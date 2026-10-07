@@ -76,7 +76,7 @@ catalogue `latest` while a stable version exists.
 3. `release.yml` (environment `plugin-release`, waits for a reviewer if one is
    configured) checks that the tag is on `main`, tag = `plugin.json` version,
    CHANGELOG entry exists, the plugin is releasable; validates, tests, builds,
-   **signs**, verifies the signature against `GC_PLUGIN_PUBLIC_KEY` and creates
+   **signs**, verifies the signature against `signing-key.pub` and creates
    the GitHub Release `<id>-v<version>` with
    `<id>-<version>.gcplugin`, `<id>-<version>.gcplugin.sha256` and
    `<id>-<version>.index.json`. It fails, and publishes nothing, when a key
@@ -105,9 +105,9 @@ releases are the source of truth; deleting a release and re-running the
 
 | Kind | Name | Value |
 |---|---|---|
-| Environment | `plugin-release` | add yourself as *required reviewer*; *deployment branches and tags* → selected, tag rule `*-v*` |
+| Environment | `plugin-release` | *deployment branches and tags* → selected, tag rule `*-v*` (a required reviewer is optional) |
 | Environment secret | `GC_PLUGIN_SIGNING_KEY` | private seed from `node scripts/plugin-keygen.js` (GateControl repo; run it on your own machine) |
-| Variable (repo or environment) | `GC_PLUGIN_PUBLIC_KEY` | the matching public key (base64, 32 bytes); also goes into GateControl's `BUILTIN_PUBLIC_KEYS` |
+| File in this repo | `signing-key.pub` | the matching public key (base64, 32 bytes); also in GateControl's `BUILTIN_PUBLIC_KEYS` |
 | Tag ruleset (recommended) | `*-v*` | restrict creation/update/deletion to maintainers |
 
 No other secrets are used. `pull_request` runs (`ci.yml`) never see the

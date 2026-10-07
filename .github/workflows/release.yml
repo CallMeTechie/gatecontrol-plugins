@@ -61,14 +61,17 @@ jobs:
           ID: ${{ steps.check.outputs.id }}
         run: node tools/test.js "$ID"
 
+      # The public key is committed (signing-key.pub) so a release can't be
+      # pointed at a different key by changing a repo variable.
       - name: Require signing key and public key
         env:
           SIGNING_KEY: ${{ secrets.GC_PLUGIN_SIGNING_KEY }}
-          PUBLIC_KEY: ${{ vars.GC_PLUGIN_PUBLIC_KEY || secrets.GC_PLUGIN_PUBLIC_KEY }}
         run: |
+          PUBLIC_KEY=$(tr -d '[:space:]' < signing-key.pub)
+          echo "GC_PLUGIN_PUBLIC_KEY=$PUBLIC_KEY" >> "$GITHUB_ENV"
           ok=1
           if [ -z "$SIGNING_KEY" ]; then echo "::error::secret GC_PLUGIN_SIGNING_KEY is not set (environment plugin-release)"; ok=0; fi
-          if [ -z "$PUBLIC_KEY" ]; then echo "::error::variable GC_PLUGIN_PUBLIC_KEY is not set"; ok=0; fi
+          if ! printf '%s' "$PUBLIC_KEY" | grep -Eq '^[A-Za-z0-9+/]{43}=$'; then echo "::error::signing-key.pub does not hold a base64 32-byte Ed25519 public key"; ok=0; fi
           [ "$ok" = 1 ]
 
       # The key only exists in this step's environment; GitHub masks it in logs.
@@ -86,7 +89,6 @@ jobs:
         env:
           ID: ${{ steps.check.outputs.id }}
           VERSION: ${{ steps.check.outputs.version }}
-          GC_PLUGIN_PUBLIC_KEY: ${{ vars.GC_PLUGIN_PUBLIC_KEY || secrets.GC_PLUGIN_PUBLIC_KEY }}
         run: node tools/verify.js "dist/${ID}-${VERSION}.gcplugin" --id "$ID" --version "$VERSION"
 
       - name: sha256 and catalogue entry
@@ -95,7 +97,6 @@ jobs:
           VERSION: ${{ steps.check.outputs.version }}
           TAG: ${{ github.ref_name }}
           KEY_ID: ${{ steps.verify.outputs.key_id }}
-          GC_PLUGIN_PUBLIC_KEY: ${{ vars.GC_PLUGIN_PUBLIC_KEY || secrets.GC_PLUGIN_PUBLIC_KEY }}
         run: |
           node tools/index-entry.js "dist/${ID}-${VERSION}.gcplugin" --tag "$TAG" --repo "$GITHUB_REPOSITORY" --key-id "$KEY_ID" --public-key "$GC_PLUGIN_PUBLIC_KEY"
           ls -l dist
