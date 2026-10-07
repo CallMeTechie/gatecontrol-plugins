@@ -1,0 +1,97 @@
+<main class="sh-page">
+  <div class="page-header">
+    <div>
+      <div class="page-eyebrow">{{t:eyebrow}}</div>
+      <h1 class="page-title">{{t:title}}</h1>
+      <div class="page-sub">{{t:subtitle}}</div>
+    </div>
+    <div class="page-actions">
+      <select id="sh-gateway-select" class="form-select" aria-label="Gateway"></select>
+      <button class="btn" type="button" id="sh-test">{{t:test}}</button>
+      <button class="btn" type="button" id="sh-sync">{{t:sync}}</button>
+      <button class="btn" type="button" id="sh-edit">{{t:gateway.edit}}</button>
+      <button class="btn" type="button" data-nav="rules">{{t:rules.title}}</button>
+      <button class="btn btn-primary" type="button" id="sh-connect-open">{{t:connect}}</button>
+    </div>
+  </div>
+  <div class="sh-gwinfo" id="sh-gwinfo"></div>
+  <div class="sh-test-result" id="sh-test-result" role="status" hidden></div>
+  <div id="smarthome-kpis" class="sh-kpis"></div>
+  <div id="smarthome-devices"></div>
+
+  <div class="modal-overlay" id="sh-connect-modal" role="dialog" aria-modal="true" aria-labelledby="sh-c-title" hidden>
+    <div class="modal">
+      <div class="modal-head">
+        <div class="modal-title" id="sh-c-title">{{t:connect.title}}</div>
+        <button class="btn modal-close" type="button" data-close="sh-connect-modal" aria-label="{{t:common.close}}">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label class="form-label" for="sh-c-name">{{t:connect.name}}</label>
+          <input class="form-input" id="sh-c-name" type="text" maxlength="100" value="Phoscon-Gateway">
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="sh-c-target">{{t:connect.target}}</label>
+          <select class="form-select" id="sh-c-target"></select>
+          <span class="form-hint" id="sh-c-target-hint">{{t:connect.target_hint}}</span>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="sh-c-key">{{t:connect.apikey_optional}}</label>
+          <input class="form-input" id="sh-c-key" type="text" maxlength="80" autocomplete="off" spellcheck="false" placeholder="{{t:connect.apikey_ph}}">
+          <span class="form-hint">{{t:connect.apikey_hint}}</span>
+        </div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn" type="button" data-close="sh-connect-modal">{{t:common.cancel}}</button>
+        <button class="btn btn-primary" type="button" id="sh-c-submit">{{t:connect.acquire}}</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="sh-edit-modal" role="dialog" aria-modal="true" aria-labelledby="sh-e-title" hidden>
+    <div class="modal">
+      <div class="modal-head">
+        <div class="modal-title" id="sh-e-title">{{t:gateway.edit}}</div>
+        <button class="btn modal-close" type="button" data-close="sh-edit-modal" aria-label="{{t:common.close}}">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label class="form-label" for="sh-e-name">{{t:connect.name}}</label>
+          <input class="form-input" id="sh-e-name" type="text" maxlength="100">
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="sh-e-target">{{t:connect.target}}</label>
+          <select class="form-select" id="sh-e-target"></select>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="sh-e-key">{{t:gateway.apikey_new}}</label>
+          <input class="form-input" id="sh-e-key" type="text" maxlength="80" autocomplete="off" spellcheck="false">
+        </div>
+        <label class="check"><input type="checkbox" id="sh-e-enabled"> {{t:gateway.enabled}}</label>
+      </div>
+      <div class="modal-foot">
+        <button class="btn btn-danger" type="button" id="sh-e-remove">{{t:gateway.remove}}</button>
+        <button class="btn" type="button" data-close="sh-edit-modal">{{t:common.cancel}}</button>
+        <button class="btn btn-primary" type="button" id="sh-e-save">{{t:common.save}}</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="sh-owner-modal" role="dialog" aria-modal="true" aria-labelledby="sh-o-title" hidden>
+    <div class="modal">
+      <div class="modal-head">
+        <div class="modal-title" id="sh-o-title">{{t:owners.title}}</div>
+        <button class="btn modal-close" type="button" data-close="sh-owner-modal" aria-label="{{t:common.close}}">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="sh-owner-sub" id="sh-owner-sub"></div>
+        <input class="form-input" id="sh-owner-search" type="text" placeholder="{{t:owners.search}}" aria-label="{{t:owners.search}}">
+        <div class="sh-owner-list" id="sh-owner-list"></div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn" type="button" data-close="sh-owner-modal">{{t:common.cancel}}</button>
+        <button class="btn btn-primary" type="button" id="sh-owner-save">{{t:owners.save}}</button>
+      </div>
+    </div>
+  </div>
+</main>

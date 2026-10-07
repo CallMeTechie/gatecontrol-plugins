@@ -23,6 +23,7 @@
 //   await host.start();
 //   const res = await host.request({ method: 'GET', path: '/ping' });
 //   host.logs, host.notifications, host.fetches; await host.close();
+//   await host.legacyImport(snapshot); await host.portalVisible({ id: 2, name: 'Ada', role: 'user' });
 
 const fs = require('node:fs');
 const os = require('node:os');
@@ -77,6 +78,11 @@ function settingDefaults(manifest) {
   return out;
 }
 
+const SETTING_KEY_RE = /^[a-z][a-z0-9_.-]{0,63}$/;
+function settingKey(k) {
+  return typeof k === 'string' && SETTING_KEY_RE.test(k) && !['__proto__', 'constructor', 'prototype'].includes(k);
+}
+
 function openDb(file) {
   let sqlite;
   try { sqlite = require('node:sqlite'); } catch { return null; }
@@ -100,6 +106,7 @@ async function createHost(pluginDir, opts = {}) {
   const fetches = [];
   const kv = new Map();
   const settings = { ...settingDefaults(manifest), ...(opts.settings || {}) };
+  const secrets = new Set(); // keys stored with gc.settings.setSecret (encrypted on the real host)
   const users = (opts.users || [DEFAULT_USER]).map((u) => ({ id: u.id, name: u.name, role: u.role }));
   const license = { required: !!(manifest.license && manifest.license.required), licensed: true, state: 'valid', expiresAt: null, ...(opts.license || {}) };
 
@@ -188,10 +195,19 @@ async function createHost(pluginDir, opts = {}) {
     },
     'db.exec': async ({ sql }) => { needDb(sql); db.exec(sql); return null; },
     'settings.all': async () => ({ ...settings }),
-    'settings.get': async ({ key }) => (settings[key] === undefined ? null : settings[key]),
+    'settings.get': async ({ key }) => (Object.prototype.hasOwnProperty.call(settings, key) && settings[key] !== undefined ? settings[key] : null),
     'settings.set': async ({ key, value }) => {
-      if (!Object.prototype.hasOwnProperty.call(settings, key)) throw hostError('ERR_INVALID', 'invalid setting');
+      // like the host: declared keys plus the plugin's own (JSON) keys; no prototype names
+      if (!settingKey(key)) throw hostError('ERR_INVALID', 'invalid setting');
       settings[key] = value === undefined ? null : value;
+      return null;
+    },
+    'settings.setSecret': async ({ key, value }) => {
+      if (!settingKey(key)) throw hostError('ERR_INVALID', 'invalid setting');
+      const def = ((manifest.ui && manifest.ui.settings) || []).find((d) => d.key === key);
+      if (def && def.type !== 'secret') throw hostError('ERR_INVALID', 'invalid setting');
+      if (value != null && (typeof value !== 'string' || value.length > 4000)) throw hostError('ERR_INVALID', 'invalid secret');
+      if (value == null || value === '') { delete settings[key]; secrets.delete(key); } else { settings[key] = value; secrets.add(key); }
       return null;
     },
     'users.list': async () => {
@@ -251,6 +267,7 @@ async function createHost(pluginDir, opts = {}) {
       get: (key) => call('settings.get', { key }),
       all: () => call('settings.all', {}),
       set: (key, value) => call('settings.set', { key, value }),
+      setSecret: (key, value) => call('settings.setSecret', { key, value: value == null ? null : String(value) }),
     }),
     users: Object.freeze({ list: () => call('users.list', {}), get: (id) => call('users.get', { id }) }),
     notify: (message, o) => call('notify', { message: String(message), opts: o || {} }),
@@ -268,6 +285,15 @@ async function createHost(pluginDir, opts = {}) {
     stop: () => hook('stop'),
     tick: () => hook('tick'),
     settingsChanged: (values) => hook('settingsChanged', values),
+    /** portalVisible hook: false hides the portal tab for this viewer (no hook → true) */
+    async portalVisible(user) {
+      if (typeof plugin.portalVisible !== 'function') return true;
+      return (await hook('portalVisible', { user: { portal: true, ...user }, lang: 'de' })) !== false;
+    },
+    /** legacyImport hook: the host hands over the built-in data (first-party plugins only) */
+    legacyImport: (snapshot) => hook('legacyImport', snapshot),
+    /** keys stored with gc.settings.setSecret */
+    secrets,
     /** req = { method, path, query, body, user, lang } (defaults filled in); returns { status, json | html … } */
     async request(req) {
       const r = await hook('request', { method: 'GET', query: {}, body: null, user: users[0] || DEFAULT_USER, lang: 'de', ...req });

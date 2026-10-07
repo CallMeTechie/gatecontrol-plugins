@@ -120,3 +120,24 @@ test('pack → sign → verify round trip with a throwaway key', { skip: !gcDir 
     fs.rmSync(out, { recursive: true, force: true });
   }
 });
+
+test('--no-license: an unsigned dev build of a licensed plugin that a test server can install', { skip: !gcDir && 'no GateControl checkout' }, () => {
+  const pkg = lib.gcRequire('src/services/plugins/package');
+  const out = fs.mkdtempSync(path.join(os.tmpdir(), 'pack-'));
+  const run = (args) => spawnSync(process.execPath, args, { encoding: 'utf8' });
+  try {
+    let r = run([path.join(TOOLS, 'pack.js'), 'gatecontrol-smarthome', '--no-license', '--out', out]);
+    assert.equal(r.status, 0, r.stderr);
+    assert.match(r.stdout, /gatecontrol-smarthome-\d+\.\d+\.\d+-dev\.gcplugin .*UNSIGNED/);
+    const file = fs.readdirSync(out).find((f) => f.endsWith('-dev.gcplugin'));
+    const files = pkg.decode(fs.readFileSync(path.join(out, file)));
+    const manifest = JSON.parse(files.get('plugin.json').toString('utf8'));
+    assert.deepEqual(manifest.license, { required: false });
+    assert.equal(files.has('signature'), false);
+    assert.equal(lib.readJson(path.join(lib.pluginDir('gatecontrol-smarthome'), 'plugin.json')).license.required, true, 'the source stays licensed');
+    r = run([path.join(TOOLS, 'pack.js'), 'gatecontrol-smarthome', '--no-license', '--sign', '--out', out]);
+    assert.notEqual(r.status, 0);
+  } finally {
+    fs.rmSync(out, { recursive: true, force: true });
+  }
+});
