@@ -210,3 +210,11 @@ test('background: syncs enabled gateways no more often than the interval', () =>
     assert.equal(gw.calls.filter((c) => c.path.endsWith('/lights')).length, 1, 'disabled gateways are not polled');
   });
 });
+
+test('host refusals: unassigned target vs. a blocked address vs. unreachable', async () => {
+  const mk = (err) => createClient({ net: { fetchTarget: async () => { throw err; } } }, { index: 0 });
+  const denied = (message) => Object.assign(new Error(message), { code: 'ERR_NET_DENIED' });
+  await assert.rejects(mk(denied('no target assigned for gateway — an administrator assigns it')).getConfig(), { code: 'SMARTHOME_NO_TARGET' });
+  await assert.rejects(mk(denied('address not reachable for plugins')).getConfig(), { code: 'SMARTHOME_TARGET_DENIED' });
+  await assert.rejects(mk(Object.assign(new Error('ECONNREFUSED'), { code: 'ERR_NET' })).getConfig(), { code: 'DECONZ_UNREACHABLE' });
+});

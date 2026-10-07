@@ -61,7 +61,7 @@ function createClient(gc, { index, apiKey = null, timeoutMs = 10000 } = {}) {
       // ERR_NET_DENIED: no (longer an) assignment with this index — or the
       // assigned address is one the host never lets a plugin reach
       if (e && e.code === 'ERR_NET_DENIED') {
-        if (/no target assigned|declares no target/.test(String(e.message))) throw codeError('SMARTHOME_NO_TARGET', 'gateway access target is not assigned');
+        if (/no target assigned|not assigned|declares no target|not declared/.test(String(e.message))) throw codeError('SMARTHOME_NO_TARGET', 'gateway access target is not assigned');
         throw codeError('SMARTHOME_TARGET_DENIED', 'access target not reachable for plugins');
       }
       throw codeError('DECONZ_UNREACHABLE', 'gateway not reachable');
