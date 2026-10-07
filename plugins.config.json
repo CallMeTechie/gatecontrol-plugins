@@ -1,0 +1,6 @@
+{
+  "$comment": "Repo-level settings per plugin id. release: false = never released (examples); plugins not listed here are released normally.",
+  "plugins": {
+    "gatecontrol-hello": { "release": false, "example": true }
+  }
+}
