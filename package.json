@@ -1,0 +1,16 @@
+{
+  "name": "gatecontrol-plugins",
+  "private": true,
+  "description": "First-party GateControl plugins: sources, tests, build and release tooling.",
+  "license": "UNLICENSED",
+  "engines": { "node": ">=22.13" },
+  "scripts": {
+    "gatecontrol": "tools/fetch-gatecontrol.sh",
+    "validate": "node tools/validate.js",
+    "test": "node tools/test.js",
+    "pack": "node tools/pack.js"
+  },
+  "devDependencies": {
+    "ipaddr.js": "1.9.1"
+  }
+}

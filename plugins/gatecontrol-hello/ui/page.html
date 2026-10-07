@@ -1,0 +1,13 @@
+<main class="hello">
+  <h1 id="hello">{{greeting}}, {{user}}!</h1>
+  <p id="view">{{view}}:{{page}}</p>
+  <p>Gespeicherte Grüße: <span id="count">{{count}}</span></p>
+  <button id="ping" type="button">Ping</button>
+  <pre id="out"></pre>
+</main>
+<script>
+  document.getElementById('ping').addEventListener('click', async () => {
+    const r = await window.GC.call('GET', 'ping');
+    document.getElementById('out').textContent = JSON.stringify(r, null, 2);
+  });
+</script>

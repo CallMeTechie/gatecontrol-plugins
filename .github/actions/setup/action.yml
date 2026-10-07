@@ -1,0 +1,29 @@
+name: Set up plugin tooling
+description: Node.js, this repository's dev dependencies and GateControl at the commit pinned in gatecontrol.ref (checked out to ./.gatecontrol).
+runs:
+  using: composite
+  steps:
+    - name: Read gatecontrol.ref
+      id: ref
+      shell: bash
+      run: |
+        ref="$(tr -d '[:space:]' < gatecontrol.ref)"
+        if ! [[ "$ref" =~ ^[0-9a-f]{40}$ ]]; then
+          echo "::error file=gatecontrol.ref::gatecontrol.ref must hold a 40-character commit SHA"
+          exit 1
+        fi
+        echo "sha=$ref" >> "$GITHUB_OUTPUT"
+    - name: Check out GateControl (packer, manifest validator, signature check)
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        repository: CallMeTechie/gatecontrol
+        ref: ${{ steps.ref.outputs.sha }}
+        path: .gatecontrol
+        persist-credentials: false
+    - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      with:
+        node-version: 24
+        cache: npm
+    - name: Install dev dependencies
+      shell: bash
+      run: npm ci --ignore-scripts --no-audit --no-fund
