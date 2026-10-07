@@ -1,0 +1,124 @@
+name: Release
+
+# Push a tag <id>-v<semver> (e.g. gatecontrol-smarthome-v1.0.0) on a commit of
+# main: checks tag ↔ plugin.json ↔ CHANGELOG, tests, builds, SIGNS with the
+# secret GC_PLUGIN_SIGNING_KEY (environment plugin-release), verifies the
+# signature against GC_PLUGIN_PUBLIC_KEY and publishes a GitHub Release with
+# the package, its .sha256 and the catalogue entry; then rebuilds catalog.json.
+# Never publishes an unsigned package.
+
+on:
+  push:
+    tags:
+      - '*-v[0-9]*.[0-9]*.[0-9]*'
+
+permissions: {}
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Build, sign, publish
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: plugin-release
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Tag must be on the default branch
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          git fetch --no-tags origin "+refs/heads/${DEFAULT_BRANCH}:refs/remotes/origin/${DEFAULT_BRANCH}"
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" "origin/${DEFAULT_BRANCH}"; then
+            echo "::error::${GITHUB_REF_NAME} points to ${GITHUB_SHA}, which is not on ${DEFAULT_BRANCH}"
+            exit 1
+          fi
+
+      - uses: ./.github/actions/setup
+
+      - name: Check tag, plugin.json and CHANGELOG
+        id: check
+        env:
+          TAG: ${{ github.ref_name }}
+        run: node tools/release-check.js "$TAG" --notes "$RUNNER_TEMP/notes.md"
+
+      - name: Validate
+        env:
+          ID: ${{ steps.check.outputs.id }}
+        run: node tools/validate.js "$ID"
+
+      - name: Test
+        env:
+          ID: ${{ steps.check.outputs.id }}
+        run: node tools/test.js "$ID"
+
+      - name: Require signing key and public key
+        env:
+          SIGNING_KEY: ${{ secrets.GC_PLUGIN_SIGNING_KEY }}
+          PUBLIC_KEY: ${{ vars.GC_PLUGIN_PUBLIC_KEY || secrets.GC_PLUGIN_PUBLIC_KEY }}
+        run: |
+          ok=1
+          if [ -z "$SIGNING_KEY" ]; then echo "::error::secret GC_PLUGIN_SIGNING_KEY is not set (environment plugin-release)"; ok=0; fi
+          if [ -z "$PUBLIC_KEY" ]; then echo "::error::variable GC_PLUGIN_PUBLIC_KEY is not set"; ok=0; fi
+          [ "$ok" = 1 ]
+
+      # The key only exists in this step's environment; GitHub masks it in logs.
+      # plugin-pack.js reads it from the environment — it is never written to disk.
+      - name: Build and sign
+        env:
+          ID: ${{ steps.check.outputs.id }}
+          GC_PLUGIN_SIGNING_KEY: ${{ secrets.GC_PLUGIN_SIGNING_KEY }}
+        run: |
+          rm -rf dist
+          node tools/pack.js "$ID" --sign --out dist
+
+      - name: Verify signature
+        id: verify
+        env:
+          ID: ${{ steps.check.outputs.id }}
+          VERSION: ${{ steps.check.outputs.version }}
+          GC_PLUGIN_PUBLIC_KEY: ${{ vars.GC_PLUGIN_PUBLIC_KEY || secrets.GC_PLUGIN_PUBLIC_KEY }}
+        run: node tools/verify.js "dist/${ID}-${VERSION}.gcplugin" --id "$ID" --version "$VERSION"
+
+      - name: sha256 and catalogue entry
+        env:
+          ID: ${{ steps.check.outputs.id }}
+          VERSION: ${{ steps.check.outputs.version }}
+          TAG: ${{ github.ref_name }}
+          KEY_ID: ${{ steps.verify.outputs.key_id }}
+          GC_PLUGIN_PUBLIC_KEY: ${{ vars.GC_PLUGIN_PUBLIC_KEY || secrets.GC_PLUGIN_PUBLIC_KEY }}
+        run: |
+          node tools/index-entry.js "dist/${ID}-${VERSION}.gcplugin" --tag "$TAG" --repo "$GITHUB_REPOSITORY" --key-id "$KEY_ID" --public-key "$GC_PLUGIN_PUBLIC_KEY"
+          ls -l dist
+          cat "dist/${ID}-${VERSION}.gcplugin.sha256"
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ID: ${{ steps.check.outputs.id }}
+          VERSION: ${{ steps.check.outputs.version }}
+          PRERELEASE: ${{ steps.check.outputs.prerelease }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          flags=(--verify-tag --latest=false --title "${ID} ${VERSION}" --notes-file "$RUNNER_TEMP/notes.md")
+          if [ "$PRERELEASE" = true ]; then flags+=(--prerelease); fi
+          gh release create "$TAG" "${flags[@]}" \
+            "dist/${ID}-${VERSION}.gcplugin" \
+            "dist/${ID}-${VERSION}.gcplugin.sha256" \
+            "dist/${ID}-${VERSION}.index.json"
+
+  catalog:
+    name: Update catalog
+    needs: release
+    permissions:
+      contents: write
+    uses: ./.github/workflows/catalog.yml

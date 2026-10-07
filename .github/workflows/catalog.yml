@@ -1,0 +1,61 @@
+name: Catalog
+
+# Rebuilds catalog.json from the *.index.json assets of all published plugin
+# releases and uploads it to the rolling release "catalog":
+#   https://github.com/<owner>/<repo>/releases/download/catalog/catalog.json
+# Runs after every release (release.yml) and on demand (e.g. after deleting a
+# release). Needs no secrets.
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  catalog:
+    name: Rebuild catalog.json
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    concurrency:
+      group: catalog
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+
+      - name: Download index entries of all plugin releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          dir="$RUNNER_TEMP/index"
+          mkdir -p "$dir"
+          gh release list --repo "$GITHUB_REPOSITORY" --limit 1000 --exclude-drafts --json tagName --jq '.[].tagName' \
+            | { grep -E '^[a-z0-9]+(-[a-z0-9]+)*-v[0-9]+\.[0-9]+\.[0-9]+' || true; } \
+            | while read -r tag; do
+                gh release download "$tag" --repo "$GITHUB_REPOSITORY" --pattern '*.index.json' --dir "$dir" --clobber \
+                  || echo "::warning::${tag}: no index entry"
+              done
+          ls -l "$dir"
+
+      - name: Build catalog.json
+        run: node tools/catalog.js "$RUNNER_TEMP/index" --out "$RUNNER_TEMP/catalog.json" --repo "$GITHUB_REPOSITORY"
+
+      - name: Publish to the rolling "catalog" release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          if ! gh release view catalog --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create catalog --repo "$GITHUB_REPOSITORY" --target "${DEFAULT_BRANCH:-main}" --latest=false \
+              --title "Plugin catalog" \
+              --notes "Rolling release: catalog.json lists every published plugin (latest version + history). Rebuilt by the Catalog workflow; do not edit by hand."
+          fi
+          gh release upload catalog "$RUNNER_TEMP/catalog.json" --repo "$GITHUB_REPOSITORY" --clobber
