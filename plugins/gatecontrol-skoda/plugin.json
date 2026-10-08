@@ -1,0 +1,84 @@
+{
+  "id": "gatecontrol-skoda",
+  "name": {
+    "de": "Fahrzeuge",
+    "en": "Vehicles"
+  },
+  "version": "1.0.0",
+  "publisher": "CallMeTechie",
+  "description": {
+    "de": "Škoda-Fahrzeuge über MySkoda einbinden: Ladestand, Reichweite, Zustand, Position und Fahrzeugdetails sehen, Klima, Laden, Scheibenheizung, Ver- und Entriegeln und Abfahrtstimer steuern und Fahrzeuge Haushaltsmitgliedern zuweisen (Portal „Fahrzeug“).",
+    "en": "Connect Škoda vehicles through MySkoda: see charge level, range, condition, location and vehicle details, control climate, charging, window heating, locking and departure timers, and assign vehicles to household members (portal “Vehicle”)."
+  },
+  "gatecontrol": ">=1.151.0",
+  "entry": "server/index.js",
+  "permissions": {
+    "network": {
+      "internet": [
+        "identity.vwgroup.io:443",
+        "mysmob.api.connect.skoda-auto.cz:443",
+        "iprenders.blob.core.windows.net:443",
+        "ip-modcwp.azureedge.net:443",
+        "nominatim.openstreetmap.org:443"
+      ]
+    },
+    "storage": true,
+    "portal": true,
+    "users": true,
+    "background": {
+      "intervalSeconds": 60
+    }
+  },
+  "ui": {
+    "nav": {
+      "label": {
+        "de": "Fahrzeuge",
+        "en": "Vehicles"
+      },
+      "icon": "M5 16l1-5 2-3h8l2 3 1 5v3h-2a2 2 0 0 1-4 0H9a2 2 0 0 1-4 0H3v-3zM7.5 17.5h.01M16.5 17.5h.01"
+    },
+    "pages": [
+      {
+        "id": "main",
+        "title": {
+          "de": "Fahrzeuge",
+          "en": "Vehicles"
+        }
+      }
+    ],
+    "settings": [
+      {
+        "key": "interval",
+        "type": "number",
+        "label": {
+          "de": "Abrufintervall (Minuten)",
+          "en": "Poll interval (minutes)"
+        },
+        "help": {
+          "de": "Wie oft Zustand, Ladestand und Position aller Fahrzeuge aus der Škoda-Cloud gelesen werden (5–1440). Zu häufige Abfragen führen zu einer Sperre durch Škoda.",
+          "en": "How often the state, charge level and location of all vehicles are read from the Škoda cloud (5–1440). Polling too often gets the account rate-limited by Škoda."
+        },
+        "min": 5,
+        "max": 1440,
+        "default": 15
+      }
+    ],
+    "portal": {
+      "sections": [
+        {
+          "id": "skoda",
+          "tab": "car",
+          "title": {
+            "de": "Fahrzeuge",
+            "en": "Vehicles"
+          },
+          "order": 20
+        }
+      ]
+    }
+  },
+  "license": {
+    "required": true
+  },
+  "migrations": "migrations"
+}
