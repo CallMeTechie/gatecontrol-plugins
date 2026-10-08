@@ -1,0 +1,136 @@
+'use strict';
+
+// MySkoda login flow (port of GateControl's src/services/skoda/skodaAuth.js,
+// itself ported from the Python `myskoda` reference library). The API is
+// unofficial. fetchImpl = http.fetchFor(gc): every request goes through the
+// host to the hosts of plugin.json (identity.vwgroup.io, mysmob.api.…).
+
+const crypto = require('node:crypto');
+const { CookieJar, followRedirects } = require('./http');
+
+const CLIENT_ID = '7f045eee-7003-4379-9968-9355ed2adb06@apps_vw-dilab_com';
+const REDIRECT_URI = 'myskoda://redirect/login/';
+const IDENT_BASE = 'https://identity.vwgroup.io';
+const API_BASE = 'https://mysmob.api.connect.skoda-auto.cz';
+const SCOPES = 'address badge birthdate cars driversLicense dealers email mileage mbb nationalIdentifier openid phone profession profile vin';
+const FORM_HEADERS = { 'content-type': 'application/x-www-form-urlencoded', accept: 'text/html' };
+
+class SkodaAuthError extends Error {
+  constructor(message, code) { super(message); this.name = 'SkodaAuthError'; this.code = code; }
+}
+
+function generatePkce() {
+  const verifier = crypto.randomBytes(32).toString('base64url');
+  const challenge = crypto.createHash('sha256').update(verifier).digest('base64url');
+  return { verifier, challenge };
+}
+
+function parseIdk(html) {
+  const csrf = html.match(/csrf_token:\s*['"]([^'"]+)['"]/);
+  const tpl = html.match(/templateModel:\s*(\{.*?\})\s*,?\s*\n/s);
+  if (!csrf || !tpl) throw new SkodaAuthError('cannot parse identity page', 'SKODA_AUTH_FLOW_CHANGED');
+  let templateModel;
+  try { templateModel = JSON.parse(tpl[1]); } catch {
+    throw new SkodaAuthError('cannot parse templateModel', 'SKODA_AUTH_FLOW_CHANGED');
+  }
+  return { csrfToken: csrf[1], templateModel };
+}
+
+function parseFragment(location) {
+  // response_type=code returns the auth code as a QUERY param on the
+  // myskoda:// redirect; older hybrid flows used the #fragment. Read both,
+  // query first (the real Skoda behaviour), fragment as fallback.
+  const params = {};
+  const afterScheme = location.split('://')[1] || location;
+  const query = (afterScheme.split('?')[1] || '').split('#')[0];
+  const fragment = location.split('#')[1] || '';
+  for (const [k, v] of new URLSearchParams(fragment)) params[k] = v;
+  for (const [k, v] of new URLSearchParams(query)) params[k] = v;
+  return params;
+}
+
+function formBody(fields) { return new URLSearchParams(fields).toString(); }
+
+function tokensOf(json) {
+  if (!json || typeof json.accessToken !== 'string' || typeof json.refreshToken !== 'string') {
+    throw new SkodaAuthError('no tokens in answer', 'SKODA_AUTH_FLOW_CHANGED');
+  }
+  return { accessToken: json.accessToken, refreshToken: json.refreshToken };
+}
+
+async function exchangeCode(code, verifier, fetchImpl) {
+  const res = await fetchImpl(`${API_BASE}/api/v1/authentication/exchange-authorization-code?tokenType=CONNECT`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', accept: 'application/json' },
+    body: JSON.stringify({ code, redirectUri: REDIRECT_URI, verifier }),
+  });
+  if (res.status === 429) throw new SkodaAuthError('rate limited', 'SKODA_RATE_LIMITED');
+  if (res.status >= 400) throw new SkodaAuthError(`code exchange failed (${res.status})`, 'SKODA_LOGIN_FAILED');
+  return tokensOf(await res.json());
+}
+
+async function login(email, password, { fetchImpl }) {
+  const jar = new CookieJar();
+  const { verifier, challenge } = generatePkce();
+  const nonce = crypto.randomBytes(16).toString('base64url');
+
+  const authorizeUrl = `${IDENT_BASE}/oidc/v1/authorize?` + new URLSearchParams({
+    client_id: CLIENT_ID,
+    nonce,
+    redirect_uri: REDIRECT_URI,
+    response_type: 'code',
+    scope: SCOPES,
+    code_challenge: challenge,
+    code_challenge_method: 's256',
+    prompt: 'login',
+  }).toString();
+
+  const start = await followRedirects(jar, authorizeUrl, { method: 'GET', headers: { accept: 'text/html' } }, { fetchImpl });
+  const emailIdk = parseIdk(await start.res.text());
+
+  const identifierRes = await followRedirects(jar,
+    `${IDENT_BASE}/signin-service/v1/${CLIENT_ID}/login/identifier`,
+    { method: 'POST', headers: FORM_HEADERS, body: formBody({
+      _csrf: emailIdk.csrfToken,
+      relayState: emailIdk.templateModel.relayState,
+      hmac: emailIdk.templateModel.hmac,
+      email,
+    }) }, { fetchImpl });
+  const pwIdk = parseIdk(await identifierRes.res.text());
+
+  const finish = await followRedirects(jar,
+    `${IDENT_BASE}/signin-service/v1/${CLIENT_ID}/login/authenticate`,
+    { method: 'POST', headers: FORM_HEADERS, body: formBody({
+      _csrf: pwIdk.csrfToken,
+      relayState: pwIdk.templateModel.relayState,
+      hmac: pwIdk.templateModel.hmac,
+      email,
+      password,
+    }) }, { stopPrefix: 'myskoda://', fetchImpl });
+
+  if (!finish.location.startsWith('myskoda://')) {
+    if (finish.location.includes('terms-and-conditions')) {
+      throw new SkodaAuthError('terms acceptance required in MySkoda app', 'SKODA_TERMS_REQUIRED');
+    }
+    throw new SkodaAuthError('login did not reach redirect (wrong credentials?)', 'SKODA_LOGIN_FAILED');
+  }
+  const { code } = parseFragment(finish.location);
+  if (!code) throw new SkodaAuthError('no code in redirect', 'SKODA_AUTH_FLOW_CHANGED');
+  return exchangeCode(code, verifier, fetchImpl);
+}
+
+async function refresh(refreshToken, { fetchImpl }) {
+  const res = await fetchImpl(`${API_BASE}/api/v1/authentication/refresh-token?tokenType=CONNECT`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', accept: 'application/json' },
+    body: JSON.stringify({ token: refreshToken }),
+  });
+  if (res.status === 429) throw new SkodaAuthError('rate limited', 'SKODA_RATE_LIMITED');
+  if (res.status >= 400) throw new SkodaAuthError(`refresh failed (${res.status})`, 'SKODA_LOGIN_FAILED');
+  return tokensOf(await res.json());
+}
+
+module.exports = {
+  SkodaAuthError, generatePkce, parseIdk, parseFragment, login, refresh,
+  CLIENT_ID, REDIRECT_URI, IDENT_BASE, API_BASE,
+};

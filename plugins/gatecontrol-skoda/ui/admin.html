@@ -1,0 +1,100 @@
+<main class="sk-page">
+  <div class="page-header">
+    <div>
+      <div class="page-eyebrow">{{t:eyebrow}}</div>
+      <h1 class="page-title">{{t:title}}</h1>
+      <div class="page-sub">{{t:subtitle}}</div>
+    </div>
+    <div class="page-actions">
+      <label class="sk-poll" for="sk-poll-interval">{{t:settings.poll_interval}}</label>
+      <input class="form-input sk-poll-input" type="number" id="sk-poll-interval" min="5" max="1440" step="1">
+      <button class="btn btn-primary" type="button" id="sk-account-add-open">{{t:accounts.add}}</button>
+    </div>
+  </div>
+
+  <h2 class="sk-h2">{{t:accounts.title}}</h2>
+  <div class="sk-accounts" id="sk-accounts"></div>
+  <h2 class="sk-h2">{{t:vehicles.title}}</h2>
+  <div class="sk-grid" id="sk-vehicles"></div>
+
+  <div class="modal-overlay" id="sk-account-modal" role="dialog" aria-modal="true" aria-labelledby="sk-a-title" hidden>
+    <div class="modal">
+      <div class="modal-head">
+        <div class="modal-title" id="sk-a-title">{{t:accounts.add}}</div>
+        <button class="btn modal-close" type="button" data-close="sk-account-modal" aria-label="{{t:common.close}}">×</button>
+      </div>
+      <div class="modal-body">
+        <p class="form-hint">{{t:accounts.hint}}</p>
+        <div class="form-group">
+          <label class="form-label" for="sk-acc-email">{{t:accounts.email}}</label>
+          <input class="form-input" type="email" id="sk-acc-email" maxlength="254" autocomplete="off" spellcheck="false">
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="sk-acc-password">{{t:accounts.password}}</label>
+          <input class="form-input" type="password" id="sk-acc-password" maxlength="256" autocomplete="new-password">
+        </div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn" type="button" data-close="sk-account-modal">{{t:common.cancel}}</button>
+        <button class="btn btn-primary" type="button" id="sk-acc-save">{{t:common.save}}</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="sk-password-modal" role="dialog" aria-modal="true" aria-labelledby="sk-p-title" hidden>
+    <div class="modal">
+      <div class="modal-head">
+        <div class="modal-title" id="sk-p-title">{{t:accounts.change_password}}</div>
+        <button class="btn modal-close" type="button" data-close="sk-password-modal" aria-label="{{t:common.close}}">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label class="form-label" for="sk-pw-input">{{t:accounts.new_password}}</label>
+          <input class="form-input" type="password" id="sk-pw-input" maxlength="256" autocomplete="new-password">
+        </div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn" type="button" data-close="sk-password-modal">{{t:common.cancel}}</button>
+        <button class="btn btn-primary" type="button" id="sk-pw-save">{{t:common.save}}</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="sk-spin-modal" role="dialog" aria-modal="true" aria-labelledby="sk-s-title" hidden>
+    <div class="modal">
+      <div class="modal-head">
+        <div class="modal-title" id="sk-s-title">{{t:cmd.spin}}</div>
+        <button class="btn modal-close" type="button" data-close="sk-spin-modal" aria-label="{{t:common.close}}">×</button>
+      </div>
+      <div class="modal-body">
+        <p class="form-hint">{{t:cmd.spin_hint}}</p>
+        <div class="form-group">
+          <label class="form-label" for="sk-spin-input">{{t:cmd.spin}}</label>
+          <input class="form-input" type="password" id="sk-spin-input" inputmode="numeric" maxlength="10" autocomplete="off">
+        </div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn" type="button" data-close="sk-spin-modal">{{t:common.cancel}}</button>
+        <button class="btn btn-primary" type="button" id="sk-spin-save">{{t:cmd.spin_set}}</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="sk-owner-modal" role="dialog" aria-modal="true" aria-labelledby="sk-o-title" hidden>
+    <div class="modal">
+      <div class="modal-head">
+        <div class="modal-title" id="sk-o-title">{{t:owner.title}}</div>
+        <button class="btn modal-close" type="button" data-close="sk-owner-modal" aria-label="{{t:common.close}}">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="sk-owner-sub" id="sk-owner-sub"></div>
+        <input class="form-input" id="sk-owner-search" type="text" placeholder="{{t:owner.search}}" aria-label="{{t:owner.search}}">
+        <div class="sk-owner-list" id="sk-owner-list"></div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn" type="button" data-close="sk-owner-modal">{{t:common.cancel}}</button>
+        <button class="btn btn-primary" type="button" id="sk-owner-save">{{t:owner.save}}</button>
+      </div>
+    </div>
+  </div>
+</main>

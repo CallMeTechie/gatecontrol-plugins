@@ -1,0 +1,87 @@
+/* gatecontrol-skoda — close to GateControl's aurora Fahrzeuge page
+   (public/css/skoda.css), on the frame's colour tokens (light and dark). */
+:root{--surface-3:var(--surface-2);--faint:var(--muted)}
+body{padding:2px 2px 24px}
+[hidden]{display:none!important}
+.page-header{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:20px}
+.page-eyebrow{font-size:11px;text-transform:uppercase;letter-spacing:.09em;color:var(--muted);font-weight:700;margin-bottom:6px}
+.page-title{font-size:26px;font-weight:800;margin:0;line-height:1.15}
+.page-sub{color:var(--muted);font-size:13.5px;margin-top:6px;max-width:640px}
+.page-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:36px;padding:0 14px;border-radius:10px;border:1px solid var(--line-2);background:transparent;color:var(--text);font:600 13px var(--font);cursor:pointer;text-decoration:none}
+.btn:hover{border-color:var(--accent)}
+.btn:disabled{opacity:.55;cursor:default}
+.btn-primary{background:var(--btn-bg);color:var(--btn-text);border:0}
+.btn-sm{min-height:30px;padding:0 10px;font-size:12px}
+.btn-danger{color:var(--crit);border-color:var(--crit)}
+.form-group{display:flex;flex-direction:column;gap:6px;margin-bottom:14px}
+.form-label{font-size:12px;font-weight:700;color:var(--muted)}
+.form-hint{font-size:12px;color:var(--muted)}
+.form-input,.form-select{width:100%;min-height:36px}
+.page-actions .form-select{width:auto;min-width:180px}
+.check{display:flex;align-items:center;gap:8px;font-size:13px}
+.check input{min-height:0;width:16px;height:16px}
+/* status line (in-frame toast) */
+.sk-toast{position:fixed;left:50%;top:10px;transform:translateX(-50%);z-index:50;padding:9px 14px;border-radius:10px;font-size:13px;font-weight:600;background:var(--surface);border:1px solid var(--line-2);box-shadow:0 8px 24px rgba(0,0,0,.25);max-width:90%}
+.sk-toast[data-tone="error"]{color:var(--crit);border-color:var(--crit)}
+.sk-toast[data-tone="good"]{color:var(--good);border-color:var(--good)}
+/* modals */
+.modal-overlay{position:fixed;inset:0;z-index:40;background:rgba(5,8,12,.55);display:flex;align-items:flex-start;justify-content:center;padding:32px 12px;overflow:auto}
+.modal{width:100%;max-width:480px;background:var(--surface);border:1px solid var(--line-2);border-radius:16px;box-shadow:0 18px 50px rgba(0,0,0,.35)}
+.modal-wide{max-width:620px}
+.modal-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:16px 18px;border-bottom:1px solid var(--line)}
+.modal-title{font-weight:800;font-size:16px}
+.modal-close{min-height:30px;width:30px;padding:0;justify-content:center;border:0}
+.modal-body{padding:16px 18px}
+.modal-foot{display:flex;justify-content:flex-end;gap:8px;padding:12px 18px;border-top:1px solid var(--line)}
+.modal-msg{margin:0 0 6px;font-size:14px}
+/* port of public/css/smarthome.css */
+.muted{color:var(--muted)}
+.sk-grow{flex:1 1 auto}
+.sk-poll{font-size:12px;font-weight:700;color:var(--muted)}
+.sk-poll-input{width:84px!important}
+.sk-h2{font-size:16px;font-weight:800;margin:22px 0 12px}
+/* accounts */
+.sk-accounts{display:flex;flex-direction:column;gap:6px}
+.sk-account{display:flex;align-items:center;flex-wrap:wrap;gap:8px 10px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface)}
+.sk-account-email{font-weight:700;min-width:200px;overflow-wrap:anywhere}
+.sk-badge{padding:2px 10px;border-radius:999px;font-size:12px;font-weight:700;border:1px solid var(--line-2);color:var(--muted)}
+.sk-badge[data-status="ok"]{color:var(--good);border-color:var(--good)}
+.sk-badge[data-status="login_failed"],.sk-badge[data-status="error"]{color:var(--crit);border-color:var(--crit)}
+.sk-badge[data-status="rate_limited"]{color:var(--warn);border-color:var(--warn)}
+/* vehicles */
+.sk-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:16px}
+.sk-card{border:1px solid var(--line);border-radius:14px;padding:16px;background:var(--surface);min-width:0}
+.sk-card-img{max-width:100%;height:120px;object-fit:contain;display:block;margin:0 auto 8px}
+.sk-card-head{display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap}
+.sk-vin{font-size:12px;color:var(--muted);font-family:var(--mono)}
+.sk-card-stats{display:flex;flex-wrap:wrap;gap:8px 16px;margin:10px 0;font-size:13px}
+.sk-card-meta{font-size:12px;color:var(--muted);margin-bottom:10px}
+.sk-card-actions,.sk-cmds{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.sk-cmds{margin-top:12px}
+.sk-num{width:76px!important}
+.sk-limit{width:auto!important}
+.sk-details-block,.sk-timers-block{margin-top:12px;font-size:13px;border-top:1px solid var(--line);padding-top:8px}
+.sk-details-block summary,.sk-timers-block summary{cursor:pointer;font-weight:700}
+.sk-enrich{display:flex;flex-direction:column;gap:8px;margin-top:8px}
+.sk-facts{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:6px 16px;margin:0}
+.sk-facts dt{color:var(--muted);font-size:12px}
+.sk-facts dd{margin:0;font-weight:700;overflow-wrap:anywhere}
+.sk-equipment{display:flex;flex-wrap:wrap;gap:6px;align-items:baseline}
+.sk-chip{font-size:12px;padding:2px 8px;border-radius:999px;border:1px solid var(--line-2);color:var(--muted)}
+.sk-details-error{color:var(--muted);font-style:italic}
+.sk-timer{border-top:1px solid var(--line);padding:8px 0}
+.sk-timer-head,.sk-timer-foot{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.sk-time{width:auto!important}
+.sk-timer-days{display:flex;flex-wrap:wrap;gap:4px;margin:6px 0}
+.sk-timer-day{min-height:30px;padding:0 10px;border-radius:999px;font-size:12px}
+.sk-timer-day[aria-pressed="true"]{background:var(--accent-soft);border-color:var(--accent);color:var(--text)}
+.sk-timer-day:disabled{opacity:.5;cursor:default}
+.sk-timer-msg{font-size:12px}
+.sk-timer-msg.is-ok{color:var(--good)}
+/* owners */
+.sk-owner-sub{font-size:13px;color:var(--muted);margin-bottom:10px}
+.sk-owner-list{display:flex;flex-direction:column;gap:2px;max-height:320px;overflow:auto;margin-top:10px}
+.sk-owner-item{display:flex;align-items:center;gap:8px;padding:6px 2px;font-size:13px}
+.sk-owner-item input{min-height:0;width:16px;height:16px}
+.sk-field{display:inline-flex;align-items:center;gap:6px;font-size:13px}
