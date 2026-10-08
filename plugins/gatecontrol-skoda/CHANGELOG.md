@@ -20,4 +20,4 @@
 - MySkoda-Passwort, S-PIN und Sitzungs-Tokens werden als verschlüsselte Plugin-Geheimnisse
   gespeichert.
 - Übernahme der Daten der eingebauten Integration (Konten inkl. Passwort, S-PIN und Sitzung,
-  Fahrzeuge inkl. Zustand und Bild, Besitzer) – angeboten von GateControl ab 1.150.0.
+  Fahrzeuge inkl. Zustand und Bild, Besitzer) – angeboten von GateControl ab 1.151.0.

@@ -29,7 +29,7 @@ test('plugin.json allows exactly the Škoda, render and geocoding hosts (HTTPS)'
     assert.equal(internetAllowed(list, bad), false, bad);
   }
   const m = require('../plugin.json');
-  assert.equal(m.gatecontrol, '>=1.150.0');
+  assert.equal(m.gatecontrol, '>=1.151.0');
   assert.deepEqual(m.license, { required: true });
   assert.equal(m.permissions.network.homeTargets, undefined, 'a cloud integration needs no home network');
 });

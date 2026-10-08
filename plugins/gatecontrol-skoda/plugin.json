@@ -10,7 +10,7 @@
     "de": "Škoda-Fahrzeuge über MySkoda einbinden: Ladestand, Reichweite, Zustand, Position und Fahrzeugdetails sehen, Klima, Laden, Scheibenheizung, Ver- und Entriegeln und Abfahrtstimer steuern und Fahrzeuge Haushaltsmitgliedern zuweisen (Portal „Fahrzeug“).",
     "en": "Connect Škoda vehicles through MySkoda: see charge level, range, condition, location and vehicle details, control climate, charging, window heating, locking and departure timers, and assign vehicles to household members (portal “Vehicle”)."
   },
-  "gatecontrol": ">=1.150.0",
+  "gatecontrol": ">=1.151.0",
   "entry": "server/index.js",
   "permissions": {
     "network": {
