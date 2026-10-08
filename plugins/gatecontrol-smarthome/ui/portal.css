@@ -1,0 +1,20 @@
+/* Portal tab "Zuhause" — close to GateControl's portal Smart Home card (public/css/portal.css). */
+.pt-lead{color:var(--muted);margin:0 0 14px}
+.pt-hint{padding:10px 14px;border-radius:12px;border:1px solid var(--line);background:var(--surface-2);font-size:13px;margin-bottom:12px}
+.pt-card{padding:18px}
+.pt-h2{font-size:16px;margin:0 0 14px}
+.pt-overline{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:700;margin-top:6px}
+.pt-sh-tiles{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-bottom:16px}
+@media (min-width:720px){.pt-sh-tiles{grid-template-columns:repeat(3,minmax(0,1fr))}}
+.pt-shtile{display:flex;flex-direction:column;gap:8px;border-radius:14px;border:1px solid var(--line);background:var(--surface-2);color:var(--muted)}
+.pt-shtile.is-on{border-color:var(--accent);background:var(--accent-soft);color:var(--text)}
+.pt-shtile-main{display:flex;flex-direction:column;align-items:flex-start;gap:4px;width:100%;min-height:64px;padding:12px 14px;border:0;background:transparent;color:inherit;text-align:left;font:inherit;cursor:pointer;border-radius:14px}
+.pt-shtile-main b{color:var(--text);overflow-wrap:anywhere}
+.pt-shtile-main:disabled{cursor:default}
+.pt-small{font-size:12.5px}
+.pt-shtile input[type=range]{width:calc(100% - 28px);margin:-4px 14px 12px;min-height:0;padding:0;accent-color:var(--accent)}
+.pt-sensor-list{list-style:none;margin:6px 0 0;padding:0}
+.pt-sensor-list li{display:flex;justify-content:space-between;gap:12px;padding:8px 0;border-bottom:1px solid var(--line);font-size:13.5px}
+.pt-sensor-list li:last-child{border-bottom:0}
+.pt-sensor-list b[data-tone="warn"]{color:var(--warn)}
+.pt-sensor-list b[data-tone="good"]{color:var(--good)}

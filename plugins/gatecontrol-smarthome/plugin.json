@@ -1,0 +1,97 @@
+{
+  "id": "gatecontrol-smarthome",
+  "name": {
+    "de": "Smart Home",
+    "en": "Smart Home"
+  },
+  "version": "1.0.0",
+  "publisher": "CallMeTechie",
+  "description": {
+    "de": "Phoscon/deCONZ-Gateways einbinden: Lichter, Steckdosen, Gruppen, Szenen und Sensoren steuern, Haushaltsmitgliedern zuweisen (Portal „Zuhause“) und Logikketten auf dem Gateway anlegen.",
+    "en": "Connect Phoscon/deCONZ gateways: control lights, plugs, groups, scenes and sensors, assign them to household members (portal “Home”) and create logic chains on the gateway."
+  },
+  "gatecontrol": ">=1.149.0",
+  "entry": "server/index.js",
+  "permissions": {
+    "network": {
+      "homeTargets": [
+        {
+          "id": "gateway",
+          "label": {
+            "de": "Phoscon/deCONZ-Gateway",
+            "en": "Phoscon/deCONZ gateway"
+          },
+          "protocols": [
+            "http"
+          ],
+          "multiple": true
+        }
+      ]
+    },
+    "storage": true,
+    "portal": true,
+    "users": true,
+    "background": {
+      "intervalSeconds": 30
+    }
+  },
+  "ui": {
+    "nav": {
+      "label": {
+        "de": "Smart Home",
+        "en": "Smart Home"
+      },
+      "icon": "M9 21h6M10 21v-3a2 2 0 0 1 4 0v3M5.5 11a6.5 6.5 0 1 1 13 0c0 2.5-1.5 3.8-2.5 4.8-.6.6-1 1.2-1 2.2H9c0-1-.4-1.6-1-2.2C7 14.8 5.5 13.5 5.5 11z"
+    },
+    "pages": [
+      {
+        "id": "main",
+        "title": {
+          "de": "Smart Home",
+          "en": "Smart Home"
+        }
+      },
+      {
+        "id": "rules",
+        "title": {
+          "de": "Logikketten",
+          "en": "Logic chains"
+        }
+      }
+    ],
+    "settings": [
+      {
+        "key": "interval",
+        "type": "number",
+        "label": {
+          "de": "Abfrageintervall (Sekunden)",
+          "en": "Polling interval (seconds)"
+        },
+        "help": {
+          "de": "Wie oft Gerätezustände und Sensorwerte von den Gateways gelesen werden (30–3600).",
+          "en": "How often device states and sensor values are read from the gateways (30–3600)."
+        },
+        "min": 30,
+        "max": 3600,
+        "default": 30
+      }
+    ],
+    "portal": {
+      "sections": [
+        {
+          "id": "smarthome",
+          "tab": "home",
+          "title": {
+            "de": "Smart Home",
+            "en": "Smart Home"
+          },
+          "order": 20
+        }
+      ]
+    }
+  },
+  "license": {
+    "required": true
+  },
+  "migrations": "migrations"
+}

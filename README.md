@@ -28,6 +28,10 @@ gatecontrol.ref             GateControl commit whose packer/validator is used (4
 fixture). It is built and tested in CI but never released
 (`plugins.config.json`: `"release": false`).
 
+| Plugin | | GateControl |
+|---|---|---|
+| `gatecontrol-smarthome` | Smart Home (Phoscon/deCONZ) — formerly built into GateControl; imports the built-in data | ≥ 1.149.0 |
+
 ## Tooling
 
 The packer is **not** copied into this repository. CI checks out
@@ -43,7 +47,18 @@ npm run gatecontrol           # checks out the pinned GateControl into ./.gateco
 npm run validate              # all plugin.json files + repo rules
 npm test                      # all plugin tests (or: npm test -- <id>)
 npm run pack <id>             # UNSIGNED dev build → dist/<id>-<version>.gcplugin
+npm run pack <id> -- --no-license
+                              # UNSIGNED dev build with license.required = false
+                              # → dist/<id>-<version>-dev.gcplugin (see below)
 ```
+
+An unsigned package counts as third party, and a third-party plugin that
+needs a licence must name its own licence server — so the plain dev build of
+a licensed first-party plugin (e.g. `gatecontrol-smarthome`) cannot be
+installed. `--no-license` builds one that can (test servers only, never
+released or signed). The mock host (`tools/testing/mock-host.js`) also offers
+`gc.settings.setSecret`, `host.legacyImport(snapshot)` and
+`host.portalVisible(user)`.
 
 Dev builds are always unsigned (`tools/pack.js` drops `GC_PLUGIN_SIGNING_KEY`
 unless `--sign` is passed). Install them on a test server with
@@ -125,7 +140,8 @@ Erstanbieter-Plugins für GateControl mit Build-, Signatur- und Release-Pipeline
 * **Werkzeuge:** Der Packer stammt aus GateControl (Commit in `gatecontrol.ref`,
   ändern mit `tools/bump-gatecontrol.sh <sha>`). Lokal: `npm ci`,
   `npm run gatecontrol`, `npm run validate`, `npm test`, `npm run pack <id>`
-  (immer **unsigniert**).
+  (immer **unsigniert**; `-- --no-license` für einen installierbaren
+  Testbau eines lizenzpflichtigen Erstanbieter-Plugins).
 * **Neues Plugin:** Ordner anlegen, plugin.json + Code + CHANGELOG + Tests mit
   `tools/testing/mock-host.js`, prüfen, PR öffnen.
 * **Versionierung:** SemVer pro Plugin; jede Version braucht einen
