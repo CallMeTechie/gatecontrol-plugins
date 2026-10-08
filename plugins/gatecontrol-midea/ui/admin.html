@@ -1,0 +1,147 @@
+<main class="md-page">
+  <div class="page-header">
+    <div>
+      <div class="page-eyebrow">{{t:eyebrow}}</div>
+      <h1 class="page-title">{{t:title}}</h1>
+      <div class="page-sub">{{t:subtitle}}</div>
+    </div>
+    <div class="page-actions">
+      <button class="btn" type="button" id="md-discover">{{t:discover}}</button>
+      <button class="btn" type="button" id="md-cloud-open">{{t:cloud.title}}</button>
+      <button class="btn btn-primary" type="button" id="md-add-open">{{t:add.title}}</button>
+    </div>
+  </div>
+  <div class="banner banner-warn" id="md-reauth" role="status" hidden>{{t:cloud.reauth}}</div>
+  <div class="md-kpis" id="md-kpis"></div>
+  <div class="md-grid" id="md-devices"></div>
+
+  <div class="modal-overlay" id="md-cloud-modal" role="dialog" aria-modal="true" aria-labelledby="md-cl-title" hidden>
+    <div class="modal">
+      <div class="modal-head">
+        <div class="modal-title" id="md-cl-title">{{t:cloud.title}}</div>
+        <button class="btn modal-close" type="button" data-close="md-cloud-modal" aria-label="{{t:common.close}}">×</button>
+      </div>
+      <div class="modal-body">
+        <p class="form-hint md-cloud-state" id="md-cloud-state"></p>
+        <form id="md-cloud-form" autocomplete="off">
+          <div class="form-group">
+            <label class="form-label" for="md-cl-app">{{t:cloud.app}}</label>
+            <select class="form-select" id="md-cl-app"><option value="msmarthome">MSmartHome</option><option value="nethome">NetHome Plus</option></select>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="md-cl-email">{{t:cloud.email}}</label>
+            <input class="form-input" id="md-cl-email" type="email" maxlength="200" autocomplete="username">
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="md-cl-password">{{t:cloud.password}}</label>
+            <input class="form-input" id="md-cl-password" type="password" maxlength="500" autocomplete="current-password">
+          </div>
+          <p class="form-hint">{{t:cloud.usage_hint}}</p>
+          <p class="md-msg" id="md-cloud-msg" role="status"></p>
+        </form>
+      </div>
+      <div class="modal-foot">
+        <button class="btn" type="button" data-close="md-cloud-modal">{{t:common.cancel}}</button>
+        <button class="btn btn-primary" type="button" id="md-cloud-connect">{{t:cloud.connect}}</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="md-add-modal" role="dialog" aria-modal="true" aria-labelledby="md-add-title" hidden>
+    <div class="modal modal-wide">
+      <div class="modal-head">
+        <div class="modal-title" id="md-add-title">{{t:add.title}}</div>
+        <button class="btn modal-close" type="button" data-close="md-add-modal" aria-label="{{t:common.close}}">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="md-seg" role="tablist">
+          <button type="button" role="tab" class="md-seg-btn active" id="md-tab-cloud" aria-selected="true">{{t:add.tab_cloud}}</button>
+          <button type="button" role="tab" class="md-seg-btn" id="md-tab-lan" aria-selected="false">{{t:add.tab_lan}}</button>
+        </div>
+        <div class="md-pane" id="md-pane-cloud">
+          <p class="form-hint" id="md-cloud-list-hint"></p>
+          <div class="md-cloud-list" id="md-cloud-list"></div>
+        </div>
+        <div class="md-pane" id="md-pane-lan" hidden>
+          <p class="form-hint">{{t:lan.hint}}</p>
+          <div class="form-group">
+            <label class="form-label" for="md-lan-target">{{t:lan.target}}</label>
+            <select class="form-select" id="md-lan-target"></select>
+            <span class="form-hint" id="md-lan-target-hint">{{t:lan.target_hint}}</span>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="md-lan-name">{{t:lan.name}}</label>
+            <input class="form-input" id="md-lan-name" type="text" maxlength="100" autocomplete="off">
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="md-lan-sn">{{t:lan.cloud_device}}</label>
+            <select class="form-select" id="md-lan-sn"><option value="">{{t:lan.no_cloud}}</option></select>
+          </div>
+          <p class="md-msg" id="md-lan-msg" role="status"></p>
+          <button class="btn btn-primary" type="button" id="md-lan-add">{{t:devices.add}}</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="md-discover-modal" role="dialog" aria-modal="true" aria-labelledby="md-d-title" hidden>
+    <div class="modal modal-wide">
+      <div class="modal-head">
+        <div class="modal-title" id="md-d-title">{{t:discover}}</div>
+        <button class="btn modal-close" type="button" data-close="md-discover-modal" aria-label="{{t:common.close}}">×</button>
+      </div>
+      <div class="modal-body">
+        <p class="md-msg" id="md-discover-msg" role="status"></p>
+        <div class="md-found" id="md-found"></div>
+        <p class="form-hint">{{t:discover.assign_hint}}</p>
+      </div>
+      <div class="modal-foot">
+        <button class="btn" type="button" data-close="md-discover-modal">{{t:common.close}}</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="md-edit-modal" role="dialog" aria-modal="true" aria-labelledby="md-e-title" hidden>
+    <div class="modal">
+      <div class="modal-head">
+        <div class="modal-title" id="md-e-title">{{t:device.edit}}</div>
+        <button class="btn modal-close" type="button" data-close="md-edit-modal" aria-label="{{t:common.close}}">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label class="form-label" for="md-e-name">{{t:lan.name}}</label>
+          <input class="form-input" id="md-e-name" type="text" maxlength="100">
+        </div>
+        <div class="form-group" id="md-e-target-group">
+          <label class="form-label" for="md-e-target">{{t:lan.target}}</label>
+          <select class="form-select" id="md-e-target"></select>
+        </div>
+        <label class="check"><input type="checkbox" id="md-e-enabled"> {{t:device.enabled}}</label>
+      </div>
+      <div class="modal-foot">
+        <button class="btn btn-danger" type="button" id="md-e-remove">{{t:device.remove}}</button>
+        <button class="btn" type="button" data-close="md-edit-modal">{{t:common.cancel}}</button>
+        <button class="btn btn-primary" type="button" id="md-e-save">{{t:common.save}}</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="md-owner-modal" role="dialog" aria-modal="true" aria-labelledby="md-o-title" hidden>
+    <div class="modal">
+      <div class="modal-head">
+        <div class="modal-title" id="md-o-title">{{t:owners.modal_title}}</div>
+        <button class="btn modal-close" type="button" data-close="md-owner-modal" aria-label="{{t:common.close}}">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="md-owner-sub" id="md-owner-sub"></div>
+        <input class="form-input" id="md-owner-search" type="text" placeholder="{{t:owners.search}}" aria-label="{{t:owners.search}}">
+        <div class="md-owner-count" id="md-owner-count"></div>
+        <div class="md-owner-list" id="md-owner-list"></div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn" type="button" data-close="md-owner-modal">{{t:common.cancel}}</button>
+        <button class="btn btn-primary" type="button" id="md-owner-save">{{t:owners.save}}</button>
+      </div>
+    </div>
+  </div>
+</main>

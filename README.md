@@ -31,6 +31,7 @@ fixture). It is built and tested in CI but never released
 | Plugin | | GateControl |
 |---|---|---|
 | `gatecontrol-smarthome` | Smart Home (Phoscon/deCONZ) — formerly built into GateControl; imports the built-in data | ≥ 1.149.0 |
+| `gatecontrol-midea` | Klimaanlage (Midea air conditioners, cloud and LAN) — formerly built into GateControl; imports the built-in data | ≥ 1.150.0 |
 
 ## Tooling
 
