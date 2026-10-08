@@ -1,0 +1,84 @@
+{
+  "id": "gatecontrol-midea",
+  "name": {
+    "de": "Klimaanlage",
+    "en": "Air conditioning"
+  },
+  "version": "1.0.0",
+  "publisher": "CallMeTechie",
+  "description": {
+    "de": "Midea-Klimageräte über die Midea-Cloud oder im Heimnetz steuern (Ein/Aus, Zieltemperatur, Modus, Lüfter, Turbo/Eco) und Haushaltsmitgliedern zuweisen (Portal „Zuhause“).",
+    "en": "Control Midea air conditioners through the Midea cloud or in the home network (on/off, target temperature, mode, fan, turbo/eco) and assign them to household members (portal “Home”)."
+  },
+  "gatecontrol": ">=1.150.0",
+  "entry": "server/index.js",
+  "permissions": {
+    "network": {
+      "internet": [
+        "mp-prod.appsmb.com:443",
+        "mapp.appsmb.com:443"
+      ],
+      "homeTargets": [
+        {
+          "id": "ac",
+          "label": {
+            "de": "Klimagerät (Heimnetz)",
+            "en": "Air conditioner (home network)"
+          },
+          "protocols": [
+            "tcp:6444",
+            "udp:6445,20086"
+          ],
+          "multiple": true
+        }
+      ],
+      "localDiscovery": {
+        "udp": [
+          6445,
+          20086
+        ]
+      }
+    },
+    "storage": true,
+    "portal": true,
+    "users": true,
+    "background": {
+      "intervalSeconds": 30
+    }
+  },
+  "ui": {
+    "nav": {
+      "label": {
+        "de": "Klimaanlage",
+        "en": "Air conditioning"
+      },
+      "icon": "M2 4h20v10H2zM6 9h12M6 18v1M10 18v2M14 18v2M18 18v1"
+    },
+    "pages": [
+      {
+        "id": "main",
+        "title": {
+          "de": "Klimaanlage",
+          "en": "Air conditioning"
+        }
+      }
+    ],
+    "portal": {
+      "sections": [
+        {
+          "id": "midea",
+          "tab": "home",
+          "title": {
+            "de": "Klimaanlage",
+            "en": "Air conditioning"
+          },
+          "order": 10
+        }
+      ]
+    }
+  },
+  "license": {
+    "required": true
+  },
+  "migrations": "migrations"
+}

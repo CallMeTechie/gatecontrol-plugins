@@ -1,0 +1,38 @@
+/* Portal section "Klimaanlage" — close to GateControl's portal AC card (public/css/portal.css). */
+.pt-md{display:flex;flex-direction:column;gap:12px}
+.pt-hint{padding:10px 14px;border-radius:12px;border:1px solid var(--line);background:var(--surface-2);font-size:13px}
+.pt-ac-list{display:flex;flex-direction:column;gap:16px;min-width:0}
+.pt-ac{padding:18px}
+.pt-ac.is-offline{opacity:.8}
+.pt-card-row{display:flex;align-items:center;gap:10px;margin-bottom:6px}
+.pt-h2{font-size:16px;margin:0;flex:1;min-width:0;overflow-wrap:anywhere}
+.pt-pill{font-size:12px;font-weight:700;padding:3px 10px;border-radius:999px;border:1px solid var(--line);color:var(--muted)}
+.pt-pill[data-tone="good"]{color:var(--good);border-color:var(--good)}
+.pt-switch{position:relative;width:48px;height:28px;min-height:0;padding:3px;border-radius:999px;background:var(--surface-2);border:1px solid var(--line-2);display:flex;justify-content:flex-start;cursor:pointer}
+.pt-switch[aria-checked="true"]{justify-content:flex-end;background:var(--btn-bg);border-color:transparent}
+.pt-switch:disabled{opacity:.5;cursor:not-allowed}
+.pt-knob{width:20px;height:20px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.3)}
+.pt-ac-climate{display:flex;flex-direction:column;align-items:center;gap:4px;padding:6px 0 16px}
+.pt-stepper{display:flex;align-items:center;gap:18px}
+.pt-round{width:56px;height:56px;min-height:0;padding:0;border-radius:50%;justify-content:center;font-size:24px}
+.pt-round:disabled{opacity:.45;cursor:not-allowed}
+.pt-target{font-size:44px;font-weight:800;min-width:110px;text-align:center;font-variant-numeric:tabular-nums;transition:color .15s}
+.pt-stepper.is-pending .pt-target{color:var(--warn)}
+.pt-stepper.is-confirmed .pt-target{color:var(--good)}
+.pt-ac-sub{font-size:13px;text-align:center}
+.pt-seg{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px}
+.pt-seg button{min-height:34px;padding:0 12px;font-size:13px}
+.pt-seg button[aria-pressed="true"]{border-color:var(--accent);background:var(--accent-soft)}
+.pt-seg button.is-heat[aria-pressed="true"]{border-color:var(--crit);background:color-mix(in srgb,var(--crit) 14%,transparent)}
+.pt-seg button:disabled{cursor:not-allowed;opacity:.6}
+.pt-overline{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:700}
+.pt-fan{margin-bottom:12px}
+.pt-fan-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:4px}
+.pt-fan-val{font-weight:700;font-size:13px}
+.pt-fan input[type=range]{width:100%;min-height:0;padding:0;border:0;background:none;accent-color:var(--accent)}
+.pt-fan-ticks{display:flex;justify-content:space-between;font-size:11px;color:var(--muted)}
+.pt-chip-row{display:flex;flex-wrap:wrap;gap:6px}
+.pt-chip{min-height:32px;padding:0 12px;border-radius:999px;font-size:12.5px}
+.pt-chip[aria-pressed="true"]{border-color:var(--accent);background:var(--accent-soft)}
+.pt-chip:disabled{opacity:.55;cursor:not-allowed}
+.pt-foot{margin:12px 0 0;font-size:12px;color:var(--muted)}
