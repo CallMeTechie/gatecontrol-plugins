@@ -30,7 +30,7 @@ fixture). It is built and tested in CI but never released
 
 | Plugin | | GateControl |
 |---|---|---|
-| `gatecontrol-smarthome` | Smart Home (Phoscon/deCONZ) — formerly built into GateControl; imports the built-in data | ≥ 1.148.0 |
+| `gatecontrol-smarthome` | Smart Home (Phoscon/deCONZ) — formerly built into GateControl; imports the built-in data | ≥ 1.149.0 |
 
 ## Tooling
 

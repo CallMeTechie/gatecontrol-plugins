@@ -112,3 +112,26 @@ test('owners of users that no longer exist are not shown', () => withHost({ gate
   const res = (await asAdmin(host, 'GET', '/resources')).json.resources;
   assert.deepEqual(res.find((x) => x.name === 'Stehlampe').owners, []);
 }));
+
+test('portal Start tiles and search: only the viewer\'s own devices and sensors, declarative', () => withHost({ gateways: [fakeDeconz()] }, async (host) => {
+  const { by } = await connected(host);
+  for (const n of ['Stehlampe', 'Wohnzimmer', 'Temp', 'Fensterkontakt']) await asAdmin(host, 'PUT', `/resources/${by(n).id}/owners`, { userIds: [2] });
+  await asAdmin(host, 'PUT', `/resources/${by('Poolpumpe').id}/owners`, { userIds: [3] });
+  const tiles = await host.portalTiles(ADA);
+  assert.deepEqual(tiles.map((x) => [x.title, x.value, x.unit || null, x.state, x.section]).sort(), [
+    ['Fensterkontakt', 'offen', null, 'warn', 'smarthome'],
+    ['Stehlampe', 'An · 100 %', null, 'on', 'smarthome'],
+    ['Temp', '21,5', '°C', null, 'smarthome'],
+    ['Wohnzimmer', 'An', null, 'on', 'smarthome'],
+  ]);
+  assert.ok(tiles.every((x) => /^[MmLlHhVvCcSsQqTtAaZz0-9 .,-]{1,600}$/.test(x.icon)), 'icons are SVG paths the host accepts');
+  assert.ok(!tiles.some((x) => x.title === 'Wohnzimmer · Abend'), 'scenes are no tiles');
+  assert.equal((await host.portalTiles(ADA, 'en')).find((x) => x.title === 'Temp').value, '21.5');
+  assert.deepEqual((await host.portalTiles(BOB)).map((x) => x.title), ['Poolpumpe']);
+  assert.deepEqual(await host.portalTiles({ id: 9, name: 'Eve', role: 'user' }), []);
+  const hits = await host.portalSearch(ADA, 'wohn');
+  assert.deepEqual(hits, [{ title: 'Wohnzimmer', subtitle: 'Gruppe', section: 'smarthome' }, { title: 'Wohnzimmer · Abend', subtitle: 'Szene', section: 'smarthome' }]);
+  assert.deepEqual(await host.portalSearch(BOB, 'wohn'), [], 'never another person\'s devices');
+  assert.deepEqual(await host.portalSearch(ADA, 'w'), []);
+  assert.equal(await host.portalVisible(ADA, 'smarthome'), true);
+}));

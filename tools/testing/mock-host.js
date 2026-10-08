@@ -23,7 +23,8 @@
 //   await host.start();
 //   const res = await host.request({ method: 'GET', path: '/ping' });
 //   host.logs, host.notifications, host.fetches; await host.close();
-//   await host.legacyImport(snapshot); await host.portalVisible({ id: 2, name: 'Ada', role: 'user' });
+//   await host.legacyImport(snapshot); await host.portalVisible({ id: 2, name: 'Ada', role: 'user' }, 'section-id');
+//   await host.portalTiles(user); await host.portalSearch(user, 'lamp');
 
 const fs = require('node:fs');
 const os = require('node:os');
@@ -285,11 +286,15 @@ async function createHost(pluginDir, opts = {}) {
     stop: () => hook('stop'),
     tick: () => hook('tick'),
     settingsChanged: (values) => hook('settingsChanged', values),
-    /** portalVisible hook: false hides the portal tab for this viewer (no hook → true) */
-    async portalVisible(user) {
+    /** portalVisible hook: false hides the portal tab (section = null) or a section for this viewer (no hook → true) */
+    async portalVisible(user, section = null) {
       if (typeof plugin.portalVisible !== 'function') return true;
-      return (await hook('portalVisible', { user: { portal: true, ...user }, lang: 'de' })) !== false;
+      return (await hook('portalVisible', { user: { portal: true, ...user }, lang: 'de', section })) !== false;
     },
+    /** portalTiles hook: declarative Start tiles for this viewer (no hook → []) */
+    portalTiles: async (user, lang = 'de') => (typeof plugin.portalTiles === 'function' ? hook('portalTiles', { user: { portal: true, ...user }, lang }) : []),
+    /** portalSearch hook: declarative search results for this viewer (no hook → []) */
+    portalSearch: async (user, q, lang = 'de') => (typeof plugin.portalSearch === 'function' ? hook('portalSearch', { user: { portal: true, ...user }, lang, q }) : []),
     /** legacyImport hook: the host hands over the built-in data (first-party plugins only) */
     legacyImport: (snapshot) => hook('legacyImport', snapshot),
     /** keys stored with gc.settings.setSecret */
@@ -299,7 +304,7 @@ async function createHost(pluginDir, opts = {}) {
       const r = await hook('request', { method: 'GET', query: {}, body: null, user: users[0] || DEFAULT_USER, lang: 'de', ...req });
       return { status: 200, ...r };
     },
-    /** view = { view: 'page'|'portal', page, user, lang } */
+    /** view = { view: 'page'|'portal', page, section, user, lang, loggedIn } */
     render: (view) => hook('render', { view: 'page', page: 'main', user: users[0] || DEFAULT_USER, lang: 'de', ...view }),
     async close() {
       if (db) { db.close(); db = null; }

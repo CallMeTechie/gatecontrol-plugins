@@ -10,7 +10,7 @@
     "de": "Phoscon/deCONZ-Gateways einbinden: Lichter, Steckdosen, Gruppen, Szenen und Sensoren steuern, Haushaltsmitgliedern zuweisen (Portal „Zuhause“) und Logikketten auf dem Gateway anlegen.",
     "en": "Connect Phoscon/deCONZ gateways: control lights, plugs, groups, scenes and sensors, assign them to household members (portal “Home”) and create logic chains on the gateway."
   },
-  "gatecontrol": ">=1.148.0",
+  "gatecontrol": ">=1.149.0",
   "entry": "server/index.js",
   "permissions": {
     "network": {
@@ -77,11 +77,17 @@
       }
     ],
     "portal": {
-      "label": {
-        "de": "Zuhause",
-        "en": "Home"
-      },
-      "icon": "M3 11l9-7 9 7M5 10v10h14V10M10 20v-5h4v5"
+      "sections": [
+        {
+          "id": "smarthome",
+          "tab": "home",
+          "title": {
+            "de": "Smart Home",
+            "en": "Smart Home"
+          },
+          "order": 20
+        }
+      ]
     }
   },
   "license": {

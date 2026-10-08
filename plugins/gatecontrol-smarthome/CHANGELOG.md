@@ -8,9 +8,12 @@ Phoscon/deCONZ-Integration als GateControl-Plugin – bisher fest in GateControl
   Lichter, Steckdosen, Gruppen, Szenen, Sensoren und Schalter; Steuerung (Ein/Aus,
   Helligkeit, Farbe, Farbtemperatur, Szenen); Besitzer je Gerät; Logikketten auf dem
   Gateway (Auslöser, Zeitfenster, Verzögerung mit ignorieren/zurücksetzen/abbrechen);
-  Hintergrund-Abfrage (Abfrageintervall einstellbar); Portal-Tab „Zuhause“.
+  Hintergrund-Abfrage (Abfrageintervall einstellbar).
+- Portal: Abschnitt „Smart Home“ im gemeinsamen Tab „Zuhause“ (nur für Personen mit
+  zugewiesenen Geräten), Kacheln auf der Startseite (Geräte und Sensorwerte) und
+  Treffer in der Portal-Suche.
 - Mehrere Gateways: je Gateway ein Zugriffsziel (GateControl-Route, VPN-Gerät oder Adresse),
   zugewiesen unter Einstellungen → Plugins → Smart Home → Zugriffsziele.
 - deCONZ-API-Keys werden als verschlüsselte Plugin-Geheimnisse gespeichert.
 - Übernahme der Daten der eingebauten Integration (Gateways inkl. API-Key und Route,
-  Geräte, Besitzer, Regeln) – angeboten von GateControl ab 1.148.0.
+  Geräte, Besitzer, Regeln) – angeboten von GateControl ab 1.149.0.

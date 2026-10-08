@@ -117,6 +117,52 @@ async function portalData(gc, userId) {
   };
 }
 
+// ─── Portal Start tiles and search (declarative; the host renders them) ──
+
+const TILE_ICONS = {
+  light: 'M9 18h6M10 21h4M12 3a6 6 0 0 0-4 10.5c.8.8 1 1.5 1 2.5h6c0-1 .2-1.7 1-2.5A6 6 0 0 0 12 3z',
+  plug: 'M9 2v5M15 2v5M7 7h10v3a5 5 0 0 1-10 0zM12 15v7',
+  group: 'M3 11l9-7 9 7M5 10v10h14V10',
+  temperature: 'M10 13V5a2 2 0 1 1 4 0v8a4 4 0 1 1-4 0z',
+  water: 'M12 3s6 6.5 6 11a6 6 0 0 1-12 0c0-4.5 6-11 6-11z',
+  humidity: 'M12 3s6 6.5 6 11a6 6 0 0 1-12 0c0-4.5 6-11 6-11zM9 14a3 3 0 0 0 3 3',
+  open: 'M4 3h16v18H4zM14 3v18',
+  sensor: 'M12 2v4M12 18v4M4.9 4.9l2.8 2.8M16.3 16.3l2.8 2.8M2 12h4M18 12h4',
+};
+
+function fmtNum(v, lang) {
+  const n = Number(v);
+  return Number.isFinite(n) ? n.toLocaleString(lang === 'en' ? 'en-GB' : 'de-DE', { maximumFractionDigits: 1 }) : null;
+}
+
+function kindLabel(r, lang) {
+  if (r.kind === 'sensor') return t(lang, 'sensor.' + ((r.state && r.state.type) || (r.capabilities && r.capabilities.reading) || 'unknown'));
+  return t(lang, 'kind.' + r.kind);
+}
+
+function deviceTile(d, lang) {
+  const st = d.state || {};
+  let value = st.on ? t(lang, 'portal.on') : t(lang, 'portal.off');
+  if (st.on && d.capabilities && d.capabilities.bri && st.bri != null) value += ' · ' + fmtNum(st.bri, lang) + ' %';
+  return { section: 'smarthome', title: d.name || '', value, state: st.on ? 'on' : 'off', icon: TILE_ICONS[d.kind] || TILE_ICONS.light };
+}
+
+function sensorTile(s, lang) {
+  const st = s.state || {};
+  const v = st.value;
+  const tile = { section: 'smarthome', title: s.name || '', value: '–', unit: null, state: null, icon: TILE_ICONS[st.type] || TILE_ICONS.sensor };
+  if (v === null || v === undefined || v === '') return tile;
+  switch (st.type) {
+    case 'temperature': return { ...tile, value: fmtNum(v, lang), unit: '°C' };
+    case 'humidity': return { ...tile, value: fmtNum(v, lang), unit: '%' };
+    case 'lightlevel': return { ...tile, value: fmtNum(v, lang), unit: 'lx' };
+    case 'open': return { ...tile, value: t(lang, v ? 'portal.open' : 'portal.closed'), state: v ? 'warn' : 'good' };
+    case 'presence': return { ...tile, value: t(lang, v ? 'portal.motion' : 'portal.no_motion') };
+    case 'water': return { ...tile, value: t(lang, v ? 'portal.wet' : 'portal.dry'), state: v ? 'crit' : 'good' };
+    default: return tile;
+  }
+}
+
 // ─── Routes ─────────────────────────────────────
 
 async function portalRoute(req, gc, seg) {
@@ -278,10 +324,29 @@ module.exports = {
     return { html: ui.render(view, t) };
   },
 
-  /** The portal tab "Zuhause" only for viewers with devices assigned to them. */
+  /** The section in the portal tab "Zuhause" only for viewers with devices assigned to them. */
   async portalVisible({ user }, gc) {
     if (!user) return false;
     return (await store.resourcesOwnedBy(gc, user.id)).length > 0;
+  },
+
+  /** Start tab: up to four of the viewer's devices and three sensor values (declarative, rendered by the host). */
+  async portalTiles({ user, lang }, gc) {
+    if (!user) return [];
+    const { devices, sensors } = await portalData(gc, user.id);
+    return [
+      ...devices.filter((d) => d.kind !== 'scene').slice(0, 4).map((d) => deviceTile(d, lang)),
+      ...sensors.slice(0, 3).map((s) => sensorTile(s, lang)),
+    ];
+  },
+
+  /** Portal search: the viewer's own devices and sensors by name. */
+  async portalSearch({ user, lang, q }, gc) {
+    if (!user || typeof q !== 'string' || q.length < 2) return [];
+    const needle = q.toLowerCase();
+    const { devices, sensors } = await portalData(gc, user.id);
+    return [...devices, ...sensors].filter((r) => String(r.name || '').toLowerCase().includes(needle)).slice(0, 10)
+      .map((r) => ({ title: r.name, subtitle: kindLabel(r, lang), section: 'smarthome' }));
   },
 
   /** Built-in data handed over by GateControl (once, by an administrator). */

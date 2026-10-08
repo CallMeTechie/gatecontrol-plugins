@@ -1,6 +1,7 @@
 'use strict';
 
-// Pages and the portal tab. The host shows plugin HTML only in a sandboxed
+// Pages and the portal section "Smart Home" (inside GateControl's "Zuhause"
+// tab, ui.portal.sections; render gets view.section = 'smarthome'). The host shows plugin HTML only in a sandboxed
 // frame (opaque origin, inline scripts/styles only, no network): the page
 // talks to this plugin's API through window.GC.call (the parent page adds the
 // session, CSRF token and rate limit). Everything is read once from ui/.
