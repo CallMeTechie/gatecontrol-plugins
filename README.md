@@ -88,6 +88,10 @@ catalogue `latest` while a stable version exists.
    `## <version>` section to its `CHANGELOG.md`, merge.
 2. Tag that commit and push the tag:
    `git tag gatecontrol-smarthome-v1.2.0 && git push origin gatecontrol-smarthome-v1.2.0`
+   — or run **Actions → Tag release** on `main` with that tag: `tag.yml` runs
+   the same tag check, creates the tag on the current `main` commit and
+   dispatches `release.yml` on it (a tag created by the workflow token would
+   not fire the push trigger on its own).
 3. `release.yml` (environment `plugin-release`, waits for a reviewer if one is
    configured) checks that the tag is on `main`, tag = `plugin.json` version,
    CHANGELOG entry exists, the plugin is releasable; validates, tests, builds,

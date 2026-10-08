@@ -5,12 +5,15 @@ name: Release
 # secret GC_PLUGIN_SIGNING_KEY (environment plugin-release), verifies the
 # signature against GC_PLUGIN_PUBLIC_KEY and publishes a GitHub Release with
 # the package, its .sha256 and the catalogue entry; then rebuilds catalog.json.
-# Never publishes an unsigned package.
+# Never publishes an unsigned package. Without a local tag push: run
+# tag.yml on main, which creates the tag and dispatches this workflow.
 
 on:
   push:
     tags:
       - '*-v[0-9]*.[0-9]*.[0-9]*'
+  # Dispatched by tag.yml on the tag it created (the job still requires a tag ref).
+  workflow_dispatch:
 
 permissions: {}
 
