@@ -2,6 +2,18 @@
 
 Škoda-Fahrzeuge (MySkoda) als GateControl-Plugin – bisher fest in GateControl eingebaut.
 
+## 1.0.1
+- Fahrzeugbilder werden wieder angezeigt (Seite „Fahrzeuge“ und Portal): Bilder bis 4 MB statt
+  bisher 700 KB – die hochauflösenden Škoda-Renderbilder wurden bisher beim Abruf und bei der
+  Übernahme der eingebauten Daten verworfen. Das Bild wird in der Plugin-Datenbank als Binärwert
+  gespeichert und in Teilen (je ca. 600 KB) an Seite und Portal übertragen.
+- Škoda-Bildserver wie in der eingebauten Integration: iprenders.blob.core.windows.net sowie alle
+  Hosts unter azureedge.net und skoda-auto.cz (HTTPS). Netzwerk-Berechtigung dafür:
+  `*.azureedge.net:443` und `*.skoda-auto.cz:443` (statt nur ip-modcwp.azureedge.net). Das
+  Zugangs-Token wird weiterhin nie an die Bildserver gesendet.
+- Fehlende Bilder (auch die bei der Übernahme verworfenen) werden beim nächsten
+  „Synchronisieren“ bzw. beim nächsten automatischen Abruf neu geladen.
+
 ## 1.0.0
 - Erste Version als Plugin, Funktionsumfang der eingebauten Fahrzeuge-Integration:
   MySkoda-Konten (Anmeldung über VW-Identity, Passwort ändern, S-PIN), Fahrzeuge aus der

@@ -7,9 +7,11 @@
 // real IPC every argument and result goes through JSON, and the host checks
 // the permissions of plugin.json, throwing errors with the host's codes
 // (ERR_NET_DENIED, ERR_STORAGE_DENIED, ERR_USERS_DENIED, ERR_NOTIFY_DENIED,
-// ERR_RATE_LIMIT, ERR_INVALID). It does NOT reproduce the process sandbox,
-// the network checks on resolved addresses or the real HTTP stack: network
-// answers come from the handlers a test passes in.
+// ERR_RATE_LIMIT, ERR_INVALID). Database parameters follow the host's rules
+// (a string at most 1 MB, a BLOB as { b64 } in parameters and rows). It does
+// NOT reproduce the process sandbox, the network checks on resolved addresses
+// or the real HTTP stack: network answers come from the handlers a test
+// passes in.
 //
 //   const { createHost } = require('../../../tools/testing/mock-host');
 //   const host = await createHost(path.join(__dirname, '..'), {
@@ -82,6 +84,43 @@ function settingDefaults(manifest) {
 const SETTING_KEY_RE = /^[a-z][a-z0-9_.-]{0,63}$/;
 function settingKey(k) {
   return typeof k === 'string' && SETTING_KEY_RE.test(k) && !['__proto__', 'constructor', 'prototype'].includes(k);
+}
+
+// Statement parameters and result rows as in the host's database worker
+// (src/services/plugins/dbWorker.js): a string parameter may be at most 1 MB,
+// a BLOB travels as { b64: '<base64>' } both ways (no size limit of its own).
+const DB_MAX_VALUE = 1024 * 1024;
+function dbParam(v) {
+  if (v === null || v === undefined) return null;
+  if (typeof v === 'boolean') return v ? 1 : 0;
+  if (typeof v === 'number') { if (!Number.isFinite(v)) throw hostError('ERR_INVALID', 'invalid parameter'); return v; }
+  if (typeof v === 'string') { if (v.length > DB_MAX_VALUE) throw hostError('ERR_INVALID', 'parameter too long'); return v; }
+  if (v && typeof v === 'object' && typeof v.b64 === 'string') return Buffer.from(v.b64, 'base64');
+  throw hostError('ERR_INVALID', 'invalid parameter');
+}
+function dbParams(p) {
+  if (p == null) return [];
+  if (Array.isArray(p)) {
+    if (p.length > 100) throw hostError('ERR_INVALID', 'too many parameters');
+    return p.map(dbParam);
+  }
+  if (typeof p === 'object') {
+    const keys = Object.keys(p);
+    if (keys.length > 100) throw hostError('ERR_INVALID', 'too many parameters');
+    const out = {};
+    for (const k of keys) {
+      if (!/^[A-Za-z_][A-Za-z0-9_]{0,63}$/.test(k)) throw hostError('ERR_INVALID', 'invalid parameter name');
+      out[k] = dbParam(p[k]);
+    }
+    return [out];
+  }
+  throw hostError('ERR_INVALID', 'invalid parameters');
+}
+function dbRow(row) {
+  if (!row || typeof row !== 'object') return row;
+  const o = {};
+  for (const [k, v] of Object.entries(row)) o[k] = v instanceof Uint8Array ? { b64: Buffer.from(v.buffer, v.byteOffset, v.byteLength).toString('base64') } : (typeof v === 'bigint' ? Number(v) : v);
+  return o;
 }
 
 function openDb(file) {
@@ -186,13 +225,13 @@ async function createHost(pluginDir, opts = {}) {
     'db.query': async ({ sql, params, mode }) => {
       needDb(sql);
       const stmt = db.prepare(sql);
-      const args = Array.isArray(params) ? params : params == null ? [] : [params];
+      const args = dbParams(params);
       if (mode === 'run') {
         const r = stmt.run(...args);
         return { changes: Number(r.changes), lastInsertRowid: Number(r.lastInsertRowid) };
       }
-      if (mode === 'get') return { row: stmt.get(...args) || null };
-      return { rows: stmt.all(...args), truncated: false };
+      if (mode === 'get') return { row: dbRow(stmt.get(...args)) || null };
+      return { rows: stmt.all(...args).map(dbRow), truncated: false };
     },
     'db.exec': async ({ sql }) => { needDb(sql); db.exec(sql); return null; },
     'settings.all': async () => ({ ...settings }),

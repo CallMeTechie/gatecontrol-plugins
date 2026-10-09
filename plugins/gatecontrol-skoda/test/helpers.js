@@ -6,7 +6,10 @@
 // render CDN and Nominatim. Shapes follow GateControl's
 // tests/fixtures/skoda (python-myskoda reference models).
 
+const crypto = require('node:crypto');
+const fs = require('node:fs');
 const path = require('node:path');
+const vm = require('node:vm');
 const { createHost } = require('../../../tools/testing/mock-host');
 
 const DIR = path.join(__dirname, '..');
@@ -14,7 +17,12 @@ const IDENT = 'https://identity.vwgroup.io';
 const API = 'https://mysmob.api.connect.skoda-auto.cz';
 const CLIENT = '7f045eee-7003-4379-9968-9355ed2adb06@apps_vw-dilab_com';
 const VIN = 'TMBTESTVIN000001';
-const PNG = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.from('fake-render-image')]);
+const PNG_SIG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+const PNG = Buffer.concat([PNG_SIG, Buffer.from('fake-render-image')]);
+/** A "PNG" of exactly `bytes` bytes (signature + random data). */
+const bigPng = (bytes) => Buffer.concat([PNG_SIG, crypto.randomBytes(bytes - PNG_SIG.length)]);
+// render CDN hosts the fake cloud serves (the plugin decides which it may use)
+const RENDER_URL_RE = /^https:\/\/(iprenders\.blob\.core\.windows\.net|[a-z0-9-]+\.azureedge\.net)\//;
 
 const ADMIN = { id: 1, name: 'admin', role: 'admin' };
 const ADA = { id: 2, name: 'Ada', role: 'user' };
@@ -61,7 +69,8 @@ const fx = {
 
 /**
  * A fake Škoda cloud. cloud.fetch is the mock host's internet handler.
- * Knobs: password, terms, fail (path part → status), renderUrl, timers.
+ * Knobs: password, terms, fail (path part → status), info (render url),
+ * render (the image bytes the CDN serves), timers.
  */
 function fakeSkoda(opts = {}) {
   const cloud = {
@@ -79,6 +88,7 @@ function fakeSkoda(opts = {}) {
     info: JSON.parse(JSON.stringify(fx.info)),
     ac: JSON.parse(JSON.stringify(fx.airConditioning)),
     garage: JSON.parse(JSON.stringify(fx.garage)),
+    render: PNG,
     delayMs: 0,
     inFlight: 0,
     maxInFlight: 0,
@@ -129,9 +139,9 @@ function fakeSkoda(opts = {}) {
     }
 
     // render CDN and Nominatim
-    if (url.startsWith('https://iprenders.blob.core.windows.net/')) {
+    if (RENDER_URL_RE.test(url)) {
       if (headers.authorization) return json({}, 400); // never with the token
-      return o.binary ? { status: 200, headers: { 'content-type': 'image/png' }, bodyBase64: PNG.toString('base64') } : { status: 200, headers: {}, body: PNG.toString('latin1') };
+      return o.binary ? { status: 200, headers: { 'content-type': 'image/png' }, bodyBase64: cloud.render.toString('base64') } : { status: 200, headers: {}, body: cloud.render.toString('latin1') };
     }
     if (url.startsWith('https://nominatim.openstreetmap.org/reverse?')) return json(fx.nominatim);
 
@@ -200,4 +210,56 @@ async function connected(host, cloud) {
   return { accountId: r.json.account.id, vehicleId: st.json.vehicles[0].id };
 }
 
-module.exports = { DIR, IDENT, API, CLIENT, VIN, PNG, ADMIN, ADA, BOB, USERS, emailPage, passwordPage, fx, fakeSkoda, withHost, asAdmin, asPortal, connected };
+const RESPONSE_BYTES = 1024 * 1024; // the host's limit of one plugin answer (LIMITS.responseBytes)
+
+/**
+ * The render through the chunked image API, the way the pages load it:
+ * part 0 … parts-1 of `p` (e.g. /vehicles/7/image), every answer checked
+ * against the host's 1 MB, the slices joined. → { type, parts, bytes }.
+ */
+async function fetchImage(host, user, p) {
+  const chunks = [];
+  let first = null;
+  for (let n = 0; !first || n < first.parts; n++) {
+    const r = await host.request({ method: 'GET', path: p, query: { part: String(n) }, body: null, user });
+    if (r.status !== 200) throw Object.assign(new Error(`part ${n}: HTTP ${r.status}`), { status: r.status, json: r.json });
+    if (Buffer.byteLength(JSON.stringify(r.json)) >= RESPONSE_BYTES) throw new Error(`part ${n}: answer too large for the host`);
+    if (r.json.part !== n) throw new Error(`part ${n}: got part ${r.json.part}`);
+    if (!first) first = r.json;
+    else if (r.json.parts !== first.parts || r.json.type !== first.type || r.json.size !== first.size) throw new Error(`part ${n}: image changed`);
+    chunks.push(r.json.data);
+  }
+  const b64 = chunks.join('');
+  if (b64.length !== first.size) throw new Error('size mismatch');
+  return { type: first.type, parts: first.parts, bytes: Buffer.from(b64, 'base64') };
+}
+
+/**
+ * ui/common.js in a VM with window.GC bridged to the mock host the way
+ * GateControl forwards a frame call (path and query string split) → its
+ * window.SK (loadImage, cachedImage, safeImage …) and the calls made.
+ */
+function uiCommon(host, user) {
+  const calls = [];
+  const window = {
+    SK_CTX: { lang: 'de', texts: {} },
+    GC: {
+      async call(method, rawPath, body) {
+        calls.push(rawPath);
+        const [p, qs] = String(rawPath).split('?');
+        const r = await host.request({ method, path: '/' + p, query: Object.fromEntries(new URLSearchParams(qs || '')), body: body == null ? null : body, user });
+        if (r.status >= 400) throw Object.assign(new Error((r.json && r.json.error) || 'HTTP ' + r.status), { status: r.status, data: r.json });
+        return r.json;
+      },
+    },
+  };
+  const document = { addEventListener() {}, querySelector: () => null, querySelectorAll: () => [] };
+  const ctx = vm.createContext({ window, document, Intl, Promise, Number, String, Object, Array, Error, setTimeout, clearTimeout });
+  vm.runInContext(fs.readFileSync(path.join(DIR, 'ui', 'common.js'), 'utf8'), ctx);
+  return { SK: window.SK, calls };
+}
+
+module.exports = {
+  DIR, IDENT, API, CLIENT, VIN, PNG, bigPng, ADMIN, ADA, BOB, USERS, RESPONSE_BYTES, emailPage, passwordPage, fx,
+  fakeSkoda, withHost, asAdmin, asPortal, connected, fetchImage, uiCommon,
+};

@@ -7,7 +7,7 @@
   var vehicles = [];
   var loggedIn = false;
   var detailsCache = {};
-  var images = {};
+  var images = {}; // vehId -> data: URL, false = none, or a load in progress (S.cachedImage)
   var dirtyTimers = false;
 
   function up(x) { return String(x || '').toUpperCase(); }
@@ -169,15 +169,9 @@
     function put(src) {
       S.clear(holder).appendChild(el('img', { class: 'pt-car-img', src: src, alt: '' }));
     }
-    if (images[v.id]) { put(images[v.id]); return; }
-    if (images[v.id] === false) return;
-    images[v.id] = false;
-    S.api('GET', 'portal/vehicles/' + Number(v.id) + '/image').then(function (r) {
-      var src = S.safeImage(r && r.image);
-      if (!src) return;
-      images[v.id] = src;
-      put(src);
-    }, function () { delete images[v.id]; });
+    S.cachedImage(images, v.id, 'portal/vehicles/' + Number(v.id) + '/image').then(function (src) {
+      if (src) put(src);
+    });
   }
   var CAR_ICON = '<svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 16l1.5-5h11L19 16M4 16h16v3H4zM7 19v2M17 19v2"/></svg>';
   function renderCarCard(v) {

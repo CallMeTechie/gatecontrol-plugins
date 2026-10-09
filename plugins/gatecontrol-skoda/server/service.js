@@ -16,7 +16,9 @@ const REFRESH_COOLDOWN_MS = 5 * 60 * 1000;
 const COMMAND_REFRESH_COOLDOWN_MS = 30 * 1000;
 const BACKOFF_START_MIN = 60;
 const BACKOFF_CAP_MIN = 240;
-const MAX_IMAGE_BYTES = 700 * 1024; // the data: URL must fit into one plugin answer (1 MB)
+// The render is stored as a BLOB and served in parts (store.imagePart), so
+// only the host's http.fetch limit (5 MB) bounds it; 4 MB leaves headroom.
+const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
 const POLL_MIN = 5;
 const POLL_MAX = 1440;
 const POLL_DEFAULT = 15;
@@ -76,7 +78,8 @@ async function syncVehicle(gc, client, accountId, garageEntry) {
   const { state: vehicleState } = await client.fetchFullState(garageEntry.vin);
   await store.saveState(gc, row.id, vehicleState);
 
-  // Render image: fetch once, refetch only when the url changes.
+  // Render image: fetch once, refetch when the url changes or no image is
+  // stored (e.g. one skipped by 1.0.0 as too large).
   try {
     const info = await client.vehicleInfo(garageEntry.vin);
     const url = firstRenderUrl(info);

@@ -5,12 +5,12 @@
 // the Fahrzeuge page and the vehicle part of the portal tab "Fahrzeug").
 //
 //   admin API   (Settings → Plugins, the plugin page; administrators only)
-//     GET  /  · /users · /vehicles/:id/details · /vehicles/:id/image
+//     GET  /  · /users · /vehicles/:id/details · /vehicles/:id/image?part=N
 //     POST /accounts · /accounts/:id/sync · /vehicles/:id/refresh · /vehicles/:id/command
 //     PUT  /accounts/:id · /accounts/:id/spin · /vehicles/:id/owners · /settings
 //     DELETE /accounts/:id
 //   portal API  (the identified portal viewer — owner-scoped)
-//     GET  /portal · /portal/vehicles/:id/image · /portal/vehicles/:id/details
+//     GET  /portal · /portal/vehicles/:id/image?part=N · /portal/vehicles/:id/details
 //     POST /portal/vehicles/:id/command   (the host lets only signed-in viewers change things)
 //
 // Requests run with the requesting user's rights: req.user.portal = a portal
@@ -112,6 +112,24 @@ function vehicleId(seg) {
   return id;
 }
 
+/**
+ * GET …/image?part=N (N from 0, default 0): one part of the render,
+ * { ok, type, part, parts, size, data } — the page loads part 0 … parts-1
+ * and joins the base64 slices (one answer stays well under the host's 1 MB).
+ * No image or no such part → NOT_FOUND; a malformed part → SKODA_VALIDATION.
+ */
+async function imageAnswer(gc, id, query) {
+  const raw = query && query.part;
+  let part = 0;
+  if (raw !== undefined && raw !== null) {
+    part = typeof raw === 'number' ? raw : (typeof raw === 'string' && /^(0|[1-9][0-9]{0,5})$/.test(raw) ? Number(raw) : NaN);
+    if (!Number.isInteger(part) || part < 0) throw fail('SKODA_VALIDATION');
+  }
+  const out = await store.imagePart(gc, id, part);
+  if (!out) throw fail('NOT_FOUND');
+  return { json: { ok: true, ...out } };
+}
+
 async function portalRoute(req, gc, seg) {
   const user = req.user;
   const m = req.method;
@@ -122,11 +140,7 @@ async function portalRoute(req, gc, seg) {
   if (seg[1] !== 'vehicles' || seg.length !== 4) throw fail('NOT_FOUND');
   const id = vehicleId(seg[2]);
   if (!(await store.isOwner(gc, id, user.id))) throw fail('SKODA_NOT_OWNER');
-  if (m === 'GET' && seg[3] === 'image') {
-    const image = await store.imageOf(gc, id);
-    if (!image) throw fail('NOT_FOUND');
-    return { json: { ok: true, image } };
-  }
+  if (m === 'GET' && seg[3] === 'image') return imageAnswer(gc, id, req.query);
   if (m === 'GET' && seg[3] === 'details') return { json: { ok: true, details: await details.getDetails(gc, id, { forAdmin: false }) } };
   if (m === 'POST' && seg[3] === 'command') {
     // the host only forwards changes of a signed-in viewer; checked here again
@@ -186,11 +200,7 @@ async function adminRoute(req, gc, seg) {
   if (a === 'vehicles' && seg.length === 3) {
     const id = vehicleId(b);
     if (c === 'details' && m === 'GET') return { json: { ok: true, details: await details.getDetails(gc, id, { forAdmin: true }) } };
-    if (c === 'image' && m === 'GET') {
-      const image = await store.imageOf(gc, id);
-      if (!image) throw fail('NOT_FOUND');
-      return { json: { ok: true, image } };
-    }
+    if (c === 'image' && m === 'GET') return imageAnswer(gc, id, req.query);
     if (c === 'refresh' && m === 'POST') { await service.refreshVehicle(gc, id); return { json: { ok: true } }; }
     if (c === 'owners' && m === 'PUT') {
       if (!Array.isArray(body.user_ids) || body.user_ids.length > 1000) throw fail('SKODA_VALIDATION');

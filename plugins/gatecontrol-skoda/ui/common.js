@@ -106,13 +106,66 @@
   }
   /** Only a data: URL of the plugin's own image answer becomes an <img src>. */
   function safeImage(src) { return typeof src === 'string' && /^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(src) ? src : null; }
+  var IMAGE_MAX_PARTS = 32;
+  /**
+   * The vehicle render from the plugin's image answer, which comes in parts
+   * (path?part=N → { type, part, parts, size, data }, data = a base64 slice;
+   * one answer must stay under the host's 1 MB): every part in turn, joined
+   * and checked by safeImage. Resolves to the data: URL or null (no usable
+   * image); rejects when a part fails or the image changed in between, so the
+   * caller can try again later.
+   */
+  function loadImage(path) {
+    var chunks = [];
+    var first = null;
+    function part(n) {
+      return api('GET', path + '?part=' + n).then(function (r) {
+        if (!r || r.part !== n || typeof r.data !== 'string' || !r.data) throw new Error('bad image part');
+        if (n === 0) {
+          first = r;
+          if (!(Number.isInteger(r.parts) && r.parts >= 1 && r.parts <= IMAGE_MAX_PARTS && Number.isInteger(r.size))) throw new Error('bad image');
+        } else if (r.type !== first.type || r.parts !== first.parts || r.size !== first.size) {
+          throw new Error('image changed');
+        }
+        chunks.push(r.data);
+        return n + 1 < first.parts ? part(n + 1) : null;
+      });
+    }
+    return part(0).then(function () {
+      var b64 = chunks.join('');
+      if (b64.length !== first.size) throw new Error('image incomplete');
+      return safeImage('data:' + String(first.type) + ';base64,' + b64);
+    });
+  }
+  /**
+   * loadImage once per page view: cache[id] holds the data: URL, false (no
+   * usable image) or the promise of a load in progress (a card rebuilt
+   * meanwhile gets the image too). A failed load is forgotten, so the next
+   * rebuild tries again. Resolves to the data: URL or null.
+   */
+  function cachedImage(cache, id, path) {
+    var c = cache[id];
+    if (typeof c === 'string') return Promise.resolve(c);
+    if (c === false) return Promise.resolve(null);
+    if (!c) {
+      c = loadImage(path).then(function (src) {
+        cache[id] = src || false;
+        return src || null;
+      }, function () {
+        if (cache[id] === c) delete cache[id];
+        return null;
+      });
+      cache[id] = c;
+    }
+    return c;
+  }
   var DAYS = [['MONDAY', 'mon'], ['TUESDAY', 'tue'], ['WEDNESDAY', 'wed'], ['THURSDAY', 'thu'], ['FRIDAY', 'fri'], ['SATURDAY', 'sat'], ['SUNDAY', 'sun']];
   // timer save errors (codes of the plugin API) → text key
   var TIMER_ERRORS = { SKODA_TIMER_NOT_FOUND: 'timers.not_found', SKODA_TIMER_READONLY: 'timers.readonly', SKODA_VALIDATION: 'timers.invalid' };
   window.SK = {
     CTX: CTX, LOCALE: LOCALE, T: T, $: $, $$: $$, el: el, clear: clear, api: api, codeOf: codeOf, toast: toast,
     openModal: openModal, closeModal: closeModal, confirm: confirmDialog, fmtNum: fmtNum, toDate: toDate, rel: rel,
-    safeImage: safeImage, DAYS: DAYS, TIMER_ERRORS: TIMER_ERRORS,
+    safeImage: safeImage, loadImage: loadImage, cachedImage: cachedImage, DAYS: DAYS, TIMER_ERRORS: TIMER_ERRORS,
   };
   document.addEventListener('click', function (e) {
     var c = e.target && e.target.closest ? e.target.closest('[data-close]') : null;

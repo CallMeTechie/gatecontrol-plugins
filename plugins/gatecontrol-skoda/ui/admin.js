@@ -9,7 +9,7 @@
   var allUsers = null;
   var enrich = {};          // vehId -> details node, cached on success only
   var pending = {};         // vehId -> details fetch in flight
-  var images = {};          // vehId -> data: URL (or false = none)
+  var images = {};          // vehId -> data: URL, false = none, or a load in progress (S.cachedImage)
 
   function fail(e) {
     var code = S.codeOf(e);
@@ -157,16 +157,11 @@
   }
 
   function loadImage(v, img) {
-    if (images[v.id]) { img.src = images[v.id]; img.hidden = false; return; }
-    if (images[v.id] === false) return;
-    images[v.id] = false;
-    S.api('GET', 'vehicles/' + Number(v.id) + '/image').then(function (r) {
-      var src = S.safeImage(r && r.image);
+    S.cachedImage(images, v.id, 'vehicles/' + Number(v.id) + '/image').then(function (src) {
       if (!src) return;
-      images[v.id] = src;
       img.src = src;
       img.hidden = false;
-    }, function () { delete images[v.id]; });
+    });
   }
 
   function command(vehId, action, args, ctl) {

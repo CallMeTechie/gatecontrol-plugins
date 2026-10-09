@@ -58,7 +58,7 @@ test('portal: commands, image and details only for the owner; details with maske
   assert.equal(ok.status, 200);
   assert.deepEqual(cloud.commands.at(-1).body, { targetSOCInPercent: 90 });
   const img = await asPortal(host, ADA, 'GET', `/portal/vehicles/${vehicleId}/image`);
-  assert.equal(img.json.image, 'data:image/png;base64,' + PNG.toString('base64'));
+  assert.deepEqual([img.json.type, img.json.parts, img.json.data], ['image/png', 1, PNG.toString('base64')]);
   const d = await asPortal(host, ADA, 'GET', `/portal/vehicles/${vehicleId}/details`);
   assert.equal(d.json.details.meta.vin, '***0001');
   assert.equal(d.json.details.meta.title, 'Škoda Elroq 85');
