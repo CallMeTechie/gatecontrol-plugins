@@ -11,11 +11,16 @@ class SkodaApiError extends Error {
   constructor(message, code, status) { super(message); this.name = 'SkodaApiError'; this.code = code; this.status = status; }
 }
 
-// Hosts observed serving compositeRenders images (live-confirmed in the
-// built-in integration). Exactly the render hosts of plugin.json
-// permissions.network.internet: a render URL on another host is skipped
-// (no image) instead of widening the plugin's network permissions.
-const RENDER_HOSTS = new Set(['iprenders.blob.core.windows.net', 'ip-modcwp.azureedge.net']);
+// Hosts serving compositeRenders images — the rule of the built-in
+// integration (live-confirmed there): exactly iprenders.blob.core.windows.net,
+// or any host under azureedge.net / skoda-auto.cz (the Škoda CDN hosts vary).
+// Matches plugin.json permissions.network.internet (iprenders…:443,
+// *.azureedge.net:443, *.skoda-auto.cz:443): a render URL on another host is
+// skipped (no image) instead of widening the plugin's network permissions.
+function renderHostAllowed(hostname) {
+  const h = String(hostname || '').toLowerCase();
+  return h === 'iprenders.blob.core.windows.net' || h.endsWith('.azureedge.net') || h.endsWith('.skoda-auto.cz');
+}
 
 /** Image type by its first bytes (PNG, JPEG, WebP) or null. */
 function imageType(buf) {
@@ -84,7 +89,7 @@ class SkodaClient {
     // and never send the access token to a CDN (token leak).
     let parsed;
     try { parsed = new URL(url); } catch { throw new SkodaApiError('invalid render url', 'SKODA_API_ERROR', 0); }
-    if (parsed.protocol !== 'https:' || !RENDER_HOSTS.has(parsed.hostname)) {
+    if (parsed.protocol !== 'https:' || parsed.port !== '' || !renderHostAllowed(parsed.hostname)) {
       throw new SkodaApiError(`render url host not allowed: ${parsed.hostname}`, 'SKODA_RENDER_HOST', 0);
     }
     const res = await this.fetchImpl(parsed.toString(), { binary: true });
@@ -209,4 +214,4 @@ function normalizeVehicleState({ status, drivingRange, charging, airConditioning
   };
 }
 
-module.exports = { SkodaClient, SkodaApiError, normalizeVehicleState, imageType, RENDER_HOSTS };
+module.exports = { SkodaClient, SkodaApiError, normalizeVehicleState, imageType, renderHostAllowed };

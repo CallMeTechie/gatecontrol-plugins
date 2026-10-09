@@ -62,7 +62,7 @@ function normalise(snapshot) {
     vehicles.push({
       id: v.id, account_id: v.account_id, vin: v.vin, name: str(v.name, 200), model: str(v.model, 200),
       state_json: v.state && typeof v.state === 'object' && !Array.isArray(v.state) ? JSON.stringify(v.state) : null,
-      image_b64: img ? img.b64 : null, image_type: img ? img.type : null, image_url: img ? str(v.image_url, 2000) : null,
+      image: img ? img.b64 : null, image_type: img ? img.type : null, image_url: img ? str(v.image_url, 2000) : null,
       fetched_at: ts(v.fetched_at), created_at: ts(v.created_at),
     });
   }
@@ -98,9 +98,14 @@ async function importSnapshot(snapshot, gc) {
   await store.tx(gc, async () => {
     for (const t of ['vehicle_owners', 'vehicles', 'accounts']) await gc.db.run(`DELETE FROM ${t}`);
     await insertJson(gc, 'accounts', ['id', 'email', 'status', 'status_detail', 'backoff_min', 'next_retry_at', 'created_at', 'updated_at'], data.accounts);
-    // one vehicle per statement: a render image may come close to the size of a whole chunk
+    // one vehicle per statement, without the render: the JSON parameter is a
+    // string (at most 1 MB on the host); the render follows as a BLOB
+    // parameter ({ b64 }, no such limit) in a statement of its own
     for (const v of data.vehicles) {
-      await insertJson(gc, 'vehicles', ['id', 'account_id', 'vin', 'name', 'model', 'state_json', 'image_b64', 'image_type', 'image_url', 'fetched_at', 'created_at'], [v]);
+      await insertJson(gc, 'vehicles', ['id', 'account_id', 'vin', 'name', 'model', 'state_json', 'fetched_at', 'created_at'], [v]);
+      if (v.image) {
+        await gc.db.run('UPDATE vehicles SET image = ?, image_type = ?, image_url = ? WHERE id = ?', [{ b64: v.image }, v.image_type, v.image_url, v.id]);
+      }
     }
     await insertJson(gc, 'vehicle_owners', ['vehicle_id', 'user_id', 'created_at'], data.owners);
   });

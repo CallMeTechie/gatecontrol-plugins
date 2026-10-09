@@ -1,6 +1,6 @@
 'use strict';
 
-// Data access of the plugin's own database (migrations/001_init.sql) — port
+// Data access of the plugin's own database (migrations/) — port
 // of GateControl's skodaAccounts.js / skodaVehicles.js / skodaOwners.js.
 // The MySkoda password, the S-PIN and the session tokens of an account are
 // secret settings of the plugin (gc.settings.setSecret: encrypted with the
@@ -9,6 +9,16 @@
 function codeError(code, message) { return Object.assign(new Error(message || code), { code }); }
 
 const secretKey = (accountId, what) => `acc.${Number(accountId)}.${what}`;
+
+// The render is stored as a BLOB (vehicles.image, written as { b64 }); rows
+// written by 1.0.0 still hold it as base64 text (vehicles.image_b64).
+const HAS_IMAGE = '(image IS NOT NULL OR image_b64 IS NOT NULL) AS has_image';
+const IMAGE_TYPE_RE = /^image\/(png|jpeg|webp)$/;
+// One part of the image answer: 450 KiB of the image = 600 KiB of base64
+// (a multiple of 3 bytes = a multiple of 4 characters, so the parts join to
+// the base64 of the whole image), well under the host's 1 MB per answer.
+const IMAGE_PART_BYTES = 450 * 1024;
+const IMAGE_PART_CHARS = (IMAGE_PART_BYTES / 3) * 4;
 
 // One transaction at a time (BEGIN … COMMIT over the host's single
 // connection to the plugin database); serialised in this process.
@@ -172,7 +182,7 @@ async function upsertVehicle(gc, accountId, garageEntry) {
   // two account garages — first assignment wins, no flapping between accounts.
   await gc.db.run(`INSERT INTO vehicles (account_id, vin, name, model) VALUES (?, ?, ?, ?)
     ON CONFLICT(vin) DO UPDATE SET name = excluded.name, model = excluded.model`, [Number(accountId), vin, name, model]);
-  return (await gc.db.get('SELECT id, image_url, image_b64 IS NOT NULL AS has_image FROM vehicles WHERE vin = ?', [vin])).row;
+  return (await gc.db.get(`SELECT id, image_url, ${HAS_IMAGE} FROM vehicles WHERE vin = ?`, [vin])).row;
 }
 
 async function saveState(gc, vehicleId, state) {
@@ -180,8 +190,8 @@ async function saveState(gc, vehicleId, state) {
 }
 
 async function saveImage(gc, vehicleId, { bytes, type }, url) {
-  await gc.db.run('UPDATE vehicles SET image_b64 = ?, image_type = ?, image_url = ? WHERE id = ?',
-    [Buffer.from(bytes).toString('base64'), type, url, Number(vehicleId)]);
+  await gc.db.run('UPDATE vehicles SET image = ?, image_b64 = NULL, image_type = ?, image_url = ? WHERE id = ?',
+    [{ b64: Buffer.from(bytes).toString('base64') }, type, url, Number(vehicleId)]);
 }
 
 function rowToVehicle(r) {
@@ -193,19 +203,43 @@ function rowToVehicle(r) {
 
 /** Vehicles without the image. */
 async function listVehicles(gc) {
-  return (await gc.db.query('SELECT id, account_id, vin, name, model, state_json, fetched_at, image_b64 IS NOT NULL AS has_image FROM vehicles ORDER BY id')).rows.map(rowToVehicle);
+  return (await gc.db.query(`SELECT id, account_id, vin, name, model, state_json, fetched_at, ${HAS_IMAGE} FROM vehicles ORDER BY id`)).rows.map(rowToVehicle);
 }
 
 async function getVehicle(gc, id) {
-  const r = (await gc.db.get('SELECT id, account_id, vin, name, model, state_json, fetched_at, image_b64 IS NOT NULL AS has_image FROM vehicles WHERE id = ?', [Number(id)])).row;
+  const r = (await gc.db.get(`SELECT id, account_id, vin, name, model, state_json, fetched_at, ${HAS_IMAGE} FROM vehicles WHERE id = ?`, [Number(id)])).row;
   return r ? rowToVehicle(r) : null;
 }
 
-/** The render as a data: URL (the frame's CSP allows only data: images), or null. */
-async function imageOf(gc, id) {
-  const r = (await gc.db.get('SELECT image_b64, image_type FROM vehicles WHERE id = ?', [Number(id)])).row;
-  if (!r || !r.image_b64 || !/^image\/(png|jpeg|webp)$/.test(r.image_type || '')) return null;
-  return `data:${r.image_type};base64,${r.image_b64}`;
+/**
+ * Part `part` (0-based) of the render: { type, part, parts, size, data } with
+ * data = a slice of the image's base64 and size = the length of the whole
+ * base64; null when the vehicle has no (allowed) image or there is no such
+ * part. The page joins the parts into a data: URL (the frame's CSP allows
+ * only data: images); one answer stays well under the host's 1 MB.
+ */
+async function imagePart(gc, id, part) {
+  if (!Number.isInteger(part) || part < 0) return null;
+  const r = (await gc.db.get(`SELECT image_type, length(image) AS bytes, length(image_b64) AS chars,
+    substr(image, ?, ?) AS blob_part, substr(image_b64, ?, ?) AS text_part FROM vehicles WHERE id = ?`,
+  [part * IMAGE_PART_BYTES + 1, IMAGE_PART_BYTES, part * IMAGE_PART_CHARS + 1, IMAGE_PART_CHARS, Number(id)])).row;
+  if (!r || !IMAGE_TYPE_RE.test(r.image_type || '')) return null;
+  let parts;
+  let size;
+  let data;
+  if (r.bytes != null) { // BLOB (1.0.1 and later): substr counts bytes
+    const bytes = Number(r.bytes);
+    parts = Math.ceil(bytes / IMAGE_PART_BYTES);
+    size = Math.ceil(bytes / 3) * 4;
+    data = r.blob_part && typeof r.blob_part.b64 === 'string' ? r.blob_part.b64 : '';
+  } else if (r.chars != null) { // base64 text of 1.0.0
+    const chars = Number(r.chars);
+    parts = Math.ceil(chars / IMAGE_PART_CHARS);
+    size = chars;
+    data = typeof r.text_part === 'string' ? r.text_part : '';
+  } else return null;
+  if (!parts || part >= parts || !data) return null;
+  return { type: r.image_type, part, parts, size, data };
 }
 
 // ─── Owners ─────────────────────────────────────
@@ -252,6 +286,6 @@ module.exports = {
   codeError, secretKey, tx, parseJson, validEmail,
   getSession, saveSession, getPassword, getSpin, dropSecrets,
   listAccounts, getAccount, createAccount, updatePassword, setStatus, setSpin, removeAccount,
-  upsertVehicle, saveState, saveImage, listVehicles, getVehicle, imageOf,
+  upsertVehicle, saveState, saveImage, listVehicles, getVehicle, imagePart, IMAGE_PART_BYTES, IMAGE_PART_CHARS,
   setOwners, ownerIdsOf, allOwners, vehiclesOwnedBy, isOwner,
 };

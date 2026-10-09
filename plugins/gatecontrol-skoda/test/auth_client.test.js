@@ -9,7 +9,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
 const auth = require('../server/auth');
-const { SkodaClient, normalizeVehicleState, imageType } = require('../server/client');
+const { SkodaClient, normalizeVehicleState, imageType, renderHostAllowed } = require('../server/client');
 const { fetchFor, CookieJar, responseOf } = require('../server/http');
 const { createHost, internetAllowed } = require('../../../tools/testing/mock-host');
 const { DIR, emailPage, fakeSkoda, fx, PNG, VIN } = require('./helpers');
@@ -21,11 +21,12 @@ async function hostWith(cloud) {
 test('plugin.json allows exactly the Škoda, render and geocoding hosts (HTTPS)', () => {
   const list = require('../plugin.json').permissions.network.internet;
   for (const ok of ['https://identity.vwgroup.io/oidc/v1/authorize', 'https://mysmob.api.connect.skoda-auto.cz/api/v2/garage',
-    'https://iprenders.blob.core.windows.net/r/1.png', 'https://ip-modcwp.azureedge.net/r.png', 'https://nominatim.openstreetmap.org/reverse']) {
+    'https://iprenders.blob.core.windows.net/r/1.png', 'https://ip-modcwp.azureedge.net/r.png', 'https://ip-xyz.azureedge.net/r.png',
+    'https://render.skoda-auto.cz/r.png', 'https://nominatim.openstreetmap.org/reverse']) {
     assert.equal(internetAllowed(list, ok), true, ok);
   }
-  for (const bad of ['https://evil.blob.core.windows.net/x', 'https://other.azureedge.net/x', 'https://skoda-auto.cz/', 'https://identity.vwgroup.io:8443/',
-    'http://169.254.169.254/latest', 'https://example.com/']) {
+  for (const bad of ['https://evil.blob.core.windows.net/x', 'https://azureedge.net/x', 'https://skoda-auto.cz/', 'https://identity.vwgroup.io:8443/',
+    'https://ip-xyz.azureedge.net:8443/x', 'https://azureedge.net.evil.example/x', 'http://169.254.169.254/latest', 'https://example.com/']) {
     assert.equal(internetAllowed(list, bad), false, bad);
   }
   const m = require('../plugin.json');
@@ -138,9 +139,20 @@ test('client: render image only from the render hosts, without the token; type s
     const call = cloud.calls.at(-1);
     assert.equal(call.headers.authorization, undefined, 'no bearer token to the CDN');
     assert.equal(call.binary, true);
-    for (const bad of ['http://iprenders.blob.core.windows.net/x.png', 'https://evil.blob.core.windows.net/x.png', 'https://other.azureedge.net/x.png', 'not a url']) {
+    // the built-in rule: iprenders exactly, any host under azureedge.net / skoda-auto.cz — HTTPS, default port
+    const other = await client.renderImage('https://ip-xyz.azureedge.net/renders/car.png');
+    assert.equal(other.bytes.equals(PNG), true);
+    assert.equal(cloud.calls.at(-1).url, 'https://ip-xyz.azureedge.net/renders/car.png');
+    assert.equal(cloud.calls.at(-1).headers.authorization, undefined, 'no bearer token to the CDN');
+    const n = cloud.calls.length;
+    for (const bad of ['http://iprenders.blob.core.windows.net/x.png', 'http://ip-xyz.azureedge.net/x.png', 'https://evil.example/x.png',
+      'https://evil.blob.core.windows.net/x.png', 'https://azureedge.net/x.png', 'https://azureedge.net.evil.example/x.png',
+      'https://evilazureedge.net/x.png', 'https://ip-xyz.azureedge.net:8443/x.png', 'not a url']) {
       await assert.rejects(client.renderImage(bad), (e) => ['SKODA_API_ERROR', 'SKODA_RENDER_HOST'].includes(e.code), bad);
     }
+    assert.equal(cloud.calls.length, n, 'a refused render url is never fetched');
+    for (const h of ['iprenders.blob.core.windows.net', 'ip-modcwp.azureedge.net', 'ip-xyz.azureedge.net', 'a.b.azureedge.net', 'render.skoda-auto.cz']) assert.equal(renderHostAllowed(h), true, h);
+    for (const h of ['evil.example', 'x.iprenders.blob.core.windows.net', 'azureedge.net', 'skoda-auto.cz', 'evilazureedge.net', 'azureedge.net.evil.example', '']) assert.equal(renderHostAllowed(h), false, h);
     assert.equal(imageType(Buffer.from('GIF89a-not-allowed')), null);
   } finally { await host.close(); }
 });

@@ -39,7 +39,7 @@ test('import keeps ids and owners; password, S-PIN and session become secrets; t
   assert.deepEqual(st.vehicles.map((v) => [v.id, v.account_id, v.vin, v.name, v.has_image]), [[7, 3, VIN, 'Elroq', true], [8, 5, 'TMBTESTVIN000002', 'Enyaq', false]]);
   assert.deepEqual(st.vehicles[0].state, STATE);
   assert.deepEqual(st.vehicles[0].owners, [{ id: 2, username: 'Ada' }]);
-  assert.equal((await asAdmin(host, 'GET', '/vehicles/7/image')).json.image, 'data:image/png;base64,' + PNG.toString('base64'));
+  assert.equal((await asAdmin(host, 'GET', '/vehicles/7/image')).json.data, PNG.toString('base64'));
   for (const [k, v] of [['acc.3.password', 'pw-secret-1'], ['acc.3.spin', '4711'], ['acc.3.access', 'AT1'], ['acc.3.refresh', 'RT1'], ['acc.5.password', 'other-pw']]) {
     assert.equal(await host.gc.settings.get(k), v, k);
     assert.ok(host.secrets.has(k), k + ' is a secret');

@@ -46,7 +46,7 @@ test('sync: login, vehicle with normalised state and render image; session token
   assert.equal(st.poll_interval_min, 15);
   assert.ok(st.lastSyncAt);
   const img = await asAdmin(host, 'GET', `/vehicles/${vehicleId}/image`);
-  assert.equal(img.json.image, 'data:image/png;base64,' + PNG.toString('base64'));
+  assert.deepEqual(img.json, { ok: true, type: 'image/png', part: 0, parts: 1, size: PNG.toString('base64').length, data: PNG.toString('base64') });
   assert.equal(await host.gc.settings.get(`acc.${accountId}.access`), 'AT1');
   assert.equal(await host.gc.settings.get(`acc.${accountId}.refresh`), 'RT1');
   assert.ok(!host.logs.some((l) => /AT1|RT1|pw-secret/.test(l.message)), 'nothing secret in the log');
