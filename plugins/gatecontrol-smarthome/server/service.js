@@ -4,6 +4,7 @@
 // connect (acquire an API key), test, sync resources, control.
 
 const store = require('./store');
+const alerts = require('./alerts');
 const { createClient, briFromDeconz, validApiKey, codeError } = require('./deconz');
 
 async function clientForGateway(gc, gw) {
@@ -75,14 +76,68 @@ async function connectGateway(gc, { name, target_index, apiKey }) {
   return store.createGateway(gc, { name, target_index, apiKey: key, enabled: true });
 }
 
+// deCONZ sensor state keys that mean "alarm" (ZHAWater, ZHAFire, ZHACarbonMonoxide, ZHAAlarm).
+const ALARM_KEYS = [['water', 'water'], ['fire', 'smoke'], ['carbonmonoxide', 'co'], ['alarm', 'alarm']];
+
+/**
+ * What the notifications need of one deCONZ sensor (raw /sensors entry):
+ * alarm (true/false/null = no alarm sensor) and its kind, contact open,
+ * battery (config.battery %, state.lowbattery), thermostat heating.
+ */
+function sensorObservation(id, sensor) {
+  const s = (sensor && sensor.state) || {};
+  const cfg = (sensor && sensor.config) || {};
+  let alarm = null;
+  let alarmKind = null;
+  for (const [key, kind] of ALARM_KEYS) {
+    if (!(key in s)) continue;
+    if (s[key] === true) { alarm = true; alarmKind = kind; break; }
+    if (alarm == null) { alarm = false; alarmKind = kind; }
+  }
+  const type = String((sensor && sensor.type) || '');
+  const thermostat = /thermostat/i.test(type);
+  return {
+    id: String(id),
+    uniqueid: (sensor && sensor.uniqueid) || null,
+    name: String((sensor && sensor.name) || id),
+    type,
+    alarm,
+    alarmKind,
+    open: typeof s.open === 'boolean' ? s.open : null,
+    battery: typeof cfg.battery === 'number' && Number.isFinite(cfg.battery) ? cfg.battery : null,
+    lowBattery: s.lowbattery === true,
+    thermostat,
+    heating: thermostat ? (cfg.mode != null ? String(cfg.mode).toLowerCase() !== 'off' : s.on === true) && cfg.on !== false : null,
+  };
+}
+
 async function syncGateway(gc, gatewayId) {
+  const { counts } = await syncGatewayFull(gc, gatewayId);
+  return { counts };
+}
+
+/** Sync one gateway → { counts, reachable (any request answered), sensors: [sensorObservation] }. */
+async function syncGatewayFull(gc, gatewayId) {
   const gw = await store.getGateway(gc, gatewayId);
   const client = await clientForGateway(gc, gw);
   const counts = { lights: 0, plugs: 0, groups: 0, scenes: 0, sensors: 0, switches: 0 };
   const seen = [];
+  const observed = [];
+  let answered = 0;
+  // reachable = the gateway answered at all (an HTTP error or a bad body is an answer, too)
+  const fetchOk = async (fn) => {
+    try {
+      const v = await fn();
+      answered++;
+      return v;
+    } catch (e) {
+      if (e && /^DECONZ_(HTTP_[1-9]|BAD_RESPONSE)/.test(String(e.code))) answered++;
+      throw e;
+    }
+  };
 
   try {
-    for (const [id, l] of entries(await client.getLights())) {
+    for (const [id, l] of entries(await fetchOk(client.getLights))) {
       const kind = lightKind(l);
       if (!kind) continue;
       await store.upsertResource(gc, { gateway_id: gw.id, deconz_id: id, deconz_type: 'lights', uniqueid: l.uniqueid || null, kind, name: l.name, capabilities: capsFromLight(l), state: lightStateOf(l) });
@@ -91,7 +146,7 @@ async function syncGateway(gc, gatewayId) {
   } catch { /* best effort */ }
 
   try {
-    for (const [id, g] of entries(await client.getGroups())) {
+    for (const [id, g] of entries(await fetchOk(client.getGroups))) {
       await store.upsertResource(gc, { gateway_id: gw.id, deconz_id: id, deconz_type: 'groups', kind: 'group', name: g.name, capabilities: { on: true, bri: true, color: 'hs' }, state: groupStateOf(g) });
       seen.push(`groups:${id}`); counts.groups++;
       for (const sc of (Array.isArray(g.scenes) ? g.scenes : [])) {
@@ -103,17 +158,18 @@ async function syncGateway(gc, gatewayId) {
   } catch { /* best effort */ }
 
   try {
-    for (const [id, s] of entries(await client.getSensors())) {
+    for (const [id, s] of entries(await fetchOk(client.getSensors))) {
       const kind = sensorKind(s);
       if (!kind) continue;
       const rd = sensorReading(s);
       await store.upsertResource(gc, { gateway_id: gw.id, deconz_id: id, deconz_type: 'sensors', uniqueid: s.uniqueid || null, kind, name: s.name, capabilities: { reading: rd.type }, state: rd });
       seen.push(`sensors:${id}`); counts[kind === 'switch' ? 'switches' : 'sensors']++;
+      if (kind === 'sensor') observed.push(sensorObservation(id, s));
     }
   } catch { /* best effort */ }
 
   if (seen.length) { await store.markMissing(gc, gw.id, seen); await store.touchGateway(gc, gw.id); }
-  return { counts };
+  return { counts, reachable: answered > 0, sensors: observed };
 }
 
 function validatePatch(resource, raw) {
@@ -177,15 +233,23 @@ async function targetLabel(gc, index) {
   return t ? t.label : null;
 }
 
-/** Background sync of every enabled gateway (best effort). */
+/** Background sync of every enabled gateway (best effort), then the notifications. */
 async function syncAll(gc) {
+  const results = [];
   for (const gw of await store.listGateways(gc)) {
     if (!gw.enabled) continue;
-    try { await syncGateway(gc, gw.id); } catch (e) { gc.log.debug('gateway sync failed', gw.id, e.code || e.message); }
+    try {
+      const r = await syncGatewayFull(gc, gw.id);
+      results.push({ gateway: { id: gw.id, name: gw.name }, reachable: r.reachable, sensors: r.sensors });
+    } catch (e) {
+      // no access target / api key: a setup matter, not "unreachable"
+      gc.log.debug('gateway sync failed', gw.id, e.code || e.message);
+    }
   }
+  await alerts.check(gc, results).catch(() => {});
 }
 
 module.exports = {
-  connectGateway, syncGateway, setResourceState, testGateway, gatewayTargets, targetLabel, syncAll, clientForGateway,
-  capsFromLight, sensorReading, lightKind, sensorKind, validatePatch,
+  connectGateway, syncGateway, syncGatewayFull, setResourceState, testGateway, gatewayTargets, targetLabel, syncAll, clientForGateway,
+  capsFromLight, sensorReading, sensorObservation, lightKind, sensorKind, validatePatch,
 };

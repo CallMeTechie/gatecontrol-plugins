@@ -4,13 +4,13 @@
     "de": "Smart Home",
     "en": "Smart Home"
   },
-  "version": "1.0.0",
+  "version": "1.1.0",
   "publisher": "CallMeTechie",
   "description": {
     "de": "Phoscon/deCONZ-Gateways einbinden: Lichter, Steckdosen, Gruppen, Szenen und Sensoren steuern, Haushaltsmitgliedern zuweisen (Portal „Zuhause“) und Logikketten auf dem Gateway anlegen.",
     "en": "Connect Phoscon/deCONZ gateways: control lights, plugs, groups, scenes and sensors, assign them to household members (portal “Home”) and create logic chains on the gateway."
   },
-  "gatecontrol": ">=1.149.0",
+  "gatecontrol": ">=1.154.0",
   "entry": "server/index.js",
   "permissions": {
     "network": {
@@ -31,6 +31,7 @@
     "storage": true,
     "portal": true,
     "users": true,
+    "notify": true,
     "background": {
       "intervalSeconds": 30
     }
@@ -74,6 +75,55 @@
         "min": 30,
         "max": 3600,
         "default": 30
+      },
+      {
+        "key": "notify_window_min",
+        "type": "number",
+        "label": {
+          "de": "Benachrichtigung „Fenster offen“ nach (Minuten)",
+          "en": "“Window open” notification after (minutes)"
+        },
+        "help": {
+          "de": "Wenn ein Fenster-/Türkontakt länger als diese Zeit offen ist (5–240) – auf einem Gateway mit Thermostaten nur, während geheizt wird. Das Thema ist anfangs aus – abonnieren im Portal oder in der App.",
+          "en": "When a window/door contact stays open longer than this (5–240) – on a gateway with thermostats only while heating. The topic is off by default – subscribe in the portal or the app."
+        },
+        "min": 5,
+        "max": 240,
+        "default": 15
+      },
+      {
+        "key": "notify_battery_low",
+        "type": "number",
+        "label": {
+          "de": "Benachrichtigung „Batterie schwach“ unter (%)",
+          "en": "“Battery low” notification below (%)"
+        },
+        "help": {
+          "de": "Höchstens einmal pro Gerät und Tag, wenn die Batterie eines Sensors unter diesen Wert fällt (5–50). Wer die Benachrichtigungen bekommt, legst du in GateControl unter System › Benachrichtigungen fest.",
+          "en": "At most once per device and day, when a sensor's battery drops below this value (5–50). Who gets notifications is set in GateControl under System › Notifications."
+        },
+        "min": 5,
+        "max": 50,
+        "default": 15
+      },
+      {
+        "key": "notify_lang",
+        "type": "select",
+        "label": {
+          "de": "Sprache der Benachrichtigungen",
+          "en": "Notification language"
+        },
+        "options": [
+          {
+            "value": "de",
+            "label": "Deutsch"
+          },
+          {
+            "value": "en",
+            "label": "English"
+          }
+        ],
+        "default": "de"
       }
     ],
     "portal": {
@@ -93,5 +143,39 @@
   "license": {
     "required": true
   },
-  "migrations": "migrations"
+  "migrations": "migrations",
+  "notifyTopics": [
+    {
+      "id": "alarm",
+      "label": {
+        "de": "Alarm (Wasser, Rauch, CO)",
+        "en": "Alarm (water, smoke, CO)"
+      },
+      "default": true
+    },
+    {
+      "id": "window_open",
+      "label": {
+        "de": "Fenster lange offen",
+        "en": "Window left open"
+      },
+      "default": false
+    },
+    {
+      "id": "battery_low",
+      "label": {
+        "de": "Batterie schwach",
+        "en": "Battery low"
+      },
+      "default": true
+    },
+    {
+      "id": "gateway_unreachable",
+      "label": {
+        "de": "Gateway nicht erreichbar",
+        "en": "Gateway unreachable"
+      },
+      "default": true
+    }
+  ]
 }

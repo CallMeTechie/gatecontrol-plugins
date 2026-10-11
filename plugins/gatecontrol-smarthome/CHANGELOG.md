@@ -2,6 +2,30 @@
 
 Phoscon/deCONZ-Integration als GateControl-Plugin – bisher fest in GateControl eingebaut.
 
+## 1.1.0
+- Benachrichtigungen über die Benachrichtigungszentrale von GateControl (Apps, Portal),
+  jeweils als eigenes Thema, das jede Person selbst an- und abschalten kann:
+  - **Alarm (Wasser, Rauch, CO)** (an, Priorität hoch): Wasser-, Rauch-/Feuer-, CO- oder
+    Alarmsensor löst aus; endet der Alarm, ersetzt eine Entwarnung die Meldung.
+  - **Fenster lange offen** (aus): Kontakt länger als N Minuten offen (Einstellung,
+    Standard 15) – auf Gateways mit Thermostaten nur, während geheizt wird.
+  - **Batterie schwach** (an): Sensorbatterie unter der Schwelle (Einstellung, Standard
+    15 %) oder „Batterie schwach“ gemeldet; höchstens einmal pro Gerät und Tag, alle
+    Geräte eines Gateways in einer Meldung.
+  - **Gateway nicht erreichbar** (an, Priorität hoch): Gateway antwortet 5 Minuten lang
+    nicht; ist es wieder da, ersetzt „wieder erreichbar“ die Meldung.
+- Grundlage ist die ohnehin laufende Hintergrund-Abfrage (keine zusätzlichen Anfragen an
+  die Gateways). Der zuletzt gesehene Zustand wird gespeichert: kein erneutes Melden nach
+  einem Neustart, und beim ersten Lauf wird nichts gemeldet, was schon vorher so war.
+- Empfänger: Alarm, Batterie und Gateway nach der Regel des Themas in GateControl
+  (System › Benachrichtigungen); „Fenster offen“ an die dem Sensor zugewiesenen Personen,
+  sonst ebenfalls nach der Regel. Eigene Obergrenze unter dem Limit von GateControl
+  (30/h), Alarme haben Vorrang.
+- Neue Einstellungen: Minuten für „Fenster offen“, Schwelle für „Batterie schwach“,
+  Sprache der Benachrichtigungen (Deutsch/English).
+- Neue Berechtigung **Benachrichtigungen** (`permissions.notify`) – beim Update fragt
+  GateControl nach der Zustimmung. Benötigt GateControl ab 1.154.0.
+
 ## 1.0.0
 - Erste Version als Plugin, Funktionsumfang der eingebauten Smart-Home-Integration:
   Gateways verbinden (API-Key automatisch holen oder eintragen), testen, synchronisieren;
