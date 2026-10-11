@@ -2,6 +2,26 @@
 
 Škoda-Fahrzeuge (MySkoda) als GateControl-Plugin – bisher fest in GateControl eingebaut.
 
+## 1.1.0
+- Benachrichtigungen über die Benachrichtigungszentrale von GateControl (Apps, Portal),
+  jeweils als eigenes Thema, das jede Person selbst an- und abschalten kann:
+  - **Laden abgeschlossen** (an): Laden am Ladeziel beendet – „Elroq · 80 % · ca. 390 km“.
+  - **Akku niedrig** (an): Ladestand unter der Schwelle (Einstellung, Standard 20 %),
+    einmal pro Entladung.
+  - **Fahrzeug nicht verriegelt** (aus): länger als N Minuten entriegelt (Einstellung,
+    Standard 15).
+  - **Klimatisierung fertig** (aus): Zieltemperatur erreicht bzw. Klimatisierung beendet.
+- Grundlage ist der ohnehin abgefragte Fahrzeugzustand (keine zusätzlichen Abfragen bei
+  Škoda). Der zuletzt gesehene Zustand wird gespeichert: kein erneutes Melden nach einem
+  Neustart, und beim ersten Lauf wird nichts gemeldet, was schon vorher so war.
+- Empfänger: die dem Fahrzeug zugewiesenen Personen; ohne Zuweisung entscheidet die Regel
+  des Themas in GateControl (System › Benachrichtigungen). Eigene Obergrenze unter dem
+  Limit von GateControl (30/h), Wiederholungen werden unterdrückt.
+- Neue Einstellungen: Schwellen für „Akku niedrig“ und „Nicht verriegelt“, Sprache der
+  Benachrichtigungen (Deutsch/English).
+- Neue Berechtigung **Benachrichtigungen** (`permissions.notify`) – beim Update fragt
+  GateControl nach der Zustimmung. Benötigt GateControl ab 1.154.0.
+
 ## 1.0.1
 - Fahrzeugbilder werden wieder angezeigt (Seite „Fahrzeuge“ und Portal): Bilder bis 4 MB statt
   bisher 700 KB – die hochauflösenden Škoda-Renderbilder wurden bisher beim Abruf und bei der

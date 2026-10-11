@@ -7,6 +7,7 @@
 const store = require('./store');
 const lan = require('./lan');
 const ac = require('./ac');
+const alerts = require('./alerts');
 const { MideaCloud } = require('./cloud');
 
 const { codeError } = store;
@@ -353,10 +354,15 @@ async function pollTick(gc) {
     const devices = (await store.listDevices(gc)).filter((d) => d.enabled && d.transport !== 'cloud' && d.target_index != null);
     if (!devices.length) return;
     status.lastPollAt = new Date().toISOString();
+    const observations = [];
     for (const d of devices) {
       if (lockDepth.get(d.id)) continue;            // skip devices with an active queue
-      try { await getState(gc, d.id); } catch { /* offline handled internally */ }
+      let st = null;
+      try { st = await getState(gc, d.id); } catch { /* offline handled internally */ }
+      const online = !!(st && !st.offline);
+      observations.push({ device: { id: d.id, name: d.name }, online, state: online ? st : null });
     }
+    await alerts.check(gc, observations).catch(() => {}); // notifications (errors are logged there)
   } finally {
     pollRunning = false;
   }
@@ -365,6 +371,7 @@ async function pollTick(gc) {
 /** Forget every cached state (new data was imported). */
 function reset() {
   cache.clear();
+  alerts.reset();
   status.cloudNeedsReauth = false;
 }
 

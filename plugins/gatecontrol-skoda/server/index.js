@@ -26,6 +26,7 @@ const details = require('./details');
 const geocode = require('./geocode');
 const portal = require('./portal');
 const legacy = require('./legacy');
+const alerts = require('./alerts');
 const texts = require('./texts.json');
 
 const state = { importing: false };
@@ -219,6 +220,7 @@ function resetCaches() {
   control.reset();
   details.reset();
   geocode.reset();
+  alerts.reset();
 }
 
 module.exports = {

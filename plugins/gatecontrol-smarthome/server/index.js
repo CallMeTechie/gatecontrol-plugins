@@ -24,6 +24,7 @@ const store = require('./store');
 const service = require('./service');
 const rules = require('./rules');
 const legacy = require('./legacy');
+const alerts = require('./alerts');
 const deconzCaps = require('./caps');
 const { validApiKey } = require('./deconz');
 const texts = require('./texts.json');
@@ -302,6 +303,7 @@ module.exports = {
   async start(gc) {
     state.lastSync = 0;
     state.resynced = false;
+    alerts.reset();
     gc.log.info('smarthome started', gc.plugin.version);
   },
 
