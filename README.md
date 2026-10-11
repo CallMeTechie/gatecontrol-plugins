@@ -30,9 +30,25 @@ fixture). It is built and tested in CI but never released
 
 | Plugin | | GateControl |
 |---|---|---|
-| `gatecontrol-smarthome` | Smart Home (Phoscon/deCONZ) — formerly built into GateControl; imports the built-in data | ≥ 1.149.0 |
-| `gatecontrol-midea` | Klimaanlage (Midea air conditioners, cloud and LAN) — formerly built into GateControl; imports the built-in data | ≥ 1.150.0 |
-| `gatecontrol-skoda` | Fahrzeuge (Škoda / MySkoda) — formerly built into GateControl; imports the built-in data | ≥ 1.151.0 |
+| `gatecontrol-smarthome` | Smart Home (Phoscon/deCONZ) — formerly built into GateControl; imports the built-in data; notifies: alarm, window open, battery low, gateway unreachable | ≥ 1.154.0 (1.0.0: ≥ 1.149.0) |
+| `gatecontrol-midea` | Klimaanlage (Midea air conditioners, cloud and LAN) — formerly built into GateControl; imports the built-in data; notifies: device unreachable, clean filter, malfunction | ≥ 1.154.0 (1.0.0: ≥ 1.150.0) |
+| `gatecontrol-skoda` | Fahrzeuge (Škoda / MySkoda) — formerly built into GateControl; imports the built-in data; notifies: charging complete, battery low, not locked, climate done | ≥ 1.154.0 (1.0.0: ≥ 1.151.0) |
+
+### Notifications
+
+Plugins that notify declare their topics in `plugin.json` (`notifyTopics`,
+needs `permissions.notify`) and send through GateControl's notification
+center with `gc.notify({ topic, title, body, priority, users, collapseKey, data })`
+(GateControl ≥ 1.154.0, docs/plugins.md "Notifications"). The shared helper
+`server/notify.js` (sending with fallbacks for older hosts, an own hourly
+budget below the host's 30/h with a reserve for high priority, dedupe,
+persisted last-seen state) is the **same file in every plugin** — packages
+cannot share code; `tools/test/notify.test.js` fails when the copies differ.
+Each plugin's `server/alerts.js` holds the transitions as a pure
+`evaluate(previousState, observations, config, now)`: nothing is announced
+on a first sighting, a restart neither repeats nor loses anything. The mock
+host records both forms in `host.notifications` (`notifyApi: 'legacy'`
+emulates a GateControl < 1.154.0).
 
 ## Tooling
 
@@ -150,6 +166,12 @@ Erstanbieter-Plugins für GateControl mit Build-, Signatur- und Release-Pipeline
   Testbau eines lizenzpflichtigen Erstanbieter-Plugins).
 * **Neues Plugin:** Ordner anlegen, plugin.json + Code + CHANGELOG + Tests mit
   `tools/testing/mock-host.js`, prüfen, PR öffnen.
+* **Benachrichtigungen:** Themen in `plugin.json` (`notifyTopics`, braucht
+  `permissions.notify`), Versand mit `gc.notify({ topic, … })` (GateControl
+  ab 1.154.0). `server/notify.js` ist in jedem Plugin dieselbe Datei
+  (`tools/test/notify.test.js` prüft das); die Übergänge stehen je Plugin in
+  `server/alerts.js` – beim ersten Sehen wird nichts gemeldet, ein Neustart
+  wiederholt nichts.
 * **Versionierung:** SemVer pro Plugin; jede Version braucht einen
   `## <version>`-Abschnitt im CHANGELOG.
 * **Release:** Version und CHANGELOG auf `main` bringen, dann Tag
