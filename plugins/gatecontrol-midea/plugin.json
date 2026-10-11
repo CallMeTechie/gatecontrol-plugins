@@ -4,13 +4,13 @@
     "de": "Klimaanlage",
     "en": "Air conditioning"
   },
-  "version": "1.0.0",
+  "version": "1.1.0",
   "publisher": "CallMeTechie",
   "description": {
     "de": "Midea-Klimageräte über die Midea-Cloud oder im Heimnetz steuern (Ein/Aus, Zieltemperatur, Modus, Lüfter, Turbo/Eco) und Haushaltsmitgliedern zuweisen (Portal „Zuhause“).",
     "en": "Control Midea air conditioners through the Midea cloud or in the home network (on/off, target temperature, mode, fan, turbo/eco) and assign them to household members (portal “Home”)."
   },
-  "gatecontrol": ">=1.150.0",
+  "gatecontrol": ">=1.154.0",
   "entry": "server/index.js",
   "permissions": {
     "network": {
@@ -42,6 +42,7 @@
     "storage": true,
     "portal": true,
     "users": true,
+    "notify": true,
     "background": {
       "intervalSeconds": 30
     }
@@ -63,6 +64,31 @@
         }
       }
     ],
+    "settings": [
+      {
+        "key": "notify_lang",
+        "type": "select",
+        "label": {
+          "de": "Sprache der Benachrichtigungen",
+          "en": "Notification language"
+        },
+        "help": {
+          "de": "Wer welche Benachrichtigung bekommt, legst du in GateControl unter System › Benachrichtigungen fest; jede Person kann Themen im Portal oder in der App abschalten.",
+          "en": "Who gets which notification is set in GateControl under System › Notifications; everyone can switch topics off in the portal or the app."
+        },
+        "options": [
+          {
+            "value": "de",
+            "label": "Deutsch"
+          },
+          {
+            "value": "en",
+            "label": "English"
+          }
+        ],
+        "default": "de"
+      }
+    ],
     "portal": {
       "sections": [
         {
@@ -80,5 +106,31 @@
   "license": {
     "required": true
   },
-  "migrations": "migrations"
+  "migrations": "migrations",
+  "notifyTopics": [
+    {
+      "id": "device_unreachable",
+      "label": {
+        "de": "Klimagerät nicht erreichbar",
+        "en": "Air conditioner unreachable"
+      },
+      "default": true
+    },
+    {
+      "id": "filter_clean",
+      "label": {
+        "de": "Filter reinigen",
+        "en": "Clean the filter"
+      },
+      "default": true
+    },
+    {
+      "id": "error_code",
+      "label": {
+        "de": "Störung am Klimagerät",
+        "en": "Air conditioner malfunction"
+      },
+      "default": true
+    }
+  ]
 }

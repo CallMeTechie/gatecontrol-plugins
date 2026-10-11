@@ -156,6 +156,13 @@ function parseState(frame) {
     targetTemp = targetAlt + 12.0 + ((p[2] & 0x10) ? 0.5 : 0.0);
   }
 
+  // Status flags (msmart / midea_ac_lan StateResponse): p[1] bit 7 = appliance
+  // error, p[13] bit 5 = filter needs cleaning ("full dust"); p[16] carries the
+  // error code on the models that report one (only read while the error bit is set).
+  const applianceError = (p[1] & 0x80) !== 0;
+  const filterAlert = (p[13] & 0x20) !== 0;
+  const errorCode = applianceError && p.length > 16 ? p[16] : 0;
+
   return {
     power,
     mode: MODE_BY_NUM[modeNum] || 'auto',
@@ -167,6 +174,9 @@ function parseState(frame) {
     swingH: (swing & 0x3) !== 0,
     eco,
     turbo,
+    filterAlert,
+    applianceError,
+    errorCode,
   };
 }
 

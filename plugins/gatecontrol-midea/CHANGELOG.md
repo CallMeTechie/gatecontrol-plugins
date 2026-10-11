@@ -2,6 +2,26 @@
 
 Midea-Klimageräte als GateControl-Plugin – bisher fest in GateControl eingebaut („Klimaanlage“).
 
+## 1.1.0
+- Benachrichtigungen über die Benachrichtigungszentrale von GateControl (Apps, Portal),
+  jeweils als eigenes Thema, das jede Person selbst an- und abschalten kann:
+  - **Klimagerät nicht erreichbar** (an): ein Gerät im Heimnetz antwortet 10 Minuten lang
+    nicht; ist es wieder da, ersetzt „wieder erreichbar“ die Meldung.
+  - **Filter reinigen** (an): das Gerät meldet, dass der Filter gereinigt werden sollte.
+  - **Störung am Klimagerät** (an, Priorität hoch): das Gerät meldet eine Störung (mit
+    Fehlercode, wenn es einen liefert); „Störung behoben“ ersetzt die Meldung.
+- Grundlage ist die ohnehin laufende Abfrage der Geräte im Heimnetz (keine zusätzlichen
+  Anfragen). Reine Cloud-Geräte werden weiterhin nicht rund um die Uhr abgefragt und
+  melden daher nichts. Der Gerätezustand liefert jetzt auch Filter- und Störungsstatus.
+- Der zuletzt gesehene Zustand wird gespeichert: kein erneutes Melden nach einem Neustart,
+  und beim ersten Lauf wird nichts gemeldet, was schon vorher so war.
+- Empfänger: die dem Gerät zugewiesenen Personen; ohne Zuweisung entscheidet die Regel des
+  Themas in GateControl (System › Benachrichtigungen). Eigene Obergrenze unter dem Limit
+  von GateControl (30/h), Störungen haben Vorrang.
+- Neue Einstellung: Sprache der Benachrichtigungen (Deutsch/English).
+- Neue Berechtigung **Benachrichtigungen** (`permissions.notify`) – beim Update fragt
+  GateControl nach der Zustimmung. Benötigt GateControl ab 1.154.0.
+
 ## 1.0.0
 - Erste Version als Plugin, Funktionsumfang der eingebauten Klimaanlage:
   Midea-Konto verbinden (MSmartHome oder NetHome Plus), Klimageräte des Kontos

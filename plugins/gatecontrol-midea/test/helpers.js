@@ -27,7 +27,7 @@ const MODE_NUM = { auto: 1, cool: 2, dry: 3, heat: 4, fan: 5 };
 function stateFrame(st) {
   const p = Buffer.alloc(24);
   p[0] = 0xc0;
-  p[1] = st.power ? 0x01 : 0x00;
+  p[1] = (st.power ? 0x01 : 0x00) | (st.applianceError ? 0x80 : 0x00);
   const t = Number(st.targetTemp);
   p[2] = ((MODE_NUM[st.mode] || 1) << 5) | ((Math.floor(t) - 16) & 0x0f) | (t % 1 ? 0x10 : 0);
   p[3] = Number(st.fanSpeed) & 0x7f;
@@ -36,6 +36,8 @@ function stateFrame(st) {
   p[9] = st.eco ? 0x10 : 0;
   p[11] = st.indoorTemp == null ? 0xff : Math.round(st.indoorTemp * 2 + 50);
   p[12] = st.outdoorTemp == null ? 0xff : Math.round(st.outdoorTemp * 2 + 50);
+  p[13] = st.filterAlert ? 0x20 : 0x00;
+  p[16] = Number(st.errorCode) & 0xff;
   return ac.buildFrame(0x03, p, 0);
 }
 

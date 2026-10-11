@@ -16,8 +16,12 @@ const KEY = 'b2'.repeat(32);
 const DEVICE_ID = '151732605161920';
 
 test('ac frames: a state answer parses back to the state', () => {
-  const st = { power: true, mode: 'heat', targetTemp: 21.5, fanSpeed: 102, swingV: true, swingH: false, turbo: false, eco: true, indoorTemp: 19, outdoorTemp: 4.5 };
+  const st = { power: true, mode: 'heat', targetTemp: 21.5, fanSpeed: 102, swingV: true, swingH: false, turbo: false, eco: true, indoorTemp: 19, outdoorTemp: 4.5, filterAlert: false, applianceError: false, errorCode: 0 };
   assert.deepEqual(ac.parseState(stateFrame(st)), st);
+  // status flags: filter, appliance error with its code (the code only counts with the error bit)
+  const flagged = { ...st, filterAlert: true, applianceError: true, errorCode: 5 };
+  assert.deepEqual(ac.parseState(stateFrame(flagged)), flagged);
+  assert.equal(ac.parseState(stateFrame({ ...st, errorCode: 7 })).errorCode, 0);
   const set = ac.buildSet({ ...st, targetTemp: 16 });
   assert.equal(set[0], 0xaa);
   assert.equal(set[9], 0x02, 'a control frame');
