@@ -11,6 +11,7 @@ const auth = require('./auth');
 const { SkodaClient } = require('./client');
 const { fetchFor } = require('./http');
 const store = require('./store');
+const alerts = require('./alerts');
 
 const REFRESH_COOLDOWN_MS = 5 * 60 * 1000;
 const COMMAND_REFRESH_COOLDOWN_MS = 30 * 1000;
@@ -95,7 +96,11 @@ async function syncVehicle(gc, client, accountId, garageEntry) {
 }
 
 function syncAccount(gc, accountId) {
-  return withAccountLock(accountId, () => syncAccountLocked(gc, accountId));
+  return withAccountLock(accountId, () => syncAccountLocked(gc, accountId)).then(async (r) => {
+    // notifications from the fresh state (outside the account lock; errors are logged there)
+    if (r && r.ok) await alerts.check(gc).catch(() => {});
+    return r;
+  });
 }
 
 async function syncAccountLocked(gc, accountId) {

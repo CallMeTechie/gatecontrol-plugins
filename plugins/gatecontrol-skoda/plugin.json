@@ -4,13 +4,13 @@
     "de": "Fahrzeuge",
     "en": "Vehicles"
   },
-  "version": "1.0.1",
+  "version": "1.1.0",
   "publisher": "CallMeTechie",
   "description": {
     "de": "Škoda-Fahrzeuge über MySkoda einbinden: Ladestand, Reichweite, Zustand, Position und Fahrzeugdetails sehen, Klima, Laden, Scheibenheizung, Ver- und Entriegeln und Abfahrtstimer steuern und Fahrzeuge Haushaltsmitgliedern zuweisen (Portal „Fahrzeug“).",
     "en": "Connect Škoda vehicles through MySkoda: see charge level, range, condition, location and vehicle details, control climate, charging, window heating, locking and departure timers, and assign vehicles to household members (portal “Vehicle”)."
   },
-  "gatecontrol": ">=1.151.0",
+  "gatecontrol": ">=1.154.0",
   "entry": "server/index.js",
   "permissions": {
     "network": {
@@ -26,6 +26,7 @@
     "storage": true,
     "portal": true,
     "users": true,
+    "notify": true,
     "background": {
       "intervalSeconds": 60
     }
@@ -62,6 +63,55 @@
         "min": 5,
         "max": 1440,
         "default": 15
+      },
+      {
+        "key": "notify_battery_low",
+        "type": "number",
+        "label": {
+          "de": "Benachrichtigung „Akku niedrig“ unter (%)",
+          "en": "“Battery low” notification below (%)"
+        },
+        "help": {
+          "de": "Einmal pro Entladung, wenn der Ladestand eines Fahrzeugs unter diesen Wert fällt (5–80). Wer die Benachrichtigung bekommt, legst du in GateControl unter System › Benachrichtigungen fest.",
+          "en": "Once per discharge, when a vehicle's charge level drops below this value (5–80). Who gets it is set in GateControl under System › Notifications."
+        },
+        "min": 5,
+        "max": 80,
+        "default": 20
+      },
+      {
+        "key": "notify_unlocked_min",
+        "type": "number",
+        "label": {
+          "de": "Benachrichtigung „Nicht verriegelt“ nach (Minuten)",
+          "en": "“Not locked” notification after (minutes)"
+        },
+        "help": {
+          "de": "Wenn ein Fahrzeug länger als diese Zeit entriegelt ist (5–720). Das Thema ist anfangs aus – abonnieren im Portal oder in der App.",
+          "en": "When a vehicle stays unlocked longer than this (5–720). The topic is off by default – subscribe in the portal or the app."
+        },
+        "min": 5,
+        "max": 720,
+        "default": 15
+      },
+      {
+        "key": "notify_lang",
+        "type": "select",
+        "label": {
+          "de": "Sprache der Benachrichtigungen",
+          "en": "Notification language"
+        },
+        "options": [
+          {
+            "value": "de",
+            "label": "Deutsch"
+          },
+          {
+            "value": "en",
+            "label": "English"
+          }
+        ],
+        "default": "de"
       }
     ],
     "portal": {
@@ -81,5 +131,39 @@
   "license": {
     "required": true
   },
-  "migrations": "migrations"
+  "migrations": "migrations",
+  "notifyTopics": [
+    {
+      "id": "charging_done",
+      "label": {
+        "de": "Laden abgeschlossen",
+        "en": "Charging complete"
+      },
+      "default": true
+    },
+    {
+      "id": "battery_low",
+      "label": {
+        "de": "Akku niedrig",
+        "en": "Battery low"
+      },
+      "default": true
+    },
+    {
+      "id": "not_locked",
+      "label": {
+        "de": "Fahrzeug nicht verriegelt",
+        "en": "Vehicle not locked"
+      },
+      "default": false
+    },
+    {
+      "id": "climate_done",
+      "label": {
+        "de": "Klimatisierung fertig",
+        "en": "Climate control done"
+      },
+      "default": false
+    }
+  ]
 }
