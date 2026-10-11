@@ -25,6 +25,11 @@
 //   await host.start();
 //   const res = await host.request({ method: 'GET', path: '/ping' });
 //   host.logs, host.notifications, host.fetches; await host.close();
+//   notifications: legacy gc.notify(message, { severity }) → { message, severity };
+//   gc.notify({ topic, title, … }) (GateControl ≥ 1.154.0) → { topic, title, body,
+//   priority, users, collapseKey, ttl, data } with the host's checks. Options:
+//   notifyApi: 'legacy' emulates a GateControl < 1.154.0 (the child turns every
+//   argument into a string), notifyFail: (n) => error code to throw instead.
 //   await host.legacyImport(snapshot); await host.portalVisible({ id: 2, name: 'Ada', role: 'user' }, 'section-id');
 //   await host.portalTiles(user); await host.portalSearch(user, 'lamp');
 
@@ -34,6 +39,8 @@ const path = require('node:path');
 
 const SQL_DENY = /\b(attach|detach|vacuum|pragma|load_extension|sqlite_dbpage|fts3_tokenizer)\b|_gc_/i;
 const DEFAULT_USER = Object.freeze({ id: 1, name: 'admin', role: 'admin' });
+const NOTIFY_PRIORITIES = ['info', 'normal', 'high', 'critical'];
+const NOTIFY_ACTIONS = new Set(['open_app_route', 'open_portal', 'mute_1h', 'ack', 'done']);
 
 function hostError(code, message) {
   return Object.assign(new Error(message), { code });
@@ -258,8 +265,42 @@ async function createHost(pluginDir, opts = {}) {
       if (!perms.users) throw hostError('ERR_USERS_DENIED', 'this plugin has no users permission');
       return users.find((u) => u.id === Number(id)) || null;
     },
-    notify: async ({ message, opts: o }) => {
+    notify: async ({ message, opts: o, notification: n }) => {
       if (!perms.notify) throw hostError('ERR_NOTIFY_DENIED', 'this plugin has no notify permission');
+      if (opts.notifyFail) {
+        const code = opts.notifyFail(n || { message });
+        if (code) throw hostError(code, 'notify failed (test)');
+      }
+      if (n && typeof n === 'object' && !Array.isArray(n)) {
+        // GateControl ≥ 1.154.0 (src/services/plugins/hostApi.js notify): same checks and codes
+        const topic = n.topic == null ? 'default' : String(n.topic);
+        const declared = Array.isArray(manifest.notifyTopics) ? manifest.notifyTopics : [];
+        if (topic !== 'default' && !declared.some((t) => t && t.id === topic)) throw hostError('ERR_INVALID', 'topic not declared in notifyTopics');
+        const title = String(n.title == null ? '' : n.title).replace(/\s+/g, ' ').trim().slice(0, 120);
+        if (!title) throw hostError('ERR_INVALID', 'empty title');
+        const body = String(n.body == null ? '' : n.body).trim().slice(0, 1000);
+        const priority = n.priority == null ? 'normal' : n.priority;
+        if (!NOTIFY_PRIORITIES.includes(priority)) throw hostError('ERR_INVALID', 'invalid priority');
+        if (n.users != null && !(Array.isArray(n.users) && n.users.length <= 100 && n.users.every((u) => Number.isSafeInteger(u) && u > 0))) throw hostError('ERR_INVALID', 'invalid users');
+        if (n.collapseKey != null && !/^[A-Za-z0-9_.:@/-]{1,120}$/.test(String(n.collapseKey))) throw hostError('ERR_INVALID', 'invalid collapseKey');
+        if (n.ttl != null && !(Number.isSafeInteger(n.ttl) && n.ttl >= 60 && n.ttl <= 30 * 86400)) throw hostError('ERR_INVALID', 'invalid ttl');
+        if (n.data != null && (typeof n.data !== 'object' || Array.isArray(n.data))) throw hostError('ERR_INVALID', 'invalid data');
+        const data = { route: `plg-${manifest.id}`, ...(n.data || {}) };
+        if (Buffer.byteLength(JSON.stringify(data), 'utf8') > 4096) throw hostError('ERR_INVALID', 'data too large (max 4 KB)');
+        if (data.actions != null) {
+          if (!Array.isArray(data.actions) || data.actions.length > 4) throw hostError('ERR_INVALID', 'invalid actions (test)');
+          for (const a of data.actions) {
+            if (!a || !NOTIFY_ACTIONS.has(a.type)) throw hostError('ERR_INVALID', 'unknown action type (test: the host would drop it)');
+            if (a.type === 'open_app_route' && !/^(?:vpn|services|gateways|inbox|plg-[a-z0-9]+(?:-[a-z0-9]+)*)$/.test(String(a.target))) throw hostError('ERR_INVALID', 'invalid app route (test)');
+          }
+        }
+        if (notifications.length >= 30) throw hostError('ERR_RATE_LIMIT', 'too many notifications');
+        notifications.push({
+          topic, title, body, priority: priority === 'critical' ? 'high' : priority,
+          users: n.users == null ? null : [...new Set(n.users)], collapseKey: n.collapseKey == null ? null : String(n.collapseKey), ttl: n.ttl == null ? null : n.ttl, data,
+        });
+        return { pushed: true, id: notifications.length };
+      }
       const msg = String(message || '').trim();
       if (!msg) throw hostError('ERR_INVALID', 'empty message');
       if (notifications.length >= 30) throw hostError('ERR_RATE_LIMIT', 'too many notifications');
@@ -310,7 +351,10 @@ async function createHost(pluginDir, opts = {}) {
       setSecret: (key, value) => call('settings.setSecret', { key, value: value == null ? null : String(value) }),
     }),
     users: Object.freeze({ list: () => call('users.list', {}), get: (id) => call('users.get', { id }) }),
-    notify: (message, o) => call('notify', { message: String(message), opts: o || {} }),
+    // like the child bootstrap: GateControl ≥ 1.154.0 passes an object on; older ones String() it
+    notify: (message, o) => (opts.notifyApi !== 'legacy' && message && typeof message === 'object' && !Array.isArray(message)
+      ? call('notify', { notification: message })
+      : call('notify', { message: String(message), opts: o || {} })),
     license: Object.freeze({ status: () => call('license.status', {}) }),
   });
 
