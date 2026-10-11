@@ -1,0 +1,224 @@
+{
+  "id": "gatecontrol-alltag",
+  "name": {
+    "de": "Alltag",
+    "en": "Everyday"
+  },
+  "version": "1.0.0",
+  "publisher": "CallMeTechie",
+  "description": {
+    "de": "Müllabfuhr und Kalender des Haushalts: Abfuhrtermine aus Online-Abfallkalendern (AbfallNavi, abfall.io, AWIDO), einer ICS-Datei oder eigenen Regeln; iCal-Kalender (Google, iCloud, Outlook, Nextcloud im Heimnetz); Erinnerungen in der App und Termine im Portal „Zuhause“.",
+    "en": "The household’s waste collection and calendars: collection dates from online waste calendars (AbfallNavi, abfall.io, AWIDO), an ICS file or own rules; iCal calendars (Google, iCloud, Outlook, Nextcloud in the home network); reminders in the app and dates in the portal “Home”."
+  },
+  "gatecontrol": ">=1.154.0",
+  "entry": "server/index.js",
+  "permissions": {
+    "network": {
+      "internet": [
+        "calendar.google.com:443",
+        "*.icloud.com:443",
+        "outlook.office365.com:443",
+        "outlook.office.com:443",
+        "outlook.live.com:443",
+        "*.regioit.de:443",
+        "api.abfall.io:443",
+        "widgets.abfall.io:443",
+        "awido.cubefour.de:443"
+      ],
+      "homeTargets": [
+        {
+          "id": "calendar",
+          "label": {
+            "de": "Kalender (Heimnetz)",
+            "en": "Calendar (home network)"
+          },
+          "protocols": [
+            "http"
+          ],
+          "multiple": true
+        }
+      ]
+    },
+    "storage": true,
+    "portal": true,
+    "users": true,
+    "notify": true,
+    "background": {
+      "intervalSeconds": 60
+    }
+  },
+  "ui": {
+    "nav": {
+      "label": {
+        "de": "Alltag",
+        "en": "Everyday"
+      },
+      "icon": "M4 5h16v15H4zM4 10h16M8 3v4M16 3v4M9 14h2M13 14h2M9 17h2"
+    },
+    "pages": [
+      {
+        "id": "main",
+        "title": {
+          "de": "Alltag",
+          "en": "Everyday"
+        }
+      }
+    ],
+    "settings": [
+      {
+        "key": "waste_enabled",
+        "type": "boolean",
+        "label": {
+          "de": "Müllabfuhr",
+          "en": "Waste collection"
+        },
+        "help": {
+          "de": "Abfuhrpläne abrufen, erinnern und im Portal zeigen.",
+          "en": "Fetch collection plans, remind and show them in the portal."
+        },
+        "default": true
+      },
+      {
+        "key": "calendar_enabled",
+        "type": "boolean",
+        "label": {
+          "de": "Kalender",
+          "en": "Calendar"
+        },
+        "help": {
+          "de": "Kalender-Abos abrufen, erinnern und im Portal zeigen.",
+          "en": "Fetch calendar subscriptions, remind and show them in the portal."
+        },
+        "default": true
+      },
+      {
+        "key": "timezone",
+        "type": "text",
+        "label": {
+          "de": "Zeitzone",
+          "en": "Time zone"
+        },
+        "help": {
+          "de": "IANA-Name, z. B. Europe/Berlin – für Abfuhrtage, Erinnerungszeiten und Termine ohne eigene Zeitzone.",
+          "en": "IANA name, e.g. Europe/Berlin – for collection days, reminder times and events without a zone of their own."
+        },
+        "default": "Europe/Berlin"
+      },
+      {
+        "key": "waste_evening_time",
+        "type": "text",
+        "label": {
+          "de": "Müllabfuhr: Erinnerung am Vorabend um",
+          "en": "Waste: reminder the evening before at"
+        },
+        "help": {
+          "de": "HH:MM, z. B. 18:00",
+          "en": "HH:MM, e.g. 18:00"
+        },
+        "default": "18:00"
+      },
+      {
+        "key": "waste_morning",
+        "type": "boolean",
+        "label": {
+          "de": "Müllabfuhr: zusätzlich am Morgen erinnern",
+          "en": "Waste: also remind in the morning"
+        },
+        "default": false
+      },
+      {
+        "key": "waste_morning_time",
+        "type": "text",
+        "label": {
+          "de": "Müllabfuhr: Erinnerung am Morgen um",
+          "en": "Waste: morning reminder at"
+        },
+        "help": {
+          "de": "HH:MM, z. B. 06:30",
+          "en": "HH:MM, e.g. 06:30"
+        },
+        "default": "06:30"
+      },
+      {
+        "key": "calendar_allday_time",
+        "type": "text",
+        "label": {
+          "de": "Kalender: ganztägige Termine melden um",
+          "en": "Calendar: announce all-day events at"
+        },
+        "help": {
+          "de": "HH:MM am Tag des Termins, z. B. 07:00",
+          "en": "HH:MM on the day of the event, e.g. 07:00"
+        },
+        "default": "07:00"
+      },
+      {
+        "key": "notify_lang",
+        "type": "select",
+        "label": {
+          "de": "Sprache der Benachrichtigungen",
+          "en": "Notification language"
+        },
+        "help": {
+          "de": "Wer welche Benachrichtigung bekommt, legst du in GateControl unter System › Benachrichtigungen fest; jede Person kann Themen im Portal oder in der App abschalten.",
+          "en": "Who gets which notification is set in GateControl under System › Notifications; everyone can switch topics off in the portal or the app."
+        },
+        "options": [
+          {
+            "value": "de",
+            "label": "Deutsch"
+          },
+          {
+            "value": "en",
+            "label": "English"
+          }
+        ],
+        "default": "de"
+      }
+    ],
+    "portal": {
+      "sections": [
+        {
+          "id": "waste",
+          "tab": "home",
+          "title": {
+            "de": "Müllabfuhr",
+            "en": "Waste collection"
+          },
+          "order": 30
+        },
+        {
+          "id": "calendar",
+          "tab": "home",
+          "title": {
+            "de": "Termine",
+            "en": "Events"
+          },
+          "order": 31
+        }
+      ]
+    }
+  },
+  "license": {
+    "required": true
+  },
+  "migrations": "migrations",
+  "notifyTopics": [
+    {
+      "id": "waste",
+      "label": {
+        "de": "Müllabfuhr",
+        "en": "Waste collection"
+      },
+      "default": true
+    },
+    {
+      "id": "calendar",
+      "label": {
+        "de": "Termine",
+        "en": "Calendar events"
+      },
+      "default": true
+    }
+  ]
+}

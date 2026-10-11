@@ -1,0 +1,440 @@
+{
+ "provider": "awido",
+ "service": "regensburg",
+ "window": {
+  "from": "2026-10-11",
+  "to": "2026-12-31"
+ },
+ "config": {
+  "service": "regensburg",
+  "place": {
+   "id": "00000000-0000-0000-1000-000000000001",
+   "name": "Regensburg"
+  },
+  "street": {
+   "id": "e36cedd1-f51a-4d97-b670-cd1fb67f7a25",
+   "name": "Rathausplatz"
+  },
+  "house": null
+ },
+ "expected": {
+  "places": 1,
+  "streets": 1323,
+  "houses": 0,
+  "dates": 21,
+  "first": [
+   {
+    "date": "2026-10-12",
+    "name": "große Restmülltonne 770 l , 1100 l ",
+    "color": "#b1b3b4"
+   },
+   {
+    "date": "2026-10-14",
+    "name": "kleine Restmülltonne 60 l , 80 l , 120 l, 240 l",
+    "color": "#b1b3b4"
+   },
+   {
+    "date": "2026-10-14",
+    "name": "Papiertonne",
+    "color": "#d7f5c4"
+   }
+  ]
+ },
+ "recordedAt": "2026-10-11",
+ "responses": [
+  {
+   "method": "GET",
+   "url": "https://awido.cubefour.de/WebServices/Awido.Service.svc/secure/getPlaces/client=regensburg",
+   "status": 200,
+   "body": [
+    {
+     "key": "00000000-0000-0000-1000-000000000001",
+     "value": "Regensburg"
+    }
+   ]
+  },
+  {
+   "method": "GET",
+   "url": "https://awido.cubefour.de/WebServices/Awido.Service.svc/secure/getGroupedStreets/00000000-0000-0000-1000-000000000001?client=regensburg",
+   "status": 200,
+   "body": [
+    {
+     "key": "e8ea990c-a2d7-4b3f-90de-7582363acb07",
+     "value": "Abensstraße"
+    },
+    {
+     "key": "2fcb7da1-8ae4-455a-bf23-e0200926b7cf",
+     "value": "Abt-Adalbert-Straße"
+    },
+    {
+     "key": "4419bb37-eaa3-4beb-a291-de8811de2656",
+     "value": "Ackersegenweg"
+    },
+    {
+     "key": "e36cedd1-f51a-4d97-b670-cd1fb67f7a25",
+     "value": "Rathausplatz"
+    }
+   ]
+  },
+  {
+   "method": "GET",
+   "url": "https://awido.cubefour.de/WebServices/Awido.Service.svc/secure/getStreetAddons/e36cedd1-f51a-4d97-b670-cd1fb67f7a25?client=regensburg",
+   "status": 200,
+   "body": [
+    {
+     "key": "e36cedd1-f51a-4d97-b670-cd1fb67f7a25",
+     "value": ""
+    }
+   ]
+  },
+  {
+   "method": "GET",
+   "url": "https://awido.cubefour.de/WebServices/Awido.Service.svc/secure/getData/e36cedd1-f51a-4d97-b670-cd1fb67f7a25?fractions=&client=regensburg",
+   "status": 200,
+   "body": {
+    "calendar": [
+     {
+      "ad": null,
+      "dt": "20261003",
+      "fr": null,
+      "ft": "Tag der dt. Einheit",
+      "id": null
+     },
+     {
+      "ad": [
+       "Regensburg, Rathausplatz"
+      ],
+      "dt": "20261007",
+      "fr": [
+       "GS"
+      ],
+      "ft": null,
+      "id": [
+       0
+      ]
+     },
+     {
+      "ad": [
+       "Regensburg, Rathausplatz"
+      ],
+      "dt": "20261012",
+      "fr": [
+       "gRM"
+      ],
+      "ft": null,
+      "id": [
+       0
+      ]
+     },
+     {
+      "ad": [
+       "Regensburg, Rathausplatz",
+       "Regensburg, Rathausplatz"
+      ],
+      "dt": "20261014",
+      "fr": [
+       "kRM",
+       "PT"
+      ],
+      "ft": null,
+      "id": [
+       0,
+       0
+      ]
+     },
+     {
+      "ad": [
+       "Regensburg, Rathausplatz"
+      ],
+      "dt": "20261021",
+      "fr": [
+       "GS"
+      ],
+      "ft": null,
+      "id": [
+       0
+      ]
+     },
+     {
+      "ad": [
+       "Regensburg, Rathausplatz"
+      ],
+      "dt": "20261026",
+      "fr": [
+       "gRM"
+      ],
+      "ft": null,
+      "id": [
+       0
+      ]
+     },
+     {
+      "ad": [
+       "Regensburg, Rathausplatz"
+      ],
+      "dt": "20261028",
+      "fr": [
+       "kRM"
+      ],
+      "ft": null,
+      "id": [
+       0
+      ]
+     },
+     {
+      "ad": null,
+      "dt": "20261101",
+      "fr": null,
+      "ft": "Allerheiligen",
+      "id": null
+     },
+     {
+      "ad": [
+       "Regensburg, Rathausplatz"
+      ],
+      "dt": "20261104",
+      "fr": [
+       "GS"
+      ],
+      "ft": null,
+      "id": [
+       0
+      ]
+     },
+     {
+      "ad": [
+       "Regensburg, Rathausplatz"
+      ],
+      "dt": "20261109",
+      "fr": [
+       "gRM"
+      ],
+      "ft": null,
+      "id": [
+       0
+      ]
+     },
+     {
+      "ad": [
+       "Regensburg, Rathausplatz",
+       "Regensburg, Rathausplatz"
+      ],
+      "dt": "20261111",
+      "fr": [
+       "kRM",
+       "PT"
+      ],
+      "ft": null,
+      "id": [
+       0,
+       0
+      ]
+     },
+     {
+      "ad": [
+       "Regensburg, Rathausplatz"
+      ],
+      "dt": "20261118",
+      "fr": [
+       "GS"
+      ],
+      "ft": null,
+      "id": [
+       0
+      ]
+     },
+     {
+      "ad": [
+       "Regensburg, Rathausplatz"
+      ],
+      "dt": "20261123",
+      "fr": [
+       "gRM"
+      ],
+      "ft": null,
+      "id": [
+       0
+      ]
+     },
+     {
+      "ad": [
+       "Regensburg, Rathausplatz"
+      ],
+      "dt": "20261125",
+      "fr": [
+       "kRM"
+      ],
+      "ft": null,
+      "id": [
+       0
+      ]
+     },
+     {
+      "ad": [
+       "Regensburg, Rathausplatz"
+      ],
+      "dt": "20261202",
+      "fr": [
+       "GS"
+      ],
+      "ft": null,
+      "id": [
+       0
+      ]
+     },
+     {
+      "ad": [
+       "Regensburg, Rathausplatz"
+      ],
+      "dt": "20261207",
+      "fr": [
+       "gRM"
+      ],
+      "ft": null,
+      "id": [
+       0
+      ]
+     },
+     {
+      "ad": [
+       "Regensburg, Rathausplatz",
+       "Regensburg, Rathausplatz"
+      ],
+      "dt": "20261209",
+      "fr": [
+       "kRM",
+       "PT"
+      ],
+      "ft": null,
+      "id": [
+       0,
+       0
+      ]
+     },
+     {
+      "ad": [
+       "Regensburg, Rathausplatz"
+      ],
+      "dt": "20261216",
+      "fr": [
+       "GS"
+      ],
+      "ft": null,
+      "id": [
+       0
+      ]
+     },
+     {
+      "ad": [
+       "Regensburg, Rathausplatz"
+      ],
+      "dt": "20261219",
+      "fr": [
+       "gRM"
+      ],
+      "ft": null,
+      "id": [
+       0
+      ]
+     },
+     {
+      "ad": [
+       "Regensburg, Rathausplatz"
+      ],
+      "dt": "20261222",
+      "fr": [
+       "kRM"
+      ],
+      "ft": null,
+      "id": [
+       0
+      ]
+     },
+     {
+      "ad": null,
+      "dt": "20261225",
+      "fr": null,
+      "ft": "1. Weihnachtstag",
+      "id": null
+     },
+     {
+      "ad": null,
+      "dt": "20261226",
+      "fr": null,
+      "ft": "2. Weihnachtstag",
+      "id": null
+     },
+     {
+      "ad": [
+       "Regensburg, Rathausplatz"
+      ],
+      "dt": "20261230",
+      "fr": [
+       "GS"
+      ],
+      "ft": null,
+      "id": [
+       0
+      ]
+     },
+     {
+      "ad": null,
+      "dt": "20270101",
+      "fr": null,
+      "ft": "Neujahr",
+      "id": null
+     },
+     {
+      "ad": null,
+      "dt": "20270106",
+      "fr": null,
+      "ft": "Heilige Drei Könige",
+      "id": null
+     }
+    ],
+    "fracts": [
+     {
+      "nm": "kleine Restmülltonne 60 l , 80 l , 120 l, 240 l",
+      "snm": "kRM",
+      "bg": "#b1b3b4"
+     },
+     {
+      "nm": "große Restmülltonne 770 l , 1100 l ",
+      "snm": "gRM",
+      "bg": "#b1b3b4"
+     },
+     {
+      "nm": "Papiertonne",
+      "snm": "PT",
+      "bg": "#d7f5c4"
+     },
+     {
+      "nm": "Biotonne",
+      "snm": "BT",
+      "bg": "#d4ab71"
+     },
+     {
+      "nm": "Gelber Sack",
+      "snm": "GS",
+      "bg": "#f2db64"
+     },
+     {
+      "nm": "Problemmüll",
+      "snm": "PM",
+      "bg": "#ee8370"
+     },
+     {
+      "nm": "Problemmüll",
+      "snm": "PM",
+      "bg": "#ee8370"
+     },
+     {
+      "nm": "Sperrmüll",
+      "snm": "Sperrmüll",
+      "bg": "#0812cc"
+     }
+    ]
+   }
+  }
+ ]
+}
