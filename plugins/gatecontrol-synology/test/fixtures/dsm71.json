@@ -1,0 +1,37 @@
+{
+  "$comment": "Synthetic DSM 7.1.1 answers: sizes as numbers, no update, no Hyper Backup, no UPS (APIs not listed).",
+  "api_info": {
+    "SYNO.API.Auth": { "maxVersion": 7, "minVersion": 1, "path": "entry.cgi" },
+    "SYNO.DSM.Info": { "maxVersion": 2, "minVersion": 1, "path": "entry.cgi" },
+    "SYNO.Core.System": { "maxVersion": 3, "minVersion": 1, "path": "entry.cgi", "requestFormat": "JSON" },
+    "SYNO.Core.System.Utilization": { "maxVersion": 1, "minVersion": 1, "path": "entry.cgi", "requestFormat": "JSON" },
+    "SYNO.Storage.CGI.Storage": { "maxVersion": 1, "minVersion": 1, "path": "entry.cgi" },
+    "SYNO.Core.Upgrade.Server": { "maxVersion": 3, "minVersion": 1, "path": "entry.cgi", "requestFormat": "JSON" }
+  },
+  "responses": {
+    "SYNO.DSM.Info.getinfo": {
+      "model": "DS218+", "ram": 2048, "serial": "1780PDN000000", "temperature": 49, "temperature_warn": false,
+      "uptime": 86520, "version": "42962", "version_string": "DSM 7.1.1-42962 Update 6"
+    },
+    "SYNO.Core.System.Utilization.get": {
+      "cpu": { "other_load": 0, "system_load": 12, "user_load": 30, "1min_load": 80, "5min_load": 70, "15min_load": 60 },
+      "memory": { "total_real": 1975332, "avail_real": 395066, "memory_size": 2097152 }
+    },
+    "SYNO.Storage.CGI.Storage.load_info": {
+      "disks": [
+        { "id": "sata1", "name": "Disk 1", "model": "ST4000VN008-2DR166", "vendor": "Seagate", "size_total": 4000787030016, "temp": 39,
+          "status": "normal", "smart_status": "normal", "overview_status": "normal" },
+        { "id": "sata2", "name": "Disk 2", "model": "ST4000VN008-2DR166", "vendor": "Seagate", "size_total": 4000787030016, "temp": 40,
+          "status": "warning", "smart_status": "warning", "overview_status": "warning", "exceed_bad_sector_thr": true }
+      ],
+      "storagePools": [
+        { "id": "reuse_1", "num_id": 1, "device_type": "raid_1", "status": "degraded", "size": { "total": 3995587264512, "used": 3995587264512 }, "disks": ["sata1", "sata2"] }
+      ],
+      "volumes": [
+        { "id": "volume_1", "vol_path": "/volume1", "pool_path": "reuse_1", "status": "degraded", "fs_type": "ext4",
+          "size": { "total": 3838127013888, "used": 3531076852777 } }
+      ]
+    },
+    "SYNO.Core.Upgrade.Server.check": { "update": { "available": false } }
+  }
+}

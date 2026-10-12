@@ -1,0 +1,186 @@
+{
+  "id": "gatecontrol-synology",
+  "name": {
+    "de": "NAS (Synology)",
+    "en": "NAS (Synology)"
+  },
+  "version": "1.0.0",
+  "publisher": "CallMeTechie",
+  "description": {
+    "de": "Synology-NAS im Heimnetz überwachen und steuern (DSM Web API): Modell, DSM-Version, CPU/RAM, Temperatur, Volumes, Speicherpools, Laufwerke mit S.M.A.R.T.-Status, DSM-Updates, Hyper Backup und USV; Neustart und Herunterfahren; Benachrichtigungen bei Ausfall, beeinträchtigtem Speicher, Laufwerksproblemen, vollem Speicher, Updates und fehlgeschlagenen Sicherungen. Nur für Administratoren.",
+    "en": "Monitor and control Synology NAS in the home network (DSM Web API): model, DSM version, CPU/RAM, temperature, volumes, storage pools, drives with S.M.A.R.T. status, DSM updates, Hyper Backup and UPS; reboot and shut down; notifications on outages, degraded storage, drive problems, full storage, updates and failed backups. Administrators only."
+  },
+  "gatecontrol": ">=1.154.0",
+  "entry": "server/index.js",
+  "permissions": {
+    "network": {
+      "homeTargets": [
+        {
+          "id": "nas",
+          "label": {
+            "de": "Synology-NAS (DSM)",
+            "en": "Synology NAS (DSM)"
+          },
+          "protocols": [
+            "http"
+          ],
+          "multiple": true
+        }
+      ]
+    },
+    "storage": true,
+    "notify": true,
+    "background": {
+      "intervalSeconds": 60
+    }
+  },
+  "ui": {
+    "nav": {
+      "label": {
+        "de": "NAS (Synology)",
+        "en": "NAS (Synology)"
+      },
+      "icon": "M5 3h14v18H5zM8 7h8M8 11h8M9 16.5h.01M12 16.5h.01M15 16.5h.01"
+    },
+    "pages": [
+      {
+        "id": "main",
+        "title": {
+          "de": "NAS (Synology)",
+          "en": "NAS (Synology)"
+        }
+      }
+    ],
+    "settings": [
+      {
+        "key": "poll_interval",
+        "type": "number",
+        "label": {
+          "de": "Abfrageintervall (Sekunden)",
+          "en": "Polling interval (seconds)"
+        },
+        "help": {
+          "de": "Wie oft jedes NAS abgefragt wird (60–3600). Bei Fehlern wird der Abstand nach und nach größer.",
+          "en": "How often each NAS is polled (60–3600). After errors the gap grows step by step."
+        },
+        "min": 60,
+        "max": 3600,
+        "default": 120
+      },
+      {
+        "key": "unreachable_polls",
+        "type": "number",
+        "label": {
+          "de": "„Nicht erreichbar“ nach Fehlversuchen",
+          "en": "“Unreachable” after failed polls"
+        },
+        "help": {
+          "de": "So viele Abfragen hintereinander müssen scheitern, bevor gemeldet wird, dass ein NAS nicht erreichbar ist (1–20).",
+          "en": "This many polls in a row must fail before a NAS is reported as unreachable (1–20)."
+        },
+        "min": 1,
+        "max": 20,
+        "default": 3
+      },
+      {
+        "key": "storage_full_pct",
+        "type": "number",
+        "label": {
+          "de": "Speicher fast voll ab (%)",
+          "en": "Storage almost full at (%)"
+        },
+        "min": 50,
+        "max": 99,
+        "default": 90
+      },
+      {
+        "key": "disk_temp_max",
+        "type": "number",
+        "label": {
+          "de": "Laufwerkstemperatur zu hoch ab (°C)",
+          "en": "Drive temperature too high at (°C)"
+        },
+        "min": 40,
+        "max": 80,
+        "default": 55
+      },
+      {
+        "key": "notify_lang",
+        "type": "select",
+        "label": {
+          "de": "Sprache der Benachrichtigungen",
+          "en": "Notification language"
+        },
+        "help": {
+          "de": "Wer welche Benachrichtigung bekommt, legst du in GateControl unter System › Benachrichtigungen fest (z. B. nur Administratoren).",
+          "en": "Who gets which notification is set in GateControl under System › Notifications (e.g. administrators only)."
+        },
+        "options": [
+          {
+            "value": "de",
+            "label": "Deutsch"
+          },
+          {
+            "value": "en",
+            "label": "English"
+          }
+        ],
+        "default": "de"
+      }
+    ]
+  },
+  "license": {
+    "required": true
+  },
+  "migrations": "migrations",
+  "notifyTopics": [
+    {
+      "id": "unreachable",
+      "label": {
+        "de": "NAS nicht erreichbar",
+        "en": "NAS unreachable"
+      },
+      "default": true
+    },
+    {
+      "id": "storage",
+      "label": {
+        "de": "NAS-Speicher (beeinträchtigt, fast voll)",
+        "en": "NAS storage (degraded, almost full)"
+      },
+      "default": true
+    },
+    {
+      "id": "disk",
+      "label": {
+        "de": "NAS-Laufwerke (Zustand, Temperatur)",
+        "en": "NAS drives (health, temperature)"
+      },
+      "default": true
+    },
+    {
+      "id": "backup",
+      "label": {
+        "de": "NAS-Datensicherung fehlgeschlagen",
+        "en": "NAS backup failed"
+      },
+      "default": true
+    },
+    {
+      "id": "update",
+      "label": {
+        "de": "DSM-Update verfügbar",
+        "en": "DSM update available"
+      },
+      "default": true
+    },
+    {
+      "id": "power",
+      "label": {
+        "de": "NAS neu gestartet / heruntergefahren",
+        "en": "NAS restarted / shut down"
+      },
+      "default": true
+    }
+  ]
+}

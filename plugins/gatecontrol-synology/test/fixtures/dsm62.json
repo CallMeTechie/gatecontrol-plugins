@@ -1,0 +1,33 @@
+{
+  "$comment": "Synthetic DSM 6.2.4 answers: SYNO.API.Auth at auth.cgi (max version 6), no SYNO.Storage.CGI.Storage in this fixture (fallback SYNO.Core.System type=storage), DSM 6 update shape.",
+  "api_info": {
+    "SYNO.API.Auth": { "maxVersion": 6, "minVersion": 1, "path": "auth.cgi" },
+    "SYNO.DSM.Info": { "maxVersion": 2, "minVersion": 1, "path": "entry.cgi" },
+    "SYNO.Core.System": { "maxVersion": 1, "minVersion": 1, "path": "entry.cgi" },
+    "SYNO.Core.System.Utilization": { "maxVersion": 1, "minVersion": 1, "path": "entry.cgi" },
+    "SYNO.Core.Upgrade.Server": { "maxVersion": 2, "minVersion": 1, "path": "entry.cgi" }
+  },
+  "responses": {
+    "SYNO.DSM.Info.getinfo": {
+      "model": "DS216j", "ram": 512, "serial": "1650LWN000000", "temperature": 41, "temperature_warn": false,
+      "uptime": 3600, "version": "25556", "version_string": "DSM 6.2.4-25556 Update 7"
+    },
+    "SYNO.Core.System.info": {
+      "firmware_ver": "DSM 6.2.4-25556 Update 7", "model": "DS216j", "ram_size": 512, "sys_temp": 41, "sys_tempwarn": false, "up_time": "1:00:00"
+    },
+    "SYNO.Core.System.info:storage": {
+      "hdd_info": [
+        { "capacity": "3000592982016", "diskno": "Disk 1", "model": "WD30EFRX-68EUZN0", "status": "normal", "temp": 33, "volume": "volume_1" },
+        { "capacity": "3000592982016", "diskno": "Disk 2", "model": "WD30EFRX-68EUZN0", "status": "normal", "temp": 34, "volume": "volume_1" }
+      ],
+      "vol_info": [
+        { "name": "volume_1", "status": "normal", "total_size": "2879180136448", "used_size": "1439590068224", "vol_desc": "" }
+      ]
+    },
+    "SYNO.Core.System.Utilization.get": {
+      "cpu": { "other_load": 2, "system_load": 3, "user_load": 5 },
+      "memory": { "real_usage": 45 }
+    },
+    "SYNO.Core.Upgrade.Server.check": { "available": true, "version": "DSM 6.2.4-25556 Update 8", "reboot": "now" }
+  }
+}
