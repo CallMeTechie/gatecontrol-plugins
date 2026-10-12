@@ -1,0 +1,255 @@
+<main class="at-page">
+  <div class="page-header">
+    <div>
+      <div class="page-eyebrow">{{t:eyebrow}}</div>
+      <h1 class="page-title">{{t:title}}</h1>
+      <div class="page-sub">{{t:subtitle}}</div>
+    </div>
+  </div>
+  <div class="at-tabs" role="tablist">
+    <button type="button" role="tab" class="at-tab active" id="at-tab-waste" aria-selected="true" aria-controls="at-pane-waste">{{t:tab.waste}}</button>
+    <button type="button" role="tab" class="at-tab" id="at-tab-calendar" aria-selected="false" aria-controls="at-pane-calendar">{{t:tab.calendar}}</button>
+  </div>
+  <div class="banner banner-warn" id="at-problems" role="status" hidden></div>
+
+  <section id="at-pane-waste" role="tabpanel" aria-labelledby="at-tab-waste">
+    <div class="banner banner-warn" id="at-waste-off" hidden>{{t:waste.disabled}}</div>
+    <div class="at-bar">
+      <div class="at-bar-info" id="at-waste-info"></div>
+      <div class="page-actions">
+        <button class="btn" type="button" id="at-waste-test">{{t:test.send}}</button>
+        <button class="btn btn-primary" type="button" id="at-plan-add">{{t:plan.add}}</button>
+      </div>
+    </div>
+    <div class="at-grid" id="at-plans"></div>
+  </section>
+
+  <section id="at-pane-calendar" role="tabpanel" aria-labelledby="at-tab-calendar" hidden>
+    <div class="banner banner-warn" id="at-cal-off" hidden>{{t:cal.disabled}}</div>
+    <div class="at-bar">
+      <div class="at-bar-info" id="at-cal-info"></div>
+      <div class="page-actions">
+        <button class="btn" type="button" id="at-cal-test">{{t:test.send}}</button>
+        <button class="btn btn-primary" type="button" id="at-sub-add">{{t:sub.add}}</button>
+      </div>
+    </div>
+    <div class="at-grid" id="at-subs"></div>
+  </section>
+
+  <!-- Abfuhrplan -->
+  <div class="modal-overlay" id="at-plan-modal" role="dialog" aria-modal="true" aria-labelledby="at-plan-title" hidden>
+    <div class="modal modal-wide">
+      <div class="modal-head">
+        <div class="modal-title" id="at-plan-title">{{t:plan.add}}</div>
+        <button class="btn modal-close" type="button" data-close="at-plan-modal" aria-label="{{t:common.close}}">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label class="form-label" for="at-p-name">{{t:plan.name}}</label>
+          <input class="form-input" id="at-p-name" type="text" maxlength="60" placeholder="{{t:plan.name_ph}}" autocomplete="off">
+        </div>
+        <div class="form-label">{{t:plan.source}}</div>
+        <div class="at-seg" role="tablist" id="at-p-source">
+          <button type="button" class="at-seg-btn active" data-source="provider">{{t:source.provider}}</button>
+          <button type="button" class="at-seg-btn" data-source="ics">{{t:source.ics}}</button>
+          <button type="button" class="at-seg-btn" data-source="rules">{{t:source.rules}}</button>
+        </div>
+
+        <div class="at-box" id="at-p-provider">
+          <p class="form-hint">{{t:provider.hint}}</p>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label" for="at-p-prov">{{t:provider.provider}}</label>
+              <select class="form-select" id="at-p-prov"></select>
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="at-p-service">{{t:provider.service}}</label>
+              <select class="form-select" id="at-p-service"></select>
+            </div>
+          </div>
+          <div class="form-group" id="at-p-custom-group" hidden>
+            <label class="form-label" for="at-p-custom">{{t:provider.custom}}</label>
+            <input class="form-input" id="at-p-custom" type="text" maxlength="40" autocomplete="off">
+            <span class="form-hint">{{t:provider.custom_hint}}</span>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="at-p-place">{{t:provider.place}}</label>
+            <select class="form-select" id="at-p-place" disabled></select>
+          </div>
+          <div class="form-group" id="at-p-street-group" hidden>
+            <label class="form-label" for="at-p-street-filter">{{t:provider.street}}</label>
+            <input class="form-input" id="at-p-street-filter" type="search" placeholder="{{t:provider.street_filter}}" autocomplete="off">
+            <select class="form-select" id="at-p-street" size="6"></select>
+          </div>
+          <div class="form-group" id="at-p-house-group" hidden>
+            <label class="form-label" for="at-p-house">{{t:provider.house}}</label>
+            <select class="form-select" id="at-p-house"></select>
+          </div>
+          <button class="btn btn-sm" type="button" id="at-p-preview" disabled>{{t:provider.preview}}</button>
+          <p class="at-msg" id="at-p-prov-msg" role="status"></p>
+          <div class="at-preview" id="at-p-preview-list"></div>
+        </div>
+
+        <div class="at-box" id="at-p-ics" hidden>
+          <p class="form-hint">{{t:ics.hint}}</p>
+          <div class="form-group">
+            <label class="form-label" for="at-p-file">{{t:ics.file}}</label>
+            <input class="form-input" id="at-p-file" type="file" accept=".ics,.ical,.ifb,.icalendar,text/calendar">
+          </div>
+          <details class="at-details">
+            <summary>{{t:ics.paste}}</summary>
+            <textarea class="form-input" id="at-p-ics-text" spellcheck="false" placeholder="BEGIN:VCALENDAR …"></textarea>
+          </details>
+          <p class="at-msg" id="at-p-ics-msg" role="status"></p>
+          <div class="at-preview" id="at-p-ics-preview"></div>
+        </div>
+
+        <div class="at-box" id="at-p-rules" hidden>
+          <p class="form-hint">{{t:rules.hint}}</p>
+          <div class="at-rows" id="at-p-rule-rows"></div>
+          <button class="btn btn-sm" type="button" id="at-p-rule-add">{{t:rules.add}}</button>
+        </div>
+
+        <details class="at-details at-box" id="at-p-exc-box">
+          <summary>{{t:exc.title}}</summary>
+          <p class="form-hint">{{t:exc.hint}}</p>
+          <div class="at-rows" id="at-p-exc-rows"></div>
+          <button class="btn btn-sm" type="button" id="at-p-exc-add">{{t:exc.add}}</button>
+        </details>
+
+        <div class="form-group">
+          <div class="form-label">{{t:plan.people}}</div>
+          <label class="check"><input type="radio" name="at-p-users" value="all" id="at-p-users-all" checked> {{t:plan.people_all}}</label>
+          <label class="check"><input type="radio" name="at-p-users" value="some" id="at-p-users-some"> {{t:plan.people_some}}</label>
+          <div class="at-check-list" id="at-p-user-list" hidden></div>
+          <span class="form-hint">{{t:plan.people_hint}}</span>
+        </div>
+        <label class="check"><input type="checkbox" id="at-p-enabled" checked> {{t:plan.enabled}}</label>
+        <p class="at-msg" id="at-p-msg" role="status"></p>
+      </div>
+      <div class="modal-foot">
+        <button class="btn btn-danger" type="button" id="at-p-delete" hidden>{{t:common.delete}}</button>
+        <button class="btn" type="button" data-close="at-plan-modal">{{t:common.cancel}}</button>
+        <button class="btn btn-primary" type="button" id="at-p-save">{{t:common.save}}</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Fraktion -->
+  <div class="modal-overlay" id="at-frac-modal" role="dialog" aria-modal="true" aria-labelledby="at-f-title" hidden>
+    <div class="modal">
+      <div class="modal-head">
+        <div class="modal-title" id="at-f-title">{{t:frac.title}}</div>
+        <button class="btn modal-close" type="button" data-close="at-frac-modal" aria-label="{{t:common.close}}">×</button>
+      </div>
+      <div class="modal-body">
+        <p class="form-hint" id="at-f-source"></p>
+        <div class="form-group">
+          <label class="form-label" for="at-f-name">{{t:frac.name}}</label>
+          <input class="form-input" id="at-f-name" type="text" maxlength="60" autocomplete="off">
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label" for="at-f-type">{{t:frac.type}}</label>
+            <select class="form-select" id="at-f-type"></select>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="at-f-color">{{t:frac.color}}</label>
+            <input class="form-input at-color" id="at-f-color" type="color">
+          </div>
+        </div>
+        <label class="check"><input type="checkbox" id="at-f-hidden"> {{t:frac.hidden}}</label>
+      </div>
+      <div class="modal-foot">
+        <button class="btn" type="button" id="at-f-reset">{{t:frac.reset}}</button>
+        <button class="btn" type="button" data-close="at-frac-modal">{{t:common.cancel}}</button>
+        <button class="btn btn-primary" type="button" id="at-f-save">{{t:common.save}}</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Kalender-Abo -->
+  <div class="modal-overlay" id="at-sub-modal" role="dialog" aria-modal="true" aria-labelledby="at-s-title" hidden>
+    <div class="modal modal-wide">
+      <div class="modal-head">
+        <div class="modal-title" id="at-s-title">{{t:sub.add}}</div>
+        <button class="btn modal-close" type="button" data-close="at-sub-modal" aria-label="{{t:common.close}}">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label" for="at-s-name">{{t:sub.name}}</label>
+            <input class="form-input" id="at-s-name" type="text" maxlength="60" autocomplete="off">
+          </div>
+          <div class="form-group" style="flex:0 0 80px">
+            <label class="form-label" for="at-s-color">{{t:sub.color}}</label>
+            <input class="form-input at-color" id="at-s-color" type="color" value="#0d9488">
+          </div>
+        </div>
+        <div class="at-seg" role="tablist" id="at-s-source">
+          <button type="button" class="at-seg-btn active" data-source="url">{{t:sub.source_url}}</button>
+          <button type="button" class="at-seg-btn" data-source="target">{{t:sub.source_target}}</button>
+        </div>
+        <div class="at-box" id="at-s-url-box">
+          <div class="form-group">
+            <label class="form-label" for="at-s-url">{{t:sub.url}}</label>
+            <input class="form-input" id="at-s-url" type="password" autocomplete="off" spellcheck="false" placeholder="https://calendar.google.com/calendar/ical/…/basic.ics">
+            <span class="form-hint" id="at-s-url-hint"></span>
+          </div>
+          <p class="form-hint" id="at-s-hosts"></p>
+        </div>
+        <div class="at-box" id="at-s-target-box" hidden>
+          <p class="form-hint">{{t:sub.target_hint}}</p>
+          <div class="form-group">
+            <label class="form-label" for="at-s-target">{{t:sub.target}}</label>
+            <select class="form-select" id="at-s-target"></select>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="at-s-path">{{t:sub.path}}</label>
+            <input class="form-input" id="at-s-path" type="text" maxlength="1000" autocomplete="off" spellcheck="false" placeholder="/remote.php/dav/calendars/…/?export">
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label" for="at-s-user">{{t:sub.username}}</label>
+              <input class="form-input" id="at-s-user" type="text" maxlength="200" autocomplete="off">
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="at-s-pass">{{t:sub.password}}</label>
+              <input class="form-input" id="at-s-pass" type="password" maxlength="500" autocomplete="new-password">
+            </div>
+          </div>
+          <span class="form-hint" id="at-s-cred-hint"></span>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label" for="at-s-reminder">{{t:sub.reminder}}</label>
+            <select class="form-select" id="at-s-reminder">
+              <option value="off">{{t:reminder.off}}</option>
+              <option value="start">{{t:reminder.start}}</option>
+              <option value="10">{{t:reminder.10}}</option>
+              <option value="15">{{t:reminder.15}}</option>
+              <option value="30">{{t:reminder.30}}</option>
+              <option value="60">{{t:reminder.60}}</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <span class="form-label">&nbsp;</span>
+            <label class="check"><input type="checkbox" id="at-s-allday" checked> {{t:sub.allday}}</label>
+          </div>
+        </div>
+        <div class="form-group">
+          <div class="form-label">{{t:sub.people}}</div>
+          <span class="form-hint">{{t:sub.people_hint}}</span>
+          <div class="at-check-list" id="at-s-user-list"></div>
+        </div>
+        <label class="check"><input type="checkbox" id="at-s-enabled" checked> {{t:sub.enabled}}</label>
+        <p class="at-msg" id="at-s-msg" role="status"></p>
+      </div>
+      <div class="modal-foot">
+        <button class="btn btn-danger" type="button" id="at-s-delete" hidden>{{t:common.delete}}</button>
+        <button class="btn" type="button" data-close="at-sub-modal">{{t:common.cancel}}</button>
+        <button class="btn btn-primary" type="button" id="at-s-save">{{t:common.save}}</button>
+      </div>
+    </div>
+  </div>
+</main>

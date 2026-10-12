@@ -1,0 +1,732 @@
+{
+ "provider": "regioit",
+ "service": "aachen",
+ "window": {
+  "from": "2026-10-11",
+  "to": "2026-12-31"
+ },
+ "config": {
+  "service": "aachen",
+  "place": {
+   "id": "11578729",
+   "name": "Aachen"
+  },
+  "street": {
+   "id": "12039239",
+   "name": "Markt"
+  },
+  "house": {
+   "id": "12039240",
+   "name": "1-3"
+  }
+ },
+ "expected": {
+  "places": 1,
+  "streets": 1369,
+  "houses": 27,
+  "dates": 28,
+  "first": [
+   {
+    "date": "2026-10-16",
+    "name": "Gelber Sack",
+    "color": "#ffd700"
+   },
+   {
+    "date": "2026-10-30",
+    "name": "Gelber Sack",
+    "color": "#ffd700"
+   },
+   {
+    "date": "2026-11-13",
+    "name": "Gelber Sack",
+    "color": "#ffd700"
+   }
+  ]
+ },
+ "recordedAt": "2026-10-11",
+ "responses": [
+  {
+   "method": "GET",
+   "url": "https://aachen-abfallapp.regioit.de/abfall-app-aachen/rest/orte",
+   "status": 200,
+   "body": [
+    {
+     "id": 11578729,
+     "name": "Aachen"
+    }
+   ]
+  },
+  {
+   "method": "GET",
+   "url": "https://aachen-abfallapp.regioit.de/abfall-app-aachen/rest/orte/11578729/strassen",
+   "status": 200,
+   "body": [
+    {
+     "id": 12013779,
+     "name": "Aachener Straße",
+     "staticId": "QWFjaGVuZGVmYXVsdEFhY2hlbmVyIFN0cmHfZQ==",
+     "hausNrList": [],
+     "plz": null,
+     "gueltigBis": null,
+     "ortsteilName": "default",
+     "ort": {
+      "id": 11578729,
+      "name": "Aachen"
+     }
+    },
+    {
+     "id": 12013890,
+     "name": "Aachener-und-Münchener-Allee",
+     "staticId": "QWFjaGVuZGVmYXVsdEFhY2hlbmVyLXVuZC1N/G5jaGVuZXItQWxsZWU=",
+     "hausNrList": [],
+     "plz": null,
+     "gueltigBis": null,
+     "ortsteilName": "default",
+     "ort": {
+      "id": 11578729,
+      "name": "Aachen"
+     }
+    },
+    {
+     "id": 12013773,
+     "name": "AachenMünchener-Platz",
+     "staticId": "QWFjaGVuZGVmYXVsdEFhY2hlbk38bmNoZW5lci1QbGF0eg==",
+     "hausNrList": [],
+     "plz": null,
+     "gueltigBis": null,
+     "ortsteilName": "default",
+     "ort": {
+      "id": 11578729,
+      "name": "Aachen"
+     }
+    },
+    {
+     "id": 12039239,
+     "name": "Markt",
+     "staticId": "QWFjaGVuZGVmYXVsdE1hcmt0",
+     "hausNrList": [],
+     "plz": null,
+     "gueltigBis": null,
+     "ortsteilName": "default",
+     "ort": {
+      "id": 11578729,
+      "name": "Aachen"
+     }
+    }
+   ]
+  },
+  {
+   "method": "GET",
+   "url": "https://aachen-abfallapp.regioit.de/abfall-app-aachen/rest/strassen/12039239",
+   "status": 200,
+   "body": {
+    "id": 12039239,
+    "name": "Markt",
+    "staticId": "QWFjaGVuZGVmYXVsdE1hcmt0",
+    "hausNrList": [
+     {
+      "id": 12039240,
+      "nr": "1-3",
+      "plz": "",
+      "staticId": "QWFjaGVuTWFya3QxLTM=",
+      "gueltigBis": null
+     },
+     {
+      "id": 12039243,
+      "nr": "2-12",
+      "plz": "",
+      "staticId": "QWFjaGVuTWFya3QyLTEy",
+      "gueltigBis": null
+     },
+     {
+      "id": 12039264,
+      "nr": "5",
+      "plz": "",
+      "staticId": "QWFjaGVuTWFya3Q1",
+      "gueltigBis": null
+     },
+     {
+      "id": 12039265,
+      "nr": "7",
+      "plz": "",
+      "staticId": "QWFjaGVuTWFya3Q3",
+      "gueltigBis": null
+     }
+    ],
+    "plz": null,
+    "gueltigBis": null,
+    "ortsteilName": "default",
+    "ort": {
+     "id": 11578729,
+     "name": "Aachen"
+    }
+   }
+  },
+  {
+   "method": "GET",
+   "url": "https://aachen-abfallapp.regioit.de/abfall-app-aachen/rest/fraktionen",
+   "status": 200,
+   "body": [
+    {
+     "id": 0,
+     "name": "Bio 2wö",
+     "iconNr": 24,
+     "farbeRgb": "228B22",
+     "material": []
+    },
+    {
+     "id": 1,
+     "name": "Gelber Sack",
+     "iconNr": 12,
+     "farbeRgb": "FFD700",
+     "material": []
+    },
+    {
+     "id": 2,
+     "name": "Altpapier 2500",
+     "iconNr": 68,
+     "farbeRgb": "0074ff",
+     "material": []
+    },
+    {
+     "id": 3,
+     "name": "Altpapier 5000",
+     "iconNr": 68,
+     "farbeRgb": "0074ff",
+     "material": []
+    },
+    {
+     "id": 4,
+     "name": "Altpapier 4wö",
+     "iconNr": 11,
+     "farbeRgb": "0074ff",
+     "material": []
+    },
+    {
+     "id": 5,
+     "name": "Altpapier 4wö 1100",
+     "iconNr": 68,
+     "farbeRgb": "0074ff",
+     "material": []
+    },
+    {
+     "id": 6,
+     "name": "Altpapier 4wö 770",
+     "iconNr": 68,
+     "farbeRgb": "0074ff",
+     "material": []
+    },
+    {
+     "id": 7,
+     "name": "Restabfall",
+     "iconNr": 28,
+     "farbeRgb": "C0C0C0C0",
+     "material": []
+    },
+    {
+     "id": 8,
+     "name": "Restabfall 1100",
+     "iconNr": 34,
+     "farbeRgb": "C0C0C0C0",
+     "material": []
+    },
+    {
+     "id": 9,
+     "name": "Restabfall 2500",
+     "iconNr": 34,
+     "farbeRgb": "C0C0C0C0",
+     "material": []
+    },
+    {
+     "id": 10,
+     "name": "Restabfall 770",
+     "iconNr": 34,
+     "farbeRgb": "C0C0C0C0",
+     "material": []
+    },
+    {
+     "id": 11,
+     "name": "Restabfall 2wö",
+     "iconNr": 73,
+     "farbeRgb": "d20e0e",
+     "material": []
+    },
+    {
+     "id": 12,
+     "name": "Restabfall 2wö 1100",
+     "iconNr": 70,
+     "farbeRgb": "d20e0e",
+     "material": []
+    },
+    {
+     "id": 13,
+     "name": "Restabfall 2wö 770",
+     "iconNr": 70,
+     "farbeRgb": "d20e0e",
+     "material": []
+    },
+    {
+     "id": 14,
+     "name": "Restabfall 4wö",
+     "iconNr": 53,
+     "farbeRgb": "f9f4ea",
+     "material": []
+    },
+    {
+     "id": 15,
+     "name": "Restabfall 4wö 770",
+     "iconNr": 70,
+     "farbeRgb": "f9f4ea",
+     "material": []
+    },
+    {
+     "id": 16,
+     "name": "Restabfall wö 5000",
+     "iconNr": 70,
+     "farbeRgb": "f9f4ea",
+     "material": []
+    },
+    {
+     "id": 17,
+     "name": "Altpapier 1100",
+     "iconNr": 68,
+     "farbeRgb": "0074ff",
+     "material": []
+    },
+    {
+     "id": 18,
+     "name": "Restabfall 4wö 1100",
+     "iconNr": 34,
+     "farbeRgb": "C0C0C0C0",
+     "material": []
+    },
+    {
+     "id": 19,
+     "name": "Altpapier wö",
+     "iconNr": 11,
+     "farbeRgb": "0074ff",
+     "material": []
+    },
+    {
+     "id": 20,
+     "name": "Altpapier wö 770",
+     "iconNr": 68,
+     "farbeRgb": "0074ff",
+     "material": []
+    },
+    {
+     "id": 21,
+     "name": "Altpapier 2wö",
+     "iconNr": 11,
+     "farbeRgb": "0074ff",
+     "material": []
+    },
+    {
+     "id": 22,
+     "name": "Altpapier 2wö 1100",
+     "iconNr": 68,
+     "farbeRgb": "0074ff",
+     "material": []
+    },
+    {
+     "id": 23,
+     "name": "Weihnachtsbaum",
+     "iconNr": 14,
+     "farbeRgb": "7CFC00",
+     "material": []
+    }
+   ]
+  },
+  {
+   "method": "GET",
+   "url": "https://aachen-abfallapp.regioit.de/abfall-app-aachen/rest/hausnummern/12039240/termine?fraktion=0&fraktion=1&fraktion=2&fraktion=3&fraktion=4&fraktion=5&fraktion=6&fraktion=7&fraktion=8&fraktion=9&fraktion=10&fraktion=11&fraktion=12&fraktion=13&fraktion=14&fraktion=15&fraktion=16&fraktion=17&fraktion=18&fraktion=19&fraktion=20&fraktion=21&fraktion=22&fraktion=23",
+   "status": 200,
+   "body": [
+    {
+     "id": 12058877,
+     "bezirk": {
+      "id": 12013776,
+      "name": "A2",
+      "gueltigAb": "2026-01-01",
+      "fraktionId": 1
+     },
+     "datum": "2026-10-02",
+     "jahr": 2026,
+     "info": null
+    },
+    {
+     "id": 12059072,
+     "bezirk": {
+      "id": 12013776,
+      "name": "A2",
+      "gueltigAb": "2026-01-01",
+      "fraktionId": 1
+     },
+     "datum": "2026-10-16",
+     "jahr": 2026,
+     "info": null
+    },
+    {
+     "id": 12059276,
+     "bezirk": {
+      "id": 12013776,
+      "name": "A2",
+      "gueltigAb": "2026-01-01",
+      "fraktionId": 1
+     },
+     "datum": "2026-10-30",
+     "jahr": 2026,
+     "info": null
+    },
+    {
+     "id": 12059471,
+     "bezirk": {
+      "id": 12013776,
+      "name": "A2",
+      "gueltigAb": "2026-01-01",
+      "fraktionId": 1
+     },
+     "datum": "2026-11-13",
+     "jahr": 2026,
+     "info": null
+    },
+    {
+     "id": 12059675,
+     "bezirk": {
+      "id": 12013776,
+      "name": "A2",
+      "gueltigAb": "2026-01-01",
+      "fraktionId": 1
+     },
+     "datum": "2026-11-27",
+     "jahr": 2026,
+     "info": null
+    },
+    {
+     "id": 12059870,
+     "bezirk": {
+      "id": 12013776,
+      "name": "A2",
+      "gueltigAb": "2026-01-01",
+      "fraktionId": 1
+     },
+     "datum": "2026-12-11",
+     "jahr": 2026,
+     "info": null
+    },
+    {
+     "id": 12060074,
+     "bezirk": {
+      "id": 12013776,
+      "name": "A2",
+      "gueltigAb": "2026-01-01",
+      "fraktionId": 1
+     },
+     "datum": "2026-12-24",
+     "jahr": 2026,
+     "info": null
+    },
+    {
+     "id": 12059075,
+     "bezirk": {
+      "id": 12013795,
+      "name": "A5",
+      "gueltigAb": "2026-01-01",
+      "fraktionId": 4
+     },
+     "datum": "2026-10-16",
+     "jahr": 2026,
+     "info": null
+    },
+    {
+     "id": 12059474,
+     "bezirk": {
+      "id": 12013795,
+      "name": "A5",
+      "gueltigAb": "2026-01-01",
+      "fraktionId": 4
+     },
+     "datum": "2026-11-13",
+     "jahr": 2026,
+     "info": null
+    },
+    {
+     "id": 12059873,
+     "bezirk": {
+      "id": 12013795,
+      "name": "A5",
+      "gueltigAb": "2026-01-01",
+      "fraktionId": 4
+     },
+     "datum": "2026-12-11",
+     "jahr": 2026,
+     "info": null
+    },
+    {
+     "id": 12059078,
+     "bezirk": {
+      "id": 12014725,
+      "name": "A5",
+      "gueltigAb": "2026-01-01",
+      "fraktionId": 6
+     },
+     "datum": "2026-10-16",
+     "jahr": 2026,
+     "info": null
+    },
+    {
+     "id": 12059477,
+     "bezirk": {
+      "id": 12014725,
+      "name": "A5",
+      "gueltigAb": "2026-01-01",
+      "fraktionId": 6
+     },
+     "datum": "2026-11-13",
+     "jahr": 2026,
+     "info": null
+    },
+    {
+     "id": 12059876,
+     "bezirk": {
+      "id": 12014725,
+      "name": "A5",
+      "gueltigAb": "2026-01-01",
+      "fraktionId": 6
+     },
+     "datum": "2026-12-11",
+     "jahr": 2026,
+     "info": null
+    },
+    {
+     "id": 12058884,
+     "bezirk": {
+      "id": 12014029,
+      "name": "A21",
+      "gueltigAb": "2026-01-01",
+      "fraktionId": 7
+     },
+     "datum": "2026-10-02",
+     "jahr": 2026,
+     "info": null
+    },
+    {
+     "id": 12058977,
+     "bezirk": {
+      "id": 12014029,
+      "name": "A21",
+      "gueltigAb": "2026-01-01",
+      "fraktionId": 7
+     },
+     "datum": "2026-10-09",
+     "jahr": 2026,
+     "info": null
+    },
+    {
+     "id": 12059079,
+     "bezirk": {
+      "id": 12014029,
+      "name": "A21",
+      "gueltigAb": "2026-01-01",
+      "fraktionId": 7
+     },
+     "datum": "2026-10-16",
+     "jahr": 2026,
+     "info": null
+    },
+    {
+     "id": 12059177,
+     "bezirk": {
+      "id": 12014029,
+      "name": "A21",
+      "gueltigAb": "2026-01-01",
+      "fraktionId": 7
+     },
+     "datum": "2026-10-23",
+     "jahr": 2026,
+     "info": null
+    },
+    {
+     "id": 12059283,
+     "bezirk": {
+      "id": 12014029,
+      "name": "A21",
+      "gueltigAb": "2026-01-01",
+      "fraktionId": 7
+     },
+     "datum": "2026-10-30",
+     "jahr": 2026,
+     "info": null
+    },
+    {
+     "id": 12059376,
+     "bezirk": {
+      "id": 12014029,
+      "name": "A21",
+      "gueltigAb": "2026-01-01",
+      "fraktionId": 7
+     },
+     "datum": "2026-11-06",
+     "jahr": 2026,
+     "info": null
+    },
+    {
+     "id": 12059478,
+     "bezirk": {
+      "id": 12014029,
+      "name": "A21",
+      "gueltigAb": "2026-01-01",
+      "fraktionId": 7
+     },
+     "datum": "2026-11-13",
+     "jahr": 2026,
+     "info": null
+    },
+    {
+     "id": 12059576,
+     "bezirk": {
+      "id": 12014029,
+      "name": "A21",
+      "gueltigAb": "2026-01-01",
+      "fraktionId": 7
+     },
+     "datum": "2026-11-20",
+     "jahr": 2026,
+     "info": null
+    },
+    {
+     "id": 12059682,
+     "bezirk": {
+      "id": 12014029,
+      "name": "A21",
+      "gueltigAb": "2026-01-01",
+      "fraktionId": 7
+     },
+     "datum": "2026-11-27",
+     "jahr": 2026,
+     "info": null
+    },
+    {
+     "id": 12059775,
+     "bezirk": {
+      "id": 12014029,
+      "name": "A21",
+      "gueltigAb": "2026-01-01",
+      "fraktionId": 7
+     },
+     "datum": "2026-12-04",
+     "jahr": 2026,
+     "info": null
+    },
+    {
+     "id": 12059877,
+     "bezirk": {
+      "id": 12014029,
+      "name": "A21",
+      "gueltigAb": "2026-01-01",
+      "fraktionId": 7
+     },
+     "datum": "2026-12-11",
+     "jahr": 2026,
+     "info": null
+    },
+    {
+     "id": 12059975,
+     "bezirk": {
+      "id": 12014029,
+      "name": "A21",
+      "gueltigAb": "2026-01-01",
+      "fraktionId": 7
+     },
+     "datum": "2026-12-18",
+     "jahr": 2026,
+     "info": null
+    },
+    {
+     "id": 12060081,
+     "bezirk": {
+      "id": 12014029,
+      "name": "A21",
+      "gueltigAb": "2026-01-01",
+      "fraktionId": 7
+     },
+     "datum": "2026-12-24",
+     "jahr": 2026,
+     "info": null
+    },
+    {
+     "id": 12058981,
+     "bezirk": {
+      "id": 12013777,
+      "name": "A1",
+      "gueltigAb": "2026-01-01",
+      "fraktionId": 11
+     },
+     "datum": "2026-10-09",
+     "jahr": 2026,
+     "info": null
+    },
+    {
+     "id": 12059181,
+     "bezirk": {
+      "id": 12013777,
+      "name": "A1",
+      "gueltigAb": "2026-01-01",
+      "fraktionId": 11
+     },
+     "datum": "2026-10-23",
+     "jahr": 2026,
+     "info": null
+    },
+    {
+     "id": 12059380,
+     "bezirk": {
+      "id": 12013777,
+      "name": "A1",
+      "gueltigAb": "2026-01-01",
+      "fraktionId": 11
+     },
+     "datum": "2026-11-06",
+     "jahr": 2026,
+     "info": null
+    },
+    {
+     "id": 12059580,
+     "bezirk": {
+      "id": 12013777,
+      "name": "A1",
+      "gueltigAb": "2026-01-01",
+      "fraktionId": 11
+     },
+     "datum": "2026-11-20",
+     "jahr": 2026,
+     "info": null
+    },
+    {
+     "id": 12059779,
+     "bezirk": {
+      "id": 12013777,
+      "name": "A1",
+      "gueltigAb": "2026-01-01",
+      "fraktionId": 11
+     },
+     "datum": "2026-12-04",
+     "jahr": 2026,
+     "info": null
+    },
+    {
+     "id": 12059979,
+     "bezirk": {
+      "id": 12013777,
+      "name": "A1",
+      "gueltigAb": "2026-01-01",
+      "fraktionId": 11
+     },
+     "datum": "2026-12-18",
+     "jahr": 2026,
+     "info": null
+    }
+   ]
+  }
+ ]
+}

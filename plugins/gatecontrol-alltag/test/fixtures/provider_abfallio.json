@@ -1,0 +1,1411 @@
+{
+ "provider": "abfallio",
+ "service": "51be67f3758f1fb57b420efe065c0663",
+ "window": {
+  "from": "2026-10-11",
+  "to": "2026-12-31"
+ },
+ "config": {
+  "service": "51be67f3758f1fb57b420efe065c0663",
+  "place": {
+   "id": "5844",
+   "name": "Essen"
+  },
+  "street": {
+   "id": "1274",
+   "name": "Kennedyplatz"
+  },
+  "house": {
+   "id": "1712",
+   "name": "5"
+  }
+ },
+ "expected": {
+  "places": 1,
+  "streets": 3281,
+  "houses": 6,
+  "dates": 88,
+  "first": [
+   {
+    "date": "2026-10-12",
+    "name": "Graue Tonne gewerblich",
+    "color": "#706f6f"
+   },
+   {
+    "date": "2026-10-13",
+    "name": "Blaue Tonne gewerblich",
+    "color": "#2a91df"
+   },
+   {
+    "date": "2026-10-13",
+    "name": "Graue Tonne gewerblich",
+    "color": "#706f6f"
+   }
+  ]
+ },
+ "recordedAt": "2026-10-11",
+ "responses": [
+  {
+   "method": "GET",
+   "url": "https://api.abfall.io/?key=51be67f3758f1fb57b420efe065c0663",
+   "status": 200,
+   "body": {
+    "apiKey": "FIXTURE-API-KEY",
+    "settings": {
+     "PUB_ABFALLTYPEN": [
+      {
+       "wasteType": "51",
+       "checked": true,
+       "radiogroup": null
+      },
+      {
+       "wasteType": "1584",
+       "checked": true,
+       "radiogroup": null
+      },
+      {
+       "wasteType": "1146",
+       "checked": true,
+       "radiogroup": null
+      },
+      {
+       "wasteType": "1583",
+       "checked": true,
+       "radiogroup": null
+      },
+      {
+       "wasteType": "1538",
+       "checked": true,
+       "radiogroup": null
+      },
+      {
+       "wasteType": "66",
+       "checked": true,
+       "radiogroup": null
+      },
+      {
+       "wasteType": "177",
+       "checked": true,
+       "radiogroup": null
+      },
+      {
+       "wasteType": "1582",
+       "checked": true,
+       "radiogroup": null
+      },
+      {
+       "wasteType": "1537",
+       "checked": true,
+       "radiogroup": null
+      },
+      {
+       "wasteType": "1536",
+       "checked": true,
+       "radiogroup": null
+      },
+      {
+       "wasteType": "1564",
+       "checked": true,
+       "radiogroup": null
+      },
+      {
+       "wasteType": "42",
+       "checked": true,
+       "radiogroup": null
+      },
+      {
+       "wasteType": "3500",
+       "checked": false,
+       "radiogroup": "Schadstoffmobil"
+      },
+      {
+       "wasteType": "2009",
+       "checked": false,
+       "radiogroup": "Schadstoffmobil"
+      },
+      {
+       "wasteType": "1825",
+       "checked": false,
+       "radiogroup": "Schadstoffmobil"
+      },
+      {
+       "wasteType": "1827",
+       "checked": false,
+       "radiogroup": "Schadstoffmobil"
+      },
+      {
+       "wasteType": "1828",
+       "checked": false,
+       "radiogroup": "Schadstoffmobil"
+      },
+      {
+       "wasteType": "1820",
+       "checked": false,
+       "radiogroup": "Schadstoffmobil"
+      },
+      {
+       "wasteType": "1830",
+       "checked": false,
+       "radiogroup": "Schadstoffmobil"
+      },
+      {
+       "wasteType": "1819",
+       "checked": false,
+       "radiogroup": "Schadstoffmobil"
+      },
+      {
+       "wasteType": "1826",
+       "checked": false,
+       "radiogroup": "Schadstoffmobil"
+      },
+      {
+       "wasteType": "1829",
+       "checked": false,
+       "radiogroup": "Schadstoffmobil"
+      },
+      {
+       "wasteType": "1831",
+       "checked": false,
+       "radiogroup": "Schadstoffmobil"
+      },
+      {
+       "wasteType": "2010",
+       "checked": false,
+       "radiogroup": "Schadstoffmobil"
+      },
+      {
+       "wasteType": "1822",
+       "checked": false,
+       "radiogroup": "Schadstoffmobil"
+      },
+      {
+       "wasteType": "1818",
+       "checked": false,
+       "radiogroup": "Schadstoffmobil"
+      },
+      {
+       "wasteType": "1824",
+       "checked": false,
+       "radiogroup": "Schadstoffmobil"
+      },
+      {
+       "wasteType": "1821",
+       "checked": false,
+       "radiogroup": "Schadstoffmobil"
+      },
+      {
+       "wasteType": "2931",
+       "checked": false,
+       "radiogroup": "Schadstoffmobil"
+      },
+      {
+       "wasteType": "1823",
+       "checked": false,
+       "radiogroup": "Schadstoffmobil"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "method": "POST",
+   "url": "https://widgets.abfall.io/graphql",
+   "query": "{cities{id name}}",
+   "status": 200,
+   "body": {
+    "data": {
+     "cities": [
+      {
+       "id": "5844",
+       "name": "Essen"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "method": "GET",
+   "url": "https://api.abfall.io/?key=51be67f3758f1fb57b420efe065c0663",
+   "status": 200,
+   "body": {
+    "apiKey": "FIXTURE-API-KEY",
+    "settings": {
+     "PUB_ABFALLTYPEN": [
+      {
+       "wasteType": "51",
+       "checked": true,
+       "radiogroup": null
+      },
+      {
+       "wasteType": "1584",
+       "checked": true,
+       "radiogroup": null
+      },
+      {
+       "wasteType": "1146",
+       "checked": true,
+       "radiogroup": null
+      },
+      {
+       "wasteType": "1583",
+       "checked": true,
+       "radiogroup": null
+      },
+      {
+       "wasteType": "1538",
+       "checked": true,
+       "radiogroup": null
+      },
+      {
+       "wasteType": "66",
+       "checked": true,
+       "radiogroup": null
+      },
+      {
+       "wasteType": "177",
+       "checked": true,
+       "radiogroup": null
+      },
+      {
+       "wasteType": "1582",
+       "checked": true,
+       "radiogroup": null
+      },
+      {
+       "wasteType": "1537",
+       "checked": true,
+       "radiogroup": null
+      },
+      {
+       "wasteType": "1536",
+       "checked": true,
+       "radiogroup": null
+      },
+      {
+       "wasteType": "1564",
+       "checked": true,
+       "radiogroup": null
+      },
+      {
+       "wasteType": "42",
+       "checked": true,
+       "radiogroup": null
+      },
+      {
+       "wasteType": "3500",
+       "checked": false,
+       "radiogroup": "Schadstoffmobil"
+      },
+      {
+       "wasteType": "2009",
+       "checked": false,
+       "radiogroup": "Schadstoffmobil"
+      },
+      {
+       "wasteType": "1825",
+       "checked": false,
+       "radiogroup": "Schadstoffmobil"
+      },
+      {
+       "wasteType": "1827",
+       "checked": false,
+       "radiogroup": "Schadstoffmobil"
+      },
+      {
+       "wasteType": "1828",
+       "checked": false,
+       "radiogroup": "Schadstoffmobil"
+      },
+      {
+       "wasteType": "1820",
+       "checked": false,
+       "radiogroup": "Schadstoffmobil"
+      },
+      {
+       "wasteType": "1830",
+       "checked": false,
+       "radiogroup": "Schadstoffmobil"
+      },
+      {
+       "wasteType": "1819",
+       "checked": false,
+       "radiogroup": "Schadstoffmobil"
+      },
+      {
+       "wasteType": "1826",
+       "checked": false,
+       "radiogroup": "Schadstoffmobil"
+      },
+      {
+       "wasteType": "1829",
+       "checked": false,
+       "radiogroup": "Schadstoffmobil"
+      },
+      {
+       "wasteType": "1831",
+       "checked": false,
+       "radiogroup": "Schadstoffmobil"
+      },
+      {
+       "wasteType": "2010",
+       "checked": false,
+       "radiogroup": "Schadstoffmobil"
+      },
+      {
+       "wasteType": "1822",
+       "checked": false,
+       "radiogroup": "Schadstoffmobil"
+      },
+      {
+       "wasteType": "1818",
+       "checked": false,
+       "radiogroup": "Schadstoffmobil"
+      },
+      {
+       "wasteType": "1824",
+       "checked": false,
+       "radiogroup": "Schadstoffmobil"
+      },
+      {
+       "wasteType": "1821",
+       "checked": false,
+       "radiogroup": "Schadstoffmobil"
+      },
+      {
+       "wasteType": "2931",
+       "checked": false,
+       "radiogroup": "Schadstoffmobil"
+      },
+      {
+       "wasteType": "1823",
+       "checked": false,
+       "radiogroup": "Schadstoffmobil"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "method": "POST",
+   "url": "https://widgets.abfall.io/graphql",
+   "query": "query($id:ID!){city(id:$id){idHouseNumber streets{id name}}}",
+   "status": 200,
+   "body": {
+    "data": {
+     "city": {
+      "idHouseNumber": null,
+      "streets": [
+       {
+        "id": "118",
+        "name": "Aachener Str."
+       },
+       {
+        "id": "2323",
+        "name": "Abteistr."
+       },
+       {
+        "id": "24673",
+        "name": "Achenbachhang"
+       },
+       {
+        "id": "1274",
+        "name": "Kennedyplatz"
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "method": "GET",
+   "url": "https://api.abfall.io/?key=51be67f3758f1fb57b420efe065c0663",
+   "status": 200,
+   "body": {
+    "apiKey": "FIXTURE-API-KEY",
+    "settings": {
+     "PUB_ABFALLTYPEN": [
+      {
+       "wasteType": "51",
+       "checked": true,
+       "radiogroup": null
+      },
+      {
+       "wasteType": "1584",
+       "checked": true,
+       "radiogroup": null
+      },
+      {
+       "wasteType": "1146",
+       "checked": true,
+       "radiogroup": null
+      },
+      {
+       "wasteType": "1583",
+       "checked": true,
+       "radiogroup": null
+      },
+      {
+       "wasteType": "1538",
+       "checked": true,
+       "radiogroup": null
+      },
+      {
+       "wasteType": "66",
+       "checked": true,
+       "radiogroup": null
+      },
+      {
+       "wasteType": "177",
+       "checked": true,
+       "radiogroup": null
+      },
+      {
+       "wasteType": "1582",
+       "checked": true,
+       "radiogroup": null
+      },
+      {
+       "wasteType": "1537",
+       "checked": true,
+       "radiogroup": null
+      },
+      {
+       "wasteType": "1536",
+       "checked": true,
+       "radiogroup": null
+      },
+      {
+       "wasteType": "1564",
+       "checked": true,
+       "radiogroup": null
+      },
+      {
+       "wasteType": "42",
+       "checked": true,
+       "radiogroup": null
+      },
+      {
+       "wasteType": "3500",
+       "checked": false,
+       "radiogroup": "Schadstoffmobil"
+      },
+      {
+       "wasteType": "2009",
+       "checked": false,
+       "radiogroup": "Schadstoffmobil"
+      },
+      {
+       "wasteType": "1825",
+       "checked": false,
+       "radiogroup": "Schadstoffmobil"
+      },
+      {
+       "wasteType": "1827",
+       "checked": false,
+       "radiogroup": "Schadstoffmobil"
+      },
+      {
+       "wasteType": "1828",
+       "checked": false,
+       "radiogroup": "Schadstoffmobil"
+      },
+      {
+       "wasteType": "1820",
+       "checked": false,
+       "radiogroup": "Schadstoffmobil"
+      },
+      {
+       "wasteType": "1830",
+       "checked": false,
+       "radiogroup": "Schadstoffmobil"
+      },
+      {
+       "wasteType": "1819",
+       "checked": false,
+       "radiogroup": "Schadstoffmobil"
+      },
+      {
+       "wasteType": "1826",
+       "checked": false,
+       "radiogroup": "Schadstoffmobil"
+      },
+      {
+       "wasteType": "1829",
+       "checked": false,
+       "radiogroup": "Schadstoffmobil"
+      },
+      {
+       "wasteType": "1831",
+       "checked": false,
+       "radiogroup": "Schadstoffmobil"
+      },
+      {
+       "wasteType": "2010",
+       "checked": false,
+       "radiogroup": "Schadstoffmobil"
+      },
+      {
+       "wasteType": "1822",
+       "checked": false,
+       "radiogroup": "Schadstoffmobil"
+      },
+      {
+       "wasteType": "1818",
+       "checked": false,
+       "radiogroup": "Schadstoffmobil"
+      },
+      {
+       "wasteType": "1824",
+       "checked": false,
+       "radiogroup": "Schadstoffmobil"
+      },
+      {
+       "wasteType": "1821",
+       "checked": false,
+       "radiogroup": "Schadstoffmobil"
+      },
+      {
+       "wasteType": "2931",
+       "checked": false,
+       "radiogroup": "Schadstoffmobil"
+      },
+      {
+       "wasteType": "1823",
+       "checked": false,
+       "radiogroup": "Schadstoffmobil"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "method": "POST",
+   "url": "https://widgets.abfall.io/graphql",
+   "query": "query($id:ID!){street(id:$id){idHouseNumber houseNumbers{id name}}}",
+   "status": 200,
+   "body": {
+    "data": {
+     "street": {
+      "idHouseNumber": null,
+      "houseNumbers": [
+       {
+        "id": "5153",
+        "name": "0"
+       },
+       {
+        "id": "2726",
+        "name": "3"
+       },
+       {
+        "id": "1712",
+        "name": "5"
+       },
+       {
+        "id": "2501",
+        "name": "6"
+       },
+       {
+        "id": "1274",
+        "name": "7"
+       },
+       {
+        "id": "2191",
+        "name": "8"
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "method": "GET",
+   "url": "https://api.abfall.io/?key=51be67f3758f1fb57b420efe065c0663",
+   "status": 200,
+   "body": {
+    "apiKey": "FIXTURE-API-KEY",
+    "settings": {
+     "PUB_ABFALLTYPEN": [
+      {
+       "wasteType": "51",
+       "checked": true,
+       "radiogroup": null
+      },
+      {
+       "wasteType": "1584",
+       "checked": true,
+       "radiogroup": null
+      },
+      {
+       "wasteType": "1146",
+       "checked": true,
+       "radiogroup": null
+      },
+      {
+       "wasteType": "1583",
+       "checked": true,
+       "radiogroup": null
+      },
+      {
+       "wasteType": "1538",
+       "checked": true,
+       "radiogroup": null
+      },
+      {
+       "wasteType": "66",
+       "checked": true,
+       "radiogroup": null
+      },
+      {
+       "wasteType": "177",
+       "checked": true,
+       "radiogroup": null
+      },
+      {
+       "wasteType": "1582",
+       "checked": true,
+       "radiogroup": null
+      },
+      {
+       "wasteType": "1537",
+       "checked": true,
+       "radiogroup": null
+      },
+      {
+       "wasteType": "1536",
+       "checked": true,
+       "radiogroup": null
+      },
+      {
+       "wasteType": "1564",
+       "checked": true,
+       "radiogroup": null
+      },
+      {
+       "wasteType": "42",
+       "checked": true,
+       "radiogroup": null
+      },
+      {
+       "wasteType": "3500",
+       "checked": false,
+       "radiogroup": "Schadstoffmobil"
+      },
+      {
+       "wasteType": "2009",
+       "checked": false,
+       "radiogroup": "Schadstoffmobil"
+      },
+      {
+       "wasteType": "1825",
+       "checked": false,
+       "radiogroup": "Schadstoffmobil"
+      },
+      {
+       "wasteType": "1827",
+       "checked": false,
+       "radiogroup": "Schadstoffmobil"
+      },
+      {
+       "wasteType": "1828",
+       "checked": false,
+       "radiogroup": "Schadstoffmobil"
+      },
+      {
+       "wasteType": "1820",
+       "checked": false,
+       "radiogroup": "Schadstoffmobil"
+      },
+      {
+       "wasteType": "1830",
+       "checked": false,
+       "radiogroup": "Schadstoffmobil"
+      },
+      {
+       "wasteType": "1819",
+       "checked": false,
+       "radiogroup": "Schadstoffmobil"
+      },
+      {
+       "wasteType": "1826",
+       "checked": false,
+       "radiogroup": "Schadstoffmobil"
+      },
+      {
+       "wasteType": "1829",
+       "checked": false,
+       "radiogroup": "Schadstoffmobil"
+      },
+      {
+       "wasteType": "1831",
+       "checked": false,
+       "radiogroup": "Schadstoffmobil"
+      },
+      {
+       "wasteType": "2010",
+       "checked": false,
+       "radiogroup": "Schadstoffmobil"
+      },
+      {
+       "wasteType": "1822",
+       "checked": false,
+       "radiogroup": "Schadstoffmobil"
+      },
+      {
+       "wasteType": "1818",
+       "checked": false,
+       "radiogroup": "Schadstoffmobil"
+      },
+      {
+       "wasteType": "1824",
+       "checked": false,
+       "radiogroup": "Schadstoffmobil"
+      },
+      {
+       "wasteType": "1821",
+       "checked": false,
+       "radiogroup": "Schadstoffmobil"
+      },
+      {
+       "wasteType": "2931",
+       "checked": false,
+       "radiogroup": "Schadstoffmobil"
+      },
+      {
+       "wasteType": "1823",
+       "checked": false,
+       "radiogroup": "Schadstoffmobil"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "method": "POST",
+   "url": "https://widgets.abfall.io/graphql",
+   "query": "query($id:ID!,$types:[ID],$min:Date,$max:Date){appointments(idHouseNumber:$id,wasteTypes:$types,dateMin:$min,dateMax:$max,showInactive:false){date wasteType{name color}}}",
+   "status": 200,
+   "body": {
+    "data": {
+     "appointments": [
+      {
+       "date": "2026-10-12",
+       "wasteType": {
+        "name": "Graue Tonne gewerblich",
+        "color": "#706f6f"
+       }
+      },
+      {
+       "date": "2026-10-13",
+       "wasteType": {
+        "name": "Blaue Tonne gewerblich",
+        "color": "#2a91df"
+       }
+      },
+      {
+       "date": "2026-10-13",
+       "wasteType": {
+        "name": "Graue Tonne gewerblich",
+        "color": "#706f6f"
+       }
+      },
+      {
+       "date": "2026-10-14",
+       "wasteType": {
+        "name": "Graue Tonne gewerblich",
+        "color": "#706f6f"
+       }
+      },
+      {
+       "date": "2026-10-15",
+       "wasteType": {
+        "name": "Graue Tonne gewerblich",
+        "color": "#706f6f"
+       }
+      },
+      {
+       "date": "2026-10-16",
+       "wasteType": {
+        "name": "Graue Tonne gewerblich",
+        "color": "#706f6f"
+       }
+      },
+      {
+       "date": "2026-10-16",
+       "wasteType": {
+        "name": "Blaue Tonne gewerblich",
+        "color": "#2a91df"
+       }
+      },
+      {
+       "date": "2026-10-19",
+       "wasteType": {
+        "name": "Gelbe Tonne",
+        "color": "#fcd52a"
+       }
+      },
+      {
+       "date": "2026-10-19",
+       "wasteType": {
+        "name": "Graue Tonne gewerblich",
+        "color": "#706f6f"
+       }
+      },
+      {
+       "date": "2026-10-20",
+       "wasteType": {
+        "name": "Graue Tonne gewerblich",
+        "color": "#706f6f"
+       }
+      },
+      {
+       "date": "2026-10-20",
+       "wasteType": {
+        "name": "Blaue Tonne gewerblich",
+        "color": "#2a91df"
+       }
+      },
+      {
+       "date": "2026-10-21",
+       "wasteType": {
+        "name": "Graue Tonne gewerblich",
+        "color": "#706f6f"
+       }
+      },
+      {
+       "date": "2026-10-22",
+       "wasteType": {
+        "name": "Graue Tonne gewerblich",
+        "color": "#706f6f"
+       }
+      },
+      {
+       "date": "2026-10-23",
+       "wasteType": {
+        "name": "Graue Tonne gewerblich",
+        "color": "#706f6f"
+       }
+      },
+      {
+       "date": "2026-10-23",
+       "wasteType": {
+        "name": "Blaue Tonne gewerblich",
+        "color": "#2a91df"
+       }
+      },
+      {
+       "date": "2026-10-26",
+       "wasteType": {
+        "name": "Graue Tonne gewerblich",
+        "color": "#706f6f"
+       }
+      },
+      {
+       "date": "2026-10-27",
+       "wasteType": {
+        "name": "Graue Tonne gewerblich",
+        "color": "#706f6f"
+       }
+      },
+      {
+       "date": "2026-10-27",
+       "wasteType": {
+        "name": "Blaue Tonne gewerblich",
+        "color": "#2a91df"
+       }
+      },
+      {
+       "date": "2026-10-28",
+       "wasteType": {
+        "name": "Graue Tonne gewerblich",
+        "color": "#706f6f"
+       }
+      },
+      {
+       "date": "2026-10-29",
+       "wasteType": {
+        "name": "Graue Tonne gewerblich",
+        "color": "#706f6f"
+       }
+      },
+      {
+       "date": "2026-10-30",
+       "wasteType": {
+        "name": "Blaue Tonne gewerblich",
+        "color": "#2a91df"
+       }
+      },
+      {
+       "date": "2026-10-30",
+       "wasteType": {
+        "name": "Graue Tonne gewerblich",
+        "color": "#706f6f"
+       }
+      },
+      {
+       "date": "2026-11-02",
+       "wasteType": {
+        "name": "Graue Tonne gewerblich",
+        "color": "#706f6f"
+       }
+      },
+      {
+       "date": "2026-11-02",
+       "wasteType": {
+        "name": "Gelbe Tonne",
+        "color": "#fcd52a"
+       }
+      },
+      {
+       "date": "2026-11-03",
+       "wasteType": {
+        "name": "Blaue Tonne gewerblich",
+        "color": "#2a91df"
+       }
+      },
+      {
+       "date": "2026-11-03",
+       "wasteType": {
+        "name": "Graue Tonne gewerblich",
+        "color": "#706f6f"
+       }
+      },
+      {
+       "date": "2026-11-04",
+       "wasteType": {
+        "name": "Graue Tonne gewerblich",
+        "color": "#706f6f"
+       }
+      },
+      {
+       "date": "2026-11-05",
+       "wasteType": {
+        "name": "Graue Tonne gewerblich",
+        "color": "#706f6f"
+       }
+      },
+      {
+       "date": "2026-11-06",
+       "wasteType": {
+        "name": "Blaue Tonne gewerblich",
+        "color": "#2a91df"
+       }
+      },
+      {
+       "date": "2026-11-06",
+       "wasteType": {
+        "name": "Graue Tonne gewerblich",
+        "color": "#706f6f"
+       }
+      },
+      {
+       "date": "2026-11-09",
+       "wasteType": {
+        "name": "Graue Tonne gewerblich",
+        "color": "#706f6f"
+       }
+      },
+      {
+       "date": "2026-11-10",
+       "wasteType": {
+        "name": "Graue Tonne gewerblich",
+        "color": "#706f6f"
+       }
+      },
+      {
+       "date": "2026-11-10",
+       "wasteType": {
+        "name": "Blaue Tonne gewerblich",
+        "color": "#2a91df"
+       }
+      },
+      {
+       "date": "2026-11-11",
+       "wasteType": {
+        "name": "Graue Tonne gewerblich",
+        "color": "#706f6f"
+       }
+      },
+      {
+       "date": "2026-11-12",
+       "wasteType": {
+        "name": "Graue Tonne gewerblich",
+        "color": "#706f6f"
+       }
+      },
+      {
+       "date": "2026-11-13",
+       "wasteType": {
+        "name": "Graue Tonne gewerblich",
+        "color": "#706f6f"
+       }
+      },
+      {
+       "date": "2026-11-13",
+       "wasteType": {
+        "name": "Blaue Tonne gewerblich",
+        "color": "#2a91df"
+       }
+      },
+      {
+       "date": "2026-11-16",
+       "wasteType": {
+        "name": "Gelbe Tonne",
+        "color": "#fcd52a"
+       }
+      },
+      {
+       "date": "2026-11-16",
+       "wasteType": {
+        "name": "Graue Tonne gewerblich",
+        "color": "#706f6f"
+       }
+      },
+      {
+       "date": "2026-11-17",
+       "wasteType": {
+        "name": "Blaue Tonne gewerblich",
+        "color": "#2a91df"
+       }
+      },
+      {
+       "date": "2026-11-17",
+       "wasteType": {
+        "name": "Graue Tonne gewerblich",
+        "color": "#706f6f"
+       }
+      },
+      {
+       "date": "2026-11-18",
+       "wasteType": {
+        "name": "Graue Tonne gewerblich",
+        "color": "#706f6f"
+       }
+      },
+      {
+       "date": "2026-11-19",
+       "wasteType": {
+        "name": "Graue Tonne gewerblich",
+        "color": "#706f6f"
+       }
+      },
+      {
+       "date": "2026-11-20",
+       "wasteType": {
+        "name": "Blaue Tonne gewerblich",
+        "color": "#2a91df"
+       }
+      },
+      {
+       "date": "2026-11-20",
+       "wasteType": {
+        "name": "Graue Tonne gewerblich",
+        "color": "#706f6f"
+       }
+      },
+      {
+       "date": "2026-11-23",
+       "wasteType": {
+        "name": "Graue Tonne gewerblich",
+        "color": "#706f6f"
+       }
+      },
+      {
+       "date": "2026-11-24",
+       "wasteType": {
+        "name": "Blaue Tonne gewerblich",
+        "color": "#2a91df"
+       }
+      },
+      {
+       "date": "2026-11-24",
+       "wasteType": {
+        "name": "Graue Tonne gewerblich",
+        "color": "#706f6f"
+       }
+      },
+      {
+       "date": "2026-11-25",
+       "wasteType": {
+        "name": "Graue Tonne gewerblich",
+        "color": "#706f6f"
+       }
+      },
+      {
+       "date": "2026-11-26",
+       "wasteType": {
+        "name": "Graue Tonne gewerblich",
+        "color": "#706f6f"
+       }
+      },
+      {
+       "date": "2026-11-27",
+       "wasteType": {
+        "name": "Graue Tonne gewerblich",
+        "color": "#706f6f"
+       }
+      },
+      {
+       "date": "2026-11-27",
+       "wasteType": {
+        "name": "Blaue Tonne gewerblich",
+        "color": "#2a91df"
+       }
+      },
+      {
+       "date": "2026-11-30",
+       "wasteType": {
+        "name": "Gelbe Tonne",
+        "color": "#fcd52a"
+       }
+      },
+      {
+       "date": "2026-11-30",
+       "wasteType": {
+        "name": "Graue Tonne gewerblich",
+        "color": "#706f6f"
+       }
+      },
+      {
+       "date": "2026-12-01",
+       "wasteType": {
+        "name": "Blaue Tonne gewerblich",
+        "color": "#2a91df"
+       }
+      },
+      {
+       "date": "2026-12-01",
+       "wasteType": {
+        "name": "Graue Tonne gewerblich",
+        "color": "#706f6f"
+       }
+      },
+      {
+       "date": "2026-12-02",
+       "wasteType": {
+        "name": "Graue Tonne gewerblich",
+        "color": "#706f6f"
+       }
+      },
+      {
+       "date": "2026-12-03",
+       "wasteType": {
+        "name": "Graue Tonne gewerblich",
+        "color": "#706f6f"
+       }
+      },
+      {
+       "date": "2026-12-04",
+       "wasteType": {
+        "name": "Graue Tonne gewerblich",
+        "color": "#706f6f"
+       }
+      },
+      {
+       "date": "2026-12-04",
+       "wasteType": {
+        "name": "Blaue Tonne gewerblich",
+        "color": "#2a91df"
+       }
+      },
+      {
+       "date": "2026-12-07",
+       "wasteType": {
+        "name": "Graue Tonne gewerblich",
+        "color": "#706f6f"
+       }
+      },
+      {
+       "date": "2026-12-08",
+       "wasteType": {
+        "name": "Graue Tonne gewerblich",
+        "color": "#706f6f"
+       }
+      },
+      {
+       "date": "2026-12-08",
+       "wasteType": {
+        "name": "Blaue Tonne gewerblich",
+        "color": "#2a91df"
+       }
+      },
+      {
+       "date": "2026-12-09",
+       "wasteType": {
+        "name": "Graue Tonne gewerblich",
+        "color": "#706f6f"
+       }
+      },
+      {
+       "date": "2026-12-10",
+       "wasteType": {
+        "name": "Graue Tonne gewerblich",
+        "color": "#706f6f"
+       }
+      },
+      {
+       "date": "2026-12-11",
+       "wasteType": {
+        "name": "Blaue Tonne gewerblich",
+        "color": "#2a91df"
+       }
+      },
+      {
+       "date": "2026-12-11",
+       "wasteType": {
+        "name": "Graue Tonne gewerblich",
+        "color": "#706f6f"
+       }
+      },
+      {
+       "date": "2026-12-14",
+       "wasteType": {
+        "name": "Gelbe Tonne",
+        "color": "#fcd52a"
+       }
+      },
+      {
+       "date": "2026-12-14",
+       "wasteType": {
+        "name": "Graue Tonne gewerblich",
+        "color": "#706f6f"
+       }
+      },
+      {
+       "date": "2026-12-15",
+       "wasteType": {
+        "name": "Blaue Tonne gewerblich",
+        "color": "#2a91df"
+       }
+      },
+      {
+       "date": "2026-12-15",
+       "wasteType": {
+        "name": "Graue Tonne gewerblich",
+        "color": "#706f6f"
+       }
+      },
+      {
+       "date": "2026-12-16",
+       "wasteType": {
+        "name": "Graue Tonne gewerblich",
+        "color": "#706f6f"
+       }
+      },
+      {
+       "date": "2026-12-17",
+       "wasteType": {
+        "name": "Graue Tonne gewerblich",
+        "color": "#706f6f"
+       }
+      },
+      {
+       "date": "2026-12-18",
+       "wasteType": {
+        "name": "Blaue Tonne gewerblich",
+        "color": "#2a91df"
+       }
+      },
+      {
+       "date": "2026-12-18",
+       "wasteType": {
+        "name": "Graue Tonne gewerblich",
+        "color": "#706f6f"
+       }
+      },
+      {
+       "date": "2026-12-19",
+       "wasteType": {
+        "name": "Graue Tonne gewerblich",
+        "color": "#706f6f"
+       }
+      },
+      {
+       "date": "2026-12-21",
+       "wasteType": {
+        "name": "Graue Tonne gewerblich",
+        "color": "#706f6f"
+       }
+      },
+      {
+       "date": "2026-12-21",
+       "wasteType": {
+        "name": "Blaue Tonne gewerblich",
+        "color": "#2a91df"
+       }
+      },
+      {
+       "date": "2026-12-22",
+       "wasteType": {
+        "name": "Graue Tonne gewerblich",
+        "color": "#706f6f"
+       }
+      },
+      {
+       "date": "2026-12-23",
+       "wasteType": {
+        "name": "Graue Tonne gewerblich",
+        "color": "#706f6f"
+       }
+      },
+      {
+       "date": "2026-12-24",
+       "wasteType": {
+        "name": "Graue Tonne gewerblich",
+        "color": "#706f6f"
+       }
+      },
+      {
+       "date": "2026-12-24",
+       "wasteType": {
+        "name": "Blaue Tonne gewerblich",
+        "color": "#2a91df"
+       }
+      },
+      {
+       "date": "2026-12-28",
+       "wasteType": {
+        "name": "Gelbe Tonne",
+        "color": "#fcd52a"
+       }
+      },
+      {
+       "date": "2026-12-28",
+       "wasteType": {
+        "name": "Graue Tonne gewerblich",
+        "color": "#706f6f"
+       }
+      },
+      {
+       "date": "2026-12-29",
+       "wasteType": {
+        "name": "Blaue Tonne gewerblich",
+        "color": "#2a91df"
+       }
+      },
+      {
+       "date": "2026-12-29",
+       "wasteType": {
+        "name": "Graue Tonne gewerblich",
+        "color": "#706f6f"
+       }
+      },
+      {
+       "date": "2026-12-30",
+       "wasteType": {
+        "name": "Graue Tonne gewerblich",
+        "color": "#706f6f"
+       }
+      },
+      {
+       "date": "2026-12-31",
+       "wasteType": {
+        "name": "Graue Tonne gewerblich",
+        "color": "#706f6f"
+       }
+      }
+     ]
+    }
+   }
+  }
+ ]
+}
