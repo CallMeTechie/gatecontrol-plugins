@@ -1,11 +1,4 @@
 <main class="at-page">
-  <div class="page-header">
-    <div>
-      <div class="page-eyebrow">{{t:eyebrow}}</div>
-      <h1 class="page-title">{{t:title}}</h1>
-      <div class="page-sub">{{t:subtitle}}</div>
-    </div>
-  </div>
   <div class="at-tabs" role="tablist">
     <button type="button" role="tab" class="at-tab active" id="at-tab-waste" aria-selected="true" aria-controls="at-pane-waste">{{t:tab.waste}}</button>
     <button type="button" role="tab" class="at-tab" id="at-tab-calendar" aria-selected="false" aria-controls="at-pane-calendar">{{t:tab.calendar}}</button>
@@ -116,6 +109,31 @@
           <div class="at-rows" id="at-p-exc-rows"></div>
           <button class="btn btn-sm" type="button" id="at-p-exc-add">{{t:exc.add}}</button>
         </details>
+
+        <fieldset class="at-box at-remind" id="at-p-remind">
+          <legend class="at-legend">{{t:plan.remind}}</legend>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label" for="at-p-lead">{{t:plan.remind_lead}}</label>
+              <select class="form-select" id="at-p-lead">
+                <option value="off">{{t:remind.off}}</option>
+                <option value="0">{{t:remind.0}}</option>
+                <option value="1">{{t:remind.1}}</option>
+                <option value="2">{{t:remind.2}}</option>
+                <option value="3">{{t:remind.3}}</option>
+              </select>
+            </div>
+            <div class="form-group at-time-group">
+              <label class="form-label" for="at-p-time">{{t:plan.remind_time}}</label>
+              <input class="form-input" id="at-p-time" type="time" step="60" required>
+            </div>
+          </div>
+          <div class="at-extra">
+            <label class="check" for="at-p-extra"><input type="checkbox" id="at-p-extra"> {{t:plan.remind_extra}}</label>
+            <input class="form-input at-time" id="at-p-extra-time" type="time" step="60" aria-label="{{t:plan.remind_extra}}">
+          </div>
+          <span class="form-hint">{{t:plan.remind_hint}}</span>
+        </fieldset>
 
         <div class="form-group">
           <div class="form-label">{{t:plan.people}}</div>

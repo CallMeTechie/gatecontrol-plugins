@@ -49,8 +49,7 @@
     $('#at-problems').textContent = probs.join(' ');
     $('#at-waste-off').hidden = c.waste_enabled;
     $('#at-cal-off').hidden = c.calendar_enabled;
-    var reminders = T('waste.info', { evening: c.evening }) + (c.morning ? ' ' + T('waste.info_morning', { morning: c.morning_time }) : '');
-    $('#at-waste-info').textContent = reminders + ' · ' + T('info.tz', { tz: c.timezone });
+    $('#at-waste-info').textContent = T('waste.info') + ' · ' + T('info.tz', { tz: c.timezone });
     $('#at-cal-info').textContent = T('cal.info', { allday: c.allday_time }) + ' · ' + T('info.tz', { tz: c.timezone });
     renderPlans();
     renderSubs();
@@ -76,6 +75,13 @@
       ]);
     }));
   }
+  /** "1 Tag vorher, 18:00 · zusätzlich am Abholtag 06:30" */
+  function remindText(r) {
+    if (!r) return '';
+    var parts = [r.lead === 'off' ? T('remind.off') : T('plan.remind_at', { lead: T('remind.' + r.lead), time: r.time })];
+    if (r.extra) parts.push(T('plan.remind_extra_short', { time: r.extra_time }));
+    return parts.join(' · ') + (r.custom ? '' : ' ' + T('plan.remind_default'));
+  }
   function people(list, allText) {
     return el('div', { class: 'at-people' }, [el('span', { class: 'at-lbl', text: T('plan.people') })].concat(
       list == null ? [el('span', { class: 'at-person', text: allText })]
@@ -100,6 +106,7 @@
       el('div', { class: 'at-head' }, [ic, el('div', { class: 'at-head-text' }, [el('div', { class: 'at-name', text: p.name }), el('div', { class: 'at-sub', text: sourceLine(p) })]), status]),
       el('div', null, [el('div', { class: 'at-lbl', text: T('plan.next') }), dayRows(p.upcoming || [], T('plan.no_dates'))]),
       p.fractions.length ? el('div', null, [el('div', { class: 'at-lbl', text: T('plan.fractions') }), fr]) : null,
+      el('div', { class: 'at-sub at-remind-line', text: T('plan.remind_line', { text: remindText(p.reminder) }) }),
       people(p.users, T('plan.people_all')),
       el('div', { class: 'at-meta' }, meta),
       el('div', { class: 'at-foot' }, [
@@ -341,6 +348,51 @@
   $('#at-p-users-all').addEventListener('change', function () { $('#at-p-user-list').hidden = true; });
   $('#at-p-users-some').addEventListener('change', function () { $('#at-p-user-list').hidden = false; });
 
+  // reminder: lead (none / on the day / 1–3 days before) at a time, optionally also on the pickup day
+  var TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
+  function remindDefaults() {
+    var c = data.config || {};
+    return { lead: 1, time: c.evening || '18:00', extra: !!c.morning, extra_time: c.morning_time || '06:30' };
+  }
+  function syncRemind() {
+    var off = $('#at-p-lead').value === 'off';
+    $('#at-p-time').disabled = off;
+    $('#at-p-extra').disabled = off;
+    if (off) $('#at-p-extra').checked = false;
+    $('#at-p-extra-time').disabled = off || !$('#at-p-extra').checked;
+  }
+  function setRemind(r) {
+    $('#at-p-lead').value = String(r.lead);
+    $('#at-p-time').value = r.time;
+    $('#at-p-extra').checked = !!r.extra && r.lead !== 'off';
+    $('#at-p-extra-time').value = r.extra_time;
+    $('#at-p-lead').setAttribute('data-prev', String(r.lead));
+    syncRemind();
+  }
+  $('#at-p-lead').addEventListener('change', function () {
+    // "Am Abholtag" with the evening time (or back): take the matching default time
+    var d = remindDefaults();
+    var prev = this.getAttribute('data-prev');
+    var t = $('#at-p-time').value;
+    if (this.value === '0' && prev !== '0' && t === d.time) $('#at-p-time').value = d.extra_time;
+    else if (this.value !== '0' && this.value !== 'off' && prev === '0' && t === d.extra_time) $('#at-p-time').value = d.time;
+    this.setAttribute('data-prev', this.value);
+    syncRemind();
+  });
+  $('#at-p-extra').addEventListener('change', syncRemind);
+  function collectRemind() {
+    var lead = $('#at-p-lead').value;
+    var r = { lead: lead === 'off' ? 'off' : Number(lead), time: $('#at-p-time').value, extra: lead !== 'off' && $('#at-p-extra').checked, extra_time: $('#at-p-extra-time').value };
+    var d = remindDefaults();
+    if (!TIME_RE.test(r.time)) { if (lead === 'off') r.time = d.time; else return null; }
+    if (!TIME_RE.test(r.extra_time)) { if (!r.extra) r.extra_time = d.extra_time; else return null; }
+    return r;
+  }
+
+  function sameRemind(a, b) {
+    return String(a.lead) === String(b.lead) && (a.lead === 'off' || a.time === b.time) && !!a.extra === !!b.extra && (!a.extra || a.extra_time === b.extra_time);
+  }
+
   function openPlan(p) {
     editPlan = p || null;
     icsText = null; icsName = null;
@@ -372,6 +424,7 @@
     $('#at-p-users-some').checked = some;
     $('#at-p-user-list').hidden = !some;
     userChecks('#at-p-user-list', some ? p.users.map(function (u) { return u.id; }) : []);
+    setRemind(p && p.reminder ? p.reminder : remindDefaults());
     setPlanSource(p ? p.source : 'provider');
     A.openModal('at-plan-modal');
   }
@@ -380,6 +433,10 @@
   $('#at-p-save').addEventListener('click', function () {
     var body = { name: $('#at-p-name').value.trim(), source: planSource, enabled: $('#at-p-enabled').checked, exceptions: collectExceptions() };
     body.users = $('#at-p-users-some').checked ? checkedUsers('#at-p-user-list') : null;
+    body.reminder = collectRemind();
+    if (!body.reminder) { setMsg('#at-p-msg', T('error.reminder_invalid'), 'error'); return; }
+    // a plan still on the defaults (plugin settings) stays on them unless its reminder is changed here
+    if (editPlan && editPlan.reminder && !editPlan.reminder.custom && sameRemind(body.reminder, editPlan.reminder)) delete body.reminder;
     if (planSource === 'provider') {
       if ($('#at-p-preview').disabled) { setMsg('#at-p-msg', T('provider.incomplete'), 'error'); return; }
       body.provider = $('#at-p-prov').value;

@@ -126,6 +126,7 @@ test('portal render: the section frames, texts filled, no unresolved keys; every
   const dyn = [
     ...require('../server/fractions').TYPES.map((x) => 'type.' + x),
     ...require('../server/calendar').REMINDERS.map((x) => 'reminder.' + x),
+    ...['off', 0, 1, 2, 3].map((x) => 'remind.' + x),
     ...['timezone', 'waste_evening_time', 'waste_morning_time', 'calendar_allday_time'].map((x) => 'problem.' + x),
     'status.ok', 'status.new', 'status.error',
     ...['CAL_AUTH', 'CAL_NOT_FOUND', 'CAL_HTTP', 'CAL_UNREACHABLE', 'CAL_DENIED', 'ICS_INVALID', 'ICS_TOO_LARGE', 'URL_MISSING', 'TARGET_MISSING', 'CAL_FAILED'].map((x) => 'calerror.' + x),

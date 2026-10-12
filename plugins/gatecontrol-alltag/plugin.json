@@ -4,7 +4,7 @@
     "de": "Alltag",
     "en": "Everyday"
   },
-  "version": "1.0.0",
+  "version": "1.1.0",
   "publisher": "CallMeTechie",
   "description": {
     "de": "Müllabfuhr und Kalender des Haushalts: Abfuhrtermine aus Online-Abfallkalendern (AbfallNavi, abfall.io, AWIDO), einer ICS-Datei oder eigenen Regeln; iCal-Kalender (Google, iCloud, Outlook, Nextcloud im Heimnetz); Erinnerungen in der App und Termine im Portal „Zuhause“.",
@@ -108,12 +108,12 @@
         "key": "waste_evening_time",
         "type": "text",
         "label": {
-          "de": "Müllabfuhr: Erinnerung am Vorabend um",
-          "en": "Waste: reminder the evening before at"
+          "de": "Müllabfuhr: Standard-Uhrzeit der Erinnerung",
+          "en": "Waste: default reminder time"
         },
         "help": {
-          "de": "HH:MM, z. B. 18:00",
-          "en": "HH:MM, e.g. 18:00"
+          "de": "HH:MM, z. B. 18:00 – Vorgabe für neue Abfuhrpläne (1 Tag vorher) und für Pläne ohne eigene Einstellung. Jeder Plan hat seine Erinnerung im Dialog „Abfuhrplan bearbeiten“.",
+          "en": "HH:MM, e.g. 18:00 – default for new collection plans (1 day before) and for plans without a setting of their own. Each plan has its reminder in the dialog “Edit collection plan”."
         },
         "default": "18:00"
       },
@@ -121,8 +121,12 @@
         "key": "waste_morning",
         "type": "boolean",
         "label": {
-          "de": "Müllabfuhr: zusätzlich am Morgen erinnern",
-          "en": "Waste: also remind in the morning"
+          "de": "Müllabfuhr: standardmäßig zusätzlich am Abholtag erinnern",
+          "en": "Waste: by default also remind on the collection day"
+        },
+        "help": {
+          "de": "Vorgabe für neue Abfuhrpläne und für Pläne ohne eigene Einstellung.",
+          "en": "Default for new collection plans and for plans without a setting of their own."
         },
         "default": false
       },
@@ -130,12 +134,12 @@
         "key": "waste_morning_time",
         "type": "text",
         "label": {
-          "de": "Müllabfuhr: Erinnerung am Morgen um",
-          "en": "Waste: morning reminder at"
+          "de": "Müllabfuhr: Standard-Uhrzeit am Abholtag",
+          "en": "Waste: default time on the collection day"
         },
         "help": {
-          "de": "HH:MM, z. B. 06:30",
-          "en": "HH:MM, e.g. 06:30"
+          "de": "HH:MM, z. B. 06:30 – Vorgabe für „Zusätzlich am Abholtag“ in neuen Abfuhrplänen und für Pläne ohne eigene Einstellung.",
+          "en": "HH:MM, e.g. 06:30 – default for “Also on the collection day” in new collection plans and for plans without a setting of their own."
         },
         "default": "06:30"
       },

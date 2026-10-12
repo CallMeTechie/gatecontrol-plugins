@@ -1,6 +1,7 @@
 'use strict';
 
-// Data access of the plugin's own database (migrations/001_init.sql).
+// Data access of the plugin's own database (migrations/001_init.sql,
+// 002_plan_reminder.sql).
 // Calendar secrets (the internet address, Basic-auth credentials) are
 // plugin secrets (gc.settings.setSecret 'sub.<id>.url' / '.user' /
 // '.password'): encrypted by the host, never sent to the browser, never in
@@ -48,8 +49,30 @@ const userIds = (v) => (Array.isArray(v) ? [...new Set(v.filter((x) => Number.is
 // ─── Plans ──────────────────────────────────────
 
 const PLAN_COLS = `id, name, source, provider, provider_config, ics_name, rules_json, exceptions_json, users_json, enabled, status,
-  last_error, error_count, last_attempt_at, last_success_at, next_refresh_at, created_at, updated_at,
+  remind_lead, remind_time, remind_extra, remind_extra_time, last_error, error_count, last_attempt_at, last_success_at, next_refresh_at, created_at, updated_at,
   CASE WHEN ics_text IS NULL THEN 0 ELSE length(ics_text) END AS ics_size`;
+
+const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+/**
+ * The plan's own reminder as stored (migrations/002): every field null =
+ * the plugin settings apply. lead: 'off' | 0–3 (days before the pickup).
+ */
+function reminderRow(r) {
+  const lead = r.remind_lead == null ? null : Number(r.remind_lead);
+  return {
+    lead: lead == null || !Number.isInteger(lead) ? null : (lead < 0 ? 'off' : Math.min(lead, 3)),
+    time: TIME_RE.test(r.remind_time || '') ? r.remind_time : null,
+    extra: r.remind_extra == null ? null : !!r.remind_extra,
+    extra_time: TIME_RE.test(r.remind_extra_time || '') ? r.remind_extra_time : null,
+  };
+}
+
+/** A reminder (as reminderRow returns it, null = all defaults) → the four column values. */
+function reminderCols(v) {
+  const x = v || {};
+  return [x.lead == null ? null : (x.lead === 'off' ? -1 : Number(x.lead)), x.time || null, x.extra == null ? null : (x.extra ? 1 : 0), x.extra_time || null];
+}
 
 function planRow(r) {
   if (!r) return null;
@@ -58,6 +81,7 @@ function planRow(r) {
     provider_config: parseJson(r.provider_config, null), ics_name: r.ics_name || null, ics_size: r.ics_size || 0,
     rules: parseJson(r.rules_json, []), exceptions: parseJson(r.exceptions_json, []),
     users: r.users_json == null ? null : userIds(parseJson(r.users_json, [])) || [],
+    reminder: reminderRow(r),
     enabled: !!r.enabled, status: r.status, last_error: r.last_error || null, error_count: r.error_count || 0,
     last_attempt_at: r.last_attempt_at || null, last_success_at: r.last_success_at || null, next_refresh_at: r.next_refresh_at || 0,
     created_at: r.created_at, updated_at: r.updated_at,
@@ -79,10 +103,12 @@ async function planIcs(gc, id) {
 
 async function createPlan(gc, p) {
   const r = await gc.db.run(
-    `INSERT INTO plans (name, source, provider, provider_config, ics_text, ics_name, rules_json, exceptions_json, users_json, enabled)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO plans (name, source, provider, provider_config, ics_text, ics_name, rules_json, exceptions_json, users_json, enabled,
+       remind_lead, remind_time, remind_extra, remind_extra_time)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [p.name, p.source, p.provider || null, p.provider_config ? JSON.stringify(p.provider_config) : null, p.ics_text || null, p.ics_name || null,
-      JSON.stringify(p.rules || []), JSON.stringify(p.exceptions || []), p.users == null ? null : JSON.stringify(userIds(p.users) || []), p.enabled === false ? 0 : 1]);
+      JSON.stringify(p.rules || []), JSON.stringify(p.exceptions || []), p.users == null ? null : JSON.stringify(userIds(p.users) || []), p.enabled === false ? 0 : 1,
+      ...reminderCols(p.reminder)]);
   return getPlan(gc, r.lastInsertRowid);
 }
 
@@ -108,6 +134,10 @@ const PLAN_COLUMN = { rules: 'rules_json', exceptions: 'exceptions_json', users:
 
 async function updatePlan(gc, id, patch) {
   const sets = []; const vals = [];
+  if ('reminder' in patch) {
+    sets.push('remind_lead = ?', 'remind_time = ?', 'remind_extra = ?', 'remind_extra_time = ?');
+    vals.push(...reminderCols(patch.reminder));
+  }
   for (const [k, fn] of Object.entries(PLAN_FIELDS)) {
     if (!(k in patch)) continue;
     sets.push(`${PLAN_COLUMN[k] || k} = ?`);
@@ -287,7 +317,7 @@ async function clearSubSecrets(gc, id) {
 
 module.exports = {
   tx, parseJson, insertMany, userIds, codeError,
-  listPlans, getPlan, planIcs, createPlan, updatePlan, deletePlan,
+  reminderRow, reminderCols, listPlans, getPlan, planIcs, createPlan, updatePlan, deletePlan,
   listFractions, ensureFractions, updateFraction, replaceDates, datesBetween, countDates,
   listSubs, getSub, createSub, updateSub, deleteSub, replaceEvents, eventsBetween,
   subSecret, setSubSecret, clearSubSecrets, secretKey,

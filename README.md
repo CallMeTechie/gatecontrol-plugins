@@ -33,7 +33,7 @@ fixture). It is built and tested in CI but never released
 | `gatecontrol-smarthome` | Smart Home (Phoscon/deCONZ) — formerly built into GateControl; imports the built-in data; notifies: alarm, window open, battery low, gateway unreachable | ≥ 1.154.0 (1.0.0: ≥ 1.149.0) |
 | `gatecontrol-midea` | Klimaanlage (Midea air conditioners, cloud and LAN) — formerly built into GateControl; imports the built-in data; notifies: device unreachable, clean filter, malfunction | ≥ 1.154.0 (1.0.0: ≥ 1.150.0) |
 | `gatecontrol-skoda` | Fahrzeuge (Škoda / MySkoda) — formerly built into GateControl; imports the built-in data; notifies: charging complete, battery low, not locked, climate done | ≥ 1.154.0 (1.0.0: ≥ 1.151.0) |
-| `gatecontrol-alltag` | Alltag / Everyday — waste collection dates (online waste calendars AbfallNavi, abfall.io, AWIDO; ICS upload; own rules) and iCal calendars (Google, iCloud, Outlook, or a home-network server such as Nextcloud); portal sections in "Zuhause", Start tiles, search; notifies: waste collection (evening before / morning), calendar events | ≥ 1.154.0 |
+| `gatecontrol-alltag` | Alltag / Everyday — waste collection dates (online waste calendars AbfallNavi, abfall.io, AWIDO; ICS upload; own rules) and iCal calendars (Google, iCloud, Outlook, or a home-network server such as Nextcloud); portal sections in "Zuhause", Start tiles, search; notifies: waste collection (per plan 0–3 days before at a set time, optionally on the day), calendar events | ≥ 1.154.0 |
 
 ### Notifications
 
