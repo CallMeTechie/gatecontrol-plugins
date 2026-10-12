@@ -15,6 +15,8 @@ test('capsFromLight derives the colour capability', () => {
   assert.equal(service.capsFromLight({ state: { on: true, bri: 100, hue: 1, sat: 2 } }).color, 'hs');
   assert.equal(service.capsFromLight({ state: { on: true, xy: [0.1, 0.2] } }).color, 'xy');
   assert.equal(service.capsFromLight({ state: { on: true } }).color, 'none');
+  assert.equal(service.capsFromLight({ state: { on: true, xy: [0.1, 0.2], hue: 1, sat: 2, ct: 300 } }).ct, true, 'extended colour light: also ct');
+  assert.equal(service.capsFromLight({ state: { on: true, ct: 300 } }).ct, undefined);
   assert.equal(service.capsFromLight({ state: { on: true, bri: 5 } }).bri, true);
 });
 
@@ -217,4 +219,33 @@ test('host refusals: unassigned target vs. a blocked address vs. unreachable', a
   await assert.rejects(mk(denied('no target assigned for gateway — an administrator assigns it')).getConfig(), { code: 'SMARTHOME_NO_TARGET' });
   await assert.rejects(mk(denied('address not reachable for plugins')).getConfig(), { code: 'SMARTHOME_TARGET_DENIED' });
   await assert.rejects(mk(Object.assign(new Error('ECONNREFUSED'), { code: 'ERR_NET' })).getConfig(), { code: 'DECONZ_UNREACHABLE' });
+});
+
+test('validatePatch: colour presets (hue/sat) become xy on xy lights, stay hue/sat on hs lights; ct only where supported', () => {
+  const xy = { capabilities: { on: true, bri: true, color: 'xy', ct: true } };
+  const hs = { capabilities: { on: true, bri: true, color: 'hs' } };
+  const ct = { capabilities: { on: true, bri: true, color: 'ct' } };
+  const p = service.validatePatch(xy, { on: true, hue: 0, sat: 254 });
+  assert.equal(p.on, true);
+  assert.ok(p.xy[0] > 0.6 && p.xy[1] < 0.35, 'red → red xy: ' + JSON.stringify(p.xy));
+  assert.equal(p.hue, undefined);
+  assert.deepEqual(service.validatePatch(xy, { xy: [0.2, 0.3] }), { xy: [0.2, 0.3] });
+  assert.deepEqual(service.validatePatch(xy, { ct: 400 }), { ct: 400 }, 'extended colour light takes ct');
+  assert.deepEqual(service.validatePatch(hs, { hue: 44000, sat: 200 }), { hue: 44000, sat: 200 });
+  assert.deepEqual(service.validatePatch(hs, { ct: 400 }), {}, 'hs-only light: no ct');
+  assert.deepEqual(service.validatePatch(ct, { hue: 1, sat: 2, ct: 700 }), { ct: 500 }, 'ct clamped, no colour');
+  const white = service.xyFromHueSat(0, 0);
+  assert.ok(Math.abs(white[0] - 0.3227) < 0.01 && Math.abs(white[1] - 0.329) < 0.01, 'white → D65: ' + JSON.stringify(white));
+});
+
+test('control: a colour preset on an extended colour light is sent to deCONZ as xy', () => {
+  const gw = fakeDeconz();
+  return withHost({ gateways: [gw] }, async (host) => {
+    const { by } = await connected(host);
+    const r = await asAdmin(host, 'POST', `/resources/${by('Bunt').id}/state`, { hue: 23000, sat: 200 });
+    assert.equal(r.status, 200, JSON.stringify(r.json));
+    const body = gw.calls.at(-1).body;
+    assert.ok(Array.isArray(body.xy), 'xy sent: ' + JSON.stringify(body));
+    assert.ok(body.xy[1] > body.xy[0], 'green preset → green xy: ' + JSON.stringify(body.xy));
+  });
 });

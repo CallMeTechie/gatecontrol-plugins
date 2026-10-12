@@ -21,7 +21,34 @@ function capsFromLight(light) {
   if ('xy' in s) color = 'xy';
   else if ('hue' in s || 'sat' in s) color = 'hs';
   else if ('ct' in s) color = 'ct';
-  return { on: 'on' in s, bri: 'bri' in s, color };
+  const caps = { on: 'on' in s, bri: 'bri' in s, color };
+  // extended colour lights also have a colour temperature
+  if (color !== 'ct' && 'ct' in s) caps.ct = true;
+  return caps;
+}
+
+/**
+ * deCONZ hue (0–65535) and saturation (0–254) → CIE xy, for lights that
+ * only take xy. Full brightness HSV → sRGB (gamma removed) → XYZ (wide gamut
+ * D65, as the Hue and deCONZ docs use) → xy; the light clips to its own gamut.
+ */
+function xyFromHueSat(hue, sat) {
+  const h = (((Number(hue) % 65536) + 65536) % 65536) / 65536 * 6;
+  const sv = Math.max(0, Math.min(254, Number(sat))) / 254;
+  const i = Math.floor(h);
+  const f = h - i;
+  const p = 1 - sv;
+  const q = 1 - sv * f;
+  const t = 1 - sv * (1 - f);
+  const [r, g, b] = [[1, t, p], [q, 1, p], [p, 1, t], [p, q, 1], [t, p, 1], [1, p, q]][i % 6];
+  const lin = (c) => (c > 0.04045 ? ((c + 0.055) / 1.055) ** 2.4 : c / 12.92);
+  const [R, G, B] = [lin(r), lin(g), lin(b)];
+  const X = R * 0.664511 + G * 0.154324 + B * 0.162028;
+  const Y = R * 0.283881 + G * 0.668433 + B * 0.047685;
+  const Z = R * 0.000088 + G * 0.072310 + B * 0.986039;
+  const sum = X + Y + Z;
+  if (!(sum > 0)) return [0.3227, 0.329];
+  return [Math.round((X / sum) * 10000) / 10000, Math.round((Y / sum) * 10000) / 10000];
 }
 
 function sensorReading(sensor) {
@@ -177,12 +204,19 @@ function validatePatch(resource, raw) {
   const patch = {};
   if ('on' in raw) patch.on = Boolean(raw.on);
   if ('bri' in raw && caps.bri) { const b = Number(raw.bri); if (Number.isFinite(b)) patch.bri = Math.max(0, Math.min(100, b)); }
-  if (caps.color === 'ct' && 'ct' in raw && Number.isFinite(Number(raw.ct))) patch.ct = Number(raw.ct);
-  if (caps.color === 'hs') {
-    if ('hue' in raw && Number.isFinite(Number(raw.hue))) patch.hue = Number(raw.hue);
-    if ('sat' in raw && Number.isFinite(Number(raw.sat))) patch.sat = Number(raw.sat);
+  const num = (v) => v != null && v !== '' && Number.isFinite(Number(v));
+  if ((caps.color === 'ct' || caps.ct) && num(raw.ct)) patch.ct = Math.round(Math.max(153, Math.min(500, Number(raw.ct))));
+  const hasHs = num(raw.hue) || num(raw.sat);
+  if (caps.color === 'hs' && hasHs) {
+    if (num(raw.hue)) patch.hue = Math.round(Math.max(0, Math.min(65535, Number(raw.hue))));
+    if (num(raw.sat)) patch.sat = Math.round(Math.max(0, Math.min(254, Number(raw.sat))));
   }
-  if (caps.color === 'xy' && Array.isArray(raw.xy) && raw.xy.length === 2 && raw.xy.every((n) => Number.isFinite(Number(n)))) patch.xy = raw.xy.map(Number);
+  if (caps.color === 'xy') {
+    if (Array.isArray(raw.xy) && raw.xy.length === 2 && raw.xy.every(num)) patch.xy = raw.xy.map((n) => Math.max(0, Math.min(1, Number(n))));
+    // the colour presets send hue/sat: lights that only take xy get it converted
+    else if (hasHs) patch.xy = xyFromHueSat(num(raw.hue) ? raw.hue : 0, num(raw.sat) ? raw.sat : 254);
+  }
+  if (patch.ct != null && (patch.xy || patch.hue != null || patch.sat != null)) delete patch.ct; // one colour mode per call
   return patch;
 }
 
@@ -250,6 +284,7 @@ async function syncAll(gc) {
 }
 
 module.exports = {
+  xyFromHueSat,
   connectGateway, syncGateway, syncGatewayFull, setResourceState, testGateway, gatewayTargets, targetLabel, syncAll, clientForGateway,
   capsFromLight, sensorReading, sensorObservation, lightKind, sensorKind, validatePatch,
 };

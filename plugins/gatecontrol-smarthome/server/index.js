@@ -105,6 +105,13 @@ function portalPatch(raw, caps) {
     if (typeof raw.bri !== 'number' || !Number.isFinite(raw.bri) || raw.bri < 0 || raw.bri > 100) return null;
     patch.bri = raw.bri;
   }
+  const colour = caps && (caps.color === 'hs' || caps.color === 'xy');
+  const temp = caps && (caps.color === 'ct' || caps.ct);
+  for (const [k, lo, hi, ok] of [['hue', 0, 65535, colour], ['sat', 0, 254, colour], ['ct', 153, 500, temp]]) {
+    if (!(k in raw) || !ok) continue;
+    if (typeof raw[k] !== 'number' || !Number.isFinite(raw[k]) || raw[k] < lo || raw[k] > hi) return null;
+    patch[k] = raw[k];
+  }
   return patch;
 }
 

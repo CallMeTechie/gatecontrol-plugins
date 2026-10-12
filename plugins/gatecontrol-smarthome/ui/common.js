@@ -74,7 +74,18 @@
       setTimeout(function () { ok.focus(); }, 30);
     });
   }
-  window.SH = { CTX: CTX, T: T, esc: esc, $: $, $$: $$, el: el, clear: clear, api: api, toast: toast, openModal: openModal, closeModal: closeModal, confirm: confirmDialog };
+  // 8 colour presets → hue/sat (deCONZ hue 0–65535, sat 0–254); the plugin
+  // converts them for lights that only take xy
+  var SWATCHES = [
+    { c: '#ff7a59', hue: 2000, sat: 200 }, { c: '#ff5d8f', hue: 60000, sat: 200 },
+    { c: '#9d7bff', hue: 47000, sat: 180 }, { c: '#5b8cff', hue: 44000, sat: 200 },
+    { c: '#36d6c3', hue: 33000, sat: 200 }, { c: '#8be36b', hue: 23000, sat: 200 },
+    { c: '#ffd27a', hue: 8000, sat: 160 }, { c: '#ffffff', hue: 0, sat: 0 },
+  ];
+  function hasColour(caps) { return !!caps && (caps.color === 'hs' || caps.color === 'xy'); }
+  function hasWarmth(caps) { return !!caps && (caps.color === 'ct' || caps.ct === true); }
+  window.SH = { CTX: CTX, T: T, esc: esc, $: $, $$: $$, el: el, clear: clear, api: api, toast: toast, openModal: openModal, closeModal: closeModal, confirm: confirmDialog,
+    SWATCHES: SWATCHES, hasColour: hasColour, hasWarmth: hasWarmth };
   document.addEventListener('click', function (e) {
     var c = e.target && e.target.closest ? e.target.closest('[data-close]') : null;
     if (c) closeModal(c.getAttribute('data-close'));

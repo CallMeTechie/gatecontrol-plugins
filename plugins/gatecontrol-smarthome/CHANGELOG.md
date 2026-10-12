@@ -2,6 +2,14 @@
 
 Phoscon/deCONZ-Integration als GateControl-Plugin – bisher fest in GateControl eingebaut.
 
+## 1.2.0
+- Farben ändern geht wieder: Die Farbvorgaben schickten Farbton/Sättigung, Farblampen
+  mit „xy“-Farbraum (die meisten, z. B. „Extended color light“) bekamen dadurch keine
+  Farbe. Die Vorgaben werden für diese Lampen jetzt in xy umgerechnet.
+- Lampen mit Farbe **und** Farbtemperatur zeigen beide Regler (Seite und Portal).
+- Portal „Zuhause“: Farbauswahl und Farbtemperatur für zugewiesene Lampen
+  (nach Anmeldung), zusätzlich zu Schalter und Helligkeit.
+
 ## 1.1.0
 - Benachrichtigungen über die Benachrichtigungszentrale von GateControl (Apps, Portal),
   jeweils als eigenes Thema, das jede Person selbst an- und abschalten kann:
