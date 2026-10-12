@@ -49,6 +49,25 @@
       });
       t.appendChild(range);
     }
+    var caps = d.capabilities || {};
+    if (!scene && loggedIn && S.hasColour(caps)) {
+      var row = el('div', { class: 'pt-sh-swatches', role: 'group', 'aria-label': T('portal.color_of', { name: d.name || '' }) });
+      S.SWATCHES.forEach(function (s) {
+        var dot = el('button', { type: 'button', class: 'pt-sh-sw', 'aria-label': T('color') + ' ' + s.c, style: 'background:' + s.c });
+        dot.addEventListener('click', function () {
+          d.state = Object.assign({}, d.state || {}, { on: true });
+          sync(t, d);
+          control(d.id, { on: true, hue: s.hue, sat: s.sat });
+        });
+        row.appendChild(dot);
+      });
+      t.appendChild(row);
+    }
+    if (!scene && loggedIn && S.hasWarmth(caps)) {
+      var ct = el('input', { type: 'range', min: '153', max: '500', value: '300', 'aria-label': T('portal.warmth_of', { name: d.name || '' }) });
+      ct.addEventListener('change', function () { control(d.id, { ct: Number(ct.value) }); });
+      t.appendChild(ct);
+    }
     return t;
   }
   function sensorValue(s) {

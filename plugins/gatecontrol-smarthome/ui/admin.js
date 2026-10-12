@@ -2,13 +2,7 @@
 (function () {
   'use strict';
   var S = window.SH, T = S.T, $ = S.$, $$ = S.$$, el = S.el;
-  // 8 colour presets → hue/sat (deCONZ hue 0–65535, sat 0–254)
-  var SWATCHES = [
-    { c: '#ff7a59', hue: 2000, sat: 200 }, { c: '#ff5d8f', hue: 60000, sat: 200 },
-    { c: '#9d7bff', hue: 47000, sat: 180 }, { c: '#5b8cff', hue: 44000, sat: 200 },
-    { c: '#36d6c3', hue: 33000, sat: 200 }, { c: '#8be36b', hue: 23000, sat: 200 },
-    { c: '#ffd27a', hue: 8000, sat: 160 }, { c: '#ffffff', hue: 0, sat: 0 },
-  ];
+  var SWATCHES = S.SWATCHES;
   var ICONS = {
     light: '<circle cx="12" cy="9" r="5"/><path d="M9 18h6M10 21h4"/>',
     plug: '<path d="M9 2v5M15 2v5"/><path d="M7 7h10v3a5 5 0 0 1-10 0z"/><path d="M12 15v7"/>',
@@ -73,7 +67,7 @@
       range.addEventListener('change', function () { send(r.id, { bri: Number(range.value) }).catch(warn); });
       body.appendChild(el('div', null, [el('div', { class: 'sh-ctl-lbl', text: T('brightness') }), range]));
     }
-    if (caps.color === 'hs' || caps.color === 'xy') {
+    if (S.hasColour(caps)) {
       var row = el('div', { class: 'sh-swatches' });
       SWATCHES.forEach(function (s) {
         var dot = el('button', { type: 'button', class: 'sh-sw', 'aria-label': T('color') + ' ' + s.c, style: 'background:' + s.c });
@@ -81,7 +75,8 @@
         row.appendChild(dot);
       });
       body.appendChild(el('div', null, [el('div', { class: 'sh-ctl-lbl', text: T('color') }), row]));
-    } else if (caps.color === 'ct') {
+    }
+    if (S.hasWarmth(caps)) {
       var ct = el('input', { class: 'sh-bri', type: 'range', min: '153', max: '500', value: '300', 'aria-label': T('warmth') });
       ct.addEventListener('change', function () { send(r.id, { ct: Number(ct.value) }).catch(warn); });
       body.appendChild(el('div', null, [el('div', { class: 'sh-ctl-lbl', text: T('warmth') }), ct]));

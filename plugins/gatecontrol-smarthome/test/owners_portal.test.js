@@ -67,7 +67,7 @@ test('portal: control needs ownership (scenes of an owned group included); senso
     await asAdmin(host, 'PUT', `/resources/${by('Temp').id}/owners`, { userIds: [2] });
     let r = await asPortal(host, ADA, 'POST', `/portal/resources/${by('Stehlampe').id}/state`, { patch: { on: false, bri: 20, ct: 400 } });
     assert.equal(r.status, 200);
-    assert.deepEqual(gw.calls.at(-1).body, { on: false, bri: 51 }, 'portal patch: on + bri only');
+    assert.deepEqual(gw.calls.at(-1).body, { on: false, bri: 51, ct: 400 }, 'portal patch: on, bri and the colour temperature of a ct light');
     r = await asPortal(host, ADA, 'POST', `/portal/resources/${by('Wohnzimmer · Abend').id}/state`, { patch: {} });
     assert.equal(r.status, 200);
     assert.equal(gw.calls.at(-1).path, '/api/KEY1234567/groups/8/scenes/2/recall');
@@ -77,7 +77,7 @@ test('portal: control needs ownership (scenes of an owned group included); senso
     r = await asPortal(host, ADA, 'POST', `/portal/resources/${by('Temp').id}/state`, { patch: { on: true } });
     assert.equal(r.status, 400);
     assert.equal(r.json.code, 'SMARTHOME_NOT_CONTROLLABLE');
-    for (const patch of [{ on: 'yes' }, { bri: 101 }, { bri: '50' }]) {
+    for (const patch of [{ on: 'yes' }, { bri: 101 }, { bri: '50' }, { ct: 600 }, { ct: '300' }]) {
       r = await asPortal(host, ADA, 'POST', `/portal/resources/${by('Stehlampe').id}/state`, { patch });
       assert.equal(r.json.code, 'SMARTHOME_INVALID_PATCH', JSON.stringify(patch));
     }
@@ -135,3 +135,23 @@ test('portal Start tiles and search: only the viewer\'s own devices and sensors,
   assert.deepEqual(await host.portalSearch(ADA, 'w'), []);
   assert.equal(await host.portalVisible(ADA, 'smarthome'), true);
 }));
+
+test('portal: colour presets reach a colour light as xy; hue/sat on a ct-only light are ignored', () => {
+  const gw = fakeDeconz();
+  return withHost({ gateways: [gw] }, async (host) => {
+    const { by } = await connected(host);
+    await asAdmin(host, 'PUT', `/resources/${by('Bunt').id}/owners`, { userIds: [2] });
+    await asAdmin(host, 'PUT', `/resources/${by('Stehlampe').id}/owners`, { userIds: [2] });
+    let r = await asPortal(host, ADA, 'POST', `/portal/resources/${by('Bunt').id}/state`, { patch: { on: true, hue: 44000, sat: 200 } });
+    assert.equal(r.status, 200);
+    const body = gw.calls.at(-1).body;
+    assert.equal(body.on, true);
+    assert.ok(Array.isArray(body.xy) && body.xy.length === 2, JSON.stringify(body));
+    assert.ok(body.xy[1] < body.xy[0] + 0.1 && body.xy[0] < 0.25, 'blue preset → blue xy: ' + JSON.stringify(body.xy));
+    r = await asPortal(host, ADA, 'POST', `/portal/resources/${by('Bunt').id}/state`, { patch: { hue: 70000 } });
+    assert.equal(r.json.code, 'SMARTHOME_INVALID_PATCH');
+    r = await asPortal(host, ADA, 'POST', `/portal/resources/${by('Stehlampe').id}/state`, { patch: { on: true, hue: 1000, sat: 100 } });
+    assert.equal(r.status, 200);
+    assert.deepEqual(gw.calls.at(-1).body, { on: true }, 'no colour for a colour temperature light');
+  });
+});
