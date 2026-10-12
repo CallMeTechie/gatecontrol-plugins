@@ -1,0 +1,236 @@
+{
+  "id": "gatecontrol-proxmox",
+  "name": {
+    "de": "Proxmox VE",
+    "en": "Proxmox VE"
+  },
+  "version": "1.0.0",
+  "publisher": "CallMeTechie",
+  "description": {
+    "de": "Proxmox-VE-Hosts und -Cluster im Blick: Nodes (CPU, RAM, Speicher, Laufzeit, Version), VMs und Container, Speicher, Backups und HA – mit Start, Herunterfahren, Neustart und Stopp von VMs/CTs für Administratoren und Meldungen bei Ausfall, unerwartet gestoppten Gästen, vollem Speicher und fehlgeschlagenen Backups.",
+    "en": "Keep an eye on Proxmox VE hosts and clusters: nodes (CPU, RAM, storage, uptime, version), VMs and containers, storage, backups and HA – with start, shutdown, reboot and stop of VMs/CTs for administrators and notifications on outages, guests stopped unexpectedly, full storage and failed backups."
+  },
+  "gatecontrol": ">=1.154.0",
+  "entry": "server/index.js",
+  "permissions": {
+    "network": {
+      "homeTargets": [
+        {
+          "id": "pve",
+          "label": {
+            "de": "Proxmox-VE-Host oder -Cluster (API, Port 8006)",
+            "en": "Proxmox VE host or cluster (API, port 8006)"
+          },
+          "protocols": [
+            "http"
+          ],
+          "multiple": true
+        }
+      ]
+    },
+    "storage": true,
+    "users": true,
+    "notify": true,
+    "background": {
+      "intervalSeconds": 30
+    }
+  },
+  "ui": {
+    "nav": {
+      "label": {
+        "de": "Proxmox VE",
+        "en": "Proxmox VE"
+      },
+      "icon": "M4 4h16v6H4zM4 14h16v6H4zM8 7h.01M8 17h.01M12 7h4M12 17h4"
+    },
+    "pages": [
+      {
+        "id": "main",
+        "title": {
+          "de": "Proxmox VE",
+          "en": "Proxmox VE"
+        }
+      }
+    ],
+    "settings": [
+      {
+        "key": "poll_interval",
+        "type": "number",
+        "label": {
+          "de": "Abfrageintervall (Sekunden)",
+          "en": "Polling interval (seconds)"
+        },
+        "help": {
+          "de": "Wie oft jeder Host abgefragt wird (30–3600). Nach Fehlern wird der Abstand bis auf 5 Minuten verlängert.",
+          "en": "How often each host is polled (30–3600). After errors the interval grows up to 5 minutes."
+        },
+        "min": 30,
+        "max": 3600,
+        "default": 60
+      },
+      {
+        "key": "storage_threshold",
+        "type": "number",
+        "label": {
+          "de": "Speicher fast voll ab (%)",
+          "en": "Storage almost full from (%)"
+        },
+        "help": {
+          "de": "Meldung, sobald ein Speicher diese Belegung erreicht (50–99).",
+          "en": "Notify as soon as a storage reaches this usage (50–99)."
+        },
+        "min": 50,
+        "max": 99,
+        "default": 90
+      },
+      {
+        "key": "cpu_threshold",
+        "type": "number",
+        "label": {
+          "de": "Hohe CPU-Last eines Nodes ab (%)",
+          "en": "High node CPU load from (%)"
+        },
+        "help": {
+          "de": "0 = aus. Gemeldet wird erst, wenn die Last so lange anhält wie unten eingestellt.",
+          "en": "0 = off. Notified only when the load lasts as long as set below."
+        },
+        "min": 0,
+        "max": 100,
+        "default": 0
+      },
+      {
+        "key": "ram_threshold",
+        "type": "number",
+        "label": {
+          "de": "Hohe RAM-Belegung eines Nodes ab (%)",
+          "en": "High node RAM usage from (%)"
+        },
+        "help": {
+          "de": "0 = aus. Gemeldet wird erst, wenn die Belegung so lange anhält wie unten eingestellt.",
+          "en": "0 = off. Notified only when the usage lasts as long as set below."
+        },
+        "min": 0,
+        "max": 100,
+        "default": 0
+      },
+      {
+        "key": "load_minutes",
+        "type": "number",
+        "label": {
+          "de": "Hohe Auslastung: Dauer (Minuten)",
+          "en": "High load: duration (minutes)"
+        },
+        "min": 5,
+        "max": 240,
+        "default": 15
+      },
+      {
+        "key": "show_updates",
+        "type": "boolean",
+        "label": {
+          "de": "Verfügbare Updates anzeigen",
+          "en": "Show available updates"
+        },
+        "help": {
+          "de": "Liest die Paketliste der Nodes (nur lesen, alle 6 Stunden). Proxmox verlangt dafür das Recht Sys.Modify auf /nodes – nur einschalten, wenn der Token es haben soll.",
+          "en": "Reads the nodes' package list (read-only, every 6 hours). Proxmox requires the privilege Sys.Modify on /nodes for it – only switch on if the token should have it."
+        },
+        "default": false
+      },
+      {
+        "key": "notify_recipients",
+        "type": "select",
+        "label": {
+          "de": "Empfänger der Benachrichtigungen",
+          "en": "Notification recipients"
+        },
+        "help": {
+          "de": "„Alle Administratoren“: nur Personen mit Rolle Admin (jede kann Themen abschalten). „Regel des Themas“: wer welche Meldung bekommt, legst du in GateControl unter System › Benachrichtigungen fest.",
+          "en": "“All administrators”: only people with the admin role (each can switch topics off). “Rule of the topic”: who gets which notification is set in GateControl under System › Notifications."
+        },
+        "options": [
+          {
+            "value": "admins",
+            "label": {
+              "de": "Alle Administratoren",
+              "en": "All administrators"
+            }
+          },
+          {
+            "value": "rule",
+            "label": {
+              "de": "Regel des Themas",
+              "en": "Rule of the topic"
+            }
+          }
+        ],
+        "default": "admins"
+      },
+      {
+        "key": "notify_lang",
+        "type": "select",
+        "label": {
+          "de": "Sprache der Benachrichtigungen",
+          "en": "Notification language"
+        },
+        "options": [
+          {
+            "value": "de",
+            "label": "Deutsch"
+          },
+          {
+            "value": "en",
+            "label": "English"
+          }
+        ],
+        "default": "de"
+      }
+    ]
+  },
+  "license": {
+    "required": true
+  },
+  "migrations": "migrations",
+  "notifyTopics": [
+    {
+      "id": "unreachable",
+      "label": {
+        "de": "Proxmox-Host oder Node nicht erreichbar",
+        "en": "Proxmox host or node unreachable"
+      },
+      "default": true
+    },
+    {
+      "id": "guest_stopped",
+      "label": {
+        "de": "VM/CT unerwartet gestoppt",
+        "en": "VM/CT stopped unexpectedly"
+      },
+      "default": true
+    },
+    {
+      "id": "storage_full",
+      "label": {
+        "de": "Proxmox-Speicher fast voll",
+        "en": "Proxmox storage almost full"
+      },
+      "default": true
+    },
+    {
+      "id": "backup_failed",
+      "label": {
+        "de": "Proxmox-Backup fehlgeschlagen",
+        "en": "Proxmox backup failed"
+      },
+      "default": true
+    },
+    {
+      "id": "node_load",
+      "label": {
+        "de": "Hohe Auslastung eines Nodes",
+        "en": "High node load"
+      },
+      "default": true
+    }
+  ]
+}
