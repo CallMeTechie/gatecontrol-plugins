@@ -35,6 +35,7 @@ fixture). It is built and tested in CI but never released
 | `gatecontrol-skoda` | Fahrzeuge (Škoda / MySkoda) — formerly built into GateControl; imports the built-in data; notifies: charging complete, battery low, not locked, climate done | ≥ 1.154.0 (1.0.0: ≥ 1.151.0) |
 | `gatecontrol-alltag` | Alltag / Everyday — waste collection dates (online waste calendars AbfallNavi, abfall.io, AWIDO; ICS upload; own rules) and iCal calendars (Google, iCloud, Outlook, or a home-network server such as Nextcloud); portal sections in "Zuhause", Start tiles, search; notifies: waste collection (per plan 0–3 days before at a set time, optionally on the day), calendar events | ≥ 1.154.0 |
 | `gatecontrol-synology` | NAS (Synology) — status and control of Synology NAS through the DSM Web API (several NAS, home target over HTTP; DSM 2-step verification via device token): model, DSM version, CPU/RAM, temperature, volumes, storage pools, drives (S.M.A.R.T.), DSM update, Hyper Backup, UPS; reboot, shutdown, back up now; administrators only; notifies: NAS unreachable, storage degraded/almost full, drive health/temperature, backup failed, DSM update, reboot/shutdown | ≥ 1.154.0 |
+| `gatecontrol-proxmox` | Proxmox VE — status of hosts and clusters (nodes, VMs/containers, storage, backups, HA) and control of VMs/CTs (start, shutdown, stop, reboot) for administrators; admin page only; notifies: host/node unreachable, watched guest stopped, storage almost full, backup failed, high node load | ≥ 1.154.0 |
 
 ### Notifications
 

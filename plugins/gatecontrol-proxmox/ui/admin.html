@@ -1,0 +1,163 @@
+<main class="px-page">
+  <div class="px-tabs" role="tablist">
+    <button type="button" role="tab" class="px-tab active" id="px-tab-overview" aria-selected="true" aria-controls="px-pane-overview">{{t:tab.overview}}</button>
+    <button type="button" role="tab" class="px-tab" id="px-tab-guests" aria-selected="false" aria-controls="px-pane-guests">{{t:tab.guests}}</button>
+    <button type="button" role="tab" class="px-tab" id="px-tab-storage" aria-selected="false" aria-controls="px-pane-storage">{{t:tab.storage}}</button>
+    <button type="button" role="tab" class="px-tab" id="px-tab-hosts" aria-selected="false" aria-controls="px-pane-hosts">{{t:tab.hosts}}</button>
+  </div>
+  <div class="banner banner-warn" id="px-no-targets" role="status" hidden>{{t:hosts.no_targets}}</div>
+  <div class="banner" id="px-no-hosts" hidden>
+    <span>{{t:hosts.empty}}</span>
+    <button class="btn btn-primary btn-sm" type="button" id="px-empty-add">{{t:host.add}}</button>
+  </div>
+
+  <!-- Übersicht: connections → nodes -->
+  <section id="px-pane-overview" role="tabpanel" aria-labelledby="px-tab-overview">
+    <div id="px-overview"></div>
+  </section>
+
+  <!-- Gäste -->
+  <section id="px-pane-guests" role="tabpanel" aria-labelledby="px-tab-guests" hidden>
+    <div class="px-filters">
+      <input class="form-input px-search" id="px-g-search" type="search" placeholder="{{t:guests.search}}" aria-label="{{t:guests.search}}" autocomplete="off">
+      <select class="form-select" id="px-g-host" aria-label="{{t:guests.host}}"></select>
+      <select class="form-select" id="px-g-type" aria-label="{{t:guests.type}}">
+        <option value="">{{t:guests.type_all}}</option>
+        <option value="qemu">{{t:kind.qemu_long}}</option>
+        <option value="lxc">{{t:kind.lxc_long}}</option>
+      </select>
+      <select class="form-select" id="px-g-status" aria-label="{{t:guests.status}}">
+        <option value="">{{t:guests.status_all}}</option>
+        <option value="running">{{t:status.running}}</option>
+        <option value="stopped">{{t:status.stopped}}</option>
+      </select>
+      <label class="check"><input type="checkbox" id="px-g-watched"> {{t:guests.only_watched}}</label>
+    </div>
+    <p class="px-hint">{{t:guests.watch_hint}}</p>
+    <div class="px-table-wrap">
+      <table class="px-table" id="px-g-table">
+        <thead>
+          <tr>
+            <th>{{t:guests.col_vmid}}</th>
+            <th>{{t:guests.col_name}}</th>
+            <th>{{t:guests.col_type}}</th>
+            <th>{{t:guests.col_node}}</th>
+            <th>{{t:guests.col_status}}</th>
+            <th>{{t:guests.col_cpu}}</th>
+            <th>{{t:guests.col_ram}}</th>
+            <th>{{t:guests.col_uptime}}</th>
+            <th>{{t:guests.col_watch}}</th>
+            <th>{{t:guests.col_actions}}</th>
+          </tr>
+        </thead>
+        <tbody id="px-g-body"></tbody>
+      </table>
+    </div>
+    <div class="px-empty" id="px-g-empty" hidden></div>
+  </section>
+
+  <!-- Speicher & Backups -->
+  <section id="px-pane-storage" role="tabpanel" aria-labelledby="px-tab-storage" hidden>
+    <h3 class="px-h">{{t:storage.title}}</h3>
+    <div id="px-storage"></div>
+    <h3 class="px-h">{{t:backups.title}}</h3>
+    <div id="px-backups"></div>
+  </section>
+
+  <!-- Verbindungen -->
+  <section id="px-pane-hosts" role="tabpanel" aria-labelledby="px-tab-hosts" hidden>
+    <div class="px-bar">
+      <div class="px-bar-info" id="px-hosts-info"></div>
+      <div class="page-actions">
+        <button class="btn btn-primary" type="button" id="px-host-add">{{t:host.add}}</button>
+      </div>
+    </div>
+    <div class="px-grid" id="px-hosts"></div>
+    <h3 class="px-h">{{t:actions.title}}</h3>
+    <div id="px-actions"></div>
+    <details class="px-setup">
+      <summary>{{t:setup.title}}</summary>
+      <p><strong>{{t:setup.target_title}}</strong> {{t:setup.target}}</p>
+      <ul>
+        <li>{{t:setup.cert_gateway}}</li>
+        <li>{{t:setup.cert_acme}}</li>
+        <li>{{t:setup.cert_direct}}</li>
+      </ul>
+      <p><strong>{{t:setup.token_title}}</strong> {{t:setup.token}}</p>
+      <pre class="px-pre">pveum user add gatecontrol@pve --comment "GateControl"
+pveum acl modify / --users gatecontrol@pve --roles PVEAuditor
+pveum role add GateControlPower --privs "VM.PowerMgmt VM.Audit"
+pveum acl modify /vms --users gatecontrol@pve --roles GateControlPower
+pveum user token add gatecontrol@pve monitor --privsep 0</pre>
+      <p>{{t:setup.token_result}}</p>
+      <ul>
+        <li>{{t:setup.priv_audit}}</li>
+        <li>{{t:setup.priv_power}}</li>
+        <li>{{t:setup.priv_updates}}</li>
+      </ul>
+      <p>{{t:setup.no_node_power}}</p>
+    </details>
+  </section>
+
+  <!-- Verbindung hinzufügen / bearbeiten -->
+  <div class="modal-overlay" id="px-host-modal" role="dialog" aria-modal="true" aria-labelledby="px-host-title" hidden>
+    <div class="modal">
+      <div class="modal-head">
+        <div class="modal-title" id="px-host-title">{{t:host.add}}</div>
+        <button class="btn modal-close" type="button" data-close="px-host-modal" aria-label="{{t:common.close}}">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label class="form-label" for="px-h-name">{{t:host.name}}</label>
+          <input class="form-input" id="px-h-name" type="text" maxlength="60" placeholder="{{t:host.name_ph}}" autocomplete="off">
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="px-h-target">{{t:host.target}}</label>
+          <select class="form-select" id="px-h-target"></select>
+          <span class="form-hint">{{t:host.target_hint}}</span>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="px-h-token">{{t:host.token_id}}</label>
+          <input class="form-input px-mono" id="px-h-token" type="text" maxlength="200" placeholder="gatecontrol@pve!monitor" autocomplete="off" spellcheck="false">
+          <span class="form-hint">{{t:host.token_id_hint}}</span>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="px-h-secret">{{t:host.secret}}</label>
+          <input class="form-input px-mono" id="px-h-secret" type="password" maxlength="200" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" autocomplete="new-password" spellcheck="false">
+          <span class="form-hint" id="px-h-secret-hint">{{t:host.secret_hint}}</span>
+        </div>
+        <label class="check form-group" id="px-h-enabled-row"><input type="checkbox" id="px-h-enabled"> {{t:host.enabled}}</label>
+        <div class="px-test">
+          <button class="btn btn-sm" type="button" id="px-h-test">{{t:host.test}}</button>
+          <p class="px-msg" id="px-h-test-msg" role="status"></p>
+        </div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn btn-danger" type="button" id="px-h-delete" hidden>{{t:common.delete}}</button>
+        <span class="px-spacer"></span>
+        <button class="btn" type="button" data-close="px-host-modal">{{t:common.cancel}}</button>
+        <button class="btn btn-primary" type="button" id="px-h-save">{{t:common.save}}</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Aktion bestätigen / Ergebnis -->
+  <div class="modal-overlay" id="px-action-modal" role="dialog" aria-modal="true" aria-labelledby="px-a-title" hidden>
+    <div class="modal">
+      <div class="modal-head">
+        <div class="modal-title" id="px-a-title"></div>
+        <button class="btn modal-close" type="button" data-close="px-action-modal" aria-label="{{t:common.close}}">×</button>
+      </div>
+      <div class="modal-body">
+        <p class="modal-msg" id="px-a-msg"></p>
+        <div class="banner banner-crit" id="px-a-warn" hidden>{{t:action.stop_warn}}</div>
+        <label class="check" id="px-a-hard-row" hidden><input type="checkbox" id="px-a-hard"> {{t:action.stop_confirm}}</label>
+        <div class="px-progress" id="px-a-progress" role="status" hidden></div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn" type="button" id="px-a-cancel" data-close="px-action-modal">{{t:common.cancel}}</button>
+        <button class="btn btn-primary" type="button" id="px-a-ok"></button>
+      </div>
+    </div>
+  </div>
+</main>
