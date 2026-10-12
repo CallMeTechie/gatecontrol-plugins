@@ -1,0 +1,84 @@
+{
+  "$comment": "Synthetic DSM 7.2.1 answers (the data of { success: true, data }) in the shapes of the DSM Web API; no real device, example values only.",
+  "api_info": {
+    "SYNO.API.Auth": { "maxVersion": 7, "minVersion": 1, "path": "entry.cgi" },
+    "SYNO.DSM.Info": { "maxVersion": 2, "minVersion": 1, "path": "entry.cgi" },
+    "SYNO.Core.System": { "maxVersion": 3, "minVersion": 1, "path": "entry.cgi", "requestFormat": "JSON" },
+    "SYNO.Core.System.Utilization": { "maxVersion": 1, "minVersion": 1, "path": "entry.cgi", "requestFormat": "JSON" },
+    "SYNO.Storage.CGI.Storage": { "maxVersion": 1, "minVersion": 1, "path": "entry.cgi" },
+    "SYNO.Core.Upgrade.Server": { "maxVersion": 4, "minVersion": 1, "path": "entry.cgi", "requestFormat": "JSON" },
+    "SYNO.Backup.Task": { "maxVersion": 1, "minVersion": 1, "path": "entry.cgi", "requestFormat": "JSON" },
+    "SYNO.Core.ExternalDevice.UPS": { "maxVersion": 1, "minVersion": 1, "path": "entry.cgi", "requestFormat": "JSON" }
+  },
+  "responses": {
+    "SYNO.DSM.Info.getinfo": {
+      "codepage": "ger", "model": "DS920+", "ram": 4096, "serial": "2010PDN000000",
+      "temperature": 44, "temperature_warn": false, "time": "Mon Oct 12 10:00:00 2026",
+      "uptime": 1123200, "version": "69057", "version_string": "DSM 7.2.1-69057 Update 5"
+    },
+    "SYNO.Core.System.info": {
+      "cpu_clock_speed": 2000, "cpu_cores": "4", "cpu_family": "Celeron", "cpu_series": "J4125", "cpu_vendor": "INTEL",
+      "firmware_date": "2024/03/18", "firmware_ver": "DSM 7.2.1-69057 Update 5", "model": "DS920+", "ram_size": 4096,
+      "serial": "2010PDN000000", "sys_temp": 44, "sys_tempwarn": false, "temperature_warning": false,
+      "time": "2026-10-12 10:00:00", "up_time": "312:00:00"
+    },
+    "SYNO.Core.System.info:storage": {
+      "hdd_info": [
+        { "capacity": "4000787030016", "diskno": "Drive 1", "diskPath": "/dev/sata1", "model": "WD40EFZX-68AWUN0", "status": "normal", "temp": 36, "volume": "volume_1" }
+      ],
+      "vol_info": [
+        { "name": "volume_1", "status": "normal", "total_size": "11511880392704", "used_size": "6907128235622", "vol_desc": "Daten" }
+      ]
+    },
+    "SYNO.Core.System.Utilization.get": {
+      "cpu": { "15min_load": 22, "1min_load": 31, "5min_load": 26, "device": "System", "other_load": 1, "system_load": 4, "user_load": 9 },
+      "memory": { "avail_real": 802304, "avail_swap": 2001920, "buffer": 41216, "cached": 2306048, "device": "Memory", "memory_size": 4194304,
+        "real_usage": 31, "si_disk": 0, "so_disk": 0, "swap_usage": 4, "total_real": 3854284, "total_swap": 2097084 },
+      "network": [{ "device": "total", "rx": 2048, "tx": 1024 }],
+      "time": 1791800000
+    },
+    "SYNO.Storage.CGI.Storage.load_info": {
+      "disks": [
+        { "id": "sata1", "name": "Drive 1", "device": "/dev/sata1", "model": "WD40EFZX-68AWUN0", "vendor": "WDC", "serial": "WD-XXXX1",
+          "diskType": "SATA", "isSsd": false, "size_total": "4000787030016", "temp": 36, "status": "normal", "smart_status": "normal",
+          "overview_status": "normal", "exceed_bad_sector_thr": false, "below_remain_life_thr": false, "remain_life": { "trustable": false, "value": -1 }, "used_by": "reuse_1" },
+        { "id": "sata2", "name": "Drive 2", "device": "/dev/sata2", "model": "WD40EFZX-68AWUN0", "vendor": "WDC", "serial": "WD-XXXX2",
+          "diskType": "SATA", "isSsd": false, "size_total": "4000787030016", "temp": 38, "status": "normal", "smart_status": "normal",
+          "overview_status": "normal", "exceed_bad_sector_thr": false, "below_remain_life_thr": false, "remain_life": { "trustable": false, "value": -1 }, "used_by": "reuse_1" },
+        { "id": "sata3", "name": "Drive 3", "device": "/dev/sata3", "model": "WD40EFZX-68AWUN0", "vendor": "WDC", "serial": "WD-XXXX3",
+          "diskType": "SATA", "isSsd": false, "size_total": "4000787030016", "temp": 37, "status": "normal", "smart_status": "normal",
+          "overview_status": "normal", "exceed_bad_sector_thr": false, "below_remain_life_thr": false, "remain_life": { "trustable": false, "value": -1 }, "used_by": "reuse_1" },
+        { "id": "nvme0n1", "name": "Cache device 1", "device": "/dev/nvme0n1", "model": "SNV3S500G", "vendor": "Kingston", "serial": "50026B000000",
+          "diskType": "NVMe", "isSsd": true, "size_total": "500107862016", "temp": 41, "status": "normal", "smart_status": "normal",
+          "overview_status": "normal", "exceed_bad_sector_thr": false, "below_remain_life_thr": false, "remain_life": { "trustable": true, "value": 97 }, "used_by": "" }
+      ],
+      "storagePools": [
+        { "id": "reuse_1", "num_id": 1, "pool_path": "reuse_1", "device_type": "shr_with_1_disk_protect", "raidType": "multiple",
+          "status": "normal", "summary_status": "normal", "size": { "total": "11993834569728", "used": "11511880392704" },
+          "disks": ["sata1", "sata2", "sata3"], "desc": "" }
+      ],
+      "volumes": [
+        { "id": "volume_1", "num_id": 1, "vol_path": "/volume1", "pool_path": "reuse_1", "status": "normal", "summary_status": "normal",
+          "fs_type": "btrfs", "description": "Daten", "size": { "total": "11511880392704", "used": "6907128235622", "total_device": "11993834569728" } }
+      ],
+      "env": { "bay_number": "4", "status": { "system_crashed": false, "system_need_repair": false } }
+    },
+    "SYNO.Core.Upgrade.Server.check": {
+      "update": { "available": true, "reboot": "now", "restart": "some", "type": "nano", "version": "DSM 7.2.2-72806 Update 2",
+        "version_details": { "buildnumber": 72806, "major": 7, "minor": 2, "micro": 2, "nano": 2, "os_name": "DSM" } }
+    },
+    "SYNO.Backup.Task.list": {
+      "task_list": [
+        { "task_id": 1, "name": "USB-Sicherung", "state": "backupable", "status": "none", "type": "image", "target_type": "usb",
+          "last_bkp_result": "done", "last_bkp_time": "2026/10/12 03:00", "last_bkp_end_time": "2026/10/12 03:41", "next_bkp_time": "2026/10/13 03:00" },
+        { "task_id": 2, "name": "Cloud (C2)", "state": "backupable", "status": "none", "type": "image", "target_type": "cloud_image",
+          "last_bkp_result": "done", "last_bkp_time": "2026/10/12 04:00", "last_bkp_end_time": "2026/10/12 04:22", "next_bkp_time": "2026/10/13 04:00" }
+      ],
+      "total": 2
+    },
+    "SYNO.Core.ExternalDevice.UPS.get": {
+      "ACPower": "", "charge": 100, "enable": true, "manufacture": "APC", "model": "Back-UPS ES 700G", "mode": "SLAVE",
+      "runtime": 1980, "status": "usb_ups_status_online", "usb_ups_connect": true
+    }
+  }
+}

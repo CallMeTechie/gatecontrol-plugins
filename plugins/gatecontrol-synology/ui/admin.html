@@ -1,0 +1,130 @@
+<main class="sy-page">
+  <div class="sy-tabs" role="tablist">
+    <button type="button" role="tab" class="sy-tab active" id="sy-tab-nas" aria-selected="true" aria-controls="sy-pane-nas">{{t:tab.nas}}</button>
+    <button type="button" role="tab" class="sy-tab" id="sy-tab-settings" aria-selected="false" aria-controls="sy-pane-settings">{{t:tab.settings}}</button>
+  </div>
+
+  <section id="sy-pane-nas" role="tabpanel" aria-labelledby="sy-tab-nas">
+    <div class="banner banner-warn" id="sy-no-target" hidden>
+      <strong>{{t:target.none_title}}</strong>
+      <span>{{t:target.none}}</span>
+    </div>
+    <div id="sy-list-view">
+      <div class="sy-bar">
+        <div class="sy-bar-info" id="sy-info"></div>
+        <div class="page-actions">
+          <button class="btn" type="button" id="sy-reload">{{t:common.reload}}</button>
+          <button class="btn btn-primary" type="button" id="sy-add">{{t:nas.add}}</button>
+        </div>
+      </div>
+      <div class="sy-grid" id="sy-list"></div>
+    </div>
+    <div id="sy-detail-view" hidden>
+      <div class="sy-bar">
+        <button class="btn" type="button" id="sy-back">← {{t:detail.back}}</button>
+        <div class="page-actions" id="sy-detail-actions"></div>
+      </div>
+      <div id="sy-detail"></div>
+    </div>
+  </section>
+
+  <section id="sy-pane-settings" role="tabpanel" aria-labelledby="sy-tab-settings" hidden>
+    <div class="sy-card sy-settings">
+      <p class="form-hint">{{t:settings.hint}}</p>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label" for="sy-set-interval">{{t:settings.interval}}</label>
+          <input class="form-input" id="sy-set-interval" type="number" min="60" max="3600" step="10" inputmode="numeric">
+          <span class="form-hint">{{t:settings.interval_hint}}</span>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="sy-set-polls">{{t:settings.polls}}</label>
+          <input class="form-input" id="sy-set-polls" type="number" min="1" max="20" step="1" inputmode="numeric">
+          <span class="form-hint">{{t:settings.polls_hint}}</span>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label" for="sy-set-full">{{t:settings.full}}</label>
+          <input class="form-input" id="sy-set-full" type="number" min="50" max="99" step="1" inputmode="numeric">
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="sy-set-temp">{{t:settings.temp}}</label>
+          <input class="form-input" id="sy-set-temp" type="number" min="40" max="80" step="1" inputmode="numeric">
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="sy-set-lang">{{t:settings.lang}}</label>
+          <select class="form-select" id="sy-set-lang">
+            <option value="de">Deutsch</option>
+            <option value="en">English</option>
+          </select>
+        </div>
+      </div>
+      <p class="form-hint">{{t:settings.notify_hint}}</p>
+      <div class="sy-foot">
+        <button class="btn btn-primary" type="button" id="sy-set-save">{{t:common.save}}</button>
+      </div>
+    </div>
+    <div class="sy-card sy-help">
+      <div class="sy-lbl">{{t:help.title}}</div>
+      <p>{{t:help.target}}</p>
+      <p>{{t:help.https}}</p>
+      <p>{{t:help.account}}</p>
+      <p>{{t:help.otp}}</p>
+    </div>
+  </section>
+
+  <!-- NAS hinzufügen / bearbeiten -->
+  <div class="modal-overlay" id="sy-nas-modal" role="dialog" aria-modal="true" aria-labelledby="sy-n-title" hidden>
+    <div class="modal modal-wide">
+      <div class="modal-head">
+        <div class="modal-title" id="sy-n-title">{{t:nas.add}}</div>
+        <button class="btn modal-close" type="button" data-close="sy-nas-modal" aria-label="{{t:common.close}}">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label class="form-label" for="sy-n-name">{{t:nas.name}}</label>
+          <input class="form-input" id="sy-n-name" type="text" maxlength="60" placeholder="{{t:nas.name_ph}}" autocomplete="off">
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="sy-n-target">{{t:nas.target}}</label>
+          <select class="form-select" id="sy-n-target"></select>
+          <span class="form-hint">{{t:nas.target_hint}}</span>
+        </div>
+        <fieldset class="sy-box">
+          <legend class="sy-legend">{{t:nas.account}}</legend>
+          <p class="form-hint">{{t:nas.account_hint}}</p>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label" for="sy-n-user">{{t:nas.username}}</label>
+              <input class="form-input" id="sy-n-user" type="text" maxlength="200" autocomplete="off" spellcheck="false">
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="sy-n-pass">{{t:nas.password}}</label>
+              <input class="form-input" id="sy-n-pass" type="password" maxlength="500" autocomplete="new-password">
+            </div>
+          </div>
+          <span class="form-hint" id="sy-n-cred-hint"></span>
+          <div class="sy-otp" id="sy-n-otp-box" hidden>
+            <div class="form-group">
+              <label class="form-label" for="sy-n-otp">{{t:nas.otp}}</label>
+              <input class="form-input sy-otp-input" id="sy-n-otp" type="text" inputmode="numeric" maxlength="12" autocomplete="one-time-code" spellcheck="false" placeholder="123456">
+              <span class="form-hint">{{t:nas.otp_hint}}</span>
+            </div>
+          </div>
+        </fieldset>
+        <div class="sy-test">
+          <button class="btn btn-sm" type="button" id="sy-n-test">{{t:nas.test}}</button>
+          <span class="sy-msg" id="sy-n-test-msg" role="status"></span>
+        </div>
+        <label class="check"><input type="checkbox" id="sy-n-enabled" checked> {{t:nas.enabled}}</label>
+        <p class="sy-msg" id="sy-n-msg" role="status"></p>
+      </div>
+      <div class="modal-foot">
+        <button class="btn btn-danger" type="button" id="sy-n-delete" hidden>{{t:common.delete}}</button>
+        <button class="btn" type="button" data-close="sy-nas-modal">{{t:common.cancel}}</button>
+        <button class="btn btn-primary" type="button" id="sy-n-save">{{t:common.save}}</button>
+      </div>
+    </div>
+  </div>
+</main>
