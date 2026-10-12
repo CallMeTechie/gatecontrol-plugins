@@ -3,12 +3,18 @@
 // Reminders (plugin.json notifyTopics), checked by the background run every
 // minute from what is already stored — no extra requests:
 //
-//   waste     "Morgen: Gelber Sack, Papier" the evening before (default
-//             18:00) and, when switched on, "Heute: …" on the morning of the
-//             day (default 06:30); one per plan and day (collapse key
-//             waste:<plan>:<date>, the morning one replaces the evening one);
-//             to the plan's people (users) or, without a list, the topic's
-//             subscribers.
+//   waste     per plan (Abfuhrplan, migrations/002): the main reminder 0–3
+//             days before the pickup at HH:MM ("Heute: …", "Morgen: …",
+//             "Übermorgen: …", "Am Do, 15.10.: …") or none, and optionally a
+//             second one on the pickup day ("Heute: …"). A plan without its
+//             own setting (the plans of 1.0.0 until they are edited) uses the
+//             plugin settings: the evening before at waste_evening_time and,
+//             with waste_morning, on the day at waste_morning_time. One per
+//             plan, pickup day and kind (main / pickup day): changing a plan's
+//             reminder never repeats one already sent for that day. Collapse
+//             key waste:<plan>:<date> (the pickup-day one replaces the main
+//             one); to the plan's people (users) or, without a list, the
+//             topic's subscribers.
 //   calendar  per subscription: at the start or 10/15/30/60 minutes before
 //             a timed event, all-day events in the morning (default 07:00);
 //             collapse key per event instance; only to the subscription's
@@ -19,7 +25,11 @@
 // gc.storage (notify.state): a restart neither repeats a reminder nor loses
 // one that fell into the downtime (as long as it is still useful). The very
 // first run only records what is already due — installing the plugin at
-// 18:05 does not announce the 18:00 reminder. A reminder held back by the
+// 18:05 does not announce the 18:00 reminder. A reminder that was already due
+// at the previous check without being sent (a plan created or its reminder
+// changed afterwards, new dates from the provider) is "late": per plan only
+// the one of the nearest pickup goes out, the others are recorded — editing
+// a plan never sends a flood of past reminders. A reminder held back by the
 // hourly budget is tried again while it is still due.
 
 const crypto = require('node:crypto');
@@ -39,7 +49,8 @@ const TEXTS = {
   de: {
     'waste.today': 'Heute: {{list}}',
     'waste.tomorrow': 'Morgen: {{list}}',
-    'waste.on': '{{date}}: {{list}}',
+    'waste.in2': 'Übermorgen: {{list}}',
+    'waste.on': 'Am {{date}}: {{list}}',
     'waste.body': '{{plan}} · {{date}}',
     'waste.body_one': 'Abfuhr am {{date}}',
     'cal.in': 'In {{min}} Minuten · {{time}}',
@@ -59,7 +70,8 @@ const TEXTS = {
   en: {
     'waste.today': 'Today: {{list}}',
     'waste.tomorrow': 'Tomorrow: {{list}}',
-    'waste.on': '{{date}}: {{list}}',
+    'waste.in2': 'Day after tomorrow: {{list}}',
+    'waste.on': 'On {{date}}: {{list}}',
     'waste.body': '{{plan}} · {{date}}',
     'waste.body_one': 'Collection on {{date}}',
     'cal.in': 'In {{min}} minutes · {{time}}',
@@ -84,23 +96,64 @@ const fmtTime = (ms, cfg) => format.time(ms, cfg.tz);
 
 // ─── Observations (what could be due) ───────────
 
-/** Waste reminders of the plans' next pickups (today … day after tomorrow). */
+const MAX_LEAD = 3; // days before the pickup
+
+/**
+ * The reminder a plan actually uses: its own fields, the plugin settings
+ * for every field it leaves open (null). → { lead: 0–3 | null (none), time,
+ * extra, extraTime, custom } with times as { hh, mm }.
+ */
+function reminderOf(plan, cfg) {
+  const r = (plan && plan.reminder) || {};
+  const lead = r.lead === 'off' ? null : (Number.isInteger(r.lead) && r.lead >= 0 && r.lead <= MAX_LEAD ? r.lead : 1);
+  return {
+    lead,
+    time: tz.parseTime(r.time) || cfg.evening,
+    extra: typeof r.extra === 'boolean' ? r.extra : !!cfg.morning,
+    extraTime: tz.parseTime(r.extra_time) || cfg.morningTime,
+    custom: r.lead != null || r.time != null || r.extra != null || r.extra_time != null,
+  };
+}
+
+/**
+ * When the reminders of one pickup day are due (pure): the main one
+ * (kind 'e', `lead` days before at `time`; until the pickup day begins —
+ * on the day itself until noon, at least 2 h) and the pickup-day one
+ * (kind 'm', until noon, at least 2 h). The local wall clock of `zone`
+ * (DST-correct: the date is counted in days, the time set on that day).
+ * The kind letters are those of 1.0.0 (evening / morning), so a stored
+ * state carries over.
+ * @returns {Array<{ kind: 'e'|'m', due: number, expires: number }>}
+ */
+function wasteSchedule(date, rem, zone) {
+  const out = [];
+  const sameDay = (due) => Math.max(tz.at(date, { hh: 12, mm: 0 }, zone), due + 2 * 3600000);
+  if (rem.lead != null) {
+    const due = tz.at(tz.addDays(date, -rem.lead), rem.time, zone);
+    out.push({ kind: 'e', due, expires: rem.lead ? tz.toUtc({ ...tz.parseDate(date) }, zone) : sameDay(due) });
+  }
+  if (rem.extra) {
+    const due = tz.at(date, rem.extraTime, zone);
+    out.push({ kind: 'm', due, expires: sameDay(due) });
+  }
+  return out;
+}
+
+/** Waste reminders of the plans' next pickups (today … MAX_LEAD days ahead). */
 async function wasteObservations(gc, cfg, now) {
   if (!cfg.wasteEnabled) return [];
   const plans = (await store.listPlans(gc)).filter((p) => p.enabled);
   if (!plans.length) return [];
   const today = tz.localDate(now, cfg.tz);
-  const upcoming = await waste.upcoming(gc, plans.map((p) => p.id), cfg, now, { days: 2, limit: 3 });
+  const upcoming = await waste.upcoming(gc, plans.map((p) => p.id), cfg, now, { days: MAX_LEAD, limit: MAX_LEAD + 1 });
   const out = [];
   for (const plan of plans) {
+    const rem = reminderOf(plan, cfg);
     for (const day of upcoming.get(plan.id) || []) {
       if (day.date < today || !day.fractions.length) continue;
-      const base = { kind: 'waste', plan: { id: plan.id, name: plan.name, users: plan.users }, date: day.date, fractions: day.fractions.map((f) => ({ name: f.name, type: f.type })) };
-      const midnight = tz.toUtc({ ...tz.parseDate(day.date) }, cfg.tz);
-      out.push({ ...base, key: `w:${plan.id}:${day.date}:e`, when: 'evening', due: tz.at(tz.addDays(day.date, -1), cfg.evening, cfg.tz), expires: midnight });
-      if (cfg.morning) {
-        const due = tz.at(day.date, cfg.morningTime, cfg.tz);
-        out.push({ ...base, key: `w:${plan.id}:${day.date}:m`, when: 'morning', due, expires: Math.max(tz.at(day.date, { hh: 12, mm: 0 }, cfg.tz), due + 2 * 3600000) });
+      const base = { kind: 'waste', group: `w:${plan.id}`, plan: { id: plan.id, name: plan.name, users: plan.users }, date: day.date, fractions: day.fractions.map((f) => ({ name: f.name, type: f.type })) };
+      for (const s of wasteSchedule(day.date, rem, cfg.tz)) {
+        out.push({ ...base, key: `w:${plan.id}:${day.date}:${s.kind}`, when: s.kind === 'm' ? 'pickup_day' : 'main', due: s.due, expires: s.expires });
       }
     }
   }
@@ -140,17 +193,28 @@ async function observations(gc, cfg, now) {
 
 /**
  * @param {object|null} prev  last stored state (null = first run)
- * @param {Array<{ key, kind, due, expires }>} observations
+ * @param {Array<{ key, kind, due, expires, group?, date? }>} observations
  * @param {{ wasteEnabled, calendarEnabled }} cfg
  * @param {number} now  ms
- * @returns {{ memo: { v, at, sent: { key: expires } }, events: Array }}
+ * @returns {{ memo: { v, at, sent: { key: expires }, retry: { key: expires } }, events: Array }}
+ *
+ * An observation is announced once, when it is due and not expired. One
+ * that was already due at the previous check (prev.at) and is neither sent
+ * nor waiting for a retry is late — it was not there before (a new plan,
+ * changed reminder settings, new dates). Late ones of a group (a plan) are
+ * all recorded, but only one goes out: the nearest date, the latest due
+ * time — and none when the group sends a regular one in this run.
  */
 function evaluate(prev, observations, cfg, now) {
   const first = !prev || typeof prev.sent !== 'object' || prev.sent === null;
   const sent = {};
+  const retry = {};
   // forget what expired more than a day ago
   if (!first) for (const [k, exp] of Object.entries(prev.sent)) if (Number(exp) + DAY > now) sent[k] = Number(exp);
+  if (!first && prev.retry && typeof prev.retry === 'object') for (const [k, exp] of Object.entries(prev.retry)) if (Number(exp) > now) retry[k] = Number(exp);
+  const last = !first && Number.isFinite(prev.at) && prev.at <= now ? prev.at : null;
   const events = [];
+  const late = new Map(); // group → observations
   for (const o of observations || []) {
     if (!o || typeof o.key !== 'string') continue;
     if (o.kind === 'waste' && !cfg.wasteEnabled) continue;
@@ -158,9 +222,20 @@ function evaluate(prev, observations, cfg, now) {
     if (sent[o.key] != null) continue;
     if (o.due > now || now >= o.expires) continue;
     sent[o.key] = o.expires;
-    if (!first) events.push(o); // first run: already due = only recorded
+    if (first) continue; // first run: already due = only recorded
+    const isLate = o.group != null && last != null && o.due <= last && retry[o.key] == null;
+    delete retry[o.key];
+    if (!isLate) { events.push(o); continue; }
+    if (!late.has(o.group)) late.set(o.group, []);
+    late.get(o.group).push(o);
   }
-  return { memo: { v: 1, at: now, sent }, events };
+  for (const [group, list] of late) {
+    if (events.some((e) => e.group === group)) continue;
+    const ord = (o) => (o.date != null ? String(o.date) : '');
+    list.sort((a, b) => (ord(a) < ord(b) ? -1 : (ord(a) > ord(b) ? 1 : b.due - a.due)));
+    events.push(list[0]);
+  }
+  return { memo: { v: 2, at: now, sent, retry }, events };
 }
 
 // ─── Notifications ──────────────────────────────
@@ -174,8 +249,8 @@ function toNotification(gc, o, cfg, now, { test = false } = {}) {
   const ttl = (exp) => Math.max(60, Math.min(30 * 86400, Math.round((exp - now) / 1000)));
   if (o.kind === 'waste') {
     const list = o.fractions.map((f) => f.name).join(', ');
-    const today = tz.localDate(now, cfg.tz);
-    const key = o.date === today ? 'waste.today' : (o.date === tz.addDays(today, 1) ? 'waste.tomorrow' : 'waste.on');
+    const ahead = tz.diffDays(tz.localDate(now, cfg.tz), o.date);
+    const key = ahead <= 0 ? 'waste.today' : (ahead === 1 ? 'waste.tomorrow' : (ahead === 2 ? 'waste.in2' : 'waste.on'));
     const day = fmtDay(o.date, cfg);
     const facts = [{ label: tx('fact.fractions'), value: list.slice(0, 120) }, { label: tx('fact.plan'), value: o.plan.name.slice(0, 120) }, { label: tx('fact.date'), value: day }];
     return {
@@ -227,7 +302,7 @@ function check(gc, { now = Date.now() } = {}) {
       if (ev.kind === 'waste' && Array.isArray(ev.plan.users) && !ev.plan.users.length) continue;
       const r = await notifierOf(gc).send(toNotification(gc, ev, cfg, now));
       if (r.sent) sent++;
-      else if (RETRY.has(r.error)) delete memo.sent[ev.key]; // budget used up: again while still due
+      else if (RETRY.has(r.error)) { delete memo.sent[ev.key]; memo.retry[ev.key] = ev.expires; } // budget used up: again while still due
     }
     await notify.saveState(gc, STATE_KEY, memo, prev ? JSON.stringify(prev) : null);
     return sent;
@@ -263,4 +338,4 @@ async function sendTest(gc, area, userId, { now = Date.now() } = {}) {
   return notifierOf(gc).send(n);
 }
 
-module.exports = { evaluate, toNotification, observations, wasteObservations, calendarObservations, check, sendTest, reset, STATE_KEY, TEXTS };
+module.exports = { evaluate, reminderOf, wasteSchedule, MAX_LEAD, toNotification, observations, wasteObservations, calendarObservations, check, sendTest, reset, STATE_KEY, TEXTS };

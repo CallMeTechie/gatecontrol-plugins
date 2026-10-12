@@ -7,6 +7,7 @@
 //   admin API   (the plugin page; administrators only)
 //     GET  /status                       everything the page shows
 //     POST /plans   PUT|DELETE /plans/:id   POST /plans/:id/refresh   GET /plans/:id/dates
+//                                        (a plan's reminder: { lead, time, extra, extra_time })
 //     PUT  /plans/:id/fractions/:fid     rename / recolour / retype / hide
 //     POST /providers/lookup · /providers/preview · /ics/preview
 //     POST /subscriptions   PUT|DELETE /subscriptions/:id   POST /subscriptions/:id/refresh
@@ -61,6 +62,7 @@ const ERRORS = {
   PATH_INVALID: [400, 'error.path_invalid'],
   TARGET_REQUIRED: [400, 'error.target_required'],
   USERS_INVALID: [400, 'error.users_invalid'],
+  REMINDER_INVALID: [400, 'error.reminder_invalid'],
   PROVIDER_UNKNOWN: [400, 'error.provider_unknown'],
   PROVIDER_CONFIG: [400, 'error.provider_config'],
   PROVIDER_NOT_FOUND: [502, 'error.provider_not_found'],
@@ -122,6 +124,7 @@ async function planView(gc, p, cfg, users, upcomingMap, now) {
     id: p.id, name: p.name, source: p.source, provider: p.provider, provider_config: p.provider_config,
     ics_name: p.ics_name, ics_size: p.ics_size, rules: p.rules, exceptions: p.exceptions,
     users: p.users == null ? null : p.users.filter((id) => users.has(id)).map((id) => users.get(id)),
+    reminder: reminderView(p, cfg),
     enabled: p.enabled, status: p.status, last_error: p.last_error, error_text: p.last_error ? t(cfg.uiLang, ERRORS[p.last_error] ? ERRORS[p.last_error][1] : 'error.refresh') : null,
     last_attempt_at: p.last_attempt_at, last_success_at: p.last_success_at, next_refresh_at: p.next_refresh_at,
     date_count: await store.countDates(gc, p.id, today), fractions: frs,
@@ -145,7 +148,42 @@ async function subView(gc, s, cfg, users, targets, now) {
   };
 }
 
+/** The reminder a plan uses (its own or the defaults) for the page: { lead: 'off'|0–3, time, extra, extra_time, custom }. */
+function reminderView(p, cfg) {
+  const r = alerts.reminderOf(p, cfg);
+  return { lead: r.lead == null ? 'off' : r.lead, time: config.hhmm(r.time), extra: r.extra, extra_time: config.hhmm(r.extraTime), custom: r.custom };
+}
+
 // ─── Plans (admin) ──────────────────────────────
+
+/**
+ * The reminder of a plan from a request body: null = the plugin settings
+ * (defaults); an object { lead: 'off' | 0–3 | null, time: 'HH:MM' | null,
+ * extra: boolean | null, extra_time: 'HH:MM' | null } — a field left out or
+ * null follows the settings. On update, fields left out keep their value.
+ */
+function cleanReminder(raw, existing) {
+  if (raw === null) return { lead: null, time: null, extra: null, extra_time: null };
+  if (typeof raw !== 'object' || Array.isArray(raw)) throw fail('REMINDER_INVALID');
+  const out = { lead: null, time: null, extra: null, extra_time: null, ...(existing || {}) };
+  const time = (v) => {
+    if (v === null) return null;
+    const m = typeof v === 'string' ? /^([01]?\d|2[0-3]):([0-5]\d)$/.exec(v.trim()) : null;
+    if (!m) throw fail('REMINDER_INVALID');
+    return `${m[1].padStart(2, '0')}:${m[2]}`;
+  };
+  if (raw.lead !== undefined) {
+    if (raw.lead !== null && raw.lead !== 'off' && !(Number.isInteger(raw.lead) && raw.lead >= 0 && raw.lead <= alerts.MAX_LEAD)) throw fail('REMINDER_INVALID');
+    out.lead = raw.lead;
+  }
+  if (raw.time !== undefined) out.time = time(raw.time);
+  if (raw.extra !== undefined) {
+    if (raw.extra !== null && typeof raw.extra !== 'boolean') throw fail('REMINDER_INVALID');
+    out.extra = raw.extra;
+  }
+  if (raw.extra_time !== undefined) out.extra_time = time(raw.extra_time);
+  return out;
+}
 
 function cleanProviderConfig(provider, raw) {
   const p = providers.get(provider);
@@ -203,6 +241,7 @@ async function planFields(gc, body, existing) {
     out.exceptions = ex;
   }
   if (body.users !== undefined) out.users = await cleanUsers(gc, body.users, { allowNull: true });
+  if (body.reminder !== undefined) out.reminder = cleanReminder(body.reminder, existing && existing.reminder);
   if (body.enabled !== undefined) { if (typeof body.enabled !== 'boolean') throw fail('INVALID'); out.enabled = body.enabled; }
   return out;
 }
