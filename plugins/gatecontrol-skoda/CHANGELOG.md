@@ -2,6 +2,18 @@
 
 Škoda-Fahrzeuge (MySkoda) als GateControl-Plugin – bisher fest in GateControl eingebaut.
 
+## 1.2.0
+- Schnellaktionen für die GateControl-Apps (Verknüpfungen auf dem Startbildschirm,
+  Schnelleinstellungen, Widget) – dieselben Befehle wie im Portal: Klimatisierung,
+  Laden (Fahrzeuge mit Akku) und Scheibenheizung als Schalter (Zustand aus dem zuletzt
+  abgefragten Stand), Verriegeln und Entriegeln als Tasten, nur wenn für das Konto eine
+  S-PIN hinterlegt ist; **Entriegeln fragt in der App vorher nach**. Höchstens 16.
+- Nur für die angemeldete Person, der das Fahrzeug zugewiesen ist (wie die Steuerung im
+  Portal); die Prüfung läuft beim Auslösen erneut, die Grenzen der Befehle (S-PIN,
+  Ver-/Entriegeln höchstens 5 × in 15 Minuten) gelten unverändert.
+- Optional: GateControl-Versionen ohne Schnellaktionen rufen sie nie auf –
+  die Mindestversion bleibt unverändert.
+
 ## 1.1.0
 - Benachrichtigungen über die Benachrichtigungszentrale von GateControl (Apps, Portal),
   jeweils als eigenes Thema, das jede Person selbst an- und abschalten kann:

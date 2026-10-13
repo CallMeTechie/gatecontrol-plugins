@@ -137,7 +137,10 @@
   "portal.lan": "im Heimnetz",
   "portal.empty": "Dir ist noch kein Klimagerät zugewiesen.",
   "portal.login_hint": "Zum Steuern bitte anmelden.",
-  "portal.load_error": "Klimageräte konnten nicht geladen werden"
+  "portal.load_error": "Klimageräte konnten nicht geladen werden",
+  "qa.switched_on": "{{name}} eingeschaltet",
+  "qa.switched_off": "{{name}} ausgeschaltet",
+  "qa.unknown": "Diese Aktion gibt es nicht mehr."
  },
  "en": {
   "title": "Air conditioning",
@@ -277,6 +280,9 @@
   "portal.lan": "in the home network",
   "portal.empty": "No air conditioner has been assigned to you yet.",
   "portal.login_hint": "Sign in to control.",
-  "portal.load_error": "Air conditioners could not be loaded"
+  "portal.load_error": "Air conditioners could not be loaded",
+  "qa.switched_on": "{{name}} switched on",
+  "qa.switched_off": "{{name}} switched off",
+  "qa.unknown": "This action no longer exists."
  }
 }

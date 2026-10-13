@@ -2,6 +2,16 @@
 
 Phoscon/deCONZ-Integration als GateControl-Plugin – bisher fest in GateControl eingebaut.
 
+## 1.3.0
+- Schnellaktionen für die GateControl-Apps (Verknüpfungen auf dem Startbildschirm,
+  Schnelleinstellungen, Widget): je ein Schalter für die eigenen Lampen, Steckdosen und
+  Gruppen (an/aus, Zustand aus dem zuletzt abgefragten Stand) und je eine Taste für die
+  Szenen eigener Gruppen; höchstens 16, Schalter vor Szenen.
+- Sichtbar und auslösbar ist genau das, was die Person im Portal „Zuhause“ schalten darf
+  (Zuweisung durch einen Administrator); die Prüfung läuft beim Auslösen erneut.
+- Optional: GateControl-Versionen ohne Schnellaktionen rufen sie nie auf –
+  die Mindestversion bleibt unverändert.
+
 ## 1.2.0
 - Farben ändern geht wieder: Die Farbvorgaben schickten Farbton/Sättigung, Farblampen
   mit „xy“-Farbraum (die meisten, z. B. „Extended color light“) bekamen dadurch keine

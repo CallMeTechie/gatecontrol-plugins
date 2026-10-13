@@ -12,6 +12,10 @@
 //   portal API  (the identified portal viewer — owner-scoped)
 //     GET  /portal · /portal/vehicles/:id/image?part=N · /portal/vehicles/:id/details
 //     POST /portal/vehicles/:id/command   (the host lets only signed-in viewers change things)
+//   quick actions of the GateControl apps (hooks quickActions / runQuickAction)
+//     the portal's controls for a signed-in owner: climate, charging, window
+//     heating (toggles), lock and unlock (buttons, with the account's S-PIN;
+//     unlock asks first)
 //
 // Requests run with the requesting user's rights: req.user.portal = a portal
 // viewer, who only ever sees and controls the vehicles an administrator
@@ -103,6 +107,107 @@ function vehicleTile(v, lang) {
   else if (s.locked === false) tone = 'warn';
   else if (soc != null) tone = 'good';
   return { section: 'skoda', title: v.name || v.model || '', value: parts.length ? parts.join(' · ') : '–', state: tone, icon: CAR_ICON };
+}
+
+// ─── Quick actions of the apps (declarative; the host checks and caps them) ──
+
+const QA_MAX = 16;
+const QA_ID_RE = /^(climate|charging|windowheat|lock|unlock):([1-9][0-9]{0,9})$/;
+const QA_ICONS = {
+  climate: 'M12 2v20M3.3 7l17.4 10M3.3 17L20.7 7M9 3l3 2 3-2M9 21l3-2 3 2',
+  charging: 'M13 2L4 14h7l-1 8 9-12h-7z',
+  windowheat: 'M3 9c4-3 14-3 18 0l-2 7H5zM9 18c-1 1 1 2 0 3M15 18c-1 1 1 2 0 3',
+  lock: 'M6 11h12v10H6zM8 11V7a4 4 0 0 1 8 0v4',
+  unlock: 'M6 11h12v10H6zM8 11V7a4 4 0 0 1 7.6-1.8',
+};
+
+/** A text as the host takes it unchanged: no control characters, trimmed, at most `max` UTF-16 units. */
+function clip(v, max) {
+  let s = String(v == null ? '' : v).replace(/[\0-\x1f\x7f]/g, ' ').trim();
+  if (s.length > max) s = s.slice(0, max).replace(/[\ud800-\udbff]$/, '').trimEnd();
+  return s;
+}
+
+/** The toggles' states from the stored vehicle state (as the portal shows them): 'on' | 'off' | null. */
+function toggleStates(s) {
+  const st = s || {};
+  const cl = st.climate || {};
+  const ch = st.charging || {};
+  const up = (x) => String(x || '').toUpperCase();
+  return {
+    climate: cl.state == null ? null : (up(cl.state) !== 'OFF' ? 'on' : 'off'),
+    charging: ch.state == null ? null : (up(ch.state) === 'CHARGING' ? 'on' : 'off'),
+    windowheat: typeof cl.windowHeating === 'boolean' ? (cl.windowHeating ? 'on' : 'off') : null,
+  };
+}
+
+/** The viewer's own vehicles (the portal's owner scope), stored state only. */
+async function ownVehicles(gc, userId) {
+  const ids = new Set(await store.vehiclesOwnedBy(gc, userId));
+  if (!ids.size) return [];
+  return (await store.listVehicles(gc)).filter((v) => ids.has(v.id));
+}
+
+/**
+ * The portal's vehicle controls as quick actions — only for a signed-in owner
+ * (the portal shows controls only then): climate, charging (a vehicle with a
+ * battery), window heating; lock and unlock only with the account's S-PIN,
+ * unlocking asks first. No cloud call.
+ */
+async function quickActionsFor(gc, user, lang) {
+  if (!user || !Number.isInteger(user.id) || user.loggedIn !== true) return [];
+  const out = [];
+  for (const v of await ownVehicles(gc, user.id)) {
+    const st = toggleStates(v.state);
+    const subtitle = clip(v.name || v.model || t(lang, 'portal.vehicle'), 60);
+    const add = (kind, extra) => out.push({ id: `${kind}:${v.id}`, title: t(lang, 'qa.' + kind), subtitle, icon: QA_ICONS[kind], ...extra });
+    const toggle = (kind) => add(kind, st[kind] ? { kind: 'toggle', state: st[kind] } : { kind: 'toggle' });
+    toggle('climate');
+    if ((v.state && v.state.soc != null) || st.charging) toggle('charging');
+    toggle('windowheat');
+    if (await store.getSpin(gc, v.account_id)) {
+      add('lock', { kind: 'button' });
+      add('unlock', { kind: 'button', confirm: true });
+    }
+    if (out.length >= QA_MAX) break;
+  }
+  return out.slice(0, QA_MAX);
+}
+
+/** The command an action sends now (toggles switch the stored state over), with its args and the state it aims for. */
+function commandFor(kind, v) {
+  const st = toggleStates(v.state);
+  if (kind === 'climate') {
+    if (st.climate === 'on') return { action: 'ac_stop', args: {}, state: 'off' };
+    const c = Number(v.state && v.state.climate && v.state.climate.targetC);
+    return { action: 'ac_start', args: { temp: Number.isFinite(c) && c >= 15.5 && c <= 30 ? c : 21 }, state: 'on' }; // like the portal
+  }
+  if (kind === 'charging') return st.charging === 'on' ? { action: 'charge_stop', args: {}, state: 'off' } : { action: 'charge_start', args: {}, state: 'on' };
+  if (kind === 'windowheat') return st.windowheat === 'on' ? { action: 'window_heat_stop', args: {}, state: 'off' } : { action: 'window_heat_start', args: {}, state: 'on' };
+  return { action: kind, args: {}, state: null }; // lock / unlock
+}
+
+/** Run one quick action with the portal's checks (signed in, owner). */
+async function runQuickActionFor(gc, user, lang, id) {
+  const m = typeof id === 'string' ? QA_ID_RE.exec(id) : null;
+  if (!m || !user || !Number.isInteger(user.id)) return { ok: false, message: t(lang, 'qa.unknown') };
+  const [, kind, raw] = m;
+  const vid = Number(raw);
+  try {
+    if (user.loggedIn !== true) throw fail('LOGIN_REQUIRED');
+    if (!(await store.isOwner(gc, vid, user.id))) throw fail('SKODA_NOT_OWNER');
+    const v = await store.getVehicle(gc, vid);
+    if (!v) throw fail('SKODA_VEHICLE_NOT_FOUND');
+    const c = commandFor(kind, v);
+    await control.runCommand(gc, vid, c.action, c.args); // its refresh runs on in the background
+    const name = clip(v.name || v.model || t(lang, 'portal.vehicle'), 40);
+    const out = { ok: true, message: clip(t(lang, `qa.${kind}${c.state ? '_' + c.state : ''}_sent`, { name }), 120) };
+    if (c.state) out.state = c.state;
+    return out;
+  } catch (e) {
+    if (!(e && Object.prototype.hasOwnProperty.call(ERRORS, e.code))) gc.log.warn('quick action failed', id, (e && e.code) || 'error');
+    return { ok: false, message: errorResponse(e, lang).json.error };
+  }
 }
 
 // ─── Routes ─────────────────────────────────────
@@ -270,6 +375,16 @@ module.exports = {
       .filter((v) => String(v.name || '').toLowerCase().includes(needle) || String(v.model || '').toLowerCase().includes(needle))
       .slice(0, 10)
       .map((v) => ({ title: v.name || v.model || '', subtitle: v.model && v.model !== v.name ? v.model : t(lang, 'portal.vehicle'), section: 'skoda' }));
+  },
+
+  /** Quick actions of the apps: the portal's vehicle controls for a signed-in owner, at most 16. */
+  async quickActions({ user, lang }, gc) {
+    return quickActionsFor(gc, user, lang);
+  },
+
+  /** Runs one of them (the host only passes an id quickActions just listed for this viewer; checked here again). */
+  async runQuickAction({ user, lang, id }, gc) {
+    return runQuickActionFor(gc, user, lang, id);
   },
 
   /** Built-in data handed over by GateControl (once, by an administrator). */

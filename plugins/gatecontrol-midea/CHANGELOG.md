@@ -2,6 +2,17 @@
 
 Midea-Klimageräte als GateControl-Plugin – bisher fest in GateControl eingebaut („Klimaanlage“).
 
+## 1.2.0
+- Schnellaktionen für die GateControl-Apps (Verknüpfungen auf dem Startbildschirm,
+  Schnelleinstellungen, Widget): je ein Ein/Aus-Schalter pro eigenem Klimagerät, mit
+  Modus und Zieltemperatur als Untertitel (aus dem zwischengespeicherten Zustand, ohne
+  Geräteabfrage); höchstens 16, deaktivierte Geräte nicht.
+- Sichtbar und auslösbar ist genau das, was die Person im Portal „Zuhause“ steuern darf
+  (Zuweisung durch einen Administrator); die Prüfung läuft beim Auslösen erneut. Ist der
+  Zustand noch unbekannt, wird er vor dem Umschalten vom Gerät gelesen.
+- Optional: GateControl-Versionen ohne Schnellaktionen rufen sie nie auf –
+  die Mindestversion bleibt unverändert.
+
 ## 1.1.0
 - Benachrichtigungen über die Benachrichtigungszentrale von GateControl (Apps, Portal),
   jeweils als eigenes Thema, das jede Person selbst an- und abschalten kann:

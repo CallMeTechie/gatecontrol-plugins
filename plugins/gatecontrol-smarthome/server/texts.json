@@ -150,7 +150,11 @@
   "gateway.off": "aus",
   "rules.gateway": "Gateway",
   "portal.home.lead": "Geräte, die dir gehören.",
-  "error.target_denied": "Das zugewiesene Zugriffsziel ist für Plugins gesperrt (z. B. eine Loopback-Adresse). Weise eine andere Route, ein VPN-Gerät oder eine Adresse zu."
+  "error.target_denied": "Das zugewiesene Zugriffsziel ist für Plugins gesperrt (z. B. eine Loopback-Adresse). Weise eine andere Route, ein VPN-Gerät oder eine Adresse zu.",
+  "qa.switched_on": "{{name}} eingeschaltet",
+  "qa.switched_off": "{{name}} ausgeschaltet",
+  "qa.unreachable": "nicht erreichbar",
+  "qa.unknown": "Diese Aktion gibt es nicht mehr."
  },
  "en": {
   "error.gateway_not_found": "Smart Home gateway not found",
@@ -303,6 +307,10 @@
   "gateway.off": "off",
   "rules.gateway": "Gateway",
   "portal.home.lead": "Devices that belong to you.",
-  "error.target_denied": "The assigned access target is blocked for plugins (e.g. a loopback address). Assign another route, VPN device or address."
+  "error.target_denied": "The assigned access target is blocked for plugins (e.g. a loopback address). Assign another route, VPN device or address.",
+  "qa.switched_on": "{{name}} switched on",
+  "qa.switched_off": "{{name}} switched off",
+  "qa.unreachable": "unreachable",
+  "qa.unknown": "This action no longer exists."
  }
 }

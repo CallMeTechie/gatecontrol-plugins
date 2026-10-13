@@ -13,6 +13,9 @@
 //   portal API  (the identified portal viewer — owner-scoped)
 //     GET  /portal                     own devices and sensors
 //     POST /portal/resources/:id/state control (the host lets only signed-in viewers change things)
+//   quick actions of the GateControl apps (hooks quickActions / runQuickAction)
+//     the same owner scope as the portal: a toggle per own light, plug and
+//     group, a button per scene of an own group
 //
 // Requests run with the requesting user's rights: req.user.portal = a portal
 // viewer, who only ever sees and controls what an administrator assigned to
@@ -31,9 +34,11 @@ const texts = require('./texts.json');
 
 const state = { lastSync: 0, resynced: false, importing: false };
 
-function t(lang, key) {
+function t(lang, key, params) {
   const l = lang === 'en' ? 'en' : 'de';
-  return (texts[l] && texts[l][key]) || texts.de[key] || key;
+  let s = (texts[l] && texts[l][key]) || texts.de[key] || key;
+  if (params) for (const [k, v] of Object.entries(params)) s = s.split(`{{${k}}}`).join(String(v));
+  return s;
 }
 
 // error code → [HTTP status, text key]
@@ -168,6 +173,65 @@ function sensorTile(s, lang) {
     case 'presence': return { ...tile, value: t(lang, v ? 'portal.motion' : 'portal.no_motion') };
     case 'water': return { ...tile, value: t(lang, v ? 'portal.wet' : 'portal.dry'), state: v ? 'crit' : 'good' };
     default: return tile;
+  }
+}
+
+// ─── Quick actions of the apps (declarative; the host checks and caps them) ──
+
+const QA_MAX = 16;
+const QA_ID_RE = /^(light|plug|group|scene):([1-9][0-9]{0,9})$/;
+const SCENE_ICON = 'M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8zM19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z';
+
+/** A text as the host takes it unchanged: no control characters, trimmed, at most `max` UTF-16 units. */
+function clip(v, max) {
+  let s = String(v == null ? '' : v).replace(/[\0-\x1f\x7f]/g, ' ').trim();
+  if (s.length > max) s = s.slice(0, max).replace(/[\ud800-\udbff]$/, '').trimEnd();
+  return s;
+}
+
+function quickAction(r, lang) {
+  const name = clip(r.name, 40) || t(lang, 'kind.' + r.kind);
+  if (r.kind === 'scene') return { id: `scene:${r.id}`, title: name, subtitle: t(lang, 'kind.scene'), icon: SCENE_ICON, kind: 'button' };
+  const st = r.state || {};
+  let subtitle = t(lang, 'kind.' + r.kind);
+  if (st.reachable === false) subtitle += ' · ' + t(lang, 'qa.unreachable');
+  else if (st.on && r.capabilities && r.capabilities.bri && st.bri != null) subtitle += ' · ' + fmtNum(st.bri, lang) + ' %';
+  return { id: `${r.kind}:${r.id}`, title: name, subtitle: clip(subtitle, 60), icon: TILE_ICONS[r.kind] || TILE_ICONS.light, kind: 'toggle', state: st.on ? 'on' : 'off' };
+}
+
+/**
+ * The viewer's own controllable devices (exactly the portal's devices: owned,
+ * enabled, scenes of an owned group) as quick actions — cached state only,
+ * no gateway round trip. Switches first (groups, lights, plugs), scenes last.
+ */
+async function quickActionsFor(gc, user, lang) {
+  if (!user || !Number.isInteger(user.id) || user.loggedIn === false) return [];
+  const { devices } = await portalData(gc, user.id);
+  const toggles = devices.filter((d) => d.kind !== 'scene');
+  const scenes = devices.filter((d) => d.kind === 'scene');
+  return [...toggles, ...scenes].slice(0, QA_MAX).map((d) => quickAction(d, lang));
+}
+
+/** Run one quick action with the portal's checks (owner, enabled, controllable). */
+async function runQuickActionFor(gc, user, lang, id) {
+  const m = typeof id === 'string' ? QA_ID_RE.exec(id) : null;
+  if (!m || !user || !Number.isInteger(user.id) || user.loggedIn === false) return { ok: false, message: t(lang, 'qa.unknown') };
+  const rid = Number(m[2]);
+  try {
+    if (!(await store.canAccess(gc, rid, user.id))) throw fail('SMARTHOME_NOT_OWNER');
+    const r = await store.getResource(gc, rid);
+    if (!r || !r.enabled || r.kind !== m[1]) throw fail('SMARTHOME_RESOURCE_NOT_FOUND');
+    const name = clip(r.name, 40);
+    if (r.kind === 'scene') {
+      await service.setResourceState(gc, rid, {});
+      return { ok: true, message: clip(t(lang, 'portal.scene_done', { name }), 120) };
+    }
+    const on = !(r.state && r.state.on);
+    await service.setResourceState(gc, rid, { on });
+    return { ok: true, message: clip(t(lang, on ? 'qa.switched_on' : 'qa.switched_off', { name }), 120), state: on ? 'on' : 'off' };
+  } catch (e) {
+    if (!ERRORS[e && e.code]) gc.log.warn('quick action failed', id, (e && (e.code || e.message)) || e);
+    return { ok: false, message: errorResponse(e, lang).json.error };
   }
 }
 
@@ -356,6 +420,16 @@ module.exports = {
     const { devices, sensors } = await portalData(gc, user.id);
     return [...devices, ...sensors].filter((r) => String(r.name || '').toLowerCase().includes(needle)).slice(0, 10)
       .map((r) => ({ title: r.name, subtitle: kindLabel(r, lang), section: 'smarthome' }));
+  },
+
+  /** Quick actions of the apps: the viewer's own lights, plugs and groups (toggles) and scenes (buttons), at most 16. */
+  async quickActions({ user, lang }, gc) {
+    return quickActionsFor(gc, user, lang);
+  },
+
+  /** Runs one of them (the host only passes an id quickActions just listed for this viewer; checked here again). */
+  async runQuickAction({ user, lang, id }, gc) {
+    return runQuickActionFor(gc, user, lang, id);
   },
 
   /** Built-in data handed over by GateControl (once, by an administrator). */

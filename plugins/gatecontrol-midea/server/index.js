@@ -13,6 +13,8 @@
 //   portal API  (the identified portal viewer — owner-scoped)
 //     GET  /portal · /portal/devices/:id/state
 //     POST /portal/devices/:id/state   control (the host lets only signed-in viewers change things)
+//   quick actions of the GateControl apps (hooks quickActions / runQuickAction)
+//     the same owner scope as the portal: power on/off per own air conditioner
 //
 // Requests run with the requesting user's rights: req.user.portal = a portal
 // viewer, who only ever sees and controls what an administrator assigned to
@@ -142,6 +144,60 @@ function deviceTile(d, st, lang) {
   if (st && st.offline) tile.state = 'warn';
   else if (st) tile.state = st.power ? 'on' : 'off';
   return tile;
+}
+
+// ─── Quick actions of the apps (declarative; the host checks and caps them) ──
+
+const QA_MAX = 16;
+const QA_ID_RE = /^ac:([1-9][0-9]{0,9})$/;
+
+/** A text as the host takes it unchanged: no control characters, trimmed, at most `max` UTF-16 units. */
+function clip(v, max) {
+  let s = String(v == null ? '' : v).replace(/[\0-\x1f\x7f]/g, ' ').trim();
+  if (s.length > max) s = s.slice(0, max).replace(/[\ud800-\udbff]$/, '').trimEnd();
+  return s;
+}
+
+/** The power state a toggle shows: 'on' | 'off', null when unknown or offline. */
+function powerOf(st) {
+  return st && !st.offline && typeof st.power === 'boolean' ? (st.power ? 'on' : 'off') : null;
+}
+
+/**
+ * Power on/off per air conditioner of the viewer (the portal's owner scope;
+ * disabled devices left out) — cached state only, no device round trip.
+ */
+async function quickActionsFor(gc, user, lang) {
+  if (!user || !Number.isInteger(user.id) || user.loggedIn === false) return [];
+  return (await ownedDevices(gc, user.id)).filter((d) => d.enabled).slice(0, QA_MAX).map((d) => {
+    const st = service.cachedState(gc, d);
+    const a = { id: `ac:${d.id}`, title: clip(d.name, 40) || t(lang, 'portal.title'), subtitle: clip(statusLine(st, lang) || t(lang, 'portal.title'), 60), icon: AC_ICON, kind: 'toggle' };
+    const power = powerOf(st);
+    if (power) a.state = power;
+    return a;
+  });
+}
+
+/** Switch one over (owner checked again); an unknown state is read from the device first. */
+async function runQuickActionFor(gc, user, lang, id) {
+  const m = typeof id === 'string' ? QA_ID_RE.exec(id) : null;
+  if (!m || !user || !Number.isInteger(user.id) || user.loggedIn === false) return { ok: false, message: t(lang, 'qa.unknown') };
+  const did = Number(m[1]);
+  try {
+    if (!(await store.isOwner(gc, did, user.id))) throw fail('MIDEA_NOT_OWNER');
+    const d = await store.getDevice(gc, did);
+    if (!d || !d.enabled) throw fail('MIDEA_DEVICE_NOT_FOUND');
+    let power = powerOf(service.cachedState(gc, d));
+    if (!power) power = powerOf(await service.getState(gc, did));
+    if (!power) throw fail('MIDEA_OFFLINE');
+    const st = await service.setState(gc, did, { power: power !== 'on' });
+    const now = powerOf(st);
+    if (!now) throw fail('MIDEA_OFFLINE');
+    return { ok: true, message: clip(t(lang, now === 'on' ? 'qa.switched_on' : 'qa.switched_off', { name: clip(d.name, 40) || t(lang, 'portal.title') }), 120), state: now };
+  } catch (e) {
+    if (!ERRORS[e && e.code]) gc.log.warn('quick action failed', id, (e && (e.code || e.message)) || e);
+    return { ok: false, message: errorResponse(e, lang).json.error };
+  }
 }
 
 // ─── Routes ─────────────────────────────────────
@@ -314,6 +370,16 @@ module.exports = {
     const needle = q.toLowerCase();
     return (await ownedDevices(gc, user.id)).filter((d) => String(d.name || '').toLowerCase().includes(needle)).slice(0, 10)
       .map((d) => ({ title: d.name, subtitle: statusLine(service.cachedState(gc, d), lang) || t(lang, 'portal.title'), section: 'midea' }));
+  },
+
+  /** Quick actions of the apps: power on/off per air conditioner of the viewer, at most 16. */
+  async quickActions({ user, lang }, gc) {
+    return quickActionsFor(gc, user, lang);
+  },
+
+  /** Runs one of them (the host only passes an id quickActions just listed for this viewer; checked here again). */
+  async runQuickAction({ user, lang, id }, gc) {
+    return runQuickActionFor(gc, user, lang, id);
   },
 
   /** Built-in data handed over by GateControl (once, by an administrator). */
