@@ -191,7 +191,21 @@
   "portal.timers_edit": "Abfahrtszeiten bearbeiten",
   "portal.timers_none": "Keine Abfahrtszeiten eingerichtet.",
   "portal.timer_active": "aktiv",
-  "portal.timer_time": "Uhrzeit"
+  "portal.timer_time": "Uhrzeit",
+  "qa.climate": "Klimatisierung",
+  "qa.charging": "Laden",
+  "qa.windowheat": "Scheibenheizung",
+  "qa.lock": "Verriegeln",
+  "qa.unlock": "Entriegeln",
+  "qa.climate_on_sent": "{{name}}: Klimatisierung wird gestartet",
+  "qa.climate_off_sent": "{{name}}: Klimatisierung wird gestoppt",
+  "qa.charging_on_sent": "{{name}}: Laden wird gestartet",
+  "qa.charging_off_sent": "{{name}}: Laden wird gestoppt",
+  "qa.windowheat_on_sent": "{{name}}: Scheibenheizung wird eingeschaltet",
+  "qa.windowheat_off_sent": "{{name}}: Scheibenheizung wird ausgeschaltet",
+  "qa.lock_sent": "{{name}} wird verriegelt",
+  "qa.unlock_sent": "{{name}} wird entriegelt",
+  "qa.unknown": "Diese Aktion gibt es nicht mehr."
  },
  "en": {
   "title": "Vehicles",
@@ -385,6 +399,20 @@
   "portal.timers_edit": "Edit departure times",
   "portal.timers_none": "No departure times set up.",
   "portal.timer_active": "active",
-  "portal.timer_time": "Time"
+  "portal.timer_time": "Time",
+  "qa.climate": "Climate control",
+  "qa.charging": "Charging",
+  "qa.windowheat": "Window heating",
+  "qa.lock": "Lock",
+  "qa.unlock": "Unlock",
+  "qa.climate_on_sent": "{{name}}: starting climate control",
+  "qa.climate_off_sent": "{{name}}: stopping climate control",
+  "qa.charging_on_sent": "{{name}}: starting to charge",
+  "qa.charging_off_sent": "{{name}}: stopping charging",
+  "qa.windowheat_on_sent": "{{name}}: turning window heating on",
+  "qa.windowheat_off_sent": "{{name}}: turning window heating off",
+  "qa.lock_sent": "{{name}} is being locked",
+  "qa.unlock_sent": "{{name}} is being unlocked",
+  "qa.unknown": "This action no longer exists."
  }
 }

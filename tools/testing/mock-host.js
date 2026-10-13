@@ -32,6 +32,13 @@
 //   argument into a string), notifyFail: (n) => error code to throw instead.
 //   await host.legacyImport(snapshot); await host.portalVisible({ id: 2, name: 'Ada', role: 'user' }, 'section-id');
 //   await host.portalTiles(user); await host.portalSearch(user, 'lamp');
+//   await host.quickActions(user); await host.runQuickAction(user, 'light:3');
+//   quick actions of the apps (GateControl's src/services/plugins/quickActions.js):
+//   the viewer is { portal: true, loggedIn: true, app: true, ...user }. Stricter
+//   than the host, which drops or cuts what does not fit: an entry the host
+//   would change throws ERR_INVALID here. runQuickAction lists again first
+//   and answers like the host's route: { status: 404 } for an id that is not
+//   listed for this viewer, else { status: 200, body: { ok, message, state } }.
 
 const fs = require('node:fs');
 const os = require('node:os');
@@ -41,6 +48,10 @@ const SQL_DENY = /\b(attach|detach|vacuum|pragma|load_extension|sqlite_dbpage|ft
 const DEFAULT_USER = Object.freeze({ id: 1, name: 'admin', role: 'admin' });
 const NOTIFY_PRIORITIES = ['info', 'normal', 'high', 'critical'];
 const NOTIFY_ACTIONS = new Set(['open_app_route', 'open_portal', 'mute_1h', 'ack', 'done']);
+const QA_MAX = 16;
+const QA_ID_RE = /^[A-Za-z0-9:._-]{1,64}$/;
+const QA_ICON_RE = /^[MmLlHhVvCcSsQqTtAaZz0-9 .,-]{1,2000}$/;
+const QA_STATES = new Set(['on', 'off']);
 
 function hostError(code, message) {
   return Object.assign(new Error(message), { code });
@@ -134,6 +145,37 @@ function openDb(file) {
   let sqlite;
   try { sqlite = require('node:sqlite'); } catch { return null; }
   return new sqlite.DatabaseSync(file);
+}
+
+// A text the host accepts unchanged (src/services/plugins/portal.js text()).
+function qaText(v, max, what, optional) {
+  if (v == null && optional) return null;
+  if (typeof v !== 'string' || !v.trim() || v.length > max || /[\0-\x1f\x7f]/.test(v) || v !== v.trim()) {
+    throw hostError('ERR_INVALID', `quick action: ${what} must be a trimmed string of 1–${max} characters, got ${JSON.stringify(v)}`);
+  }
+  return v;
+}
+
+/** quickActions answer → the list the host passes on; throws ERR_INVALID where the host would drop or cut. */
+function checkQuickActions(out) {
+  if (!Array.isArray(out)) throw hostError('ERR_INVALID', 'quickActions must return an array');
+  if (out.length > QA_MAX) throw hostError('ERR_INVALID', `quickActions: ${out.length} entries, at most ${QA_MAX}`);
+  const seen = new Set();
+  return out.map((a) => {
+    if (!a || typeof a !== 'object' || Array.isArray(a)) throw hostError('ERR_INVALID', 'quick action: not an object');
+    if (typeof a.id !== 'string' || !QA_ID_RE.test(a.id)) throw hostError('ERR_INVALID', `quick action: bad id ${JSON.stringify(a.id)}`);
+    if (seen.has(a.id)) throw hostError('ERR_INVALID', `quick action: duplicate id ${a.id}`);
+    seen.add(a.id);
+    const kind = a.kind == null ? 'button' : a.kind;
+    if (kind !== 'button' && kind !== 'toggle') throw hostError('ERR_INVALID', `quick action ${a.id}: bad kind ${JSON.stringify(a.kind)}`);
+    if (a.state != null && (kind !== 'toggle' || !QA_STATES.has(a.state))) throw hostError('ERR_INVALID', `quick action ${a.id}: state ${JSON.stringify(a.state)} (only 'on'|'off' on a toggle)`);
+    if (a.icon != null && (typeof a.icon !== 'string' || !QA_ICON_RE.test(a.icon))) throw hostError('ERR_INVALID', `quick action ${a.id}: icon is not SVG path data`);
+    if (a.confirm != null && typeof a.confirm !== 'boolean') throw hostError('ERR_INVALID', `quick action ${a.id}: confirm must be a boolean`);
+    return {
+      id: a.id, title: qaText(a.title, 40, `${a.id} title`), subtitle: qaText(a.subtitle, 60, `${a.id} subtitle`, true),
+      icon: a.icon == null ? null : a.icon, kind, state: kind === 'toggle' && a.state != null ? a.state : null, confirm: a.confirm === true,
+    };
+  });
 }
 
 /**
@@ -378,6 +420,22 @@ async function createHost(pluginDir, opts = {}) {
     portalTiles: async (user, lang = 'de') => (typeof plugin.portalTiles === 'function' ? hook('portalTiles', { user: { portal: true, ...user }, lang }) : []),
     /** portalSearch hook: declarative search results for this viewer (no hook → []) */
     portalSearch: async (user, q, lang = 'de') => (typeof plugin.portalSearch === 'function' ? hook('portalSearch', { user: { portal: true, ...user }, lang, q }) : []),
+    /** quickActions hook: the app's quick actions for this viewer, checked like the host (no hook → []) */
+    async quickActions(user, lang = 'de') {
+      if (!perms.portal || typeof plugin.quickActions !== 'function') return [];
+      return checkQuickActions(await hook('quickActions', { user: { portal: true, loggedIn: true, app: true, ...user }, lang }));
+    },
+    /** runQuickAction hook as the host's route runs it: only an id listed for this viewer → { status, body } */
+    async runQuickAction(user, id, lang = 'de') {
+      const viewer = { portal: true, loggedIn: true, app: true, ...user };
+      if (!perms.portal || typeof plugin.runQuickAction !== 'function' || typeof id !== 'string' || !QA_ID_RE.test(id)) return { status: 404, body: { ok: false, error: 'not_found' } };
+      const listed = checkQuickActions(await hook('quickActions', { user: viewer, lang }));
+      if (!listed.some((a) => a.id === id)) return { status: 404, body: { ok: false, error: 'not_found' } };
+      const out = await hook('runQuickAction', { user: viewer, lang, id });
+      if (!out || typeof out !== 'object' || Array.isArray(out)) throw hostError('ERR_INVALID', 'runQuickAction must return an object');
+      if (out.state != null && !QA_STATES.has(out.state)) throw hostError('ERR_INVALID', `runQuickAction: state ${JSON.stringify(out.state)}`);
+      return { status: 200, body: { ok: out.ok !== false, message: qaText(out.message, 120, 'message', true), state: out.state == null ? null : out.state } };
+    },
     /** legacyImport hook: the host hands over the built-in data (first-party plugins only) */
     legacyImport: (snapshot) => hook('legacyImport', snapshot),
     /** keys stored with gc.settings.setSecret */

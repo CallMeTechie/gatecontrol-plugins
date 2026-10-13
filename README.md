@@ -30,9 +30,9 @@ fixture). It is built and tested in CI but never released
 
 | Plugin | | GateControl |
 |---|---|---|
-| `gatecontrol-smarthome` | Smart Home (Phoscon/deCONZ) — formerly built into GateControl; imports the built-in data; notifies: alarm, window open, battery low, gateway unreachable | ≥ 1.154.0 (1.0.0: ≥ 1.149.0) |
-| `gatecontrol-midea` | Klimaanlage (Midea air conditioners, cloud and LAN) — formerly built into GateControl; imports the built-in data; notifies: device unreachable, clean filter, malfunction | ≥ 1.154.0 (1.0.0: ≥ 1.150.0) |
-| `gatecontrol-skoda` | Fahrzeuge (Škoda / MySkoda) — formerly built into GateControl; imports the built-in data; notifies: charging complete, battery low, not locked, climate done | ≥ 1.154.0 (1.0.0: ≥ 1.151.0) |
+| `gatecontrol-smarthome` | Smart Home (Phoscon/deCONZ) — formerly built into GateControl; imports the built-in data; notifies: alarm, window open, battery low, gateway unreachable; app quick actions: own lights, plugs, groups (toggles) and scenes | ≥ 1.154.0 (1.0.0: ≥ 1.149.0) |
+| `gatecontrol-midea` | Klimaanlage (Midea air conditioners, cloud and LAN) — formerly built into GateControl; imports the built-in data; notifies: device unreachable, clean filter, malfunction; app quick actions: power toggle per own unit | ≥ 1.154.0 (1.0.0: ≥ 1.150.0) |
+| `gatecontrol-skoda` | Fahrzeuge (Škoda / MySkoda) — formerly built into GateControl; imports the built-in data; notifies: charging complete, battery low, not locked, climate done; app quick actions: climate, charging, window heating, lock/unlock (S-PIN, unlock asks first) | ≥ 1.154.0 (1.0.0: ≥ 1.151.0) |
 | `gatecontrol-alltag` | Alltag / Everyday — waste collection dates (online waste calendars AbfallNavi, abfall.io, AWIDO; ICS upload; own rules) and iCal calendars (Google, iCloud, Outlook, or a home-network server such as Nextcloud); portal sections in "Zuhause", Start tiles, search; notifies: waste collection (per plan 0–3 days before at a set time, optionally on the day), calendar events | ≥ 1.154.0 |
 | `gatecontrol-synology` | NAS (Synology) — status and control of Synology NAS through the DSM Web API (several NAS, home target over HTTP; DSM 2-step verification via device token): model, DSM version, CPU/RAM, temperature, volumes, storage pools, drives (S.M.A.R.T.), DSM update, Hyper Backup, UPS; reboot, shutdown, back up now; administrators only; notifies: NAS unreachable, storage degraded/almost full, drive health/temperature, backup failed, DSM update, reboot/shutdown | ≥ 1.154.0 |
 | `gatecontrol-proxmox` | Proxmox VE — status of hosts and clusters (nodes, VMs/containers, storage, backups, HA) and control of VMs/CTs (start, shutdown, stop, reboot) for administrators; admin page only; notifies: host/node unreachable, watched guest stopped, storage almost full, backup failed, high node load | ≥ 1.154.0 |
@@ -52,6 +52,21 @@ Each plugin's `server/alerts.js` holds the transitions as a pure
 on a first sighting, a restart neither repeats nor loses anything. The mock
 host records both forms in `host.notifications` (`notifyApi: 'legacy'`
 emulates a GateControl < 1.154.0).
+
+### Quick actions
+
+Plugins with a portal may offer quick actions to the GateControl apps
+(home-screen shortcuts, Quick Settings tiles, widget) through two optional
+hooks: `quickActions({ user, lang })` → at most 16
+`{ id, title, subtitle, icon, kind: 'button'|'toggle', state, confirm }`
+(1.5 s budget, cached state only) and `runQuickAction({ user, lang, id })` →
+`{ ok, message, state }` (10 s). `user` is the signed-in portal viewer
+(`app: true`); a plugin offers exactly what that person may control in the
+portal and checks it again when an action runs. A GateControl without the
+hooks never calls them, so the `gatecontrol` requirement stays. Smart Home,
+Klimaanlage and Fahrzeuge offer them. The mock host checks the answers like
+the host (stricter: what the host would drop or cut throws) —
+`host.quickActions(user)`, `host.runQuickAction(user, id)`.
 
 ## Tooling
 
@@ -178,6 +193,9 @@ Erstanbieter-Plugins für GateControl mit Build-, Signatur- und Release-Pipeline
   (`tools/test/notify.test.js` prüft das); die Übergänge stehen je Plugin in
   `server/alerts.js` – beim ersten Sehen wird nichts gemeldet, ein Neustart
   wiederholt nichts.
+* **Schnellaktionen:** optionale Hooks `quickActions` / `runQuickAction` für
+  Verknüpfungen, Schnelleinstellungen und Widget der Apps (höchstens 16, nur was
+  die Person im Portal steuern darf) – Smart Home, Klimaanlage, Fahrzeuge.
 * **Versionierung:** SemVer pro Plugin; jede Version braucht einen
   `## <version>`-Abschnitt im CHANGELOG.
 * **Release:** Version und CHANGELOG auf `main` bringen, dann Tag

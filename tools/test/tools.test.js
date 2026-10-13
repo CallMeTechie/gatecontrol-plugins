@@ -10,7 +10,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { execFileSync, spawnSync } = require('node:child_process');
 const lib = require('../lib');
-const { internetAllowed } = require('../testing/mock-host');
+const { internetAllowed, createHost } = require('../testing/mock-host');
 
 const TOOLS = path.join(__dirname, '..');
 let gcDir = null;
@@ -49,6 +49,38 @@ test('mock host internet allowlist', () => {
   assert.ok(!internetAllowed(list, 'https://cloud.example/'));
   assert.ok(internetAllowed(list, 'http://plain.example:8080/'));
   assert.ok(!internetAllowed(list, 'file:///etc/passwd'));
+});
+
+test('mock host quick actions: checked like the host, run only for an id listed for that viewer', async () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'qa-plugin-'));
+  try {
+    fs.mkdirSync(path.join(tmp, 'server'));
+    fs.writeFileSync(path.join(tmp, 'plugin.json'), JSON.stringify({ id: 'qa-test', name: 'QA', version: '1.0.0', entry: 'server/index.js', permissions: { portal: true } }));
+    fs.writeFileSync(path.join(tmp, 'server', 'index.js'), `
+      let answer = null;
+      module.exports = {
+        _set(a) { answer = a; },
+        async quickActions({ user }) { return answer || (user.id === 2 ? [{ id: 'x:1', title: 'Lamp', kind: 'toggle', state: 'on' }] : []); },
+        async runQuickAction({ user, id }) { return { ok: true, message: user.app && user.loggedIn ? 'done ' + id : 'no', state: 'off' }; },
+      };`);
+    const host = await createHost(tmp);
+    try {
+      assert.deepEqual(await host.quickActions({ id: 2, name: 'Ada', role: 'user' }), [{ id: 'x:1', title: 'Lamp', subtitle: null, icon: null, kind: 'toggle', state: 'on', confirm: false }]);
+      assert.deepEqual(await host.runQuickAction({ id: 2, name: 'Ada', role: 'user' }, 'x:1'), { status: 200, body: { ok: true, message: 'done x:1', state: 'off' } });
+      assert.equal((await host.runQuickAction({ id: 3, name: 'Bob', role: 'user' }, 'x:1')).status, 404, 'not listed for Bob');
+      assert.equal((await host.runQuickAction({ id: 2, name: 'Ada', role: 'user' }, 'x:2')).status, 404);
+      const many = Array.from({ length: 17 }, (_, i) => ({ id: 'a' + i, title: 'A' }));
+      for (const bad of [many, [{ id: 'a b', title: 'A' }], [{ id: 'a', title: 'x'.repeat(41) }], [{ id: 'a', title: 'A', kind: 'slider' }],
+        [{ id: 'a', title: 'A', state: 'on' }], [{ id: 'a', title: 'A' }, { id: 'a', title: 'B' }], [{ id: 'a', title: 'A', icon: '<svg>' }], {}]) {
+        host.plugin._set(bad);
+        await assert.rejects(host.quickActions({ id: 2, name: 'Ada', role: 'user' }), { code: 'ERR_INVALID' }, JSON.stringify(bad).slice(0, 60));
+      }
+    } finally {
+      await host.close();
+    }
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
 });
 
 test('catalog keeps every version and picks the latest stable one', () => {
