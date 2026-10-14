@@ -1,0 +1,149 @@
+<main class="fa-page fa-portal">
+  <div class="fa-p-head">
+    <h1 class="fa-p-title">{{t:portal.title}}</h1>
+    <p class="fa-p-sub" id="fa-p-sub"></p>
+  </div>
+  <div class="banner" id="fa-p-banner" role="status" hidden></div>
+
+  <div class="fa-row" id="fa-p-main" hidden>
+    <section class="fa-card fa-col-1" id="fa-shop" aria-labelledby="fa-shop-h" hidden>
+      <div class="fa-card-head">
+        <h2 class="fa-card-title" id="fa-shop-h">{{t:portal.shopping}}</h2>
+        <select class="form-select fa-p-listsel" id="fa-shop-list" aria-label="{{t:portal.list_choose}}"></select>
+        <button class="btn btn-sm btn-ghost fa-write" type="button" id="fa-shop-list-edit" aria-label="{{t:portal.list_edit}}" title="{{t:portal.list_edit}}">…</button>
+      </div>
+      <form class="fa-p-add fa-write" id="fa-shop-add" autocomplete="off">
+        <input class="form-input" id="fa-shop-text" type="text" maxlength="120" placeholder="{{t:portal.item_add}}" aria-label="{{t:portal.item_add}}">
+        <input class="form-input fa-p-qty" id="fa-shop-qty" type="text" maxlength="40" placeholder="{{t:portal.qty}}" aria-label="{{t:portal.qty}}">
+        <button class="btn btn-primary" type="submit" aria-label="{{t:portal.item_add}}">+</button>
+      </form>
+      <ul class="fa-p-items" id="fa-shop-items"></ul>
+      <p class="fa-empty" id="fa-shop-empty" hidden></p>
+      <div class="fa-p-foot fa-write">
+        <button class="btn btn-sm" type="button" id="fa-shop-clear">{{t:portal.clear_checked}}</button>
+        <button class="btn btn-sm" type="button" id="fa-shop-going">{{t:portal.going}}</button>
+        <button class="btn btn-sm btn-ghost" type="button" id="fa-shop-new">{{t:portal.list_new}}</button>
+      </div>
+    </section>
+
+    <section class="fa-card fa-col-2" id="fa-tasks" aria-labelledby="fa-tasks-h" hidden>
+      <div class="fa-card-head">
+        <h2 class="fa-card-title" id="fa-tasks-h">{{t:portal.tasks}}</h2>
+        <button class="btn btn-primary btn-sm fa-write" type="button" id="fa-task-add" hidden>{{t:portal.task_add}}</button>
+      </div>
+      <div class="fa-p-cols" id="fa-task-cols"></div>
+      <p class="fa-empty" id="fa-tasks-empty" hidden>{{t:portal.tasks_none}}</p>
+    </section>
+
+    <div class="fa-col-1 fa-p-side">
+      <section class="fa-card" id="fa-dates" aria-labelledby="fa-dates-h" hidden>
+        <h2 class="fa-card-title" id="fa-dates-h">{{t:portal.dates}}</h2>
+        <div id="fa-date-list" class="fa-p-dates"></div>
+      </section>
+      <section class="fa-card" id="fa-bdays" aria-labelledby="fa-bdays-h" hidden>
+        <h2 class="fa-card-title" id="fa-bdays-h">{{t:portal.birthdays}}</h2>
+        <div id="fa-bday-list" class="fa-p-dates"></div>
+      </section>
+    </div>
+  </div>
+
+  <section class="fa-card" id="fa-locate" aria-labelledby="fa-locate-h" hidden>
+    <div class="fa-card-head">
+      <h2 class="fa-card-title" id="fa-locate-h">{{t:portal.locate}}</h2>
+      <span class="fa-card-sub">{{t:portal.locate_sub}}</span>
+    </div>
+    <div class="fa-row">
+      <div class="fa-col-1" id="fa-kids"></div>
+      <div class="fa-col-2" id="fa-locate-map"></div>
+    </div>
+    <div id="fa-locate-recent"></div>
+  </section>
+
+  <!-- Liste -->
+  <div class="modal-overlay" id="fa-list-modal" role="dialog" aria-modal="true" aria-labelledby="fa-l-title" hidden>
+    <div class="modal">
+      <div class="modal-head">
+        <div class="modal-title" id="fa-l-title">{{t:portal.list_new}}</div>
+        <button class="btn modal-close" type="button" data-close="fa-list-modal" aria-label="{{t:common.close}}">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label class="form-label" for="fa-l-name">{{t:portal.list_name}}</label>
+          <input class="form-input" id="fa-l-name" type="text" maxlength="40" autocomplete="off">
+        </div>
+        <p class="fa-msg" id="fa-l-msg" role="status"></p>
+      </div>
+      <div class="modal-foot">
+        <button class="btn btn-danger" type="button" id="fa-l-delete" hidden>{{t:common.delete}}</button>
+        <span class="fa-spacer"></span>
+        <button class="btn" type="button" data-close="fa-list-modal">{{t:common.cancel}}</button>
+        <button class="btn btn-primary" type="button" id="fa-l-save">{{t:common.save}}</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Aufgabe -->
+  <div class="modal-overlay" id="fa-task-modal" role="dialog" aria-modal="true" aria-labelledby="fa-t-title" hidden>
+    <div class="modal modal-wide">
+      <div class="modal-head">
+        <div class="modal-title" id="fa-t-title">{{t:portal.task_add}}</div>
+        <button class="btn modal-close" type="button" data-close="fa-task-modal" aria-label="{{t:common.close}}">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label class="form-label" for="fa-t-name">{{t:task.title}}</label>
+          <input class="form-input" id="fa-t-name" type="text" maxlength="80" autocomplete="off">
+        </div>
+        <div class="form-group">
+          <div class="form-label">{{t:task.assignees}}</div>
+          <div class="fa-check-list" id="fa-t-people"></div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label" for="fa-t-mode">{{t:task.mode}}</label>
+            <select class="form-select" id="fa-t-mode">
+              <option value="fixed">{{t:task.mode_fixed}}</option>
+              <option value="rotate">{{t:task.mode_rotate}}</option>
+              <option value="first">{{t:task.mode_first}}</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="fa-t-repeat">{{t:task.repeat}}</label>
+            <select class="form-select" id="fa-t-repeat">
+              <option value="none">{{t:repeat.none}}</option>
+              <option value="daily">{{t:repeat.daily}}</option>
+              <option value="weekly">{{t:repeat.weekly}}</option>
+              <option value="monthly">{{t:repeat.monthly}}</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-group" id="fa-t-wd-group" hidden>
+          <div class="form-label">{{t:task.weekdays}}</div>
+          <div class="fa-weekdays" id="fa-t-weekdays"></div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label" for="fa-t-date">{{t:task.date}}</label>
+            <input class="form-input" id="fa-t-date" type="date">
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="fa-t-time">{{t:task.time}}</label>
+            <input class="form-input" id="fa-t-time" type="time" step="60">
+          </div>
+          <div class="form-group" id="fa-t-stars-group">
+            <label class="form-label" for="fa-t-stars">{{t:task.stars}}</label>
+            <input class="form-input" id="fa-t-stars" type="number" min="0" max="10" step="1" value="0">
+          </div>
+        </div>
+        <label class="check"><input type="checkbox" id="fa-t-remind" checked> {{t:task.reminder}}</label>
+        <p class="fa-msg" id="fa-t-msg" role="status"></p>
+      </div>
+      <div class="modal-foot">
+        <button class="btn btn-danger" type="button" id="fa-t-delete" hidden>{{t:common.delete}}</button>
+        <span class="fa-spacer"></span>
+        <button class="btn" type="button" data-close="fa-task-modal">{{t:common.cancel}}</button>
+        <button class="btn btn-primary" type="button" id="fa-t-save">{{t:common.save}}</button>
+      </div>
+    </div>
+  </div>
+</main>

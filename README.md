@@ -33,9 +33,10 @@ fixture). It is built and tested in CI but never released
 | `gatecontrol-smarthome` | Smart Home (Phoscon/deCONZ) — formerly built into GateControl; imports the built-in data; notifies: alarm, window open, battery low, gateway unreachable; app quick actions: own lights, plugs, groups (toggles) and scenes | ≥ 1.154.0 (1.0.0: ≥ 1.149.0) |
 | `gatecontrol-midea` | Klimaanlage (Midea air conditioners, cloud and LAN) — formerly built into GateControl; imports the built-in data; notifies: device unreachable, clean filter, malfunction; app quick actions: power toggle per own unit | ≥ 1.154.0 (1.0.0: ≥ 1.150.0) |
 | `gatecontrol-skoda` | Fahrzeuge (Škoda / MySkoda) — formerly built into GateControl; imports the built-in data; notifies: charging complete, battery low, not locked, climate done; app quick actions: climate, charging, window heating, lock/unlock (S-PIN, unlock asks first) | ≥ 1.154.0 (1.0.0: ≥ 1.151.0) |
-| `gatecontrol-alltag` | Alltag / Everyday — waste collection dates (online waste calendars AbfallNavi, abfall.io, AWIDO; ICS upload; own rules) and iCal calendars (Google, iCloud, Outlook, or a home-network server such as Nextcloud); portal sections in "Zuhause", Start tiles, search; notifies: waste collection (per plan 0–3 days before at a set time, optionally on the day), calendar events | ≥ 1.154.0 |
+| `gatecontrol-alltag` | Alltag / Everyday — waste collection dates (online waste calendars AbfallNavi, abfall.io, AWIDO; ICS upload; own rules) and iCal calendars (Google, iCloud, Outlook, or a home-network server such as Nextcloud); portal sections in "Zuhause", Start tiles, search; app API `app/events` for the family app (1.2.0); notifies: waste collection (per plan 0–3 days before at a set time, optionally on the day), calendar events | ≥ 1.164.0 (1.1.0: ≥ 1.154.0) |
 | `gatecontrol-synology` | NAS (Synology) — status and control of Synology NAS through the DSM Web API (several NAS, home target over HTTP; DSM 2-step verification via device token): model, DSM version, CPU/RAM, temperature, volumes, storage pools, drives (S.M.A.R.T.), DSM update, Hyper Backup, UPS; reboot, shutdown, back up now; administrators only; notifies: NAS unreachable, storage degraded/almost full, drive health/temperature, backup failed, DSM update, reboot/shutdown | ≥ 1.154.0 |
 | `gatecontrol-proxmox` | Proxmox VE — status of hosts and clusters (nodes, VMs/containers, storage, backups, HA) and control of VMs/CTs (start, shutdown, stop, reboot) for administrators; admin page only; notifies: host/node unreachable, watched guest stopped, storage almost full, backup failed, high node load | ≥ 1.154.0 |
+| `gatecontrol-familie` | Familie / Family — the family in the GateControl app (own tab, `permissions.app` + `ui.app`) and the portal (own tab): shared shopping lists (offline-first ops API), tasks (fixed / in turns / first) with reminders and stars for children, dates and birthdays, locating children on request (auto or confirmed, the child sees every request, ends at 18; coordinates 7 days), "I've arrived" and SOS (critical push), place reminders (geofencing on the phone, consent); admin pages members, features, log with OpenStreetMap (`ui.maps`); notifies: shopping, tasks, dates, locate, arrival, sos (critical), places | ≥ 1.164.0 |
 
 ### Notifications
 
@@ -93,8 +94,10 @@ needs a licence must name its own licence server — so the plain dev build of
 a licensed first-party plugin (e.g. `gatecontrol-smarthome`) cannot be
 installed. `--no-license` builds one that can (test servers only, never
 released or signed). The mock host (`tools/testing/mock-host.js`) also offers
-`gc.settings.setSecret`, `host.legacyImport(snapshot)` and
-`host.portalVisible(user)`.
+`gc.settings.setSecret`, `host.legacyImport(snapshot)`,
+`host.portalVisible(user)` and `host.appVisible(user)`; it follows
+`permissions.notify.perHour` and keeps priority `critical` on topics with
+`allowCritical` (GateControl ≥ 1.164.0).
 
 Dev builds are always unsigned (`tools/pack.js` drops `GC_PLUGIN_SIGNING_KEY`
 unless `--sign` is passed). Install them on a test server with
@@ -177,9 +180,11 @@ Erstanbieter-Plugins für GateControl mit Build-, Signatur- und Release-Pipeline
 * **Aufbau:** ein Ordner pro Plugin unter `plugins/<id>/` (plugin.json, `server/`,
   `ui/`, `migrations/`, `CHANGELOG.md`, `test/`); gemeinsame Werkzeuge in `tools/`.
   `gatecontrol-hello` ist nur ein Beispiel und wird nie veröffentlicht.
-* **Plugins:** Smart Home, Klimaanlage, Fahrzeuge (früher eingebaut) und **Alltag**
+* **Plugins:** Smart Home, Klimaanlage, Fahrzeuge (früher eingebaut), **Alltag**
   (Müllabfuhr aus Online-Abfallkalendern, ICS-Datei oder eigenen Regeln; iCal-Kalender;
-  Erinnerungen und Portal „Zuhause“) – Tabelle oben.
+  Erinnerungen und Portal „Zuhause“), NAS, Proxmox VE und **Familie** (Einkaufslisten,
+  Aufgaben und Sterne, Termine, Kinder orten, „Bin angekommen“ & SOS, Orts-Erinnerungen –
+  in der App und im Portal) – Tabelle oben.
 * **Werkzeuge:** Der Packer stammt aus GateControl (Commit in `gatecontrol.ref`,
   ändern mit `tools/bump-gatecontrol.sh <sha>`). Lokal: `npm ci`,
   `npm run gatecontrol`, `npm run validate`, `npm test`, `npm run pack <id>`

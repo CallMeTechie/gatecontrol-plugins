@@ -1,0 +1,133 @@
+<main class="fa-page">
+  <p class="fa-intro">{{t:members.intro}}</p>
+  <div class="banner banner-warn" id="fa-problems" role="status" hidden></div>
+
+  <section class="fa-card fa-flush" aria-labelledby="fa-members-h">
+    <div class="fa-card-head">
+      <h2 class="fa-card-title" id="fa-members-h">{{t:members.title}}</h2>
+      <button class="btn btn-primary" type="button" id="fa-add">{{t:members.add}}</button>
+    </div>
+    <div class="fa-table-wrap">
+      <table class="fa-table">
+        <thead>
+          <tr>
+            <th scope="col">{{t:members.col_person}}</th>
+            <th scope="col">{{t:members.col_role}}</th>
+            <th scope="col">{{t:members.col_birthday}}</th>
+            <th scope="col">{{t:members.col_locate}}</th>
+            <th scope="col">{{t:members.col_stars}}</th>
+            <th scope="col"><span class="fa-sr">{{t:common.actions}}</span></th>
+          </tr>
+        </thead>
+        <tbody id="fa-member-rows"></tbody>
+      </table>
+    </div>
+    <p class="fa-empty" id="fa-members-empty" hidden>{{t:members.empty}}</p>
+  </section>
+
+  <div class="fa-row">
+    <section class="fa-card fa-col-3" aria-labelledby="fa-locate-h">
+      <h2 class="fa-card-title" id="fa-locate-h">{{t:locate.title}}</h2>
+      <div class="fa-opt" id="fa-opt-locate"></div>
+      <div>
+        <div class="fa-opt-title">{{t:locate.modes_title}}</div>
+        <ul class="fa-hint fa-modes">
+          <li>{{t:locate.mode_auto_long}}</li>
+          <li>{{t:locate.mode_confirm_long}}</li>
+        </ul>
+        <p class="fa-hint">{{t:locate.modes_hint}}</p>
+      </div>
+      <div class="fa-opt" id="fa-opt-sees"></div>
+      <div class="fa-opt" id="fa-opt-sos"></div>
+      <div class="fa-opt" id="fa-opt-adult"></div>
+    </section>
+    <section class="fa-card fa-note fa-col-2" aria-labelledby="fa-privacy-h">
+      <h2 class="fa-card-title" id="fa-privacy-h">{{t:privacy.title}}</h2>
+      <ul>
+        <li>{{t:privacy.1}}</li>
+        <li>{{t:privacy.2}}</li>
+        <li>{{t:privacy.3}}</li>
+        <li>{{t:privacy.4}}</li>
+      </ul>
+    </section>
+  </div>
+
+  <section class="fa-card fa-flush" aria-labelledby="fa-log-h">
+    <div class="fa-card-head">
+      <h2 class="fa-card-title" id="fa-log-h">{{t:members.log_title}}</h2>
+      <span class="fa-card-sub">{{t:members.log_days}}</span>
+      <button class="btn btn-sm" type="button" data-nav="log">{{t:members.log_all}}</button>
+    </div>
+    <div class="fa-table-wrap">
+      <table class="fa-table">
+        <thead>
+          <tr>
+            <th scope="col">{{t:log.col_time}}</th>
+            <th scope="col">{{t:log.col_kind}}</th>
+            <th scope="col">{{t:log.col_who}}</th>
+            <th scope="col">{{t:log.col_child}}</th>
+            <th scope="col">{{t:log.col_result}}</th>
+          </tr>
+        </thead>
+        <tbody id="fa-log-rows"></tbody>
+      </table>
+    </div>
+    <p class="fa-empty" id="fa-log-empty" hidden>{{t:log.empty}}</p>
+  </section>
+
+  <div class="modal-overlay" id="fa-member-modal" role="dialog" aria-modal="true" aria-labelledby="fa-m-title" hidden>
+    <div class="modal">
+      <div class="modal-head">
+        <div class="modal-title" id="fa-m-title">{{t:members.add}}</div>
+        <button class="btn modal-close" type="button" data-close="fa-member-modal" aria-label="{{t:common.close}}">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group" id="fa-m-user-group">
+          <label class="form-label" for="fa-m-user">{{t:members.user}}</label>
+          <select class="form-select" id="fa-m-user"></select>
+          <span class="form-hint">{{t:members.user_hint}}</span>
+        </div>
+        <div class="form-group">
+          <div class="form-label">{{t:members.role}}</div>
+          <label class="check"><input type="radio" name="fa-m-role" value="parent" id="fa-m-parent" checked> {{t:role.parent}}</label>
+          <label class="check"><input type="radio" name="fa-m-role" value="child" id="fa-m-child"> {{t:role.child}}</label>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label" for="fa-m-birth">{{t:members.birthdate}}</label>
+            <input class="form-input" id="fa-m-birth" type="date">
+            <span class="form-hint" id="fa-m-birth-hint">{{t:members.birthdate_hint}}</span>
+          </div>
+          <div class="form-group" style="flex:0 0 80px">
+            <label class="form-label" for="fa-m-color">{{t:members.color}}</label>
+            <input class="form-input fa-color" id="fa-m-color" type="color" value="#0f766e">
+          </div>
+        </div>
+        <div id="fa-m-child-box">
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label" for="fa-m-mode">{{t:members.locate_mode}}</label>
+              <select class="form-select" id="fa-m-mode">
+                <option value="confirm">{{t:mode.confirm}}</option>
+                <option value="auto">{{t:mode.auto}}</option>
+                <option value="off">{{t:mode.off}}</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="fa-m-goal">{{t:members.star_goal}}</label>
+              <input class="form-input" id="fa-m-goal" type="number" min="1" max="500" step="1" value="20">
+            </div>
+          </div>
+          <p class="form-hint">{{t:members.auto_hint}}</p>
+        </div>
+        <p class="fa-msg" id="fa-m-msg" role="status"></p>
+      </div>
+      <div class="modal-foot">
+        <button class="btn btn-danger" type="button" id="fa-m-delete" hidden>{{t:members.remove}}</button>
+        <span class="fa-spacer"></span>
+        <button class="btn" type="button" data-close="fa-member-modal">{{t:common.cancel}}</button>
+        <button class="btn btn-primary" type="button" id="fa-m-save">{{t:common.save}}</button>
+      </div>
+    </div>
+  </div>
+</main>

@@ -1,0 +1,26 @@
+<main class="fa-page">
+  <p class="fa-intro">{{t:modules.intro}}</p>
+  <div class="fa-row">
+    <div class="fa-col-3" style="display:flex;flex-direction:column;gap:18px">
+      <div id="fa-groups" style="display:flex;flex-direction:column;gap:18px"></div>
+
+      <section class="fa-card" aria-labelledby="fa-kids-h">
+        <h2 class="fa-card-title" id="fa-kids-h">{{t:modules.kids_title}}</h2>
+        <div id="fa-kids" style="display:flex;flex-direction:column;gap:12px"></div>
+        <p class="fa-hint">{{t:modules.kids_hint}}</p>
+      </section>
+    </div>
+
+    <aside class="fa-col-1 fa-preview" aria-labelledby="fa-preview-h">
+      <h2 class="fa-card-title" id="fa-preview-h" style="font-size:15px">{{t:modules.preview_title}}</h2>
+      <div class="fa-phone">
+        <span class="fa-phone-title">{{t:app.title}}</span>
+        <div id="fa-preview-cards" style="display:flex;flex-direction:column;gap:10px"></div>
+        <span class="fa-phone-count" id="fa-preview-count"></span>
+      </div>
+      <label class="fa-kid-row" for="fa-preview-as"><span class="fa-kid-name" style="font-weight:400">{{t:modules.preview_as}}</span>
+        <select class="form-select" id="fa-preview-as" style="width:auto"></select>
+      </label>
+    </aside>
+  </div>
+</main>

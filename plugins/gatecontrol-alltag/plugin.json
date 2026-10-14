@@ -4,13 +4,13 @@
     "de": "Alltag",
     "en": "Everyday"
   },
-  "version": "1.1.0",
+  "version": "1.2.0",
   "publisher": "CallMeTechie",
   "description": {
     "de": "Müllabfuhr und Kalender des Haushalts: Abfuhrtermine aus Online-Abfallkalendern (AbfallNavi, abfall.io, AWIDO), einer ICS-Datei oder eigenen Regeln; iCal-Kalender (Google, iCloud, Outlook, Nextcloud im Heimnetz); Erinnerungen in der App und Termine im Portal „Zuhause“.",
     "en": "The household’s waste collection and calendars: collection dates from online waste calendars (AbfallNavi, abfall.io, AWIDO), an ICS file or own rules; iCal calendars (Google, iCloud, Outlook, Nextcloud in the home network); reminders in the app and dates in the portal “Home”."
   },
-  "gatecontrol": ">=1.154.0",
+  "gatecontrol": ">=1.164.0",
   "entry": "server/index.js",
   "permissions": {
     "network": {
@@ -42,6 +42,7 @@
     "storage": true,
     "portal": true,
     "users": true,
+    "app": true,
     "notify": true,
     "background": {
       "intervalSeconds": 60
