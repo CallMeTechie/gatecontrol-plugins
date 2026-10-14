@@ -59,7 +59,8 @@ function render(view, t) {
   const portal = v.view === 'portal';
   const pageId = portal ? (v.wall === true ? 'wall' : 'portal') : (PAGES.includes(v.page) ? v.page : 'members');
   const page = FILES[pageId];
-  const loggedIn = portal ? (v.loggedIn === true || !!(v.user && v.user.loggedIn === true)) : true;
+  // a paired kiosk device (user.kiosk, GateControl ≥ 1.165.0) writes like a signed-in viewer
+  const loggedIn = portal ? (v.loggedIn === true || !!(v.user && (v.user.loggedIn === true || v.user.kiosk === true))) : true;
   const ctx = { lang, view: portal ? 'portal' : 'page', page: pageId, loggedIn, texts: texts[lang], leaflet: LEAFLET, tiles: TILES };
   return '<style>' + FILES.css + (page.css || '') + '</style>'
     + fill(page.html, t, lang)

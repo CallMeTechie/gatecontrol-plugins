@@ -3,6 +3,27 @@
 Die Familie in der GateControl-App (eigener Tab), im Portal (eigener Tab „Familie“) und auf
 drei Admin-Seiten. Alles bleibt auf dem eigenen Server.
 
+## 1.1.1
+- **Kiosk-Anmeldung für das Wand-Tablet** (braucht GateControl ≥ 1.165.0, neue Berechtigung
+  `permissions.kiosk` – im Installationsdialog „darf Benutzer als Kiosk-Geräte freigeben“): Jedes
+  Mitglied mit der Rolle **„Wand-Tablet“** gibt das Plugin in GateControl als Kiosk-Benutzer frei
+  (`gc.kiosk.allow`); wechselt die Rolle weg von „Wand-Tablet“ oder wird das Mitglied entfernt,
+  nimmt es die Freigabe zurück – jedes gekoppelte Tablet des Kontos ist dann beim nächsten Aufruf
+  abgemeldet. Beim Start gleicht das Plugin die Liste ab (`gc.kiosk.list`): freigegeben sind genau
+  die aktuellen Wand-Tablets. Administrator-Konten und deaktivierte Konten lehnt GateControl ab –
+  ein solches Wand-Tablet bleibt Mitglied, lässt sich aber nicht koppeln (Hinweis auf der Seite
+  „Funktionen“, Warnung im Log).
+- **Neue Einrichtung:** Konto anlegen (z. B. „Küche“, Rolle Mitglied), unter „Mitglieder & Ortung“
+  als „Wand-Tablet“ hinzufügen, in GateControl das Konto öffnen › **„Kiosk-Gerät koppeln“**, auf
+  dem Tablet den QR-Code scannen oder `https://<Portal>/portal/kiosk` öffnen und den Code
+  eingeben, Kiosk-Browser auf `https://<Portal>/portal`. Die Kopplung hält 90 Tage und verlängert
+  sich bei jeder Benutzung, gilt nur für das Portal und lässt sich in GateControl beim Benutzer
+  („Kiosk-Geräte“ › „Widerrufen“) oder mit „Abmelden“ auf dem Tablet beenden. Der Rat, dafür
+  `GC_SESSION_MAX_AGE` zu erhöhen, entfällt.
+- **Wand-Ansicht:** ein gekoppeltes Kiosk-Gerät (`req.user.kiosk`) zählt wie eine echte
+  Portal-Anmeldung – es hakt Aufgaben ab und fügt Einkäufe hinzu (weiterhin nur, was das
+  Wand-Tablet darf). „Nur lesen“ bleibt für die Erkennung über Geräte-Vertrauen.
+
 ## 1.1.0
 - **Abholen & Fahrten** (Funktion `rides`, Gruppe Unterwegs, Standard an): eine Fahrt ist eine
   Strecke zu einer Uhrzeit („Tim vom Training abholen“, 16:00, Sporthalle Nord), einmalig oder

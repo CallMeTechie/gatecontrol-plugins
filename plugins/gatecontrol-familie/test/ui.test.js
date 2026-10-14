@@ -31,6 +31,7 @@ test('render: members, modules, log and the portal tab in de and en; no unresolv
   }
   assert.equal(ctxOf(ui.render({ view: 'portal', user: { loggedIn: false } }, t)).loggedIn, false);
   assert.equal(ctxOf(ui.render({ view: 'portal', loggedIn: true }, t)).loggedIn, true);
+  assert.equal(ctxOf(ui.render({ view: 'portal', wall: true, user: { id: 7, portal: true, kiosk: true } }, t)).loggedIn, true, 'a kiosk device writes');
   assert.equal(ctxOf(ui.render({ view: 'page', page: 'nope' }, t)).page, 'members', 'unknown page → members');
   assert.ok(ui.render({ view: 'page', page: 'log' }, t).includes('window.FA.map'), 'the log page has the map');
   assert.ok(!ui.render({ view: 'page', page: 'modules' }, t).includes('window.FA.map'), 'the modules page does not need it');
@@ -84,12 +85,12 @@ test('Leaflet: one constant (server/ui.js), nowhere else', () => {
   assert.equal(ui.TILES, 'https://tile.openstreetmap.org/{z}/{x}/{y}.png');
 });
 
-test('plugin.json: permissions, app tab, maps, the eight topics with SOS allowed critical', () => {
+test('plugin.json: permissions (kiosk), app tab, maps, the eight topics with SOS allowed critical', () => {
   assert.equal(manifest.id, 'gatecontrol-familie');
-  assert.equal(manifest.version, '1.1.0');
-  assert.equal(manifest.gatecontrol, '>=1.164.0');
+  assert.equal(manifest.version, '1.1.1');
+  assert.equal(manifest.gatecontrol, '>=1.165.0', 'permissions.kiosk needs GateControl 1.165.0');
   const p = manifest.permissions;
-  assert.deepEqual([p.storage, p.portal, p.users, p.app, p.notify, p.background], [true, true, true, true, { perHour: 120 }, { intervalSeconds: 60 }]);
+  assert.deepEqual([p.storage, p.portal, p.users, p.app, p.notify, p.background, p.kiosk], [true, true, true, true, { perHour: 120 }, { intervalSeconds: 60 }, true]);
   assert.deepEqual(manifest.ui.pages.map((x) => x.id), ['members', 'modules', 'log']);
   assert.equal(manifest.ui.maps, true);
   const ICON = /^[MmLlHhVvCcSsQqTtAaZz0-9 .,-]{1,600}$/;

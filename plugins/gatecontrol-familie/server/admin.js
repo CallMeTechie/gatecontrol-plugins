@@ -6,6 +6,7 @@
 //   POST   admin/members                       { userId, role, birthdate, locateMode, starGoal, color }
 //   PATCH  admin/members/<userId>              same fields, partial
 //   DELETE admin/members/<userId>
+//                                              (a role 'wall' member is a kiosk user — server/kiosk.js)
 //   PUT    admin/modules                       { shopping: bool, … } (partial)
 //   PUT    admin/wall                          { listId } — the wall tablet's shopping list ('' = the first)
 //   GET    admin/log?days=&kind=&userId=       locate requests, arrivals, SOS, place transitions
@@ -17,6 +18,7 @@ const members = require('./members');
 const config = require('./config');
 const locate = require('./locate');
 const shopping = require('./shopping');
+const kiosk = require('./kiosk');
 const { fail, posInt, iso } = require('./util');
 
 const DAY = 86400000;
@@ -135,20 +137,25 @@ async function route(req, gc, seg, cfg, now) {
     const fam = await members.load(gc, today);
     if (seg.length === 2 && m === 'POST') {
       const id = await store.tx(gc, () => members.add(gc, fam, body, now));
+      await kiosk.roleChanged(gc, id, null, await kiosk.roleOf(gc, id));
       const fresh = await members.load(gc, today);
       return { member: adminMember(fresh.byId.get(id) || fresh.walls.get(id), cfg) };
     }
     const id = posInt(b);
     if (!id || seg.length !== 3) throw fail('not_found');
     if (m === 'PATCH' || m === 'PUT') {
+      const before = await kiosk.roleOf(gc, id);
       await store.tx(gc, () => members.update(gc, fam, id, body));
+      await kiosk.roleChanged(gc, id, before, await kiosk.roleOf(gc, id));
       const fresh = await members.load(gc, today);
       const mm = fresh.byId.get(id) || fresh.walls.get(id);
       if (!mm) throw fail('not_found');
       return { member: adminMember(mm, cfg) };
     }
     if (m === 'DELETE') {
+      const before = await kiosk.roleOf(gc, id);
       await store.tx(gc, () => members.remove(gc, id));
+      await kiosk.roleChanged(gc, id, before, null);
       return {};
     }
   }

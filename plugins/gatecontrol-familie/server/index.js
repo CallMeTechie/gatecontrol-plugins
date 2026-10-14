@@ -15,7 +15,9 @@
 // 7 days, log rows 90 days, shopping tombstones and rides 30 days).
 //
 // The portal tab of a member with the role 'wall' is the wall view (a fixed
-// tablet, module wall) — see server/wall.js.
+// tablet, module wall) — see server/wall.js. Wall members are the plugin's
+// kiosk users (1.1.1, permissions.kiosk): reconciled on start, kept in step
+// on every role change — see server/kiosk.js.
 
 const ui = require('./ui');
 const api = require('./api');
@@ -33,6 +35,7 @@ const safety = require('./safety');
 const places = require('./places');
 const rides = require('./rides');
 const notices = require('./notices');
+const kiosk = require('./kiosk');
 const texts = require('./texts.json');
 const { STATUS, isKnown } = require('./util');
 
@@ -109,6 +112,13 @@ module.exports = {
   async start(gc) {
     push.reset();
     state.lastPurge = 0;
+    try {
+      const cfg = await config.load(gc);
+      const k = await kiosk.reconcile(gc, tz.localDate(Date.now(), cfg.tz));
+      if (k.allowed.length || k.removed.length) gc.log.info('kiosk users reconciled', k.allowed.length, k.removed.length);
+    } catch (e) {
+      gc.log.warn('kiosk reconcile failed', (e && e.code) || (e && e.message) || 'error');
+    }
     gc.log.info('familie started', gc.plugin.version);
   },
 

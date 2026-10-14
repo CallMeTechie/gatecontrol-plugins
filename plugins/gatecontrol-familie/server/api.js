@@ -22,8 +22,9 @@
 // login may change things; a portal viewer recognised only by device trust
 // (loggedIn false) may read the everyday parts — never positions, SOS,
 // place reminders or the emergency card — and change nothing (403
-// login_required). A wall tablet (role 'wall') only gets what server/wall.js
-// allows (403 forbidden otherwise).
+// login_required). A kiosk device (req.user.kiosk, GateControl ≥ 1.165.0 —
+// a paired wall tablet) counts as signed in. A wall tablet (role 'wall') only
+// gets what server/wall.js allows (403 forbidden otherwise).
 
 const store = require('./store');
 const tz = require('./tz');
@@ -39,6 +40,11 @@ const rides = require('./rides');
 const emergency = require('./emergency');
 const wall = require('./wall');
 const { fail, posInt, iso } = require('./util');
+
+/** A portal viewer recognised only by device trust: no real login and no paired kiosk device. */
+function trustOnly(user) {
+  return !!user && user.portal === true && user.loggedIn !== true && user.kiosk !== true;
+}
 
 /** GET me */
 function me(r) {
@@ -61,7 +67,7 @@ async function overview(gc, r) {
     out.stars = { week: s.week[r.me.userId] || 0, goal: s.goal[r.me.userId] || r.me.starGoal };
   }
   if (mod.dates) out.dates = { next: await dates.next(gc, r) };
-  if (mod.locate && !(r.user.portal === true && r.user.loggedIn !== true)) out.locate = { last: await locate.last(gc, r) };
+  if (mod.locate && !r.trustOnly) out.locate = { last: await locate.last(gc, r) };
   if (mod.rides) out.rides = await rides.overview(gc, r);
   // addition: the latest "Bin angekommen" per member (24 h)
   out.arrivals = mod.arrival_sos ? await safety.recentArrivals(gc, r.now) : null;
@@ -189,15 +195,14 @@ async function route(req, gc, seg, cfg, now) {
   if (!m) throw fail('not_member');
   const method = String(req.method || 'GET').toUpperCase();
   const write = method !== 'GET';
-  const trustOnly = user.portal === true && user.loggedIn !== true;
   const body = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
-  const r = { req, cfg, now, today, fam, me: m, user, body, query: req.query || {}, trustOnly, pushes: [] };
+  const r = { req, cfg, now, today, fam, me: m, user, body, query: req.query || {}, trustOnly: trustOnly(user), pushes: [] };
   if (m.role === 'wall') wall.guard(r, method, seg);
   const handler = dispatch(gc, r, seg, method);
-  if (write && trustOnly) throw fail('login_required');
+  if (write && r.trustOnly) throw fail('login_required');
   const out = write ? await store.tx(gc, handler) : await handler();
   if (r.pushes.length) await push.flush(gc, r.pushes);
   return { status: 200, json: { ok: true, ...out } };
 }
 
-module.exports = { route, me, overview };
+module.exports = { route, me, overview, trustOnly };

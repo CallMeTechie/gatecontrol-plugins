@@ -42,6 +42,10 @@
 //   await host.appVisible(user)   (the app tab hook appVisible(user, gc); viewer { …user, portal, loggedIn, app: true })
 //   permissions.notify { perHour } raises the mock's notification limit; a notifyTopics entry with
 //   allowCritical keeps priority 'critical' (otherwise capped to 'high'), as GateControl ≥ 1.164.0.
+//   permissions.kiosk (GateControl ≥ 1.165.0): gc.kiosk.allow(userId, allowed) and gc.kiosk.list()
+//   (ERR_KIOSK_DENIED without the permission; ERR_INVALID for an unknown user, an administrator or a
+//   user given as { disabled: true }, and for allowed not a boolean). host.kiosk is the plugin's set
+//   of kiosk users; opts.kiosk: [userId] pre-fills it (what an earlier run left behind).
 
 const fs = require('node:fs');
 const os = require('node:os');
@@ -189,6 +193,8 @@ async function createHost(pluginDir, opts = {}) {
   const manifest = JSON.parse(fs.readFileSync(path.join(pluginDir, 'plugin.json'), 'utf8'));
   const perms = manifest.permissions || {};
   const net = networkOf(manifest);
+  // permissions.kiosk: a boolean (GateControl ≥ 1.165.0, manifest.js)
+  if (perms.kiosk != null && typeof perms.kiosk !== 'boolean') throw hostError('ERR_INVALID', 'plugin.json: permissions.kiosk: invalid');
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), `gcmock-${manifest.id}-`));
   const filesDir = path.join(tmp, 'files');
   fs.mkdirSync(filesDir);
@@ -199,10 +205,13 @@ async function createHost(pluginDir, opts = {}) {
   const kv = new Map();
   const settings = { ...settingDefaults(manifest), ...(opts.settings || {}) };
   const secrets = new Set(); // keys stored with gc.settings.setSecret (encrypted on the real host)
-  const users = (opts.users || [DEFAULT_USER]).map((u) => ({ id: u.id, name: u.name, role: u.role }));
+  const allUsers = (opts.users || [DEFAULT_USER]).map((u) => ({ id: u.id, name: u.name, role: u.role, disabled: u.disabled === true }));
+  // gc.users lists enabled accounts only
+  const users = allUsers.filter((u) => !u.disabled).map(({ id, name, role }) => ({ id, name, role }));
   const license = { required: !!(manifest.license && manifest.license.required), licensed: true, state: 'valid', expiresAt: null, ...(opts.license || {}) };
   // permissions.notify: true (30 per hour) or { perHour: 1–120 } (GateControl ≥ 1.164.0); the mock counts all of a test
   const notifyLimit = perms.notify && typeof perms.notify === 'object' && Number.isInteger(perms.notify.perHour) ? perms.notify.perHour : 30;
+  const kiosk = new Set((opts.kiosk || []).map(Number));
 
   // Storage: the plugin's own SQLite database with its migrations applied.
   let db = null;
@@ -357,6 +366,19 @@ async function createHost(pluginDir, opts = {}) {
       return {};
     },
     'license.status': async () => ({ ...license }),
+    // GateControl ≥ 1.165.0: users this plugin marks as kiosk devices (wall tablet …); never administrators or disabled users
+    'kiosk.allow': async ({ userId, allowed }) => {
+      if (perms.kiosk !== true) throw hostError('ERR_KIOSK_DENIED', 'this plugin has no kiosk permission');
+      if (typeof allowed !== 'boolean') throw hostError('ERR_INVALID', 'allowed must be a boolean');
+      const u = Number.isSafeInteger(userId) && userId > 0 ? allUsers.find((x) => x.id === userId) : null;
+      if (!u || u.disabled || u.role === 'admin') throw hostError('ERR_INVALID', 'not a user that can be a kiosk device');
+      if (allowed) kiosk.add(userId); else kiosk.delete(userId);
+      return null;
+    },
+    'kiosk.list': async () => {
+      if (perms.kiosk !== true) throw hostError('ERR_KIOSK_DENIED', 'this plugin has no kiosk permission');
+      return [...kiosk].sort((a, b) => a - b);
+    },
   };
 
   const call = async (name, args) => wire(await api[name](wire(args)));
@@ -405,6 +427,7 @@ async function createHost(pluginDir, opts = {}) {
       ? call('notify', { notification: message })
       : call('notify', { message: String(message), opts: o || {} })),
     license: Object.freeze({ status: () => call('license.status', {}) }),
+    kiosk: Object.freeze({ allow: (userId, allowed) => call('kiosk.allow', { userId, allowed }), list: () => call('kiosk.list', {}) }),
   });
 
   const entry = path.join(pluginDir, manifest.entry);
@@ -413,7 +436,7 @@ async function createHost(pluginDir, opts = {}) {
   const hook = async (name, ...a) => (typeof plugin[name] === 'function' ? wire(await plugin[name](...a.map(wire), gc)) : undefined);
 
   return {
-    manifest, gc, plugin, logs, notifications, fetches, kv, settings, filesDir,
+    manifest, gc, plugin, logs, notifications, fetches, kv, settings, filesDir, kiosk,
     start: () => hook('start'),
     stop: () => hook('stop'),
     tick: () => hook('tick'),
