@@ -128,3 +128,5 @@ textarea.form-input{min-height:70px;padding:8px 10px;resize:vertical}
 @media (max-width:640px){.fa-col-3,.fa-col-2,.fa-col-1{flex-basis:100%}}
 .fa-sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 .fa-modes{margin:6px 0;padding-left:18px;line-height:1.6}
+.fa-age-hint{display:block;font-size:12px;font-weight:600;color:var(--warn);margin-top:2px}
+.fa-kid-row .fa-age-hint{flex-basis:100%;margin-top:-4px}

@@ -59,6 +59,113 @@
     <div id="fa-locate-recent"></div>
   </section>
 
+  <div class="fa-row">
+    <section class="fa-card fa-col-2" id="fa-rides" aria-labelledby="fa-rides-h" hidden>
+      <div class="fa-card-head">
+        <h2 class="fa-card-title" id="fa-rides-h">{{t:portal.rides}}</h2>
+        <span class="fa-card-sub">{{t:portal.rides_sub}}</span>
+      </div>
+      <div class="fa-p-rides" id="fa-ride-list"></div>
+    </section>
+
+    <section class="fa-card fa-col-2" id="fa-emergency" aria-labelledby="fa-em-h" hidden>
+      <div class="fa-card-head">
+        <h2 class="fa-card-title" id="fa-em-h">{{t:portal.emergency}}</h2>
+        <span class="fa-card-sub">{{t:emergency.private}}</span>
+      </div>
+      <div class="fa-p-chips" id="fa-em-chips" role="tablist" aria-label="{{t:portal.emergency}}"></div>
+      <div class="fa-p-em" id="fa-em-card"></div>
+      <div class="fa-p-em-family">
+        <div class="fa-card-head">
+          <div class="fa-opt-title" style="flex:1">{{t:emergency.family_contacts}}</div>
+          <button class="btn btn-sm fa-write" type="button" id="fa-em-family-edit">{{t:common.edit}}</button>
+        </div>
+        <div id="fa-em-family"></div>
+      </div>
+      <p class="fa-hint">{{t:emergency.call_112}}</p>
+    </section>
+  </div>
+
+  <!-- Notfall-Karte -->
+  <div class="modal-overlay" id="fa-em-modal" role="dialog" aria-modal="true" aria-labelledby="fa-e-title" hidden>
+    <div class="modal modal-wide">
+      <div class="modal-head">
+        <div class="modal-title" id="fa-e-title"></div>
+        <button class="btn modal-close" type="button" data-close="fa-em-modal" aria-label="{{t:common.close}}">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label" for="fa-e-blood">{{t:emergency.blood}}</label>
+            <select class="form-select" id="fa-e-blood"></select>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="fa-e-weight">{{t:emergency.weight}}</label>
+            <input class="form-input" id="fa-e-weight" type="number" min="1" max="400" step="0.1">
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="fa-e-allergies">{{t:emergency.allergies}}</label>
+          <textarea class="form-input" id="fa-e-allergies" maxlength="300" rows="2"></textarea>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="fa-e-medications">{{t:emergency.medications}}</label>
+          <textarea class="form-input" id="fa-e-medications" maxlength="300" rows="2"></textarea>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="fa-e-conditions">{{t:emergency.conditions}}</label>
+          <textarea class="form-input" id="fa-e-conditions" maxlength="300" rows="2"></textarea>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="fa-e-notes">{{t:emergency.notes}}</label>
+          <textarea class="form-input" id="fa-e-notes" maxlength="500" rows="2"></textarea>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label" for="fa-e-ins-name">{{t:emergency.insurance}}</label>
+            <input class="form-input" id="fa-e-ins-name" type="text" maxlength="60" autocomplete="off">
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="fa-e-ins-number">{{t:emergency.insurance_number}}</label>
+            <input class="form-input" id="fa-e-ins-number" type="text" maxlength="40" autocomplete="off">
+          </div>
+        </div>
+        <div class="form-group">
+          <div class="form-label">{{t:emergency.contacts}}</div>
+          <div class="fa-p-contacts" id="fa-e-contacts"></div>
+          <button class="btn btn-sm" type="button" id="fa-e-contact-add">{{t:emergency.contact_add}}</button>
+        </div>
+        <p class="fa-msg" id="fa-e-msg" role="status"></p>
+      </div>
+      <div class="modal-foot">
+        <span class="fa-spacer"></span>
+        <button class="btn" type="button" data-close="fa-em-modal">{{t:common.cancel}}</button>
+        <button class="btn btn-primary" type="button" id="fa-e-save">{{t:common.save}}</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Notfall: Kontakte der Familie -->
+  <div class="modal-overlay" id="fa-emf-modal" role="dialog" aria-modal="true" aria-labelledby="fa-f-title" hidden>
+    <div class="modal modal-wide">
+      <div class="modal-head">
+        <div class="modal-title" id="fa-f-title">{{t:emergency.family_contacts}}</div>
+        <button class="btn modal-close" type="button" data-close="fa-emf-modal" aria-label="{{t:common.close}}">×</button>
+      </div>
+      <div class="modal-body">
+        <p class="fa-hint">{{t:emergency.labels_hint}}</p>
+        <div class="fa-p-contacts" id="fa-f-contacts"></div>
+        <button class="btn btn-sm" type="button" id="fa-f-contact-add">{{t:emergency.contact_add}}</button>
+        <p class="fa-msg" id="fa-f-msg" role="status"></p>
+      </div>
+      <div class="modal-foot">
+        <span class="fa-spacer"></span>
+        <button class="btn" type="button" data-close="fa-emf-modal">{{t:common.cancel}}</button>
+        <button class="btn btn-primary" type="button" id="fa-f-save">{{t:common.save}}</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Liste -->
   <div class="modal-overlay" id="fa-list-modal" role="dialog" aria-modal="true" aria-labelledby="fa-l-title" hidden>
     <div class="modal">

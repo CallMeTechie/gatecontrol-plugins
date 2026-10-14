@@ -1,6 +1,7 @@
-/* Page "Funktionen": the seven modules of Familie 1.0 as switches (plugin
-   settings mod_*), the locate mode per child, and a live preview of the
-   app's family screen for a chosen member. */
+/* Page "Funktionen": the modules as switches (plugin settings mod_*,
+   grouped like the mockup AdminModules), the wall tablet (its shopping list
+   and how to set it up), the locate mode per child (with the hint from 14),
+   and a live preview of the app's family screen for a chosen member. */
 (function () {
   'use strict';
   var A = window.FA, T = A.T, $ = A.$, el = A.el;
@@ -8,10 +9,15 @@
 
   var GROUPS = [
     ['group.everyday', [['shopping', 'all'], ['tasks', 'all'], ['dates', 'all']]],
-    ['group.out', [['places', 'all']]],
-    ['group.kids', [['locate', 'parents'], ['arrival_sos', 'children'], ['stars', 'children']]],
+    ['group.out', [['places', 'all'], ['rides', 'all']]],
+    ['group.kids', [['locate', 'parents'], ['arrival_sos', 'children'], ['stars', 'children'], ['emergency', 'all']]],
+    ['group.home', [['wall', 'none']]],
   ];
-  var ORDER = ['shopping', 'tasks', 'stars', 'dates', 'locate', 'arrival_sos', 'places'];
+  // what the app shows (the wall tablet has no app screen)
+  var ORDER = ['shopping', 'tasks', 'stars', 'dates', 'rides', 'emergency', 'locate', 'arrival_sos', 'places'];
+
+  function ageHint(k) { return k.role === 'child' && !k.adult && k.age != null && k.age >= 14 && k.locateMode === 'auto'; }
+  function family() { return data.members.filter(function (m) { return m.role !== 'wall'; }); }
 
   function setModule(key, on, btn) {
     var body = {}; body[key] = on;
@@ -54,15 +60,18 @@
       }));
       sel.value = k.locateMode;
       sel.disabled = !data.modules.locate;
+      var hint = el('span', { class: 'fa-age-hint', text: T('members.age_hint', { name: k.name }) });
+      hint.hidden = !ageHint(k);
       sel.addEventListener('change', function () {
         var prev = k.locateMode;
         A.api('PATCH', 'admin/members/' + k.userId, { locateMode: sel.value }).then(function (r) {
           k.locateMode = r.member.locateMode;
+          hint.hidden = !ageHint(k);
           A.toast(T('common.saved'));
           renderPreview();
         }).catch(function (e) { sel.value = prev; A.warn(e); });
       });
-      box.appendChild(el('div', { class: 'fa-kid-row' }, [el('span', { class: 'fa-kid-name', text: label }), sel]));
+      box.appendChild(el('div', { class: 'fa-kid-row' }, [el('span', { class: 'fa-kid-name', text: label }), sel, hint]));
     });
   }
 
@@ -83,7 +92,7 @@
   function renderPreview() {
     var sel = $('#fa-preview-as');
     var id = parseInt(sel.value, 10);
-    var m = data.members.filter(function (x) { return x.userId === id; })[0] || null;
+    var m = family().filter(function (x) { return x.userId === id; })[0] || null;
     var list = A.clear($('#fa-preview-cards'));
     var cards = m ? cardsFor(m) : [];
     cards.forEach(function (c) { list.appendChild(el('div', { class: 'fa-phone-card' }, [el('span', { class: 'fa-phone-dot' }), el('span', { text: c })])); });
@@ -96,13 +105,35 @@
     var sel = $('#fa-preview-as');
     var keep = sel.value;
     A.clear(sel);
-    data.members.forEach(function (m) { sel.appendChild(el('option', { value: String(m.userId), text: m.name + ' (' + T('role.' + m.role) + ')' })); });
-    if (keep && data.members.some(function (m) { return String(m.userId) === keep; })) sel.value = keep;
+    family().forEach(function (m) { sel.appendChild(el('option', { value: String(m.userId), text: m.name + ' (' + T('role.' + m.role) + ')' })); });
+    if (keep && family().some(function (m) { return String(m.userId) === keep; })) sel.value = keep;
   }
   $('#fa-preview-as').addEventListener('change', renderPreview);
 
+  // ── wall tablet ───────────────────────────────────────────────────────────
+  function renderWall() {
+    var walls = data.members.filter(function (m) { return m.role === 'wall'; });
+    $('#fa-wall-who').textContent = walls.length
+      ? T('wallcfg.accounts', { names: walls.map(function (m) { return m.name; }).join(', ') }) + (data.modules.wall ? '' : ' ' + T('wallcfg.module_off'))
+      : T('wallcfg.none');
+    var sel = A.clear($('#fa-wall-list'));
+    sel.appendChild(el('option', { value: '', text: T('wallcfg.list_first') }));
+    (data.wall.lists || []).forEach(function (l) { sel.appendChild(el('option', { value: l.id, text: l.name })); });
+    sel.value = data.wall.listId && (data.wall.lists || []).some(function (l) { return l.id === data.wall.listId; }) ? data.wall.listId : '';
+    sel.disabled = !data.modules.wall || !data.modules.shopping;
+  }
+  $('#fa-wall-list').addEventListener('change', function () {
+    var sel = $('#fa-wall-list');
+    var prev = data.wall.listId || '';
+    A.api('PUT', 'admin/wall', { listId: sel.value || null }).then(function (r) {
+      data.wall.listId = r.wall.listId;
+      A.toast(T('common.saved'));
+    }).catch(function (e) { sel.value = prev; A.warn(e); });
+  });
+
   function render() {
     renderGroups();
+    renderWall();
     renderKids();
     renderPreview();
   }

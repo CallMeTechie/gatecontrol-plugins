@@ -91,8 +91,10 @@
           <div class="form-label">{{t:members.role}}</div>
           <label class="check"><input type="radio" name="fa-m-role" value="parent" id="fa-m-parent" checked> {{t:role.parent}}</label>
           <label class="check"><input type="radio" name="fa-m-role" value="child" id="fa-m-child"> {{t:role.child}}</label>
+          <label class="check"><input type="radio" name="fa-m-role" value="wall" id="fa-m-wall"> {{t:role.wall}}</label>
+          <span class="form-hint" id="fa-m-wall-hint" hidden>{{t:members.wall_hint}}</span>
         </div>
-        <div class="form-row">
+        <div class="form-row" id="fa-m-person-box">
           <div class="form-group">
             <label class="form-label" for="fa-m-birth">{{t:members.birthdate}}</label>
             <input class="form-input" id="fa-m-birth" type="date">
@@ -112,6 +114,7 @@
                 <option value="auto">{{t:mode.auto}}</option>
                 <option value="off">{{t:mode.off}}</option>
               </select>
+              <span class="fa-age-hint" id="fa-m-age-hint" hidden></span>
             </div>
             <div class="form-group">
               <label class="form-label" for="fa-m-goal">{{t:members.star_goal}}</label>

@@ -7,6 +7,7 @@
 //   PATCH  admin/members/<userId>              same fields, partial
 //   DELETE admin/members/<userId>
 //   PUT    admin/modules                       { shopping: bool, … } (partial)
+//   PUT    admin/wall                          { listId } — the wall tablet's shopping list ('' = the first)
 //   GET    admin/log?days=&kind=&userId=       locate requests, arrivals, SOS, place transitions
 //                                              + the last answered position per child
 
@@ -15,6 +16,7 @@ const tz = require('./tz');
 const members = require('./members');
 const config = require('./config');
 const locate = require('./locate');
+const shopping = require('./shopping');
 const { fail, posInt, iso } = require('./util');
 
 const DAY = 86400000;
@@ -25,6 +27,8 @@ function adminMember(m, cfg) {
     userId: m.userId, name: m.name, gcRole: m.gcRole, role: m.role, birthdate: m.birthdate, age: m.age, adult: m.adult,
     locateMode: m.locateMode, effectiveMode: members.effectiveMode(m), locatable: m.role === 'child' && members.locateRefusal(m, cfg) === null,
     starGoal: m.starGoal, color: m.color,
+    // 1.1.0: a child of 14+ on "Automatisch" — the pages recommend "Kind bestätigt"
+    ageHint: members.ageHint(m),
   };
 }
 
@@ -32,10 +36,11 @@ async function status(gc, cfg, now) {
   const today = tz.localDate(now, cfg.tz);
   const fam = await members.load(gc, today);
   return {
-    members: fam.list.map((m) => adminMember(m, cfg)),
-    users: [...fam.users.values()].map((u) => ({ id: u.id, name: u.name, role: u.role, member: fam.byId.has(u.id) })),
+    members: fam.all.map((m) => adminMember(m, cfg)),
+    users: [...fam.users.values()].map((u) => ({ id: u.id, name: u.name, role: u.role, member: fam.byId.has(u.id) || fam.walls.has(u.id) })),
     modules: { ...cfg.modules },
     settings: { timezone: cfg.tz, timezoneSetting: cfg.tzSetting, notifyLang: cfg.lang, problems: cfg.problems },
+    wall: { listId: cfg.wallList || null, lists: (await shopping.summary(gc)).map((l) => ({ id: l.id, name: l.name })) },
     today,
   };
 }
@@ -115,20 +120,30 @@ async function route(req, gc, seg, cfg, now) {
     }
     return { modules: (await config.load(gc)).modules };
   }
+  if (a === 'wall' && seg.length === 2 && (m === 'PUT' || m === 'PATCH')) {
+    const id = body.listId == null || body.listId === '' ? '' : body.listId;
+    if (id) {
+      if (typeof id !== 'string' || !shopping.ID_RE.test(id)) throw fail('invalid');
+      const l = await store.one(gc, 'SELECT deleted FROM shop_lists WHERE id = ?', [id]);
+      if (!l || l.deleted) throw fail('invalid');
+    }
+    await config.saveWallList(gc, id);
+    return { wall: { listId: id || null } };
+  }
   if (a === 'members') {
     const today = tz.localDate(now, cfg.tz);
     const fam = await members.load(gc, today);
     if (seg.length === 2 && m === 'POST') {
       const id = await store.tx(gc, () => members.add(gc, fam, body, now));
       const fresh = await members.load(gc, today);
-      return { member: adminMember(fresh.byId.get(id), cfg) };
+      return { member: adminMember(fresh.byId.get(id) || fresh.walls.get(id), cfg) };
     }
     const id = posInt(b);
     if (!id || seg.length !== 3) throw fail('not_found');
     if (m === 'PATCH' || m === 'PUT') {
       await store.tx(gc, () => members.update(gc, fam, id, body));
       const fresh = await members.load(gc, today);
-      const mm = fresh.byId.get(id);
+      const mm = fresh.byId.get(id) || fresh.walls.get(id);
       if (!mm) throw fail('not_found');
       return { member: adminMember(mm, cfg) };
     }

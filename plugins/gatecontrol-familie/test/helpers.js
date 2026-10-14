@@ -2,8 +2,9 @@
 
 // Test helpers: the mock host (tools/testing/mock-host.js) with a family
 // (Anna and Marc parents, Lena 12 and Tim 9 children, Oma not a member, an
-// administrator who is no member), callers as the app / the portal sees
-// them, and a controllable clock (node:test mock timers, Date only).
+// administrator who is no member, Küche an account for a wall tablet — no
+// member until a test adds it), callers as the app / the portal sees them,
+// and a controllable clock (node:test mock timers, Date only).
 
 const path = require('node:path');
 const { mock } = require('node:test');
@@ -18,7 +19,8 @@ const MARC = { id: 3, name: 'Marc', role: 'user' };
 const LENA = { id: 4, name: 'Lena', role: 'user' };
 const TIM = { id: 5, name: 'Tim', role: 'user' };
 const OMA = { id: 6, name: 'Oma', role: 'user' };
-const USERS = [ADMIN, ANNA, MARC, LENA, TIM, OMA];
+const KUECHE = { id: 7, name: 'Küche', role: 'user' };
+const USERS = [ADMIN, ANNA, MARC, LENA, TIM, OMA, KUECHE];
 
 /** 2026-10-14 (Wednesday) 10:00 in Berlin (CEST, UTC+2) */
 const T0 = Date.UTC(2026, 9, 14, 8, 0, 0);
@@ -85,5 +87,5 @@ function pushes(host, type, from = 0) {
 }
 
 module.exports = {
-  DIR, BERLIN, ADMIN, ANNA, MARC, LENA, TIM, OMA, USERS, T0, MIN, HOUR, DAY, birth, startClock, app, portal, withFamily, pushes,
+  DIR, BERLIN, ADMIN, ANNA, MARC, LENA, TIM, OMA, KUECHE, USERS, T0, MIN, HOUR, DAY, birth, startClock, app, portal, withFamily, pushes,
 };

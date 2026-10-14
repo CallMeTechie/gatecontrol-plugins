@@ -1,0 +1,33 @@
+<main class="fa-wall" id="fa-wall" aria-labelledby="fa-w-time">
+  <div class="fa-w-shift" id="fa-w-shift">
+    <header class="fa-w-head">
+      <div class="fa-w-clock">
+        <div class="fa-w-time" id="fa-w-time">--:--</div>
+        <div class="fa-w-date" id="fa-w-date"></div>
+      </div>
+      <div class="fa-w-people" id="fa-w-people"></div>
+    </header>
+    <div class="fa-w-banner" id="fa-w-banner" role="status" hidden></div>
+    <div class="fa-w-grid">
+      <section class="fa-w-card" id="fa-w-today" aria-labelledby="fa-w-today-h">
+        <h2 class="fa-w-h" id="fa-w-today-h">{{t:wall.today}}</h2>
+        <div class="fa-w-list" id="fa-w-today-list"></div>
+      </section>
+      <section class="fa-w-card" id="fa-w-tasks" aria-labelledby="fa-w-tasks-h">
+        <h2 class="fa-w-h" id="fa-w-tasks-h">{{t:wall.tasks}}</h2>
+        <div class="fa-w-list" id="fa-w-task-list"></div>
+      </section>
+      <section class="fa-w-card" id="fa-w-shop" aria-labelledby="fa-w-shop-h">
+        <div class="fa-w-card-head">
+          <h2 class="fa-w-h" id="fa-w-shop-h">{{t:wall.shopping}}</h2>
+          <span class="fa-w-muted" id="fa-w-shop-open"></span>
+        </div>
+        <div class="fa-w-chips" id="fa-w-items"></div>
+        <form class="fa-w-add" id="fa-w-add" autocomplete="off">
+          <input class="fa-w-input" id="fa-w-add-text" type="text" maxlength="120" placeholder="{{t:wall.add_item}}" aria-label="{{t:wall.add_item}}">
+          <button class="fa-w-add-btn" type="submit" aria-label="{{t:wall.add_item}}">+</button>
+        </form>
+      </section>
+    </div>
+  </div>
+</main>

@@ -36,7 +36,7 @@ fixture). It is built and tested in CI but never released
 | `gatecontrol-alltag` | Alltag / Everyday — waste collection dates (online waste calendars AbfallNavi, abfall.io, AWIDO; ICS upload; own rules) and iCal calendars (Google, iCloud, Outlook, or a home-network server such as Nextcloud); portal sections in "Zuhause", Start tiles, search; app API `app/events` for the family app (1.2.0); notifies: waste collection (per plan 0–3 days before at a set time, optionally on the day), calendar events | ≥ 1.164.0 (1.1.0: ≥ 1.154.0) |
 | `gatecontrol-synology` | NAS (Synology) — status and control of Synology NAS through the DSM Web API (several NAS, home target over HTTP; DSM 2-step verification via device token): model, DSM version, CPU/RAM, temperature, volumes, storage pools, drives (S.M.A.R.T.), DSM update, Hyper Backup, UPS; reboot, shutdown, back up now; administrators only; notifies: NAS unreachable, storage degraded/almost full, drive health/temperature, backup failed, DSM update, reboot/shutdown | ≥ 1.154.0 |
 | `gatecontrol-proxmox` | Proxmox VE — status of hosts and clusters (nodes, VMs/containers, storage, backups, HA) and control of VMs/CTs (start, shutdown, stop, reboot) for administrators; admin page only; notifies: host/node unreachable, watched guest stopped, storage almost full, backup failed, high node load | ≥ 1.154.0 |
-| `gatecontrol-familie` | Familie / Family — the family in the GateControl app (own tab, `permissions.app` + `ui.app`) and the portal (own tab): shared shopping lists (offline-first ops API), tasks (fixed / in turns / first) with reminders and stars for children, dates and birthdays, locating children on request (auto or confirmed, the child sees every request, ends at 18; coordinates 7 days), "I've arrived" and SOS (critical push), place reminders (geofencing on the phone, consent); admin pages members, features, log with OpenStreetMap (`ui.maps`); notifies: shopping, tasks, dates, locate, arrival, sos (critical), places | ≥ 1.164.0 |
+| `gatecontrol-familie` | Familie / Family — the family in the GateControl app (own tab, `permissions.app` + `ui.app`) and the portal (own tab): shared shopping lists (offline-first ops API), tasks (fixed / in turns / first) with reminders and stars for children, dates and birthdays, locating children on request (auto or confirmed, the child sees every request, ends at 18; coordinates 7 days), "I've arrived" and SOS (critical push), place reminders (geofencing on the phone, consent), pick-ups & rides (weekly series, "I'll do it" / "can't" / "who can …?", reminders; 1.1.0), an emergency card (health data on the own server only, never in pushes or logs; 1.1.0), a wall tablet view in the portal (role `wall`, read-only by device trust, ticking needs a portal login; 1.1.0 — setup in the plugin's CHANGELOG and on its page "Funktionen"); admin pages members, features, log with OpenStreetMap (`ui.maps`); notifies: shopping, tasks, dates, locate, arrival, sos (critical), places, rides | ≥ 1.164.0 |
 
 ### Notifications
 
@@ -183,8 +183,10 @@ Erstanbieter-Plugins für GateControl mit Build-, Signatur- und Release-Pipeline
 * **Plugins:** Smart Home, Klimaanlage, Fahrzeuge (früher eingebaut), **Alltag**
   (Müllabfuhr aus Online-Abfallkalendern, ICS-Datei oder eigenen Regeln; iCal-Kalender;
   Erinnerungen und Portal „Zuhause“), NAS, Proxmox VE und **Familie** (Einkaufslisten,
-  Aufgaben und Sterne, Termine, Kinder orten, „Bin angekommen“ & SOS, Orts-Erinnerungen –
-  in der App und im Portal) – Tabelle oben.
+  Aufgaben und Sterne, Termine, Kinder orten, „Bin angekommen“ & SOS, Orts-Erinnerungen,
+  Abholen & Fahrten, Notfall-Karte – in der App und im Portal – und ein Wand-Tablet im
+  Portal; Einrichtung des Tablets im CHANGELOG des Plugins und auf seiner Seite
+  „Funktionen“) – Tabelle oben.
 * **Werkzeuge:** Der Packer stammt aus GateControl (Commit in `gatecontrol.ref`,
   ändern mit `tools/bump-gatecontrol.sh <sha>`). Lokal: `npm ci`,
   `npm run gatecontrol`, `npm run validate`, `npm test`, `npm run pack <id>`

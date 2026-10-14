@@ -4,6 +4,25 @@
     <div class="fa-col-3" style="display:flex;flex-direction:column;gap:18px">
       <div id="fa-groups" style="display:flex;flex-direction:column;gap:18px"></div>
 
+      <section class="fa-card" aria-labelledby="fa-wall-h">
+        <h2 class="fa-card-title" id="fa-wall-h">{{t:wallcfg.title}}</h2>
+        <p class="fa-hint" id="fa-wall-who"></p>
+        <label class="fa-kid-row" for="fa-wall-list"><span class="fa-kid-name">{{t:wallcfg.list}}</span>
+          <select class="form-select" id="fa-wall-list"></select>
+        </label>
+        <div>
+          <div class="fa-opt-title">{{t:wallcfg.setup_title}}</div>
+          <ol class="fa-hint fa-modes">
+            <li>{{t:wallcfg.step1}}</li>
+            <li>{{t:wallcfg.step2}}</li>
+            <li>{{t:wallcfg.step3}}</li>
+            <li>{{t:wallcfg.step4}}</li>
+            <li>{{t:wallcfg.step5}}</li>
+          </ol>
+          <p class="fa-hint">{{t:wallcfg.login}}</p>
+        </div>
+      </section>
+
       <section class="fa-card" aria-labelledby="fa-kids-h">
         <h2 class="fa-card-title" id="fa-kids-h">{{t:modules.kids_title}}</h2>
         <div id="fa-kids" style="display:flex;flex-direction:column;gap:12px"></div>

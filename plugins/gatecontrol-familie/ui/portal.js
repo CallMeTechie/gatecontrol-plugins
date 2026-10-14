@@ -1,8 +1,9 @@
 /* Portal tab "Familie": shopping lists (edit), tasks of the week (done;
-   parents create/edit), dates and birthdays, and for parents the locate
-   panel (request, countdown, last results on a map). Same API as the app;
-   a viewer recognised only by device trust reads (no positions) and changes
-   nothing. */
+   parents create/edit), dates and birthdays, rides of the week (take,
+   decline, ask, release), and for parents the locate panel (request,
+   countdown, last results on a map) and the emergency card (view and edit).
+   Same API as the app; a viewer recognised only by device trust reads (no
+   positions, no emergency card) and changes nothing. */
 (function () {
   'use strict';
   var A = window.FA, T = A.T, $ = A.$, $$ = A.$$, el = A.el;
@@ -353,6 +354,201 @@
     });
   }
 
+  // ── rides (next 7 days) ──────────────────────────────────────────────────
+  var ridesData = [];
+  function canDrive() { return me.me.role === 'parent' || (me.me.role === 'child' && me.me.age != null && me.me.age >= 18); }
+  function rideWho(r) {
+    if (r.status === 'cancelled') return T('ride.cancelled');
+    if (r.status === 'taken') return r.driver && r.driver.userId === me.me.userId ? T('ride.you_drive') : T('ride.driver', { name: r.driver ? (r.driver.name || r.driver.label) : '–' });
+    var parts = [T('ride.open')];
+    if (r.declined.length) parts.push(T('ride.declined', { names: r.declined.map(function (d) { return d.name; }).join(', ') }));
+    return parts.join(' · ');
+  }
+  function rideAction(r, action) {
+    A.api('POST', 'rides/' + encodeURIComponent(r.id) + '/' + action).then(function (x) {
+      A.toast(action === 'ask' ? T('ride.asked', { n: x.notified || 0 }) : T('common.saved'));
+      return loadRides();
+    }).catch(function (e) {
+      var c = A.errCode(e);
+      A.toast(c === 'too_soon' ? T('ride.ask_soon') : (c === 'already_taken' ? T('error.already_taken') : A.errText(e)), 'error');
+      loadRides();
+    });
+  }
+  function renderRides() {
+    var box = A.clear($('#fa-ride-list'));
+    if (!ridesData.length) { box.appendChild(el('p', { class: 'fa-empty', text: T('ride.none') })); return; }
+    ridesData.forEach(function (r) {
+      var n = A.daysUntil(r.date);
+      var when = (n === 0 ? T('rel.today') : (n === 1 ? T('rel.tomorrow') : A.day(r.date, { weekday: 'short', day: '2-digit', month: '2-digit' }))) + ' ' + r.time;
+      var btns = [];
+      if (writable && r.status === 'open') {
+        if (canDrive()) btns.push(el('button', { type: 'button', class: 'btn btn-primary btn-sm', text: T('ride.take'), on: { click: function () { rideAction(r, 'take'); } } }));
+        if (me.me.role === 'parent' && !r.declined.some(function (d) { return d.userId === me.me.userId; })) btns.push(el('button', { type: 'button', class: 'btn btn-sm', text: T('ride.decline'), on: { click: function () { rideAction(r, 'decline'); } } }));
+        btns.push(el('button', { type: 'button', class: 'btn btn-sm btn-ghost', text: T('ride.ask'), on: { click: function () { rideAction(r, 'ask'); } } }));
+      }
+      if (writable && r.status === 'taken' && r.driver && r.driver.userId === me.me.userId) {
+        btns.push(el('button', { type: 'button', class: 'btn btn-sm', text: T('ride.release'), on: { click: function () { rideAction(r, 'release'); } } }));
+      }
+      var kids = r.childIds.map(memberById).filter(Boolean);
+      box.appendChild(el('div', { class: 'fa-p-ride is-' + r.status }, [
+        el('span', { class: 'fa-p-date-when', text: when }),
+        el('div', { class: 'fa-p-ride-main' }, [
+          el('div', { class: 'fa-p-task-title', text: r.title }),
+          el('div', { class: 'fa-p-task-sub', text: [r.place, kids.map(function (k) { return k.name; }).join(', '), rideWho(r)].filter(Boolean).join(' · ') }),
+        ]),
+        btns.length ? el('div', { class: 'fa-p-ride-btns' }, btns) : null,
+      ]));
+    });
+  }
+  function loadRides() {
+    return A.api('GET', 'rides').then(function (r) {
+      ridesData = r.rides.filter(function (x) { return x.status !== 'cancelled' || A.daysUntil(x.date) <= 1; });
+      renderRides();
+    }).catch(A.warn);
+  }
+
+  // ── emergency card (parents, signed in) ──────────────────────────────────
+  var ICON_PHONE = 'M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2';
+  var BLOOD = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', '0+', '0-', 'unknown'];
+  var em = null;
+  var emSel = null;
+  var emEdit = null;
+  function telHref(phone) { return 'tel:' + String(phone).replace(/[^0-9+]/g, ''); }
+  function contactRow(c) {
+    return el('div', { class: 'fa-p-contact' }, [
+      el('div', { class: 'fa-p-contact-main' }, [el('b', { text: c.label }), el('span', { class: 'fa-sub', text: [c.phone, c.note].filter(Boolean).join(' · ') })]),
+      el('a', { class: 'btn btn-sm', href: telHref(c.phone), target: '_blank', rel: 'noopener', 'aria-label': T('emergency.call', { name: c.label }) }, [A.svg(ICON_PHONE, 14)]),
+    ]);
+  }
+  function masked(num) {
+    var s = String(num || '');
+    return s.length > 4 ? s.slice(0, -4).replace(/[^\s]/g, '•') + s.slice(-4) : s;
+  }
+  function field(label, value) {
+    return value ? el('div', { class: 'fa-p-em-field' }, [el('span', { class: 'fa-p-em-label', text: label }), el('span', { class: 'fa-p-em-value', text: value })]) : null;
+  }
+  function renderEmergency() {
+    var chips = A.clear($('#fa-em-chips'));
+    em.members.forEach(function (m) {
+      var b = el('button', { type: 'button', class: 'btn btn-sm fa-p-chip', role: 'tab', 'aria-selected': m.userId === emSel ? 'true' : 'false', text: m.name });
+      b.addEventListener('click', function () { emSel = m.userId; renderEmergency(); });
+      chips.appendChild(b);
+    });
+    var c = em.members.filter(function (m) { return m.userId === emSel; })[0];
+    var box = A.clear($('#fa-em-card'));
+    if (c) {
+      var mem = memberById(c.userId);
+      var sub = [];
+      if (c.birthdate) sub.push(T('emergency.born', { date: A.dateLong(c.birthdate) }));
+      if (c.age != null) sub.push(T('members.years', { n: c.age }));
+      if (c.weightKg != null) sub.push(c.weightKg + ' kg');
+      box.appendChild(el('div', { class: 'fa-person' }, [A.avatar(mem || c, 36), el('div', null, [el('b', { text: c.name }), el('div', { class: 'fa-sub', text: sub.join(' · ') })])]));
+      var ins = null;
+      if (c.insurance) {
+        var num = el('button', { type: 'button', class: 'btn btn-sm btn-ghost', text: masked(c.insurance.number), title: T('emergency.reveal') });
+        num.addEventListener('click', function () { num.textContent = c.insurance.number; });
+        ins = el('div', { class: 'fa-p-em-field' }, [el('span', { class: 'fa-p-em-label', text: T('emergency.insurance') }), el('span', { class: 'fa-p-em-value' }, [c.insurance.name + ' ', c.insurance.number ? num : null])]);
+      }
+      var fields = [
+        field(T('emergency.allergies'), c.allergies), field(T('emergency.blood'), c.bloodType ? (c.bloodType === 'unknown' ? T('emergency.blood_unknown') : c.bloodType) : ''),
+        field(T('emergency.medications'), c.medications), field(T('emergency.conditions'), c.conditions), field(T('emergency.notes'), c.notes), ins,
+      ].filter(Boolean);
+      box.appendChild(fields.length ? el('div', { class: 'fa-p-em-grid' }, fields) : el('p', { class: 'fa-empty', text: T('emergency.empty') }));
+      c.contacts.forEach(function (x) { box.appendChild(contactRow(x)); });
+      if (c.updatedAt) box.appendChild(el('p', { class: 'fa-hint', text: T('emergency.updated', { when: A.when(c.updatedAt), name: (c.updatedBy && c.updatedBy.name) || '–' }) }));
+      if (writable) box.appendChild(el('button', { type: 'button', class: 'btn btn-sm', text: T('emergency.edit', { name: c.name }), on: { click: function () { openEmergency(c); } } }));
+    }
+    var fam = A.clear($('#fa-em-family'));
+    em.contacts.forEach(function (x) { fam.appendChild(contactRow(x)); });
+    if (!em.contacts.length) fam.appendChild(el('p', { class: 'fa-empty', text: T('emergency.family_none') }));
+  }
+  /** A small editor for a list of { label, phone, note }; returns a getter. */
+  function contactsEditor(box, list, max) {
+    A.clear(box);
+    function addRow(c) {
+      if (box.children.length >= max) return;
+      var row = el('div', { class: 'fa-p-contact-edit' }, [
+        el('input', { class: 'form-input', type: 'text', maxlength: '60', placeholder: T('emergency.label'), 'aria-label': T('emergency.label'), value: (c && c.label) || '' }),
+        el('input', { class: 'form-input', type: 'tel', maxlength: '30', placeholder: T('emergency.phone'), 'aria-label': T('emergency.phone'), value: (c && c.phone) || '' }),
+        el('input', { class: 'form-input', type: 'text', maxlength: '80', placeholder: T('emergency.note'), 'aria-label': T('emergency.note'), value: (c && c.note) || '' }),
+      ]);
+      row.appendChild(el('button', { type: 'button', class: 'btn fa-p-x', 'aria-label': T('common.delete'), on: { click: function () { row.remove(); } } }, [A.svg(ICON_X, 14)]));
+      box.appendChild(row);
+    }
+    (list || []).forEach(addRow);
+    return {
+      add: function () { addRow(null); },
+      get: function () {
+        return $$('.fa-p-contact-edit', box).map(function (r) {
+          var i = r.querySelectorAll('input');
+          return { label: i[0].value.trim(), phone: i[1].value.trim(), note: i[2].value.trim() };
+        }).filter(function (c) { return c.label || c.phone; });
+      },
+    };
+  }
+  var emContacts = null;
+  var famContacts = null;
+  function openEmergency(c) {
+    emEdit = c;
+    $('#fa-e-title').textContent = T('emergency.edit', { name: c.name });
+    var sel = A.clear($('#fa-e-blood'));
+    sel.appendChild(el('option', { value: '', text: '–' }));
+    BLOOD.forEach(function (b) { sel.appendChild(el('option', { value: b, text: b === 'unknown' ? T('emergency.blood_unknown') : b })); });
+    sel.value = c.bloodType || '';
+    $('#fa-e-weight').value = c.weightKg != null ? String(c.weightKg) : '';
+    $('#fa-e-allergies').value = c.allergies;
+    $('#fa-e-medications').value = c.medications;
+    $('#fa-e-conditions').value = c.conditions;
+    $('#fa-e-notes').value = c.notes;
+    $('#fa-e-ins-name').value = c.insurance ? c.insurance.name : '';
+    $('#fa-e-ins-number').value = c.insurance ? c.insurance.number : '';
+    emContacts = contactsEditor($('#fa-e-contacts'), c.contacts, 10);
+    $('#fa-e-msg').textContent = '';
+    A.openModal('fa-em-modal');
+  }
+  $('#fa-e-contact-add').addEventListener('click', function () { if (emContacts) emContacts.add(); });
+  function fieldError(e) {
+    var f = e && e.data && e.data.field;
+    if (f && /\.phone$/.test(f)) return T('emergency.invalid_phone');
+    return f ? T('emergency.invalid_field', { field: f }) : A.errText(e);
+  }
+  $('#fa-e-save').addEventListener('click', function () {
+    if (!emEdit) return;
+    var w = $('#fa-e-weight').value.trim();
+    var name = $('#fa-e-ins-name').value.trim();
+    var number = $('#fa-e-ins-number').value.trim();
+    var body = {
+      bloodType: $('#fa-e-blood').value || null, weightKg: w ? Number(w.replace(',', '.')) : null,
+      allergies: $('#fa-e-allergies').value, medications: $('#fa-e-medications').value, conditions: $('#fa-e-conditions').value, notes: $('#fa-e-notes').value,
+      insurance: name || number ? { name: name, number: number } : null, contacts: emContacts.get(),
+    };
+    A.api('PUT', 'emergency/members/' + emEdit.userId, body).then(function () {
+      A.closeModal('fa-em-modal');
+      A.toast(T('common.saved'));
+      return loadEmergency();
+    }).catch(function (e) { $('#fa-e-msg').textContent = fieldError(e); });
+  });
+  $('#fa-em-family-edit').addEventListener('click', function () {
+    famContacts = contactsEditor($('#fa-f-contacts'), em ? em.contacts : [], 20);
+    $('#fa-f-msg').textContent = '';
+    A.openModal('fa-emf-modal');
+  });
+  $('#fa-f-contact-add').addEventListener('click', function () { if (famContacts) famContacts.add(); });
+  $('#fa-f-save').addEventListener('click', function () {
+    A.api('PUT', 'emergency/contacts', { contacts: famContacts.get() }).then(function () {
+      A.closeModal('fa-emf-modal');
+      A.toast(T('common.saved'));
+      return loadEmergency();
+    }).catch(function (e) { $('#fa-f-msg').textContent = fieldError(e); });
+  });
+  function loadEmergency() {
+    return A.api('GET', 'emergency').then(function (r) {
+      em = r;
+      if (!r.members.some(function (m) { return m.userId === emSel; })) emSel = r.members.length ? r.members[0].userId : null;
+      renderEmergency();
+    }).catch(A.warn);
+  }
+
   // ── start ────────────────────────────────────────────────────────────────
   function start() {
     A.api('GET', 'me').then(function (r) {
@@ -370,6 +566,8 @@
       if (mod.tasks) loadTasks();
       if (mod.dates) loadDates();
       if (mod.locate && writable && r.me.role === 'parent') { $('#fa-locate').hidden = false; loadLocate(); }
+      if (mod.rides) { $('#fa-rides').hidden = false; loadRides(); }
+      if (mod.emergency && writable && r.me.role === 'parent') { $('#fa-emergency').hidden = false; loadEmergency(); }
     }).catch(function (e) {
       var c = A.errCode(e);
       banner(c === 'not_member' ? T('portal.not_member') : A.errText(e));
@@ -380,5 +578,6 @@
     if (!me) return;
     if (me.modules.shopping) loadShopping();
     if (me.modules.tasks) loadTasks();
+    if (me.modules.rides) loadRides();
   }, 60000);
 }());

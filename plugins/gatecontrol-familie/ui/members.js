@@ -11,11 +11,25 @@
   function roleOfAccount(u) { return u && u.role === 'admin' ? T('account.admin') : T('account.user'); }
 
   function locateCell(m) {
+    if (m.role === 'wall') return el('span', { class: 'fa-muted', text: '–' });
     if (m.role !== 'child') return data.modules.locate ? el('span', { class: 'fa-ok', text: T('members.may_locate') }) : el('span', { class: 'fa-muted', text: '–' });
     if (m.adult) return el('span', { class: 'fa-pill is-warn', text: T('members.adult') });
     if (!data.modules.locate) return el('span', { class: 'fa-muted', text: T('members.module_off') });
     if (m.locateMode === 'off') return el('span', { class: 'fa-muted', text: T('members.locate_off') });
-    return el('span', { text: T('members.locatable', { mode: T('mode.' + m.locateMode) }) });
+    return el('span', null, [
+      el('span', { text: T('members.locatable', { mode: T('mode.' + m.locateMode) }) }),
+      m.ageHint ? el('span', { class: 'fa-age-hint', text: T('members.age_hint', { name: m.name }) }) : null,
+    ]);
+  }
+
+  /** Full years on `today` (both YYYY-MM-DD), like the server. */
+  function ageOn(birth, today) {
+    var b = /^(\d{4})-(\d{2})-(\d{2})$/.exec(birth || '');
+    var t = /^(\d{4})-(\d{2})-(\d{2})$/.exec(today || '');
+    if (!b || !t) return null;
+    var a = +t[1] - +b[1];
+    if (+t[2] < +b[2] || (+t[2] === +b[2] && +t[3] < +b[3])) a--;
+    return a < 0 ? 0 : a;
   }
 
   function memberRow(m) {
@@ -24,7 +38,7 @@
     var person = el('div', { class: 'fa-person' }, [A.avatar(m), el('div', null, [el('b', { text: m.name }), el('div', { class: 'fa-sub', text: acct.join(' · ') })])]);
     return el('tr', null, [
       el('td', null, [person]),
-      el('td', null, [el('span', { class: 'fa-pill' + (m.role === 'child' ? ' is-child' : ''), text: T('role.' + m.role) })]),
+      el('td', null, [el('span', { class: 'fa-pill' + (m.role === 'child' ? ' is-child' : (m.role === 'wall' ? ' is-off' : '')), text: T('role.' + m.role) })]),
       el('td', { text: m.birthdate ? A.dateLong(m.birthdate) : '–' }),
       el('td', null, [locateCell(m)]),
       el('td', { text: m.role === 'child' ? String(m.starGoal) + ' ★' : '–' }),
@@ -98,14 +112,34 @@
   }
 
   // ── member dialog ─────────────────────────────────────────────────────────
-  function roleValue() { return $('#fa-m-child').checked ? 'child' : 'parent'; }
+  function roleValue() { return $('#fa-m-child').checked ? 'child' : ($('#fa-m-wall').checked ? 'wall' : 'parent'); }
   function syncRole() {
-    var child = roleValue() === 'child';
-    $('#fa-m-child-box').hidden = !child;
-    $('#fa-m-birth-hint').textContent = child ? T('members.birthdate_required') : T('members.birthdate_hint');
+    var role = roleValue();
+    $('#fa-m-child-box').hidden = role !== 'child';
+    $('#fa-m-person-box').hidden = role === 'wall';
+    $('#fa-m-wall-hint').hidden = role !== 'wall';
+    $('#fa-m-birth-hint').textContent = role === 'child' ? T('members.birthdate_required') : T('members.birthdate_hint');
+    syncAgeHint();
+  }
+  /** From 14 we recommend "<Name> bestätigt": a hint next to the select when "Automatisch" is chosen. */
+  function syncAgeHint() {
+    var a = ageOn($('#fa-m-birth').value, data.today);
+    var name = edit ? edit.name : ($('#fa-m-user').selectedOptions && $('#fa-m-user').selectedOptions[0] ? $('#fa-m-user').selectedOptions[0].textContent.replace(/ \(.*\)$/, '') : '');
+    var h = $('#fa-m-age-hint');
+    h.textContent = T('members.age_hint', { name: name || T('role.child') });
+    h.hidden = !(roleValue() === 'child' && a != null && a >= 14 && a < 18 && $('#fa-m-mode').value === 'auto');
   }
   $('#fa-m-parent').addEventListener('change', syncRole);
   $('#fa-m-child').addEventListener('change', syncRole);
+  $('#fa-m-wall').addEventListener('change', syncRole);
+  $('#fa-m-mode').addEventListener('change', syncAgeHint);
+  $('#fa-m-user').addEventListener('change', syncAgeHint);
+  $('#fa-m-birth').addEventListener('change', function () {
+    // a new child of 14 or older starts with "Kind bestätigt"
+    var a = ageOn($('#fa-m-birth').value, data.today);
+    if (!edit && a != null && a >= 14) $('#fa-m-mode').value = 'confirm';
+    syncAgeHint();
+  });
 
   function openMember(m) {
     edit = m || null;
@@ -119,6 +153,7 @@
     }
     $('#fa-m-parent').checked = !m || m.role === 'parent';
     $('#fa-m-child').checked = !!m && m.role === 'child';
+    $('#fa-m-wall').checked = !!m && m.role === 'wall';
     $('#fa-m-birth').value = (m && m.birthdate) || '';
     $('#fa-m-birth').max = data.today;
     $('#fa-m-color').value = (m && m.color ? m.color : '#0f766e').toLowerCase();
@@ -133,7 +168,7 @@
 
   $('#fa-m-save').addEventListener('click', function () {
     var role = roleValue();
-    var body = { role: role, birthdate: $('#fa-m-birth').value || null, color: $('#fa-m-color').value };
+    var body = role === 'wall' ? { role: role } : { role: role, birthdate: $('#fa-m-birth').value || null, color: $('#fa-m-color').value };
     if (role === 'child') {
       if (!body.birthdate) { $('#fa-m-msg').textContent = T('members.birthdate_required'); return; }
       body.locateMode = $('#fa-m-mode').value;
