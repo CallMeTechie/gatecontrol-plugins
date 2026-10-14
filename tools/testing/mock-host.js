@@ -39,6 +39,9 @@
 //   would change throws ERR_INVALID here. runQuickAction lists again first
 //   and answers like the host's route: { status: 404 } for an id that is not
 //   listed for this viewer, else { status: 200, body: { ok, message, state } }.
+//   await host.appVisible(user)   (the app tab hook appVisible(user, gc); viewer { …user, portal, loggedIn, app: true })
+//   permissions.notify { perHour } raises the mock's notification limit; a notifyTopics entry with
+//   allowCritical keeps priority 'critical' (otherwise capped to 'high'), as GateControl ≥ 1.164.0.
 
 const fs = require('node:fs');
 const os = require('node:os');
@@ -198,6 +201,8 @@ async function createHost(pluginDir, opts = {}) {
   const secrets = new Set(); // keys stored with gc.settings.setSecret (encrypted on the real host)
   const users = (opts.users || [DEFAULT_USER]).map((u) => ({ id: u.id, name: u.name, role: u.role }));
   const license = { required: !!(manifest.license && manifest.license.required), licensed: true, state: 'valid', expiresAt: null, ...(opts.license || {}) };
+  // permissions.notify: true (30 per hour) or { perHour: 1–120 } (GateControl ≥ 1.164.0); the mock counts all of a test
+  const notifyLimit = perms.notify && typeof perms.notify === 'object' && Number.isInteger(perms.notify.perHour) ? perms.notify.perHour : 30;
 
   // Storage: the plugin's own SQLite database with its migrations applied.
   let db = null;
@@ -336,16 +341,18 @@ async function createHost(pluginDir, opts = {}) {
             if (a.type === 'open_app_route' && !/^(?:vpn|services|gateways|inbox|plg-[a-z0-9]+(?:-[a-z0-9]+)*)$/.test(String(a.target))) throw hostError('ERR_INVALID', 'invalid app route (test)');
           }
         }
-        if (notifications.length >= 30) throw hostError('ERR_RATE_LIMIT', 'too many notifications');
+        if (notifications.length >= notifyLimit) throw hostError('ERR_RATE_LIMIT', 'too many notifications');
+        // 'critical' is capped to 'high' unless the topic declares allowCritical (GateControl ≥ 1.164.0)
+        const critical = priority === 'critical' && declared.some((t) => t && t.id === topic && t.allowCritical === true);
         notifications.push({
-          topic, title, body, priority: priority === 'critical' ? 'high' : priority,
+          topic, title, body, priority: priority === 'critical' && !critical ? 'high' : priority,
           users: n.users == null ? null : [...new Set(n.users)], collapseKey: n.collapseKey == null ? null : String(n.collapseKey), ttl: n.ttl == null ? null : n.ttl, data,
         });
         return { pushed: true, id: notifications.length };
       }
       const msg = String(message || '').trim();
       if (!msg) throw hostError('ERR_INVALID', 'empty message');
-      if (notifications.length >= 30) throw hostError('ERR_RATE_LIMIT', 'too many notifications');
+      if (notifications.length >= notifyLimit) throw hostError('ERR_RATE_LIMIT', 'too many notifications');
       notifications.push({ message: msg, severity: (o && o.severity) || 'info' });
       return {};
     },
@@ -435,6 +442,12 @@ async function createHost(pluginDir, opts = {}) {
       if (!out || typeof out !== 'object' || Array.isArray(out)) throw hostError('ERR_INVALID', 'runQuickAction must return an object');
       if (out.state != null && !QA_STATES.has(out.state)) throw hostError('ERR_INVALID', `runQuickAction: state ${JSON.stringify(out.state)}`);
       return { status: 200, body: { ok: out.ok !== false, message: qaText(out.message, 120, 'message', true), state: out.state == null ? null : out.state } };
+    },
+    /** appVisible hook (permissions.app + ui.app, GateControl ≥ 1.164.0): called as appVisible(user, gc) with the
+        token owner; false (or an error) = no app tab for this person (no hook → true) */
+    async appVisible(user) {
+      if (typeof plugin.appVisible !== 'function') return true;
+      try { return (await hook('appVisible', { portal: true, loggedIn: true, app: true, ...user })) !== false; } catch { return false; }
     },
     /** legacyImport hook: the host hands over the built-in data (first-party plugins only) */
     legacyImport: (snapshot) => hook('legacyImport', snapshot),

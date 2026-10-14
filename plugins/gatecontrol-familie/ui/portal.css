@@ -1,0 +1,45 @@
+/* Portal tab "Familie" (mockup PortalFamily). */
+.fa-portal{gap:20px}
+.fa-p-head{display:flex;flex-direction:column;gap:4px}
+.fa-p-title{margin:0;font-size:28px;font-weight:800;letter-spacing:-.4px}
+.fa-p-sub{margin:0;color:var(--muted);font-size:14px}
+.fa-p-listsel{width:auto;max-width:200px;min-height:34px;font-size:13px}
+.fa-p-add{display:flex;gap:8px;align-items:center}
+.fa-p-add .form-input{flex:1;min-width:0}
+.fa-p-add .fa-p-qty{flex:0 0 90px}
+.fa-p-items{margin:0;padding:0;list-style:none;display:flex;flex-direction:column}
+.fa-p-item{display:flex;align-items:center;gap:10px;padding:8px 2px;border-bottom:1px solid var(--line)}
+.fa-p-item:last-child{border-bottom:0}
+.fa-p-item input[type=checkbox]{width:18px;height:18px;min-height:0;accent-color:var(--accent);flex:none}
+.fa-p-item-text{flex:1;min-width:0;font-size:14px;overflow-wrap:anywhere}
+.fa-p-item-qty{font-size:13px;color:var(--muted);white-space:nowrap}
+.fa-p-item.is-checked .fa-p-item-text{color:var(--muted);text-decoration:line-through}
+.fa-p-x{min-height:28px;width:28px;padding:0;justify-content:center;border:0;color:var(--muted)}
+.fa-p-foot{display:flex;gap:8px;flex-wrap:wrap}
+.fa-p-cols{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px}
+.fa-p-col{display:flex;flex-direction:column;gap:8px;min-width:0}
+.fa-p-col-head{display:flex;align-items:center;gap:8px}
+.fa-p-col-head b{font-size:14px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fa-p-stars{margin-left:auto;font-size:12px;font-weight:800;color:var(--warn);white-space:nowrap}
+.fa-p-task{display:flex;gap:8px;align-items:flex-start;padding:10px;border-radius:12px;background:var(--surface-2);border:1px solid var(--line);font-size:13px}
+.fa-p-task.is-done{background:color-mix(in srgb,var(--good) 10%,var(--surface));border-color:color-mix(in srgb,var(--good) 30%,var(--line))}
+.fa-p-task.is-done .fa-p-task-title{color:var(--muted);text-decoration:line-through}
+.fa-p-task-main{flex:1;min-width:0}
+.fa-p-task-title{font-weight:600;overflow-wrap:anywhere}
+.fa-p-task-sub{color:var(--muted);font-size:12px}
+.fa-p-done{min-height:26px;width:26px;padding:0;justify-content:center;border-radius:13px;flex:none}
+.fa-p-done[aria-pressed="true"]{background:var(--good);border-color:var(--good);color:#fff}
+.fa-p-edit{min-height:26px;width:26px;padding:0;justify-content:center;border:0;color:var(--muted);flex:none}
+.fa-p-side{display:flex;flex-direction:column;gap:20px}
+.fa-p-dates{display:flex;flex-direction:column;gap:8px}
+.fa-p-date{display:flex;gap:10px;font-size:14px;align-items:baseline}
+.fa-p-date-when{width:62px;flex:none;color:var(--muted);font-size:13px}
+.fa-p-date-main{flex:1;min-width:0;overflow-wrap:anywhere}
+.fa-p-bday{display:flex;align-items:center;gap:10px}
+.fa-p-bday b{flex:1;font-size:14px;min-width:0}
+.fa-p-kid{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--line)}
+.fa-p-kid:last-child{border-bottom:0}
+.fa-p-kid-main{flex:1;min-width:0;display:flex;flex-direction:column}
+.fa-p-kid-main span{font-size:12.5px;color:var(--muted)}
+.fa-p-recent{margin-top:6px}
+.fa-p-recent .fa-table{min-width:520px}

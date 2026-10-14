@@ -1,0 +1,175 @@
+{
+  "id": "gatecontrol-familie",
+  "name": {
+    "de": "Familie",
+    "en": "Family"
+  },
+  "version": "1.0.0",
+  "publisher": "CallMeTechie",
+  "description": {
+    "de": "Die Familie in der GateControl-App und im Portal: gemeinsame Einkaufslisten (offline nutzbar), Aufgaben mit Erinnerung und Sternen für Kinder, Termine und Geburtstage, Kinder orten auf Anfrage (das Kind sieht jede Abfrage, endet mit 18), „Bin angekommen“ und SOS, Orts-Erinnerungen. Alles bleibt auf dem eigenen Server.",
+    "en": "The family in the GateControl app and the portal: shared shopping lists (usable offline), tasks with reminders and stars for children, dates and birthdays, locating children on request (the child sees every request, ends at 18), “I’ve arrived” and SOS, place reminders. Everything stays on your own server."
+  },
+  "gatecontrol": ">=1.164.0",
+  "entry": "server/index.js",
+  "permissions": {
+    "storage": true,
+    "portal": true,
+    "users": true,
+    "app": true,
+    "notify": {
+      "perHour": 120
+    },
+    "background": {
+      "intervalSeconds": 60
+    }
+  },
+  "ui": {
+    "nav": {
+      "label": {
+        "de": "Familie",
+        "en": "Family"
+      },
+      "icon": "M3 11l9-7 9 7M5 10v10h14V10M10 20v-5h4v5"
+    },
+    "pages": [
+      {
+        "id": "members",
+        "title": {
+          "de": "Mitglieder & Ortung",
+          "en": "Members & locating"
+        }
+      },
+      {
+        "id": "modules",
+        "title": {
+          "de": "Funktionen",
+          "en": "Features"
+        }
+      },
+      {
+        "id": "log",
+        "title": {
+          "de": "Protokoll",
+          "en": "Log"
+        }
+      }
+    ],
+    "settings": [
+      {
+        "key": "timezone",
+        "type": "text",
+        "label": {
+          "de": "Zeitzone",
+          "en": "Time zone"
+        },
+        "help": {
+          "de": "IANA-Name, z. B. Europe/Berlin – für Fälligkeiten, Erinnerungen, Geburtstage und Tagesgrenzen. Leer = Zeitzone des Servers.",
+          "en": "IANA name, e.g. Europe/Berlin – for due times, reminders, birthdays and day boundaries. Empty = the server’s time zone."
+        },
+        "default": ""
+      },
+      {
+        "key": "notify_lang",
+        "type": "select",
+        "label": {
+          "de": "Sprache der Benachrichtigungen",
+          "en": "Notification language"
+        },
+        "help": {
+          "de": "Welche Funktionen eingeschaltet sind, legst du auf der Seite „Funktionen“ fest; jede Person kann Themen im Portal oder in der App abschalten.",
+          "en": "Which features are on is set on the page “Features”; everyone can switch topics off in the portal or the app."
+        },
+        "options": [
+          {
+            "value": "de",
+            "label": "Deutsch"
+          },
+          {
+            "value": "en",
+            "label": "English"
+          }
+        ],
+        "default": "de"
+      }
+    ],
+    "portal": {
+      "label": {
+        "de": "Familie",
+        "en": "Family"
+      },
+      "icon": "M3 11l9-7 9 7M5 10v10h14V10M10 20v-5h4v5"
+    },
+    "app": {
+      "label": {
+        "de": "Familie",
+        "en": "Family"
+      },
+      "icon": "M3 11l9-7 9 7M5 10v10h14V10M10 20v-5h4v5"
+    },
+    "maps": true
+  },
+  "license": {
+    "required": true
+  },
+  "migrations": "migrations",
+  "notifyTopics": [
+    {
+      "id": "shopping",
+      "label": {
+        "de": "Einkaufsliste",
+        "en": "Shopping list"
+      },
+      "default": true
+    },
+    {
+      "id": "tasks",
+      "label": {
+        "de": "Aufgaben",
+        "en": "Tasks"
+      },
+      "default": true
+    },
+    {
+      "id": "dates",
+      "label": {
+        "de": "Termine & Geburtstage",
+        "en": "Dates & birthdays"
+      },
+      "default": true
+    },
+    {
+      "id": "locate",
+      "label": {
+        "de": "Kinder orten",
+        "en": "Locating children"
+      },
+      "default": true
+    },
+    {
+      "id": "arrival",
+      "label": {
+        "de": "„Bin angekommen“",
+        "en": "“I’ve arrived”"
+      },
+      "default": true
+    },
+    {
+      "id": "sos",
+      "label": {
+        "de": "SOS (Notfall)",
+        "en": "SOS (emergency)"
+      },
+      "default": true,
+      "allowCritical": true
+    },
+    {
+      "id": "places",
+      "label": {
+        "de": "Orts-Erinnerungen",
+        "en": "Place reminders"
+      },
+      "default": true
+    }
+  ]
+}

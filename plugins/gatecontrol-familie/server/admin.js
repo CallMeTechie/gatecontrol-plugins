@@ -1,0 +1,143 @@
+'use strict';
+
+// The admin pages' API (administrators only, never a portal or app caller):
+//
+//   GET    admin/status                        members, users, modules, settings
+//   POST   admin/members                       { userId, role, birthdate, locateMode, starGoal, color }
+//   PATCH  admin/members/<userId>              same fields, partial
+//   DELETE admin/members/<userId>
+//   PUT    admin/modules                       { shopping: bool, … } (partial)
+//   GET    admin/log?days=&kind=&userId=       locate requests, arrivals, SOS, place transitions
+//                                              + the last answered position per child
+
+const store = require('./store');
+const tz = require('./tz');
+const members = require('./members');
+const config = require('./config');
+const locate = require('./locate');
+const { fail, posInt, iso } = require('./util');
+
+const DAY = 86400000;
+const LOG_KINDS = ['locate', 'arrival', 'sos', 'place'];
+
+function adminMember(m, cfg) {
+  return {
+    userId: m.userId, name: m.name, gcRole: m.gcRole, role: m.role, birthdate: m.birthdate, age: m.age, adult: m.adult,
+    locateMode: m.locateMode, effectiveMode: members.effectiveMode(m), locatable: m.role === 'child' && members.locateRefusal(m, cfg) === null,
+    starGoal: m.starGoal, color: m.color,
+  };
+}
+
+async function status(gc, cfg, now) {
+  const today = tz.localDate(now, cfg.tz);
+  const fam = await members.load(gc, today);
+  return {
+    members: fam.list.map((m) => adminMember(m, cfg)),
+    users: [...fam.users.values()].map((u) => ({ id: u.id, name: u.name, role: u.role, member: fam.byId.has(u.id) })),
+    modules: { ...cfg.modules },
+    settings: { timezone: cfg.tz, timezoneSetting: cfg.tzSetting, notifyLang: cfg.lang, problems: cfg.problems },
+    today,
+  };
+}
+
+async function log(gc, cfg, query, now) {
+  const q = query || {};
+  const days = q.days == null || q.days === '' ? 7 : posInt(String(q.days));
+  if (!days || days > 90) throw fail('invalid');
+  const kinds = q.kind == null || q.kind === '' || q.kind === 'all' ? LOG_KINDS : String(q.kind).split(',').filter((k) => LOG_KINDS.includes(k));
+  if (!kinds.length) throw fail('invalid');
+  const userId = q.userId == null || q.userId === '' ? null : posInt(String(q.userId));
+  const today = tz.localDate(now, cfg.tz);
+  const fam = await members.load(gc, today);
+  const name = (id) => { const m = fam.byId.get(id); if (m) return m.name; const u = fam.users.get(id); return u ? u.name : `#${id}`; };
+  const from = now - days * DAY;
+  const out = [];
+  const pos = (r) => (r.lat != null && !r.purged ? { lat: r.lat, lon: r.lon, accuracy: r.accuracy } : null);
+  if (kinds.includes('locate')) {
+    const rows = await store.all(gc, 'SELECT * FROM locate_requests WHERE created_at >= ? ORDER BY created_at DESC LIMIT 1000', [from]);
+    for (const r of rows) {
+      if (userId && r.child_id !== userId && r.requested_by !== userId) continue;
+      const status = r.status === 'pending' && r.expires_at <= now ? 'expired' : r.status;
+      out.push({ kind: 'locate', id: r.id, at: iso(r.created_at), by: name(r.requested_by), byId: r.requested_by, subject: name(r.child_id), subjectId: r.child_id,
+        status, mode: r.mode, reason: r.reason || null, answeredAt: iso(r.answered_at), position: status === 'answered' ? pos(r) : null, purged: !!r.purged });
+    }
+  }
+  if (kinds.includes('arrival')) {
+    const rows = await store.all(gc, 'SELECT * FROM arrivals WHERE at >= ? ORDER BY at DESC LIMIT 1000', [from]);
+    for (const r of rows) {
+      if (userId && r.user_id !== userId) continue;
+      out.push({ kind: 'arrival', id: r.id, at: iso(r.at), by: name(r.user_id), byId: r.user_id, subject: name(r.user_id), subjectId: r.user_id, label: r.label || null, position: pos(r), purged: !!r.purged });
+    }
+  }
+  if (kinds.includes('sos')) {
+    const rows = await store.all(gc, 'SELECT * FROM sos WHERE at >= ? ORDER BY at DESC LIMIT 1000', [from]);
+    const ids = rows.map((r) => r.id);
+    const acks = ids.length ? await store.all(gc, `SELECT * FROM sos_acks WHERE sos_id IN (${store.marks(Math.min(ids.length, 90))})`, ids.slice(0, 90)) : [];
+    for (const r of rows) {
+      if (userId && r.user_id !== userId) continue;
+      out.push({ kind: 'sos', id: r.id, at: iso(r.at), by: name(r.user_id), byId: r.user_id, subject: name(r.user_id), subjectId: r.user_id, position: pos(r), purged: !!r.purged,
+        acks: acks.filter((a) => a.sos_id === r.id).map((a) => ({ name: name(a.user_id), at: iso(a.at) })) });
+    }
+  }
+  if (kinds.includes('place')) {
+    const rows = await store.all(gc, 'SELECT * FROM place_events WHERE at >= ? ORDER BY at DESC LIMIT 1000', [from]);
+    for (const r of rows) {
+      if (userId && r.user_id !== userId) continue;
+      out.push({ kind: 'place', id: r.id, at: iso(r.at), by: name(r.user_id), byId: r.user_id, subject: name(r.user_id), subjectId: r.user_id, label: r.title, transition: r.transition, told: r.told });
+    }
+  }
+  out.sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0));
+  const kids = members.children(fam);
+  return {
+    days, entries: out.slice(0, 1000),
+    positions: await locate.lastPositions(gc, fam, kids.map((k) => k.userId)),
+    children: kids.map((k) => ({ userId: k.userId, name: k.name, color: k.color })),
+    members: fam.list.map((m) => ({ userId: m.userId, name: m.name, role: m.role, color: m.color })),
+  };
+}
+
+async function route(req, gc, seg, cfg, now) {
+  const m = String(req.method || 'GET').toUpperCase();
+  const body = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
+  const [, a, b] = seg;
+  if (a === 'status' && seg.length === 2 && m === 'GET') return status(gc, cfg, now);
+  if (a === 'log' && seg.length === 2 && m === 'GET') return log(gc, cfg, req.query, now);
+  if (a === 'modules' && seg.length === 2 && (m === 'PUT' || m === 'PATCH')) {
+    const patch = {};
+    for (const [k, v] of Object.entries(body)) {
+      if (!config.MODULES.includes(k) || typeof v !== 'boolean') throw fail('invalid');
+      patch[k] = v;
+    }
+    if (!Object.keys(patch).length) throw fail('invalid');
+    await config.saveModules(gc, patch);
+    if (patch.locate === false) {
+      await store.tx(gc, () => store.run(gc, "UPDATE locate_requests SET status = 'expired' WHERE status = 'pending'"));
+    }
+    return { modules: (await config.load(gc)).modules };
+  }
+  if (a === 'members') {
+    const today = tz.localDate(now, cfg.tz);
+    const fam = await members.load(gc, today);
+    if (seg.length === 2 && m === 'POST') {
+      const id = await store.tx(gc, () => members.add(gc, fam, body, now));
+      const fresh = await members.load(gc, today);
+      return { member: adminMember(fresh.byId.get(id), cfg) };
+    }
+    const id = posInt(b);
+    if (!id || seg.length !== 3) throw fail('not_found');
+    if (m === 'PATCH' || m === 'PUT') {
+      await store.tx(gc, () => members.update(gc, fam, id, body));
+      const fresh = await members.load(gc, today);
+      const mm = fresh.byId.get(id);
+      if (!mm) throw fail('not_found');
+      return { member: adminMember(mm, cfg) };
+    }
+    if (m === 'DELETE') {
+      await store.tx(gc, () => members.remove(gc, id));
+      return {};
+    }
+  }
+  throw fail('not_found');
+}
+
+module.exports = { route, status, log, adminMember };

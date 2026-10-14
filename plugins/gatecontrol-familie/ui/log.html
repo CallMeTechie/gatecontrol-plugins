@@ -1,0 +1,58 @@
+<main class="fa-page">
+  <p class="fa-intro">{{t:log.intro}}</p>
+
+  <section class="fa-card" aria-labelledby="fa-map-h">
+    <div class="fa-card-head">
+      <h2 class="fa-card-title" id="fa-map-h">{{t:log.map_title}}</h2>
+      <span class="fa-card-sub">{{t:log.map_sub}}</span>
+    </div>
+    <div id="fa-map-box"></div>
+  </section>
+
+  <section class="fa-card fa-flush" aria-labelledby="fa-log-h">
+    <div class="fa-card-head">
+      <h2 class="fa-card-title" id="fa-log-h">{{t:log.title}}</h2>
+      <div class="fa-filters">
+        <div class="form-group">
+          <label class="form-label" for="fa-f-days">{{t:log.filter_days}}</label>
+          <select class="form-select" id="fa-f-days">
+            <option value="1">{{t:log.days_1}}</option>
+            <option value="7" selected>{{t:log.days_7}}</option>
+            <option value="30">{{t:log.days_30}}</option>
+            <option value="90">{{t:log.days_90}}</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="fa-f-kind">{{t:log.filter_kind}}</label>
+          <select class="form-select" id="fa-f-kind">
+            <option value="all">{{t:log.kind_all}}</option>
+            <option value="locate">{{t:kind.locate}}</option>
+            <option value="arrival">{{t:kind.arrival}}</option>
+            <option value="sos">{{t:kind.sos}}</option>
+            <option value="place">{{t:kind.place}}</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="fa-f-user">{{t:log.filter_user}}</label>
+          <select class="form-select" id="fa-f-user"><option value="">{{t:log.user_all}}</option></select>
+        </div>
+      </div>
+    </div>
+    <div class="fa-table-wrap">
+      <table class="fa-table">
+        <thead>
+          <tr>
+            <th scope="col">{{t:log.col_time}}</th>
+            <th scope="col">{{t:log.col_kind}}</th>
+            <th scope="col">{{t:log.col_who}}</th>
+            <th scope="col">{{t:log.col_child}}</th>
+            <th scope="col">{{t:log.col_result}}</th>
+          </tr>
+        </thead>
+        <tbody id="fa-log-rows"></tbody>
+      </table>
+    </div>
+    <p class="fa-empty" id="fa-log-empty" hidden>{{t:log.empty}}</p>
+    <p class="fa-hint" style="padding:0 18px 16px">{{t:log.retention}}</p>
+  </section>
+</main>
