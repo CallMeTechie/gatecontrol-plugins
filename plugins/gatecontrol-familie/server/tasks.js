@@ -19,6 +19,10 @@
 // Reminders (tick): once the occurrence is due (date + time, default 08:00,
 // local) and not done, one push per occurrence and person — and one more
 // after each snooze (15–240 minutes).
+//
+// The wall tablet (role 'wall', 1.1.0) ticks a task off for the person whose
+// task it is: rotate → whose turn it is, fixed → each assignee, first → any
+// assignee (POST tasks/<id>/done { userId }).
 
 const store = require('./store');
 const tz = require('./tz');
@@ -191,6 +195,39 @@ async function mine(gc, r) {
   return { mine: list, open: list.filter((x) => !x.doneToday).length };
 }
 
+/**
+ * Wall view: today's tasks (and overdue one-off tasks) with a chip per person
+ * who may tick it off — rotate: whose turn it is (or who did it), fixed: every
+ * assignee, first: every assignee.
+ */
+async function forWall(gc, r) {
+  const list = await listTasks(gc);
+  const rows = await doneRows(gc, list.map((t) => t.id));
+  const out = [];
+  for (const t of list) {
+    const occ = currentOccurrence(t, r.today);
+    const a = liveAssignees(t, r.fam);
+    if (!occ || occ > r.today || !a.length) continue;
+    const own = rows.filter((x) => x.task_id === t.id && x.occurrence === occ);
+    const by = own.map((x) => x.user_id);
+    const done = t.mode === 'fixed' ? a.every((id) => by.includes(id)) : by.length > 0;
+    // a one-off task finished on an earlier day is gone from the wall
+    if (t.repeat === 'none' && done && !own.some((x) => tz.localDate(x.at, r.cfg.tz) === r.today)) continue;
+    let ids = a;
+    if (t.mode === 'rotate') ids = by.length ? [by[0]] : [currentTurn(t, r.fam)].filter(Boolean);
+    const chips = ids.filter((id) => r.fam.byId.has(id)).map((id) => {
+      const m = r.fam.byId.get(id);
+      return { userId: id, name: m.name, color: m.color, done: t.mode === 'fixed' || t.mode === 'first' ? by.includes(id) : done };
+    });
+    out.push({
+      id: t.id, title: t.title, mode: t.mode, dueDate: occ, dueTime: t.dueTime, overdue: occ < r.today,
+      stars: r.cfg.modules.stars ? t.stars : 0, done, chips,
+    });
+  }
+  out.sort((x, y) => (x.done - y.done) || String(x.dueTime || '99').localeCompare(String(y.dueTime || '99')) || x.id - y.id);
+  return out;
+}
+
 /** Body → task fields (create: defaults; update: merged with the existing task). */
 function fields(body, existing, fam, today) {
   const b = body || {};
@@ -261,7 +298,10 @@ async function done(gc, r, id) {
   if (!t) throw fail('not_found');
   const b = r.body || {};
   let doer = r.me.userId;
-  if (b.userId != null && posInt(b.userId) !== r.me.userId) {
+  if (r.me.role === 'wall') {
+    doer = posInt(b.userId);
+    if (!doer || !responsible(t, r.fam, doer)) throw fail('invalid');
+  } else if (b.userId != null && posInt(b.userId) !== r.me.userId) {
     if (r.me.role !== 'parent') throw fail('parents_only');
     doer = posInt(b.userId);
     if (!doer || !liveAssignees(t, r.fam).includes(doer)) throw fail('invalid');
@@ -383,5 +423,5 @@ async function purge(gc, cfg, now) {
 }
 
 module.exports = {
-  MODES, REPEATS, isoWd, isOccurrence, nextOccurrence, currentOccurrence, weekStart, starsOf, get, mine, create, update, remove, done, snooze, remind, purge, one,
+  MODES, REPEATS, isoWd, isOccurrence, nextOccurrence, currentOccurrence, weekStart, starsOf, get, mine, forWall, create, update, remove, done, snooze, remind, purge, one,
 };

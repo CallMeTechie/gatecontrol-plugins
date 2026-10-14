@@ -3,6 +3,86 @@
 Die Familie in der GateControl-App (eigener Tab), im Portal (eigener Tab „Familie“) und auf
 drei Admin-Seiten. Alles bleibt auf dem eigenen Server.
 
+## 1.1.0
+- **Abholen & Fahrten** (Funktion `rides`, Gruppe Unterwegs, Standard an): eine Fahrt ist eine
+  Strecke zu einer Uhrzeit („Tim vom Training abholen“, 16:00, Sporthalle Nord), einmalig oder
+  wöchentlich an Wochentagen (Serie bis zu einem Enddatum oder offen, mit Standard-Fahrer: ein
+  Mitglied oder ein Freitext wie „Familie Weber“ oder „Bus“). Eine Änderung an einem Termin der
+  Serie (übernehmen, absagen, Fahrer, Uhrzeit …) gilt nur für diesen Termin. **„Ich mache es“**
+  (Eltern und volljährige Mitglieder), **„Kann nicht“** (Eltern – sagen alle Eltern ab, erfährt
+  es, wer gefragt hat: „Niemand kann Tim abholen“), **„Rückgängig“** (der Fahrer), **„Wer kann
+  …? fragen“** (jedes Mitglied, höchstens alle 5 Minuten pro Fahrt, an alle Eltern, die nicht
+  abgesagt haben). Kinder legen mit **„Bitte abholen“** eine Fahrt für sich selbst an (ohne
+  Fahrer, ohne Serie), die Eltern werden gleich gefragt; ihre eigene Anfrage können sie wieder
+  absagen. Löschen eines Termins = abgesagt (bleibt sichtbar), `?series=1` entfernt die Serie. Erinnerung an den Fahrer 0–120 Minuten vorher (Standard 20: „Gleich: …“), eine
+  noch offene Fahrt 60 Minuten vorher an die Eltern („Noch offen: …“) – je einmal pro Termin.
+  Neues Benachrichtigungsthema **„Abholen & Fahrten“** (`rides`). Fahrten bleiben 30 Tage nach
+  ihrem Datum.
+- **Notfall-Karte** (`emergency`, Kinder & Sicherheit, Standard an): pro Mitglied Blutgruppe,
+  Gewicht, Allergien, Medikamente, Erkrankungen (je ≤ 300 Zeichen), Hinweise (≤ 500),
+  Krankenkasse mit Versichertennummer und bis zu 10 Kontakte; dazu bis zu 20 wichtige Nummern der
+  Familie (Kinderarzt, Giftnotruf … – es werden keine Nummern vorgegeben). Telefonnummern nur mit
+  Ziffern, Leerzeichen und `+ / ( ) -`. Alle Mitglieder lesen (im Notfall braucht sie jeder);
+  jede Person bearbeitet ihre eigene Karte, Eltern jede Karte und die Nummern der Familie.
+  Gesundheitsdaten liegen nur in der Datenbank des Plugins auf dem eigenen Server – nie in
+  Mitteilungen, nie im Log. Im Portal-Tab „Familie“ für angemeldete Eltern (nicht auf den
+  Admin-Seiten – Administratoren gehören nicht unbedingt zur Familie); über Geräte-Vertrauen
+  erkannte Personen und das Wand-Tablet sehen sie nicht. Die App speichert sie verschlüsselt für
+  offline und zeigt „Notruf 112“ selbst an.
+- **Wand-Tablet** (`wall`, Zuhause, Standard aus): ein Dashboard im Portal für ein festes Tablet
+  (Vorlage 10" quer): Uhr und Datum, die Familie, „Heute“ (Termine heute und morgen, Fahrten von
+  heute, Geburtstage der nächsten 7 Tage), die Aufgaben von heute mit einem großen Knopf pro
+  Person (*reihum*: wer dran ist, *fest*: jede Person, *wer zuerst*: jede Person) und die offenen
+  Einträge einer Einkaufsliste (antippen = gekauft, Feld = hinzufügen). Lädt jede Minute neu,
+  von 21 bis 6 Uhr (Server-Zeit) dunkel, verschiebt sich alle paar Minuten um wenige Pixel gegen
+  Einbrennen, ohne Scrollen.
+  - **Zugang:** ein eigenes GateControl-Konto (z. B. „Küche“) mit der neuen Rolle
+    **„Wand-Tablet“** (Mitglieder & Ortung). Sein Portal-Tab „Familie“ *ist* die Wand-Ansicht
+    (`/portal#plg-gatecontrol-familie`). Ein Wand-Tablet gehört nicht zur Familie: nirgends
+    aufgeführt, keine Mitteilungen, kein App-Tab (`appVisible` false), keine Ortung, kein SOS,
+    keine Notfall-Karte, kein Bearbeiten von Aufgaben, Terminen oder Fahrten (`403 forbidden`).
+    Es darf Aufgaben für die zuständige Person abhaken, Einkäufe hinzufügen und abhaken, Termine
+    und Fahrten lesen. Welche Liste es zeigt, steht auf der Seite **Funktionen** (Standard: die
+    erste).
+  - **Anmeldung – empfohlene Einrichtung:** das Tablet als eigenes VPN-Gerät (WireGuard-Peer)
+    dem Konto „Küche“ zuordnen; mit „Geräte-Besitzer automatisch erkennen“ erkennt das Portal es
+    dauerhaft ohne Anmeldung – dann **nur lesen**. Zum Abhaken braucht das Portal eine echte
+    Anmeldung: dem Konto „Mein Bereich“ erlauben und auf dem Tablet einmal mit Benutzername und
+    Passwort anmelden. Eine Web-Anmeldung hält so lange wie `GC_SESSION_MAX_AGE` (Standard
+    24 Stunden ab der Anmeldung, Benutzung verlängert sie nicht), eine Anmeldung über den Link der
+    App oder die Portal-PIN höchstens 8 Stunden; danach liest die Wand weiter und zeigt „Nur lesen“.
+    Wochenlang angemeldet bleibt sie nur mit einem höheren `GC_SESSION_MAX_AGE` am Server (gilt für
+    alle Web-Anmeldungen). Kiosk-Browser (z. B. Fully Kiosk Browser) mit der Start-Adresse
+    `https://<Portal>/portal#plg-gatecontrol-familie`, Bildschirm an, Cookies behalten.
+- **Kinder ab 14:** auf „Mitglieder & Ortung“ und „Funktionen“ steht bei Kindern ab 14 mit
+  *Automatisch* der Hinweis „Ab 14 empfehlen wir „<Name> bestätigt““; neue Kinder ab 14 beginnen
+  mit *Kind bestätigt*. Am 14. Geburtstag (ab 09:00) bekommen die Eltern einmal die Mitteilung
+  „Lena ist heute 14 – Ortung auf „Lena bestätigt“ umstellen?“ (Thema `locate`). Die Ortungsart
+  wird nie von selbst umgestellt.
+- **Funktionen:** gruppiert wie die Vorlage (Alltag / Unterwegs / Kinder & Sicherheit / Zuhause),
+  neue Schalter `mod_rides`, `mod_emergency`, `mod_wall`; Karte „Wand-Tablet“ mit der Liste und
+  der Einrichtungsanleitung. **Portal:** Fahrten der nächsten 7 Tage (übernehmen, absagen,
+  fragen, rückgängig), Notfall-Karte für Eltern.
+- **App-API** (zusätzlich zu 1.0.0):
+  - `GET me` → `modules` mit `rides`, `emergency`, `wall`; `me.role` kann `wall` sein
+  - `GET overview` → `rides: { next: [Fahrt …] (nächste 24 h, höchstens 5), open: n (offen in den
+    nächsten 7 Tagen) } | null`
+  - `GET rides?from=&to=` (Standard heute + 7 Tage, höchstens 62), `GET rides/<id>`, `POST rides`,
+    `PATCH|DELETE rides/<id>[?series=1]`, `POST rides/<id>/take|release|decline|driver|ask` —
+    Ids sind Zeichenketten: `"<id>"` (einmalig) oder `"<Serien-Id>:<Datum>"`
+  - `GET emergency`, `PUT emergency/members/<userId>`, `PUT emergency/contacts`
+  - `GET wall` (Wand-Tablet)
+  - neue Fehlercodes `already_taken` (409, mit `driver`), `cancelled` (409); `invalid` nennt bei
+    der Notfall-Karte das Feld (`field`, z. B. `contacts.0.phone`); `forbidden` für das
+    Wand-Tablet
+  - Mitteilungen mit `data.familie.type` `ride_ask`, `ride_taken`, `ride_released`,
+    `ride_unassigned`, `ride_reminder`, `ride_open` (`rideId`, `date`) und `locate_age_hint`
+    (`childId`)
+- Datenbank: Migration `002_rides_emergency.sql` (Fahrten, Ausnahmen einzelner Termine,
+  Notfall-Karte, einmalige Mitteilungen). Beim Entfernen eines Mitglieds geht seine Notfall-Karte
+  mit.
+- Braucht weiterhin GateControl 1.164.0.
+
 ## 1.0.0
 - Erste Version mit sieben Funktionen, einzeln schaltbar auf der Seite **Funktionen**
   (gruppiert in Alltag / Unterwegs / Kinder & Sicherheit, mit Live-Vorschau des App-Tabs

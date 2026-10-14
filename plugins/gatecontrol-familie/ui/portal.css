@@ -43,3 +43,28 @@
 .fa-p-kid-main span{font-size:12.5px;color:var(--muted)}
 .fa-p-recent{margin-top:6px}
 .fa-p-recent .fa-table{min-width:520px}
+/* rides (1.1.0) */
+.fa-p-rides{display:flex;flex-direction:column;gap:8px}
+.fa-p-ride{display:flex;gap:10px;align-items:center;padding:10px;border-radius:12px;background:var(--surface-2);border:1px solid var(--line);flex-wrap:wrap}
+.fa-p-ride.is-open{border-color:color-mix(in srgb,var(--warn) 45%,var(--line))}
+.fa-p-ride.is-cancelled{opacity:.6}
+.fa-p-ride.is-cancelled .fa-p-task-title{text-decoration:line-through}
+.fa-p-ride-main{flex:1;min-width:160px;font-size:13px}
+.fa-p-ride-btns{display:flex;gap:6px;flex-wrap:wrap}
+/* emergency card (1.1.0) */
+.fa-p-chips{display:flex;gap:6px;flex-wrap:wrap}
+.fa-p-chip[aria-selected="true"]{background:var(--btn-bg);color:var(--btn-text);border-color:transparent}
+.fa-p-em{display:flex;flex-direction:column;gap:10px}
+.fa-p-em-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px}
+.fa-p-em-field{display:flex;flex-direction:column;gap:2px;padding:10px;border-radius:12px;background:var(--surface-2);border:1px solid var(--line);min-width:0}
+.fa-p-em-label{font-size:11px;font-weight:800;letter-spacing:.8px;text-transform:uppercase;color:var(--muted)}
+.fa-p-em-value{font-size:14px;font-weight:600;white-space:pre-line;overflow-wrap:anywhere}
+.fa-p-contact{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--line)}
+.fa-p-contact:last-child{border-bottom:0}
+.fa-p-contact-main{flex:1;min-width:0;display:flex;flex-direction:column;font-size:14px}
+.fa-p-em-family{display:flex;flex-direction:column;gap:6px;border-top:1px solid var(--line);padding-top:12px}
+.fa-p-contacts{display:flex;flex-direction:column;gap:6px;margin-bottom:8px}
+.fa-p-contact-edit{display:flex;gap:6px;align-items:center}
+.fa-p-contact-edit .form-input{flex:1 1 0;min-width:0}
+.fa-p-ride .fa-p-date-when{width:96px}
+.fa-p-em>.btn{align-self:flex-start}

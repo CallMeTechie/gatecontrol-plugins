@@ -147,8 +147,13 @@ const OPS = {
   },
 };
 
-/** POST shopping/ops (inside a transaction) */
-async function applyOps(gc, body, user, now) {
+/**
+ * POST shopping/ops (inside a transaction). opts.only: the ops this caller may
+ * use (the wall tablet: item_add, item_check) — any other op is rejected with
+ * the code 'forbidden'.
+ */
+async function applyOps(gc, body, user, now, opts) {
+  const only = opts && Array.isArray(opts.only) ? opts.only : null;
   const ops = body && body.ops;
   if (!Array.isArray(ops) || ops.length > MAX_OPS) throw fail('invalid');
   let applied = 0;
@@ -157,6 +162,7 @@ async function applyOps(gc, body, user, now) {
     const op = ops[i];
     const fn = op && typeof op === 'object' && !Array.isArray(op) && typeof op.op === 'string' && Object.prototype.hasOwnProperty.call(OPS, op.op) ? OPS[op.op] : null;
     if (!fn) { rejected.push({ index: i, code: 'invalid' }); continue; }
+    if (only && !only.includes(op.op)) { rejected.push({ index: i, code: 'forbidden' }); continue; }
     try {
       await fn(gc, op, user, now);
       applied++;
@@ -189,6 +195,15 @@ async function going(gc, r, listId) {
   return { notified: to.length };
 }
 
+/** One list with its open items (wall view): `listId` or, when it is gone or empty, the first list. */
+async function wallList(gc, listId) {
+  const lists = await summary(gc);
+  const l = lists.find((x) => x.id === listId) || lists[0] || null;
+  if (!l) return { list: null, lists, items: [], open: 0 };
+  const items = await store.all(gc, 'SELECT * FROM shop_items WHERE list_id = ? AND deleted = 0 AND checked = 0 ORDER BY created_at', [l.id]);
+  return { list: { id: l.id, name: l.name, icon: l.icon }, lists, items: items.map((x) => ({ id: x.id, text: x.text, qty: x.qty || null })), open: items.length };
+}
+
 /** Who is shopping right now (last hour) → [{ userId, listId, at }] (overview). */
 async function goingNow(gc, now) {
   const rows = await store.all(gc, `SELECT g.list_id, g.user_id, g.at FROM shop_going g JOIN shop_lists l ON l.id = g.list_id
@@ -204,4 +219,4 @@ async function purge(gc, now) {
   await store.run(gc, 'DELETE FROM shop_going WHERE at < ?', [now - DAY]);
 }
 
-module.exports = { get, summary, applyOps, going, goingNow, purge, ID_RE, MAX_OPS, TOMBSTONE_DAYS, GOING_GAP_MS };
+module.exports = { get, summary, wallList, applyOps, going, goingNow, purge, ID_RE, MAX_OPS, TOMBSTONE_DAYS, GOING_GAP_MS };

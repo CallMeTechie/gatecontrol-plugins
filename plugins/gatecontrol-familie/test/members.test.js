@@ -3,11 +3,12 @@
 // Members and roles: only GateControl users, admin API (administrators on
 // the admin pages only), GET me per role, not_member, age from the
 // birthdate, 18 = adult (never locatable), app/portal visibility, device
-// trust in the portal reads only.
+// trust in the portal reads only; from 14 the hint for "Kind bestätigt" and
+// the push on the 14th birthday.
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { withFamily, ADMIN, ANNA, MARC, LENA, TIM, OMA, app, portal, birth, T0, DAY } = require('./helpers');
+const { withFamily, ADMIN, ANNA, MARC, LENA, TIM, OMA, app, portal, birth, pushes, T0, DAY } = require('./helpers');
 const members = require('../server/members');
 
 test('age: full years on the local date; 29 February counts from 1 March', () => {
@@ -27,8 +28,8 @@ test('admin API: add, edit, remove members; only GateControl users; children nee
   assert.deepEqual([lena.age, lena.adult, lena.locateMode, lena.locatable, lena.starGoal], [12, false, 'confirm', true, 25]);
   assert.match(lena.color, /^#[0-9A-Fa-f]{6}$/);
   assert.equal(new Set(st.json.members.map((m) => m.color)).size, 4, 'distinct colours');
-  assert.deepEqual(st.json.users.filter((u) => !u.member).map((u) => u.id), [ADMIN.id, OMA.id]);
-  assert.deepEqual(st.json.modules, { shopping: true, tasks: true, stars: true, dates: true, locate: true, arrival_sos: true, places: true });
+  assert.deepEqual(st.json.users.filter((u) => !u.member).map((u) => u.id), [ADMIN.id, OMA.id, 7]);
+  assert.deepEqual(st.json.modules, { shopping: true, tasks: true, stars: true, dates: true, locate: true, arrival_sos: true, places: true, rides: true, emergency: true, wall: false });
   assert.equal(st.json.settings.timezone, 'Europe/Berlin');
 
   assert.equal((await admin('POST', 'members', { userId: 99, role: 'parent' })).status, 404, 'no such GateControl user');
@@ -110,10 +111,10 @@ test('app tab and portal tab: members only, and only while at least one module i
   assert.equal(await host.portalVisible(ANNA), true);
   assert.equal(await host.portalVisible(OMA), false);
   assert.equal(await host.portalVisible(ANNA, 'home'), false, 'no sections');
-  await admin('PUT', 'modules', { shopping: false, tasks: false, stars: false, dates: false, locate: false, arrival_sos: false });
+  await admin('PUT', 'modules', { shopping: false, tasks: false, stars: false, dates: false, locate: false, arrival_sos: false, rides: false, emergency: false, wall: true });
   assert.equal(await host.appVisible(ANNA), true, 'places still on');
   await admin('PUT', 'modules', { places: false });
-  assert.equal(await host.appVisible(ANNA), false, 'every module off');
+  assert.equal(await host.appVisible(ANNA), false, 'every module off (the wall view is no family feature)');
   assert.equal(await host.portalVisible(ANNA), false);
 }));
 
@@ -129,4 +130,61 @@ test('portal: device trust reads the everyday parts only, changes nothing; a rea
   const ok = await call(portal(ANNA, true), 'POST', '/shopping/ops', { ops: [{ op: 'list_add', id: 'list-0001-aaaa', name: 'REWE' }] });
   assert.equal(ok.json.applied, 1);
   assert.equal(T0, Date.now(), 'clock mocked');
+}));
+
+test('from 14: a hint for "Automatisch" (admin pages); new children of 14+ start with "Kind bestätigt"', () => withFamily({}, async (host, { admin }) => {
+  const kid = (st, id) => st.json.members.find((m) => m.userId === id);
+  let st = await admin('GET', 'status');
+  assert.deepEqual([kid(st, LENA.id).ageHint, kid(st, TIM.id).ageHint], [false, false], '12 (confirm) and 9 (auto)');
+  await admin('PATCH', 'members/' + LENA.id, { birthdate: birth(14), locateMode: 'auto' });
+  st = await admin('GET', 'status');
+  assert.deepEqual([kid(st, LENA.id).age, kid(st, LENA.id).ageHint], [14, true]);
+  await admin('PATCH', 'members/' + LENA.id, { locateMode: 'confirm' });
+  assert.equal(kid(await admin('GET', 'status'), LENA.id).ageHint, false);
+  await admin('PATCH', 'members/' + LENA.id, { birthdate: birth(18), locateMode: 'auto' });
+  assert.equal(kid(await admin('GET', 'status'), LENA.id).ageHint, false, 'adult: no locating at all');
+  const oma = await admin('POST', 'members', { userId: OMA.id, role: 'child', birthdate: birth(15) });
+  assert.deepEqual([oma.json.member.locateMode, oma.json.member.ageHint], ['confirm', false]);
+  // the pages show the hint next to the select (members.js / modules.js use this text)
+  for (const page of ['members', 'modules']) assert.ok((await host.render({ view: 'page', page, lang: 'de' })).html.includes("T('members.age_hint'"), page);
+  const t = require('../server/texts.json');
+  assert.equal(t.de['members.age_hint'].replace('{{name}}', 'Lena'), 'Ab 14 empfehlen wir „Lena bestätigt“');
+}));
+
+test('14th birthday (tick, from 09:00): the parents get one hint when the phone still answers automatically', () => withFamily({}, async (host, { admin, clock }) => {
+  // Lena turns 14 tomorrow (auto), Tim turns 14 tomorrow too but confirms himself
+  await admin('PATCH', 'members/' + LENA.id, { birthdate: birth(14, { daysAfterBirthday: -1 }), locateMode: 'auto' });
+  await admin('PATCH', 'members/' + TIM.id, { birthdate: birth(14, { daysAfterBirthday: -1 }), locateMode: 'confirm' });
+  await host.tick();
+  assert.equal(pushes(host, 'locate_age_hint').length, 0, 'not yet 14');
+  const tomorrow = (hh, mm) => Date.UTC(2026, 9, 15, hh - 2, mm);
+  clock.set(tomorrow(8, 59));
+  await host.tick();
+  assert.equal(pushes(host, 'locate_age_hint').length, 0, 'before 09:00');
+  clock.set(tomorrow(9, 0));
+  await host.tick();
+  await host.tick();
+  const p = pushes(host, 'locate_age_hint');
+  assert.deepEqual(p.map((x) => [x.topic, x.users.sort(), x.title, x.data.familie]), [
+    ['locate', [ANNA.id, MARC.id], 'Lena ist heute 14 – Ortung auf „Lena bestätigt“ umstellen?', { type: 'locate_age_hint', childId: LENA.id }],
+  ]);
+  clock.set(tomorrow(18, 0));
+  await host.tick();
+  assert.equal(pushes(host, 'locate_age_hint').length, 1, 'once');
+  const st = await admin('GET', 'status');
+  assert.equal(st.json.members.find((m) => m.userId === LENA.id).locateMode, 'auto', 'never switched by itself');
+  // the next day: nothing; module off: nothing
+  clock.set(tomorrow(10, 0) + DAY);
+  await host.tick();
+  assert.equal(pushes(host, 'locate_age_hint').length, 1);
+}));
+
+test('14th birthday: nothing while locating is switched off; 29 February counts from 1 March', () => withFamily({}, async (host, { admin, clock }) => {
+  assert.equal(members.age('2012-02-29', '2026-02-28'), 13);
+  assert.equal(members.age('2012-02-29', '2026-03-01'), 14);
+  await admin('PATCH', 'members/' + LENA.id, { birthdate: birth(14, { daysAfterBirthday: -1 }), locateMode: 'auto' });
+  await admin('PUT', 'modules', { locate: false });
+  clock.set(Date.UTC(2026, 9, 15, 8, 0));
+  await host.tick();
+  assert.equal(pushes(host, 'locate_age_hint').length, 0);
 }));

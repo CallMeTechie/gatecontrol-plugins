@@ -7,12 +7,15 @@
 //   admin API  admin/* (administrators on the admin pages)  — see server/admin.js
 //
 // Modules (page "Funktionen", settings mod_*): shopping, tasks, stars, dates,
-// locate, arrival_sos, places — a module that is off answers 403 module_off,
-// sends nothing and keeps its data.
+// locate, arrival_sos, places, rides, emergency, wall — a module that is off
+// answers 403 module_off, sends nothing and keeps its data.
 //
-// Background (every minute): task and date reminders, expiry of locate
-// requests, retention (coordinates 7 days, log rows 90 days, shopping
-// tombstones 30 days).
+// Background (every minute): task, date and ride reminders, open rides,
+// the 14th-birthday hint, expiry of locate requests, retention (coordinates
+// 7 days, log rows 90 days, shopping tombstones and rides 30 days).
+//
+// The portal tab of a member with the role 'wall' is the wall view (a fixed
+// tablet, module wall) — see server/wall.js.
 
 const ui = require('./ui');
 const api = require('./api');
@@ -28,6 +31,8 @@ const dates = require('./dates');
 const locate = require('./locate');
 const safety = require('./safety');
 const places = require('./places');
+const rides = require('./rides');
+const notices = require('./notices');
 const texts = require('./texts.json');
 const { STATUS, isKnown } = require('./util');
 
@@ -48,15 +53,25 @@ function errorResponse(e, lang) {
 const state = { ticking: false, lastPurge: 0 };
 const PURGE_EVERY_MS = 3600000;
 
-/** Is the viewer a member and is at least one module on? (portal tab, app tab) */
-async function visibleFor(gc, user) {
-  if (!user || !Number.isSafeInteger(user.id)) return false;
-  const cfg = await config.load(gc);
-  if (!config.MODULES.some((m) => cfg.modules[m])) return false;
-  const row = await store.one(gc, 'SELECT user_id FROM members WHERE user_id = ?', [user.id]);
-  if (!row) return false;
+/** The viewer's member row ({ role }) when the account exists, else null. */
+async function memberRow(gc, user) {
+  if (!user || !Number.isSafeInteger(user.id)) return null;
+  const row = await store.one(gc, 'SELECT user_id, role FROM members WHERE user_id = ?', [user.id]);
+  if (!row) return null;
   const users = await members.usersById(gc);
-  return users.has(user.id);
+  return users.has(user.id) ? row : null;
+}
+
+/**
+ * Is there something for this viewer? Members: at least one module on. A wall
+ * tablet: the module wall on, and never in the app (no app tab, no pushes).
+ */
+async function visibleFor(gc, user, { app = false } = {}) {
+  const row = await memberRow(gc, user);
+  if (!row) return false;
+  const cfg = await config.load(gc);
+  if (row.role === 'wall') return !app && cfg.modules.wall;
+  return config.FAMILY_MODULES.some((m) => cfg.modules[m]);
 }
 
 /** Background steps; each in its own transaction, pushes after the commit. */
@@ -72,6 +87,8 @@ async function background(gc, now) {
   await step('locate', () => locate.expire(gc, fam, cfg, now, cfg.modules.locate ? pushes : []));
   if (cfg.modules.tasks) await step('tasks', () => tasks.remind(gc, fam, cfg, now, pushes));
   if (cfg.modules.dates) await step('dates', () => dates.remind(gc, fam, cfg, now, pushes));
+  if (cfg.modules.rides) await step('rides', () => rides.remind(gc, fam, cfg, now, pushes));
+  if (cfg.modules.locate) await step('age14', () => members.ageHints(gc, fam, cfg, now, pushes));
   if (now - state.lastPurge >= PURGE_EVERY_MS) {
     state.lastPurge = now;
     await step('purge', async () => {
@@ -81,6 +98,8 @@ async function background(gc, now) {
       await places.purge(gc, now);
       await tasks.purge(gc, cfg, now);
       await dates.purge(gc, cfg, now);
+      await rides.purge(gc, cfg, now);
+      await notices.purge(gc, now);
     });
   }
   await push.flush(gc, pushes);
@@ -113,22 +132,28 @@ module.exports = {
   },
 
   async render(view, gc) {
-    return { html: ui.render(view, t) };
+    const v = view || {};
+    if (v.view === 'portal' && !v.section) {
+      // a wall tablet's portal tab is the wall view
+      const row = await memberRow(gc, v.user).catch(() => null);
+      if (row && row.role === 'wall') return { html: ui.render({ ...v, wall: true }, t) };
+    }
+    return { html: ui.render(v, t) };
   },
 
-  /** The portal tab "Familie": members only, with at least one module on. */
+  /** The portal tab "Familie": members with at least one module on; a wall tablet with the module wall on. */
   async portalVisible({ user, section } = {}, gc) {
     if (section) return false;
     return visibleFor(gc, user);
   },
 
   /**
-   * The app tab (ui.app): members only, with at least one module on.
+   * The app tab (ui.app): members only, with at least one module on — never a wall tablet.
    * Called as appVisible(user) or appVisible({ user, lang }) — both are accepted.
    */
   async appVisible(arg, gc) {
     const user = arg && typeof arg === 'object' && arg.user && typeof arg.user === 'object' ? arg.user : arg;
-    return visibleFor(gc, user);
+    return visibleFor(gc, user, { app: true });
   },
 
   async tick(gc) {

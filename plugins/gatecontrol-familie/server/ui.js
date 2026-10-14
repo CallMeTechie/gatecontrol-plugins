@@ -1,6 +1,7 @@
 'use strict';
 
-// The admin pages (members, modules, log) and the portal tab. The host shows
+// The admin pages (members, modules, log), the portal tab and — for a member
+// with the role 'wall' — the wall tablet's view in that tab. The host shows
 // plugin HTML only in a sandboxed frame (opaque origin, inline scripts and
 // styles, no network of its own): the pages talk to this plugin's API
 // through window.GC.call. Everything is read once from ui/.
@@ -31,6 +32,7 @@ const FILES = {
   modules: { html: read('modules.html'), js: read('modules.js'), map: false },
   log: { html: read('log.html'), js: read('log.js'), map: true },
   portal: { html: read('portal.html'), js: read('portal.js'), css: read('portal.css'), map: true },
+  wall: { html: read('wall.html'), js: read('wall.js'), css: read('wall.css'), map: false },
 };
 
 function esc(s) {
@@ -48,14 +50,14 @@ function fill(html, t, lang) {
 }
 
 /**
- * @param {{view:'page'|'portal', page?:string, lang?:string, loggedIn?:boolean, user?:object}} view
+ * @param {{view:'page'|'portal', page?:string, lang?:string, loggedIn?:boolean, user?:object, wall?:boolean}} view
  * @param {(lang:string, key:string) => string} t
  */
 function render(view, t) {
   const v = view || {};
   const lang = v.lang === 'en' ? 'en' : 'de';
   const portal = v.view === 'portal';
-  const pageId = portal ? 'portal' : (PAGES.includes(v.page) ? v.page : 'members');
+  const pageId = portal ? (v.wall === true ? 'wall' : 'portal') : (PAGES.includes(v.page) ? v.page : 'members');
   const page = FILES[pageId];
   const loggedIn = portal ? (v.loggedIn === true || !!(v.user && v.user.loggedIn === true)) : true;
   const ctx = { lang, view: portal ? 'portal' : 'page', page: pageId, loggedIn, texts: texts[lang], leaflet: LEAFLET, tiles: TILES };

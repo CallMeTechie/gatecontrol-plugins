@@ -16,6 +16,8 @@ const STATUS = {
   locate_off: 409,
   not_pending: 409,
   too_many_places: 409,
+  already_taken: 409,
+  cancelled: 409,
   too_soon: 429,
   daily_limit: 429,
   internal: 500,

@@ -19,7 +19,8 @@ const ctxOf = (html) => JSON.parse(html.split('window.FA_CTX=')[1].split(';</scr
 
 test('render: members, modules, log and the portal tab in de and en; no unresolved keys', () => {
   for (const lang of ['de', 'en']) {
-    for (const view of [{ view: 'page', page: 'members' }, { view: 'page', page: 'modules' }, { view: 'page', page: 'log' }, { view: 'portal', loggedIn: true }, { view: 'portal', user: { id: 2, loggedIn: false } }]) {
+    for (const view of [{ view: 'page', page: 'members' }, { view: 'page', page: 'modules' }, { view: 'page', page: 'log' }, { view: 'portal', loggedIn: true }, { view: 'portal', user: { id: 2, loggedIn: false } },
+      { view: 'portal', wall: true, loggedIn: true }, { view: 'portal', wall: true, loggedIn: false }]) {
       const html = ui.render({ ...view, lang }, t);
       assert.ok(!/\{\{t:/.test(html), `${view.page || view.view}: all keys filled`);
       const ctx = ctxOf(html);
@@ -33,6 +34,10 @@ test('render: members, modules, log and the portal tab in de and en; no unresolv
   assert.equal(ctxOf(ui.render({ view: 'page', page: 'nope' }, t)).page, 'members', 'unknown page → members');
   assert.ok(ui.render({ view: 'page', page: 'log' }, t).includes('window.FA.map'), 'the log page has the map');
   assert.ok(!ui.render({ view: 'page', page: 'modules' }, t).includes('window.FA.map'), 'the modules page does not need it');
+  const wall = ui.render({ view: 'portal', wall: true, loggedIn: false }, t);
+  assert.deepEqual([ctxOf(wall).page, ctxOf(wall).loggedIn], ['wall', false]);
+  assert.ok(wall.includes('id="fa-wall"') && !wall.includes('window.FA.map'), 'the wall view, no map');
+  assert.equal(ctxOf(ui.render({ view: 'page', page: 'members', wall: true }, t)).page, 'members', 'wall only in the portal');
 });
 
 test('texts: every key used by the pages exists in de and en; both languages have the same keys', () => {
@@ -44,11 +49,12 @@ test('texts: every key used by the pages exists in de and en; both languages hav
     for (const m of src.matchAll(/\{\{t:([a-z0-9_.-]+)\}\}|\bT\('([a-z0-9_.-]+)'/g)) used.add(m[1] || m[2]);
   }
   for (const k of used) if (!k.endsWith('.') && !k.endsWith('_')) for (const l of ['de', 'en']) assert.ok(texts[l][k], `${l}: ${k}`);
-  const MODS = ['shopping', 'tasks', 'stars', 'dates', 'locate', 'arrival_sos', 'places'];
+  const MODS = ['shopping', 'tasks', 'stars', 'dates', 'locate', 'arrival_sos', 'places', 'rides', 'emergency'];
   const dyn = [
     ...MODS.flatMap((m) => ['module.' + m, 'module.' + m + '_desc', 'card.' + m + '_parent', 'card.' + m + '_child']),
-    ...['all', 'parents', 'children'].map((x) => 'who.' + x),
-    ...['everyday', 'out', 'kids'].map((x) => 'group.' + x),
+    'module.wall', 'module.wall_desc', 'role.wall',
+    ...['all', 'parents', 'children', 'none'].map((x) => 'who.' + x),
+    ...['everyday', 'out', 'kids', 'home'].map((x) => 'group.' + x),
     ...['pending', 'answered', 'declined', 'failed', 'expired'].map((x) => 'status.' + x),
     ...['no_permission', 'location_off', 'timeout'].map((x) => 'fail.' + x),
     'decline.busy', 'problem.timezone',
@@ -78,9 +84,9 @@ test('Leaflet: one constant (server/ui.js), nowhere else', () => {
   assert.equal(ui.TILES, 'https://tile.openstreetmap.org/{z}/{x}/{y}.png');
 });
 
-test('plugin.json: permissions, app tab, maps, the seven topics with SOS allowed critical', () => {
+test('plugin.json: permissions, app tab, maps, the eight topics with SOS allowed critical', () => {
   assert.equal(manifest.id, 'gatecontrol-familie');
-  assert.equal(manifest.version, '1.0.0');
+  assert.equal(manifest.version, '1.1.0');
   assert.equal(manifest.gatecontrol, '>=1.164.0');
   const p = manifest.permissions;
   assert.deepEqual([p.storage, p.portal, p.users, p.app, p.notify, p.background], [true, true, true, true, { perHour: 120 }, { intervalSeconds: 60 }]);
@@ -91,7 +97,8 @@ test('plugin.json: permissions, app tab, maps, the seven topics with SOS allowed
     assert.ok(ICON.test(manifest.ui[k].icon), k);
     assert.deepEqual(manifest.ui[k].label, { de: 'Familie', en: 'Family' });
   }
-  assert.deepEqual(manifest.notifyTopics.map((x) => x.id), ['shopping', 'tasks', 'dates', 'locate', 'arrival', 'sos', 'places']);
+  assert.deepEqual(manifest.notifyTopics.map((x) => x.id), ['shopping', 'tasks', 'dates', 'locate', 'arrival', 'sos', 'places', 'rides']);
+  assert.deepEqual(manifest.notifyTopics.find((x) => x.id === 'rides').label, { de: 'Abholen & Fahrten', en: 'Pick-ups & rides' });
   assert.deepEqual(manifest.notifyTopics.filter((x) => x.allowCritical).map((x) => x.id), ['sos']);
   for (const tp of manifest.notifyTopics) assert.ok(tp.label.de && tp.label.en && tp.label.de.length <= 60 && tp.label.en.length <= 60);
 });
