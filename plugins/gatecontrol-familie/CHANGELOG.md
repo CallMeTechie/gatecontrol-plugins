@@ -3,6 +3,101 @@
 Die Familie in der GateControl-App (eigener Tab), im Portal (eigener Tab „Familie“) und auf
 drei Admin-Seiten. Alles bleibt auf dem eigenen Server.
 
+## 1.2.0
+Braucht **GateControl ≥ 1.166.0** und die neue Berechtigung `permissions.actions` (im
+Installationsdialog „darf Schnellaktionen anderer Plugins auslösen (z. B. Smart-Home-Szenen)“).
+Geld ist überall **nur Buchhaltung**: ganze Cent (EUR), es wird nie etwas bezahlt, abgebucht
+oder überwiesen.
+- **Taschengeld** (Funktion `allowance`, Gruppe Geld, Standard aus): ein Konto pro Kind
+  (Guthaben = Summe der Buchungen), Regel pro Kind (Betrag, wöchentlich an einem Wochentag oder
+  monatlich an einem Tag 1–28, an/aus) und optional ein Kurs für Sterne („10 Sterne = 1 €“).
+  Am Auszahltag ab 07:00 bucht das Plugin den Betrag – genau einmal pro Zeitraum (auch bei
+  Neustarts; ein verpasster Zeitraum wird einmal nachgeholt, nie einer vor dem Einschalten oder
+  Umstellen der Regel) – und das Kind bekommt „Dein Taschengeld ist da: 5,00 €“. Eltern buchen
+  Gutschriften/Korrekturen und Ausgaben („Kino mit Mia − 8,50 €“, ins Minus nur durch Eltern)
+  und löschen eigene Buchungen. **Sterne umwandeln:** das Kind fragt („Umwandeln“, in Schritten
+  des Kurses), die Eltern bekommen eine Mitteilung mit „Annehmen“/„Ablehnen“; angenommen = Buchung
+  `stars`. Umwandelbar sind die verdienten Sterne minus bereits umgewandelte minus offene
+  Anfragen – der Wochenzähler der Aufgaben bleibt unverändert (Sterne aus Aufgaben-Einträgen, die
+  nach 400 Tagen gelöscht werden, bleiben umwandelbar). Neues Mitteilungsthema **„Taschengeld“**
+  (`allowance`).
+- **Wunschlisten** (`wishes`, Geld, Standard an): eine Liste pro Mitglied (Titel, https-Link,
+  ca. Preis, Anlass Geburtstag/Weihnachten/Sonstiges, Notiz). Bearbeiten: die Person selbst,
+  Eltern auch die Listen der Kinder. Alle anderen tippen **„Ich besorge das“** / „Freigeben“ –
+  **wer etwas besorgt, sieht der Beschenkte nie** (in keiner Antwort der API). Nach dem Anlass
+  „Bekommen“ blendet den Wunsch aus.
+- **Haushaltsbuch** (`expenses`, Geld, Standard aus, nur Eltern): Ausgaben mit Betrag,
+  Kategorie (Lebensmittel, Kinder, Haushalt, Freizeit, Mobilität, Sonstiges), wer bezahlt hat,
+  Datum, Notiz, gemeinsam ja/nein. Monatsansicht mit Summe, Kategorien und **Ausgleich**: die
+  gemeinsamen Ausgaben werden gleich unter den Eltern geteilt („Marc → Anna 48,20 €“); bei drei
+  oder mehr Eltern die wenigsten nötigen Zahlungen. **„Erledigt“** hält nur fest, dass ausgeglichen
+  wurde; eine Änderung an einer Ausgabe öffnet den Monat wieder. Die App kann nach „Ich gehe
+  einkaufen“ „Einkauf erfassen“ anbieten.
+- **Pinnwand & Packlisten** (`board`, Alltag, Standard an): Notizen in fünf Farben, anheften,
+  optional mit Ablaufdatum (danach verschwinden sie); alle schreiben, löschen dürfen die
+  Verfasserin und Eltern. Checklisten (z. B. „Urlaub“, „Schwimmbad“) aus einer Vorlage oder neu,
+  Einträge abhaken/hinzufügen/löschen, „Alles wieder offen“, „Als Vorlage“ speichern.
+- **Essensplan** (`meals`, Alltag, Standard aus): Mittag und Abend pro Tag, Woche für Woche
+  (ISO-Woche), mit Koch und Zutaten; **„Zutaten auf die Liste“** setzt die Zutaten auf eine
+  Einkaufsliste – ohne Doppelte (Groß-/Kleinschreibung egal, nur offene Einträge zählen). Das
+  heutige Essen steht in der Übersicht und auf dem Wand-Tablet („Essen: Pfannkuchen“).
+- **Anwesenheit & Smart Home** (`presence`, Zuhause, Standard aus, neue Admin-Seite
+  **„Anwesenheit & Smart Home“** und Abschnitt im Portal): Die App erkennt am Heim-WLAN, ob
+  jemand zuhause ist (kein GPS) – nur für Personen, die selbst zugestimmt haben („Anwesenheit
+  teilen“, jederzeit abschaltbar; ohne Zustimmung „nicht freigegeben“). **Regeln** (Eltern):
+  *Wenn alle weg sind* (alle, die teilen, seit 0–120 Minuten, Standard 10), *wenn der Erste
+  heimkommt*, *wenn ein Kind allein heimkommt*, *wenn <Person> heimkommt/geht*; optional nur in
+  einem Zeitfenster (auch über Mitternacht) und/oder nach Sonnenuntergang (Standort in den neuen
+  Plugin-Einstellungen **Breitengrad/Längengrad**, sonst ignoriert). Aktionen: **Schnellaktionen
+  anderer Plugins** (z. B. Szenen des Smart-Home-Plugins, über `gc.actions.run` als die Person,
+  die die Aktion in die Regel gesetzt hat – auf der Admin-Seite der Administrator) und
+  **Mitteilungen** an Eltern, alle oder bestimmte Personen (`{name}` = die Person). Eine Regel
+  greift einmal pro Wechsel und höchstens alle 10 Minuten („alle weg“ wird nachgeholt, solange
+  alle weg bleiben). Jeder Lauf steht mit dem Ergebnis jeder Aktion im Protokoll der Regeln
+  (die letzten 50); eine Schnellaktion, die das Plugin nicht mehr anbietet, zeigt **„Aktion nicht
+  mehr verfügbar“**. Das Wand-Tablet zeigt an den Avataren zuhause/unterwegs. Über
+  Geräte-Vertrauen erkannte Personen sehen keine Anwesenheit. Neues Mitteilungsthema
+  **„Anwesenheit & Smart Home“** (`presence`).
+- **Funktionen:** gruppiert wie die Vorlage – Alltag (+ Pinnwand, Essensplan), Unterwegs,
+  Kinder & Sicherheit, **Geld** (Taschengeld, Wunschlisten, Haushaltsbuch), Zuhause
+  (+ Anwesenheit); neue Schalter `mod_allowance`, `mod_wishes`, `mod_expenses`, `mod_board`,
+  `mod_meals`, `mod_presence`. **Portal:** Pinnwand, Essensplan, Wunschlisten (alle),
+  Taschengeld (Eltern alles, Kinder ihr Konto), Haushaltsbuch (Eltern), Anwesenheit (eigene
+  Zustimmung, wer zuhause ist; Eltern: Regeln).
+- **App-API** (zusätzlich zu 1.1.x; Beträge in Cent):
+  - `GET me` → `modules` mit `allowance`, `wishes`, `expenses`, `board`, `meals`, `presence`
+  - `GET overview` → `allowance` (Kind: `{ balanceCents, nextPayout, amountCents,
+    convertibleStars, pendingRequests }`, Eltern: `{ sumCents, children: [{ childId,
+    balanceCents }], pendingRequests }`), `wishes: { mine, reservedByMe }`, `expenses` (Eltern:
+    `{ month, totalCents, sharedCents, settlement, settled }`), `board: { pinned, notes,
+    openChecklists }`, `meals: { date, lunch, dinner }`, `presence: { home: [{ userId, since }],
+    share }` – jeweils `null`, wenn aus
+  - `GET allowance`, `POST allowance/<childId>/bookings`, `DELETE
+    allowance/<childId>/bookings/<id>`, `PUT allowance/<childId>/rule`, `POST
+    allowance/<childId>/convert`, `POST allowance/requests/<id>/approve|decline`
+  - `GET|POST wishes`, `PATCH|DELETE wishes/<id>`, `POST wishes/<id>/reserve|unreserve`
+  - `GET expenses?month=`, `POST expenses`, `PATCH|DELETE expenses/<id>`, `POST
+    expenses/settle|unsettle`
+  - `GET board`, `board/notes[/<id>]`, `board/checklists[/<id>]`,
+    `board/checklists/<id>/items[/<itemId>]`, `POST board/checklists/<id>/reset`,
+    `board/templates[/<id>]`
+  - `GET meals?week=YYYY-Www`, `PUT|DELETE meals/<date>/<lunch|dinner>`, `POST
+    meals/<date>/<slot>/to-shopping`
+  - `GET|POST presence`, `PUT presence/consent`, `GET presence/actions`, `GET presence/log`,
+    `GET|POST presence/rules`, `PATCH|DELETE presence/rules/<id>`
+  - `GET wall` → `meals`, `modules.meals`, `modules.presence`, `members[].presence`
+    (`home`/`away`/`null`)
+  - neue Fehlercodes `not_enough_stars` (409, mit `available`), `no_star_rate` (409),
+    `no_consent` (409), `too_many` (409)
+  - Mitteilungen mit `data.familie.type` `allowance_paid` (`childId`, `bookingId`, `cents`),
+    `allowance_convert` (`requestId`, `childId`, `stars`, `cents`), `allowance_decided`
+    (`requestId`, `childId`, `status`, `cents`), `presence_rule` (`ruleId`, `trigger`, `userId`)
+- Admin-API: `GET admin/presence`, `GET admin/presence/actions`, `POST admin/presence/rules`,
+  `PATCH|DELETE admin/presence/rules/<id>`; `GET admin/status` → `settings.location`.
+- Datenbank: Migration `003_money_board_meals_presence.sql`. Beim Entfernen eines Mitglieds
+  gehen seine Zustimmung, sein Anwesenheitsstand und seine Taschengeld-Regel; Buchungen,
+  Wünsche und Ausgaben bleiben.
+
 ## 1.1.1
 - **Kiosk-Anmeldung für das Wand-Tablet** (braucht GateControl ≥ 1.165.0, neue Berechtigung
   `permissions.kiosk` – im Installationsdialog „darf Benutzer als Kiosk-Geräte freigeben“): Jedes

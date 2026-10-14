@@ -419,6 +419,8 @@ async function purge(gc, cfg, now) {
     }
   }
   await store.run(gc, 'DELETE FROM task_reminders WHERE occurrence < ?', [tz.addDays(today, -14)]);
+  // the stars of the rows that go stay convertible (pocket money, server/allowance.js)
+  await require('./allowance').carryStars(gc, now - 400 * DAY);
   await store.run(gc, 'DELETE FROM task_done WHERE at < ?', [now - 400 * DAY]);
 }
 

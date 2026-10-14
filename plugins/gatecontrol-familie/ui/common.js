@@ -154,11 +154,106 @@
   }
   function setSwitch(b, on) { b.setAttribute('aria-checked', on ? 'true' : 'false'); }
 
+  /**
+   * A small form in a modal (1.2.0 sections): fields [{ key, label, type: 'text'|'textarea'|'number'|'money'|'date'|'time'|
+   * 'select'|'checkbox'|'checks', value, options: [{ value, label }], max, min, step, hint, show: (values) => bool }].
+   * check(values) → error text or null. Resolves the values (money in cents) or null when cancelled.
+   */
+  function form(title, fields, opts) {
+    var o = opts || {};
+    return new Promise(function (resolve) {
+      var ov;
+      var inputs = {};
+      var groups = {};
+      var msg = el('p', { class: 'fa-msg', role: 'status' });
+      function values() {
+        var v = {};
+        fields.forEach(function (f) {
+          var i = inputs[f.key];
+          if (f.type === 'checkbox') v[f.key] = i.checked;
+          else if (f.type === 'checks') v[f.key] = $$('input:checked', i).map(function (x) { return x.value; });
+          else if (f.type === 'number') v[f.key] = i.value === '' ? null : Number(i.value);
+          else if (f.type === 'money') v[f.key] = i.value.trim() === '' ? null : (parseMoney(i.value) == null ? NaN : parseMoney(i.value)); // NaN = not a number
+          else v[f.key] = i.value;
+        });
+        return v;
+      }
+      function sync() { var v = values(); fields.forEach(function (f) { if (f.show) groups[f.key].hidden = !f.show(v); }); }
+      var body = el('div', { class: 'modal-body' });
+      fields.forEach(function (f, n) {
+        var id = 'fa-form-' + n;
+        var input;
+        if (f.type === 'textarea') input = el('textarea', { class: 'form-input', id: id, rows: '3', maxlength: f.max ? String(f.max) : null });
+        else if (f.type === 'select') input = el('select', { class: 'form-select', id: id }, (f.options || []).map(function (x) { return el('option', { value: String(x.value), text: x.label }); }));
+        else if (f.type === 'checks') {
+          input = el('div', { class: 'fa-check-list', id: id }, (f.options || []).map(function (x) {
+            return el('label', { class: 'fa-check-row' }, [el('input', { type: 'checkbox', value: String(x.value), checked: (f.value || []).indexOf(String(x.value)) >= 0 }), x.label]);
+          }));
+          if (!(f.options || []).length) input.appendChild(el('p', { class: 'fa-empty', text: f.empty || '–' }));
+        } else if (f.type === 'checkbox') input = el('input', { type: 'checkbox', id: id, checked: !!f.value });
+        else {
+          var type = f.type === 'money' ? 'text' : (f.type || 'text');
+          input = el('input', { class: 'form-input', id: id, type: type, maxlength: f.max && type === 'text' ? String(f.max) : null, min: f.min != null ? String(f.min) : null,
+            max: f.type === 'number' && f.maxValue != null ? String(f.maxValue) : null, step: f.step != null ? String(f.step) : null, inputmode: f.type === 'money' ? 'decimal' : null, autocomplete: 'off' });
+        }
+        if (f.type !== 'checkbox' && f.type !== 'checks') input.value = f.value == null ? '' : (f.type === 'money' ? moneyInput(f.value) : String(f.value));
+        inputs[f.key] = input;
+        input.addEventListener('change', sync);
+        var g = f.type === 'checkbox'
+          ? el('label', { class: 'check form-group' }, [input, ' ' + f.label])
+          : el('div', { class: 'form-group' }, [f.type === 'checks' ? el('div', { class: 'form-label', text: f.label }) : el('label', { class: 'form-label', for: id, text: f.label }), input, f.hint ? el('p', { class: 'fa-hint', text: f.hint }) : null]);
+        groups[f.key] = g;
+        body.appendChild(g);
+      });
+      body.appendChild(msg);
+      var done = function (v) { ov.remove(); resolve(v); };
+      var save = el('button', { type: 'button', class: 'btn btn-primary', text: o.okLabel || T('common.save') });
+      save.addEventListener('click', function () {
+        var v = values();
+        var err = o.check ? o.check(v) : null;
+        if (err) { msg.textContent = err; return; }
+        if (o.submit) {
+          save.disabled = true;
+          Promise.resolve(o.submit(v)).then(function () { done(v); }).catch(function (e) { save.disabled = false; msg.textContent = errText(e); });
+        } else done(v);
+      });
+      var foot = [o.onDelete ? el('button', { type: 'button', class: 'btn btn-danger', text: T('common.delete'), on: { click: function () { done(null); o.onDelete(); } } }) : null,
+        el('span', { class: 'fa-spacer' }), el('button', { type: 'button', class: 'btn', text: T('common.cancel'), on: { click: function () { done(null); } } }), save];
+      ov = el('div', { class: 'modal-overlay', role: 'dialog', 'aria-modal': 'true', 'aria-label': title }, [
+        el('div', { class: 'modal' + (o.wide ? ' modal-wide' : '') }, [
+          el('div', { class: 'modal-head' }, [el('div', { class: 'modal-title', text: title }), el('button', { type: 'button', class: 'btn modal-close', 'aria-label': T('common.close'), text: '×', on: { click: function () { done(null); } } })]),
+          body,
+          el('div', { class: 'modal-foot' }, foot),
+        ]),
+      ]);
+      document.body.appendChild(ov);
+      sync();
+      var first = body.querySelector('input:not([type=checkbox]),select,textarea');
+      if (first) setTimeout(function () { first.focus(); }, 30);
+    });
+  }
+  /** "5,50" / "5.50" / "5" → 550 (null when not a number). */
+  function parseMoney(s) {
+    var t = String(s == null ? '' : s).trim().replace(/[€\s]/g, '').replace(',', '.');
+    if (!/^-?\d+(\.\d{1,2})?$/.test(t)) return null;
+    return Math.round(Number(t) * 100);
+  }
+  function moneyInput(cents) {
+    var n = Number(cents) || 0;
+    var a = Math.abs(n);
+    return (n < 0 ? '-' : '') + Math.floor(a / 100) + (CTX.lang === 'en' ? '.' : ',') + String(a % 100).padStart(2, '0');
+  }
+  /** 550 → "5,50 €" / "€5.50" */
+  function money(cents) {
+    var n = Number(cents) || 0;
+    try { return (n / 100).toLocaleString(LOCALE, { style: 'currency', currency: 'EUR' }); } catch (_) { return moneyInput(n) + ' €'; }
+  }
+
   window.FA = {
     CTX: CTX, T: T, $: $, $$: $$, el: el, clear: clear, api: api, errText: errText, errCode: errCode, toast: toast, warn: warn,
     openModal: openModal, closeModal: closeModal, confirm: confirmDialog, svg: svg, safeColor: safeColor,
     when: when, day: day, dateLong: dateLong, daysUntil: daysUntil, todayStr: todayStr, uuid: uuid, initials: initials, avatar: avatar,
-    switchBtn: switchBtn, setSwitch: setSwitch,
+    switchBtn: switchBtn, setSwitch: setSwitch, form: form, parseMoney: parseMoney, money: money,
   };
   document.addEventListener('click', function (e) {
     var c = e.target && e.target.closest ? e.target.closest('[data-close]') : null;

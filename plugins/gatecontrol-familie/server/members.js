@@ -188,14 +188,16 @@ async function update(gc, fam, userId, body) {
     await store.run(gc, "UPDATE locate_requests SET status = 'expired' WHERE child_id = ? AND status = 'pending'", [userId]);
   }
   if (f.role === 'wall') {
-    // a wall tablet has no place reminders of its own
+    // a wall tablet has no place reminders, presence or pocket money of its own
     await store.run(gc, 'DELETE FROM places WHERE owner_id = ? OR target_user_id = ?', [userId, userId]);
+    await leftovers(gc, userId);
   }
 }
 
 /**
- * Remove a member: the person's place reminders and emergency card go, open
- * locate requests end; shared data (lists, dates, rides) stays.
+ * Remove a member: the person's place reminders, emergency card, presence
+ * consent and pocket money rule go, open locate and convert requests end;
+ * shared data (lists, dates, rides, bookings, wishes, expenses) stays.
  */
 async function remove(gc, userId) {
   const r = await store.run(gc, 'DELETE FROM members WHERE user_id = ?', [userId]);
@@ -203,6 +205,15 @@ async function remove(gc, userId) {
   await store.run(gc, 'DELETE FROM places WHERE owner_id = ? OR target_user_id = ?', [userId, userId]);
   await store.run(gc, 'DELETE FROM emergency_cards WHERE user_id = ?', [userId]);
   await store.run(gc, "UPDATE locate_requests SET status = 'expired' WHERE (child_id = ? OR requested_by = ?) AND status = 'pending'", [userId, userId]);
+  await leftovers(gc, userId);
+}
+
+/** 1.2.0: presence consent and state, the pocket money rule and open requests (bookings stay — bookkeeping). */
+async function leftovers(gc, userId) {
+  await store.run(gc, 'DELETE FROM presence_consent WHERE user_id = ?', [userId]);
+  await store.run(gc, 'DELETE FROM presence_state WHERE user_id = ?', [userId]);
+  await store.run(gc, 'DELETE FROM allowance_rules WHERE child_id = ?', [userId]);
+  await store.run(gc, "UPDATE allowance_requests SET status = 'declined' WHERE child_id = ? AND status = 'pending'", [userId]);
 }
 
 /**

@@ -11,6 +11,12 @@
 //   PUT    admin/wall                          { listId } — the wall tablet's shopping list ('' = the first)
 //   GET    admin/log?days=&kind=&userId=       locate requests, arrivals, SOS, place transitions
 //                                              + the last answered position per child
+//   GET    admin/presence                      page "Anwesenheit & Smart Home" (1.2.0): who is home,
+//                                              rules (with `available` per quick action), the rule log,
+//                                              the administrator's own quick actions, the home location
+//   GET    admin/presence/actions              the quick actions of the other plugins for the administrator
+//   POST   admin/presence/rules                PATCH|DELETE admin/presence/rules/<id>
+//                                              (quick actions of a rule saved here run as the administrator)
 
 const store = require('./store');
 const tz = require('./tz');
@@ -19,6 +25,7 @@ const config = require('./config');
 const locate = require('./locate');
 const shopping = require('./shopping');
 const kiosk = require('./kiosk');
+const presence = require('./presence');
 const { fail, posInt, iso } = require('./util');
 
 const DAY = 86400000;
@@ -41,7 +48,7 @@ async function status(gc, cfg, now) {
     members: fam.all.map((m) => adminMember(m, cfg)),
     users: [...fam.users.values()].map((u) => ({ id: u.id, name: u.name, role: u.role, member: fam.byId.has(u.id) || fam.walls.has(u.id) })),
     modules: { ...cfg.modules },
-    settings: { timezone: cfg.tz, timezoneSetting: cfg.tzSetting, notifyLang: cfg.lang, problems: cfg.problems },
+    settings: { timezone: cfg.tz, timezoneSetting: cfg.tzSetting, notifyLang: cfg.lang, problems: cfg.problems, location: cfg.location },
     wall: { listId: cfg.wallList || null, lists: (await shopping.summary(gc)).map((l) => ({ id: l.id, name: l.name })) },
     today,
   };
@@ -103,10 +110,34 @@ async function log(gc, cfg, query, now) {
   };
 }
 
+/** The page "Anwesenheit & Smart Home". */
+async function presenceRoute(req, gc, seg, cfg, now, m, body) {
+  const [, , b, c] = seg;
+  const fam = await members.load(gc, tz.localDate(now, cfg.tz));
+  const lang = req.lang === 'en' ? 'en' : 'de';
+  const ctx = { fam, cfg, now, ownerId: req.user.id, lang };
+  if (seg.length === 2 && m === 'GET') {
+    const map = await presence.load(gc, fam);
+    const own = await presence.actions(gc, req.user.id, lang);
+    return {
+      modules: { presence: cfg.modules.presence }, location: cfg.location, members: presence.membersView(fam, map),
+      ...(await presence.listRules(gc, ctx)), actions: own.actions, actionsAvailable: own.available,
+    };
+  }
+  if (b === 'actions' && seg.length === 3 && m === 'GET') return presence.actions(gc, req.user.id, lang);
+  if (b === 'rules') {
+    if (seg.length === 3 && m === 'POST') return store.tx(gc, () => presence.createRule(gc, ctx, body));
+    if (seg.length === 4 && (m === 'PATCH' || m === 'PUT')) return store.tx(gc, () => presence.updateRule(gc, ctx, c, body));
+    if (seg.length === 4 && m === 'DELETE') return store.tx(gc, () => presence.removeRule(gc, c));
+  }
+  throw fail('not_found');
+}
+
 async function route(req, gc, seg, cfg, now) {
   const m = String(req.method || 'GET').toUpperCase();
   const body = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
   const [, a, b] = seg;
+  if (a === 'presence') return presenceRoute(req, gc, seg, cfg, now, m, body);
   if (a === 'status' && seg.length === 2 && m === 'GET') return status(gc, cfg, now);
   if (a === 'log' && seg.length === 2 && m === 'GET') return log(gc, cfg, req.query, now);
   if (a === 'modules' && seg.length === 2 && (m === 'PUT' || m === 'PATCH')) {

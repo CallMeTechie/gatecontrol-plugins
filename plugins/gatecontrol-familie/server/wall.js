@@ -9,7 +9,10 @@
 //   GET wall   clock data, the family's avatars, "Heute" (today's and
 //              tomorrow's dates, birthdays within 7 days, today's rides),
 //              today's tasks with a chip per person, the open items of the
-//              chosen shopping list (setting wall_list, page "Funktionen")
+//              chosen shopping list (setting wall_list, page "Funktionen");
+//              1.2.0: today's meals (module meals) and, per member, home/away
+//              (module presence, sharing members only, never for device trust alone —
+//              null otherwise)
 //
 // A wall member is no family member: never listed, no pushes, no app tab.
 // It may read me / wall / dates / rides / tasks / shopping, tick tasks off
@@ -25,6 +28,8 @@ const dates = require('./dates');
 const tasks = require('./tasks');
 const shopping = require('./shopping');
 const rides = require('./rides');
+const meals = require('./meals');
+const presence = require('./presence');
 const { fail, iso } = require('./util');
 
 const DARK_FROM = 21;
@@ -59,10 +64,16 @@ async function view(gc, r) {
   const out = {
     now: iso(r.now), date: r.today, time: `${tz.pad(p.hh)}:${tz.pad(p.mm)}`, timezone: r.cfg.tz, dark: isDark(p.hh),
     dayLabel: format.dayShort(r.today, lang),
-    members: r.fam.list.map((m) => ({ userId: m.userId, name: m.name, role: m.role, color: m.color })),
-    modules: { tasks: !!mod.tasks, shopping: !!mod.shopping, dates: !!mod.dates, rides: !!mod.rides, stars: !!(mod.tasks && mod.stars) },
-    today: null, tasks: null, shopping: null,
+    members: r.fam.list.map((m) => ({ userId: m.userId, name: m.name, role: m.role, color: m.color, presence: null })),
+    modules: { tasks: !!mod.tasks, shopping: !!mod.shopping, dates: !!mod.dates, rides: !!mod.rides, stars: !!(mod.tasks && mod.stars), meals: !!mod.meals, presence: !!mod.presence },
+    today: null, tasks: null, shopping: null, meals: null,
   };
+  // who is home: not for a viewer recognised only by device trust (like positions)
+  if (mod.presence && !r.trustOnly) {
+    const st = await presence.wallStates(gc, r.fam);
+    for (const m of out.members) m.presence = st.get(m.userId) || null;
+  }
+  if (mod.meals) out.meals = await meals.today(gc, r);
   if (mod.dates || mod.rides) {
     const t = { dates: [], tomorrow: [], birthdays: [], rides: [] };
     if (mod.dates) {

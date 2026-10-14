@@ -29,7 +29,10 @@ test('admin API: add, edit, remove members; only GateControl users; children nee
   assert.match(lena.color, /^#[0-9A-Fa-f]{6}$/);
   assert.equal(new Set(st.json.members.map((m) => m.color)).size, 4, 'distinct colours');
   assert.deepEqual(st.json.users.filter((u) => !u.member).map((u) => u.id), [ADMIN.id, OMA.id, 7]);
-  assert.deepEqual(st.json.modules, { shopping: true, tasks: true, stars: true, dates: true, locate: true, arrival_sos: true, places: true, rides: true, emergency: true, wall: false });
+  assert.deepEqual(st.json.modules, {
+    shopping: true, tasks: true, stars: true, dates: true, locate: true, arrival_sos: true, places: true, rides: true, emergency: true, wall: false,
+    allowance: false, wishes: true, expenses: false, board: true, meals: false, presence: false,
+  });
   assert.equal(st.json.settings.timezone, 'Europe/Berlin');
 
   assert.equal((await admin('POST', 'members', { userId: 99, role: 'parent' })).status, 404, 'no such GateControl user');
@@ -113,8 +116,13 @@ test('app tab and portal tab: members only, and only while at least one module i
   assert.equal(await host.portalVisible(ANNA, 'home'), false, 'no sections');
   await admin('PUT', 'modules', { shopping: false, tasks: false, stars: false, dates: false, locate: false, arrival_sos: false, rides: false, emergency: false, wall: true });
   assert.equal(await host.appVisible(ANNA), true, 'places still on');
-  await admin('PUT', 'modules', { places: false });
+  await admin('PUT', 'modules', { places: false, wishes: false });
+  assert.equal(await host.appVisible(ANNA), true, 'board still on (1.2.0)');
+  await admin('PUT', 'modules', { board: false });
   assert.equal(await host.appVisible(ANNA), false, 'every module off (the wall view is no family feature)');
+  await admin('PUT', 'modules', { presence: true });
+  assert.equal(await host.appVisible(ANNA), true, 'a 1.2.0 module alone is enough');
+  await admin('PUT', 'modules', { presence: false });
   assert.equal(await host.portalVisible(ANNA), false);
 }));
 

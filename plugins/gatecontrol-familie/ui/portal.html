@@ -86,6 +86,81 @@
     </section>
   </div>
 
+  <!-- 1.2.0: Pinnwand, Essensplan, Wunschlisten, Taschengeld, Haushaltsbuch, Anwesenheit (ui/portal-plus.js) -->
+  <div class="fa-row">
+    <section class="fa-card fa-col-2" id="fa-board" aria-labelledby="fa-board-h" hidden>
+      <div class="fa-card-head">
+        <h2 class="fa-card-title" id="fa-board-h">{{t:board.title}}</h2>
+        <button class="btn btn-sm fa-write" type="button" id="fa-note-add">{{t:board.note_add}}</button>
+      </div>
+      <div class="fa-notes" id="fa-notes"></div>
+      <div class="fa-card-head">
+        <div class="fa-opt-title" style="flex:1">{{t:board.checklists}}</div>
+        <button class="btn btn-sm fa-write" type="button" id="fa-list-add">{{t:board.checklist_add}}</button>
+      </div>
+      <div class="fa-checklists" id="fa-checklists"></div>
+    </section>
+
+    <section class="fa-card fa-col-2" id="fa-meals" aria-labelledby="fa-meals-h" hidden>
+      <div class="fa-card-head">
+        <h2 class="fa-card-title" id="fa-meals-h">{{t:meals.title}}</h2>
+        <button class="btn btn-sm btn-ghost" type="button" id="fa-meals-prev" aria-label="{{t:meals.prev}}">‹</button>
+        <span class="fa-card-sub" id="fa-meals-week"></span>
+        <button class="btn btn-sm btn-ghost" type="button" id="fa-meals-next" aria-label="{{t:meals.next}}">›</button>
+      </div>
+      <div class="fa-meal-days" id="fa-meal-days"></div>
+    </section>
+  </div>
+
+  <section class="fa-card" id="fa-wishes" aria-labelledby="fa-wishes-h" hidden>
+    <div class="fa-card-head">
+      <h2 class="fa-card-title" id="fa-wishes-h">{{t:wishes.title}}</h2>
+      <button class="btn btn-sm fa-write" type="button" id="fa-wish-add">{{t:wishes.add}}</button>
+    </div>
+    <div class="fa-p-chips" id="fa-wish-chips" role="tablist" aria-label="{{t:wishes.title}}"></div>
+    <div class="fa-wish-list" id="fa-wish-list"></div>
+    <p class="fa-hint" id="fa-wish-hint"></p>
+  </section>
+
+  <div class="fa-row">
+    <section class="fa-card fa-col-2" id="fa-allowance" aria-labelledby="fa-allow-h" hidden>
+      <div class="fa-card-head">
+        <h2 class="fa-card-title" id="fa-allow-h">{{t:allowance.title}}</h2>
+        <span class="fa-card-sub">{{t:money.bookkeeping}}</span>
+      </div>
+      <div class="fa-accounts" id="fa-accounts"></div>
+    </section>
+
+    <section class="fa-card fa-col-2" id="fa-expenses" aria-labelledby="fa-exp-h" hidden>
+      <div class="fa-card-head">
+        <h2 class="fa-card-title" id="fa-exp-h">{{t:expenses.title}}</h2>
+        <button class="btn btn-sm btn-ghost" type="button" id="fa-exp-prev" aria-label="{{t:expenses.prev}}">‹</button>
+        <span class="fa-card-sub" id="fa-exp-month"></span>
+        <button class="btn btn-sm btn-ghost" type="button" id="fa-exp-next" aria-label="{{t:expenses.next}}">›</button>
+        <button class="btn btn-primary btn-sm fa-write" type="button" id="fa-exp-add">{{t:expenses.add}}</button>
+      </div>
+      <div id="fa-exp-body"></div>
+    </section>
+  </div>
+
+  <section class="fa-card" id="fa-presence" aria-labelledby="fa-pres-h" hidden>
+    <div class="fa-card-head">
+      <h2 class="fa-card-title" id="fa-pres-h">{{t:presence.title}}</h2>
+      <span class="fa-card-sub">{{t:presence.share}}</span>
+      <span id="fa-pres-share"></span>
+    </div>
+    <p class="fa-hint">{{t:presence.share_hint}}</p>
+    <div class="fa-pres-grid" id="fa-pres-people"></div>
+    <div id="fa-pres-rules-box" hidden>
+      <div class="fa-card-head">
+        <div class="fa-opt-title" style="flex:1">{{t:rule.title}}</div>
+        <button class="btn btn-sm fa-write" type="button" id="fa-pres-add">{{t:rule.add_button}}</button>
+      </div>
+      <div class="fa-rules" id="fa-pres-rules"></div>
+      <details class="fa-pres-log"><summary class="fa-opt-title">{{t:rule.log_title}}</summary><div id="fa-pres-log"></div></details>
+    </div>
+  </section>
+
   <!-- Notfall-Karte -->
   <div class="modal-overlay" id="fa-em-modal" role="dialog" aria-modal="true" aria-labelledby="fa-e-title" hidden>
     <div class="modal modal-wide">

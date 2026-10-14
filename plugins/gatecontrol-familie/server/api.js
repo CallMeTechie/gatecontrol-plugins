@@ -15,6 +15,15 @@
 //   POST rides/<id>/take · /release · /decline · /driver · /ask
 //   GET  emergency               PUT emergency/members/<userId>   PUT emergency/contacts
 //   GET  wall                    (the wall tablet's view, server/wall.js)
+//   1.2.0:
+//   GET  allowance               POST allowance/<childId>/bookings   DELETE allowance/<childId>/bookings/<id>
+//   PUT  allowance/<childId>/rule   POST allowance/<childId>/convert   POST allowance/requests/<id>/approve · /decline
+//   GET  wishes   POST wishes    PATCH|DELETE wishes/<id>     POST wishes/<id>/reserve · /unreserve
+//   GET  expenses?month=         POST expenses   PATCH|DELETE expenses/<id>   POST expenses/settle · /unsettle
+//   GET  board · board/notes · board/checklists[/<id>] · board/templates   (+ POST / PATCH / DELETE, see server/board.js)
+//   GET  meals?week=             PUT|DELETE meals/<date>/<slot>   POST meals/<date>/<slot>/to-shopping
+//   GET  presence   POST presence   PUT presence/consent   GET presence/actions · presence/log
+//   GET|POST presence/rules      PATCH|DELETE presence/rules/<id>
 //
 // Every response is { ok: true, … } or { ok: false, code, error }. Callers
 // that are no member get 403 not_member, a switched-off module 403
@@ -39,6 +48,12 @@ const places = require('./places');
 const rides = require('./rides');
 const emergency = require('./emergency');
 const wall = require('./wall');
+const allowance = require('./allowance');
+const wishes = require('./wishes');
+const expenses = require('./expenses');
+const board = require('./board');
+const meals = require('./meals');
+const presence = require('./presence');
 const { fail, posInt, iso } = require('./util');
 
 /** A portal viewer recognised only by device trust: no real login and no paired kiosk device. */
@@ -71,6 +86,13 @@ async function overview(gc, r) {
   if (mod.rides) out.rides = await rides.overview(gc, r);
   // addition: the latest "Bin angekommen" per member (24 h)
   out.arrivals = mod.arrival_sos ? await safety.recentArrivals(gc, r.now) : null;
+  // 1.2.0 (null when the module is off; expenses: parents only)
+  out.allowance = mod.allowance ? await allowance.overview(gc, r) : null;
+  out.wishes = mod.wishes ? await wishes.overview(gc, r) : null;
+  out.expenses = mod.expenses ? await expenses.overview(gc, r) : null;
+  out.board = mod.board ? await board.overview(gc, r) : null;
+  out.meals = mod.meals ? await meals.today(gc, r) : null;
+  out.presence = mod.presence && !r.trustOnly ? await presence.overview(gc, r) : null;
   out.serverTime = iso(r.now);
   return out;
 }
@@ -182,6 +204,72 @@ function dispatch(gc, r, seg, method) {
   }
 
   if (a === 'wall' && n === 1 && GET) return () => wall.view(gc, r);
+
+  if (a === 'allowance') {
+    need('allowance');
+    if (n === 1 && GET) return () => allowance.get(gc, r);
+    if (b === 'requests') {
+      if (n === 4 && POST && (d === 'approve' || d === 'decline')) return () => allowance.decide(gc, r, c, d === 'approve');
+    } else {
+      if (n === 3 && c === 'bookings' && POST) return () => allowance.book(gc, r, b);
+      if (n === 4 && c === 'bookings' && DELETE) return () => allowance.unbook(gc, r, b, d);
+      if (n === 3 && c === 'rule' && PATCH) return () => allowance.putRule(gc, r, b);
+      if (n === 3 && c === 'convert' && POST) return () => allowance.convert(gc, r, b);
+    }
+  }
+
+  if (a === 'wishes') {
+    need('wishes');
+    if (n === 1 && GET) return () => wishes.get(gc, r);
+    if (n === 1 && POST) return () => wishes.create(gc, r);
+    if (n === 2 && PATCH) return () => wishes.update(gc, r, b);
+    if (n === 2 && DELETE) return () => wishes.remove(gc, r, b);
+    if (n === 3 && POST && c === 'reserve') return () => wishes.reserve(gc, r, b);
+    if (n === 3 && POST && c === 'unreserve') return () => wishes.unreserve(gc, r, b);
+  }
+
+  if (a === 'expenses') {
+    need('expenses');
+    parentsOnly(r);
+    if (n === 1 && GET) return () => expenses.get(gc, r);
+    if (n === 1 && POST) return () => expenses.create(gc, r);
+    if (n === 2 && b === 'settle' && POST) return () => expenses.markSettled(gc, r);
+    if (n === 2 && b === 'unsettle' && POST) return () => expenses.unsettle(gc, r);
+    if (n === 2 && PATCH) return () => expenses.update(gc, r, b);
+    if (n === 2 && DELETE) return () => expenses.remove(gc, r, b);
+  }
+
+  if (a === 'board') {
+    need('board');
+    const h = board.route(gc, r, seg.slice(1), method);
+    if (h) return h;
+  }
+
+  if (a === 'meals') {
+    need('meals');
+    if (n === 1 && GET) return () => meals.get(gc, r);
+    if (n === 3 && PATCH) return () => meals.put(gc, r, b, c);
+    if (n === 3 && DELETE) return () => meals.remove(gc, r, b, c);
+    if (n === 4 && d === 'to-shopping' && POST) return () => meals.toShopping(gc, r, b, c);
+  }
+
+  if (a === 'presence') {
+    need('presence');
+    sensitive();
+    const ctx = () => ({ fam: r.fam, cfg: r.cfg, now: r.now, ownerId: r.me.userId, lang: r.lang });
+    if (n === 1 && GET) return () => presence.get(gc, r);
+    if (n === 1 && POST) return () => presence.report(gc, r);
+    if (n === 2 && b === 'consent' && PATCH) return () => presence.consent(gc, r);
+    if (n === 2 && b === 'actions' && GET) return () => presence.actions(gc, r.me.userId, r.lang);
+    if (n === 2 && b === 'log' && GET) { parentsOnly(r); return async () => ({ log: await presence.log(gc) }); }
+    if (b === 'rules') {
+      parentsOnly(r);
+      if (n === 2 && GET) return () => presence.listRules(gc, ctx());
+      if (n === 2 && POST) return () => presence.createRule(gc, ctx(), r.body);
+      if (n === 3 && PATCH) return () => presence.updateRule(gc, ctx(), c, r.body);
+      if (n === 3 && DELETE) return () => presence.removeRule(gc, c);
+    }
+  }
   throw fail('not_found');
 }
 
@@ -196,11 +284,13 @@ async function route(req, gc, seg, cfg, now) {
   const method = String(req.method || 'GET').toUpperCase();
   const write = method !== 'GET';
   const body = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
-  const r = { req, cfg, now, today, fam, me: m, user, body, query: req.query || {}, trustOnly: trustOnly(user), pushes: [] };
+  const r = { req, cfg, now, today, fam, me: m, user, body, query: req.query || {}, trustOnly: trustOnly(user), pushes: [], runs: [], lang: req.lang === 'en' ? 'en' : 'de' };
   if (m.role === 'wall') wall.guard(r, method, seg);
   const handler = dispatch(gc, r, seg, method);
   if (write && r.trustOnly) throw fail('login_required');
   const out = write ? await store.tx(gc, handler) : await handler();
+  // presence rules that fired: quick actions and notifications after the commit
+  if (r.runs.length) await presence.execute(gc, r.fam, r.cfg, r.now, r.runs, r.pushes);
   if (r.pushes.length) await push.flush(gc, r.pushes);
   return { status: 200, json: { ok: true, ...out } };
 }

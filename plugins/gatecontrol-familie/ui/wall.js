@@ -2,6 +2,8 @@
    the family, "Heute" (dates today/tomorrow, today's rides, birthdays within
    7 days), today's tasks with a chip per person (tap = done for that person)
    and the open items of one shopping list (tap = bought, field = add).
+   1.2.0: today's meals in "Heute" ("Essen: Pfannkuchen") and home / away
+   on the avatars of the members who share their presence.
    GET wall every 60 s; dark from 21:00 to 06:00 (server's local time); a
    small pixel shift every few minutes against burn-in. A paired kiosk
    device or a portal login writes; device trust only (no login): read-only. */
@@ -50,7 +52,9 @@
     data.members.slice(0, 6).forEach(function (m) {
       var a = el('span', { class: 'fa-w-avatar', text: A.initials(m.name), 'aria-hidden': 'true' });
       a.style.setProperty('--c', A.safeColor(m.color, '#0B7A55'));
-      box.appendChild(el('div', { class: 'fa-w-person' }, [a, el('span', { text: m.name })]));
+      var p = m.presence === 'home' || m.presence === 'away' ? m.presence : null;
+      var label = p ? m.name + ' · ' + T('presence.' + p) : m.name;
+      box.appendChild(el('div', { class: 'fa-w-person' + (p ? ' is-' + p : ''), title: label, 'aria-label': label }, [a, el('span', { text: m.name })]));
     });
   }
 
@@ -66,8 +70,23 @@
     return [r.place, who].filter(Boolean).join(' · ');
   }
 
+  /** Today's meals: "Essen · Pfannkuchen" (one), "Mittag" / "Abend" (both). */
+  function mealRows() {
+    var m = data.meals;
+    if (!m) return [];
+    var both = m.lunch && m.dinner;
+    var out = [];
+    ['lunch', 'dinner'].forEach(function (slot) {
+      var x = m[slot];
+      if (!x) return;
+      var cook = x.cook != null ? (data.members.filter(function (p) { return p.userId === x.cook; })[0] || {}).name : null;
+      out.push(row(both ? T('meal.' + slot) : T('wall.meal'), x.title, cook ? T('meal.cook_by', { name: cook }) : ''));
+    });
+    return out;
+  }
+
   function renderToday() {
-    var t = data.today;
+    var t = data.today || (data.meals ? { dates: [], tomorrow: [], birthdays: [], rides: [] } : null);
     $('#fa-w-today').hidden = !t;
     if (!t) return;
     var box = A.clear($('#fa-w-today-list'));
@@ -77,6 +96,7 @@
     t.rides.forEach(function (r) { today.push([r.time, row(r.time, r.title, rideSub(r))]); });
     today.sort(function (a, b) { return a[0] < b[0] ? -1 : (a[0] > b[0] ? 1 : 0); });
     var rows = today.map(function (x) { return x[1]; });
+    mealRows().forEach(function (n) { rows.push(n); });
     t.tomorrow.forEach(function (e) { rows.push(row(T('rel.tomorrow'), e.title, e.allDay || !e.time ? '' : e.time)); });
     rows.slice(0, MAX_TODAY).forEach(function (n) { box.appendChild(n); });
     if (rows.length > MAX_TODAY) box.appendChild(el('span', { class: 'fa-w-more', text: T('wall.more', { n: rows.length - MAX_TODAY }) }));

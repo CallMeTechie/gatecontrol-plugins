@@ -130,3 +130,17 @@ textarea.form-input{min-height:70px;padding:8px 10px;resize:vertical}
 .fa-modes{margin:6px 0;padding-left:18px;line-height:1.6}
 .fa-age-hint{display:block;font-size:12px;font-weight:600;color:var(--warn);margin-top:2px}
 .fa-kid-row .fa-age-hint{flex-basis:100%;margin-top:-4px}
+/* presence & rules (1.2.0: page "Anwesenheit & Smart Home" and the portal) */
+.fa-pres-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px}
+.fa-pres{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:14px;background:var(--surface-2);border:1px solid var(--line)}
+.fa-pres.is-home{background:color-mix(in srgb,var(--good) 12%,var(--surface));border-color:color-mix(in srgb,var(--good) 30%,var(--line))}
+.fa-pres.is-not_shared,.fa-pres.is-unknown{border-style:dashed}
+.fa-pres-main{display:flex;flex-direction:column;min-width:0}
+.fa-rules{display:flex;flex-direction:column}
+.fa-rule{display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:14px 18px;border-top:1px solid var(--line);color:var(--muted)}
+.fa-rule.is-off{opacity:.62}
+.fa-rule-when{padding:6px 12px;border-radius:10px;background:var(--surface-2);font-size:14px;font-weight:700;color:var(--text)}
+.fa-rule-act{padding:6px 12px;border-radius:10px;background:var(--accent-soft);color:var(--accent);font-size:14px;font-weight:600}
+.fa-rule-act.is-gone{background:color-mix(in srgb,var(--crit) 12%,transparent);color:var(--crit);text-decoration:line-through}
+.fa-rule-meta{margin-left:auto;font-size:12px}
+.fa-rules .fa-empty{padding:4px 18px 18px}
