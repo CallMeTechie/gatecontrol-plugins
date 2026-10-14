@@ -46,6 +46,18 @@
 //   (ERR_KIOSK_DENIED without the permission; ERR_INVALID for an unknown user, an administrator or a
 //   user given as { disabled: true }, and for allowed not a boolean). host.kiosk is the plugin's set
 //   of kiosk users; opts.kiosk: [userId] pre-fills it (what an earlier run left behind).
+//   permissions.actions (GateControl ≥ 1.166.0): gc.actions.list({ userId, lang }) and
+//   gc.actions.run({ userId, plugin, id, lang }) — the quick actions of OTHER plugins, given by the test:
+//     opts.actions: [{ plugin: 'gatecontrol-smarthome', pluginName: 'Smart Home',
+//       quickActions: (viewer, lang) => [{ id, title, subtitle, kind, state, … }]   (or actions: [ … ])
+//       runQuickAction: (viewer, id, lang) => ({ ok, message, state }) }]          (default { ok: true })
+//   Checked like the host (src/services/plugins/hostApi.js): ERR_ACTIONS_DENIED without the
+//   permission; ERR_INVALID for a userId that is not a positive integer of an enabled user, a lang
+//   other than de/en, a bad or the caller's own plugin id, a bad action id; ERR_RATE_LIMIT after 60
+//   runs per (mocked) hour. The target gets the viewer { id, name, role, portal: true, loggedIn: true,
+//   automation: true, via: '<caller id>' }; a run that did not happen resolves { ok: false, message:
+//   null, state: null, error: 'not_found'|'plugin_error' } (an id not listed for that viewer, an
+//   unknown plugin, a hook that throws). host.actionRuns records { plugin, id, userId, lang, viewer, result }.
 
 const fs = require('node:fs');
 const os = require('node:os');
@@ -59,6 +71,8 @@ const QA_MAX = 16;
 const QA_ID_RE = /^[A-Za-z0-9:._-]{1,64}$/;
 const QA_ICON_RE = /^[MmLlHhVvCcSsQqTtAaZz0-9 .,-]{1,2000}$/;
 const QA_STATES = new Set(['on', 'off']);
+const PLUGIN_ID_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+const ACTIONS_PER_HOUR = 60;
 
 function hostError(code, message) {
   return Object.assign(new Error(message), { code });
@@ -195,6 +209,8 @@ async function createHost(pluginDir, opts = {}) {
   const net = networkOf(manifest);
   // permissions.kiosk: a boolean (GateControl ≥ 1.165.0, manifest.js)
   if (perms.kiosk != null && typeof perms.kiosk !== 'boolean') throw hostError('ERR_INVALID', 'plugin.json: permissions.kiosk: invalid');
+  // permissions.actions: a boolean (GateControl ≥ 1.166.0, manifest.js)
+  if (perms.actions != null && typeof perms.actions !== 'boolean') throw hostError('ERR_INVALID', 'plugin.json: permissions.actions: invalid');
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), `gcmock-${manifest.id}-`));
   const filesDir = path.join(tmp, 'files');
   fs.mkdirSync(filesDir);
@@ -212,6 +228,9 @@ async function createHost(pluginDir, opts = {}) {
   // permissions.notify: true (30 per hour) or { perHour: 1–120 } (GateControl ≥ 1.164.0); the mock counts all of a test
   const notifyLimit = perms.notify && typeof perms.notify === 'object' && Number.isInteger(perms.notify.perHour) ? perms.notify.perHour : 30;
   const kiosk = new Set((opts.kiosk || []).map(Number));
+  const actionPlugins = (opts.actions || []).filter((p) => p && p.plugin !== manifest.id);
+  const actionRuns = [];
+  const actionRunAt = [];
 
   // Storage: the plugin's own SQLite database with its migrations applied.
   let db = null;
@@ -381,6 +400,58 @@ async function createHost(pluginDir, opts = {}) {
     },
   };
 
+  // gc.actions.* (GateControl ≥ 1.166.0, hostApi.js actionsList / actionsRun)
+  const automationViewer = (args) => {
+    if (perms.actions !== true) throw hostError('ERR_ACTIONS_DENIED', 'this plugin has no actions permission');
+    const userId = args && args.userId;
+    if (!Number.isSafeInteger(userId) || userId <= 0) throw hostError('ERR_INVALID', 'invalid user id');
+    const lang = args.lang;
+    if (!(lang == null || lang === 'de' || lang === 'en')) throw hostError('ERR_INVALID', "lang must be 'de' or 'en'");
+    const u = allUsers.find((x) => x.id === userId);
+    if (!u || u.disabled) throw hostError('ERR_INVALID', 'unknown or disabled user');
+    return { user: { id: u.id, name: u.name, role: u.role, portal: true, loggedIn: true, automation: true, via: manifest.id }, lang: lang || 'de' };
+  };
+  const listOf = async (p, viewer, lang) => checkQuickActions(wire(typeof p.quickActions === 'function' ? await p.quickActions(wire(viewer), lang) : (p.actions || [])));
+  api['actions.list'] = async (args) => {
+    const { user, lang } = automationViewer(args);
+    const out = [];
+    for (const p of actionPlugins) {
+      let list;
+      try { list = await listOf(p, user, lang); } catch { continue; }
+      for (const a of list) out.push({ plugin: p.plugin, pluginName: p.pluginName || p.plugin, id: a.id, title: a.title, subtitle: a.subtitle, kind: a.kind, state: a.state });
+    }
+    return out;
+  };
+  api['actions.run'] = async (args) => {
+    if (perms.actions !== true) throw hostError('ERR_ACTIONS_DENIED', 'this plugin has no actions permission');
+    const target = args && args.plugin;
+    const actionId = args && args.id;
+    if (typeof target !== 'string' || target.length < 2 || target.length > 64 || !PLUGIN_ID_RE.test(target)) throw hostError('ERR_INVALID', 'invalid plugin id');
+    if (target === manifest.id) throw hostError('ERR_INVALID', 'a plugin cannot run its own quick actions');
+    if (typeof actionId !== 'string' || !QA_ID_RE.test(actionId)) throw hostError('ERR_INVALID', 'invalid action id');
+    const { user, lang } = automationViewer(args);
+    const now = Date.now();
+    while (actionRunAt.length && now - actionRunAt[0] >= 3600000) actionRunAt.shift();
+    if (actionRunAt.length >= ACTIONS_PER_HOUR) throw hostError('ERR_RATE_LIMIT', 'too many quick action runs (60 per hour)');
+    actionRunAt.push(now);
+    const p = actionPlugins.find((x) => x.plugin === target);
+    let result;
+    if (!p) result = { ok: false, message: null, state: null, error: 'not_found' };
+    else {
+      try {
+        const listed = await listOf(p, user, lang);
+        if (!listed.some((a) => a.id === actionId)) result = { ok: false, message: null, state: null, error: 'not_found' };
+        else {
+          const out = wire(typeof p.runQuickAction === 'function' ? await p.runQuickAction(wire(user), actionId, lang) : { ok: true });
+          if (!out || typeof out !== 'object' || Array.isArray(out)) result = { ok: false, message: null, state: null, error: 'plugin_error' };
+          else result = { ok: out.ok !== false, message: typeof out.message === 'string' ? out.message.slice(0, 120) : null, state: QA_STATES.has(out.state) ? out.state : null };
+        }
+      } catch { result = { ok: false, message: null, state: null, error: 'plugin_error' }; }
+    }
+    actionRuns.push({ plugin: target, id: actionId, userId: user.id, lang, viewer: user, result });
+    return result;
+  };
+
   const call = async (name, args) => wire(await api[name](wire(args)));
   const log = (level) => (...a) => logs.push({ level, message: a.map((x) => (typeof x === 'string' ? x : JSON.stringify(x))).join(' ') });
 
@@ -428,6 +499,10 @@ async function createHost(pluginDir, opts = {}) {
       : call('notify', { message: String(message), opts: o || {} })),
     license: Object.freeze({ status: () => call('license.status', {}) }),
     kiosk: Object.freeze({ allow: (userId, allowed) => call('kiosk.allow', { userId, allowed }), list: () => call('kiosk.list', {}) }),
+    actions: Object.freeze({
+      list: (o) => { const x = o && typeof o === 'object' ? o : {}; return call('actions.list', { userId: x.userId, lang: x.lang }); },
+      run: (o) => { const x = o && typeof o === 'object' ? o : {}; return call('actions.run', { userId: x.userId, plugin: x.plugin, id: x.id, lang: x.lang }); },
+    }),
   });
 
   const entry = path.join(pluginDir, manifest.entry);
@@ -436,7 +511,7 @@ async function createHost(pluginDir, opts = {}) {
   const hook = async (name, ...a) => (typeof plugin[name] === 'function' ? wire(await plugin[name](...a.map(wire), gc)) : undefined);
 
   return {
-    manifest, gc, plugin, logs, notifications, fetches, kv, settings, filesDir, kiosk,
+    manifest, gc, plugin, logs, notifications, fetches, kv, settings, filesDir, kiosk, actionRuns,
     start: () => hook('start'),
     stop: () => hook('stop'),
     tick: () => hook('tick'),

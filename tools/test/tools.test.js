@@ -121,6 +121,59 @@ test('mock host kiosk users: needs permissions.kiosk, never an administrator or 
   }
 });
 
+test('mock host plugin actions: needs permissions.actions, checked like the host, other plugins only, 60 runs per hour', async () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'actions-plugin-'));
+  const write = (permissions) => fs.writeFileSync(path.join(tmp, 'plugin.json'), JSON.stringify({ id: 'actions-test', name: 'A', version: '1.0.0', entry: 'server/index.js', permissions }));
+  const users = [{ id: 1, name: 'admin', role: 'admin' }, { id: 2, name: 'Anna', role: 'user' }, { id: 3, name: 'Alt', role: 'user', disabled: true }];
+  const seen = [];
+  const actions = [
+    { plugin: 'gatecontrol-smarthome', pluginName: 'Smart Home',
+      quickActions: (viewer) => (viewer.id === 2 ? [{ id: 'scene:evening', title: 'Abend', icon: 'M3 3h18', confirm: true }, { id: 'light:1', title: 'Flur', kind: 'toggle', state: 'off' }] : []),
+      runQuickAction: (viewer, id) => { seen.push([viewer, id]); if (id === 'light:1') throw new Error('boom'); return { ok: true, message: 'Szene gestartet' }; } },
+    { plugin: 'actions-test', actions: [{ id: 'own', title: 'Own' }] },
+  ];
+  try {
+    fs.mkdirSync(path.join(tmp, 'server'));
+    fs.writeFileSync(path.join(tmp, 'server', 'index.js'), 'module.exports = {};');
+    write({ users: true, actions: true });
+    const host = await createHost(tmp, { users, actions });
+    try {
+      assert.deepEqual(await host.gc.actions.list({ userId: 2, lang: 'de' }), [
+        { plugin: 'gatecontrol-smarthome', pluginName: 'Smart Home', id: 'scene:evening', title: 'Abend', subtitle: null, kind: 'button', state: null },
+        { plugin: 'gatecontrol-smarthome', pluginName: 'Smart Home', id: 'light:1', title: 'Flur', subtitle: null, kind: 'toggle', state: 'off' },
+      ], 'no icon / confirm, never the caller itself');
+      assert.deepEqual(await host.gc.actions.list({ userId: 1 }), []);
+      assert.deepEqual(await host.gc.actions.run({ userId: 2, plugin: 'gatecontrol-smarthome', id: 'scene:evening' }), { ok: true, message: 'Szene gestartet', state: null });
+      assert.deepEqual(seen[0][0], { id: 2, name: 'Anna', role: 'user', portal: true, loggedIn: true, automation: true, via: 'actions-test' });
+      assert.deepEqual(await host.gc.actions.run({ userId: 2, plugin: 'gatecontrol-smarthome', id: 'light:1' }), { ok: false, message: null, state: null, error: 'plugin_error' });
+      assert.deepEqual(await host.gc.actions.run({ userId: 1, plugin: 'gatecontrol-smarthome', id: 'scene:evening' }), { ok: false, message: null, state: null, error: 'not_found' }, 'not listed for that user');
+      assert.deepEqual(await host.gc.actions.run({ userId: 2, plugin: 'gatecontrol-nothing', id: 'x' }), { ok: false, message: null, state: null, error: 'not_found' });
+      for (const bad of [{ userId: '2', plugin: 'gatecontrol-smarthome', id: 'x' }, { userId: 3, plugin: 'gatecontrol-smarthome', id: 'x' }, { userId: 9, plugin: 'gatecontrol-smarthome', id: 'x' },
+        { userId: 2, plugin: 'actions-test', id: 'own' }, { userId: 2, plugin: 'Bad_Id', id: 'x' }, { userId: 2, plugin: 'gatecontrol-smarthome', id: 'bad id' }, { userId: 2, plugin: 'gatecontrol-smarthome', id: 'x', lang: 'fr' }]) {
+        await assert.rejects(host.gc.actions.run(bad), { code: 'ERR_INVALID' }, JSON.stringify(bad));
+      }
+      await assert.rejects(host.gc.actions.list({ userId: 3 }), { code: 'ERR_INVALID' });
+      assert.equal(host.actionRuns.length, 4);
+      for (let i = 4; i < 60; i++) await host.gc.actions.run({ userId: 2, plugin: 'gatecontrol-smarthome', id: 'scene:evening' });
+      await assert.rejects(host.gc.actions.run({ userId: 2, plugin: 'gatecontrol-smarthome', id: 'scene:evening' }), { code: 'ERR_RATE_LIMIT' });
+    } finally {
+      await host.close();
+    }
+    write({ users: true });
+    const without = await createHost(tmp, { users, actions });
+    try {
+      await assert.rejects(without.gc.actions.list({ userId: 2 }), { code: 'ERR_ACTIONS_DENIED' });
+      await assert.rejects(without.gc.actions.run({ userId: 2, plugin: 'gatecontrol-smarthome', id: 'scene:evening' }), { code: 'ERR_ACTIONS_DENIED' });
+    } finally {
+      await without.close();
+    }
+    write({ actions: 'yes' });
+    await assert.rejects(createHost(tmp, { users }), { code: 'ERR_INVALID' });
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
 test('catalog keeps every version and picks the latest stable one', () => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'catalog-'));
   try {
