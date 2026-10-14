@@ -13,6 +13,8 @@
 //     POST /subscriptions   PUT|DELETE /subscriptions/:id   POST /subscriptions/:id/refresh
 //     GET  /subscriptions/:id/events
 //     POST /test/waste · /test/calendar   a sample reminder to the requesting administrator
+//   app API     (the GateControl app, req.user.app; GateControl ≥ 1.164.0 permissions.app)
+//     GET  /app/events?from=YYYY-MM-DD&to=YYYY-MM-DD   the caller's events and pickups (≤ 62 days)
 //   portal API  (the identified portal viewer)
 //     GET  /portal/waste      the plans this person sees (read-only, also for device trust)
 //     GET  /portal/calendar   the person's calendars — details only after a real login,
@@ -38,7 +40,10 @@ const format = require('./format');
 const tz = require('./tz');
 const texts = require('./texts.json');
 
+const crypto = require('node:crypto');
+
 const DAY = 86400000;
+const APP_MAX_DAYS = 62;
 
 function t(lang, key, params) {
   const l = lang === 'en' ? 'en' : 'de';
@@ -483,6 +488,70 @@ async function portalRoute(req, gc, seg, cfg) {
   throw fail('NOT_FOUND');
 }
 
+// ─── App (GateControl app, permissions.app) ─────
+
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * GET /app/events?from=&to= — the caller's calendar events and waste pickups
+ * between two local dates (inclusive, at most 62 days), with the same
+ * visibility as the portal: calendars assigned to the person, plans for
+ * everyone or for the person; a switched-off area answers with an empty list.
+ *   { events: [{ id, title, date, time, endTime, allDay, calendar: { id, name, color }, endDate, location }],
+ *     waste:  [{ date, kinds: [name], color, plan: { id, name }, fractions: [{ name, type, color }] }] }
+ */
+async function appEvents(gc, user, query, cfg, now) {
+  const q = query || {};
+  const today = tz.localDate(now, cfg.tz);
+  const from = q.from == null || q.from === '' ? today : String(q.from);
+  const to = q.to == null || q.to === '' ? tz.addDays(from, 31) : String(q.to);
+  if (!DATE_RE.test(from) || !DATE_RE.test(to) || !tz.parseDate(from) || !tz.parseDate(to) || to < from || tz.diffDays(from, to) > APP_MAX_DAYS) throw fail('INVALID');
+  const events = [];
+  if (cfg.calendarEnabled) {
+    const subs = await visibleSubs(gc, user.id);
+    const byId = new Map(subs.map((s) => [s.id, s]));
+    const startMs = tz.toUtc({ ...tz.parseDate(from) }, cfg.tz);
+    const endMs = tz.toUtc({ ...tz.parseDate(tz.addDays(to, 1)) }, cfg.tz);
+    for (const e of await store.eventsBetween(gc, subs.map((s) => s.id), startMs, endMs, 2000)) {
+      const s = byId.get(e.sub_id);
+      const lastDay = e.all_day && e.end_date ? tz.addDays(e.end_date, -1) : (e.all_day ? e.date : tz.localDate(Math.max(e.start_ms, e.end_ms - 1), cfg.tz));
+      events.push({
+        id: `${e.sub_id}:${crypto.createHash('sha1').update(String(e.ikey)).digest('hex').slice(0, 16)}`,
+        title: e.title, date: e.date,
+        time: e.all_day ? null : format.time(e.start_ms, cfg.tz),
+        endTime: e.all_day || e.end_ms <= e.start_ms ? null : format.time(e.end_ms, cfg.tz),
+        allDay: e.all_day,
+        calendar: { id: s.id, name: s.name, color: s.color },
+        endDate: lastDay > e.date ? lastDay : null,
+        location: e.location || null,
+      });
+    }
+  }
+  const waste = [];
+  if (cfg.wasteEnabled) {
+    const plans = await visiblePlans(gc, user.id);
+    const want = new Map(plans.map((p) => [p.id, p]));
+    const byKey = new Map();
+    for (const r of await store.datesBetween(gc, null, from, to)) {
+      if (!want.has(r.plan_id) || r.hidden) continue;
+      const key = `${r.plan_id}|${r.date}`;
+      let day = byKey.get(key);
+      if (!day) {
+        const p = want.get(r.plan_id);
+        day = { date: r.date, kinds: [], color: null, plan: { id: p.id, name: p.name }, fractions: [] };
+        byKey.set(key, day);
+        waste.push(day);
+      }
+      const f = fractions.present({ id: r.fraction_id, source_name: r.source_name, type: r.type, name: r.name, color: r.color || null, hidden: r.hidden });
+      day.kinds.push(f.name);
+      day.fractions.push({ name: f.name, type: f.type, color: f.color });
+      if (!day.color) day.color = f.color;
+    }
+    waste.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : a.plan.id - b.plan.id));
+  }
+  return { events, waste };
+}
+
 // ─── Portal Start tiles and search (declarative; the host renders them) ──
 
 const ICON_WASTE = 'M4 7h16M10 11v6M14 11v6M5 7l1 13h12l1-13M9 7V4h6v3';
@@ -533,12 +602,18 @@ module.exports = {
       const seg = String(req.path || '/').split('/').filter(Boolean);
       if (!seg.length) throw fail('NOT_FOUND');
       const cfg = { ...(await config.load(gc)), uiLang: lang === 'en' ? 'en' : 'de' };
+      if (seg[0] === 'app') {
+        // the GateControl app only (the token owner as viewer, app: true)
+        if (!req.user || !Number.isInteger(req.user.id) || req.user.app !== true) throw fail('FORBIDDEN');
+        if (req.method !== 'GET' || seg.length !== 2 || seg[1] !== 'events') throw fail('NOT_FOUND');
+        return { json: { ok: true, ...(await appEvents(gc, req.user, req.query, cfg, Date.now())) } };
+      }
       if (seg[0] === 'portal') {
         if (!req.user || !Number.isInteger(req.user.id)) throw fail('FORBIDDEN');
         return await portalRoute(req, gc, seg, cfg);
       }
-      // admin API: administrators only, never a portal viewer
-      if (!req.user || req.user.portal || req.user.role !== 'admin') throw fail('FORBIDDEN');
+      // admin API: administrators only, never a portal or app viewer
+      if (!req.user || req.user.portal || req.user.app || req.user.role !== 'admin') throw fail('FORBIDDEN');
       return await adminRoute(req, gc, seg, cfg);
     } catch (e) {
       if (!ERRORS[e && e.code]) gc.log.warn('request failed', req.method, String(req.path || '').split('/').slice(0, 3).join('/'), (e && e.code) || 'error');

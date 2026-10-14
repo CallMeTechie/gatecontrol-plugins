@@ -2,6 +2,18 @@
 
 Müllabfuhr und Kalender des Haushalts als GateControl-Plugin.
 
+## 1.2.0
+- **Termine und Abfuhrtermine für die GateControl-App** (`permissions.app`, ohne eigenen
+  App-Tab): `GET app/events?from=YYYY-MM-DD&to=YYYY-MM-DD` (höchstens 62 Tage, Vorgabe heute
+  + 31 Tage) liefert der App die Termine der Kalender, die der Person zugeordnet sind, und die
+  Abfuhrtermine der Pläne, die sie sieht – dieselbe Sichtbarkeit wie im Portal; ein
+  abgeschalteter Bereich liefert eine leere Liste. Antwort `{ ok, events: [{ id, title, date,
+  time, endTime, allDay, calendar: { id, name, color }, endDate, location }], waste: [{ date,
+  kinds, color, plan: { id, name }, fractions: [{ name, type, color }] }] }` (Zeiten in der
+  Zeitzone des Plugins). Nur für Aufrufe aus der App (`req.user.app`), sonst `403 FORBIDDEN`.
+  Die Familie-App zeigt diese Termine in ihrer Terminübersicht mit der Kalenderfarbe.
+- Braucht GateControl 1.164.0 (Berechtigung „Daten für die GateControl-App bereitstellen“).
+
 ## 1.1.0
 - **Erinnerung je Abfuhrplan:** im Dialog „Abfuhrplan hinzufügen/bearbeiten“ gibt es den
   Abschnitt „Erinnerung“: *Keine*, *Am Abholtag*, *1 Tag vorher* (Vorgabe), *2 Tage vorher*
