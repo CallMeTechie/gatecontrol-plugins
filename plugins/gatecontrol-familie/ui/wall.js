@@ -3,8 +3,8 @@
    7 days), today's tasks with a chip per person (tap = done for that person)
    and the open items of one shopping list (tap = bought, field = add).
    GET wall every 60 s; dark from 21:00 to 06:00 (server's local time); a
-   small pixel shift every few minutes against burn-in. Device trust only
-   (no login): read-only. */
+   small pixel shift every few minutes against burn-in. A paired kiosk
+   device or a portal login writes; device trust only (no login): read-only. */
 (function () {
   'use strict';
   var A = window.FA, T = A.T, $ = A.$, el = A.el, CTX = A.CTX;

@@ -113,8 +113,11 @@
   // ── wall tablet ───────────────────────────────────────────────────────────
   function renderWall() {
     var walls = data.members.filter(function (m) { return m.role === 'wall'; });
+    // an administrator account cannot be paired as a kiosk device (GateControl refuses it)
+    var admins = walls.filter(function (m) { return m.gcRole === 'admin'; });
     $('#fa-wall-who').textContent = walls.length
       ? T('wallcfg.accounts', { names: walls.map(function (m) { return m.name; }).join(', ') }) + (data.modules.wall ? '' : ' ' + T('wallcfg.module_off'))
+        + (admins.length ? ' ' + T('wallcfg.admin_account', { names: admins.map(function (m) { return m.name; }).join(', ') }) : '')
       : T('wallcfg.none');
     var sel = A.clear($('#fa-wall-list'));
     sel.appendChild(el('option', { value: '', text: T('wallcfg.list_first') }));

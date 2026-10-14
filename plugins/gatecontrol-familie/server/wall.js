@@ -15,8 +15,9 @@
 // It may read me / wall / dates / rides / tasks / shopping, tick tasks off
 // for the person whose task it is and add / check shopping items — nothing
 // else (403 forbidden): no locating, SOS, places, emergency card, overview,
-// no editing of tasks, dates or rides. Writes need a real portal login like
-// every portal write (device trust reads only).
+// no editing of tasks, dates or rides. Writes need a real portal login or a
+// paired kiosk device (req.user.kiosk, 1.1.1 — server/kiosk.js); device
+// trust only reads ("Nur lesen").
 
 const tz = require('./tz');
 const format = require('./format');

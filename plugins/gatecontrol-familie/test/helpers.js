@@ -49,15 +49,18 @@ function startClock(at = T0) {
 
 const app = (u) => ({ ...u, portal: true, loggedIn: true, app: true });
 const portal = (u, loggedIn = true) => ({ ...u, portal: true, loggedIn });
+/** A paired kiosk device (GateControl ≥ 1.165.0): loggedIn true plus kiosk true. */
+const kioskViewer = (u, loggedIn = true) => ({ ...u, portal: true, loggedIn, kiosk: true });
 
 /**
- * A host with the users above; family: true adds the family through the admin API.
+ * A host with the users above (o.users replaces them; o.kiosk pre-fills the host's kiosk users);
+ * family: true adds the family through the admin API.
  * fn(host, ctx) with ctx = { clock, call(user, method, path, body, query), admin(method, path, body, query) }
  */
 async function withFamily(opts, fn) {
   const o = opts || {};
   const clock = startClock(o.at || T0);
-  const host = await createHost(DIR, { users: USERS, settings: { timezone: BERLIN, ...(o.settings || {}) }, notifyFail: o.notifyFail });
+  const host = await createHost(DIR, { users: o.users || USERS, settings: { timezone: BERLIN, ...(o.settings || {}) }, notifyFail: o.notifyFail, kiosk: o.kiosk });
   await host.start();
   const call = (user, method, p, body, query) => host.request({ method, path: p, body: body === undefined ? null : body, query: query || {}, user, lang: o.lang || 'de' });
   const admin = (method, p, body, query) => call(ADMIN, method, '/admin/' + p.replace(/^\//, ''), body, query);
@@ -87,5 +90,5 @@ function pushes(host, type, from = 0) {
 }
 
 module.exports = {
-  DIR, BERLIN, ADMIN, ANNA, MARC, LENA, TIM, OMA, KUECHE, USERS, T0, MIN, HOUR, DAY, birth, startClock, app, portal, withFamily, pushes,
+  DIR, BERLIN, ADMIN, ANNA, MARC, LENA, TIM, OMA, KUECHE, USERS, T0, MIN, HOUR, DAY, birth, startClock, app, portal, kioskViewer, withFamily, pushes,
 };

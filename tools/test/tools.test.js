@@ -83,6 +83,44 @@ test('mock host quick actions: checked like the host, run only for an id listed 
   }
 });
 
+test('mock host kiosk users: needs permissions.kiosk, never an administrator or a disabled user', async () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'kiosk-plugin-'));
+  const write = (permissions) => fs.writeFileSync(path.join(tmp, 'plugin.json'), JSON.stringify({ id: 'kiosk-test', name: 'K', version: '1.0.0', entry: 'server/index.js', permissions }));
+  const users = [{ id: 1, name: 'admin', role: 'admin' }, { id: 2, name: 'Küche', role: 'user' }, { id: 3, name: 'Alt', role: 'user', disabled: true }];
+  try {
+    fs.mkdirSync(path.join(tmp, 'server'));
+    fs.writeFileSync(path.join(tmp, 'server', 'index.js'), 'module.exports = {};');
+    write({ users: true, kiosk: true });
+    const host = await createHost(tmp, { users, kiosk: [9] });
+    try {
+      assert.deepEqual(await host.gc.kiosk.list(), [9]);
+      await host.gc.kiosk.allow(2, true);
+      await host.gc.kiosk.allow(2, true);
+      assert.deepEqual(await host.gc.kiosk.list(), [2, 9]);
+      assert.deepEqual(await host.gc.users.list(), users.slice(0, 2).map(({ id, name, role }) => ({ id, name, role })), 'disabled accounts are not listed');
+      for (const [id, allowed] of [[1, true], [3, true], [4, true], [2, 'yes'], ['2', true], [0, false]]) {
+        await assert.rejects(host.gc.kiosk.allow(id, allowed), { code: 'ERR_INVALID' }, `${id} ${allowed}`);
+      }
+      await host.gc.kiosk.allow(2, false);
+      assert.deepEqual([...host.kiosk], [9]);
+    } finally {
+      await host.close();
+    }
+    write({ storage: true });
+    const without = await createHost(tmp, { users });
+    try {
+      await assert.rejects(without.gc.kiosk.allow(2, true), { code: 'ERR_KIOSK_DENIED' });
+      await assert.rejects(without.gc.kiosk.list(), { code: 'ERR_KIOSK_DENIED' });
+    } finally {
+      await without.close();
+    }
+    write({ kiosk: 'yes' });
+    await assert.rejects(createHost(tmp, { users }), { code: 'ERR_INVALID' });
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
 test('catalog keeps every version and picks the latest stable one', () => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'catalog-'));
   try {
