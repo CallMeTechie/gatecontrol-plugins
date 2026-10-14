@@ -4,13 +4,13 @@
     "de": "Familie",
     "en": "Family"
   },
-  "version": "1.1.1",
+  "version": "1.2.0",
   "publisher": "CallMeTechie",
   "description": {
-    "de": "Die Familie in der GateControl-App und im Portal: gemeinsame Einkaufslisten (offline nutzbar), Aufgaben mit Erinnerung und Sternen für Kinder, Termine und Geburtstage, Abholen & Fahrten („Wer holt Tim?“), Notfall-Karte, Kinder orten auf Anfrage (das Kind sieht jede Abfrage, endet mit 18), „Bin angekommen“ und SOS, Orts-Erinnerungen und ein Dashboard für ein Wand-Tablet. Alles bleibt auf dem eigenen Server.",
-    "en": "The family in the GateControl app and the portal: shared shopping lists (usable offline), tasks with reminders and stars for children, dates and birthdays, pick-ups & rides (“Who picks up Tim?”), an emergency card, locating children on request (the child sees every request, ends at 18), “I’ve arrived” and SOS, place reminders and a dashboard for a wall tablet. Everything stays on your own server."
+    "de": "Die Familie in der GateControl-App und im Portal: gemeinsame Einkaufslisten (offline nutzbar), Aufgaben mit Erinnerung und Sternen für Kinder, Termine und Geburtstage, Abholen & Fahrten („Wer holt Tim?“), Notfall-Karte, Kinder orten auf Anfrage (das Kind sieht jede Abfrage, endet mit 18), „Bin angekommen“ und SOS, Orts-Erinnerungen, Taschengeld (nur Buchhaltung), Wunschlisten, Haushaltsbuch, Pinnwand & Packlisten, Essensplan, Anwesenheit mit Smart-Home-Regeln (nur mit Zustimmung) und ein Dashboard für ein Wand-Tablet. Alles bleibt auf dem eigenen Server.",
+    "en": "The family in the GateControl app and the portal: shared shopping lists (usable offline), tasks with reminders and stars for children, dates and birthdays, pick-ups & rides (“Who picks up Tim?”), an emergency card, locating children on request (the child sees every request, ends at 18), “I’ve arrived” and SOS, place reminders, pocket money (bookkeeping only), wishlists, a household book, pinboard & packing lists, a meal plan, presence with smart home rules (only with consent) and a dashboard for a wall tablet. Everything stays on your own server."
   },
-  "gatecontrol": ">=1.165.0",
+  "gatecontrol": ">=1.166.0",
   "entry": "server/index.js",
   "permissions": {
     "storage": true,
@@ -23,7 +23,8 @@
     "background": {
       "intervalSeconds": 60
     },
-    "kiosk": true
+    "kiosk": true,
+    "actions": true
   },
   "ui": {
     "nav": {
@@ -46,6 +47,13 @@
         "title": {
           "de": "Funktionen",
           "en": "Features"
+        }
+      },
+      {
+        "id": "presence",
+        "title": {
+          "de": "Anwesenheit & Smart Home",
+          "en": "Presence & smart home"
         }
       },
       {
@@ -92,6 +100,32 @@
           }
         ],
         "default": "de"
+      },
+      {
+        "key": "lat",
+        "type": "text",
+        "label": {
+          "de": "Breitengrad des Zuhauses",
+          "en": "Latitude of the home"
+        },
+        "help": {
+          "de": "Nur für die Regel-Bedingung „nach Sonnenuntergang“ (Anwesenheit & Smart Home), z. B. 50.94. Leer = Bedingung wird ignoriert.",
+          "en": "Only for the rule condition “after sunset” (presence & smart home), e.g. 50.94. Empty = the condition is ignored."
+        },
+        "default": ""
+      },
+      {
+        "key": "lon",
+        "type": "text",
+        "label": {
+          "de": "Längengrad des Zuhauses",
+          "en": "Longitude of the home"
+        },
+        "help": {
+          "de": "z. B. 6.96 – zusammen mit dem Breitengrad.",
+          "en": "e.g. 6.96 – together with the latitude."
+        },
+        "default": ""
       }
     ],
     "portal": {
@@ -177,6 +211,22 @@
       "label": {
         "de": "Abholen & Fahrten",
         "en": "Pick-ups & rides"
+      },
+      "default": true
+    },
+    {
+      "id": "allowance",
+      "label": {
+        "de": "Taschengeld",
+        "en": "Pocket money"
+      },
+      "default": true
+    },
+    {
+      "id": "presence",
+      "label": {
+        "de": "Anwesenheit & Smart Home",
+        "en": "Presence & smart home"
       },
       "default": true
     }

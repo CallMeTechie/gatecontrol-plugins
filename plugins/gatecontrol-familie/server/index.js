@@ -7,12 +7,16 @@
 //   admin API  admin/* (administrators on the admin pages)  — see server/admin.js
 //
 // Modules (page "Funktionen", settings mod_*): shopping, tasks, stars, dates,
-// locate, arrival_sos, places, rides, emergency, wall — a module that is off
-// answers 403 module_off, sends nothing and keeps its data.
+// locate, arrival_sos, places, rides, emergency, wall; 1.2.0 allowance,
+// wishes, expenses, board, meals, presence — a module that is off answers 403
+// module_off, sends nothing and keeps its data.
 //
 // Background (every minute): task, date and ride reminders, open rides,
-// the 14th-birthday hint, expiry of locate requests, retention (coordinates
-// 7 days, log rows 90 days, shopping tombstones and rides 30 days).
+// the 14th-birthday hint, expiry of locate requests, pocket money payouts
+// (07:00 on the payout day), the grace time of the presence rule "all away"
+// (quick actions of other plugins through gc.actions, permissions.actions,
+// GateControl ≥ 1.166.0), retention (coordinates 7 days, log rows 90 days,
+// shopping tombstones and rides 30 days, expired pinboard notes, meals 90 days).
 //
 // The portal tab of a member with the role 'wall' is the wall view (a fixed
 // tablet, module wall) — see server/wall.js. Wall members are the plugin's
@@ -36,6 +40,10 @@ const places = require('./places');
 const rides = require('./rides');
 const notices = require('./notices');
 const kiosk = require('./kiosk');
+const allowance = require('./allowance');
+const board = require('./board');
+const meals = require('./meals');
+const presence = require('./presence');
 const texts = require('./texts.json');
 const { STATUS, isKnown } = require('./util');
 
@@ -92,6 +100,15 @@ async function background(gc, now) {
   if (cfg.modules.dates) await step('dates', () => dates.remind(gc, fam, cfg, now, pushes));
   if (cfg.modules.rides) await step('rides', () => rides.remind(gc, fam, cfg, now, pushes));
   if (cfg.modules.locate) await step('age14', () => members.ageHints(gc, fam, cfg, now, pushes));
+  if (cfg.modules.allowance) await step('allowance', () => allowance.payout(gc, fam, cfg, now, pushes));
+  if (cfg.modules.board) await step('board', () => board.purge(gc, now));
+  if (cfg.modules.presence) {
+    const runs = [];
+    await step('presence', () => presence.tick(gc, fam, cfg, now, runs));
+    if (runs.length) {
+      try { await presence.execute(gc, fam, cfg, now, runs, pushes); } catch (e) { gc.log.warn('background step failed', 'presence_run', (e && e.code) || (e && e.message) || 'error'); }
+    }
+  }
   if (now - state.lastPurge >= PURGE_EVERY_MS) {
     state.lastPurge = now;
     await step('purge', async () => {
@@ -103,6 +120,8 @@ async function background(gc, now) {
       await dates.purge(gc, cfg, now);
       await rides.purge(gc, cfg, now);
       await notices.purge(gc, now);
+      await meals.purge(gc, cfg, now);
+      await presence.purge(gc, now);
     });
   }
   await push.flush(gc, pushes);

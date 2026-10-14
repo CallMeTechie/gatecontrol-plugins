@@ -68,3 +68,34 @@
 .fa-p-contact-edit .form-input{flex:1 1 0;min-width:0}
 .fa-p-ride .fa-p-date-when{width:96px}
 .fa-p-em>.btn{align-self:flex-start}
+/* 1.2.0: pinboard, checklists, meal plan, wishlists, pocket money, household book, presence */
+.fa-notes{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px}
+.fa-bnote{position:relative;display:flex;flex-direction:column;gap:6px;padding:12px;border-radius:12px;font-size:14px;cursor:pointer;min-height:70px;--n:#E9C46A;background:color-mix(in srgb,var(--n) 22%,var(--surface));border:1px solid color-mix(in srgb,var(--n) 45%,var(--line))}
+.fa-bnote.is-green{--n:#2A9D8F}.fa-bnote.is-blue{--n:#457B9D}.fa-bnote.is-pink{--n:#E5989B}.fa-bnote.is-grey{--n:#8D99AE}
+.fa-bnote-text{white-space:pre-line;overflow-wrap:anywhere;font-weight:600}
+.fa-bnote-pin{position:absolute;top:8px;right:8px;color:var(--muted)}
+.fa-checklists{display:flex;flex-direction:column;gap:8px}
+.fa-checklist{border:1px solid var(--line);border-radius:12px;padding:8px 12px;background:var(--surface-2)}
+.fa-checklist summary{cursor:pointer;font-size:14px}
+.fa-checklist .fa-p-add{margin-top:6px}
+.fa-checklist .fa-p-foot{margin-top:8px}
+.fa-meal-days{display:flex;flex-direction:column;gap:6px}
+.fa-meal-day{display:grid;grid-template-columns:90px 1fr 1fr;gap:8px;align-items:stretch}
+.fa-meal-day.is-today .fa-p-date-when{color:var(--accent);font-weight:800}
+.fa-meal{display:flex;flex-direction:column;gap:2px;padding:8px 10px;border-radius:10px;background:var(--surface-2);border:1px solid var(--line);font-size:13px;min-width:0}
+.fa-meal.is-empty b{color:var(--muted)}
+.fa-meal .btn{align-self:flex-start;margin-top:4px}
+.fa-wish-list{display:flex;flex-direction:column;gap:8px}
+.fa-wish{display:flex;gap:8px;align-items:center;padding:10px;border-radius:12px;background:var(--surface-2);border:1px solid var(--line);flex-wrap:wrap}
+.fa-accounts{display:flex;flex-direction:column;gap:12px}
+.fa-account{display:flex;flex-direction:column;gap:6px;padding:12px;border-radius:14px;border:1px solid var(--line);background:var(--surface-2)}
+.fa-balance{font-size:22px;font-weight:800}
+.fa-exp-total b{font-size:26px;font-weight:800}
+.fa-cat{display:grid;grid-template-columns:110px 1fr 90px;gap:8px;align-items:center;font-size:13px;margin-top:6px}
+.fa-cat-bar{height:10px;border-radius:5px;background:var(--surface-2);overflow:hidden}
+.fa-bar{display:block;height:100%;background:var(--accent);border-radius:5px}
+.fa-cat-sum{text-align:right;font-weight:700}
+.fa-settle{display:flex;flex-direction:column;gap:4px;align-items:flex-start;margin:12px 0;padding:12px;border-radius:12px;background:color-mix(in srgb,var(--warn) 9%,var(--surface));border:1px solid color-mix(in srgb,var(--warn) 35%,var(--line))}
+.fa-settle.is-done{background:color-mix(in srgb,var(--good) 10%,var(--surface));border-color:color-mix(in srgb,var(--good) 30%,var(--line))}
+.fa-pres-log summary{cursor:pointer;margin-top:8px}
+@media (max-width:640px){.fa-meal-day{grid-template-columns:1fr}.fa-cat{grid-template-columns:90px 1fr 80px}}

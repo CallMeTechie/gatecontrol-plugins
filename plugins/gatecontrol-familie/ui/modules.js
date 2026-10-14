@@ -8,13 +8,14 @@
   var data = null;
 
   var GROUPS = [
-    ['group.everyday', [['shopping', 'all'], ['tasks', 'all'], ['dates', 'all']]],
+    ['group.everyday', [['shopping', 'all'], ['tasks', 'all'], ['dates', 'all'], ['board', 'all'], ['meals', 'all']]],
     ['group.out', [['places', 'all'], ['rides', 'all']]],
     ['group.kids', [['locate', 'parents'], ['arrival_sos', 'children'], ['stars', 'children'], ['emergency', 'all']]],
-    ['group.home', [['wall', 'none']]],
+    ['group.money', [['allowance', 'family'], ['wishes', 'all'], ['expenses', 'parents']]],
+    ['group.home', [['wall', 'none'], ['presence', 'all']]],
   ];
   // what the app shows (the wall tablet has no app screen)
-  var ORDER = ['shopping', 'tasks', 'stars', 'dates', 'rides', 'emergency', 'locate', 'arrival_sos', 'places'];
+  var ORDER = ['shopping', 'tasks', 'stars', 'dates', 'board', 'meals', 'rides', 'emergency', 'locate', 'arrival_sos', 'places', 'allowance', 'wishes', 'expenses', 'presence'];
 
   function ageHint(k) { return k.role === 'child' && !k.adult && k.age != null && k.age >= 14 && k.locateMode === 'auto'; }
   function family() { return data.members.filter(function (m) { return m.role !== 'wall'; }); }
@@ -84,6 +85,7 @@
       if (!mod[key]) return;
       if (key === 'stars' && !mod.tasks) return;
       if (key === 'locate' && child && (m.adult || m.locateMode === 'off')) return;
+      if (key === 'expenses' && child) return;
       out.push(T('card.' + key + (child ? '_child' : '_parent')));
     });
     return out;

@@ -52,3 +52,7 @@ body{padding:0}
 .fa-w-add-btn{width:60px;height:60px;flex:none;border-radius:30px;border:0;background:var(--w-accent);color:#fff;font:800 28px var(--w-font);cursor:pointer}
 .fa-w-add-btn:disabled{opacity:.5;cursor:default}
 .fa-w-empty{color:var(--w-muted);font-size:16px;margin:0}
+.fa-w-person{position:relative}
+.fa-w-person.is-home .fa-w-avatar{box-shadow:0 0 0 3px var(--w-accent)}
+.fa-w-person.is-away .fa-w-avatar{opacity:.45}
+.fa-w-person.is-away span:last-child{color:var(--w-muted)}

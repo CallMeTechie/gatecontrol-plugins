@@ -1,0 +1,32 @@
+<main class="fa-page">
+  <p class="fa-intro">{{t:presence.intro}}</p>
+  <div class="banner banner-warn" id="fa-pr-banner" role="status" hidden></div>
+
+  <section class="fa-card" aria-labelledby="fa-pr-home-h">
+    <h2 class="fa-card-title" id="fa-pr-home-h">{{t:presence.now_home}}</h2>
+    <div class="fa-pres-grid" id="fa-pr-people"></div>
+  </section>
+
+  <section class="fa-card fa-flush" aria-labelledby="fa-pr-rules-h">
+    <div class="fa-card-head">
+      <h2 class="fa-card-title" id="fa-pr-rules-h">{{t:rule.title}}</h2>
+      <button class="btn btn-primary" type="button" id="fa-pr-add">{{t:rule.add_button}}</button>
+    </div>
+    <div class="fa-rules" id="fa-pr-rules"></div>
+  </section>
+
+  <section class="fa-card fa-note" aria-labelledby="fa-pr-note-h">
+    <h2 class="fa-card-title" id="fa-pr-note-h">{{t:presence.note_title}}</h2>
+    <ul>
+      <li>{{t:presence.note_unknown}}</li>
+      <li>{{t:presence.note_once}}</li>
+      <li>{{t:presence.note_owner}}</li>
+      <li id="fa-pr-sun"></li>
+    </ul>
+  </section>
+
+  <section class="fa-card fa-flush" aria-labelledby="fa-pr-log-h">
+    <div class="fa-card-head"><h2 class="fa-card-title" id="fa-pr-log-h">{{t:rule.log_title}}</h2></div>
+    <div id="fa-pr-log"></div>
+  </section>
+</main>
