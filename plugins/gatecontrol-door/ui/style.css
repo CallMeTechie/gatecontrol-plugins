@@ -28,6 +28,7 @@ body{padding:2px 2px 24px}
 .dr-item-title{font-weight:700;font-size:15px}
 .dr-item-sub{font-size:12px;color:var(--muted)}
 .dr-diag{font-size:11px;overflow-wrap:anywhere;font-variant-numeric:tabular-nums}
+.dr-cloud-hint{margin-top:6px}
 .dr-actions{display:flex;gap:8px;flex-wrap:wrap}
 .dr-badge{display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px;font-weight:700;border:1px solid var(--line-2);color:var(--muted)}
 .dr-badge[data-tone="good"]{color:var(--good);border-color:var(--good)}

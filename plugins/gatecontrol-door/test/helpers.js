@@ -96,9 +96,32 @@ function fakeBridge(devices, { token = BRIDGE_TOKEN } = {}) {
 }
 
 /**
+ * A Nuki Web smartlock as GET /smartlock answers it (the fields the plugin reads, plus a few it must ignore).
+ * o: { type, name, serverState, mode, trigger, lastAction, doorState, battery, updateDate }. updateDate
+ * undefined → the fake cloud fills in "now" on every answer (a live cloud); a string → that (a cloud copy
+ * stuck since then); null → the field is left out.
+ */
+function webEntry(id, state, o = {}) {
+  const d = {
+    smartlockId: id, accountId: 1, type: o.type == null ? 4 : o.type, lmType: 0, authId: 2, name: o.name || 'Haustür', favorite: false,
+    serverState: o.serverState == null ? 0 : o.serverState, adminPinState: 0, virtualDevice: false,
+    creationDate: '2024-03-01T10:00:00.000Z',
+    state: {
+      mode: o.mode == null ? 2 : o.mode, state, trigger: o.trigger == null ? 0 : o.trigger, lastAction: o.lastAction == null ? 1 : o.lastAction,
+      batteryCritical: false, batteryCharging: false, batteryCharge: o.battery == null ? 82 : o.battery, keypadBatteryCritical: false,
+      doorsensorBatteryCritical: false, doorState: o.doorState == null ? 0 : o.doorState, ringToOpenTimer: 0, nightMode: false,
+    },
+  };
+  // key absent → the fake fills in now; null → key present but undefined (JSON leaves it out)
+  if (o.updateDate !== undefined) d.updateDate = o.updateDate === null ? undefined : o.updateDate;
+  return d;
+}
+
+/**
  * A fake of the unofficial Ring API and the Nuki Web API on the internet handler.
  * web.locks: GET /smartlock · web.fresh { smartlockId: lock }: what GET /smartlock/{id} answers
- * (default: the entry of web.locks) — a stale overview vs. the lock read again.
+ * (default: the entry of web.locks) — a stale overview vs. the lock read again. An entry without
+ * `updateDate` (key absent) is answered with updateDate = now (a live cloud copy).
  */
 function fakeCloud() {
   const c = {
@@ -118,11 +141,12 @@ function fakeCloud() {
     const R = c.ring;
     if (u.hostname === 'api.nuki.io') {
       if (h.authorization !== `Bearer ${WEB_TOKEN}`) return { status: 401, body: '' };
-      if (u.pathname === '/smartlock') return { status: 200, body: JSON.stringify(c.web.locks) };
+      const live = (d) => (d && typeof d === 'object' && !('updateDate' in d) ? { ...d, updateDate: new Date().toISOString() } : d);
+      if (u.pathname === '/smartlock') return { status: 200, body: JSON.stringify(c.web.locks.map(live)) };
       const one = /^\/smartlock\/(\d+)$/.exec(u.pathname);
       if (one && (opts.method || 'GET') === 'GET') {
         const d = c.web.fresh[one[1]] || c.web.locks.find((x) => String(x.smartlockId) === one[1]);
-        return d ? { status: 200, body: JSON.stringify(d) } : { status: 404, body: '' };
+        return d ? { status: 200, body: JSON.stringify(live(d)) } : { status: 404, body: '' };
       }
       const m = /^\/smartlock\/(\d+)\/(action|log)$/.exec(u.pathname);
       if (m && m[2] === 'action' && opts.method === 'POST') { c.web.actions.push({ id: m[1], ...opts.json }); return { status: 204, body: '' }; }
@@ -216,5 +240,5 @@ async function ringLogin(ctx) {
 
 module.exports = {
   DIR, ADMIN, ANNA, MARC, LENA, GAST, USERS, BRIDGE_TOKEN, WEB_TOKEN, T0, SEC, MIN, HOUR,
-  app, portal, kiosk, startClock, jpeg, fakeBridge, fakeCloud, withDoor, ringLogin,
+  app, portal, kiosk, startClock, jpeg, fakeBridge, fakeCloud, webEntry, withDoor, ringLogin,
 };

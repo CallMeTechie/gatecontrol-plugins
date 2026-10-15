@@ -28,6 +28,13 @@
 // bridge's /list and Nuki Web's /smartlock can stay on one of them long after
 // the lock has stopped — server/locks.js then asks the lock itself
 // (bridgeLockState / webLock).
+//
+// Nuki Web (1.0.2): GET /smartlock and /smartlock/{id} answer the cloud's
+// copy. `updateDate` (ISO 8601, top level of the smartlock) is when that copy
+// last changed; `serverState` (0 ok, 4 offline, …) top level; `state` holds
+// mode, state, trigger, lastAction, doorState, battery*. A transitional state
+// whose updateDate is older than 60 s cannot be live (a lock moves for a few
+// seconds) — server/locks.js treats it as unclear at once.
 
 const crypto = require('node:crypto');
 const { fail } = require('./util');
@@ -142,6 +149,23 @@ function bridgeRequest(gc, bridge, token, path, params, timeoutMs) {
   });
 }
 
+/**
+ * The raw fields Nuki reported, for the admin diagnostics (1.0.2): only the listed keys, only numbers,
+ * booleans and short strings — never anything else of the answer (no tokens, no names).
+ */
+function rawFields(src, keys) {
+  if (!src || typeof src !== 'object') return null;
+  const out = {};
+  for (const k of keys) {
+    const v = src[k];
+    if (typeof v === 'number' && Number.isFinite(v)) out[k] = v;
+    else if (typeof v === 'boolean') out[k] = v;
+    else if (typeof v === 'string' && v.length <= 40) out[k] = v;
+  }
+  return Object.keys(out).length ? out : null;
+}
+const BRIDGE_RAW = ['mode', 'state', 'stateName', 'doorsensorState', 'doorsensorStateName', 'timestamp'];
+
 /** A bridge state object (/list lastKnownState or /lockState) → our state. */
 function fromBridgeState(deviceType, s) {
   if (!s || typeof s !== 'object') return null;
@@ -152,6 +176,8 @@ function fromBridgeState(deviceType, s) {
     batteryCritical: s.batteryCritical === true,
     batteryPercent: batteryPercent(s.batteryChargeState),
     batteryCharging: s.batteryCharging === true,
+    raw: rawFields(s, BRIDGE_RAW),
+    cloudAt: null,
   };
 }
 
@@ -203,8 +229,22 @@ async function webRequest(gc, token, method, path, json) {
   return body;
 }
 
+/** Nuki Web's updateDate (ISO 8601) → ms, or null. */
+function webDate(v) {
+  if (typeof v !== 'string' || v.length > 40) return null;
+  const t = Date.parse(v);
+  return Number.isFinite(t) ? t : null;
+}
+const WEB_RAW = ['mode', 'state', 'lastAction', 'trigger', 'doorState'];
+
+/**
+ * A Web API smartlock → ours. state.cloudAt: the smartlock's updateDate (when the cloud's copy last
+ * changed — it only gets news from the lock while the lock / its bridge is online); state.raw: the raw
+ * fields mode, state, lastAction, trigger, doorState (from smartlock.state) and serverState, updateDate.
+ */
 function fromWebLock(d) {
   const s = (d && d.state) || {};
+  const raw = { ...(rawFields(s, WEB_RAW) || {}), ...(rawFields(d, ['serverState', 'updateDate']) || {}) };
   return {
     nukiId: String(d.smartlockId), deviceType: Number(d.type), name: typeof d.name === 'string' ? d.name.slice(0, 60) : '',
     // serverState 0 = ok; anything else (4 offline, …) = not reachable through the cloud
@@ -216,6 +256,8 @@ function fromWebLock(d) {
       batteryCritical: s.batteryCritical === true,
       batteryPercent: batteryPercent(s.batteryCharge),
       batteryCharging: s.batteryCharging === true,
+      raw: Object.keys(raw).length ? raw : null,
+      cloudAt: webDate(d.updateDate),
     },
   };
 }
@@ -268,6 +310,6 @@ async function webLog(gc, token, lock, limit = 20) {
 module.exports = {
   TARGET, WEB, SMARTLOCK_TYPES, OPENER, TIMEOUT, LOCK_STATES, OPENER_STATES, DOOR_STATES, TRANSITIONAL,
   isOpener, isTransitional, knownType, supportedActions, actionCode, stateName, doorName, hashAuth, bridgeTs,
-  bridgeList, bridgeLockState, bridgeAction, webList, webLock, webAction, webLog, fromBridgeState, fromWebLock,
+  bridgeList, bridgeLockState, bridgeAction, webList, webLock, webAction, webLog, fromBridgeState, fromWebLock, rawFields, webDate,
   _chains: chains,
 };

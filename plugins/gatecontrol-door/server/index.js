@@ -103,6 +103,12 @@ function qaViewer(user) {
   return null;
 }
 
+/** The shown state as text: "Zustand unklar – zuletzt: …", or only "Zustand unklar" when no stable state was ever seen. */
+function stateLabel(lang, shown) {
+  if (!shown.stale) return t(lang, 'state.' + shown.state);
+  return shown.state === 'unknown' ? t(lang, 'state.unclear') : t(lang, 'state.stale', { state: t(lang, 'state.' + shown.state) });
+}
+
 async function quickActionsFor(gc, user, lang) {
   const kind = qaViewer(user);
   if (!kind) return [];
@@ -113,7 +119,7 @@ async function quickActionsFor(gc, user, lang) {
     if (!level) continue;
     const opener = nuki.isOpener(lock.device_type);
     const shown = locks.displayState(lock, Date.now());
-    const sub = clip(shown.stale ? t(lang, 'state.stale', { state: t(lang, 'state.' + shown.state) }) : t(lang, 'state.' + shown.state), 60) || null;
+    const sub = clip(stateLabel(lang, shown), 60) || null;
     for (const a of lock.actions) {
       if (!rights.atLeast(level, rights.NEEDS[a])) continue;
       if (kind === 'automation' && a === 'open') continue;
@@ -197,7 +203,7 @@ module.exports = {
       const s = lock.state;
       const shown = locks.displayState(lock, Date.now());
       const st = !s.reachable || s.state === 'jammed' ? 'crit' : (shown.stale ? 'warn' : (s.state === 'locked' ? 'good' : (s.state === 'unlocked' || s.state === 'unlatched' ? 'warn' : 'off')));
-      const value = !s.reachable ? t(lang, 'portal.unreachable') : (shown.stale ? t(lang, 'state.stale', { state: t(lang, 'state.' + shown.state) }) : t(lang, 'state.' + shown.state));
+      const value = !s.reachable ? t(lang, 'portal.unreachable') : stateLabel(lang, shown);
       out.push({ title: clip(lock.name, 40), value: clip(value, 40), state: st, icon: shown.state === 'locked' ? ICONS.lock : ICONS.unlock });
     }
     return out.slice(0, 8);

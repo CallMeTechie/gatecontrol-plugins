@@ -60,8 +60,8 @@ Administrator) – **deren** Rechte und Zustimmung gelten hier.
 Das Plugin sperrt nur auf, wenn **alles** stimmt: nur „aufsperren“ (öffnen/Falle nie
 automatisch), Zustimmung „Automatisch aufsperren“ und mindestens „zu-/aufsperren“, Zeitfenster,
 höchstens einmal in 10 Minuten pro Person und Schloss, Schloss erreichbar und zugesperrt (frisch
-abgefragt; ein „in Bewegung“, das seit 3 Minuten nicht endet, gilt als **Zustand unklar** und
-wird abgelehnt), Tür geschlossen (bei Türsensor). Sonst: abgelehnt, Eintrag im Verlauf und Mitteilung
+abgefragt; ein „in Bewegung“, das seit 3 Minuten nicht endet – bei Nuki Web auch eines, dessen
+Cloud-Stand älter als 60 s ist –, gilt als **Zustand unklar** und wird abgelehnt), Tür geschlossen (bei Türsensor). Sonst: abgelehnt, Eintrag im Verlauf und Mitteilung
 „Automatisches Aufsperren abgelehnt: …“ (Thema „Automatisches Aufsperren“). Danach: „Haustür
 automatisch aufgesperrt“ mit „Wieder zusperren“. **Sicherheitsnetz:** meldet der Türsensor in
 3 Minuten kein „offen“, sperrt das Plugin wieder zu („wieder zugesperrt“); ohne Türsensor fragt
@@ -84,15 +84,29 @@ auf …“, „Sperrt zu …“, beim Opener „Summer …“ oder „Startet �
   Minute und Schloss – und übernimmt dessen Antwort. Klappt das nicht, gilt für diese Abfrage
   weiter `/list`.
 * **Nuki Web:** nach ≥ 60 s wird das einzelne Schloss neu gelesen (`GET /smartlock/{id}`),
-  höchstens alle 2 Minuten.
-* **Anzeige:** ist der Zustand nach **3 Minuten** immer noch ein Zwischenzustand, zeigen App und
-  Portal den letzten festen Zustand mit dem Hinweis „Zustand unklar – zuletzt: Zugesperrt“ (API:
-  `stale: true`). Für Sicherheitsentscheidungen zählt das nie: automatisches Aufsperren wird dann
-  abgelehnt („Zustand des Schlosses unklar“).
+  höchstens alle 2 Minuten. Nuki Web liefert die **Kopie der Cloud**; sie bekommt nur Neues, solange
+  das Schloss (bzw. seine Bridge) mit dem Internet verbunden ist. Wann die Cloud ihre Kopie zuletzt
+  geändert hat, steht in `updateDate` des Schlosses. Ist ein Zwischenzustand dort **älter als
+  60 s**, kann er nicht echt sein (ein Schloss bewegt sich nur Sekunden): er gilt sofort als
+  „Zustand unklar“ (ohne 3 Minuten zu warten), und das Schloss wird sofort neu gelesen.
+* **Anzeige:** ist der Zustand nach **3 Minuten** immer noch ein Zwischenzustand (Nuki Web: oder
+  sein Cloud-Stand älter als 60 s), zeigen App, Portal und die Seite „Geräte“ den letzten festen
+  Zustand mit dem Hinweis „Zustand unklar – zuletzt: Zugesperrt“ (API: `stale: true`). Wurde noch
+  nie ein fester Zustand gesehen (z. B. hing die Cloud schon vor dem Update), heißt es nur
+  „Zustand unklar“ (API: `lock: "unknown"`, `stale: true`) – nie „Öffnet …“. Für
+  Sicherheitsentscheidungen zählt das nie: automatisches Aufsperren wird dann abgelehnt („Zustand
+  des Schlosses unklar“).
 * **Diagnose:** die Seite „Geräte“ zeigt pro Schloss die Quelle (Bridge/Nuki Web), den rohen
   Nuki-Code (z. B. 7 = öffnet, 3 = aufgesperrt, 1 = zugesperrt), woher er stammt (`/list`,
   `/lockState`, `/smartlock`, `/smartlock/{id}`), was die Übersicht meldet, wenn es abweicht,
-  und wann zuletzt gelesen wurde. Bitte diese Zeile mitschicken, wenn ein Zustand nicht stimmt.
+  und wann zuletzt gelesen wurde. Darunter die **rohen Felder**: bei Nuki Web `mode`, `state`,
+  `lastAction`, `trigger`, `doorState`, `serverState` (0 = ok, 4 = offline) und der Cloud-Stand
+  aus `updateDate` („Cloud-Stand: vor 3 Std.“); bei der Bridge aus `lastKnownState` bzw.
+  `/lockState` `mode`, `state`, `stateName`, `doorsensorState`, `doorsensorStateName` und
+  `timestamp` (falls vorhanden). Bitte diese Zeilen mitschicken, wenn ein Zustand nicht stimmt.
+* **Hinweis:** gilt ein Zustand aus Nuki Web als unklar, steht beim Schloss: „Nuki Web liefert
+  einen veralteten Zustand. Für zuverlässige Anzeige die Nuki Bridge verwenden oder in der
+  Nuki-App prüfen, ob das Schloss mit dem Internet verbunden ist.“
 
 ### Mitteilungen
 
@@ -149,10 +163,15 @@ working regardless).
 * **Stuck "moving" states:** the bridge's `/list` (its cache) and Nuki Web's `/smartlock` can stay
   on unlocking / locking / unlatching (opener: opening / boot_run). Bridge: after ≥ 30 s the lock
   itself is asked (`/lockState`, at most once per minute per lock); Nuki Web: after ≥ 60 s the
-  lock is read again (`GET /smartlock/{id}`, at most every 2 min). Still moving after 3 min → the
-  last stable state is shown with `stale: true` ("State unclear – last: Locked"); automatic
-  unlock refuses then. The page **Devices** shows per lock the source, the raw Nuki state code,
-  where it came from and when it was last read.
+  lock is read again (`GET /smartlock/{id}`, at most every 2 min). Still moving after 3 min — Nuki
+  Web: or the cloud's copy (`updateDate`) of a moving state older than 60 s, then at once → the
+  last stable state is shown with `stale: true` ("State unclear – last: Locked"; no stable state
+  ever seen: `lock: "unknown"`, "State unclear"); automatic unlock refuses then. The page
+  **Devices** shows per lock the source, the raw Nuki state code, where it came from, when it was
+  last read, the raw fields (Nuki Web: `mode`, `state`, `lastAction`, `trigger`, `doorState`,
+  `serverState`, the cloud's age from `updateDate`; bridge: `mode`, `state`, `stateName`,
+  `doorsensorState`, `doorsensorStateName`, `timestamp`) and, for a stale Nuki Web state, a hint
+  to use the bridge or check the lock's internet connection in the Nuki app.
 * **Privacy:** history (90 days), pictures (1–30 days) and rights stay on your server; tokens are
   encrypted, never logged and never sent to a page or app.
 * **Ring delay:** polled (no push receiving possible for a plugin): about 5–15 s plus up to ~8 s
@@ -197,7 +216,7 @@ Every answer is `{ "ok": true, … }` or `{ "ok": false, "code": "<code>", "erro
   "doorSensor": true,
   "state": {
     "lock": "locked",                     // see "Lock states"
-    "stale": false,                       // true: Nuki has reported a moving state for ≥ 3 min — "lock" is then the last stable state; show "Zustand unklar – zuletzt: …"
+    "stale": false,                       // true: Nuki has reported a moving state for ≥ 3 min (Nuki Web: or from cloud data older than 60 s) — "lock" is then the last stable state ("unknown" if none was seen); show "Zustand unklar – zuletzt: …" ("Zustand unklar" for "unknown")
     "door": "closed",                     // null = no door sensor | "open" | "closed" | "unknown" | "deactivated" | "calibrating" | "uncalibrated" | "removed"
     "batteryCritical": false, "batteryPercent": 80, "batteryCharging": false,   // batteryPercent may be null
     "reachable": true, "updatedAt": "2026-10-14T08:00:00Z"                     // updatedAt may be null
@@ -209,8 +228,10 @@ Lock states — smart lock: `locked`, `unlocked`, `unlatched`, `locking`, `unloc
 `unlatching`, `jammed`, `uncalibrated`, `unknown`; opener: `online`, `rto_active`, `open`,
 `opening`, `untrained`, `boot_run`, `unknown`. `reachable: false` → show "nicht erreichbar".
 Transitional ("moving") states: `unlocking`, `locking`, `unlatching`, `opening`, `boot_run`. One
-that has not ended after 3 minutes is not shown any more: `lock` is the last stable state seen
-before it and `stale` is `true` (an app that does not know `stale` simply shows that state).
+that has not ended after 3 minutes (Nuki Web: or whose cloud data — `updateDate` — is older than
+60 s) is not shown any more: `lock` is the last stable state seen before it, or `unknown` when
+none was ever seen, and `stale` is `true` (an app that does not know `stale` simply shows that
+state). Show `stale: true` with `lock: "unknown"` as "Zustand unklar" / "State unclear".
 
 **CameraView**
 
@@ -335,9 +356,15 @@ Doorbell pushes have `ttl` 3600 s (the picture expires with it).
 `GET cameras/<id>/snapshot`; `GET rights`, `PUT rights/<userId>`; `GET history`, `GET events/<id>`;
 `GET|PUT settings`. Secrets are write-only (`hasToken: true/false`). Each lock of `GET status` /
 `locks` carries `diag: { source, nukiState, via, listNukiState, updatedAt, checkedAt, movingSince,
-stableState, stale }` — the raw Nuki state code and where it came from (`list` = bridge `/list`,
-`lockState`, `smartlock` = web overview, `smartlock_id` = web single read, `assumed` = after an own
-action until the next poll).
+stableState, stale, staleWhy, raw, cloudAt, cloudAgeSec, cloudHint }` — the raw Nuki state code and
+where it came from (`list` = bridge `/list`, `lockState`, `smartlock` = web overview, `smartlock_id`
+= web single read, `assumed` = after an own action until the next poll); `staleWhy`: `null`,
+`moving` (≥ 3 min) or `cloud` (Nuki Web data older than 60 s); `raw`: the raw fields Nuki reported
+(Nuki Web: `mode`, `state`, `lastAction`, `trigger`, `doorState`, `serverState`, `updateDate`;
+bridge: `mode`, `state`, `stateName`, `doorsensorState`, `doorsensorStateName`, `timestamp` —
+only numbers, booleans and short strings, never tokens; kept in `lock_state.nuki_raw`, migration
+`003_state_raw.sql`); `cloudAt` / `cloudAgeSec`: Nuki Web's `updateDate` and its age;
+`cloudHint`: a Nuki Web state is stale (the page shows the hint).
 
 ## Ring – what is used (unofficial, `server/ring.js`)
 

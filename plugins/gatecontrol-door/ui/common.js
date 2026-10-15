@@ -96,7 +96,7 @@
   }
   function stateText(lock) {
     var s = lock.state || {};
-    var parts = [!s.reachable ? T('portal.unreachable') : (s.stale ? T('state.stale', { state: T('state.' + s.lock) }) : T('state.' + s.lock))];
+    var parts = [!s.reachable ? T('portal.unreachable') : (!s.stale ? T('state.' + s.lock) : (s.lock === 'unknown' ? T('state.unclear') : T('state.stale', { state: T('state.' + s.lock) })))];
     if (s.door) parts.push(T('door.' + s.door));
     if (s.batteryCritical) parts.push(T('portal.battery_low'));
     else if (s.batteryPercent != null) parts.push(s.batteryPercent + ' %');
