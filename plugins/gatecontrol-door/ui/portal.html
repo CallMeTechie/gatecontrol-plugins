@@ -1,0 +1,20 @@
+<main class="dr-page">
+  <div class="dr-note" id="dr-ring-broken" hidden>{{t:portal.ring_broken}}</div>
+  <p class="dr-intro" id="dr-readonly" hidden>{{t:portal.read_only}}</p>
+  <section class="dr-card" aria-labelledby="dr-locks-h">
+    <div class="dr-card-head"><h2 class="dr-card-title" id="dr-locks-h">{{t:portal.locks}}</h2></div>
+    <div class="dr-list" id="dr-locks"></div>
+    <p class="dr-hint" id="dr-empty" hidden>{{t:portal.empty}}</p>
+  </section>
+  <section class="dr-card" aria-labelledby="dr-cams-h" id="dr-cams-card" hidden>
+    <div class="dr-card-head"><h2 class="dr-card-title" id="dr-cams-h">{{t:portal.cameras}}</h2></div>
+    <div class="dr-grid" id="dr-cams"></div>
+    <p class="dr-hint">{{t:ring.unofficial}}</p>
+  </section>
+  <section class="dr-card" aria-labelledby="dr-hist-h">
+    <div class="dr-card-head"><h2 class="dr-card-title" id="dr-hist-h">{{t:portal.history}}</h2></div>
+    <div class="dr-list" id="dr-hist"></div>
+    <p class="dr-hint" id="dr-hist-empty" hidden>{{t:portal.history_empty}}</p>
+    <div><button type="button" class="btn btn-sm" id="dr-more" hidden>{{t:common.more}}</button></div>
+  </section>
+</main>

@@ -93,7 +93,12 @@ function userFace(u) {
 const SQL_DENY = /\b(attach|detach|vacuum|pragma|load_extension|sqlite_dbpage|fts3_tokenizer)\b|_gc_/i;
 const DEFAULT_USER = Object.freeze({ id: 1, name: 'admin', role: 'admin' });
 const NOTIFY_PRIORITIES = ['info', 'normal', 'high', 'critical'];
-const NOTIFY_ACTIONS = new Set(['open_app_route', 'open_portal', 'mute_1h', 'ack', 'done']);
+const NOTIFY_ACTIONS = new Set(['open_app_route', 'open_portal', 'mute_1h', 'ack', 'done', 'quick_action']);
+// GateControl ≥ 1.169.0: a picture on a push (notify_media), checked like services/avatars.js
+const NOTIFY_IMAGE_MAX = 300 * 1024;
+const NOTIFY_IMAGE_TTL_MAX = 7 * 86400;
+const NOTIFY_IMAGE_EXT = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' };
+const BACKGROUND_MIN_S = 5;
 const QA_MAX = 16;
 const QA_ID_RE = /^[A-Za-z0-9:._-]{1,64}$/;
 const QA_ICON_RE = /^[MmLlHhVvCcSsQqTtAaZz0-9 .,-]{1,2000}$/;
@@ -103,6 +108,70 @@ const ACTIONS_PER_HOUR = 60;
 
 function hostError(code, message) {
   return Object.assign(new Error(message), { code });
+}
+
+/**
+ * Width, height and animation of a JPEG / PNG / WebP picture from its header, or null when the bytes are not
+ * a picture of that type (the checks of GateControl's services/avatars.js, GateControl ≥ 1.169.0 notify image).
+ */
+function imageInfo(buf, mime) {
+  if (mime === 'image/png') {
+    if (buf.length < 33 || buf.toString('latin1', 0, 8) !== '\x89PNG\r\n\x1a\n' || buf.toString('latin1', 12, 16) !== 'IHDR') return null;
+    let animated = false;
+    for (let i = 8; i + 8 <= buf.length;) {
+      const len = buf.readUInt32BE(i);
+      const type = buf.toString('latin1', i + 4, i + 8);
+      if (type === 'acTL') animated = true;
+      if (type === 'IDAT' || type === 'IEND') break;
+      i += 12 + len;
+    }
+    return { width: buf.readUInt32BE(16), height: buf.readUInt32BE(20), animated };
+  }
+  if (mime === 'image/jpeg') {
+    if (buf.length < 4 || buf[0] !== 0xff || buf[1] !== 0xd8) return null;
+    for (let i = 2; i + 9 < buf.length;) {
+      if (buf[i] !== 0xff) return null;
+      const marker = buf[i + 1];
+      if (marker === 0xff) { i++; continue; }
+      if (marker === 0xd8 || (marker >= 0xd0 && marker <= 0xd7) || marker === 0x01) { i += 2; continue; }
+      const len = buf.readUInt16BE(i + 2);
+      if (marker >= 0xc0 && marker <= 0xcf && ![0xc4, 0xc8, 0xcc].includes(marker)) {
+        return { width: buf.readUInt16BE(i + 7), height: buf.readUInt16BE(i + 5), animated: false };
+      }
+      if (marker === 0xd9 || marker === 0xda) return null;
+      i += 2 + len;
+    }
+    return null;
+  }
+  if (mime === 'image/webp') {
+    if (buf.length < 30 || buf.toString('latin1', 0, 4) !== 'RIFF' || buf.toString('latin1', 8, 12) !== 'WEBP') return null;
+    const chunk = buf.toString('latin1', 12, 16);
+    if (chunk === 'VP8 ') return { width: buf.readUInt16LE(26) & 0x3fff, height: buf.readUInt16LE(28) & 0x3fff, animated: false };
+    if (chunk === 'VP8L') {
+      const b = buf.readUInt32LE(21);
+      return { width: (b & 0x3fff) + 1, height: ((b >> 14) & 0x3fff) + 1, animated: false };
+    }
+    if (chunk === 'VP8X') {
+      return { width: 1 + buf.readUIntLE(24, 3), height: 1 + buf.readUIntLE(27, 3), animated: (buf[20] & 0x02) !== 0 };
+    }
+    return null;
+  }
+  return null;
+}
+
+/** The checked picture of a push → { mime, size, width, height } or throws ERR_INVALID. */
+function notifyImage(img) {
+  if (!img || typeof img !== 'object' || Array.isArray(img) || typeof img.data !== 'string' || !NOTIFY_IMAGE_EXT[img.mime]) throw hostError('ERR_INVALID', 'invalid image');
+  // a data: URL prefix is accepted as well
+  const data = img.data.replace(/^data:[a-z/+.-]{1,40};base64,/i, '');
+  if (data.length > Math.ceil(NOTIFY_IMAGE_MAX / 3) * 4 + 4 || !/^[A-Za-z0-9+/]*={0,2}$/.test(data)) throw hostError('ERR_INVALID', 'invalid image');
+  const buf = Buffer.from(data, 'base64');
+  if (!buf.length || buf.length > NOTIFY_IMAGE_MAX) throw hostError('ERR_INVALID', 'image too large (max 300 KB)');
+  const info = imageInfo(buf, img.mime);
+  if (!info) throw hostError('ERR_INVALID', 'image does not match its type');
+  if (info.animated) throw hostError('ERR_INVALID', 'animated images are not allowed');
+  if (![info.width, info.height].every((x) => Number.isInteger(x) && x >= 32 && x <= 2560)) throw hostError('ERR_INVALID', 'image size out of range (32…2560 px)');
+  return { mime: img.mime, size: buf.length, width: info.width, height: info.height };
 }
 
 /** JSON round trip, as over the IPC channel (Buffers become { type, data }). */
@@ -238,6 +307,11 @@ async function createHost(pluginDir, opts = {}) {
   if (perms.kiosk != null && typeof perms.kiosk !== 'boolean') throw hostError('ERR_INVALID', 'plugin.json: permissions.kiosk: invalid');
   // permissions.actions: a boolean (GateControl ≥ 1.166.0, manifest.js)
   if (perms.actions != null && typeof perms.actions !== 'boolean') throw hostError('ERR_INVALID', 'plugin.json: permissions.actions: invalid');
+  // permissions.background.intervalSeconds: 5 … 86400 (GateControl ≥ 1.169.0; 10 before)
+  if (perms.background != null) {
+    const iv = perms.background && perms.background.intervalSeconds;
+    if (!Number.isInteger(iv) || iv < BACKGROUND_MIN_S || iv > 86400) throw hostError('ERR_INVALID', 'plugin.json: permissions.background.intervalSeconds: invalid');
+  }
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), `gcmock-${manifest.id}-`));
   const filesDir = path.join(tmp, 'files');
   fs.mkdirSync(filesDir);
@@ -394,15 +468,30 @@ async function createHost(pluginDir, opts = {}) {
           for (const a of data.actions) {
             if (!a || !NOTIFY_ACTIONS.has(a.type)) throw hostError('ERR_INVALID', 'unknown action type (test: the host would drop it)');
             if (a.type === 'open_app_route' && !/^(?:vpn|services|gateways|inbox|plg-[a-z0-9]+(?:-[a-z0-9]+)*)$/.test(String(a.target))) throw hostError('ERR_INVALID', 'invalid app route (test)');
+            // GateControl ≥ 1.169.0: run one of this plugin's own quick actions from the push
+            if (a.type === 'quick_action') {
+              if (typeof a.label !== 'string' || !a.label.trim() || a.label.length > 24) throw hostError('ERR_INVALID', 'quick_action: label must be 1–24 characters');
+              if (a.plugin !== manifest.id) throw hostError('ERR_INVALID', 'quick_action: plugin must be the calling plugin');
+              if (typeof a.id !== 'string' || !QA_ID_RE.test(a.id)) throw hostError('ERR_INVALID', 'quick_action: invalid id');
+              if (a.confirm != null && typeof a.confirm !== 'boolean') throw hostError('ERR_INVALID', 'quick_action: confirm must be a boolean');
+              if (a.auth != null && a.auth !== 'device') throw hostError('ERR_INVALID', "quick_action: auth must be 'device'");
+            }
           }
         }
+        const image = n.image == null ? null : notifyImage(n.image);
         if (notifications.length >= notifyLimit) throw hostError('ERR_RATE_LIMIT', 'too many notifications');
         // 'critical' is capped to 'high' unless the topic declares allowCritical (GateControl ≥ 1.164.0)
         const critical = priority === 'critical' && declared.some((t) => t && t.id === topic && t.allowCritical === true);
-        notifications.push({
+        const rec = {
           topic, title, body, priority: priority === 'critical' && !critical ? 'high' : priority,
           users: n.users == null ? null : [...new Set(n.users)], collapseKey: n.collapseKey == null ? null : String(n.collapseKey), ttl: n.ttl == null ? null : n.ttl, data,
-        });
+        };
+        if (image) {
+          // notify_media: a capability URL (≥ 22 url-safe characters), expires with the push (24 h default, ≤ 7 days)
+          const mediaId = require('node:crypto').randomBytes(18).toString('base64url');
+          Object.assign(rec, { image, imageUrl: `/notify-media/${mediaId}.${NOTIFY_IMAGE_EXT[image.mime]}`, imageTtl: Math.min(n.ttl == null ? 86400 : n.ttl, NOTIFY_IMAGE_TTL_MAX) });
+        }
+        notifications.push(rec);
         return { pushed: true, id: notifications.length };
       }
       const msg = String(message || '').trim();
@@ -560,13 +649,22 @@ async function createHost(pluginDir, opts = {}) {
       if (!perms.portal || typeof plugin.quickActions !== 'function') return [];
       return checkQuickActions(await hook('quickActions', { user: { portal: true, loggedIn: true, app: true, ...user }, lang }));
     },
-    /** runQuickAction hook as the host's route runs it: only an id listed for this viewer → { status, body } */
-    async runQuickAction(user, id, lang = 'de') {
-      const viewer = { portal: true, loggedIn: true, app: true, ...user };
+    /**
+     * runQuickAction hook as the host's route runs it: only an id listed for this viewer → { status, body }.
+     * o.via: 'app' (default) | 'notification' (GateControl ≥ 1.169.0: run from a push action); o.automation with
+     * o.via '<plugin id>': as another plugin's gc.actions.run (viewer without app, automation: true, via).
+     */
+    async runQuickAction(user, id, lang = 'de', o = {}) {
+      const auto = o.automation === true;
+      const via = auto ? String(o.via || 'gatecontrol-other') : (o.via === 'notification' ? 'notification' : 'app');
+      if (auto && (!PLUGIN_ID_RE.test(via) || via === manifest.id)) throw hostError('ERR_INVALID', 'automation via must be another plugin id');
+      const viewer = auto
+        ? { id: user.id, name: user.name, role: user.role, portal: true, loggedIn: true, automation: true, via }
+        : { portal: true, loggedIn: true, app: true, ...user };
       if (!perms.portal || typeof plugin.runQuickAction !== 'function' || typeof id !== 'string' || !QA_ID_RE.test(id)) return { status: 404, body: { ok: false, error: 'not_found' } };
       const listed = checkQuickActions(await hook('quickActions', { user: viewer, lang }));
       if (!listed.some((a) => a.id === id)) return { status: 404, body: { ok: false, error: 'not_found' } };
-      const out = await hook('runQuickAction', { user: viewer, lang, id });
+      const out = await hook('runQuickAction', { user: viewer, lang, id, via, automation: auto });
       if (!out || typeof out !== 'object' || Array.isArray(out)) throw hostError('ERR_INVALID', 'runQuickAction must return an object');
       if (out.state != null && !QA_STATES.has(out.state)) throw hostError('ERR_INVALID', `runQuickAction: state ${JSON.stringify(out.state)}`);
       return { status: 200, body: { ok: out.ok !== false, message: qaText(out.message, 120, 'message', true), state: out.state == null ? null : out.state } };

@@ -202,6 +202,62 @@ test('mock host plugin actions: needs permissions.actions, checked like the host
   }
 });
 
+test('mock host GateControl 1.169.0: push pictures, quick_action push actions, 5 s background, via/automation of quick action runs', async () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'gc169-plugin-'));
+  const write = (permissions) => fs.writeFileSync(path.join(tmp, 'plugin.json'), JSON.stringify({ id: 'gc169-test', name: 'T', version: '1.0.0', entry: 'server/index.js', permissions, notifyTopics: [{ id: 'bell', label: 'Bell' }] }));
+  const jpeg = (w, h, pad = 10) => Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xc0, 0x00, 0x11, 0x08, h >> 8, h & 0xff, w >> 8, w & 0xff, 3, 1, 0x22, 0, 2, 0x11, 1, 3, 0x11, 1]), Buffer.alloc(pad), Buffer.from([0xff, 0xd9])]);
+  const png = (w, h, animated) => {
+    const chunk = (type, data) => { const b = Buffer.alloc(12 + data.length); b.writeUInt32BE(data.length, 0); b.write(type, 4, 'latin1'); data.copy(b, 8); return b; };
+    const ihdr = Buffer.alloc(13); ihdr.writeUInt32BE(w, 0); ihdr.writeUInt32BE(h, 4);
+    return Buffer.concat([Buffer.from('89504e470d0a1a0a', 'hex'), chunk('IHDR', ihdr), ...(animated ? [chunk('acTL', Buffer.alloc(8))] : []), chunk('IDAT', Buffer.alloc(4)), chunk('IEND', Buffer.alloc(0))]);
+  };
+  try {
+    fs.mkdirSync(path.join(tmp, 'server'));
+    fs.writeFileSync(path.join(tmp, 'server', 'index.js'), `
+      module.exports = {
+        async quickActions({ user }) { return user.id === 2 ? [{ id: 'door:open', title: 'Door' }] : []; },
+        async runQuickAction(arg) { return { ok: true, message: [arg.via, arg.automation, !!arg.user.app, arg.user.automation === true].join(' ') }; },
+      };`);
+    write({ portal: true, notify: true, background: { intervalSeconds: 5 } });
+    const host = await createHost(tmp, { users: [{ id: 1, name: 'admin', role: 'admin' }, { id: 2, name: 'Ada', role: 'user' }] });
+    try {
+      const img = jpeg(640, 360);
+      const r = await host.gc.notify({ topic: 'bell', title: 'Ring', ttl: 10 * 86400, image: { data: img.toString('base64'), mime: 'image/jpeg' } });
+      assert.equal(r.pushed, true);
+      const n = host.notifications[0];
+      assert.deepEqual(n.image, { mime: 'image/jpeg', size: img.length, width: 640, height: 360 });
+      assert.match(n.imageUrl, /^\/notify-media\/[A-Za-z0-9_-]{22,}\.jpg$/);
+      assert.equal(n.imageTtl, 7 * 86400, 'the picture lives at most 7 days');
+      await host.gc.notify({ topic: 'bell', title: 'Ring', image: { data: 'data:image/png;base64,' + png(64, 64).toString('base64'), mime: 'image/png' } });
+      assert.equal(host.notifications[1].imageTtl, 86400);
+      for (const bad of [
+        { data: img.toString('base64'), mime: 'image/png' }, { data: jpeg(20, 360).toString('base64'), mime: 'image/jpeg' }, { data: jpeg(3000, 360).toString('base64'), mime: 'image/jpeg' },
+        { data: jpeg(640, 360, 301 * 1024).toString('base64'), mime: 'image/jpeg' }, { data: png(64, 64, true).toString('base64'), mime: 'image/png' },
+        { data: img.toString('base64'), mime: 'image/gif' }, { data: '###', mime: 'image/jpeg' }, 'x',
+      ]) await assert.rejects(host.gc.notify({ topic: 'bell', title: 'Ring', image: bad }), { code: 'ERR_INVALID' }, JSON.stringify(bad).slice(0, 50));
+      assert.equal(host.notifications.length, 2, 'a bad picture pushes nothing');
+      const qa = { type: 'quick_action', label: 'Tür öffnen', plugin: 'gc169-test', id: 'door:open', confirm: true, auth: 'device' };
+      await host.gc.notify({ topic: 'bell', title: 'Ring', data: { actions: [qa, { type: 'open_app_route', label: 'Ansehen', target: 'plg-gc169-test' }] } });
+      for (const bad of [{ ...qa, plugin: 'gatecontrol-other' }, { ...qa, label: 'x'.repeat(25) }, { ...qa, label: '' }, { ...qa, id: 'bad id' }, { ...qa, auth: 'pin' }, { ...qa, confirm: 'yes' }]) {
+        await assert.rejects(host.gc.notify({ topic: 'bell', title: 'Ring', data: { actions: [bad] } }), { code: 'ERR_INVALID' }, JSON.stringify(bad));
+      }
+      const ada = { id: 2, name: 'Ada', role: 'user' };
+      assert.equal((await host.runQuickAction(ada, 'door:open')).body.message, 'app false true false');
+      assert.equal((await host.runQuickAction(ada, 'door:open', 'de', { via: 'notification' })).body.message, 'notification false true false');
+      assert.equal((await host.runQuickAction(ada, 'door:open', 'de', { automation: true, via: 'gatecontrol-familie' })).body.message, 'gatecontrol-familie true false true');
+      await assert.rejects(host.runQuickAction(ada, 'door:open', 'de', { automation: true, via: 'gc169-test' }), { code: 'ERR_INVALID' });
+    } finally {
+      await host.close();
+    }
+    for (const iv of [4, 86401, '5']) {
+      write({ background: { intervalSeconds: iv } });
+      await assert.rejects(createHost(tmp), { code: 'ERR_INVALID' }, String(iv));
+    }
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
 test('catalog keeps every version and picks the latest stable one', () => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'catalog-'));
   try {

@@ -1,0 +1,26 @@
+<main class="dr-page">
+  <p class="dr-intro">{{t:set.intro}}</p>
+  <section class="dr-card">
+    <form id="dr-set" autocomplete="off">
+      <div class="form-row">
+        <div class="form-group"><label class="form-label" for="dr-s-tz">{{t:set.timezone}}</label><input class="form-input" id="dr-s-tz" maxlength="64"></div>
+        <div class="form-group"><label class="form-label" for="dr-s-lang">{{t:set.lang}}</label><select class="form-select" id="dr-s-lang"><option value="de">Deutsch</option><option value="en">English</option></select></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label class="form-label" for="dr-s-media">{{t:set.media_days}}</label><input class="form-input" id="dr-s-media" type="number" min="1" max="30"></div>
+        <div class="form-group"><label class="form-label" for="dr-s-gap">{{t:set.motion_gap}}</label><input class="form-input" id="dr-s-gap" type="number" min="1" max="60"></div>
+      </div>
+      <label class="check"><input type="checkbox" id="dr-s-ring"> {{t:set.ring}}</label>
+      <label class="check"><input type="checkbox" id="dr-s-nlog"> {{t:set.nuki_log}}</label>
+      <div class="dr-actions" style="margin-top:12px"><button class="btn btn-primary" type="submit">{{t:common.save}}</button></div>
+    </form>
+  </section>
+  <section class="dr-card">
+    <div class="dr-card-head"><h2 class="dr-card-title">{{t:set.help_title}}</h2></div>
+    <p class="dr-hint">{{t:set.help_1}}</p>
+    <p class="dr-hint">{{t:set.help_2}}</p>
+    <div class="dr-note">{{t:set.help_3}}</div>
+    <p class="dr-hint">{{t:set.help_4}}</p>
+    <p class="dr-hint">{{t:ring.unofficial}}</p>
+  </section>
+</main>

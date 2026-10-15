@@ -1,0 +1,20 @@
+<main class="dr-page">
+  <p class="dr-intro">{{t:hist.intro}}</p>
+  <section class="dr-card">
+    <div class="form-row">
+      <div class="form-group"><label class="form-label" for="dr-f-kind">{{t:hist.col_kind}}</label>
+        <select class="form-select" id="dr-f-kind">
+          <option value="">{{t:hist.all}}</option><option value="action">{{t:kind.action}}</option><option value="ding">{{t:kind.ding}}</option>
+          <option value="motion">{{t:kind.motion}}</option><option value="alert">{{t:kind.alert}}</option><option value="nuki">{{t:kind.nuki}}</option>
+        </select></div>
+    </div>
+    <div class="dr-table-wrap">
+      <table class="dr-table">
+        <thead><tr><th>{{t:hist.col_time}}</th><th>{{t:hist.col_kind}}</th><th>{{t:hist.col_lock}}</th><th>{{t:hist.col_who}}</th><th>{{t:hist.col_result}}</th><th>{{t:hist.image}}</th></tr></thead>
+        <tbody id="dr-rows"></tbody>
+      </table>
+    </div>
+    <p class="dr-hint" id="dr-empty" hidden>{{t:portal.history_empty}}</p>
+    <div><button type="button" class="btn btn-sm" id="dr-more" hidden>{{t:common.more}}</button></div>
+  </section>
+</main>

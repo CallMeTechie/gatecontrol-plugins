@@ -128,3 +128,15 @@ test('texts and numbers in the notification language', () => {
   assert.deepEqual(notify.openAction({ plugin: { id: 'gatecontrol-midea' } }, 'de'),
     { route: 'plg-gatecontrol-midea', actions: [{ id: 'open', label: 'Öffnen', type: 'open_app_route', target: 'plg-gatecontrol-midea' }] });
 });
+
+test('a picture the host refuses never costs the message: sent again without it (GateControl ≥ 1.169.0 image)', async () => {
+  const h = await host({ notifyFail: (n) => (n && n.image ? 'ERR_INVALID' : null) });
+  try {
+    const r = await notify.deliver(h.gc, { ...N, image: { data: 'AAAA', mime: 'image/jpeg' } });
+    assert.deepEqual(r, { sent: true, pushed: true, form: 'v2', error: null, imageDropped: true });
+    assert.equal(h.notifications.length, 1);
+    assert.equal(h.notifications[0].image, undefined);
+    assert.equal(h.notifications[0].title, N.title);
+    assert.deepEqual(Object.keys(notify.payload({ ...N, image: { data: 'x', mime: 'image/png' } })).includes('image'), true);
+  } finally { await h.close(); }
+});
