@@ -15,6 +15,14 @@
 // "Küche"). It is no family member anywhere — not in fam.list / fam.byId,
 // so it gets no pushes and is never an assignee, driver or locatable — but
 // it is in fam.walls and fam.all (admin page); see server/wall.js.
+//
+// Face (1.3.0, GateControl ≥ 1.168.0): profile picture and favourite colour
+// belong to the GateControl account — each person changes them in the
+// GateControl app (Einstellungen → Profil), the administrator in the user
+// profile. gc.users gives avatarUrl (a capability path /avatars/<id>.<ext> or
+// null), color (a palette key, never red — red means "away"), colorHex and
+// initials; every member object carries them (face()). The member colour of
+// the admin page (1.0–1.2) is gone; the column stays unused.
 
 const store = require('./store');
 const tz = require('./tz');
@@ -24,8 +32,14 @@ const { fail, posInt, intIn, date } = require('./util');
 
 const ROLES = ['parent', 'child', 'wall'];
 const LOCATE_MODES = ['confirm', 'auto', 'off'];
-const COLORS = ['#0F766E', '#1E3A8A', '#8A3C08', '#5B21B6', '#B45309', '#BE185D', '#047857', '#4338CA', '#9F1239', '#0E7490'];
+// GateControl's favourite colour palette (core services/avatars.js PALETTE); the default is palette[id % 10]
+const PALETTE = Object.freeze([
+  ['blue', '#3B82F6'], ['teal', '#14B8A6'], ['green', '#22C55E'], ['lime', '#84CC16'], ['yellow', '#EAB308'],
+  ['orange', '#F97316'], ['pink', '#EC4899'], ['purple', '#A855F7'], ['indigo', '#6366F1'], ['slate', '#64748B'],
+].map(([key, hex]) => Object.freeze({ key, hex })));
+const PALETTE_HEX = new Map(PALETTE.map((p) => [p.key, p.hex]));
 const COLOR_RE = /^#[0-9A-Fa-f]{6}$/;
+const AVATAR_RE = /^\/avatars\/[A-Za-z0-9_-]{16,128}\.(?:png|jpe?g|webp)$/;
 const ADULT_AGE = 18;
 const CONFIRM_AGE = 14;
 const AGE_HINT_AT = { hh: 9, mm: 0 };
@@ -40,10 +54,37 @@ function age(birthdate, today) {
   return a < 0 ? 0 : a;
 }
 
+/** Initials like GateControl (portalDevices.initials): two words → first letters, one word → its first two letters. */
+function initialsOf(name) {
+  const words = String(name || '').trim().split(/[\s._-]+/).filter(Boolean);
+  if (!words.length) return '?';
+  const chars = words.length > 1 ? [Array.from(words[0])[0], Array.from(words[1])[0]] : Array.from(words[0]).slice(0, 2);
+  return chars.join('').toUpperCase();
+}
+
+/**
+ * The face of a GateControl user (gc.users, GateControl ≥ 1.168.0): { avatarUrl, color, colorHex, initials }.
+ * Defensive: an avatarUrl that is no /avatars/ capability path is null, an unknown colour key the default
+ * palette[id % 10], missing initials are computed — so color and colorHex are never null.
+ */
+function face(u) {
+  const id = Number.isSafeInteger(u && u.id) && u.id > 0 ? u.id : 0;
+  const color = u && PALETTE_HEX.has(u.color) ? u.color : PALETTE[id % PALETTE.length].key;
+  const colorHex = u && PALETTE_HEX.has(u.color) && COLOR_RE.test(String(u.colorHex || '')) ? String(u.colorHex).toUpperCase() : PALETTE_HEX.get(color);
+  const avatarUrl = u && typeof u.avatarUrl === 'string' && AVATAR_RE.test(u.avatarUrl) ? u.avatarUrl : null;
+  const ini = u && typeof u.initials === 'string' ? u.initials.trim() : '';
+  return { avatarUrl, color, colorHex, initials: ini && Array.from(ini).length <= 3 ? ini : initialsOf(u && u.name) };
+}
+
+/** The face fields of a member (spread into every member object the app or a page gets). */
+function faceOf(m) {
+  return { avatarUrl: m.avatarUrl, color: m.color, colorHex: m.colorHex, initials: m.initials };
+}
+
 async function usersById(gc) {
   const m = new Map();
   try {
-    for (const u of await gc.users.list()) if (Number.isSafeInteger(u.id)) m.set(u.id, { id: u.id, name: String(u.name || ''), role: u.role });
+    for (const u of await gc.users.list()) if (Number.isSafeInteger(u.id)) m.set(u.id, { id: u.id, name: String(u.name || ''), role: u.role, ...face(u) });
   } catch { /* users unavailable */ }
   return m;
 }
@@ -54,13 +95,13 @@ function rowToMember(r, u, today) {
     userId: r.user_id,
     name: u.name,
     gcRole: u.role,
+    ...faceOf(u),
     role: ROLES.includes(r.role) ? r.role : 'parent',
     birthdate: r.birthdate || null,
     age: a,
     adult: r.role === 'child' && a != null && a >= ADULT_AGE,
     locateMode: LOCATE_MODES.includes(r.locate_mode) ? r.locate_mode : 'confirm',
     starGoal: r.star_goal,
-    color: COLOR_RE.test(r.color || '') ? r.color : COLORS[(r.user_id - 1) % COLORS.length],
     createdAt: r.created_at,
   };
 }
@@ -106,14 +147,19 @@ function effectiveMode(m) {
   return m.adult || !m.birthdate ? 'off' : m.locateMode;
 }
 
-/** GET me → me */
-function meView(m) {
-  return { userId: m.userId, name: m.name, role: m.role, age: m.role === 'child' ? m.age : null, locateMode: effectiveMode(m), color: m.color };
+const ringOf = (presence, m) => (presence && presence.get(m.userId)) || null;
+
+/**
+ * GET me → me. `presence` (1.3.0): Map userId → 'home' | 'away' | 'unknown' | null
+ * (presence.rings; null = not shared, module off or device trust only).
+ */
+function meView(m, presence) {
+  return { userId: m.userId, name: m.name, role: m.role, age: m.role === 'child' ? m.age : null, locateMode: effectiveMode(m), ...faceOf(m), presence: ringOf(presence, m) };
 }
 
 /** A member as `viewer` may see it (locate fields: children, for parents only). */
-function memberView(viewer, m, cfg) {
-  const v = { userId: m.userId, name: m.name, role: m.role, age: m.role === 'child' ? m.age : null, color: m.color };
+function memberView(viewer, m, cfg, presence) {
+  const v = { userId: m.userId, name: m.name, role: m.role, age: m.role === 'child' ? m.age : null, ...faceOf(m), presence: ringOf(presence, m) };
   if (viewer.role === 'parent' && m.role === 'child') {
     v.locateMode = effectiveMode(m);
     v.locatable = locateRefusal(m, cfg) === null;
@@ -132,10 +178,6 @@ function checkFields(body, existing, today) {
     // a wall tablet has no birthday, no locating and no stars
     out.birthdate = null;
     if (!existing) { out.locate_mode = 'confirm'; out.star_goal = 20; }
-    if (body.color !== undefined) {
-      if (body.color !== null && !COLOR_RE.test(String(body.color))) throw fail('invalid');
-      out.color = body.color;
-    }
     return out;
   }
   let birthdate = existing ? existing.birthdate : null;
@@ -154,10 +196,7 @@ function checkFields(body, existing, today) {
   } else if (!existing) out.locate_mode = 'confirm';
   if (body.starGoal !== undefined) out.star_goal = intIn(body.starGoal, 1, 500);
   else if (!existing) out.star_goal = 20;
-  if (body.color !== undefined) {
-    if (body.color !== null && !COLOR_RE.test(String(body.color))) throw fail('invalid');
-    out.color = body.color;
-  }
+  // `color` (1.0–1.2) is ignored: the favourite colour belongs to the GateControl account
   return out;
 }
 
@@ -166,12 +205,8 @@ async function add(gc, fam, body, now) {
   if (!userId || !fam.users.has(userId)) throw fail('not_found');
   if (await store.one(gc, 'SELECT user_id FROM members WHERE user_id = ?', [userId])) throw fail('invalid');
   const f = checkFields(body, null, fam.today);
-  if (f.color === undefined) {
-    const used = new Set(fam.list.map((m) => m.color));
-    f.color = COLORS.find((c) => !used.has(c)) || COLORS[fam.list.length % COLORS.length];
-  }
-  await store.run(gc, 'INSERT INTO members (user_id, role, birthdate, locate_mode, star_goal, color, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
-    [userId, f.role, f.birthdate, f.locate_mode, f.star_goal, f.color, now]);
+  await store.run(gc, 'INSERT INTO members (user_id, role, birthdate, locate_mode, star_goal, color, created_at) VALUES (?, ?, ?, ?, ?, NULL, ?)',
+    [userId, f.role, f.birthdate, f.locate_mode, f.star_goal, now]);
   return userId;
 }
 
@@ -240,6 +275,6 @@ async function ageHints(gc, fam, cfg, now, pushes) {
 }
 
 module.exports = {
-  ROLES, LOCATE_MODES, COLORS, ADULT_AGE, CONFIRM_AGE, age, usersById, load, parents, children, locateRefusal, effectiveMode, ageHint, canDrive,
+  ROLES, LOCATE_MODES, PALETTE, ADULT_AGE, CONFIRM_AGE, age, initialsOf, face, faceOf, usersById, load, parents, children, locateRefusal, effectiveMode, ageHint, canDrive,
   meView, memberView, add, update, remove, ageHints,
 };

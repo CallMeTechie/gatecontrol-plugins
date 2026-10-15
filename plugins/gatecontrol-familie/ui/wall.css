@@ -10,11 +10,12 @@ body{padding:0}
 .fa-w-clock{flex:1;min-width:0}
 .fa-w-time{font-size:60px;font-weight:800;letter-spacing:-1.5px;line-height:1;font-variant-numeric:tabular-nums}
 .fa-w-date{font-size:19px;color:var(--w-muted);margin-top:6px}
-.fa-w-people{display:flex;gap:14px;flex-wrap:wrap;justify-content:flex-end}
-.fa-w-person{display:flex;flex-direction:column;align-items:center;gap:5px;font-size:14px;font-weight:700;max-width:74px}
+.fa-w-people{display:flex;gap:18px;flex-wrap:wrap;justify-content:flex-end;padding:7px}
+.fa-w-person{display:flex;flex-direction:column;align-items:center;gap:10px;font-size:14px;font-weight:700;max-width:74px}
 .fa-w-person span:last-child{max-width:74px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.fa-w-avatar{width:58px;height:58px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:19px;color:var(--c);background:color-mix(in srgb,var(--c) 18%,var(--w-card))}
-.fa-wall.is-dark .fa-w-avatar{color:color-mix(in srgb,var(--c) 45%,#fff)}
+.fa-wall .fa-avatar{box-shadow:0 0 0 1px var(--w-ring)}
+.fa-w-avatar{font-size:19px}
+.fa-wall .fa-avatar.is-ring-home,.fa-wall .fa-avatar.is-ring-away{box-shadow:0 0 0 3px var(--w-bg),0 0 0 7px var(--ring);margin:0}
 .fa-w-banner{padding:10px 16px;border-radius:14px;background:var(--w-warm);color:var(--w-warm-fg);font-size:16px;font-weight:700}
 .fa-w-grid{flex:1;min-height:0;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px}
 .fa-w-card{background:var(--w-card);border-radius:22px;padding:20px;display:flex;flex-direction:column;gap:12px;min-height:0;overflow:hidden}
@@ -39,9 +40,10 @@ body{padding:0}
 .fa-w-task.is-done .fa-w-task-title{text-decoration:line-through;color:var(--w-muted)}
 .fa-w-task-chips{display:flex;gap:6px;flex:none}
 .fa-w-chip{width:54px;height:54px;padding:0;display:inline-flex;align-items:center;justify-content:center;border-radius:50%;border:3px solid var(--w-ring);background:transparent;color:var(--w-fg);font:800 15px var(--w-font);cursor:pointer;box-sizing:border-box}
-.fa-w-dot{width:40px;height:40px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800;color:#fff;background:var(--c)}
+.fa-w-dot{width:40px;height:40px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:800;color:#fff}
+.fa-wall .fa-w-dot{font-size:14px;box-shadow:none}
 .fa-w-chip[aria-pressed="true"]{border-color:var(--w-accent);background:var(--w-accent);color:#fff}
-.fa-w-chip[aria-pressed="true"] .fa-w-dot{background:transparent}
+.fa-w-chip[aria-pressed="true"] .fa-w-dot:not(.has-img){background:transparent}
 .fa-w-chip:disabled{cursor:default}
 .fa-w-chip:disabled:not([aria-pressed="true"]){opacity:.7}
 .fa-w-chips{display:flex;flex-wrap:wrap;gap:10px;align-content:flex-start;min-height:0;overflow:hidden;flex:1}
@@ -53,6 +55,3 @@ body{padding:0}
 .fa-w-add-btn:disabled{opacity:.5;cursor:default}
 .fa-w-empty{color:var(--w-muted);font-size:16px;margin:0}
 .fa-w-person{position:relative}
-.fa-w-person.is-home .fa-w-avatar{box-shadow:0 0 0 3px var(--w-accent)}
-.fa-w-person.is-away .fa-w-avatar{opacity:.45}
-.fa-w-person.is-away span:last-child{color:var(--w-muted)}

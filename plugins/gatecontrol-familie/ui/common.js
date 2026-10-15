@@ -139,10 +139,48 @@
     var parts = String(name || '?').trim().split(/\s+/);
     return ((parts[0] || '?').charAt(0) + (parts.length > 1 ? parts[parts.length - 1].charAt(0) : (parts[0] || '').charAt(1) || '')).toUpperCase();
   }
-  function avatar(m, size) {
-    var a = el('span', { class: 'fa-avatar', text: initials(m && m.name), 'aria-hidden': 'true' });
-    a.style.setProperty('--c', safeColor(m && m.color, '#0F766E'));
-    if (size) { a.style.width = size + 'px'; a.style.height = size + 'px'; }
+  // ── avatar with presence ring (1.3.0) ──────────────────────────────────
+  var AWAY = '#E5484D';
+  var AVATAR_RE = /^\/avatars\/[A-Za-z0-9_-]{16,128}\.(?:png|jpe?g|webp)$/;
+  /** The ring of a member object: 'home' | 'away' | 'none' (unknown, not shared, module off, older server). */
+  function ringOf(m) {
+    var p = m && m.presence;
+    return p === 'home' || p === 'away' ? p : 'none';
+  }
+  /** "Anna – zu Hause" / "Anna – unterwegs" / "Anna". */
+  function avatarLabel(m) {
+    var r = ringOf(m);
+    var name = String((m && m.name) || '');
+    return r === 'none' ? name : T('avatar.' + r, { name: name });
+  }
+  /**
+   * The one avatar of the admin pages, the portal tab and the wall: the picture of the
+   * GateControl account (m.avatarUrl, a /avatars/… path) or the initials on the favourite
+   * colour (m.colorHex), inside a ring — home: the favourite colour, away: red #E5484D,
+   * unknown / not shared / module off: a thin neutral border. A picture that cannot be
+   * loaded leaves the initials. opts: { cls } (extra classes).
+   */
+  function avatar(m, size, opts) {
+    var o = opts || {};
+    var r = ringOf(m);
+    var hex = safeColor(m && m.colorHex, '#64748B');
+    var label = avatarLabel(m);
+    var a = el('span', {
+      class: 'fa-avatar is-ring-' + r + (o.cls ? ' ' + o.cls : ''), title: label || null,
+      role: r === 'none' ? null : 'img', 'aria-label': r === 'none' ? null : label, 'aria-hidden': r === 'none' ? 'true' : null,
+    });
+    a.style.setProperty('--c', hex);
+    a.style.setProperty('--ring', r === 'home' ? hex : (r === 'away' ? AWAY : 'transparent'));
+    if (size) { a.style.width = size + 'px'; a.style.height = size + 'px'; a.style.fontSize = Math.max(10, Math.round(size * 0.36)) + 'px'; }
+    var ini = m && typeof m.initials === 'string' && m.initials ? m.initials : initials(m && m.name);
+    a.appendChild(el('span', { class: 'fa-avatar-ini', text: ini }));
+    var url = m && m.avatarUrl;
+    if (typeof url === 'string' && AVATAR_RE.test(url)) {
+      var img = el('img', { class: 'fa-avatar-img', src: url, alt: '', decoding: 'async', draggable: 'false' });
+      img.addEventListener('load', function () { a.classList.add('has-img'); });
+      img.addEventListener('error', function () { if (img.parentNode) img.parentNode.removeChild(img); });
+      a.appendChild(img);
+    }
     return a;
   }
   /** A switch button (role=switch). */
@@ -252,7 +290,7 @@
   window.FA = {
     CTX: CTX, T: T, $: $, $$: $$, el: el, clear: clear, api: api, errText: errText, errCode: errCode, toast: toast, warn: warn,
     openModal: openModal, closeModal: closeModal, confirm: confirmDialog, svg: svg, safeColor: safeColor,
-    when: when, day: day, dateLong: dateLong, daysUntil: daysUntil, todayStr: todayStr, uuid: uuid, initials: initials, avatar: avatar,
+    when: when, day: day, dateLong: dateLong, daysUntil: daysUntil, todayStr: todayStr, uuid: uuid, initials: initials, avatar: avatar, ringOf: ringOf, avatarLabel: avatarLabel, AWAY: AWAY,
     switchBtn: switchBtn, setSwitch: setSwitch, form: form, parseMoney: parseMoney, money: money,
   };
   document.addEventListener('click', function (e) {

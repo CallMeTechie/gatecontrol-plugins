@@ -97,7 +97,7 @@ test('mock host kiosk users: needs permissions.kiosk, never an administrator or 
       await host.gc.kiosk.allow(2, true);
       await host.gc.kiosk.allow(2, true);
       assert.deepEqual(await host.gc.kiosk.list(), [2, 9]);
-      assert.deepEqual(await host.gc.users.list(), users.slice(0, 2).map(({ id, name, role }) => ({ id, name, role })), 'disabled accounts are not listed');
+      assert.deepEqual((await host.gc.users.list()).map(({ id, name, role }) => ({ id, name, role })), users.slice(0, 2).map(({ id, name, role }) => ({ id, name, role })), 'disabled accounts are not listed');
       for (const [id, allowed] of [[1, true], [3, true], [4, true], [2, 'yes'], ['2', true], [0, false]]) {
         await assert.rejects(host.gc.kiosk.allow(id, allowed), { code: 'ERR_INVALID' }, `${id} ${allowed}`);
       }
@@ -116,6 +116,34 @@ test('mock host kiosk users: needs permissions.kiosk, never an administrator or 
     }
     write({ kiosk: 'yes' });
     await assert.rejects(createHost(tmp, { users }), { code: 'ERR_INVALID' });
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test('mock host gc.users faces (GateControl ≥ 1.168.0): avatarUrl, colour key (default palette[id % 10]), colorHex, initials', async () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'face-plugin-'));
+  const pic = '/avatars/' + 'a'.repeat(22) + '.webp';
+  try {
+    fs.mkdirSync(path.join(tmp, 'server'));
+    fs.writeFileSync(path.join(tmp, 'server', 'index.js'), 'module.exports = {};');
+    fs.writeFileSync(path.join(tmp, 'plugin.json'), JSON.stringify({ id: 'face-test', name: 'F', version: '1.0.0', entry: 'server/index.js', permissions: { users: true } }));
+    const users = [{ id: 1, name: 'admin', role: 'admin' }, { id: 2, name: 'Anna Berg', role: 'user', color: 'pink', avatarUrl: pic }, { id: 13, name: 'Tim', role: 'user', color: 'red' }];
+    const host = await createHost(tmp, { users });
+    try {
+      assert.deepEqual(await host.gc.users.list(), [
+        { id: 1, name: 'admin', role: 'admin', avatarUrl: null, color: 'teal', colorHex: '#14B8A6', initials: 'AD' },
+        { id: 2, name: 'Anna Berg', role: 'user', avatarUrl: pic, color: 'pink', colorHex: '#EC4899', initials: 'AB' },
+        { id: 13, name: 'Tim', role: 'user', avatarUrl: null, color: 'lime', colorHex: '#84CC16', initials: 'TI' },
+      ], 'red is no favourite colour: the default');
+      host.setUserFace(13, { color: 'indigo', avatarUrl: pic });
+      assert.deepEqual(await host.gc.users.get(13), { id: 13, name: 'Tim', role: 'user', avatarUrl: pic, color: 'indigo', colorHex: '#6366F1', initials: 'TI' });
+      host.setUserFace(13, { avatarUrl: null });
+      assert.equal((await host.gc.users.get(13)).avatarUrl, null);
+      assert.throws(() => host.setUserFace(13, { avatarUrl: '/avatars/x.gif' }), { code: 'ERR_INVALID' });
+    } finally {
+      await host.close();
+    }
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
   }

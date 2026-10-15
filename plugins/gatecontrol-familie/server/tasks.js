@@ -27,6 +27,7 @@
 const store = require('./store');
 const tz = require('./tz');
 const push = require('./push');
+const members = require('./members');
 const { fail, posInt, text, bool, intIn, time, date, iso, userIds, parseJson, validDate } = require('./util');
 
 const MODES = ['fixed', 'rotate', 'first'];
@@ -217,7 +218,7 @@ async function forWall(gc, r) {
     if (t.mode === 'rotate') ids = by.length ? [by[0]] : [currentTurn(t, r.fam)].filter(Boolean);
     const chips = ids.filter((id) => r.fam.byId.has(id)).map((id) => {
       const m = r.fam.byId.get(id);
-      return { userId: id, name: m.name, color: m.color, done: t.mode === 'fixed' || t.mode === 'first' ? by.includes(id) : done };
+      return { userId: id, name: m.name, ...members.faceOf(m), done: t.mode === 'fixed' || t.mode === 'first' ? by.includes(id) : done };
     });
     out.push({
       id: t.id, title: t.title, mode: t.mode, dueDate: occ, dueTime: t.dueTime, overdue: occ < r.today,

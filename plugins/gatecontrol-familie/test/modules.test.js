@@ -8,7 +8,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { withFamily, ANNA, LENA, TIM } = require('./helpers');
+const { withFamily, ANNA, MARC, LENA, TIM } = require('./helpers');
 const config = require('../server/config');
 
 const ENDPOINTS = {
@@ -80,7 +80,8 @@ test('a module switched off: 403 module_off on its endpoints, null in the overvi
   assert.deepEqual(ov.json.expenses, { month: '2026-10', totalCents: 0, sharedCents: 0, settlement: null, settled: false });
   assert.deepEqual(ov.json.board, { pinned: 0, notes: 0, openChecklists: 0 });
   assert.deepEqual(ov.json.meals, { date: '2026-10-14', lunch: null, dinner: null });
-  assert.deepEqual(ov.json.presence, { home: [], share: false });
+  assert.deepEqual({ ...ov.json.presence, members: ov.json.presence.members.map((m) => [m.userId, m.state, m.presence]) },
+    { home: [], share: false, members: [[ANNA.id, 'not_shared', null], [MARC.id, 'not_shared', null], [LENA.id, 'not_shared', null], [TIM.id, 'not_shared', null]] });
   const kid = (await as(TIM)('GET', '/overview')).json;
   assert.deepEqual(kid.allowance, { balanceCents: 0, nextPayout: null, amountCents: 0, convertibleStars: 0, pendingRequests: 0 });
   assert.equal(kid.expenses, null, 'parents only');

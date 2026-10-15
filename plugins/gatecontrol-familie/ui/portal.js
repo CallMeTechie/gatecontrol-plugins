@@ -3,7 +3,10 @@
    decline, ask, release), and for parents the locate panel (request,
    countdown, last results on a map) and the emergency card (view and edit).
    Same API as the app; a viewer recognised only by device trust reads (no
-   positions, no emergency card) and changes nothing. */
+   positions, no emergency card) and changes nothing.
+   1.3.0: the family as chips in the header — picture or initials on the
+   favourite colour inside the presence ring (A.avatar, ui/common.js),
+   refreshed every minute with GET me while the module presence is on. */
 (function () {
   'use strict';
   var A = window.FA, T = A.T, $ = A.$, $$ = A.$$, el = A.el;
@@ -33,6 +36,18 @@
       parts.push(T('portal.tasks_open', { n: open }));
     }
     $('#fa-p-sub').textContent = parts.join(' · ');
+  }
+
+  /** The member chips in the header: avatar with the presence ring and the name. */
+  function renderPeople() {
+    var box = A.clear($('#fa-p-people'));
+    (me.members || []).forEach(function (m) {
+      var label = A.avatarLabel(m);
+      var a = A.avatar(m, 30);
+      a.removeAttribute('role'); a.removeAttribute('aria-label'); a.setAttribute('aria-hidden', 'true');
+      box.appendChild(el('span', { class: 'fa-p-chip', role: 'listitem', title: label, 'aria-label': label }, [a, el('span', { text: m.name, 'aria-hidden': 'true' })]));
+    });
+    box.hidden = !(me.members || []).length;
   }
 
   // ── shopping ─────────────────────────────────────────────────────────────
@@ -304,7 +319,7 @@
     var points = [];
     kids.forEach(function (k) {
       var ans = locateData.filter(function (x) { return x.childId === k.userId && x.status === 'answered' && x.lat != null; })[0];
-      if (ans) points.push({ lat: ans.lat, lon: ans.lon, accuracy: ans.accuracy, label: k.name, sub: A.when(ans.at || ans.answeredAt), color: k.color });
+      if (ans) points.push({ lat: ans.lat, lon: ans.lon, accuracy: ans.accuracy, label: k.name, sub: A.when(ans.at || ans.answeredAt), color: k.colorHex });
     });
     // redraw the map only when the positions changed (the countdown re-renders every 3 s)
     var key = JSON.stringify(points);
@@ -562,6 +577,7 @@
       $('#fa-dates').hidden = !mod.dates;
       $('#fa-bdays').hidden = !mod.dates;
       renderSub();
+      renderPeople();
       if (mod.shopping) loadShopping();
       if (mod.tasks) loadTasks();
       if (mod.dates) loadDates();
@@ -579,5 +595,7 @@
     if (me.modules.shopping) loadShopping();
     if (me.modules.tasks) loadTasks();
     if (me.modules.rides) loadRides();
+    // the presence ring follows who is home
+    if (me.modules.presence) A.api('GET', 'me').then(function (r) { me.members = r.members; me.me = r.me; renderPeople(); }).catch(function () { /* next minute */ });
   }, 60000);
 }());

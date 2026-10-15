@@ -2,8 +2,10 @@
    the family, "Heute" (dates today/tomorrow, today's rides, birthdays within
    7 days), today's tasks with a chip per person (tap = done for that person)
    and the open items of one shopping list (tap = bought, field = add).
-   1.2.0: today's meals in "Heute" ("Essen: Pfannkuchen") and home / away
-   on the avatars of the members who share their presence.
+   1.2.0: today's meals in "Heute" ("Essen: Pfannkuchen").
+   1.3.0: the avatars (picture or initials on the favourite colour) with the
+   presence ring — home: favourite colour, away: red, otherwise a thin
+   neutral border (A.avatar, ui/common.js); it follows the 60 s poll.
    GET wall every 60 s; dark from 21:00 to 06:00 (server's local time); a
    small pixel shift every few minutes against burn-in. A paired kiosk
    device or a portal login writes; device trust only (no login): read-only. */
@@ -41,20 +43,20 @@
     if (!isNaN(hh)) $('#fa-wall').classList.toggle('is-dark', hh >= 21 || hh < 6);
   }
 
+  /** A task chip's person: the avatar without a ring (the chip is the frame). */
   function dot(m) {
-    var d = el('span', { class: 'fa-w-dot', text: A.initials(m.name), 'aria-hidden': 'true' });
-    d.style.setProperty('--c', A.safeColor(m.color, '#0B7A55'));
+    var d = A.avatar({ name: m.name, initials: m.initials, colorHex: m.colorHex, avatarUrl: m.avatarUrl }, 40, { cls: 'fa-w-dot' });
+    d.setAttribute('aria-hidden', 'true');
     return d;
   }
 
   function renderPeople() {
     var box = A.clear($('#fa-w-people'));
     data.members.slice(0, 6).forEach(function (m) {
-      var a = el('span', { class: 'fa-w-avatar', text: A.initials(m.name), 'aria-hidden': 'true' });
-      a.style.setProperty('--c', A.safeColor(m.color, '#0B7A55'));
-      var p = m.presence === 'home' || m.presence === 'away' ? m.presence : null;
-      var label = p ? m.name + ' · ' + T('presence.' + p) : m.name;
-      box.appendChild(el('div', { class: 'fa-w-person' + (p ? ' is-' + p : ''), title: label, 'aria-label': label }, [a, el('span', { text: m.name })]));
+      var label = A.avatarLabel(m);
+      var a = A.avatar(m, 58, { cls: 'fa-w-avatar' });
+      a.removeAttribute('role'); a.removeAttribute('aria-label'); a.setAttribute('aria-hidden', 'true');
+      box.appendChild(el('div', { class: 'fa-w-person', title: label, role: 'img', 'aria-label': label }, [a, el('span', { text: m.name, 'aria-hidden': 'true' })]));
     });
   }
 

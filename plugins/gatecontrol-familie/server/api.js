@@ -34,6 +34,13 @@
 // login_required). A kiosk device (req.user.kiosk, GateControl ≥ 1.165.0 —
 // a paired wall tablet) counts as signed in. A wall tablet (role 'wall') only
 // gets what server/wall.js allows (403 forbidden otherwise).
+//
+// Member objects (1.3.0, GateControl ≥ 1.168.0) — me and members of GET me,
+// GET presence, overview.presence.members, the wall's members — carry the
+// face of the GateControl account: avatarUrl (/avatars/<id>.<ext> | null),
+// color (favourite colour key), colorHex, initials, and presence: 'home' |
+// 'away' | 'unknown' | null (null = not shared, module presence off, or a
+// viewer recognised only by device trust) — the colour of the avatar ring.
 
 const store = require('./store');
 const tz = require('./tz');
@@ -62,11 +69,12 @@ function trustOnly(user) {
 }
 
 /** GET me */
-function me(r) {
+async function me(gc, r) {
+  const rings = await presence.rings(gc, r.fam, r.cfg, r.trustOnly);
   return {
-    me: members.meView(r.me),
+    me: members.meView(r.me, rings),
     modules: { ...r.cfg.modules },
-    members: r.fam.list.map((m) => members.memberView(r.me, m, r.cfg)),
+    members: r.fam.list.map((m) => members.memberView(r.me, m, r.cfg, rings)),
     serverTime: iso(r.now),
   };
 }
@@ -114,7 +122,7 @@ function dispatch(gc, r, seg, method) {
   const PATCH = method === 'PATCH' || method === 'PUT';
   const DELETE = method === 'DELETE';
 
-  if (a === 'me' && n === 1 && GET) return () => me(r);
+  if (a === 'me' && n === 1 && GET) return () => me(gc, r);
   if (a === 'overview' && n === 1 && GET) return () => overview(gc, r);
 
   if (a === 'shopping') {

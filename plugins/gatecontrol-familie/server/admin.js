@@ -3,7 +3,10 @@
 // The admin pages' API (administrators only, never a portal or app caller):
 //
 //   GET    admin/status                        members, users, modules, settings
-//   POST   admin/members                       { userId, role, birthdate, locateMode, starGoal, color }
+//   POST   admin/members                       { userId, role, birthdate, locateMode, starGoal }
+//                                              (1.3.0: colour and picture come from the GateControl account —
+//                                              avatarUrl, color, colorHex, initials and presence in every member;
+//                                              a `color` in the body is ignored)
 //   PATCH  admin/members/<userId>              same fields, partial
 //   DELETE admin/members/<userId>
 //                                              (a role 'wall' member is a kiosk user — server/kiosk.js)
@@ -31,11 +34,11 @@ const { fail, posInt, iso } = require('./util');
 const DAY = 86400000;
 const LOG_KINDS = ['locate', 'arrival', 'sos', 'place'];
 
-function adminMember(m, cfg) {
+function adminMember(m, cfg, rings) {
   return {
     userId: m.userId, name: m.name, gcRole: m.gcRole, role: m.role, birthdate: m.birthdate, age: m.age, adult: m.adult,
     locateMode: m.locateMode, effectiveMode: members.effectiveMode(m), locatable: m.role === 'child' && members.locateRefusal(m, cfg) === null,
-    starGoal: m.starGoal, color: m.color,
+    starGoal: m.starGoal, ...members.faceOf(m), presence: rings.get(m.userId) || null,
     // 1.1.0: a child of 14+ on "Automatisch" — the pages recommend "Kind bestätigt"
     ageHint: members.ageHint(m),
   };
@@ -44,8 +47,9 @@ function adminMember(m, cfg) {
 async function status(gc, cfg, now) {
   const today = tz.localDate(now, cfg.tz);
   const fam = await members.load(gc, today);
+  const rings = await presence.rings(gc, fam, cfg, false);
   return {
-    members: fam.all.map((m) => adminMember(m, cfg)),
+    members: fam.all.map((m) => adminMember(m, cfg, rings)),
     users: [...fam.users.values()].map((u) => ({ id: u.id, name: u.name, role: u.role, member: fam.byId.has(u.id) || fam.walls.has(u.id) })),
     modules: { ...cfg.modules },
     settings: { timezone: cfg.tz, timezoneSetting: cfg.tzSetting, notifyLang: cfg.lang, problems: cfg.problems, location: cfg.location },
@@ -105,8 +109,8 @@ async function log(gc, cfg, query, now) {
   return {
     days, entries: out.slice(0, 1000),
     positions: await locate.lastPositions(gc, fam, kids.map((k) => k.userId)),
-    children: kids.map((k) => ({ userId: k.userId, name: k.name, color: k.color })),
-    members: fam.list.map((m) => ({ userId: m.userId, name: m.name, role: m.role, color: m.color })),
+    children: kids.map((k) => ({ userId: k.userId, name: k.name, ...members.faceOf(k) })),
+    members: fam.list.map((m) => ({ userId: m.userId, name: m.name, role: m.role, ...members.faceOf(m) })),
   };
 }
 
@@ -170,7 +174,7 @@ async function route(req, gc, seg, cfg, now) {
       const id = await store.tx(gc, () => members.add(gc, fam, body, now));
       await kiosk.roleChanged(gc, id, null, await kiosk.roleOf(gc, id));
       const fresh = await members.load(gc, today);
-      return { member: adminMember(fresh.byId.get(id) || fresh.walls.get(id), cfg) };
+      return { member: adminMember(fresh.byId.get(id) || fresh.walls.get(id), cfg, await presence.rings(gc, fresh, cfg, false)) };
     }
     const id = posInt(b);
     if (!id || seg.length !== 3) throw fail('not_found');
@@ -181,7 +185,7 @@ async function route(req, gc, seg, cfg, now) {
       const fresh = await members.load(gc, today);
       const mm = fresh.byId.get(id) || fresh.walls.get(id);
       if (!mm) throw fail('not_found');
-      return { member: adminMember(mm, cfg) };
+      return { member: adminMember(mm, cfg, await presence.rings(gc, fresh, cfg, false)) };
     }
     if (m === 'DELETE') {
       const before = await kiosk.roleOf(gc, id);
