@@ -1,0 +1,140 @@
+{
+  "id": "gatecontrol-door",
+  "name": {
+    "de": "Tür & Kamera",
+    "en": "Door & Camera"
+  },
+  "version": "1.0.0",
+  "publisher": "CallMeTechie",
+  "description": {
+    "de": "Nuki-Schlösser und -Opener (lokale Bridge oder Nuki Web) und Ring-Türklingeln/-Kameras (inoffizielle Schnittstelle, ohne Gewähr) in GateControl: Tür in App, Widget und Portal auf- und zusperren, Klingel-Push mit Bild und „Tür öffnen“, Verlauf mit Bildern, automatisches Aufsperren bei Ankunft (nur mit Zustimmung) und Sicherheits-Hinweise. Rechte pro Person und Schloss. Alles bleibt auf dem eigenen Server.",
+    "en": "Nuki smart locks and openers (local bridge or Nuki Web) and Ring doorbells/cameras (unofficial interface, no warranty) in GateControl: lock and unlock in the app, widget and portal, doorbell push with a picture and “Open door”, history with pictures, automatic unlock on arrival (opt-in only) and safety notices. Rights per person and lock. Everything stays on your own server."
+  },
+  "gatecontrol": ">=1.169.0",
+  "entry": "server/index.js",
+  "permissions": {
+    "network": {
+      "internet": [
+        "api.nuki.io",
+        "oauth.ring.com",
+        "api.ring.com",
+        "app-snaps.ring.com"
+      ],
+      "homeTargets": [
+        {
+          "id": "nuki-bridge",
+          "label": {
+            "de": "Nuki Bridge",
+            "en": "Nuki Bridge"
+          },
+          "protocols": [
+            "http"
+          ],
+          "multiple": true
+        }
+      ]
+    },
+    "storage": true,
+    "portal": true,
+    "users": true,
+    "app": true,
+    "notify": {
+      "perHour": 120
+    },
+    "background": {
+      "intervalSeconds": 5
+    }
+  },
+  "ui": {
+    "nav": {
+      "label": {
+        "de": "Tür & Kamera",
+        "en": "Door & Camera"
+      },
+      "icon": "M5 21V4a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v17M3 21h18M15 12h.01"
+    },
+    "pages": [
+      {
+        "id": "devices",
+        "title": {
+          "de": "Geräte",
+          "en": "Devices"
+        }
+      },
+      {
+        "id": "rights",
+        "title": {
+          "de": "Berechtigungen",
+          "en": "Permissions"
+        }
+      },
+      {
+        "id": "history",
+        "title": {
+          "de": "Verlauf",
+          "en": "History"
+        }
+      },
+      {
+        "id": "settings",
+        "title": {
+          "de": "Einstellungen",
+          "en": "Settings"
+        }
+      }
+    ],
+    "portal": {
+      "label": {
+        "de": "Tür",
+        "en": "Door"
+      },
+      "icon": "M5 21V4a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v17M3 21h18M15 12h.01"
+    },
+    "app": {
+      "label": {
+        "de": "Tür",
+        "en": "Door"
+      },
+      "icon": "M5 21V4a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v17M3 21h18M15 12h.01"
+    }
+  },
+  "license": {
+    "required": true
+  },
+  "migrations": "migrations",
+  "notifyTopics": [
+    {
+      "id": "doorbell",
+      "label": {
+        "de": "Klingel",
+        "en": "Doorbell"
+      },
+      "default": true,
+      "allowCritical": false
+    },
+    {
+      "id": "motion",
+      "label": {
+        "de": "Bewegung an der Kamera",
+        "en": "Camera motion"
+      },
+      "default": false
+    },
+    {
+      "id": "door",
+      "label": {
+        "de": "Tür & Schloss (offen, blockiert, Batterie, Nacht)",
+        "en": "Door & lock (open, jammed, battery, night)"
+      },
+      "default": true
+    },
+    {
+      "id": "auto",
+      "label": {
+        "de": "Automatisches Aufsperren",
+        "en": "Automatic unlock"
+      },
+      "default": true
+    }
+  ]
+}

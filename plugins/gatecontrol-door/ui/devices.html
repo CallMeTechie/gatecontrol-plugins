@@ -1,0 +1,56 @@
+<main class="dr-page">
+  <p class="dr-intro">{{t:dev.intro}}</p>
+  <section class="dr-card" aria-labelledby="dr-br-h">
+    <div class="dr-card-head"><h2 class="dr-card-title" id="dr-br-h">{{t:dev.bridges}}</h2></div>
+    <p class="dr-hint">{{t:dev.bridges_hint}}</p>
+    <div class="dr-list" id="dr-bridges"></div>
+    <p class="dr-hint" id="dr-no-targets" hidden>{{t:dev.no_targets}}</p>
+    <form id="dr-bridge-form" class="form-row" autocomplete="off">
+      <div class="form-group"><label class="form-label" for="dr-b-name">{{t:dev.bridge_name}}</label><input class="form-input" id="dr-b-name" maxlength="40" required></div>
+      <div class="form-group"><label class="form-label" for="dr-b-target">{{t:dev.target}}</label><select class="form-select" id="dr-b-target"></select></div>
+      <div class="form-group"><label class="form-label" for="dr-b-token">{{t:dev.token}}</label><input class="form-input" id="dr-b-token" type="password" maxlength="64" required></div>
+      <div class="form-group" style="justify-content:flex-end"><button class="btn btn-primary" type="submit">{{t:dev.bridge_add}}</button></div>
+    </form>
+  </section>
+  <section class="dr-card" aria-labelledby="dr-web-h">
+    <div class="dr-card-head"><h2 class="dr-card-title" id="dr-web-h">{{t:dev.web}}</h2><span class="dr-badge" id="dr-web-state"></span></div>
+    <p class="dr-hint">{{t:dev.web_hint}}</p>
+    <form id="dr-web-form" class="form-row" autocomplete="off">
+      <div class="form-group"><label class="form-label" for="dr-w-token">{{t:dev.token}}</label><input class="form-input" id="dr-w-token" type="password" maxlength="2000"></div>
+      <div class="form-group" style="justify-content:flex-end;flex-direction:row;align-items:flex-end">
+        <button class="btn btn-primary" type="submit">{{t:dev.web_save}}</button>
+        <button class="btn" type="button" id="dr-w-test">{{t:dev.test}}</button>
+        <button class="btn btn-danger" type="button" id="dr-w-remove">{{t:dev.web_remove}}</button>
+      </div>
+    </form>
+  </section>
+  <section class="dr-card" aria-labelledby="dr-locks-h">
+    <div class="dr-card-head"><h2 class="dr-card-title" id="dr-locks-h">{{t:dev.locks}}</h2><button class="btn btn-primary btn-sm" type="button" id="dr-lock-add">{{t:dev.lock_add}}</button></div>
+    <div class="dr-list" id="dr-locks"></div>
+    <p class="dr-hint" id="dr-no-locks" hidden>{{t:dev.no_locks}}</p>
+  </section>
+  <section class="dr-card" aria-labelledby="dr-ring-h">
+    <div class="dr-card-head"><h2 class="dr-card-title" id="dr-ring-h">{{t:dev.ring}}</h2><span class="dr-badge" id="dr-ring-state"></span></div>
+    <div class="dr-note">{{t:ring.unofficial}}</div>
+    <form id="dr-ring-form" autocomplete="off">
+      <div class="form-row">
+        <div class="form-group"><label class="form-label" for="dr-r-email">{{t:dev.ring_email}}</label><input class="form-input" id="dr-r-email" type="email" maxlength="200"></div>
+        <div class="form-group"><label class="form-label" for="dr-r-pw">{{t:dev.ring_password}}</label><input class="form-input" id="dr-r-pw" type="password" maxlength="200" autocomplete="new-password"></div>
+        <div class="form-group" id="dr-r-code-box" hidden><label class="form-label" for="dr-r-code">{{t:dev.ring_code}}</label><input class="form-input" id="dr-r-code" inputmode="numeric" maxlength="10"></div>
+      </div>
+      <p class="dr-hint" id="dr-r-code-hint" hidden></p>
+      <p class="dr-hint">{{t:dev.ring_pw_hint}}</p>
+      <div class="dr-actions" style="margin-top:10px">
+        <button class="btn btn-primary" type="submit" id="dr-r-submit">{{t:dev.ring_login}}</button>
+        <button class="btn" type="button" id="dr-r-sync">{{t:dev.ring_sync}}</button>
+        <button class="btn btn-danger" type="button" id="dr-r-logout">{{t:dev.ring_logout}}</button>
+      </div>
+    </form>
+  </section>
+  <section class="dr-card" aria-labelledby="dr-cams-h">
+    <div class="dr-card-head"><h2 class="dr-card-title" id="dr-cams-h">{{t:dev.cameras}}</h2></div>
+    <p class="dr-hint">{{t:dev.camera_hint}}</p>
+    <div class="dr-list" id="dr-cams"></div>
+    <p class="dr-hint" id="dr-no-cams" hidden>{{t:dev.no_cameras}}</p>
+  </section>
+</main>
