@@ -19,6 +19,7 @@
 
   function ageHint(k) { return k.role === 'child' && !k.adult && k.age != null && k.age >= 14 && k.locateMode === 'auto'; }
   function family() { return data.members.filter(function (m) { return m.role !== 'wall'; }); }
+  function hasKids() { return data.members.some(function (m) { return m.role === 'child'; }); }
 
   function setModule(key, on, btn) {
     var body = {}; body[key] = on;
@@ -36,8 +37,11 @@
       g[1].forEach(function (it) {
         var key = it[0];
         var on = !!data.modules[key];
+        var text = [el('span', { class: 'fa-opt-title', text: T('module.' + key) }), el('span', { class: 'fa-opt-desc', text: T('module.' + key + '_desc') })];
+        // Pocket money needs a child: without one the app shows no card at all.
+        if (key === 'allowance' && !hasKids()) text.push(el('span', { class: 'fa-age-hint', text: T('modules.allowance_no_kids') }));
         sec.appendChild(el('div', { class: 'fa-mod' + (on ? '' : ' is-off') }, [
-          el('div', { class: 'fa-opt-text' }, [el('span', { class: 'fa-opt-title', text: T('module.' + key) }), el('span', { class: 'fa-opt-desc', text: T('module.' + key + '_desc') })]),
+          el('div', { class: 'fa-opt-text' }, text),
           el('span', { class: 'fa-mod-who', text: T('who.' + it[1]) }),
           A.switchBtn(on, T('module.' + key), function (v, b) { setModule(key, v, b); }),
         ]));

@@ -3,6 +3,12 @@
 Die Familie in der GateControl-App (eigener Tab), im Portal (eigener Tab „Familie“) und auf
 drei Admin-Seiten. Alles bleibt auf dem eigenen Server.
 
+## 1.2.1
+- **Funktionen:** Die Karte „Taschengeld“ zeigt einen Hinweis, solange noch kein Kind
+  Mitglied ist („Noch kein Kind angelegt – füge unter „Mitglieder & Ortung“ ein Kind hinzu,
+  dann erscheint das Taschengeld in der App.“). Ohne Kind blendet die App die Taschengeld-Karte
+  aus; der Hinweis erklärt das schon beim Einschalten.
+
 ## 1.2.0
 Braucht **GateControl ≥ 1.166.0** und die neue Berechtigung `permissions.actions` (im
 Installationsdialog „darf Schnellaktionen anderer Plugins auslösen (z. B. Smart-Home-Szenen)“).
