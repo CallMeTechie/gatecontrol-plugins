@@ -93,8 +93,28 @@
     if (d.listNukiState != null && d.listNukiState !== d.nukiState) parts.push(T('dev.diag_list', { code: d.listNukiState }));
     parts.push(T('dev.diag_updated', { when: D.when(d.updatedAt) }));
     if (d.movingSince) parts.push(T('dev.diag_moving', { when: D.when(d.movingSince) }));
-    if (d.stale) parts.push(T('dev.diag_stale', { state: d.stableState ? T('state.' + d.stableState) : T('state.unknown') }));
+    if (d.stale) parts.push(d.stableState ? T('dev.diag_stale', { state: T('state.' + d.stableState) }) : T('dev.diag_stale_none'));
     return parts.join(' · ');
+  }
+
+  /** "vor 3 Std." — the age of Nuki Web's cloud copy (seconds). */
+  function ago(sec) {
+    if (sec < 90) return T('rel.ago_s', { n: sec });
+    if (sec < 5400) return T('rel.ago_min', { n: Math.round(sec / 60) });
+    if (sec < 172800) return T('rel.ago_h', { n: Math.round(sec / 3600) });
+    return T('rel.ago_d', { n: Math.round(sec / 86400) });
+  }
+
+  /** The raw fields Nuki reported (Web: mode, state, lastAction, trigger, doorState, serverState, updateDate; Bridge: lastKnownState). */
+  var RAW_KEYS = { web: ['mode', 'state', 'lastAction', 'trigger', 'doorState', 'serverState'], bridge: ['mode', 'state', 'stateName', 'doorsensorState', 'doorsensorStateName', 'timestamp'] };
+  function rawText(l) {
+    var d = l.diag || {};
+    var web = d.source === 'web';
+    var raw = d.raw || {};
+    var parts = RAW_KEYS[web ? 'web' : 'bridge'].filter(function (k) { return raw[k] != null; }).map(function (k) { return k + ' ' + raw[k]; });
+    if (web) parts.push(d.cloudAgeSec != null ? T('dev.diag_cloud', { age: ago(d.cloudAgeSec) }) : T('dev.diag_cloud_none'));
+    if (!parts.length) return null;
+    return T(web ? 'dev.diag_raw_web' : 'dev.diag_raw_bridge') + ': ' + parts.join(' · ');
   }
 
   function renderLocks() {
@@ -105,6 +125,8 @@
           el('div', { class: 'dr-item-title' }, [l.name + ' ', el('span', { class: 'dr-badge', 'data-tone': D.tone(l), text: D.badgeText(l) })]),
           el('div', { class: 'dr-item-sub', text: [T('dev.type_' + l.type), l.source === 'web' ? T('dev.source_web') : T('dev.source_bridge'), l.actions.map(function (a) { return D.actLabel(l, a); }).join('/'), D.stateText(l)].join(' · ') }),
           el('div', { class: 'dr-item-sub dr-diag', text: diagText(l) }),
+          rawText(l) ? el('div', { class: 'dr-item-sub dr-diag', text: rawText(l) }) : null,
+          l.diag && l.diag.cloudHint ? el('div', { class: 'dr-note dr-cloud-hint', role: 'note', text: T('dev.web_stale_hint') }) : null,
         ]),
         el('div', { class: 'dr-actions' }, [
           el('button', { type: 'button', class: 'btn btn-sm', text: T('dev.refresh'), on: { click: function () { D.api('POST', 'admin/locks/' + l.id + '/refresh').then(load).catch(D.warn); } } }),

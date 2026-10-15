@@ -23,6 +23,13 @@
 //           shown with stale: true (displayState) — never for safety decisions:
 //           server/control.js refuses an automatic unlock then (state_unclear).
 // A failed re-read keeps the overview's state for that poll.
+//
+// Nuki Web's cloud copy (1.0.2): a transitional state whose cloud data
+// (smartlock.updateDate, saved as cloud_at) is older than 60 s is not live —
+// a lock moves for a few seconds. It is unclear at once (no 3-minute wait) and
+// read again at once (GET /smartlock/{id}, still ≤ 1 per 2 min). No stable
+// state ever seen (e.g. a row written by 1.0.0, where the cloud was already
+// stuck) → state 'unknown', stale: true ("Zustand unklar"), never "Öffnet …".
 
 const store = require('./store');
 const nuki = require('./nuki');
@@ -31,6 +38,7 @@ const { fail, parseJson, iso } = require('./util');
 const POLL_MS = 30000;
 const POLL_FAST_MS = 10000;
 const STALE_MS = 3 * 60000;
+const CLOUD_STALE_MS = 60000;
 const REFRESH = {
   bridge: { afterMs: 30000, everyMs: 60000, via: 'lockState' },
   web: { afterMs: 60000, everyMs: 120000, via: 'smartlock_id' },
@@ -55,6 +63,11 @@ function pollSoon(lock, at) {
   mem.soon.set(k, list);
 }
 
+function rawJson(v) {
+  const o = parseJson(v, null);
+  return o && typeof o === 'object' && !Array.isArray(o) ? o : null;
+}
+
 function rowToLock(r) {
   const actions = parseJson(r.actions, []).filter((a) => ['lock', 'unlock', 'open'].includes(a));
   return {
@@ -68,13 +81,14 @@ function rowToLock(r) {
       unreachableSince: r.unreachable_since || null, doorOpenSince: r.door_open_since || null, jammedSince: r.jammed_since || null,
       movingSince: r.moving_since || null, stableState: r.stable_state || null, via: r.nuki_via || null,
       listNukiState: r.list_nuki_state == null ? null : r.list_nuki_state, listMovingSince: r.list_moving_since || null,
+      cloudAt: r.cloud_at || null, raw: rawJson(r.nuki_raw),
     },
   };
 }
 
 const SELECT = `SELECT l.*, s.state AS st_state, s.nuki_state, s.door, s.battery_critical, s.battery_percent, s.battery_charging,
   s.reachable, s.updated_at, s.checked_at, s.unreachable_since, s.door_open_since, s.jammed_since,
-  s.moving_since, s.stable_state, s.nuki_via, s.list_nuki_state, s.list_moving_since
+  s.moving_since, s.stable_state, s.nuki_via, s.list_nuki_state, s.list_moving_since, s.cloud_at, s.nuki_raw
   FROM locks l LEFT JOIN lock_state s ON s.lock_id = l.id`;
 
 async function all(gc) {
@@ -100,15 +114,27 @@ async function webToken(gc) {
   return typeof t === 'string' && t ? t : null;
 }
 
+/** Nuki Web: the cloud's copy of this lock is older than 60 s (null when unknown / not web). */
+function cloudOld(lock, cloudAt, now) {
+  return lock.source === 'web' && cloudAt != null ? now - cloudAt > CLOUD_STALE_MS : null;
+}
+
 /**
- * The state to show: a transitional state saved for ≥ 3 min is not believed any more — the last
- * stable state is shown instead, with stale: true ("Zustand unklar – zuletzt: …"). For display only:
- * every safety decision uses lock.state.state.  → { state, stale }
+ * The state to show: a transitional state saved for ≥ 3 min — or, Nuki Web, whose cloud data is older
+ * than 60 s — is not believed — the last stable state is shown instead, with stale: true ("Zustand
+ * unklar – zuletzt: …"; none seen: 'unknown' → "Zustand unklar"). For display and the refusal of an
+ * automatic unlock (state_unclear) only: never used as "locked".
+ *   → { state, stale, why: null | 'moving' (≥ 3 min) | 'cloud' (cloud data old) }
  */
 function displayState(lock, now = Date.now()) {
   const s = lock.state;
-  const stale = nuki.isTransitional(s.state) && s.movingSince != null && now - s.movingSince >= STALE_MS;
-  return { state: stale ? (s.stableState || 'unknown') : s.state, stale };
+  let why = null;
+  if (nuki.isTransitional(s.state)) {
+    if (cloudOld(lock, s.cloudAt, now)) why = 'cloud';
+    else if (s.movingSince != null && now - s.movingSince >= STALE_MS) why = 'moving';
+  }
+  const stale = why != null;
+  return { state: stale ? (s.stableState || 'unknown') : s.state, stale, why };
 }
 
 /** The state view for the API (no Nuki internals). */
@@ -122,13 +148,20 @@ function stateView(lock, now = Date.now()) {
   };
 }
 
-/** What Nuki reported, for the admin page "Geräte" (diagnostics). */
+/**
+ * What Nuki reported, for the admin page "Geräte" (diagnostics). raw: the raw fields (nuki.js rawFields);
+ * cloudAt / cloudAgeSec: Nuki Web's updateDate and its age; cloudHint: the cloud's state is stale →
+ * the page suggests the bridge / checking the lock's internet connection.
+ */
 function diagView(lock, now = Date.now()) {
   const s = lock.state;
+  const d = displayState(lock, now);
   return {
     source: lock.source, nukiState: s.nukiState, via: s.via, listNukiState: s.listNukiState,
     updatedAt: iso(s.updatedAt), checkedAt: iso(s.checkedAt), movingSince: iso(s.movingSince),
-    stableState: s.stableState, stale: displayState(lock, now).stale,
+    stableState: s.stableState, stale: d.stale, staleWhy: d.why, raw: s.raw,
+    cloudAt: iso(s.cloudAt), cloudAgeSec: s.cloudAt != null ? Math.max(0, Math.round((now - s.cloudAt) / 1000)) : null,
+    cloudHint: lock.source === 'web' && d.stale,
   };
 }
 
@@ -140,9 +173,12 @@ function diagView(lock, now = Date.now()) {
 async function saveState(gc, lock, obs, now, meta = {}) {
   const prev = lock.state;
   if (!obs) {
-    await store.run(gc, `INSERT INTO lock_state (lock_id, reachable, checked_at, unreachable_since) VALUES (?, 0, ?, ?)
+    // not reachable: the raw fields of the answer still tell why (e.g. Nuki Web serverState 4 = offline)
+    const raw = meta.raw ? JSON.stringify(meta.raw) : null;
+    await store.run(gc, `INSERT INTO lock_state (lock_id, reachable, checked_at, unreachable_since, nuki_raw) VALUES (?, 0, ?, ?, ?)
       ON CONFLICT(lock_id) DO UPDATE SET reachable = 0, checked_at = excluded.checked_at,
-      unreachable_since = COALESCE(lock_state.unreachable_since, excluded.unreachable_since)`, [lock.id, now, now]);
+      unreachable_since = COALESCE(lock_state.unreachable_since, excluded.unreachable_since),
+      nuki_raw = COALESCE(excluded.nuki_raw, lock_state.nuki_raw)`, [lock.id, now, now, raw]);
     return;
   }
   const doorOpenSince = obs.door === 'open' ? (prev.door === 'open' && prev.doorOpenSince ? prev.doorOpenSince : now) : null;
@@ -152,17 +188,19 @@ async function saveState(gc, lock, obs, now, meta = {}) {
   const prevStable = prev.state && prev.state !== 'unknown' && !nuki.isTransitional(prev.state);
   const stableState = moving ? (prevStable ? prev.state : prev.stableState) : obs.state;
   await store.run(gc, `INSERT INTO lock_state (lock_id, state, nuki_state, door, battery_critical, battery_percent, battery_charging, reachable,
-      updated_at, checked_at, unreachable_since, door_open_since, jammed_since, moving_since, stable_state, nuki_via, list_nuki_state, list_moving_since)
-    VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?)
+      updated_at, checked_at, unreachable_since, door_open_since, jammed_since, moving_since, stable_state, nuki_via, list_nuki_state, list_moving_since,
+      cloud_at, nuki_raw)
+    VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(lock_id) DO UPDATE SET state = excluded.state, nuki_state = excluded.nuki_state, door = excluded.door,
       battery_critical = excluded.battery_critical, battery_percent = excluded.battery_percent, battery_charging = excluded.battery_charging,
       reachable = 1, updated_at = excluded.updated_at, checked_at = excluded.checked_at, unreachable_since = NULL,
       door_open_since = excluded.door_open_since, jammed_since = excluded.jammed_since, moving_since = excluded.moving_since,
       stable_state = excluded.stable_state, nuki_via = excluded.nuki_via, list_nuki_state = excluded.list_nuki_state,
-      list_moving_since = excluded.list_moving_since`, [
+      list_moving_since = excluded.list_moving_since, cloud_at = excluded.cloud_at, nuki_raw = excluded.nuki_raw`, [
     lock.id, obs.state, obs.nukiState, obs.door, obs.batteryCritical ? 1 : 0, obs.batteryPercent, obs.batteryCharging ? 1 : 0,
     now, now, doorOpenSince, jammedSince, movingSince, stableState, meta.via || null,
     meta.listCode == null ? obs.nukiState : meta.listCode, meta.listSince || null,
+    obs.cloudAt == null ? null : obs.cloudAt, obs.raw ? JSON.stringify(obs.raw) : null,
   ]);
 }
 
@@ -175,12 +213,16 @@ async function saveState(gc, lock, obs, now, meta = {}) {
 async function refreshStuck(gc, lock, obs, listSince, now, src) {
   const web = lock.source === 'web';
   const r = web ? REFRESH.web : REFRESH.bridge;
-  if (now - listSince < r.afterMs) return null;
+  // Nuki Web: the cloud's data is older than 60 s → it cannot be a live movement; read again now
+  if (now - listSince < r.afterMs && !cloudOld(lock, obs.cloudAt, now)) return null;
   const code = obs.nukiState;
   const last = mem.refreshedAt.get(lock.id);
   if (last != null && now - last < r.everyMs) {
     const f = mem.fresh.get(lock.id);
-    return f && f.code === code ? { obs: f.obs, via: r.via } : null;
+    if (!f || f.code !== code) return null;
+    // Nuki Web: overview and single read are the same cloud copy — its age is that of the newer one
+    const cloudAt = f.obs.cloudAt != null && obs.cloudAt != null ? Math.max(f.obs.cloudAt, obs.cloudAt) : f.obs.cloudAt;
+    return { obs: { ...f.obs, cloudAt }, via: r.via };
   }
   mem.refreshedAt.set(lock.id, now);
   mem.fresh.delete(lock.id);
@@ -244,7 +286,7 @@ async function poll(gc, now, { force = false, fast = new Set(), only = null } = 
       const d = found && found.get(String(l.nuki_id));
       const reachable = !!(d && d.state && d.reachable !== false && d.state.state !== 'unknown');
       let obs = reachable ? d.state : null;
-      const meta = { via: k === 'web' ? 'smartlock' : 'list', listCode: obs ? obs.nukiState : null, listSince: null };
+      const meta = { via: k === 'web' ? 'smartlock' : 'list', listCode: obs ? obs.nukiState : null, listSince: null, raw: d && d.state ? d.state.raw : null };
       if (obs && nuki.isTransitional(obs.state)) {
         // the overview has been on this transitional code since …
         meta.listSince = l.state.listNukiState === obs.nukiState && l.state.listMovingSince ? l.state.listMovingSince : now;
@@ -282,6 +324,6 @@ async function assumeAfter(gc, lock, action, now) {
 }
 
 module.exports = {
-  POLL_MS, POLL_FAST_MS, STALE_MS, REFRESH, WEB_TOKEN, bridgeSecret, reset, sourceKey, pollSoon, all, get, bridges, bridgeToken, webToken,
+  POLL_MS, POLL_FAST_MS, STALE_MS, CLOUD_STALE_MS, REFRESH, WEB_TOKEN, bridgeSecret, reset, sourceKey, pollSoon, all, get, bridges, bridgeToken, webToken,
   displayState, stateView, diagView, saveState, poll, execute, assumeAfter, rowToLock, _mem: mem,
 };

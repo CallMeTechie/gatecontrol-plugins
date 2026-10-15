@@ -8,6 +8,29 @@ bleibt auf dem eigenen Server. Einrichtung, Risiken, Datenschutz und die App-API
 an; das Plugin nutzt die, die auch die Open-Source-Projekte ring-client-api (Homebridge) und
 python-ring-doorbell (Home Assistant) verwenden. Sie kann sich jederzeit ändern oder wegfallen.
 
+## 1.0.2
+- **Behoben: Nuki Web zeigt weiter „Öffnet …“, obwohl das Schloss längst aufgesperrt ist.** Die
+  Cloud-Kopie kann auf einem Zwischenzustand hängen – auch `GET /smartlock/{id}` liefert dann
+  weiter 7 (öffnet). Jetzt wird `updateDate` des Schlosses gelesen (wann die Cloud ihre Kopie
+  zuletzt geändert hat): ein Zwischenzustand mit einem Cloud-Stand älter als 60 s gilt **sofort**
+  als „Zustand unklar“ (nicht erst nach 3 Minuten) und wird sofort neu gelesen (weiter höchstens
+  alle 2 Minuten). Ohne `updateDate` gilt wie bisher die 3-Minuten-Regel.
+- **Kein fester Zustand bekannt** (z. B. hing die Cloud schon vor dem Update, Zeile aus 1.0.0):
+  App-API `lock: "unknown"`, `stale: true`; Portal, Startkachel, Schnellaktionen und die Seite
+  „Geräte“ zeigen nur „Zustand unklar“ (statt „Zustand unklar – zuletzt: Unbekannt“), nie
+  „Öffnet …“. Geprüft: eine Zeile aus 1.0.0 (`moving_since` leer nach Migration 002) erreicht die
+  3-Minuten-Regel über die Übersicht und über das Neulesen; die Uhr startet bei der ersten Abfrage
+  nach dem Update und wird beim Neulesen nicht zurückgesetzt.
+- **Diagnose** auf der Seite „Geräte“: die rohen Felder – Nuki Web `mode`, `state`, `lastAction`,
+  `trigger`, `doorState`, `serverState` und „Cloud-Stand: vor … “ aus `updateDate`; Bridge
+  `mode`, `state`, `stateName`, `doorsensorState`, `doorsensorStateName`, `timestamp` (aus
+  `lastKnownState` bzw. `/lockState`). Auch bei „nicht erreichbar“ bleibt z. B. `serverState`
+  sichtbar. Nur Zahlen und kurze Texte, nie Tokens.
+- **Hinweis** auf der Seite „Geräte“, wenn der Zustand aus Nuki Web als unklar gilt: „Nuki Web
+  liefert einen veralteten Zustand. Für zuverlässige Anzeige die Nuki Bridge verwenden oder in der
+  Nuki-App prüfen, ob das Schloss mit dem Internet verbunden ist.“
+- Datenbank: Migration `003_state_raw.sql` (`lock_state.cloud_at`, `lock_state.nuki_raw`).
+
 ## 1.0.1
 - **Behoben: Schloss bleibt auf „Öffnet …“ (oder „Sperrt auf/zu …“) stehen.** Die Bridge liefert
   in `/list` ihren zwischengespeicherten Zustand, Nuki Web in `/smartlock` den der Cloud – beide
