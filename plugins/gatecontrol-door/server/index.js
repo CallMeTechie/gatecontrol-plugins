@@ -112,7 +112,8 @@ async function quickActionsFor(gc, user, lang) {
     const level = rights.levelOf(r, user.id, lock.id);
     if (!level) continue;
     const opener = nuki.isOpener(lock.device_type);
-    const sub = clip(t(lang, 'state.' + lock.state.state), 60) || null;
+    const shown = locks.displayState(lock, Date.now());
+    const sub = clip(shown.stale ? t(lang, 'state.stale', { state: t(lang, 'state.' + shown.state) }) : t(lang, 'state.' + shown.state), 60) || null;
     for (const a of lock.actions) {
       if (!rights.atLeast(level, rights.NEEDS[a])) continue;
       if (kind === 'automation' && a === 'open') continue;
@@ -194,8 +195,10 @@ module.exports = {
     for (const lock of await locks.all(gc)) {
       if (!rights.levelOf(r, user.id, lock.id)) continue;
       const s = lock.state;
-      const st = !s.reachable || s.state === 'jammed' ? 'crit' : (s.state === 'locked' ? 'good' : (s.state === 'unlocked' || s.state === 'unlatched' ? 'warn' : 'off'));
-      out.push({ title: clip(lock.name, 40), value: clip(t(lang, s.reachable ? 'state.' + s.state : 'portal.unreachable'), 40), state: st, icon: s.state === 'locked' ? ICONS.lock : ICONS.unlock });
+      const shown = locks.displayState(lock, Date.now());
+      const st = !s.reachable || s.state === 'jammed' ? 'crit' : (shown.stale ? 'warn' : (s.state === 'locked' ? 'good' : (s.state === 'unlocked' || s.state === 'unlatched' ? 'warn' : 'off')));
+      const value = !s.reachable ? t(lang, 'portal.unreachable') : (shown.stale ? t(lang, 'state.stale', { state: t(lang, 'state.' + shown.state) }) : t(lang, 'state.' + shown.state));
+      out.push({ title: clip(lock.name, 40), value: clip(value, 40), state: st, icon: shown.state === 'locked' ? ICONS.lock : ICONS.unlock });
     }
     return out.slice(0, 8);
   },

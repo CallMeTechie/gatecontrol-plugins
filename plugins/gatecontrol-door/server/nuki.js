@@ -15,9 +15,19 @@
 //   token), GET /smartlock, POST /smartlock/{id}/action { action },
 //   GET /smartlock/{id}/log (optional import of keypad / manual operations).
 //
-// Device types: smart lock 0, 3, 4, 5 · opener 2. Actions: smart lock
-// 1 unlock, 2 lock, 3 unlatch ("öffnen"); opener 3 electric strike actuation
-// ("Summer"). Tokens are never logged: errors carry codes only.
+// Device types — the same numbers in the bridge's deviceType and the Web API's
+// `type`: 0 Smart Lock 1.0/2.0 ("keyturner"), 1 Box (no lock, ignored),
+// 2 Opener, 3 Smart Door, 4 Smart Lock 3.0/4.0 (Pro), 5 newer smart locks
+// (Ultra / 5th generation — handled as a smart lock). So: smart lock 0, 3, 4, 5
+// · opener 2. Actions: smart lock 1 unlock, 2 lock, 3 unlatch ("öffnen");
+// opener 3 electric strike actuation ("Summer"). Tokens are never logged:
+// errors carry codes only.
+//
+// Transitional states (the lock is moving): smart lock unlocking (2),
+// locking (4), unlatching (7); opener opening (7), boot_run (253). The
+// bridge's /list and Nuki Web's /smartlock can stay on one of them long after
+// the lock has stopped — server/locks.js then asks the lock itself
+// (bridgeLockState / webLock).
 
 const crypto = require('node:crypto');
 const { fail } = require('./util');
@@ -37,7 +47,11 @@ const OPENER_STATES = { 0: 'untrained', 1: 'online', 3: 'rto_active', 5: 'open',
 // 16 uncalibrated, 240 removed, 255 unknown
 const DOOR_STATES = { 1: 'deactivated', 2: 'closed', 3: 'open', 4: 'unknown', 5: 'calibrating', 16: 'uncalibrated', 240: 'removed', 255: 'unknown' };
 
+const TRANSITIONAL = new Set(['unlocking', 'locking', 'unlatching', 'opening', 'boot_run']);
+
 const isOpener = (deviceType) => Number(deviceType) === OPENER;
+/** Is this (our) state name one of a lock that is moving? */
+const isTransitional = (state) => TRANSITIONAL.has(state);
 const knownType = (t) => SMARTLOCK_TYPES.has(Number(t)) || isOpener(t);
 
 /** The actions a device type can do (in this plugin). */
@@ -213,6 +227,14 @@ async function webList(gc, token) {
   return list.filter((d) => d && d.smartlockId != null && knownType(d.type)).map(fromWebLock);
 }
 
+/** GET /smartlock/{id} — one lock, read again (a transitional state that does not end). */
+async function webLock(gc, token, lock) {
+  if (!/^\d{1,20}$/.test(String(lock.nuki_id))) throw fail('invalid');
+  const d = await webRequest(gc, token, 'GET', `/smartlock/${lock.nuki_id}`);
+  if (!d || typeof d !== 'object' || d.smartlockId == null) throw fail('nuki_error');
+  return fromWebLock(d);
+}
+
 /** POST /smartlock/{id}/action { action } (the cloud forwards it; 204 = accepted). */
 async function webAction(gc, token, lock, action) {
   const code = actionCode(lock.device_type, action);
@@ -244,8 +266,8 @@ async function webLog(gc, token, lock, limit = 20) {
 }
 
 module.exports = {
-  TARGET, WEB, SMARTLOCK_TYPES, OPENER, TIMEOUT, LOCK_STATES, OPENER_STATES, DOOR_STATES,
-  isOpener, knownType, supportedActions, actionCode, stateName, doorName, hashAuth, bridgeTs,
-  bridgeList, bridgeLockState, bridgeAction, webList, webAction, webLog, fromBridgeState, fromWebLock,
+  TARGET, WEB, SMARTLOCK_TYPES, OPENER, TIMEOUT, LOCK_STATES, OPENER_STATES, DOOR_STATES, TRANSITIONAL,
+  isOpener, isTransitional, knownType, supportedActions, actionCode, stateName, doorName, hashAuth, bridgeTs,
+  bridgeList, bridgeLockState, bridgeAction, webList, webLock, webAction, webLog, fromBridgeState, fromWebLock,
   _chains: chains,
 };

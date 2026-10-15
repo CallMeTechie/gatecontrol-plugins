@@ -17,7 +17,7 @@
     if (lock.blocked === 'outside_window') sub += ' · ' + T('portal.outside_window');
     return el('div', { class: 'dr-item' }, [
       el('div', { class: 'dr-item-main' }, [
-        el('div', { class: 'dr-item-title' }, [lock.name + ' ', el('span', { class: 'dr-badge', 'data-tone': D.tone(lock), text: lock.state.reachable ? T('state.' + lock.state.lock) : T('portal.unreachable') })]),
+        el('div', { class: 'dr-item-title' }, [lock.name + ' ', el('span', { class: 'dr-badge', 'data-tone': D.tone(lock), text: D.badgeText(lock) })]),
         el('div', { class: 'dr-item-sub', text: sub }),
       ]),
       el('div', { class: 'dr-actions' }, buttons),

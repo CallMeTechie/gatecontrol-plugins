@@ -20,17 +20,17 @@ function lockView(lock, { level, user, prefs, cfg, now }) {
   return {
     id: lock.id, name: lock.name, type: nuki.isOpener(lock.device_type) ? 'opener' : 'smartlock',
     right: level, actions: allowed, blocked, confirm: allowed.filter((a) => a !== 'lock'),
-    doorSensor: lock.door_sensor, state: locks.stateView(lock),
+    doorSensor: lock.door_sensor, state: locks.stateView(lock, now),
   };
 }
 
-/** A lock for the admin pages (configuration + state). */
-function adminLockView(lock) {
+/** A lock for the admin pages (configuration + state + what Nuki reported: diag). */
+function adminLockView(lock, now = Date.now()) {
   return {
     id: lock.id, name: lock.name, type: nuki.isOpener(lock.device_type) ? 'opener' : 'smartlock', source: lock.source,
     bridgeId: lock.bridge_id || null, nukiId: lock.nuki_id, deviceType: lock.device_type, actions: lock.actions,
     supported: nuki.supportedActions(lock.device_type), doorSensor: lock.door_sensor, openTooLongMin: lock.open_too_long_min,
-    nightCheck: lock.night_check, state: locks.stateView(lock),
+    nightCheck: lock.night_check, state: locks.stateView(lock, now), diag: locks.diagView(lock, now),
   };
 }
 

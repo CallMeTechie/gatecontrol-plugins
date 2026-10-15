@@ -14,7 +14,7 @@ test('GET me: exactly the documented shape', () => withDoor({}, async (host, { c
   assert.deepEqual(me.me, { userId: MARC.id, name: 'Marc', canAct: true, autoUnlock: false, window: null, windowOpen: true });
   assert.deepEqual(me.locks[0], {
     id: lockId, name: 'Haustür', type: 'smartlock', right: 'lock', actions: ['lock', 'unlock'], blocked: null, confirm: ['unlock'], doorSensor: true,
-    state: { lock: 'locked', door: 'closed', batteryCritical: false, batteryPercent: 80, batteryCharging: false, reachable: true, updatedAt: '2026-10-14T08:00:00Z' },
+    state: { lock: 'locked', stale: false, door: 'closed', batteryCritical: false, batteryPercent: 80, batteryCharging: false, reachable: true, updatedAt: '2026-10-14T08:00:00Z' },
   });
   assert.deepEqual(me.locks[1].actions, [], 'Marc may only view the opener');
   assert.deepEqual(me.ring, { connected: false, broken: false });

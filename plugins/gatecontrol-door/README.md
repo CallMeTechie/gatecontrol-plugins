@@ -60,7 +60,8 @@ Administrator) – **deren** Rechte und Zustimmung gelten hier.
 Das Plugin sperrt nur auf, wenn **alles** stimmt: nur „aufsperren“ (öffnen/Falle nie
 automatisch), Zustimmung „Automatisch aufsperren“ und mindestens „zu-/aufsperren“, Zeitfenster,
 höchstens einmal in 10 Minuten pro Person und Schloss, Schloss erreichbar und zugesperrt (frisch
-abgefragt), Tür geschlossen (bei Türsensor). Sonst: abgelehnt, Eintrag im Verlauf und Mitteilung
+abgefragt; ein „in Bewegung“, das seit 3 Minuten nicht endet, gilt als **Zustand unklar** und
+wird abgelehnt), Tür geschlossen (bei Türsensor). Sonst: abgelehnt, Eintrag im Verlauf und Mitteilung
 „Automatisches Aufsperren abgelehnt: …“ (Thema „Automatisches Aufsperren“). Danach: „Haustür
 automatisch aufgesperrt“ mit „Wieder zusperren“. **Sicherheitsnetz:** meldet der Türsensor in
 3 Minuten kein „offen“, sperrt das Plugin wieder zu („wieder zugesperrt“); ohne Türsensor fragt
@@ -70,6 +71,28 @@ eine Mitteilung mit „Zusperren“.
 vor der Haustür, in der Einfahrt oder beim Nachbarn der Fall sein, und wer das Handy hat, kommt
 hinein. Nur für Personen einschalten, die das wollen, möglichst mit Türsensor und Zeitfenster.
 Tipp: Regel **„Alle sind unterwegs“** › Aktion „Haustür zusperren“.
+
+### Zustand „in Bewegung“ (sperrt auf / sperrt zu / öffnet) und Diagnose
+
+Die Bridge liefert in `/list` ihren **zwischengespeicherten** Zustand, Nuki Web in `/smartlock`
+den der Cloud. Beide können nach einer Bedienung (z. B. über die Nuki-App, das Keypad oder den
+Knopf am Schloss) auf einem Zwischenzustand hängen bleiben – „Öffnet …“ (`unlatching`), „Sperrt
+auf …“, „Sperrt zu …“, beim Opener „Summer …“ oder „Startet …“. Deshalb:
+
+* **Bridge:** steht ein Schloss in `/list` seit ≥ 30 s auf einem Zwischenzustand, fragt das
+  Plugin das Schloss selbst (`/lockState`, per Bluetooth über die Bridge) – höchstens einmal pro
+  Minute und Schloss – und übernimmt dessen Antwort. Klappt das nicht, gilt für diese Abfrage
+  weiter `/list`.
+* **Nuki Web:** nach ≥ 60 s wird das einzelne Schloss neu gelesen (`GET /smartlock/{id}`),
+  höchstens alle 2 Minuten.
+* **Anzeige:** ist der Zustand nach **3 Minuten** immer noch ein Zwischenzustand, zeigen App und
+  Portal den letzten festen Zustand mit dem Hinweis „Zustand unklar – zuletzt: Zugesperrt“ (API:
+  `stale: true`). Für Sicherheitsentscheidungen zählt das nie: automatisches Aufsperren wird dann
+  abgelehnt („Zustand des Schlosses unklar“).
+* **Diagnose:** die Seite „Geräte“ zeigt pro Schloss die Quelle (Bridge/Nuki Web), den rohen
+  Nuki-Code (z. B. 7 = öffnet, 3 = aufgesperrt, 1 = zugesperrt), woher er stammt (`/list`,
+  `/lockState`, `/smartlock`, `/smartlock/{id}`), was die Übersicht meldet, wenn es abweicht,
+  und wann zuletzt gelesen wurde. Bitte diese Zeile mitschicken, wenn ein Zustand nicht stimmt.
 
 ### Mitteilungen
 
@@ -119,9 +142,17 @@ working regardless).
 * **Automatic unlock:** Family › Presence & smart home › rule "Person comes home" › action
   "Unlock front door". Accepted only for `unlock` (never open), with the opt-in and at least
   `lock`, inside the window, at most once per 10 min per person and lock, lock reachable and
-  locked, door closed (with a sensor). Not opened within 3 min → locked again (with a sensor) or
+  locked (a "moving" state that has not ended for 3 min is refused as `state_unclear`), door
+  closed (with a sensor). Not opened within 3 min → locked again (with a sensor) or
   a push asks. Risk: "home" = the phone is on the home Wi-Fi, which may be the case in front of
   the house.
+* **Stuck "moving" states:** the bridge's `/list` (its cache) and Nuki Web's `/smartlock` can stay
+  on unlocking / locking / unlatching (opener: opening / boot_run). Bridge: after ≥ 30 s the lock
+  itself is asked (`/lockState`, at most once per minute per lock); Nuki Web: after ≥ 60 s the
+  lock is read again (`GET /smartlock/{id}`, at most every 2 min). Still moving after 3 min → the
+  last stable state is shown with `stale: true` ("State unclear – last: Locked"); automatic
+  unlock refuses then. The page **Devices** shows per lock the source, the raw Nuki state code,
+  where it came from and when it was last read.
 * **Privacy:** history (90 days), pictures (1–30 days) and rights stay on your server; tokens are
   encrypted, never logged and never sent to a page or app.
 * **Ring delay:** polled (no push receiving possible for a plugin): about 5–15 s plus up to ~8 s
@@ -166,6 +197,7 @@ Every answer is `{ "ok": true, … }` or `{ "ok": false, "code": "<code>", "erro
   "doorSensor": true,
   "state": {
     "lock": "locked",                     // see "Lock states"
+    "stale": false,                       // true: Nuki has reported a moving state for ≥ 3 min — "lock" is then the last stable state; show "Zustand unklar – zuletzt: …"
     "door": "closed",                     // null = no door sensor | "open" | "closed" | "unknown" | "deactivated" | "calibrating" | "uncalibrated" | "removed"
     "batteryCritical": false, "batteryPercent": 80, "batteryCharging": false,   // batteryPercent may be null
     "reachable": true, "updatedAt": "2026-10-14T08:00:00Z"                     // updatedAt may be null
@@ -176,6 +208,9 @@ Every answer is `{ "ok": true, … }` or `{ "ok": false, "code": "<code>", "erro
 Lock states — smart lock: `locked`, `unlocked`, `unlatched`, `locking`, `unlocking`,
 `unlatching`, `jammed`, `uncalibrated`, `unknown`; opener: `online`, `rto_active`, `open`,
 `opening`, `untrained`, `boot_run`, `unknown`. `reachable: false` → show "nicht erreichbar".
+Transitional ("moving") states: `unlocking`, `locking`, `unlatching`, `opening`, `boot_run`. One
+that has not ended after 3 minutes is not shown any more: `lock` is the last stable state seen
+before it and `stale` is `true` (an app that does not know `stale` simply shows that state).
 
 **CameraView**
 
@@ -298,7 +333,11 @@ Doorbell pushes have `ttl` 3600 s (the picture expires with it).
 `GET bridges/<id>/devices`; `PUT web`, `GET web/devices`; `GET|POST locks`, `PATCH|DELETE locks/<id>`,
 `POST locks/<id>/refresh`; `POST ring/login|logout|sync`; `PATCH cameras/<id>`,
 `GET cameras/<id>/snapshot`; `GET rights`, `PUT rights/<userId>`; `GET history`, `GET events/<id>`;
-`GET|PUT settings`. Secrets are write-only (`hasToken: true/false`).
+`GET|PUT settings`. Secrets are write-only (`hasToken: true/false`). Each lock of `GET status` /
+`locks` carries `diag: { source, nukiState, via, listNukiState, updatedAt, checkedAt, movingSince,
+stableState, stale }` — the raw Nuki state code and where it came from (`list` = bridge `/list`,
+`lockState`, `smartlock` = web overview, `smartlock_id` = web single read, `assumed` = after an own
+action until the next poll).
 
 ## Ring – what is used (unofficial, `server/ring.js`)
 

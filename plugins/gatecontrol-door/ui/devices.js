@@ -84,13 +84,27 @@
     });
   }
 
+  /** What Nuki reported (for support): source, raw code, where it came from, last read, moving since. */
+  function diagText(l) {
+    var d = l.diag || {};
+    var code = d.nukiState == null ? '–' : String(d.nukiState);
+    var parts = [T('dev.diag') + ': ' + (d.source === 'web' ? T('dev.source_web') : T('dev.source_bridge')), T('dev.diag_code', { code: code })];
+    if (d.via) parts.push(T('dev.diag_via_' + d.via));
+    if (d.listNukiState != null && d.listNukiState !== d.nukiState) parts.push(T('dev.diag_list', { code: d.listNukiState }));
+    parts.push(T('dev.diag_updated', { when: D.when(d.updatedAt) }));
+    if (d.movingSince) parts.push(T('dev.diag_moving', { when: D.when(d.movingSince) }));
+    if (d.stale) parts.push(T('dev.diag_stale', { state: d.stableState ? T('state.' + d.stableState) : T('state.unknown') }));
+    return parts.join(' · ');
+  }
+
   function renderLocks() {
     var box = D.clear($('#dr-locks'));
     S.locks.forEach(function (l) {
       box.appendChild(el('div', { class: 'dr-item' }, [
         el('div', { class: 'dr-item-main' }, [
-          el('div', { class: 'dr-item-title' }, [l.name + ' ', el('span', { class: 'dr-badge', 'data-tone': D.tone(l), text: l.state.reachable ? T('state.' + l.state.lock) : T('portal.unreachable') })]),
+          el('div', { class: 'dr-item-title' }, [l.name + ' ', el('span', { class: 'dr-badge', 'data-tone': D.tone(l), text: D.badgeText(l) })]),
           el('div', { class: 'dr-item-sub', text: [T('dev.type_' + l.type), l.source === 'web' ? T('dev.source_web') : T('dev.source_bridge'), l.actions.map(function (a) { return D.actLabel(l, a); }).join('/'), D.stateText(l)].join(' · ') }),
+          el('div', { class: 'dr-item-sub dr-diag', text: diagText(l) }),
         ]),
         el('div', { class: 'dr-actions' }, [
           el('button', { type: 'button', class: 'btn btn-sm', text: T('dev.refresh'), on: { click: function () { D.api('POST', 'admin/locks/' + l.id + '/refresh').then(load).catch(D.warn); } } }),
