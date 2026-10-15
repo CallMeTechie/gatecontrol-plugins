@@ -8,6 +8,27 @@ bleibt auf dem eigenen Server. Einrichtung, Risiken, Datenschutz und die App-API
 an; das Plugin nutzt die, die auch die Open-Source-Projekte ring-client-api (Homebridge) und
 python-ring-doorbell (Home Assistant) verwenden. Sie kann sich jederzeit ändern oder wegfallen.
 
+## 1.0.1
+- **Behoben: Schloss bleibt auf „Öffnet …“ (oder „Sperrt auf/zu …“) stehen.** Die Bridge liefert
+  in `/list` ihren zwischengespeicherten Zustand, Nuki Web in `/smartlock` den der Cloud – beide
+  können nach einer Bedienung über Nuki-App, Keypad oder Knopf auf einem Zwischenzustand hängen
+  bleiben. Jetzt: Bridge – nach ≥ 30 s im Zwischenzustand wird das Schloss selbst gefragt
+  (`/lockState`, höchstens 1× pro Minute und Schloss) und dessen Antwort gespeichert; schlägt das
+  fehl, gilt für diese Abfrage weiter `/list`. Nuki Web – nach ≥ 60 s wird das Schloss einzeln neu
+  gelesen (`GET /smartlock/{id}`, höchstens alle 2 Minuten).
+- **Anzeige:** ein Zwischenzustand, der nach 3 Minuten nicht endet, wird nicht mehr gezeigt –
+  stattdessen der letzte feste Zustand mit „Zustand unklar – zuletzt: …“ (Portal, Startkachel,
+  Schnellaktionen; App-API: `state.stale: true`, die App zeigt den festen Zustand).
+- **Sicherheit:** automatisches Aufsperren nutzt nur den echten, frisch abgefragten Zustand; ist
+  er „unklar“, wird abgelehnt (Grund `state_unclear`, „Zustand des Schlosses unklar“).
+- **Diagnose** auf der Seite „Geräte“: pro Schloss Quelle (Bridge/Nuki Web), roher Nuki-Code,
+  Herkunft (`/list`, `/lockState`, `/smartlock`, `/smartlock/{id}`), abweichender Code der
+  Übersicht, letzter Lesezeitpunkt, „in Bewegung seit“. Debug-Protokoll, wenn ein Zwischenzustand
+  neu gelesen wird (ohne Tokens).
+- Gerätetypen geprüft (Bridge `deviceType` und Web `type`: 0 Smart Lock 1/2, 1 Box – ignoriert,
+  2 Opener, 3 Smart Door, 4 Smart Lock 3/4, 5 neuere Smart Locks): unverändert korrekt.
+- Datenbank: Migration `002_state_diagnostics.sql` (neue Spalten in `lock_state`).
+
 ## 1.0.0
 Braucht **GateControl ≥ 1.169.0** (Push-Bilder, Schnellaktionen in Mitteilungen,
 5-Sekunden-Hintergrundlauf). Kostenpflichtiges Zusatz-Plugin (`license.required`), nicht in

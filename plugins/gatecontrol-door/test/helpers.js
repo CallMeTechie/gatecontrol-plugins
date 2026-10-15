@@ -50,11 +50,13 @@ function jpeg(width = 640, height = 360, pad = 200) {
 }
 
 /**
- * A fake Nuki Bridge: devices { nukiId: { deviceType, name, state, door, batteryCritical, battery } }.
+ * A fake Nuki Bridge: devices { nukiId: { deviceType, name, state, door, batteryCritical, battery, listState } }.
  * Checks ts (±60 s), rnr (never reused), hash = sha256("ts,rnr,token"); 401 otherwise.
+ * listState (optional): the code the bridge's cached lastKnownState in /list is stuck on (e.g. 7
+ * unlatching) while the lock itself — /lockState — reports `state`. failLockState: /lockState → 503.
  */
 function fakeBridge(devices, { token = BRIDGE_TOKEN } = {}) {
-  const b = { devices, requests: [], rnrs: new Set(), down: false, busy: 0, maxBusy: 0, failAction: false, plainTokenSeen: false };
+  const b = { devices, requests: [], rnrs: new Set(), down: false, busy: 0, maxBusy: 0, failAction: false, failLockState: false, plainTokenSeen: false };
   b.fetch = async (p, opts) => {
     const u = new URL('http://bridge' + p);
     b.requests.push({ path: u.pathname, query: Object.fromEntries(u.searchParams), opts });
@@ -71,13 +73,13 @@ function fakeBridge(devices, { token = BRIDGE_TOKEN } = {}) {
       if (!ts || Math.abs(Date.parse(ts) - Date.now()) > 60000 || hash !== expect || b.rnrs.has(rnr) || u.searchParams.has('token')) return { status: 401, body: '' };
       b.rnrs.add(rnr);
       const dev = (id) => b.devices[id];
-      const stateOf = (d) => ({ mode: 2, state: d.state, stateName: 'x', batteryCritical: !!d.batteryCritical, batteryChargeState: d.battery == null ? 80 : d.battery, batteryCharging: false, doorsensorState: d.door == null ? 1 : d.door, timestamp: new Date().toISOString() });
+      const stateOf = (d, code = d.state) => ({ mode: 2, state: code, stateName: 'x', batteryCritical: !!d.batteryCritical, batteryChargeState: d.battery == null ? 80 : d.battery, batteryCharging: false, doorsensorState: d.door == null ? 1 : d.door, timestamp: new Date().toISOString() });
       if (u.pathname === '/list') {
-        return { status: 200, body: JSON.stringify(Object.entries(b.devices).map(([id, d]) => ({ nukiId: Number(id), deviceType: d.deviceType, name: d.name, firmwareVersion: '3.0', lastKnownState: stateOf(d) }))) };
+        return { status: 200, body: JSON.stringify(Object.entries(b.devices).map(([id, d]) => ({ nukiId: Number(id), deviceType: d.deviceType, name: d.name, firmwareVersion: '3.0', lastKnownState: stateOf(d, d.listState != null ? d.listState : d.state) }))) };
       }
       const d = dev(u.searchParams.get('nukiId'));
       if (!d) return { status: 404, body: '' };
-      if (u.pathname === '/lockState') return { status: 200, body: JSON.stringify({ ...stateOf(d), success: true }) };
+      if (u.pathname === '/lockState') return b.failLockState ? { status: 503, body: '' } : { status: 200, body: JSON.stringify({ ...stateOf(d), success: true }) };
       if (u.pathname === '/lockAction') {
         const action = Number(u.searchParams.get('action'));
         if (b.failAction) return { status: 200, body: JSON.stringify({ success: false }) };
@@ -93,7 +95,11 @@ function fakeBridge(devices, { token = BRIDGE_TOKEN } = {}) {
   return b;
 }
 
-/** A fake of the unofficial Ring API and the Nuki Web API on the internet handler. */
+/**
+ * A fake of the unofficial Ring API and the Nuki Web API on the internet handler.
+ * web.locks: GET /smartlock · web.fresh { smartlockId: lock }: what GET /smartlock/{id} answers
+ * (default: the entry of web.locks) — a stale overview vs. the lock read again.
+ */
 function fakeCloud() {
   const c = {
     calls: [],
@@ -103,7 +109,7 @@ function fakeCloud() {
         authorized_doorbots: [], stickup_cams: [{ id: 222, description: 'Garten', kind: 'stickup_cam_v4', location_id: 'loc1', battery_life: null, alerts: { connection: 'offline' }, settings: {} }] },
       active: [], events: [], snapshot: jpeg(), sessions: 0,
     },
-    web: { locks: [], actions: [], log: [] },
+    web: { locks: [], fresh: {}, actions: [], log: [] },
   };
   c.fetch = async (url, opts) => {
     const u = new URL(url);
@@ -113,6 +119,11 @@ function fakeCloud() {
     if (u.hostname === 'api.nuki.io') {
       if (h.authorization !== `Bearer ${WEB_TOKEN}`) return { status: 401, body: '' };
       if (u.pathname === '/smartlock') return { status: 200, body: JSON.stringify(c.web.locks) };
+      const one = /^\/smartlock\/(\d+)$/.exec(u.pathname);
+      if (one && (opts.method || 'GET') === 'GET') {
+        const d = c.web.fresh[one[1]] || c.web.locks.find((x) => String(x.smartlockId) === one[1]);
+        return d ? { status: 200, body: JSON.stringify(d) } : { status: 404, body: '' };
+      }
       const m = /^\/smartlock\/(\d+)\/(action|log)$/.exec(u.pathname);
       if (m && m[2] === 'action' && opts.method === 'POST') { c.web.actions.push({ id: m[1], ...opts.json }); return { status: 204, body: '' }; }
       if (m && m[2] === 'log') return { status: 200, body: JSON.stringify(c.web.log) };

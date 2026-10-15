@@ -14,7 +14,8 @@
 //        action unlock (lock is allowed too; open/unlatch never) · the person's
 //        opt-in "automatisch aufsperren" and at least `lock` · the time window ·
 //        at most once per 10 min per person and lock · the lock reachable and
-//        currently locked (asked fresh) · the door sensor (if any) closed.
+//        currently locked (asked fresh; a transitional state that has not ended
+//        for 3 min → state_unclear) · the door sensor (if any) closed.
 //      Otherwise refused: history row + push (topic auto) "Automatisches
 //      Aufsperren abgelehnt: …".
 //
@@ -92,6 +93,9 @@ async function perform(gc, ctx, user, lockId, action) {
       lock = (await locks.get(gc, lock.id)) || lock;
     }
     if (!lock.state.reachable) await refuse('unreachable');
+    // the real (fresh) state only: a transitional state that has not ended for 3 min is unclear —
+    // never "locked" because the last stable state was (the display's fallback is not a fact)
+    if (locks.displayState(lock, now).stale) await refuse('state_unclear');
     if (lock.state.state !== 'locked') await refuse('not_locked');
     if (lock.door_sensor && lock.state.door !== 'closed') await refuse('door_open');
   }

@@ -83,18 +83,25 @@
   function tone(lock) {
     var s = lock.state || {};
     if (!s.reachable || s.lock === 'jammed') return 'crit';
+    if (s.stale) return 'warn';
     if (s.lock === 'locked') return 'good';
     if (s.lock === 'unlocked' || s.lock === 'unlatched' || s.door === 'open') return 'warn';
     return '';
   }
+  /** The badge: the state; "Zustand unklar" when a transitional state did not end (stale). */
+  function badgeText(lock) {
+    var s = lock.state || {};
+    if (!s.reachable) return T('portal.unreachable');
+    return s.stale ? T('state.unclear') : T('state.' + s.lock);
+  }
   function stateText(lock) {
     var s = lock.state || {};
-    var parts = [s.reachable ? T('state.' + s.lock) : T('portal.unreachable')];
+    var parts = [!s.reachable ? T('portal.unreachable') : (s.stale ? T('state.stale', { state: T('state.' + s.lock) }) : T('state.' + s.lock))];
     if (s.door) parts.push(T('door.' + s.door));
     if (s.batteryCritical) parts.push(T('portal.battery_low'));
     else if (s.batteryPercent != null) parts.push(s.batteryPercent + ' %');
     return parts.join(' · ');
   }
   function actLabel(lock, a) { return T(a === 'open' && lock.type === 'opener' ? 'act.buzz' : 'act.' + a); }
-  window.DOOR = { CTX: CTX, T: T, $: $, el: el, clear: clear, api: api, toast: toast, warn: warn, errText: errText, dialog: dialog, confirmDialog: confirmDialog, imgUrl: imgUrl, showImage: showImage, when: when, tone: tone, stateText: stateText, actLabel: actLabel };
+  window.DOOR = { CTX: CTX, T: T, $: $, el: el, clear: clear, api: api, toast: toast, warn: warn, errText: errText, dialog: dialog, confirmDialog: confirmDialog, imgUrl: imgUrl, showImage: showImage, when: when, tone: tone, badgeText: badgeText, stateText: stateText, actLabel: actLabel };
 })();

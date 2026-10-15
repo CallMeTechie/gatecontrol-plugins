@@ -61,7 +61,7 @@ async function ringView(gc, now) {
 async function status(gc, cfg, now) {
   return {
     bridges: await bridgeViews(gc), targets: await targetList(gc), web: { hasToken: !!(await locks.webToken(gc)) },
-    ring: await ringView(gc, now), locks: (await locks.all(gc)).map(views.adminLockView),
+    ring: await ringView(gc, now), locks: (await locks.all(gc)).map((l) => views.adminLockView(l, now)),
     cameras: (await cameras.all(gc)).map(views.adminCameraView), config: cfg,
   };
 }
@@ -187,7 +187,7 @@ async function createLock(gc, body, now) {
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [v.name, v.source, v.bridgeId || null, v.nukiId, v.deviceType, JSON.stringify(v.actions), v.doorSensor ? 1 : 0, v.openTooLongMin, v.nightCheck, n, now, now])).lastInsertRowid);
   const lock = await locks.get(gc, id);
   locks.pollSoon(lock, now);
-  return { lock: views.adminLockView(lock) };
+  return { lock: views.adminLockView(lock, now) };
 }
 
 async function updateLock(gc, id, body, now) {
@@ -207,7 +207,7 @@ async function updateLock(gc, id, body, now) {
   });
   const lock = await locks.get(gc, id);
   locks.pollSoon(lock, now);
-  return { lock: views.adminLockView(lock) };
+  return { lock: views.adminLockView(lock, now) };
 }
 
 async function deleteLock(gc, id) {
@@ -226,7 +226,7 @@ async function refreshLock(gc, id, now) {
   const lock = await locks.get(gc, id);
   if (!lock) throw fail('not_found');
   await locks.poll(gc, now, { force: true, only: [id] });
-  return { lock: views.adminLockView(await locks.get(gc, id)) };
+  return { lock: views.adminLockView(await locks.get(gc, id), now) };
 }
 
 // ─── Ring ──────────────────────────────────────
@@ -388,7 +388,7 @@ async function route(req, gc, seg, cfg, now, t) {
     if (n === 3 && b === 'devices' && GET) return webDevices(gc);
   }
   if (a === 'locks') {
-    if (n === 2 && GET) return { locks: (await locks.all(gc)).map(views.adminLockView) };
+    if (n === 2 && GET) return { locks: (await locks.all(gc)).map((l) => views.adminLockView(l, now)) };
     if (n === 2 && POST) return createLock(gc, body, now);
     needId();
     if (n === 3 && PATCH) return updateLock(gc, id, body, now);
