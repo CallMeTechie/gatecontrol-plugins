@@ -58,10 +58,37 @@
 //   automation: true, via: '<caller id>' }; a run that did not happen resolves { ok: false, message:
 //   null, state: null, error: 'not_found'|'plugin_error' } (an id not listed for that viewer, an
 //   unknown plugin, a hook that throws). host.actionRuns records { plugin, id, userId, lang, viewer, result }.
+//   gc.users (GateControl ≥ 1.168.0): every user also has avatarUrl (string|null, a capability path
+//   /avatars/<id>.<ext>), color (a key of the favourite colour palette, never red; default
+//   palette[id % 10]), colorHex and initials (like GateControl: two words → first letters, one word →
+//   its first two letters). A test sets them per user: { id, name, role, color: 'pink', avatarUrl:
+//   '/avatars/…webp' }; an unknown colour key falls back to the default. host.setUserFace(id, { color,
+//   avatarUrl }) changes them while the plugin runs (what the GateControl app's profile does).
 
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+
+// GateControl's favourite colour palette (services/avatars.js PALETTE, GateControl ≥ 1.168.0)
+const PALETTE = Object.freeze([
+  ['blue', '#3B82F6'], ['teal', '#14B8A6'], ['green', '#22C55E'], ['lime', '#84CC16'], ['yellow', '#EAB308'],
+  ['orange', '#F97316'], ['pink', '#EC4899'], ['purple', '#A855F7'], ['indigo', '#6366F1'], ['slate', '#64748B'],
+].map(([key, hex]) => Object.freeze({ key, hex })));
+const AVATAR_PATH_RE = /^\/avatars\/[A-Za-z0-9_-]{22,}\.(?:png|jpg|webp)$/;
+
+function userInitials(name) {
+  const words = String(name || '').trim().split(/[\s._-]+/).filter(Boolean);
+  if (!words.length) return '?';
+  const chars = words.length > 1 ? [Array.from(words[0])[0], Array.from(words[1])[0]] : Array.from(words[0]).slice(0, 2);
+  return chars.join('').toUpperCase();
+}
+
+/** The face fields gc.users adds (GateControl ≥ 1.168.0). */
+function userFace(u) {
+  const p = PALETTE.find((x) => x.key === u.color) || PALETTE[u.id % PALETTE.length];
+  if (u.avatarUrl != null && !AVATAR_PATH_RE.test(String(u.avatarUrl))) throw hostError('ERR_INVALID', 'mock host: avatarUrl must be /avatars/<22+ url-safe chars>.<png|jpg|webp>');
+  return { avatarUrl: u.avatarUrl == null ? null : String(u.avatarUrl), color: p.key, colorHex: p.hex, initials: userInitials(u.name) };
+}
 
 const SQL_DENY = /\b(attach|detach|vacuum|pragma|load_extension|sqlite_dbpage|fts3_tokenizer)\b|_gc_/i;
 const DEFAULT_USER = Object.freeze({ id: 1, name: 'admin', role: 'admin' });
@@ -221,9 +248,9 @@ async function createHost(pluginDir, opts = {}) {
   const kv = new Map();
   const settings = { ...settingDefaults(manifest), ...(opts.settings || {}) };
   const secrets = new Set(); // keys stored with gc.settings.setSecret (encrypted on the real host)
-  const allUsers = (opts.users || [DEFAULT_USER]).map((u) => ({ id: u.id, name: u.name, role: u.role, disabled: u.disabled === true }));
-  // gc.users lists enabled accounts only
-  const users = allUsers.filter((u) => !u.disabled).map(({ id, name, role }) => ({ id, name, role }));
+  const allUsers = (opts.users || [DEFAULT_USER]).map((u) => ({ id: u.id, name: u.name, role: u.role, disabled: u.disabled === true, ...userFace(u) }));
+  // gc.users lists enabled accounts only (GateControl ≥ 1.168.0: with avatarUrl, color, colorHex, initials)
+  const users = allUsers.filter((u) => !u.disabled).map(({ id, name, role, avatarUrl, color, colorHex, initials }) => ({ id, name, role, avatarUrl, color, colorHex, initials }));
   const license = { required: !!(manifest.license && manifest.license.required), licensed: true, state: 'valid', expiresAt: null, ...(opts.license || {}) };
   // permissions.notify: true (30 per hour) or { perHour: 1–120 } (GateControl ≥ 1.164.0); the mock counts all of a test
   const notifyLimit = perms.notify && typeof perms.notify === 'object' && Number.isInteger(perms.notify.perHour) ? perms.notify.perHour : 30;
@@ -510,6 +537,9 @@ async function createHost(pluginDir, opts = {}) {
   const plugin = require(entry);
   const hook = async (name, ...a) => (typeof plugin[name] === 'function' ? wire(await plugin[name](...a.map(wire), gc)) : undefined);
 
+  // the default req.user: the first user as a session knows it (no gc.users face fields)
+  const sessionUser = () => (users[0] ? { id: users[0].id, name: users[0].name, role: users[0].role } : DEFAULT_USER);
+
   return {
     manifest, gc, plugin, logs, notifications, fetches, kv, settings, filesDir, kiosk, actionRuns,
     start: () => hook('start'),
@@ -547,17 +577,26 @@ async function createHost(pluginDir, opts = {}) {
       if (typeof plugin.appVisible !== 'function') return true;
       try { return (await hook('appVisible', { portal: true, loggedIn: true, app: true, ...user })) !== false; } catch { return false; }
     },
+    /** GateControl ≥ 1.168.0: change a user's colour / picture (as the app's profile does); gc.users answers with it from now on */
+    setUserFace(id, face) {
+      const i = users.findIndex((u) => u.id === id);
+      if (i < 0) throw hostError('ERR_INVALID', 'mock host: unknown user');
+      const f = face || {};
+      const cur = users[i];
+      const next = { ...cur, color: f.color === undefined ? cur.color : f.color, avatarUrl: f.avatarUrl === undefined ? cur.avatarUrl : f.avatarUrl };
+      users[i] = { ...cur, ...userFace(next) };
+    },
     /** legacyImport hook: the host hands over the built-in data (first-party plugins only) */
     legacyImport: (snapshot) => hook('legacyImport', snapshot),
     /** keys stored with gc.settings.setSecret */
     secrets,
     /** req = { method, path, query, body, user, lang } (defaults filled in); returns { status, json | html … } */
     async request(req) {
-      const r = await hook('request', { method: 'GET', query: {}, body: null, user: users[0] || DEFAULT_USER, lang: 'de', ...req });
+      const r = await hook('request', { method: 'GET', query: {}, body: null, user: sessionUser(), lang: 'de', ...req });
       return { status: 200, ...r };
     },
     /** view = { view: 'page'|'portal', page, section, user, lang, loggedIn } */
-    render: (view) => hook('render', { view: 'page', page: 'main', user: users[0] || DEFAULT_USER, lang: 'de', ...view }),
+    render: (view) => hook('render', { view: 'page', page: 'main', user: sessionUser(), lang: 'de', ...view }),
     async close() {
       if (db) { db.close(); db = null; }
       fs.rmSync(tmp, { recursive: true, force: true });
@@ -565,4 +604,4 @@ async function createHost(pluginDir, opts = {}) {
   };
 }
 
-module.exports = { createHost, internetAllowed, hostError };
+module.exports = { createHost, internetAllowed, hostError, PALETTE };

@@ -86,7 +86,8 @@ test('home targets are reachable only once assigned', async () => {
 });
 
 test('users, notify and license go through the host', () => withHost({ users: [{ id: 7, name: 'Ada', role: 'admin' }] }, async (host) => {
-  assert.deepEqual((await host.request({ path: '/users' })).json.users, [{ id: 7, name: 'Ada', role: 'admin' }]);
+  // GateControl ≥ 1.168.0 adds the face of each account (default colour palette[id % 10])
+  assert.deepEqual((await host.request({ path: '/users' })).json.users, [{ id: 7, name: 'Ada', role: 'admin', avatarUrl: null, color: 'purple', colorHex: '#A855F7', initials: 'AD' }]);
   await host.request({ path: '/notify' });
   assert.deepEqual(host.notifications, [{ message: 'hello from the plugin', severity: 'info' }]);
   assert.equal((await host.request({ path: '/license' })).json.license.required, false);

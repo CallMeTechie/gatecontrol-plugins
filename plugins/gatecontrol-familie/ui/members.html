@@ -1,5 +1,6 @@
 <main class="fa-page">
   <p class="fa-intro">{{t:members.intro}}</p>
+  <p class="fa-hint" id="fa-face-hint">{{t:members.face_hint}} {{t:members.ring_hint}}</p>
   <div class="banner banner-warn" id="fa-problems" role="status" hidden></div>
 
   <section class="fa-card fa-flush" aria-labelledby="fa-members-h">
@@ -100,11 +101,8 @@
             <input class="form-input" id="fa-m-birth" type="date">
             <span class="form-hint" id="fa-m-birth-hint">{{t:members.birthdate_hint}}</span>
           </div>
-          <div class="form-group" style="flex:0 0 80px">
-            <label class="form-label" for="fa-m-color">{{t:members.color}}</label>
-            <input class="form-input fa-color" id="fa-m-color" type="color" value="#0f766e">
-          </div>
         </div>
+        <p class="form-hint">{{t:members.face_hint}}</p>
         <div id="fa-m-child-box">
           <div class="form-row">
             <div class="form-group">

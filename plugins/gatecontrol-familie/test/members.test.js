@@ -26,8 +26,8 @@ test('admin API: add, edit, remove members; only GateControl users; children nee
   assert.deepEqual(st.json.members.map((m) => [m.userId, m.role]), [[2, 'parent'], [3, 'parent'], [4, 'child'], [5, 'child']]);
   const lena = st.json.members.find((m) => m.userId === LENA.id);
   assert.deepEqual([lena.age, lena.adult, lena.locateMode, lena.locatable, lena.starGoal], [12, false, 'confirm', true, 25]);
-  assert.match(lena.color, /^#[0-9A-Fa-f]{6}$/);
-  assert.equal(new Set(st.json.members.map((m) => m.color)).size, 4, 'distinct colours');
+  // 1.3.0: colour and picture of the GateControl account (default palette[id % 10])
+  assert.deepEqual([lena.avatarUrl, lena.color, lena.colorHex, lena.initials, lena.presence], [null, 'yellow', '#EAB308', 'LE', null]);
   assert.deepEqual(st.json.users.filter((u) => !u.member).map((u) => u.id), [ADMIN.id, OMA.id, 7]);
   assert.deepEqual(st.json.modules, {
     shopping: true, tasks: true, stars: true, dates: true, locate: true, arrival_sos: true, places: true, rides: true, emergency: true, wall: false,
@@ -62,10 +62,10 @@ test('admin API: administrators on the admin pages only — never a portal or ap
 test('GET me: own role and age; locate fields of children for parents only; non-members get not_member', () => withFamily({}, async (host, { as, call }) => {
   const anna = await as(ANNA)('GET', '/me');
   assert.equal(anna.status, 200);
-  assert.deepEqual(anna.json.me, { userId: 2, name: 'Anna', role: 'parent', age: null, locateMode: null, color: anna.json.me.color });
+  assert.deepEqual(anna.json.me, { userId: 2, name: 'Anna', role: 'parent', age: null, locateMode: null, avatarUrl: null, color: 'green', colorHex: '#22C55E', initials: 'AN', presence: null });
   assert.equal(anna.json.serverTime, '2026-10-14T08:00:00Z');
   const tim = anna.json.members.find((m) => m.userId === TIM.id);
-  assert.deepEqual(tim, { userId: 5, name: 'Tim', role: 'child', age: 9, color: tim.color, locateMode: 'auto', locatable: true });
+  assert.deepEqual(tim, { userId: 5, name: 'Tim', role: 'child', age: 9, avatarUrl: null, color: 'orange', colorHex: '#F97316', initials: 'TI', presence: null, locateMode: 'auto', locatable: true });
   const marc = anna.json.members.find((m) => m.userId === MARC.id);
   assert.ok(!('locateMode' in marc) && marc.age === null, 'parents: no locate fields, age null');
 

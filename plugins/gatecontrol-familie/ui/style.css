@@ -97,8 +97,13 @@ textarea.form-input{min-height:70px;padding:8px 10px;resize:vertical}
 .fa-phone-card{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:10px 12px;display:flex;align-items:center;gap:10px;font-size:14px;font-weight:600}
 .fa-phone-dot{width:8px;height:8px;border-radius:4px;background:var(--good);flex:none}
 .fa-phone-count{margin-top:auto;font-size:12px;color:var(--muted);text-align:center}
-/* avatars, people */
-.fa-avatar{width:28px;height:28px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;flex:none;color:var(--c,var(--accent));background:color-mix(in srgb,var(--c,var(--accent)) 16%,transparent)}
+/* avatars, people — 1.3.0: picture or initials on the favourite colour inside the presence ring
+   (home: favourite colour, away: red, otherwise a thin neutral border); ui/common.js avatar() */
+.fa-avatar{--ring:transparent;position:relative;box-sizing:border-box;width:28px;height:28px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;flex:none;color:#fff;background:var(--c,var(--accent));box-shadow:0 0 0 1px var(--line-2,rgba(127,127,127,.35))}
+.fa-avatar-ini{line-height:1;letter-spacing:.02em;pointer-events:none}
+.fa-avatar-img{position:absolute;inset:0;width:100%;height:100%;border-radius:50%;object-fit:cover}
+.fa-avatar.has-img .fa-avatar-ini{visibility:hidden}
+.fa-avatar.is-ring-home,.fa-avatar.is-ring-away{box-shadow:0 0 0 2px var(--surface,#fff),0 0 0 4px var(--ring);margin:4px}
 .fa-person{display:flex;align-items:center;gap:8px;min-width:0}
 .fa-person b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 /* map */
@@ -124,7 +129,6 @@ textarea.form-input{min-height:70px;padding:8px 10px;resize:vertical}
 .fa-weekdays{display:flex;gap:4px;flex-wrap:wrap}
 .fa-weekdays label{display:inline-flex;align-items:center;gap:4px;font-size:13px;padding:4px 8px;border:1px solid var(--line-2);border-radius:8px}
 .fa-weekdays input{min-height:0;width:14px;height:14px}
-.fa-color{width:56px;padding:2px;min-height:36px}
 @media (max-width:640px){.fa-col-3,.fa-col-2,.fa-col-1{flex-basis:100%}}
 .fa-sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 .fa-modes{margin:6px 0;padding-left:18px;line-height:1.6}

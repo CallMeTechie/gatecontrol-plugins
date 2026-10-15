@@ -57,7 +57,7 @@
       });
       $('#fa-log-empty').hidden = r.entries.length > 0;
       var colors = {};
-      r.children.forEach(function (c) { colors[c.userId] = c.color; });
+      r.children.forEach(function (c) { colors[c.userId] = c.colorHex; });
       A.map.show($('#fa-map-box'), r.positions.map(function (p) {
         return { lat: p.lat, lon: p.lon, accuracy: p.accuracy, label: p.childName, sub: A.when(p.at || p.answeredAt), color: colors[p.childId] };
       }));

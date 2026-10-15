@@ -6,8 +6,10 @@
 //
 //   PUT  presence/consent { share }        only for oneself; false deletes the state
 //   POST presence { home, at? }            the app; only with consent (409 no_consent), ≤ 1 per minute (429 too_soon)
-//   GET  presence                          { members: [{ userId, name, role, shared, state, home, since }], me: { share }, home: [userId] }
+//   GET  presence                          { members: [{ userId, name, role, avatarUrl, color, colorHex, initials, presence,
+//                                          shared, state, home, since }], me: { share }, home: [userId] }
 //                                          state: 'home' | 'away' | 'unknown' (shares, nothing reported yet) | 'not_shared'
+//                                          presence (1.3.0, the ring): 'home' | 'away' | 'unknown' | null (not shared)
 //   GET  presence/actions                  the quick actions of the other plugins available to the caller (gc.actions.list)
 //   GET  presence/rules                    parents: { rules, log }       GET presence/log (addition): { log }
 //   POST presence/rules    PATCH|DELETE presence/rules/<id>                parents
@@ -73,10 +75,30 @@ function stateOf(p) {
   return p.home ? 'home' : 'away';
 }
 
+/** The avatar ring of one state (1.3.0): 'home' | 'away' | 'unknown' | null (not shared). */
+function ringOf(p) {
+  const s = stateOf(p);
+  return s === 'not_shared' ? null : s;
+}
+
+/**
+ * Every member's ring for the member objects of the app and the pages (1.3.0):
+ * Map userId → 'home' | 'away' | 'unknown' | null. Empty (all null) when the
+ * module is off or for a viewer recognised only by device trust.
+ */
+async function rings(gc, fam, cfg, trustOnly) {
+  if (!cfg.modules.presence || trustOnly) return new Map();
+  const map = await load(gc, fam);
+  return new Map([...map.entries()].map(([id, p]) => [id, ringOf(p)]));
+}
+
 function membersView(fam, map) {
   return fam.list.map((m) => {
     const p = map.get(m.userId);
-    return { userId: m.userId, name: m.name, role: m.role, color: m.color, shared: !!(p && p.share), state: stateOf(p), home: p ? p.home : null, since: iso(p && p.since) };
+    return {
+      userId: m.userId, name: m.name, role: m.role, ...members.faceOf(m), presence: ringOf(p),
+      shared: !!(p && p.share), state: stateOf(p), home: p ? p.home : null, since: iso(p && p.since),
+    };
   });
 }
 
@@ -91,11 +113,6 @@ async function get(gc, r) {
   };
 }
 
-/** The wall's avatars: 'home' | 'away' | null per member. */
-async function wallStates(gc, fam) {
-  const map = await load(gc, fam);
-  return new Map([...map.entries()].map(([id, p]) => [id, p.share && p.home != null ? (p.home ? 'home' : 'away') : null]));
-}
 
 /** PUT presence/consent { share } — only for oneself. */
 async function consent(gc, r) {
@@ -426,17 +443,18 @@ async function purge(gc, now) {
   await store.run(gc, 'DELETE FROM presence_log WHERE at < ?', [now - LOG_KEEP_DAYS * DAY]);
 }
 
-/** Overview: who is home (sharing members only) and the caller's consent. */
+/** Overview: who is home (sharing members only), the caller's consent; 1.3.0: every member like GET presence. */
 async function overview(gc, r) {
   const map = await load(gc, r.fam);
   const mine = map.get(r.me.userId);
   return {
     home: [...map.entries()].filter(([, p]) => p.share && p.home === true).map(([id, p]) => ({ userId: id, since: iso(p.since) })),
     share: !!(mine && mine.share),
+    members: membersView(r.fam, map),
   };
 }
 
 module.exports = {
-  TRIGGERS, THROTTLE_MS, REPORT_GAP_MS, load, stateOf, membersView, get, wallStates, consent, report, transitionEvents, inWindow, conditionsHold,
+  TRIGGERS, THROTTLE_MS, REPORT_GAP_MS, load, stateOf, ringOf, rings, membersView, get, consent, report, transitionEvents, inWindow, conditionsHold,
   fire, checkAllAway, tick, execute, listRules, createRule, updateRule, removeRule, actions, log, purge, overview,
 };

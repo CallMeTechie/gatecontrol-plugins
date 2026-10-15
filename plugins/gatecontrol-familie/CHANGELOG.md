@@ -3,6 +3,31 @@
 Die Familie in der GateControl-App (eigener Tab), im Portal (eigener Tab „Familie“) und auf
 drei Admin-Seiten. Alles bleibt auf dem eigenen Server.
 
+## 1.3.0
+Braucht **GateControl ≥ 1.168.0** (Profilbilder und Lieblingsfarben der Konten).
+- **Profilbild und Lieblingsfarbe:** Profilbild und Lieblingsfarbe ändert jede Person in der
+  GateControl-App (Einstellungen → Profil) oder der Admin im Benutzerprofil. Die Familie zeigt
+  überall das Bild des GateControl-Kontos – ohne Bild die Initialen weiß auf der Lieblingsfarbe.
+  Die eigene Mitgliedsfarbe der Admin-Seite „Mitglieder & Ortung“ entfällt (ein `color` im
+  Admin-API wird ignoriert); die Farbe der Kinder auf der Karte im Protokoll ist jetzt ihre
+  Lieblingsfarbe.
+- **Anwesenheit am Ring:** Um jedes Bild liegt ein Ring – **zu Hause** in der Lieblingsfarbe der
+  Person, **unterwegs** rot (`#E5484D`), unbekannt / nicht geteilt / Funktion aus: nur ein dünner
+  neutraler Rand. Tooltip und Screenreader: „Anna – zu Hause“ / „Anna – unterwegs“. Ein
+  gemeinsamer Baustein (`ui/common.js` `avatar()`) auf der Seite „Mitglieder & Ortung“, der Seite
+  „Anwesenheit & Smart Home“, im Portal-Tab (neu: die Familie als Chips im Kopf, jede Minute
+  aktualisiert, solange die Anwesenheit an ist) und auf dem Wand-Tablet – dort ersetzt der Ring
+  die bisherige Markierung (Rahmen / blasser) und folgt dem Abruf jede Minute. Ein Bild, das
+  nicht geladen werden kann, lässt die Initialen stehen.
+- **API für App und Seiten:** Jedes Mitglieds-Objekt – `me` und `members` von `GET me`,
+  `GET presence`, `overview.presence.members` (neu, wie `GET presence`), die `members` von
+  `GET wall`, die Admin-Seiten (`admin/status`, `admin/presence`, `admin/log`), dazu die
+  Aufgaben-Chips der Wand und die Wunschlisten – trägt `avatarUrl` (`/avatars/<id>.<ext>` oder
+  `null`), `color` (Schlüssel der Lieblingsfarbe, z. B. `pink` – **vorher ein Hex-Wert**),
+  `colorHex` und `initials`; die Personen-Objekte zusätzlich `presence`: `home` | `away` |
+  `unknown` | `null` (nicht geteilt, Funktion aus oder nur Geräte-Vertrauen im Portal). Ältere
+  Apps, die `color` als Hex lesen, fallen auf ihre Standardfarbe zurück.
+
 ## 1.2.1
 - **Funktionen:** Die Karte „Taschengeld“ zeigt einen Hinweis, solange noch kein Kind
   Mitglied ist („Noch kein Kind angelegt – füge unter „Mitglieder & Ortung“ ein Kind hinzu,

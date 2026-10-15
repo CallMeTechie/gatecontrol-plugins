@@ -1,7 +1,9 @@
 /* Page "Mitglieder & Ortung": who belongs to the family (GateControl users),
    parent or child, birthdate, locate mode per child, star goal; the locate
    switches (the same module switches as on "Funktionen"); the last 7 days
-   of the locate log. */
+   of the locate log.
+   1.3.0: each person with picture / favourite colour of the GateControl
+   account and the presence ring (A.avatar); no own member colour any more. */
 (function () {
   'use strict';
   var A = window.FA, T = A.T, $ = A.$, el = A.el;
@@ -35,7 +37,7 @@
   function memberRow(m) {
     var acct = [T('members.account', { name: m.name }), m.gcRole === 'admin' ? T('account.admin') : T('account.user')];
     if (m.role === 'child' && m.age != null) acct.push(T('members.years', { n: m.age }));
-    var person = el('div', { class: 'fa-person' }, [A.avatar(m), el('div', null, [el('b', { text: m.name }), el('div', { class: 'fa-sub', text: acct.join(' · ') })])]);
+    var person = el('div', { class: 'fa-person' }, [A.avatar(m, 32), el('div', null, [el('b', { text: m.name }), el('div', { class: 'fa-sub', text: acct.join(' · ') })])]);
     return el('tr', null, [
       el('td', null, [person]),
       el('td', null, [el('span', { class: 'fa-pill' + (m.role === 'child' ? ' is-child' : (m.role === 'wall' ? ' is-off' : '')), text: T('role.' + m.role) })]),
@@ -156,7 +158,6 @@
     $('#fa-m-wall').checked = !!m && m.role === 'wall';
     $('#fa-m-birth').value = (m && m.birthdate) || '';
     $('#fa-m-birth').max = data.today;
-    $('#fa-m-color').value = (m && m.color ? m.color : '#0f766e').toLowerCase();
     $('#fa-m-mode').value = (m && m.locateMode) || 'confirm';
     $('#fa-m-goal').value = String((m && m.starGoal) || 20);
     $('#fa-m-delete').hidden = !m;
@@ -168,7 +169,7 @@
 
   $('#fa-m-save').addEventListener('click', function () {
     var role = roleValue();
-    var body = role === 'wall' ? { role: role } : { role: role, birthdate: $('#fa-m-birth').value || null, color: $('#fa-m-color').value };
+    var body = role === 'wall' ? { role: role } : { role: role, birthdate: $('#fa-m-birth').value || null };
     if (role === 'child') {
       if (!body.birthdate) { $('#fa-m-msg').textContent = T('members.birthdate_required'); return; }
       body.locateMode = $('#fa-m-mode').value;

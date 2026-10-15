@@ -51,7 +51,10 @@ test('consent only for oneself; reports only with consent, ≤ 1 per minute; sta
     [ANNA.id, true, 'home', true, '2026-10-14T07:58:30Z'], [MARC.id, true, 'away', false, '2026-10-14T08:00:00Z'], [LENA.id, false, 'not_shared', null, null], [TIM.id, true, 'unknown', null, null],
   ]);
   assert.deepEqual([g.me, g.home], [{ share: false }, [ANNA.id]]);
-  assert.deepEqual((await as(TIM)('GET', '/overview')).json.presence, { home: [{ userId: ANNA.id, since: '2026-10-14T07:58:30Z' }], share: true });
+  const ovp = (await as(TIM)('GET', '/overview')).json.presence;
+  assert.deepEqual({ ...ovp, members: null }, { home: [{ userId: ANNA.id, since: '2026-10-14T07:58:30Z' }], share: true, members: null });
+  assert.deepEqual(ovp.members.map((m) => [m.userId, m.state, m.presence]), [[ANNA.id, 'home', 'home'], [MARC.id, 'away', 'away'], [LENA.id, 'not_shared', null], [TIM.id, 'unknown', 'unknown']], '1.3.0: every member like GET presence');
+  assert.deepEqual(g.members.map((m) => m.presence), ['home', 'away', null, 'unknown'], 'the ring');
   // the same state again: no change, no new "since"
   clock.add(MIN);
   assert.deepEqual((await as(ANNA)('POST', '/presence', { home: true })).json.changed, false);

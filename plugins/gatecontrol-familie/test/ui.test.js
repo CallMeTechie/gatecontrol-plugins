@@ -41,6 +41,11 @@ test('render: members, modules, log and the portal tab in de and en; no unresolv
   const portalHtml = ui.render({ view: 'portal', loggedIn: true }, t);
   for (const id of ['fa-board', 'fa-meals', 'fa-wishes', 'fa-allowance', 'fa-expenses', 'fa-presence']) assert.ok(portalHtml.includes(`id="${id}"`), id);
   assert.ok(portalHtml.includes('A.rules = {') && portalHtml.includes('function form(title, fields, opts)'));
+  // 1.3.0: member chips in the portal header, the help on the members page, one avatar renderer
+  assert.ok(portalHtml.includes('id="fa-p-people"') && portalHtml.includes('function avatar(m, size, opts)'));
+  const membersHtml = ui.render({ view: 'page', page: 'members', lang: 'de' }, t);
+  assert.ok(membersHtml.includes('Profilbild und Lieblingsfarbe ändert jede Person in der GateControl-App (Einstellungen → Profil) oder der Admin im Benutzerprofil.'));
+  assert.ok(!membersHtml.includes('fa-m-color'), 'no own member colour any more');
   const wall = ui.render({ view: 'portal', wall: true, loggedIn: false }, t);
   assert.deepEqual([ctxOf(wall).page, ctxOf(wall).loggedIn], ['wall', false]);
   assert.ok(wall.includes('id="fa-wall"') && !wall.includes('window.FA.map'), 'the wall view, no map');
@@ -69,6 +74,7 @@ test('texts: every key used by the pages exists in de and en; both languages hav
     ...require('../server/meals').SLOTS.map((x) => 'meal.' + x),
     ...require('../server/presence').TRIGGERS.map((x) => 'rule.trigger_' + x),
     ...['home', 'away', 'unknown', 'not_shared'].map((x) => 'presence.' + x),
+    ...['home', 'away'].map((x) => 'avatar.' + x),
     ...['not_found', 'plugin_error', 'timeout', 'rate_limit', 'invalid', 'denied', 'unavailable', 'no_recipients', 'failed', 'error'].map((x) => 'rule.err.' + x),
     ...['pending', 'answered', 'declined', 'failed', 'expired'].map((x) => 'status.' + x),
     ...['no_permission', 'location_off', 'timeout'].map((x) => 'fail.' + x),
@@ -101,8 +107,8 @@ test('Leaflet: one constant (server/ui.js), nowhere else', () => {
 
 test('plugin.json: permissions (kiosk, actions), app tab, maps, the ten topics with SOS allowed critical', () => {
   assert.equal(manifest.id, 'gatecontrol-familie');
-  assert.equal(manifest.version, '1.2.1');
-  assert.equal(manifest.gatecontrol, '>=1.166.0', 'permissions.actions needs GateControl 1.166.0');
+  assert.equal(manifest.version, '1.3.0');
+  assert.equal(manifest.gatecontrol, '>=1.168.0', 'avatarUrl / color / colorHex / initials in gc.users need GateControl 1.168.0');
   const p = manifest.permissions;
   assert.deepEqual([p.storage, p.portal, p.users, p.app, p.notify, p.background, p.kiosk, p.actions], [true, true, true, true, { perHour: 120 }, { intervalSeconds: 60 }, true, true]);
   assert.deepEqual(manifest.ui.pages.map((x) => x.id), ['members', 'modules', 'presence', 'log']);

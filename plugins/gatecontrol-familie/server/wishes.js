@@ -14,6 +14,7 @@
 // An item marked gotIt (after the occasion) is hidden unless ?gotIt=1.
 
 const store = require('./store');
+const members = require('./members');
 const { fail, posInt, text, optText, multiline, bool, intIn, iso } = require('./util');
 
 const OCCASIONS = ['birthday', 'christmas', 'other'];
@@ -84,7 +85,7 @@ async function get(gc, r) {
   const rows = await store.all(gc, `SELECT * FROM wishes ${all ? '' : 'WHERE got_it = 0'} ORDER BY owner_id, sort, id`);
   return {
     lists: r.fam.list.map((m) => ({
-      ownerId: m.userId, name: m.name, color: m.color,
+      ownerId: m.userId, name: m.name, ...members.faceOf(m),
       items: rows.filter((x) => x.owner_id === m.userId).map((x) => view(x, r.me.userId)),
     })),
   };

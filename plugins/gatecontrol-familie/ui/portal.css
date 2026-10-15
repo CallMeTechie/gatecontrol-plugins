@@ -3,6 +3,11 @@
 .fa-p-head{display:flex;flex-direction:column;gap:4px}
 .fa-p-title{margin:0;font-size:28px;font-weight:800;letter-spacing:-.4px}
 .fa-p-sub{margin:0;color:var(--muted);font-size:14px}
+.fa-p-people{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+.fa-p-people[hidden]{display:none}
+.fa-p-chip{display:inline-flex;align-items:center;gap:8px;padding:4px 12px 4px 4px;border-radius:999px;background:var(--surface-2);border:1px solid var(--line);font-size:13px;font-weight:600;max-width:180px}
+.fa-p-chip .fa-avatar{margin:4px}
+.fa-p-chip span:last-child{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .fa-p-listsel{width:auto;max-width:200px;min-height:34px;font-size:13px}
 .fa-p-add{display:flex;gap:8px;align-items:center}
 .fa-p-add .form-input{flex:1;min-width:0}
