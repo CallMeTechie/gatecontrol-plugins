@@ -15,7 +15,8 @@
 //     POST /portal/resources/:id/state control (the host lets only signed-in viewers change things)
 //   quick actions of the GateControl apps (hooks quickActions / runQuickAction)
 //     the same owner scope as the portal: a toggle per own light, plug and
-//     group, a button per scene of an own group
+//     group, a button per scene of an own group; dimmable lights and groups
+//     carry a widget (brightness as the value, a brightness slider)
 //
 // Requests run with the requesting user's rights: req.user.portal = a portal
 // viewer, who only ever sees and controls what an administrator assigned to
@@ -189,6 +190,31 @@ function clip(v, max) {
   return s;
 }
 
+const BRI = { min: 1, max: 100, step: 1, fallback: 100 };
+
+/** Whether a resource's quick action carries a widget: a dimmable light or group (never a plug or a scene). */
+function dimmable(r) {
+  return (r.kind === 'light' || r.kind === 'group') && Boolean(r.capabilities && r.capabilities.bri);
+}
+
+/**
+ * The widget of a dimmable light or group (GateControl ≥ 1.171.0; older hosts
+ * leave it out): the brightness as the value while on ("Off" otherwise), the
+ * kind and reachability as the status, a brightness slider.
+ */
+function widgetOf(r, lang) {
+  const st = r.state || {};
+  const bri = st.bri == null || !Number.isFinite(Number(st.bri)) ? null : Math.min(BRI.max, Math.max(BRI.min, Math.round(Number(st.bri))));
+  let status = t(lang, 'kind.' + r.kind);
+  if (st.reachable === false) status += ' · ' + t(lang, 'qa.unreachable');
+  const w = { value: t(lang, 'portal.off'), unit: null, status: clip(status, 60), state: st.on ? 'on' : 'off', controls: [] };
+  if (st.on) {
+    if (bri != null) { w.value = bri; w.unit = '%'; } else w.value = t(lang, 'portal.on');
+  }
+  w.controls.push({ id: 'bri', kind: 'slider', label: clip(t(lang, 'portal.brightness'), 20), value: bri == null ? BRI.fallback : bri, min: BRI.min, max: BRI.max, step: BRI.step, unit: '%' });
+  return w;
+}
+
 function quickAction(r, lang) {
   const name = clip(r.name, 40) || t(lang, 'kind.' + r.kind);
   if (r.kind === 'scene') return { id: `scene:${r.id}`, title: name, subtitle: t(lang, 'kind.scene'), icon: SCENE_ICON, kind: 'button' };
@@ -196,7 +222,9 @@ function quickAction(r, lang) {
   let subtitle = t(lang, 'kind.' + r.kind);
   if (st.reachable === false) subtitle += ' · ' + t(lang, 'qa.unreachable');
   else if (st.on && r.capabilities && r.capabilities.bri && st.bri != null) subtitle += ' · ' + fmtNum(st.bri, lang) + ' %';
-  return { id: `${r.kind}:${r.id}`, title: name, subtitle: clip(subtitle, 60), icon: TILE_ICONS[r.kind] || TILE_ICONS.light, kind: 'toggle', state: st.on ? 'on' : 'off' };
+  const a = { id: `${r.kind}:${r.id}`, title: name, subtitle: clip(subtitle, 60), icon: TILE_ICONS[r.kind] || TILE_ICONS.light, kind: 'toggle', state: st.on ? 'on' : 'off' };
+  if (dimmable(r)) a.widget = widgetOf(r, lang);
+  return a;
 }
 
 /**
@@ -212,26 +240,50 @@ async function quickActionsFor(gc, user, lang) {
   return [...toggles, ...scenes].slice(0, QA_MAX).map((d) => quickAction(d, lang));
 }
 
-/** Run one quick action with the portal's checks (owner, enabled, controllable). */
-async function runQuickActionFor(gc, user, lang, id) {
+/** The widget of a dimmable resource after a change (the cached state follows what was sent). */
+async function widgetAfter(gc, r, lang) {
+  if (!dimmable(r)) return undefined;
+  const now = await store.getResource(gc, r.id);
+  return widgetOf(now || r, lang);
+}
+
+/**
+ * Run one quick action with the portal's checks (owner, enabled, controllable).
+ * With a control (GateControl ≥ 1.171.0): `bri` sets the brightness of a
+ * dimmable light or group and switches it on. A dimmable resource's answer
+ * carries its widget.
+ */
+async function runQuickActionFor(gc, user, lang, id, control, value) {
   const m = typeof id === 'string' ? QA_ID_RE.exec(id) : null;
   if (!m || !user || !Number.isInteger(user.id) || user.loggedIn === false) return { ok: false, message: t(lang, 'qa.unknown') };
   const rid = Number(m[2]);
+  let r = null;
   try {
     if (!(await store.canAccess(gc, rid, user.id))) throw fail('SMARTHOME_NOT_OWNER');
-    const r = await store.getResource(gc, rid);
+    r = await store.getResource(gc, rid);
     if (!r || !r.enabled || r.kind !== m[1]) throw fail('SMARTHOME_RESOURCE_NOT_FOUND');
     const name = clip(r.name, 40);
+    if (control !== undefined) {
+      const bri = typeof value === 'number' && Number.isFinite(value) ? Math.round(value) : NaN;
+      if (control !== 'bri' || !dimmable(r) || !(bri >= BRI.min && bri <= BRI.max)) return { ok: false, message: t(lang, 'qa.unknown') };
+      await service.setResourceState(gc, rid, { bri, on: true });
+      return { ok: true, message: null, state: 'on', widget: await widgetAfter(gc, r, lang) };
+    }
     if (r.kind === 'scene') {
       await service.setResourceState(gc, rid, {});
       return { ok: true, message: clip(t(lang, 'portal.scene_done', { name }), 120) };
     }
     const on = !(r.state && r.state.on);
     await service.setResourceState(gc, rid, { on });
-    return { ok: true, message: clip(t(lang, on ? 'qa.switched_on' : 'qa.switched_off', { name }), 120), state: on ? 'on' : 'off' };
+    const out = { ok: true, message: clip(t(lang, on ? 'qa.switched_on' : 'qa.switched_off', { name }), 120), state: on ? 'on' : 'off' };
+    const widget = await widgetAfter(gc, r, lang);
+    if (widget) out.widget = widget;
+    return out;
   } catch (e) {
     if (!ERRORS[e && e.code]) gc.log.warn('quick action failed', id, (e && (e.code || e.message)) || e);
-    return { ok: false, message: errorResponse(e, lang).json.error };
+    const out = { ok: false, message: errorResponse(e, lang).json.error };
+    if (r && dimmable(r)) out.widget = widgetOf(r, lang);
+    return out;
   }
 }
 
@@ -422,14 +474,17 @@ module.exports = {
       .map((r) => ({ title: r.name, subtitle: kindLabel(r, lang), section: 'smarthome' }));
   },
 
-  /** Quick actions of the apps: the viewer's own lights, plugs and groups (toggles) and scenes (buttons), at most 16. */
+  /** Quick actions of the apps: the viewer's own lights, plugs and groups (toggles, dimmable ones with a widget) and scenes (buttons), at most 16. */
   async quickActions({ user, lang }, gc) {
     return quickActionsFor(gc, user, lang);
   },
 
-  /** Runs one of them (the host only passes an id quickActions just listed for this viewer; checked here again). */
-  async runQuickAction({ user, lang, id }, gc) {
-    return runQuickActionFor(gc, user, lang, id);
+  /**
+   * Runs one of them (the host only passes an id quickActions just listed for this viewer; checked here
+   * again). control/value (GateControl ≥ 1.171.0) only when the app used the widget's brightness slider.
+   */
+  async runQuickAction({ user, lang, id, control, value }, gc) {
+    return runQuickActionFor(gc, user, lang, id, control, value);
   },
 
   /** Built-in data handed over by GateControl (once, by an administrator). */

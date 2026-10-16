@@ -38,7 +38,14 @@
 //   than the host, which drops or cuts what does not fit: an entry the host
 //   would change throws ERR_INVALID here. runQuickAction lists again first
 //   and answers like the host's route: { status: 404 } for an id that is not
-//   listed for this viewer, else { status: 200, body: { ok, message, state } }.
+//   listed for this viewer, else { status: 200, body: { ok, message, state, widget } }.
+//   Widgets (GateControl ≥ 1.171.0): an entry's optional `widget` { value, unit, status,
+//   state, controls: [stepper | slider | choice] } is checked like the host's sanitizer
+//   (which nulls a bad widget; here it throws) and comes back as `widget` (null without
+//   one). host.runQuickAction(user, id, lang, { control, value }) runs a control as the
+//   route does: an id the action's widget has no control for → { status: 400, body:
+//   { ok: false, error: 'invalid_control' } }, a value outside min…max (stepper, slider)
+//   or not an option id (choice) → 400 invalid_value; else the hook gets control/value.
 //   await host.appVisible(user)   (the app tab hook appVisible(user, gc); viewer { …user, portal, loggedIn, app: true })
 //   permissions.notify { perHour } raises the mock's notification limit; a notifyTopics entry with
 //   allowCritical keeps priority 'critical' (otherwise capped to 'high'), as GateControl ≥ 1.164.0.
@@ -103,6 +110,10 @@ const QA_MAX = 16;
 const QA_ID_RE = /^[A-Za-z0-9:._-]{1,64}$/;
 const QA_ICON_RE = /^[MmLlHhVvCcSsQqTtAaZz0-9 .,-]{1,2000}$/;
 const QA_STATES = new Set(['on', 'off']);
+const QA_WIDGET_STATES = new Set(['on', 'off', 'good', 'warn', 'crit']);
+const QA_CONTROL_ID_RE = /^[A-Za-z0-9_-]{1,24}$/;
+const QA_CONTROL_KINDS = new Set(['stepper', 'slider', 'choice']);
+const QA_WIDGET_CONTROLS = 4;
 const PLUGIN_ID_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const ACTIONS_PER_HOUR = 60;
 
@@ -273,6 +284,60 @@ function qaText(v, max, what, optional) {
   return v;
 }
 
+function qaNumber(v, what) {
+  if (typeof v !== 'number' || !Number.isFinite(v)) throw hostError('ERR_INVALID', `${what} must be a finite number, got ${JSON.stringify(v)}`);
+  return v;
+}
+
+/**
+ * A quick action's widget → what the host passes on (GateControl ≥ 1.171.0, quickActions.js
+ * sanitizeWidget); null without one. The host nulls the whole widget where this throws ERR_INVALID
+ * (and clamps a stepper/slider value into min…max, falls back to the first option of a choice).
+ */
+function checkQuickWidget(w, what) {
+  if (w == null) return null;
+  if (typeof w !== 'object' || Array.isArray(w)) throw hostError('ERR_INVALID', `${what}: widget must be an object`);
+  const value = w.value == null ? null : (typeof w.value === 'number' ? qaNumber(w.value, `${what}: widget value`) : qaText(w.value, 24, `${what} widget value`));
+  if (w.state != null && !QA_WIDGET_STATES.has(w.state)) throw hostError('ERR_INVALID', `${what}: widget state ${JSON.stringify(w.state)}`);
+  const controls = [];
+  if (w.controls != null) {
+    if (!Array.isArray(w.controls) || w.controls.length > QA_WIDGET_CONTROLS) throw hostError('ERR_INVALID', `${what}: widget controls must be a list of at most ${QA_WIDGET_CONTROLS}`);
+    const ids = new Set();
+    for (const c of w.controls) {
+      if (!c || typeof c !== 'object' || Array.isArray(c)) throw hostError('ERR_INVALID', `${what}: control is not an object`);
+      if (typeof c.id !== 'string' || !QA_CONTROL_ID_RE.test(c.id)) throw hostError('ERR_INVALID', `${what}: bad control id ${JSON.stringify(c.id)}`);
+      if (ids.has(c.id)) throw hostError('ERR_INVALID', `${what}: duplicate control id ${c.id}`);
+      ids.add(c.id);
+      if (!QA_CONTROL_KINDS.has(c.kind)) throw hostError('ERR_INVALID', `${what}: control ${c.id}: bad kind ${JSON.stringify(c.kind)}`);
+      const label = qaText(c.label, 20, `${what} control ${c.id} label`, true);
+      if (c.kind === 'choice') {
+        if (!Array.isArray(c.options) || c.options.length < 2 || c.options.length > 8) throw hostError('ERR_INVALID', `${what}: control ${c.id}: 2–8 options`);
+        const oids = new Set();
+        const options = c.options.map((o) => {
+          if (!o || typeof o !== 'object' || typeof o.id !== 'string' || !QA_CONTROL_ID_RE.test(o.id)) throw hostError('ERR_INVALID', `${what}: control ${c.id}: bad option id`);
+          if (oids.has(o.id)) throw hostError('ERR_INVALID', `${what}: control ${c.id}: duplicate option ${o.id}`);
+          oids.add(o.id);
+          return { id: o.id, label: qaText(o.label, 20, `${what} control ${c.id} option ${o.id} label`) };
+        });
+        if (typeof c.value !== 'string' || !oids.has(c.value)) throw hostError('ERR_INVALID', `${what}: control ${c.id}: value ${JSON.stringify(c.value)} is no option`);
+        controls.push({ id: c.id, kind: c.kind, label, value: c.value, options });
+      } else {
+        const [value, min, max, step] = ['value', 'min', 'max', 'step'].map((k) => qaNumber(c[k], `${what}: control ${c.id} ${k}`));
+        if (!(min < max) || !(step > 0)) throw hostError('ERR_INVALID', `${what}: control ${c.id}: min < max and step > 0`);
+        if (value < min || value > max) throw hostError('ERR_INVALID', `${what}: control ${c.id}: value ${value} outside ${min}…${max}`);
+        controls.push({ id: c.id, kind: c.kind, label, value, min, max, step, unit: qaText(c.unit, 8, `${what} control ${c.id} unit`, true) });
+      }
+    }
+  }
+  return { value, unit: qaText(w.unit, 8, `${what} widget unit`, true), status: qaText(w.status, 60, `${what} widget status`, true), state: w.state == null ? null : w.state, controls };
+}
+
+/** The checked `value` of a control run, or undefined where the route answers 400 invalid_value. */
+function controlValue(c, v) {
+  if (c.kind === 'choice') return typeof v === 'string' && c.options.some((o) => o.id === v) ? v : undefined;
+  return typeof v === 'number' && Number.isFinite(v) && v >= c.min && v <= c.max ? v : undefined;
+}
+
 /** quickActions answer → the list the host passes on; throws ERR_INVALID where the host would drop or cut. */
 function checkQuickActions(out) {
   if (!Array.isArray(out)) throw hostError('ERR_INVALID', 'quickActions must return an array');
@@ -291,6 +356,7 @@ function checkQuickActions(out) {
     return {
       id: a.id, title: qaText(a.title, 40, `${a.id} title`), subtitle: qaText(a.subtitle, 60, `${a.id} subtitle`, true),
       icon: a.icon == null ? null : a.icon, kind, state: kind === 'toggle' && a.state != null ? a.state : null, confirm: a.confirm === true,
+      widget: checkQuickWidget(a.widget, `quick action ${a.id}`),
     };
   });
 }
@@ -663,11 +729,26 @@ async function createHost(pluginDir, opts = {}) {
         : { portal: true, loggedIn: true, app: true, ...user };
       if (!perms.portal || typeof plugin.runQuickAction !== 'function' || typeof id !== 'string' || !QA_ID_RE.test(id)) return { status: 404, body: { ok: false, error: 'not_found' } };
       const listed = checkQuickActions(await hook('quickActions', { user: viewer, lang }));
-      if (!listed.some((a) => a.id === id)) return { status: 404, body: { ok: false, error: 'not_found' } };
-      const out = await hook('runQuickAction', { user: viewer, lang, id, via, automation: auto });
+      const action = listed.find((a) => a.id === id);
+      if (!action) return { status: 404, body: { ok: false, error: 'not_found' } };
+      const args = { user: viewer, lang, id, via, automation: auto };
+      if (o.control !== undefined) {
+        // GateControl ≥ 1.171.0: a control of the action's widget; never through gc.actions.run
+        if (auto) throw hostError('ERR_INVALID', 'an automation run carries no control');
+        const c = typeof o.control === 'string' && action.widget ? action.widget.controls.find((x) => x.id === o.control) : null;
+        if (!c) return { status: 400, body: { ok: false, error: 'invalid_control' } };
+        const value = controlValue(c, o.value);
+        if (value === undefined) return { status: 400, body: { ok: false, error: 'invalid_value' } };
+        args.control = c.id;
+        args.value = value;
+      }
+      const out = await hook('runQuickAction', args);
       if (!out || typeof out !== 'object' || Array.isArray(out)) throw hostError('ERR_INVALID', 'runQuickAction must return an object');
       if (out.state != null && !QA_STATES.has(out.state)) throw hostError('ERR_INVALID', `runQuickAction: state ${JSON.stringify(out.state)}`);
-      return { status: 200, body: { ok: out.ok !== false, message: qaText(out.message, 120, 'message', true), state: out.state == null ? null : out.state } };
+      return {
+        status: 200,
+        body: { ok: out.ok !== false, message: qaText(out.message, 120, 'message', true), state: out.state == null ? null : out.state, widget: checkQuickWidget(out.widget, 'runQuickAction') },
+      };
     },
     /** appVisible hook (permissions.app + ui.app, GateControl ≥ 1.164.0): called as appVisible(user, gc) with the
         token owner; false (or an error) = no app tab for this person (no hook → true) */

@@ -65,8 +65,8 @@ test('mock host quick actions: checked like the host, run only for an id listed 
       };`);
     const host = await createHost(tmp);
     try {
-      assert.deepEqual(await host.quickActions({ id: 2, name: 'Ada', role: 'user' }), [{ id: 'x:1', title: 'Lamp', subtitle: null, icon: null, kind: 'toggle', state: 'on', confirm: false }]);
-      assert.deepEqual(await host.runQuickAction({ id: 2, name: 'Ada', role: 'user' }, 'x:1'), { status: 200, body: { ok: true, message: 'done x:1', state: 'off' } });
+      assert.deepEqual(await host.quickActions({ id: 2, name: 'Ada', role: 'user' }), [{ id: 'x:1', title: 'Lamp', subtitle: null, icon: null, kind: 'toggle', state: 'on', confirm: false, widget: null }]);
+      assert.deepEqual(await host.runQuickAction({ id: 2, name: 'Ada', role: 'user' }, 'x:1'), { status: 200, body: { ok: true, message: 'done x:1', state: 'off', widget: null } });
       assert.equal((await host.runQuickAction({ id: 3, name: 'Bob', role: 'user' }, 'x:1')).status, 404, 'not listed for Bob');
       assert.equal((await host.runQuickAction({ id: 2, name: 'Ada', role: 'user' }, 'x:2')).status, 404);
       const many = Array.from({ length: 17 }, (_, i) => ({ id: 'a' + i, title: 'A' }));
@@ -74,6 +74,68 @@ test('mock host quick actions: checked like the host, run only for an id listed 
         [{ id: 'a', title: 'A', state: 'on' }], [{ id: 'a', title: 'A' }, { id: 'a', title: 'B' }], [{ id: 'a', title: 'A', icon: '<svg>' }], {}]) {
         host.plugin._set(bad);
         await assert.rejects(host.quickActions({ id: 2, name: 'Ada', role: 'user' }), { code: 'ERR_INVALID' }, JSON.stringify(bad).slice(0, 60));
+      }
+    } finally {
+      await host.close();
+    }
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test('mock host quick action widgets: checked like the host, controls run through the route', async () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'qa-widget-plugin-'));
+  try {
+    fs.mkdirSync(path.join(tmp, 'server'));
+    fs.writeFileSync(path.join(tmp, 'plugin.json'), JSON.stringify({ id: 'qa-widget-test', name: 'QA', version: '1.0.0', entry: 'server/index.js', permissions: { portal: true } }));
+    fs.writeFileSync(path.join(tmp, 'server', 'index.js'), `
+      let widget = null;
+      module.exports = {
+        _set(w) { widget = w; },
+        async quickActions() { return [{ id: 'ac:1', title: 'Klima', kind: 'toggle', state: 'on', widget }, { id: 'plain', title: 'Plain' }]; },
+        async runQuickAction(a) { return { ok: true, message: [a.id, String(a.control), typeof a.value, String(a.value)].join(' '), state: 'on', widget: a.control === 'mode' ? widget : (a.control === 'target' ? { value: 'x' } : undefined) }; },
+      };`);
+    const ok = {
+      value: 21.5, unit: '°C', status: 'Kühlen · Ziel 22 °C', state: 'on',
+      controls: [
+        { id: 'target', kind: 'stepper', label: 'Ziel', value: 22, min: 16, max: 30, step: 0.5, unit: '°C' },
+        { id: 'mode', kind: 'choice', label: 'Modus', value: 'cool', options: [{ id: 'auto', label: 'Auto' }, { id: 'cool', label: 'Kühlen' }] },
+      ],
+    };
+    const host = await createHost(tmp);
+    const ada = { id: 2, name: 'Ada', role: 'user' };
+    try {
+      host.plugin._set(ok);
+      const list = await host.quickActions(ada);
+      assert.deepEqual(list[0].widget, { ...ok, controls: [ok.controls[0], ok.controls[1]] });
+      assert.equal(list[1].widget, null, 'no widget → null');
+      host.plugin._set({ value: '–' });
+      assert.deepEqual((await host.quickActions(ada))[0].widget, { value: '–', unit: null, status: null, state: null, controls: [] });
+      host.plugin._set(ok);
+      assert.deepEqual(await host.runQuickAction(ada, 'ac:1', 'de', { control: 'target', value: 23.5 }), { status: 200, body: { ok: true, message: 'ac:1 target number 23.5', state: 'on', widget: { value: 'x', unit: null, status: null, state: null, controls: [] } } });
+      assert.deepEqual((await host.runQuickAction(ada, 'ac:1', 'de', { control: 'mode', value: 'auto' })).body.message, 'ac:1 mode string auto');
+      assert.deepEqual((await host.runQuickAction(ada, 'ac:1', 'de', { control: 'mode', value: 'auto' })).body.widget, ok);
+      assert.deepEqual((await host.runQuickAction(ada, 'ac:1')).body, { ok: true, message: 'ac:1 undefined undefined undefined', state: 'on', widget: null });
+      for (const [control, value] of [['fan', 50], ['', 1], [5, 1], ['target', 31], ['target', 15.5], ['target', '22'], ['target', NaN], ['mode', 'heat'], ['mode', 1], ['mode', undefined]]) {
+        const r = await host.runQuickAction(ada, 'ac:1', 'de', { control, value });
+        assert.equal(r.status, 400, `${control} ${value}`);
+        assert.equal(r.body.error, typeof control === 'string' && ['target', 'mode'].includes(control) ? 'invalid_value' : 'invalid_control');
+      }
+      assert.equal((await host.runQuickAction(ada, 'plain', 'de', { control: 'target', value: 22 })).status, 400, 'no widget, no control');
+      await assert.rejects(host.runQuickAction(ada, 'ac:1', 'de', { control: 'target', value: 22, automation: true, via: 'gatecontrol-other' }), { code: 'ERR_INVALID' }, 'never through gc.actions.run');
+      const ctl = (c) => ({ ...ok, controls: [{ ...ok.controls[0], ...c }] });
+      for (const bad of [
+        [], 'x', { value: 'x'.repeat(25) }, { unit: 'x'.repeat(9) }, { status: 'x'.repeat(61) }, { state: 'on ' }, { state: 'bad' },
+        { controls: {} }, { controls: [1] }, { controls: ok.controls.concat(ok.controls, ok.controls) }, { controls: [ok.controls[0], ok.controls[0]] },
+        ctl({ id: 'a b' }), ctl({ id: 'x'.repeat(25) }), ctl({ kind: 'knob' }), ctl({ label: 'x'.repeat(21) }), ctl({ unit: 'x'.repeat(9) }),
+        ctl({ value: 31 }), ctl({ value: 15 }), ctl({ value: '22' }), ctl({ min: 30, max: 16 }), ctl({ step: 0 }), ctl({ step: -1 }), ctl({ max: undefined }),
+        { controls: [{ ...ok.controls[1], options: [{ id: 'auto', label: 'Auto' }] }] }, { controls: [{ ...ok.controls[1], value: 'heat' }] },
+        { controls: [{ ...ok.controls[1], options: [{ id: 'auto', label: 'Auto' }, { id: 'auto', label: 'Auto' }] }] },
+        { controls: [{ ...ok.controls[1], options: [{ id: 'auto', label: 'Auto' }, { id: 'cool' }] }] },
+        { controls: [{ ...ok.controls[1], options: Array.from({ length: 9 }, (_, i) => ({ id: 'o' + i, label: 'O' })) }] },
+      ]) {
+        host.plugin._set(bad);
+        await assert.rejects(host.quickActions(ada), { code: 'ERR_INVALID' }, JSON.stringify(bad).slice(0, 80));
       }
     } finally {
       await host.close();

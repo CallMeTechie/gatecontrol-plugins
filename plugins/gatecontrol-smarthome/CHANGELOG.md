@@ -2,6 +2,20 @@
 
 Phoscon/deCONZ-Integration als GateControl-Plugin – bisher fest in GateControl eingebaut.
 
+## 1.4.0
+- Widget für den Start-Tab der GateControl-Apps: dimmbare Lampen und Gruppen bringen
+  bei ihrer Schnellaktion jetzt ein Widget mit – eingeschaltet die Helligkeit in Prozent
+  als großer Wert, ausgeschaltet „Aus“; darunter die Art (Licht/Gruppe, ggf. „nicht
+  erreichbar“) und ein Helligkeitsregler (1–100 %). Steckdosen, Schalter-Lampen ohne
+  Dimmung und Szenen bleiben einfache Schaltflächen.
+- Helligkeitsregler bedienen: die Helligkeit wird am Gateway gesetzt und die Lampe bzw.
+  Gruppe dabei eingeschaltet (nur für eigene Geräte, Prüfung wie beim Schalten); jede
+  Antwort – auch das Umschalten – liefert das Widget mit dem neuen Zustand. Ein
+  unbekannter Regler oder Wert ändert nichts.
+- Neuer Text „Helligkeit“/„Brightness“ (Beschriftung des Reglers).
+- Optional: GateControl ab 1.171.0 zeigt die Widgets, ältere Versionen lassen das Feld
+  weg – die Mindestversion bleibt unverändert.
+
 ## 1.3.0
 - Schnellaktionen für die GateControl-Apps (Verknüpfungen auf dem Startbildschirm,
   Schnelleinstellungen, Widget): je ein Schalter für die eigenen Lampen, Steckdosen und
