@@ -141,12 +141,14 @@ textarea.form-input{min-height:70px;padding:8px 10px;resize:vertical}
 .fa-pres.is-not_shared,.fa-pres.is-unknown{border-style:dashed}
 .fa-pres-main{display:flex;flex-direction:column;min-width:0}
 .fa-rules{display:flex;flex-direction:column}
-.fa-rule{display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:14px 18px;border-top:1px solid var(--line);color:var(--muted)}
+.fa-rule{display:flex;flex-wrap:wrap;gap:10px 16px;align-items:flex-start;padding:14px 18px;border-top:1px solid var(--line);color:var(--muted)}
+.fa-rule-main{flex:1 1 420px;min-width:0;min-height:36px;display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.fa-rule-side{flex:0 0 auto;max-width:100%;margin-left:auto;display:flex;flex-wrap:wrap;justify-content:flex-end;align-items:center;gap:10px;min-height:36px}
 .fa-rule.is-off{opacity:.62}
 .fa-rule-when{padding:6px 12px;border-radius:10px;background:var(--surface-2);font-size:14px;font-weight:700;color:var(--text)}
 .fa-rule-act{padding:6px 12px;border-radius:10px;background:var(--accent-soft);color:var(--accent);font-size:14px;font-weight:600}
 .fa-rule-act.is-gone{background:color-mix(in srgb,var(--crit) 12%,transparent);color:var(--crit);text-decoration:line-through}
-.fa-rule-meta{margin-left:auto;font-size:12px}
+.fa-rule-meta{font-size:12px;text-align:right}
 .fa-rules .fa-empty{padding:4px 18px 18px}
 /* rule editor (1.4.0, mockup „Neue Regel“; ui/rules.js): one wide dialog, three columns
    Wann? · Was soll passieren? · Ablauf — on the frame's tokens, light and dark; one column ≤ 760 px */

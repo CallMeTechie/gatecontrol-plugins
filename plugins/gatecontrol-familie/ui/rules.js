@@ -86,17 +86,19 @@
       meta.push(rule.lastRunAt ? T('rule.last', { when: A.when(rule.lastRunAt) }) : T('rule.never'));
       if (rule.lastResult && !rule.lastResult.ok) meta.push(T('rule.failed'));
       var cond = conditionText(rule);
-      var row = el('div', { class: 'fa-rule' + (rule.active ? '' : ' is-off') }, [
+      // left: the summary and the action chips (they wrap); right, at the top: meta, switch, „Bearbeiten“ (own line, right-aligned, when it must wrap)
+      var main = el('div', { class: 'fa-rule-main' }, [
         el('span', { class: 'fa-rule-when' }, [rule.name ? el('b', { text: rule.name }) : null, rule.name ? ' · ' : null, triggerText(rule, data), cond ? el('span', { class: 'fa-sub', text: ' (' + cond + ')' }) : null]),
         A.svg(ICON_ARROW, 18),
-      ].concat(chips).concat([el('span', { class: 'fa-rule-meta' + (rule.lastResult && !rule.lastResult.ok ? ' fa-bad' : ''), text: meta.join(' · ') })]));
+      ].concat(chips));
+      var side = el('div', { class: 'fa-rule-side' }, [el('span', { class: 'fa-rule-meta' + (rule.lastResult && !rule.lastResult.ok ? ' fa-bad' : ''), text: meta.join(' · ') })]);
       if (opts.editable) {
-        row.appendChild(A.switchBtn(rule.active, T('rule.active'), function (on, b) {
+        side.appendChild(A.switchBtn(rule.active, T('rule.active'), function (on, b) {
           A.api('PATCH', opts.base + '/rules/' + rule.id, { active: on }).then(opts.reload).catch(function (e) { A.setSwitch(b, !on); A.warn(e); });
         }));
-        row.appendChild(el('button', { type: 'button', class: 'btn btn-sm', text: T('common.edit'), on: { click: function () { edit(rule, data, opts); } } }));
+        side.appendChild(el('button', { type: 'button', class: 'btn btn-sm', text: T('common.edit'), on: { click: function () { edit(rule, data, opts); } } }));
       }
-      box.appendChild(row);
+      box.appendChild(el('div', { class: 'fa-rule' + (rule.active ? '' : ' is-off') }, [main, side]));
     });
   }
 
