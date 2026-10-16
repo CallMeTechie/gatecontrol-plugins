@@ -100,6 +100,11 @@ test('quick actions per right: zusperren / aufsperren / öffnen (opener: Summer)
     [`${openerId}:open`, 'Hoftor Summer', true],
   ]);
   assert.ok(anna.every((a) => a.icon && a.kind === 'button'));
+  // one device per lock (GateControl ≥ 1.172.0): all of its actions under it
+  const lockDevice = { id: `lock:${lockId}`, title: 'Haustür', subtitle: null, icon: 'M7 11V7a5 5 0 0 1 10 0v4M5 11h14v10H5z' };
+  const openerDevice = { id: `lock:${openerId}`, title: 'Hoftor', subtitle: null, icon: 'M5 21V4a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v17M3 21h18M15 12h.01' };
+  assert.deepEqual(anna.map((a) => a.device), [lockDevice, lockDevice, lockDevice, openerDevice]);
+  assert.ok(anna.every((a) => a.look === null && a.confirmWhen === null && a.widget === null), 'buttons as before');
   assert.equal(anna[0].subtitle, 'Zugesperrt');
   assert.deepEqual((await host.quickActions(MARC)).map((a) => a.id), [`${lockId}:lock`, `${lockId}:unlock`]);
   assert.deepEqual(await host.quickActions(LENA), []);

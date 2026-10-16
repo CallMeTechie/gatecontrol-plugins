@@ -120,11 +120,13 @@ async function quickActionsFor(gc, user, lang) {
     const opener = nuki.isOpener(lock.device_type);
     const shown = locks.displayState(lock, Date.now());
     const sub = clip(stateLabel(lang, shown), 60) || null;
+    // the apps group a lock's actions (GateControl ≥ 1.172.0; older hosts drop the field)
+    const device = { id: `lock:${lock.id}`, title: clip(lock.name, 40) || t(lang, opener ? 'qa.device_opener' : 'qa.device_lock'), icon: opener ? ICONS.open : ICONS.lock };
     for (const a of lock.actions) {
       if (!rights.atLeast(level, rights.NEEDS[a])) continue;
       if (kind === 'automation' && a === 'open') continue;
       const key = a === 'open' && opener ? 'buzz' : a;
-      out.push({ id: `${lock.id}:${a}`, title: clip(t(lang, 'qa.' + key, { name: lock.name }), 40), subtitle: sub, icon: ICONS[a], kind: 'button', confirm: a !== 'lock' });
+      out.push({ id: `${lock.id}:${a}`, title: clip(t(lang, 'qa.' + key, { name: lock.name }), 40), subtitle: sub, icon: ICONS[a], kind: 'button', confirm: a !== 'lock', device });
     }
   }
   return out.slice(0, QA_MAX);

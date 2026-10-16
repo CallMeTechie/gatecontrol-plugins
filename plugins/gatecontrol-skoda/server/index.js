@@ -13,9 +13,10 @@
 //     GET  /portal · /portal/vehicles/:id/image?part=N · /portal/vehicles/:id/details
 //     POST /portal/vehicles/:id/command   (the host lets only signed-in viewers change things)
 //   quick actions of the GateControl apps (hooks quickActions / runQuickAction)
-//     the portal's controls for a signed-in owner: climate, charging, window
-//     heating (toggles), lock and unlock (buttons, with the account's S-PIN;
-//     unlock asks first)
+//     the portal's controls for a signed-in owner, grouped per vehicle
+//     (device v:<id>): climate (with the vehicle's widget), charging, window
+//     heating and the lock (one toggle: locked/unlocked, with the account's
+//     S-PIN; unlocking asks first)
 //
 // Requests run with the requesting user's rights: req.user.portal = a portal
 // viewer, who only ever sees and controls the vehicles an administrator
@@ -86,10 +87,49 @@ async function usersById(gc) {
 // ─── Portal Start tiles and search (declarative; the host renders them) ──
 
 const CAR_ICON = 'M5 16l1-5 2-3h8l2 3 1 5v3h-2a2 2 0 0 1-4 0H9a2 2 0 0 1-4 0H3v-3z';
+// 24×24 stroke icons of the widget readings and tile items
+const BATTERY_ICON = 'M2 7h16v10H2zM21 10v4M5 10v4M8 10v4M11 10v4';
+const ROUTE_ICON = 'M3 19a3 3 0 1 0 6 0a3 3 0 1 0-6 0M9 19h8.5a3.5 3.5 0 0 0 0-7h-11a3.5 3.5 0 0 1 0-7H15M15 5a3 3 0 1 0 6 0a3 3 0 1 0-6 0';
+const LOCK_CLOSED_ICON = 'M5 11h14v10H5zM8 11V7a4 4 0 0 1 8 0v4M12 15v2';
+const LOCK_OPEN_ICON = 'M5 11h14v10H5zM8 11V7a4 4 0 0 1 7.9-1M12 15v2';
 
 function fmtNum(v, lang) {
   const n = Number(v);
   return Number.isFinite(n) ? n.toLocaleString(lang === 'en' ? 'en-GB' : 'de-DE', { maximumFractionDigits: 0 }) : null;
+}
+
+/** A finite number or null. */
+function num(v) {
+  const n = v == null || v === '' ? NaN : Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+/** The vehicle's charge level (whole %), range (whole km) and lock (true / false / null) from the stored state. */
+function vehicleFacts(s) {
+  const st = s || {};
+  const soc = num(st.soc);
+  const range = num(st.rangeKm);
+  return {
+    soc: soc == null ? null : Math.round(soc),
+    range: range == null ? null : Math.round(range),
+    locked: typeof st.locked === 'boolean' ? st.locked : null,
+    charging: String((st.charging && st.charging.state) || '').toUpperCase() === 'CHARGING',
+  };
+}
+
+/** The lock as a reading / tile item: closed (good) or open (crit). */
+function lockItem(locked, label) {
+  return { label, icon: locked ? LOCK_CLOSED_ICON : LOCK_OPEN_ICON, state: locked ? 'good' : 'crit' };
+}
+
+/** Start tile items for the apps (GateControl ≥ 1.172.0): charge level, range, lock — each only when known. */
+function tileItems(s, lang) {
+  const f = vehicleFacts(s);
+  const items = [];
+  if (f.soc != null) items.push({ label: t(lang, 'widget.soc'), icon: BATTERY_ICON, value: f.soc, unit: '%', state: f.soc <= 15 ? 'crit' : 'good' });
+  if (f.range != null) items.push({ label: t(lang, 'portal.range'), icon: ROUTE_ICON, value: f.range, unit: 'km' });
+  if (f.locked != null) items.push(lockItem(f.locked, t(lang, f.locked ? 'qa.lock_locked' : 'qa.lock_unlocked')));
+  return items;
 }
 
 function vehicleTile(v, lang) {
@@ -106,20 +146,23 @@ function vehicleTile(v, lang) {
   else if (soc != null && soc <= 15) tone = 'crit';
   else if (s.locked === false) tone = 'warn';
   else if (soc != null) tone = 'good';
-  return { section: 'skoda', title: v.name || v.model || '', value: parts.length ? parts.join(' · ') : '–', state: tone, icon: CAR_ICON };
+  // `value` for the portal; the apps show `items` (older GateControl versions leave them out)
+  return { section: 'skoda', title: v.name || v.model || '', value: parts.length ? parts.join(' · ') : '–', state: tone, icon: CAR_ICON, items: tileItems(s, lang) };
 }
 
 // ─── Quick actions of the apps (declarative; the host checks and caps them) ──
 
 const QA_MAX = 16;
-const QA_ID_RE = /^(climate|charging|windowheat|lock|unlock):([1-9][0-9]{0,9})$/;
+// unlock:<id> is no longer listed (the lock is one toggle); the host answers 404 for it
+const QA_ID_RE = /^(climate|charging|windowheat|lock):([1-9][0-9]{0,9})$/;
 const QA_ICONS = {
   climate: 'M12 2v20M3.3 7l17.4 10M3.3 17L20.7 7M9 3l3 2 3-2M9 21l3-2 3 2',
   charging: 'M13 2L4 14h7l-1 8 9-12h-7z',
   windowheat: 'M3 9c4-3 14-3 18 0l-2 7H5zM9 18c-1 1 1 2 0 3M15 18c-1 1 1 2 0 3',
-  lock: 'M6 11h12v10H6zM8 11V7a4 4 0 0 1 8 0v4',
-  unlock: 'M6 11h12v10H6zM8 11V7a4 4 0 0 1 7.6-1.8',
+  lock: LOCK_CLOSED_ICON,
 };
+// the lock toggle per state (GateControl ≥ 1.172.0): on = locked (green, closed), off = unlocked (red, open)
+const LOCK_LOOK = Object.freeze({ on: { icon: LOCK_CLOSED_ICON, tone: 'good' }, off: { icon: LOCK_OPEN_ICON, tone: 'crit' } });
 
 /** A text as the host takes it unchanged: no control characters, trimmed, at most `max` UTF-16 units. */
 function clip(v, max) {
@@ -141,6 +184,52 @@ function toggleStates(s) {
   };
 }
 
+/** The vehicle as the apps group its actions (GateControl ≥ 1.172.0): v:<id>, name (or model), model below a different name. */
+function deviceOf(v, lang) {
+  const title = clip(v.name || v.model || '', 40) || t(lang, 'portal.vehicle');
+  const d = { id: `v:${v.id}`, title, icon: CAR_ICON };
+  const model = clip(v.model || '', 60);
+  if (model && model !== clip(v.name || '', 60)) d.subtitle = model;
+  return d;
+}
+
+/**
+ * The vehicle's widget, carried by its climate action (GateControl ≥ 1.172.0;
+ * older hosts leave the new fields out): charge level (or the range without
+ * one) as the value, range and lock as readings, charging / climate as the
+ * status. `power: false` — the climate toggle is one of the vehicle's buttons,
+ * not its on/off switch.
+ */
+function vehicleWidget(v, lang) {
+  const s = v.state || {};
+  const f = vehicleFacts(s);
+  const w = { label: null, value: null, unit: null, status: null, state: null, readings: [], controls: [], power: false };
+  if (f.soc != null) {
+    Object.assign(w, { label: clip(t(lang, 'widget.soc'), 24), value: f.soc, unit: '%' });
+    if (f.range != null) w.readings.push({ id: 'range', label: clip(t(lang, 'portal.range'), 20), value: f.range, unit: 'km', icon: ROUTE_ICON });
+  } else {
+    Object.assign(w, { label: clip(t(lang, 'portal.range'), 24), value: f.range == null ? '–' : f.range, unit: f.range == null ? null : 'km' });
+  }
+  if (f.locked != null) w.readings.push({ id: 'lock', ...lockItem(f.locked, clip(t(lang, 'widget.lock'), 20)) });
+  if (f.charging) w.status = t(lang, 'widget.charging');
+  else if (toggleStates(s).climate === 'on') w.status = t(lang, 'widget.climate_on');
+  if (f.soc != null && f.soc <= 15) w.state = 'crit';
+  else if (f.locked === false) w.state = 'warn';
+  else if (f.soc != null) w.state = 'good';
+  return w;
+}
+
+/** The lock as one toggle: on = locked, off = unlocked, no state when unknown; asks before unlocking. */
+function lockAction(v, lang) {
+  const locked = v.state && typeof v.state.locked === 'boolean' ? v.state.locked : null;
+  const a = {
+    kind: 'toggle', title: t(lang, locked === true ? 'qa.lock_locked' : (locked === false ? 'qa.lock_unlocked' : 'qa.lock_unknown')),
+    icon: locked === false ? LOCK_OPEN_ICON : LOCK_CLOSED_ICON, look: LOCK_LOOK, confirm: true, confirmWhen: 'off',
+  };
+  if (locked != null) a.state = locked ? 'on' : 'off';
+  return a;
+}
+
 /** The viewer's own vehicles (the portal's owner scope), stored state only. */
 async function ownVehicles(gc, userId) {
   const ids = new Set(await store.vehiclesOwnedBy(gc, userId));
@@ -150,9 +239,10 @@ async function ownVehicles(gc, userId) {
 
 /**
  * The portal's vehicle controls as quick actions — only for a signed-in owner
- * (the portal shows controls only then): climate, charging (a vehicle with a
- * battery), window heating; lock and unlock only with the account's S-PIN,
- * unlocking asks first. No cloud call.
+ * (the portal shows controls only then), grouped per vehicle (device): climate
+ * (carrying the vehicle's widget), charging (a vehicle with a battery), window
+ * heating; the lock as one toggle only with the account's S-PIN, unlocking
+ * asks first. No cloud call.
  */
 async function quickActionsFor(gc, user, lang) {
   if (!user || !Number.isInteger(user.id) || user.loggedIn !== true) return [];
@@ -160,15 +250,13 @@ async function quickActionsFor(gc, user, lang) {
   for (const v of await ownVehicles(gc, user.id)) {
     const st = toggleStates(v.state);
     const subtitle = clip(v.name || v.model || t(lang, 'portal.vehicle'), 60);
-    const add = (kind, extra) => out.push({ id: `${kind}:${v.id}`, title: t(lang, 'qa.' + kind), subtitle, icon: QA_ICONS[kind], ...extra });
-    const toggle = (kind) => add(kind, st[kind] ? { kind: 'toggle', state: st[kind] } : { kind: 'toggle' });
-    toggle('climate');
+    const device = deviceOf(v, lang);
+    const add = (kind, extra) => out.push({ id: `${kind}:${v.id}`, title: t(lang, 'qa.' + kind), subtitle, icon: QA_ICONS[kind], device, ...extra });
+    const toggle = (kind, extra) => add(kind, { kind: 'toggle', ...(st[kind] ? { state: st[kind] } : {}), ...extra });
+    toggle('climate', { widget: vehicleWidget(v, lang) });
     if ((v.state && v.state.soc != null) || st.charging) toggle('charging');
     toggle('windowheat');
-    if (await store.getSpin(gc, v.account_id)) {
-      add('lock', { kind: 'button' });
-      add('unlock', { kind: 'button', confirm: true });
-    }
+    if (await store.getSpin(gc, v.account_id)) add('lock', lockAction(v, lang));
     if (out.length >= QA_MAX) break;
   }
   return out.slice(0, QA_MAX);
@@ -184,7 +272,8 @@ function commandFor(kind, v) {
   }
   if (kind === 'charging') return st.charging === 'on' ? { action: 'charge_stop', args: {}, state: 'off' } : { action: 'charge_start', args: {}, state: 'on' };
   if (kind === 'windowheat') return st.windowheat === 'on' ? { action: 'window_heat_stop', args: {}, state: 'off' } : { action: 'window_heat_start', args: {}, state: 'on' };
-  return { action: kind, args: {}, state: null }; // lock / unlock
+  // the lock: locked → unlock, else (unlocked or unknown) → lock
+  return v.state && v.state.locked === true ? { action: 'unlock', args: {}, state: 'off' } : { action: 'lock', args: {}, state: 'on' };
 }
 
 /** Run one quick action with the portal's checks (signed in, owner). */

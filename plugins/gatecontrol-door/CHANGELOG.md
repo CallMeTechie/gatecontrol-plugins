@@ -8,6 +8,11 @@ bleibt auf dem eigenen Server. Einrichtung, Risiken, Datenschutz und die App-API
 an; das Plugin nutzt die, die auch die Open-Source-Projekte ring-client-api (Homebridge) und
 python-ring-doorbell (Home Assistant) verwenden. Sie kann sich jederzeit ändern oder wegfallen.
 
+## 1.0.3
+- Geräte: die Schnellaktionen eines Schlosses bzw. Openers (zusperren, aufsperren, öffnen,
+  Summer) gehören zu einem Gerät mit dessen Namen – die GateControl-Apps ab 1.38.0 zeigen
+  sie als eine Zeile. Sonst unverändert; GateControl-Versionen vor 1.172.0 lassen das Feld weg.
+
 ## 1.0.2
 - **Behoben: Nuki Web zeigt weiter „Öffnet …“, obwohl das Schloss längst aufgesperrt ist.** Die
   Cloud-Kopie kann auf einem Zwischenzustand hängen – auch `GET /smartlock/{id}` liefert dann

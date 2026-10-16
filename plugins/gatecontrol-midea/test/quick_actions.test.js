@@ -2,8 +2,9 @@
 
 // Quick actions of the GateControl apps (hooks quickActions / runQuickAction):
 // power on/off per air conditioner of the viewer — the portal's owner scope,
-// cached state only in the list, at most 16 — each with a widget (indoor
-// temperature, status line, target temperature stepper, mode choice).
+// cached state only in the list, at most 16 — each its own device (ac:<id>)
+// with a widget (indoor temperature, outdoor temperature reading, status line,
+// target temperature stepper, mode choice).
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -16,10 +17,16 @@ const settle = () => new Promise((r) => setTimeout(r, 300));
 const direct = (host, user, id, lang = 'de', extra = {}) => host.plugin.runQuickAction({ user: { portal: true, loggedIn: true, app: true, ...user }, lang, id, ...extra }, host.gc);
 
 const MODES = { de: { auto: 'Auto', cool: 'Kühlen', heat: 'Heizen', dry: 'Entfeuchten', fan: 'Lüften' }, en: { auto: 'Auto', cool: 'Cool', heat: 'Heat', dry: 'Dry', fan: 'Fan' } };
-/** The widget as the host passes it on: value/status/state plus the two controls. */
-function widget({ value = '–', status = null, state = null, target = 24, mode = 'auto', lang = 'de' } = {}) {
+const AC = 'M2 4h20v10H2zM6 9h12M6 18v1M10 18v2M14 18v2M18 18v1';
+const THERMO = 'M10 13V5a2 2 0 1 1 4 0v8a4 4 0 1 1-4 0z';
+/**
+ * The widget as the host passes it on: label/value/status/state, the outdoor reading (the fake
+ * devices report 31 °C outside, so by default whenever the indoor value is known), the two controls.
+ */
+function widget({ value = '–', status = null, state = null, target = 24, mode = 'auto', lang = 'de', outdoor = value === '–' ? null : '31' } = {}) {
   return {
-    value, unit: '°C', status, state,
+    label: lang === 'en' ? 'Indoor temperature' : 'Innentemperatur', value, unit: '°C', status, state, power: true,
+    readings: outdoor == null ? [] : [{ id: 'outdoor', label: lang === 'en' ? 'Outdoor temperature' : 'Außentemperatur', value: outdoor, unit: '°C', icon: THERMO, state: null }],
     controls: [
       { id: 'target', kind: 'stepper', label: lang === 'en' ? 'Target' : 'Ziel', value: target, min: 16, max: 30, step: 0.5, unit: '°C' },
       { id: 'mode', kind: 'choice', label: lang === 'en' ? 'Mode' : 'Modus', value: mode, options: ['auto', 'cool', 'heat', 'dry', 'fan'].map((id) => ({ id, label: MODES[lang][id] })) },
@@ -58,7 +65,8 @@ test('quick actions: a power toggle per own air conditioner, state from the cach
       [`ac:${a}`, 'Wohnzimmer', 'Kühlen · Ziel 22 °C', 'toggle', 'on'],
       [`ac:${b}`, 'Büro', 'Klimaanlage', 'toggle', null],
     ]);
-    assert.ok(ada.every((x) => /^M/.test(x.icon) && x.confirm === false));
+    assert.ok(ada.every((x) => /^M/.test(x.icon) && x.confirm === false && x.look === null && x.confirmWhen === null));
+    assert.deepEqual(ada.map((x) => x.device), [{ id: `ac:${a}`, title: 'Wohnzimmer', subtitle: null, icon: AC }, { id: `ac:${b}`, title: 'Büro', subtitle: null, icon: AC }], 'every air conditioner its own device');
     assert.deepEqual(ada[0].widget, widget({ value: '23,5', status: 'Kühlen · Ziel 22 °C', state: 'on', target: 22, mode: 'cool' }), 'the widget from the cached state');
     assert.deepEqual(ada[1].widget, widget(), 'unknown state: dash, no status, default controls');
     const bob = await host.quickActions(BOB, 'en');
@@ -68,6 +76,21 @@ test('quick actions: a power toggle per own air conditioner, state from the cach
     assert.deepEqual(await host.quickActions({ ...ADA, loggedIn: false }), []);
     await asAdmin(host, 'PUT', `/devices/${b}`, { enabled: false });
     assert.deepEqual((await host.quickActions(ADA)).map((x) => x.id), [`ac:${a}`], 'a disabled device is no action');
+    await settle();
+  });
+});
+
+test('quick actions: no outdoor reading while the device does not report one', () => {
+  const devA = fakeAc({ power: true, mode: 'heat', targetTemp: 21, outdoorTemp: null });
+  const cloud = fakeCloud({ devices: { [A]: devA }, appliances: [{ id: A, sn: 'SN-A', name: 'Wohnzimmer', type: '0xAC', onlineStatus: '1' }] });
+  return withHost({ cloud }, async (host) => {
+    await connectCloud(host, cloud);
+    const a = (await asAdmin(host, 'POST', '/devices', { transport: 'cloud', cloud_appliance_id: A, name: 'Wohnzimmer' })).json.device.id;
+    await asAdmin(host, 'PUT', `/devices/${a}/owners`, { user_ids: [ADA.id] });
+    await asAdmin(host, 'GET', `/devices/${a}/state`);
+    const [x] = await host.quickActions(ADA);
+    assert.deepEqual(x.widget, widget({ value: '23,5', status: 'Heizen · Ziel 21 °C', state: 'on', target: 21, mode: 'heat', outdoor: null }));
+    assert.equal(x.widget.power, true, 'the toggle stays the device\'s on/off switch');
     await settle();
   });
 });
@@ -91,6 +114,7 @@ test('quick actions: at most 16, long names cut to 40', () => {
     const list = await host.quickActions(ADA); // the mock host throws on more than 16 or a title over 40
     assert.equal(list.length, 16);
     assert.equal(list[0].title, 'Klimaanlage im Schlafzimmer ganz oben un');
+    assert.equal(list[0].device.title, 'Klimaanlage im Schlafzimmer ganz oben un');
     await settle();
   });
 });

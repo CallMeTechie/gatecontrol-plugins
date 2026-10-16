@@ -92,7 +92,8 @@ test('portalVisible, Start tiles and search: only the viewer\'s vehicles, declar
   assert.equal(await host.portalVisible(ADA, 'skoda'), true);
   assert.equal(await host.portalVisible(BOB, 'skoda'), false);
   const tiles = await host.portalTiles(ADA);
-  assert.deepEqual(tiles, [{ section: 'skoda', title: 'Elroq', value: '74 % · 310 km · lädt', state: 'on', icon: 'M5 16l1-5 2-3h8l2 3 1 5v3h-2a2 2 0 0 1-4 0H9a2 2 0 0 1-4 0H3v-3z' }]);
+  assert.deepEqual(tiles.map(({ items, ...rest }) => rest), [{ section: 'skoda', title: 'Elroq', value: '74 % · 310 km · lädt', state: 'on', icon: 'M5 16l1-5 2-3h8l2 3 1 5v3h-2a2 2 0 0 1-4 0H9a2 2 0 0 1-4 0H3v-3z' }]);
+  assert.equal(tiles[0].items.length, 3, 'items for the apps (test/quick_actions.test.js)');
   assert.equal((await host.portalTiles(ADA, 'en'))[0].value, '74 % · 310 km · charging');
   assert.deepEqual(await host.portalTiles(BOB), []);
   assert.equal(cloud.calls.filter((c) => c.url.includes('nominatim')).length, 0, 'tiles never look up an address');

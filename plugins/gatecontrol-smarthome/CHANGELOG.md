@@ -2,6 +2,15 @@
 
 Phoscon/deCONZ-Integration als GateControl-Plugin – bisher fest in GateControl eingebaut.
 
+## 1.5.0
+- Geräte: jede Lampe, Steckdose und Gruppe ist ein eigenes Gerät (Name und Symbol); die
+  Szenen einer Gruppe gehören zum Gerät der Gruppe, wenn die Person diese Gruppe hat, sonst
+  sind sie ein eigenes Gerät – die GateControl-Apps ab 1.38.0 zeigen so z. B. „Wohnzimmer“
+  mit Schalter, Helligkeit und den Szenen als eine Zeile.
+- Widget: der große Wert heißt „Helligkeit“ (für die Auswahl, was das Widget zeigt).
+- Optional: GateControl ab 1.172.0 gibt die neuen Felder weiter, ältere Versionen lassen
+  sie weg – die Mindestversion bleibt unverändert.
+
 ## 1.4.0
 - Widget für den Start-Tab der GateControl-Apps: dimmbare Lampen und Gruppen bringen
   bei ihrer Schnellaktion jetzt ein Widget mit – eingeschaltet die Helligkeit in Prozent

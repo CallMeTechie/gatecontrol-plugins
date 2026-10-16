@@ -32,7 +32,7 @@ fixture). It is built and tested in CI but never released
 |---|---|---|
 | `gatecontrol-smarthome` | Smart Home (Phoscon/deCONZ) — formerly built into GateControl; imports the built-in data; notifies: alarm, window open, battery low, gateway unreachable; app quick actions: own lights, plugs, groups (toggles) and scenes | ≥ 1.154.0 (1.0.0: ≥ 1.149.0) |
 | `gatecontrol-midea` | Klimaanlage (Midea air conditioners, cloud and LAN) — formerly built into GateControl; imports the built-in data; notifies: device unreachable, clean filter, malfunction; app quick actions: power toggle per own unit | ≥ 1.154.0 (1.0.0: ≥ 1.150.0) |
-| `gatecontrol-skoda` | Fahrzeuge (Škoda / MySkoda) — formerly built into GateControl; imports the built-in data; notifies: charging complete, battery low, not locked, climate done; app quick actions: climate, charging, window heating, lock/unlock (S-PIN, unlock asks first) | ≥ 1.154.0 (1.0.0: ≥ 1.151.0) |
+| `gatecontrol-skoda` | Fahrzeuge (Škoda / MySkoda) — formerly built into GateControl; imports the built-in data; notifies: charging complete, battery low, not locked, climate done; app quick actions per vehicle (device): climate with the vehicle's widget, charging, window heating, the lock as one toggle (S-PIN, unlocking asks first) | ≥ 1.154.0 (1.0.0: ≥ 1.151.0) |
 | `gatecontrol-alltag` | Alltag / Everyday — waste collection dates (online waste calendars AbfallNavi, abfall.io, AWIDO; ICS upload; own rules) and iCal calendars (Google, iCloud, Outlook, or a home-network server such as Nextcloud); portal sections in "Zuhause", Start tiles, search; app API `app/events` for the family app (1.2.0); notifies: waste collection (per plan 0–3 days before at a set time, optionally on the day), calendar events | ≥ 1.164.0 (1.1.0: ≥ 1.154.0) |
 | `gatecontrol-synology` | NAS (Synology) — status and control of Synology NAS through the DSM Web API (several NAS, home target over HTTP; DSM 2-step verification via device token): model, DSM version, CPU/RAM, temperature, volumes, storage pools, drives (S.M.A.R.T.), DSM update, Hyper Backup, UPS; reboot, shutdown, back up now; administrators only; notifies: NAS unreachable, storage degraded/almost full, drive health/temperature, backup failed, DSM update, reboot/shutdown | ≥ 1.154.0 |
 | `gatecontrol-proxmox` | Proxmox VE — status of hosts and clusters (nodes, VMs/containers, storage, backups, HA) and control of VMs/CTs (start, shutdown, stop, reboot) for administrators; admin page only; notifies: host/node unreachable, watched guest stopped, storage almost full, backup failed, high node load | ≥ 1.154.0 |
@@ -75,6 +75,12 @@ calling plugin's id) and `automation` (true only for another plugin's
 confirm?, auth?: 'device' }` actions for the plugin's own quick actions and an
 `image: { data, mime }` (≤ 300 KB) — `server/notify.js` passes `image` on and
 sends a message again without it when the host refuses the picture.
+Since GateControl 1.171.0 an action may carry a `widget` (value, status,
+controls), since 1.172.0 a `device` `{ id, title, subtitle?, icon? }` that
+groups the actions of one thing in the apps, a toggle `look` (icon and tone per
+state) and `confirmWhen`, a widget `label`, `readings` and `power`, and a Start
+tile `items` for the apps (`host.clientTiles(user)` in the mock host). Older
+hosts drop the fields.
 
 ## Tooling
 

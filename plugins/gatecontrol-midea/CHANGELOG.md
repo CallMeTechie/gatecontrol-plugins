@@ -2,6 +2,15 @@
 
 Midea-Klimageräte als GateControl-Plugin – bisher fest in GateControl eingebaut („Klimaanlage“).
 
+## 1.4.0
+- Geräte: die Schnellaktion jedes Klimageräts gehört zu einem eigenen Gerät (Name und
+  Symbol des Klimageräts) – die GateControl-Apps ab 1.38.0 gruppieren danach.
+- Widget: der große Wert heißt „Innentemperatur“ (für die Auswahl, was das Widget zeigt),
+  dazu die Außentemperatur als Zusatzwert (°C, Thermometer), sobald das Gerät sie meldet.
+  Der Schalter bleibt der Ein/Aus-Schalter des Widgets.
+- Optional: GateControl ab 1.172.0 gibt die neuen Felder weiter, ältere Versionen lassen
+  sie weg – die Mindestversion bleibt unverändert.
+
 ## 1.3.0
 - Widget für den Start-Tab der GateControl-Apps: jede Schnellaktion eines Klimageräts
   bringt jetzt ein Widget mit – Innentemperatur als großer Wert (°C), die Statuszeile wie

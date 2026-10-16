@@ -46,6 +46,17 @@
 //   route does: an id the action's widget has no control for → { status: 400, body:
 //   { ok: false, error: 'invalid_control' } }, a value outside min…max (stepper, slider)
 //   or not an option id (choice) → 400 invalid_value; else the hook gets control/value.
+//   Devices (GateControl ≥ 1.172.0): an entry's optional `device` { id, title, subtitle?, icon? }
+//   (always in the answer, null without one), on a toggle `look` { on?: { icon?, tone? }, off? }
+//   (tone good|warn|crit|neutral; answer { on, off } with null for a missing part, null without
+//   one) and `confirmWhen` 'on'|'off' (null without); a button carrying look or confirmWhen
+//   throws (the host nulls them). A widget may carry `label` (≤ 24), `readings` (≤ 4, each
+//   { id, label, value?, unit?, icon?, state? } with value or icon; answer always a list) and
+//   `power` (boolean, answer always a boolean, default true).
+//   Start tiles: host.portalTiles(user) answers what the hook returned (the portal ignores
+//   `items`), but a tile's `items` (≤ 4, { label, icon?, value?, unit?, state? } with value or
+//   icon) are checked like the host; host.clientTiles(user) answers like the apps' GET
+//   /api/v1/client/tiles: { section, title, value, unit, state, icon, items } (items [] without).
 //   await host.appVisible(user)   (the app tab hook appVisible(user, gc); viewer { …user, portal, loggedIn, app: true })
 //   permissions.notify { perHour } raises the mock's notification limit; a notifyTopics entry with
 //   allowCritical keeps priority 'critical' (otherwise capped to 'high'), as GateControl ≥ 1.164.0.
@@ -114,6 +125,10 @@ const QA_WIDGET_STATES = new Set(['on', 'off', 'good', 'warn', 'crit']);
 const QA_CONTROL_ID_RE = /^[A-Za-z0-9_-]{1,24}$/;
 const QA_CONTROL_KINDS = new Set(['stepper', 'slider', 'choice']);
 const QA_WIDGET_CONTROLS = 4;
+const QA_TONES = new Set(['good', 'warn', 'crit', 'neutral']);
+const QA_READINGS = 4;
+const TILE_ITEMS = 4;
+const TILE_STATES = new Set(['on', 'off', 'good', 'warn', 'crit']);
 const PLUGIN_ID_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const ACTIONS_PER_HOUR = 60;
 
@@ -329,7 +344,81 @@ function checkQuickWidget(w, what) {
       }
     }
   }
-  return { value, unit: qaText(w.unit, 8, `${what} widget unit`, true), status: qaText(w.status, 60, `${what} widget status`, true), state: w.state == null ? null : w.state, controls };
+  if (w.power != null && typeof w.power !== 'boolean') throw hostError('ERR_INVALID', `${what}: widget power must be a boolean`);
+  const readings = [];
+  if (w.readings != null) {
+    if (!Array.isArray(w.readings) || w.readings.length > QA_READINGS) throw hostError('ERR_INVALID', `${what}: widget readings must be a list of at most ${QA_READINGS}`);
+    const ids = new Set();
+    for (const r of w.readings) {
+      if (!r || typeof r !== 'object' || Array.isArray(r)) throw hostError('ERR_INVALID', `${what}: reading is not an object`);
+      if (typeof r.id !== 'string' || !QA_CONTROL_ID_RE.test(r.id)) throw hostError('ERR_INVALID', `${what}: bad reading id ${JSON.stringify(r.id)}`);
+      if (ids.has(r.id)) throw hostError('ERR_INVALID', `${what}: duplicate reading id ${r.id}`);
+      ids.add(r.id);
+      readings.push({ id: r.id, ...checkValueItem(r, 16, `${what} reading ${r.id}`) });
+    }
+  }
+  return {
+    label: qaText(w.label, 24, `${what} widget label`, true), value, unit: qaText(w.unit, 8, `${what} widget unit`, true),
+    status: qaText(w.status, 60, `${what} widget status`, true), state: w.state == null ? null : w.state, controls, readings, power: w.power !== false,
+  };
+}
+
+/**
+ * A widget reading (without its id) or a Start tile item → { label, value, unit, icon, state } as the host passes it on
+ * (GateControl ≥ 1.172.0); throws where the host drops it: label 1–20, value a text ≤ `valueMax` or a finite number,
+ * unit ≤ 8, icon SVG path data, state on|off|good|warn|crit; a value or an icon.
+ */
+function checkValueItem(r, valueMax, what) {
+  const label = qaText(r.label, 20, `${what} label`);
+  const value = r.value == null ? null : (typeof r.value === 'number' ? qaNumber(r.value, `${what} value`) : qaText(r.value, valueMax, `${what} value`));
+  if (r.icon != null && (typeof r.icon !== 'string' || !QA_ICON_RE.test(r.icon))) throw hostError('ERR_INVALID', `${what}: icon is not SVG path data`);
+  if (r.state != null && !TILE_STATES.has(r.state)) throw hostError('ERR_INVALID', `${what}: state ${JSON.stringify(r.state)}`);
+  if (value == null && r.icon == null) throw hostError('ERR_INVALID', `${what}: needs a value or an icon`);
+  return { label, value, unit: qaText(r.unit, 8, `${what} unit`, true), icon: r.icon == null ? null : r.icon, state: r.state == null ? null : r.state };
+}
+
+/** A quick action's device → { id, title, subtitle, icon } (GateControl ≥ 1.172.0); null without one. */
+function checkQuickDevice(d, what) {
+  if (d == null) return null;
+  if (typeof d !== 'object' || Array.isArray(d)) throw hostError('ERR_INVALID', `${what}: device must be an object`);
+  if (typeof d.id !== 'string' || !QA_ID_RE.test(d.id)) throw hostError('ERR_INVALID', `${what}: bad device id ${JSON.stringify(d.id)}`);
+  if (d.icon != null && (typeof d.icon !== 'string' || !QA_ICON_RE.test(d.icon))) throw hostError('ERR_INVALID', `${what}: device icon is not SVG path data`);
+  return { id: d.id, title: qaText(d.title, 40, `${what} device title`), subtitle: qaText(d.subtitle, 60, `${what} device subtitle`, true), icon: d.icon == null ? null : d.icon };
+}
+
+/** A toggle's look → { on, off } (each { icon, tone } or null; GateControl ≥ 1.172.0); null without one. */
+function checkQuickLook(l, what) {
+  if (l == null) return null;
+  if (typeof l !== 'object' || Array.isArray(l)) throw hostError('ERR_INVALID', `${what}: look must be an object`);
+  const part = (p, k) => {
+    if (p == null) return null;
+    if (typeof p !== 'object' || Array.isArray(p)) throw hostError('ERR_INVALID', `${what}: look.${k} must be an object`);
+    if (p.icon != null && (typeof p.icon !== 'string' || !QA_ICON_RE.test(p.icon))) throw hostError('ERR_INVALID', `${what}: look.${k}.icon is not SVG path data`);
+    if (p.tone != null && !QA_TONES.has(p.tone)) throw hostError('ERR_INVALID', `${what}: look.${k}.tone ${JSON.stringify(p.tone)}`);
+    if (p.icon == null && p.tone == null) throw hostError('ERR_INVALID', `${what}: look.${k} needs an icon or a tone`);
+    return { icon: p.icon == null ? null : p.icon, tone: p.tone == null ? null : p.tone };
+  };
+  const out = { on: part(l.on, 'on'), off: part(l.off, 'off') };
+  if (!out.on && !out.off) throw hostError('ERR_INVALID', `${what}: look without on or off`);
+  return out;
+}
+
+/** A tile's text as the portal takes it (src/services/plugins/portal.js text()). */
+function tileText(v, max) {
+  if (typeof v === 'number' && Number.isFinite(v)) return String(v);
+  if (typeof v !== 'string') return null;
+  const s = v.replace(/[\0-\x1f\x7f]/g, ' ').trim();
+  return s ? s.slice(0, max) : null;
+}
+
+/** A Start tile's items (GateControl ≥ 1.172.0) → what the client API passes on ([] without); throws where the host drops. */
+function checkTileItems(items, what) {
+  if (items == null) return [];
+  if (!Array.isArray(items) || items.length > TILE_ITEMS) throw hostError('ERR_INVALID', `${what}: items must be a list of at most ${TILE_ITEMS}`);
+  return items.map((it, i) => {
+    if (!it || typeof it !== 'object' || Array.isArray(it)) throw hostError('ERR_INVALID', `${what}: item ${i} is not an object`);
+    return checkValueItem(it, 16, `${what} item ${i}`);
+  });
 }
 
 /** The checked `value` of a control run, or undefined where the route answers 400 invalid_value. */
@@ -353,9 +442,14 @@ function checkQuickActions(out) {
     if (a.state != null && (kind !== 'toggle' || !QA_STATES.has(a.state))) throw hostError('ERR_INVALID', `quick action ${a.id}: state ${JSON.stringify(a.state)} (only 'on'|'off' on a toggle)`);
     if (a.icon != null && (typeof a.icon !== 'string' || !QA_ICON_RE.test(a.icon))) throw hostError('ERR_INVALID', `quick action ${a.id}: icon is not SVG path data`);
     if (a.confirm != null && typeof a.confirm !== 'boolean') throw hostError('ERR_INVALID', `quick action ${a.id}: confirm must be a boolean`);
+    // GateControl ≥ 1.172.0: look and confirmWhen only on a toggle (the host nulls them on a button)
+    if (kind !== 'toggle' && (a.look != null || a.confirmWhen != null)) throw hostError('ERR_INVALID', `quick action ${a.id}: look/confirmWhen only on a toggle`);
+    if (a.confirmWhen != null && !QA_STATES.has(a.confirmWhen)) throw hostError('ERR_INVALID', `quick action ${a.id}: confirmWhen ${JSON.stringify(a.confirmWhen)}`);
     return {
       id: a.id, title: qaText(a.title, 40, `${a.id} title`), subtitle: qaText(a.subtitle, 60, `${a.id} subtitle`, true),
       icon: a.icon == null ? null : a.icon, kind, state: kind === 'toggle' && a.state != null ? a.state : null, confirm: a.confirm === true,
+      confirmWhen: a.confirmWhen == null ? null : a.confirmWhen, look: checkQuickLook(a.look, `quick action ${a.id}`),
+      device: checkQuickDevice(a.device, `quick action ${a.id}`),
       widget: checkQuickWidget(a.widget, `quick action ${a.id}`),
     };
   });
@@ -707,7 +801,23 @@ async function createHost(pluginDir, opts = {}) {
       return (await hook('portalVisible', { user: { portal: true, ...user }, lang: 'de', section })) !== false;
     },
     /** portalTiles hook: declarative Start tiles for this viewer (no hook → []) */
-    portalTiles: async (user, lang = 'de') => (typeof plugin.portalTiles === 'function' ? hook('portalTiles', { user: { portal: true, ...user }, lang }) : []),
+    // a tile's items are checked like the host (GateControl ≥ 1.172.0), the answer is the hook's own
+    async portalTiles(user, lang = 'de') {
+      if (typeof plugin.portalTiles !== 'function') return [];
+      const out = await hook('portalTiles', { user: { portal: true, ...user }, lang });
+      if (Array.isArray(out)) for (const t of out) if (t && typeof t === 'object') checkTileItems(t.items, `tile ${JSON.stringify(t.title)}`);
+      return out;
+    },
+    /** the Start tiles as the apps get them (GET /api/v1/client/tiles, without key/plugin): items always a list */
+    async clientTiles(user, lang = 'de') {
+      const out = typeof plugin.portalTiles === 'function' ? await hook('portalTiles', { user: { portal: true, loggedIn: true, app: true, ...user }, lang }) : [];
+      if (!Array.isArray(out)) return [];
+      return out.slice(0, 8).filter((t) => t && typeof t === 'object' && tileText(t.title, 60)).map((t) => ({
+        section: typeof t.section === 'string' ? t.section : null, title: tileText(t.title, 60), value: tileText(t.value, 40), unit: tileText(t.unit, 12),
+        state: TILE_STATES.has(t.state) ? t.state : null, icon: typeof t.icon === 'string' && QA_ICON_RE.test(t.icon) ? t.icon : null,
+        items: checkTileItems(t.items, `tile ${JSON.stringify(t.title)}`),
+      }));
+    },
     /** portalSearch hook: declarative search results for this viewer (no hook → []) */
     portalSearch: async (user, q, lang = 'de') => (typeof plugin.portalSearch === 'function' ? hook('portalSearch', { user: { portal: true, ...user }, lang, q }) : []),
     /** quickActions hook: the app's quick actions for this viewer, checked like the host (no hook → []) */

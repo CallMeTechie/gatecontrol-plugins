@@ -4,6 +4,8 @@
 // exactly the portal's owner scope — a toggle per own light, plug and group,
 // a button per scene of an own group; cached state only; at most 16. Dimmable
 // lights and groups carry a widget (brightness value, brightness slider).
+// Every resource is a device (r:<id>); a scene belongs to its group's device
+// when the viewer has that group.
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -18,7 +20,7 @@ const direct = (host, user, id, lang = 'de', extra = {}) => host.plugin.runQuick
 
 /** The widget as the host passes it on: `value` (brightness while on, else the off text), status, state, one slider at `bri`. */
 function widget({ value, unit = null, status, state, bri = 100, lang = 'de' }) {
-  return { value, unit, status, state, controls: [{ id: 'bri', kind: 'slider', label: lang === 'en' ? 'Brightness' : 'Helligkeit', value: bri, min: 1, max: 100, step: 1, unit: '%' }] };
+  return { label: lang === 'en' ? 'Brightness' : 'Helligkeit', value, unit, status, state, readings: [], power: true, controls: [{ id: 'bri', kind: 'slider', label: lang === 'en' ? 'Brightness' : 'Helligkeit', value: bri, min: 1, max: 100, step: 1, unit: '%' }] };
 }
 
 test('quick actions: only the viewer\'s own devices, toggles first, scenes as buttons, sensors never', () => withHost({ gateways: [fakeDeconz()] }, async (host) => {
@@ -31,7 +33,7 @@ test('quick actions: only the viewer\'s own devices, toggles first, scenes as bu
     [`light:${by('Stehlampe').id}`, 'Stehlampe', 'Licht · 100 %', 'toggle', 'on'],
     [`scene:${by('Wohnzimmer · Abend').id}`, 'Wohnzimmer · Abend', 'Szene', 'button', null],
   ]);
-  assert.ok(ada.every((a) => a.icon && a.confirm === false));
+  assert.ok(ada.every((a) => a.icon && a.confirm === false && a.look === null && a.confirmWhen === null));
   assert.deepEqual(ada.map((a) => a.widget), [
     widget({ value: 'An', status: 'Gruppe', state: 'on' }),               // a group has no brightness of its own: "on", slider at 100
     widget({ value: 100, unit: '%', status: 'Licht', state: 'on', bri: 100 }),
@@ -45,6 +47,29 @@ test('quick actions: only the viewer\'s own devices, toggles first, scenes as bu
   // a resource the gateway no longer has is no action
   await host.gc.db.run('UPDATE resources SET enabled = 0 WHERE id = ?', [by('Stehlampe').id]);
   assert.ok(!(await host.quickActions(ADA)).some((a) => a.title === 'Stehlampe'));
+}));
+
+const GROUP_ICON = 'M3 11l9-7 9 7M5 10v10h14V10';
+const LIGHT_ICON = 'M9 18h6M10 21h4M12 3a6 6 0 0 0-4 10.5c.8.8 1 1.5 1 2.5h6c0-1 .2-1.7 1-2.5A6 6 0 0 0 12 3z';
+const PLUG_ICON = 'M9 2v5M15 2v5M7 7h10v3a5 5 0 0 1-10 0zM12 15v7';
+const SCENE_ICON = 'M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8zM19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z';
+
+test('quick actions: a device per light, plug and group; scenes under their group\'s device', () => withHost({ gateways: [fakeDeconz()] }, async (host) => {
+  const { by } = await connected(host);
+  await own(host, by, ['Stehlampe', 'Wohnzimmer', 'Poolpumpe'], [2]);
+  const group = { id: `r:${by('Wohnzimmer').id}`, title: 'Wohnzimmer', subtitle: null, icon: GROUP_ICON };
+  let ada = await host.quickActions(ADA);
+  assert.deepEqual(ada.map((a) => [a.id, a.device]), [
+    [`group:${by('Wohnzimmer').id}`, group],
+    [`light:${by('Stehlampe').id}`, { id: `r:${by('Stehlampe').id}`, title: 'Stehlampe', subtitle: null, icon: LIGHT_ICON }],
+    [`plug:${by('Poolpumpe').id}`, { id: `r:${by('Poolpumpe').id}`, title: 'Poolpumpe', subtitle: null, icon: PLUG_ICON }],
+    [`scene:${by('Wohnzimmer · Abend').id}`, group],
+  ]);
+  // the group gone (disabled) while its scene stays: the scene is a device of its own
+  await host.gc.db.run('UPDATE resources SET enabled = 0 WHERE id = ?', [by('Wohnzimmer').id]);
+  ada = await host.quickActions(ADA, 'en');
+  assert.deepEqual(ada.find((a) => a.id.startsWith('scene:')).device, { id: `r:${by('Wohnzimmer · Abend').id}`, title: 'Wohnzimmer · Abend', subtitle: null, icon: SCENE_ICON });
+  assert.ok(!ada.some((a) => a.device.id === group.id));
 }));
 
 test('quick actions: the widget of a light that is off, unreachable or not dimmable', () => {
