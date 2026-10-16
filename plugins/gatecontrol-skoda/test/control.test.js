@@ -9,6 +9,8 @@ const { withHost, asAdmin, connected, VIN } = require('./helpers');
 
 const cmd = (host, id, action, args) => asAdmin(host, 'POST', `/vehicles/${id}/command`, { action, args });
 const last = (cloud) => cloud.commands.at(-1);
+// the refresh timer is unref'd (never holds the host's process): keep the test's event loop alive while awaiting it
+const keepAlive = (p) => { const h = setInterval(() => {}, 1000); return Promise.resolve(p).finally(() => clearInterval(h)); };
 
 test('climate, window heating, charging, charge limit: payloads of python-myskoda', () => withHost({}, async (host, cloud) => {
   const { vehicleId } = await connected(host, cloud);
@@ -80,15 +82,65 @@ test('departure timers: fresh read, only RECURRING slots, type never from the re
   }
 }));
 
-test('a command triggers a refresh of the vehicle (own 30 s window)', () => withHost({}, async (host, cloud) => {
+test('a command triggers a refresh of the vehicle once it has applied it (delayed, own 30 s window)', () => withHost({}, async (host, cloud) => {
   const { vehicleId } = await connected(host, cloud);
   const control = require('../server/control');
+  assert.equal(control.REFRESH_DELAY_MS, 45 * 1000, 'about 45 s after the command by default');
   const garage = () => cloud.calls.filter((c) => /\/api\/v2\/garage\?/.test(c.url)).length;
-  const n = garage();
-  const out = await control.runCommand(host.gc, vehicleId, 'ac_stop', {});
-  await out.refresh;
-  assert.equal(garage(), n + 1);
-  const again = await control.runCommand(host.gc, vehicleId, 'ac_stop', {});
-  await again.refresh;
-  assert.equal(garage(), n + 1, 'second refresh within 30 s is skipped');
+  control._setRefreshDelayForTest(80);
+  try {
+    const n = garage();
+    const out = await control.runCommand(host.gc, vehicleId, 'ac_stop', {});
+    await new Promise((r) => setTimeout(r, 30));
+    assert.equal(garage(), n, 'no sync right after the command (the vehicle still reports the old state)');
+    // a second command before the refresh postpones it: both share one sync
+    const second = await control.runCommand(host.gc, vehicleId, 'window_heat_stop', {});
+    assert.equal(second.refresh, out.refresh);
+    await new Promise((r) => setTimeout(r, 60));
+    assert.equal(garage(), n, 'postponed to 80 ms after the last command');
+    await keepAlive(out.refresh);
+    assert.equal(garage(), n + 1);
+    const again = await control.runCommand(host.gc, vehicleId, 'ac_stop', {});
+    assert.equal(await keepAlive(again.refresh), undefined, 'skipped (best effort, no rejection)');
+    assert.equal(garage(), n + 1, 'second refresh within 30 s is skipped');
+  } finally {
+    control._setRefreshDelayForTest(null);
+  }
+}));
+
+test('expected state: a successful command sets what the vehicle should report until it does or 3 minutes pass', (t) => withHost({}, async (host, cloud) => {
+  const { accountId, vehicleId } = await connected(host, cloud);
+  const control = require('../server/control');
+  const shown = (kind, reported) => control.expectedState(vehicleId, kind, reported);
+  assert.equal(shown('climate', 'off'), 'off', 'nothing expected yet');
+  for (const [action, args, kind, state] of [['ac_start', { temp: 21 }, 'climate', 'on'], ['ac_stop', {}, 'climate', 'off'],
+    ['charge_start', {}, 'charging', 'on'], ['charge_stop', {}, 'charging', 'off'],
+    ['window_heat_start', {}, 'windowheat', 'on'], ['window_heat_stop', {}, 'windowheat', 'off']]) {
+    await control.runCommand(host.gc, vehicleId, action, args);
+    const other = state === 'on' ? 'off' : 'on';
+    assert.equal(shown(kind, other), state, action);
+    assert.equal(shown(kind, null), state, `${action}: unknown reported state`);
+  }
+  await asAdmin(host, 'PUT', `/accounts/${accountId}/spin`, { spin: '4711' });
+  await control.runCommand(host.gc, vehicleId, 'unlock', {});
+  assert.equal(shown('lock', 'on'), 'off');
+  await control.runCommand(host.gc, vehicleId, 'lock', {});
+  assert.equal(shown('lock', 'off'), 'on');
+  // the vehicle reports it → the entry goes (a later different report is shown as it is)
+  assert.equal(shown('lock', 'on'), 'on');
+  assert.equal(shown('lock', 'off'), 'off');
+  // expired after 3 minutes
+  await control.runCommand(host.gc, vehicleId, 'ac_start', { temp: 21 });
+  const now = Date.now();
+  t.mock.method(Date, 'now', () => now + control.EXPECT_MS);
+  assert.equal(shown('climate', 'off'), 'off');
+  t.mock.restoreAll();
+  assert.equal(shown('climate', 'off'), 'off', 'dropped, not only hidden');
+  // a failing command or one without a toggle sets nothing
+  await control.runCommand(host.gc, vehicleId, 'charge_limit', { limit: 80 });
+  cloud.fail['/start-window-heating'] = 500;
+  await assert.rejects(control.runCommand(host.gc, vehicleId, 'window_heat_start', {}));
+  assert.equal(shown('windowheat', 'off'), 'off');
+  control.reset();
+  assert.equal(shown('lock', 'off'), 'off');
 }));

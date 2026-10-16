@@ -2,6 +2,21 @@
 
 Škoda-Fahrzeuge (MySkoda) als GateControl-Plugin – bisher fest in GateControl eingebaut.
 
+## 1.3.1
+- **Schalter folgen dem Befehl sofort**: nach Klimatisierung, Laden, Scheibenheizung oder
+  Ver-/Entriegeln zeigen die Apps (Schalter, Schloss mit Titel und Farbe, Verriegelung im
+  Widget und auf der Startkachel) gleich den Zustand, den der Befehl anstrebt – bis das
+  Fahrzeug ihn meldet, höchstens 3 Minuten; danach wieder der gemeldete Stand. Gilt auch
+  für Befehle aus dem Portal. Bisher blieb der alte Zustand bis zur nächsten Abfrage stehen.
+- Abfrage nach einem Befehl erst nach etwa 45 Sekunden statt sofort – Škoda braucht
+  20–60 Sekunden, bis das Fahrzeug den Befehl umgesetzt hat; vorher las die Abfrage nur den
+  alten Stand. Mehrere Befehle kurz hintereinander teilen sich eine Abfrage.
+- **Verriegeln/Entriegeln endete in „fehlgeschlagen“**, wenn das Konto gerade abgefragt
+  wurde (z. B. direkt nach einem anderen Befehl): GateControl wartet höchstens 10 Sekunden.
+  Dauert der Befehl länger als 8 Sekunden, antwortet die App jetzt „Befehl unterwegs – der
+  Status folgt“; der Befehl läuft weiter, ein späterer Fehler steht im Protokoll. Fehler
+  vorher (S-PIN fehlt, zu viele Versuche, …) melden sich wie bisher.
+
 ## 1.3.0
 - **Ver- und Entriegeln als ein Schalter**: statt zweier Tasten gibt es pro Fahrzeug einen
   Schalter „Verriegelt“ / „Entriegelt“ (Zustand aus dem zuletzt abgefragten Stand; unbekannt:

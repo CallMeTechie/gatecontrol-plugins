@@ -5,12 +5,16 @@
 // (device v:<id>) — climate (carrying the vehicle's widget), charging and
 // window heating as toggles from the stored state, the lock as one toggle
 // (S-PIN; on = locked, asks before unlocking); no cloud call in the list; at
-// most 16. Start tiles carry items for the apps.
+// most 16. Start tiles carry items for the apps. Right after a command the
+// apps show the state it aims for until the vehicle reports it; a command
+// queued past the host's time limit answers "on its way".
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { withHost, asAdmin, connected, fakeSkoda, ADMIN, ADA, BOB, VIN } = require('./helpers');
 const store = require('../server/store');
+const service = require('../server/service');
+const control = require('../server/control');
 
 const CAR = 'M5 16l1-5 2-3h8l2 3 1 5v3h-2a2 2 0 0 1-4 0H9a2 2 0 0 1-4 0H3v-3z';
 const BATTERY = 'M2 7h16v10H2zM21 10v4M5 10v4M8 10v4M11 10v4';
@@ -27,7 +31,7 @@ async function patchState(host, id, patch) {
 }
 
 const direct = (host, user, id, lang = 'de') => host.plugin.runQuickAction({ user: { portal: true, loggedIn: true, app: true, ...user }, lang, id }, host.gc);
-const settle = () => new Promise((r) => setTimeout(r, 50)); // the command's background refresh
+const settle = () => new Promise((r) => setTimeout(r, 50)); // a command finishing in the background
 
 async function owned(host, cloud) {
   const ids = await connected(host, cloud);
@@ -112,7 +116,8 @@ test('runQuickAction: the lock toggle unlocks a locked vehicle and locks an unlo
   assert.deepEqual(r.body, { ok: true, message: 'Elroq is being locked', state: 'on', widget: null });
   assert.deepEqual(last(), { method: 'POST', path: `/api/v1/vehicle-access/${VIN}/lock`, body: { currentSpin: '4711' } });
   await settle();
-  // unknown → lock, the toggle without a state
+  // unknown → lock, the toggle without a state (the lock command's expected state is over)
+  control.reset();
   await patchState(host, v, { locked: null });
   const unknown = await lock();
   assert.deepEqual([unknown.title, unknown.state, unknown.icon, unknown.confirm, unknown.confirmWhen], ['Schloss', null, LOCKED, true, 'off']);
@@ -206,4 +211,80 @@ test('runQuickAction: unknown ids, other people\'s vehicles and no sign-in send 
   assert.equal(r.status, 200);
   assert.equal(r.body.ok, false);
   assert.ok(r.body.message && r.body.state === null);
+}));
+
+test('right after a command the apps show the state it aims for, until the vehicle reports it or 3 minutes pass', (t) => withHost({}, async (host, cloud) => {
+  const { accountId, vehicleId: v } = await owned(host, cloud);
+  await asAdmin(host, 'PUT', `/accounts/${accountId}/spin`, { spin: '4711' });
+  const action = async (kind, lang) => (await host.quickActions(ADA, lang)).find((a) => a.id === `${kind}:${v}`);
+  const lockReading = async () => (await action('climate')).widget.readings.find((r) => r.id === 'lock');
+  const lockItem = async () => (await host.clientTiles(ADA))[0].items.at(-1);
+  // window heating: stored off → on is shown at once; the next press switches it off again (not "on" a second time)
+  assert.equal((await action('windowheat')).state, 'off');
+  await host.runQuickAction(ADA, `windowheat:${v}`);
+  assert.equal((await action('windowheat')).state, 'on');
+  assert.equal((await host.runQuickAction(ADA, `windowheat:${v}`)).body.state, 'off');
+  assert.equal(cloud.commands.at(-1).path, `/api/v2/air-conditioning/${VIN}/stop-window-heating`);
+  assert.equal((await action('windowheat')).state, 'off', 'equals the stored state again');
+  // climate and charging the same way, the widget follows
+  await host.runQuickAction(ADA, `climate:${v}`);
+  await host.runQuickAction(ADA, `charging:${v}`);
+  assert.deepEqual([(await action('climate')).state, (await action('charging')).state], ['on', 'off']);
+  assert.equal((await action('climate')).widget.status, 'Klimatisierung an');
+  // the lock: stored locked → unlock; title, icon, state, widget reading and tile item follow at once
+  await host.runQuickAction(ADA, `lock:${v}`);
+  const lock = await action('lock', 'en');
+  assert.deepEqual([lock.title, lock.state, lock.icon, lock.look], ['Unlocked', 'off', UNLOCKED, LOOK]);
+  assert.deepEqual(await lockReading(), { id: 'lock', label: 'Verriegelung', value: null, unit: null, icon: UNLOCKED, state: 'crit' });
+  assert.deepEqual(await lockItem(), { label: 'Entriegelt', value: null, unit: null, icon: UNLOCKED, state: 'crit' });
+  assert.equal((await action('climate')).widget.state, 'warn');
+  // the vehicle reports it → the entry goes; a later report is shown as it is
+  await patchState(host, v, { locked: false });
+  assert.equal((await action('lock')).state, 'off');
+  await patchState(host, v, { locked: true });
+  assert.deepEqual([(await action('lock')).state, (await lockItem()).icon], ['on', LOCKED]);
+  // not reported within 3 minutes → the stored state again
+  await host.runQuickAction(ADA, `lock:${v}`);
+  assert.equal((await action('lock')).state, 'off');
+  const now = Date.now();
+  t.mock.method(Date, 'now', () => now + control.EXPECT_MS);
+  assert.deepEqual([(await action('lock')).state, (await action('lock')).title, (await lockReading()).icon, (await lockItem()).label], ['on', 'Verriegelt', LOCKED, 'Verriegelt']);
+}));
+
+test('runQuickAction: a command queued past the time budget answers "on its way" without a state; a late failure is only logged', () => withHost({}, async (host, cloud) => {
+  const { accountId, vehicleId: v } = await owned(host, cloud);
+  host.plugin._setQuickActionBudgetForTest(60);
+  // the account is busy (e.g. the sync after the previous command): the lock call waits for it
+  let release = null;
+  const hold = () => { service.withAccountLock(accountId, () => new Promise((r) => { release = r; })); };
+  hold();
+  // checks before the cloud call still answer at once with their message
+  assert.deepEqual(await direct(host, ADA, `lock:${v}`), { ok: false, message: 'Dafür wird die S-PIN des Kontos gebraucht.' });
+  await asAdmin(host, 'PUT', `/accounts/${accountId}/spin`, { spin: '4711' });
+  const n = cloud.commands.length;
+  const started = Date.now();
+  let r = await host.runQuickAction(ADA, `lock:${v}`);
+  assert.ok(Date.now() - started < 1000);
+  assert.deepEqual(r.body, { ok: true, message: 'Elroq: Befehl unterwegs – der Status folgt', state: null, widget: null });
+  assert.equal(cloud.commands.length, n, 'still waiting for the account');
+  assert.equal((await host.quickActions(ADA)).find((a) => a.id === `lock:${v}`).state, 'on', 'the stored state until the command went through');
+  release();
+  await settle();
+  assert.deepEqual(cloud.commands.at(-1), { method: 'POST', path: `/api/v1/vehicle-access/${VIN}/unlock`, body: { currentSpin: '4711' } });
+  assert.equal((await host.quickActions(ADA)).find((a) => a.id === `lock:${v}`).state, 'off', 'then the state it aims for');
+  // a late failure: the answer is out already, so it is logged
+  hold();
+  cloud.fail['/vehicle-access/'] = 500;
+  r = await host.runQuickAction(ADA, `lock:${v}`, 'en');
+  assert.deepEqual(r.body, { ok: true, message: 'Elroq: command on its way – the status follows', state: null, widget: null });
+  assert.ok(!host.logs.some((l) => l.message.includes('quick action failed')));
+  release();
+  await settle();
+  assert.ok(host.logs.some((l) => l.level === 'warn' && l.message.includes('quick action failed late') && l.message.includes(`lock:${v}`)));
+  assert.ok(!host.logs.some((l) => l.message.includes('4711')), 'the S-PIN is never logged');
+  // fast path unchanged: within the budget the answer carries the state
+  delete cloud.fail['/vehicle-access/'];
+  host.plugin._setQuickActionBudgetForTest(null);
+  r = await host.runQuickAction(ADA, `windowheat:${v}`);
+  assert.deepEqual(r.body, { ok: true, message: 'Elroq: Scheibenheizung wird eingeschaltet', state: 'on', widget: null });
 }));
