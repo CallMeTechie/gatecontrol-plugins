@@ -288,3 +288,16 @@ test('runQuickAction: a command queued past the time budget answers "on its way"
   r = await host.runQuickAction(ADA, `windowheat:${v}`);
   assert.deepEqual(r.body, { ok: true, message: 'Elroq: Scheibenheizung wird eingeschaltet', state: 'on', widget: null });
 }));
+
+test('runQuickAction: a command Škoda refuses says so with the HTTP status; the log gets Škoda\'s reason', () => withHost({}, async (host, cloud) => {
+  const { accountId, vehicleId: v } = await owned(host, cloud);
+  await asAdmin(host, 'PUT', `/accounts/${accountId}/spin`, { spin: '4711' });
+  cloud.fail['/vehicle-access/'] = { status: 403, body: { errorCode: 'SPIN_INVALID', message: 'The S-PIN is not valid.\nTry again' } };
+  assert.deepEqual(await direct(host, ADA, `lock:${v}`), { ok: false, message: 'Škoda hat den Befehl abgelehnt (HTTP 403).' });
+  const line = host.logs.find((l) => l.level === 'warn' && l.message.includes('quick action failed') && l.message.includes(`lock:${v}`));
+  assert.ok(line, 'logged');
+  for (const part of ['SKODA_API_ERROR', 'HTTP 403', 'SPIN_INVALID – The S-PIN is not valid. Try again']) assert.ok(line.message.includes(part), part);
+  assert.ok(!host.logs.some((l) => l.message.includes('4711')), 'the S-PIN is never logged');
+  cloud.fail['/vehicle-access/'] = 503;
+  assert.deepEqual(await direct(host, ADA, `lock:${v}`, 'en'), { ok: false, message: 'Škoda cloud error (HTTP 503) – please try again later.' });
+}));

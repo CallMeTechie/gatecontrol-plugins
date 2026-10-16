@@ -2,6 +2,14 @@
 
 Škoda-Fahrzeuge (MySkoda) als GateControl-Plugin – bisher fest in GateControl eingebaut.
 
+## 1.3.2
+- **Abgelehnte Befehle sagen jetzt, was los ist**: lehnt die Škoda-Cloud einen Befehl ab
+  (z. B. Verriegeln), melden App und Portal „Škoda hat den Befehl abgelehnt (HTTP 403).“
+  bzw. bei einer Störung „Störung in der Škoda-Cloud (HTTP 503) …“ statt nur „Aktion
+  fehlgeschlagen“. Das Protokoll enthält zusätzlich den HTTP-Status und Škodas Begründung
+  (Fehlercode und Text) – nie die S-PIN.
+- Abgelaufene Škoda-Anmeldung meldet sich mit dem Hinweis, das Konto zu synchronisieren.
+
 ## 1.3.1
 - **Schalter folgen dem Befehl sofort**: nach Klimatisierung, Laden, Scheibenheizung oder
   Ver-/Entriegeln zeigen die Apps (Schalter, Schloss mit Titel und Farbe, Verriegelung im

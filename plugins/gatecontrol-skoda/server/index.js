@@ -58,6 +58,7 @@ const ERRORS = {
   SKODA_ACCOUNT_EXISTS: [409, 'error.account_exists'],
   SKODA_SPIN_REQUIRED: [409, 'cmd.spin_required'],
   SKODA_NO_SESSION: [409, 'error.no_session'],
+  SKODA_UNAUTHORIZED: [409, 'error.no_session'],
   SKODA_TIMER_READONLY: [409, 'timers.readonly'],
   SKODA_REFRESH_COOLDOWN: [429, 'error.cooldown'],
   SKODA_RATE_LIMITED: [429, 'error.rate_limited'],
@@ -76,8 +77,20 @@ function fail(code) { return Object.assign(new Error(code), { code }); }
 
 function errorResponse(e, lang) {
   const known = e && Object.prototype.hasOwnProperty.call(ERRORS, e.code) ? ERRORS[e.code] : null;
+  // the Škoda cloud refused: say so, with its HTTP status (the reason goes to the log, logError)
+  if (!known && e && e.code === 'SKODA_API_ERROR' && Number.isInteger(e.status) && e.status >= 400 && e.status <= 599) {
+    const key = e.status >= 500 ? 'error.api_server' : 'error.api_refused';
+    return { status: 502, json: { ok: false, code: e.code, error: t(lang, key, { status: e.status }) } };
+  }
   const [status, key] = known || [502, 'error.generic'];
   return { status, json: { ok: false, code: (e && e.code) || null, error: t(lang, key) } };
+}
+
+/** An unexpected error to the log: its code, and for a refused Škoda request the HTTP status and Škoda's reason. */
+function logError(gc, what, ...context) {
+  const e = context.pop();
+  const extra = e && e.code === 'SKODA_API_ERROR' ? [`HTTP ${e.status}`, ...(e.detail ? [e.detail] : [])] : [];
+  gc.log.warn(what, ...context, (e && e.code) || 'error', ...extra);
 }
 
 const posInt = (v) => {
@@ -321,14 +334,14 @@ async function runQuickActionFor(gc, user, lang, id) {
     const budget = new Promise((resolve) => { timer = setTimeout(resolve, Math.max(0, qaBudgetMs - (Date.now() - started)), PENDING); });
     const first = await Promise.race([run, budget]).finally(() => clearTimeout(timer));
     if (first === PENDING) {
-      run.catch((e) => gc.log.warn('quick action failed late', id, (e && e.code) || 'error'));
+      run.catch((e) => logError(gc, 'quick action failed late', id, e));
       return { ok: true, message: clip(t(lang, 'qa.pending', { name }), 120) };
     }
     const out = { ok: true, message: clip(t(lang, `qa.${kind}${c.state ? '_' + c.state : ''}_sent`, { name }), 120) };
     if (c.state) out.state = c.state;
     return out;
   } catch (e) {
-    if (!(e && Object.prototype.hasOwnProperty.call(ERRORS, e.code))) gc.log.warn('quick action failed', id, (e && e.code) || 'error');
+    if (!(e && Object.prototype.hasOwnProperty.call(ERRORS, e.code))) logError(gc, 'quick action failed', id, e);
     return { ok: false, message: errorResponse(e, lang).json.error };
   }
 }
@@ -469,7 +482,7 @@ module.exports = {
       if (!req.user || req.user.portal || req.user.role !== 'admin') throw fail('FORBIDDEN');
       return await adminRoute(req, gc, seg);
     } catch (e) {
-      if (!(e && Object.prototype.hasOwnProperty.call(ERRORS, e.code))) gc.log.warn('request failed', req.method, req.path, (e && e.code) || 'error');
+      if (!(e && Object.prototype.hasOwnProperty.call(ERRORS, e.code))) logError(gc, 'request failed', req.method, req.path, e);
       return errorResponse(e, lang);
     }
   },
