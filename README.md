@@ -81,6 +81,15 @@ groups the actions of one thing in the apps, a toggle `look` (icon and tone per
 state) and `confirmWhen`, a widget `label`, `readings` and `power`, and a Start
 tile `items` for the apps (`host.clientTiles(user)` in the mock host). Older
 hosts drop the fields.
+Since GateControl 1.173.0 a toggle may declare `verbs` `{ on, off }` (what
+setting each state is called as a command, „Verriegeln“ / „Entriegeln“) and
+`targets: true` (the hook honours an explicit `target`): a run with a target
+state (`host.runQuickAction(user, id, lang, { state: 'on' })`, or another
+plugin's `gc.actions.run({ …, state })`) then hands the hook `target: 'on'|'off'`
+— set that state, never flip. Without `targets` the host decides from the
+listed state (already there → no hook call, `unchanged: true`; unknown → 409
+`state_unknown`). Fahrzeuge, Klimaanlage and Smart Home honour targets; older
+hosts never send one, so their `gatecontrol` requirement stays.
 
 ## Tooling
 

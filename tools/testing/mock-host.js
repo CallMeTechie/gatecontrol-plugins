@@ -38,7 +38,7 @@
 //   than the host, which drops or cuts what does not fit: an entry the host
 //   would change throws ERR_INVALID here. runQuickAction lists again first
 //   and answers like the host's route: { status: 404 } for an id that is not
-//   listed for this viewer, else { status: 200, body: { ok, message, state, widget } }.
+//   listed for this viewer, else { status: 200, body: { ok, message, state, widget, unchanged } }.
 //   Widgets (GateControl ≥ 1.171.0): an entry's optional `widget` { value, unit, status,
 //   state, controls: [stepper | slider | choice] } is checked like the host's sanitizer
 //   (which nulls a bad widget; here it throws) and comes back as `widget` (null without
@@ -65,7 +65,7 @@
 //   user given as { disabled: true }, and for allowed not a boolean). host.kiosk is the plugin's set
 //   of kiosk users; opts.kiosk: [userId] pre-fills it (what an earlier run left behind).
 //   permissions.actions (GateControl ≥ 1.166.0): gc.actions.list({ userId, lang }) and
-//   gc.actions.run({ userId, plugin, id, lang }) — the quick actions of OTHER plugins, given by the test:
+//   gc.actions.run({ userId, plugin, id, lang, state? }) — the quick actions of OTHER plugins, given by the test:
 //     opts.actions: [{ plugin: 'gatecontrol-smarthome', pluginName: 'Smart Home',
 //       quickActions: (viewer, lang) => [{ id, title, subtitle, kind, state, … }]   (or actions: [ … ])
 //       runQuickAction: (viewer, id, lang) => ({ ok, message, state }) }]          (default { ok: true })
@@ -75,13 +75,27 @@
 //   runs per (mocked) hour. The target gets the viewer { id, name, role, portal: true, loggedIn: true,
 //   automation: true, via: '<caller id>' }; a run that did not happen resolves { ok: false, message:
 //   null, state: null, error: 'not_found'|'plugin_error' } (an id not listed for that viewer, an
-//   unknown plugin, a hook that throws). host.actionRuns records { plugin, id, userId, lang, viewer, result }.
+//   unknown plugin, a hook that throws). host.actionRuns records { plugin, id, userId, lang, viewer, state, target, result }.
 //   gc.users (GateControl ≥ 1.168.0): every user also has avatarUrl (string|null, a capability path
 //   /avatars/<id>.<ext>), color (a key of the favourite colour palette, never red; default
 //   palette[id % 10]), colorHex and initials (like GateControl: two words → first letters, one word →
 //   its first two letters). A test sets them per user: { id, name, role, color: 'pink', avatarUrl:
 //   '/avatars/…webp' }; an unknown colour key falls back to the default. host.setUserFace(id, { color,
 //   avatarUrl }) changes them while the plugin runs (what the GateControl app's profile does).
+//   Target states (GateControl ≥ 1.173.0): a toggle may declare `verbs` { on, off } (each 1–20 characters,
+//   trimmed, no control characters, both — what setting each state is called as a command) and `targets`
+//   (boolean: the hook honours an explicit `target`); a button carrying either throws (the host nulls them).
+//   Every listed action carries verbs (object or null) and targets (boolean) — the hook's list, gc.actions.list
+//   (whose items are { plugin, pluginName, id, title, subtitle, icon, kind, state, verbs, targets, device }).
+//   host.runQuickAction(user, id, lang, { state: 'on'|'off' }) and gc.actions.run({ …, state }) run as the
+//   host does (an unlisted id → 404 first; null / absent = a plain run): state with a control, on a button or
+//   any other value → 400 invalid_state (gc.actions.run: { ok: false, …, error: 'invalid_state' }); on a toggle with targets: true the hook gets `target`; with
+//   targets: false the listed state decides — the same → no hook call, 200 { ok: true, message: null, state,
+//   widget (the listed one), unchanged: true }; the other → the hook runs as without state (it flips);
+//   unknown (null) → 409 { ok: false, error: 'state_unknown' }. Every 200 answer and every gc.actions.run
+//   result carries `unchanged` (false unless the no-op; a run that did not happen: { ok: false, message: null,
+//   state: null, unchanged: false, error }). A test plugin of
+//   opts.actions gets the target as runQuickAction(viewer, id, lang, { target }).
 
 const fs = require('node:fs');
 const os = require('node:os');
@@ -427,6 +441,13 @@ function controlValue(c, v) {
   return typeof v === 'number' && Number.isFinite(v) && v >= c.min && v <= c.max ? v : undefined;
 }
 
+/** A toggle's verbs → { on, off } (GateControl ≥ 1.173.0); null without; throws where the host nulls them. */
+function checkQuickVerbs(v, what) {
+  if (v == null) return null;
+  if (typeof v !== 'object' || Array.isArray(v)) throw hostError('ERR_INVALID', `${what}: verbs must be an object`);
+  return { on: qaText(v.on, 20, `${what} verbs.on`), off: qaText(v.off, 20, `${what} verbs.off`) };
+}
+
 /** quickActions answer → the list the host passes on; throws ERR_INVALID where the host would drop or cut. */
 function checkQuickActions(out) {
   if (!Array.isArray(out)) throw hostError('ERR_INVALID', 'quickActions must return an array');
@@ -445,10 +466,14 @@ function checkQuickActions(out) {
     // GateControl ≥ 1.172.0: look and confirmWhen only on a toggle (the host nulls them on a button)
     if (kind !== 'toggle' && (a.look != null || a.confirmWhen != null)) throw hostError('ERR_INVALID', `quick action ${a.id}: look/confirmWhen only on a toggle`);
     if (a.confirmWhen != null && !QA_STATES.has(a.confirmWhen)) throw hostError('ERR_INVALID', `quick action ${a.id}: confirmWhen ${JSON.stringify(a.confirmWhen)}`);
+    // GateControl ≥ 1.173.0: verbs and targets only on a toggle (the host gives a button null / false)
+    if (kind !== 'toggle' && (a.verbs != null || a.targets != null)) throw hostError('ERR_INVALID', `quick action ${a.id}: verbs/targets only on a toggle`);
+    if (a.targets != null && typeof a.targets !== 'boolean') throw hostError('ERR_INVALID', `quick action ${a.id}: targets must be a boolean`);
     return {
       id: a.id, title: qaText(a.title, 40, `${a.id} title`), subtitle: qaText(a.subtitle, 60, `${a.id} subtitle`, true),
       icon: a.icon == null ? null : a.icon, kind, state: kind === 'toggle' && a.state != null ? a.state : null, confirm: a.confirm === true,
       confirmWhen: a.confirmWhen == null ? null : a.confirmWhen, look: checkQuickLook(a.look, `quick action ${a.id}`),
+      verbs: checkQuickVerbs(a.verbs, `quick action ${a.id}`), targets: a.targets === true,
       device: checkQuickDevice(a.device, `quick action ${a.id}`),
       widget: checkQuickWidget(a.widget, `quick action ${a.id}`),
     };
@@ -694,7 +719,12 @@ async function createHost(pluginDir, opts = {}) {
     for (const p of actionPlugins) {
       let list;
       try { list = await listOf(p, user, lang); } catch { continue; }
-      for (const a of list) out.push({ plugin: p.plugin, pluginName: p.pluginName || p.plugin, id: a.id, title: a.title, subtitle: a.subtitle, kind: a.kind, state: a.state });
+      for (const a of list) {
+        out.push({
+          plugin: p.plugin, pluginName: p.pluginName || p.plugin, id: a.id, title: a.title, subtitle: a.subtitle, icon: a.icon, kind: a.kind, state: a.state,
+          verbs: a.verbs, targets: a.targets, device: a.device,
+        });
+      }
     }
     return out;
   };
@@ -711,20 +741,29 @@ async function createHost(pluginDir, opts = {}) {
     if (actionRunAt.length >= ACTIONS_PER_HOUR) throw hostError('ERR_RATE_LIMIT', 'too many quick action runs (60 per hour)');
     actionRunAt.push(now);
     const p = actionPlugins.find((x) => x.plugin === target);
+    const state = args.state == null ? undefined : args.state;
+    const failed = (error) => ({ ok: false, message: null, state: null, unchanged: false, error });
     let result;
-    if (!p) result = { ok: false, message: null, state: null, error: 'not_found' };
+    let target2 = null;
+    if (!p) result = failed('not_found');
     else {
       try {
         const listed = await listOf(p, user, lang);
-        if (!listed.some((a) => a.id === actionId)) result = { ok: false, message: null, state: null, error: 'not_found' };
+        const action = listed.find((a) => a.id === actionId);
+        if (!action) result = failed('not_found');
+        else if (state !== undefined && (!QA_STATES.has(state) || action.kind !== 'toggle')) result = failed('invalid_state');
+        else if (state !== undefined && !action.targets && action.state === state) result = { ok: true, message: null, state, unchanged: true };
+        else if (state !== undefined && !action.targets && action.state == null) result = failed('state_unknown');
         else {
-          const out = wire(typeof p.runQuickAction === 'function' ? await p.runQuickAction(wire(user), actionId, lang) : { ok: true });
-          if (!out || typeof out !== 'object' || Array.isArray(out)) result = { ok: false, message: null, state: null, error: 'plugin_error' };
-          else result = { ok: out.ok !== false, message: typeof out.message === 'string' ? out.message.slice(0, 120) : null, state: QA_STATES.has(out.state) ? out.state : null };
+          if (state !== undefined && action.targets) target2 = state;
+          const extra = target2 ? [{ target: target2 }] : [];
+          const out = wire(typeof p.runQuickAction === 'function' ? await p.runQuickAction(wire(user), actionId, lang, ...extra) : { ok: true });
+          if (!out || typeof out !== 'object' || Array.isArray(out)) result = failed('plugin_error');
+          else result = { ok: out.ok !== false, message: typeof out.message === 'string' ? out.message.slice(0, 120) : null, state: QA_STATES.has(out.state) ? out.state : null, unchanged: false };
         }
-      } catch { result = { ok: false, message: null, state: null, error: 'plugin_error' }; }
+      } catch { result = failed('plugin_error'); }
     }
-    actionRuns.push({ plugin: target, id: actionId, userId: user.id, lang, viewer: user, result });
+    actionRuns.push({ plugin: target, id: actionId, userId: user.id, lang, viewer: user, state: state === undefined ? null : state, target: target2, result });
     return result;
   };
 
@@ -777,7 +816,7 @@ async function createHost(pluginDir, opts = {}) {
     kiosk: Object.freeze({ allow: (userId, allowed) => call('kiosk.allow', { userId, allowed }), list: () => call('kiosk.list', {}) }),
     actions: Object.freeze({
       list: (o) => { const x = o && typeof o === 'object' ? o : {}; return call('actions.list', { userId: x.userId, lang: x.lang }); },
-      run: (o) => { const x = o && typeof o === 'object' ? o : {}; return call('actions.run', { userId: x.userId, plugin: x.plugin, id: x.id, lang: x.lang }); },
+      run: (o) => { const x = o && typeof o === 'object' ? o : {}; return call('actions.run', { userId: x.userId, plugin: x.plugin, id: x.id, lang: x.lang, state: x.state }); },
     }),
   });
 
@@ -829,6 +868,7 @@ async function createHost(pluginDir, opts = {}) {
      * runQuickAction hook as the host's route runs it: only an id listed for this viewer → { status, body }.
      * o.via: 'app' (default) | 'notification' (GateControl ≥ 1.169.0: run from a push action); o.automation with
      * o.via '<plugin id>': as another plugin's gc.actions.run (viewer without app, automation: true, via).
+     * o.state 'on'|'off' (GateControl ≥ 1.173.0): the target state of a toggle (see the header).
      */
     async runQuickAction(user, id, lang = 'de', o = {}) {
       const auto = o.automation === true;
@@ -842,6 +882,13 @@ async function createHost(pluginDir, opts = {}) {
       const action = listed.find((a) => a.id === id);
       if (!action) return { status: 404, body: { ok: false, error: 'not_found' } };
       const args = { user: viewer, lang, id, via, automation: auto };
+      // GateControl ≥ 1.173.0: a target state for a toggle
+      if (o.state != null) {
+        if (!QA_STATES.has(o.state) || o.control !== undefined || action.kind !== 'toggle') return { status: 400, body: { ok: false, error: 'invalid_state' } };
+        if (action.targets) args.target = o.state;
+        else if (action.state === o.state) return { status: 200, body: { ok: true, message: null, state: o.state, widget: action.widget, unchanged: true } };
+        else if (action.state == null) return { status: 409, body: { ok: false, error: 'state_unknown' } };
+      }
       if (o.control !== undefined) {
         // GateControl ≥ 1.171.0: a control of the action's widget; never through gc.actions.run
         if (auto) throw hostError('ERR_INVALID', 'an automation run carries no control');
@@ -857,7 +904,7 @@ async function createHost(pluginDir, opts = {}) {
       if (out.state != null && !QA_STATES.has(out.state)) throw hostError('ERR_INVALID', `runQuickAction: state ${JSON.stringify(out.state)}`);
       return {
         status: 200,
-        body: { ok: out.ok !== false, message: qaText(out.message, 120, 'message', true), state: out.state == null ? null : out.state, widget: checkQuickWidget(out.widget, 'runQuickAction') },
+        body: { ok: out.ok !== false, message: qaText(out.message, 120, 'message', true), state: out.state == null ? null : out.state, widget: checkQuickWidget(out.widget, 'runQuickAction'), unchanged: false },
       };
     },
     /** appVisible hook (permissions.app + ui.app, GateControl ≥ 1.164.0): called as appVisible(user, gc) with the

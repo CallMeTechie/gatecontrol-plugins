@@ -127,16 +127,47 @@ test('runQuickAction: switches over and reports the device\'s answer', () => {
     await asAdmin(host, 'PUT', `/devices/${b}/owners`, { user_ids: [ADA.id] });
     await asAdmin(host, 'GET', `/devices/${a}/state`);
     let r = await host.runQuickAction(ADA, `ac:${a}`);
-    assert.deepEqual(r, { status: 200, body: { ok: true, message: 'Wohnzimmer ausgeschaltet', state: 'off', widget: widget({ value: '23,5', status: 'Aus', state: 'off', target: 22, mode: 'cool' }) } });
+    assert.deepEqual(r, { status: 200, body: { ok: true, unchanged: false, message: 'Wohnzimmer ausgeschaltet', state: 'off', widget: widget({ value: '23,5', status: 'Aus', state: 'off', target: 22, mode: 'cool' }) } });
     assert.equal(devA.state.power, false);
     assert.equal((await host.quickActions(ADA))[0].state, 'off', 'the list follows at once');
     r = await host.runQuickAction(ADA, `ac:${a}`, 'en');
-    assert.deepEqual(r.body, { ok: true, message: 'Wohnzimmer switched on', state: 'on', widget: widget({ value: '23.5', status: 'Cool · Target 22 °C', state: 'on', target: 22, mode: 'cool', lang: 'en' }) });
+    assert.deepEqual(r.body, { ok: true, unchanged: false, message: 'Wohnzimmer switched on', state: 'on', widget: widget({ value: '23.5', status: 'Cool · Target 22 °C', state: 'on', target: 22, mode: 'cool', lang: 'en' }) });
     assert.equal(devA.state.power, true);
     // B: no cached state yet → read from the device first, then switched over
     r = await host.runQuickAction(ADA, `ac:${b}`);
-    assert.deepEqual(r.body, { ok: true, message: 'Büro eingeschaltet', state: 'on', widget: widget({ value: '23,5', status: 'Kühlen · Ziel 24 °C', state: 'on', target: 24, mode: 'cool' }) });
+    assert.deepEqual(r.body, { ok: true, unchanged: false, message: 'Büro eingeschaltet', state: 'on', widget: widget({ value: '23,5', status: 'Kühlen · Ziel 24 °C', state: 'on', target: 24, mode: 'cool' }) });
     assert.equal(devB.state.power, true);
+    await settle();
+  });
+});
+
+test('target states (GateControl ≥ 1.173.0): verbs listed, a target sets that power state whatever the device shows', () => {
+  const { devA, devB, cloud } = twoDevices();
+  return withHost({ cloud }, async (host) => {
+    const { a, b } = await setup(host, cloud);
+    await asAdmin(host, 'PUT', `/devices/${a}/owners`, { user_ids: [ADA.id] });
+    await asAdmin(host, 'PUT', `/devices/${b}/owners`, { user_ids: [ADA.id] });
+    await asAdmin(host, 'GET', `/devices/${a}/state`); // A on (cached), B unknown
+    assert.deepEqual((await host.quickActions(ADA)).map((x) => [x.verbs, x.targets]), [[{ on: 'Einschalten', off: 'Ausschalten' }, true], [{ on: 'Einschalten', off: 'Ausschalten' }, true]]);
+    assert.deepEqual((await host.quickActions(ADA, 'en'))[0].verbs, { on: 'Turn on', off: 'Turn off' });
+    // A is on: target on keeps it on (sent again), never switches it off
+    let r = await host.runQuickAction(ADA, `ac:${a}`, 'de', { state: 'on' });
+    assert.deepEqual([r.status, r.body.ok, r.body.state, r.body.message, r.body.unchanged], [200, true, 'on', 'Wohnzimmer eingeschaltet', false]);
+    assert.equal(devA.state.power, true);
+    r = await host.runQuickAction(ADA, `ac:${a}`, 'de', { state: 'off' });
+    assert.deepEqual([r.body.state, r.body.message], ['off', 'Wohnzimmer ausgeschaltet']);
+    assert.equal(devA.state.power, false);
+    r = await host.runQuickAction(ADA, `ac:${a}`, 'en', { state: 'off' });
+    assert.deepEqual([r.body.state, r.body.message], ['off', 'Wohnzimmer switched off']);
+    assert.equal(devA.state.power, false, 'off stays off');
+    // B: unknown state — a target needs no read first
+    r = await host.runQuickAction(ADA, `ac:${b}`, 'de', { state: 'off' });
+    assert.deepEqual([r.body.ok, r.body.state], [true, 'off']);
+    assert.equal(devB.state.power, false);
+    // without a state: switches over as before; a target with a control → 400
+    r = await host.runQuickAction(ADA, `ac:${a}`);
+    assert.equal(devA.state.power, true);
+    assert.equal((await host.runQuickAction(ADA, `ac:${a}`, 'de', { state: 'on', control: 'target', value: 22 })).status, 400);
     await settle();
   });
 });
@@ -147,16 +178,16 @@ test('runQuickAction with a control: target temperature and mode reach the devic
     const { a } = await setup(host, cloud);
     await asAdmin(host, 'PUT', `/devices/${a}/owners`, { user_ids: [ADA.id] });
     let r = await host.runQuickAction(ADA, `ac:${a}`, 'de', { control: 'target', value: 25.5 });
-    assert.deepEqual(r, { status: 200, body: { ok: true, message: null, state: 'on', widget: widget({ value: '23,5', status: 'Kühlen · Ziel 25,5 °C', state: 'on', target: 25.5, mode: 'cool' }) } });
+    assert.deepEqual(r, { status: 200, body: { ok: true, unchanged: false, message: null, state: 'on', widget: widget({ value: '23,5', status: 'Kühlen · Ziel 25,5 °C', state: 'on', target: 25.5, mode: 'cool' }) } });
     assert.deepEqual([devA.state.targetTemp, devA.state.mode, devA.state.power], [25.5, 'cool', true], 'only the target changed');
     r = await host.runQuickAction(ADA, `ac:${a}`, 'en', { control: 'mode', value: 'heat' });
-    assert.deepEqual(r.body, { ok: true, message: null, state: 'on', widget: widget({ value: '23.5', status: 'Heat · Target 25.5 °C', state: 'on', target: 25.5, mode: 'heat', lang: 'en' }) });
+    assert.deepEqual(r.body, { ok: true, unchanged: false, message: null, state: 'on', widget: widget({ value: '23.5', status: 'Heat · Target 25.5 °C', state: 'on', target: 25.5, mode: 'heat', lang: 'en' }) });
     assert.equal(devA.state.mode, 'heat');
     assert.deepEqual((await host.quickActions(ADA))[0].subtitle, 'Heizen · Ziel 25,5 °C', 'the list follows at once');
     // a control works while the device is off (it stays off), and a value off the half-degree grid is snapped
     devA.state.power = false;
     r = await host.runQuickAction(ADA, `ac:${a}`, 'de', { control: 'target', value: 19.3 });
-    assert.deepEqual(r.body, { ok: true, message: null, state: 'off', widget: widget({ value: '23,5', status: 'Aus', state: 'off', target: 19.5, mode: 'heat' }) });
+    assert.deepEqual(r.body, { ok: true, unchanged: false, message: null, state: 'off', widget: widget({ value: '23,5', status: 'Aus', state: 'off', target: 19.5, mode: 'heat' }) });
     assert.equal(devA.state.power, false);
     // the host checks control and value against the listed widget before the hook sees them
     for (const [control, value] of [['fan', 50], ['target', 31], ['target', '22'], ['mode', 'turbo'], ['mode', 2]]) {
@@ -172,7 +203,7 @@ test('runQuickAction with a control: target temperature and mode reach the devic
     assert.equal((await direct(host, BOB, `ac:${a}`, 'de', { control: 'target', value: 22 })).message, 'Dieses Gerät ist dir nicht zugewiesen');
     devA.down = true;
     r = await host.runQuickAction(ADA, `ac:${a}`, 'de', { control: 'target', value: 22 });
-    assert.deepEqual(r.body, { ok: false, message: 'Gerät nicht erreichbar', state: null, widget: widget({ status: 'Offline', state: 'warn' }) });
+    assert.deepEqual(r.body, { ok: false, unchanged: false, message: 'Gerät nicht erreichbar', state: null, widget: widget({ status: 'Offline', state: 'warn' }) });
     await settle();
   });
 });
@@ -193,7 +224,7 @@ test('runQuickAction: unknown ids and other people\'s devices change nothing; of
     assert.equal(devB.state.power, false, 'Bob\'s device untouched');
     devA.down = true;
     const r = await host.runQuickAction(ADA, `ac:${a}`);
-    assert.deepEqual(r, { status: 200, body: { ok: false, message: 'Gerät nicht erreichbar', state: null, widget: widget({ status: 'Offline', state: 'warn' }) } });
+    assert.deepEqual(r, { status: 200, body: { ok: false, unchanged: false, message: 'Gerät nicht erreichbar', state: null, widget: widget({ status: 'Offline', state: 'warn' }) } });
     assert.deepEqual((await host.quickActions(ADA))[0].widget, widget({ status: 'Offline', state: 'warn' }), 'the list shows it offline too');
     await settle();
   });

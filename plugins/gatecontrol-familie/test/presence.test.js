@@ -75,8 +75,8 @@ test('rules: parents only; validation; shape, owner, the quick actions of the ca
   assert.equal((await as(TIM)('GET', '/presence/log')).json.code, 'parents_only');
   const acts = (await as(ANNA)('GET', '/presence/actions')).json;
   assert.deepEqual(acts, { ok: true, available: true, actions: [
-    { plugin: SH, pluginName: 'Smart Home', id: 'scene:away', title: 'Heizung 17 °C', subtitle: null, kind: 'button', state: null },
-    { plugin: SH, pluginName: 'Smart Home', id: 'scene:home', title: 'Heizung 21 °C', subtitle: null, kind: 'button', state: null },
+    { plugin: SH, pluginName: 'Smart Home', id: 'scene:away', title: 'Heizung 17 °C', subtitle: null, icon: null, kind: 'button', state: null, verbs: null, targets: false, device: null },
+    { plugin: SH, pluginName: 'Smart Home', id: 'scene:home', title: 'Heizung 21 °C', subtitle: null, icon: null, kind: 'button', state: null, verbs: null, targets: false, device: null },
   ] });
   assert.deepEqual((await as(TIM)('GET', '/presence/actions')).json.actions, [], 'everyone may look; Tim has none');
   for (const [bad, field] of [
@@ -95,7 +95,10 @@ test('rules: parents only; validation; shape, owner, the quick actions of the ca
   const rule = (await as(ANNA)('POST', '/presence/rules', { name: 'Sparen', trigger: 'all_away', actions: [QA('scene:away', 'Heizung 17 °C'), { type: 'notify', to: 'parents' }] })).json.rule;
   assert.deepEqual({ ...rule, id: 0 }, {
     id: 0, name: 'Sparen', trigger: 'all_away', userId: null, graceMinutes: 10, conditions: { time: null, afterSunset: false },
-    actions: [{ type: 'quick_action', plugin: SH, id: 'scene:away', title: 'Heizung 17 °C', available: true }, { type: 'notify', to: 'parents', text: null }],
+    actions: [
+      { type: 'quick_action', plugin: SH, id: 'scene:away', title: 'Heizung 17 °C', state: null, kind: 'button', verb: null, available: true, needsTarget: false },
+      { type: 'notify', to: 'parents', text: null },
+    ],
     active: true, ownerId: ANNA.id, ownerName: 'Anna', lastRunAt: null, lastResult: null, createdAt: '2026-10-14T08:00:00Z', updatedAt: '2026-10-14T08:00:00Z',
   });
   // Marc edits the name: Anna stays the owner; Marc sets the actions: Marc owns it — and lacks the scene
@@ -139,7 +142,7 @@ test('all away: after the grace time, once per transition, quick action as the o
     const l = (await as(ANNA)('GET', '/presence/log')).json.log;
     assert.deepEqual(l.map((x) => [x.ruleId, x.trigger, x.ok]), [[rule.id, 'all_away', true]]);
     assert.deepEqual(l[0].results, [
-      { type: 'quick_action', plugin: SH, id: 'scene:away', title: 'Heizung 17 °C', ok: true, message: 'Szene gestartet', error: null },
+      { type: 'quick_action', plugin: SH, id: 'scene:away', title: 'Heizung 17 °C', state: null, verb: null, ok: true, message: 'Szene gestartet', error: null, unchanged: false },
       { type: 'notify', ok: true, sent: 4, error: null },
     ]);
     const r = (await as(ANNA)('GET', '/presence/rules')).json.rules[0];

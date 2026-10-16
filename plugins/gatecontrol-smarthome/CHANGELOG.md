@@ -2,6 +2,15 @@
 
 Phoscon/deCONZ-Integration als GateControl-Plugin – bisher fest in GateControl eingebaut.
 
+## 1.6.0
+- **Zielzustand statt Umschalten** (GateControl ≥ 1.173.0): Lampen, Steckdosen und Gruppen
+  nennen ihre Befehle („Einschalten“ / „Ausschalten“, englisch „Turn on“ / „Turn off“) und
+  nehmen einen gewünschten Zustand an: eine Regel (z. B. der Familie: „alle weg → Licht aus“)
+  oder eine App, die „aus“ verlangt, schaltet aus – ein schon ausgeschaltetes Licht bleibt
+  aus. Szenen bleiben Tasten.
+- Ohne Zielzustand (Apps, ältere GateControl-Versionen) wird wie bisher umgeschaltet – das
+  Plugin läuft weiter ab GateControl 1.154.0.
+
 ## 1.5.1
 - **Keine eigene Seitenüberschrift mehr**: GateControl zeigt den Seitentitel im Kopf; die
   Seiten „Smart Home“ und „Logikketten“ beginnen direkt mit ihrer Knopfleiste (Gateway-Auswahl,

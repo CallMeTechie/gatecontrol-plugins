@@ -15,7 +15,9 @@
 //     POST /portal/devices/:id/state   control (the host lets only signed-in viewers change things)
 //   quick actions of the GateControl apps (hooks quickActions / runQuickAction)
 //     the same owner scope as the portal: power on/off per own air conditioner,
-//     with a widget (indoor temperature, status, target temperature and mode controls)
+//     with a widget (indoor temperature, status, target temperature and mode controls);
+//     the toggle declares its verbs and honours a target state (GateControl ≥ 1.173.0:
+//     `target` 'on'|'off' sets that power state, never switches over)
 //
 // Requests run with the requesting user's rights: req.user.portal = a portal
 // viewer, who only ever sees and controls what an administrator assigned to
@@ -223,6 +225,7 @@ async function quickActionsFor(gc, user, lang) {
     const a = {
       id: `ac:${d.id}`, title, subtitle: clip(statusLine(st, lang) || t(lang, 'portal.title'), 60), icon: AC_ICON, kind: 'toggle',
       device: { id: `ac:${d.id}`, title, icon: AC_ICON }, widget: widgetOf(st, lang),
+      verbs: { on: t(lang, 'qa.verb_on'), off: t(lang, 'qa.verb_off') }, targets: true,
     };
     const power = powerOf(st);
     if (power) a.state = power;
@@ -232,11 +235,12 @@ async function quickActionsFor(gc, user, lang) {
 
 /**
  * Without a control: switch one over (owner checked again); an unknown state
- * is read from the device first. With a control (target, mode): set it. The
- * answer carries the widget of the resulting state (of the cached one after a
- * failure), so the app shows it at once.
+ * is read from the device first. With a target ('on' | 'off', GateControl ≥
+ * 1.173.0): set that power state, whatever the device shows. With a control
+ * (target temperature, mode): set it. The answer carries the widget of the
+ * resulting state (of the cached one after a failure), so the app shows it at once.
  */
-async function runQuickActionFor(gc, user, lang, id, control, value) {
+async function runQuickActionFor(gc, user, lang, id, control, value, target) {
   const m = typeof id === 'string' ? QA_ID_RE.exec(id) : null;
   if (!m || !user || !Number.isInteger(user.id) || user.loggedIn === false) return { ok: false, message: t(lang, 'qa.unknown') };
   const did = Number(m[1]);
@@ -252,10 +256,15 @@ async function runQuickActionFor(gc, user, lang, id, control, value) {
       if (!st || st.offline) throw fail('MIDEA_OFFLINE');
       return { ok: true, message: null, state: powerOf(st), widget: widgetOf(st, lang) };
     }
-    let power = powerOf(service.cachedState(gc, d));
-    if (!power) power = powerOf(await service.getState(gc, did));
-    if (!power) throw fail('MIDEA_OFFLINE');
-    const st = await service.setState(gc, did, { power: power !== 'on' });
+    let on;
+    if (target === 'on' || target === 'off') on = target === 'on';
+    else {
+      let power = powerOf(service.cachedState(gc, d));
+      if (!power) power = powerOf(await service.getState(gc, did));
+      if (!power) throw fail('MIDEA_OFFLINE');
+      on = power !== 'on';
+    }
+    const st = await service.setState(gc, did, { power: on });
     const now = powerOf(st);
     if (!now) throw fail('MIDEA_OFFLINE');
     return { ok: true, message: clip(t(lang, now === 'on' ? 'qa.switched_on' : 'qa.switched_off', { name: clip(d.name, 40) || t(lang, 'portal.title') }), 120), state: now, widget: widgetOf(st, lang) };
@@ -446,10 +455,11 @@ module.exports = {
 
   /**
    * Runs one of them (the host only passes an id quickActions just listed for this viewer; checked here
-   * again). control/value (GateControl ≥ 1.171.0) only when the app used a control of the widget.
+   * again). control/value (GateControl ≥ 1.171.0) only when the app used a control of the widget;
+   * target 'on' | 'off' (GateControl ≥ 1.173.0) sets that power state.
    */
-  async runQuickAction({ user, lang, id, control, value }, gc) {
-    return runQuickActionFor(gc, user, lang, id, control, value);
+  async runQuickAction({ user, lang, id, control, value, target }, gc) {
+    return runQuickActionFor(gc, user, lang, id, control, value, target === 'on' || target === 'off' ? target : undefined);
   },
 
   /** Built-in data handed over by GateControl (once, by an administrator). */

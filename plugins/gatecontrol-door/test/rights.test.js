@@ -105,13 +105,16 @@ test('quick actions per right: zusperren / aufsperren / öffnen (opener: Summer)
   const openerDevice = { id: `lock:${openerId}`, title: 'Hoftor', subtitle: null, icon: 'M5 21V4a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v17M3 21h18M15 12h.01' };
   assert.deepEqual(anna.map((a) => a.device), [lockDevice, lockDevice, lockDevice, openerDevice]);
   assert.ok(anna.every((a) => a.look === null && a.confirmWhen === null && a.widget === null), 'buttons as before');
+  // target states (GateControl ≥ 1.173.0) are for toggles: the lock's actions stay buttons — no verbs, no targets, no state
+  assert.ok(anna.every((a) => a.verbs === null && a.targets === false && a.state === null));
+  assert.deepEqual(await host.runQuickAction(ANNA, `${lockId}:lock`, 'de', { state: 'on' }), { status: 400, body: { ok: false, error: 'invalid_state' } });
   assert.equal(anna[0].subtitle, 'Zugesperrt');
   assert.deepEqual((await host.quickActions(MARC)).map((a) => a.id), [`${lockId}:lock`, `${lockId}:unlock`]);
   assert.deepEqual(await host.quickActions(LENA), []);
   assert.deepEqual((await host.quickActions(ANNA, 'en')).map((a) => a.title), ['Lock Haustür', 'Unlock Haustür', 'Open Haustür', 'Hoftor buzzer']);
   // a run from the app and from a notification button: both checked and in the history with their source
-  assert.deepEqual((await host.runQuickAction(ANNA, `${lockId}:unlock`)).body, { ok: true, message: 'Haustür aufgesperrt', state: null, widget: null });
-  assert.deepEqual((await host.runQuickAction(ANNA, `${openerId}:open`, 'de', { via: 'notification' })).body, { ok: true, message: 'Hoftor: Summer betätigt', state: null, widget: null });
+  assert.deepEqual((await host.runQuickAction(ANNA, `${lockId}:unlock`)).body, { ok: true, unchanged: false, message: 'Haustür aufgesperrt', state: null, widget: null });
+  assert.deepEqual((await host.runQuickAction(ANNA, `${openerId}:open`, 'de', { via: 'notification' })).body, { ok: true, unchanged: false, message: 'Hoftor: Summer betätigt', state: null, widget: null });
   assert.equal((await host.runQuickAction(MARC, `${lockId}:open`)).status, 404, 'not listed for Marc');
   const h = await host.request({ method: 'GET', path: '/history', user: app(ANNA) });
   assert.deepEqual(h.json.items.slice(0, 2).map((x) => [x.action, x.via, x.userName]), [['open', 'notification', 'Anna'], ['unlock', 'app', 'Anna']]);

@@ -2,6 +2,20 @@
 
 Škoda-Fahrzeuge (MySkoda) als GateControl-Plugin – bisher fest in GateControl eingebaut.
 
+## 1.4.0
+- **Zielzustand statt Umschalten** (GateControl ≥ 1.173.0): Klimatisierung, Laden,
+  Scheibenheizung und das Schloss nennen ihre Befehle („Verriegeln“ / „Entriegeln“,
+  „Einschalten“ / „Ausschalten“, „Laden starten“ / „Laden stoppen“, englisch „Lock“ / „Unlock“,
+  „Turn on“ / „Turn off“, „Start charging“ / „Stop charging“) und nehmen einen gewünschten
+  Zustand an: fragt eine Regel (z. B. der Familie: „alle weg → Auto verriegeln“) oder eine App
+  nach „verriegelt“, wird verriegelt – auch wenn das Auto schon verriegelt ist, nie entriegelt.
+  Was die Apps bis zur Rückmeldung des Fahrzeugs anzeigen, bleibt wie bisher der Zustand, den
+  der Befehl anstrebt.
+- Für die Regeln anderer Plugins heißt das Schloss immer „Schloss“ (statt „Verriegelt“ /
+  „Entriegelt“); in den Apps bleibt der Titel mit dem Zustand.
+- Ohne Zielzustand (Apps, ältere GateControl-Versionen) schalten die Schalter wie bisher um –
+  das Plugin läuft weiter ab GateControl 1.154.0.
+
 ## 1.3.3
 - **Eine abgelehnte S-PIN wird nicht noch einmal gesendet**: lehnt die Škoda-Cloud ein
   Ver- oder Entriegeln ab (HTTP 4xx außer 401/429, z. B. 403 bei falscher S-PIN), merkt sich
