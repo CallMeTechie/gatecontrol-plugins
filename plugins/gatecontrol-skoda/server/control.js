@@ -48,23 +48,75 @@ async function setTimer(c, vin, a) {
 }
 
 const none = () => ({});
+// expects: [kind, state] the vehicle should report once it applied the command (see expectedState)
 const COMMANDS = {
-  ac_start: { needsSpin: false, validate: reqTemp, run: (c, vin, a) => c.startAc(vin, a.temp) },
-  ac_stop: { needsSpin: false, validate: none, run: (c, vin) => c.stopAc(vin) },
+  ac_start: { needsSpin: false, validate: reqTemp, run: (c, vin, a) => c.startAc(vin, a.temp), expects: ['climate', 'on'] },
+  ac_stop: { needsSpin: false, validate: none, run: (c, vin) => c.stopAc(vin), expects: ['climate', 'off'] },
   ac_temp: { needsSpin: false, validate: reqTemp, run: (c, vin, a) => c.setAcTemp(vin, a.temp) },
-  window_heat_start: { needsSpin: false, validate: none, run: (c, vin) => c.startWindowHeating(vin) },
-  window_heat_stop: { needsSpin: false, validate: none, run: (c, vin) => c.stopWindowHeating(vin) },
-  charge_start: { needsSpin: false, validate: none, run: (c, vin) => c.startCharging(vin) },
-  charge_stop: { needsSpin: false, validate: none, run: (c, vin) => c.stopCharging(vin) },
+  window_heat_start: { needsSpin: false, validate: none, run: (c, vin) => c.startWindowHeating(vin), expects: ['windowheat', 'on'] },
+  window_heat_stop: { needsSpin: false, validate: none, run: (c, vin) => c.stopWindowHeating(vin), expects: ['windowheat', 'off'] },
+  charge_start: { needsSpin: false, validate: none, run: (c, vin) => c.startCharging(vin), expects: ['charging', 'on'] },
+  charge_stop: { needsSpin: false, validate: none, run: (c, vin) => c.stopCharging(vin), expects: ['charging', 'off'] },
   charge_limit: {
     needsSpin: false,
     validate: (a) => { const l = num(a && a.limit); if (!CHARGE_STEPS.includes(l)) throw err('limit not allowed', 'SKODA_VALIDATION'); return { limit: l }; },
     run: (c, vin, a) => c.setChargeLimit(vin, a.limit),
   },
-  lock: { needsSpin: true, validate: none, run: (c, vin, a, spin) => c.lock(vin, spin) },
-  unlock: { needsSpin: true, validate: none, run: (c, vin, a, spin) => c.unlock(vin, spin) },
+  lock: { needsSpin: true, validate: none, run: (c, vin, a, spin) => c.lock(vin, spin), expects: ['lock', 'on'] },
+  unlock: { needsSpin: true, validate: none, run: (c, vin, a, spin) => c.unlock(vin, spin), expects: ['lock', 'off'] },
   timer_set: { needsSpin: false, validate: reqTimer, run: setTimer },
 };
+
+// ─── Expected state after a command ─────────────
+// The cloud accepts a command at once, but the vehicle needs about 20–60 s to
+// apply it and report the new state — a sync right away still reads the old
+// one. So for EXPECT_MS after a successful command the apps show the state the
+// vehicle should report (kind: climate | charging | windowheat | lock; 'on' /
+// 'off', lock: on = locked) instead of the reported one. The entry goes as
+// soon as the reported state equals it, or when it expires. Memory only
+// (a restart forgets it); reset() clears it.
+const EXPECT_MS = 3 * 60 * 1000;
+const expected = new Map(); // `${vehicleId}:${kind}` -> { state, until }
+
+/** The state to show for a vehicle's toggle: the expected one while it is unexpired and differs from `reported`, else `reported`. */
+function expectedState(vehicleId, kind, reported) {
+  const key = `${vehicleId}:${kind}`;
+  const e = expected.get(key);
+  if (!e) return reported;
+  if (Date.now() >= e.until || e.state === reported) { expected.delete(key); return reported; }
+  return e.state;
+}
+
+// ─── Post-command refresh ────────────────────────
+// The sync after a command waits until the vehicle has most likely applied it
+// (see above). Several commands in a row share one refresh, REFRESH_DELAY_MS
+// after the last; the cooldown of service.refreshVehicle applies as before.
+const REFRESH_DELAY_MS = 45 * 1000;
+let refreshDelayMs = REFRESH_DELAY_MS;
+const pendingRefresh = new Map(); // vehicleId -> { timer, promise, resolve }
+
+/** Schedules (or postpones) the vehicle's post-command refresh → a promise of its result (undefined when skipped or failed). */
+function scheduleRefresh(gc, vehicleId) {
+  let p = pendingRefresh.get(vehicleId);
+  if (p) clearTimeout(p.timer);
+  else {
+    p = {};
+    p.promise = new Promise((resolve) => { p.resolve = resolve; });
+    pendingRefresh.set(vehicleId, p);
+  }
+  const entry = p;
+  entry.timer = setTimeout(() => {
+    pendingRefresh.delete(vehicleId);
+    service.refreshVehicle(gc, vehicleId, { afterCommand: true })
+      .catch(() => { /* best effort (cooldown, cloud error); the next poll catches up */ })
+      .then(entry.resolve);
+  }, refreshDelayMs);
+  entry.timer.unref?.();
+  return entry.promise;
+}
+
+/** Tests: the delay of the post-command refresh in ms (null: the default 45 s). */
+function _setRefreshDelayForTest(ms) { refreshDelayMs = ms == null ? REFRESH_DELAY_MS : ms; }
 
 // ponytail: grows one entry per account ever touched; fine at household scale, per process.
 const lockAttempts = new Map(); // accountId -> [timestamps]
@@ -78,7 +130,7 @@ function checkLockRate(accountId) {
 
 /**
  * Run a command on a vehicle (callers check ownership / admin rights first).
- * @returns {Promise<{ok:true, refresh:Promise}>} refresh = the 30 s post-command sync (best effort)
+ * @returns {Promise<{ok:true, refresh:Promise}>} refresh = the delayed post-command sync (best effort, never rejects)
  */
 async function runCommand(gc, vehicleId, action, args) {
   // hasOwnProperty guard: no prototype key (constructor/…) as an action
@@ -107,11 +159,17 @@ async function runCommand(gc, vehicleId, action, args) {
     await cmd.run(service.clientFor(gc, accountId), v.vin, normArgs, spin);
   });
 
-  // command-triggered refresh in its own 30 s window (never blocks the answer)
-  const refresh = service.refreshVehicle(gc, vehicleId, { afterCommand: true }).catch(() => { /* best effort; the next poll catches up */ });
+  if (cmd.expects) expected.set(`${vehicleId}:${cmd.expects[0]}`, { state: cmd.expects[1], until: Date.now() + EXPECT_MS });
+  // command-triggered refresh once the vehicle has applied it, in its own 30 s window (never blocks the answer)
+  const refresh = scheduleRefresh(gc, vehicleId);
   return { ok: true, refresh };
 }
 
-function reset() { lockAttempts.clear(); }
+function reset() {
+  lockAttempts.clear();
+  expected.clear();
+  for (const p of pendingRefresh.values()) { clearTimeout(p.timer); p.resolve(); }
+  pendingRefresh.clear();
+}
 
-module.exports = { COMMANDS, WEEKDAYS, runCommand, reset };
+module.exports = { COMMANDS, WEEKDAYS, EXPECT_MS, REFRESH_DELAY_MS, runCommand, expectedState, reset, _setRefreshDelayForTest };

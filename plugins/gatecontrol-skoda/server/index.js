@@ -16,7 +16,9 @@
 //     the portal's controls for a signed-in owner, grouped per vehicle
 //     (device v:<id>): climate (with the vehicle's widget), charging, window
 //     heating and the lock (one toggle: locked/unlocked, with the account's
-//     S-PIN; unlocking asks first)
+//     S-PIN; unlocking asks first); right after a command they show the state
+//     the vehicle should report (control.expectedState), and an answer that
+//     would pass the host's time limit says the command is on its way
 //
 // Requests run with the requesting user's rights: req.user.portal = a portal
 // viewer, who only ever sees and controls the vehicles an administrator
@@ -35,6 +37,11 @@ const alerts = require('./alerts');
 const texts = require('./texts.json');
 
 const state = { importing: false };
+
+// GateControl waits at most 10 s for runQuickAction (then 504): a command
+// still queued behind the account's sync answers "on its way" before that.
+const QA_BUDGET_MS = 8000;
+let qaBudgetMs = QA_BUDGET_MS;
 
 function t(lang, key, params) {
   const l = lang === 'en' ? 'en' : 'de';
@@ -104,16 +111,19 @@ function num(v) {
   return Number.isFinite(n) ? n : null;
 }
 
-/** The vehicle's charge level (whole %), range (whole km) and lock (true / false / null) from the stored state. */
-function vehicleFacts(s) {
-  const st = s || {};
+/**
+ * The vehicle's charge level (whole %), range (whole km), lock (true / false / null)
+ * and charging from the stored state — lock and charging as the apps show them (appStates).
+ */
+function vehicleFacts(v, states = appStates(v)) {
+  const st = v.state || {};
   const soc = num(st.soc);
   const range = num(st.rangeKm);
   return {
     soc: soc == null ? null : Math.round(soc),
     range: range == null ? null : Math.round(range),
-    locked: typeof st.locked === 'boolean' ? st.locked : null,
-    charging: String((st.charging && st.charging.state) || '').toUpperCase() === 'CHARGING',
+    locked: states.lock == null ? null : states.lock === 'on',
+    charging: states.charging === 'on',
   };
 }
 
@@ -123,8 +133,7 @@ function lockItem(locked, label) {
 }
 
 /** Start tile items for the apps (GateControl ≥ 1.172.0): charge level, range, lock — each only when known. */
-function tileItems(s, lang) {
-  const f = vehicleFacts(s);
+function tileItems(f, lang) {
   const items = [];
   if (f.soc != null) items.push({ label: t(lang, 'widget.soc'), icon: BATTERY_ICON, value: f.soc, unit: '%', state: f.soc <= 15 ? 'crit' : 'good' });
   if (f.range != null) items.push({ label: t(lang, 'portal.range'), icon: ROUTE_ICON, value: f.range, unit: 'km' });
@@ -134,20 +143,20 @@ function tileItems(s, lang) {
 
 function vehicleTile(v, lang) {
   const s = v.state || {};
-  const charging = String((s.charging && s.charging.state) || '').toUpperCase() === 'CHARGING';
+  const f = vehicleFacts(v);
   const soc = s.soc == null ? null : Number(s.soc);
   const parts = [];
   if (soc != null && Number.isFinite(soc)) parts.push(fmtNum(soc, lang) + ' %');
   if (s.rangeKm != null && fmtNum(s.rangeKm, lang) != null) parts.push(fmtNum(s.rangeKm, lang) + ' km');
-  if (charging) parts.push(t(lang, 'portal.charging'));
-  else if (s.locked === false) parts.push(t(lang, 'portal.unlocked'));
+  if (f.charging) parts.push(t(lang, 'portal.charging'));
+  else if (f.locked === false) parts.push(t(lang, 'portal.unlocked'));
   let tone = null;
-  if (charging) tone = 'on';
+  if (f.charging) tone = 'on';
   else if (soc != null && soc <= 15) tone = 'crit';
-  else if (s.locked === false) tone = 'warn';
+  else if (f.locked === false) tone = 'warn';
   else if (soc != null) tone = 'good';
   // `value` for the portal; the apps show `items` (older GateControl versions leave them out)
-  return { section: 'skoda', title: v.name || v.model || '', value: parts.length ? parts.join(' · ') : '–', state: tone, icon: CAR_ICON, items: tileItems(s, lang) };
+  return { section: 'skoda', title: v.name || v.model || '', value: parts.length ? parts.join(' · ') : '–', state: tone, icon: CAR_ICON, items: tileItems(f, lang) };
 }
 
 // ─── Quick actions of the apps (declarative; the host checks and caps them) ──
@@ -181,7 +190,19 @@ function toggleStates(s) {
     climate: cl.state == null ? null : (up(cl.state) !== 'OFF' ? 'on' : 'off'),
     charging: ch.state == null ? null : (up(ch.state) === 'CHARGING' ? 'on' : 'off'),
     windowheat: typeof cl.windowHeating === 'boolean' ? (cl.windowHeating ? 'on' : 'off') : null,
+    lock: typeof st.locked === 'boolean' ? (st.locked ? 'on' : 'off') : null,
   };
+}
+
+/**
+ * The states the apps show (climate, charging, windowheat, lock: 'on' | 'off' | null):
+ * the reported ones, or — for a few minutes after a command, until the vehicle
+ * reports it — the state the command aims for (control.expectedState).
+ */
+function appStates(v) {
+  const out = toggleStates(v.state);
+  for (const kind of Object.keys(out)) out[kind] = control.expectedState(v.id, kind, out[kind]);
+  return out;
 }
 
 /** The vehicle as the apps group its actions (GateControl ≥ 1.172.0): v:<id>, name (or model), model below a different name. */
@@ -200,9 +221,8 @@ function deviceOf(v, lang) {
  * status. `power: false` — the climate toggle is one of the vehicle's buttons,
  * not its on/off switch.
  */
-function vehicleWidget(v, lang) {
-  const s = v.state || {};
-  const f = vehicleFacts(s);
+function vehicleWidget(v, lang, states = appStates(v)) {
+  const f = vehicleFacts(v, states);
   const w = { label: null, value: null, unit: null, status: null, state: null, readings: [], controls: [], power: false };
   if (f.soc != null) {
     Object.assign(w, { label: clip(t(lang, 'widget.soc'), 24), value: f.soc, unit: '%' });
@@ -212,7 +232,7 @@ function vehicleWidget(v, lang) {
   }
   if (f.locked != null) w.readings.push({ id: 'lock', ...lockItem(f.locked, clip(t(lang, 'widget.lock'), 20)) });
   if (f.charging) w.status = t(lang, 'widget.charging');
-  else if (toggleStates(s).climate === 'on') w.status = t(lang, 'widget.climate_on');
+  else if (states.climate === 'on') w.status = t(lang, 'widget.climate_on');
   if (f.soc != null && f.soc <= 15) w.state = 'crit';
   else if (f.locked === false) w.state = 'warn';
   else if (f.soc != null) w.state = 'good';
@@ -220,8 +240,8 @@ function vehicleWidget(v, lang) {
 }
 
 /** The lock as one toggle: on = locked, off = unlocked, no state when unknown; asks before unlocking. */
-function lockAction(v, lang) {
-  const locked = v.state && typeof v.state.locked === 'boolean' ? v.state.locked : null;
+function lockAction(lang, states) {
+  const locked = states.lock == null ? null : states.lock === 'on';
   const a = {
     kind: 'toggle', title: t(lang, locked === true ? 'qa.lock_locked' : (locked === false ? 'qa.lock_unlocked' : 'qa.lock_unknown')),
     icon: locked === false ? LOCK_OPEN_ICON : LOCK_CLOSED_ICON, look: LOCK_LOOK, confirm: true, confirmWhen: 'off',
@@ -248,23 +268,23 @@ async function quickActionsFor(gc, user, lang) {
   if (!user || !Number.isInteger(user.id) || user.loggedIn !== true) return [];
   const out = [];
   for (const v of await ownVehicles(gc, user.id)) {
-    const st = toggleStates(v.state);
+    const st = appStates(v);
     const subtitle = clip(v.name || v.model || t(lang, 'portal.vehicle'), 60);
     const device = deviceOf(v, lang);
     const add = (kind, extra) => out.push({ id: `${kind}:${v.id}`, title: t(lang, 'qa.' + kind), subtitle, icon: QA_ICONS[kind], device, ...extra });
     const toggle = (kind, extra) => add(kind, { kind: 'toggle', ...(st[kind] ? { state: st[kind] } : {}), ...extra });
-    toggle('climate', { widget: vehicleWidget(v, lang) });
+    toggle('climate', { widget: vehicleWidget(v, lang, st) });
     if ((v.state && v.state.soc != null) || st.charging) toggle('charging');
     toggle('windowheat');
-    if (await store.getSpin(gc, v.account_id)) add('lock', lockAction(v, lang));
+    if (await store.getSpin(gc, v.account_id)) add('lock', lockAction(lang, st));
     if (out.length >= QA_MAX) break;
   }
   return out.slice(0, QA_MAX);
 }
 
-/** The command an action sends now (toggles switch the stored state over), with its args and the state it aims for. */
+/** The command an action sends now (toggles switch the shown state over), with its args and the state it aims for. */
 function commandFor(kind, v) {
-  const st = toggleStates(v.state);
+  const st = appStates(v);
   if (kind === 'climate') {
     if (st.climate === 'on') return { action: 'ac_stop', args: {}, state: 'off' };
     const c = Number(v.state && v.state.climate && v.state.climate.targetC);
@@ -273,11 +293,18 @@ function commandFor(kind, v) {
   if (kind === 'charging') return st.charging === 'on' ? { action: 'charge_stop', args: {}, state: 'off' } : { action: 'charge_start', args: {}, state: 'on' };
   if (kind === 'windowheat') return st.windowheat === 'on' ? { action: 'window_heat_stop', args: {}, state: 'off' } : { action: 'window_heat_start', args: {}, state: 'on' };
   // the lock: locked → unlock, else (unlocked or unknown) → lock
-  return v.state && v.state.locked === true ? { action: 'unlock', args: {}, state: 'off' } : { action: 'lock', args: {}, state: 'on' };
+  return st.lock === 'on' ? { action: 'unlock', args: {}, state: 'off' } : { action: 'lock', args: {}, state: 'on' };
 }
 
-/** Run one quick action with the portal's checks (signed in, owner). */
+const PENDING = Symbol('pending');
+
+/**
+ * Run one quick action with the portal's checks (signed in, owner). A command
+ * that takes longer than the budget (queued behind the account's sync) is
+ * answered "on its way" without a state and finishes in the background.
+ */
 async function runQuickActionFor(gc, user, lang, id) {
+  const started = Date.now();
   const m = typeof id === 'string' ? QA_ID_RE.exec(id) : null;
   if (!m || !user || !Number.isInteger(user.id)) return { ok: false, message: t(lang, 'qa.unknown') };
   const [, kind, raw] = m;
@@ -288,8 +315,15 @@ async function runQuickActionFor(gc, user, lang, id) {
     const v = await store.getVehicle(gc, vid);
     if (!v) throw fail('SKODA_VEHICLE_NOT_FOUND');
     const c = commandFor(kind, v);
-    await control.runCommand(gc, vid, c.action, c.args); // its refresh runs on in the background
     const name = clip(v.name || v.model || t(lang, 'portal.vehicle'), 40);
+    const run = control.runCommand(gc, vid, c.action, c.args); // its refresh runs on in the background
+    let timer = null;
+    const budget = new Promise((resolve) => { timer = setTimeout(resolve, Math.max(0, qaBudgetMs - (Date.now() - started)), PENDING); });
+    const first = await Promise.race([run, budget]).finally(() => clearTimeout(timer));
+    if (first === PENDING) {
+      run.catch((e) => gc.log.warn('quick action failed late', id, (e && e.code) || 'error'));
+      return { ok: true, message: clip(t(lang, 'qa.pending', { name }), 120) };
+    }
     const out = { ok: true, message: clip(t(lang, `qa.${kind}${c.state ? '_' + c.state : ''}_sent`, { name }), 120) };
     if (c.state) out.state = c.state;
     return out;
@@ -493,4 +527,6 @@ module.exports = {
   },
 
   _state: state,
+  /** Tests: the time budget of runQuickAction in ms (null: the default 8 s). */
+  _setQuickActionBudgetForTest(ms) { qaBudgetMs = ms == null ? QA_BUDGET_MS : ms; },
 };
