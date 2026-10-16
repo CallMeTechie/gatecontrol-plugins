@@ -140,7 +140,9 @@
   "portal.load_error": "Klimageräte konnten nicht geladen werden",
   "qa.switched_on": "{{name}} eingeschaltet",
   "qa.switched_off": "{{name}} ausgeschaltet",
-  "qa.unknown": "Diese Aktion gibt es nicht mehr."
+  "qa.unknown": "Diese Aktion gibt es nicht mehr.",
+  "widget.indoor": "Innentemperatur",
+  "widget.outdoor": "Außentemperatur"
  },
  "en": {
   "title": "Air conditioning",
@@ -283,6 +285,8 @@
   "portal.load_error": "Air conditioners could not be loaded",
   "qa.switched_on": "{{name}} switched on",
   "qa.switched_off": "{{name}} switched off",
-  "qa.unknown": "This action no longer exists."
+  "qa.unknown": "This action no longer exists.",
+  "widget.indoor": "Indoor temperature",
+  "widget.outdoor": "Outdoor temperature"
  }
 }

@@ -4,7 +4,7 @@
     "de": "Klimaanlage",
     "en": "Air conditioning"
   },
-  "version": "1.3.0",
+  "version": "1.4.0",
   "publisher": "CallMeTechie",
   "description": {
     "de": "Midea-Klimageräte über die Midea-Cloud oder im Heimnetz steuern (Ein/Aus, Zieltemperatur, Modus, Lüfter, Turbo/Eco) und Haushaltsmitgliedern zuweisen (Portal „Zuhause“).",

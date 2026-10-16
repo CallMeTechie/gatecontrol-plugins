@@ -121,10 +121,15 @@ function portalPatch(raw, caps) {
   return patch;
 }
 
-async function portalData(gc, userId) {
+/** The viewer's resources (owned, enabled; scenes of an owned group), as stored. */
+async function ownedResources(gc, userId) {
   const ids = new Set(await store.resourcesOwnedBy(gc, userId));
-  if (!ids.size) return { devices: [], sensors: [] };
-  const owned = (await store.listResources(gc)).filter((r) => r.enabled && ids.has(r.id));
+  if (!ids.size) return [];
+  return (await store.listResources(gc)).filter((r) => r.enabled && ids.has(r.id));
+}
+
+async function portalData(gc, userId) {
+  const owned = await ownedResources(gc, userId);
   return {
     devices: owned.filter((r) => r.kind !== 'sensor' && r.kind !== 'switch').map(portalResource),
     sensors: owned.filter((r) => r.kind === 'sensor').map(portalResource), // switches stay out
@@ -207,7 +212,7 @@ function widgetOf(r, lang) {
   const bri = st.bri == null || !Number.isFinite(Number(st.bri)) ? null : Math.min(BRI.max, Math.max(BRI.min, Math.round(Number(st.bri))));
   let status = t(lang, 'kind.' + r.kind);
   if (st.reachable === false) status += ' · ' + t(lang, 'qa.unreachable');
-  const w = { value: t(lang, 'portal.off'), unit: null, status: clip(status, 60), state: st.on ? 'on' : 'off', controls: [] };
+  const w = { label: clip(t(lang, 'portal.brightness'), 24), value: t(lang, 'portal.off'), unit: null, status: clip(status, 60), state: st.on ? 'on' : 'off', controls: [] };
   if (st.on) {
     if (bri != null) { w.value = bri; w.unit = '%'; } else w.value = t(lang, 'portal.on');
   }
@@ -215,29 +220,47 @@ function widgetOf(r, lang) {
   return w;
 }
 
-function quickAction(r, lang) {
+/** A resource as the apps group quick actions (GateControl ≥ 1.172.0): r:<resource id>, its name and icon. */
+function deviceOf(r, lang) {
+  return { id: `r:${r.id}`, title: clip(r.name, 40) || t(lang, 'kind.' + r.kind), icon: r.kind === 'scene' ? SCENE_ICON : (TILE_ICONS[r.kind] || TILE_ICONS.light) };
+}
+
+/** `device`: the resource's own, for a scene its group's (when the viewer has that group). */
+function quickAction(r, lang, device) {
   const name = clip(r.name, 40) || t(lang, 'kind.' + r.kind);
-  if (r.kind === 'scene') return { id: `scene:${r.id}`, title: name, subtitle: t(lang, 'kind.scene'), icon: SCENE_ICON, kind: 'button' };
+  if (r.kind === 'scene') return { id: `scene:${r.id}`, title: name, subtitle: t(lang, 'kind.scene'), icon: SCENE_ICON, kind: 'button', device: device || deviceOf(r, lang) };
   const st = r.state || {};
   let subtitle = t(lang, 'kind.' + r.kind);
   if (st.reachable === false) subtitle += ' · ' + t(lang, 'qa.unreachable');
   else if (st.on && r.capabilities && r.capabilities.bri && st.bri != null) subtitle += ' · ' + fmtNum(st.bri, lang) + ' %';
-  const a = { id: `${r.kind}:${r.id}`, title: name, subtitle: clip(subtitle, 60), icon: TILE_ICONS[r.kind] || TILE_ICONS.light, kind: 'toggle', state: st.on ? 'on' : 'off' };
+  const a = { id: `${r.kind}:${r.id}`, title: name, subtitle: clip(subtitle, 60), icon: TILE_ICONS[r.kind] || TILE_ICONS.light, kind: 'toggle', state: st.on ? 'on' : 'off', device: device || deviceOf(r, lang) };
   if (dimmable(r)) a.widget = widgetOf(r, lang);
   return a;
+}
+
+/** The deCONZ group of a scene on its gateway: "<gateway id>/<group id>" (capabilities.group_id, else the id's prefix). */
+function sceneGroupKey(r) {
+  const gid = r.capabilities && r.capabilities.group_id != null ? r.capabilities.group_id : String(r.deconz_id).split('/')[0];
+  return `${r.gateway_id}/${gid}`;
 }
 
 /**
  * The viewer's own controllable devices (exactly the portal's devices: owned,
  * enabled, scenes of an owned group) as quick actions — cached state only,
  * no gateway round trip. Switches first (groups, lights, plugs), scenes last.
+ * Every resource is its own device (r:<id>); a scene belongs to its group's
+ * device when the viewer has that group, else it is a device of its own.
  */
 async function quickActionsFor(gc, user, lang) {
   if (!user || !Number.isInteger(user.id) || user.loggedIn === false) return [];
-  const { devices } = await portalData(gc, user.id);
+  const devices = (await ownedResources(gc, user.id)).filter((r) => r.kind !== 'sensor' && r.kind !== 'switch');
+  const groups = new Map(devices.filter((r) => r.kind === 'group').map((g) => [`${g.gateway_id}/${g.deconz_id}`, g]));
   const toggles = devices.filter((d) => d.kind !== 'scene');
   const scenes = devices.filter((d) => d.kind === 'scene');
-  return [...toggles, ...scenes].slice(0, QA_MAX).map((d) => quickAction(d, lang));
+  return [...toggles, ...scenes].slice(0, QA_MAX).map((d) => {
+    const group = d.kind === 'scene' ? groups.get(sceneGroupKey(d)) : null;
+    return quickAction(d, lang, group ? deviceOf(group, lang) : null);
+  });
 }
 
 /** The widget of a dimmable resource after a change (the cached state follows what was sent). */

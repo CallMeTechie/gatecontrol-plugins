@@ -125,6 +125,7 @@ async function ownedDevices(gc, userId) {
 // ─── Portal Start tiles and search (declarative; the host renders them) ──
 
 const AC_ICON = 'M2 4h20v10H2zM6 9h12M6 18v1M10 18v2M14 18v2M18 18v1';
+const THERMOMETER_ICON = 'M10 13V5a2 2 0 1 1 4 0v8a4 4 0 1 1-4 0z';
 
 function fmtTemp(v, lang) {
   const n = Number(v);
@@ -177,11 +178,14 @@ function targetOf(v) {
 
 /**
  * The widget of an air conditioner's quick action: the indoor temperature as
- * the value, the status line, power as the state, controls for target
+ * the value, the outdoor temperature as a reading when known (GateControl ≥
+ * 1.172.0), the status line, power as the state, controls for target
  * temperature and mode. Built from whatever state is at hand (null = unknown).
  */
 function widgetOf(st, lang) {
-  const w = { value: (st && !st.offline && fmtTemp(st.indoorTemp, lang)) || '–', unit: '°C', status: null, state: null, controls: [] };
+  const w = { label: clip(t(lang, 'widget.indoor'), 24), value: (st && !st.offline && fmtTemp(st.indoorTemp, lang)) || '–', unit: '°C', status: null, state: null, readings: [], controls: [] };
+  const outdoor = st && !st.offline && typeof st.outdoorTemp === 'number' ? fmtTemp(st.outdoorTemp, lang) : null;
+  if (outdoor) w.readings.push({ id: 'outdoor', label: clip(t(lang, 'widget.outdoor'), 20), value: outdoor, unit: '°C', icon: THERMOMETER_ICON });
   const status = statusLine(st, lang);
   if (status) w.status = clip(status, 60);
   if (st && st.offline) w.state = 'warn';
@@ -208,14 +212,18 @@ function controlPatch(control, value) {
 
 /**
  * Power on/off per air conditioner of the viewer (the portal's owner scope;
- * disabled devices left out), each with its widget — cached state only, no
- * device round trip.
+ * disabled devices left out), each its own device (ac:<id>) with its widget —
+ * cached state only, no device round trip.
  */
 async function quickActionsFor(gc, user, lang) {
   if (!user || !Number.isInteger(user.id) || user.loggedIn === false) return [];
   return (await ownedDevices(gc, user.id)).filter((d) => d.enabled).slice(0, QA_MAX).map((d) => {
     const st = service.cachedState(gc, d);
-    const a = { id: `ac:${d.id}`, title: clip(d.name, 40) || t(lang, 'portal.title'), subtitle: clip(statusLine(st, lang) || t(lang, 'portal.title'), 60), icon: AC_ICON, kind: 'toggle', widget: widgetOf(st, lang) };
+    const title = clip(d.name, 40) || t(lang, 'portal.title');
+    const a = {
+      id: `ac:${d.id}`, title, subtitle: clip(statusLine(st, lang) || t(lang, 'portal.title'), 60), icon: AC_ICON, kind: 'toggle',
+      device: { id: `ac:${d.id}`, title, icon: AC_ICON }, widget: widgetOf(st, lang),
+    };
     const power = powerOf(st);
     if (power) a.state = power;
     return a;

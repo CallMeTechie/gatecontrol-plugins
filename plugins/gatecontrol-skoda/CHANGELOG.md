@@ -2,6 +2,28 @@
 
 Škoda-Fahrzeuge (MySkoda) als GateControl-Plugin – bisher fest in GateControl eingebaut.
 
+## 1.3.0
+- **Ver- und Entriegeln als ein Schalter**: statt zweier Tasten gibt es pro Fahrzeug einen
+  Schalter „Verriegelt“ / „Entriegelt“ (Zustand aus dem zuletzt abgefragten Stand; unbekannt:
+  „Schloss“, ohne Zustand). In GateControl-Apps ab 1.38.0 mit eigenem Symbol und eigener
+  Farbe je Zustand – verriegelt grünes geschlossenes, entriegelt rotes offenes Schloss – und
+  einer Rückfrage nur vor dem Entriegeln; ältere Apps fragen vor jedem Schalten. Auslösen:
+  ein verriegeltes Fahrzeug wird entriegelt, ein entriegeltes oder unbekanntes verriegelt.
+  Weiterhin nur mit hinterlegter S-PIN, die Grenzen der Befehle gelten unverändert.
+  Die bisherige Aktion „Verriegeln“ behält ihre Kennung – angeheftete Verknüpfungen bleiben
+  gültig und werden zum Schalter. **„Entriegeln“ gibt es nicht mehr als eigene Aktion: alte
+  „Entriegeln“-Verknüpfungen bitte entfernen und den Schalter neu anheften.**
+- Geräte: alle Schnellaktionen eines Fahrzeugs gehören zusammen (Name, darunter das Modell,
+  wenn es anders heißt) – die Apps zeigen sie als eine Zeile.
+- Widget pro Fahrzeug (an der Klimatisierung, die darin eine Taste wie die anderen ist):
+  Ladestand als großer Wert (ohne Akku die Reichweite), dazu Reichweite und Verriegelung
+  (Schloss offen/zu), „Lädt“ bzw. „Klimatisierung an“ als Statuszeile; Zustand kritisch bei
+  höchstens 15 %, Warnung wenn entriegelt.
+- Startkachel: zusätzlich einzelne Werte für die Info-Karte der Apps – Ladestand (Akku),
+  Reichweite (Route) und Verriegelt/Entriegelt (Schloss); das Portal zeigt weiter den Text.
+- Optional: GateControl ab 1.172.0 gibt die neuen Felder weiter, ältere Versionen lassen
+  sie weg – die Mindestversion bleibt unverändert.
+
 ## 1.2.0
 - Schnellaktionen für die GateControl-Apps (Verknüpfungen auf dem Startbildschirm,
   Schnelleinstellungen, Widget) – dieselben Befehle wie im Portal: Klimatisierung,
