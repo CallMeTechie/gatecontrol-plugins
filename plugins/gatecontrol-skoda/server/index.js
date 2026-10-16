@@ -57,6 +57,7 @@ const ERRORS = {
   SKODA_UNKNOWN_COMMAND: [400, 'error.unknown_command'],
   SKODA_ACCOUNT_EXISTS: [409, 'error.account_exists'],
   SKODA_SPIN_REQUIRED: [409, 'cmd.spin_required'],
+  SKODA_SPIN_REJECTED: [409, 'cmd.spin_rejected'],
   SKODA_NO_SESSION: [409, 'error.no_session'],
   SKODA_UNAUTHORIZED: [409, 'error.no_session'],
   SKODA_TIMER_READONLY: [409, 'timers.readonly'],
@@ -79,7 +80,8 @@ function errorResponse(e, lang) {
   const known = e && Object.prototype.hasOwnProperty.call(ERRORS, e.code) ? ERRORS[e.code] : null;
   // the Škoda cloud refused: say so, with its HTTP status (the reason goes to the log, logError)
   if (!known && e && e.code === 'SKODA_API_ERROR' && Number.isInteger(e.status) && e.status >= 400 && e.status <= 599) {
-    const key = e.status >= 500 ? 'error.api_server' : 'error.api_refused';
+    // spinRejected: the refusal of a lock/unlock marked the stored S-PIN as rejected (control.js)
+    const key = e.status >= 500 ? 'error.api_server' : (e.spinRejected ? 'error.api_refused_spin' : 'error.api_refused');
     return { status: 502, json: { ok: false, code: e.code, error: t(lang, key, { status: e.status }) } };
   }
   const [status, key] = known || [502, 'error.generic'];
@@ -342,7 +344,7 @@ async function runQuickActionFor(gc, user, lang, id) {
     return out;
   } catch (e) {
     if (!(e && Object.prototype.hasOwnProperty.call(ERRORS, e.code))) logError(gc, 'quick action failed', id, e);
-    return { ok: false, message: errorResponse(e, lang).json.error };
+    return { ok: false, message: clip(errorResponse(e, lang).json.error, 120) };
   }
 }
 

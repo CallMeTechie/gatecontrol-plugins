@@ -94,7 +94,9 @@ test('pages render with texts in the viewer\'s language and no secrets', () => {
   return withHost({ cloud }, async (host) => {
     await host.legacyImport(snapshot(cloud));
     const de = (await host.render({ view: 'page', page: 'main', lang: 'de' })).html;
-    assert.match(de, /<h1 class="page-title">Klimaanlage<\/h1>/);
+    // no own page title (GateControl shows it in its header); the actions stay
+    assert.doesNotMatch(de, /<h1|page-title|page-eyebrow|page-sub/);
+    assert.match(de, /id="md-add-open"/);
     assert.match(de, /window\.MD_CTX=/);
     assert.doesNotMatch(de, /\{\{t:/, 'every placeholder filled');
     const en = (await host.render({ view: 'page', page: 'main', lang: 'en' })).html;

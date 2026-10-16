@@ -1,18 +1,13 @@
 <main class="sk-page">
-  <div class="page-header">
-    <div>
-      <div class="page-eyebrow">{{t:eyebrow}}</div>
-      <h1 class="page-title">{{t:title}}</h1>
-      <div class="page-sub">{{t:subtitle}}</div>
-    </div>
+  <!-- no page title: GateControl shows it in its header -->
+  <div class="sk-section-head">
+    <h2 class="sk-h2">{{t:accounts.title}}</h2>
     <div class="page-actions">
       <label class="sk-poll" for="sk-poll-interval">{{t:settings.poll_interval}}</label>
       <input class="form-input sk-poll-input" type="number" id="sk-poll-interval" min="5" max="1440" step="1">
       <button class="btn btn-primary" type="button" id="sk-account-add-open">{{t:accounts.add}}</button>
     </div>
   </div>
-
-  <h2 class="sk-h2">{{t:accounts.title}}</h2>
   <div class="sk-accounts" id="sk-accounts"></div>
   <h2 class="sk-h2">{{t:vehicles.title}}</h2>
   <div class="sk-grid" id="sk-vehicles"></div>

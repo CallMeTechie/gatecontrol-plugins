@@ -16,7 +16,7 @@ test('accounts: create (validated), list without secrets, secrets as encrypted s
   }
   const r = await asAdmin(host, 'POST', '/accounts', { email: ' ada@example.com ', password: cloud.password });
   assert.equal(r.status, 201);
-  assert.deepEqual(Object.keys(r.json.account).sort(), ['email', 'has_credentials', 'has_spin', 'id', 'next_retry_at', 'status', 'status_detail', 'updated_at']);
+  assert.deepEqual(Object.keys(r.json.account).sort(), ['email', 'has_credentials', 'has_spin', 'id', 'next_retry_at', 'spin_rejected', 'status', 'status_detail', 'updated_at']);
   assert.equal(r.json.account.email, 'ada@example.com');
   assert.equal(r.json.account.has_credentials, true);
   assert.equal((await asAdmin(host, 'POST', '/accounts', { email: 'ada@example.com', password: 'x' })).json.code, 'SKODA_ACCOUNT_EXISTS');

@@ -2,6 +2,11 @@
 
 Midea-Klimageräte als GateControl-Plugin – bisher fest in GateControl eingebaut („Klimaanlage“).
 
+## 1.4.1
+- **Keine eigene Seitenüberschrift mehr**: GateControl zeigt den Seitentitel im Kopf; die
+  Seite „Klimaanlage“ beginnt direkt mit ihren Knöpfen (Geräte entdecken, Midea-Konto,
+  Gerät hinzufügen) – Überschrift und Beschreibung oben entfallen.
+
 ## 1.4.0
 - Geräte: die Schnellaktion jedes Klimageräts gehört zu einem eigenen Gerät (Name und
   Symbol des Klimageräts) – die GateControl-Apps ab 1.38.0 gruppieren danach.

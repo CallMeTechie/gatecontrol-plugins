@@ -1,15 +1,9 @@
 <main class="md-page">
-  <div class="page-header">
-    <div>
-      <div class="page-eyebrow">{{t:eyebrow}}</div>
-      <h1 class="page-title">{{t:title}}</h1>
-      <div class="page-sub">{{t:subtitle}}</div>
-    </div>
-    <div class="page-actions">
-      <button class="btn" type="button" id="md-discover">{{t:discover}}</button>
-      <button class="btn" type="button" id="md-cloud-open">{{t:cloud.title}}</button>
-      <button class="btn btn-primary" type="button" id="md-add-open">{{t:add.title}}</button>
-    </div>
+  <!-- no page title: GateControl shows it in its header -->
+  <div class="page-actions page-toolbar">
+    <button class="btn" type="button" id="md-discover">{{t:discover}}</button>
+    <button class="btn" type="button" id="md-cloud-open">{{t:cloud.title}}</button>
+    <button class="btn btn-primary" type="button" id="md-add-open">{{t:add.title}}</button>
   </div>
   <div class="banner banner-warn" id="md-reauth" role="status" hidden>{{t:cloud.reauth}}</div>
   <div class="md-kpis" id="md-kpis"></div>

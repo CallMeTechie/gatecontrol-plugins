@@ -75,12 +75,15 @@ test('a snapshot that is not a smarthome snapshot is refused, nothing changes', 
 
 test('render: main page, rules page and portal tab in both languages, texts escaped, context as safe JSON', () => withHost({}, async (host) => {
   const main = (await host.render({ view: 'page', page: 'main', lang: 'de' })).html;
-  assert.match(main, /<h1 class="page-title">Smart Home<\/h1>/);
+  // no own page title (GateControl shows it in its header); the actions stay
+  assert.doesNotMatch(main, /<h1|page-title|page-eyebrow|page-sub/);
+  assert.match(main, /id="sh-connect-open"/);
   assert.match(main, /id="sh-connect-modal"/);
   assert.match(main, /window\.SH_CTX=\{"lang":"de","view":"page","page":"main","loggedIn":true/);
   assert.doesNotMatch(main.split('window.SH_CTX=')[1].split(';</script>')[0], /</, 'no "<" inside the JSON island');
   const rules = (await host.render({ view: 'page', page: 'rules', lang: 'en' })).html;
-  assert.match(rules, /<h1 class="page-title">Logic Chains<\/h1>/);
+  assert.doesNotMatch(rules, /<h1|page-title|page-eyebrow|page-sub/);
+  assert.match(rules, /id="shr-new"/);
   assert.match(rules, /id="shr-modal"/);
   const portal = (await host.render({ view: 'portal', page: null, lang: 'de', loggedIn: false, user: { ...ADA, portal: true } })).html;
   assert.match(portal, /id="pt-sh-tiles"/);

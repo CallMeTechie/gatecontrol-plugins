@@ -1,18 +1,12 @@
 <main class="sh-page">
-  <div class="page-header">
-    <div>
-      <div class="page-eyebrow">{{t:eyebrow}}</div>
-      <h1 class="page-title">{{t:title}}</h1>
-      <div class="page-sub">{{t:subtitle}}</div>
-    </div>
-    <div class="page-actions">
-      <select id="sh-gateway-select" class="form-select" aria-label="Gateway"></select>
-      <button class="btn" type="button" id="sh-test">{{t:test}}</button>
-      <button class="btn" type="button" id="sh-sync">{{t:sync}}</button>
-      <button class="btn" type="button" id="sh-edit">{{t:gateway.edit}}</button>
-      <button class="btn" type="button" data-nav="rules">{{t:rules.title}}</button>
-      <button class="btn btn-primary" type="button" id="sh-connect-open">{{t:connect}}</button>
-    </div>
+  <!-- no page title: GateControl shows it in its header -->
+  <div class="page-actions page-toolbar">
+    <select id="sh-gateway-select" class="form-select" aria-label="Gateway"></select>
+    <button class="btn" type="button" id="sh-test">{{t:test}}</button>
+    <button class="btn" type="button" id="sh-sync">{{t:sync}}</button>
+    <button class="btn" type="button" id="sh-edit">{{t:gateway.edit}}</button>
+    <button class="btn" type="button" data-nav="rules">{{t:rules.title}}</button>
+    <button class="btn btn-primary" type="button" id="sh-connect-open">{{t:connect}}</button>
   </div>
   <div class="sh-gwinfo" id="sh-gwinfo"></div>
   <div class="sh-test-result" id="sh-test-result" role="status" hidden></div>

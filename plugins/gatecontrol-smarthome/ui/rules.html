@@ -1,16 +1,10 @@
 <main class="sh-page">
-  <div class="page-header">
-    <div>
-      <div class="page-eyebrow">{{t:eyebrow}}</div>
-      <h1 class="page-title">{{t:rules.title}}</h1>
-      <div class="page-sub">{{t:rules.subtitle}}</div>
-    </div>
-    <div class="page-actions">
-      <select id="shr-gateway" class="form-select" aria-label="{{t:rules.gateway}}"></select>
-      <button class="btn" type="button" data-nav="main">{{t:rules.back}}</button>
-      <button class="btn" type="button" id="shr-gateway-count">{{t:rules.load_count}}</button>
-      <button class="btn btn-primary" type="button" id="shr-new">{{t:rules.new}}</button>
-    </div>
+  <!-- no page title: GateControl shows it in its header -->
+  <div class="page-actions page-toolbar">
+    <select id="shr-gateway" class="form-select" aria-label="{{t:rules.gateway}}"></select>
+    <button class="btn" type="button" data-nav="main">{{t:rules.back}}</button>
+    <button class="btn" type="button" id="shr-gateway-count">{{t:rules.load_count}}</button>
+    <button class="btn btn-primary" type="button" id="shr-new">{{t:rules.new}}</button>
   </div>
   <div id="shr-limit" class="banner banner-warn" role="status" hidden></div>
   <div id="shr-count-hint" class="banner" hidden></div>

@@ -86,13 +86,16 @@ test('a session token the host cannot store is dropped (new login on the next sy
 
 test('render: page and portal section in both languages, texts escaped, context as safe JSON, no external resources', () => withHost({}, async (host) => {
   const main = (await host.render({ view: 'page', page: 'main', lang: 'de' })).html;
-  assert.match(main, /<h1 class="page-title">Fahrzeuge<\/h1>/);
+  // no own page title (GateControl shows it in its header); the section headings stay
+  assert.doesNotMatch(main, /<h1|page-title|page-eyebrow|page-sub/);
+  assert.match(main, /<h2 class="sk-h2">Škoda-Konten<\/h2>/);
   assert.match(main, /id="sk-account-modal"/);
   assert.match(main, /id="sk-spin-modal"/);
   assert.match(main, /window\.SK_CTX=\{"lang":"de","view":"page","page":"main","loggedIn":true/);
   assert.doesNotMatch(main.split('window.SK_CTX=')[1].split(';</script>')[0], /</, 'no "<" inside the JSON island');
   const en = (await host.render({ view: 'page', page: 'main', lang: 'en' })).html;
-  assert.match(en, /<h1 class="page-title">Vehicles<\/h1>/);
+  assert.doesNotMatch(en, /<h1|page-title/);
+  assert.match(en, /<h2 class="sk-h2">Vehicles<\/h2>/);
   const portal = (await host.render({ view: 'portal', page: null, section: 'skoda', lang: 'de', loggedIn: false, user: { ...ADA, portal: true } })).html;
   assert.match(portal, /id="pt-sk-list"/);
   assert.match(portal, /"view":"portal","page":null,"loggedIn":false/);

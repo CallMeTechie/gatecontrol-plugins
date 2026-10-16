@@ -3,10 +3,6 @@
 :root{--surface-3:var(--surface-2);--faint:var(--muted)}
 body{padding:2px 2px 24px}
 [hidden]{display:none!important}
-.page-header{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:20px}
-.page-eyebrow{font-size:11px;text-transform:uppercase;letter-spacing:.09em;color:var(--muted);font-weight:700;margin-bottom:6px}
-.page-title{font-size:26px;font-weight:800;margin:0;line-height:1.15}
-.page-sub{color:var(--muted);font-size:13.5px;margin-top:6px;max-width:640px}
 .page-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:36px;padding:0 14px;border-radius:10px;border:1px solid var(--line-2);background:transparent;color:var(--text);font:600 13px var(--font);cursor:pointer;text-decoration:none}
 .btn:hover{border-color:var(--accent)}
@@ -41,6 +37,10 @@ body{padding:2px 2px 24px}
 .sk-poll{font-size:12px;font-weight:700;color:var(--muted)}
 .sk-poll-input{width:84px!important}
 .sk-h2{font-size:16px;font-weight:800;margin:22px 0 12px}
+.sk-h2:first-child{margin-top:0}
+/* a section heading with its actions on the right (the accounts: poll interval, add) */
+.sk-section-head{display:flex;align-items:center;justify-content:space-between;gap:10px 16px;flex-wrap:wrap;margin-bottom:12px}
+.sk-section-head .sk-h2{margin:0}
 /* accounts */
 .sk-accounts{display:flex;flex-direction:column;gap:6px}
 .sk-account{display:flex;align-items:center;flex-wrap:wrap;gap:8px 10px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface)}
@@ -49,6 +49,8 @@ body{padding:2px 2px 24px}
 .sk-badge[data-status="ok"]{color:var(--good);border-color:var(--good)}
 .sk-badge[data-status="login_failed"],.sk-badge[data-status="error"]{color:var(--crit);border-color:var(--crit)}
 .sk-badge[data-status="rate_limited"]{color:var(--warn);border-color:var(--warn)}
+.sk-badge[data-status="spin_rejected"]{color:var(--crit);border-color:var(--crit)}
+.sk-account-warn{flex-basis:100%;font-size:12.5px;color:var(--crit)}
 /* vehicles */
 .sk-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:16px}
 .sk-card{border:1px solid var(--line);border-radius:14px;padding:16px;background:var(--surface);min-width:0}

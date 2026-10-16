@@ -5,7 +5,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { withHost, asAdmin, connected, VIN } = require('./helpers');
+const { withHost, asAdmin, asPortal, connected, VIN, ADA } = require('./helpers');
 
 const cmd = (host, id, action, args) => asAdmin(host, 'POST', `/vehicles/${id}/command`, { action, args });
 const last = (cloud) => cloud.commands.at(-1);
@@ -56,6 +56,96 @@ test('lock/unlock need the S-PIN; 5 attempts per 15 minutes', () => withHost({},
   assert.equal(limited.status, 429);
   assert.equal(limited.json.code, 'SKODA_COMMAND_RATE_LIMIT');
   assert.ok(!host.logs.some((l) => l.message.includes('4711')), 'the S-PIN is never logged');
+}));
+
+// ─── A refused S-PIN is never sent again ─────────
+const REFUSED = { status: 403, body: { errorCode: 'SPIN_INVALID', message: 'The S-PIN is not valid.' } };
+const spinCalls = (cloud) => cloud.calls.filter((c) => c.url.includes('/vehicle-access/')).length;
+const account = async (host) => (await asAdmin(host, 'GET', '/')).json.accounts[0];
+
+test('a lock Škoda refuses marks the stored S-PIN: nothing is sent until a new S-PIN is saved', () => withHost({}, async (host, cloud) => {
+  const { accountId, vehicleId } = await connected(host, cloud);
+  await asAdmin(host, 'PUT', `/vehicles/${vehicleId}/owners`, { user_ids: [ADA.id] });
+  await asAdmin(host, 'PUT', `/accounts/${accountId}/spin`, { spin: '9876' }); // e.g. the bank PIN
+  assert.equal((await account(host)).spin_rejected, false);
+  const answers = [];
+  const keep = (r) => { answers.push(r); return r; };
+
+  // first lock: Škoda refuses (403) → the answer says so, the S-PIN is marked
+  cloud.fail['/vehicle-access/'] = REFUSED;
+  let r = keep(await cmd(host, vehicleId, 'lock', {}));
+  assert.equal(r.status, 502);
+  assert.equal(r.json.code, 'SKODA_API_ERROR');
+  assert.equal(r.json.error, 'Škoda hat den Befehl abgelehnt (HTTP 403) – bitte die S-PIN im Konto prüfen und neu eingeben.');
+  assert.equal(spinCalls(cloud), 1);
+  const acc = keep(await account(host));
+  assert.equal(acc.has_spin, true);
+  assert.equal(acc.spin_rejected, true);
+  assert.ok(host.logs.some((l) => l.level === 'warn' && l.message.includes('refused the stored S-PIN') && l.message.includes('HTTP 403')));
+
+  // from now on nothing reaches the cloud: admin, portal and app answer at once
+  delete cloud.fail['/vehicle-access/'];
+  const MSG = 'Škoda hat die gespeicherte S-PIN abgelehnt – bitte die S-PIN im Konto neu eingeben.';
+  for (const action of ['lock', 'unlock']) {
+    r = keep(await cmd(host, vehicleId, action, {}));
+    assert.deepEqual([r.status, r.json.code, r.json.error], [409, 'SKODA_SPIN_REJECTED', MSG], action);
+  }
+  r = keep(await asPortal(host, ADA, 'POST', `/portal/vehicles/${vehicleId}/command`, { action: 'lock', args: {} }));
+  assert.deepEqual([r.status, r.json.code, r.json.error], [409, 'SKODA_SPIN_REJECTED', MSG]);
+  const en = keep(await host.request({ method: 'POST', path: `/vehicles/${vehicleId}/command`, body: { action: 'lock', args: {} }, user: { id: 1, name: 'admin', role: 'admin' }, lang: 'en' }));
+  assert.equal(en.json.error, 'Škoda refused the stored S-PIN – please re-enter the S-PIN in the account.');
+  // the app's lock stays listed and answers with the message
+  const qa = keep(await host.quickActions(ADA));
+  assert.ok(qa.some((a) => a.id === `lock:${vehicleId}`), 'the lock stays listed');
+  r = keep(await host.runQuickAction(ADA, `lock:${vehicleId}`));
+  assert.deepEqual([r.status, r.body.ok, r.body.message], [200, false, MSG]);
+  assert.equal(spinCalls(cloud), 1, 'nothing more was sent to Škoda');
+  // other commands are not affected
+  assert.equal((await cmd(host, vehicleId, 'ac_stop', {})).status, 200);
+
+  // a new S-PIN clears the mark (nothing is sent when saving); the lock goes to the cloud again
+  const before = cloud.calls.length;
+  r = keep(await asAdmin(host, 'PUT', `/accounts/${accountId}/spin`, { spin: '4711' }));
+  assert.equal(r.status, 200);
+  assert.equal(cloud.calls.length, before, 'saving the S-PIN talks to nobody');
+  assert.equal(keep(await account(host)).spin_rejected, false);
+  assert.equal(keep(await cmd(host, vehicleId, 'lock', {})).status, 200);
+  assert.deepEqual(last(cloud), { method: 'POST', path: `/api/v1/vehicle-access/${VIN}/lock`, body: { currentSpin: '4711' } });
+
+  // the S-PIN never appears in a log line or an answer
+  for (const pin of ['9876', '4711']) {
+    assert.ok(!host.logs.some((l) => l.message.includes(pin)), `${pin} not logged`);
+    assert.ok(!answers.some((a) => JSON.stringify(a).includes(pin)), `${pin} not answered`);
+  }
+}));
+
+test('a refused S-PIN command still counts towards the 5 attempts per 15 minutes', () => withHost({}, async (host, cloud) => {
+  const { accountId, vehicleId } = await connected(host, cloud);
+  await asAdmin(host, 'PUT', `/accounts/${accountId}/spin`, { spin: '9876' });
+  cloud.fail['/vehicle-access/'] = REFUSED;
+  assert.equal((await cmd(host, vehicleId, 'lock', {})).status, 502); // attempt 1
+  delete cloud.fail['/vehicle-access/'];
+  // refused locally while marked: no attempt used
+  for (let i = 0; i < 3; i++) assert.equal((await cmd(host, vehicleId, 'lock', {})).json.code, 'SKODA_SPIN_REJECTED');
+  await asAdmin(host, 'PUT', `/accounts/${accountId}/spin`, { spin: '4711' });
+  for (let i = 0; i < 4; i++) assert.equal((await cmd(host, vehicleId, 'lock', {})).status, 200, `attempt ${i + 2}`);
+  assert.equal((await cmd(host, vehicleId, 'lock', {})).json.code, 'SKODA_COMMAND_RATE_LIMIT');
+}));
+
+test('401, 429 and 5xx on lock/unlock do not mark the S-PIN', () => withHost({}, async (host, cloud) => {
+  const { accountId, vehicleId } = await connected(host, cloud);
+  await asAdmin(host, 'PUT', `/accounts/${accountId}/spin`, { spin: '4711' });
+  for (const [status, code] of [[401, 'SKODA_UNAUTHORIZED'], [429, 'SKODA_RATE_LIMITED'], [500, 'SKODA_API_ERROR'], [503, 'SKODA_API_ERROR']]) {
+    cloud.fail['/vehicle-access/'] = { status, body: { errorCode: 'X', message: 'nope' } };
+    const r = await cmd(host, vehicleId, status === 503 ? 'unlock' : 'lock', {});
+    assert.equal(r.json.code, code, String(status));
+    assert.ok(!/S-PIN/.test(r.json.error), `${status}: no S-PIN hint`);
+    assert.equal((await account(host)).spin_rejected, false, String(status));
+  }
+  delete cloud.fail['/vehicle-access/'];
+  const n = spinCalls(cloud);
+  assert.equal((await cmd(host, vehicleId, 'lock', {})).status, 200, 'still sent to the cloud');
+  assert.equal(spinCalls(cloud), n + 1);
 }));
 
 test('no session → SKODA_NO_SESSION (typed 409, nothing sent)', () => withHost({}, async (host, cloud) => {
