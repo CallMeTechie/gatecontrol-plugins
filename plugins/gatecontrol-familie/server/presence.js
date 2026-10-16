@@ -10,7 +10,8 @@
 //                                          shared, state, home, since }], me: { share }, home: [userId] }
 //                                          state: 'home' | 'away' | 'unknown' (shares, nothing reported yet) | 'not_shared'
 //                                          presence (1.3.0, the ring): 'home' | 'away' | 'unknown' | null (not shared)
-//   GET  presence/actions                  the quick actions of the other plugins available to the caller (gc.actions.list)
+//   GET  presence/actions                  the quick actions of the other plugins available to the caller (gc.actions.list;
+//                                          GateControl ≥ 1.173.0: each with device, verbs { on, off } | null, targets, state)
 //   GET  presence/rules                    parents: { rules, log }       GET presence/log (addition): { log }
 //   POST presence/rules    PATCH|DELETE presence/rules/<id>                parents
 //
@@ -22,15 +23,25 @@
 //            person_home / person_away   { userId } comes home / leaves
 //   conditions (optional)  time: local window (may span midnight, from inclusive, to exclusive);
 //            afterSunset: the sun is down at the home (settings lat / lon) — ignored without a location
-//   actions  { type: 'quick_action', plugin, id, title? } — runs with gc.actions.run as the rule's owner
-//            (the person who last set the actions; on the admin page the administrator)
+//   actions  { type: 'quick_action', plugin, id, title?, state } — runs with gc.actions.run as the rule's owner
+//            (the person who last set the actions; on the admin page the administrator). 1.4.0: `state`
+//            'on' | 'off' is the target state of a toggle (null for a button), checked against the owner's
+//            gc.actions.list when the actions are set: a toggle without one → 400 state_required, one on a
+//            button → 400 invalid (an action the owner does not have is kept as given). Stored with it:
+//            `kind` ('toggle' | 'button' | null = not known) and `verb` (the toggle's word for the state,
+//            „Verriegeln“). The run passes `state` (GateControl ≥ 1.173.0: the plugin sets that state, a
+//            locked car is never unlocked). A toggle stored without a state (rules made before 1.4.0) is
+//            NOT run: result { ok: false, error: 'needs_target' }; rule views mark it `needsTarget: true`
+//            (the pages: „Zielzustand fehlt – Regel bearbeiten“).
 //            { type: 'notify', to: 'parents' | 'all' | [userId], text? } — push topic presence ({name} = the person)
 // A rule fires once per transition and at most once per 10 minutes; a
 // throttled "all away" is retried while everyone stays away, a throttled
 // arrival or departure is dropped. Each run is logged with the result of every
-// action (the last 50 are shown, rows kept 90 days). In a rule view every
-// quick action carries `available`: false when the owner no longer has it
-// (the pages show "Aktion nicht mehr verfügbar"), null when unknown.
+// action (the last 50 are shown, rows kept 90 days; a quick action's result carries
+// its state, verb and `unchanged`: the plugin found the state already set). In a
+// rule view every quick action carries `available`: false when the owner no
+// longer has it (the pages show "Aktion nicht mehr verfügbar"), null when
+// unknown; `needsTarget` and `verb` (the owner's current word for the state).
 
 const store = require('./store');
 const tz = require('./tz');
@@ -53,6 +64,7 @@ const PLUGIN_ID_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const ACTION_ID_RE = /^[A-Za-z0-9:._-]{1,64}$/;
 const DAY = 86400000;
 const SELF = 'gatecontrol-familie';
+const STATES = ['on', 'off'];
 
 // ─── state ──────────────────────────────────────
 
@@ -255,17 +267,31 @@ function recipients(action, fam, triggerUser) {
  * notifications into `pushes`; one log row per run.
  */
 async function execute(gc, fam, cfg, now, runs, pushes) {
+  const lists = new Map(); // ownerId → Promise<Map('plugin|id' → action)> (only for actions stored without a known kind)
+  const listOf = (owner) => {
+    if (!lists.has(owner)) lists.set(owner, gc.actions.list({ userId: owner, lang: cfg.lang }).then((l) => new Map(l.map((x) => [`${x.plugin}|${x.id}`, x]))));
+    return lists.get(owner);
+  };
   for (const run of runs) {
     const { rule } = run;
     const person = run.userId ? fam.byId.get(run.userId) : null;
     const results = [];
     for (const a of rule.actions) {
       if (a.type === 'quick_action') {
-        const base = { type: 'quick_action', plugin: a.plugin, id: a.id, title: a.title || null };
+        const state = STATES.includes(a.state) ? a.state : null;
+        const base = { type: 'quick_action', plugin: a.plugin, id: a.id, title: a.title || null, state, verb: (state && a.verb) || null };
         if (!gc.actions || typeof gc.actions.run !== 'function') { results.push({ ...base, ok: false, message: null, error: 'unavailable' }); continue; }
         try {
-          const x = await gc.actions.run({ userId: rule.ownerId, plugin: a.plugin, id: a.id, lang: cfg.lang });
-          results.push({ ...base, ok: !!(x && x.ok === true), message: (x && x.message) || null, error: (x && x.error) || (x && x.ok === true ? null : 'failed') });
+          // without a state: a button runs; a toggle (or an action stored before 1.4.0 that the owner lists as one) needs a target first
+          if (!state && a.kind !== 'button') {
+            const listed = a.kind === 'toggle' ? a : (await listOf(rule.ownerId)).get(`${a.plugin}|${a.id}`);
+            if (listed && listed.kind === 'toggle') { results.push({ ...base, ok: false, message: null, error: 'needs_target' }); continue; }
+          }
+          const x = await gc.actions.run({ userId: rule.ownerId, plugin: a.plugin, id: a.id, lang: cfg.lang, ...(state ? { state } : {}) });
+          results.push({
+            ...base, ok: !!(x && x.ok === true), message: (x && x.message) || null, error: (x && x.error) || (x && x.ok === true ? null : 'failed'),
+            unchanged: !!(x && x.unchanged === true),
+          });
         } catch (e) {
           results.push({ ...base, ok: false, message: null, error: hostCode(e) });
         }
@@ -317,7 +343,8 @@ function parseActions(v, fam) {
       if (typeof a.id !== 'string' || !ACTION_ID_RE.test(a.id)) throw fail('invalid', { field: `${at}.id` });
       let title;
       try { title = optText(a.title, NAME_MAX); } catch { throw fail('invalid', { field: `${at}.title` }); }
-      return { type: 'quick_action', plugin: a.plugin, id: a.id, title: title || null };
+      if (a.state != null && !STATES.includes(a.state)) throw fail('invalid', { field: `${at}.state` });
+      return { type: 'quick_action', plugin: a.plugin, id: a.id, title: title || null, state: a.state == null ? null : a.state, kind: null, verb: null };
     }
     if (a.type === 'notify') {
       let to;
@@ -353,24 +380,61 @@ function ruleFields(body, cur, fam) {
   return f;
 }
 
-/** Which quick actions each owner has right now: Map ownerId → Set('plugin|id') | null (unknown). */
+/** The quick actions `owner` has right now: Map 'plugin|id' → listed action, or null when unknown. */
+async function ownerActions(gc, owner, lang) {
+  if (!gc.actions || typeof gc.actions.list !== 'function') return null;
+  try {
+    return new Map((await gc.actions.list({ userId: owner, lang })).map((a) => [`${a.plugin}|${a.id}`, a]));
+  } catch { return null; }
+}
+
+/**
+ * The quick actions of a rule being saved, checked against what the owner has (1.4.0): a toggle needs
+ * a target state (400 state_required), a button takes none (400 invalid); kind and verb stored with
+ * them. An action the owner does not have (or a list the host refuses) is kept as given, kind unknown.
+ */
+async function checkTargets(gc, actions, owner, lang) {
+  if (!actions.some((a) => a.type === 'quick_action')) return actions;
+  const listed = await ownerActions(gc, owner, lang);
+  return actions.map((a, i) => {
+    if (a.type !== 'quick_action') return a;
+    const x = listed && listed.get(`${a.plugin}|${a.id}`);
+    if (!x) return { ...a, kind: null, verb: null };
+    if (x.kind === 'toggle') {
+      if (!a.state) throw fail('state_required', { field: `actions.${i}.state` });
+      return { ...a, kind: 'toggle', verb: (x.verbs && x.verbs[a.state]) || null };
+    }
+    if (a.state) throw fail('invalid', { field: `actions.${i}.state` });
+    return { ...a, kind: 'button', verb: null };
+  });
+}
+
+/** Which quick actions each owner has right now: Map ownerId → Map('plugin|id' → action) | null (unknown). */
 async function availability(gc, rules, lang) {
   const out = new Map();
   for (const owner of new Set(rules.filter((x) => x.actions.some((a) => a.type === 'quick_action')).map((x) => x.ownerId))) {
-    if (!gc.actions || typeof gc.actions.list !== 'function') { out.set(owner, null); continue; }
-    try {
-      out.set(owner, new Set((await gc.actions.list({ userId: owner, lang })).map((a) => `${a.plugin}|${a.id}`)));
-    } catch { out.set(owner, null); }
+    out.set(owner, await ownerActions(gc, owner, lang));
   }
   return out;
 }
 
+/** A rule's quick action as the pages see it: available, needsTarget (a toggle without a state), the current verb. */
+function actionView(a, listed) {
+  const x = listed ? listed.get(`${a.plugin}|${a.id}`) : null;
+  const state = STATES.includes(a.state) ? a.state : null;
+  const kind = x ? x.kind : (a.kind || null);
+  return {
+    ...a, state, kind, verb: state ? ((x && x.verbs && x.verbs[state]) || a.verb || null) : null,
+    available: listed ? !!x : null, needsTarget: !state && kind === 'toggle',
+  };
+}
+
 function ruleView(rule, fam, avail, last) {
-  const set = avail.get(rule.ownerId);
+  const listed = avail.get(rule.ownerId);
   const owner = fam.byId.get(rule.ownerId) || fam.users.get(rule.ownerId);
   return {
     id: rule.id, name: rule.name, trigger: rule.trigger, userId: rule.userId, graceMinutes: rule.graceMinutes, conditions: rule.conditions,
-    actions: rule.actions.map((a) => (a.type === 'quick_action' ? { ...a, available: set ? set.has(`${a.plugin}|${a.id}`) : null } : a)),
+    actions: rule.actions.map((a) => (a.type === 'quick_action' ? actionView(a, listed) : a)),
     active: rule.active, ownerId: rule.ownerId, ownerName: owner ? owner.name : null, lastRunAt: iso(rule.lastRunAt),
     lastResult: last ? { at: iso(last.at), ok: !!last.ok } : null, createdAt: iso(rule.createdAt), updatedAt: iso(rule.updatedAt),
   };
@@ -399,6 +463,7 @@ async function listRules(gc, ctx) {
 async function createRule(gc, ctx, body) {
   if ((await store.one(gc, 'SELECT COUNT(*) AS n FROM presence_rules')).n >= MAX_RULES) throw fail('too_many');
   const f = ruleFields(body, null, ctx.fam);
+  f.actions = await checkTargets(gc, f.actions, ctx.ownerId, ctx.lang);
   const res = await store.run(gc, `INSERT INTO presence_rules (name, trigger_type, user_id, grace_minutes, conditions_json, actions_json, active, owner_id, created_at, updated_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [f.name, f.trigger, f.userId, f.graceMinutes, JSON.stringify(f.conditions), JSON.stringify(f.actions), f.active ? 1 : 0, ctx.ownerId, ctx.now, ctx.now]);
   return { rule: (await rulesView(gc, ctx.fam, ctx.lang, [res.lastInsertRowid]))[0] };
@@ -414,8 +479,9 @@ async function ruleRow(gc, raw) {
 async function updateRule(gc, ctx, raw, body) {
   const cur = await ruleRow(gc, raw);
   const f = ruleFields(body, cur, ctx.fam);
-  // whoever sets the actions owns them: the quick actions run as that person
+  // whoever sets the actions owns them: the quick actions run as that person (and are checked against what they have)
   const owner = body && body.actions !== undefined ? ctx.ownerId : cur.ownerId;
+  if (body && body.actions !== undefined) f.actions = await checkTargets(gc, f.actions, owner, ctx.lang);
   // a changed trigger starts afresh
   const lastKey = f.trigger === cur.trigger ? cur.lastKey : null;
   await store.run(gc, `UPDATE presence_rules SET name = ?, trigger_type = ?, user_id = ?, grace_minutes = ?, conditions_json = ?, actions_json = ?, active = ?, owner_id = ?,

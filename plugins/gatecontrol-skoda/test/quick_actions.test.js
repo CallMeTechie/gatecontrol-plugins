@@ -56,7 +56,7 @@ test('quick actions: the portal\'s controls for the signed-in owner, stored stat
   assert.deepEqual(list.map((a) => a.id), [`climate:${v}`, `charging:${v}`, `windowheat:${v}`, `lock:${v}`], 'no unlock action any more');
   assert.deepEqual(list[3], {
     id: `lock:${v}`, title: 'Locked', subtitle: 'Elroq', icon: LOCKED, kind: 'toggle', state: 'on', confirm: true, confirmWhen: 'off', look: LOOK,
-    device: { id: `v:${v}`, title: 'Elroq', subtitle: null, icon: CAR }, widget: null,
+    device: { id: `v:${v}`, title: 'Elroq', subtitle: null, icon: CAR }, widget: null, verbs: { on: 'Lock', off: 'Unlock' }, targets: true,
   });
   assert.ok(!JSON.stringify(list).includes(VIN) && !JSON.stringify(list).includes('4711'));
   assert.deepEqual(await host.quickActions(BOB), [], 'never another person\'s vehicle');
@@ -85,14 +85,14 @@ test('runQuickAction: toggles send the portal\'s commands and report the state t
   const { accountId, vehicleId: v } = await owned(host, cloud);
   const last = () => cloud.commands.at(-1);
   let r = await host.runQuickAction(ADA, `climate:${v}`);
-  assert.deepEqual(r, { status: 200, body: { ok: true, message: 'Elroq: Klimatisierung wird gestartet', state: 'on', widget: null } });
+  assert.deepEqual(r, { status: 200, body: { ok: true, unchanged: false, message: 'Elroq: Klimatisierung wird gestartet', state: 'on', widget: null } });
   assert.deepEqual(last(), { method: 'POST', path: `/api/v2/air-conditioning/${VIN}/start`, body: { heaterSource: 'ELECTRIC', targetTemperature: { temperatureValue: 22, unitInCar: 'CELSIUS' } } });
   await settle();
   r = await host.runQuickAction(ADA, `charging:${v}`, 'en');
-  assert.deepEqual(r.body, { ok: true, message: 'Elroq: stopping charging', state: 'off', widget: null });
+  assert.deepEqual(r.body, { ok: true, unchanged: false, message: 'Elroq: stopping charging', state: 'off', widget: null });
   assert.equal(last().path, `/api/v1/charging/${VIN}/stop`);
   r = await host.runQuickAction(ADA, `windowheat:${v}`);
-  assert.deepEqual(r.body, { ok: true, message: 'Elroq: Scheibenheizung wird eingeschaltet', state: 'on', widget: null });
+  assert.deepEqual(r.body, { ok: true, unchanged: false, message: 'Elroq: Scheibenheizung wird eingeschaltet', state: 'on', widget: null });
   assert.equal(last().path, `/api/v2/air-conditioning/${VIN}/start-window-heating`);
   await asAdmin(host, 'PUT', `/accounts/${accountId}/spin`, { spin: '4711' });
   await settle();
@@ -106,14 +106,14 @@ test('runQuickAction: the lock toggle unlocks a locked vehicle and locks an unlo
   // locked (the stored state) → unlock
   assert.deepEqual([(await lock()).title, (await lock()).state, (await lock()).icon], ['Verriegelt', 'on', LOCKED]);
   let r = await host.runQuickAction(ADA, `lock:${v}`);
-  assert.deepEqual(r.body, { ok: true, message: 'Elroq wird entriegelt', state: 'off', widget: null });
+  assert.deepEqual(r.body, { ok: true, unchanged: false, message: 'Elroq wird entriegelt', state: 'off', widget: null });
   assert.deepEqual(last(), { method: 'POST', path: `/api/v1/vehicle-access/${VIN}/unlock`, body: { currentSpin: '4711' } });
   await settle();
   // unlocked → lock
   await patchState(host, v, { locked: false });
   assert.deepEqual([(await lock('en')).title, (await lock()).state, (await lock()).icon, (await lock()).look], ['Unlocked', 'off', UNLOCKED, LOOK]);
   r = await host.runQuickAction(ADA, `lock:${v}`, 'en');
-  assert.deepEqual(r.body, { ok: true, message: 'Elroq is being locked', state: 'on', widget: null });
+  assert.deepEqual(r.body, { ok: true, unchanged: false, message: 'Elroq is being locked', state: 'on', widget: null });
   assert.deepEqual(last(), { method: 'POST', path: `/api/v1/vehicle-access/${VIN}/lock`, body: { currentSpin: '4711' } });
   await settle();
   // unknown → lock, the toggle without a state (the lock command's expected state is over)
@@ -122,7 +122,7 @@ test('runQuickAction: the lock toggle unlocks a locked vehicle and locks an unlo
   const unknown = await lock();
   assert.deepEqual([unknown.title, unknown.state, unknown.icon, unknown.confirm, unknown.confirmWhen], ['Schloss', null, LOCKED, true, 'off']);
   r = await host.runQuickAction(ADA, `lock:${v}`);
-  assert.deepEqual(r.body, { ok: true, message: 'Elroq wird verriegelt', state: 'on', widget: null });
+  assert.deepEqual(r.body, { ok: true, unchanged: false, message: 'Elroq wird verriegelt', state: 'on', widget: null });
   assert.equal(last().path, `/api/v1/vehicle-access/${VIN}/lock`);
   await settle();
   // old "Entriegeln" pins: not listed any more → 404; the hook itself does not know the id either
@@ -130,6 +130,71 @@ test('runQuickAction: the lock toggle unlocks a locked vehicle and locks an unlo
   assert.equal((await host.runQuickAction(ADA, `unlock:${v}`)).status, 404);
   assert.deepEqual(await direct(host, ADA, `unlock:${v}`), { ok: false, message: 'Diese Aktion gibt es nicht mehr.' });
   assert.equal(cloud.commands.length, n);
+}));
+
+test('target states (GateControl ≥ 1.173.0): every toggle declares its verbs and honours a target', () => withHost({}, async (host, cloud) => {
+  const { accountId, vehicleId: v } = await owned(host, cloud);
+  await asAdmin(host, 'PUT', `/accounts/${accountId}/spin`, { spin: '4711' });
+  const verbs = async (lang) => (await host.quickActions(ADA, lang)).map((a) => [a.id.split(':')[0], a.verbs, a.targets]);
+  assert.deepEqual(await verbs('de'), [
+    ['climate', { on: 'Einschalten', off: 'Ausschalten' }, true], ['charging', { on: 'Laden starten', off: 'Laden stoppen' }, true],
+    ['windowheat', { on: 'Einschalten', off: 'Ausschalten' }, true], ['lock', { on: 'Verriegeln', off: 'Entriegeln' }, true],
+  ]);
+  assert.deepEqual(await verbs('en'), [
+    ['climate', { on: 'Turn on', off: 'Turn off' }, true], ['charging', { on: 'Start charging', off: 'Stop charging' }, true],
+    ['windowheat', { on: 'Turn on', off: 'Turn off' }, true], ['lock', { on: 'Lock', off: 'Unlock' }, true],
+  ]);
+  const last = () => cloud.commands.at(-1);
+  const run = async (id, state, lang = 'de') => { const r = await host.runQuickAction(ADA, `${id}:${v}`, lang, { state }); await settle(); return r; };
+  // the vehicle is locked: target on → lock again (never unlock), target off → unlock
+  let r = await run('lock', 'on');
+  assert.deepEqual(r.body, { ok: true, message: 'Elroq wird verriegelt', state: 'on', widget: null, unchanged: false });
+  assert.deepEqual(last(), { method: 'POST', path: `/api/v1/vehicle-access/${VIN}/lock`, body: { currentSpin: '4711' } });
+  r = await run('lock', 'on');
+  assert.equal(last().path, `/api/v1/vehicle-access/${VIN}/lock`, 'twice: lock twice');
+  r = await run('lock', 'off', 'en');
+  assert.deepEqual(r.body, { ok: true, message: 'Elroq is being unlocked', state: 'off', widget: null, unchanged: false });
+  assert.equal(last().path, `/api/v1/vehicle-access/${VIN}/unlock`);
+  // the state the command aims for is what the apps show until the vehicle reports (as without a target)
+  assert.equal((await host.quickActions(ADA)).find((a) => a.id === `lock:${v}`).state, 'off');
+  r = await run('lock', 'off');
+  assert.equal(last().path, `/api/v1/vehicle-access/${VIN}/unlock`, 'unlocked (expected) + target off: unlock again');
+  // charging is on: target on → start (again), target off → stop; climate / window heating are off: off → stop
+  await run('charging', 'on');
+  assert.equal(last().path, `/api/v1/charging/${VIN}/start`);
+  await run('climate', 'off');
+  assert.equal(last().path, `/api/v2/air-conditioning/${VIN}/stop`);
+  await run('climate', 'on');
+  assert.equal(last().path, `/api/v2/air-conditioning/${VIN}/start`);
+  await run('windowheat', 'off');
+  assert.equal(last().path, `/api/v2/air-conditioning/${VIN}/stop-window-heating`);
+  // another plugin's automation (a Familie rule): the lock is titled „Schloss“, the target reaches the command
+  control.reset();
+  const auto = { automation: true, via: 'gatecontrol-familie' };
+  r = await host.runQuickAction(ADA, `lock:${v}`, 'de', { ...auto, state: 'on' });
+  assert.deepEqual(r.body, { ok: true, message: 'Elroq wird verriegelt', state: 'on', widget: null, unchanged: false });
+  assert.equal(last().path, `/api/v1/vehicle-access/${VIN}/lock`);
+  await settle();
+  // without a target: as before (switches over)
+  r = await host.runQuickAction(ADA, `lock:${v}`);
+  assert.equal(last().path, `/api/v1/vehicle-access/${VIN}/unlock`);
+  await settle();
+  // the hook itself: anything but 'on' | 'off' is no target (window heating, expected off → switched on)
+  const out = await host.plugin.runQuickAction({ user: { portal: true, loggedIn: true, app: true, ...ADA }, lang: 'de', id: `windowheat:${v}`, target: 'sideways' }, host.gc);
+  assert.deepEqual([out.ok, out.state, last().path], [true, 'on', `/api/v2/air-conditioning/${VIN}/start-window-heating`]);
+  await settle();
+}));
+
+test('the lock for another plugin\'s automation is titled „Schloss“ in every state; the apps keep the state titles', () => withHost({}, async (host, cloud) => {
+  const { accountId, vehicleId: v } = await owned(host, cloud);
+  await asAdmin(host, 'PUT', `/accounts/${accountId}/spin`, { spin: '4711' });
+  const titleFor = async (viewer, lang) => {
+    const list = viewer === 'app' ? await host.quickActions(ADA, lang) : await host.plugin.quickActions({ user: { id: ADA.id, name: ADA.name, role: ADA.role, portal: true, loggedIn: true, automation: true, via: 'gatecontrol-familie' }, lang }, host.gc);
+    return list.find((a) => a.id === `lock:${v}`).title;
+  };
+  assert.deepEqual([await titleFor('app'), await titleFor('auto'), await titleFor('auto', 'en')], ['Verriegelt', 'Schloss', 'Lock']);
+  await patchState(host, v, { locked: false });
+  assert.deepEqual([await titleFor('app'), await titleFor('auto')], ['Entriegelt', 'Schloss']);
 }));
 
 test('quick actions: the vehicle\'s device and its widget on the climate action', () => {
@@ -265,7 +330,7 @@ test('runQuickAction: a command queued past the time budget answers "on its way"
   const started = Date.now();
   let r = await host.runQuickAction(ADA, `lock:${v}`);
   assert.ok(Date.now() - started < 1000);
-  assert.deepEqual(r.body, { ok: true, message: 'Elroq: Befehl unterwegs – der Status folgt', state: null, widget: null });
+  assert.deepEqual(r.body, { ok: true, unchanged: false, message: 'Elroq: Befehl unterwegs – der Status folgt', state: null, widget: null });
   assert.equal(cloud.commands.length, n, 'still waiting for the account');
   assert.equal((await host.quickActions(ADA)).find((a) => a.id === `lock:${v}`).state, 'on', 'the stored state until the command went through');
   release();
@@ -276,7 +341,7 @@ test('runQuickAction: a command queued past the time budget answers "on its way"
   hold();
   cloud.fail['/vehicle-access/'] = 500;
   r = await host.runQuickAction(ADA, `lock:${v}`, 'en');
-  assert.deepEqual(r.body, { ok: true, message: 'Elroq: command on its way – the status follows', state: null, widget: null });
+  assert.deepEqual(r.body, { ok: true, unchanged: false, message: 'Elroq: command on its way – the status follows', state: null, widget: null });
   assert.ok(!host.logs.some((l) => l.message.includes('quick action failed')));
   release();
   await settle();
@@ -286,7 +351,7 @@ test('runQuickAction: a command queued past the time budget answers "on its way"
   delete cloud.fail['/vehicle-access/'];
   host.plugin._setQuickActionBudgetForTest(null);
   r = await host.runQuickAction(ADA, `windowheat:${v}`);
-  assert.deepEqual(r.body, { ok: true, message: 'Elroq: Scheibenheizung wird eingeschaltet', state: 'on', widget: null });
+  assert.deepEqual(r.body, { ok: true, unchanged: false, message: 'Elroq: Scheibenheizung wird eingeschaltet', state: 'on', widget: null });
 }));
 
 test('runQuickAction: a command Škoda refuses says so with the HTTP status; the log gets Škoda\'s reason', () => withHost({}, async (host, cloud) => {

@@ -4,13 +4,13 @@
     "de": "Familie",
     "en": "Family"
   },
-  "version": "1.3.1",
+  "version": "1.4.0",
   "publisher": "CallMeTechie",
   "description": {
     "de": "Die Familie in der GateControl-App und im Portal: gemeinsame Einkaufslisten (offline nutzbar), Aufgaben mit Erinnerung und Sternen für Kinder, Termine und Geburtstage, Abholen & Fahrten („Wer holt Tim?“), Notfall-Karte, Kinder orten auf Anfrage (das Kind sieht jede Abfrage, endet mit 18), „Bin angekommen“ und SOS, Orts-Erinnerungen, Taschengeld (nur Buchhaltung), Wunschlisten, Haushaltsbuch, Pinnwand & Packlisten, Essensplan, Anwesenheit mit Smart-Home-Regeln (nur mit Zustimmung) und ein Dashboard für ein Wand-Tablet. Alles bleibt auf dem eigenen Server.",
     "en": "The family in the GateControl app and the portal: shared shopping lists (usable offline), tasks with reminders and stars for children, dates and birthdays, pick-ups & rides (“Who picks up Tim?”), an emergency card, locating children on request (the child sees every request, ends at 18), “I’ve arrived” and SOS, place reminders, pocket money (bookkeeping only), wishlists, a household book, pinboard & packing lists, a meal plan, presence with smart home rules (only with consent) and a dashboard for a wall tablet. Everything stays on your own server."
   },
-  "gatecontrol": ">=1.168.0",
+  "gatecontrol": ">=1.173.0",
   "entry": "server/index.js",
   "permissions": {
     "storage": true,

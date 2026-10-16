@@ -110,18 +110,52 @@ test('runQuickAction: a toggle switches the cached state over, a scene is recall
     await own(host, by, ['Stehlampe', 'Wohnzimmer'], [2]);
     const lamp = `light:${by('Stehlampe').id}`;
     let r = await host.runQuickAction(ADA, lamp);
-    assert.deepEqual(r, { status: 200, body: { ok: true, message: 'Stehlampe ausgeschaltet', state: 'off', widget: widget({ value: 'Aus', status: 'Licht', state: 'off', bri: 100 }) } });
+    assert.deepEqual(r, { status: 200, body: { ok: true, unchanged: false, message: 'Stehlampe ausgeschaltet', state: 'off', widget: widget({ value: 'Aus', status: 'Licht', state: 'off', bri: 100 }) } });
     assert.deepEqual([gw.calls.at(-1).method, gw.calls.at(-1).path, gw.calls.at(-1).body], ['PUT', '/api/KEY1234567/lights/3/state', { on: false }]);
     assert.equal((await host.quickActions(ADA)).find((a) => a.id === lamp).state, 'off', 'the list follows at once');
     r = await host.runQuickAction(ADA, lamp, 'en');
-    assert.deepEqual(r.body, { ok: true, message: 'Stehlampe switched on', state: 'on', widget: widget({ value: 100, unit: '%', status: 'Light', state: 'on', bri: 100, lang: 'en' }) });
+    assert.deepEqual(r.body, { ok: true, unchanged: false, message: 'Stehlampe switched on', state: 'on', widget: widget({ value: 100, unit: '%', status: 'Light', state: 'on', bri: 100, lang: 'en' }) });
     assert.deepEqual(gw.calls.at(-1).body, { on: true });
     r = await host.runQuickAction(ADA, `group:${by('Wohnzimmer').id}`);
-    assert.deepEqual(r.body, { ok: true, message: 'Wohnzimmer ausgeschaltet', state: 'off', widget: widget({ value: 'Aus', status: 'Gruppe', state: 'off' }) });
+    assert.deepEqual(r.body, { ok: true, unchanged: false, message: 'Wohnzimmer ausgeschaltet', state: 'off', widget: widget({ value: 'Aus', status: 'Gruppe', state: 'off' }) });
     assert.equal(gw.calls.at(-1).path, '/api/KEY1234567/groups/8/action');
     r = await host.runQuickAction(ADA, `scene:${by('Wohnzimmer · Abend').id}`);
-    assert.deepEqual(r.body, { ok: true, message: 'Szene „Wohnzimmer · Abend“ aktiviert', state: null, widget: null });
+    assert.deepEqual(r.body, { ok: true, unchanged: false, message: 'Szene „Wohnzimmer · Abend“ aktiviert', state: null, widget: null });
     assert.equal(gw.calls.at(-1).path, '/api/KEY1234567/groups/8/scenes/2/recall');
+  });
+});
+
+test('target states (GateControl ≥ 1.173.0): toggles list their verbs, a target sets that state, scenes stay buttons', () => {
+  const gw = fakeDeconz();
+  return withHost({ gateways: [gw] }, async (host) => {
+    const { by } = await connected(host);
+    await own(host, by, ['Stehlampe', 'Wohnzimmer', 'Poolpumpe'], [2]);
+    const list = await host.quickActions(ADA);
+    assert.deepEqual(list.map((a) => [a.id.split(':')[0], a.kind, a.verbs, a.targets]), [
+      ['group', 'toggle', { on: 'Einschalten', off: 'Ausschalten' }, true],
+      ['light', 'toggle', { on: 'Einschalten', off: 'Ausschalten' }, true],
+      ['plug', 'toggle', { on: 'Einschalten', off: 'Ausschalten' }, true],
+      ['scene', 'button', null, false],
+    ]);
+    assert.deepEqual((await host.quickActions(ADA, 'en'))[0].verbs, { on: 'Turn on', off: 'Turn off' });
+    const lamp = `light:${by('Stehlampe').id}`;
+    // the lamp is on: target on → on again (sent, never switched off)
+    let r = await host.runQuickAction(ADA, lamp, 'de', { state: 'on' });
+    assert.deepEqual([r.body.ok, r.body.state, r.body.message, r.body.unchanged], [true, 'on', 'Stehlampe eingeschaltet', false]);
+    assert.deepEqual([gw.calls.at(-1).path, gw.calls.at(-1).body], ['/api/KEY1234567/lights/3/state', { on: true }]);
+    r = await host.runQuickAction(ADA, lamp, 'de', { state: 'off' });
+    assert.deepEqual([r.body.state, gw.calls.at(-1).body], ['off', { on: false }]);
+    r = await host.runQuickAction(ADA, lamp, 'en', { state: 'off' });
+    assert.deepEqual([r.body.state, r.body.message, gw.calls.at(-1).body], ['off', 'Stehlampe switched off', { on: false }], 'off stays off');
+    const pump = `plug:${by('Poolpumpe').id}`;
+    r = await host.runQuickAction(ADA, pump, 'de', { state: 'off' });
+    assert.deepEqual([r.body.state, gw.calls.at(-1).body], ['off', { on: false }]);
+    r = await host.runQuickAction(ADA, `group:${by('Wohnzimmer').id}`, 'de', { state: 'off' });
+    assert.deepEqual([r.body.state, gw.calls.at(-1).path, gw.calls.at(-1).body], ['off', '/api/KEY1234567/groups/8/action', { on: false }]);
+    // a scene takes no state; without a state a toggle switches over as before
+    assert.deepEqual(await host.runQuickAction(ADA, `scene:${by('Wohnzimmer · Abend').id}`, 'de', { state: 'on' }), { status: 400, body: { ok: false, error: 'invalid_state' } });
+    r = await host.runQuickAction(ADA, lamp);
+    assert.deepEqual([r.body.state, gw.calls.at(-1).body], ['on', { on: true }]);
   });
 });
 
@@ -133,15 +167,15 @@ test('runQuickAction with the brightness control: sets the brightness and switch
     const lamp = `light:${by('Stehlampe').id}`;
     const bunt = `light:${by('Bunt').id}`;
     let r = await host.runQuickAction(ADA, lamp, 'de', { control: 'bri', value: 60 });
-    assert.deepEqual(r, { status: 200, body: { ok: true, message: null, state: 'on', widget: widget({ value: 60, unit: '%', status: 'Licht', state: 'on', bri: 60 }) } });
+    assert.deepEqual(r, { status: 200, body: { ok: true, unchanged: false, message: null, state: 'on', widget: widget({ value: 60, unit: '%', status: 'Licht', state: 'on', bri: 60 }) } });
     assert.deepEqual([gw.calls.at(-1).path, gw.calls.at(-1).body], ['/api/KEY1234567/lights/3/state', { on: true, bri: 152 }]);
     assert.equal((await host.quickActions(ADA)).find((a) => a.id === lamp).subtitle, 'Licht · 60 %', 'the list follows at once');
     // a light that is off comes on with the brightness
     r = await host.runQuickAction(ADA, bunt, 'en', { control: 'bri', value: 1 });
-    assert.deepEqual(r.body, { ok: true, message: null, state: 'on', widget: widget({ value: 1, unit: '%', status: 'Light', state: 'on', bri: 1, lang: 'en' }) });
+    assert.deepEqual(r.body, { ok: true, unchanged: false, message: null, state: 'on', widget: widget({ value: 1, unit: '%', status: 'Light', state: 'on', bri: 1, lang: 'en' }) });
     assert.deepEqual(gw.calls.at(-1).body, { on: true, bri: 3 });
     r = await host.runQuickAction(ADA, `group:${by('Wohnzimmer').id}`, 'de', { control: 'bri', value: 100 });
-    assert.deepEqual(r.body, { ok: true, message: null, state: 'on', widget: widget({ value: 100, unit: '%', status: 'Gruppe', state: 'on', bri: 100 }) });
+    assert.deepEqual(r.body, { ok: true, unchanged: false, message: null, state: 'on', widget: widget({ value: 100, unit: '%', status: 'Gruppe', state: 'on', bri: 100 }) });
     assert.deepEqual([gw.calls.at(-1).path, gw.calls.at(-1).body], ['/api/KEY1234567/groups/8/action', { on: true, bri: 254 }]);
     // the host checks control and value against the listed widget before the hook sees them
     const n = gw.calls.length;

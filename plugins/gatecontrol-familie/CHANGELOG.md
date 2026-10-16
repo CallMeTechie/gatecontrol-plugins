@@ -3,6 +3,34 @@
 Die Familie in der GateControl-App (eigener Tab), im Portal (eigener Tab „Familie“) und auf
 drei Admin-Seiten. Alles bleibt auf dem eigenen Server.
 
+## 1.4.0
+Braucht **GateControl ≥ 1.173.0** (Zielzustände für Schalter).
+- **Schalter bekommen einen festen Zustand:** In einer Regel wählt man bei jedem Schalter
+  einer Schnellaktion, welchen Zustand er bekommen soll – mit den Worten des Plugins
+  („Verriegeln“ / „Entriegeln“, „Einschalten“ / „Ausschalten“, …). „Alle weg → Auto
+  verriegeln“ entriegelt ein schon verriegeltes Auto nicht mehr, ein ausgeschaltetes Licht
+  bleibt aus. Tasten (Szenen, Tür öffnen) werden wie bisher ausgeführt.
+- **Ältere Regeln:** Ein Schalter, der in einer Regel von vor 1.4.0 steht, hat noch keinen
+  Zielzustand – er wird nicht mehr ausgeführt (Protokoll: „Zielzustand fehlt – Regel
+  bearbeiten“), die Regelliste zeigt ihn mit „Zielzustand fehlt – Regel bearbeiten“. Regel
+  öffnen, den Zustand wählen, speichern. Die übrigen Aktionen der Regel laufen weiter.
+- **Neuer Regel-Dialog** („Neue Regel“ / „Regel bearbeiten“) auf der Seite „Anwesenheit &
+  Smart Home“ und im Portal-Tab – ein breiter Dialog in drei Spalten: **Wann?** (Auslöser als
+  Karten, Person, Wartezeit, Zeitfenster, nach Sonnenuntergang) · **Was soll passieren?**
+  (die Schnellaktionen in Tabs je Plugin mit Zähler, nach Gerät gruppiert; Schalter mit zwei
+  Zielknöpfen, Tasten mit „Ausführen“; Suche über alle Plugins; die Mitteilung als eigener
+  Tab) · **Ablauf** (die Regel als Satz, die nummerierten Schritte zum Entfernen, der Hinweis,
+  dass Schalter einen festen Zustand setzen). Auf schmalen Bildschirmen (≤ 760 px) stehen die
+  Spalten untereinander; per Tastatur bedienbar (Escape schließt, Tab bleibt im Dialog).
+- Regelliste und Protokoll zeigen den Zielzustand („Elroq – Schloss: Verriegeln“), das
+  Protokoll außerdem „war schon so“, wenn das Plugin den Zustand schon hatte.
+- **API:** Eine Schnellaktion einer Regel trägt `state` (`'on'` | `'off'` für Schalter, `null`
+  für Tasten); beim Speichern wird gegen die Schnellaktionen der Person geprüft (Schalter ohne
+  Zustand → 400 `state_required`, Zustand bei einer Taste → 400 `invalid`). In den Regeln
+  zusätzlich `kind`, `verb` und `needsTarget`; `presence/actions` liefert je Aktion `device`,
+  `verbs`, `targets` und `state`; Ergebnisse im Protokoll tragen `state`, `verb` und
+  `unchanged`, neue Fehler `needs_target`, `state_unknown`, `invalid_state`.
+
 ## 1.3.1
 - **Portal ohne doppelte Überschrift**: das Portal zeigt über dem Tab schon „Familie“ – die
   eigene Überschrift „Familie“ im Tab entfällt; Datum, Personen, offene Aufgaben und die

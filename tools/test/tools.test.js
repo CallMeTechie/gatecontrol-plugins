@@ -65,8 +65,8 @@ test('mock host quick actions: checked like the host, run only for an id listed 
       };`);
     const host = await createHost(tmp);
     try {
-      assert.deepEqual(await host.quickActions({ id: 2, name: 'Ada', role: 'user' }), [{ id: 'x:1', title: 'Lamp', subtitle: null, icon: null, kind: 'toggle', state: 'on', confirm: false, confirmWhen: null, look: null, device: null, widget: null }]);
-      assert.deepEqual(await host.runQuickAction({ id: 2, name: 'Ada', role: 'user' }, 'x:1'), { status: 200, body: { ok: true, message: 'done x:1', state: 'off', widget: null } });
+      assert.deepEqual(await host.quickActions({ id: 2, name: 'Ada', role: 'user' }), [{ id: 'x:1', title: 'Lamp', subtitle: null, icon: null, kind: 'toggle', state: 'on', confirm: false, confirmWhen: null, look: null, device: null, widget: null, verbs: null, targets: false }]);
+      assert.deepEqual(await host.runQuickAction({ id: 2, name: 'Ada', role: 'user' }, 'x:1'), { status: 200, body: { ok: true, unchanged: false, message: 'done x:1', state: 'off', widget: null } });
       assert.equal((await host.runQuickAction({ id: 3, name: 'Bob', role: 'user' }, 'x:1')).status, 404, 'not listed for Bob');
       assert.equal((await host.runQuickAction({ id: 2, name: 'Ada', role: 'user' }, 'x:2')).status, 404);
       const many = Array.from({ length: 17 }, (_, i) => ({ id: 'a' + i, title: 'A' }));
@@ -112,10 +112,10 @@ test('mock host quick action widgets: checked like the host, controls run throug
       host.plugin._set({ value: '–' });
       assert.deepEqual((await host.quickActions(ada))[0].widget, { label: null, value: '–', unit: null, status: null, state: null, controls: [], readings: [], power: true });
       host.plugin._set(ok);
-      assert.deepEqual(await host.runQuickAction(ada, 'ac:1', 'de', { control: 'target', value: 23.5 }), { status: 200, body: { ok: true, message: 'ac:1 target number 23.5', state: 'on', widget: { label: null, value: 'x', unit: null, status: null, state: null, controls: [], readings: [], power: true } } });
+      assert.deepEqual(await host.runQuickAction(ada, 'ac:1', 'de', { control: 'target', value: 23.5 }), { status: 200, body: { ok: true, unchanged: false, message: 'ac:1 target number 23.5', state: 'on', widget: { label: null, value: 'x', unit: null, status: null, state: null, controls: [], readings: [], power: true } } });
       assert.deepEqual((await host.runQuickAction(ada, 'ac:1', 'de', { control: 'mode', value: 'auto' })).body.message, 'ac:1 mode string auto');
       assert.deepEqual((await host.runQuickAction(ada, 'ac:1', 'de', { control: 'mode', value: 'auto' })).body.widget, { label: null, ...ok, readings: [], power: true });
-      assert.deepEqual((await host.runQuickAction(ada, 'ac:1')).body, { ok: true, message: 'ac:1 undefined undefined undefined', state: 'on', widget: null });
+      assert.deepEqual((await host.runQuickAction(ada, 'ac:1')).body, { ok: true, unchanged: false, message: 'ac:1 undefined undefined undefined', state: 'on', widget: null });
       for (const [control, value] of [['fan', 50], ['', 1], [5, 1], ['target', 31], ['target', 15.5], ['target', '22'], ['target', NaN], ['mode', 'heat'], ['mode', 1], ['mode', undefined]]) {
         const r = await host.runQuickAction(ada, 'ac:1', 'de', { control, value });
         assert.equal(r.status, 400, `${control} ${value}`);
@@ -303,15 +303,15 @@ test('mock host plugin actions: needs permissions.actions, checked like the host
     const host = await createHost(tmp, { users, actions });
     try {
       assert.deepEqual(await host.gc.actions.list({ userId: 2, lang: 'de' }), [
-        { plugin: 'gatecontrol-smarthome', pluginName: 'Smart Home', id: 'scene:evening', title: 'Abend', subtitle: null, kind: 'button', state: null },
-        { plugin: 'gatecontrol-smarthome', pluginName: 'Smart Home', id: 'light:1', title: 'Flur', subtitle: null, kind: 'toggle', state: 'off' },
-      ], 'no icon / confirm, never the caller itself');
+        { plugin: 'gatecontrol-smarthome', pluginName: 'Smart Home', id: 'scene:evening', title: 'Abend', subtitle: null, icon: 'M3 3h18', kind: 'button', state: null, verbs: null, targets: false, device: null },
+        { plugin: 'gatecontrol-smarthome', pluginName: 'Smart Home', id: 'light:1', title: 'Flur', subtitle: null, icon: null, kind: 'toggle', state: 'off', verbs: null, targets: false, device: null },
+      ], 'no confirm, never the caller itself');
       assert.deepEqual(await host.gc.actions.list({ userId: 1 }), []);
-      assert.deepEqual(await host.gc.actions.run({ userId: 2, plugin: 'gatecontrol-smarthome', id: 'scene:evening' }), { ok: true, message: 'Szene gestartet', state: null });
+      assert.deepEqual(await host.gc.actions.run({ userId: 2, plugin: 'gatecontrol-smarthome', id: 'scene:evening' }), { ok: true, message: 'Szene gestartet', state: null, unchanged: false });
       assert.deepEqual(seen[0][0], { id: 2, name: 'Anna', role: 'user', portal: true, loggedIn: true, automation: true, via: 'actions-test' });
-      assert.deepEqual(await host.gc.actions.run({ userId: 2, plugin: 'gatecontrol-smarthome', id: 'light:1' }), { ok: false, message: null, state: null, error: 'plugin_error' });
-      assert.deepEqual(await host.gc.actions.run({ userId: 1, plugin: 'gatecontrol-smarthome', id: 'scene:evening' }), { ok: false, message: null, state: null, error: 'not_found' }, 'not listed for that user');
-      assert.deepEqual(await host.gc.actions.run({ userId: 2, plugin: 'gatecontrol-nothing', id: 'x' }), { ok: false, message: null, state: null, error: 'not_found' });
+      assert.deepEqual(await host.gc.actions.run({ userId: 2, plugin: 'gatecontrol-smarthome', id: 'light:1' }), { ok: false, message: null, state: null, unchanged: false, error: 'plugin_error' });
+      assert.deepEqual(await host.gc.actions.run({ userId: 1, plugin: 'gatecontrol-smarthome', id: 'scene:evening' }), { ok: false, message: null, state: null, unchanged: false, error: 'not_found' }, 'not listed for that user');
+      assert.deepEqual(await host.gc.actions.run({ userId: 2, plugin: 'gatecontrol-nothing', id: 'x' }), { ok: false, message: null, state: null, unchanged: false, error: 'not_found' });
       for (const bad of [{ userId: '2', plugin: 'gatecontrol-smarthome', id: 'x' }, { userId: 3, plugin: 'gatecontrol-smarthome', id: 'x' }, { userId: 9, plugin: 'gatecontrol-smarthome', id: 'x' },
         { userId: 2, plugin: 'actions-test', id: 'own' }, { userId: 2, plugin: 'Bad_Id', id: 'x' }, { userId: 2, plugin: 'gatecontrol-smarthome', id: 'bad id' }, { userId: 2, plugin: 'gatecontrol-smarthome', id: 'x', lang: 'fr' }]) {
         await assert.rejects(host.gc.actions.run(bad), { code: 'ERR_INVALID' }, JSON.stringify(bad));
@@ -388,6 +388,96 @@ test('mock host GateControl 1.169.0: push pictures, quick_action push actions, 5
     for (const iv of [4, 86401, '5']) {
       write({ background: { intervalSeconds: iv } });
       await assert.rejects(createHost(tmp), { code: 'ERR_INVALID' }, String(iv));
+    }
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test('mock host GateControl 1.173.0: verbs and targets of toggles, runs with a target state (route and gc.actions.run)', async () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'gc173-plugin-'));
+  try {
+    fs.mkdirSync(path.join(tmp, 'server'));
+    fs.writeFileSync(path.join(tmp, 'plugin.json'), JSON.stringify({ id: 'gc173-test', name: 'T', version: '1.0.0', entry: 'server/index.js', permissions: { portal: true, users: true, actions: true } }));
+    fs.writeFileSync(path.join(tmp, 'server', 'index.js'), `
+      let list = null;
+      const calls = [];
+      module.exports = {
+        _set(l) { list = l; }, calls,
+        async quickActions() { return list || [
+          { id: 'lock:1', title: 'Schloss', kind: 'toggle', state: 'on', verbs: { on: 'Verriegeln', off: 'Entriegeln' }, targets: true },
+          { id: 'old:1', title: 'Alt', kind: 'toggle', state: 'on', widget: { value: 'An' } },
+          { id: 'unknown:1', title: 'Unklar', kind: 'toggle' },
+          { id: 'scene:1', title: 'Abend' },
+        ]; },
+        async runQuickAction(a) { calls.push([a.id, a.target === undefined ? 'none' : a.target]); return { ok: true, message: 'ran', state: a.target || 'off' }; },
+      };`);
+    const users = [{ id: 1, name: 'admin', role: 'admin' }, { id: 2, name: 'Ada', role: 'user' }];
+    const host = await createHost(tmp, { users });
+    const ada = users[1];
+    try {
+      const list = await host.quickActions(ada);
+      assert.deepEqual(list.map((a) => [a.id, a.verbs, a.targets]), [
+        ['lock:1', { on: 'Verriegeln', off: 'Entriegeln' }, true], ['old:1', null, false], ['unknown:1', null, false], ['scene:1', null, false],
+      ], 'always present: verbs (object or null), targets (boolean)');
+      assert.deepEqual(Object.keys(list[0]), ['id', 'title', 'subtitle', 'icon', 'kind', 'state', 'confirm', 'confirmWhen', 'look', 'verbs', 'targets', 'device', 'widget'], 'the host\'s key order');
+      // targets: true → the hook gets the target, even for the state it already has
+      assert.deepEqual(await host.runQuickAction(ada, 'lock:1', 'de', { state: 'on' }), { status: 200, body: { ok: true, message: 'ran', state: 'on', widget: null, unchanged: false } });
+      assert.deepEqual(host.plugin.calls.at(-1), ['lock:1', 'on']);
+      // targets: false → the listed state decides
+      assert.deepEqual(await host.runQuickAction(ada, 'old:1', 'de', { state: 'on' }), { status: 200, body: { ok: true, message: null, state: 'on', widget: { label: null, value: 'An', unit: null, status: null, state: null, controls: [], readings: [], power: true }, unchanged: true } });
+      assert.equal(host.plugin.calls.length, 1, 'already there: no hook call');
+      assert.equal((await host.runQuickAction(ada, 'old:1', 'de', { state: 'off' })).body.unchanged, false);
+      assert.deepEqual(host.plugin.calls.at(-1), ['old:1', 'none'], 'the other state: the hook flips as without a state');
+      assert.deepEqual(await host.runQuickAction(ada, 'unknown:1', 'de', { state: 'off' }), { status: 409, body: { ok: false, error: 'state_unknown' } });
+      for (const [id, o] of [['scene:1', { state: 'on' }], ['lock:1', { state: 'yes' }], ['lock:1', { state: '' }], ['lock:1', { state: 'on', control: 'x' }]]) {
+        assert.deepEqual(await host.runQuickAction(ada, id, 'de', o), { status: 400, body: { ok: false, error: 'invalid_state' } }, `${id} ${JSON.stringify(o)}`);
+      }
+      assert.equal((await host.runQuickAction(ada, 'lock:1')).body.unchanged, false);
+      assert.deepEqual(host.plugin.calls.at(-1), ['lock:1', 'none'], 'without a state: as before');
+      assert.equal((await host.runQuickAction(ada, 'lock:1', 'de', { state: null })).body.unchanged, false);
+      assert.deepEqual(host.plugin.calls.at(-1), ['lock:1', 'none'], 'state null: a plain run');
+      assert.equal((await host.runQuickAction(ada, 'gone:1', 'de', { state: 'bad' })).status, 404, 'unlisted: 404 before the state check');
+      for (const bad of [[{ id: 'b', title: 'B', verbs: { on: 'An', off: 'Aus' } }], [{ id: 'b', title: 'B', targets: true }], [{ id: 't', title: 'T', kind: 'toggle', targets: 'yes' }],
+        [{ id: 't', title: 'T', kind: 'toggle', verbs: { on: 'An' } }], [{ id: 't', title: 'T', kind: 'toggle', verbs: { on: 'An', off: 'x'.repeat(21) } }],
+        [{ id: 't', title: 'T', kind: 'toggle', verbs: { on: ' An', off: 'Aus' } }], [{ id: 't', title: 'T', kind: 'toggle', verbs: { on: 'A\tn', off: 'Aus' } }], [{ id: 't', title: 'T', kind: 'toggle', verbs: ['An', 'Aus'] }]]) {
+        host.plugin._set(bad);
+        await assert.rejects(host.quickActions(ada), { code: 'ERR_INVALID' }, JSON.stringify(bad));
+      }
+    } finally {
+      await host.close();
+    }
+    // gc.actions.list / run of another plugin's actions
+    const seen = [];
+    const other = {
+      plugin: 'gatecontrol-skoda', pluginName: 'Fahrzeuge',
+      quickActions: () => [
+        { id: 'lock:1', title: 'Schloss', kind: 'toggle', state: 'on', verbs: { on: 'Verriegeln', off: 'Entriegeln' }, targets: true, device: { id: 'v:1', title: 'Elroq' } },
+        { id: 'old:1', title: 'Alt', kind: 'toggle', state: 'off' }, { id: 'unknown:1', title: 'Unklar', kind: 'toggle' }, { id: 'scene:1', title: 'Abend' },
+      ],
+      runQuickAction: (viewer, id, lang, extra) => { seen.push([id, extra === undefined ? 'none' : extra.target]); return { ok: true, message: 'ok', state: (extra && extra.target) || 'on' }; },
+    };
+    const auto = await createHost(tmp, { users, actions: [other] });
+    try {
+      const listed = await auto.gc.actions.list({ userId: 2 });
+      assert.deepEqual(listed[0], {
+        plugin: 'gatecontrol-skoda', pluginName: 'Fahrzeuge', id: 'lock:1', title: 'Schloss', subtitle: null, icon: null, kind: 'toggle', state: 'on',
+        verbs: { on: 'Verriegeln', off: 'Entriegeln' }, targets: true, device: { id: 'v:1', title: 'Elroq', subtitle: null, icon: null },
+      });
+      const run = (id, state) => auto.gc.actions.run({ userId: 2, plugin: 'gatecontrol-skoda', id, state });
+      assert.deepEqual(await run('lock:1', 'on'), { ok: true, message: 'ok', state: 'on', unchanged: false });
+      assert.deepEqual(seen.at(-1), ['lock:1', 'on'], 'locked + target on: still the hook with the target');
+      assert.deepEqual(await run('old:1', 'off'), { ok: true, message: null, state: 'off', unchanged: true });
+      assert.equal(seen.length, 1);
+      assert.deepEqual(await run('old:1', 'on'), { ok: true, message: 'ok', state: 'on', unchanged: false });
+      assert.deepEqual(seen.at(-1), ['old:1', 'none']);
+      assert.deepEqual(await run('unknown:1', 'on'), { ok: false, message: null, state: null, unchanged: false, error: 'state_unknown' });
+      assert.deepEqual(await run('scene:1', 'on'), { ok: false, message: null, state: null, unchanged: false, error: 'invalid_state' });
+      assert.deepEqual(await run('lock:1', 'up'), { ok: false, message: null, state: null, unchanged: false, error: 'invalid_state' });
+      assert.deepEqual(await run('scene:1'), { ok: true, message: 'ok', state: 'on', unchanged: false });
+      assert.deepEqual(auto.actionRuns.map((r) => [r.id, r.state, r.target]), [['lock:1', 'on', 'on'], ['old:1', 'off', null], ['old:1', 'on', null], ['unknown:1', 'on', null], ['scene:1', 'on', null], ['lock:1', 'up', null], ['scene:1', null, null]]);
+    } finally {
+      await auto.close();
     }
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });

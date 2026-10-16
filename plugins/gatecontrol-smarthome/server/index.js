@@ -16,7 +16,9 @@
 //   quick actions of the GateControl apps (hooks quickActions / runQuickAction)
 //     the same owner scope as the portal: a toggle per own light, plug and
 //     group, a button per scene of an own group; dimmable lights and groups
-//     carry a widget (brightness as the value, a brightness slider)
+//     carry a widget (brightness as the value, a brightness slider); the toggles
+//     declare their verbs and honour a target state (GateControl ≥ 1.173.0:
+//     `target` 'on'|'off' sets that state, never switches over)
 //
 // Requests run with the requesting user's rights: req.user.portal = a portal
 // viewer, who only ever sees and controls what an administrator assigned to
@@ -233,7 +235,10 @@ function quickAction(r, lang, device) {
   let subtitle = t(lang, 'kind.' + r.kind);
   if (st.reachable === false) subtitle += ' · ' + t(lang, 'qa.unreachable');
   else if (st.on && r.capabilities && r.capabilities.bri && st.bri != null) subtitle += ' · ' + fmtNum(st.bri, lang) + ' %';
-  const a = { id: `${r.kind}:${r.id}`, title: name, subtitle: clip(subtitle, 60), icon: TILE_ICONS[r.kind] || TILE_ICONS.light, kind: 'toggle', state: st.on ? 'on' : 'off', device: device || deviceOf(r, lang) };
+  const a = {
+    id: `${r.kind}:${r.id}`, title: name, subtitle: clip(subtitle, 60), icon: TILE_ICONS[r.kind] || TILE_ICONS.light, kind: 'toggle', state: st.on ? 'on' : 'off',
+    device: device || deviceOf(r, lang), verbs: { on: t(lang, 'qa.verb_on'), off: t(lang, 'qa.verb_off') }, targets: true,
+  };
   if (dimmable(r)) a.widget = widgetOf(r, lang);
   return a;
 }
@@ -272,11 +277,12 @@ async function widgetAfter(gc, r, lang) {
 
 /**
  * Run one quick action with the portal's checks (owner, enabled, controllable).
- * With a control (GateControl ≥ 1.171.0): `bri` sets the brightness of a
- * dimmable light or group and switches it on. A dimmable resource's answer
- * carries its widget.
+ * A toggle switches over; with a target ('on' | 'off', GateControl ≥ 1.173.0)
+ * it sets that state, whatever the cached state says. With a control
+ * (GateControl ≥ 1.171.0): `bri` sets the brightness of a dimmable light or
+ * group and switches it on. A dimmable resource's answer carries its widget.
  */
-async function runQuickActionFor(gc, user, lang, id, control, value) {
+async function runQuickActionFor(gc, user, lang, id, control, value, target) {
   const m = typeof id === 'string' ? QA_ID_RE.exec(id) : null;
   if (!m || !user || !Number.isInteger(user.id) || user.loggedIn === false) return { ok: false, message: t(lang, 'qa.unknown') };
   const rid = Number(m[2]);
@@ -296,7 +302,7 @@ async function runQuickActionFor(gc, user, lang, id, control, value) {
       await service.setResourceState(gc, rid, {});
       return { ok: true, message: clip(t(lang, 'portal.scene_done', { name }), 120) };
     }
-    const on = !(r.state && r.state.on);
+    const on = target === 'on' || target === 'off' ? target === 'on' : !(r.state && r.state.on);
     await service.setResourceState(gc, rid, { on });
     const out = { ok: true, message: clip(t(lang, on ? 'qa.switched_on' : 'qa.switched_off', { name }), 120), state: on ? 'on' : 'off' };
     const widget = await widgetAfter(gc, r, lang);
@@ -504,10 +510,11 @@ module.exports = {
 
   /**
    * Runs one of them (the host only passes an id quickActions just listed for this viewer; checked here
-   * again). control/value (GateControl ≥ 1.171.0) only when the app used the widget's brightness slider.
+   * again). control/value (GateControl ≥ 1.171.0) only when the app used the widget's brightness slider;
+   * target 'on' | 'off' (GateControl ≥ 1.173.0) sets a toggle's state.
    */
-  async runQuickAction({ user, lang, id, control, value }, gc) {
-    return runQuickActionFor(gc, user, lang, id, control, value);
+  async runQuickAction({ user, lang, id, control, value, target }, gc) {
+    return runQuickActionFor(gc, user, lang, id, control, value, target === 'on' || target === 'off' ? target : undefined);
   },
 
   /** Built-in data handed over by GateControl (once, by an administrator). */

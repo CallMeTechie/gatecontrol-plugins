@@ -5,6 +5,7 @@
 // API error code → HTTP status (docs: the "codes" table in CHANGELOG / B3)
 const STATUS = {
   invalid: 400,
+  state_required: 400,
   login_required: 403,
   forbidden: 403,
   not_member: 403,

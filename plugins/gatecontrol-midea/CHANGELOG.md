@@ -2,6 +2,15 @@
 
 Midea-Klimageräte als GateControl-Plugin – bisher fest in GateControl eingebaut („Klimaanlage“).
 
+## 1.5.0
+- **Zielzustand statt Umschalten** (GateControl ≥ 1.173.0): der Ein/Aus-Schalter jedes
+  Klimageräts nennt seine Befehle („Einschalten“ / „Ausschalten“, englisch „Turn on“ /
+  „Turn off“) und nimmt einen gewünschten Zustand an: eine Regel (z. B. der Familie) oder eine
+  App, die „aus“ verlangt, schaltet aus – ein schon ausgeschaltetes Gerät bleibt aus, ein
+  unbekannter Zustand muss dafür nicht erst gelesen werden.
+- Ohne Zielzustand (Apps, ältere GateControl-Versionen) wird wie bisher umgeschaltet – das
+  Plugin läuft weiter ab GateControl 1.154.0.
+
 ## 1.4.1
 - **Keine eigene Seitenüberschrift mehr**: GateControl zeigt den Seitentitel im Kopf; die
   Seite „Klimaanlage“ beginnt direkt mit ihren Knöpfen (Geräte entdecken, Midea-Konto,
