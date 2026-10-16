@@ -11,6 +11,25 @@ class SkodaApiError extends Error {
   constructor(message, code, status) { super(message); this.name = 'SkodaApiError'; this.code = code; this.status = status; }
 }
 
+/**
+ * Škoda's reason for a rejected request, for the log: the error JSON's
+ * code / message fields (or the start of the text), one line, ≤ 200 chars;
+ * null when there is none. Never throws.
+ */
+async function errorDetail(res) {
+  let text = '';
+  try { text = typeof res.text === 'function' ? String(await res.text()).slice(0, 4000) : ''; } catch { return null; }
+  let out = text;
+  try {
+    const j = JSON.parse(text);
+    const parts = [j && j.errorCode, j && j.code, j && j.error, j && j.message, j && j.description]
+      .filter((x) => typeof x === 'string' && x.trim());
+    if (parts.length) out = [...new Set(parts)].join(' – ');
+  } catch { /* not JSON: the text itself */ }
+  out = out.replace(/[\u0000-\u001f\u007f]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 200);
+  return out || null;
+}
+
 // Hosts serving compositeRenders images — the rule of the built-in
 // integration (live-confirmed there): exactly iprenders.blob.core.windows.net,
 // or any host under azureedge.net / skoda-auto.cz (the Škoda CDN hosts vary).
@@ -57,7 +76,11 @@ class SkodaClient {
     }
     if (res.status === 401) throw new SkodaApiError('unauthorized', 'SKODA_UNAUTHORIZED', 401);
     if (res.status === 429) throw new SkodaApiError('rate limited', 'SKODA_RATE_LIMITED', 429);
-    if (res.status >= 400) throw new SkodaApiError(`api error ${res.status} for ${path}`, 'SKODA_API_ERROR', res.status);
+    if (res.status >= 400) {
+      const e = new SkodaApiError(`api error ${res.status} for ${path}`, 'SKODA_API_ERROR', res.status);
+      e.detail = await errorDetail(res);
+      throw e;
+    }
     return res;
   }
 

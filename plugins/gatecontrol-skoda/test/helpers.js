@@ -80,7 +80,7 @@ function fakeSkoda(opts = {}) {
     n: 0,
     access: null,
     refresh: null,
-    fail: {},            // url part → HTTP status
+    fail: {},            // url part → HTTP status (or { status, body })
     calls: [],
     commands: [],
     logins: 0,
@@ -109,7 +109,10 @@ function fakeSkoda(opts = {}) {
     const headers = Object.fromEntries(Object.entries(o.headers || {}).map(([k, v]) => [k.toLowerCase(), v]));
     cloud.calls.push({ url, method, body: o.body, headers, binary: !!o.binary });
     const failKey = Object.keys(cloud.fail).find((k) => url.includes(k));
-    if (failKey) return json({}, cloud.fail[failKey]);
+    if (failKey) {
+      const f = cloud.fail[failKey]; // a status, or { status, body } with Škoda's error body
+      return typeof f === 'object' ? json(f.body, f.status) : json({}, f);
+    }
 
     // VW identity
     if (url.startsWith(IDENT + '/oidc/v1/authorize')) return redirect(`${IDENT}/signin-service/v1/${CLIENT}/login?relayState=relay-xyz`, ['SESSION=s1; Path=/; Secure; HttpOnly']);
