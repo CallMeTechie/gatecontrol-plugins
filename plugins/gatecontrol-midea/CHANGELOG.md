@@ -2,6 +2,20 @@
 
 Midea-Klimageräte als GateControl-Plugin – bisher fest in GateControl eingebaut („Klimaanlage“).
 
+## 1.3.0
+- Widget für den Start-Tab der GateControl-Apps: jede Schnellaktion eines Klimageräts
+  bringt jetzt ein Widget mit – Innentemperatur als großer Wert (°C), die Statuszeile wie
+  im Portal (z. B. „Kühlen · Ziel 22 °C“, „Aus“, „Offline“), der Zustand (Ein/Aus, Offline
+  als Warnung) sowie zwei Regler: Zieltemperatur (16–30 °C in halben Graden) und Modus
+  (Auto, Kühlen, Heizen, Entfeuchten, Lüften). Die Liste nutzt weiterhin nur den
+  zwischengespeicherten Zustand (keine Geräteabfrage).
+- Regler bedienen: Zieltemperatur und Modus werden direkt am Gerät gesetzt (nur für
+  eigene Geräte, die Prüfung läuft wie beim Umschalten); jede Antwort – auch das
+  Umschalten – liefert das Widget mit dem neuen Zustand, damit die App ihn sofort zeigt.
+  Ein unbekannter Regler oder Wert ändert nichts.
+- Optional: GateControl ab 1.171.0 zeigt die Widgets, ältere Versionen lassen das Feld
+  weg – die Mindestversion bleibt unverändert.
+
 ## 1.2.0
 - Schnellaktionen für die GateControl-Apps (Verknüpfungen auf dem Startbildschirm,
   Schnelleinstellungen, Widget): je ein Ein/Aus-Schalter pro eigenem Klimagerät, mit

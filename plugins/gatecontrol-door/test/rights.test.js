@@ -105,8 +105,8 @@ test('quick actions per right: zusperren / aufsperren / öffnen (opener: Summer)
   assert.deepEqual(await host.quickActions(LENA), []);
   assert.deepEqual((await host.quickActions(ANNA, 'en')).map((a) => a.title), ['Lock Haustür', 'Unlock Haustür', 'Open Haustür', 'Hoftor buzzer']);
   // a run from the app and from a notification button: both checked and in the history with their source
-  assert.deepEqual((await host.runQuickAction(ANNA, `${lockId}:unlock`)).body, { ok: true, message: 'Haustür aufgesperrt', state: null });
-  assert.deepEqual((await host.runQuickAction(ANNA, `${openerId}:open`, 'de', { via: 'notification' })).body, { ok: true, message: 'Hoftor: Summer betätigt', state: null });
+  assert.deepEqual((await host.runQuickAction(ANNA, `${lockId}:unlock`)).body, { ok: true, message: 'Haustür aufgesperrt', state: null, widget: null });
+  assert.deepEqual((await host.runQuickAction(ANNA, `${openerId}:open`, 'de', { via: 'notification' })).body, { ok: true, message: 'Hoftor: Summer betätigt', state: null, widget: null });
   assert.equal((await host.runQuickAction(MARC, `${lockId}:open`)).status, 404, 'not listed for Marc');
   const h = await host.request({ method: 'GET', path: '/history', user: app(ANNA) });
   assert.deepEqual(h.json.items.slice(0, 2).map((x) => [x.action, x.via, x.userName]), [['open', 'notification', 'Anna'], ['unlock', 'app', 'Anna']]);

@@ -2,7 +2,8 @@
 
 // Quick actions of the GateControl apps (hooks quickActions / runQuickAction):
 // exactly the portal's owner scope — a toggle per own light, plug and group,
-// a button per scene of an own group; cached state only; at most 16.
+// a button per scene of an own group; cached state only; at most 16. Dimmable
+// lights and groups carry a widget (brightness value, brightness slider).
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -13,7 +14,12 @@ const own = async (host, by, names, userIds) => {
   for (const n of names) await asAdmin(host, 'PUT', `/resources/${by(n).id}/owners`, { userIds });
 };
 // the hook as the host calls it, without the host's "listed for this viewer" check
-const direct = (host, user, id, lang = 'de') => host.plugin.runQuickAction({ user: { portal: true, loggedIn: true, app: true, ...user }, lang, id }, host.gc);
+const direct = (host, user, id, lang = 'de', extra = {}) => host.plugin.runQuickAction({ user: { portal: true, loggedIn: true, app: true, ...user }, lang, id, ...extra }, host.gc);
+
+/** The widget as the host passes it on: `value` (brightness while on, else the off text), status, state, one slider at `bri`. */
+function widget({ value, unit = null, status, state, bri = 100, lang = 'de' }) {
+  return { value, unit, status, state, controls: [{ id: 'bri', kind: 'slider', label: lang === 'en' ? 'Brightness' : 'Helligkeit', value: bri, min: 1, max: 100, step: 1, unit: '%' }] };
+}
 
 test('quick actions: only the viewer\'s own devices, toggles first, scenes as buttons, sensors never', () => withHost({ gateways: [fakeDeconz()] }, async (host) => {
   const { by } = await connected(host);
@@ -26,7 +32,13 @@ test('quick actions: only the viewer\'s own devices, toggles first, scenes as bu
     [`scene:${by('Wohnzimmer · Abend').id}`, 'Wohnzimmer · Abend', 'Szene', 'button', null],
   ]);
   assert.ok(ada.every((a) => a.icon && a.confirm === false));
-  assert.deepEqual((await host.quickActions(BOB, 'en')).map((a) => [a.title, a.subtitle, a.state]), [['Poolpumpe', 'Plug', 'off']]);
+  assert.deepEqual(ada.map((a) => a.widget), [
+    widget({ value: 'An', status: 'Gruppe', state: 'on' }),               // a group has no brightness of its own: "on", slider at 100
+    widget({ value: 100, unit: '%', status: 'Licht', state: 'on', bri: 100 }),
+    null,                                                                 // a scene stays a button
+  ]);
+  const bob = await host.quickActions(BOB, 'en');
+  assert.deepEqual(bob.map((a) => [a.title, a.subtitle, a.state, a.widget]), [['Poolpumpe', 'Plug', 'off', null]], 'a plug has no widget');
   assert.deepEqual(await host.quickActions(EVE), []);
   assert.deepEqual(await host.quickActions(ADMIN), [], 'an administrator gets only what is assigned to them, like in the portal');
   assert.deepEqual(await host.quickActions({ ...ADA, loggedIn: false }), [], 'never for a viewer that is not signed in');
@@ -34,6 +46,23 @@ test('quick actions: only the viewer\'s own devices, toggles first, scenes as bu
   await host.gc.db.run('UPDATE resources SET enabled = 0 WHERE id = ?', [by('Stehlampe').id]);
   assert.ok(!(await host.quickActions(ADA)).some((a) => a.title === 'Stehlampe'));
 }));
+
+test('quick actions: the widget of a light that is off, unreachable or not dimmable', () => {
+  const lights = {
+    3: { name: 'Stehlampe', type: 'Color temperature light', uniqueid: 'l1', state: { on: true, bri: 254, reachable: false } },
+    4: { name: 'Bunt', type: 'Extended color light', uniqueid: 'l2', state: { on: false, bri: 127, reachable: true } },
+    5: { name: 'Flur', type: 'On/Off light', uniqueid: 'l3', state: { on: true, reachable: true } },
+  };
+  return withHost({ gateways: [fakeDeconz({ lights, groups: {} })] }, async (host) => {
+    const { by } = await connected(host);
+    await own(host, by, ['Stehlampe', 'Bunt', 'Flur'], [2]);
+    const w = Object.fromEntries((await host.quickActions(ADA, 'en')).map((a) => [a.title, a.widget]));
+    assert.deepEqual(w.Stehlampe, widget({ value: 100, unit: '%', status: 'Light · unreachable', state: 'on', bri: 100, lang: 'en' }));
+    assert.deepEqual(w.Bunt, widget({ value: 'Off', status: 'Light', state: 'off', bri: 50, lang: 'en' }), 'off: the off text, the slider keeps the last brightness');
+    assert.equal(w.Flur, null, 'an on/off light has no widget');
+    assert.equal((await host.quickActions(ADA)).find((a) => a.title === 'Bunt').widget.value, 'Aus');
+  });
+});
 
 test('quick actions: at most 16, scenes are the first to go; long names cut to 40', () => {
   const lights = {};
@@ -56,18 +85,57 @@ test('runQuickAction: a toggle switches the cached state over, a scene is recall
     await own(host, by, ['Stehlampe', 'Wohnzimmer'], [2]);
     const lamp = `light:${by('Stehlampe').id}`;
     let r = await host.runQuickAction(ADA, lamp);
-    assert.deepEqual(r, { status: 200, body: { ok: true, message: 'Stehlampe ausgeschaltet', state: 'off' } });
+    assert.deepEqual(r, { status: 200, body: { ok: true, message: 'Stehlampe ausgeschaltet', state: 'off', widget: widget({ value: 'Aus', status: 'Licht', state: 'off', bri: 100 }) } });
     assert.deepEqual([gw.calls.at(-1).method, gw.calls.at(-1).path, gw.calls.at(-1).body], ['PUT', '/api/KEY1234567/lights/3/state', { on: false }]);
     assert.equal((await host.quickActions(ADA)).find((a) => a.id === lamp).state, 'off', 'the list follows at once');
     r = await host.runQuickAction(ADA, lamp, 'en');
-    assert.deepEqual(r.body, { ok: true, message: 'Stehlampe switched on', state: 'on' });
+    assert.deepEqual(r.body, { ok: true, message: 'Stehlampe switched on', state: 'on', widget: widget({ value: 100, unit: '%', status: 'Light', state: 'on', bri: 100, lang: 'en' }) });
     assert.deepEqual(gw.calls.at(-1).body, { on: true });
     r = await host.runQuickAction(ADA, `group:${by('Wohnzimmer').id}`);
-    assert.deepEqual(r.body, { ok: true, message: 'Wohnzimmer ausgeschaltet', state: 'off' });
+    assert.deepEqual(r.body, { ok: true, message: 'Wohnzimmer ausgeschaltet', state: 'off', widget: widget({ value: 'Aus', status: 'Gruppe', state: 'off' }) });
     assert.equal(gw.calls.at(-1).path, '/api/KEY1234567/groups/8/action');
     r = await host.runQuickAction(ADA, `scene:${by('Wohnzimmer · Abend').id}`);
-    assert.deepEqual(r.body, { ok: true, message: 'Szene „Wohnzimmer · Abend“ aktiviert', state: null });
+    assert.deepEqual(r.body, { ok: true, message: 'Szene „Wohnzimmer · Abend“ aktiviert', state: null, widget: null });
     assert.equal(gw.calls.at(-1).path, '/api/KEY1234567/groups/8/scenes/2/recall');
+  });
+});
+
+test('runQuickAction with the brightness control: sets the brightness and switches on, the answer carries the new widget', () => {
+  const gw = fakeDeconz();
+  return withHost({ gateways: [gw] }, async (host) => {
+    const { by } = await connected(host);
+    await own(host, by, ['Stehlampe', 'Bunt', 'Wohnzimmer', 'Poolpumpe'], [2]);
+    const lamp = `light:${by('Stehlampe').id}`;
+    const bunt = `light:${by('Bunt').id}`;
+    let r = await host.runQuickAction(ADA, lamp, 'de', { control: 'bri', value: 60 });
+    assert.deepEqual(r, { status: 200, body: { ok: true, message: null, state: 'on', widget: widget({ value: 60, unit: '%', status: 'Licht', state: 'on', bri: 60 }) } });
+    assert.deepEqual([gw.calls.at(-1).path, gw.calls.at(-1).body], ['/api/KEY1234567/lights/3/state', { on: true, bri: 152 }]);
+    assert.equal((await host.quickActions(ADA)).find((a) => a.id === lamp).subtitle, 'Licht · 60 %', 'the list follows at once');
+    // a light that is off comes on with the brightness
+    r = await host.runQuickAction(ADA, bunt, 'en', { control: 'bri', value: 1 });
+    assert.deepEqual(r.body, { ok: true, message: null, state: 'on', widget: widget({ value: 1, unit: '%', status: 'Light', state: 'on', bri: 1, lang: 'en' }) });
+    assert.deepEqual(gw.calls.at(-1).body, { on: true, bri: 3 });
+    r = await host.runQuickAction(ADA, `group:${by('Wohnzimmer').id}`, 'de', { control: 'bri', value: 100 });
+    assert.deepEqual(r.body, { ok: true, message: null, state: 'on', widget: widget({ value: 100, unit: '%', status: 'Gruppe', state: 'on', bri: 100 }) });
+    assert.deepEqual([gw.calls.at(-1).path, gw.calls.at(-1).body], ['/api/KEY1234567/groups/8/action', { on: true, bri: 254 }]);
+    // the host checks control and value against the listed widget before the hook sees them
+    const n = gw.calls.length;
+    for (const [id, control, value] of [[lamp, 'on', true], [lamp, 'bri', 0], [lamp, 'bri', 101], [lamp, 'bri', '50'], [`plug:${by('Poolpumpe').id}`, 'bri', 50], [`scene:${by('Wohnzimmer · Abend').id}`, 'bri', 50]]) {
+      const bad = await host.runQuickAction(ADA, id, 'de', { control, value });
+      assert.equal(bad.status, 400, `${id} ${control} ${value}`);
+    }
+    // … and the hook checks again on its own
+    for (const [id, control, value] of [[lamp, 'on', true], [lamp, 'bri', 0], [lamp, 'bri', 100.5], [lamp, 'bri', '50'], [lamp, 'bri', NaN], [lamp, null, 50], [`plug:${by('Poolpumpe').id}`, 'bri', 50], [`scene:${by('Wohnzimmer · Abend').id}`, 'bri', 50]]) {
+      const out = await direct(host, ADA, id, 'de', { control, value });
+      assert.deepEqual(out, { ok: false, message: 'Diese Aktion gibt es nicht mehr.' }, `${id} ${control} ${value}`);
+    }
+    assert.equal((await direct(host, BOB, lamp, 'de', { control: 'bri', value: 50 })).message, 'Dieses Gerät gehört dir nicht.');
+    assert.equal(gw.calls.length, n, 'nothing reached the gateway');
+    gw.down = true;
+    r = await host.runQuickAction(ADA, lamp, 'de', { control: 'bri', value: 30 });
+    assert.equal(r.status, 200);
+    assert.equal(r.body.ok, false);
+    assert.deepEqual(r.body.widget, widget({ value: 60, unit: '%', status: 'Licht', state: 'on', bri: 60 }), 'a failed run answers with the widget as it was');
   });
 });
 

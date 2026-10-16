@@ -2,7 +2,8 @@
 
 // Quick actions of the GateControl apps (hooks quickActions / runQuickAction):
 // power on/off per air conditioner of the viewer — the portal's owner scope,
-// cached state only in the list, at most 16.
+// cached state only in the list, at most 16 — each with a widget (indoor
+// temperature, status line, target temperature stepper, mode choice).
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -12,7 +13,19 @@ const A = '153931628798542';
 const B = '153931628798543';
 // the list kicks background cloud refreshes (service.cachedState); let them land before the host closes
 const settle = () => new Promise((r) => setTimeout(r, 300));
-const direct = (host, user, id, lang = 'de') => host.plugin.runQuickAction({ user: { portal: true, loggedIn: true, app: true, ...user }, lang, id }, host.gc);
+const direct = (host, user, id, lang = 'de', extra = {}) => host.plugin.runQuickAction({ user: { portal: true, loggedIn: true, app: true, ...user }, lang, id, ...extra }, host.gc);
+
+const MODES = { de: { auto: 'Auto', cool: 'Kühlen', heat: 'Heizen', dry: 'Entfeuchten', fan: 'Lüften' }, en: { auto: 'Auto', cool: 'Cool', heat: 'Heat', dry: 'Dry', fan: 'Fan' } };
+/** The widget as the host passes it on: value/status/state plus the two controls. */
+function widget({ value = '–', status = null, state = null, target = 24, mode = 'auto', lang = 'de' } = {}) {
+  return {
+    value, unit: '°C', status, state,
+    controls: [
+      { id: 'target', kind: 'stepper', label: lang === 'en' ? 'Target' : 'Ziel', value: target, min: 16, max: 30, step: 0.5, unit: '°C' },
+      { id: 'mode', kind: 'choice', label: lang === 'en' ? 'Mode' : 'Modus', value: mode, options: ['auto', 'cool', 'heat', 'dry', 'fan'].map((id) => ({ id, label: MODES[lang][id] })) },
+    ],
+  };
+}
 
 function twoDevices() {
   const devA = fakeAc({ power: true, mode: 'cool', targetTemp: 22 });
@@ -46,7 +59,11 @@ test('quick actions: a power toggle per own air conditioner, state from the cach
       [`ac:${b}`, 'Büro', 'Klimaanlage', 'toggle', null],
     ]);
     assert.ok(ada.every((x) => /^M/.test(x.icon) && x.confirm === false));
-    assert.deepEqual((await host.quickActions(BOB, 'en')).map((x) => x.id), [`ac:${b}`]);
+    assert.deepEqual(ada[0].widget, widget({ value: '23,5', status: 'Kühlen · Ziel 22 °C', state: 'on', target: 22, mode: 'cool' }), 'the widget from the cached state');
+    assert.deepEqual(ada[1].widget, widget(), 'unknown state: dash, no status, default controls');
+    const bob = await host.quickActions(BOB, 'en');
+    assert.deepEqual(bob.map((x) => x.id), [`ac:${b}`]);
+    assert.deepEqual(bob[0].widget, widget({ lang: 'en' }));
     assert.deepEqual(await host.quickActions(ADMIN), [], 'only what is assigned, like in the portal');
     assert.deepEqual(await host.quickActions({ ...ADA, loggedIn: false }), []);
     await asAdmin(host, 'PUT', `/devices/${b}`, { enabled: false });
@@ -86,16 +103,52 @@ test('runQuickAction: switches over and reports the device\'s answer', () => {
     await asAdmin(host, 'PUT', `/devices/${b}/owners`, { user_ids: [ADA.id] });
     await asAdmin(host, 'GET', `/devices/${a}/state`);
     let r = await host.runQuickAction(ADA, `ac:${a}`);
-    assert.deepEqual(r, { status: 200, body: { ok: true, message: 'Wohnzimmer ausgeschaltet', state: 'off' } });
+    assert.deepEqual(r, { status: 200, body: { ok: true, message: 'Wohnzimmer ausgeschaltet', state: 'off', widget: widget({ value: '23,5', status: 'Aus', state: 'off', target: 22, mode: 'cool' }) } });
     assert.equal(devA.state.power, false);
     assert.equal((await host.quickActions(ADA))[0].state, 'off', 'the list follows at once');
     r = await host.runQuickAction(ADA, `ac:${a}`, 'en');
-    assert.deepEqual(r.body, { ok: true, message: 'Wohnzimmer switched on', state: 'on' });
+    assert.deepEqual(r.body, { ok: true, message: 'Wohnzimmer switched on', state: 'on', widget: widget({ value: '23.5', status: 'Cool · Target 22 °C', state: 'on', target: 22, mode: 'cool', lang: 'en' }) });
     assert.equal(devA.state.power, true);
     // B: no cached state yet → read from the device first, then switched over
     r = await host.runQuickAction(ADA, `ac:${b}`);
-    assert.deepEqual(r.body, { ok: true, message: 'Büro eingeschaltet', state: 'on' });
+    assert.deepEqual(r.body, { ok: true, message: 'Büro eingeschaltet', state: 'on', widget: widget({ value: '23,5', status: 'Kühlen · Ziel 24 °C', state: 'on', target: 24, mode: 'cool' }) });
     assert.equal(devB.state.power, true);
+    await settle();
+  });
+});
+
+test('runQuickAction with a control: target temperature and mode reach the device, the answer carries the new widget', () => {
+  const { devA, cloud } = twoDevices();
+  return withHost({ cloud }, async (host) => {
+    const { a } = await setup(host, cloud);
+    await asAdmin(host, 'PUT', `/devices/${a}/owners`, { user_ids: [ADA.id] });
+    let r = await host.runQuickAction(ADA, `ac:${a}`, 'de', { control: 'target', value: 25.5 });
+    assert.deepEqual(r, { status: 200, body: { ok: true, message: null, state: 'on', widget: widget({ value: '23,5', status: 'Kühlen · Ziel 25,5 °C', state: 'on', target: 25.5, mode: 'cool' }) } });
+    assert.deepEqual([devA.state.targetTemp, devA.state.mode, devA.state.power], [25.5, 'cool', true], 'only the target changed');
+    r = await host.runQuickAction(ADA, `ac:${a}`, 'en', { control: 'mode', value: 'heat' });
+    assert.deepEqual(r.body, { ok: true, message: null, state: 'on', widget: widget({ value: '23.5', status: 'Heat · Target 25.5 °C', state: 'on', target: 25.5, mode: 'heat', lang: 'en' }) });
+    assert.equal(devA.state.mode, 'heat');
+    assert.deepEqual((await host.quickActions(ADA))[0].subtitle, 'Heizen · Ziel 25,5 °C', 'the list follows at once');
+    // a control works while the device is off (it stays off), and a value off the half-degree grid is snapped
+    devA.state.power = false;
+    r = await host.runQuickAction(ADA, `ac:${a}`, 'de', { control: 'target', value: 19.3 });
+    assert.deepEqual(r.body, { ok: true, message: null, state: 'off', widget: widget({ value: '23,5', status: 'Aus', state: 'off', target: 19.5, mode: 'heat' }) });
+    assert.equal(devA.state.power, false);
+    // the host checks control and value against the listed widget before the hook sees them
+    for (const [control, value] of [['fan', 50], ['target', 31], ['target', '22'], ['mode', 'turbo'], ['mode', 2]]) {
+      const bad = await host.runQuickAction(ADA, `ac:${a}`, 'de', { control, value });
+      assert.equal(bad.status, 400, `${control} ${value}`);
+    }
+    // … and the hook checks again on its own
+    for (const [control, value] of [['fan', 50], ['target', 15.5], ['target', 30.5], ['target', '22'], ['target', NaN], ['mode', 'turbo'], ['mode', null], [null, 22]]) {
+      const out = await direct(host, ADA, `ac:${a}`, 'de', { control, value });
+      assert.deepEqual(out, { ok: false, message: 'Diese Aktion gibt es nicht mehr.' }, `${control} ${value}`);
+    }
+    assert.deepEqual([devA.state.targetTemp, devA.state.mode], [19.5, 'heat'], 'nothing reached the device');
+    assert.equal((await direct(host, BOB, `ac:${a}`, 'de', { control: 'target', value: 22 })).message, 'Dieses Gerät ist dir nicht zugewiesen');
+    devA.down = true;
+    r = await host.runQuickAction(ADA, `ac:${a}`, 'de', { control: 'target', value: 22 });
+    assert.deepEqual(r.body, { ok: false, message: 'Gerät nicht erreichbar', state: null, widget: widget({ status: 'Offline', state: 'warn' }) });
     await settle();
   });
 });
@@ -116,7 +169,8 @@ test('runQuickAction: unknown ids and other people\'s devices change nothing; of
     assert.equal(devB.state.power, false, 'Bob\'s device untouched');
     devA.down = true;
     const r = await host.runQuickAction(ADA, `ac:${a}`);
-    assert.deepEqual(r, { status: 200, body: { ok: false, message: 'Gerät nicht erreichbar', state: null } });
+    assert.deepEqual(r, { status: 200, body: { ok: false, message: 'Gerät nicht erreichbar', state: null, widget: widget({ status: 'Offline', state: 'warn' }) } });
+    assert.deepEqual((await host.quickActions(ADA))[0].widget, widget({ status: 'Offline', state: 'warn' }), 'the list shows it offline too');
     await settle();
   });
 });

@@ -14,7 +14,8 @@
 //     GET  /portal · /portal/devices/:id/state
 //     POST /portal/devices/:id/state   control (the host lets only signed-in viewers change things)
 //   quick actions of the GateControl apps (hooks quickActions / runQuickAction)
-//     the same owner scope as the portal: power on/off per own air conditioner
+//     the same owner scope as the portal: power on/off per own air conditioner,
+//     with a widget (indoor temperature, status, target temperature and mode controls)
 //
 // Requests run with the requesting user's rights: req.user.portal = a portal
 // viewer, who only ever sees and controls what an administrator assigned to
@@ -163,40 +164,98 @@ function powerOf(st) {
   return st && !st.offline && typeof st.power === 'boolean' ? (st.power ? 'on' : 'off') : null;
 }
 
+// the widget's controls (GateControl ≥ 1.171.0; older hosts leave the widget out)
+const TARGET = { min: 16, max: 30, step: 0.5, fallback: 24 };
+const MODE_IDS = ['auto', 'cool', 'heat', 'dry', 'fan'];
+
+/** A target temperature as the stepper shows it: snapped to half degrees inside 16–30. */
+function targetOf(v) {
+  const n = v == null ? NaN : Number(v);
+  if (!Number.isFinite(n)) return TARGET.fallback;
+  return Math.min(TARGET.max, Math.max(TARGET.min, Math.round(n * 2) / 2));
+}
+
+/**
+ * The widget of an air conditioner's quick action: the indoor temperature as
+ * the value, the status line, power as the state, controls for target
+ * temperature and mode. Built from whatever state is at hand (null = unknown).
+ */
+function widgetOf(st, lang) {
+  const w = { value: (st && !st.offline && fmtTemp(st.indoorTemp, lang)) || '–', unit: '°C', status: null, state: null, controls: [] };
+  const status = statusLine(st, lang);
+  if (status) w.status = clip(status, 60);
+  if (st && st.offline) w.state = 'warn';
+  else w.state = powerOf(st);
+  const live = st && !st.offline ? st : null;
+  w.controls.push({ id: 'target', kind: 'stepper', label: clip(t(lang, 'portal.target'), 20), value: targetOf(live ? live.targetTemp : null), min: TARGET.min, max: TARGET.max, step: TARGET.step, unit: '°C' });
+  w.controls.push({
+    id: 'mode', kind: 'choice', label: clip(t(lang, 'portal.mode'), 20), value: live && MODES.has(live.mode) ? live.mode : 'auto',
+    options: MODE_IDS.map((m) => ({ id: m, label: clip(t(lang, 'portal.mode_' + m), 20) })),
+  });
+  return w;
+}
+
+/** A control's patch for setState, or null for an unknown control or a value that is no good. */
+function controlPatch(control, value) {
+  if (control === 'target') {
+    const n = typeof value === 'number' ? value : NaN;
+    if (!Number.isFinite(n) || n < TARGET.min || n > TARGET.max) return null;
+    return { targetTemp: targetOf(n) };
+  }
+  if (control === 'mode') return typeof value === 'string' && MODES.has(value) ? { mode: value } : null;
+  return null;
+}
+
 /**
  * Power on/off per air conditioner of the viewer (the portal's owner scope;
- * disabled devices left out) — cached state only, no device round trip.
+ * disabled devices left out), each with its widget — cached state only, no
+ * device round trip.
  */
 async function quickActionsFor(gc, user, lang) {
   if (!user || !Number.isInteger(user.id) || user.loggedIn === false) return [];
   return (await ownedDevices(gc, user.id)).filter((d) => d.enabled).slice(0, QA_MAX).map((d) => {
     const st = service.cachedState(gc, d);
-    const a = { id: `ac:${d.id}`, title: clip(d.name, 40) || t(lang, 'portal.title'), subtitle: clip(statusLine(st, lang) || t(lang, 'portal.title'), 60), icon: AC_ICON, kind: 'toggle' };
+    const a = { id: `ac:${d.id}`, title: clip(d.name, 40) || t(lang, 'portal.title'), subtitle: clip(statusLine(st, lang) || t(lang, 'portal.title'), 60), icon: AC_ICON, kind: 'toggle', widget: widgetOf(st, lang) };
     const power = powerOf(st);
     if (power) a.state = power;
     return a;
   });
 }
 
-/** Switch one over (owner checked again); an unknown state is read from the device first. */
-async function runQuickActionFor(gc, user, lang, id) {
+/**
+ * Without a control: switch one over (owner checked again); an unknown state
+ * is read from the device first. With a control (target, mode): set it. The
+ * answer carries the widget of the resulting state (of the cached one after a
+ * failure), so the app shows it at once.
+ */
+async function runQuickActionFor(gc, user, lang, id, control, value) {
   const m = typeof id === 'string' ? QA_ID_RE.exec(id) : null;
   if (!m || !user || !Number.isInteger(user.id) || user.loggedIn === false) return { ok: false, message: t(lang, 'qa.unknown') };
   const did = Number(m[1]);
+  let d = null;
   try {
     if (!(await store.isOwner(gc, did, user.id))) throw fail('MIDEA_NOT_OWNER');
-    const d = await store.getDevice(gc, did);
+    d = await store.getDevice(gc, did);
     if (!d || !d.enabled) throw fail('MIDEA_DEVICE_NOT_FOUND');
+    if (control !== undefined) {
+      const patch = controlPatch(control, value);
+      if (!patch) return { ok: false, message: t(lang, 'qa.unknown') };
+      const st = await service.setState(gc, did, patch);
+      if (!st || st.offline) throw fail('MIDEA_OFFLINE');
+      return { ok: true, message: null, state: powerOf(st), widget: widgetOf(st, lang) };
+    }
     let power = powerOf(service.cachedState(gc, d));
     if (!power) power = powerOf(await service.getState(gc, did));
     if (!power) throw fail('MIDEA_OFFLINE');
     const st = await service.setState(gc, did, { power: power !== 'on' });
     const now = powerOf(st);
     if (!now) throw fail('MIDEA_OFFLINE');
-    return { ok: true, message: clip(t(lang, now === 'on' ? 'qa.switched_on' : 'qa.switched_off', { name: clip(d.name, 40) || t(lang, 'portal.title') }), 120), state: now };
+    return { ok: true, message: clip(t(lang, now === 'on' ? 'qa.switched_on' : 'qa.switched_off', { name: clip(d.name, 40) || t(lang, 'portal.title') }), 120), state: now, widget: widgetOf(st, lang) };
   } catch (e) {
     if (!ERRORS[e && e.code]) gc.log.warn('quick action failed', id, (e && (e.code || e.message)) || e);
-    return { ok: false, message: errorResponse(e, lang).json.error };
+    const out = { ok: false, message: errorResponse(e, lang).json.error };
+    if (d) out.widget = widgetOf(service.cachedState(gc, d), lang);
+    return out;
   }
 }
 
@@ -372,14 +431,17 @@ module.exports = {
       .map((d) => ({ title: d.name, subtitle: statusLine(service.cachedState(gc, d), lang) || t(lang, 'portal.title'), section: 'midea' }));
   },
 
-  /** Quick actions of the apps: power on/off per air conditioner of the viewer, at most 16. */
+  /** Quick actions of the apps: power on/off per air conditioner of the viewer, each with a widget, at most 16. */
   async quickActions({ user, lang }, gc) {
     return quickActionsFor(gc, user, lang);
   },
 
-  /** Runs one of them (the host only passes an id quickActions just listed for this viewer; checked here again). */
-  async runQuickAction({ user, lang, id }, gc) {
-    return runQuickActionFor(gc, user, lang, id);
+  /**
+   * Runs one of them (the host only passes an id quickActions just listed for this viewer; checked here
+   * again). control/value (GateControl ≥ 1.171.0) only when the app used a control of the widget.
+   */
+  async runQuickAction({ user, lang, id, control, value }, gc) {
+    return runQuickActionFor(gc, user, lang, id, control, value);
   },
 
   /** Built-in data handed over by GateControl (once, by an administrator). */

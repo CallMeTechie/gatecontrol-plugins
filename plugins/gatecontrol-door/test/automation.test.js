@@ -89,7 +89,7 @@ test('Marc (`lock`, no opt-in) → refused auto_off; Lena (`view`) cannot even l
 test('success: push "automatisch aufgesperrt" with the quick action "Wieder zusperren"; door not opened → locked again after 3 min', () => withDoor({}, async (host, { admin, call, lockId, bridge, clock }) => {
   await optIn(admin, ANNA);
   const r = await auto(host, ANNA, `${lockId}:unlock`);
-  assert.deepEqual(r.body, { ok: true, message: 'Haustür aufgesperrt', state: null });
+  assert.deepEqual(r.body, { ok: true, message: 'Haustür aufgesperrt', state: null, widget: null });
   assert.equal(bridge.devices[1001].state, 3);
   const n = lastAuto(host);
   assert.equal(n.title, 'Haustür automatisch aufgesperrt');
