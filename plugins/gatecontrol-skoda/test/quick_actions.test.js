@@ -293,11 +293,13 @@ test('runQuickAction: a command Škoda refuses says so with the HTTP status; the
   const { accountId, vehicleId: v } = await owned(host, cloud);
   await asAdmin(host, 'PUT', `/accounts/${accountId}/spin`, { spin: '4711' });
   cloud.fail['/vehicle-access/'] = { status: 403, body: { errorCode: 'SPIN_INVALID', message: 'The S-PIN is not valid.\nTry again' } };
-  assert.deepEqual(await direct(host, ADA, `lock:${v}`), { ok: false, message: 'Škoda hat den Befehl abgelehnt (HTTP 403).' });
+  // a refused lock/unlock: the stored S-PIN is marked as rejected (control.test.js)
+  assert.deepEqual(await direct(host, ADA, `lock:${v}`), { ok: false, message: 'Škoda hat den Befehl abgelehnt (HTTP 403) – bitte die S-PIN im Konto prüfen und neu eingeben.' });
   const line = host.logs.find((l) => l.level === 'warn' && l.message.includes('quick action failed') && l.message.includes(`lock:${v}`));
   assert.ok(line, 'logged');
   for (const part of ['SKODA_API_ERROR', 'HTTP 403', 'SPIN_INVALID – The S-PIN is not valid. Try again']) assert.ok(line.message.includes(part), part);
   assert.ok(!host.logs.some((l) => l.message.includes('4711')), 'the S-PIN is never logged');
+  await asAdmin(host, 'PUT', `/accounts/${accountId}/spin`, { spin: '4711' }); // clears the mark
   cloud.fail['/vehicle-access/'] = 503;
   assert.deepEqual(await direct(host, ADA, `lock:${v}`, 'en'), { ok: false, message: 'Škoda cloud error (HTTP 503) – please try again later.' });
 }));

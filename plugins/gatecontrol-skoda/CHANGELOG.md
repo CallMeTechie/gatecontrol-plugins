@@ -2,6 +2,25 @@
 
 Škoda-Fahrzeuge (MySkoda) als GateControl-Plugin – bisher fest in GateControl eingebaut.
 
+## 1.3.3
+- **Eine abgelehnte S-PIN wird nicht noch einmal gesendet**: lehnt die Škoda-Cloud ein
+  Ver- oder Entriegeln ab (HTTP 4xx außer 401/429, z. B. 403 bei falscher S-PIN), merkt sich
+  das Plugin die gespeicherte S-PIN als abgelehnt. Bis eine neue S-PIN gespeichert ist, geht
+  kein Ver-/Entriegeln mehr an Škoda – App, Portal und Admin-Seite melden sofort „Škoda hat
+  die gespeicherte S-PIN abgelehnt – bitte die S-PIN im Konto neu eingeben.“ So sperrt Škoda
+  die S-PIN nicht mehr für 24 Stunden, nur weil die App die falsche S-PIN immer wieder
+  sendet. Die erste Ablehnung sagt „Škoda hat den Befehl abgelehnt (HTTP 403) – bitte die
+  S-PIN im Konto prüfen und neu eingeben.“; der Versuch zählt wie bisher zur Grenze von
+  5 Versuchen in 15 Minuten. 401, 429 und Störungen (5xx) markieren nichts.
+- Admin-Seite: das Konto zeigt „S-PIN abgelehnt“ mit dem Hinweis, die S-PIN neu einzugeben;
+  der Knopf „S-PIN“ ist dann hervorgehoben. Eine neu gespeicherte S-PIN hebt die Sperre auf
+  (beim Speichern wird nichts an Škoda gesendet). Die Schnellaktion „Schloss“ bleibt in den
+  Apps sichtbar und meldet beim Tippen den Hinweis. Andere Befehle (Klima, Laden, …) sind
+  nicht betroffen. Die S-PIN steht nie im Protokoll oder in einer Antwort.
+- **Keine eigene Seitenüberschrift mehr**: GateControl zeigt den Seitentitel im Kopf; die
+  Seite „Fahrzeuge“ beginnt direkt mit „Škoda-Konten“ (Abrufintervall und „Konto
+  hinzufügen“ stehen jetzt neben dieser Überschrift).
+
 ## 1.3.2
 - **Abgelehnte Befehle sagen jetzt, was los ist**: lehnt die Škoda-Cloud einen Befehl ab
   (z. B. Verriegeln), melden App und Portal „Škoda hat den Befehl abgelehnt (HTTP 403).“

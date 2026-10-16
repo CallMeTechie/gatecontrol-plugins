@@ -4,7 +4,7 @@
     "de": "Smart Home",
     "en": "Smart Home"
   },
-  "version": "1.5.0",
+  "version": "1.5.1",
   "publisher": "CallMeTechie",
   "description": {
     "de": "Phoscon/deCONZ-Gateways einbinden: Lichter, Steckdosen, Gruppen, Szenen und Sensoren steuern, Haushaltsmitgliedern zuweisen (Portal „Zuhause“) und Logikketten auf dem Gateway anlegen.",

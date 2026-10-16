@@ -1,8 +1,5 @@
 {
  "de": {
-  "title": "Klimaanlage",
-  "subtitle": "Midea-Klimageräte über die Midea-Cloud oder im Heimnetz steuern und Haushaltsmitgliedern zuweisen.",
-  "eyebrow": "Plugin · Klima",
   "discover": "Geräte entdecken",
   "discover.running": "Suche im lokalen Netz …",
   "discover.result": "Gerät(e) gefunden",
@@ -145,9 +142,6 @@
   "widget.outdoor": "Außentemperatur"
  },
  "en": {
-  "title": "Air conditioning",
-  "subtitle": "Control Midea air conditioners through the Midea cloud or in the home network and assign them to household members.",
-  "eyebrow": "Plugin · Climate",
   "discover": "Discover devices",
   "discover.running": "Searching the local network …",
   "discover.result": "device(s) found",

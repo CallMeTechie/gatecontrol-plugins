@@ -3,6 +3,11 @@
 Die Familie in der GateControl-App (eigener Tab), im Portal (eigener Tab „Familie“) und auf
 drei Admin-Seiten. Alles bleibt auf dem eigenen Server.
 
+## 1.3.1
+- **Portal ohne doppelte Überschrift**: das Portal zeigt über dem Tab schon „Familie“ – die
+  eigene Überschrift „Familie“ im Tab entfällt; Datum, Personen, offene Aufgaben und die
+  Familien-Chips bleiben oben stehen.
+
 ## 1.3.0
 Braucht **GateControl ≥ 1.168.0** (Profilbilder und Lieblingsfarben der Konten).
 - **Profilbild und Lieblingsfarbe:** Profilbild und Lieblingsfarbe ändert jede Person in der

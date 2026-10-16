@@ -43,6 +43,8 @@ test('render: members, modules, log and the portal tab in de and en; no unresolv
   assert.ok(portalHtml.includes('A.rules = {') && portalHtml.includes('function form(title, fields, opts)'));
   // 1.3.0: member chips in the portal header, the help on the members page, one avatar renderer
   assert.ok(portalHtml.includes('id="fa-p-people"') && portalHtml.includes('function avatar(m, size, opts)'));
+  // 1.3.1: no own title — the portal shows the tab name „Familie“ above the frame
+  assert.ok(!/<h1|fa-p-title/.test(portalHtml));
   const membersHtml = ui.render({ view: 'page', page: 'members', lang: 'de' }, t);
   assert.ok(membersHtml.includes('Profilbild und Lieblingsfarbe ändert jede Person in der GateControl-App (Einstellungen → Profil) oder der Admin im Benutzerprofil.'));
   assert.ok(!membersHtml.includes('fa-m-color'), 'no own member colour any more');
@@ -107,7 +109,7 @@ test('Leaflet: one constant (server/ui.js), nowhere else', () => {
 
 test('plugin.json: permissions (kiosk, actions), app tab, maps, the ten topics with SOS allowed critical', () => {
   assert.equal(manifest.id, 'gatecontrol-familie');
-  assert.equal(manifest.version, '1.3.0');
+  assert.equal(manifest.version, '1.3.1');
   assert.equal(manifest.gatecontrol, '>=1.168.0', 'avatarUrl / color / colorHex / initials in gc.users need GateControl 1.168.0');
   const p = manifest.permissions;
   assert.deepEqual([p.storage, p.portal, p.users, p.app, p.notify, p.background, p.kiosk, p.actions], [true, true, true, true, { perHour: 120 }, { intervalSeconds: 60 }, true, true]);

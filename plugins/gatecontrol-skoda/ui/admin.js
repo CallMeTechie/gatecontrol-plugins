@@ -26,11 +26,14 @@
       el('span', { class: 'sk-account-email', text: a.email }),
       el('span', { class: 'sk-badge', 'data-status': a.status, title: a.status_detail || '', text: statusText }),
       a.has_spin ? null : el('span', { class: 'sk-badge', 'data-status': 'muted', text: T('accounts.no_spin') }),
+      a.spin_rejected ? el('span', { class: 'sk-badge', 'data-status': 'spin_rejected', title: T('accounts.spin_rejected_hint'), text: T('accounts.spin_rejected') }) : null,
       el('span', { class: 'sk-grow' }),
       el('button', { type: 'button', class: 'btn btn-sm', text: T('accounts.sync'), on: { click: function () { syncAccount(a.id); } } }),
       el('button', { type: 'button', class: 'btn btn-sm', text: T('accounts.change_password'), on: { click: function () { passwordAccountId = a.id; $('#sk-pw-input').value = ''; S.openModal('sk-password-modal'); } } }),
-      el('button', { type: 'button', class: 'btn btn-sm', text: T('cmd.spin'), on: { click: function () { spinAccountId = a.id; $('#sk-spin-input').value = ''; S.openModal('sk-spin-modal'); } } }),
+      el('button', { type: 'button', class: 'btn btn-sm' + (a.spin_rejected ? ' btn-primary' : ''), text: T('cmd.spin'), on: { click: function () { spinAccountId = a.id; $('#sk-spin-input').value = ''; S.openModal('sk-spin-modal'); } } }),
       el('button', { type: 'button', class: 'btn btn-sm btn-danger', text: T('accounts.remove'), on: { click: function () { removeAccount(a); } } }),
+      // Škoda refused the stored S-PIN: no lock/unlock until a new one is saved
+      a.spin_rejected ? el('div', { class: 'sk-account-warn', role: 'note', text: T('accounts.spin_rejected_hint') }) : null,
     ]);
     return row;
   }
@@ -180,6 +183,7 @@
       }, function (e) {
         var code = S.codeOf(e);
         S.toast(code === 'SKODA_SPIN_REQUIRED' ? T('cmd.spin_required') : ((e && e.message) || T('cmd.failed')), 'error');
+        if (action === 'lock' || action === 'unlock') load(); // a refused S-PIN shows up at the account
       }).then(function () { setTimeout(reset, 3000); });
     });
   }

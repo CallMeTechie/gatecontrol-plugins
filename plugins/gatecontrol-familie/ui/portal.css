@@ -1,7 +1,6 @@
 /* Portal tab "Familie" (mockup PortalFamily). */
 .fa-portal{gap:20px}
 .fa-p-head{display:flex;flex-direction:column;gap:4px}
-.fa-p-title{margin:0;font-size:28px;font-weight:800;letter-spacing:-.4px}
 .fa-p-sub{margin:0;color:var(--muted);font-size:14px}
 .fa-p-people{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
 .fa-p-people[hidden]{display:none}

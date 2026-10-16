@@ -109,12 +109,14 @@ function rowToAccount(r, values) {
     id: r.id, email: r.email, status: r.status, status_detail: r.status_detail,
     next_retry_at: r.next_retry_at, updated_at: r.updated_at,
     has_credentials: has('password'), has_spin: has('spin'),
+    // Škoda refused the stored S-PIN: no S-PIN command until a new one is saved
+    spin_rejected: has('spin') && Boolean(r.spin_rejected_at),
   };
 }
 
 /** Accounts without secrets (has_credentials / has_spin only). */
 async function listAccounts(gc) {
-  const rows = (await gc.db.query('SELECT id, email, status, status_detail, next_retry_at, updated_at FROM accounts ORDER BY id')).rows;
+  const rows = (await gc.db.query('SELECT id, email, status, status_detail, next_retry_at, updated_at, spin_rejected_at FROM accounts ORDER BY id')).rows;
   const values = rows.length ? await gc.settings.all() : {};
   return rows.map((r) => rowToAccount(r, values || {}));
 }
@@ -159,7 +161,25 @@ async function setSpin(gc, id, spin) {
   if (!/^[0-9]{4,10}$/.test(String(spin == null ? '' : spin))) throw codeError('SKODA_VALIDATION', 'spin must be 4-10 digits');
   if (!(await getAccount(gc, id))) throw codeError('SKODA_ACCOUNT_NOT_FOUND', 'account not found');
   await setSecret(gc, id, 'spin', String(spin));
-  await gc.db.run("UPDATE accounts SET updated_at = datetime('now') WHERE id = ?", [Number(id)]);
+  // a new S-PIN: Škoda has not refused this one (nothing is sent to Škoda here)
+  await gc.db.run("UPDATE accounts SET spin_rejected_at = NULL, updated_at = datetime('now') WHERE id = ?", [Number(id)]);
+}
+
+/** Has Škoda refused the account's stored S-PIN (no S-PIN command until a new one is saved)? */
+async function isSpinRejected(gc, id) {
+  const r = (await gc.db.get('SELECT spin_rejected_at FROM accounts WHERE id = ?', [Number(id)])).row;
+  return Boolean(r && r.spin_rejected_at);
+}
+
+/**
+ * Škoda refused a command with the S-PIN `spin`: marks the stored S-PIN as
+ * rejected — only when it is still the one that was sent (a new S-PIN saved
+ * while the command ran stays usable). → whether it was marked.
+ */
+async function markSpinRejected(gc, id, spin) {
+  if (!spin || (await getSpin(gc, id)) !== spin) return false;
+  await gc.db.run("UPDATE accounts SET spin_rejected_at = datetime('now') WHERE id = ?", [Number(id)]);
+  return true;
 }
 
 async function removeAccount(gc, id) {
@@ -285,7 +305,7 @@ async function isOwner(gc, vehicleId, userId) {
 module.exports = {
   codeError, secretKey, tx, parseJson, validEmail,
   getSession, saveSession, getPassword, getSpin, dropSecrets,
-  listAccounts, getAccount, createAccount, updatePassword, setStatus, setSpin, removeAccount,
+  listAccounts, getAccount, createAccount, updatePassword, setStatus, setSpin, isSpinRejected, markSpinRejected, removeAccount,
   upsertVehicle, saveState, saveImage, listVehicles, getVehicle, imagePart, IMAGE_PART_BYTES, IMAGE_PART_CHARS,
   setOwners, ownerIdsOf, allOwners, vehiclesOwnedBy, isOwner,
 };

@@ -3,11 +3,9 @@
 :root{--surface-3:var(--surface-2);--faint:var(--muted);--amber:var(--warn);--green:var(--good);--coral:var(--crit)}
 body{padding:2px 2px 24px}
 [hidden]{display:none!important}
-.page-header{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:20px}
-.page-eyebrow{font-size:11px;text-transform:uppercase;letter-spacing:.09em;color:var(--muted);font-weight:700;margin-bottom:6px}
-.page-title{font-size:26px;font-weight:800;margin:0;line-height:1.15}
-.page-sub{color:var(--muted);font-size:13.5px;margin-top:6px;max-width:640px}
 .page-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+/* the page's actions at the top (no own page title: GateControl shows it in its header) */
+.page-toolbar{justify-content:flex-end;margin-bottom:16px}
 .btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:36px;padding:0 14px;border-radius:10px;border:1px solid var(--line-2);background:transparent;color:var(--text);font:600 13px var(--font);cursor:pointer;text-decoration:none}
 .btn:hover{border-color:var(--accent)}
 .btn:disabled{opacity:.55;cursor:default}
