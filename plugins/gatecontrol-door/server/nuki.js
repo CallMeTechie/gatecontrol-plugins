@@ -92,8 +92,16 @@ function bridgeTs(now) {
   return new Date(Math.floor(now / 1000) * 1000).toISOString().replace(/\.\d{3}Z$/, 'Z');
 }
 
+// The bridge refuses a repeated rnr (401, like a wrong token): a counter from a random start
+// never repeats within 65536 requests; random picks collide after a few hundred.
+let lastRnr = crypto.randomInt(0, 65536);
+function nextRnr() {
+  lastRnr = (lastRnr + 1) % 65536;
+  return lastRnr;
+}
+
 /** The hashed token parameters: ts, rnr, hash = sha256("<ts>,<rnr>,<token>"). */
-function hashAuth(token, now = Date.now(), rnr = crypto.randomInt(0, 65536)) {
+function hashAuth(token, now = Date.now(), rnr = nextRnr()) {
   const ts = bridgeTs(now);
   const hash = crypto.createHash('sha256').update(`${ts},${rnr},${token}`).digest('hex');
   return { ts, rnr, hash };

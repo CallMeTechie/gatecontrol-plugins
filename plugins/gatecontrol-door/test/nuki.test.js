@@ -19,6 +19,9 @@ test('hash auth: ts "YYYY-MM-DDTHH:MM:SSZ", rnr, hash = sha256("ts,rnr,token")',
   assert.match(a.hash, /^[0-9a-f]{64}$/);
   const b = nuki.hashAuth('abc123', at);
   assert.ok(Number.isInteger(b.rnr) && b.rnr >= 0 && b.rnr <= 65535);
+  // never the same rnr twice in a row of requests (the bridge refuses a repeated one)
+  const seen = new Set(Array.from({ length: 2000 }, () => nuki.hashAuth('abc123', at).rnr));
+  assert.equal(seen.size, 2000);
 });
 
 test('action mapping: smart lock 1 unlock / 2 lock / 3 unlatch, opener 3 electric strike; nothing else', () => {
