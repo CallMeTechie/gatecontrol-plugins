@@ -241,10 +241,26 @@ async function forUser(gc, user, r) {
   return (await all(gc)).filter((row) => supported(row) && rights.mayMode(r, user, row.location_id));
 }
 
-const QA_RE = /^mode_(disarmed|home|away):([0-9A-Za-z_-]{1,48})$/;
-const CARRIER = 'disarmed';
+// Quick actions per location (1.2.0): the toggle mode:<id> (on = Abwesend, off = Zuhause; it carries
+// the widget) and the button mode_disarmed:<id> ("Inaktiv"). m[1] = 'disarmed' or undefined (the toggle).
+const QA_RE = /^mode(?:_(disarmed))?:([0-9A-Za-z_-]{1,48})$/;
 
-/** The widget of a location (carried by its "Inaktiv" button): the mode and a choice to switch it. */
+/** The toggle's state of a mode: away → 'on', home → 'off', disarmed / unknown → null. */
+function toggleState(mode) {
+  return mode === 'away' ? 'on' : (mode === 'home' ? 'off' : null);
+}
+
+/**
+ * The mode a run of the toggle sets: target 'on' → away, 'off' → home (exactly that, also when it
+ * already holds); without a target away → home, home → away, disarmed / unknown → home.
+ */
+function toggleMode(current, target) {
+  if (target === 'on') return 'away';
+  if (target === 'off') return 'home';
+  return current === 'home' ? 'away' : 'home';
+}
+
+/** The widget of a location (carried by its toggle): the mode and a choice to switch it. */
 function widgetOf(t, lang, row) {
   return {
     label: t(lang, 'mode.widget_label'), value: modeName(t, lang, row.mode), state: TONE[row.mode] || null, power: false,
@@ -252,18 +268,31 @@ function widgetOf(t, lang, row) {
   };
 }
 
-/** The three quick-action buttons of a location (device ring:<id>; "Inaktiv" carries the widget). */
+/**
+ * The quick actions of a location (device ring:<id>): the toggle Zuhause ⇄ Abwesend (state, look,
+ * verbs, targets; carries the widget) and the button "Inaktiv".
+ */
 function quickActions(t, lang, row) {
-  const device = { id: `ring:${row.location_id}`, title: clip(row.name, 40) || t(lang, 'mode.device'), subtitle: t(lang, 'mode.widget_label'), icon: ICONS.device };
-  const subtitle = clip(t(lang, 'mode.current', { mode: modeName(t, lang, row.mode) }), 60);
-  return MODES.map((m) => ({
-    id: `mode_${m}:${row.location_id}`, title: t(lang, 'mode.' + m), subtitle, icon: ICONS[m], kind: 'button', confirm: false, device,
-    ...(m === CARRIER ? { widget: widgetOf(t, lang, row) } : {}),
-  }));
+  const name = clip(row.name, 40) || t(lang, 'mode.device');
+  const device = { id: `ring:${row.location_id}`, title: name, subtitle: t(lang, 'mode.widget_label'), icon: ICONS.device };
+  const state = toggleState(row.mode);
+  return [
+    {
+      id: `mode:${row.location_id}`, title: state ? t(lang, 'mode.' + row.mode) : t(lang, 'mode.widget_label'), subtitle: name,
+      icon: state === 'on' ? ICONS.away : (state === 'off' ? ICONS.home : ICONS.device), kind: 'toggle', state, confirm: false,
+      look: { on: { icon: ICONS.away, tone: 'good' }, off: { icon: ICONS.home, tone: 'neutral' } },
+      verbs: { on: t(lang, 'mode.away'), off: t(lang, 'mode.home') }, targets: true, device, widget: widgetOf(t, lang, row),
+    },
+    {
+      id: `mode_disarmed:${row.location_id}`, title: t(lang, 'mode.disarmed'), subtitle: clip(t(lang, 'mode.current', { mode: modeName(t, lang, row.mode) }), 60),
+      icon: ICONS.disarmed, kind: 'button', confirm: false, device,
+    },
+  ];
 }
 
 module.exports = {
-  MODES, ICONS, TONE, QA_RE, CARRIER, POLL_EVERY_MS, PER_MINUTE,
+  MODES, ICONS, TONE, QA_RE, POLL_EVERY_MS, PER_MINUTE,
   reset, all, get, why, supported, readable, refresh, syncLocations, tick, perform, modeName, view, adminView, forUser, widgetOf, quickActions,
+  toggleState, toggleMode,
   _mem: mem,
 };

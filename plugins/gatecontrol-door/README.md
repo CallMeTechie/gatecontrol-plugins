@@ -137,14 +137,16 @@ müssen die Modi für den Standort in der Ring-App eingeschaltet sein.
 
 * **Wo:** Seite „Geräte“ › *Ring-Modus* (pro Standort der aktuelle Modus und drei Knöpfe),
   Portal-Tab „Tür“, Start-Kachel „Ring-Modus · <Standort>“ und die **Schnellaktionen** der
-  Apps: pro Standort drei Knöpfe **Inaktiv**, **Zuhause**, **Abwesend** (Gerät = der Standort,
-  ohne Rückfrage). „Inaktiv“ trägt das **Widget** „Ring-Modus“ mit dem aktuellen Modus und einer
-  Auswahl der drei Modi (mit Symbolen wie in der Ring-App; GateControl vor 1.174.0 zeigt nur die
-  Namen).
+  Apps: pro Standort (Gerät = der Standort, ohne Rückfrage) **ein Schalter Zuhause ⇄ Abwesend**
+  (an = Abwesend, aus = Zuhause; Titel = der aktuelle Modus, bei Inaktiv „Ring-Modus“ ohne
+  Zustand; Antippen: Abwesend → Zuhause, Zuhause → Abwesend, Inaktiv → Zuhause) und der Knopf
+  **Inaktiv** (seit 1.2.0; vorher drei Knöpfe). Der Schalter trägt das **Widget** „Ring-Modus“
+  mit dem aktuellen Modus und einer Auswahl der drei Modi (mit Symbolen wie in der Ring-App;
+  GateControl vor 1.174.0 zeigt nur die Namen).
 * **Regeln:** Familie › Anwesenheit & Smart Home › z. B. Regel **„Alle sind unterwegs“** ›
-  Aktion **„Abwesend“** (Tür & Kamera, Standort) und **„Erste Person kommt heim“** ›
-  **„Zuhause“** oder **„Inaktiv“**. Knöpfe statt Umschalter: eine Regel setzt immer genau einen
-  Modus (auch wenn er schon gilt). Die Regel läuft als die Person, die ihre Aktionen festgelegt
+  Schalter des Standorts › **„Abwesend“** und **„Erste Person kommt heim“** › **„Zuhause“**
+  (oder der Knopf **„Inaktiv“**). Der Schalter kennt Zielzustände (`targets`): eine Regel setzt
+  immer genau diesen Modus, auch wenn er schon gilt – sie schaltet nie um. Die Regel läuft als die Person, die ihre Aktionen festgelegt
   hat – diese Person braucht „Ring-Modus schalten“ (Admins immer).
 * **Prüfung bei jedem Wechsel:** Recht, kein Kiosk-/Geräte-Vertrauen-Zugriff, Zeitfenster der
   Person, höchstens 10 Wechsel pro Minute pro Person und pro Standort. Jeder Versuch steht im
@@ -214,9 +216,10 @@ working regardless).
   encrypted, never logged and never sent to a page or app.
 * **Ring mode:** per Ring location Disarmed / Home / Away as in the Ring app (which cameras
   record and notify in each mode is set up there). Page **Devices**, the portal tab, a Start tile
-  and three quick-action buttons per location (`mode_disarmed|mode_home|mode_away:<locationId>`,
-  device `ring:<locationId>`, no confirm; "Disarmed" carries the widget "Ring mode" with a choice
-  control `mode`) — usable in Family rules ("Everyone is out" › "Away"). Right "Switch Ring mode"
+  and per location (device `ring:<locationId>`, no confirm) the toggle `mode:<locationId>`
+  Home ⇄ Away (on = Away; `targets`, so a Family rule "Everyone is out" › "Away" sets exactly
+  that mode; carries the widget "Ring mode" with a choice control `mode`) and the button
+  `mode_disarmed:<locationId>` ("Disarmed"). Right "Switch Ring mode"
   per person and location; administrators always. Checked like door actions (right, read-only
   viewers, time window, 10 per minute per person and location) and written to the history.
   Read every minute; locations with a **Ring Alarm** base station are never read or switched.
@@ -404,12 +407,21 @@ door. Runs: `POST /api/v1/client/actions/gatecontrol-door/<lockId>:<action>` wit
 `{ "source": "app" | "notification" }`. Another plugin (`gc.actions.run`, `automation: true`)
 gets only `lock`/`unlock`, and `unlock` only under the rules of "Automatisch aufsperren".
 
-Ring mode (1.1.0), per location the person may switch (administrators: every location that
-supports it): three buttons `mode_disarmed:<locationId>` ("Inaktiv"), `mode_home:<locationId>`
-("Zuhause"), `mode_away:<locationId>` ("Abwesend"), no confirm, subtitle "Aktuell: Zuhause",
-shield icons like the Ring app, `device: { id: "ring:<locationId>", title: "<location name>",
-subtitle: "Ring-Modus" }`. Buttons, not a toggle: a run always sets exactly that mode (also for
-`gc.actions.run`, e.g. a Family rule). `mode_disarmed:<locationId>` carries the widget:
+Ring mode, per location the person may switch (administrators: every location that supports
+it), both with `device: { id: "ring:<locationId>", title: "<location name>", subtitle:
+"Ring-Modus" }` and no confirm (1.2.0; 1.1.0 had three buttons — `mode_home:` / `mode_away:` are
+gone, pins of them disappear):
+
+* `mode:<locationId>` — **toggle** Zuhause ⇄ Abwesend: `state` `"on"` = away, `"off"` = home,
+  `null` = disarmed or unknown; `title` the current mode ("Zuhause" / "Abwesend", "Ring-Modus"
+  when disarmed/unknown), `subtitle` the location name; `look: { on: { icon: <running person
+  shield>, tone: "good" }, off: { icon: <person shield>, tone: "neutral" } }`, `verbs: { on:
+  "Abwesend", off: "Zuhause" }` (en Away / Home), `targets: true`. A run with a target state sets
+  exactly that mode (`on` → away, `off` → home, also when it already holds); a plain run: away →
+  home, home → away, disarmed/unknown → home. The answer has the new `state` and `widget`.
+* `mode_disarmed:<locationId>` — **button** "Inaktiv", subtitle "Aktuell: Zuhause".
+
+The toggle carries the widget:
 
 ```jsonc
 { "label": "Ring-Modus", "value": "Zuhause", "state": "good",   // "off" for Inaktiv
@@ -420,11 +432,12 @@ subtitle: "Ring-Modus" }`. Buttons, not a toggle: a run always sets exactly that
                              { "id": "away", "label": "Abwesend", "icon": "<path>" }] }] }
 ```
 
-A control run (`control: "mode"`, `value: "away"`) sets that mode and answers with the new
-widget. Answers: `{ ok: true, message: "Ring: Zuhause" }`, refused/failed `{ ok: false,
+A control run on the toggle (`control: "mode"`, `value: "away"`) sets that mode (also
+`disarmed`) and answers with the new state and widget. Answers: `{ ok: true, message: "Ring: Zuhause" }`, refused/failed `{ ok: false,
 message: "<reason>" }` (see "Ring-Modus" above). Option icons need GateControl ≥ 1.174.0 (older
-hosts drop them, the apps show the labels); widget and device need ≥ 1.171.0 / 1.172.0 (older
-hosts drop them, the buttons stay).
+hosts drop them, the apps show the labels); widget and device need ≥ 1.171.0 / 1.172.0, `look`
+1.172.0, `verbs` / `targets` 1.173.0 (older hosts drop them; a target-state run then becomes a
+plain run — the Familie rules with target states need 1.173.0 anyway).
 
 ### Pushes (`data` for the app)
 

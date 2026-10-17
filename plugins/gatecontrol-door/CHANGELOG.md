@@ -8,6 +8,22 @@ bleibt auf dem eigenen Server. Einrichtung, Risiken, Datenschutz und die App-API
 an; das Plugin nutzt die, die auch die Open-Source-Projekte ring-client-api (Homebridge) und
 python-ring-doorbell (Home Assistant) verwenden. Sie kann sich jederzeit ändern oder wegfallen.
 
+## 1.2.0
+- **Schnellaktion Ring-Modus: ein Schalter statt zwei Knöpfen.** Pro Standort gibt es jetzt
+  einen Schalter **Zuhause ⇄ Abwesend** (`mode:<Standort>`; an = Abwesend, aus = Zuhause) statt
+  der Knöpfe „Zuhause“ und „Abwesend“. Titel = der aktuelle Modus („Zuhause“ / „Abwesend“; bei
+  Inaktiv „Ring-Modus“ ohne Zustand), Symbol wie in der Ring-App (Schild mit Person bzw. mit
+  laufender Person), ohne Rückfrage. Antippen: Abwesend → Zuhause, Zuhause → Abwesend,
+  Inaktiv → Zuhause.
+- **Regeln** setzen über den Schalter einen festen Zielzustand (`targets`, „Abwesend“ /
+  „Zuhause“) – genau diesen Modus, auch wenn er schon gilt; umgeschaltet wird dabei nie.
+- Der Knopf **„Inaktiv“** bleibt. Das **Widget** „Ring-Modus“ (aktueller Modus, Auswahl der drei
+  Modi) hängt jetzt am Schalter; die Auswahl funktioniert wie bisher.
+- **Angeheftete Knöpfe „Zuhause“ / „Abwesend“ (`mode_home:` / `mode_away:`) verschwinden** – die
+  App entfernt Schnellaktionen, die das Plugin nicht mehr anbietet; bitte den Schalter neu
+  anheften. Regeln mit diesen Aktionen auf den Schalter umstellen.
+- Rechte, Rate-Limits, Verlauf, Seite „Geräte“ und Portal unverändert.
+
 ## 1.1.0
 - **Neu: Ring-Modus (Inaktiv / Zuhause / Abwesend)** pro Ring-Standort – wie in der Ring-App
   unter *Modi*; welche Kameras im jeweiligen Modus aufnehmen und melden, bleibt in der Ring-App
