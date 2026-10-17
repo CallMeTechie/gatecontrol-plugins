@@ -63,10 +63,18 @@ async function refresh(gc, action, { now = Date.now(), client = null } = {}) {
 
 /**
  * Run `action` on guest `vmid` of connection `host` for the administrator `user`.
+ * `action` may also be a function (status of the guest right now → action, or
+ * null for nothing to do — the quick actions' target states): then a guest that
+ * already is where it should be answers { skipped: true, status, guest_name,
+ * guest_type } without any change.
+ * opts.via: where the run came from for the log and the action list ('App',
+ * 'Regel' …; none for the page); opts.waitMs: how long to wait for the task
+ * (default timing.waitMs).
  * → the action (status running | ok | error)
  */
-async function run(gc, host, vmid, action, user) {
-  if (!ACTIONS.includes(action)) throw codeError('ACTION_INVALID');
+async function run(gc, host, vmid, action, user, opts = {}) {
+  const pick = typeof action === 'function' ? action : null;
+  if (!pick && !ACTIONS.includes(action)) throw codeError('ACTION_INVALID');
   if (!validVmid(vmid)) throw codeError('NOT_FOUND');
   const client = await poll.clientFor(gc, host, { timeoutMs: timing.timeoutMs });
   // where the guest is right now (it may have migrated since the last poll)
@@ -74,16 +82,25 @@ async function run(gc, host, vmid, action, user) {
   const g = vms.find((r) => r && Number(r.vmid) === vmid && (r.type === 'qemu' || r.type === 'lxc'));
   if (!g) throw codeError('GUEST_NOT_FOUND');
   if (Number(g.template) === 1) throw codeError('GUEST_TEMPLATE');
-  if (!allowed(action, String(g.status || ''))) throw codeError('GUEST_STATE');
+  const status = String(g.status || '');
+  const guestName = typeof g.name === 'string' ? g.name.slice(0, 120) : '';
+  if (pick) {
+    action = pick(status);
+    if (action == null) return { skipped: true, status, guest_name: guestName, guest_type: g.type };
+    if (!ACTIONS.includes(action)) throw codeError('ACTION_INVALID');
+  }
+  if (!allowed(action, status)) throw codeError('GUEST_STATE');
   const node = String(g.node || '');
   const upid = await client.guestAction(node, g.type, vmid, action);
   const started = Date.now();
+  const via = typeof opts.via === 'string' && opts.via ? opts.via.slice(0, 20) : null;
+  const name = user && user.name ? String(user.name).slice(0, 90) : null;
   let a = await store.addAction(gc, {
-    host_id: host.id, node, guest_type: g.type, vmid, guest_name: typeof g.name === 'string' ? g.name.slice(0, 120) : '', action, upid,
-    status: 'running', user_id: Number.isInteger(user && user.id) ? user.id : null, user_name: user && user.name ? String(user.name).slice(0, 120) : null, started_at: started,
+    host_id: host.id, node, guest_type: g.type, vmid, guest_name: guestName, action, upid,
+    status: 'running', user_id: Number.isInteger(user && user.id) ? user.id : null, user_name: name && via ? `${name} (${via})` : name, started_at: started,
   });
-  gc.log.info('proxmox action', `#${a.id}`, action, `${g.type}/${vmid}`, `on ${node}`, `connection ${host.id}`, `by ${a.user_name || a.user_id || '?'}`);
-  const until = started + timing.waitMs;
+  gc.log.info('proxmox action', `#${a.id}`, action, `${g.type}/${vmid}`, `on ${node}`, `connection ${host.id}`, `by ${name || a.user_id || '?'}`, ...(via ? [`via ${via}`] : []));
+  const until = started + (Number.isFinite(opts.waitMs) ? opts.waitMs : timing.waitMs);
   while (a.status === 'running' && Date.now() < until) {
     await sleep(timing.pollMs);
     a = await refresh(gc, a, { client, now: Date.now() });

@@ -133,7 +133,7 @@ test('watch toggle: boolean only, per connection, shown in the status', async ()
   });
 });
 
-test('administrators only: every route refuses non-admins and portal viewers; no portal part', async () => {
+test('administrators only: every route refuses non-admins and portal viewers; nothing in the portal', async () => {
   await withHost({}, async (host, fake) => {
     const id = await addHost(host);
     fake.calls.length = 0;
@@ -149,9 +149,12 @@ test('administrators only: every route refuses non-admins and portal viewers; no
     }
     assert.equal(fake.calls.length, 0);
     assert.equal((await store.listHosts(host.gc)).length, 1);
+    // the portal shows nothing; the own tab only carries the Start tile of an administrator's app
     assert.equal(await host.portalVisible(ADA), false);
     assert.equal(await host.portalVisible(ADMIN), false);
-    assert.equal(host.manifest.ui.portal, undefined, 'no portal tab or sections');
+    assert.equal(await host.portalVisible({ ...ADA, loggedIn: true, app: true }), false);
+    assert.equal(await host.portalVisible({ ...ADMIN, loggedIn: true, app: true }), true);
+    assert.deepEqual(host.manifest.ui.portal.sections || [], [], 'no sections in the portal tabs');
     // the page itself: the admin page for administrators only
     for (const user of [ADA, { ...ADMIN, portal: true }]) {
       const html = (await host.render({ view: 'page', user })).html;
@@ -201,7 +204,7 @@ test('texts: de and en have the same keys; every key the page and the server use
   const used = new Set();
   for (const m of read('ui/admin.html').matchAll(/\{\{t:([a-z0-9_.-]+)\}\}/g)) used.add(m[1]);
   for (const f of ['ui/admin.js', 'ui/common.js']) for (const m of read(f).matchAll(/\bT\('([A-Za-z0-9_.]+)'/g)) used.add(m[1]);
-  for (const f of ['server/index.js', 'server/ui.js']) for (const m of read(f).matchAll(/\bt\(lang, '([A-Za-z0-9_.]+)'/g)) used.add(m[1]);
+  for (const f of ['server/index.js', 'server/ui.js', 'server/quick.js']) for (const m of read(f).matchAll(/\bt\(lang, '([A-Za-z0-9_.]+)'/g)) used.add(m[1]);
   for (const m of read('server/index.js').matchAll(/'(error\.[A-Za-z_]+)'/g)) used.add(m[1]);
   // keys built at run time
   for (const a of ['start', 'shutdown', 'stop', 'reboot']) { used.add(`action.${a}`); used.add(`action.title_${a}`); used.add(`action.msg_${a}`); }
@@ -227,11 +230,12 @@ test('notification texts (alerts.js) de/en have the same keys and placeholders',
 test('manifest: licence required, admin page only, the home target pve (http, several), five topics', async () => {
   const m = JSON.parse(fs.readFileSync(path.join(DIR, 'plugin.json'), 'utf8'));
   assert.equal(m.id, 'gatecontrol-proxmox');
-  assert.equal(m.version, '1.0.0');
+  assert.equal(m.version, '1.1.0');
   assert.equal(m.license.required, true);
   assert.deepEqual(m.permissions.network.homeTargets.map((t) => [t.id, t.protocols, t.multiple]), [['pve', ['http'], true]]);
   assert.equal(m.permissions.network.internet, undefined, 'no internet access');
-  assert.equal(m.permissions.portal, undefined);
+  assert.equal(m.permissions.portal, true, 'quick actions and the Start tile of the apps need it');
+  assert.equal(m.gatecontrol, '>=1.154.0', 'newer quick-action fields are dropped by older hosts');
   assert.deepEqual(m.notifyTopics.map((t) => t.id), ['unreachable', 'guest_stopped', 'storage_full', 'backup_failed', 'node_load']);
   assert.ok(!m.ui.settings.some((s) => s.type === 'secret'), 'token secrets are per connection (setSecret), not a setting');
 });

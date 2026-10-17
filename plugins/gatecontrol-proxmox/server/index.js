@@ -16,6 +16,13 @@
 //                                               confirm_hard: true (stop only) }
 //     GET    /actions/:id                     the action, its task checked once more while running
 //
+//   quick actions, widgets and the Start tile of the GateControl apps
+//   (hooks quickActions / runQuickAction / portalTiles, server/quick.js) —
+//   administrators only: per connection a refresh button with its widget,
+//   per watched guest start/shut down (a toggle) and reboot; nothing for
+//   anybody else, the portal itself shows nothing (portalVisible: only an
+//   administrator's app, for the Start tile)
+//
 // Requests run with the requesting user's rights; control actions are
 // written to the plugin log with the administrator's name and kept in the
 // action list. The API token secret is stored with gc.settings.setSecret
@@ -28,6 +35,7 @@ const poll = require('./poll');
 const control = require('./control');
 const alerts = require('./alerts');
 const pve = require('./pve');
+const quick = require('./quick');
 const texts = require('./texts.json');
 
 function t(lang, key, params) {
@@ -264,8 +272,32 @@ module.exports = {
     return { html: ui.render(view, t) };
   },
 
-  /** No portal tab or section. */
-  async portalVisible() { return false; },
+  /**
+   * The portal shows nothing of this plugin; the own tab (ui.portal) exists only so the
+   * apps' start card can carry the Start tile — visible for an administrator's app only.
+   */
+  async portalVisible({ user } = {}) {
+    return quick.isAdmin(user) && user.app === true;
+  },
+
+  /** Start tile of the apps (administrators only): „Proxmox“ with guests running, CPU, RAM, storage. */
+  async portalTiles({ user, lang } = {}, gc) {
+    return quick.tiles(gc, user, lang === 'en' ? 'en' : 'de', t, errorText);
+  },
+
+  /** Quick actions of the apps (administrators only, at most 16): refresh per connection, start/shut down and reboot per watched guest. */
+  async quickActions({ user, lang } = {}, gc) {
+    return quick.list(gc, user, lang === 'en' ? 'en' : 'de', t, errorText);
+  },
+
+  /**
+   * Runs one of them (the host only passes an id quickActions just listed for this viewer; the
+   * administrator is checked here again). `target` 'on' | 'off' (GateControl ≥ 1.173.0): start
+   * unless running / shut down unless stopped — never flipped, never a hard stop.
+   */
+  async runQuickAction(args, gc) {
+    return quick.run(gc, args, t, errorText);
+  },
 
   /**
    * Background (every 30 s): the connections whose poll is due, then the
