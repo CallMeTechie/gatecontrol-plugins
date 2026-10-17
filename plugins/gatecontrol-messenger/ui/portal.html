@@ -1,0 +1,26 @@
+<div class="ms-app" id="ms-app" data-pane="list" data-info="0">
+  <aside class="ms-list" aria-label="{{t:portal.chats}}">
+    <div class="ms-list-head">
+      <label class="ms-search"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="M20 20l-3.5-3.5"></path></svg><span class="ms-sr">{{t:portal.search_chats}}</span><input id="ms-q" type="search" autocomplete="off" placeholder="{{t:portal.search_chats}}"></label>
+      <button type="button" class="ms-ib" id="ms-prefs-btn" aria-label="{{t:prefs.title}}" title="{{t:prefs.title}}"></button>
+      <button type="button" class="ms-ib is-primary" id="ms-new-btn" aria-label="{{t:portal.new_chat}}" title="{{t:portal.new_chat}}"></button>
+    </div>
+    <div class="ms-rows" id="ms-rows" role="list"></div>
+    <p class="ms-list-empty" id="ms-list-empty" hidden>{{t:portal.no_chats}}</p>
+  </aside>
+  <section class="ms-chat" id="ms-chat" aria-label="{{t:portal.chat}}">
+    <div class="ms-placeholder" id="ms-placeholder">
+      <div class="ms-ph-icon" aria-hidden="true"><svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h16v11H9l-5 4z"></path></svg></div>
+      <b>{{t:portal.pick_title}}</b>
+      <span class="ms-muted">{{t:portal.pick_text}}</span>
+    </div>
+    <div class="ms-conv" id="ms-conv" hidden></div>
+  </section>
+  <aside class="ms-info" id="ms-info" aria-label="{{t:info.title}}" hidden></aside>
+</div>
+<div class="ms-login" id="ms-login" hidden>
+  <b>{{t:portal.login_title}}</b>
+  <span class="ms-muted">{{t:portal.login_text}}</span>
+</div>
+<input type="file" id="ms-file" hidden>
+<input type="file" id="ms-avatar-file" accept="image/jpeg,image/png,image/webp" hidden>
