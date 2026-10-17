@@ -8,6 +8,13 @@ bleibt auf dem eigenen Server. Einrichtung, Risiken, Datenschutz und die App-API
 an; das Plugin nutzt die, die auch die Open-Source-Projekte ring-client-api (Homebridge) und
 python-ring-doorbell (Home Assistant) verwenden. Sie kann sich jederzeit ändern oder wegfallen.
 
+## 1.2.1
+- **Nuki: seltene „Bridge-Token ungültig“-Fehler behoben.** Jede Anfrage an die Bridge trägt eine
+  Zufallszahl (`rnr`), die die Bridge nicht zweimal annimmt. Sie wurde bisher jedes Mal neu
+  gewürfelt und konnte sich wiederholen – dann lehnte die Bridge die Aktion ab, als wäre der
+  Token falsch. Jetzt zählt das Plugin von einem zufälligen Start aus hoch; Wiederholungen
+  gibt es erst nach 65 536 Anfragen.
+
 ## 1.2.0
 - **Schnellaktion Ring-Modus: ein Schalter statt zwei Knöpfen.** Pro Standort gibt es jetzt
   einen Schalter **Zuhause ⇄ Abwesend** (`mode:<Standort>`; an = Abwesend, aus = Zuhause) statt
