@@ -20,6 +20,8 @@
 //   GET    admin/presence/actions              the quick actions of the other plugins for the administrator
 //   POST   admin/presence/rules                PATCH|DELETE admin/presence/rules/<id>
 //                                              (quick actions of a rule saved here run as the administrator)
+//   GET    admin/presence/places               1.5.0: the rule places (also in GET admin/presence: places, home)
+//   POST   admin/presence/places               PATCH|DELETE admin/presence/places/<id>   (server/ruleplaces.js)
 
 const store = require('./store');
 const tz = require('./tz');
@@ -29,6 +31,7 @@ const locate = require('./locate');
 const shopping = require('./shopping');
 const kiosk = require('./kiosk');
 const presence = require('./presence');
+const ruleplaces = require('./ruleplaces');
 const { fail, posInt, iso } = require('./util');
 
 const DAY = 86400000;
@@ -126,6 +129,7 @@ async function presenceRoute(req, gc, seg, cfg, now, m, body) {
     return {
       modules: { presence: cfg.modules.presence }, location: cfg.location, members: presence.membersView(fam, map),
       ...(await presence.listRules(gc, ctx)), actions: own.actions, actionsAvailable: own.available,
+      ...(await ruleplaces.list(gc, ctx)),
     };
   }
   if (b === 'actions' && seg.length === 3 && m === 'GET') return presence.actions(gc, req.user.id, lang);
@@ -133,6 +137,12 @@ async function presenceRoute(req, gc, seg, cfg, now, m, body) {
     if (seg.length === 3 && m === 'POST') return store.tx(gc, () => presence.createRule(gc, ctx, body));
     if (seg.length === 4 && (m === 'PATCH' || m === 'PUT')) return store.tx(gc, () => presence.updateRule(gc, ctx, c, body));
     if (seg.length === 4 && m === 'DELETE') return store.tx(gc, () => presence.removeRule(gc, c));
+  }
+  if (b === 'places') {
+    if (seg.length === 3 && m === 'GET') return ruleplaces.list(gc, ctx);
+    if (seg.length === 3 && m === 'POST') return store.tx(gc, () => ruleplaces.create(gc, ctx, body));
+    if (seg.length === 4 && (m === 'PATCH' || m === 'PUT')) return store.tx(gc, () => ruleplaces.update(gc, ctx, c, body));
+    if (seg.length === 4 && m === 'DELETE') return store.tx(gc, () => ruleplaces.remove(gc, c));
   }
   throw fail('not_found');
 }

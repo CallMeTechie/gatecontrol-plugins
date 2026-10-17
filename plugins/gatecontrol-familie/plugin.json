@@ -4,7 +4,7 @@
     "de": "Familie",
     "en": "Family"
   },
-  "version": "1.4.0",
+  "version": "1.5.0",
   "publisher": "CallMeTechie",
   "description": {
     "de": "Die Familie in der GateControl-App und im Portal: gemeinsame Einkaufslisten (offline nutzbar), Aufgaben mit Erinnerung und Sternen für Kinder, Termine und Geburtstage, Abholen & Fahrten („Wer holt Tim?“), Notfall-Karte, Kinder orten auf Anfrage (das Kind sieht jede Abfrage, endet mit 18), „Bin angekommen“ und SOS, Orts-Erinnerungen, Taschengeld (nur Buchhaltung), Wunschlisten, Haushaltsbuch, Pinnwand & Packlisten, Essensplan, Anwesenheit mit Smart-Home-Regeln (nur mit Zustimmung) und ein Dashboard für ein Wand-Tablet. Alles bleibt auf dem eigenen Server.",
@@ -109,8 +109,8 @@
           "en": "Latitude of the home"
         },
         "help": {
-          "de": "Nur für die Regel-Bedingung „nach Sonnenuntergang“ (Anwesenheit & Smart Home), z. B. 50.94. Leer = Bedingung wird ignoriert.",
-          "en": "Only for the rule condition “after sunset” (presence & smart home), e.g. 50.94. Empty = the condition is ignored."
+          "de": "Für die Regel-Bedingung „nach Sonnenuntergang“ und „Zuhause übernehmen“ bei den Orten (Anwesenheit & Smart Home), z. B. 50.94. Leer = Bedingung wird ignoriert.",
+          "en": "For the rule condition “after sunset” and “Use home” for places (presence & smart home), e.g. 50.94. Empty = the condition is ignored."
         },
         "default": ""
       },

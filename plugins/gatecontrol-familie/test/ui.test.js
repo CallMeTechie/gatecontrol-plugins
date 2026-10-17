@@ -37,12 +37,19 @@ test('render: members, modules, log and the portal tab in de and en; no unresolv
   assert.ok(!ui.render({ view: 'page', page: 'modules' }, t).includes('window.FA.map'), 'the modules page does not need it');
   // 1.2.0: the rule editor on the presence page and in the portal, the new portal sections
   const pres = ui.render({ view: 'page', page: 'presence' }, t);
-  assert.ok(pres.includes('A.rules = {') && pres.includes('id="fa-pr-rules"') && !pres.includes('window.FA.map'));
+  assert.ok(pres.includes('A.rules = {') && pres.includes('id="fa-pr-rules"'));
   const portalHtml = ui.render({ view: 'portal', loggedIn: true }, t);
   for (const id of ['fa-board', 'fa-meals', 'fa-wishes', 'fa-allowance', 'fa-expenses', 'fa-presence']) assert.ok(portalHtml.includes(`id="${id}"`), id);
   assert.ok(portalHtml.includes('A.rules = {') && portalHtml.includes('function form(title, fields, opts)'));
   // 1.4.0: one rule editor (ui/rules.js) for the admin page and the portal: the wide three-column dialog
   for (const html of [pres, portalHtml]) assert.ok(html.includes("class: 'fa-rm'") && html.includes('.fa-rm-body{') && html.includes("'aria-pressed'"));
+  // 1.5.0: places as triggers — the section „Orte“ on the admin page and in the portal, the place editor on the map (ui/map.js pick)
+  assert.ok(pres.includes('id="fa-pr-places"') && pres.includes('id="fa-pr-place-add"') && portalHtml.includes('id="fa-pres-places"') && portalHtml.includes('id="fa-pres-place-add"'));
+  for (const html of [pres, portalHtml]) assert.ok(html.includes('window.FA.map') && html.includes('function pick(box, o)') && html.includes('function editPlace(p, data, opts, done)') && html.includes('.fa-pe{'));
+  for (const lang of ['de', 'en']) {
+    const h = ui.render({ view: 'page', page: 'presence', lang }, t);
+    assert.ok(h.includes(texts[lang]['places.intro'].replace(/"/g, '&quot;').replace(/'/g, '&#39;')) && h.includes(texts[lang]['presence.note_places'].replace(/"/g, '&quot;').replace(/'/g, '&#39;')), lang);
+  }
   // 1.3.0: member chips in the portal header, the help on the members page, one avatar renderer
   assert.ok(portalHtml.includes('id="fa-p-people"') && portalHtml.includes('function avatar(m, size, opts)'));
   // 1.3.1: no own title — the portal shows the tab name „Familie“ above the frame
@@ -81,6 +88,7 @@ test('texts: every key used by the pages exists in de and en; both languages hav
     ...['home', 'away'].map((x) => 'avatar.' + x),
     ...['not_found', 'plugin_error', 'timeout', 'rate_limit', 'invalid', 'denied', 'unavailable', 'no_recipients', 'failed', 'error', 'needs_target', 'state_unknown', 'invalid_state'].map((x) => 'rule.err.' + x),
     ...require('../server/presence').TRIGGERS.flatMap((x) => ['rule.m_trig_' + x, 'rule.m_trig_' + x + '_hint']),
+    ...Object.keys(require('../server/presence').PLACE_TRIGGERS).map((x) => 'rule.log_' + x),
     'rule.m_on', 'rule.m_off',
     ...['pending', 'answered', 'declined', 'failed', 'expired'].map((x) => 'status.' + x),
     ...['no_permission', 'location_off', 'timeout'].map((x) => 'fail.' + x),
@@ -113,7 +121,7 @@ test('Leaflet: one constant (server/ui.js), nowhere else', () => {
 
 test('plugin.json: permissions (kiosk, actions), app tab, maps, the ten topics with SOS allowed critical', () => {
   assert.equal(manifest.id, 'gatecontrol-familie');
-  assert.equal(manifest.version, '1.4.0');
+  assert.equal(manifest.version, '1.5.0');
   assert.equal(manifest.gatecontrol, '>=1.173.0', 'target states of switches (gc.actions.run state, verbs/targets/device in gc.actions.list) need GateControl 1.173.0');
   const p = manifest.permissions;
   assert.deepEqual([p.storage, p.portal, p.users, p.app, p.notify, p.background, p.kiosk, p.actions], [true, true, true, true, { perHour: 120 }, { intervalSeconds: 60 }, true, true]);

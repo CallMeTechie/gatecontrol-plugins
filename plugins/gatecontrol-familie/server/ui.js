@@ -32,7 +32,7 @@ const FILES = {
   members: { html: read('members.html'), js: read('members.js'), map: true },
   modules: { html: read('modules.html'), js: read('modules.js'), map: false },
   log: { html: read('log.html'), js: read('log.js'), map: true },
-  presence: { html: read('presence.html'), js: read('presence.js'), map: false, rules: true },
+  presence: { html: read('presence.html'), js: read('presence.js'), map: true, rules: true },
   portal: { html: read('portal.html'), js: read('portal.js') + '\n' + read('portal-plus.js'), css: read('portal.css'), map: true, rules: true },
   wall: { html: read('wall.html'), js: read('wall.js'), css: read('wall.css'), map: false },
 };

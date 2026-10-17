@@ -3,7 +3,9 @@
    server/ui.js) and allows the OSM tiles in the frame. When Leaflet does not
    load (older GateControl, blocked, offline) the page still shows every
    position as coordinates with an "OpenStreetMap" link. No marker images
-   (the frame allows none): circles only. */
+   (the frame allows none): circles only.
+   1.5.0: pick() — choose a position (a rule place): tap the map or drag the
+   point, the radius drawn as a circle; the point is a styled div (no image). */
 (function () {
   'use strict';
   var A = window.FA, T = A.T, el = A.el;
@@ -118,5 +120,59 @@
     }).catch(function () { fallback(box, list); });
   }
 
-  window.FA.map = { load: load, show: show, osmLink: osmLink, osmUrl: osmUrl, coordText: coordText };
+  var GERMANY = { lat: 51.16, lon: 10.45 };
+
+  /**
+   * A map to choose a position in `box` (1.5.0): o = { lat, lon (null = none yet), radius (m),
+   * center: { lat, lon } | null (where to look without a position), color, onPick(lat, lon) }.
+   * Resolves { set(lat, lon), radius(m), fit(), invalidate() } — or null when Leaflet does not load
+   * (the caller keeps its coordinate fields).
+   */
+  function pick(box, o) {
+    return load().then(function (L) {
+      A.clear(box);
+      var holder = el('div', { class: 'fa-map fa-map-pick', role: 'application', 'aria-label': T('map.pick_aria') });
+      box.appendChild(holder);
+      var map = L.map(holder, { scrollWheelZoom: false, attributionControl: true });
+      L.tileLayer(CTX.tiles, {
+        maxZoom: 19,
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>',
+        referrerPolicy: 'origin',
+      }).addTo(map);
+      var color = A.safeColor(o.color, '#0F766E');
+      var pos = o.lat != null && o.lon != null ? { lat: o.lat, lon: o.lon } : null;
+      var radius = o.radius || 200;
+      var marker = null, circle = null;
+      function draw() {
+        if (!pos) return;
+        var ll = [pos.lat, pos.lon];
+        if (!marker) {
+          circle = L.circle(ll, { radius: radius, color: color, weight: 2, fillColor: color, fillOpacity: 0.14, interactive: false }).addTo(map);
+          marker = L.marker(ll, { draggable: true, keyboard: true, title: T('map.pick_point'), alt: T('map.pick_point'),
+            icon: L.divIcon({ className: 'fa-pin', html: '', iconSize: [22, 22], iconAnchor: [11, 11] }) }).addTo(map);
+          marker.on('drag', function (e) { var p = e.target.getLatLng(); pos = { lat: p.lat, lon: p.lng }; circle.setLatLng(p); });
+          marker.on('dragend', function () { o.onPick(pos.lat, pos.lon); });
+        } else { marker.setLatLng(ll); circle.setLatLng(ll); }
+        circle.setRadius(radius);
+      }
+      // the circle with some room around it (computed from the position: no projection needed)
+      function fit() {
+        if (pos) map.fitBounds(L.latLng(pos.lat, pos.lon).toBounds(radius * 2), { padding: [28, 28], maxZoom: 17, animate: false });
+      }
+      map.on('click', function (e) { pos = { lat: e.latlng.lat, lon: e.latlng.lng }; draw(); o.onPick(pos.lat, pos.lon); });
+      // a view first, then the layers
+      var start = pos || o.center || GERMANY;
+      map.setView([start.lat, start.lon], pos ? 16 : (o.center ? 14 : 6));
+      if (pos) { draw(); fit(); }
+      setTimeout(function () { try { map.invalidateSize(); if (pos) fit(); } catch (_) { /* gone */ } }, 60);
+      return {
+        set: function (lat, lon) { pos = { lat: lat, lon: lon }; draw(); fit(); },
+        radius: function (r) { radius = r; if (circle) circle.setRadius(r); },
+        fit: fit,
+        invalidate: function () { try { map.invalidateSize(); } catch (_) { /* gone */ } },
+      };
+    }).catch(function () { return null; });
+  }
+
+  window.FA.map = { load: load, show: show, pick: pick, osmLink: osmLink, osmUrl: osmUrl, coordText: coordText, GERMANY: GERMANY };
 }());

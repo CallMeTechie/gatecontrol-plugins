@@ -15,7 +15,8 @@
 // the 14th-birthday hint, expiry of locate requests, pocket money payouts
 // (07:00 on the payout day), the grace time of the presence rule "all away"
 // (quick actions of other plugins through gc.actions, permissions.actions,
-// GateControl ≥ 1.166.0), retention (coordinates 7 days, log rows 90 days,
+// GateControl ≥ 1.166.0), retention (coordinates 7 days, log rows and place
+// rule events 90 days,
 // shopping tombstones and rides 30 days, expired pinboard notes, meals 90 days).
 //
 // The portal tab of a member with the role 'wall' is the wall view (a fixed

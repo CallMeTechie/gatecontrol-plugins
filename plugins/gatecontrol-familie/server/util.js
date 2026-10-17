@@ -23,6 +23,8 @@ const STATUS = {
   no_star_rate: 409,
   no_consent: 409,
   too_many: 409,
+  name_taken: 409,
+  in_use: 409,
   too_soon: 429,
   daily_limit: 429,
   internal: 500,

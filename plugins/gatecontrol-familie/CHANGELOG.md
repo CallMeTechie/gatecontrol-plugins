@@ -3,6 +3,68 @@
 Die Familie in der GateControl-App (eigener Tab), im Portal (eigener Tab „Familie“) und auf
 drei Admin-Seiten. Alles bleibt auf dem eigenen Server.
 
+## 1.5.0
+Braucht weiterhin **GateControl ≥ 1.173.0** (keine Änderung am Kern) und die GateControl-App
+1.41.0 für „Orte für Regeln teilen“.
+- **Orte als Auslöser für Regeln:** zwei neue Auslöser **„Kommt an einem Ort an“** und
+  **„Verlässt einen Ort“** – „Wenn Marc bei Schule ankommt …“, „Wenn jemand Arbeit Anna
+  verlässt …“, und mit einem großen Radius um Zuhause (z. B. 500 m) „kurz vor Zuhause“. Je Regel
+  eine Person oder **„Jemand“** (jede Person, die Orte teilt) und ein Ort. Das Geofencing läuft
+  auf dem Handy der Person (wie bei den Orts-Erinnerungen); der Server erfährt nur „Person X hat
+  Ort Y betreten / verlassen“ – **nie eine Position**. Eine Regel greift wie die anderen
+  höchstens alle 10 Minuten und nur, wenn Zeitfenster und „nach Sonnenuntergang“ passen.
+- **Eigene Zustimmung „Orte für Regeln teilen“** (in der App, unter „Anwesenheit teilen“) –
+  unabhängig vom Teilen von zuhause/unterwegs. Ausgeschaltet beobachtet das Handy keinen Ort
+  mehr; die gespeicherten Meldungen bleiben für das Protokoll.
+- **Verspätete Meldungen lösen nichts aus:** eine Meldung, die mehr als 10 Minuten nach dem
+  Betreten / Verlassen ankommt (das Handy war offline), wird gespeichert, führt aber keine Regel
+  aus – eine Ankunft, die eine Stunde später gemeldet wird, öffnet keine Tür und schaltet kein
+  Licht. Dieselbe Meldung innerhalb von 60 Sekunden zählt nur einmal.
+- **Abschnitt „Orte“** auf der Seite „Anwesenheit & Smart Home“ und im Portal-Tab (Eltern):
+  Karten mit Name, Radius und wie viele Regeln den Ort nutzen; Bearbeiten, Löschen (gesperrt,
+  solange eine Regel den Ort nutzt). Der Editor zeigt die OpenStreetMap-Karte: tippen oder den
+  Punkt ziehen, Radius 50 m – 5 km als Kreis, **„Zuhause übernehmen“** (Standort aus den
+  Plugin-Einstellungen), Breiten- und Längengrad zum Nachtragen (ohne Karte der einzige Weg,
+  mit Link „Position auf Karte wählen“). Höchstens 20 Orte, Namen eindeutig.
+- **Regel-Dialog:** In „Wann?“ stehen die Auslöser in zwei Gruppen (Zuhause · Heim-WLAN, Orte ·
+  Standort des Handys); bei einem Orts-Auslöser „Wer?“ mit „Jemand“, der Ort mit „Orte
+  verwalten“ (öffnet die Orte über dem Dialog) und der Hinweis, wer „Orte für Regeln teilen“
+  eingeschaltet hat – mit Warnung, wenn die gewählte Person es nicht hat. „Ablauf“ zeigt die
+  Regel als Satz mit Radius („Wenn jemand Zuhause (500 m) verlässt …“). Mitteilungen kennen
+  `{place}`; Standardtexte „Marc ist bei Schule angekommen“ / „Marc hat Schule verlassen“.
+- **Anwesenheit / Protokoll:** „Orte geteilt“ an den Personen, die es eingeschaltet haben; das
+  Protokoll der Regeln zeigt den Ort („Marc · kommt an: Schule“, mit dem Namen von damals).
+- **App-API** (zusätzlich zu 1.4.0, alles in der Funktion `presence`, aus → `403 module_off`):
+  - `PUT presence/consent { share?, places? }` – je optional, mindestens eins (sonst `400
+    invalid`); `{ share }` wie bisher. Antwort zusätzlich `consent: { share, places }`.
+  - `GET presence` → `me: { share, places }`, jedes Mitglied `placesShared`, dazu `watchVersion`;
+    auch `POST presence` antwortet mit `watchVersion`.
+  - `GET presence/watch` (jedes Mitglied) → `{ places: [{ id, name, lat, lon, radius,
+    transitions: ['enter'] | ['exit'] | ['enter', 'exit'] }], version }` – die Orte der aktiven
+    Orts-Regeln für „Jemand“ oder den Aufrufer, die Übergänge vereinigt, nach `id`; ohne
+    Zustimmung `places: []` (nie ein Fehler). `version` = die ersten 12 Hex-Zeichen von sha1 über
+    das JSON von `places` – gleich, solange sich nichts ändert.
+  - `POST presence/places/<id>/event { transition: 'enter' | 'exit', at? }` → `{ fired, late,
+    repeated }`; `at` (ISO, Zeit am Handy) nicht in der Zukunft, Standard jetzt. `409
+    no_consent`, `404 not_found`, `400 invalid` (`field`).
+  - Eltern: `GET presence/places` → `{ places: [{ id, name, lat, lon, radius, rules, createdAt,
+    updatedAt }], home: { lat, lon } | null }`, `POST presence/places { name, lat, lon,
+    radius? }`, `PATCH presence/places/<id>` (beliebige Teile) → `{ place }`, `DELETE
+    presence/places/<id>` (`409 in_use` mit `rules: [Name …]`, solange eine Regel ihn nutzt).
+    Name 1–40 Zeichen, eindeutig ohne Groß-/Kleinschreibung (`409 name_taken`), `radius` ganze
+    Meter 50–5000 (Standard 200), höchstens 20 (`409 too_many`).
+  - Regeln: `trigger` `place_enter` | `place_exit` mit `placeId` (Pflicht, sonst `400 invalid`
+    `field: 'placeId'`) und `userId` (ein Mitglied oder `null` = jemand); jede Regel trägt
+    `placeId` und `placeName` (sonst `null`). Ein geänderter Ort beginnt neu wie ein geänderter
+    Auslöser. Protokoll-Zeilen: `placeId`, `placeName`. Mitteilungen einer Orts-Regel:
+    `data.familie.placeId` (Typ weiterhin `presence_rule`).
+  - neue Fehlercodes `name_taken` (409), `in_use` (409, mit `rules`)
+- Admin-API: `GET admin/presence` zusätzlich `places` und `home`; `GET|POST
+  admin/presence/places`, `PATCH|DELETE admin/presence/places/<id>`.
+- Datenbank: Migration `004_place_rules.sql` (`rule_places`, `presence_consent.places`,
+  `presence_rules.place_id`, `presence_log.place_id` / `place_name`, `place_rule_events` –
+  Meldungen ohne Position, 90 Tage).
+
 ## 1.4.0
 Braucht **GateControl ≥ 1.173.0** (Zielzustände für Schalter).
 - **Schalter bekommen einen festen Zustand:** In einer Regel wählt man bei jedem Schalter
