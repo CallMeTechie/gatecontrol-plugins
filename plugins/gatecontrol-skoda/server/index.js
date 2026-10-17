@@ -254,8 +254,9 @@ function socBadge(f, lang) {
  * older hosts leave the new fields out): the charge level as the badge right
  * of the vehicle's name (GateControl ≥ 1.175.0; older hosts drop it), no main
  * value, the range as the only reading (the lock shows on its own toggle),
- * charging / climate as the status. `power: false` — the climate toggle is one
- * of the vehicle's buttons, not its on/off switch.
+ * charging / climate as the status, the card's colour from the charge level only
+ * (red ≤ 15 %, else green; none without one — never from the lock). `power: false` —
+ * the climate toggle is one of the vehicle's buttons, not its on/off switch.
  */
 function vehicleWidget(v, lang, states = appStates(v)) {
   const f = vehicleFacts(v, states);
@@ -263,9 +264,7 @@ function vehicleWidget(v, lang, states = appStates(v)) {
   if (f.range != null) w.readings.push({ id: 'range', label: clip(t(lang, 'portal.range'), 20), value: f.range, unit: 'km', icon: ROUTE_ICON });
   if (f.charging) w.status = t(lang, 'widget.charging');
   else if (states.climate === 'on') w.status = t(lang, 'widget.climate_on');
-  if (f.soc != null && f.soc <= 15) w.state = 'crit';
-  else if (f.locked === false) w.state = 'warn';
-  else if (f.soc != null) w.state = 'good';
+  if (f.soc != null) w.state = f.soc <= 15 ? 'crit' : 'good';
   return w;
 }
 
