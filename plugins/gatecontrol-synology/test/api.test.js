@@ -39,8 +39,10 @@ test('admin only: a portal viewer, a non-admin user and no user are refused on e
     assert.doesNotMatch(portal.html, /sy-nas-modal/);
     const admin = await host.render({ user: ADMIN });
     assert.match(admin.html, /sy-nas-modal/);
-    assert.equal(host.manifest.permissions.portal, undefined, 'no portal permission');
-    assert.equal(host.manifest.ui.portal, undefined, 'no portal tab or sections');
+    // the portal section only carries the apps' Start tiles: never shown in the web portal, not even to an administrator
+    assert.equal(await host.portalVisible({ ...ADMIN }, 'nas'), false);
+    assert.equal(await host.portalVisible({ ...ADA }, 'nas'), false);
+    assert.deepEqual(await host.portalTiles({ ...ADMIN }), []);
   });
 });
 

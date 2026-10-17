@@ -3,7 +3,11 @@
 // gatecontrol-synology — "NAS (Synology)": status and control of Synology
 // NAS in the home network through the DSM Web API (server/dsm.js), polled
 // in the background, with notifications through GateControl's notification
-// center. Administrators only: no portal tab, no portal sections.
+// center. Administrators only: no portal page. For the GateControl apps
+// (administrators only, server/quick.js): quick actions per NAS (refresh
+// with the NAS widget, Hyper Backup "now", restart, shut down) and a Start
+// tile per NAS — the portal section "nas" only carries those tiles and is
+// never shown in the web portal (portalVisible).
 //
 //   admin API   (the plugin page)
 //     GET    /status                  everything the page shows (never a secret)
@@ -28,6 +32,7 @@ const store = require('./store');
 const config = require('./config');
 const service = require('./service');
 const alerts = require('./alerts');
+const quick = require('./quick');
 const texts = require('./texts.json');
 
 function t(lang, key, params) {
@@ -192,6 +197,116 @@ function resultView(r, lang) {
   return r.ok ? { ok: true } : { ok: false, code: r.code, error: t(lang, errorKey(r.code)) };
 }
 
+// ─── Control (admin page and quick actions) ─────
+
+/**
+ * Reboot / shut down with the page's checks and logging: an enabled NAS,
+ * the request in the plugin log (warn), the "power" notice afterwards.
+ * who: for the log; notifyWho: for the notice (in the notification language).
+ */
+async function powerAction(gc, n, action, cfg, { who, notifyWho = who }) {
+  if (action !== 'reboot' && action !== 'shutdown') throw fail('INVALID');
+  if (!n.enabled) throw fail('NAS_DISABLED');
+  gc.log.warn(`NAS ${action} requested`, n.id, n.name, `by ${who}`);
+  await service.power(gc, n, action);
+  await alerts.sendPower(gc, n, action, notifyWho, cfg);
+}
+
+/** Hyper Backup "back up now": an enabled NAS and a task of its last status; logged. → the task */
+async function backupAction(gc, n, task, { who }) {
+  if (!n.enabled) throw fail('NAS_DISABLED');
+  const snap = await store.getSnapshot(gc, n.id);
+  const known = snap && snap.data && Array.isArray(snap.data.backups) ? snap.data.backups.find((x) => x.id === task) : null;
+  if (!known) throw fail('NOT_FOUND');
+  gc.log.info('Hyper Backup task started', n.id, task, `by ${who}`);
+  await service.startBackup(gc, n, task);
+  return known;
+}
+
+// ─── Quick actions and Start tiles of the apps (server/quick.js) ──
+
+// GateControl waits at most 10 s for runQuickAction (then 504): an action
+// still waiting for the NAS (e.g. behind a running poll) is answered
+// "requested" before that and finishes in the background.
+const QA_BUDGET_MS = 8000;
+let qaBudgetMs = QA_BUDGET_MS;
+const PENDING = Symbol('pending');
+
+/**
+ * Who may use them: a GateControl administrator — in an app (the owner of
+ * the device token) or as the owner of another plugin's rule
+ * (gc.actions.run, automation). → 'App' | 'Regel' (the route in the log), null for anyone else.
+ */
+function qaRoute(user, automation) {
+  if (!user || !Number.isSafeInteger(user.id) || user.role !== 'admin') return null;
+  if (automation || user.automation === true) return 'Regel';
+  if (user.app === true && user.loggedIn !== false) return 'App';
+  return null;
+}
+
+async function statusOf(gc) {
+  const [cfg, list, snaps] = await Promise.all([config.load(gc), store.listNas(gc), store.allSnapshots(gc)]);
+  return { cfg, list, snaps };
+}
+
+async function widgetNow(gc, id, cfg, lang) {
+  const n = await store.getNas(gc, id);
+  if (!n) return null;
+  const snap = await store.getSnapshot(gc, id);
+  return quick.widgetOf(n, snap ? snap.data : null, cfg, t, lang);
+}
+
+/**
+ * Run one quick action (the host only passes an id quickActions just listed
+ * for this viewer; the administrator is checked here again). Refresh polls
+ * now and answers with the new widget; backup / restart / shut down go
+ * through the page's code paths (checks, log, "power" notice).
+ */
+async function runQuickActionFor(gc, a) {
+  const lang = a.lang === 'en' ? 'en' : 'de';
+  const user = a.user;
+  const route = qaRoute(user, a.automation === true);
+  const q = quick.parseId(a.id);
+  if (!q) return { ok: false, message: t(lang, 'qa.unknown') };
+  if (!route) return { ok: false, message: t(lang, 'error.forbidden') };
+  const started = Date.now();
+  let cfg = null;
+  try {
+    cfg = await config.load(gc);
+    const n = await store.getNas(gc, q.nas);
+    if (!n) throw fail('NOT_FOUND');
+    if (!n.enabled) throw fail('NAS_DISABLED');
+    const name = quick.clip(n.name, 40) || `NAS ${n.id}`;
+    const who = `${str(user.name, 60) || `#${user.id}`} (${route})`;
+    const notifyWho = `${str(user.name, 60) || `#${user.id}`} (${t(cfg.lang, route === 'App' ? 'route.app' : 'route.rule')})`;
+    let work;
+    if (q.kind === 'refresh') {
+      work = pollNow(gc, n, cfg).then(async (r) => {
+        const widget = await widgetNow(gc, n.id, cfg, lang);
+        if (!r.ok) return { ok: false, message: quick.short(t(lang, errorKey(r.code))), widget };
+        return { ok: true, message: quick.short(t(lang, 'qa.refreshed', { name })), widget };
+      });
+    } else if (q.kind === 'backup') {
+      work = backupAction(gc, n, q.task, { who }).then((task) => ({ ok: true, message: quick.short(t(lang, 'qa.backup_started', { name, task: quick.clip(task.name, 40) || `#${task.id}` })) }));
+    } else {
+      work = powerAction(gc, n, q.kind, cfg, { who, notifyWho }).then(() => ({ ok: true, message: quick.short(t(lang, `qa.${q.kind}_sent`, { name })) }));
+    }
+    let timer = null;
+    const budget = new Promise((resolve) => { timer = setTimeout(resolve, Math.max(0, qaBudgetMs - (Date.now() - started)), PENDING); });
+    const first = await Promise.race([work, budget]).finally(() => clearTimeout(timer));
+    if (first === PENDING) {
+      work.catch((e) => gc.log.warn('quick action failed late', a.id, (e && (e.code || e.message)) || 'error'));
+      return { ok: true, message: quick.short(t(lang, 'qa.pending', { name })) };
+    }
+    return first;
+  } catch (e) {
+    if (!ERRORS[e && e.code]) gc.log.warn('quick action failed', a.id, (e && (e.code || e.message)) || 'error');
+    const out = { ok: false, message: quick.short(errorResponse(e, lang).json.error) };
+    if (q.kind === 'refresh' && cfg) { const w = await widgetNow(gc, q.nas, cfg, lang).catch(() => null); if (w) out.widget = w; }
+    return out;
+  }
+}
+
 // ─── Routes ─────────────────────────────────────
 
 async function route(req, gc, seg, cfg, lang) {
@@ -301,10 +416,7 @@ async function route(req, gc, seg, cfg, lang) {
     if (action !== 'reboot' && action !== 'shutdown') throw fail('INVALID');
     if (body.confirm !== true) throw fail('CONFIRM_REQUIRED');
     if (!n.enabled) throw fail('NAS_DISABLED');
-    const who = str(req.user.name, 60) || `#${req.user.id}`;
-    gc.log.warn(`NAS ${action} requested`, id, n.name, `by ${who}`);
-    await service.power(gc, n, action);
-    await alerts.sendPower(gc, n, action, who, cfg);
+    await powerAction(gc, n, action, cfg, { who: str(req.user.name, 60) || `#${req.user.id}` });
     return { json: { ok: true, power: { state: action } } };
   }
 
@@ -312,12 +424,7 @@ async function route(req, gc, seg, cfg, lang) {
     const task = posInt(d) || (d === '0' ? 0 : null);
     if (task == null) throw fail('NOT_FOUND');
     if (body.confirm !== true) throw fail('CONFIRM_REQUIRED');
-    if (!n.enabled) throw fail('NAS_DISABLED');
-    const snap = await store.getSnapshot(gc, id);
-    const known = snap && snap.data && Array.isArray(snap.data.backups) ? snap.data.backups.find((x) => x.id === task) : null;
-    if (!known) throw fail('NOT_FOUND');
-    gc.log.info('Hyper Backup task started', id, task, `by ${str(req.user.name, 60) || req.user.id}`);
-    await service.startBackup(gc, n, task);
+    await backupAction(gc, n, task, { who: str(req.user.name, 60) || req.user.id });
     return { json: { ok: true } };
   }
 
@@ -359,6 +466,34 @@ module.exports = {
     }
   },
 
+  /**
+   * The portal section "NAS" exists only for the apps' Start tiles: shown to
+   * administrators in an app (the device token's owner), never in the web
+   * portal (no portal page; the plugin stays administrators-only).
+   */
+  async portalVisible({ user }) {
+    return qaRoute(user, false) === 'App';
+  },
+
+  /** Start tiles of the apps (administrators only): per enabled NAS storage used, temperature, health. */
+  async portalTiles({ user, lang }, gc) {
+    if (qaRoute(user, false) !== 'App') return [];
+    const { cfg, list, snaps } = await statusOf(gc);
+    return quick.tilesFor(list, snaps, cfg, t, lang === 'en' ? 'en' : 'de');
+  },
+
+  /** Quick actions of the apps (administrators only): per enabled NAS refresh (with the widget), backup, restart, shut down. */
+  async quickActions({ user, lang }, gc) {
+    if (!qaRoute(user, false)) return [];
+    const { cfg, list, snaps } = await statusOf(gc);
+    return quick.actionsFor(list, snaps, cfg, t, lang === 'en' ? 'en' : 'de');
+  },
+
+  /** Runs one of them (app or another plugin's rule; administrator checked again). */
+  async runQuickAction(args, gc) {
+    return runQuickActionFor(gc, args || {});
+  },
+
   async render(view, gc) {
     return { html: ui.render(view, t, isAdmin(view && view.user) && view.view !== 'portal') };
   },
@@ -387,6 +522,8 @@ module.exports = {
   },
 
   _state: state,
+  /** Tests: the time budget of runQuickAction in ms (null: the default 8 s). */
+  _setQuickActionBudgetForTest(ms) { qaBudgetMs = ms == null ? QA_BUDGET_MS : ms; },
   _pending: pendingDevices,
   _errors: ERRORS,
   _dsmCodes: DSM_CODES,
