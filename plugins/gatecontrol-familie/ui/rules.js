@@ -447,9 +447,14 @@
       renderFlow();
     }
     function notifyPanel() {
-      var choices = [{ id: 'parents', label: T('rule.to_parents') }, { id: 'all', label: T('rule.to_all') }];
-      var custom = oldNotify && Array.isArray(oldNotify.to) ? oldNotify.to : null;
-      if (custom) choices.push({ id: 'custom', value: custom, label: custom.map(function (id) { return nameOf(data, id); }).join(', ') });
+      var groups = [{ id: 'parents', label: T('rule.to_parents') }, { id: 'all', label: T('rule.to_all') }];
+      var picked = Array.isArray(st.notifyTo) ? st.notifyTo : [];
+      // single people (any number) instead of a group; none left → back to the parents
+      function togglePerson(id) {
+        var next = picked.indexOf(id) >= 0 ? picked.filter(function (x) { return x !== id; }) : picked.concat([id]);
+        st.notifyTo = next.length ? next : 'parents';
+        renderWhat(); renderFlow();
+      }
       var text = el('input', { type: 'text', class: 'form-input', maxlength: '120', value: st.text, placeholder: T('rule.text_default'), 'data-k': 'notify-text', id: uid + '-text' });
       text.addEventListener('input', function () { st.text = text.value; });
       var add = el('button', { type: 'button', class: 'fa-rm-run fa-rm-notify-add', 'aria-pressed': st.notify ? 'true' : 'false', 'data-k': 'notify-add', text: st.notify ? T('rule.m_notify_added') : T('rule.m_notify_add'), on: { click: function () {
@@ -463,10 +468,15 @@
           add,
         ]),
         el('div', { class: 'fa-rm-label', id: uid + '-to', text: T('rule.notify_to') }),
-        el('div', { class: 'fa-rm-chips', role: 'group', 'aria-labelledby': uid + '-to' }, choices.map(function (c) {
-          var on = c.id === 'custom' ? Array.isArray(st.notifyTo) : st.notifyTo === c.id;
-          return el('button', { type: 'button', class: 'fa-rm-chip', 'aria-pressed': on ? 'true' : 'false', 'data-k': 'to-' + c.id, text: c.label, on: { click: function () { st.notifyTo = c.id === 'custom' ? c.value : c.id; renderWhat(); renderFlow(); } } });
+        el('div', { class: 'fa-rm-chips', role: 'group', 'aria-labelledby': uid + '-to' }, groups.map(function (c) {
+          return el('button', { type: 'button', class: 'fa-rm-chip', 'aria-pressed': st.notifyTo === c.id ? 'true' : 'false', 'data-k': 'to-' + c.id, text: c.label, on: { click: function () { st.notifyTo = c.id; renderWhat(); renderFlow(); } } });
         })),
+        el('div', { class: 'fa-rm-label', id: uid + '-to-people', text: T('rule.m_notify_people') }),
+        el('div', { class: 'fa-rm-people', role: 'group', 'aria-labelledby': uid + '-to-people' }, people.map(function (m) {
+          return el('button', { type: 'button', class: 'fa-rm-person', 'aria-pressed': picked.indexOf(m.userId) >= 0 ? 'true' : 'false', 'data-k': 'to-person-' + m.userId, on: { click: function () { togglePerson(m.userId); } } },
+            [A.avatar({ name: m.name, initials: m.initials, colorHex: m.colorHex, avatarUrl: m.avatarUrl }, 28), el('span', { text: m.name })]);
+        })),
+        el('p', { class: 'fa-hint', text: T('rule.m_notify_self') }),
         el('label', { class: 'fa-rm-label', for: uid + '-text', text: T('rule.m_text') }),
         text,
         el('p', { class: 'fa-hint', text: T('rule.text_hint') }),
