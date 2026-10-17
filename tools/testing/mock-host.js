@@ -100,6 +100,44 @@
 //   result carries `unchanged` (false unless the no-op; a run that did not happen: { ok: false, message: null,
 //   state: null, unchanged: false, error }). A test plugin of
 //   opts.actions gets the target as runQuickAction(viewer, id, lang, { target }).
+//
+// Messenger foundations (GateControl ≥ 1.177.0, src/services/plugins/{media,events}.js, hostApi.js):
+//   Media — plugin.json `media` { maxBytes (1024…100 MB), types (1–32 MIME types, never HTML/XML/SVG/JS/CSS/JSON/form),
+//   quotaDefault ("10GB", "500 MB" or bytes; 1 MB…1 TB, ≥ maxBytes; default 1 GB) } is validated like the host.
+//   host.upload(user, Buffer, mime) is the upload of an app or a frame (PUT …/plugins/<id>/media) →
+//   { status: 200, body: { ok: true, mediaId (32 hex), mime, bytes } } or the host's refusals { status, body: { ok: false,
+//   code } }: 404 not_found (no `media`), 415 unsupported_type, 411 length_required (empty), 413 too_large,
+//   507 quota_exceeded (opts.mediaQuota overrides quotaDefault, as an administrator would). host.media is the store
+//   (Map id → { mime, bytes, owner, data, claimed, createdAt }). gc.media.info(id) → { mediaId, mime, bytes, sha256,
+//   owner, createdAt, claimed } | null; claim(id) (idempotent; unknown → ERR_INVALID); delete(id) → boolean;
+//   usage() → { bytes, count, quota, maxBytes, types }; url(id, { user, ttlS }) → '/plugin-media/<id>.<exp>.<uid>.<sig>'
+//   (ttlS 60…86400, default 3600, exp rounded up to 5 minutes; unknown id / bad user / ttlS → ERR_INVALID); without
+//   `media` every call → ERR_MEDIA_DENIED. host.mediaGet(user, mediaId, { range: 'bytes=a-b' }) answers like GET
+//   /api/v1/client/plugins/<id>/media/<mediaId>: the hook mediaAccess({ user (app viewer), mediaId, owner, mime })
+//   decides (true only; no hook → the uploader only; a throwing hook → no) → { status: 200|206|404|416, headers, body }.
+//   host.mediaFromUrl(url, { range, now }) answers like /plugin-media/<token> (404 once expired, deleted or unknown).
+//   host.mediaCleanup(now) removes unclaimed files older than 24 h (as the host's hourly job) → count.
+//   Realtime events — permissions.events: gc.events.emit({ users (1–500 ids), type ([a-z][a-z0-9._-]{0,63}), data
+//   (JSON ≤ 4 KB) }) → { delivered } (one stream per listed user, or opts.connected(userId) → number of streams);
+//   ERR_EVENTS_DENIED / ERR_INVALID / ERR_RATE_LIMIT (600 per minute). host.events records { users, type, data }.
+//   Chat notifications — a notifyTopics entry with chat: true (never with allowCritical, never 'default'):
+//   gc.notify({ topic, title, body, users (1–100, required), conversation { id, title?, isGroup? }, sender { id,
+//   name, avatarUrl? (/avatars/ or /plugin-media/ path) }, priority (critical → high), collapseKey (default
+//   'chat:<conversation.id>'), ttl, data, image }) → { pushed: true, id, skipped }; data.actions may carry
+//   { type: 'reply'|'mark_read', label (1–24), path (the plugin's client API, relative, no '..'; needs
+//   permissions.app), body? (object ≤ 1 KB) }. Own budget: 1200 per (mocked) hour and plugin (ERR_RATE_LIMIT),
+//   120 per recipient (skipped, all skipped → ERR_RATE_LIMIT) — not counted against permissions.notify. Recorded
+//   in host.notifications with kind: 'message' and data.conversation / data.sender as the host stores them.
+//   Services — services.provides { <name>: { label } } and permissions.services ["<plugin>:<service>"] are validated.
+//   opts.services: [{ plugin: 'gatecontrol-messenger', provides: ['send_message'] (or an object like plugin.json),
+//   service: async ({ name, caller, user, payload }) => result }] are the other plugins.
+//   gc.services.call({ plugin, service, userId, payload }) → the provider's result, checked like the host:
+//   ERR_SERVICES_DENIED (not in permissions.services), ERR_SERVICE_UNAVAILABLE (no such provider/service),
+//   ERR_INVALID (ids, a userId that is not an enabled user, payload over 16 KB, own plugin), ERR_RATE_LIMIT
+//   (60 per hour), ERR_SERVICE_FAILED (the provider threw, or answered over 16 KB). The provider gets user
+//   { id, name, role } or null. host.serviceCalls records { plugin, service, userId, payload, ok }.
+//   host.callService(name, { caller, user, payload }) calls this plugin's own hook service(…) as another plugin
+//   would (the service must be in services.provides; no hook → ERR_SERVICE_FAILED) → its result.
 
 const fs = require('node:fs');
 const os = require('node:os');
@@ -150,6 +188,26 @@ const TILE_ITEMS = 4;
 const TILE_STATES = new Set(['on', 'off', 'good', 'warn', 'crit']);
 const PLUGIN_ID_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const ACTIONS_PER_HOUR = 60;
+// GateControl ≥ 1.177.0 (manifest.js, media.js, events.js, hostApi.js)
+const MEDIA_MAX_BYTES = 100 * 1024 * 1024;
+const MEDIA_QUOTA_DEFAULT = 1024 * 1024 * 1024;
+const MEDIA_MIME_RE = /^(?:image|audio|video|application|text)\/[a-z0-9][a-z0-9.+-]{0,99}$/;
+const MEDIA_MIME_DENY_RE = /^(?:text\/(?:html|xml|css|javascript|ecmascript|x-javascript)|application\/(?:xhtml\+xml|xml|javascript|x-javascript|ecmascript|json|x-www-form-urlencoded)|image\/svg\+xml)$|\+(?:xml|json)$/;
+const MEDIA_QUOTA_RE = /^(\d{1,7})\s?(KB|MB|GB|TB)$/i;
+const MEDIA_UNIT = { KB: 1024, MB: 1024 ** 2, GB: 1024 ** 3, TB: 1024 ** 4 };
+const MEDIA_UNCLAIMED_MS = 24 * 3600 * 1000;
+const EVENT_TYPE_RE = /^[a-z][a-z0-9._-]{0,63}$/;
+const EVENTS_PER_MINUTE = 600;
+const CHAT_PER_HOUR = 1200;
+const CHAT_PER_USER_HOUR = 120;
+const CHAT_CONV_ID_RE = /^[A-Za-z0-9_.:-]{1,64}$/;
+const CHAT_SENDER_ID_RE = /^[A-Za-z0-9_.:@-]{1,64}$/;
+const CHAT_AVATAR_RE = /^\/(?:avatars|plugin-media)\/[A-Za-z0-9._-]{1,200}$/;
+const CHAT_PATH_RE = /^[A-Za-z0-9._~!$&'()*+,;=:@%/-]{1,300}$/;
+const SERVICE_NAME_RE = /^[a-z][a-z0-9_]{0,31}$/;
+const SERVICE_REF_RE = /^([a-z0-9]+(?:-[a-z0-9]+)*):([a-z][a-z0-9_]{0,31})$/;
+const SERVICES_PER_HOUR = 60;
+const SERVICE_JSON_MAX = 16 * 1024;
 
 function hostError(code, message) {
   return Object.assign(new Error(message), { code });
@@ -510,6 +568,31 @@ function checkQuickActions(out) {
  * @param {string} pluginDir  folder with plugin.json
  * @param {object} [opts]     see the header
  */
+/** plugin.json `media` → { maxBytes, types, quotaDefault } like GateControl's manifest.js (throws ERR_INVALID). */
+function mediaDecl(m) {
+  if (m == null) return null;
+  const bad = (what) => { throw hostError('ERR_INVALID', `plugin.json: ${what}: invalid`); };
+  if (typeof m !== 'object' || Array.isArray(m) || Object.keys(m).some((k) => !['maxBytes', 'types', 'quotaDefault'].includes(k))) bad('media');
+  if (!Number.isSafeInteger(m.maxBytes) || m.maxBytes < 1024 || m.maxBytes > MEDIA_MAX_BYTES) bad('media.maxBytes');
+  const types = Array.isArray(m.types) ? [...new Set(m.types.map((x) => (typeof x === 'string' ? x.trim().toLowerCase() : '')))] : null;
+  if (!types || !types.length || types.length > 32 || !types.every((x) => MEDIA_MIME_RE.test(x) && !MEDIA_MIME_DENY_RE.test(x))) bad('media.types');
+  let quota = MEDIA_QUOTA_DEFAULT;
+  if (m.quotaDefault != null) {
+    const q = Number.isSafeInteger(m.quotaDefault) ? null : MEDIA_QUOTA_RE.exec(String(m.quotaDefault).trim());
+    quota = Number.isSafeInteger(m.quotaDefault) ? m.quotaDefault : (q ? Number(q[1]) * MEDIA_UNIT[q[2].toUpperCase()] : null);
+  }
+  if (quota == null || quota < 1024 * 1024 || quota > 1024 ** 4 || quota < m.maxBytes) bad('media.quotaDefault');
+  return { maxBytes: m.maxBytes, types, quotaDefault: quota };
+}
+
+/** Plain JSON ≤ max bytes, else the error code. */
+function boundedJson(v, max, codeOver, what) {
+  let s;
+  try { s = JSON.stringify(v === undefined ? null : v); } catch { s = undefined; }
+  if (s === undefined || Buffer.byteLength(s, 'utf8') > max) throw hostError(codeOver, `${what} must be JSON ≤ ${Math.round(max / 1024)} KB`);
+  return JSON.parse(s);
+}
+
 async function createHost(pluginDir, opts = {}) {
   const manifest = JSON.parse(fs.readFileSync(path.join(pluginDir, 'plugin.json'), 'utf8'));
   const perms = manifest.permissions || {};
@@ -522,6 +605,29 @@ async function createHost(pluginDir, opts = {}) {
   if (perms.background != null) {
     const iv = perms.background && perms.background.intervalSeconds;
     if (!Number.isInteger(iv) || iv < BACKGROUND_MIN_S || iv > 86400) throw hostError('ERR_INVALID', 'plugin.json: permissions.background.intervalSeconds: invalid');
+  }
+  // GateControl ≥ 1.177.0: media, permissions.events, services, permissions.services, notifyTopics[].chat
+  const media = mediaDecl(manifest.media);
+  if (perms.events != null && typeof perms.events !== 'boolean') throw hostError('ERR_INVALID', 'plugin.json: permissions.events: invalid');
+  if (perms.services != null && (!Array.isArray(perms.services) || perms.services.length > 32 || !perms.services.every((x) => typeof x === 'string' && SERVICE_REF_RE.test(x)))) {
+    throw hostError('ERR_INVALID', 'plugin.json: permissions.services: invalid');
+  }
+  if ((perms.services || []).some((x) => SERVICE_REF_RE.exec(x)[1] === manifest.id)) throw hostError('ERR_INVALID', 'plugin.json: permissions.services: own service');
+  const provides = {};
+  if (manifest.services != null) {
+    const sv = manifest.services;
+    const prov = sv && typeof sv === 'object' && !Array.isArray(sv) && Object.keys(sv).every((k) => k === 'provides') ? sv.provides : null;
+    if (!prov || typeof prov !== 'object' || Array.isArray(prov) || Object.keys(prov).length > 32) throw hostError('ERR_INVALID', 'plugin.json: services: invalid');
+    for (const [name, def] of Object.entries(prov)) {
+      const label = def && def.label;
+      const okLabel = (typeof label === 'string' && label.trim() && label.length <= 60) || (label && typeof label === 'object' && (label.de || label.en));
+      if (!SERVICE_NAME_RE.test(name) || !okLabel || Object.keys(def).some((k) => k !== 'label')) throw hostError('ERR_INVALID', 'plugin.json: services.provides: invalid');
+      provides[name] = { label };
+    }
+  }
+  for (const t of Array.isArray(manifest.notifyTopics) ? manifest.notifyTopics : []) {
+    if (t && t.chat != null && typeof t.chat !== 'boolean') throw hostError('ERR_INVALID', 'plugin.json: notifyTopics: invalid');
+    if (t && t.chat === true && (t.allowCritical === true || t.id === 'default')) throw hostError('ERR_INVALID', 'plugin.json: notifyTopics: chat topic cannot be critical or default');
   }
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), `gcmock-${manifest.id}-`));
   const filesDir = path.join(tmp, 'files');
@@ -539,10 +645,22 @@ async function createHost(pluginDir, opts = {}) {
   const license = { required: !!(manifest.license && manifest.license.required), licensed: true, state: 'valid', expiresAt: null, ...(opts.license || {}) };
   // permissions.notify: true (30 per hour) or { perHour: 1–120 } (GateControl ≥ 1.164.0); the mock counts all of a test
   const notifyLimit = perms.notify && typeof perms.notify === 'object' && Number.isInteger(perms.notify.perHour) ? perms.notify.perHour : 30;
+  // chat notifications (GateControl ≥ 1.177.0) have a budget of their own
+  const notifyCount = () => notifications.filter((x) => x.kind !== 'message').length;
   const kiosk = new Set((opts.kiosk || []).map(Number));
   const actionPlugins = (opts.actions || []).filter((p) => p && p.plugin !== manifest.id);
   const actionRuns = [];
   const actionRunAt = [];
+  // GateControl ≥ 1.177.0
+  const mediaStore = new Map(); // id → { mime, bytes, owner, data, claimed, createdAt (ms) }
+  const mediaQuota = Number.isSafeInteger(opts.mediaQuota) && opts.mediaQuota > 0 ? opts.mediaQuota : (media ? media.quotaDefault : 0);
+  const events = [];
+  const eventAt = [];
+  const chatAt = [];
+  const chatUserAt = new Map();
+  const serviceCalls = [];
+  const serviceAt = [];
+  const providers = (opts.services || []).filter((p) => p && typeof p.plugin === 'string' && p.plugin !== manifest.id);
 
   // Storage: the plugin's own SQLite database with its migrations applied.
   let db = null;
@@ -663,6 +781,7 @@ async function createHost(pluginDir, opts = {}) {
         const topic = n.topic == null ? 'default' : String(n.topic);
         const declared = Array.isArray(manifest.notifyTopics) ? manifest.notifyTopics : [];
         if (topic !== 'default' && !declared.some((t) => t && t.id === topic)) throw hostError('ERR_INVALID', 'topic not declared in notifyTopics');
+        if (declared.some((t) => t && t.id === topic && t.chat === true)) return notifyChat(topic, n);
         const title = String(n.title == null ? '' : n.title).replace(/\s+/g, ' ').trim().slice(0, 120);
         if (!title) throw hostError('ERR_INVALID', 'empty title');
         const body = String(n.body == null ? '' : n.body).trim().slice(0, 1000);
@@ -690,7 +809,7 @@ async function createHost(pluginDir, opts = {}) {
           }
         }
         const image = n.image == null ? null : notifyImage(n.image);
-        if (notifications.length >= notifyLimit) throw hostError('ERR_RATE_LIMIT', 'too many notifications');
+        if (notifyCount() >= notifyLimit) throw hostError('ERR_RATE_LIMIT', 'too many notifications');
         // 'critical' is capped to 'high' unless the topic declares allowCritical (GateControl ≥ 1.164.0)
         const critical = priority === 'critical' && declared.some((t) => t && t.id === topic && t.allowCritical === true);
         const rec = {
@@ -707,7 +826,7 @@ async function createHost(pluginDir, opts = {}) {
       }
       const msg = String(message || '').trim();
       if (!msg) throw hostError('ERR_INVALID', 'empty message');
-      if (notifications.length >= notifyLimit) throw hostError('ERR_RATE_LIMIT', 'too many notifications');
+      if (notifyCount() >= notifyLimit) throw hostError('ERR_RATE_LIMIT', 'too many notifications');
       notifications.push({ message: msg, severity: (o && o.severity) || 'info' });
       return {};
     },
@@ -725,6 +844,166 @@ async function createHost(pluginDir, opts = {}) {
       if (perms.kiosk !== true) throw hostError('ERR_KIOSK_DENIED', 'this plugin has no kiosk permission');
       return [...kiosk].sort((a, b) => a - b);
     },
+  };
+
+  // ─── GateControl ≥ 1.177.0: chat notifications, media, realtime events, services ───
+
+  const recentAt = (list, now) => { while (list.length && now - list[0] >= 3600000) list.shift(); return list; };
+
+  // gc.notify on a chat topic (hostApi.js notifyChat)
+  function notifyChat(topic, n) {
+    const title = String(n.title == null ? '' : n.title).replace(/\s+/g, ' ').trim().slice(0, 120);
+    if (!title) throw hostError('ERR_INVALID', 'empty title');
+    const body = String(n.body == null ? '' : n.body).trim().slice(0, 1000);
+    let priority = n.priority == null ? 'normal' : n.priority;
+    if (!NOTIFY_PRIORITIES.includes(priority)) throw hostError('ERR_INVALID', 'invalid priority');
+    if (priority === 'critical') priority = 'high';
+    if (!(Array.isArray(n.users) && n.users.length >= 1 && n.users.length <= 100 && n.users.every((u) => Number.isSafeInteger(u) && u > 0))) throw hostError('ERR_INVALID', 'users (1…100 ids) required on a chat topic');
+    const c = n.conversation;
+    if (!c || typeof c !== 'object' || Array.isArray(c)) throw hostError('ERR_INVALID', 'conversation required on a chat topic');
+    const convId = typeof c.id === 'number' && Number.isSafeInteger(c.id) ? String(c.id) : c.id;
+    if (typeof convId !== 'string' || !CHAT_CONV_ID_RE.test(convId)) throw hostError('ERR_INVALID', 'invalid conversation.id');
+    if (c.title != null && typeof c.title !== 'string') throw hostError('ERR_INVALID', 'invalid conversation.title');
+    if (c.isGroup != null && typeof c.isGroup !== 'boolean') throw hostError('ERR_INVALID', 'invalid conversation.isGroup');
+    const conversation = { id: convId, title: c.title == null ? null : (c.title.replace(/\s+/g, ' ').trim().slice(0, 80) || null), isGroup: c.isGroup === true };
+    const sd = n.sender;
+    if (!sd || typeof sd !== 'object' || Array.isArray(sd)) throw hostError('ERR_INVALID', 'sender required on a chat topic');
+    const sid = typeof sd.id === 'number' && Number.isSafeInteger(sd.id) ? sd.id : (typeof sd.id === 'string' && CHAT_SENDER_ID_RE.test(sd.id) ? sd.id : null);
+    if (sid === null) throw hostError('ERR_INVALID', 'invalid sender.id');
+    const name = typeof sd.name === 'string' ? sd.name.replace(/\s+/g, ' ').trim().slice(0, 80) : '';
+    if (!name) throw hostError('ERR_INVALID', 'sender.name required');
+    if (sd.avatarUrl != null && !(typeof sd.avatarUrl === 'string' && CHAT_AVATAR_RE.test(sd.avatarUrl))) throw hostError('ERR_INVALID', 'sender.avatarUrl must be a /avatars/ or /plugin-media/ path');
+    const sender = { id: sid, name, avatarUrl: sd.avatarUrl == null ? null : sd.avatarUrl };
+    let collapseKey = `chat:${convId}`;
+    if (n.collapseKey != null) {
+      if (!/^[A-Za-z0-9_.:@/-]{1,120}$/.test(String(n.collapseKey))) throw hostError('ERR_INVALID', 'invalid collapseKey');
+      collapseKey = String(n.collapseKey);
+    }
+    if (n.ttl != null && !(Number.isSafeInteger(n.ttl) && n.ttl >= 60 && n.ttl <= 30 * 86400)) throw hostError('ERR_INVALID', 'invalid ttl');
+    if (n.data != null && (typeof n.data !== 'object' || Array.isArray(n.data))) throw hostError('ERR_INVALID', 'invalid data');
+    const data = { route: `plg-${manifest.id}`, ...(n.data || {}), conversation, sender };
+    if (Buffer.byteLength(JSON.stringify(data), 'utf8') > 4096) throw hostError('ERR_INVALID', 'data too large (max 4 KB)');
+    if (data.actions != null) {
+      if (!Array.isArray(data.actions) || data.actions.length > 4) throw hostError('ERR_INVALID', 'invalid actions (test)');
+      data.actions = data.actions.map((a) => {
+        if (!a || !(NOTIFY_ACTIONS.has(a.type) || a.type === 'reply' || a.type === 'mark_read')) throw hostError('ERR_INVALID', 'unknown action type (test: the host would drop it)');
+        if (a.type !== 'reply' && a.type !== 'mark_read') return a;
+        if (perms.app !== true) throw hostError('ERR_INVALID', `${a.type}: needs permissions.app (the app posts to the plugin's client API)`);
+        const p2 = typeof a.path === 'string' ? a.path.replace(/^\/+/, '') : '';
+        if (!CHAT_PATH_RE.test(p2) || p2.split('/').some((x) => x === '..' || x === '.')) throw hostError('ERR_INVALID', `${a.type}: invalid path`);
+        if (typeof a.label !== 'string' || !a.label.trim() || a.label.trim().length > 24) throw hostError('ERR_INVALID', `${a.type}: label must be 1…24 characters`);
+        if (a.body != null && (typeof a.body !== 'object' || Array.isArray(a.body) || Buffer.byteLength(JSON.stringify(a.body)) > 1024)) throw hostError('ERR_INVALID', `${a.type}: body must be an object ≤ 1 KB`);
+        return { id: a.id || a.type, label: a.label.trim(), type: a.type, path: p2, ...(a.body != null ? { body: a.body } : {}) };
+      });
+    }
+    const image = n.image == null ? null : notifyImage(n.image);
+    const now = Date.now();
+    if (recentAt(chatAt, now).length >= CHAT_PER_HOUR) throw hostError('ERR_RATE_LIMIT', `too many chat notifications (${CHAT_PER_HOUR} per hour)`);
+    const to = [];
+    const skipped = [];
+    for (const u of [...new Set(n.users)]) {
+      if (!chatUserAt.has(u)) chatUserAt.set(u, []);
+      if (recentAt(chatUserAt.get(u), now).length >= CHAT_PER_USER_HOUR) skipped.push(u); else to.push(u);
+    }
+    if (!to.length) throw hostError('ERR_RATE_LIMIT', `too many chat notifications for these recipients (${CHAT_PER_USER_HOUR} per hour each)`);
+    chatAt.push(now);
+    for (const u of to) chatUserAt.get(u).push(now);
+    const rec = { kind: 'message', topic, title, body, priority, users: to, collapseKey, ttl: n.ttl == null ? null : n.ttl, data };
+    if (image) rec.image = image;
+    notifications.push(rec);
+    return { pushed: true, id: notifications.length, skipped };
+  }
+
+  const needMedia = () => { if (!media) throw hostError('ERR_MEDIA_DENIED', 'plugin.json declares no media'); };
+  const mediaIdOf = (args) => {
+    const id = args && args.id;
+    if (typeof id !== 'string' || !/^[0-9a-f]{32}$/.test(id)) throw hostError('ERR_INVALID', 'invalid media id');
+    return id;
+  };
+  const mediaInfo = (id) => {
+    const m = mediaStore.get(id);
+    return m ? { mediaId: id, mime: m.mime, bytes: m.bytes, sha256: require('node:crypto').createHash('sha256').update(m.data).digest('hex'),
+      owner: m.owner, createdAt: new Date(m.createdAt).toISOString(), claimed: m.claimed } : null;
+  };
+  const mediaUsage = () => { let bytes = 0; for (const m of mediaStore.values()) bytes += m.bytes; return { bytes, count: mediaStore.size }; };
+  const urlSecret = require('node:crypto').randomBytes(16).toString('hex');
+  const urlSig = (id, exp, uid) => require('node:crypto').createHmac('sha256', urlSecret).update(`plugin-media:${id}:${manifest.id}:${exp}:${uid}`).digest('base64url').slice(0, 22);
+  api['media.info'] = async (args) => { needMedia(); return mediaInfo(mediaIdOf(args)); };
+  api['media.claim'] = async (args) => {
+    needMedia();
+    const id = mediaIdOf(args);
+    const m = mediaStore.get(id);
+    if (!m) throw hostError('ERR_INVALID', 'unknown media id');
+    m.claimed = true;
+    return mediaInfo(id);
+  };
+  api['media.delete'] = async (args) => { needMedia(); return mediaStore.delete(mediaIdOf(args)); };
+  api['media.usage'] = async () => { needMedia(); return { ...mediaUsage(), quota: mediaQuota, maxBytes: media.maxBytes, types: media.types }; };
+  api['media.url'] = async (args) => {
+    needMedia();
+    const id = mediaIdOf(args);
+    if (!mediaStore.has(id)) throw hostError('ERR_INVALID', 'unknown media id');
+    const user = args.user == null ? null : args.user;
+    if (!(user === null || (Number.isSafeInteger(user) && user > 0))) throw hostError('ERR_INVALID', 'invalid user id');
+    const ttl = args.ttlS == null ? 3600 : args.ttlS;
+    if (!(Number.isSafeInteger(ttl) && ttl >= 60 && ttl <= 86400)) throw hostError('ERR_INVALID', 'ttlS must be 60…86400');
+    const exp = Math.ceil((Math.floor((args.now || Date.now()) / 1000) + ttl) / 300) * 300;
+    const uid = user == null ? 0 : user;
+    return `/plugin-media/${id}.${exp}.${uid}.${urlSig(id, exp, uid)}`;
+  };
+
+  // gc.events.emit (events.js)
+  api['events.emit'] = async (args) => {
+    if (perms.events !== true) throw hostError('ERR_EVENTS_DENIED', 'this plugin has no events permission');
+    const a = args && typeof args === 'object' ? args : {};
+    if (!Array.isArray(a.users) || !a.users.length || a.users.length > 500 || !a.users.every((u) => Number.isSafeInteger(u) && u > 0)) throw hostError('ERR_INVALID', 'users must be 1…500 user ids');
+    if (typeof a.type !== 'string' || !EVENT_TYPE_RE.test(a.type)) throw hostError('ERR_INVALID', 'invalid type');
+    const data = boundedJson(a.data, 4096, 'ERR_INVALID', 'data');
+    const now = Date.now();
+    while (eventAt.length && now - eventAt[0] >= 60000) eventAt.shift();
+    if (eventAt.length >= EVENTS_PER_MINUTE) throw hostError('ERR_RATE_LIMIT', 'too many events (600 per minute)');
+    eventAt.push(now);
+    const users2 = [...new Set(a.users)];
+    events.push({ users: users2, type: a.type, data });
+    const delivered = users2.reduce((sum, u) => sum + (typeof opts.connected === 'function' ? Number(opts.connected(u)) || 0 : 1), 0);
+    return { delivered };
+  };
+
+  // gc.services.call (hostApi.js servicesCall)
+  api['services.call'] = async (args) => {
+    const a = args && typeof args === 'object' ? args : {};
+    if (typeof a.plugin !== 'string' || a.plugin.length < 2 || a.plugin.length > 64 || !PLUGIN_ID_RE.test(a.plugin)) throw hostError('ERR_INVALID', 'invalid plugin id');
+    if (typeof a.service !== 'string' || !SERVICE_NAME_RE.test(a.service)) throw hostError('ERR_INVALID', 'invalid service name');
+    if (!(perms.services || []).includes(`${a.plugin}:${a.service}`)) throw hostError('ERR_SERVICES_DENIED', 'service not listed in permissions.services');
+    if (a.plugin === manifest.id) throw hostError('ERR_INVALID', 'a plugin cannot call its own services');
+    let user = null;
+    if (a.userId != null) {
+      if (!Number.isSafeInteger(a.userId) || a.userId <= 0) throw hostError('ERR_INVALID', 'invalid user id');
+      const u = allUsers.find((x) => x.id === a.userId);
+      if (!u || u.disabled) throw hostError('ERR_INVALID', 'unknown or disabled user');
+      user = { id: u.id, name: u.name, role: u.role };
+    }
+    const payload = boundedJson(a.payload, SERVICE_JSON_MAX, 'ERR_INVALID', 'payload');
+    const p = providers.find((x) => x.plugin === a.plugin);
+    const offered = p ? (Array.isArray(p.provides) ? p.provides : Object.keys(p.provides || {})) : [];
+    if (!p || !offered.includes(a.service) || typeof p.service !== 'function') throw hostError('ERR_SERVICE_UNAVAILABLE', 'the providing plugin or service is not available');
+    const now = Date.now();
+    if (recentAt(serviceAt, now).length >= SERVICES_PER_HOUR) throw hostError('ERR_RATE_LIMIT', `too many service calls (${SERVICES_PER_HOUR} per hour)`);
+    serviceAt.push(now);
+    let result;
+    try {
+      result = wire(await p.service(wire({ name: a.service, caller: manifest.id, user, payload })));
+    } catch (e) {
+      serviceCalls.push({ plugin: a.plugin, service: a.service, userId: user ? user.id : null, payload, ok: false });
+      throw hostError('ERR_SERVICE_FAILED', String((e && e.message) || 'service failed').slice(0, 200));
+    }
+    let out;
+    try { out = boundedJson(result === undefined ? null : result, SERVICE_JSON_MAX, 'ERR_SERVICE_FAILED', 'result'); } catch (e) {
+      serviceCalls.push({ plugin: a.plugin, service: a.service, userId: user ? user.id : null, payload, ok: false });
+      throw e;
+    }
+    serviceCalls.push({ plugin: a.plugin, service: a.service, userId: user ? user.id : null, payload, ok: true });
+    return out;
   };
 
   // gc.actions.* (GateControl ≥ 1.166.0, hostApi.js actionsList / actionsRun)
@@ -844,6 +1123,20 @@ async function createHost(pluginDir, opts = {}) {
       list: (o) => { const x = o && typeof o === 'object' ? o : {}; return call('actions.list', { userId: x.userId, lang: x.lang }); },
       run: (o) => { const x = o && typeof o === 'object' ? o : {}; return call('actions.run', { userId: x.userId, plugin: x.plugin, id: x.id, lang: x.lang, state: x.state }); },
     }),
+    // GateControl ≥ 1.177.0
+    media: Object.freeze({
+      info: (id) => call('media.info', { id }),
+      claim: (id) => call('media.claim', { id }),
+      delete: (id) => call('media.delete', { id }),
+      usage: () => call('media.usage', {}),
+      url: (id, o) => { const x = o && typeof o === 'object' ? o : {}; return call('media.url', { id, user: x.user, ttlS: x.ttlS }); },
+    }),
+    events: Object.freeze({
+      emit: (o) => { const x = o && typeof o === 'object' ? o : {}; return call('events.emit', { users: x.users, type: x.type, data: x.data }); },
+    }),
+    services: Object.freeze({
+      call: (o) => { const x = o && typeof o === 'object' ? o : {}; return call('services.call', { plugin: x.plugin, service: x.service, userId: x.userId, payload: x.payload }); },
+    }),
   });
 
   const entry = path.join(pluginDir, manifest.entry);
@@ -854,8 +1147,77 @@ async function createHost(pluginDir, opts = {}) {
   // the default req.user: the first user as a session knows it (no gc.users face fields)
   const sessionUser = () => (users[0] ? { id: users[0].id, name: users[0].name, role: users[0].role } : DEFAULT_USER);
 
+  // ─── GateControl ≥ 1.177.0: the routes around media, services of this plugin ───
+  const mediaRange = (m, range) => {
+    if (range == null || range === '') return null;
+    const r = /^bytes=(\d{0,15})-(\d{0,15})$/.exec(String(range).trim());
+    if (!r || (r[1] === '' && r[2] === '')) return null;
+    let start;
+    let end;
+    if (r[1] === '') { const nn = Number(r[2]); if (nn === 0) return false; start = Math.max(0, m.bytes - nn); end = m.bytes - 1; } else { start = Number(r[1]); end = r[2] === '' ? m.bytes - 1 : Math.min(Number(r[2]), m.bytes - 1); }
+    return start >= m.bytes || end < start ? false : { start, end };
+  };
+  const mediaAnswer = (m, range) => {
+    const rg = mediaRange(m, range);
+    if (rg === false) return { status: 416, headers: { 'content-range': `bytes */${m.bytes}` }, body: Buffer.alloc(0) };
+    const { start, end } = rg || { start: 0, end: m.bytes - 1 };
+    const headers = { 'content-type': m.mime, 'accept-ranges': 'bytes', 'content-length': String(end - start + 1) };
+    if (rg) headers['content-range'] = `bytes ${start}-${end}/${m.bytes}`;
+    if (!/^(?:image|audio|video)\//.test(m.mime)) headers['content-disposition'] = 'attachment';
+    return { status: rg ? 206 : 200, headers, body: m.data.subarray(start, end + 1) };
+  };
+  const notFound = () => ({ status: 404, headers: {}, body: Buffer.alloc(0) });
+
   return {
     manifest, gc, plugin, logs, notifications, fetches, kv, settings, filesDir, kiosk, actionRuns,
+    media: mediaStore, events, serviceCalls,
+    /** GateControl ≥ 1.177.0: an upload of an app or a frame (PUT …/plugins/<id>/media) → { status, body } */
+    async upload(user, data, mime) {
+      if (!media) return { status: 404, body: { ok: false, code: 'not_found' } };
+      const buf = Buffer.isBuffer(data) ? data : Buffer.from(String(data == null ? '' : data));
+      const type = String(mime || '').split(';')[0].trim().toLowerCase();
+      if (!media.types.includes(type)) return { status: 415, body: { ok: false, code: 'unsupported_type' } };
+      if (!buf.length) return { status: 411, body: { ok: false, code: 'length_required' } };
+      if (buf.length > media.maxBytes) return { status: 413, body: { ok: false, code: 'too_large' } };
+      if (mediaUsage().bytes + buf.length > mediaQuota) return { status: 507, body: { ok: false, code: 'quota_exceeded' } };
+      const id = require('node:crypto').randomBytes(16).toString('hex');
+      mediaStore.set(id, { mime: type, bytes: buf.length, owner: user && user.id != null ? user.id : null, data: Buffer.from(buf), claimed: false, createdAt: Date.now() });
+      return { status: 200, body: { ok: true, mediaId: id, mime: type, bytes: buf.length } };
+    },
+    /** GateControl ≥ 1.177.0: GET /api/v1/client/plugins/<id>/media/<mediaId> for this app user → { status, headers, body } */
+    async mediaGet(user, mediaId, o = {}) {
+      const m = media && typeof mediaId === 'string' ? mediaStore.get(mediaId) : null;
+      if (!m) return notFound();
+      const viewer = { portal: true, loggedIn: true, app: true, ...user };
+      let allowed;
+      if (typeof plugin.mediaAccess !== 'function') allowed = m.owner != null && m.owner === viewer.id;
+      else { try { allowed = (await hook('mediaAccess', { user: viewer, mediaId, owner: m.owner, mime: m.mime })) === true; } catch { allowed = false; } }
+      return allowed ? mediaAnswer(m, o.range) : notFound();
+    },
+    /** GateControl ≥ 1.177.0: GET /plugin-media/<token> (a gc.media.url) → { status, headers, body } */
+    async mediaFromUrl(url, o = {}) {
+      const r = /^\/plugin-media\/([0-9a-f]{32})\.(\d{1,12})\.(\d{1,12})\.([A-Za-z0-9_-]{22})$/.exec(String(url || ''));
+      if (!r) return notFound();
+      const s2 = Math.floor((o.now || Date.now()) / 1000);
+      const exp = Number(r[2]);
+      if (!(s2 < exp && exp <= s2 + 86400 + 300) || urlSig(r[1], exp, Number(r[3])) !== r[4]) return notFound();
+      const m = mediaStore.get(r[1]);
+      return m ? mediaAnswer(m, o.range) : notFound();
+    },
+    /** GateControl ≥ 1.177.0: the hourly clean-up — unclaimed files older than 24 h at `now` go → count */
+    mediaCleanup(now = Date.now()) {
+      let n = 0;
+      for (const [id, m] of mediaStore) if (!m.claimed && m.createdAt <= now - MEDIA_UNCLAIMED_MS) { mediaStore.delete(id); n++; }
+      return n;
+    },
+    /** GateControl ≥ 1.177.0: another plugin calls this plugin's service `name` (services.provides) → the hook's result */
+    async callService(name, o = {}) {
+      if (!Object.prototype.hasOwnProperty.call(provides, name)) throw hostError('ERR_SERVICE_UNAVAILABLE', 'not in services.provides');
+      if (typeof plugin.service !== 'function') throw hostError('ERR_SERVICE_FAILED', 'this plugin offers no services');
+      const payload = boundedJson(o.payload, SERVICE_JSON_MAX, 'ERR_INVALID', 'payload');
+      const out = await hook('service', { name, caller: o.caller || 'gatecontrol-other', user: o.user == null ? null : o.user, payload });
+      return boundedJson(out === undefined ? null : out, SERVICE_JSON_MAX, 'ERR_SERVICE_FAILED', 'result');
+    },
     start: () => hook('start'),
     stop: () => hook('stop'),
     tick: () => hook('tick'),
