@@ -23,6 +23,11 @@
 // tablet, module wall) — see server/wall.js. Wall members are the plugin's
 // kiosk users (1.1.1, permissions.kiosk): reconciled on start, kept in step
 // on every role change — see server/kiosk.js.
+//
+// Messenger (1.6.0, optional): the group „Familie“ in gatecontrol-messenger kept
+// in step with the members, and the rule action „Messenger-Nachricht senden“ —
+// GateControl ≥ 1.177.0 services (permissions.services), see server/messenger.js.
+// Without the messenger nothing changes.
 
 const ui = require('./ui');
 const api = require('./api');
@@ -45,6 +50,7 @@ const allowance = require('./allowance');
 const board = require('./board');
 const meals = require('./meals');
 const presence = require('./presence');
+const messenger = require('./messenger');
 const texts = require('./texts.json');
 const { STATUS, isKnown } = require('./util');
 
@@ -126,11 +132,14 @@ async function background(gc, now) {
     });
   }
   await push.flush(gc, pushes);
+  // the messenger group, last (outside any transaction: a service call may take a while)
+  await messenger.tick(gc, fam, cfg, now);
 }
 
 module.exports = {
   async start(gc) {
     push.reset();
+    messenger.reset();
     state.lastPurge = 0;
     try {
       const cfg = await config.load(gc);

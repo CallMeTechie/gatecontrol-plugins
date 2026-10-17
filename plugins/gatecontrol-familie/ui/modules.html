@@ -23,6 +23,22 @@
         </div>
       </section>
 
+      <section class="fa-card" aria-labelledby="fa-msg-h" id="fa-msg">
+        <h2 class="fa-card-title" id="fa-msg-h">{{t:msgcfg.title}}</h2>
+        <p class="fa-hint">{{t:msgcfg.intro}}</p>
+        <p class="fa-hint" id="fa-msg-status" role="status"></p>
+        <div class="fa-mod fa-msg-row" id="fa-msg-row">
+          <div class="fa-opt-text">
+            <span class="fa-opt-title">{{t:msgcfg.group}}</span>
+            <span class="fa-opt-desc">{{t:msgcfg.group_desc}}</span>
+            <span class="fa-opt-desc" id="fa-msg-sync"></span>
+          </div>
+          <span id="fa-msg-switch"></span>
+        </div>
+        <p class="fa-hint" id="fa-msg-off" hidden>{{t:msgcfg.group_off_hint}}</p>
+        <div><button type="button" class="btn btn-sm" id="fa-msg-sync-now">{{t:msgcfg.sync_now}}</button></div>
+      </section>
+
       <section class="fa-card" aria-labelledby="fa-kids-h">
         <h2 class="fa-card-title" id="fa-kids-h">{{t:modules.kids_title}}</h2>
         <div id="fa-kids" style="display:flex;flex-direction:column;gap:12px"></div>

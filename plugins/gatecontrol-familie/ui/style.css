@@ -259,6 +259,8 @@ button.fa-rm-box:hover{border-color:var(--line-2)}
 .fa-rm-chips{display:flex;gap:8px;flex-wrap:wrap}
 .fa-rm-chip{min-height:36px;padding:0 14px;border-radius:18px;border:1px solid var(--line-2);background:var(--surface-2);color:var(--text);font-size:13px;font-weight:700;cursor:pointer}
 .fa-rm-chip[aria-pressed="true"]{background:var(--text);color:var(--surface);border-color:var(--text)}
+.fa-rm-chip:disabled,.fa-rm-run:disabled{opacity:.5;cursor:default}
+.fa-msg-row{padding:12px 0;border-top:0}
 /* Ablauf */
 .fa-rm-flow-head{padding:20px 22px 0}
 .fa-rm-flow-list{gap:8px;padding-top:14px}

@@ -1,7 +1,9 @@
 /* Page "Funktionen": the modules as switches (plugin settings mod_*,
    grouped like the mockup AdminModules), the wall tablet (its shopping list
    and how to set it up), the locate mode per child (with the hint from 14),
-   and a live preview of the app's family screen for a chosen member. */
+   and a live preview of the app's family screen for a chosen member.
+   1.6.0: the card „Messenger“ — whether the Messenger plugin is there, the
+   group „Familie“ on / off (default on), its last sync and „Jetzt abgleichen“. */
 (function () {
   'use strict';
   var A = window.FA, T = A.T, $ = A.$, el = A.el;
@@ -140,9 +142,47 @@
     }).catch(function (e) { sel.value = prev; A.warn(e); });
   });
 
+  // ── messenger (1.6.0) ─────────────────────────────────────────────────────
+  function renderMessenger() {
+    var m = data.messenger || { api: false, available: false, group: true, sync: null };
+    var status = !m.api ? T('msgcfg.no_api') : (m.available === true ? T('msgcfg.available') : (m.available === false ? T('msgcfg.not_running') : T('msgcfg.unknown')));
+    var st = $('#fa-msg-status');
+    st.textContent = status;
+    st.className = 'fa-hint' + (m.available === true ? ' fa-ok' : (m.available === false ? ' fa-bad' : ''));
+    var row = $('#fa-msg-row');
+    row.className = 'fa-mod fa-msg-row' + (m.group ? '' : ' is-off');
+    A.clear($('#fa-msg-switch')).appendChild(A.switchBtn(m.group, T('msgcfg.group'), function (on, b) {
+      A.api('PUT', 'admin/messenger', { group: on }).then(function (r) {
+        data.messenger = r.messenger;
+        A.toast(T(on ? 'msgcfg.saved_on' : 'msgcfg.saved_off'));
+        renderMessenger();
+      }).catch(function (e) { A.setSwitch(b, !on); A.warn(e); });
+    }));
+    var s = m.sync;
+    var line = '';
+    if (m.group && s && s.at) {
+      line = s.ok ? T('msgcfg.synced', { when: A.when(s.at), n: s.members == null ? 0 : s.members }) : T('msgcfg.sync_failed', { when: A.when(s.at), error: T('rule.msg_err.' + (s.error || 'failed')) });
+      if (s.ok && s.ignored && s.ignored.length) line += ' ' + T('msgcfg.ignored', { n: s.ignored.length });
+    }
+    $('#fa-msg-sync').textContent = line;
+    $('#fa-msg-sync').hidden = !line;
+    $('#fa-msg-off').hidden = !!m.group;
+    $('#fa-msg-sync-now').disabled = !m.group || !m.api;
+  }
+  $('#fa-msg-sync-now').addEventListener('click', function () {
+    var b = $('#fa-msg-sync-now');
+    b.disabled = true;
+    A.api('POST', 'admin/messenger/sync').then(function (r) {
+      data.messenger = r.messenger;
+      A.toast(r.messenger.sync && r.messenger.sync.ok ? T('msgcfg.synced_now') : T('msgcfg.sync_failed', { when: A.when(r.messenger.sync && r.messenger.sync.at), error: T('rule.msg_err.' + ((r.messenger.sync && r.messenger.sync.error) || 'failed')) }));
+      renderMessenger();
+    }).catch(function (e) { A.warn(e); renderMessenger(); });
+  });
+
   function render() {
     renderGroups();
     renderWall();
+    renderMessenger();
     renderKids();
     renderPreview();
   }
