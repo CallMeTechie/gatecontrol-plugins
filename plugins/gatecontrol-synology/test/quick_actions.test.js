@@ -265,12 +265,16 @@ test('restart / shut down: the page\'s code path (log, "power" notice with the r
     // the widget follows: restarting
     const w = (await host.quickActions(ADMIN)).find((x) => x.id === `refresh:${id}`).widget;
     assert.deepEqual([w.state, w.status], ['warn', 'Startet neu …']);
-    // shut down from a rule
-    const s = await host.runQuickAction(ADMIN, `shutdown:${id}`, 'de', { automation: true, via: 'gatecontrol-familie' });
+    // never shut down from a rule (power on only at the device): refused, nothing sent
+    const ruled = await host.runQuickAction(ADMIN, `shutdown:${id}`, 'de', { automation: true, via: 'gatecontrol-familie' });
+    assert.deepEqual([ruled.body.ok, ruled.body.message], [false, 'Herunterfahren nur per Hand in der App – Einschalten geht nur am Gerät.']);
+    assert.deepEqual(d.state.power, ['reboot']);
+    // shut down from the app
+    const s = await host.runQuickAction(ADMIN, `shutdown:${id}`);
     assert.deepEqual([s.body.ok, s.body.message], [true, 'Keller wird heruntergefahren. Einschalten nur am Gerät.']);
     assert.deepEqual(d.state.power, ['reboot', 'shutdown']);
-    assert.ok(host.logs.some((l) => l.level === 'warn' && /NAS shutdown requested 1 Keller by admin \(Regel\)/.test(l.message)));
-    assert.match(host.notifications.filter((n) => n.topic === 'power').at(-1).body, /angefordert von admin \(Regel\) in GateControl\. Einschalten nur am Gerät/);
+    assert.ok(host.logs.some((l) => l.level === 'warn' && /NAS shutdown requested 1 Keller by admin \(App\)/.test(l.message)));
+    assert.match(host.notifications.filter((n) => n.topic === 'power').at(-1).body, /angefordert von admin \(App\) in GateControl\. Einschalten nur am Gerät/);
     // the NAS does not answer: the message, nothing sent, no notice
     d.state.down = true;
     const notices = host.notifications.length;

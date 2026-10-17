@@ -269,6 +269,8 @@ async function runQuickActionFor(gc, a) {
   const q = quick.parseId(a.id);
   if (!q) return { ok: false, message: t(lang, 'qa.unknown') };
   if (!route) return { ok: false, message: t(lang, 'error.forbidden') };
+  // switching on again only works at the device: never from a rule, only by a person in the app
+  if (q.kind === 'shutdown' && route === 'Regel') return { ok: false, message: t(lang, 'qa.no_rule_shutdown') };
   const started = Date.now();
   let cfg = null;
   try {

@@ -17,7 +17,8 @@ Synology-NAS überwachen und steuern (DSM Web API) als GateControl-Plugin – nu
     Plugin-Protokoll mit dem Weg („von admin (App)“, „von admin (Regel)“ für die Regel eines
     anderen Plugins); Neustart/Herunterfahren senden wie bisher die Meldung „NAS neu gestartet /
     heruntergefahren“. Fehler von DSM kommen als verständliche Antwort in der App an. Einschalten
-    eines heruntergefahrenen NAS ist weiterhin nicht möglich.
+    eines heruntergefahrenen NAS ist weiterhin nicht möglich – deshalb kann eine **Regel** das NAS
+    nie herunterfahren (nur per Hand in der App); Neustart und Backup gehen auch per Regel.
 - **Startkachel in den Apps** je NAS: „62 % belegt“ mit Speicher, Temperatur und Zustand; Farbe
   nach dem Zustand. Dafür bekommt das Plugin die Portal-Berechtigung und einen Portal-Bereich
   „NAS (Synology)“, der nur die Kacheln der Apps trägt – im Web-Portal erscheint nichts.
