@@ -1,0 +1,23 @@
+<div class="ms-page" id="ms-log">
+  <div class="ms-banner" role="note">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"></rect><path d="M8 11V8a4 4 0 0 1 8 0v3"></path></svg>
+    <span>{{t:log.intro}}</span>
+  </div>
+  <section class="ms-card">
+    <div class="ms-filters">
+      <h2 style="flex:1">{{t:log.title}}</h2>
+      <div class="ms-seg" role="group" aria-label="{{t:log.period}}">
+        <button type="button" data-days="1" aria-pressed="false">{{t:log.day1}}</button>
+        <button type="button" data-days="7" aria-pressed="true">{{t:log.day7}}</button>
+        <button type="button" data-days="30" aria-pressed="false">{{t:log.day30}}</button>
+      </div>
+    </div>
+    <div class="ms-table-wrap">
+      <table class="ms-table">
+        <thead><tr><th>{{t:log.when}}</th><th>{{t:log.level}}</th><th>{{t:log.what}}</th><th>{{t:log.detail}}</th><th>{{t:log.count}}</th></tr></thead>
+        <tbody id="ms-log-rows"></tbody>
+      </table>
+    </div>
+    <p class="ms-empty" id="ms-log-empty" hidden>{{t:log.empty}}</p>
+  </section>
+</div>

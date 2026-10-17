@@ -1,0 +1,50 @@
+<div class="ms-page" id="ms-overview">
+  <div class="ms-banner" role="note">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"></rect><path d="M8 11V8a4 4 0 0 1 8 0v3"></path></svg>
+    <span><b>{{t:admin.private_title}}</b> {{t:admin.private_text}}</span>
+  </div>
+
+  <section class="ms-tiles" aria-label="{{t:admin.tiles}}">
+    <div class="ms-tile"><span class="ms-tile-l">{{t:admin.tile_accounts}}</span><span class="ms-tile-v" id="ms-t-accounts">–</span><span class="ms-tile-s" id="ms-t-accounts-s"></span></div>
+    <div class="ms-tile"><span class="ms-tile-l">{{t:admin.tile_chats}}</span><span class="ms-tile-v" id="ms-t-chats">–</span><span class="ms-tile-s" id="ms-t-chats-s"></span></div>
+    <div class="ms-tile"><span class="ms-tile-l">{{t:admin.tile_today}}</span><span class="ms-tile-v" id="ms-t-today">–</span><span class="ms-tile-s" id="ms-t-today-s"></span></div>
+    <div class="ms-tile"><span class="ms-tile-l">{{t:admin.tile_storage}}</span><span class="ms-tile-v" id="ms-t-storage">–</span><div class="ms-bar" id="ms-t-bar"><i style="width:0"></i></div><span class="ms-tile-s" id="ms-t-storage-s"></span></div>
+  </section>
+
+  <div class="ms-grid2">
+    <section class="ms-card" aria-labelledby="ms-h-media">
+      <h2 id="ms-h-media">{{t:admin.media_title}}</h2>
+      <div class="ms-field"><span class="ms-field-k">{{t:admin.quota}}<small>{{t:admin.quota_hint}}</small></span><span class="ms-field-v" id="ms-quota">–</span></div>
+      <div class="ms-field"><span class="ms-field-k">{{t:admin.max_file}}</span><span class="ms-field-v" id="ms-maxfile">–</span></div>
+      <div class="ms-field"><span class="ms-field-k">{{t:admin.types}}<small id="ms-types-list"></small></span><span class="ms-field-v" id="ms-types">–</span></div>
+      <p>{{t:admin.media_where}} <span class="ms-path">{{t:admin.media_path}}</span></p>
+      <div class="ms-field"><label class="ms-field-k" for="ms-voice">{{t:admin.voice_max}}<small>{{t:admin.voice_max_hint}}</small></label><select id="ms-voice" class="form-select"></select></div>
+      <p>{{t:admin.backup_hint}} <span class="ms-path">{{t:admin.backup_path}}</span></p>
+    </section>
+
+    <section class="ms-card" aria-labelledby="ms-h-ret">
+      <h2 id="ms-h-ret">{{t:admin.retention_title}}</h2>
+      <div class="ms-field"><label class="ms-field-k" for="ms-retention">{{t:admin.retention}}<small>{{t:admin.retention_hint}}</small></label><select id="ms-retention" class="form-select"></select></div>
+      <div class="ms-field"><span class="ms-field-k" id="ms-l-disappearing">{{t:admin.allow_disappearing}}<small>{{t:admin.allow_disappearing_hint}}</small></span><span id="ms-disappearing"></span></div>
+      <div class="ms-field"><label class="ms-field-k" for="ms-edit">{{t:admin.edit_window}}<small>{{t:admin.edit_window_hint}}</small></label><select id="ms-edit" class="form-select"></select></div>
+      <div class="ms-field"><span class="ms-field-k">{{t:admin.account_gone}}<small>{{t:admin.account_gone_hint}}</small></span><span class="ms-field-v">{{t:admin.account_gone_value}}</span></div>
+    </section>
+
+    <section class="ms-card" aria-labelledby="ms-h-def">
+      <h2 id="ms-h-def">{{t:admin.defaults_title}}</h2>
+      <p>{{t:admin.defaults_hint}}</p>
+      <div class="ms-field"><span class="ms-field-k">{{t:prefs.read_receipts}}<small>{{t:prefs.read_receipts_hint}}</small></span><span id="ms-d-receipts"></span></div>
+      <div class="ms-field"><span class="ms-field-k">{{t:prefs.typing}}</span><span id="ms-d-typing"></span></div>
+      <div class="ms-field"><span class="ms-field-k">{{t:prefs.preview}}<small>{{t:prefs.preview_hint}}</small></span><span id="ms-d-preview"></span></div>
+    </section>
+
+    <section class="ms-card" aria-labelledby="ms-h-sec">
+      <h2 id="ms-h-sec">{{t:admin.security_title}}</h2>
+      <p>{{t:admin.security_text}}</p>
+      <p>{{t:admin.system_chat_text}}</p>
+      <div class="ms-field"><span class="ms-field-k">{{t:admin.errors_7d}}</span><span class="ms-field-v" id="ms-errors">–</span></div>
+    </section>
+  </div>
+
+  <div class="ms-actions"><span class="ms-saved" id="ms-saved" role="status" hidden>{{t:common.saved}}</span><button type="button" class="btn btn-primary" id="ms-save">{{t:common.save}}</button></div>
+</div>

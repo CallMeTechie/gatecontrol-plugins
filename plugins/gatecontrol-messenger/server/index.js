@@ -1,0 +1,158 @@
+'use strict';
+
+// gatecontrol-messenger — chats between the GateControl accounts: the apps
+// (own tab "Chats", permissions.app + ui.app — the apps draw it natively from
+// the API), the Windows client, the portal (own tab "Chats", a sandboxed frame)
+// and two admin pages without any message content (Übersicht, Protokoll).
+//
+//   chat API   (apps, portal)              server/api.js — contract in README.md "App-API"
+//   admin API  admin/* (administrators)    server/admin.js
+//   services   send_message, sync_group    server/services.js (for Familie)
+//   media      gc.media (uploads by the apps / GC.upload), hook mediaAccess: members only
+//   live       gc.events (message.new, …), chat pushes (notifyTopics[].chat) — server/live.js, server/push.js
+//   background disappearing messages, retention, file clean-up — server/jobs.js
+//
+// Needs GateControl ≥ 1.177.0 (media, realtime events, chat notifications, services).
+
+const ui = require('./ui');
+const api = require('./api');
+const admin = require('./admin');
+const config = require('./config');
+const people = require('./people');
+const seal = require('./seal');
+const store = require('./store');
+const live = require('./live');
+const jobs = require('./jobs');
+const services = require('./services');
+const texts = require('./texts.json');
+const { STATUS, isKnown } = require('./util');
+
+function t(lang, key, params) {
+  const l = lang === 'en' ? 'en' : 'de';
+  let s = (texts[l] && texts[l][key]) || texts.de[key] || key;
+  if (params) for (const [k, v] of Object.entries(params)) s = s.split(`{{${k}}}`).join(String(v));
+  return s;
+}
+
+function errorResponse(e, lang) {
+  const code = isKnown(e) ? e.code : 'internal';
+  return { status: STATUS[code], json: { ok: false, code, error: t(lang, 'error.' + code) } };
+}
+
+/** The request context of a chat call. */
+async function context(gc, user, now) {
+  return { gc, viewer: user ? user.id : null, now, users: await people.users(gc, now), cfg: await config.load(gc), portal: !(user && user.app === true), box: live.outbox() };
+}
+
+async function ensureKey(gc) {
+  if (!seal.ready()) await seal.init(gc);
+}
+
+/** A person who may chat: a signed-in portal viewer or an app user — never a kiosk device, never the admin UI. */
+function chatViewer(user) {
+  if (!user || !Number.isSafeInteger(user.id) || user.id <= 0) return 'forbidden';
+  if (user.portal !== true && user.app !== true) return 'forbidden';
+  if (user.kiosk === true) return 'forbidden';
+  if (user.loggedIn !== true) return 'login_required';
+  return null;
+}
+
+module.exports = {
+  async start(gc) {
+    live.reset();
+    jobs.reset();
+    config.reset();
+    people.reset();
+    seal._reset();
+    await seal.init(gc);
+    gc.log.info('messenger started', gc.plugin.version);
+  },
+
+  async request(req, gc) {
+    const lang = req && req.lang;
+    try {
+      await ensureKey(gc);
+      const seg = String(req.path || '/').split('/').filter(Boolean).map((s) => { try { return decodeURIComponent(s); } catch { return s; } });
+      if (!seg.length) return errorResponse({ code: 'not_found' }, lang);
+      const now = Date.now();
+      if (seg[0] === 'admin') {
+        // admin pages only: an administrator in GateControl's admin UI, never a portal or app caller
+        if (!req.user || req.user.portal || req.user.app || req.user.role !== 'admin') return errorResponse({ code: 'forbidden' }, lang);
+        return { status: 200, json: { ok: true, ...(await admin.route(req, gc, seg, now)) } };
+      }
+      const refusal = chatViewer(req.user);
+      if (refusal) {
+        if (req.user && req.user.kiosk === true && Number.isSafeInteger(req.user.id)) await store.tx(gc, () => people.markKiosk(gc, req.user.id, now));
+        return errorResponse({ code: refusal }, lang);
+      }
+      const ctx = await context(gc, req.user, now);
+      if (!ctx.users.has(ctx.viewer)) return errorResponse({ code: 'forbidden' }, lang);
+      await store.tx(gc, () => people.touch(gc, req.user, lang, now));
+      let res;
+      try {
+        res = await api.route(ctx, req, seg);
+      } catch (e) {
+        ctx.box = live.outbox(); // nothing of a failed request goes out
+        throw e;
+      }
+      await api.flush(ctx);
+      return res;
+    } catch (e) {
+      if (!isKnown(e)) gc.log.warn('request failed', req && req.method, String((req && req.path) || '').split('/').slice(0, 2).join('/'), (e && (e.code || e.message)) || 'error');
+      return errorResponse(e, lang);
+    }
+  },
+
+  async render(view, gc) {
+    return { html: ui.render(view || {}, t) };
+  },
+
+  /** The portal tab "Chats": every signed-in account — not a kiosk device (a wall tablet is no person). */
+  async portalVisible({ user, section } = {}, gc) {
+    if (section) return false;
+    if (user && user.kiosk === true && Number.isSafeInteger(user.id)) {
+      try { await store.tx(gc, () => people.markKiosk(gc, user.id)); } catch { /* shown or not, nothing else depends on it */ }
+      return false;
+    }
+    return !!user;
+  },
+
+  /** The app tab "Chats": every account. */
+  async appVisible(arg) {
+    const user = arg && typeof arg === 'object' && arg.user && typeof arg.user === 'object' ? arg.user : arg;
+    return !!(user && Number.isSafeInteger(user.id));
+  },
+
+  /**
+   * May this viewer read a file (GET …/media/<id> of the apps)? Members of the conversation the file
+   * belongs to (message, preview picture or group picture) — only from the message on that they see.
+   * A file not (yet) part of a message: its uploader only.
+   */
+  async mediaAccess({ user, mediaId, owner } = {}, gc) {
+    if (!user || !Number.isSafeInteger(user.id) || user.kiosk === true) return false;
+    const m = await store.one(gc, 'SELECT * FROM media WHERE media_id = ?', [mediaId]);
+    if (!m) return owner != null && owner === user.id;
+    if (m.orphan) return false;
+    const me = await store.one(gc, 'SELECT * FROM members WHERE conv_id = ? AND user_id = ? AND left_at IS NULL', [m.conv_id, user.id]);
+    if (!me) return false;
+    if (m.role === 'avatar') return true;
+    const msg = m.msg_id == null ? null : await store.one(gc, 'SELECT id, conv_id, deleted_at FROM messages WHERE id = ?', [m.msg_id]);
+    if (!msg || msg.conv_id !== m.conv_id || msg.deleted_at || msg.id <= me.joined_msg_id) return false;
+    const hidden = await store.one(gc, 'SELECT 1 AS x FROM hidden WHERE msg_id = ? AND user_id = ?', [msg.id, user.id]);
+    return !hidden;
+  },
+
+  /** Services for other plugins (services.provides): send_message, sync_group — server/services.js. */
+  async service(call, gc) {
+    await ensureKey(gc);
+    const now = Date.now();
+    const ctx = await context(gc, call && call.user, now);
+    ctx.portal = false;
+    return services.handle(ctx, call || {}, () => api.flush(ctx));
+  },
+
+  async tick(gc) {
+    await ensureKey(gc);
+    return jobs.tick(gc, Date.now());
+  },
+};
