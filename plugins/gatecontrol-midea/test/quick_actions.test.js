@@ -25,7 +25,7 @@ const THERMO = 'M10 13V5a2 2 0 1 1 4 0v8a4 4 0 1 1-4 0z';
  */
 function widget({ value = '–', status = null, state = null, target = 24, mode = 'auto', lang = 'de', outdoor = value === '–' ? null : '31' } = {}) {
   return {
-    label: lang === 'en' ? 'Indoor temperature' : 'Innentemperatur', value, unit: '°C', status, state, power: true,
+    label: lang === 'en' ? 'Indoor temperature' : 'Innentemperatur', value, unit: '°C', status, state, power: true, badge: null,
     readings: outdoor == null ? [] : [{ id: 'outdoor', label: lang === 'en' ? 'Outdoor temperature' : 'Außentemperatur', value: outdoor, unit: '°C', icon: THERMO, state: null }],
     controls: [
       { id: 'target', kind: 'stepper', label: lang === 'en' ? 'Target' : 'Ziel', value: target, min: 16, max: 30, step: 0.5, unit: '°C' },

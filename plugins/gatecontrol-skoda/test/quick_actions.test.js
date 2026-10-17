@@ -23,6 +23,9 @@ const LOCKED = 'M5 11h14v10H5zM8 11V7a4 4 0 0 1 8 0v4M12 15v2';
 const UNLOCKED = 'M5 11h14v10H5zM8 11V7a4 4 0 0 1 7.9-1M12 15v2';
 const LOOK = { on: { icon: LOCKED, tone: 'good' }, off: { icon: UNLOCKED, tone: 'crit' } };
 const ICON_RE = /^[MmLlHhVvCcSsQqTtAaZz0-9 .,-]{1,2000}$/;
+// the widget badge: battery empty, one, two, three bars; with a lightning bolt while charging
+const BAT = ['', 'M6 10v4', 'M6 10v4M10 10v4', 'M6 10v4M10 10v4M14 10v4'].map((bars) => 'M2 7h16v10H2zM21 10v4' + bars);
+const BAT_CHARGING = 'M2 7h16v10H2zM21 10v4M11 9l-3 3h4l-3 3';
 
 /** Change the stored vehicle state (what the next poll would bring). */
 async function patchState(host, id, patch) {
@@ -206,35 +209,63 @@ test('quick actions: the vehicle\'s device and its widget on the climate action'
     const device = { id: `v:${v}`, title: 'Familienauto', subtitle: 'Elroq', icon: CAR };
     assert.ok(list.every((a) => JSON.stringify(a.device) === JSON.stringify(device)), 'every action of the vehicle: one device');
     assert.deepEqual(list.map((a) => [a.id, Boolean(a.widget)]), [[`climate:${v}`, true], [`charging:${v}`, false], [`windowheat:${v}`, false]]);
+    // the charge level as the badge (charging: the lightning battery), no main value, only the range as a reading
     assert.deepEqual(list[0].widget, {
-      label: 'Ladestand', value: 74, unit: '%', status: 'Lädt', state: 'good', controls: [], power: false,
-      readings: [
-        { id: 'range', label: 'Reichweite', value: 310, unit: 'km', icon: ROUTE, state: null },
-        { id: 'lock', label: 'Verriegelung', value: null, unit: null, icon: LOCKED, state: 'good' },
-      ],
+      label: null, value: null, unit: null, status: 'Lädt', state: 'good', controls: [], power: false,
+      readings: [{ id: 'range', label: 'Reichweite', value: 310, unit: 'km', icon: ROUTE, state: null }],
+      badge: { icon: BAT_CHARGING, value: 74, unit: '%', state: 'good', label: 'Ladestand' },
     });
-    // unlocked, not charging, climate on, English
+    // unlocked, not charging, climate on, English: the lock stays on its toggle — no reading, no amber card
     await patchState(host, v, { locked: false, charging: { state: 'READY_FOR_CHARGING' }, climate: { state: 'HEATING' } });
     list = await host.quickActions(ADA, 'en');
     assert.deepEqual(list[0].widget, {
-      label: 'Charge level', value: 74, unit: '%', status: 'Climate control on', state: 'warn', controls: [], power: false,
-      readings: [
-        { id: 'range', label: 'Range', value: 310, unit: 'km', icon: ROUTE, state: null },
-        { id: 'lock', label: 'Locking', value: null, unit: null, icon: UNLOCKED, state: 'crit' },
-      ],
+      label: null, value: null, unit: null, status: 'Climate control on', state: 'good', controls: [], power: false,
+      readings: [{ id: 'range', label: 'Range', value: 310, unit: 'km', icon: ROUTE, state: null }],
+      badge: { icon: BAT[2], value: 74, unit: '%', state: 'good', label: 'Charge level' },
     });
-    // low charge level beats unlocked
+    // a low charge level: red card (whatever the lock)
     await patchState(host, v, { soc: 12 });
     assert.equal((await host.quickActions(ADA))[0].widget.state, 'crit');
-    // no charge level (a combustion car): the range is the value, no range reading; lock unknown → no lock reading
+    await patchState(host, v, { soc: 15, locked: true });
+    assert.equal((await host.quickActions(ADA))[0].widget.state, 'crit', '15 % is still red');
+    await patchState(host, v, { soc: 16, locked: false });
+    assert.equal((await host.quickActions(ADA))[0].widget.state, 'good', 'unlocked → no warn');
+    // no charge level (a combustion car): no badge, still no main value, the range as the reading; lock unknown → nothing about it
     await patchState(host, v, { soc: null, locked: null, charging: null, climate: { state: 'OFF' } });
     list = await host.quickActions(ADA);
-    assert.deepEqual(list[0].widget, { label: 'Reichweite', value: 310, unit: 'km', status: null, state: null, controls: [], readings: [], power: false });
+    assert.deepEqual(list[0].widget, {
+      label: null, value: null, unit: null, status: null, state: null, controls: [], power: false,
+      readings: [{ id: 'range', label: 'Reichweite', value: 310, unit: 'km', icon: ROUTE, state: null }], badge: null,
+    });
     assert.deepEqual(list.map((a) => a.id), [`climate:${v}`, `windowheat:${v}`], 'no charging toggle without a battery');
+    // nothing known: an empty widget (never a dash), the status line still shows
     await patchState(host, v, { rangeKm: null });
-    assert.deepEqual((await host.quickActions(ADA))[0].widget, { label: 'Reichweite', value: '–', unit: null, status: null, state: null, controls: [], readings: [], power: false });
+    assert.deepEqual((await host.quickActions(ADA))[0].widget, { label: null, value: null, unit: null, status: null, state: null, controls: [], readings: [], power: false, badge: null });
+    await patchState(host, v, { climate: { state: 'HEATING' } });
+    assert.equal((await host.quickActions(ADA))[0].widget.status, 'Klimatisierung an');
   });
 });
+
+test('quick actions: the badge\'s battery shows the charge level (empty ≤ 15 %, one bar ≤ 40, two ≤ 75, three above), lightning while charging', () => withHost({}, async (host, cloud) => {
+  const { vehicleId: v } = await owned(host, cloud);
+  await patchState(host, v, { charging: { state: 'READY_FOR_CHARGING' } });
+  const badge = async (soc, lang) => { await patchState(host, v, { soc }); return (await host.quickActions(ADA, lang))[0].widget.badge; };
+  for (const [soc, icon, state] of [
+    [0, BAT[0], 'crit'], [15, BAT[0], 'crit'], [15.4, BAT[0], 'crit'], [16, BAT[1], 'good'], [40, BAT[1], 'good'], [41, BAT[2], 'good'],
+    [75, BAT[2], 'good'], [76, BAT[3], 'good'], [100, BAT[3], 'good'],
+  ]) {
+    assert.deepEqual(await badge(soc), { icon, value: Math.round(soc), unit: '%', state, label: 'Ladestand' }, `${soc} %`);
+  }
+  assert.equal((await badge(57.6, 'en')).value, 58, 'a whole number');
+  // charging: the lightning battery at every level; a low level stays red
+  await patchState(host, v, { charging: { state: 'CHARGING' } });
+  assert.deepEqual(await badge(9), { icon: BAT_CHARGING, value: 9, unit: '%', state: 'crit', label: 'Ladestand' });
+  assert.deepEqual(await badge(90, 'en'), { icon: BAT_CHARGING, value: 90, unit: '%', state: 'good', label: 'Charge level' });
+  await patchState(host, v, { charging: { state: 'READY_FOR_CHARGING' } });
+  assert.equal((await badge(50)).icon, BAT[2], 'no longer charging: the level again');
+  for (const icon of [...BAT, BAT_CHARGING]) assert.ok(ICON_RE.test(icon), icon);
+  assert.equal(new Set([...BAT, BAT_CHARGING]).size, 5, 'five different icons');
+}));
 
 test('Start tiles: items for the apps (charge level, range, lock), value text for the portal', () => withHost({}, async (host, cloud) => {
   const { vehicleId: v } = await owned(host, cloud);
@@ -282,7 +313,6 @@ test('right after a command the apps show the state it aims for, until the vehic
   const { accountId, vehicleId: v } = await owned(host, cloud);
   await asAdmin(host, 'PUT', `/accounts/${accountId}/spin`, { spin: '4711' });
   const action = async (kind, lang) => (await host.quickActions(ADA, lang)).find((a) => a.id === `${kind}:${v}`);
-  const lockReading = async () => (await action('climate')).widget.readings.find((r) => r.id === 'lock');
   const lockItem = async () => (await host.clientTiles(ADA))[0].items.at(-1);
   // window heating: stored off → on is shown at once; the next press switches it off again (not "on" a second time)
   assert.equal((await action('windowheat')).state, 'off');
@@ -296,13 +326,14 @@ test('right after a command the apps show the state it aims for, until the vehic
   await host.runQuickAction(ADA, `charging:${v}`);
   assert.deepEqual([(await action('climate')).state, (await action('charging')).state], ['on', 'off']);
   assert.equal((await action('climate')).widget.status, 'Klimatisierung an');
-  // the lock: stored locked → unlock; title, icon, state, widget reading and tile item follow at once
+  assert.equal((await action('climate')).widget.badge.icon, BAT[2], 'charging stopped: the badge shows the level, no lightning');
+  // the lock: stored locked → unlock; title, icon, state and tile item follow at once (the widget's card stays green)
   await host.runQuickAction(ADA, `lock:${v}`);
   const lock = await action('lock', 'en');
   assert.deepEqual([lock.title, lock.state, lock.icon, lock.look], ['Unlocked', 'off', UNLOCKED, LOOK]);
-  assert.deepEqual(await lockReading(), { id: 'lock', label: 'Verriegelung', value: null, unit: null, icon: UNLOCKED, state: 'crit' });
+  assert.deepEqual((await action('climate')).widget.readings.map((r) => r.id), ['range'], 'the lock is no widget reading');
   assert.deepEqual(await lockItem(), { label: 'Entriegelt', value: null, unit: null, icon: UNLOCKED, state: 'crit' });
-  assert.equal((await action('climate')).widget.state, 'warn');
+  assert.equal((await action('climate')).widget.state, 'good', 'unlocked → no warn on the card');
   // the vehicle reports it → the entry goes; a later report is shown as it is
   await patchState(host, v, { locked: false });
   assert.equal((await action('lock')).state, 'off');
@@ -313,7 +344,7 @@ test('right after a command the apps show the state it aims for, until the vehic
   assert.equal((await action('lock')).state, 'off');
   const now = Date.now();
   t.mock.method(Date, 'now', () => now + control.EXPECT_MS);
-  assert.deepEqual([(await action('lock')).state, (await action('lock')).title, (await lockReading()).icon, (await lockItem()).label], ['on', 'Verriegelt', LOCKED, 'Verriegelt']);
+  assert.deepEqual([(await action('lock')).state, (await action('lock')).title, (await lockItem()).icon, (await lockItem()).label], ['on', 'Verriegelt', LOCKED, 'Verriegelt']);
 }));
 
 test('runQuickAction: a command queued past the time budget answers "on its way" without a state; a late failure is only logged', () => withHost({}, async (host, cloud) => {

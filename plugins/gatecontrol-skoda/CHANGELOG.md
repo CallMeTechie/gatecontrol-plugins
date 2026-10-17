@@ -2,6 +2,22 @@
 
 Škoda-Fahrzeuge (MySkoda) als GateControl-Plugin – bisher fest in GateControl eingebaut.
 
+## 1.4.1
+- **Ladestand als Akku oben rechts im Fahrzeug-Widget** (GateControl ≥ 1.175.0): rechts neben
+  dem Fahrzeugnamen zeigt ein Akku-Symbol mit der Prozentzahl den Ladestand – leer bis 15 %
+  (rot), ein Balken bis 40 %, zwei bis 75 %, darüber drei; während des Ladens ein Akku mit
+  Blitz. Ohne bekannten Ladestand (z. B. Verbrenner) entfällt das Symbol.
+- Die eigene Zeile „Ladestand“ mit dem großen Wert entfällt; das Widget zeigt darunter nur
+  noch die Reichweite. Das zusätzliche Schloss-Symbol neben der Reichweite entfällt ebenfalls –
+  den Verriegelungszustand zeigt nur noch der Schloss-Schalter mit seiner Farbe. Auch die
+  Farbe des Widgets hängt nicht mehr am Schloss: rot bis 15 % Ladestand, sonst grün, ohne
+  bekannten Ladestand neutral – ein entriegeltes Fahrzeug färbt das Widget nicht mehr gelb.
+  Die Statuszeile („Lädt“ / „Klimatisierung an“) bleibt; ist weder Ladestand noch Reichweite
+  bekannt, zeigt das Widget keinen Strich mehr.
+- Die Kachel auf der Startseite (Ladestand, Reichweite, Schloss) bleibt unverändert.
+- Ältere GateControl-Versionen (vor 1.175.0) kennen das Akku-Symbol nicht und lassen es weg;
+  das Plugin läuft weiter ab GateControl 1.154.0.
+
 ## 1.4.0
 - **Zielzustand statt Umschalten** (GateControl ≥ 1.173.0): Klimatisierung, Laden,
   Scheibenheizung und das Schloss nennen ihre Befehle („Verriegeln“ / „Entriegeln“,

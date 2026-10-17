@@ -52,7 +52,11 @@
 //   one) and `confirmWhen` 'on'|'off' (null without); a button carrying look or confirmWhen
 //   throws (the host nulls them). A widget may carry `label` (≤ 24), `readings` (≤ 4, each
 //   { id, label, value?, unit?, icon?, state? } with value or icon; answer always a list) and
-//   `power` (boolean, answer always a boolean, default true).
+//   `power` (boolean, answer always a boolean, default true). Badge (GateControl ≥ 1.175.0): a
+//   widget's optional `badge` { icon, value?, unit?, state?, label? } (icon SVG path data, value a
+//   text ≤ 8 or a number, unit ≤ 4 and only with a value, state good|warn|crit, label ≤ 20; the
+//   widget's last key, always in the answer, null without one; where the host nulls the badge or a
+//   part of it this throws) — shown right of the device name in the widget head.
 //   Start tiles: host.portalTiles(user) answers what the hook returned (the portal ignores
 //   `items`), but a tile's `items` (≤ 4, { label, icon?, value?, unit?, state? } with value or
 //   icon) are checked like the host; host.clientTiles(user) answers like the apps' GET
@@ -136,6 +140,7 @@ const QA_ID_RE = /^[A-Za-z0-9:._-]{1,64}$/;
 const QA_ICON_RE = /^[MmLlHhVvCcSsQqTtAaZz0-9 .,-]{1,2000}$/;
 const QA_STATES = new Set(['on', 'off']);
 const QA_WIDGET_STATES = new Set(['on', 'off', 'good', 'warn', 'crit']);
+const QA_BADGE_STATES = new Set(['good', 'warn', 'crit']);
 const QA_CONTROL_ID_RE = /^[A-Za-z0-9_-]{1,24}$/;
 const QA_CONTROL_KINDS = new Set(['stepper', 'slider', 'choice']);
 const QA_WIDGET_CONTROLS = 4;
@@ -374,6 +379,27 @@ function checkQuickWidget(w, what) {
   return {
     label: qaText(w.label, 24, `${what} widget label`, true), value, unit: qaText(w.unit, 8, `${what} widget unit`, true),
     status: qaText(w.status, 60, `${what} widget status`, true), state: w.state == null ? null : w.state, controls, readings, power: w.power !== false,
+    badge: checkQuickBadge(w.badge, what),
+  };
+}
+
+/**
+ * A widget's badge → { icon, value, unit, state, label } as the host passes it on (GateControl ≥ 1.175.0,
+ * quickActions.js; the widget's last key, shown in its head right of the device name); null without one.
+ * Throws where the host nulls the badge or one of its parts (the host never drops the widget for it):
+ * icon (required) SVG path data, value a trimmed text of 1–8 or a finite number, unit 1–4 and only with
+ * a value, state good|warn|crit (not on/off), label 1–20 (for screen readers).
+ */
+function checkQuickBadge(b, what) {
+  if (b == null) return null;
+  if (typeof b !== 'object' || Array.isArray(b)) throw hostError('ERR_INVALID', `${what}: widget badge must be an object`);
+  if (typeof b.icon !== 'string' || !QA_ICON_RE.test(b.icon)) throw hostError('ERR_INVALID', `${what}: widget badge icon is not SVG path data`);
+  const value = b.value == null ? null : (typeof b.value === 'number' ? qaNumber(b.value, `${what}: widget badge value`) : qaText(b.value, 8, `${what} widget badge value`));
+  if (b.state != null && !QA_BADGE_STATES.has(b.state)) throw hostError('ERR_INVALID', `${what}: widget badge state ${JSON.stringify(b.state)}`);
+  if (b.unit != null && value == null) throw hostError('ERR_INVALID', `${what}: widget badge unit without a value`);
+  return {
+    icon: b.icon, value, unit: qaText(b.unit, 4, `${what} widget badge unit`, true),
+    state: b.state == null ? null : b.state, label: qaText(b.label, 20, `${what} widget badge label`, true),
   };
 }
 

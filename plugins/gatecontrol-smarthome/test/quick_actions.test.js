@@ -20,7 +20,7 @@ const direct = (host, user, id, lang = 'de', extra = {}) => host.plugin.runQuick
 
 /** The widget as the host passes it on: `value` (brightness while on, else the off text), status, state, one slider at `bri`. */
 function widget({ value, unit = null, status, state, bri = 100, lang = 'de' }) {
-  return { label: lang === 'en' ? 'Brightness' : 'Helligkeit', value, unit, status, state, readings: [], power: true, controls: [{ id: 'bri', kind: 'slider', label: lang === 'en' ? 'Brightness' : 'Helligkeit', value: bri, min: 1, max: 100, step: 1, unit: '%' }] };
+  return { label: lang === 'en' ? 'Brightness' : 'Helligkeit', value, unit, status, state, readings: [], power: true, badge: null, controls: [{ id: 'bri', kind: 'slider', label: lang === 'en' ? 'Brightness' : 'Helligkeit', value: bri, min: 1, max: 100, step: 1, unit: '%' }] };
 }
 
 test('quick actions: only the viewer\'s own devices, toggles first, scenes as buttons, sensors never', () => withHost({ gateways: [fakeDeconz()] }, async (host) => {

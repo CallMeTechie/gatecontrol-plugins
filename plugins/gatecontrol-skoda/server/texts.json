@@ -219,7 +219,6 @@
   "qa.lock_off_sent": "{{name}} wird entriegelt",
   "qa.pending": "{{name}}: Befehl unterwegs – der Status folgt",
   "widget.soc": "Ladestand",
-  "widget.lock": "Verriegelung",
   "widget.charging": "Lädt",
   "widget.climate_on": "Klimatisierung an",
   "qa.unknown": "Diese Aktion gibt es nicht mehr."
@@ -444,7 +443,6 @@
   "qa.lock_off_sent": "{{name}} is being unlocked",
   "qa.pending": "{{name}}: command on its way – the status follows",
   "widget.soc": "Charge level",
-  "widget.lock": "Locking",
   "widget.charging": "Charging",
   "widget.climate_on": "Climate control on",
   "qa.unknown": "This action no longer exists."
