@@ -3,6 +3,12 @@
 Die Familie in der GateControl-App (eigener Tab), im Portal (eigener Tab „Familie“) und auf
 drei Admin-Seiten. Alles bleibt auf dem eigenen Server.
 
+## 1.5.1
+- **Karten wieder sichtbar** (Orte, Protokoll): OpenStreetMap lehnte die Kacheln mit „403 Access
+  blocked“ ab, weil die abgeschottete Plugin-Seite keinen Referer mitsendet. Ab GateControl 1.176
+  holt GateControl die Kacheln selbst (mit Zwischenspeicher) und reicht sie an die Karte weiter
+  (`GC.tiles`); auf älteren GateControl-Versionen bleibt es beim direkten Abruf.
+
 ## 1.5.0
 Braucht weiterhin **GateControl ≥ 1.173.0** (keine Änderung am Kern) und die GateControl-App
 1.41.0 für „Orte für Regeln teilen“.

@@ -10,6 +10,16 @@
   'use strict';
   var A = window.FA, T = A.T, el = A.el;
   var CTX = A.CTX;
+
+  /**
+   * The tile URL template: GateControl's relay when the host offers one (core 1.176+, `GC.tiles`) —
+   * the sandboxed frame has an opaque origin and sends no Referer, which OpenStreetMap answers with
+   * 403 "Access blocked" — else the direct URL (older hosts).
+   */
+  function tileUrl() {
+    var t = window.GC && typeof window.GC.tiles === 'string' ? window.GC.tiles : null;
+    return t || CTX.tiles;
+  }
   var loading = null;
 
   function load() {
@@ -90,7 +100,7 @@
       var holder = el('div', { class: 'fa-map', role: 'img', 'aria-label': T('map.aria') });
       box.appendChild(holder);
       var map = L.map(holder, { scrollWheelZoom: false, attributionControl: true });
-      L.tileLayer(CTX.tiles, {
+      L.tileLayer(tileUrl(), {
         maxZoom: 19,
         attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>',
         referrerPolicy: 'origin',
@@ -134,7 +144,7 @@
       var holder = el('div', { class: 'fa-map fa-map-pick', role: 'application', 'aria-label': T('map.pick_aria') });
       box.appendChild(holder);
       var map = L.map(holder, { scrollWheelZoom: false, attributionControl: true });
-      L.tileLayer(CTX.tiles, {
+      L.tileLayer(tileUrl(), {
         maxZoom: 19,
         attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>',
         referrerPolicy: 'origin',
