@@ -3,7 +3,7 @@
    reservations on one's own wishes), pocket money (parents: every child, book,
    rule, approve converting stars; a child: its own account and "Umwandeln"),
    household book (parents), presence (everyone: own consent and who is home;
-   parents: the rules — ui/rules.js). Money is bookkeeping only. Same API as
+   parents: the rules and, 1.5.0, the places of the place rules — ui/rules.js). Money is bookkeeping only. Same API as
    the app; a viewer recognised only by device trust reads and changes nothing
    (no presence at all). */
 (function () {
@@ -451,17 +451,22 @@
       A.rules.people($('#fa-pres-people'), r.members);
       if (!parent()) return null;
       $('#fa-pres-rules-box').hidden = false;
-      return Promise.all([A.api('GET', 'presence/rules'), A.api('GET', 'presence/actions')]).then(function (x) {
+      return Promise.all([A.api('GET', 'presence/rules'), A.api('GET', 'presence/actions'), A.api('GET', 'presence/places')]).then(function (x) {
         presData.rules = x[0].rules;
         presData.log = x[0].log;
         presData.actions = x[1].actions;
         presData.actionsAvailable = x[1].available;
+        presData.places = x[2].places;
+        presData.home = x[2].home;
         A.rules.render($('#fa-pres-rules'), presData, ruleOpts);
+        A.rules.places($('#fa-pres-places'), presData, ruleOpts);
+        $('#fa-pres-place-add').disabled = presData.places.length >= A.rules.MAX_PLACES;
         A.rules.log($('#fa-pres-log'), presData);
       });
     }).catch(A.warn);
   }
   $('#fa-pres-add').addEventListener('click', function () { if (presData && presData.rules) A.rules.edit(null, presData, ruleOpts); });
+  $('#fa-pres-place-add').addEventListener('click', function () { if (presData && presData.places) A.rules.editPlace(null, presData, ruleOpts, loadPresence); });
 
   // ── start ────────────────────────────────────────────────────────────────
   A.api('GET', 'me').then(function (r) {

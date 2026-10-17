@@ -10,11 +10,19 @@
    button a card with „Ausführen“; search over all plugins; the notification
    as its own tab) · Ablauf (the rule as a sentence, the numbered steps). A
    switch always gets a fixed target state; a rule from before 1.4.0 whose
-   switch has none shows „Zielzustand fehlt – Regel bearbeiten“ and is not run. */
+   switch has none shows „Zielzustand fehlt – Regel bearbeiten“ and is not run.
+   1.5.0: places as triggers — „Kommt an einem Ort an“ / „Verlässt einen Ort“
+   in Wann? (a person or „Jemand“, a place, „Orte verwalten“, who shares
+   places), the section „Orte“ (cards, the editor with the OpenStreetMap map,
+   ui/map.js pick()) on the admin page and in the portal; dialogs opened from
+   the rule dialog stack on top of it (Escape closes the top one). */
 (function () {
   'use strict';
   var A = window.FA, T = A.T, el = A.el;
-  var TRIGGERS = ['all_away', 'first_home', 'child_home_alone', 'person_home', 'person_away'];
+  var TRIGGERS = ['all_away', 'first_home', 'child_home_alone', 'person_home', 'person_away', 'place_enter', 'place_exit'];
+  var PLACE_TRIGGERS = ['place_enter', 'place_exit'];
+  var MAX_PLACES = 20;
+  var RADIUS = { min: 50, max: 5000, step: 50, def: 200 };
   var ICON_ARROW = 'M5 12h14M13 6l6 6-6 6';
   var MAX_STEPS = 10;
   var ICON_RE = /^[MmLlHhVvCcSsQqTtAaZz0-9 .,-]{1,2000}$/;
@@ -30,19 +38,34 @@
     bell: 'M6 16V11a6 6 0 0 1 12 0v5l2 2H4zM10 21h4',
     info: 'M12 8h.01M11 12h1v5h1M21 12a9 9 0 1 1-18 0a9 9 0 0 1 18 0',
     x: 'M6 6l12 12M18 6L6 18',
+    trash: 'M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3',
     power: 'M12 3v8M6.3 7.3a8 8 0 1 0 11.4 0',
     play: 'M7 4l12 8-12 8z',
     plugin: 'M9 3v4M15 3v4M6 7h12v4a6 6 0 0 1-12 0zM12 17v4',
+    pin: 'M12 21s-6.5-5.6-6.5-11a6.5 6.5 0 0 1 13 0c0 5.4-6.5 11-6.5 11zM12 12.5a2.5 2.5 0 1 0 0-5a2.5 2.5 0 0 0 0 5',
+    pinIn: 'M10 21s-6-5.2-6-10a6 6 0 0 1 12 0c0 1-.3 2.1-.8 3.1M10 13a2 2 0 1 0 0-4a2 2 0 0 0 0 4M14 19h7M18 16l3 3-3 3',
+    pinOut: 'M10 21s-6-5.2-6-10a6 6 0 0 1 12 0c0 1-.3 2.1-.8 3.1M10 13a2 2 0 1 0 0-4a2 2 0 0 0 0 4M21 19h-7M17 16l-3 3 3 3',
+    group: 'M9 11a3.5 3.5 0 1 0 0-7a3.5 3.5 0 0 0 0 7M2.5 20a6.5 6.5 0 0 1 13 0M16 4.2a3.5 3.5 0 0 1 0 6.6M18 14a6.5 6.5 0 0 1 3.5 6',
   };
-  var TRIGGER_ICON = { all_away: ICON.away, first_home: ICON.home, child_home_alone: ICON.child, person_home: ICON.personIn, person_away: ICON.personOut };
+  var TRIGGER_ICON = { all_away: ICON.away, first_home: ICON.home, child_home_alone: ICON.child, person_home: ICON.personIn, person_away: ICON.personOut, place_enter: ICON.pinIn, place_exit: ICON.pinOut };
+  // dialogs opened from the rule dialog (places) stack on top of it: Escape and Tab belong to the top one
+  var stack = [];
 
   function nameOf(data, id) {
     var m = (data.members || []).filter(function (x) { return x.userId === id; })[0];
     return m ? m.name : '–';
   }
 
+  function isPlace(trigger) { return PLACE_TRIGGERS.indexOf(trigger) >= 0; }
+  function placeOf(data, id) { return (data.places || []).filter(function (p) { return p.id === id; })[0] || null; }
+  /** "150 m" / "1,5 km" */
+  function radiusText(m) {
+    return m < 1000 ? m + ' m' : (m / 1000).toLocaleString(A.CTX.lang === 'en' ? 'en-GB' : 'de-DE', { maximumFractionDigits: 2 }) + ' km';
+  }
+
   function triggerText(rule, data) {
     if (rule.trigger === 'person_home' || rule.trigger === 'person_away') return T('rule.trigger_' + rule.trigger, { name: nameOf(data, rule.userId) });
+    if (isPlace(rule.trigger)) return T('rule.trigger_' + rule.trigger, { name: rule.userId ? nameOf(data, rule.userId) : T('rule.someone'), place: rule.placeName || '–' });
     return T('rule.trigger_' + rule.trigger);
   }
 
@@ -121,14 +144,16 @@
 
   /** The editor (rule null = new): one dialog, three columns; saves through opts.base. */
   function edit(rule, data, opts) {
-    var r = rule || { trigger: 'all_away', graceMinutes: 10, conditions: { time: null, afterSunset: false }, actions: [], active: true, name: '', userId: null };
+    var r = rule || { trigger: 'all_away', graceMinutes: 10, conditions: { time: null, afterSunset: false }, actions: [], active: true, name: '', userId: null, placeId: null };
     var listed = (data.actions || []).filter(function (a) { return a && a.plugin && a.id; });
     var byKey = {};
     listed.forEach(function (a) { byKey[keyOf(a.plugin, a.id)] = a; });
     var people = data.members || [];
     var oldNotify = r.actions.filter(function (a) { return a.type === 'notify'; })[0] || null;
     var st = {
-      name: r.name || '', trigger: r.trigger, userId: r.userId != null ? r.userId : (people[0] ? people[0].userId : null),
+      name: r.name || '', trigger: r.trigger, userId: r.userId != null && !isPlace(r.trigger) ? r.userId : (people[0] ? people[0].userId : null),
+      // a place rule: the person (null = anyone who shares places) and the place
+      placeUser: isPlace(r.trigger) ? r.userId : null, placeId: r.placeId != null ? r.placeId : ((data.places || [])[0] ? data.places[0].id : null),
       grace: r.graceMinutes == null ? 10 : r.graceMinutes, active: r.active !== false,
       window: !!(r.conditions && r.conditions.time), from: r.conditions && r.conditions.time ? r.conditions.time.from : '22:00', to: r.conditions && r.conditions.time ? r.conditions.time.to : '06:00',
       sun: !!(r.conditions && r.conditions.afterSunset),
@@ -148,6 +173,7 @@
     var opener = document.activeElement;
     var uid = 'fa-rm-' + Math.random().toString(36).slice(2, 8);
     var person = function () { return st.trigger === 'person_home' || st.trigger === 'person_away'; };
+    var place = function () { return isPlace(st.trigger); };
     function needsTarget(s) { var a = byKey[s.key]; return !s.state && !!a && a.kind === 'toggle'; }
     function stepCount() { return st.steps.length + (st.notify ? 1 : 0); }
 
@@ -175,7 +201,13 @@
       var focus = focusKey();
       A.clear(colWhen);
       colWhen.appendChild(colHead('1', T('rule.m_when'), uid + '-when'));
-      var radios = TRIGGERS.map(function (t) {
+      var radios = [];
+      TRIGGERS.forEach(function (t, i) {
+        // two groups: home / away from the home Wi-Fi, then places (the phone's location)
+        if (i === 0 || t === PLACE_TRIGGERS[0]) radios.push(el('span', { class: 'fa-rm-group-label', 'aria-hidden': 'true', text: T(i === 0 ? 'rule.m_group_home' : 'rule.m_group_places') }));
+        radios.push(trigger(t));
+      });
+      function trigger(t) {
         var on = st.trigger === t;
         return el('button', {
           type: 'button', role: 'radio', 'aria-checked': on ? 'true' : 'false', tabindex: on ? '0' : '-1', class: 'fa-rm-trigger', 'data-k': 'trigger-' + t,
@@ -184,7 +216,7 @@
           el('span', { class: 'fa-rm-trigger-ico' }, [A.svg(TRIGGER_ICON[t], 18)]),
           el('span', { class: 'fa-rm-trigger-text' }, [el('b', { text: T('rule.m_trig_' + t) }), el('span', { text: T('rule.m_trig_' + t + '_hint') })]),
         ]);
-      });
+      }
       var group = el('div', { class: 'fa-rm-triggers', role: 'radiogroup', 'aria-label': T('rule.m_triggers') }, radios);
       group.addEventListener('keydown', function (e) {
         var i = TRIGGERS.indexOf(st.trigger);
@@ -204,6 +236,7 @@
           })),
         ]));
       }
+      if (place()) placeBlocks();
       if (st.trigger === 'all_away') {
         var step = function (d) { return function () { st.grace = Math.max(0, Math.min(120, d > 0 ? Math.floor(st.grace / 5) * 5 + 5 : Math.ceil(st.grace / 5) * 5 - 5)); renderWhen(); renderFlow(); }; };
         colWhen.appendChild(el('div', { class: 'fa-rm-box fa-rm-grace' }, [
@@ -237,11 +270,67 @@
       ]));
       restore(focus);
     }
+    /** Wann? for a place trigger: who („Jemand“ or a person), which place (+ „Orte verwalten“), who shares places. */
+    function placeBlocks() {
+      var chip = function (key, on, kids, extra, pick) {
+        return el('button', { type: 'button', class: 'fa-rm-person' + (extra || ''), 'aria-pressed': on ? 'true' : 'false', 'data-k': key, on: { click: function () { pick(); renderWhen(); renderFlow(); } } }, kids);
+      };
+      var chips = [chip('pwho-any', st.placeUser == null, [el('span', { class: 'fa-rm-any' }, [A.svg(ICON.group, 16)]), el('span', { text: T('rule.m_who_any') })], '', function () { st.placeUser = null; })];
+      people.forEach(function (m) {
+        chips.push(chip('pwho-' + m.userId, st.placeUser === m.userId, [A.avatar({ name: m.name, initials: m.initials, colorHex: m.colorHex, avatarUrl: m.avatarUrl }, 28), el('span', { text: m.name })],
+          m.placesShared ? '' : ' is-dim', function () { st.placeUser = m.userId; }));
+      });
+      colWhen.appendChild(el('div', { class: 'fa-rm-block' }, [
+        el('span', { class: 'fa-rm-label', id: uid + '-pwho', text: T('rule.m_who') }),
+        el('div', { class: 'fa-rm-people', role: 'group', 'aria-labelledby': uid + '-pwho' }, chips),
+      ]));
+      var list = data.places || [];
+      var manage = el('button', { type: 'button', class: 'fa-rm-link', 'data-k': 'places-manage', on: { click: function () { managePlaces(data, opts, placesChanged); } } }, [A.svg(ICON.pin, 14), T('rule.m_places_manage')]);
+      var row;
+      if (list.length) {
+        var sel = el('select', { class: 'form-select fa-rm-select', id: uid + '-place', 'data-k': 'place' }, list.map(function (p) {
+          return el('option', { value: String(p.id), text: p.name + ' · ' + radiusText(p.radius) });
+        }));
+        if (!placeOf(data, st.placeId)) st.placeId = list[0].id;
+        sel.value = String(st.placeId);
+        sel.addEventListener('change', function () { st.placeId = Number(sel.value); renderFlow(); });
+        row = sel;
+      } else {
+        st.placeId = null;
+        row = el('div', { class: 'fa-rm-box fa-rm-place-none' }, [el('span', { class: 'fa-rm-box-text' }, [el('b', { text: T('rule.m_place_none') }), el('span', { text: T('rule.m_place_none_hint') })])]);
+      }
+      var sharing = people.filter(function (m) { return m.placesShared; }).map(function (m) { return m.name; });
+      var who = st.placeUser != null ? people.filter(function (m) { return m.userId === st.placeUser; })[0] : null;
+      var off = who && !who.placesShared;
+      colWhen.appendChild(el('div', { class: 'fa-rm-block', 'data-place-block': '1' }, [
+        el('div', { class: 'fa-rm-label-row' }, [el('label', { class: 'fa-rm-label', for: list.length ? uid + '-place' : null, text: T('rule.m_place') }), manage]),
+        row,
+        el('div', { class: 'fa-rm-info fa-rm-places-info' + (off ? ' is-warn' : '') }, [A.svg(ICON.info, 18), el('span', null, [
+          T('rule.m_places_hint') + ' ',
+          el('b', { text: sharing.length ? T('rule.m_places_on', { names: sharing.join(', ') }) : T('rule.m_places_nobody') }),
+          off ? el('span', { class: 'fa-rm-warn-line', text: T('rule.m_places_off_person', { name: who.name }) }) : null,
+        ])]),
+      ]));
+    }
+    /** After a change in „Orte verwalten“: the new list; a place just added or edited becomes the rule's place. */
+    function placesChanged(saved) {
+      if (saved) st.placeId = saved.id;
+      renderWhen();
+      renderFlow();
+    }
     function setTrigger(t, keyboard) {
       st.trigger = t;
       renderWhen();
       renderFlow();
       if (keyboard) { var b = colWhen.querySelector('[data-k="trigger-' + t + '"]'); if (b) b.focus(); }
+      if (place()) showPlace();
+    }
+    /** The place blocks sit below the triggers: scroll Wann? so the place can be seen. */
+    function showPlace() {
+      var blk = colWhen.querySelector('[data-place-block]');
+      if (!blk || window.matchMedia('(max-width: 760px)').matches) return;
+      var over = blk.getBoundingClientRect().bottom - colWhen.getBoundingClientRect().bottom + 16;
+      if (over > 0) colWhen.scrollTop += over;
     }
 
     // ── column 2: Was soll passieren? ──
@@ -388,7 +477,10 @@
     var flowCount = el('span', { class: 'fa-rm-mono fa-rm-muted' });
     var flowList = el('div', { class: 'fa-rm-scroll fa-rm-flow-list' });
     function sentence() {
-      var who = person() ? T('rule.trigger_' + st.trigger, { name: nameOf(data, st.userId) }) : T('rule.trigger_' + st.trigger);
+      var pl = place() ? placeOf(data, st.placeId) : null;
+      var who = person() ? T('rule.trigger_' + st.trigger, { name: nameOf(data, st.userId) })
+        : (place() ? T('rule.trigger_' + st.trigger, { name: st.placeUser == null ? T('rule.someone') : nameOf(data, st.placeUser), place: pl ? pl.name + ' (' + radiusText(pl.radius) + ')' : '…' })
+          : T('rule.trigger_' + st.trigger));
       var parts = [who + (st.trigger === 'all_away' && st.grace > 0 ? ' (' + T('rule.m_s_grace', { n: st.grace }) + ')' : '')];
       if (st.window && st.from && st.to) parts.push(T('rule.m_s_window', { from: st.from, to: st.to }));
       if (st.sun) parts.push(T('rule.after_sunset'));
@@ -474,12 +566,13 @@
       if (closed) return;
       closed = true;
       document.removeEventListener('keydown', onKey, true);
+      if (stack.indexOf(ov) >= 0) stack.splice(stack.indexOf(ov), 1);
       ov.remove();
       if (opener && opener.focus && document.body.contains(opener)) opener.focus();
     }
     // keyboard: Escape closes, Tab stays inside the dialog
     function onKey(e) {
-      if (closed) return;
+      if (closed || stack[stack.length - 1] !== ov) return;
       if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(); return; }
       if (e.key !== 'Tab') return;
       var f = Array.prototype.filter.call(dialog.querySelectorAll('button,input,select,textarea,[tabindex]'), function (x) {
@@ -503,6 +596,7 @@
       if (st.window && (!st.from || !st.to)) { msg.textContent = T('rule.window_both'); return; }
       if (st.window && st.from === st.to) { msg.textContent = T('rule.m_window_same'); return; }
       if (person() && !st.userId) { msg.textContent = T('rule.m_who_missing'); return; }
+      if (place() && !placeOf(data, st.placeId)) { msg.textContent = T('rule.m_place_missing'); return; }
       var actions = st.steps.map(function (s) {
         var a = byKey[s.key];
         var out = { type: 'quick_action', plugin: s.plugin, id: s.id, title: (a ? labelOf(a) : s.title) || null };
@@ -515,6 +609,7 @@
         conditions: { time: st.window ? { from: st.from, to: st.to } : null, afterSunset: st.sun }, actions: actions, active: st.active,
       };
       if (person()) body.userId = st.userId;
+      if (place()) { body.userId = st.placeUser; body.placeId = st.placeId; }
       save.disabled = true;
       var p = rule ? A.api('PATCH', opts.base + '/rules/' + rule.id, body) : A.api('POST', opts.base + '/rules', body);
       p.then(function () { close(); A.toast(T('common.saved')); opts.reload(); })
@@ -525,7 +620,9 @@
     renderWhat();
     renderFlow();
     document.body.appendChild(ov);
+    stack.push(ov);
     document.addEventListener('keydown', onKey, true);
+    if (place()) showPlace();
     setTimeout(function () { if (!closed) nameInput.focus(); }, 30);
     return { close: close, state: st };
   }
@@ -542,7 +639,9 @@
       }).join(' · ');
       tb.appendChild(el('tr', null, [
         el('td', { class: 'fa-time', text: A.when(x.at) }),
-        el('td', { text: (x.ruleName ? x.ruleName + ' · ' : '') + T('rule.trigger_' + x.trigger, { name: x.userId ? nameOf(data, x.userId) : '' }) }),
+        el('td', { text: (x.ruleName ? x.ruleName + ' · ' : '') + (isPlace(x.trigger)
+          ? T('rule.log_' + x.trigger, { name: x.userId ? nameOf(data, x.userId) : '–', place: x.placeName || '–' }) // „Marc · kommt an: Schule“
+          : T('rule.trigger_' + x.trigger, { name: x.userId ? nameOf(data, x.userId) : '' })) }),
         el('td', { class: x.ok ? 'fa-ok' : 'fa-bad', text: res || '–' }),
       ]));
     });
@@ -557,10 +656,213 @@
     A.clear(box);
     members.forEach(function (m) {
       var sub = m.state === 'home' ? T('presence.home_since', { when: A.when(m.since) }) : T('presence.' + m.state);
-      box.appendChild(el('div', { class: 'fa-pres is-' + m.state }, [A.avatar(m, 34), el('div', { class: 'fa-pres-main' }, [el('b', { text: m.name }), el('span', { class: 'fa-sub', text: sub })])]));
+      box.appendChild(el('div', { class: 'fa-pres is-' + m.state }, [A.avatar(m, 34), el('div', { class: 'fa-pres-main' }, [el('b', { text: m.name }), el('span', { class: 'fa-sub', text: sub }),
+        // 1.5.0: switched on „Orte für Regeln teilen“ in the app
+        m.placesShared ? el('span', { class: 'fa-pres-tag', title: T('presence.places_shared_hint') }, [A.svg(ICON.pin, 12), T('presence.places_shared')]) : null])]));
     });
     if (!members.length) box.appendChild(el('p', { class: 'fa-empty', text: T('presence.nobody') }));
   }
 
-  A.rules = { render: render, edit: edit, log: log, people: people, TRIGGERS: TRIGGERS };
+  // ── places (1.5.0) ────────────────────────────────────────────────────────
+
+  /** A dialog on top of the others: { title, kicker, body: [nodes], foot: [nodes], cls } → { close, dialog }. */
+  function sheet(o) {
+    var opener = document.activeElement;
+    var id = 'fa-pl-' + Math.random().toString(36).slice(2, 8);
+    var closed = false;
+    var dlg = el('div', { class: 'fa-pl' + (o.cls ? ' ' + o.cls : ''), role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': id }, [
+      el('div', { class: 'fa-pl-head' }, [
+        el('div', { class: 'fa-rm-titles' }, [o.kicker ? el('span', { class: 'fa-rm-kicker', text: o.kicker }) : null, el('h2', { id: id, class: 'fa-pl-title', text: o.title })]),
+        el('span', { class: 'fa-spacer' }),
+        el('button', { type: 'button', class: 'fa-rm-icon-btn', 'aria-label': T('common.close'), on: { click: function () { close(); } } }, [A.svg(ICON.x, 18)]),
+      ]),
+      el('div', { class: 'fa-pl-body' }, o.body),
+      el('div', { class: 'fa-pl-foot' }, o.foot),
+    ]);
+    var ov = el('div', { class: 'modal-overlay fa-pl-overlay' }, [dlg]);
+    function close() {
+      if (closed) return;
+      closed = true;
+      document.removeEventListener('keydown', onKey, true);
+      if (stack.indexOf(ov) >= 0) stack.splice(stack.indexOf(ov), 1);
+      ov.remove();
+      if (o.onClose) o.onClose();
+      if (opener && opener.focus && document.body.contains(opener)) opener.focus();
+    }
+    function onKey(e) {
+      if (closed || stack[stack.length - 1] !== ov) return;
+      if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(); return; }
+      if (e.key !== 'Tab') return;
+      var f = Array.prototype.filter.call(dlg.querySelectorAll('button,input,select,textarea,a[href],[tabindex]'), function (x) {
+        return !x.disabled && x.getAttribute('tabindex') !== '-1' && x.offsetParent !== null;
+      });
+      if (!f.length) return;
+      if (e.shiftKey && (document.activeElement === f[0] || !dlg.contains(document.activeElement))) { e.preventDefault(); f[f.length - 1].focus(); }
+      else if (!e.shiftKey && (document.activeElement === f[f.length - 1] || !dlg.contains(document.activeElement))) { e.preventDefault(); f[0].focus(); }
+    }
+    document.body.appendChild(ov);
+    stack.push(ov);
+    document.addEventListener('keydown', onKey, true);
+    return { close: close, dialog: dlg };
+  }
+
+  function rulesText(n) { return n ? (n === 1 ? T('places.rules_1') : T('places.rules_n', { n: n })) : T('places.rules_0'); }
+
+  /** Reload the places into `data` (data.places, data.home) through opts.base. */
+  function reloadPlaces(data, opts) {
+    return A.api('GET', opts.base + '/places').then(function (r) { data.places = r.places; data.home = r.home; return r; });
+  }
+
+  /**
+   * The place cards into `box` (section „Orte“ of the admin page and the portal, the dialog
+   * „Orte verwalten“): name, radius, how many rules use it, edit / delete (not while in use).
+   * after(created?) runs after a change.
+   */
+  function places(box, data, opts, after) {
+    A.clear(box);
+    var list = data.places || [];
+    var done = after || opts.reload;
+    if (!list.length) { box.appendChild(el('p', { class: 'fa-empty', text: T('places.none') })); return; }
+    var grid = el('div', { class: 'fa-places' });
+    list.forEach(function (p) {
+      var used = p.rules > 0;
+      var btns = opts.editable ? el('div', { class: 'fa-place-btns' }, [
+        el('button', { type: 'button', class: 'btn btn-sm', text: T('common.edit'), on: { click: function () { editPlace(p, data, opts, done); } } }),
+        el('button', { type: 'button', class: 'fa-rm-icon-btn fa-place-del', disabled: used, title: used ? T('places.in_use_hint') : T('places.delete_aria', { name: p.name }),
+          'aria-label': T('places.delete_aria', { name: p.name }), on: { click: function () {
+            A.confirm(T('places.delete_confirm', { name: p.name }), T('common.delete'), true).then(function (ok) {
+              if (ok) A.api('DELETE', opts.base + '/places/' + p.id).then(function () { A.toast(T('places.deleted')); done(); }).catch(A.warn);
+            });
+          } } }, [A.svg(ICON.trash, 16)]),
+      ]) : null;
+      grid.appendChild(el('div', { class: 'fa-place' + (used ? ' is-used' : '') }, [
+        el('span', { class: 'fa-place-ico' }, [A.svg(ICON.pin, 20)]),
+        el('div', { class: 'fa-place-main' }, [el('b', { text: p.name }),
+          el('span', { class: 'fa-sub fa-place-radius', text: T('places.radius', { r: radiusText(p.radius) }) }), el('span', { class: 'fa-sub', text: rulesText(p.rules) })]),
+        btns,
+      ]));
+    });
+    box.appendChild(grid);
+    if (opts.editable && list.some(function (p) { return p.rules > 0; })) box.appendChild(el('p', { class: 'fa-hint fa-places-note', text: T('places.in_use_hint') }));
+  }
+
+  /** The dialog „Orte verwalten“ (from the rule dialog): the cards and „+ Ort“; changed(created) after every change. */
+  function managePlaces(data, opts, changed) {
+    var box = el('div', { class: 'fa-pl-list' });
+    var add = el('button', { type: 'button', class: 'btn', text: T('places.add') });
+    function refresh(created) {
+      return reloadPlaces(data, opts).then(function () {
+        places(box, data, opts, refresh);
+        add.disabled = (data.places || []).length >= MAX_PLACES;
+        changed(created || null);
+        if (opts.reload) opts.reload();
+      }).catch(A.warn);
+    }
+    add.addEventListener('click', function () { editPlace(null, data, opts, refresh); });
+    var s = sheet({
+      title: T('places.manage_title'), kicker: T('places.title'), cls: 'fa-pl-manage',
+      body: [el('p', { class: 'fa-hint', text: T('places.intro') }), box],
+      foot: [add, el('span', { class: 'fa-spacer' }), el('button', { type: 'button', class: 'btn btn-primary', text: T('places.done'), on: { click: function () { s.close(); } } })],
+    });
+    places(box, data, opts, refresh);
+    add.disabled = (data.places || []).length >= MAX_PLACES;
+    setTimeout(function () { add.focus(); }, 30);
+  }
+
+  /**
+   * The place editor (p null = new): name, the position on the map (tap / drag; latitude and
+   * longitude below, the only way without Leaflet), the radius 50–5000 m with the circle drawn,
+   * „Zuhause übernehmen“ (the settings location). done(place) after saving or deleting.
+   */
+  function editPlace(p, data, opts, done) {
+    var home = data.home || null;
+    var st = { name: p ? p.name : '', lat: p ? p.lat : null, lon: p ? p.lon : null, radius: p ? p.radius : RADIUS.def };
+    var picker = null;
+    var uid = 'fa-pe-' + Math.random().toString(36).slice(2, 8);
+    var fmt = function (n) { return n == null ? '' : String(Math.round(n * 1e6) / 1e6); };
+    var msg = el('p', { class: 'fa-msg', role: 'status', 'aria-live': 'polite' });
+
+    var name = el('input', { class: 'form-input', id: uid + '-name', type: 'text', maxlength: '40', value: st.name, placeholder: T('places.name_ph'), autocomplete: 'off' });
+    name.addEventListener('input', function () { st.name = name.value; });
+    var lat = el('input', { class: 'form-input fa-rm-mono', id: uid + '-lat', type: 'number', step: 'any', min: '-90', max: '90', inputmode: 'decimal', value: fmt(st.lat) });
+    var lon = el('input', { class: 'form-input fa-rm-mono', id: uid + '-lon', type: 'number', step: 'any', min: '-180', max: '180', inputmode: 'decimal', value: fmt(st.lon) });
+    function typed() {
+      var a = lat.value === '' ? NaN : Number(lat.value), b = lon.value === '' ? NaN : Number(lon.value);
+      if (isFinite(a) && isFinite(b) && Math.abs(a) <= 90 && Math.abs(b) <= 180) { st.lat = a; st.lon = b; if (picker) picker.set(a, b); }
+    }
+    lat.addEventListener('change', typed);
+    lon.addEventListener('change', typed);
+    function setPos(a, b) { st.lat = a; st.lon = b; lat.value = fmt(a); lon.value = fmt(b); osm.href = A.map.osmUrl({ lat: a, lon: b }); }
+
+    var homeBtn = el('button', { type: 'button', class: 'btn fa-pe-home', disabled: !home, title: home ? null : T('places.home_none'), on: { click: function () {
+      setPos(home.lat, home.lon);
+      if (picker) picker.set(home.lat, home.lon);
+      if (!name.value.trim()) { name.value = T('places.home_name'); st.name = name.value; }
+    } } }, [A.svg(ICON.home, 16), T('places.home')]);
+
+    var out = el('output', { class: 'fa-pe-radius-val', for: uid + '-radius', text: radiusText(st.radius) });
+    var range = el('input', { type: 'range', class: 'fa-pe-range', id: uid + '-radius', min: String(RADIUS.min), max: String(RADIUS.max), step: String(RADIUS.step), value: String(st.radius) });
+    range.addEventListener('input', function () { st.radius = Number(range.value); out.textContent = radiusText(st.radius); if (picker) picker.radius(st.radius); });
+    range.addEventListener('change', function () { if (picker) picker.fit(); });
+
+    // the map, else (no Leaflet) the coordinates with „Position auf Karte wählen“ (openstreetmap.org)
+    var mapBox = el('div', { class: 'fa-pe-map' }, [el('div', { class: 'fa-pe-map-wait', text: '…' })]);
+    var at = st.lat != null ? { lat: st.lat, lon: st.lon } : (home || A.map.GERMANY);
+    var osm = A.map.osmLink(at, T('places.pick_osm'));
+    var fallback = el('p', { class: 'fa-hint fa-pe-fallback', hidden: true }, [T('places.map_unavailable') + ' ', osm]);
+
+    var foot = [
+      p ? el('button', { type: 'button', class: 'btn btn-danger', text: T('common.delete'), disabled: p.rules > 0, title: p.rules > 0 ? T('places.in_use_hint') : null, on: { click: function () {
+        A.confirm(T('places.delete_confirm', { name: p.name }), T('common.delete'), true).then(function (ok) {
+          if (ok) A.api('DELETE', opts.base + '/places/' + p.id).then(function () { s.close(); A.toast(T('places.deleted')); done(); }).catch(function (e) { msg.textContent = A.errText(e); });
+        });
+      } } }) : null,
+      el('span', { class: 'fa-spacer' }),
+      el('button', { type: 'button', class: 'btn', text: T('common.cancel'), on: { click: function () { s.close(); } } }),
+    ];
+    var save = el('button', { type: 'button', class: 'btn btn-primary', text: T('places.save'), on: { click: submit } });
+    foot.push(save);
+    var s = sheet({
+      title: p ? T('places.edit') : T('places.new'), kicker: T('places.title'), cls: 'fa-pl-edit', foot: foot,
+      body: [el('div', { class: 'fa-pe' }, [
+        el('div', { class: 'fa-pe-mapcol' }, [mapBox, el('p', { class: 'fa-hint', text: T('places.position_hint') }), fallback]),
+        el('div', { class: 'fa-pe-side' }, [
+          el('div', { class: 'form-group' }, [el('label', { class: 'form-label', for: uid + '-name', text: T('places.name') }), name]),
+          el('div', { class: 'form-group' }, [
+            el('div', { class: 'fa-pe-radius-head' }, [el('label', { class: 'form-label', for: uid + '-radius', text: T('places.radius_label') }), out]),
+            range,
+            el('div', { class: 'fa-pe-scale', 'aria-hidden': 'true' }, [el('span', { text: radiusText(RADIUS.min) }), el('span', { text: radiusText(RADIUS.max) })]),
+          ]),
+          homeBtn,
+          el('div', { class: 'fa-rm-info' }, [A.svg(ICON.info, 18), el('span', { text: T('places.tip') })]),
+          el('div', { class: 'fa-pe-coords' }, [
+            el('div', { class: 'form-group' }, [el('label', { class: 'form-label', for: uid + '-lat', text: T('places.lat') }), lat]),
+            el('div', { class: 'form-group' }, [el('label', { class: 'form-label', for: uid + '-lon', text: T('places.lon') }), lon]),
+          ]),
+          msg,
+        ]),
+      ])],
+    });
+    A.map.pick(mapBox, { lat: st.lat, lon: st.lon, radius: st.radius, center: home, onPick: setPos }).then(function (c) {
+      picker = c;
+      if (!c) { A.clear(mapBox); mapBox.hidden = true; fallback.hidden = false; }
+    });
+    setTimeout(function () { name.focus(); }, 30);
+
+    function submit() {
+      msg.textContent = '';
+      var n = name.value.trim();
+      if (!n) { msg.textContent = T('places.name_required'); name.focus(); return; }
+      if (st.lat == null || st.lon == null) { msg.textContent = T('places.position_required'); return; }
+      var body = { name: n, lat: st.lat, lon: st.lon, radius: st.radius };
+      save.disabled = true;
+      (p ? A.api('PATCH', opts.base + '/places/' + p.id, body) : A.api('POST', opts.base + '/places', body)).then(function (r) {
+        s.close();
+        A.toast(T('common.saved'));
+        done(r.place);
+      }).catch(function (e) { save.disabled = false; msg.textContent = A.errText(e); });
+    }
+  }
+
+  A.rules = { render: render, edit: edit, log: log, people: people, places: places, editPlace: editPlace, TRIGGERS: TRIGGERS, MAX_PLACES: MAX_PLACES };
 }());

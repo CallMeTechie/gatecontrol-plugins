@@ -86,6 +86,8 @@ const TEXTS = {
     'presence.child_home_alone': '{{name}} ist allein zuhause',
     'presence.person_home': '{{name}} ist zuhause',
     'presence.person_away': '{{name}} ist unterwegs',
+    'presence.place_enter': '{{name}} ist bei {{place}} angekommen',
+    'presence.place_exit': '{{name}} hat {{place}} verlassen',
   },
   en: {
     'shopping.going': '{{name}} is going shopping ({{list}} list) – anything missing?',
@@ -159,6 +161,8 @@ const TEXTS = {
     'presence.child_home_alone': '{{name}} is home alone',
     'presence.person_home': '{{name}} is home',
     'presence.person_away': '{{name}} has left home',
+    'presence.place_enter': '{{name}} arrived at {{place}}',
+    'presence.place_exit': '{{name}} left {{place}}',
   },
 };
 

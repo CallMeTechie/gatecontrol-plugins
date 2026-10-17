@@ -24,6 +24,7 @@
 //   GET  meals?week=             PUT|DELETE meals/<date>/<slot>   POST meals/<date>/<slot>/to-shopping
 //   GET  presence   POST presence   PUT presence/consent   GET presence/actions · presence/log
 //   GET|POST presence/rules      PATCH|DELETE presence/rules/<id>
+//   1.5.0: GET presence/watch    POST presence/places/<id>/event   GET|POST presence/places   PATCH|DELETE presence/places/<id>
 //
 // Every response is { ok: true, … } or { ok: false, code, error }. Callers
 // that are no member get 403 not_member, a switched-off module 403
@@ -61,6 +62,7 @@ const expenses = require('./expenses');
 const board = require('./board');
 const meals = require('./meals');
 const presence = require('./presence');
+const ruleplaces = require('./ruleplaces');
 const { fail, posInt, iso } = require('./util');
 
 /** A portal viewer recognised only by device trust: no real login and no paired kiosk device. */
@@ -270,6 +272,16 @@ function dispatch(gc, r, seg, method) {
     if (n === 2 && b === 'consent' && PATCH) return () => presence.consent(gc, r);
     if (n === 2 && b === 'actions' && GET) return () => presence.actions(gc, r.me.userId, r.lang);
     if (n === 2 && b === 'log' && GET) { parentsOnly(r); return async () => ({ log: await presence.log(gc) }); }
+    // 1.5.0: the phone's watch list and its events (any member), the rule places (parents)
+    if (n === 2 && b === 'watch' && GET) return () => presence.watch(gc, r.me.userId);
+    if (b === 'places') {
+      if (n === 4 && d === 'event' && POST) return () => presence.placeEvent(gc, r, c);
+      parentsOnly(r);
+      if (n === 2 && GET) return () => ruleplaces.list(gc, ctx());
+      if (n === 2 && POST) return () => ruleplaces.create(gc, ctx(), r.body);
+      if (n === 3 && PATCH) return () => ruleplaces.update(gc, ctx(), c, r.body);
+      if (n === 3 && DELETE) return () => ruleplaces.remove(gc, c);
+    }
     if (b === 'rules') {
       parentsOnly(r);
       if (n === 2 && GET) return () => presence.listRules(gc, ctx());

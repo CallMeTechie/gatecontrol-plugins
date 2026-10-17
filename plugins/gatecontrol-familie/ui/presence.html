@@ -15,6 +15,15 @@
     <div class="fa-rules" id="fa-pr-rules"></div>
   </section>
 
+  <section class="fa-card fa-flush" aria-labelledby="fa-pr-places-h">
+    <div class="fa-card-head">
+      <h2 class="fa-card-title" id="fa-pr-places-h">{{t:places.title}}</h2>
+      <button class="btn" type="button" id="fa-pr-place-add">{{t:places.add}}</button>
+    </div>
+    <p class="fa-hint fa-places-intro">{{t:places.intro}}</p>
+    <div class="fa-places-box" id="fa-pr-places"></div>
+  </section>
+
   <section class="fa-card fa-note" aria-labelledby="fa-pr-note-h">
     <h2 class="fa-card-title" id="fa-pr-note-h">{{t:presence.note_title}}</h2>
     <ul>
@@ -22,6 +31,7 @@
       <li>{{t:presence.note_ring}}</li>
       <li>{{t:presence.note_once}}</li>
       <li>{{t:presence.note_owner}}</li>
+      <li>{{t:presence.note_places}}</li>
       <li id="fa-pr-sun"></li>
     </ul>
   </section>

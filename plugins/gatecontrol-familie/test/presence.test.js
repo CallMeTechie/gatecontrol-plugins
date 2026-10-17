@@ -10,7 +10,11 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { withFamily, ADMIN, ANNA, MARC, LENA, TIM, KUECHE, MIN, HOUR, portal, pushes } = require('./helpers');
+const crypto = require('node:crypto');
 const presence = require('../server/presence');
+
+/** The watch version of an empty list (1.5.0): sha1('[]'), 12 hex characters. */
+const EMPTY_WATCH = crypto.createHash('sha1').update('[]').digest('hex').slice(0, 12);
 
 const SH = 'gatecontrol-smarthome';
 /** A smart home plugin: Anna and the administrator have scenes, Marc only the hall light; runs are recorded. */
@@ -36,11 +40,11 @@ async function share(as, ...users) {
 test('consent only for oneself; reports only with consent, ≤ 1 per minute; states; device trust sees nothing', () => withFamily(ON([]), async (host, { as, call, clock }) => {
   assert.equal((await as(ANNA)('POST', '/presence', { home: true })).json.code, 'no_consent');
   const c = (await as(ANNA)('PUT', '/presence/consent', { share: true })).json;
-  assert.deepEqual(c, { ok: true, consent: { share: true }, state: { userId: ANNA.id, state: 'unknown', home: null, since: null } });
+  assert.deepEqual(c, { ok: true, consent: { share: true, places: false }, state: { userId: ANNA.id, state: 'unknown', home: null, since: null } });
   assert.equal((await as(ANNA)('PUT', '/presence/consent', { share: 'ja' })).json.code, 'invalid');
   await share(as, MARC, TIM);
   const r = (await as(ANNA)('POST', '/presence', { home: true, at: '2026-10-14T07:58:30Z' })).json;
-  assert.deepEqual(r, { ok: true, state: { userId: ANNA.id, home: true, since: '2026-10-14T07:58:30Z' }, changed: true });
+  assert.deepEqual(r, { ok: true, state: { userId: ANNA.id, home: true, since: '2026-10-14T07:58:30Z' }, changed: true, watchVersion: EMPTY_WATCH });
   const again = await as(ANNA)('POST', '/presence', { home: false });
   assert.deepEqual([again.status, again.json.code, again.json.retryAfter], [429, 'too_soon', 60]);
   assert.equal((await as(MARC)('POST', '/presence', { home: 'no' })).json.code, 'invalid');
@@ -50,7 +54,8 @@ test('consent only for oneself; reports only with consent, ≤ 1 per minute; sta
   assert.deepEqual(g.members.map((m) => [m.userId, m.shared, m.state, m.home, m.since]), [
     [ANNA.id, true, 'home', true, '2026-10-14T07:58:30Z'], [MARC.id, true, 'away', false, '2026-10-14T08:00:00Z'], [LENA.id, false, 'not_shared', null, null], [TIM.id, true, 'unknown', null, null],
   ]);
-  assert.deepEqual([g.me, g.home], [{ share: false }, [ANNA.id]]);
+  assert.deepEqual([g.me, g.home, g.watchVersion], [{ share: false, places: false }, [ANNA.id], EMPTY_WATCH]);
+  assert.ok(g.members.every((m) => m.placesShared === false), '1.5.0: nobody shares places yet');
   const ovp = (await as(TIM)('GET', '/overview')).json.presence;
   assert.deepEqual({ ...ovp, members: null }, { home: [{ userId: ANNA.id, since: '2026-10-14T07:58:30Z' }], share: true, members: null });
   assert.deepEqual(ovp.members.map((m) => [m.userId, m.state, m.presence]), [[ANNA.id, 'home', 'home'], [MARC.id, 'away', 'away'], [LENA.id, 'not_shared', null], [TIM.id, 'unknown', 'unknown']], '1.3.0: every member like GET presence');
@@ -94,7 +99,7 @@ test('rules: parents only; validation; shape, owner, the quick actions of the ca
   }
   const rule = (await as(ANNA)('POST', '/presence/rules', { name: 'Sparen', trigger: 'all_away', actions: [QA('scene:away', 'Heizung 17 °C'), { type: 'notify', to: 'parents' }] })).json.rule;
   assert.deepEqual({ ...rule, id: 0 }, {
-    id: 0, name: 'Sparen', trigger: 'all_away', userId: null, graceMinutes: 10, conditions: { time: null, afterSunset: false },
+    id: 0, name: 'Sparen', trigger: 'all_away', userId: null, placeId: null, placeName: null, graceMinutes: 10, conditions: { time: null, afterSunset: false },
     actions: [
       { type: 'quick_action', plugin: SH, id: 'scene:away', title: 'Heizung 17 °C', state: null, kind: 'button', verb: null, available: true, needsTarget: false },
       { type: 'notify', to: 'parents', text: null },
