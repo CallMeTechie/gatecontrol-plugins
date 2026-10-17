@@ -61,88 +61,125 @@ test('locations: modes read after the login; a Ring Alarm location is never read
   assert.deepEqual(rv.locations, [{ id: 'loc3', name: 'Garage', supported: false }, { id: 'loc1', name: 'Langenlonsheim', supported: true }]);
   assert.equal((await admin('PUT', `rights/${ANNA.id}`, { modes: { loc2: true } })).json.code, 'invalid');
   // quick actions: only loc1
-  assert.deepEqual((await host.quickActions(ADMIN)).map((x) => x.id), ['mode_disarmed:loc1', 'mode_home:loc1', 'mode_away:loc1']);
+  assert.deepEqual((await host.quickActions(ADMIN)).map((x) => x.id), ['mode:loc1', 'mode_disarmed:loc1']);
 }));
 
-test('quick actions: three buttons per location, device ring:<id>, Ring app icons, no confirm; the "Inaktiv" button carries the widget', () => withDoor({}, async (host, ctx) => {
+test('quick actions: per location the toggle Zuhause ⇄ Abwesend (carries the widget) and the button "Inaktiv"; the two old buttons are gone', () => withDoor({}, async (host, ctx) => {
   await ringLogin(ctx);
   const list = await host.quickActions(ADMIN);
-  assert.deepEqual(list.map((x) => [x.id, x.title, x.subtitle, x.kind, x.confirm]), [
-    ['mode_disarmed:loc1', 'Inaktiv', 'Aktuell: Zuhause', 'button', false],
-    ['mode_home:loc1', 'Zuhause', 'Aktuell: Zuhause', 'button', false],
-    ['mode_away:loc1', 'Abwesend', 'Aktuell: Zuhause', 'button', false],
+  assert.deepEqual(list.map((x) => [x.id, x.title, x.subtitle, x.kind, x.state, x.confirm]), [
+    ['mode:loc1', 'Zuhause', 'Langenlonsheim', 'toggle', 'off', false],
+    ['mode_disarmed:loc1', 'Inaktiv', 'Aktuell: Zuhause', 'button', null, false],
   ]);
+  assert.ok(!list.some((x) => /^mode_(home|away):/.test(x.id)), 'mode_home / mode_away no longer listed');
   assert.deepEqual(list[0].device, { id: 'ring:loc1', title: 'Langenlonsheim', subtitle: 'Ring-Modus', icon: modes.ICONS.device });
   assert.ok(list.every((x) => x.device.id === 'ring:loc1'));
-  assert.deepEqual(list.map((x) => x.icon), [modes.ICONS.disarmed, modes.ICONS.home, modes.ICONS.away]);
-  assert.equal(new Set(list.map((x) => x.icon)).size, 3);
+  assert.deepEqual(list[0].look, { on: { icon: modes.ICONS.away, tone: 'good' }, off: { icon: modes.ICONS.home, tone: 'neutral' } });
+  assert.deepEqual([list[0].verbs, list[0].targets, list[0].confirmWhen], [{ on: 'Abwesend', off: 'Zuhause' }, true, null]);
+  assert.deepEqual([list[0].icon, list[1].icon, list[1].look, list[1].verbs, list[1].targets], [modes.ICONS.home, modes.ICONS.disarmed, null, null, false]);
   assert.deepEqual(list[0].widget.controls, [{ id: 'mode', kind: 'choice', label: 'Modus', value: 'home', options: [{ id: 'disarmed', label: 'Inaktiv' }, { id: 'home', label: 'Zuhause' }, { id: 'away', label: 'Abwesend' }] }]);
   assert.deepEqual([list[0].widget.label, list[0].widget.value, list[0].widget.state, list[0].widget.power], ['Ring-Modus', 'Zuhause', 'good', false]);
   assert.equal(list[1].widget, null);
-  assert.equal(list[2].widget, null);
   // the options carry the icons (GateControl ≥ 1.174.0 passes them on; the mock host drops them like older hosts)
   const raw = await plugin.quickActions({ user: app(ADMIN), lang: 'de' }, host.gc);
   assert.deepEqual(raw[0].widget.controls[0].options.map((o) => o.icon), [modes.ICONS.disarmed, modes.ICONS.home, modes.ICONS.away]);
   // English
   const en = await host.quickActions(ADMIN, 'en');
-  assert.deepEqual(en.map((x) => x.title), ['Disarmed', 'Home', 'Away']);
+  assert.deepEqual(en.map((x) => x.title), ['Home', 'Disarmed']);
+  assert.deepEqual(en[0].verbs, { on: 'Away', off: 'Home' });
   assert.equal(en[0].widget.label, 'Ring mode');
-  assert.equal(en[0].subtitle, 'Current: Home');
-  // lock actions and mode buttons together stay within 16
-  assert.deepEqual((await host.quickActions(ANNA)).map((x) => x.id).filter((id) => id.startsWith('mode_')), [], 'Anna has no mode right');
+  assert.equal(en[1].subtitle, 'Current: Home');
+  assert.deepEqual((await host.quickActions(ANNA)).map((x) => x.id).filter((id) => id.startsWith('mode')), [], 'Anna has no mode right');
 }));
 
-test('switching with each button: Ring gets { mode }, the new mode shows at once, history who/what/via', () => withDoor({}, async (host, ctx) => {
+test('the toggle per mode: state, title, icon — away on, home off, disarmed / unknown null "Ring-Modus"', () => withDoor({}, async (host, ctx) => {
+  const { cloud, clock } = ctx;
+  await ringLogin(ctx);
+  for (const [mode, state, title, icon] of [['away', 'on', 'Abwesend', modes.ICONS.away], ['home', 'off', 'Zuhause', modes.ICONS.home], ['disarmed', null, 'Ring-Modus', modes.ICONS.device]]) {
+    cloud.ring.modes.loc1.mode = mode;
+    clock.add(61 * SEC);
+    await host.tick();
+    const [tg, btn] = await host.quickActions(ADMIN);
+    assert.deepEqual([tg.id, tg.state, tg.title, tg.icon, tg.widget.controls[0].value], ['mode:loc1', state, title, icon, mode], mode);
+    assert.equal(btn.id, 'mode_disarmed:loc1');
+  }
+  assert.deepEqual([modes.toggleState('away'), modes.toggleState('home'), modes.toggleState('disarmed'), modes.toggleState(null)], ['on', 'off', null, null]);
+}));
+
+test('the toggle without a target: away → home, home → away, disarmed → home; the answer has the new state and widget; history', () => withDoor({}, async (host, ctx) => {
   const { cloud, admin } = ctx;
   await ringLogin(ctx);
-  const away = await host.runQuickAction(ADMIN, 'mode_away:loc1');
-  assert.deepEqual([away.status, away.body.ok, away.body.message, away.body.widget], [200, true, 'Ring: Abwesend', null]);
-  assert.deepEqual(modeCalls(cloud, 'POST').map((c) => [c.url, c.json]), [[MODE_URL + 'loc1', { mode: 'away' }]]);
+  const run = async (o) => (await host.runQuickAction(ADMIN, 'mode:loc1', 'de', o || {})).body;
+  let r = await run(); // home → away
+  assert.deepEqual([r.ok, r.message, r.state, r.widget.value, r.unchanged], [true, 'Ring: Abwesend', 'on', 'Abwesend', false]);
   assert.equal(cloud.ring.modes.loc1.mode, 'away');
   const listed = await host.quickActions(ADMIN);
-  assert.equal(listed[0].subtitle, 'Aktuell: Abwesend');
-  assert.equal(listed[0].widget.value, 'Abwesend');
-  assert.equal(listed[0].widget.controls[0].value, 'away');
+  assert.deepEqual([listed[0].state, listed[0].title, listed[1].subtitle], ['on', 'Abwesend', 'Aktuell: Abwesend'], 'the new mode shows at once');
   assert.equal((await admin('GET', 'status')).json.ringModes[0].mode, 'away');
-  const home = await host.runQuickAction(ADMIN, 'mode_home:loc1', 'en');
-  assert.equal(home.body.message, 'Ring: Home');
-  const off = await host.runQuickAction(ADMIN, 'mode_disarmed:loc1', 'de', { via: 'notification' });
-  assert.equal(off.body.message, 'Ring: Inaktiv');
-  assert.equal(off.body.widget.value, 'Inaktiv', 'the carrier answers with its new widget');
-  assert.equal(off.body.widget.state, 'off');
-  // the same mode again is sent again (a rule always sets a fixed mode)
-  assert.equal((await host.runQuickAction(ADMIN, 'mode_disarmed:loc1')).body.message, 'Ring: Inaktiv');
-  assert.deepEqual(modeCalls(cloud, 'POST').map((c) => c.json.mode), ['away', 'home', 'disarmed', 'disarmed']);
+  r = await run(); // away → home
+  assert.deepEqual([r.message, r.state], ['Ring: Zuhause', 'off']);
+  const off = (await host.runQuickAction(ADMIN, 'mode_disarmed:loc1', 'de', { via: 'notification' })).body;
+  assert.deepEqual([off.ok, off.message, off.state, off.widget], [true, 'Ring: Inaktiv', null, null]);
+  assert.equal((await host.quickActions(ADMIN))[0].state, null);
+  r = await run({ via: 'notification' }); // disarmed → home
+  assert.deepEqual([r.message, r.state], ['Ring: Zuhause', 'off']);
+  assert.equal((await host.runQuickAction(ADMIN, 'mode:loc1', 'en')).body.message, 'Ring: Away');
+  assert.deepEqual(modeCalls(cloud, 'POST').map((c) => [c.url, c.json.mode]), [[MODE_URL + 'loc1', 'away'], [MODE_URL + 'loc1', 'home'], [MODE_URL + 'loc1', 'disarmed'], [MODE_URL + 'loc1', 'home'], [MODE_URL + 'loc1', 'away']]);
   const rows = (await admin('GET', 'history', null, { kind: 'mode' })).json.items;
-  assert.deepEqual(rows.map((r) => [r.kind, r.action, r.result, r.via, r.userName, r.locationId, r.locationName]), [
-    ['mode', 'disarmed', 'ok', 'app', 'admin', 'loc1', 'Langenlonsheim'],
-    ['mode', 'disarmed', 'ok', 'notification', 'admin', 'loc1', 'Langenlonsheim'],
-    ['mode', 'home', 'ok', 'app', 'admin', 'loc1', 'Langenlonsheim'],
-    ['mode', 'away', 'ok', 'app', 'admin', 'loc1', 'Langenlonsheim'],
+  assert.deepEqual(rows.map((x) => [x.action, x.result, x.via, x.userName, x.locationName]), [
+    ['away', 'ok', 'app', 'admin', 'Langenlonsheim'], ['home', 'ok', 'notification', 'admin', 'Langenlonsheim'],
+    ['disarmed', 'ok', 'notification', 'admin', 'Langenlonsheim'], ['home', 'ok', 'app', 'admin', 'Langenlonsheim'], ['away', 'ok', 'app', 'admin', 'Langenlonsheim'],
   ]);
+  // the old ids are not listed any more → 404 from the host, and the plugin does not know them either
+  assert.equal((await host.runQuickAction(ADMIN, 'mode_away:loc1')).status, 404);
+  assert.deepEqual(await plugin.runQuickAction({ user: app(ADMIN), lang: 'de', id: 'mode_home:loc1', via: 'app', automation: false }, host.gc), { ok: false, message: 'Nicht gefunden.' });
 }));
 
-test('the widget: the choice control "mode" sets that mode; anything else never reaches Ring', () => withDoor({}, async (host, ctx) => {
+test('the toggle with a target sets exactly that mode from every mode (also again); rules too', () => withDoor({}, async (host, ctx) => {
+  const { cloud, clock } = ctx;
+  await ringLogin(ctx);
+  for (const from of ['disarmed', 'home', 'away']) {
+    for (const [target, want] of [['on', 'away'], ['off', 'home']]) {
+      cloud.ring.modes.loc1.mode = from;
+      clock.add(61 * SEC);
+      await host.tick();
+      const n = modeCalls(cloud, 'POST').length;
+      const r = await host.runQuickAction(ADMIN, 'mode:loc1', 'de', { state: target });
+      assert.deepEqual([r.status, r.body.ok, r.body.state, r.body.unchanged, r.body.message], [200, true, target, false, `Ring: ${want === 'away' ? 'Abwesend' : 'Zuhause'}`], `${from} → ${target}`);
+      assert.deepEqual(modeCalls(cloud, 'POST').slice(n).map((c) => c.json), [{ mode: want }], `${from} → ${target}: sent even when already there`);
+      assert.equal(cloud.ring.modes.loc1.mode, want);
+      clock.add(7 * SEC); // stay below 10 switches per minute
+    }
+  }
+  // a Familie rule (gc.actions.run with a target state)
+  const rule = await host.runQuickAction(ADMIN, 'mode:loc1', 'de', { automation: true, via: 'gatecontrol-familie', state: 'on' });
+  assert.deepEqual([rule.body.ok, rule.body.state, cloud.ring.modes.loc1.mode], [true, 'on', 'away']);
+  assert.deepEqual((await host.runQuickAction(ADMIN, 'mode_disarmed:loc1', 'de', { state: 'on' })).body, { ok: false, error: 'invalid_state' }, 'the button has no states');
+}));
+
+test('the widget (on the toggle): the choice control "mode" sets that mode; anything else never reaches Ring', () => withDoor({}, async (host, ctx) => {
   const { cloud } = ctx;
   await ringLogin(ctx);
-  const r = await host.runQuickAction(ADMIN, 'mode_disarmed:loc1', 'de', { control: 'mode', value: 'away' });
-  assert.deepEqual([r.body.ok, r.body.message, r.body.widget.value, r.body.widget.controls[0].value], [true, 'Ring: Abwesend', 'Abwesend', 'away']);
-  assert.deepEqual(modeCalls(cloud, 'POST').map((c) => c.json), [{ mode: 'away' }]);
-  assert.deepEqual((await host.runQuickAction(ADMIN, 'mode_disarmed:loc1', 'de', { control: 'mode', value: 'panic' })).body, { ok: false, error: 'invalid_value' });
-  assert.deepEqual((await host.runQuickAction(ADMIN, 'mode_disarmed:loc1', 'de', { control: 'volume', value: 3 })).body, { ok: false, error: 'invalid_control' });
-  assert.deepEqual((await host.runQuickAction(ADMIN, 'mode_home:loc1', 'de', { control: 'mode', value: 'home' })).body, { ok: false, error: 'invalid_control' }, 'only the carrier has the widget');
+  const r = await host.runQuickAction(ADMIN, 'mode:loc1', 'de', { control: 'mode', value: 'away' });
+  assert.deepEqual([r.body.ok, r.body.message, r.body.state, r.body.widget.value, r.body.widget.controls[0].value], [true, 'Ring: Abwesend', 'on', 'Abwesend', 'away']);
+  const d = await host.runQuickAction(ADMIN, 'mode:loc1', 'de', { control: 'mode', value: 'disarmed' });
+  assert.deepEqual([d.body.message, d.body.state, d.body.widget.value], ['Ring: Inaktiv', null, 'Inaktiv']);
+  assert.deepEqual(modeCalls(cloud, 'POST').map((c) => c.json), [{ mode: 'away' }, { mode: 'disarmed' }]);
+  assert.deepEqual((await host.runQuickAction(ADMIN, 'mode:loc1', 'de', { control: 'mode', value: 'panic' })).body, { ok: false, error: 'invalid_value' });
+  assert.deepEqual((await host.runQuickAction(ADMIN, 'mode:loc1', 'de', { control: 'volume', value: 3 })).body, { ok: false, error: 'invalid_control' });
+  assert.deepEqual((await host.runQuickAction(ADMIN, 'mode_disarmed:loc1', 'de', { control: 'mode', value: 'home' })).body, { ok: false, error: 'invalid_control' }, 'only the toggle has the widget');
   // the plugin checks the value itself as well
-  const direct = await plugin.runQuickAction({ user: app(ADMIN), lang: 'de', id: 'mode_disarmed:loc1', via: 'app', automation: false, control: 'mode', value: 'panic' }, host.gc);
+  const direct = await plugin.runQuickAction({ user: app(ADMIN), lang: 'de', id: 'mode:loc1', via: 'app', automation: false, control: 'mode', value: 'panic' }, host.gc);
   assert.deepEqual(direct, { ok: false, message: 'Ungültige Eingabe.' });
-  assert.equal(modeCalls(cloud, 'POST').length, 1);
+  assert.equal(modeCalls(cloud, 'POST').length, 2);
 }));
 
 test('rights: "Ring-Modus schalten" per person and location; administrators always; rules run as the person; kiosk and time window', () => withDoor({}, async (host, ctx) => {
   const { admin, call, cloud, clock } = ctx;
   await ringLogin(ctx);
   // nobody but administrators at first
-  for (const u of [ANNA, MARC, LENA, GAST]) assert.deepEqual((await host.quickActions(u)).filter((x) => x.id.startsWith('mode_')), []);
-  assert.equal((await host.runQuickAction(MARC, 'mode_away:loc1')).status, 404);
+  for (const u of [ANNA, MARC, LENA, GAST]) assert.deepEqual((await host.quickActions(u)).filter((x) => x.id.startsWith('mode')), []);
+  assert.equal((await host.runQuickAction(MARC, 'mode:loc1')).status, 404);
   assert.equal((await call(app(MARC), 'POST', '/modes/loc1/away')).status, 404);
   assert.deepEqual((await call(app(MARC), 'GET', '/me')).json.ringModes, []);
   // the admin page assigns the right
@@ -150,14 +187,14 @@ test('rights: "Ring-Modus schalten" per person and location; administrators alwa
   assert.deepEqual(rv.modeRights, { [MARC.id]: ['loc1'] });
   assert.equal((await admin('PUT', `rights/${MARC.id}`, { modes: { loc1: 'yes' } })).json.code, 'invalid');
   assert.equal((await admin('PUT', `rights/${MARC.id}`, { modes: { nowhere: true } })).json.code, 'invalid');
-  assert.deepEqual((await host.quickActions(MARC)).map((x) => x.id).filter((id) => id.startsWith('mode_')), ['mode_disarmed:loc1', 'mode_home:loc1', 'mode_away:loc1']);
+  assert.deepEqual((await host.quickActions(MARC)).map((x) => x.id).filter((id) => id.startsWith('mode')), ['mode:loc1', 'mode_disarmed:loc1']);
   // a Familie rule (gc.actions.run) as Marc
-  const rule = await host.runQuickAction(MARC, 'mode_away:loc1', 'de', { automation: true, via: 'gatecontrol-familie' });
+  const rule = await host.runQuickAction(MARC, 'mode:loc1', 'de', { automation: true, via: 'gatecontrol-familie', state: 'on' });
   assert.deepEqual([rule.status, rule.body.ok, rule.body.message], [200, true, 'Ring: Abwesend']);
   const h = (await admin('GET', 'history', null, { kind: 'mode' })).json.items[0];
   assert.deepEqual([h.userName, h.via, h.caller, h.action], ['Marc', 'automation', 'gatecontrol-familie', 'away']);
   // an administrator's rule works without any assignment
-  assert.equal((await host.runQuickAction(ADMIN, 'mode_home:loc1', 'de', { automation: true, via: 'gatecontrol-familie' })).body.message, 'Ring: Zuhause');
+  assert.equal((await host.runQuickAction(ADMIN, 'mode:loc1', 'de', { automation: true, via: 'gatecontrol-familie', state: 'off' })).body.message, 'Ring: Zuhause');
   // portal (signed in) and the app API
   const me = (await call(portal(MARC), 'GET', '/me')).json.ringModes;
   assert.deepEqual(me, [{ id: 'loc1', name: 'Langenlonsheim', mode: 'home', modes: ['disarmed', 'home', 'away'], blocked: null, modeAt: me[0].modeAt, checkedAt: me[0].checkedAt }]);
@@ -172,14 +209,14 @@ test('rights: "Ring-Modus schalten" per person and location; administrators alwa
   assert.equal((await call(portal(MARC, false), 'POST', '/modes/loc1/away')).json.code, 'read_only');
   // the person's time window (Mon–Fri 07:00–09:00 Berlin; now Wednesday 10:00)
   await admin('PUT', `rights/${MARC.id}`, { window: { days: [1, 2, 3, 4, 5], from: '07:00', to: '09:00' } });
-  const w = await host.runQuickAction(MARC, 'mode_away:loc1', 'de', { automation: true, via: 'gatecontrol-familie' });
+  const w = await host.runQuickAction(MARC, 'mode:loc1', 'de', { automation: true, via: 'gatecontrol-familie', state: 'on' });
   assert.deepEqual([w.body.ok, w.body.message], [false, 'Außerhalb deines Zeitfensters.']);
   assert.equal((await call(app(MARC), 'GET', '/me')).json.ringModes[0].blocked, 'outside_window');
   clock.set(Date.UTC(2026, 9, 15, 6, 0, 0)); // Thursday 08:00 Berlin
-  assert.equal((await host.runQuickAction(MARC, 'mode_away:loc1')).body.ok, true);
+  assert.equal((await host.runQuickAction(MARC, 'mode:loc1', 'de', { state: 'on' })).body.ok, true);
   // taking the right away
   await admin('PUT', `rights/${MARC.id}`, { modes: { loc1: false } });
-  assert.equal((await host.runQuickAction(MARC, 'mode_home:loc1')).status, 404);
+  assert.equal((await host.runQuickAction(MARC, 'mode:loc1', 'de', { state: 'off' })).status, 404);
   assert.equal(cloud.ring.modes.loc1.mode, 'away');
   // the portal tab: people with a lock right or a mode right; tiles show the mode
   assert.equal(await plugin.portalVisible({ user: portal(GAST) }, host.gc), false);
@@ -193,24 +230,24 @@ test('Ring errors → clear messages (with Ring\'s HTTP status), the history say
   const { cloud, admin, clock } = ctx;
   await ringLogin(ctx);
   const R = cloud.ring;
-  const run = async (id, lang) => (await host.runQuickAction(ADMIN, id, lang || 'de')).body;
+  const run = async (id, lang) => (await host.runQuickAction(ADMIN, id, lang || 'de', { state: 'on' })).body;
   R.modeStatus = 403;
-  assert.deepEqual(await run('mode_away:loc1'), { ok: false, message: 'Ring lehnt den Moduswechsel ab (HTTP 403).', state: null, widget: null, unchanged: false });
-  assert.equal((await run('mode_away:loc1', 'en')).message, 'Ring refused the mode change (HTTP 403).');
+  assert.deepEqual(await run('mode:loc1'), { ok: false, message: 'Ring lehnt den Moduswechsel ab (HTTP 403).', state: null, widget: null, unchanged: false });
+  assert.equal((await run('mode:loc1', 'en')).message, 'Ring refused the mode change (HTTP 403).');
   const api = await admin('POST', 'modes/loc1/away');
   assert.deepEqual([api.status, api.json.code, api.json.httpStatus], [502, 'ring_mode_refused', 403]);
   R.modeStatus = 503;
-  assert.equal((await run('mode_away:loc1')).message, 'Ring hat den Modus nicht umgestellt (HTTP 503).');
+  assert.equal((await run('mode:loc1')).message, 'Ring hat den Modus nicht umgestellt (HTTP 503).');
   R.modeStatus = null;
   R.modeDown = true;
-  assert.equal((await run('mode_away:loc1')).message, 'Ring ist nicht erreichbar – der Modus wurde nicht umgestellt.');
+  assert.equal((await run('mode:loc1')).message, 'Ring ist nicht erreichbar – der Modus wurde nicht umgestellt.');
   R.modeDown = false;
   R.modeIgnore = true;
-  assert.equal((await run('mode_away:loc1')).message, 'Ring hat den Modus nicht übernommen und meldet weiter „Zuhause“.');
+  assert.equal((await run('mode:loc1')).message, 'Ring hat den Modus nicht übernommen und meldet weiter „Zuhause“.');
   assert.equal((await admin('POST', 'modes/loc1/away')).json.error, 'Ring hat den Modus nicht übernommen und meldet weiter „Zuhause“.');
   R.modeIgnore = false;
   R.status429 = true;
-  assert.equal((await run('mode_away:loc1')).message, 'Ring bremst gerade – bitte später erneut versuchen.');
+  assert.equal((await run('mode:loc1')).message, 'Ring bremst gerade – bitte später erneut versuchen.');
   R.status429 = false;
   const rows = (await admin('GET', 'history', null, { kind: 'mode' })).json.items;
   assert.deepEqual(rows.map((r) => [r.result, r.reason]), [
@@ -225,7 +262,7 @@ test('Ring errors → clear messages (with Ring\'s HTTP status), the history say
   clock.add(MIN);
   const nc = await admin('POST', 'modes/loc1/away');
   assert.deepEqual([nc.status, nc.json.code, nc.json.error], [409, 'ring_not_connected', 'Ring ist nicht verbunden.']);
-  assert.deepEqual(await host.quickActions(ADMIN).then((l) => l.length), 3, 'the last known state stays listed');
+  assert.deepEqual(await host.quickActions(ADMIN).then((l) => l.length), 2, 'the last known state stays listed');
 }));
 
 test('the mode poll: every minute, a change in the Ring app shows up; read-only → not offered; a failing read never touches the doorbell poll', () => withDoor({}, async (host, ctx) => {
@@ -289,7 +326,7 @@ test('at most 10 switches per minute per person and location (rate_limited with 
   // the admin page may still try: the mode is read first, then set
   const r = await admin('POST', 'modes/loc1/away');
   assert.deepEqual([r.status, r.json.message, r.json.ringMode.mode], [200, 'Ring: Abwesend', 'away']);
-  for (let i = 0; i < 9; i++) assert.equal((await host.runQuickAction(ADMIN, 'mode_home:loc1')).body.ok, true);
+  for (let i = 0; i < 9; i++) assert.equal((await host.runQuickAction(ADMIN, 'mode:loc1', 'de', { state: 'off' })).body.ok, true);
   const x = await admin('POST', 'modes/loc1/away');
   assert.deepEqual([x.status, x.json.code], [429, 'rate_limited']);
   assert.ok(x.json.retryAfter > 0);

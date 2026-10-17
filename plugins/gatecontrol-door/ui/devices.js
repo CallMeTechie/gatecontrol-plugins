@@ -150,7 +150,7 @@
     $('#dr-r-sync').hidden = !r.connected;
   }
 
-  /** Ring modes: per location the current mode and the three buttons (or why it cannot switch). */
+  /** Ring modes: per location the current mode and the three mode buttons (or why it cannot switch). */
   function renderModes() {
     var list = S.ringModes || [];
     $('#dr-modes-card').hidden = !S.ring.connected && !list.length;

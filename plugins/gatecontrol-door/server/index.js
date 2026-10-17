@@ -63,7 +63,7 @@ const ICONS = Object.freeze({
 });
 const QA_ID_RE = /^(\d{1,9}):(lock|unlock|open)$/;
 const QA_MAX = 16;
-const QA_MODE_LOCATIONS = 3; // at most 3 Ring locations (9 buttons); the locks get the rest
+const QA_MODE_LOCATIONS = 4; // at most 4 Ring locations (8 actions); the locks get the rest
 
 /** Nuki Web log → history (keypad / manual operations), entries after the lock was added. */
 async function importNukiLog(gc, now) {
@@ -121,7 +121,8 @@ async function quickActionsFor(gc, user, lang) {
   const kind = qaViewer(user);
   if (!kind) return [];
   const r = await rights.load(gc);
-  // Ring mode: three buttons per location the person may switch (rules always set a fixed mode)
+  // Ring mode per location the person may switch: the toggle Zuhause ⇄ Abwesend (with targets, so a
+  // rule sets a fixed mode) and the button "Inaktiv"
   const ringModes = [];
   for (const row of (await modes.forUser(gc, user, r)).slice(0, QA_MODE_LOCATIONS)) ringModes.push(...modes.quickActions(t, lang, row));
   const out = [];
@@ -143,18 +144,28 @@ async function quickActionsFor(gc, user, lang) {
   return [...out.slice(0, QA_MAX - ringModes.length), ...ringModes];
 }
 
-/** A Ring mode button or its widget's choice (control 'mode') → { ok, message[, widget] }. */
+/**
+ * A Ring mode action → { ok, message[, state, widget] }: the button "Inaktiv" (m[1] 'disarmed'), or the
+ * toggle (m[1] undefined) — its widget's choice (control 'mode'), a target ('on' away, 'off' home) or
+ * a plain run (away → home, home → away, disarmed / unknown → home).
+ */
 async function runModeAction(gc, a, m, { lang, viewer, via, caller }) {
   const id = m[2];
+  const toggle = !m[1];
   let mode = m[1];
   if (a.control !== undefined) {
-    if (a.control !== 'mode' || !modes.MODES.includes(a.value)) return { ok: false, message: t(lang, 'error.invalid') };
+    if (!toggle || a.control !== 'mode' || !modes.MODES.includes(a.value)) return { ok: false, message: t(lang, 'error.invalid') };
     mode = a.value;
+  } else if (toggle) {
+    const target = a.target === 'on' || a.target === 'off' ? a.target : null;
+    const row = target ? null : await modes.get(gc, id);
+    mode = modes.toggleMode(row ? row.mode : null, target);
   }
   try {
     const cfg = await config.load(gc);
     const out = await modes.perform(gc, { cfg, t, lang, now: Date.now(), via, caller }, viewer, id, mode);
-    return { ok: true, message: out.message, ...(m[1] === modes.CARRIER ? { widget: modes.widgetOf(t, lang, out.location) } : {}) };
+    if (!toggle) return { ok: true, message: out.message };
+    return { ok: true, message: out.message, state: modes.toggleState(out.location.mode), widget: modes.widgetOf(t, lang, out.location) };
   } catch (e) {
     if (!isKnown(e)) gc.log.warn('quick action failed', a.id, (e && (e.code || e.message)) || 'error');
     return { ok: false, message: errorResponse(e, lang).json.error };
