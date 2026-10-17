@@ -137,6 +137,18 @@ allows `background.intervalSeconds` from 5; and
 `host.runQuickAction(user, id, lang, { via: 'notification' })` or
 `{ automation: true, via: '<other plugin id>' }` passes `via` / `automation` to the
 hook.
+The messenger foundations of GateControl ≥ 1.177.0 are mirrored too (details
+in the header of `tools/testing/mock-host.js`): plugin.json `media` with
+`host.upload(user, buffer, mime)` (the host's upload answers and quota,
+`opts.mediaQuota`), `gc.media.info/claim/delete/usage/url`,
+`host.mediaGet(user, mediaId, { range })` through the hook `mediaAccess`,
+`host.mediaFromUrl(url)` for `gc.media.url` URLs and `host.mediaCleanup(now)`;
+`permissions.events` with `gc.events.emit` (recorded in `host.events`);
+chat topics (`notifyTopics[].chat`: `users`, `conversation`, `sender`,
+`reply`/`mark_read` actions, own budget; recorded with `kind: 'message'`); and
+services between plugins (`services.provides`, `permissions.services`,
+`gc.services.call` against `opts.services`, `host.callService(name, …)` for the
+plugin's own hook `service`).
 
 Dev builds are always unsigned (`tools/pack.js` drops `GC_PLUGIN_SIGNING_KEY`
 unless `--sign` is passed). Install them on a test server with
