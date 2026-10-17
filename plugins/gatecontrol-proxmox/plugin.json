@@ -4,11 +4,11 @@
     "de": "Proxmox VE",
     "en": "Proxmox VE"
   },
-  "version": "1.0.0",
+  "version": "1.1.0",
   "publisher": "CallMeTechie",
   "description": {
-    "de": "Proxmox-VE-Hosts und -Cluster im Blick: Nodes (CPU, RAM, Speicher, Laufzeit, Version), VMs und Container, Speicher, Backups und HA – mit Start, Herunterfahren, Neustart und Stopp von VMs/CTs für Administratoren und Meldungen bei Ausfall, unerwartet gestoppten Gästen, vollem Speicher und fehlgeschlagenen Backups.",
-    "en": "Keep an eye on Proxmox VE hosts and clusters: nodes (CPU, RAM, storage, uptime, version), VMs and containers, storage, backups and HA – with start, shutdown, reboot and stop of VMs/CTs for administrators and notifications on outages, guests stopped unexpectedly, full storage and failed backups."
+    "de": "Proxmox-VE-Hosts und -Cluster im Blick: Nodes (CPU, RAM, Speicher, Laufzeit, Version), VMs und Container, Speicher, Backups und HA – mit Start, Herunterfahren, Neustart und Stopp von VMs/CTs für Administratoren und Meldungen bei Ausfall, unerwartet gestoppten Gästen, vollem Speicher und fehlgeschlagenen Backups – dazu Widgets, Schnellaktionen und eine Startkachel in den GateControl-Apps für Administratoren.",
+    "en": "Keep an eye on Proxmox VE hosts and clusters: nodes (CPU, RAM, storage, uptime, version), VMs and containers, storage, backups and HA – with start, shutdown, reboot and stop of VMs/CTs for administrators and notifications on outages, guests stopped unexpectedly, full storage and failed backups – plus widgets, quick actions and a Start tile in the GateControl apps for administrators."
   },
   "gatecontrol": ">=1.154.0",
   "entry": "server/index.js",
@@ -29,6 +29,7 @@
       ]
     },
     "storage": true,
+    "portal": true,
     "users": true,
     "notify": true,
     "background": {
@@ -52,6 +53,13 @@
         }
       }
     ],
+    "portal": {
+      "label": {
+        "de": "Proxmox VE",
+        "en": "Proxmox VE"
+      },
+      "icon": "M4 4h16v6H4zM4 14h16v6H4zM8 7h.01M8 17h.01M12 7h4M12 17h4"
+    },
     "settings": [
       {
         "key": "poll_interval",

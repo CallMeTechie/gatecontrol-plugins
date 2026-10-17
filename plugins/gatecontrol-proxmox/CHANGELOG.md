@@ -1,7 +1,48 @@
 # Proxmox VE (gatecontrol-proxmox)
 
-Proxmox-VE-Hosts und -Cluster als GateControl-Plugin: Status, Steuerung von VMs/Containern
-und Benachrichtigungen – nur für Administratoren (keine Portal-Teile).
+Proxmox-VE-Hosts und -Cluster als GateControl-Plugin: Status, Steuerung von VMs/Containern,
+Benachrichtigungen sowie Widgets, Schnellaktionen und eine Startkachel in den Apps – nur für
+Administratoren (keine Portal-Teile).
+
+## 1.1.0
+- **Widgets und Schnellaktionen in den GateControl-Apps** – nur für GateControl-Administratoren;
+  alle anderen sehen weder Aktionen noch Kachel, und jeder Lauf prüft die Rolle erneut.
+  - **Je Verbindung** (Gerät = Name der Verbindung) die Taste **„Aktualisieren“** (fragt den
+    Host sofort ab) mit dem Widget der Verbindung: groß die **aktiven Gäste** („2/3“, „Gäste
+    aktiv“, ohne Vorlagen), darunter **CPU**, **RAM** und **Speicher** des Clusters in Prozent
+    (wie die Rechenzentrums-Übersicht von Proxmox; an einer eingestellten Meldeschwelle
+    markiert), oben rechts ein Server-Symbol für die **Erreichbarkeit** (grün erreichbar, rot
+    nicht erreichbar). Die Statuszeile nennt Probleme: Grund der Störung, Node offline,
+    Speicher an der Schwelle; die letzten guten Werte bleiben sichtbar.
+  - **Je überwachtem Gast** (Gerät = Name der VM bzw. des Containers) ein **Schalter**
+    (an = läuft): Einschalten **startet**, Ausschalten **fährt sauber herunter** – nie ein
+    hartes Stoppen. Gefragt wird nur vor dem Herunterfahren. Der Schalter nennt seine Befehle
+    („Starten“ / „Herunterfahren“) und nimmt einen gewünschten Zustand an (GateControl ≥
+    1.173.0, z. B. Regeln der Familie): „an“ startet nur einen gestoppten Gast, „aus“ fährt
+    nur einen laufenden herunter, sonst bleibt alles, wie es ist („läuft bereits“). Dazu die
+    Taste **„Neustart“** (sauber, mit Rückfrage). Das Widget des Gasts: groß die **CPU-Last**,
+    darunter **RAM** und **Laufzeit** („4 T“), die Statuszeile mit Node bzw. „Wird
+    heruntergefahren …“.
+  - Die Aktionen laufen über denselben Weg wie die Seite: Gast frisch in Proxmox suchen,
+    Aufgabe (UPID) verfolgen, Ergebnis als klare Meldung („web heruntergefahren.“,
+    „db läuft nicht – ein Neustart ist nicht möglich.“, Fehler von Proxmox im Wortlaut).
+    Protokoll und „Letzte Aktionen“ halten den Namen der Administratorin bzw. des
+    Administrators und die Herkunft fest („admin (App)“, „admin (Regel)“). Dauert es länger
+    als das Zeitlimit der Apps, meldet die Aktion „Auftrag gesendet“ und läuft weiter; bis zur
+    nächsten Abfrage zeigen die Apps den angestrebten Zustand.
+  - Höchstens 16 Aktionen: zuerst jede aktive Verbindung, dann die überwachten Gäste
+    (Vorlagen und in Proxmox nicht mehr gefundene Gäste entfallen). Deaktivierte
+    Verbindungen erscheinen nicht.
+- **Startkachel „Proxmox“ in den Apps** (nur Administratoren): „2/3 aktiv“ über alle
+  Verbindungen mit den Werten Gäste, CPU, RAM und Speicher; gelb bei einem Problem (Node
+  offline, Speicher voll), rot, wenn eine Verbindung nicht erreichbar ist.
+- Dafür braucht das Plugin jetzt die Berechtigung **Portal** (Schnellaktionen und Kacheln) und
+  einen eigenen Portal-Reiter, der im Portal selbst **nie** angezeigt wird – er trägt nur die
+  Startkachel der Apps.
+- Läuft weiter ab GateControl 1.154.0: Schnellaktionen gibt es ab 1.160.0, Widgets ab
+  1.171.0, Geräte, Farben und „nur vor dem Herunterfahren fragen“ ab 1.172.0, Zielzustände ab
+  1.173.0, das Erreichbarkeits-Symbol ab 1.175.0 – ältere Versionen lassen das jeweils weg
+  (dann fragt der Schalter vor jedem Umschalten).
 
 ## 1.0.0
 - **Verbindungen:** mehrere Proxmox-Hosts oder -Cluster, je über eine Zuweisung des
