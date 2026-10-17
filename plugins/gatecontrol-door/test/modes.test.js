@@ -11,7 +11,7 @@ const assert = require('node:assert/strict');
 const plugin = require('../server/index');
 const ring = require('../server/ring');
 const modes = require('../server/modes');
-const { withDoor, ringLogin, app, portal, kiosk, ADMIN, ANNA, MARC, GAST, SEC, MIN, T0, HOUR } = require('./helpers');
+const { withDoor, ringLogin, app, portal, kiosk, ADMIN, ANNA, MARC, LENA, GAST, SEC, MIN, T0, HOUR } = require('./helpers');
 
 const MODE_URL = 'https://prd-api-us.prd.rings.solutions/api/v1/mode/location/';
 
