@@ -3,6 +3,12 @@
 Die Familie in der GateControl-App (eigener Tab), im Portal (eigener Tab „Familie“) und auf
 drei Admin-Seiten. Alles bleibt auf dem eigenen Server.
 
+## 1.5.2
+- **Mitteilung an einzelne Personen:** Im Regel-Fenster („Was soll passieren?“ → Mitteilung) lassen
+  sich neben „Eltern“ und „alle“ jetzt auch einzelne Personen wählen – eine oder mehrere, z. B. nur
+  Anna: „Wenn Marc bei Arbeit ankommt → Mitteilung an Anna“. Wer die Regel auslöst, bekommt die
+  Mitteilung nicht selbst. (Der Server konnte das schon; es fehlte nur die Auswahl.)
+
 ## 1.5.1
 - **Karten wieder sichtbar** (Orte, Protokoll): OpenStreetMap lehnte die Kacheln mit „403 Access
   blocked“ ab, weil die abgeschottete Plugin-Seite keinen Referer mitsendet. Ab GateControl 1.176
