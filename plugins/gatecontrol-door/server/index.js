@@ -8,12 +8,14 @@
 //   admin API  admin/* (admin pages)  — server/admin.js
 //   every action                      — server/control.js (rights, time window, rate limit, history)
 //   quick actions (apps, widget, notification buttons, other plugins' automation)
+//   Ring location modes (Inaktiv / Zuhause / Abwesend) — server/modes.js
 //
 // Background (every 5 s, GateControl ≥ 1.169.0): the Ring event poll
 // (server/cameras.js), Nuki polling every 30 s per bridge / Nuki Web account
 // (10 s while an automatic unlock waits for the door, at once after an
 // action), safety notices and the automatic re-lock (server/safety.js), the
-// Nuki Web log import (every 2 min), retention (hourly).
+// Nuki Web log import (every 2 min), the Ring mode poll (every minute),
+// retention (hourly).
 
 const ui = require('./ui');
 const api = require('./api');
@@ -28,6 +30,7 @@ const safety = require('./safety');
 const history = require('./history');
 const nuki = require('./nuki');
 const ring = require('./ring');
+const modes = require('./modes');
 const push = require('./push');
 const texts = require('./texts.json');
 const { STATUS, isKnown, clip } = require('./util');
@@ -41,7 +44,10 @@ function t(lang, key, params) {
 
 function errorResponse(e, lang) {
   const code = isKnown(e) ? e.code : 'internal';
-  const json = { ok: false, code, error: t(lang, 'error.' + code) };
+  // texts may name a value of the error (Ring's HTTP status, the mode Ring reports)
+  const params = { ...((e && e.extra) || {}) };
+  if (params.mode != null) params.mode = modes.modeName(t, lang === 'en' ? 'en' : 'de', params.mode);
+  const json = { ok: false, code, error: t(lang, 'error.' + code, params) };
   if (e && e.extra) for (const [k, v] of Object.entries(e.extra)) if (!(k in json)) json[k] = v;
   return { status: STATUS[code], json };
 }
@@ -57,6 +63,7 @@ const ICONS = Object.freeze({
 });
 const QA_ID_RE = /^(\d{1,9}):(lock|unlock|open)$/;
 const QA_MAX = 16;
+const QA_MODE_LOCATIONS = 3; // at most 3 Ring locations (9 buttons); the locks get the rest
 
 /** Nuki Web log → history (keypad / manual operations), entries after the lock was added. */
 async function importNukiLog(gc, now) {
@@ -79,6 +86,7 @@ async function background(gc, now) {
     try { await fn(); } catch (e) { gc.log.warn('background step failed', name, (e && e.code) || (e && e.message) || 'error'); }
   };
   await step('ring', () => cameras.tick(gc, cfg, now));
+  await step('ringmode', () => modes.tick(gc, cfg, now, cameras.blocked(now)));
   await step('nuki', async () => {
     const fast = await safety.pendingSources(gc);
     const polled = await locks.poll(gc, now, { fast });
@@ -113,6 +121,9 @@ async function quickActionsFor(gc, user, lang) {
   const kind = qaViewer(user);
   if (!kind) return [];
   const r = await rights.load(gc);
+  // Ring mode: three buttons per location the person may switch (rules always set a fixed mode)
+  const ringModes = [];
+  for (const row of (await modes.forUser(gc, user, r)).slice(0, QA_MODE_LOCATIONS)) ringModes.push(...modes.quickActions(t, lang, row));
   const out = [];
   for (const lock of await locks.all(gc)) {
     const level = rights.levelOf(r, user.id, lock.id);
@@ -129,7 +140,25 @@ async function quickActionsFor(gc, user, lang) {
       out.push({ id: `${lock.id}:${a}`, title: clip(t(lang, 'qa.' + key, { name: lock.name }), 40), subtitle: sub, icon: ICONS[a], kind: 'button', confirm: a !== 'lock', device });
     }
   }
-  return out.slice(0, QA_MAX);
+  return [...out.slice(0, QA_MAX - ringModes.length), ...ringModes];
+}
+
+/** A Ring mode button or its widget's choice (control 'mode') → { ok, message[, widget] }. */
+async function runModeAction(gc, a, m, { lang, viewer, via, caller }) {
+  const id = m[2];
+  let mode = m[1];
+  if (a.control !== undefined) {
+    if (a.control !== 'mode' || !modes.MODES.includes(a.value)) return { ok: false, message: t(lang, 'error.invalid') };
+    mode = a.value;
+  }
+  try {
+    const cfg = await config.load(gc);
+    const out = await modes.perform(gc, { cfg, t, lang, now: Date.now(), via, caller }, viewer, id, mode);
+    return { ok: true, message: out.message, ...(m[1] === modes.CARRIER ? { widget: modes.widgetOf(t, lang, out.location) } : {}) };
+  } catch (e) {
+    if (!isKnown(e)) gc.log.warn('quick action failed', a.id, (e && (e.code || e.message)) || 'error');
+    return { ok: false, message: errorResponse(e, lang).json.error };
+  }
 }
 
 async function runQuickActionFor(gc, arg) {
@@ -139,11 +168,13 @@ async function runQuickActionFor(gc, arg) {
   // GateControl ≥ 1.169.0: { automation } is true only for another plugin's gc.actions.run (user.automation as well)
   const automation = a.automation === true || !!(user && user.automation === true);
   const m = typeof a.id === 'string' ? QA_ID_RE.exec(a.id) : null;
+  const mm = typeof a.id === 'string' ? modes.QA_RE.exec(a.id) : null;
   const kind = automation ? (user && Number.isSafeInteger(user.id) ? 'automation' : null) : qaViewer(user);
-  if (!m || !kind) return { ok: false, message: t(lang, 'error.not_found') };
+  if ((!m && !mm) || !kind) return { ok: false, message: t(lang, 'error.not_found') };
   const viewer = automation ? { ...user, automation: true, app: false } : { ...user, automation: false };
   const via = automation ? 'automation' : (a.via === 'notification' ? 'notification' : 'app');
   const caller = automation ? (typeof a.via === 'string' && a.via !== 'app' && a.via !== 'notification' ? a.via : (user.via || null)) : null;
+  if (mm) return runModeAction(gc, a, mm, { lang, viewer, via, caller });
   try {
     const cfg = await config.load(gc);
     const out = await control.perform(gc, { cfg, t, lang, now: Date.now(), via, caller }, viewer, Number(m[1]), m[2]);
@@ -160,6 +191,7 @@ module.exports = {
     ring.reset();
     locks.reset();
     cameras.reset();
+    modes.reset();
     control.reset();
     state.lastPurge = 0;
     state.lastLogImport = 0;
@@ -189,10 +221,10 @@ module.exports = {
     return { html: ui.render(view || {}, t) };
   },
 
-  /** The portal tab "Tür": people with a right on at least one lock. */
+  /** The portal tab "Tür": people with a right on at least one lock or who may switch a Ring mode. */
   async portalVisible({ user, section } = {}, gc) {
     if (section) return false;
-    return api.visibleFor(gc, user);
+    return api.visibleFor(gc, user, { modes: true });
   },
 
   /** Start tiles: one per visible lock with its state (≤ 8). */
@@ -207,6 +239,9 @@ module.exports = {
       const st = !s.reachable || s.state === 'jammed' ? 'crit' : (shown.stale ? 'warn' : (s.state === 'locked' ? 'good' : (s.state === 'unlocked' || s.state === 'unlatched' ? 'warn' : 'off')));
       const value = !s.reachable ? t(lang, 'portal.unreachable') : stateLabel(lang, shown);
       out.push({ title: clip(lock.name, 40), value: clip(value, 40), state: st, icon: shown.state === 'locked' ? ICONS.lock : ICONS.unlock });
+    }
+    for (const row of await modes.forUser(gc, user, r)) {
+      out.push({ title: clip(t(lang, 'mode.tile', { name: row.name }), 40), value: clip(modes.modeName(t, lang, row.mode), 40), state: modes.TONE[row.mode] || null, icon: modes.ICONS[row.mode] || modes.ICONS.device });
     }
     return out.slice(0, 8);
   },

@@ -4,21 +4,22 @@
 // days, default 7). Every action — also a refused or failed one — is a row:
 // who, via (app / portal / notification / automation / system / nuki /
 // keypad), what, result and the reason code. Rings and motion carry the
-// snapshot (media_id) while it is kept.
+// snapshot (media_id) while it is kept. Ring mode switches (kind 'mode') name
+// their location (location_id) and the mode (action).
 
 const store = require('./store');
 const { iso } = require('./util');
 const { HISTORY_DAYS } = require('./config');
 
 const DAY = 86400000;
-const KINDS = ['action', 'ding', 'motion', 'alert', 'nuki'];
+const KINDS = ['action', 'ding', 'motion', 'alert', 'nuki', 'mode'];
 
 /** Insert a row; a row with an ext_id that exists already is skipped (→ null). → id */
 async function add(gc, row) {
-  const r = await store.run(gc, `INSERT OR IGNORE INTO history (at, kind, lock_id, camera_id, user_id, user_name, via, caller, action, result, reason, media_id, ext_id)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [
+  const r = await store.run(gc, `INSERT OR IGNORE INTO history (at, kind, lock_id, camera_id, user_id, user_name, via, caller, action, result, reason, media_id, ext_id, location_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [
     row.at, row.kind, row.lockId || null, row.cameraId || null, row.userId || null, row.userName || null, row.via || null, row.caller || null,
-    row.action || null, row.result || null, row.reason || null, row.mediaId || null, row.extId || null,
+    row.action || null, row.result || null, row.reason || null, row.mediaId || null, row.extId || null, row.locationId || null,
   ]);
   return r && r.changes ? r.lastInsertRowid : null;
 }
@@ -87,13 +88,15 @@ async function one(gc, id) {
 }
 
 /** A row for the API (names from the given maps; reasonText from t). */
-function view(row, { locks, cameras, t, lang, mediaOk }) {
+function view(row, { locks, cameras, locations, t, lang, mediaOk }) {
   const lock = row.lock_id ? locks.get(row.lock_id) : null;
   const cam = row.camera_id ? cameras.get(row.camera_id) : null;
+  const loc = row.location_id && locations ? locations.get(row.location_id) : null;
   return {
     id: row.id, at: iso(row.at), kind: row.kind,
     lockId: row.lock_id || null, lockName: lock ? lock.name : null,
     cameraId: row.camera_id || null, cameraName: cam ? cam.name : null,
+    locationId: row.location_id || null, locationName: loc ? loc.name : null,
     userId: row.user_id || null, userName: row.user_name || null,
     via: row.via || null, caller: row.caller || null, action: row.action || null, result: row.result || null,
     reason: row.reason || null, reasonText: row.reason ? t(lang, 'reason.' + row.reason) : null,

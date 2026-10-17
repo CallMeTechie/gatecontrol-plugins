@@ -5,7 +5,8 @@
 Nuki-Schlösser und -Opener (lokale Nuki Bridge oder Nuki Web) und Ring-Klingeln/-Kameras in
 GateControl: Tür in App, Widget und Portal auf- und zusperren, Klingel-Push mit Bild und
 „Tür öffnen“, Verlauf mit Bildern, automatisches Aufsperren bei Ankunft (nur mit Zustimmung)
-und Sicherheits-Hinweise. Rechte pro Person und Schloss.
+und Sicherheits-Hinweise. Rechte pro Person und Schloss. Dazu der **Ring-Modus** (Inaktiv /
+Zuhause / Abwesend) pro Ring-Standort – in App, Widget, Portal und in Regeln der Familie.
 
 Braucht **GateControl ≥ 1.169.0**. Kostenpflichtiges Zusatz-Plugin (eigenes Abo), **nicht** in
 GateControl Lifetime enthalten.
@@ -44,8 +45,10 @@ GateControl Lifetime enthalten.
 5. **Berechtigungen:** pro Person und Schloss *keine / ansehen / zu-/aufsperren / auch öffnen*,
    optional ein Wochen-Zeitfenster (gilt für alle Aktionen; über Mitternacht gehört es zum
    Starttag), „Automatisch aufsperren bei Ankunft erlauben“ und pro Kamera Klingel-/Bewegungs-Push.
-   **Admins bekommen nichts automatisch.** Kiosk-Geräte und Portal-Besucher, die nur per
-   Geräte-Vertrauen erkannt sind, sehen nur – sie können nie etwas auslösen.
+   **Admins bekommen auf Schlösser nichts automatisch.** Pro Ring-Standort zusätzlich das Recht
+   **„Ring-Modus schalten“** – Admins haben es immer, andere Personen nur mit Haken. Kiosk-Geräte
+   und Portal-Besucher, die nur per Geräte-Vertrauen erkannt sind, sehen nur – sie können nie
+   etwas auslösen.
 6. **Einstellungen:** Zeitzone (für Zeitfenster und Nachtkontrolle), Sprache der Mitteilungen,
    Aufbewahrung der Bilder (1–30 Tage, Standard 7), Abstand der Bewegungs-Pushs, Ring-Abfrage
    an/aus, Nuki-Web-Protokoll übernehmen.
@@ -123,8 +126,43 @@ Alles bleibt auf dem eigenen Server: Verlauf (90 Tage), Bilder (1–30 Tage), Re
 gehen nur an Personen mit Recht auf das verknüpfte Schloss. Tokens werden mit dem
 Server-Schlüssel verschlüsselt gespeichert, nie protokolliert und nie an eine Seite oder App
 geschickt. Das Ring-Passwort wird nur für die Anmeldung an Ring gesendet. Verbindungen gehen nur
-zu `api.nuki.io`, `oauth.ring.com`, `api.ring.com`, `app-snaps.ring.com` und zur
-zugewiesenen Bridge.
+zu `api.nuki.io`, `oauth.ring.com`, `api.ring.com`, `app-snaps.ring.com`,
+`prd-api-us.prd.rings.solutions` (Ring-Modus) und zur zugewiesenen Bridge.
+
+### Ring-Modus (Inaktiv / Zuhause / Abwesend)
+
+Wie in der Ring-App unter *Modi*: je nach Modus nehmen bestimmte Kameras auf und melden sich –
+**welche, legst du in der Ring-App fest**; das Plugin zeigt und schaltet nur den Modus. Dafür
+müssen die Modi für den Standort in der Ring-App eingeschaltet sein.
+
+* **Wo:** Seite „Geräte“ › *Ring-Modus* (pro Standort der aktuelle Modus und drei Knöpfe),
+  Portal-Tab „Tür“, Start-Kachel „Ring-Modus · <Standort>“ und die **Schnellaktionen** der
+  Apps: pro Standort drei Knöpfe **Inaktiv**, **Zuhause**, **Abwesend** (Gerät = der Standort,
+  ohne Rückfrage). „Inaktiv“ trägt das **Widget** „Ring-Modus“ mit dem aktuellen Modus und einer
+  Auswahl der drei Modi (mit Symbolen wie in der Ring-App; GateControl vor 1.174.0 zeigt nur die
+  Namen).
+* **Regeln:** Familie › Anwesenheit & Smart Home › z. B. Regel **„Alle sind unterwegs“** ›
+  Aktion **„Abwesend“** (Tür & Kamera, Standort) und **„Erste Person kommt heim“** ›
+  **„Zuhause“** oder **„Inaktiv“**. Knöpfe statt Umschalter: eine Regel setzt immer genau einen
+  Modus (auch wenn er schon gilt). Die Regel läuft als die Person, die ihre Aktionen festgelegt
+  hat – diese Person braucht „Ring-Modus schalten“ (Admins immer).
+* **Prüfung bei jedem Wechsel:** Recht, kein Kiosk-/Geräte-Vertrauen-Zugriff, Zeitfenster der
+  Person, höchstens 10 Wechsel pro Minute pro Person und pro Standort. Jeder Versuch steht im
+  **Verlauf** (Art „Ring-Modus“: wer, welcher Modus, über App / Mitteilung / Automatik (Regel,
+  mit dem aufrufenden Plugin) / Portal / Admin-Seite, Ergebnis).
+* **Aktualität:** gelesen mit dem Geräteabgleich (alle 10 Minuten, nach der Anmeldung,
+  „Geräte aktualisieren“) und danach **jede Minute** pro Standort; nach einem Wechsel gilt sofort
+  die Antwort von Ring. Fehler beim Lesen bremsen nur diese Abfrage (1 … 15 min, bei 429 nach
+  `Retry-After`) – Klingel und Bilder laufen weiter.
+* **Ring Alarm:** Standorte mit einer Ring-Alarmanlage (Basisstation) werden **nie** gelesen
+  oder geschaltet – dort gehört der Modus zur Alarmanlage. Die Seite „Geräte“ zeigt sie mit dem
+  Hinweis „Ring-Alarmanlage vorhanden – ihren Modus schaltet nur die Ring-App“. Ebenso ohne
+  Knöpfe: Standorte ohne Kameras, mit ausgeschalteten Modi oder wenn Ring dem Konto den Wechsel
+  nicht erlaubt (`readOnly`, z. B. geteilter Zugang ohne Freigabe).
+* **Meldungen:** „Ring: Zuhause“; abgelehnt/fehlgeschlagen mit Grund, z. B. „Ring lehnt den
+  Moduswechsel ab (HTTP 403).“, „Ring hat den Modus nicht umgestellt (HTTP 503).“, „Ring ist
+  nicht erreichbar – der Modus wurde nicht umgestellt.“, „Ring hat den Modus nicht übernommen
+  und meldet weiter „Zuhause“.“, „Ring ist nicht verbunden.“, „Außerhalb deines Zeitfensters.“
 
 ### Klingel-Verzögerung (Ring)
 
@@ -174,6 +212,14 @@ working regardless).
   to use the bridge or check the lock's internet connection in the Nuki app.
 * **Privacy:** history (90 days), pictures (1–30 days) and rights stay on your server; tokens are
   encrypted, never logged and never sent to a page or app.
+* **Ring mode:** per Ring location Disarmed / Home / Away as in the Ring app (which cameras
+  record and notify in each mode is set up there). Page **Devices**, the portal tab, a Start tile
+  and three quick-action buttons per location (`mode_disarmed|mode_home|mode_away:<locationId>`,
+  device `ring:<locationId>`, no confirm; "Disarmed" carries the widget "Ring mode" with a choice
+  control `mode`) — usable in Family rules ("Everyone is out" › "Away"). Right "Switch Ring mode"
+  per person and location; administrators always. Checked like door actions (right, read-only
+  viewers, time window, 10 per minute per person and location) and written to the history.
+  Read every minute; locations with a **Ring Alarm** base station are never read or switched.
 * **Ring delay:** polled (no push receiving possible for a plugin): about 5–15 s plus up to ~8 s
   for the picture.
 
@@ -199,8 +245,20 @@ Every answer is `{ "ok": true, … }` or `{ "ok": false, "code": "<code>", "erro
   "locks": [ LockView, … ],               // only locks with a right for this person
   "cameras": [ CameraView, … ],           // enabled cameras linked to one of those locks
   "ring": { "connected": true, "broken": false },   // broken → show "Ring-Verbindung gestört"
+  "ringModes": [ RingModeView, … ],       // Ring locations this person may switch (see below; [] for most people)
   "serverTime": "2026-10-14T08:00:00Z"
 }
+```
+
+**RingModeView** (1.1.0)
+
+```jsonc
+{ "id": "a1b2c3d4-…", "name": "Langenlonsheim",
+  "mode": "home",                         // "disarmed" (Inaktiv) | "home" (Zuhause) | "away" (Abwesend)
+  "modes": ["disarmed", "home", "away"],  // the buttons, in this order
+  "blocked": null,                        // null | "read_only" | "outside_window" (show the buttons disabled)
+  "modeAt": "2026-10-14T07:00:00Z",       // when Ring last changed the mode (may be null)
+  "checkedAt": "2026-10-14T08:00:00Z" }   // last read / switch
 ```
 
 **LockView**
@@ -251,6 +309,18 @@ time window, ≤ 10 actions per minute and person); every attempt is in the hist
 { "ok": true, "message": "Haustür aufgesperrt", "lock": LockView }
 ```
 
+### `POST modes/<locationId>/<mode>` (1.1.0)
+
+`<mode>` = `disarmed` | `home` | `away`. Switches the Ring mode of that location (checked again:
+the right "Ring-Modus schalten" — administrators always —, read-only viewers, time window,
+≤ 10 per minute per person and location; every attempt is in the history).
+
+```jsonc
+{ "ok": true, "message": "Ring: Zuhause", "ringMode": RingModeView }
+```
+
+A location this person may not switch (or an unknown mode) → `404 not_found`.
+
 ### `GET cameras/<id>/snapshot[?refresh=1]`
 
 The newest stored picture (else Ring's latest). `refresh=1` asks the camera for a new one
@@ -278,12 +348,13 @@ the rings/motion of cameras linked to locks they can view (administrators: every
 { "ok": true, "nextCursor": 118,          // null = no more; pass as ?cursor=
   "items": [ {
     "id": 120, "at": "2026-10-14T08:00:00Z",
-    "kind": "action",                     // "action" | "ding" | "motion" | "alert" | "nuki"
+    "kind": "action",                     // "action" | "ding" | "motion" | "alert" | "nuki" | "mode" (Ring mode switch)
     "lockId": 1, "lockName": "Haustür", "cameraId": null, "cameraName": null,
+    "locationId": null, "locationName": null,   // kind "mode": the Ring location
     "userId": 3, "userName": "Marc",
-    "via": "app",                         // "app" | "portal" | "notification" | "automation" | "system" | "nuki" | "keypad" | "ring"
+    "via": "app",                         // "app" | "portal" | "notification" | "automation" | "system" | "nuki" | "keypad" | "ring" | "admin"
     "caller": null,                       // automation: the calling plugin id, e.g. "gatecontrol-familie"
-    "action": "unlock",                   // action: lock|unlock|open; alert: open_long|jammed|unreachable|night; nuki: lock|unlock|open|null
+    "action": "unlock",                   // action: lock|unlock|open; alert: open_long|jammed|unreachable|night; nuki: lock|unlock|open|null; mode: disarmed|home|away
     "result": "ok",                       // "ok" | "refused" | "failed"
     "reason": null, "reasonText": null,   // e.g. "outside_window" / "außerhalb des Zeitfensters"
     "hasImage": false                     // ding/motion with a stored picture → GET events/<id>
@@ -293,7 +364,9 @@ the rings/motion of cameras linked to locks they can view (administrators: every
 Reason codes: `no_right`, `unsupported`, `read_only`, `outside_window`, `rate_limited`,
 `auto_open`, `auto_no_right`, `auto_off`, `auto_too_soon`, `unreachable`, `not_locked`,
 `door_open`, `failed`, `lock_unreachable`, `lock_failed`, `nuki_auth`, `no_target`,
-`not_configured`, `auto_relock`.
+`not_configured`, `auto_relock`; Ring mode: `mode_alarm`, `mode_disabled`, `mode_read_only`,
+`ring_not_connected`, `ring_login_failed`, `ring_rate_limited`, `ring_mode_refused`,
+`ring_mode_failed`, `ring_mode_unreachable`, `ring_mode_mismatch`.
 
 ### `GET events/<id>`
 
@@ -316,8 +389,11 @@ One ring or motion event (the push "Ansehen" opens it with `data.door.eventId`):
 | 403 | `no_right`, `outside_window`, `forbidden` | |
 | 404 | `not_found`, `no_image` | unknown, or no right on that lock/camera |
 | 409 | `unsupported`, `not_configured`, `no_target`, `nuki_auth`, `ring_not_connected`, `ring_login_failed`, `too_many` | |
+| 409 | `mode_alarm`, `mode_disabled`, `mode_read_only` | Ring mode: a Ring Alarm location / modes off in the Ring app / Ring does not let this account switch |
 | 429 | `rate_limited`, `too_soon`, `ring_rate_limited` | with `retryAfter` (s) |
 | 502 | `lock_unreachable`, `lock_failed`, `nuki_error`, `ring_error` | |
+| 502 | `ring_mode_refused`, `ring_mode_failed` | Ring answered the mode switch with an error, `httpStatus` = its HTTP status |
+| 502 | `ring_mode_unreachable`, `ring_mode_mismatch` | no answer / Ring kept the old mode (`mode`) |
 
 ### Quick actions
 
@@ -327,6 +403,28 @@ opener "… Summer", `confirm: true`); subtitle = the state ("Zugesperrt"), icon
 door. Runs: `POST /api/v1/client/actions/gatecontrol-door/<lockId>:<action>` with body
 `{ "source": "app" | "notification" }`. Another plugin (`gc.actions.run`, `automation: true`)
 gets only `lock`/`unlock`, and `unlock` only under the rules of "Automatisch aufsperren".
+
+Ring mode (1.1.0), per location the person may switch (administrators: every location that
+supports it): three buttons `mode_disarmed:<locationId>` ("Inaktiv"), `mode_home:<locationId>`
+("Zuhause"), `mode_away:<locationId>` ("Abwesend"), no confirm, subtitle "Aktuell: Zuhause",
+shield icons like the Ring app, `device: { id: "ring:<locationId>", title: "<location name>",
+subtitle: "Ring-Modus" }`. Buttons, not a toggle: a run always sets exactly that mode (also for
+`gc.actions.run`, e.g. a Family rule). `mode_disarmed:<locationId>` carries the widget:
+
+```jsonc
+{ "label": "Ring-Modus", "value": "Zuhause", "state": "good",   // "off" for Inaktiv
+  "power": false,
+  "controls": [{ "id": "mode", "kind": "choice", "label": "Modus", "value": "home",
+                 "options": [{ "id": "disarmed", "label": "Inaktiv", "icon": "<path>" },
+                             { "id": "home", "label": "Zuhause", "icon": "<path>" },
+                             { "id": "away", "label": "Abwesend", "icon": "<path>" }] }] }
+```
+
+A control run (`control: "mode"`, `value: "away"`) sets that mode and answers with the new
+widget. Answers: `{ ok: true, message: "Ring: Zuhause" }`, refused/failed `{ ok: false,
+message: "<reason>" }` (see "Ring-Modus" above). Option icons need GateControl ≥ 1.174.0 (older
+hosts drop them, the apps show the labels); widget and device need ≥ 1.171.0 / 1.172.0 (older
+hosts drop them, the buttons stay).
 
 ### Pushes (`data` for the app)
 
@@ -353,8 +451,14 @@ Doorbell pushes have `ttl` 3600 s (the picture expires with it).
 (portal/app callers get `403 forbidden`): `GET status`; `POST bridges`, `PATCH|DELETE bridges/<id>`,
 `GET bridges/<id>/devices`; `PUT web`, `GET web/devices`; `GET|POST locks`, `PATCH|DELETE locks/<id>`,
 `POST locks/<id>/refresh`; `POST ring/login|logout|sync`; `PATCH cameras/<id>`,
-`GET cameras/<id>/snapshot`; `GET rights`, `PUT rights/<userId>`; `GET history`, `GET events/<id>`;
-`GET|PUT settings`. Secrets are write-only (`hasToken: true/false`). Each lock of `GET status` /
+`GET cameras/<id>/snapshot`; `POST modes/<locationId>/<disarmed|home|away>`; `GET rights`,
+`PUT rights/<userId>`; `GET history`, `GET events/<id>`;
+`GET|PUT settings`. Secrets are write-only (`hasToken: true/false`). `GET status` carries
+`ringModes: [{ id, name, mode, supported, why, cameras, alarm, readOnly, error, present, modeAt,
+checkedAt }]` (`why`: `null` or `alarm` | `no_cameras` | `unknown` | `error` | `disabled` |
+`read_only`); `GET rights` carries `locations: [{ id, name, supported }]` (no Ring Alarm
+locations) and `modeRights: { <userId>: [<locationId>, …] }`; `PUT rights/<userId>` takes
+`modes: { <locationId>: true | false }`. Each lock of `GET status` /
 `locks` carries `diag: { source, nukiState, via, listNukiState, updatedAt, checkedAt, movingSince,
 stableState, stale, staleWhy, raw, cloudAt, cloudAgeSec, cloudHint }` — the raw Nuki state code and
 where it came from (`list` = bridge `/list`, `lockState`, `smartlock` = web overview, `smartlock_id`
@@ -376,3 +480,5 @@ only numbers, booleans and short strings, never tokens; kept in `lock_state.nuki
 | Devices | `GET https://api.ring.com/clients_api/ring_devices` (`doorbots`, `authorized_doorbots`, `stickup_cams`) |
 | Events | `GET …/clients_api/dings/active` every 5 s; `GET …/clients_api/locations/<id>/events?limit=20` every 30 s |
 | Pictures | `GET https://app-snaps.ring.com/snapshots/next/<id>?after-ms=…&max-wait-ms=…&extras=force`; `GET …/clients_api/snapshots/image/<id>` |
+| Locations | `GET https://api.ring.com/devices/v1/locations` → `user_locations: [{ location_id, name }]`; Ring Alarm = `base_stations` of `ring_devices` with that `location_id` (ring-client-api `lib/api.js`) |
+| Mode | `GET` / `POST https://prd-api-us.prd.rings.solutions/api/v1/mode/location/<location_id>` (POST body `{ mode: "disarmed" \| "home" \| "away" }`) → `{ mode, readOnly, lastUpdateTimeMS, … }`; switchable = cameras there, no Ring Alarm, `mode` not `disabled`/`unset`, not `readOnly` (ring-client-api 14.3.0 `lib/location.js` `getLocationMode` / `setLocationMode` / `supportsLocationModeSwitching`) |

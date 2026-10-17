@@ -103,5 +103,36 @@
     return parts.join(' · ');
   }
   function actLabel(lock, a) { return T(a === 'open' && lock.type === 'opener' ? 'act.buzz' : 'act.' + a); }
-  window.DOOR = { CTX: CTX, T: T, $: $, el: el, clear: clear, api: api, toast: toast, warn: warn, errText: errText, dialog: dialog, confirmDialog: confirmDialog, imgUrl: imgUrl, showImage: showImage, when: when, tone: tone, badgeText: badgeText, stateText: stateText, actLabel: actLabel };
+  /** A 24×24 stroke icon (SVG path data from the server). */
+  function icon(d) {
+    var NS = 'http://www.w3.org/2000/svg';
+    var svg = document.createElementNS(NS, 'svg');
+    svg.setAttribute('viewBox', '0 0 24 24'); svg.setAttribute('aria-hidden', 'true');
+    var p = document.createElementNS(NS, 'path');
+    p.setAttribute('d', String(d || ''));
+    svg.appendChild(p);
+    return svg;
+  }
+  var MODES = ['disarmed', 'home', 'away'];
+  /** The name of a Ring mode ("Zuhause"); unknown values → "Unbekannt". */
+  function modeText(mode) { return mode && T('mode.' + mode) !== 'mode.' + mode ? T('mode.' + mode) : T('mode.unknown'); }
+  function modeTone(mode) { return mode === 'home' || mode === 'away' ? 'good' : ''; }
+  /**
+   * The three mode buttons like the Ring app (Inaktiv / Zuhause / Abwesend); the current one pressed.
+   * onPick(mode) → a promise; the buttons wait for it.
+   */
+  function modeSeg(name, current, disabled, onPick) {
+    var icons = CTX.modeIcons || {};
+    var box = el('div', { class: 'dr-seg', role: 'group', 'aria-label': T('mode.title') + ' – ' + name });
+    var buttons = MODES.map(function (m) {
+      return el('button', { type: 'button', 'data-mode': m, 'aria-pressed': m === current ? 'true' : 'false', disabled: !!disabled, on: { click: function () {
+        buttons.forEach(function (b) { b.disabled = true; });
+        box.setAttribute('aria-busy', 'true');
+        Promise.resolve(onPick(m)).catch(warn).then(function () { box.removeAttribute('aria-busy'); buttons.forEach(function (b) { b.disabled = !!disabled; }); });
+      } } }, [icon(icons[m]), el('span', { text: modeText(m) })]);
+    });
+    buttons.forEach(function (b) { box.appendChild(b); });
+    return box;
+  }
+  window.DOOR = { CTX: CTX, T: T, $: $, el: el, clear: clear, api: api, toast: toast, warn: warn, errText: errText, dialog: dialog, confirmDialog: confirmDialog, imgUrl: imgUrl, showImage: showImage, when: when, tone: tone, badgeText: badgeText, stateText: stateText, actLabel: actLabel, icon: icon, MODES: MODES, modeText: modeText, modeTone: modeTone, modeSeg: modeSeg };
 })();

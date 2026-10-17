@@ -19,6 +19,9 @@ const STATUS = {
   ring_not_connected: 409,
   ring_login_failed: 409,
   too_many: 409,
+  mode_alarm: 409,
+  mode_disabled: 409,
+  mode_read_only: 409,
   rate_limited: 429,
   too_soon: 429,
   ring_rate_limited: 429,
@@ -26,6 +29,10 @@ const STATUS = {
   lock_failed: 502,
   nuki_error: 502,
   ring_error: 502,
+  ring_mode_refused: 502,
+  ring_mode_failed: 502,
+  ring_mode_unreachable: 502,
+  ring_mode_mismatch: 502,
   internal: 500,
 };
 

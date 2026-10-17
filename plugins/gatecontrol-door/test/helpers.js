@@ -131,6 +131,12 @@ function fakeCloud() {
       devices: { doorbots: [{ id: 111, description: 'Klingel Haustür', kind: 'doorbell_v4', location_id: 'loc1', battery_life: '87', alerts: { connection: 'online' }, settings: { motion_detection_enabled: true } }],
         authorized_doorbots: [], stickup_cams: [{ id: 222, description: 'Garten', kind: 'stickup_cam_v4', location_id: 'loc1', battery_life: null, alerts: { connection: 'offline' }, settings: {} }] },
       active: [], events: [], snapshot: jpeg(), sessions: 0,
+      // devices/v1/locations and the location modes (prd-api-us.prd.rings.solutions/api/v1/mode/location/<id>)
+      locations: [{ location_id: 'loc1', name: 'Langenlonsheim', owner_id: 1 }],
+      modes: { loc1: { mode: 'home', readOnly: false, lastUpdateTimeMS: T0 - HOUR } },
+      modeStatus: null,    // a number → GET/POST mode answers that HTTP status
+      modeDown: false,     // the mode host does not answer
+      modeIgnore: false,   // POST answers 200 but keeps the old mode
     },
     web: { locks: [], fresh: {}, actions: [], log: [] },
   };
@@ -170,6 +176,21 @@ function fakeCloud() {
       return { status: 200, body: JSON.stringify({ access_token: `at-${R.rt}`, expires_in: 3600, refresh_token: R.validRt, scope: 'client', token_type: 'Bearer' }) };
     }
     if (!h.authorization || h.authorization !== `Bearer at-${R.rt}`) return { status: 401, body: '' };
+    if (u.hostname === 'prd-api-us.prd.rings.solutions') {
+      const m = /^\/api\/v1\/mode\/location\/([^/]+)$/.exec(u.pathname);
+      if (!m) return { status: 404, body: '' };
+      if (R.modeDown) throw Object.assign(new Error('down'), { code: 'ERR_NET' });
+      if (R.modeStatus) return { status: R.modeStatus, body: '{"error":"nope"}' };
+      const cur = R.modes[decodeURIComponent(m[1])];
+      if (!cur) return { status: 404, body: '' };
+      if ((opts.method || 'GET') === 'POST') {
+        const want = opts.json && opts.json.mode;
+        if (!['disarmed', 'home', 'away'].includes(want) || cur.readOnly) return { status: 400, body: '{}' };
+        if (!R.modeIgnore) { cur.mode = want; cur.lastUpdateTimeMS = Date.now(); }
+      }
+      return { status: 200, body: JSON.stringify({ ...cur, securityStatus: { md: 'none', returnTopic: 'x' } }) };
+    }
+    if (u.pathname === '/devices/v1/locations') return { status: 200, body: JSON.stringify({ user_locations: R.locations }) };
     if (u.hostname === 'app-snaps.ring.com') return R.snapshot ? { status: 200, bodyBase64: R.snapshot.toString('base64') } : { status: 404, body: '' };
     if (u.pathname === '/clients_api/session') { R.sessions++; return { status: 201, body: '{"profile":{}}' }; }
     if (u.pathname === '/clients_api/ring_devices') return { status: 200, body: JSON.stringify(R.devices) };

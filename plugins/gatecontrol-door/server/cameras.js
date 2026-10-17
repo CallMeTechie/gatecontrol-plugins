@@ -18,6 +18,7 @@ const rights = require('./rights');
 const history = require('./history');
 const push = require('./push');
 const notify = require('./notify');
+const modes = require('./modes');
 const tz = require('./tz');
 const { fail, rateLimiter } = require('./util');
 
@@ -140,9 +141,13 @@ async function get(gc, id) {
   return store.one(gc, 'SELECT * FROM cameras WHERE id = ?', [id]);
 }
 
-/** Device list from Ring → cameras table (new ones enabled, missing ones present = 0). */
+/**
+ * Device list from Ring → cameras table (new ones enabled, missing ones present = 0), then the
+ * locations and their modes (server/modes.js; a failure there never fails the device sync).
+ */
 async function sync(gc, now) {
-  const list = await ring.devices(gc);
+  const inv = await ring.inventory(gc);
+  const list = inv.devices;
   await store.tx(gc, async () => {
     await store.run(gc, 'UPDATE cameras SET present = 0');
     for (const d of list) {
@@ -153,7 +158,13 @@ async function sync(gc, now) {
     }
   });
   mem.lastSync = now;
+  try { await modes.syncLocations(gc, inv, now); } catch (e) { gc.log.warn('ring locations failed', (e && e.code) || (e && e.message) || 'error'); }
   return list.length;
+}
+
+/** Is the doorbell poll backing off (errors, 429)? The mode poll waits then too. */
+function blocked(now = Date.now()) {
+  return now < mem.backoffUntil;
 }
 
 // ─── events ────────────────────────────────────
@@ -284,5 +295,5 @@ async function snapshot(gc, cfg, camera, { refresh = false, userId = 0 } = {}, n
 
 module.exports = {
   STATUS_KEY, MAX_EVENT_AGE_MS, IMAGE_MAX, EVENTS_EVERY_MS, SYNC_EVERY_MS,
-  reset, status, loggedIn, loggedOut, all, get, sync, tick, handleEvent, snapshot, usableImage, jpegSize, prefsOf, _mem: mem,
+  reset, status, loggedIn, loggedOut, all, get, sync, blocked, tick, handleEvent, snapshot, usableImage, jpegSize, prefsOf, _mem: mem,
 };

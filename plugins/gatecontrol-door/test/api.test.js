@@ -10,7 +10,8 @@ const { withDoor, ringLogin, app, portal, ADMIN, ANNA, MARC, LENA, GAST, BRIDGE_
 
 test('GET me: exactly the documented shape', () => withDoor({}, async (host, { call, lockId }) => {
   const me = (await call(app(MARC), 'GET', '/me')).json;
-  assert.deepEqual(Object.keys(me).sort(), ['cameras', 'locks', 'me', 'ok', 'ring', 'serverTime']);
+  assert.deepEqual(Object.keys(me).sort(), ['cameras', 'locks', 'me', 'ok', 'ring', 'ringModes', 'serverTime']);
+  assert.deepEqual(me.ringModes, []);
   assert.deepEqual(me.me, { userId: MARC.id, name: 'Marc', canAct: true, autoUnlock: false, window: null, windowOpen: true });
   assert.deepEqual(me.locks[0], {
     id: lockId, name: 'Haustür', type: 'smartlock', right: 'lock', actions: ['lock', 'unlock'], blocked: null, confirm: ['unlock'], doorSensor: true,
@@ -51,7 +52,7 @@ test('history: own events; everything of locks with `open`; rings of viewable ca
   assert.deepEqual([p2.items.length, p2.nextCursor], [2, null]);
   assert.equal((await call(app(ANNA), 'GET', '/history', null, { limit: '500' })).json.code, 'invalid');
   const item = p1.items[1];
-  assert.deepEqual(Object.keys(item).sort(), ['action', 'at', 'caller', 'cameraId', 'cameraName', 'hasImage', 'id', 'kind', 'lockId', 'lockName', 'reason', 'reasonText', 'result', 'userId', 'userName', 'via']);
+  assert.deepEqual(Object.keys(item).sort(), ['action', 'at', 'caller', 'cameraId', 'cameraName', 'hasImage', 'id', 'kind', 'locationId', 'locationName', 'lockId', 'lockName', 'reason', 'reasonText', 'result', 'userId', 'userName', 'via']);
   assert.deepEqual([item.reason, item.reasonText], ['no_right', 'keine Berechtigung']);
 }));
 

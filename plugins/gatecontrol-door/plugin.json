@@ -4,11 +4,11 @@
     "de": "Tür & Kamera",
     "en": "Door & Camera"
   },
-  "version": "1.0.3",
+  "version": "1.1.0",
   "publisher": "CallMeTechie",
   "description": {
-    "de": "Nuki-Schlösser und -Opener (lokale Bridge oder Nuki Web) und Ring-Türklingeln/-Kameras (inoffizielle Schnittstelle, ohne Gewähr) in GateControl: Tür in App, Widget und Portal auf- und zusperren, Klingel-Push mit Bild und „Tür öffnen“, Verlauf mit Bildern, automatisches Aufsperren bei Ankunft (nur mit Zustimmung) und Sicherheits-Hinweise. Rechte pro Person und Schloss. Alles bleibt auf dem eigenen Server.",
-    "en": "Nuki smart locks and openers (local bridge or Nuki Web) and Ring doorbells/cameras (unofficial interface, no warranty) in GateControl: lock and unlock in the app, widget and portal, doorbell push with a picture and “Open door”, history with pictures, automatic unlock on arrival (opt-in only) and safety notices. Rights per person and lock. Everything stays on your own server."
+    "de": "Nuki-Schlösser und -Opener (lokale Bridge oder Nuki Web) und Ring-Türklingeln/-Kameras (inoffizielle Schnittstelle, ohne Gewähr) in GateControl: Tür in App, Widget und Portal auf- und zusperren, Klingel-Push mit Bild und „Tür öffnen“, Ring-Modus (Inaktiv / Zuhause / Abwesend) für Schnellaktionen und Regeln, Verlauf mit Bildern, automatisches Aufsperren bei Ankunft (nur mit Zustimmung) und Sicherheits-Hinweise. Rechte pro Person und Schloss. Alles bleibt auf dem eigenen Server.",
+    "en": "Nuki smart locks and openers (local bridge or Nuki Web) and Ring doorbells/cameras (unofficial interface, no warranty) in GateControl: lock and unlock in the app, widget and portal, doorbell push with a picture and “Open door”, Ring mode (Disarmed / Home / Away) for quick actions and rules, history with pictures, automatic unlock on arrival (opt-in only) and safety notices. Rights per person and lock. Everything stays on your own server."
   },
   "gatecontrol": ">=1.169.0",
   "entry": "server/index.js",
@@ -18,7 +18,8 @@
         "api.nuki.io",
         "oauth.ring.com",
         "api.ring.com",
-        "app-snaps.ring.com"
+        "app-snaps.ring.com",
+        "prd-api-us.prd.rings.solutions"
       ],
       "homeTargets": [
         {

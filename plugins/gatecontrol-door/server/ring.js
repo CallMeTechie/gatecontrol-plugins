@@ -8,7 +8,7 @@
 // devices, events and pictures.
 //
 // Hosts (plugin.json permissions.network.internet): oauth.ring.com,
-// api.ring.com, app-snaps.ring.com.
+// api.ring.com, app-snaps.ring.com, prd-api-us.prd.rings.solutions.
 //
 // Authentication (OAuth password grant of the Android app, client_id
 // "ring_official_android", scope "client"):
@@ -42,6 +42,19 @@
 // Pictures: GET https://app-snaps.ring.com/snapshots/next/<id>?after-ms=…&max-wait-ms=…&extras=force
 //   (a fresh snapshot, ring-client-api getNextSnapshot) and
 //   GET clients_api/snapshots/image/<id> (the latest stored one, python-ring-doorbell).
+// Location modes (Ring app: Inaktiv / Zuhause / Abwesend — the mode decides which
+//   cameras record and notify), as ring-client-api 14.3.0 lib/location.js and
+//   lib/api.js do it (same headers and session as every other request):
+//   GET https://api.ring.com/devices/v1/locations → { user_locations: [{ location_id, name, owner_id }] }
+//     (api.js fetchRawLocations)
+//   GET  https://prd-api-us.prd.rings.solutions/api/v1/mode/location/<location_id>
+//     → { mode: disarmed|home|away|disabled|unset, readOnly, lastUpdateTimeMS, … }   (getLocationMode)
+//   POST the same URL { mode: 'disarmed'|'home'|'away' } → the same object with the new mode (setLocationMode)
+//   (the app API host of rest-client.js appApiBaseUrl; older clients used app.ring.com/api/v1/).
+//   A location supports switching (supportsLocationModeSwitching) when it has cameras, NO Ring
+//   Alarm base station (ring_devices base_stations with its location_id — that location's mode
+//   belongs to the alarm's security panel, which this plugin never touches), and the mode is
+//   neither 'disabled' nor 'unset' and not readOnly.
 //
 // Errors are codes only (never tokens, passwords or Ring's answer text):
 // ring_not_connected, ring_login_failed (token no longer valid → log in
@@ -53,6 +66,10 @@ const { fail } = require('./util');
 const OAUTH = 'https://oauth.ring.com/oauth/token';
 const API = 'https://api.ring.com/clients_api/';
 const SNAPS = 'https://app-snaps.ring.com/snapshots/next/';
+const DEVICES_API = 'https://api.ring.com/devices/v1/';
+const APP_API = 'https://prd-api-us.prd.rings.solutions/api/v1/';
+const MODES = Object.freeze(['disarmed', 'home', 'away']);
+const LOCATION_RE = /^[0-9A-Za-z_-]{1,48}$/;
 const CLIENT_ID = 'ring_official_android';
 const USER_AGENT = 'android:com.ringapp';
 const API_VERSION = 11;
@@ -227,8 +244,11 @@ function batteryOf(d) {
   return Number.isFinite(n) && n >= 0 && n <= 100 ? Math.round(n) : null;
 }
 
-/** GET ring_devices → doorbells and cameras: [{ ringId, name, kind, doorbell, locationId, battery, online, motionDetection }] */
-async function devices(gc) {
+/**
+ * GET ring_devices → { devices: doorbells and cameras [{ ringId, name, kind, doorbell, locationId, battery,
+ * online, motionDetection }], alarmLocations: [location ids with a Ring Alarm base station] }
+ */
+async function inventory(gc) {
   const body = await getJson(gc, 'ring_devices');
   const out = [];
   const add = (list, doorbell) => {
@@ -245,7 +265,76 @@ async function devices(gc) {
   add(body.doorbots, true);
   add(body.authorized_doorbots, true);
   add(body.stickup_cams, false);
+  const alarmLocations = [...new Set((Array.isArray(body.base_stations) ? body.base_stations : [])
+    .filter((b) => b && b.location_id != null).map((b) => String(b.location_id).slice(0, 80)))];
+  return { devices: out, alarmLocations };
+}
+
+/** The doorbells and cameras of GET ring_devices (see inventory). */
+async function devices(gc) {
+  return (await inventory(gc)).devices;
+}
+
+/** GET devices/v1/locations → [{ locationId, name }] (locations with an id the plugin can use). */
+async function locations(gc) {
+  const res = await request(gc, DEVICES_API + 'locations');
+  if (res.status < 200 || res.status >= 300) throw fail('ring_error', { httpStatus: res.status });
+  const body = parse(res);
+  const list = body && Array.isArray(body.user_locations) ? body.user_locations : null;
+  if (!list) throw fail('ring_error');
+  const out = [];
+  for (const l of list) {
+    const id = l && l.location_id != null ? String(l.location_id) : '';
+    if (!LOCATION_RE.test(id) || out.some((x) => x.locationId === id)) continue;
+    const name = typeof l.name === 'string' && l.name.trim() ? l.name.replace(/[\0-\x1f\x7f]/g, ' ').trim().slice(0, 60) : null;
+    out.push({ locationId: id, name });
+  }
   return out;
+}
+
+/** A mode answer → { mode, readOnly, at } (mode a short [a-z_] word or null). */
+function modeOf(body) {
+  if (!body || typeof body !== 'object') return null;
+  const mode = typeof body.mode === 'string' && /^[a-z_]{1,20}$/.test(body.mode) ? body.mode : null;
+  if (!mode) return null;
+  const at = Number(body.lastUpdateTimeMS);
+  return { mode, readOnly: body.readOnly === true, at: Number.isFinite(at) && at > 1e12 ? Math.round(at) : null };
+}
+
+/** A failed mode request → the error: 4xx → ring_mode_refused, else ring_mode_failed (both with the HTTP status, extra.httpStatus). */
+function modeError(res) {
+  const status = res && Number.isInteger(res.status) ? res.status : 0;
+  return fail(status >= 400 && status < 500 ? 'ring_mode_refused' : 'ring_mode_failed', { httpStatus: status });
+}
+
+/** GET mode/location/<id> → { mode, readOnly, at }. Network trouble → ring_mode_unreachable. */
+async function getMode(gc, locationId) {
+  if (!LOCATION_RE.test(String(locationId || ''))) throw fail('not_found');
+  let res;
+  try { res = await request(gc, `${APP_API}mode/location/${encodeURIComponent(locationId)}`); } catch (e) {
+    throw e && e.code === 'ring_error' ? fail('ring_mode_unreachable') : e;
+  }
+  if (res.status < 200 || res.status >= 300) throw modeError(res);
+  const m = modeOf(parse(res));
+  if (!m) throw fail('ring_mode_failed', { httpStatus: res.status });
+  return m;
+}
+
+/**
+ * POST mode/location/<id> { mode } → { mode, readOnly, at } as Ring answers (the new mode).
+ * Ring refuses (4xx) → ring_mode_refused, other answers → ring_mode_failed (with status),
+ * no answer → ring_mode_unreachable; 401 / 429 as every request (ring_login_failed, ring_rate_limited).
+ */
+async function setMode(gc, locationId, mode) {
+  if (!LOCATION_RE.test(String(locationId || '')) || !MODES.includes(mode)) throw fail('invalid');
+  let res;
+  try { res = await request(gc, `${APP_API}mode/location/${encodeURIComponent(locationId)}`, { method: 'POST', json: { mode } }); } catch (e) {
+    throw e && e.code === 'ring_error' ? fail('ring_mode_unreachable') : e;
+  }
+  if (res.status < 200 || res.status >= 300) throw modeError(res);
+  const m = modeOf(parse(res));
+  if (!m) throw fail('ring_mode_failed', { httpStatus: res.status });
+  return m;
 }
 
 const EVENT_KINDS = new Set(['ding', 'motion']);
@@ -307,7 +396,8 @@ async function latestSnapshot(gc, ringId) {
 }
 
 module.exports = {
-  OAUTH, API, SNAPS, CLIENT_ID, USER_AGENT, SECRET, HWID,
-  login, logout, hasToken, hardwareId, accessToken, request, devices, activeDings, locationEvents, nextSnapshot, latestSnapshot, reset,
+  OAUTH, API, SNAPS, DEVICES_API, APP_API, MODES, LOCATION_RE, CLIENT_ID, USER_AGENT, SECRET, HWID,
+  login, logout, hasToken, hardwareId, accessToken, request, devices, inventory, locations, getMode, setMode,
+  activeDings, locationEvents, nextSnapshot, latestSnapshot, reset,
   _mem: mem,
 };

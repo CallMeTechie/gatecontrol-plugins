@@ -1,4 +1,4 @@
-/* Admin page "Geräte": Nuki bridges and web token, locks, Ring login wizard, cameras ↔ lock. */
+/* Admin page "Geräte": Nuki bridges and web token, locks, Ring login wizard, Ring modes, cameras ↔ lock. */
 (function () {
   'use strict';
   var D = window.DOOR;
@@ -150,6 +150,33 @@
     $('#dr-r-sync').hidden = !r.connected;
   }
 
+  /** Ring modes: per location the current mode and the three buttons (or why it cannot switch). */
+  function renderModes() {
+    var list = S.ringModes || [];
+    $('#dr-modes-card').hidden = !S.ring.connected && !list.length;
+    var box = D.clear($('#dr-modes'));
+    list.forEach(function (l) {
+      var shown = l.supported ? D.modeText(l.mode) : T('mode.' + (l.mode || 'unknown'));
+      var sub = [l.cameras === 1 ? T('mode.camera_one') : T('mode.cameras', { n: l.cameras }), l.modeAt ? T('mode.changed', { when: D.when(l.modeAt) }) : null, l.checkedAt ? T('mode.checked', { when: D.when(l.checkedAt) }) : null].filter(Boolean).join(' · ');
+      var why = l.why ? (l.why === 'error' ? T('mode.why_error', { reason: T('reason.' + l.error) }) : T('mode.why_' + l.why)) : null;
+      box.appendChild(el('div', { class: 'dr-item' }, [
+        el('div', { class: 'dr-item-main' }, [
+          el('div', { class: 'dr-item-title' }, [l.name + ' ', l.alarm ? null : el('span', { class: 'dr-badge', 'data-tone': l.supported ? D.modeTone(l.mode) : '', text: shown })]),
+          el('div', { class: 'dr-item-sub', text: sub }),
+          why ? el('div', { class: 'dr-note dr-cloud-hint', role: 'note', text: why }) : null,
+        ]),
+        l.supported ? D.modeSeg(l.name, l.mode, false, function (m) {
+          return D.api('POST', 'admin/modes/' + encodeURIComponent(l.id) + '/' + m).then(function (r) {
+            D.toast(r.message);
+            S.ringModes = S.ringModes.map(function (x) { return x.id === l.id ? r.ringMode : x; });
+            renderModes();
+          }).catch(function (e) { D.warn(e); return load(); });
+        }) : null,
+      ]));
+    });
+    $('#dr-no-modes').hidden = list.length > 0;
+  }
+
   function renderCams() {
     var box = D.clear($('#dr-cams'));
     S.cameras.forEach(function (c) {
@@ -173,7 +200,7 @@
     return D.api('GET', 'admin/status').then(function (r) {
       S = r;
       $('#dr-web-state').textContent = T(r.web.hasToken ? 'dev.token_set' : 'dev.token_missing');
-      renderBridges(); renderLocks(); renderRing(); renderCams();
+      renderBridges(); renderLocks(); renderRing(); renderModes(); renderCams();
     }).catch(D.warn);
   }
 
