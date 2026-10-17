@@ -90,6 +90,8 @@ test('texts: every key used by the pages exists in de and en; both languages hav
     ...require('../server/presence').TRIGGERS.flatMap((x) => ['rule.m_trig_' + x, 'rule.m_trig_' + x + '_hint']),
     ...Object.keys(require('../server/presence').PLACE_TRIGGERS).map((x) => 'rule.log_' + x),
     'rule.m_on', 'rule.m_off',
+    // 1.6.0: the results of a messenger action in the rule log and on the page „Funktionen“
+    ...['unavailable', 'group_off', 'not_found', 'forbidden', 'invalid', 'rate_limit', 'timeout', 'failed', 'no_recipients'].map((x) => 'rule.msg_err.' + x),
     ...['pending', 'answered', 'declined', 'failed', 'expired'].map((x) => 'status.' + x),
     ...['no_permission', 'location_off', 'timeout'].map((x) => 'fail.' + x),
     'decline.busy', 'problem.timezone',
@@ -121,10 +123,14 @@ test('Leaflet: one constant (server/ui.js), nowhere else', () => {
 
 test('plugin.json: permissions (kiosk, actions), app tab, maps, the ten topics with SOS allowed critical', () => {
   assert.equal(manifest.id, 'gatecontrol-familie');
-  assert.equal(manifest.version, '1.5.2');
+  assert.equal(manifest.version, '1.6.0');
+  // 1.6.0 stays on 1.173.0: the messenger services (GateControl ≥ 1.177.0) are optional — an older host ignores
+  // permissions.services and has no gc.services, so the group and the rule action stay hidden there
   assert.equal(manifest.gatecontrol, '>=1.173.0', 'target states of switches (gc.actions.run state, verbs/targets/device in gc.actions.list) need GateControl 1.173.0');
   const p = manifest.permissions;
   assert.deepEqual([p.storage, p.portal, p.users, p.app, p.notify, p.background, p.kiosk, p.actions], [true, true, true, true, { perHour: 120 }, { intervalSeconds: 60 }, true, true]);
+  assert.deepEqual(p.services, ['gatecontrol-messenger:sync_group', 'gatecontrol-messenger:send_message']);
+  assert.equal(manifest.services, undefined, 'Familie offers no services of its own');
   assert.deepEqual(manifest.ui.pages.map((x) => x.id), ['members', 'modules', 'presence', 'log']);
   assert.deepEqual(manifest.ui.pages[2].title, { de: 'Anwesenheit & Smart Home', en: 'Presence & smart home' });
   assert.deepEqual(manifest.ui.settings.map((x) => x.key), ['timezone', 'notify_lang', 'lat', 'lon']);

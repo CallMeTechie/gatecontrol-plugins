@@ -454,6 +454,7 @@
       return Promise.all([A.api('GET', 'presence/rules'), A.api('GET', 'presence/actions'), A.api('GET', 'presence/places')]).then(function (x) {
         presData.rules = x[0].rules;
         presData.log = x[0].log;
+        presData.messenger = x[0].messenger || null; // 1.6.0: the rule action „Messenger-Nachricht senden“
         presData.actions = x[1].actions;
         presData.actionsAvailable = x[1].available;
         presData.places = x[2].places;

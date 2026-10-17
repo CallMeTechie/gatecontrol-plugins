@@ -22,6 +22,11 @@
 //                                              (quick actions of a rule saved here run as the administrator)
 //   GET    admin/presence/places               1.5.0: the rule places (also in GET admin/presence: places, home)
 //   POST   admin/presence/places               PATCH|DELETE admin/presence/places/<id>   (server/ruleplaces.js)
+//   1.6.0 — the Messenger plugin (server/messenger.js; also `messenger` in GET admin/status, GET admin/presence
+//                                              and GET presence/rules):
+//   GET    admin/messenger                     { messenger: { api, available, reason, group, title, sync, checkedAt } }
+//   PUT    admin/messenger                     { group: bool } — the group „Familie“ on / off (on: synced at once)
+//   POST   admin/messenger/sync                sync the group now (also after every member change here)
 
 const store = require('./store');
 const tz = require('./tz');
@@ -32,6 +37,7 @@ const shopping = require('./shopping');
 const kiosk = require('./kiosk');
 const presence = require('./presence');
 const ruleplaces = require('./ruleplaces');
+const messenger = require('./messenger');
 const { fail, posInt, iso } = require('./util');
 
 const DAY = 86400000;
@@ -57,6 +63,7 @@ async function status(gc, cfg, now) {
     modules: { ...cfg.modules },
     settings: { timezone: cfg.tz, timezoneSetting: cfg.tzSetting, notifyLang: cfg.lang, problems: cfg.problems, location: cfg.location },
     wall: { listId: cfg.wallList || null, lists: (await shopping.summary(gc)).map((l) => ({ id: l.id, name: l.name })) },
+    messenger: await messenger.info(gc, cfg),
     today,
   };
 }
@@ -147,12 +154,40 @@ async function presenceRoute(req, gc, seg, cfg, now, m, body) {
   throw fail('not_found');
 }
 
+/** 1.6.0: the group „Familie“ in the Messenger plugin. */
+async function messengerRoute(gc, seg, cfg, now, m, body) {
+  const [, , b] = seg;
+  if (seg.length === 2 && m === 'GET') return { messenger: await messenger.info(gc, cfg) };
+  if (seg.length === 2 && (m === 'PUT' || m === 'PATCH')) {
+    if (typeof body.group !== 'boolean') throw fail('invalid', { field: 'group' });
+    await messenger.setGroup(gc, body.group);
+    const next = await config.load(gc);
+    if (next.messengerGroup) await messenger.sync(gc, await members.load(gc, tz.localDate(now, next.tz)), next, now, { force: true });
+    return { messenger: await messenger.info(gc, next) };
+  }
+  if (b === 'sync' && seg.length === 3 && m === 'POST') {
+    if (!cfg.messengerGroup) throw fail('invalid', { field: 'group' });
+    await messenger.sync(gc, await members.load(gc, tz.localDate(now, cfg.tz)), cfg, now, { force: true });
+    return { messenger: await messenger.info(gc, cfg) };
+  }
+  throw fail('not_found');
+}
+
+/** After a member change: the messenger group follows at once (when on; never fails the change). */
+async function memberChanged(gc, cfg, now) {
+  if (!cfg.messengerGroup) return;
+  try {
+    await messenger.sync(gc, await members.load(gc, tz.localDate(now, cfg.tz)), cfg, now);
+  } catch (e) { gc.log.warn('messenger sync after member change failed', (e && (e.code || e.message)) || 'error'); }
+}
+
 async function route(req, gc, seg, cfg, now) {
   const m = String(req.method || 'GET').toUpperCase();
   const body = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
   const [, a, b] = seg;
   if (a === 'presence') return presenceRoute(req, gc, seg, cfg, now, m, body);
   if (a === 'status' && seg.length === 2 && m === 'GET') return status(gc, cfg, now);
+  if (a === 'messenger') return messengerRoute(gc, seg, cfg, now, m, body);
   if (a === 'log' && seg.length === 2 && m === 'GET') return log(gc, cfg, req.query, now);
   if (a === 'modules' && seg.length === 2 && (m === 'PUT' || m === 'PATCH')) {
     const patch = {};
@@ -183,6 +218,7 @@ async function route(req, gc, seg, cfg, now) {
     if (seg.length === 2 && m === 'POST') {
       const id = await store.tx(gc, () => members.add(gc, fam, body, now));
       await kiosk.roleChanged(gc, id, null, await kiosk.roleOf(gc, id));
+      await memberChanged(gc, cfg, now);
       const fresh = await members.load(gc, today);
       return { member: adminMember(fresh.byId.get(id) || fresh.walls.get(id), cfg, await presence.rings(gc, fresh, cfg, false)) };
     }
@@ -192,6 +228,7 @@ async function route(req, gc, seg, cfg, now) {
       const before = await kiosk.roleOf(gc, id);
       await store.tx(gc, () => members.update(gc, fam, id, body));
       await kiosk.roleChanged(gc, id, before, await kiosk.roleOf(gc, id));
+      await memberChanged(gc, cfg, now);
       const fresh = await members.load(gc, today);
       const mm = fresh.byId.get(id) || fresh.walls.get(id);
       if (!mm) throw fail('not_found');
@@ -201,6 +238,7 @@ async function route(req, gc, seg, cfg, now) {
       const before = await kiosk.roleOf(gc, id);
       await store.tx(gc, () => members.remove(gc, id));
       await kiosk.roleChanged(gc, id, before, null);
+      await memberChanged(gc, cfg, now);
       return {};
     }
   }

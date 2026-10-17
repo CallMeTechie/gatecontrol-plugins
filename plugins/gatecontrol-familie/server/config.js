@@ -11,6 +11,9 @@
 // 1.2.0 adds allowance (default off), wishes (on), expenses (off), board (on),
 // meals (off) and presence (off), and the declared settings lat / lon (the
 // home's location, only for the presence condition "after sunset").
+//
+// 1.6.0: messenger_group (default on) — the group „Familie“ in the Messenger
+// plugin (server/messenger.js), switched on the page „Funktionen“.
 
 const tz = require('./tz');
 
@@ -41,7 +44,7 @@ function coord(v, max) {
   return Number.isFinite(n) && Math.abs(n) <= max ? n : null;
 }
 
-/** settings (gc.settings.all()) → { tz, tzSetting, lang, modules, wallList, location, problems } */
+/** settings (gc.settings.all()) → { tz, tzSetting, lang, modules, wallList, location, messengerGroup, problems } */
 function fromSettings(s) {
   const v = s || {};
   const problems = [];
@@ -58,7 +61,8 @@ function fromSettings(s) {
   const lat = coord(v.lat, 90);
   const lon = coord(v.lon, 180);
   const location = lat != null && lon != null && !(lat === 0 && lon === 0) ? { lat, lon } : null;
-  return { tz: zone, tzSetting: raw, lang: v.notify_lang === 'en' ? 'en' : 'de', modules, wallList, location, problems };
+  const messengerGroup = bool(v.messenger_group, true);
+  return { tz: zone, tzSetting: raw, lang: v.notify_lang === 'en' ? 'en' : 'de', modules, wallList, location, messengerGroup, problems };
 }
 
 async function load(gc) {

@@ -3,6 +3,43 @@
 Die Familie in der GateControl-App (eigener Tab), im Portal (eigener Tab „Familie“) und auf
 drei Admin-Seiten. Alles bleibt auf dem eigenen Server.
 
+## 1.6.0
+Zusammenarbeit mit dem **Messenger-Plugin** (gatecontrol-messenger ≥ 1.0.0). Die Messenger-Funktionen
+brauchen **GateControl ≥ 1.177.0** (Dienste zwischen Plugins); Familie selbst läuft weiterhin ab
+GateControl 1.173.0 – ohne Messenger oder auf älterem GateControl ändert sich nichts, die neuen Teile
+bleiben einfach ausgeblendet. Neu beim Aktualisieren: die Berechtigung „Dienste anderer Plugins“
+(`gatecontrol-messenger: sync_group, send_message`).
+- **Gruppe „Familie“ im Messenger:** Familie legt im Messenger eine Gruppe mit allen
+  Familienmitgliedern an (Eltern und Kinder, keine Wand-Tablets) und hält sie aktuell – wer auf der
+  Seite „Mitglieder“ dazukommt, ist sofort drin, wer entfernt wird oder Wand-Tablet wird, ist
+  draußen; ein deaktiviertes Konto fällt beim nächsten Abgleich heraus. Im Messenger kann niemand
+  die Mitglieder ändern oder austreten, stummschalten geht. Abgeglichen wird nach jeder Änderung,
+  einmal nach jedem Start und sonst alle 6 Stunden; der Abgleich ist wiederholbar, ohne etwas
+  doppelt anzulegen. Der Gruppenname folgt der Sprache der Benachrichtigungen („Familie“ / „Family“).
+- **Schalter auf der Seite „Funktionen“** (Karte „Messenger“, Standard: an): zeigt, ob der Messenger
+  verfügbar ist, wann zuletzt abgeglichen wurde, und hat „Jetzt abgleichen“. Ausgeschaltet gleicht
+  Familie die Gruppe nicht mehr ab; eine schon angelegte Gruppe bleibt im Messenger so, wie sie ist.
+- **Regel-Aktion „Messenger-Nachricht senden“** (Regel-Fenster → „Was soll passieren?“ → Tab
+  „Messenger“): eine Nachricht von „GateControl“ in die Gruppe „Familie“ oder an einzelne Personen
+  (dieselben Personen-Chips wie bei der Mitteilung; jede Person bekommt sie in ihrem eigenen Chat
+  „Familie“). Text mit denselben Platzhaltern wie die Mitteilung – `{name}` die Person, `{place}` der
+  Ort –, leer = Standardtext. Wer die Regel auslöst, bekommt die Nachricht an einzelne Personen nicht.
+- **Ohne Messenger:** Der Tab erscheint nur, solange der Messenger läuft. Verschwindet er (deinstalliert,
+  gestoppt), läuft die Regel trotzdem – nur diese Aktion wird übersprungen, im Regel-Protokoll steht
+  „Messenger nicht verfügbar“, im Plugin-Log eine Warnung; die Regel behält die Aktion. Familie schaut
+  alle 5 Minuten nach, ob er wieder da ist (das kostet nichts: GateControl zählt solche Aufrufe nicht).
+- GateControl erlaubt 60 Dienst-Aufrufe pro Stunde: der Abgleich braucht nur wenige am Tag; eine
+  Regel-Aktion einen pro Lauf (Gruppe) bzw. einen pro Person. Ist die Gruppe ausgeschaltet, prüft
+  Familie die Verfügbarkeit mit einer leeren Nachricht, die der Messenger ablehnt (Eintrag
+  `service_refused` in dessen Protokoll) – nur solange unbekannt, dann alle 6 Stunden.
+- **API:** Regel-Aktion `{ type: 'messenger', to: 'family' | [userId] (1–20 Mitglieder), text? (≤ 500) }`;
+  im Regel-Protokoll `{ type: 'messenger', to, ok, sent, error }` mit `error` `unavailable` |
+  `group_off` | `not_found` | `forbidden` | `invalid` | `rate_limit` | `timeout` | `failed` |
+  `no_recipients`. `GET presence/rules` und `GET admin/presence` tragen `messenger: { api, available,
+  reason, group, title, sync, checkedAt }` (der Editor bietet die Aktion nur bei `available: true`).
+- Admin-API: `GET admin/messenger`, `PUT admin/messenger { group }`, `POST admin/messenger/sync`;
+  `GET admin/status` trägt `messenger`.
+
 ## 1.5.2
 - **Mitteilung an einzelne Personen:** Im Regel-Fenster („Was soll passieren?“ → Mitteilung) lassen
   sich neben „Eltern“ und „alle“ jetzt auch einzelne Personen wählen – eine oder mehrere, z. B. nur

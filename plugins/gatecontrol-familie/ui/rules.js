@@ -15,7 +15,12 @@
    in Wann? (a person or „Jemand“, a place, „Orte verwalten“, who shares
    places), the section „Orte“ (cards, the editor with the OpenStreetMap map,
    ui/map.js pick()) on the admin page and in the portal; dialogs opened from
-   the rule dialog stack on top of it (Escape closes the top one). */
+   the rule dialog stack on top of it (Escape closes the top one).
+   1.6.0: „Messenger-Nachricht senden“ as its own tab next to the notification —
+   into the group „Familie“ or to single people (the person chips of the
+   notification) — only while the Messenger plugin is available
+   (data.messenger.available); a rule that already has one keeps it and shows
+   „Messenger nicht verfügbar“ meanwhile. */
 (function () {
   'use strict';
   var A = window.FA, T = A.T, el = A.el;
@@ -25,6 +30,7 @@
   var RADIUS = { min: 50, max: 5000, step: 50, def: 200 };
   var ICON_ARROW = 'M5 12h14M13 6l6 6-6 6';
   var MAX_STEPS = 10;
+  var MSG_ERRORS = ['unavailable', 'group_off', 'not_found', 'forbidden', 'invalid', 'rate_limit', 'timeout', 'failed', 'no_recipients'];
   var ICON_RE = /^[MmLlHhVvCcSsQqTtAaZz0-9 .,-]{1,2000}$/;
   var ICON = {
     away: 'M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9',
@@ -45,6 +51,7 @@
     pin: 'M12 21s-6.5-5.6-6.5-11a6.5 6.5 0 0 1 13 0c0 5.4-6.5 11-6.5 11zM12 12.5a2.5 2.5 0 1 0 0-5a2.5 2.5 0 0 0 0 5',
     pinIn: 'M10 21s-6-5.2-6-10a6 6 0 0 1 12 0c0 1-.3 2.1-.8 3.1M10 13a2 2 0 1 0 0-4a2 2 0 0 0 0 4M14 19h7M18 16l3 3-3 3',
     pinOut: 'M10 21s-6-5.2-6-10a6 6 0 0 1 12 0c0 1-.3 2.1-.8 3.1M10 13a2 2 0 1 0 0-4a2 2 0 0 0 0 4M21 19h-7M17 16l-3 3 3 3',
+    chat: 'M4 5h16v11H9l-5 4z',
     group: 'M9 11a3.5 3.5 0 1 0 0-7a3.5 3.5 0 0 0 0 7M2.5 20a6.5 6.5 0 0 1 13 0M16 4.2a3.5 3.5 0 0 1 0 6.6M18 14a6.5 6.5 0 0 1 3.5 6',
   };
   var TRIGGER_ICON = { all_away: ICON.away, first_home: ICON.home, child_home_alone: ICON.child, person_home: ICON.personIn, person_away: ICON.personOut, place_enter: ICON.pinIn, place_exit: ICON.pinOut };
@@ -79,9 +86,24 @@
     return a.to === 'parents' ? T('rule.to_parents') : (a.to === 'all' ? T('rule.to_all') : (a.to || []).map(function (id) { return nameOf(data, id); }).join(', '));
   }
 
+  function msgTo(a, data) {
+    return a.to === 'family' ? T('rule.msg_to_family') : (a.to || []).map(function (id) { return nameOf(data, id); }).join(', ');
+  }
+
   function actionText(a, data) {
     if (a.type === 'quick_action') return quickText(a);
+    if (a.type === 'messenger') return T('rule.messenger_chip', { to: msgTo(a, data), text: a.text || T('rule.text_default') });
     return T('rule.notify_chip', { to: notifyTo(a, data), text: a.text || T('rule.text_default') });
+  }
+
+  /** 1.6.0: is the Messenger there (data.messenger from the server; missing = an older server → no)? */
+  function msgAvailable(data) { return !!(data.messenger && data.messenger.available === true); }
+  /** A messenger action that cannot run now: 'gone' (no messenger), 'group_off' (the group is switched off) or null. */
+  function msgProblem(a, data) {
+    if (a.type !== 'messenger') return null;
+    if (!msgAvailable(data)) return 'gone';
+    if (a.to === 'family' && !(data.messenger && data.messenger.group)) return 'group_off';
+    return null;
   }
 
   function conditionText(rule) {
@@ -100,6 +122,11 @@
       var chips = rule.actions.map(function (a) {
         var gone = a.type === 'quick_action' && a.available === false;
         var needs = a.type === 'quick_action' && !gone && a.needsTarget === true;
+        var mp = msgProblem(a, data);
+        if (mp) {
+          return el('span', { class: 'fa-rule-act is-gone', text: actionText(a, data) + ' – ' + T(mp === 'gone' ? 'rule.msg_gone' : 'rule.msg_group_off'),
+            title: T(mp === 'gone' ? 'rule.msg_gone_hint' : 'rule.msg_group_off_hint') });
+        }
         var text = actionText(a, data) + (gone ? ' – ' + T('rule.action_gone') : (needs ? ' – ' + T('rule.needs_target') : ''));
         return el('span', { class: 'fa-rule-act' + (gone ? ' is-gone' : '') + (needs ? ' is-needs' : ''), text: text, title: gone ? T('rule.action_gone_hint') : (needs ? T('rule.needs_target_hint') : null) });
       });
@@ -150,6 +177,9 @@
     listed.forEach(function (a) { byKey[keyOf(a.plugin, a.id)] = a; });
     var people = data.members || [];
     var oldNotify = r.actions.filter(function (a) { return a.type === 'notify'; })[0] || null;
+    var oldMsg = r.actions.filter(function (a) { return a.type === 'messenger'; })[0] || null;
+    var msgOn = msgAvailable(data);
+    var msgGroup = !!(data.messenger && data.messenger.group);
     var st = {
       name: r.name || '', trigger: r.trigger, userId: r.userId != null && !isPlace(r.trigger) ? r.userId : (people[0] ? people[0].userId : null),
       // a place rule: the person (null = anyone who shares places) and the place
@@ -161,12 +191,16 @@
         return { key: keyOf(a.plugin, a.id), plugin: a.plugin, id: a.id, state: a.state === 'on' || a.state === 'off' ? a.state : null, title: a.title || null, verb: a.verb || null };
       }),
       notify: !!oldNotify, notifyTo: oldNotify ? oldNotify.to : 'parents', text: oldNotify && oldNotify.text ? oldNotify.text : '',
+      // 1.6.0: the messenger message (one per rule): 'family' or [userId]
+      msg: !!oldMsg, msgTo: oldMsg ? oldMsg.to : (msgGroup ? 'family' : []), msgText: oldMsg && oldMsg.text ? oldMsg.text : '',
       query: '', tab: null,
     };
     // plugin tabs in the order of the list, then the notification
     var tabs = [];
     listed.forEach(function (a) { if (!tabs.some(function (t) { return t.id === a.plugin; })) tabs.push({ id: a.plugin, label: a.pluginName || a.plugin }); });
     tabs.push({ id: '@notify', label: T('rule.m_notify_tab') });
+    // only with the Messenger plugin — or to keep / remove the message of a rule that already has one
+    if (msgOn || oldMsg) tabs.push({ id: '@messenger', label: T('rule.m_msg_tab') });
     var firstNeeds = st.steps.filter(function (s) { return needsTarget(s); })[0];
     st.tab = firstNeeds ? firstNeeds.plugin : (st.steps[0] && byKey[st.steps[0].key] ? st.steps[0].plugin : tabs[0].id);
 
@@ -175,7 +209,7 @@
     var person = function () { return st.trigger === 'person_home' || st.trigger === 'person_away'; };
     var place = function () { return isPlace(st.trigger); };
     function needsTarget(s) { var a = byKey[s.key]; return !s.state && !!a && a.kind === 'toggle'; }
-    function stepCount() { return st.steps.length + (st.notify ? 1 : 0); }
+    function stepCount() { return st.steps.length + (st.notify ? 1 : 0) + (st.msg ? 1 : 0); }
 
     // ── header ──
     var nameInput = el('input', { class: 'fa-rm-name-input', type: 'text', maxlength: '60', value: st.name, 'aria-label': T('rule.m_name_aria'), placeholder: T('rule.m_name_ph'), autocomplete: 'off', 'data-k': 'name' });
@@ -357,6 +391,7 @@
     ]);
     function countOf(tabId) {
       if (tabId === '@notify') return st.notify ? 1 : 0;
+      if (tabId === '@messenger') return st.msg ? 1 : 0;
       return st.steps.filter(function (s) { return s.plugin === tabId; }).length;
     }
     function renderWhat() {
@@ -369,11 +404,12 @@
         tabBar.appendChild(el('button', {
           type: 'button', role: 'tab', class: 'fa-rm-tab', 'aria-selected': on ? 'true' : 'false', 'aria-controls': uid + '-panel', tabindex: on || (q && i === 0) ? '0' : '-1', 'data-k': 'tab-' + t.id,
           on: { click: function () { selectTab(t.id); } },
-        }, [t.id === '@notify' ? A.svg(ICON.bell, 16) : null, el('span', { text: t.label }), n ? el('span', { class: 'fa-rm-count', text: String(n) }) : null,
+        }, [t.id === '@notify' ? A.svg(ICON.bell, 16) : (t.id === '@messenger' ? A.svg(ICON.chat, 16) : null), el('span', { text: t.label }), n ? el('span', { class: 'fa-rm-count', text: String(n) }) : null,
           n ? el('span', { class: 'fa-sr', text: ' – ' + T('rule.m_tab_count', { n: n }) }) : null]));
       });
       A.clear(cards);
       if (!q && st.tab === '@notify') { cards.appendChild(notifyPanel()); restore(focus); return; }
+      if (!q && st.tab === '@messenger') { cards.appendChild(messengerPanel()); restore(focus); return; }
       var visible = listed.filter(function (a) {
         if (!q) return a.plugin === st.tab;
         var hay = [a.title, a.subtitle, a.pluginName, a.device && a.device.title, a.device && a.device.subtitle, a.verbs && a.verbs.on, a.verbs && a.verbs.off].join(' ').toLowerCase();
@@ -483,6 +519,47 @@
       ]);
     }
 
+    /** 1.6.0: „Messenger-Nachricht senden“ — the group „Familie“ or single people (the chips of the notification). */
+    function messengerPanel() {
+      var picked = Array.isArray(st.msgTo) ? st.msgTo : [];
+      function togglePerson(id) {
+        var next = picked.indexOf(id) >= 0 ? picked.filter(function (x) { return x !== id; }) : picked.concat([id]);
+        // none left → back to the group (when it is on)
+        st.msgTo = next.length ? next : (msgGroup ? 'family' : []);
+        renderWhat(); renderFlow();
+      }
+      var text = el('input', { type: 'text', class: 'form-input', maxlength: '500', value: st.msgText, placeholder: T('rule.text_default'), 'data-k': 'msg-text', id: uid + '-msg-text' });
+      text.addEventListener('input', function () { st.msgText = text.value; });
+      var add = el('button', { type: 'button', class: 'fa-rm-run fa-rm-notify-add', 'aria-pressed': st.msg ? 'true' : 'false', 'data-k': 'msg-add', text: st.msg ? T('rule.m_notify_added') : T('rule.m_notify_add'), disabled: !msgOn && !st.msg, on: { click: function () {
+        if (!st.msg && stepCount() >= MAX_STEPS) { msg.textContent = T('rule.m_max', { n: MAX_STEPS }); return; }
+        st.msg = !st.msg; renderWhat(); renderFlow();
+      } } });
+      var groupOn = st.msgTo === 'family';
+      return el('div', { class: 'fa-rm-notify' + (st.msg ? ' is-on' : '') }, [
+        el('div', { class: 'fa-rm-card-top' }, [
+          el('span', { class: 'fa-rm-card-ico' }, [A.svg(ICON.chat, 20)]),
+          el('span', { class: 'fa-rm-card-text' }, [el('b', { text: T('rule.m_msg_title') }), el('span', { text: T('rule.m_msg_hint') })]),
+          add,
+        ]),
+        msgOn ? null : el('div', { class: 'fa-rm-info is-warn' }, [A.svg(ICON.info, 18), el('span', { text: T('rule.m_msg_unavailable') })]),
+        el('div', { class: 'fa-rm-label', id: uid + '-msg-to', text: T('rule.notify_to') }),
+        el('div', { class: 'fa-rm-chips', role: 'group', 'aria-labelledby': uid + '-msg-to' }, [
+          el('button', { type: 'button', class: 'fa-rm-chip', 'aria-pressed': groupOn ? 'true' : 'false', disabled: !msgGroup && !groupOn, 'data-k': 'msg-to-family', text: T('rule.m_msg_group'),
+            on: { click: function () { st.msgTo = 'family'; renderWhat(); renderFlow(); } } }),
+        ]),
+        msgGroup ? null : el('p', { class: 'fa-hint', text: T('rule.m_msg_group_off') }),
+        el('div', { class: 'fa-rm-label', id: uid + '-msg-people', text: T('rule.m_msg_people') }),
+        el('div', { class: 'fa-rm-people', role: 'group', 'aria-labelledby': uid + '-msg-people' }, people.map(function (m) {
+          return el('button', { type: 'button', class: 'fa-rm-person', 'aria-pressed': picked.indexOf(m.userId) >= 0 ? 'true' : 'false', 'data-k': 'msg-person-' + m.userId, on: { click: function () { togglePerson(m.userId); } } },
+            [A.avatar({ name: m.name, initials: m.initials, colorHex: m.colorHex, avatarUrl: m.avatarUrl }, 28), el('span', { text: m.name })]);
+        })),
+        el('p', { class: 'fa-hint', text: T('rule.m_msg_people_hint') }),
+        el('label', { class: 'fa-rm-label', for: uid + '-msg-text', text: T('rule.m_text') }),
+        text,
+        el('p', { class: 'fa-hint', text: T('rule.text_hint') }),
+      ]);
+    }
+
     // ── column 3: Ablauf ──
     var flowCount = el('span', { class: 'fa-rm-mono fa-rm-muted' });
     var flowList = el('div', { class: 'fa-rm-scroll fa-rm-flow-list' });
@@ -518,6 +595,10 @@
       if (st.notify) {
         var to = st.notifyTo === 'parents' ? T('rule.m_to_parents') : (st.notifyTo === 'all' ? T('rule.m_to_all') : T('rule.m_to_people', { names: (st.notifyTo || []).map(function (id) { return nameOf(data, id); }).join(', ') }));
         flowList.appendChild(stepRow(++n, T('rule.notify'), to, T('rule.m_push'), 'neutral', function () { st.notify = false; renderWhat(); renderFlow(); }, 'step-notify'));
+      }
+      if (st.msg) {
+        var mto = st.msgTo === 'family' ? T('rule.m_msg_to_family') : T('rule.m_to_people', { names: (st.msgTo || []).map(function (id) { return nameOf(data, id); }).join(', ') });
+        flowList.appendChild(stepRow(++n, T('rule.messenger'), msgOn ? mto : T('rule.msg_gone'), T('rule.m_msg_chip'), msgOn ? 'neutral' : 'gone', function () { st.msg = false; renderWhat(); renderFlow(); }, 'step-msg'));
       }
       if (!n) flowList.appendChild(el('div', { class: 'fa-rm-flow-empty', text: T('rule.m_empty') }));
       flowList.appendChild(el('div', { class: 'fa-rm-info' }, [A.svg(ICON.info, 18), el('span', { text: T('rule.m_hint_fixed') })]));
@@ -614,6 +695,12 @@
         return out;
       });
       if (st.notify) actions.push({ type: 'notify', to: st.notifyTo, text: st.text.trim() || null });
+      if (st.msg) {
+        // people who are no members any more drop out
+        if (Array.isArray(st.msgTo)) st.msgTo = st.msgTo.filter(function (id) { return people.some(function (m) { return m.userId === id; }); });
+        if (Array.isArray(st.msgTo) && !st.msgTo.length) { selectTab('@messenger'); msg.textContent = T('rule.m_msg_to_missing'); return; }
+        actions.push({ type: 'messenger', to: st.msgTo, text: st.msgText.trim() || null });
+      }
       var body = {
         name: st.name.trim(), trigger: st.trigger, graceMinutes: st.trigger === 'all_away' ? st.grace : r.graceMinutes,
         conditions: { time: st.window ? { from: st.from, to: st.to } : null, afterSunset: st.sun }, actions: actions, active: st.active,
@@ -644,6 +731,7 @@
     var tb = el('tbody');
     data.log.forEach(function (x) {
       var res = x.results.map(function (y) {
+        if (y.type === 'messenger') return T('rule.messenger') + ' → ' + (y.ok ? T('rule.ok') : T('rule.msg_err.' + (MSG_ERRORS.indexOf(y.error) >= 0 ? y.error : 'failed')));
         var what = y.type === 'quick_action' ? quickText({ title: y.title || y.id, verb: y.verb }) : T('rule.notify');
         return what + ' → ' + (y.ok ? (y.unchanged ? T('rule.unchanged') : (y.message || T('rule.ok'))) : T('rule.err.' + (y.error || 'failed')));
       }).join(' · ');

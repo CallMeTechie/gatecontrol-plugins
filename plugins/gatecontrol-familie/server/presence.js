@@ -43,6 +43,12 @@
 //            (the pages: „Zielzustand fehlt – Regel bearbeiten“).
 //            { type: 'notify', to: 'parents' | 'all' | [userId], text? } — push topic presence ({name} = the person,
 //            {place} = the place of a place rule; data.familie of a place rule carries placeId)
+//            1.6.0: { type: 'messenger', to: 'family' | [userId] (1–20 members), text? (≤ 500, same placeholders) }
+//            — „Messenger-Nachricht senden“ through the Messenger plugin (server/messenger.js): into the
+//            group „Familie“ (only while the group is switched on: else error 'group_off') or into each
+//            person's own channel „Familie“ (not to the person who sets the rule off). Without the
+//            messenger the action is not offered (listRules: `messenger.available`); a rule that still has
+//            one logs { ok: false, error: 'unavailable' } and the rest of the rule runs.
 // A rule fires once per transition and at most once per 10 minutes; a
 // throttled "all away" is retried while everyone stays away, a throttled
 // arrival or departure is dropped. Each run is logged with the result of every
@@ -69,6 +75,7 @@ const push = require('./push');
 const members = require('./members');
 const sun = require('./sun');
 const ruleplaces = require('./ruleplaces');
+const messenger = require('./messenger');
 const { fail, posInt, optText, bool, intIn, iso, parseIso, parseJson, userIds, TIME_RE } = require('./util');
 
 const TRIGGERS = ['all_away', 'first_home', 'child_home_alone', 'person_home', 'person_away', 'place_enter', 'place_exit'];
@@ -297,6 +304,13 @@ function hostCode(e) {
   return 'error';
 }
 
+/** The text of a notify or messenger action: its own (or the default of the trigger) with {name} and {place} filled. */
+function actionText(a, run, person, cfg) {
+  const name = person ? person.name : '';
+  const place = run.placeName || '';
+  return (a.text || push.t(cfg.lang, `presence.${run.trigger}`, { name, place })).split('{name}').join(name).split('{place}').join(place);
+}
+
 function recipients(action, fam, triggerUser) {
   let ids;
   if (action.to === 'parents') ids = members.parents(fam).map((m) => m.userId);
@@ -340,9 +354,7 @@ async function execute(gc, fam, cfg, now, runs, pushes) {
         }
       } else if (a.type === 'notify') {
         const to = recipients(a, fam, run.userId);
-        const name = person ? person.name : '';
-        const place = run.placeName || '';
-        const text = (a.text || push.t(cfg.lang, `presence.${run.trigger}`, { name, place })).split('{name}').join(name).split('{place}').join(place);
+        const text = actionText(a, run, person, cfg);
         if (to.length) {
           const data = { type: 'presence_rule', ruleId: rule.id, trigger: run.trigger, userId: run.userId || null };
           if (run.placeId) data.placeId = run.placeId;
@@ -352,6 +364,11 @@ async function execute(gc, fam, cfg, now, runs, pushes) {
           });
         }
         results.push({ type: 'notify', ok: to.length > 0, sent: to.length, error: to.length ? null : 'no_recipients' });
+      } else if (a.type === 'messenger') {
+        // 1.6.0: never throws; without the messenger { ok: false, error: 'unavailable' } and the rest runs
+        const res = await messenger.sendAction(gc, fam, cfg, now, a, actionText(a, run, person, cfg), run.userId);
+        if (res.error === 'unavailable') gc.log.warn('messenger not available – rule action skipped', rule.id);
+        results.push(res);
       }
     }
     const ok = results.every((x) => x.ok);
@@ -458,6 +475,17 @@ function parseActions(v, fam) {
       let text;
       try { text = optText(a.text, TEXT_MAX); } catch { throw fail('invalid', { field: `${at}.text` }); }
       return { type: 'notify', to, text: text || null };
+    }
+    if (a.type === 'messenger') {
+      let to;
+      if (a.to === 'family') to = 'family';
+      else {
+        try { to = userIds(a.to, messenger.PEOPLE_MAX); } catch { throw fail('invalid', { field: `${at}.to` }); }
+        if (!to.length || to.some((id) => !fam.byId.has(id))) throw fail('invalid', { field: `${at}.to` });
+      }
+      let text;
+      try { text = optText(a.text, messenger.TEXT_MAX); } catch { throw fail('invalid', { field: `${at}.text` }); }
+      return { type: 'messenger', to, text: text || null };
     }
     throw fail('invalid', { field: `${at}.type` });
   });
@@ -580,7 +608,8 @@ async function rulesView(gc, fam, lang, ids) {
 
 /** ctx: { fam, cfg, now, ownerId, lang } — shared by the member API (parents) and the admin page. */
 async function listRules(gc, ctx) {
-  return { rules: await rulesView(gc, ctx.fam, ctx.lang), log: await log(gc) };
+  // 1.6.0: whether the editor offers „Messenger-Nachricht senden“ (and the group as a target)
+  return { rules: await rulesView(gc, ctx.fam, ctx.lang), log: await log(gc), messenger: await messenger.info(gc, ctx.cfg) };
 }
 
 async function createRule(gc, ctx, body) {
