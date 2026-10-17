@@ -1,7 +1,12 @@
 <main class="dr-page">
   <div class="dr-note" id="dr-ring-broken" hidden>{{t:portal.ring_broken}}</div>
   <p class="dr-intro" id="dr-readonly" hidden>{{t:portal.read_only}}</p>
-  <section class="dr-card" aria-labelledby="dr-locks-h">
+  <section class="dr-card" aria-labelledby="dr-modes-h" id="dr-modes-card" hidden>
+    <div class="dr-card-head"><h2 class="dr-card-title" id="dr-modes-h">{{t:mode.title}}</h2></div>
+    <div class="dr-list" id="dr-modes"></div>
+    <p class="dr-hint">{{t:mode.portal_hint}}</p>
+  </section>
+  <section class="dr-card" aria-labelledby="dr-locks-h" id="dr-locks-card">
     <div class="dr-card-head"><h2 class="dr-card-title" id="dr-locks-h">{{t:portal.locks}}</h2></div>
     <div class="dr-list" id="dr-locks"></div>
     <p class="dr-hint" id="dr-empty" hidden>{{t:portal.empty}}</p>

@@ -8,6 +8,39 @@ bleibt auf dem eigenen Server. Einrichtung, Risiken, Datenschutz und die App-API
 an; das Plugin nutzt die, die auch die Open-Source-Projekte ring-client-api (Homebridge) und
 python-ring-doorbell (Home Assistant) verwenden. Sie kann sich jederzeit ändern oder wegfallen.
 
+## 1.1.0
+- **Neu: Ring-Modus (Inaktiv / Zuhause / Abwesend)** pro Ring-Standort – wie in der Ring-App
+  unter *Modi*; welche Kameras im jeweiligen Modus aufnehmen und melden, bleibt in der Ring-App
+  eingestellt. Für Standorte mit eingeschalteten Modi und ohne Ring-Alarmanlage.
+- **Schnellaktionen und Regeln:** pro Standort drei Knöpfe „Inaktiv“, „Zuhause“, „Abwesend“
+  (Gerät = der Standort, ohne Rückfrage, Symbole wie in der Ring-App). Knöpfe statt Umschalter:
+  eine Regel der Familie (z. B. „Alle sind unterwegs“ › „Abwesend“) setzt immer genau diesen
+  Modus. „Inaktiv“ trägt das Widget „Ring-Modus“ mit dem aktuellen Modus und einer Auswahl, die
+  den Modus direkt umstellt (Symbole in der Auswahl ab GateControl 1.174.0, sonst die Namen).
+  Antwort „Ring: Zuhause“ oder der Grund, z. B. „Ring lehnt den Moduswechsel ab (HTTP 403).“
+- **Recht „Ring-Modus schalten“** pro Person und Standort (Seite „Berechtigungen“); Admins dürfen
+  immer. Geprüft wie bei den Schlössern: kein Kiosk-/Geräte-Vertrauen-Zugriff, Zeitfenster,
+  höchstens 10 Wechsel pro Minute pro Person und Standort.
+- **Seite „Geräte“:** neuer Bereich „Ring-Modus“ mit dem aktuellen Modus pro Standort und drei
+  Knöpfen; Standorte, die nicht schalten können, mit Grund (Ring-Alarmanlage, Modi aus, keine
+  Kameras, Ring erlaubt es dem Konto nicht). **Portal-Tab „Tür“:** dasselbe für berechtigte
+  Personen (der Tab erscheint auch ohne Schloss-Recht), dazu eine Start-Kachel
+  „Ring-Modus · <Standort>“. App-API: `ringModes` in `GET me`, `POST modes/<id>/<mode>`.
+- **Ring-Alarmanlage:** solche Standorte werden nie gelesen oder geschaltet – dort gehört der
+  Modus zur Alarmanlage.
+- Der Modus wird mit dem Geräteabgleich und danach jede Minute gelesen; nach einem Wechsel gilt
+  sofort die Antwort von Ring. Lesefehler bremsen nur diese Abfrage (eigene Wartezeit), Klingel
+  und Bilder laufen weiter.
+- **Verlauf:** jeder Wechsel (auch abgelehnte und fehlgeschlagene) als Art „Ring-Modus“ mit
+  Person, Modus, Standort und Weg (App, Mitteilung, Automatik mit aufrufendem Plugin, Portal,
+  Admin-Seite).
+- Ring-Schnittstelle (inoffiziell, wie ring-client-api 14.3.0): `GET https://api.ring.com/devices/v1/locations`,
+  `GET`/`POST https://prd-api-us.prd.rings.solutions/api/v1/mode/location/<id>`; neuer Host
+  `prd-api-us.prd.rings.solutions` in den Netzwerk-Rechten. Datenbank: Migration
+  `004_ring_modes.sql` (`ring_locations`, `mode_rights`, `history.location_id`).
+- Weiter ab GateControl 1.169.0: ältere Versionen lassen Widget (vor 1.171.0) und Gerät (vor
+  1.172.0) weg, die drei Knöpfe bleiben.
+
 ## 1.0.3
 - Geräte: die Schnellaktionen eines Schlosses bzw. Openers (zusperren, aufsperren, öffnen,
   Summer) gehören zu einem Gerät mit dessen Namen – die GateControl-Apps ab 1.38.0 zeigen

@@ -1,4 +1,4 @@
-/* Portal tab "Tür": lock cards with buttons per right, latest pictures per camera, history. */
+/* Portal tab "Tür": Ring mode per location, lock cards with buttons per right, latest pictures per camera, history. */
 (function () {
   'use strict';
   var D = window.DOOR;
@@ -33,6 +33,34 @@
     }).catch(D.warn);
   }
 
+  /** A Ring location: its current mode and the three buttons (Inaktiv / Zuhause / Abwesend). */
+  function modeCard(loc) {
+    var sub = [];
+    if (loc.modeAt) sub.push(T('mode.changed', { when: D.when(loc.modeAt) }));
+    if (loc.blocked === 'outside_window') sub.push(T('portal.outside_window'));
+    return el('div', { class: 'dr-item' }, [
+      el('div', { class: 'dr-item-main' }, [
+        el('div', { class: 'dr-item-title' }, [loc.name + ' ', el('span', { class: 'dr-badge', 'data-tone': D.modeTone(loc.mode), text: D.modeText(loc.mode) })]),
+        el('div', { class: 'dr-item-sub', text: sub.join(' · ') }),
+      ]),
+      D.modeSeg(loc.name, loc.mode, !!loc.blocked, function (m) {
+        return D.api('POST', 'modes/' + encodeURIComponent(loc.id) + '/' + m).then(function (r) {
+          D.toast(r.message);
+          me.ringModes = me.ringModes.map(function (x) { return x.id === loc.id ? r.ringMode : x; });
+          renderModes();
+          loadHistory(false);
+        }).catch(function (e) { D.warn(e); load(); });
+      }),
+    ]);
+  }
+
+  function renderModes() {
+    var list = (me && me.ringModes) || [];
+    var box = D.clear($('#dr-modes'));
+    list.forEach(function (l) { box.appendChild(modeCard(l)); });
+    $('#dr-modes-card').hidden = !list.length;
+  }
+
   function camCard(cam) {
     var box = el('div', { class: 'dr-noimg', text: T('portal.no_image') });
     var wrap = el('div', { class: 'dr-cam' }, [
@@ -60,11 +88,11 @@
   function pref(cam, body) { D.api('PUT', 'cameras/' + cam.id + '/prefs', body).then(function () { D.toast(T('common.saved')); }).catch(D.warn); }
 
   function histRow(h) {
-    var what = h.kind === 'action' ? T('act.' + (h.action || 'lock')) : (h.kind === 'alert' ? T('alert.' + h.action) : T('kind.' + h.kind));
+    var what = h.kind === 'action' ? T('act.' + (h.action || 'lock')) : (h.kind === 'alert' ? T('alert.' + h.action) : (h.kind === 'mode' ? T('kind.mode') + ' · ' + D.modeText(h.action) : T('kind.' + h.kind)));
     var who = [h.userName, h.via ? T('via.' + h.via) : null].filter(Boolean).join(' · ');
     var res = h.result && h.result !== 'ok' ? T('result.' + h.result) + (h.reasonText ? ': ' + h.reasonText : '') : '';
     var kids = [el('div', { class: 'dr-item-main' }, [
-      el('div', { class: 'dr-item-title', text: what + ' – ' + (h.lockName || h.cameraName || '') }),
+      el('div', { class: 'dr-item-title', text: what + ' – ' + (h.lockName || h.cameraName || h.locationName || '') }),
       el('div', { class: 'dr-item-sub', text: [D.when(h.at), who, res].filter(Boolean).join(' · ') }),
     ])];
     if (h.hasImage) kids.push(el('button', { type: 'button', class: 'btn btn-sm', text: T('hist.image'), on: { click: function () { D.api('GET', 'events/' + h.id).then(function (r) { D.showImage(r.event.image); }).catch(D.warn); } } }));
@@ -90,6 +118,9 @@
       var box = D.clear($('#dr-locks'));
       r.locks.forEach(function (l) { box.appendChild(lockCard(l)); });
       $('#dr-empty').hidden = r.locks.length > 0;
+      // only Ring modes for this person: no empty "Schlösser" card
+      $('#dr-locks-card').hidden = !r.locks.length && !!(r.ringModes && r.ringModes.length);
+      renderModes();
       var cams = D.clear($('#dr-cams'));
       r.cameras.forEach(function (c) { cams.appendChild(camCard(c)); });
       $('#dr-cams-card').hidden = !r.cameras.length;
@@ -99,5 +130,5 @@
 
   $('#dr-more').addEventListener('click', function () { loadHistory(true); });
   load();
-  setInterval(function () { if (!document.hidden) D.api('GET', 'me').then(function (r) { me = r; var box = D.clear($('#dr-locks')); r.locks.forEach(function (l) { box.appendChild(lockCard(l)); }); }).catch(function () {}); }, 30000);
+  setInterval(function () { if (!document.hidden) D.api('GET', 'me').then(function (r) { me = r; var box = D.clear($('#dr-locks')); r.locks.forEach(function (l) { box.appendChild(lockCard(l)); }); renderModes(); }).catch(function () {}); }, 30000);
 })();

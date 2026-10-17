@@ -5,8 +5,12 @@
 // plus per user an optional weekly time window for every action and the
 // opt-in "Automatisch aufsperren bei Ankunft erlauben" (default off).
 //
-// Administrators get nothing automatically: they set their own rights like
-// anyone. Kiosk devices and portal viewers recognised only by device trust
+// plus per user and Ring location the right "Ring-Modus schalten" (Inaktiv /
+// Zuhause / Abwesend — server/modes.js).
+//
+// Administrators get no lock rights automatically: they set their own rights
+// like anyone. The Ring mode is the exception — administrators may always
+// switch it (it is a setting of the house, like the plugin's own settings). Kiosk devices and portal viewers recognised only by device trust
 // may look (view) but never act. Every action is checked here again on the
 // server, wherever it comes from (app, portal, notification, automation).
 
@@ -56,7 +60,10 @@ function windowAllows(win, ms, zone) {
   return false;
 }
 
-/** Everything about rights in one read: { levels: Map(userId → Map(lockId → level)), prefs: Map(userId → { autoUnlock, window }) } */
+/**
+ * Everything about rights in one read: { levels: Map(userId → Map(lockId → level)), prefs: Map(userId →
+ * { autoUnlock, window }), modes: Map(userId → Set(locationId)) }
+ */
 async function load(gc) {
   const levels = new Map();
   for (const r of await store.all(gc, 'SELECT user_id, lock_id, level FROM rights')) {
@@ -69,7 +76,20 @@ async function load(gc) {
     try { win = parseWindow(parseJson(p.time_window, null)); } catch { win = null; }
     prefs.set(p.user_id, { autoUnlock: p.auto_unlock === 1, window: win });
   }
-  return { levels, prefs };
+  const modes = new Map();
+  for (const m of await store.all(gc, 'SELECT user_id, location_id FROM mode_rights')) {
+    if (!modes.has(m.user_id)) modes.set(m.user_id, new Set());
+    modes.get(m.user_id).add(m.location_id);
+  }
+  return { levels, prefs, modes };
+}
+
+/** May this user switch the Ring mode of a location? Administrators always; others with the right. */
+function mayMode(r, user, locationId) {
+  if (!user || !Number.isSafeInteger(user.id)) return false;
+  if (user.role === 'admin') return true;
+  const s = r.modes && r.modes.get(user.id);
+  return !!s && s.has(locationId);
 }
 
 function levelOf(r, userId, lockId) {
@@ -94,4 +114,4 @@ function hasAny(r, userId) {
   return !!m && m.size > 0;
 }
 
-module.exports = { LEVELS, ACTIONS, NEEDS, atLeast, canAct, parseWindow, windowAllows, load, levelOf, prefsOf, usersWith, hasAny };
+module.exports = { LEVELS, ACTIONS, NEEDS, atLeast, canAct, parseWindow, windowAllows, load, levelOf, prefsOf, usersWith, hasAny, mayMode };

@@ -3,8 +3,9 @@
 // The API for people (GateControl app tab, portal tab, plugin API). Paths
 // relative to the plugin's /api/ (README "App API" has the JSON shapes):
 //
-//   GET  me                              rights, locks with state, cameras, Ring status
+//   GET  me                              rights, locks with state, cameras, Ring status, Ring modes
 //   POST locks/<id>/<lock|unlock|open>   run an action (checked again: server/control.js)
+//   POST modes/<locationId>/<disarmed|home|away>   switch a Ring location's mode (server/modes.js)
 //   GET  cameras/<id>/snapshot[?refresh=1]   the newest picture (JSON, base64, ≤ 300 KB)
 //   PUT  cameras/<id>/prefs { ding?, motion? }   own doorbell / motion pushes for that camera
 //   GET  history[?cursor=&limit=&lockId=]    own events; all events of locks with `open`; rings of viewable cameras
@@ -22,6 +23,7 @@ const rights = require('./rights');
 const cameras = require('./cameras');
 const history = require('./history');
 const control = require('./control');
+const modes = require('./modes');
 const views = require('./views');
 const { fail, posInt, bool, iso, rateLimiter } = require('./util');
 
@@ -61,6 +63,7 @@ async function me(gc, c) {
     locks: c.mine.map((l) => views.lockView(l, { level: rights.levelOf(c.r, c.user.id, l.id), user: c.user, prefs: c.prefs, cfg: c.cfg, now: c.now })),
     cameras: cams.map((cam) => views.cameraView(cam, { prefs: camPrefs.get(cam.id), lastImageAt: lastAt.get(cam.id) })),
     ring: { connected: st.connected, broken: st.broken },
+    ringModes: (await modes.forUser(gc, c.user, c.r)).map((row) => modes.view(row, { user: c.user, r: c.r, cfg: c.cfg, now: c.now })),
     serverTime: iso(c.now),
   };
 }
@@ -70,6 +73,13 @@ async function action(gc, c, lockId, act) {
   if (!lock || !['lock', 'unlock', 'open'].includes(act)) throw fail('not_found');
   const out = await control.perform(gc, { cfg: c.cfg, t: c.t, lang: c.lang, now: c.now, via: viaOf(c.user) }, c.user, lockId, act);
   return { message: out.message, lock: views.lockView(out.lock, { level: rights.levelOf(c.r, c.user.id, lockId), user: c.user, prefs: c.prefs, cfg: c.cfg, now: c.now }) };
+}
+
+async function switchMode(gc, c, id, mode) {
+  const row = (await modes.forUser(gc, c.user, c.r)).find((x) => x.location_id === id);
+  if (!row || !modes.MODES.includes(mode)) throw fail('not_found');
+  const out = await modes.perform(gc, { cfg: c.cfg, t: c.t, lang: c.lang, now: c.now, via: viaOf(c.user) }, c.user, id, mode);
+  return { message: out.message, ringMode: modes.view(out.location, { user: c.user, r: c.r, cfg: c.cfg, now: c.now }) };
 }
 
 async function camera(gc, c, id) {
@@ -116,8 +126,9 @@ async function historyPage(gc, c, query, filter) {
   const page = await history.list(gc, filter, { cursor, limit, lockId, kind });
   const lockMap = new Map(c.all.map((l) => [l.id, l]));
   const camMap = new Map((await cameras.all(gc)).map((x) => [x.id, x]));
+  const locMap = new Map((await modes.all(gc)).map((x) => [x.location_id, x]));
   const mediaOk = await history.existingMedia(gc, page.rows.map((x) => x.media_id), c.now);
-  return { items: page.rows.map((row) => history.view(row, { locks: lockMap, cameras: camMap, t: c.t, lang: c.lang, mediaOk })), nextCursor: page.nextCursor };
+  return { items: page.rows.map((row) => history.view(row, { locks: lockMap, cameras: camMap, locations: locMap, t: c.t, lang: c.lang, mediaOk })), nextCursor: page.nextCursor };
 }
 
 /** One ring / motion event with its picture, when the viewer may see that camera's events. */
@@ -156,6 +167,7 @@ async function route(req, gc, seg, cfg, now, t) {
     if (!id) throw fail('not_found');
     return action(gc, c, id, x);
   }
+  if (a === 'modes' && n === 3 && method === 'POST') return switchMode(gc, c, b, x);
   if (a === 'cameras' && n === 3) {
     const id = posInt(b);
     if (!id) throw fail('not_found');
@@ -163,7 +175,7 @@ async function route(req, gc, seg, cfg, now, t) {
     if (x === 'prefs' && (method === 'PUT' || method === 'PATCH')) return prefs(gc, c, id, body);
   }
   if (a === 'history' && n === 1 && method === 'GET') {
-    if (!c.mine.length && c.user.role !== 'admin') return { items: [], nextCursor: null };
+    if (!c.mine.length && c.user.role !== 'admin' && !(c.r.modes.get(c.user.id) || new Set()).size) return { items: [], nextCursor: null };
     return historyPage(gc, c, query, historyFilter(c));
   }
   if (a === 'events' && n === 2 && method === 'GET') {
@@ -174,13 +186,16 @@ async function route(req, gc, seg, cfg, now, t) {
   throw fail('not_found');
 }
 
-/** Is there something for this viewer (portal / app tab)? Any right on a lock. */
-async function visibleFor(gc, user) {
+/**
+ * Is there something for this viewer (portal / app tab)? Any right on a lock — for the portal
+ * (opts.modes) also a Ring location whose mode this person may switch. The app tab stays lock-only:
+ * the apps reach the modes through their quick actions and widget.
+ */
+async function visibleFor(gc, user, opts = {}) {
   if (!user || !Number.isSafeInteger(user.id)) return false;
   const r = await rights.load(gc);
-  if (!rights.hasAny(r, user.id)) return false;
-  const all = await locks.all(gc);
-  return all.some((l) => rights.levelOf(r, user.id, l.id));
+  if (rights.hasAny(r, user.id) && (await locks.all(gc)).some((l) => rights.levelOf(r, user.id, l.id))) return true;
+  return !!opts.modes && (await modes.forUser(gc, user, r)).length > 0;
 }
 
 module.exports = { route, context, me, historyPage, historyFilter, event, visibleFor, readLimiter };

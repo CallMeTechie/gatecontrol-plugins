@@ -9,6 +9,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const texts = require('./texts.json');
+const modes = require('./modes');
 
 const UI = path.join(__dirname, '..', 'ui');
 const read = (f) => fs.readFileSync(path.join(UI, f), 'utf8');
@@ -43,7 +44,7 @@ function render(view, t) {
   const portal = v.view === 'portal';
   const pageId = portal ? 'portal' : (PAGES.includes(v.page) ? v.page : 'devices');
   const page = FILES[pageId];
-  const ctx = { lang, view: portal ? 'portal' : 'page', page: pageId, texts: texts[lang] };
+  const ctx = { lang, view: portal ? 'portal' : 'page', page: pageId, texts: texts[lang], modeIcons: modes.ICONS };
   return '<style>' + FILES.css + '</style>'
     + fill(page.html, t, lang)
     + '<script>window.DOOR_CTX=' + island(ctx) + ';</script>'

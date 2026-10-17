@@ -2,14 +2,15 @@
 
 // The admin API (administrators on the admin pages only; never a portal or app caller):
 //
-//   GET    admin/status                      bridges, home targets, Nuki Web, Ring, locks, cameras, settings
+//   GET    admin/status                      bridges, home targets, Nuki Web, Ring, locks, cameras, Ring modes, settings
 //   POST   admin/bridges { name, targetIndex, token }      PATCH|DELETE admin/bridges/<id>
 //   GET    admin/bridges/<id>/devices        the bridge's /list (test + "add lock")
 //   PUT    admin/web { token | null }        GET admin/web/devices
 //   POST   admin/locks { … }                 PATCH|DELETE admin/locks/<id>   POST admin/locks/<id>/refresh
 //   POST   admin/ring/login { email, password, code? }      POST admin/ring/logout · admin/ring/sync
 //   PATCH  admin/cameras/<id> { name?, lockId?, enabled? }  GET admin/cameras/<id>/snapshot[?refresh=1]
-//   GET    admin/rights                      PUT admin/rights/<userId> { locks?, autoUnlock?, window?, cameras? }
+//   POST   admin/modes/<locationId>/<disarmed|home|away>    switch a Ring location's mode (server/modes.js)
+//   GET    admin/rights                      PUT admin/rights/<userId> { locks?, autoUnlock?, window?, cameras?, modes? }
 //   GET    admin/history[?cursor&limit&lockId&kind]          GET admin/events/<id>
 //   GET    admin/settings                    PUT admin/settings { timezone?, notifyLang?, mediaDays?, motionGapMin?, ring?, nukiLogImport? }
 //
@@ -24,6 +25,7 @@ const nuki = require('./nuki');
 const ring = require('./ring');
 const rights = require('./rights');
 const cameras = require('./cameras');
+const modes = require('./modes');
 const config = require('./config');
 const views = require('./views');
 const api = require('./api');
@@ -62,7 +64,7 @@ async function status(gc, cfg, now) {
   return {
     bridges: await bridgeViews(gc), targets: await targetList(gc), web: { hasToken: !!(await locks.webToken(gc)) },
     ring: await ringView(gc, now), locks: (await locks.all(gc)).map((l) => views.adminLockView(l, now)),
-    cameras: (await cameras.all(gc)).map(views.adminCameraView), config: cfg,
+    cameras: (await cameras.all(gc)).map(views.adminCameraView), ringModes: (await modes.all(gc)).filter((l) => l.present === 1).map(modes.adminView), config: cfg,
   };
 }
 
@@ -264,6 +266,13 @@ async function ringSync(gc, now) {
   return { count: await cameras.sync(gc, now), cameras: (await cameras.all(gc)).map(views.adminCameraView) };
 }
 
+/** The admin page's mode buttons (administrators may always switch; Ring Alarm locations never). */
+async function switchMode(gc, req, cfg, now, t, id, mode) {
+  if (!modes.MODES.includes(mode)) throw fail('not_found');
+  const out = await modes.perform(gc, { cfg, t, lang: req.lang, now, via: 'admin', adminPage: true }, req.user, id, mode);
+  return { message: out.message, ringMode: modes.adminView(out.location) };
+}
+
 async function updateCamera(gc, id, body) {
   const cam = await cameras.get(gc, id);
   if (!cam) throw fail('not_found');
@@ -305,10 +314,14 @@ async function rightsView(gc) {
     camPrefs[p.user_id] = camPrefs[p.user_id] || {};
     camPrefs[p.user_id][p.camera_id] = { ding: p.ding === 1, motion: p.motion === 1 };
   }
+  const modeRights = {};
+  for (const [uid, set] of r.modes) modeRights[uid] = [...set].sort();
   return {
     users, locks: (await locks.all(gc)).map((l) => ({ id: l.id, name: l.name, type: nuki.isOpener(l.device_type) ? 'opener' : 'smartlock', actions: l.actions })),
     cameras: (await cameras.all(gc)).filter((c) => c.present === 1).map((c) => ({ id: c.id, name: c.name, lockId: c.lock_id || null })),
-    rights: levels, prefs, cameraPrefs: camPrefs,
+    // Ring locations a mode right makes sense for (present, cameras there, no Ring Alarm)
+    locations: (await modes.all(gc)).filter(modes.readable).map((l) => ({ id: l.location_id, name: l.name, supported: modes.supported(l) })),
+    rights: levels, prefs, cameraPrefs: camPrefs, modeRights,
   };
 }
 
@@ -325,6 +338,15 @@ async function putRights(gc, userId, body, now) {
       const id = posInt(k);
       if (!id || !lockIds.has(id) || !LEVELS.includes(lv)) throw fail('invalid', { field: 'locks' });
       levels.push([id, lv]);
+    }
+  }
+  const modeSet = [];
+  if (body.modes !== undefined) {
+    if (!body.modes || typeof body.modes !== 'object' || Array.isArray(body.modes)) throw fail('invalid', { field: 'modes' });
+    const locIds = new Set((await modes.all(gc)).filter(modes.readable).map((l) => l.location_id));
+    for (const [k, on] of Object.entries(body.modes)) {
+      if (!locIds.has(k) || typeof on !== 'boolean') throw fail('invalid', { field: 'modes' });
+      modeSet.push([k, on]);
     }
   }
   const autoUnlock = body.autoUnlock === undefined ? undefined : bool(body.autoUnlock);
@@ -349,6 +371,10 @@ async function putRights(gc, userId, body, now) {
         ON CONFLICT(user_id) DO UPDATE SET auto_unlock = excluded.auto_unlock, time_window = excluded.time_window, updated_at = excluded.updated_at`, [
         userId, autoUnlock === undefined ? cur.auto_unlock : (autoUnlock ? 1 : 0), win === undefined ? cur.time_window : (win ? JSON.stringify(win) : null), now,
       ]);
+    }
+    for (const [loc, on] of modeSet) {
+      if (on) await store.run(gc, 'INSERT OR IGNORE INTO mode_rights (user_id, location_id) VALUES (?, ?)', [userId, loc]);
+      else await store.run(gc, 'DELETE FROM mode_rights WHERE user_id = ? AND location_id = ?', [userId, loc]);
     }
     for (const [id, ding, motion] of camPrefs) {
       const cur = (await store.one(gc, 'SELECT ding, motion FROM camera_prefs WHERE user_id = ? AND camera_id = ?', [userId, id])) || { ding: 1, motion: 0 };
@@ -400,6 +426,7 @@ async function route(req, gc, seg, cfg, now, t) {
     if (b === 'logout') return ringLogout(gc);
     if (b === 'sync') return ringSync(gc, now);
   }
+  if (a === 'modes' && n === 4 && POST) return switchMode(gc, req, cfg, now, t, b, c);
   if (a === 'cameras') {
     needId();
     if (n === 3 && PATCH) return updateCamera(gc, id, body);

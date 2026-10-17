@@ -6,12 +6,13 @@
   var cursor = null;
 
   function row(h) {
-    var what = h.kind === 'action' ? T('act.' + (h.action || 'lock')) : (h.kind === 'alert' ? T('alert.' + h.action) : T('kind.' + h.kind) + (h.action ? ' · ' + T('act.' + h.action) : ''));
+    var what = h.kind === 'action' ? T('act.' + (h.action || 'lock')) : (h.kind === 'alert' ? T('alert.' + h.action)
+      : (h.kind === 'mode' ? T('kind.mode') + ' · ' + D.modeText(h.action) : T('kind.' + h.kind) + (h.action ? ' · ' + T('act.' + h.action) : '')));
     var img = h.hasImage ? el('button', { type: 'button', class: 'btn btn-sm', text: T('hist.image'), on: { click: function () {
       D.api('GET', 'admin/events/' + h.id).then(function (r) { D.showImage(r.event.image); }).catch(D.warn);
     } } }) : '';
     return el('tr', {}, [
-      el('td', { text: D.when(h.at) }), el('td', { text: what }), el('td', { text: [h.lockName, h.cameraName].filter(Boolean).join(' · ') }),
+      el('td', { text: D.when(h.at) }), el('td', { text: what }), el('td', { text: [h.lockName, h.cameraName, h.locationName].filter(Boolean).join(' · ') }),
       el('td', { text: [h.userName, h.via ? T('via.' + h.via) : null, h.caller].filter(Boolean).join(' · ') }),
       el('td', { text: (h.result ? T('result.' + h.result) : '') + (h.reasonText ? ': ' + h.reasonText : '') }), el('td', {}, [img]),
     ]);
