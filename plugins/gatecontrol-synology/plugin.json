@@ -4,11 +4,11 @@
     "de": "NAS (Synology)",
     "en": "NAS (Synology)"
   },
-  "version": "1.0.0",
+  "version": "1.1.0",
   "publisher": "CallMeTechie",
   "description": {
-    "de": "Synology-NAS im Heimnetz überwachen und steuern (DSM Web API): Modell, DSM-Version, CPU/RAM, Temperatur, Volumes, Speicherpools, Laufwerke mit S.M.A.R.T.-Status, DSM-Updates, Hyper Backup und USV; Neustart und Herunterfahren; Benachrichtigungen bei Ausfall, beeinträchtigtem Speicher, Laufwerksproblemen, vollem Speicher, Updates und fehlgeschlagenen Sicherungen. Nur für Administratoren.",
-    "en": "Monitor and control Synology NAS in the home network (DSM Web API): model, DSM version, CPU/RAM, temperature, volumes, storage pools, drives with S.M.A.R.T. status, DSM updates, Hyper Backup and UPS; reboot and shut down; notifications on outages, degraded storage, drive problems, full storage, updates and failed backups. Administrators only."
+    "de": "Synology-NAS im Heimnetz überwachen und steuern (DSM Web API): Modell, DSM-Version, CPU/RAM, Temperatur, Volumes, Speicherpools, Laufwerke mit S.M.A.R.T.-Status, DSM-Updates, Hyper Backup und USV; Neustart und Herunterfahren; Benachrichtigungen bei Ausfall, beeinträchtigtem Speicher, Laufwerksproblemen, vollem Speicher, Updates und fehlgeschlagenen Sicherungen. In den GateControl-Apps Schnellaktionen, Widget und Startkachel je NAS. Nur für Administratoren.",
+    "en": "Monitor and control Synology NAS in the home network (DSM Web API): model, DSM version, CPU/RAM, temperature, volumes, storage pools, drives with S.M.A.R.T. status, DSM updates, Hyper Backup and UPS; reboot and shut down; notifications on outages, degraded storage, drive problems, full storage, updates and failed backups. Quick actions, widget and Start tile per NAS in the GateControl apps. Administrators only."
   },
   "gatecontrol": ">=1.154.0",
   "entry": "server/index.js",
@@ -29,6 +29,7 @@
       ]
     },
     "storage": true,
+    "portal": true,
     "notify": true,
     "background": {
       "intervalSeconds": 60
@@ -51,6 +52,19 @@
         }
       }
     ],
+    "portal": {
+      "sections": [
+        {
+          "id": "nas",
+          "tab": "home",
+          "title": {
+            "de": "NAS (Synology)",
+            "en": "NAS (Synology)"
+          },
+          "order": 900
+        }
+      ]
+    },
     "settings": [
       {
         "key": "poll_interval",

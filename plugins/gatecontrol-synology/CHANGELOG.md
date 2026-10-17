@@ -2,6 +2,30 @@
 
 Synology-NAS überwachen und steuern (DSM Web API) als GateControl-Plugin – nur für Administratoren.
 
+## 1.1.0
+- **Schnellaktionen und Widget in den GateControl-Apps** (nur für GateControl-Administratoren;
+  alle anderen sehen nichts): je NAS ein Gerät mit
+  - **„Aktualisieren“** – fragt das NAS sofort ab und trägt das **NAS-Widget**: großer Wert
+    „Speicher belegt“ (alle Volumes zusammen, in %), daneben CPU, RAM und Temperatur (gelb bei
+    CPU/RAM ab 90 % bzw. bei der Temperaturwarnung von DSM), oben rechts der **Zustand** als
+    Schild (grün/gelb/rot wie auf der Plugin-Seite) und als Statuszeile das wichtigste Problem
+    („Speicherpool 1 beeinträchtigt“, „Nicht erreichbar“ …) oder „Alles in Ordnung“. Antwortet
+    das NAS nicht, bleibt die letzte bekannte Belegung stehen, CPU/RAM/Temperatur entfallen.
+  - **„Backup jetzt“** – je Hyper-Backup-Aufgabe (bei mehreren mit dem Namen der Aufgabe, höchstens
+    vier je NAS), **„Neustart“** und **„Herunterfahren“** – die App fragt vorher nach. Sie laufen
+    über dieselben Prüfungen wie die Plugin-Seite (NAS aktiv, Aufgabe bekannt) und stehen im
+    Plugin-Protokoll mit dem Weg („von admin (App)“, „von admin (Regel)“ für die Regel eines
+    anderen Plugins); Neustart/Herunterfahren senden wie bisher die Meldung „NAS neu gestartet /
+    heruntergefahren“. Fehler von DSM kommen als verständliche Antwort in der App an. Einschalten
+    eines heruntergefahrenen NAS ist weiterhin nicht möglich – deshalb kann eine **Regel** das NAS
+    nie herunterfahren (nur per Hand in der App); Neustart und Backup gehen auch per Regel.
+- **Startkachel in den Apps** je NAS: „62 % belegt“ mit Speicher, Temperatur und Zustand; Farbe
+  nach dem Zustand. Dafür bekommt das Plugin die Portal-Berechtigung und einen Portal-Bereich
+  „NAS (Synology)“, der nur die Kacheln der Apps trägt – im Web-Portal erscheint nichts.
+- Widget-Schild ab GateControl 1.175.0, Geräte-Gruppierung ab 1.172.0, Widget ab 1.171.0,
+  Startkacheln in den Apps ab 1.169.0, Schnellaktionen ab 1.159.0; ältere Versionen lassen das
+  Unbekannte weg. Das Plugin läuft weiter ab GateControl 1.154.0.
+
 ## 1.0.0
 - **Mehrere NAS** über das Zugriffsziel „Synology-NAS (DSM)“ (GateControl-Route, VPN-Peer oder
   Adresse; HTTP). Je NAS ein DSM-Konto – Benutzername, Passwort und Geräte-Token werden als

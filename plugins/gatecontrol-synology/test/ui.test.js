@@ -37,7 +37,9 @@ test('every text key of the page and the server exists (literal and composed)', 
   for (const f of ['ui/admin.js', 'ui/common.js']) for (const m of read(f).matchAll(/\bT\('([a-z0-9_.-]+)'\s*[,)]/g)) used.add(m[1]);
   // keys picked by a condition (T(a ? 'x.y' : 'x.z')): every key-like literal of the page scripts
   for (const f of ['ui/admin.js', 'ui/common.js']) for (const m of read(f).matchAll(/'([a-z]+\.[a-z0-9_]*[a-z0-9])'/g)) used.add(m[1]);
-  for (const f of ['server/index.js', 'server/ui.js']) for (const m of read(f).matchAll(/\bt\(\w+, '([a-z0-9_.-]+)'/g)) used.add(m[1]);
+  for (const f of ['server/index.js', 'server/ui.js', 'server/quick.js']) for (const m of read(f).matchAll(/\bt\((?:\w|\.)+, '([a-z0-9_.-]+)'/g)) used.add(m[1]);
+  // composed in server/index.js: 'qa.<reboot|shutdown>_sent'
+  for (const k of ['reboot', 'shutdown']) used.add(`qa.${k}_sent`);
   for (const [, key] of Object.values(plugin._errors)) used.add(key);
   used.add('dsm.INTERNAL');
   // composed in admin.js: 'issue.<kind>_<status>', 'vstatus.', 'health.', 'bk.', 'ups.'
@@ -74,14 +76,17 @@ test('rendered page: inline only (no external URL, no src/href to elsewhere), te
   assert.equal(ui.render({ view: 'page', lang: 'de' }, t, false).includes('SY_CTX'), false, 'nobody but an administrator gets the page');
 });
 
-test('manifest: admin only, topics and settings match the code', () => {
+test('manifest: admin only, topics and settings match the code; portal only for the apps\' quick actions and Start tiles', () => {
   assert.equal(manifest.id, 'gatecontrol-synology');
-  assert.equal(manifest.version, '1.0.0');
+  assert.equal(manifest.version, '1.1.0');
+  assert.equal(manifest.gatecontrol, '>=1.154.0');
   assert.deepEqual(manifest.name, { de: 'NAS (Synology)', en: 'NAS (Synology)' });
   assert.equal(manifest.license.required, true);
-  assert.equal(manifest.permissions.portal, undefined);
+  // permissions.portal: the hooks quickActions / portalTiles; one section (no own tab) that only carries the tiles
+  assert.equal(manifest.permissions.portal, true);
   assert.equal(manifest.permissions.users, undefined);
-  assert.equal(manifest.ui.portal, undefined);
+  assert.equal(manifest.ui.portal.label, undefined);
+  assert.deepEqual(manifest.ui.portal.sections.map((s) => [s.id, s.tab]), [['nas', 'home']]);
   assert.deepEqual(manifest.permissions.network.homeTargets.map((x) => [x.id, x.protocols.join(), x.multiple]), [['nas', 'http', true]]);
   assert.deepEqual(manifest.notifyTopics.map((x) => x.id).sort(), ['backup', 'disk', 'power', 'storage', 'unreachable', 'update']);
   for (const s of manifest.ui.settings) {
