@@ -117,6 +117,16 @@ const BATTERY_ICON = 'M2 7h16v10H2zM21 10v4M5 10v4M8 10v4M11 10v4';
 const ROUTE_ICON = 'M3 19a3 3 0 1 0 6 0a3 3 0 1 0-6 0M9 19h8.5a3.5 3.5 0 0 0 0-7h-11a3.5 3.5 0 0 1 0-7H15M15 5a3 3 0 1 0 6 0a3 3 0 1 0-6 0';
 const LOCK_CLOSED_ICON = 'M5 11h14v10H5zM8 11V7a4 4 0 0 1 8 0v4M12 15v2';
 const LOCK_OPEN_ICON = 'M5 11h14v10H5zM8 11V7a4 4 0 0 1 7.9-1M12 15v2';
+// the widget badge (24×24 stroke): a battery filled to the level — empty (≤ 15 %), one,
+// two or three bars (≤ 40, ≤ 75, above) — and with a lightning bolt while charging
+const BATTERY_OUTLINE = 'M2 7h16v10H2zM21 10v4';
+const BATTERY_LEVEL_ICONS = Object.freeze([
+  [15, BATTERY_OUTLINE],
+  [40, BATTERY_OUTLINE + 'M6 10v4'],
+  [75, BATTERY_OUTLINE + 'M6 10v4M10 10v4'],
+  [Infinity, BATTERY_OUTLINE + 'M6 10v4M10 10v4M14 10v4'],
+]);
+const BATTERY_CHARGING_ICON = BATTERY_OUTLINE + 'M11 9l-3 3h4l-3 3';
 
 function fmtNum(v, lang) {
   const n = Number(v);
@@ -232,23 +242,25 @@ function deviceOf(v, lang) {
   return d;
 }
 
+/** The charge level as the widget badge: battery icon by level (lightning while charging), whole %; null without one. */
+function socBadge(f, lang) {
+  if (f.soc == null) return null;
+  const icon = f.charging ? BATTERY_CHARGING_ICON : BATTERY_LEVEL_ICONS.find(([max]) => f.soc <= max)[1];
+  return { icon, value: f.soc, unit: '%', state: f.soc <= 15 ? 'crit' : 'good', label: clip(t(lang, 'widget.soc'), 20) };
+}
+
 /**
  * The vehicle's widget, carried by its climate action (GateControl ≥ 1.172.0;
- * older hosts leave the new fields out): charge level (or the range without
- * one) as the value, range and lock as readings, charging / climate as the
- * status. `power: false` — the climate toggle is one of the vehicle's buttons,
- * not its on/off switch.
+ * older hosts leave the new fields out): the charge level as the badge right
+ * of the vehicle's name (GateControl ≥ 1.175.0; older hosts drop it), no main
+ * value, the range as the only reading (the lock shows on its own toggle),
+ * charging / climate as the status. `power: false` — the climate toggle is one
+ * of the vehicle's buttons, not its on/off switch.
  */
 function vehicleWidget(v, lang, states = appStates(v)) {
   const f = vehicleFacts(v, states);
-  const w = { label: null, value: null, unit: null, status: null, state: null, readings: [], controls: [], power: false };
-  if (f.soc != null) {
-    Object.assign(w, { label: clip(t(lang, 'widget.soc'), 24), value: f.soc, unit: '%' });
-    if (f.range != null) w.readings.push({ id: 'range', label: clip(t(lang, 'portal.range'), 20), value: f.range, unit: 'km', icon: ROUTE_ICON });
-  } else {
-    Object.assign(w, { label: clip(t(lang, 'portal.range'), 24), value: f.range == null ? '–' : f.range, unit: f.range == null ? null : 'km' });
-  }
-  if (f.locked != null) w.readings.push({ id: 'lock', ...lockItem(f.locked, clip(t(lang, 'widget.lock'), 20)) });
+  const w = { label: null, value: null, unit: null, status: null, state: null, readings: [], controls: [], power: false, badge: socBadge(f, lang) };
+  if (f.range != null) w.readings.push({ id: 'range', label: clip(t(lang, 'portal.range'), 20), value: f.range, unit: 'km', icon: ROUTE_ICON });
   if (f.charging) w.status = t(lang, 'widget.charging');
   else if (states.climate === 'on') w.status = t(lang, 'widget.climate_on');
   if (f.soc != null && f.soc <= 15) w.state = 'crit';

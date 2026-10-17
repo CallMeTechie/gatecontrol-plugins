@@ -107,14 +107,14 @@ test('mock host quick action widgets: checked like the host, controls run throug
     try {
       host.plugin._set(ok);
       const list = await host.quickActions(ada);
-      assert.deepEqual(list[0].widget, { label: null, ...ok, controls: [ok.controls[0], ok.controls[1]], readings: [], power: true });
+      assert.deepEqual(list[0].widget, { label: null, ...ok, controls: [ok.controls[0], ok.controls[1]], readings: [], power: true, badge: null });
       assert.equal(list[1].widget, null, 'no widget → null');
       host.plugin._set({ value: '–' });
-      assert.deepEqual((await host.quickActions(ada))[0].widget, { label: null, value: '–', unit: null, status: null, state: null, controls: [], readings: [], power: true });
+      assert.deepEqual((await host.quickActions(ada))[0].widget, { label: null, value: '–', unit: null, status: null, state: null, controls: [], readings: [], power: true, badge: null });
       host.plugin._set(ok);
-      assert.deepEqual(await host.runQuickAction(ada, 'ac:1', 'de', { control: 'target', value: 23.5 }), { status: 200, body: { ok: true, unchanged: false, message: 'ac:1 target number 23.5', state: 'on', widget: { label: null, value: 'x', unit: null, status: null, state: null, controls: [], readings: [], power: true } } });
+      assert.deepEqual(await host.runQuickAction(ada, 'ac:1', 'de', { control: 'target', value: 23.5 }), { status: 200, body: { ok: true, unchanged: false, message: 'ac:1 target number 23.5', state: 'on', widget: { label: null, value: 'x', unit: null, status: null, state: null, controls: [], readings: [], power: true, badge: null } } });
       assert.deepEqual((await host.runQuickAction(ada, 'ac:1', 'de', { control: 'mode', value: 'auto' })).body.message, 'ac:1 mode string auto');
-      assert.deepEqual((await host.runQuickAction(ada, 'ac:1', 'de', { control: 'mode', value: 'auto' })).body.widget, { label: null, ...ok, readings: [], power: true });
+      assert.deepEqual((await host.runQuickAction(ada, 'ac:1', 'de', { control: 'mode', value: 'auto' })).body.widget, { label: null, ...ok, readings: [], power: true, badge: null });
       assert.deepEqual((await host.runQuickAction(ada, 'ac:1')).body, { ok: true, unchanged: false, message: 'ac:1 undefined undefined undefined', state: 'on', widget: null });
       for (const [control, value] of [['fan', 50], ['', 1], [5, 1], ['target', 31], ['target', 15.5], ['target', '22'], ['target', NaN], ['mode', 'heat'], ['mode', 1], ['mode', undefined]]) {
         const r = await host.runQuickAction(ada, 'ac:1', 'de', { control, value });
@@ -171,7 +171,7 @@ test('mock host devices (GateControl ≥ 1.172.0): device, look, confirmWhen, wi
       const list = await host.quickActions(ada);
       assert.deepEqual(list[0].device, device);
       assert.deepEqual(list[0].widget, {
-        label: 'Ladestand', value: 74, unit: '%', status: null, state: null, controls: [], power: false,
+        label: 'Ladestand', value: 74, unit: '%', status: null, state: null, controls: [], power: false, badge: null,
         readings: [{ id: 'range', label: 'Reichweite', value: 310, unit: 'km', icon: 'M3 19h18', state: null }, { id: 'lock', label: 'Verriegelung', value: null, unit: null, icon: LOCK, state: 'good' }],
       });
       assert.deepEqual([list[0].look, list[0].confirmWhen], [null, null]);
@@ -181,7 +181,7 @@ test('mock host devices (GateControl ≥ 1.172.0): device, look, confirmWhen, wi
       assert.equal((await host.runQuickAction(ada, 'climate:1')).body.widget.power, false, 'a run answer is checked the same way');
       // a widget with only readings is fine
       host.plugin._set([{ id: 'a', title: 'A', widget: { readings: [{ id: 'x', label: 'X', value: 'ok' }] } }]);
-      assert.deepEqual((await host.quickActions(ada))[0].widget, { label: null, value: null, unit: null, status: null, state: null, controls: [], readings: [{ id: 'x', label: 'X', value: 'ok', unit: null, icon: null, state: null }], power: true });
+      assert.deepEqual((await host.quickActions(ada))[0].widget, { label: null, value: null, unit: null, status: null, state: null, controls: [], readings: [{ id: 'x', label: 'X', value: 'ok', unit: null, icon: null, state: null }], power: true, badge: null });
       const rd = (r) => [{ id: 'a', title: 'A', widget: { readings: [{ id: 'x', label: 'X', value: 1, ...r }] } }];
       for (const bad of [
         [{ id: 'a', title: 'A', device: 'v:1' }], [{ id: 'a', title: 'A', device: { id: 'v 1', title: 'X' } }], [{ id: 'a', title: 'A', device: { id: 'v:1' } }],
@@ -210,6 +210,51 @@ test('mock host devices (GateControl ≥ 1.172.0): device, look, confirmWhen, wi
         host.plugin._tiles([{ title: 'T', items }]);
         await assert.rejects(host.portalTiles(ada), { code: 'ERR_INVALID' }, JSON.stringify(items).slice(0, 80));
         await assert.rejects(host.clientTiles(ada), { code: 'ERR_INVALID' });
+      }
+    } finally {
+      await host.close();
+    }
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test('mock host widget badge (GateControl ≥ 1.175.0): always in the answer, checked like the host', async () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'qa-badge-plugin-'));
+  try {
+    fs.mkdirSync(path.join(tmp, 'server'));
+    fs.writeFileSync(path.join(tmp, 'plugin.json'), JSON.stringify({ id: 'qa-badge-test', name: 'QA', version: '1.0.0', entry: 'server/index.js', permissions: { portal: true } }));
+    fs.writeFileSync(path.join(tmp, 'server', 'index.js'), `
+      let answer = [];
+      module.exports = {
+        _set(a) { answer = a; },
+        async quickActions() { return answer; },
+        async runQuickAction() { return { ok: true, state: 'on', widget: answer[0] && answer[0].widget }; },
+      };`);
+    const host = await createHost(tmp);
+    const ada = { id: 2, name: 'Ada', role: 'user' };
+    const BAT = 'M3 7h15v10H3zM21 10v4';
+    const wb = (badge) => [{ id: 'climate:1', title: 'Klima', kind: 'toggle', widget: { value: null, readings: [{ id: 'range', label: 'Reichweite', value: 310, unit: 'km' }], badge } }];
+    try {
+      host.plugin._set(wb({ icon: BAT, value: 74, unit: '%', state: 'good', label: 'Ladestand' }));
+      const w = (await host.quickActions(ada))[0].widget;
+      assert.deepEqual(w.badge, { icon: BAT, value: 74, unit: '%', state: 'good', label: 'Ladestand' });
+      assert.deepEqual([w.label, w.value, w.unit], [null, null, null], 'a widget without a main value');
+      assert.equal(Object.keys(w).at(-1), 'badge', 'the widget\'s last key, as the host');
+      assert.deepEqual((await host.runQuickAction(ada, 'climate:1')).body.widget.badge, w.badge, 'a run answer is checked the same way');
+      // only the icon is required; the rest comes back as null
+      host.plugin._set(wb({ icon: BAT, value: 'voll' }));
+      assert.deepEqual((await host.quickActions(ada))[0].widget.badge, { icon: BAT, value: 'voll', unit: null, state: null, label: null });
+      for (const none of [undefined, null]) {
+        host.plugin._set(wb(none));
+        assert.equal((await host.quickActions(ada))[0].widget.badge, null, 'no badge → null');
+      }
+      for (const bad of [
+        'x', [], {}, { value: 5 }, { icon: '<svg>' }, { icon: 5 }, { icon: BAT, value: '123456789' }, { icon: BAT, value: true }, { icon: BAT, value: '' },
+        { icon: BAT, value: 1, unit: 'Watts' }, { icon: BAT, unit: '%' }, { icon: BAT, value: ' 5' }, { icon: BAT, state: 'on' }, { icon: BAT, state: 'off' }, { icon: BAT, state: 'neutral' }, { icon: BAT, label: 'x'.repeat(21) }, { icon: BAT, label: ' x' },
+      ]) {
+        host.plugin._set(wb(bad));
+        await assert.rejects(host.quickActions(ada), { code: 'ERR_INVALID' }, JSON.stringify(bad));
       }
     } finally {
       await host.close();
@@ -425,7 +470,7 @@ test('mock host GateControl 1.173.0: verbs and targets of toggles, runs with a t
       assert.deepEqual(await host.runQuickAction(ada, 'lock:1', 'de', { state: 'on' }), { status: 200, body: { ok: true, message: 'ran', state: 'on', widget: null, unchanged: false } });
       assert.deepEqual(host.plugin.calls.at(-1), ['lock:1', 'on']);
       // targets: false → the listed state decides
-      assert.deepEqual(await host.runQuickAction(ada, 'old:1', 'de', { state: 'on' }), { status: 200, body: { ok: true, message: null, state: 'on', widget: { label: null, value: 'An', unit: null, status: null, state: null, controls: [], readings: [], power: true }, unchanged: true } });
+      assert.deepEqual(await host.runQuickAction(ada, 'old:1', 'de', { state: 'on' }), { status: 200, body: { ok: true, message: null, state: 'on', widget: { label: null, value: 'An', unit: null, status: null, state: null, controls: [], readings: [], power: true, badge: null }, unchanged: true } });
       assert.equal(host.plugin.calls.length, 1, 'already there: no hook call');
       assert.equal((await host.runQuickAction(ada, 'old:1', 'de', { state: 'off' })).body.unchanged, false);
       assert.deepEqual(host.plugin.calls.at(-1), ['old:1', 'none'], 'the other state: the hook flips as without a state');
