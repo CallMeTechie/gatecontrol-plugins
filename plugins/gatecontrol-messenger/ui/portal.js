@@ -2,7 +2,11 @@
    Talks to the plugin API through GC.call, uploads with GC.upload, gets live events with
    GC.on('event') (plus a 30 s refresh as a fallback) and shows files through the signed
    /plugin-media/ URLs the API hands out. Voice messages are recorded with MediaRecorder
-   when the browser allows the microphone in the frame. */
+   when the browser allows the microphone in the frame.
+   1.2.0: locations — sent from a map (the host's Leaflet, tiles through GC.tiles), the
+   browser's position when the frame may ask for it (GateControl 1.179+ ui.geolocation),
+   coordinates typed in otherwise; received ones with a small map. The pinned entry
+   "GateControl" (the core inbox) through GC.inbox when the host offers it (1.179+). */
 (function () {
   'use strict';
   var M = window.MS;
@@ -16,7 +20,7 @@
   var app = $('#ms-app');
   var S = {
     me: null, prefs: null, limits: {}, features: {}, people: null, convs: [], cur: null, msgs: {}, typing: {}, reply: null, edit: null,
-    rec: null, uploads: [], q: '', lastSync: null, activeTimer: null, firstUnread: null, infoOpen: false, loading: false, menu: null, refreshTimers: {}, typingAt: 0,
+    rec: null, uploads: [], q: '', inbox: null, lastSync: null, activeTimer: null, firstUnread: null, infoOpen: false, loading: false, menu: null, refreshTimers: {}, typingAt: 0,
   };
 
   // ── sizing: the frame grows with its content, the app gets a fixed height from the screen ──
@@ -153,10 +157,37 @@
     ]));
     return b;
   }
+  /** The pinned entry "GateControl": the viewer's own core inbox (GC.inbox, GateControl 1.179+), not a chat. */
+  function inboxRow() {
+    var ib = S.inbox;
+    var latest = ib.latest;
+    var b = el('button', { type: 'button', class: 'ms-row ms-row-pinned', role: 'listitem', title: T('inbox.open'),
+      on: { click: function () { if (window.GC && window.GC.inbox) window.GC.inbox.open(); } } });
+    b.appendChild(M.avatar({ icon: 'system' }, 46));
+    b.appendChild(el('span', { class: 'ms-row-tx' }, [
+      el('span', { class: 'ms-row-top' }, [el('span', { class: 'ms-row-name', text: 'GateControl' }), latest && latest.createdAt ? el('span', { class: 'ms-row-time', text: M.listTime(latest.createdAt) }) : null]),
+      el('span', { class: 'ms-row-bottom' }, [
+        el('span', { class: 'ms-row-pv' + (ib.unread ? ' is-unread' : ''), text: latest ? latest.title : T('inbox.empty') }),
+        el('span', { class: 'ms-row-icons', title: T('portal.pinned') }, [M.icon('pin', 14)]),
+        ib.unread ? el('span', { class: 'ms-badge', text: ib.unread > 99 ? '99+' : String(ib.unread), 'aria-label': T('portal.unread', { n: ib.unread }) }) : null,
+      ]),
+    ]));
+    return b;
+  }
+  function inboxShown(q) {
+    if (!S.inbox) return false;
+    if (!q) return true;
+    return 'gatecontrol'.indexOf(q) >= 0 || !!(S.inbox.latest && S.inbox.latest.title.toLowerCase().indexOf(q) >= 0);
+  }
   function renderList() {
     var rows = M.clear($('#ms-rows'));
     var q = S.q.trim().toLowerCase();
     var list = S.convs.filter(function (c) { return !q || convTitle(c).toLowerCase().indexOf(q) >= 0 || preview(c).toLowerCase().indexOf(q) >= 0; });
+    if (inboxShown(q)) {
+      rows.appendChild(el('div', { class: 'ms-list-sec', text: T('portal.pinned') }));
+      rows.appendChild(inboxRow());
+      if (list.length) rows.appendChild(el('div', { class: 'ms-list-sec', text: T('portal.chats') }));
+    }
     list.forEach(function (c) { rows.appendChild(row(c)); });
     var empty = $('#ms-list-empty');
     empty.hidden = list.length > 0;
@@ -301,8 +332,19 @@
   }
   function locationEl(m) {
     var l = m.location || {};
-    var coords = (typeof l.lat === 'number' ? l.lat.toFixed(5) : '?') + ', ' + (typeof l.lon === 'number' ? l.lon.toFixed(5) : '?');
-    return el('div', { class: 'ms-loc' }, [el('span', { class: 'ms-loc-ic' }, [M.icon('pin', 18)]), el('span', { class: 'ms-filecard-tx' }, [el('b', { text: l.label || T('kind.location') }), el('small', { class: 'ms-mono', text: coords })])]);
+    var ok = validPos(l);
+    var label = l.label || T('kind.location');
+    var prev = ok ? mapPreview(l.lat, l.lon) : null;
+    var kids = [
+      prev,
+      el('span', { class: 'ms-loc-row' }, [
+        el('span', { class: 'ms-loc-ic' }, [M.icon('pin', 18)]),
+        el('span', { class: 'ms-filecard-tx' }, [el('b', { text: label }), el('small', { class: 'ms-mono', text: ok ? coordText(l) : '?' })]),
+      ]),
+    ];
+    if (!ok) return el('div', { class: 'ms-loc' }, kids);
+    return el('button', { type: 'button', class: 'ms-loc' + (prev ? ' has-map' : ''), 'aria-label': T('loc.open', { label: label }),
+      on: { click: function (e) { e.stopPropagation(); showLocation(l); } } }, kids);
   }
   function reactionsEl(m) {
     if (!m.reactions || !m.reactions.length) return null;
@@ -592,7 +634,10 @@
       refs.input = null;
       return;
     }
-    if (!S.edit) rowEl.appendChild(el('button', { type: 'button', class: 'ms-ib', 'aria-label': T('portal.attach'), title: T('portal.attach'), on: { click: pickFile } }, [M.icon('attach', 18)]));
+    if (!S.edit) {
+      var attachBtn = el('button', { type: 'button', class: 'ms-ib', 'aria-label': T('portal.attach'), title: T('portal.attach'), 'aria-haspopup': 'menu', on: { click: function () { attachMenu(attachBtn); } } }, [M.icon('attach', 18)]);
+      rowEl.appendChild(attachBtn);
+    }
     var input = el('textarea', { class: 'ms-input', rows: '1', placeholder: T('portal.placeholder_short'), title: narrow() ? null : T('portal.placeholder'), 'aria-label': T('portal.placeholder'), maxlength: String(S.limits.textMax || 4000) });
     if (S.edit) input.value = S.edit.text || '';
     if (refs.draft && !S.edit) { input.value = refs.draft; refs.draft = ''; }
@@ -850,6 +895,215 @@
       }).catch(function (e) { if (e && (e.status || (e.data && e.data.code))) uploadErr(e); else M.warn(e); });
     };
     try { rec.recorder.stop(); } catch (_) { rec.recorder.onstop(); }
+  }
+
+  // ── location (1.2.0): a map to pick the point, the browser's position when allowed ──
+  var OSM = 'https://www.openstreetmap.org';
+  var ATTRIBUTION = '&copy; <a href="' + OSM + '/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap</a>';
+  var START = { lat: 51.16, lon: 10.45, zoom: 5 }; // without a point: Germany
+  var PREVIEW = { w: 260, h: 132, z: 15 };
+  var leafletLoading = null;
+  function fmt(n) { return Number(n).toFixed(5); }
+  function validPos(p) { return !!p && typeof p.lat === 'number' && typeof p.lon === 'number' && isFinite(p.lat) && isFinite(p.lon) && Math.abs(p.lat) <= 90 && Math.abs(p.lon) <= 180; }
+  function coordText(p) { return fmt(p.lat) + ', ' + fmt(p.lon) + (p.accuracy != null && p.accuracy > 0 ? ' · ±' + Math.round(p.accuracy) + ' m' : ''); }
+  function wrapLon(lon) { return ((((lon + 180) % 360) + 360) % 360) - 180; }
+  function osmUrl(p) { return OSM + '/?mlat=' + fmt(p.lat) + '&mlon=' + fmt(p.lon) + '#map=17/' + fmt(p.lat) + '/' + fmt(p.lon); }
+  /** GateControl's tile relay (plugin.json ui.maps): the only way tiles reach the sandboxed frame. */
+  function tilesUrl() {
+    var t = window.GC && typeof window.GC.tiles === 'string' ? window.GC.tiles : null;
+    return t && /^\/plugins\/_shared\/tiles\/[A-Za-z0-9._-]+\/\{z\}\/\{x\}\/\{y\}\.png$/.test(t) ? t : null;
+  }
+  function tile(t, z, x, y) { return t.replace('{z}', String(z)).replace('{x}', String(x)).replace('{y}', String(y)); }
+  /** The host's Leaflet (ui.maps) — rejects when it does not load or there is no tile relay. */
+  function loadLeaflet() {
+    if (window.L && window.L.map && tilesUrl()) return Promise.resolve(window.L);
+    if (leafletLoading) return leafletLoading;
+    var cfg = CTX.leaflet || {};
+    leafletLoading = new Promise(function (resolve, reject) {
+      if (!cfg.js || !tilesUrl()) { reject(new Error('no map')); return; }
+      var done = false;
+      var finish = function (ok) {
+        if (done) return;
+        done = true;
+        if (ok && window.L && window.L.map) resolve(window.L); else reject(new Error('leaflet unavailable'));
+      };
+      if (cfg.css) document.head.appendChild(el('link', { rel: 'stylesheet', href: cfg.css }));
+      var sc = el('script', { src: cfg.js });
+      sc.async = true;
+      sc.onload = function () { finish(true); };
+      sc.onerror = function () { finish(false); };
+      document.head.appendChild(sc);
+      setTimeout(function () { finish(!!(window.L && window.L.map)); }, 8000);
+    });
+    leafletLoading.catch(function () { leafletLoading = null; });
+    return leafletLoading;
+  }
+  /** A small static map around a point from the relay's tiles (no Leaflet, a few <img>), or null. */
+  function mapPreview(lat, lon) {
+    var t = tilesUrl();
+    if (!t) return null;
+    var z = PREVIEW.z;
+    var n = Math.pow(2, z);
+    var rad = Math.max(-85.05, Math.min(85.05, lat)) * Math.PI / 180;
+    var px = ((lon + 180) / 360) * n * 256;
+    var py = ((1 - Math.log(Math.tan(rad) + 1 / Math.cos(rad)) / Math.PI) / 2) * n * 256;
+    var left = px - PREVIEW.w / 2;
+    var top = py - PREVIEW.h / 2;
+    var box = el('span', { class: 'ms-locmap', 'aria-hidden': 'true' });
+    for (var tx = Math.floor(left / 256); tx * 256 < left + PREVIEW.w; tx++) {
+      for (var ty = Math.floor(top / 256); ty * 256 < top + PREVIEW.h; ty++) {
+        if (ty < 0 || ty >= n) continue;
+        box.appendChild(el('img', { src: tile(t, z, ((tx % n) + n) % n, ty), alt: '', loading: 'lazy', draggable: 'false',
+          style: 'left:' + Math.round(tx * 256 - left) + 'px;top:' + Math.round(ty * 256 - top) + 'px' }));
+      }
+    }
+    box.appendChild(el('span', { class: 'ms-locpin' }));
+    return box;
+  }
+  function tileLayer(L) { return L.tileLayer(tilesUrl(), { maxZoom: 19, attribution: ATTRIBUTION }); }
+  function pinIcon(L) { return L.divIcon({ className: 'ms-pin', html: '', iconSize: [26, 26], iconAnchor: [13, 26] }); }
+  function osmLink(p) { return el('a', { class: 'ms-osm', href: osmUrl(p), target: '_blank', rel: 'noopener noreferrer', text: T('loc.open_osm') }); }
+  /** A received location in a dialog: the map (Leaflet) or the preview, coordinates, a link to OpenStreetMap. */
+  function showLocation(l) {
+    var holder = el('div', { class: 'ms-bigmap', role: 'img', 'aria-label': T('loc.view_aria') });
+    var body = el('div', { class: 'ms-locview' }, [holder, el('div', { class: 'ms-loc-foot' }, [el('span', { class: 'ms-mono', text: coordText(l) }), osmLink(l)])]);
+    M.dialog(l.label || T('kind.location'), body, [], { wide: true });
+    loadLeaflet().then(function (L) {
+      var map = L.map(holder, { scrollWheelZoom: false, attributionControl: true });
+      tileLayer(L).addTo(map);
+      map.setView([l.lat, l.lon], 16);
+      if (l.accuracy > 0) L.circle([l.lat, l.lon], { radius: l.accuracy, color: '#0F766E', weight: 1, fillOpacity: 0.12, interactive: false }).addTo(map);
+      L.marker([l.lat, l.lon], { icon: pinIcon(L), keyboard: false, interactive: false }).addTo(map);
+      setTimeout(function () { try { map.invalidateSize(); } catch (_) { /* closed */ } }, 60);
+    }).catch(function () {
+      var prev = mapPreview(l.lat, l.lon);
+      holder.classList.add('is-static');
+      if (prev) holder.appendChild(prev); else holder.appendChild(el('p', { class: 'ms-muted', text: T('loc.no_map') }));
+    });
+  }
+  /** May the frame ask for the browser's position? (GateControl 1.179+ gives the frame allow="geolocation".) */
+  function geoAllowed() {
+    if (!navigator.geolocation || window.isSecureContext === false) return false;
+    var fp = document.permissionsPolicy || document.featurePolicy;
+    if (fp && typeof fp.allowsFeature === 'function') {
+      try { return !!fp.allowsFeature('geolocation'); } catch (_) { return false; }
+    }
+    return true; // no way to ask this browser: try, the error callback tells
+  }
+  /** "Send location": pick a point on the map (tap, drag), use the browser's position or type coordinates. */
+  function pickLocation() {
+    var c = conv(S.cur);
+    if (!c || !c.can.send) return;
+    var pos = null;
+    var map = null;
+    var Lf = null;
+    var marker = null;
+    var circle = null;
+    var holder = el('div', { class: 'ms-bigmap ms-pickmap', role: 'application', 'aria-label': T('loc.map_aria') });
+    var status = el('p', { class: 'ms-loc-status', role: 'status', text: T('loc.pick_hint') });
+    var lat = el('input', { class: 'form-input', type: 'number', step: 'any', min: '-90', max: '90', inputmode: 'decimal', 'aria-label': T('loc.lat'), placeholder: T('loc.lat') });
+    var lon = el('input', { class: 'form-input', type: 'number', step: 'any', min: '-180', max: '180', inputmode: 'decimal', 'aria-label': T('loc.lon'), placeholder: T('loc.lon') });
+    var label = el('input', { class: 'form-input', type: 'text', maxlength: '200', placeholder: T('loc.label_ph'), 'aria-label': T('loc.label') });
+    var mine = geoAllowed() ? el('button', { type: 'button', class: 'btn btn-sm', on: { click: locate } }, [M.icon('pin', 14), T('loc.mine')]) : null;
+    function draw(fit) {
+      if (!map || !pos) return;
+      var ll = [pos.lat, pos.lon];
+      if (!marker) {
+        marker = Lf.marker(ll, { icon: pinIcon(Lf), draggable: true, keyboard: true, title: T('loc.point'), alt: T('loc.point') }).addTo(map);
+        marker.on('dragend', function () { var p = marker.getLatLng(); setPos({ lat: p.lat, lon: wrapLon(p.lng) }, { map: false }); });
+      } else marker.setLatLng(ll);
+      if (circle) { circle.remove(); circle = null; }
+      if (pos.accuracy > 0) circle = Lf.circle(ll, { radius: pos.accuracy, color: '#0F766E', weight: 1, fillOpacity: 0.12, interactive: false }).addTo(map);
+      if (fit) map.setView(ll, Math.max(map.getZoom(), 16));
+    }
+    function setPos(p, o) {
+      var opt = o || {};
+      pos = { lat: Math.max(-90, Math.min(90, p.lat)), lon: wrapLon(p.lon) };
+      if (p.accuracy != null && isFinite(p.accuracy)) pos.accuracy = Math.min(100000, Math.max(0, p.accuracy));
+      status.textContent = coordText(pos);
+      if (opt.inputs !== false) { lat.value = fmt(pos.lat); lon.value = fmt(pos.lon); }
+      if (opt.map !== false) draw(!!opt.fit);
+    }
+    function fromInputs() {
+      var a = parseFloat(lat.value);
+      var b = parseFloat(lon.value);
+      if (!isFinite(a) || !isFinite(b) || Math.abs(a) > 90 || Math.abs(b) > 180) return;
+      if (pos && fmt(a) === fmt(pos.lat) && fmt(b) === fmt(pos.lon)) return; // unchanged: keep the precision and the accuracy
+      setPos({ lat: a, lon: b }, { inputs: false, fit: true });
+    }
+    lat.addEventListener('change', fromInputs);
+    lon.addEventListener('change', fromInputs);
+    function locate() {
+      status.textContent = T('loc.locating');
+      if (mine) mine.disabled = true;
+      navigator.geolocation.getCurrentPosition(function (g) {
+        if (mine) mine.disabled = false;
+        setPos({ lat: g.coords.latitude, lon: g.coords.longitude, accuracy: g.coords.accuracy }, { fit: true });
+      }, function (err) {
+        if (mine) mine.disabled = false;
+        status.textContent = T(err && err.code === 1 ? 'loc.denied' : 'loc.unavailable');
+      }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 });
+    }
+    var body = el('div', { class: 'ms-locpick' }, [
+      holder,
+      el('div', { class: 'ms-loc-tools' }, [status, mine]),
+      el('div', { class: 'ms-loc-coords' }, [lat, lon]),
+      el('div', { class: 'form-group' }, [el('label', { class: 'form-label', text: T('loc.label') }), label]),
+    ]);
+    M.dialog(T('loc.title'), body, [
+      { label: T('common.cancel'), value: null },
+      { label: T('portal.send'), primary: true, onClick: function () {
+        fromInputs();
+        if (!pos) { status.textContent = T('loc.need_point'); return false; }
+        var cur = conv(S.cur);
+        if (!cur || cur.id !== c.id) return true;
+        var loc = { lat: Number(pos.lat.toFixed(6)), lon: Number(pos.lon.toFixed(6)) };
+        var name = label.value.trim().slice(0, 200);
+        if (name) loc.label = name;
+        if (pos.accuracy != null) loc.accuracy = Math.round(pos.accuracy);
+        var b = { clientId: M.uuid(), kind: 'location', location: loc };
+        if (S.reply) { b.replyTo = S.reply.id; }
+        var replyWas = S.reply;
+        send(c, b, { location: loc }).catch(function (e) { M.warn(e); });
+        S.reply = null;
+        if (replyWas) renderComposer();
+        return true;
+      } },
+    ], { wide: true });
+    loadLeaflet().then(function (L) {
+      if (!holder.isConnected) return;
+      Lf = L;
+      map = L.map(holder, { scrollWheelZoom: true, attributionControl: true });
+      tileLayer(L).addTo(map);
+      map.setView([START.lat, START.lon], START.zoom);
+      map.on('click', function (e) { setPos({ lat: e.latlng.lat, lon: e.latlng.lng }); });
+      if (pos) draw(true);
+      setTimeout(function () { try { map.invalidateSize(); } catch (_) { /* closed */ } }, 60);
+    }).catch(function () {
+      holder.hidden = true;
+      status.textContent = T('loc.no_map_pick');
+    });
+  }
+  /** The attach button: a small menu — file or photo, location. */
+  function attachMenu(btn) {
+    closeMenu();
+    var items = [
+      el('button', { type: 'button', class: 'ms-menu-item', role: 'menuitem', on: { click: function () { closeMenu(); pickFile(); } } }, [M.icon('attach', 16), T('portal.attach_file')]),
+    ];
+    if (S.features.location !== false) {
+      items.push(el('button', { type: 'button', class: 'ms-menu-item', role: 'menuitem', on: { click: function () { closeMenu(); pickLocation(); } } }, [M.icon('pin', 16), T('loc.send')]));
+    }
+    var layer = el('div', { style: 'position:absolute;inset:0;z-index:19', on: { click: function (e) { if (e.target === layer) closeMenu(); } } });
+    var menu = el('div', { class: 'ms-menu', role: 'menu', 'aria-label': T('portal.attach') }, items);
+    layer.appendChild(menu);
+    app.appendChild(layer);
+    var ar = app.getBoundingClientRect();
+    var br = btn.getBoundingClientRect();
+    menu.style.left = Math.max(8, Math.min(ar.width - menu.offsetWidth - 8, br.left - ar.left)) + 'px';
+    menu.style.top = Math.max(8, br.top - ar.top - menu.offsetHeight - 6) + 'px';
+    S.menu = { layer: layer, wrap: null };
+    var first = menu.querySelector('button');
+    if (first) first.focus();
   }
 
   // ── message menu ──
@@ -1290,6 +1544,13 @@
       S.limits = r.limits || {};
       S.features = r.features || {};
       if (window.GC && window.GC.on) window.GC.on('event', onEvent);
+      // the pinned entry "GateControl" (GateControl 1.179+, plugin.json ui.inbox); older hosts have no GC.inbox
+      if (window.GC && window.GC.inbox && typeof window.GC.inbox.on === 'function') {
+        window.GC.inbox.on(function (st) {
+          S.inbox = st && st.available === true ? { unread: Math.max(0, Number(st.unread) || 0), latest: st.latest && typeof st.latest.title === 'string' ? st.latest : null } : null;
+          renderList();
+        });
+      }
       return refreshAll();
     }).then(function () {
       setInterval(function () { refreshAll().catch(function () {}); }, 30000);
