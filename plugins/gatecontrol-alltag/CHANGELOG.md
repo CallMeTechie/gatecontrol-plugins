@@ -2,6 +2,19 @@
 
 Müllabfuhr und Kalender des Haushalts als GateControl-Plugin.
 
+## 1.3.0
+- **Kalender für andere Plugins** (`services.provides`, GateControl ≥ 1.177.0 – ein älteres GateControl ruft
+  die Dienste einfach nie auf, die Mindestversion bleibt 1.164.0): Familie 1.9.0 nutzt sie für Regeln und
+  Erinnerungen mit der Bedingung „Termin heute/morgen“.
+  - `calendar_query { from: 'YYYY-MM-DD', to: 'YYYY-MM-DD', subIds?: [number], match?: string }` →
+    `{ ok: true, events: [{ title, date, startMs, allDay, subId, subName, time }], subscriptions: [{ id, name }] }`
+    – die Termine der Kalender, die die aufrufende Person sieht (wie im Portal und in der App; ein Admin sieht
+    alle Kalender; ohne Person nichts), höchstens 62 Tage, `match`: Titel enthält (ohne Groß/Klein, ≤ 80),
+    höchstens 50 Termine (Titel ≤ 80), `time` „HH:MM“ in der Zeitzone des Plugins (ganztägig `null`).
+    Abgeschaltete Kalender ⇒ leer. Fehler `{ ok: false, code: 'invalid' }`.
+  - `calendar_list {}` → `{ ok: true, subscriptions: [{ id, name }] }`.
+  Die Adresse eines Kalenders verlässt das Plugin auch hier nie.
+
 ## 1.2.0
 - **Termine und Abfuhrtermine für die GateControl-App** (`permissions.app`, ohne eigenen
   App-Tab): `GET app/events?from=YYYY-MM-DD&to=YYYY-MM-DD` (höchstens 62 Tage, Vorgabe heute

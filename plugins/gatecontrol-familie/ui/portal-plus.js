@@ -5,7 +5,7 @@
    household book (parents), presence (everyone: own consent and who is home;
    parents: the rules and, 1.5.0, the places of the place rules — ui/rules.js). Money is bookkeeping only. Same API as
    the app; a viewer recognised only by device trust reads and changes nothing
-   (no presence at all). */
+   (no presence at all). 1.9.0: rules and reminders (ui/reminders.js) for everyone who may make some. */
 (function () {
   'use strict';
   var A = window.FA, T = A.T, $ = A.$, el = A.el, CTX = A.CTX;
@@ -469,6 +469,16 @@
   $('#fa-pres-add').addEventListener('click', function () { if (presData && presData.rules) A.rules.edit(null, presData, ruleOpts); });
   $('#fa-pres-place-add').addEventListener('click', function () { if (presData && presData.places) A.rules.editPlace(null, presData, ruleOpts, loadPresence); });
 
+  // ── rules and reminders (1.9.0, ui/reminders.js) ─────────────────────────
+  var rulesView = null;
+  function loadRules() {
+    if (!rulesView) rulesView = A.reminders.mount($('#fa-rules-box'), { base: 'rules', add: $('#fa-rules-add'), writable: writable, me: me && me.me });
+    return rulesView.reload().then(function (d) {
+      // children without their own rules (and without the setting) see nothing of it
+      $('#fa-rules').hidden = !d || !(d.can.house || d.can.personal || d.rules.length);
+    });
+  }
+
   // ── start ────────────────────────────────────────────────────────────────
   A.api('GET', 'me').then(function (r) {
     me = r;
@@ -487,6 +497,7 @@
     if (mod.allowance) loadAllowance();
     if (mod.expenses && r.me.role === 'parent') loadExpenses();
     if (mod.presence && writable) loadPresence();
+    if (mod.rules && writable) loadRules();
     setInterval(function () {
       if (mod.board) loadBoard();
       if (mod.presence && writable) loadPresence();

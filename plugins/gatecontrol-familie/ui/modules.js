@@ -3,7 +3,8 @@
    and how to set it up), the locate mode per child (with the hint from 14),
    and a live preview of the app's family screen for a chosen member.
    1.6.0: the card „Messenger“ — whether the Messenger plugin is there, the
-   group „Familie“ on / off (default on), its last sync and „Jetzt abgleichen“. */
+   group „Familie“ on / off (default on), its last sync and „Jetzt abgleichen“.
+   1.9.0: the module „Regeln und Erinnerungen“ (rules). */
 (function () {
   'use strict';
   var A = window.FA, T = A.T, $ = A.$, el = A.el;
@@ -14,7 +15,7 @@
     ['group.out', [['places', 'all'], ['rides', 'all']]],
     ['group.kids', [['locate', 'parents'], ['arrival_sos', 'children'], ['stars', 'children'], ['emergency', 'all']]],
     ['group.money', [['allowance', 'family'], ['wishes', 'all'], ['expenses', 'parents']]],
-    ['group.home', [['wall', 'none'], ['presence', 'all']]],
+    ['group.home', [['wall', 'none'], ['presence', 'all'], ['rules', 'all']]],
   ];
   // what the app shows (the wall tablet has no app screen)
   var ORDER = ['shopping', 'tasks', 'stars', 'dates', 'board', 'meals', 'rides', 'emergency', 'locate', 'arrival_sos', 'places', 'allowance', 'wishes', 'expenses', 'presence'];

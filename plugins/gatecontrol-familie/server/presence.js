@@ -73,17 +73,28 @@
 // collect { userId, place } into r.placeStatus — the place's name („Zuhause“ for home, the
 // rule place's name), null when away / after leaving a place while not at home / without
 // consent; sent to the Messenger after the commit. Never a position.
+//
+// 1.9.0 — rules and reminders (server/rules.js: the API `rules`, the trigger 'schedule', title,
+// scope, device and calendar conditions; server/conditions.js, server/reminders.js): rules run
+// only with the module rules on (default on); presence and place triggers still need the module
+// presence. The conditions device / calendar are checked here, after the commit, right before the
+// actions (not met → nothing runs, a log row { skipped: true } says why). The API presence/rules
+// stays for the pages of before: it lists and changes only house rules with a presence or place
+// trigger and keeps what it does not know (title, schedule, device / calendar conditions, the
+// facts and buttons of a notification).
 
 const crypto = require('node:crypto');
 const store = require('./store');
-const tz = require('./tz');
-const push = require('./push');
 const members = require('./members');
-const sun = require('./sun');
 const ruleplaces = require('./ruleplaces');
+const rulerow = require('./rulerow');
+const conditions = require('./conditions');
+const reminders = require('./reminders');
 const messenger = require('./messenger');
 const texts = require('./texts.json');
 const { fail, posInt, optText, bool, intIn, iso, parseIso, parseJson, userIds, TIME_RE } = require('./util');
+
+const { rowToRule } = rulerow;
 
 const TRIGGERS = ['all_away', 'first_home', 'child_home_alone', 'person_home', 'person_away', 'place_enter', 'place_exit'];
 const PLACE_TRIGGERS = { place_enter: 'enter', place_exit: 'exit' };
@@ -241,35 +252,17 @@ function transitionEvents(fam, map, m, home) {
 
 // ─── rules ──────────────────────────────────────
 
-function rowToRule(x) {
-  const c = parseJson(x.conditions_json, {});
-  return {
-    id: x.id, name: x.name || '', trigger: x.trigger_type, userId: x.user_id == null ? null : x.user_id, placeId: x.place_id == null ? null : x.place_id,
-    graceMinutes: x.grace_minutes,
-    conditions: { time: c.time && c.time.from && c.time.to ? { from: c.time.from, to: c.time.to } : null, afterSunset: c.afterSunset === true },
-    actions: parseJson(x.actions_json, []), active: !!x.active, ownerId: x.owner_id, lastRunAt: x.last_run_at, lastKey: x.last_key,
-    createdAt: x.created_at, updatedAt: x.updated_at,
-  };
-}
-
 /** Local "HH:MM" of now in the window (from inclusive, to exclusive; may span midnight). */
-function inWindow(hm, w) {
-  if (!w) return true;
-  return w.from < w.to ? hm >= w.from && hm < w.to : hm >= w.from || hm < w.to;
-}
+const { inWindow } = conditions;
 
+/** The rule's own conditions (time window, after sunset) — the others are checked by execute(). */
 function conditionsHold(rule, cfg, now) {
-  const p = tz.parts(now, cfg.tz);
-  if (!inWindow(`${tz.pad(p.hh)}:${tz.pad(p.mm)}`, rule.conditions.time)) return false;
-  if (rule.conditions.afterSunset && cfg.location && !sun.isDown(now, cfg.location.lat, cfg.location.lon)) return false;
-  return true;
+  return conditions.syncHold(rule, cfg, now);
 }
 
 const throttled = (rule, now) => rule.lastRunAt != null && now - rule.lastRunAt < THROTTLE_MS;
 
-async function activeRules(gc, trigger) {
-  return (await store.all(gc, 'SELECT * FROM presence_rules WHERE active = 1 AND trigger_type = ? ORDER BY id', [trigger])).map(rowToRule);
-}
+const activeRules = rulerow.activeRules;
 
 /**
  * Event triggers: the matching rules run now (not throttled, conditions hold) → runs.
@@ -277,6 +270,8 @@ async function activeRules(gc, trigger) {
  * the rules of that place for anyone (userId null) or that person.
  */
 async function fire(gc, fam, cfg, now, events, runs) {
+  // 1.9.0: no rule runs while the module rules is off
+  if (cfg.modules.rules === false) return;
   for (const ev of events) {
     const place = !!PLACE_TRIGGERS[ev.trigger];
     for (const rule of await activeRules(gc, ev.trigger)) {
@@ -295,6 +290,7 @@ async function fire(gc, fam, cfg, now, events, runs) {
  * its grace time — throttled: later, while everyone stays away.
  */
 async function checkAllAway(gc, fam, cfg, now, runs) {
+  if (cfg.modules.rules === false) return;
   const map = await load(gc, fam);
   const sharing = [...map.values()].filter((p) => p.share);
   if (!sharing.length || !sharing.every((p) => p.home === false)) return;
@@ -322,18 +318,18 @@ function hostCode(e) {
   return 'error';
 }
 
-/** The text of a notify or messenger action: its own (or the default of the trigger) with {name} and {place} filled. */
-function actionText(a, run, person, cfg) {
-  const name = person ? person.name : '';
-  const place = run.placeName || '';
-  return (a.text || push.t(cfg.lang, `presence.${run.trigger}`, { name, place })).split('{name}').join(name).split('{place}').join(place);
+/** The text of a notify or messenger action: its own (or the default of the trigger) with the placeholders filled. */
+function actionText(a, run, person, cfg, vars) {
+  return reminders.textOf(a, run, person, cfg, vars, run.rule);
 }
 
-function recipients(action, fam, triggerUser) {
+function recipients(action, fam, triggerUser, rule) {
   let ids;
   if (action.to === 'parents') ids = members.parents(fam).map((m) => m.userId);
   else if (action.to === 'all') ids = fam.list.map((m) => m.userId);
   else ids = (Array.isArray(action.to) ? action.to : []).filter((id) => fam.byId.has(id));
+  // 1.9.0: a person's own rule only ever tells that person
+  if (rule && rule.scope === 'personal') ids = ids.filter((id) => id === rule.ownerId);
   return ids.filter((id) => id !== triggerUser);
 }
 
@@ -347,15 +343,28 @@ async function execute(gc, fam, cfg, now, runs, pushes) {
     if (!lists.has(owner)) lists.set(owner, gc.actions.list({ userId: owner, lang: cfg.lang }).then((l) => new Map(l.map((x) => [`${x.plugin}|${x.id}`, x]))));
     return lists.get(owner);
   };
+  const cache = new Map(); // device values and quick action lists of this pass
   for (const run of runs) {
     const { rule } = run;
     const person = run.userId ? fam.byId.get(run.userId) : null;
     const results = [];
+    // 1.9.0: the conditions that need other plugins (device values, calendar), right before the actions
+    let ev = null;
+    if (conditions.needsEvaluate(rule)) {
+      try { ev = await conditions.evaluate(gc, fam, cfg, now, rule, cfg.lang, cache); } catch (e) { ev = { ok: false, checks: [{ kind: 'device', ok: false, known: false, text: (e && e.code) || 'error' }], facts: [], vars: {} }; }
+      if (!ev.ok) {
+        const skipped = ev.checks.filter((x) => !x.ok).map((x) => ({ type: 'condition', kind: x.kind, ok: false, known: x.known !== false, text: x.text, error: x.known === false ? 'unknown' : 'not_met' }));
+        await writeLog(gc, run, now, false, skipped);
+        continue;
+      }
+    }
+    const key = run.key || `run:${now}`;
     for (const a of rule.actions) {
       if (a.type === 'quick_action') {
         const state = STATES.includes(a.state) ? a.state : null;
         const base = { type: 'quick_action', plugin: a.plugin, id: a.id, title: a.title || null, state, verb: (state && a.verb) || null };
         if (!gc.actions || typeof gc.actions.run !== 'function') { results.push({ ...base, ok: false, message: null, error: 'unavailable' }); continue; }
+        // 1.9.0: a person's own rule switches only what that person may switch (its owner never changes)
         try {
           // without a state: a button runs; a toggle (or an action stored before 1.4.0 that the owner lists as one) needs a target first
           if (!state && a.kind !== 'button') {
@@ -371,31 +380,35 @@ async function execute(gc, fam, cfg, now, runs, pushes) {
           results.push({ ...base, ok: false, message: null, error: hostCode(e) });
         }
       } else if (a.type === 'notify') {
-        const to = recipients(a, fam, run.userId);
-        const text = actionText(a, run, person, cfg);
-        if (to.length) {
-          const data = { type: 'presence_rule', ruleId: rule.id, trigger: run.trigger, userId: run.userId || null };
-          if (run.placeId) data.placeId = run.placeId;
-          pushes.push({
-            topic: 'presence', users: to, priority: 'normal', collapseKey: `presence:${rule.id}`, ttl: 6 * 3600,
-            title: text.slice(0, 120), body: rule.name || undefined, data: { familie: data },
-          });
-        }
+        const to = recipients(a, fam, run.userId, rule);
+        // 1.9.0: facts and buttons (server/reminders.js); a reminder row per person with buttons
+        const out = await reminders.notifyPushes(gc, fam, cfg, now, { rule, run, action: a, person, ev, to, key, cache });
+        pushes.push(...out.pushes);
+        if (out.keyed.length) await reminders.remember(gc, cfg, now, rule.id, key, out.keyed);
         results.push({ type: 'notify', ok: to.length > 0, sent: to.length, error: to.length ? null : 'no_recipients' });
       } else if (a.type === 'messenger') {
         // 1.6.0: never throws; without the messenger { ok: false, error: 'unavailable' } and the rest runs
-        const res = await messenger.sendAction(gc, fam, cfg, now, a, actionText(a, run, person, cfg), run.userId);
+        // 1.9.0: a person's own rule only writes to that person
+        const target = rule.scope === 'personal' ? { ...a, to: [rule.ownerId] } : a;
+        const res = await messenger.sendAction(gc, fam, cfg, now, target, actionText(a, run, person, cfg, ev && ev.vars), rule.scope === 'personal' ? null : run.userId);
         if (res.error === 'unavailable') gc.log.warn('messenger not available – rule action skipped', rule.id);
         results.push(res);
       }
     }
     const ok = results.every((x) => x.ok);
-    try {
-      await store.tx(gc, () => store.run(gc, `INSERT INTO presence_log (rule_id, rule_name, trigger_type, user_id, at, ok, results_json, place_id, place_name)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, [rule.id, rule.name, run.trigger, run.userId || null, now, ok ? 1 : 0, JSON.stringify(results), run.placeId || null, run.placeName || null]));
-    } catch (e) { gc.log.warn('presence log failed', (e && e.code) || 'error'); }
+    await writeLog(gc, run, now, ok, results);
     if (!ok) gc.log.warn('presence rule run failed', rule.id, results.filter((x) => !x.ok).map((x) => x.error).join(','));
   }
+}
+
+/** One row of the rule log (own transaction); results of type 'condition': not run, a condition of another plugin was not met. */
+async function writeLog(gc, run, now, ok, results) {
+  const { rule } = run;
+  try {
+    await store.tx(gc, () => store.run(gc, `INSERT INTO presence_log (rule_id, rule_name, trigger_type, user_id, at, ok, results_json, place_id, place_name)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, [rule.id, rule.title || rule.name, run.trigger, run.userId || null, now, ok ? 1 : 0, JSON.stringify(results),
+      run.placeId || null, run.placeName || null]));
+  } catch (e) { gc.log.warn('presence log failed', (e && e.code) || 'error'); }
 }
 
 // ─── places (1.5.0) ─────────────────────────────
@@ -536,6 +549,8 @@ function ruleFields(body, cur, fam) {
   f.placeId = PLACE_TRIGGERS[f.trigger] ? (b.placeId !== undefined ? b.placeId : (cur ? cur.placeId : null)) : null;
   f.graceMinutes = b.graceMinutes !== undefined ? intIn(b.graceMinutes, 0, 120) : (cur ? cur.graceMinutes : GRACE_DEFAULT);
   f.conditions = b.conditions !== undefined ? parseConditions(b.conditions) : (cur ? cur.conditions : { time: null, afterSunset: false });
+  // 1.9.0: the pages of before know only the time window and „after sunset“ — the device and calendar conditions stay
+  f.conditions = { ...f.conditions, device: cur && cur.conditions.device ? cur.conditions.device : [], calendar: cur && cur.conditions.calendar ? cur.conditions.calendar : null };
   f.actions = b.actions !== undefined || !cur ? parseActions(b.actions, fam) : cur.actions;
   f.active = b.active !== undefined ? bool(b.active) : (cur ? cur.active : true);
   return f;
@@ -604,7 +619,7 @@ function ruleView(rule, fam, avail, last, places) {
   const place = rule.placeId != null && PLACE_TRIGGERS[rule.trigger] ? places.get(rule.placeId) : null;
   return {
     id: rule.id, name: rule.name, trigger: rule.trigger, userId: rule.userId, placeId: place ? place.id : null, placeName: place ? place.name : null,
-    graceMinutes: rule.graceMinutes, conditions: rule.conditions,
+    graceMinutes: rule.graceMinutes, conditions: { time: rule.conditions.time, afterSunset: rule.conditions.afterSunset },
     actions: rule.actions.map((a) => (a.type === 'quick_action' ? actionView(a, listed) : a)),
     active: rule.active, ownerId: rule.ownerId, ownerName: owner ? owner.name : null, lastRunAt: iso(rule.lastRunAt),
     lastResult: last ? { at: iso(last.at), ok: !!last.ok } : null, createdAt: iso(rule.createdAt), updatedAt: iso(rule.updatedAt),
@@ -614,15 +629,20 @@ function ruleView(rule, fam, avail, last, places) {
 const logView = (x) => ({
   id: x.id, ruleId: x.rule_id, ruleName: x.rule_name || '', trigger: x.trigger_type, userId: x.user_id == null ? null : x.user_id,
   placeId: x.place_id == null ? null : x.place_id, placeName: x.place_name == null ? null : x.place_name, at: iso(x.at), ok: !!x.ok, results: parseJson(x.results_json, []),
+  // 1.9.0: not run — a device or calendar condition was not met (results of type 'condition')
+  skipped: parseJson(x.results_json, []).some((y) => y && y.type === 'condition'),
 });
 
 async function log(gc) {
   return (await store.all(gc, 'SELECT * FROM presence_log ORDER BY at DESC, id DESC LIMIT ?', [LOG_SHOWN])).map(logView);
 }
 
+/** 1.9.0: the rules the API presence/rules knows — house rules with a presence or place trigger. */
+const legacy = (rule) => rule.scope === 'house' && TRIGGERS.includes(rule.trigger);
+
 async function rulesView(gc, fam, lang, ids) {
   const rows = await store.all(gc, 'SELECT * FROM presence_rules ORDER BY id');
-  const rules = rows.map(rowToRule).filter((x) => !ids || ids.includes(x.id));
+  const rules = rows.map(rowToRule).filter((x) => legacy(x) && (!ids || ids.includes(x.id)));
   const avail = await availability(gc, rules, lang);
   const lastRows = await store.all(gc, 'SELECT l.* FROM presence_log l WHERE l.id = (SELECT m.id FROM presence_log m WHERE m.rule_id = l.rule_id ORDER BY m.at DESC, m.id DESC LIMIT 1)');
   const last = new Map(lastRows.map((x) => [x.rule_id, x]));
@@ -637,20 +657,27 @@ async function listRules(gc, ctx) {
 }
 
 async function createRule(gc, ctx, body) {
-  if ((await store.one(gc, 'SELECT COUNT(*) AS n FROM presence_rules')).n >= MAX_RULES) throw fail('too_many');
+  if ((await store.one(gc, "SELECT COUNT(*) AS n FROM presence_rules WHERE scope = 'house'")).n >= MAX_RULES) throw fail('too_many');
   const f = ruleFields(body, null, ctx.fam);
   await checkPlace(gc, f);
   f.actions = await checkTargets(gc, f.actions, ctx.ownerId, ctx.lang);
-  const res = await store.run(gc, `INSERT INTO presence_rules (name, trigger_type, user_id, place_id, grace_minutes, conditions_json, actions_json, active, owner_id, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [f.name, f.trigger, f.userId, f.placeId, f.graceMinutes, JSON.stringify(f.conditions), JSON.stringify(f.actions), f.active ? 1 : 0, ctx.ownerId, ctx.now, ctx.now]);
+  const res = await store.run(gc, `INSERT INTO presence_rules (name, title, scope, trigger_type, user_id, place_id, grace_minutes, conditions_json, actions_json, active, owner_id, created_at, updated_at)
+    VALUES (?, ?, 'house', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [f.name, f.name, f.trigger, f.userId, f.placeId, f.graceMinutes, JSON.stringify(f.conditions), JSON.stringify(f.actions), f.active ? 1 : 0, ctx.ownerId, ctx.now, ctx.now]);
   return { rule: (await rulesView(gc, ctx.fam, ctx.lang, [res.lastInsertRowid]))[0] };
 }
 
 async function ruleRow(gc, raw) {
   const id = posInt(raw);
   const row = id ? await store.one(gc, 'SELECT * FROM presence_rules WHERE id = ?', [id]) : null;
-  if (!row) throw fail('not_found');
+  if (!row || !legacy(rowToRule(row))) throw fail('not_found');
   return rowToRule(row);
+}
+
+/** 1.9.0: a notification set again through the pages of before keeps its facts and buttons. */
+function keepExtras(actions, cur) {
+  const old = cur.actions.find((a) => a.type === 'notify');
+  if (!old || (!old.facts && !(old.buttons && old.buttons.length))) return actions;
+  return actions.map((a) => (a.type === 'notify' ? { ...a, facts: !!old.facts, buttons: Array.isArray(old.buttons) ? old.buttons : [] } : a));
 }
 
 async function updateRule(gc, ctx, raw, body) {
@@ -659,11 +686,13 @@ async function updateRule(gc, ctx, raw, body) {
   await checkPlace(gc, f);
   // whoever sets the actions owns them: the quick actions run as that person (and are checked against what they have)
   const owner = body && body.actions !== undefined ? ctx.ownerId : cur.ownerId;
-  if (body && body.actions !== undefined) f.actions = await checkTargets(gc, f.actions, owner, ctx.lang);
+  if (body && body.actions !== undefined) f.actions = keepExtras(await checkTargets(gc, f.actions, owner, ctx.lang), cur);
   // a changed trigger or place starts afresh
   const lastKey = f.trigger === cur.trigger && f.placeId === cur.placeId ? cur.lastKey : null;
-  await store.run(gc, `UPDATE presence_rules SET name = ?, trigger_type = ?, user_id = ?, place_id = ?, grace_minutes = ?, conditions_json = ?, actions_json = ?, active = ?, owner_id = ?,
-    last_key = ?, updated_at = ? WHERE id = ?`, [f.name, f.trigger, f.userId, f.placeId, f.graceMinutes, JSON.stringify(f.conditions), JSON.stringify(f.actions), f.active ? 1 : 0, owner, lastKey, ctx.now, cur.id]);
+  // the name of before is the title (1.9.0)
+  const title = body && body.name !== undefined ? f.name : cur.title;
+  await store.run(gc, `UPDATE presence_rules SET name = ?, title = ?, trigger_type = ?, user_id = ?, place_id = ?, grace_minutes = ?, conditions_json = ?, actions_json = ?, active = ?, owner_id = ?,
+    last_key = ?, updated_at = ? WHERE id = ?`, [f.name, title, f.trigger, f.userId, f.placeId, f.graceMinutes, JSON.stringify(f.conditions), JSON.stringify(f.actions), f.active ? 1 : 0, owner, lastKey, ctx.now, cur.id]);
   return { rule: (await rulesView(gc, ctx.fam, ctx.lang, [cur.id]))[0] };
 }
 
@@ -700,6 +729,7 @@ async function overview(gc, r) {
 }
 
 module.exports = {
+  STATES, MAX_ACTIONS, NAME_MAX, TEXT_MAX, PLUGIN_ID_RE, ACTION_ID_RE, GRACE_DEFAULT, legacy, actionView, availability, ownerActions, checkPlace, checkTargets, parseConditions, logView, hostCode, recipients,
   TRIGGERS, PLACE_TRIGGERS, THROTTLE_MS, REPORT_GAP_MS, EVENT_DEDUPE_MS, EVENT_LATE_MS, load, stateOf, ringOf, rings, membersView, get, consent, report, transitionEvents,
   inWindow, conditionsHold, fire, checkAllAway, tick, execute, listRules, createRule, updateRule, removeRule, actions, log, purge, overview, watch, placeEvent,
 };

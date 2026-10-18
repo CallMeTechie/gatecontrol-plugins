@@ -20,7 +20,9 @@
    into the group „Familie“ or to single people (the person chips of the
    notification) — only while the Messenger plugin is available
    (data.messenger.available); a rule that already has one keeps it and shows
-   „Messenger nicht verfügbar“ meanwhile. */
+   „Messenger nicht verfügbar“ meanwhile.
+   1.9.0: the rule log also shows reminders (trigger 'schedule'), presses of a notification's button and
+   runs held back by a device or calendar condition; the full editor of rules and reminders is ui/reminders.js. */
 (function () {
   'use strict';
   var A = window.FA, T = A.T, el = A.el;
@@ -731,6 +733,8 @@
     var tb = el('tbody');
     data.log.forEach(function (x) {
       var res = x.results.map(function (y) {
+        // 1.9.0: not run — a device or calendar condition (the text comes from the server)
+        if (y.type === 'condition') return y.text || '–';
         if (y.type === 'messenger') return T('rule.messenger') + ' → ' + (y.ok ? T('rule.ok') : T('rule.msg_err.' + (MSG_ERRORS.indexOf(y.error) >= 0 ? y.error : 'failed')));
         var what = y.type === 'quick_action' ? quickText({ title: y.title || y.id, verb: y.verb }) : T('rule.notify');
         return what + ' → ' + (y.ok ? (y.unchanged ? T('rule.unchanged') : (y.message || T('rule.ok'))) : T('rule.err.' + (y.error || 'failed')));

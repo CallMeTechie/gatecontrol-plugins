@@ -19,6 +19,9 @@
 //     GET  /portal/waste      the plans this person sees (read-only, also for device trust)
 //     GET  /portal/calendar   the person's calendars — details only after a real login,
 //                             a device-trust viewer gets a count
+//   services    (1.3.0, plugin.json services.provides, GateControl ≥ 1.177.0 gc.services)
+//     calendar_query · calendar_list   the calendars a person sees, for other plugins
+//                             (gatecontrol-familie: calendar conditions of rules) — server/services.js
 //
 // Requests run with the requesting user's rights: the admin API is reached
 // only by administrators (the host's admin routes) and refuses a portal
@@ -38,6 +41,7 @@ const providers = require('./providers');
 const ics = require('./ics');
 const format = require('./format');
 const tz = require('./tz');
+const services = require('./services');
 const texts = require('./texts.json');
 
 const crypto = require('node:crypto');
@@ -675,6 +679,11 @@ module.exports = {
       if (cfg.wasteEnabled) await waste.tick(gc, cfg, Date.now(), deadline);
       if (cfg.calendarEnabled) await calendar.tick(gc, cfg, Date.now(), deadline);
     } finally { state.ticking = false; }
+  },
+
+  /** 1.3.0: services for other plugins (services.provides, GateControl ≥ 1.177.0) — server/services.js. */
+  async service(call, gc) {
+    return services.handle(gc, await config.load(gc), call);
   },
 
   async settingsChanged(values, gc) {

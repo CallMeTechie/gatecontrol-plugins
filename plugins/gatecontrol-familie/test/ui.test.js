@@ -19,7 +19,7 @@ const ctxOf = (html) => JSON.parse(html.split('window.FA_CTX=')[1].split(';</scr
 
 test('render: members, modules, log and the portal tab in de and en; no unresolved keys', () => {
   for (const lang of ['de', 'en']) {
-    for (const view of [{ view: 'page', page: 'members' }, { view: 'page', page: 'modules' }, { view: 'page', page: 'presence' }, { view: 'page', page: 'log' }, { view: 'portal', loggedIn: true }, { view: 'portal', user: { id: 2, loggedIn: false } },
+    for (const view of [{ view: 'page', page: 'members' }, { view: 'page', page: 'modules' }, { view: 'page', page: 'presence' }, { view: 'page', page: 'rules' }, { view: 'page', page: 'log' }, { view: 'portal', loggedIn: true }, { view: 'portal', user: { id: 2, loggedIn: false } },
       { view: 'portal', wall: true, loggedIn: true }, { view: 'portal', wall: true, loggedIn: false }]) {
       const html = ui.render({ ...view, lang }, t);
       assert.ok(!/\{\{t:/.test(html), `${view.page || view.view}: all keys filled`);
@@ -50,6 +50,11 @@ test('render: members, modules, log and the portal tab in de and en; no unresolv
     const h = ui.render({ view: 'page', page: 'presence', lang }, t);
     assert.ok(h.includes(texts[lang]['places.intro'].replace(/"/g, '&quot;').replace(/'/g, '&#39;')) && h.includes(texts[lang]['presence.note_places'].replace(/"/g, '&quot;').replace(/'/g, '&#39;')), lang);
   }
+  // 1.9.0: the page „Regeln & Erinnerungen“ and the portal section with the editor of ui/reminders.js (mockup ReminderServer)
+  const rr = ui.render({ view: 'page', page: 'rules' }, t);
+  assert.ok(rr.includes('A.reminders = {') && rr.includes('id="fa-rr-root"') && rr.includes('.fa-rr-cols{') && !rr.includes('A.rules = {'));
+  assert.ok(portalHtml.includes('A.reminders = {') && portalHtml.includes('id="fa-rules"') && portalHtml.includes('A.rules = {'));
+  assert.ok(!pres.includes('A.reminders = {'), 'the presence page keeps its own editor');
   // 1.3.0: member chips in the portal header, the help on the members page, one avatar renderer
   assert.ok(portalHtml.includes('id="fa-p-people"') && portalHtml.includes('function avatar(m, size, opts)'));
   // 1.3.1: no own title — the portal shows the tab name „Familie“ above the frame
@@ -90,6 +95,12 @@ test('texts: every key used by the pages exists in de and en; both languages hav
     ...require('../server/presence').TRIGGERS.flatMap((x) => ['rule.m_trig_' + x, 'rule.m_trig_' + x + '_hint']),
     ...Object.keys(require('../server/presence').PLACE_TRIGGERS).map((x) => 'rule.log_' + x),
     'rule.m_on', 'rule.m_off',
+    // 1.9.0: the module, the rule log of the presence page, the editor of ui/reminders.js
+    'module.rules', 'module.rules_desc', 'rule.trigger_schedule', 'rule.trigger_button',
+    ...require('../server/rules').TRIGGERS.map((x) => 'rr.trig_' + x),
+    ...['person_home', 'person_away', 'place_enter', 'place_exit', 'all_away'].map((x) => 'rr.trig_' + x + '_s'),
+    ...['all', 'reminder', 'presence', 'place'].map((x) => 'rr.filter_' + x),
+    ...[1, 2, 3, 4, 5, 6, 7].map((x) => 'rr.wd_' + x), 'rr.cal_today_s', 'rr.cal_tomorrow_s',
     // 1.6.0: the results of a messenger action in the rule log and on the page „Funktionen“
     ...['unavailable', 'group_off', 'not_found', 'forbidden', 'invalid', 'rate_limit', 'timeout', 'failed', 'no_recipients'].map((x) => 'rule.msg_err.' + x),
     ...['pending', 'answered', 'declined', 'failed', 'expired'].map((x) => 'status.' + x),
@@ -121,28 +132,38 @@ test('Leaflet: one constant (server/ui.js), nowhere else', () => {
   assert.equal(ui.TILES, 'https://tile.openstreetmap.org/{z}/{x}/{y}.png');
 });
 
-test('plugin.json: permissions (kiosk, actions), app tab, maps, the ten topics with SOS allowed critical', () => {
+test('plugin.json: permissions (kiosk, actions), app tab, maps, the eleven topics with SOS allowed critical', () => {
   assert.equal(manifest.id, 'gatecontrol-familie');
-  assert.equal(manifest.version, '1.8.0');
+  assert.equal(manifest.version, '1.9.0');
   // 1.6.0 stays on 1.173.0: the messenger services (GateControl ≥ 1.177.0) are optional — an older host ignores
   // permissions.services and has no gc.services, so the group and the rule action stay hidden there
   assert.equal(manifest.gatecontrol, '>=1.173.0', 'target states of switches (gc.actions.run state, verbs/targets/device in gc.actions.list) need GateControl 1.173.0');
   const p = manifest.permissions;
   assert.deepEqual([p.storage, p.portal, p.users, p.app, p.notify, p.background, p.kiosk, p.actions], [true, true, true, true, { perHour: 120 }, { intervalSeconds: 60 }, true, true]);
   assert.deepEqual(p.services, ['gatecontrol-messenger:sync_group', 'gatecontrol-messenger:send_message', 'gatecontrol-messenger:release_group',
-    'gatecontrol-messenger:set_place_status'], '1.7.0: release_group (messenger ≥ 1.1.0); 1.8.0: set_place_status (messenger ≥ 1.4.0)');
-  assert.deepEqual(Object.keys(manifest.services.provides), ['list_add', 'calendar_add', 'calendar_upsert', 'calendar_remove', 'places'], '1.8.0: services for the Messenger');
+    'gatecontrol-messenger:set_place_status', 'gatecontrol-alltag:calendar_query', 'gatecontrol-alltag:calendar_list'],
+  '1.7.0: release_group (messenger ≥ 1.1.0); 1.8.0: set_place_status (messenger ≥ 1.4.0); 1.9.0: the Alltag calendars for calendar conditions');
+  assert.deepEqual(Object.keys(manifest.services.provides), ['list_add', 'calendar_add', 'calendar_upsert', 'calendar_remove', 'places', 'family_roles'],
+    '1.8.0: services for the Messenger; 1.9.0: family_roles');
   for (const sv of Object.values(manifest.services.provides)) assert.ok(sv.label.de && sv.label.en && sv.label.de.length <= 60 && sv.label.en.length <= 60);
-  assert.deepEqual(manifest.ui.pages.map((x) => x.id), ['members', 'modules', 'presence', 'log']);
+  assert.deepEqual(manifest.ui.pages.map((x) => x.id), ['members', 'modules', 'presence', 'rules', 'log']);
   assert.deepEqual(manifest.ui.pages[2].title, { de: 'Anwesenheit & Smart Home', en: 'Presence & smart home' });
-  assert.deepEqual(manifest.ui.settings.map((x) => x.key), ['timezone', 'notify_lang', 'lat', 'lon']);
+  assert.deepEqual(manifest.ui.pages[3].title, { de: 'Regeln & Erinnerungen', en: 'Rules & reminders' });
+  // 1.9.0: children's own reminders (off), how a shopping list is asked of someone (direct), „Ich gehe einkaufen“ in the family chat (on)
+  assert.deepEqual(manifest.ui.settings.map((x) => x.key), ['timezone', 'notify_lang', 'lat', 'lon', 'children_own_rules', 'shopping_notify', 'shopping_chat']);
+  assert.deepEqual(manifest.ui.settings.slice(4).map((x) => x.default), [false, 'direct', 'family']);
+  assert.deepEqual(manifest.ui.settings[5].options.map((o) => o.value), ['direct', 'family', 'push']);
+  assert.deepEqual(manifest.ui.settings[6].options.map((o) => o.value), ['family', 'off']);
+  // 1.9.0: device values and buttons need GateControl 1.181.0 — feature-detected, so the requirement stays
+  assert.equal(manifest.gatecontrol, '>=1.173.0');
   assert.equal(manifest.ui.maps, true);
   const ICON = /^[MmLlHhVvCcSsQqTtAaZz0-9 .,-]{1,600}$/;
   for (const k of ['nav', 'portal', 'app']) {
     assert.ok(ICON.test(manifest.ui[k].icon), k);
     assert.deepEqual(manifest.ui[k].label, { de: 'Familie', en: 'Family' });
   }
-  assert.deepEqual(manifest.notifyTopics.map((x) => x.id), ['shopping', 'tasks', 'dates', 'locate', 'arrival', 'sos', 'places', 'rides', 'allowance', 'presence']);
+  assert.deepEqual(manifest.notifyTopics.map((x) => x.id), ['shopping', 'tasks', 'dates', 'locate', 'arrival', 'sos', 'places', 'rides', 'allowance', 'presence', 'reminders']);
+  assert.deepEqual(manifest.notifyTopics.find((x) => x.id === 'reminders').label, { de: 'Regeln & Erinnerungen', en: 'Rules & reminders' });
   assert.deepEqual(manifest.notifyTopics.find((x) => x.id === 'allowance').label, { de: 'Taschengeld', en: 'Pocket money' });
   assert.deepEqual(manifest.notifyTopics.find((x) => x.id === 'presence').label, { de: 'Anwesenheit & Smart Home', en: 'Presence & smart home' });
   assert.deepEqual(manifest.notifyTopics.find((x) => x.id === 'rides').label, { de: 'Abholen & Fahrten', en: 'Pick-ups & rides' });

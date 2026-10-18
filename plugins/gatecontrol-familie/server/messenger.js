@@ -58,6 +58,14 @@
 //                timeout) → kept and tried again by the background run every 5 minutes (the
 //                latest place per person only). State: gc.storage 'messenger_places'
 //                { <userId>: { place, sent, at } }.
+//
+// Cards (1.9.0, messenger ≥ 1.4.0): send_message { conversation, card: { kind: 'notice', title, text?,
+// actions?: [{ actionId, label }], link?: { label, route } } } — „Kannst du einkaufen gehen?“ (a shopping
+// list asked of someone), „<Name> geht jetzt einkaufen“, a task made in a chat. The buttons are this
+// plugin's quick actions (shop-take / shop-decline / task-done, server/quick.js), run by the Messenger as
+// the person who presses them. Targets: 'direct:<uid>' (the direct chat between the call's user and uid,
+// messenger with C1 — an older one answers invalid), 'family', 'group:<id>' (a chat the call's user is in).
+// sendCard never throws; the callers fall back (direct → family → push).
 
 const PLUGIN = 'gatecontrol-messenger';
 const KEY = 'family';
@@ -115,10 +123,10 @@ function codeOf(e) {
  * One service call → { ok: true, result } | { ok: false, code, answered }. `answered`: the messenger
  * itself answered (it is there), else the host refused or the call failed.
  */
-async function call(gc, service, payload) {
+async function call(gc, service, payload, userId) {
   if (!hasApi(gc)) return { ok: false, code: 'unavailable', answered: false, noApi: true };
   try {
-    const r = await gc.services.call({ plugin: PLUGIN, service, payload });
+    const r = await gc.services.call({ plugin: PLUGIN, service, payload, ...(Number.isSafeInteger(userId) && userId > 0 ? { userId } : {}) });
     if (r && r.ok === true) return { ok: true, result: r, answered: true };
     const code = r && typeof r.code === 'string' && /^[a-z_]{1,32}$/.test(r.code) ? r.code : 'failed';
     return { ok: false, code, answered: true };
@@ -471,7 +479,48 @@ async function sendAction(gc, fam, cfg, now, action, text, triggerUser) {
   return { ...base, ok: sent === ids.length, sent, error: sent === ids.length ? null : error };
 }
 
+// ─── cards (1.9.0) ─────────────────────────────────
+
+/**
+ * One card into one conversation (`userId`: the person it is sent for — needed for 'direct:<uid>' and
+ * 'group:<id>'). The family group not there yet → synced and tried once more. Never throws.
+ * → { ok, code, conversationId }
+ */
+async function sendCard(gc, fam, cfg, now, conversation, card, userId) {
+  if (!hasApi(gc)) return { ok: false, code: 'unavailable', conversationId: null };
+  if (conversation === 'family' && !cfg.messengerGroup) return { ok: false, code: 'group_off', conversationId: null };
+  let res = await call(gc, 'send_message', { conversation, card }, userId);
+  if (!res.ok && res.code === 'not_found' && conversation === 'family') {
+    await sync(gc, fam, cfg, now, { force: true });
+    res = await call(gc, 'send_message', { conversation, card }, userId);
+  }
+  const st = await loadState(gc);
+  await note(gc, res, now, st);
+  await saveState(gc, st);
+  return { ok: res.ok, code: res.ok ? null : res.code, conversationId: res.ok && Number.isSafeInteger(res.result.conversationId) ? res.result.conversationId : null };
+}
+
+/**
+ * A card asked of one person with a fallback: mode 'direct' (the direct chat between `from` and `to`) → on a
+ * refusal (an older messenger without 'direct:', not found, forbidden) the family chat → else nothing (the caller
+ * pushes). mode 'family' starts with the family chat. → { via: 'direct' | 'family' | null, ok, code }
+ */
+async function sendCardTo(gc, fam, cfg, now, mode, card, from, to) {
+  let last = null;
+  if (mode === 'direct' && from && to && from !== to) {
+    last = await sendCard(gc, fam, cfg, now, `direct:${to}`, card, from);
+    if (last.ok) return { via: 'direct', ok: true, code: null };
+    if (last.code === 'unavailable' || last.code === 'rate_limit') return { via: null, ok: false, code: last.code };
+  }
+  if (mode === 'direct' || mode === 'family') {
+    last = await sendCard(gc, fam, cfg, now, 'family', card, from);
+    if (last.ok) return { via: 'family', ok: true, code: null };
+  }
+  return { via: null, ok: false, code: last ? last.code : null };
+}
+
 module.exports = {
+  sendCard, sendCardTo,
   PLUGIN, KEY, SETTING, TEXT_MAX, PEOPLE_MAX, HEAL_MS, RETRY_UNAVAILABLE_MS, RETRY_FAILED_MS,
   hasApi, hasAvailable, groupTitle, call, probe, sync, release, tick, reset, info, setGroup, sendAction, loadState,
   placeStatus, flushPlaces, loadPlaces, PLACES_KEY, PLACE_SERVICE, _proc: proc,
