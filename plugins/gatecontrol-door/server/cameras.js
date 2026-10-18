@@ -15,6 +15,22 @@
 // 1.3.0: a ring also goes into the Messenger's family chat as a card with the
 // picture and „Tür öffnen“ (server/chat.js; setting familyChat, default on) —
 // after the pushes, whether or not anybody got one.
+//
+// 1.4.0 — rings that never reached the chat (a ring that rang the chime but left no card):
+//   * Ring has restricted dings/active for many accounts (it answers an empty list or an error);
+//     an error there used to fail the whole poll, so the location events — the only source then —
+//     were never read and the status said "Ring-Verbindung gestört". Now dings/active is optional:
+//     an error (or a 429) switches it off for 10 minutes (Retry-After when longer) and the location
+//     events are read every 15 s instead of 30 s meanwhile; a login problem still fails the poll.
+//   * A ring that only shows up in the location events arrives late (Ring lists it after a delay,
+//     plus up to 30 s poll interval, plus any back-off): it was dropped once older than 2 minutes —
+//     and remembered as seen, so it was lost for good. Rings are now taken up to 10 minutes after
+//     they happened (history, chat card); the push only up to 5 minutes (a later push could make
+//     somebody open the door for nobody). Motion keeps the 2 minutes. The history's ext_id keeps
+//     every ring once, across restarts too.
+//   * Diagnosis (gc.storage 'door.ringdiag', admin page „Einstellungen“ and GET /me doorbell):
+//     the last ring seen — when it rang, when the plugin saw it, where (dings/active or the
+//     location events) and what became of it — and how dings/active answers.
 
 const store = require('./store');
 const ring = require('./ring');
@@ -31,6 +47,11 @@ const STATUS_KEY = 'door.ring';
 const EVENTS_EVERY_MS = 30000;
 const SYNC_EVERY_MS = 10 * 60000;
 const MAX_EVENT_AGE_MS = 2 * 60000;
+const DING_MAX_AGE_MS = 10 * 60000;
+const DING_PUSH_MAX_AGE_MS = 5 * 60000;
+const EVENTS_FAST_MS = 15000;
+const ACTIVE_OFF_MS = 10 * 60000;
+const DIAG_KEY = 'door.ringdiag';
 const BROKEN_AFTER_MS = 2 * 60000;
 const IMAGE_MAX = 300 * 1024;
 const BACKOFF_MAX_MS = 5 * 60000;
@@ -38,10 +59,12 @@ const BACKOFF_MAX_MS = 5 * 60000;
 const mem = {
   backoffUntil: 0, failures: 0, lastEvents: 0, lastSync: 0, seen: new Set(), motionLast: new Map(),
   refreshCam: rateLimiter(1, 15000), refreshUser: rateLimiter(6, 60000), latestCam: rateLimiter(1, 30000),
+  activeOffUntil: 0, activeState: null,
 };
 function reset() {
   mem.backoffUntil = 0; mem.failures = 0; mem.lastEvents = 0; mem.lastSync = 0; mem.seen.clear(); mem.motionLast.clear();
   mem.refreshCam.reset(); mem.refreshUser.reset(); mem.latestCam.reset();
+  mem.activeOffUntil = 0; mem.activeState = null;
 }
 
 function remember(id) {
@@ -126,7 +149,7 @@ async function onError(gc, cfg, e, now) {
 
 /** Mark the connection as fresh after a login (the wizard). */
 async function loggedIn(gc, now) {
-  mem.failures = 0; mem.backoffUntil = 0; mem.lastSync = 0; mem.lastEvents = 0;
+  mem.failures = 0; mem.backoffUntil = 0; mem.lastSync = 0; mem.lastEvents = 0; mem.activeOffUntil = 0; mem.activeState = null;
   const s = await loadStatus(gc);
   await saveStatus(gc, { ...s, state: 'ok', since: null, code: null, lastOk: now });
 }
@@ -191,13 +214,21 @@ async function grabPicture(gc, cfg, camera, afterMs, now) {
   return { id, buf };
 }
 
-/** One ding / motion event (already de-duplicated by the caller's id check and the history's ext_id). */
-async function handleEvent(gc, cfg, ev, now) {
+/**
+ * One ding / motion event (already de-duplicated by the caller's id check and the history's ext_id).
+ * opts.push false: history, picture and chat card, no push (a ring seen late). opts.out (an object) gets
+ * `outcome`: 'handled' | 'no_camera' (unknown or switched off here) | 'duplicate' (in the history already)
+ * and, for a ring, `chat` (server/chat.js ring()).
+ */
+async function handleEvent(gc, cfg, ev, now, opts = {}) {
+  const out = opts.out || {};
   const camera = await store.one(gc, 'SELECT * FROM cameras WHERE ring_id = ? AND enabled = 1', [ev.ringId]);
-  if (!camera) return null;
+  if (!camera) { out.outcome = 'no_camera'; return null; }
+  out.camera = camera.name;
   const lock = camera.lock_id ? await store.one(gc, 'SELECT id, name, actions, device_type FROM locks WHERE id = ?', [camera.lock_id]) : null;
   const hid = await store.tx(gc, () => history.add(gc, { at: ev.at, kind: ev.kind, cameraId: camera.id, lockId: lock ? lock.id : null, via: 'ring', result: 'ok', extId: `ring:${ev.id}` }));
-  if (!hid) return null;
+  if (!hid) { out.outcome = 'duplicate'; return null; }
+  out.outcome = 'handled';
   const r = await rights.load(gc);
   const prefs = await prefsOf(gc, camera.id);
   const viewers = lock ? rights.usersWith(r, lock.id, 'view') : [];
@@ -214,10 +245,47 @@ async function handleEvent(gc, cfg, ev, now) {
   if (pic) await store.tx(gc, () => history.setMedia(gc, hid, pic.id));
   const local = tz.local(ev.at, cfg.timezone);
   const time = `${String(Math.floor(local.minutes / 60)).padStart(2, '0')}:${String(local.minutes % 60).padStart(2, '0')}`;
-  if (users.length) await pushEvent(gc, cfg, { ev, camera, lock, users, r, pic, hid, time });
-  // 1.3.0: the ring as a card in the family chat (never throws)
-  if (ev.kind === 'ding') await chat.ring(gc, cfg, { camera, lock, time, image: pic ? pic.buf : null });
+  if (users.length && opts.push !== false) await pushEvent(gc, cfg, { ev, camera, lock, users, r, pic, hid, time });
+  // 1.3.0: the ring as a card in the family chat (never throws); 1.4.0: without the group „Familie“ to
+  // the people who get the ring's push (their own channel „Tür & Kamera“)
+  if (ev.kind === 'ding') out.chat = await chat.ring(gc, cfg, { camera, lock, time, image: pic ? pic.buf : null, people: users });
   return hid;
+}
+
+// ─── diagnosis (1.4.0) ─────────────────────────
+
+/** The stored diagnosis → { lastDing: { at, seenAt, source, camera, outcome, pushed } | null, active } */
+async function loadDiag(gc) {
+  let d = null;
+  try { d = await gc.storage.get(DIAG_KEY); } catch { d = null; }
+  return d && typeof d === 'object' ? d : { lastDing: null, active: null };
+}
+
+async function saveDiag(gc, patch) {
+  try { await gc.storage.set(DIAG_KEY, { ...(await loadDiag(gc)), ...patch }); } catch { /* best effort */ }
+}
+
+/** How dings/active answered: { state: 'ok'|'off', code, since, offUntil } — stored only when it changes. */
+async function noteActive(gc, state, code, now) {
+  if (mem.activeState === `${state}:${code || ''}`) return;
+  mem.activeState = `${state}:${code || ''}`;
+  await saveDiag(gc, { active: { state, code: code || null, since: now, offUntil: state === 'off' ? mem.activeOffUntil : null } });
+}
+
+/** For the admin page and GET /me: ISO times; outcome / chat codes as stored. */
+async function diagnosis(gc) {
+  const d = await loadDiag(gc);
+  const isoOf = (ms) => (Number.isFinite(ms) ? new Date(ms).toISOString() : null);
+  const l = d.lastDing && typeof d.lastDing === 'object' ? d.lastDing : null;
+  const a = d.active && typeof d.active === 'object' ? d.active : null;
+  return {
+    lastDing: l ? {
+      at: isoOf(l.at), seenAt: isoOf(l.seenAt), delayS: Number.isFinite(l.at) && Number.isFinite(l.seenAt) ? Math.max(0, Math.round((l.seenAt - l.at) / 1000)) : null,
+      source: l.source === 'active' ? 'active' : 'events', camera: typeof l.camera === 'string' ? l.camera : null, outcome: typeof l.outcome === 'string' ? l.outcome : null,
+      pushed: l.pushed === true,
+    } : null,
+    active: a ? { state: a.state === 'off' ? 'off' : 'ok', code: typeof a.code === 'string' ? a.code : null, since: isoOf(a.since), offUntil: isoOf(a.offUntil) } : null,
+  };
 }
 
 /** The pushes of one event (doorbell / motion) to `users`. */
@@ -240,6 +308,27 @@ async function pushEvent(gc, cfg, { ev, camera, lock, users, r, pic, hid, time }
   if (others.length) await push.send(gc, { ...base, users: others, data: { door, actions: [push.viewAction(lang)] } });
 }
 
+/**
+ * dings/active, optional (1.4.0): Ring has restricted it — an error or a 429 there switches it off for
+ * 10 minutes (Retry-After when longer) instead of failing the poll; a login problem fails it as before.
+ */
+async function pollActive(gc, now) {
+  if (now < mem.activeOffUntil) return [];
+  try {
+    const list = await ring.activeDings(gc);
+    await noteActive(gc, 'ok', null, now);
+    return list.map((e) => ({ ...e, source: 'active' }));
+  } catch (e) {
+    const code = (e && e.code) || 'ring_error';
+    if (code === 'ring_login_failed' || code === 'ring_not_connected') throw e;
+    const wait = code === 'ring_rate_limited' ? Math.max(ACTIVE_OFF_MS, ((e.extra && e.extra.retryAfter) || 60) * 1000) : ACTIVE_OFF_MS;
+    mem.activeOffUntil = now + wait;
+    gc.log.info('ring dings/active not usable — location events only', code);
+    await noteActive(gc, 'off', code, now);
+    return [];
+  }
+}
+
 /** The background part of Ring: device sync, events, back-off, status. */
 async function tick(gc, cfg, now) {
   if (!cfg.ring) return;
@@ -249,17 +338,34 @@ async function tick(gc, cfg, now) {
     if (!mem.lastSync || now - mem.lastSync >= SYNC_EVERY_MS) await sync(gc, now);
     const cams = await store.all(gc, 'SELECT ring_id, location_id FROM cameras WHERE enabled = 1 AND present = 1');
     if (!cams.length) { await onOk(gc, now); return; }
-    const events = await ring.activeDings(gc);
-    if (!mem.lastEvents || now - mem.lastEvents >= EVENTS_EVERY_MS) {
+    const events = await pollActive(gc, now);
+    // the catch-up every 30 s — every 15 s while dings/active is off (the only source then)
+    const every = now < mem.activeOffUntil ? EVENTS_FAST_MS : EVENTS_EVERY_MS;
+    if (!mem.lastEvents || now - mem.lastEvents >= every) {
       mem.lastEvents = now;
-      for (const loc of [...new Set(cams.map((c) => c.location_id).filter(Boolean))]) events.push(...await ring.locationEvents(gc, loc, 20));
+      for (const loc of [...new Set(cams.map((c) => c.location_id).filter(Boolean))]) {
+        for (const e of await ring.locationEvents(gc, loc, 20)) events.push({ ...e, source: 'events' });
+      }
     }
     await onOk(gc, now);
     for (const ev of events.sort((a, b) => a.at - b.at)) {
       if (mem.seen.has(ev.id)) continue;
       remember(ev.id);
-      if (ev.at < now - MAX_EVENT_AGE_MS) continue;
-      try { await handleEvent(gc, cfg, ev, now); } catch (e) { gc.log.warn('ring event failed', (e && e.code) || (e && e.message) || 'error'); }
+      const age = now - ev.at;
+      const ding = ev.kind === 'ding';
+      if (age > (ding ? DING_MAX_AGE_MS : MAX_EVENT_AGE_MS)) {
+        if (ding) await saveDiag(gc, { lastDing: { at: ev.at, seenAt: now, source: ev.source, camera: null, outcome: 'too_old', pushed: false } });
+        continue;
+      }
+      const out = {};
+      const push = !ding || age <= DING_PUSH_MAX_AGE_MS;
+      try { await handleEvent(gc, cfg, ev, now, { push, out }); } catch (e) {
+        out.outcome = 'failed';
+        gc.log.warn('ring event failed', (e && e.code) || (e && e.message) || 'error');
+      }
+      if (ding && out.outcome !== 'duplicate') {
+        await saveDiag(gc, { lastDing: { at: ev.at, seenAt: now, source: ev.source, camera: out.camera || null, outcome: out.outcome || 'failed', pushed: push && out.outcome === 'handled' } });
+      }
     }
   } catch (e) {
     await onError(gc, cfg, e, now);
@@ -305,6 +411,6 @@ async function snapshot(gc, cfg, camera, { refresh = false, userId = 0 } = {}, n
 }
 
 module.exports = {
-  STATUS_KEY, MAX_EVENT_AGE_MS, IMAGE_MAX, EVENTS_EVERY_MS, SYNC_EVERY_MS,
-  reset, status, loggedIn, loggedOut, all, get, sync, blocked, tick, handleEvent, snapshot, usableImage, jpegSize, prefsOf, _mem: mem,
+  STATUS_KEY, MAX_EVENT_AGE_MS, DING_MAX_AGE_MS, DING_PUSH_MAX_AGE_MS, IMAGE_MAX, EVENTS_EVERY_MS, EVENTS_FAST_MS, ACTIVE_OFF_MS, SYNC_EVERY_MS, DIAG_KEY,
+  reset, status, loggedIn, loggedOut, all, get, sync, blocked, tick, handleEvent, snapshot, usableImage, jpegSize, prefsOf, diagnosis, _mem: mem,
 };

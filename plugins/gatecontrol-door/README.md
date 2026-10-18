@@ -53,7 +53,12 @@ GateControl Lifetime enthalten.
    Aufbewahrung der Bilder (1–30 Tage, Standard 7), Abstand der Bewegungs-Pushs, Ring-Abfrage
    an/aus, Nuki-Web-Protokoll übernehmen, **Klingel in den Familien-Chat** (1.3.0, Standard an):
    mit dem Messenger-Plugin (ab 1.4.0, GateControl ≥ 1.177.0) kommt jedes Klingeln als Karte mit Bild
-   und „Tür öffnen“ in den Chat „Familie“; den Knopf prüft der Server wie jede andere Aktion.
+   und „Tür öffnen“ in den Chat „Familie“; den Knopf prüft der Server wie jede andere Aktion. Gibt es
+   keine Gruppe „Familie“ (1.4.0), geht die Karte an die Personen, die den Klingel-Push bekommen –
+   jeweils in ihren eigenen Kanal „Tür & Kamera“. Die **Klingel-Diagnose** darunter zeigt die zuletzt
+   erkannte Klingel (Zeit, Kamera, nach wie vielen Sekunden und über welchen Weg erkannt, was daraus
+   wurde), das letzte Chat-Ergebnis mit verständlichem Grund und ob Ring die Sofort-Abfrage
+   (`dings/active`) gerade einschränkt.
 
 ### Automatisch aufsperren bei Ankunft
 
@@ -176,6 +181,14 @@ als Nachlauf. **Erwartete Verzögerung: etwa 5–15 Sekunden**, dazu bis ~8 s f�
 Bild, wenn Ring keins rechtzeitig liefert oder es größer als 300 KB ist). Bei Fehlern bremst das
 Plugin (5 s … 5 min, bei 429 nach `Retry-After`).
 
+Ring schränkt die Sofort-Abfrage (`dings/active`) für viele Konten ein – sie liefert dann nichts oder
+einen Fehler. Seit 1.4.0 stört das die Abfrage nicht mehr: bei einem Fehler (oder 429) pausiert das
+Plugin nur diese eine Abfrage für 10 Minuten (bei 429 so lange, wie Ring verlangt) und liest die
+Ereignisliste währenddessen alle 15 Sekunden. Dann kommt ein Klingeln **etwa 15–60 Sekunden** später
+an (Ring führt es oft erst mit Verzögerung in der Liste). Klingeln bis 10 Minuten nach dem Läuten
+landen im Verlauf und im Chat, der Push geht nur bis 5 Minuten danach raus; ältere zeigt nur die
+Klingel-Diagnose. Gong und Fernseher bekommen das Klingeln direkt von Ring und sind deshalb schneller.
+
 ## English
 
 Nuki smart locks and openers (local Nuki Bridge or Nuki Web) and Ring doorbells/cameras in
@@ -226,7 +239,10 @@ working regardless).
   viewers, time window, 10 per minute per person and location) and written to the history.
   Read every minute; locations with a **Ring Alarm** base station are never read or switched.
 * **Ring delay:** polled (no push receiving possible for a plugin): about 5–15 s plus up to ~8 s
-  for the picture.
+  for the picture. Ring restricts `dings/active` for many accounts (empty or an error): since 1.4.0 an
+  error or a 429 there only pauses that request (10 minutes, longer when Retry-After says so) and the
+  location events are read every 15 s instead — about 15–60 s then. Rings are taken up to 10 minutes
+  after they rang (history, chat card), pushed only up to 5 minutes; motion keeps 2 minutes.
 * **Doorbell in the family chat (1.3.0):** with the Messenger plugin (1.4.0 or later, GateControl ≥
   1.177.0, `permissions.services` `gatecontrol-messenger:send_message`) every ring posts a card into
   the chat "Family": `send_message { conversation: 'family', card: { kind: 'doorbell', title:
@@ -237,6 +253,11 @@ working regardless).
   'gatecontrol-messenger'`): a person's action with that person's rights, never the automation
   rules; history `via: 'chat'` with `caller: 'gatecontrol-messenger'`. Switch "Doorbell in the family
   chat" on the page **Settings** (default on); without the messenger nothing changes.
+  1.4.0: the host takes up to 512 KB per call from GateControl 1.180.0 on (16 KB before). When the
+  messenger answers `not_found` (no group "Family"), the card goes to the people who get the ring's
+  push, each into their own read-only channel "Door & Camera" (`conversation: ['user:<id>', …]`, ≤ 20,
+  `title`). The page shows the **doorbell diagnosis**: the last ring noticed (when, camera, delay,
+  source `active` | `events`, outcome) and the last chat result with a reason.
 
 ## App API
 
@@ -260,6 +281,10 @@ Every answer is `{ "ok": true, … }` or `{ "ok": false, "code": "<code>", "erro
   "locks": [ LockView, … ],               // only locks with a right for this person
   "cameras": [ CameraView, … ],           // enabled cameras linked to one of those locks
   "ring": { "connected": true, "broken": false },   // broken → show "Ring-Verbindung gestört"
+  // 1.4.0: the last ring and its chat card — null for people who see no camera
+  "doorbell": { "lastRingAt": "2026-10-14T08:00:00Z" | null, "source": "active" | "events" | null,
+                "chat": { "at": "…", "ok": true, "error": null | "not_found" | "unavailable" | "rate_limit" | "timeout" | "invalid" | "failed",
+                          "fallback": false } | null },   // fallback: sent to the people's own channels (no group "Familie")
   "ringModes": [ RingModeView, … ],       // Ring locations this person may switch (see below; [] for most people)
   "serverTime": "2026-10-14T08:00:00Z"
 }
@@ -479,7 +504,9 @@ Doorbell pushes have `ttl` 3600 s (the picture expires with it).
 `GET cameras/<id>/snapshot`; `POST modes/<locationId>/<disarmed|home|away>`; `GET rights`,
 `PUT rights/<userId>`; `GET history`, `GET events/<id>`;
 `GET|PUT settings` (1.3.0: `familyChat` in `config`; both answer `chat: { api, available, last: { at, ok,
-error, image } | null }` — `available` `null` on GateControl < 1.178.0). Secrets are write-only (`hasToken: true/false`). `GET status` carries
+error, image, fallback: { to, sent, failed } | null } | null, detect }` — `available` `null` on GateControl < 1.178.0;
+1.4.0 `detect: { lastDing: { at, seenAt, delayS, source: 'active' | 'events', camera, outcome: 'handled' | 'too_old' |
+'no_camera' | 'failed', pushed } | null, active: { state: 'ok' | 'off', code, since, offUntil } | null }`). Secrets are write-only (`hasToken: true/false`). `GET status` carries
 `ringModes: [{ id, name, mode, supported, why, cameras, alarm, readOnly, error, present, modeAt,
 checkedAt }]` (`why`: `null` or `alarm` | `no_cameras` | `unknown` | `error` | `disabled` |
 `read_only`); `GET rights` carries `locations: [{ id, name, supported }]` (no Ring Alarm
@@ -504,7 +531,7 @@ only numbers, booleans and short strings, never tokens; kept in `lock_state.nuki
 | Refresh | same endpoint, `grant_type: "refresh_token"`; the answer's `refresh_token` replaces the stored one at once |
 | Session | `POST https://api.ring.com/clients_api/session` `{ device: { hardware_id, metadata: { api_version: 11, device_model: "GateControl" }, os: "android" } }` every 12 h |
 | Devices | `GET https://api.ring.com/clients_api/ring_devices` (`doorbots`, `authorized_doorbots`, `stickup_cams`) |
-| Events | `GET …/clients_api/dings/active` every 5 s; `GET …/clients_api/locations/<id>/events?limit=20` every 30 s |
+| Events | `GET …/clients_api/dings/active` every 5 s (optional since 1.4.0: an error or 429 pauses it for ≥ 10 min); `GET …/clients_api/locations/<id>/events?limit=20` every 30 s (15 s while `dings/active` is paused) |
 | Pictures | `GET https://app-snaps.ring.com/snapshots/next/<id>?after-ms=…&max-wait-ms=…&extras=force`; `GET …/clients_api/snapshots/image/<id>` |
 | Locations | `GET https://api.ring.com/devices/v1/locations` → `user_locations: [{ location_id, name }]`; Ring Alarm = `base_stations` of `ring_devices` with that `location_id` (ring-client-api `lib/api.js`) |
 | Mode | `GET` / `POST https://prd-api-us.prd.rings.solutions/api/v1/mode/location/<location_id>` (POST body `{ mode: "disarmed" \| "home" \| "away" }`) → `{ mode, readOnly, lastUpdateTimeMS, … }`; switchable = cameras there, no Ring Alarm, `mode` not `disabled`/`unset`, not `readOnly` (ring-client-api 14.3.0 `lib/location.js` `getLocationMode` / `setLocationMode` / `supportsLocationModeSwitching`) |

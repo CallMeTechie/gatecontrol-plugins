@@ -124,13 +124,15 @@ test('the switch „Klingel in den Familien-Chat“ (default on); gc.services.av
     st = (await ctx.admin('PUT', 'settings', { familyChat: true })).json;
     assert.deepEqual([st.config.familyChat, st.chat.available], [true, true]);
     assert.equal((await ctx.admin('PUT', 'settings', { familyChat: 'yes' })).json.code, 'invalid');
-    // the messenger answers with a refusal (e.g. no group „Familie“): logged, kept for the page
+    // the messenger answers with a refusal (e.g. no group „Familie“): logged, kept for the page — 1.4.0: not_found
+    // tries the people of the ring's push once (refused here as well)
     m.answer = () => ({ ok: false, code: 'not_found' });
     ctx.clock.add(MIN);
     await ding(host, ctx);
-    assert.equal(m.got.length, 1);
+    assert.equal(m.got.length, 2);
+    assert.deepEqual(m.got[1].payload.conversation, [`user:${ANNA.id}`, `user:${MARC.id}`, `user:${LENA.id}`]);
     st = (await ctx.admin('GET', 'settings')).json;
-    assert.deepEqual([st.chat.last.ok, st.chat.last.error], [false, 'not_found']);
+    assert.deepEqual([st.chat.last.ok, st.chat.last.error, st.chat.last.fallback], [false, 'not_found', { to: 3, sent: 0, failed: 3 }]);
     assert.ok(host.logs.some((l) => l.level === 'warn' && l.message === 'doorbell card not sent not_found'));
     // a provider that throws
     m.answer = () => { throw new Error('boom'); };
@@ -146,14 +148,14 @@ test('an older GateControl without gc.services: nothing breaks; the card helper;
     await linkCameras(ctx.admin, ctx.lockId);
     const gc = { ...host.gc, services: undefined };
     assert.deepEqual(await chat.ring(gc, { familyChat: true, notifyLang: 'de' }, { camera: { name: 'Klingel' }, lock: null, time: '10:00', image: null }),
-      { sent: false, ok: false, error: 'unavailable', image: false });
+      { sent: false, ok: false, error: 'unavailable', image: false, fallback: null });
     await ding(host, ctx);
     assert.ok(host.notifications.some((n) => n.topic === 'doorbell'));
   });
   const big = Buffer.alloc(300 * 1024 + 1, 1);
   assert.equal(chat.cardOf({ lang: 'de', camera: { name: 'K' }, lock: { id: 3, name: 'Tür', actions: '["open"]' }, time: '07:05', image: big }).card.imageBase64, undefined, 'over 300 KB: never');
   const manifest = JSON.parse(fs.readFileSync(path.join(DIR, 'plugin.json'), 'utf8'));
-  assert.equal(manifest.version, '1.3.0');
+  assert.equal(manifest.version, '1.4.0');
   assert.deepEqual(manifest.permissions.services, ['gatecontrol-messenger:send_message']);
   assert.equal(manifest.gatecontrol, '>=1.169.0', 'the chat is optional: an older host ignores permissions.services');
   const texts = require('../server/texts.json');
