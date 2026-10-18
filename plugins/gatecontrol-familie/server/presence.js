@@ -67,6 +67,12 @@
 // offline) is recorded but runs nothing — a late arrival must not open a door.
 // Otherwise the matching rules run like every other trigger (throttle,
 // conditions, after the commit). Events are kept 90 days, without positions.
+//
+// The place in the messenger status (1.8.0, server/messenger.js placeStatus): a change of
+// home / away, a place event that runs (not repeated, not late) and a withdrawn consent
+// collect { userId, place } into r.placeStatus — the place's name („Zuhause“ for home, the
+// rule place's name), null when away / after leaving a place while not at home / without
+// consent; sent to the Messenger after the commit. Never a position.
 
 const crypto = require('node:crypto');
 const store = require('./store');
@@ -76,6 +82,7 @@ const members = require('./members');
 const sun = require('./sun');
 const ruleplaces = require('./ruleplaces');
 const messenger = require('./messenger');
+const texts = require('./texts.json');
 const { fail, posInt, optText, bool, intIn, iso, parseIso, parseJson, userIds, TIME_RE } = require('./util');
 
 const TRIGGERS = ['all_away', 'first_home', 'child_home_alone', 'person_home', 'person_away', 'place_enter', 'place_exit'];
@@ -99,6 +106,14 @@ const SELF = 'gatecontrol-familie';
 const STATES = ['on', 'off'];
 
 // ─── state ──────────────────────────────────────
+
+/** The name of home in the messenger status (1.8.0): „Zuhause“ / „Home“ (notification language). */
+const homeName = (cfg) => texts[cfg && cfg.lang === 'en' ? 'en' : 'de']['services.home'];
+
+/** Collect a place change for the messenger status (1.8.0) — r.placeStatus, when the caller has one. */
+function notePlace(r, userId, place) {
+  if (r && Array.isArray(r.placeStatus)) r.placeStatus.push({ userId, place: place || null });
+}
 
 /** Map userId → { share, places, home: bool|null, since } for the family members (places: 1.5.0, the own consent for places). */
 async function load(gc, fam) {
@@ -176,6 +191,8 @@ async function consent(gc, r) {
   [r.me.userId, next.share ? 1 : 0, next.places ? 1 : 0, r.now]);
   if (!next.share) await store.run(gc, 'DELETE FROM presence_state WHERE user_id = ?', [r.me.userId]);
   const p = (await load(gc, r.fam)).get(r.me.userId);
+  // 1.8.0: a withdrawn consent takes the place out of the messenger status (home stays while shared)
+  if ((cur && cur.share && !next.share) || (cur && cur.places && !next.places)) notePlace(r, r.me.userId, p.share && p.home === true ? homeName(r.cfg) : null);
   return { consent: next, state: { userId: r.me.userId, state: stateOf(p), home: p.home, since: iso(p.since) } };
 }
 
@@ -199,6 +216,7 @@ async function report(gc, r) {
     await store.run(gc, `INSERT INTO presence_state (user_id, home, since, reported_at) VALUES (?, ?, ?, ?)
       ON CONFLICT(user_id) DO UPDATE SET home = excluded.home, since = excluded.since, reported_at = excluded.reported_at`, [r.me.userId, home ? 1 : 0, at, r.now]);
     const events = transitionEvents(r.fam, map, r.me, home);
+    notePlace(r, r.me.userId, home ? homeName(r.cfg) : null);
     await fire(gc, r.fam, r.cfg, r.now, events, r.runs);
     await checkAllAway(gc, r.fam, r.cfg, r.now, r.runs);
   } else {
@@ -429,6 +447,12 @@ async function placeEvent(gc, r, raw) {
   const before = r.runs.length;
   if (!repeated && !late) {
     const trigger = b.transition === 'enter' ? 'place_enter' : 'place_exit';
+    // 1.8.0: the messenger status — the place's name on arrival; on leaving „Zuhause“ while at home, else null
+    if (b.transition === 'enter') notePlace(r, r.me.userId, place.name);
+    else {
+      const p = (await load(gc, r.fam)).get(r.me.userId);
+      notePlace(r, r.me.userId, p && p.share && p.home === true ? homeName(r.cfg) : null);
+    }
     await fire(gc, r.fam, r.cfg, r.now, [{ trigger, userId: r.me.userId, placeId: place.id, placeName: place.name }], r.runs);
   }
   const fired = r.runs.length - before;

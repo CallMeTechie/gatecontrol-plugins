@@ -63,6 +63,7 @@ const board = require('./board');
 const meals = require('./meals');
 const presence = require('./presence');
 const ruleplaces = require('./ruleplaces');
+const messenger = require('./messenger');
 const { fail, posInt, iso } = require('./util');
 
 /** A portal viewer recognised only by device trust: no real login and no paired kiosk device. */
@@ -304,7 +305,7 @@ async function route(req, gc, seg, cfg, now) {
   const method = String(req.method || 'GET').toUpperCase();
   const write = method !== 'GET';
   const body = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
-  const r = { req, cfg, now, today, fam, me: m, user, body, query: req.query || {}, trustOnly: trustOnly(user), pushes: [], runs: [], lang: req.lang === 'en' ? 'en' : 'de' };
+  const r = { req, cfg, now, today, fam, me: m, user, body, query: req.query || {}, trustOnly: trustOnly(user), pushes: [], runs: [], placeStatus: [], lang: req.lang === 'en' ? 'en' : 'de' };
   if (m.role === 'wall') wall.guard(r, method, seg);
   const handler = dispatch(gc, r, seg, method);
   if (write && r.trustOnly) throw fail('login_required');
@@ -312,6 +313,8 @@ async function route(req, gc, seg, cfg, now) {
   // presence rules that fired: quick actions and notifications after the commit
   if (r.runs.length) await presence.execute(gc, r.fam, r.cfg, r.now, r.runs, r.pushes);
   if (r.pushes.length) await push.flush(gc, r.pushes);
+  // 1.8.0: where people are, for the messenger status (never throws)
+  if (r.placeStatus.length) await messenger.placeStatus(gc, r.fam, r.now, r.placeStatus);
   return { status: 200, json: { ok: true, ...out } };
 }
 

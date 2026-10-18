@@ -39,6 +39,7 @@
 .fa-p-date{display:flex;gap:10px;font-size:14px;align-items:baseline}
 .fa-p-date-when{width:62px;flex:none;color:var(--muted);font-size:13px}
 .fa-p-date-main{flex:1;min-width:0;overflow-wrap:anywhere}
+.fa-p-date-chat{flex:none;font-size:11px;align-self:center}
 .fa-p-bday{display:flex;align-items:center;gap:10px}
 .fa-p-bday b{flex:1;font-size:14px;min-width:0}
 .fa-p-kid{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--line)}

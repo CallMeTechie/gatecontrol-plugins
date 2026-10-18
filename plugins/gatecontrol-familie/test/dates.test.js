@@ -30,6 +30,7 @@ test('API: create / edit / delete by every member; occurrences with member birth
   assert.deepEqual(e.json.event, {
     id: e.json.event.id, title: 'Elternabend 4b', date: '2026-10-14', time: '19:00', endDate: null, allDay: false, repeat: 'none', memberIds: [ANNA.id],
     kind: 'event', remindDays: 0, note: 'Raum 12', baseDate: '2026-10-14', years: null, readOnly: false, createdBy: TIM.id,
+    place: null, endTime: null, origin: null,
   });
   const helga = await as(ANNA)('POST', '/dates', { title: 'Oma Helga', date: '1946-10-20', kind: 'birthday', remindDays: 3 });
   assert.deepEqual([helga.json.event.repeat, helga.json.event.allDay, helga.json.event.time], ['yearly', true, null]);

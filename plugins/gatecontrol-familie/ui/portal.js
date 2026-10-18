@@ -275,8 +275,11 @@
       events.forEach(function (e) {
         var n = A.daysUntil(e.date);
         var when = n === 0 ? (e.time || T('rel.today')) : (n === 1 ? T('rel.tomorrow') : A.day(e.date, { weekday: 'short', day: '2-digit', month: '2-digit' }));
-        var main = e.title + (n !== 0 && e.time ? ' · ' + e.time : '');
-        list.appendChild(el('div', { class: 'fa-p-date' }, [el('span', { class: 'fa-p-date-when', text: when }), el('span', { class: 'fa-p-date-main', text: main })]));
+        var main = e.title + (n !== 0 && e.time ? ' · ' + e.time : '') + (e.time && e.endTime ? '–' + e.endTime : '') + (e.place ? ' · ' + e.place : '');
+        var kids = [el('span', { class: 'fa-p-date-main', text: main })];
+        // 1.8.0: a date from the family chat (Messenger)
+        if (e.origin === 'chat') kids.push(el('span', { class: 'fa-pill fa-p-date-chat', text: T('portal.from_chat') }));
+        list.appendChild(el('div', { class: 'fa-p-date' }, [el('span', { class: 'fa-p-date-when', text: when })].concat(kids)));
       });
       if (!events.length) list.appendChild(el('p', { class: 'fa-empty', text: T('portal.dates_none') }));
       var bl = A.clear($('#fa-bday-list'));

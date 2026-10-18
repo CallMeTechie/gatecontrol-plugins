@@ -44,6 +44,20 @@
 // State (gc.storage 'messenger'): { available: true|false|null, reason, checkedAt,
 // sync: { at, ok, hash, conversationId, members, added, removed, ignored, error } | null,
 // release: { at, ok, conversationId, error } | null (1.7.0) }
+//
+// The place in the messenger status (1.8.0, messenger ≥ 1.4.0, permissions.services):
+//   set_place_status { userId, place: string | null }   when presence or a place event changes
+//                where a member is — the place's NAME only („Zuhause“, „Schule“), never a
+//                position; null = nowhere known (away, left a place, consent withdrawn). Only
+//                for people who agreed (the presence consent `share` for home / away, `places`
+//                for the rule places: without consent there is no report to pass on). The
+//                messenger decides what it does with it (status preset „auto_place“, its own
+//                privacy setting). Sent after the commit, only when the place differs from the
+//                last one sent; with gc.services.available (GateControl ≥ 1.178.0) only when
+//                the messenger offers the service. Not delivered (missing, over the budget, a
+//                timeout) → kept and tried again by the background run every 5 minutes (the
+//                latest place per person only). State: gc.storage 'messenger_places'
+//                { <userId>: { place, sent, at } }.
 
 const PLUGIN = 'gatecontrol-messenger';
 const KEY = 'family';
@@ -57,7 +71,11 @@ const TEXT_MAX = 500;
 const PEOPLE_MAX = 20;
 
 // multiAt: when an older messenger refused send_message with a list (then one call per person until HEAL_MS later)
-const proc = { started: false, running: null, multiAt: null };
+// placing: the running place-status delivery (1.8.0); placeAt: when it last tried
+const proc = { started: false, running: null, multiAt: null, placing: null, placeAt: null };
+const PLACES_KEY = 'messenger_places';
+const PLACE_SERVICE = 'set_place_status';
+const PLACE_MAX = 60;
 
 /** Does this GateControl offer gc.services (≥ 1.177.0)? */
 const hasApi = (gc) => !!(gc && gc.services && typeof gc.services.call === 'function');
@@ -269,6 +287,7 @@ async function tick(gc, fam, cfg, now) {
   } catch (e) {
     gc.log.warn('messenger tick failed', (e && (e.code || e.message)) || 'error');
   }
+  try { await tickPlaces(gc, fam, now); } catch (e) { gc.log.warn('place status failed', (e && (e.code || e.message)) || 'error'); }
   proc.started = true;
 }
 
@@ -277,6 +296,91 @@ function reset() {
   proc.started = false;
   proc.running = null;
   proc.multiAt = null;
+  proc.placing = null;
+  proc.placeAt = null;
+}
+
+// ─── the place in the messenger status (1.8.0) ─────
+
+async function loadPlaces(gc) {
+  let v = null;
+  try { v = await gc.storage.get(PLACES_KEY); } catch { /* no storage */ }
+  return v && typeof v === 'object' && !Array.isArray(v) ? v : {};
+}
+
+async function savePlaces(gc, v) {
+  try { await gc.storage.set(PLACES_KEY, v); } catch (e) { gc.log.warn('place status not saved', (e && e.code) || (e && e.message)); }
+}
+
+/** Deliver what is not sent yet (serialised). Stops at the first "not there" or "over the budget". Never throws. */
+function flushPlaces(gc, fam, now) {
+  const run = async () => {
+    const st = await loadPlaces(gc);
+    let changed = false;
+    for (const key of Object.keys(st)) {
+      // a person who left the family: nothing more to tell
+      if (!fam.byId.has(Number(key))) { delete st[key]; changed = true; }
+    }
+    const due = Object.entries(st).filter(([, v]) => v && v.sent !== true);
+    if (due.length && hasApi(gc)) {
+      proc.placeAt = now;
+      let there = true;
+      if (hasAvailable(gc)) {
+        try { there = (await gc.services.available(PLUGIN, PLACE_SERVICE)) === true; } catch { there = true; }
+      }
+      for (const [key, v] of there ? due : []) {
+        const res = await call(gc, PLACE_SERVICE, { userId: Number(key), place: v.place == null ? null : v.place });
+        // delivered, or refused by the messenger itself (it knows better): done either way
+        if (res.ok || (res.answered && res.code !== 'timeout' && res.code !== 'failed')) {
+          st[key] = { ...v, sent: true, error: res.ok ? null : res.code };
+          changed = true;
+          continue;
+        }
+        if (res.code === 'unavailable' || res.code === 'rate_limit') break;
+      }
+    }
+    if (changed) await savePlaces(gc, st);
+    return st;
+  };
+  const p = (proc.placing || Promise.resolve()).then(run, run).catch((e) => {
+    gc.log.warn('place status failed', (e && (e.code || e.message)) || 'error');
+    return {};
+  });
+  proc.placing = p;
+  return p;
+}
+
+/**
+ * Presence or a place event changed where people are: changes [{ userId, place: name | null }]
+ * (after the commit). Remembers each person's latest place and delivers the new ones. Never throws.
+ */
+async function placeStatus(gc, fam, now, changes) {
+  try {
+    const st = await loadPlaces(gc);
+    let changed = false;
+    for (const c of changes || []) {
+      if (!c || !fam.byId.has(c.userId)) continue;
+      const place = typeof c.place === 'string' && c.place.trim() ? c.place.trim().slice(0, PLACE_MAX) : null;
+      const cur = st[c.userId];
+      if (cur && cur.place === place && cur.sent === true) continue;
+      st[c.userId] = { place, sent: false, at: now };
+      changed = true;
+    }
+    if (!changed) return st;
+    await savePlaces(gc, st);
+    return await flushPlaces(gc, fam, now);
+  } catch (e) {
+    gc.log.warn('place status failed', (e && (e.code || e.message)) || 'error');
+    return {};
+  }
+}
+
+/** Background: places not delivered yet, every 5 minutes. */
+async function tickPlaces(gc, fam, now) {
+  if (proc.placeAt != null && now - proc.placeAt < RETRY_UNAVAILABLE_MS) return;
+  const st = await loadPlaces(gc);
+  if (!Object.values(st).some((v) => v && v.sent !== true)) return;
+  await flushPlaces(gc, fam, now);
 }
 
 /** What the pages need: { api, available, reason, group, title, sync, release (1.7.0), checkedAt } (no service call). */
@@ -369,5 +473,6 @@ async function sendAction(gc, fam, cfg, now, action, text, triggerUser) {
 
 module.exports = {
   PLUGIN, KEY, SETTING, TEXT_MAX, PEOPLE_MAX, HEAL_MS, RETRY_UNAVAILABLE_MS, RETRY_FAILED_MS,
-  hasApi, hasAvailable, groupTitle, call, probe, sync, release, tick, reset, info, setGroup, sendAction, loadState, _proc: proc,
+  hasApi, hasAvailable, groupTitle, call, probe, sync, release, tick, reset, info, setGroup, sendAction, loadState,
+  placeStatus, flushPlaces, loadPlaces, PLACES_KEY, PLACE_SERVICE, _proc: proc,
 };
