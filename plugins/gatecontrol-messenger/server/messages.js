@@ -19,6 +19,16 @@ const PAGE_MAX = 100;
 const SEARCH_SCAN = 2000;
 const SEARCH_RESULTS = 50;
 const THUMB_MAX = 64 * 1024;
+// 1.3.0: the preview picture of a file message (video frame, first PDF page): these types only, ≤ 640 px a
+// side — the side is the sender's promise (the plugin cannot read the bytes of an upload), checked by the host
+// again when the preview becomes a push picture.
+const FILE_THUMB_TYPES = ['image/webp', 'image/jpeg', 'image/png'];
+const THUMB_MAX_SIDE = 640;
+const VIDEO_MAX_MS = 24 * 3600 * 1000;
+const VIDEO_MAX_SIDE = 16384;
+const isVideo = (mime) => typeof mime === 'string' && /^video\//i.test(mime);
+/** What the server supports beyond 1.0 (GET me features: clients check before sending these fields). */
+const FEATURES = ['video_meta', 'file_thumbs'];
 const URL_TTL_S = 6 * 3600;
 const CLIENT_ID_RE = /^[A-Za-z0-9_-]{8,64}$/;
 const KINDS = ['text', 'image', 'voice', 'file', 'location'];
@@ -97,6 +107,7 @@ async function view(ctx, me, r, rc, reacts, replies, hiddenReplies) {
     via: r.via || null, mine, createdAt: iso(r.created_at), editedAt: iso(r.edited_at), deletedAt: iso(r.deleted_at),
     expiresAt: iso(r.expires_at), deleted: !!r.deleted_at, undecryptable: false,
     text: null, replyTo: null, media: null, meta: null, location: null, system: null, reactions: [], status: null,
+    thumbMediaId: null, video: null,
   };
   if (mine && rc) {
     base.status = rc.readUpTo != null && r.id <= rc.readUpTo ? 'read' : (rc.deliveredUpTo != null && r.id <= rc.deliveredUpTo ? 'delivered' : 'sent');
@@ -117,6 +128,11 @@ async function view(ctx, me, r, rc, reacts, replies, hiddenReplies) {
   const metaOut = {};
   for (const k of ['durationMs', 'waveform', 'w', 'h', 'fileName']) if (m[k] != null) metaOut[k] = m[k];
   base.meta = Object.keys(metaOut).length ? metaOut : null;
+  base.thumbMediaId = r.thumb_media_id || null;
+  if (r.kind === 'file' && m.video && typeof m.video === 'object') {
+    const v = m.video;
+    base.video = { durationMs: v.durationMs != null ? v.durationMs : null, width: v.width != null ? v.width : null, height: v.height != null ? v.height : null };
+  }
   if (r.media_id) {
     const row = await store.one(ctx.gc, 'SELECT mime, bytes FROM media WHERE media_id = ?', [r.media_id]);
     base.media = {
@@ -238,6 +254,19 @@ function cleanLocation(v) {
   return loc;
 }
 
+/**
+ * 1.3.0: `video` { durationMs, width, height } of a file message whose file is video/* — integers, each may be
+ * left out (or null) when the sender does not know it; other keys are ignored. → the stored object or null.
+ */
+function cleanVideo(v, mime) {
+  if (v == null) return null;
+  if (typeof v !== 'object' || Array.isArray(v) || !isVideo(mime)) throw fail('invalid');
+  const out = {};
+  if (v.durationMs != null) out.durationMs = intIn(v.durationMs, 0, VIDEO_MAX_MS);
+  for (const k of ['width', 'height']) if (v[k] != null) out[k] = intIn(v[k], 1, VIDEO_MAX_SIDE);
+  return Object.keys(out).length ? out : null;
+}
+
 const MIME_OF_KIND = { image: /^image\//, voice: /^audio\//, file: /./ };
 
 /** Check an upload the sender wants to attach → its info; refuses others' files, used files and wrong types. */
@@ -247,6 +276,7 @@ async function checkMedia(ctx, id, kind, { thumb = false } = {}) {
   try { info = await ctx.gc.media.info(id); } catch { info = null; }
   if (!info || info.owner !== ctx.viewer) throw fail('media_invalid');
   if (thumb ? !/^image\//.test(info.mime) || info.bytes > THUMB_MAX : !MIME_OF_KIND[kind].test(info.mime)) throw fail('media_invalid');
+  if (thumb && kind === 'file' && !FILE_THUMB_TYPES.includes(String(info.mime).toLowerCase())) throw fail('media_invalid');
   const used = await store.one(ctx.gc, 'SELECT 1 AS x FROM media WHERE media_id = ?', [id]);
   if (used) throw fail('media_in_use');
   return info;
@@ -316,6 +346,11 @@ async function send(ctx, conv, me, members, body) {
       thumb = await checkMedia(ctx, b.thumbMediaId, kind, { thumb: true });
     }
   } else if (b.mediaId != null || b.thumbMediaId != null) throw fail('invalid');
+  if (b.video != null) {
+    if (kind !== 'file') throw fail('invalid');
+    const video = cleanVideo(b.video, media.mime);
+    if (video) meta.video = video;
+  }
   if (kind === 'location') meta.location = cleanLocation(b.location);
   else if (b.location != null) throw fail('invalid');
   const id = await insert(ctx, conv, { senderId: ctx.viewer, clientId: b.clientId, kind, text, replyTo, mediaId: media && media.mediaId, thumbId: thumb && thumb.mediaId, meta });
@@ -504,9 +539,21 @@ async function search(ctx, me, q, rc) {
   return { results: await views(ctx, me, hits, rc), scanned: Math.min(rows.length, SEARCH_SCAN), truncated };
 }
 
-const MEDIA_KINDS = ['image', 'voice', 'file'];
+const MEDIA_KINDS = ['image', 'voice', 'file', 'video'];
+// 1.3.0: a video is a file message whose file is video/* (kind stays 'file' for older apps)
+const VIDEO_SQL = "EXISTS (SELECT 1 FROM media x WHERE x.media_id = m.media_id AND x.mime LIKE 'video/%')";
+const KIND_SQL = {
+  image: "m.kind = 'image'",
+  voice: "m.kind = 'voice'",
+  file: `m.kind = 'file' AND NOT ${VIDEO_SQL}`,
+  video: `m.kind = 'file' AND ${VIDEO_SQL}`,
+  all: "m.kind IN ('image', 'voice', 'file')",
+};
 
-/** GET conversations/:id/media?kind=&before=&limit= → { items (newest first), counts, hasMore } */
+/**
+ * GET conversations/:id/media?kind=image|voice|file|video|all&before=&limit= → { items (newest first), counts, hasMore }
+ * 1.3.0: `video` = file messages with a video/* file; `file` = the other files; counts.video, counts.file without videos.
+ */
 async function mediaList(ctx, me, query, rc) {
   const q = query || {};
   const kind = q.kind == null || q.kind === '' || q.kind === 'all' ? null : String(q.kind);
@@ -515,13 +562,13 @@ async function mediaList(ctx, me, query, rc) {
   if (!limit || limit > PAGE_MAX) throw fail('invalid');
   const before = q.before == null || q.before === '' ? null : posInt(String(q.before));
   if (q.before != null && q.before !== '' && !before) throw fail('invalid');
-  const kinds = kind ? [kind] : MEDIA_KINDS;
-  let rows = await store.all(ctx.gc, `SELECT m.* FROM messages m WHERE ${VISIBLE_SQL} AND m.deleted_at IS NULL AND m.media_id IS NOT NULL AND m.kind IN (${store.marks(kinds.length)})${before ? ' AND m.id < ?' : ''} ORDER BY m.id DESC LIMIT ?`,
-    [...visibleArgs(me), ...kinds, ...(before ? [before] : []), limit + 1]);
+  let rows = await store.all(ctx.gc, `SELECT m.* FROM messages m WHERE ${VISIBLE_SQL} AND m.deleted_at IS NULL AND m.media_id IS NOT NULL AND ${KIND_SQL[kind || 'all']}${before ? ' AND m.id < ?' : ''} ORDER BY m.id DESC LIMIT ?`,
+    [...visibleArgs(me), ...(before ? [before] : []), limit + 1]);
   const hasMore = rows.length > limit;
   rows = rows.slice(0, limit);
-  const counts = { image: 0, voice: 0, file: 0 };
-  for (const c of await store.all(ctx.gc, `SELECT m.kind AS kind, COUNT(*) AS n FROM messages m WHERE ${VISIBLE_SQL} AND m.deleted_at IS NULL AND m.media_id IS NOT NULL GROUP BY m.kind`, visibleArgs(me))) {
+  const counts = { image: 0, voice: 0, file: 0, video: 0 };
+  for (const c of await store.all(ctx.gc, `SELECT CASE WHEN m.kind = 'file' AND ${VIDEO_SQL} THEN 'video' ELSE m.kind END AS kind, COUNT(*) AS n
+    FROM messages m WHERE ${VISIBLE_SQL} AND m.deleted_at IS NULL AND m.media_id IS NOT NULL GROUP BY 1`, visibleArgs(me))) {
     if (c.kind in counts) counts[c.kind] = c.n;
   }
   return { items: await views(ctx, me, rows, rc), counts, hasMore };
@@ -529,5 +576,6 @@ async function mediaList(ctx, me, query, rc) {
 
 module.exports = {
   views, page, send, queueNew, edit, remove, react, markRead, markDelivered, queueRead, receiptsAs, search, mediaList, system, insert, checkMedia, bindMedia,
-  orphanMedia, lastVisible, unreadCount, bodyOf, metaOf, visibleMessage, cleanEmoji, TEXT_MAX, PAGE_MAX, THUMB_MAX, URL_TTL_S, KINDS, CLIENT_ID_RE,
+  orphanMedia, lastVisible, unreadCount, bodyOf, metaOf, visibleMessage, cleanEmoji, cleanVideo, isVideo, TEXT_MAX, PAGE_MAX, THUMB_MAX, THUMB_MAX_SIDE,
+  FILE_THUMB_TYPES, FEATURES, URL_TTL_S, KINDS, CLIENT_ID_RE,
 };

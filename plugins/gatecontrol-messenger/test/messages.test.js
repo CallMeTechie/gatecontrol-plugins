@@ -257,11 +257,12 @@ test('media list of a conversation: counts per kind, newest first, filter', asyn
     await c.send(MARC, d.id, { kind: 'voice', mediaId: await c.upload(MARC, OGG, 'audio/ogg') });
     await c.send(ANNA, d.id, { text: 'kein Medium' });
     let r = (await c.as(ANNA)('GET', `conversations/${d.id}/media`)).json;
-    assert.deepEqual(r.counts, { image: 2, voice: 1, file: 0 });
+    assert.deepEqual(r.counts, { image: 2, voice: 1, file: 0, video: 0 });
     assert.deepEqual(r.items.map((m) => m.kind), ['voice', 'image', 'image']);
     r = (await c.as(ANNA)('GET', `conversations/${d.id}/media`, null, { kind: 'image', limit: '1' })).json;
     assert.deepEqual([r.items.length, r.hasMore, r.items[0].senderId], [1, true, MARC.id]);
-    assert.equal((await c.as(ANNA)('GET', `conversations/${d.id}/media`, null, { kind: 'video' })).json.code, 'invalid');
+    assert.deepEqual((await c.as(ANNA)('GET', `conversations/${d.id}/media`, null, { kind: 'video' })).json.items, [], '1.3.0: videos (none here)');
+    assert.equal((await c.as(ANNA)('GET', `conversations/${d.id}/media`, null, { kind: 'movie' })).json.code, 'invalid');
   });
 });
 

@@ -79,7 +79,7 @@ test('texts: every key used by the pages exists in de and en; both languages hav
 
 test('plugin.json: licence, GateControl 1.177.0, permissions, pages, app and portal tab "Chats"', () => {
   assert.equal(manifest.id, 'gatecontrol-messenger');
-  assert.equal(manifest.version, '1.2.0');
+  assert.equal(manifest.version, '1.3.0');
   assert.equal(manifest.gatecontrol, '>=1.177.0', 'media, realtime events, chat notifications and services');
   assert.deepEqual(manifest.license, { required: true });
   const p = manifest.permissions;
@@ -119,4 +119,66 @@ test('the mock host accepts the manifest and the plugin starts; the encryption k
     await host.start();
     assert.equal(host.settings.enc_key, key, 'kept on restart');
   });
+});
+
+test('1.3.0 portal tab: video meta and previews feature-detected, sent with the file; video tiles, file previews, a Videos tab', () => {
+  const portal = ui.render({ view: 'portal', lang: 'de', user: { id: 2, loggedIn: true } }, t);
+  assert.ok(portal.includes('root.MSVideo = api'), 'video.js in the portal tab');
+  assert.ok(portal.indexOf('root.MSVideo = api') < portal.indexOf("var M = window.MS;\n  var T = M.T;"), 'before portal.js');
+  assert.ok(!ui.render({ view: 'page', page: 'overview', lang: 'de' }, t).includes('MSVideo'), 'not on the admin pages');
+  const src = fs.readFileSync(path.join(__dirname, '..', 'ui', 'portal.js'), 'utf8');
+  // only when GET me says the server takes them
+  assert.match(src, /feature\('video_meta'\)/);
+  assert.match(src, /feature\('file_thumbs'\)/);
+  assert.match(src, /body\.video = p\.meta/);
+  assert.match(src, /body\.thumbMediaId = u\.mediaId/);
+  assert.match(src, /thumbMaxBytes/);
+  // rendering: a tile with play button and duration, previews on file cards, videos in the info pane
+  assert.match(src, /class: 'ms-vtile'/);
+  assert.match(src, /class: 'ms-vtile-dur', text: M\.duration\(dur\)/);
+  assert.match(src, /class: 'ms-filecard-th'/);
+  assert.match(src, /'\/media\?kind=' \+ kind/);
+  assert.match(src, /counts\.video/);
+  const lib = fs.readFileSync(path.join(__dirname, '..', 'ui', 'video.js'), 'utf8');
+  assert.match(lib, /new root\.VideoDecoder\(/, 'WebCodecs, no <video> element on a blob: URL (the frame CSP has no blob: media)');
+  assert.match(lib, /root\.pdfjsLib/, 'PDF previews only with a renderer already in the frame');
+  assert.ok(!/<\/script/i.test(lib), 'inlined in a <script>');
+});
+
+test('1.3.0 video.js: MP4 reader — duration, shown size (rotation), codec, the samples around 1 s; moov at the end', async () => {
+  const V = require('../ui/video.js');
+  const fixture = (f) => new Blob([fs.readFileSync(path.join(__dirname, 'fixtures', f))]);
+  // H.264 64×36, 2.5 s, 10 fps, a key frame every 5, shown turned by 90° (portrait)
+  let file = fixture('h264-rotated.mp4');
+  let m = await V.readMoov(file);
+  let info = V.parseMoov(m.buf, m.head);
+  assert.deepEqual([info.durationMs, info.width, info.height], [2500, 36, 64]);
+  assert.equal(info.video.rotation, 270);
+  assert.match(info.video.codec, /^avc1\.[0-9a-f]{6}$/);
+  assert.ok(info.video.description instanceof Uint8Array && info.video.description[0] === 1, 'avcC as the decoder description');
+  assert.deepEqual([info.video.codedWidth, info.video.codedHeight, info.video.samples.n], [64, 36, 25]);
+  let sel = V.pick(info.video, 1000);
+  assert.ok(info.video.samples.sync[sel.key], 'decoding starts at a key frame');
+  assert.ok(sel.list.length >= 1 && sel.list.length <= 5);
+  // sample offsets point at length-prefixed NAL units inside the file
+  const bytes = fs.readFileSync(path.join(__dirname, 'fixtures', 'h264-rotated.mp4'));
+  for (const i of sel.list) {
+    const off = info.video.samples.offset[i];
+    const size = info.video.samples.size[i];
+    assert.ok(off + size <= bytes.length);
+    assert.ok(bytes.readUInt32BE(off) + 4 <= size, `sample ${i}`);
+  }
+  assert.deepEqual(V.meta(info), { durationMs: 2500, width: 36, height: 64 });
+  // not fast-started: the moov box after the media data
+  file = fixture('h264-moov-at-end.mp4');
+  m = await V.readMoov(file);
+  info = V.parseMoov(m.buf, m.head);
+  assert.deepEqual([info.durationMs, info.width, info.height, info.video.rotation], [2500, 64, 36, 0]);
+  sel = V.pick(info.video, 1000);
+  assert.equal(info.video.samples.cts[sel.key] / 1024, 10, 'the key frame at 1.0 s');
+  // without WebCodecs (here: node): the meta, no preview; anything unreadable: nothing, never a rejection
+  assert.deepEqual(await V.videoInfo(file), { meta: { durationMs: 2500, width: 64, height: 36 }, thumb: null });
+  assert.deepEqual(await V.videoInfo(new Blob([Buffer.from('not a video at all')])), { meta: null, thumb: null });
+  assert.equal(V.meta({ durationMs: -1, width: 0, height: 20000 }), null, 'out of the server\'s bounds: left out');
+  assert.equal(await V.pdfThumb(new Blob([Buffer.from('%PDF-1.4')])), null, 'no PDF renderer in the frame: no preview');
 });
