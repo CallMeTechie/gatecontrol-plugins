@@ -30,6 +30,8 @@ function canAct(user) {
   if (!user || !Number.isSafeInteger(user.id)) return false;
   if (user.kiosk === true) return false;
   if (user.automation === true) return true;
+  // 1.3.0: a person's tap in another plugin (the Messenger's chat card) — GateControl's interactive run
+  if (user.interactive === true) return true;
   if (user.app === true) return user.loggedIn !== false;
   if (user.portal === true) return user.loggedIn === true;
   return false;

@@ -10,7 +10,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const chat = require('../server/chat');
-const { withDoor, ringLogin, ANNA, MIN, jpeg, DIR } = require('./helpers');
+const { withDoor, ringLogin, ANNA, MARC, LENA, MIN, jpeg, DIR } = require('./helpers');
 
 const MSG = 'gatecontrol-messenger';
 
@@ -162,3 +162,37 @@ test('an older GateControl without gc.services: nothing breaks; the card helper;
   const html = ui.render({ view: 'page', page: 'settings', lang: 'de' }, require('../server/index')._t);
   assert.ok(html.includes('id="dr-s-chat"') && html.includes('Klingel in den Familien-Chat'));
 });
+
+// GateControl's interactive run (a person tapped „Tür öffnen“ on the Messenger's chat card):
+// user.automation false, user.interactive true, user.via the calling plugin — a person's action.
+const tap = (host, u, id, o = {}) => host.plugin.runQuickAction({
+  user: { ...u, portal: true, loggedIn: true, automation: false, interactive: true, via: MSG, ...(o.user || {}) },
+  lang: 'de', id, via: MSG, automation: false, interactive: true,
+}, host.gc);
+
+test('a chat tap (interactive run): a person\'s action with that person\'s rights — never the automation refusals; history „Chat“ with the caller', () => withDoor({}, async (host, { admin, call, lockId, openerId }) => {
+  const h0 = host.notifications.length;
+  // listed for the person like in the app: Anna (open) gets „open“, which automation never gets
+  const listed = await host.plugin.quickActions({ user: { ...ANNA, portal: true, loggedIn: true, automation: false, interactive: true, via: MSG }, lang: 'de' }, host.gc);
+  assert.ok(listed.some((a) => a.id === `${lockId}:open`));
+  const r = await tap(host, ANNA, `${lockId}:open`);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  const h = (await admin('GET', 'history', null, { kind: 'action' })).json.items[0];
+  assert.deepEqual([h.action, h.via, h.caller, h.result, h.userId], ['open', 'chat', MSG, 'ok', ANNA.id]);
+  // Marc may lock/unlock, not open: refused with the normal reason (not auto_open), no „automatic unlock“ push
+  const m = await tap(host, MARC, `${lockId}:open`);
+  assert.equal(m.ok, false);
+  const hm = (await admin('GET', 'history', null, { kind: 'action' })).json.items[0];
+  assert.deepEqual([hm.via, hm.caller, hm.result, hm.reason], ['chat', MSG, 'refused', 'no_right']);
+  // unlock without the opt-in „automatisch aufsperren“: allowed — it is no automation
+  const u = await tap(host, MARC, `${lockId}:unlock`);
+  assert.equal(u.ok, true, JSON.stringify(u));
+  assert.equal(host.notifications.slice(h0).filter((n) => n.topic === 'auto').length, 0, 'no automation pushes');
+  // Lena (view only) cannot; a kiosk device never
+  assert.equal((await tap(host, LENA, `${openerId}:open`)).ok, false);
+  assert.equal((await tap(host, ANNA, `${lockId}:open`, { user: { kiosk: true } })).ok, false);
+  // the history page labels it
+  const texts = require('../server/texts.json');
+  assert.deepEqual([texts.de['via.chat'], texts.en['via.chat']], ['Chat', 'Chat']);
+  assert.equal((await call({ ...ANNA, portal: true, loggedIn: true, app: true }, 'GET', '/history')).json.items[0].via, 'chat');
+}));

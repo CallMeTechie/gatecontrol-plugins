@@ -103,10 +103,15 @@ async function background(gc, now) {
   }
 }
 
-/** Is the viewer one the apps' quick actions may serve (app owner or another plugin's automation)? */
+/**
+ * Is the viewer one the apps' quick actions may serve (app owner, another plugin's automation, or — 1.3.0 —
+ * a person's tap in another plugin: GateControl's interactive run, e.g. „Tür öffnen“ on the Messenger's
+ * doorbell card: user.interactive true, automation false, via the calling plugin)?
+ */
 function qaViewer(user) {
   if (!user || !Number.isSafeInteger(user.id)) return null;
   if (user.automation === true) return 'automation';
+  if (user.interactive === true && user.kiosk !== true) return 'interactive';
   if (user.app === true && user.loggedIn !== false && user.kiosk !== true) return 'app';
   return null;
 }
@@ -178,13 +183,17 @@ async function runQuickActionFor(gc, arg) {
   const user = a.user;
   // GateControl ≥ 1.169.0: { automation } is true only for another plugin's gc.actions.run (user.automation as well)
   const automation = a.automation === true || !!(user && user.automation === true);
+  // 1.3.0: an interactive run (a person tapped the action in another plugin, e.g. the Messenger's chat card)
+  const interactive = !automation && !!(user && user.interactive === true);
   const m = typeof a.id === 'string' ? QA_ID_RE.exec(a.id) : null;
   const mm = typeof a.id === 'string' ? modes.QA_RE.exec(a.id) : null;
   const kind = automation ? (user && Number.isSafeInteger(user.id) ? 'automation' : null) : qaViewer(user);
   if ((!m && !mm) || !kind) return { ok: false, message: t(lang, 'error.not_found') };
   const viewer = automation ? { ...user, automation: true, app: false } : { ...user, automation: false };
-  const via = automation ? 'automation' : (a.via === 'notification' ? 'notification' : 'app');
-  const caller = automation ? (typeof a.via === 'string' && a.via !== 'app' && a.via !== 'notification' ? a.via : (user.via || null)) : null;
+  const via = automation ? 'automation' : (interactive ? 'chat' : (a.via === 'notification' ? 'notification' : 'app'));
+  const pluginVia = (v) => (typeof v === 'string' && /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(v) && v !== 'app' && v !== 'notification' ? v : null);
+  const caller = automation ? (typeof a.via === 'string' && a.via !== 'app' && a.via !== 'notification' ? a.via : (user.via || null))
+    : (interactive ? pluginVia(user.via) || pluginVia(a.via) : null);
   if (mm) return runModeAction(gc, a, mm, { lang, viewer, via, caller });
   try {
     const cfg = await config.load(gc);

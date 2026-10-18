@@ -146,7 +146,7 @@ const ERRORS = new Set(['ring_mode_refused', 'ring_mode_failed', 'ring_mode_unre
 
 /**
  * Switch location `id` to `mode` for `user`.
- *   ctx = { cfg, t, lang, now, via: 'app'|'portal'|'notification'|'automation'|'admin', caller, adminPage }
+ *   ctx = { cfg, t, lang, now, via: 'app'|'portal'|'notification'|'automation'|'chat'|'admin', caller, adminPage }
  *   adminPage: the plugin's admin page (an administrator in GateControl's admin UI) — no viewer checks.
  * → { ok: true, message: 'Ring: Zuhause', location } — throws fail(code) after writing the history.
  */
@@ -161,7 +161,7 @@ async function perform(gc, ctx, user, id, mode) {
   const r = await rights.load(gc);
   const record = (result, reason) => store.tx(gc, () => history.add(gc, {
     at: now, kind: 'mode', locationId: id, userId: user.id, userName: user.name || null, via,
-    caller: automation ? ctx.caller || user.via || null : null, action: mode, result, reason,
+    caller: automation || via === 'chat' ? ctx.caller || user.via || null : null, action: mode, result, reason,
   }));
   const refuse = async (code, extra) => {
     await record('refused', code);

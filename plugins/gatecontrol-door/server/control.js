@@ -18,6 +18,10 @@
 //        for 3 min → state_unclear) · the door sensor (if any) closed.
 //      Otherwise refused: history row + push (topic auto) "Automatisches
 //      Aufsperren abgelehnt: …".
+//   7. a chat tap (1.3.0, via 'chat'): a person pressed „Tür öffnen“ on the
+//      Messenger's doorbell card — GateControl's interactive run (user.interactive,
+//      automation false). A person's action: the normal checks 1–5, never the
+//      automation refusals; the history names the calling plugin (caller).
 //
 // Every run that names an existing lock is written to the history (also a
 // refused or failed one). An automatic unlock is followed by the safety net
@@ -48,7 +52,7 @@ function verbKey(lock, action) {
 
 /**
  * Run `action` on lock `lockId` for `user`.
- *   ctx = { cfg, t, lang, now, via: 'app'|'portal'|'notification'|'automation', caller (plugin id for automation) }
+ *   ctx = { cfg, t, lang, now, via: 'app'|'portal'|'notification'|'automation'|'chat', caller (plugin id for automation and chat) }
  * → { ok: true, message, lock } — throws fail(code) when refused or failed (after writing the history).
  */
 async function perform(gc, ctx, user, lockId, action) {
@@ -65,7 +69,8 @@ async function perform(gc, ctx, user, lockId, action) {
   const prefs = rights.prefsOf(r, user.id);
 
   const record = (result, reason, extra = {}) => store.tx(gc, () => history.add(gc, {
-    at: now, kind: 'action', lockId: lock.id, userId: user.id, userName: user.name || null, via, caller: automation ? ctx.caller || user.via || null : null,
+    at: now, kind: 'action', lockId: lock.id, userId: user.id, userName: user.name || null, via,
+    caller: automation || via === 'chat' ? ctx.caller || user.via || null : null,
     action, result, reason, ...extra,
   }));
   const refuse = async (code, extra) => {

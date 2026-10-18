@@ -232,7 +232,10 @@ working regardless).
   the chat "Family": `send_message { conversation: 'family', card: { kind: 'doorbell', title:
   'Klingel · <lock>', text: '<camera> · HH:MM', imageBase64?, actions: ['<lockId>:open'] } }` —
   the picture when there is one (sent again without it when the host refuses the size: 16 KB of JSON
-  per service call), the lock's "open" quick action when it offers one. Switch "Doorbell in the family
+  per service call), the lock's "open" quick action when it offers one. A tap on the card is
+  GateControl's interactive run (`user.interactive: true`, `automation: false`, `via:
+  'gatecontrol-messenger'`): a person's action with that person's rights, never the automation
+  rules; history `via: 'chat'` with `caller: 'gatecontrol-messenger'`. Switch "Doorbell in the family
   chat" on the page **Settings** (default on); without the messenger nothing changes.
 
 ## App API
@@ -364,7 +367,7 @@ the rings/motion of cameras linked to locks they can view (administrators: every
     "lockId": 1, "lockName": "Haustür", "cameraId": null, "cameraName": null,
     "locationId": null, "locationName": null,   // kind "mode": the Ring location
     "userId": 3, "userName": "Marc",
-    "via": "app",                         // "app" | "portal" | "notification" | "automation" | "system" | "nuki" | "keypad" | "ring" | "admin"
+    "via": "app",                         // "app" | "portal" | "notification" | "automation" | "chat" (1.3.0) | "system" | "nuki" | "keypad" | "ring" | "admin"
     "caller": null,                       // automation: the calling plugin id, e.g. "gatecontrol-familie"
     "action": "unlock",                   // action: lock|unlock|open; alert: open_long|jammed|unreachable|night; nuki: lock|unlock|open|null; mode: disarmed|home|away
     "result": "ok",                       // "ok" | "refused" | "failed"

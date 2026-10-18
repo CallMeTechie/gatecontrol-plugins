@@ -15,9 +15,14 @@ Plugins“ (`gatecontrol-messenger: send_message`).
 - **Klingel in den Familien-Chat:** Jedes Klingeln kommt zusätzlich zu den Pushs als **Karte** in den
   Chat „Familie“ des Messengers – Titel „Klingel · Haustür“ (das verknüpfte Schloss, sonst die Kamera),
   Kamera und Uhrzeit, das **Bild** des Klingelns und der Knopf **„Tür öffnen“** (die Schnellaktion
-  `<Schloss>:open`, beim Opener „Summer“) – nur wenn das Schloss öffnen kann. Der Messenger führt den
-  Knopf als die Person aus, die ihn drückt; der Server prüft Rechte, Zeitfenster und Rate-Limit wie bei
-  jeder anderen Aktion. Bewegung kommt nie in den Chat.
+  `<Schloss>:open`, beim Opener „Summer“) – nur wenn das Schloss öffnen kann. Bewegung kommt nie in den
+  Chat.
+- **„Tür öffnen“ aus dem Chat ist eine Aktion der Person:** GateControl führt den Knopf als
+  interaktiven Lauf aus (`user.interactive: true`, `automation: false`, `via: 'gatecontrol-messenger'`).
+  Das Plugin behandelt ihn wie einen Tipp in der App – mit den Rechten, dem Zeitfenster und dem
+  Rate-Limit dieser Person, nie mit den Regeln fürs automatische Aufsperren (kein `auto_open`, kein
+  `auto_off`, keine „Automatisch“-Pushs). Im Verlauf steht „Chat“ (`via: 'chat'`) mit dem aufrufenden
+  Plugin (`caller: 'gatecontrol-messenger'`); das gilt auch für den Ring-Modus.
 - **Schalter auf der Seite „Einstellungen“:** „Klingel in den Familien-Chat“ (Standard: an). Darunter
   steht, ob der Messenger verfügbar ist (ab GateControl 1.178.0 kostenlos gefragt) und ob die letzte
   Karte nicht ankam. Ohne Messenger, ohne Gruppe „Familie“ oder auf älterem GateControl ändert sich
