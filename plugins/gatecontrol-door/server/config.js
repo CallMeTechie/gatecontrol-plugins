@@ -15,6 +15,7 @@ const DEFAULTS = Object.freeze({
   ring: true,            // Ring polling on/off (the connection stays)
   motionGapMin: 5,       // at most one motion push per camera in this many minutes (1–60)
   nukiLogImport: true,   // import keypad / manual operations from the Nuki Web log
+  familyChat: true,      // 1.3.0: a ring as a card in the Messenger's family chat (server/chat.js; only when the messenger is there)
 });
 const HISTORY_DAYS = 90;
 
@@ -27,6 +28,7 @@ function normalise(v) {
     if (typeof v.ring === 'boolean') c.ring = v.ring;
     if (Number.isInteger(v.motionGapMin) && v.motionGapMin >= 1 && v.motionGapMin <= 60) c.motionGapMin = v.motionGapMin;
     if (typeof v.nukiLogImport === 'boolean') c.nukiLogImport = v.nukiLogImport;
+    if (typeof v.familyChat === 'boolean') c.familyChat = v.familyChat;
   }
   return c;
 }
@@ -55,6 +57,7 @@ async function update(gc, body) {
   if (b.motionGapMin !== undefined) next.motionGapMin = intIn(b.motionGapMin, 1, 60);
   if (b.ring !== undefined) next.ring = bool(b.ring);
   if (b.nukiLogImport !== undefined) next.nukiLogImport = bool(b.nukiLogImport);
+  if (b.familyChat !== undefined) next.familyChat = bool(b.familyChat);
   await gc.settings.set(KEY, next);
   return next;
 }

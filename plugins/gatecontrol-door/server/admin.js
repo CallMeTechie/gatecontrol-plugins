@@ -12,7 +12,8 @@
 //   POST   admin/modes/<locationId>/<disarmed|home|away>    switch a Ring location's mode (server/modes.js)
 //   GET    admin/rights                      PUT admin/rights/<userId> { locks?, autoUnlock?, window?, cameras?, modes? }
 //   GET    admin/history[?cursor&limit&lockId&kind]          GET admin/events/<id>
-//   GET    admin/settings                    PUT admin/settings { timezone?, notifyLang?, mediaDays?, motionGapMin?, ring?, nukiLogImport? }
+//   GET    admin/settings                    PUT admin/settings { timezone?, notifyLang?, mediaDays?, motionGapMin?, ring?, nukiLogImport?, familyChat? }
+//                                            both answer { config, chat: { api, available, last } } (1.3.0, server/chat.js)
 //
 // Secrets (bridge tokens, the Nuki Web token, the Ring refresh token) are
 // written with gc.settings.setSecret and NEVER sent back — the pages only see
@@ -27,6 +28,7 @@ const rights = require('./rights');
 const cameras = require('./cameras');
 const modes = require('./modes');
 const config = require('./config');
+const chat = require('./chat');
 const views = require('./views');
 const api = require('./api');
 const { fail, posInt, text, bool, intIn, iso } = require('./util');
@@ -447,8 +449,8 @@ async function route(req, gc, seg, cfg, now, t) {
     return api.event(gc, ctx, id, { admin: true });
   }
   if (a === 'settings') {
-    if (n === 2 && GET) return { config: cfg };
-    if (n === 2 && PATCH) return { config: await config.update(gc, body) };
+    if (n === 2 && GET) return { config: cfg, chat: await chat.info(gc) };
+    if (n === 2 && PATCH) return { config: await config.update(gc, body), chat: await chat.info(gc) };
   }
   throw fail('not_found');
 }

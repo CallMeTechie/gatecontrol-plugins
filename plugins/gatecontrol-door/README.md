@@ -51,7 +51,9 @@ GateControl Lifetime enthalten.
    etwas auslösen.
 6. **Einstellungen:** Zeitzone (für Zeitfenster und Nachtkontrolle), Sprache der Mitteilungen,
    Aufbewahrung der Bilder (1–30 Tage, Standard 7), Abstand der Bewegungs-Pushs, Ring-Abfrage
-   an/aus, Nuki-Web-Protokoll übernehmen.
+   an/aus, Nuki-Web-Protokoll übernehmen, **Klingel in den Familien-Chat** (1.3.0, Standard an):
+   mit dem Messenger-Plugin (ab 1.4.0, GateControl ≥ 1.177.0) kommt jedes Klingeln als Karte mit Bild
+   und „Tür öffnen“ in den Chat „Familie“; den Knopf prüft der Server wie jede andere Aktion.
 
 ### Automatisch aufsperren bei Ankunft
 
@@ -225,6 +227,13 @@ working regardless).
   Read every minute; locations with a **Ring Alarm** base station are never read or switched.
 * **Ring delay:** polled (no push receiving possible for a plugin): about 5–15 s plus up to ~8 s
   for the picture.
+* **Doorbell in the family chat (1.3.0):** with the Messenger plugin (1.4.0 or later, GateControl ≥
+  1.177.0, `permissions.services` `gatecontrol-messenger:send_message`) every ring posts a card into
+  the chat "Family": `send_message { conversation: 'family', card: { kind: 'doorbell', title:
+  'Klingel · <lock>', text: '<camera> · HH:MM', imageBase64?, actions: ['<lockId>:open'] } }` —
+  the picture when there is one (sent again without it when the host refuses the size: 16 KB of JSON
+  per service call), the lock's "open" quick action when it offers one. Switch "Doorbell in the family
+  chat" on the page **Settings** (default on); without the messenger nothing changes.
 
 ## App API
 
@@ -466,7 +475,8 @@ Doorbell pushes have `ttl` 3600 s (the picture expires with it).
 `POST locks/<id>/refresh`; `POST ring/login|logout|sync`; `PATCH cameras/<id>`,
 `GET cameras/<id>/snapshot`; `POST modes/<locationId>/<disarmed|home|away>`; `GET rights`,
 `PUT rights/<userId>`; `GET history`, `GET events/<id>`;
-`GET|PUT settings`. Secrets are write-only (`hasToken: true/false`). `GET status` carries
+`GET|PUT settings` (1.3.0: `familyChat` in `config`; both answer `chat: { api, available, last: { at, ok,
+error, image } | null }` — `available` `null` on GateControl < 1.178.0). Secrets are write-only (`hasToken: true/false`). `GET status` carries
 `ringModes: [{ id, name, mode, supported, why, cameras, alarm, readOnly, error, present, modeAt,
 checkedAt }]` (`why`: `null` or `alarm` | `no_cameras` | `unknown` | `error` | `disabled` |
 `read_only`); `GET rights` carries `locations: [{ id, name, supported }]` (no Ring Alarm

@@ -8,6 +8,28 @@ bleibt auf dem eigenen Server. Einrichtung, Risiken, Datenschutz und die App-API
 an; das Plugin nutzt die, die auch die Open-Source-Projekte ring-client-api (Homebridge) und
 python-ring-doorbell (Home Assistant) verwenden. Sie kann sich jederzeit ändern oder wegfallen.
 
+## 1.3.0
+Braucht weiterhin **GateControl ≥ 1.169.0**; die Klingel im Familien-Chat braucht GateControl ≥ 1.177.0
+und das **Messenger-Plugin ab 1.4.0**. Neu beim Aktualisieren: die Berechtigung „Dienste anderer
+Plugins“ (`gatecontrol-messenger: send_message`).
+- **Klingel in den Familien-Chat:** Jedes Klingeln kommt zusätzlich zu den Pushs als **Karte** in den
+  Chat „Familie“ des Messengers – Titel „Klingel · Haustür“ (das verknüpfte Schloss, sonst die Kamera),
+  Kamera und Uhrzeit, das **Bild** des Klingelns und der Knopf **„Tür öffnen“** (die Schnellaktion
+  `<Schloss>:open`, beim Opener „Summer“) – nur wenn das Schloss öffnen kann. Der Messenger führt den
+  Knopf als die Person aus, die ihn drückt; der Server prüft Rechte, Zeitfenster und Rate-Limit wie bei
+  jeder anderen Aktion. Bewegung kommt nie in den Chat.
+- **Schalter auf der Seite „Einstellungen“:** „Klingel in den Familien-Chat“ (Standard: an). Darunter
+  steht, ob der Messenger verfügbar ist (ab GateControl 1.178.0 kostenlos gefragt) und ob die letzte
+  Karte nicht ankam. Ohne Messenger, ohne Gruppe „Familie“ oder auf älterem GateControl ändert sich
+  nichts – die Klingel funktioniert wie bisher.
+- **Bildgröße:** GateControl nimmt pro Dienst-Aufruf höchstens 16 KB an; ist das Bild dafür zu groß
+  (oder lehnt der Messenger es ab), geht die Karte ohne Bild – das zählt nicht gegen die 60 Aufrufe
+  pro Stunde. Bilder über 300 KB werden nie mitgeschickt.
+- **API:** `send_message { conversation: 'family', card: { kind: 'doorbell', title, text, imageBase64?
+  (JPEG, Base64), actions: ['<lockId>:open'] | [] } }`. `GET|PUT admin/settings` tragen `familyChat`
+  in `config` und zusätzlich `chat: { api, available (true | false | null = unbekannt), last: { at, ok,
+  error, image } | null }`.
+
 ## 1.2.1
 - **Nuki: seltene „Bridge-Token ungültig“-Fehler behoben.** Jede Anfrage an die Bridge trägt eine
   Zufallszahl (`rnr`), die die Bridge nicht zweimal annimmt. Sie wurde bisher jedes Mal neu
