@@ -164,6 +164,9 @@
       line = s.ok ? T('msgcfg.synced', { when: A.when(s.at), n: s.members == null ? 0 : s.members }) : T('msgcfg.sync_failed', { when: A.when(s.at), error: T('rule.msg_err.' + (s.error || 'failed')) });
       if (s.ok && s.ignored && s.ignored.length) line += ' ' + T('msgcfg.ignored', { n: s.ignored.length });
     }
+    // 1.7.0: switched off, the group is handed back (a normal group in the messenger)
+    var rel = m.release;
+    if (!m.group && rel && rel.at) line = rel.ok ? T('msgcfg.released', { when: A.when(rel.at) }) : T('msgcfg.release_pending');
     $('#fa-msg-sync').textContent = line;
     $('#fa-msg-sync').hidden = !line;
     $('#fa-msg-off').hidden = !!m.group;

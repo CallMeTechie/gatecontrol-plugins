@@ -3,6 +3,28 @@
 Die Familie in der GateControl-App (eigener Tab), im Portal (eigener Tab „Familie“) und auf
 drei Admin-Seiten. Alles bleibt auf dem eigenen Server.
 
+## 1.7.0
+Braucht weiterhin **GateControl ≥ 1.173.0** (Messenger-Funktionen ≥ 1.177.0). Am besten zusammen mit
+dem **Messenger 1.1.0** – mit Messenger 1.0.x läuft alles wie in 1.6.0. Neu beim Aktualisieren: die
+Berechtigung „Dienste anderer Plugins“ nennt zusätzlich `gatecontrol-messenger: release_group`.
+- **Schalter „Gruppe „Familie“ im Messenger“ aus = Gruppe wird freigegeben:** Familie gibt die Gruppe
+  an den Messenger zurück – sie wird eine **normale Gruppe**: der Verlauf bleibt, jeder kann austreten,
+  Namen und Bild ändern, die **Eltern sind Admins**. Wird der Schalter wieder eingeschaltet, legt
+  Familie eine neue Gruppe an. Mit einem Messenger vor 1.1.0 (ihm fehlt dieser Dienst) bleibt die Gruppe
+  wie bisher so, wie sie ist; die Karte „Messenger“ sagt „wird freigegeben, sobald der Messenger (ab
+  1.1.0) verfügbar ist“, und Familie fragt alle 6 Stunden wieder nach (das kostet nichts).
+- **Regel-Nachricht an mehrere Personen in einem Aufruf:** Eine Messenger-Nachricht an einzelne Personen
+  braucht jetzt nur noch einen Dienst-Aufruf statt einen pro Person (GateControl erlaubt 60 pro Stunde).
+  Ein Messenger vor 1.1.0 lehnt das ab – dann schickt Familie wie bisher einzeln und versucht es nach
+  6 Stunden wieder. Im Regel-Protokoll zählt `sent` die Personen, die die Nachricht bekommen haben.
+- **Verfügbarkeit ohne Probe-Nachricht:** Ab GateControl 1.178.0 fragt Familie bei ausgeschalteter
+  Gruppe mit `gc.services.available` nach, ob der Messenger da ist – kostenlos, ohne die leere
+  Nachricht, die im Protokoll des Messengers als abgelehnt auftauchte, und deshalb alle 5 Minuten. Auf
+  älteren GateControl-Versionen bleibt es bei der bisherigen Prüfung.
+- **API:** `GET admin/messenger` / `admin/status` / `presence/rules` tragen in `messenger` zusätzlich
+  `release: { at, ok, error, conversationId } | null`; `PUT admin/messenger { group: false }` gibt die
+  Gruppe sofort frei.
+
 ## 1.6.0
 Zusammenarbeit mit dem **Messenger-Plugin** (gatecontrol-messenger ≥ 1.0.0). Die Messenger-Funktionen
 brauchen **GateControl ≥ 1.177.0** (Dienste zwischen Plugins); Familie selbst läuft weiterhin ab
