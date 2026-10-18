@@ -8,10 +8,13 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const control = require('../server/control');
 const store = require('../server/store');
-const { withHost, asAdmin, addHost, ADA, ADMIN, SECRET } = require('./helpers');
+const { withHost, asAdmin, addHost, shortWait, ADA, ADMIN, SECRET } = require('./helpers');
 
 control.timing.pollMs = 1;
-control.timing.waitMs = 200;
+// generous: the wait ends as soon as the task does — a fixed short wait made a loaded CI runner give up
+// before the first status poll ('running' instead of the result); a task that must outlast the wait never
+// ends (taskPolls: Infinity) and runs with a short wait (shortWait)
+control.timing.waitMs = 10000;
 
 const act = (host, id, vmid, body, user = ADMIN) => host.request({ method: 'POST', path: `/hosts/${id}/guests/${vmid}/action`, body, user });
 
@@ -72,8 +75,8 @@ test('a task ending with an error → status error with Proxmox exit status', as
   });
 });
 
-test('a task still running after the wait: the page follows it (GET /actions/:id), then it finishes; time out after the limit', async () => {
-  await withHost({ pveOpts: { taskPolls: 1000 } }, async (host, fake) => {
+test('a task still running after the wait: the page follows it (GET /actions/:id), then it finishes; time out after the limit', () => shortWait(async () => {
+  await withHost({ pveOpts: { taskPolls: Infinity } }, async (host, fake) => {
     const id = await addHost(host);
     const r = await act(host, id, 100, { action: 'shutdown', confirm: true });
     const a = r.json.action;
@@ -95,10 +98,10 @@ test('a task still running after the wait: the page follows it (GET /actions/:id
     assert.ok(host.logs.some((l) => l.level === 'warn' && /timed out/.test(l.message)));
     assert.equal((await asAdmin(host, 'GET', '/actions/999')).status, 404);
   });
-});
+}));
 
-test('tick follows running tasks', async () => {
-  await withHost({ pveOpts: { taskPolls: 1000 } }, async (host, fake) => {
+test('tick follows running tasks', () => shortWait(async () => {
+  await withHost({ pveOpts: { taskPolls: Infinity } }, async (host, fake) => {
     const id = await addHost(host);
     const r = await act(host, id, 100, { action: 'stop', confirm: true, confirm_hard: true });
     assert.equal(r.json.action.status, 'running');
@@ -106,7 +109,7 @@ test('tick follows running tasks', async () => {
     await host.tick();
     assert.equal((await store.getAction(host.gc, r.json.action.id)).status, 'ok');
   });
-});
+}));
 
 test('confirmation: missing → 400 CONFIRM_REQUIRED, a hard stop needs confirm_hard too; nothing reaches Proxmox', async () => {
   await withHost({}, async (host, fake) => {
