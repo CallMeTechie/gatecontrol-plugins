@@ -780,7 +780,10 @@
     "msgcfg.sync_now": "Jetzt abgleichen",
     "msgcfg.synced_now": "Gruppe abgeglichen",
     "msgcfg.saved_on": "Gruppe „Familie“ eingeschaltet",
-    "msgcfg.saved_off": "Gruppe „Familie“ ausgeschaltet"
+    "msgcfg.saved_off": "Gruppe „Familie“ ausgeschaltet",
+    "services.home": "Zuhause",
+    "services.shopping_list": "Einkaufsliste",
+    "portal.from_chat": "aus dem Familien-Chat"
   },
   "en": {
     "account.admin": "Admin",
@@ -1563,6 +1566,9 @@
     "msgcfg.sync_now": "Sync now",
     "msgcfg.synced_now": "Group synced",
     "msgcfg.saved_on": "Group “Family” switched on",
-    "msgcfg.saved_off": "Group “Family” switched off"
+    "msgcfg.saved_off": "Group “Family” switched off",
+    "services.home": "Home",
+    "services.shopping_list": "Shopping list",
+    "portal.from_chat": "from the family chat"
   }
 }

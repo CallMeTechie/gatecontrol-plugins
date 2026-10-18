@@ -126,4 +126,12 @@ async function addHost(host, extra = {}) {
   return id;
 }
 
-module.exports = { DIR, ADMIN, ADMIN2, ADA, USERS, TOKEN_ID, SECRET, fixture, fakePve, withHost, asAdmin, addHost };
+/** Run fn with a short wait for Proxmox tasks (control.timing.waitMs) — for a task that has to be still running afterwards. */
+async function shortWait(fn, ms = 30) {
+  const control = require('../server/control');
+  const prev = control.timing.waitMs;
+  control.timing.waitMs = ms;
+  try { return await fn(); } finally { control.timing.waitMs = prev; }
+}
+
+module.exports = { DIR, ADMIN, ADMIN2, ADA, USERS, TOKEN_ID, SECRET, fixture, fakePve, withHost, asAdmin, addHost, shortWait };

@@ -11,10 +11,13 @@ const assert = require('node:assert/strict');
 const control = require('../server/control');
 const quick = require('../server/quick');
 const store = require('../server/store');
-const { withHost, asAdmin, addHost, ADA, ADMIN } = require('./helpers');
+const { withHost, asAdmin, addHost, shortWait, ADA, ADMIN } = require('./helpers');
 
 control.timing.pollMs = 1;
-control.timing.waitMs = 200;
+// generous: the wait ends as soon as the task does — a fixed short wait made a loaded CI runner give up
+// before the first status poll ('running' instead of the result); a task that must outlast the wait never
+// ends (taskPolls: Infinity) and runs with a short wait (shortWait)
+control.timing.waitMs = 10000;
 
 const APP_ADMIN = { ...ADMIN, loggedIn: true, app: true };
 const watch = (host, id, vmid) => asAdmin(host, 'PUT', `/hosts/${id}/guests/${vmid}/watch`, { watched: true });
@@ -245,8 +248,8 @@ test('reboot: a running guest is rebooted cleanly; a stopped one says why not', 
   });
 });
 
-test('a long task: the answer says it runs, the list shows where it is heading; a slow Proxmox answers „sent“', async () => {
-  await withHost({ pveOpts: { taskPolls: 1000 } }, async (host, fake) => {
+test('a long task: the answer says it runs, the list shows where it is heading; a slow Proxmox answers „sent“', () => shortWait(async () => {
+  await withHost({ pveOpts: { taskPolls: Infinity } }, async (host, fake) => {
     const id = await setup(host);
     const r = await host.runQuickAction(ADMIN, `guest:${id}:100`);
     assert.deepEqual([r.body.ok, r.body.state, r.body.message], [true, 'off', 'web wird heruntergefahren …']);
@@ -267,7 +270,7 @@ test('a long task: the answer says it runs, the list shows where it is heading; 
       await new Promise((res) => setTimeout(res, 400)); // let the runs finish before the host closes
     } finally { quick._setBudgetForTest(null); }
   });
-});
+}));
 
 test('errors: a failed task, Proxmox unreachable, missing rights — clear messages, never a hard stop', async () => {
   await withHost({ pveOpts: { taskExit: "can't lock file '/var/lock/qemu-server/lock-100.conf' - got timeout" } }, async (host, fake) => {

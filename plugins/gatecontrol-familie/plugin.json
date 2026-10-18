@@ -4,7 +4,7 @@
     "de": "Familie",
     "en": "Family"
   },
-  "version": "1.7.0",
+  "version": "1.8.0",
   "publisher": "CallMeTechie",
   "description": {
     "de": "Die Familie in der GateControl-App und im Portal: gemeinsame Einkaufslisten (offline nutzbar), Aufgaben mit Erinnerung und Sternen für Kinder, Termine und Geburtstage, Abholen & Fahrten („Wer holt Tim?“), Notfall-Karte, Kinder orten auf Anfrage (das Kind sieht jede Abfrage, endet mit 18), „Bin angekommen“ und SOS, Orts-Erinnerungen, Taschengeld (nur Buchhaltung), Wunschlisten, Haushaltsbuch, Pinnwand & Packlisten, Essensplan, Anwesenheit mit Smart-Home-Regeln (nur mit Zustimmung) und ein Dashboard für ein Wand-Tablet. Alles bleibt auf dem eigenen Server.",
@@ -28,8 +28,43 @@
     "services": [
       "gatecontrol-messenger:sync_group",
       "gatecontrol-messenger:send_message",
-      "gatecontrol-messenger:release_group"
+      "gatecontrol-messenger:release_group",
+      "gatecontrol-messenger:set_place_status"
     ]
+  },
+  "services": {
+    "provides": {
+      "list_add": {
+        "label": {
+          "de": "Auf die Einkaufsliste setzen",
+          "en": "Add to the shopping list"
+        }
+      },
+      "calendar_add": {
+        "label": {
+          "de": "Termin anlegen",
+          "en": "Add a date"
+        }
+      },
+      "calendar_upsert": {
+        "label": {
+          "de": "Termin aus dem Chat abgleichen",
+          "en": "Keep a date from the chat in step"
+        }
+      },
+      "calendar_remove": {
+        "label": {
+          "de": "Termin aus dem Chat entfernen",
+          "en": "Remove a date from the chat"
+        }
+      },
+      "places": {
+        "label": {
+          "de": "Orte der Familie",
+          "en": "Family places"
+        }
+      }
+    }
   },
   "ui": {
     "nav": {

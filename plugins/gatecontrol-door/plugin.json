@@ -4,7 +4,7 @@
     "de": "Tür & Kamera",
     "en": "Door & Camera"
   },
-  "version": "1.2.1",
+  "version": "1.3.0",
   "publisher": "CallMeTechie",
   "description": {
     "de": "Nuki-Schlösser und -Opener (lokale Bridge oder Nuki Web) und Ring-Türklingeln/-Kameras (inoffizielle Schnittstelle, ohne Gewähr) in GateControl: Tür in App, Widget und Portal auf- und zusperren, Klingel-Push mit Bild und „Tür öffnen“, Ring-Modus (Inaktiv / Zuhause / Abwesend) für Schnellaktionen und Regeln, Verlauf mit Bildern, automatisches Aufsperren bei Ankunft (nur mit Zustimmung) und Sicherheits-Hinweise. Rechte pro Person und Schloss. Alles bleibt auf dem eigenen Server.",
@@ -44,7 +44,10 @@
     },
     "background": {
       "intervalSeconds": 5
-    }
+    },
+    "services": [
+      "gatecontrol-messenger:send_message"
+    ]
   },
   "ui": {
     "nav": {
