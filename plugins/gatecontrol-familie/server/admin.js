@@ -28,6 +28,12 @@
 //   PUT    admin/messenger                     { group: bool } — the group „Familie“ on / off (on: synced at once;
 //                                              off, 1.7.0: handed back at once — release_group, a normal group)
 //   POST   admin/messenger/sync                sync the group now (also after every member change here)
+//   1.9.0 — page „Regeln & Erinnerungen“ (server/rules.js; every rule, quick actions of a rule saved here run as
+//   the administrator, house rules only):
+//   GET    admin/rules                         { rules, log, can, open: [] }
+//   POST   admin/rules                         PATCH|DELETE admin/rules/<id>   POST admin/rules/<id>/test · admin/rules/test
+//   GET    admin/rules/options
+//   GET    admin/status also: settings.childrenOwnRules / shoppingNotify / shoppingChat
 
 const store = require('./store');
 const tz = require('./tz');
@@ -39,6 +45,7 @@ const kiosk = require('./kiosk');
 const presence = require('./presence');
 const ruleplaces = require('./ruleplaces');
 const messenger = require('./messenger');
+const rules = require('./rules');
 const { fail, posInt, iso } = require('./util');
 
 const DAY = 86400000;
@@ -62,7 +69,10 @@ async function status(gc, cfg, now) {
     members: fam.all.map((m) => adminMember(m, cfg, rings)),
     users: [...fam.users.values()].map((u) => ({ id: u.id, name: u.name, role: u.role, member: fam.byId.has(u.id) || fam.walls.has(u.id) })),
     modules: { ...cfg.modules },
-    settings: { timezone: cfg.tz, timezoneSetting: cfg.tzSetting, notifyLang: cfg.lang, problems: cfg.problems, location: cfg.location },
+    settings: {
+      timezone: cfg.tz, timezoneSetting: cfg.tzSetting, notifyLang: cfg.lang, problems: cfg.problems, location: cfg.location,
+      childrenOwnRules: cfg.childrenOwnRules, shoppingNotify: cfg.shoppingNotify, shoppingChat: cfg.shoppingChat,
+    },
     wall: { listId: cfg.wallList || null, lists: (await shopping.summary(gc)).map((l) => ({ id: l.id, name: l.name })) },
     messenger: await messenger.info(gc, cfg),
     today,
@@ -177,6 +187,22 @@ async function messengerRoute(gc, seg, cfg, now, m, body) {
   throw fail('not_found');
 }
 
+/** 1.9.0: the page „Regeln & Erinnerungen“. */
+async function rulesRoute(req, gc, seg, cfg, now, m, body) {
+  const [, , b, c] = seg;
+  const fam = await members.load(gc, tz.localDate(now, cfg.tz));
+  const ctx = { fam, cfg, now, lang: req.lang === 'en' ? 'en' : 'de', me: null, userId: req.user.id, admin: true };
+  const n = seg.length;
+  if (n === 2 && m === 'GET') return { modules: { rules: cfg.modules.rules, presence: cfg.modules.presence }, ...(await rules.list(gc, ctx)) };
+  if (n === 2 && m === 'POST') return store.tx(gc, () => rules.create(gc, ctx, { ...body, scope: 'house' }));
+  if (n === 3 && b === 'options' && m === 'GET') return rules.options(gc, ctx);
+  if (n === 3 && b === 'test' && m === 'POST') return rules.testBody(gc, ctx, { ...body, scope: 'house' });
+  if (n === 3 && (m === 'PATCH' || m === 'PUT')) return store.tx(gc, () => rules.update(gc, ctx, b, body));
+  if (n === 3 && m === 'DELETE') return store.tx(gc, () => rules.remove(gc, ctx, b));
+  if (n === 4 && c === 'test' && m === 'POST') return rules.test(gc, ctx, b);
+  throw fail('not_found');
+}
+
 /** After a member change: the messenger group follows at once (when on; never fails the change). */
 async function memberChanged(gc, cfg, now) {
   if (!cfg.messengerGroup) return;
@@ -190,6 +216,7 @@ async function route(req, gc, seg, cfg, now) {
   const body = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
   const [, a, b] = seg;
   if (a === 'presence') return presenceRoute(req, gc, seg, cfg, now, m, body);
+  if (a === 'rules') return rulesRoute(req, gc, seg, cfg, now, m, body);
   if (a === 'status' && seg.length === 2 && m === 'GET') return status(gc, cfg, now);
   if (a === 'messenger') return messengerRoute(gc, seg, cfg, now, m, body);
   if (a === 'log' && seg.length === 2 && m === 'GET') return log(gc, cfg, req.query, now);

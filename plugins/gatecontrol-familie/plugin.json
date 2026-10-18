@@ -4,11 +4,11 @@
     "de": "Familie",
     "en": "Family"
   },
-  "version": "1.8.0",
+  "version": "1.9.0",
   "publisher": "CallMeTechie",
   "description": {
-    "de": "Die Familie in der GateControl-App und im Portal: gemeinsame Einkaufslisten (offline nutzbar), Aufgaben mit Erinnerung und Sternen für Kinder, Termine und Geburtstage, Abholen & Fahrten („Wer holt Tim?“), Notfall-Karte, Kinder orten auf Anfrage (das Kind sieht jede Abfrage, endet mit 18), „Bin angekommen“ und SOS, Orts-Erinnerungen, Taschengeld (nur Buchhaltung), Wunschlisten, Haushaltsbuch, Pinnwand & Packlisten, Essensplan, Anwesenheit mit Smart-Home-Regeln (nur mit Zustimmung) und ein Dashboard für ein Wand-Tablet. Alles bleibt auf dem eigenen Server.",
-    "en": "The family in the GateControl app and the portal: shared shopping lists (usable offline), tasks with reminders and stars for children, dates and birthdays, pick-ups & rides (“Who picks up Tim?”), an emergency card, locating children on request (the child sees every request, ends at 18), “I’ve arrived” and SOS, place reminders, pocket money (bookkeeping only), wishlists, a household book, pinboard & packing lists, a meal plan, presence with smart home rules (only with consent) and a dashboard for a wall tablet. Everything stays on your own server."
+    "de": "Die Familie in der GateControl-App und im Portal: gemeinsame Einkaufslisten (offline nutzbar), Aufgaben mit Erinnerung und Sternen für Kinder, Termine und Geburtstage, Abholen & Fahrten („Wer holt Tim?“), Notfall-Karte, Kinder orten auf Anfrage (das Kind sieht jede Abfrage, endet mit 18), „Bin angekommen“ und SOS, Orts-Erinnerungen, Taschengeld (nur Buchhaltung), Wunschlisten, Haushaltsbuch, Pinnwand & Packlisten, Essensplan, Anwesenheit mit Smart-Home-Regeln (nur mit Zustimmung), Erinnerungen und ein Dashboard für ein Wand-Tablet. Alles bleibt auf dem eigenen Server.",
+    "en": "The family in the GateControl app and the portal: shared shopping lists (usable offline), tasks with reminders and stars for children, dates and birthdays, pick-ups & rides (“Who picks up Tim?”), an emergency card, locating children on request (the child sees every request, ends at 18), “I’ve arrived” and SOS, place reminders, pocket money (bookkeeping only), wishlists, a household book, pinboard & packing lists, a meal plan, presence with smart home rules (only with consent), reminders and a dashboard for a wall tablet. Everything stays on your own server."
   },
   "gatecontrol": ">=1.173.0",
   "entry": "server/index.js",
@@ -29,7 +29,9 @@
       "gatecontrol-messenger:sync_group",
       "gatecontrol-messenger:send_message",
       "gatecontrol-messenger:release_group",
-      "gatecontrol-messenger:set_place_status"
+      "gatecontrol-messenger:set_place_status",
+      "gatecontrol-alltag:calendar_query",
+      "gatecontrol-alltag:calendar_list"
     ]
   },
   "services": {
@@ -63,6 +65,12 @@
           "de": "Orte der Familie",
           "en": "Family places"
         }
+      },
+      "family_roles": {
+        "label": {
+          "de": "Eltern und Kinder der Familie",
+          "en": "Parents and children of the family"
+        }
       }
     }
   },
@@ -94,6 +102,13 @@
         "title": {
           "de": "Anwesenheit & Smart Home",
           "en": "Presence & smart home"
+        }
+      },
+      {
+        "id": "rules",
+        "title": {
+          "de": "Regeln & Erinnerungen",
+          "en": "Rules & reminders"
         }
       },
       {
@@ -166,6 +181,69 @@
           "en": "e.g. 6.96 – together with the latitude."
         },
         "default": ""
+      },
+      {
+        "key": "children_own_rules",
+        "type": "boolean",
+        "label": {
+          "de": "Kinder dürfen eigene Erinnerungen anlegen",
+          "en": "Children may make their own reminders"
+        },
+        "help": {
+          "de": "Persönliche Regeln und Erinnerungen: Eltern dürfen sie immer anlegen, Kinder nur mit diesem Schalter. Hausregeln legen nur Eltern an. Eine persönliche Regel benachrichtigt nur ihre Besitzerin oder ihren Besitzer und schaltet nur Geräte, die diese Person selbst schalten darf.",
+          "en": "Personal rules and reminders: parents may always make them, children only with this switch. House rules are made by parents only. A personal rule notifies only its owner and switches only devices that person may switch."
+        },
+        "default": false
+      },
+      {
+        "key": "shopping_notify",
+        "type": "select",
+        "label": {
+          "de": "Einkaufen: wie „… bitten“ fragt",
+          "en": "Shopping: how “Ask …” asks"
+        },
+        "help": {
+          "de": "Vorgabe, wenn jemand eine Einkaufsliste einer Person zuweist: als Karte im Einzelchat der beiden (sonst im Familienchat, sonst als Mitteilung), im Familienchat oder nur als Mitteilung. Die App kann es pro Anfrage ändern.",
+          "en": "Default when someone asks a person to do a shopping list: a card in the direct chat of the two (else the family chat, else a notification), in the family chat or only a notification. The app can change it per request."
+        },
+        "options": [
+          {
+            "value": "direct",
+            "label": "Einzelchat / Direct chat"
+          },
+          {
+            "value": "family",
+            "label": "Familienchat / Family chat"
+          },
+          {
+            "value": "push",
+            "label": "Nur Mitteilung / Notification only"
+          }
+        ],
+        "default": "direct"
+      },
+      {
+        "key": "shopping_chat",
+        "type": "select",
+        "label": {
+          "de": "Einkaufen: „Ich gehe einkaufen“ im Familienchat",
+          "en": "Shopping: “I’m going shopping” in the family chat"
+        },
+        "help": {
+          "de": "Eine Karte „<Name> geht jetzt einkaufen“ mit Link zur Liste im Familienchat (Messenger) – zusätzlich zur Mitteilung.",
+          "en": "A card “<name> is going shopping now” with a link to the list in the family chat (Messenger) – in addition to the notification."
+        },
+        "options": [
+          {
+            "value": "family",
+            "label": "Familienchat / Family chat"
+          },
+          {
+            "value": "off",
+            "label": "Aus / Off"
+          }
+        ],
+        "default": "family"
       }
     ],
     "portal": {
@@ -267,6 +345,14 @@
       "label": {
         "de": "Anwesenheit & Smart Home",
         "en": "Presence & smart home"
+      },
+      "default": true
+    },
+    {
+      "id": "reminders",
+      "label": {
+        "de": "Regeln & Erinnerungen",
+        "en": "Rules & reminders"
       },
       "default": true
     }

@@ -25,6 +25,9 @@
 //   GET  presence   POST presence   PUT presence/consent   GET presence/actions · presence/log
 //   GET|POST presence/rules      PATCH|DELETE presence/rules/<id>
 //   1.5.0: GET presence/watch    POST presence/places/<id>/event   GET|POST presence/places   PATCH|DELETE presence/places/<id>
+//   1.9.0 (server/rules.js, server/shopping.js, server/tasks.js):
+//   GET|POST rules               PATCH|DELETE rules/<id>      POST rules/<id>/test · rules/test   GET rules/options
+//   POST shopping/lists/<id>/assign                           POST tasks/quick
 //
 // Every response is { ok: true, … } or { ok: false, code, error }. Callers
 // that are no member get 403 not_member, a switched-off module 403
@@ -64,6 +67,7 @@ const meals = require('./meals');
 const presence = require('./presence');
 const ruleplaces = require('./ruleplaces');
 const messenger = require('./messenger');
+const rules = require('./rules');
 const { fail, posInt, iso } = require('./util');
 
 /** A portal viewer recognised only by device trust: no real login and no paired kiosk device. */
@@ -133,12 +137,16 @@ function dispatch(gc, r, seg, method) {
     if (n === 1 && GET) return () => shopping.get(gc, r.query, r.now);
     if (n === 2 && b === 'ops' && POST) return () => shopping.applyOps(gc, r.body, { id: r.me.userId }, r.now, r.me.role === 'wall' ? { only: WALL_OPS } : null);
     if (n === 4 && b === 'lists' && d === 'going' && POST) return () => shopping.going(gc, r, c);
+    // 1.9.0: ask a person to do the shopping (the card / push goes out after the commit)
+    if (n === 4 && b === 'lists' && d === 'assign' && POST) { notWall(r); return () => shopping.assign(gc, r, c); }
   }
 
   if (a === 'tasks') {
     need('tasks');
     if (n === 1 && GET) return () => tasks.get(gc, r);
     if (n === 1 && POST) { parentsOnly(r); return async () => ({ task: await tasks.create(gc, r) }); }
+    // 1.9.0: a task from a chat (any member; the card goes into the chat after the commit)
+    if (n === 2 && b === 'quick' && POST) { notWall(r); return () => tasks.quick(gc, r); }
     const id = posInt(b);
     if (n >= 2 && !id) throw fail('not_found');
     if (n === 2 && GET) return async () => ({ task: await tasks.one(gc, r, id) });
@@ -291,8 +299,30 @@ function dispatch(gc, r, seg, method) {
       if (n === 3 && DELETE) return () => presence.removeRule(gc, c);
     }
   }
+  if (a === 'rules') {
+    // 1.9.0: rules and reminders (module rules; presence triggers need the module presence as well)
+    need('rules');
+    sensitive();
+    notWall(r);
+    const ctx = { fam: r.fam, cfg: r.cfg, now: r.now, lang: r.lang, me: r.me, userId: r.me.userId, admin: false };
+    if (n === 1 && GET) return () => rules.list(gc, ctx);
+    if (n === 1 && POST) return () => rules.create(gc, ctx, r.body);
+    if (n === 2 && b === 'options' && GET) return () => rules.options(gc, ctx);
+    if (n === 2 && b === 'test' && POST) return readOnly(() => rules.testBody(gc, ctx, r.body));
+    if (n === 2 && PATCH) return () => rules.update(gc, ctx, b, r.body);
+    if (n === 2 && DELETE) return () => rules.remove(gc, ctx, b);
+    if (n === 3 && c === 'test' && POST) return readOnly(() => rules.test(gc, ctx, b));
+  }
   throw fail('not_found');
 }
+
+/** A POST that changes nothing (the dry run): no transaction around the calls to other plugins. */
+function readOnly(fn) {
+  fn.readOnly = true;
+  return fn;
+}
+
+const notWall = (r) => { if (r.me.role === 'wall') throw fail('forbidden'); };
 
 /** The API for members (app, portal, plugin API). */
 async function route(req, gc, seg, cfg, now) {
@@ -305,16 +335,20 @@ async function route(req, gc, seg, cfg, now) {
   const method = String(req.method || 'GET').toUpperCase();
   const write = method !== 'GET';
   const body = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
-  const r = { req, cfg, now, today, fam, me: m, user, body, query: req.query || {}, trustOnly: trustOnly(user), pushes: [], runs: [], placeStatus: [], lang: req.lang === 'en' ? 'en' : 'de' };
+  const r = { req, cfg, now, today, fam, me: m, user, body, query: req.query || {}, trustOnly: trustOnly(user), pushes: [], runs: [], placeStatus: [], after: [], lang: req.lang === 'en' ? 'en' : 'de' };
   if (m.role === 'wall') wall.guard(r, method, seg);
   const handler = dispatch(gc, r, seg, method);
   if (write && r.trustOnly) throw fail('login_required');
-  const out = write ? await store.tx(gc, handler) : await handler();
+  const out = write && !handler.readOnly ? await store.tx(gc, handler) : await handler();
   // presence rules that fired: quick actions and notifications after the commit
   if (r.runs.length) await presence.execute(gc, r.fam, r.cfg, r.now, r.runs, r.pushes);
   if (r.pushes.length) await push.flush(gc, r.pushes);
   // 1.8.0: where people are, for the messenger status (never throws)
   if (r.placeStatus.length) await messenger.placeStatus(gc, r.fam, r.now, r.placeStatus);
+  // 1.9.0: cards into the Messenger (shopping list asked of someone, „Ich gehe einkaufen“, a task from a chat) — never throws
+  for (const job of r.after || []) {
+    try { Object.assign(out, await job()); } catch (e) { gc.log.warn('after commit failed', (e && (e.code || e.message)) || 'error'); }
+  }
   return { status: 200, json: { ok: true, ...out } };
 }
 

@@ -26,6 +26,9 @@
 //                   the family's places for that member: 'home' („Zuhause“, the settings lat / lon,
 //                   150 m) and, with the module presence on, the rule places ('place:<id>').
 //                   Not a member (or a wall tablet) → [].
+//   family_roles    {} → { ok: true, parents: [userId], children: [userId] }   (1.9.0) who the parents and
+//                   the children of the family are (never a wall tablet) — the Messenger's door requests
+//                   („Eltern fragen“).
 //
 // The other way round (server/messenger.js placeStatus): Familie tells the Messenger the
 // place of a member (set_place_status) when presence or a place event changes it.
@@ -229,6 +232,13 @@ async function places(gc, cfg, payload, user) {
   return out;
 }
 
+// ─── family_roles (1.9.0) ───────────────────────
+
+async function familyRoles(gc, cfg) {
+  const fam = await family(gc, cfg);
+  return { ok: true, parents: members.parents(fam).map((m) => m.userId), children: members.children(fam).map((m) => m.userId) };
+}
+
 // ─── the hook ───────────────────────────────────
 
 const HANDLERS = {
@@ -237,6 +247,7 @@ const HANDLERS = {
   calendar_upsert: (gc, cfg, payload) => calendarUpsert(gc, cfg, payload),
   calendar_remove: (gc, cfg, payload) => calendarRemove(gc, payload),
   places,
+  family_roles: (gc, cfg) => familyRoles(gc, cfg),
 };
 const NAMES = Object.freeze(Object.keys(HANDLERS));
 

@@ -32,6 +32,13 @@
 // 1.8.0: services for the Messenger (plugin.json services.provides — list_add,
 // calendar_add, calendar_upsert, calendar_remove, places; server/services.js) and
 // the place in the messenger status (set_place_status, server/messenger.js).
+//
+// 1.9.0: rules and reminders (module rules, server/rules.js — the trigger 'schedule' in the
+// background run, device and calendar conditions, reminders with facts and buttons whose presses
+// come back through the hook notifyAction, GateControl ≥ 1.181.0 — server/reminders.js), a
+// shopping list asked of a person and tasks from a chat with cards in the Messenger, the quick
+// actions of those cards (hooks quickActions / runQuickAction, server/quick.js) and the service
+// family_roles.
 
 const ui = require('./ui');
 const api = require('./api');
@@ -56,6 +63,9 @@ const meals = require('./meals');
 const presence = require('./presence');
 const messenger = require('./messenger');
 const services = require('./services');
+const rules = require('./rules');
+const reminders = require('./reminders');
+const quick = require('./quick');
 const texts = require('./texts.json');
 const { STATUS, isKnown } = require('./util');
 
@@ -114,12 +124,15 @@ async function background(gc, now) {
   if (cfg.modules.locate) await step('age14', () => members.ageHints(gc, fam, cfg, now, pushes));
   if (cfg.modules.allowance) await step('allowance', () => allowance.payout(gc, fam, cfg, now, pushes));
   if (cfg.modules.board) await step('board', () => board.purge(gc, now));
-  if (cfg.modules.presence) {
+  if (cfg.modules.rules) {
+    // the grace time of "all away" (module presence) and the trigger 'schedule' (1.9.0); snoozed reminders
     const runs = [];
-    await step('presence', () => presence.tick(gc, fam, cfg, now, runs));
+    if (cfg.modules.presence) await step('presence', () => presence.tick(gc, fam, cfg, now, runs));
+    await step('schedule', () => rules.scheduleTick(gc, fam, cfg, now, runs));
     if (runs.length) {
       try { await presence.execute(gc, fam, cfg, now, runs, pushes); } catch (e) { gc.log.warn('background step failed', 'presence_run', (e && e.code) || (e && e.message) || 'error'); }
     }
+    try { await reminders.tick(gc, fam, cfg, now, pushes); } catch (e) { gc.log.warn('background step failed', 'reminders', (e && e.code) || (e && e.message) || 'error'); }
   }
   if (now - state.lastPurge >= PURGE_EVERY_MS) {
     state.lastPurge = now;
@@ -134,6 +147,7 @@ async function background(gc, now) {
       await notices.purge(gc, now);
       await meals.purge(gc, cfg, now);
       await presence.purge(gc, now);
+      await reminders.purge(gc, now);
     });
   }
   await push.flush(gc, pushes);
@@ -204,6 +218,29 @@ module.exports = {
   async service(call, gc) {
     const cfg = await config.load(gc);
     return services.handle(gc, cfg, call);
+  },
+
+  /**
+   * 1.9.0 (GateControl ≥ 1.181.0): a button of type 'callback' on one of our notifications was pressed —
+   * snooze / done of a reminder, another plugin's quick action (server/reminders.js). Errors are only logged.
+   */
+  async notifyAction(args, gc) {
+    try {
+      const cfg = await config.load(gc);
+      return await reminders.onAction(gc, cfg, args, Date.now());
+    } catch (e) {
+      gc.log.warn('notify action failed', (e && (e.code || e.message)) || 'error');
+      return { ok: false, error: 'failed' };
+    }
+  },
+
+  /** 1.9.0: the buttons of our cards in the Messenger — open requests of the viewer only (server/quick.js). */
+  async quickActions(args, gc) {
+    return quick.list(gc, await config.load(gc), args, Date.now());
+  },
+
+  async runQuickAction(args, gc) {
+    return quick.run(gc, await config.load(gc), args, Date.now());
   },
 
   async tick(gc) {

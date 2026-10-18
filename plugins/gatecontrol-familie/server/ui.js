@@ -1,6 +1,6 @@
 'use strict';
 
-// The admin pages (members, modules, presence, log), the portal tab and — for a member
+// The admin pages (members, modules, presence, rules — 1.9.0, log), the portal tab and — for a member
 // with the role 'wall' — the wall tablet's view in that tab. The host shows
 // plugin HTML only in a sandboxed frame (opaque origin, inline scripts and
 // styles, no network of its own): the pages talk to this plugin's API
@@ -23,17 +23,19 @@ const TILES = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
 
 const UI = path.join(__dirname, '..', 'ui');
 const read = (f) => fs.readFileSync(path.join(UI, f), 'utf8');
-const PAGES = ['members', 'modules', 'presence', 'log'];
+const PAGES = ['members', 'modules', 'presence', 'rules', 'log'];
 const FILES = {
   css: read('style.css'),
   common: read('common.js'),
   map: read('map.js'),
-  rules: read('rules.js'),
+  ruleEditor: read('rules.js'),
+  reminders: read('reminders.js'),
   members: { html: read('members.html'), js: read('members.js'), map: true },
   modules: { html: read('modules.html'), js: read('modules.js'), map: false },
   log: { html: read('log.html'), js: read('log.js'), map: true },
-  presence: { html: read('presence.html'), js: read('presence.js'), map: true, rules: true },
-  portal: { html: read('portal.html'), js: read('portal.js') + '\n' + read('portal-plus.js'), css: read('portal.css'), map: true, rules: true },
+  presence: { html: read('presence.html'), js: read('presence.js'), map: true, ruleEditor: true },
+  rules: { html: read('rulespage.html'), js: read('rulespage.js'), map: false, reminders: true },
+  portal: { html: read('portal.html'), js: read('portal.js') + '\n' + read('portal-plus.js'), css: read('portal.css'), map: true, ruleEditor: true, reminders: true },
   wall: { html: read('wall.html'), js: read('wall.js'), css: read('wall.css'), map: false },
 };
 
@@ -69,7 +71,8 @@ function render(view, t) {
     + '<script>window.FA_CTX=' + island(ctx) + ';</script>'
     + '<script>' + FILES.common + '</script>'
     + (page.map ? '<script>' + FILES.map + '</script>' : '')
-    + (page.rules ? '<script>' + FILES.rules + '</script>' : '')
+    + (page.ruleEditor ? '<script>' + FILES.ruleEditor + '</script>' : '')
+    + (page.reminders ? '<script>' + FILES.reminders + '</script>' : '')
     + '<script>' + page.js + '</script>';
 }
 

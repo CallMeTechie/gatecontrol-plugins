@@ -3,6 +3,106 @@
 Die Familie in der GateControl-App (eigener Tab), im Portal (eigener Tab „Familie“) und auf
 drei Admin-Seiten. Alles bleibt auf dem eigenen Server.
 
+## 1.9.0
+Braucht weiterhin **GateControl ≥ 1.173.0**. **Gerätewerte** als Bedingung und **Knöpfe** in Mitteilungen
+(„In 1 Std.“, „Erledigt“, ein Gerät schalten) brauchen **GateControl ≥ 1.181.0** – Familie erkennt das
+selbst; vorher laufen Regeln ohne Gerätewerte wie gewohnt, Mitteilungen kommen ohne Knöpfe, und eine
+Bedingung mit Gerätewert gilt als nicht erfüllt (das Protokoll sagt warum). Karten im Chat brauchen den
+**Messenger ≥ 1.4.0**, der Einzelchat als Ziel (`direct:<id>`) den nächsten Messenger – vorher geht die
+Karte in den Familienchat bzw. kommt als Mitteilung. Neu beim Aktualisieren: die Berechtigung „Dienste
+anderer Plugins“ nennt zusätzlich `gatecontrol-alltag: calendar_query, calendar_list`, Familie bietet den
+Dienst `family_roles` an, neues Mitteilungsthema „Regeln & Erinnerungen“.
+- **Regeln und Erinnerungen** (neues Modul „Regeln und Erinnerungen“, Standard an, Seite „Funktionen“ –
+  Regeln hängen nicht mehr am Modul „Anwesenheit“; Anwesenheits- und Orts-Auslöser brauchen es weiterhin):
+  - **Zeitplan** als Auslöser: Wochentage und Uhrzeit in der Zeitzone der Familie, einmal pro Tag; war der
+    Server aus, wird höchstens 2 Stunden nachgeholt; eine Uhrzeit, die beim Speichern schon vorbei war,
+    löst erst beim nächsten Mal aus.
+  - **Bedingungen „Nur wenn (alle)“:** Zeitfenster, nach Sonnenuntergang, **Gerätewert** (Wert, Kennzahl
+    oder eine Messung aus dem Widget einer Schnellaktion – „Elroq · Ladestand < 50 %“; die Zahl wird aus dem
+    Wert gelesen, „32 %“ → 32), **Termin** heute oder morgen (Familie-Termine, auf Wunsch nur bestimmter
+    Personen, und die Alltag-Kalender, die die Person sieht; Titel enthält …). Geprüft wird direkt vor den
+    Aktionen; nicht erfüllt oder unbekannt ⇒ nichts passiert, das Protokoll nennt den Grund.
+  - **Mitteilung** mit Werten und Termin („facts“, unter dem Text) und bis zu drei **Knöpfen**:
+    „In 1 Std.“ (nach 60 Minuten wird erneut geprüft und – noch erfüllt – erneut erinnert, höchstens 3× am
+    Tag; nicht mehr erfüllt ⇒ erledigt), „Erledigt“ (für diesen Termin) und eine Schnellaktion eines anderen
+    Plugins („Laden starten“ – nur für Personen, die sie selbst ausführen dürfen; läuft als diese Person).
+    Platzhalter im Text: `{name}`, `{place}`, `{value}` (Gerätewert), `{device}`, `{event}` (Termin).
+  - **Hausregeln und eigene Erinnerungen:** Hausregeln legen nur Eltern (und der Admin) an. Eigene
+    Erinnerungen jedes Elternteil – Kinder nur mit der neuen Einstellung **„Kinder dürfen eigene
+    Erinnerungen anlegen“** (Standard aus). Eine eigene Erinnerung benachrichtigt nur ihre Besitzerin oder
+    ihren Besitzer (Mitteilung/Chat an sich selbst) und schaltet nur, was diese Person selbst darf. Kinder
+    sehen nur ihre eigenen Regeln; Eltern sehen alle, dürfen die eines Kindes pausieren oder löschen, die
+    eines anderen Elternteils nicht ändern.
+  - **Neue Seite „Regeln & Erinnerungen“** (Admin, nach dem Entwurf „ReminderServer“): links die Regeln mit
+    Filter Alle / Erinnerungen / Anwesenheit / Orte und Schalter zum Pausieren, darunter das Protokoll;
+    rechts der Editor in drei Spalten **Wann · Nur wenn · Dann**, Titel und „Gehört zu“, **Probelauf**
+    („Heute würde die Regel auslösen …“, ohne etwas auszulösen) und Speichern. Derselbe Editor im
+    **Portal-Tab** (Abschnitt „Regeln und Erinnerungen“) für alle, die Regeln anlegen dürfen. Die Seite
+    „Anwesenheit & Smart Home“ zeigt weiter ihre Anwesenheits-Regeln.
+- **Einkaufen zuweisen:** „<Name> bitten“ fragt eine Person, ob sie einkaufen geht – als **Karte im
+  Einzelchat** der beiden („Kannst du einkaufen gehen?“ · „REWE · 3 Artikel · bis heute 18:00“ mit den
+  Knöpfen **„Übernehmen“** / **„Heute nicht“**), sonst im Familienchat, sonst als Mitteilung mit denselben
+  Knöpfen. Wer gefragt hat, erfährt die Antwort. Vorgabe in der neuen Einstellung **„Einkaufen: wie
+  „… bitten“ fragt“** (Einzelchat, Familienchat, nur Mitteilung). Listen tragen jetzt, wer gefragt ist
+  und bis wann.
+- **„Ich gehe einkaufen“ im Familienchat:** zusätzlich zur Mitteilung eine Karte „<Name> geht jetzt
+  einkaufen · <Liste> · n Artikel“ mit „Zur Liste“ (Einstellung **„Einkaufen: „Ich gehe einkaufen“ im
+  Familienchat“**, Standard an). Geht die gefragte Person einkaufen, gilt die Anfrage als übernommen.
+- **Aufgaben aus dem Chat:** „Aufgabe“ im Anhang-Menü des Messengers legt eine Aufgabe an (für eine Person
+  oder „wer zuerst kann“, mit Fälligkeit, auf Wunsch wöchentlich) und postet eine Karte mit **„Erledigt“**
+  in die Unterhaltung.
+- **Dienst `family_roles`** für den Messenger (Tür-Anfragen „Eltern fragen“).
+- **Schnellaktionen von Familie** (`quickActions` / `runQuickAction`): die Knöpfe der Karten –
+  `shop-take:<listId>`, `shop-decline:<listId>` (nur für die gefragte Person, solange die Anfrage offen
+  ist) und `task-done:<taskId>` (nur für die Personen, deren Aufgabe es ist, solange sie offen ist).
+- **API** (Pfade relativ zu `/api/v1/client/plugins/gatecontrol-familie/api/`; Fehler wie bisher
+  `{ ok: false, code, error, field? }`):
+  - `GET rules` → `{ rules: [Regel], log: [Lauf], can: { house, personal }, open: [{ ruleId, title, key, state, since, actionIds }] }`
+    (`open`: heute offene Erinnerungen der Person – z. B. für einen Hinweis am Widget des Geräts in `actionIds`)
+  - `POST rules` (Regel ohne `id`; `scope` Standard `house` für Eltern, `personal` für Kinder) → `{ rule }`;
+    `PATCH rules/<id>` (Teilmenge, z. B. `{ active: false }`; `scope` ist fest) → `{ rule }`; `DELETE rules/<id>` → `{}`
+  - `POST rules/<id>/test` und `POST rules/test` (ungespeicherte Regel) → `{ wouldFire, details: [{ kind, ok, text }] }`
+    (`kind`: `trigger` | `time` | `sunset` | `device` | `calendar` | `action`; `ok` true | false | null)
+  - `GET rules/options` → `{ triggers: [{ type, group, available }], devices: [{ actionId, label, icon, fields: [{ id, label, unit, current }] }],
+    actions: [{ actionId, plugin, id, pluginName, title, subtitle, icon, kind, state, verbs, device }], actionsAvailable,
+    calendars: [{ source, label }], places: [{ id, name, radius }], people: [{ userId, name, role, avatarUrl, color, colorHex, initials, placesShared }],
+    messenger: { available, group }, can, features: { deviceValues, buttons, alltag }, location }`
+  - Regel: `{ id, title, scope: 'house' | 'personal', active, kind: 'reminder' | 'presence' | 'place',
+    trigger: { type: 'schedule', weekdays: [1–7, Mo = 1], time: 'HH:MM' } | { type: 'all_away', graceMinutes } |
+    { type: 'first_home' } | { type: 'child_home_alone' } | { type: 'person_home' | 'person_away', userId } |
+    { type: 'place_enter' | 'place_exit', placeId, placeName, userId | null },
+    conditions: { time: { from, to } | null, afterSunset, device: [{ actionId: '<plugin>/<id>', field: 'value' | 'badge' | 'reading:<id>',
+    op: '<' | '<=' | '>' | '>=' | '=', value, label, unit }] (≤ 4), calendar: { dayOffset: 0 | 1, sources: ['familie' | 'alltag' | 'alltag:<subId>'],
+    match, memberIds } | null },
+    actions: [{ type: 'quick_action', actionId, plugin, id, title, state, kind, verb, available, needsTarget } |
+    { type: 'notify', to: 'parents' | 'all' | [userId], text, facts, buttons: ['quick_action:<plugin>/<id>', 'snooze_1h', 'done'] } |
+    { type: 'messenger', to: 'family' | [userId], text }] (1–10), lastRunAt, lastResult: { at, ok, skipped } | null,
+    ownerId, ownerName, editable, pausable, createdAt, updatedAt }` – beim Senden ist `to: 'me'` die eigene Person,
+    eine Schnellaktion `{ actionId }` oder `{ plugin, id }` (+ `state` bei einem Schalter).
+  - Codes: `parents_only` (Hausregel als Kind), `forbidden` (eigene Regeln ohne Erlaubnis, eine eigene Regel an
+    andere, eine Schnellaktion, die die Person nicht hat, fremde Regeln), `module_off` (Modul aus, oder ein
+    Anwesenheits-Auslöser ohne Modul „Anwesenheit“, `field: 'trigger'`), `too_many` (50 Hausregeln, 20 eigene pro Person).
+  - `POST shopping/lists/<id>/assign { userId | null, dueAt?: ISO | null, notify?: 'direct' | 'family' | 'push' }`
+    → `{ list, notified: { via: 'direct' | 'family' | 'push' | null, ok, code } | null }`; Listen (in `GET shopping`
+    und `overview.shopping.lists`) tragen `assignee: { userId, by, at, state: 'open' | 'taken' | 'declined', notify } | null`
+    und `dueAt`.
+  - `POST shopping/lists/<id>/going` antwortet zusätzlich `chat: { ok, code } | null`.
+  - `POST tasks/quick { title, assigneeId | null, due: ISO | 'YYYY-MM-DD' | null, repeat?: 'none' | 'weekly:<1–7>', conversationId? }`
+    → `{ task, card: { ok, conversation: 'group:<id>' | 'direct:<uid>', code } | null }`; Aufgaben tragen `source` (`'chat'` | null)
+    und `conversationId`.
+  - Mitteilungen: Erinnerungen (Auslöser Zeitplan) kommen mit Thema `reminders`, `data.familie = { type: 'rule_reminder',
+    ruleId, trigger, userId, key, qa? }`, Anwesenheits-Regeln weiter mit `presence` / `presence_rule`; `data.facts`
+    `[{ label, value }]`; Knöpfe `data.actions: [{ type: 'callback', id: 'snooze_1h' | 'done' | 'qa<n>', label }]`
+    (GateControl ≥ 1.181.0, zurück über den Hook `notifyAction`). Einkaufen: `shopping_assigned` (mit
+    `quick_action`-Knöpfen), `shopping_taken`, `shopping_declined`.
+  - Dienst `family_roles {}` → `{ ok, parents: [userId], children: [userId] }` (nur `gatecontrol-messenger`).
+  - Admin: `GET|POST admin/rules`, `PATCH|DELETE admin/rules/<id>`, `POST admin/rules/<id>/test`, `POST admin/rules/test`,
+    `GET admin/rules/options`; `GET admin/status` → `settings.childrenOwnRules`, `shoppingNotify`, `shoppingChat`.
+  - Die bisherige API `presence/rules` bleibt: sie zeigt und ändert nur Hausregeln mit Anwesenheits- oder Orts-Auslöser
+    und behält, was sie nicht kennt (Titel, Gerätewert-/Termin-Bedingungen, Werte und Knöpfe einer Mitteilung).
+- Migration `006_rules_reminders` (Titel, Bereich und Zeitplan der Regeln, Stand der Erinnerungen, Zuweisung der
+  Einkaufslisten, Aufgaben aus dem Chat).
+
 ## 1.8.0
 Braucht weiterhin **GateControl ≥ 1.173.0** (Messenger-Funktionen ≥ 1.177.0). Am besten zusammen mit
 dem **Messenger 1.4.0** – mit einem älteren Messenger läuft alles wie in 1.7.0. Neu beim Aktualisieren:

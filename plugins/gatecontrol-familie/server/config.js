@@ -14,11 +14,18 @@
 //
 // 1.6.0: messenger_group (default on) — the group „Familie“ in the Messenger
 // plugin (server/messenger.js), switched on the page „Funktionen“.
+//
+// 1.9.0: the module rules („Regeln und Erinnerungen“, default on — rules are no
+// longer bound to the module presence; presence triggers still need it) and the
+// declared settings children_own_rules (children may make their own reminders,
+// default off), shopping_notify (how „<Name> bitten“ asks by default: direct |
+// family | push, default direct) and shopping_chat („Ich gehe einkaufen“ as a card
+// in the family chat: family | off, default family).
 
 const tz = require('./tz');
 
 const MODULES = Object.freeze(['shopping', 'tasks', 'stars', 'dates', 'locate', 'arrival_sos', 'places', 'rides', 'emergency', 'wall',
-  'allowance', 'wishes', 'expenses', 'board', 'meals', 'presence']);
+  'allowance', 'wishes', 'expenses', 'board', 'meals', 'presence', 'rules']);
 const OFF_BY_DEFAULT = ['wall', 'allowance', 'expenses', 'meals', 'presence'];
 const MODULE_DEFAULTS = Object.freeze(Object.fromEntries(MODULES.map((m) => [m, !OFF_BY_DEFAULT.includes(m)])));
 /** The modules people use in the app / portal (the wall view is not one of them). */
@@ -44,7 +51,13 @@ function coord(v, max) {
   return Number.isFinite(n) && Math.abs(n) <= max ? n : null;
 }
 
-/** settings (gc.settings.all()) → { tz, tzSetting, lang, modules, wallList, location, messengerGroup, problems } */
+const SHOPPING_NOTIFY = Object.freeze(['direct', 'family', 'push']);
+const SHOPPING_CHAT = Object.freeze(['family', 'off']);
+
+/**
+ * settings (gc.settings.all()) → { tz, tzSetting, lang, modules, wallList, location, messengerGroup,
+ * childrenOwnRules, shoppingNotify, shoppingChat, problems }
+ */
 function fromSettings(s) {
   const v = s || {};
   const problems = [];
@@ -62,7 +75,13 @@ function fromSettings(s) {
   const lon = coord(v.lon, 180);
   const location = lat != null && lon != null && !(lat === 0 && lon === 0) ? { lat, lon } : null;
   const messengerGroup = bool(v.messenger_group, true);
-  return { tz: zone, tzSetting: raw, lang: v.notify_lang === 'en' ? 'en' : 'de', modules, wallList, location, messengerGroup, problems };
+  const childrenOwnRules = bool(v.children_own_rules, false);
+  const shoppingNotify = SHOPPING_NOTIFY.includes(v.shopping_notify) ? v.shopping_notify : 'direct';
+  const shoppingChat = SHOPPING_CHAT.includes(v.shopping_chat) ? v.shopping_chat : 'family';
+  return {
+    tz: zone, tzSetting: raw, lang: v.notify_lang === 'en' ? 'en' : 'de', modules, wallList, location, messengerGroup,
+    childrenOwnRules, shoppingNotify, shoppingChat, problems,
+  };
 }
 
 async function load(gc) {
@@ -81,4 +100,4 @@ async function saveWallList(gc, listId) {
   await gc.settings.set('wall_list', listId || '');
 }
 
-module.exports = { MODULES, MODULE_DEFAULTS, FAMILY_MODULES, serverTz, fromSettings, load, saveModules, saveWallList };
+module.exports = { MODULES, MODULE_DEFAULTS, FAMILY_MODULES, SHOPPING_NOTIFY, SHOPPING_CHAT, serverTz, fromSettings, load, saveModules, saveWallList };

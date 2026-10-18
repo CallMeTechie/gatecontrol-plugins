@@ -4,7 +4,7 @@
 // 403 module_off on every endpoint, is null in the overview, sends nothing
 // and keeps its data; the admin API checks the switches. 1.1.0 adds rides,
 // emergency (default on) and wall (default off); 1.2.0 allowance (off), wishes
-// (on), expenses (off), board (on), meals (off) and presence (off).
+// (on), expenses (off), board (on), meals (off) and presence (off); 1.9.0 rules (on).
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -29,13 +29,15 @@ const ENDPOINTS = {
   board: [['GET', '/board'], ['POST', '/board/notes', { text: 'x' }], ['POST', '/board/checklists/1/items', { text: 'x' }], ['GET', '/board/templates']],
   meals: [['GET', '/meals'], ['PUT', '/meals/2026-10-14/dinner', { title: 'x' }], ['POST', '/meals/2026-10-14/dinner/to-shopping', { listId: 'list-0000-0001' }]],
   presence: [['GET', '/presence'], ['POST', '/presence', { home: true }], ['PUT', '/presence/consent', { share: true }], ['GET', '/presence/rules'], ['GET', '/presence/actions']],
+  // 1.9.0
+  rules: [['GET', '/rules'], ['POST', '/rules', {}], ['GET', '/rules/options'], ['PATCH', '/rules/1', { active: false }], ['POST', '/rules/1/test']],
 };
 const ON_FIRST = ['allowance', 'expenses', 'meals', 'presence'];
 
 test('defaults: every module on but the wall tablet; settings parse booleans; unknown time zone falls back with a problem', () => {
   assert.deepEqual(config.fromSettings({}).modules, {
     shopping: true, tasks: true, stars: true, dates: true, locate: true, arrival_sos: true, places: true, rides: true, emergency: true, wall: false,
-    allowance: false, wishes: true, expenses: false, board: true, meals: false, presence: false,
+    allowance: false, wishes: true, expenses: false, board: true, meals: false, presence: false, rules: true,
   });
   assert.equal(config.fromSettings({}).location, null);
   assert.deepEqual(config.fromSettings({ lat: '50,94', lon: '6.96' }).location, { lat: 50.94, lon: 6.96 });
@@ -51,6 +53,12 @@ test('defaults: every module on but the wall tablet; settings parse booleans; un
   assert.equal(bad.tz, config.serverTz());
   assert.equal(config.fromSettings({ timezone: 'America/New_York' }).tz, 'America/New_York');
   assert.equal(config.fromSettings({ notify_lang: 'en' }).lang, 'en');
+  // 1.9.0: children's own rules (off), how a shopping list is asked of someone (direct), „Ich gehe einkaufen“ in the family chat (on)
+  const d = config.fromSettings({});
+  assert.deepEqual([d.childrenOwnRules, d.shoppingNotify, d.shoppingChat], [false, 'direct', 'family']);
+  const s2 = config.fromSettings({ children_own_rules: true, shopping_notify: 'push', shopping_chat: 'off' });
+  assert.deepEqual([s2.childrenOwnRules, s2.shoppingNotify, s2.shoppingChat], [true, 'push', 'off']);
+  assert.deepEqual([config.fromSettings({ shopping_notify: 'mail', shopping_chat: 'x' }).shoppingNotify, config.fromSettings({ shopping_chat: 'x' }).shoppingChat], ['direct', 'family']);
 });
 
 test('a module switched off: 403 module_off on its endpoints, null in the overview, the others keep working', () => withFamily({}, async (host, { as, admin }) => {
@@ -67,7 +75,7 @@ test('a module switched off: 403 module_off on its endpoints, null in the overvi
     assert.equal(me.json.modules[mod], false);
     const ov = await as(ANNA)('GET', '/overview');
     const key = { shopping: 'shopping', tasks: 'tasks', dates: 'dates', locate: 'locate', arrival_sos: 'arrivals', places: null, rides: 'rides', emergency: null, wall: null,
-      allowance: 'allowance', wishes: 'wishes', expenses: 'expenses', board: 'board', meals: 'meals', presence: 'presence' }[mod];
+      allowance: 'allowance', wishes: 'wishes', expenses: 'expenses', board: 'board', meals: 'meals', presence: 'presence', rules: null }[mod];
     if (key) assert.equal(ov.json[key], null, `overview.${key}`);
     await admin('PUT', 'modules', { [mod]: true });
   }

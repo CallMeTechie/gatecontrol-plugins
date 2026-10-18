@@ -31,7 +31,7 @@ test('ops: applied in order, ids from the client, everything not deleted without
   assert.deepEqual(milk, { id: I(1), listId: L1, text: 'Milch', qty: '3×', checked: false, checkedBy: null, updatedAt: '2026-10-14T08:00:00Z', deleted: false });
   assert.deepEqual([g.json.items.find((i) => i.id === I(2)).checked, g.json.items.find((i) => i.id === I(2)).checkedBy], [true, ANNA.id]);
   const ov = await anna('GET', '/overview');
-  assert.deepEqual(ov.json.shopping.lists, [{ id: L1, name: 'REWE', icon: 'cart', open: 1 }, { id: L2, name: 'Drogerie', icon: null, open: 0 }]);
+  assert.deepEqual(ov.json.shopping.lists, [{ id: L1, name: 'REWE', icon: 'cart', open: 1, assignee: null, dueAt: null }, { id: L2, name: 'Drogerie', icon: null, open: 0, assignee: null, dueAt: null }]);
 }));
 
 test('ops: idempotent — a replayed outbox never duplicates; rejected ops carry index and code', () => withFamily({}, async (host, { as }) => {
@@ -114,7 +114,8 @@ test('since: changes including tombstones; deleted lists take their items; tombs
 test('"Ich gehe einkaufen": push to the other members, once per list and person in 15 minutes', () => withFamily({}, async (host, { as, clock }) => {
   await as(MARC)('POST', '/shopping/ops', { ops: [{ op: 'list_add', id: L1, name: 'REWE' }, { op: 'item_add', id: I(1), listId: L1, text: 'Milch' }, { op: 'item_add', id: I(2), listId: L1, text: 'Brot' }] });
   const r = await as(MARC)('POST', `/shopping/lists/${L1}/going`);
-  assert.deepEqual(r.json, { ok: true, notified: 3 });
+  // 1.9.0: without the Messenger no card in the family chat (the push goes out all the same)
+  assert.deepEqual(r.json, { ok: true, notified: 3, chat: { ok: false, code: 'unavailable' } });
   const p = pushes(host, 'shopping_going');
   assert.equal(p.length, 1);
   assert.deepEqual(p[0].users.sort(), [ANNA.id, LENA.id, TIM.id]);

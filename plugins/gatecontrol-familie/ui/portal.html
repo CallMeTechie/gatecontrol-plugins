@@ -168,6 +168,16 @@
     </div>
   </section>
 
+  <!-- 1.9.0: Regeln und Erinnerungen (ui/reminders.js) -->
+  <section class="fa-card" id="fa-rules" aria-labelledby="fa-rules-h" hidden>
+    <div class="fa-card-head">
+      <h2 class="fa-card-title" id="fa-rules-h">{{t:rr.title}}</h2>
+      <button class="btn btn-sm btn-primary fa-write" type="button" id="fa-rules-add">{{t:rr.add}}</button>
+    </div>
+    <p class="fa-hint">{{t:rr.portal_hint}}</p>
+    <div id="fa-rules-box"></div>
+  </section>
+
   <!-- Notfall-Karte -->
   <div class="modal-overlay" id="fa-em-modal" role="dialog" aria-modal="true" aria-labelledby="fa-e-title" hidden>
     <div class="modal modal-wide">

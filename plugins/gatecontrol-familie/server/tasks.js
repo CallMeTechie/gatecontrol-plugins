@@ -23,12 +23,25 @@
 // The wall tablet (role 'wall', 1.1.0) ticks a task off for the person whose
 // task it is: rotate → whose turn it is, fixed → each assignee, first → any
 // assignee (POST tasks/<id>/done { userId }).
+//
+// 1.9.0 — a task from a chat („Aufgabe“ in the Messenger's attachment menu):
+//   POST tasks/quick { title, assigneeId | null, due: ISO | 'YYYY-MM-DD' | null, repeat?: 'none' | 'weekly:<1..7>',
+//                      conversationId?: number }   any member (not a wall tablet)
+//   → { task, card: { ok, conversation, code } | null }
+//   assigneeId: that person does it (mode fixed); null = whoever is first (mode first, the whole family).
+//   due: the day (and time) in the family's time zone, null = today without a time; weekly:<d> repeats it every
+//   week on that weekday (ISO, Monday = 1). No stars, with reminder; marked source 'chat'. With conversationId a
+//   card goes into that chat after the commit (Messenger send_message, target group:<id> as the person who made
+//   it; a direct chat: direct:<assignee>): „Aufgabe: <title>“ · „<who> · bis …“ with „Erledigt“ — this plugin's
+//   quick action task-done:<taskId> (server/quick.js), listed for the people whose task it is while not done.
 
 const store = require('./store');
 const tz = require('./tz');
 const push = require('./push');
 const members = require('./members');
-const { fail, posInt, text, bool, intIn, time, date, iso, userIds, parseJson, validDate } = require('./util');
+const format = require('./format');
+const messenger = require('./messenger');
+const { fail, posInt, text, bool, intIn, time, date, iso, userIds, parseJson, validDate, parseIso } = require('./util');
 
 const MODES = ['fixed', 'rotate', 'first'];
 const REPEATS = ['none', 'daily', 'weekly', 'monthly'];
@@ -46,6 +59,7 @@ function rowToTask(r) {
     id: r.id, title: r.title, mode: r.mode, assignees: parseJson(r.assignees_json, []), turnUser: r.turn_user,
     repeat: r.repeat, weekdays: parseJson(r.weekdays_json, null), dueTime: r.due_time || null, anchor: r.due_date,
     stars: r.stars, reminder: !!r.reminder, createdBy: r.created_by, createdAt: r.created_at, updatedAt: r.updated_at,
+    source: r.source || null, conversationId: r.conversation_id == null ? null : r.conversation_id,
   };
 }
 
@@ -135,6 +149,8 @@ function view(t, fam, rows, today, viewerId) {
     // additions to the contract: who ticked off the current occurrence, one-off task finished
     doneBy, completed: t.repeat === 'none' && done,
     createdBy: t.createdBy,
+    // 1.9.0: 'chat' for a task made in a chat (and its conversation)
+    source: t.source, conversationId: t.conversationId,
   };
 }
 
@@ -405,6 +421,93 @@ async function remind(gc, fam, cfg, now, pushes) {
   }
 }
 
+// ─── tasks from a chat (1.9.0) ──────────────────
+
+const QUICK_REPEAT_RE = /^weekly:([1-7])$/;
+const DATE_ONLY_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+/** POST tasks/quick (inside a transaction; the card after the commit through r.after) */
+async function quick(gc, r) {
+  const b = r.body || {};
+  let title;
+  try { title = text(b.title, TITLE_MAX); } catch { throw fail('invalid', { field: 'title' }); }
+  let assigneeId = null;
+  if (b.assigneeId != null) {
+    assigneeId = posInt(b.assigneeId);
+    if (!assigneeId || !r.fam.byId.has(assigneeId)) throw fail('invalid', { field: 'assigneeId' });
+  }
+  let day = r.today;
+  let dueTime = null;
+  if (b.due != null && b.due !== '') {
+    if (typeof b.due === 'string' && DATE_ONLY_RE.test(b.due)) {
+      if (!validDate(b.due)) throw fail('invalid', { field: 'due' });
+      day = b.due;
+    } else {
+      const ms = parseIso(b.due);
+      if (ms == null) throw fail('invalid', { field: 'due' });
+      const p = tz.parts(ms, r.cfg.tz);
+      day = tz.dateStr(p.y, p.m, p.d);
+      dueTime = `${tz.pad(p.hh)}:${tz.pad(p.mm)}`;
+    }
+  }
+  let repeat = 'none';
+  let weekdays = null;
+  if (b.repeat != null && b.repeat !== 'none') {
+    const m = QUICK_REPEAT_RE.exec(String(b.repeat));
+    if (!m) throw fail('invalid', { field: 'repeat' });
+    repeat = 'weekly';
+    weekdays = [Number(m[1])];
+  }
+  let conversationId = null;
+  if (b.conversationId != null) {
+    conversationId = posInt(b.conversationId);
+    if (!conversationId) throw fail('invalid', { field: 'conversationId' });
+  }
+  const assignees = assigneeId ? [assigneeId] : r.fam.list.map((m) => m.userId).slice(0, 20);
+  const mode = assigneeId ? 'fixed' : 'first';
+  const res = await store.run(gc, `INSERT INTO tasks (title, mode, assignees_json, turn_user, repeat, weekdays_json, due_time, due_date, stars, reminder, created_by, created_at, updated_at,
+    source, conversation_id) VALUES (?, ?, ?, NULL, ?, ?, ?, ?, 0, 1, ?, ?, ?, 'chat', ?)`,
+  [title, mode, JSON.stringify(assignees), repeat, weekdays ? JSON.stringify(weekdays) : null, dueTime, day, r.me.userId, r.now, r.now, conversationId]);
+  const id = Number(res.lastInsertRowid);
+  const task = await one(gc, r, id);
+  if (conversationId && Array.isArray(r.after)) {
+    const lang = r.cfg.lang;
+    const who = assigneeId ? r.fam.byId.get(assigneeId).name : push.t(lang, 'card.task_anyone');
+    const when = push.t(lang, 'card.due', { when: `${format.rel(day, r.today, lang)}${dueTime ? ` ${dueTime}` : ''}` });
+    const card = {
+      kind: 'notice', title: push.t(lang, 'card.task_title', { title }).slice(0, 80), text: [who, when].join(' · '),
+      actions: [{ actionId: `task-done:${id}`, label: push.t(lang, 'card.task_done') }],
+    };
+    r.after.push(async () => {
+      const target = `group:${conversationId}`;
+      let out = await messenger.sendCard(gc, r.fam, r.cfg, r.now, target, card, r.me.userId);
+      if (out.ok) return { card: { ok: true, conversation: target, code: null } };
+      // a direct chat is no group: the direct chat with the person whose task it is (Messenger with direct:<uid>)
+      if (assigneeId && assigneeId !== r.me.userId && ['not_found', 'forbidden', 'invalid'].includes(out.code)) {
+        const direct = `direct:${assigneeId}`;
+        const res2 = await messenger.sendCard(gc, r.fam, r.cfg, r.now, direct, card, r.me.userId);
+        if (res2.ok) return { card: { ok: true, conversation: direct, code: null } };
+        out = res2;
+      }
+      return { card: { ok: false, conversation: null, code: out.code } };
+    });
+  }
+  return { task, card: null };
+}
+
+/** The open chat tasks of `userId` (quick actions „Erledigt“): [{ id, title }] — the person's turn / task, not done yet. */
+async function openChatTasks(gc, fam, today, userId) {
+  const list = (await store.all(gc, "SELECT * FROM tasks WHERE source = 'chat' ORDER BY id DESC LIMIT 100")).map(rowToTask);
+  const rows = await doneRows(gc, list.map((t) => t.id));
+  const out = [];
+  for (const t of list) {
+    const occ = currentOccurrence(t, today);
+    if (!occ || !responsible(t, fam, userId) || isDone(t, fam, rows, occ, userId)) continue;
+    out.push({ id: t.id, title: t.title });
+  }
+  return out;
+}
+
 /** Retention: finished one-off tasks after 7 days, old reminder state, done rows after 400 days. */
 async function purge(gc, cfg, now) {
   const today = tz.localDate(now, cfg.tz);
@@ -427,4 +530,5 @@ async function purge(gc, cfg, now) {
 
 module.exports = {
   MODES, REPEATS, isoWd, isOccurrence, nextOccurrence, currentOccurrence, weekStart, starsOf, get, mine, forWall, create, update, remove, done, snooze, remind, purge, one,
+  quick, openChatTasks,
 };

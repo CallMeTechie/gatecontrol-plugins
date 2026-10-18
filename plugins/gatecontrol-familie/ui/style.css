@@ -397,3 +397,54 @@ button.fa-rm-box:hover{border-color:var(--line-2)}
   .fa-pe-map{min-height:300px}
   .fa-pe-map .fa-map{height:300px}
 }
+/* rules and reminders (1.9.0, mockup ReminderServer — ui/reminders.js) */
+.fa-rr-head{display:flex;align-items:flex-start;gap:12px;flex-wrap:wrap}
+.fa-rr-head .fa-intro{flex:1 1 320px}
+.fa-rr{display:flex;flex-wrap:wrap;gap:20px;align-items:flex-start}
+.fa-rr-side{flex:1 1 320px;min-width:0;display:flex;flex-direction:column;gap:10px}
+.fa-rr-editor{flex:999 1 600px;min-width:0;background:var(--surface);border:1px solid var(--line);border-radius:20px;padding:18px;display:flex;flex-direction:column;gap:14px}
+.fa-rr-tabs{display:flex;gap:8px;flex-wrap:wrap}
+.fa-rr-tab{min-height:34px;padding:0 14px;border-radius:17px;border:1px solid var(--line-2);background:transparent;color:var(--text);font:700 13px var(--font);cursor:pointer}
+.fa-rr-tab.is-on{background:var(--text);border-color:var(--text);color:var(--surface)}
+.fa-rr-list{display:flex;flex-direction:column;gap:8px}
+.fa-rr-rule{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:14px;background:var(--surface);border:1px solid var(--line)}
+.fa-rr-rule.is-sel{border:2px solid var(--accent);padding:9px 11px}
+.fa-rr-rule.is-off{opacity:.7}
+.fa-rr-rule-main{flex:1;min-width:0;display:flex;align-items:center;gap:12px;background:transparent;border:0;padding:0;color:inherit;text-align:left;cursor:pointer;font:inherit}
+.fa-rr-ic{width:38px;height:38px;border-radius:12px;display:inline-flex;align-items:center;justify-content:center;flex:none;background:var(--accent-soft);color:var(--accent)}
+.fa-rr-ic.is-reminder{background:color-mix(in srgb,var(--warn) 16%,transparent);color:var(--warn)}
+.fa-rr-ic.is-place{background:color-mix(in srgb,var(--info,#2d5ba8) 16%,transparent);color:var(--info,#2d5ba8)}
+.fa-rr-t{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.fa-rr-t b{font-size:15px;font-weight:800}
+.fa-rr-t small{font-size:13px;color:var(--muted);overflow-wrap:anywhere}
+.fa-rr-t small.fa-rr-meta{font-size:12px}
+.fa-rr-logwrap summary{cursor:pointer;padding:6px 0}
+.fa-rr-log{display:flex;flex-direction:column;gap:6px}
+.fa-rr-logrow{display:grid;grid-template-columns:auto 1fr;gap:2px 10px;font-size:13px;padding:6px 0;border-top:1px solid var(--line)}
+.fa-rr-logrow>span:last-child{grid-column:1 / -1}
+.fa-rr-top{display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end}
+.fa-rr-f{display:flex;flex-direction:column;gap:6px;font-size:13px;font-weight:700;flex:0 1 220px;min-width:0}
+.fa-rr-grow{flex:1 1 260px}
+.fa-rr-cols{display:flex;flex-wrap:wrap;gap:12px}
+.fa-rr-col{flex:1 1 230px;min-width:0;display:flex;flex-direction:column;gap:10px;padding:14px;border-radius:16px;background:var(--surface-2);border:1px solid var(--line)}
+.fa-rr-lbl{font-family:var(--mono);font-size:11.5px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+.fa-rr-days{display:flex;gap:4px;flex-wrap:wrap}
+.fa-rr-day{width:36px;height:36px;border-radius:50%;border:1px solid var(--line-2);background:var(--surface);color:var(--text);font:700 12.5px var(--font);padding:0;cursor:pointer}
+.fa-rr-day.is-on{background:var(--accent);border-color:var(--accent);color:var(--btn-text,#fff)}
+.fa-rr-box{display:flex;flex-direction:column;gap:8px;padding:10px;border-radius:12px;background:var(--surface);border:1px solid var(--line)}
+.fa-rr-box-head{display:flex;align-items:center;gap:8px;font-size:13.5px}
+.fa-rr-box-head .fa-spacer{flex:1}
+.fa-rr-x{width:26px;height:26px;border-radius:8px;border:0;background:transparent;color:var(--muted);display:inline-flex;align-items:center;justify-content:center;cursor:pointer}
+.fa-rr-x:hover{color:var(--crit)}
+.fa-rr-pair{display:flex;gap:6px;flex-wrap:wrap;align-items:flex-end}
+.fa-rr-pair>*{flex:1 1 80px;min-width:0}
+.fa-rr-unit{flex:0 0 auto!important;font-size:13px;color:var(--muted);align-self:center}
+.fa-rr-checks{display:flex;flex-direction:column;gap:6px}
+.fa-rr-sub{font-size:12px;font-weight:700;color:var(--muted)}
+.fa-rr-foot{display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:12px 14px;border-radius:14px;background:var(--surface-2)}
+.fa-rr-probe-text{flex:1 1 320px;font-size:13.5px;color:var(--muted)}
+.fa-rr-probe-text b{color:var(--text)}
+.fa-rr-details{display:flex;flex-direction:column;gap:2px;margin-top:4px}
+.fa-rr-detail{font-size:12.5px}
+.fa-rr-empty{padding:30px 10px;text-align:center}
+@media (max-width:600px){.fa-rr-editor{padding:12px}.fa-rr-col{flex-basis:100%}}

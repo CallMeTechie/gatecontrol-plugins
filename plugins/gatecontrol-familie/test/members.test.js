@@ -31,7 +31,7 @@ test('admin API: add, edit, remove members; only GateControl users; children nee
   assert.deepEqual(st.json.users.filter((u) => !u.member).map((u) => u.id), [ADMIN.id, OMA.id, 7]);
   assert.deepEqual(st.json.modules, {
     shopping: true, tasks: true, stars: true, dates: true, locate: true, arrival_sos: true, places: true, rides: true, emergency: true, wall: false,
-    allowance: false, wishes: true, expenses: false, board: true, meals: false, presence: false,
+    allowance: false, wishes: true, expenses: false, board: true, meals: false, presence: false, rules: true,
   });
   assert.equal(st.json.settings.timezone, 'Europe/Berlin');
 
@@ -119,6 +119,8 @@ test('app tab and portal tab: members only, and only while at least one module i
   await admin('PUT', 'modules', { places: false, wishes: false });
   assert.equal(await host.appVisible(ANNA), true, 'board still on (1.2.0)');
   await admin('PUT', 'modules', { board: false });
+  assert.equal(await host.appVisible(ANNA), true, 'rules still on (1.9.0)');
+  await admin('PUT', 'modules', { rules: false });
   assert.equal(await host.appVisible(ANNA), false, 'every module off (the wall view is no family feature)');
   await admin('PUT', 'modules', { presence: true });
   assert.equal(await host.appVisible(ANNA), true, 'a 1.2.0 module alone is enough');

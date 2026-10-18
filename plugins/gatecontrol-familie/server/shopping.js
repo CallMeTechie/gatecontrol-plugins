@@ -9,11 +9,33 @@
 //                                        id twice never duplicates), last write wins by
 //                                        arrival → { applied, rejected: [{ index, code }], serverTime }
 //   POST shopping/lists/<id>/going       "Marc geht einkaufen" to the other members
-//                                        (once per list, person and 15 minutes)
+//                                        (once per list, person and 15 minutes); 1.9.0: with the setting
+//                                        shopping_chat 'family' (default) also a card „<Name> geht jetzt
+//                                        einkaufen · <Liste> · n Artikel“ with „Zur Liste“ in the family chat
+//                                        → { notified, chat: { ok, code } | null }
+//   1.9.0 — a list asked of a person:
+//   POST shopping/lists/<id>/assign { userId | null, dueAt?: ISO | null, notify?: 'direct' | 'family' | 'push' }
+//                                        any member (not a wall tablet); userId a family member, null = no one
+//                                        (the request ends). notify (default: the setting shopping_notify,
+//                                        'direct'): a card „Kannst du einkaufen gehen?“ — „<Liste> · n Artikel ·
+//                                        bis …“ with „Übernehmen“ / „Heute nicht“ (this plugin's quick actions
+//                                        shop-take:<listId> / shop-decline:<listId>, listed only for the person
+//                                        asked while the request is open — server/quick.js) into the direct chat
+//                                        of the two (Messenger target direct:<uid>), else the family chat, else
+//                                        a push with the same two buttons; 'family' starts with the family chat;
+//                                        'push' only the push. Asking oneself sends nothing.
+//                                        → { list, notified: { via: 'direct' | 'family' | 'push' | null, ok, code } | null }
+// Every list carries assignee { userId, by, at, state: 'open' | 'taken' | 'declined', notify } | null and
+// dueAt (ISO | null) — in GET shopping and the overview; a change of them is a change of the list
+// (updatedAt, ?since).
 
 const store = require('./store');
 const push = require('./push');
-const { fail, line, iso, parseIso } = require('./util');
+const tz = require('./tz');
+const format = require('./format');
+const messenger = require('./messenger');
+const { SHOPPING_NOTIFY } = require('./config');
+const { fail, line, iso, parseIso, posInt } = require('./util');
 
 const ID_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{7,63}$/;
 const MAX_OPS = 200;
@@ -25,7 +47,17 @@ const TOMBSTONE_DAYS = 30;
 const GOING_GAP_MS = 15 * 60000;
 const DAY = 86400000;
 
-const listView = (r) => ({ id: r.id, name: r.name, icon: r.icon || null, sort: r.sort, updatedAt: iso(r.updated_at), deleted: !!r.deleted });
+const ASSIGN_STATES = ['open', 'taken', 'declined'];
+const ROUTE = 'plg-gatecontrol-familie';
+
+/** 1.9.0: who is asked to do the shopping (null: nobody). */
+const assigneeOf = (r) => (r.assignee_id == null ? null : {
+  userId: r.assignee_id, by: r.assigned_by == null ? null : r.assigned_by, at: iso(r.assigned_at), state: ASSIGN_STATES.includes(r.assign_state) ? r.assign_state : 'open', notify: r.assign_notify || null,
+});
+
+const listView = (r) => ({
+  id: r.id, name: r.name, icon: r.icon || null, sort: r.sort, updatedAt: iso(r.updated_at), deleted: !!r.deleted, assignee: assigneeOf(r), dueAt: iso(r.due_at),
+});
 const itemView = (r) => ({
   id: r.id, listId: r.list_id, text: r.text, qty: r.qty || null, checked: !!r.checked, checkedBy: r.checked_by == null ? null : r.checked_by,
   updatedAt: iso(r.updated_at), deleted: !!r.deleted,
@@ -50,9 +82,9 @@ async function get(gc, query, now) {
 
 /** Open (unchecked) items per list → [{ id, name, open }] (overview). */
 async function summary(gc) {
-  const rows = await store.all(gc, `SELECT l.id, l.name, l.icon, (SELECT COUNT(*) FROM shop_items i WHERE i.list_id = l.id AND i.deleted = 0 AND i.checked = 0) AS open
+  const rows = await store.all(gc, `SELECT l.*, (SELECT COUNT(*) FROM shop_items i WHERE i.list_id = l.id AND i.deleted = 0 AND i.checked = 0) AS open
     FROM shop_lists l WHERE l.deleted = 0 ORDER BY l.sort, l.created_at`);
-  return rows.map((r) => ({ id: r.id, name: r.name, icon: r.icon || null, open: r.open }));
+  return rows.map((r) => ({ id: r.id, name: r.name, icon: r.icon || null, open: r.open, assignee: assigneeOf(r), dueAt: iso(r.due_at) }));
 }
 
 // ─── ops ────────────────────────────────────────
@@ -185,6 +217,19 @@ async function going(gc, r, listId) {
   const open = (await store.one(gc, 'SELECT COUNT(*) AS n FROM shop_items WHERE list_id = ? AND deleted = 0 AND checked = 0', [listId])).n;
   const to = r.fam.list.filter((m) => m.userId !== r.me.userId).map((m) => m.userId);
   const lang = r.cfg.lang;
+  // the person asked goes: the request is taken
+  if (l.assignee_id === r.me.userId && l.assign_state !== 'taken') await store.run(gc, "UPDATE shop_lists SET assign_state = 'taken', updated_at = ? WHERE id = ?", [r.now, listId]);
+  // 1.9.0: a card in the family chat (setting shopping_chat), after the commit
+  if (r.cfg.shoppingChat === 'family' && Array.isArray(r.after)) {
+    const card = {
+      kind: 'notice', title: push.t(lang, 'card.going_title', { name: r.me.name }).slice(0, 80), text: `${l.name} · ${itemsText(lang, open)}`,
+      link: { label: push.t(lang, 'card.going_link'), route: ROUTE },
+    };
+    r.after.push(async () => {
+      const res = await messenger.sendCard(gc, r.fam, r.cfg, r.now, 'family', card, r.me.userId);
+      return { chat: { ok: res.ok, code: res.code } };
+    });
+  }
   r.pushes.push({
     topic: 'shopping', users: to,
     title: push.t(lang, 'shopping.going', { name: r.me.name, list: l.name }),
@@ -192,7 +237,108 @@ async function going(gc, r, listId) {
     priority: 'normal', collapseKey: `going:${listId}`, ttl: 2 * 3600,
     data: { familie: { type: 'shopping_going', listId, userId: r.me.userId } },
   });
-  return { notified: to.length };
+  return { notified: to.length, chat: null };
+}
+
+/** "3 Artikel" in the notification language. */
+function itemsText(lang, n) {
+  return push.t(lang, n === 0 ? 'shopping.items_0' : (n === 1 ? 'shopping.items_1' : 'shopping.items_n'), { n });
+}
+
+/** "bis heute 18:00" / "bis Fr, 17.10. 18:00" — or '' without a due time. */
+function dueText(lang, dueAt, cfg, now) {
+  if (dueAt == null) return '';
+  const date = tz.localDate(dueAt, cfg.tz);
+  return push.t(lang, 'card.due', { when: `${format.rel(date, tz.localDate(now, cfg.tz), lang)} ${format.time(dueAt, cfg.tz)}` });
+}
+
+/** The quick action ids of a request (null when the list id is too long for one). */
+function requestIds(listId) {
+  const take = `shop-take:${listId}`;
+  const decline = `shop-decline:${listId}`;
+  return decline.length <= 64 ? { take, decline } : null;
+}
+
+/**
+ * Ask `userId` (after the commit): the card into the chat (direct → family, see the head of this file),
+ * else a push with the two buttons. Never throws. → { via, ok, code }
+ */
+async function ask(gc, r, l, userId, dueAt, mode, open) {
+  const lang = r.cfg.lang;
+  const due = dueText(lang, dueAt, r.cfg, r.now);
+  const text = [l.name, itemsText(lang, open), due].filter(Boolean).join(' · ');
+  const ids = requestIds(l.id);
+  if (mode !== 'push') {
+    const card = {
+      kind: 'notice', title: push.t(lang, 'card.shop_title'), text,
+      actions: ids ? [{ actionId: ids.take, label: push.t(lang, 'card.shop_take') }, { actionId: ids.decline, label: push.t(lang, 'card.shop_decline') }] : [],
+    };
+    const res = await messenger.sendCardTo(gc, r.fam, r.cfg, r.now, mode, card, r.me.userId, userId);
+    if (res.ok) return { via: res.via, ok: true, code: null };
+  }
+  const actions = ids ? [
+    { type: 'quick_action', label: push.t(lang, 'card.shop_take').slice(0, 24), plugin: 'gatecontrol-familie', id: ids.take },
+    { type: 'quick_action', label: push.t(lang, 'card.shop_decline').slice(0, 24), plugin: 'gatecontrol-familie', id: ids.decline },
+  ] : [];
+  const sent = await push.send(gc, {
+    topic: 'shopping', users: [userId], priority: 'normal', collapseKey: `assign:${l.id}`, ttl: 12 * 3600,
+    title: push.t(lang, 'shopping.assign_title', { name: r.me.name }), body: text,
+    data: { familie: { type: 'shopping_assigned', listId: l.id, by: r.me.userId }, ...(actions.length ? { actions } : {}) },
+  });
+  return { via: 'push', ok: !!sent.sent, code: sent.sent ? null : (sent.error || 'failed') };
+}
+
+/** POST shopping/lists/<id>/assign (inside a transaction; the card / push after the commit through r.after) */
+async function assign(gc, r, listId) {
+  if (typeof listId !== 'string' || !ID_RE.test(listId)) throw fail('not_found');
+  const l = await getList(gc, listId);
+  if (!l || l.deleted) throw fail('not_found');
+  const b = r.body || {};
+  if (b.userId === undefined) throw fail('invalid', { field: 'userId' });
+  if (b.userId === null) {
+    await store.run(gc, 'UPDATE shop_lists SET assignee_id = NULL, assigned_by = NULL, assigned_at = NULL, due_at = NULL, assign_state = NULL, assign_notify = NULL, updated_at = ? WHERE id = ?', [r.now, listId]);
+    return { list: listView(await getList(gc, listId)), notified: null };
+  }
+  const userId = posInt(b.userId);
+  if (!userId || !r.fam.byId.has(userId)) throw fail('invalid', { field: 'userId' });
+  let dueAt = null;
+  if (b.dueAt != null && b.dueAt !== '') {
+    dueAt = parseIso(b.dueAt);
+    if (dueAt == null) throw fail('invalid', { field: 'dueAt' });
+  }
+  const mode = b.notify === undefined || b.notify === null ? r.cfg.shoppingNotify : b.notify;
+  if (!SHOPPING_NOTIFY.includes(mode)) throw fail('invalid', { field: 'notify' });
+  await store.run(gc, `UPDATE shop_lists SET assignee_id = ?, assigned_by = ?, assigned_at = ?, due_at = ?, assign_state = 'open', assign_notify = ?, updated_at = ? WHERE id = ?`,
+    [userId, r.me.userId, r.now, dueAt, mode, r.now, listId]);
+  const open = (await store.one(gc, 'SELECT COUNT(*) AS n FROM shop_items WHERE list_id = ? AND deleted = 0 AND checked = 0', [listId])).n;
+  const row = await getList(gc, listId);
+  if (userId !== r.me.userId && Array.isArray(r.after)) r.after.push(async () => ({ notified: await ask(gc, r, row, userId, dueAt, mode, open) }));
+  return { list: listView(row), notified: null };
+}
+
+/** The open requests asked of `userId` (quick actions): [{ id, name, open, dueAt, by }] */
+async function requestsOf(gc, userId) {
+  return store.all(gc, `SELECT l.id, l.name, l.due_at, l.assigned_by, (SELECT COUNT(*) FROM shop_items i WHERE i.list_id = l.id AND i.deleted = 0 AND i.checked = 0) AS open
+    FROM shop_lists l WHERE l.deleted = 0 AND l.assignee_id = ? AND l.assign_state = 'open' ORDER BY l.assigned_at`, [userId]);
+}
+
+/**
+ * „Übernehmen“ / „Heute nicht“ (inside a transaction): the request of `listId` answered by `userId` → the list row, or
+ * null when it is no open request of that person. The one who asked is told (pushes).
+ */
+async function answer(gc, fam, cfg, now, listId, userId, take, pushes) {
+  const l = await getList(gc, listId);
+  if (!l || l.deleted || l.assignee_id !== userId || l.assign_state !== 'open') return null;
+  await store.run(gc, 'UPDATE shop_lists SET assign_state = ?, updated_at = ? WHERE id = ?', [take ? 'taken' : 'declined', now, listId]);
+  const me = fam.byId.get(userId);
+  if (l.assigned_by && l.assigned_by !== userId && fam.byId.has(l.assigned_by)) {
+    pushes.push({
+      topic: 'shopping', users: [l.assigned_by], priority: 'normal', collapseKey: `assign:${listId}`, ttl: 12 * 3600,
+      title: push.t(cfg.lang, take ? 'shopping.taken' : 'shopping.declined', { name: me ? me.name : '', list: l.name }),
+      data: { familie: { type: take ? 'shopping_taken' : 'shopping_declined', listId, userId } },
+    });
+  }
+  return getList(gc, listId);
 }
 
 /** One list with its open items (wall view): `listId` or, when it is gone or empty, the first list. */
@@ -219,4 +365,6 @@ async function purge(gc, now) {
   await store.run(gc, 'DELETE FROM shop_going WHERE at < ?', [now - DAY]);
 }
 
-module.exports = { get, summary, wallList, applyOps, going, goingNow, purge, ID_RE, MAX_OPS, TOMBSTONE_DAYS, GOING_GAP_MS };
+module.exports = {
+  get, summary, wallList, applyOps, going, goingNow, purge, assign, answer, requestsOf, requestIds, itemsText, dueText, ID_RE, MAX_OPS, TOMBSTONE_DAYS, GOING_GAP_MS,
+};
