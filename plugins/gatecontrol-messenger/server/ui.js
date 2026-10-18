@@ -27,7 +27,8 @@ const FILES = {
   common: read('common.js'),
   overview: { html: read('overview.html'), js: read('overview.js') },
   log: { html: read('log.html'), js: read('log.js') },
-  portal: { html: read('portal.html'), js: read('portal.js'), css: read('portal.css') },
+  // video.js (1.3.0): previews of the videos and PDFs the portal sends (MP4 reader + WebCodecs)
+  portal: { html: read('portal.html'), js: read('portal.js'), css: read('portal.css'), lib: read('video.js') },
 };
 
 function esc(s) {
@@ -61,6 +62,7 @@ function render(view, t) {
     + fill(page.html, t, lang)
     + '<script>window.MS_CTX=' + island(ctx) + ';</script>'
     + '<script>' + FILES.common + '</script>'
+    + (page.lib ? '<script>' + page.lib + '</script>' : '')
     + '<script>' + page.js + '</script>';
 }
 

@@ -31,6 +31,9 @@ async function me(ctx) {
     features: {
       direct: true, groups: true, voice: true, files: true, location: true, reactions: true, edit: cfg.editWindowMin > 0, search: true,
       disappearing: cfg.allowDisappearing, bridges: false, e2e: false,
+      // 1.3.0: video_meta, file_thumbs — file messages take `video` { durationMs, width, height } and `thumbMediaId`;
+      // flags in this object (it predates them and the released apps read it as one), check them before sending
+      ...Object.fromEntries(messages.FEATURES.map((f) => [f, true])),
     },
     limits: {
       maxBytes: usage ? usage.maxBytes : null,
@@ -40,6 +43,7 @@ async function me(ctx) {
       maxVoiceS: cfg.maxVoiceS,
       textMax: messages.TEXT_MAX,
       thumbMaxBytes: messages.THUMB_MAX,
+      thumbMaxSide: messages.THUMB_MAX_SIDE,
       imageMaxSide: 2048,
       groupMax: conversations.GROUP_MAX,
       titleMax: conversations.TITLE_MAX,

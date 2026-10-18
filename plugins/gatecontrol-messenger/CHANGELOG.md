@@ -3,6 +3,31 @@
 Chats zwischen den GateControl-Konten – in der GateControl-App (eigener Tab „Chats“), im
 Windows-Client und im Portal (eigener Tab „Chats“). Alles bleibt auf dem eigenen Server.
 
+## 1.3.0
+Läuft weiterhin ab **GateControl ≥ 1.177.0**; das Vorschaubild im Push braucht wie bei Fotos 1.178.0.
+- **Videos als eigene Kategorie:** Ein Video bleibt eine Dateinachricht (`kind: "file"` mit einer
+  `video/*`-Datei) – ältere Apps zeigen es weiter als Datei. Neu darf sie `video: { durationMs, width,
+  height }` mitbringen (ganze Zahlen, Dauer bis 24 h, Seiten 1…16384; nur bei einer Videodatei), die
+  Nachricht gibt `video` zurück. `GET conversations/:id/media?kind=video` listet die Videos,
+  `kind=file` nur noch die übrigen Dateien; `counts` hat `video`, `file` zählt keine Videos mehr.
+- **Vorschaubilder für Dateien:** Dateinachrichten dürfen `thumbMediaId` haben (WebP, JPEG oder PNG,
+  ≤ 64 KB, ≤ 640 px je Seite – eigener, noch unbenutzter Upload wie bei Fotos), die Nachricht gibt
+  `thumbMediaId` zurück. Zugriff wie auf die Datei (nur Mitglieder, die die Nachricht sehen);
+  gelöscht wird das Vorschaubild mit der Nachricht (Löschen für alle, selbstlöschende Chats,
+  Aufbewahrung, gelöschte verwaltete Gruppe).
+- **Push:** Ein Video mit Vorschaubild zeigt das Vorschaubild als Bild im Push – wie ein Foto, nur
+  bei eingeschalteter Vorschau.
+- **`GET me`:** `features.video_meta` und `features.file_thumbs` (beide `true`) – die Apps prüfen sie,
+  bevor sie die neuen Felder senden; `limits.thumbMaxSide: 640`. Die Flags stehen im bestehenden
+  Objekt `features` (die veröffentlichten Apps lesen es als Objekt).
+- **Portal:** Beim Senden eines MP4-Videos liest der Browser Dauer und Größe aus der Datei und erzeugt
+  ein Vorschaubild bei etwa 1 s (WebCodecs; der Rahmen darf Videos nicht über `blob:` öffnen). Ohne
+  WebCodecs oder bei unbekanntem Codec gehen nur Dauer und Größe mit, sonst die Datei wie bisher.
+  PDFs bekommen eine Vorschau der ersten Seite nur, wenn der Rahmen schon einen PDF-Renderer hat
+  (derzeit nicht). Videos mit Vorschaubild erscheinen als Kachel mit Abspiel-Knopf und Dauer,
+  Dateien mit Vorschaubild zeigen es auf der Dateikarte, „Zuletzt geteilt“ in der Chat-Info hat die
+  Reiter Fotos / Videos.
+
 ## 1.2.0
 Läuft weiterhin ab **GateControl ≥ 1.177.0**. Der eigene Standort des Browsers und der angeheftete Eintrag
 „GateControl“ brauchen **GateControl ≥ 1.179.0** (`ui.geolocation`, `ui.inbox`); auf älteren Versionen

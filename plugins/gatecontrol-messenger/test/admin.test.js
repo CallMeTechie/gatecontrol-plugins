@@ -76,8 +76,10 @@ test('me: prefs, licence, features and limits for the apps', async () => {
     assert.deepEqual(me.license, { licensed: true, state: 'valid', expiresAt: null });
     assert.equal(me.features.voice, true);
     assert.equal(me.features.bridges, false);
+    // 1.3.0: flags for video meta and file previews (in the features object the released apps already read)
+    assert.deepEqual([me.features.video_meta, me.features.file_thumbs], [true, true]);
     assert.deepEqual(me.limits, {
-      maxBytes: 26214400, types: require('../plugin.json').media.types, quotaFull: false, editWindowS: 900, maxVoiceS: 300, textMax: 4000, thumbMaxBytes: 65536,
+      maxBytes: 26214400, types: require('../plugin.json').media.types, quotaFull: false, editWindowS: 900, maxVoiceS: 300, textMax: 4000, thumbMaxBytes: 65536, thumbMaxSide: 640,
       imageMaxSide: 2048, groupMax: 256, titleMax: 80, pageMax: 100, typingS: 6, typingEveryS: 3, activeS: 30, disappearingS: [0, 86400, 604800, 2592000], retentionDays: 0,
     });
     assert.ok(me.serverTime);

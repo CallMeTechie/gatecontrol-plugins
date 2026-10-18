@@ -16,6 +16,7 @@
 // GateControl ≥ 1.178.0 — recognised by gc.services.available, which came with it) — for
 // recipients with preview only; the preview file (else the photo itself) when it is PNG/JPEG/WebP
 // and ≤ 300 KB. A host that refuses the picture gets the push again without it.
+// 1.3.0: a video file with a preview picture (thumbMediaId) carries that preview the same way.
 
 const store = require('./store');
 const people = require('./people');
@@ -32,10 +33,20 @@ const IMAGE_MAX = 300 * 1024;
 /** May the host take a push picture from the plugin's media (GateControl ≥ 1.178.0)? */
 const mediaPictures = (gc) => !!(gc && gc.services && typeof gc.services.available === 'function');
 
-/** The media id to show as the push picture of a message row, or null. */
+/**
+ * The media id to show as the push picture of a message row, or null. Pictures: the preview, else the photo;
+ * 1.3.0: a video file with a preview picture: the preview (never the video, never other files' previews).
+ */
 async function pictureOf(gc, row) {
-  if (row.kind !== 'image' || !mediaPictures(gc)) return null;
-  for (const id of [row.thumb_media_id, row.media_id]) {
+  if (!mediaPictures(gc)) return null;
+  let ids;
+  if (row.kind === 'image') ids = [row.thumb_media_id, row.media_id];
+  else if (row.kind === 'file' && row.thumb_media_id && row.media_id) {
+    const f = await store.one(gc, 'SELECT mime FROM media WHERE media_id = ?', [row.media_id]);
+    if (!f || !/^video\//i.test(f.mime || '')) return null;
+    ids = [row.thumb_media_id];
+  } else return null;
+  for (const id of ids) {
     if (!id) continue;
     const m = await store.one(gc, 'SELECT mime, bytes FROM media WHERE media_id = ? AND orphan = 0', [id]);
     if (m && IMAGE_TYPES.includes(m.mime) && m.bytes <= IMAGE_MAX) return id;

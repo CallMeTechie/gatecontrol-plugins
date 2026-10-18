@@ -6,7 +6,9 @@
    1.2.0: locations — sent from a map (the host's Leaflet, tiles through GC.tiles), the
    browser's position when the frame may ask for it (GateControl 1.179+ ui.geolocation),
    coordinates typed in otherwise; received ones with a small map. The pinned entry
-   "GateControl" (the core inbox) through GC.inbox when the host offers it (1.179+). */
+   "GateControl" (the core inbox) through GC.inbox when the host offers it (1.179+).
+   1.3.0: videos and PDFs get `video` meta and a preview picture (ui/video.js, window.MSVideo)
+   when GET me has features.video_meta / file_thumbs; video tiles, file previews, a Videos tab. */
 (function () {
   'use strict';
   var M = window.MS;
@@ -85,7 +87,7 @@
     switch (m.kind) {
       case 'image': return T('kind.image') + (m.text ? ': ' + m.text : '');
       case 'voice': return T('kind.voice') + (m.meta && m.meta.durationMs != null ? ' · ' + M.duration(m.meta.durationMs) : '');
-      case 'file': return (m.meta && m.meta.fileName) || T('kind.file');
+      case 'file': return isVideoMsg(m) ? T('kind.video') + (m.video && m.video.durationMs != null ? ' · ' + M.duration(m.video.durationMs) : '') : ((m.meta && m.meta.fileName) || T('kind.file'));
       case 'location': return T('kind.location') + (m.location && m.location.label ? ': ' + m.location.label : '');
       case 'system': return systemText(m, c);
       default: return m.text || '';
@@ -261,10 +263,10 @@
       ticks(statusOf(m, c)),
     ]);
   }
-  function lightbox(url) {
+  function lightbox(url, video) {
     if (!url) return;
-    var ov = el('div', { class: 'ms-lightbox', role: 'dialog', 'aria-modal': 'true', 'aria-label': T('kind.image') }, [
-      el('img', { src: url, alt: '' }),
+    var ov = el('div', { class: 'ms-lightbox', role: 'dialog', 'aria-modal': 'true', 'aria-label': video ? T('kind.video') : T('kind.image') }, [
+      video ? el('video', { src: url, controls: true, autoplay: true, playsinline: true, preload: 'auto' }) : el('img', { src: url, alt: '' }),
       el('button', { type: 'button', class: 'ms-ib', 'aria-label': T('common.close'), on: { click: function () { ov.remove(); } } }, [M.icon('close', 18)]),
     ]);
     ov.addEventListener('click', function (e) { if (e.target === ov) ov.remove(); });
@@ -320,13 +322,36 @@
     });
     return el('div', { class: 'ms-voice' }, [btn, wave, time]);
   }
+  function isVideoMsg(m) { return !!(m && m.kind === 'file' && m.media && /^video\//.test(m.media.mime || '')); }
+  /** 1.3.0: a video with a preview picture — the picture with a play button and the duration; a click plays it here. */
+  function videoTile(m) {
+    var v = m.video || {};
+    var dur = v.durationMs != null ? v.durationMs : (m.meta && m.meta.durationMs != null ? m.meta.durationMs : null);
+    // the tile in the video's shape, at most 320 px a side
+    var shape = v.width && v.height ? 'aspect-ratio:' + v.width + '/' + v.height + ';width:' + Math.round(v.width * Math.min(320 / v.width, 320 / v.height)) + 'px' : null;
+    var tile = el('button', { type: 'button', class: 'ms-vtile', style: shape, 'aria-label': T('portal.play_video') + (dur != null ? ' (' + M.duration(dur) + ')' : ''),
+      on: { click: function (e) {
+        e.stopPropagation();
+        var player = el('video', { class: 'ms-video', src: m.media.url, controls: true, autoplay: true, playsinline: true, preload: 'auto', style: shape });
+        tile.replaceWith(player);
+        var p = player.play && player.play();
+        if (p && p.catch) p.catch(function () { /* the controls stay */ });
+      } } }, [
+      el('img', { src: m.media.thumbUrl, alt: '', loading: 'lazy' }),
+      el('span', { class: 'ms-vtile-play', 'aria-hidden': 'true' }, [M.icon('play', 22, { fill: true })]),
+      dur != null ? el('span', { class: 'ms-vtile-dur', text: M.duration(dur) }) : null,
+    ]);
+    return tile;
+  }
   function fileEl(m) {
     var mime = (m.media && m.media.mime) || '';
+    if (isVideoMsg(m) && m.media.url && m.media.thumbUrl) return videoTile(m);
     if (/^video\//.test(mime) && m.media.url) return el('video', { class: 'ms-video', src: m.media.url, controls: true, preload: 'metadata' });
     if (/^audio\//.test(mime) && m.media.url) return el('audio', { src: m.media.url, controls: true, preload: 'none', style: 'max-width:100%' });
     var name = (m.meta && m.meta.fileName) || T('kind.file');
-    return el('button', { type: 'button', class: 'ms-filecard', on: { click: function (e) { e.stopPropagation(); M.toast(T('msg.file_in_app'), 'good'); } } }, [
-      el('span', { class: 'ms-filecard-ic' }, [M.icon('file', 18)]),
+    var thumb = m.media && m.media.thumbUrl;
+    return el('button', { type: 'button', class: 'ms-filecard' + (thumb ? ' has-thumb' : ''), on: { click: function (e) { e.stopPropagation(); M.toast(T('msg.file_in_app'), 'good'); } } }, [
+      thumb ? el('img', { class: 'ms-filecard-th', src: thumb, alt: '', loading: 'lazy' }) : el('span', { class: 'ms-filecard-ic' }, [M.icon('file', 18)]),
       el('span', { class: 'ms-filecard-tx' }, [el('b', { text: name }), el('small', { text: [m.media && m.media.bytes ? M.bytes(m.media.bytes) : null, mime ? mime.split('/').pop().toUpperCase().slice(0, 12) : null].filter(Boolean).join(' · ') })]),
     ]);
   }
@@ -386,6 +411,7 @@
     } else if (m.kind === 'voice') {
       b.appendChild(voiceEl(m));
     } else if (m.kind === 'file') {
+      if (isVideoMsg(m) && m.media.url) b.classList.add('is-media');
       b.appendChild(fileEl(m));
       if (m.text) b.appendChild(el('div', { class: 'ms-cap', text: m.text }));
     } else if (m.kind === 'location') {
@@ -620,7 +646,7 @@
       wrap.appendChild(el('div', { class: 'ms-uploads' }, S.uploads.map(function (u) {
         var bar = el('div', { class: 'ms-bar' }, [el('i', { style: 'width:' + Math.round(u.pct) + '%' })]);
         u.bar = bar;
-        return el('div', { class: 'ms-upload' }, [M.icon(u.kind === 'voice' ? 'mic' : (u.kind === 'image' ? 'image' : 'file'), 16), el('span', { text: u.name }), bar]);
+        return el('div', { class: 'ms-upload' }, [M.icon(u.kind === 'voice' ? 'mic' : (u.kind === 'image' ? 'image' : (u.kind === 'video' ? 'play' : 'file')), 16), el('span', { text: u.name }), bar]);
       })));
     }
     var rowEl = el('div', { class: 'ms-compose-row' });
@@ -726,6 +752,26 @@
 
   // ── uploads ──
   function allowedType(t) { return (S.limits.types || []).indexOf(t) >= 0; }
+  /** A server feature flag of GET me (1.3.0 video_meta, file_thumbs): true in the features object (or listed, should it be a list). */
+  function feature(name) {
+    var f = S.features;
+    return Array.isArray(f) ? f.indexOf(name) >= 0 : !!(f && f[name] === true);
+  }
+  /**
+   * 1.3.0: what goes with a file — a video's { durationMs, width, height } and a preview picture (a frame at about 1 s;
+   * the first page of a PDF only when the frame already has a PDF renderer) → { meta, thumb } (never rejects).
+   */
+  function filePreview(file, type) {
+    var V = window.MSVideo;
+    var wantMeta = feature('video_meta');
+    var wantThumb = feature('file_thumbs');
+    if (!V) return Promise.resolve(null);
+    if (/^video\/mp4$/.test(type) && (wantMeta || wantThumb)) {
+      return V.videoInfo(file, { thumb: wantThumb }).then(function (r) { return { meta: wantMeta ? r.meta : null, thumb: wantThumb ? r.thumb : null }; });
+    }
+    if (type === 'application/pdf' && wantThumb) return V.pdfThumb(file).then(function (t) { return { meta: null, thumb: t }; });
+    return Promise.resolve(null);
+  }
   function pickFile() {
     var f = $('#ms-file');
     f.setAttribute('accept', (S.limits.types || []).join(','));
@@ -807,8 +853,18 @@
     }
     if (file.size > maxBytes) { M.toast(T('error.upload_too_large'), 'error'); return; }
     var blob = file.type ? file : new Blob([file], { type: type });
-    upload(blob, file.name || T('kind.file'), 'file').then(function (r) {
-      return finish({ clientId: M.uuid(), kind: 'file', mediaId: r.mediaId, meta: { fileName: (file.name || T('kind.file')).slice(0, 200) } });
+    var extra = filePreview(file, type).catch(function () { return null; });
+    upload(blob, file.name || T('kind.file'), /^video\//.test(type) ? 'video' : 'file').then(function (r) {
+      return extra.then(function (p) {
+        var body = { clientId: M.uuid(), kind: 'file', mediaId: r.mediaId, meta: { fileName: (file.name || T('kind.file')).slice(0, 200) } };
+        if (p && p.meta) body.video = p.meta;
+        var t = p && p.thumb;
+        var useThumb = t && t.blob && t.blob.size <= (S.limits.thumbMaxBytes || 65536) && allowedType(t.blob.type);
+        return (useThumb ? upload(t.blob, T('portal.preview'), 'image').catch(function () { return null; }) : Promise.resolve(null)).then(function (u) {
+          if (u) body.thumbMediaId = u.mediaId;
+          return finish(body);
+        });
+      });
     }).catch(function (e) { if (e && (e.status || (e.data && e.data.code))) uploadErr(e); else M.warn(e); });
   }
 
@@ -1264,20 +1320,42 @@
     var mediaCount = el('span', { class: 'ms-muted', text: '…' });
     sec.appendChild(kv(T('info.media'), 'image', mediaCount));
     pane.appendChild(sec);
-    // media grid
+    // media grid: the newest photos — and (1.3.0) videos, a tab of their own when the chat has any
     var grid = el('div', { class: 'ms-grid' });
-    var mediaSec = el('div', { class: 'ms-info-sec', hidden: true }, [el('div', { class: 'ms-sec', text: T('info.recent_media') }), grid]);
+    var tabs = el('div', { class: 'ms-tabs', role: 'group', 'aria-label': T('info.recent_media'), hidden: true });
+    var mediaSec = el('div', { class: 'ms-info-sec', hidden: true }, [el('div', { class: 'ms-sec', text: T('info.recent_media') }), tabs, grid]);
     pane.appendChild(mediaSec);
-    M.api('GET', 'conversations/' + c.id + '/media?kind=image&limit=9').then(function (r) {
-      var n = r.counts.image + r.counts.voice + r.counts.file;
-      mediaCount.textContent = String(n);
-      if (!r.items.length) return;
-      mediaSec.hidden = false;
-      r.items.forEach(function (m) {
-        var src = m.media && (m.media.thumbUrl || m.media.url);
-        if (!src) return;
-        grid.appendChild(el('button', { type: 'button', 'aria-label': T('portal.open_image'), on: { click: function () { lightbox(m.media.url); } } }, [el('img', { src: src, alt: '', loading: 'lazy' })]));
+    function gridItems(kind, items) {
+      M.clear(grid);
+      items.forEach(function (m) {
+        if (!m.media || !m.media.url) return;
+        if (kind === 'video') {
+          var v = m.video || {};
+          grid.appendChild(el('button', { type: 'button', class: 'ms-grid-video', 'aria-label': T('portal.play_video'), on: { click: function () { lightbox(m.media.url, true); } } }, [
+            m.media.thumbUrl ? el('img', { src: m.media.thumbUrl, alt: '', loading: 'lazy' }) : null,
+            el('span', { class: 'ms-vtile-play', 'aria-hidden': 'true' }, [M.icon('play', 16, { fill: true })]),
+            v.durationMs != null ? el('span', { class: 'ms-vtile-dur', text: M.duration(v.durationMs) }) : null,
+          ]));
+          return;
+        }
+        grid.appendChild(el('button', { type: 'button', 'aria-label': T('portal.open_image'), on: { click: function () { lightbox(m.media.url); } } }, [el('img', { src: m.media.thumbUrl || m.media.url, alt: '', loading: 'lazy' })]));
       });
+    }
+    function showKind(kind) {
+      Array.prototype.forEach.call(tabs.children, function (b) { b.setAttribute('aria-pressed', b.getAttribute('data-kind') === kind ? 'true' : 'false'); });
+      return M.api('GET', 'conversations/' + c.id + '/media?kind=' + kind + '&limit=9').then(function (r) { gridItems(kind, r.items); return r; });
+    }
+    ['image', 'video'].forEach(function (k) {
+      tabs.appendChild(el('button', { type: 'button', 'data-kind': k, 'aria-pressed': 'false', on: { click: function () { showKind(k).catch(M.warn); } } }, [T(k === 'image' ? 'info.tab_photos' : 'info.tab_videos')]));
+    });
+    showKind('image').then(function (r) {
+      var n = r.counts.image + r.counts.voice + r.counts.file + (r.counts.video || 0);
+      mediaCount.textContent = String(n);
+      var videos = r.counts.video || 0;
+      if (!r.items.length && !videos) return;
+      mediaSec.hidden = false;
+      tabs.hidden = !videos;
+      if (!r.items.length) showKind('video').catch(M.warn);
     }).catch(function () { mediaCount.textContent = '–'; });
     // members
     if (c.kind === 'group' && !c.readonly) {
