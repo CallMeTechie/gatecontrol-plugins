@@ -4,7 +4,7 @@
     "de": "Messenger",
     "en": "Messenger"
   },
-  "version": "1.1.0",
+  "version": "1.2.0",
   "publisher": "CallMeTechie",
   "description": {
     "de": "Chats zwischen den GateControl-Konten – in der GateControl-App (eigener Tab „Chats“), im Windows-Client und im Portal: Einzel- und Gruppenchats mit Text, Bildern, Sprachnachrichten, Dateien und Standort, Antworten mit Zitat, Reaktionen, Bearbeiten und Löschen, Lesebestätigungen, „schreibt …“, selbstlöschende Chats und Push mit Antwortfeld. Alles bleibt auf dem eigenen Server, Texte verschlüsselt gespeichert; Administratoren können private Chats nicht lesen.",
@@ -112,7 +112,10 @@
         "en": "Chats"
       },
       "icon": "M4 5h16v11H9l-5 4z"
-    }
+    },
+    "maps": true,
+    "geolocation": true,
+    "inbox": true
   },
   "license": {
     "required": true

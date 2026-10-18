@@ -22,6 +22,8 @@ body{padding:0}
 .ms-row-pv{font-size:13.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;min-width:0}
 .ms-row-pv.is-typing,.ms-typing{color:var(--accent);font-weight:600}
 .ms-row-icons{display:inline-flex;gap:4px;align-items:center;color:var(--muted);flex:none}
+.ms-row-pv.is-unread{color:var(--text);font-weight:700}
+.ms-list-sec{padding:10px 16px 4px;font-size:11px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;color:var(--muted)}
 .ms-badge{min-width:20px;height:20px;padding:0 6px;box-sizing:border-box;border-radius:10px;background:var(--accent);color:var(--btn-text);font-size:11px;font-weight:800;display:inline-flex;align-items:center;justify-content:center;flex:none}
 .ms-badge.is-muted{background:var(--line-2);color:var(--text)}
 /* placeholder, login */
@@ -81,7 +83,29 @@ body{padding:0}
 .ms-filecard-tx{display:flex;flex-direction:column;min-width:0}
 .ms-filecard-tx b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:14px}
 .ms-filecard-tx small{color:var(--muted);font-size:12px}
-.ms-loc{display:flex;gap:10px;align-items:center;padding:6px 4px;white-space:normal}
+/* locations (1.2.0): a static map from the relay's tiles, the map dialogs (host Leaflet) */
+.ms-loc{display:flex;flex-direction:column;align-items:stretch;gap:6px;padding:4px;white-space:normal;border:0;background:transparent;color:inherit;font:inherit;text-align:left;min-height:0;width:100%;border-radius:14px}
+button.ms-loc{cursor:pointer}
+button.ms-loc:hover .ms-locmap{filter:brightness(1.05)}
+.ms-loc-row{display:flex;gap:10px;align-items:center;padding:2px 2px 0}
+.ms-locmap{position:relative;display:block;width:260px;height:132px;overflow:hidden;border-radius:12px;background:color-mix(in srgb,var(--text) 8%,transparent)}
+.ms-locmap img{position:absolute;width:256px;height:256px;max-width:none;pointer-events:none;user-select:none}
+.ms-locpin,.ms-pin::before{content:'';position:absolute;width:22px;height:22px;border-radius:50% 50% 50% 0;background:#E5484D;border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.35);transform:rotate(-45deg)}
+.ms-locpin{left:50%;top:50%;margin:-27px 0 0 -11px}
+.ms-locpin::after,.ms-pin::after{content:'';position:absolute;width:6px;height:6px;border-radius:50%;background:#fff}
+.ms-locpin::after{left:6px;top:6px}
+.leaflet-div-icon.ms-pin{background:transparent;border:0}
+.ms-pin::before{left:2px;top:0}
+.ms-pin::after{left:10px;top:8px}
+.ms-bigmap{height:min(46vh,340px);border-radius:12px;overflow:hidden;background:color-mix(in srgb,var(--text) 8%,transparent);position:relative}
+.ms-pickmap{height:min(36vh,260px)}
+.ms-bigmap.is-static{height:auto;display:flex;justify-content:center;padding:8px}
+.ms-loc-foot{display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap;margin-top:10px;font-size:13px}
+.ms-osm{font-weight:700}
+.ms-loc-tools{display:flex;align-items:center;gap:10px;justify-content:space-between;margin:10px 0 8px;flex-wrap:wrap}
+.ms-loc-status{margin:0;font-size:13px;color:var(--muted);flex:1;min-width:160px}
+.ms-loc-coords{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px}
+.ms-loc-coords input{min-width:0}
 .ms-loc-ic{width:38px;height:38px;border-radius:50%;background:var(--accent-soft);color:var(--accent);display:flex;align-items:center;justify-content:center;flex:none}
 .ms-reacts{display:flex;gap:4px;flex-wrap:wrap;margin:-4px 8px 2px}
 .ms-react{display:inline-flex;align-items:center;gap:3px;min-height:24px;padding:0 7px;border-radius:12px;background:var(--surface);border:1px solid var(--line-2);font-size:13px;cursor:pointer;color:var(--text)}

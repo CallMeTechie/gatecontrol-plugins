@@ -5,6 +5,11 @@
 // styles, no network of its own): the pages talk to this plugin's API through
 // window.GC.call, upload with GC.upload, get live events with GC.on('event')
 // and show files through signed /plugin-media/ URLs. Read once from ui/.
+//
+// Maps (plugin.json ui.maps, 1.2.0): the portal tab shows location messages on
+// OpenStreetMap — tiles through GateControl's relay (window.GC.tiles: the
+// frame has an opaque origin and sends no Referer, which OSM answers with 403)
+// and the host's Leaflet at these frame-loadable paths of the server.
 
 const fs = require('node:fs');
 const path = require('node:path');
@@ -13,6 +18,10 @@ const texts = require('./texts.json');
 const UI = path.join(__dirname, '..', 'ui');
 const read = (f) => fs.readFileSync(path.join(UI, f), 'utf8');
 const PAGES = ['overview', 'log'];
+const LEAFLET = Object.freeze({
+  js: '/plugins/_shared/leaflet/leaflet.js',
+  css: '/plugins/_shared/leaflet/leaflet.css',
+});
 const FILES = {
   css: read('style.css'),
   common: read('common.js'),
@@ -47,7 +56,7 @@ function render(view, t) {
   const page = FILES[pageId];
   const u = v.user || {};
   const loggedIn = portal ? (v.loggedIn === true || u.loggedIn === true) && u.kiosk !== true : true;
-  const ctx = { lang, view: portal ? 'portal' : 'page', page: pageId, loggedIn, texts: texts[lang], viewer: Number.isSafeInteger(u.id) ? u.id : null };
+  const ctx = { lang, view: portal ? 'portal' : 'page', page: pageId, loggedIn, texts: texts[lang], viewer: Number.isSafeInteger(u.id) ? u.id : null, ...(portal ? { leaflet: LEAFLET } : {}) };
   return '<style>' + FILES.css + (page.css || '') + '</style>'
     + fill(page.html, t, lang)
     + '<script>window.MS_CTX=' + island(ctx) + ';</script>'
@@ -55,4 +64,4 @@ function render(view, t) {
     + '<script>' + page.js + '</script>';
 }
 
-module.exports = { render, esc, island, PAGES };
+module.exports = { render, esc, island, PAGES, LEAFLET };

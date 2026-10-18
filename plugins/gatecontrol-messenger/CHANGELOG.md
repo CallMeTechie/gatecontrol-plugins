@@ -3,6 +3,28 @@
 Chats zwischen den GateControl-Konten – in der GateControl-App (eigener Tab „Chats“), im
 Windows-Client und im Portal (eigener Tab „Chats“). Alles bleibt auf dem eigenen Server.
 
+## 1.2.0
+Läuft weiterhin ab **GateControl ≥ 1.177.0**. Der eigene Standort des Browsers und der angeheftete Eintrag
+„GateControl“ brauchen **GateControl ≥ 1.179.0** (`ui.geolocation`, `ui.inbox`); auf älteren Versionen
+fehlen nur diese beiden, der Rest funktioniert.
+- **Standort aus dem Portal senden:** Die Büroklammer öffnet ein kleines Menü „Datei oder Foto“ /
+  „Standort“. „Standort senden“ zeigt eine Karte (Leaflet von GateControl, Kacheln über GateControls
+  Kachel-Relay `GC.tiles`): Punkt antippen oder ziehen, oder Breite/Länge eingeben; optional eine
+  Bezeichnung. „Mein Standort“ fragt den Browser nach der Position – nur wenn GateControl dem Rahmen
+  das erlaubt (ab 1.179.0) und der Browser zustimmt; sonst bleibt die Karte. Gesendet wird die
+  bestehende Nachrichtenart `location` (lat, lon, label, accuracy) – Apps und Push zeigen sie wie
+  bisher. Eine Adresssuche gibt es nicht (kein Geocoder ohne Internetzugriff des Plugins).
+- **Empfangene Standorte mit Kartenvorschau:** ein kleiner Kartenausschnitt mit Nadel in der Blase
+  (einige Kacheln über das Relay, kein Leaflet pro Nachricht); ein Klick öffnet die Karte groß mit
+  Genauigkeitskreis und dem Link „In OpenStreetMap öffnen“.
+- **Angehefteter Eintrag „GateControl“** oben in der Chat-Liste wie in den Apps: die Mitteilungen von
+  GateControl (Postfach des Portals) mit Zahl der ungelesenen und dem Titel der neuesten; ein Klick
+  öffnet das Postfach des Portals. Das Plugin bekommt dafür von GateControl nur Zahl, Titel, Zeit und
+  Priorität des eigenen Postfachs der angemeldeten Person (`GC.inbox`), nichts davon geht an den
+  Server des Plugins.
+- `plugin.json`: `ui.maps`, `ui.geolocation`, `ui.inbox` – im Installationsdialog als „Karten“,
+  „Standort“ und „Postfach“ (die beiden letzten zeigt GateControl ab 1.179.0).
+
 ## 1.1.0
 Braucht weiterhin **GateControl ≥ 1.177.0**; nur das Foto im Push braucht GateControl 1.178.0.
 - **Gruppe zurückgeben (Dienst `release_group`):** Ein Plugin, das eine Gruppe verwaltet (z. B. Familie

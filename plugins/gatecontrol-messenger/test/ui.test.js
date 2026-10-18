@@ -47,7 +47,8 @@ test('the frames never load a blob: URL or anything outside the frame CSP', () =
   for (const f of fs.readdirSync(dir)) {
     const src = fs.readFileSync(path.join(dir, f), 'utf8');
     assert.ok(!/createObjectURL/.test(src), `${f}: blob: URLs are blocked by the frame CSP (img-src data: + /avatars/ + /plugin-media/)`);
-    assert.ok(!/https?:\/\//.test(src.replace(/http:\/\/www\.w3\.org\/2000\/svg/g, '')), `${f}: no external URL`);
+    // links to openstreetmap.org (attribution, "open in OpenStreetMap") are navigation in a new tab, nothing loaded
+    assert.ok(!/https?:\/\//.test(src.replace(/http:\/\/www\.w3\.org\/2000\/svg/g, '').replace(/'https:\/\/www\.openstreetmap\.org'/g, '')), `${f}: no external URL`);
     assert.ok(!/\b(alert|confirm|prompt)\(/.test(src.replace(/M\.confirm\(|confirmDialog\(|confirm: confirmDialog/g, '')), `${f}: sandboxed frames have no modals`);
   }
 });
@@ -78,7 +79,7 @@ test('texts: every key used by the pages exists in de and en; both languages hav
 
 test('plugin.json: licence, GateControl 1.177.0, permissions, pages, app and portal tab "Chats"', () => {
   assert.equal(manifest.id, 'gatecontrol-messenger');
-  assert.equal(manifest.version, '1.1.0');
+  assert.equal(manifest.version, '1.2.0');
   assert.equal(manifest.gatecontrol, '>=1.177.0', 'media, realtime events, chat notifications and services');
   assert.deepEqual(manifest.license, { required: true });
   const p = manifest.permissions;
@@ -88,7 +89,28 @@ test('plugin.json: licence, GateControl 1.177.0, permissions, pages, app and por
   assert.deepEqual(manifest.ui.nav.label, { de: 'Messenger', en: 'Messenger' });
   const ICON = /^[MmLlHhVvCcSsQqTtAaZz0-9 .,-]{1,600}$/;
   for (const k of ['nav', 'portal', 'app']) assert.ok(ICON.test(manifest.ui[k].icon), k);
-  assert.ok(!manifest.ui.maps);
+  // 1.2.0: locations on a map (host Leaflet + tile relay), the browser's position and the pinned inbox
+  // entry — geolocation and inbox are read by GateControl 1.179+ and ignored by older hosts
+  assert.deepEqual([manifest.ui.maps, manifest.ui.geolocation, manifest.ui.inbox], [true, true, true]);
+});
+
+test('1.2.0 portal tab: Leaflet paths only in the portal, location picker and preview, the pinned inbox entry feature-detected', () => {
+  const ctx = ctxOf(ui.render({ view: 'portal', lang: 'de', user: { id: 2, loggedIn: true } }, t));
+  assert.deepEqual(ctx.leaflet, { js: '/plugins/_shared/leaflet/leaflet.js', css: '/plugins/_shared/leaflet/leaflet.css' });
+  assert.equal(ctxOf(ui.render({ view: 'page', page: 'overview', lang: 'de' }, t)).leaflet, undefined);
+  const src = fs.readFileSync(path.join(__dirname, '..', 'ui', 'portal.js'), 'utf8');
+  // tiles only through GateControl's relay (the frame has an opaque origin; OSM refuses it directly)
+  assert.ok(src.includes('window.GC.tiles'));
+  assert.ok(!/tile\.openstreetmap\.org/.test(src));
+  // sent as the existing location message type
+  assert.match(src, /kind: 'location', location: loc/);
+  // the browser's position only where the frame may ask; a refusal falls back to the map
+  assert.match(src, /allowsFeature\('geolocation'\)/);
+  assert.match(src, /getCurrentPosition\([\s\S]*loc\.denied/);
+  // GC.inbox: feature-detected (GateControl 1.178 has none), opened in the portal, nothing read or written by the plugin
+  assert.match(src, /window\.GC\.inbox && typeof window\.GC\.inbox\.on === 'function'/);
+  assert.match(src, /window\.GC\.inbox\.open\(\)/);
+  assert.ok(!/gc-inbox|notify\/inbox/.test(src), 'no own inbox calls');
 });
 
 test('the mock host accepts the manifest and the plugin starts; the encryption key is created once', async () => {

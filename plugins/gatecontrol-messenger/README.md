@@ -355,8 +355,30 @@ time below 760 px). Uploads with `GC.upload` (pictures scaled in the browser to
 6 h), voice messages recorded with `MediaRecorder` (Opus in Ogg/WebM, or MP4)
 when the browser allows the microphone, live updates with `GC.on('event')`
 plus a refresh every 30 s. Limits of the sandboxed frame: no downloads (files
-other than pictures, audio and video open in the apps), no location sending
-(the apps send the one-off position).
+other than pictures, audio and video open in the apps).
+
+Locations (1.2.0, `ui.maps`): the attach button offers "File or photo" and
+"Location". The location dialog shows a map with GateControl's Leaflet
+(`/plugins/_shared/leaflet/`) and tiles through GateControl's tile relay
+(`window.GC.tiles` — the frame has an opaque origin, OpenStreetMap refuses its
+referrer-less requests). Tap or drag the point, or type latitude/longitude;
+an optional label. "My location" asks the browser (`navigator.geolocation`)
+only where the frame may ask (`document.featurePolicy.allowsFeature
+('geolocation')`; GateControl ≥ 1.179.0 gives frames of `ui.geolocation`
+plugins `allow="geolocation *"`), a refusal leaves the map. Sent as the
+existing `location` message. No address search (the plugin has no internet
+access for a geocoder). Received locations show a small static map (a few
+relay tiles around the point with a pin, no Leaflet per message); a click
+opens the map in a dialog with the accuracy circle and a link to
+openstreetmap.org (new tab).
+
+Pinned "GateControl" entry (1.2.0, `ui.inbox`, GateControl ≥ 1.179.0): on
+top of the chat list, like in the apps — the viewer's own GateControl inbox
+with the unread count and the newest title, from `window.GC.inbox.on()`
+(the portal's own bell state; count, title, time and priority only). A click
+calls `GC.inbox.open()`, which shows the portal's inbox (`#mitteilungen`).
+Feature-detected: without `GC.inbox` (GateControl 1.177/1.178) or with
+`available: false` (notification center off) there is no entry.
 
 ## Development
 
