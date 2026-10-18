@@ -13,6 +13,11 @@ const live = require('./live');
 const conversations = require('./conversations');
 const messages = require('./messages');
 const push = require('./push');
+const social = require('./social');
+const homeactions = require('./homeactions');
+const familie = require('./familie');
+const status = require('./status');
+const { route14 } = require('./api14');
 const { fail, posInt, iso } = require('./util');
 
 /** GET me */
@@ -34,7 +39,11 @@ async function me(ctx) {
       // 1.3.0: video_meta, file_thumbs — file messages take `video` { durationMs, width, height } and `thumbMediaId`;
       // flags in this object (it predates them and the released apps read it as one), check them before sending
       ...Object.fromEntries(messages.FEATURES.map((f) => [f, true])),
+      // 1.4.0 (README "App-API", since 1.4.0): only true keys are present
+      ...Object.fromEntries(features14(ctx).map((f) => [f, true])),
     },
+    // 1.4.0: what the Familie plugin offers here (gc.services.available) — "Zur Liste", "In Kalender", places
+    integrations: { familie: await familie.offers(ctx.gc) },
     limits: {
       maxBytes: usage ? usage.maxBytes : null,
       types: usage ? usage.types : [],
@@ -53,12 +62,24 @@ async function me(ctx) {
       activeS: live.ACTIVE_MS / 1000,
       disappearingS: config.DISAPPEARING_S,
       retentionDays: cfg.retentionDays,
+      // 1.4.0
+      statusTextMax: status.STATUS_TEXT_MAX, storyTextMax: status.STORY_TEXT_MAX, storyTtlS: status.STORY_TTL_MS / 1000, storiesMax: status.STORIES_MAX,
+      pollOptionsMax: 12, pollQuestionMax: 200, pollOptionMax: 80, eventTitleMax: 120, eventChecklistMax: 20, pinsMax: 3, listsMax: 20, remindersMax: 100,
+      arrivalEveryS: 20, arrivalMaxS: 3 * 3600, arrivalRadiusM: 150,
     },
     serverTime: iso(ctx.now),
   };
 }
 
-const json = (status, body) => ({ status, json: { ok: true, ...body } });
+/** 1.4.0 feature keys of GET me (features.*). */
+function features14(ctx) {
+  const out = ['status', 'polls', 'events', 'arrival', 'msg_tools', 'privacy2'];
+  if (ctx.cfg.allowStories) out.splice(1, 0, 'stories');
+  if (homeactions.available(ctx.gc, ctx.cfg)) out.push('actions');
+  return out;
+}
+
+const json = (st, body) => ({ status: st, json: { ok: true, ...body } });
 
 /** The conversation as the viewer sees it after a change (re-read inside the same request). */
 async function convOut(ctx, convId) {
@@ -76,7 +97,16 @@ async function route(ctx, req, seg) {
   if (a === 'prefs' && seg.length === 1 && (m === 'PUT' || m === 'PATCH')) {
     return json(200, { prefs: await tx(() => people.updatePrefs(gc, ctx.viewer, req.body, ctx.now)) });
   }
-  if (a === 'people' && seg.length === 1 && m === 'GET') return json(200, { people: await people.list(gc, ctx.viewer) });
+  if (a === 'people' && seg.length === 1 && m === 'GET') {
+    // 1.4.0: online / lastSeenAt per privacy, blocked (by the caller), avatar per privacy
+    const soc = await social.load(ctx);
+    const list = (await people.list(gc, ctx.viewer)).map((p) => {
+      const pr = social.presence(soc, ctx.viewer, p.id, ctx.now);
+      const u = ctx.users.get(p.id);
+      return { ...p, avatarUrl: u ? u.avatarUrl || null : p.avatarUrl, online: pr.online, lastSeenAt: pr.lastSeenAt, blocked: soc.hasBlocked(ctx.viewer, p.id) };
+    });
+    return json(200, { people: list });
+  }
 
   if (a === 'conversations') {
     if (seg.length === 1 && m === 'GET') {
@@ -86,7 +116,7 @@ async function route(ctx, req, seg) {
     if (seg.length === 1 && m === 'POST') {
       const out = await tx(async () => {
         const r = await conversations.create(ctx, req.body);
-        return { conversation: await convOut(ctx, r.conv.id), created: r.created };
+        return { conversation: await convOut(ctx, r.conv.id), created: r.created, skipped: ctx.skipped || [] };
       });
       return json(200, out);
     }
@@ -100,7 +130,7 @@ async function route(ctx, req, seg) {
           const x = await conversations.access(ctx, b);
           const conv = await conversations.patch(ctx, x.conv, x.me, x.members, req.body);
           const still = await conversations.isMember(gc, conv.id, ctx.viewer);
-          return { conversation: still ? await convOut(ctx, conv.id) : null, left: !still };
+          return { conversation: still ? await convOut(ctx, conv.id) : null, left: !still, skipped: ctx.skipped || [] };
         });
         return json(200, out);
       }
@@ -192,21 +222,31 @@ async function route(ctx, req, seg) {
       }));
     }
     if (seg.length === 3 && c === 'reaction' && (m === 'PUT' || m === 'POST')) {
+      // (1.4.0 routes of a message are in api14.js)
       return json(200, await tx(async () => {
         const x = await locate();
         return { reactions: await messages.react(ctx, x.conv, x.me, x.members, id, req.body) };
       }));
     }
   }
+  const r14 = await route14(ctx, req, seg);
+  if (r14) return r14;
   throw fail('not_found');
 }
 
-/** After the commit: events, then the pushes of new messages. */
+/** After the commit: events, then the pushes of new messages (and 1.4.0 custom pushes), then the tasks for after it. */
 async function flush(ctx) {
   await live.flush(ctx.gc, ctx.box);
   const jobs = ctx.box.pushes;
   ctx.box.pushes = [];
   for (const j of jobs) await push.send(ctx.gc, j, ctx.users, ctx.now);
+  const after = ctx.box.after || [];
+  ctx.box.after = [];
+  for (const fn of after) {
+    try { await fn(); } catch (e) { ctx.gc.log.warn('after-commit task failed', (e && (e.code || e.message)) || 'error'); }
+  }
+  // an after-commit task may have queued more events
+  if (ctx.box.events.length) await live.flush(ctx.gc, ctx.box);
 }
 
-module.exports = { route, flush, me };
+module.exports = { route, flush, me, features14 };

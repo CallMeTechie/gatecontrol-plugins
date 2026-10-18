@@ -77,13 +77,17 @@ test('texts: every key used by the pages exists in de and en; both languages hav
   for (const k of dyn) for (const l of ['de', 'en']) assert.ok(texts[l][k], `${l}: ${k}`);
 });
 
-test('plugin.json: licence, GateControl 1.177.0, permissions, pages, app and portal tab "Chats"', () => {
+test('plugin.json: licence, GateControl 1.180.0, permissions, pages, app and portal tab "Chats"', () => {
   assert.equal(manifest.id, 'gatecontrol-messenger');
-  assert.equal(manifest.version, '1.3.0');
-  assert.equal(manifest.gatecontrol, '>=1.177.0', 'media, realtime events, chat notifications and services');
+  assert.equal(manifest.version, '1.4.0');
+  assert.equal(manifest.gatecontrol, '>=1.180.0', '1.4.0: interactive gc.actions runs (permissions.actions { interactive: true }), larger service payloads');
   assert.deepEqual(manifest.license, { required: true });
   const p = manifest.permissions;
   assert.deepEqual([p.storage, p.users, p.app, p.portal, p.notify, p.events, p.background], [true, true, true, true, true, true, { intervalSeconds: 60 }]);
+  // 1.4.0: home actions (gc.actions), the Familie services, the service set_place_status
+  assert.deepEqual(p.actions, { interactive: true });
+  assert.deepEqual(p.services, ['list_add', 'calendar_add', 'calendar_upsert', 'calendar_remove', 'places'].map((x) => 'gatecontrol-familie:' + x));
+  assert.ok(manifest.services.provides.set_place_status);
   assert.deepEqual(manifest.ui.pages.map((x) => x.id), ['overview', 'log']);
   for (const k of ['portal', 'app']) assert.deepEqual(manifest.ui[k].label, { de: 'Chats', en: 'Chats' });
   assert.deepEqual(manifest.ui.nav.label, { de: 'Messenger', en: 'Messenger' });
@@ -181,4 +185,20 @@ test('1.3.0 video.js: MP4 reader — duration, shown size (rotation), codec, the
   assert.deepEqual(await V.videoInfo(new Blob([Buffer.from('not a video at all')])), { meta: null, thumb: null });
   assert.equal(V.meta({ durationMs: -1, width: 0, height: 20000 }), null, 'out of the server\'s bounds: left out');
   assert.equal(await V.pdfThumb(new Blob([Buffer.from('%PDF-1.4')])), null, 'no PDF renderer in the frame: no preview');
+});
+
+test('1.4.0 portal tab: rich.js before portal.js, new kinds drawn, features checked, no HTML from the API', () => {
+  const portal = ui.render({ view: 'portal', lang: 'de', user: { id: 2, loggedIn: true } }, t);
+  assert.ok(portal.indexOf('root.MSRich = {') > 0 && portal.indexOf('root.MSRich = {') < portal.indexOf("var M = window.MS;\n  var T = M.T;\n  var el = M.el;\n  var $ = M.$;"), 'rich.js before portal.js');
+  assert.ok(portal.indexOf('root.MSVideo = api') < portal.indexOf('root.MSRich = {'));
+  const src = fs.readFileSync(path.join(__dirname, '..', 'ui', 'portal.js'), 'utf8');
+  for (const f of ['status', 'polls', 'events', 'actions', 'msg_tools', 'privacy2']) assert.match(src, new RegExp(`feature\\('${f}'\\)`), f);
+  for (const ev of ["'poll.update'", "'event.update'", "'arrival.update'", "'action.update'", "'status.update'", "'story.new'", "'story.remove'", "'lists.update'"]) assert.ok(src.includes(ev), ev);
+  const rich = fs.readFileSync(path.join(__dirname, '..', 'ui', 'rich.js'), 'utf8');
+  for (const call of ["'vote'", "'rsvp'", "'action/run'", "'action/approve'", "'action/deny'", "'status/feed'", "'status/stories'", "'/card/image'", "'/to-list'", "'/to-calendar'", "'/remind'", "'/suggest'", "'/export?format=txt'", "'/seen'", "'/react'", "'blocks'", "'lists'"]) {
+    assert.ok(rich.includes(call) || src.includes(call), call);
+  }
+  assert.ok(!/innerHTML|insertAdjacentHTML|outerHTML/.test(rich), 'texts only through textContent');
+  assert.match(rich, /is-unseen/, 'the glowing ring of unseen stories');
+  assert.match(fs.readFileSync(path.join(__dirname, '..', 'ui', 'portal.css'), 'utf8'), /@keyframes ms-glow/);
 });

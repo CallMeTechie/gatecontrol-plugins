@@ -31,8 +31,12 @@ const isVideo = (mime) => typeof mime === 'string' && /^video\//i.test(mime);
 const FEATURES = ['video_meta', 'file_thumbs'];
 const URL_TTL_S = 6 * 3600;
 const CLIENT_ID_RE = /^[A-Za-z0-9_-]{8,64}$/;
-const KINDS = ['text', 'image', 'voice', 'file', 'location'];
+const KINDS = ['text', 'image', 'voice', 'file', 'location', 'poll', 'event', 'arrival', 'action'];
+// 1.4.0: kinds whose content is an object (poll, event, arrival, action — card only through the service)
+const RICH = ['poll', 'event', 'arrival', 'action'];
+const EDITABLE = ['text', 'image', 'file'];
 const EMOJI_MAX = 16;
+const RICH_VIEW = ['poll', 'event', 'arrival', 'action', 'card'];
 const REPLY_PREVIEW = 200;
 
 // ─── reading ────────────────────────────────────────────────────────────────
@@ -77,6 +81,7 @@ async function views(ctx, me, rows, rc) {
   }
   const out = [];
   for (const r of rows) out.push(await view(ctx, me, r, rc, reactions.get(r.id) || [], replies, hiddenReplies));
+  if (rows.some((r) => RICH_VIEW.includes(r.kind) && !r.deleted_at)) await require('./rich').decorate(ctx, rows, out);
   return out;
 }
 
@@ -97,6 +102,7 @@ function quote(r, me, hidden, id) {
   let t = bodyOf(r);
   if (!t && r.kind === 'file') t = meta.fileName || null;
   if (!t && r.kind === 'location' && meta.location) t = meta.location.label || null;
+  if (!t) t = require('./rich').summaryText(r.kind, meta);
   return { id: r.id, senderId: r.sender_id, kind: r.kind, text: typeof t === 'string' ? t.slice(0, REPLY_PREVIEW) : null, deleted: false, missing: false };
 }
 
@@ -108,6 +114,8 @@ async function view(ctx, me, r, rc, reacts, replies, hiddenReplies) {
     expiresAt: iso(r.expires_at), deleted: !!r.deleted_at, undecryptable: false,
     text: null, replyTo: null, media: null, meta: null, location: null, system: null, reactions: [], status: null,
     thumbMediaId: null, video: null,
+    // 1.4.0
+    poll: null, event: null, arrival: null, action: null, card: null, replyStory: null,
   };
   if (mine && rc) {
     base.status = rc.readUpTo != null && r.id <= rc.readUpTo ? 'read' : (rc.deliveredUpTo != null && r.id <= rc.deliveredUpTo ? 'delivered' : 'sent');
@@ -141,6 +149,7 @@ async function view(ctx, me, r, rc, reacts, replies, hiddenReplies) {
     };
   }
   if (r.reply_to) base.replyTo = quote(replies.get(r.reply_to), me, hiddenReplies, r.reply_to);
+  if (m.replyStory && typeof m.replyStory === 'object') base.replyStory = m.replyStory;
   base.reactions = reactionList(reacts);
   return base;
 }
@@ -302,7 +311,23 @@ async function insert(ctx, conv, row) {
   const id = r.lastInsertRowid;
   await store.run(ctx.gc, 'UPDATE conversations SET last_msg_id = ?, updated_at = ? WHERE id = ?', [id, ctx.now, conv.id]);
   conv.last_msg_id = id;
+  // 1.4.0: a new message (not a member change) brings an archived chat back for people with keepArchived off
+  if (row.senderId != null || row.via) await unarchive(ctx, conv.id, row.senderId);
   return id;
+}
+
+/** Archived chats of the other members come back with a new message unless they keep them archived (prefs.chats.keepArchived). */
+async function unarchive(ctx, convId, senderId) {
+  const rows = await store.all(ctx.gc, 'SELECT user_id FROM members WHERE conv_id = ? AND archived = 1 AND left_at IS NULL', [convId]);
+  const ids = rows.map((x) => x.user_id).filter((u) => u !== senderId);
+  if (!ids.length) return;
+  const prefs = await people.prefsOf(ctx.gc, ids);
+  for (const u of ids) {
+    if ((prefs.get(u) || {}).chats && prefs.get(u).chats.keepArchived === false) {
+      await store.run(ctx.gc, 'UPDATE members SET archived = 0, updated_at = ? WHERE conv_id = ? AND user_id = ?', [ctx.now, convId, u]);
+      if (ctx.box) live.queue(ctx.box, [u], 'conversation.update', { conversationId: convId, reason: 'archive' });
+    }
+  }
 }
 
 /** A system message (member changes, title, disappearing; notices of plugins with text). */
@@ -325,11 +350,22 @@ async function send(ctx, conv, me, members, body) {
   if (conv.kind === 'direct') {
     const peer = members.find((m) => m.user_id !== ctx.viewer);
     if (!peer || !ctx.users.has(peer.user_id)) throw fail('peer_unavailable');
+    // 1.4.0: blocked either way — no direct messages
+    if (await store.one(ctx.gc, 'SELECT 1 AS x FROM blocks WHERE (user_id = ? AND blocked_id = ?) OR (user_id = ? AND blocked_id = ?)', [ctx.viewer, peer.user_id, peer.user_id, ctx.viewer])) throw fail('blocked');
   }
   const kind = b.kind == null ? 'text' : b.kind;
   if (!KINDS.includes(kind)) throw fail('invalid');
-  const text = cleanText(b.text, kind === 'text');
-  const meta = cleanMeta(kind, b.meta, ctx.cfg);
+  const rich = RICH.includes(kind);
+  if (rich && b.text != null) throw fail('invalid');
+  const text = rich ? null : cleanText(b.text, kind === 'text');
+  if (rich && b.meta != null) throw fail('invalid');
+  const meta = rich ? {} : cleanMeta(kind, b.meta, ctx.cfg);
+  let extra = null;
+  if (rich) {
+    extra = await require('./rich').prepare(ctx, conv, members, kind, b);
+    Object.assign(meta, extra.meta);
+  } else if (RICH.some((k) => b[k] != null)) throw fail('invalid');
+  if (b.replyStory != null) meta.replyStory = await require('./status').replyRef(ctx, conv, members, b.replyStory);
   let replyTo = null;
   if (b.replyTo != null) {
     replyTo = posInt(b.replyTo);
@@ -356,6 +392,7 @@ async function send(ctx, conv, me, members, body) {
   const id = await insert(ctx, conv, { senderId: ctx.viewer, clientId: b.clientId, kind, text, replyTo, mediaId: media && media.mediaId, thumbId: thumb && thumb.mediaId, meta });
   if (media) await bindMedia(ctx, media, { convId: conv.id, msgId: id, role: 'file', kind });
   if (thumb) await bindMedia(ctx, thumb, { convId: conv.id, msgId: id, role: 'thumb', kind });
+  if (extra) await extra.create(id);
   // one's own message: everything up to it is read
   await store.run(ctx.gc, 'UPDATE members SET last_read_id = MAX(last_read_id, ?), last_delivered_id = MAX(last_delivered_id, ?), updated_at = ? WHERE conv_id = ? AND user_id = ?', [id, id, ctx.now, conv.id, ctx.viewer]);
   live.clearTyping(conv.id, ctx.viewer, ctx.now);
@@ -382,7 +419,7 @@ async function edit(ctx, conv, me, members, id, body) {
   const row = await visibleMessage(ctx, me, id);
   if (row.sender_id !== ctx.viewer) throw fail('not_sender');
   if (row.deleted_at) throw fail('deleted');
-  if (row.kind === 'system' || row.kind === 'location' || row.kind === 'voice') throw fail('invalid');
+  if (!EDITABLE.includes(row.kind)) throw fail('invalid');
   if (!windowOk(ctx, row)) throw fail('edit_window');
   const b = body && typeof body === 'object' && !Array.isArray(body) ? body : null;
   if (!b) throw fail('invalid');
@@ -416,6 +453,7 @@ async function remove(ctx, conv, me, members, id, scope) {
   await store.run(ctx.gc, 'UPDATE messages SET deleted_at = ?, body_enc = NULL, meta_enc = NULL, media_id = NULL, thumb_media_id = NULL, reply_to = NULL, updated_at = ? WHERE id = ?', [ctx.now, ctx.now, id]);
   await store.run(ctx.gc, 'DELETE FROM reactions WHERE msg_id = ?', [id]);
   await orphanMedia(ctx.gc, [id]);
+  await require('./rich').cleanup(ctx, [id]);
   await store.run(ctx.gc, 'UPDATE conversations SET updated_at = ? WHERE id = ?', [ctx.now, conv.id]);
   live.queue(ctx.box, members.map((m) => m.user_id), 'message.delete', { conversationId: conv.id, messageIds: [id], reason: 'deleted' });
   return { forAll: true };
@@ -442,6 +480,14 @@ async function react(ctx, conv, me, members, id, body) {
   await store.run(ctx.gc, 'UPDATE messages SET updated_at = ? WHERE id = ?', [ctx.now, id]);
   const list = reactionList(await store.all(ctx.gc, 'SELECT user_id, emoji FROM reactions WHERE msg_id = ? ORDER BY at, user_id', [id]));
   live.queue(ctx.box, members.map((m) => m.user_id), 'reaction', { conversationId: conv.id, messageId: id, userId: ctx.viewer, emoji, reactions: list });
+  // 1.4.0: a push to the author (notify.reactions, default on) — not for one's own messages, not for a removed reaction
+  if (emoji && row.sender_id != null && row.sender_id !== ctx.viewer && members.some((m) => m.user_id === row.sender_id)) {
+    const p = (await people.prefsOf(ctx.gc, [row.sender_id])).get(row.sender_id);
+    if (p && p.notify && p.notify.reactions) {
+      const q = quote(row, me, new Set(), id);
+      ctx.box.pushes.push({ custom: { kind: 'reaction', conv, members, users: [row.sender_id], senderId: ctx.viewer, messageId: id, params: { emoji, preview: q.text || '' }, respectMute: true } });
+    }
+  }
   return list;
 }
 
@@ -532,7 +578,7 @@ async function search(ctx, me, q, rc) {
   const hits = [];
   for (const r of rows.slice(0, SEARCH_SCAN)) {
     const meta = metaOf(r) || {};
-    const hay = [bodyOf(r), meta.fileName, meta.location && meta.location.label].filter((x) => typeof x === 'string').join('\n').toLocaleLowerCase('de');
+    const hay = [bodyOf(r), meta.fileName, meta.location && meta.location.label, require('./rich').summaryText(r.kind, meta)].filter((x) => typeof x === 'string').join('\n').toLocaleLowerCase('de');
     if (hay.includes(needle)) hits.push(r);
     if (hits.length >= SEARCH_RESULTS) break;
   }
@@ -576,6 +622,6 @@ async function mediaList(ctx, me, query, rc) {
 
 module.exports = {
   views, page, send, queueNew, edit, remove, react, markRead, markDelivered, queueRead, receiptsAs, search, mediaList, system, insert, checkMedia, bindMedia,
-  orphanMedia, lastVisible, unreadCount, bodyOf, metaOf, visibleMessage, cleanEmoji, cleanVideo, isVideo, TEXT_MAX, PAGE_MAX, THUMB_MAX, THUMB_MAX_SIDE,
-  FILE_THUMB_TYPES, FEATURES, URL_TTL_S, KINDS, CLIENT_ID_RE,
+  orphanMedia, lastVisible, unreadCount, bodyOf, metaOf, visibleMessage, cleanEmoji, cleanVideo, isVideo, cleanText, unarchive, TEXT_MAX, PAGE_MAX, THUMB_MAX, THUMB_MAX_SIDE,
+  FILE_THUMB_TYPES, FEATURES, URL_TTL_S, KINDS, RICH, CLIENT_ID_RE, VISIBLE_SQL, visibleArgs,
 };

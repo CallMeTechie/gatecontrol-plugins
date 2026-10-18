@@ -43,6 +43,16 @@
       $('#ms-t-storage-s').textContent = T('admin.storage_unknown');
     }
     $('#ms-errors').textContent = String(o.errors7Days || 0);
+    // 1.4.0: counts only
+    var v = o.v14;
+    if (v) {
+      $('#ms-v-status').textContent = T('admin.v14_status_v', { status: v.statusesActive, stories: v.storiesActive });
+      $('#ms-v-polls').textContent = String(v.pollsOpen);
+      $('#ms-v-events').textContent = T('admin.v14_events_v', { events: v.eventsUpcoming, live: v.arrivalsLive });
+      $('#ms-v-actions').textContent = T('admin.v14_actions_v', { actions: v.actionMessages7Days, cards: v.cards7Days });
+      $('#ms-v-actions-s').textContent = v.actionsAvailable ? '' : T('admin.v14_actions_off');
+      $('#ms-v-other').textContent = T('admin.v14_other_v', { blocks: v.blocks, reminders: v.remindersPending });
+    }
   }
 
   function renderSettings(r) {
@@ -60,6 +70,8 @@
       host.appendChild(b);
     };
     sw('#ms-disappearing', s.allowDisappearing, T('admin.allow_disappearing'));
+    sw('#ms-allow-stories', s.allowStories !== false, T('admin.allow_stories'));
+    sw('#ms-allow-actions', s.allowActions !== false, T('admin.allow_actions'));
     sw('#ms-d-receipts', s.defaults.readReceipts, T('prefs.read_receipts'));
     sw('#ms-d-typing', s.defaults.typing, T('prefs.typing'));
     sw('#ms-d-preview', s.defaults.preview, T('prefs.preview'));
@@ -82,7 +94,7 @@
     $('#ms-saved').hidden = true;
     M.api('PUT', 'admin/settings', {
       retentionDays: Number($('#ms-retention').value), editWindowMin: Number($('#ms-edit').value), maxVoiceS: Number($('#ms-voice').value),
-      allowDisappearing: on('#ms-disappearing'),
+      allowDisappearing: on('#ms-disappearing'), allowStories: on('#ms-allow-stories'), allowActions: on('#ms-allow-actions'),
       defaults: { readReceipts: on('#ms-d-receipts'), typing: on('#ms-d-typing'), preview: on('#ms-d-preview') },
     }).then(function (r) {
       renderSettings(r);

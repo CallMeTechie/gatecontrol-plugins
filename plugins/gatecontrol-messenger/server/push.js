@@ -17,6 +17,11 @@
 // recipients with preview only; the preview file (else the photo itself) when it is PNG/JPEG/WebP
 // and ≤ 300 KB. A host that refuses the picture gets the push again without it.
 // 1.3.0: a video file with a preview picture (thumbMediaId) carries that preview the same way.
+// 1.4.0: nobody with the status preset dnd gets a chat push (messages still arrive); notify.groupsMentionsOnly:
+// in groups only messages that name the person (@Name) or answer one of theirs; polls, events, arrivals,
+// home actions (a request only to its approvers) and plugin cards (a doorbell card high priority with its
+// picture) have texts of their own; custom pushes (send in `custom`) for poll nudges, event reminders,
+// departure hints, arrivals, reminders, answered action requests and reactions (notify.reactions).
 
 const store = require('./store');
 const people = require('./people');
@@ -76,6 +81,11 @@ function bodyOf(lang, kind, text, meta) {
     case 'voice': s = m.durationMs != null ? `${t(lang, 'push.voice')} (${duration(m.durationMs)})` : t(lang, 'push.voice'); break;
     case 'file': s = `${t(lang, 'push.file')}: ${m.fileName || caption || t(lang, 'push.file_unnamed')}`; break;
     case 'location': s = m.location && m.location.label ? `${t(lang, 'push.location')}: ${m.location.label}` : t(lang, 'push.location'); break;
+    case 'poll': s = `${t(lang, 'push.poll')}: ${(m.poll && m.poll.question) || ''}`; break;
+    case 'event': s = `${t(lang, 'push.event')}: ${(m.event && m.event.title) || ''}`; break;
+    case 'arrival': s = `${t(lang, 'push.arrival')}: ${(m.arrival && m.arrival.dest && m.arrival.dest.label) || ''}`; break;
+    case 'action': s = m.action ? t(lang, m.action.mode === 'request' ? 'push.action_request' : (m.action.mode === 'grant' ? 'push.action_grant' : 'push.action_run'), { label: m.action.label || '' }) : ''; break;
+    case 'card': s = m.card ? (caption ? `${m.card.title}: ${caption}` : m.card.title) : (caption || ''); break;
     default: s = caption || '';
   }
   s = s.replace(/\s+/g, ' ').trim();
@@ -90,14 +100,46 @@ function recipients(conv, members, senderId, users, now) {
   return members.filter((m) => m.user_id !== senderId && users.has(m.user_id) && !mutedNow(m, now) && !live.isActive(m.user_id, conv.id, now)).map((m) => m.user_id);
 }
 
+/** Does a message name `name` (@Anna, @Anna Müller)? */
+function mentions(textValue, name) {
+  if (typeof textValue !== 'string' || !name) return false;
+  const esc = String(name).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp('(^|[^\\p{L}\\p{N}_])@' + esc + '(?![\\p{L}\\p{N}_])', 'iu').test(textValue)
+    || new RegExp('(^|[^\\p{L}\\p{N}_])@' + esc.split(/\s+/)[0] + '(?![\\p{L}\\p{N}_])', 'iu').test(textValue);
+}
+
+/** 1.4.0: people with an active dnd status, and the mentions-only filter of groups → the ids that still get the push. */
+async function filter14(gc, conv, row, job, to, users, now) {
+  const status = require('./status');
+  const dnd = await status.dndUsers(gc, now);
+  let out = to.filter((u) => !dnd.has(u));
+  if (conv.kind === 'group' && row.sender_id != null && out.length) {
+    const prefs = await people.prefsOf(gc, out);
+    let repliedTo = null;
+    if (row.reply_to) { const r = await store.one(gc, 'SELECT sender_id FROM messages WHERE id = ?', [row.reply_to]); repliedTo = r ? r.sender_id : null; }
+    out = out.filter((u) => {
+      const p = prefs.get(u);
+      if (!p || !p.notify || !p.notify.groupsMentionsOnly) return true;
+      const name = (users.get(u) || {}).name;
+      return repliedTo === u || mentions(job.text, name);
+    });
+  }
+  if (row.kind === 'action') {
+    const only = await require('./homeactions').pushUsers(gc, row.id);
+    if (only) out = out.filter((u) => only.includes(u));
+  }
+  return out;
+}
+
 /**
  * Send the pushes of one new message (after the commit). job = { conv, members, row, text, meta, title (group title|null) }.
  * → [{ users, preview, lang }] the calls made (for tests / logging).
  */
 async function send(gc, job, users, now = Date.now()) {
+  if (job.custom) return custom(gc, job.custom, users, now);
   const { conv, members, row } = job;
   const senderId = row.sender_id;
-  const to = recipients(conv, members, senderId, users, now);
+  const to = await filter14(gc, conv, row, job, recipients(conv, members, senderId, users, now), users, now);
   if (!to.length) return [];
   const prefs = await people.prefsOf(gc, to);
   const sender = senderId == null ? null : users.get(senderId);
@@ -113,6 +155,11 @@ async function send(gc, job, users, now = Date.now()) {
   }
   const calls = [];
   const picture = await pictureOf(gc, row);
+  // 1.4.0: a plugin card: its picture as { data, mime }, a doorbell with high priority
+  let cardImage = null;
+  if (row.kind === 'card') {
+    try { cardImage = await require('./homeactions').cardImage(gc, row.id); } catch { cardImage = null; }
+  }
   for (const g of groups.values()) {
     const actions = [];
     if (!conv.readonly) actions.push({ type: 'reply', label: t(g.lang, 'push.reply'), path: `conversations/${conv.id}/messages` });
@@ -122,13 +169,14 @@ async function send(gc, job, users, now = Date.now()) {
       title: g.preview ? senderName : t(g.lang, 'push.new_from', { name: senderName }),
       body: g.preview ? bodyOf(g.lang, row.kind, job.text, job.meta) : '',
       users: g.users,
-      priority: 'normal',
+      priority: row.kind === 'card' && job.meta && job.meta.card && job.meta.card.kind === 'doorbell' ? 'high' : 'normal',
       conversation: { id: String(conv.id), title: conv.kind === 'group' ? (job.title || null) : null, isGroup: conv.kind === 'group' },
       sender: { id: senderId == null ? 'gatecontrol' : senderId, name: senderName, avatarUrl: sender && sender.avatarUrl ? sender.avatarUrl : null },
       data: { messageId: row.id, conversationId: conv.id, actions },
     };
     if (!n.title.trim()) continue;
     if (g.preview && picture) n.image = { mediaId: picture };
+    if (g.preview && cardImage) n.image = { data: cardImage.data, mime: cardImage.mime };
     for (let i = 0; i < g.users.length; i += 100) {
       const part = { ...n, users: g.users.slice(i, i + 100) };
       try {
@@ -152,4 +200,85 @@ async function send(gc, job, users, now = Date.now()) {
   return calls;
 }
 
-module.exports = { send, recipients, bodyOf, pictureOf, TOPIC };
+/**
+ * 1.4.0: a push that is not "a new message": job = { kind, conv, members, users (ids), senderId (null =
+ * GateControl), messageId, params, respectMute (default true), respectDnd (default true), deepLink?, reminderId? }.
+ * Texts push.<kind>_title / push.<kind> per language; preview off → the neutral push.<kind>_neutral.
+ */
+async function custom(gc, job, users, now = Date.now()) {
+  const { conv, members } = job;
+  let to = [...new Set(job.users || [])].filter((u) => users.has(u));
+  if (job.respectMute !== false) to = to.filter((u) => { const m = (members || []).find((x) => x.user_id === u); return !(m && mutedNow(m, now)); });
+  if (job.respectDnd !== false && to.length) { const dnd = await require('./status').dndUsers(gc, now); to = to.filter((u) => !dnd.has(u)); }
+  if (!to.length) return [];
+  const prefs = await people.prefsOf(gc, to);
+  const sender = job.senderId == null ? null : users.get(job.senderId);
+  const senderName = job.senderId == null ? 'GateControl' : (sender ? sender.name : 'GateControl');
+  const groups = new Map();
+  for (const u of to) {
+    const p = prefs.get(u) || {};
+    const lang = p.lang === 'en' ? 'en' : 'de';
+    const k = `${p.preview ? 1 : 0}:${lang}`;
+    if (!groups.has(k)) groups.set(k, { users: [], preview: !!p.preview, lang });
+    groups.get(k).users.push(u);
+  }
+  const calls = [];
+  const title0 = conv && conv.kind === 'group' ? (require('./conversations').titleOf(conv) || null) : null;
+  for (const g of groups.values()) {
+    const params = { ...(job.params || {}), name: senderName };
+    if (params.startsAt != null) params.time = clock(params.startsAt, g.lang);
+    const title = t(g.lang, `push.${job.kind}_title`, params);
+    let body = g.preview ? t(g.lang, `push.${job.kind}`, params) : t(g.lang, `push.${job.kind}_neutral`, params);
+    body = body.replace(/\s+/g, ' ').trim();
+    if (body.length > BODY_MAX) body = body.slice(0, BODY_MAX - 1) + '…';
+    const data = { messageId: job.messageId, conversationId: conv.id, kind: job.kind };
+    if (job.deepLink) data.deepLink = job.deepLink;
+    if (job.reminderId) data.reminderId = job.reminderId;
+    const n = {
+      topic: TOPIC, title, body, users: g.users, priority: 'normal',
+      conversation: { id: String(conv.id), title: title0, isGroup: conv.kind === 'group' },
+      sender: { id: job.senderId == null ? 'gatecontrol' : job.senderId, name: senderName, avatarUrl: sender && sender.avatarUrl ? sender.avatarUrl : null },
+      collapseKey: `${job.kind}:${conv.id}:${job.messageId}`.slice(0, 120), data,
+    };
+    try {
+      const res = await gc.notify(n);
+      if (res && Array.isArray(res.skipped) && res.skipped.length) await log.add(gc, 'push_rate_limit', `skipped ${res.skipped.length}`, now);
+      calls.push({ users: g.users, kind: job.kind, lang: g.lang });
+    } catch (e) {
+      await log.add(gc, e && e.code === 'ERR_RATE_LIMIT' ? 'push_rate_limit' : 'push_failed', e && e.code === 'ERR_RATE_LIMIT' ? null : ((e && e.code) || 'error'), now);
+    }
+  }
+  return calls;
+}
+
+/** "Sa., 18.10. 15:00" in the server's time zone. */
+function clock(ms, lang) {
+  const d = new Date(ms);
+  const p = (n) => String(n).padStart(2, '0');
+  const days = lang === 'en' ? ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] : ['So.', 'Mo.', 'Di.', 'Mi.', 'Do.', 'Fr.', 'Sa.'];
+  return `${days[d.getDay()]} ${p(d.getDate())}.${p(d.getMonth() + 1)}. ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+/** 1.4.0: the daily story digest (topic status, not a chat push) → the calls made. */
+async function digest(gc, list, now = Date.now()) {
+  const calls = [];
+  const byLang = new Map();
+  for (const d of list) {
+    const lang = d.lang === 'en' ? 'en' : 'de';
+    const key = `${lang}:${d.names.slice(0, 3).join(',')}:${d.names.length}`;
+    if (!byLang.has(key)) byLang.set(key, { lang, names: d.names, users: [] });
+    byLang.get(key).users.push(d.userId);
+  }
+  for (const g of byLang.values()) {
+    const shown = g.names.slice(0, 3).join(', ') + (g.names.length > 3 ? ` +${g.names.length - 3}` : '');
+    try {
+      await gc.notify({ topic: 'status', title: t(g.lang, 'push.status_digest_title'), body: t(g.lang, 'push.status_digest', { names: shown, n: g.names.length }), users: g.users.slice(0, 100), priority: 'info', collapseKey: 'status-digest', data: { deepLink: 'status' } });
+      calls.push({ users: g.users, lang: g.lang });
+    } catch (e) {
+      await log.add(gc, e && e.code === 'ERR_RATE_LIMIT' ? 'push_rate_limit' : 'push_failed', e && e.code === 'ERR_RATE_LIMIT' ? null : ((e && e.code) || 'error'), now);
+    }
+  }
+  return calls;
+}
+
+module.exports = { send, custom, digest, recipients, bodyOf, pictureOf, mentions, TOPIC };

@@ -19,7 +19,7 @@ test('sync_group: creates the managed group, keeps title and members in step, me
     const id = r.conversationId;
     const conv = (await c.as(ANNA)('GET', `conversations/${id}`)).json.conversation;
     assert.deepEqual([conv.title, conv.managedBy, conv.readonly, conv.me.role], ['Familie', FAM, false, 'member']);
-    assert.deepEqual(conv.can, { send: true, editInfo: false, manageMembers: false, leave: false, setDisappearing: true });
+    assert.deepEqual(conv.can, { send: true, pin: false, editInfo: false, manageMembers: false, leave: false, setDisappearing: true });
     for (const body of [{ title: 'x' }, { add: [OMA.id] }, { remove: [ANNA.id] }, { remove: [MARC.id] }, { avatarMediaId: null }]) {
       assert.equal((await c.as(ANNA)('PATCH', `conversations/${id}`, body)).json.code, 'managed', JSON.stringify(body));
     }

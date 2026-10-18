@@ -6,7 +6,8 @@
 //
 //   GET admin/overview      counts, storage (gc.media.usage + per type), licence
 //   GET admin/settings      the settings + the media limits of GateControl (read only)
-//   PUT admin/settings      { retentionDays, allowDisappearing, editWindowMin, maxVoiceS, defaults: { readReceipts, typing, preview } } (partial)
+//   PUT admin/settings      { retentionDays, allowDisappearing, editWindowMin, maxVoiceS, allowStories, allowActions, defaults: { readReceipts, typing, preview } } (partial)
+//   1.4.0: overview.v14 — counts only (statuses, stories, polls, events, live arrivals, home actions, blocks, reminders)
 //   GET admin/log?days=     errors and limits (log.js)
 
 const store = require('./store');
@@ -52,6 +53,18 @@ async function overview(gc, now) {
       total: await n("SELECT COUNT(*) AS n FROM messages WHERE kind != 'system' OR via IS NOT NULL"),
     },
     storage: { usage: await media(gc), byKind },
+    v14: {
+      statusesActive: await n('SELECT COUNT(*) AS n FROM statuses WHERE until IS NULL OR until > ?', [now]),
+      storiesActive: await n('SELECT COUNT(*) AS n FROM stories WHERE expires_at > ?', [now]),
+      pollsOpen: await n('SELECT COUNT(*) AS n FROM polls WHERE closed_at IS NULL AND (closes_at IS NULL OR closes_at > ?)', [now]),
+      eventsUpcoming: await n('SELECT COUNT(*) AS n FROM events WHERE cancelled = 0 AND starts_at > ?', [now]),
+      arrivalsLive: await n("SELECT COUNT(*) AS n FROM arrivals WHERE state = 'live'"),
+      actionMessages7Days: await n("SELECT COUNT(*) AS n FROM action_msgs WHERE mode != 'card' AND created_at >= ?", [now - 7 * DAY]),
+      cards7Days: await n("SELECT COUNT(*) AS n FROM action_msgs WHERE mode = 'card' AND created_at >= ?", [now - 7 * DAY]),
+      blocks: await n('SELECT COUNT(*) AS n FROM blocks'),
+      remindersPending: await n('SELECT COUNT(*) AS n FROM reminders WHERE sent_at IS NULL'),
+      actionsAvailable: !!(gc.actions && typeof gc.actions.list === 'function' && typeof gc.actions.run === 'function'),
+    },
     errors7Days: await n('SELECT COALESCE(SUM(count), 0) AS n FROM log WHERE last_at >= ?', [now - 7 * DAY]),
     license: lic ? { required: !!lic.required, licensed: !!lic.licensed, state: lic.state || null, expiresAt: lic.expiresAt || null } : null,
   };

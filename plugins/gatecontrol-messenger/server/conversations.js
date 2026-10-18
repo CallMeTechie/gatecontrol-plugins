@@ -16,6 +16,7 @@ const live = require('./live');
 const people = require('./people');
 const messages = require('./messages');
 const config = require('./config');
+const social = require('./social');
 const { fail, posInt, text, userIds, iso, parseIso } = require('./util');
 
 const GROUP_MAX = 256;
@@ -75,6 +76,10 @@ async function view(ctx, conv, me, members) {
   const viewerTyping = (prefs.get(ctx.viewer) || {}).typing !== false;
   const isAdmin = me.role === 'admin';
   const managed = conv.managed_by || null;
+  // 1.4.0: last seen / online, blocks, pinned messages, the next event
+  const soc = await social.load(ctx);
+  const withPresence = (f) => { const p = social.presence(soc, ctx.viewer, f.userId, ctx.now); return { ...f, online: p.online, lastSeenAt: p.lastSeenAt }; };
+  const iBlocked = !!(peerId && soc.hasBlocked(ctx.viewer, peerId));
   let avatarUrl = null;
   if (isGroup && conv.avatar_media_id && ctx.portal) {
     try { avatarUrl = await ctx.gc.media.url(conv.avatar_media_id, { user: ctx.viewer, ttlS: messages.URL_TTL_S }); } catch { avatarUrl = null; }
@@ -83,7 +88,7 @@ async function view(ctx, conv, me, members) {
     id: conv.id,
     kind: conv.kind,
     title: isGroup ? titleOf(conv) : (peer && peer.name),
-    peer,
+    peer: peer ? { ...withPresence(peer), blocked: iBlocked } : null,
     avatarUrl,
     avatarMediaId: isGroup ? conv.avatar_media_id || null : null,
     managedBy: managed,
@@ -93,7 +98,7 @@ async function view(ctx, conv, me, members) {
     createdAt: iso(conv.created_at),
     updatedAt: iso(Math.max(conv.updated_at, me.updated_at || 0)),
     lastMessageId: conv.last_msg_id || null,
-    members: members.map((m) => ({ ...people.face(m.user_id, ctx.users), role: m.role, joinedAt: iso(m.joined_at) })),
+    members: members.map((m) => ({ ...withPresence(people.face(m.user_id, ctx.users)), role: m.role, joinedAt: iso(m.joined_at) })),
     me: { role: me.role, mutedUntil: iso(me.muted_until), notify: me.notify, lastReadId: me.last_read_id, lastDeliveredId: me.last_delivered_id },
     muted: mutedNow(me, ctx.now),
     unread: await messages.unreadCount(ctx.gc, me),
@@ -102,8 +107,12 @@ async function view(ctx, conv, me, members) {
     readUpTo: rc.readUpTo,
     deliveredUpTo: rc.deliveredUpTo,
     receipts: rc.receipts,
+    archived: !!me.archived,
+    pinned: await require('./tools').pinnedFor(ctx, conv, me),
+    nextEvent: await require('./eventmsg').nextEvent(ctx, me),
     can: {
-      send: !conv.readonly && (isGroup || !!(peer && !peer.gone)),
+      send: !conv.readonly && (isGroup || !!(peer && !peer.gone && !iBlocked)),
+      pin: !conv.readonly && (!managed || isAdmin),
       editInfo: isGroup && !managed && !conv.readonly,
       manageMembers: isGroup && !managed && !conv.readonly && isAdmin,
       leave: isGroup && !managed,
@@ -190,15 +199,18 @@ async function setAvatar(ctx, conv, mediaId) {
 async function create(ctx, body) {
   const b = body && typeof body === 'object' && !Array.isArray(body) ? body : null;
   if (!b) throw fail('invalid');
-  const others = userIds(b.userIds, GROUP_MAX - 1).filter((id) => id !== ctx.viewer);
+  let others = userIds(b.userIds, GROUP_MAX - 1).filter((id) => id !== ctx.viewer);
   checkUsers(ctx, others);
+  // 1.4.0: the creator's default for disappearing messages (when the administrator allows them)
+  const myPrefs = (await people.prefsOf(ctx.gc, [ctx.viewer])).get(ctx.viewer);
+  const dis = ctx.cfg.allowDisappearing ? myPrefs.privacy.defaultDisappearingS : 0;
   if (b.kind === 'direct') {
     if (others.length !== 1 || b.title != null || b.avatarMediaId != null) throw fail('invalid');
     const peer = others[0];
     const key = `${Math.min(ctx.viewer, peer)}:${Math.max(ctx.viewer, peer)}`;
     const old = await store.one(ctx.gc, 'SELECT * FROM conversations WHERE direct_key = ?', [key]);
     if (old) return { conv: old, created: false };
-    const r = await store.run(ctx.gc, "INSERT INTO conversations (kind, direct_key, created_by, created_at, updated_at) VALUES ('direct', ?, ?, ?, ?)", [key, ctx.viewer, ctx.now, ctx.now]);
+    const r = await store.run(ctx.gc, "INSERT INTO conversations (kind, direct_key, created_by, created_at, updated_at, disappearing_s) VALUES ('direct', ?, ?, ?, ?, ?)", [key, ctx.viewer, ctx.now, ctx.now, dis]);
     const conv = await getConv(ctx.gc, r.lastInsertRowid);
     await addMember(ctx.gc, conv, ctx.viewer, 'member', ctx.now);
     await addMember(ctx.gc, conv, peer, 'member', ctx.now);
@@ -206,7 +218,13 @@ async function create(ctx, body) {
   }
   if (b.kind !== 'group' || !others.length) throw fail('invalid');
   const title = text(b.title, TITLE_MAX);
-  const r = await store.run(ctx.gc, "INSERT INTO conversations (kind, title_enc, created_by, created_at, updated_at) VALUES ('group', ?, ?, ?, ?)", [seal.seal(title), ctx.viewer, ctx.now, ctx.now]);
+  // 1.4.0: people whose privacy.groupAdd excludes the creator are left out (listed in `skipped`)
+  const soc = await social.load(ctx);
+  const skipped = others.filter((id) => !social.mayAdd(soc, ctx.viewer, id));
+  others = others.filter((id) => !skipped.includes(id));
+  if (!others.length) throw fail('not_allowed');
+  ctx.skipped = skipped;
+  const r = await store.run(ctx.gc, "INSERT INTO conversations (kind, title_enc, created_by, created_at, updated_at, disappearing_s) VALUES ('group', ?, ?, ?, ?, ?)", [seal.seal(title), ctx.viewer, ctx.now, ctx.now, dis]);
   const conv = await getConv(ctx.gc, r.lastInsertRowid);
   await addMember(ctx.gc, conv, ctx.viewer, 'admin', ctx.now);
   for (const id of others) await addMember(ctx.gc, conv, id, 'member', ctx.now);
@@ -277,7 +295,10 @@ async function patch(ctx, conv, me, members, body) {
   }
   if (b.add !== undefined) {
     if (!isAdmin) throw fail('not_admin');
-    const ids = checkUsers(ctx, userIds(b.add, GROUP_MAX)).filter((id) => !members.some((m) => m.user_id === id));
+    let ids = checkUsers(ctx, userIds(b.add, GROUP_MAX)).filter((id) => !members.some((m) => m.user_id === id));
+    const soc = await social.load(ctx);
+    ctx.skipped = ids.filter((id) => !social.mayAdd(soc, ctx.viewer, id));
+    ids = ids.filter((id) => !ctx.skipped.includes(id));
     if (members.length + ids.length > GROUP_MAX) throw fail('too_many');
     for (const id of ids) await addMember(ctx.gc, conv, id, 'member', ctx.now);
     if (ids.length) {

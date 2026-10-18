@@ -7,6 +7,10 @@
 //   * files of deleted messages / replaced group pictures (media.orphan) are deleted from GateControl's
 //     media store (retried until it works);
 //   * the admin log keeps 30 days.
+//   1.4.0: expired statuses and stories (with their files), polls past closesAt, event reminders and
+//   departure hints, live arrivals after 3 h, open action requests after 24 h and ended grants, due
+//   "remind me" pushes, the daily story digest (hourly check), and the poll / event / arrival / action rows
+//   of purged messages.
 
 const store = require('./store');
 const live = require('./live');
@@ -14,6 +18,15 @@ const log = require('./log');
 const config = require('./config');
 const messages = require('./messages');
 const conversations = require('./conversations');
+const people = require('./people');
+const status = require('./status');
+const polls = require('./polls');
+const eventmsg = require('./eventmsg');
+const arrival = require('./arrival');
+const homeactions = require('./homeactions');
+const tools = require('./tools');
+const rich = require('./rich');
+const push = require('./push');
 
 const BATCH = 500;
 const HOUR = 3600000;
@@ -29,6 +42,7 @@ async function purge(gc, rows, reason, box, now = Date.now()) {
   }
   const ids = rows.map((r) => r.id);
   await messages.orphanMedia(gc, ids);
+  await rich.cleanup({ gc, now, box }, ids);
   for (let i = 0; i < ids.length; i += 90) {
     const part = ids.slice(i, i + 90);
     const marks = store.marks(part.length);
@@ -76,7 +90,8 @@ async function tick(gc, now = Date.now()) {
   if (state.ticking) return null;
   state.ticking = true;
   const box = live.outbox();
-  const out = { expired: 0, retention: 0, media: 0 };
+  const out = { expired: 0, retention: 0, media: 0, statuses: 0, stories: 0, polls: 0, events: 0, arrivals: 0, actions: 0, reminders: 0, digest: 0 };
+  let ctx = null;
   const step = async (name, fn) => {
     try { return await fn(); } catch (e) {
       gc.log.warn('background step failed', name, (e && (e.code || e.message)) || 'error');
@@ -84,14 +99,38 @@ async function tick(gc, now = Date.now()) {
       return 0;
     }
   };
+  // a step in its own transaction: nothing it queued goes out when it was rolled back
+  const txStep = (name, fn) => {
+    const ev = box.events.length;
+    const pu = box.pushes.length;
+    const af = box.after.length;
+    return step(name, () => store.tx(gc, fn).catch((e) => { box.events.length = ev; box.pushes.length = pu; box.after.length = af; throw e; }));
+  };
   try {
+    ctx = { gc, now, viewer: null, users: await people.users(gc, now), cfg: await config.load(gc), portal: false, box };
     out.expired = await step('expire', () => store.tx(gc, () => expire(gc, now, box)));
+    const st = await txStep('status', () => status.expire(ctx));
+    if (st) { out.statuses = st.statuses; out.stories = st.stories; }
+    out.polls = await txStep('polls', () => polls.closeDue(ctx));
+    out.events = await txStep('events', () => eventmsg.due(ctx));
+    out.arrivals = await txStep('arrivals', () => arrival.autoStop(ctx));
+    out.actions = await txStep('actions', () => homeactions.expire(ctx));
+    out.reminders = await txStep('reminders', () => tools.dueReminders(ctx));
     if (now - state.lastHourly >= HOUR) {
       state.lastHourly = now;
       out.retention = await step('retention', () => store.tx(gc, () => retention(gc, now, box)));
       await step('log', () => log.purge(gc, now));
+      const list = await txStep('digest', () => status.digest(ctx));
+      if (Array.isArray(list) && list.length) { out.digest = list.length; await step('digest_push', () => push.digest(gc, list, now)); }
     }
     await live.flush(gc, box);
+    const jobs = box.pushes;
+    box.pushes = [];
+    for (const j of jobs) await step('push', () => push.send(gc, j, ctx.users, now));
+    const after = box.after;
+    box.after = [];
+    for (const fn of after) await step('after', fn);
+    if (box.events.length) await live.flush(gc, box);
     out.media = await step('media', () => cleanMedia(gc, now));
   } finally {
     state.ticking = false;

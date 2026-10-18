@@ -64,8 +64,8 @@ function isActive(userId, convId, now = Date.now()) {
   return true;
 }
 
-/** A batch of events to send after the commit. */
-function outbox() { return { events: [], pushes: [] }; }
+/** A batch of events to send after the commit (1.4.0: `after` — tasks run after the commit, e.g. calls of other plugins). */
+function outbox() { return { events: [], pushes: [], after: [] }; }
 
 /** Queue an event for `users` (ids; duplicates and empty lists are dropped). */
 function queue(box, users, type, data) {
