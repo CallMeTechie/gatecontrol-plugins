@@ -199,7 +199,7 @@ test('push: a video file with a preview carries the preview as push picture (Gat
     assert.equal(c.pushes().length, n + 2);
     assert.ok(c.pushes().slice(-2).every((p) => !p.image));
   });
-  await withHost({}, async (host, c) => {
+  await withHost({ gatecontrol: '1.177.0' }, async (host, c) => {
     const d = await c.direct(ANNA, MARC);
     await c.send(ANNA, d.id, { kind: 'file', mediaId: await c.upload(ANNA, MP4, 'video/mp4'), thumbMediaId: await c.upload(ANNA, png(64, 36), 'image/png') });
     assert.equal(c.pushes().at(-1).image, undefined, 'GateControl 1.177.0: no picture');

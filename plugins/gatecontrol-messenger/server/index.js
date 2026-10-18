@@ -11,8 +11,13 @@
 //   media      gc.media (uploads by the apps / GC.upload), hook mediaAccess: members only
 //   live       gc.events (message.new, …), chat pushes (notifyTopics[].chat) — server/live.js, server/push.js
 //   background disappearing messages, retention, file clean-up — server/jobs.js
+//   1.4.0      status and stories (status.js), privacy / blocks / last seen (social.js), chat tools (tools.js,
+//              suggest.js), polls, events, live arrival, home actions and plugin cards (polls.js, eventmsg.js,
+//              arrival.js, homeactions.js, rich.js), Familie's services (familie.js), routes in api14.js;
+//              service set_place_status (services.js)
 //
-// Needs GateControl ≥ 1.177.0 (media, realtime events, chat notifications, services).
+// Needs GateControl ≥ 1.177.0 (media, realtime events, chat notifications, services); Familie integration
+// needs gc.services.available (1.178.0); home actions use gc.actions (1.166.0+, interactive runs 1.180.0).
 
 const ui = require('./ui');
 const api = require('./api');
@@ -24,6 +29,9 @@ const store = require('./store');
 const live = require('./live');
 const jobs = require('./jobs');
 const services = require('./services');
+const social = require('./social');
+const status = require('./status');
+const homeactions = require('./homeactions');
 const texts = require('./texts.json');
 const { STATUS, isKnown } = require('./util');
 
@@ -40,8 +48,11 @@ function errorResponse(e, lang) {
 }
 
 /** The request context of a chat call. */
-async function context(gc, user, now) {
-  return { gc, viewer: user ? user.id : null, now, users: await people.users(gc, now), cfg: await config.load(gc), portal: !(user && user.app === true), box: live.outbox() };
+async function context(gc, user, now, lang) {
+  const ctx = { gc, viewer: user ? user.id : null, now, lang: lang === 'en' ? 'en' : 'de', users: await people.users(gc, now), cfg: await config.load(gc), portal: !(user && user.app === true), box: live.outbox() };
+  // 1.4.0: pictures of people whose avatar privacy leaves the viewer out are not handed out
+  if (ctx.viewer != null) ctx.users = social.maskUsers(await social.load(ctx), ctx.users, ctx.viewer);
+  return ctx;
 }
 
 async function ensureKey(gc) {
@@ -63,6 +74,7 @@ module.exports = {
     jobs.reset();
     config.reset();
     people.reset();
+    homeactions.reset();
     seal._reset();
     await seal.init(gc);
     gc.log.info('messenger started', gc.plugin.version);
@@ -85,7 +97,7 @@ module.exports = {
         if (req.user && req.user.kiosk === true && Number.isSafeInteger(req.user.id)) await store.tx(gc, () => people.markKiosk(gc, req.user.id, now));
         return errorResponse({ code: refusal }, lang);
       }
-      const ctx = await context(gc, req.user, now);
+      const ctx = await context(gc, req.user, now, lang);
       if (!ctx.users.has(ctx.viewer)) return errorResponse({ code: 'forbidden' }, lang);
       await store.tx(gc, () => people.touch(gc, req.user, lang, now));
       let res;
@@ -133,6 +145,12 @@ module.exports = {
     const m = await store.one(gc, 'SELECT * FROM media WHERE media_id = ?', [mediaId]);
     if (!m) return owner != null && owner === user.id;
     if (m.orphan) return false;
+    // 1.4.0: story files — the story's audience while it lasts (and the owner)
+    if (m.role === 'story' || m.role === 'story_thumb') {
+      await ensureKey(gc);
+      const ctx = { gc, viewer: user.id, now: Date.now(), users: await people.users(gc), cfg: await config.load(gc) };
+      return status.mediaAllowed(ctx, m);
+    }
     const me = await store.one(gc, 'SELECT * FROM members WHERE conv_id = ? AND user_id = ? AND left_at IS NULL', [m.conv_id, user.id]);
     if (!me) return false;
     if (m.role === 'avatar') return true;

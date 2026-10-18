@@ -4,7 +4,8 @@
 // gc.services.call → hook service({ name, caller, user, payload })):
 //
 //   send_message { conversation, text, title? }
-//     conversation 'family'       — the caller's managed group with the key 'family' (sync_group)
+//     conversation 'family'       — the caller's managed group with the key 'family' (sync_group); 1.4.0: for a
+//                                   caller without one, the group "Familie" of gatecontrol-familie
 //                  'group:<id>'   — a group the caller manages, or one the calling `user` is a member of
 //                  'user:<id>'    — the caller's notice channel for that person (created on first use:
 //                                   a group with only that person, read-only for them; `title` names it,
@@ -33,6 +34,14 @@
 //                                removed for good, the members get conversation.remove
 //     → { ok: true, conversationId, released, deleted, admins }   not_found when the caller has no such group
 //
+//   1.4.0: send_message { …, card: { kind: 'doorbell' | 'notice', title, text?, imageBase64? (JPEG/WebP/PNG,
+//     ≤ 300 KB — note GateControl caps a service payload at 16 KB), actions: ['<id>' (the caller's) | '<plugin>/<id>'] (≤ 4),
+//     link?: { label, route } } } → a message kind 'card' (senderId null, via the caller) with buttons that run
+//     the action as the person pressing (README "Home actions and plugin cards"); `text` may be left out.
+//
+//   set_place_status { userId, place: string | null }   (1.4.0, from gatecontrol-familie only)
+//     Familie's presence: shown in that person's status when the preset is auto_place → { ok, applied }
+//
 // Refusals answer { ok: false, code } (invalid | not_found | forbidden) and are logged
 // (Protokoll: service_refused, with the code — never the text).
 
@@ -42,6 +51,8 @@ const live = require('./live');
 const log = require('./log');
 const conversations = require('./conversations');
 const messages = require('./messages');
+const homeactions = require('./homeactions');
+const status = require('./status');
 const { fail, isKnown, posInt, text, optText, iso } = require('./util');
 
 const KEY_RE = /^[a-z0-9_-]{1,32}$/;
@@ -55,7 +66,8 @@ async function managed(gc, caller, key) {
 async function target(ctx, caller, user, payload) {
   const c = typeof payload.conversation === 'string' ? payload.conversation : '';
   if (c === 'family') {
-    const conv = await managed(ctx.gc, caller, 'family');
+    // the caller's own group 'family' — 1.4.0: else Familie's group "Familie" (e.g. the door's doorbell cards)
+    const conv = (await managed(ctx.gc, caller, 'family')) || (await managed(ctx.gc, 'gatecontrol-familie', 'family'));
     if (!conv) throw fail('not_found');
     return conv;
   }
@@ -102,6 +114,7 @@ function noticeText(payload) {
 /** One message into one target → { conversationId, messageId } plus the push job for after the commit. */
 async function sendTo(ctx, caller, user, payload, conversation, body) {
   const conv = await target(ctx, caller, user, { ...payload, conversation });
+  if (payload.card != null) return sendCard(ctx, caller, conv, payload.card);
   const id = await messages.system(ctx, conv, 'notice', null, { text: body, via: caller });
   const members = await conversations.membersOf(ctx.gc, conv.id);
   const row = await store.one(ctx.gc, 'SELECT * FROM messages WHERE id = ?', [id]);
@@ -110,9 +123,33 @@ async function sendTo(ctx, caller, user, payload, conversation, body) {
   return { conversationId: conv.id, messageId: id };
 }
 
+/** 1.4.0: a plugin card into one conversation → { conversationId, messageId } */
+async function sendCard(ctx, caller, conv, cardRaw) {
+  const card = homeactions.cleanCard(caller, cardRaw);
+  const meta = { card: card.meta };
+  const id = await messages.insert(ctx, conv, { senderId: null, kind: 'card', text: card.text, meta, via: caller });
+  await homeactions.createCard(ctx, conv, id, card);
+  const members = await conversations.membersOf(ctx.gc, conv.id);
+  const row = await store.one(ctx.gc, 'SELECT * FROM messages WHERE id = ?', [id]);
+  messages.queueNew(ctx, conv, members, row);
+  ctx.box.pushes.push({ conv, members, row, text: card.text, meta, title: conversations.titleOf(conv) });
+  return { conversationId: conv.id, messageId: id };
+}
+
+/** 1.4.0: set_place_status (Familie's presence) → { applied } */
+async function setPlaceStatus(ctx, caller, payload) {
+  if (caller !== 'gatecontrol-familie') throw fail('forbidden');
+  const uid = posInt(payload.userId);
+  if (!uid || !ctx.users.has(uid)) throw fail('invalid');
+  if (payload.place !== null && typeof payload.place !== 'string') throw fail('invalid');
+  const place = payload.place === null ? null : optText(payload.place, 80);
+  const r = await status.setPlace(ctx, uid, place);
+  return { applied: r.applied };
+}
+
 /** send_message with one target (a string) → { conversationId, messageId } */
 async function sendMessage(ctx, caller, user, payload) {
-  return sendTo(ctx, caller, user, payload, payload.conversation, noticeText(payload));
+  return sendTo(ctx, caller, user, payload, payload.conversation, payload.card != null && payload.text == null ? null : noticeText(payload));
 }
 
 /**
@@ -123,7 +160,7 @@ async function sendMessage(ctx, caller, user, payload) {
 async function sendMany(ctx, caller, user, payload) {
   const list = payload.conversation;
   if (!list.length || list.length > TARGETS_MAX || !list.every((c) => typeof c === 'string' && c.length <= 64)) throw fail('invalid');
-  const body = noticeText(payload);
+  const body = payload.card != null && payload.text == null ? null : noticeText(payload);
   const results = [];
   for (const c of [...new Set(list)]) {
     const ev = ctx.box.events.length;
@@ -210,6 +247,9 @@ async function releaseGroup(ctx, caller, payload) {
     await store.run(ctx.gc, 'UPDATE media SET orphan = 1, msg_id = NULL WHERE conv_id = ?', [conv.id]);
     await store.run(ctx.gc, 'DELETE FROM reactions WHERE msg_id IN (SELECT id FROM messages WHERE conv_id = ?)', [conv.id]);
     await store.run(ctx.gc, 'DELETE FROM hidden WHERE msg_id IN (SELECT id FROM messages WHERE conv_id = ?)', [conv.id]);
+    // 1.4.0: polls, events, arrivals, actions, reminders of these messages
+    const gone = (await store.all(ctx.gc, 'SELECT id FROM messages WHERE conv_id = ?', [conv.id])).map((r) => r.id);
+    await require('./rich').cleanup(ctx, gone);
     await store.run(ctx.gc, 'DELETE FROM messages WHERE conv_id = ?', [conv.id]);
     for (const id of ids) await conversations.dropMember(ctx.gc, conv.id, id, ctx.now);
     // the member rows stay (left): GET conversations?since= lists the chat under `removed`
@@ -248,6 +288,7 @@ async function handle(ctx, { name, caller, user, payload }, flush) {
     else if (name === 'send_message') out = await store.tx(ctx.gc, () => sendMessage(ctx, who, u, p));
     else if (name === 'sync_group') out = await store.tx(ctx.gc, () => syncGroup(ctx, who, p));
     else if (name === 'release_group') out = await store.tx(ctx.gc, () => releaseGroup(ctx, who, p));
+    else if (name === 'set_place_status') out = await store.tx(ctx.gc, () => setPlaceStatus(ctx, who, p));
     else throw new Error('unknown service');
     await flush();
     return { ok: true, ...out };

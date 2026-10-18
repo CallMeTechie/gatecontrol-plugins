@@ -122,7 +122,7 @@ test('picture messages (1.1.0): the preview as the push picture on GateControl â
     await c.send(ANNA, g.id, { text: 'Text' });
     assert.ok(c.pushes().slice(-2).every((p) => !p.image));
   });
-  await withHost({}, async (host, c) => {
+  await withHost({ gatecontrol: '1.177.0' }, async (host, c) => {
     const d = await c.direct(ANNA, MARC);
     await c.send(ANNA, d.id, { kind: 'image', mediaId: await c.upload(ANNA, pic, 'image/png') });
     const p = c.pushes().at(-1);
@@ -178,12 +178,14 @@ test('push failures and the host\'s limits are logged (Protokoll), the message i
 
 test('plugin.json: the chat topic "message", app + events + media + services', () => {
   const m = require('../plugin.json');
-  assert.deepEqual(m.notifyTopics, [{ id: 'message', label: { de: 'Chat-Nachrichten', en: 'Chat messages' }, chat: true, default: true }]);
+  assert.deepEqual(m.notifyTopics, [{ id: 'message', label: { de: 'Chat-Nachrichten', en: 'Chat messages' }, chat: true, default: true },
+    // 1.4.0: the daily story digest (not a chat push, off by default)
+    { id: 'status', label: { de: 'Status-Zusammenfassung', en: 'Status digest' }, default: false }]);
   assert.equal(m.permissions.app, true);
   assert.equal(m.permissions.events, true);
   assert.equal(m.permissions.notify, true);
   assert.equal(m.media.maxBytes, 25 * 1024 * 1024);
   assert.equal(m.media.quotaDefault, '10GB');
   for (const t of ['image/jpeg', 'image/webp', 'audio/ogg', 'audio/mp4', 'audio/webm', 'application/pdf']) assert.ok(m.media.types.includes(t), t);
-  assert.deepEqual(Object.keys(m.services.provides), ['send_message', 'sync_group', 'release_group']);
+  assert.deepEqual(Object.keys(m.services.provides), ['send_message', 'sync_group', 'release_group', 'set_place_status']);
 });

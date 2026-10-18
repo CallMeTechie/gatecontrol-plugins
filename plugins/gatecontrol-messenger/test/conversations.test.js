@@ -45,7 +45,7 @@ test('group: creator is admin, system message "created", members see it; title r
     const g = r.json.conversation;
     assert.equal(g.title, 'Wochenende');
     assert.equal(g.me.role, 'admin');
-    assert.deepEqual(g.can, { send: true, editInfo: true, manageMembers: true, leave: true, setDisappearing: true });
+    assert.deepEqual(g.can, { send: true, pin: true, editInfo: true, manageMembers: true, leave: true, setDisappearing: true });
     assert.equal(g.lastMessage.kind, 'system');
     assert.deepEqual(g.lastMessage.system, { event: 'created', by: ANNA.id, title: 'Wochenende' });
     const forMarc = (await c.as(MARC)('GET', `conversations/${g.id}`)).json.conversation;
@@ -189,7 +189,7 @@ test('people: every enabled account but oneself; accounts seen on a kiosk device
   await withHost({ users: [ADMIN, ANNA, MARC, LENA, OMA, { id: 6, name: 'Küche', role: 'user' }, { id: 7, name: 'Alt', role: 'user', disabled: true }] }, async (host, c) => {
     let ppl = (await c.as(ANNA)('GET', 'people')).json.people;
     assert.deepEqual(ppl.map((p) => p.name), ['admin', 'Küche', 'Lena', 'Marc', 'Oma']);
-    assert.deepEqual(Object.keys(ppl[0]).sort(), ['avatarUrl', 'color', 'colorHex', 'id', 'initials', 'name']);
+    assert.deepEqual(Object.keys(ppl[0]).sort(), ['avatarUrl', 'blocked', 'color', 'colorHex', 'id', 'initials', 'lastSeenAt', 'name', 'online'], '1.4.0: online, lastSeenAt, blocked');
     await c.call({ id: 6, name: 'Küche', role: 'user', portal: true, loggedIn: true, kiosk: true }, 'GET', 'me');
     ppl = (await c.as(ANNA)('GET', 'people')).json.people;
     assert.ok(!ppl.some((p) => p.id === 6), 'the wall tablet account is no person to chat with');

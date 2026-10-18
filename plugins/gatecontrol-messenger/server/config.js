@@ -17,6 +17,8 @@ const DEFAULTS = Object.freeze({
   allowDisappearing: true,
   editWindowMin: 15,
   maxVoiceS: 300,
+  allowStories: true,     // 1.4.0: stories (24 h) — the status line itself is always there
+  allowActions: true,     // 1.4.0: home actions in chats (action messages, plugin card buttons)
   defaults: Object.freeze({ readReceipts: true, typing: true, preview: true }),
 });
 
@@ -33,6 +35,8 @@ async function load(gc) {
     allowDisappearing: typeof raw.allowDisappearing === 'boolean' ? raw.allowDisappearing : DEFAULTS.allowDisappearing,
     editWindowMin: EDIT_WINDOW_MIN.includes(raw.editWindowMin) ? raw.editWindowMin : DEFAULTS.editWindowMin,
     maxVoiceS: VOICE_MAX_S.includes(raw.maxVoiceS) ? raw.maxVoiceS : DEFAULTS.maxVoiceS,
+    allowStories: typeof raw.allowStories === 'boolean' ? raw.allowStories : DEFAULTS.allowStories,
+    allowActions: typeof raw.allowActions === 'boolean' ? raw.allowActions : DEFAULTS.allowActions,
     defaults: {
       readReceipts: typeof d.readReceipts === 'boolean' ? d.readReceipts : true,
       typing: typeof d.typing === 'boolean' ? d.typing : true,
@@ -50,6 +54,8 @@ async function update(gc, body) {
   const next = JSON.parse(JSON.stringify(cur));
   if (b.retentionDays !== undefined) { if (!RETENTION_DAYS.includes(b.retentionDays)) throw fail('invalid'); next.retentionDays = b.retentionDays; }
   if (b.allowDisappearing !== undefined) next.allowDisappearing = bool(b.allowDisappearing);
+  if (b.allowStories !== undefined) next.allowStories = bool(b.allowStories);
+  if (b.allowActions !== undefined) next.allowActions = bool(b.allowActions);
   if (b.editWindowMin !== undefined) { if (!EDIT_WINDOW_MIN.includes(b.editWindowMin)) throw fail('invalid'); next.editWindowMin = b.editWindowMin; }
   if (b.maxVoiceS !== undefined) { if (!VOICE_MAX_S.includes(b.maxVoiceS)) throw fail('invalid'); next.maxVoiceS = b.maxVoiceS; }
   if (b.defaults !== undefined) {
@@ -57,7 +63,7 @@ async function update(gc, body) {
     for (const k of ['readReceipts', 'typing', 'preview']) if (b.defaults[k] !== undefined) next.defaults[k] = bool(b.defaults[k]);
   }
   await store.tx(gc, async () => {
-    for (const k of ['retentionDays', 'allowDisappearing', 'editWindowMin', 'maxVoiceS', 'defaults']) {
+    for (const k of ['retentionDays', 'allowDisappearing', 'editWindowMin', 'maxVoiceS', 'allowStories', 'allowActions', 'defaults']) {
       await store.run(gc, 'INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value', [k, JSON.stringify(next[k])]);
     }
   });

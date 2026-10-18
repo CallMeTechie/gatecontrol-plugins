@@ -69,7 +69,12 @@
 //   user given as { disabled: true }, and for allowed not a boolean). host.kiosk is the plugin's set
 //   of kiosk users; opts.kiosk: [userId] pre-fills it (what an earlier run left behind).
 //   permissions.actions (GateControl ≥ 1.166.0): gc.actions.list({ userId, lang }) and
-//   gc.actions.run({ userId, plugin, id, lang, state? }) — the quick actions of OTHER plugins, given by the test:
+//   gc.actions.run({ userId, plugin, id, lang, state? }) — the quick actions of OTHER plugins, given by the test
+//   (opts.actionsApi: false → no gc.actions at all. GateControl ≥ 1.180.0 via opts.gatecontrol: permissions.actions may be
+//   { interactive: true }; list items also carry actionId, label, needsConfirm, confirmWhen; run takes actionId
+//   '<plugin>/<id>' (not with plugin + id), via, interactive (with { interactive: true } only, else ERR_ACTIONS_DENIED:
+//   the target gets the viewer { …, automation: false, interactive: true, via }) and answers { ok, result, code };
+//   60 runs per minute; gc.services.call payloads up to 512 KB):
 //     opts.actions: [{ plugin: 'gatecontrol-smarthome', pluginName: 'Smart Home',
 //       quickActions: (viewer, lang) => [{ id, title, subtitle, kind, state, … }]   (or actions: [ … ])
 //       runQuickAction: (viewer, id, lang) => ({ ok, message, state }) }]          (default { ok: true })
@@ -217,6 +222,7 @@ const SERVICE_NAME_RE = /^[a-z][a-z0-9_]{0,31}$/;
 const SERVICE_REF_RE = /^([a-z0-9]+(?:-[a-z0-9]+)*):([a-z][a-z0-9_]{0,31})$/;
 const SERVICES_PER_HOUR = 60;
 const SERVICE_JSON_MAX = 16 * 1024;
+const SERVICE_PAYLOAD_MAX_180 = 512 * 1024;
 
 function hostError(code, message) {
   return Object.assign(new Error(message), { code });
@@ -609,7 +615,11 @@ async function createHost(pluginDir, opts = {}) {
   // permissions.kiosk: a boolean (GateControl ≥ 1.165.0, manifest.js)
   if (perms.kiosk != null && typeof perms.kiosk !== 'boolean') throw hostError('ERR_INVALID', 'plugin.json: permissions.kiosk: invalid');
   // permissions.actions: a boolean (GateControl ≥ 1.166.0, manifest.js)
-  if (perms.actions != null && typeof perms.actions !== 'boolean') throw hostError('ERR_INVALID', 'plugin.json: permissions.actions: invalid');
+  // GateControl ≥ 1.180.0 also { interactive: boolean } (gc.actions runs as a person's tap)
+  if (perms.actions != null && typeof perms.actions !== 'boolean'
+    && !(perms.actions && typeof perms.actions === 'object' && !Array.isArray(perms.actions) && Object.keys(perms.actions).length === 1 && typeof perms.actions.interactive === 'boolean')) {
+    throw hostError('ERR_INVALID', 'plugin.json: permissions.actions: invalid');
+  }
   // permissions.background.intervalSeconds: 5 … 86400 (GateControl ≥ 1.169.0; 10 before)
   if (perms.background != null) {
     const iv = perms.background && perms.background.intervalSeconds;
@@ -1012,7 +1022,8 @@ async function createHost(pluginDir, opts = {}) {
       if (!u || u.disabled) throw hostError('ERR_INVALID', 'unknown or disabled user');
       user = { id: u.id, name: u.name, role: u.role };
     }
-    const payload = boundedJson(a.payload, SERVICE_JSON_MAX, 'ERR_INVALID', 'payload');
+    // GateControl ≥ 1.180.0: a payload may be up to 512 KB (the answer stays ≤ 16 KB)
+    const payload = boundedJson(a.payload, hostAtLeast('1.180.0') ? SERVICE_PAYLOAD_MAX_180 : SERVICE_JSON_MAX, 'ERR_INVALID', 'payload');
     const p = providers.find((x) => x.plugin === a.plugin);
     const offered = p ? (Array.isArray(p.provides) ? p.provides : Object.keys(p.provides || {})) : [];
     if (!p || !offered.includes(a.service) || typeof p.service !== 'function') throw hostError('ERR_SERVICE_UNAVAILABLE', 'the providing plugin or service is not available');
@@ -1047,15 +1058,23 @@ async function createHost(pluginDir, opts = {}) {
     return !!p && offered.includes(a.service) && typeof p.service === 'function';
   };
 
-  // gc.actions.* (GateControl ≥ 1.166.0, hostApi.js actionsList / actionsRun)
+  // gc.actions.* (GateControl ≥ 1.166.0, hostApi.js actionsList / actionsRun; 1.180.0: actionId, interactive,
+  // { ok, result, code } answers, 60 runs per minute)
+  const actionsOn = perms.actions === true || !!(perms.actions && typeof perms.actions === 'object');
+  const actionsInteractive = !!(perms.actions && typeof perms.actions === 'object' && perms.actions.interactive === true);
   const automationViewer = (args) => {
-    if (perms.actions !== true) throw hostError('ERR_ACTIONS_DENIED', 'this plugin has no actions permission');
+    if (!actionsOn) throw hostError('ERR_ACTIONS_DENIED', 'this plugin has no actions permission');
+    if (args && args.interactive != null && args.interactive !== false) {
+      if (args.interactive !== true) throw hostError('ERR_INVALID', 'interactive must be a boolean');
+      if (!actionsInteractive) throw hostError('ERR_ACTIONS_DENIED', 'this plugin may not run actions interactively (permissions.actions { interactive: true })');
+    }
     const userId = args && args.userId;
     if (!Number.isSafeInteger(userId) || userId <= 0) throw hostError('ERR_INVALID', 'invalid user id');
     const lang = args.lang;
     if (!(lang == null || lang === 'de' || lang === 'en')) throw hostError('ERR_INVALID', "lang must be 'de' or 'en'");
     const u = allUsers.find((x) => x.id === userId);
     if (!u || u.disabled) throw hostError('ERR_INVALID', 'unknown or disabled user');
+    if (args.interactive === true) return { user: { id: u.id, name: u.name, role: u.role, portal: true, loggedIn: true, automation: false, interactive: true, via: manifest.id }, lang: lang || 'de' };
     return { user: { id: u.id, name: u.name, role: u.role, portal: true, loggedIn: true, automation: true, via: manifest.id }, lang: lang || 'de' };
   };
   const listOf = async (p, viewer, lang) => checkQuickActions(wire(typeof p.quickActions === 'function' ? await p.quickActions(wire(viewer), lang) : (p.actions || [])));
@@ -1066,25 +1085,37 @@ async function createHost(pluginDir, opts = {}) {
       let list;
       try { list = await listOf(p, user, lang); } catch { continue; }
       for (const a of list) {
-        out.push({
+        const item = {
           plugin: p.plugin, pluginName: p.pluginName || p.plugin, id: a.id, title: a.title, subtitle: a.subtitle, icon: a.icon, kind: a.kind, state: a.state,
           verbs: a.verbs, targets: a.targets, device: a.device,
-        });
+        };
+        // GateControl ≥ 1.180.0 (opt-in): actionId '<plugin>/<id>', label (= title), needsConfirm, confirmWhen
+        if (hostAtLeast('1.180.0')) Object.assign(item, { actionId: `${p.plugin}/${a.id}`, label: a.title, needsConfirm: a.confirm === true || (a.kind === 'toggle' && a.confirmWhen != null && (a.state == null || a.state !== a.confirmWhen)), confirmWhen: a.confirmWhen == null ? null : a.confirmWhen });
+        out.push(item);
       }
     }
     return out;
   };
   api['actions.run'] = async (args) => {
-    if (perms.actions !== true) throw hostError('ERR_ACTIONS_DENIED', 'this plugin has no actions permission');
-    const target = args && args.plugin;
-    const actionId = args && args.id;
+    if (!actionsOn) throw hostError('ERR_ACTIONS_DENIED', 'this plugin has no actions permission');
+    let target = args && args.plugin;
+    let actionId = args && args.id;
+    if (hostAtLeast('1.180.0') && args && args.actionId != null) {
+      if (args.plugin != null || args.id != null) throw hostError('ERR_INVALID', 'actionId or plugin + id, not both');
+      const ref = String(args.actionId);
+      const slash = ref.indexOf('/');
+      if (slash <= 0) throw hostError('ERR_INVALID', "actionId must be '<plugin>/<id>'");
+      target = ref.slice(0, slash);
+      actionId = ref.slice(slash + 1);
+    }
     if (typeof target !== 'string' || target.length < 2 || target.length > 64 || !PLUGIN_ID_RE.test(target)) throw hostError('ERR_INVALID', 'invalid plugin id');
     if (target === manifest.id) throw hostError('ERR_INVALID', 'a plugin cannot run its own quick actions');
     if (typeof actionId !== 'string' || !QA_ID_RE.test(actionId)) throw hostError('ERR_INVALID', 'invalid action id');
     const { user, lang } = automationViewer(args);
     const now = Date.now();
-    while (actionRunAt.length && now - actionRunAt[0] >= 3600000) actionRunAt.shift();
-    if (actionRunAt.length >= ACTIONS_PER_HOUR) throw hostError('ERR_RATE_LIMIT', 'too many quick action runs (60 per hour)');
+    const win = hostAtLeast('1.180.0') ? 60000 : 3600000;
+    while (actionRunAt.length && now - actionRunAt[0] >= win) actionRunAt.shift();
+    if (actionRunAt.length >= ACTIONS_PER_HOUR) throw hostError('ERR_RATE_LIMIT', `too many quick action runs (60 per ${win === 60000 ? 'minute' : 'hour'})`);
     actionRunAt.push(now);
     const p = actionPlugins.find((x) => x.plugin === target);
     const state = args.state == null ? undefined : args.state;
@@ -1109,7 +1140,12 @@ async function createHost(pluginDir, opts = {}) {
         }
       } catch { result = failed('plugin_error'); }
     }
-    actionRuns.push({ plugin: target, id: actionId, userId: user.id, lang, viewer: user, state: state === undefined ? null : state, target: target2, result });
+    actionRuns.push({ plugin: target, id: actionId, userId: user.id, lang, viewer: user, state: state === undefined ? null : state, target: target2, result, interactive: args.interactive === true });
+    if (hostAtLeast('1.180.0')) {
+      if (result.error) return { ...result, code: { not_found: 'ERR_NOT_FOUND', invalid_state: 'ERR_INVALID_STATE', state_unknown: 'ERR_STATE_UNKNOWN' }[result.error] || 'ERR_PLUGIN_FAILED' };
+      const r2 = { message: result.message, state: result.state, unchanged: result.unchanged };
+      return { ...result, result: r2, ...(result.ok ? {} : { code: 'ERR_ACTION_FAILED' }) };
+    }
     return result;
   };
 
@@ -1160,9 +1196,22 @@ async function createHost(pluginDir, opts = {}) {
       : call('notify', { message: String(message), opts: o || {} })),
     license: Object.freeze({ status: () => call('license.status', {}) }),
     kiosk: Object.freeze({ allow: (userId, allowed) => call('kiosk.allow', { userId, allowed }), list: () => call('kiosk.list', {}) }),
-    actions: Object.freeze({
-      list: (o) => { const x = o && typeof o === 'object' ? o : {}; return call('actions.list', { userId: x.userId, lang: x.lang }); },
-      run: (o) => { const x = o && typeof o === 'object' ? o : {}; return call('actions.run', { userId: x.userId, plugin: x.plugin, id: x.id, lang: x.lang, state: x.state }); },
+    // opts.actionsApi: false emulates a host whose child has no gc.actions (feature detection in plugins);
+    // GateControl ≥ 1.180.0 (opts.gatecontrol) passes actionId, params, via and interactive on — older child
+    // bootstraps drop them like the real ones did
+    ...(opts.actionsApi === false ? {} : {
+      actions: Object.freeze({
+        list: (o) => {
+          const x = o && typeof o === 'object' ? o : {};
+          return call('actions.list', { userId: x.userId, lang: x.lang, ...(hostAtLeast('1.180.0') ? { interactive: x.interactive } : {}) });
+        },
+        run: (o) => {
+          const x = o && typeof o === 'object' ? o : {};
+          return call('actions.run', hostAtLeast('1.180.0')
+            ? { userId: x.userId, actionId: x.actionId, plugin: x.plugin, id: x.id, params: x.params, lang: x.lang, state: x.state, via: x.via, interactive: x.interactive }
+            : { userId: x.userId, plugin: x.plugin, id: x.id, lang: x.lang, state: x.state });
+        },
+      }),
     }),
     // GateControl ≥ 1.177.0
     media: Object.freeze({
@@ -1262,7 +1311,7 @@ async function createHost(pluginDir, opts = {}) {
     async callService(name, o = {}) {
       if (!Object.prototype.hasOwnProperty.call(provides, name)) throw hostError('ERR_SERVICE_UNAVAILABLE', 'not in services.provides');
       if (typeof plugin.service !== 'function') throw hostError('ERR_SERVICE_FAILED', 'this plugin offers no services');
-      const payload = boundedJson(o.payload, SERVICE_JSON_MAX, 'ERR_INVALID', 'payload');
+      const payload = boundedJson(o.payload, hostAtLeast('1.180.0') ? SERVICE_PAYLOAD_MAX_180 : SERVICE_JSON_MAX, 'ERR_INVALID', 'payload');
       const out = await hook('service', { name, caller: o.caller || 'gatecontrol-other', user: o.user == null ? null : o.user, payload });
       return boundedJson(out === undefined ? null : out, SERVICE_JSON_MAX, 'ERR_SERVICE_FAILED', 'result');
     },

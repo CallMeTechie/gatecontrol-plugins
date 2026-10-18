@@ -12,12 +12,22 @@ const STATUS = {
   readonly: 403,
   edit_window: 403,
   disappearing_off: 403,
+  // 1.4.0
+  blocked: 403,
+  not_allowed: 403,
+  feature_off: 403,
   not_found: 404,
   peer_unavailable: 409,
   deleted: 409,
   media_invalid: 409,
   media_in_use: 409,
   too_many: 409,
+  // 1.4.0
+  closed: 409,
+  no_approver: 409,
+  unavailable: 409,
+  action_failed: 409,
+  rate_limited: 429,
   internal: 500,
 };
 

@@ -3,6 +3,50 @@
 Chats zwischen den GateControl-Konten – in der GateControl-App (eigener Tab „Chats“), im
 Windows-Client und im Portal (eigener Tab „Chats“). Alles bleibt auf dem eigenen Server.
 
+## 1.4.0
+Braucht **GateControl ≥ 1.180.0** (Haus-Aktionen als Tipp einer Person: `permissions.actions { interactive: true }`;
+Dienst-Aufrufe bis 512 KB für das Klingelbild). Neue Felder und Routen stehen im README unter „Since 1.4.0“; die Apps
+zeigen eine Funktion nur, wenn `GET me` → `features.<key>` sie meldet (`status`, `stories`, `polls`, `events`,
+`arrival`, `actions`, `msg_tools`, `privacy2`).
+- **Status und Storys:** eine Statuszeile pro Person (Homeoffice, Unterwegs mit Ziel und Ankunft, Bitte nicht stören,
+  Ort automatisch aus Familie, eigener Text bis 60 Zeichen, mit Ende) und Storys für 24 Stunden (Text auf Farbe,
+  Foto, Video) für alle, die Familie oder ausgewählte Personen; „angesehen von“ mit Reaktionen, Antworten als
+  Direktnachricht mit Bezug auf die Story. „Bitte nicht stören“ hält alle Chat-Pushes zurück. Optional eine
+  tägliche Zusammenfassung neuer Storys (Thema „Status-Zusammenfassung“, standardmäßig aus).
+- **Privatsphäre und Einstellungen:** zuletzt online / online (symmetrisch wie Lesebestätigungen), Profilbild,
+  Status-Standard, Ort im Status, wer mich zu Gruppen hinzufügen darf, selbstlöschende Nachrichten für neue Chats;
+  Benachrichtigungen (Gruppen nur bei Erwähnung, Reaktionen, Standard-Erinnerung für Termine); archivierte Chats
+  bleiben archiviert.
+- **Chat-Werkzeuge:** blockieren, archivieren, bis zu drei Nachrichten anheften, eigene Chat-Listen, Chat-Export als
+  Text, „Erinnern“ an eine Nachricht (Push zur gewählten Zeit), Vorschläge aus einer Nachricht (Einkäufe → Familie-
+  Liste, Termine → Familienkalender; deutscher Parser auf dem Server, kein externer Dienst).
+- **Abstimmungen:** Frage mit 2–12 Optionen, Mehrfachauswahl, anonym, weitere Optionen durch andere, Ende zu einer
+  Zeit, „Erinnern“ an alle, die noch nicht abgestimmt haben; beim Ende eine Systemnachricht mit dem Ergebnis.
+- **Termine:** Zu-/Absagen mit Begleitpersonen, Checkliste, Erinnerung vor dem Beginn, Abfahrt-Hinweis 45 Minuten
+  vorher, optional im Familienkalender (Familie-Dienste `calendar_upsert` / `calendar_remove`); der nächste Termin
+  steht oben im Chat.
+- **Live-Ankunft:** Die App teilt alle 20 s den Standort; der Server rechnet Entfernung, Ankunftszeit und
+  Fortschritt, meldet die Ankunft (Systemnachricht und Push), kann dabei eine Haus-Aktion ausführen und stoppt
+  nach 3 Stunden. Der Standort liegt nur verschlüsselt und nur, solange die Ankunft läuft.
+- **Haus-Aktionen und Plugin-Karten:** Schnellaktionen anderer Plugins als Knopf im Chat, als Bitte an die, die sie
+  ausführen dürfen, oder für eine Person bis zu einer Zeit freigegeben – immer mit den Rechten der ausführenden
+  Person in GateControl (Freigaben laufen mit den Rechten der freigebenden Person; sensible Aktionen lassen sich
+  nicht freigeben). Andere Plugins schicken Karten mit Bild und Knöpfen (`send_message` mit `card`), z. B. die
+  Türklingel mit Schnappschuss, „Tür öffnen“ und „Live-Bild“.
+- **Dienst `set_place_status`** für Familie (Ort im Status bei „Ort automatisch“); Messenger nutzt die
+  Familie-Dienste `list_add`, `calendar_add`, `calendar_upsert`, `calendar_remove`, `places`, wenn Familie sie
+  anbietet. `send_message` an `family` erreicht für Plugins ohne eigene Gruppe die Gruppe „Familie“.
+- **Portal:** Statusleiste mit leuchtendem Ring für ungesehene Storys unter „Angeheftet“, Story-Ansicht, eigener
+  Status, Abstimmungen, Termine, Live-Ankünfte (nur Anzeige), Haus-Aktionen und Karten mit Knöpfen, Listen und
+  Archiv über der Chat-Liste, angeheftete Nachrichten, Einstellungen für Privatsphäre, Benachrichtigungen und
+  Blockierungen.
+- **Admin-Übersicht:** nur Zahlen (aktive Status / Storys, offene Abstimmungen, kommende Termine, laufende
+  Ankünfte, Haus-Aktionen und Karten, Blockierungen, offene Erinnerungen) und die Schalter „Storys erlauben“ und
+  „Haus-Aktionen in Chats“.
+- Alles Neue wird wie Nachrichtentexte verschlüsselt gespeichert; Ablauf und Aufräumen übernimmt der
+  Hintergrundlauf. Migration `002` baut die Tabellen `messages` und `media` für die neuen Arten um (Inhalte und
+  Nummern bleiben).
+
 ## 1.3.0
 Läuft weiterhin ab **GateControl ≥ 1.177.0**; das Vorschaubild im Push braucht wie bei Fotos 1.178.0.
 - **Videos als eigene Kategorie:** Ein Video bleibt eine Dateinachricht (`kind: "file"` mit einer

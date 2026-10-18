@@ -1,6 +1,6 @@
 'use strict';
 
-// Test helpers: the mock host (tools/testing/mock-host.js, GateControl ≥ 1.177.0
+// Test helpers: the mock host (tools/testing/mock-host.js — as GateControl 1.180.0 unless a test names another version
 // media / events / chat notifications / services) with five accounts (an
 // administrator, Anna, Marc, Lena, Oma), callers as the apps and the portal
 // see them, and a controllable clock (node:test mock timers, Date only).
@@ -70,7 +70,7 @@ const cid = () => `client-${Date.now()}-${++seq}`;
 async function withHost(opts, fn) {
   const o = opts || {};
   const clock = startClock(o.at || T0);
-  const host = await createHost(DIR, { users: o.users || USERS, settings: o.settings || {}, services: o.services, mediaQuota: o.mediaQuota, connected: o.connected, gatecontrol: o.gatecontrol });
+  const host = await createHost(DIR, { users: o.users || USERS, settings: o.settings || {}, services: o.services, mediaQuota: o.mediaQuota, connected: o.connected, gatecontrol: o.gatecontrol || '1.180.0', actions: o.actions, actionsApi: o.actionsApi });
   await host.start();
   const call = (user, method, p, body, query) => host.request({ method, path: p, body: body === undefined ? null : body, query: query || {}, user, lang: o.lang || 'de' });
   const as = (u, viewer = app) => (method, p, body, query) => call(viewer(u), method, p, body, query);

@@ -46,7 +46,7 @@ test('overview: counts and storage per type — and no content anywhere in any a
 test('settings: read with GateControl\'s media limits; partial update; only the offered values', async () => {
   await withHost({}, async (host, c) => {
     let r = (await c.admin('GET', 'settings')).json;
-    assert.deepEqual(r.settings, { retentionDays: 0, allowDisappearing: true, editWindowMin: 15, maxVoiceS: 300, defaults: { readReceipts: true, typing: true, preview: true } });
+    assert.deepEqual(r.settings, { retentionDays: 0, allowDisappearing: true, editWindowMin: 15, maxVoiceS: 300, allowStories: true, allowActions: true, defaults: { readReceipts: true, typing: true, preview: true } });
     assert.deepEqual(r.options, { retentionDays: [0, 30, 90, 180, 365, 730], editWindowMin: [0, 5, 15, 60, 1440], maxVoiceS: [60, 120, 300, 600, 900], disappearingS: [0, 86400, 604800, 2592000] });
     assert.deepEqual([r.media.maxBytes, r.media.quota, r.media.types.length], [26214400, 10737418240, 24]);
     r = (await c.admin('PUT', 'settings', { retentionDays: 90, defaults: { preview: false } })).json;
@@ -61,11 +61,12 @@ test('settings: read with GateControl\'s media limits; partial update; only the 
 
 test('defaults for new accounts: apply to people who use the messenger for the first time', async () => {
   await withHost({}, async (host, c) => {
-    assert.deepEqual((await c.as(ANNA)('GET', 'me')).json.prefs, { readReceipts: true, typing: true, preview: true });
+    const base = (p) => ({ readReceipts: p.readReceipts, typing: p.typing, preview: p.preview });
+    assert.deepEqual(base((await c.as(ANNA)('GET', 'me')).json.prefs), { readReceipts: true, typing: true, preview: true });
     await c.admin('PUT', 'settings', { defaults: { readReceipts: false, typing: false, preview: false } });
-    assert.deepEqual((await c.as(MARC)('GET', 'me')).json.prefs, { readReceipts: false, typing: false, preview: false });
-    assert.deepEqual((await c.as(ANNA)('GET', 'me')).json.prefs, { readReceipts: true, typing: true, preview: true }, 'existing people keep theirs');
-    assert.deepEqual((await c.as(MARC)('PUT', 'prefs', { preview: true })).json.prefs, { readReceipts: false, typing: false, preview: true });
+    assert.deepEqual(base((await c.as(MARC)('GET', 'me')).json.prefs), { readReceipts: false, typing: false, preview: false });
+    assert.deepEqual(base((await c.as(ANNA)('GET', 'me')).json.prefs), { readReceipts: true, typing: true, preview: true }, 'existing people keep theirs');
+    assert.deepEqual(base((await c.as(MARC)('PUT', 'prefs', { preview: true })).json.prefs), { readReceipts: false, typing: false, preview: true });
   });
 });
 
@@ -81,6 +82,9 @@ test('me: prefs, licence, features and limits for the apps', async () => {
     assert.deepEqual(me.limits, {
       maxBytes: 26214400, types: require('../plugin.json').media.types, quotaFull: false, editWindowS: 900, maxVoiceS: 300, textMax: 4000, thumbMaxBytes: 65536, thumbMaxSide: 640,
       imageMaxSide: 2048, groupMax: 256, titleMax: 80, pageMax: 100, typingS: 6, typingEveryS: 3, activeS: 30, disappearingS: [0, 86400, 604800, 2592000], retentionDays: 0,
+      // 1.4.0
+      statusTextMax: 60, storyTextMax: 700, storyTtlS: 86400, storiesMax: 30, pollOptionsMax: 12, pollQuestionMax: 200, pollOptionMax: 80, eventTitleMax: 120,
+      eventChecklistMax: 20, pinsMax: 3, listsMax: 20, remindersMax: 100, arrivalEveryS: 20, arrivalMaxS: 10800, arrivalRadiusM: 150,
     });
     assert.ok(me.serverTime);
   });
@@ -94,5 +98,25 @@ test('log page: days 1…30, entries without content', async () => {
     assert.deepEqual(r.entries.map((e) => [e.level, e.code, e.detail, e.count]), [['error', 'service_refused', 'send_message: not_found', 1]]);
     assert.ok(!JSON.stringify(r).includes('Geheimnis'));
     assert.equal((await c.admin('GET', 'log', null, { days: '31' })).json.code, 'invalid');
+  });
+});
+
+test('1.4.0 overview: counts only (statuses, stories, polls, events, arrivals, actions, blocks, reminders); switches for stories and home actions', async () => {
+  await withHost({}, async (host, c) => {
+    const g = await c.group(ANNA, [MARC]);
+    await c.as(ANNA)('PUT', 'status', { preset: 'none', text: 'Geheimer Status' });
+    await c.as(ANNA)('POST', 'status/stories', { kind: 'text', text: 'Geheime Story' });
+    await c.send(ANNA, g.id, { kind: 'poll', poll: { question: 'Geheime Frage', options: ['a', 'b'] } });
+    await c.send(ANNA, g.id, { kind: 'event', event: { title: 'Geheimer Termin', startsAt: new Date(Date.now() + 3600000).toISOString() } });
+    await c.send(ANNA, g.id, { kind: 'arrival', arrival: { dest: { label: 'Geheim', lat: 1, lon: 1 } } });
+    await c.as(ANNA)('POST', 'blocks', { userId: LENA.id });
+    const o = (await c.admin('GET', 'overview')).json;
+    assert.deepEqual(o.v14, { statusesActive: 1, storiesActive: 1, pollsOpen: 1, eventsUpcoming: 1, arrivalsLive: 1, actionMessages7Days: 0, cards7Days: 0, blocks: 1, remindersPending: 0, actionsAvailable: true });
+    assert.ok(!JSON.stringify(o).includes('Geheim'), 'no content');
+    const s = (await c.admin('PUT', 'settings', { allowStories: false, allowActions: false })).json.settings;
+    assert.deepEqual([s.allowStories, s.allowActions], [false, false]);
+    assert.equal((await c.admin('PUT', 'settings', { allowStories: 'no' })).json.code, 'invalid');
+    const page = require('../server/ui').render({ view: 'page', page: 'overview', lang: 'de' }, (l, k) => require('../server/texts.json')[l][k] || k);
+    for (const id of ['ms-v-status', 'ms-v-polls', 'ms-v-events', 'ms-v-actions', 'ms-allow-stories', 'ms-allow-actions']) assert.ok(page.includes(`id="${id}"`), id);
   });
 });

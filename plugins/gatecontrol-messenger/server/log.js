@@ -15,12 +15,13 @@
 //   quota_exceeded      an upload was refused: storage full (reported by the apps — not seen here)
 //   service_refused     a call of another plugin was refused (code in detail)
 //   job_failed          a background step failed (step name in detail)
+//   action_failed       a home action run from a chat did not succeed (1.4.0; the target's code in detail)
 
 const store = require('./store');
 
 const MERGE_MS = 10 * 60000;
 const KEEP_MS = 30 * 86400000;
-const CODES = ['push_rate_limit', 'push_failed', 'events_rate_limit', 'events_failed', 'media_claim_failed', 'media_delete_failed', 'decrypt_failed', 'service_refused', 'job_failed'];
+const CODES = ['push_rate_limit', 'push_failed', 'events_rate_limit', 'events_failed', 'media_claim_failed', 'media_delete_failed', 'decrypt_failed', 'service_refused', 'job_failed', 'action_failed'];
 const LEVEL = { push_rate_limit: 'limit', events_rate_limit: 'limit' };
 
 /** Record one entry; never throws. `detail` must not carry content (a code, a count, a plugin id). */
