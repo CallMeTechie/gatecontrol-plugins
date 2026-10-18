@@ -29,6 +29,8 @@ const FONTS = ['sans', 'serif', 'mono'];
 const STATUS_TEXT_MAX = 60;
 const STORY_TEXT_MAX = 700;
 const STORY_TTL_MS = 24 * 3600 * 1000;
+// How long a story stays (POST status/stories durationH, since 1.4.1); 24 h without it.
+const STORY_DURATIONS_H = [1, 3, 6, 12, 24];
 const STORIES_MAX = 30; // active stories per person
 const CUSTOM_MAX = 256;
 const COLOR_RE = /^#[0-9a-fA-F]{6}$/;
@@ -209,6 +211,8 @@ async function createStory(ctx, body) {
   if (b.bg != null && !COLOR_RE.test(String(b.bg))) throw fail('invalid');
   if (b.font != null && !FONTS.includes(b.font)) throw fail('invalid');
   const place = optText(b.place, 80);
+  if (b.durationH != null && !STORY_DURATIONS_H.includes(b.durationH)) throw fail('invalid');
+  const ttl = b.durationH != null ? b.durationH * 3600 * 1000 : STORY_TTL_MS;
   let media = null;
   let thumb = null;
   let video = null;
@@ -233,7 +237,7 @@ async function createStory(ctx, body) {
   const { visibility, ids } = checkAudience(ctx, b, prefs.privacy.statusDefault);
   const bodyJson = { text, bg: b.bg || (kind === 'text' ? '#0F766E' : null), font: b.font || (kind === 'text' ? 'sans' : null), video, place };
   const r = await store.run(ctx.gc, 'INSERT INTO stories (user_id, kind, body_enc, media_id, thumb_media_id, visibility, user_ids, event_msg_id, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-    [ctx.viewer, kind, seal.sealJson(bodyJson), media ? media.mediaId : null, thumb ? thumb.mediaId : null, visibility, visibility === 'custom' ? JSON.stringify(ids) : null, eventMsg, ctx.now, ctx.now + STORY_TTL_MS]);
+    [ctx.viewer, kind, seal.sealJson(bodyJson), media ? media.mediaId : null, thumb ? thumb.mediaId : null, visibility, visibility === 'custom' ? JSON.stringify(ids) : null, eventMsg, ctx.now, ctx.now + ttl]);
   const id = r.lastInsertRowid;
   if (media) {
     await messages.bindMedia(ctx, media, { convId: 0, msgId: null, role: 'story', kind: kind === 'image' ? 'image' : 'file' });
@@ -445,5 +449,5 @@ async function digest(ctx) {
 
 module.exports = {
   put, remove, setPlace, view, rowOf, feed, createStory, deleteStory, seen, viewers, react, replyRef, statusesFor, dndUsers, expire, mediaAllowed, digest, dropStories, sendDirect,
-  PRESETS, VISIBILITY, FONTS, STATUS_TEXT_MAX, STORY_TEXT_MAX, STORY_TTL_MS, STORIES_MAX, line,
+  PRESETS, VISIBILITY, FONTS, STATUS_TEXT_MAX, STORY_TEXT_MAX, STORY_TTL_MS, STORY_DURATIONS_H, STORIES_MAX, line,
 };

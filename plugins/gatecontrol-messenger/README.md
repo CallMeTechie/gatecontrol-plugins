@@ -361,6 +361,7 @@ otherwise — never `false`):
 |---|---|
 | `status` | status line (`PUT/DELETE status`, `GET status/feed`) |
 | `stories` | stories (`status/stories…`); absent when the administrator switched them off |
+| `story_duration` | since 1.4.1: `POST status/stories` takes `durationH` (one of `limits.storyDurationsH`); present together with `stories` |
 | `polls` | message kind `poll` |
 | `events` | message kind `event`, `nextEvent` on conversations |
 | `arrival` | message kind `arrival` (live arrival) |
@@ -371,7 +372,7 @@ otherwise — never `false`):
 `GET me` also has `integrations: { familie: { lists, calendar, places } }`
 (booleans: the Familie plugin offers `list_add`, `calendar_add`, `places`
 right now — `gc.services.available`) and these `limits`: `statusTextMax: 60,
-storyTextMax: 700, storyTtlS: 86400, storiesMax: 30, pollOptionsMax: 12,
+storyTextMax: 700, storyTtlS: 86400, storyDurationsH: [1, 3, 6, 12, 24] (since 1.4.1), storiesMax: 30, pollOptionsMax: 12,
 pollQuestionMax: 200, pollOptionMax: 80, eventTitleMax: 120,
 eventChecklistMax: 20, pinsMax: 3, listsMax: 20, remindersMax: 100,
 arrivalEveryS: 20, arrivalMaxS: 10800, arrivalRadiusM: 150`.
@@ -444,7 +445,7 @@ blocked that person).
 | `PUT status` | `{ preset: "none"\|"homeoffice"\|"away"\|"dnd"\|"auto_place", text? (≤ 60), until? (ISO, future, ≤ 1 year), visibility? ("all"\|"family"\|"custom"), userIds? (custom, ≥ 1), eta? (away), destLabel? (≤ 80, away) }` | `{ status }` — `preset: "none"` needs a `text` |
 | `DELETE status` | | `{ status: null }` |
 | `GET status/feed` | | `{ items: [Item], me: Item, serverTime }` |
-| `POST status/stories` | `{ kind: "text"\|"image"\|"video", text? (≤ 700; required for text), bg? ("#RRGGBB"), font? ("sans"\|"serif"\|"mono"), mediaId? (image: image/*, video: video/*), thumbMediaId? (WebP/JPEG/PNG ≤ 64 KB), video? ({ durationMs, width, height }), visibility?, userIds?, eventMessageId? (an event message the caller sees), place? (≤ 80) }` | `{ story }` — `too_many` over 30 active stories, `feature_off` when switched off |
+| `POST status/stories` | `{ kind: "text"\|"image"\|"video", text? (≤ 700; required for text), bg? ("#RRGGBB"), font? ("sans"\|"serif"\|"mono"), mediaId? (image: image/*, video: video/*), thumbMediaId? (WebP/JPEG/PNG ≤ 64 KB), video? ({ durationMs, width, height }), visibility?, userIds?, eventMessageId? (an event message the caller sees), place? (≤ 80), durationH? (1\|3\|6\|12\|24, since 1.4.1; default 24) }` | `{ story }` — `too_many` over 30 active stories, `feature_off` when switched off |
 | `DELETE status/stories/:id` | | `{ deleted: true }` (own) |
 | `POST status/stories/:id/seen` | | `{ seen: true }` |
 | `GET status/stories/:id/viewers` | | `{ viewers: [ { user, seenAt, reaction } ] }` (own stories only) |

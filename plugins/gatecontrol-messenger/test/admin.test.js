@@ -83,7 +83,7 @@ test('me: prefs, licence, features and limits for the apps', async () => {
       maxBytes: 26214400, types: require('../plugin.json').media.types, quotaFull: false, editWindowS: 900, maxVoiceS: 300, textMax: 4000, thumbMaxBytes: 65536, thumbMaxSide: 640,
       imageMaxSide: 2048, groupMax: 256, titleMax: 80, pageMax: 100, typingS: 6, typingEveryS: 3, activeS: 30, disappearingS: [0, 86400, 604800, 2592000], retentionDays: 0,
       // 1.4.0
-      statusTextMax: 60, storyTextMax: 700, storyTtlS: 86400, storiesMax: 30, pollOptionsMax: 12, pollQuestionMax: 200, pollOptionMax: 80, eventTitleMax: 120,
+      statusTextMax: 60, storyTextMax: 700, storyTtlS: 86400, storyDurationsH: [1, 3, 6, 12, 24], storiesMax: 30, pollOptionsMax: 12, pollQuestionMax: 200, pollOptionMax: 80, eventTitleMax: 120,
       eventChecklistMax: 20, pinsMax: 3, listsMax: 20, remindersMax: 100, arrivalEveryS: 20, arrivalMaxS: 10800, arrivalRadiusM: 150,
     });
     assert.ok(me.serverTime);
