@@ -59,17 +59,8 @@ const mutedNow = (m, now) => m.notify === 'none' || (m.muted_until != null && m.
  * other members who share them too (null / [] when nobody does).
  */
 async function receipts(ctx, conv, members) {
-  const others = members.filter((m) => m.user_id !== ctx.viewer && ctx.users.has(m.user_id));
   const prefs = await people.prefsOf(ctx.gc, members.map((m) => m.user_id));
-  const mine = prefs.get(ctx.viewer) || {};
-  const deliveredUpTo = others.length ? Math.min(...others.map((m) => m.last_delivered_id)) : null;
-  if (!mine.readReceipts) return { readUpTo: null, deliveredUpTo, receipts: [] };
-  const sharing = others.filter((m) => (prefs.get(m.user_id) || {}).readReceipts);
-  return {
-    readUpTo: sharing.length ? Math.min(...sharing.map((m) => m.last_read_id)) : null,
-    deliveredUpTo,
-    receipts: sharing.map((m) => ({ userId: m.user_id, lastReadId: m.last_read_id, lastDeliveredId: m.last_delivered_id })),
-  };
+  return messages.receiptsAs(ctx.viewer, members, prefs, ctx.users);
 }
 
 /** The conversation as the viewer sees it. */

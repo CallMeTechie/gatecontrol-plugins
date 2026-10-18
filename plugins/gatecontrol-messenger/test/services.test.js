@@ -5,7 +5,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { withHost, ANNA, MARC, LENA, OMA } = require('./helpers');
+const { withHost, app, ANNA, MARC, LENA, OMA, SEC, PNG } = require('./helpers');
 
 const FAM = 'gatecontrol-familie';
 
@@ -98,5 +98,102 @@ test('send_message group:<id>: groups the caller manages, or groups the calling 
     assert.deepEqual(r, { ok: false, code: 'not_found' }, 'a direct chat is no group');
     assert.deepEqual(await host.callService('send_message', { caller: FAM, payload: { conversation: 'everyone', text: 'x' } }), { ok: false, code: 'invalid' });
     await assert.rejects(host.callService('nope', { caller: FAM, payload: {} }), /not in services.provides/);
+  });
+});
+
+test('send_message (1.1.0): several targets in one call — one message per target, the outcome of each', async () => {
+  await withHost({}, async (host, c) => {
+    const g = await host.callService('sync_group', { caller: FAM, payload: { key: 'family', title: 'Familie', userIds: [ANNA.id, MARC.id] } });
+    const before = c.pushes().length;
+    c.resetEvents();
+    const r = await host.callService('send_message', { caller: FAM, payload: { conversation: [`user:${LENA.id}`, `user:${OMA.id}`, 'family', 'user:99', `user:${LENA.id}`, 'everyone'], text: 'Abendessen um 18 Uhr', title: 'Familie' } });
+    assert.equal(r.ok, true);
+    assert.deepEqual([r.sent, r.failed], [3, 2]);
+    assert.deepEqual(r.results.map((x) => [x.conversation, x.ok, x.code || null]), [
+      [`user:${LENA.id}`, true, null], [`user:${OMA.id}`, true, null], ['family', true, null], ['user:99', false, 'invalid'], ['everyone', false, 'invalid'],
+    ], 'in the given order, duplicates dropped');
+    assert.equal(r.results[2].conversationId, g.conversationId);
+    for (const [u, x] of [[LENA, r.results[0]], [OMA, r.results[1]]]) {
+      const conv = (await c.as(u)('GET', `conversations/${x.conversationId}`)).json.conversation;
+      assert.deepEqual([conv.title, conv.readonly, conv.lastMessage.id, conv.lastMessage.text, conv.lastMessage.via], ['Familie', true, x.messageId, 'Abendessen um 18 Uhr', FAM], u.name);
+    }
+    assert.equal(c.pushes().length - before, 3, 'one push per target');
+    assert.equal(c.events('message.new').length, 3);
+    assert.ok((await c.admin('GET', 'log')).json.entries.some((e) => e.code === 'service_refused' && e.detail === 'send_message: invalid'));
+    // the person of the call counts per target (group:<id>)
+    const eltern = await c.group(ANNA, [MARC], 'Eltern');
+    const r2 = await host.callService('send_message', { caller: FAM, user: { id: LENA.id, name: 'Lena', role: 'user' }, payload: { conversation: [`group:${eltern.id}`, `user:${MARC.id}`], text: 'x' } });
+    assert.deepEqual(r2.results.map((x) => [x.ok, x.code || null]), [[false, 'forbidden'], [true, null]]);
+    // nothing usable: refused as a whole
+    for (const conversation of [[], Array.from({ length: 21 }, (_, i) => `user:${i + 1}`), ['family', 3], [{ a: 1 }]]) {
+      assert.deepEqual(await host.callService('send_message', { caller: FAM, payload: { conversation, text: 'x' } }), { ok: false, code: 'invalid' }, JSON.stringify(conversation));
+    }
+    assert.deepEqual(await host.callService('send_message', { caller: FAM, payload: { conversation: ['family'], text: '' } }), { ok: false, code: 'invalid' });
+    // the single form is unchanged
+    const one = await host.callService('send_message', { caller: FAM, payload: { conversation: 'family', text: 'eins' } });
+    assert.deepEqual(Object.keys(one).sort(), ['conversationId', 'messageId', 'ok']);
+  });
+});
+
+test('release_group (1.1.0): the managed group becomes a normal group — members may leave, admins as given', async () => {
+  await withHost({}, async (host, c) => {
+    const g = await host.callService('sync_group', { caller: FAM, payload: { key: 'family', title: 'Familie', userIds: [ANNA.id, MARC.id, LENA.id] } });
+    const id = g.conversationId;
+    await c.send(MARC, id, { text: 'bleibt' });
+    c.resetEvents();
+    const r = await host.callService('release_group', { caller: FAM, payload: { key: 'family', adminIds: [MARC.id, OMA.id] } });
+    assert.deepEqual(r, { ok: true, conversationId: id, released: true, deleted: false, admins: [MARC.id] });
+    assert.deepEqual(c.events('conversation.update').map((e) => [e.users.sort(), e.data.reason]), [[[ANNA.id, MARC.id, LENA.id], 'released']]);
+    assert.equal(c.events('message.new').length, 1);
+    const conv = (await c.as(MARC)('GET', `conversations/${id}`)).json.conversation;
+    assert.deepEqual([conv.managedBy, conv.me.role, conv.can.leave, conv.can.editInfo, conv.can.manageMembers], [null, 'admin', true, true, true]);
+    const msgs = (await c.as(ANNA)('GET', `conversations/${id}/messages`)).json.messages;
+    assert.deepEqual(msgs.slice(-2).map((m) => [m.text, m.system]), [['bleibt', null], [null, { event: 'released', by: null }]], 'the history stays, a system message tells');
+    assert.equal((await c.as(ANNA)('GET', `conversations/${id}`)).json.conversation.unread, 1, 'the system message is not unread');
+    // now a normal group: Lena leaves, Marc (admin) adds Oma, the title changes
+    assert.equal((await c.as(LENA)('PATCH', `conversations/${id}`, { remove: [LENA.id] })).json.left, true);
+    assert.equal((await c.as(MARC)('PATCH', `conversations/${id}`, { add: [OMA.id], title: 'Wir' })).status, 200);
+    // the key is free: the next sync creates a new group; releasing again → not_found
+    assert.deepEqual(await host.callService('release_group', { caller: FAM, payload: { key: 'family' } }), { ok: false, code: 'not_found' });
+    const g2 = await host.callService('sync_group', { caller: FAM, payload: { key: 'family', title: 'Familie', userIds: [ANNA.id] } });
+    assert.equal(g2.created, true);
+    assert.notEqual(g2.conversationId, id);
+    // without adminIds: the member who joined first
+    const r3 = await host.callService('release_group', { caller: FAM, payload: { key: 'family' } });
+    assert.deepEqual(r3.admins, [ANNA.id]);
+    for (const payload of [{}, { key: 'Family' }, { key: 'family', delete: 'yes' }, { key: 'family', adminIds: 'all' }, { key: 'family', adminIds: [0] }]) {
+      assert.deepEqual(await host.callService('release_group', { caller: FAM, payload }), { ok: false, code: 'invalid' }, JSON.stringify(payload));
+    }
+    // another plugin's group cannot be released
+    await host.callService('sync_group', { caller: 'gatecontrol-other', payload: { key: 'x', title: 'X', userIds: [ANNA.id] } });
+    assert.deepEqual(await host.callService('release_group', { caller: FAM, payload: { key: 'x' } }), { ok: false, code: 'not_found' });
+  });
+});
+
+test('release_group delete (1.1.0): the managed group is deleted for everyone, with its messages and files', async () => {
+  await withHost({}, async (host, c) => {
+    const g = await host.callService('sync_group', { caller: FAM, payload: { key: 'family', title: 'Familie', userIds: [ANNA.id, MARC.id] } });
+    const id = g.conversationId;
+    const media = await c.upload(ANNA, PNG, 'image/png');
+    const pic = await c.send(ANNA, id, { kind: 'image', mediaId: media });
+    await c.as(MARC)('PUT', `messages/${pic.id}/reaction`, { emoji: '👍' });
+    const t = new Date(Date.now()).toISOString();
+    c.clock.add(SEC);
+    c.resetEvents();
+    const r = await host.callService('release_group', { caller: FAM, payload: { key: 'family', delete: true } });
+    assert.deepEqual(r, { ok: true, conversationId: id, released: false, deleted: true, admins: [] });
+    assert.deepEqual(c.events('conversation.remove').map((e) => [e.users.sort(), e.data]), [[[ANNA.id, MARC.id], { conversationId: id }]]);
+    for (const u of [ANNA, MARC]) {
+      assert.equal((await c.as(u)('GET', `conversations/${id}`)).status, 404, u.name);
+      const list = (await c.as(u)('GET', 'conversations', null, { since: t })).json;
+      assert.deepEqual([list.conversations.length, list.removed], [0, [id]], 'apps that were offline learn it');
+    }
+    assert.equal((await host.mediaGet(app(ANNA), media)).status, 404, 'the file is gone for the members');
+    await host.tick();
+    assert.equal(host.media.has(media), false, 'and deleted from GateControl\'s store');
+    assert.deepEqual((await host.gc.db.query('SELECT id FROM messages WHERE conv_id = ?', [id])).rows, []);
+    assert.deepEqual((await host.gc.db.query('SELECT * FROM reactions')).rows, []);
+    // the key is free again
+    assert.equal((await host.callService('sync_group', { caller: FAM, payload: { key: 'family', title: 'Familie', userIds: [ANNA.id] } })).created, true);
   });
 });

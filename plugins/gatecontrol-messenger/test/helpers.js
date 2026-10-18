@@ -42,6 +42,23 @@ const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR
 const OGG = Buffer.from('OggS\0\x02fake-opus-voice-message-bytes');
 const PDF = Buffer.from('%PDF-1.4\n%fake\n');
 
+/** A real PNG of w × h pixels (grey) — push pictures need 32…2560 px a side. */
+function png(w, h) {
+  const zlib = require('node:zlib');
+  const crc = (buf) => { let c = ~0; for (const b of buf) { c ^= b; for (let k = 0; k < 8; k++) c = (c >>> 1) ^ (0xedb88320 & -(c & 1)); } return ~c >>> 0; };
+  const chunk = (type, data) => {
+    const len = Buffer.alloc(4); len.writeUInt32BE(data.length);
+    const td = Buffer.concat([Buffer.from(type, 'latin1'), data]);
+    const c = Buffer.alloc(4); c.writeUInt32BE(crc(td));
+    return Buffer.concat([len, td, c]);
+  };
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(w, 0); ihdr.writeUInt32BE(h, 4); ihdr[8] = 8; ihdr[9] = 0; // 8-bit greyscale
+  const raw = Buffer.alloc((w + 1) * h, 0x80);
+  for (let y = 0; y < h; y++) raw[y * (w + 1)] = 0;
+  return Buffer.concat([Buffer.from('\x89PNG\r\n\x1a\n', 'latin1'), chunk('IHDR', ihdr), chunk('IDAT', zlib.deflateSync(raw)), chunk('IEND', Buffer.alloc(0))]);
+}
+
 let seq = 0;
 const cid = () => `client-${Date.now()}-${++seq}`;
 
@@ -53,7 +70,7 @@ const cid = () => `client-${Date.now()}-${++seq}`;
 async function withHost(opts, fn) {
   const o = opts || {};
   const clock = startClock(o.at || T0);
-  const host = await createHost(DIR, { users: o.users || USERS, settings: o.settings || {}, services: o.services, mediaQuota: o.mediaQuota, connected: o.connected });
+  const host = await createHost(DIR, { users: o.users || USERS, settings: o.settings || {}, services: o.services, mediaQuota: o.mediaQuota, connected: o.connected, gatecontrol: o.gatecontrol });
   await host.start();
   const call = (user, method, p, body, query) => host.request({ method, path: p, body: body === undefined ? null : body, query: query || {}, user, lang: o.lang || 'de' });
   const as = (u, viewer = app) => (method, p, body, query) => call(viewer(u), method, p, body, query);
@@ -94,4 +111,4 @@ async function withHost(opts, fn) {
   }
 }
 
-module.exports = { DIR, ADMIN, ANNA, MARC, LENA, OMA, USERS, T0, SEC, MIN, HOUR, DAY, startClock, app, portal, withHost, PNG, OGG, PDF, cid };
+module.exports = { DIR, ADMIN, ANNA, MARC, LENA, OMA, USERS, T0, SEC, MIN, HOUR, DAY, startClock, app, portal, withHost, PNG, OGG, PDF, png, cid };

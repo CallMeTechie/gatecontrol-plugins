@@ -143,7 +143,11 @@ System messages (`kind: "system"`, `system.event`): `created { by, title }`,
 `member_added { by, userIds }`, `member_removed { by, userIds }`,
 `member_left { userId }`, `title { by, title }`, `avatar { by }`,
 `disappearing { by, seconds }` (0 = off), `notice` (a plugin's message, the
-text in `text`, `via` the plugin). `by: null` = GateControl (a managed group).
+text in `text`, `via` the plugin), `released { by: null }` (since 1.1.0: the
+plugin that managed the group handed it over — it is a normal group now,
+`managedBy` null; suggested wording "GateControl hat die Gruppe freigegeben –
+sie ist jetzt eine normale Gruppe"). `by: null` = GateControl (a managed group).
+Show an unknown `event` as a neutral line (newer versions may add events).
 Suggested wording: "Anna hat Lena hinzugefügt", "Anna hat den Namen in
 „Familie" geändert", … (`texts.json` `sys.*` of this plugin). Only `notice`
 counts as unread and is pushed.
@@ -159,7 +163,7 @@ counts as unread and is pushed.
 | `POST conversations` | `{ kind: "direct", userIds: [peerId] }` or `{ kind: "group", userIds: [ids] (1…255 others), title (1…80), avatarMediaId? }` | `{ conversation, created }` — direct: the existing chat with that person when there is one (`created: false`) |
 | `GET conversations/:id` | | `{ conversation }` |
 | `PATCH conversations/:id` | `{ title?, avatarMediaId? (null removes), disappearingS?, mutedUntil? (ISO or null), notify? ("all"\|"none"), add?: [ids], remove?: [ids], role?: { userId, role } }` | `{ conversation, left }` — `conversation: null, left: true` after leaving (`remove: [ownId]`). Rules: mutedUntil/notify are the caller's own; title/avatar any group member; add/remove others/role admins only; direct chats only disappearingS/mute/notify; managed groups not title/avatar/members (`managed`), no leaving; notice channels only mute/notify. A group always keeps an admin. |
-| `GET conversations/:id/messages` | `?limit=1…100 (50)` and one of `before=<id>` (older), `after=<id>` (newer, oldest first), `changedSince=<ISO>` (edited, deleted, reactions changed — by change time) | `{ messages (ascending by id; changedSince: by change time), hasMore, readUpTo, deliveredUpTo, receipts }` — without before/after: the newest page. Marks the newest returned message as delivered. A member sees messages from joining on. |
+| `GET conversations/:id/messages` | `?limit=1…100 (50)` and one of `before=<id>` (older), `after=<id>` (newer, oldest first), `changedSince=<ISO>` (edited, deleted, reactions changed — by change time), `around=<id>` (since 1.1.0, see below) | `{ messages (ascending by id; changedSince: by change time), hasMore, readUpTo, deliveredUpTo, receipts, serverTime }` — without before/after/around: the newest page. Marks the newest returned message as delivered. A member sees messages from joining on. `serverTime` (since 1.1.0, every mode): the server's time of this answer — use it as the next `changedSince` (like `since` of the conversation list). |
 | `POST conversations/:id/messages` | `{ clientId ([A-Za-z0-9_-]{8,64}, required), kind (default "text"), text?, replyTo?, mediaId?, thumbMediaId?, location?: { lat, lon, label?, accuracy? }, meta?: { durationMs, waveform[≤64 × 0…255], w, h, fileName } }` | `{ message, duplicate }` — see "Sending" |
 | `PATCH messages/:id` | `{ text }` | `{ message }` — sender only, kinds text/image/file (caption; a text message needs a text), within `editWindowS` |
 | `DELETE messages/:id` | `?for=me` (default) or `?for=all` | `{ forAll, message }` — `me`: hidden for the caller only (any message); `all`: sender only, within the window → tombstone (`message` the tombstone, `null` for `me`) |
@@ -169,6 +173,17 @@ counts as unread and is pushed.
 | `POST conversations/:id/active` | `{}` or `{ active: false }` | `{ until }` — the conversation is open on a device: send on open and **every 20 s** while it is open and visible, `{ active: false }` on leaving; counts 30 s; such a person gets no push for this chat |
 | `GET conversations/:id/search` | `?q=` (2…100 characters) | `{ results: [Message] (newest first, ≤ 50), scanned (≤ 2000), truncated }` — texts, captions, file names and place labels, decrypted on the server |
 | `GET conversations/:id/media` | `?kind=image\|voice\|file\|all&before=<id>&limit=1…100 (30)` | `{ items: [Message] (newest first), counts: { image, voice, file }, hasMore }` |
+
+**`around=<messageId>`** (since 1.1.0) — jump to a search result or a quoted
+message: up to `floor(limit / 2)` messages older than `around`, then the message
+`around` itself (when the caller sees it — a message hidden for the caller or
+deleted for good leaves just its neighbours) and the newer ones, `limit` in all
+at most, ascending by id (the newer half is not filled up when there are fewer
+older ones). The answer carries `hasMoreBefore` (older messages exist: continue
+with `before=<first id>`) and `hasMoreAfter` (newer ones exist: continue with
+`after=<last id>`); `hasMore` = either of them. An id of another chat only marks
+a position — nothing of that chat is returned. Example: `messages?around=4711&limit=30`
+→ 15 older, 4711 and 14 newer.
 
 ### Sending
 
@@ -232,10 +247,10 @@ cached chats).
 | `message.update` | `{ conversationId, messageId, editedAt }` | fetch `messages?changedSince=` |
 | `message.delete` | `{ conversationId, messageIds: [..], reason: "deleted" \| "hidden" \| "expired" \| "retention" }` | `deleted`: show tombstone; the others: remove (`hidden` goes to the caller's own devices only) |
 | `reaction` | `{ conversationId, messageId, userId, emoji \| null, reactions: [ { emoji, count, userIds } ] }` | replace the message's reactions |
-| `read` | `{ conversationId, userId, lastReadId (number \| null when not shared), lastDeliveredId }` — to the reader's own devices additionally `{ …, self: true, unread }` | update receipts / ticks; `self`: update unread, remove that chat's notifications |
+| `read` | `{ conversationId, userId, lastReadId (number \| null when not shared), lastDeliveredId, readUpTo, deliveredUpTo }` — to the reader's own devices additionally `{ …, self: true, unread }` | update receipts / ticks; `self`: update unread, remove that chat's notifications. `readUpTo` / `deliveredUpTo` (since 1.1.0): the values `GET conversations/:id` would give **this recipient** right now (see "Read receipts") — set the chat's `readUpTo` / `deliveredUpTo` (and the ticks of own messages) from the event, no GET needed. Sent for read marks and for delivered marks (the same event; a moved delivered mark changes `lastDeliveredId` / `deliveredUpTo`). |
 | `typing` | `{ conversationId, userId, until (ISO) \| null }` | show "schreibt …" until `until` (≈ 6 s; null = stop) |
-| `conversation.update` | `{ conversationId, reason }` — `reason`: `created`, `settings`, `members`, `title`, `avatar`, `disappearing` (comma-separated when several) | `GET conversations/:id` |
-| `conversation.remove` | `{ conversationId }` | drop the chat (removed, left, or no longer in a managed group) |
+| `conversation.update` | `{ conversationId, reason }` — `reason`: `created`, `settings`, `members`, `title`, `avatar`, `disappearing`, `released` (since 1.1.0: no longer managed by a plugin) (comma-separated when several) | `GET conversations/:id` (treat an unknown reason the same) |
+| `conversation.remove` | `{ conversationId }` | drop the chat (removed, left, no longer in a managed group, or — since 1.1.0 — a managed group deleted by its plugin) |
 
 ### Push
 
@@ -277,6 +292,14 @@ other system messages are not pushed. The payload as the device contract
   and acks the notification(s) of that chat as `read`.
 * Preview and language are per recipient: the preference `preview` (`PUT
   prefs`) and the language of the person's last request to this API.
+* **Picture** (since 1.1.0, on GateControl ≥ 1.178.0): a picture message
+  carries its preview as the push picture — GateControl puts it into the
+  payload as `imageUrl` (`/notify-media/<id>.<ext>`, fetched without login,
+  lives as long as the push; Android: `MessagingStyle.Message.setData`).
+  Only for recipients with `preview` on; the preview file (`thumbMediaId`),
+  else the photo itself, when it is PNG/JPEG/WebP, ≤ 300 KB and 32…2560 px a
+  side — otherwise the push goes out without a picture. On GateControl
+  1.177.x there is none. Apps that ignore `imageUrl` are not affected.
 * Budgets are GateControl's (1200/h per plugin, 120/h per recipient); a
   recipient over it gets no push (logged as a limit).
 
@@ -299,6 +322,29 @@ other system messages are not pushed. The payload as the device contract
   member of), `"user:<id>"` (the caller's notice channel for that person —
   created on first use, only that person, read-only, named `title` or
   "GateControl").
+  * **Several targets** (since 1.1.0): `conversation` may be an array of 1…20
+    such strings (duplicates dropped), e.g. `["user:3", "user:7", "family"]` —
+    one call (one of the host's 60 per hour), one message per target, each
+    target on its own (a refused target does not stop the others) → `{ ok: true,
+    sent, failed, results: [ { conversation, ok: true, conversationId,
+    messageId } | { conversation, ok: false, code } ] }` in the given order.
+    An empty array, more than 20 or a non-string entry → `{ ok: false, code:
+    "invalid" }` for the whole call. The single form is unchanged. A messenger
+    1.0.x answers an array with `{ ok: false, code: "invalid" }` — callers fall
+    back to one call per target.
+* `release_group` `{ key, delete?: false, adminIds?: [ids] }` (since 1.1.0) →
+  `{ ok, conversationId, released, deleted, admins }` — hands the caller's
+  managed group `key` back:
+  * `delete: false` (default): it becomes a normal group (`managedBy` null) —
+    members may leave, change title and picture; `adminIds` (those who are
+    members) become admins, without any the member who joined first; the
+    history stays, a system message `released` and `conversation.update`
+    (`reason: "released"`) tell the members. `admins` lists the new admins.
+  * `delete: true`: the group is deleted for everyone — its messages, files and
+    picture are removed for good, the members get `conversation.remove` (and
+    the chat under `removed` in `GET conversations?since=`).
+  * Either way the key is free again: a later `sync_group` with it creates a
+    new group. No such group of the caller → `not_found`.
 * Refusals answer `{ ok: false, code: "invalid" | "not_found" | "forbidden" }`.
 
 ## Portal tab

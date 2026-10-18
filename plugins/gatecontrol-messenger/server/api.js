@@ -107,7 +107,7 @@ async function route(ctx, req, seg) {
           const p = await messages.page(ctx, x.me, req.query, rc);
           const top = p.messages.reduce((mx, msg) => Math.max(mx, msg.id), 0);
           if (top) await messages.markDelivered(ctx, x.conv, x.me, x.members, top);
-          return { ...p, readUpTo: rc.readUpTo, deliveredUpTo: rc.deliveredUpTo, receipts: rc.receipts };
+          return { ...p, readUpTo: rc.readUpTo, deliveredUpTo: rc.deliveredUpTo, receipts: rc.receipts, serverTime: iso(ctx.now) };
         });
         return json(200, out);
       }

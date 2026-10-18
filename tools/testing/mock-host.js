@@ -138,6 +138,15 @@
 //   { id, name, role } or null. host.serviceCalls records { plugin, service, userId, payload, ok }.
 //   host.callService(name, { caller, user, payload }) calls this plugin's own hook service(…) as another plugin
 //   would (the service must be in services.provides; no hook → ERR_SERVICE_FAILED) → its result.
+//
+// GateControl 1.178.0 (opt-in: opts.gatecontrol: '1.178.0'; default is the behaviour of 1.177.0 — gc.services
+// has no `available`, a push picture must be { data, mime }):
+//   gc.services.available(plugin, service) (or ({ plugin, service })) → boolean: listed in permissions.services,
+//   not the plugin itself, a provider of opts.services offering it with a service hook; malformed id/name →
+//   ERR_INVALID; never runs the provider, not counted, not recorded in host.serviceCalls.
+//   gc.notify({ …, image: { mediaId } }) (any topic, chat topics included): one of the plugin's own media files
+//   (nothing else in `image`; needs `media` → else ERR_MEDIA_DENIED; unknown id, a type other than PNG/JPEG/WebP,
+//   over 300 KB → ERR_INVALID "invalid image: …") is read and checked like a sent picture.
 
 const fs = require('node:fs');
 const os = require('node:os');
@@ -661,6 +670,13 @@ async function createHost(pluginDir, opts = {}) {
   const serviceCalls = [];
   const serviceAt = [];
   const providers = (opts.services || []).filter((p) => p && typeof p.plugin === 'string' && p.plugin !== manifest.id);
+  // the GateControl version emulated for features newer than 1.177.0 (opt-in)
+  const hostAtLeast = (v) => {
+    const parse = (x) => String(x).split('.').map((n) => Number(n) || 0);
+    const [a, b] = [parse(opts.gatecontrol || '1.177.0'), parse(v)];
+    for (let i = 0; i < 3; i++) if ((a[i] || 0) !== (b[i] || 0)) return (a[i] || 0) > (b[i] || 0);
+    return true;
+  };
 
   // Storage: the plugin's own SQLite database with its migrations applied.
   let db = null;
@@ -775,6 +791,19 @@ async function createHost(pluginDir, opts = {}) {
       if (opts.notifyFail) {
         const code = opts.notifyFail(n || { message });
         if (code) throw hostError(code, 'notify failed (test)');
+      }
+      if (n && typeof n === 'object' && !Array.isArray(n) && hostAtLeast('1.178.0') && n.image && typeof n.image === 'object' && !Array.isArray(n.image)
+        && Object.prototype.hasOwnProperty.call(n.image, 'mediaId')) {
+        // GateControl ≥ 1.178.0 (hostApi.js notifyImageFromMedia): a picture from the plugin's own media
+        const im = n.image;
+        if (Object.keys(im).length !== 1) throw hostError('ERR_INVALID', 'invalid image: mediaId cannot be combined with data or mime');
+        if (typeof im.mediaId !== 'string' || !/^[0-9a-f]{32}$/.test(im.mediaId)) throw hostError('ERR_INVALID', 'invalid image: invalid media id');
+        if (!media) throw hostError('ERR_MEDIA_DENIED', 'plugin.json declares no media');
+        const f = mediaStore.get(im.mediaId);
+        if (!f) throw hostError('ERR_INVALID', 'invalid image: unknown media id');
+        if (!NOTIFY_IMAGE_EXT[f.mime]) throw hostError('ERR_INVALID', 'invalid image: mime');
+        if (f.bytes > NOTIFY_IMAGE_MAX) throw hostError('ERR_INVALID', 'invalid image: too_large');
+        n = { ...n, image: { data: Buffer.from(f.data).toString('base64'), mime: f.mime } };
       }
       if (n && typeof n === 'object' && !Array.isArray(n)) {
         // GateControl ≥ 1.154.0 (src/services/plugins/hostApi.js notify): same checks and codes
@@ -1006,6 +1035,18 @@ async function createHost(pluginDir, opts = {}) {
     return out;
   };
 
+  // gc.services.available (GateControl ≥ 1.178.0, hostApi.js servicesAvailable)
+  api['services.available'] = async (args) => {
+    if (!hostAtLeast('1.178.0')) throw hostError('ERR_UNKNOWN_API', 'services.available needs GateControl 1.178.0 (test)');
+    const a = args && typeof args === 'object' ? args : {};
+    if (typeof a.plugin !== 'string' || a.plugin.length < 2 || a.plugin.length > 64 || !PLUGIN_ID_RE.test(a.plugin)) throw hostError('ERR_INVALID', 'invalid plugin id');
+    if (typeof a.service !== 'string' || !SERVICE_NAME_RE.test(a.service)) throw hostError('ERR_INVALID', 'invalid service name');
+    if (a.plugin === manifest.id || !(perms.services || []).includes(`${a.plugin}:${a.service}`)) return false;
+    const p = providers.find((x) => x.plugin === a.plugin);
+    const offered = p ? (Array.isArray(p.provides) ? p.provides : Object.keys(p.provides || {})) : [];
+    return !!p && offered.includes(a.service) && typeof p.service === 'function';
+  };
+
   // gc.actions.* (GateControl ≥ 1.166.0, hostApi.js actionsList / actionsRun)
   const automationViewer = (args) => {
     if (perms.actions !== true) throw hostError('ERR_ACTIONS_DENIED', 'this plugin has no actions permission');
@@ -1136,6 +1177,13 @@ async function createHost(pluginDir, opts = {}) {
     }),
     services: Object.freeze({
       call: (o) => { const x = o && typeof o === 'object' ? o : {}; return call('services.call', { plugin: x.plugin, service: x.service, userId: x.userId, payload: x.payload }); },
+      // GateControl ≥ 1.178.0 only (like the child bootstrap of an older host, the function is missing before)
+      ...(hostAtLeast('1.178.0') ? {
+        available: (pluginId, service) => {
+          const x = pluginId && typeof pluginId === 'object' ? pluginId : { plugin: pluginId, service };
+          return call('services.available', { plugin: x.plugin, service: x.service });
+        },
+      } : {}),
     }),
   });
 

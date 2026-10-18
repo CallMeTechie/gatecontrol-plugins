@@ -109,6 +109,48 @@ test('pages: newest first page ascending, before / after / changedSince, limit â
   });
 });
 
+test('pages (1.1.0): around=<id> gives the messages before and after it; serverTime in every mode', async () => {
+  await withHost({}, async (host, c) => {
+    const d = await c.direct(ANNA, MARC);
+    const ids = [];
+    for (let i = 0; i < 9; i++) { ids.push((await c.send(ANNA, d.id, { text: `n${i}` })).id); c.clock.add(SEC); }
+    const marc = c.as(MARC);
+    const get = async (q) => (await marc('GET', `conversations/${d.id}/messages`, null, q)).json;
+    let r = await get({ around: String(ids[4]), limit: '5' });
+    assert.deepEqual(r.messages.map((m) => m.text), ['n2', 'n3', 'n4', 'n5', 'n6'], '2 older, the message, 2 newer');
+    assert.deepEqual([r.hasMore, r.hasMoreBefore, r.hasMoreAfter], [true, true, true]);
+    assert.equal(r.serverTime, new Date(Date.now()).toISOString());
+    r = await get({ around: String(ids[1]), limit: '6' });
+    assert.deepEqual(r.messages.map((m) => m.text), ['n0', 'n1', 'n2', 'n3'], 'fewer older ones at the start (the newer half is not filled up)');
+    assert.deepEqual([r.hasMoreBefore, r.hasMoreAfter], [false, true]);
+    r = await get({ around: String(ids[8]), limit: '4' });
+    assert.deepEqual(r.messages.map((m) => m.text), ['n6', 'n7', 'n8']);
+    assert.deepEqual([r.hasMore, r.hasMoreBefore, r.hasMoreAfter], [true, true, false]);
+    r = await get({ around: String(ids[4]), limit: '1' });
+    assert.deepEqual([r.messages.map((m) => m.text), r.hasMoreBefore, r.hasMoreAfter], [['n4'], true, true]);
+    // a message hidden for the viewer: its neighbours (the position still counts)
+    await marc('DELETE', `messages/${ids[4]}`, null, { for: 'me' });
+    r = await get({ around: String(ids[4]), limit: '4' });
+    assert.deepEqual(r.messages.map((m) => m.text), ['n2', 'n3', 'n5', 'n6']);
+    // the other modes carry serverTime too; it works as the next changedSince
+    for (const q of [{}, { before: String(ids[3]) }, { after: String(ids[3]) }, { changedSince: new Date(Date.now() - 1000).toISOString() }]) {
+      assert.equal((await get(q)).serverTime, new Date(Date.now()).toISOString(), JSON.stringify(q));
+    }
+    const t = (await get({})).serverTime;
+    c.clock.add(SEC);
+    await c.as(ANNA)('PATCH', `messages/${ids[7]}`, { text: 'n7!' });
+    assert.deepEqual((await get({ changedSince: t })).messages.map((m) => m.text), ['n7!']);
+    for (const q of [{ around: 'x' }, { around: '0' }, { around: String(ids[2]), before: String(ids[3]) }, { around: String(ids[2]), after: String(ids[1]) }, { around: String(ids[2]), limit: '101' }]) {
+      assert.equal((await get(q)).code, 'invalid', JSON.stringify(q));
+    }
+    // another conversation's message id is only a position: nothing of that chat comes back
+    const other = await c.direct(ANNA, LENA);
+    const foreign = await c.send(ANNA, other.id, { text: 'privat' });
+    r = await get({ around: String(foreign.id), limit: '4' });
+    assert.ok(!r.messages.some((m) => m.text === 'privat'));
+  });
+});
+
 test('edit and delete for everyone: sender only, within the window (default 15 min; 0 = never)', async () => {
   await withHost({}, async (host, c) => {
     const d = await c.direct(ANNA, MARC);

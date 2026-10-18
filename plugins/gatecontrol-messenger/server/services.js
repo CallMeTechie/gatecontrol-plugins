@@ -12,12 +12,26 @@
 //     The message is a system message from "GateControl" (senderId null, via = caller) with the text,
 //     pushed to the members like any message.
 //     → { ok: true, conversationId, messageId }
+//     1.1.0: `conversation` may be an array of 1…20 such targets (duplicates dropped) — one call, one
+//     message per target, each in its own transaction (one refused target does not stop the others):
+//     → { ok: true, sent, failed, results: [ { conversation, ok: true, conversationId, messageId }
+//                                           | { conversation, ok: false, code } ] } (in the given order)
 //
 //   sync_group { key, title, userIds }
 //     creates or updates the caller's managed group `key` ([a-z0-9_-]{1,32}): title and exactly these
 //     members (enabled accounts; others are ignored and listed). Members cannot change the members,
 //     the title or the picture of a managed group in the messenger, nor leave it.
 //     → { ok: true, conversationId, created, added, removed, ignored }
+//
+//   release_group { key, delete?, adminIds? }   (1.1.0)
+//     hands the caller's managed group `key` back:
+//       delete false (default) — it becomes a normal group: members may leave, change the title and the
+//                                picture; `adminIds` (members among them) become admins, else the member
+//                                who joined first; a system message `released`; the key is free again
+//                                (a later sync_group with it creates a new group)
+//       delete true            — the group is deleted for everyone: its messages, files and picture are
+//                                removed for good, the members get conversation.remove
+//     → { ok: true, conversationId, released, deleted, admins }   not_found when the caller has no such group
 //
 // Refusals answer { ok: false, code } (invalid | not_found | forbidden) and are logged
 // (Protokoll: service_refused, with the code — never the text).
@@ -31,6 +45,7 @@ const messages = require('./messages');
 const { fail, isKnown, posInt, text, optText, iso } = require('./util');
 
 const KEY_RE = /^[a-z0-9_-]{1,32}$/;
+const TARGETS_MAX = 20;
 
 async function managed(gc, caller, key) {
   return store.one(gc, 'SELECT * FROM conversations WHERE managed_by = ? AND managed_key = ?', [caller, key]);
@@ -77,17 +92,57 @@ async function target(ctx, caller, user, payload) {
   throw fail('invalid');
 }
 
-/** send_message → { conversationId, messageId } plus the push job for after the commit. */
-async function sendMessage(ctx, caller, user, payload) {
+/** The text of send_message: \r\n → \n, control characters removed, trimmed, 1…4000 characters. */
+function noticeText(payload) {
   const body = typeof payload.text === 'string' ? payload.text.replace(/\r\n?/g, '\n').replace(/[\0-\x08\x0b-\x1f\x7f]/g, '').trim() : '';
   if (!body || body.length > messages.TEXT_MAX) throw fail('invalid');
-  const conv = await target(ctx, caller, user, payload);
+  return body;
+}
+
+/** One message into one target → { conversationId, messageId } plus the push job for after the commit. */
+async function sendTo(ctx, caller, user, payload, conversation, body) {
+  const conv = await target(ctx, caller, user, { ...payload, conversation });
   const id = await messages.system(ctx, conv, 'notice', null, { text: body, via: caller });
   const members = await conversations.membersOf(ctx.gc, conv.id);
   const row = await store.one(ctx.gc, 'SELECT * FROM messages WHERE id = ?', [id]);
   messages.queueNew(ctx, conv, members, row);
   ctx.box.pushes.push({ conv, members, row, text: body, meta: null, title: conversations.titleOf(conv) });
   return { conversationId: conv.id, messageId: id };
+}
+
+/** send_message with one target (a string) → { conversationId, messageId } */
+async function sendMessage(ctx, caller, user, payload) {
+  return sendTo(ctx, caller, user, payload, payload.conversation, noticeText(payload));
+}
+
+/**
+ * send_message with several targets (1.1.0, `conversation` an array of 1…20 strings): each target in its
+ * own transaction; a refused one is listed with its code (and logged), the others are sent.
+ * → { sent, failed, results }
+ */
+async function sendMany(ctx, caller, user, payload) {
+  const list = payload.conversation;
+  if (!list.length || list.length > TARGETS_MAX || !list.every((c) => typeof c === 'string' && c.length <= 64)) throw fail('invalid');
+  const body = noticeText(payload);
+  const results = [];
+  for (const c of [...new Set(list)]) {
+    const ev = ctx.box.events.length;
+    const pu = ctx.box.pushes.length;
+    try {
+      const r = await store.tx(ctx.gc, () => sendTo(ctx, caller, user, payload, c, body));
+      results.push({ conversation: c, ok: true, ...r });
+    } catch (e) {
+      // nothing of a rolled-back target goes out
+      ctx.box.events.length = ev;
+      ctx.box.pushes.length = pu;
+      const code = isKnown(e) ? e.code : 'failed';
+      if (!isKnown(e)) ctx.gc.log.warn('send_message target failed', (e && (e.code || e.message)) || 'error');
+      await log.add(ctx.gc, 'service_refused', `send_message: ${code}`, ctx.now);
+      results.push({ conversation: c, ok: false, code });
+    }
+  }
+  const sent = results.filter((r) => r.ok).length;
+  return { sent, failed: results.length - sent, results };
 }
 
 /** sync_group → { conversationId, created, added, removed, ignored } */
@@ -134,6 +189,50 @@ async function syncGroup(ctx, caller, payload) {
   return { conversationId: conv.id, created, added, removed, ignored, at: iso(ctx.now) };
 }
 
+/** release_group (1.1.0) → { conversationId, released, deleted, admins } */
+async function releaseGroup(ctx, caller, payload) {
+  const key = typeof payload.key === 'string' && KEY_RE.test(payload.key) ? payload.key : null;
+  if (!key) throw fail('invalid');
+  if (payload.delete != null && typeof payload.delete !== 'boolean') throw fail('invalid');
+  let adminIds = [];
+  if (payload.adminIds != null) {
+    if (!Array.isArray(payload.adminIds) || payload.adminIds.length > conversations.GROUP_MAX) throw fail('invalid');
+    adminIds = payload.adminIds.map((x) => posInt(x));
+    if (adminIds.some((x) => !x)) throw fail('invalid');
+  }
+  const conv = await managed(ctx.gc, caller, key);
+  if (!conv) throw fail('not_found');
+  const members = await conversations.membersOf(ctx.gc, conv.id);
+  const ids = members.map((m) => m.user_id);
+  if (payload.delete === true) {
+    // everything of the group goes: messages (with reactions, "hidden" marks), files and picture
+    // (deleted from GateControl's store by the background run); the members are out
+    await store.run(ctx.gc, 'UPDATE media SET orphan = 1, msg_id = NULL WHERE conv_id = ?', [conv.id]);
+    await store.run(ctx.gc, 'DELETE FROM reactions WHERE msg_id IN (SELECT id FROM messages WHERE conv_id = ?)', [conv.id]);
+    await store.run(ctx.gc, 'DELETE FROM hidden WHERE msg_id IN (SELECT id FROM messages WHERE conv_id = ?)', [conv.id]);
+    await store.run(ctx.gc, 'DELETE FROM messages WHERE conv_id = ?', [conv.id]);
+    for (const id of ids) await conversations.dropMember(ctx.gc, conv.id, id, ctx.now);
+    // the member rows stay (left): GET conversations?since= lists the chat under `removed`
+    await store.run(ctx.gc, 'DELETE FROM conversations WHERE id = ?', [conv.id]);
+    live.queue(ctx.box, ids, 'conversation.remove', { conversationId: conv.id });
+    return { conversationId: conv.id, released: false, deleted: true, admins: [] };
+  }
+  await store.run(ctx.gc, 'UPDATE conversations SET managed_by = NULL, managed_key = NULL, updated_at = ? WHERE id = ?', [ctx.now, conv.id]);
+  conv.managed_by = null;
+  conv.managed_key = null;
+  const admins = [...new Set(adminIds)].filter((id) => ids.includes(id));
+  for (const id of admins) await store.run(ctx.gc, "UPDATE members SET role = 'admin', updated_at = ? WHERE conv_id = ? AND user_id = ?", [ctx.now, conv.id, id]);
+  if (!admins.length && members.length) {
+    // a group always keeps an admin: the member who joined first
+    await store.run(ctx.gc, "UPDATE members SET role = 'admin', updated_at = ? WHERE conv_id = ? AND user_id = ?", [ctx.now, conv.id, members[0].user_id]);
+    admins.push(members[0].user_id);
+  }
+  const msgId = await messages.system(ctx, conv, 'released', { by: null });
+  live.queue(ctx.box, ids, 'conversation.update', { conversationId: conv.id, reason: 'released' });
+  live.queue(ctx.box, ids, 'message.new', { conversationId: conv.id, messageId: msgId, senderId: null, clientId: null, kind: 'system', createdAt: iso(ctx.now) });
+  return { conversationId: conv.id, released: true, deleted: false, admins };
+}
+
 /**
  * The hook: run one service in a transaction, then send events and pushes.
  * `run(ctxFactory)` is provided by index.js (context with users, settings, outbox).
@@ -144,8 +243,11 @@ async function handle(ctx, { name, caller, user, payload }, flush) {
   try {
     if (!who) throw fail('invalid');
     let out;
-    if (name === 'send_message') out = await store.tx(ctx.gc, () => sendMessage(ctx, who, user && Number.isSafeInteger(user.id) ? user : null, p));
+    const u = user && Number.isSafeInteger(user.id) ? user : null;
+    if (name === 'send_message' && Array.isArray(p.conversation)) out = await sendMany(ctx, who, u, p);
+    else if (name === 'send_message') out = await store.tx(ctx.gc, () => sendMessage(ctx, who, u, p));
     else if (name === 'sync_group') out = await store.tx(ctx.gc, () => syncGroup(ctx, who, p));
+    else if (name === 'release_group') out = await store.tx(ctx.gc, () => releaseGroup(ctx, who, p));
     else throw new Error('unknown service');
     await flush();
     return { ok: true, ...out };
@@ -156,4 +258,4 @@ async function handle(ctx, { name, caller, user, payload }, flush) {
   }
 }
 
-module.exports = { handle, sendMessage, syncGroup, KEY_RE };
+module.exports = { handle, sendMessage, sendMany, syncGroup, releaseGroup, KEY_RE, TARGETS_MAX };

@@ -7,7 +7,7 @@
 //
 //   chat API   (apps, portal)              server/api.js — contract in README.md "App-API"
 //   admin API  admin/* (administrators)    server/admin.js
-//   services   send_message, sync_group    server/services.js (for Familie)
+//   services   send_message, sync_group, release_group (1.1.0)    server/services.js (for Familie)
 //   media      gc.media (uploads by the apps / GC.upload), hook mediaAccess: members only
 //   live       gc.events (message.new, …), chat pushes (notifyTopics[].chat) — server/live.js, server/push.js
 //   background disappearing messages, retention, file clean-up — server/jobs.js
@@ -142,7 +142,7 @@ module.exports = {
     return !hidden;
   },
 
-  /** Services for other plugins (services.provides): send_message, sync_group — server/services.js. */
+  /** Services for other plugins (services.provides): send_message, sync_group, release_group — server/services.js. */
   async service(call, gc) {
     await ensureKey(gc);
     const now = Date.now();

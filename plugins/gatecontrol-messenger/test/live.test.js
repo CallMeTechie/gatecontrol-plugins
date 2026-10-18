@@ -19,8 +19,13 @@ test('read: unread count, read mark, events to one\'s own devices and to the oth
     let r = await marc('POST', `conversations/${d.id}/read`, { upTo: m1.id });
     assert.deepEqual(r.json, { ok: true, lastReadId: m1.id, unread: 1 });
     const evs = c.events('read');
-    assert.deepEqual(evs.find((e) => e.users[0] === MARC.id).data, { conversationId: d.id, userId: MARC.id, lastDeliveredId: m1.id, lastReadId: m1.id, self: true, unread: 1 });
-    assert.deepEqual(evs.find((e) => e.users[0] === ANNA.id).data, { conversationId: d.id, userId: MARC.id, lastDeliveredId: m1.id, lastReadId: m1.id });
+    // 1.1.0: readUpTo / deliveredUpTo as GET conversations/:id gives them to each recipient
+    assert.deepEqual(evs.find((e) => e.users[0] === MARC.id).data, { conversationId: d.id, userId: MARC.id, lastDeliveredId: m1.id, lastReadId: m1.id, self: true, unread: 1, readUpTo: m2.id, deliveredUpTo: m2.id });
+    assert.deepEqual(evs.find((e) => e.users[0] === ANNA.id).data, { conversationId: d.id, userId: MARC.id, lastDeliveredId: m1.id, lastReadId: m1.id, readUpTo: m1.id, deliveredUpTo: m1.id });
+    for (const [u, ev] of [[MARC, evs.find((e) => e.users[0] === MARC.id)], [ANNA, evs.find((e) => e.users[0] === ANNA.id)]]) {
+      const conv = (await c.as(u)('GET', `conversations/${d.id}`)).json.conversation;
+      assert.deepEqual([ev.data.readUpTo, ev.data.deliveredUpTo], [conv.readUpTo, conv.deliveredUpTo], `${u.name}: same as the GET`);
+    }
     // Anna sees it: readUpTo and the status of her messages
     let forAnna = (await c.as(ANNA)('GET', `conversations/${d.id}/messages`)).json;
     assert.equal(forAnna.readUpTo, m1.id);
@@ -97,6 +102,39 @@ test('groups: readUpTo is the lowest read mark of the members who share receipts
     assert.equal(conv.readUpTo, m.id);
     assert.equal(conv.lastMessage.status, 'read');
     assert.equal(conv.receipts.length, 2);
+  });
+});
+
+test('read events (1.1.0): every recipient gets readUpTo / deliveredUpTo as its own GET would give them', async () => {
+  await withHost({}, async (host, c) => {
+    const g = await c.group(ANNA, [MARC, LENA, OMA]);
+    const m1 = await c.send(ANNA, g.id, { text: 'eins' });
+    const m2 = await c.send(ANNA, g.id, { text: 'zwei' });
+    await c.as(LENA)('PUT', 'prefs', { readReceipts: false });
+    await c.as(OMA)('POST', `conversations/${g.id}/read`, { upTo: m2.id });
+    c.resetEvents();
+    await c.as(MARC)('POST', `conversations/${g.id}/read`, { upTo: m1.id });
+    const evs = c.events('read');
+    for (const u of [ANNA, MARC, LENA, OMA]) {
+      const ev = evs.filter((e) => e.users.includes(u.id));
+      assert.equal(ev.length, 1, `${u.name}: one event`);
+      const conv = (await c.as(u)('GET', `conversations/${g.id}`)).json.conversation;
+      assert.deepEqual([ev[0].data.readUpTo, ev[0].data.deliveredUpTo], [conv.readUpTo, conv.deliveredUpTo], u.name);
+    }
+    const of = (u) => evs.find((e) => e.users.includes(u.id)).data;
+    assert.deepEqual([of(ANNA).lastReadId, of(ANNA).readUpTo], [m1.id, m1.id]);
+    assert.deepEqual([of(LENA).lastReadId, of(LENA).readUpTo], [null, null], 'Lena shares no receipts: sees none');
+    assert.deepEqual([of(MARC).self, of(MARC).readUpTo], [true, m2.id], 'Anna and Oma read m2');
+    assert.ok(evs.some((e) => e.users.length > 1), 'recipients with the same values share one event');
+    // a delivered mark moves (GET conversations): the same fields
+    const m3 = await c.send(ANNA, g.id, { text: 'drei' });
+    c.resetEvents();
+    await c.as(LENA)('GET', 'conversations');
+    for (const u of [ANNA, MARC, OMA]) {
+      const ev = c.events('read').find((e) => e.users.includes(u.id));
+      const conv = (await c.as(u)('GET', `conversations/${g.id}`)).json.conversation;
+      assert.deepEqual([ev.data.lastDeliveredId, ev.data.readUpTo, ev.data.deliveredUpTo], [m3.id, conv.readUpTo, conv.deliveredUpTo], u.name);
+    }
   });
 });
 

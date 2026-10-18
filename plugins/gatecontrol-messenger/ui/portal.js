@@ -70,6 +70,7 @@
       case 'title': return T('sys.title', { name: who, title: s.title || '' });
       case 'avatar': return T('sys.avatar', { name: who });
       case 'disappearing': return s.seconds ? T('sys.dis_on', { name: who, time: disLabel(s.seconds) }) : T('sys.dis_off', { name: who });
+      case 'released': return T('sys.released');
       default: return m.text || '';
     }
   }
