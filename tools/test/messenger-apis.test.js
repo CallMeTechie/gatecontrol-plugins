@@ -244,3 +244,47 @@ test('services: validated declarations, gc.services.call against opts.services, 
   const h3 = await createHost(noHook.dir);
   try { await assert.rejects(h3.callService('a'), { code: 'ERR_SERVICE_FAILED' }); } finally { await h3.close(); noHook.done(); }
 });
+
+test('GateControl 1.178.0 (opts.gatecontrol): gc.services.available, push pictures from the plugin\'s media', async () => {
+  const services = [{ plugin: 'gatecontrol-messenger', provides: ['send_message'], service: async () => ({ ok: true }) }];
+  const p = plugin({ permissions: { services: ['gatecontrol-messenger:send_message', 'gatecontrol-messenger:sync_group', 'gatecontrol-other:x'] } });
+  const old = await createHost(p.dir, { users: USERS, services });
+  try {
+    assert.equal(typeof old.gc.services.available, 'undefined', 'GateControl 1.177.0 has no available()');
+  } finally { await old.close(); }
+  const h = await createHost(p.dir, { users: USERS, services, gatecontrol: '1.178.0' });
+  try {
+    assert.equal(await h.gc.services.available('gatecontrol-messenger', 'send_message'), true);
+    assert.equal(await h.gc.services.available({ plugin: 'gatecontrol-messenger', service: 'send_message' }), true);
+    assert.equal(await h.gc.services.available('gatecontrol-messenger', 'sync_group'), false, 'listed, not provided');
+    assert.equal(await h.gc.services.available('gatecontrol-messenger', 'other'), false, 'not listed');
+    assert.equal(await h.gc.services.available('gatecontrol-other', 'x'), false, 'no such provider');
+    await assert.rejects(h.gc.services.available('Bad Id', 'x'), { code: 'ERR_INVALID' });
+    await assert.rejects(h.gc.services.available('gatecontrol-messenger', 'Bad-Name'), { code: 'ERR_INVALID' });
+    assert.deepEqual(h.serviceCalls, [], 'never runs the provider, never counted');
+  } finally { await h.close(); p.done(); }
+
+  // a 40 × 32 PNG (header and IHDR are what the checks read)
+  const ihdr = Buffer.alloc(25);
+  ihdr.writeUInt32BE(13, 0); ihdr.write('IHDR', 4, 'latin1'); ihdr.writeUInt32BE(40, 8); ihdr.writeUInt32BE(32, 12);
+  const pic = Buffer.concat([Buffer.from('\x89PNG\r\n\x1a\n', 'latin1'), ihdr, Buffer.from([0, 0, 0, 0]), Buffer.from('IEND', 'latin1'), Buffer.alloc(4)]);
+  const m = plugin({ permissions: { notify: true, app: true }, media: MEDIA, notifyTopics: [{ id: 'message', label: 'N', chat: true }, { id: 'news', label: 'News' }] });
+  const chat = (image) => ({ topic: 'message', title: 'Anna', body: 'Foto', users: [3], conversation: { id: 12 }, sender: { id: 2, name: 'Anna' }, image });
+  const h2 = await createHost(m.dir, { users: USERS, gatecontrol: '1.178.0' });
+  try {
+    const id = (await h2.upload({ id: 2, name: 'Anna', role: 'user', app: true }, pic, 'image/png')).body.mediaId;
+    const pdf = (await h2.upload({ id: 2, name: 'Anna', role: 'user', app: true }, Buffer.from('%PDF-1.4'), 'application/pdf')).body.mediaId;
+    await h2.gc.notify(chat({ mediaId: id }));
+    assert.deepEqual(h2.notifications.at(-1).image, { mime: 'image/png', size: pic.length, width: 40, height: 32 });
+    await h2.gc.notify({ topic: 'news', title: 'x', image: { mediaId: id } });
+    assert.equal(h2.notifications.at(-1).image.width, 40, 'any topic');
+    for (const bad of [{ mediaId: id, mime: 'image/png' }, { mediaId: 'x' }, { mediaId: 'f'.repeat(32) }, { mediaId: pdf }]) {
+      await assert.rejects(h2.gc.notify(chat(bad)), (e) => e.code === 'ERR_INVALID' && /^invalid image/.test(e.message), JSON.stringify(bad));
+    }
+  } finally { await h2.close(); }
+  const h3 = await createHost(m.dir, { users: USERS });
+  try {
+    const id = (await h3.upload({ id: 2, name: 'Anna', role: 'user', app: true }, pic, 'image/png')).body.mediaId;
+    await assert.rejects(h3.gc.notify(chat({ mediaId: id })), { code: 'ERR_INVALID' }, 'GateControl 1.177.0 wants { data, mime }');
+  } finally { await h3.close(); m.done(); }
+});

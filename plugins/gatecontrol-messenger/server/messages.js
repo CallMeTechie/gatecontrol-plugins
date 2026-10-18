@@ -145,17 +145,34 @@ async function unreadCount(gc, me) {
   return r ? r.n : 0;
 }
 
-/** GET conversations/:id/messages?before=|after=|changedSince=&limit= → { messages (ascending), hasMore } */
+/**
+ * GET conversations/:id/messages?before=|after=|changedSince=|around=&limit= → { messages (ascending), hasMore }
+ * around (1.1.0): the message `around` and the messages before and after it — floor(limit / 2) older ones,
+ * the rest from `around` on (the message itself when the member sees it) → also { hasMoreBefore, hasMoreAfter }.
+ */
 async function page(ctx, me, query, rc) {
   const q = query || {};
   const limit = q.limit == null || q.limit === '' ? PAGE_DEFAULT : posInt(String(q.limit));
   if (!limit || limit > PAGE_MAX) throw fail('invalid');
-  const before = q.before == null || q.before === '' ? null : posInt(String(q.before));
-  const after = q.after == null || q.after === '' ? null : posInt(String(q.after));
-  const changed = q.changedSince == null || q.changedSince === '' ? null : parseIso(String(q.changedSince));
-  if ((q.before != null && q.before !== '' && !before) || (q.after != null && q.after !== '' && !after) || (q.changedSince != null && q.changedSince !== '' && changed == null)) throw fail('invalid');
-  if ([before, after, changed].filter((x) => x != null).length > 1) throw fail('invalid');
+  const given = (k) => q[k] != null && q[k] !== '';
+  const before = given('before') ? posInt(String(q.before)) : null;
+  const after = given('after') ? posInt(String(q.after)) : null;
+  const around = given('around') ? posInt(String(q.around)) : null;
+  const changed = given('changedSince') ? parseIso(String(q.changedSince)) : null;
+  if ((given('before') && !before) || (given('after') && !after) || (given('around') && !around) || (given('changedSince') && changed == null)) throw fail('invalid');
+  if ([before, after, around, changed].filter((x) => x != null).length > 1) throw fail('invalid');
   let rows;
+  if (around) {
+    const nBefore = Math.floor(limit / 2);
+    const nAfter = limit - nBefore;
+    const older = nBefore ? await store.all(ctx.gc, `SELECT m.* FROM messages m WHERE ${VISIBLE_SQL} AND m.id < ? ORDER BY m.id DESC LIMIT ?`, [...visibleArgs(me), around, nBefore + 1]) : [];
+    const newer = await store.all(ctx.gc, `SELECT m.* FROM messages m WHERE ${VISIBLE_SQL} AND m.id >= ? ORDER BY m.id ASC LIMIT ?`, [...visibleArgs(me), around, nAfter + 1]);
+    const hasMoreBefore = nBefore ? older.length > nBefore
+      : !!(await store.one(ctx.gc, `SELECT 1 AS x FROM messages m WHERE ${VISIBLE_SQL} AND m.id < ? LIMIT 1`, [...visibleArgs(me), around]));
+    const hasMoreAfter = newer.length > nAfter;
+    rows = [...older.slice(0, nBefore).reverse(), ...newer.slice(0, nAfter)];
+    return { messages: await views(ctx, me, rows, rc), hasMore: hasMoreBefore || hasMoreAfter, hasMoreBefore, hasMoreAfter };
+  }
   if (after) {
     rows = await store.all(ctx.gc, `SELECT m.* FROM messages m WHERE ${VISIBLE_SQL} AND m.id > ? ORDER BY m.id ASC LIMIT ?`, [...visibleArgs(me), after, limit + 1]);
     const hasMore = rows.length > limit;
@@ -396,21 +413,53 @@ async function react(ctx, conv, me, members, id, body) {
 // ─── read marks ─────────────────────────────────────────────────────────────
 
 /**
+ * Receipts as `viewer` may see them (pure; conversations.receipts, the 'read' event): deliveredUpTo (the
+ * lowest delivered mark of the other members with an account), readUpTo and receipts[] only when the
+ * viewer shares read receipts — then over the other members who share them too (null / [] when nobody does).
+ * `prefs` = people.prefsOf of the members, `users` = the enabled accounts (Map).
+ */
+function receiptsAs(viewer, members, prefs, users) {
+  const others = members.filter((m) => m.user_id !== viewer && users.has(m.user_id));
+  const mine = prefs.get(viewer) || {};
+  const deliveredUpTo = others.length ? Math.min(...others.map((m) => m.last_delivered_id)) : null;
+  if (!mine.readReceipts) return { readUpTo: null, deliveredUpTo, receipts: [] };
+  const sharing = others.filter((m) => (prefs.get(m.user_id) || {}).readReceipts);
+  return {
+    readUpTo: sharing.length ? Math.min(...sharing.map((m) => m.last_read_id)) : null,
+    deliveredUpTo,
+    receipts: sharing.map((m) => ({ userId: m.user_id, lastReadId: m.last_read_id, lastDeliveredId: m.last_delivered_id })),
+  };
+}
+
+/**
  * Queue the 'read' event after a member's marks moved: the member's own devices get
  * { …, self: true, unread }; the others get lastReadId only when both share read receipts
- * (else null) — lastDeliveredId always.
+ * (else null) — lastDeliveredId always. 1.1.0: every recipient also gets readUpTo and
+ * deliveredUpTo as GET conversations/:id would give them to that recipient now (recipients
+ * with the same values share one event).
  */
 async function queueRead(ctx, conv, members, me, { self = true } = {}) {
-  const ids = members.map((m) => m.user_id);
+  // the members with the reader's new marks (the rows were read before the marks moved)
+  const cur = members.map((m) => (m.user_id === me.user_id ? { ...m, last_read_id: me.last_read_id, last_delivered_id: me.last_delivered_id } : m));
+  const ids = cur.map((m) => m.user_id);
   const prefs = await people.prefsOf(ctx.gc, ids);
   const mine = prefs.get(me.user_id) || {};
   const base = { conversationId: conv.id, userId: me.user_id, lastDeliveredId: me.last_delivered_id };
-  if (self) live.queue(ctx.box, [me.user_id], 'read', { ...base, lastReadId: me.last_read_id, self: true, unread: await unreadCount(ctx.gc, me) });
-  const others = ids.filter((u) => u !== me.user_id);
-  const sharing = mine.readReceipts ? others.filter((u) => (prefs.get(u) || {}).readReceipts) : [];
-  const rest = others.filter((u) => !sharing.includes(u));
-  live.queue(ctx.box, sharing, 'read', { ...base, lastReadId: me.last_read_id });
-  live.queue(ctx.box, rest, 'read', { ...base, lastReadId: null });
+  const upTo = (u) => {
+    const rc = receiptsAs(u, cur, prefs, ctx.users);
+    return { readUpTo: rc.readUpTo, deliveredUpTo: rc.deliveredUpTo };
+  };
+  if (self) live.queue(ctx.box, [me.user_id], 'read', { ...base, lastReadId: me.last_read_id, self: true, unread: await unreadCount(ctx.gc, me), ...upTo(me.user_id) });
+  const groups = new Map();
+  for (const u of ids) {
+    if (u === me.user_id) continue;
+    const shared = !!(mine.readReceipts && (prefs.get(u) || {}).readReceipts);
+    const data = { ...base, lastReadId: shared ? me.last_read_id : null, ...upTo(u) };
+    const k = JSON.stringify(data);
+    if (!groups.has(k)) groups.set(k, { users: [], data });
+    groups.get(k).users.push(u);
+  }
+  for (const g of groups.values()) live.queue(ctx.box, g.users, 'read', g.data);
 }
 
 /** POST conversations/:id/read { upTo } → { lastReadId, unread } */
@@ -479,6 +528,6 @@ async function mediaList(ctx, me, query, rc) {
 }
 
 module.exports = {
-  views, page, send, queueNew, edit, remove, react, markRead, markDelivered, queueRead, search, mediaList, system, insert, checkMedia, bindMedia,
+  views, page, send, queueNew, edit, remove, react, markRead, markDelivered, queueRead, receiptsAs, search, mediaList, system, insert, checkMedia, bindMedia,
   orphanMedia, lastVisible, unreadCount, bodyOf, metaOf, visibleMessage, cleanEmoji, TEXT_MAX, PAGE_MAX, THUMB_MAX, URL_TTL_S, KINDS, CLIENT_ID_RE,
 };

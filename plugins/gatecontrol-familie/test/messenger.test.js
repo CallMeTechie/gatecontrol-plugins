@@ -21,20 +21,29 @@ const MSG_DIR = path.join(__dirname, '..', '..', MSG);
 const FAMILY = [ANNA.id, MARC.id, LENA.id, TIM.id];
 const sorted = (a) => [...a].sort((x, y) => x - y);
 
+const ALL = ['sync_group', 'send_message', 'release_group'];
+const V10 = ['sync_group', 'send_message'];
+
 /**
  * The Messenger plugin as a provider of the familie host: a mock host of its own (created on the
- * first call, so it runs on the test clock). bridge.provides = [] makes it "uninstalled".
+ * first call, so it runs on the test clock). bridge.provides = [] makes it "uninstalled";
+ * bridge.v10 = true emulates a messenger 1.0.x (no release_group, a list of targets refused as invalid);
+ * o.msgUsers: the accounts the messenger knows (default USERS).
  */
-function messengerBridge() {
+function messengerBridge(o = {}) {
   let mh = null;
   const bridge = {
     plugin: MSG,
-    provides: ['sync_group', 'send_message'],
+    v10: !!o.v10,
+    provides: o.v10 ? V10.slice() : ALL.slice(),
     async host() {
-      if (!mh) { mh = await createHost(MSG_DIR, { users: USERS }); await mh.start(); }
+      if (!mh) { mh = await createHost(MSG_DIR, { users: o.msgUsers || USERS }); await mh.start(); }
       return mh;
     },
-    service: async (c) => (await bridge.host()).callService(c.name, { caller: c.caller, user: c.user, payload: c.payload }),
+    service: async (c) => {
+      if (bridge.v10 && c.name === 'send_message' && c.payload && Array.isArray(c.payload.conversation)) return { ok: false, code: 'invalid' };
+      return (await bridge.host()).callService(c.name, { caller: c.caller, user: c.user, payload: c.payload });
+    },
     /** The messenger API as `user` sees it (the app). */
     async as(user, method, p, body) {
       const h = await bridge.host();
@@ -49,6 +58,7 @@ function messengerBridge() {
       const g = (await bridge.managed(user)).filter((c) => !c.readonly);
       return g.length ? (await bridge.as(user, 'GET', `conversations/${g[0].id}`)).json.conversation : null;
     },
+    async conversation(user, id) { return (await bridge.as(user, 'GET', `conversations/${id}`)).json.conversation || null; },
     async messages(user, id) { return (await bridge.as(user, 'GET', `conversations/${id}/messages`)).json.messages; },
     close: () => (mh ? mh.close() : null),
   };
@@ -56,7 +66,7 @@ function messengerBridge() {
 }
 
 async function withMessenger(opts, fn) {
-  const bridge = messengerBridge();
+  const bridge = messengerBridge(opts);
   try {
     return await withFamily({ ...opts, services: [bridge] }, (host, ctx) => fn(host, ctx, bridge));
   } finally {
@@ -117,7 +127,7 @@ test('sync at start, every 6 hours and when the title changes; repeated syncs ch
   assert.equal((await m.family()).title, 'Family');
 }));
 
-test('the switch on „Funktionen“: off stops the sync (the group stays), on syncs at once', () => withMessenger({}, async (host, { admin }, m) => {
+test('the switch on „Funktionen“ with a messenger 1.0.x: off stops the sync (the group stays, the release waits), on syncs at once', () => withMessenger({ v10: true }, async (host, { admin }, m) => {
   await host.tick();
   let r = await admin('PUT', 'messenger', { group: false });
   assert.equal(r.status, 200);
@@ -130,6 +140,7 @@ test('the switch on „Funktionen“: off stops the sync (the group stays), on s
   assert.equal(syncCalls(host).length, n, 'no sync while off');
   assert.deepEqual(sorted((await m.family()).members.map((x) => x.userId)), FAMILY, 'the group stays as it was');
   assert.equal((await admin('POST', 'messenger/sync')).status, 400, 'no manual sync while off');
+  assert.deepEqual([(await admin('GET', 'messenger')).json.messenger.release.ok, (await admin('GET', 'messenger')).json.messenger.available], [false, true], 'release pending; the messenger itself is there');
   r = await admin('PUT', 'messenger', { group: true });
   assert.equal(r.json.messenger.group, true);
   assert.deepEqual(sorted((await m.family()).members.map((x) => x.userId)), sorted([ANNA.id, MARC.id, LENA.id]), 'synced at once');
@@ -160,6 +171,8 @@ test('rule action „Messenger-Nachricht senden“: into the group with the plac
     assert.equal((await m.messages(u, ch[0].id)).at(-1).text, 'Anna ist zuhause');
   }
   assert.equal((await m.managed(ANNA)).filter((c) => c.readonly).length, 0, 'Anna set it off');
+  const multi = host.serviceCalls.filter((c) => c.service === 'send_message' && Array.isArray(c.payload.conversation));
+  assert.deepEqual(multi.map((c) => c.payload.conversation), [[`user:${MARC.id}`, `user:${LENA.id}`]], '1.7.0: both people in one call');
   const log = (await as(ANNA)('GET', '/presence/rules')).json.log;
   const res = log.map((x) => x.results[0]).sort((a, b) => (a.to === 'family' ? -1 : 1) - (b.to === 'family' ? -1 : 1));
   assert.deepEqual(res, [
@@ -270,3 +283,102 @@ test('pages: the card „Messenger“ on „Funktionen“, the messenger tab in 
   assert.ok(pres.includes('function messengerPanel()') && pres.includes("'@messenger'"));
   assert.equal(texts.de['rule.m_msg_title'], 'Messenger-Nachricht senden');
 });
+
+test('1.7.0: switched off, the group is handed back — a normal group, the parents its admins; on again: a new group', () => withMessenger({ settings: { mod_wall: true } }, async (host, { admin }, m) => {
+  await host.tick();
+  const g = await m.family();
+  const r = await admin('PUT', 'messenger', { group: false });
+  assert.equal(r.status, 200);
+  const rel = host.serviceCalls.filter((c) => c.service === 'release_group');
+  assert.deepEqual(rel.map((c) => [c.payload.key, sorted(c.payload.adminIds), c.ok]), [['family', sorted([ANNA.id, MARC.id]), true]]);
+  assert.deepEqual([r.json.messenger.release.ok, r.json.messenger.release.conversationId, r.json.messenger.sync], [true, g.id, null]);
+  const conv = await m.conversation(LENA, g.id);
+  assert.deepEqual([conv.managedBy, conv.can.leave, conv.me.role], [null, true, 'member'], 'Lena may leave now');
+  assert.equal((await m.conversation(ANNA, g.id)).me.role, 'admin');
+  assert.equal((await m.conversation(MARC, g.id)).me.role, 'admin');
+  assert.equal((await m.as(LENA, 'PATCH', `conversations/${g.id}`, { remove: [LENA.id] })).json.left, true);
+  // nothing more to do while off: the ticks release nothing again
+  await host.tick();
+  assert.equal(host.serviceCalls.filter((c) => c.service === 'release_group').length, 1);
+  // on again: a new managed group with the family, the old one stays a normal group
+  await admin('PUT', 'messenger', { group: true });
+  const g2 = await m.family();
+  assert.notEqual(g2.id, g.id);
+  assert.deepEqual(sorted(g2.members.map((x) => x.userId)), FAMILY);
+  assert.equal((await m.conversation(ANNA, g.id)).managedBy, null);
+  // and off again: that one is handed back as well
+  await admin('PUT', 'messenger', { group: false });
+  assert.equal((await m.conversation(ANNA, g2.id)).managedBy, null);
+  assert.equal(host.serviceCalls.filter((c) => c.service === 'release_group').length, 2);
+}));
+
+test('1.7.0: a messenger 1.0.x has no release_group — the group stays; once it is updated, the release follows (every 6 hours)', () => withMessenger({ v10: true }, async (host, { admin, clock }, m) => {
+  await host.tick();
+  const g = await m.family();
+  await admin('PUT', 'messenger', { group: false });
+  assert.equal((await m.conversation(ANNA, g.id)).managedBy, 'gatecontrol-familie', 'stays managed');
+  let info = (await admin('GET', 'messenger')).json.messenger;
+  assert.deepEqual([info.available, info.release.ok, info.release.error], [true, false, 'unavailable'], 'the messenger is there, only the service is missing');
+  assert.equal(host.serviceCalls.filter((c) => c.service === 'release_group').length, 0, 'refused before counting');
+  await host.tick();
+  clock.add(HOUR);
+  await host.tick();
+  m.provides = ALL.slice();
+  m.v10 = false;
+  clock.add(5 * HOUR);
+  await host.tick();
+  assert.equal((await m.conversation(ANNA, g.id)).managedBy, null, 'released after the update');
+  info = (await admin('GET', 'messenger')).json.messenger;
+  assert.deepEqual([info.release.ok, info.sync], [true, null]);
+}));
+
+test('1.7.0: several people with a messenger 1.0.x — the list is refused, then one call per person (and so for 6 hours)', () => withMessenger({ v10: true, settings: { mod_presence: true } }, async (host, { as, clock }, m) => {
+  await as(ANNA)('POST', '/presence/rules', { trigger: 'person_home', userId: ANNA.id, actions: [{ type: 'messenger', to: [MARC.id, LENA.id] }] });
+  await as(ANNA)('PUT', '/presence/consent', { share: true });
+  const sends = () => host.serviceCalls.filter((c) => c.service === 'send_message').map((c) => c.payload.conversation);
+  await as(ANNA)('POST', '/presence', { home: true });
+  assert.deepEqual(sends(), [[`user:${MARC.id}`, `user:${LENA.id}`], `user:${MARC.id}`, `user:${LENA.id}`]);
+  assert.deepEqual((await lastLog(as)).results, [{ type: 'messenger', to: [MARC.id, LENA.id], ok: true, sent: 2, error: null }]);
+  for (const u of [MARC, LENA]) assert.equal((await m.messages(u, (await m.managed(u)).find((c) => c.readonly).id)).length, 1, u.name);
+  // the next run: one call per person straight away
+  await as(ANNA)('POST', '/presence', { home: false });
+  clock.add(MIN);
+  await as(ANNA)('POST', '/presence', { home: true });
+  assert.equal(sends().filter((x) => Array.isArray(x)).length, 1);
+}));
+
+test('1.7.0: several people — refused targets are counted and named in the rule log', () => withMessenger({ settings: { mod_presence: true }, msgUsers: USERS.filter((u) => u.id !== LENA.id) }, async (host, { as }) => {
+  await as(ANNA)('POST', '/presence/rules', { trigger: 'person_home', userId: ANNA.id, actions: [{ type: 'messenger', to: [MARC.id, LENA.id] }] });
+  await as(ANNA)('PUT', '/presence/consent', { share: true });
+  await as(ANNA)('POST', '/presence', { home: true });
+  const res = (await lastLog(as)).results[0];
+  assert.deepEqual([res.ok, res.sent, res.error], [false, 1, 'invalid']);
+}));
+
+test('1.7.0: GateControl 1.178.0 — with the group off, gc.services.available replaces the empty send_message', () => withMessenger({ gatecontrol: '1.178.0', settings: { messenger_group: false } }, async (host, { clock, admin }, m) => {
+  await host.tick();
+  assert.deepEqual(host.serviceCalls, [], 'no probe call at all');
+  assert.equal((await admin('GET', 'messenger')).json.messenger.available, true);
+  m.provides = [];
+  clock.add(5 * MIN);
+  await host.tick();
+  assert.equal((await admin('GET', 'messenger')).json.messenger.available, false, 'found out within 5 minutes, for free');
+  m.provides = ALL.slice();
+  clock.add(5 * MIN);
+  await host.tick();
+  assert.equal((await admin('GET', 'messenger')).json.messenger.available, true);
+  assert.deepEqual(host.serviceCalls, []);
+}));
+
+test('1.7.0: GateControl 1.178.0 — the release asks gc.services.available first (a messenger 1.0.x costs no call)', () => withMessenger({ gatecontrol: '1.178.0', v10: true }, async (host, { admin }, m) => {
+  await host.tick();
+  const g = await m.family();
+  await admin('PUT', 'messenger', { group: false });
+  assert.equal(host.serviceCalls.filter((c) => c.service === 'release_group').length, 0);
+  assert.equal((await admin('GET', 'messenger')).json.messenger.release.error, 'unavailable');
+  m.provides = ALL.slice();
+  m.v10 = false;
+  await host.start();
+  await host.tick();
+  assert.equal((await m.conversation(ANNA, g.id)).managedBy, null, 'after a restart the release is tried at once');
+}));

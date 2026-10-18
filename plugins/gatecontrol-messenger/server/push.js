@@ -12,7 +12,12 @@
 // Actions: reply (the apps post { clientId, kind: 'text', text, source:
 // 'notification' } to conversations/<id>/messages) and mark_read
 // (conversations/<id>/read with { upTo: <message id> }).
+// 1.1.0: a picture message carries its preview as the push picture (`image: { mediaId }`,
+// GateControl ≥ 1.178.0 — recognised by gc.services.available, which came with it) — for
+// recipients with preview only; the preview file (else the photo itself) when it is PNG/JPEG/WebP
+// and ≤ 300 KB. A host that refuses the picture gets the push again without it.
 
+const store = require('./store');
 const people = require('./people');
 const live = require('./live');
 const log = require('./log');
@@ -21,6 +26,22 @@ const { mutedNow } = require('./conversations');
 
 const TOPIC = 'message';
 const BODY_MAX = 1000;
+const IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/webp'];
+const IMAGE_MAX = 300 * 1024;
+
+/** May the host take a push picture from the plugin's media (GateControl ≥ 1.178.0)? */
+const mediaPictures = (gc) => !!(gc && gc.services && typeof gc.services.available === 'function');
+
+/** The media id to show as the push picture of a message row, or null. */
+async function pictureOf(gc, row) {
+  if (row.kind !== 'image' || !mediaPictures(gc)) return null;
+  for (const id of [row.thumb_media_id, row.media_id]) {
+    if (!id) continue;
+    const m = await store.one(gc, 'SELECT mime, bytes FROM media WHERE media_id = ? AND orphan = 0', [id]);
+    if (m && IMAGE_TYPES.includes(m.mime) && m.bytes <= IMAGE_MAX) return id;
+  }
+  return null;
+}
 
 function t(lang, key, params) {
   const l = lang === 'en' ? 'en' : 'de';
@@ -80,6 +101,7 @@ async function send(gc, job, users, now = Date.now()) {
     groups.get(k).users.push(u);
   }
   const calls = [];
+  const picture = await pictureOf(gc, row);
   for (const g of groups.values()) {
     const actions = [];
     if (!conv.readonly) actions.push({ type: 'reply', label: t(g.lang, 'push.reply'), path: `conversations/${conv.id}/messages` });
@@ -95,12 +117,22 @@ async function send(gc, job, users, now = Date.now()) {
       data: { messageId: row.id, conversationId: conv.id, actions },
     };
     if (!n.title.trim()) continue;
+    if (g.preview && picture) n.image = { mediaId: picture };
     for (let i = 0; i < g.users.length; i += 100) {
       const part = { ...n, users: g.users.slice(i, i + 100) };
       try {
-        const res = await gc.notify(part);
+        let res;
+        try {
+          res = await gc.notify(part);
+        } catch (e) {
+          // the host refused the picture (too small, unreadable, …): the message without it
+          if (!part.image || !e || e.code !== 'ERR_INVALID') throw e;
+          gc.log.warn('push picture refused', String(e.message || '').slice(0, 80));
+          delete part.image;
+          res = await gc.notify(part);
+        }
         if (res && Array.isArray(res.skipped) && res.skipped.length) await log.add(gc, 'push_rate_limit', `skipped ${res.skipped.length}`, now);
-        calls.push({ users: part.users, preview: g.preview, lang: g.lang });
+        calls.push({ users: part.users, preview: g.preview, lang: g.lang, image: !!part.image });
       } catch (e) {
         await log.add(gc, e && e.code === 'ERR_RATE_LIMIT' ? 'push_rate_limit' : 'push_failed', e && e.code === 'ERR_RATE_LIMIT' ? null : ((e && e.code) || 'error'), now);
       }
@@ -109,4 +141,4 @@ async function send(gc, job, users, now = Date.now()) {
   return calls;
 }
 
-module.exports = { send, recipients, bodyOf, TOPIC };
+module.exports = { send, recipients, bodyOf, pictureOf, TOPIC };

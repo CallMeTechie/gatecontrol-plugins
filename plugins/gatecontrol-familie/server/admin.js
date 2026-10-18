@@ -24,8 +24,9 @@
 //   POST   admin/presence/places               PATCH|DELETE admin/presence/places/<id>   (server/ruleplaces.js)
 //   1.6.0 — the Messenger plugin (server/messenger.js; also `messenger` in GET admin/status, GET admin/presence
 //                                              and GET presence/rules):
-//   GET    admin/messenger                     { messenger: { api, available, reason, group, title, sync, checkedAt } }
-//   PUT    admin/messenger                     { group: bool } — the group „Familie“ on / off (on: synced at once)
+//   GET    admin/messenger                     { messenger: { api, available, reason, group, title, sync, release (1.7.0), checkedAt } }
+//   PUT    admin/messenger                     { group: bool } — the group „Familie“ on / off (on: synced at once;
+//                                              off, 1.7.0: handed back at once — release_group, a normal group)
 //   POST   admin/messenger/sync                sync the group now (also after every member change here)
 
 const store = require('./store');
@@ -162,7 +163,10 @@ async function messengerRoute(gc, seg, cfg, now, m, body) {
     if (typeof body.group !== 'boolean') throw fail('invalid', { field: 'group' });
     await messenger.setGroup(gc, body.group);
     const next = await config.load(gc);
-    if (next.messengerGroup) await messenger.sync(gc, await members.load(gc, tz.localDate(now, next.tz)), next, now, { force: true });
+    const fam = await members.load(gc, tz.localDate(now, next.tz));
+    // on: synced at once; off (1.7.0): the group is handed back at once (a normal group in the messenger)
+    if (next.messengerGroup) await messenger.sync(gc, fam, next, now, { force: true });
+    else await messenger.release(gc, fam, next, now);
     return { messenger: await messenger.info(gc, next) };
   }
   if (b === 'sync' && seg.length === 3 && m === 'POST') {

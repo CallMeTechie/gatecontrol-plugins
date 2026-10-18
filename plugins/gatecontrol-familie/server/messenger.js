@@ -19,20 +19,31 @@
 // is kept in step by the background run: when the members (or the title, which follows
 // the notification language) differ from the last sync, right after a member change on
 // the admin pages, once after every start, and every 6 hours to heal (e.g. a reinstalled
-// messenger). sync_group is idempotent. Switched off, Familie stops syncing — the
-// messenger has no service to hand a managed group back, so the group stays as it is.
+// messenger). sync_group is idempotent.
+//
+// Switched off (1.7.0), Familie stops syncing and hands the group back (release_group,
+// messenger ≥ 1.1.0, permissions.services): it becomes a normal group — members may leave,
+// the parents are its admins. Right when the switch goes off, else by the background run
+// (a messenger that was not there or older than 1.1.0 — it lacks the service — is asked
+// again every 6 hours; asking a missing service costs nothing). Switched on again, sync_group
+// creates a new group.
 //
 // Availability: the host refuses calls to a messenger that is missing or stopped
 // (ERR_SERVICE_UNAVAILABLE) before counting them, so retrying costs nothing; such a
 // retry runs every 5 minutes. With the group switched off, availability is found out
-// by a deliberately empty send_message (the messenger answers `invalid` and notes it in
-// its own log) — only while it is unknown or unavailable, and every 6 hours.
+// with gc.services.available (GateControl ≥ 1.178.0: asks nobody, costs nothing — every
+// 5 minutes) or, on an older GateControl, by a deliberately empty send_message (the
+// messenger answers `invalid` and notes it in its own log) — only while it is unknown or
+// unavailable, and every 6 hours.
 //
 // Budget: the host allows 60 service calls per hour and calling plugin — the sync uses a
-// few per day; a rule action one per run (group) or one per person.
+// few per day; a rule action one per run (1.7.0: also to several people — send_message
+// with a list of targets, messenger ≥ 1.1.0; an older messenger refuses the list, then one
+// call per person, and the list is tried again after 6 hours).
 //
 // State (gc.storage 'messenger'): { available: true|false|null, reason, checkedAt,
-// sync: { at, ok, hash, conversationId, members, added, removed, ignored, error } | null }
+// sync: { at, ok, hash, conversationId, members, added, removed, ignored, error } | null,
+// release: { at, ok, conversationId, error } | null (1.7.0) }
 
 const PLUGIN = 'gatecontrol-messenger';
 const KEY = 'family';
@@ -45,10 +56,13 @@ const RETRY_FAILED_MS = 15 * 60000;
 const TEXT_MAX = 500;
 const PEOPLE_MAX = 20;
 
-const proc = { started: false, running: null };
+// multiAt: when an older messenger refused send_message with a list (then one call per person until HEAL_MS later)
+const proc = { started: false, running: null, multiAt: null };
 
 /** Does this GateControl offer gc.services (≥ 1.177.0)? */
 const hasApi = (gc) => !!(gc && gc.services && typeof gc.services.call === 'function');
+/** Does it offer gc.services.available (≥ 1.178.0)? */
+const hasAvailable = (gc) => hasApi(gc) && typeof gc.services.available === 'function';
 
 const groupTitle = (cfg) => TITLE[cfg && cfg.lang === 'en' ? 'en' : 'de'];
 
@@ -61,6 +75,7 @@ async function loadState(gc) {
     reason: typeof s.reason === 'string' ? s.reason : null,
     checkedAt: Number.isFinite(s.checkedAt) ? s.checkedAt : null,
     sync: s.sync && typeof s.sync === 'object' ? s.sync : null,
+    release: s.release && typeof s.release === 'object' ? s.release : null,
   };
 }
 
@@ -151,6 +166,7 @@ function sync(gc, fam, cfg, now, o = {}) {
         at: now, ok: true, hash, conversationId: Number.isSafeInteger(r.conversationId) ? r.conversationId : null, members: ids.length,
         added: list(r.added), removed: list(r.removed), ignored: list(r.ignored), error: null,
       };
+      s.release = null; // a group of ours again: switched off later, it is handed back again
       if (r.created || s.sync.added.length || s.sync.removed.length) gc.log.info('messenger group synced', s.sync.conversationId, `+${s.sync.added.length}`, `-${s.sync.removed.length}`);
     } else {
       s.sync = { ...(last || {}), at: now, ok: false, hash, error: res.code };
@@ -168,6 +184,62 @@ function sync(gc, fam, cfg, now, o = {}) {
 }
 
 /**
+ * Is the messenger there (group switched off: nothing else asks)? gc.services.available when the host has
+ * it (asks nobody, costs nothing), else the deliberately empty send_message. → a result for note().
+ */
+async function probe(gc) {
+  if (hasAvailable(gc)) {
+    try {
+      const yes = await gc.services.available(PLUGIN, 'send_message');
+      return yes === true ? { ok: true, answered: true } : { ok: false, code: 'unavailable', answered: false };
+    } catch { /* a host that refuses the question: ask the old way */ }
+  }
+  return call(gc, 'send_message', {});
+}
+
+/**
+ * Hand the group back (switch off, 1.7.0): release_group → it becomes a normal group, the parents its admins.
+ * Never throws. A messenger without the service (missing, stopped, older than 1.1.0) leaves it for a later
+ * try (tick). → the saved state.
+ */
+function release(gc, fam, cfg, now) {
+  const run = async () => {
+    const s = await loadState(gc);
+    if (cfg.messengerGroup || !s.sync || !s.sync.conversationId || !hasApi(gc)) return s;
+    if (hasAvailable(gc)) {
+      let yes = null;
+      try { yes = await gc.services.available(PLUGIN, 'release_group'); } catch { yes = null; }
+      if (yes === false) {
+        s.release = { at: now, ok: false, conversationId: s.sync.conversationId, error: 'unavailable' };
+        await saveState(gc, s);
+        return s;
+      }
+    }
+    const admins = fam.list.filter((m) => m.role === 'parent').map((m) => m.userId);
+    const res = await call(gc, 'release_group', { key: KEY, adminIds: admins });
+    if (res.ok || res.code === 'not_found') {
+      // gone already (another way, or a reinstalled messenger) counts as done
+      if (res.ok) gc.log.info('messenger group released', s.sync.conversationId);
+      s.release = { at: now, ok: true, conversationId: s.sync.conversationId, error: null };
+      s.sync = null;
+    } else {
+      s.release = { at: now, ok: false, conversationId: s.sync.conversationId, error: res.code };
+      if (res.code !== 'unavailable') gc.log.warn('messenger group release failed', res.code);
+    }
+    // an older messenger answers "unavailable" for this service only: that says nothing about the messenger
+    if (res.answered) await note(gc, res, now, s);
+    await saveState(gc, s);
+    return s;
+  };
+  const p = (proc.running || Promise.resolve()).then(run, run).catch((e) => {
+    gc.log.warn('messenger release failed', (e && (e.code || e.message)) || 'error');
+    return loadState(gc);
+  });
+  proc.running = p;
+  return p;
+}
+
+/**
  * Background (every minute, outside any transaction): the group sync, or — with the group
  * switched off — the availability check (see the head of this file).
  */
@@ -175,14 +247,20 @@ async function tick(gc, fam, cfg, now) {
   try {
     if (cfg.messengerGroup) await sync(gc, fam, cfg, now);
     else {
-      const s = await loadState(gc);
+      let s = await loadState(gc);
       if (!hasApi(gc)) {
         if (s.available !== false || s.reason !== 'no_api') { await note(gc, { ok: false, code: 'unavailable', noApi: true }, now, s); await saveState(gc, s); }
       } else {
+        // a group still to hand back (1.7.0): at start, else every 6 hours (a messenger older than 1.1.0)
+        const r = s.release;
+        if (s.sync && s.sync.conversationId && (!r || !r.ok) && (!proc.started || !r || now - r.at >= (r.error === 'unavailable' ? HEAL_MS : RETRY_FAILED_MS))) {
+          s = await release(gc, fam, cfg, now);
+        }
         const since = s.checkedAt == null ? Infinity : now - s.checkedAt;
-        const due = !proc.started || s.available == null || (s.available === false ? since >= RETRY_UNAVAILABLE_MS : since >= HEAL_MS);
+        // gc.services.available asks nobody: every 5 minutes; the empty send_message only while unknown/away, else every 6 hours
+        const due = !proc.started || s.available == null || since >= (s.available === false || hasAvailable(gc) ? RETRY_UNAVAILABLE_MS : HEAL_MS);
         if (due) {
-          const res = await call(gc, 'send_message', {});
+          const res = await probe(gc);
           await note(gc, res, now, s);
           await saveState(gc, s);
         }
@@ -198,9 +276,10 @@ async function tick(gc, fam, cfg, now) {
 function reset() {
   proc.started = false;
   proc.running = null;
+  proc.multiAt = null;
 }
 
-/** What the pages need: { api, available, reason, group, title, sync, checkedAt } (no service call). */
+/** What the pages need: { api, available, reason, group, title, sync, release (1.7.0), checkedAt } (no service call). */
 async function info(gc, cfg) {
   const s = await loadState(gc);
   const api = hasApi(gc);
@@ -209,9 +288,13 @@ async function info(gc, cfg) {
     members: Number.isSafeInteger(s.sync.members) ? s.sync.members : null, conversationId: s.sync.conversationId || null,
     ignored: Array.isArray(s.sync.ignored) ? s.sync.ignored : [],
   } : null;
+  const rel = s.release ? {
+    at: Number.isFinite(s.release.at) ? new Date(s.release.at).toISOString() : null, ok: !!s.release.ok, error: s.release.error || null,
+    conversationId: s.release.conversationId || null,
+  } : null;
   return {
     api, available: api ? s.available : false, reason: api ? s.reason : 'no_api', group: !!cfg.messengerGroup, title: groupTitle(cfg),
-    sync: sync2, checkedAt: s.checkedAt == null ? null : new Date(s.checkedAt).toISOString(),
+    sync: sync2, release: rel, checkedAt: s.checkedAt == null ? null : new Date(s.checkedAt).toISOString(),
   };
 }
 
@@ -247,11 +330,32 @@ async function sendAction(gc, fam, cfg, now, action, text, triggerUser) {
   // single people: each into the person's own channel „Familie“ (the person who sets the rule off gets none)
   const ids = to.filter((id) => fam.byId.has(id) && id !== triggerUser);
   if (!ids.length) return { ...base, ok: false, sent: 0, error: 'no_recipients' };
+  const title = groupTitle(cfg);
+  // 1.7.0: several people in one call (messenger ≥ 1.1.0) — unless an older messenger refused the list lately
+  if (ids.length > 1 && (proc.multiAt == null || now - proc.multiAt >= HEAL_MS)) {
+    const res = await call(gc, 'send_message', { conversation: ids.map((id) => `user:${id}`), text: body, title });
+    if (res.ok) {
+      const results = Array.isArray(res.result.results) ? res.result.results : [];
+      proc.multiAt = null;
+      await finish(res);
+      const sent = results.filter((r) => r && r.ok === true).length;
+      const bad = results.find((r) => !r || r.ok !== true);
+      const error = sent === ids.length ? null : ((bad && typeof bad.code === 'string' && /^[a-z_]{1,32}$/.test(bad.code) ? bad.code : null) || 'failed');
+      return { ...base, ok: sent === ids.length, sent, error };
+    }
+    if (!(res.answered && res.code === 'invalid')) {
+      // not there, over the budget, …: the same for every person
+      await finish(res);
+      return { ...base, ok: false, sent: 0, error: res.code };
+    }
+    // a messenger before 1.1.0 refuses the list: one call per person (and for the next 6 hours)
+    proc.multiAt = now;
+  }
   let sent = 0;
   let error = null;
   let told = null; // the answer that tells most about availability: one from the messenger, else the first
   for (const id of ids) {
-    const res = await call(gc, 'send_message', { conversation: `user:${id}`, text: body, title: groupTitle(cfg) });
+    const res = await call(gc, 'send_message', { conversation: `user:${id}`, text: body, title });
     if (res.ok || res.answered || !told) told = res;
     if (res.ok) sent++;
     else {
@@ -265,5 +369,5 @@ async function sendAction(gc, fam, cfg, now, action, text, triggerUser) {
 
 module.exports = {
   PLUGIN, KEY, SETTING, TEXT_MAX, PEOPLE_MAX, HEAL_MS, RETRY_UNAVAILABLE_MS, RETRY_FAILED_MS,
-  hasApi, groupTitle, call, sync, tick, reset, info, setGroup, sendAction, loadState, _proc: proc,
+  hasApi, hasAvailable, groupTitle, call, probe, sync, release, tick, reset, info, setGroup, sendAction, loadState, _proc: proc,
 };

@@ -6,7 +6,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { withHost, ANNA, MARC, LENA, OMA, SEC, HOUR, PNG, OGG, PDF } = require('./helpers');
+const { withHost, ANNA, MARC, LENA, OMA, SEC, HOUR, PNG, OGG, PDF, png } = require('./helpers');
 
 test('one push per message to the other members; sender, conversation, actions as the device contract expects', async () => {
   await withHost({}, async (host, c) => {
@@ -97,6 +97,40 @@ test('bodies of other kinds: photo with caption, voice with duration, file name,
   });
 });
 
+test('picture messages (1.1.0): the preview as the push picture on GateControl ≥ 1.178.0 — preview recipients only; older hosts get none', async () => {
+  const pic = png(64, 48);
+  await withHost({ gatecontrol: '1.178.0' }, async (host, c) => {
+    const g = await c.group(ANNA, [MARC, LENA]);
+    await c.as(LENA)('PUT', 'prefs', { preview: false });
+    const photo = await c.upload(ANNA, pic, 'image/png');
+    const thumb = await c.upload(ANNA, png(40, 32), 'image/png');
+    await c.send(ANNA, g.id, { kind: 'image', mediaId: photo, thumbMediaId: thumb, text: 'Schau mal' });
+    const ps = c.pushes().slice(-2);
+    const forMarc = ps.find((p) => p.users.includes(MARC.id));
+    const forLena = ps.find((p) => p.users.includes(LENA.id));
+    assert.deepEqual([forMarc.image.mime, forMarc.image.width, forMarc.image.height], ['image/png', 40, 32], 'the preview file');
+    assert.equal(forLena.image, undefined, 'no picture without preview');
+    // no preview file: the photo itself (≤ 300 KB); a picture the host refuses (1×1): the push without it
+    await c.send(ANNA, g.id, { kind: 'image', mediaId: await c.upload(ANNA, pic, 'image/png') });
+    assert.equal(c.pushes().slice(-2).find((p) => p.users.includes(MARC.id)).image.width, 64);
+    const n = c.pushes().length;
+    await c.send(ANNA, g.id, { kind: 'image', mediaId: await c.upload(ANNA, PNG, 'image/png') });
+    assert.equal(c.pushes().length, n + 2, 'both pushes went out');
+    assert.ok(c.pushes().slice(-2).every((p) => !p.image));
+    assert.ok(host.logs.some((l) => l.level === 'warn' && l.message.includes('push picture refused')));
+    // other kinds carry none
+    await c.send(ANNA, g.id, { text: 'Text' });
+    assert.ok(c.pushes().slice(-2).every((p) => !p.image));
+  });
+  await withHost({}, async (host, c) => {
+    const d = await c.direct(ANNA, MARC);
+    await c.send(ANNA, d.id, { kind: 'image', mediaId: await c.upload(ANNA, pic, 'image/png') });
+    const p = c.pushes().at(-1);
+    assert.deepEqual([p.users, p.image], [[MARC.id], undefined], 'GateControl 1.177.0: no picture, no refused attempt');
+    assert.ok(!host.logs.some((l) => l.message.includes('push picture refused')));
+  });
+});
+
 test('no push: muted (until a time / always), the conversation open (active within 30 s), the sender', async () => {
   await withHost({}, async (host, c) => {
     const g = await c.group(ANNA, [MARC, LENA, OMA]);
@@ -151,5 +185,5 @@ test('plugin.json: the chat topic "message", app + events + media + services', (
   assert.equal(m.media.maxBytes, 25 * 1024 * 1024);
   assert.equal(m.media.quotaDefault, '10GB');
   for (const t of ['image/jpeg', 'image/webp', 'audio/ogg', 'audio/mp4', 'audio/webm', 'application/pdf']) assert.ok(m.media.types.includes(t), t);
-  assert.deepEqual(Object.keys(m.services.provides), ['send_message', 'sync_group']);
+  assert.deepEqual(Object.keys(m.services.provides), ['send_message', 'sync_group', 'release_group']);
 });
