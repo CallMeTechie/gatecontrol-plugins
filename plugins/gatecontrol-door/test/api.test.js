@@ -10,7 +10,8 @@ const { withDoor, ringLogin, app, portal, ADMIN, ANNA, MARC, LENA, GAST, BRIDGE_
 
 test('GET me: exactly the documented shape', () => withDoor({}, async (host, { call, lockId }) => {
   const me = (await call(app(MARC), 'GET', '/me')).json;
-  assert.deepEqual(Object.keys(me).sort(), ['cameras', 'locks', 'me', 'ok', 'ring', 'ringModes', 'serverTime']);
+  assert.deepEqual(Object.keys(me).sort(), ['cameras', 'doorbell', 'locks', 'me', 'ok', 'ring', 'ringModes', 'serverTime']);
+  assert.equal(me.doorbell, null, '1.4.0: null without a visible camera');
   assert.deepEqual(me.ringModes, []);
   assert.deepEqual(me.me, { userId: MARC.id, name: 'Marc', canAct: true, autoUnlock: false, window: null, windowOpen: true });
   assert.deepEqual(me.locks[0], {

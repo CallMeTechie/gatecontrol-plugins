@@ -3,7 +3,7 @@
 // The API for people (GateControl app tab, portal tab, plugin API). Paths
 // relative to the plugin's /api/ (README "App API" has the JSON shapes):
 //
-//   GET  me                              rights, locks with state, cameras, Ring status, Ring modes
+//   GET  me                              rights, locks with state, cameras, Ring status, Ring modes, 1.4.0: doorbell
 //   POST locks/<id>/<lock|unlock|open>   run an action (checked again: server/control.js)
 //   POST modes/<locationId>/<disarmed|home|away>   switch a Ring location's mode (server/modes.js)
 //   GET  cameras/<id>/snapshot[?refresh=1]   the newest picture (JSON, base64, ≤ 300 KB)
@@ -25,6 +25,7 @@ const history = require('./history');
 const control = require('./control');
 const modes = require('./modes');
 const views = require('./views');
+const chat = require('./chat');
 const { fail, posInt, bool, iso, rateLimiter } = require('./util');
 
 const readLimiter = rateLimiter(60, 60000);
@@ -48,6 +49,17 @@ async function visibleCameras(gc, c) {
   return (await cameras.all(gc)).filter((cam) => cam.enabled === 1 && cam.present === 1 && cam.lock_id && ids.has(cam.lock_id));
 }
 
+/** GET /me doorbell → { lastRingAt, source, chat: { at, ok, error, fallback } | null } */
+async function doorbellView(gc) {
+  const d = await cameras.diagnosis(gc);
+  const l = await chat.last(gc);
+  const ring = d.lastDing && d.lastDing.outcome === 'handled' ? d.lastDing : null;
+  return {
+    lastRingAt: ring ? ring.at : null, source: ring ? ring.source : null,
+    chat: l ? { at: l.at, ok: l.ok, error: l.error, fallback: !!(l.fallback && l.fallback.sent > 0) } : null,
+  };
+}
+
 async function me(gc, c) {
   const cams = await visibleCameras(gc, c);
   const camPrefs = new Map();
@@ -63,6 +75,8 @@ async function me(gc, c) {
     locks: c.mine.map((l) => views.lockView(l, { level: rights.levelOf(c.r, c.user.id, l.id), user: c.user, prefs: c.prefs, cfg: c.cfg, now: c.now })),
     cameras: cams.map((cam) => views.cameraView(cam, { prefs: camPrefs.get(cam.id), lastImageAt: lastAt.get(cam.id) })),
     ring: { connected: st.connected, broken: st.broken },
+    // 1.4.0: the last ring and its chat card, for people who see a camera (the apps' „Haus-Aktionen“ screen)
+    doorbell: cams.length ? await doorbellView(gc) : null,
     ringModes: (await modes.forUser(gc, c.user, c.r)).map((row) => modes.view(row, { user: c.user, r: c.r, cfg: c.cfg, now: c.now })),
     serverTime: iso(c.now),
   };

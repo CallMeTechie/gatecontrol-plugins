@@ -8,6 +8,35 @@ bleibt auf dem eigenen Server. Einrichtung, Risiken, Datenschutz und die App-API
 an; das Plugin nutzt die, die auch die Open-Source-Projekte ring-client-api (Homebridge) und
 python-ring-doorbell (Home Assistant) verwenden. Sie kann sich jederzeit ändern oder wegfallen.
 
+## 1.4.0
+Braucht weiterhin **GateControl ≥ 1.169.0** (Familien-Chat: ≥ 1.177.0 und Messenger ab 1.4.0).
+- **Behoben: ein Klingeln kam nicht im Familien-Chat an** (Gong und Fernseher klingelten). Ursachen:
+  - Ring schränkt die Sofort-Abfrage `dings/active` für viele Konten ein. Antwortete sie mit einem
+    Fehler, scheiterte die ganze Abfrage – auch die Ereignisliste, die dann die einzige Quelle für ein
+    Klingeln ist, wurde nie gelesen (und die Seite zeigte „Ring-Verbindung gestört“). Jetzt pausiert
+    nur `dings/active` für 10 Minuten (bei 429 so lange wie verlangt), die Ereignisliste läuft weiter,
+    währenddessen alle 15 statt 30 Sekunden. Ein Anmeldefehler stoppt die Abfrage wie bisher.
+  - Ein Klingeln, das Ring erst verzögert in der Ereignisliste führt (dazu bis zu 30 s Abfrage-Abstand
+    oder eine Pause nach einem Fehler), wurde nach 2 Minuten verworfen und als „gesehen“ gemerkt – es
+    war für immer verloren: kein Verlauf, kein Push, keine Karte. Jetzt gilt ein Klingeln 10 Minuten
+    lang (Verlauf und Chat-Karte), der Push geht bis 5 Minuten danach raus. Bewegung bleibt bei
+    2 Minuten. Doppelt wird nichts – auch nicht nach einem Neustart (der Verlauf merkt sich jedes
+    Ereignis).
+- **Ersatzweg ohne Gruppe „Familie“:** antwortet der Messenger `not_found` (Familie fehlt, die
+  Messenger-Gruppe ist aus oder wurde freigegeben), geht die Karte an die Personen, die den
+  Klingel-Push bekommen (Sichtrecht auf das verknüpfte Schloss, Klingel-Push nicht abgeschaltet) –
+  jeweils in ihren eigenen, schreibgeschützten Kanal „Tür & Kamera“ (ein Aufruf, höchstens 20 Personen).
+- **Klingel-Diagnose** auf der Seite „Einstellungen“: die zuletzt erkannte Klingel (Zeit, Kamera,
+  nach wie vielen Sekunden, über welchen Weg, was daraus wurde – auch „zu spät erkannt“ oder „Kamera
+  ausgeschaltet“), das letzte Chat-Ergebnis mit verständlichem Grund (u. a. `unavailable`,
+  `not_found`, `rate_limit`, `timeout` – „die Karte kann trotzdem angekommen sein“) und ob Ring die
+  Sofort-Abfrage gerade einschränkt.
+- **API:** `GET me` trägt `doorbell: { lastRingAt, source, chat: { at, ok, error, fallback } | null } | null`
+  (für Personen, die eine Kamera sehen – für den Bildschirm „Haus-Aktionen“ der Apps). `GET|PUT
+  admin/settings`: `chat.last.fallback { to, sent, failed }` und `chat.detect { lastDing, active }`.
+- Hinweis zur Bildgröße: ab GateControl 1.180.0 nimmt der Dienst-Aufruf bis 512 KB an – das Bild
+  (≤ 300 KB) passt dann immer.
+
 ## 1.3.0
 Braucht weiterhin **GateControl ≥ 1.169.0**; die Klingel im Familien-Chat braucht GateControl ≥ 1.177.0
 und das **Messenger-Plugin ab 1.4.0**. Neu beim Aktualisieren: die Berechtigung „Dienste anderer

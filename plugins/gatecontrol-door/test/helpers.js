@@ -131,6 +131,8 @@ function fakeCloud() {
       devices: { doorbots: [{ id: 111, description: 'Klingel Haustür', kind: 'doorbell_v4', location_id: 'loc1', battery_life: '87', alerts: { connection: 'online' }, settings: { motion_detection_enabled: true } }],
         authorized_doorbots: [], stickup_cams: [{ id: 222, description: 'Garten', kind: 'stickup_cam_v4', location_id: 'loc1', battery_life: null, alerts: { connection: 'offline' }, settings: {} }] },
       active: [], events: [], snapshot: jpeg(), sessions: 0,
+      // 1.4.0: dings/active as Ring restricts it — a number → it answers that HTTP status (429 with Retry-After activeRetry)
+      activeStatus: null, activeRetry: '120',
       // devices/v1/locations and the location modes (prd-api-us.prd.rings.solutions/api/v1/mode/location/<id>)
       locations: [{ location_id: 'loc1', name: 'Langenlonsheim', owner_id: 1 }],
       modes: { loc1: { mode: 'home', readOnly: false, lastUpdateTimeMS: T0 - HOUR } },
@@ -194,7 +196,10 @@ function fakeCloud() {
     if (u.hostname === 'app-snaps.ring.com') return R.snapshot ? { status: 200, bodyBase64: R.snapshot.toString('base64') } : { status: 404, body: '' };
     if (u.pathname === '/clients_api/session') { R.sessions++; return { status: 201, body: '{"profile":{}}' }; }
     if (u.pathname === '/clients_api/ring_devices') return { status: 200, body: JSON.stringify(R.devices) };
-    if (u.pathname === '/clients_api/dings/active') return { status: 200, body: JSON.stringify(R.active) };
+    if (u.pathname === '/clients_api/dings/active') {
+      if (R.activeStatus) return { status: R.activeStatus, headers: R.activeStatus === 429 ? { 'retry-after': R.activeRetry } : {}, body: '' };
+      return { status: 200, body: JSON.stringify(R.active) };
+    }
     if (/^\/clients_api\/locations\/[^/]+\/events$/.test(u.pathname)) return { status: 200, body: JSON.stringify({ events: R.events, meta: {} }) };
     if (/^\/clients_api\/snapshots\/image\/\d+$/.test(u.pathname)) return R.snapshot ? { status: 200, bodyBase64: R.snapshot.toString('base64') } : { status: 404, body: '' };
     return { status: 404, body: '' };

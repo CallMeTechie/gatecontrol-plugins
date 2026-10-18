@@ -21,7 +21,17 @@
 // as too big (ERR_INVALID, not counted) or a messenger that refuses the picture (`invalid`) gets
 // the card once more without it. Never throws: a ring works the same without the messenger.
 //
-// The last result is kept for the page (gc.storage 'door.chat': { at, ok, error, image }).
+// The last result is kept for the page (gc.storage 'door.chat': { at, ok, error, image, fallback }).
+//
+// 1.4.0 — when the messenger answers `not_found` for 'family' (no group „Familie“: Familie not
+// installed, its messenger group switched off or handed back), the card goes to the people who get
+// the ring's push (view right on the camera's lock, doorbell push not switched off) — each into
+// their own read-only channel „Tür & Kamera“ of this plugin (targets 'user:<id>', one call with a
+// list, at most 20): send_message { conversation: ['user:2', 'user:4'], title: 'Tür & Kamera', card }
+// → { ok, sent, failed, results }. fallback = { to, sent, failed } in the stored result. Without a
+// linked lock there is nobody to send it to (error stays not_found, fallback { to: 0 }).
+// Note: a `timeout` means the messenger did not answer within GateControl's 15 s — the card may
+// still have arrived (the messenger stores it before it sends the pushes).
 
 const PLUGIN = 'gatecontrol-messenger';
 const SERVICE = 'send_message';
@@ -30,9 +40,11 @@ const TITLE_MAX = 80;
 const TEXT_MAX = 200;
 const IMAGE_MAX = 300 * 1024;
 
+const FALLBACK_MAX = 20;
+
 const TEXTS = {
-  de: { title: 'Klingel · {{name}}', text: '{{camera}} · {{time}}' },
-  en: { title: 'Doorbell · {{name}}', text: '{{camera}} · {{time}}' },
+  de: { title: 'Klingel · {{name}}', text: '{{camera}} · {{time}}', channel: 'Tür & Kamera' },
+  en: { title: 'Doorbell · {{name}}', text: '{{camera}} · {{time}}', channel: 'Door & Camera' },
 };
 const fmt = (lang, key, params) => {
   let s = (TEXTS[lang === 'en' ? 'en' : 'de'])[key];
@@ -62,11 +74,32 @@ function codeOf(e) {
 async function send(gc, payload) {
   try {
     const r = await gc.services.call({ plugin: PLUGIN, service: SERVICE, payload });
-    if (r && r.ok === true) return { ok: true, error: null };
+    if (r && r.ok === true) {
+      // a list of targets: ok when at least one got it
+      if (Array.isArray(payload.conversation)) {
+        const sent = Number.isInteger(r.sent) ? r.sent : 0;
+        const failed = Number.isInteger(r.failed) ? r.failed : payload.conversation.length - sent;
+        const codes = Array.isArray(r.results) ? r.results.filter((x) => x && x.ok === false && typeof x.code === 'string').map((x) => x.code) : [];
+        return { ok: sent > 0, error: sent > 0 ? null : (codes[0] && /^[a-z_]{1,32}$/.test(codes[0]) ? codes[0] : 'failed'), sent, failed };
+      }
+      return { ok: true, error: null };
+    }
     return { ok: false, error: r && typeof r.code === 'string' && /^[a-z_]{1,32}$/.test(r.code) ? r.code : 'failed' };
   } catch (e) {
     return { ok: false, error: codeOf(e) };
   }
+}
+
+/** send(), once more without the picture when the host or the messenger refuses it → { res, image } */
+async function sendWithPicture(gc, payload) {
+  let image = !!payload.card.imageBase64;
+  let res = await send(gc, payload);
+  if (!res.ok && image && (res.error === 'too_big' || res.error === 'invalid')) {
+    delete payload.card.imageBase64;
+    image = false;
+    res = await send(gc, payload);
+  }
+  return { res, image };
 }
 
 /**
@@ -85,36 +118,63 @@ function cardOf(o) {
   return { conversation: 'family', card };
 }
 
-/** Send the card of a ring (see the head of this file). → { sent, ok, error, image } — never throws. */
+/**
+ * Send the card of a ring (see the head of this file). o.people: the user ids for the fallback.
+ * → { sent, ok, error, image, fallback: { to, sent, failed } | null } — never throws.
+ */
 async function ring(gc, cfg, o) {
   try {
-    if (!cfg.familyChat || !hasApi(gc)) return { sent: false, ok: false, error: cfg.familyChat ? 'unavailable' : 'off', image: false };
-    if ((await available(gc)) === false) return { sent: false, ok: false, error: 'unavailable', image: false };
+    if (!cfg.familyChat || !hasApi(gc)) return { sent: false, ok: false, error: cfg.familyChat ? 'unavailable' : 'off', image: false, fallback: null };
+    if ((await available(gc)) === false) {
+      const out = { sent: false, ok: false, error: 'unavailable', image: false, fallback: null };
+      await keep(gc, out);
+      return out;
+    }
     const payload = cardOf({ ...o, lang: cfg.notifyLang });
-    let image = !!payload.card.imageBase64;
-    let res = await send(gc, payload);
-    if (!res.ok && image && (res.error === 'too_big' || res.error === 'invalid')) {
-      delete payload.card.imageBase64;
-      image = false;
-      res = await send(gc, payload);
+    const picture = payload.card.imageBase64;
+    let { res, image } = await sendWithPicture(gc, payload);
+    let fallback = null;
+    if (!res.ok && res.error === 'not_found') {
+      // no group „Familie“: the people who get the ring's push, each in their own channel
+      const people = [...new Set((o.people || []).filter((u) => Number.isSafeInteger(u) && u > 0))].slice(0, FALLBACK_MAX);
+      fallback = { to: people.length, sent: 0, failed: 0 };
+      if (people.length) {
+        const many = { conversation: people.map((u) => `user:${u}`), title: fmt(cfg.notifyLang, 'channel'), card: { ...payload.card } };
+        if (picture) many.card.imageBase64 = picture;
+        const r2 = await sendWithPicture(gc, many);
+        fallback = { to: people.length, sent: r2.res.sent || 0, failed: r2.res.failed || (r2.res.ok ? 0 : people.length) };
+        if (r2.res.ok) { res = { ok: true, error: null }; image = r2.image; }
+      }
     }
     if (!res.ok && res.error !== 'unavailable') gc.log.warn('doorbell card not sent', res.error);
-    const out = { sent: true, ok: res.ok, error: res.error, image: res.ok && image };
-    try { await gc.storage.set(STORE_KEY, { at: Date.now(), ok: out.ok, error: out.error, image: out.image }); } catch { /* best effort */ }
+    const out = { sent: true, ok: res.ok, error: res.error, image: res.ok && image, fallback };
+    await keep(gc, out);
     return out;
   } catch (e) {
     gc.log.warn('doorbell card failed', (e && (e.code || e.message)) || 'error');
-    return { sent: false, ok: false, error: 'failed', image: false };
+    return { sent: false, ok: false, error: 'failed', image: false, fallback: null };
   }
 }
 
-/** For the admin page: { api, available, last: { at, ok, error, image } | null } (no service call). */
-async function info(gc) {
-  let last = null;
-  try { last = await gc.storage.get(STORE_KEY); } catch { last = null; }
-  const l = last && typeof last === 'object' && Number.isFinite(last.at)
-    ? { at: new Date(last.at).toISOString(), ok: !!last.ok, error: typeof last.error === 'string' ? last.error : null, image: !!last.image } : null;
-  return { api: hasApi(gc), available: await available(gc), last: l };
+async function keep(gc, out) {
+  try { await gc.storage.set(STORE_KEY, { at: Date.now(), ok: out.ok, error: out.error, image: out.image, fallback: out.fallback }); } catch { /* best effort */ }
 }
 
-module.exports = { PLUGIN, SERVICE, STORE_KEY, TEXTS, cardOf, ring, info, available };
+/** The stored last result → { at, ok, error, image, fallback } | null (ISO time). */
+async function last(gc) {
+  let v = null;
+  try { v = await gc.storage.get(STORE_KEY); } catch { v = null; }
+  if (!v || typeof v !== 'object' || !Number.isFinite(v.at)) return null;
+  const f = v.fallback && typeof v.fallback === 'object' ? v.fallback : null;
+  return {
+    at: new Date(v.at).toISOString(), ok: !!v.ok, error: typeof v.error === 'string' ? v.error : null, image: !!v.image,
+    fallback: f ? { to: Number(f.to) || 0, sent: Number(f.sent) || 0, failed: Number(f.failed) || 0 } : null,
+  };
+}
+
+/** For the admin page: { api, available, last: { at, ok, error, image, fallback } | null } (no service call). */
+async function info(gc) {
+  return { api: hasApi(gc), available: await available(gc), last: await last(gc) };
+}
+
+module.exports = { PLUGIN, SERVICE, STORE_KEY, TEXTS, FALLBACK_MAX, cardOf, ring, info, last, available };
