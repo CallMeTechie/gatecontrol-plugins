@@ -123,14 +123,16 @@ test('Leaflet: one constant (server/ui.js), nowhere else', () => {
 
 test('plugin.json: permissions (kiosk, actions), app tab, maps, the ten topics with SOS allowed critical', () => {
   assert.equal(manifest.id, 'gatecontrol-familie');
-  assert.equal(manifest.version, '1.7.0');
+  assert.equal(manifest.version, '1.8.0');
   // 1.6.0 stays on 1.173.0: the messenger services (GateControl ≥ 1.177.0) are optional — an older host ignores
   // permissions.services and has no gc.services, so the group and the rule action stay hidden there
   assert.equal(manifest.gatecontrol, '>=1.173.0', 'target states of switches (gc.actions.run state, verbs/targets/device in gc.actions.list) need GateControl 1.173.0');
   const p = manifest.permissions;
   assert.deepEqual([p.storage, p.portal, p.users, p.app, p.notify, p.background, p.kiosk, p.actions], [true, true, true, true, { perHour: 120 }, { intervalSeconds: 60 }, true, true]);
-  assert.deepEqual(p.services, ['gatecontrol-messenger:sync_group', 'gatecontrol-messenger:send_message', 'gatecontrol-messenger:release_group'], '1.7.0: release_group (messenger ≥ 1.1.0)');
-  assert.equal(manifest.services, undefined, 'Familie offers no services of its own');
+  assert.deepEqual(p.services, ['gatecontrol-messenger:sync_group', 'gatecontrol-messenger:send_message', 'gatecontrol-messenger:release_group',
+    'gatecontrol-messenger:set_place_status'], '1.7.0: release_group (messenger ≥ 1.1.0); 1.8.0: set_place_status (messenger ≥ 1.4.0)');
+  assert.deepEqual(Object.keys(manifest.services.provides), ['list_add', 'calendar_add', 'calendar_upsert', 'calendar_remove', 'places'], '1.8.0: services for the Messenger');
+  for (const sv of Object.values(manifest.services.provides)) assert.ok(sv.label.de && sv.label.en && sv.label.de.length <= 60 && sv.label.en.length <= 60);
   assert.deepEqual(manifest.ui.pages.map((x) => x.id), ['members', 'modules', 'presence', 'log']);
   assert.deepEqual(manifest.ui.pages[2].title, { de: 'Anwesenheit & Smart Home', en: 'Presence & smart home' });
   assert.deepEqual(manifest.ui.settings.map((x) => x.key), ['timezone', 'notify_lang', 'lat', 'lon']);

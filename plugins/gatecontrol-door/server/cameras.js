@@ -11,6 +11,10 @@
 // plus the picture (up to ~8 s; without a picture when Ring has none in
 // time). Back-off on errors: 5 s, 10 s, 20 s … 5 min; a 429 waits for
 // Retry-After (at least 60 s).
+//
+// 1.3.0: a ring also goes into the Messenger's family chat as a card with the
+// picture and „Tür öffnen“ (server/chat.js; setting familyChat, default on) —
+// after the pushes, whether or not anybody got one.
 
 const store = require('./store');
 const ring = require('./ring');
@@ -20,6 +24,7 @@ const push = require('./push');
 const notify = require('./notify');
 const modes = require('./modes');
 const tz = require('./tz');
+const chat = require('./chat');
 const { fail, rateLimiter } = require('./util');
 
 const STATUS_KEY = 'door.ring';
@@ -196,7 +201,6 @@ async function handleEvent(gc, cfg, ev, now) {
   const r = await rights.load(gc);
   const prefs = await prefsOf(gc, camera.id);
   const viewers = lock ? rights.usersWith(r, lock.id, 'view') : [];
-  const lang = cfg.notifyLang;
   let users;
   if (ev.kind === 'ding') users = viewers.filter((u) => !prefs.has(u) || prefs.get(u).ding);
   else {
@@ -208,9 +212,17 @@ async function handleEvent(gc, cfg, ev, now) {
   // the picture: always for a ring, for motion only when somebody gets the push
   const pic = ev.kind === 'ding' || users.length ? await grabPicture(gc, cfg, camera, ev.at - 2000, now) : null;
   if (pic) await store.tx(gc, () => history.setMedia(gc, hid, pic.id));
-  if (!users.length) return hid;
   const local = tz.local(ev.at, cfg.timezone);
   const time = `${String(Math.floor(local.minutes / 60)).padStart(2, '0')}:${String(local.minutes % 60).padStart(2, '0')}`;
+  if (users.length) await pushEvent(gc, cfg, { ev, camera, lock, users, r, pic, hid, time });
+  // 1.3.0: the ring as a card in the family chat (never throws)
+  if (ev.kind === 'ding') await chat.ring(gc, cfg, { camera, lock, time, image: pic ? pic.buf : null });
+  return hid;
+}
+
+/** The pushes of one event (doorbell / motion) to `users`. */
+async function pushEvent(gc, cfg, { ev, camera, lock, users, r, pic, hid, time }) {
+  const lang = cfg.notifyLang;
   const image = pic ? { data: pic.buf.toString('base64'), mime: 'image/jpeg' } : undefined;
   const door = { type: ev.kind, eventId: hid, cameraId: camera.id, lockId: lock ? lock.id : null };
   const base = {
@@ -226,7 +238,6 @@ async function handleEvent(gc, cfg, ev, now) {
     await push.send(gc, { ...base, users: openers, data: { door, actions: [push.quickAction(label, lock.id, 'open', { confirm: true, auth: 'device' }), push.viewAction(lang)] } });
   }
   if (others.length) await push.send(gc, { ...base, users: others, data: { door, actions: [push.viewAction(lang)] } });
-  return hid;
 }
 
 /** The background part of Ring: device sync, events, back-off, status. */

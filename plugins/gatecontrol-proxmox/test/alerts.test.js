@@ -13,7 +13,10 @@ const store = require('../server/store');
 const { withHost, asAdmin, addHost, ADMIN, ADMIN2, SECRET } = require('./helpers');
 
 control.timing.pollMs = 1;
-control.timing.waitMs = 200;
+// generous: the wait ends as soon as the task does — a fixed short wait made a loaded CI runner give up
+// before the first status poll ('running' instead of the result); a task that must outlast the wait never
+// ends (taskPolls: Infinity) and runs with a short wait (shortWait)
+control.timing.waitMs = 10000;
 
 const MIN = 60000;
 const CFG = { storagePct: 90, cpuPct: 0, ramPct: 0, loadMin: 15, downMin: 5, lang: 'de' };

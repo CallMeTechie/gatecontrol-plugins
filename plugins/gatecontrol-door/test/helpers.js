@@ -218,6 +218,8 @@ async function withDoor(opts, fn) {
   const host = await createHost(DIR, {
     users: o.users || USERS, settings: o.settings || {}, fetch: cloud.fetch, notifyFail: o.notifyFail,
     targets: { 'nuki-bridge': [{ label: 'Bridge Flur', fetch: bridge.fetch }] },
+    // 1.3.0: other plugins' services (the Messenger) and the GateControl version for gc.services.available
+    services: o.services, gatecontrol: o.gatecontrol,
   });
   await host.start();
   const call = (user, method, p, body, query) => host.request({ method, path: p, body: body === undefined ? null : body, query: query || {}, user, lang: o.lang || 'de' });

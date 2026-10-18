@@ -3,6 +3,48 @@
 Die Familie in der GateControl-App (eigener Tab), im Portal (eigener Tab „Familie“) und auf
 drei Admin-Seiten. Alles bleibt auf dem eigenen Server.
 
+## 1.8.0
+Braucht weiterhin **GateControl ≥ 1.173.0** (Messenger-Funktionen ≥ 1.177.0). Am besten zusammen mit
+dem **Messenger 1.4.0** – mit einem älteren Messenger läuft alles wie in 1.7.0. Neu beim Aktualisieren:
+Familie **bietet Dienste an** (`services.provides`, im Installationsdialog sichtbar), und die
+Berechtigung „Dienste anderer Plugins“ nennt zusätzlich `gatecontrol-messenger: set_place_status`.
+- **Aus dem Chat auf die Einkaufsliste** (Dienst `list_add`): Der Messenger setzt Dinge aus einer
+  Nachricht auf eine Einkaufsliste – für ein Familienmitglied (Eltern oder Kind, kein Wand-Tablet), nur
+  mit eingeschalteter Einkaufsliste. „Die Einkaufsliste“ ist die erste Liste; gibt es keine, legt Familie
+  „Einkaufsliste“ an. Was dort schon offen steht (gleicher Text, Groß-/Kleinschreibung egal), kommt nicht
+  doppelt dazu.
+- **Termine aus dem Chat:** „Termin anlegen“ im Messenger (Dienst `calendar_add`) legt einen normalen
+  Termin dieser Person für die ganze Familie an. Ereignisse im Familien-Chat mit „In den Familienkalender“
+  hält der Messenger aktuell (`calendar_upsert` / `calendar_remove`, wiederholbar ohne Doppel) – diese
+  Termine sind in Familie schreibgeschützt (geändert und gelöscht wird im Chat). Beide tragen im Portal
+  den Hinweis **„aus dem Familien-Chat“**. Zeiten werden in die Zeitzone des Plugins umgerechnet.
+- **Ort und Endzeit für jeden Termin:** Termine haben jetzt optional einen **Ort** (nur der Name, ≤ 80
+  Zeichen – nie Koordinaten) und eine **Endzeit**; das Portal zeigt „17:00–18:30 · Cinemaxx“. Ändert
+  jemand die Startzeit, fällt die Endzeit weg.
+- **Orte der Familie für den Messenger** (Dienst `places`): Zuhause (Breiten-/Längengrad aus den
+  Einstellungen, 150 m) und – mit eingeschalteter Anwesenheit – die Orte für Regeln, für die Ortsauswahl
+  bei Ereignissen und Live-Ankunft. Nur für Familienmitglieder.
+- **Ort im Messenger-Status** (Dienst des Messengers `set_place_status`): Kommt jemand heim, verlässt
+  das Zuhause, kommt an einem Ort für Regeln an oder verlässt ihn, sagt Familie dem Messenger den
+  **Namen** des Ortes („Zuhause“, „Schule“) oder „kein Ort“ – nie eine Position, und nur für Personen,
+  die der Anwesenheit (Zuhause/unterwegs) bzw. den Orten selbst zugestimmt haben; wer die Zustimmung
+  zurückzieht, verschwindet aus dem Status. Ob und wem der Ort angezeigt wird, entscheidet der Messenger
+  (Status „Automatisch: Ort“, eigene Privatsphäre-Einstellung). Gesendet wird nur eine Änderung; ist der
+  Messenger nicht da (mit GateControl ≥ 1.178.0 vorher kostenlos gefragt) oder das Stundenbudget
+  erschöpft, versucht Familie es alle 5 Minuten wieder – mit dem jeweils neuesten Ort.
+- **API:** Termin-Objekte tragen zusätzlich `place` (string | null), `endTime` („HH:MM“ | null) und
+  `origin` (`'chat'` | null); `POST dates` / `PATCH dates/<id>` nehmen `place` und `endTime`. Ein Termin
+  des Messengers antwortet bei `PATCH`/`DELETE` mit 403 `read_only`. Dienste (nur für
+  `gatecontrol-messenger`, sonst `forbidden`; Fehler als `{ ok: false, code }`):
+  - `list_add { userId, list: 'shopping' | <listId>, items: [string] (1–50, je ≤ 120) }` →
+    `{ ok, listId, listName, added, skipped, itemIds }` (Codes `invalid`, `not_member`, `module_off`, `not_found`)
+  - `calendar_add { userId, title (≤ 80), startsAt, endsAt?, allDay?, place? }` → `{ ok, eventId }`
+  - `calendar_upsert { sourceRef ('<wort>:<id>', z. B. 'messenger:123'), title, startsAt, endsAt?, allDay?, place?, userIds? }`
+    → `{ ok, eventId, created }`; `calendar_remove { sourceRef }` → `{ ok, removed }`
+  - `places { userId }` → `[{ id ('home' | 'place:<id>'), name, lat, lon, radiusM }]` (kein Mitglied: `[]`)
+  - `startsAt`/`endsAt`: ISO-8601 mit Uhrzeit oder ein Datum `YYYY-MM-DD` (ganztägig); `place`: ein Text
+    oder `{ label }`.
+
 ## 1.7.0
 Braucht weiterhin **GateControl ≥ 1.173.0** (Messenger-Funktionen ≥ 1.177.0). Am besten zusammen mit
 dem **Messenger 1.1.0** – mit Messenger 1.0.x läuft alles wie in 1.6.0. Neu beim Aktualisieren: die

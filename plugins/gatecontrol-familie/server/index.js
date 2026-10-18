@@ -28,6 +28,10 @@
 // in step with the members, and the rule action „Messenger-Nachricht senden“ —
 // GateControl ≥ 1.177.0 services (permissions.services), see server/messenger.js.
 // Without the messenger nothing changes.
+//
+// 1.8.0: services for the Messenger (plugin.json services.provides — list_add,
+// calendar_add, calendar_upsert, calendar_remove, places; server/services.js) and
+// the place in the messenger status (set_place_status, server/messenger.js).
 
 const ui = require('./ui');
 const api = require('./api');
@@ -51,6 +55,7 @@ const board = require('./board');
 const meals = require('./meals');
 const presence = require('./presence');
 const messenger = require('./messenger');
+const services = require('./services');
 const texts = require('./texts.json');
 const { STATUS, isKnown } = require('./util');
 
@@ -193,6 +198,12 @@ module.exports = {
   async appVisible(arg, gc) {
     const user = arg && typeof arg === 'object' && arg.user && typeof arg.user === 'object' ? arg.user : arg;
     return visibleFor(gc, user, { app: true });
+  },
+
+  /** Services for the Messenger (services.provides, GateControl ≥ 1.177.0) — server/services.js. */
+  async service(call, gc) {
+    const cfg = await config.load(gc);
+    return services.handle(gc, cfg, call);
   },
 
   async tick(gc) {

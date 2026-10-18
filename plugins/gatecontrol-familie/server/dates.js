@@ -12,15 +12,24 @@
 // remindDays 0–14 before an occurrence, from 08:00 local on that day, once
 // per occurrence, to the event's members (everyone when none) — a member's
 // birthday goes to everyone else, on the day.
+//
+// 1.8.0: every date may carry a place (a label, ≤ 80 characters, never
+// coordinates) and an end time (endTime "HH:MM", with time). Dates from the
+// Messenger (family chat, server/services.js) carry origin 'chat' — the
+// pages show „aus dem Familien-Chat“. Those the Messenger keeps in step
+// (calendar_upsert, a sourceRef such as 'messenger:123') are read-only here
+// (PATCH / DELETE → 403 read_only); ones made with „Termin anlegen“
+// (calendar_add) are ordinary dates of that person.
 
 const store = require('./store');
 const tz = require('./tz');
 const push = require('./push');
 const format = require('./format');
-const { fail, text, multiline, bool, intIn, time, date, userIds, parseJson, posInt } = require('./util');
+const { fail, text, optText, multiline, bool, intIn, time, date, userIds, parseJson, posInt } = require('./util');
 
 const TITLE_MAX = 80;
 const NOTE_MAX = 500;
+const PLACE_MAX = 80;
 const MAX_RANGE_DAYS = 400;
 const DEFAULT_RANGE_DAYS = 60;
 const MAX_SPAN_DAYS = 60;
@@ -31,7 +40,8 @@ function rowToEvent(r) {
   return {
     id: r.id, title: r.title, date: r.date, time: r.time || null, endDate: r.end_date || null, allDay: !!r.all_day,
     repeat: r.repeat === 'yearly' ? 'yearly' : 'none', memberIds: parseJson(r.member_ids_json, []), kind: r.kind === 'birthday' ? 'birthday' : 'event',
-    remindDays: r.remind_days == null ? null : r.remind_days, note: r.note || '', createdBy: r.created_by, readOnly: false,
+    remindDays: r.remind_days == null ? null : r.remind_days, note: r.note || '', createdBy: r.created_by, readOnly: !!r.source_ref,
+    place: r.place || null, endTime: r.all_day ? null : (r.end_time || null), origin: r.source === 'chat' ? 'chat' : null,
   };
 }
 
@@ -39,6 +49,7 @@ function memberBirthdays(fam) {
   return fam.list.filter((m) => m.birthdate).map((m) => ({
     id: `member:${m.userId}`, title: m.name, date: m.birthdate, time: null, endDate: null, allDay: true, repeat: 'yearly',
     memberIds: [m.userId], kind: 'birthday', remindDays: MEMBER_BIRTHDAY_REMIND, note: '', createdBy: null, readOnly: true, memberId: m.userId,
+    place: null, endTime: null, origin: null,
   }));
 }
 
@@ -76,6 +87,8 @@ function occurrenceView(ev, o) {
     // additions: the stored date (birth date for birthdays), the age turned, read-only for member birthdays
     baseDate: ev.date, years: ev.kind === 'birthday' && ev.repeat === 'yearly' ? tz.parseDate(o.date).y - tz.parseDate(ev.date).y : null,
     readOnly: ev.readOnly, createdBy: ev.createdBy,
+    // 1.8.0: the place label, the end time, 'chat' for a date from the family chat
+    place: ev.place || null, endTime: ev.allDay ? null : (ev.endTime || null), origin: ev.origin || null,
   };
   return v;
 }
@@ -120,9 +133,14 @@ function fields(body, existing, fam) {
   out.time = b.time !== undefined ? time(b.time) : (existing ? cur.time : null);
   out.allDay = b.allDay !== undefined ? bool(b.allDay) : (existing && b.time === undefined ? cur.allDay : out.time == null);
   if (out.allDay) out.time = null;
+  // 1.8.0: the end time stays only while the start time does
+  out.endTime = b.endTime !== undefined ? time(b.endTime) : (existing && b.time === undefined && b.allDay === undefined ? cur.endTime || null : null);
+  if (out.allDay || !out.time) out.endTime = null;
+  out.place = b.place !== undefined ? optText(b.place, PLACE_MAX) : (existing ? cur.place || null : null);
   out.endDate = b.endDate !== undefined ? (b.endDate == null || b.endDate === '' ? null : date(b.endDate)) : (existing ? cur.endDate : null);
   if (out.endDate && (out.endDate < out.date || tz.diffDays(out.date, out.endDate) > MAX_SPAN_DAYS)) throw fail('invalid');
   if (out.endDate === out.date) out.endDate = null;
+  if (out.endTime && !out.endDate && out.endTime < out.time) throw fail('invalid');
   out.repeat = b.repeat !== undefined ? b.repeat : (cur.repeat || (out.kind === 'birthday' ? 'yearly' : 'none'));
   if (!['none', 'yearly'].includes(out.repeat)) throw fail('invalid');
   out.memberIds = b.memberIds !== undefined ? userIds(b.memberIds, 50) : (cur.memberIds || []);
@@ -136,8 +154,8 @@ function fields(body, existing, fam) {
   return out;
 }
 
-const COLS = 'title = ?, date = ?, time = ?, end_date = ?, all_day = ?, repeat = ?, member_ids_json = ?, kind = ?, remind_days = ?, note = ?';
-const vals = (f) => [f.title, f.date, f.time, f.endDate, f.allDay ? 1 : 0, f.repeat, JSON.stringify(f.memberIds), f.kind, f.remindDays, f.note];
+const COLS = 'title = ?, date = ?, time = ?, end_date = ?, all_day = ?, repeat = ?, member_ids_json = ?, kind = ?, remind_days = ?, note = ?, place = ?, end_time = ?';
+const vals = (f) => [f.title, f.date, f.time, f.endDate, f.allDay ? 1 : 0, f.repeat, JSON.stringify(f.memberIds), f.kind, f.remindDays, f.note, f.place || null, f.endTime || null];
 
 async function getOne(gc, fam, id) {
   const r = await store.one(gc, 'SELECT * FROM events WHERE id = ?', [id]);
@@ -150,8 +168,8 @@ const plain = (e) => occurrenceView(e, { date: e.date, endDate: e.endDate });
 
 async function create(gc, r) {
   const f = fields(r.body, null, r.fam);
-  const res = await store.run(gc, `INSERT INTO events (title, date, time, end_date, all_day, repeat, member_ids_json, kind, remind_days, note, created_by, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [...vals(f), r.me.userId, r.now, r.now]);
+  const res = await store.run(gc, `INSERT INTO events (title, date, time, end_date, all_day, repeat, member_ids_json, kind, remind_days, note, place, end_time, created_by, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [...vals(f), r.me.userId, r.now, r.now]);
   return plain(await getOne(gc, r.fam, res.lastInsertRowid));
 }
 
@@ -167,6 +185,7 @@ async function update(gc, r, raw) {
   const id = eventId(raw);
   const e = await getOne(gc, r.fam, id);
   if (!e) throw fail('not_found');
+  if (e.readOnly) throw fail('read_only');
   const f = fields(r.body, e, r.fam);
   await store.run(gc, `UPDATE events SET ${COLS}, updated_at = ? WHERE id = ?`, [...vals(f), r.now, id]);
   return plain(await getOne(gc, r.fam, id));
@@ -174,6 +193,8 @@ async function update(gc, r, raw) {
 
 async function remove(gc, raw) {
   const id = eventId(raw);
+  // 1.8.0: a date the Messenger keeps in step is removed there (calendar_remove)
+  if (await store.one(gc, 'SELECT 1 AS x FROM events WHERE id = ? AND source_ref IS NOT NULL', [id])) throw fail('read_only');
   const res = await store.run(gc, 'DELETE FROM events WHERE id = ?', [id]);
   if (!res.changes) throw fail('not_found');
   await store.run(gc, 'DELETE FROM event_reminders WHERE event_key = ?', [String(id)]);
@@ -219,4 +240,6 @@ async function purge(gc, cfg, now) {
   await store.run(gc, 'DELETE FROM event_reminders WHERE occurrence < ?', [tz.addDays(today, -30)]);
 }
 
-module.exports = { inYear, occurrences, between, get, next, create, update, remove, remind, purge, memberBirthdays, MAX_RANGE_DAYS };
+module.exports = {
+  inYear, occurrences, between, get, next, create, update, remove, remind, purge, memberBirthdays, MAX_RANGE_DAYS, MAX_SPAN_DAYS, TITLE_MAX, PLACE_MAX,
+};
