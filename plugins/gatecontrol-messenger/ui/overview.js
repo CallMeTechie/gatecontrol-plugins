@@ -15,6 +15,9 @@
   function retentionLabel(d) { return d === 0 ? T('admin.retention_forever') : (d >= 365 ? T('admin.years', { n: Math.round(d / 365) }) : T('admin.days', { n: d })); }
   function editLabel(m) { return m === 0 ? T('admin.edit_never') : (m >= 1440 ? T('admin.day1') : (m >= 60 ? T('admin.hours', { n: m / 60 }) : T('admin.minutes', { n: m }))); }
   function voiceLabel(s) { return T('admin.minutes', { n: s / 60 }); }
+  function ttlLabel(m) { return m >= 1440 ? T('admin.day1') : (m >= 60 ? T('admin.hours', { n: m / 60 }) : T('admin.minutes', { n: m })); }
+  function approversLabel(v) { return T('admin.approvers_' + v); }
+  function grantLabel(d) { return d === 1 ? T('admin.day1') : T('admin.days', { n: d }); }
 
   function renderOverview(o) {
     $('#ms-t-accounts').textContent = String(o.accounts.total);
@@ -62,6 +65,11 @@
     option($('#ms-retention'), r.options.retentionDays, retentionLabel, s.retentionDays);
     option($('#ms-edit'), r.options.editWindowMin, editLabel, s.editWindowMin);
     option($('#ms-voice'), r.options.maxVoiceS, voiceLabel, s.maxVoiceS);
+    // 1.5.0: home action requests and grants
+    if (r.options.requestTtlMin) option($('#ms-req-ttl'), r.options.requestTtlMin, ttlLabel, s.requestTtlMin);
+    if (r.options.requestApproversDefault) option($('#ms-req-approvers'), r.options.requestApproversDefault, approversLabel, s.requestApproversDefault);
+    if (r.options.grantMaxDays) option($('#ms-grant-max'), r.options.grantMaxDays, grantLabel, s.grantMaxDays);
+    $('#ms-req-approvers-s').textContent = T(r.familyRoles ? 'admin.request_approvers_hint' : 'admin.request_approvers_nofamily');
     var sw = function (id, on, label) {
       var host = $(id);
       M.clear(host);
@@ -72,6 +80,7 @@
     sw('#ms-disappearing', s.allowDisappearing, T('admin.allow_disappearing'));
     sw('#ms-allow-stories', s.allowStories !== false, T('admin.allow_stories'));
     sw('#ms-allow-actions', s.allowActions !== false, T('admin.allow_actions'));
+    sw('#ms-children-request', s.childrenMayRequest !== false, T('admin.children_request'));
     sw('#ms-d-receipts', s.defaults.readReceipts, T('prefs.read_receipts'));
     sw('#ms-d-typing', s.defaults.typing, T('prefs.typing'));
     sw('#ms-d-preview', s.defaults.preview, T('prefs.preview'));
@@ -95,6 +104,8 @@
     M.api('PUT', 'admin/settings', {
       retentionDays: Number($('#ms-retention').value), editWindowMin: Number($('#ms-edit').value), maxVoiceS: Number($('#ms-voice').value),
       allowDisappearing: on('#ms-disappearing'), allowStories: on('#ms-allow-stories'), allowActions: on('#ms-allow-actions'),
+      requestTtlMin: Number($('#ms-req-ttl').value), requestApproversDefault: $('#ms-req-approvers').value, childrenMayRequest: on('#ms-children-request'),
+      grantMaxDays: Number($('#ms-grant-max').value),
       defaults: { readReceipts: on('#ms-d-receipts'), typing: on('#ms-d-typing'), preview: on('#ms-d-preview') },
     }).then(function (r) {
       renderSettings(r);

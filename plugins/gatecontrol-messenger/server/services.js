@@ -10,6 +10,10 @@
 //                  'user:<id>'    — the caller's notice channel for that person (created on first use:
 //                                   a group with only that person, read-only for them; `title` names it,
 //                                   default "GateControl")
+//                  'direct:<id>'  — 1.5.0: the direct chat between the calling `user` and that person (found or
+//                                   created; needs `user`, never the user themselves, refused when either blocked
+//                                   the other: forbidden). The message is a system message "via <plugin>" in it
+//                                   (e.g. Familie's shopping request from the person who asks).
 //     The message is a system message from "GateControl" (senderId null, via = caller) with the text,
 //     pushed to the members like any message.
 //     → { ok: true, conversationId, messageId }
@@ -34,8 +38,9 @@
 //                                removed for good, the members get conversation.remove
 //     → { ok: true, conversationId, released, deleted, admins }   not_found when the caller has no such group
 //
-//   1.4.0: send_message { …, card: { kind: 'doorbell' | 'notice', title, text?, imageBase64? (JPEG/WebP/PNG,
-//     ≤ 300 KB — note GateControl caps a service payload at 16 KB), actions: ['<id>' (the caller's) | '<plugin>/<id>'] (≤ 4),
+//   1.4.0: send_message { …, card: { kind: 'doorbell' | 'notice', title, text?, imageBase64? (JPEG or WebP,
+//     ≤ 300 KB — GateControl takes service payloads up to 512 KB from 1.180.0 on, 16 KB before), actions: ['<id>' (the
+//     caller's, e.g. the door's '<lockId>:open') | '<plugin>/<id>'] (≤ 4, ids [A-Za-z0-9:._-]{1,64}),
 //     link?: { label, route } } } → a message kind 'card' (senderId null, via the caller) with buttons that run
 //     the action as the person pressing (README "Home actions and plugin cards"); `text` may be left out.
 //
@@ -79,6 +84,8 @@ async function target(ctx, caller, user, payload) {
     if (user && !conv.readonly && await conversations.isMember(ctx.gc, conv.id, user.id)) return conv;
     throw fail('forbidden');
   }
+  m = /^direct:(\d{1,15})$/.exec(c);
+  if (m) return directConv(ctx, user, posInt(m[1]));
   m = /^user:(\d{1,15})$/.exec(c);
   if (m) {
     const uid = posInt(m[1]);
@@ -102,6 +109,25 @@ async function target(ctx, caller, user, payload) {
     return conv;
   }
   throw fail('invalid');
+}
+
+/** 1.5.0: target 'direct:<uid>' → the direct chat of `user` and uid (found or created, both members). */
+async function directConv(ctx, user, uid) {
+  if (!user || !ctx.users.has(user.id) || !uid || uid === user.id || !ctx.users.has(uid)) throw fail('invalid');
+  if (await store.one(ctx.gc, 'SELECT 1 AS x FROM blocks WHERE (user_id = ? AND blocked_id = ?) OR (user_id = ? AND blocked_id = ?)', [user.id, uid, uid, user.id])) throw fail('forbidden');
+  const key = `${Math.min(user.id, uid)}:${Math.max(user.id, uid)}`;
+  let conv = await store.one(ctx.gc, 'SELECT * FROM conversations WHERE direct_key = ?', [key]);
+  const joined = [];
+  if (!conv) {
+    const r = await store.run(ctx.gc, "INSERT INTO conversations (kind, direct_key, created_by, created_at, updated_at) VALUES ('direct', ?, ?, ?, ?)", [key, user.id, ctx.now, ctx.now]);
+    conv = await conversations.getConv(ctx.gc, r.lastInsertRowid);
+  }
+  for (const id of [user.id, uid]) {
+    const mem = await store.one(ctx.gc, 'SELECT left_at FROM members WHERE conv_id = ? AND user_id = ?', [conv.id, id]);
+    if (!mem || mem.left_at != null) { await conversations.addMember(ctx.gc, conv, id, 'member', ctx.now); joined.push(id); }
+  }
+  if (joined.length) live.queue(ctx.box, joined, 'conversation.update', { conversationId: conv.id, reason: 'created' });
+  return conv;
 }
 
 /** The text of send_message: \r\n → \n, control characters removed, trimmed, 1…4000 characters. */

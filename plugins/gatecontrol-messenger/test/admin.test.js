@@ -46,8 +46,16 @@ test('overview: counts and storage per type — and no content anywhere in any a
 test('settings: read with GateControl\'s media limits; partial update; only the offered values', async () => {
   await withHost({}, async (host, c) => {
     let r = (await c.admin('GET', 'settings')).json;
-    assert.deepEqual(r.settings, { retentionDays: 0, allowDisappearing: true, editWindowMin: 15, maxVoiceS: 300, allowStories: true, allowActions: true, defaults: { readReceipts: true, typing: true, preview: true } });
-    assert.deepEqual(r.options, { retentionDays: [0, 30, 90, 180, 365, 730], editWindowMin: [0, 5, 15, 60, 1440], maxVoiceS: [60, 120, 300, 600, 900], disappearingS: [0, 86400, 604800, 2592000] });
+    assert.deepEqual(r.settings, {
+      retentionDays: 0, allowDisappearing: true, editWindowMin: 15, maxVoiceS: 300, allowStories: true, allowActions: true,
+      requestTtlMin: 15, requestApproversDefault: 'auto', childrenMayRequest: true, grantMaxDays: 7, // 1.5.0
+      defaults: { readReceipts: true, typing: true, preview: true },
+    });
+    assert.deepEqual(r.options, {
+      retentionDays: [0, 30, 90, 180, 365, 730], editWindowMin: [0, 5, 15, 60, 1440], maxVoiceS: [60, 120, 300, 600, 900], disappearingS: [0, 86400, 604800, 2592000],
+      requestTtlMin: [5, 10, 15, 30, 60, 120, 240, 1440], requestApproversDefault: ['auto', 'parents', 'rights'], grantMaxDays: [1, 2, 3, 7, 14, 30],
+    });
+    assert.equal(r.familyRoles, false, 'no Familie here');
     assert.deepEqual([r.media.maxBytes, r.media.quota, r.media.types.length], [26214400, 10737418240, 24]);
     r = (await c.admin('PUT', 'settings', { retentionDays: 90, defaults: { preview: false } })).json;
     assert.equal(r.settings.retentionDays, 90);
@@ -85,6 +93,8 @@ test('me: prefs, licence, features and limits for the apps', async () => {
       // 1.4.0
       statusTextMax: 60, storyTextMax: 700, storyTtlS: 86400, storyDurationsH: [1, 3, 6, 12, 24], storiesMax: 30, pollOptionsMax: 12, pollQuestionMax: 200, pollOptionMax: 80, eventTitleMax: 120,
       eventChecklistMax: 20, pinsMax: 3, listsMax: 20, remindersMax: 100, arrivalEveryS: 20, arrivalMaxS: 10800, arrivalRadiusM: 150,
+      // 1.5.0
+      requestTtlMin: 15, grantMaxDays: 7,
     });
     assert.ok(me.serverTime);
   });

@@ -123,7 +123,7 @@ test('home actions: GET actions, run card (interactive), request → approve / d
     assert.equal((await c.as(LENA)('POST', `conversations/${g.id}/messages`, { clientId: c.cid(), kind: 'action', action: { mode: 'request', actionId: 'nope:1' } })).json.code, 'no_approver');
     // grant: Anna lets Lena switch the light until a time — run as Anna, as an automation
     const gr = await c.send(ANNA, g.id, { kind: 'action', action: { mode: 'grant', actionId: 'light:1', grant: { toUserId: LENA.id, until: iso(T0 + HOUR) } } });
-    assert.deepEqual(gr.action.grant, { toUserId: LENA.id, until: iso(T0 + HOUR) });
+    assert.deepEqual(gr.action.grant, { toUserId: LENA.id, until: iso(T0 + HOUR), offAtEnd: false });
     assert.equal((await c.as(LENA)('GET', `conversations/${g.id}/messages`)).json.messages.find((x) => x.id === gr.id).action.can.run, true);
     r = await c.as(LENA)('POST', `messages/${gr.id}/action/run`);
     const run = host.actionRuns.pop();

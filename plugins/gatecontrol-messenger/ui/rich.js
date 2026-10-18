@@ -296,6 +296,7 @@
       case 'arrived': return T('sys.arrived', { name: H.nameOf(c, s.userId, { you: false }), label: s.label || '' });
       case 'action_run': return T('sys.action_run', { name: H.nameOf(c, s.userId, { you: false }), label: s.label || '' });
       case 'action_denied': return T('sys.action_denied', { name: H.nameOf(c, s.by, { you: false }), label: s.label || '' });
+      case 'grant_off': return T(s.ok ? 'sys.grant_off' : 'sys.grant_off_failed', { label: s.label || '' });
       default: return null;
     }
   }

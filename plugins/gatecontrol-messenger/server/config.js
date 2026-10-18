@@ -11,6 +11,10 @@ const RETENTION_DAYS = [0, 30, 90, 180, 365, 730];       // 0 = unlimited
 const EDIT_WINDOW_MIN = [0, 5, 15, 60, 1440];            // 0 = no editing / deleting for everyone
 const VOICE_MAX_S = [60, 120, 300, 600, 900];
 const DISAPPEARING_S = [0, 86400, 604800, 2592000];      // off, 1 day, 1 week, 1 month
+// 1.5.0: home actions — how long a request stays open, who approves by default, the longest grant
+const REQUEST_TTL_MIN = [5, 10, 15, 30, 60, 120, 240, 1440];
+const APPROVERS = ['auto', 'parents', 'rights'];          // auto: parents when Familie offers family_roles, else rights
+const GRANT_MAX_DAYS = [1, 2, 3, 7, 14, 30];
 
 const DEFAULTS = Object.freeze({
   retentionDays: 0,
@@ -19,6 +23,10 @@ const DEFAULTS = Object.freeze({
   maxVoiceS: 300,
   allowStories: true,     // 1.4.0: stories (24 h) — the status line itself is always there
   allowActions: true,     // 1.4.0: home actions in chats (action messages, plugin card buttons)
+  requestTtlMin: 15,      // 1.5.0: a request („Tür-Anfrage“) is open this long
+  requestApproversDefault: 'auto', // 1.5.0: who may approve when the request names nobody
+  childrenMayRequest: true,        // 1.5.0: Familie's children may send requests
+  grantMaxDays: 7,        // 1.5.0: the longest „Gerät teilen“
   defaults: Object.freeze({ readReceipts: true, typing: true, preview: true }),
 });
 
@@ -37,6 +45,10 @@ async function load(gc) {
     maxVoiceS: VOICE_MAX_S.includes(raw.maxVoiceS) ? raw.maxVoiceS : DEFAULTS.maxVoiceS,
     allowStories: typeof raw.allowStories === 'boolean' ? raw.allowStories : DEFAULTS.allowStories,
     allowActions: typeof raw.allowActions === 'boolean' ? raw.allowActions : DEFAULTS.allowActions,
+    requestTtlMin: REQUEST_TTL_MIN.includes(raw.requestTtlMin) ? raw.requestTtlMin : DEFAULTS.requestTtlMin,
+    requestApproversDefault: APPROVERS.includes(raw.requestApproversDefault) ? raw.requestApproversDefault : DEFAULTS.requestApproversDefault,
+    childrenMayRequest: typeof raw.childrenMayRequest === 'boolean' ? raw.childrenMayRequest : DEFAULTS.childrenMayRequest,
+    grantMaxDays: GRANT_MAX_DAYS.includes(raw.grantMaxDays) ? raw.grantMaxDays : DEFAULTS.grantMaxDays,
     defaults: {
       readReceipts: typeof d.readReceipts === 'boolean' ? d.readReceipts : true,
       typing: typeof d.typing === 'boolean' ? d.typing : true,
@@ -58,12 +70,16 @@ async function update(gc, body) {
   if (b.allowActions !== undefined) next.allowActions = bool(b.allowActions);
   if (b.editWindowMin !== undefined) { if (!EDIT_WINDOW_MIN.includes(b.editWindowMin)) throw fail('invalid'); next.editWindowMin = b.editWindowMin; }
   if (b.maxVoiceS !== undefined) { if (!VOICE_MAX_S.includes(b.maxVoiceS)) throw fail('invalid'); next.maxVoiceS = b.maxVoiceS; }
+  if (b.requestTtlMin !== undefined) { if (!REQUEST_TTL_MIN.includes(b.requestTtlMin)) throw fail('invalid'); next.requestTtlMin = b.requestTtlMin; }
+  if (b.requestApproversDefault !== undefined) { if (!APPROVERS.includes(b.requestApproversDefault)) throw fail('invalid'); next.requestApproversDefault = b.requestApproversDefault; }
+  if (b.childrenMayRequest !== undefined) next.childrenMayRequest = bool(b.childrenMayRequest);
+  if (b.grantMaxDays !== undefined) { if (!GRANT_MAX_DAYS.includes(b.grantMaxDays)) throw fail('invalid'); next.grantMaxDays = b.grantMaxDays; }
   if (b.defaults !== undefined) {
     if (!b.defaults || typeof b.defaults !== 'object' || Array.isArray(b.defaults)) throw fail('invalid');
     for (const k of ['readReceipts', 'typing', 'preview']) if (b.defaults[k] !== undefined) next.defaults[k] = bool(b.defaults[k]);
   }
   await store.tx(gc, async () => {
-    for (const k of ['retentionDays', 'allowDisappearing', 'editWindowMin', 'maxVoiceS', 'allowStories', 'allowActions', 'defaults']) {
+    for (const k of ['retentionDays', 'allowDisappearing', 'editWindowMin', 'maxVoiceS', 'allowStories', 'allowActions', 'requestTtlMin', 'requestApproversDefault', 'childrenMayRequest', 'grantMaxDays', 'defaults']) {
       await store.run(gc, 'INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value', [k, JSON.stringify(next[k])]);
     }
   });
@@ -73,4 +89,4 @@ async function update(gc, body) {
 
 function reset() { cache = null; }
 
-module.exports = { load, update, reset, DEFAULTS, RETENTION_DAYS, EDIT_WINDOW_MIN, VOICE_MAX_S, DISAPPEARING_S };
+module.exports = { load, update, reset, DEFAULTS, RETENTION_DAYS, EDIT_WINDOW_MIN, VOICE_MAX_S, DISAPPEARING_S, REQUEST_TTL_MIN, APPROVERS, GRANT_MAX_DAYS };

@@ -3,6 +3,7 @@
 // 1.4.0 routes of the chat API (README "App-API", sections marked "since 1.4.0"): status and stories,
 // blocks, archive, pins, lists, export, reminders, suggestions, polls, events, live arrival, home
 // actions, the Familie proxies. api.js calls route14() before answering not_found.
+// 1.5.0: GET actions/requestable (homeactions.requestable).
 
 const store = require('./store');
 const conversations = require('./conversations');
@@ -72,6 +73,8 @@ async function route14(ctx, req, seg) {
     const list = await homeactions.listFor(gc, ctx.viewer, ctx.now);
     return json(200, { actions: list.map((x) => ({ id: x.id, plugin: x.plugin, label: x.label, icon: x.icon, kind: x.kind, needsConfirm: x.needsConfirm, state: x.state, subtitle: x.subtitle, pluginName: x.pluginName })) });
   }
+  // 1.5.0: what the caller may ask for (a request's approvers' actions)
+  if (a === 'actions' && seg.length === 2 && b === 'requestable' && m === 'GET') return json(200, await homeactions.requestable(ctx, req.query));
   if (a === 'familie' && seg.length === 2 && b === 'places' && m === 'GET') {
     const r = await familie.call(gc, 'places', { userId: ctx.viewer }, ctx.viewer, ctx.now);
     const list = Array.isArray(r) ? r : (r && Array.isArray(r.places) ? r.places : []);
