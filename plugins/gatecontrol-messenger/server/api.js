@@ -44,6 +44,8 @@ async function me(ctx) {
     },
     // 1.4.0: what the Familie plugin offers here (gc.services.available) — "Zur Liste", "In Kalender", places
     integrations: { familie: await familie.offers(ctx.gc) },
+    // 1.5.0: home actions in detail — why they are missing (reason), the request defaults, the last doorbell card
+    homeActions: await homeactions.info(ctx),
     limits: {
       maxBytes: usage ? usage.maxBytes : null,
       types: usage ? usage.types : [],
@@ -66,6 +68,8 @@ async function me(ctx) {
       statusTextMax: status.STATUS_TEXT_MAX, storyTextMax: status.STORY_TEXT_MAX, storyTtlS: status.STORY_TTL_MS / 1000, storyDurationsH: status.STORY_DURATIONS_H, storiesMax: status.STORIES_MAX,
       pollOptionsMax: 12, pollQuestionMax: 200, pollOptionMax: 80, eventTitleMax: 120, eventChecklistMax: 20, pinsMax: 3, listsMax: 20, remindersMax: 100,
       arrivalEveryS: 20, arrivalMaxS: 3 * 3600, arrivalRadiusM: 150,
+      // 1.5.0: a request is open this long; the longest grant
+      requestTtlMin: cfg.requestTtlMin, grantMaxDays: cfg.grantMaxDays,
     },
     serverTime: iso(ctx.now),
   };
@@ -75,7 +79,8 @@ async function me(ctx) {
 function features14(ctx) {
   const out = ['status', 'polls', 'events', 'arrival', 'msg_tools', 'privacy2'];
   if (ctx.cfg.allowStories) out.splice(1, 0, 'stories', 'story_duration');
-  if (homeactions.available(ctx.gc, ctx.cfg)) out.push('actions');
+  // 1.5.0: action_requests (GET actions/requestable, request `approvers`), grant_off (grant `offAtEnd`)
+  if (homeactions.available(ctx.gc, ctx.cfg)) out.push('actions', 'action_requests', 'grant_off');
   return out;
 }
 

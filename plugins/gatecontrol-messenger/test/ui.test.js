@@ -79,14 +79,15 @@ test('texts: every key used by the pages exists in de and en; both languages hav
 
 test('plugin.json: licence, GateControl 1.180.0, permissions, pages, app and portal tab "Chats"', () => {
   assert.equal(manifest.id, 'gatecontrol-messenger');
-  assert.equal(manifest.version, '1.4.1');
+  assert.equal(manifest.version, '1.5.0');
   assert.equal(manifest.gatecontrol, '>=1.180.0', '1.4.0: interactive gc.actions runs (permissions.actions { interactive: true }), larger service payloads');
   assert.deepEqual(manifest.license, { required: true });
   const p = manifest.permissions;
   assert.deepEqual([p.storage, p.users, p.app, p.portal, p.notify, p.events, p.background], [true, true, true, true, true, true, { intervalSeconds: 60 }]);
   // 1.4.0: home actions (gc.actions), the Familie services, the service set_place_status
   assert.deepEqual(p.actions, { interactive: true });
-  assert.deepEqual(p.services, ['list_add', 'calendar_add', 'calendar_upsert', 'calendar_remove', 'places'].map((x) => 'gatecontrol-familie:' + x));
+  // 1.5.0: family_roles (who approves requests, who is a child)
+  assert.deepEqual(p.services, ['list_add', 'calendar_add', 'calendar_upsert', 'calendar_remove', 'places', 'family_roles'].map((x) => 'gatecontrol-familie:' + x));
   assert.ok(manifest.services.provides.set_place_status);
   assert.deepEqual(manifest.ui.pages.map((x) => x.id), ['overview', 'log']);
   for (const k of ['portal', 'app']) assert.deepEqual(manifest.ui[k].label, { de: 'Chats', en: 'Chats' });

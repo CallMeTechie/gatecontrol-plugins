@@ -49,7 +49,13 @@ suggestions, polls, events, live arrival, home actions and plugin cards — see
   Since 1.4.0 a card with counts only (active statuses / stories, open polls,
   upcoming events, live arrivals, home actions and plugin cards of the last 7
   days, blocks, pending reminders) and the switches "Storys erlauben" and
-  "Haus-Aktionen in Chats" (both on by default).
+  "Haus-Aktionen in Chats" (both on by default). Since 1.5.0 also: how long a
+  request stays open (`requestTtlMin`: 5, 10, 15, 30, 60, 120, 240 min, 1 day;
+  default 15 min), who approves a request that names nobody
+  (`requestApproversDefault`: `auto` = parents when the Familie plugin offers
+  `family_roles`, else everyone with the right; `parents`; `rights`), "Kinder
+  dürfen anfragen" (`childrenMayRequest`, default on) and the longest "Gerät
+  teilen" (`grantMaxDays`: 1, 2, 3, 7, 14, 30 days; default 7).
 * **Protokoll**: errors and limits only (push limit, live event limit, file
   clean-up, decryption, refused service calls, failed background steps, since
   1.4.0 failed home actions).
@@ -365,7 +371,9 @@ otherwise — never `false`):
 | `polls` | message kind `poll` |
 | `events` | message kind `event`, `nextEvent` on conversations |
 | `arrival` | message kind `arrival` (live arrival) |
-| `actions` | home actions (`GET actions`, message kind `action`, buttons of `card` messages); absent without `gc.actions` on the host or when the administrator switched them off |
+| `actions` | home actions (`GET actions`, message kind `action`, buttons of `card` messages); absent without `gc.actions` on the host or when the administrator switched them off — `homeActions.reason` says which (since 1.5.0) |
+| `action_requests` | since 1.5.0: `GET actions/requestable`, request `approvers`, `expiresAt`; present together with `actions` |
+| `grant_off` | since 1.5.0: grant `offAtEnd`, system message `grant_off`; present together with `actions` |
 | `msg_tools` | blocks, archive, pins, lists, export, remind me, suggest |
 | `privacy2` | `prefs.privacy` / `prefs.notify` / `prefs.chats`, last seen / online |
 
@@ -375,7 +383,16 @@ right now — `gc.services.available`) and these `limits`: `statusTextMax: 60,
 storyTextMax: 700, storyTtlS: 86400, storyDurationsH: [1, 3, 6, 12, 24] (since 1.4.1), storiesMax: 30, pollOptionsMax: 12,
 pollQuestionMax: 200, pollOptionMax: 80, eventTitleMax: 120,
 eventChecklistMax: 20, pinsMax: 3, listsMax: 20, remindersMax: 100,
-arrivalEveryS: 20, arrivalMaxS: 10800, arrivalRadiusM: 150`.
+arrivalEveryS: 20, arrivalMaxS: 10800, arrivalRadiusM: 150`; since 1.5.0
+`requestTtlMin` and `grantMaxDays` (the administrator's settings).
+
+Since 1.5.0 `GET me` also has `homeActions: { available, reason: null | "off"
+(the administrator's switch) | "host" (no gc.actions), approversDefault:
+"parents" | "rights", childrenMayRequest, familyRoles (Familie offers
+family_roles), canRequest (false for Familie's children while
+childrenMayRequest is off), doorbell: { lastCardAt } | null (the last doorbell
+card of gatecontrol-door in a chat of the caller) }` — show "Aus deinem
+Zuhause" with a hint instead of hiding it when `available` is false.
 
 Unknown message kinds (a newer server): show a neutral bubble "Diese
 Nachricht braucht eine neuere App-Version". New error codes:
@@ -626,21 +643,45 @@ plugins offer to a person, run **as that person with their rights**
   null, kind ("button"|"toggle"), needsConfirm, state, subtitle, pluginName } ] }`
   — what the caller may run with a tap (attach sheet). Which of them a person
   shows in the attach sheet is a client setting ("Haus-Aktionen").
+* `GET actions/requestable[?approvers=parents|rights|<id,id,…>&conversationId=<id>]`
+  (since 1.5.0, feature `action_requests`) → `{ actions: [ { id, plugin, label,
+  icon, kind, needsConfirm, state, subtitle, pluginName, approverIds: [ids],
+  self } ], approvers: "parents"|"rights"|"list"|null, approversDefault,
+  canRequest, requestTtlMin }` — what the caller may **ask for**: the actions
+  the possible approvers may run (also ones the caller cannot run, e.g. a
+  child asking for the front door; `self`: the caller may run it too). Without
+  `approvers` the administrator's default; `conversationId`: only approvers
+  among that chat's members (at most 30 people are asked). `canRequest: false`
+  (Familie's children while `childrenMayRequest` is off) → `actions: []`.
 * Send `{ clientId, kind: "action", action: { mode: "run"|"request"|"grant",
-  actionId, plugin?, label? (≤ 80), approverIds? (request), grant?: {
-  toUserId, until (≤ 7 days) } (grant) } }`:
+  actionId, plugin?, label? (≤ 80), approvers? (request, since 1.5.0:
+  "parents" | "rights" | [ids]), approverIds? (request, older form of a list),
+  grant?: { toUserId, until (≤ grantMaxDays, default 7 days), offAtEnd?
+  (since 1.5.0) } (grant) } }`:
   * `run`: a button; the sender must be able to run it.
-  * `request`: approvers = `approverIds` (or every other member) who may run
-    it; none → `no_approver`. The push goes to the approvers only ("Bittet um:
-    <label>").
+  * `request`: approvers = the members of the chat in the group who may run
+    it — `parents` (the Familie plugin's service `family_roles`; without
+    Familie, or when it refuses, `rights`), `rights` (every other member), a
+    list of ids; without `approvers`/`approverIds` the administrator's default
+    (`requestApproversDefault`). None → `no_approver`; Familie's children
+    while `childrenMayRequest` is off → `not_allowed`. The push goes to the
+    approvers only ("Bittet um: <label>"). Open for `requestTtlMin` (default
+    15 min, kept per request).
   * `grant`: the sender lets one member run it until `until`, **as the
     sender** (an automation run). Actions with `needsConfirm` (sensitive, e.g.
-    a door) cannot be granted (`not_allowed`).
+    a door) cannot be granted (`not_allowed`). `offAtEnd: true` (a `toggle`
+    only, ignored for buttons): when the grant ends the action runs with state
+    `off` as the granter, then the system message `grant_off { messageId,
+    label, ok, byUserId, toUserId }` ("„Flurlicht“ wurde zum Ende der Freigabe
+    ausgeschaltet").
 * Message `action`: `{ mode, actionId, plugin, label, icon, needsConfirm,
-  approverIds (request), grant: { toUserId, until } (grant), state:
-  "open"|"done"|"denied"|"expired", result: { ok, message } | null, by, at,
-  can: { run, approve, deny } }` (`can` for the caller). Open requests expire
-  after 24 h, grants at `until`.
+  approverIds (request), expiresAt (request, since 1.5.0), approvers (request,
+  since 1.5.0: "parents"|"rights"|"list"|null), grant: { toUserId, until,
+  offAtEnd } (grant), state: "open"|"done"|"denied"|"expired", result: { ok,
+  message } | null, by, at, can: { run, approve, deny } }` (`can` for the
+  caller). Open requests expire at `expiresAt` (24 h for requests sent before
+  1.5.0), grants at `until`. Approving needs the right to run it at that
+  moment (`not_allowed` otherwise).
 * `POST messages/:id/action/run` (run: anyone who may run it, as themselves —
   an **interactive** run, the target sees a person's tap; grant: the grantee,
   as the granter), `POST …/action/approve` (an approver: runs it as the
@@ -719,7 +760,10 @@ reminders, pins and Familie calendar entries along.
   `"group:<id>"` (a group the caller manages, or one the calling `userId` is a
   member of), `"user:<id>"` (the caller's notice channel for that person —
   created on first use, only that person, read-only, named `title` or
-  "GateControl").
+  "GateControl"), since 1.5.0 `"direct:<id>"` (the direct chat between the
+  calling `userId` and that person, found or created; needs `userId`, never
+  the user themselves, `forbidden` when either blocked the other — e.g.
+  Familie's shopping request from the person who asks; shown "via" the plugin).
   * **Several targets** (since 1.1.0): `conversation` may be an array of 1…20
     such strings (duplicates dropped), e.g. `["user:3", "user:7", "family"]` —
     one call (one of the host's 60 per hour), one message per target, each
@@ -746,7 +790,8 @@ reminders, pins and Familie calendar entries along.
 * `send_message` with `card` (since 1.4.0): `{ conversation, card: { kind:
   "doorbell"|"notice", title (1…80), text? (≤ 500), imageBase64? (JPEG or
   WebP, ≤ 300 KB — GateControl 1.180.0 takes service payloads up to 512 KB),
-  actions?: [ "<id>" (a quick action of the caller) | "<plugin>/<id>" ] (≤ 4),
+  actions?: [ "<id>" (a quick action of the caller, e.g. the door's
+  `"<lockId>:open"`) | "<plugin>/<id>" ] (≤ 4, ids `[A-Za-z0-9:._-]{1,64}`),
   link?: { label (≤ 24), route (an app route: plg-<id>, vpn, services,
   gateways, inbox) } } }` (`text` of the call may be left out) → a message
   `kind: "card"` (see "Home actions and plugin cards"). A bad picture or
@@ -769,7 +814,9 @@ code }` become `unavailable` for the client): `list_add { userId, list, items }`
 `calendar_add { userId, title, startsAt, endsAt?, allDay?, place? }`,
 `calendar_upsert { sourceRef: "messenger:<messageId>", title, startsAt,
 endsAt?, allDay?, place?, userIds? }`, `calendar_remove { sourceRef }`,
-`places { userId }` (a bare array). Dates are ISO with a time, or
+`places { userId }` (a bare array), since 1.5.0 `family_roles {}` →
+`{ parents: [ids], children: [ids] }` (cached 10 minutes; missing → requests
+use `rights`, nobody counts as a child). Dates are ISO with a time, or
 `YYYY-MM-DD` for all-day; `place` is the label.
 
 ## Portal tab

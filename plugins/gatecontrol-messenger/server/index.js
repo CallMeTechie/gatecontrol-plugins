@@ -15,6 +15,9 @@
 //              suggest.js), polls, events, live arrival, home actions and plugin cards (polls.js, eventmsg.js,
 //              arrival.js, homeactions.js, rich.js), Familie's services (familie.js), routes in api14.js;
 //              service set_place_status (services.js)
+//   1.5.0      home actions for families: GET actions/requestable, request approvers (Familie's family_roles),
+//              request time, grant offAtEnd, send_message target direct:<id>, GET me homeActions (homeactions.js,
+//              services.js, familie.js)
 //
 // Needs GateControl ≥ 1.177.0 (media, realtime events, chat notifications, services); Familie integration
 // needs gc.services.available (1.178.0); home actions use gc.actions (1.166.0+, interactive runs 1.180.0).
@@ -75,6 +78,7 @@ module.exports = {
     config.reset();
     people.reset();
     homeactions.reset();
+    require('./familie').reset();
     seal._reset();
     await seal.init(gc);
     gc.log.info('messenger started', gc.plugin.version);

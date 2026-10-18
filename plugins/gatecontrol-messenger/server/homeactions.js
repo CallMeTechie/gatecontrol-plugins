@@ -14,6 +14,17 @@
 //   POST messages/:id/action/run { actionId?, plugin? (cards) } · …/action/approve · …/action/deny
 // A run happens outside the database transaction (another plugin's action may call back into this one);
 // a successful run posts the system message action_run ("Anna hat Haustür ausgeführt").
+//
+// 1.5.0 (README "Home actions and plugin cards"):
+//   GET actions/requestable[?approvers=parents|rights|<id,id>&conversationId=]   what the caller may ASK for: the
+//     actions of the possible approvers — also ones the caller cannot run (a child asks for the front door)
+//   request `approvers`: 'parents' (Familie's service family_roles; Familie missing → 'rights') | 'rights' | [ids];
+//     without it the administrator's default (requestApproversDefault: auto = parents when Familie offers
+//     family_roles). Approvers are always members of the chat who may run the action (checked again on approve).
+//     A request stays open requestTtlMin (kept per request: expires_at); Familie's children may only ask while
+//     childrenMayRequest is on.
+//   grant `offAtEnd`: when the grant ends the action runs with state 'off' as the granter (toggles only) and a system
+//     message grant_off says so; the longest grant is grantMaxDays.
 
 const store = require('./store');
 const seal = require('./seal');
@@ -21,6 +32,7 @@ const live = require('./live');
 const log = require('./log');
 const people = require('./people');
 const messages = require('./messages');
+const familie = require('./familie');
 const { fail, posInt, text, optText, iso, parseIso, userIds, parseJson } = require('./util');
 
 const SELF = 'gatecontrol-messenger';
@@ -28,12 +40,13 @@ const ID_RE = /^[A-Za-z0-9:._-]{1,64}$/;
 const PLUGIN_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const ROUTE_RE = /^(?:vpn|services|gateways|inbox|plg-[a-z0-9]+(?:-[a-z0-9]+)*)$/;
 const CACHE_MS = 20000;
-const REQUEST_TTL_MS = 24 * 3600000;
-const GRANT_MAX_MS = 7 * 86400000;
+const REQUEST_TTL_MS = 24 * 3600000;     // requests sent before 1.5.0 (they have no expires_at)
+const GRANT_MAX_MS = 7 * 86400000;       // the default of grantMaxDays (1.5.0: the administrator sets it)
 const APPROVER_CHECK_MAX = 30;
 const CARD_ACTIONS_MAX = 4;
 const CARD_IMAGE_MAX = 300 * 1024;
 const MODES = ['run', 'request', 'grant'];
+const DAY = 86400000;
 
 const cache = new Map(); // `${userId}:${interactive}` → { at, list }
 function reset() { cache.clear(); }
@@ -91,8 +104,9 @@ const findIn = (list, plugin, id) => list.find((a) => a.id === id && (!plugin ||
  * target's own refusal message comes back in `message`. Grants and onArrive always run as automation.
  * Called with actionId '<plugin>/<id>' (GateControl ≥ 1.180.0, which this version needs).
  */
-async function run(gc, userId, plugin, id, { interactive = false } = {}) {
-  const base = { userId, actionId: `${plugin}/${id}`, lang: await langOf(gc, userId), via: SELF };
+async function run(gc, userId, plugin, id, { interactive = false, state = null } = {}) {
+  // 1.5.0: state 'on' | 'off' — the state a toggle should end in (a grant's offAtEnd)
+  const base = { userId, actionId: `${plugin}/${id}`, lang: await langOf(gc, userId), via: SELF, ...(state ? { state } : {}) };
   const once = (extra) => gc.actions.run({ ...base, ...extra });
   try {
     let r;
@@ -116,6 +130,40 @@ async function run(gc, userId, plugin, id, { interactive = false } = {}) {
 
 // ─── sending ────────────────────────────────────────────────────────────────
 
+/** When a request is no longer open: its own end (1.5.0), else 24 h after it was sent (requests from before 1.5.0). */
+function requestEnd(row) {
+  return row.expires_at != null ? row.expires_at : row.created_at + REQUEST_TTL_MS;
+}
+
+/** The administrator's default for who approves → 'parents' | 'rights' ('auto': parents when Familie offers family_roles). */
+async function approversDefault(gc, cfg) {
+  if (cfg.requestApproversDefault === 'parents' || cfg.requestApproversDefault === 'rights') return cfg.requestApproversDefault;
+  return (await familie.available(gc, 'family_roles')) ? 'parents' : 'rights';
+}
+
+/**
+ * The approver group of a request (`approvers` of the body or the query) → { mode: 'parents' | 'rights' | 'list', ids }
+ * — ids: the candidates (null = everybody), before the member and rights checks. 'parents' without Familie's
+ * family_roles is 'rights'.
+ */
+async function approverGroup(ctx, want) {
+  if (Array.isArray(want)) return { mode: 'list', ids: userIds(want, APPROVER_CHECK_MAX) };
+  const m = want == null ? await approversDefault(ctx.gc, ctx.cfg) : want;
+  if (m !== 'parents' && m !== 'rights') throw fail('invalid');
+  if (m === 'parents') {
+    const roles = await familie.roles(ctx.gc, ctx.now);
+    if (roles) return { mode: 'parents', ids: roles.parents };
+  }
+  return { mode: 'rights', ids: null };
+}
+
+/** May the viewer send requests? Familie's children only while childrenMayRequest is on (asks Familie only then). */
+async function mayRequest(ctx) {
+  if (ctx.cfg.childrenMayRequest !== false) return true;
+  const roles = await familie.roles(ctx.gc, ctx.now);
+  return !(roles && roles.children.includes(ctx.viewer));
+}
+
 /**
  * Check `action` of a send body (inside the send transaction) → { meta, row }.
  * run / grant: the sender must be able to run it; request: approvers who may run it.
@@ -128,7 +176,7 @@ async function clean(ctx, conv, members, v) {
   const plugin = v.plugin || null;
   const others = members.map((m) => m.user_id).filter((u) => u !== ctx.viewer && ctx.users.has(u));
   let entry = null;
-  const row = { mode: v.mode, approverIds: null, grantTo: null, grantUntil: null };
+  const row = { mode: v.mode, approverIds: null, grantTo: null, grantUntil: null, expiresAt: null, offAtEnd: false, approvers: null };
   if (v.mode === 'run' || v.mode === 'grant') {
     // a run button is pressed by people (interactive); a grant runs as an automation of the sender
     entry = findIn(await listFor(ctx.gc, ctx.viewer, ctx.now, { interactive: v.mode === 'run' }), plugin, v.actionId);
@@ -142,12 +190,19 @@ async function clean(ctx, conv, members, v) {
     const to = posInt(g.toUserId);
     if (!to || !others.includes(to)) throw fail('invalid');
     const until = parseIso(g.until);
-    if (until == null || until <= ctx.now || until > ctx.now + GRANT_MAX_MS) throw fail('invalid');
+    // 1.5.0: the administrator's longest grant (grantMaxDays, default 7)
+    if (until == null || until <= ctx.now || until > ctx.now + (ctx.cfg.grantMaxDays || 7) * DAY) throw fail('invalid');
+    if (g.offAtEnd != null && typeof g.offAtEnd !== 'boolean') throw fail('invalid');
     row.grantTo = to;
     row.grantUntil = until;
+    // switched off at the end: only an action with an on/off state
+    row.offAtEnd = g.offAtEnd === true && entry.kind === 'toggle';
   }
   if (v.mode === 'request') {
-    const wanted = v.approverIds == null ? others : userIds(v.approverIds, APPROVER_CHECK_MAX).filter((u) => others.includes(u));
+    if (!(await mayRequest(ctx))) throw fail('not_allowed');
+    const want = v.approvers !== undefined ? v.approvers : (v.approverIds != null ? v.approverIds : undefined);
+    const group = await approverGroup(ctx, want);
+    const wanted = group.ids == null ? others : group.ids.filter((u) => others.includes(u));
     const approvers = [];
     for (const u of wanted.slice(0, APPROVER_CHECK_MAX)) {
       const e = findIn(await listFor(ctx.gc, u, ctx.now), plugin, v.actionId);
@@ -155,15 +210,19 @@ async function clean(ctx, conv, members, v) {
     }
     if (!approvers.length) throw fail('no_approver');
     row.approverIds = approvers;
+    row.approvers = group.mode;
+    row.expiresAt = ctx.now + (ctx.cfg.requestTtlMin || 15) * 60000;
   }
   const meta = { mode: v.mode, plugin: entry.plugin, actionId: entry.id, label: optText(v.label, 80) || entry.label, icon: entry.icon, needsConfirm: entry.needsConfirm };
+  if (row.approvers) meta.approvers = row.approvers;
+  if (row.offAtEnd) meta.offAtEnd = true;
   return { meta, row: { ...row, plugin: entry.plugin } };
 }
 
 async function create(ctx, conv, msgId, a) {
-  await store.run(ctx.gc, `INSERT INTO action_msgs (msg_id, conv_id, mode, plugin, action_id, state, owner_id, grant_to, grant_until, approver_ids, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, 'open', ?, ?, ?, ?, ?, ?)`, [msgId, conv.id, a.row.mode, a.meta.plugin, a.meta.actionId, ctx.viewer, a.row.grantTo, a.row.grantUntil,
-    a.row.approverIds ? JSON.stringify(a.row.approverIds) : null, ctx.now, ctx.now]);
+  await store.run(ctx.gc, `INSERT INTO action_msgs (msg_id, conv_id, mode, plugin, action_id, state, owner_id, grant_to, grant_until, approver_ids, expires_at, off_at_end, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, 'open', ?, ?, ?, ?, ?, ?, ?, ?)`, [msgId, conv.id, a.row.mode, a.meta.plugin, a.meta.actionId, ctx.viewer, a.row.grantTo, a.row.grantUntil,
+    a.row.approverIds ? JSON.stringify(a.row.approverIds) : null, a.row.expiresAt, a.row.offAtEnd ? 1 : 0, ctx.now, ctx.now]);
 }
 
 /** Who gets the push of a new action message: request → the approvers only; else everyone (null). */
@@ -267,12 +326,14 @@ async function decorate(ctx, rows) {
     if (!a) continue;
     let state = row.state;
     if (state === 'open' && row.mode === 'grant' && row.grant_until != null && row.grant_until <= ctx.now) state = 'expired';
-    if (state === 'open' && row.mode === 'request' && row.created_at <= ctx.now - REQUEST_TTL_MS) state = 'expired';
+    if (state === 'open' && row.mode === 'request' && requestEnd(row) <= ctx.now) state = 'expired';
     const approvers = parseJson(row.approver_ids, []);
     const open = state === 'open';
     out.set(r.id, { action: {
       mode: row.mode, actionId: row.action_id, plugin: row.plugin, label: a.label, icon: a.icon || null, needsConfirm: !!a.needsConfirm,
-      approverIds: row.mode === 'request' ? approvers : undefined, grant: row.mode === 'grant' ? { toUserId: row.grant_to, until: iso(row.grant_until) } : undefined,
+      approverIds: row.mode === 'request' ? approvers : undefined, grant: row.mode === 'grant' ? { toUserId: row.grant_to, until: iso(row.grant_until), offAtEnd: row.off_at_end > 0 } : undefined,
+      // 1.5.0: a request's end and its approver group ('parents' | 'rights' | 'list'; null before 1.5.0)
+      expiresAt: row.mode === 'request' ? iso(requestEnd(row)) : undefined, approvers: row.mode === 'request' ? a.approvers || null : undefined,
       state, result: result ? { ok: !!result.ok, message: result.message || null } : null, by: row.by_id || null, at: row.by_id ? iso(row.updated_at) : null,
       can: {
         run: can && open && ((row.mode === 'run' && !!findIn(mine, row.plugin, row.action_id)) || (row.mode === 'grant' && row.grant_to === ctx.viewer)),
@@ -311,7 +372,7 @@ async function prepare(ctx, x, idRaw, body, op) {
   const label = meta.action ? meta.action.label : row.action_id;
   if (row.state !== 'open') throw fail('closed');
   if (row.mode === 'grant' && row.grant_until <= ctx.now) throw fail('closed');
-  if (row.mode === 'request' && row.created_at <= ctx.now - REQUEST_TTL_MS) throw fail('closed');
+  if (row.mode === 'request' && requestEnd(row) <= ctx.now) throw fail('closed');
   if (op === 'run') {
     if (row.mode === 'request') throw fail('not_allowed');
     if (row.mode === 'grant') {
@@ -321,8 +382,9 @@ async function prepare(ctx, x, idRaw, body, op) {
     if (!findIn(await listFor(ctx.gc, ctx.viewer, ctx.now), row.plugin, row.action_id)) throw fail('not_allowed');
     return { msg, row, meta, plugin: row.plugin, actionId: row.action_id, label, executor: ctx.viewer };
   }
-  // approve / deny: an approver while it is open
+  // approve / deny: an approver while it is open — 1.5.0: approving needs the right to run it still
   if (row.mode !== 'request' || !parseJson(row.approver_ids, []).includes(ctx.viewer)) throw fail('not_allowed');
+  if (op === 'approve' && !findIn(await listFor(ctx.gc, ctx.viewer, ctx.now), row.plugin, row.action_id)) throw fail('not_allowed');
   return { msg, row, meta, plugin: row.plugin, actionId: row.action_id, label, executor: ctx.viewer };
 }
 
@@ -346,16 +408,109 @@ async function record(ctx, x, p, op, result) {
   if (result && !result.ok) await log.add(ctx.gc, 'action_failed', String(result.error || 'failed').slice(0, 40), ctx.now);
 }
 
-/** Background: open requests after 24 h and grants past their end → expired. */
+/**
+ * Background: open requests past their end (requestTtlMin; 24 h before 1.5.0) and grants past their end → expired.
+ * A grant with offAtEnd switches the device off after the commit (switchOff, ctx.box.after).
+ */
 async function expire(ctx) {
-  const rows = await store.all(ctx.gc, "SELECT * FROM action_msgs WHERE state = 'open' AND ((mode = 'grant' AND grant_until <= ?) OR (mode = 'request' AND created_at <= ?)) LIMIT 200", [ctx.now, ctx.now - REQUEST_TTL_MS]);
+  const rows = await store.all(ctx.gc, "SELECT * FROM action_msgs WHERE state = 'open' AND ((mode = 'grant' AND grant_until <= ?) OR (mode = 'request' AND COALESCE(expires_at, created_at + ?) <= ?)) LIMIT 200",
+    [ctx.now, REQUEST_TTL_MS, ctx.now]);
   for (const r of rows) {
     await store.run(ctx.gc, "UPDATE action_msgs SET state = 'expired', updated_at = ? WHERE msg_id = ?", [ctx.now, r.msg_id]);
     await store.run(ctx.gc, 'UPDATE messages SET updated_at = ? WHERE id = ?', [ctx.now, r.msg_id]);
     const members = await store.all(ctx.gc, 'SELECT user_id FROM members WHERE conv_id = ? AND left_at IS NULL', [r.conv_id]);
     live.queue(ctx.box, members.map((m) => m.user_id), 'action.update', { conversationId: r.conv_id, messageId: r.msg_id, updatedAt: iso(ctx.now) });
+    if (r.mode === 'grant' && r.off_at_end === 1 && ctx.box && Array.isArray(ctx.box.after)) {
+      await store.run(ctx.gc, 'UPDATE action_msgs SET off_at_end = 2 WHERE msg_id = ?', [r.msg_id]);
+      ctx.box.after.push(() => switchOff(ctx.gc, r, ctx.box));
+    }
   }
   return rows.length;
+}
+
+/**
+ * The end of a grant with offAtEnd (outside any transaction): the action with state 'off' as the granter (an
+ * automation), then the system message grant_off { messageId, label, ok, byUserId, toUserId } → the run's result.
+ */
+async function switchOff(gc, row, box) {
+  const config = require('./config');
+  const cfg = await config.load(gc);
+  if (!available(gc, cfg) || !row.owner_id || !row.plugin || !row.action_id) return null;
+  const result = await run(gc, row.owner_id, row.plugin, row.action_id, { interactive: false, state: 'off' });
+  const now = Date.now();
+  if (!result.ok) await log.add(gc, 'action_failed', String(result.error || 'failed').slice(0, 40), now);
+  await store.tx(gc, async () => {
+    const c = await store.one(gc, 'SELECT * FROM conversations WHERE id = ?', [row.conv_id]);
+    const msg = await store.one(gc, 'SELECT * FROM messages WHERE id = ?', [row.msg_id]);
+    if (!c || !msg) return;
+    const meta = messages.metaOf(msg) || {};
+    const label = (meta.action && meta.action.label) || row.action_id;
+    await store.run(gc, 'UPDATE action_msgs SET result_enc = ?, updated_at = ? WHERE msg_id = ?', [seal.sealJson({ ok: !!result.ok, message: result.message || null, state: result.state || null }), now, row.msg_id]);
+    const ctx = { gc, now, viewer: null, box };
+    const sysId = await messages.system(ctx, c, 'grant_off', { messageId: row.msg_id, label, ok: !!result.ok, byUserId: row.owner_id, toUserId: row.grant_to });
+    const members = await store.all(gc, 'SELECT user_id FROM members WHERE conv_id = ? AND left_at IS NULL', [c.id]);
+    const ids = members.map((m) => m.user_id);
+    live.queue(box, ids, 'message.new', { conversationId: c.id, messageId: sysId, senderId: null, clientId: null, kind: 'system', createdAt: iso(now) });
+    live.queue(box, ids, 'action.update', { conversationId: c.id, messageId: row.msg_id, updatedAt: iso(now) });
+  });
+  return result;
+}
+
+/**
+ * GET actions/requestable → { actions: [{ id, plugin, label, icon, kind, needsConfirm, state, subtitle, pluginName, approverIds, self }],
+ * approvers, approversDefault, canRequest, requestTtlMin } — the actions the possible approvers may run (the caller's own
+ * included when somebody else may approve them; `self`: the caller may run it too). query.approvers as for a request
+ * ('parents' | 'rights' | '2,3'), query.conversationId: only approvers among that chat's members.
+ */
+async function requestable(ctx, query) {
+  if (!available(ctx.gc, ctx.cfg)) throw fail('feature_off');
+  const q = query && typeof query === 'object' ? query : {};
+  const def = await approversDefault(ctx.gc, ctx.cfg);
+  const base = { approversDefault: def, requestTtlMin: ctx.cfg.requestTtlMin || 15 };
+  if (!(await mayRequest(ctx))) return { actions: [], approvers: null, canRequest: false, ...base };
+  let want;
+  if (q.approvers != null && q.approvers !== '') {
+    const raw = String(q.approvers);
+    if (/^\d{1,15}(,\d{1,15}){0,29}$/.test(raw)) want = raw.split(',').map(Number);
+    else want = raw;
+  }
+  const group = await approverGroup(ctx, want);
+  const kiosk = new Set((await store.all(ctx.gc, 'SELECT user_id FROM prefs WHERE kiosk = 1')).map((r) => r.user_id));
+  let pool = (group.ids == null ? [...ctx.users.keys()] : group.ids).filter((u) => u !== ctx.viewer && ctx.users.has(u) && !kiosk.has(u));
+  if (q.conversationId != null && q.conversationId !== '') {
+    const x = await require('./conversations').access(ctx, q.conversationId);
+    const ids = x.members.map((m) => m.user_id);
+    pool = pool.filter((u) => ids.includes(u));
+  }
+  const mine = await listFor(ctx.gc, ctx.viewer, ctx.now);
+  const out = new Map();
+  for (const u of pool.slice(0, APPROVER_CHECK_MAX)) {
+    for (const a of await listFor(ctx.gc, u, ctx.now)) {
+      const key = `${a.plugin}/${a.id}`;
+      if (!out.has(key)) out.set(key, { ...a, approverIds: [], self: !!findIn(mine, a.plugin, a.id) });
+      out.get(key).approverIds.push(u);
+    }
+  }
+  return { actions: [...out.values()], approvers: group.mode, canRequest: true, ...base };
+}
+
+/**
+ * What GET me says about home actions (1.5.0) → { available, reason, approversDefault, childrenMayRequest, familyRoles,
+ * canRequest, doorbell: { lastCardAt } | null }. reason: null | 'off' (the administrator's switch) | 'host' (no gc.actions).
+ */
+async function info(ctx) {
+  const gc = ctx.gc;
+  const host = !!(gc && gc.actions && typeof gc.actions.list === 'function' && typeof gc.actions.run === 'function');
+  const can = available(gc, ctx.cfg);
+  const familyRoles = await familie.available(gc, 'family_roles');
+  const last = ctx.viewer ? await store.one(gc, `SELECT MAX(m.created_at) AS at FROM messages m JOIN members x ON x.conv_id = m.conv_id AND x.user_id = ? AND x.left_at IS NULL
+    WHERE m.kind = 'card' AND m.via = 'gatecontrol-door' AND m.deleted_at IS NULL AND m.id > x.joined_msg_id`, [ctx.viewer]) : null;
+  return {
+    available: can, reason: can ? null : (host ? 'off' : 'host'),
+    approversDefault: await approversDefault(gc, ctx.cfg), childrenMayRequest: ctx.cfg.childrenMayRequest !== false, familyRoles,
+    canRequest: can && await mayRequest(ctx),
+    doorbell: last && last.at != null ? { lastCardAt: iso(last.at) } : null,
+  };
 }
 
 /** After an arrival: the sender's onArrive action, as the sender (outside any transaction). */
@@ -390,5 +545,6 @@ async function cleanup(gc, ids) {
 
 module.exports = {
   available, listFor, run, clean, create, pushUsers, cleanCard, createCard, cardImage, decorate, prepare, record, expire, runAfterArrival, cleanup, reset, findIn,
+  requestable, info, switchOff, approversDefault, requestEnd,
   REQUEST_TTL_MS, GRANT_MAX_MS, CARD_IMAGE_MAX, SELF,
 };

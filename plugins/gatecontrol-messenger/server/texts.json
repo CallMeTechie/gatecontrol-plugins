@@ -528,7 +528,21 @@
     "admin.allow_stories": "Storys erlauben",
     "admin.allow_stories_hint": "Fotos, Videos und Texte für 24 Stunden. Die Statuszeile bleibt immer.",
     "admin.allow_actions": "Haus-Aktionen in Chats",
-    "admin.allow_actions_hint": "Knöpfe für die Schnellaktionen anderer Plugins (z. B. Tür, Licht) – jede Person nur mit ihren eigenen GateControl-Rechten."
+    "admin.allow_actions_hint": "Knöpfe für die Schnellaktionen anderer Plugins (z. B. Tür, Licht) – jede Person nur mit ihren eigenen GateControl-Rechten.",
+    "admin.request_ttl": "Tür-Anfragen offen",
+    "admin.request_ttl_hint": "So lange kann eine Bitte um eine Haus-Aktion freigegeben werden",
+    "admin.request_approvers": "Wer gibt Anfragen frei",
+    "admin.request_approvers_hint": "Vorgabe, wenn die Anfrage niemanden nennt – freigeben kann nur, wer im Chat ist und die Aktion selbst ausführen darf",
+    "admin.request_approvers_nofamily": "Ohne Familie-Plugin (Dienst „Rollen“) gilt „Alle mit Recht“",
+    "admin.approvers_auto": "Automatisch (Eltern, wenn Familie da ist)",
+    "admin.approvers_parents": "Eltern",
+    "admin.approvers_rights": "Alle mit Recht auf die Aktion",
+    "admin.children_request": "Kinder dürfen anfragen",
+    "admin.children_request_hint": "Kinder aus dem Familie-Plugin können um Haus-Aktionen bitten",
+    "admin.grant_max": "Gerät teilen höchstens",
+    "admin.grant_max_hint": "Längste Dauer, für die jemand ein Gerät mit einer anderen Person teilen kann",
+    "sys.grant_off": "„{{label}}“ wurde zum Ende der Freigabe ausgeschaltet",
+    "sys.grant_off_failed": "„{{label}}“ konnte zum Ende der Freigabe nicht ausgeschaltet werden"
   },
   "en": {
     "common.back": "Back",
@@ -1059,6 +1073,20 @@
     "admin.allow_stories": "Allow stories",
     "admin.allow_stories_hint": "Photos, videos and texts for 24 hours. The status line always stays.",
     "admin.allow_actions": "Home actions in chats",
-    "admin.allow_actions_hint": "Buttons for other plugins' quick actions (e.g. door, light) – everyone only with their own GateControl rights."
+    "admin.allow_actions_hint": "Buttons for other plugins' quick actions (e.g. door, light) – everyone only with their own GateControl rights.",
+    "admin.request_ttl": "Requests stay open",
+    "admin.request_ttl_hint": "How long a request for a home action can be approved",
+    "admin.request_approvers": "Who approves requests",
+    "admin.request_approvers_hint": "Default when a request names nobody – only members of the chat who may run the action themselves can approve",
+    "admin.request_approvers_nofamily": "Without the Family plugin (service “roles”) “Everyone with the right” applies",
+    "admin.approvers_auto": "Automatic (parents when Family is there)",
+    "admin.approvers_parents": "Parents",
+    "admin.approvers_rights": "Everyone with the right to the action",
+    "admin.children_request": "Children may ask",
+    "admin.children_request_hint": "Children of the Family plugin can ask for home actions",
+    "admin.grant_max": "Share a device at most",
+    "admin.grant_max_hint": "The longest time somebody can share a device with another person",
+    "sys.grant_off": "“{{label}}” was switched off as the share ended",
+    "sys.grant_off_failed": "“{{label}}” could not be switched off as the share ended"
   }
 }

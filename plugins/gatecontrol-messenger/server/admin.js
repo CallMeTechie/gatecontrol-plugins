@@ -7,6 +7,8 @@
 //   GET admin/overview      counts, storage (gc.media.usage + per type), licence
 //   GET admin/settings      the settings + the media limits of GateControl (read only)
 //   PUT admin/settings      { retentionDays, allowDisappearing, editWindowMin, maxVoiceS, allowStories, allowActions, defaults: { readReceipts, typing, preview } } (partial)
+//                           1.5.0: requestTtlMin, requestApproversDefault ('auto' | 'parents' | 'rights'), childrenMayRequest, grantMaxDays;
+//                           GET answers familyRoles (Familie offers family_roles)
 //   1.4.0: overview.v14 — counts only (statuses, stories, polls, events, live arrivals, home actions, blocks, reminders)
 //   GET admin/log?days=     errors and limits (log.js)
 
@@ -74,7 +76,12 @@ async function settings(gc) {
   const cfg = await config.load(gc);
   return {
     settings: cfg,
-    options: { retentionDays: config.RETENTION_DAYS, editWindowMin: config.EDIT_WINDOW_MIN, maxVoiceS: config.VOICE_MAX_S, disappearingS: config.DISAPPEARING_S },
+    options: {
+      retentionDays: config.RETENTION_DAYS, editWindowMin: config.EDIT_WINDOW_MIN, maxVoiceS: config.VOICE_MAX_S, disappearingS: config.DISAPPEARING_S,
+      requestTtlMin: config.REQUEST_TTL_MIN, requestApproversDefault: config.APPROVERS, grantMaxDays: config.GRANT_MAX_DAYS,
+    },
+    // 1.5.0: does Familie tell parents from children (service family_roles)? — 'auto' means parents then
+    familyRoles: await require('./familie').available(gc, 'family_roles'),
     media: await media(gc),
   };
 }

@@ -3,6 +3,30 @@
 Chats zwischen den GateControl-Konten – in der GateControl-App (eigener Tab „Chats“), im
 Windows-Client und im Portal (eigener Tab „Chats“). Alles bleibt auf dem eigenen Server.
 
+## 1.5.0
+Braucht weiterhin **GateControl ≥ 1.180.0**. Neu beim Aktualisieren: der Familie-Dienst „Rollen“
+(`gatecontrol-familie: family_roles`) in den Berechtigungen.
+- **Tür-Anfrage für Familien:** `GET actions/requestable` listet, worum eine Person bitten kann – die Aktionen der
+  möglichen Freigebenden, auch wenn sie selbst kein Recht hat (ein Kind bittet um die Haustür). Eine Anfrage nennt
+  `approvers`: `parents` (Eltern aus dem Familie-Plugin, Dienst `family_roles`; ohne Familie wie `rights`),
+  `rights` (alle im Chat mit Recht) oder eine Liste. Freigeben kann nur, wer in dieser Gruppe ist und die Aktion beim
+  Freigeben selbst ausführen darf.
+- **Neue Einstellungen (Übersicht):** wie lange eine Anfrage offen ist (Standard 15 Minuten, bisher 24 Stunden – je
+  Anfrage gespeichert), wer ohne Angabe freigibt (automatisch: Eltern, wenn Familie da ist, sonst alle mit Recht),
+  „Kinder dürfen anfragen“ (Standard an) und die längste Dauer für „Gerät teilen“ (Standard 7 Tage).
+- **Gerät teilen mit „Am Ende ausschalten“:** `grant.offAtEnd` – endet die Freigabe, schaltet der Server das Gerät
+  als die freigebende Person aus (nur Schalter) und schreibt „„Flurlicht“ wurde zum Ende der Freigabe ausgeschaltet“
+  in den Chat (Systemnachricht `grant_off`).
+- **Dienst `send_message` mit Ziel `direct:<id>`:** der Einzelchat zwischen der aufrufenden Person (`userId`) und
+  dieser Person – gefunden oder angelegt; Karte oder Hinweis „über <Plugin>“ (z. B. Familie: „Kannst du einkaufen
+  gehen?“). Ohne Person, an sich selbst oder bei Blockierung abgelehnt.
+- **`GET me`:** `features.action_requests` und `features.grant_off`, `limits.requestTtlMin` und
+  `limits.grantMaxDays`, `homeActions { available, reason, approversDefault, childrenMayRequest, familyRoles,
+  canRequest, doorbell }` – die Apps zeigen „Aus deinem Zuhause“ mit Hinweis statt es auszublenden, und den
+  Zeitpunkt der letzten Klingel-Karte.
+- Doku: Klingel-Karten der Tür (`<Schloss>:open`) passen zum Aktions-Format; Bilder JPEG oder WebP; GateControl ab
+  1.180.0 nimmt Dienst-Aufrufe bis 512 KB an.
+
 ## 1.4.1
 - **Dauer einer Story wählbar:** 1, 3, 6, 12 oder 24 Stunden (`durationH` bei `POST status/stories`, Funktion
   `story_duration`); ohne Angabe wie bisher 24 Stunden.
