@@ -3,6 +3,10 @@
 Chats zwischen den GateControl-Konten – in der GateControl-App (eigener Tab „Chats“), im
 Windows-Client und im Portal (eigener Tab „Chats“). Alles bleibt auf dem eigenen Server.
 
+## 1.4.1
+- **Dauer einer Story wählbar:** 1, 3, 6, 12 oder 24 Stunden (`durationH` bei `POST status/stories`, Funktion
+  `story_duration`); ohne Angabe wie bisher 24 Stunden.
+
 ## 1.4.0
 Braucht **GateControl ≥ 1.180.0** (Haus-Aktionen als Tipp einer Person: `permissions.actions { interactive: true }`;
 Dienst-Aufrufe bis 512 KB für das Klingelbild). Neue Felder und Routen stehen im README unter „Since 1.4.0“; die Apps

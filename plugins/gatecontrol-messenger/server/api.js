@@ -63,7 +63,7 @@ async function me(ctx) {
       disappearingS: config.DISAPPEARING_S,
       retentionDays: cfg.retentionDays,
       // 1.4.0
-      statusTextMax: status.STATUS_TEXT_MAX, storyTextMax: status.STORY_TEXT_MAX, storyTtlS: status.STORY_TTL_MS / 1000, storiesMax: status.STORIES_MAX,
+      statusTextMax: status.STATUS_TEXT_MAX, storyTextMax: status.STORY_TEXT_MAX, storyTtlS: status.STORY_TTL_MS / 1000, storyDurationsH: status.STORY_DURATIONS_H, storiesMax: status.STORIES_MAX,
       pollOptionsMax: 12, pollQuestionMax: 200, pollOptionMax: 80, eventTitleMax: 120, eventChecklistMax: 20, pinsMax: 3, listsMax: 20, remindersMax: 100,
       arrivalEveryS: 20, arrivalMaxS: 3 * 3600, arrivalRadiusM: 150,
     },
@@ -74,7 +74,7 @@ async function me(ctx) {
 /** 1.4.0 feature keys of GET me (features.*). */
 function features14(ctx) {
   const out = ['status', 'polls', 'events', 'arrival', 'msg_tools', 'privacy2'];
-  if (ctx.cfg.allowStories) out.splice(1, 0, 'stories');
+  if (ctx.cfg.allowStories) out.splice(1, 0, 'stories', 'story_duration');
   if (homeactions.available(ctx.gc, ctx.cfg)) out.push('actions');
   return out;
 }

@@ -94,8 +94,12 @@ test('stories: text and image, audience, feed order (unseen first), seen, viewer
     const s2 = r.json.story;
     assert.equal(host.media.get(img).claimed, true);
     await c.as(LENA)('POST', 'status/stories', { kind: 'text', text: 'Lena' });
+    // 1.4.1: a chosen duration
+    const short = (await c.as(LENA)('POST', 'status/stories', { kind: 'text', text: 'Kurz', durationH: 3 })).json.story;
+    assert.equal(short.expiresAt, new Date(T0 + MIN + 3 * HOUR).toISOString());
+    await c.as(LENA)('DELETE', `status/stories/${short.id}`);
     // bad bodies
-    for (const bad of [{ kind: 'text' }, { kind: 'text', text: 'x', bg: 'red' }, { kind: 'text', text: 'x', font: 'comic' }, { kind: 'image' }, { kind: 'video', mediaId: await c.upload(ANNA, PNG, 'image/png') }, { kind: 'audio' }]) {
+    for (const bad of [{ kind: 'text', text: 'x', durationH: 2 }, { kind: 'text', text: 'x', durationH: '24' }, { kind: 'text' }, { kind: 'text', text: 'x', bg: 'red' }, { kind: 'text', text: 'x', font: 'comic' }, { kind: 'image' }, { kind: 'video', mediaId: await c.upload(ANNA, PNG, 'image/png') }, { kind: 'audio' }]) {
       const x = await anna('POST', 'status/stories', bad);
       assert.ok(x.status >= 400, JSON.stringify(bad));
     }
