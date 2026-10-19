@@ -17,6 +17,7 @@ const FILES = {
   css: read('style.css'),
   common: read('common.js'),
   main: { html: read('admin.html'), js: read('admin.js') },
+  logbook: { html: read('logbook.html'), js: read('logbook.js') },
   portal: { html: read('portal.html'), js: read('portal.js'), css: read('portal.css') },
 };
 
@@ -35,14 +36,16 @@ function fill(html, t, lang) {
 }
 
 /**
- * @param {{view:'page'|'portal', page?:string, lang?:string, loggedIn?:boolean}} view
+ * The admin page "main" or "logbook", the portal section "skoda" or "logbook" (1.5.0).
+ * @param {{view:'page'|'portal', page?:string, section?:string, lang?:string, loggedIn?:boolean}} view
  * @param {(lang:string, key:string) => string} t
  */
 function render(view, t) {
   const lang = view && view.lang === 'en' ? 'en' : 'de';
   const portal = view && view.view === 'portal';
-  const page = portal ? FILES.portal : FILES.main;
-  const ctx = { lang, view: portal ? 'portal' : 'page', page: portal ? null : 'main', loggedIn: portal ? !!view.loggedIn : true, texts: texts[lang] };
+  const logbook = portal ? view.section === 'logbook' : view && view.page === 'logbook';
+  const page = logbook ? FILES.logbook : (portal ? FILES.portal : FILES.main);
+  const ctx = { lang, view: portal ? 'portal' : 'page', page: portal ? null : (logbook ? 'logbook' : 'main'), loggedIn: portal ? !!view.loggedIn : true, section: portal ? (logbook ? 'logbook' : 'skoda') : null, texts: texts[lang] };
   return '<style>' + FILES.css + (page.css || '') + '</style>'
     + fill(page.html, t, lang)
     + '<script>window.SK_CTX=' + island(ctx) + ';</script>'

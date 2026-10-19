@@ -4,13 +4,13 @@
     "de": "Fahrzeuge",
     "en": "Vehicles"
   },
-  "version": "1.4.1",
+  "version": "1.5.0",
   "publisher": "CallMeTechie",
   "description": {
     "de": "Škoda-Fahrzeuge über MySkoda einbinden: Ladestand, Reichweite, Zustand, Position und Fahrzeugdetails sehen, Klima, Laden, Scheibenheizung, Ver- und Entriegeln und Abfahrtstimer steuern und Fahrzeuge Haushaltsmitgliedern zuweisen (Portal „Fahrzeug“).",
     "en": "Connect Škoda vehicles through MySkoda: see charge level, range, condition, location and vehicle details, control climate, charging, window heating, locking and departure timers, and assign vehicles to household members (portal “Vehicle”)."
   },
-  "gatecontrol": ">=1.154.0",
+  "gatecontrol": ">=1.186.0",
   "entry": "server/index.js",
   "permissions": {
     "network": {
@@ -45,6 +45,13 @@
         "title": {
           "de": "Fahrzeuge",
           "en": "Vehicles"
+        }
+      },
+      {
+        "id": "logbook",
+        "title": {
+          "de": "Fahrtenbuch",
+          "en": "Logbook"
         }
       }
     ],
@@ -95,6 +102,49 @@
         "default": 15
       },
       {
+        "key": "logbook_default",
+        "type": "select",
+        "label": {
+          "de": "Fahrtenbuch: Zweck neuer Fahrten",
+          "en": "Logbook: purpose of new trips"
+        },
+        "help": {
+          "de": "Welchen Zweck eine automatisch erfasste Fahrt bekommt. „Offen“: die Besitzer des Fahrzeugs bekommen nach jeder Fahrt eine Benachrichtigung mit den Knöpfen Privat / Geschäftlich / Arbeitsweg.",
+          "en": "Which purpose a recorded trip gets. “Open”: the vehicle’s owners get a notification after every trip with the buttons Private / Business / Commute."
+        },
+        "options": [
+          {
+            "value": "open",
+            "label": {
+              "de": "Offen – nachfragen",
+              "en": "Open – ask"
+            }
+          },
+          {
+            "value": "private",
+            "label": {
+              "de": "Privat",
+              "en": "Private"
+            }
+          },
+          {
+            "value": "business",
+            "label": {
+              "de": "Geschäftlich",
+              "en": "Business"
+            }
+          },
+          {
+            "value": "commute",
+            "label": {
+              "de": "Arbeitsweg",
+              "en": "Commute"
+            }
+          }
+        ],
+        "default": "open"
+      },
+      {
         "key": "notify_lang",
         "type": "select",
         "label": {
@@ -124,6 +174,15 @@
             "en": "Vehicles"
           },
           "order": 20
+        },
+        {
+          "id": "logbook",
+          "tab": "car",
+          "title": {
+            "de": "Fahrtenbuch",
+            "en": "Logbook"
+          },
+          "order": 30
         }
       ]
     }
@@ -164,6 +223,14 @@
         "en": "Climate control done"
       },
       "default": false
+    },
+    {
+      "id": "trip",
+      "label": {
+        "de": "Fahrt erfasst (Fahrtenbuch)",
+        "en": "Trip recorded (logbook)"
+      },
+      "default": true
     }
   ]
 }
