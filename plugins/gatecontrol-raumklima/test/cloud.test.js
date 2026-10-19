@@ -9,7 +9,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { internetAllowed } = require('../../../tools/testing/mock-host');
 const manifest = require('../plugin.json');
-const { fakeAc, fakeCloud, withHost, asAdmin, asPortal, connectCloud, ADMIN } = require('./helpers');
+const { fakeAc, fakeCloud, withHost, asAdmin, asPortal, connectCloud, lineOf, ADMIN } = require('./helpers');
 
 const APPLIANCE = '153931628798542';
 
@@ -21,15 +21,24 @@ test('plugin.json: internet only to the Midea cloud hosts', () => {
   assert.ok(!internetAllowed(list, 'http://mp-prod.appsmb.com:8080/'));
 });
 
-test('connect: the password and session become secrets, never shown; wrong input is refused', () => {
+test('the account on the settings page: saving logs in, a status line per account; secrets never shown', () => {
   const cloud = fakeCloud();
   return withHost({ cloud }, async (host) => {
-    assert.equal((await asAdmin(host, 'POST', '/cloud/connect', { email: cloud.email })).json.code, 'MIDEA_EMAIL_PASSWORD_REQUIRED');
-    assert.equal((await asAdmin(host, 'POST', '/cloud/connect', { email: cloud.email, password: 'x', app: 'other' })).json.code, 'MIDEA_INVALID');
-    const bad = await asAdmin(host, 'POST', '/cloud/connect', { email: 'nobody@example.com', password: 'x' });
-    assert.equal(bad.status, 502);
-    assert.match(bad.json.detail, /Midea-Code 3101/);
-    await connectCloud(host, cloud);
+    let lines = await host.settingsStatus();
+    assert.equal(lineOf(lines, 'midea').tone, 'info');
+    assert.equal(lineOf(lines, 'dreo').tone, 'info');
+    lines = await host.saveSettings({ 'cloud.email': cloud.email });
+    assert.equal(lineOf(lines, 'midea').tone, 'warn', 'no password yet');
+    lines = await host.saveSettings({ 'cloud.email': 'nobody@example.com', 'cloud.password': 'x' });
+    assert.equal(lineOf(lines, 'midea').tone, 'error');
+    assert.match(lineOf(lines, 'midea').text, /Midea-Code 3101/);
+    lines = await connectCloud(host, cloud);
+    assert.match(lineOf(lines, 'midea').text, new RegExp(`${cloud.email}.*MSmartHome`));
+    assert.equal(await host.gc.settings.get('cloud.email'), cloud.email);
+    // saving again without changes does not log in again
+    const logins = host.fetches.length;
+    await host.saveSettings({ 'notify_lang': 'en' });
+    assert.equal(host.fetches.length, logins);
     assert.equal(await host.gc.settings.get('cloud.password'), cloud.password);
     assert.ok(host.secrets.has('cloud.password') && host.secrets.has('cloud.session'));
     const st = (await asAdmin(host, 'GET', '/cloud')).json.cloud;
@@ -40,14 +49,35 @@ test('connect: the password and session become secrets, never shown; wrong input
   });
 });
 
+test('accounts of gatecontrol-midea < 2.0.0 (app and e-mail in the key/value storage) move to the settings', () => {
+  const cloud = fakeCloud();
+  return withHost({ cloud }, async (host) => {
+    await host.gc.storage.set('cloud', { app: 'nethome', email: cloud.email });
+    await host.gc.settings.setSecret('cloud.password', cloud.password);
+    await host.gc.storage.set('dreo', { email: 'heat@example.com', region: 'NA' });
+    await host.start();
+    assert.equal(await host.gc.settings.get('cloud.app'), 'nethome');
+    assert.equal(await host.gc.settings.get('cloud.email'), cloud.email);
+    assert.equal(await host.gc.settings.get('dreo.email'), 'heat@example.com');
+    assert.equal(await host.gc.storage.get('cloud'), null);
+    assert.deepEqual(await host.gc.storage.get('dreo'), { region: 'NA' });
+    assert.equal(lineOf(await host.settingsStatus(), 'midea').tone, 'info', 'entered, not signed in yet');
+    // once more: nothing changes
+    await host.start();
+    assert.equal(await host.gc.settings.get('cloud.email'), cloud.email);
+  });
+});
+
 test('2FA and rate limit are reported like before; the reauth banner flag follows', () => {
   const dev = fakeAc();
   const cloud = fakeCloud({ devices: { [APPLIANCE]: dev } });
   return withHost({ cloud }, async (host) => {
     cloud.require2fa = true;
-    const r = await asAdmin(host, 'POST', '/cloud/connect', { email: cloud.email, password: cloud.password });
-    assert.deepEqual([r.status, r.json.code], [409, 'MIDEA_CLOUD_2FA_REQUIRED']);
+    const lines = await host.saveSettings({ 'cloud.email': cloud.email, 'cloud.password': cloud.password });
+    assert.equal(lineOf(lines, 'midea').tone, 'error');
+    assert.match(lineOf(lines, 'midea').text, /Midea-App/);
     cloud.require2fa = false;
+    await host.saveSettings({ 'cloud.password': cloud.password + 'x' });
     await connectCloud(host, cloud);
     const id = (await asAdmin(host, 'POST', '/devices', { transport: 'cloud', cloud_appliance_id: APPLIANCE })).json.device.id;
     // the session expires and the new login needs 2FA → offline + reauth flag

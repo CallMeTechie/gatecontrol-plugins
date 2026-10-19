@@ -323,14 +323,23 @@ async function withHost(o, fn) {
 const asAdmin = (host, method, p, body) => host.request({ method, path: p, body: body === undefined ? null : body, user: ADMIN });
 const asPortal = (host, user, method, p, body) => host.request({ method, path: p, body: body === undefined ? null : body, user: { ...user, portal: true } });
 
-/** Connect the fake cloud account through the admin API. */
-async function connectCloud(host, cloud) {
-  const r = await asAdmin(host, 'POST', '/cloud/connect', { email: cloud.email, password: cloud.password });
-  if (r.status !== 200) throw new Error('connect failed: ' + JSON.stringify(r.json));
-  return r;
+/** The status line of one account group on the settings page. */
+const lineOf = (lines, group) => lines.find((l) => l.group === group) || null;
+
+/** Enter the fake Midea account on the settings page (saving logs in); the status lines. */
+async function connectCloud(host, cloud, extra = {}) {
+  const lines = await host.saveSettings({ 'cloud.email': cloud.email, 'cloud.password': cloud.password, ...extra });
+  const l = lineOf(lines, 'midea');
+  if (!l || l.tone !== 'ok') throw new Error('connect failed: ' + JSON.stringify(lines));
+  return lines;
+}
+
+/** Enter the fake Dreo account on the settings page; the status lines. */
+async function connectDreo(host, dreo, password = dreo.password) {
+  return host.saveSettings({ 'dreo.email': dreo.email, 'dreo.password': password });
 }
 
 module.exports = {
   DIR, ADMIN, ADA, BOB, USERS,
-  stateFrame, fakeAc, fakeSocket, discoveryAnswer, fakeCloud, fakeDreo, withHost, asAdmin, asPortal, connectCloud,
+  stateFrame, fakeAc, fakeSocket, discoveryAnswer, fakeCloud, fakeDreo, withHost, asAdmin, asPortal, connectCloud, connectDreo, lineOf,
 };

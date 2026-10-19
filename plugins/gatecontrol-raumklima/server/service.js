@@ -86,6 +86,11 @@ async function connectCloud(gc, email, password, app = 'msmarthome') {
   return res;
 }
 
+/** What the settings page shows about the Midea account. */
+function getCloudStatus() {
+  return { needsReauth: status.cloudNeedsReauth };
+}
+
 async function listCloudDevices(gc) {
   return withCloud(gc, (c) => c.listDevices());
 }
@@ -409,7 +414,7 @@ function reset() {
 
 module.exports = {
   CLOUD_STATE_TTL_MS,
-  withDeviceLock, connectCloud, listCloudDevices, discoverLan, acTargets,
+  withDeviceLock, connectCloud, getCloudStatus, listCloudDevices, discoverLan, acTargets,
   getState, cachedState, setState, testConnection, addDevice, removeDevice, getStatus, pollTick, reset,
   // seams for the tests
   newCloud, connectTarget, _cache: cache,

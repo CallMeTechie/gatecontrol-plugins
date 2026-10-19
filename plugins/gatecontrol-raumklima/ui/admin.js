@@ -297,6 +297,8 @@
     if (st.dreo) dreo = st.dreo;
     $('#md-dreo-reauth').hidden = !(dreo.configured && dreo.needs_login);
     $('#md-dreo-update').hidden = dreo.supported !== false || !devices.some(isDreo);
+    // nothing set up yet: the accounts are entered in the settings
+    $('#md-no-account').hidden = devices.length > 0 || cloud.configured || dreo.configured;
     if ($('#md-kpis').firstChild) { renderKpis(); updateOnlineKpi(); } // the Dreo connection may have changed
   }
 
@@ -375,37 +377,13 @@
     }, 500);
   });
 
-  // ── cloud account ───────────────────────────────────────────────────────────
-  function cloudStateText() {
-    return cloud.configured ? T('cloud.connected_as', { email: cloud.email || '' }) : T('cloud.not_connected');
+  // ── accounts: on the plugin's settings page (GateControl ≥ 1.185.0) ─────────
+  function openSettings() {
+    if (window.GC && typeof window.GC.openSettings === 'function') window.GC.openSettings();
   }
-  $('#md-cloud-open').addEventListener('click', function () {
-    $('#md-cloud-state').textContent = cloudStateText();
-    $('#md-cl-app').value = cloud.app || 'msmarthome';
-    $('#md-cl-email').value = cloud.email || '';
-    $('#md-cl-password').value = '';
-    $('#md-cloud-msg').textContent = '';
-    M.openModal('md-cloud-modal');
+  document.addEventListener('click', function (ev) {
+    if (ev.target.closest && ev.target.closest('[data-settings]')) { ev.preventDefault(); openSettings(); }
   });
-  function connectCloud() {
-    var btn = $('#md-cloud-connect');
-    var msg = $('#md-cloud-msg');
-    var body = { app: $('#md-cl-app').value, email: $('#md-cl-email').value.trim(), password: $('#md-cl-password').value };
-    if (!body.email || !body.password) { msg.textContent = T('error.email_password_required'); return; }
-    btn.disabled = true;
-    msg.textContent = '…';
-    M.api('POST', 'cloud/connect', body).then(function () {
-      $('#md-cl-password').value = '';
-      msg.textContent = T('cloud.connected');
-      M.toast(T('cloud.connected'));
-      M.closeModal('md-cloud-modal');
-      return loadDevices().then(loadCloudDevices);
-    }, function (e) {
-      msg.textContent = e && e.data && e.data.code === 'MIDEA_CLOUD_2FA_REQUIRED' ? T('error.twofa') : errText(e);
-    }).then(function () { btn.disabled = false; });
-  }
-  $('#md-cloud-connect').addEventListener('click', connectCloud);
-  $('#md-cloud-form').addEventListener('submit', function (e) { e.preventDefault(); connectCloud(); });
 
   function isAdded(cd) {
     return devices.some(function (x) { return x.device_sn === cd.sn || x.device_sn === 'cloud-' + cd.id || String(x.cloud_appliance_id) === String(cd.id); });
@@ -413,6 +391,7 @@
   function renderCloudList() {
     var list = M.clear($('#md-cloud-list'));
     var hint = $('#md-cloud-list-hint');
+    $('#md-cloud-settings').hidden = !!cloud.configured;
     if (!cloud.configured) { hint.textContent = T('add.cloud_first'); return; }
     var pending = cloudDevices.filter(function (cd) { return !isAdded(cd); });
     hint.textContent = pending.length ? T('add.cloud_hint') : T('add.cloud_none');
@@ -448,38 +427,10 @@
 
   // ── Dreo account and devices ────────────────────────────────────────────────
   var dreoDevices = [];
-  function dreoStateText() {
-    return dreo.configured ? T('dreo.connected_as', { email: dreo.email || '', region: dreo.region === 'NA' ? 'US' : 'EU' }) : T('dreo.not_connected');
-  }
-  $('#md-dreo-open').addEventListener('click', function () {
-    $('#md-dreo-state').textContent = dreoStateText();
-    $('#md-dreo-modal-update').hidden = dreo.supported !== false;
-    $('#md-dr-email').value = dreo.email || '';
-    $('#md-dr-password').value = '';
-    $('#md-dreo-msg').textContent = '';
-    M.openModal('md-dreo-modal');
-  });
-  function connectDreo() {
-    var btn = $('#md-dreo-connect');
-    var msg = $('#md-dreo-msg');
-    var body = { email: $('#md-dr-email').value.trim(), password: $('#md-dr-password').value };
-    if (!body.email || !body.password) { msg.textContent = T('error.email_password_required'); return; }
-    btn.disabled = true;
-    msg.textContent = '…';
-    M.api('POST', 'dreo/connect', body).then(function (r) {
-      $('#md-dr-password').value = '';
-      dreo = r.dreo || dreo;
-      M.toast(T('cloud.connected'));
-      M.closeModal('md-dreo-modal');
-      return loadDevices();
-    }, function (e) { msg.textContent = errText(e); }).then(function () { btn.disabled = false; });
-  }
-  $('#md-dreo-connect').addEventListener('click', connectDreo);
-  $('#md-dreo-form').addEventListener('submit', function (e) { e.preventDefault(); connectDreo(); });
-
   function renderDreoList() {
     var list = M.clear($('#md-dreo-list'));
     var hint = $('#md-dreo-list-hint');
+    $('#md-dreo-settings').hidden = dreo.supported === false || !!dreo.configured;
     if (dreo.supported === false) { hint.textContent = T('dreo.needs_update'); return; }
     if (!dreo.configured) { hint.textContent = T('add.dreo_first'); return; }
     var pending = dreoDevices.filter(function (x) { return !devices.some(function (d) { return d.device_sn === 'dreo-' + x.sn; }); });

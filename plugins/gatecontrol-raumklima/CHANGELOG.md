@@ -1,7 +1,25 @@
-# Raumklima (gatecontrol-midea)
+# Raumklima (gatecontrol-raumklima, bis 1.6.0 gatecontrol-midea)
 
 Klimageräte und Heizungen als GateControl-Plugin: Midea-Klimageräte (früher fest in GateControl
 eingebaut, „Klimaanlage“) und seit 1.6.0 Dreo-Heizlüfter und -Klimageräte.
+
+## 2.0.0
+- **Neue Plugin-ID `gatecontrol-raumklima`** – passend zum Namen. Das Plugin ersetzt
+  `gatecontrol-midea`: Im Katalog erscheint es als Update des installierten Plugins, und beim
+  Aktualisieren übernimmt GateControl alles – Geräte, Besitzer, Konten, Startkacheln, Widgets,
+  Schnellaktionen, Regeln, Benachrichtigungs-Einstellungen und die Lizenz (keine neue Lizenz
+  nötig). Das alte Plugin wird dabei entfernt. Automatische Updates installieren den Umstieg
+  nicht – einmal von Hand auf „Aktualisieren“.
+- **Konten in den Einstellungen des Plugins**: Midea-Konto (App, E-Mail, Passwort) und
+  Dreo-Konto (E-Mail, Passwort) trägst du jetzt unter Einstellungen › Plugins › Raumklima ›
+  Einstellungen ein. Speichern meldet sich gleich an; je Konto zeigt eine Statuszeile, ob die
+  Anmeldung geklappt hat („Verbunden als …“, „Anmeldung fehlgeschlagen: …“). Die Dialoge
+  „Midea-Konto“ und „Dreo-Konto“ auf der Raumklima-Seite entfallen; dort führt „Konten“ (und
+  jeder Hinweis auf ein fehlendes oder abgelaufenes Konto) direkt zu den Einstellungen.
+  Bereits verbundene Konten werden übernommen.
+- Vom Dreo-Passwort wird weiterhin nur die Prüfsumme (MD5) aufbewahrt: das eingegebene Passwort
+  wird beim Speichern durch sie ersetzt.
+- **Braucht GateControl 1.185.0** (Einstellungs-Gruppen mit Statuszeilen, Plugin-Ersetzung).
 
 ## 1.6.0
 - **Neuer Name „Raumklima“** (vorher „Klimaanlage“): Navigation, Seite, Portal-Bereich und
