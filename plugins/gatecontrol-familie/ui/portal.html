@@ -153,29 +153,24 @@
     <p class="fa-hint">{{t:presence.share_hint}}</p>
     <div class="fa-pres-grid" id="fa-pres-people"></div>
     <div id="fa-pres-rules-box" hidden>
-      <div class="fa-card-head">
-        <div class="fa-opt-title" style="flex:1">{{t:rule.title}}</div>
-        <button class="btn btn-sm fa-write" type="button" id="fa-pres-add">{{t:rule.add_button}}</button>
-      </div>
-      <div class="fa-rules" id="fa-pres-rules"></div>
       <div class="fa-card-head fa-pres-places-head">
         <div class="fa-opt-title" style="flex:1">{{t:places.title}}</div>
         <button class="btn btn-sm fa-write" type="button" id="fa-pres-place-add">{{t:places.add}}</button>
       </div>
       <p class="fa-hint">{{t:places.intro}}</p>
       <div id="fa-pres-places"></div>
-      <details class="fa-pres-log"><summary class="fa-opt-title">{{t:rule.log_title}}</summary><div id="fa-pres-log"></div></details>
     </div>
   </section>
 
-  <!-- 1.9.0: Regeln und Erinnerungen (ui/reminders.js) -->
+  <!-- Regeln und Erinnerungen (1.10.0: the editor of „Anwesenheit & Smart Home“, ui/rules.js) -->
   <section class="fa-card" id="fa-rules" aria-labelledby="fa-rules-h" hidden>
     <div class="fa-card-head">
       <h2 class="fa-card-title" id="fa-rules-h">{{t:rr.title}}</h2>
-      <button class="btn btn-sm btn-primary fa-write" type="button" id="fa-rules-add">{{t:rr.add}}</button>
+      <button class="btn btn-sm btn-primary fa-write" type="button" id="fa-rules-add">{{t:rule.add_button}}</button>
     </div>
     <p class="fa-hint">{{t:rr.portal_hint}}</p>
-    <div id="fa-rules-box"></div>
+    <div class="fa-rules" id="fa-rules-box"></div>
+    <details class="fa-pres-log"><summary class="fa-opt-title">{{t:rule.log_title}}</summary><div id="fa-rules-log"></div></details>
   </section>
 
   <!-- Notfall-Karte -->
