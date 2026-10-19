@@ -3,6 +3,10 @@
 Die Familie in der GateControl-App (eigener Tab), im Portal (eigener Tab „Familie“) und auf
 drei Admin-Seiten. Alles bleibt auf dem eigenen Server.
 
+## 1.9.1
+- **Erinnerungen:** Ein Gerät heißt im Regel-Editor wie das Gerät („Elroq“), nicht mehr nach der Aktion, an der
+  sein Widget hängt („Elroq – Klimatisierung“). Damit stimmen auch Titel und Bedingung („Ladestand Elroq < 50 %“).
+
 ## 1.9.0
 Braucht weiterhin **GateControl ≥ 1.173.0**. **Gerätewerte** als Bedingung und **Knöpfe** in Mitteilungen
 („In 1 Std.“, „Erledigt“, ein Gerät schalten) brauchen **GateControl ≥ 1.181.0** – Familie erkennt das
