@@ -309,6 +309,9 @@ function dispatch(gc, r, seg, method) {
     if (n === 1 && POST) return () => rules.create(gc, ctx, r.body);
     if (n === 2 && b === 'options' && GET) return () => rules.options(gc, ctx);
     if (n === 2 && b === 'test' && POST) return readOnly(() => rules.testBody(gc, ctx, r.body));
+    // 1.11.0: the holiday mode (parents; before "rules/<id>") and one's own open reminder from the app
+    if (n === 2 && b === 'vacation' && PATCH) return () => rules.setVacation(gc, ctx, r.body);
+    if (n === 4 && b === 'open' && POST) return () => rules.openAction(gc, ctx, c, d, r.body);
     if (n === 2 && PATCH) return () => rules.update(gc, ctx, b, r.body);
     if (n === 2 && DELETE) return () => rules.remove(gc, ctx, b);
     if (n === 3 && c === 'test' && POST) return readOnly(() => rules.test(gc, ctx, b));

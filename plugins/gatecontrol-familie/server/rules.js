@@ -17,6 +17,11 @@
 //   POST   rules/test            the same for an unsaved rule body
 //   GET    rules/options         what the editor offers → { triggers, devices, actions, calendars, places, people,
 //                                messenger, can, features, location }
+//   1.11.0:
+//   POST   rules/open/<ruleId>/done | snooze   { key } — one's own open reminder („Erledigt“, „In 1 Std.“)
+//   PUT    rules/vacation        { on, until?: 'YYYY-MM-DD' } (parents) — the holiday mode: every active
+//                                house rule paused, those resumed when it ends (by hand or after `until`)
+//   GET rules also carries `vacation: { on, until, since, paused }`; `open` every member's for parents.
 // Admin page „Regeln & Erinnerungen“: admin/rules … with the same paths (every rule; quick actions of a
 // rule saved there run as the administrator).
 //
@@ -276,6 +281,64 @@ async function one(gc, ctx, id) {
 
 // ─── the API ────────────────────────────────────
 
+// ─── the holiday mode (1.11.0) ──────────────────
+
+const VACATION = 'vacation';
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+async function vacationOf(gc) {
+  const v = await gc.storage.get(VACATION);
+  return v && typeof v === 'object' && v.on === true ? { on: true, until: v.until || null, since: v.since || null, paused: Array.isArray(v.paused) ? v.paused : [] }
+    : { on: false, until: null, since: null, paused: [] };
+}
+
+const vacationView = (v) => ({ on: v.on, until: v.until, since: v.since ? new Date(v.since).toISOString() : null, paused: v.paused.length });
+
+/** On: pause every active house rule (remembering which); off: resume those that still exist. Inside a transaction. */
+async function setVacation(gc, ctx, body) {
+  if (!can(ctx).house) throw fail('parents_only');
+  const b = body || {};
+  if (typeof b.on !== 'boolean') throw bad('on');
+  const until = b.until == null || b.until === '' ? null : String(b.until);
+  if (until != null && (!DATE_RE.test(until) || until < tz.localDate(ctx.now, ctx.cfg.tz))) throw bad('until');
+  const cur = await vacationOf(gc);
+  if (b.on) {
+    if (cur.on) {
+      await gc.storage.set(VACATION, { ...cur, until });
+      return { vacation: vacationView({ ...cur, until }) };
+    }
+    const rows = await store.all(gc, "SELECT id FROM presence_rules WHERE scope = 'house' AND active = 1");
+    const ids = rows.map((x) => x.id);
+    if (ids.length) await store.run(gc, `UPDATE presence_rules SET active = 0, updated_at = ? WHERE id IN (${ids.map(() => '?').join(',')})`, [ctx.now, ...ids]);
+    const v = { on: true, until, since: ctx.now, paused: ids };
+    await gc.storage.set(VACATION, v);
+    return { vacation: vacationView(v) };
+  }
+  await endVacation(gc, ctx.now, cur);
+  return { vacation: vacationView({ on: false, until: null, since: null, paused: [] }) };
+}
+
+async function endVacation(gc, now, cur) {
+  if (cur.on && cur.paused.length) {
+    await store.run(gc, `UPDATE presence_rules SET active = 1, updated_at = ? WHERE active = 0 AND id IN (${cur.paused.map(() => '?').join(',')})`, [now, ...cur.paused]);
+  }
+  await gc.storage.set(VACATION, { on: false });
+}
+
+/** Background (inside a transaction): the holiday mode ends after its last day. */
+async function vacationTick(gc, cfg, now) {
+  const v = await vacationOf(gc);
+  if (v.on && v.until && tz.localDate(now, cfg.tz) > v.until) await endVacation(gc, now, v);
+}
+
+/** POST rules/open/<ruleId>/done | snooze — inside the request's transaction. */
+async function openAction(gc, ctx, rawId, action, body) {
+  if (action !== 'done' && action !== 'snooze') throw fail('not_found');
+  const id = posInt(rawId);
+  if (!id) throw fail('not_found');
+  return reminders.act(gc, ctx.now, ctx.userId, id, body && body.key, action);
+}
+
 /** GET rules */
 async function list(gc, ctx) {
   const rules = (await allRules(gc)).filter((x) => visible(x, ctx));
@@ -285,7 +348,9 @@ async function list(gc, ctx) {
   const log = rows.filter((x) => all || ids.has(x.rule_id)).slice(0, LOG_SHOWN).map((x) => ({ ...presence.logView(x), ruleTitle: x.rule_name || '' }));
   return {
     rules: await views(gc, ctx, rules), log, can: can(ctx),
-    open: ctx.admin ? [] : await reminders.openFor(gc, ctx.cfg, ctx.now, ctx.userId),
+    // 1.11.0: parents and the admin page see every member's open reminders (with userId), the others their own
+    open: await reminders.openFor(gc, ctx.cfg, ctx.now, all ? null : ctx.userId, ctx.fam),
+    vacation: vacationView(await vacationOf(gc)),
   };
 }
 
@@ -529,4 +594,5 @@ async function scheduleTick(gc, fam, cfg, now, runs) {
 
 module.exports = {
   TRIGGERS, SCOPES, MAX_HOUSE, MAX_PERSONAL, can, visible, rights, list, create, update, remove, test, testBody, dryRun, options, scheduleTick, kindOf,
+  setVacation, vacationTick, vacationOf, openAction,
 };

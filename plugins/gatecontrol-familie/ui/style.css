@@ -417,3 +417,8 @@ button.fa-rm-box:hover{border-color:var(--line-2)}
 .fa-rm-probe.is-no{border-color:color-mix(in srgb,var(--warn) 45%,transparent)}
 .fa-rm-probe-list{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:2px;font-size:12.5px}
 span.fa-rm-chip{display:inline-flex;align-items:center;cursor:default}
+.fa-vac{display:flex;flex-wrap:wrap;align-items:center;gap:10px 16px;margin-top:12px}
+.fa-vac-state{font-weight:600}
+.fa-vac-state[data-on]{color:var(--warn)}
+.fa-vac-until{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted)}
+.fa-vac-until .form-input{width:auto}

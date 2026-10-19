@@ -3,6 +3,16 @@
 Die Familie in der GateControl-App (eigener Tab), im Portal (eigener Tab „Familie“) und auf
 drei Admin-Seiten. Alles bleibt auf dem eigenen Server.
 
+## 1.11.0
+- **Offene Erinnerungen in der App:** `GET rules` liefert unter `open` die heute offenen Erinnerungen mit Person
+  (`userId`) und „Später bis …“ – Kinder sehen ihre eigenen, Eltern (und die Admin-Seite) die der ganzen Familie.
+  „Erledigt“ und „In 1 Std.“ gehen jetzt auch ohne Mitteilung: `POST rules/open/<Regel>/done | snooze { key }` –
+  nur für die eigene Erinnerung, „In 1 Std.“ wie beim Knopf höchstens dreimal am Tag.
+- **Urlaubsmodus:** Eltern (App: `PUT rules/vacation { on, until }`) und die Admin-Seite („Anwesenheit & Smart
+  Home“ → Karte „Urlaubsmodus“) pausieren alle aktiven Hausregeln auf einmal, optional bis zu einem Datum. Endet
+  er – von Hand oder nach dem letzten Tag –, werden genau die Regeln wieder eingeschaltet, die vorher aktiv waren;
+  schon pausierte bleiben pausiert, eigene Erinnerungen laufen weiter. `GET rules` zeigt ihn unter `vacation`.
+
 ## 1.10.0
 - **Ein Regel-Editor für alles:** Die Seite „Regeln & Erinnerungen“ ist wieder weg – alle Regeln der Familie
   stehen auf **„Anwesenheit & Smart Home“** und werden mit dem bekannten Dialog („Wann? · Was soll passieren? ·
