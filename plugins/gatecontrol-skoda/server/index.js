@@ -12,6 +12,8 @@
 //   portal API  (the identified portal viewer — owner-scoped)
 //     GET  /portal · /portal/vehicles/:id/image?part=N · /portal/vehicles/:id/details
 //     POST /portal/vehicles/:id/command   (the host lets only signed-in viewers change things)
+//   logbook (1.5.0, server/logbookapi.js): GET logbook · logbook/export, PUT/DELETE logbook/trips/:id,
+//     POST logbook/trips — on the admin page "Fahrtenbuch" and as portal/logbook… for the owners
 //   quick actions of the GateControl apps (hooks quickActions / runQuickAction)
 //     the portal's controls for a signed-in owner, grouped per vehicle
 //     (device v:<id>): climate (with the vehicle's widget), charging, window
@@ -37,6 +39,8 @@ const geocode = require('./geocode');
 const portal = require('./portal');
 const legacy = require('./legacy');
 const alerts = require('./alerts');
+const logbook = require('./logbook');
+const logbookApi = require('./logbookapi');
 const texts = require('./texts.json');
 
 const state = { importing: false };
@@ -71,6 +75,8 @@ const ERRORS = {
   SKODA_TIMER_NOT_FOUND: [404, 'timers.not_found'],
   SKODA_ACCOUNT_NOT_FOUND: [404, 'error.account_not_found'],
   SKODA_NOT_OWNER: [403, 'error.not_owner'],
+  SKODA_TRIP_NOT_FOUND: [404, 'error.trip_not_found'],
+  SKODA_EXPORT_TOO_LARGE: [400, 'error.export_too_large'],
   LOGIN_REQUIRED: [403, 'error.login_required'],
   FORBIDDEN: [403, 'error.forbidden'],
   NOT_FOUND: [404, 'error.not_found'],
@@ -191,12 +197,20 @@ function vehicleTile(v, lang) {
 
 const QA_MAX = 16;
 // unlock:<id> is no longer listed (the lock is one toggle); the host answers 404 for it
-const QA_ID_RE = /^(climate|charging|windowheat|lock):([1-9][0-9]{0,9})$/;
+const QA_ID_RE = /^(climate|charging|windowheat|lock|logbook):([1-9][0-9]{0,9})$/;
 const QA_ICONS = {
   climate: 'M12 2v20M3.3 7l17.4 10M3.3 17L20.7 7M9 3l3 2 3-2M9 21l3-2 3 2',
   charging: 'M13 2L4 14h7l-1 8 9-12h-7z',
   windowheat: 'M3 9c4-3 14-3 18 0l-2 7H5zM9 18c-1 1 1 2 0 3M15 18c-1 1 1 2 0 3',
   lock: LOCK_CLOSED_ICON,
+  logbook: 'M6 3h11a2 2 0 0 1 2 2v16H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2zM8 7h7M8 11h7M8 15h4',
+};
+// the purposes of a trip as the widget's choice (open = not classified yet)
+const PURPOSE_ICONS = {
+  open: 'M12 8v4M12 16h.01M12 3a9 9 0 1 0 0 18a9 9 0 0 0 0-18z',
+  private: 'M3 11l9-8 9 8M5 10v10h14V10',
+  business: 'M4 8h16v12H4zM9 8V5h6v3M4 13h16',
+  commute: 'M4 17l5-5 4 4 7-7M14 9h6v6',
 };
 // the lock toggle per state (GateControl ≥ 1.172.0): on = locked (green, closed), off = unlocked (red, open)
 const LOCK_LOOK = Object.freeze({ on: { icon: LOCK_CLOSED_ICON, tone: 'good' }, off: { icon: LOCK_OPEN_ICON, tone: 'crit' } });
@@ -311,9 +325,72 @@ async function quickActionsFor(gc, user, lang) {
     if ((v.state && v.state.soc != null) || st.charging) toggle('charging');
     toggle('windowheat');
     if (await store.getSpin(gc, v.account_id)) add('lock', { ...lockAction(lang, st, automation), verbs: verbsOf('lock', lang), targets: true });
+    // the logbook (1.5.0): the last trip private/business, with the month's widget — never for rules
+    if (!automation && await logbook.hasTrips(gc, v.vin)) add('logbook', await logbookAction(gc, v, lang));
     if (out.length >= QA_MAX) break;
   }
   return out.slice(0, QA_MAX);
+}
+
+/**
+ * The logbook as a quick action of the vehicle: a toggle for its last trip (on = business, off =
+ * private; no state while open or a commute), its widget the month's kilometres with the split by
+ * purpose and a choice to classify the last trip (open / private / business / commute).
+ */
+async function logbookAction(gc, v, lang) {
+  const last = await logbook.lastTrip(gc, v.vin);
+  const [from, to] = logbook.monthRange(logbook.currentMonth());
+  const sum = logbook.summary(await logbook.listTrips(gc, v.vin, from, to));
+  const moving = await logbook.isMoving(gc, v.vin);
+  const km = (n) => logbook.fmtKm(n, lang);
+  const w = {
+    label: clip(t(lang, 'widget.month_km'), 24), value: sum.total, unit: 'km', status: null, state: null, readings: [], controls: [], power: false,
+  };
+  w.readings.push({ id: 'business', label: clip(t(lang, 'logbook.purpose_business'), 20), value: km(sum.business), unit: 'km', icon: PURPOSE_ICONS.business });
+  w.readings.push({ id: 'private', label: clip(t(lang, 'logbook.purpose_private'), 20), value: km(sum.private), unit: 'km', icon: PURPOSE_ICONS.private });
+  if (sum.commute) w.readings.push({ id: 'commute', label: clip(t(lang, 'logbook.purpose_commute'), 20), value: km(sum.commute), unit: 'km', icon: PURPOSE_ICONS.commute });
+  if (sum.openCount) w.readings.push({ id: 'open', label: clip(t(lang, 'logbook.purpose_open'), 20), value: String(sum.openCount), icon: PURPOSE_ICONS.open, state: 'warn' });
+  if (moving) w.status = clip(t(lang, 'widget.trip_moving'), 60);
+  else if (last) {
+    const to = last.endAddress ? last.endAddress.split(',')[0] : '';
+    w.status = clip(t(lang, 'widget.trip_last', { km: km(last.distanceKm), purpose: logbook.purposeLabel(last.purpose, lang) }) + (to ? ` → ${to}` : ''), 60);
+  }
+  if (last && !last.purpose) w.state = 'warn';
+  if (last) {
+    w.controls.push({
+      id: 'purpose', kind: 'choice', label: clip(t(lang, 'widget.trip_purpose'), 20), value: last.purpose || 'open',
+      options: ['open', 'private', 'business', 'commute'].map((p) => ({ id: p, label: clip(logbook.purposeLabel(p === 'open' ? null : p, lang), 20), icon: PURPOSE_ICONS[p] })),
+    });
+  }
+  const a = {
+    kind: 'toggle', title: t(lang, 'qa.logbook'), widget: w,
+    verbs: { on: t(lang, 'logbook.purpose_business'), off: t(lang, 'logbook.purpose_private') },
+  };
+  if (last && last.purpose === 'business') a.state = 'on';
+  else if (last && last.purpose === 'private') a.state = 'off';
+  if (last) a.subtitle = clip(`${t(lang, 'qa.logbook_last')}: ${km(last.distanceKm)} km · ${logbook.purposeLabel(last.purpose, lang)}`, 60);
+  return a;
+}
+
+/** A tap / control on the logbook action: classify the vehicle's last trip. */
+async function runLogbookAction(gc, user, lang, vid, ctl, value, target) {
+  if (user.loggedIn !== true) throw fail('LOGIN_REQUIRED');
+  if (!(await store.isOwner(gc, vid, user.id))) throw fail('SKODA_NOT_OWNER');
+  const v = await store.getVehicle(gc, vid);
+  if (!v) throw fail('SKODA_VEHICLE_NOT_FOUND');
+  const last = await logbook.lastTrip(gc, v.vin);
+  if (!last) throw fail('SKODA_TRIP_NOT_FOUND');
+  let purpose;
+  if (ctl !== undefined) {
+    if (ctl !== 'purpose' || !['open', ...logbook.PURPOSES].includes(value)) return { ok: false, message: t(lang, 'qa.unknown') };
+    purpose = value === 'open' ? null : value;
+  } else if (target === 'on' || target === 'off') purpose = target === 'on' ? 'business' : 'private';
+  else purpose = last.purpose === 'business' ? 'private' : 'business';
+  await logbook.updateTrip(gc, last.id, { purpose });
+  const action = await logbookAction(gc, v, lang);
+  const out = { ok: true, message: clip(t(lang, 'qa.logbook_set', { km: logbook.fmtKm(last.distanceKm, lang), purpose: logbook.purposeLabel(purpose, lang) }), 120), widget: action.widget };
+  if (action.state) out.state = action.state;
+  return out;
 }
 
 /** What setting each state of a toggle is called as a command (GateControl ≥ 1.173.0): { on, off }. */
@@ -347,13 +424,14 @@ const PENDING = Symbol('pending');
  * that takes longer than the budget (queued behind the account's sync) is
  * answered "on its way" without a state and finishes in the background.
  */
-async function runQuickActionFor(gc, user, lang, id, target) {
+async function runQuickActionFor(gc, user, lang, id, target, ctl, val) {
   const started = Date.now();
   const m = typeof id === 'string' ? QA_ID_RE.exec(id) : null;
   if (!m || !user || !Number.isInteger(user.id)) return { ok: false, message: t(lang, 'qa.unknown') };
   const [, kind, raw] = m;
   const vid = Number(raw);
   try {
+    if (kind === 'logbook') return await runLogbookAction(gc, user, lang, vid, ctl, val, target);
     if (user.loggedIn !== true) throw fail('LOGIN_REQUIRED');
     if (!(await store.isOwner(gc, vid, user.id))) throw fail('SKODA_NOT_OWNER');
     const v = await store.getVehicle(gc, vid);
@@ -410,6 +488,7 @@ async function portalRoute(req, gc, seg) {
     const loggedIn = user.loggedIn === true;
     return { json: { ok: true, vehicles: await portal.vehiclesFor(gc, user.id, { loggedIn }), loggedIn } };
   }
+  if (seg[1] === 'logbook') return logbookApi.route(req, gc, seg.slice(2), { admin: false });
   if (seg[1] !== 'vehicles' || seg.length !== 4) throw fail('NOT_FOUND');
   const id = vehicleId(seg[2]);
   if (!(await store.isOwner(gc, id, user.id))) throw fail('SKODA_NOT_OWNER');
@@ -440,6 +519,7 @@ async function adminRoute(req, gc, seg) {
   }
 
   if (a === 'users' && seg.length === 1 && m === 'GET') return { json: { ok: true, users: [...(await usersById(gc)).values()] } };
+  if (a === 'logbook') return logbookApi.route(req, gc, seg.slice(1), { admin: true });
 
   if (a === 'settings' && seg.length === 1 && m === 'PUT') {
     const val = Number(body.poll_interval_min);
@@ -493,6 +573,7 @@ function resetCaches() {
   details.reset();
   geocode.reset();
   alerts.reset();
+  logbook.reset();
 }
 
 module.exports = {
@@ -522,7 +603,7 @@ module.exports = {
     return { html: ui.render(view, t) };
   },
 
-  /** The section in the portal tab "Fahrzeug" only for viewers with a vehicle assigned to them. */
+  /** The sections in the portal tab "Fahrzeug" (vehicles, logbook) only for viewers with a vehicle assigned to them. */
   async portalVisible({ user }, gc) {
     if (!user) return false;
     return (await store.vehiclesOwnedBy(gc, user.id)).length > 0;
@@ -553,8 +634,13 @@ module.exports = {
    * Runs one of them (the host only passes an id quickActions just listed for this viewer; checked here again).
    * `target` 'on' | 'off' (GateControl ≥ 1.173.0, a rule or app asking for a state): the command for that state.
    */
-  async runQuickAction({ user, lang, id, target }, gc) {
-    return runQuickActionFor(gc, user, lang, id, target === 'on' || target === 'off' ? target : undefined);
+  async runQuickAction({ user, lang, id, target, control, value }, gc) {
+    return runQuickActionFor(gc, user, lang, id, target === 'on' || target === 'off' ? target : undefined, control, value);
+  },
+
+  /** A button of a push was pressed (GateControl ≥ 1.181.0): the purpose of a just recorded trip. */
+  async notifyAction({ userId, action, data }, gc) {
+    await logbook.notifyAction(gc, { userId, action, data });
   },
 
   /** Built-in data handed over by GateControl (once, by an administrator). */

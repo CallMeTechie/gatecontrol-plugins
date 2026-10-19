@@ -189,7 +189,7 @@ function fakeSkoda(opts = {}) {
 /** Mock host with the fake cloud behind gc.http.fetch. */
 async function withHost(o, fn) {
   const cloud = o.cloud || fakeSkoda();
-  const host = await createHost(DIR, { users: o.users || USERS, settings: o.settings, license: o.license, fetch: cloud.fetch });
+  const host = await createHost(DIR, { users: o.users || USERS, settings: o.settings, license: o.license, fetch: cloud.fetch, ...(o.gatecontrol ? { gatecontrol: o.gatecontrol } : {}) });
   try {
     await host.start();
     await fn(host, cloud);

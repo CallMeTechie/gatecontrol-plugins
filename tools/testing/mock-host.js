@@ -185,7 +185,7 @@ function userFace(u) {
 const SQL_DENY = /\b(attach|detach|vacuum|pragma|load_extension|sqlite_dbpage|fts3_tokenizer)\b|_gc_/i;
 const DEFAULT_USER = Object.freeze({ id: 1, name: 'admin', role: 'admin' });
 const NOTIFY_PRIORITIES = ['info', 'normal', 'high', 'critical'];
-const NOTIFY_ACTIONS = new Set(['open_app_route', 'open_portal', 'mute_1h', 'ack', 'done', 'quick_action']);
+const NOTIFY_ACTIONS = new Set(['open_app_route', 'open_portal', 'mute_1h', 'ack', 'done', 'quick_action', 'callback']);
 // GateControl ≥ 1.169.0: a picture on a push (notify_media), checked like services/avatars.js
 const NOTIFY_IMAGE_MAX = 300 * 1024;
 const NOTIFY_IMAGE_TTL_MAX = 7 * 86400;
@@ -848,6 +848,14 @@ async function createHost(pluginDir, opts = {}) {
           for (const a of data.actions) {
             if (!a || !NOTIFY_ACTIONS.has(a.type)) throw hostError('ERR_INVALID', 'unknown action type (test: the host would drop it)');
             if (a.type === 'open_app_route' && !/^(?:vpn|services|gateways|inbox|plg-[a-z0-9]+(?:-[a-z0-9]+)*)$/.test(String(a.target))) throw hostError('ERR_INVALID', 'invalid app route (test)');
+            // GateControl ≥ 1.181.0: a button whose press comes back to the plugin (hook notifyAction)
+            if (a.type === 'callback') {
+              if (!hostAtLeast('1.181.0')) throw hostError('ERR_INVALID', 'callback buttons need GateControl 1.181.0 (test)');
+              if (typeof a.id !== 'string' || !/^[a-z0-9_-]{1,32}$/.test(a.id)) throw hostError('ERR_INVALID', 'callback: invalid id');
+              const label = typeof a.label === 'string' ? a.label.replace(/[\0-\x1f\x7f]/g, '').trim() : '';
+              if (!label || label.length > 24) throw hostError('ERR_INVALID', 'callback: label must be 1–24 characters');
+              if (data.actions.filter((x) => x && x.type === 'callback' && x.id === a.id).length > 1) throw hostError('ERR_INVALID', 'callback: duplicate id');
+            }
             // GateControl ≥ 1.169.0: run one of this plugin's own quick actions from the push
             if (a.type === 'quick_action') {
               if (typeof a.label !== 'string' || !a.label.trim() || a.label.length > 24) throw hostError('ERR_INVALID', 'quick_action: label must be 1–24 characters');
@@ -1366,6 +1374,11 @@ async function createHost(pluginDir, opts = {}) {
     stop: () => hook('stop'),
     tick: () => hook('tick'),
     settingsChanged: (values) => hook('settingsChanged', values),
+    /** GateControl ≥ 1.181.0: a callback button of a push was pressed → hook notifyAction({ userId, notificationId, action, data }) */
+    async notifyAction(o) {
+      if (typeof plugin.notifyAction !== 'function') return undefined;
+      return hook('notifyAction', { userId: o.userId, notificationId: o.notificationId == null ? 1 : o.notificationId, action: o.action, data: o.data || {} });
+    },
     /**
      * GateControl ≥ 1.185.0: the status lines of the settings page (settingsStatus hook), checked like the
      * host: at most 10, text without control characters (≤ 200), unknown group → null, unknown tone → 'info'

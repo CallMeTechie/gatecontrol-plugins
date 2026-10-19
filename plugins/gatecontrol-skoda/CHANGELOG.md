@@ -2,6 +2,31 @@
 
 Škoda-Fahrzeuge (MySkoda) als GateControl-Plugin – bisher fest in GateControl eingebaut.
 
+## 1.5.0
+- **Fahrtenbuch**: Fahrten werden automatisch erfasst. Meldet das Fahrzeug nach einer Fahrt
+  wieder eine Parkposition und einen höheren Kilometerstand, trägt das Plugin die Fahrt ein:
+  Datum, Abfahrt und Ankunft, Start- und Zieladresse, Kilometerstand am Anfang und Ende und
+  die gefahrene Strecke. Die Abfahrtszeit ist so genau wie das Abrufintervall; mehrere Stopps
+  zwischen zwei Abrufen ergeben eine Fahrt.
+  - Jede Fahrt bekommt einen **Zweck**: Privat, Geschäftlich oder Arbeitsweg, dazu Anlass
+    bzw. Geschäftspartner und Fahrer. Fahrten ohne Netz lassen sich von Hand eintragen.
+  - Nach jeder Fahrt bekommen die Besitzer des Fahrzeugs eine **Benachrichtigung** mit den
+    Knöpfen Privat / Geschäftlich / Arbeitsweg (Thema „Fahrt erfasst“, abschaltbar). Wer immer
+    gleich fährt, stellt in den Einstellungen des Plugins einen festen Zweck für neue Fahrten
+    ein – dann kommt keine Nachfrage.
+  - **Admin-Seite „Fahrtenbuch“** (neuer Reiter neben „Fahrzeuge“): alle Fahrzeuge, Monat für
+    Monat, mit Summen je Zweck, Bearbeiten, Löschen und Fahrten von Hand.
+  - **Portal**: im Reiter „Fahrzeug“ der neue Bereich „Fahrtenbuch“ für die Besitzer – nach
+    der Anmeldung lassen sich dort die eigenen Fahrten einordnen.
+  - **Export als PDF oder CSV** (Excel) für einen Monat oder bis zu 24 Monate: die PDF im
+    Querformat mit allen Fahrten und den Summen je Zweck.
+- **Schnellaktion und Widget „Fahrtenbuch“** in den Apps (beim Fahrzeug): das Widget zeigt
+  die Kilometer des Monats mit der Aufteilung Geschäftlich / Privat / Arbeitsweg, offene
+  Fahrten und die letzte Fahrt; die Auswahl im Widget ordnet die letzte Fahrt ein, ein Tippen
+  auf den Knopf schaltet sie zwischen Geschäftlich und Privat um. Regeln anderer Plugins
+  bekommen diese Aktion nicht.
+- **Braucht GateControl 1.186.0** (Download aus Plugin-Seiten für den Export).
+
 ## 1.4.1
 - **Ladestand als Akku oben rechts im Fahrzeug-Widget** (GateControl ≥ 1.175.0): rechts neben
   dem Fahrzeugnamen zeigt ein Akku-Symbol mit der Prozentzahl den Ladestand – leer bis 15 %

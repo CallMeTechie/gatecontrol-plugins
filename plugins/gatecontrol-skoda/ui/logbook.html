@@ -1,0 +1,115 @@
+<main class="lb">
+  <!-- the logbook: the admin page "Fahrtenbuch" and the portal section "Fahrtenbuch" -->
+  <div class="lb-head">
+    <label class="lb-vehicle-wrap" id="lb-vehicle-wrap">
+      <span class="sr-only">{{t:logbook.vehicle}}</span>
+      <select class="form-select" id="lb-vehicle"></select>
+    </label>
+    <div class="lb-month" role="group" aria-label="{{t:logbook.month}}">
+      <button class="btn btn-sm" type="button" id="lb-prev" aria-label="{{t:logbook.prev}}">‹</button>
+      <b id="lb-month-label" aria-live="polite"></b>
+      <button class="btn btn-sm" type="button" id="lb-next" aria-label="{{t:logbook.next}}">›</button>
+    </div>
+    <div class="page-actions lb-actions">
+      <button class="btn btn-sm" type="button" id="lb-add" hidden>{{t:logbook.add}}</button>
+      <button class="btn btn-sm btn-primary" type="button" id="lb-export-open">{{t:logbook.export}}</button>
+    </div>
+  </div>
+  <div class="lb-hint" id="lb-hint" role="note" hidden></div>
+  <div class="lb-sum" id="lb-sum"></div>
+  <div class="lb-list" id="lb-list" aria-label="{{t:logbook.title}}"></div>
+  <p class="muted lb-empty" id="lb-empty" hidden></p>
+  <p class="form-hint lb-note">{{t:logbook.how}}</p>
+
+  <div class="modal-overlay" id="lb-export-modal" role="dialog" aria-modal="true" aria-labelledby="lb-x-title" hidden>
+    <div class="modal">
+      <div class="modal-head">
+        <div class="modal-title" id="lb-x-title">{{t:logbook.export}}</div>
+        <button class="btn modal-close" type="button" data-close="lb-export-modal" aria-label="{{t:common.close}}">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="lb-row2">
+          <div class="form-group">
+            <label class="form-label" for="lb-x-from">{{t:logbook.from_month}}</label>
+            <input class="form-input" type="month" id="lb-x-from">
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="lb-x-to">{{t:logbook.to_month}}</label>
+            <input class="form-input" type="month" id="lb-x-to">
+          </div>
+        </div>
+        <div class="form-group">
+          <span class="form-label">{{t:logbook.format}}</span>
+          <label class="check"><input type="radio" name="lb-x-format" value="pdf" checked> PDF</label>
+          <label class="check"><input type="radio" name="lb-x-format" value="csv"> {{t:logbook.csv}}</label>
+        </div>
+        <p class="form-hint">{{t:logbook.export_hint}}</p>
+      </div>
+      <div class="modal-foot">
+        <button class="btn" type="button" data-close="lb-export-modal">{{t:common.cancel}}</button>
+        <button class="btn btn-primary" type="button" id="lb-x-go">{{t:logbook.download}}</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="lb-edit-modal" role="dialog" aria-modal="true" aria-labelledby="lb-e-title" hidden>
+    <div class="modal">
+      <div class="modal-head">
+        <div class="modal-title" id="lb-e-title">{{t:logbook.edit}}</div>
+        <button class="btn modal-close" type="button" data-close="lb-edit-modal" aria-label="{{t:common.close}}">×</button>
+      </div>
+      <div class="modal-body">
+        <p class="form-hint" id="lb-e-summary"></p>
+        <div class="form-group">
+          <label class="form-label" for="lb-e-purpose">{{t:logbook.purpose}}</label>
+          <select class="form-select" id="lb-e-purpose"></select>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="lb-e-note">{{t:logbook.col_reason}}</label>
+          <input class="form-input" type="text" id="lb-e-note" maxlength="200" placeholder="{{t:logbook.note_ph}}">
+        </div>
+        <div class="form-group" id="lb-e-driver-wrap" hidden>
+          <label class="form-label" for="lb-e-driver">{{t:logbook.col_driver}}</label>
+          <select class="form-select" id="lb-e-driver"></select>
+        </div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn btn-danger lb-left" type="button" id="lb-e-delete" hidden>{{t:logbook.delete}}</button>
+        <button class="btn" type="button" data-close="lb-edit-modal">{{t:common.cancel}}</button>
+        <button class="btn btn-primary" type="button" id="lb-e-save">{{t:common.save}}</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="lb-add-modal" role="dialog" aria-modal="true" aria-labelledby="lb-a-title" hidden>
+    <div class="modal modal-wide">
+      <div class="modal-head">
+        <div class="modal-title" id="lb-a-title">{{t:logbook.add}}</div>
+        <button class="btn modal-close" type="button" data-close="lb-add-modal" aria-label="{{t:common.close}}">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="lb-row3">
+          <div class="form-group"><label class="form-label" for="lb-a-date">{{t:logbook.col_date}}</label><input class="form-input" type="date" id="lb-a-date"></div>
+          <div class="form-group"><label class="form-label" for="lb-a-start">{{t:logbook.col_start_time}}</label><input class="form-input" type="time" id="lb-a-start"></div>
+          <div class="form-group"><label class="form-label" for="lb-a-end">{{t:logbook.col_end_time}}</label><input class="form-input" type="time" id="lb-a-end"></div>
+        </div>
+        <div class="lb-row2">
+          <div class="form-group"><label class="form-label" for="lb-a-km1">{{t:logbook.col_km_start}}</label><input class="form-input" type="number" min="0" step="1" id="lb-a-km1"></div>
+          <div class="form-group"><label class="form-label" for="lb-a-km2">{{t:logbook.col_km_end}}</label><input class="form-input" type="number" min="0" step="1" id="lb-a-km2"></div>
+        </div>
+        <div class="form-group"><label class="form-label" for="lb-a-from">{{t:logbook.col_from}}</label><input class="form-input" type="text" maxlength="200" id="lb-a-from"></div>
+        <div class="form-group"><label class="form-label" for="lb-a-to">{{t:logbook.col_to}}</label><input class="form-input" type="text" maxlength="200" id="lb-a-to"></div>
+        <div class="lb-row2">
+          <div class="form-group"><label class="form-label" for="lb-a-purpose">{{t:logbook.purpose}}</label><select class="form-select" id="lb-a-purpose"></select></div>
+          <div class="form-group"><label class="form-label" for="lb-a-driver">{{t:logbook.col_driver}}</label><select class="form-select" id="lb-a-driver"></select></div>
+        </div>
+        <div class="form-group"><label class="form-label" for="lb-a-note">{{t:logbook.col_reason}}</label><input class="form-input" type="text" maxlength="200" id="lb-a-note" placeholder="{{t:logbook.note_ph}}"></div>
+        <p class="lb-msg" id="lb-a-msg" role="status"></p>
+      </div>
+      <div class="modal-foot">
+        <button class="btn" type="button" data-close="lb-add-modal">{{t:common.cancel}}</button>
+        <button class="btn btn-primary" type="button" id="lb-a-save">{{t:common.save}}</button>
+      </div>
+    </div>
+  </div>
+</main>

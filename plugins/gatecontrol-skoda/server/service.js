@@ -12,6 +12,7 @@ const { SkodaClient } = require('./client');
 const { fetchFor } = require('./http');
 const store = require('./store');
 const alerts = require('./alerts');
+const logbook = require('./logbook');
 
 const REFRESH_COOLDOWN_MS = 5 * 60 * 1000;
 const COMMAND_REFRESH_COOLDOWN_MS = 30 * 1000;
@@ -78,6 +79,12 @@ async function syncVehicle(gc, client, accountId, garageEntry) {
   const row = await store.upsertVehicle(gc, accountId, garageEntry);
   const { state: vehicleState } = await client.fetchFullState(garageEntry.vin);
   await store.saveState(gc, row.id, vehicleState);
+  // the logbook: a trip when it parked again with a higher mileage (never stops the sync)
+  try {
+    await logbook.observe(gc, { id: row.id, vin: garageEntry.vin, name: garageEntry.name || garageEntry.title || null }, vehicleState);
+  } catch (e) {
+    gc.log.warn('logbook not updated', e.code || e.message);
+  }
 
   // Render image: fetch once, refetch when the url changes or no image is
   // stored (e.g. one skipped by 1.0.0 as too large).
