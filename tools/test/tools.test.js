@@ -551,7 +551,14 @@ test('catalog: store metadata from catalog-meta.json and release notes from the 
     for (const [id, v, p] of [['gatecontrol-hello', '1.0.0'], ['gatecontrol-hello', '1.1.0-rc.1', true], ['demo', '1.0.0'], ['gatecontrol-familie', '1.9.0']]) {
       fs.writeFileSync(path.join(tmp, `${id}-${v}.index.json`), JSON.stringify(entry(id, v, p)));
     }
-    const meta = { plugins: { 'gatecontrol-hello': { category: 'other', icon: 'puzzle', summary: { de: 'Hallo', en: 'Hello' }, audience: 'admins', keywords: ['hallo'], related: ['gatecontrol-door'], extra: 'not copied' } } };
+    const detail = {
+      adds: [{ icon: 'page', title: { de: 'Seite', en: 'Page' }, text: { de: 'im Menü', en: 'in the menu' } }],
+      permissions: [{ icon: 'network', title: { de: 'Heimnetz', en: 'Home network' }, text: { de: 'Nur das Ziel', en: 'Only the target' }, tag: { de: 'Netzwerk', en: 'Network' } }],
+      shows: [{ kind: 'tile', caption: { de: 'Startkachel', en: 'Start tile' }, value: '3/3' }],
+      needs: { de: 'Ein Konto', en: 'An account' },
+      languages: ['de', 'en'],
+    };
+    const meta = { plugins: { 'gatecontrol-hello': { category: 'other', icon: 'puzzle', summary: { de: 'Hallo', en: 'Hello' }, audience: 'admins', keywords: ['hallo'], related: ['gatecontrol-door'], ...detail, extra: 'not copied' } } };
     fs.writeFileSync(path.join(tmp, 'meta.json'), JSON.stringify(meta));
     const build = (...extra) => {
       execFileSync(process.execPath, [path.join(TOOLS, 'catalog.js'), tmp, '--out', path.join(tmp, 'catalog.json'), '--repo', 'o/r', ...extra]);
@@ -560,8 +567,10 @@ test('catalog: store metadata from catalog-meta.json and release notes from the 
 
     let c = build('--meta', path.join(tmp, 'meta.json'));
     const hello = c.plugins['gatecontrol-hello'];
-    assert.deepEqual(Object.keys(hello), ['id', 'name', 'description', 'publisher', 'latest', 'versions', 'category', 'icon', 'summary', 'audience', 'keywords', 'related']);
+    assert.deepEqual(Object.keys(hello), ['id', 'name', 'description', 'publisher', 'latest', 'versions', 'category', 'icon', 'summary', 'audience', 'keywords', 'related',
+      'adds', 'permissions', 'shows', 'needs', 'languages']);
     assert.equal(hello.icon, 'puzzle');
+    for (const k of Object.keys(detail)) assert.deepEqual(hello[k], detail[k], k);
     assert.deepEqual(hello.related, ['gatecontrol-door']);
     assert.equal(hello.latest.version, '1.0.0');
     assert.equal(hello.latest.notes, lib.changelogSection('gatecontrol-hello', '1.0.0'));
@@ -585,6 +594,10 @@ test('catalog: store metadata from catalog-meta.json and release notes from the 
     const familie = c.plugins['gatecontrol-familie'];
     assert.equal(familie.category, 'family');
     assert.equal(familie.highlight.version, '1.9.0');
+    assert.deepEqual(familie.highlight.tags.map((x) => x.icon), ['clock', 'car', 'calendar', 'bell']);
+    assert.ok(familie.adds.length && familie.permissions.length && familie.shows.length);
+    assert.deepEqual(familie.languages, ['de', 'en']);
+    assert.equal(c.plugins['gatecontrol-hello'].adds, undefined);
     assert.ok(familie.latest.notes.length > 100 && familie.latest.notes.length <= 6000);
     assert.equal(c.plugins['gatecontrol-hello'].category, undefined, 'the example has no store metadata');
   } finally {
@@ -614,14 +627,30 @@ test('catalog-meta.json: valid, and checked strictly', () => {
   const { validateMeta, validateFile, FILE } = require('../catalog-meta');
   assert.deepEqual(validateFile(), [], 'the repository file');
   const raw = lib.readJson(FILE);
-  for (const id of lib.listPlugins().filter((i) => lib.pluginConfig(i).release)) assert.ok(raw.plugins[id], `${id} has store metadata`);
+  for (const id of lib.listPlugins().filter((i) => lib.pluginConfig(i).release)) {
+    assert.ok(raw.plugins[id], `${id} has store metadata`);
+    for (const k of ['adds', 'permissions', 'shows', 'languages']) assert.ok(raw.plugins[id][k], `${id} has ${k}`);
+  }
 
   const ids = ['a', 'b', 'c', 'd', 'e', 'f'];
   const changelog = (id, v) => v === '1.0.0';
   const ok = {
     category: 'home', icon: 'bulb', summary: { de: 'Licht.', en: 'Light.' }, audience: 'all', keywords: ['licht', 'light'], related: ['b'],
-    highlight: { version: '1.0.0', title: { de: 'Neu', en: 'New' }, text: { de: 'Text', en: 'Text' } },
+    highlight: { version: '1.0.0', title: { de: 'Neu', en: 'New' }, text: { de: 'Text', en: 'Text' }, tags: [{ icon: 'clock', text: { de: 'Sonntag · 18:00', en: 'Sunday · 6 pm' } }] },
+    adds: [{ icon: 'page', title: { de: 'Seite', en: 'Page' }, text: { de: 'im Menü', en: 'in the menu' } }],
+    permissions: [
+      { icon: 'network', title: { de: 'Heimnetz', en: 'Home network' }, text: { de: 'Nur das Ziel.', en: 'Only the target.' }, tag: { de: 'Netzwerk', en: 'Network' } },
+      { icon: 'bell', title: { de: 'Mitteilungen', en: 'Notifications' }, text: { de: 'An dich.', en: 'To you.' } },
+    ],
+    shows: [{ kind: 'tile', caption: { de: 'Startkachel', en: 'Start tile' }, value: '3/3' }, { kind: 'list', caption: { de: 'Liste', en: 'List' } }],
+    needs: { de: 'Ein Konto', en: 'An account' },
+    languages: ['de', 'en'],
   };
+  const T = (n) => ({ de: 'x'.repeat(n), en: 'x' });
+  const add0 = ok.adds[0];
+  const perm0 = ok.permissions[0];
+  const show0 = ok.shows[0];
+  const tag0 = ok.highlight.tags[0];
   const check = (m, root = {}) => validateMeta({ $comment: 'x', plugins: { a: m }, ...root }, { ids, changelog });
   assert.deepEqual(check(ok), []);
   assert.deepEqual(check({}), [], 'every field is optional');
@@ -653,6 +682,45 @@ test('catalog-meta.json: valid, and checked strictly', () => {
     [{ ...ok, highlight: { ...ok.highlight, text: { de: 'x'.repeat(281), en: 'Text' } } }, /highlight\.text\.de: 281 characters \(max 280\)/],
     [{ ...ok, highlight: { ...ok.highlight, text: undefined } }, /highlight\.text: not an object/],
     [{ ...ok, highlight: { ...ok.highlight, since: 'x' } }, /highlight: unknown key "since"/],
+    // highlight tags
+    [{ ...ok, highlight: { ...ok.highlight, tags: 'x' } }, /highlight\.tags: not an array/],
+    [{ ...ok, highlight: { ...ok.highlight, tags: Array.from({ length: 5 }, () => tag0) } }, /highlight\.tags: 5 \(max 4\)/],
+    [{ ...ok, highlight: { ...ok.highlight, tags: [{ ...tag0, icon: 'rocket' }] } }, /highlight\.tags\[0\]\.icon: "rocket" is not one of/],
+    [{ ...ok, highlight: { ...ok.highlight, tags: [{ ...tag0, text: T(41) }] } }, /highlight\.tags\[0\]\.text\.de: 41 characters \(max 40\)/],
+    [{ ...ok, highlight: { ...ok.highlight, tags: [{ ...tag0, tag: tag0.text }] } }, /highlight\.tags\[0\]: unknown key "tag"/],
+    [{ ...ok, tags: [tag0] }, /unknown key "tags"/],
+    // adds
+    [{ ...ok, adds: {} }, /adds: not an array/],
+    [{ ...ok, adds: [] }, /adds: empty/],
+    [{ ...ok, adds: Array.from({ length: 9 }, () => add0) }, /adds: 9 \(max 8\)/],
+    [{ ...ok, adds: ['x'] }, /adds\[0\]: not an object/],
+    [{ ...ok, adds: [{ ...add0, icon: 'puzzle' }] }, /adds\[0\]\.icon: "puzzle" is not one of/],
+    [{ ...ok, adds: [{ ...add0, title: T(81) }] }, /adds\[0\]\.title\.de: 81 characters \(max 80\)/],
+    [{ ...ok, adds: [{ ...add0, text: T(121) }] }, /adds\[0\]\.text\.de: 121 characters \(max 120\)/],
+    [{ ...ok, adds: [{ ...add0, text: undefined }] }, /adds\[0\]\.text: not an object/],
+    [{ ...ok, adds: [{ ...add0, tag: perm0.tag }] }, /adds\[0\]: unknown key "tag"/],
+    // permissions
+    [{ ...ok, permissions: Array.from({ length: 11 }, () => perm0) }, /permissions: 11 \(max 10\)/],
+    [{ ...ok, permissions: [{ ...perm0, text: T(201) }] }, /permissions\[0\]\.text\.de: 201 characters \(max 200\)/],
+    [{ ...ok, permissions: [{ ...perm0, tag: T(25) }] }, /permissions\[0\]\.tag\.de: 25 characters \(max 24\)/],
+    [{ ...ok, permissions: [{ ...perm0, tag: 'Netzwerk' }] }, /permissions\[0\]\.tag: not an object/],
+    [{ ...ok, permissions: [{ ...perm0, icon: undefined }] }, /permissions\[0\]\.icon/],
+    [{ ...ok, permissions: [{ ...perm0, level: 1 }] }, /permissions\[0\]: unknown key "level"/],
+    // shows
+    [{ ...ok, shows: Array.from({ length: 4 }, () => show0) }, /shows: 4 \(max 3\)/],
+    [{ ...ok, shows: [{ ...show0, kind: 'chart' }] }, /shows\[0\]\.kind: "chart" is not one of tile, list, widget/],
+    [{ ...ok, shows: [{ ...show0, caption: T(61) }] }, /shows\[0\]\.caption\.de: 61 characters \(max 60\)/],
+    [{ ...ok, shows: [{ ...show0, value: '1234567890123' }] }, /shows\[0\]\.value: 13 characters \(max 12\)/],
+    [{ ...ok, shows: [{ ...show0, value: 3 }] }, /shows\[0\]\.value: invalid/],
+    [{ ...ok, shows: [{ ...show0, value: ' 3/3' }] }, /shows\[0\]\.value: invalid/],
+    [{ ...ok, shows: [{ ...show0, icon: 'tile' }] }, /shows\[0\]: unknown key "icon"/],
+    // needs, languages
+    [{ ...ok, needs: 'Konto' }, /needs: not an object/],
+    [{ ...ok, needs: T(81) }, /needs\.de: 81 characters \(max 80\)/],
+    [{ ...ok, languages: 'de' }, /languages: not an array/],
+    [{ ...ok, languages: [] }, /languages: empty/],
+    [{ ...ok, languages: ['de', 'fr'] }, /languages: "fr" is not one of de, en/],
+    [{ ...ok, languages: ['de', 'de'] }, /languages: duplicates/],
     ['x', /a: not an object/],
   ];
   for (const [m, re] of bad) {

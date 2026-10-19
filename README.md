@@ -215,7 +215,8 @@ releases are the source of truth; deleting a release and re-running the
   "plugins": { "<id>": { "id", "name", "description", "publisher",
                          "latest": { /* index entry */ }, "versions": [ /* newest first */ ],
                          // optional, from catalog-meta.json:
-                         "category", "icon", "summary", "audience", "keywords", "related", "highlight" } } }
+                         "category", "icon", "summary", "audience", "keywords", "related", "highlight",
+                         "adds", "permissions", "shows", "needs", "languages" } } }
 // index entry (+ "notes"):
 { "schema": 1, "id", "name", "description", "publisher", "version", "prerelease",
   "gatecontrol": ">=1.146.0", "license_required", "file", "size", "sha256", "url",
@@ -231,8 +232,27 @@ releases are the source of truth; deleting a release and re-running the
 `audience` (`all` / `admins`), `keywords` (≤ 12 lowercase search words in
 German and English, ≤ 32 characters each), `related` (≤ 4 other plugin ids,
 "passt gut dazu") and an optional `highlight`
-`{ version, title: { de, en } ≤ 80, text: { de, en } ≤ 280 }` whose version
-has a CHANGELOG section. `tools/catalog.js` copies the fields that are set into
+`{ version, title: { de, en } ≤ 80, text: { de, en } ≤ 280, tags? }` whose version
+has a CHANGELOG section (`tags`: ≤ 4 chips beside it, `{ icon, text: { de, en } ≤ 40 }`).
+
+The store's detail page reads these optional fields:
+
+| Field | Shape | Shown as |
+|---|---|---|
+| `adds` | ≤ 8 × `{ icon, title ≤ 80, text ≤ 120 }` | „Was <Plugin> hinzufügt“ – pages, app tab, portal area, tiles, widgets, quick actions, notifications, background jobs |
+| `permissions` | ≤ 10 × `{ icon, title ≤ 80, text ≤ 200, tag? ≤ 24 }` | „Das darf das Plugin“ for end users; `tag` only on sensitive rows (*Netzwerk*, *Steuern*, *Standort*, *Benutzer*) |
+| `shows` | ≤ 3 × `{ kind: tile \| list \| widget, caption ≤ 60, value? ≤ 12 }` | captions of the wireframes „So sieht es bei dir aus“ – only what the plugin really has |
+| `needs` | `{ de, en }` ≤ 80 | what it needs besides GateControl (an account, a token, a device) |
+| `languages` | subset of `["de", "en"]` | languages of the plugin |
+
+Titles, texts, tags and captions are `{ de, en }`. `icon` (in `adds`,
+`permissions` and highlight `tags`) is one of `page`, `app`, `portal`,
+`widget`, `tile`, `action`, `bell`, `clock`, `data`, `network`, `chat`, `key`,
+`location`, `users`, `door`, `calendar`, `camera`, `car`, `bulb`, `server`,
+`shield`, `link`. Write them from the plugin's `plugin.json`, README and
+CHANGELOG – never promise what the plugin does not do.
+
+`tools/catalog.js` copies the fields that are set into
 the plugin's object; `node tools/validate.js` (CI) checks the file strictly
 (`tools/catalog-meta.js`). Every version entry also gets **`notes`**: the
 `## <version>` section of the plugin's `CHANGELOG.md` (at most 6000

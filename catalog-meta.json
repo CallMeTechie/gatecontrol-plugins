@@ -10,7 +10,206 @@
       },
       "audience": "all",
       "keywords": ["müll", "abfall", "waste", "abfuhr", "kalender", "calendar", "ical", "termine", "google", "icloud", "outlook", "nextcloud"],
-      "related": ["gatecontrol-familie"]
+      "related": ["gatecontrol-familie"],
+      "adds": [
+        {
+          "icon": "page",
+          "title": {
+            "de": "Seite „Alltag“",
+            "en": "Page “Everyday”"
+          },
+          "text": {
+            "de": "Abfuhrpläne und Kalender-Abos einrichten – mit den Reitern Müllabfuhr und Kalender",
+            "en": "Set up collection plans and calendar subscriptions – with the tabs Waste collection and Calendar"
+          }
+        },
+        {
+          "icon": "portal",
+          "title": {
+            "de": "Portal: „Müllabfuhr“ und „Termine“ im Tab „Zuhause“",
+            "en": "Portal: “Waste collection” and “Events” in the tab “Home”"
+          },
+          "text": {
+            "de": "Die nächsten Abfuhrtage und die Termine der nächsten 7 Tage, dazu Treffer in der Portal-Suche",
+            "en": "The next collection days and the events of the next 7 days, plus hits in the portal search"
+          }
+        },
+        {
+          "icon": "tile",
+          "title": {
+            "de": "Kacheln „Nächste Abfuhr“ und „Heute“",
+            "en": "Tiles “Next collection” and “Today”"
+          },
+          "text": {
+            "de": "auf der Startseite des Portals",
+            "en": "on the start page of the portal"
+          }
+        },
+        {
+          "icon": "bell",
+          "title": {
+            "de": "Erinnerungen",
+            "en": "Reminders"
+          },
+          "text": {
+            "de": "Müllabfuhr bis 3 Tage vorher oder am Abholtag, Termine zu Beginn oder bis 60 Minuten vorher",
+            "en": "Waste collection up to 3 days ahead or on the day, events at the start or up to 60 minutes ahead"
+          }
+        },
+        {
+          "icon": "app",
+          "title": {
+            "de": "Termine für die GateControl-App",
+            "en": "Dates for the GateControl app"
+          },
+          "text": {
+            "de": "Die Familie-App zeigt deine Termine und Abfuhrtage in ihrer Terminübersicht",
+            "en": "The family app shows your events and collection days in its date overview"
+          }
+        },
+        {
+          "icon": "clock",
+          "title": {
+            "de": "Hintergrunddienst",
+            "en": "Background service"
+          },
+          "text": {
+            "de": "Holt Abfuhrpläne höchstens zweimal am Tag und Kalender alle 30 Minuten ab",
+            "en": "Fetches collection plans at most twice a day and calendars every 30 minutes"
+          }
+        },
+        {
+          "icon": "link",
+          "title": {
+            "de": "Kalender für andere Plugins",
+            "en": "Calendars for other plugins"
+          },
+          "text": {
+            "de": "Familie nutzt sie für Regeln mit der Bedingung „Termin heute/morgen“",
+            "en": "Family uses them for rules with the condition “event today/tomorrow”"
+          }
+        }
+      ],
+      "permissions": [
+        {
+          "icon": "network",
+          "title": {
+            "de": "Abfallkalender und Kalender im Internet abrufen",
+            "en": "Fetch waste and calendar data from the internet"
+          },
+          "text": {
+            "de": "Nur AbfallNavi, abfall.io und AWIDO sowie Kalender-Adressen von Google, iCloud und Outlook – keine anderen Server.",
+            "en": "Only AbfallNavi, abfall.io and AWIDO plus calendar addresses of Google, iCloud and Outlook – no other servers."
+          },
+          "tag": {
+            "de": "Netzwerk",
+            "en": "Network"
+          }
+        },
+        {
+          "icon": "network",
+          "title": {
+            "de": "Kalender im Heimnetz lesen",
+            "en": "Read calendars in the home network"
+          },
+          "text": {
+            "de": "Nur über ein Zugriffsziel, das du zuweist – z. B. Nextcloud oder Radicale, auf Wunsch mit Anmeldung.",
+            "en": "Only through an access target you assign – e.g. Nextcloud or Radicale, with a login if needed."
+          },
+          "tag": {
+            "de": "Netzwerk",
+            "en": "Network"
+          }
+        },
+        {
+          "icon": "users",
+          "title": {
+            "de": "Benutzer lesen",
+            "en": "Read users"
+          },
+          "text": {
+            "de": "Namen der Konten, damit du Pläne und Kalender Personen zuordnen kannst – keine Passwörter, keine Schlüssel.",
+            "en": "Names of the accounts so you can assign plans and calendars to people – no passwords, no keys."
+          },
+          "tag": {
+            "de": "Benutzer",
+            "en": "Users"
+          }
+        },
+        {
+          "icon": "bell",
+          "title": {
+            "de": "Mitteilungen senden",
+            "en": "Send notifications"
+          },
+          "text": {
+            "de": "Themen „Müllabfuhr“ und „Termine“ – jede Person kann sie im Portal oder in der App abschalten.",
+            "en": "Topics “Waste collection” and “Calendar events” – everyone can switch them off in the portal or the app."
+          }
+        },
+        {
+          "icon": "app",
+          "title": {
+            "de": "Daten für die GateControl-App",
+            "en": "Data for the GateControl app"
+          },
+          "text": {
+            "de": "Liefert der App die Termine und Abfuhrtage, die die Person auch im Portal sieht.",
+            "en": "Gives the app the events and collection days the person also sees in the portal."
+          }
+        },
+        {
+          "icon": "link",
+          "title": {
+            "de": "Dienste für andere Plugins",
+            "en": "Services for other plugins"
+          },
+          "text": {
+            "de": "„Termine aus den Kalendern lesen“ und „Kalender auflisten“ – nur Termine, die die Person sieht, nie die Adresse eines Kalenders.",
+            "en": "“Read events from the calendars” and “List the calendars” – only events the person sees, never a calendar’s address."
+          }
+        },
+        {
+          "icon": "key",
+          "title": {
+            "de": "Zugangsdaten verschlüsselt speichern",
+            "en": "Store credentials encrypted"
+          },
+          "text": {
+            "de": "Kalender-Adressen und Anmeldedaten als verschlüsselte Plugin-Geheimnisse – nie an den Browser, nie ins Protokoll.",
+            "en": "Calendar addresses and logins as encrypted plugin secrets – never sent to the browser, never logged."
+          }
+        }
+      ],
+      "shows": [
+        {
+          "kind": "tile",
+          "caption": {
+            "de": "Kachel „Nächste Abfuhr“ im Portal",
+            "en": "Tile “Next collection” in the portal"
+          },
+          "value": "Morgen"
+        },
+        {
+          "kind": "list",
+          "caption": {
+            "de": "Portal „Zuhause“ · Müllabfuhr und Termine",
+            "en": "Portal “Home” · waste collection and events"
+          }
+        },
+        {
+          "kind": "list",
+          "caption": {
+            "de": "Admin-Seite · Abfuhrpläne und Kalender",
+            "en": "Admin page · collection plans and calendars"
+          }
+        }
+      ],
+      "needs": {
+        "de": "Für Kalender: eine iCal-Adresse (Google, iCloud, Outlook, Nextcloud)",
+        "en": "For calendars: an iCal address (Google, iCloud, Outlook, Nextcloud)"
+      },
+      "languages": ["de", "en"]
     },
     "gatecontrol-door": {
       "category": "home",
@@ -21,7 +220,248 @@
       },
       "audience": "all",
       "keywords": ["tür", "door", "schloss", "lock", "nuki", "opener", "klingel", "doorbell", "ring", "kamera", "camera"],
-      "related": ["gatecontrol-messenger", "gatecontrol-smarthome"]
+      "related": ["gatecontrol-messenger", "gatecontrol-smarthome"],
+      "adds": [
+        {
+          "icon": "app",
+          "title": {
+            "de": "App-Tab „Tür“",
+            "en": "App tab “Door”"
+          },
+          "text": {
+            "de": "Schlösser auf- und zusperren, Klingelbilder und Verlauf – mit deinen Rechten",
+            "en": "Lock and unlock, doorbell pictures and history – with your rights"
+          }
+        },
+        {
+          "icon": "portal",
+          "title": {
+            "de": "Portal-Tab „Tür“",
+            "en": "Portal tab “Door”"
+          },
+          "text": {
+            "de": "Schlosskarten, letzte Bilder, Verlauf und der Ring-Modus für berechtigte Personen",
+            "en": "Lock cards, latest pictures, history and the Ring mode for people with the right"
+          }
+        },
+        {
+          "icon": "page",
+          "title": {
+            "de": "Admin-Seiten „Geräte“, „Berechtigungen“, „Verlauf“, „Einstellungen“",
+            "en": "Admin pages “Devices”, “Permissions”, “History”, “Settings”"
+          },
+          "text": {
+            "de": "Bridge, Nuki Web und Ring verbinden, Rechte pro Person und Schloss vergeben",
+            "en": "Connect bridge, Nuki Web and Ring, grant rights per person and lock"
+          }
+        },
+        {
+          "icon": "action",
+          "title": {
+            "de": "Schnellaktionen und Widget",
+            "en": "Quick actions and widget"
+          },
+          "text": {
+            "de": "Zusperren, Aufsperren und Öffnen je Schloss, dazu der Ring-Modus mit Widget",
+            "en": "Lock, unlock and open per lock, plus the Ring mode with a widget"
+          }
+        },
+        {
+          "icon": "tile",
+          "title": {
+            "de": "Startkacheln",
+            "en": "Start tiles"
+          },
+          "text": {
+            "de": "Eine Kachel pro Schloss mit seinem Zustand, dazu „Ring-Modus · <Standort>“",
+            "en": "One tile per lock with its state, plus “Ring mode · <location>”"
+          }
+        },
+        {
+          "icon": "bell",
+          "title": {
+            "de": "Klingel-Push mit Bild",
+            "en": "Doorbell push with a picture"
+          },
+          "text": {
+            "de": "Mit „Tür öffnen“ für alle, die öffnen dürfen – dazu Tür zu lange offen, blockiert, Batterie, Nachtkontrolle",
+            "en": "With “Open door” for everyone allowed to open – plus door open too long, jammed, battery, night check"
+          }
+        },
+        {
+          "icon": "chat",
+          "title": {
+            "de": "Klingel im Familien-Chat",
+            "en": "Doorbell in the family chat"
+          },
+          "text": {
+            "de": "Mit dem Messenger kommt jedes Klingeln als Karte mit Bild und „Tür öffnen“ in den Chat „Familie“",
+            "en": "With the messenger every ring arrives as a card with a picture and “Open door” in the chat “Family”"
+          }
+        },
+        {
+          "icon": "key",
+          "title": {
+            "de": "Automatisch aufsperren bei Ankunft",
+            "en": "Automatic unlock on arrival"
+          },
+          "text": {
+            "de": "Über eine Regel der Familie – nur mit Zustimmung, im Zeitfenster und mit Sicherheitsnetz",
+            "en": "Through a family rule – only with consent, within the time window and with a safety net"
+          }
+        }
+      ],
+      "permissions": [
+        {
+          "icon": "network",
+          "title": {
+            "de": "Nuki Bridge im Heimnetz ansprechen",
+            "en": "Reach the Nuki Bridge in the home network"
+          },
+          "text": {
+            "de": "Nur die Bridge, die du als Zugriffsziel zuweist; der Token steht nie in einer Adresse.",
+            "en": "Only the bridge you assign as an access target; the token never appears in an address."
+          },
+          "tag": {
+            "de": "Netzwerk",
+            "en": "Network"
+          }
+        },
+        {
+          "icon": "network",
+          "title": {
+            "de": "Nuki Web und Ring in der Cloud erreichen",
+            "en": "Reach Nuki Web and Ring in the cloud"
+          },
+          "text": {
+            "de": "Nur api.nuki.io und die Ring-Server (inoffizielle Schnittstelle, ohne Gewähr) – keine anderen Adressen.",
+            "en": "Only api.nuki.io and the Ring servers (unofficial interface, no warranty) – no other addresses."
+          },
+          "tag": {
+            "de": "Netzwerk",
+            "en": "Network"
+          }
+        },
+        {
+          "icon": "door",
+          "title": {
+            "de": "Schlösser auf- und zusperren und öffnen",
+            "en": "Lock, unlock and open locks"
+          },
+          "text": {
+            "de": "Nur für Personen mit Recht auf das Schloss, im Zeitfenster, höchstens 10 Aktionen pro Minute – jede Aktion steht im Verlauf.",
+            "en": "Only for people with a right on the lock, within their time window, at most 10 actions a minute – every action is in the history."
+          },
+          "tag": {
+            "de": "Steuern",
+            "en": "Control"
+          }
+        },
+        {
+          "icon": "camera",
+          "title": {
+            "de": "Ring-Modus schalten",
+            "en": "Switch the Ring mode"
+          },
+          "text": {
+            "de": "Inaktiv, Zuhause oder Abwesend pro Standort – Admins immer, andere Personen nur mit Haken.",
+            "en": "Disarmed, Home or Away per location – admins always, other people only when ticked."
+          },
+          "tag": {
+            "de": "Steuern",
+            "en": "Control"
+          }
+        },
+        {
+          "icon": "users",
+          "title": {
+            "de": "Benutzer lesen",
+            "en": "Read users"
+          },
+          "text": {
+            "de": "Namen der Konten, damit du Rechte pro Person und Schloss vergeben kannst – keine Passwörter, keine Schlüssel.",
+            "en": "Names of the accounts so you can grant rights per person and lock – no passwords, no keys."
+          },
+          "tag": {
+            "de": "Benutzer",
+            "en": "Users"
+          }
+        },
+        {
+          "icon": "camera",
+          "title": {
+            "de": "Bilder speichern",
+            "en": "Store pictures"
+          },
+          "text": {
+            "de": "Klingel- und Bewegungsbilder 1–30 Tage (Standard 7), nur für Personen mit Recht auf das verknüpfte Schloss.",
+            "en": "Doorbell and motion pictures for 1–30 days (default 7), only for people with a right on the linked lock."
+          }
+        },
+        {
+          "icon": "bell",
+          "title": {
+            "de": "Mitteilungen senden",
+            "en": "Send notifications"
+          },
+          "text": {
+            "de": "Klingel, Bewegung, Tür & Schloss und automatisches Aufsperren – bis zu 120 pro Stunde.",
+            "en": "Doorbell, motion, door & lock and automatic unlock – up to 120 an hour."
+          }
+        },
+        {
+          "icon": "link",
+          "title": {
+            "de": "Messenger nutzen",
+            "en": "Use the messenger"
+          },
+          "text": {
+            "de": "Darf über den Messenger Chat-Nachrichten senden – für die Klingel-Karte im Familien-Chat.",
+            "en": "May send chat messages through the messenger – for the doorbell card in the family chat."
+          }
+        },
+        {
+          "icon": "clock",
+          "title": {
+            "de": "Im Hintergrund abfragen",
+            "en": "Poll in the background"
+          },
+          "text": {
+            "de": "Schlösser und Ring alle paar Sekunden, damit Klingeln und Zustände schnell ankommen.",
+            "en": "Locks and Ring every few seconds, so rings and states arrive quickly."
+          }
+        }
+      ],
+      "shows": [
+        {
+          "kind": "tile",
+          "caption": {
+            "de": "Startkachel pro Schloss",
+            "en": "Start tile per lock"
+          },
+          "value": "Zugesperrt"
+        },
+        {
+          "kind": "widget",
+          "caption": {
+            "de": "Widget „Ring-Modus“",
+            "en": "Widget “Ring mode”"
+          },
+          "value": "Zuhause"
+        },
+        {
+          "kind": "list",
+          "caption": {
+            "de": "Admin-Seite · Verlauf mit Bildern",
+            "en": "Admin page · history with pictures"
+          }
+        }
+      ],
+      "needs": {
+        "de": "Nuki Bridge oder Nuki-Web-Konto; Ring-Konto optional",
+        "en": "Nuki Bridge or Nuki Web account; Ring account optional"
+      },
+      "languages": ["de", "en"]
     },
     "gatecontrol-familie": {
       "category": "family",
@@ -42,8 +482,273 @@
         "text": {
           "de": "Regeln mit Zeitplan, Gerätewerten und Kalender: „Sonntag 18 Uhr, Elroq unter 50 % und Montag ist Arbeit – erinnere mich ans Laden.“",
           "en": "Rules with a schedule, device values and the calendar: “Sunday 6 pm, Elroq below 50 % and Monday is a work day – remind me to charge.”"
+        },
+        "tags": [
+          {
+            "icon": "clock",
+            "text": {
+              "de": "Sonntag · 18:00",
+              "en": "Sunday · 6 pm"
+            }
+          },
+          {
+            "icon": "car",
+            "text": {
+              "de": "Elroq · Ladestand < 50 %",
+              "en": "Elroq · charge level < 50 %"
+            }
+          },
+          {
+            "icon": "calendar",
+            "text": {
+              "de": "Montag: „Arbeit“ im Kalender",
+              "en": "Monday: “Work” in the calendar"
+            }
+          },
+          {
+            "icon": "bell",
+            "text": {
+              "de": "„Auto laden“ · Später · Erledigt",
+              "en": "“Charge car” · Later · Done"
+            }
+          }
+        ]
+      },
+      "adds": [
+        {
+          "icon": "app",
+          "title": {
+            "de": "App-Tab „Familie“",
+            "en": "App tab “Family”"
+          },
+          "text": {
+            "de": "Einkauf, Aufgaben, Termine, Fahrten, Orten und Erinnerungen in der GateControl-App",
+            "en": "Shopping, tasks, dates, rides, locating and reminders in the GateControl app"
+          }
+        },
+        {
+          "icon": "portal",
+          "title": {
+            "de": "Portal-Tab „Familie“",
+            "en": "Portal tab “Family”"
+          },
+          "text": {
+            "de": "Einkaufslisten, Aufgaben der Woche, Termine, Regeln und Erinnerungen im Browser",
+            "en": "Shopping lists, tasks of the week, dates, rules and reminders in the browser"
+          }
+        },
+        {
+          "icon": "page",
+          "title": {
+            "de": "Fünf Admin-Seiten",
+            "en": "Five admin pages"
+          },
+          "text": {
+            "de": "Mitglieder & Ortung, Funktionen, Anwesenheit & Smart Home, Regeln & Erinnerungen, Protokoll",
+            "en": "Members & locating, features, presence & smart home, rules & reminders, log"
+          }
+        },
+        {
+          "icon": "bell",
+          "title": {
+            "de": "Regeln und Erinnerungen",
+            "en": "Rules and reminders"
+          },
+          "text": {
+            "de": "Zeitplan, Gerätewerte und Kalender als Bedingung – Mitteilung mit Knöpfen wie „In 1 Std.“",
+            "en": "Schedule, device values and calendar as conditions – notification with buttons like “In 1 hr”"
+          }
+        },
+        {
+          "icon": "location",
+          "title": {
+            "de": "Anwesenheit mit Smart-Home-Regeln",
+            "en": "Presence with smart home rules"
+          },
+          "text": {
+            "de": "„Alle sind unterwegs“ → Licht aus: Regeln lösen Aktionen anderer Plugins aus – nur mit Zustimmung",
+            "en": "“Everyone is out” → lights off: rules run other plugins’ actions – only with consent"
+          }
+        },
+        {
+          "icon": "chat",
+          "title": {
+            "de": "Karten im Familien-Chat",
+            "en": "Cards in the family chat"
+          },
+          "text": {
+            "de": "Mit dem Messenger: „Ich gehe einkaufen“, Einkaufsbitten und Aufgaben mit Knöpfen",
+            "en": "With the messenger: “I’m going shopping”, shopping requests and tasks with buttons"
+          }
+        },
+        {
+          "icon": "tile",
+          "title": {
+            "de": "Dashboard fürs Wand-Tablet",
+            "en": "Dashboard for a wall tablet"
+          },
+          "text": {
+            "de": "Die Familie auf einen Blick, angemeldet als Kiosk-Gerät",
+            "en": "The family at a glance, signed in as a kiosk device"
+          }
+        },
+        {
+          "icon": "link",
+          "title": {
+            "de": "Dienste für andere Plugins",
+            "en": "Services for other plugins"
+          },
+          "text": {
+            "de": "Einkaufsliste, Termine, Orte und Eltern/Kinder für den Messenger",
+            "en": "Shopping list, dates, places and parents/children for the messenger"
+          }
         }
-      }
+      ],
+      "permissions": [
+        {
+          "icon": "location",
+          "title": {
+            "de": "Kinder orten – nur auf Anfrage",
+            "en": "Locate children – on request only"
+          },
+          "text": {
+            "de": "Eltern fragen den Standort an, das Kind sieht jede Abfrage; mit 18 ist Schluss. Koordinaten werden nach 7 Tagen gelöscht.",
+            "en": "Parents request the location, the child sees every request; it ends at 18. Coordinates are deleted after 7 days."
+          },
+          "tag": {
+            "de": "Standort",
+            "en": "Location"
+          }
+        },
+        {
+          "icon": "location",
+          "title": {
+            "de": "Anwesenheit und Orts-Erinnerungen",
+            "en": "Presence and place reminders"
+          },
+          "text": {
+            "de": "Zuhause/unterwegs und Orte nur für Personen, die zugestimmt haben – jede Änderung fragt erneut.",
+            "en": "Home/away and places only for people who agreed – every change asks again."
+          },
+          "tag": {
+            "de": "Standort",
+            "en": "Location"
+          }
+        },
+        {
+          "icon": "bulb",
+          "title": {
+            "de": "Schnellaktionen anderer Plugins auslösen",
+            "en": "Run other plugins’ quick actions"
+          },
+          "text": {
+            "de": "Regeln schalten z. B. Licht oder starten das Laden – nur, was die Person selbst darf, mit ihren Rechten.",
+            "en": "Rules e.g. switch lights or start charging – only what the person may do, with their rights."
+          },
+          "tag": {
+            "de": "Steuern",
+            "en": "Control"
+          }
+        },
+        {
+          "icon": "users",
+          "title": {
+            "de": "Benutzer lesen",
+            "en": "Read users"
+          },
+          "text": {
+            "de": "Namen, Profilbilder und Lieblingsfarben der Konten, damit sie Eltern oder Kinder werden – keine Passwörter.",
+            "en": "Names, profile pictures and favourite colours of the accounts, so they become parents or children – no passwords."
+          },
+          "tag": {
+            "de": "Benutzer",
+            "en": "Users"
+          }
+        },
+        {
+          "icon": "key",
+          "title": {
+            "de": "Kiosk-Geräte freigeben",
+            "en": "Allow kiosk devices"
+          },
+          "text": {
+            "de": "Mitglieder mit der Rolle „Wand-Tablet“ werden als Kiosk-Benutzer freigegeben.",
+            "en": "Members with the role “Wall tablet” are allowed as kiosk users."
+          }
+        },
+        {
+          "icon": "bell",
+          "title": {
+            "de": "Mitteilungen senden",
+            "en": "Send notifications"
+          },
+          "text": {
+            "de": "Bis zu 120 pro Stunde an genannte Personen; SOS als dringende Mitteilung auch in der Ruhezeit.",
+            "en": "Up to 120 an hour to named people; SOS as an urgent notification even during quiet hours."
+          }
+        },
+        {
+          "icon": "link",
+          "title": {
+            "de": "Dienste von Messenger und Alltag nutzen",
+            "en": "Use services of Messenger and Everyday"
+          },
+          "text": {
+            "de": "Familienchat abgleichen, Karten senden, Ort im Status zeigen und Termine aus den Alltag-Kalendern lesen.",
+            "en": "Keep the family chat in sync, send cards, show the place in the status and read events from the Everyday calendars."
+          }
+        },
+        {
+          "icon": "location",
+          "title": {
+            "de": "Karten anzeigen",
+            "en": "Show maps"
+          },
+          "text": {
+            "de": "Positionen und Orte auf OpenStreetMap-Karten – die Kacheln holt GateControl selbst.",
+            "en": "Positions and places on OpenStreetMap maps – GateControl fetches the tiles itself."
+          }
+        },
+        {
+          "icon": "data",
+          "title": {
+            "de": "Eigene Datenbank",
+            "en": "Own database"
+          },
+          "text": {
+            "de": "Listen, Aufgaben, Termine, Regeln und Protokoll bleiben auf deinem Server, getrennt von GateControl.",
+            "en": "Lists, tasks, dates, rules and the log stay on your server, separate from GateControl."
+          }
+        }
+      ],
+      "shows": [
+        {
+          "kind": "list",
+          "caption": {
+            "de": "App-Tab · Einkauf, Aufgaben, Termine",
+            "en": "App tab · shopping, tasks, dates"
+          }
+        },
+        {
+          "kind": "list",
+          "caption": {
+            "de": "Admin-Seite · Regeln & Erinnerungen",
+            "en": "Admin page · rules & reminders"
+          }
+        },
+        {
+          "kind": "list",
+          "caption": {
+            "de": "Wand-Tablet · die Familie auf einen Blick",
+            "en": "Wall tablet · the family at a glance"
+          }
+        }
+      ],
+      "needs": {
+        "de": "GateControl-App auf den Handys (für Ortung und Orts-Erinnerungen)",
+        "en": "GateControl app on the phones (for locating and place reminders)"
+      },
+      "languages": ["de", "en"]
     },
     "gatecontrol-messenger": {
       "category": "family",
@@ -54,7 +759,227 @@
       },
       "audience": "all",
       "keywords": ["chat", "messenger", "nachrichten", "messages", "gruppe", "group", "sprachnachricht", "voice", "storys", "stories", "umfrage", "poll"],
-      "related": ["gatecontrol-familie", "gatecontrol-door"]
+      "related": ["gatecontrol-familie", "gatecontrol-door"],
+      "adds": [
+        {
+          "icon": "app",
+          "title": {
+            "de": "App-Tab „Chats“",
+            "en": "App tab “Chats”"
+          },
+          "text": {
+            "de": "Einzel- und Gruppenchats in der GateControl-App und im Windows-Client",
+            "en": "Direct and group chats in the GateControl app and the Windows client"
+          }
+        },
+        {
+          "icon": "portal",
+          "title": {
+            "de": "Portal-Tab „Chats“",
+            "en": "Portal tab “Chats”"
+          },
+          "text": {
+            "de": "Dieselben Chats im Browser – mit Status, Storys, Abstimmungen und Terminen",
+            "en": "The same chats in the browser – with status, stories, polls and events"
+          }
+        },
+        {
+          "icon": "page",
+          "title": {
+            "de": "Admin-Seiten „Übersicht“ und „Protokoll“",
+            "en": "Admin pages “Overview” and “Log”"
+          },
+          "text": {
+            "de": "Nur Zahlen und Schalter – kein Nachrichtentext, keine Mitgliederliste",
+            "en": "Only numbers and switches – no message text, no member list"
+          }
+        },
+        {
+          "icon": "bell",
+          "title": {
+            "de": "Push mit Antwortfeld",
+            "en": "Push with a reply field"
+          },
+          "text": {
+            "de": "Neue Nachrichten als Mitteilung, direkt daraus antworten; Storys auf Wunsch als Zusammenfassung",
+            "en": "New messages as a notification, reply right from it; stories as a digest if you like"
+          }
+        },
+        {
+          "icon": "action",
+          "title": {
+            "de": "Haus-Aktionen im Chat",
+            "en": "Home actions in chats"
+          },
+          "text": {
+            "de": "Schnellaktionen anderer Plugins als Knopf, als Bitte oder auf Zeit freigegeben",
+            "en": "Quick actions of other plugins as a button, as a request or shared for a while"
+          }
+        },
+        {
+          "icon": "calendar",
+          "title": {
+            "de": "Termine und Abstimmungen",
+            "en": "Events and polls"
+          },
+          "text": {
+            "de": "Zu- und Absagen, Erinnerung vor Beginn, auf Wunsch im Familienkalender",
+            "en": "RSVPs, a reminder before the start, optionally in the family calendar"
+          }
+        },
+        {
+          "icon": "location",
+          "title": {
+            "de": "Live-Ankunft",
+            "en": "Live arrival"
+          },
+          "text": {
+            "de": "Die App teilt unterwegs den Standort, der Chat sieht Entfernung und Ankunftszeit",
+            "en": "The app shares the location on the way, the chat sees distance and arrival time"
+          }
+        },
+        {
+          "icon": "link",
+          "title": {
+            "de": "Dienste für andere Plugins",
+            "en": "Services for other plugins"
+          },
+          "text": {
+            "de": "Nachrichten und Karten senden – z. B. die Türklingel mit Bild oder Einkaufsbitten der Familie",
+            "en": "Send messages and cards – e.g. the doorbell with a picture or the family’s shopping requests"
+          }
+        }
+      ],
+      "permissions": [
+        {
+          "icon": "users",
+          "title": {
+            "de": "Benutzer lesen",
+            "en": "Read users"
+          },
+          "text": {
+            "de": "Die aktiven GateControl-Konten erscheinen als Kontakte – keine Passwörter, keine Schlüssel.",
+            "en": "The enabled GateControl accounts appear as contacts – no passwords, no keys."
+          },
+          "tag": {
+            "de": "Benutzer",
+            "en": "Users"
+          }
+        },
+        {
+          "icon": "data",
+          "title": {
+            "de": "Nachrichten verschlüsselt speichern",
+            "en": "Store messages encrypted"
+          },
+          "text": {
+            "de": "Texte, Standorte, Dateinamen und Gruppentitel mit AES-256; Administratoren können private Chats nicht lesen.",
+            "en": "Texts, locations, file names and group titles with AES-256; administrators cannot read private chats."
+          }
+        },
+        {
+          "icon": "data",
+          "title": {
+            "de": "Dateien speichern",
+            "en": "Store files"
+          },
+          "text": {
+            "de": "Bilder, Videos, Sprachnachrichten und Dokumente bei GateControl – bis 25 MB je Datei, Kontingent 10 GB.",
+            "en": "Pictures, videos, voice messages and documents with GateControl – up to 25 MB per file, 10 GB quota."
+          }
+        },
+        {
+          "icon": "location",
+          "title": {
+            "de": "Standort teilen",
+            "en": "Share the location"
+          },
+          "text": {
+            "de": "Nur, wenn du ihn sendest oder eine Live-Ankunft startest; die Live-Position liegt nur, solange die Ankunft läuft.",
+            "en": "Only when you send it or start a live arrival; the live position is kept only while the arrival runs."
+          },
+          "tag": {
+            "de": "Standort",
+            "en": "Location"
+          }
+        },
+        {
+          "icon": "door",
+          "title": {
+            "de": "Aktionen per Antippen auslösen",
+            "en": "Run actions on a tap"
+          },
+          "text": {
+            "de": "Haus-Aktionen wie „Tür öffnen“ laufen mit den Rechten der Person, die tippt; sensible Aktionen lassen sich nicht freigeben.",
+            "en": "Home actions like “Open door” run with the rights of the person who taps; sensitive actions cannot be shared."
+          },
+          "tag": {
+            "de": "Steuern",
+            "en": "Control"
+          }
+        },
+        {
+          "icon": "bell",
+          "title": {
+            "de": "Mitteilungen senden",
+            "en": "Send notifications"
+          },
+          "text": {
+            "de": "Chat-Nachrichten als Push mit Antwortfeld – der Text kommt nie ins Protokoll und nie per E-Mail.",
+            "en": "Chat messages as a push with a reply field – the text never goes to the log or by e-mail."
+          }
+        },
+        {
+          "icon": "app",
+          "title": {
+            "de": "Live-Ereignisse an die Apps",
+            "en": "Live events to the apps"
+          },
+          "text": {
+            "de": "Neue Nachrichten, „schreibt …“ und Lesebestätigungen kommen sofort an.",
+            "en": "New messages, “typing …” and read receipts arrive at once."
+          }
+        },
+        {
+          "icon": "chat",
+          "title": {
+            "de": "Postfach im Portal",
+            "en": "Inbox in the portal"
+          },
+          "text": {
+            "de": "Sieht, wie viele deiner Mitteilungen ungelesen sind, und den Titel der neuesten – ohne Text.",
+            "en": "Sees how many of your notifications are unread and the title of the newest – without text."
+          }
+        },
+        {
+          "icon": "link",
+          "title": {
+            "de": "Dienste der Familie nutzen",
+            "en": "Use the family’s services"
+          },
+          "text": {
+            "de": "Einkaufsliste, Familienkalender, Orte sowie Eltern und Kinder – nur, wenn Familie sie anbietet.",
+            "en": "Shopping list, family calendar, places and parents and children – only when Family offers them."
+          }
+        }
+      ],
+      "shows": [
+        {
+          "kind": "list",
+          "caption": {
+            "de": "App-Tab „Chats“ · Einzel- und Gruppenchats",
+            "en": "App tab “Chats” · direct and group chats"
+          }
+        },
+        {
+          "kind": "list",
+          "caption": {
+            "de": "Admin-Seite · Übersicht nur mit Zahlen",
+            "en": "Admin page · overview with numbers only"
+          }
+        }
+      ],
+      "languages": ["de", "en"]
     },
     "gatecontrol-midea": {
       "category": "home",
@@ -65,7 +990,204 @@
       },
       "audience": "all",
       "keywords": ["klima", "klimaanlage", "air conditioning", "midea", "kühlen", "cooling", "heizen", "heating", "temperatur", "temperature"],
-      "related": ["gatecontrol-smarthome"]
+      "related": ["gatecontrol-smarthome"],
+      "adds": [
+        {
+          "icon": "page",
+          "title": {
+            "de": "Seite „Klimaanlage“",
+            "en": "Page “Air conditioning”"
+          },
+          "text": {
+            "de": "Midea-Konto verbinden, Geräte entdecken, hinzufügen und Personen zuweisen",
+            "en": "Connect the Midea account, discover and add devices and assign them to people"
+          }
+        },
+        {
+          "icon": "portal",
+          "title": {
+            "de": "Portal: „Klimaanlage“ im Tab „Zuhause“",
+            "en": "Portal: “Air conditioning” in the tab “Home”"
+          },
+          "text": {
+            "de": "Für Personen mit zugewiesenen Geräten – mit Kacheln auf der Startseite und Treffern in der Suche",
+            "en": "For people with assigned devices – with tiles on the start page and hits in the search"
+          }
+        },
+        {
+          "icon": "action",
+          "title": {
+            "de": "Schnellaktionen",
+            "en": "Quick actions"
+          },
+          "text": {
+            "de": "Ein Ein/Aus-Schalter pro eigenem Klimagerät, mit Modus und Zieltemperatur",
+            "en": "An on/off switch per own air conditioner, with mode and target temperature"
+          }
+        },
+        {
+          "icon": "widget",
+          "title": {
+            "de": "Widget pro Klimagerät",
+            "en": "Widget per air conditioner"
+          },
+          "text": {
+            "de": "Innen- und Außentemperatur, Zieltemperatur und Modus direkt einstellen",
+            "en": "Indoor and outdoor temperature, set target temperature and mode right there"
+          }
+        },
+        {
+          "icon": "bell",
+          "title": {
+            "de": "Mitteilungen",
+            "en": "Notifications"
+          },
+          "text": {
+            "de": "Gerät nicht erreichbar, Filter reinigen und Störungen mit Fehlercode",
+            "en": "Device unreachable, clean the filter and faults with an error code"
+          }
+        },
+        {
+          "icon": "clock",
+          "title": {
+            "de": "Hintergrundabfrage",
+            "en": "Background polling"
+          },
+          "text": {
+            "de": "Fragt die Geräte im Heimnetz alle 30 Sekunden ab",
+            "en": "Polls the devices in the home network every 30 seconds"
+          }
+        }
+      ],
+      "permissions": [
+        {
+          "icon": "network",
+          "title": {
+            "de": "Midea-Cloud erreichen",
+            "en": "Reach the Midea cloud"
+          },
+          "text": {
+            "de": "Nur die Midea-Server mp-prod.appsmb.com und mapp.appsmb.com – für Konto und Cloud-Geräte.",
+            "en": "Only the Midea servers mp-prod.appsmb.com and mapp.appsmb.com – for the account and cloud devices."
+          },
+          "tag": {
+            "de": "Netzwerk",
+            "en": "Network"
+          }
+        },
+        {
+          "icon": "network",
+          "title": {
+            "de": "Klimageräte im Heimnetz ansprechen",
+            "en": "Reach air conditioners in the home network"
+          },
+          "text": {
+            "de": "Nur über Zugriffsziele, die du zuweist (TCP 6444, UDP 6445/20086).",
+            "en": "Only through access targets you assign (TCP 6444, UDP 6445/20086)."
+          },
+          "tag": {
+            "de": "Netzwerk",
+            "en": "Network"
+          }
+        },
+        {
+          "icon": "network",
+          "title": {
+            "de": "Geräte im lokalen Netz suchen",
+            "en": "Discover devices in the local network"
+          },
+          "text": {
+            "de": "Lokale Suche per UDP 6445 und 20086 – nur, wenn ein Administrator sie erlaubt.",
+            "en": "Local discovery via UDP 6445 and 20086 – only when an administrator allows it."
+          },
+          "tag": {
+            "de": "Netzwerk",
+            "en": "Network"
+          }
+        },
+        {
+          "icon": "action",
+          "title": {
+            "de": "Klimageräte steuern",
+            "en": "Control air conditioners"
+          },
+          "text": {
+            "de": "Ein/Aus, Zieltemperatur, Modus, Lüfter, Turbo und Eco – Personen nur für Geräte, die ihnen zugewiesen sind.",
+            "en": "Power, target temperature, mode, fan, turbo and eco – people only for devices assigned to them."
+          },
+          "tag": {
+            "de": "Steuern",
+            "en": "Control"
+          }
+        },
+        {
+          "icon": "users",
+          "title": {
+            "de": "Benutzer lesen",
+            "en": "Read users"
+          },
+          "text": {
+            "de": "Namen der Konten, damit du Geräte Haushaltsmitgliedern zuweisen kannst – keine Passwörter, keine Schlüssel.",
+            "en": "Names of the accounts so you can assign devices to household members – no passwords, no keys."
+          },
+          "tag": {
+            "de": "Benutzer",
+            "en": "Users"
+          }
+        },
+        {
+          "icon": "bell",
+          "title": {
+            "de": "Mitteilungen senden",
+            "en": "Send notifications"
+          },
+          "text": {
+            "de": "An die zugewiesenen Personen; jede Person kann die Themen selbst abschalten.",
+            "en": "To the assigned people; everyone can switch the topics off."
+          }
+        },
+        {
+          "icon": "key",
+          "title": {
+            "de": "Zugangsdaten verschlüsselt speichern",
+            "en": "Store credentials encrypted"
+          },
+          "text": {
+            "de": "Passwort und Sitzung des Midea-Kontos sowie die V3-Schlüssel als verschlüsselte Plugin-Geheimnisse.",
+            "en": "Password and session of the Midea account and the V3 keys as encrypted plugin secrets."
+          }
+        }
+      ],
+      "shows": [
+        {
+          "kind": "widget",
+          "caption": {
+            "de": "Widget pro Klimagerät",
+            "en": "Widget per air conditioner"
+          },
+          "value": "23 °C"
+        },
+        {
+          "kind": "tile",
+          "caption": {
+            "de": "Kachel auf der Startseite des Portals",
+            "en": "Tile on the portal’s start page"
+          },
+          "value": "Kühlen"
+        },
+        {
+          "kind": "list",
+          "caption": {
+            "de": "Portal „Zuhause“ · Klimaanlage",
+            "en": "Portal “Home” · air conditioning"
+          }
+        }
+      ],
+      "needs": {
+        "de": "Midea-Konto (MSmartHome oder NetHome Plus)",
+        "en": "Midea account (MSmartHome or NetHome Plus)"
+      },
+      "languages": ["de", "en"]
     },
     "gatecontrol-proxmox": {
       "category": "infrastructure",
@@ -76,7 +1198,185 @@
       },
       "audience": "admins",
       "keywords": ["proxmox", "pve", "server", "virtualisierung", "virtualization", "vm", "container", "lxc", "cluster", "backup", "homelab"],
-      "related": ["gatecontrol-synology"]
+      "related": ["gatecontrol-synology"],
+      "adds": [
+        {
+          "icon": "page",
+          "title": {
+            "de": "Seite „Proxmox VE“",
+            "en": "Page “Proxmox VE”"
+          },
+          "text": {
+            "de": "Übersicht, VMs & Container, Speicher & Backups und Verbindungen",
+            "en": "Overview, VMs & containers, storage & backups and connections"
+          }
+        },
+        {
+          "icon": "action",
+          "title": {
+            "de": "Schnellaktionen für Administratoren",
+            "en": "Quick actions for administrators"
+          },
+          "text": {
+            "de": "Gäste starten, sauber herunterfahren und neu starten, Verbindung sofort aktualisieren",
+            "en": "Start, cleanly shut down and reboot guests, refresh a connection at once"
+          }
+        },
+        {
+          "icon": "widget",
+          "title": {
+            "de": "Widgets",
+            "en": "Widgets"
+          },
+          "text": {
+            "de": "Je Verbindung aktive Gäste mit CPU, RAM und Speicher; je Gast CPU-Last, RAM und Laufzeit",
+            "en": "Per connection active guests with CPU, RAM and storage; per guest CPU load, RAM and uptime"
+          }
+        },
+        {
+          "icon": "tile",
+          "title": {
+            "de": "Startkachel „Proxmox“ in den Apps",
+            "en": "Start tile “Proxmox” in the apps"
+          },
+          "text": {
+            "de": "„2/3 aktiv“ über alle Verbindungen – gelb bei Problemen, rot bei Ausfall",
+            "en": "“2/3 active” across all connections – yellow on problems, red on outages"
+          }
+        },
+        {
+          "icon": "bell",
+          "title": {
+            "de": "Mitteilungen",
+            "en": "Notifications"
+          },
+          "text": {
+            "de": "Host oder Node nicht erreichbar, Gast unerwartet gestoppt, Speicher fast voll, Backup fehlgeschlagen",
+            "en": "Host or node unreachable, guest stopped unexpectedly, storage almost full, backup failed"
+          }
+        },
+        {
+          "icon": "clock",
+          "title": {
+            "de": "Hintergrundabfrage",
+            "en": "Background polling"
+          },
+          "text": {
+            "de": "Jede Verbindung standardmäßig alle 60 Sekunden, nach Fehlern seltener",
+            "en": "Each connection every 60 seconds by default, less often after errors"
+          }
+        }
+      ],
+      "permissions": [
+        {
+          "icon": "network",
+          "title": {
+            "de": "Proxmox-API im Heimnetz ansprechen",
+            "en": "Reach the Proxmox API in the home network"
+          },
+          "text": {
+            "de": "Nur Hosts oder Cluster, die du als Zugriffsziel zuweist (Port 8006); das Token-Secret wird verschlüsselt gespeichert.",
+            "en": "Only hosts or clusters you assign as an access target (port 8006); the token secret is stored encrypted."
+          },
+          "tag": {
+            "de": "Netzwerk",
+            "en": "Network"
+          }
+        },
+        {
+          "icon": "server",
+          "title": {
+            "de": "VMs und Container steuern",
+            "en": "Control VMs and containers"
+          },
+          "text": {
+            "de": "Starten, herunterfahren, stoppen und neu starten – nur Administratoren, mit Rückfrage und im Protokoll. Nodes nie.",
+            "en": "Start, shut down, stop and reboot – administrators only, with confirmation and in the log. Never nodes."
+          },
+          "tag": {
+            "de": "Steuern",
+            "en": "Control"
+          }
+        },
+        {
+          "icon": "users",
+          "title": {
+            "de": "Benutzer lesen",
+            "en": "Read users"
+          },
+          "text": {
+            "de": "Um Administratoren zu erkennen und ihre Namen bei Aktionen festzuhalten – keine Passwörter.",
+            "en": "To recognise administrators and record their names with actions – no passwords."
+          },
+          "tag": {
+            "de": "Benutzer",
+            "en": "Users"
+          }
+        },
+        {
+          "icon": "bell",
+          "title": {
+            "de": "Mitteilungen senden",
+            "en": "Send notifications"
+          },
+          "text": {
+            "de": "Standardmäßig an alle Administratoren; jede Person kann Themen abschalten.",
+            "en": "To all administrators by default; everyone can switch topics off."
+          }
+        },
+        {
+          "icon": "portal",
+          "title": {
+            "de": "Portal-Bereich nur für die Apps",
+            "en": "Portal area for the apps only"
+          },
+          "text": {
+            "de": "Trägt die Startkachel und die Schnellaktionen der Apps – im Portal selbst erscheint nichts.",
+            "en": "Carries the apps’ start tile and quick actions – nothing appears in the portal itself."
+          }
+        },
+        {
+          "icon": "data",
+          "title": {
+            "de": "Eigene Datenbank",
+            "en": "Own database"
+          },
+          "text": {
+            "de": "Verbindungen, überwachte Gäste, letzter Stand und Aktionen – getrennt von GateControl.",
+            "en": "Connections, monitored guests, last state and actions – separate from GateControl."
+          }
+        }
+      ],
+      "shows": [
+        {
+          "kind": "tile",
+          "caption": {
+            "de": "Startkachel in der App",
+            "en": "Start tile in the app"
+          },
+          "value": "2/3"
+        },
+        {
+          "kind": "list",
+          "caption": {
+            "de": "Admin-Seite · VMs und Container",
+            "en": "Admin page · VMs and containers"
+          }
+        },
+        {
+          "kind": "widget",
+          "caption": {
+            "de": "Widget „Gäste aktiv“",
+            "en": "Widget “Guests active”"
+          },
+          "value": "12/14"
+        }
+      ],
+      "needs": {
+        "de": "Proxmox-API-Token (PVEAuditor, zum Steuern VM.PowerMgmt)",
+        "en": "Proxmox API token (PVEAuditor, VM.PowerMgmt to control)"
+      },
+      "languages": ["de", "en"]
     },
     "gatecontrol-skoda": {
       "category": "mobility",
@@ -87,7 +1387,200 @@
       },
       "audience": "all",
       "keywords": ["auto", "car", "fahrzeug", "vehicle", "skoda", "škoda", "myskoda", "laden", "charging", "elektroauto", "ev", "klima"],
-      "related": ["gatecontrol-familie"]
+      "related": ["gatecontrol-familie"],
+      "adds": [
+        {
+          "icon": "page",
+          "title": {
+            "de": "Seite „Fahrzeuge“",
+            "en": "Page “Vehicles”"
+          },
+          "text": {
+            "de": "MySkoda-Konten verbinden, Fahrzeuge sehen und Personen zuweisen",
+            "en": "Connect MySkoda accounts, see the vehicles and assign them to people"
+          }
+        },
+        {
+          "icon": "portal",
+          "title": {
+            "de": "Portal: „Fahrzeuge“ im Tab „Fahrzeug“",
+            "en": "Portal: “Vehicles” in the tab “Vehicle”"
+          },
+          "text": {
+            "de": "Ladestand, Reichweite, Zustand und Befehle – Standort und Steuern nur nach Anmeldung",
+            "en": "Charge level, range, condition and commands – location and control only after sign-in"
+          }
+        },
+        {
+          "icon": "action",
+          "title": {
+            "de": "Schnellaktionen",
+            "en": "Quick actions"
+          },
+          "text": {
+            "de": "Klimatisierung, Laden, Scheibenheizung und Schloss als Schalter",
+            "en": "Climate, charging, window heating and lock as switches"
+          }
+        },
+        {
+          "icon": "widget",
+          "title": {
+            "de": "Widget pro Fahrzeug",
+            "en": "Widget per vehicle"
+          },
+          "text": {
+            "de": "Ladestand als Akku, Reichweite und „Lädt“ oder „Klimatisierung an“",
+            "en": "Charge level as a battery, range and “Charging” or “Climate on”"
+          }
+        },
+        {
+          "icon": "tile",
+          "title": {
+            "de": "Kachel auf der Startseite",
+            "en": "Tile on the start page"
+          },
+          "text": {
+            "de": "Ladestand, Reichweite und Schloss – im Portal und in den Apps",
+            "en": "Charge level, range and lock – in the portal and the apps"
+          }
+        },
+        {
+          "icon": "bell",
+          "title": {
+            "de": "Mitteilungen",
+            "en": "Notifications"
+          },
+          "text": {
+            "de": "Laden abgeschlossen, Akku niedrig, Fahrzeug nicht verriegelt, Klimatisierung fertig",
+            "en": "Charging complete, battery low, vehicle not locked, climate ready"
+          }
+        },
+        {
+          "icon": "clock",
+          "title": {
+            "de": "Hintergrundabfrage",
+            "en": "Background polling"
+          },
+          "text": {
+            "de": "Fragt den Fahrzeugzustand im eingestellten Intervall ab und bremst bei Rate-Limits",
+            "en": "Polls the vehicle state at the set interval and backs off on rate limits"
+          }
+        }
+      ],
+      "permissions": [
+        {
+          "icon": "network",
+          "title": {
+            "de": "Škoda-Cloud erreichen",
+            "en": "Reach the Škoda cloud"
+          },
+          "text": {
+            "de": "Nur VW-Identity, die MySkoda-Schnittstelle und die Škoda-Bildserver – keine anderen Adressen.",
+            "en": "Only VW Identity, the MySkoda interface and the Škoda image servers – no other addresses."
+          },
+          "tag": {
+            "de": "Netzwerk",
+            "en": "Network"
+          }
+        },
+        {
+          "icon": "location",
+          "title": {
+            "de": "Fahrzeugposition mit Adresse",
+            "en": "Vehicle location with address"
+          },
+          "text": {
+            "de": "Die Position kommt von Škoda, die Adresse von OpenStreetMap (Nominatim); im Portal nur nach Anmeldung.",
+            "en": "The position comes from Škoda, the address from OpenStreetMap (Nominatim); in the portal only after sign-in."
+          },
+          "tag": {
+            "de": "Standort",
+            "en": "Location"
+          }
+        },
+        {
+          "icon": "car",
+          "title": {
+            "de": "Fahrzeug steuern",
+            "en": "Control the vehicle"
+          },
+          "text": {
+            "de": "Klima, Laden, Ladelimit, Scheibenheizung, Abfahrtstimer, Ver- und Entriegeln mit S-PIN – nur für zugewiesene Personen.",
+            "en": "Climate, charging, charge limit, window heating, departure timers, locking with the S-PIN – only for assigned people."
+          },
+          "tag": {
+            "de": "Steuern",
+            "en": "Control"
+          }
+        },
+        {
+          "icon": "users",
+          "title": {
+            "de": "Benutzer lesen",
+            "en": "Read users"
+          },
+          "text": {
+            "de": "Namen der Konten, damit du Fahrzeuge Haushaltsmitgliedern zuweisen kannst – keine Passwörter, keine Schlüssel.",
+            "en": "Names of the accounts so you can assign vehicles to household members – no passwords, no keys."
+          },
+          "tag": {
+            "de": "Benutzer",
+            "en": "Users"
+          }
+        },
+        {
+          "icon": "key",
+          "title": {
+            "de": "Zugangsdaten verschlüsselt speichern",
+            "en": "Store credentials encrypted"
+          },
+          "text": {
+            "de": "MySkoda-Passwort, S-PIN und Sitzung als verschlüsselte Plugin-Geheimnisse – die S-PIN steht nie im Protokoll.",
+            "en": "MySkoda password, S-PIN and session as encrypted plugin secrets – the S-PIN is never logged."
+          }
+        },
+        {
+          "icon": "bell",
+          "title": {
+            "de": "Mitteilungen senden",
+            "en": "Send notifications"
+          },
+          "text": {
+            "de": "An die zugewiesenen Personen; jede Person kann die Themen selbst abschalten.",
+            "en": "To the assigned people; everyone can switch the topics off."
+          }
+        }
+      ],
+      "shows": [
+        {
+          "kind": "widget",
+          "caption": {
+            "de": "Widget pro Fahrzeug",
+            "en": "Widget per vehicle"
+          },
+          "value": "80 %"
+        },
+        {
+          "kind": "tile",
+          "caption": {
+            "de": "Startkachel in der App",
+            "en": "Start tile in the app"
+          },
+          "value": "390 km"
+        },
+        {
+          "kind": "list",
+          "caption": {
+            "de": "Portal „Fahrzeug“ · deine Fahrzeuge",
+            "en": "Portal “Vehicle” · your vehicles"
+          }
+        }
+      ],
+      "needs": {
+        "de": "MySkoda-Konto (S-PIN zum Ver- und Entriegeln)",
+        "en": "MySkoda account (S-PIN for locking and unlocking)"
+      },
+      "languages": ["de", "en"]
     },
     "gatecontrol-smarthome": {
       "category": "home",
@@ -98,7 +1591,174 @@
       },
       "audience": "all",
       "keywords": ["smarthome", "licht", "light", "lampe", "steckdose", "plug", "szene", "scene", "sensor", "phoscon", "deconz", "zigbee"],
-      "related": ["gatecontrol-midea", "gatecontrol-door"]
+      "related": ["gatecontrol-midea", "gatecontrol-door"],
+      "adds": [
+        {
+          "icon": "page",
+          "title": {
+            "de": "Seiten „Smart Home“ und „Logikketten“",
+            "en": "Pages “Smart Home” and “Logic chains”"
+          },
+          "text": {
+            "de": "Gateways verbinden, Geräte zuweisen und Regeln auf dem Gateway anlegen",
+            "en": "Connect gateways, assign devices and create rules on the gateway"
+          }
+        },
+        {
+          "icon": "portal",
+          "title": {
+            "de": "Portal: „Smart Home“ im Tab „Zuhause“",
+            "en": "Portal: “Smart Home” in the tab “Home”"
+          },
+          "text": {
+            "de": "Schalten, dimmen und Farben für zugewiesene Geräte – mit Kacheln und Treffern in der Suche",
+            "en": "Switch, dim and colour assigned devices – with tiles and hits in the search"
+          }
+        },
+        {
+          "icon": "action",
+          "title": {
+            "de": "Schnellaktionen",
+            "en": "Quick actions"
+          },
+          "text": {
+            "de": "Schalter für eigene Lampen, Steckdosen und Gruppen, Tasten für Szenen",
+            "en": "Switches for own lights, plugs and groups, buttons for scenes"
+          }
+        },
+        {
+          "icon": "widget",
+          "title": {
+            "de": "Widget für dimmbare Lampen und Gruppen",
+            "en": "Widget for dimmable lights and groups"
+          },
+          "text": {
+            "de": "Helligkeit in Prozent mit Regler",
+            "en": "Brightness in percent with a slider"
+          }
+        },
+        {
+          "icon": "bell",
+          "title": {
+            "de": "Mitteilungen",
+            "en": "Notifications"
+          },
+          "text": {
+            "de": "Alarm bei Wasser, Rauch oder CO, Fenster lange offen, Batterie schwach, Gateway nicht erreichbar",
+            "en": "Alarm on water, smoke or CO, window open for long, battery low, gateway unreachable"
+          }
+        },
+        {
+          "icon": "clock",
+          "title": {
+            "de": "Hintergrundabfrage",
+            "en": "Background polling"
+          },
+          "text": {
+            "de": "Fragt die Gateways im eingestellten Intervall ab",
+            "en": "Polls the gateways at the set interval"
+          }
+        }
+      ],
+      "permissions": [
+        {
+          "icon": "network",
+          "title": {
+            "de": "Phoscon/deCONZ-Gateway im Heimnetz ansprechen",
+            "en": "Reach the Phoscon/deCONZ gateway in the home network"
+          },
+          "text": {
+            "de": "Nur Gateways, die du als Zugriffsziel zuweist; die API-Keys werden verschlüsselt gespeichert.",
+            "en": "Only gateways you assign as an access target; the API keys are stored encrypted."
+          },
+          "tag": {
+            "de": "Netzwerk",
+            "en": "Network"
+          }
+        },
+        {
+          "icon": "bulb",
+          "title": {
+            "de": "Lichter, Steckdosen und Szenen schalten",
+            "en": "Switch lights, plugs and scenes"
+          },
+          "text": {
+            "de": "Personen schalten nur Geräte, die ihnen ein Administrator zugewiesen hat – geprüft bei jedem Auslösen.",
+            "en": "People only switch devices an administrator assigned to them – checked on every use."
+          },
+          "tag": {
+            "de": "Steuern",
+            "en": "Control"
+          }
+        },
+        {
+          "icon": "users",
+          "title": {
+            "de": "Benutzer lesen",
+            "en": "Read users"
+          },
+          "text": {
+            "de": "Namen der Konten, damit du Geräte Haushaltsmitgliedern zuweisen kannst – keine Passwörter, keine Schlüssel.",
+            "en": "Names of the accounts so you can assign devices to household members – no passwords, no keys."
+          },
+          "tag": {
+            "de": "Benutzer",
+            "en": "Users"
+          }
+        },
+        {
+          "icon": "bell",
+          "title": {
+            "de": "Mitteilungen senden",
+            "en": "Send notifications"
+          },
+          "text": {
+            "de": "Alarme mit hoher Priorität; jede Person kann die Themen selbst abschalten.",
+            "en": "Alarms with high priority; everyone can switch the topics off."
+          }
+        },
+        {
+          "icon": "data",
+          "title": {
+            "de": "Eigene Datenbank",
+            "en": "Own database"
+          },
+          "text": {
+            "de": "Gateways, Geräte, Besitzer und Logikketten – getrennt von GateControl.",
+            "en": "Gateways, devices, owners and logic chains – separate from GateControl."
+          }
+        }
+      ],
+      "shows": [
+        {
+          "kind": "widget",
+          "caption": {
+            "de": "Widget „Wohnzimmer“",
+            "en": "Widget “Living room”"
+          },
+          "value": "60 %"
+        },
+        {
+          "kind": "tile",
+          "caption": {
+            "de": "Kachel auf der Startseite des Portals",
+            "en": "Tile on the portal’s start page"
+          },
+          "value": "21,5 °C"
+        },
+        {
+          "kind": "list",
+          "caption": {
+            "de": "Portal „Zuhause“ · Smart Home",
+            "en": "Portal “Home” · smart home"
+          }
+        }
+      ],
+      "needs": {
+        "de": "Phoscon/deCONZ-Gateway im Heimnetz",
+        "en": "Phoscon/deCONZ gateway in the home network"
+      },
+      "languages": ["de", "en"]
     },
     "gatecontrol-synology": {
       "category": "infrastructure",
@@ -109,7 +1769,170 @@
       },
       "audience": "admins",
       "keywords": ["nas", "synology", "dsm", "speicher", "storage", "festplatte", "drive", "backup", "hyper backup", "s.m.a.r.t.", "usv", "ups"],
-      "related": ["gatecontrol-proxmox"]
+      "related": ["gatecontrol-proxmox"],
+      "adds": [
+        {
+          "icon": "page",
+          "title": {
+            "de": "Seite „NAS (Synology)“",
+            "en": "Page “NAS (Synology)”"
+          },
+          "text": {
+            "de": "NAS-Karten mit Status, Volumes, Pools, Laufwerken, Sicherungen und USV",
+            "en": "NAS cards with status, volumes, pools, drives, backups and UPS"
+          }
+        },
+        {
+          "icon": "action",
+          "title": {
+            "de": "Schnellaktionen für Administratoren",
+            "en": "Quick actions for administrators"
+          },
+          "text": {
+            "de": "Aktualisieren, „Backup jetzt“, Neustart und Herunterfahren je NAS",
+            "en": "Refresh, “Back up now”, reboot and shut down per NAS"
+          }
+        },
+        {
+          "icon": "widget",
+          "title": {
+            "de": "NAS-Widget",
+            "en": "NAS widget"
+          },
+          "text": {
+            "de": "Speicher belegt, CPU, RAM, Temperatur und der Zustand als Schild",
+            "en": "Storage used, CPU, RAM, temperature and the state as a shield"
+          }
+        },
+        {
+          "icon": "tile",
+          "title": {
+            "de": "Startkachel je NAS in den Apps",
+            "en": "Start tile per NAS in the apps"
+          },
+          "text": {
+            "de": "„62 % belegt“ mit Speicher, Temperatur und Zustand",
+            "en": "“62 % used” with storage, temperature and state"
+          }
+        },
+        {
+          "icon": "bell",
+          "title": {
+            "de": "Mitteilungen",
+            "en": "Notifications"
+          },
+          "text": {
+            "de": "Nicht erreichbar, Speicher beeinträchtigt oder fast voll, Laufwerksprobleme, Updates, Backup fehlgeschlagen",
+            "en": "Unreachable, storage degraded or almost full, drive problems, updates, backup failed"
+          }
+        },
+        {
+          "icon": "clock",
+          "title": {
+            "de": "Hintergrundabfrage",
+            "en": "Background polling"
+          },
+          "text": {
+            "de": "Fragt jedes NAS standardmäßig alle 120 Sekunden ab",
+            "en": "Polls each NAS every 120 seconds by default"
+          }
+        }
+      ],
+      "permissions": [
+        {
+          "icon": "network",
+          "title": {
+            "de": "Synology-NAS im Heimnetz ansprechen",
+            "en": "Reach Synology NAS in the home network"
+          },
+          "text": {
+            "de": "Nur NAS, die du als Zugriffsziel zuweist; Benutzername, Passwort und Geräte-Token werden verschlüsselt gespeichert.",
+            "en": "Only NAS you assign as an access target; user name, password and device token are stored encrypted."
+          },
+          "tag": {
+            "de": "Netzwerk",
+            "en": "Network"
+          }
+        },
+        {
+          "icon": "server",
+          "title": {
+            "de": "NAS neu starten, herunterfahren, sichern",
+            "en": "Reboot, shut down and back up the NAS"
+          },
+          "text": {
+            "de": "Nur Administratoren, mit Rückfrage und im Protokoll; eine Regel kann das NAS nie herunterfahren.",
+            "en": "Administrators only, with confirmation and in the log; a rule can never shut the NAS down."
+          },
+          "tag": {
+            "de": "Steuern",
+            "en": "Control"
+          }
+        },
+        {
+          "icon": "bell",
+          "title": {
+            "de": "Mitteilungen senden",
+            "en": "Send notifications"
+          },
+          "text": {
+            "de": "Wer welche Meldung bekommt, legst du unter System › Benachrichtigungen fest.",
+            "en": "Who gets which notification is set under System › Notifications."
+          }
+        },
+        {
+          "icon": "portal",
+          "title": {
+            "de": "Portal-Bereich nur für die Apps",
+            "en": "Portal area for the apps only"
+          },
+          "text": {
+            "de": "Trägt die Startkacheln der Apps – im Web-Portal erscheint nichts.",
+            "en": "Carries the apps’ start tiles – nothing appears in the web portal."
+          }
+        },
+        {
+          "icon": "data",
+          "title": {
+            "de": "Eigene Datenbank",
+            "en": "Own database"
+          },
+          "text": {
+            "de": "NAS, letzter Stand und Aktionen – getrennt von GateControl.",
+            "en": "NAS, last state and actions – separate from GateControl."
+          }
+        }
+      ],
+      "shows": [
+        {
+          "kind": "tile",
+          "caption": {
+            "de": "Startkachel in der App",
+            "en": "Start tile in the app"
+          },
+          "value": "62 %"
+        },
+        {
+          "kind": "widget",
+          "caption": {
+            "de": "Widget „Speicher belegt“",
+            "en": "Widget “Storage used”"
+          },
+          "value": "62 %"
+        },
+        {
+          "kind": "list",
+          "caption": {
+            "de": "Admin-Seite · NAS mit Laufwerken",
+            "en": "Admin page · NAS with drives"
+          }
+        }
+      ],
+      "needs": {
+        "de": "DSM-Konto mit Administratorrechten auf dem NAS",
+        "en": "DSM account with administrator rights on the NAS"
+      },
+      "languages": ["de", "en"]
     }
   }
 }

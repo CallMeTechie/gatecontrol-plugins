@@ -13,18 +13,31 @@
 //   audience   all | admins
 //   keywords   ≤ 12 lowercase search words (German and English), each ≤ 32 characters
 //   related    ≤ 4 other released plugin ids ("passt gut dazu")
-//   highlight  { version, title: { de, en } ≤ 80, text: { de, en } ≤ 280 }; version has a CHANGELOG section
+//   highlight  { version, title: { de, en } ≤ 80, text: { de, en } ≤ 280, tags? }; version has a CHANGELOG section
+//              tags: ≤ 4 chips beside the highlight, { icon, text: { de, en } ≤ 40 }
+// Detail page of the store:
+//   adds         ≤ 8 × { icon, title: { de, en } ≤ 80, text: { de, en } ≤ 120 }  "Was <Plugin> hinzufügt"
+//   permissions  ≤ 10 × { icon, title: { de, en } ≤ 80, text: { de, en } ≤ 200, tag?: { de, en } ≤ 24 }
+//                "Das darf das Plugin" – tag only on sensitive ones (Netzwerk, Steuern, Standort, Benutzer …)
+//   shows        ≤ 3 × { kind: tile | list | widget, caption: { de, en } ≤ 60, value?: string ≤ 12 }
+//                captions of the wireframes "So sieht es bei dir aus"
+//   needs        { de, en } ≤ 80  what it needs besides GateControl (an account, a token, a device)
+//   languages    non-empty subset of de, en
+// icon of adds, permissions and highlight tags: one of DETAIL_ICONS below.
 
 const fs = require('node:fs');
 const path = require('node:path');
 const lib = require('./lib');
 
 const FILE = path.join(__dirname, '..', 'catalog-meta.json');
-const FIELDS = ['category', 'icon', 'summary', 'audience', 'keywords', 'related', 'highlight'];
+const FIELDS = ['category', 'icon', 'summary', 'audience', 'keywords', 'related', 'highlight', 'adds', 'permissions', 'shows', 'needs', 'languages'];
 const CATEGORIES = ['family', 'home', 'mobility', 'infrastructure', 'other'];
 const ICONS = ['family', 'chat', 'calendar', 'door', 'bulb', 'snowflake', 'car', 'server', 'nas', 'puzzle'];
 const AUDIENCES = ['all', 'admins'];
 const LANGS = ['de', 'en'];
+const DETAIL_ICONS = ['page', 'app', 'portal', 'widget', 'tile', 'action', 'bell', 'clock', 'data', 'network', 'chat', 'key',
+  'location', 'users', 'door', 'calendar', 'camera', 'car', 'bulb', 'server', 'shield', 'link'];
+const SHOW_KINDS = ['tile', 'list', 'widget'];
 
 const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 
@@ -70,6 +83,24 @@ function validateMeta(raw, { ids, changelog } = {}) {
   const oneOf = (where, v, list) => {
     if (!list.includes(v)) errors.push(`${where}: "${v}" is not one of ${list.join(', ')}`);
   };
+  // array of objects with the given keys (optional ones end in "?"), each checked by `item`
+  const rows = (where, v, max, keys, item) => {
+    if (!Array.isArray(v)) { errors.push(`${where}: not an array`); return; }
+    if (!v.length) errors.push(`${where}: empty (leave it out instead)`);
+    if (v.length > max) errors.push(`${where}: ${v.length} (max ${max})`);
+    const known = keys.map((k) => k.replace(/\?$/, ''));
+    v.forEach((x, i) => {
+      const w = `${where}[${i}]`;
+      if (!isObj(x)) { errors.push(`${w}: not an object`); return; }
+      for (const k of Object.keys(x)) if (!known.includes(k)) errors.push(`${w}: unknown key "${k}"`);
+      item(w, x);
+    });
+  };
+  const iconText = (titleMax, textMax) => (w, x) => {
+    oneOf(`${w}.icon`, x.icon, DETAIL_ICONS);
+    text(`${w}.title`, x.title, titleMax);
+    text(`${w}.text`, x.text, textMax);
+  };
 
   for (const [id, m] of Object.entries(raw.plugins)) {
     const at = (k) => `${id}: ${k}`;
@@ -107,11 +138,43 @@ function validateMeta(raw, { ids, changelog } = {}) {
       const h = m.highlight;
       if (!isObj(h)) errors.push(at('highlight: not an object'));
       else {
-        for (const k of Object.keys(h)) if (!['version', 'title', 'text'].includes(k)) errors.push(at(`highlight: unknown key "${k}"`));
+        for (const k of Object.keys(h)) if (!['version', 'title', 'text', 'tags'].includes(k)) errors.push(at(`highlight: unknown key "${k}"`));
         if (typeof h.version !== 'string' || !lib.parseSemver(h.version)) errors.push(at(`highlight.version: "${h.version}" is not a version`));
         else if (ids.has(id) && !changelog(id, h.version)) errors.push(at(`highlight.version: no "## ${h.version}" section in CHANGELOG.md`));
         text(at('highlight.title'), h.title, 80);
         text(at('highlight.text'), h.text, 280);
+        if (h.tags !== undefined) {
+          rows(at('highlight.tags'), h.tags, 4, ['icon', 'text'], (w, x) => {
+            oneOf(`${w}.icon`, x.icon, DETAIL_ICONS);
+            text(`${w}.text`, x.text, 40);
+          });
+        }
+      }
+    }
+    if (m.adds !== undefined) rows(at('adds'), m.adds, 8, ['icon', 'title', 'text'], iconText(80, 120));
+    if (m.permissions !== undefined) {
+      rows(at('permissions'), m.permissions, 10, ['icon', 'title', 'text', 'tag?'], (w, x) => {
+        iconText(80, 200)(w, x);
+        if (x.tag !== undefined) text(`${w}.tag`, x.tag, 24);
+      });
+    }
+    if (m.shows !== undefined) {
+      rows(at('shows'), m.shows, 3, ['kind', 'caption', 'value?'], (w, x) => {
+        oneOf(`${w}.kind`, x.kind, SHOW_KINDS);
+        text(`${w}.caption`, x.caption, 60);
+        if (x.value !== undefined) {
+          if (typeof x.value !== 'string' || !x.value.trim() || x.value !== x.value.trim()) errors.push(`${w}.value: invalid "${x.value}"`);
+          else if (x.value.length > 12) errors.push(`${w}.value: ${x.value.length} characters (max 12)`);
+        }
+      });
+    }
+    if (m.needs !== undefined) text(at('needs'), m.needs, 80);
+    if (m.languages !== undefined) {
+      if (!Array.isArray(m.languages)) errors.push(at('languages: not an array'));
+      else {
+        if (!m.languages.length) errors.push(at('languages: empty'));
+        for (const l of m.languages) oneOf(at('languages'), l, LANGS);
+        if (new Set(m.languages).size !== m.languages.length) errors.push(at('languages: duplicates'));
       }
     }
   }
@@ -138,4 +201,4 @@ function check(file = FILE) {
 
 if (require.main === module && !check()) process.exit(1);
 
-module.exports = { FILE, FIELDS, CATEGORIES, ICONS, AUDIENCES, readMeta, pick, validateMeta, validateFile, check };
+module.exports = { FILE, FIELDS, CATEGORIES, ICONS, AUDIENCES, DETAIL_ICONS, SHOW_KINDS, readMeta, pick, validateMeta, validateFile, check };

@@ -16,7 +16,10 @@
 //               "versions": [<entries, newest first>],
 //               // optional store metadata from catalog-meta.json (tools/catalog-meta.js), only when set:
 //               "category", "icon", "summary": { de, en }, "audience", "keywords": [], "related": [],
-//               "highlight": { "version", "title": { de, en }, "text": { de, en } } }
+//               "highlight": { "version", "title": { de, en }, "text": { de, en }, "tags": [{ icon, text }] },
+//               // detail page: "Was … hinzufügt", "Das darf das Plugin", "So sieht es bei dir aus":
+//               "adds": [{ icon, title, text }], "permissions": [{ icon, title, text, tag? }],
+//               "shows": [{ kind, caption, value? }], "needs": { de, en }, "languages": ["de", "en"] }
 //   }
 // }
 //
