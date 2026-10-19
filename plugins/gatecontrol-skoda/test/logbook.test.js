@@ -161,12 +161,18 @@ test('quick action: the last trip business/private, the widget with the month an
   return withHost({ cloud, gatecontrol: GC }, async (host) => {
     const { vehicleId } = await connected(host, cloud);
     await asAdmin(host, 'PUT', `/vehicles/${vehicleId}/owners`, { user_ids: [ADA.id] });
-    assert.ok(!(await host.quickActions(ADA)).some((a) => a.id === `logbook:${vehicleId}`), 'no trip yet: no logbook action');
+    // before the first trip: offered (its widget can be placed), a tap only says how trips get in
+    const first = (await host.quickActions(ADA)).find((a) => a.id === `logbook:${vehicleId}`);
+    assert.deepEqual([first.kind, first.state, first.subtitle, first.widget.value, first.widget.controls.length], ['toggle', null, 'Noch keine Fahrt erfasst', 0, 0]);
+    assert.match(first.widget.status, /^Noch keine Fahrt/);
+    const none = await host.runQuickAction(ADA, `logbook:${vehicleId}`);
+    assert.deepEqual([none.body.ok, none.body.widget.value], [false, 0]);
+    assert.match(none.body.message, /automatisch/);
     await withState({ moving: true, km: 5215 }, () => sync(host, 1));
     await withState({ lat: 51.1, lon: 7.1, km: 5232 }, () => sync(host, 1));
     const qa = (await host.quickActions(ADA)).find((a) => a.id === `logbook:${vehicleId}`);
     assert.ok(qa);
-    assert.deepEqual([qa.kind, qa.state, qa.device.id, qa.widget.value, qa.widget.unit, qa.widget.state], ['toggle', null, `v:${vehicleId}`, 22, 'km', 'warn']);
+    assert.deepEqual([qa.kind, qa.state, qa.device.id, qa.widget.value, qa.widget.unit, qa.widget.state], ['toggle', null, `lb:${vehicleId}`, 22, 'km', 'warn']);
     assert.match(qa.subtitle, /^Letzte Fahrt: 22 km · Offen$/);
     assert.deepEqual(qa.widget.controls[0].options.map((o) => o.id), ['open', 'private', 'business', 'commute']);
     assert.equal(qa.widget.controls[0].value, 'open');

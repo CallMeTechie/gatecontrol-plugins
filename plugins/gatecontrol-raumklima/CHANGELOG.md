@@ -3,6 +3,17 @@
 Klimageräte und Heizungen als GateControl-Plugin: Midea-Klimageräte (früher fest in GateControl
 eingebaut, „Klimaanlage“) und seit 1.6.0 Dreo-Heizlüfter und -Klimageräte.
 
+## 2.0.1
+- **Dreo auf der Plugin-Seite**: Die Kachel „Dreo“ blieb bei „Verbinde …“, wenn das Konto
+  angemeldet, aber noch kein Dreo-Gerät angelegt war (die Live-Verbindung entsteht erst mit
+  einem Gerät). Sie zeigt jetzt „Konto verbunden“, „Live“, „Verbinde …“ (Gerät da, Verbindung
+  im Aufbau), „Anmeldung fehlgeschlagen“ oder „Nicht angemeldet“ – und aktualisiert sich
+  alle 30 Sekunden.
+- **Schnellaktionen der Apps**: Ist der zwischengespeicherte Zustand eines Midea-Cloud-Geräts
+  älter als 90 Sekunden, wird er zuerst neu gelesen (höchstens 1 Sekunde). Ein mit der
+  Fernbedienung oder der Midea-App ausgeschaltetes Gerät erscheint so beim nächsten Laden als
+  aus, nicht erst beim übernächsten.
+
 ## 2.0.0
 - **Neue Plugin-ID `gatecontrol-raumklima`** – passend zum Namen. Das Plugin ersetzt
   `gatecontrol-midea`: Im Katalog erscheint es als Update des installierten Plugins, und beim

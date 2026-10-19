@@ -2,6 +2,13 @@
 
 Škoda-Fahrzeuge (MySkoda) als GateControl-Plugin – bisher fest in GateControl eingebaut.
 
+## 1.5.1
+- **Fahrtenbuch in der App**: Die Schnellaktion „Fahrtenbuch“ ist jetzt ein eigenes Gerät mit
+  eigenem Widget (bisher hing sie am Auto, dessen Widget die Klimatisierung zeigt – das
+  Fahrtenbuch-Widget ließ sich darum nicht anlegen). Sie erscheint schon vor der ersten Fahrt:
+  Das Widget zeigt dann „Noch keine Fahrt“, ein Tippen erklärt, dass Fahrten automatisch
+  nach dem Parken eingetragen werden.
+
 ## 1.5.0
 - **Fahrtenbuch**: Fahrten werden automatisch erfasst. Meldet das Fahrzeug nach einer Fahrt
   wieder eine Parkposition und einen höheren Kilometerstand, trägt das Plugin die Fahrt ein:
