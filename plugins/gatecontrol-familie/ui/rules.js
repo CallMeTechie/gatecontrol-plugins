@@ -22,11 +22,22 @@
    (data.messenger.available); a rule that already has one keeps it and shows
    „Messenger nicht verfügbar“ meanwhile.
    1.9.0: the rule log also shows reminders (trigger 'schedule'), presses of a notification's button and
-   runs held back by a device or calendar condition; the full editor of rules and reminders is ui/reminders.js. */
+   runs held back by a device or calendar condition.
+   1.10.0: the one editor of every rule (the page „Regeln & Erinnerungen“ and ui/reminders.js are gone):
+   rules are read and saved through the rules API (opts.rulesBase: admin/rules, in the portal rules —
+   server/rules.js), places still through opts.base (…/places). New in this dialog: the trigger group
+   „Zeit“ (weekdays and a time), „Nur wenn“ a device value and an event today / tomorrow, the notification
+   with values and up to three buttons, „Gehört zu“ (house rule or one's own reminder, portal), the dry run
+   („Probelauf“); the list filters Alle / Erinnerungen / Anwesenheit / Orte. */
 (function () {
   'use strict';
   var A = window.FA, T = A.T, el = A.el;
-  var TRIGGERS = ['all_away', 'first_home', 'child_home_alone', 'person_home', 'person_away', 'place_enter', 'place_exit'];
+  var TRIGGERS = ['schedule', 'all_away', 'first_home', 'child_home_alone', 'person_home', 'person_away', 'place_enter', 'place_exit'];
+  var WEEKDAYS = [1, 2, 3, 4, 5, 6, 7];
+  var OPS = ['<', '<=', '>', '>=', '='];
+  var FILTERS = ['all', 'reminder', 'presence', 'place'];
+  var MAX_DEVICE_CONDS = 4;
+  var MAX_BUTTONS = 3;
   var PLACE_TRIGGERS = ['place_enter', 'place_exit'];
   var MAX_PLACES = 20;
   var RADIUS = { min: 50, max: 5000, step: 50, def: 200 };
@@ -55,14 +66,58 @@
     pinOut: 'M10 21s-6-5.2-6-10a6 6 0 0 1 12 0c0 1-.3 2.1-.8 3.1M10 13a2 2 0 1 0 0-4a2 2 0 0 0 0 4M21 19h-7M17 16l-3 3 3 3',
     chat: 'M4 5h16v11H9l-5 4z',
     group: 'M9 11a3.5 3.5 0 1 0 0-7a3.5 3.5 0 0 0 0 7M2.5 20a6.5 6.5 0 0 1 13 0M16 4.2a3.5 3.5 0 0 1 0 6.6M18 14a6.5 6.5 0 0 1 3.5 6',
+    alarm: 'M12 21a8 8 0 1 0 0-16a8 8 0 0 0 0 16M12 9v4l2.5 1.5M5 3L2 6M22 6l-3-3',
+    gauge: 'M4 18a9 9 0 1 1 16 0M12 14l4-5M12 15a1 1 0 1 0 0-2a1 1 0 0 0 0 2',
+    cal: 'M4 6h16v15H4zM4 10h16M8 3v4M16 3v4',
   };
-  var TRIGGER_ICON = { all_away: ICON.away, first_home: ICON.home, child_home_alone: ICON.child, person_home: ICON.personIn, person_away: ICON.personOut, place_enter: ICON.pinIn, place_exit: ICON.pinOut };
+  var TRIGGER_ICON = { schedule: ICON.alarm, all_away: ICON.away, first_home: ICON.home, child_home_alone: ICON.child, person_home: ICON.personIn, person_away: ICON.personOut, place_enter: ICON.pinIn, place_exit: ICON.pinOut };
   // dialogs opened from the rule dialog (places) stack on top of it: Escape and Tab belong to the top one
   var stack = [];
 
+  /** The family (data.members of the presence API, else the people of …/options). */
+  function peopleOf(data) { return data.members || (data.options && data.options.people) || []; }
+
   function nameOf(data, id) {
-    var m = (data.members || []).filter(function (x) { return x.userId === id; })[0];
+    var m = peopleOf(data).filter(function (x) { return x.userId === id; })[0];
     return m ? m.name : '–';
+  }
+
+  /**
+   * 1.10.0: a rule of the rules API ({ title, trigger: { type, … } }) → the flat fields the rows and the
+   * editor read (name, trigger as a string, userId, placeId, placeName, graceMinutes, schedule); a rule
+   * that is flat already stays as it is.
+   */
+  function flat(r) {
+    if (!r.trigger || typeof r.trigger !== 'object') return r;
+    var t = r.trigger;
+    var out = {};
+    Object.keys(r).forEach(function (k) { out[k] = r[k]; });
+    out.name = r.title != null ? r.title : r.name;
+    out.trigger = t.type;
+    out.userId = t.userId != null ? t.userId : null;
+    out.placeId = t.placeId != null ? t.placeId : null;
+    out.placeName = t.placeName || null;
+    out.graceMinutes = t.graceMinutes != null ? t.graceMinutes : 10;
+    out.schedule = t.type === 'schedule' ? { weekdays: (t.weekdays || []).slice(), time: t.time || '' } : null;
+    return out;
+  }
+
+  /** The list's filter of a rule: reminder (schedule), place or presence. */
+  function kindOf(rule) { return rule.kind || (rule.trigger === 'schedule' ? 'reminder' : (isPlace(rule.trigger) ? 'place' : 'presence')); }
+
+  /** „Mo–Fr“, „täglich“, „Sa, So“ */
+  function daysText(w) {
+    if (!w || !w.length) return '–';
+    if (w.length === 7) return T('rr.daily');
+    if (w.join(',') === '1,2,3,4,5') return T('rr.wd_1') + '–' + T('rr.wd_5');
+    return w.map(function (d) { return T('rr.wd_' + d); }).join(', ');
+  }
+
+  /** The device of a device-value condition by its action („Elroq“). */
+  function deviceName(data, actionId) {
+    var o = data.options || {};
+    var d = (o.devices || []).filter(function (x) { return x.actionId === actionId; })[0];
+    return d ? d.label : String(actionId || '').split('/')[1] || '–';
   }
 
   function isPlace(trigger) { return PLACE_TRIGGERS.indexOf(trigger) >= 0; }
@@ -73,6 +128,7 @@
   }
 
   function triggerText(rule, data) {
+    if (rule.trigger === 'schedule') return T('rule.trigger_schedule', { days: daysText(rule.schedule && rule.schedule.weekdays), time: (rule.schedule && rule.schedule.time) || '–' });
     if (rule.trigger === 'person_home' || rule.trigger === 'person_away') return T('rule.trigger_' + rule.trigger, { name: nameOf(data, rule.userId) });
     if (isPlace(rule.trigger)) return T('rule.trigger_' + rule.trigger, { name: rule.userId ? nameOf(data, rule.userId) : T('rule.someone'), place: rule.placeName || '–' });
     return T('rule.trigger_' + rule.trigger);
@@ -108,19 +164,47 @@
     return null;
   }
 
-  function conditionText(rule) {
+  /** „Ladestand Elroq < 50 %“ */
+  function deviceCondText(d, data) {
+    return (d.label ? d.label + ' ' : '') + deviceName(data, d.actionId) + ' ' + d.op + ' ' + d.value + (d.unit ? ' ' + d.unit : '');
+  }
+
+  function conditionText(rule, data) {
     var c = [];
+    var k = rule.conditions || {};
     if (rule.trigger === 'all_away' && rule.graceMinutes) c.push(T('rule.after_minutes', { n: rule.graceMinutes }));
-    if (rule.conditions && rule.conditions.time) c.push(rule.conditions.time.from + '–' + rule.conditions.time.to);
-    if (rule.conditions && rule.conditions.afterSunset) c.push(T('rule.after_sunset'));
+    if (k.time) c.push(k.time.from + '–' + k.time.to);
+    if (k.afterSunset) c.push(T('rule.after_sunset'));
+    (k.device || []).forEach(function (d) { c.push(deviceCondText(d, data)); });
+    if (k.calendar) c.push(T(k.calendar.dayOffset ? 'rr.cal_tomorrow_s' : 'rr.cal_today_s', { match: k.calendar.match || T('rr.cal_any') }));
     return c.join(' · ');
   }
 
-  /** The rule rows into `box`; opts = { base, editable, reload, data }. */
+  /** Where rules are read and saved: the rules API (1.10.0), else the presence API of before. */
+  function rulesBase(opts) { return opts.rulesBase || opts.base + '/rules'; }
+
+  /** The list filter (Alle / Erinnerungen / Anwesenheit / Orte) above the rows; opts.filter keeps the choice. */
+  function filterBar(data, opts, redraw) {
+    var f = opts.filter || 'all';
+    var bar = el('div', { class: 'fa-rm-tabs fa-rule-filter', role: 'tablist', 'aria-label': T('rr.filter') }, FILTERS.map(function (x) {
+      var n = x === 'all' ? data.rules.length : data.rules.filter(function (r) { return kindOf(r) === x; }).length;
+      return el('button', { type: 'button', role: 'tab', class: 'fa-rm-tab', 'aria-selected': f === x ? 'true' : 'false', 'data-filter': x, on: { click: function () { opts.filter = x; redraw(); } } },
+        [el('span', { text: T('rr.filter_' + x) }), n ? el('span', { class: 'fa-rm-count', text: String(n) }) : null]);
+    }));
+    return bar;
+  }
+
+  /**
+   * The rule rows into `box`; opts = { base, rulesBase, editable, reload, filter }. A rule the viewer may
+   * only pause (a child's own reminder for a parent, portal) has the switch and „Löschen“, no „Bearbeiten“.
+   */
   function render(box, data, opts) {
     A.clear(box);
     if (!data.rules.length) { box.appendChild(el('p', { class: 'fa-empty', text: T('rule.none') })); return; }
-    data.rules.forEach(function (rule) {
+    box.appendChild(filterBar(data, opts, function () { render(box, data, opts); }));
+    var shown = data.rules.filter(function (r) { return !opts.filter || opts.filter === 'all' || kindOf(r) === opts.filter; });
+    if (!shown.length) box.appendChild(el('p', { class: 'fa-empty', text: T('rr.none_filter') }));
+    shown.forEach(function (rule) {
       var chips = rule.actions.map(function (a) {
         var gone = a.type === 'quick_action' && a.available === false;
         var needs = a.type === 'quick_action' && !gone && a.needsTarget === true;
@@ -134,21 +218,28 @@
       });
       var meta = [];
       if (!rule.active) meta.push(T('rule.paused'));
-      if (rule.actions.some(function (a) { return a.type === 'quick_action'; }) && rule.ownerName) meta.push(T('rule.as', { name: rule.ownerName }));
+      if (rule.scope === 'personal') meta.push(T('rr.personal_of', { name: rule.ownerName || '–' }));
+      else if (rule.actions.some(function (a) { return a.type === 'quick_action'; }) && rule.ownerName) meta.push(T('rule.as', { name: rule.ownerName }));
       meta.push(rule.lastRunAt ? T('rule.last', { when: A.when(rule.lastRunAt) }) : T('rule.never'));
-      if (rule.lastResult && !rule.lastResult.ok) meta.push(T('rule.failed'));
-      var cond = conditionText(rule);
+      var failed = rule.lastResult && !rule.lastResult.ok && !rule.lastResult.skipped;
+      if (failed) meta.push(T('rule.failed'));
+      var cond = conditionText(rule, data);
       // left: the summary and the action chips (they wrap); right, at the top: meta, switch, „Bearbeiten“ (own line, right-aligned, when it must wrap)
       var main = el('div', { class: 'fa-rule-main' }, [
         el('span', { class: 'fa-rule-when' }, [rule.name ? el('b', { text: rule.name }) : null, rule.name ? ' · ' : null, triggerText(rule, data), cond ? el('span', { class: 'fa-sub', text: ' (' + cond + ')' }) : null]),
         A.svg(ICON_ARROW, 18),
       ].concat(chips));
-      var side = el('div', { class: 'fa-rule-side' }, [el('span', { class: 'fa-rule-meta' + (rule.lastResult && !rule.lastResult.ok ? ' fa-bad' : ''), text: meta.join(' · ') })]);
-      if (opts.editable) {
+      var side = el('div', { class: 'fa-rule-side' }, [el('span', { class: 'fa-rule-meta' + (failed ? ' fa-bad' : ''), text: meta.join(' · ') })]);
+      if (opts.editable && rule.pausable !== false) {
         side.appendChild(A.switchBtn(rule.active, T('rule.active'), function (on, b) {
-          A.api('PATCH', opts.base + '/rules/' + rule.id, { active: on }).then(opts.reload).catch(function (e) { A.setSwitch(b, !on); A.warn(e); });
+          A.api('PATCH', rulesBase(opts) + '/' + rule.id, { active: on }).then(opts.reload).catch(function (e) { A.setSwitch(b, !on); A.warn(e); });
         }));
-        side.appendChild(el('button', { type: 'button', class: 'btn btn-sm', text: T('common.edit'), on: { click: function () { edit(rule, data, opts); } } }));
+        if (rule.editable !== false) side.appendChild(el('button', { type: 'button', class: 'btn btn-sm', text: T('common.edit'), on: { click: function () { edit(rule, data, opts); } } }));
+        else {
+          side.appendChild(el('button', { type: 'button', class: 'btn btn-sm', text: T('common.delete'), on: { click: function () {
+            A.confirm(T('rule.delete_confirm'), T('common.delete'), true).then(function (ok) { if (ok) A.api('DELETE', rulesBase(opts) + '/' + rule.id).then(opts.reload).catch(A.warn); });
+          } } }));
+        }
       }
       box.appendChild(el('div', { class: 'fa-rule' + (rule.active ? '' : ' is-off') }, [main, side]));
     });
@@ -173,16 +264,30 @@
 
   /** The editor (rule null = new): one dialog, three columns; saves through opts.base. */
   function edit(rule, data, opts) {
-    var r = rule || { trigger: 'all_away', graceMinutes: 10, conditions: { time: null, afterSunset: false }, actions: [], active: true, name: '', userId: null, placeId: null };
+    var opt = data.options || {};
+    var can = opt.can || { house: true, personal: false };
+    var trigAvail = function (t) {
+      var x = (opt.triggers || []).filter(function (y) { return y.type === t; })[0];
+      return x ? x.available !== false : t !== 'schedule' || !!opt.triggers;
+    };
+    var r = rule || { trigger: trigAvail('all_away') ? 'all_away' : 'schedule', graceMinutes: 10, conditions: { time: null, afterSunset: false }, actions: [], active: true, name: '', userId: null, placeId: null };
     var listed = (data.actions || []).filter(function (a) { return a && a.plugin && a.id; });
     var byKey = {};
     listed.forEach(function (a) { byKey[keyOf(a.plugin, a.id)] = a; });
-    var people = data.members || [];
+    var people = peopleOf(data);
     var oldNotify = r.actions.filter(function (a) { return a.type === 'notify'; })[0] || null;
     var oldMsg = r.actions.filter(function (a) { return a.type === 'messenger'; })[0] || null;
     var msgOn = msgAvailable(data);
     var msgGroup = !!(data.messenger && data.messenger.group);
+    var cond = r.conditions || {};
+    var clone = function (v) { return v == null ? v : JSON.parse(JSON.stringify(v)); };
     var st = {
+      // 1.10.0: house rule or the viewer's own reminder (fixed once saved; a new one: what the viewer may)
+      scope: r.scope || (can.house ? 'house' : 'personal'),
+      days: r.schedule ? r.schedule.weekdays.slice() : [1, 2, 3, 4, 5], at: r.schedule && r.schedule.time ? r.schedule.time : '07:00',
+      device: clone(cond.device) || [], calendar: clone(cond.calendar) || null,
+      facts: oldNotify ? oldNotify.facts === true : false, buttons: oldNotify && Array.isArray(oldNotify.buttons) ? oldNotify.buttons.slice() : [],
+      probe: null,
       name: r.name || '', trigger: r.trigger, userId: r.userId != null && !isPlace(r.trigger) ? r.userId : (people[0] ? people[0].userId : null),
       // a place rule: the person (null = anyone who shares places) and the place
       placeUser: isPlace(r.trigger) ? r.userId : null, placeId: r.placeId != null ? r.placeId : ((data.places || [])[0] ? data.places[0].id : null),
@@ -210,6 +315,7 @@
     var uid = 'fa-rm-' + Math.random().toString(36).slice(2, 8);
     var person = function () { return st.trigger === 'person_home' || st.trigger === 'person_away'; };
     var place = function () { return isPlace(st.trigger); };
+    var personal = function () { return st.scope === 'personal'; };
     function needsTarget(s) { var a = byKey[s.key]; return !s.state && !!a && a.kind === 'toggle'; }
     function stepCount() { return st.steps.length + (st.notify ? 1 : 0) + (st.msg ? 1 : 0); }
 
@@ -218,9 +324,22 @@
     nameInput.addEventListener('input', function () { st.name = nameInput.value; });
     var activeBtn = el('button', { type: 'button', class: 'fa-rm-pill', 'aria-pressed': st.active ? 'true' : 'false', 'data-k': 'active' }, [el('span', { class: 'fa-rm-track' }, [el('span', { class: 'fa-rm-knob' })]), T('rule.active')]);
     activeBtn.addEventListener('click', function () { st.active = !st.active; activeBtn.setAttribute('aria-pressed', st.active ? 'true' : 'false'); });
+    // „Gehört zu“: a new rule of someone who may make both (a parent in the portal); else what it is
+    var scopeNode = null;
+    if (!rule && can.house && can.personal) {
+      var scopeSel = el('select', { class: 'form-select fa-rm-select', 'data-k': 'scope', 'aria-label': T('rr.scope') }, [
+        el('option', { value: 'house', text: T('rr.scope_house') }), el('option', { value: 'personal', text: T('rr.scope_personal') }),
+      ]);
+      scopeSel.value = st.scope;
+      scopeSel.addEventListener('change', function () { st.scope = scopeSel.value; renderWhat(); renderFlow(); });
+      scopeNode = el('label', { class: 'fa-rm-name fa-rm-scope' }, [el('span', { text: T('rr.scope') }), scopeSel]);
+    } else if (st.scope === 'personal') {
+      scopeNode = el('span', { class: 'fa-rm-scope-tag', text: rule && rule.ownerName ? T('rr.scope_personal_of', { name: rule.ownerName }) : T('rr.scope_personal') });
+    }
     var head = el('div', { class: 'fa-rm-head' }, [
       el('div', { class: 'fa-rm-titles' }, [el('span', { class: 'fa-rm-kicker', text: T('rule.m_kicker') }), el('h2', { id: uid + '-title', class: 'fa-rm-title', text: rule ? T('rule.edit') : T('rule.add') })]),
       el('label', { class: 'fa-rm-name' }, [el('span', { text: T('rule.m_name') }), nameInput]),
+      scopeNode,
       el('span', { class: 'fa-spacer' }),
       activeBtn,
       el('button', { type: 'button', class: 'fa-rm-icon-btn', 'aria-label': T('common.close'), on: { click: function () { close(); } } }, [A.svg(ICON.x, 18)]),
@@ -232,36 +351,57 @@
     var toInput = el('input', { type: 'time', class: 'fa-rm-time', value: st.to, 'data-k': 'to', id: uid + '-to' });
     fromInput.addEventListener('input', function () { st.from = fromInput.value; renderFlow(); });
     toInput.addEventListener('input', function () { st.to = toInput.value; renderFlow(); });
+    var atInput = el('input', { type: 'time', class: 'fa-rm-time', value: st.at, 'data-k': 'at', id: uid + '-at' });
+    atInput.addEventListener('input', function () { st.at = atInput.value; renderFlow(); });
     function switchBox(on) { return el('span', { class: 'fa-rm-track' + (on ? ' is-on' : '') }, [el('span', { class: 'fa-rm-knob' })]); }
+    // the triggers the dialog offers: those that can run now, and the rule's own (a presence rule while „Anwesenheit“ is off)
+    var offered = TRIGGERS.filter(function (t) { return trigAvail(t) || t === r.trigger; });
     function renderWhen() {
       var focus = focusKey();
+      st.probe = null; // a change: the last dry run no longer holds
       A.clear(colWhen);
       colWhen.appendChild(colHead('1', T('rule.m_when'), uid + '-when'));
       var radios = [];
-      TRIGGERS.forEach(function (t, i) {
-        // two groups: home / away from the home Wi-Fi, then places (the phone's location)
-        if (i === 0 || t === PLACE_TRIGGERS[0]) radios.push(el('span', { class: 'fa-rm-group-label', 'aria-hidden': 'true', text: T(i === 0 ? 'rule.m_group_home' : 'rule.m_group_places') }));
+      var shownGroups = {};
+      offered.forEach(function (t) {
+        // three groups: a time (reminders), home / away from the home Wi-Fi, places (the phone's location)
+        var g = t === 'schedule' ? 'time' : (isPlace(t) ? 'places' : 'home');
+        if (!shownGroups[g]) { shownGroups[g] = true; radios.push(el('span', { class: 'fa-rm-group-label', 'aria-hidden': 'true', text: T('rule.m_group_' + g) })); }
         radios.push(trigger(t));
       });
       function trigger(t) {
         var on = st.trigger === t;
+        var avail = trigAvail(t);
         return el('button', {
           type: 'button', role: 'radio', 'aria-checked': on ? 'true' : 'false', tabindex: on ? '0' : '-1', class: 'fa-rm-trigger', 'data-k': 'trigger-' + t,
           on: { click: function () { setTrigger(t); } },
         }, [
           el('span', { class: 'fa-rm-trigger-ico' }, [A.svg(TRIGGER_ICON[t], 18)]),
-          el('span', { class: 'fa-rm-trigger-text' }, [el('b', { text: T('rule.m_trig_' + t) }), el('span', { text: T('rule.m_trig_' + t + '_hint') })]),
+          el('span', { class: 'fa-rm-trigger-text' }, [el('b', { text: T('rule.m_trig_' + t) }), el('span', { text: avail ? T('rule.m_trig_' + t + '_hint') : T('rule.m_needs_presence') })]),
         ]);
       }
       var group = el('div', { class: 'fa-rm-triggers', role: 'radiogroup', 'aria-label': T('rule.m_triggers') }, radios);
       group.addEventListener('keydown', function (e) {
-        var i = TRIGGERS.indexOf(st.trigger);
+        var i = offered.indexOf(st.trigger);
         var d = e.key === 'ArrowDown' || e.key === 'ArrowRight' ? 1 : (e.key === 'ArrowUp' || e.key === 'ArrowLeft' ? -1 : 0);
         if (!d) return;
         e.preventDefault();
-        setTrigger(TRIGGERS[(i + d + TRIGGERS.length) % TRIGGERS.length], true);
+        setTrigger(offered[(i + d + offered.length) % offered.length], true);
       });
       colWhen.appendChild(group);
+      if (st.trigger === 'schedule') {
+        colWhen.appendChild(el('div', { class: 'fa-rm-block' }, [
+          el('span', { class: 'fa-rm-label', id: uid + '-days', text: T('rr.days') }),
+          el('div', { class: 'fa-rm-chips fa-rm-days', role: 'group', 'aria-labelledby': uid + '-days' }, WEEKDAYS.map(function (d) {
+            var on = st.days.indexOf(d) >= 0;
+            return el('button', { type: 'button', class: 'fa-rm-chip fa-rm-day', 'aria-pressed': on ? 'true' : 'false', 'data-k': 'day-' + d, text: T('rr.wd_' + d), on: { click: function () {
+              st.days = on ? st.days.filter(function (x) { return x !== d; }) : st.days.concat([d]).sort();
+              renderWhen(); renderFlow();
+            } } });
+          })),
+          el('div', { class: 'fa-rm-times' }, [el('label', { for: uid + '-at' }, [el('span', { text: T('rr.time') })]), atInput]),
+        ]));
+      }
       if (person()) {
         colWhen.appendChild(el('div', { class: 'fa-rm-block' }, [
           el('span', { class: 'fa-rm-label', id: uid + '-who', text: T('rule.m_who') }),
@@ -289,7 +429,9 @@
         el('span', { class: 'fa-rm-box-text' }, [el('b', { text: T('rule.m_window') }), el('span', { class: 'fa-rm-mono', text: st.window ? (st.from || '–') + ' – ' + (st.to || '–') : T('rule.m_window_always') })]),
         switchBox(st.window),
       ]);
-      var sunHint = data.location === null ? T('rule.m_sun_none') : (data.location ? T('rule.m_sun_at', { lat: data.location.lat, lon: data.location.lon }) : T('rule.m_sun_hint'));
+      // data.location: the coordinates (admin page), true (portal: set, not shown), null / false: none
+      var loc = data.location !== undefined ? data.location : (opt.location === undefined ? undefined : opt.location);
+      var sunHint = loc === null || loc === false ? T('rule.m_sun_none') : (loc && loc.lat != null ? T('rule.m_sun_at', { lat: loc.lat, lon: loc.lon }) : T('rule.m_sun_hint'));
       var sunBtn = el('button', { type: 'button', class: 'fa-rm-box fa-rm-cond', 'aria-pressed': st.sun ? 'true' : 'false', 'data-k': 'sun', on: { click: function () { st.sun = !st.sun; renderWhen(); renderFlow(); } } }, [
         A.svg(ICON.sun, 18),
         el('span', { class: 'fa-rm-box-text' }, [el('b', { text: T('rule.m_sun') }), el('span', { text: sunHint })]),
@@ -303,8 +445,89 @@
           el('label', { for: uid + '-to' }, [el('span', { text: T('rule.m_to') })]), toInput,
         ]) : null,
         sunBtn,
+        deviceBlock(),
+        calendarBlock(),
       ]));
       restore(focus);
+    }
+    /** „Nur wenn“ a device value (1.9.0): the box switches the first condition on / all off; up to 4 rows. */
+    function deviceBlock() {
+      var devices = opt.devices || [];
+      var on = st.device.length > 0;
+      var none = !devices.length && !on;
+      var hint = none ? (opt.features && opt.features.deviceValues === false ? T('rr.values_old') : T('rr.no_devices')) : T('rule.m_device_hint');
+      var box = el('button', { type: 'button', class: 'fa-rm-box fa-rm-cond', 'aria-pressed': on ? 'true' : 'false', disabled: none, 'data-k': 'device', on: { click: function () {
+        if (on) st.device = [];
+        else { var d0 = devices[0]; st.device.push({ actionId: d0.actionId, field: d0.fields[0].id, op: '<', value: 50, label: d0.fields[0].label, unit: d0.fields[0].unit || null }); }
+        renderWhen(); renderFlow();
+      } } }, [A.svg(ICON.gauge, 18), el('span', { class: 'fa-rm-box-text' }, [el('b', { text: T('rr.c_device') }), el('span', { text: hint })]), switchBox(on)]);
+      if (!on) return box;
+      var rows = st.device.map(function (d, i) {
+        var dev = devices.filter(function (x) { return x.actionId === d.actionId; })[0];
+        var fields = dev ? dev.fields : [{ id: d.field, label: d.label || d.field, unit: d.unit, current: null }];
+        var f = fields.filter(function (x) { return x.id === d.field; })[0] || fields[0];
+        var devSel = el('select', { class: 'form-select fa-rm-select', 'aria-label': T('rr.device'), 'data-k': 'dev-' + i }, (dev ? [] : [el('option', { value: d.actionId, text: deviceName(data, d.actionId) + ' – ' + T('rr.gone') })])
+          .concat(devices.map(function (x) { return el('option', { value: x.actionId, text: x.label }); })));
+        devSel.value = d.actionId;
+        devSel.addEventListener('change', function () {
+          var nd = devices.filter(function (x) { return x.actionId === devSel.value; })[0];
+          d.actionId = nd.actionId; d.field = nd.fields[0].id; d.label = nd.fields[0].label; d.unit = nd.fields[0].unit || null;
+          renderWhen(); renderFlow();
+        });
+        var fieldSel = el('select', { class: 'form-select fa-rm-select', 'aria-label': T('rr.field'), 'data-k': 'dev-field-' + i }, fields.map(function (x) { return el('option', { value: x.id, text: x.label }); }));
+        fieldSel.value = f.id;
+        fieldSel.addEventListener('change', function () {
+          var nf = fields.filter(function (x) { return x.id === fieldSel.value; })[0];
+          d.field = nf.id; d.label = nf.label; d.unit = nf.unit || null;
+          renderWhen(); renderFlow();
+        });
+        var opSel = el('select', { class: 'form-select fa-rm-select fa-rm-op', 'aria-label': T('rr.op'), 'data-k': 'dev-op-' + i }, OPS.map(function (x) { return el('option', { value: x, text: x }); }));
+        opSel.value = d.op;
+        opSel.addEventListener('change', function () { d.op = opSel.value; renderFlow(); });
+        var val = el('input', { type: 'number', step: 'any', class: 'form-input fa-rm-num-input', value: String(d.value), 'aria-label': T('rr.value'), 'data-k': 'dev-val-' + i });
+        val.addEventListener('input', function () { var n = parseFloat(val.value); d.value = isFinite(n) ? n : 0; renderFlow(); });
+        return el('div', { class: 'fa-rm-cond-row' }, [
+          el('div', { class: 'fa-rm-cond-line' }, [devSel, el('button', { type: 'button', class: 'fa-rm-icon-btn', 'aria-label': T('rr.remove', { name: T('rr.c_device') }), 'data-k': 'dev-x-' + i,
+            on: { click: function () { st.device.splice(i, 1); renderWhen(); renderFlow(); } } }, [A.svg(ICON.x, 16)])]),
+          el('div', { class: 'fa-rm-cond-line' }, [fieldSel, opSel, val, f && f.unit ? el('span', { class: 'fa-rm-unit', text: f.unit }) : null]),
+          el('span', { class: 'fa-hint', text: f && f.current ? T('rr.now', { value: f.current }) : (opt.features && opt.features.deviceValues === false ? T('rr.values_old') : T('rr.now_unknown')) }),
+        ]);
+      });
+      var more = st.device.length < MAX_DEVICE_CONDS && devices.length ? el('button', { type: 'button', class: 'fa-rm-link', 'data-k': 'dev-more', on: { click: function () {
+        var d0 = devices[0];
+        st.device.push({ actionId: d0.actionId, field: d0.fields[0].id, op: '<', value: 50, label: d0.fields[0].label, unit: d0.fields[0].unit || null });
+        renderWhen(); renderFlow();
+      } } }, [T('rule.m_device_more')]) : null;
+      return el('div', { class: 'fa-rm-cond-wrap' }, [box].concat(rows).concat([more]));
+    }
+    /** „Nur wenn“ an event today / tomorrow (Familie dates, Alltag calendars). */
+    function calendarBlock() {
+      var cals = opt.calendars || [];
+      var on = !!st.calendar;
+      var none = !cals.length && !on;
+      var box = el('button', { type: 'button', class: 'fa-rm-box fa-rm-cond', 'aria-pressed': on ? 'true' : 'false', disabled: none, 'data-k': 'calendar', on: { click: function () {
+        st.calendar = on ? null : { dayOffset: 1, sources: [cals[0].source], match: '', memberIds: null };
+        renderWhen(); renderFlow();
+      } } }, [A.svg(ICON.cal, 18), el('span', { class: 'fa-rm-box-text' }, [el('b', { text: T('rr.c_calendar') }), el('span', { text: none ? T('rule.m_calendar_none') : T('rule.m_calendar_hint') })]), switchBox(on)]);
+      if (!on) return box;
+      var c = st.calendar;
+      var day = el('div', { class: 'fa-rm-chips', role: 'group', 'aria-label': T('rr.day') }, [0, 1].map(function (n) {
+        return el('button', { type: 'button', class: 'fa-rm-chip', 'aria-pressed': c.dayOffset === n ? 'true' : 'false', 'data-k': 'cal-day-' + n, text: T(n ? 'rr.tomorrow' : 'rr.today'),
+          on: { click: function () { c.dayOffset = n; renderWhen(); renderFlow(); } } });
+      }));
+      var srcs = el('div', { class: 'fa-rm-chips', role: 'group', 'aria-label': T('rule.m_calendars') }, cals.map(function (s) {
+        var picked = c.sources.indexOf(s.source) >= 0;
+        return el('button', { type: 'button', class: 'fa-rm-chip', 'aria-pressed': picked ? 'true' : 'false', 'data-k': 'cal-src-' + s.source, text: s.label, on: { click: function () {
+          c.sources = picked ? c.sources.filter(function (x) { return x !== s.source; }) : c.sources.concat([s.source]);
+          renderWhen(); renderFlow();
+        } } });
+      }));
+      var match = el('input', { type: 'text', class: 'form-input', maxlength: '60', value: c.match || '', placeholder: T('rr.match_ph'), 'data-k': 'cal-match', id: uid + '-cal-match' });
+      match.addEventListener('input', function () { c.match = match.value; renderFlow(); });
+      return el('div', { class: 'fa-rm-cond-wrap' }, [box, el('div', { class: 'fa-rm-cond-row' }, [
+        day, el('span', { class: 'fa-rm-label', text: T('rule.m_calendars') }), srcs,
+        el('label', { class: 'fa-rm-label', for: uid + '-cal-match', text: T('rr.match') }), match,
+      ])]);
     }
     /** Wann? for a place trigger: who („Jemand“ or a person), which place (+ „Orte verwalten“), who shares places. */
     function placeBlocks() {
@@ -321,7 +544,8 @@
         el('div', { class: 'fa-rm-people', role: 'group', 'aria-labelledby': uid + '-pwho' }, chips),
       ]));
       var list = data.places || [];
-      var manage = el('button', { type: 'button', class: 'fa-rm-link', 'data-k': 'places-manage', on: { click: function () { managePlaces(data, opts, placesChanged); } } }, [A.svg(ICON.pin, 14), T('rule.m_places_manage')]);
+      // „Orte verwalten“ only for who may (the admin page, parents in the portal)
+      var manage = opts.managePlaces === false ? null : el('button', { type: 'button', class: 'fa-rm-link', 'data-k': 'places-manage', on: { click: function () { managePlaces(data, opts, placesChanged); } } }, [A.svg(ICON.pin, 14), T('rule.m_places_manage')]);
       var row;
       if (list.length) {
         var sel = el('select', { class: 'form-select fa-rm-select', id: uid + '-place', 'data-k': 'place' }, list.map(function (p) {
@@ -398,6 +622,7 @@
     }
     function renderWhat() {
       var focus = focusKey();
+      st.probe = null;
       A.clear(tabBar);
       var q = st.query.trim().toLowerCase();
       tabs.forEach(function (t, i) {
@@ -499,12 +724,40 @@
         if (!st.notify && stepCount() >= MAX_STEPS) { msg.textContent = T('rule.m_max', { n: MAX_STEPS }); return; }
         st.notify = !st.notify; renderWhat(); renderFlow();
       } } });
-      return el('div', { class: 'fa-rm-notify' + (st.notify ? ' is-on' : '') }, [
-        el('div', { class: 'fa-rm-card-top' }, [
-          el('span', { class: 'fa-rm-card-ico' }, [A.svg(ICON.bell, 20)]),
-          el('span', { class: 'fa-rm-card-text' }, [el('b', { text: T('rule.m_notify_title') }), el('span', { text: T('rule.m_notify_hint') })]),
-          add,
-        ]),
+      // 1.10.0: values and event under the text, and up to 3 buttons (snooze, done, a device's button)
+      var factsBtn = el('button', { type: 'button', class: 'fa-rm-box fa-rm-cond', 'aria-pressed': st.facts ? 'true' : 'false', 'data-k': 'facts', on: { click: function () { st.facts = !st.facts; renderWhat(); } } },
+        [el('span', { class: 'fa-rm-box-text' }, [el('b', { text: T('rr.facts') }), el('span', { text: T('rule.m_facts_hint') })]), switchBox(st.facts)]);
+      var hasBtn = function (b) { return st.buttons.indexOf(b) >= 0; };
+      var toggleBtn = function (b) {
+        if (hasBtn(b)) st.buttons = st.buttons.filter(function (x) { return x !== b; });
+        else if (st.buttons.length < MAX_BUTTONS) st.buttons.push(b);
+        else { msg.textContent = T('rule.m_buttons_max', { n: MAX_BUTTONS }); return; }
+        renderWhat();
+      };
+      var qaNow = st.buttons.filter(function (b) { return b.indexOf('quick_action:') === 0; })[0] || '';
+      var qaSel = el('select', { class: 'form-select fa-rm-select', id: uid + '-qa-btn', 'data-k': 'qa-btn' }, [el('option', { value: '', text: T('rr.btn_none') })]
+        .concat(listed.filter(function (a) { return a.kind !== 'toggle'; }).map(function (a) { return el('option', { value: 'quick_action:' + a.plugin + '/' + a.id, text: labelOf(a) }); })));
+      if (qaNow && !qaSel.querySelector('option[value="' + qaNow.replace(/"/g, '') + '"]')) qaSel.appendChild(el('option', { value: qaNow, text: qaNow.slice(13) + ' – ' + T('rr.gone') }));
+      qaSel.value = qaNow;
+      qaSel.addEventListener('change', function () {
+        var rest = st.buttons.filter(function (b) { return b.indexOf('quick_action:') !== 0; });
+        if (qaSel.value && rest.length >= MAX_BUTTONS) { qaSel.value = qaNow; msg.textContent = T('rule.m_buttons_max', { n: MAX_BUTTONS }); return; }
+        st.buttons = qaSel.value ? rest.concat([qaSel.value]) : rest;
+        renderWhat();
+      });
+      var buttons = [
+        el('div', { class: 'fa-rm-label', id: uid + '-btns', text: T('rr.buttons') }),
+        el('div', { class: 'fa-rm-chips', role: 'group', 'aria-labelledby': uid + '-btns' }, [['snooze_1h', 'rule.m_btn_snooze'], ['done', 'rule.m_btn_done']].map(function (x) {
+          return el('button', { type: 'button', class: 'fa-rm-chip', 'aria-pressed': hasBtn(x[0]) ? 'true' : 'false', 'data-k': 'btn-' + x[0], text: T(x[1]), on: { click: function () { toggleBtn(x[0]); } } });
+        })),
+        el('label', { class: 'fa-rm-label', for: uid + '-qa-btn', text: T('rr.btn_device') }), qaSel,
+        opt.features && opt.features.buttons === false ? el('p', { class: 'fa-hint', text: T('rr.buttons_old') }) : null,
+      ];
+      // an own reminder tells only its owner
+      var recipients = personal() ? [
+        el('div', { class: 'fa-rm-label', text: T('rule.notify_to') }),
+        el('div', { class: 'fa-rm-chips' }, [el('span', { class: 'fa-rm-chip', 'aria-pressed': 'true', text: T('rr.to_me') })]),
+      ] : [
         el('div', { class: 'fa-rm-label', id: uid + '-to', text: T('rule.notify_to') }),
         el('div', { class: 'fa-rm-chips', role: 'group', 'aria-labelledby': uid + '-to' }, groups.map(function (c) {
           return el('button', { type: 'button', class: 'fa-rm-chip', 'aria-pressed': st.notifyTo === c.id ? 'true' : 'false', 'data-k': 'to-' + c.id, text: c.label, on: { click: function () { st.notifyTo = c.id; renderWhat(); renderFlow(); } } });
@@ -515,10 +768,19 @@
             [A.avatar({ name: m.name, initials: m.initials, colorHex: m.colorHex, avatarUrl: m.avatarUrl }, 28), el('span', { text: m.name })]);
         })),
         el('p', { class: 'fa-hint', text: T('rule.m_notify_self') }),
+      ];
+      return el('div', { class: 'fa-rm-notify' + (st.notify ? ' is-on' : '') }, [
+        el('div', { class: 'fa-rm-card-top' }, [
+          el('span', { class: 'fa-rm-card-ico' }, [A.svg(ICON.bell, 20)]),
+          el('span', { class: 'fa-rm-card-text' }, [el('b', { text: T('rule.m_notify_title') }), el('span', { text: T('rule.m_notify_hint') })]),
+          add,
+        ]),
+      ].concat(recipients).concat([
         el('label', { class: 'fa-rm-label', for: uid + '-text', text: T('rule.m_text') }),
         text,
-        el('p', { class: 'fa-hint', text: T('rule.text_hint') }),
-      ]);
+        el('p', { class: 'fa-hint', text: T('rr.text_hint') }),
+        factsBtn,
+      ]).concat(buttons));
     }
 
     /** 1.6.0: „Messenger-Nachricht senden“ — the group „Familie“ or single people (the chips of the notification). */
@@ -544,6 +806,10 @@
           add,
         ]),
         msgOn ? null : el('div', { class: 'fa-rm-info is-warn' }, [A.svg(ICON.info, 18), el('span', { text: T('rule.m_msg_unavailable') })]),
+      ].concat(personal() ? [
+        el('div', { class: 'fa-rm-label', text: T('rule.notify_to') }),
+        el('div', { class: 'fa-rm-chips' }, [el('span', { class: 'fa-rm-chip', 'aria-pressed': 'true', text: T('rr.to_me') })]),
+      ] : [
         el('div', { class: 'fa-rm-label', id: uid + '-msg-to', text: T('rule.notify_to') }),
         el('div', { class: 'fa-rm-chips', role: 'group', 'aria-labelledby': uid + '-msg-to' }, [
           el('button', { type: 'button', class: 'fa-rm-chip', 'aria-pressed': groupOn ? 'true' : 'false', disabled: !msgGroup && !groupOn, 'data-k': 'msg-to-family', text: T('rule.m_msg_group'),
@@ -556,10 +822,11 @@
             [A.avatar({ name: m.name, initials: m.initials, colorHex: m.colorHex, avatarUrl: m.avatarUrl }, 28), el('span', { text: m.name })]);
         })),
         el('p', { class: 'fa-hint', text: T('rule.m_msg_people_hint') }),
+      ]).concat([
         el('label', { class: 'fa-rm-label', for: uid + '-msg-text', text: T('rule.m_text') }),
         text,
-        el('p', { class: 'fa-hint', text: T('rule.text_hint') }),
-      ]);
+        el('p', { class: 'fa-hint', text: T('rr.text_hint') }),
+      ]));
     }
 
     // ── column 3: Ablauf ──
@@ -567,12 +834,15 @@
     var flowList = el('div', { class: 'fa-rm-scroll fa-rm-flow-list' });
     function sentence() {
       var pl = place() ? placeOf(data, st.placeId) : null;
-      var who = person() ? T('rule.trigger_' + st.trigger, { name: nameOf(data, st.userId) })
-        : (place() ? T('rule.trigger_' + st.trigger, { name: st.placeUser == null ? T('rule.someone') : nameOf(data, st.placeUser), place: pl ? pl.name + ' (' + radiusText(pl.radius) + ')' : '…' })
-          : T('rule.trigger_' + st.trigger));
+      var who = st.trigger === 'schedule' ? T('rule.trigger_schedule', { days: daysText(st.days.slice().sort()), time: st.at || '–' })
+        : (person() ? T('rule.trigger_' + st.trigger, { name: nameOf(data, st.userId) })
+          : (place() ? T('rule.trigger_' + st.trigger, { name: st.placeUser == null ? T('rule.someone') : nameOf(data, st.placeUser), place: pl ? pl.name + ' (' + radiusText(pl.radius) + ')' : '…' })
+            : T('rule.trigger_' + st.trigger)));
       var parts = [who + (st.trigger === 'all_away' && st.grace > 0 ? ' (' + T('rule.m_s_grace', { n: st.grace }) + ')' : '')];
       if (st.window && st.from && st.to) parts.push(T('rule.m_s_window', { from: st.from, to: st.to }));
       if (st.sun) parts.push(T('rule.after_sunset'));
+      st.device.forEach(function (d) { parts.push(deviceCondText(d, data)); });
+      if (st.calendar) parts.push(T(st.calendar.dayOffset ? 'rr.cal_tomorrow_s' : 'rr.cal_today_s', { match: st.calendar.match || T('rr.cal_any') }));
       var n = stepCount();
       return parts.join(', ') + ' – ' + (n ? (n === 1 ? T('rule.m_s_one') : T('rule.m_s_many', { n: n })) : T('rule.m_s_none'));
     }
@@ -595,16 +865,17 @@
         }, 'step-' + s.key));
       });
       if (st.notify) {
-        var to = st.notifyTo === 'parents' ? T('rule.m_to_parents') : (st.notifyTo === 'all' ? T('rule.m_to_all') : T('rule.m_to_people', { names: (st.notifyTo || []).map(function (id) { return nameOf(data, id); }).join(', ') }));
+        var to = personal() ? T('rr.to_me') : st.notifyTo === 'parents' ? T('rule.m_to_parents') : (st.notifyTo === 'all' ? T('rule.m_to_all') : T('rule.m_to_people', { names: (st.notifyTo || []).map(function (id) { return nameOf(data, id); }).join(', ') }));
         flowList.appendChild(stepRow(++n, T('rule.notify'), to, T('rule.m_push'), 'neutral', function () { st.notify = false; renderWhat(); renderFlow(); }, 'step-notify'));
       }
       if (st.msg) {
-        var mto = st.msgTo === 'family' ? T('rule.m_msg_to_family') : T('rule.m_to_people', { names: (st.msgTo || []).map(function (id) { return nameOf(data, id); }).join(', ') });
+        var mto = personal() ? T('rr.to_me') : st.msgTo === 'family' ? T('rule.m_msg_to_family') : T('rule.m_to_people', { names: (st.msgTo || []).map(function (id) { return nameOf(data, id); }).join(', ') });
         flowList.appendChild(stepRow(++n, T('rule.messenger'), msgOn ? mto : T('rule.msg_gone'), T('rule.m_msg_chip'), msgOn ? 'neutral' : 'gone', function () { st.msg = false; renderWhat(); renderFlow(); }, 'step-msg'));
       }
       if (!n) flowList.appendChild(el('div', { class: 'fa-rm-flow-empty', text: T('rule.m_empty') }));
+      if (st.probe) flowList.appendChild(probeBox(st.probe));
       flowList.appendChild(el('div', { class: 'fa-rm-info' }, [A.svg(ICON.info, 18), el('span', { text: T('rule.m_hint_fixed') })]));
-      footHint.textContent = n ? T('rule.m_foot_ok') : T('rule.actions_required');
+      footHint.textContent = n ? T(st.trigger === 'schedule' ? 'rule.m_foot_ok_schedule' : 'rule.m_foot_ok') : T('rule.actions_required');
       restore(focus);
     }
     function stepRow(n, title, where, target, tone, remove, k) {
@@ -614,18 +885,29 @@
         el('button', { type: 'button', class: 'fa-rm-icon-btn fa-rm-step-x', 'aria-label': T('rule.m_remove', { name: title }), 'data-k': k, on: { click: remove } }, [A.svg(ICON.x, 16)]),
       ]);
     }
+    /** The dry run's answer (1.10.0): would it fire today, and each check. */
+    function probeBox(p) {
+      return el('div', { class: 'fa-rm-probe' + (p.wouldFire ? ' is-ok' : ' is-no'), role: 'status' }, [
+        el('b', { text: p.wouldFire ? T('rr.would_fire') : T('rr.would_not') }),
+        el('ul', { class: 'fa-rm-probe-list' }, (p.details || []).map(function (d) {
+          return el('li', { class: d.ok === false ? 'fa-bad' : (d.ok ? 'fa-ok' : null), text: d.text });
+        })),
+      ]);
+    }
     var runsAs = el('div', { class: 'fa-rm-runs', text: opts.base === 'admin/presence' ? T('rule.m_runs_admin') : T('rule.m_runs_you') });
 
     // ── footer ──
     var footHint = el('span', { class: 'fa-rm-foot-hint' });
     var msg = el('span', { class: 'fa-rm-msg', role: 'status', 'aria-live': 'polite' });
     var save = el('button', { type: 'button', class: 'btn btn-primary fa-rm-save', text: T('rule.m_save'), on: { click: submit } });
+    var probeBtn = opts.rulesBase ? el('button', { type: 'button', class: 'btn', text: T('rule.m_test'), title: T('rr.probe_hint'), on: { click: probe } }) : null;
     var foot = el('div', { class: 'fa-rm-foot' }, [
       el('span', { class: 'fa-rm-foot-text' }, [msg, footHint]),
       el('span', { class: 'fa-spacer' }),
+      probeBtn,
       rule ? el('button', { type: 'button', class: 'btn btn-danger', text: T('common.delete'), on: { click: function () {
         close();
-        A.confirm(T('rule.delete_confirm'), T('common.delete'), true).then(function (ok) { if (ok) A.api('DELETE', opts.base + '/rules/' + rule.id).then(opts.reload).catch(A.warn); });
+        A.confirm(T('rule.delete_confirm'), T('common.delete'), true).then(function (ok) { if (ok) A.api('DELETE', rulesBase(opts) + '/' + rule.id).then(opts.reload).catch(A.warn); });
       } } }) : null,
       el('button', { type: 'button', class: 'btn', text: T('common.cancel'), on: { click: function () { close(); } } }),
       save,
@@ -677,42 +959,73 @@
       else if (!e.shiftKey && (document.activeElement === last || !dialog.contains(document.activeElement))) { e.preventDefault(); first.focus(); }
     }
 
-    function submit() {
-      msg.textContent = '';
-      if (!stepCount()) { msg.textContent = T('rule.actions_required'); return; }
+    /** The checks before saving or a dry run: null, or the message (and the tab to show). */
+    function check(forTest) {
+      if (!forTest && !stepCount()) return T('rule.actions_required');
       var missing = st.steps.filter(needsTarget)[0];
-      if (missing) {
-        selectTab(missing.plugin);
-        msg.textContent = T('rule.m_target_missing', { name: byKey[missing.key].title });
-        return;
+      if (missing) { selectTab(missing.plugin); return T('rule.m_target_missing', { name: byKey[missing.key].title }); }
+      if (st.trigger === 'schedule' && (!st.days.length || !st.at)) return T('rr.err_schedule');
+      if (st.window && (!st.from || !st.to)) return T('rule.window_both');
+      if (st.window && st.from === st.to) return T('rule.m_window_same');
+      if (st.calendar && !st.calendar.sources.length) return T('rr.err_sources');
+      if (person() && !st.userId) return T('rule.m_who_missing');
+      if (place() && !placeOf(data, st.placeId)) return T('rule.m_place_missing');
+      if (st.msg && !personal()) {
+        // people who are no members any more drop out
+        if (Array.isArray(st.msgTo)) st.msgTo = st.msgTo.filter(function (id) { return people.some(function (m) { return m.userId === id; }); });
+        if (Array.isArray(st.msgTo) && !st.msgTo.length) { selectTab('@messenger'); return T('rule.m_msg_to_missing'); }
       }
-      if (st.window && (!st.from || !st.to)) { msg.textContent = T('rule.window_both'); return; }
-      if (st.window && st.from === st.to) { msg.textContent = T('rule.m_window_same'); return; }
-      if (person() && !st.userId) { msg.textContent = T('rule.m_who_missing'); return; }
-      if (place() && !placeOf(data, st.placeId)) { msg.textContent = T('rule.m_place_missing'); return; }
+      return null;
+    }
+
+    /** The rule as the rules API takes it (1.10.0: the trigger as an object, title, the new conditions and notify fields). */
+    function body() {
       var actions = st.steps.map(function (s) {
         var a = byKey[s.key];
         var out = { type: 'quick_action', plugin: s.plugin, id: s.id, title: (a ? labelOf(a) : s.title) || null };
         if (s.state) out.state = s.state;
         return out;
       });
-      if (st.notify) actions.push({ type: 'notify', to: st.notifyTo, text: st.text.trim() || null });
-      if (st.msg) {
-        // people who are no members any more drop out
-        if (Array.isArray(st.msgTo)) st.msgTo = st.msgTo.filter(function (id) { return people.some(function (m) { return m.userId === id; }); });
-        if (Array.isArray(st.msgTo) && !st.msgTo.length) { selectTab('@messenger'); msg.textContent = T('rule.m_msg_to_missing'); return; }
-        actions.push({ type: 'messenger', to: st.msgTo, text: st.msgText.trim() || null });
-      }
-      var body = {
-        name: st.name.trim(), trigger: st.trigger, graceMinutes: st.trigger === 'all_away' ? st.grace : r.graceMinutes,
-        conditions: { time: st.window ? { from: st.from, to: st.to } : null, afterSunset: st.sun }, actions: actions, active: st.active,
+      if (st.notify) actions.push({ type: 'notify', to: personal() ? 'me' : st.notifyTo, text: st.text.trim() || null, facts: st.facts, buttons: st.buttons.slice(0, MAX_BUTTONS) });
+      if (st.msg) actions.push({ type: 'messenger', to: personal() ? 'me' : st.msgTo, text: st.msgText.trim() || null });
+      var trig = { type: st.trigger };
+      if (st.trigger === 'schedule') { trig.weekdays = st.days.slice().sort(); trig.time = st.at; }
+      if (st.trigger === 'all_away') trig.graceMinutes = st.grace;
+      if (person()) trig.userId = st.userId;
+      if (place()) { trig.userId = st.placeUser; trig.placeId = st.placeId; }
+      var b = {
+        title: st.name.trim(), trigger: trig, active: st.active, actions: actions,
+        conditions: {
+          time: st.window ? { from: st.from, to: st.to } : null, afterSunset: st.sun,
+          device: st.device.map(function (d) { return { actionId: d.actionId, field: d.field, op: d.op, value: d.value, label: d.label || null, unit: d.unit || null }; }),
+          calendar: st.calendar ? { dayOffset: st.calendar.dayOffset, sources: st.calendar.sources.slice(), match: (st.calendar.match || '').trim(), memberIds: st.calendar.memberIds || null } : null,
+        },
       };
-      if (person()) body.userId = st.userId;
-      if (place()) { body.userId = st.placeUser; body.placeId = st.placeId; }
+      if (!rule) b.scope = st.scope;
+      return b;
+    }
+
+    function submit() {
+      msg.textContent = '';
+      var bad = check(false);
+      if (bad) { msg.textContent = bad; return; }
       save.disabled = true;
-      var p = rule ? A.api('PATCH', opts.base + '/rules/' + rule.id, body) : A.api('POST', opts.base + '/rules', body);
+      var p = rule ? A.api('PATCH', rulesBase(opts) + '/' + rule.id, body()) : A.api('POST', rulesBase(opts), body());
       p.then(function () { close(); A.toast(T('common.saved')); opts.reload(); })
         .catch(function (e) { save.disabled = false; msg.textContent = A.errText(e); });
+    }
+
+    /** „Probelauf“: would the rule as it stands fire today? Nothing runs, nothing is saved. */
+    function probe() {
+      msg.textContent = '';
+      var bad = check(true);
+      if (bad) { msg.textContent = bad; return; }
+      probeBtn.disabled = true;
+      var b = body();
+      if (rule) b.scope = rule.scope || 'house';
+      A.api('POST', rulesBase(opts) + '/test', b).then(function (res) { st.probe = res; renderFlow(); })
+        .catch(function (e) { msg.textContent = A.errText(e); })
+        .then(function () { probeBtn.disabled = false; });
     }
 
     renderWhen();
@@ -739,12 +1052,13 @@
         var what = y.type === 'quick_action' ? quickText({ title: y.title || y.id, verb: y.verb }) : T('rule.notify');
         return what + ' → ' + (y.ok ? (y.unchanged ? T('rule.unchanged') : (y.message || T('rule.ok'))) : T('rule.err.' + (y.error || 'failed')));
       }).join(' · ');
+      var title = x.ruleTitle || x.ruleName;
+      var what = isPlace(x.trigger) ? T('rule.log_' + x.trigger, { name: x.userId ? nameOf(data, x.userId) : '–', place: x.placeName || '–' }) // „Marc · kommt an: Schule“
+        : (x.trigger === 'schedule' ? T('rr.trig_schedule') : (x.trigger === 'button' ? T('rr.log_button') : T('rule.trigger_' + x.trigger, { name: x.userId ? nameOf(data, x.userId) : '' })));
       tb.appendChild(el('tr', null, [
         el('td', { class: 'fa-time', text: A.when(x.at) }),
-        el('td', { text: (x.ruleName ? x.ruleName + ' · ' : '') + (isPlace(x.trigger)
-          ? T('rule.log_' + x.trigger, { name: x.userId ? nameOf(data, x.userId) : '–', place: x.placeName || '–' }) // „Marc · kommt an: Schule“
-          : T('rule.trigger_' + x.trigger, { name: x.userId ? nameOf(data, x.userId) : '' })) }),
-        el('td', { class: x.ok ? 'fa-ok' : 'fa-bad', text: res || '–' }),
+        el('td', { text: (title ? title + ' · ' : '') + what }),
+        el('td', { class: x.ok ? 'fa-ok' : (x.skipped ? 'fa-sub' : 'fa-bad'), text: (x.skipped ? T('rr.skipped') + ' – ' : '') + (res || '–') }),
       ]));
     });
     box.appendChild(el('div', { class: 'fa-table-wrap' }, [el('table', { class: 'fa-table' }, [
@@ -966,5 +1280,5 @@
     }
   }
 
-  A.rules = { render: render, edit: edit, log: log, people: people, places: places, editPlace: editPlace, TRIGGERS: TRIGGERS, MAX_PLACES: MAX_PLACES };
+  A.rules = { render: render, edit: edit, log: log, people: people, places: places, editPlace: editPlace, flat: flat, TRIGGERS: TRIGGERS, MAX_PLACES: MAX_PLACES };
 }());

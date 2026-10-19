@@ -3,6 +3,23 @@
 Die Familie in der GateControl-App (eigener Tab), im Portal (eigener Tab „Familie“) und auf
 drei Admin-Seiten. Alles bleibt auf dem eigenen Server.
 
+## 1.10.0
+- **Ein Regel-Editor für alles:** Die Seite „Regeln & Erinnerungen“ ist wieder weg – alle Regeln der Familie
+  stehen auf **„Anwesenheit & Smart Home“** und werden mit dem bekannten Dialog („Wann? · Was soll passieren? ·
+  Ablauf“) angelegt. Er kann jetzt zusätzlich:
+  - **Zeit · Erinnerungen** als Auslöser: Wochentage und Uhrzeit, einmal am Tag;
+  - unter **„Nur wenn …“** einen **Gerätewert** (bis zu 4, mit dem aktuellen Wert) und einen **Termin** heute oder
+    morgen (Familie-Termine, Alltag-Kalender, Titel enthält …);
+  - in der **Mitteilung** Werte und Termin unter dem Text und bis zu drei **Knöpfe** („In 1 Std.“, „Erledigt“,
+    ein Gerät);
+  - einen **Probelauf** („Heute würde die Regel auslösen …“, ohne etwas auszulösen).
+  Die Liste filtert nach Alle / Erinnerungen / Anwesenheit / Orte; eigene Erinnerungen der Mitglieder stehen mit
+  „nur für …“. Ist „Anwesenheit & Smart Home“ aus, bietet der Dialog nur den Zeitplan an.
+- **Portal:** Der Abschnitt „Regeln und Erinnerungen“ nutzt denselben Editor – Eltern wählen „Hausregel“ oder
+  „Nur für mich“, Kinder (mit „Kinder dürfen eigene Erinnerungen anlegen“) legen eigene Erinnerungen an. Die
+  Anwesenheits-Karte zeigt weiter, wer zuhause ist, und für Eltern die Orte.
+- Bestehende Regeln und Erinnerungen bleiben unverändert (dieselbe Tabelle, dieselbe API `rules`).
+
 ## 1.9.1
 - **Erinnerungen:** Ein Gerät heißt im Regel-Editor wie das Gerät („Elroq“), nicht mehr nach der Aktion, an der
   sein Widget hängt („Elroq – Klimatisierung“). Damit stimmen auch Titel und Bedingung („Ladestand Elroq < 50 %“).

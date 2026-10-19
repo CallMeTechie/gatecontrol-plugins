@@ -540,12 +540,12 @@
         {
           "icon": "page",
           "title": {
-            "de": "Fünf Admin-Seiten",
-            "en": "Five admin pages"
+            "de": "Vier Admin-Seiten",
+            "en": "Four admin pages"
           },
           "text": {
-            "de": "Mitglieder & Ortung, Funktionen, Anwesenheit & Smart Home, Regeln & Erinnerungen, Protokoll",
-            "en": "Members & locating, features, presence & smart home, rules & reminders, log"
+            "de": "Mitglieder & Ortung, Funktionen, Anwesenheit & Smart Home (mit allen Regeln und Erinnerungen), Protokoll",
+            "en": "Members & locating, features, presence & smart home (with every rule and reminder), log"
           }
         },
         {
@@ -732,8 +732,8 @@
         {
           "kind": "list",
           "caption": {
-            "de": "Admin-Seite · Regeln & Erinnerungen",
-            "en": "Admin page · rules & reminders"
+            "de": "Admin-Seite · Anwesenheit & Smart Home",
+            "en": "Admin page · presence & smart home"
           }
         },
         {

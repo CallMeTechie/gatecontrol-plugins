@@ -3,9 +3,10 @@
    reservations on one's own wishes), pocket money (parents: every child, book,
    rule, approve converting stars; a child: its own account and "Umwandeln"),
    household book (parents), presence (everyone: own consent and who is home;
-   parents: the rules and, 1.5.0, the places of the place rules — ui/rules.js). Money is bookkeeping only. Same API as
+   parents: 1.5.0, the places of the place rules — ui/rules.js). Money is bookkeeping only. Same API as
    the app; a viewer recognised only by device trust reads and changes nothing
-   (no presence at all). 1.9.0: rules and reminders (ui/reminders.js) for everyone who may make some. */
+   (no presence at all). Rules and reminders (1.9.0) for everyone who may make some — 1.10.0 with the
+   editor of the admin page „Anwesenheit & Smart Home“ (ui/rules.js, API rules/…). */
 (function () {
   'use strict';
   var A = window.FA, T = A.T, $ = A.$, el = A.el, CTX = A.CTX;
@@ -439,8 +440,9 @@
   $('#fa-exp-next').addEventListener('click', function () { if (expMonth) { expMonth = shiftMonth(expMonth, 1); loadExpenses(); } });
 
   // ── presence ─────────────────────────────────────────────────────────────
+  // who is home for everyone; the places of the place rules for parents (the rules: below)
   var presData = null;
-  var ruleOpts = { base: 'presence', editable: writable, reload: function () { return loadPresence(); } };
+  var placeOpts = { base: 'presence', editable: writable, reload: function () { loadPresence(); loadRules(); } };
   function loadPresence() {
     return A.api('GET', 'presence').then(function (r) {
       presData = { members: r.members, me: r.me };
@@ -451,33 +453,39 @@
       A.rules.people($('#fa-pres-people'), r.members);
       if (!parent()) return null;
       $('#fa-pres-rules-box').hidden = false;
-      return Promise.all([A.api('GET', 'presence/rules'), A.api('GET', 'presence/actions'), A.api('GET', 'presence/places')]).then(function (x) {
-        presData.rules = x[0].rules;
-        presData.log = x[0].log;
-        presData.messenger = x[0].messenger || null; // 1.6.0: the rule action „Messenger-Nachricht senden“
-        presData.actions = x[1].actions;
-        presData.actionsAvailable = x[1].available;
-        presData.places = x[2].places;
-        presData.home = x[2].home;
-        A.rules.render($('#fa-pres-rules'), presData, ruleOpts);
-        A.rules.places($('#fa-pres-places'), presData, ruleOpts);
+      return A.api('GET', 'presence/places').then(function (x) {
+        presData.places = x.places;
+        presData.home = x.home;
+        A.rules.places($('#fa-pres-places'), presData, placeOpts);
         $('#fa-pres-place-add').disabled = presData.places.length >= A.rules.MAX_PLACES;
-        A.rules.log($('#fa-pres-log'), presData);
       });
     }).catch(A.warn);
   }
-  $('#fa-pres-add').addEventListener('click', function () { if (presData && presData.rules) A.rules.edit(null, presData, ruleOpts); });
-  $('#fa-pres-place-add').addEventListener('click', function () { if (presData && presData.places) A.rules.editPlace(null, presData, ruleOpts, loadPresence); });
+  $('#fa-pres-place-add').addEventListener('click', function () { if (presData && presData.places) A.rules.editPlace(null, presData, placeOpts, placeOpts.reload); });
 
-  // ── rules and reminders (1.9.0, ui/reminders.js) ─────────────────────────
-  var rulesView = null;
+  // ── rules and reminders (1.10.0: one editor, ui/rules.js, through the rules API) ──
+  var rulesData = null;
+  var rulesOpts = { base: 'presence', rulesBase: 'rules', editable: writable, managePlaces: false, filter: 'all', reload: function () { return loadRules(); } };
   function loadRules() {
-    if (!rulesView) rulesView = A.reminders.mount($('#fa-rules-box'), { base: 'rules', add: $('#fa-rules-add'), writable: writable, me: me && me.me });
-    return rulesView.reload().then(function (d) {
+    return Promise.all([A.api('GET', 'rules'), A.api('GET', 'rules/options')]).then(function (x) {
+      var rr = x[0], o = x[1];
+      var isParent = parent();
+      rulesOpts.managePlaces = isParent;
+      rulesData = {
+        rules: rr.rules.map(A.rules.flat), log: rr.log, can: rr.can,
+        options: o, actions: o.actions, actionsAvailable: o.actionsAvailable, messenger: o.messenger,
+        // the places of the place triggers: parents manage them (presence/places), the others pick from the options
+        places: isParent && presData && presData.places ? presData.places : o.places, home: presData ? presData.home : null,
+        location: o.location ? true : null,
+      };
       // children without their own rules (and without the setting) see nothing of it
-      $('#fa-rules').hidden = !d || !(d.can.house || d.can.personal || d.rules.length);
-    });
+      $('#fa-rules').hidden = !(rr.can.house || rr.can.personal || rr.rules.length);
+      $('#fa-rules-add').hidden = !(rr.can.house || rr.can.personal);
+      A.rules.render($('#fa-rules-box'), rulesData, rulesOpts);
+      A.rules.log($('#fa-rules-log'), rulesData);
+    }).catch(function (e) { $('#fa-rules').hidden = true; if (!e || e.code !== 'login_required') A.warn(e); });
   }
+  $('#fa-rules-add').addEventListener('click', function () { if (rulesData) A.rules.edit(null, rulesData, rulesOpts); });
 
   // ── start ────────────────────────────────────────────────────────────────
   A.api('GET', 'me').then(function (r) {

@@ -50,11 +50,16 @@ test('render: members, modules, log and the portal tab in de and en; no unresolv
     const h = ui.render({ view: 'page', page: 'presence', lang }, t);
     assert.ok(h.includes(texts[lang]['places.intro'].replace(/"/g, '&quot;').replace(/'/g, '&#39;')) && h.includes(texts[lang]['presence.note_places'].replace(/"/g, '&quot;').replace(/'/g, '&#39;')), lang);
   }
-  // 1.9.0: the page „Regeln & Erinnerungen“ and the portal section with the editor of ui/reminders.js (mockup ReminderServer)
-  const rr = ui.render({ view: 'page', page: 'rules' }, t);
-  assert.ok(rr.includes('A.reminders = {') && rr.includes('id="fa-rr-root"') && rr.includes('.fa-rr-cols{') && !rr.includes('A.rules = {'));
-  assert.ok(portalHtml.includes('A.reminders = {') && portalHtml.includes('id="fa-rules"') && portalHtml.includes('A.rules = {'));
-  assert.ok(!pres.includes('A.reminders = {'), 'the presence page keeps its own editor');
+  // 1.10.0: one editor for every rule — the page „Regeln & Erinnerungen“ and ui/reminders.js are gone; the presence page
+  // and the portal section „Regeln und Erinnerungen“ use ui/rules.js through the rules API, with reminders (schedule),
+  // device values, events, buttons and the dry run
+  assert.equal(ctxOf(ui.render({ view: 'page', page: 'rules' }, t)).page, 'members', 'no page „rules“ any more');
+  for (const html of [pres, portalHtml]) {
+    assert.ok(!html.includes('A.reminders') && !html.includes('fa-rr-'), 'no second editor');
+    assert.ok(html.includes("'schedule'") && html.includes('function deviceBlock()') && html.includes('function calendarBlock()') && html.includes('function probe()') && html.includes('.fa-rm-probe{'));
+  }
+  assert.ok(pres.includes("rulesBase: 'admin/rules'") && pres.includes("A.api('GET', 'admin/rules/options')"));
+  assert.ok(portalHtml.includes('id="fa-rules"') && portalHtml.includes('id="fa-rules-box"') && portalHtml.includes("rulesBase: 'rules'") && !portalHtml.includes('id="fa-pres-rules"'));
   // 1.3.0: member chips in the portal header, the help on the members page, one avatar renderer
   assert.ok(portalHtml.includes('id="fa-p-people"') && portalHtml.includes('function avatar(m, size, opts)'));
   // 1.3.1: no own title — the portal shows the tab name „Familie“ above the frame
@@ -92,7 +97,8 @@ test('texts: every key used by the pages exists in de and en; both languages hav
     ...['home', 'away', 'unknown', 'not_shared'].map((x) => 'presence.' + x),
     ...['home', 'away'].map((x) => 'avatar.' + x),
     ...['not_found', 'plugin_error', 'timeout', 'rate_limit', 'invalid', 'denied', 'unavailable', 'no_recipients', 'failed', 'error', 'needs_target', 'state_unknown', 'invalid_state'].map((x) => 'rule.err.' + x),
-    ...require('../server/presence').TRIGGERS.flatMap((x) => ['rule.m_trig_' + x, 'rule.m_trig_' + x + '_hint']),
+    ...require('../server/rules').TRIGGERS.flatMap((x) => ['rule.m_trig_' + x, 'rule.m_trig_' + x + '_hint']),
+    ...['time', 'home', 'places'].map((x) => 'rule.m_group_' + x), 'rule.m_btn_snooze', 'rule.m_btn_done',
     ...Object.keys(require('../server/presence').PLACE_TRIGGERS).map((x) => 'rule.log_' + x),
     'rule.m_on', 'rule.m_off',
     // 1.9.0: the module, the rule log of the presence page, the editor of ui/reminders.js
@@ -134,7 +140,7 @@ test('Leaflet: one constant (server/ui.js), nowhere else', () => {
 
 test('plugin.json: permissions (kiosk, actions), app tab, maps, the eleven topics with SOS allowed critical', () => {
   assert.equal(manifest.id, 'gatecontrol-familie');
-  assert.equal(manifest.version, '1.9.1');
+  assert.equal(manifest.version, '1.10.0');
   // 1.6.0 stays on 1.173.0: the messenger services (GateControl ≥ 1.177.0) are optional — an older host ignores
   // permissions.services and has no gc.services, so the group and the rule action stay hidden there
   assert.equal(manifest.gatecontrol, '>=1.173.0', 'target states of switches (gc.actions.run state, verbs/targets/device in gc.actions.list) need GateControl 1.173.0');
@@ -146,9 +152,9 @@ test('plugin.json: permissions (kiosk, actions), app tab, maps, the eleven topic
   assert.deepEqual(Object.keys(manifest.services.provides), ['list_add', 'calendar_add', 'calendar_upsert', 'calendar_remove', 'places', 'family_roles'],
     '1.8.0: services for the Messenger; 1.9.0: family_roles');
   for (const sv of Object.values(manifest.services.provides)) assert.ok(sv.label.de && sv.label.en && sv.label.de.length <= 60 && sv.label.en.length <= 60);
-  assert.deepEqual(manifest.ui.pages.map((x) => x.id), ['members', 'modules', 'presence', 'rules', 'log']);
+  // 1.10.0: no page „Regeln & Erinnerungen“ — every rule is on „Anwesenheit & Smart Home“
+  assert.deepEqual(manifest.ui.pages.map((x) => x.id), ['members', 'modules', 'presence', 'log']);
   assert.deepEqual(manifest.ui.pages[2].title, { de: 'Anwesenheit & Smart Home', en: 'Presence & smart home' });
-  assert.deepEqual(manifest.ui.pages[3].title, { de: 'Regeln & Erinnerungen', en: 'Rules & reminders' });
   // 1.9.0: children's own reminders (off), how a shopping list is asked of someone (direct), „Ich gehe einkaufen“ in the family chat (on)
   assert.deepEqual(manifest.ui.settings.map((x) => x.key), ['timezone', 'notify_lang', 'lat', 'lon', 'children_own_rules', 'shopping_notify', 'shopping_chat']);
   assert.deepEqual(manifest.ui.settings.slice(4).map((x) => x.default), [false, 'direct', 'family']);
