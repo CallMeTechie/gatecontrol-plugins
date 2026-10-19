@@ -23,7 +23,7 @@ const LAN_TIMEOUT_MS = 8000;
 const cache = new Map();          // deviceId -> { state, online, lastAt }
 const locks = new Map();          // deviceId -> Promise chain tail
 const lockDepth = new Map();      // deviceId -> active operation count
-const cloudRefreshInFlight = new Set(); // device ids with a background cloud refresh running (dedupe)
+const cloudRefreshInFlight = new Map(); // device id → its running background cloud refresh (dedupe)
 const status = { lastPollAt: null, cloudNeedsReauth: false }; // reauth: set on a 2FA error, cleared on a successful cloud command
 let pollRunning = false;
 
@@ -158,12 +158,13 @@ function fetchCloudState(gc, id, d) {
 // Kick a single background refresh for a stale-but-usable cache entry. Deduped
 // per device so overlapping page/widget loads don't stack cloud calls.
 function refreshCloudState(gc, id, d) {
-  if (cloudRefreshInFlight.has(id)) return;
-  cloudRefreshInFlight.add(id);
-  Promise.resolve()
+  if (cloudRefreshInFlight.has(id)) return cloudRefreshInFlight.get(id);
+  const p = Promise.resolve()
     .then(() => fetchCloudState(gc, id, d))
     .catch((err) => { gc.log.debug('cloud state refresh failed', id, err && err.message); })
     .finally(() => cloudRefreshInFlight.delete(id));
+  cloudRefreshInFlight.set(id, p);
+  return p;
 }
 
 async function deviceOrThrow(gc, id) {
@@ -213,6 +214,22 @@ function cachedState(gc, d) {
   if (d.transport === 'cloud' && (!c || !c.online || Date.now() - c.lastAt >= CLOUD_STATE_TTL_MS)) refreshCloudState(gc, d.id, d);
   if (!c) return null;
   return c.online && c.state ? c.state : { offline: true };
+}
+
+/**
+ * Like cachedState, but a cloud state older than the TTL is first refreshed
+ * for up to `waitMs` (the apps' quick actions, 2.0.1): a device switched with
+ * its remote or the Midea app shows its real state on the next look instead
+ * of the one after. Past `waitMs` the cached state, the refresh lands later.
+ */
+async function recentState(gc, d, waitMs) {
+  const c = cache.get(d.id);
+  if (d.vendor === 'dreo' || d.transport !== 'cloud' || (c && c.online && Date.now() - c.lastAt < CLOUD_STATE_TTL_MS)) return cachedState(gc, d);
+  let timer;
+  const wait = new Promise((resolve) => { timer = setTimeout(resolve, waitMs); if (timer.unref) timer.unref(); });
+  await Promise.race([refreshCloudState(gc, d.id, d), wait]);
+  clearTimeout(timer);
+  return cachedState(gc, d);
 }
 
 async function setState(gc, id, patch) {
@@ -415,7 +432,7 @@ function reset() {
 module.exports = {
   CLOUD_STATE_TTL_MS,
   withDeviceLock, connectCloud, getCloudStatus, listCloudDevices, discoverLan, acTargets,
-  getState, cachedState, setState, testConnection, addDevice, removeDevice, getStatus, pollTick, reset,
+  getState, cachedState, recentState, setState, testConnection, addDevice, removeDevice, getStatus, pollTick, reset,
   // seams for the tests
   newCloud, connectTarget, _cache: cache,
 };

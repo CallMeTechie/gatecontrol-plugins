@@ -250,6 +250,15 @@
     }, warn);
   }
 
+  // the Dreo account: live socket, signed in without devices (no socket needed), connecting, failed
+  function dreoKpi() {
+    if (!dreo.configured) return '—';
+    if (dreo.needs_login) return T('dreo.kpi_failed');
+    if (dreo.connected) return T('dreo.live');
+    if (!devices.some(function (d) { return isDreo(d) && d.enabled; })) return dreo.signed_in ? T('cloud.connected') : T('dreo.kpi_not_signed');
+    return T('dreo.offline');
+  }
+
   function renderKpis() {
     var host = M.clear($('#md-kpis'));
     var total = devices.length;
@@ -259,7 +268,7 @@
       [T('kpi.online'), '0 / ' + total, 'md-kpi-online'],
       [T('kpi.assigned'), withOwner + ' / ' + total, null],
       [T('kpi.cloud'), cloud.configured ? T('cloud.connected') : '—', null],
-      [T('kpi.dreo'), dreo.configured ? (dreo.connected ? T('dreo.live') : T('dreo.offline')) : '—', null],
+      [T('kpi.dreo'), dreoKpi(), null],
     ].forEach(function (k) {
       host.appendChild(el('div', { class: 'md-kpi' }, [el('span', { class: 'l', text: k[0] }), el('span', { class: 'v', id: k[2], text: k[1] })]));
     });
@@ -281,7 +290,7 @@
   // live — mirror both from the plugin's cache here (no extra device round trip)
   setInterval(function () {
     if (document.hidden || $$('.modal-overlay').some(function (m) { return !m.hidden; })) return;
-    if (!devices.some(function (d) { return d.transport !== 'cloud' || isDreo(d); })) return;
+    if (!dreo.configured && !devices.some(function (d) { return d.transport !== 'cloud' || isDreo(d); })) return;
     M.api('GET', 'status').then(function (st) {
       showBanners(st);
       (st.devices || []).forEach(function (s) {

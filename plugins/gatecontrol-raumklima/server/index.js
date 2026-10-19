@@ -209,6 +209,7 @@ function deviceTile(d, st, lang) {
 // ─── Quick actions of the apps (declarative; the host checks and caps them) ──
 
 const QA_MAX = 16;
+const QA_FRESH_MS = 1000;  // a stale cloud state is refreshed this long first (the host gives the hook 1.5 s)
 const QA_ID_RE = /^ac:([1-9][0-9]{0,9})$/;
 
 /** A text as the host takes it unchanged: no control characters, trimmed, at most `max` UTF-16 units. */
@@ -292,8 +293,10 @@ function controlPatch(control, value, d) {
  */
 async function quickActionsFor(gc, user, lang) {
   if (!user || !Number.isInteger(user.id) || user.loggedIn === false) return [];
-  return (await ownedDevices(gc, user.id)).filter((d) => d.enabled).slice(0, QA_MAX).map((d) => {
-    const st = service.cachedState(gc, d);
+  const devices = (await ownedDevices(gc, user.id)).filter((d) => d.enabled).slice(0, QA_MAX);
+  const states = await Promise.all(devices.map((d) => service.recentState(gc, d, QA_FRESH_MS).catch(() => service.cachedState(gc, d))));
+  return devices.map((d, i) => {
+    const st = states[i];
     const title = clip(d.name, 40) || t(lang, 'portal.title');
     const a = {
       id: `ac:${d.id}`, title, subtitle: clip(statusLine(st, lang, d) || t(lang, 'portal.title'), 60), icon: iconOf(d), kind: 'toggle',
@@ -380,7 +383,8 @@ async function portalRoute(req, gc, seg) {
 
 /** The Dreo account as the admin page shows it (never the password hash or token). */
 async function dreoView(gc) {
-  return { ...store.redactDreo(await store.loadDreo(gc)), ...dreo.getStatus(), supported: dreo.supported(gc) };
+  const cfg = await store.loadDreo(gc);
+  return { ...store.redactDreo(cfg), ...dreo.getStatus(), signed_in: Boolean(cfg.token), supported: dreo.supported(gc) };
 }
 
 async function adminRoute(req, gc, seg) {

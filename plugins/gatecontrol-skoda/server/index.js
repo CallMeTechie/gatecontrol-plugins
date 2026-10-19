@@ -256,6 +256,11 @@ function deviceOf(v, lang) {
   return d;
 }
 
+/** The logbook of a vehicle as a device of the apps (its own widget next to the car's). */
+function logbookDevice(v, lang) {
+  return { id: `lb:${v.id}`, title: clip(t(lang, 'qa.logbook'), 40), subtitle: clip(v.name || v.model || t(lang, 'portal.vehicle'), 60), icon: QA_ICONS.logbook };
+}
+
 /** The charge level as the widget badge: battery icon by level (lightning while charging), whole %; null without one. */
 function socBadge(f, lang) {
   if (f.soc == null) return null;
@@ -325,8 +330,10 @@ async function quickActionsFor(gc, user, lang) {
     if ((v.state && v.state.soc != null) || st.charging) toggle('charging');
     toggle('windowheat');
     if (await store.getSpin(gc, v.account_id)) add('lock', { ...lockAction(lang, st, automation), verbs: verbsOf('lock', lang), targets: true });
-    // the logbook (1.5.0): the last trip private/business, with the month's widget — never for rules
-    if (!automation && await logbook.hasTrips(gc, v.vin)) add('logbook', await logbookAction(gc, v, lang));
+    // the logbook (1.5.0): the last trip private/business, with the month's widget — never for rules;
+    // offered before the first trip too (1.5.1), so its widget can be placed right away
+    // — a device of its own (1.5.1): the app shows one widget per device, the car's is the climate one
+    if (!automation) add('logbook', { ...(await logbookAction(gc, v, lang)), device: logbookDevice(v, lang) });
     if (out.length >= QA_MAX) break;
   }
   return out.slice(0, QA_MAX);
@@ -354,7 +361,7 @@ async function logbookAction(gc, v, lang) {
   else if (last) {
     const to = last.endAddress ? last.endAddress.split(',')[0] : '';
     w.status = clip(t(lang, 'widget.trip_last', { km: km(last.distanceKm), purpose: logbook.purposeLabel(last.purpose, lang) }) + (to ? ` → ${to}` : ''), 60);
-  }
+  } else w.status = clip(t(lang, 'widget.trip_none'), 60);
   if (last && !last.purpose) w.state = 'warn';
   if (last) {
     w.controls.push({
@@ -368,7 +375,8 @@ async function logbookAction(gc, v, lang) {
   };
   if (last && last.purpose === 'business') a.state = 'on';
   else if (last && last.purpose === 'private') a.state = 'off';
-  if (last) a.subtitle = clip(`${t(lang, 'qa.logbook_last')}: ${km(last.distanceKm)} km · ${logbook.purposeLabel(last.purpose, lang)}`, 60);
+  a.subtitle = last ? clip(`${t(lang, 'qa.logbook_last')}: ${km(last.distanceKm)} km · ${logbook.purposeLabel(last.purpose, lang)}`, 60)
+    : clip(t(lang, 'qa.logbook_none'), 60);
   return a;
 }
 
@@ -379,7 +387,7 @@ async function runLogbookAction(gc, user, lang, vid, ctl, value, target) {
   const v = await store.getVehicle(gc, vid);
   if (!v) throw fail('SKODA_VEHICLE_NOT_FOUND');
   const last = await logbook.lastTrip(gc, v.vin);
-  if (!last) throw fail('SKODA_TRIP_NOT_FOUND');
+  if (!last) return { ok: false, message: clip(t(lang, 'qa.logbook_no_trip'), 120), widget: (await logbookAction(gc, v, lang)).widget };
   let purpose;
   if (ctl !== undefined) {
     if (ctl !== 'purpose' || !['open', ...logbook.PURPOSES].includes(value)) return { ok: false, message: t(lang, 'qa.unknown') };

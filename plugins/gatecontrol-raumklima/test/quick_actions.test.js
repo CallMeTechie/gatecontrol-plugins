@@ -2,7 +2,7 @@
 
 // Quick actions of the GateControl apps (hooks quickActions / runQuickAction):
 // power on/off per air conditioner of the viewer — the portal's owner scope,
-// cached state only in the list, at most 16 — each its own device (ac:<id>)
+// cached state in the list (a stale cloud state read first, 2.0.1), at most 16 — each its own device (ac:<id>)
 // with a widget (indoor temperature, outdoor temperature reading, status line,
 // target temperature stepper, mode choice).
 
@@ -51,27 +51,47 @@ async function setup(host, cloud) {
   return { a, b };
 }
 
+test('quick actions (2.0.1): a stale cloud state is read again first — switched off with the remote shows off', () => {
+  const { devA, cloud } = twoDevices();
+  return withHost({ cloud }, async (host) => {
+    const { a } = await setup(host, cloud);
+    await asAdmin(host, 'PUT', `/devices/${a}/owners`, { user_ids: [ADA.id] });
+    assert.equal((await host.quickActions(ADA))[0].state, 'on');
+    devA.state.power = false;                                   // the remote, the Midea app
+    assert.equal((await host.quickActions(ADA))[0].state, 'on', 'within the TTL: the cache');
+    const service = require('../server/service');
+    service._cache.get(a).lastAt -= service.CLOUD_STATE_TTL_MS; // the cache got old
+    const qa = (await host.quickActions(ADA))[0];
+    assert.deepEqual([qa.state, qa.widget.state, qa.subtitle], ['off', 'off', 'Aus']);
+    await settle();
+  });
+});
+
 test('quick actions: a power toggle per own air conditioner, state from the cache only', () => {
   const { cloud } = twoDevices();
   return withHost({ cloud }, async (host) => {
     const { a, b } = await setup(host, cloud);
     await asAdmin(host, 'PUT', `/devices/${a}/owners`, { user_ids: [ADA.id] });
     await asAdmin(host, 'PUT', `/devices/${b}/owners`, { user_ids: [ADA.id, BOB.id] });
-    await asAdmin(host, 'GET', `/devices/${a}/state`); // A has a cached state, B none yet
+    await asAdmin(host, 'GET', `/devices/${a}/state`); // A has a fresh cached state, B none yet
     const calls = cloud.calls.length;
     const ada = await host.quickActions(ADA);
-    assert.equal(cloud.calls.length, calls, 'no cloud call inside the hook');
+    // 2.0.1: a fresh cache is used as is; a missing or stale cloud state is read first (up to 1 s)
+    assert.ok(cloud.calls.length > calls, 'B had no state: read inside the hook');
     assert.deepEqual(ada.map((x) => [x.id, x.title, x.subtitle, x.kind, x.state]), [
       [`ac:${a}`, 'Wohnzimmer', 'Kühlen · Ziel 22 °C', 'toggle', 'on'],
-      [`ac:${b}`, 'Büro', 'Raumklima', 'toggle', null],
+      [`ac:${b}`, 'Büro', 'Aus', 'toggle', 'off'],
     ]);
     assert.ok(ada.every((x) => /^M/.test(x.icon) && x.confirm === false && x.look === null && x.confirmWhen === null));
     assert.deepEqual(ada.map((x) => x.device), [{ id: `ac:${a}`, title: 'Wohnzimmer', subtitle: null, icon: AC }, { id: `ac:${b}`, title: 'Büro', subtitle: null, icon: AC }], 'every air conditioner its own device');
     assert.deepEqual(ada[0].widget, widget({ value: '23,5', status: 'Kühlen · Ziel 22 °C', state: 'on', target: 22, mode: 'cool' }), 'the widget from the cached state');
-    assert.deepEqual(ada[1].widget, widget(), 'unknown state: dash, no status, default controls');
+    assert.deepEqual(ada[1].widget, widget({ value: '23,5', status: 'Aus', state: 'off', mode: 'cool' }), 'read in the hook');
+    const again = cloud.calls.length;
+    await host.quickActions(ADA);
+    assert.equal(cloud.calls.length, again, 'fresh states: no cloud call inside the hook');
     const bob = await host.quickActions(BOB, 'en');
     assert.deepEqual(bob.map((x) => x.id), [`ac:${b}`]);
-    assert.deepEqual(bob[0].widget, widget({ lang: 'en' }));
+    assert.deepEqual(bob[0].widget, widget({ lang: 'en', value: '23.5', status: 'Off', state: 'off', mode: 'cool' }));
     assert.deepEqual(await host.quickActions(ADMIN), [], 'only what is assigned, like in the portal');
     assert.deepEqual(await host.quickActions({ ...ADA, loggedIn: false }), []);
     await asAdmin(host, 'PUT', `/devices/${b}`, { enabled: false });

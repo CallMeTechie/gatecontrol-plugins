@@ -51,12 +51,13 @@ test('quick actions: the portal\'s controls for the signed-in owner, stored stat
     [`climate:${v}`, 'Klimatisierung', 'Elroq', 'toggle', 'off', false],
     [`charging:${v}`, 'Laden', 'Elroq', 'toggle', 'on', false],
     [`windowheat:${v}`, 'Scheibenheizung', 'Elroq', 'toggle', 'off', false],
+    [`logbook:${v}`, 'Fahrtenbuch', 'Noch keine Fahrt erfasst', 'toggle', null, false],
   ]);
   assert.ok(list.every((a) => /^M/.test(a.icon)));
   assert.ok(list.every((a) => a.look === null && a.confirmWhen === null));
   await asAdmin(host, 'PUT', `/accounts/${accountId}/spin`, { spin: '4711' });
   list = await host.quickActions(ADA, 'en');
-  assert.deepEqual(list.map((a) => a.id), [`climate:${v}`, `charging:${v}`, `windowheat:${v}`, `lock:${v}`], 'no unlock action any more');
+  assert.deepEqual(list.map((a) => a.id), [`climate:${v}`, `charging:${v}`, `windowheat:${v}`, `lock:${v}`, `logbook:${v}`], 'no unlock action any more');
   assert.deepEqual(list[3], {
     id: `lock:${v}`, title: 'Locked', subtitle: 'Elroq', icon: LOCKED, kind: 'toggle', state: 'on', confirm: true, confirmWhen: 'off', look: LOOK,
     device: { id: `v:${v}`, title: 'Elroq', subtitle: null, icon: CAR }, widget: null, verbs: { on: 'Lock', off: 'Unlock' }, targets: true,
@@ -78,9 +79,9 @@ test('quick actions: at most 16 over several vehicles', () => {
     for (const x of vehicles) await asAdmin(host, 'PUT', `/vehicles/${x.id}/owners`, { user_ids: [ADA.id] });
     const list = await host.quickActions(ADA); // the mock host throws on more than 16
     assert.equal(list.length, 16);
-    assert.deepEqual(list.slice(0, 5).map((a) => a.id.split(':')[0]), ['climate', 'charging', 'windowheat', 'lock', 'climate']);
-    assert.deepEqual(list.slice(0, 5).map((a) => a.device.id), [`v:${vehicles[0].id}`, `v:${vehicles[0].id}`, `v:${vehicles[0].id}`, `v:${vehicles[0].id}`, `v:${vehicles[1].id}`]);
-    assert.equal(list.filter((a) => a.widget).length, 4, 'one widget per vehicle');
+    assert.deepEqual(list.slice(0, 6).map((a) => a.id.split(':')[0]), ['climate', 'charging', 'windowheat', 'lock', 'logbook', 'climate']);
+    assert.deepEqual(list.slice(0, 6).map((a) => a.device.id), [`v:${vehicles[0].id}`, `v:${vehicles[0].id}`, `v:${vehicles[0].id}`, `v:${vehicles[0].id}`, `lb:${vehicles[0].id}`, `v:${vehicles[1].id}`]);
+    assert.equal(list.filter((a) => a.widget).length, 7, 'one widget per device: the car (climate) and its logbook');
   });
 });
 
@@ -142,10 +143,12 @@ test('target states (GateControl ≥ 1.173.0): every toggle declares its verbs a
   assert.deepEqual(await verbs('de'), [
     ['climate', { on: 'Einschalten', off: 'Ausschalten' }, true], ['charging', { on: 'Laden starten', off: 'Laden stoppen' }, true],
     ['windowheat', { on: 'Einschalten', off: 'Ausschalten' }, true], ['lock', { on: 'Verriegeln', off: 'Entriegeln' }, true],
+    ['logbook', { on: 'Geschäftlich', off: 'Privat' }, false],
   ]);
   assert.deepEqual(await verbs('en'), [
     ['climate', { on: 'Turn on', off: 'Turn off' }, true], ['charging', { on: 'Start charging', off: 'Stop charging' }, true],
     ['windowheat', { on: 'Turn on', off: 'Turn off' }, true], ['lock', { on: 'Lock', off: 'Unlock' }, true],
+    ['logbook', { on: 'Business', off: 'Private' }, false],
   ]);
   const last = () => cloud.commands.at(-1);
   const run = async (id, state, lang = 'de') => { const r = await host.runQuickAction(ADA, `${id}:${v}`, lang, { state }); await settle(); return r; };
@@ -207,8 +210,9 @@ test('quick actions: the vehicle\'s device and its widget on the climate action'
     const { vehicleId: v } = await owned(host, cloud);
     let list = await host.quickActions(ADA);
     const device = { id: `v:${v}`, title: 'Familienauto', subtitle: 'Elroq', icon: CAR };
-    assert.ok(list.every((a) => JSON.stringify(a.device) === JSON.stringify(device)), 'every action of the vehicle: one device');
-    assert.deepEqual(list.map((a) => [a.id, Boolean(a.widget)]), [[`climate:${v}`, true], [`charging:${v}`, false], [`windowheat:${v}`, false]]);
+    assert.ok(list.filter((a) => !a.id.startsWith('logbook:')).every((a) => JSON.stringify(a.device) === JSON.stringify(device)), 'every action of the vehicle: one device');
+    assert.deepEqual(list.at(-1).device, { id: `lb:${v}`, title: 'Fahrtenbuch', subtitle: 'Familienauto', icon: list.at(-1).icon }, 'the logbook: a device of its own');
+    assert.deepEqual(list.map((a) => [a.id, Boolean(a.widget)]), [[`climate:${v}`, true], [`charging:${v}`, false], [`windowheat:${v}`, false], [`logbook:${v}`, true]]);
     // the charge level as the badge (charging: the lightning battery), no main value, only the range as a reading
     assert.deepEqual(list[0].widget, {
       label: null, value: null, unit: null, status: 'Lädt', state: 'good', controls: [], power: false,
@@ -237,7 +241,7 @@ test('quick actions: the vehicle\'s device and its widget on the climate action'
       label: null, value: null, unit: null, status: null, state: null, controls: [], power: false,
       readings: [{ id: 'range', label: 'Reichweite', value: 310, unit: 'km', icon: ROUTE, state: null }], badge: null,
     });
-    assert.deepEqual(list.map((a) => a.id), [`climate:${v}`, `windowheat:${v}`], 'no charging toggle without a battery');
+    assert.deepEqual(list.map((a) => a.id), [`climate:${v}`, `windowheat:${v}`, `logbook:${v}`], 'no charging toggle without a battery');
     // nothing known: an empty widget (never a dash), the status line still shows
     await patchState(host, v, { rangeKm: null });
     assert.deepEqual((await host.quickActions(ADA))[0].widget, { label: null, value: null, unit: null, status: null, state: null, controls: [], readings: [], power: false, badge: null });
