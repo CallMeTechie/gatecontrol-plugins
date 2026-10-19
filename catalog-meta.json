@@ -1,0 +1,115 @@
+{
+  "$comment": "Store metadata per plugin id for catalog.json (tools/catalog.js). Optional; GateControl ignores unknown or invalid values.",
+  "plugins": {
+    "gatecontrol-alltag": {
+      "category": "family",
+      "icon": "calendar",
+      "summary": {
+        "de": "Müllabfuhr-Termine und iCal-Kalender des Haushalts – mit Erinnerungen in der App und Terminen im Portal.",
+        "en": "The household’s waste collection dates and iCal calendars – with reminders in the app and dates in the portal."
+      },
+      "audience": "all",
+      "keywords": ["müll", "abfall", "waste", "abfuhr", "kalender", "calendar", "ical", "termine", "google", "icloud", "outlook", "nextcloud"],
+      "related": ["gatecontrol-familie"]
+    },
+    "gatecontrol-door": {
+      "category": "home",
+      "icon": "door",
+      "summary": {
+        "de": "Nuki-Schlösser in App, Widget und Portal auf- und zusperren, Ring-Klingel mit Bild und „Tür öffnen“ – Rechte pro Person.",
+        "en": "Lock and unlock Nuki locks in the app, widget and portal, Ring doorbell pushes with a picture and “Open door” – rights per person."
+      },
+      "audience": "all",
+      "keywords": ["tür", "door", "schloss", "lock", "nuki", "opener", "klingel", "doorbell", "ring", "kamera", "camera"],
+      "related": ["gatecontrol-messenger", "gatecontrol-smarthome"]
+    },
+    "gatecontrol-familie": {
+      "category": "family",
+      "icon": "family",
+      "summary": {
+        "de": "Einkauf, Aufgaben, Termine, Fahrten, Regeln und Orten auf Anfrage – für die ganze Familie in App und Portal.",
+        "en": "Shopping, tasks, dates, rides, rules and locating on request – for the whole family in the app and the portal."
+      },
+      "audience": "all",
+      "keywords": ["familie", "family", "einkauf", "shopping", "aufgaben", "tasks", "termine", "erinnerung", "reminder", "kinder", "orten", "taschengeld"],
+      "related": ["gatecontrol-messenger", "gatecontrol-alltag"],
+      "highlight": {
+        "version": "1.9.0",
+        "title": {
+          "de": "Erinnerungen, die mitdenken.",
+          "en": "Reminders that think ahead."
+        },
+        "text": {
+          "de": "Regeln mit Zeitplan, Gerätewerten und Kalender: „Sonntag 18 Uhr, Elroq unter 50 % und Montag ist Arbeit – erinnere mich ans Laden.“",
+          "en": "Rules with a schedule, device values and the calendar: “Sunday 6 pm, Elroq below 50 % and Monday is a work day – remind me to charge.”"
+        }
+      }
+    },
+    "gatecontrol-messenger": {
+      "category": "family",
+      "icon": "chat",
+      "summary": {
+        "de": "Einzel- und Gruppenchats zwischen den GateControl-Konten mit Bildern, Sprachnachrichten, Storys und Umfragen – verschlüsselt gespeichert.",
+        "en": "Direct and group chats between the GateControl accounts with pictures, voice messages, stories and polls – stored encrypted."
+      },
+      "audience": "all",
+      "keywords": ["chat", "messenger", "nachrichten", "messages", "gruppe", "group", "sprachnachricht", "voice", "storys", "stories", "umfrage", "poll"],
+      "related": ["gatecontrol-familie", "gatecontrol-door"]
+    },
+    "gatecontrol-midea": {
+      "category": "home",
+      "icon": "snowflake",
+      "summary": {
+        "de": "Midea-Klimageräte über die Cloud oder im Heimnetz steuern – Ein/Aus, Temperatur, Modus, Lüfter – und Haushaltsmitgliedern zuweisen.",
+        "en": "Control Midea air conditioners through the cloud or in the home network – power, temperature, mode, fan – and assign them to household members."
+      },
+      "audience": "all",
+      "keywords": ["klima", "klimaanlage", "air conditioning", "midea", "kühlen", "cooling", "heizen", "heating", "temperatur", "temperature"],
+      "related": ["gatecontrol-smarthome"]
+    },
+    "gatecontrol-proxmox": {
+      "category": "infrastructure",
+      "icon": "server",
+      "summary": {
+        "de": "Proxmox-VE-Hosts und -Cluster überwachen, VMs und Container starten und stoppen, Meldungen bei Ausfall und fehlgeschlagenen Backups.",
+        "en": "Monitor Proxmox VE hosts and clusters, start and stop VMs and containers, notifications on outages and failed backups."
+      },
+      "audience": "admins",
+      "keywords": ["proxmox", "pve", "server", "virtualisierung", "virtualization", "vm", "container", "lxc", "cluster", "backup", "homelab"],
+      "related": ["gatecontrol-synology"]
+    },
+    "gatecontrol-skoda": {
+      "category": "mobility",
+      "icon": "car",
+      "summary": {
+        "de": "Škoda-Fahrzeuge über MySkoda: Ladestand, Reichweite und Position sehen, Klima, Laden und Verriegeln steuern.",
+        "en": "Škoda vehicles through MySkoda: see charge level, range and location, control climate, charging and locking."
+      },
+      "audience": "all",
+      "keywords": ["auto", "car", "fahrzeug", "vehicle", "skoda", "škoda", "myskoda", "laden", "charging", "elektroauto", "ev", "klima"],
+      "related": ["gatecontrol-familie"]
+    },
+    "gatecontrol-smarthome": {
+      "category": "home",
+      "icon": "bulb",
+      "summary": {
+        "de": "Lichter, Steckdosen, Gruppen, Szenen und Sensoren eines Phoscon/deCONZ-Gateways steuern und Haushaltsmitgliedern zuweisen.",
+        "en": "Control the lights, plugs, groups, scenes and sensors of a Phoscon/deCONZ gateway and assign them to household members."
+      },
+      "audience": "all",
+      "keywords": ["smarthome", "licht", "light", "lampe", "steckdose", "plug", "szene", "scene", "sensor", "phoscon", "deconz", "zigbee"],
+      "related": ["gatecontrol-midea", "gatecontrol-door"]
+    },
+    "gatecontrol-synology": {
+      "category": "infrastructure",
+      "icon": "nas",
+      "summary": {
+        "de": "Synology-NAS überwachen und steuern: Speicher, Laufwerke, Temperatur, Hyper Backup und DSM-Updates – mit Neustart und Meldungen.",
+        "en": "Monitor and control Synology NAS: storage, drives, temperature, Hyper Backup and DSM updates – with reboot and notifications."
+      },
+      "audience": "admins",
+      "keywords": ["nas", "synology", "dsm", "speicher", "storage", "festplatte", "drive", "backup", "hyper backup", "s.m.a.r.t.", "usv", "ups"],
+      "related": ["gatecontrol-proxmox"]
+    }
+  }
+}

@@ -544,6 +544,128 @@ test('catalog keeps every version and picks the latest stable one', () => {
   }
 });
 
+test('catalog: store metadata from catalog-meta.json and release notes from the CHANGELOG', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'catalog-meta-'));
+  try {
+    const entry = (id, version, prerelease = false) => ({ schema: 1, id, name: { de: id, en: id }, description: { de: 'd', en: 'd' }, publisher: 'p', version, prerelease, sha256: 'a'.repeat(64), url: `https://x/${id}/${version}` });
+    for (const [id, v, p] of [['gatecontrol-hello', '1.0.0'], ['gatecontrol-hello', '1.1.0-rc.1', true], ['demo', '1.0.0'], ['gatecontrol-familie', '1.9.0']]) {
+      fs.writeFileSync(path.join(tmp, `${id}-${v}.index.json`), JSON.stringify(entry(id, v, p)));
+    }
+    const meta = { plugins: { 'gatecontrol-hello': { category: 'other', icon: 'puzzle', summary: { de: 'Hallo', en: 'Hello' }, audience: 'admins', keywords: ['hallo'], related: ['gatecontrol-door'], extra: 'not copied' } } };
+    fs.writeFileSync(path.join(tmp, 'meta.json'), JSON.stringify(meta));
+    const build = (...extra) => {
+      execFileSync(process.execPath, [path.join(TOOLS, 'catalog.js'), tmp, '--out', path.join(tmp, 'catalog.json'), '--repo', 'o/r', ...extra]);
+      return JSON.parse(fs.readFileSync(path.join(tmp, 'catalog.json'), 'utf8'));
+    };
+
+    let c = build('--meta', path.join(tmp, 'meta.json'));
+    const hello = c.plugins['gatecontrol-hello'];
+    assert.deepEqual(Object.keys(hello), ['id', 'name', 'description', 'publisher', 'latest', 'versions', 'category', 'icon', 'summary', 'audience', 'keywords', 'related']);
+    assert.equal(hello.icon, 'puzzle');
+    assert.deepEqual(hello.related, ['gatecontrol-door']);
+    assert.equal(hello.latest.version, '1.0.0');
+    assert.equal(hello.latest.notes, lib.changelogSection('gatecontrol-hello', '1.0.0'));
+    assert.match(hello.latest.notes, /Erste Version/);
+    assert.equal(hello.versions[1].notes, hello.latest.notes);
+    assert.ok(!('notes' in hello.versions[0]), 'no CHANGELOG section → no notes');
+    assert.ok(!('notes' in c.plugins.demo.latest), 'no plugin folder → no notes');
+    assert.ok(!('category' in c.plugins.demo), 'no meta entry → no store fields');
+    assert.deepEqual(Object.keys(c.plugins['gatecontrol-familie']), ['id', 'name', 'description', 'publisher', 'latest', 'versions'], 'not in this meta file');
+
+    c = build('--meta', path.join(tmp, 'missing.json'));
+    assert.ok(!('category' in c.plugins['gatecontrol-hello']), 'missing meta file → no store fields');
+    assert.match(c.plugins['gatecontrol-hello'].latest.notes, /Erste Version/);
+
+    fs.writeFileSync(path.join(tmp, 'broken.json'), '{');
+    const r = spawnSync(process.execPath, [path.join(TOOLS, 'catalog.js'), tmp, '--out', path.join(tmp, 'catalog.json'), '--meta', path.join(tmp, 'broken.json')], { encoding: 'utf8' });
+    assert.equal(r.status, 0, 'broken meta never stops the catalogue');
+    assert.match(r.stderr, /store metadata left out/);
+
+    c = build(); // the repository's catalog-meta.json
+    const familie = c.plugins['gatecontrol-familie'];
+    assert.equal(familie.category, 'family');
+    assert.equal(familie.highlight.version, '1.9.0');
+    assert.ok(familie.latest.notes.length > 100 && familie.latest.notes.length <= 6000);
+    assert.equal(c.plugins['gatecontrol-hello'].category, undefined, 'the example has no store metadata');
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test('catalog: release notes are capped at 6000 characters on a line end', () => {
+  const { capNotes, NOTES_MAX } = require('../catalog');
+  assert.equal(capNotes(null), null);
+  assert.equal(capNotes('  \n '), null);
+  assert.equal(capNotes('\n- a\n- b\n'), '- a\n- b');
+  const line = '- ' + 'x'.repeat(97); // 99 characters + "\n"
+  const long = Array.from({ length: 100 }, () => line).join('\n');
+  const n = capNotes(long);
+  assert.ok(n.length <= NOTES_MAX, String(n.length));
+  assert.ok(n.endsWith('\n…'));
+  assert.ok(n.slice(0, -2).split('\n').every((l) => l === line), 'cut between lines');
+  assert.equal(n.slice(0, -2).split('\n').length, 59);
+  const oneLine = capNotes('y'.repeat(7000));
+  assert.equal(oneLine.length, NOTES_MAX);
+  assert.ok(oneLine.endsWith('\n…'));
+  assert.equal(capNotes('z'.repeat(NOTES_MAX)), 'z'.repeat(NOTES_MAX));
+});
+
+test('catalog-meta.json: valid, and checked strictly', () => {
+  const { validateMeta, validateFile, FILE } = require('../catalog-meta');
+  assert.deepEqual(validateFile(), [], 'the repository file');
+  const raw = lib.readJson(FILE);
+  for (const id of lib.listPlugins().filter((i) => lib.pluginConfig(i).release)) assert.ok(raw.plugins[id], `${id} has store metadata`);
+
+  const ids = ['a', 'b', 'c', 'd', 'e', 'f'];
+  const changelog = (id, v) => v === '1.0.0';
+  const ok = {
+    category: 'home', icon: 'bulb', summary: { de: 'Licht.', en: 'Light.' }, audience: 'all', keywords: ['licht', 'light'], related: ['b'],
+    highlight: { version: '1.0.0', title: { de: 'Neu', en: 'New' }, text: { de: 'Text', en: 'Text' } },
+  };
+  const check = (m, root = {}) => validateMeta({ $comment: 'x', plugins: { a: m }, ...root }, { ids, changelog });
+  assert.deepEqual(check(ok), []);
+  assert.deepEqual(check({}), [], 'every field is optional');
+  assert.deepEqual(validateMeta({ plugins: {} }, { ids, changelog }), []);
+  const bad = [
+    [{ ...ok, color: 'red' }, /unknown key "color"/],
+    [{ ...ok, category: 'fun' }, /category: "fun" is not one of/],
+    [{ ...ok, icon: 'rocket' }, /icon/],
+    [{ ...ok, audience: 'kids' }, /audience/],
+    [{ ...ok, summary: 'Licht.' }, /summary: not an object/],
+    [{ ...ok, summary: { de: 'Licht.' } }, /summary\.en: missing/],
+    [{ ...ok, summary: { de: 'Licht.', en: 'Light.', fr: 'Lumière.' } }, /unknown language "fr"/],
+    [{ ...ok, summary: { de: 'x'.repeat(161), en: 'Light.' } }, /summary\.de: 161 characters \(max 160\)/],
+    [{ ...ok, summary: { de: ' Licht.', en: 'Light.' } }, /whitespace/],
+    [{ ...ok, keywords: 'licht' }, /keywords: not an array/],
+    [{ ...ok, keywords: Array.from({ length: 13 }, (_, i) => 'k' + i) }, /keywords: 13 \(max 12\)/],
+    [{ ...ok, keywords: ['Licht'] }, /not lowercase/],
+    [{ ...ok, keywords: ['x'.repeat(33)] }, /longer than 32/],
+    [{ ...ok, keywords: ['', 'a'] }, /keywords: invalid/],
+    [{ ...ok, keywords: [1] }, /keywords: invalid/],
+    [{ ...ok, keywords: ['a', 'a'] }, /keywords: duplicates/],
+    [{ ...ok, related: ['a'] }, /related: names itself/],
+    [{ ...ok, related: ['zz'] }, /related: "zz" is not a released plugin/],
+    [{ ...ok, related: ['b', 'c', 'd', 'e', 'f'] }, /related: 5 \(max 4\)/],
+    [{ ...ok, related: ['b', 'b'] }, /related: duplicates/],
+    [{ ...ok, highlight: { ...ok.highlight, version: '1.0' } }, /highlight\.version: "1\.0" is not a version/],
+    [{ ...ok, highlight: { ...ok.highlight, version: '2.0.0' } }, /no "## 2\.0\.0" section/],
+    [{ ...ok, highlight: { ...ok.highlight, title: { de: 'x'.repeat(81), en: 'New' } } }, /highlight\.title\.de: 81 characters \(max 80\)/],
+    [{ ...ok, highlight: { ...ok.highlight, text: { de: 'x'.repeat(281), en: 'Text' } } }, /highlight\.text\.de: 281 characters \(max 280\)/],
+    [{ ...ok, highlight: { ...ok.highlight, text: undefined } }, /highlight\.text: not an object/],
+    [{ ...ok, highlight: { ...ok.highlight, since: 'x' } }, /highlight: unknown key "since"/],
+    ['x', /a: not an object/],
+  ];
+  for (const [m, re] of bad) {
+    const errors = check(m);
+    assert.ok(errors.some((e) => re.test(e)), `${JSON.stringify(m).slice(0, 80)} → ${JSON.stringify(errors)}`);
+  }
+  assert.match(validateMeta({ plugins: { zz: {} } }, { ids, changelog })[0], /zz: not a released plugin/);
+  assert.match(check({}, { extra: 1 })[0], /unknown key "extra"/);
+  assert.deepEqual(validateMeta({ plugins: [] }, { ids, changelog }), ['plugins: not an object']);
+  assert.deepEqual(validateMeta(null, { ids, changelog }), ['not a JSON object']);
+  assert.match(validateMeta({ plugins: { 'gatecontrol-hello': {} } })[0], /gatecontrol-hello: not a released plugin/, 'release: false');
+});
+
 test('pack → sign → verify round trip with a throwaway key', { skip: !gcDir && 'no GateControl checkout' }, () => {
   const signature = lib.gcRequire('src/services/plugins/signature');
   const kp = signature.generateKeyPair();
