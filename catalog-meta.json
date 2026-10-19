@@ -1408,11 +1408,28 @@
       "category": "mobility",
       "icon": "car",
       "summary": {
-        "de": "Škoda-Fahrzeuge über MySkoda: Ladestand, Reichweite und Position sehen, Klima, Laden und Verriegeln steuern.",
-        "en": "Škoda vehicles through MySkoda: see charge level, range and location, control climate, charging and locking."
+        "de": "Škoda-Fahrzeuge über MySkoda: Ladestand, Reichweite und Position sehen, Klima, Laden und Verriegeln steuern – mit Fahrtenbuch.",
+        "en": "Škoda vehicles through MySkoda: see charge level, range and location, control climate, charging and locking – with a logbook."
       },
       "audience": "all",
-      "keywords": ["auto", "car", "fahrzeug", "vehicle", "skoda", "škoda", "myskoda", "laden", "charging", "elektroauto", "ev", "klima"],
+      "keywords": ["auto", "car", "fahrzeug", "vehicle", "skoda", "škoda", "myskoda", "laden", "charging", "elektroauto", "fahrtenbuch", "logbook"],
+      "highlight": {
+        "version": "1.5.0",
+        "title": {
+          "de": "Das Fahrtenbuch, das sich selbst schreibt.",
+          "en": "The logbook that writes itself."
+        },
+        "text": {
+          "de": "Jede Fahrt wird beim Parken erfasst – Strecke, Start, Ziel und Kilometerstand. Privat oder geschäftlich wählst du direkt in der Mitteilung oder im Widget; den Export gibt es als PDF und CSV.",
+          "en": "Every trip is recorded when the car parks – distance, start, destination and mileage. Pick private or business right in the notification or the widget; export as PDF and CSV."
+        },
+        "tags": [
+          {"icon": "car", "text": {"de": "22 km · Köln → Bonn", "en": "22 km · Cologne → Bonn"}},
+          {"icon": "bell", "text": {"de": "Privat · Geschäftlich · Arbeitsweg", "en": "Private · Business · Commute"}},
+          {"icon": "widget", "text": {"de": "Diesen Monat: 1.340 km", "en": "This month: 1,340 km"}},
+          {"icon": "data", "text": {"de": "Export als PDF und CSV", "en": "Export as PDF and CSV"}}
+        ]
+      },
       "related": ["gatecontrol-familie"],
       "adds": [
         {
@@ -1444,8 +1461,19 @@
             "en": "Quick actions"
           },
           "text": {
-            "de": "Klimatisierung, Laden, Scheibenheizung und Schloss als Schalter",
-            "en": "Climate, charging, window heating and lock as switches"
+            "de": "Klimatisierung, Laden, Scheibenheizung, Schloss und die letzte Fahrt (privat/geschäftlich) als Schalter",
+            "en": "Climate, charging, window heating, lock and the last trip (private/business) as switches"
+          }
+        },
+        {
+          "icon": "data",
+          "title": {
+            "de": "Fahrtenbuch",
+            "en": "Logbook"
+          },
+          "text": {
+            "de": "Fahrten automatisch erfasst, Zweck per Mitteilung oder Widget, Export als PDF und CSV",
+            "en": "Trips recorded automatically, purpose from the notification or widget, export as PDF and CSV"
           }
         },
         {
