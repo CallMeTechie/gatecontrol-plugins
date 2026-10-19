@@ -22,6 +22,9 @@
 // 'schedule' — has a row in rule_reminders: { rule, key, user, state: open | snoozed | done |
 // resolved, sends, snoozeUntil }. Open reminders of today are in GET rules (`open`), e.g.
 // for a hint at the device's widget in the app. Rows are kept 14 days.
+// 1.11.0: `open` carries the person (userId); parents (and the admin page) see every member's
+// open reminders, the others their own. „Erledigt“ / „In 1 Std.“ also from the app:
+// POST rules/open/<ruleId>/done | snooze { key } — only one's own (act below).
 //
 // Topics: a reminder of the trigger 'schedule' goes out as topic 'reminders'
 // („Erinnerungen“), the rules of presence and places stay on topic 'presence'.
@@ -32,6 +35,7 @@ const push = require('./push');
 const members = require('./members');
 const conditions = require('./conditions');
 const rulerow = require('./rulerow');
+const { fail } = require('./util');
 
 const SNOOZE_MS = 60 * 60000;
 const MAX_SENDS = 3;
@@ -270,20 +274,44 @@ async function tick(gc, fam, cfg, now, pushes) {
   }
 }
 
-/** The open reminders of `userId` today (GET rules `open`): [{ ruleId, title, key, state, since, actionIds }]. */
-async function openFor(gc, cfg, now, userId) {
+/**
+ * The open reminders of today (GET rules `open`): [{ ruleId, title, key, state, since, snoozeUntil, userId, actionIds }]
+ * — of `userId`, or of every member (userId null: parents, the admin page).
+ */
+async function openFor(gc, cfg, now, userId, fam) {
   const today = tz.localDate(now, cfg.tz);
   const rows = await store.all(gc, `SELECT r.*, p.title AS rule_title, p.name AS rule_name, p.conditions_json FROM rule_reminders r JOIN presence_rules p ON p.id = r.rule_id
-    WHERE r.user_id = ? AND r.state IN ('open', 'snoozed') AND r.day = ? ORDER BY r.created_at`, [userId, today]);
-  return rows.map((x) => {
+    WHERE ${userId == null ? '1 = 1' : 'r.user_id = ?'} AND r.state IN ('open', 'snoozed') AND r.day = ? ORDER BY r.created_at`, userId == null ? [today] : [userId, today]);
+  const iso = (ms) => new Date(ms).toISOString().replace(/\.\d{3}Z$/, 'Z');
+  return rows.filter((x) => !fam || fam.byId.has(x.user_id)).map((x) => {
     let dev = [];
     try { const c = JSON.parse(x.conditions_json || '{}'); dev = Array.isArray(c.device) ? c.device.map((d) => d.actionId).filter(Boolean) : []; } catch { dev = []; }
-    return { ruleId: x.rule_id, title: x.rule_title || x.rule_name || '', key: x.fire_key, state: x.state, since: new Date(x.created_at).toISOString().replace(/\.\d{3}Z$/, 'Z'), actionIds: [...new Set(dev)] };
+    return {
+      ruleId: x.rule_id, title: x.rule_title || x.rule_name || '', key: x.fire_key, state: x.state, since: iso(x.created_at),
+      snoozeUntil: x.state === 'snoozed' && x.snooze_until ? iso(x.snooze_until) : null, userId: x.user_id, actionIds: [...new Set(dev)],
+    };
   });
+}
+
+/**
+ * „Erledigt“ / „In 1 Std.“ from the app (1.11.0, inside the request's transaction): the caller's own
+ * reminder → { ok, state, until? }. Snoozing follows the button's rules (at most 3 notifications a day).
+ */
+async function act(gc, now, userId, ruleId, key, action) {
+  if (!Number.isSafeInteger(ruleId) || typeof key !== 'string' || !key || key.length > 120) throw fail('invalid', { field: 'key' });
+  const row = await store.one(gc, "SELECT * FROM rule_reminders WHERE rule_id = ? AND fire_key = ? AND user_id = ? AND state IN ('open', 'snoozed')", [ruleId, key, userId]);
+  if (!row) throw fail('not_found');
+  if (action === 'done') {
+    await store.run(gc, "UPDATE rule_reminders SET state = 'done', snooze_until = NULL, updated_at = ? WHERE id = ?", [now, row.id]);
+    return { ok: true, state: 'done' };
+  }
+  if (row.sends >= MAX_SENDS) throw fail('daily_limit');
+  await store.run(gc, "UPDATE rule_reminders SET state = 'snoozed', snooze_until = ?, updated_at = ? WHERE id = ?", [now + SNOOZE_MS, now, row.id]);
+  return { ok: true, state: 'snoozed', until: new Date(now + SNOOZE_MS).toISOString() };
 }
 
 async function purge(gc, now) {
   await store.run(gc, 'DELETE FROM rule_reminders WHERE updated_at < ?', [now - KEEP_DAYS * DAY]);
 }
 
-module.exports = { SNOOZE_MS, MAX_SENDS, BUTTONS_MAX, parseButtons, callbacks, textOf, notifyPushes, remember, onAction, tick, openFor, purge, ownRefs };
+module.exports = { SNOOZE_MS, MAX_SENDS, BUTTONS_MAX, parseButtons, callbacks, textOf, notifyPushes, remember, onAction, act, tick, openFor, purge, ownRefs };

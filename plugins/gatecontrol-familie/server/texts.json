@@ -985,7 +985,17 @@
     "rr.err_schedule": "Wähle mindestens einen Wochentag und eine Uhrzeit.",
     "rr.err_window": "Das Zeitfenster braucht zwei verschiedene Uhrzeiten.",
     "rr.err_sources": "Wähle mindestens einen Kalender.",
-    "rr.module_off": "Das Modul „Regeln und Erinnerungen“ ist aus (Seite „Funktionen“) – keine Regel löst aus."
+    "rr.module_off": "Das Modul „Regeln und Erinnerungen“ ist aus (Seite „Funktionen“) – keine Regel löst aus.",
+    "vacation.title": "Urlaubsmodus",
+    "vacation.hint": "Pausiert alle aktiven Hausregeln und schaltet genau diese wieder ein, wenn er endet – von Hand oder nach dem letzten Tag. Eigene Erinnerungen bleiben.",
+    "vacation.off": "Aus",
+    "vacation.on": "Aktiv – {{n}} Hausregeln pausiert",
+    "vacation.on_until": "Aktiv bis {{date}} – {{n}} Hausregeln pausiert",
+    "vacation.until": "Bis (optional)",
+    "vacation.start": "Urlaub starten",
+    "vacation.stop": "Urlaub beenden",
+    "vacation.saved_on": "Urlaubsmodus an",
+    "vacation.saved_off": "Urlaubsmodus aus – Regeln wieder aktiv"
   },
   "en": {
     "account.admin": "Admin",
@@ -1973,6 +1983,16 @@
     "rr.err_schedule": "Pick at least one weekday and a time.",
     "rr.err_window": "The time window needs two different times.",
     "rr.err_sources": "Pick at least one calendar.",
-    "rr.module_off": "The module “Rules and reminders” is off (page “Features”) – no rule fires."
+    "rr.module_off": "The module “Rules and reminders” is off (page “Features”) – no rule fires.",
+    "vacation.title": "Holiday mode",
+    "vacation.hint": "Pauses every active house rule and switches exactly those on again when it ends – by hand or after the last day. Own reminders stay.",
+    "vacation.off": "Off",
+    "vacation.on": "On – {{n}} house rules paused",
+    "vacation.on_until": "On until {{date}} – {{n}} house rules paused",
+    "vacation.until": "Until (optional)",
+    "vacation.start": "Start holiday",
+    "vacation.stop": "End holiday",
+    "vacation.saved_on": "Holiday mode on",
+    "vacation.saved_off": "Holiday mode off – rules active again"
   }
 }

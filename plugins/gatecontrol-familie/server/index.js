@@ -128,6 +128,7 @@ async function background(gc, now) {
     // the grace time of "all away" (module presence) and the trigger 'schedule' (1.9.0); snoozed reminders
     const runs = [];
     if (cfg.modules.presence) await step('presence', () => presence.tick(gc, fam, cfg, now, runs));
+    await step('vacation', () => rules.vacationTick(gc, cfg, now));
     await step('schedule', () => rules.scheduleTick(gc, fam, cfg, now, runs));
     if (runs.length) {
       try { await presence.execute(gc, fam, cfg, now, runs, pushes); } catch (e) { gc.log.warn('background step failed', 'presence_run', (e && e.code) || (e && e.message) || 'error'); }

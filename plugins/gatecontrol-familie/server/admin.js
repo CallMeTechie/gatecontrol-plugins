@@ -197,6 +197,7 @@ async function rulesRoute(req, gc, seg, cfg, now, m, body) {
   if (n === 2 && m === 'POST') return store.tx(gc, () => rules.create(gc, ctx, { ...body, scope: 'house' }));
   if (n === 3 && b === 'options' && m === 'GET') return rules.options(gc, ctx);
   if (n === 3 && b === 'test' && m === 'POST') return rules.testBody(gc, ctx, { ...body, scope: 'house' });
+  if (n === 3 && b === 'vacation' && (m === 'PATCH' || m === 'PUT')) return store.tx(gc, () => rules.setVacation(gc, ctx, body));
   if (n === 3 && (m === 'PATCH' || m === 'PUT')) return store.tx(gc, () => rules.update(gc, ctx, b, body));
   if (n === 3 && m === 'DELETE') return store.tx(gc, () => rules.remove(gc, ctx, b));
   if (n === 4 && c === 'test' && m === 'POST') return rules.test(gc, ctx, b);

@@ -5,7 +5,8 @@
    1.166.0). Editors, rows and cards: ui/rules.js.
    1.10.0: every rule of the family is here — reminders (schedule) too, the page „Regeln & Erinnerungen“
    is gone: rules, log and the editor's options come from the rules API (admin/rules), who is home,
-   places and the sunset location from admin/presence. */
+   places and the sunset location from admin/presence.
+   1.11.0: the holiday mode (admin/rules/vacation) — every active house rule paused until it ends. */
 (function () {
   'use strict';
   var A = window.FA, T = A.T, $ = A.$;
@@ -25,7 +26,30 @@
     A.rules.places($('#fa-pr-places'), data, opts);
     $('#fa-pr-place-add').disabled = (data.places || []).length >= A.rules.MAX_PLACES;
     A.rules.log($('#fa-pr-log'), data);
+    vacation();
     $('#fa-pr-sun').textContent = data.location ? T('presence.note_sun', { lat: data.location.lat, lon: data.location.lon }) : T('presence.note_sun_none');
+  }
+
+  function vacation() {
+    var v = data.vacation || { on: false };
+    var st = $('#fa-pr-vac-state');
+    st.textContent = !v.on ? T('vacation.off') : v.until ? T('vacation.on_until', { date: A.dateLong(v.until), n: v.paused }) : T('vacation.on', { n: v.paused });
+    if (v.on) st.setAttribute('data-on', ''); else st.removeAttribute('data-on');
+    var u = $('#fa-pr-vac-until');
+    if (document.activeElement !== u) u.value = v.until || '';
+    u.min = A.todayStr();
+    var b = $('#fa-pr-vac-btn');
+    b.textContent = T(v.on ? 'vacation.stop' : 'vacation.start');
+    b.className = v.on ? 'btn' : 'btn btn-primary';
+  }
+
+  function setVacation(on) {
+    var until = $('#fa-pr-vac-until').value || null;
+    return A.api('PUT', 'admin/rules/vacation', { on: on, until: on ? until : null }).then(function (r) {
+      data.vacation = r.vacation;
+      A.toast(T(r.vacation.on ? 'vacation.saved_on' : 'vacation.saved_off'));
+      return load();
+    }).catch(A.warn);
   }
 
   function load() {
@@ -34,7 +58,7 @@
       data = {
         modules: { presence: pres.modules.presence, rules: rr.modules ? rr.modules.rules : true },
         location: pres.location, members: pres.members, places: pres.places, home: pres.home,
-        rules: rr.rules.map(A.rules.flat), log: rr.log,
+        rules: rr.rules.map(A.rules.flat), log: rr.log, vacation: rr.vacation,
         options: o, actions: o.actions, actionsAvailable: o.actionsAvailable, messenger: o.messenger,
       };
       render();
@@ -43,6 +67,9 @@
 
   $('#fa-pr-add').addEventListener('click', function () { if (data) A.rules.edit(null, data, opts); });
   $('#fa-pr-place-add').addEventListener('click', function () { if (data) A.rules.editPlace(null, data, opts, load); });
+  $('#fa-pr-vac-btn').addEventListener('click', function () { if (data) setVacation(!(data.vacation && data.vacation.on)); });
+  // on: a new end date is saved at once
+  $('#fa-pr-vac-until').addEventListener('change', function () { if (data && data.vacation && data.vacation.on) setVacation(true); });
   load();
   setInterval(load, 60000);
 }());
