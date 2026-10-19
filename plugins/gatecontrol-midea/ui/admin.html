@@ -3,9 +3,12 @@
   <div class="page-actions page-toolbar">
     <button class="btn" type="button" id="md-discover">{{t:discover}}</button>
     <button class="btn" type="button" id="md-cloud-open">{{t:cloud.title}}</button>
+    <button class="btn" type="button" id="md-dreo-open">{{t:dreo.title}}</button>
     <button class="btn btn-primary" type="button" id="md-add-open">{{t:add.title}}</button>
   </div>
   <div class="banner banner-warn" id="md-reauth" role="status" hidden>{{t:cloud.reauth}}</div>
+  <div class="banner banner-warn" id="md-dreo-reauth" role="status" hidden>{{t:dreo.reauth}}</div>
+  <div class="banner banner-warn" id="md-dreo-update" role="status" hidden>{{t:dreo.needs_update}}</div>
   <div class="md-kpis" id="md-kpis"></div>
   <div class="md-grid" id="md-devices"></div>
 
@@ -41,6 +44,36 @@
     </div>
   </div>
 
+  <div class="modal-overlay" id="md-dreo-modal" role="dialog" aria-modal="true" aria-labelledby="md-dr-title" hidden>
+    <div class="modal">
+      <div class="modal-head">
+        <div class="modal-title" id="md-dr-title">{{t:dreo.title}}</div>
+        <button class="btn modal-close" type="button" data-close="md-dreo-modal" aria-label="{{t:common.close}}">×</button>
+      </div>
+      <div class="modal-body">
+        <p class="form-hint md-cloud-state" id="md-dreo-state"></p>
+        <p class="banner banner-warn" id="md-dreo-modal-update" hidden>{{t:dreo.needs_update}}</p>
+        <form id="md-dreo-form" autocomplete="off">
+          <div class="form-group">
+            <label class="form-label" for="md-dr-email">{{t:dreo.email}}</label>
+            <input class="form-input" id="md-dr-email" type="email" maxlength="200" autocomplete="username">
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="md-dr-password">{{t:dreo.password}}</label>
+            <input class="form-input" id="md-dr-password" type="password" maxlength="500" autocomplete="current-password">
+          </div>
+          <p class="form-hint">{{t:dreo.usage_hint}}</p>
+          <p class="form-hint">{{t:dreo.remote_hint}}</p>
+          <p class="md-msg" id="md-dreo-msg" role="status"></p>
+        </form>
+      </div>
+      <div class="modal-foot">
+        <button class="btn" type="button" data-close="md-dreo-modal">{{t:common.cancel}}</button>
+        <button class="btn btn-primary" type="button" id="md-dreo-connect">{{t:dreo.connect}}</button>
+      </div>
+    </div>
+  </div>
+
   <div class="modal-overlay" id="md-add-modal" role="dialog" aria-modal="true" aria-labelledby="md-add-title" hidden>
     <div class="modal modal-wide">
       <div class="modal-head">
@@ -51,10 +84,15 @@
         <div class="md-seg" role="tablist">
           <button type="button" role="tab" class="md-seg-btn active" id="md-tab-cloud" aria-selected="true">{{t:add.tab_cloud}}</button>
           <button type="button" role="tab" class="md-seg-btn" id="md-tab-lan" aria-selected="false">{{t:add.tab_lan}}</button>
+          <button type="button" role="tab" class="md-seg-btn" id="md-tab-dreo" aria-selected="false">{{t:add.tab_dreo}}</button>
         </div>
         <div class="md-pane" id="md-pane-cloud">
           <p class="form-hint" id="md-cloud-list-hint"></p>
           <div class="md-cloud-list" id="md-cloud-list"></div>
+        </div>
+        <div class="md-pane" id="md-pane-dreo" hidden>
+          <p class="form-hint" id="md-dreo-list-hint"></p>
+          <div class="md-cloud-list" id="md-dreo-list"></div>
         </div>
         <div class="md-pane" id="md-pane-lan" hidden>
           <p class="form-hint">{{t:lan.hint}}</p>

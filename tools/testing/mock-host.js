@@ -21,6 +21,9 @@
 //     fetch: async (url, opts) => ({ status: 200, body: '…' }),            // internet
 //     targets: { gateway: [{ label: 'deCONZ', fetch: async (path, opts) => ({ status: 200, body: '{}' }) }] },
 //     discover: async (data, opts) => [{ address: '192.168.1.5', port: 6445, data: Buffer }],
+//     // GateControl ≥ 1.184.0: gc.http.websocket — peer.send(text | Buffer) / peer.close(code, reason)
+//     // reach the plugin; the returned { message(data), close(code) } get what the plugin sends
+//     websocket: async (url, opts, peer) => ({ message: (data) => peer.send(data) }),
 //   });
 //   await host.start();
 //   const res = await host.request({ method: 'GET', path: '/ping' });
@@ -156,6 +159,7 @@
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const EventEmitter = require('node:events');
 
 // GateControl's favourite colour palette (services/avatars.js PALETTE, GateControl ≥ 1.168.0)
 const PALETTE = Object.freeze([
@@ -655,6 +659,7 @@ async function createHost(pluginDir, opts = {}) {
   const logs = [];
   const notifications = [];
   const fetches = [];
+  const websockets = [];
   const kv = new Map();
   const settings = { ...settingDefaults(manifest), ...(opts.settings || {}) };
   const secrets = new Set(); // keys stored with gc.settings.setSecret (encrypted on the real host)
@@ -729,6 +734,12 @@ async function createHost(pluginDir, opts = {}) {
       if (!opts.fetch) throw hostError('ERR_NET', 'no fetch handler in this test');
       const r = await opts.fetch(url, o);
       return { status: 200, headers: {}, url, redirects: [], ...r };
+    },
+    'ws.connect': async ({ url, opts: o }) => {
+      const u = String(url);
+      if (!/^wss?:/i.test(u) || !internetAllowed(net.internet, u.replace(/^ws/i, 'http'))) throw hostError('ERR_NET_DENIED', `host not allowed: ${u}`);
+      if (!opts.websocket) throw hostError('ERR_NET', 'no websocket handler in this test');
+      return { url: u, opts: o || {} };
     },
     'targets.list': async () => net.homeTargets.map((t) => ({
       id: t.id, protocols: t.protocols, assigned: ((opts.targets && opts.targets[t.id]) || []).map((a, index) => ({ index, label: a.label || `${t.id} ${index}` })),
@@ -1150,12 +1161,48 @@ async function createHost(pluginDir, opts = {}) {
   };
 
   const call = async (name, args) => wire(await api[name](wire(args)));
+
+  /** A WebSocket like the host's (EventEmitter: message, close, error; send, close) wired to opts.websocket. */
+  async function openWebSocket(url, o) {
+    const { url: u, opts: wo } = await call('ws.connect', { url: String(url), opts: { headers: o && o.headers, protocols: o && o.protocols, timeoutMs: o && o.timeoutMs } });
+    const sock = new EventEmitter();
+    sock.protocol = '';
+    sock.closed = false;
+    const end = (code, reason) => {
+      if (sock.closed) return;
+      sock.closed = true;
+      setImmediate(() => sock.emit('close', code, reason || ''));
+    };
+    const peer = {
+      url: u, opts: wo,
+      send: (m) => { if (!sock.closed) setImmediate(() => { if (!sock.closed) sock.emit('message', Buffer.isBuffer(m) ? Buffer.from(m) : String(m)); }); },
+      close: (code = 1000, reason = '') => end(code, reason),
+      get closed() { return sock.closed; },
+    };
+    const h = (await opts.websocket(u, wo, peer)) || {};
+    websockets.push(peer);
+    sock.send = async (data) => {
+      if (sock.closed) throw hostError('ERR_NET', 'websocket is not open');
+      if (h.message) await h.message(Buffer.isBuffer(data) ? Buffer.from(data) : String(data));
+      return null;
+    };
+    sock.close = async (code = 1000, reason = '') => {
+      if (!sock.closed && h.close) h.close(code, reason);
+      end(code, reason);
+      return null;
+    };
+    return sock;
+  }
   const log = (level) => (...a) => logs.push({ level, message: a.map((x) => (typeof x === 'string' ? x : JSON.stringify(x))).join(' ') });
 
   const gc = Object.freeze({
     plugin: Object.freeze({ id: manifest.id, version: manifest.version, filesDir }),
     log: Object.freeze({ debug: log('debug'), info: log('info'), warn: log('warn'), error: log('error') }),
-    http: Object.freeze({ fetch: (url, o) => call('http.fetch', { url: String(url), opts: o || {} }) }),
+    http: Object.freeze({
+      fetch: (url, o) => call('http.fetch', { url: String(url), opts: o || {} }),
+      /** GateControl ≥ 1.184.0 (only when the test passes a websocket handler, like an older host without it otherwise) */
+      ...(opts.websocket ? { websocket: (url, o) => openWebSocket(url, o) } : {}),
+    }),
     net: Object.freeze({
       targets: () => call('targets.list', {}),
       fetchTarget: (id, p, o) => call('target.fetch', { target: String(id), index: o && o.index, path: String(p || '/'), opts: o || {} }),
@@ -1266,7 +1313,7 @@ async function createHost(pluginDir, opts = {}) {
   const notFound = () => ({ status: 404, headers: {}, body: Buffer.alloc(0) });
 
   return {
-    manifest, gc, plugin, logs, notifications, fetches, kv, settings, filesDir, kiosk, actionRuns,
+    manifest, gc, plugin, logs, notifications, fetches, websockets, kv, settings, filesDir, kiosk, actionRuns,
     media: mediaStore, events, serviceCalls,
     /** GateControl ≥ 1.177.0: an upload of an app or a frame (PUT …/plugins/<id>/media) → { status, body } */
     async upload(user, data, mime) {

@@ -112,3 +112,6 @@ body{padding:2px 2px 24px}
 .md-owner-name b{display:block;font-size:13.5px;font-weight:600}
 .md-owner-name small{font-size:11.5px;color:var(--muted)}
 @media (max-width:560px){.page-actions{width:100%}.page-actions .btn{flex:1 1 auto}}
+/* Dreo: modes as text (heat levels, Eco, fan) — they wrap on narrow cards */
+.md-modes-text{flex-wrap:wrap}
+.md-mode-text{flex:1 1 auto;padding:0 10px;font-size:12px;font-weight:700;white-space:nowrap}

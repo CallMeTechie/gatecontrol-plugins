@@ -54,7 +54,7 @@ test('payloads: priorities, collapse keys, error code, owners, language', () => 
   const clear = alerts.toNotification(gc, { topic: 'error_code', kind: 'clear', device: DEV, state: ok().state }, CFG, []);
   assert.deepEqual([clear.priority, clear.collapseKey, clear.users], ['info', 'error:1', null]);
   const down = alerts.toNotification(gc, { topic: 'device_unreachable', kind: 'down', device: DEV, minutes: 10 }, { ...CFG, lang: 'en' }, []);
-  assert.deepEqual([down.title, down.body, down.priority], ['Air conditioner unreachable', 'Büro has not answered for 10 minutes', 'normal']);
+  assert.deepEqual([down.title, down.body, down.priority], ['Device unreachable', 'Büro has not answered for 10 minutes', 'normal']);
   const filter = alerts.toNotification(gc, { topic: 'filter_clean', kind: 'filter', device: DEV, state: ok().state }, CFG, []);
   assert.deepEqual([filter.title, filter.priority, filter.data.route], ['Filter reinigen', 'info', 'plg-gatecontrol-midea']);
 });
@@ -103,10 +103,10 @@ test('LAN poll → error (high) to the owners and filter notice; offline device 
     await alerts.check(host.gc, [{ device: { id, name: 'Büro' }, online: false, state: null }], { now: t });
     await alerts.check(host.gc, [{ device: { id, name: 'Büro' }, online: false, state: null }], { now: t + 11 * MIN });
     const down = host.notifications[3];
-    assert.deepEqual([down.topic, down.title, down.collapseKey], ['device_unreachable', 'Klimagerät nicht erreichbar', `device:${id}`]);
+    assert.deepEqual([down.topic, down.title, down.collapseKey], ['device_unreachable', 'Gerät nicht erreichbar', `device:${id}`]);
     dev.down = false;
     await host.tick();
-    assert.equal(host.notifications[4].title, 'Klimagerät wieder erreichbar');
+    assert.equal(host.notifications[4].title, 'Gerät wieder erreichbar');
     assert.equal(host.notifications.length, 5);
   });
 });

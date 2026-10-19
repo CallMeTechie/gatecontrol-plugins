@@ -1,6 +1,7 @@
-/* Portal section "Klimaanlage" in the tab "Zuhause" (port of the Klima part of
-   GateControl's public/js/portal.js). Only the viewer's own air conditioners;
-   control needs a portal or web login. */
+/* Portal section "Raumklima" in the tab "Zuhause" (port of the Klima part of
+   GateControl's public/js/portal.js, plus Dreo devices). Only the viewer's own
+   devices; control needs a portal or web login. A Midea air conditioner keeps
+   its card; a Dreo heater or air conditioner gets one built from its caps. */
 (function () {
   'use strict';
   var M = window.MD, T = M.T, $ = M.$, el = M.el;
@@ -29,13 +30,61 @@
     var tgt = Number(i.st.targetTemp);
     var has = !i.offline && i.st.targetTemp != null && isFinite(tgt);
     var dis = !i.canControl || !has;
-    return el('div', { class: 'pt-stepper' }, [
+    var pending = timers[d.id] ? ' is-pending' : '';
+    return el('div', { class: 'pt-stepper' + pending }, [
       el('button', { type: 'button', class: 'pt-round', 'data-act': 'down', 'aria-label': T('portal.cooler_name', { name: d.name }), disabled: dis, on: { click: function () { step(d.id, -1); } } }, ['−']),
       el('span', { class: 'pt-target', 'aria-live': 'polite', text: has ? fmtNum(tgt, 1) + '°' : '–' }),
       el('button', { type: 'button', class: 'pt-round', 'data-act': 'up', 'aria-label': T('portal.warmer_name', { name: d.name }), disabled: dis, on: { click: function () { step(d.id, 1); } } }, ['+']),
     ]);
   }
+  /** A group of chips (swing, fan levels): one pressed, a click sends { key: id }. */
+  function chipGroup(d, label, key, options, current, dis) {
+    return el('div', { class: 'pt-group' }, [
+      el('span', { class: 'pt-overline', text: label }),
+      el('div', { class: 'pt-chip-row', role: 'group', 'aria-label': label }, options.map(function (o) {
+        var patch = {}; patch[key] = o.id;
+        return el('button', { type: 'button', class: 'pt-chip', 'data-act': key + ':' + o.id, 'aria-pressed': current === o.id ? 'true' : 'false', disabled: dis,
+          on: { click: function () { control(d.id, patch); } } }, [o.label]);
+      })),
+    ]);
+  }
+  /** A Dreo heater or air conditioner: modes, target, swing, fan levels and switches as its caps say. */
+  function renderDreo(d) {
+    var i = info(d);
+    var st = i.st;
+    var caps = d.caps || { modes: [], switches: [] };
+    var dis = !i.canControl;
+    var status = i.offline ? T('portal.offline') : (i.powered ? (st.heating ? T('portal.power_on') + ' · ' + T('portal.heating') : T('portal.power_on')) : T('portal.power_off'));
+    var sub = [];
+    if (!i.offline && st.indoorTemp != null && isFinite(Number(st.indoorTemp))) sub.push(T('portal.now', { temp: fmtNum(st.indoorTemp, 1) + '°' }));
+    if (d.kind === 'heater' && caps.target) sub.push(T('portal.target_eco'));
+    var parts = [
+      el('div', { class: 'pt-card-row' }, [
+        el('h2', { class: 'pt-h2', text: d.name }),
+        el('span', { class: 'pt-pill', 'data-tone': i.offline ? 'muted' : (i.powered ? 'good' : 'muted'), text: status }),
+        switchBtn(i.powered, T('portal.power_name', { name: d.name }), dis, function () { control(d.id, { power: !i.powered }); }),
+      ]),
+    ];
+    if (caps.target) parts.push(el('div', { class: 'pt-ac-climate' }, [stepper(d), el('div', { class: 'pt-ac-sub muted', text: sub.join(' · ') })]));
+    parts.push(el('div', { class: 'pt-seg', role: 'group', 'aria-label': T('portal.mode') }, caps.modes.map(function (m) {
+      var on = !i.offline && i.powered && st.mode === m.id;
+      return el('button', { type: 'button', 'data-mode': m.id, 'aria-pressed': on ? 'true' : 'false', disabled: dis, class: on && /^heat/.test(m.id) ? 'is-heat-level' : null,
+        on: { click: function () { control(d.id, { mode: m.id }); } } }, [m.label]);
+    })));
+    if (caps.fan && caps.fan.kind === 'levels') parts.push(chipGroup(d, T('portal.fan_level'), 'fanLevel', caps.fan.options, i.offline ? null : st.fanLevel, dis));
+    if (caps.swing) parts.push(chipGroup(d, T('portal.swing'), 'swing', caps.swing.options, i.offline ? null : st.swing, dis));
+    if (caps.switches.length) {
+      parts.push(el('div', { class: 'pt-chip-row' }, caps.switches.map(function (w) {
+        var on = !i.offline && !!st[w.id];
+        return el('button', { type: 'button', class: 'pt-chip', 'data-act': w.id, 'aria-pressed': on ? 'true' : 'false', disabled: dis,
+          on: { click: function () { var p = {}; p[w.id] = !on; control(d.id, p); } } }, [w.label]);
+      })));
+    }
+    parts.push(el('div', { class: 'pt-foot', text: T('portal.dreo') }));
+    return el('section', { class: 'card pt-ac' + (i.offline ? ' is-offline' : ''), 'data-id': String(d.id), 'aria-label': d.name }, parts);
+  }
   function renderCard(d) {
+    if (d.vendor === 'dreo') return renderDreo(d);
     var i = info(d);
     var st = i.st;
     var dis = !i.canControl;
@@ -114,7 +163,8 @@
     if (!d || !d.state) return;
     var cur = Number(d.state.targetTemp);
     if (!isFinite(cur)) return;
-    var next = Math.min(30, Math.max(16, Math.round(cur) + delta));
+    var range = (d.caps && d.caps.target) || { min: 16, max: 30 };
+    var next = Math.min(range.max, Math.max(range.min, Math.round(cur) + delta));
     d.state = Object.assign({}, d.state, { targetTemp: next });
     var card = document.querySelector('.pt-ac[data-id="' + id + '"]');
     if (card) {

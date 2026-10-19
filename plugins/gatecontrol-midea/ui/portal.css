@@ -1,4 +1,4 @@
-/* Portal section "Klimaanlage" — close to GateControl's portal AC card (public/css/portal.css). */
+/* Portal section "Raumklima" — close to GateControl's portal AC card (public/css/portal.css). */
 .pt-md{display:flex;flex-direction:column;gap:12px}
 .pt-hint{padding:10px 14px;border-radius:12px;border:1px solid var(--line);background:var(--surface-2);font-size:13px}
 .pt-ac-list{display:flex;flex-direction:column;gap:16px;min-width:0}
@@ -36,3 +36,6 @@
 .pt-chip[aria-pressed="true"]{border-color:var(--accent);background:var(--accent-soft)}
 .pt-chip:disabled{opacity:.55;cursor:not-allowed}
 .pt-foot{margin:12px 0 0;font-size:12px;color:var(--muted)}
+.pt-group{margin-bottom:12px}
+.pt-group .pt-overline{display:block;margin-bottom:6px}
+.pt-seg button.is-heat-level[aria-pressed="true"]{border-color:var(--crit);background:color-mix(in srgb,var(--crit) 14%,transparent)}

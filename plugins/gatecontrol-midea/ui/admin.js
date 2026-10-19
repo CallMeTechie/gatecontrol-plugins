@@ -1,4 +1,6 @@
-/* Klimaanlage page (port of GateControl's public/js/midea.js). */
+/* Raumklima page (port of GateControl's public/js/midea.js, plus Dreo devices).
+   Every card is built from the device's caps (modes, target range, fan, swing,
+   switches) — what a Midea air conditioner or a Dreo heater offers. */
 (function () {
   'use strict';
   var M = window.MD, T = M.T, $ = M.$, $$ = M.$$, el = M.el;
@@ -15,10 +17,18 @@
     fan: '<path d="M9.6 4.6A2 2 0 1 1 11 8H2"/><path d="M12.6 19.4A2 2 0 1 0 14 16H2"/><path d="M17.7 7.7A2.5 2.5 0 1 1 19.5 12H2"/>',
   };
   var AC_ICON = '<rect x="2" y="4" width="20" height="10" rx="2"/><path d="M6 18v1M10 18v2M14 18v2M18 18v1"/><line x1="6" y1="9" x2="18" y2="9"/>';
+  var HEATER_ICON = '<rect x="5" y="3" width="14" height="14" rx="2"/><path d="M9 7v6M12 7v6M15 7v6M7 17v3M17 17v3"/>';
+  // a Midea air conditioner offers the same everywhere (caps before the server sent them)
+  var MIDEA_CAPS = {
+    vendor: 'midea', kind: 'ac', target: { min: 16, max: 30, step: 1 }, fan: { kind: 'percent' }, swing: null,
+    modes: MODES.map(function (m) { return { id: m, label: T('mode.' + m) }; }),
+    switches: [{ id: 'turbo', label: T('turbo') }, { id: 'eco', label: T('eco') }],
+  };
 
   var devices = [];
   var targets = [];
   var cloud = { configured: false };
+  var dreo = { configured: false, supported: true };
   var cloudDevices = [];
   var allUsers = null;
   var ownerDevice = null;
@@ -37,6 +47,8 @@
   function warn(e) { M.toast(errText(e), 'error'); }
   function fanIndex(v) { return FAN_STEPS.reduce(function (b, val, i, a) { return Math.abs(val - v) < Math.abs(a[b] - v) ? i : b; }, 0); }
   function byId(id) { return devices.find(function (d) { return d.id === id; }) || null; }
+  function capsOf(d) { return (d && d.caps) || MIDEA_CAPS; }
+  function isDreo(d) { return d && d.vendor === 'dreo'; }
   function cardOf(id) { return $('.md-card[data-id="' + Number(id) + '"]'); }
 
   // ── device cards ────────────────────────────────────────────────────────────
@@ -51,22 +63,69 @@
     ]);
   }
   function subLine(d) {
+    if (isDreo(d)) return el('span', { class: 'tag tag-blue', title: T('kind.' + d.kind), text: [T('vendor.dreo'), d.model || T('kind.' + d.kind)].join(' · ') });
     if (d.transport === 'cloud') return el('span', { class: 'tag tag-blue', text: T('transport.cloud') });
     var where = d.target_label || T('device.no_target');
     var parts = [where, 'v' + d.protocol_version];
     if (d.protocol_version === 3 && !d.has_credentials) parts.push(T('device.no_keys'));
     return el('span', { class: 'tag', text: parts.join(' · ') });
   }
+  /** A row of choice chips (fan levels, swing): data-act + data-val. */
+  function chipRow(act, options, label) {
+    return el('div', null, [
+      el('div', { class: 'md-lbl', text: label }),
+      el('div', { class: 'md-tgl-row', role: 'group', 'aria-label': label }, options.map(function (o) {
+        return el('button', { type: 'button', class: 'md-tgl', 'data-act': act, 'data-val': o.id, 'aria-pressed': 'false', text: o.label });
+      })),
+    ]);
+  }
   function card(d) {
-    var modeBtns = MODES.map(function (m) {
-      var b = el('button', { type: 'button', class: 'md-mode', 'data-act': 'mode', 'data-mode': m, title: T('mode.' + m), 'aria-label': T('mode.' + m), 'aria-pressed': 'false' });
-      b.appendChild(icon(MODE_ICONS[m], 16));
+    var caps = capsOf(d);
+    var textModes = isDreo(d);
+    var modeBtns = caps.modes.map(function (m) {
+      var b = el('button', { type: 'button', class: 'md-mode' + (textModes ? ' md-mode-text' : ''), 'data-act': 'mode', 'data-mode': m.id, title: m.label, 'aria-label': m.label, 'aria-pressed': 'false' });
+      if (!textModes && MODE_ICONS[m.id]) b.appendChild(icon(MODE_ICONS[m.id], 16)); else b.textContent = m.label;
       return b;
     });
-    var slider = el('input', { type: 'range', min: '0', max: '5', step: '1', value: '3', 'data-act': 'fan', 'aria-label': T('fan.label') });
+    var set = [];
+    if (caps.target) {
+      set.push(el('div', null, [
+        el('div', { class: 'md-lbl', text: T('device.target') }),
+        el('div', { class: 'md-stepper' }, [
+          el('button', { type: 'button', 'data-step': '-1', 'aria-label': T('device.cooler') }, ['−']),
+          el('span', { class: 'v', 'aria-live': 'polite', text: '— °C' }),
+          el('button', { type: 'button', 'data-step': '1', 'aria-label': T('device.warmer') }, ['+']),
+        ]),
+      ]));
+    }
+    set.push(el('div', null, [el('div', { class: 'md-lbl', text: T('device.mode') }), el('div', { class: 'md-modes' + (textModes ? ' md-modes-text' : ''), role: 'group', 'aria-label': T('device.mode') }, modeBtns)]));
+    var slider = null;
+    if (caps.fan && caps.fan.kind === 'percent') {
+      slider = el('input', { type: 'range', min: '0', max: '5', step: '1', value: '3', 'data-act': 'fan', 'aria-label': T('fan.label') });
+      set.push(el('div', { class: 'md-fan' }, [
+        el('div', { class: 'md-fan-head' }, [
+          el('span', { class: 'md-lbl', text: T('fan.label') }),
+          el('button', { type: 'button', class: 'md-tgl', 'data-act': 'fan-auto', 'aria-pressed': 'false', text: T('fan.auto') }),
+          el('span', { class: 'md-fan-val', text: '—' }),
+        ]),
+        slider,
+        el('div', { class: 'md-fan-ticks', 'aria-hidden': 'true' }, FAN_STEPS.map(function (v) { return el('span', { text: v + '%' }); })),
+      ]));
+    } else if (caps.fan && caps.fan.kind === 'levels') {
+      set.push(chipRow('fanlevel', caps.fan.options, T('device.fan_level')));
+    }
+    if (caps.swing) set.push(chipRow('swing', caps.swing.options, T('device.swing')));
+    if (caps.switches.length) {
+      set.push(el('div', null, [
+        el('div', { class: 'md-lbl', text: T('extras.label') }),
+        el('div', { class: 'md-tgl-row' }, caps.switches.map(function (w) {
+          return el('button', { type: 'button', class: 'md-tgl', 'data-act': 'switch', 'data-key': w.id, 'aria-pressed': 'false', text: w.label });
+        })),
+      ]));
+    }
     var c = el('div', { class: 'md-card' + (d.enabled ? '' : ' is-disabled'), 'data-id': String(d.id) }, [
       el('div', { class: 'md-head' }, [
-        el('div', { class: 'md-ic' }, [icon(AC_ICON, 20)]),
+        el('div', { class: 'md-ic' }, [icon(d.kind === 'heater' ? HEATER_ICON : AC_ICON, 20)]),
         el('div', { class: 'md-head-text' }, [el('div', { class: 'md-name', text: d.name }), el('div', { class: 'md-sub' }, [subLine(d)])]),
         el('span', { class: 'tag md-status', text: '—' }),
       ]),
@@ -75,33 +134,7 @@
           el('div', { class: 'md-ring' }, [el('div', { class: 'md-ring-in' }, [el('span', { class: 'md-ring-v', text: '—' }), el('span', { class: 'md-ring-l', text: T('device.current') })])]),
           el('div', { class: 'md-outdoor', hidden: true }),
         ]),
-        el('div', { class: 'md-set' }, [
-          el('div', null, [
-            el('div', { class: 'md-lbl', text: T('device.target') }),
-            el('div', { class: 'md-stepper' }, [
-              el('button', { type: 'button', 'data-step': '-1', 'aria-label': T('device.cooler') }, ['−']),
-              el('span', { class: 'v', 'aria-live': 'polite', text: '— °C' }),
-              el('button', { type: 'button', 'data-step': '1', 'aria-label': T('device.warmer') }, ['+']),
-            ]),
-          ]),
-          el('div', null, [el('div', { class: 'md-lbl', text: T('device.mode') }), el('div', { class: 'md-modes', role: 'group', 'aria-label': T('device.mode') }, modeBtns)]),
-          el('div', { class: 'md-fan' }, [
-            el('div', { class: 'md-fan-head' }, [
-              el('span', { class: 'md-lbl', text: T('fan.label') }),
-              el('button', { type: 'button', class: 'md-tgl', 'data-act': 'fan-auto', 'aria-pressed': 'false', text: T('fan.auto') }),
-              el('span', { class: 'md-fan-val', text: '—' }),
-            ]),
-            slider,
-            el('div', { class: 'md-fan-ticks', 'aria-hidden': 'true' }, FAN_STEPS.map(function (v) { return el('span', { text: v + '%' }); })),
-          ]),
-          el('div', null, [
-            el('div', { class: 'md-lbl', text: T('extras.label') }),
-            el('div', { class: 'md-tgl-row' }, [
-              el('button', { type: 'button', class: 'md-tgl', 'data-act': 'turbo', 'aria-pressed': 'false', text: T('turbo') }),
-              el('button', { type: 'button', class: 'md-tgl', 'data-act': 'eco', 'aria-pressed': 'false', text: T('eco') }),
-            ]),
-          ]),
-        ]),
+        el('div', { class: 'md-set' }, set),
       ]),
       ownerBlock(d),
       el('div', { class: 'md-foot' }, [
@@ -110,9 +143,21 @@
         el('button', { type: 'button', class: 'btn btn-sm', 'data-act': 'edit', text: T('device.edit') }),
       ]),
     ]);
-    slider.addEventListener('input', function () { var v = $('.md-fan-val', c); if (v) v.textContent = FAN_STEPS[Number(slider.value)] + '%'; });
-    slider.addEventListener('change', function () { control(d.id, { fanSpeed: FAN_STEPS[Number(slider.value)] }); });
+    if (slider) {
+      slider.addEventListener('input', function () { var v = $('.md-fan-val', c); if (v) v.textContent = FAN_STEPS[Number(slider.value)] + '%'; });
+      slider.addEventListener('change', function () { control(d.id, { fanSpeed: FAN_STEPS[Number(slider.value)] }); });
+    }
     return c;
+  }
+
+  /** New caps from the server (a Dreo device's swing and switches arrive with its first values) → rebuild the card. */
+  function takeCaps(c, r) {
+    var d = byId(Number(c.getAttribute('data-id')));
+    if (!d || !r || !r.caps || JSON.stringify(r.caps) === JSON.stringify(d.caps)) return c;
+    d.caps = r.caps;
+    var fresh = card(d);
+    c.replaceWith(fresh);
+    return fresh;
   }
 
   function updateOnlineKpi() {
@@ -126,6 +171,7 @@
   function setCardState(c, st) {
     var d = byId(Number(c.getAttribute('data-id')));
     if (d) d.state = st;
+    var caps = capsOf(d);
     var ring = $('.md-ring', c);
     var status = $('.md-status', c);
     var stepper = $('.md-stepper', c);
@@ -137,7 +183,7 @@
       $('.md-ring-v', c).textContent = '—';
       status.textContent = T('device.offline');
       status.removeAttribute('data-tone');
-      stepper.classList.remove('pending', 'confirmed');
+      if (stepper) stepper.classList.remove('pending', 'confirmed');
       outdoor.hidden = true;
       updateOnlineKpi();
       return;
@@ -146,24 +192,34 @@
     c.setAttribute('data-online', '1');
     var indoor = Number(st.indoorTemp);
     var has = st.indoorTemp != null && isFinite(indoor);
-    ring.style.setProperty('--ring-val', (has ? Math.max(0, Math.min(100, ((indoor - 16) / 14) * 100)) : 0) + '%');
+    var lo = caps.target ? caps.target.min : 16;
+    var span = caps.target ? caps.target.max - caps.target.min : 14;
+    ring.style.setProperty('--ring-val', (has ? Math.max(0, Math.min(100, ((indoor - lo) / span) * 100)) : 0) + '%');
     $('.md-ring-v', c).textContent = has ? Math.round(indoor) + '°' : '—';
-    status.textContent = st.power ? T('device.on') : T('device.off');
+    status.textContent = st.power ? (st.heating ? T('device.on') + ' · ' + T('device.heating') : T('device.on')) : T('device.off');
     status.setAttribute('data-tone', st.power ? 'good' : 'muted');
-    var target = Number(st.targetTemp);
-    $('.v', stepper).textContent = isFinite(target) && st.targetTemp != null ? target + ' °C' : '— °C';
-    // the displayed target is now the device's setpoint → confirmed (green), no longer pending
-    stepper.classList.remove('pending');
-    stepper.classList.toggle('confirmed', isFinite(target) && st.targetTemp != null);
+    if (stepper) {
+      var target = Number(st.targetTemp);
+      $('.v', stepper).textContent = isFinite(target) && st.targetTemp != null ? target + ' °C' : '— °C';
+      // the displayed target is now the device's setpoint → confirmed (green), no longer pending
+      stepper.classList.remove('pending');
+      stepper.classList.toggle('confirmed', isFinite(target) && st.targetTemp != null);
+    }
     $$('.md-mode', c).forEach(function (b) { b.setAttribute('aria-pressed', b.getAttribute('data-mode') === st.mode ? 'true' : 'false'); });
     var out = Number(st.outdoorTemp);
-    if (st.outdoorTemp == null || !isFinite(out)) outdoor.hidden = true;
-    else { outdoor.hidden = false; outdoor.textContent = T('device.outdoor') + ' ' + Math.round(out) + '°'; }
+    if (st.outdoorTemp != null && isFinite(out)) { outdoor.hidden = false; outdoor.textContent = T('device.outdoor') + ' ' + Math.round(out) + '°'; }
+    else if (st.humidity != null && isFinite(Number(st.humidity))) { outdoor.hidden = false; outdoor.textContent = T('device.humidity') + ' ' + Math.round(Number(st.humidity)) + ' %'; }
+    else outdoor.hidden = true;
+    $$('[data-act="fanlevel"]', c).forEach(function (b) { b.setAttribute('aria-pressed', b.getAttribute('data-val') === st.fanLevel ? 'true' : 'false'); });
+    $$('[data-act="swing"]', c).forEach(function (b) { b.setAttribute('aria-pressed', b.getAttribute('data-val') === st.swing ? 'true' : 'false'); });
+    // switches (turbo/eco, child lock, sound, …) only mirror what the device reports
+    $$('[data-act="switch"]', c).forEach(function (b) { b.setAttribute('aria-pressed', st[b.getAttribute('data-key')] ? 'true' : 'false'); });
     // fan: auto (102) → chip on, slider dimmed; otherwise snap the slider to the nearest step
     var fanAuto = $('[data-act="fan-auto"]', c);
     var fanBox = $('.md-fan', c);
     var fanVal = $('.md-fan-val', c);
     var fs = Number(st.fanSpeed);
+    if (!fanBox) { updateOnlineKpi(); return; }
     if (st.fanSpeed === 102) {
       fanAuto.setAttribute('aria-pressed', 'true'); fanBox.classList.add('is-auto'); fanVal.textContent = T('fan.auto');
     } else if (st.fanSpeed != null && isFinite(fs)) {
@@ -172,16 +228,13 @@
       $('input[data-act="fan"]', c).value = String(idx);
       fanVal.textContent = FAN_STEPS[idx] + '%';
     }
-    // turbo / eco only mirror what the device reports
-    $('[data-act="turbo"]', c).setAttribute('aria-pressed', st.turbo ? 'true' : 'false');
-    $('[data-act="eco"]', c).setAttribute('aria-pressed', st.eco ? 'true' : 'false');
     updateOnlineKpi();
   }
 
   function refreshState(id) {
     var c = cardOf(id);
     return M.api('GET', 'devices/' + Number(id) + '/state').then(function (r) {
-      if (c) setCardState(c, r.state);
+      if (c) setCardState(takeCaps(c, r), r.state);
       return { suspend: !!(r.state && r.state.offline) };
     }, function (e) {
       if (c) { var s = $('.md-status', c); s.textContent = errText(e); s.setAttribute('data-tone', 'error'); }
@@ -192,7 +245,7 @@
   function control(id, patch) {
     return M.api('POST', 'devices/' + Number(id) + '/state', { patch: patch }).then(function (r) {
       var c = cardOf(id);
-      if (c) setCardState(c, r.state);
+      if (c) setCardState(takeCaps(c, r), r.state);
       if (r.state && r.state.offline) M.toast(T('error.offline'), 'error');
     }, warn);
   }
@@ -206,6 +259,7 @@
       [T('kpi.online'), '0 / ' + total, 'md-kpi-online'],
       [T('kpi.assigned'), withOwner + ' / ' + total, null],
       [T('kpi.cloud'), cloud.configured ? T('cloud.connected') : '—', null],
+      [T('kpi.dreo'), dreo.configured ? (dreo.connected ? T('dreo.live') : T('dreo.offline')) : '—', null],
     ].forEach(function (k) {
       host.appendChild(el('div', { class: 'md-kpi' }, [el('span', { class: 'l', text: k[0] }), el('span', { class: 'v', id: k[2], text: k[1] })]));
     });
@@ -214,7 +268,7 @@
   function startCloudRefresh() {
     // cloud devices while the page is visible, every 120 s (as before); stops on rate limit/offline
     if (cloudTimer) { clearInterval(cloudTimer); cloudTimer = null; }
-    var ids = devices.filter(function (d) { return d.transport === 'cloud'; }).map(function (d) { return d.id; });
+    var ids = devices.filter(function (d) { return d.transport === 'cloud' && !isDreo(d); }).map(function (d) { return d.id; });
     if (!ids.length) return;
     cloudTimer = setInterval(function () {
       if (document.hidden) return;
@@ -223,19 +277,28 @@
       }, Promise.resolve(false)).then(function (stop) { if (stop && cloudTimer) { clearInterval(cloudTimer); cloudTimer = null; } });
     }, 120000);
   }
-  // LAN devices: the background run polls them every 30 s; mirror its cached
-  // states here (no extra device round trip)
+  // LAN devices: the background run polls them every 30 s; Dreo devices report
+  // live — mirror both from the plugin's cache here (no extra device round trip)
   setInterval(function () {
     if (document.hidden || $$('.modal-overlay').some(function (m) { return !m.hidden; })) return;
-    if (!devices.some(function (d) { return d.transport !== 'cloud'; })) return;
+    if (!devices.some(function (d) { return d.transport !== 'cloud' || isDreo(d); })) return;
     M.api('GET', 'status').then(function (st) {
-      $('#md-reauth').hidden = !st.cloud_needs_reauth;
+      showBanners(st);
       (st.devices || []).forEach(function (s) {
-        var c = s.transport !== 'cloud' && s.checked ? cardOf(s.id) : null;
+        var live = s.vendor === 'dreo' || s.transport !== 'cloud';
+        var c = live && s.checked ? cardOf(s.id) : null;
         if (c) setCardState(c, s.online && s.state ? s.state : { offline: true });
       });
     }, function () { /* retried on the next run */ });
   }, 30000);
+
+  function showBanners(st) {
+    $('#md-reauth').hidden = !st.cloud_needs_reauth;
+    if (st.dreo) dreo = st.dreo;
+    $('#md-dreo-reauth').hidden = !(dreo.configured && dreo.needs_login);
+    $('#md-dreo-update').hidden = dreo.supported !== false || !devices.some(isDreo);
+    if ($('#md-kpis').firstChild) { renderKpis(); updateOnlineKpi(); } // the Dreo connection may have changed
+  }
 
   function loadDevices() {
     return Promise.all([
@@ -247,7 +310,7 @@
       var st = out[1] || {};
       cloud = st.cloud || { configured: false };
       targets = out[2].targets || [];
-      $('#md-reauth').hidden = !st.cloud_needs_reauth;
+      showBanners(st);
       renderKpis();
       var host = M.clear($('#md-devices'));
       if (!devices.length) { host.appendChild(el('p', { class: 'md-empty', text: T('devices.none') })); return; }
@@ -255,6 +318,8 @@
       // the real state right after rendering (parallel, per card)
       devices.forEach(function (d) { refreshState(d.id); });
       startCloudRefresh();
+      // the Dreo socket comes up with the first states — show it without waiting for the 30 s run
+      if (devices.some(isDreo)) setTimeout(function () { M.api('GET', 'status').then(showBanners, function () { /* next run */ }); }, 3000);
     }, function (e) {
       var host = M.clear($('#md-devices'));
       host.appendChild(el('p', { class: 'md-empty', text: errText(e) }));
@@ -284,7 +349,9 @@
     if (act === 'power') { control(id, { power: !st.power }); return; }
     if (act === 'mode') { control(id, { mode: btn.getAttribute('data-mode') }); return; }
     if (act === 'fan-auto') { control(id, { fanSpeed: 102 }); return; }
-    if (act === 'turbo' || act === 'eco') { var p = {}; p[act] = !st[act]; control(id, p); }
+    if (act === 'fanlevel') { control(id, { fanLevel: btn.getAttribute('data-val') }); return; }
+    if (act === 'swing') { control(id, { swing: btn.getAttribute('data-val') }); return; }
+    if (act === 'switch') { var key = btn.getAttribute('data-key'); var p = {}; p[key] = !st[key]; control(id, p); }
   });
 
   // Target temperature: whole degrees, optimistic (amber = pending), debounced
@@ -296,14 +363,15 @@
     var id = Number(c.getAttribute('data-id'));
     var d = byId(id);
     if (!d || !d.state || d.state.offline || d.state.targetTemp == null) return; // no state yet — never send a default
-    var next = Math.min(30, Math.max(16, Math.round(Number(d.state.targetTemp)) + Number(step.getAttribute('data-step'))));
+    var range = capsOf(d).target || { min: 16, max: 30 };
+    var next = Math.min(range.max, Math.max(range.min, Math.round(Number(d.state.targetTemp)) + Number(step.getAttribute('data-step'))));
     d.state = Object.assign({}, d.state, { targetTemp: next });
     var wrap = step.closest('.md-stepper');
     $('.v', wrap).textContent = next + ' °C';
     wrap.classList.add('pending'); wrap.classList.remove('confirmed');
     clearTimeout(wrap._t);
     wrap._t = setTimeout(function () {
-      M.api('POST', 'devices/' + id + '/state', { patch: { targetTemp: next } }).then(function (r) { setCardState(c, r.state); }, function (e) { wrap.classList.remove('pending'); warn(e); });
+      M.api('POST', 'devices/' + id + '/state', { patch: { targetTemp: next } }).then(function (r) { setCardState(takeCaps(c, r), r.state); }, function (e) { wrap.classList.remove('pending'); warn(e); });
     }, 500);
   });
 
@@ -378,17 +446,80 @@
     }, warn).then(function () { btn.disabled = false; });
   }
 
-  // ── add dialog ──────────────────────────────────────────────────────────────
-  function showPane(isCloud) {
-    $('#md-tab-cloud').classList.toggle('active', isCloud);
-    $('#md-tab-lan').classList.toggle('active', !isCloud);
-    $('#md-tab-cloud').setAttribute('aria-selected', isCloud ? 'true' : 'false');
-    $('#md-tab-lan').setAttribute('aria-selected', isCloud ? 'false' : 'true');
-    $('#md-pane-cloud').hidden = !isCloud;
-    $('#md-pane-lan').hidden = isCloud;
+  // ── Dreo account and devices ────────────────────────────────────────────────
+  var dreoDevices = [];
+  function dreoStateText() {
+    return dreo.configured ? T('dreo.connected_as', { email: dreo.email || '', region: dreo.region === 'NA' ? 'US' : 'EU' }) : T('dreo.not_connected');
   }
-  $('#md-tab-cloud').addEventListener('click', function () { showPane(true); });
-  $('#md-tab-lan').addEventListener('click', function () { showPane(false); });
+  $('#md-dreo-open').addEventListener('click', function () {
+    $('#md-dreo-state').textContent = dreoStateText();
+    $('#md-dreo-modal-update').hidden = dreo.supported !== false;
+    $('#md-dr-email').value = dreo.email || '';
+    $('#md-dr-password').value = '';
+    $('#md-dreo-msg').textContent = '';
+    M.openModal('md-dreo-modal');
+  });
+  function connectDreo() {
+    var btn = $('#md-dreo-connect');
+    var msg = $('#md-dreo-msg');
+    var body = { email: $('#md-dr-email').value.trim(), password: $('#md-dr-password').value };
+    if (!body.email || !body.password) { msg.textContent = T('error.email_password_required'); return; }
+    btn.disabled = true;
+    msg.textContent = '…';
+    M.api('POST', 'dreo/connect', body).then(function (r) {
+      $('#md-dr-password').value = '';
+      dreo = r.dreo || dreo;
+      M.toast(T('cloud.connected'));
+      M.closeModal('md-dreo-modal');
+      return loadDevices();
+    }, function (e) { msg.textContent = errText(e); }).then(function () { btn.disabled = false; });
+  }
+  $('#md-dreo-connect').addEventListener('click', connectDreo);
+  $('#md-dreo-form').addEventListener('submit', function (e) { e.preventDefault(); connectDreo(); });
+
+  function renderDreoList() {
+    var list = M.clear($('#md-dreo-list'));
+    var hint = $('#md-dreo-list-hint');
+    if (dreo.supported === false) { hint.textContent = T('dreo.needs_update'); return; }
+    if (!dreo.configured) { hint.textContent = T('add.dreo_first'); return; }
+    var pending = dreoDevices.filter(function (x) { return !devices.some(function (d) { return d.device_sn === 'dreo-' + x.sn; }); });
+    hint.textContent = pending.some(function (x) { return x.kind; }) ? T('add.dreo_hint') : T('add.dreo_none');
+    pending.forEach(function (x) {
+      list.appendChild(el('div', { class: 'md-cloud-row' }, [
+        el('span', { class: 'md-cloud-name', text: (x.name || x.sn) + (x.model ? ' · ' + x.model : '') }),
+        el('span', { class: 'tag', 'data-tone': x.kind ? 'good' : 'muted', text: x.kind ? T('kind.' + x.kind) : T('add.dreo_unsupported') }),
+        x.kind ? el('button', { type: 'button', class: 'btn btn-sm btn-primary', text: T('cloud.add'), on: { click: function (e) { addDreo(x, e.currentTarget); } } }) : null,
+      ]));
+    });
+  }
+  function loadDreoDevices() {
+    if (!dreo.configured || dreo.supported === false) { dreoDevices = []; renderDreoList(); return Promise.resolve(); }
+    $('#md-dreo-list-hint').textContent = '…';
+    return M.api('GET', 'dreo/devices').then(function (r) { dreoDevices = r.devices || []; renderDreoList(); }, function (e) {
+      dreoDevices = [];
+      M.clear($('#md-dreo-list'));
+      $('#md-dreo-list-hint').textContent = errText(e);
+    });
+  }
+  function addDreo(x, btn) {
+    btn.disabled = true;
+    M.api('POST', 'devices', { transport: 'dreo', sn: x.sn, name: x.name || '' }).then(function () {
+      M.closeModal('md-add-modal');
+      return loadDevices();
+    }, warn).then(function () { btn.disabled = false; });
+  }
+
+  // ── add dialog ──────────────────────────────────────────────────────────────
+  function showPane(which) {
+    ['cloud', 'lan', 'dreo'].forEach(function (k) {
+      $('#md-tab-' + k).classList.toggle('active', k === which);
+      $('#md-tab-' + k).setAttribute('aria-selected', k === which ? 'true' : 'false');
+      $('#md-pane-' + k).hidden = k !== which;
+    });
+  }
+  $('#md-tab-cloud').addEventListener('click', function () { showPane('cloud'); });
+  $('#md-tab-lan').addEventListener('click', function () { showPane('lan'); });
+  $('#md-tab-dreo').addEventListener('click', function () { showPane('dreo'); loadDreoDevices(); });
   function fillTargets(select, current) {
     M.clear(select);
     targets.forEach(function (a) { select.appendChild(el('option', { value: String(a.index), text: a.label })); });
@@ -400,8 +531,10 @@
     $('#md-lan-target-hint').textContent = targets.length ? T('lan.target_hint') : T('lan.no_targets');
     $('#md-lan-add').disabled = !targets.length;
     $('#md-lan-msg').textContent = '';
-    showPane(true);
+    showPane(cloud.configured || !dreo.configured ? 'cloud' : 'dreo');
     renderCloudList();
+    renderDreoList();
+    if (dreo.configured) loadDreoDevices();
     M.openModal('md-add-modal');
     loadCloudDevices();
   });

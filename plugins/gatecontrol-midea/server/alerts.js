@@ -1,9 +1,9 @@
 'use strict';
 
-// Air-conditioner notifications (plugin.json notifyTopics) from the LAN poll
-// of the background run — no extra requests to the devices. Cloud-only
-// devices are not polled around the clock (as before), so they do not
-// notify. After every poll the devices' state is compared with the last
+// Device notifications (plugin.json notifyTopics) from the background run —
+// the LAN poll of Midea devices and the live connection of Dreo devices, no
+// extra requests to the devices. Midea cloud devices are not polled around
+// the clock (as before), so they do not notify. After every poll the devices' state is compared with the last
 // seen state (kept in gc.storage, so a restart neither repeats nor loses
 // anything):
 //
@@ -23,9 +23,9 @@ const OFFLINE_MIN = 10;
 
 const TEXTS = {
   de: {
-    'down.title': 'Klimagerät nicht erreichbar',
+    'down.title': 'Gerät nicht erreichbar',
     'down.body': '{{name}} antwortet seit {{min}} Minuten nicht',
-    'up.title': 'Klimagerät wieder erreichbar',
+    'up.title': 'Gerät wieder erreichbar',
     'up.body': '{{name}} antwortet wieder',
     'filter.title': 'Filter reinigen',
     'filter.body': '{{name}}: Der Filter sollte gereinigt werden',
@@ -39,9 +39,9 @@ const TEXTS = {
     'fact.code': 'Fehlercode',
   },
   en: {
-    'down.title': 'Air conditioner unreachable',
+    'down.title': 'Device unreachable',
     'down.body': '{{name}} has not answered for {{min}} minutes',
-    'up.title': 'Air conditioner reachable again',
+    'up.title': 'Device reachable again',
     'up.body': '{{name}} answers again',
     'filter.title': 'Clean the filter',
     'filter.body': '{{name}}: the filter should be cleaned',
