@@ -981,7 +981,7 @@
       ],
       "languages": ["de", "en"]
     },
-    "gatecontrol-midea": {
+    "gatecontrol-raumklima": {
       "category": "home",
       "icon": "snowflake",
       "summary": {
@@ -1210,8 +1210,8 @@
         }
       ],
       "needs": {
-        "de": "Midea- und/oder Dreo-Konto; Dreo ab GateControl 1.184.0",
-        "en": "Midea and/or Dreo account; Dreo from GateControl 1.184.0"
+        "de": "Midea- und/oder Dreo-Konto; GateControl 1.185.0",
+        "en": "Midea and/or Dreo account; GateControl 1.185.0"
       },
       "languages": ["de", "en"]
     },
@@ -1617,7 +1617,7 @@
       },
       "audience": "all",
       "keywords": ["smarthome", "licht", "light", "lampe", "steckdose", "plug", "szene", "scene", "sensor", "phoscon", "deconz", "zigbee"],
-      "related": ["gatecontrol-midea", "gatecontrol-door"],
+      "related": ["gatecontrol-raumklima", "gatecontrol-door"],
       "adds": [
         {
           "icon": "page",

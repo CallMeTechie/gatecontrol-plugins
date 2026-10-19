@@ -10,7 +10,7 @@
 
 const store = require('./store');
 const model = require('./dreomodel');
-const { DreoApi, DreoLink, md5 } = require('./dreo');
+const { DreoApi, DreoLink } = require('./dreo');
 
 const { codeError } = store;
 
@@ -105,14 +105,21 @@ async function withApi(gc, fn) {
 
 // ─── Account and devices ────────────────────────
 
-async function connect(gc, email, password) {
+/** Log in with the account of the settings (e-mail, MD5 of the password); keeps token and region. */
+async function connect(gc) {
   needSupport(gc);
-  const passwordMd5 = md5(password);
-  const r = await module.exports.newApi(gc).login(email, passwordMd5, 'EU');
-  await store.saveDreo(gc, { email, region: r.region, passwordMd5, token: r.token });
+  const cfg = await account(gc);
+  const r = await module.exports.newApi(gc).login(cfg.email, cfg.passwordMd5, 'EU');
+  await store.saveDreo(gc, { ...cfg, region: r.region, token: r.token });
   Object.assign(status, { needsLogin: false, lastError: null, failures: 0, retryAt: 0 });
   if (link) link.close();
   return { region: r.region };
+}
+
+/** The account was removed from the settings: forget the token, close the socket. */
+async function disconnect(gc) {
+  await store.saveDreoToken(gc, null);
+  reset();
 }
 
 /** The account's devices → [{ sn, name, model, productName, kind }] (kind null = not a heater or air conditioner). */
@@ -270,6 +277,6 @@ function reset() {
 }
 
 module.exports = {
-  supported, connect, listCloudDevices, ensureLink, getState, cachedState, setState, capsOf, tick, forget, getStatus, reset,
+  supported, connect, disconnect, listCloudDevices, ensureLink, getState, cachedState, setState, capsOf, tick, forget, getStatus, reset,
   newApi, newLink, _raw: raw,
 };

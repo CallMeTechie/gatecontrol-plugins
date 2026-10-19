@@ -40,6 +40,8 @@ const entry = {
   prerelease: lib.parseSemver(manifest.version).pre.length > 0,
   gatecontrol: manifest.gatecontrol,
   license_required: !!(manifest.license && manifest.license.required),
+  // GateControl ≥ 1.185.0: an installed plugin listed here moves over to this one (the catalogue offers it as its update)
+  replaces: Array.isArray(manifest.replaces) ? manifest.replaces : [],
   file: name,
   size: buf.length,
   sha256,

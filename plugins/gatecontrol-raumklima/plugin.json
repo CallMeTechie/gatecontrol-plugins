@@ -1,16 +1,19 @@
 {
-  "id": "gatecontrol-midea",
+  "id": "gatecontrol-raumklima",
   "name": {
     "de": "Raumklima",
     "en": "Indoor climate"
   },
-  "version": "1.6.0",
+  "version": "2.0.0",
   "publisher": "CallMeTechie",
   "description": {
     "de": "Klimageräte und Heizungen steuern: Midea-Klimageräte über die Midea-Cloud oder im Heimnetz, Dreo-Heizlüfter und -Klimageräte live über die Dreo-Cloud (Ein/Aus, Zieltemperatur, Modus, Lüfter, Schwenken) – und Haushaltsmitgliedern zuweisen (Portal „Zuhause“).",
     "en": "Control air conditioners and heaters: Midea air conditioners through the Midea cloud or in the home network, Dreo heaters and air conditioners live through the Dreo cloud (on/off, target temperature, mode, fan, oscillation) – and assign them to household members (portal “Home”)."
   },
-  "gatecontrol": ">=1.154.0",
+  "gatecontrol": ">=1.185.0",
+  "replaces": [
+    "gatecontrol-midea"
+  ],
   "entry": "server/index.js",
   "permissions": {
     "network": {
@@ -68,7 +71,102 @@
         }
       }
     ],
+    "settingsGroups": [
+      {
+        "id": "midea",
+        "label": {
+          "de": "Midea-Konto",
+          "en": "Midea account"
+        },
+        "help": {
+          "de": "Für Midea-Klimageräte über die Midea-Cloud (Anmeldedaten der App MSmartHome oder NetHome Plus). Geräte im Heimnetz (LAN) brauchen kein Konto. Beim Speichern meldet sich GateControl an.",
+          "en": "For Midea air conditioners through the Midea cloud (the sign-in of the MSmartHome or NetHome Plus app). Devices in the home network (LAN) need no account. Saving signs in."
+        }
+      },
+      {
+        "id": "dreo",
+        "label": {
+          "de": "Dreo-Konto",
+          "en": "Dreo account"
+        },
+        "help": {
+          "de": "Für Dreo-Heizlüfter und -Klimageräte (Anmeldedaten der Dreo-App). GateControl hält eine Live-Verbindung zur Dreo-Cloud. Beim Speichern meldet sich GateControl an; vom Passwort wird nur die Prüfsumme (MD5) aufbewahrt, die Dreo für die Anmeldung verlangt.",
+          "en": "For Dreo heaters and air conditioners (the sign-in of the Dreo app). GateControl keeps a live connection to the Dreo cloud. Saving signs in; of the password only the checksum (MD5) Dreo asks for at sign-in is kept."
+        }
+      },
+      {
+        "id": "notifications",
+        "label": {
+          "de": "Benachrichtigungen",
+          "en": "Notifications"
+        }
+      }
+    ],
     "settings": [
+      {
+        "key": "cloud.app",
+        "type": "select",
+        "group": "midea",
+        "label": {
+          "de": "App",
+          "en": "App"
+        },
+        "options": [
+          {
+            "value": "msmarthome",
+            "label": "MSmartHome"
+          },
+          {
+            "value": "nethome",
+            "label": "NetHome Plus"
+          }
+        ],
+        "default": "msmarthome"
+      },
+      {
+        "key": "cloud.email",
+        "type": "text",
+        "group": "midea",
+        "label": {
+          "de": "E-Mail",
+          "en": "E-mail"
+        }
+      },
+      {
+        "key": "cloud.password",
+        "type": "secret",
+        "group": "midea",
+        "label": {
+          "de": "Passwort",
+          "en": "Password"
+        },
+        "help": {
+          "de": "Leer lassen, um das gespeicherte Passwort zu behalten.",
+          "en": "Leave empty to keep the stored password."
+        }
+      },
+      {
+        "key": "dreo.email",
+        "type": "text",
+        "group": "dreo",
+        "label": {
+          "de": "E-Mail",
+          "en": "E-mail"
+        }
+      },
+      {
+        "key": "dreo.password",
+        "type": "secret",
+        "group": "dreo",
+        "label": {
+          "de": "Passwort",
+          "en": "Password"
+        },
+        "help": {
+          "de": "Leer lassen, um das gespeicherte Passwort zu behalten. Hinweis: Dreo-Heizungen sperren die Fernsteuerung nach 24 Stunden ohne Bedienung – reagiert ein Gerät nicht, einmal kurz die WLAN-Taste am Gerät drücken.",
+          "en": "Leave empty to keep the stored password. Note: Dreo heaters lock remote control after 24 hours without use – if a device does not respond, briefly press the Wi-Fi button on the device."
+        }
+      },
       {
         "key": "notify_lang",
         "type": "select",
@@ -90,7 +188,8 @@
             "label": "English"
           }
         ],
-        "default": "de"
+        "default": "de",
+        "group": "notifications"
       }
     ],
     "portal": {

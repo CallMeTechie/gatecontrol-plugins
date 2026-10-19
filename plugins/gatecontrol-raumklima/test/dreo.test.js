@@ -6,7 +6,8 @@
 
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { fakeDreo, withHost, asAdmin, asPortal, ADA, BOB } = require('./helpers');
+const { fakeDreo, withHost, asAdmin, asPortal, connectDreo, lineOf, ADA, BOB } = require('./helpers');
+const { md5 } = require('../server/dreo');
 const dreoservice = require('../server/dreoservice');
 const { DreoLink } = require('../server/dreo');
 const model = require('../server/dreomodel');
@@ -15,8 +16,8 @@ const settle = () => new Promise((r) => setTimeout(r, 30));
 
 /** Connect the fake Dreo account and add its heater (and air conditioner) for Ada. */
 async function setup(host, dreo, { ac = false } = {}) {
-  const r = await asAdmin(host, 'POST', '/dreo/connect', { email: dreo.email, password: dreo.password });
-  assert.equal(r.status, 200, JSON.stringify(r.json));
+  const lines = await connectDreo(host, dreo);
+  assert.equal(lineOf(lines, 'dreo').tone, 'ok', JSON.stringify(lines));
   const heater = (await asAdmin(host, 'POST', '/devices', { transport: 'dreo', sn: 'HSH009S-1' })).json.device;
   await asAdmin(host, 'PUT', `/devices/${heater.id}/owners`, { user_ids: [ADA.id] });
   let air = null;
@@ -34,15 +35,22 @@ function quickAcks() {
   return () => { dreoservice.newLink = orig; };
 }
 
-test('the account: login at the account’s region, only the password’s MD5 is kept', () => {
+test('the account on the settings page: login at the account’s region, only the password’s MD5 is kept', () => {
   const dreo = fakeDreo({ region: 'NA' });
   return withHost({ dreo }, async (host) => {
-    const bad = await asAdmin(host, 'POST', '/dreo/connect', { email: dreo.email, password: 'wrong' });
-    assert.equal(bad.status, 400);
-    assert.equal(bad.json.code, 'DREO_LOGIN_FAILED');
-    const r = await asAdmin(host, 'POST', '/dreo/connect', { email: dreo.email, password: dreo.password });
-    assert.equal(r.status, 200);
+    const bad = lineOf(await connectDreo(host, dreo, 'wrong'), 'dreo');
+    assert.equal(bad.tone, 'error');
+    const lines = await connectDreo(host, dreo);
+    assert.equal(lineOf(lines, 'dreo').tone, 'ok');
+    assert.match(lineOf(lines, 'dreo').text, /Region US/);
+    assert.equal(host.settings['dreo.password'], md5(dreo.password), 'the plain password is replaced by its MD5');
+    const r = await asAdmin(host, 'GET', '/dreo');
     assert.deepEqual([r.json.dreo.email, r.json.dreo.region, r.json.dreo.configured, r.json.dreo.supported], [dreo.email, 'NA', true, true]);
+    // the account removed from the settings: the token is gone
+    await host.saveSettings({ 'dreo.email': '' });
+    assert.equal(lineOf(await host.settingsStatus(), 'dreo').tone, 'info');
+    assert.equal(await host.gc.settings.get('dreo.token'), null);
+    await connectDreo(host, dreo);
     const stored = JSON.stringify({ kv: [...host.kv.entries()], settings: host.settings });
     assert.ok(!stored.includes(dreo.password), 'never the plain password');
     const status = (await asAdmin(host, 'GET', '/dreo')).json.dreo;
@@ -55,7 +63,7 @@ test('the device list: heaters and air conditioners can be added, other Dreo dev
   return withHost({ dreo }, async (host) => {
     const before = await asAdmin(host, 'GET', '/dreo/devices');
     assert.equal(before.json.code, 'DREO_NOT_CONFIGURED');
-    await asAdmin(host, 'POST', '/dreo/connect', { email: dreo.email, password: dreo.password });
+    await connectDreo(host, dreo);
     const list = (await asAdmin(host, 'GET', '/dreo/devices')).json.devices;
     assert.deepEqual(list.map((d) => [d.sn, d.model, d.kind]), [['HSH009S-1', 'DR-HSH009S', 'heater'], ['HAC006S-1', 'DR-HAC006S', 'ac'], ['HTF001S-1', 'DR-HTF001S', null]]);
     const fan = await asAdmin(host, 'POST', '/devices', { transport: 'dreo', sn: 'HTF001S-1' });
@@ -167,9 +175,9 @@ test('an expired token: one new login (REST and WebSocket)', () => {
 test('GateControl without WebSockets: Dreo is refused clearly, Midea is untouched', () => {
   const dreo = fakeDreo();
   return withHost({ dreo, websocket: false }, async (host) => {
-    const r = await asAdmin(host, 'POST', '/dreo/connect', { email: dreo.email, password: dreo.password });
-    assert.equal(r.status, 409);
-    assert.equal(r.json.code, 'DREO_NEEDS_UPDATE');
+    const l = lineOf(await connectDreo(host, dreo), 'dreo');
+    assert.equal(l.tone, 'warn');
+    assert.match(l.text, /1\.184\.0/);
     assert.equal((await asAdmin(host, 'GET', '/dreo')).json.dreo.supported, false);
     assert.equal((await asAdmin(host, 'GET', '/status')).status, 200);
   });

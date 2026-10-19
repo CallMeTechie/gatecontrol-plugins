@@ -47,7 +47,7 @@ test('filter_clean once until reset; error_code once per error with "resolved"',
 });
 
 test('payloads: priorities, collapse keys, error code, owners, language', () => {
-  const gc = { plugin: { id: 'gatecontrol-midea' } };
+  const gc = { plugin: { id: 'gatecontrol-raumklima' } };
   const err = alerts.toNotification(gc, { topic: 'error_code', kind: 'error', device: DEV, state: ok({ applianceError: true, errorCode: 5 }).state }, CFG, [2]);
   assert.deepEqual([err.title, err.body, err.priority, err.collapseKey, err.users], ['Störung am Klimagerät', 'Büro meldet eine Störung (Code 5)', 'high', 'error:1', [2]]);
   assert.deepEqual(err.data.facts[0], { label: 'Fehlercode', value: '5' });
@@ -56,7 +56,7 @@ test('payloads: priorities, collapse keys, error code, owners, language', () => 
   const down = alerts.toNotification(gc, { topic: 'device_unreachable', kind: 'down', device: DEV, minutes: 10 }, { ...CFG, lang: 'en' }, []);
   assert.deepEqual([down.title, down.body, down.priority], ['Device unreachable', 'Büro has not answered for 10 minutes', 'normal']);
   const filter = alerts.toNotification(gc, { topic: 'filter_clean', kind: 'filter', device: DEV, state: ok().state }, CFG, []);
-  assert.deepEqual([filter.title, filter.priority, filter.data.route], ['Filter reinigen', 'info', 'plg-gatecontrol-midea']);
+  assert.deepEqual([filter.title, filter.priority, filter.data.route], ['Filter reinigen', 'info', 'plg-gatecontrol-raumklima']);
 });
 
 test('every topic the plugin sends is declared in plugin.json (with a de/en label)', () => {
@@ -87,7 +87,7 @@ test('LAN poll → error (high) to the owners and filter notice; offline device 
     assert.equal(err.body, 'Büro meldet eine Störung (Code 3)');
     assert.deepEqual(err.users, [ADA.id]);
     assert.equal(err.collapseKey, `error:${id}`);
-    assert.equal(err.data.actions[0].target, 'plg-gatecontrol-midea');
+    assert.equal(err.data.actions[0].target, 'plg-gatecontrol-raumklima');
 
     await host.stop();
     await host.start();

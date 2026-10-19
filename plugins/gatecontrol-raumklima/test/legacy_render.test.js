@@ -115,7 +115,7 @@ test('every text key used by the code exists in German and English', () => {
   const path = require('node:path');
   const texts = require('../server/texts.json');
   const dir = path.join(__dirname, '..');
-  const src = ['server/index.js', 'ui/admin.html', 'ui/admin.js', 'ui/portal.html', 'ui/portal.js', 'ui/common.js']
+  const src = ['server/index.js', 'server/accounts.js', 'ui/admin.html', 'ui/admin.js', 'ui/portal.html', 'ui/portal.js', 'ui/common.js']
     .map((f) => fs.readFileSync(path.join(dir, f), 'utf8')).join('\n');
   const used = new Set();
   for (const m of src.matchAll(/\{\{t:([a-z0-9_.-]+)\}\}/g)) used.add(m[1]);

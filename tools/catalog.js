@@ -49,7 +49,21 @@ function capNotes(text) {
 
 /** Release notes of one plugin version from its CHANGELOG.md, or null. */
 function notesFor(id, version) {
-  try { return capNotes(lib.changelogSection(id, version)); } catch { return null; }
+  // a plugin that moved to a new id (plugin.json `replaces`) keeps its old sections in the new CHANGELOG
+  for (const dir of [id, ...renamedTo(id)]) {
+    try {
+      const n = capNotes(lib.changelogSection(dir, version));
+      if (n) return n;
+    } catch { /* not in this folder */ }
+  }
+  return null;
+}
+
+/** Plugins of this repository whose plugin.json replaces `id`. */
+function renamedTo(id) {
+  return lib.listPlugins().filter((p) => {
+    try { return (lib.readJson(path.join(lib.pluginDir(p), 'plugin.json')).replaces || []).includes(id); } catch { return false; }
+  });
 }
 
 /** Index entries (parsed) + store metadata ({ <id>: meta }) → catalog.json object. */

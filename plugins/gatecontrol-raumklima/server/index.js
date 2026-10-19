@@ -1,13 +1,17 @@
 'use strict';
 
-// gatecontrol-midea — "Raumklima": Midea air conditioners (cloud and LAN) and
-// Dreo heaters and air conditioners (Dreo cloud, live over a WebSocket) as a
-// GateControl plugin (formerly built into GateControl as "Klimaanlage": the
-// plugin id stays, so licences and installations carry on).
+// gatecontrol-raumklima — "Raumklima": Midea air conditioners (cloud and LAN)
+// and Dreo heaters and air conditioners (Dreo cloud, live over a WebSocket) as
+// a GateControl plugin. Until 1.6.0 it was gatecontrol-midea (and before that
+// built into GateControl as "Klimaanlage"); plugin.json `replaces` lets
+// GateControl move devices, settings, tiles, rules and the licence over.
 //
+//   settings    (Settings → Plugins → Raumklima → Einstellungen): the Midea and
+//     Dreo accounts — saving logs in (settingsChanged), the page shows a status
+//     line per account (settingsStatus); see accounts.js
 //   admin API   (the plugin page; administrators only)
 //     GET  /status · /cloud · /cloud/devices · /dreo · /dreo/devices · /targets · /users · /devices
-//     POST /cloud/connect · /dreo/connect · /discover · /devices
+//     POST /discover · /devices
 //     PUT  /devices/:id · /devices/:id/owners            DELETE /devices/:id
 //     GET  /devices/:id/state   POST /devices/:id/state · /devices/:id/test
 //   portal API  (the identified portal viewer — owner-scoped)
@@ -29,6 +33,7 @@ const store = require('./store');
 const service = require('./service');
 const legacy = require('./legacy');
 const dreo = require('./dreoservice');
+const accounts = require('./accounts');
 const texts = require('./texts.json');
 
 const state = { importing: false };
@@ -83,6 +88,12 @@ const ERRORS = {
 const DETAIL = new Set(['MIDEA_CLOUD_ERROR', 'MIDEA_CLOUD_NO_SESSION', 'ERR_NET_DENIED', 'ERR_NET', 'DREO_CLOUD', 'DREO_LOGIN_FAILED', 'DREO_REJECTED', 'DREO_UNSUPPORTED']);
 
 function fail(code, detail) { return Object.assign(new Error(code), { code, detail }); }
+
+/** The text of a recorded login failure ({ code, detail }) for the settings page. */
+function errorText(rec, lang) {
+  const { json } = errorResponse({ code: rec.code, message: rec.detail || '' }, lang);
+  return json.detail ? `${json.error} (${json.detail})` : json.error;
+}
 
 function errorResponse(e, lang) {
   const known = e && ERRORS[e.code];
@@ -387,13 +398,6 @@ async function adminRoute(req, gc, seg) {
 
   if (a === 'dreo') {
     if (seg.length === 1 && m === 'GET') return { json: { ok: true, dreo: await dreoView(gc) } };
-    if (b === 'connect' && seg.length === 2 && m === 'POST') {
-      const email = typeof body.email === 'string' ? body.email.trim().slice(0, 200) : '';
-      const password = typeof body.password === 'string' ? body.password.slice(0, 500) : '';
-      if (!email || !password) throw fail('MIDEA_EMAIL_PASSWORD_REQUIRED');
-      await dreo.connect(gc, email, password);
-      return { json: { ok: true, dreo: await dreoView(gc) } };
-    }
     if (b === 'devices' && seg.length === 2 && m === 'GET') return { json: { ok: true, devices: await dreo.listCloudDevices(gc) } };
     throw fail('NOT_FOUND');
   }
@@ -402,14 +406,6 @@ async function adminRoute(req, gc, seg) {
     if (seg.length === 1 && m === 'GET') {
       const cloud = store.redactConfig(await store.loadConfig(gc));
       return { json: { ok: true, cloud: { ...cloud, configured: Boolean(cloud.email) } } };
-    }
-    if (b === 'connect' && seg.length === 2 && m === 'POST') {
-      const email = typeof body.email === 'string' ? body.email.trim().slice(0, 200) : '';
-      const password = typeof body.password === 'string' ? body.password.slice(0, 500) : '';
-      if (!email || !password) throw fail('MIDEA_EMAIL_PASSWORD_REQUIRED');
-      const app = body.app === undefined ? 'msmarthome' : body.app;
-      if (!store.APPS.has(app)) throw fail('MIDEA_INVALID');
-      return { json: { ...(await service.connectCloud(gc, email, password, app)), ok: true } };
     }
     if (b === 'devices' && seg.length === 2 && m === 'GET') return { json: { ok: true, devices: await service.listCloudDevices(gc) } };
     throw fail('NOT_FOUND');
@@ -493,8 +489,19 @@ async function adminRoute(req, gc, seg) {
 
 module.exports = {
   async start(gc) {
+    await store.migrateAccounts(gc);
     service.reset();
-    gc.log.info('midea started', gc.plugin.version);
+    gc.log.info('raumklima started', gc.plugin.version);
+  },
+
+  /** The settings were saved: log in with changed accounts (GateControl waits for this before it answers). */
+  async settingsChanged(values, gc) {
+    await accounts.settingsChanged(gc);
+  },
+
+  /** Status lines of the settings page: one per account (group midea / dreo). */
+  async settingsStatus({ lang }, gc) {
+    return accounts.settingsStatus(gc, lang, t, errorText);
   },
 
   async request(req, gc) {

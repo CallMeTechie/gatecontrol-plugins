@@ -1366,6 +1366,40 @@ async function createHost(pluginDir, opts = {}) {
     stop: () => hook('stop'),
     tick: () => hook('tick'),
     settingsChanged: (values) => hook('settingsChanged', values),
+    /**
+     * GateControl ≥ 1.185.0: the status lines of the settings page (settingsStatus hook), checked like the
+     * host: at most 10, text without control characters (≤ 200), unknown group → null, unknown tone → 'info'
+     */
+    async settingsStatus(lang = 'de') {
+      if (typeof plugin.settingsStatus !== 'function') return [];
+      const out = await hook('settingsStatus', { lang: lang === 'en' ? 'en' : 'de' });
+      if (!Array.isArray(out)) return [];
+      const groups = new Set(((manifest.ui && manifest.ui.settingsGroups) || []).map((g) => g.id));
+      const lines = [];
+      for (const x of out.slice(0, 10)) {
+        if (!x || typeof x !== 'object' || typeof x.text !== 'string') continue;
+        const text = x.text.replace(/[\0-\x1f\x7f]/g, ' ').trim().slice(0, 200);
+        if (!text) continue;
+        lines.push({ group: typeof x.group === 'string' && groups.has(x.group) ? x.group : null, tone: ['ok', 'info', 'warn', 'error'].includes(x.tone) ? x.tone : 'info', text });
+      }
+      return lines;
+    },
+    /**
+     * An administrator saves the settings page (declared keys only; '' clears a secret, an omitted
+     * secret stays): the values are stored, settingsChanged runs, the answer carries the status lines.
+     */
+    async saveSettings(values, lang = 'de') {
+      const defs = new Map(((manifest.ui && manifest.ui.settings) || []).map((d) => [d.key, d]));
+      for (const [k, v] of Object.entries(values || {})) {
+        const def = defs.get(k);
+        if (!def) throw hostError('ERR_INVALID', 'unknown setting ' + k);
+        if (def.type === 'secret') {
+          if (v == null || v === '') { delete settings[k]; secrets.delete(k); } else { settings[k] = String(v); secrets.add(k); }
+        } else settings[k] = v;
+      }
+      await hook('settingsChanged', values);
+      return this.settingsStatus(lang);
+    },
     /** portalVisible hook: false hides the portal tab (section = null) or a section for this viewer (no hook → true) */
     async portalVisible(user, section = null) {
       if (typeof plugin.portalVisible !== 'function') return true;

@@ -3,14 +3,23 @@
 // Data access of the plugin's own database (migrations/001_init.sql) — port
 // of GateControl's mideaDevices.js / mideaOwners.js storage.
 //
-// Secrets never go into the database: the Midea account password and cloud
-// session and the LAN token/key (protocol V3) of a device are secret settings
-// of the plugin (gc.settings.setSecret: encrypted with the server key by the
-// host). The account's app variant and e-mail are kept in the plugin's
-// key/value storage.
+// The accounts are settings of the plugin (Settings → Plugins → Raumklima →
+// Einstellungen, plugin.json ui.settings): Midea app, e-mail and password,
+// Dreo e-mail and password — the passwords as `secret` settings (encrypted
+// with the server key by the host). The Dreo password is kept as its MD5
+// checksum (what the Dreo login wants): a password entered in the settings is
+// replaced by it on save. Before 2.0.0 (gatecontrol-midea) the app and e-mail
+// lay in the key/value storage; migrateAccounts() moves them once.
+// Secrets never go into the database: the cloud sessions and the LAN
+// token/key (protocol V3) of a device are secret settings too.
 
 const CLOUD_KEY = 'cloud';
 const DREO_KEY = 'dreo';
+const SETTING = {
+  app: 'cloud.app',
+  email: 'cloud.email',
+  dreoEmail: 'dreo.email',
+};
 const SECRET = {
   password: 'cloud.password',
   session: 'cloud.session',
@@ -20,6 +29,7 @@ const SECRET = {
   key: (id) => `dev.${Number(id)}.key`,
 };
 const APPS = new Set(['msmarthome', 'nethome']);
+const MD5_RE = /^[0-9a-f]{32}$/;
 
 function codeError(code, message) {
   return Object.assign(new Error(message || code), { code });
@@ -45,29 +55,56 @@ function tx(gc, fn) {
   return p;
 }
 
-// ─── Cloud account ──────────────────────────────
-
 async function secret(gc, key) {
   const v = await gc.settings.get(key);
   return typeof v === 'string' && v ? v : null;
 }
 
+async function text(gc, key) {
+  const v = await gc.settings.get(key);
+  return typeof v === 'string' ? v.trim() : '';
+}
+
+/**
+ * The accounts of gatecontrol-midea < 2.0.0 (app and e-mail in the key/value
+ * storage) → settings, once. The passwords already are settings under the
+ * same keys.
+ */
+async function migrateAccounts(gc) {
+  const cloud = await gc.storage.get(CLOUD_KEY);
+  if (cloud && typeof cloud === 'object' && ('email' in cloud || 'app' in cloud)) {
+    if (!(await text(gc, SETTING.email)) && typeof cloud.email === 'string' && cloud.email) {
+      await gc.settings.set(SETTING.app, APPS.has(cloud.app) ? cloud.app : 'msmarthome');
+      await gc.settings.set(SETTING.email, cloud.email);
+    }
+    await gc.storage.delete(CLOUD_KEY);
+  }
+  const d = await gc.storage.get(DREO_KEY);
+  if (d && typeof d === 'object' && 'email' in d) {
+    if (!(await text(gc, SETTING.dreoEmail)) && typeof d.email === 'string' && d.email) await gc.settings.set(SETTING.dreoEmail, d.email);
+    await gc.storage.set(DREO_KEY, { region: d.region === 'NA' ? 'NA' : 'EU' });
+  }
+}
+
+// ─── Midea account ──────────────────────────────
+
 /** { app, email, password, session } — password '' and session null when unset. */
 async function loadConfig(gc) {
-  const raw = (await gc.storage.get(CLOUD_KEY)) || {};
   let session = null;
   const s = await secret(gc, SECRET.session);
   if (s) { try { session = JSON.parse(s); } catch { session = null; } } // a broken session only means a new login
+  const app = await gc.settings.get(SETTING.app);
   return {
-    app: APPS.has(raw.app) ? raw.app : 'msmarthome',
-    email: typeof raw.email === 'string' ? raw.email : '',
+    app: APPS.has(app) ? app : 'msmarthome',
+    email: await text(gc, SETTING.email),
     password: (await secret(gc, SECRET.password)) || '',
     session: session && typeof session === 'object' ? session : null,
   };
 }
 
 async function saveConfig(gc, cfg) {
-  await gc.storage.set(CLOUD_KEY, { app: APPS.has(cfg.app) ? cfg.app : 'msmarthome', email: cfg.email || '' });
+  await gc.settings.set(SETTING.app, APPS.has(cfg.app) ? cfg.app : 'msmarthome');
+  await gc.settings.set(SETTING.email, cfg.email || null);
   await gc.settings.setSecret(SECRET.password, cfg.password || null);
   await saveSession(gc, cfg.session);
 }
@@ -87,16 +124,25 @@ function redactConfig(cfg) {
 /** { email, region, passwordMd5, token } — '' / null when unset. */
 async function loadDreo(gc) {
   const raw = (await gc.storage.get(DREO_KEY)) || {};
+  const pw = (await secret(gc, SECRET.dreoPassword)) || '';
   return {
-    email: typeof raw.email === 'string' ? raw.email : '',
+    email: await text(gc, SETTING.dreoEmail),
     region: raw.region === 'NA' ? 'NA' : 'EU',
-    passwordMd5: (await secret(gc, SECRET.dreoPassword)) || '',
+    // a password just entered in the settings is plain until settingsChanged replaces it
+    passwordMd5: !pw || MD5_RE.test(pw) ? pw : require('./dreo').md5(pw),
     token: await secret(gc, SECRET.dreoToken),
   };
 }
 
+/** A plain Dreo password in the settings → its MD5 (the plain password is not kept). */
+async function hashDreoPassword(gc) {
+  const pw = await secret(gc, SECRET.dreoPassword);
+  if (pw && !MD5_RE.test(pw)) await gc.settings.setSecret(SECRET.dreoPassword, require('./dreo').md5(pw));
+}
+
 async function saveDreo(gc, cfg) {
-  await gc.storage.set(DREO_KEY, { email: cfg.email || '', region: cfg.region === 'NA' ? 'NA' : 'EU' });
+  await gc.settings.set(SETTING.dreoEmail, cfg.email || null);
+  await gc.storage.set(DREO_KEY, { region: cfg.region === 'NA' ? 'NA' : 'EU' });
   await gc.settings.setSecret(SECRET.dreoPassword, cfg.passwordMd5 || null);
   await saveDreoToken(gc, cfg.token);
 }
@@ -244,9 +290,9 @@ async function isOwner(gc, deviceId, userId) {
 }
 
 module.exports = {
-  APPS, SECRET, codeError, tx,
+  APPS, SETTING, SECRET, codeError, tx, migrateAccounts,
   loadConfig, saveConfig, saveSession, redactConfig,
-  loadDreo, saveDreo, saveDreoToken, redactDreo,
+  loadDreo, hashDreoPassword, saveDreo, saveDreoToken, redactDreo,
   listDevices, getDevice, credentialsOf, setCredentials, createDevice, updateDevice, removeDevice,
   ownerIdsOf, allOwners, setOwners, devicesOwnedBy, isOwner,
 };

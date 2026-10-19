@@ -1,4 +1,4 @@
-/* gatecontrol-midea — close to GateControl's aurora Klimaanlage page
+/* gatecontrol-raumklima — close to GateControl's aurora Klimaanlage page
    (public/css/midea.css), on the frame's colour tokens (light and dark). */
 :root{--surface-3:var(--surface-2);--faint:var(--muted);--amber:var(--warn);--green:var(--good);--coral:var(--crit)}
 body{padding:2px 2px 24px}
@@ -36,6 +36,9 @@ body{padding:2px 2px 24px}
 /* banner */
 .banner{padding:11px 15px;margin-bottom:16px;border-radius:12px;font-size:13px;font-weight:600;background:var(--surface-2);border:1px solid var(--line);color:var(--muted)}
 .banner-warn{background:var(--accent-soft);border-color:var(--warn);color:var(--warn)}
+.md-banner{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.md-banner>span{flex:1 1 220px}
+.md-pane>[data-settings]{margin:0 0 10px}
 .tag{display:inline-flex;align-items:center;gap:6px;padding:3px 9px;border-radius:999px;font-size:11.5px;font-weight:600;background:var(--surface-2);border:1px solid var(--line);color:var(--muted);max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .tag-blue{color:var(--accent);border-color:var(--accent);background:var(--accent-soft)}
 .tag[data-tone="good"]{color:var(--good);border-color:var(--good)}
