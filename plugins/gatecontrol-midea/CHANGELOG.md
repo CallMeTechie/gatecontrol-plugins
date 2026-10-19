@@ -1,6 +1,32 @@
-# Klimaanlage (gatecontrol-midea)
+# Raumklima (gatecontrol-midea)
 
-Midea-Klimageräte als GateControl-Plugin – bisher fest in GateControl eingebaut („Klimaanlage“).
+Klimageräte und Heizungen als GateControl-Plugin: Midea-Klimageräte (früher fest in GateControl
+eingebaut, „Klimaanlage“) und seit 1.6.0 Dreo-Heizlüfter und -Klimageräte.
+
+## 1.6.0
+- **Neuer Name „Raumklima“** (vorher „Klimaanlage“): Navigation, Seite, Portal-Bereich und
+  Katalog heißen jetzt so. Die Plugin-ID bleibt `gatecontrol-midea` – Lizenz, Daten,
+  Zuweisungen und Schnellaktionen bleiben, wie sie sind.
+- **Dreo-Heizlüfter und -Klimageräte** (z. B. DR-HSH009S, WH…, DR-HAC…): Dreo-Konto unter
+  „Dreo-Konto“ verbinden, Geräte im Dialog „Gerät hinzufügen“ → „Dreo“ wählen. Gesteuert wird
+  über die Dreo-Cloud mit einer **Live-Verbindung** (WebSocket): Befehle kommen sofort an, und
+  was am Gerät oder mit der Fernbedienung geändert wird, erscheint sofort in GateControl.
+  - Heizungen: Ein/Aus, Heizen Stufe 1–3 (DR-HSH016S: 1–5), Eco mit Thermostat
+    (Zieltemperatur 5–35 °C), Lüften, Schwenken mit Winkel (60/90/120°, je nach Modell),
+    Kindersicherung, Tastenton, Fenster-Erkennung (wenn das Gerät sie hat); „heizt gerade“.
+  - Klimageräte: Ein/Aus, Kühlen, Entfeuchten, Lüften, Schlafen, Eco, Zieltemperatur
+    16–30 °C, Lüfterstufe (Auto/Niedrig/Mittel/Hoch), Schwenken, Luftfeuchte.
+  - Portal, Startseiten-Kacheln, Suche, Schnellaktionen und Widgets wie bei Midea – das
+    Widget zeigt die Modi, die das Gerät hat. „Gerät nicht erreichbar“ meldet auch Dreo-Geräte.
+  - Gespeichert wird vom Dreo-Passwort nur die Prüfsumme (MD5), die Dreo für die Anmeldung
+    verlangt, dazu das Zugangstoken – beides als verschlüsselte Plugin-Geheimnisse.
+  - Dreo-Heizungen sperren die Fernsteuerung nach 24 Stunden ohne Bedienung; antwortet ein
+    Gerät nicht, nennt die Fehlermeldung den Ausweg (einmal die WLAN-Taste am Gerät drücken).
+- **Braucht für Dreo GateControl 1.184.0** (WebSocket für Plugins). Auf älteren Versionen
+  läuft Midea wie bisher; Dreo zeigt einen Hinweis zum Aktualisieren.
+- Neue Berechtigung: die Dreo-Server `app-api-eu/us.dreo-tech.com` und
+  `wsb-eu/us.dreo-tech.com` – das Update muss deshalb einmal bestätigt werden.
+- Mitteilung „Klimagerät nicht erreichbar“ heißt jetzt „Gerät nicht erreichbar“.
 
 ## 1.5.0
 - **Zielzustand statt Umschalten** (GateControl ≥ 1.173.0): der Ein/Aus-Schalter jedes

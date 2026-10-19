@@ -1,13 +1,15 @@
 'use strict';
 
-// Air conditioners (port of GateControl's src/services/midea/index.js):
-// state cache and per-device lock, cloud account, adding devices (cloud or
-// LAN), control, connection test and the LAN poll of the background run.
+// Devices (port of GateControl's src/services/midea/index.js, plus Dreo):
+// state cache and per-device lock, cloud account, adding devices (Midea cloud
+// or LAN, Dreo cloud), control, connection test and the background run.
+// Dreo devices (vendor 'dreo') are handled by dreoservice.js.
 
 const store = require('./store');
 const lan = require('./lan');
 const ac = require('./ac');
 const alerts = require('./alerts');
+const dreo = require('./dreoservice');
 const { MideaCloud } = require('./cloud');
 
 const { codeError } = store;
@@ -167,6 +169,7 @@ async function deviceOrThrow(gc, id) {
 
 async function getState(gc, id) {
   const d = await deviceOrThrow(gc, id);
+  if (d.vendor === 'dreo') return dreo.getState(gc, d);
 
   if (d.transport === 'cloud') {
     const cached = cache.get(d.id);
@@ -200,6 +203,7 @@ async function getState(gc, id) {
  * background refresh, so the next look has one.
  */
 function cachedState(gc, d) {
+  if (d.vendor === 'dreo') return dreo.cachedState(gc, d);
   const c = cache.get(d.id);
   if (d.transport === 'cloud' && (!c || !c.online || Date.now() - c.lastAt >= CLOUD_STATE_TTL_MS)) refreshCloudState(gc, d.id, d);
   if (!c) return null;
@@ -208,6 +212,7 @@ function cachedState(gc, d) {
 
 async function setState(gc, id, patch) {
   const d = await deviceOrThrow(gc, id);
+  if (d.vendor === 'dreo') return withDeviceLock(d.id, () => dreo.setState(gc, d, patch));
 
   if (d.transport === 'cloud') {
     return withDeviceLock(d.id, async () => {
@@ -255,6 +260,24 @@ async function addDevice(gc, { sn, name, transport, cloud_appliance_id, target_i
   const existing = await store.listDevices(gc);
   const exists = (deviceSn) => existing.some((x) => x.device_sn === deviceSn);
   const duplicate = () => codeError('MIDEA_DEVICE_EXISTS', 'device already added');
+
+  // ── Dreo: a heater or air conditioner of the Dreo account ────────────────
+  if (transport === 'dreo') {
+    if (exists('dreo-' + sn)) throw duplicate();
+    const found = (await dreo.listCloudDevices(gc)).find((x) => x.sn === sn);
+    if (!found) throw codeError('MIDEA_NOT_IN_CLOUD', 'device not found in the Dreo account');
+    if (!found.kind) throw codeError('DREO_UNSUPPORTED', `${found.model || 'this device'} is not a heater or air conditioner`);
+    const d = await store.createDevice(gc, {
+      name: name || found.name || found.model || 'Dreo',
+      device_sn: 'dreo-' + sn,
+      transport: 'cloud',
+      cloud_appliance_id: sn,
+      model: found.model || null,
+      vendor: 'dreo',
+      kind: found.kind,
+    });
+    return redacted(d, false);
+  }
 
   // ── Cloud-only path ───────────────────────────────────────────────────────
   if (transport === 'cloud') {
@@ -329,6 +352,8 @@ async function addDevice(gc, { sn, name, transport, cloud_appliance_id, target_i
 // ── Registry ──────────────────────────────────────────────────────────────────
 
 async function removeDevice(gc, id) {
+  const d = await store.getDevice(gc, id);
+  if (d && d.vendor === 'dreo') dreo.forget(d);
   cache.delete(Number(id));
   return store.removeDevice(gc, id);
 }
@@ -337,24 +362,30 @@ async function getStatus(gc) {
   const devices = await store.listDevices(gc);
   return {
     devices: devices.map((d) => {
+      if (d.vendor === 'dreo') {
+        const st = dreo.cachedState(gc, d);
+        return { id: d.id, name: d.name, enabled: d.enabled, online: Boolean(st && !st.offline), state: st && !st.offline ? st : null, checked: st != null, transport: d.transport, vendor: d.vendor };
+      }
       const c = cache.get(d.id) || {};
-      return { id: d.id, name: d.name, enabled: d.enabled, online: Boolean(c.online), state: c.state || null, checked: Boolean(c.lastAt), transport: d.transport };
+      return { id: d.id, name: d.name, enabled: d.enabled, online: Boolean(c.online), state: c.state || null, checked: Boolean(c.lastAt), transport: d.transport, vendor: d.vendor };
     }),
     lastPollAt: status.lastPollAt,
     cloud_needs_reauth: status.cloudNeedsReauth,
+    dreo: { ...dreo.getStatus(), supported: dreo.supported(gc) },
   };
 }
 
-// ── Background (LAN poll; never 24/7 cloud polling) ──────────────────────────
+// ── Background (LAN poll + the Dreo socket; never 24/7 Midea cloud polling) ──
 
 async function pollTick(gc) {
   if (pollRunning) return;                          // no overlapping ticks
   pollRunning = true;
   try {
-    const devices = (await store.listDevices(gc)).filter((d) => d.enabled && d.transport !== 'cloud' && d.target_index != null);
-    if (!devices.length) return;
-    status.lastPollAt = new Date().toISOString();
-    const observations = [];
+    const all = await store.listDevices(gc);
+    const observations = await dreo.tick(gc, all).catch((e) => { gc.log.debug('dreo tick failed', e.code || e.message); return []; });
+    const devices = all.filter((d) => d.enabled && d.vendor !== 'dreo' && d.transport !== 'cloud' && d.target_index != null);
+    if (!devices.length && !observations.length) return;
+    if (devices.length) status.lastPollAt = new Date().toISOString();
     for (const d of devices) {
       if (lockDepth.get(d.id)) continue;            // skip devices with an active queue
       let st = null;
@@ -372,6 +403,7 @@ async function pollTick(gc) {
 function reset() {
   cache.clear();
   alerts.reset();
+  dreo.reset();
   status.cloudNeedsReauth = false;
 }
 

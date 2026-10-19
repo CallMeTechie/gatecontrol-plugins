@@ -10,9 +10,12 @@
 // key/value storage.
 
 const CLOUD_KEY = 'cloud';
+const DREO_KEY = 'dreo';
 const SECRET = {
   password: 'cloud.password',
   session: 'cloud.session',
+  dreoPassword: 'dreo.password',   // MD5 of the Dreo password (what the Dreo login wants)
+  dreoToken: 'dreo.token',
   token: (id) => `dev.${Number(id)}.token`,
   key: (id) => `dev.${Number(id)}.key`,
 };
@@ -79,6 +82,33 @@ function redactConfig(cfg) {
   return { app: cfg.app, email: cfg.email, password_set: Boolean(cfg.password), session_active: Boolean(cfg.session) };
 }
 
+// ─── Dreo account ───────────────────────────────
+
+/** { email, region, passwordMd5, token } — '' / null when unset. */
+async function loadDreo(gc) {
+  const raw = (await gc.storage.get(DREO_KEY)) || {};
+  return {
+    email: typeof raw.email === 'string' ? raw.email : '',
+    region: raw.region === 'NA' ? 'NA' : 'EU',
+    passwordMd5: (await secret(gc, SECRET.dreoPassword)) || '',
+    token: await secret(gc, SECRET.dreoToken),
+  };
+}
+
+async function saveDreo(gc, cfg) {
+  await gc.storage.set(DREO_KEY, { email: cfg.email || '', region: cfg.region === 'NA' ? 'NA' : 'EU' });
+  await gc.settings.setSecret(SECRET.dreoPassword, cfg.passwordMd5 || null);
+  await saveDreoToken(gc, cfg.token);
+}
+
+async function saveDreoToken(gc, token) {
+  await gc.settings.setSecret(SECRET.dreoToken, typeof token === 'string' && token && token.length <= 4000 ? token : null);
+}
+
+function redactDreo(cfg) {
+  return { email: cfg.email, region: cfg.region, configured: Boolean(cfg.email && cfg.passwordMd5) };
+}
+
 // ─── Devices ────────────────────────────────────
 
 function rowToDevice(row) {
@@ -88,6 +118,8 @@ function rowToDevice(row) {
     name: row.name,
     device_sn: row.device_sn,
     device_id: row.device_id == null ? null : String(row.device_id),
+    vendor: row.vendor === 'dreo' ? 'dreo' : 'midea',
+    kind: row.kind === 'heater' ? 'heater' : 'ac',
     transport: row.transport === 'cloud' ? 'cloud' : 'lan',
     cloud_appliance_id: row.cloud_appliance_id == null ? null : String(row.cloud_appliance_id),
     target_index: row.target_index == null ? null : Number(row.target_index),
@@ -122,8 +154,8 @@ async function setCredentials(gc, id, creds) {
 
 async function createDevice(gc, data) {
   const r = await gc.db.run(`INSERT INTO devices
-      (name, device_sn, device_id, transport, cloud_appliance_id, target_index, protocol_version, model, enabled)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, [
+      (name, device_sn, device_id, transport, cloud_appliance_id, target_index, protocol_version, model, enabled, vendor, kind)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [
     data.name,
     data.device_sn,
     data.device_id ?? null,
@@ -133,6 +165,8 @@ async function createDevice(gc, data) {
     data.protocol_version ?? 3,
     data.model ?? null,
     data.enabled === false ? 0 : 1,
+    data.vendor === 'dreo' ? 'dreo' : 'midea',
+    data.kind === 'heater' ? 'heater' : 'ac',
   ]);
   const id = Number(r.lastInsertRowid);
   if (data.token && data.key) await setCredentials(gc, id, { token: data.token, key: data.key });
@@ -212,6 +246,7 @@ async function isOwner(gc, deviceId, userId) {
 module.exports = {
   APPS, SECRET, codeError, tx,
   loadConfig, saveConfig, saveSession, redactConfig,
+  loadDreo, saveDreo, saveDreoToken, redactDreo,
   listDevices, getDevice, credentialsOf, setCredentials, createDevice, updateDevice, removeDevice,
   ownerIdsOf, allOwners, setOwners, devicesOwnedBy, isOwner,
 };

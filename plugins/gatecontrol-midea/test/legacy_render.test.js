@@ -100,7 +100,7 @@ test('pages render with texts in the viewer\'s language and no secrets', () => {
     assert.match(de, /window\.MD_CTX=/);
     assert.doesNotMatch(de, /\{\{t:/, 'every placeholder filled');
     const en = (await host.render({ view: 'page', page: 'main', lang: 'en' })).html;
-    assert.match(en, /Air conditioning/);
+    assert.match(en, /Indoor climate/);
     const portal = (await host.render({ view: 'portal', section: 'midea', lang: 'de', loggedIn: false })).html;
     assert.match(portal, /id="pt-md-list"/);
     assert.match(portal, /"loggedIn":false/);
@@ -123,6 +123,9 @@ test('every text key used by the code exists in German and English', () => {
   for (const m of src.matchAll(/\bt\(lang, '([a-z0-9_.-]+)'\s*[,)]/g)) used.add(m[1]);
   for (const m of src.matchAll(/\[\d{3}, '([a-z0-9_.-]+)'\]/g)) used.add(m[1]);
   for (const k of ['mode.auto', 'mode.cool', 'mode.heat', 'mode.dry', 'mode.fan', 'portal.mode_auto', 'portal.mode_cool', 'portal.mode_heat', 'portal.mode_dry', 'portal.mode_fan']) used.add(k);
+  // keys built from ids (dreomodel.js: modes, swing, fan levels, switches; admin/portal: vendor and kind)
+  for (const k of ['dmode.heat', 'dmode.eco', 'dmode.fan', 'dmode.cool', 'dmode.dry', 'dmode.sleep', 'dmode.eco_ac', 'swing.off', 'swing.on', 'swing.osc', 'swing.60', 'swing.90', 'swing.120',
+    'fanlevel.auto', 'fanlevel.low', 'fanlevel.medium', 'fanlevel.high', 'switch.childLock', 'switch.sound', 'switch.window', 'vendor.midea', 'vendor.dreo', 'kind.heater', 'kind.ac']) used.add(k);
   assert.ok(used.size > 80);
   for (const k of used) {
     assert.ok(texts.de[k], `de: ${k}`);

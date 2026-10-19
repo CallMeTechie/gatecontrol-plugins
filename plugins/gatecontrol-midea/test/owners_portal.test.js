@@ -55,7 +55,8 @@ test('portal: only the viewer\'s own devices, portal-safe fields only', () => {
     assert.equal(await host.portalVisible(BOB, 'midea'), false);
     const mine = (await asPortal(host, ADA, 'GET', '/portal')).json.devices;
     assert.deepEqual(mine.map((d) => [d.id, d.name, d.transport]), [[a, 'Wohnzimmer', 'cloud']]);
-    assert.deepEqual(Object.keys(mine[0]).sort(), ['id', 'name', 'state', 'transport'], 'no cloud ids, targets or keys');
+    assert.deepEqual(Object.keys(mine[0]).sort(), ['caps', 'id', 'kind', 'name', 'state', 'transport', 'vendor'], 'no cloud ids, targets or keys');
+    assert.deepEqual([mine[0].vendor, mine[0].kind, mine[0].caps.modes.map((m) => m.id)], ['midea', 'ac', ['auto', 'cool', 'heat', 'dry', 'fan']]);
     assert.equal(mine[0].state.indoorTemp, 25.5);
     assert.deepEqual((await asPortal(host, BOB, 'GET', '/portal')).json.devices, []);
     assert.equal((await asPortal(host, ADA, 'GET', `/portal/devices/${b}/state`)).status, 403);

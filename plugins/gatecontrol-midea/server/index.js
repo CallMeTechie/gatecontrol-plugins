@@ -1,13 +1,13 @@
 'use strict';
 
-// gatecontrol-midea — Midea air conditioners (cloud and LAN) as a GateControl
-// plugin (formerly built into GateControl: src/services/midea,
-// routes/api/midea.js, the Klimaanlage page and its part of the portal tab
-// "Zuhause").
+// gatecontrol-midea — "Raumklima": Midea air conditioners (cloud and LAN) and
+// Dreo heaters and air conditioners (Dreo cloud, live over a WebSocket) as a
+// GateControl plugin (formerly built into GateControl as "Klimaanlage": the
+// plugin id stays, so licences and installations carry on).
 //
 //   admin API   (the plugin page; administrators only)
-//     GET  /status · /cloud · /cloud/devices · /targets · /users · /devices
-//     POST /cloud/connect · /discover · /devices
+//     GET  /status · /cloud · /cloud/devices · /dreo · /dreo/devices · /targets · /users · /devices
+//     POST /cloud/connect · /dreo/connect · /discover · /devices
 //     PUT  /devices/:id · /devices/:id/owners            DELETE /devices/:id
 //     GET  /devices/:id/state   POST /devices/:id/state · /devices/:id/test
 //   portal API  (the identified portal viewer — owner-scoped)
@@ -28,6 +28,7 @@ const ui = require('./ui');
 const store = require('./store');
 const service = require('./service');
 const legacy = require('./legacy');
+const dreo = require('./dreoservice');
 const texts = require('./texts.json');
 
 const state = { importing: false };
@@ -62,13 +63,24 @@ const ERRORS = {
   MIDEA_NOT_OWNER: [403, 'error.not_owner'],
   MIDEA_OFFLINE: [502, 'error.offline'],
   MIDEA_INVALID: [400, 'error.invalid'],
+  DREO_NEEDS_UPDATE: [409, 'error.dreo_needs_update'],
+  DREO_NOT_CONFIGURED: [409, 'error.dreo_not_configured'],
+  DREO_LOGIN_FAILED: [400, 'error.dreo_login'],
+  DREO_AUTH: [502, 'error.dreo_login'],
+  DREO_RATE_LIMITED: [429, 'error.ratelimit'],
+  DREO_UNREACHABLE: [502, 'error.cloud_unreachable'],
+  DREO_CLOUD: [502, 'error.dreo_cloud'],
+  DREO_OFFLINE: [502, 'error.dreo_offline'],
+  DREO_NO_REPLY: [502, 'error.dreo_no_reply'],
+  DREO_REJECTED: [502, 'error.dreo_rejected'],
+  DREO_UNSUPPORTED: [400, 'error.dreo_unsupported'],
   ERR_NET_DENIED: [400, 'error.target_denied'],
   ERR_NET: [502, 'error.unreachable'],
   FORBIDDEN: [403, 'error.forbidden'],
   NOT_FOUND: [404, 'error.not_found'],
 };
 // errors whose own message helps the administrator (Midea codes, LAN timeouts) — never secrets
-const DETAIL = new Set(['MIDEA_CLOUD_ERROR', 'MIDEA_CLOUD_NO_SESSION', 'ERR_NET_DENIED', 'ERR_NET']);
+const DETAIL = new Set(['MIDEA_CLOUD_ERROR', 'MIDEA_CLOUD_NO_SESSION', 'ERR_NET_DENIED', 'ERR_NET', 'DREO_CLOUD', 'DREO_LOGIN_FAILED', 'DREO_REJECTED', 'DREO_UNSUPPORTED']);
 
 function fail(code, detail) { return Object.assign(new Error(code), { code, detail }); }
 
@@ -113,9 +125,33 @@ async function usersById(gc) {
   return m;
 }
 
+// What a Midea air conditioner offers (the same for every model, as before).
+const MIDEA_MODES = ['auto', 'cool', 'heat', 'dry', 'fan'];
+function mideaCaps(lang) {
+  return {
+    vendor: 'midea', kind: 'ac',
+    modes: MIDEA_MODES.map((id) => ({ id, label: t(lang, 'portal.mode_' + id) })),
+    target: { min: 16, max: 30, step: 1 },
+    fan: { kind: 'percent' },
+    swing: null,
+    switches: [{ id: 'turbo', label: t(lang, 'portal.turbo') }, { id: 'eco', label: t(lang, 'portal.eco') }],
+  };
+}
+
+/** What the device offers: modes, target range, fan, swing, switches (labels in `lang`). */
+function capsOf(d, lang) {
+  return d.vendor === 'dreo' ? dreo.capsOf(d, t, lang) : mideaCaps(lang);
+}
+
 /** Portal: only the controllable surface — never the target, cloud ids or keys. */
-function portalDevice(d, st) {
-  return { id: d.id, name: d.name, transport: d.transport, state: st || null };
+function portalDevice(d, st, lang) {
+  return { id: d.id, name: d.name, transport: d.transport, vendor: d.vendor, kind: d.kind, caps: capsOf(d, lang), state: st || null };
+}
+
+/** A change from the portal or the admin page: Midea checked here, Dreo against the device's caps (dreoservice). */
+function patchFor(d, raw, opts) {
+  if (d.vendor !== 'dreo') return validatePatch(raw, opts);
+  return raw && typeof raw === 'object' && !Array.isArray(raw) && Object.keys(raw).length && Object.keys(raw).length <= 8 ? raw : null;
 }
 
 async function ownedDevices(gc, userId) {
@@ -127,6 +163,8 @@ async function ownedDevices(gc, userId) {
 // ─── Portal Start tiles and search (declarative; the host renders them) ──
 
 const AC_ICON = 'M2 4h20v10H2zM6 9h12M6 18v1M10 18v2M14 18v2M18 18v1';
+const HEATER_ICON = 'M5 3h14v14H5zM9 7v6M12 7v6M15 7v6M7 17v3M17 17v3';
+const iconOf = (d) => (d && d.kind === 'heater' ? HEATER_ICON : AC_ICON);
 const THERMOMETER_ICON = 'M10 13V5a2 2 0 1 1 4 0v8a4 4 0 1 1-4 0z';
 
 function fmtTemp(v, lang) {
@@ -134,17 +172,24 @@ function fmtTemp(v, lang) {
   return Number.isFinite(n) ? n.toLocaleString(lang === 'en' ? 'en-GB' : 'de-DE', { maximumFractionDigits: 1 }) : null;
 }
 
-function statusLine(st, lang) {
+function modeLabel(d, mode, lang) {
+  const m = capsOf(d, lang).modes.find((x) => x.id === mode);
+  return m ? m.label : null;
+}
+
+function statusLine(st, lang, d) {
   if (!st) return null;
   if (st.offline) return t(lang, 'portal.offline');
   if (!st.power) return t(lang, 'portal.power_off');
-  const mode = t(lang, 'portal.mode_' + (MODES.has(st.mode) ? st.mode : 'auto'));
+  const mode = d && d.vendor === 'dreo' ? (modeLabel(d, st.mode, lang) || t(lang, 'portal.power_on')) : t(lang, 'portal.mode_' + (MODES.has(st.mode) ? st.mode : 'auto'));
   const target = fmtTemp(st.targetTemp, lang);
-  return target ? `${mode} · ${t(lang, 'portal.target')} ${target} °C` : mode;
+  // a Dreo heater keeps its target only in Eco (thermostat); the heat levels run without one
+  if (!target || (d && d.kind === 'heater' && st.mode !== 'eco')) return mode;
+  return `${mode} · ${t(lang, 'portal.target')} ${target} °C`;
 }
 
 function deviceTile(d, st, lang) {
-  const tile = { section: 'midea', title: d.name || '', value: statusLine(st, lang) || '–', unit: null, state: null, icon: AC_ICON };
+  const tile = { section: 'midea', title: d.name || '', value: statusLine(st, lang, d) || '–', unit: null, state: null, icon: iconOf(d) };
   if (st && st.offline) tile.state = 'warn';
   else if (st) tile.state = st.power ? 'on' : 'off';
   return tile;
@@ -171,11 +216,12 @@ function powerOf(st) {
 const TARGET = { min: 16, max: 30, step: 0.5, fallback: 24 };
 const MODE_IDS = ['auto', 'cool', 'heat', 'dry', 'fan'];
 
-/** A target temperature as the stepper shows it: snapped to half degrees inside 16–30. */
-function targetOf(v) {
+/** A target temperature as the stepper shows it: snapped to half degrees inside the device's range. */
+function targetOf(v, range) {
+  const r = range || TARGET;
   const n = v == null ? NaN : Number(v);
-  if (!Number.isFinite(n)) return TARGET.fallback;
-  return Math.min(TARGET.max, Math.max(TARGET.min, Math.round(n * 2) / 2));
+  if (!Number.isFinite(n)) return Math.min(r.max, Math.max(r.min, TARGET.fallback));
+  return Math.min(r.max, Math.max(r.min, Math.round(n * 2) / 2));
 }
 
 /**
@@ -184,15 +230,26 @@ function targetOf(v) {
  * 1.172.0), the status line, power as the state, controls for target
  * temperature and mode. Built from whatever state is at hand (null = unknown).
  */
-function widgetOf(st, lang) {
+function widgetOf(st, lang, d) {
+  const caps = capsOf(d || {}, lang);
   const w = { label: clip(t(lang, 'widget.indoor'), 24), value: (st && !st.offline && fmtTemp(st.indoorTemp, lang)) || '–', unit: '°C', status: null, state: null, readings: [], controls: [] };
   const outdoor = st && !st.offline && typeof st.outdoorTemp === 'number' ? fmtTemp(st.outdoorTemp, lang) : null;
   if (outdoor) w.readings.push({ id: 'outdoor', label: clip(t(lang, 'widget.outdoor'), 20), value: outdoor, unit: '°C', icon: THERMOMETER_ICON });
-  const status = statusLine(st, lang);
+  const status = statusLine(st, lang, d);
   if (status) w.status = clip(status, 60);
   if (st && st.offline) w.state = 'warn';
   else w.state = powerOf(st);
   const live = st && !st.offline ? st : null;
+  if (caps.vendor === 'dreo') {
+    // Dreo: whole degrees; the mode choice lists what the device offers
+    if (caps.target) w.controls.push({ id: 'target', kind: 'stepper', label: clip(t(lang, 'portal.target'), 20), value: targetOf(live ? live.targetTemp : null, caps.target), min: caps.target.min, max: caps.target.max, step: 1, unit: '°C' });
+    const ids = caps.modes.map((m) => m.id);
+    w.controls.push({
+      id: 'mode', kind: 'choice', label: clip(t(lang, 'portal.mode'), 20), value: live && ids.includes(live.mode) ? live.mode : ids[0],
+      options: caps.modes.slice(0, 8).map((m) => ({ id: m.id, label: clip(m.label, 20) })),
+    });
+    return w;
+  }
   w.controls.push({ id: 'target', kind: 'stepper', label: clip(t(lang, 'portal.target'), 20), value: targetOf(live ? live.targetTemp : null), min: TARGET.min, max: TARGET.max, step: TARGET.step, unit: '°C' });
   w.controls.push({
     id: 'mode', kind: 'choice', label: clip(t(lang, 'portal.mode'), 20), value: live && MODES.has(live.mode) ? live.mode : 'auto',
@@ -202,13 +259,18 @@ function widgetOf(st, lang) {
 }
 
 /** A control's patch for setState, or null for an unknown control or a value that is no good. */
-function controlPatch(control, value) {
+function controlPatch(control, value, d) {
+  const caps = d && d.vendor === 'dreo' ? capsOf(d, 'de') : null;
   if (control === 'target') {
+    const range = caps ? caps.target : TARGET;
     const n = typeof value === 'number' ? value : NaN;
-    if (!Number.isFinite(n) || n < TARGET.min || n > TARGET.max) return null;
-    return { targetTemp: targetOf(n) };
+    if (!range || !Number.isFinite(n) || n < range.min || n > range.max) return null;
+    return { targetTemp: caps ? Math.round(n) : targetOf(n) };
   }
-  if (control === 'mode') return typeof value === 'string' && MODES.has(value) ? { mode: value } : null;
+  if (control === 'mode') {
+    if (caps) return typeof value === 'string' && caps.modes.some((m) => m.id === value) ? { mode: value } : null;
+    return typeof value === 'string' && MODES.has(value) ? { mode: value } : null;
+  }
   return null;
 }
 
@@ -223,8 +285,8 @@ async function quickActionsFor(gc, user, lang) {
     const st = service.cachedState(gc, d);
     const title = clip(d.name, 40) || t(lang, 'portal.title');
     const a = {
-      id: `ac:${d.id}`, title, subtitle: clip(statusLine(st, lang) || t(lang, 'portal.title'), 60), icon: AC_ICON, kind: 'toggle',
-      device: { id: `ac:${d.id}`, title, icon: AC_ICON }, widget: widgetOf(st, lang),
+      id: `ac:${d.id}`, title, subtitle: clip(statusLine(st, lang, d) || t(lang, 'portal.title'), 60), icon: iconOf(d), kind: 'toggle',
+      device: { id: `ac:${d.id}`, title, icon: iconOf(d) }, widget: widgetOf(st, lang, d),
       verbs: { on: t(lang, 'qa.verb_on'), off: t(lang, 'qa.verb_off') }, targets: true,
     };
     const power = powerOf(st);
@@ -250,11 +312,11 @@ async function runQuickActionFor(gc, user, lang, id, control, value, target) {
     d = await store.getDevice(gc, did);
     if (!d || !d.enabled) throw fail('MIDEA_DEVICE_NOT_FOUND');
     if (control !== undefined) {
-      const patch = controlPatch(control, value);
+      const patch = controlPatch(control, value, d);
       if (!patch) return { ok: false, message: t(lang, 'qa.unknown') };
       const st = await service.setState(gc, did, patch);
       if (!st || st.offline) throw fail('MIDEA_OFFLINE');
-      return { ok: true, message: null, state: powerOf(st), widget: widgetOf(st, lang) };
+      return { ok: true, message: null, state: powerOf(st), widget: widgetOf(st, lang, d) };
     }
     let on;
     if (target === 'on' || target === 'off') on = target === 'on';
@@ -267,11 +329,11 @@ async function runQuickActionFor(gc, user, lang, id, control, value, target) {
     const st = await service.setState(gc, did, { power: on });
     const now = powerOf(st);
     if (!now) throw fail('MIDEA_OFFLINE');
-    return { ok: true, message: clip(t(lang, now === 'on' ? 'qa.switched_on' : 'qa.switched_off', { name: clip(d.name, 40) || t(lang, 'portal.title') }), 120), state: now, widget: widgetOf(st, lang) };
+    return { ok: true, message: clip(t(lang, now === 'on' ? 'qa.switched_on' : 'qa.switched_off', { name: clip(d.name, 40) || t(lang, 'portal.title') }), 120), state: now, widget: widgetOf(st, lang, d) };
   } catch (e) {
     if (!ERRORS[e && e.code]) gc.log.warn('quick action failed', id, (e && (e.code || e.message)) || e);
     const out = { ok: false, message: errorResponse(e, lang).json.error };
-    if (d) out.widget = widgetOf(service.cachedState(gc, d), lang);
+    if (d) out.widget = widgetOf(service.cachedState(gc, d), lang, d);
     return out;
   }
 }
@@ -284,7 +346,7 @@ async function portalRoute(req, gc, seg) {
     const devices = await ownedDevices(gc, user.id);
     // parallel live state — a device being offline never aborts the list
     const states = await Promise.all(devices.map((d) => service.getState(gc, d.id).catch(() => ({ offline: true }))));
-    return { json: { ok: true, devices: devices.map((d, i) => portalDevice(d, states[i])) } };
+    return { json: { ok: true, devices: devices.map((d, i) => portalDevice(d, states[i], req.lang)) } };
   }
   if (seg[1] === 'devices' && seg[3] === 'state' && seg.length === 4) {
     const id = posInt(seg[2]);
@@ -292,7 +354,10 @@ async function portalRoute(req, gc, seg) {
     if (!(await store.isOwner(gc, id, user.id))) throw fail('MIDEA_NOT_OWNER');
     if (req.method === 'GET') return { json: { ok: true, state: await service.getState(gc, id) } };
     if (req.method === 'POST') {
-      const patch = validatePatch(req.body && req.body.patch);
+      const d = await store.getDevice(gc, id);
+      if (!d) throw fail('MIDEA_DEVICE_NOT_FOUND');
+      // swing and the switches only for Dreo devices (the Midea portal never offered swing)
+      const patch = patchFor(d, req.body && req.body.patch);
       if (!patch) throw fail('MIDEA_INVALID_PATCH');
       const st = await service.setState(gc, id, patch);
       if (!st || st.offline) throw fail('MIDEA_OFFLINE');
@@ -302,6 +367,11 @@ async function portalRoute(req, gc, seg) {
   throw fail('NOT_FOUND');
 }
 
+/** The Dreo account as the admin page shows it (never the password hash or token). */
+async function dreoView(gc) {
+  return { ...store.redactDreo(await store.loadDreo(gc)), ...dreo.getStatus(), supported: dreo.supported(gc) };
+}
+
 async function adminRoute(req, gc, seg) {
   const m = req.method;
   const body = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
@@ -309,11 +379,24 @@ async function adminRoute(req, gc, seg) {
 
   if (a === 'status' && seg.length === 1 && m === 'GET') {
     const cloud = store.redactConfig(await store.loadConfig(gc));
-    return { json: { ok: true, ...(await service.getStatus(gc)), cloud: { ...cloud, configured: Boolean(cloud.email) } } };
+    return { json: { ok: true, ...(await service.getStatus(gc)), cloud: { ...cloud, configured: Boolean(cloud.email) }, dreo: await dreoView(gc) } };
   }
   if (a === 'targets' && seg.length === 1 && m === 'GET') return { json: { ok: true, targets: await service.acTargets(gc) } };
   if (a === 'users' && seg.length === 1 && m === 'GET') return { json: { ok: true, users: [...(await usersById(gc)).values()] } };
   if (a === 'discover' && seg.length === 1 && m === 'POST') return { json: { ok: true, devices: await service.discoverLan(gc) } };
+
+  if (a === 'dreo') {
+    if (seg.length === 1 && m === 'GET') return { json: { ok: true, dreo: await dreoView(gc) } };
+    if (b === 'connect' && seg.length === 2 && m === 'POST') {
+      const email = typeof body.email === 'string' ? body.email.trim().slice(0, 200) : '';
+      const password = typeof body.password === 'string' ? body.password.slice(0, 500) : '';
+      if (!email || !password) throw fail('MIDEA_EMAIL_PASSWORD_REQUIRED');
+      await dreo.connect(gc, email, password);
+      return { json: { ok: true, dreo: await dreoView(gc) } };
+    }
+    if (b === 'devices' && seg.length === 2 && m === 'GET') return { json: { ok: true, devices: await dreo.listCloudDevices(gc) } };
+    throw fail('NOT_FOUND');
+  }
 
   if (a === 'cloud') {
     if (seg.length === 1 && m === 'GET') {
@@ -342,6 +425,7 @@ async function adminRoute(req, gc, seg) {
         const tg = d.target_index == null ? null : targets.find((x) => x.index === d.target_index);
         devices.push({
           ...d,
+          caps: capsOf(d, req.lang),
           target_label: tg ? tg.label : null,
           has_credentials: d.protocol_version === 3 && d.transport === 'lan' ? Boolean(await store.credentialsOf(gc, d.id)) : false,
           owners: (owners.get(d.id) || []).filter((uid) => users.has(uid)).map((uid) => users.get(uid)),
@@ -352,6 +436,11 @@ async function adminRoute(req, gc, seg) {
     if (seg.length === 1 && m === 'POST') {
       const name = typeof body.name === 'string' ? body.name.trim().slice(0, 100) : '';
       const str = (v) => (typeof v === 'string' && v.trim() ? v.trim().slice(0, 100) : null);
+      if (body.transport === 'dreo') {
+        const sn = typeof body.sn === 'string' ? body.sn.trim() : '';
+        if (!/^[A-Za-z0-9_-]{1,64}$/.test(sn)) throw fail('MIDEA_INVALID');
+        return { json: { ok: true, device: await service.addDevice(gc, { transport: 'dreo', sn, name }) } };
+      }
       if (body.transport === 'cloud') {
         const id = str(body.cloud_appliance_id) || (typeof body.cloud_appliance_id === 'number' ? String(body.cloud_appliance_id) : null);
         if (!id || !/^[0-9A-Za-z_-]{1,40}$/.test(id)) throw fail('MIDEA_INVALID');
@@ -387,11 +476,13 @@ async function adminRoute(req, gc, seg) {
       const users = await usersById(gc);
       return { json: { ok: true, device_id: id, owners: ids.filter((uid) => users.has(uid)).map((uid) => users.get(uid)) } };
     }
-    if (seg.length === 3 && c === 'state' && m === 'GET') return { json: { ok: true, state: await service.getState(gc, id) } };
+    // caps after the state: a Dreo device's swing and switches show up with its first values
+    if (seg.length === 3 && c === 'state' && m === 'GET') { const state = await service.getState(gc, id); return { json: { ok: true, state, caps: capsOf(d, req.lang) } }; }
     if (seg.length === 3 && c === 'state' && m === 'POST') {
-      const patch = validatePatch(body.patch && typeof body.patch === 'object' ? body.patch : body, { swing: true });
+      const patch = patchFor(d, body.patch && typeof body.patch === 'object' ? body.patch : body, { swing: true });
       if (!patch) throw fail('MIDEA_INVALID_PATCH');
-      return { json: { ok: true, state: await service.setState(gc, id, patch) } };
+      const state = await service.setState(gc, id, patch);
+      return { json: { ok: true, state, caps: capsOf(d, req.lang) } };
     }
     if (seg.length === 3 && c === 'test' && m === 'POST') return { json: { ...(await service.testConnection(gc, id)), ok: true } };
     throw fail('NOT_FOUND');
@@ -445,7 +536,7 @@ module.exports = {
     if (!user || typeof q !== 'string' || q.length < 2) return [];
     const needle = q.toLowerCase();
     return (await ownedDevices(gc, user.id)).filter((d) => String(d.name || '').toLowerCase().includes(needle)).slice(0, 10)
-      .map((d) => ({ title: d.name, subtitle: statusLine(service.cachedState(gc, d), lang) || t(lang, 'portal.title'), section: 'midea' }));
+      .map((d) => ({ title: d.name, subtitle: statusLine(service.cachedState(gc, d), lang, d) || t(lang, 'portal.title'), section: 'midea' }));
   },
 
   /** Quick actions of the apps: power on/off per air conditioner of the viewer, each with a widget, at most 16. */

@@ -1,14 +1,14 @@
 {
   "id": "gatecontrol-midea",
   "name": {
-    "de": "Klimaanlage",
-    "en": "Air conditioning"
+    "de": "Raumklima",
+    "en": "Indoor climate"
   },
-  "version": "1.5.0",
+  "version": "1.6.0",
   "publisher": "CallMeTechie",
   "description": {
-    "de": "Midea-Klimageräte über die Midea-Cloud oder im Heimnetz steuern (Ein/Aus, Zieltemperatur, Modus, Lüfter, Turbo/Eco) und Haushaltsmitgliedern zuweisen (Portal „Zuhause“).",
-    "en": "Control Midea air conditioners through the Midea cloud or in the home network (on/off, target temperature, mode, fan, turbo/eco) and assign them to household members (portal “Home”)."
+    "de": "Klimageräte und Heizungen steuern: Midea-Klimageräte über die Midea-Cloud oder im Heimnetz, Dreo-Heizlüfter und -Klimageräte live über die Dreo-Cloud (Ein/Aus, Zieltemperatur, Modus, Lüfter, Schwenken) – und Haushaltsmitgliedern zuweisen (Portal „Zuhause“).",
+    "en": "Control air conditioners and heaters: Midea air conditioners through the Midea cloud or in the home network, Dreo heaters and air conditioners live through the Dreo cloud (on/off, target temperature, mode, fan, oscillation) – and assign them to household members (portal “Home”)."
   },
   "gatecontrol": ">=1.154.0",
   "entry": "server/index.js",
@@ -16,7 +16,11 @@
     "network": {
       "internet": [
         "mp-prod.appsmb.com:443",
-        "mapp.appsmb.com:443"
+        "mapp.appsmb.com:443",
+        "app-api-eu.dreo-tech.com:443",
+        "app-api-us.dreo-tech.com:443",
+        "wsb-eu.dreo-tech.com:443",
+        "wsb-us.dreo-tech.com:443"
       ],
       "homeTargets": [
         {
@@ -50,17 +54,17 @@
   "ui": {
     "nav": {
       "label": {
-        "de": "Klimaanlage",
-        "en": "Air conditioning"
+        "de": "Raumklima",
+        "en": "Indoor climate"
       },
-      "icon": "M2 4h20v10H2zM6 9h12M6 18v1M10 18v2M14 18v2M18 18v1"
+      "icon": "M10 13V5a2 2 0 1 1 4 0v8a4 4 0 1 1-4 0zM12 9v6"
     },
     "pages": [
       {
         "id": "main",
         "title": {
-          "de": "Klimaanlage",
-          "en": "Air conditioning"
+          "de": "Raumklima",
+          "en": "Indoor climate"
         }
       }
     ],
@@ -95,8 +99,8 @@
           "id": "midea",
           "tab": "home",
           "title": {
-            "de": "Klimaanlage",
-            "en": "Air conditioning"
+            "de": "Raumklima",
+            "en": "Indoor climate"
           },
           "order": 10
         }
@@ -111,8 +115,8 @@
     {
       "id": "device_unreachable",
       "label": {
-        "de": "Klimagerät nicht erreichbar",
-        "en": "Air conditioner unreachable"
+        "de": "Gerät nicht erreichbar",
+        "en": "Device unreachable"
       },
       "default": true
     },

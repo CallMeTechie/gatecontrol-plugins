@@ -985,33 +985,44 @@
       "category": "home",
       "icon": "snowflake",
       "summary": {
-        "de": "Midea-Klimageräte über die Cloud oder im Heimnetz steuern – Ein/Aus, Temperatur, Modus, Lüfter – und Haushaltsmitgliedern zuweisen.",
-        "en": "Control Midea air conditioners through the cloud or in the home network – power, temperature, mode, fan – and assign them to household members."
+        "de": "Klimageräte und Heizungen: Midea über Cloud oder Heimnetz, Dreo-Heizlüfter und -Klimageräte live – steuern und Haushaltsmitgliedern zuweisen.",
+        "en": "Air conditioners and heaters: Midea via cloud or home network, Dreo heaters and air conditioners live – control them and assign them to the household."
       },
       "audience": "all",
-      "keywords": ["klima", "klimaanlage", "air conditioning", "midea", "kühlen", "cooling", "heizen", "heating", "temperatur", "temperature"],
+      "keywords": ["raumklima", "klima", "klimaanlage", "air conditioning", "heizung", "heizlüfter", "heater", "midea", "dreo", "kühlen", "heizen", "temperatur"],
       "related": ["gatecontrol-smarthome"],
       "adds": [
         {
           "icon": "page",
           "title": {
-            "de": "Seite „Klimaanlage“",
-            "en": "Page “Air conditioning”"
+            "de": "Seite „Raumklima“",
+            "en": "Page “Indoor climate”"
           },
           "text": {
-            "de": "Midea-Konto verbinden, Geräte entdecken, hinzufügen und Personen zuweisen",
-            "en": "Connect the Midea account, discover and add devices and assign them to people"
+            "de": "Midea- und Dreo-Konto verbinden, Geräte entdecken, hinzufügen und Personen zuweisen",
+            "en": "Connect the Midea and Dreo accounts, discover and add devices and assign them to people"
           }
         },
         {
           "icon": "portal",
           "title": {
-            "de": "Portal: „Klimaanlage“ im Tab „Zuhause“",
-            "en": "Portal: “Air conditioning” in the tab “Home”"
+            "de": "Portal: „Raumklima“ im Tab „Zuhause“",
+            "en": "Portal: “Indoor climate” in the tab “Home”"
           },
           "text": {
             "de": "Für Personen mit zugewiesenen Geräten – mit Kacheln auf der Startseite und Treffern in der Suche",
             "en": "For people with assigned devices – with tiles on the start page and hits in the search"
+          }
+        },
+        {
+          "icon": "link",
+          "title": {
+            "de": "Dreo-Heizungen und -Klimageräte",
+            "en": "Dreo heaters and air conditioners"
+          },
+          "text": {
+            "de": "Heizstufe, Eco mit Thermostat, Schwenken mit Winkel, Kindersicherung – Änderungen am Gerät sofort sichtbar",
+            "en": "Heat level, Eco with thermostat, oscillation angle, child lock – changes on the device show up at once"
           }
         },
         {
@@ -1021,19 +1032,19 @@
             "en": "Quick actions"
           },
           "text": {
-            "de": "Ein Ein/Aus-Schalter pro eigenem Klimagerät, mit Modus und Zieltemperatur",
-            "en": "An on/off switch per own air conditioner, with mode and target temperature"
+            "de": "Ein Ein/Aus-Schalter pro eigenem Gerät, mit Modus und Zieltemperatur",
+            "en": "An on/off switch per own device, with mode and target temperature"
           }
         },
         {
           "icon": "widget",
           "title": {
-            "de": "Widget pro Klimagerät",
-            "en": "Widget per air conditioner"
+            "de": "Widget pro Gerät",
+            "en": "Widget per device"
           },
           "text": {
-            "de": "Innen- und Außentemperatur, Zieltemperatur und Modus direkt einstellen",
-            "en": "Indoor and outdoor temperature, set target temperature and mode right there"
+            "de": "Raumtemperatur, Zieltemperatur und Modus (bei Dreo-Heizungen die Heizstufe) direkt einstellen",
+            "en": "Room temperature, set target temperature and mode (heat level on Dreo heaters) right there"
           }
         },
         {
@@ -1054,8 +1065,8 @@
             "en": "Background polling"
           },
           "text": {
-            "de": "Fragt die Geräte im Heimnetz alle 30 Sekunden ab",
-            "en": "Polls the devices in the home network every 30 seconds"
+            "de": "Fragt Midea-Geräte im Heimnetz alle 30 Sekunden ab; Dreo-Geräte melden sich live",
+            "en": "Polls Midea devices in the home network every 30 seconds; Dreo devices report live"
           }
         }
       ],
@@ -1069,6 +1080,21 @@
           "text": {
             "de": "Nur die Midea-Server mp-prod.appsmb.com und mapp.appsmb.com – für Konto und Cloud-Geräte.",
             "en": "Only the Midea servers mp-prod.appsmb.com and mapp.appsmb.com – for the account and cloud devices."
+          },
+          "tag": {
+            "de": "Netzwerk",
+            "en": "Network"
+          }
+        },
+        {
+          "icon": "network",
+          "title": {
+            "de": "Dreo-Cloud erreichen",
+            "en": "Reach the Dreo cloud"
+          },
+          "text": {
+            "de": "Nur die Dreo-Server app-api-eu/us.dreo-tech.com (Anmeldung, Geräte) und wsb-eu/us.dreo-tech.com (Live-Verbindung) – ab GateControl 1.184.0.",
+            "en": "Only the Dreo servers app-api-eu/us.dreo-tech.com (sign-in, devices) and wsb-eu/us.dreo-tech.com (live connection) – from GateControl 1.184.0."
           },
           "tag": {
             "de": "Netzwerk",
@@ -1108,12 +1134,12 @@
         {
           "icon": "action",
           "title": {
-            "de": "Klimageräte steuern",
-            "en": "Control air conditioners"
+            "de": "Geräte steuern",
+            "en": "Control devices"
           },
           "text": {
-            "de": "Ein/Aus, Zieltemperatur, Modus, Lüfter, Turbo und Eco – Personen nur für Geräte, die ihnen zugewiesen sind.",
-            "en": "Power, target temperature, mode, fan, turbo and eco – people only for devices assigned to them."
+            "de": "Ein/Aus, Zieltemperatur, Modus, Lüfter, Schwenken und Extras – Personen nur für Geräte, die ihnen zugewiesen sind.",
+            "en": "Power, target temperature, mode, fan, oscillation and extras – people only for devices assigned to them."
           },
           "tag": {
             "de": "Steuern",
@@ -1153,8 +1179,8 @@
             "en": "Store credentials encrypted"
           },
           "text": {
-            "de": "Passwort und Sitzung des Midea-Kontos sowie die V3-Schlüssel als verschlüsselte Plugin-Geheimnisse.",
-            "en": "Password and session of the Midea account and the V3 keys as encrypted plugin secrets."
+            "de": "Zugangsdaten des Midea- und des Dreo-Kontos (vom Dreo-Passwort nur eine Prüfsumme) und die V3-Schlüssel als verschlüsselte Plugin-Geheimnisse.",
+            "en": "Credentials of the Midea and the Dreo account (of the Dreo password only a checksum) and the V3 keys as encrypted plugin secrets."
           }
         }
       ],
@@ -1162,8 +1188,8 @@
         {
           "kind": "widget",
           "caption": {
-            "de": "Widget pro Klimagerät",
-            "en": "Widget per air conditioner"
+            "de": "Widget pro Gerät",
+            "en": "Widget per device"
           },
           "value": "23 °C"
         },
@@ -1178,14 +1204,14 @@
         {
           "kind": "list",
           "caption": {
-            "de": "Portal „Zuhause“ · Klimaanlage",
-            "en": "Portal “Home” · air conditioning"
+            "de": "Portal „Zuhause“ · Raumklima",
+            "en": "Portal “Home” · indoor climate"
           }
         }
       ],
       "needs": {
-        "de": "Midea-Konto (MSmartHome oder NetHome Plus)",
-        "en": "Midea account (MSmartHome or NetHome Plus)"
+        "de": "Midea- und/oder Dreo-Konto; Dreo ab GateControl 1.184.0",
+        "en": "Midea and/or Dreo account; Dreo from GateControl 1.184.0"
       },
       "languages": ["de", "en"]
     },

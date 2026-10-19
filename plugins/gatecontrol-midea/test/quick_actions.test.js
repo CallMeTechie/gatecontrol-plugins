@@ -63,7 +63,7 @@ test('quick actions: a power toggle per own air conditioner, state from the cach
     assert.equal(cloud.calls.length, calls, 'no cloud call inside the hook');
     assert.deepEqual(ada.map((x) => [x.id, x.title, x.subtitle, x.kind, x.state]), [
       [`ac:${a}`, 'Wohnzimmer', 'Kühlen · Ziel 22 °C', 'toggle', 'on'],
-      [`ac:${b}`, 'Büro', 'Klimaanlage', 'toggle', null],
+      [`ac:${b}`, 'Büro', 'Raumklima', 'toggle', null],
     ]);
     assert.ok(ada.every((x) => /^M/.test(x.icon) && x.confirm === false && x.look === null && x.confirmWhen === null));
     assert.deepEqual(ada.map((x) => x.device), [{ id: `ac:${a}`, title: 'Wohnzimmer', subtitle: null, icon: AC }, { id: `ac:${b}`, title: 'Büro', subtitle: null, icon: AC }], 'every air conditioner its own device');

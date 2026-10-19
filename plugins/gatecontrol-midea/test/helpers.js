@@ -13,6 +13,7 @@ const lan = require('../server/lan');
 const mcrypto = require('../server/crypto');
 const { APP_VARIANTS, computeUdpid, sessionCbcEncrypt, sessionCbcDecrypt } = require('../server/cloud');
 const service = require('../server/service');
+const { md5 } = require('../server/dreo');
 
 const DIR = path.join(__dirname, '..');
 
@@ -193,17 +194,99 @@ function fakeCloud(opts = {}) {
 }
 
 /**
+ * A fake Dreo cloud (the app's API): login (answers with the account's region
+ * — a login at the wrong region is retried there), device list, device state
+ * (REST, values in { state } wrappers, temperatures in °F) and the WebSocket
+ * (wsb-<region>): control commands change the device and are acknowledged
+ * (control-reply + control-report); `push` sends a device's own report.
+ */
+function fakeDreo(opts = {}) {
+  const dreo = {
+    email: opts.email || 'heat@example.com',
+    password: opts.password || 'dreo-pw',
+    region: opts.region || 'EU',
+    devices: opts.devices || [
+      { sn: 'HSH009S-1', deviceName: 'Bad', model: 'DR-HSH009S', productName: 'Heater' },
+      { sn: 'HAC006S-1', deviceName: 'Schlafzimmer', model: 'DR-HAC006S', productName: 'Air Conditioner' },
+      { sn: 'HTF001S-1', deviceName: 'Turm', model: 'DR-HTF001S', productName: 'Tower Fan' },
+    ],
+    states: opts.states || {
+      'HSH009S-1': { poweron: true, connected: true, mode: 'hotair', htalevel: 2, ecolevel: 72, temperature: 68, oscon: true, oscangle: 60, childlockon: false, muteon: true, ptcon: true },
+      'HAC006S-1': { poweron: false, connected: true, mode: 1, templevel: 76, temperature: 79, windlevel: 4, oscmode: 0, rh: 55 },
+      'HTF001S-1': { poweron: false, connected: true },
+    },
+    logins: 0, tokens: new Set(), stateReads: 0, commands: [], sockets: [],
+    silent: false, reject: null, rateLimited: false,
+  };
+  const ok = (data) => ({ status: 200, body: JSON.stringify({ code: 0, msg: 'OK', data }) });
+  dreo.fetch = async (url, o) => {
+    const u = new URL(url);
+    const region = u.hostname.startsWith('app-api-eu.') ? 'EU' : 'NA';
+    if (dreo.rateLimited) return { status: 429, body: '' };
+    if (u.pathname === '/api/oauth/login') {
+      const b = JSON.parse(o.body);
+      if (b.email !== dreo.email || b.password !== md5(dreo.password) || b.grant_type !== 'email-password') return { status: 200, body: JSON.stringify({ code: 10001, msg: 'wrong account or password' }) };
+      if (region !== dreo.region) return ok({ region: dreo.region, access_token: 'wrong-region' });
+      dreo.logins += 1;
+      const token = 'TOKEN-' + dreo.logins;
+      dreo.tokens.add(token);
+      return ok({ access_token: token, region: dreo.region });
+    }
+    const auth = String((o.headers && o.headers.authorization) || '').replace(/^Bearer /, '');
+    if (region !== dreo.region || !dreo.tokens.has(auth)) return { status: 401, body: '' };
+    if (u.pathname === '/api/v2/user-device/device/list') return ok({ list: dreo.devices, totalNum: dreo.devices.length });
+    if (u.pathname === '/api/user-device/device/state') {
+      dreo.stateReads += 1;
+      const st = dreo.states[u.searchParams.get('deviceSn')];
+      if (!st) return { status: 200, body: JSON.stringify({ code: 404, msg: 'no such device' }) };
+      const mixed = {};
+      for (const [k, v] of Object.entries(st)) mixed[k] = { state: v, timestamp: 1 };
+      return ok({ deviceSn: u.searchParams.get('deviceSn'), mixed });
+    }
+    return { status: 404, body: '' };
+  };
+  dreo.websocket = async (url, o, peer) => {
+    const u = new URL(url);
+    if (u.hostname !== `wsb-${dreo.region === 'EU' ? 'eu' : 'us'}.dreo-tech.com` || !dreo.tokens.has(u.searchParams.get('accessToken'))) {
+      throw Object.assign(new Error('unexpected response 401'), { code: 'ERR_NET' });
+    }
+    dreo.sockets.push(peer);
+    return {
+      message: (data) => {
+        if (data === '2') return;
+        const m = JSON.parse(String(data));
+        dreo.commands.push({ sn: m.devicesn, params: m.params });
+        if (dreo.silent) return;
+        if (dreo.reject) { peer.send(JSON.stringify({ devicesn: m.devicesn, method: 'control-reply', reported: { error_code: dreo.reject, error_msg: 'instruction validate failed' } })); return; }
+        Object.assign(dreo.states[m.devicesn] || {}, m.params);
+        peer.send(JSON.stringify({ devicesn: m.devicesn, method: 'control-reply', reported: m.params }));
+        peer.send(JSON.stringify({ devicesn: m.devicesn, method: 'control-report', reported: m.params }));
+      },
+    };
+  };
+  /** A report the device sends by itself (someone used the device or its remote). */
+  dreo.push = (sn, reported, method = 'report') => {
+    Object.assign(dreo.states[sn], reported);
+    for (const p of dreo.sockets) if (!p.closed) p.send(JSON.stringify({ devicesn: sn, method, reported }));
+  };
+  dreo.offline = (sn) => { for (const p of dreo.sockets) if (!p.closed) p.send(JSON.stringify({ devicesn: sn, method: 'device-offline' })); };
+  return dreo;
+}
+
+/**
  * Mock host with a fake cloud and LAN devices: `lan` = [{ dev, version, token, key, label, answer }]
  * become the assigned "ac" targets 0…n (TCP through the service seam, UDP probe answers `answer`).
  */
 async function withHost(o, fn) {
   const cloud = o.cloud || fakeCloud();
+  const dreo = o.dreo || null;
   const lanDevs = o.lan || [];
   const host = await createHost(DIR, {
     users: o.users || USERS,
     settings: o.settings,
     license: o.license,
-    fetch: cloud.fetch,
+    fetch: (url, fo) => (dreo && /\.dreo-tech\.com$/.test(new URL(url).hostname) ? dreo.fetch(url, fo) : cloud.fetch(url, fo)),
+    websocket: dreo && o.websocket !== false ? dreo.websocket : undefined,
     targets: {
       ac: lanDevs.map((l, i) => ({
         label: l.label || `192.168.1.${60 + i}`,
@@ -226,7 +309,7 @@ async function withHost(o, fn) {
   };
   try {
     await host.start();
-    await fn(host, cloud);
+    await fn(host, cloud, dreo);
   } finally {
     service.connectTarget = seams.connectTarget;
     service.newCloud = seams.newCloud;
@@ -249,5 +332,5 @@ async function connectCloud(host, cloud) {
 
 module.exports = {
   DIR, ADMIN, ADA, BOB, USERS,
-  stateFrame, fakeAc, fakeSocket, discoveryAnswer, fakeCloud, withHost, asAdmin, asPortal, connectCloud,
+  stateFrame, fakeAc, fakeSocket, discoveryAnswer, fakeCloud, fakeDreo, withHost, asAdmin, asPortal, connectCloud,
 };
