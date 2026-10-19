@@ -473,8 +473,10 @@ async function options(gc, ctx) {
   for (const a of listed) {
     const flds = conditions.widgetFields(a.widget, lang);
     if (!flds.length) continue;
+    // 1.9.1: the widget stands for its device — named after it („Elroq“), not after the action that carries
+    // it („Elroq – Klimatisierung“, whose widget shows the battery)
     const d = a.device && a.device.title;
-    devices.push({ actionId: conditions.refOf(a), label: (d && d !== a.title ? `${d} – ${a.title}` : a.title || a.id).slice(0, 60), icon: (a.device && a.device.icon) || a.icon || null, fields: flds });
+    devices.push({ actionId: conditions.refOf(a), label: String(d || a.title || a.id).slice(0, 60), icon: (a.device && a.device.icon) || a.icon || null, fields: flds });
   }
   const calendars = [];
   if (cfg.modules.dates) calendars.push({ source: 'familie', label: say(lang, 'cond.src_familie') });
