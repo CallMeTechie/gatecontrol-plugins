@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 
-// Validate plugins: node tools/validate.js [<id> ...]   (default: every plugin)
+// Validate plugins: node tools/validate.js [<id> ...]   (default: every plugin + catalog-meta.json)
 //
 // plugin.json is checked with GateControl's own validator (src/services/plugins/
 // manifest.js of the pinned checkout — the exact rules of docs/plugins.md, the
@@ -11,11 +11,14 @@
 //   * migrations are named <number>_<name>.sql, numbers unique
 //   * CHANGELOG.md has a section for the current version
 //   * the plugin has tests (test/*.test.js)
+// Without ids, catalog-meta.json (store metadata of catalog.json) is checked
+// too (tools/catalog-meta.js).
 
 const fs = require('node:fs');
 const path = require('node:path');
 const lib = require('./lib');
 const { stagedFiles } = require('./stage');
+const catalogMeta = require('./catalog-meta');
 
 function validatePlugin(id) {
   const errors = [];
@@ -58,7 +61,8 @@ function validatePlugin(id) {
 }
 
 if (require.main === module) {
-  const ids = process.argv.slice(2).length ? process.argv.slice(2) : lib.listPlugins();
+  const all = !process.argv.slice(2).length;
+  const ids = all ? lib.listPlugins() : process.argv.slice(2);
   if (!ids.length) lib.fail('no plugins found');
   let bad = 0;
   for (const id of ids) {
@@ -73,6 +77,7 @@ if (require.main === module) {
       process.stdout.write(`✓ ${id}\n`);
     }
   }
+  if (all && !catalogMeta.check()) bad++;
   if (bad) process.exit(1);
 }
 

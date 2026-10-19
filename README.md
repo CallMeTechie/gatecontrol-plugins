@@ -20,6 +20,7 @@ plugins/<id>/               one folder per plugin (folder name = plugin.json id)
 tools/                      validate, test, pack, verify, release metadata, catalog
 tools/testing/mock-host.js  mock of the host API (gc.*) for plugin tests
 plugins.config.json         repo-level flags per plugin (release: false = never released)
+catalog-meta.json           store metadata per plugin for catalog.json (category, icon, summary, …)
 gatecontrol.ref             GateControl commit whose packer/validator is used (40-char SHA)
 .github/                    CI (ci.yml), release (release.yml), catalogue (catalog.yml)
 ```
@@ -212,12 +213,52 @@ releases are the source of truth; deleting a release and re-running the
 ```jsonc
 { "schema": 1, "generated_at": "…", "repository": "CallMeTechie/gatecontrol-plugins",
   "plugins": { "<id>": { "id", "name", "description", "publisher",
-                         "latest": { /* index entry */ }, "versions": [ /* newest first */ ] } } }
-// index entry:
+                         "latest": { /* index entry */ }, "versions": [ /* newest first */ ],
+                         // optional, from catalog-meta.json:
+                         "category", "icon", "summary", "audience", "keywords", "related", "highlight",
+                         "adds", "permissions", "shows", "needs", "languages" } } }
+// index entry (+ "notes"):
 { "schema": 1, "id", "name", "description", "publisher", "version", "prerelease",
   "gatecontrol": ">=1.146.0", "license_required", "file", "size", "sha256", "url",
-  "signature": { "alg": "Ed25519", "key_id", "public_key" }, "tag", "release_url", "published_at" }
+  "signature": { "alg": "Ed25519", "key_id", "public_key" }, "tag", "release_url", "published_at",
+  "notes": "…" }
 ```
+
+**Store metadata** for GateControl's plugin store lives in `catalog-meta.json`
+(repository root, one optional entry per released plugin id): `category`
+(`family` / `home` / `mobility` / `infrastructure` / `other`), `icon`
+(`family`, `chat`, `calendar`, `door`, `bulb`, `snowflake`, `car`, `server`,
+`nas`, `puzzle`), `summary` `{ de, en }` (one sentence, ≤ 160 characters),
+`audience` (`all` / `admins`), `keywords` (≤ 12 lowercase search words in
+German and English, ≤ 32 characters each), `related` (≤ 4 other plugin ids,
+"passt gut dazu") and an optional `highlight`
+`{ version, title: { de, en } ≤ 80, text: { de, en } ≤ 280, tags? }` whose version
+has a CHANGELOG section (`tags`: ≤ 4 chips beside it, `{ icon, text: { de, en } ≤ 40 }`).
+
+The store's detail page reads these optional fields:
+
+| Field | Shape | Shown as |
+|---|---|---|
+| `adds` | ≤ 8 × `{ icon, title ≤ 80, text ≤ 120 }` | „Was <Plugin> hinzufügt“ – pages, app tab, portal area, tiles, widgets, quick actions, notifications, background jobs |
+| `permissions` | ≤ 10 × `{ icon, title ≤ 80, text ≤ 200, tag? ≤ 24 }` | „Das darf das Plugin“ for end users; `tag` only on sensitive rows (*Netzwerk*, *Steuern*, *Standort*, *Benutzer*) |
+| `shows` | ≤ 3 × `{ kind: tile \| list \| widget, caption ≤ 60, value? ≤ 12 }` | captions of the wireframes „So sieht es bei dir aus“ – only what the plugin really has |
+| `needs` | `{ de, en }` ≤ 80 | what it needs besides GateControl (an account, a token, a device) |
+| `languages` | subset of `["de", "en"]` | languages of the plugin |
+
+Titles, texts, tags and captions are `{ de, en }`. `icon` (in `adds`,
+`permissions` and highlight `tags`) is one of `page`, `app`, `portal`,
+`widget`, `tile`, `action`, `bell`, `clock`, `data`, `network`, `chat`, `key`,
+`location`, `users`, `door`, `calendar`, `camera`, `car`, `bulb`, `server`,
+`shield`, `link`. Write them from the plugin's `plugin.json`, README and
+CHANGELOG – never promise what the plugin does not do.
+
+`tools/catalog.js` copies the fields that are set into
+the plugin's object; `node tools/validate.js` (CI) checks the file strictly
+(`tools/catalog-meta.js`). Every version entry also gets **`notes`**: the
+`## <version>` section of the plugin's `CHANGELOG.md` (at most 6000
+characters, cut at a line end with `…`; no section → no `notes`). Both are
+read from the commit the catalog workflow checks out (the release tag, or
+`main` when run by hand), so a change shows up with the next catalogue rebuild.
 
 ### One-time setup (repository owner)
 
