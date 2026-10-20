@@ -21,7 +21,7 @@ test('add by QR link: one login, the children found, baseline fetched, logout; t
   assert.deepEqual([r.json.result.ok, r.json.result.code, r.json.result.students, r.json.result.changes], [true, null, 2, 0]);
   assert.deepEqual(untis.state.logins, ['secret'], 'one login');
   assert.equal(untis.state.logouts, 1, 'logged out at the end');
-  assert.deepEqual(untis.state.calls, ['getUserData2017', 'app/config', 'getTimegridUnits', 'getHolidays', 'getTimetable', 'getTimetable', 'logout']);
+  assert.deepEqual(untis.state.calls, ['getUserData2017', 'app/config', 'getTimegridUnits', 'getHolidays', 'getTimetable', 'getTimetable', 'homeworks', 'exams', 'exams', 'logout']);
   // the key: a plugin secret (encrypted by the host), never in the database, the API or the log
   assert.deepEqual([...host.secrets], ['acct.1.secret']);
   assert.equal(host.settings['acct.1.secret'], SECRET);

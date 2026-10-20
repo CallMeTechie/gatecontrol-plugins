@@ -55,12 +55,12 @@ test('a cycle: one login, logout; only due accounts; timegrid and holidays once 
   await tickAt(host, T0 + 5 * MIN);
   assert.deepEqual(untis.state.calls, [], 'not due');
   await tickAt(host, T0 + 15 * MIN);
-  assert.deepEqual(untis.state.calls, ['getUserData2017', 'app/config', 'getTimetable', 'getTimetable', 'logout'], 'same day: no timegrid / holidays');
+  assert.deepEqual(untis.state.calls, ['getUserData2017', 'app/config', 'getTimetable', 'getTimetable', 'homeworks', 'exams', 'exams', 'logout'], 'same day: no timegrid / holidays');
   assert.deepEqual([untis.state.logins.length, untis.state.logouts], [2, 2]);
   assert.equal(untis.state.sessions.size, 0);
   untis.state.calls.length = 0;
   await tickAt(host, at('2026-10-21T04:00:00Z')); // next day 06:00
-  assert.deepEqual(untis.state.calls, ['getUserData2017', 'app/config', 'getTimegridUnits', 'getHolidays', 'getTimetable', 'getTimetable', 'logout']);
+  assert.deepEqual(untis.state.calls, ['getUserData2017', 'app/config', 'getTimegridUnits', 'getHolidays', 'getTimetable', 'getTimetable', 'homeworks', 'exams', 'exams', 'logout']);
   // every call after the login carried the session and the school
   assert.ok(untis.state.cookies.every((c) => /^JSESSIONID=S\d+x[0-9a-f]+; schoolname=_/.test(c)));
 }));
@@ -115,6 +115,11 @@ test('settings: fallbacks and problems, quiet hours, a shorter interval applies 
   assert.deepEqual(c.problems, ['timezone', 'poll_minutes', 'notify_days', 'quiet']);
   assert.deepEqual([c.tz, c.pollMinutes, c.notifyDays, config.hhmm(c.quiet.from), c.lang], ['Europe/Berlin', 15, 2, '21:00', 'en']);
   assert.equal(config.fromSettings({ quiet_from: '', quiet_to: '' }).quiet, null);
+  // 1.2.0: the evening reminder — default 18:00, empty = none, invalid = 18:00 with a problem
+  assert.equal(config.hhmm(config.fromSettings({}).reminder), '18:00');
+  assert.equal(config.fromSettings({ reminder_time: '' }).reminder, null);
+  const bad = config.fromSettings({ reminder_time: '18 Uhr' });
+  assert.deepEqual([bad.problems, config.hhmm(bad.reminder)], [['reminder_time'], '18:00']);
   assert.equal(config.fromSettings({ poll_minutes: '30' }).pollMinutes, 30);
   const q = config.fromSettings({});
   assert.equal(config.inQuiet(q, at('2026-10-20T19:30:00Z')), true, '21:30');
@@ -126,7 +131,7 @@ test('settings: fallbacks and problems, quiet hours, a shorter interval applies 
   // status shows the config; a shorter interval moves the next fetch forward
   await setupParent(host);
   const st = (await asAdmin(host, 'GET', '/status')).json.config;
-  assert.deepEqual(st, { timezone: 'Europe/Berlin', notify_lang: 'de', poll_minutes: 15, notify_days: 2, quiet_from: '21:00', quiet_to: '06:00', problems: [] });
+  assert.deepEqual(st, { timezone: 'Europe/Berlin', notify_lang: 'de', poll_minutes: 15, notify_days: 2, quiet_from: '21:00', quiet_to: '06:00', problems: [], reminder_time: '18:00' });
   await host.saveSettings({ poll_minutes: 5 });
   assert.equal((await account(host)).next_fetch_at, T0 + 5 * MIN);
 }));

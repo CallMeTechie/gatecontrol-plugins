@@ -1,6 +1,7 @@
 'use strict';
 
-// Data access of the plugin's own database (migrations/001_init.sql).
+// Data access of the plugin's own database (migrations/001_init.sql; 1.2.0: 003_homework_exams.sql —
+// homework, exams, once-only notices, early ends of a school day).
 //
 // Credentials are plugin secrets, never in this database: the QR key of an
 // account under 'acct.<id>.secret', a password under 'acct.<id>.password'
@@ -55,7 +56,7 @@ async function patchRow(gc, table, cols, id, patch) {
 // ─── Accounts ───────────────────────────────────
 
 const ACCOUNT_COLS = ['host', 'school', 'username', 'auth', 'person_id', 'person_type', 'status', 'last_error', 'error_count', 'last_attempt_at',
-  'last_success_at', 'last_error_at', 'next_fetch_at', 'refresh_asked_at', 'timegrid_json', 'holidays_json', 'meta_day'];
+  'last_success_at', 'last_error_at', 'next_fetch_at', 'refresh_asked_at', 'timegrid_json', 'holidays_json', 'meta_day', 'extras_json'];
 
 function accountRow(r) {
   if (!r) return null;
@@ -68,6 +69,7 @@ function accountRow(r) {
     last_error_at: r.last_error_at == null ? null : Number(r.last_error_at),
     next_fetch_at: Number(r.next_fetch_at) || 0, refresh_asked_at: r.refresh_asked_at == null ? null : Number(r.refresh_asked_at),
     timegrid: parseJson(r.timegrid_json, []), holidays: parseJson(r.holidays_json, []), meta_day: r.meta_day || null,
+    extras: parseJson(r.extras_json, {}),
     created_at: Number(r.created_at),
   };
 }
@@ -89,6 +91,7 @@ async function updateAccount(gc, id, patch) {
   const p = { ...patch };
   if (p.timegrid !== undefined) { p.timegrid_json = JSON.stringify(p.timegrid || []); delete p.timegrid; }
   if (p.holidays !== undefined) { p.holidays_json = JSON.stringify(p.holidays || []); delete p.holidays; }
+  if (p.extras !== undefined) { p.extras_json = JSON.stringify(p.extras || {}); delete p.extras; }
   await patchRow(gc, 'accounts', ACCOUNT_COLS, id, p);
   return getAccount(gc, id);
 }
@@ -119,6 +122,7 @@ async function deleteAccount(gc, id) {
     for (const sid of ids) {
       await gc.db.run('DELETE FROM lessons WHERE student_id = ?', [sid]);
       await gc.db.run('DELETE FROM changes WHERE student_id = ?', [sid]);
+      for (const t of ['homework', 'exams', 'day_ends']) await gc.db.run(`DELETE FROM ${t} WHERE student_id = ?`, [sid]);
     }
     await gc.db.run('DELETE FROM students WHERE account_id = ?', [id]);
     return (await gc.db.run('DELETE FROM accounts WHERE id = ?', [id])).changes > 0;
@@ -278,10 +282,111 @@ async function listChanges(gc, studentIds, since, limit = 100) {
   return r.rows.map(changeRow);
 }
 
-/** Housekeeping: lessons before `beforeDate`, changes detected before `beforeMs`. */
+/** Housekeeping: lessons, homework, exams and early ends before `beforeDate`, changes and notices before `beforeMs`. */
 async function prune(gc, beforeDate, beforeMs) {
   await gc.db.run('DELETE FROM lessons WHERE date < ?', [beforeDate]);
   await gc.db.run('DELETE FROM changes WHERE detected_at < ?', [beforeMs]);
+  await gc.db.run('DELETE FROM homework WHERE due_date < ?', [beforeDate]);
+  await gc.db.run('DELETE FROM exams WHERE date < ?', [beforeDate]);
+  await gc.db.run('DELETE FROM day_ends WHERE date < ?', [beforeDate]);
+  await gc.db.run('DELETE FROM notices WHERE at < ?', [beforeMs]);
+}
+
+// ─── Homework and exams (1.2.0) ─────────────────
+
+const HW_COLS = ['hw_id', 'given_date', 'due_date', 'subject', 'subject_long', 'text', 'remark', 'completed'];
+const EX_COLS = ['ex_id', 'date', 't_start', 't_end', 'subject', 'subject_long', 'name', 'type', 'text'];
+
+function homeworkRow(r) {
+  return {
+    student_id: r.student_id, hw_id: r.hw_id, given_date: r.given_date || null, due_date: r.due_date, subject: r.subject || '',
+    subject_long: r.subject_long || null, text: r.text || '', remark: r.remark || null, completed: !!r.completed,
+  };
+}
+
+function examRow(r) {
+  return {
+    student_id: r.student_id, ex_id: r.ex_id, date: r.date, t_start: r.t_start || null, t_end: r.t_end || null, subject: r.subject || '',
+    subject_long: r.subject_long || null, name: r.name || '', type: r.type || null, text: r.text || null,
+  };
+}
+
+/** A student's homework is replaced by a fetch (`rows` = everything the fetch found). */
+async function replaceHomework(gc, studentId, rows) {
+  return tx(gc, async () => {
+    await gc.db.run('DELETE FROM homework WHERE student_id = ?', [studentId]);
+    await insertMany(gc, `INSERT OR REPLACE INTO homework (student_id, ${HW_COLS.join(', ')})`, HW_COLS.length + 1,
+      rows.map((r) => [studentId, ...HW_COLS.map((k) => (k === 'completed' ? (r[k] ? 1 : 0) : (r[k] === undefined ? null : r[k])))]));
+  });
+}
+
+/** A student's exams between `from` and `to` are replaced by `rows`. */
+async function replaceExams(gc, studentId, from, to, rows) {
+  return tx(gc, async () => {
+    await gc.db.run('DELETE FROM exams WHERE student_id = ? AND date >= ? AND date <= ?', [studentId, from, to]);
+    await insertMany(gc, `INSERT OR REPLACE INTO exams (student_id, ${EX_COLS.join(', ')})`, EX_COLS.length + 1,
+      rows.map((r) => [studentId, ...EX_COLS.map((k) => (r[k] === undefined ? null : r[k]))]));
+  });
+}
+
+async function byStudents(gc, table, col, studentIds, from, to, order, rowFn) {
+  if (!studentIds.length) return [];
+  const out = [];
+  for (let i = 0; i < studentIds.length; i += 90) {
+    const ids = studentIds.slice(i, i + 90);
+    const r = await gc.db.query(`SELECT * FROM ${table} WHERE student_id IN (${ids.map(() => '?').join(',')}) AND ${col} >= ? AND ${col} <= ? ORDER BY ${order}`, [...ids, from, to]);
+    out.push(...r.rows.map(rowFn));
+  }
+  return out;
+}
+
+/** Homework due between two dates (inclusive). */
+const homeworkDue = (gc, studentIds, from, to) => byStudents(gc, 'homework', 'due_date', studentIds, from, to, 'due_date, subject, hw_id', homeworkRow);
+/** Exams between two dates (inclusive), by date and time. */
+const examsBetween = (gc, studentIds, from, to) => byStudents(gc, 'exams', 'date', studentIds, from, to, 'date, t_start, ex_id', examRow);
+
+/** Counts per student: { homework: Map, exams: Map } from `from` on. */
+async function countExtras(gc, from) {
+  const hw = new Map();
+  const ex = new Map();
+  for (const r of (await gc.db.query('SELECT student_id, COUNT(*) AS n FROM homework WHERE due_date >= ? GROUP BY student_id', [from])).rows) hw.set(r.student_id, Number(r.n));
+  for (const r of (await gc.db.query('SELECT student_id, COUNT(*) AS n FROM exams WHERE date >= ? GROUP BY student_id', [from])).rows) ex.set(r.student_id, Number(r.n));
+  return { homework: hw, exams: ex };
+}
+
+// ─── Once-only notices (1.2.0) ──────────────────
+
+async function noticeSeen(gc, key) {
+  return !!(await gc.db.get('SELECT key FROM notices WHERE key = ?', [key])).row;
+}
+async function noticeMark(gc, key, now) {
+  await gc.db.run('INSERT OR IGNORE INTO notices (key, at) VALUES (?, ?)', [key, now]);
+}
+
+// ─── Early ends of a school day (1.2.0) ─────────
+
+function dayEndRow(r) {
+  return {
+    student_id: r.student_id, date: r.date, new_end: r.new_end, planned_end: r.planned_end, detected_at: Number(r.detected_at),
+    status: r.status, sent_at: r.sent_at == null ? null : Number(r.sent_at),
+  };
+}
+
+/** A newly found early end (once per student, date and new end) → true when it is new. */
+async function addDayEnd(gc, studentId, e, now) {
+  const r = await gc.db.run("INSERT OR IGNORE INTO day_ends (student_id, date, new_end, planned_end, detected_at, status) VALUES (?, ?, ?, ?, ?, 'pending')",
+    [studentId, e.date, e.newEnd, e.plannedEnd, now]);
+  return r.changes > 0;
+}
+
+async function dayEndsWithStatus(gc, statuses) {
+  return (await gc.db.query(`SELECT * FROM day_ends WHERE status IN (${statuses.map(() => '?').join(',')}) ORDER BY detected_at, student_id, date`, statuses)).rows.map(dayEndRow);
+}
+
+async function setDayEndStatus(gc, list, status, sentAt = null) {
+  for (const e of list) {
+    await gc.db.run('UPDATE day_ends SET status = ?, sent_at = ? WHERE student_id = ? AND date = ? AND new_end = ?', [status, sentAt, e.student_id, e.date, e.new_end]);
+  }
 }
 
 module.exports = {
@@ -289,4 +394,6 @@ module.exports = {
   listStudents, getStudent, updateStudent, syncStudents,
   lessonsBetween, replaceLessons, countLessons, LESSON_COLS,
   addChanges, changesWithStatus, setChangeStatus, setRuleAt, cancellationSent, listChanges, prune,
+  replaceHomework, replaceExams, homeworkDue, examsBetween, countExtras, noticeSeen, noticeMark,
+  addDayEnd, dayEndsWithStatus, setDayEndStatus,
 };

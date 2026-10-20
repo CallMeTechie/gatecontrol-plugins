@@ -27,6 +27,13 @@
 // 1.1.0: the changes dispatch() releases (pushed now, or held back by the push budget) of a student
 // mapped to a GateControl user are also handed to the Familie plugin's rules (server/ruleevents.js) —
 // dispatch() answers them as `events`, each change once (changes.rule_at).
+//
+// 1.2.0: the end of a school day. Its planned end is the end of the day's last lesson of the plan
+// (cancelled ones included, extra ones not); its end the end of the last lesson that takes place.
+// When a fetch after the baseline changes a lesson of today or tomorrow (a covered, not rebased
+// day) and the day's end moves EARLIER than before, the early end is recorded once per student,
+// date and new end (table day_ends, only students mapped to a GateControl user, only while the
+// planned end lies ahead) — server/dayend.js hands it to the Familie plugin.
 
 const store = require('./store');
 const tz = require('./tz');
@@ -97,20 +104,60 @@ function diff(prev, next, covered) {
     if (!p.removed && p.state !== 'cancelled') changes.push({ kind: 'cancelled', row });
   }
   rows.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : a.t_start < b.t_start ? -1 : a.t_start > b.t_start ? 1 : 0));
-  return { rows, changes };
+  return { rows, changes, rebased };
+}
+
+/** The end of a date: the end of its last lesson that takes place (null: none takes place). */
+function endOf(rows, date) {
+  let e = null;
+  for (const r of rows) if (r.date === date && tt.shownState(r) !== 'cancelled' && (!e || r.t_end > e)) e = r.t_end;
+  return e;
+}
+
+/** The planned end of a date: the end of its last lesson of the plan — cancelled ones too, extra ones not. */
+function plannedEndOf(rows, date) {
+  let e = null;
+  for (const r of rows) if (r.date === date && !r.added && (!e || r.t_end > e)) e = r.t_end;
+  return e;
+}
+
+/**
+ * Early ends found by one fetch → [{ date, plannedEnd, newEnd }]: on `dates` (today, tomorrow) the
+ * previous fetch covered, not rebased, with a change found now, whose end moved earlier and whose
+ * planned end has not passed.
+ */
+function earlyEnds(prev, rows, found, { dates, covered, rebased, now, cfg }) {
+  const out = [];
+  for (const date of dates) {
+    if (!covered(date) || rebased.has(date) || !found.some((c) => c.row.date === date)) continue;
+    const before = endOf(prev, date);
+    const after = endOf(rows, date);
+    const planned = plannedEndOf(rows, date);
+    if (!before || !after || !planned || after >= before || after >= planned) continue;
+    if (tz.at(date, planned, cfg.tz) <= now) continue;
+    out.push({ date, plannedEnd: planned, newEnd: after });
+  }
+  return out;
 }
 
 /**
  * Store a student's fetch (`rows` normalized, covering [from, to]) and log what changed.
- * → { changes: number, pending: number, baseline: boolean }
+ * → { changes: number, pending: number, baseline: boolean, dayEnds: number (1.2.0: early ends recorded) }
  */
 async function apply(gc, student, rows, range, cfg, now) {
   const prev = await store.lessonsBetween(gc, [student.id], range.from, range.to);
   const baseline = !student.baseline_done;
   const covered = (d) => !baseline && student.range_from != null && d >= student.range_from && d <= student.range_to;
-  const { rows: keep, changes } = diff(prev, rows, covered);
+  const { rows: keep, changes, rebased } = diff(prev, rows, covered);
   await store.replaceLessons(gc, student.id, range.from, range.to, keep);
   const today = tz.localDate(now, cfg.tz);
+  // 1.2.0: the school day ends earlier (today, tomorrow) — for the Familie plugin's rides
+  let dayEnds = 0;
+  if (!baseline && student.user_id != null) {
+    for (const e of earlyEnds(prev, keep, changes, { dates: [today, tz.addDays(today, 1)], covered, rebased, now, cfg })) {
+      if (await store.addDayEnd(gc, student.id, e, now)) dayEnds += 1;
+    }
+  }
   const lastDay = tz.addDays(today, cfg.notifyDays - 1);
   // days already past are only stored, not reported
   const log = changes.filter(({ row }) => row.date >= today).map(({ kind, row }) => ({
@@ -124,7 +171,7 @@ async function apply(gc, student, rows, range, cfg, now) {
   if (klasse) patch.klasse = klasse;
   if (log.length) patch.last_change_at = now;
   await store.updateStudent(gc, student.id, patch);
-  return { changes: log.length, pending: log.filter((c) => c.status === 'pending').length, baseline };
+  return { changes: log.length, pending: log.filter((c) => c.status === 'pending').length, baseline, dayEnds };
 }
 
 // ─── Texts ──────────────────────────────────────
@@ -268,4 +315,6 @@ async function dispatch(gc, notifier, cfg, now, quiet) {
   return { sent, held: 0, expired, events };
 }
 
-module.exports = { diff, apply, dispatch, message, phrase, dayLabel, periodLabel, changeFacts, recipientsOf, subSig, endMs, TOPIC };
+module.exports = {
+  diff, apply, dispatch, message, phrase, dayLabel, periodLabel, changeFacts, recipientsOf, subSig, endMs, endOf, plannedEndOf, earlyEnds, TOPIC,
+};

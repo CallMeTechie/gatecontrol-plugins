@@ -1,6 +1,7 @@
 /* Portal tab "Schule": the week of the students this viewer may see (this / next week),
    cancelled lessons struck through in red, substitutions in orange with the original teacher /
-   room crossed out, extra lessons highlighted, info and substitution texts below. */
+   room crossed out, extra lessons highlighted, info and substitution texts below.
+   1.2.0: an exam badge at the top of the day, the homework due that day below its lessons. */
 (function () {
   'use strict';
   var S = window.SC, T = S.T, $ = S.$, $$ = S.$$, el = S.el;
@@ -38,6 +39,26 @@
     ]);
   }
 
+  function subjName(x) { return (x.subjectLong && x.subjectLong.length <= 16 ? x.subjectLong : x.subject) || '–'; }
+
+  /** 1.2.0: "Arbeit · Mathe 09:50" */
+  function examBadge(x) {
+    var text = T('portal.exam') + ' · ' + subjName(x) + (x.start ? ' ' + x.start : '');
+    return el('div', { class: 'pt-sc-exam', title: [x.name, x.type, x.text].filter(Boolean).join(' · ') }, [el('span', { text: text }), x.name ? el('span', { class: 'pt-sc-exam-name', text: x.name }) : null]);
+  }
+
+  /** 1.2.0: the homework due that day */
+  function homeworkBox(list) {
+    var box = el('div', { class: 'pt-sc-hw' }, [el('div', { class: 'pt-sc-hw-h', text: T('portal.homework') })]);
+    list.forEach(function (h) {
+      box.appendChild(el('div', { class: 'pt-sc-hw-row' + (h.completed ? ' is-done' : ''), title: h.givenDate ? T('portal.given', { date: S.dayLabel(h.givenDate) }) : '' }, [
+        el('span', { class: 'pt-sc-hw-subj', text: subjName(h) }),
+        el('span', { text: (h.text || '–') + (h.completed ? ' (' + T('portal.hw_done') + ')' : '') }),
+      ]));
+    });
+    return box;
+  }
+
   function renderStudentTabs(list) {
     var box = S.clear($('#pt-sc-students'));
     box.hidden = list.length < 2;
@@ -55,14 +76,16 @@
     renderStudentTabs(list);
     var s = list.filter(function (x) { return x.id === current; })[0];
     $('#pt-sc-head').textContent = [s.name, s.klasse, s.updatedAt ? T('portal.updated', { when: S.when(s.updatedAt) }) : T('portal.not_yet')].filter(Boolean).join(' · ');
-    // Saturday only when it has lessons
-    var days = s.days.filter(function (d, i) { return i < 5 || d.lessons.length; });
+    // Saturday only when it has lessons (or an exam / homework)
+    var days = s.days.filter(function (d, i) { return i < 5 || d.lessons.length || (d.exams && d.exams.length) || (d.homework && d.homework.length); });
     grid.style.setProperty('--days', String(days.length));
     days.forEach(function (d) {
       var col = el('div', { class: 'pt-sc-day' + (d.date === r.today ? ' is-today' : '') }, [el('div', { class: 'pt-sc-dayh', text: (d.date === r.today ? T('portal.today') + ' · ' : '') + S.dayLabel(d.date) })]);
+      (d.exams || []).forEach(function (x) { col.appendChild(examBadge(x)); });
       if (d.holiday && !d.lessons.length) col.appendChild(el('div', { class: 'pt-sc-holiday', text: T('portal.holiday', { name: d.holiday }) }));
       else if (!d.lessons.length) col.appendChild(el('div', { class: 'pt-sc-free', text: T('portal.no_lessons') }));
       d.lessons.forEach(function (l) { col.appendChild(lesson(l)); });
+      if (d.homework && d.homework.length) col.appendChild(homeworkBox(d.homework));
       grid.appendChild(col);
     });
     empty('');

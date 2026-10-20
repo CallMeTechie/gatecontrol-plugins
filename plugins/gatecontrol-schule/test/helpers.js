@@ -48,6 +48,12 @@ function fakeUntis(opts = {}) {
     sessions: new Set(),
     logins: [], logouts: 0, calls: [], cookies: [], otps: [],
     loginError: null, // e.g. { code: -8504, message: 'bad credentials' }
+    // 1.2.0: the REST answers — homework (data of api/homeworks/lessons, the whole account) and exams
+    // (api/exams answers those within the dates); restStatus { homeworks: 403, exams: 500 } answers that status
+    homework: { homeworks: [], lessons: [], teachers: [] },
+    exams: [],
+    restStatus: {},
+    queries: [],
   };
   let n = 0;
   const json = (body, headers = {}) => ({ status: 200, headers: { 'content-type': 'application/json', ...headers }, body: JSON.stringify(body) });
@@ -74,6 +80,17 @@ function fakeUntis(opts = {}) {
       state.calls.push('app/config');
       if (!sessionOf(o)) return { status: 401, body: '' };
       return json(config());
+    }
+    if ((p === '/WebUntis/api/homeworks/lessons' || p === '/WebUntis/api/exams') && (o.method || 'GET') === 'GET') {
+      const kind = p.endsWith('/exams') ? 'exams' : 'homeworks';
+      state.calls.push(kind);
+      state.queries.push({ kind, query: Object.fromEntries(u.searchParams) });
+      if (!sessionOf(o)) return { status: 401, body: '' };
+      if (state.restStatus[kind]) return { status: state.restStatus[kind], body: '' };
+      const from = Number(u.searchParams.get('startDate'));
+      const to = Number(u.searchParams.get('endDate'));
+      if (kind === 'exams') return json({ data: { exams: clone(state.exams.filter((e) => e.examDate >= from && e.examDate <= to)) } });
+      return json({ data: clone(state.homework) });
     }
     if (o.method !== 'POST' || !o.json || o.json.jsonrpc !== '2.0') return { status: 400, body: 'bad request' };
     const { id, method, params } = o.json;

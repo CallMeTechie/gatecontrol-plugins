@@ -10,12 +10,15 @@
 // A cycle: login → the account's persons (api/app/config: a student account is the student,
 // a parent account lists its children) → timegrid and holidays once a day → each enabled
 // student's timetable from Monday of this week to Sunday of next week (14 days, always
-// ≥ today + 7; the portal shows this and next week) → change detection (server/changes.js).
+// ≥ today + 7; the portal shows this and next week) → change detection (server/changes.js)
+// → 1.2.0: homework (once per account) and exams (per student) for the same dates — optional,
+// never failing the cycle (server/extras.js).
 
 const store = require('./store');
 const untis = require('./untis');
 const tt = require('./timetable');
 const changes = require('./changes');
+const extras = require('./extras');
 const tz = require('./tz');
 
 const MIN = 60000;
@@ -107,11 +110,14 @@ async function pollAccount(gc, acc, cfg, now, opts = {}) {
     const due = students.filter((s) => s.enabled && !s.missing);
     let failures = 0;
     let firstError = null;
+    const fetched = [];
     for (const s of due) {
       if (Date.now() > deadline) break; // the rest in the next cycle
       try {
-        const rows = tt.normalize(await client.timetable(s.person_id, range.from, range.to), grid, range);
+        const raw = await client.timetable(s.person_id, range.from, range.to);
+        const rows = tt.normalize(raw, grid, range);
         const r = await changes.apply(gc, s, rows, range, cfg, now);
+        fetched.push({ student: s, raw, rows });
         result.students += 1;
         result.changes += r.changes;
         result.pending += r.pending;
@@ -125,7 +131,10 @@ async function pollAccount(gc, acc, cfg, now, opts = {}) {
       }
     }
     if (due.length && failures === due.length) throw firstError;
+    // 1.2.0: homework and exams (never throws)
+    const extrasState = await extras.fetchAccount(gc, client, acc, fetched, range, now, deadline);
     await store.updateAccount(gc, acc.id, {
+      extras: extrasState,
       status: 'ok', last_error: failures ? untis.codeOf(firstError) : null, error_count: 0, last_success_at: now,
       next_fetch_at: nextFetch(now, cfg),
     });

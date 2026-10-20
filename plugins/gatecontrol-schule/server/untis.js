@@ -17,6 +17,14 @@
 //              [{ id, type, displayName }] } — type 5 student, 12 legal guardian, 2 teacher
 //   data       getTimetable { options: { element: { id, type: 5 }, startDate, endDate, … } },
 //              getTimegridUnits, getHolidays; logout at the end of every cycle
+//   1.2.0      the REST interface of the web app with the same session cookie (optional data — a
+//              failure never stops the timetable, see server/extras.js):
+//              GET /WebUntis/api/homeworks/lessons?startDate=yyyymmdd&endDate=yyyymmdd
+//                → { data: { homeworks: [{ id, lessonId, date, dueDate, text, remark, completed }],
+//                            lessons: [{ id, subject, lessonType }], records?, teachers? } }
+//              GET /WebUntis/api/exams?startDate&endDate&klasseId&studentId&withGrades=true
+//                → { data: { exams: [{ id, examType, name, examDate, startTime, endTime, subject,
+//                            teachers, rooms, text, studentClass?, assignedStudents?: [{ id, displayName, klasse }] }] } }
 //
 // Errors become stable codes (UntisError.code): 'auth' (bad credentials,
 // invalid one-time password, unknown school), 'no_right' (JSON-RPC -8509:
@@ -214,6 +222,33 @@ function createClient(gc, account, opts = {}) {
         if (e instanceof UntisError && e.detail === NO_ALLOWED_DATE) return [];
         throw e;
       }
+    },
+
+    /**
+     * 1.2.0: the homework of the account between two local dates (the web app's homework list) →
+     * the raw `data` { homeworks, lessons, records?, … }. Throws like every call (codes above).
+     */
+    async homework(from, to) {
+      const q = `startDate=${untisDate(from)}&endDate=${untisDate(to)}`;
+      const { body } = await http(`${base}/api/homeworks/lessons?${q}`, { method: 'GET', headers: { cookie: cookie() } });
+      const data = body && body.data;
+      if (!data || typeof data !== 'object' || Array.isArray(data)) throw fail('failed', 'homework');
+      return data;
+    },
+
+    /**
+     * 1.2.0: the exams between two local dates for a class (klasseId, -1 = the account's own) and a
+     * student → the raw exams ([] when there are none). Grades are asked for like the web app does,
+     * never kept.
+     */
+    async exams(from, to, { klasseId, studentId } = {}) {
+      const kid = Number.isSafeInteger(klasseId) && klasseId > 0 ? klasseId : -1;
+      let q = `startDate=${untisDate(from)}&endDate=${untisDate(to)}&klasseId=${kid}`;
+      if (Number.isSafeInteger(studentId) && studentId > 0) q += `&studentId=${studentId}`;
+      const { body } = await http(`${base}/api/exams?${q}&withGrades=true`, { method: 'GET', headers: { cookie: cookie() } });
+      const data = body && body.data;
+      if (!data || typeof data !== 'object' || Array.isArray(data)) throw fail('failed', 'exams');
+      return Array.isArray(data.exams) ? data.exams : [];
     },
 
     async timegrid() {

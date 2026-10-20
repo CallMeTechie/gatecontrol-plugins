@@ -79,6 +79,8 @@ textarea.form-input{min-height:70px;padding:8px 10px;font:12px var(--mono);resiz
 .sc-log-row{display:flex;align-items:flex-start;gap:10px;padding:8px 10px;border-radius:10px;background:var(--surface);border:1px solid var(--line);border-left:4px solid var(--warn)}
 .sc-log-row[data-kind="cancelled"]{border-left-color:var(--crit)}
 .sc-log-row[data-kind="restored"]{border-left-color:var(--good)}
+.sc-log-row[data-kind="exam"]{border-left-color:var(--warn)}
+.sc-log-row[data-kind="homework"]{border-left-color:var(--accent)}
 .sc-log-kind{min-width:92px;font-size:12px;font-weight:700}
 .sc-log-main{flex:1;min-width:0}
 .sc-log-title{font-size:13px;font-weight:600;overflow-wrap:anywhere}
