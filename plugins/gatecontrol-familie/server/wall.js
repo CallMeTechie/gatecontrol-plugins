@@ -104,7 +104,11 @@ async function view(gc, r) {
   return out;
 }
 
-/** „Schule heute“ / „Schule morgen“: the Schule plugin's day (names as the family knows them), or null. */
+/**
+ * „Schule heute“ / „Schule morgen“: the Schule plugin's day (names as the family knows them), or null.
+ * 1.13.1: each child with its colour and picture — the Schule plugin's (≥ 1.3.0), else the member's
+ * favourite colour and picture — and the member's initials, so the wall tells the children apart.
+ */
 async function schoolDay(gc, r, day) {
   const date = day === 'tomorrow' ? tz.addDays(r.today, 1) : r.today;
   let list = null;
@@ -112,7 +116,13 @@ async function schoolDay(gc, r, day) {
   if (!list || !list.length) return null;
   return {
     day, date,
-    students: list.map((s) => ({ ...s, name: r.fam.byId.has(s.userId) ? r.fam.byId.get(s.userId).name : s.name })),
+    students: list.map((s) => {
+      const m = r.fam.byId.get(s.userId) || null;
+      return {
+        ...s, name: m ? m.name : s.name,
+        color: s.color || (m && m.colorHex) || null, avatarUrl: s.avatarUrl || (m && m.avatarUrl) || null, initials: m ? m.initials : null,
+      };
+    }),
   };
 }
 

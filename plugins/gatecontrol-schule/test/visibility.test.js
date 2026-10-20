@@ -147,7 +147,9 @@ test('app API: timetable and change log of the visible students; ranges checked'
   assert.equal(r.json.updatedAt, T0 + 16 * MIN);
   assert.equal(r.json.students.length, 1);
   const s = r.json.students[0];
-  assert.deepEqual(Object.keys(s).sort(), ['days', 'id', 'klasse', 'name', 'userId']);
+  // 1.3.0: + color (the mapped user's favourite colour; avatarUrl only when there is a picture)
+  assert.deepEqual(Object.keys(s).sort(), ['color', 'days', 'id', 'klasse', 'name', 'userId']);
+  assert.equal(s.color, '#84CC16');
   assert.deepEqual([s.name, s.userId, s.klasse, s.days.map((d) => d.date)], ['Lena Muster', LENA.id, '5a', ['2026-10-20', '2026-10-21']]);
   assert.deepEqual(s.days[0].lessons[2], { start: '09:50', end: '10:35', subject: 'E', subjectLong: 'Englisch', teacher: 'WEB', room: '201', state: 'cancelled', period: 3 });
   assert.deepEqual(s.days[1].lessons[3], { start: '10:40', end: '11:25', subject: 'BIO', subjectLong: 'Biologie', teacher: 'KLE', room: '104', state: 'changed', period: 4, roomOld: '201', substText: 'Raumtausch' });

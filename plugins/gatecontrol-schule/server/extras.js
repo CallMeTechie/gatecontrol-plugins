@@ -9,15 +9,22 @@
 //             (elementIds), only those; otherwise, with several students in one account, only
 //             homework of subjects in that student's timetable. Stored per student, replaced by every
 //             successful fetch.
-//   exams     per student (klasseId: the class of the student's lessons, studentId: the student) for
-//             the timetable's dates. assignedStudents present → only exams the student is assigned
-//             to; otherwise the exam's classes (studentClass) must include the student's class.
-//             Grades are never stored.
+//   exams     per student for the timetable's dates. 1.3.0: asked like the "webuntis" library
+//             (klasseId of the student's class, no studentId — variant 'class'), then with the
+//             studentId ('student'), then for the account's own class ('own') — a parent account is
+//             refused the studentId variant by some schools (HTTP 403). The variant that answered is
+//             remembered per account (extras.examsVariant) and asked first next time.
+//             assignedStudents present → only exams the student is assigned to; otherwise the
+//             exam's classes (studentClass) must include the student's class. Grades are never asked
+//             for or stored.
 //
 // Both are optional: an error (any code) never stops or fails the cycle and keeps what was stored.
-// An endpoint that answered with an error other than 'network' (e.g. 403 — the school does not
-// share it, 404 — an older WebUntis) is left alone for 6 hours (accounts.extras_json).
-// The shapes of these answers are not documented by Untis; everything is read defensively.
+// 1.3.0: an endpoint WebUntis does not share with the account ('no_right' — 401/403 — or
+// 'unsupported' — 404) is asked again after 24 hours, any other error ('failed') after 6 hours,
+// 'network' in the next cycle (accounts.extras_json { homework?, exams?: { code, until } }). The
+// settings say so in plain words („Klassenarbeiten sind für dieses Konto in WebUntis nicht
+// freigegeben“), never with a code. The shapes of these answers are not documented by Untis;
+// everything is read defensively.
 
 const store = require('./store');
 const untis = require('./untis');
@@ -25,6 +32,10 @@ const tt = require('./timetable');
 const tz = require('./tz');
 
 const SKIP_MS = 6 * 3600000;
+const SKIP_UNSHARED_MS = 24 * 3600000;
+/** Not shared with this account (or not there): asked again after a day, not after 6 hours. */
+const UNSHARED = new Set(['no_right', 'unsupported', 'auth']);
+const skipFor = (code) => (UNSHARED.has(code) ? SKIP_UNSHARED_MS : SKIP_MS);
 const HW_BACK_DAYS = 14;
 const MAX_ROWS = 200;
 
@@ -147,7 +158,7 @@ async function fetchAccount(gc, client, acc, fetched, range, now, deadline = Inf
   const skipped = (k) => state[k] && Number(state[k].until) > now;
   const failed = (k, e) => {
     const code = untis.codeOf(e);
-    if (code !== 'network') state[k] = { code, until: now + SKIP_MS };
+    if (code !== 'network') state[k] = { code, until: now + skipFor(code) };
     gc.log.info(`${k} not fetched`, acc.id, code);
   };
   const siblings = fetched.length > 1;
@@ -165,14 +176,16 @@ async function fetchAccount(gc, client, acc, fetched, range, now, deadline = Inf
     let err = null;
     for (const f of fetched) {
       if (Date.now() > deadline) break;
-      try {
-        const raw = await client.exams(range.from, range.to, { klasseId: klasseIdOf(f.raw), studentId: f.student.person_id });
-        const rows = examRows(raw, { personId: f.student.person_id, klassen: klassenOf(f.rows), index: subjectIndex(f.rows), from: range.from, to: range.to });
+      const r = await examsOf(client, f, range, state.examsVariant);
+      if (r.raw) {
+        state.examsVariant = r.variant;
+        const rows = examRows(r.raw, { personId: f.student.person_id, klassen: klassenOf(f.rows), index: subjectIndex(f.rows), from: range.from, to: range.to });
         await store.replaceExams(gc, f.student.id, range.from, range.to, rows);
         ok += 1;
-      } catch (e) {
-        err = err || e;
-        if (untis.codeOf(e) === 'network') break;
+      } else {
+        err = err || r.error;
+        // no variant worked for this student: the next ones would not fare better (same account)
+        if (!ok || untis.codeOf(r.error) === 'network') break;
       }
     }
     if (err && !ok) failed('exams', err);
@@ -181,4 +194,26 @@ async function fetchAccount(gc, client, acc, fetched, range, now, deadline = Inf
   return state;
 }
 
-module.exports = { SKIP_MS, HW_BACK_DAYS, subjectIndex, subjectOf, klasseIdOf, klassenOf, homeworkRows, examRows, fetchAccount };
+/**
+ * 1.3.0: the exams of one student, asked in the remembered variant first, then the others
+ * (untis.EXAM_VARIANTS). → { raw, variant } | { error } ('network' stops at once; the most telling
+ * error is kept: 'no_right' over 'unsupported' over 'failed').
+ */
+async function examsOf(client, f, range, preferred) {
+  const order = untis.EXAM_VARIANTS.includes(preferred) ? [preferred, ...untis.EXAM_VARIANTS.filter((v) => v !== preferred)] : untis.EXAM_VARIANTS.slice();
+  const rank = { no_right: 3, auth: 3, failed: 2, unsupported: 1 };
+  let error = null;
+  for (const variant of order) {
+    try {
+      const raw = await client.exams(range.from, range.to, { klasseId: klasseIdOf(f.raw), studentId: f.student.person_id, variant });
+      return { raw, variant };
+    } catch (e) {
+      const code = untis.codeOf(e);
+      if (code === 'network') return { error: e };
+      if (!error || (rank[code] || 0) > (rank[untis.codeOf(error)] || 0)) error = e;
+    }
+  }
+  return { error };
+}
+
+module.exports = { SKIP_MS, SKIP_UNSHARED_MS, skipFor, HW_BACK_DAYS, examsOf, subjectIndex, subjectOf, klasseIdOf, klassenOf, homeworkRows, examRows, fetchAccount };

@@ -59,7 +59,8 @@ body{padding:0}
 .fa-w-school[hidden]{display:none}
 .fa-w-school-h{margin:0;flex:none;font-size:19px;font-weight:800}
 .fa-w-school-list{flex:1;min-width:0;display:flex;flex-wrap:wrap;gap:10px;max-height:96px;overflow:hidden}
-.fa-w-school-kid{display:inline-flex;align-items:center;gap:8px;min-width:0;max-width:100%;padding:7px 16px;border-radius:999px;background:var(--w-soft);font-size:17px}
+.fa-w-school-kid{display:inline-flex;align-items:center;gap:8px;min-width:0;max-width:100%;padding:5px 16px 5px 5px;border-radius:999px;background:var(--w-soft);font-size:17px;box-shadow:inset 0 0 0 2px var(--kid,transparent)}
+.fa-w-school-av{flex:none}
 .fa-w-school-name{font-weight:800;flex:none}
 .fa-w-school-sub{color:var(--w-muted);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
 .fa-w-school-kid.is-warn{background:var(--w-warm)}

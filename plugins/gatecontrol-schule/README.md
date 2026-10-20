@@ -4,9 +4,14 @@
 
 Der Stundenplan aus **WebUntis** in GateControl – für Schüler- und Elternkonten: Ausfälle,
 Vertretungen und Zusatzstunden als Push-Mitteilung, Arbeiten und Hausaufgaben mit Erinnerung am
-Vorabend, der Wochenplan im Portal (auch am Wand-Tablet), eine Startkachel und ein Widget je Kind.
+Vorabend, der Wochenplan je Kind in seiner Farbe (Seite „Schule“, Portal, Wand-Tablet, App), eine
+Startkachel und ein Widget je Kind. Konten kommen per **QR-Code-Scan** in die Einstellungen; jede Person
+kann ihr eigenes Schülerkonto in ihrem **GateControl-Profil** verknüpfen.
 
-Braucht **GateControl ≥ 1.172.0**. Lizenzpflichtiges Plugin.
+Braucht **GateControl ≥ 1.172.0**. Ab GateControl **1.188.0** stehen „Konten & Kinder“ direkt in den
+Einstellungen des Plugins, die Kamera darf den QR-Code lesen und das Profil hat den Abschnitt
+„WebUntis“; auf älteren Versionen ist „Konten & Kinder“ ein zweiter Reiter der Seite „Schule“, und statt
+der Kamera geht ein Bild des QR-Codes oder die Eingabe von Hand. Lizenzpflichtiges Plugin.
 
 > **Inoffizielle Schnittstelle, ohne Gewähr.** WebUntis bietet für das keine öffentliche
 > Schnittstelle an. Das Plugin verwendet die Schnittstelle der WebUntis-Web-App (JSON-RPC) so, wie
@@ -26,8 +31,11 @@ Braucht **GateControl ≥ 1.172.0**. Lizenzpflichtiges Plugin.
   oder „Lena: 3 Änderungen“ mit je einer Zeile. Empfänger: das zugeordnete Kind und die
   eingetragenen Empfänger (z. B. die Eltern). In der **Ruhezeit** (Vorgabe 21:00–06:00) erkannte
   Änderungen kommen an deren Ende – nur, wenn die Stunde dann noch bevorsteht.
-* **Portal-Tab „Schule“**: Wochenansicht Mo–Fr (Sa, wenn Unterricht ist), diese und nächste Woche,
-  je Kind umschaltbar. Ausfälle rot durchgestrichen, Vertretungen orange mit durchgestrichener
+* **Seite und Portal-Tab „Schule“** (1.3.0: nur noch die Informationen): oben je Kind eine Karte mit
+  Bild bzw. Initialen in seiner Farbe, heute von–bis, Ausfällen und der nächsten Arbeit; darunter für
+  das gewählte Kind die Wochenansicht Mo–Fr (Sa, wenn Unterricht ist), diese und nächste Woche (auf dem
+  Handy Tag für Tag), und die Listen **Änderungen**, **Klassenarbeiten** und **Hausaufgaben**. Ohne
+  Konto ein klarer Hinweis mit „Einstellungen öffnen“. Ausfälle rot durchgestrichen, Vertretungen orange mit durchgestrichener
   ursprünglicher Lehrkraft bzw. ursprünglichem Raum, Zusatzstunden hervorgehoben, Info- und
   Vertretungstexte, Stundennummern aus dem Zeitraster der Schule, „Ferien“.
 * **Startkachel „Schule · <Name>“** je Kind: „2 Ausfälle“, „1 Vertretung“, „Planmäßig“, „Frei“ oder
@@ -37,7 +45,8 @@ Braucht **GateControl ≥ 1.172.0**. Lizenzpflichtiges Plugin.
   Regeln der Familie können das als Gerätebedingung nutzen: Aktion
   `gatecontrol-schule/student:<id>`, Feld `value` (heute) oder `reading:tomorrow` (morgen) – z. B.
   „wenn morgen etwas ausfällt, abends erinnern“. Antippen fragt einen baldigen Abruf an.
-* **Änderungsprotokoll und Diagnose** auf der Seite „Schule“.
+* **Änderungsprotokoll und Diagnose** in den Einstellungen („Konten & Kinder“ › Diagnose).
+* **Farbe je Kind** (1.3.0): Geschwister sind überall an ihrer Farbe zu erkennen – siehe unten.
 * **Regeln der Familie** (ab 1.1.0, mit dem Plugin „Familie“ ≥ 1.12.0): Auslöser **„Stunde fällt aus“** –
   z. B. „wenn bei Lena morgen eine Stunde ausfällt, Wecker später stellen“ (siehe unten).
 * **Arbeiten und Hausaufgaben** (ab 1.2.0): im Wochenplan (Arbeit oben am Tag, fällige Hausaufgaben unter
@@ -59,7 +68,7 @@ nächsten Tage“, nur Schüler mit zugeordnetem GateControl-Benutzer – in **e
 (höchstens die 20 neuesten), mit dem Text wie in der Mitteilung („Lena: Englisch 3. Std. (09:50) fällt
 aus“, Sprache der Mitteilungen). In der **Ruhezeit** gehaltene Änderungen gehen mit den Mitteilungen an
 ihrem Ende. Jede Änderung wird nur einmal gemeldet; ein Fehler (Familie nicht erreichbar, Limit von 60
-Aufrufen pro Stunde) hält den Abruf nie auf – die Seite „Schule“ zeigt das letzte Ergebnis. Braucht
+Aufrufen pro Stunde) hält den Abruf nie auf – die Diagnose in den Einstellungen zeigt das letzte Ergebnis. Braucht
 GateControl ≥ 1.178.0 (`gc.services.available`); auf einem älteren GateControl wird nichts gemeldet.
 
 ### Arbeiten und Hausaufgaben (1.2.0)
@@ -69,7 +78,11 @@ Tage vor dem Stundenplan) und die **Arbeiten/Tests** (je Kind) aus WebUntis. Bei
 mehreren Kindern gehört eine Arbeit dem Kind, dem sie WebUntis zuordnet (sonst seiner Klasse), eine
 Hausaufgabe dem Kind, das WebUntis nennt (sonst nur Fächer aus dem Stundenplan des Kindes). Noten werden
 nie gespeichert. Liefert die Schule das nicht (z. B. „keine Berechtigung“), läuft der Stundenplan wie
-bisher; das Plugin versucht es dann erst nach 6 Stunden wieder (die Seite „Schule“ zeigt das am Konto).
+bisher. 1.3.0: Arbeiten werden zuerst so abgefragt wie in der Bibliothek *webuntis* (Klasse des Kindes,
+ohne Schüler-ID, ohne Noten), dann mit Schüler-ID, dann für die eigene Klasse des Kontos – manche Schulen
+verweigern Elternkonten die Abfrage mit Schüler-ID (HTTP 403). Eine Ablehnung dieser optionalen Daten ist
+**kein Anmeldefehler**: Die Einstellungen sagen ruhig „Klassenarbeiten sind für dieses Konto in WebUntis
+nicht freigegeben“, und das Plugin schaut **einmal am Tag** wieder nach (andere Fehler nach 6 Stunden).
 
 **Erinnerung am Vorabend** (Einstellung „Erinnerung am Vorabend“, Vorgabe 18:00, leer = aus): ab dieser
 Uhrzeit bis Mitternacht je Kind **eine** Mitteilung zu den Arbeiten von morgen – Thema **„Klassenarbeiten“**,
@@ -93,25 +106,53 @@ vorbei, entfällt die Meldung.
 
 ### Einrichtung
 
-1. **QR-Code-Link holen (empfohlen, ohne Passwort):** WebUntis im Browser öffnen, mit dem Konto des
-   Kindes oder dem Elternkonto anmelden, unten links auf das **Profil** (Name) › Reiter
-   **„Freigaben“** › bei **„Zugriff über Untis Mobile“** auf **„Anzeigen“**. WebUntis zeigt einen
-   QR-Code (je nach Version heißt es „Datenzugriff“ oder ähnlich). Den QR-Code mit der Handy-Kamera
-   oder einer QR-App scannen und den Link kopieren – er sieht so aus:
-   `untis://setschool?url=xyz.webuntis.com&school=…&user=…&key=…&schoolNumber=…`.
-   Alternativ stehen unter dem QR-Code Server, Schule, Benutzer und Schlüssel zum Abtippen.
-2. In GateControl die Seite **„Schule“** öffnen › **„WebUntis-Konto hinzufügen“** › den Link
-   einfügen (oder die Daten einzeln) › „Anmelden und Schüler suchen“. Das Plugin meldet sich einmal
-   an und zeigt die gefundenen Schüler: ein **Schülerkonto** ist der Schüler selbst, ein
-   **Elternkonto** liefert seine Kinder. Den Zugang kann man in WebUntis jederzeit wieder entziehen.
-   Gibt es keinen QR-Code, geht es auch mit **Benutzername und Passwort** (Server z. B.
-   `xyz.webuntis.com`, der Schulname wie bei der WebUntis-Anmeldung).
-3. Je Schüler **„Bearbeiten“**: Anzeigename (z. B. „Lena“), den **GateControl-Benutzer des Kindes**
-   (optional), **weitere Empfänger** (z. B. die Eltern) und **„Am Wand-Tablet zeigen“**. Ein Schüler
-   lässt sich ausschalten (kein Abruf, nirgends sichtbar).
-4. **Einstellungen** (Plugins › Schule › Einstellungen): Zeitzone der Schule (Europe/Berlin),
-   Sprache der Mitteilungen, Abrufintervall (Vorgabe 15 min), Push für die nächsten Tage (Vorgabe 2),
-   Ruhezeit (beide Felder leer = keine), Erinnerung am Vorabend (Vorgabe 18:00, leer = keine).
+Alles Einrichten steht in den **Einstellungen**: Einstellungen › Plugins › Schule › Einstellungen
+(GateControl ≥ 1.188.0; davor der Reiter „Konten & Kinder“ der Seite „Schule“). Die Seite „Schule“ zeigt
+nur noch die Informationen.
+
+1. **Den QR-Code finden:** WebUntis im Browser öffnen, mit dem Konto des Kindes oder dem Elternkonto
+   anmelden, meist unten links auf das **Profil** (Name) › Reiter **„Freigaben“** › bei **„Zugriff über
+   Untis Mobile“** auf **„Anzeigen“** (je nach Schule und Version kann das etwas anders heißen). WebUntis
+   zeigt einen QR-Code – darin steht ein Link `untis://setschool?url=…&school=…&user=…&key=…`.
+2. **„WebUntis-Konto hinzufügen“** und eine der drei Arten wählen:
+   * **„QR-Code scannen“** – die Kamera dieses Geräts liest den QR-Code direkt vom Bildschirm (der
+     Browser fragt einmal nach der Kamera; braucht GateControl ≥ 1.188.0 und HTTPS);
+   * **„QR-Bild hochladen“** – ein Screenshot oder Foto des QR-Codes; gelesen wird im Browser, das Bild
+     verlässt ihn nicht;
+   * **„Manuell eingeben“** – Server (z. B. `xyz.webuntis.com`), Schule, Benutzer und den **Schlüssel**
+     unter dem QR-Code oder das **Passwort** des Kontos.
+   Klein darunter geht auch „den untis://-Link einfügen“. Das Plugin meldet sich einmal an und zeigt die
+   gefundenen Schüler: ein **Schülerkonto** ist der Schüler selbst, ein **Elternkonto** liefert seine
+   Kinder. Den Zugang kann man in WebUntis jederzeit wieder entziehen.
+3. Jedes Konto ist eine Karte mit Status, letztem und nächstem Abruf, einem Fehler in Worten und den
+   Knöpfen „Jetzt abrufen“, „Zugang ändern“ (z. B. nach einem neuen QR-Code) und „Entfernen“.
+4. Unter **„Kinder“** je Kind **„Bearbeiten“**: Anzeigename (z. B. „Lena“), **GateControl-Benutzer des
+   Kindes** (optional, mit Bild), **Farbe**, **weitere Empfänger** (z. B. die Eltern), **„Am Wand-Tablet
+   zeigen“** und an/aus (aus = kein Abruf, nirgends sichtbar).
+5. Darunter das Formular von GateControl: **Abruf** (Zeitzone der Schule, Abrufintervall, Vorgabe 15
+   min), **Benachrichtigungen und Ruhezeit** (Sprache, Push für die nächsten Tage, Ruhezeit, Erinnerung am
+   Vorabend) und **Verknüpfen im Profil** („Benutzer dürfen ihr WebUntis-Konto selbst verknüpfen“,
+   Vorgabe an). Statuszeilen oben fassen zusammen („1 WebUntis-Konto verbunden · 2 Kinder“) und nennen
+   Konten mit Problemen.
+
+### Farben und Verknüpfen im Profil (1.3.0)
+
+* **Farbe je Kind:** Ist ein Kind einem GateControl-Benutzer zugeordnet, zeigt Schule dessen
+  **Lieblingsfarbe** und **Profilbild** (sonst die Initialen auf der Farbe). Sonst bekommt jedes Kind
+  automatisch eine eigene Farbe aus der GateControl-Palette (die erste, die noch kein anderes Kind hat);
+  in den Einstellungen lässt sie sich ändern. Die Farbe steht auf der Seite „Schule“, im Portal, in der
+  Diagnose, am Wand-Tablet der Familie (ab Familie 1.13.1) und in der App-API (`color`, `avatarUrl`).
+* **„WebUntis verknüpfen“ im eigenen Profil** (GateControl ≥ 1.188.0): Im Portal unter **„Meine
+  Geräte“** steht unter Profilbild und Lieblingsfarbe der Abschnitt **„WebUntis“**. Dort verknüpft z. B.
+  Noah sein **eigenes Schülerkonto** – QR-Code scannen, Bild hochladen oder eingeben. Das Konto wird ihm
+  zugeordnet: sein Stundenplan im Portal und in der App, Push an ihn, seine Farbe und sein Bild. Regeln:
+  nur angemeldet (kein Wand-Tablet, kein reines Geräte-Vertrauen), nur für sich selbst, nur
+  **Schülerkonten** (Elternkonten richtet ein Administrator ein), ein schon eingerichtetes Konto wird
+  nicht übernommen, höchstens 5 Versuche in 15 Minuten. Kennt Schule das Kind schon über das Elternkonto,
+  entsteht kein zweites Konto – das vorhandene Kind wird ihm zugeordnet. „Verknüpfung lösen“ löscht ein
+  selbst verbundenes Konto mit allem; eine Zuordnung des Administrators kann nur dieser ändern. Der
+  Schalter „Benutzer dürfen ihr WebUntis-Konto selbst verknüpfen“ (Vorgabe an) stellt das ab;
+  Administratoren dürfen immer.
 
 Der **erste Abruf** eines Schülers legt nur den Stand fest – es kommt keine Mitteilung über das, was
 schon vorher ausfiel. Wer wann welche Mitteilung bekommt, steuert GateControl zusätzlich über
@@ -121,7 +162,7 @@ System › Benachrichtigungen; jede Person kann das Thema im Portal oder in der 
 
 * **Admins** sehen alle Schüler (Push nur, wenn sie als Empfänger eingetragen sind).
 * Das **zugeordnete Kind** und die **Empfänger** sehen „ihre“ Schüler – im Portal, in der Kachel,
-  im Widget und über die App-API.
+  im Widget und über die App-API. Wer sein Schülerkonto im Profil verknüpft, ist das zugeordnete Kind.
 * **Kiosk-Geräte** (Wand-Tablet) sehen genau die Schüler mit „Am Wand-Tablet zeigen“.
 * Andere Personen sehen nichts; ein Portal-Besucher, der nur per Geräte-Vertrauen erkannt ist
   (ohne Anmeldung), auch nicht – ein Stundenplan verrät, wo ein Kind ist.
@@ -133,9 +174,9 @@ Pro Konto und Durchlauf genau **eine Anmeldung**, danach **Abmeldung**. Abgerufe
 bis Sonntag nächster Woche (immer mindestens heute + 7 Tage), Zeitraster und Ferien einmal täglich.
 Bei Fehlern wird seltener versucht: Netz/unerwartete Antwort nach 5, 10, 20 … bis 120 Minuten,
 abgelehnte Anmeldung oder fehlende Berechtigung nach 1, 2, 4 … bis 24 Stunden (wiederholte
-Fehlanmeldungen könnten das WebUntis-Konto sperren). Die Seite zeigt je Konto den letzten
-erfolgreichen Abruf, den letzten Fehler (`auth`, `no_right`, `network`, `failed`) mit Text und den
-nächsten Abruf, je Kind die gespeicherten Stunden und die letzte erkannte Änderung.
+Fehlanmeldungen könnten das WebUntis-Konto sperren). Die Einstellungen zeigen je Konto den letzten
+erfolgreichen Abruf, den letzten Fehler in Worten (nie als Code) und den nächsten Abruf, je Kind den
+letzten Abruf und Fehler.
 
 ### Datenschutz
 
@@ -161,6 +202,10 @@ nur mit den Schülern, die die Person sehen darf (wie im Portal), und nur Aufruf
 GET app/timetable?from=YYYY-MM-DD&to=YYYY-MM-DD      höchstens 14 Tage, Vorgabe heute … heute + 6
   200 { ok: true, updatedAt: <ms | null>,               letzter Abruf der Schüler
         students: [{ id, name, userId, klasse,
+          color: '#RRGGBB',                             1.3.0: Farbe des Kindes (die Lieblingsfarbe des
+                                                        zugeordneten Benutzers, sonst die eigene)
+          avatarUrl?: '/avatars/….webp',                1.3.0: Profilbild des zugeordneten Benutzers
+                                                        (fehlt ohne Bild; relativ zum GateControl-Server)
           days: [{ date, holiday?: 'Brückentag',        jeder Tag des Zeitraums, auch ohne Unterricht
             lessons: [{ start: 'HH:MM', end: 'HH:MM', period?: 3, periodEnd?: 4,
                         subject: 'M', subjectLong: 'Mathematik', subjectOld?: 'D',
@@ -189,7 +234,8 @@ Zeitraster (Doppelstunde 3.–4.). Die Felder mit `?` fehlen, wenn sie leer sind
 `exams` (1.2.0) fehlen an Tagen ohne Hausaufgaben bzw. Arbeiten; alle anderen Felder sind gegenüber 1.1.0
 unverändert. `subject` von Hausaufgaben und Arbeiten ist das Kürzel aus dem Stundenplan, wenn WebUntis das
 Fach dort kennt (sonst der Name, den die Hausaufgaben-/Prüfungsliste nennt); `subjectLong` nur, wenn es
-sich unterscheidet. `givenDate` = an dem Tag aufgegeben. Noten liefert die API nie.
+sich unterscheidet. `givenDate` = an dem Tag aufgegeben. Noten liefert die API nie. `color` und
+`avatarUrl` (1.3.0) kamen hinzu, sonst ist alles wie in 1.2.0.
 
 ### Dienste zwischen Plugins (1.1.0)
 
@@ -199,7 +245,8 @@ sich unterscheidet. `givenDate` = an dem Tag aufgegeben. Noten liefert die API n
 school_students   {} → { ok: true, students: [{ userId, name }] }
                   die eingeschalteten Schüler mit zugeordnetem GateControl-Benutzer (Anzeigename)
 school_day        { date: 'YYYY-MM-DD' }                       1.2.0, Wand-Tablet der Familie
-                  → { ok: true, date, students: [{ userId, name, start?: 'HH:MM', end?: 'HH:MM',
+                  → { ok: true, date, students: [{ userId, name, color: '#RRGGBB', avatarUrl?,   (1.3.0)
+                        start?: 'HH:MM', end?: 'HH:MM',
                         cancelled: n, changed: n, holiday?: 'Herbstferien',
                         exams: [{ subject, name }], free: boolean }] }
                   nur Schüler mit „Am Wand-Tablet zeigen“ und zugeordnetem Benutzer, deren letzter Abruf
@@ -227,18 +274,35 @@ Abruf-Durchlauf und Dienst auf, und nur, wenn es etwas zu melden gibt.
 
 The timetable of **WebUntis** student and parent accounts in GateControl: cancellations,
 substitutions and extra lessons as push notifications, a week view in the portal (also on wall
-tablets), a Start tile and a widget per child. Needs **GateControl ≥ 1.172.0**.
+tablets), a Start tile and a widget per child, every child in its own colour. Needs **GateControl ≥
+1.172.0**; from **1.188.0** “Accounts & children” sit right in the plugin's settings, the camera may read
+the QR code and the portal profile has the section “WebUntis” (older hosts: a second tab of the page
+“School”, upload a picture of the QR code or type it in instead of the camera).
 
 **Unofficial interface, no warranty:** WebUntis has no public API for this. The plugin uses the
 interface of the WebUntis web app as documented by the MIT-licensed `webuntis` npm project; it may
 change or stop working at any time. Not affiliated with Untis GmbH.
 
-**Setup:** in WebUntis (browser) open the profile › “Sharing” › “Access via Untis Mobile” ›
-“Display”, scan the QR code and copy its link (`untis://setschool?url=…&school=…&user=…&key=…`) –
-or use server, school, user and key shown below it, or user name and password. On the page
-“School” add the account: the plugin signs in once (a TOTP from the key, no password) and lists the
-students – the student itself, or a parent's children. Per student set a display name, the child's
-GateControl user, further recipients and “Show on the wall tablet”.
+**Setup (1.3.0):** everything is set up in the **settings** (Settings › Plugins › School › Settings); the
+page “School” only shows the information (per child a card in its colour, the week, changes, exams,
+homework; without an account a pointer to the settings). In WebUntis (browser) the QR code is usually
+under the profile › “Sharing” › “Access via Untis Mobile” › “Display” (names vary by school). “Add WebUntis
+account” offers **“Scan QR code”** (this device's camera), **“Upload QR picture”** (a screenshot or photo,
+decoded in the browser) and **“Enter manually”** (server, school, user and key or password); pasting the
+`untis://` link is a small fallback. The plugin signs in once (a TOTP from the key, no password) and lists
+the students – the student itself, or a parent's children. Each account is a card (status, last/next
+fetch, a readable error, fetch now, renew access, remove); per child set a display name, the child's
+GateControl user, a **colour**, further recipients, “Show on the wall tablet” and on/off. Below, GateControl's
+form: fetching, notifications and quiet hours, and “Users may link their own WebUntis account”.
+
+**Colours and linking in the profile (1.3.0):** a child mapped to a GateControl user shows that user's
+favourite colour and profile picture; others get a distinct palette colour automatically (changeable).
+Used on the School page, in the portal, the diagnostics, Familie's wall tablet (Familie ≥ 1.13.1) and the
+app API (`color`, `avatarUrl`). In the portal under **“My devices”** (GateControl ≥ 1.188.0) a person links
+their **own student account** (scan, upload or type) – only signed in, only for themselves, student
+accounts only, an account already set up is not taken over, at most 5 tries in 15 minutes; a child already
+known through the parents' account is mapped instead of adding a second account. “Unlink” removes an
+account they connected; an administrator's mapping only the administrator changes.
 
 **Who sees what:** admins all students; the mapped child and the recipients their students; kiosk
 devices the students marked for the wall tablet; nobody else (a device-trust-only portal viewer
@@ -259,14 +323,17 @@ all; today / tomorrow / any day). After each fetch the plugin hands Familie the 
 the baseline, lessons not over, within “Push for the next days”, students mapped to a user) in **one**
 `rule_event` call (at most the 20 newest), with the push line as text (“Lena: Englisch lesson 3
 (09:50) cancelled”); quiet hours hold them like the pushes. Each change is handed over once; errors
-never stop a fetch, the page “School” shows the last result. Needs GateControl ≥ 1.178.0
+never stop a fetch, the diagnostics in the settings show the last result. Needs GateControl ≥ 1.178.0
 (`gc.services.available`). The service `school_students` (caller `gatecontrol-familie` only) answers
 `{ ok: true, students: [{ userId, name }] }`.
 
 **Exams and homework (1.2.0):** each cycle also fetches the homework (once per account, from 14 days
 before the timetable) and the exams (per student) from WebUntis' web interface with the same session —
-optional: errors never stop the timetable; an endpoint that answers with an error other than a network
-error is left alone for 6 hours. Shown in the week view (exam badge, homework due that day), on the page
+optional: errors never stop the timetable. 1.3.0: exams are asked like the *webuntis* library (the
+child's class, no student id, no grades), then with the student id, then for the account's own class – some
+schools refuse parent accounts the student-id request (HTTP 403). Such a refusal is not a login error: the
+settings calmly say “Exams are not shared with this account in WebUntis” and the plugin checks again once a
+day (other errors after 6 hours). Shown in the week view (exam badge, homework due that day), on the page
 “School”, in `app/timetable` (`homework` / `exams` per day, only when there are any) and as an **evening
 reminder** (setting “Reminder the evening before”, default 18:00, empty = off): per child one notification
 about tomorrow's exams (topic **“Exams”**, “Lena: Mathematik exam tomorrow (lesson 3)”) and one about

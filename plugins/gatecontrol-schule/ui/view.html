@@ -1,0 +1,46 @@
+<main class="sv" id="sv">
+  <div class="sv-kids" id="sv-kids" role="tablist" aria-label="{{t:view.children}}"></div>
+  <div class="sv-alert" id="sv-alert" role="status" hidden>
+    <span class="sv-alert-text" id="sv-alert-text"></span>
+    <button type="button" class="btn btn-sm" id="sv-alert-go">{{t:view.to_settings}}</button>
+  </div>
+
+  <section class="sv-child" id="sv-child" hidden aria-live="polite">
+    <div class="sv-bar">
+      <h2 class="sv-title" id="sv-title"></h2>
+      <div class="seg sv-weeks" role="tablist" aria-label="{{t:view.week}}">
+        <button type="button" class="seg-btn" role="tab" aria-selected="true" data-week="0">{{t:portal.this_week}}</button>
+        <button type="button" class="seg-btn" role="tab" aria-selected="false" data-week="1">{{t:portal.next_week}}</button>
+      </div>
+    </div>
+    <div class="sv-daypick" id="sv-daypick" role="tablist" aria-label="{{t:view.day}}"></div>
+    <div class="sv-week" id="sv-week"></div>
+    <div class="sv-legend" aria-hidden="true">
+      <span class="sv-key is-cancelled">{{t:legend.cancelled}}</span>
+      <span class="sv-key is-changed">{{t:legend.changed}}</span>
+      <span class="sv-key is-extra">{{t:legend.extra}}</span>
+      <span class="sv-key is-exam">{{t:legend.exam}}</span>
+    </div>
+    <div class="sv-cols">
+      <section class="card sv-panel" aria-labelledby="sv-h-changes">
+        <h3 class="sv-h3" id="sv-h-changes">{{t:view.changes}}</h3>
+        <ul class="sv-list" id="sv-changes"></ul>
+      </section>
+      <section class="card sv-panel" aria-labelledby="sv-h-exams">
+        <h3 class="sv-h3" id="sv-h-exams">{{t:view.exams}}</h3>
+        <ul class="sv-list" id="sv-exams"></ul>
+      </section>
+      <section class="card sv-panel" aria-labelledby="sv-h-hw">
+        <h3 class="sv-h3" id="sv-h-hw">{{t:view.homework}}</h3>
+        <ul class="sv-list" id="sv-hw"></ul>
+      </section>
+    </div>
+  </section>
+
+  <section class="sv-empty card" id="sv-empty" hidden>
+    <span class="sv-empty-ic" id="sv-empty-ic" aria-hidden="true"></span>
+    <h2 class="sv-empty-title" id="sv-empty-title"></h2>
+    <p class="sv-empty-text" id="sv-empty-text"></p>
+    <button type="button" class="btn btn-primary" id="sv-empty-go" hidden>{{t:view.to_settings}}</button>
+  </section>
+</main>

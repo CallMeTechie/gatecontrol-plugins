@@ -166,13 +166,22 @@ test('render: page and portal frame, texts escaped, no external scripts', async 
   const ui = require('../server/ui');
   const index = require('../server/index');
   const page = (await index.render({ view: 'page', page: 'main', lang: 'de' })).html;
+  const setup = (await index.render({ view: 'page', page: 'setup', lang: 'de' })).html;
   const portal = (await index.render({ view: 'portal', lang: 'en', user: { id: 5, kiosk: true } })).html;
-  for (const html of [page, portal]) {
+  const profile = (await index.render({ view: 'portal', section: 'webuntis', lang: 'de', user: { id: 3 } })).html;
+  for (const html of [page, setup, portal, profile]) {
     assert.ok(!/<script[^>]+src=/i.test(html), 'inline scripts only');
     assert.ok(!/\{\{t:/.test(html), 'every text filled in');
+    assert.ok(!/function jsQR|webpackUniversalModuleDefinition/.test(html), 'the QR decoder is loaded on demand only');
   }
-  assert.match(page, /WebUntis-Konto hinzufügen/);
-  assert.match(page, /untis:\/\/setschool\?url=…&amp;school=/);
+  // 1.3.0: the Schule page only shows information; accounts and children are in the settings page
+  assert.match(page, /id="sv-kids"/);
+  assert.doesNotMatch(page, /id="ss-add"/);
+  assert.match(setup, /<button class="btn btn-primary" type="button" id="ss-add">WebUntis-Konto hinzufügen<\/button>/);
+  assert.match(setup, /window\.SCScan = /);
+  assert.match(setup, /untis:\/\/setschool\?url=…&school=/);
+  assert.match(profile, /WebUntis verknüpfen/);
+  assert.match(profile, /portal\/link/);
   assert.match(portal, /This week/);
   assert.match(portal, /"kiosk":true/);
   assert.equal(ui.island({ a: '</script><!--' }), '{"a":"\\u003c/script>\\u003c!--"}');

@@ -167,6 +167,9 @@ test('the portal tab of a wall tablet renders the wall view', () => withFamily({
 // 1.13.0: „Schule heute“ / „Schule morgen“ from the Schule plugin's service school_day — only with the plugin
 // (GateControl ≥ 1.178.0 gc.services.available), cached 10 minutes per date (also a failure), names as the
 // family knows them, the answer checked.
+// 1.13.1: Schule ≥ 1.3.0 sends each child's colour and picture
+const PIC = '/avatars/abcdefghijklmnopqrstuv123.webp';
+
 function schule(o = {}) {
   const s = {
     plugin: 'gatecontrol-schule', provides: ['school_students', 'school_day'], calls: [],
@@ -176,9 +179,9 @@ function schule(o = {}) {
       if (o.fail) throw new Error('down');
       return o.answer ? o.answer(c) : {
         ok: true, date: c.payload.date, students: [
-          { userId: LENA.id, name: 'Lena M.', start: '07:45', end: '13:05', cancelled: 1, changed: 0, exams: [{ subject: 'Mathe', name: 'Klassenarbeit 2' }], free: false },
+          { userId: LENA.id, name: 'Lena M.', color: '#ec4899', avatarUrl: PIC, start: '07:45', end: '13:05', cancelled: 1, changed: 0, exams: [{ subject: 'Mathe', name: 'Klassenarbeit 2' }], free: false },
           { userId: TIM.id, name: 'Tim M.', cancelled: 0, changed: 0, exams: [], free: true },
-          { userId: 99, name: '<img src=x onerror=alert(1)>', start: '8 Uhr', end: '13:05', cancelled: -3, changed: 'x', holiday: 'Herbstferien', exams: [{}, 'x', { subject: 'D' }], free: true },
+          { userId: 99, name: '<img src=x onerror=alert(1)>', color: 'red', avatarUrl: 'javascript:alert(1)', start: '8 Uhr', end: '13:05', cancelled: -3, changed: 'x', holiday: 'Herbstferien', exams: [{}, 'x', { subject: 'D' }], free: true },
           { userId: 'x', name: 'kaputt' },
         ],
       };
@@ -192,11 +195,17 @@ test('GET wall: „Schule heute“ (from 15:00 „Schule morgen“) from the Sch
   return withFamily({ settings: { mod_wall: true }, services: [s], gatecontrol: '1.178.0' }, async (host, { admin, call, clock }) => {
     await wallSetup(admin);
     const w = (await call(WALL, 'GET', '/wall')).json;
+    const tim = w.members.find((m) => m.userId === TIM.id || m.id === TIM.id);
+    const lena = w.members.find((m) => m.userId === LENA.id || m.id === LENA.id);
+    assert.ok(tim && tim.colorHex && lena && lena.initials, 'members with faces');
     assert.deepEqual(w.school, {
       day: 'today', date: '2026-10-14', students: [
-        { userId: LENA.id, name: 'Lena', start: '07:45', end: '13:05', cancelled: 1, changed: 0, holiday: null, exams: [{ subject: 'Mathe', name: 'Klassenarbeit 2' }], free: false },
-        { userId: TIM.id, name: 'Tim', start: null, end: null, cancelled: 0, changed: 0, holiday: null, exams: [], free: true },
-        { userId: 99, name: '<img src=x onerror=alert(1)>', start: null, end: '13:05', cancelled: 0, changed: 0, holiday: 'Herbstferien', exams: [{ subject: 'D', name: '' }], free: true },
+        // Schule's colour and picture; the member's initials
+        { userId: LENA.id, name: 'Lena', color: '#EC4899', avatarUrl: PIC, initials: lena.initials, start: '07:45', end: '13:05', cancelled: 1, changed: 0, holiday: null, exams: [{ subject: 'Mathe', name: 'Klassenarbeit 2' }], free: false },
+        // an older Schule without colours: the member's favourite colour and picture
+        { userId: TIM.id, name: 'Tim', color: tim.colorHex, avatarUrl: tim.avatarUrl || null, initials: tim.initials, start: null, end: null, cancelled: 0, changed: 0, holiday: null, exams: [], free: true },
+        // not a member, garbage colour and picture: none
+        { userId: 99, name: '<img src=x onerror=alert(1)>', color: null, avatarUrl: null, initials: null, start: null, end: '13:05', cancelled: 0, changed: 0, holiday: 'Herbstferien', exams: [{ subject: 'D', name: '' }], free: true },
       ],
     });
     assert.deepEqual(s.calls, ['2026-10-14']);

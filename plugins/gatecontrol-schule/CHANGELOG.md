@@ -2,6 +2,52 @@
 
 Stundenplan aus WebUntis für Schüler- und Elternkonten als GateControl-Plugin.
 
+## 1.3.0
+- **Konto hinzufügen = QR-Code scannen.** „WebUntis-Konto hinzufügen“ bietet drei Wege: **„QR-Code
+  scannen“** – die Kamera liest den WebUntis-QR-Code (`untis://setschool?…`) direkt (BarcodeDetector des
+  Browsers, sonst der mitgelieferte Decoder jsQR 1.4.0, Apache-2.0, `ui/vendor/jsqr`, nur bei Bedarf
+  geladen); **„QR-Bild hochladen“** – Screenshot oder Foto, gelesen im Browser; **„Manuell eingeben“** –
+  Server, Schule, Benutzer und Schlüssel oder Passwort. Den `untis://`-Link einfügen geht weiter, nur
+  noch klein darunter. Ein kurzer Hinweis sagt, wo WebUntis den QR-Code zeigt. Die Kamera braucht
+  GateControl ≥ 1.188.0 (`ui.camera`); ohne sie bleiben Bild und Eingabe.
+- **„Arbeiten vorerst nicht abrufbar (auth)“ behoben.** Elternkonten bekamen von manchen Schulen auf die
+  Frage nach den Arbeiten mit Schüler-ID HTTP 403 – das galt als Anmeldefehler und legte die Arbeiten 6
+  Stunden still. Jetzt: Arbeiten werden zuerst wie in der Bibliothek *webuntis* abgefragt (Klasse des
+  Kindes, ohne Schüler-ID, `withGrades=false`), dann mit Schüler-ID, dann für die eigene Klasse; was
+  klappt, merkt sich das Plugin je Konto. 401/403 dieser optionalen Daten (auch der Hausaufgaben) heißen
+  „nicht freigegeben“ (`no_right`), 404 „nicht vorhanden“ – nie `auth`. Nicht freigegebene Daten werden
+  einmal am Tag wieder versucht (sonst nach 6 Stunden), und die Einstellungen sagen es in Worten:
+  „Klassenarbeiten sind für dieses Konto in WebUntis nicht freigegeben.“ Kein Code wird mehr angezeigt.
+  Von 1.2.0 als `auth` angehaltene Abfragen laufen nach dem Update sofort wieder.
+- **Einstellungen statt Verwaltungsseite.** Konten und Kinder stehen jetzt in **Einstellungen › Plugins ›
+  Schule › Einstellungen** (Seite „Konten & Kinder“ = `ui.settingsPage`, GateControl ≥ 1.188.0; davor als
+  zweiter Reiter der Seite „Schule“): „WebUntis-Konten“ als Karten (Status, letzter/nächster Abruf, Fehler
+  in Worten, Jetzt abrufen, Zugang ändern, Entfernen), „Kinder“ (Anzeigename, Farbe, GateControl-Benutzer
+  mit Bild, Empfänger, Wand-Tablet, an/aus) und „Diagnose“ (Änderungsprotokoll, Familie). Darunter das
+  Formular von GateControl in Gruppen (Abruf, Benachrichtigungen und Ruhezeit, Verknüpfen im Profil) mit
+  Statuszeilen (`settingsStatus`).
+- **Seite „Schule“ und Portal-Tab nur noch mit den Informationen**, neu gestaltet: je Kind eine Karte
+  (Bild oder Initialen in seiner Farbe, heute von–bis, Ausfälle, nächste Arbeit), die Woche des gewählten
+  Kindes (auf dem Handy Tag für Tag), die Listen Änderungen, Klassenarbeiten und Hausaufgaben; ohne Konto
+  ein klarer Hinweis mit „Einstellungen öffnen“ (`GC.openSettings`). Neue Routen `GET overview` und
+  `GET portal/overview`.
+- **Farbe je Kind.** Ein zugeordnetes Kind hat die Lieblingsfarbe und das Profilbild seines
+  GateControl-Benutzers; sonst bekommt jedes Kind automatisch eine eigene Palettenfarbe (änderbar,
+  `PUT students/:id { color }`). Überall gleich: Seite, Portal, Diagnose, Wand-Tablet der Familie.
+- **API (additiv):** `app/timetable` und `portal/timetable` – je Schüler `color: '#RRGGBB'` und
+  `avatarUrl?` (nur mit Profilbild). Dienst `school_day` – je Kind `color` und `avatarUrl?` (Familie ≥
+  1.13.1 zeigt sie am Wand-Tablet). Alles Bisherige unverändert (`app/changes`, `school_students`,
+  `rule_event`, `school_day_end`).
+- **„WebUntis verknüpfen“ im eigenen Profil** (GateControl ≥ 1.188.0, `ui.portal.profileSections`): im
+  Portal unter „Meine Geräte“ verknüpft eine Person ihr eigenes Schülerkonto (scannen, Bild, Eingabe) –
+  nur angemeldet, nur für sich, nur Schülerkonten, kein Übernehmen eingerichteter Konten, höchstens 5
+  Versuche in 15 Minuten; ein über das Elternkonto schon bekanntes Kind wird ihr zugeordnet statt eines
+  zweiten Kontos. „Verknüpfung lösen“ wieder dort. Neue Einstellung **„Benutzer dürfen ihr
+  WebUntis-Konto selbst verknüpfen“** (`self_link`, Vorgabe an). Routen `GET|POST portal/link`,
+  `DELETE portal/link/:id`.
+- Migration `004_colors_links.sql` (`students.color`, `students.link_source`, `accounts.owner_user_id`).
+- Läuft weiter ab GateControl 1.172.0; Kamera, Einstellungsseite und Profil-Abschnitt brauchen 1.188.0.
+
 ## 1.2.0
 - **Hausaufgaben und Arbeiten aus WebUntis:** In jedem Abruf (gleiche Sitzung, gleiche Tage wie der
   Stundenplan) holt das Plugin die Hausaufgaben (`GET /WebUntis/api/homeworks/lessons`, einmal je Konto,

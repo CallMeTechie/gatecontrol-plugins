@@ -3,6 +3,14 @@
 Die Familie in der GateControl-App (eigener Tab), im Portal (eigener Tab „Familie“) und auf
 drei Admin-Seiten. Alles bleibt auf dem eigenen Server.
 
+## 1.13.1
+- **Wand-Tablet „Schule heute“: jedes Kind mit Bild und Farbe** – vor dem Namen das Profilbild (sonst die
+  Initialen auf der Lieblingsfarbe), die Zeile in der Farbe des Kindes umrandet. So sind Geschwister auf einen
+  Blick zu unterscheiden. Farbe und Bild kommen vom Plugin **Schule** ab 1.3.0 (`school_day` liefert je Kind
+  `color` `#RRGGBB` und, wenn es ein Profilbild gibt, `avatarUrl`); mit einer älteren Version von Schule die
+  Lieblingsfarbe und das Bild des Familienmitglieds. `GET wall` hat dafür in `school.students[]` zusätzlich
+  `color`, `avatarUrl` und `initials` (jeweils `null`, wenn unbekannt).
+
 ## 1.13.0
 - **Früher Schulschluss → Abholen** (mit dem Plugin **Schule** ≥ 1.2.0): endet der Unterricht eines Kindes
   heute oder morgen früher als geplant, ruft Schule den neuen Dienst **`school_day_end`** auf (nur der Aufrufer

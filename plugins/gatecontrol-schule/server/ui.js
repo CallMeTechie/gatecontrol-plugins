@@ -1,10 +1,22 @@
 'use strict';
 
-// The plugin page (accounts, students, change log) and the portal tab "Schule". The host shows
-// plugin HTML only in a sandboxed frame (opaque origin, inline scripts/styles only, no
-// network): the page talks to this plugin's API through window.GC.call. No external scripts;
-// everything is read once from ui/. Data from the API is put into the page with textContent
-// only (ui/common.js el()).
+// The frames of the plugin. The host shows plugin HTML only in a sandboxed frame (opaque origin,
+// inline scripts/styles only, no network): the page talks to this plugin's API through
+// window.GC.call. No external scripts; everything is read once from ui/. Data from the API is put
+// into the page with textContent only (ui/common.js el()).
+//
+// 1.3.0 — information and settings apart:
+//   page 'main'    „Schule“: only the information (ui/view.*) — per child the week, changes, exams,
+//                  homework; without an account a pointer to the settings
+//   page 'setup'   „Konten & Kinder“ (plugin.json ui.settingsPage): GateControl ≥ 1.188.0 shows it in
+//                  Einstellungen › Plugins › Schule › Einstellungen; older hosts as a second page tab.
+//                  WebUntis accounts (scan the QR code, upload a picture of it, type it in), children
+//                  (name, colour, GateControl user, recipients, wall tablet), diagnostics
+//   portal         the tab „Schule“ (the same view as 'main', for what the viewer may see)
+//   portal section 'webuntis' (plugin.json ui.portal.profileSections, GateControl ≥ 1.188.0): on the
+//                  viewer's own profile — link his own WebUntis account (server/link.js)
+// The QR decoder (ui/vendor/jsqr, Apache-2.0) is not inlined: a frame asks for it (GET qr-decoder)
+// only when the browser has no BarcodeDetector, and runs it as an inline script.
 
 const fs = require('node:fs');
 const path = require('node:path');
@@ -12,12 +24,22 @@ const texts = require('./texts.json');
 
 const UI = path.join(__dirname, '..', 'ui');
 const read = (f) => fs.readFileSync(path.join(UI, f), 'utf8');
+const PROFILE_SECTION = 'webuntis';
+
 const FILES = {
   css: read('style.css'),
   common: read('common.js'),
-  main: { html: read('admin.html'), js: read('admin.js') },
-  portal: { html: read('portal.html'), js: read('portal.js'), css: read('portal.css') },
+  view: { html: read('view.html'), js: read('view.js'), css: read('view.css') },
+  setup: { html: read('setup.html'), js: read('scan.js') + '\n' + read('setup.js'), css: read('setup.css') },
+  link: { html: read('link.html'), js: read('scan.js') + '\n' + read('link.js'), css: read('setup.css') },
 };
+
+let decoder = null;
+/** The vendored jsQR (ui/vendor/jsqr/jsQR.js) as text, read on first use. */
+function qrDecoder() {
+  if (decoder == null) decoder = read('vendor/jsqr/jsQR.js');
+  return decoder;
+}
 
 function esc(s) {
   return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -34,14 +56,21 @@ function fill(html, t, lang) {
 }
 
 /**
- * @param {{view:'page'|'portal', lang?:string, user?:object}} view
+ * @param {{view:'page'|'portal', page?:string, section?:string, lang?:string, user?:object}} view
  * @param {(lang:string, key:string) => string} t
  */
 function render(view, t) {
-  const lang = view && view.lang === 'en' ? 'en' : 'de';
-  const portal = view && view.view === 'portal';
-  const page = portal ? FILES.portal : FILES.main;
-  const ctx = { lang, view: portal ? 'portal' : 'page', kiosk: !!(portal && view.user && view.user.kiosk === true), texts: texts[lang] };
+  const v = view || {};
+  const lang = v.lang === 'en' ? 'en' : 'de';
+  const portal = v.view === 'portal';
+  let kind = 'view';
+  if (portal && v.section === PROFILE_SECTION) kind = 'link';
+  else if (!portal && v.page === 'setup') kind = 'setup';
+  const page = FILES[kind];
+  const ctx = {
+    lang, view: portal ? 'portal' : 'page', kind,
+    kiosk: !!(portal && v.user && v.user.kiosk === true), texts: texts[lang],
+  };
   return '<style>' + FILES.css + (page.css || '') + '</style>'
     + fill(page.html, t, lang)
     + '<script>window.SC_CTX=' + island(ctx) + ';</script>'
@@ -49,4 +78,4 @@ function render(view, t) {
     + '<script>' + page.js + '</script>';
 }
 
-module.exports = { render, esc, island };
+module.exports = { render, esc, island, qrDecoder, PROFILE_SECTION };

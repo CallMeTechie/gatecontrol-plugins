@@ -15,6 +15,7 @@ const DEFAULTS = Object.freeze({
   quiet_from: '21:00',
   quiet_to: '06:00',
   reminder_time: '18:00',
+  self_link: true,
 });
 
 function int(v, min, max, d) {
@@ -63,6 +64,8 @@ function fromSettings(s) {
     pollMinutes: poll == null ? DEFAULTS.poll_minutes : poll,
     notifyDays: days == null ? DEFAULTS.notify_days : days,
     quiet,
+    // 1.3.0: people may link their own WebUntis student account in their GateControl profile
+    selfLink: v.self_link == null ? DEFAULTS.self_link : v.self_link === true || v.self_link === 'true',
     problems,
   };
 }

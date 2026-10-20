@@ -1,0 +1,77 @@
+<main class="ss" id="ss">
+  <div class="banner" id="ss-problems" role="status" hidden></div>
+
+  <section class="ss-sec" aria-labelledby="ss-h-accounts">
+    <header class="ss-sec-h">
+      <div class="ss-sec-t">
+        <h2 class="h2" id="ss-h-accounts">{{t:setup.accounts}}</h2>
+        <p class="hint">{{t:setup.accounts_hint}}</p>
+      </div>
+      <button class="btn btn-primary" type="button" id="ss-add">{{t:account.add}}</button>
+    </header>
+    <div class="ss-list" id="ss-accounts"></div>
+  </section>
+
+  <section class="ss-sec" aria-labelledby="ss-h-kids">
+    <header class="ss-sec-h">
+      <div class="ss-sec-t">
+        <h2 class="h2" id="ss-h-kids">{{t:setup.kids}}</h2>
+        <p class="hint">{{t:setup.kids_hint}}</p>
+      </div>
+    </header>
+    <div class="ss-kids" id="ss-kids"></div>
+  </section>
+
+  <section class="ss-sec" aria-labelledby="ss-h-diag">
+    <details class="ss-diag card" id="ss-diag">
+      <summary><span class="h2" id="ss-h-diag">{{t:setup.diag}}</span><span class="hint" id="ss-diag-sum"></span></summary>
+      <div class="ss-diag-body">
+        <p class="hint" id="ss-info"></p>
+        <p class="hint" id="ss-rules" hidden></p>
+        <p class="hint" id="ss-dayends" hidden></p>
+        <h3 class="ss-h3">{{t:log.title}}</h3>
+        <p class="hint">{{t:log.hint}}</p>
+        <div class="ss-log" id="ss-log"></div>
+        <p class="hint ss-note">{{t:page.disclaimer}}</p>
+      </div>
+    </details>
+  </section>
+
+  <!-- Kind bearbeiten -->
+  <div class="modal-overlay" id="ss-kid-modal" role="dialog" aria-modal="true" aria-labelledby="ss-kid-title" hidden>
+    <div class="modal">
+      <div class="modal-head">
+        <div class="ss-kid-head"><span id="ss-kid-av"></span><div class="modal-title" id="ss-kid-title"></div></div>
+        <button class="btn modal-close" type="button" data-close="ss-kid-modal" aria-label="{{t:common.close}}">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label class="form-label" for="ss-k-alias">{{t:student.alias}}</label>
+          <input class="form-input" id="ss-k-alias" type="text" maxlength="40" autocomplete="off">
+          <span class="form-hint" id="ss-k-alias-hint"></span>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="ss-k-user">{{t:student.user}}</label>
+          <select class="form-select" id="ss-k-user"></select>
+          <span class="form-hint" id="ss-k-user-hint">{{t:student.user_hint}}</span>
+        </div>
+        <div class="form-group">
+          <div class="form-label" id="ss-k-color-l">{{t:student.color}}</div>
+          <div class="ss-swatches" id="ss-k-colors" role="radiogroup" aria-labelledby="ss-k-color-l"></div>
+          <span class="form-hint" id="ss-k-color-hint"></span>
+        </div>
+        <div class="form-group">
+          <div class="form-label">{{t:student.recipients}}</div>
+          <span class="form-hint">{{t:student.recipients_hint}}</span>
+          <div class="ss-people" id="ss-k-recipients"></div>
+        </div>
+        <label class="switch-row"><span class="switch-text">{{t:student.wall}}<small>{{t:student.wall_hint}}</small></span><input type="checkbox" class="switch" id="ss-k-wall"></label>
+        <label class="switch-row"><span class="switch-text">{{t:student.enabled}}<small>{{t:student.enabled_hint}}</small></span><input type="checkbox" class="switch" id="ss-k-enabled"></label>
+      </div>
+      <div class="modal-foot">
+        <button class="btn" type="button" data-close="ss-kid-modal">{{t:common.cancel}}</button>
+        <button class="btn btn-primary" type="button" id="ss-kid-save">{{t:common.save}}</button>
+      </div>
+    </div>
+  </div>
+</main>
