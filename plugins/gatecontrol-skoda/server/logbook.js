@@ -21,6 +21,9 @@
 // ending at that arrival. After two days without a higher mileage the arrival
 // becomes the new spot. The mileage is the higher of the warning-light and
 // the maintenance report.
+// 1.5.3: addresses are Škoda's own address of the parking position (what the
+// MySkoda app shows); OpenStreetMap only when Škoda gives none. Start and
+// destination can be corrected by hand.
 //
 // A new trip gets the purpose of the setting `logbook_default` (none by
 // default), the vehicle's only owner as driver, and — while it has no
@@ -232,7 +235,8 @@ async function observe(gc, vehicle, state, now = Date.now()) {
   const vin = vehicle.vin;
   const kmRaw = state.health && state.health.mileageKm;
   const km = typeof kmRaw === 'number' && Number.isFinite(kmRaw) && kmRaw >= 0 ? Math.round(kmRaw) : null;
-  const pos = state.position && validCoord(state.position.lat, state.position.lon) ? { lat: state.position.lat, lon: state.position.lon } : null;
+  const pos = state.position && validCoord(state.position.lat, state.position.lon)
+    ? { lat: state.position.lat, lon: state.position.lon, address: typeof state.position.address === 'string' && state.position.address ? state.position.address : null } : null;
   if (km == null) return null;
   const nowIso = iso(now);
   const spot = await getSpot(gc, vin);
@@ -264,7 +268,7 @@ async function observe(gc, vehicle, state, now = Date.now()) {
     }
     // still parked (or moved less than a kilometre): a new spot only when it is clearly elsewhere
     const moved = spot.lat == null || distanceM({ lat: spot.lat, lon: spot.lon }, pos) > MOVED_M;
-    await setSpot(gc, vin, { km: Number(spot.km), lat: pos.lat, lon: pos.lon, address: moved ? null : spot.address, seen_at: nowIso, moving_since: null });
+    await setSpot(gc, vin, { km: Number(spot.km), lat: pos.lat, lon: pos.lon, address: pos.address || (moved ? null : spot.address), seen_at: nowIso, moving_since: null });
     return null;
   }
 
@@ -278,7 +282,8 @@ async function observe(gc, vehicle, state, now = Date.now()) {
   ended = Math.max(ended, started);
 
   const startAddress = spot.address || (spot.lat != null ? await geocode.reverseGeocode(gc, Number(spot.lat), Number(spot.lon)).catch(() => null) : null);
-  const endAddress = await geocode.reverseGeocode(gc, pos.lat, pos.lon).catch(() => null);
+  // Škoda's own address of the position first (the MySkoda app shows it), OpenStreetMap otherwise
+  const endAddress = pos.address || await geocode.reverseGeocode(gc, pos.lat, pos.lon).catch(() => null);
   const owners = await store.ownerIdsOf(gc, vehicle.id).catch(() => []);
   const purpose = await defaultPurpose(gc);
   const r = await gc.db.run(`INSERT INTO trips (vin, started_at, ended_at, start_km, end_km, distance_km, start_lat, start_lon, start_address,
@@ -297,7 +302,8 @@ const cleanText = (v, max) => String(v == null ? '' : v).replace(/[\0-\x1f\x7f]/
 
 /**
  * Change a trip: purpose ('private' | 'business' | 'commute' | null), note,
- * driverUserId (null = nobody). Only the given fields; marks it edited.
+ * startAddress / endAddress (1.5.3: a wrong address corrected), driverUserId
+ * (null = nobody). Only the given fields; marks it edited.
  */
 async function updateTrip(gc, id, patch) {
   const trip = await getTrip(gc, id);
@@ -311,6 +317,11 @@ async function updateTrip(gc, id, patch) {
   if ('note' in patch) {
     if (patch.note !== null && typeof patch.note !== 'string') throw fail('SKODA_VALIDATION');
     sets.push('note = ?'); vals.push(cleanText(patch.note, NOTE_MAX) || null);
+  }
+  for (const [key, col] of [['startAddress', 'start_address'], ['endAddress', 'end_address']]) {
+    if (!(key in patch)) continue;
+    if (patch[key] !== null && typeof patch[key] !== 'string') throw fail('SKODA_VALIDATION');
+    sets.push(`${col} = ?`); vals.push(cleanText(patch[key], ADDRESS_MAX) || null);
   }
   if ('driverUserId' in patch) {
     const d = patch.driverUserId;

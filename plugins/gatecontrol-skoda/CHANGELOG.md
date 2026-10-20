@@ -2,6 +2,14 @@
 
 Škoda-Fahrzeuge (MySkoda) als GateControl-Plugin – bisher fest in GateControl eingebaut.
 
+## 1.5.3
+- **Richtige Adressen im Fahrtenbuch**: Start und Ziel kommen jetzt aus Škodas eigener Adresse der
+  Parkposition – dieselbe, die die MySkoda-App zeigt (z. B. „Fujiallee“ statt eines Fußwegs in der
+  Nähe). OpenStreetMap nur noch, wenn Škoda keine Adresse liefert, und dann nur Straßen mit
+  Hausnummern. Die Fahrzeugkarte im Portal nutzt dieselbe Adresse.
+- **Start und Ziel korrigieren**: Im Bearbeiten-Fenster einer Fahrt lassen sich beide Adressen ändern
+  (Administrator und angemeldete Besitzer); die Fahrt gilt dann als bearbeitet.
+
 ## 1.5.2
 - **Fahrtenbuch erkennt Fahrten zuverlässiger**: Škoda meldet die neue Parkposition oft früher als
   den neuen Kilometerstand – die Fahrt ging dann verloren. Jetzt merkt sich das Plugin die Ankunft

@@ -99,6 +99,8 @@ async function route(req, gc, seg, { admin }) {
     const patch = {};
     if ('purpose' in body) patch.purpose = body.purpose === '' ? null : body.purpose;
     if ('note' in body) patch.note = body.note;
+    if ('startAddress' in body) patch.startAddress = body.startAddress;
+    if ('endAddress' in body) patch.endAddress = body.endAddress;
     if (admin && 'driverUserId' in body) patch.driverUserId = body.driverUserId;
     const out = await logbook.updateTrip(gc, id, patch);
     return { json: { ok: true, trip: logbook.tripView(out, lang, await logbook.usersMap(gc)) } };

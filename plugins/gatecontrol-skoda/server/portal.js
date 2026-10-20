@@ -20,7 +20,8 @@ async function redactState(gc, s, loggedIn) {
   if (!s) return null;
   let position = null;
   if (loggedIn && s.position && typeof s.position.lat === 'number' && typeof s.position.lon === 'number') {
-    const address = await geocode.reverseGeocode(gc, s.position.lat, s.position.lon);
+    // Škoda's own address of the position (1.5.3), OpenStreetMap otherwise
+    const address = (typeof s.position.address === 'string' && s.position.address) || await geocode.reverseGeocode(gc, s.position.lat, s.position.lon);
     position = { lat: s.position.lat, lon: s.position.lon, address };
   }
   // Explicit allowlist down to the leaf fields (not a spread): a field added
