@@ -62,6 +62,10 @@
     hint.hidden = true;
     if (PORTAL && !d.canEdit) { hint.hidden = false; hint.textContent = T('logbook.login_hint'); }
     else if (d.moving) { hint.hidden = false; hint.textContent = T('widget.trip_moving'); }
+    else if (d.detection && d.detection.waitingSince) { hint.hidden = false; hint.textContent = T('logbook.waiting_km', { since: SK.rel(d.detection.waitingSince) }); }
+    var det = $('#lb-detection');
+    det.hidden = !(d.detection && d.detection.km != null);
+    det.textContent = det.hidden ? '' : T('logbook.last_km', { km: km(d.detection.km) });
 
     var s = d.summary;
     var sum = clear($('#lb-sum'));

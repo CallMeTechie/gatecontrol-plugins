@@ -74,6 +74,69 @@ test('a trip: from the last parking spot to the new one, the mileage difference,
   });
 });
 
+test('1.5.2: the position comes before the higher mileage — the trip waits and ends at the arrival', () => {
+  const cloud = fakeSkoda();
+  return withHost({ cloud, gatecontrol: GC }, async (host) => {
+    const ids = await connected(host, cloud); // parked at 51.0/7.0 with 5210 km
+    await asAdmin(host, 'PUT', `/vehicles/${ids.vehicleId}/owners`, { user_ids: [ADA.id] });
+    await withState({ moving: true, km: 5210 }, () => sync(host, ids.accountId));
+    // parked 40 km away, the mileage not updated yet: no trip, the page says it waits
+    const arrived = new Date(Date.now() + 60000).toISOString().replace(/\.\d{3}Z$/, 'Z');
+    await withState({ lat: 51.3, lon: 7.4, km: 5210, captured: arrived }, () => sync(host, ids.accountId));
+    let r = await asAdmin(host, 'GET', '/logbook');
+    assert.equal(r.json.trips.length, 0);
+    assert.equal(r.json.moving, false);
+    assert.deepEqual([r.json.detection.km, Date.parse(r.json.detection.waitingSince)], [5210, Date.parse(arrived)]);
+    // still there, still the old mileage: nothing changes
+    await withState({ lat: 51.3001, lon: 7.4001, km: 5210 }, () => sync(host, ids.accountId));
+    assert.equal(Date.parse((await asAdmin(host, 'GET', '/logbook')).json.detection.waitingSince), Date.parse(arrived));
+    // the higher mileage arrives: one trip from the old spot, ending at the arrival
+    await withState({ lat: 51.3, lon: 7.4, km: 5251 }, () => sync(host, ids.accountId));
+    r = await asAdmin(host, 'GET', '/logbook');
+    assert.equal(r.json.trips.length, 1);
+    const tr = r.json.trips[0];
+    assert.deepEqual([tr.startKm, tr.endKm, tr.distanceKm], [5210, 5251, 41]);
+    assert.equal(tr.startAddress, 'Hauptstraße 5, 50667 Köln');
+    const stored = await logbook.getTrip(host.gc, tr.id);
+    assert.equal(Date.parse(stored.endedAt || stored.ended_at), Date.parse(arrived), 'arrival time, not the late mileage');
+    assert.deepEqual([r.json.detection.km, r.json.detection.waitingSince], [5251, null]);
+    assert.ok(host.notifications.some((n) => n.topic === 'trip'), 'the owner is asked');
+  });
+});
+
+test('1.5.2: the mileage of the maintenance report counts when it is the newer one', () => {
+  const cloud = fakeSkoda();
+  return withHost({ cloud, gatecontrol: GC }, async (host) => {
+    const ids = await connected(host, cloud);
+    await withState({ moving: true, km: 5210 }, () => sync(host, ids.accountId));
+    const saved = fx.maintenance;
+    fx.maintenance = { ...fx.maintenance, maintenanceReport: { ...fx.maintenance.maintenanceReport, mileageInKm: 5233 } };
+    try {
+      await withState({ lat: 51.1, lon: 7.1, km: 5210 }, () => sync(host, ids.accountId));
+    } finally { fx.maintenance = saved; }
+    const r = await asAdmin(host, 'GET', '/logbook');
+    assert.deepEqual(r.json.trips.map((x) => x.distanceKm), [23]);
+  });
+});
+
+test('1.5.2: an arrival without a higher mileage for two days becomes the new spot', () => {
+  const cloud = fakeSkoda();
+  return withHost({ cloud, gatecontrol: GC }, async (host) => {
+    const gc = host.gc;
+    const v = { id: 1, vin: 'TMBLATE0000000001' };
+    const st = (lat, lon, km) => ({ position: { lat, lon }, health: { mileageKm: km }, capturedAt: null });
+    const t0 = Date.parse('2026-10-10T08:00:00Z');
+    await logbook.observe(gc, v, st(50, 8, 1000), t0);
+    await logbook.observe(gc, v, st(50.3, 8.3, 1000), t0 + 3600000); // elsewhere, old mileage
+    assert.ok((await logbook.detection(gc, v.vin)).waitingSince);
+    await logbook.observe(gc, v, st(50.3, 8.3, 1000), t0 + 3 * 86400000); // two days later: given up
+    assert.equal((await logbook.detection(gc, v.vin)).waitingSince, null);
+    // the next trip starts at the new spot
+    const trip = await logbook.observe(gc, v, st(50.5, 8.5, 1030), t0 + 3 * 86400000 + 3600000);
+    assert.deepEqual([trip.startLat ?? trip.start_lat, trip.distanceKm ?? trip.distance_km], [50.3, 30]);
+  });
+});
+
 test('the push after a trip: Privat / Geschäftlich / Arbeitsweg to the owners; a button sets the purpose (owners only)', () => {
   const cloud = fakeSkoda();
   return withHost({ cloud, gatecontrol: GC }, async (host) => {

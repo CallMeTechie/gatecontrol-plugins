@@ -14,6 +14,13 @@
 // the time the vehicle reported its state (carCapturedTimestamp). Several
 // stops between two syncs become one trip. The addresses come from the
 // geocoder (OpenStreetMap, cached). A lower mileage resets the spot.
+// 1.5.2: Škoda often reports the new position before the higher mileage. A
+// sync that sees the vehicle parked clearly elsewhere (> 1 km) with the old
+// mileage keeps the last spot as the start and remembers the arrival (time and
+// place); the trip is recorded as soon as a sync reports the higher mileage,
+// ending at that arrival. After two days without a higher mileage the arrival
+// becomes the new spot. The mileage is the higher of the warning-light and
+// the maintenance report.
 //
 // A new trip gets the purpose of the setting `logbook_default` (none by
 // default), the vehicle's only owner as driver, and — while it has no
@@ -29,6 +36,8 @@ const texts = require('./texts.json');
 const PURPOSES = Object.freeze(['private', 'business', 'commute']);
 const MIN_KM = 1;
 const MOVED_M = 300;          // a parked vehicle moved further than this (no mileage change): new spot
+const ARRIVED_M = 1000;       // … further than this: it drove there, the higher mileage follows later
+const ARRIVAL_WAIT_MS = 2 * 86400000;
 const EXPORT_MONTHS_MAX = 24;
 const EXPORT_ROWS_MAX = 3000;
 const NOTE_MAX = 200;
@@ -184,10 +193,18 @@ async function getSpot(gc, vin) {
 }
 
 async function setSpot(gc, vin, s) {
-  await gc.db.run(`INSERT INTO trip_state (vin, km, lat, lon, address, seen_at, moving_since) VALUES (?, ?, ?, ?, ?, ?, ?)
+  await gc.db.run(`INSERT INTO trip_state (vin, km, lat, lon, address, seen_at, moving_since, arrived_lat, arrived_lon, arrived_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(vin) DO UPDATE SET km = excluded.km, lat = excluded.lat, lon = excluded.lon, address = excluded.address,
-      seen_at = excluded.seen_at, moving_since = excluded.moving_since`,
-  [vin, s.km, s.lat, s.lon, s.address, s.seen_at, s.moving_since]);
+      seen_at = excluded.seen_at, moving_since = excluded.moving_since, arrived_lat = excluded.arrived_lat,
+      arrived_lon = excluded.arrived_lon, arrived_at = excluded.arrived_at`,
+  [vin, s.km, s.lat, s.lon, s.address, s.seen_at, s.moving_since, s.arrived_lat ?? null, s.arrived_lon ?? null, s.arrived_at ?? null]);
+}
+
+/** For the logbook page: the last mileage, and since when a trip waits for the higher mileage. */
+async function detection(gc, vin) {
+  const s = await getSpot(gc, vin);
+  return { km: s && s.km != null ? Number(s.km) : null, waitingSince: (s && s.arrived_at) || null, moving: Boolean(s && s.moving_since) };
 }
 
 /** The vehicle is driving right now (a sync without a position since it was last seen parked). */
@@ -213,6 +230,9 @@ async function observe(gc, vehicle, state, now = Date.now()) {
   const nowIso = iso(now);
   const spot = await getSpot(gc, vin);
 
+  const captured = Date.parse(state.capturedAt || '');
+  const capturedOk = Number.isFinite(captured) && captured <= now + 5 * 60000;
+
   if (!spot || spot.km == null || km < Number(spot.km)) {
     // first sight, or the mileage went down (another car with this VIN, a reset): start over here
     await setSpot(gc, vin, { km, lat: pos ? pos.lat : null, lon: pos ? pos.lon : null, address: null, seen_at: pos ? nowIso : null, moving_since: pos ? null : nowIso });
@@ -223,16 +243,29 @@ async function observe(gc, vehicle, state, now = Date.now()) {
     return null;
   }
   const delta = km - Number(spot.km);
+  const arrival = spot.arrived_at ? { lat: Number(spot.arrived_lat), lon: Number(spot.arrived_lon), at: spot.arrived_at } : null;
   if (delta < MIN_KM) {
+    const far = spot.lat != null && distanceM({ lat: spot.lat, lon: spot.lon }, pos) > ARRIVED_M;
+    const waitedOut = arrival && now - Date.parse(arrival.at) > ARRIVAL_WAIT_MS;
+    if (far && !waitedOut) {
+      // parked elsewhere, the higher mileage is not reported yet: keep the start, remember the arrival
+      const same = arrival && distanceM(arrival, pos) <= MOVED_M;
+      const lastSeen = Date.parse(spot.seen_at || spot.moving_since || '');
+      const at = same ? arrival.at : iso(capturedOk && (!Number.isFinite(lastSeen) || captured > lastSeen) ? captured : now);
+      await setSpot(gc, vin, { ...spot, moving_since: null, arrived_lat: pos.lat, arrived_lon: pos.lon, arrived_at: at });
+      return null;
+    }
     // still parked (or moved less than a kilometre): a new spot only when it is clearly elsewhere
     const moved = spot.lat == null || distanceM({ lat: spot.lat, lon: spot.lon }, pos) > MOVED_M;
     await setSpot(gc, vin, { km: Number(spot.km), lat: pos.lat, lon: pos.lon, address: moved ? null : spot.address, seen_at: nowIso, moving_since: null });
     return null;
   }
 
-  const captured = Date.parse(state.capturedAt || '');
+  // the higher mileage: the trip ends at the remembered arrival when the vehicle is still there
+  const atArrival = arrival && distanceM(arrival, pos) <= MOVED_M;
   const lastSeen = Date.parse(spot.seen_at || spot.moving_since || '');
-  let ended = Number.isFinite(captured) && captured <= now + 5 * 60000 && (!Number.isFinite(lastSeen) || captured > lastSeen) ? captured : now;
+  let ended = atArrival ? Date.parse(arrival.at)
+    : capturedOk && (!Number.isFinite(lastSeen) || captured > lastSeen) ? captured : now;
   let started = Number.isFinite(lastSeen) ? lastSeen : ended;
   if (started > ended) started = ended;
   ended = Math.max(ended, started);
@@ -476,6 +509,6 @@ async function notifyAction(gc, { userId, action, data }) {
 module.exports = {
   PURPOSES, MIN_KM, EXPORT_MONTHS_MAX, EXPORT_ROWS_MAX,
   t, serverTz, parts, toUtc, monthRange, currentMonth, fmtDate, fmtTime, fmtKm,
-  observe, isMoving, getTrip, listTrips, lastTrip, hasTrips, summary, updateTrip, addManual, deleteTrip,
+  observe, isMoving, detection, getTrip, listTrips, lastTrip, hasTrips, summary, updateTrip, addManual, deleteTrip,
   tripView, purposeLabel, toCsv, toPdf, exportFile, usersMap, notifyTrip, notifyAction, reset, csvCell,
 };
