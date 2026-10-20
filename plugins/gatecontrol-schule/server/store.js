@@ -1,7 +1,8 @@
 'use strict';
 
 // Data access of the plugin's own database (migrations/001_init.sql; 1.2.0: 003_homework_exams.sql —
-// homework, exams, once-only notices, early ends of a school day).
+// homework, exams, once-only notices, early ends of a school day; 1.3.0: 004_colors_links.sql — a
+// colour per student, links made by people themselves in their profile).
 //
 // Credentials are plugin secrets, never in this database: the QR key of an
 // account under 'acct.<id>.secret', a password under 'acct.<id>.password'
@@ -9,6 +10,8 @@
 // the server key like a declared `secret` setting, never sent to the browser,
 // re-keyed by backups; docs/plugins.md "Plugin code"). Deleting an account
 // deletes them together with its students, lessons and change log.
+
+const colors = require('./colors');
 
 // One transaction at a time over the host's single connection.
 let txChain = Promise.resolve();
@@ -56,7 +59,7 @@ async function patchRow(gc, table, cols, id, patch) {
 // ─── Accounts ───────────────────────────────────
 
 const ACCOUNT_COLS = ['host', 'school', 'username', 'auth', 'person_id', 'person_type', 'status', 'last_error', 'error_count', 'last_attempt_at',
-  'last_success_at', 'last_error_at', 'next_fetch_at', 'refresh_asked_at', 'timegrid_json', 'holidays_json', 'meta_day', 'extras_json'];
+  'last_success_at', 'last_error_at', 'next_fetch_at', 'refresh_asked_at', 'timegrid_json', 'holidays_json', 'meta_day', 'extras_json', 'owner_user_id'];
 
 function accountRow(r) {
   if (!r) return null;
@@ -70,6 +73,8 @@ function accountRow(r) {
     next_fetch_at: Number(r.next_fetch_at) || 0, refresh_asked_at: r.refresh_asked_at == null ? null : Number(r.refresh_asked_at),
     timegrid: parseJson(r.timegrid_json, []), holidays: parseJson(r.holidays_json, []), meta_day: r.meta_day || null,
     extras: parseJson(r.extras_json, {}),
+    // 1.3.0: the GateControl user who connected the account in the profile (null = an administrator)
+    owner_user_id: r.owner_user_id == null ? null : Number(r.owner_user_id),
     created_at: Number(r.created_at),
   };
 }
@@ -84,7 +89,8 @@ async function findAccount(gc, host, school, username) {
   return accountRow((await gc.db.get('SELECT * FROM accounts WHERE host = ? AND lower(school) = lower(?) AND lower(username) = lower(?)', [host, school, username])).row);
 }
 async function createAccount(gc, a, now) {
-  const r = await gc.db.run('INSERT INTO accounts (host, school, username, auth, created_at) VALUES (?, ?, ?, ?, ?)', [a.host, a.school, a.username, a.auth, now]);
+  const owner = Number.isSafeInteger(a.owner_user_id) && a.owner_user_id > 0 ? a.owner_user_id : null;
+  const r = await gc.db.run('INSERT INTO accounts (host, school, username, auth, owner_user_id, created_at) VALUES (?, ?, ?, ?, ?, ?)', [a.host, a.school, a.username, a.auth, owner, now]);
   return getAccount(gc, r.lastInsertRowid);
 }
 async function updateAccount(gc, id, patch) {
@@ -132,7 +138,7 @@ async function deleteAccount(gc, id) {
 // ─── Students ───────────────────────────────────
 
 const STUDENT_COLS = ['name', 'alias', 'klasse', 'enabled', 'user_id', 'recipients_json', 'show_on_wall', 'baseline_done', 'missing', 'range_from',
-  'range_to', 'last_fetch_at', 'last_change_at', 'last_error'];
+  'range_to', 'last_fetch_at', 'last_change_at', 'last_error', 'color', 'link_source'];
 
 function studentRow(r) {
   if (!r) return null;
@@ -145,6 +151,8 @@ function studentRow(r) {
     last_fetch_at: r.last_fetch_at == null ? null : Number(r.last_fetch_at),
     last_change_at: r.last_change_at == null ? null : Number(r.last_change_at),
     last_error: r.last_error || null, created_at: Number(r.created_at),
+    // 1.3.0: the student's own colour (#RRGGBB) and who mapped user_id ('admin' | 'self' | null)
+    color: colors.hex(r.color), link_source: r.link_source === 'self' || r.link_source === 'admin' ? r.link_source : null,
   };
 }
 
@@ -173,17 +181,47 @@ async function syncStudents(gc, accountId, persons, now) {
   const have = await listStudents(gc, accountId);
   const byPerson = new Map(have.map((s) => [s.person_id, s]));
   const listed = new Set();
+  let taken = null;
   for (const p of persons) {
     listed.add(p.personId);
     const s = byPerson.get(p.personId);
     if (!s) {
-      await gc.db.run('INSERT INTO students (account_id, person_id, name, created_at) VALUES (?, ?, ?, ?)', [accountId, p.personId, p.name, now]);
+      // 1.3.0: a colour no other student has (distinct children at a glance)
+      if (!taken) taken = await takenColors(gc);
+      const color = colors.pick(taken, now);
+      taken.add(color);
+      await gc.db.run('INSERT INTO students (account_id, person_id, name, color, created_at) VALUES (?, ?, ?, ?, ?)', [accountId, p.personId, p.name, color, now]);
     } else if (s.name !== p.name || s.missing) {
       await updateStudent(gc, s.id, { name: p.name, missing: false });
     }
   }
   for (const s of have) if (!listed.has(s.person_id) && !s.missing) await updateStudent(gc, s.id, { missing: true });
   return listStudents(gc, accountId);
+}
+
+/** The colours the students have (a Set of #RRGGBB). */
+async function takenColors(gc) {
+  return new Set((await gc.db.query('SELECT color FROM students WHERE color IS NOT NULL')).rows.map((r) => colors.hex(r.color)).filter(Boolean));
+}
+
+/** 1.3.0: students of 1.2.0 (no colour yet) get one each — distinct, in the order they were found. */
+async function ensureColors(gc) {
+  const missing = (await gc.db.query('SELECT id FROM students WHERE color IS NULL ORDER BY id')).rows;
+  if (!missing.length) return 0;
+  const taken = await takenColors(gc);
+  for (const r of missing) {
+    const c = colors.pick(taken, r.id);
+    taken.add(c);
+    await gc.db.run('UPDATE students SET color = ? WHERE id = ?', [c, r.id]);
+  }
+  return missing.length;
+}
+
+/** 1.3.0: the students of one WebUntis person at one school, in any account (host + school + person id). */
+async function studentsOfPerson(gc, host, school, personId) {
+  const r = await gc.db.query('SELECT s.* FROM students s JOIN accounts a ON a.id = s.account_id WHERE a.host = ? AND lower(a.school) = lower(?) AND s.person_id = ? ORDER BY s.id',
+    [host, school, personId]);
+  return r.rows.map(studentRow);
 }
 
 // ─── Lessons ────────────────────────────────────
@@ -391,7 +429,7 @@ async function setDayEndStatus(gc, list, status, sentAt = null) {
 
 module.exports = {
   tx, listAccounts, getAccount, findAccount, createAccount, updateAccount, deleteAccount, getCred, setCred, clearCred,
-  listStudents, getStudent, updateStudent, syncStudents,
+  listStudents, getStudent, updateStudent, syncStudents, ensureColors, takenColors, studentsOfPerson,
   lessonsBetween, replaceLessons, countLessons, LESSON_COLS,
   addChanges, changesWithStatus, setChangeStatus, setRuleAt, cancellationSent, listChanges, prune,
   replaceHomework, replaceExams, homeworkDue, examsBetween, countExtras, noticeSeen, noticeMark,

@@ -26,6 +26,8 @@ const HOST = 'nessa.webuntis.com';
 const SCHOOL = 'Gymnasium Musterstadt';
 const SECRET = 'JBSWY3DPEHPK3PXP';
 const QR = `untis://setschool?url=${HOST}&school=${encodeURIComponent(SCHOOL)}&user=eva.muster&key=${SECRET}&schoolNumber=4711`;
+// 1.3.0: Lena's own student account (fakeUntis({ account: 'student', username: 'lena.muster' }))
+const QR_LENA = `untis://setschool?url=${HOST}&school=${encodeURIComponent(SCHOOL)}&user=lena.muster&key=${SECRET}&schoolNumber=4711`;
 const T0 = Date.parse('2026-10-20T06:00:00Z'); // Tue 08:00 CEST
 
 const fixture = (name) => JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', name), 'utf8'));
@@ -53,6 +55,8 @@ function fakeUntis(opts = {}) {
     homework: { homeworks: [], lessons: [], teachers: [] },
     exams: [],
     restStatus: {},
+    // 1.3.0: (query) → an HTTP status for api/exams (e.g. 403 when it names a studentId), or null
+    examsStatus: null,
     queries: [],
   };
   let n = 0;
@@ -87,6 +91,10 @@ function fakeUntis(opts = {}) {
       state.queries.push({ kind, query: Object.fromEntries(u.searchParams) });
       if (!sessionOf(o)) return { status: 401, body: '' };
       if (state.restStatus[kind]) return { status: state.restStatus[kind], body: '' };
+      if (kind === 'exams' && typeof state.examsStatus === 'function') {
+        const st = state.examsStatus(Object.fromEntries(u.searchParams));
+        if (st) return { status: st, body: '' };
+      }
       const from = Number(u.searchParams.get('startDate'));
       const to = Number(u.searchParams.get('endDate'));
       if (kind === 'exams') return json({ data: { exams: clone(state.exams.filter((e) => e.examDate >= from && e.examDate <= to)) } });
@@ -140,7 +148,7 @@ async function withHost(opts, fn) {
   const untis = fakeUntis(opts.untis);
   clock.set(opts.now || T0);
   const host = await createHost(DIR, {
-    users: USERS,
+    users: opts.users || USERS,
     settings: opts.settings || {},
     notifyFail: opts.notifyFail,
     fetch: (url, o) => untis.handler(url, o),
@@ -181,6 +189,6 @@ async function tickAt(host, ms) {
 const at = (iso) => Date.parse(iso);
 
 module.exports = {
-  DIR, ADMIN, EVA, LENA, BOB, WALL, USERS, HOST, SCHOOL, SECRET, QR, T0,
+  DIR, ADMIN, EVA, LENA, BOB, WALL, USERS, HOST, SCHOOL, SECRET, QR, QR_LENA, T0,
   fixture, clone, fakeUntis, withHost, asAdmin, asPortal, asApp, setupParent, lessonAt, tickAt, at, clock,
 };

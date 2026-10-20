@@ -5,7 +5,11 @@
 // portal (also on wall tablets), a Start tile and a display widget per child, an API for the
 // apps. WebUntis has no public API for this; see server/untis.js for the protocol used.
 //
-//   admin API   (the plugin page; administrators only)
+//   admin API   (administrators only; 1.3.0: the settings page „Konten & Kinder“ — plugin.json
+//               ui.settingsPage, shown in Einstellungen › Plugins › Schule › Einstellungen — and the
+//               Schule page, which only shows the information)
+//     GET    /overview?week=0|1               1.3.0: the Schule page — per student its face, the week,
+//                                             the coming changes, exams and homework (views.overview)
 //     GET    /status                          accounts with diagnostics, students, users, change log
 //     POST   /accounts                        { mode: 'qr', link } | { mode: 'secret', host, school, username, secret }
 //                                             | { mode: 'password', host, school, username, password }
@@ -13,16 +17,25 @@
 //     PUT    /accounts/:id                    new credentials (same body), checked by a login
 //     DELETE /accounts/:id                    with its credentials, students, lessons and change log
 //     POST   /accounts/:id/refresh            fetch now
-//     PUT    /students/:id                    { alias, enabled, user_id, recipients, show_on_wall }
+//     PUT    /students/:id                    { alias, enabled, user_id, recipients, show_on_wall, color (1.3.0) }
 //     GET    /changes?limit=                  the change log
+//     GET    /qr-decoder                      1.3.0: the QR decoder (ui/vendor/jsqr) for browsers without
+//                                             BarcodeDetector — loaded by the frame only when needed
 //   portal API  (the identified portal viewer, kiosk devices included)
 //     GET    /portal/timetable?week=0|1       Mon–Sat of this / next week of the students the viewer sees
+//     GET    /portal/overview?week=0|1        1.3.0: like /overview, for the students the viewer sees
+//     GET|POST /portal/link, DELETE /portal/link/:studentId
+//                                             1.3.0: the viewer links his own WebUntis student account in
+//                                             his profile (server/link.js; signed in, no kiosk)
+//     GET    /portal/qr-decoder               1.3.0: as /qr-decoder
 //   services    (1.1.0, server/ruleevents.js) school_students for gatecontrol-familie; after each cycle the
 //               released changes go to Familie's rule_event (its trigger „Stunde fällt aus“)
 //               (1.2.0) school_day for Familie's wall tablet; early ends of a school day go to Familie's
 //               school_day_end (server/dayend.js)
 //   1.2.0       homework and exams (server/extras.js) in the timetable, the portal, the admin page and the
 //               evening reminders (topics exams / homework, server/remind.js)
+//   1.3.0       a colour (and picture) per student (server/colors.js) everywhere; settingsStatus (status
+//               lines of the settings form); the profile section „WebUntis verknüpfen“
 //   app API     (the GateControl apps, req.user.app; permissions.app, no app tab of its own)
 //     GET    /app/timetable?from=&to=         ≤ 14 days, see README "API"
 //     GET    /app/changes?days=7              the change log of the students the caller sees
@@ -50,6 +63,9 @@ const notifyLib = require('./notify');
 const ruleevents = require('./ruleevents');
 const dayend = require('./dayend');
 const remind = require('./remind');
+const link = require('./link');
+const colors = require('./colors');
+const { fail, str, accountInput, posInt } = require('./input');
 const texts = require('./texts.json');
 
 const DAY = 86400000;
@@ -72,9 +88,16 @@ const ERRORS = {
   LOGIN_FAILED: [502, 'error.login_failed'],
   FORBIDDEN: [403, 'error.forbidden'],
   NOT_FOUND: [404, 'error.not_found'],
+  // 1.3.0: the profile link (server/link.js)
+  NOT_STUDENT: [422, 'error.not_student'],
+  LINK_OFF: [403, 'error.link_off'],
+  LINK_TAKEN: [409, 'error.link_taken'],
+  LINK_DUPLICATE: [409, 'error.link_duplicate'],
+  LINK_CONFLICT: [409, 'error.link_conflict'],
+  LINK_ADMIN: [403, 'error.link_admin'],
+  TOO_FAST: [429, 'error.too_fast'],
+  COLOR_INVALID: [400, 'error.color_invalid'],
 };
-
-function fail(code, extra) { return Object.assign(new Error(code), { code }, extra || {}); }
 
 function errorResponse(e, lang) {
   const known = e && ERRORS[e.code];
@@ -84,60 +107,63 @@ function errorResponse(e, lang) {
   return { status, json };
 }
 
-const posInt = (v) => {
-  const n = typeof v === 'number' ? v : (typeof v === 'string' && /^\d{1,10}$/.test(v) ? Number(v) : NaN);
-  return Number.isInteger(n) && n > 0 ? n : null;
-};
-const str = (v, max) => (typeof v === 'string' ? v.replace(/[\0-\x1f\x7f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max) : '');
-
-async function usersById(gc) {
-  const m = new Map();
-  try { for (const u of await gc.users.list()) m.set(u.id, { id: u.id, name: u.name, role: u.role }); } catch { /* users unavailable */ }
-  return m;
-}
+const usersById = (gc) => views.usersMap(gc);
 
 const codeText = (lang, code) => (code ? t(lang, 'code.' + code) : null);
 
-// ─── Admin ──────────────────────────────────────
-
-/** Account + credentials from a request body → { host, school, username, auth, value } (value: the secret or password). */
-function accountInput(body) {
-  const mode = body.mode;
-  if (mode === 'qr') {
-    let q;
-    try { q = untis.parseQrLink(body.link); } catch (e) { throw fail(e.code === 'HOST_INVALID' ? 'HOST_INVALID' : 'QR_INVALID'); }
-    return { host: q.host, school: q.school, username: q.username, auth: 'secret', value: q.secret };
-  }
-  if (mode !== 'secret' && mode !== 'password') throw fail('INVALID');
-  const school = str(body.school, 120);
-  const username = str(body.username, 120);
-  const value = mode === 'secret' ? String(body.secret || '').replace(/\s+/g, '').toUpperCase() : (typeof body.password === 'string' ? body.password : '');
-  if (!str(body.host, 253) || !school || !username || !value || value.length > 500) throw fail('FIELDS_REQUIRED');
-  const host = untis.normalizeHost(body.host);
-  if (!host) throw fail('HOST_INVALID');
-  if (mode === 'secret') {
-    try { require('./totp').base32Decode(value); } catch { throw fail('QR_INVALID'); }
-  }
-  return { host, school, username, auth: mode === 'secret' ? 'secret' : 'password', value };
+/** "21.10. 01:50" / "21/10 01:50" in the plugin's time zone. */
+function whenText(ms, cfg, lang) {
+  if (!Number.isFinite(ms)) return '–';
+  const p = tz.parts(ms, cfg.tz);
+  return lang === 'en' ? `${tz.pad(p.d)}/${tz.pad(p.m)} ${tz.pad(p.hh)}:${tz.pad(p.mm)}` : `${tz.pad(p.d)}.${tz.pad(p.m)}. ${tz.pad(p.hh)}:${tz.pad(p.mm)}`;
 }
+
+// ─── Admin ──────────────────────────────────────
 
 const extraView = (x) => (x && typeof x === 'object' && Number(x.until) > clock.now() ? { code: String(x.code || 'failed'), until: Number(x.until) } : null);
 
-function accountView(a, students, counts, users, lang) {
+/**
+ * 1.3.0: the optional data of an account in plain words — never a code. Not shared with the account
+ * (no_right / unsupported; 1.2.0 stored 'auth' for that) → a calm info line; another error → when it
+ * is tried again. → [{ kind: 'exams'|'homework', tone: 'info'|'warn', text }]
+ */
+function extrasInfo(a, cfg, lang) {
+  const out = [];
+  for (const kind of ['exams', 'homework']) {
+    const x = extraView(a.extras && a.extras[kind]);
+    if (!x) continue;
+    const unshared = ['no_right', 'unsupported', 'auth'].includes(x.code);
+    out.push({ kind, tone: unshared ? 'info' : 'warn', text: t(lang, `extras.${kind}_${unshared ? 'unshared' : 'failed'}`, { when: whenText(x.until, cfg, lang) }) });
+  }
+  return out;
+}
+
+/** A GateControl user as the settings page shows it (name, picture or initials on the colour). */
+const personView = (u) => (u ? { id: u.id, name: u.name, role: u.role, avatarUrl: u.avatarUrl, colorHex: u.colorHex, initials: u.initials } : null);
+
+function accountView(a, students, counts, users, lang, cfg) {
   return {
     id: a.id, host: a.host, school: a.school, username: a.username, auth: a.auth,
     person_type: a.person_type, status: a.status, last_error: a.last_error, error_text: codeText(lang, a.last_error), error_count: a.error_count,
     last_attempt_at: a.last_attempt_at, last_success_at: a.last_success_at, last_error_at: a.last_error_at, next_fetch_at: a.next_fetch_at,
     // 1.2.0: an optional endpoint left alone after an error ({ code, until } | null)
     extras: { homework: extraView(a.extras && a.extras.homework), exams: extraView(a.extras && a.extras.exams) },
-    students: students.filter((s) => s.account_id === a.id).map((s) => ({
-      id: s.id, person_id: s.person_id, name: s.name, alias: s.alias, display: s.display, klasse: s.klasse,
-      enabled: s.enabled, missing: s.missing, show_on_wall: s.show_on_wall, baseline_done: s.baseline_done,
-      user: s.user_id != null && users.has(s.user_id) ? users.get(s.user_id) : null, user_id: s.user_id,
-      recipients: s.recipients.filter((id) => users.has(id)).map((id) => users.get(id)),
-      lesson_count: counts.get(s.id) || 0, last_fetch_at: s.last_fetch_at, last_change_at: s.last_change_at,
-      last_error: s.last_error, error_text: codeText(lang, s.last_error),
-    })),
+    // 1.3.0: the same in plain words, and who connected the account in the profile (null = an administrator)
+    extras_info: extrasInfo(a, cfg, lang),
+    owner: a.owner_user_id != null ? personView(users.get(a.owner_user_id)) || { id: a.owner_user_id, name: '#' + a.owner_user_id } : null,
+    students: students.filter((s) => s.account_id === a.id).map((s) => {
+      const f = colors.faceOf(s, users);
+      return {
+        id: s.id, person_id: s.person_id, name: s.name, alias: s.alias, display: s.display, klasse: s.klasse,
+        enabled: s.enabled, missing: s.missing, show_on_wall: s.show_on_wall, baseline_done: s.baseline_done,
+        user: s.user_id != null && users.has(s.user_id) ? personView(users.get(s.user_id)) : null, user_id: s.user_id,
+        recipients: s.recipients.filter((id) => users.has(id)).map((id) => personView(users.get(id))),
+        lesson_count: counts.get(s.id) || 0, last_fetch_at: s.last_fetch_at, last_change_at: s.last_change_at,
+        last_error: s.last_error, error_text: codeText(lang, s.last_error),
+        // 1.3.0: the face (colour from the user when linked), the own colour, who linked
+        color: f.color, own_color: s.color, avatarUrl: f.avatarUrl, initials: f.initials, color_from_user: f.linked, link_source: s.link_source,
+      };
+    }),
   };
 }
 
@@ -167,8 +193,10 @@ async function adminStatus(gc, cfg, lang) {
       quiet_from: cfg.quiet ? config.hhmm(cfg.quiet.from) : null, quiet_to: cfg.quiet ? config.hhmm(cfg.quiet.to) : null, problems: cfg.problems,
       reminder_time: cfg.reminder ? config.hhmm(cfg.reminder) : null,
     },
-    accounts: accounts.map((a) => accountView(a, students, counts, users, lang)),
-    users: [...users.values()],
+    accounts: accounts.map((a) => accountView(a, students, counts, users, lang, cfg)),
+    users: [...users.values()].map(personView),
+    // 1.3.0: the colours a student may get, and whether people may link their own account in the profile
+    palette: colors.PALETTE, self_link: cfg.selfLink,
     changes: log.map((c) => changeView(c, byId)),
     // 1.1.0: the Familie plugin's rules — reachable, and the last rule_event call
     rules: await ruleevents.status(gc),
@@ -253,6 +281,20 @@ async function studentPatch(gc, body, existing) {
       if (!id || !users.has(id)) throw fail('USERS_INVALID');
       out.user_id = id;
     }
+    // 1.3.0: a mapping changed here is the administrator's
+    if (out.user_id !== existing.user_id) out.link_source = out.user_id == null ? null : 'admin';
+  }
+  if (body.color !== undefined) {
+    // 1.3.0: one of the palette; null = a colour picked automatically (distinct from the others)
+    if (body.color === null) {
+      const taken = await store.takenColors(gc);
+      taken.delete(existing.color);
+      out.color = colors.pick(taken, existing.id);
+    } else {
+      const c = colors.paletteColor(body.color);
+      if (!c) throw fail('COLOR_INVALID');
+      out.color = c;
+    }
   }
   if (body.recipients !== undefined) {
     if (!Array.isArray(body.recipients) || body.recipients.length > 50) throw fail('USERS_INVALID');
@@ -271,6 +313,13 @@ async function adminRoute(req, gc, seg, cfg, lang) {
   const [a, b, c] = seg;
 
   if (a === 'status' && seg.length === 1 && m === 'GET') return { json: await adminStatus(gc, cfg, lang) };
+  if (a === 'overview' && seg.length === 1 && m === 'GET') {
+    const students = (await store.listStudents(gc)).filter((s) => s.enabled && !s.missing);
+    const accounts = await store.listAccounts(gc);
+    const week = req.query && String(req.query.week) === '1' ? 1 : 0;
+    return { json: { ok: true, configured: accounts.length > 0, accountErrors: accounts.filter((x) => x.status === 'error').length, ...(await views.overview(gc, cfg, students, week, clock.now())) } };
+  }
+  if (a === 'qr-decoder' && seg.length === 1 && m === 'GET') return { json: { ok: true, js: ui.qrDecoder() } };
 
   if (a === 'accounts') {
     if (seg.length === 1 && m === 'POST') return addAccount(gc, body, cfg, lang);
@@ -293,7 +342,7 @@ async function adminRoute(req, gc, seg, cfg, lang) {
     const patch = await studentPatch(gc, body, s);
     const updated = await store.updateStudent(gc, id, patch);
     if (patch.enabled === true && !s.enabled) await store.updateAccount(gc, s.account_id, { next_fetch_at: 0 });
-    return { json: { ok: true, student: { id: updated.id, enabled: updated.enabled } } };
+    return { json: { ok: true, student: { id: updated.id, enabled: updated.enabled, color: updated.color } } };
   }
 
   if (a === 'changes' && seg.length === 1 && m === 'GET') {
@@ -310,7 +359,25 @@ async function adminRoute(req, gc, seg, cfg, lang) {
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 async function portalRoute(req, gc, seg, cfg) {
-  if (req.method !== 'GET' || seg.length !== 2 || seg[1] !== 'timetable') throw fail('NOT_FOUND');
+  // 1.3.0: the viewer's own WebUntis link (profile section, server/link.js)
+  if (seg[1] === 'link') {
+    const body = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
+    if (seg.length === 2 && req.method === 'GET') return { json: await link.list(gc, cfg, req.user) };
+    if (seg.length === 2 && req.method === 'POST') return link.add(gc, cfg, req.user, body);
+    if (seg.length === 3 && req.method === 'DELETE') return link.remove(gc, req.user, seg[2]);
+    throw fail('NOT_FOUND');
+  }
+  if (req.method !== 'GET' || seg.length !== 2) throw fail('NOT_FOUND');
+  if (seg[1] === 'qr-decoder') {
+    if (!link.isPerson(req.user)) throw fail('FORBIDDEN');
+    return { json: { ok: true, js: ui.qrDecoder() } };
+  }
+  if (seg[1] === 'overview') {
+    const week = req.query && String(req.query.week) === '1' ? 1 : 0;
+    const students = await views.visibleStudents(gc, req.user);
+    return { json: { ok: true, configured: students.length > 0, ...(await views.overview(gc, cfg, students, week, clock.now())) } };
+  }
+  if (seg[1] !== 'timetable') throw fail('NOT_FOUND');
   const week = req.query && String(req.query.week) === '1' ? 1 : 0;
   const now = clock.now();
   const today = tz.localDate(now, cfg.tz);
@@ -357,6 +424,19 @@ function notifierOf(gc) {
 module.exports = {
   async start(gc) {
     state.notifier = notifyLib.createNotifier(gc, { now: () => clock.now() });
+    // 1.3.0: a colour for the students of 1.2.0; exams / homework that 1.2.0 paused as 'auth' (a
+    // parent account refused one way of asking — not a login problem) are tried again at once
+    try {
+      await store.ensureColors(gc);
+      for (const a of await store.listAccounts(gc)) {
+        const x = a.extras || {};
+        const stale = ['exams', 'homework'].filter((k) => x[k] && x[k].code === 'auth');
+        if (!stale.length) continue;
+        const next = { ...x };
+        for (const k of stale) delete next[k];
+        await store.updateAccount(gc, a.id, { extras: next });
+      }
+    } catch (e) { gc.log.warn('start housekeeping failed', (e && (e.code || e.message)) || 'error'); }
     gc.log.info('schule started', gc.plugin.version);
   },
 
@@ -386,10 +466,40 @@ module.exports = {
     return { html: ui.render(view, t) };
   },
 
-  /** The portal tab only for viewers who may see a student. */
+  /**
+   * The portal tab only for viewers who may see a student; 1.3.0: the profile section „WebUntis
+   * verknüpfen“ for a signed-in person while self-linking is allowed or he has a link to undo.
+   */
   async portalVisible({ user, section }, gc) {
-    if (!user || section) return false;
+    if (!user) return false;
+    if (section === ui.PROFILE_SECTION) {
+      if (!link.isPerson(user)) return false;
+      const cfg = await config.load(gc);
+      if (link.allowed(cfg, user)) return true;
+      return (await store.listStudents(gc)).some((s) => s.user_id === user.id);
+    }
+    if (section) return false;
     return (await views.visibleStudents(gc, user)).length > 0;
+  },
+
+  /**
+   * 1.3.0 (GateControl ≥ 1.185.0): status lines of the settings form — how many accounts and
+   * children, accounts with a problem (in words), invalid settings.
+   */
+  async settingsStatus({ lang }, gc) {
+    const l = lang === 'en' ? 'en' : 'de';
+    const cfg = await config.load(gc);
+    const out = [];
+    const accounts = await store.listAccounts(gc);
+    const students = (await store.listStudents(gc)).filter((s) => !s.missing);
+    if (!accounts.length) out.push({ group: null, tone: 'info', text: t(l, 'status.none') });
+    else {
+      const bad = accounts.filter((a) => a.status === 'error');
+      out.push({ group: null, tone: bad.length ? 'warn' : 'ok', text: t(l, 'status.summary', { accounts: accounts.length, students: students.filter((s) => s.enabled).length }) });
+      for (const a of bad.slice(0, 5)) out.push({ group: null, tone: 'warn', text: views.clip(`${a.school} · ${a.username}: ${codeText(l, a.last_error) || ''}`, 200) });
+    }
+    for (const p of cfg.problems.slice(0, 3)) out.push({ group: null, tone: 'warn', text: views.clip(t(l, 'problem.' + p), 200) });
+    return out.slice(0, 10);
   },
 
   /** Start tab and the apps' start card: one tile per student the viewer sees. */
@@ -467,6 +577,7 @@ module.exports = {
 
   /** A shorter interval applies at once. */
   async settingsChanged(values, gc) {
+    await store.ensureColors(gc);
     const cfg = await config.load(gc);
     const now = clock.now();
     for (const a of await store.listAccounts(gc)) {

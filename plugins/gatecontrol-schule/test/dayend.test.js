@@ -161,6 +161,9 @@ test('errors never stop the cycle; a refusal is kept for the admin page, a rate 
   });
 });
 
+// 1.3.0: Lena is mapped to the user LENA — her colour is that user's favourite colour (mock: palette[3] = lime)
+const LENA_COLOR = '#84CC16';
+
 test('school_day: only for Familie; the wall students mapped to a user; times, counts, holiday, exams, free', () => withHost({}, async (host, untis) => {
   untis.state.exams = [{ id: 1, examDate: 20261020, startTime: 950, endTime: 1035, subject: 'E', name: 'Vokabeltest', assignedStudents: [{ id: 101 }] }];
   const { max } = await household(host, { wall: true });
@@ -171,10 +174,10 @@ test('school_day: only for Familie; the wall students mapped to a user; times, c
   lessonAt(untis, 101, 20261020, 1040).code = 'irregular';
   await tickAt(host, T0 + 15 * MIN);
   assert.deepEqual(await call({ date: '2026-10-20' }), { ok: true, date: '2026-10-20', students: [
-    { userId: LENA.id, name: 'Lena', start: '08:50', end: '12:25', cancelled: 1, changed: 1, exams: [{ subject: 'Englisch', name: 'Vokabeltest' }], free: false },
+    { userId: LENA.id, name: 'Lena', color: LENA_COLOR, start: '08:50', end: '12:25', cancelled: 1, changed: 1, exams: [{ subject: 'Englisch', name: 'Vokabeltest' }], free: false },
   ] });
-  assert.deepEqual((await call({ date: '2026-10-24' })).students, [{ userId: LENA.id, name: 'Lena', cancelled: 0, changed: 0, exams: [], free: true }], 'Saturday');
-  assert.deepEqual((await call({ date: '2026-10-30' })).students, [{ userId: LENA.id, name: 'Lena', cancelled: 0, changed: 0, holiday: 'Brückentag', exams: [], free: true }]);
+  assert.deepEqual((await call({ date: '2026-10-24' })).students, [{ userId: LENA.id, name: 'Lena', color: LENA_COLOR, cancelled: 0, changed: 0, exams: [], free: true }], 'Saturday');
+  assert.deepEqual((await call({ date: '2026-10-30' })).students, [{ userId: LENA.id, name: 'Lena', color: LENA_COLOR, cancelled: 0, changed: 0, holiday: 'Brückentag', exams: [], free: true }]);
   // Max on the wall too, but not mapped to a user: left out; Lena off the wall: nobody
   await asAdmin(host, 'PUT', `/students/${max.id}`, { show_on_wall: true });
   assert.equal((await call({ date: '2026-10-20' })).students.length, 1);

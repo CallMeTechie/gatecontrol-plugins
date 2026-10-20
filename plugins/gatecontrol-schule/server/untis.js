@@ -22,13 +22,20 @@
 //              GET /WebUntis/api/homeworks/lessons?startDate=yyyymmdd&endDate=yyyymmdd
 //                → { data: { homeworks: [{ id, lessonId, date, dueDate, text, remark, completed }],
 //                            lessons: [{ id, subject, lessonType }], records?, teachers? } }
-//              GET /WebUntis/api/exams?startDate&endDate&klasseId&studentId&withGrades=true
+//              GET /WebUntis/api/exams?startDate&endDate&klasseId[&studentId]&withGrades=false
 //                → { data: { exams: [{ id, examType, name, examDate, startTime, endTime, subject,
 //                            teachers, rooms, text, studentClass?, assignedStudents?: [{ id, displayName, klasse }] }] } }
+//   1.3.0      exams are asked like the "webuntis" library does (klasseId of the student's class,
+//              withGrades=false, no studentId — 'class'), then with the studentId ('student'), then for
+//              the account's own class (klasseId=-1 — 'own'): a parent account is refused the
+//              studentId variant by some schools (HTTP 403). The REST answers of these optional
+//              endpoints map 401/403 to 'no_right' (the same session just read the timetable, so the
+//              login is fine) and 404 to 'unsupported' — never 'auth'.
 //
 // Errors become stable codes (UntisError.code): 'auth' (bad credentials,
 // invalid one-time password, unknown school), 'no_right' (JSON-RPC -8509:
-// the account may not read that), 'network' (no answer, timeout, 5xx) and
+// the account may not read that), 'network' (no answer, timeout, 5xx),
+// 'unsupported' (1.3.0: an optional endpoint this WebUntis does not have) and
 // 'failed' (anything else). Secrets, one-time passwords and session ids
 // never reach a log line, an error message or the database.
 
@@ -117,11 +124,25 @@ function rpcError(err) {
 
 /** Any error of this module or of gc.http.fetch → one of the stable codes. */
 function codeOf(e) {
-  if (e instanceof UntisError && ['auth', 'no_right', 'network', 'failed'].includes(e.code)) return e.code;
+  if (e instanceof UntisError && ['auth', 'no_right', 'network', 'unsupported', 'failed'].includes(e.code)) return e.code;
   return 'failed';
 }
 
 const NO_ALLOWED_DATE = -7004; // getTimetable outside the school year
+
+// 1.3.0: the ways of asking api/exams, in the order tried (see the header)
+const EXAM_VARIANTS = Object.freeze(['class', 'student', 'own']);
+
+/** The query of api/exams for one variant (null when the variant needs an id that is missing). */
+function examsQuery(variant, from, to, klasseId, studentId) {
+  const kid = Number.isSafeInteger(klasseId) && klasseId > 0 ? klasseId : null;
+  const sid = Number.isSafeInteger(studentId) && studentId > 0 ? studentId : null;
+  const base = `startDate=${untisDate(from)}&endDate=${untisDate(to)}`;
+  if (variant === 'class') return kid ? `${base}&klasseId=${kid}&withGrades=false` : null;
+  if (variant === 'student') return sid ? `${base}&klasseId=${kid || -1}&studentId=${sid}&withGrades=false` : null;
+  if (variant === 'own') return `${base}&klasseId=-1&withGrades=false`;
+  return null;
+}
 
 const pad2 = (n) => String(n).padStart(2, '0');
 /** "YYYY-MM-DD" → 20261021 */
@@ -142,7 +163,8 @@ function createClient(gc, account, opts = {}) {
 
   const cookie = () => `JSESSIONID=${sessionId}; schoolname=${schoolCookie(school)}`;
 
-  async function http(url, o) {
+  /** opt.optional (1.3.0): an optional REST endpoint — 401/403 → 'no_right', 404 → 'unsupported'. */
+  async function http(url, o, opt = {}) {
     let res;
     try {
       res = await gc.http.fetch(url, { ...o, timeoutMs, headers: { accept: 'application/json', 'cache-control': 'no-cache', ...(o.headers || {}) } });
@@ -150,7 +172,8 @@ function createClient(gc, account, opts = {}) {
       throw fail(e && e.code === 'ERR_NET_DENIED' ? 'failed' : 'network', (e && e.code) || null);
     }
     const st = Number(res && res.status);
-    if (st === 401 || st === 403) throw fail('auth', st);
+    if (st === 401 || st === 403) throw fail(opt.optional ? 'no_right' : 'auth', st);
+    if (st === 404 && opt.optional) throw fail('unsupported', st);
     if (st === 429 || st >= 500) throw fail('network', st);
     if (!(st >= 200 && st < 300)) throw fail('failed', st);
     let body;
@@ -230,22 +253,21 @@ function createClient(gc, account, opts = {}) {
      */
     async homework(from, to) {
       const q = `startDate=${untisDate(from)}&endDate=${untisDate(to)}`;
-      const { body } = await http(`${base}/api/homeworks/lessons?${q}`, { method: 'GET', headers: { cookie: cookie() } });
+      const { body } = await http(`${base}/api/homeworks/lessons?${q}`, { method: 'GET', headers: { cookie: cookie() } }, { optional: true });
       const data = body && body.data;
       if (!data || typeof data !== 'object' || Array.isArray(data)) throw fail('failed', 'homework');
       return data;
     },
 
     /**
-     * 1.2.0: the exams between two local dates for a class (klasseId, -1 = the account's own) and a
-     * student → the raw exams ([] when there are none). Grades are asked for like the web app does,
-     * never kept.
+     * 1.2.0: the exams between two local dates → the raw exams ([] when there are none). 1.3.0: asked
+     * in one of EXAM_VARIANTS (default 'class': the student's class like the "webuntis" library);
+     * a variant that needs a missing id throws 'unsupported'. No grades are asked for.
      */
-    async exams(from, to, { klasseId, studentId } = {}) {
-      const kid = Number.isSafeInteger(klasseId) && klasseId > 0 ? klasseId : -1;
-      let q = `startDate=${untisDate(from)}&endDate=${untisDate(to)}&klasseId=${kid}`;
-      if (Number.isSafeInteger(studentId) && studentId > 0) q += `&studentId=${studentId}`;
-      const { body } = await http(`${base}/api/exams?${q}&withGrades=true`, { method: 'GET', headers: { cookie: cookie() } });
+    async exams(from, to, { klasseId, studentId, variant = 'class' } = {}) {
+      const q = examsQuery(variant, from, to, klasseId, studentId);
+      if (!q) throw fail('unsupported', 'variant');
+      const { body } = await http(`${base}/api/exams?${q}`, { method: 'GET', headers: { cookie: cookie() } }, { optional: true });
       const data = body && body.data;
       if (!data || typeof data !== 'object' || Array.isArray(data)) throw fail('failed', 'exams');
       return Array.isArray(data.exams) ? data.exams : [];
@@ -297,5 +319,5 @@ function studentsOf(account, login, cfg) {
 
 module.exports = {
   UntisError, normalizeHost, parseQrLink, schoolCookie, sessionFromSetCookie, rpcError, codeOf, createClient, studentsOf,
-  untisDate, pad2, CLIENT,
+  untisDate, pad2, CLIENT, EXAM_VARIANTS, examsQuery,
 };

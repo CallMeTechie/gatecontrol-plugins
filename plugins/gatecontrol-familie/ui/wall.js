@@ -115,7 +115,7 @@
     }
   }
 
-  /** 1.13.0: „Lena 07:45–13:05 · 1 Ausfall“, „Max frei“, a holiday, exam badges. */
+  /** 1.13.0: „Lena 07:45–13:05 · 1 Ausfall“, „Max frei“, a holiday, exam badges; 1.13.1: picture and colour per child. */
   function renderSchool() {
     var s = data.school;
     $('#fa-w-school').hidden = !s;
@@ -132,11 +132,16 @@
         if (k.changed) parts.push(k.changed === 1 ? T('wall.school_changed_1') : T('wall.school_changed', { n: k.changed }));
         sub = parts.filter(Boolean).join(' · ');
       }
-      var kids = [el('span', { class: 'fa-w-school-name', text: k.name }), el('span', { class: 'fa-w-school-sub', text: sub })];
+      // 1.13.1: the child's picture or initials on its colour (Schule ≥ 1.3.0, else the member's), its colour as the accent
+      var face = A.avatar({ name: k.name, initials: k.initials, colorHex: k.color, avatarUrl: k.avatarUrl }, 30, { cls: 'fa-w-dot fa-w-school-av' });
+      face.setAttribute('aria-hidden', 'true');
+      var kids = [face, el('span', { class: 'fa-w-school-name', text: k.name }), el('span', { class: 'fa-w-school-sub', text: sub })];
       (k.exams || []).slice(0, 2).forEach(function (x) {
         kids.push(el('span', { class: 'fa-w-school-exam', text: T('wall.school_exam', { subject: x.subject || x.name }), title: x.name || '' }));
       });
-      box.appendChild(el('div', { class: 'fa-w-school-kid' + (k.cancelled ? ' is-warn' : '') }, kids));
+      var pill = el('div', { class: 'fa-w-school-kid' + (k.cancelled ? ' is-warn' : '') }, kids);
+      if (k.color && /^#[0-9A-Fa-f]{6}$/.test(k.color)) pill.style.setProperty('--kid', k.color);
+      box.appendChild(pill);
     });
   }
 

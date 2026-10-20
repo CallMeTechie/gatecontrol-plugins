@@ -201,14 +201,24 @@ const count = (v) => (Number.isInteger(v) && v >= 0 ? Math.min(v, 99) : 0);
 const hhmm = (v) => (typeof v === 'string' && TIME_RE.test(v) ? v : null);
 const short = (v, n) => { const s = line(typeof v === 'string' ? v : ''); return s ? s.slice(0, n) : ''; };
 
-/** One student of school_day's answer → { userId, name, start, end, cancelled, changed, holiday, exams, free } (null: unusable). */
+// 1.13.1: the child's colour (#RRGGBB) and picture (/avatars/…) as the Schule plugin (≥ 1.3.0) sends them
+const DAY_COLOR_RE = /^#[0-9A-Fa-f]{6}$/;
+const DAY_AVATAR_RE = /^\/avatars\/[A-Za-z0-9_-]{1,200}\.(?:png|jpe?g|webp)$/;
+
+/**
+ * One student of school_day's answer → { userId, name, color, avatarUrl, start, end, cancelled, changed, holiday,
+ * exams, free } (null: unusable). color / avatarUrl null when missing or not well-formed.
+ */
 function dayStudent(s) {
   const userId = s && posInt(s.userId);
   if (!userId) return null;
   const exams = (Array.isArray(s.exams) ? s.exams : []).filter((x) => x && typeof x === 'object').slice(0, 4)
     .map((x) => ({ subject: short(x.subject, 40), name: short(x.name, 60) })).filter((x) => x.subject || x.name);
   return {
-    userId, name: short(s.name, 40) || String(userId), start: hhmm(s.start), end: hhmm(s.end), cancelled: count(s.cancelled), changed: count(s.changed),
+    userId, name: short(s.name, 40) || String(userId),
+    color: typeof s.color === 'string' && DAY_COLOR_RE.test(s.color) ? s.color.toUpperCase() : null,
+    avatarUrl: typeof s.avatarUrl === 'string' && DAY_AVATAR_RE.test(s.avatarUrl) ? s.avatarUrl : null,
+    start: hhmm(s.start), end: hhmm(s.end), cancelled: count(s.cancelled), changed: count(s.changed),
     holiday: short(s.holiday, 60) || null, exams, free: s.free === true,
   };
 }

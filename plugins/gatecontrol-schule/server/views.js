@@ -13,6 +13,9 @@
 // 1.2.0: each day of the timetable carries the homework due that day and the day's exams (omitted
 // when empty); the tile and the widget name tomorrow's exam; school_day (service for the Familie
 // plugin's wall tablet) — one line per student shown on the wall.
+// 1.3.0: every student carries its face (server/colors.js): `color` '#RRGGBB' and, when the mapped
+// GateControl user has a profile picture, `avatarUrl` — in app/timetable, the portal, school_day and
+// the overview of the Schule page (overview(): the week, the coming changes, exams and homework).
 
 const store = require('./store');
 const tz = require('./tz');
@@ -20,6 +23,7 @@ const tt = require('./timetable');
 const changes = require('./changes');
 const texts = require('./texts.json');
 const notify = require('./notify');
+const colors = require('./colors');
 
 function t(lang, key, params) { return notify.fmt(texts, lang, key, params); }
 
@@ -41,6 +45,24 @@ function canView(student, user) {
 
 async function visibleStudents(gc, user) {
   return (await store.listStudents(gc)).filter((s) => canView(s, user));
+}
+
+/** 1.3.0: the GateControl users with their faces (Map id → colors.userFace()); empty without gc.users. */
+async function usersMap(gc) {
+  const m = new Map();
+  try {
+    for (const u of await gc.users.list()) {
+      const f = colors.userFace(u);
+      if (f && Number.isSafeInteger(f.id)) m.set(f.id, f);
+    }
+  } catch { /* users unavailable */ }
+  return m;
+}
+
+/** 1.3.0: { color, avatarUrl? } of a student for the APIs (avatarUrl only when there is a picture). */
+function faceFields(student, users) {
+  const f = colors.faceOf(student, users);
+  return f.avatarUrl ? { color: f.color, avatarUrl: f.avatarUrl } : { color: f.color };
 }
 
 const clip = (s, n) => {
@@ -92,6 +114,7 @@ function examView(x) {
  */
 async function timetableOf(gc, students, from, to, opts = {}) {
   const accounts = new Map((await store.listAccounts(gc)).map((a) => [a.id, a]));
+  const users = opts.users || await usersMap(gc);
   const ids = students.map((s) => s.id);
   const lessons = await store.lessonsBetween(gc, ids, from, to);
   const homework = await store.homeworkDue(gc, ids, from, to);
@@ -112,7 +135,7 @@ async function timetableOf(gc, students, from, to, opts = {}) {
       if (ex.length) day.exams = ex.map(examView);
       return day;
     });
-    return { id: s.id, name: s.display, userId: s.user_id, klasse: s.klasse || null, updatedAt: s.last_fetch_at, days };
+    return { id: s.id, name: s.display, userId: s.user_id, klasse: s.klasse || null, ...faceFields(s, users), updatedAt: s.last_fetch_at, days };
   });
 }
 
@@ -231,12 +254,14 @@ async function schoolDay(gc, cfg, payload, now) {
   const accounts = new Map((await store.listAccounts(gc)).map((a) => [a.id, a]));
   const lessons = await store.lessonsBetween(gc, ids, date, date);
   const exams = await store.examsBetween(gc, ids, date, date);
+  const users = await usersMap(gc);
   const out = students.map((s) => {
     const st = lessons.filter((l) => l.student_id === s.id).map((l) => ({ l, s: tt.shownState(l) }));
     const on = st.filter((x) => x.s !== 'cancelled');
     const acc = accounts.get(s.account_id);
     const holiday = acc ? tt.holidayOn(acc.holidays, date) : null;
-    const v = { userId: s.user_id, name: clip(s.display, 40) };
+    // 1.3.0: the child's colour (and picture) for the wall
+    const v = { userId: s.user_id, name: clip(s.display, 40), ...faceFields(s, users) };
     if (on.length) {
       v.start = on.reduce((a, x) => (x.l.t_start < a ? x.l.t_start : a), on[0].l.t_start);
       v.end = on.reduce((a, x) => (x.l.t_end > a ? x.l.t_end : a), on[0].l.t_end);
@@ -278,6 +303,43 @@ function quickActionOf(student, sum, lang, cfg) {
   };
 }
 
+/**
+ * 1.3.0: what the Schule page and the portal tab show of some students for one week (Mon–Sat):
+ * per student its face, the week (timetableOf), the coming changes (lessons from now on that do not
+ * take place as planned, ≤ 30), the exams and the homework due of the next 14 days.
+ * → { today, week, from, to, students: [{ id, name, klasse, color, avatarUrl?, initials, updatedAt,
+ *      days, changes: [lessonView + date], exams: [examView + date], homework: [homeworkView + date] }] }
+ */
+async function overview(gc, cfg, students, week, now) {
+  const today = tz.localDate(now, cfg.tz);
+  const from = tz.addDays(tz.weekStart(today), 7 * (week === 1 ? 1 : 0));
+  const to = tz.addDays(from, 5);
+  const users = await usersMap(gc);
+  const list = await timetableOf(gc, students, from, to, { users });
+  const ids = students.map((s) => s.id);
+  const until = tz.addDays(today, 13);
+  const lessons = await store.lessonsBetween(gc, ids, today, until);
+  const exams = await store.examsBetween(gc, ids, today, until);
+  const homework = await store.homeworkDue(gc, ids, today, until);
+  const byId = new Map(students.map((s) => [s.id, s]));
+  return {
+    today, week: week === 1 ? 1 : 0, from, to,
+    students: list.map((x) => {
+      const s = byId.get(x.id);
+      const changes = lessons.filter((l) => l.student_id === x.id && tt.shownState(l) !== 'normal' && tz.at(l.date, l.t_end, cfg.tz) > now)
+        .slice(0, 30).map((l) => ({ date: l.date, ...lessonView(l) }));
+      return {
+        ...x, initials: colors.faceOf(s, users).initials,
+        changes,
+        exams: exams.filter((e) => e.student_id === x.id).slice(0, 30).map((e) => ({ date: e.date, ...examView(e) })),
+        homework: homework.filter((h) => h.student_id === x.id).sort((a, b) => Number(a.completed) - Number(b.completed) || (a.due_date < b.due_date ? -1 : a.due_date > b.due_date ? 1 : 0))
+          .slice(0, 40).map((h) => ({ date: h.due_date, ...homeworkView(h) })),
+      };
+    }),
+  };
+}
+
 module.exports = {
+  usersMap, faceFields, overview,
   canView, visibleStudents, lessonView, homeworkView, examView, timetableOf, summary, tileOf, quickActionOf, statusOf, readingsOf, examSubject, schoolDay, clip, ICON_CAL,
 };

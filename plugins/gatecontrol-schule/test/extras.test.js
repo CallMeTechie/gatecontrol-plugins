@@ -82,8 +82,9 @@ test('the cycle: homework once per account, exams per student (class and student
   const q = untis.state.queries;
   assert.deepEqual(q.map((x) => x.kind), ['homeworks', 'exams', 'exams']);
   assert.deepEqual(q[0].query, { startDate: '20261005', endDate: '20261101' }, 'homework from 14 days before the timetable');
-  assert.deepEqual(q[1].query, { startDate: '20261019', endDate: '20261101', klasseId: '501', studentId: '101', withGrades: 'true' });
-  assert.deepEqual([q[2].query.klasseId, q[2].query.studentId], ['701', '102']);
+  // 1.3.0: asked like the "webuntis" library — the student's class, no studentId, no grades
+  assert.deepEqual(q[1].query, { startDate: '20261019', endDate: '20261101', klasseId: '501', withGrades: 'false' });
+  assert.deepEqual([q[2].query.klasseId, q[2].query.studentId], ['701', undefined]);
   assert.ok(untis.state.cookies.slice(-3).every((c) => /^JSESSIONID=S\d+x/.test(c)), 'with the session cookie');
 
   const r = await asApp(host, EVA, '/app/timetable', { from: '2026-10-20', to: '2026-10-23' });
@@ -119,7 +120,7 @@ test('the cycle: homework once per account, exams per student (class and student
   assert.deepEqual([again.homework.map((h) => h.text), again.exams], [['Vokabeln Unit 3'], undefined]);
 }));
 
-test('failures never break the timetable: 403 → left alone for 6 hours, network → tried next cycle, the stored data stays', () => withHost({}, async (host, untis) => {
+test('failures never break the timetable: 403 → not shared, asked again after a day; network → tried next cycle, the stored data stays', () => withHost({}, async (host, untis) => {
   seed(untis);
   await setupParent(host);
   untis.state.restStatus = { homeworks: 403, exams: 500 };
@@ -129,7 +130,9 @@ test('failures never break the timetable: 403 → left alone for 6 hours, networ
   assert.deepEqual(untis.state.calls, ['getUserData2017', 'app/config', 'getTimetable', 'getTimetable', 'homeworks', 'exams', 'logout'], 'exams: a 5xx stops after the first student');
   let acc = (await asAdmin(host, 'GET', '/status')).json.accounts[0];
   assert.deepEqual([acc.status, acc.last_error], ['ok', null], 'the account is fine');
-  assert.deepEqual(acc.extras, { homework: { code: 'auth', until: T0 + 15 * MIN + 6 * HOUR }, exams: null });
+  // 1.3.0: a 403 of an optional endpoint is "not shared with this account" — never 'auth' — and asked again after 24 hours
+  assert.deepEqual(acc.extras, { homework: { code: 'no_right', until: T0 + 15 * MIN + 24 * HOUR }, exams: null });
+  assert.deepEqual(acc.extras_info, [{ kind: 'homework', tone: 'info', text: 'Hausaufgaben sind für dieses Konto in WebUntis nicht freigegeben. GateControl schaut einmal am Tag wieder nach.' }]);
   assert.equal(host.notifications.filter((n) => n.topic === 'changes').length, 1, 'the change is pushed as ever');
   const day = (await asApp(host, EVA, '/app/timetable', { from: '2026-10-21', to: '2026-10-21' })).json.students[0].days[0];
   assert.equal(day.homework.length, 2, 'kept');
@@ -138,16 +141,19 @@ test('failures never break the timetable: 403 → left alone for 6 hours, networ
   untis.state.calls.length = 0;
   await tickAt(host, T0 + 30 * MIN);
   assert.deepEqual(untis.state.calls.filter((c) => c === 'homeworks' || c === 'exams'), ['exams']);
-  // 6 hours later it is tried again; fine now → the mark is gone
+  // 6 hours later still left alone (not shared: once a day); a day later it is tried again; fine now → the mark is gone
   untis.state.restStatus = {};
   untis.state.calls.length = 0;
   await tickAt(host, T0 + 15 * MIN + 6 * HOUR + MIN);
+  assert.deepEqual(untis.state.calls.filter((c) => c === 'homeworks' || c === 'exams'), ['exams', 'exams']);
+  untis.state.calls.length = 0;
+  await tickAt(host, T0 + 15 * MIN + 24 * HOUR + MIN);
   assert.deepEqual(untis.state.calls.filter((c) => c === 'homeworks' || c === 'exams'), ['homeworks', 'exams', 'exams']);
   acc = (await asAdmin(host, 'GET', '/status')).json.accounts[0];
   assert.deepEqual(acc.extras, { homework: null, exams: null });
   // malformed answers: kept as they were, the cycle is fine
   untis.state.homework = { homeworks: 'kaputt' };
-  await tickAt(host, T0 + 15 * MIN + 7 * HOUR);
+  await tickAt(host, T0 + 15 * MIN + 25 * HOUR);
   acc = (await asAdmin(host, 'GET', '/status')).json.accounts[0];
   assert.equal(acc.status, 'ok');
 }));
@@ -232,3 +238,68 @@ test('admin page: the exams and homework of the next 14 days', () => withHost({}
   // not for others
   assert.equal((await host.request({ method: 'GET', path: '/status', user: { ...BOB } })).status, 403);
 }));
+
+test('1.3.0 exams of a parent account: 403 when asked with the studentId → no "auth", the class variant answers; remembered', () => withHost({}, async (host, untis) => {
+  seed(untis);
+  // the school refuses parent accounts the studentId variant (what a real parent account reported)
+  untis.state.examsStatus = (q) => (q.studentId ? 403 : null);
+  const store = require('../server/store');
+  await setupParent(host);
+  let acc = (await asAdmin(host, 'GET', '/status')).json.accounts[0];
+  // an account 1.2.0 left paused as 'auth' with the studentId variant: start() clears the pause
+  await store.updateAccount(host.gc, acc.id, { extras: { exams: { code: 'auth', until: T0 + 6 * HOUR }, examsVariant: 'student' } });
+  await host.plugin.start(host.gc);
+  untis.state.queries.length = 0;
+  await tickAt(host, T0 + 15 * MIN);
+  const ex = untis.state.queries.filter((x) => x.kind === 'exams').map((x) => x.query);
+  // Lena: the remembered variant first (403), then the class (ok); Max: the class variant right away
+  assert.deepEqual(ex.map((q) => [q.klasseId, q.studentId || null, q.withGrades]), [['501', '101', 'false'], ['501', null, 'false'], ['701', null, 'false']]);
+  acc = (await asAdmin(host, 'GET', '/status')).json.accounts[0];
+  assert.deepEqual([acc.status, acc.extras, acc.extras_info], ['ok', { homework: null, exams: null }, []]);
+  assert.equal((await store.getAccount(host.gc, acc.id)).extras.examsVariant, 'class');
+  const day = (await asApp(host, EVA, '/app/timetable', { from: '2026-10-21', to: '2026-10-21' })).json.students[0].days[0];
+  assert.equal(day.exams[0].name, 'KA 2', 'filtered by assignedStudents as before');
+  // next cycle: only the class variant
+  untis.state.queries.length = 0;
+  await tickAt(host, T0 + 30 * MIN);
+  assert.deepEqual(untis.state.queries.filter((x) => x.kind === 'exams').map((x) => x.query.studentId || null), [null, null]);
+}));
+
+test('1.3.0 exams not shared at all: every variant refused → a calm line in the settings, asked again after a day, never a code', () => withHost({}, async (host, untis) => {
+  seed(untis);
+  untis.state.examsStatus = () => 403;
+  await setupParent(host);
+  const ex = untis.state.queries.filter((x) => x.kind === 'exams');
+  assert.equal(ex.length, 3, 'three variants for the first student, then no more (same account)');
+  const acc = (await asAdmin(host, 'GET', '/status')).json.accounts[0];
+  assert.equal(acc.status, 'ok');
+  assert.equal(acc.extras.exams.code, 'no_right');
+  assert.equal(acc.extras.exams.until, T0 + 24 * HOUR);
+  assert.deepEqual(acc.extras_info.map((x) => [x.kind, x.tone]), [['exams', 'info']]);
+  assert.equal(acc.extras_info[0].text, 'Klassenarbeiten sind für dieses Konto in WebUntis nicht freigegeben. GateControl schaut einmal am Tag wieder nach.');
+  assert.ok(!/\((auth|no_right)\)|no_right/.test(JSON.stringify(acc.extras_info)), 'no codes for people');
+  // English
+  const en = (await host.request({ method: 'GET', path: '/status', query: {}, body: null, user: { id: 1, name: 'admin', role: 'admin' }, lang: 'en' })).json.accounts[0];
+  assert.match(en.extras_info[0].text, /^Exams are not shared with this account in WebUntis/);
+}));
+
+test('1.3.0 untis client: optional endpoints map 401/403 to no_right and 404 to unsupported; the login keeps auth', async () => {
+  const untis = require('../server/untis');
+  const answers = [];
+  const gc = { http: { fetch: async () => answers.shift() } };
+  const c = untis.createClient(gc, { host: 'nessa.webuntis.com', school: 'X', username: 'u', auth: 'password' });
+  const code = async (fn) => { try { await fn(); return 'ok'; } catch (e) { return e.code; } };
+  answers.push({ status: 200, headers: {}, body: JSON.stringify({ result: { sessionId: 'S1', personId: 1, personType: 12 } }) });
+  await c.login({ password: 'pw' });
+  answers.push({ status: 403, body: '' });
+  assert.equal(await code(() => c.exams('2026-10-19', '2026-11-01', { klasseId: 5, variant: 'class' })), 'no_right');
+  answers.push({ status: 401, body: '' });
+  assert.equal(await code(() => c.homework('2026-10-05', '2026-11-01')), 'no_right');
+  answers.push({ status: 404, body: '' });
+  assert.equal(await code(() => c.exams('2026-10-19', '2026-11-01', { variant: 'own' })), 'unsupported');
+  assert.equal(await code(() => c.exams('2026-10-19', '2026-11-01', { variant: 'class' })), 'unsupported', 'no class id: the variant is skipped without a request');
+  answers.push({ status: 401, body: '' });
+  assert.equal(await code(() => c.appConfig()), 'auth', 'not an optional endpoint');
+  assert.equal(untis.examsQuery('student', '2026-10-19', '2026-11-01', null, 101), 'startDate=20261019&endDate=20261101&klasseId=-1&studentId=101&withGrades=false');
+  assert.equal(untis.examsQuery('class', '2026-10-19', '2026-11-01', 501, 101), 'startDate=20261019&endDate=20261101&klasseId=501&withGrades=false');
+});
