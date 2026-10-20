@@ -64,6 +64,8 @@ async function route(req, gc, seg, { admin }) {
       ok: true, month, currentMonth: logbook.currentMonth(), vehicles: vehicles.map(vehicleView), vehicleId: v ? v.id : null,
       trips: trips.map((tr) => logbook.tripView(tr, lang, users)).reverse(), // newest first on screen
       summary: logbook.summary(trips), moving: v ? await logbook.isMoving(gc, v.vin) : false,
+      // 1.5.2: the last mileage and since when a trip waits for the higher one (shown under the list)
+      detection: v ? await logbook.detection(gc, v.vin) : null,
       canEdit, admin, users: admin ? [...users.values()] : [],
     } };
   }

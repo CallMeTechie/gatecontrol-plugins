@@ -170,6 +170,7 @@ const YES = (v) => (v == null ? null : String(v).toUpperCase() === 'YES');
 const OPEN = (v) => (v == null ? null : String(v).toUpperCase() === 'OPEN');
 const ON = (v) => (v == null ? null : String(v).toUpperCase() === 'ON');
 const num = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+const maxKm = (...vs) => { const n = vs.map(num).filter((v) => v != null); return n.length ? Math.max(...n) : null; };
 
 function normalizeVehicleState({ status, drivingRange, charging, airConditioning, position, health, maintenance }) {
   const chStatus = charging && charging.status;
@@ -225,7 +226,9 @@ function normalizeVehicleState({ status, drivingRange, charging, airConditioning
     position: pos && pos.gpsCoordinates
       ? { lat: num(pos.gpsCoordinates.latitude), lon: num(pos.gpsCoordinates.longitude) } : null,
     health: {
-      mileageKm: health ? num(health.mileageInKm) : null,
+      // the warning-light report and the maintenance report both carry the mileage, one is often
+      // updated later than the other: the higher (newer) one counts
+      mileageKm: maxKm(health && health.mileageInKm, maintenance && maintenance.maintenanceReport && maintenance.maintenanceReport.mileageInKm),
       warnings: (health && Array.isArray(health.warningLights) ? health.warningLights : [])
         .map((w) => (typeof w === 'string' ? w : (w && (w.category || w.type)) || 'UNKNOWN')),
     },
