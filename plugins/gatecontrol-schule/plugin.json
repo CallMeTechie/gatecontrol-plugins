@@ -1,0 +1,163 @@
+{
+  "id": "gatecontrol-schule",
+  "name": {
+    "de": "Schule",
+    "en": "School"
+  },
+  "version": "1.0.0",
+  "publisher": "CallMeTechie",
+  "description": {
+    "de": "Stundenplan aus WebUntis für Schüler- und Elternkonten: Ausfälle, Vertretungen und Zusatzstunden als Push, Wochenplan im Portal (auch am Wand-Tablet), Kachel und Widget je Kind.",
+    "en": "Timetable from WebUntis for student and parent accounts: cancellations, substitutions and extra lessons as push notifications, a week view in the portal (also on the wall tablet), a tile and a widget per child."
+  },
+  "gatecontrol": ">=1.172.0",
+  "entry": "server/index.js",
+  "permissions": {
+    "network": {
+      "internet": [
+        "*.webuntis.com:443"
+      ]
+    },
+    "storage": true,
+    "portal": true,
+    "users": true,
+    "app": true,
+    "notify": true,
+    "background": {
+      "intervalSeconds": 60
+    }
+  },
+  "ui": {
+    "nav": {
+      "label": {
+        "de": "Schule",
+        "en": "School"
+      },
+      "icon": "M2 9l10-5 10 5-10 5zM6 11v5c3 2 9 2 12 0v-5M22 9v6"
+    },
+    "pages": [
+      {
+        "id": "main",
+        "title": {
+          "de": "Schule",
+          "en": "School"
+        }
+      }
+    ],
+    "settings": [
+      {
+        "key": "timezone",
+        "type": "text",
+        "label": {
+          "de": "Zeitzone",
+          "en": "Time zone"
+        },
+        "help": {
+          "de": "IANA-Name, z. B. Europe/Berlin – die Zeitzone der Schule (Stundenzeiten, Ruhezeit, Abrufzeiten).",
+          "en": "IANA name, e.g. Europe/Berlin – the school's time zone (lesson times, quiet hours, fetch times)."
+        },
+        "default": "Europe/Berlin"
+      },
+      {
+        "key": "notify_lang",
+        "type": "select",
+        "label": {
+          "de": "Sprache der Benachrichtigungen",
+          "en": "Notification language"
+        },
+        "help": {
+          "de": "Die Mitteilungen gehen an das zugeordnete Kind und die eingetragenen Empfänger; jede Person kann das Thema „Stundenplan-Änderungen“ im Portal oder in der App abschalten.",
+          "en": "Notifications go to the mapped child and the listed recipients; everyone can switch the topic “Timetable changes” off in the portal or the app."
+        },
+        "options": [
+          {
+            "value": "de",
+            "label": "Deutsch"
+          },
+          {
+            "value": "en",
+            "label": "English"
+          }
+        ],
+        "default": "de"
+      },
+      {
+        "key": "poll_minutes",
+        "type": "number",
+        "label": {
+          "de": "Abrufintervall (Minuten)",
+          "en": "Fetch interval (minutes)"
+        },
+        "help": {
+          "de": "Mo–Sa 05:30–20:00 so oft je Konto, sonst stündlich. Mindestens 5 Minuten – bitte WebUntis nicht unnötig belasten.",
+          "en": "Mon–Sat 05:30–20:00 this often per account, otherwise hourly. At least 5 minutes – please do not load WebUntis needlessly."
+        },
+        "min": 5,
+        "max": 120,
+        "default": 15
+      },
+      {
+        "key": "notify_days",
+        "type": "number",
+        "label": {
+          "de": "Push für die nächsten Tage",
+          "en": "Push for the next days"
+        },
+        "help": {
+          "de": "1 = nur heute, 2 = heute und morgen (Vorgabe), bis 7. Änderungen weiter in der Zukunft stehen nur im Änderungsprotokoll und im Portal.",
+          "en": "1 = today only, 2 = today and tomorrow (default), up to 7. Changes further ahead are only shown in the change log and the portal."
+        },
+        "min": 1,
+        "max": 7,
+        "default": 2
+      },
+      {
+        "key": "quiet_from",
+        "type": "text",
+        "label": {
+          "de": "Ruhezeit ab",
+          "en": "Quiet hours from"
+        },
+        "help": {
+          "de": "HH:MM, z. B. 21:00. In der Ruhezeit erkannte Änderungen werden am Ende der Ruhezeit gesendet (nur, wenn die Stunde dann noch nicht vorbei ist). Beide Felder leer = keine Ruhezeit.",
+          "en": "HH:MM, e.g. 21:00. Changes found during quiet hours are sent when they end (only if the lesson is not over by then). Both fields empty = no quiet hours."
+        },
+        "default": "21:00"
+      },
+      {
+        "key": "quiet_to",
+        "type": "text",
+        "label": {
+          "de": "Ruhezeit bis",
+          "en": "Quiet hours until"
+        },
+        "help": {
+          "de": "HH:MM, z. B. 06:00",
+          "en": "HH:MM, e.g. 06:00"
+        },
+        "default": "06:00"
+      }
+    ],
+    "portal": {
+      "label": {
+        "de": "Schule",
+        "en": "School"
+      },
+      "icon": "M2 9l10-5 10 5-10 5zM6 11v5c3 2 9 2 12 0v-5M22 9v6"
+    }
+  },
+  "license": {
+    "required": true
+  },
+  "migrations": "migrations",
+  "notifyTopics": [
+    {
+      "id": "changes",
+      "label": {
+        "de": "Stundenplan-Änderungen",
+        "en": "Timetable changes"
+      },
+      "default": true
+    }
+  ]
+}

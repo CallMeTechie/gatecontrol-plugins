@@ -1,0 +1,20 @@
+{
+ "jsonrpc": "2.0",
+ "id": "gc",
+ "result": [
+  {
+   "id": 1,
+   "name": "Brücke",
+   "longName": "Brückentag",
+   "startDate": 20261030,
+   "endDate": 20261030
+  },
+  {
+   "id": 2,
+   "name": "Weihn",
+   "longName": "Weihnachtsferien",
+   "startDate": 20261223,
+   "endDate": 20270105
+  }
+ ]
+}

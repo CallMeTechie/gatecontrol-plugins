@@ -1,0 +1,134 @@
+<main class="sc-page">
+  <div class="banner banner-warn" id="sc-problems" role="status" hidden></div>
+  <div class="sc-bar">
+    <div class="sc-bar-info" id="sc-info"></div>
+    <div class="page-actions">
+      <button class="btn btn-primary" type="button" id="sc-add">{{t:account.add}}</button>
+    </div>
+  </div>
+  <p class="sc-note">{{t:page.disclaimer}}</p>
+  <div class="sc-grid" id="sc-accounts"></div>
+
+  <section class="sc-section">
+    <h2 class="sc-h2">{{t:log.title}}</h2>
+    <p class="form-hint">{{t:log.hint}}</p>
+    <div class="sc-log" id="sc-log"></div>
+  </section>
+
+  <!-- Konto hinzufügen / Zugang ändern -->
+  <div class="modal-overlay" id="sc-acc-modal" role="dialog" aria-modal="true" aria-labelledby="sc-acc-title" hidden>
+    <div class="modal modal-wide">
+      <div class="modal-head">
+        <div class="modal-title" id="sc-acc-title">{{t:account.add}}</div>
+        <button class="btn modal-close" type="button" data-close="sc-acc-modal" aria-label="{{t:common.close}}">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="sc-seg" role="tablist" id="sc-mode">
+          <button type="button" class="sc-seg-btn active" data-mode="qr">{{t:mode.qr}}</button>
+          <button type="button" class="sc-seg-btn" data-mode="password">{{t:mode.password}}</button>
+        </div>
+
+        <div id="sc-qr-box">
+          <ol class="sc-steps">
+            <li>{{t:qr.step1}}</li>
+            <li>{{t:qr.step2}}</li>
+            <li>{{t:qr.step3}}</li>
+          </ol>
+          <div class="form-group">
+            <label class="form-label" for="sc-qr-link">{{t:qr.link}}</label>
+            <textarea class="form-input" id="sc-qr-link" spellcheck="false" autocomplete="off" placeholder="untis://setschool?url=…&amp;school=…&amp;user=…&amp;key=…"></textarea>
+            <span class="form-hint">{{t:qr.link_hint}}</span>
+          </div>
+          <details class="sc-details">
+            <summary>{{t:qr.manual}}</summary>
+            <p class="form-hint">{{t:qr.manual_hint}}</p>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label" for="sc-k-host">{{t:field.host}}</label>
+                <input class="form-input" id="sc-k-host" type="text" maxlength="253" placeholder="xyz.webuntis.com" autocomplete="off">
+              </div>
+              <div class="form-group">
+                <label class="form-label" for="sc-k-school">{{t:field.school}}</label>
+                <input class="form-input" id="sc-k-school" type="text" maxlength="120" autocomplete="off">
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label" for="sc-k-user">{{t:field.user}}</label>
+                <input class="form-input" id="sc-k-user" type="text" maxlength="120" autocomplete="off">
+              </div>
+              <div class="form-group">
+                <label class="form-label" for="sc-k-key">{{t:field.key}}</label>
+                <input class="form-input" id="sc-k-key" type="password" maxlength="200" autocomplete="off">
+              </div>
+            </div>
+          </details>
+        </div>
+
+        <div id="sc-pw-box" hidden>
+          <p class="form-hint">{{t:pw.hint}}</p>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label" for="sc-p-host">{{t:field.host}}</label>
+              <input class="form-input" id="sc-p-host" type="text" maxlength="253" placeholder="xyz.webuntis.com" autocomplete="off">
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="sc-p-school">{{t:field.school}}</label>
+              <input class="form-input" id="sc-p-school" type="text" maxlength="120" autocomplete="off">
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label" for="sc-p-user">{{t:field.user}}</label>
+              <input class="form-input" id="sc-p-user" type="text" maxlength="120" autocomplete="off">
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="sc-p-pass">{{t:field.password}}</label>
+              <input class="form-input" id="sc-p-pass" type="password" maxlength="500" autocomplete="new-password">
+            </div>
+          </div>
+        </div>
+        <p class="form-hint">{{t:account.privacy}}</p>
+        <p class="sc-msg" id="sc-acc-msg" role="status"></p>
+      </div>
+      <div class="modal-foot">
+        <button class="btn" type="button" data-close="sc-acc-modal">{{t:common.cancel}}</button>
+        <button class="btn btn-primary" type="button" id="sc-acc-save">{{t:account.connect}}</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Schüler bearbeiten -->
+  <div class="modal-overlay" id="sc-st-modal" role="dialog" aria-modal="true" aria-labelledby="sc-st-title" hidden>
+    <div class="modal">
+      <div class="modal-head">
+        <div class="modal-title" id="sc-st-title">{{t:student.edit}}</div>
+        <button class="btn modal-close" type="button" data-close="sc-st-modal" aria-label="{{t:common.close}}">×</button>
+      </div>
+      <div class="modal-body">
+        <label class="check sc-check"><input type="checkbox" id="sc-s-enabled"> <span>{{t:student.enabled}}</span></label>
+        <div class="form-group">
+          <label class="form-label" for="sc-s-alias">{{t:student.alias}}</label>
+          <input class="form-input" id="sc-s-alias" type="text" maxlength="40" autocomplete="off">
+          <span class="form-hint" id="sc-s-alias-hint"></span>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="sc-s-user">{{t:student.user}}</label>
+          <select class="form-select" id="sc-s-user"></select>
+          <span class="form-hint">{{t:student.user_hint}}</span>
+        </div>
+        <div class="form-group">
+          <div class="form-label">{{t:student.recipients}}</div>
+          <span class="form-hint">{{t:student.recipients_hint}}</span>
+          <div class="sc-check-list" id="sc-s-recipients"></div>
+        </div>
+        <label class="check sc-check"><input type="checkbox" id="sc-s-wall"> <span>{{t:student.wall}}</span></label>
+        <p class="form-hint">{{t:student.wall_hint}}</p>
+      </div>
+      <div class="modal-foot">
+        <button class="btn" type="button" data-close="sc-st-modal">{{t:common.cancel}}</button>
+        <button class="btn btn-primary" type="button" id="sc-st-save">{{t:common.save}}</button>
+      </div>
+    </div>
+  </div>
+</main>

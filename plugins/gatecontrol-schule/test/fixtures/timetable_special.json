@@ -1,0 +1,325 @@
+{
+ "comment": "getTimetable result with cancelled, substituted (orgname), irregular, double and duplicate lessons",
+ "result": [
+  {
+   "id": 1,
+   "date": 20261020,
+   "startTime": 800,
+   "endTime": 845,
+   "kl": [
+    {
+     "id": 501,
+     "name": "5a",
+     "longname": "Klasse 5a"
+    }
+   ],
+   "te": [
+    {
+     "id": 11,
+     "name": "MUE",
+     "longname": "Müller"
+    }
+   ],
+   "su": [
+    {
+     "id": 1,
+     "name": "M",
+     "longname": "Mathematik"
+    }
+   ],
+   "ro": [
+    {
+     "id": 1,
+     "name": "101",
+     "longname": "Raum 101"
+    }
+   ],
+   "activityType": "Unterricht"
+  },
+  {
+   "id": 2,
+   "date": 20261020,
+   "startTime": 850,
+   "endTime": 935,
+   "code": "cancelled",
+   "kl": [
+    {
+     "id": 501,
+     "name": "5a",
+     "longname": "Klasse 5a"
+    }
+   ],
+   "te": [
+    {
+     "id": 12,
+     "name": "SCH",
+     "longname": "Schmidt"
+    }
+   ],
+   "su": [
+    {
+     "id": 2,
+     "name": "D",
+     "longname": "Deutsch"
+    }
+   ],
+   "ro": [
+    {
+     "id": 1,
+     "name": "101",
+     "longname": "Raum 101"
+    }
+   ],
+   "substText": "Lehrkraft erkrankt"
+  },
+  {
+   "id": 3,
+   "date": 20261020,
+   "startTime": 950,
+   "endTime": 1035,
+   "code": "irregular",
+   "kl": [
+    {
+     "id": 501,
+     "name": "5a",
+     "longname": "Klasse 5a"
+    }
+   ],
+   "te": [
+    {
+     "id": 12,
+     "name": "SCH",
+     "longname": "Schmidt",
+     "orgid": 13,
+     "orgname": "WEB"
+    }
+   ],
+   "su": [
+    {
+     "id": 3,
+     "name": "E",
+     "longname": "Englisch"
+    }
+   ],
+   "ro": [
+    {
+     "id": 2,
+     "name": "201",
+     "longname": "Raum 201"
+    }
+   ],
+   "substText": "Vertretung"
+  },
+  {
+   "id": 4,
+   "date": 20261020,
+   "startTime": 1040,
+   "endTime": 1125,
+   "kl": [
+    {
+     "id": 501,
+     "name": "5a",
+     "longname": "Klasse 5a"
+    }
+   ],
+   "te": [
+    {
+     "id": 14,
+     "name": "KLE",
+     "longname": "Klein"
+    }
+   ],
+   "su": [
+    {
+     "id": 4,
+     "name": "BIO",
+     "longname": "Biologie"
+    }
+   ],
+   "ro": [
+    {
+     "id": 3,
+     "name": "104",
+     "longname": "Raum 104",
+     "orgid": 2,
+     "orgname": "201"
+    }
+   ]
+  },
+  {
+   "id": 5,
+   "date": 20261020,
+   "startTime": 1140,
+   "endTime": 1225,
+   "code": "irregular",
+   "kl": [
+    {
+     "id": 501,
+     "name": "5a",
+     "longname": "Klasse 5a"
+    }
+   ],
+   "te": [
+    {
+     "id": 14,
+     "name": "KLE",
+     "longname": "Klein"
+    }
+   ],
+   "su": [
+    {
+     "id": 6,
+     "name": "MU",
+     "longname": "Musik",
+     "orgid": 7,
+     "orgname": "GE"
+    }
+   ],
+   "ro": [
+    {
+     "id": 2,
+     "name": "201",
+     "longname": "Raum 201"
+    }
+   ],
+   "info": "Probe für das Konzert"
+  },
+  {
+   "id": 6,
+   "date": 20261021,
+   "startTime": 1040,
+   "endTime": 1225,
+   "kl": [
+    {
+     "id": 501,
+     "name": "5a",
+     "longname": "Klasse 5a"
+    }
+   ],
+   "te": [
+    {
+     "id": 14,
+     "name": "KLE",
+     "longname": "Klein"
+    }
+   ],
+   "su": [
+    {
+     "id": 5,
+     "name": "SP",
+     "longname": "Sport"
+    }
+   ],
+   "ro": [
+    {
+     "id": 4,
+     "name": "TH",
+     "longname": "Turnhalle"
+    }
+   ],
+   "lstext": "Doppelstunde"
+  },
+  {
+   "id": 7,
+   "date": 20261021,
+   "startTime": 800,
+   "endTime": 1315,
+   "code": "irregular",
+   "kl": [
+    {
+     "id": 501,
+     "name": "5a",
+     "longname": "Klasse 5a"
+    }
+   ],
+   "te": [],
+   "su": [],
+   "ro": [],
+   "lstext": "Wandertag"
+  },
+  {
+   "id": 8,
+   "date": 20261022,
+   "startTime": 800,
+   "endTime": 845,
+   "kl": [
+    {
+     "id": 501,
+     "name": "5a",
+     "longname": "Klasse 5a"
+    }
+   ],
+   "te": [
+    {
+     "id": 11,
+     "name": "MUE",
+     "longname": "Müller"
+    }
+   ],
+   "su": [
+    {
+     "id": 1,
+     "name": "M",
+     "longname": "Mathematik"
+    }
+   ],
+   "ro": [
+    {
+     "id": 1,
+     "name": "101",
+     "longname": "Raum 101"
+    }
+   ]
+  },
+  {
+   "id": 9,
+   "date": 20261022,
+   "startTime": 800,
+   "endTime": 845,
+   "kl": [
+    {
+     "id": 501,
+     "name": "5a",
+     "longname": "Klasse 5a"
+    }
+   ],
+   "te": [
+    {
+     "id": 11,
+     "name": "MUE",
+     "longname": "Müller"
+    }
+   ],
+   "su": [
+    {
+     "id": 1,
+     "name": "M",
+     "longname": "Mathematik"
+    }
+   ],
+   "ro": [
+    {
+     "id": 3,
+     "name": "104",
+     "longname": "Raum 104"
+    }
+   ]
+  },
+  {
+   "id": 10,
+   "date": 20261123,
+   "startTime": 800,
+   "endTime": 845,
+   "kl": [],
+   "te": [],
+   "su": [
+    {
+     "id": 1,
+     "name": "M",
+     "longname": "Mathematik"
+    }
+   ],
+   "ro": []
+  }
+ ]
+}

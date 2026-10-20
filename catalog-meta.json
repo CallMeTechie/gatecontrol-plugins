@@ -1987,6 +1987,162 @@
         "en": "DSM account with administrator rights on the NAS"
       },
       "languages": ["de", "en"]
+    },
+    "gatecontrol-schule": {
+      "category": "family",
+      "icon": "calendar",
+      "summary": {
+        "de": "Stundenplan aus WebUntis: Ausfälle und Vertretungen als Push, Wochenplan im Portal und am Wand-Tablet, Kachel und Widget je Kind.",
+        "en": "Timetable from WebUntis: cancellations and substitutions as pushes, a week view in the portal and on the wall tablet, a tile and widget per child."
+      },
+      "audience": "all",
+      "keywords": ["schule", "school", "webuntis", "untis", "stundenplan", "timetable", "vertretung", "substitution", "ausfall", "vertretungsplan", "kinder", "eltern"],
+      "related": ["gatecontrol-familie", "gatecontrol-alltag"],
+      "adds": [
+        {
+          "icon": "page",
+          "title": {
+            "de": "Seite „Schule“",
+            "en": "Page “School”"
+          },
+          "text": {
+            "de": "WebUntis-Konten per QR-Code-Link verbinden, Kinder Benutzern zuordnen, Abrufe und Änderungen im Blick",
+            "en": "Connect WebUntis accounts by QR code link, map children to users, keep an eye on fetches and changes"
+          }
+        },
+        {
+          "icon": "portal",
+          "title": {
+            "de": "Portal-Tab „Schule“",
+            "en": "Portal tab “School”"
+          },
+          "text": {
+            "de": "Wochenplan je Kind: Ausfälle rot durchgestrichen, Vertretungen orange – auch am Wand-Tablet",
+            "en": "Week view per child: cancellations struck through in red, substitutions in orange – also on the wall tablet"
+          }
+        },
+        {
+          "icon": "bell",
+          "title": {
+            "de": "Push bei Änderungen",
+            "en": "Push on changes"
+          },
+          "text": {
+            "de": "Ausfall, Vertretung, Zusatzstunde für heute und morgen – mit Ruhezeit, eine Mitteilung pro Kind",
+            "en": "Cancellation, substitution, extra lesson for today and tomorrow – with quiet hours, one notification per child"
+          }
+        },
+        {
+          "icon": "tile",
+          "title": {
+            "de": "Startkachel „Schule · <Kind>“",
+            "en": "Start tile “School · <child>”"
+          },
+          "text": {
+            "de": "Ausfälle und Vertretungen von heute und morgen auf einen Blick",
+            "en": "Today's and tomorrow's cancellations and substitutions at a glance"
+          }
+        },
+        {
+          "icon": "widget",
+          "title": {
+            "de": "Widget je Kind",
+            "en": "Widget per child"
+          },
+          "text": {
+            "de": "Ausfälle heute und morgen – auch als Bedingung in Regeln der Familie",
+            "en": "Cancellations today and tomorrow – also as a condition in family rules"
+          }
+        },
+        {
+          "icon": "app",
+          "title": {
+            "de": "Daten für die App",
+            "en": "Data for the app"
+          },
+          "text": {
+            "de": "Stundenplan und Änderungen über die App-Schnittstelle",
+            "en": "Timetable and changes through the app API"
+          }
+        }
+      ],
+      "permissions": [
+        {
+          "icon": "network",
+          "title": {
+            "de": "WebUntis der Schule erreichen",
+            "en": "Reach the school's WebUntis"
+          },
+          "text": {
+            "de": "Nur Adressen unter webuntis.com (inoffizielle Schnittstelle der Web-App, ohne Gewähr). Zugang verschlüsselt gespeichert.",
+            "en": "Only addresses under webuntis.com (unofficial interface of the web app, without warranty). Access stored encrypted."
+          },
+          "tag": {
+            "de": "Netzwerk",
+            "en": "Network"
+          }
+        },
+        {
+          "icon": "users",
+          "title": {
+            "de": "Benutzer sehen",
+            "en": "See the users"
+          },
+          "text": {
+            "de": "Um Kinder und Empfänger zuzuordnen – jede Person sieht nur die Kinder, die ihr zugeordnet sind.",
+            "en": "To map children and recipients – everyone only sees the children mapped to them."
+          },
+          "tag": {
+            "de": "Benutzer",
+            "en": "Users"
+          }
+        },
+        {
+          "icon": "bell",
+          "title": {
+            "de": "Push-Mitteilungen senden",
+            "en": "Send push notifications"
+          },
+          "text": {
+            "de": "Thema „Stundenplan-Änderungen“ an das Kind und die eingetragenen Empfänger.",
+            "en": "Topic “Timetable changes” to the child and the listed recipients."
+          }
+        },
+        {
+          "icon": "clock",
+          "title": {
+            "de": "Im Hintergrund abrufen",
+            "en": "Fetch in the background"
+          },
+          "text": {
+            "de": "Je Konto alle 15 Minuten (Mo–Sa 05:30–20:00), sonst stündlich – mit Abmeldung nach jedem Abruf.",
+            "en": "Per account every 15 minutes (Mon–Sat 05:30–20:00), otherwise hourly – logging out after every fetch."
+          }
+        }
+      ],
+      "shows": [
+        {
+          "kind": "tile",
+          "caption": {
+            "de": "Startkachel „Schule · Lena“",
+            "en": "Start tile “School · Lena”"
+          },
+          "value": "1 Ausfall"
+        },
+        {
+          "kind": "widget",
+          "caption": {
+            "de": "Widget mit Ausfällen heute und morgen",
+            "en": "Widget with today's and tomorrow's cancellations"
+          },
+          "value": "2"
+        }
+      ],
+      "needs": {
+        "de": "Ein WebUntis-Schüler- oder Elternkonto",
+        "en": "A WebUntis student or parent account"
+      },
+      "languages": ["de", "en"]
     }
   }
 }
