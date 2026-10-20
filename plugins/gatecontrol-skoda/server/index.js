@@ -212,6 +212,10 @@ const PURPOSE_ICONS = {
   business: 'M4 8h16v12H4zM9 8V5h6v3M4 13h16',
   commute: 'M4 17l5-5 4 4 7-7M14 9h6v6',
 };
+// the month's kilometres of the logbook widget (GateControl ≥ 1.187 shows it beside the value instead of the label)
+const MONTH_ICON = 'M4 6h16v14H4zM4 10h16M9 3v4M15 3v4';
+// at most this many small values in the logbook widget: more wrap to a second line in a half-width card
+const LOGBOOK_READINGS_MAX = 3;
 // the lock toggle per state (GateControl ≥ 1.172.0): on = locked (green, closed), off = unlocked (red, open)
 const LOCK_LOOK = Object.freeze({ on: { icon: LOCK_CLOSED_ICON, tone: 'good' }, off: { icon: LOCK_OPEN_ICON, tone: 'crit' } });
 
@@ -351,16 +355,20 @@ async function logbookAction(gc, v, lang) {
   const moving = await logbook.isMoving(gc, v.vin);
   const km = (n) => logbook.fmtKm(n, lang);
   const w = {
-    label: clip(t(lang, 'widget.month_km'), 24), value: sum.total, unit: 'km', status: null, state: null, readings: [], controls: [], power: false,
+    label: clip(t(lang, 'widget.month_km'), 24), icon: MONTH_ICON, value: sum.total, unit: 'km', status: null, state: null, readings: [], controls: [], power: false,
   };
-  w.readings.push({ id: 'business', label: clip(t(lang, 'logbook.purpose_business'), 20), value: km(sum.business), unit: 'km', icon: PURPOSE_ICONS.business });
-  w.readings.push({ id: 'private', label: clip(t(lang, 'logbook.purpose_private'), 20), value: km(sum.private), unit: 'km', icon: PURPOSE_ICONS.private });
-  if (sum.commute) w.readings.push({ id: 'commute', label: clip(t(lang, 'logbook.purpose_commute'), 20), value: km(sum.commute), unit: 'km', icon: PURPOSE_ICONS.commute });
-  if (sum.openCount) w.readings.push({ id: 'open', label: clip(t(lang, 'logbook.purpose_open'), 20), value: String(sum.openCount), icon: PURPOSE_ICONS.open, state: 'warn' });
+  // 1.5.4: icon and number only (the unit is the large value's), at most three — one line in a half-width card
+  w.readings.push({ id: 'business', label: clip(t(lang, 'logbook.purpose_business'), 20), value: km(sum.business), icon: PURPOSE_ICONS.business });
+  w.readings.push({ id: 'private', label: clip(t(lang, 'logbook.purpose_private'), 20), value: km(sum.private), icon: PURPOSE_ICONS.private });
+  if (sum.commute) w.readings.push({ id: 'commute', label: clip(t(lang, 'logbook.purpose_commute'), 20), value: km(sum.commute), icon: PURPOSE_ICONS.commute });
+  if (sum.openCount && w.readings.length < LOGBOOK_READINGS_MAX) {
+    w.readings.push({ id: 'open', label: clip(t(lang, 'logbook.purpose_open'), 20), value: String(sum.openCount), icon: PURPOSE_ICONS.open, state: 'warn' });
+  }
   if (moving) w.status = clip(t(lang, 'widget.trip_moving'), 60);
   else if (last) {
     const to = last.endAddress ? last.endAddress.split(',')[0] : '';
-    w.status = clip(t(lang, 'widget.trip_last', { km: km(last.distanceKm), purpose: logbook.purposeLabel(last.purpose, lang) }) + (to ? ` → ${to}` : ''), 60);
+    // the purpose is the choice below — the line only says how far and where to
+    w.status = clip(t(lang, 'widget.trip_last', { km: km(last.distanceKm) }) + (to ? ` → ${to}` : ''), 60);
   } else w.status = clip(t(lang, 'widget.trip_none'), 60);
   if (last && !last.purpose) w.state = 'warn';
   if (last) {

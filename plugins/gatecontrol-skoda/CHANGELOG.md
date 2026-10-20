@@ -2,6 +2,12 @@
 
 Škoda-Fahrzeuge (MySkoda) als GateControl-Plugin – bisher fest in GateControl eingebaut.
 
+## 1.5.4
+- **Fahrtenbuch-Widget kompakter**: Die Monatssumme hat ein Kalender-Symbol statt „Diesen Monat“
+  (GateControl ab 1.187 und App ab der nächsten Version; ältere zeigen weiter den Text). Die Zwecke
+  stehen als Symbol und Zahl in einer Zeile (höchstens drei), die Zeile „Letzte: 65 km → Fujiallee 4“
+  ist kürzer – der Zweck steht ja in den Knöpfen darunter.
+
 ## 1.5.3
 - **Richtige Adressen im Fahrtenbuch**: Start und Ziel kommen jetzt aus Škodas eigener Adresse der
   Parkposition – dieselbe, die die MySkoda-App zeigt (z. B. „Fujiallee“ statt eines Fußwegs in der
