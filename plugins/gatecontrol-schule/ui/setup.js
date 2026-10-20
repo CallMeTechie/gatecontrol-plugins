@@ -2,7 +2,7 @@
    in Einstellungen › Plugins › Schule › Einstellungen). WebUntis accounts (add: scan the QR code,
    upload a picture of it, type it in — ui/scan.js; fetch now, renew the access, remove), the
    children (name, colour, GateControl user, recipients, wall tablet, on/off) and the diagnostics
-   (change log, Familie). Everything goes through the plugin API (window.GC); credentials never
+   (change log, Familie; 1.4.0: per account the state of the school messages and absences in words). Everything goes through the plugin API (window.GC); credentials never
    come back. Codes are never shown — the API sends the texts. */
 (function () {
   'use strict';
@@ -49,7 +49,11 @@
       a.status === 'error' && a.error_text ? el('div', { class: 'acc-err', text: a.error_text }) : null,
       el('div', { class: 'acc-meta' }, meta),
       kids.length ? el('div', { class: 'acc-kids' }, kids) : el('div', { class: 'hint', text: T('student.none') }),
-    ].concat((a.extras_info || []).map(function (x) { return el('div', { class: 'acc-info', 'data-tone': x.tone, text: x.text }); })).concat([
+    ].concat((a.extras_info || []).map(function (x) { return el('div', { class: 'acc-info', 'data-tone': x.tone, text: x.text }); }))
+      // 1.4.0: school messages and absences — their state in words
+      .concat((a.school_info || []).map(function (x) {
+        return el('div', { class: 'acc-info acc-school', 'data-tone': x.tone, 'data-kind': x.kind }, [S.svg(x.kind === 'messages' ? S.ICON.mail : S.ICON.calx, 14), el('span', { text: x.text })]);
+      })).concat([
       el('div', { class: 'acc-foot' }, [
         el('button', { type: 'button', class: 'btn btn-sm', on: { click: function (e) { refresh(a, e.currentTarget); } } }, [S.svg(S.ICON.refresh, 15), T('account.refresh')]),
         el('button', { type: 'button', class: 'btn btn-sm', on: { click: function () { reauth(a); } } }, [S.svg(S.ICON.key, 15), T('account.credentials')]),

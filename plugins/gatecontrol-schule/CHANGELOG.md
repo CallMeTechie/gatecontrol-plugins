@@ -2,6 +2,33 @@
 
 Stundenplan aus WebUntis für Schüler- und Elternkonten als GateControl-Plugin.
 
+## 1.4.0
+- **Nachrichten der Schule.** Das Plugin liest im Abruf den WebUntis-Posteingang jedes Kontos (beim
+  Elternkonto die Post an die Eltern, beim Schülerkonto die an das Kind) – höchstens alle 15 Minuten je
+  Konto, **nur lesend** (nichts wird als gelesen markiert, keine Nachricht geöffnet): ein Token per
+  `GET api/token/new` mit der Sitzung, dann `GET api/rest/view/v1/messages` mit `Authorization: Bearer`.
+  Betreff, Vorschau und – nur wenn die Liste ihn liefert – der Text werden als reiner Text gespeichert
+  (HTML sicher entfernt), 90 Tage lang. Neues Thema **„Nachrichten der Schule“**: je neuer Nachricht ein
+  Push „Schule: <Betreff>“ mit Absender und Vorschau, höchstens 3 je Konto und Abruf, dann eine
+  Sammelmitteilung; an die Empfänger der Kinder des Kontos bzw. beim eigenen Schülerkonto an das Kind.
+  Ein Kind sieht die Post an seine Eltern nicht.
+- **Fehlzeiten.** Je Kind höchstens stündlich `GET api/classreg/absences/students` (Schuljahr ab 1. August
+  bis 14 Tage voraus, alle Entschuldigungsstatus): Datum, Uhrzeit, Grund, Text, entschuldigt / nicht
+  entschuldigt / offen. Neues Thema **„Fehlzeiten“**: neue oder geänderte Einträge (z. B. eingetragen,
+  entschuldigt) an die Empfänger, an das Kind nur mit der neuen Einstellung **„Fehlzeiten auch dem Kind
+  melden“** (Vorgabe aus). Sehen dürfen Admins, Empfänger und das Kind selbst.
+- Für beide gilt: der erste gute Abruf ist die Ausgangslage (keine Pushes), nie doppelt, Ruhezeit wie
+  bei den anderen Mitteilungen. Optional wie Hausaufgaben/Arbeiten: 401/403 = „nicht freigegeben“, 404 =
+  „nicht vorhanden“ (einmal am Tag wieder versucht), andere Fehler nach 6 Stunden – der Stundenplan läuft
+  immer weiter. Die Einstellungen zeigen je Konto den Stand beider in Worten (zuletzt gelesen, Anzahl,
+  nicht freigegeben, nächster Versuch).
+- **Seite „Schule“ und Portal:** je Kind die Abschnitte „Nachrichten“ (antippen öffnet den Text) und
+  „Fehlzeiten“ (Datum/Uhrzeit, Badge entschuldigt / nicht entschuldigt / offen, Grund) in der Farbe des
+  Kindes; auf der Kinderkarte „1 neue Nachricht“. Die Startkachel nennt neue Nachrichten.
+- **API (additiv):** `GET app/messages?days=30` (1…90, ≤ 100) und `GET app/absences?days=60` (1…180,
+  ≤ 200); `overview` / `portal/overview` je Kind `messages` und `absences` (nur wenn sichtbar). Migration
+  `005_messages_absences.sql`. Alles Bisherige unverändert.
+
 ## 1.3.0
 - **Konto hinzufügen = QR-Code scannen.** „WebUntis-Konto hinzufügen“ bietet drei Wege: **„QR-Code
   scannen“** – die Kamera liest den WebUntis-QR-Code (`untis://setschool?…`) direkt (BarcodeDetector des

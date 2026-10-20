@@ -16,6 +16,7 @@ const DEFAULTS = Object.freeze({
   quiet_to: '06:00',
   reminder_time: '18:00',
   self_link: true,
+  absence_notify_child: false,
 });
 
 function int(v, min, max, d) {
@@ -66,6 +67,8 @@ function fromSettings(s) {
     quiet,
     // 1.3.0: people may link their own WebUntis student account in their GateControl profile
     selfLink: v.self_link == null ? DEFAULTS.self_link : v.self_link === true || v.self_link === 'true',
+    // 1.4.0: absence pushes also to the child itself (default: only the recipients)
+    absenceNotifyChild: v.absence_notify_child === true || v.absence_notify_child === 'true',
     problems,
   };
 }

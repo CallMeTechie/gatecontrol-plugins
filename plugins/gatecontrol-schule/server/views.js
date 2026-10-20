@@ -33,6 +33,7 @@ const ICON_SWAP = 'M4 8h13l-3-3M20 16H7l3 3';
 const ICON_PLUS = 'M12 5v14M5 12h14';
 const ICON_CHECK = 'M5 12l5 5 9-10';
 const ICON_EXAM = 'M9 4h6v3H9zM6 6h12v15H6zM9 12h6M9 16h4';
+const ICON_MAIL = 'M4 6h16v12H4zM4 7l8 6 8-6';
 
 /** May `user` see `student`? */
 function canView(student, user) {
@@ -178,7 +179,10 @@ function examSubject(x, max) {
   return clip(x.subject || x.subject_long || x.name || '–', max);
 }
 
-/** Start tile of a student (value ≤ 24 characters, ≤ 4 items; 1.2.0: an item for tomorrow's exam). */
+/**
+ * Start tile of a student (value ≤ 24 characters, ≤ 4 items; 1.2.0: an item for tomorrow's exam; 1.4.0:
+ * „1 neue Nachricht“ when sum.newMessages (new messages of its inbox the viewer may read) has some).
+ */
 function tileOf(student, sum, lang) {
   const a = sum.today;
   let value;
@@ -199,7 +203,8 @@ function tileOf(student, sum, lang) {
   } else value = a.holiday ? t(lang, 'tile.holiday') : t(lang, 'tile.free');
   const items = [];
   const exam = (sum.tomorrow.exams || [])[0];
-  const room = exam ? 3 : 4;
+  const news = Array.isArray(sum.newMessages) ? sum.newMessages : [];
+  const room = 4 - (exam ? 1 : 0) - (news.length ? 1 : 0);
   for (const [part, label] of [[sum.today, t(lang, 'tile.today')], [sum.tomorrow, t(lang, 'tile.tomorrow')]]) {
     for (const x of part.special) {
       if (items.length >= room) break;
@@ -212,6 +217,13 @@ function tileOf(student, sum, lang) {
     }
   }
   // „Morgen · Arbeit: Mathematik“
+  // „1 neue Nachricht · Elternabend“
+  if (news.length) {
+    items.push({
+      label: clip(news.length === 1 ? t(lang, 'tile.one_message') : t(lang, 'tile.messages', { n: news.length }), 20),
+      value: clip(news[0].subject || news[0].sender || '–', 16), icon: ICON_MAIL,
+    });
+  }
   if (exam) items.push({ label: clip(t(lang, 'tile.exam_tomorrow'), 20), value: examSubject(exam, 16), icon: ICON_EXAM, state: 'warn' });
   return { title: clip(`${t(lang, 'tile.title')} · ${student.display}`, 60), value: clip(value, 24), state, icon: ICON_CAL, items };
 }

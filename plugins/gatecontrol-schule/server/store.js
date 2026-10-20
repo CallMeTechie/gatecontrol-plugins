@@ -2,7 +2,8 @@
 
 // Data access of the plugin's own database (migrations/001_init.sql; 1.2.0: 003_homework_exams.sql —
 // homework, exams, once-only notices, early ends of a school day; 1.3.0: 004_colors_links.sql — a
-// colour per student, links made by people themselves in their profile).
+// colour per student, links made by people themselves in their profile; 1.4.0: 005_messages_absences.sql —
+// the inbox of an account and the absences of a student).
 //
 // Credentials are plugin secrets, never in this database: the QR key of an
 // account under 'acct.<id>.secret', a password under 'acct.<id>.password'
@@ -59,7 +60,7 @@ async function patchRow(gc, table, cols, id, patch) {
 // ─── Accounts ───────────────────────────────────
 
 const ACCOUNT_COLS = ['host', 'school', 'username', 'auth', 'person_id', 'person_type', 'status', 'last_error', 'error_count', 'last_attempt_at',
-  'last_success_at', 'last_error_at', 'next_fetch_at', 'refresh_asked_at', 'timegrid_json', 'holidays_json', 'meta_day', 'extras_json', 'owner_user_id'];
+  'last_success_at', 'last_error_at', 'next_fetch_at', 'refresh_asked_at', 'timegrid_json', 'holidays_json', 'meta_day', 'extras_json', 'owner_user_id', 'messages_at'];
 
 function accountRow(r) {
   if (!r) return null;
@@ -75,6 +76,8 @@ function accountRow(r) {
     extras: parseJson(r.extras_json, {}),
     // 1.3.0: the GateControl user who connected the account in the profile (null = an administrator)
     owner_user_id: r.owner_user_id == null ? null : Number(r.owner_user_id),
+    // 1.4.0: the last good inbox fetch (null: the next one is the baseline)
+    messages_at: r.messages_at == null ? null : Number(r.messages_at),
     created_at: Number(r.created_at),
   };
 }
@@ -128,8 +131,9 @@ async function deleteAccount(gc, id) {
     for (const sid of ids) {
       await gc.db.run('DELETE FROM lessons WHERE student_id = ?', [sid]);
       await gc.db.run('DELETE FROM changes WHERE student_id = ?', [sid]);
-      for (const t of ['homework', 'exams', 'day_ends']) await gc.db.run(`DELETE FROM ${t} WHERE student_id = ?`, [sid]);
+      for (const t of ['homework', 'exams', 'day_ends', 'absences']) await gc.db.run(`DELETE FROM ${t} WHERE student_id = ?`, [sid]);
     }
+    await gc.db.run('DELETE FROM messages WHERE account_id = ?', [id]);
     await gc.db.run('DELETE FROM students WHERE account_id = ?', [id]);
     return (await gc.db.run('DELETE FROM accounts WHERE id = ?', [id])).changes > 0;
   });
@@ -138,7 +142,7 @@ async function deleteAccount(gc, id) {
 // ─── Students ───────────────────────────────────
 
 const STUDENT_COLS = ['name', 'alias', 'klasse', 'enabled', 'user_id', 'recipients_json', 'show_on_wall', 'baseline_done', 'missing', 'range_from',
-  'range_to', 'last_fetch_at', 'last_change_at', 'last_error', 'color', 'link_source'];
+  'range_to', 'last_fetch_at', 'last_change_at', 'last_error', 'color', 'link_source', 'absences_at'];
 
 function studentRow(r) {
   if (!r) return null;
@@ -153,6 +157,8 @@ function studentRow(r) {
     last_error: r.last_error || null, created_at: Number(r.created_at),
     // 1.3.0: the student's own colour (#RRGGBB) and who mapped user_id ('admin' | 'self' | null)
     color: colors.hex(r.color), link_source: r.link_source === 'self' || r.link_source === 'admin' ? r.link_source : null,
+    // 1.4.0: the last good absence fetch (null: the next one is the baseline)
+    absences_at: r.absences_at == null ? null : Number(r.absences_at),
   };
 }
 
@@ -427,7 +433,177 @@ async function setDayEndStatus(gc, list, status, sentAt = null) {
   }
 }
 
+// ─── Messages (1.4.0) ───────────────────────────
+
+const MSG_FIELDS = ['subject', 'preview', 'body', 'sender', 'sent_at', 'has_attachments'];
+
+function messageRow(r) {
+  if (!r) return null;
+  return {
+    account_id: Number(r.account_id), msg_id: r.msg_id, subject: r.subject || '', preview: r.preview || '', body: r.body || null, sender: r.sender || '',
+    sent_at: r.sent_at == null ? null : Number(r.sent_at), has_attachments: !!r.has_attachments, detected_at: Number(r.detected_at),
+    seen_at: Number(r.seen_at), status: r.status, pushed_at: r.pushed_at == null ? null : Number(r.pushed_at),
+  };
+}
+
+/**
+ * The messages an inbox fetch found (`rows` parsed, server/messages.js). New ones are added — 'baseline'
+ * on the account's first fetch, else 'pending' (to be pushed); known ones are updated (a body once
+ * there is kept). Messages sent before `oldest` (ms) are not added (they would be pruned at once).
+ * → the number of new messages.
+ */
+async function upsertMessages(gc, accountId, rows, now, { baseline, oldest }) {
+  return tx(gc, async () => {
+    const have = new Set((await gc.db.query('SELECT msg_id FROM messages WHERE account_id = ?', [accountId])).rows.map((r) => r.msg_id));
+    let added = 0;
+    for (const m of rows) {
+      const vals = [m.subject || '', m.preview || '', m.body || null, m.sender || '', m.sent_at == null ? null : m.sent_at, m.has_attachments ? 1 : 0];
+      if (have.has(m.msg_id)) {
+        await gc.db.run(`UPDATE messages SET subject = ?, preview = ?, body = COALESCE(?, body), sender = ?, sent_at = ?, has_attachments = ?, seen_at = ? WHERE account_id = ? AND msg_id = ?`,
+          [...vals, now, accountId, m.msg_id]);
+        continue;
+      }
+      if (m.sent_at != null && oldest != null && m.sent_at < oldest) continue;
+      have.add(m.msg_id);
+      await gc.db.run(`INSERT INTO messages (account_id, msg_id, ${MSG_FIELDS.join(', ')}, detected_at, seen_at, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [accountId, m.msg_id, ...vals, now, now, baseline ? 'baseline' : 'pending']);
+      added += 1;
+    }
+    return added;
+  });
+}
+
+async function messagesWithStatus(gc, statuses) {
+  return (await gc.db.query(`SELECT * FROM messages WHERE status IN (${statuses.map(() => '?').join(',')}) ORDER BY account_id, COALESCE(sent_at, detected_at), msg_id`, statuses)).rows.map(messageRow);
+}
+
+async function setMessageStatus(gc, list, status, pushedAt = null) {
+  for (const m of list) await gc.db.run('UPDATE messages SET status = ?, pushed_at = ? WHERE account_id = ? AND msg_id = ?', [status, pushedAt, m.account_id, m.msg_id]);
+}
+
+/** The messages of some accounts sent (or, without a time, found) since `since` (ms), newest first. */
+async function listMessages(gc, accountIds, since, limit = 100) {
+  if (!accountIds.length) return [];
+  const r = await gc.db.query(`SELECT * FROM messages WHERE account_id IN (${accountIds.map(() => '?').join(',')}) AND COALESCE(sent_at, detected_at) >= ?
+    ORDER BY COALESCE(sent_at, detected_at) DESC, msg_id DESC LIMIT ?`, [...accountIds, since, limit]);
+  return r.rows.map(messageRow);
+}
+
+/** Per account: how many messages are stored. */
+async function countMessages(gc) {
+  const m = new Map();
+  for (const r of (await gc.db.query('SELECT account_id, COUNT(*) AS n FROM messages GROUP BY account_id')).rows) m.set(Number(r.account_id), Number(r.n));
+  return m;
+}
+
+// ─── Absences (1.4.0) ───────────────────────────
+
+const ABS_FIELDS = ['date', 'end_date', 't_start', 't_end', 'reason', 'text', 'excused'];
+
+function absenceRow(r) {
+  if (!r) return null;
+  return {
+    student_id: Number(r.student_id), abs_id: r.abs_id, date: r.date, end_date: r.end_date || null, t_start: r.t_start || null, t_end: r.t_end || null,
+    reason: r.reason || null, text: r.text || null, excused: r.excused == null ? null : !!Number(r.excused), sig: r.sig,
+    detected_at: Number(r.detected_at), changed_at: Number(r.changed_at), status: r.status, change: r.change || null,
+    pushed_at: r.pushed_at == null ? null : Number(r.pushed_at),
+  };
+}
+
+/** What a change of an absence is looked for in (not its free text). */
+const absenceSig = (a) => JSON.stringify([a.date, a.end_date || null, a.t_start || null, a.t_end || null, a.excused == null ? null : !!a.excused, a.reason || null]);
+
+/** The change of an absence that is known already → 'excused' | 'unexcused' | 'changed'. */
+function absenceChange(old, next) {
+  const was = old.excused == null ? null : !!old.excused;
+  const now = next.excused == null ? null : !!next.excused;
+  if (was !== now && now === true) return 'excused';
+  if (was !== now && now === false) return 'unexcused';
+  return 'changed';
+}
+
+/**
+ * A student's absences between `from` and `to` as a fetch found them (`rows` parsed, server/absences.js):
+ * new ones are added, changed ones updated — on the baseline as 'baseline', later as 'pending' with what
+ * changed —, ones WebUntis no longer lists within the dates are removed. → { added, changed, removed }
+ */
+async function applyAbsences(gc, studentId, rows, from, to, now, { baseline }) {
+  return tx(gc, async () => {
+    const prev = new Map((await gc.db.query('SELECT * FROM absences WHERE student_id = ? AND date >= ? AND date <= ?', [studentId, from, to])).rows.map((r) => [r.abs_id, absenceRow(r)]));
+    const out = { added: 0, changed: 0, removed: 0 };
+    const seen = new Set();
+    for (const a of rows) {
+      if (seen.has(a.abs_id)) continue;
+      seen.add(a.abs_id);
+      const sig = absenceSig(a);
+      const vals = ABS_FIELDS.map((k) => (k === 'excused' ? (a.excused == null ? null : (a.excused ? 1 : 0)) : (a[k] == null ? null : a[k])));
+      const old = prev.get(a.abs_id) || (await gc.db.get('SELECT * FROM absences WHERE student_id = ? AND abs_id = ?', [studentId, a.abs_id]).then((r) => absenceRow(r.row)));
+      if (!old) {
+        await gc.db.run(`INSERT INTO absences (student_id, abs_id, ${ABS_FIELDS.join(', ')}, sig, detected_at, changed_at, status, change) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [studentId, a.abs_id, ...vals, sig, now, now, baseline ? 'baseline' : 'pending', baseline ? null : 'new']);
+        out.added += 1;
+        continue;
+      }
+      if (old.sig === sig) {
+        await gc.db.run('UPDATE absences SET text = ? WHERE student_id = ? AND abs_id = ?', [a.text == null ? null : a.text, studentId, a.abs_id]);
+        continue;
+      }
+      let status = baseline ? old.status : 'pending';
+      let change = baseline ? old.change : absenceChange(old, a);
+      // not pushed yet: a new one stays new
+      if (!baseline && (old.status === 'pending' || old.status === 'held') && old.change === 'new') change = 'new';
+      if (baseline && status === 'pending') status = 'baseline';
+      await gc.db.run(`UPDATE absences SET ${ABS_FIELDS.map((k) => `${k} = ?`).join(', ')}, sig = ?, changed_at = ?, status = ?, change = ? WHERE student_id = ? AND abs_id = ?`,
+        [...vals, sig, now, status, change, studentId, a.abs_id]);
+      out.changed += 1;
+    }
+    for (const id of prev.keys()) {
+      if (seen.has(id)) continue;
+      await gc.db.run('DELETE FROM absences WHERE student_id = ? AND abs_id = ?', [studentId, id]);
+      out.removed += 1;
+    }
+    return out;
+  });
+}
+
+async function absencesWithStatus(gc, statuses) {
+  return (await gc.db.query(`SELECT * FROM absences WHERE status IN (${statuses.map(() => '?').join(',')}) ORDER BY student_id, date, t_start, abs_id`, statuses)).rows.map(absenceRow);
+}
+
+async function setAbsenceStatus(gc, list, status, pushedAt = null) {
+  for (const a of list) await gc.db.run('UPDATE absences SET status = ?, pushed_at = ? WHERE student_id = ? AND abs_id = ?', [status, pushedAt, a.student_id, a.abs_id]);
+}
+
+/** Absences of some students that start on or end after `sinceDate`, newest first. */
+async function listAbsences(gc, studentIds, sinceDate, limit = 200) {
+  if (!studentIds.length) return [];
+  const out = [];
+  for (let i = 0; i < studentIds.length; i += 90) {
+    const ids = studentIds.slice(i, i + 90);
+    const r = await gc.db.query(`SELECT * FROM absences WHERE student_id IN (${ids.map(() => '?').join(',')}) AND (date >= ? OR end_date >= ?)
+      ORDER BY date DESC, COALESCE(t_start, '') DESC, abs_id DESC LIMIT ?`, [...ids, sinceDate, sinceDate, limit]);
+    out.push(...r.rows.map(absenceRow));
+  }
+  out.sort((a, b) => (a.date > b.date ? -1 : a.date < b.date ? 1 : (a.t_start || '') > (b.t_start || '') ? -1 : (a.t_start || '') < (b.t_start || '') ? 1 : 0));
+  return out.slice(0, limit);
+}
+
+/** Per student: how many absences are stored. */
+async function countAbsences(gc) {
+  const m = new Map();
+  for (const r of (await gc.db.query('SELECT student_id, COUNT(*) AS n FROM absences GROUP BY student_id')).rows) m.set(Number(r.student_id), Number(r.n));
+  return m;
+}
+
+/** Housekeeping (1.4.0): messages sent (or, without a time, last listed) before `msgBefore` (ms); absences before `absBefore` (date). */
+async function pruneSchool(gc, msgBefore, absBefore) {
+  await gc.db.run('DELETE FROM messages WHERE (sent_at IS NOT NULL AND sent_at < ?) OR (sent_at IS NULL AND seen_at < ?)', [msgBefore, msgBefore]);
+  await gc.db.run('DELETE FROM absences WHERE COALESCE(end_date, date) < ?', [absBefore]);
+}
+
 module.exports = {
+  upsertMessages, messagesWithStatus, setMessageStatus, listMessages, countMessages,
+  applyAbsences, absencesWithStatus, setAbsenceStatus, listAbsences, countAbsences, absenceSig, absenceChange, pruneSchool,
   tx, listAccounts, getAccount, findAccount, createAccount, updateAccount, deleteAccount, getCred, setCred, clearCred,
   listStudents, getStudent, updateStudent, syncStudents, ensureColors, takenColors, studentsOfPerson,
   lessonsBetween, replaceLessons, countLessons, LESSON_COLS,

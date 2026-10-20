@@ -110,6 +110,8 @@
     check: 'M5 12l5 5 9-10',
     wall: 'M4 5h16v11H4zM9 20h6M12 16v4',
     bell: 'M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9|M10.3 21a1.94 1.94 0 0 0 3.4 0',
+    mail: 'M4 6h16v12H4z|M4 7l8 6 8-6',
+    calx: 'M4 5h16v15H4zM4 10h16M8 3v4M16 3v4|M10 13l4 4M14 13l-4 4',
   };
   /**
    * The face of a child or a person: the picture (avatarUrl, /avatars/… of GateControl — allowed by

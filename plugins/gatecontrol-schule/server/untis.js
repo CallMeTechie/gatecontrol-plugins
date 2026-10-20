@@ -31,6 +31,18 @@
 //              studentId variant by some schools (HTTP 403). The REST answers of these optional
 //              endpoints map 401/403 to 'no_right' (the same session just read the timetable, so the
 //              login is fine) and 404 to 'unsupported' — never 'auth'.
+//   1.4.0      school messages and absences (optional like homework / exams, read only — nothing is
+//              ever marked as read, sent or changed in WebUntis):
+//              GET /WebUntis/api/token/new (session cookie) → the JWT of the session as text
+//              GET /WebUntis/api/rest/view/v1/messages (cookie + Authorization: Bearer <jwt>)
+//                → { incomingMessages: [{ id, subject, contentPreview, hasAttachments, isMessageRead,
+//                    sender: { displayName, className }, sentDateTime }] } — the account's inbox (a parent
+//                    account: the parents' inbox, a student account: the student's). No detail call: opening
+//                    a message in WebUntis may mark it as read.
+//              GET /WebUntis/api/classreg/absences/students?startDate&endDate&studentId&excuseStatusId=-1
+//                → { data: { absences: [{ id, startDate, endDate, startTime, endTime, reason, text,
+//                    excuseStatus, isExcused, excuse: { id, excuseStatus, isExcused, … }, studentName }] } }
+//              The JWT is asked once per session, kept in memory only and never logged.
 //
 // Errors become stable codes (UntisError.code): 'auth' (bad credentials,
 // invalid one-time password, unknown school), 'no_right' (JSON-RPC -8509:
@@ -145,6 +157,20 @@ function examsQuery(variant, from, to, klasseId, studentId) {
 }
 
 const pad2 = (n) => String(n).padStart(2, '0');
+const JWT_RE = /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*$/;
+
+/** 1.4.0: the answer of api/token/new (plain text, a JSON string or { token }) → the JWT, null when none. */
+function jwtOf(text) {
+  let v = typeof text === 'string' ? text.trim() : '';
+  if (v.startsWith('"') || v.startsWith('{')) {
+    try {
+      const j = JSON.parse(v);
+      v = typeof j === 'string' ? j : (j && typeof j === 'object' && (typeof j.token === 'string' ? j.token : (typeof j.jwt === 'string' ? j.jwt : ''))) || '';
+    } catch { v = ''; }
+  }
+  v = v.trim();
+  return v.length <= 8192 && JWT_RE.test(v) ? v : null;
+}
 /** "YYYY-MM-DD" → 20261021 */
 const untisDate = (d) => Number(String(d).replace(/-/g, ''));
 
@@ -159,6 +185,7 @@ function createClient(gc, account, opts = {}) {
   const school = String(account.school);
   const timeoutMs = opts.timeoutMs || TIMEOUT_MS;
   let sessionId = null;
+  let jwt = null; // 1.4.0: the session's token for the REST views (memory only)
   let rid = 0;
 
   const cookie = () => `JSESSIONID=${sessionId}; schoolname=${schoolCookie(school)}`;
@@ -176,6 +203,7 @@ function createClient(gc, account, opts = {}) {
     if (st === 404 && opt.optional) throw fail('unsupported', st);
     if (st === 429 || st >= 500) throw fail('network', st);
     if (!(st >= 200 && st < 300)) throw fail('failed', st);
+    if (opt.raw) return { res, text: typeof res.body === 'string' ? res.body : '' };
     let body;
     try { body = JSON.parse(res.body); } catch { throw fail('failed', 'json'); }
     return { res, body };
@@ -273,6 +301,46 @@ function createClient(gc, account, opts = {}) {
       return Array.isArray(data.exams) ? data.exams : [];
     },
 
+    /** 1.4.0: the JWT of this session (api/token/new, asked once per session). Optional endpoint. */
+    async token() {
+      if (jwt) return jwt;
+      const { text } = await http(`${base}/api/token/new`, { method: 'GET', headers: { cookie: cookie(), accept: 'text/plain, application/json' } }, { optional: true, raw: true });
+      const v = jwtOf(text);
+      if (!v) throw fail('failed', 'token');
+      jwt = v;
+      return jwt;
+    },
+
+    /**
+     * 1.4.0: the account's inbox (read only) → the raw incoming messages ([] when empty). Throws like the
+     * optional endpoints ('no_right' / 'unsupported' / 'network' / 'failed').
+     */
+    async inbox() {
+      const token = await this.token();
+      const { body } = await http(`${base}/api/rest/view/v1/messages`, { method: 'GET', headers: { cookie: cookie(), authorization: `Bearer ${token}` } }, { optional: true });
+      const b = body && typeof body === 'object' ? body : null;
+      if (!b) throw fail('failed', 'messages');
+      if (Array.isArray(b)) return b;
+      const list = b.incomingMessages || (b.data && typeof b.data === 'object' ? b.data.incomingMessages : undefined);
+      if (list == null) {
+        if (Array.isArray(b.messages)) return b.messages;
+        throw fail('failed', 'messages');
+      }
+      if (!Array.isArray(list)) throw fail('failed', 'messages');
+      return list;
+    },
+
+    /** 1.4.0: a student's absences between two local dates (excuseStatusId=-1: all) → the raw absences. */
+    async absences(from, to, studentId) {
+      const sid = Number.isSafeInteger(studentId) && studentId > 0 ? studentId : null;
+      if (!sid) throw fail('unsupported', 'student');
+      const q = `startDate=${untisDate(from)}&endDate=${untisDate(to)}&studentId=${sid}&excuseStatusId=-1`;
+      const { body } = await http(`${base}/api/classreg/absences/students?${q}`, { method: 'GET', headers: { cookie: cookie() } }, { optional: true });
+      const data = body && body.data;
+      if (!data || typeof data !== 'object' || Array.isArray(data)) throw fail('failed', 'absences');
+      return Array.isArray(data.absences) ? data.absences : [];
+    },
+
     async timegrid() {
       const { result } = await rpc('getTimegridUnits', {});
       return Array.isArray(result) ? result : [];
@@ -288,6 +356,7 @@ function createClient(gc, account, opts = {}) {
       if (!sessionId) return;
       try { await rpc('logout', {}); } catch { /* expires on the server */ }
       sessionId = null;
+      jwt = null;
     },
   };
 }
@@ -319,5 +388,5 @@ function studentsOf(account, login, cfg) {
 
 module.exports = {
   UntisError, normalizeHost, parseQrLink, schoolCookie, sessionFromSetCookie, rpcError, codeOf, createClient, studentsOf,
-  untisDate, pad2, CLIENT, EXAM_VARIANTS, examsQuery,
+  untisDate, pad2, CLIENT, EXAM_VARIANTS, examsQuery, jwtOf,
 };

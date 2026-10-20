@@ -17,6 +17,10 @@
 .acc-err{font-size:13px;color:var(--crit);font-weight:600;padding:8px 10px;border-radius:10px;background:color-mix(in srgb,var(--crit) 9%,transparent)}
 .acc-info{font-size:12.5px;padding:7px 10px;border-radius:10px;background:var(--surface-2);color:var(--muted)}
 .acc-info[data-tone="warn"]{color:var(--warn);background:color-mix(in srgb,var(--warn) 10%,transparent)}
+.acc-school{display:flex;align-items:flex-start;gap:7px}
+.acc-school svg{flex:none;margin-top:2px}
+.acc-info[data-tone="good"]{color:var(--text)}
+.acc-info[data-tone="good"] svg{color:var(--good)}
 .acc-kids{display:flex;gap:6px;flex-wrap:wrap}
 .acc-kid{display:inline-flex;align-items:center;gap:6px;padding:3px 10px 3px 3px;border-radius:999px;background:var(--surface-2);font-size:12.5px;font-weight:600;max-width:100%}
 .acc-kid span:last-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
