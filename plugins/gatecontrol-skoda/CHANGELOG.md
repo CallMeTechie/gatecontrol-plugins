@@ -12,6 +12,8 @@
   wird oft später aktualisiert).
 - Das Fahrtenbuch zeigt den zuletzt gemeldeten Kilometerstand und „Geparkt an einem neuen Ort – die
   Fahrt wird eingetragen, sobald …“, solange eine Fahrt darauf wartet.
+- Meldet das Fahrzeug seit Stunden keine Parkposition, sagt das Fahrtenbuch das jetzt (statt dauerhaft
+  „Unterwegs“) – ohne Position wird keine Fahrt erkannt.
 
 ## 1.5.1
 - **Fahrtenbuch in der App**: Die Schnellaktion „Fahrtenbuch“ ist jetzt ein eigenes Gerät mit

@@ -204,7 +204,14 @@ async function setSpot(gc, vin, s) {
 /** For the logbook page: the last mileage, and since when a trip waits for the higher mileage. */
 async function detection(gc, vin) {
   const s = await getSpot(gc, vin);
-  return { km: s && s.km != null ? Number(s.km) : null, waitingSince: (s && s.arrived_at) || null, moving: Boolean(s && s.moving_since) };
+  return {
+    km: s && s.km != null ? Number(s.km) : null,
+    waitingSince: (s && s.arrived_at) || null,
+    moving: Boolean(s && s.moving_since),
+    // since when no parking position came (a vehicle that never reports one is never seen parked)
+    noPositionSince: (s && s.moving_since) || null,
+    parkedSeen: Boolean(s && s.lat != null),
+  };
 }
 
 /** The vehicle is driving right now (a sync without a position since it was last seen parked). */

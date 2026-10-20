@@ -8,6 +8,7 @@
   var T = SK.T, $ = SK.$, el = SK.el, clear = SK.clear, api = SK.api, toast = SK.toast;
   var CTX = SK.CTX;
   var PORTAL = CTX.view === 'portal';
+  var NO_POSITION_MS = 3 * 3600000;
   var BASE = PORTAL ? 'portal/logbook' : 'logbook';
   var PURPOSES = ['private', 'business', 'commute'];
   var state = { vehicleId: null, month: null, data: null, busy: false };
@@ -61,6 +62,10 @@
     var hint = $('#lb-hint');
     hint.hidden = true;
     if (PORTAL && !d.canEdit) { hint.hidden = false; hint.textContent = T('logbook.login_hint'); }
+    else if (d.detection && d.detection.noPositionSince && Date.now() - Date.parse(d.detection.noPositionSince) > NO_POSITION_MS) {
+      // hours without a parking position: hardly still driving — the vehicle does not report where it is
+      hint.hidden = false; hint.textContent = T('logbook.no_position', { since: SK.rel(d.detection.noPositionSince) });
+    }
     else if (d.moving) { hint.hidden = false; hint.textContent = T('widget.trip_moving'); }
     else if (d.detection && d.detection.waitingSince) { hint.hidden = false; hint.textContent = T('logbook.waiting_km', { since: SK.rel(d.detection.waitingSince) }); }
     var det = $('#lb-detection');
