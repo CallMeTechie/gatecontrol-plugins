@@ -182,7 +182,7 @@ test('normalizeVehicleState maps the MySkoda payloads', () => {
   assert.equal(s.climate.targetC, 22);
   assert.equal(s.climate.windowHeating, false);
   assert.deepEqual(s.climate.timers[0], { id: 1, enabled: true, time: '07:30', type: 'RECURRING', days: ['MONDAY', 'TUESDAY'] });
-  assert.deepEqual(s.position, { lat: 51, lon: 7 });
+  assert.deepEqual(s.position, { lat: 51, lon: 7, address: null });
   assert.equal(s.health.mileageKm, 5210);
   assert.deepEqual(s.maintenance, { dueInDays: 210, dueInKm: 24790, partner: 'Autohaus Test GmbH' });
   const empty = normalizeVehicleState({});

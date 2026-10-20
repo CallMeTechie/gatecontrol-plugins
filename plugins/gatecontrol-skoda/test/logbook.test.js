@@ -104,6 +104,30 @@ test('1.5.2: the position comes before the higher mileage — the trip waits and
   });
 });
 
+test('1.5.3: Škoda’s own address of the parking position wins over OpenStreetMap; start and destination can be corrected', () => {
+  const cloud = fakeSkoda();
+  return withHost({ cloud, gatecontrol: GC }, async (host) => {
+    const ids = await connected(host, cloud);
+    await asAdmin(host, 'PUT', `/vehicles/${ids.vehicleId}/owners`, { user_ids: [ADA.id] });
+    await withState({ moving: true, km: 5210 }, () => sync(host, ids.accountId));
+    const saved = fx.positions;
+    await withState({ lat: 50.0, lon: 8.53, km: 5251 }, async () => {
+      fx.positions = { positions: [{ type: 'VEHICLE', gpsCoordinates: { latitude: 50.0, longitude: 8.53 },
+        address: { street: 'Fujiallee', houseNumber: '1', zipCode: '65451', city: 'Kelsterbach', countryCode: 'DE' } }], errors: [] };
+      try { await sync(host, ids.accountId); } finally { fx.positions = saved; }
+    });
+    let tr = (await asAdmin(host, 'GET', '/logbook')).json.trips[0];
+    assert.equal(tr.endAddress, 'Fujiallee 1, 65451 Kelsterbach');
+    let r = await asAdmin(host, 'PUT', `/logbook/trips/${tr.id}`, { startAddress: '  Rothenberger Str. 7,\n55450 Langenlonsheim ', endAddress: 'Fujiallee 1, Kelsterbach' });
+    assert.equal(r.status, 200, JSON.stringify(r.json));
+    assert.deepEqual([r.json.trip.startAddress, r.json.trip.endAddress, r.json.trip.edited], ['Rothenberger Str. 7, 55450 Langenlonsheim', 'Fujiallee 1, Kelsterbach', true]);
+    assert.equal((await asAdmin(host, 'PUT', `/logbook/trips/${tr.id}`, { endAddress: 5 })).status, 400);
+    // the owner signed in in the portal may correct it too
+    r = await asPortal(host, ADA, 'PUT', `/portal/logbook/trips/${tr.id}`, { endAddress: 'Fujiallee 2, 65451 Kelsterbach' });
+    assert.equal(r.json.trip.endAddress, 'Fujiallee 2, 65451 Kelsterbach');
+  });
+});
+
 test('1.5.2: the mileage of the maintenance report counts when it is the newer one', () => {
   const cloud = fakeSkoda();
   return withHost({ cloud, gatecontrol: GC }, async (host) => {

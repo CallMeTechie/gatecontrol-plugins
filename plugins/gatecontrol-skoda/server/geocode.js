@@ -39,7 +39,8 @@ async function reverseGeocode(gc, lat, lon) {
   const hit = cache.get(key);
   if (hit && Date.now() - hit.at < CACHE_TTL_MS) return hit.label;
   const url = `https://${NOMINATIM_HOST}/reverse?` + new URLSearchParams({
-    format: 'jsonv2', lat: String(lat), lon: String(lon), zoom: '18', addressdetails: '1',
+    // layer=address: streets and house numbers only, not a footpath or a site next to the car
+    format: 'jsonv2', lat: String(lat), lon: String(lon), zoom: '18', addressdetails: '1', layer: 'address',
   }).toString();
   let label = null;
   try {

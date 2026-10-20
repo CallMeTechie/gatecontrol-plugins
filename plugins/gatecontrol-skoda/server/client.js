@@ -170,6 +170,18 @@ const YES = (v) => (v == null ? null : String(v).toUpperCase() === 'YES');
 const OPEN = (v) => (v == null ? null : String(v).toUpperCase() === 'OPEN');
 const ON = (v) => (v == null ? null : String(v).toUpperCase() === 'ON');
 const num = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+/**
+ * Škoda's own address of the parking position ({ street, houseNumber, zipCode, city }) as one line
+ * ("Fujiallee 1, 65451 Kelsterbach"); the MySkoda app shows the same. null without street or city.
+ */
+function skodaAddress(a) {
+  if (!a || typeof a !== 'object') return null;
+  const str = (v) => (typeof v === 'string' || typeof v === 'number' ? String(v).replace(/[\0-\x1f\x7f]/g, ' ').trim() : '');
+  const line1 = [str(a.street), str(a.houseNumber)].filter(Boolean).join(' ');
+  const line2 = [str(a.zipCode), str(a.city)].filter(Boolean).join(' ');
+  const label = [line1, line2].filter(Boolean).join(', ');
+  return line1 || str(a.city) ? label.slice(0, 200) : null;
+}
 const maxKm = (...vs) => { const n = vs.map(num).filter((v) => v != null); return n.length ? Math.max(...n) : null; };
 
 function normalizeVehicleState({ status, drivingRange, charging, airConditioning, position, health, maintenance }) {
@@ -224,7 +236,7 @@ function normalizeVehicleState({ status, drivingRange, charging, airConditioning
         .filter((t) => t.id != null),
     },
     position: pos && pos.gpsCoordinates
-      ? { lat: num(pos.gpsCoordinates.latitude), lon: num(pos.gpsCoordinates.longitude) } : null,
+      ? { lat: num(pos.gpsCoordinates.latitude), lon: num(pos.gpsCoordinates.longitude), address: skodaAddress(pos.address) } : null,
     health: {
       // the warning-light report and the maintenance report both carry the mileage, one is often
       // updated later than the other: the higher (newer) one counts

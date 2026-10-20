@@ -138,6 +138,8 @@
     $('#lb-e-summary').textContent = tr.dateLabel + ' · ' + tr.startTime + '–' + tr.endTime + ' · ' + km(tr.distanceKm);
     fillPurposes($('#lb-e-purpose'), tr.purpose);
     $('#lb-e-note').value = tr.note || '';
+    $('#lb-e-from').value = tr.startAddress || '';
+    $('#lb-e-to').value = tr.endAddress || '';
     $('#lb-e-driver-wrap').hidden = !isAdmin();
     if (isAdmin()) fillDrivers($('#lb-e-driver'), tr.driverUserId);
     $('#lb-e-delete').hidden = !isAdmin();
@@ -146,6 +148,9 @@
   $('#lb-e-save').addEventListener('click', function () {
     if (!editing) return;
     var body = { purpose: $('#lb-e-purpose').value || null, note: $('#lb-e-note').value };
+    // addresses only when changed (an unchanged one stays as recorded)
+    if ($('#lb-e-from').value.trim() !== (editing.startAddress || '')) body.startAddress = $('#lb-e-from').value;
+    if ($('#lb-e-to').value.trim() !== (editing.endAddress || '')) body.endAddress = $('#lb-e-to').value;
     if (isAdmin()) body.driverUserId = $('#lb-e-driver').value ? Number($('#lb-e-driver').value) : null;
     api('PUT', BASE + '/trips/' + editing.id, body).then(function () {
       SK.closeModal('lb-edit-modal');
