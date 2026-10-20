@@ -235,6 +235,7 @@ function changeRow(r) {
     id: r.id, student_id: r.student_id, lkey: r.lkey, date: r.date, t_start: r.t_start, t_end: r.t_end,
     period: r.period == null ? null : Number(r.period), kind: r.kind, subject: r.subject || '', detail: parseJson(r.detail_json, {}),
     detected_at: Number(r.detected_at), status: r.status, sent_at: r.sent_at == null ? null : Number(r.sent_at),
+    rule_at: r.rule_at == null ? null : Number(r.rule_at),
   };
 }
 
@@ -256,6 +257,14 @@ async function setChangeStatus(gc, ids, status, sentAt = null) {
 }
 
 /** Was a cancellation of this lesson pushed before change `beforeId`? */
+/** 1.1.0: the changes handed to the Familie plugin's rules (or skipped) — never again. */
+async function setRuleAt(gc, ids, at) {
+  for (let i = 0; i < ids.length; i += 90) {
+    const chunk = ids.slice(i, i + 90);
+    await gc.db.run(`UPDATE changes SET rule_at = ? WHERE id IN (${chunk.map(() => '?').join(',')})`, [at, ...chunk]);
+  }
+}
+
 async function cancellationSent(gc, studentId, lkey, beforeId) {
   const r = await gc.db.get("SELECT id FROM changes WHERE student_id = ? AND lkey = ? AND kind = 'cancelled' AND status = 'sent' AND id < ? LIMIT 1", [studentId, lkey, beforeId]);
   return !!r.row;
@@ -279,5 +288,5 @@ module.exports = {
   tx, listAccounts, getAccount, findAccount, createAccount, updateAccount, deleteAccount, getCred, setCred, clearCred,
   listStudents, getStudent, updateStudent, syncStudents,
   lessonsBetween, replaceLessons, countLessons, LESSON_COLS,
-  addChanges, changesWithStatus, setChangeStatus, cancellationSent, listChanges, prune,
+  addChanges, changesWithStatus, setChangeStatus, setRuleAt, cancellationSent, listChanges, prune,
 };

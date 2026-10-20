@@ -82,6 +82,10 @@
 // stays for the pages of before: it lists and changes only house rules with a presence or place
 // trigger and keeps what it does not know (title, schedule, device / calendar conditions, the
 // facts and buttons of a notification).
+//
+// 1.12.0 — the trigger 'school_change' (server/school.js, runs come from the service rule_event): the
+// child the event is about is told as well (a lesson that falls out concerns the child itself), the
+// event's text goes into {event} and the log (`event`).
 
 const crypto = require('node:crypto');
 const store = require('./store');
@@ -347,6 +351,8 @@ async function execute(gc, fam, cfg, now, runs, pushes) {
   for (const run of runs) {
     const { rule } = run;
     const person = run.userId ? fam.byId.get(run.userId) : null;
+    // 1.12.0: nobody is left out of a school event's notification (the child did not cause it)
+    const causer = run.trigger === 'school_change' ? null : run.userId;
     const results = [];
     // 1.9.0: the conditions that need other plugins (device values, calendar), right before the actions
     let ev = null;
@@ -380,7 +386,7 @@ async function execute(gc, fam, cfg, now, runs, pushes) {
           results.push({ ...base, ok: false, message: null, error: hostCode(e) });
         }
       } else if (a.type === 'notify') {
-        const to = recipients(a, fam, run.userId, rule);
+        const to = recipients(a, fam, causer, rule);
         // 1.9.0: facts and buttons (server/reminders.js); a reminder row per person with buttons
         const out = await reminders.notifyPushes(gc, fam, cfg, now, { rule, run, action: a, person, ev, to, key, cache });
         pushes.push(...out.pushes);
@@ -390,7 +396,7 @@ async function execute(gc, fam, cfg, now, runs, pushes) {
         // 1.6.0: never throws; without the messenger { ok: false, error: 'unavailable' } and the rest runs
         // 1.9.0: a person's own rule only writes to that person
         const target = rule.scope === 'personal' ? { ...a, to: [rule.ownerId] } : a;
-        const res = await messenger.sendAction(gc, fam, cfg, now, target, actionText(a, run, person, cfg, ev && ev.vars), rule.scope === 'personal' ? null : run.userId);
+        const res = await messenger.sendAction(gc, fam, cfg, now, target, actionText(a, run, person, cfg, ev && ev.vars), rule.scope === 'personal' ? null : causer);
         if (res.error === 'unavailable') gc.log.warn('messenger not available – rule action skipped', rule.id);
         results.push(res);
       }
@@ -405,9 +411,9 @@ async function execute(gc, fam, cfg, now, runs, pushes) {
 async function writeLog(gc, run, now, ok, results) {
   const { rule } = run;
   try {
-    await store.tx(gc, () => store.run(gc, `INSERT INTO presence_log (rule_id, rule_name, trigger_type, user_id, at, ok, results_json, place_id, place_name)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, [rule.id, rule.title || rule.name, run.trigger, run.userId || null, now, ok ? 1 : 0, JSON.stringify(results),
-      run.placeId || null, run.placeName || null]));
+    await store.tx(gc, () => store.run(gc, `INSERT INTO presence_log (rule_id, rule_name, trigger_type, user_id, at, ok, results_json, place_id, place_name, event_text)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [rule.id, rule.title || rule.name, run.trigger, run.userId || null, now, ok ? 1 : 0, JSON.stringify(results),
+      run.placeId || null, run.placeName || null, run.event || null]));
   } catch (e) { gc.log.warn('presence log failed', (e && e.code) || 'error'); }
 }
 
@@ -631,6 +637,8 @@ const logView = (x) => ({
   placeId: x.place_id == null ? null : x.place_id, placeName: x.place_name == null ? null : x.place_name, at: iso(x.at), ok: !!x.ok, results: parseJson(x.results_json, []),
   // 1.9.0: not run — a device or calendar condition was not met (results of type 'condition')
   skipped: parseJson(x.results_json, []).some((y) => y && y.type === 'condition'),
+  // 1.12.0: what a school event said („Lena: Mathe 3. Std. (09:50) fällt aus“), else null
+  event: x.event_text == null ? null : x.event_text,
 });
 
 async function log(gc) {

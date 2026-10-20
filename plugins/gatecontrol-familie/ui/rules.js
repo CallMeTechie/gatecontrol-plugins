@@ -28,14 +28,21 @@
    server/rules.js), places still through opts.base (…/places). New in this dialog: the trigger group
    „Zeit“ (weekdays and a time), „Nur wenn“ a device value and an event today / tomorrow, the notification
    with values and up to three buttons, „Gehört zu“ (house rule or one's own reminder, portal), the dry run
-   („Probelauf“); the list filters Alle / Erinnerungen / Anwesenheit / Orte. */
+   („Probelauf“); the list filters Alle / Erinnerungen / Anwesenheit / Orte.
+   1.12.0: the trigger „Stunde fällt aus“ (school_change, group „Schule“) — which child (or every child),
+   which changes, the lesson's day — offered only while the server lists it in options.triggers (the
+   Schule plugin is there; its students in options.school.students); the list filter „Schule“ shows
+   when there is such a rule; a log row of it shows the event's text. */
 (function () {
   'use strict';
   var A = window.FA, T = A.T, el = A.el;
-  var TRIGGERS = ['schedule', 'all_away', 'first_home', 'child_home_alone', 'person_home', 'person_away', 'place_enter', 'place_exit'];
+  var TRIGGERS = ['schedule', 'all_away', 'first_home', 'child_home_alone', 'person_home', 'person_away', 'place_enter', 'place_exit', 'school_change'];
+  var SCHOOL = 'school_change';
+  var SCHOOL_KINDS = ['cancelled', 'changed', 'extra', 'restored'];
+  var SCHOOL_DAYS = ['today', 'tomorrow', 'any'];
   var WEEKDAYS = [1, 2, 3, 4, 5, 6, 7];
   var OPS = ['<', '<=', '>', '>=', '='];
-  var FILTERS = ['all', 'reminder', 'presence', 'place'];
+  var FILTERS = ['all', 'reminder', 'presence', 'place', 'school'];
   var MAX_DEVICE_CONDS = 4;
   var MAX_BUTTONS = 3;
   var PLACE_TRIGGERS = ['place_enter', 'place_exit'];
@@ -69,8 +76,9 @@
     alarm: 'M12 21a8 8 0 1 0 0-16a8 8 0 0 0 0 16M12 9v4l2.5 1.5M5 3L2 6M22 6l-3-3',
     gauge: 'M4 18a9 9 0 1 1 16 0M12 14l4-5M12 15a1 1 0 1 0 0-2a1 1 0 0 0 0 2',
     cal: 'M4 6h16v15H4zM4 10h16M8 3v4M16 3v4',
+    school: 'M2 9l10-5 10 5-10 5zM6 11v5c3 2 9 2 12 0v-5M22 9v6',
   };
-  var TRIGGER_ICON = { schedule: ICON.alarm, all_away: ICON.away, first_home: ICON.home, child_home_alone: ICON.child, person_home: ICON.personIn, person_away: ICON.personOut, place_enter: ICON.pinIn, place_exit: ICON.pinOut };
+  var TRIGGER_ICON = { schedule: ICON.alarm, all_away: ICON.away, first_home: ICON.home, child_home_alone: ICON.child, person_home: ICON.personIn, person_away: ICON.personOut, place_enter: ICON.pinIn, place_exit: ICON.pinOut, school_change: ICON.school };
   // dialogs opened from the rule dialog (places) stack on top of it: Escape and Tab belong to the top one
   var stack = [];
 
@@ -99,11 +107,21 @@
     out.placeName = t.placeName || null;
     out.graceMinutes = t.graceMinutes != null ? t.graceMinutes : 10;
     out.schedule = t.type === 'schedule' ? { weekdays: (t.weekdays || []).slice(), time: t.time || '' } : null;
+    out.school = t.type === SCHOOL ? { kinds: (t.kinds || ['cancelled']).slice(), days: t.days || 'any' } : null;
     return out;
   }
 
   /** The list's filter of a rule: reminder (schedule), place or presence. */
-  function kindOf(rule) { return rule.kind || (rule.trigger === 'schedule' ? 'reminder' : (isPlace(rule.trigger) ? 'place' : 'presence')); }
+  function kindOf(rule) { return rule.kind || (rule.trigger === 'schedule' ? 'reminder' : (isPlace(rule.trigger) ? 'place' : (rule.trigger === SCHOOL ? 'school' : 'presence'))); }
+
+  /** „Schule Lena: fällt aus, Vertretung · heute“ (child null = every child). */
+  function schoolText(userId, school, data) {
+    var o = school || { kinds: ['cancelled'], days: 'any' };
+    return T('rule.trigger_school_change', {
+      name: userId != null ? nameOf(data, userId) : T('rule.all_children'),
+      kinds: o.kinds.map(function (k) { return T('school.kind_' + k); }).join(', '), days: T('school.days_' + o.days),
+    });
+  }
 
   /** „Mo–Fr“, „täglich“, „Sa, So“ */
   function daysText(w) {
@@ -131,6 +149,7 @@
     if (rule.trigger === 'schedule') return T('rule.trigger_schedule', { days: daysText(rule.schedule && rule.schedule.weekdays), time: (rule.schedule && rule.schedule.time) || '–' });
     if (rule.trigger === 'person_home' || rule.trigger === 'person_away') return T('rule.trigger_' + rule.trigger, { name: nameOf(data, rule.userId) });
     if (isPlace(rule.trigger)) return T('rule.trigger_' + rule.trigger, { name: rule.userId ? nameOf(data, rule.userId) : T('rule.someone'), place: rule.placeName || '–' });
+    if (rule.trigger === SCHOOL) return schoolText(rule.userId, rule.school, data);
     return T('rule.trigger_' + rule.trigger);
   }
 
@@ -186,8 +205,10 @@
   /** The list filter (Alle / Erinnerungen / Anwesenheit / Orte) above the rows; opts.filter keeps the choice. */
   function filterBar(data, opts, redraw) {
     var f = opts.filter || 'all';
-    var bar = el('div', { class: 'fa-rm-tabs fa-rule-filter', role: 'tablist', 'aria-label': T('rr.filter') }, FILTERS.map(function (x) {
-      var n = x === 'all' ? data.rules.length : data.rules.filter(function (r) { return kindOf(r) === x; }).length;
+    var count = function (x) { return x === 'all' ? data.rules.length : data.rules.filter(function (r) { return kindOf(r) === x; }).length; };
+    // „Schule“ only when there is such a rule (or it is the choice)
+    var bar = el('div', { class: 'fa-rm-tabs fa-rule-filter', role: 'tablist', 'aria-label': T('rr.filter') }, FILTERS.filter(function (x) { return x !== 'school' || f === x || count(x); }).map(function (x) {
+      var n = count(x);
       return el('button', { type: 'button', role: 'tab', class: 'fa-rm-tab', 'aria-selected': f === x ? 'true' : 'false', 'data-filter': x, on: { click: function () { opts.filter = x; redraw(); } } },
         [el('span', { text: T('rr.filter_' + x) }), n ? el('span', { class: 'fa-rm-count', text: String(n) }) : null]);
     }));
@@ -268,6 +289,8 @@
     var can = opt.can || { house: true, personal: false };
     var trigAvail = function (t) {
       var x = (opt.triggers || []).filter(function (y) { return y.type === t; })[0];
+      // 1.12.0: the school trigger only when the server offers it (the Schule plugin is there)
+      if (t === SCHOOL) return !!x && x.available !== false;
       return x ? x.available !== false : t !== 'schedule' || !!opt.triggers;
     };
     var r = rule || { trigger: trigAvail('all_away') ? 'all_away' : 'schedule', graceMinutes: 10, conditions: { time: null, afterSunset: false }, actions: [], active: true, name: '', userId: null, placeId: null };
@@ -301,6 +324,9 @@
       // 1.6.0: the messenger message (one per rule): 'family' or [userId]
       msg: !!oldMsg, msgTo: oldMsg ? oldMsg.to : (msgGroup ? 'family' : []), msgText: oldMsg && oldMsg.text ? oldMsg.text : '',
       query: '', tab: null,
+      // 1.12.0: „Stunde fällt aus“ — the child (null = every child), the kinds, the lesson's day
+      schoolUser: r.trigger === SCHOOL && r.userId != null ? r.userId : null,
+      kinds: r.school ? r.school.kinds.slice() : ['cancelled'], schoolDays: r.school ? r.school.days : 'any',
     };
     // plugin tabs in the order of the list, then the notification
     var tabs = [];
@@ -365,7 +391,7 @@
       var shownGroups = {};
       offered.forEach(function (t) {
         // three groups: a time (reminders), home / away from the home Wi-Fi, places (the phone's location)
-        var g = t === 'schedule' ? 'time' : (isPlace(t) ? 'places' : 'home');
+        var g = t === 'schedule' ? 'time' : (isPlace(t) ? 'places' : (t === SCHOOL ? 'school' : 'home'));
         if (!shownGroups[g]) { shownGroups[g] = true; radios.push(el('span', { class: 'fa-rm-group-label', 'aria-hidden': 'true', text: T('rule.m_group_' + g) })); }
         radios.push(trigger(t));
       });
@@ -377,7 +403,7 @@
           on: { click: function () { setTrigger(t); } },
         }, [
           el('span', { class: 'fa-rm-trigger-ico' }, [A.svg(TRIGGER_ICON[t], 18)]),
-          el('span', { class: 'fa-rm-trigger-text' }, [el('b', { text: T('rule.m_trig_' + t) }), el('span', { text: avail ? T('rule.m_trig_' + t + '_hint') : T('rule.m_needs_presence') })]),
+          el('span', { class: 'fa-rm-trigger-text' }, [el('b', { text: T('rule.m_trig_' + t) }), el('span', { text: avail ? T('rule.m_trig_' + t + '_hint') : T(t === SCHOOL ? 'rule.m_needs_school' : 'rule.m_needs_presence') })]),
         ]);
       }
       var group = el('div', { class: 'fa-rm-triggers', role: 'radiogroup', 'aria-label': T('rule.m_triggers') }, radios);
@@ -413,6 +439,7 @@
         ]));
       }
       if (place()) placeBlocks();
+      if (st.trigger === SCHOOL) schoolBlocks();
       if (st.trigger === 'all_away') {
         var step = function (d) { return function () { st.grace = Math.max(0, Math.min(120, d > 0 ? Math.floor(st.grace / 5) * 5 + 5 : Math.ceil(st.grace / 5) * 5 - 5)); renderWhen(); renderFlow(); }; };
         colWhen.appendChild(el('div', { class: 'fa-rm-box fa-rm-grace' }, [
@@ -570,6 +597,44 @@
           el('b', { text: sharing.length ? T('rule.m_places_on', { names: sharing.join(', ') }) : T('rule.m_places_nobody') }),
           off ? el('span', { class: 'fa-rm-warn-line', text: T('rule.m_places_off_person', { name: who.name }) }) : null,
         ])]),
+      ]));
+    }
+    /** Wann? for „Stunde fällt aus“ (1.12.0): which child (or every child), which changes, the lesson's day. */
+    function schoolBlocks() {
+      var kids = ((opt.school && opt.school.students) || []).slice();
+      // the rule's own child stays choosable when the Schule plugin no longer lists it
+      if (st.schoolUser != null && !kids.some(function (k) { return k.userId === st.schoolUser; })) kids.push({ userId: st.schoolUser, name: nameOf(data, st.schoolUser) });
+      var face = function (id, name) {
+        var m = people.filter(function (x) { return x.userId === id; })[0] || { name: name };
+        return A.avatar({ name: m.name || name, initials: m.initials, colorHex: m.colorHex, avatarUrl: m.avatarUrl }, 28);
+      };
+      var chip = function (key, on, kids2, pick) {
+        return el('button', { type: 'button', class: 'fa-rm-person', 'aria-pressed': on ? 'true' : 'false', 'data-k': key, on: { click: function () { pick(); renderWhen(); renderFlow(); } } }, kids2);
+      };
+      var who = [chip('swho-any', st.schoolUser == null, [el('span', { class: 'fa-rm-any' }, [A.svg(ICON.group, 16)]), el('span', { text: T('rule.m_school_any') })], function () { st.schoolUser = null; })];
+      kids.forEach(function (k) {
+        who.push(chip('swho-' + k.userId, st.schoolUser === k.userId, [face(k.userId, k.name), el('span', { text: k.name })], function () { st.schoolUser = k.userId; }));
+      });
+      colWhen.appendChild(el('div', { class: 'fa-rm-block' }, [
+        el('span', { class: 'fa-rm-label', id: uid + '-swho', text: T('rule.m_school_who') }),
+        el('div', { class: 'fa-rm-people', role: 'group', 'aria-labelledby': uid + '-swho' }, who),
+      ]));
+      colWhen.appendChild(el('div', { class: 'fa-rm-block' }, [
+        el('span', { class: 'fa-rm-label', id: uid + '-skinds', text: T('rule.m_school_kinds') }),
+        el('div', { class: 'fa-rm-chips', role: 'group', 'aria-labelledby': uid + '-skinds' }, SCHOOL_KINDS.map(function (k) {
+          var on = st.kinds.indexOf(k) >= 0;
+          return el('button', { type: 'button', class: 'fa-rm-chip', 'aria-pressed': on ? 'true' : 'false', 'data-k': 'skind-' + k, text: T('school.kind_' + k), on: { click: function () {
+            st.kinds = on ? st.kinds.filter(function (x) { return x !== k; }) : SCHOOL_KINDS.filter(function (x) { return x === k || st.kinds.indexOf(x) >= 0; });
+            renderWhen(); renderFlow();
+          } } });
+        })),
+        el('span', { class: 'fa-rm-label', id: uid + '-sdays', text: T('rule.m_school_days') }),
+        el('div', { class: 'fa-rm-chips', role: 'radiogroup', 'aria-labelledby': uid + '-sdays' }, SCHOOL_DAYS.map(function (d) {
+          var on = st.schoolDays === d;
+          return el('button', { type: 'button', class: 'fa-rm-chip', role: 'radio', 'aria-checked': on ? 'true' : 'false', 'aria-pressed': on ? 'true' : 'false', 'data-k': 'sday-' + d, text: T('school.days_' + d),
+            on: { click: function () { st.schoolDays = d; renderWhen(); renderFlow(); } } });
+        })),
+        el('div', { class: 'fa-rm-info' }, [A.svg(ICON.info, 18), el('span', { text: T('rule.m_school_hint') })]),
       ]));
     }
     /** After a change in „Orte verwalten“: the new list; a place just added or edited becomes the rule's place. */
@@ -837,7 +902,7 @@
       var who = st.trigger === 'schedule' ? T('rule.trigger_schedule', { days: daysText(st.days.slice().sort()), time: st.at || '–' })
         : (person() ? T('rule.trigger_' + st.trigger, { name: nameOf(data, st.userId) })
           : (place() ? T('rule.trigger_' + st.trigger, { name: st.placeUser == null ? T('rule.someone') : nameOf(data, st.placeUser), place: pl ? pl.name + ' (' + radiusText(pl.radius) + ')' : '…' })
-            : T('rule.trigger_' + st.trigger)));
+            : (st.trigger === SCHOOL ? schoolText(st.schoolUser, { kinds: st.kinds.length ? st.kinds : ['cancelled'], days: st.schoolDays }, data) : T('rule.trigger_' + st.trigger))));
       var parts = [who + (st.trigger === 'all_away' && st.grace > 0 ? ' (' + T('rule.m_s_grace', { n: st.grace }) + ')' : '')];
       if (st.window && st.from && st.to) parts.push(T('rule.m_s_window', { from: st.from, to: st.to }));
       if (st.sun) parts.push(T('rule.after_sunset'));
@@ -970,6 +1035,7 @@
       if (st.calendar && !st.calendar.sources.length) return T('rr.err_sources');
       if (person() && !st.userId) return T('rule.m_who_missing');
       if (place() && !placeOf(data, st.placeId)) return T('rule.m_place_missing');
+      if (st.trigger === SCHOOL && !st.kinds.length) return T('rule.m_school_kinds_missing');
       if (st.msg && !personal()) {
         // people who are no members any more drop out
         if (Array.isArray(st.msgTo)) st.msgTo = st.msgTo.filter(function (id) { return people.some(function (m) { return m.userId === id; }); });
@@ -993,6 +1059,7 @@
       if (st.trigger === 'all_away') trig.graceMinutes = st.grace;
       if (person()) trig.userId = st.userId;
       if (place()) { trig.userId = st.placeUser; trig.placeId = st.placeId; }
+      if (st.trigger === SCHOOL) { trig.userId = st.schoolUser; trig.kinds = st.kinds.slice(); trig.days = st.schoolDays; }
       var b = {
         title: st.name.trim(), trigger: trig, active: st.active, actions: actions,
         conditions: {
@@ -1054,7 +1121,9 @@
       }).join(' · ');
       var title = x.ruleTitle || x.ruleName;
       var what = isPlace(x.trigger) ? T('rule.log_' + x.trigger, { name: x.userId ? nameOf(data, x.userId) : '–', place: x.placeName || '–' }) // „Marc · kommt an: Schule“
-        : (x.trigger === 'schedule' ? T('rr.trig_schedule') : (x.trigger === 'button' ? T('rr.log_button') : T('rule.trigger_' + x.trigger, { name: x.userId ? nameOf(data, x.userId) : '' })));
+        : (x.trigger === 'schedule' ? T('rr.trig_schedule') : (x.trigger === 'button' ? T('rr.log_button')
+          // 1.12.0: a school event — its text („Lena: Mathe 3. Std. (09:50) fällt aus“)
+          : (x.trigger === SCHOOL ? (x.event || T('rr.trig_school_change')) : T('rule.trigger_' + x.trigger, { name: x.userId ? nameOf(data, x.userId) : '' }))));
       tb.appendChild(el('tr', null, [
         el('td', { class: 'fa-time', text: A.when(x.at) }),
         el('td', { text: (title ? title + ' · ' : '') + what }),

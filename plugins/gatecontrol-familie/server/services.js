@@ -1,7 +1,8 @@
 'use strict';
 
 // Services for the Messenger (1.8.0, plugin.json services.provides; GateControl ≥ 1.177.0
-// gc.services). Only gatecontrol-messenger may call them (any other caller → forbidden);
+// gc.services). Only gatecontrol-messenger may call them (any other caller → forbidden) —
+// except rule_event (1.12.0), which only gatecontrol-schule may call;
 // the host lets only plugins that list a service in permissions.services call it at all.
 // Every answer is JSON ≤ 16 KB; a refusal is { ok: false, code } (never thrown):
 //
@@ -29,6 +30,10 @@
 //   family_roles    {} → { ok: true, parents: [userId], children: [userId] }   (1.9.0) who the parents and
 //                   the children of the family are (never a wall tablet) — the Messenger's door requests
 //                   („Eltern fragen“).
+//   rule_event      { type: 'school_change', events: [{ userId, kind, date, start, subject, text }] (≤ 20) }
+//                   → { ok: true, fired }   (1.12.0, caller gatecontrol-schule only) — a child's timetable
+//                   changed: the matching rules with the trigger 'school_change' run (server/school.js).
+//                   Codes: invalid, forbidden.
 //
 // The other way round (server/messenger.js placeStatus): Familie tells the Messenger the
 // place of a member (set_place_status) when presence or a place event changes it.
@@ -40,6 +45,9 @@ const members = require('./members');
 const shopping = require('./shopping');
 const dates = require('./dates');
 const ruleplaces = require('./ruleplaces');
+const school = require('./school');
+const presence = require('./presence');
+const push = require('./push');
 const texts = require('./texts.json');
 const { line, posInt, validDate, parseIso } = require('./util');
 
@@ -239,6 +247,25 @@ async function familyRoles(gc, cfg) {
   return { ok: true, parents: members.parents(fam).map((m) => m.userId), children: members.children(fam).map((m) => m.userId) };
 }
 
+// ─── rule_event (1.12.0) ────────────────────────
+
+/** The Schule plugin's events: the matching rules run (dedupe, conditions, actions), pushes sent → { ok, fired }. */
+async function ruleEvent(gc, cfg, payload) {
+  const events = school.parseEvents(payload);
+  if (!events) throw no('invalid');
+  if (!events.length || cfg.modules.rules === false) return { ok: true, fired: 0 };
+  const now = Date.now();
+  const fam = await family(gc, cfg);
+  const runs = [];
+  await store.tx(gc, () => school.fire(gc, fam, cfg, now, events, runs));
+  if (runs.length) {
+    const pushes = [];
+    try { await presence.execute(gc, fam, cfg, now, runs, pushes); } catch (e) { gc.log.warn('school rule run failed', (e && (e.code || e.message)) || 'error'); }
+    if (pushes.length) await push.flush(gc, pushes);
+  }
+  return { ok: true, fired: runs.length };
+}
+
 // ─── the hook ───────────────────────────────────
 
 const HANDLERS = {
@@ -248,7 +275,10 @@ const HANDLERS = {
   calendar_remove: (gc, cfg, payload) => calendarRemove(gc, payload),
   places,
   family_roles: (gc, cfg) => familyRoles(gc, cfg),
+  rule_event: (gc, cfg, payload) => ruleEvent(gc, cfg, payload),
 };
+/** Who may call a service: the Messenger, except rule_event (the Schule plugin). */
+const CALLERS = { rule_event: school.SCHULE };
 const NAMES = Object.freeze(Object.keys(HANDLERS));
 
 /** service({ name, caller, user, payload }) → the answer (see the head of this file). */
@@ -256,7 +286,7 @@ async function handle(gc, cfg, call) {
   const c = call && typeof call === 'object' ? call : {};
   const fn = Object.prototype.hasOwnProperty.call(HANDLERS, c.name) ? HANDLERS[c.name] : null;
   if (!fn) return refuse('not_found');
-  if (c.caller !== CALLER) return c.name === 'places' ? [] : refuse('forbidden');
+  if (c.caller !== (CALLERS[c.name] || CALLER)) return c.name === 'places' ? [] : refuse('forbidden');
   const payload = c.payload && typeof c.payload === 'object' && !Array.isArray(c.payload) ? c.payload : {};
   try {
     return await fn(gc, cfg, payload, c.user || null);

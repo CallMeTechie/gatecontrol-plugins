@@ -27,8 +27,20 @@
     $('#sc-problems').textContent = probs.join(' ');
     var quiet = c.quiet_from ? T('info.quiet', { from: c.quiet_from, to: c.quiet_to }) : T('info.no_quiet');
     $('#sc-info').textContent = [T('info.poll', { n: c.poll_minutes }), T('info.days_' + (c.notify_days === 1 ? 'one' : (c.notify_days === 2 ? 'two' : 'n')), { n: c.notify_days }), quiet, T('info.tz', { tz: c.timezone })].join(' · ');
+    renderRules();
     renderAccounts();
     renderLog();
+  }
+
+  /** 1.1.0: the Familie plugin's rules — shown while it is reachable or after a call. */
+  function renderRules() {
+    var r = data.rules;
+    var box = $('#sc-rules');
+    if (!r || (!r.available && !r.last)) { box.hidden = true; return; }
+    box.hidden = false;
+    var l = r.last;
+    box.textContent = !l ? T('rules.info_ready')
+      : (l.ok ? T('rules.info_ok', { when: S.when(l.at), events: l.events, fired: l.fired }) : T('rules.info_error', { when: S.when(l.at), code: l.code || 'failed' }));
   }
 
   function userName(u) { return u ? u.name : ''; }

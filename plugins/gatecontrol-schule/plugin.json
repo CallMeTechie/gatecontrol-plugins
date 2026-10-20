@@ -4,7 +4,7 @@
     "de": "Schule",
     "en": "School"
   },
-  "version": "1.0.0",
+  "version": "1.1.0",
   "publisher": "CallMeTechie",
   "description": {
     "de": "Stundenplan aus WebUntis für Schüler- und Elternkonten: Ausfälle, Vertretungen und Zusatzstunden als Push, Wochenplan im Portal (auch am Wand-Tablet), Kachel und Widget je Kind.",
@@ -25,6 +25,19 @@
     "notify": true,
     "background": {
       "intervalSeconds": 60
+    },
+    "services": [
+      "gatecontrol-familie:rule_event"
+    ]
+  },
+  "services": {
+    "provides": {
+      "school_students": {
+        "label": {
+          "de": "Schülerinnen und Schüler mit Stundenplan",
+          "en": "Students with a timetable"
+        }
+      }
     }
   },
   "ui": {

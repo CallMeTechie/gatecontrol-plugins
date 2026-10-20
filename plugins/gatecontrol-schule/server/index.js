@@ -17,6 +17,8 @@
 //     GET    /changes?limit=                  the change log
 //   portal API  (the identified portal viewer, kiosk devices included)
 //     GET    /portal/timetable?week=0|1       Mon–Sat of this / next week of the students the viewer sees
+//   services    (1.1.0, server/ruleevents.js) school_students for gatecontrol-familie; after each cycle the
+//               released changes go to Familie's rule_event (its trigger „Stunde fällt aus“)
 //   app API     (the GateControl apps, req.user.app; permissions.app, no app tab of its own)
 //     GET    /app/timetable?from=&to=         ≤ 14 days, see README "API"
 //     GET    /app/changes?days=7              the change log of the students the caller sees
@@ -41,6 +43,7 @@ const views = require('./views');
 const clock = require('./clock');
 const tz = require('./tz');
 const notifyLib = require('./notify');
+const ruleevents = require('./ruleevents');
 const texts = require('./texts.json');
 
 const DAY = 86400000;
@@ -156,6 +159,8 @@ async function adminStatus(gc, cfg, lang) {
     accounts: accounts.map((a) => accountView(a, students, counts, users, lang)),
     users: [...users.values()],
     changes: log.map((c) => changeView(c, byId)),
+    // 1.1.0: the Familie plugin's rules — reachable, and the last rule_event call
+    rules: await ruleevents.status(gc),
   };
 }
 
@@ -412,7 +417,9 @@ module.exports = {
       const deadline = Date.now() + TICK_BUDGET_MS;
       await poll.tick(gc, cfg, clock.now(), deadline);
       const now = clock.now();
-      await changes.dispatch(gc, notifierOf(gc), cfg, now, config.inQuiet(cfg, now));
+      const d = await changes.dispatch(gc, notifierOf(gc), cfg, now, config.inQuiet(cfg, now));
+      // 1.1.0: the same changes to the Familie plugin's rules (one call; never throws)
+      if (d && d.events && d.events.length) await ruleevents.send(gc, cfg, now, d.events);
       if (now - state.lastPrune > 3600000) {
         state.lastPrune = now;
         await store.prune(gc, tz.addDays(tz.localDate(now, cfg.tz), -14), now - 30 * DAY);
@@ -420,6 +427,11 @@ module.exports = {
     } catch (e) {
       gc.log.warn('tick failed', (e && e.code) || (e && e.message) || 'error');
     } finally { state.ticking = false; }
+  },
+
+  /** 1.1.0: services.provides — school_students for the Familie plugin (server/ruleevents.js). */
+  async service(call, gc) {
+    return ruleevents.handle(gc, call);
   },
 
   /** A shorter interval applies at once. */

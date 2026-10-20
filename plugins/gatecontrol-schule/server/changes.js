@@ -23,6 +23,10 @@
 // topic 'changes', collapse key per student and day; a change whose lesson has ended by then or
 // that is no longer true (the lesson is back to normal) expires. Within the quiet hours pending
 // changes are held. Nothing is pushed twice: the log row's status says what happened.
+//
+// 1.1.0: the changes dispatch() releases (pushed now, or held back by the push budget) of a student
+// mapped to a GateControl user are also handed to the Familie plugin's rules (server/ruleevents.js) —
+// dispatch() answers them as `events`, each change once (changes.rule_at).
 
 const store = require('./store');
 const tz = require('./tz');
@@ -202,15 +206,17 @@ function stillTrue(c, lesson) {
 }
 
 /**
- * Send (or hold) the pending changes. → { sent: number of pushes, held, expired }
+ * Send (or hold) the pending changes. → { sent: number of pushes, held, expired, events: [{ change, student }] }
+ * events (1.1.0): the released changes of students with a GateControl user, not handed to the rules before.
  */
 async function dispatch(gc, notifier, cfg, now, quiet) {
   const open = await store.changesWithStatus(gc, quiet ? ['pending'] : ['pending', 'held']);
-  if (!open.length) return { sent: 0, held: 0, expired: 0 };
+  if (!open.length) return { sent: 0, held: 0, expired: 0, events: [] };
   if (quiet) {
     await store.setChangeStatus(gc, open.map((c) => c.id), 'held');
-    return { sent: 0, held: open.length, expired: 0 };
+    return { sent: 0, held: open.length, expired: 0, events: [] };
   }
+  const events = [];
   const users = new Set();
   try { for (const u of await gc.users.list()) users.add(u.id); } catch { /* none */ }
   const byStudent = new Map();
@@ -239,6 +245,8 @@ async function dispatch(gc, notifier, cfg, now, quiet) {
     }
     if (dead.length) { await store.setChangeStatus(gc, dead.map((c) => c.id), 'expired'); expired += dead.length; }
     if (!live.length) continue;
+    // the same changes as the push, for the rules of the Familie plugin (only a student mapped to a user)
+    if (student.user_id != null) for (const c of live) if (c.rule_at == null) events.push({ change: c, student });
     const to = recipientsOf(student, users);
     if (!to.length) { await store.setChangeStatus(gc, live.map((c) => c.id), 'no_recipients'); continue; }
     live.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : a.t_start < b.t_start ? -1 : a.t_start > b.t_start ? 1 : 0));
@@ -257,7 +265,7 @@ async function dispatch(gc, notifier, cfg, now, quiet) {
       await store.setChangeStatus(gc, live.map((c) => c.id), 'failed');
     }
   }
-  return { sent, held: 0, expired };
+  return { sent, held: 0, expired, events };
 }
 
-module.exports = { diff, apply, dispatch, message, phrase, dayLabel, periodLabel, changeFacts, recipientsOf, subSig, TOPIC };
+module.exports = { diff, apply, dispatch, message, phrase, dayLabel, periodLabel, changeFacts, recipientsOf, subSig, endMs, TOPIC };

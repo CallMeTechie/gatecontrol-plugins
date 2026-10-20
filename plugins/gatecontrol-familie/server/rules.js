@@ -22,6 +22,8 @@
 //   PUT    rules/vacation        { on, until?: 'YYYY-MM-DD' } (parents) — the holiday mode: every active
 //                                house rule paused, those resumed when it ends (by hand or after `until`)
 //   GET rules also carries `vacation: { on, until, since, paused }`; `open` every member's for parents.
+//   1.12.0: the trigger 'school_change' („Stunde fällt aus“, server/school.js) — offered in rules/options
+//   (`triggers` and `school: { students: [{ userId, name }] }`) only while the Schule plugin is there.
 // Admin page „Regeln & Erinnerungen“: admin/rules … with the same paths (every rule; quick actions of a
 // rule saved there run as the administrator).
 //
@@ -37,7 +39,8 @@
 //     trigger: { type: 'schedule', weekdays: [1..7], time: 'HH:MM' }
 //            | { type: 'all_away', graceMinutes } | { type: 'first_home' } | { type: 'child_home_alone' }
 //            | { type: 'person_home' | 'person_away', userId }
-//            | { type: 'place_enter' | 'place_exit', placeId, placeName, userId | null },
+//            | { type: 'place_enter' | 'place_exit', placeId, placeName, userId | null }
+//            | { type: 'school_change', userId | null, kinds: ['cancelled' | 'changed' | 'extra' | 'restored'], days: 'today' | 'tomorrow' | 'any' }   (1.12.0, kind 'school'),
 //     conditions: { time: { from, to } | null, afterSunset, device: [{ actionId, field, op, value, label, unit }],
 //                   calendar: { dayOffset, sources, match, memberIds } | null },
 //     actions: [{ type: 'quick_action', actionId, plugin, id, title, state, kind, verb, available, needsTarget }
@@ -56,10 +59,12 @@ const reminders = require('./reminders');
 const messenger = require('./messenger');
 const rulerow = require('./rulerow');
 const format = require('./format');
+const school = require('./school');
 const { fail, posInt, optText, bool, iso, parseJson, userIds } = require('./util');
 
 const SCHEDULE = 'schedule';
-const TRIGGERS = [SCHEDULE, ...presence.TRIGGERS];
+const SCHOOL = school.TRIGGER;
+const TRIGGERS = [SCHEDULE, ...presence.TRIGGERS, SCHOOL];
 const SCOPES = ['house', 'personal'];
 const MAX_HOUSE = 50;
 const MAX_PERSONAL = 20;
@@ -70,7 +75,7 @@ const ACTION_REF_RE = /^([a-z0-9]+(?:-[a-z0-9]+)*)\/([A-Za-z0-9:._-]{1,64})$/;
 
 const isPlace = (t) => !!presence.PLACE_TRIGGERS[t];
 const isPerson = (t) => t === 'person_home' || t === 'person_away';
-const kindOf = (t) => (t === SCHEDULE ? 'reminder' : (isPlace(t) ? 'place' : 'presence'));
+const kindOf = (t) => (t === SCHEDULE ? 'reminder' : (isPlace(t) ? 'place' : (t === SCHOOL ? 'school' : 'presence')));
 const bad = (field) => fail('invalid', { field });
 
 // ─── rights ─────────────────────────────────────
@@ -108,16 +113,22 @@ function wrap(fn) {
   }
 }
 
-/** The trigger of a body (object, or the flat fields of the presence API) → { trigger, userId, placeId, graceMinutes, schedule } */
+/** The trigger of a body (object, or the flat fields of the presence API) → { trigger, userId, placeId, graceMinutes, schedule, school } */
 function parseTrigger(b, cur, fam) {
   let t = b.trigger;
   if (t === undefined && cur) {
-    return { trigger: cur.trigger, userId: cur.userId, placeId: cur.placeId, graceMinutes: cur.graceMinutes, schedule: cur.schedule };
+    return { trigger: cur.trigger, userId: cur.userId, placeId: cur.placeId, graceMinutes: cur.graceMinutes, schedule: cur.schedule, school: cur.school || null };
   }
   if (typeof t === 'string') t = { type: t, userId: b.userId, placeId: b.placeId, graceMinutes: b.graceMinutes, ...(b.schedule || {}) };
   if (!t || typeof t !== 'object' || Array.isArray(t) || !TRIGGERS.includes(t.type)) throw bad('trigger');
-  const out = { trigger: t.type, userId: null, placeId: null, graceMinutes: presence.GRACE_DEFAULT, schedule: null };
-  if (t.type === SCHEDULE) {
+  const out = { trigger: t.type, userId: null, placeId: null, graceMinutes: presence.GRACE_DEFAULT, schedule: null, school: null };
+  if (t.type === SCHOOL) {
+    // 1.12.0: a child (or any child), the kinds of change, the day of the lesson
+    let o;
+    try { o = school.parseTrigger(t, fam); } catch (e) { if (e instanceof school.Invalid) throw bad(e.field); throw e; }
+    out.userId = o.userId;
+    out.school = { kinds: o.kinds, days: o.days };
+  } else if (t.type === SCHEDULE) {
     out.schedule = conditions.parseSchedule(t);
     if (!out.schedule) throw bad('trigger.schedule');
   } else if (isPerson(t.type)) {
@@ -205,6 +216,11 @@ function fields(body, cur, ctx, scope, ownerId) {
     try { f.title = optText(b.title !== undefined ? b.title : b.name, TITLE_MAX) || ''; } catch { throw bad('title'); }
   } else f.title = cur ? cur.title : '';
   Object.assign(f, parseTrigger(b, cur, ctx.fam));
+  // 1.12.0: a child's own school rule only for the child itself (null = itself)
+  if (f.trigger === SCHOOL && scope === 'personal' && f.userId != null && f.userId !== ownerId) {
+    const owner = ctx.fam.byId.get(ownerId);
+    if (owner && owner.role === 'child') throw fail('forbidden', { field: 'trigger.userId' });
+  }
   f.conditions = b.conditions !== undefined ? parseConds(b.conditions, ctx.fam) : (cur ? cur.conditions : { time: null, afterSunset: false, device: [], calendar: null });
   f.actions = b.actions !== undefined || !cur ? parseActions(b.actions, ctx.fam, scope, ownerId) : cur.actions;
   f.active = b.active !== undefined ? bool(b.active) : (cur ? cur.active : true);
@@ -225,7 +241,8 @@ async function checkOwn(gc, f, lang) {
 }
 
 async function checkModules(f, ctx) {
-  if (f.trigger !== SCHEDULE && !ctx.cfg.modules.presence) throw fail('module_off', { field: 'trigger' });
+  // the school trigger (1.12.0) needs only the module rules, like a schedule
+  if (f.trigger !== SCHEDULE && f.trigger !== SCHOOL && !ctx.cfg.modules.presence) throw fail('module_off', { field: 'trigger' });
 }
 
 // ─── views ──────────────────────────────────────
@@ -238,6 +255,10 @@ function triggerView(rule, places) {
     return { type: rule.trigger, placeId: p ? p.id : null, placeName: p ? p.name : null, userId: rule.userId };
   }
   if (rule.trigger === 'all_away') return { type: 'all_away', graceMinutes: rule.graceMinutes };
+  if (rule.trigger === SCHOOL) {
+    const o = rule.school || rulerow.schoolOptions(null);
+    return { type: SCHOOL, userId: rule.userId, kinds: o.kinds.slice(), days: o.days };
+  }
   return { type: rule.trigger };
 }
 
@@ -378,9 +399,9 @@ async function create(gc, ctx, body) {
   f.actions = await presence.checkTargets(gc, f.actions, ownerId, ctx.lang);
   const lastKey = f.schedule ? conditions.initialKey(f.schedule, ctx.now, ctx.cfg.tz) : null;
   const res = await store.run(gc, `INSERT INTO presence_rules (name, title, scope, trigger_type, user_id, place_id, grace_minutes, schedule_json, conditions_json, actions_json, active,
-    owner_id, last_key, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    owner_id, last_key, trigger_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   [f.title, f.title, scope, f.trigger, f.userId, f.placeId, f.graceMinutes, f.schedule ? JSON.stringify(f.schedule) : null, JSON.stringify(f.conditions), JSON.stringify(f.actions),
-    f.active ? 1 : 0, ownerId, lastKey, ctx.now, ctx.now]);
+    f.active ? 1 : 0, ownerId, lastKey, f.school ? JSON.stringify(f.school) : null, ctx.now, ctx.now]);
   return { rule: await one(gc, ctx, Number(res.lastInsertRowid)) };
 }
 
@@ -405,9 +426,9 @@ async function update(gc, ctx, raw, body) {
   const same = f.trigger === cur.trigger && f.placeId === cur.placeId && JSON.stringify(f.schedule) === JSON.stringify(cur.schedule);
   const lastKey = same ? cur.lastKey : (f.schedule ? conditions.initialKey(f.schedule, ctx.now, ctx.cfg.tz) : null);
   await store.run(gc, `UPDATE presence_rules SET name = ?, title = ?, trigger_type = ?, user_id = ?, place_id = ?, grace_minutes = ?, schedule_json = ?, conditions_json = ?, actions_json = ?,
-    active = ?, owner_id = ?, last_key = ?, updated_at = ? WHERE id = ?`,
+    active = ?, owner_id = ?, last_key = ?, trigger_json = ?, updated_at = ? WHERE id = ?`,
   [f.title, f.title, f.trigger, f.userId, f.placeId, f.graceMinutes, f.schedule ? JSON.stringify(f.schedule) : null, JSON.stringify(f.conditions), JSON.stringify(f.actions),
-    f.active ? 1 : 0, owner, lastKey, ctx.now, cur.id]);
+    f.active ? 1 : 0, owner, lastKey, f.school ? JSON.stringify(f.school) : null, ctx.now, cur.id]);
   if (!f.active) await store.run(gc, "UPDATE rule_reminders SET state = 'resolved', snooze_until = NULL WHERE rule_id = ? AND state IN ('open', 'snoozed')", [cur.id]);
   return { rule: await one(gc, ctx, cur.id) };
 }
@@ -419,6 +440,7 @@ async function remove(gc, ctx, raw) {
   if (!rights(cur, ctx)) throw fail(cur.scope === 'house' ? 'parents_only' : 'forbidden');
   await store.run(gc, 'DELETE FROM presence_rules WHERE id = ?', [cur.id]);
   await store.run(gc, 'DELETE FROM rule_reminders WHERE rule_id = ?', [cur.id]);
+  await store.run(gc, 'DELETE FROM rule_fired WHERE rule_id = ?', [cur.id]);
   return {};
 }
 
@@ -426,8 +448,17 @@ async function remove(gc, ctx, raw) {
 
 const say = conditions.say;
 
+/** „fällt aus, Vertretung“ / „heute“ — the options of a school trigger in words. */
+function schoolWords(o, lang) {
+  return { kinds: o.kinds.map((k) => say(lang, `school.kind_${k}`)).join(', '), days: say(lang, `school.days_${o.days}`) };
+}
+
 function triggerText(rule, ctx, places) {
   const name = (id) => { const m = ctx.fam.byId.get(id); return m ? m.name : '–'; };
+  if (rule.trigger === SCHOOL) {
+    const child = school.childOf(rule, ctx.fam);
+    return say(ctx.lang, 'test.trig_school_change', { name: child ? name(child) : say(ctx.lang, 'test.any_child'), ...schoolWords(rule.school || rulerow.schoolOptions(null), ctx.lang) });
+  }
   if (isPerson(rule.trigger)) return say(ctx.lang, `test.trig_${rule.trigger}`, { name: name(rule.userId) });
   if (isPlace(rule.trigger)) {
     const p = rule.placeId != null ? places.get(rule.placeId) : null;
@@ -461,6 +492,15 @@ async function dryRun(gc, ctx, rule) {
       details.push({ kind: 'trigger', ok: false, text: next ? say(lang, 'test.sched_not_today', { day: format.dayShort(next, lang), time: s.time }) : say(lang, 'test.sched_none') });
       ok = false;
     }
+  } else if (rule.trigger === SCHOOL) {
+    // 1.12.0: one simulated event — the rule's child (else the first child) and its first kind, today or tomorrow
+    const o = rule.school || rulerow.schoolOptions(null);
+    const there = await school.available(gc);
+    const child = school.childOf(rule, ctx.fam);
+    const m = child ? ctx.fam.byId.get(child) : ctx.fam.list.find((x) => x.role === 'child');
+    const sample = say(lang, `test.school_sample_${o.kinds[0]}`, { name: m ? m.name : '–', day: say(lang, o.days === 'tomorrow' ? 'school.days_tomorrow' : 'school.days_today') });
+    details.push({ kind: 'trigger', ok: there ? null : false, text: there ? say(lang, 'test.school_event', { what: triggerText(rule, ctx, places), sample }) : say(lang, 'test.school_gone') });
+    if (!there) ok = false;
   } else {
     const off = !cfg.modules.presence;
     details.push({ kind: 'trigger', ok: off ? false : null, text: off ? say(lang, 'test.presence_off') : say(lang, 'test.event', { what: triggerText(rule, ctx, places) }) });
@@ -519,7 +559,7 @@ async function testBody(gc, ctx, body) {
   if (!c[scope]) throw fail(scope === 'house' ? 'parents_only' : 'forbidden', { field: 'scope' });
   const f = fields(b, null, ctx, scope, ctx.userId);
   await presence.checkPlace(gc, f);
-  const rule = { id: null, title: f.title, scope, trigger: f.trigger, userId: f.userId, placeId: f.placeId, graceMinutes: f.graceMinutes, schedule: f.schedule,
+  const rule = { id: null, title: f.title, scope, trigger: f.trigger, userId: f.userId, placeId: f.placeId, graceMinutes: f.graceMinutes, schedule: f.schedule, school: f.school,
     conditions: f.conditions, actions: f.actions, active: f.active, ownerId: ctx.userId, lastKey: null };
   return dryRun(gc, ctx, rule);
 }
@@ -559,8 +599,15 @@ async function options(gc, ctx) {
   const pres = cfg.modules.presence;
   const consent = await presence.load(gc, ctx.fam);
   const info = await messenger.info(gc, cfg);
+  // 1.12.0: „Stunde fällt aus“ only while the Schule plugin is there and answered (its students, cached 5 minutes)
+  const students = await school.students(gc, ctx.now);
+  const self = ctx.me && ctx.me.role === 'child' && !ctx.admin ? ctx.userId : null;
+  const kids = students ? students.filter((x) => { const m = ctx.fam.byId.get(x.userId); return m && m.role === 'child' && (self == null || x.userId === self); }) : null;
+  const triggers = TRIGGERS.filter((type) => type !== SCHOOL || kids)
+    .map((type) => ({ type, group: type === SCHEDULE ? 'time' : (isPlace(type) ? 'places' : (type === SCHOOL ? 'school' : 'presence')), available: type === SCHEDULE || type === SCHOOL || pres }));
   return {
-    triggers: TRIGGERS.map((type) => ({ type, group: type === SCHEDULE ? 'time' : (isPlace(type) ? 'places' : 'presence'), available: type === SCHEDULE || pres })),
+    triggers,
+    ...(kids ? { school: { students: kids } } : {}),
     devices,
     actions: listed.map((a) => ({
       actionId: conditions.refOf(a), plugin: a.plugin, id: a.id, pluginName: a.pluginName || a.plugin, title: a.title, subtitle: a.subtitle || null, icon: a.icon || null,
@@ -593,6 +640,6 @@ async function scheduleTick(gc, fam, cfg, now, runs) {
 }
 
 module.exports = {
-  TRIGGERS, SCOPES, MAX_HOUSE, MAX_PERSONAL, can, visible, rights, list, create, update, remove, test, testBody, dryRun, options, scheduleTick, kindOf,
+  SCHOOL, TRIGGERS, SCOPES, MAX_HOUSE, MAX_PERSONAL, can, visible, rights, list, create, update, remove, test, testBody, dryRun, options, scheduleTick, kindOf,
   setVacation, vacationTick, vacationOf, openAction,
 };
