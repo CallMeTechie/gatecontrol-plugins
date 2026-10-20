@@ -8,7 +8,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { withFamily, ANNA, MARC, LENA, TIM, KUECHE, portal, app, pushes } = require('./helpers');
+const { withFamily, ANNA, MARC, LENA, TIM, KUECHE, MIN, portal, app, pushes } = require('./helpers');
 
 const WALL = portal(KUECHE, true);
 const wallSetup = async (admin) => {
@@ -163,3 +163,88 @@ test('the portal tab of a wall tablet renders the wall view', () => withFamily({
   const a = (await host.render({ view: 'portal', user: portal(ANNA), loggedIn: true })).html;
   assert.ok(a.includes('fa-p-head') && !a.includes('id="fa-wall"'), 'family portal');
 }));
+
+// 1.13.0: „Schule heute“ / „Schule morgen“ from the Schule plugin's service school_day — only with the plugin
+// (GateControl ≥ 1.178.0 gc.services.available), cached 10 minutes per date (also a failure), names as the
+// family knows them, the answer checked.
+function schule(o = {}) {
+  const s = {
+    plugin: 'gatecontrol-schule', provides: ['school_students', 'school_day'], calls: [],
+    service: async (c) => {
+      if (c.name !== 'school_day') return { ok: true, students: [] };
+      s.calls.push(c.payload.date);
+      if (o.fail) throw new Error('down');
+      return o.answer ? o.answer(c) : {
+        ok: true, date: c.payload.date, students: [
+          { userId: LENA.id, name: 'Lena M.', start: '07:45', end: '13:05', cancelled: 1, changed: 0, exams: [{ subject: 'Mathe', name: 'Klassenarbeit 2' }], free: false },
+          { userId: TIM.id, name: 'Tim M.', cancelled: 0, changed: 0, exams: [], free: true },
+          { userId: 99, name: '<img src=x onerror=alert(1)>', start: '8 Uhr', end: '13:05', cancelled: -3, changed: 'x', holiday: 'Herbstferien', exams: [{}, 'x', { subject: 'D' }], free: true },
+          { userId: 'x', name: 'kaputt' },
+        ],
+      };
+    },
+  };
+  return s;
+}
+
+test('GET wall: „Schule heute“ (from 15:00 „Schule morgen“) from the Schule plugin, cached 10 minutes per date', () => {
+  const s = schule();
+  return withFamily({ settings: { mod_wall: true }, services: [s], gatecontrol: '1.178.0' }, async (host, { admin, call, clock }) => {
+    await wallSetup(admin);
+    const w = (await call(WALL, 'GET', '/wall')).json;
+    assert.deepEqual(w.school, {
+      day: 'today', date: '2026-10-14', students: [
+        { userId: LENA.id, name: 'Lena', start: '07:45', end: '13:05', cancelled: 1, changed: 0, holiday: null, exams: [{ subject: 'Mathe', name: 'Klassenarbeit 2' }], free: false },
+        { userId: TIM.id, name: 'Tim', start: null, end: null, cancelled: 0, changed: 0, holiday: null, exams: [], free: true },
+        { userId: 99, name: '<img src=x onerror=alert(1)>', start: null, end: '13:05', cancelled: 0, changed: 0, holiday: 'Herbstferien', exams: [{ subject: 'D', name: '' }], free: true },
+      ],
+    });
+    assert.deepEqual(s.calls, ['2026-10-14']);
+    // the wall polls every minute: one call per date in 10 minutes
+    for (let i = 0; i < 9; i++) { clock.add(MIN); await call(WALL, 'GET', '/wall'); }
+    assert.equal(s.calls.length, 1);
+    clock.add(MIN);
+    await call(WALL, 'GET', '/wall');
+    assert.deepEqual(s.calls, ['2026-10-14', '2026-10-14']);
+    // 15:00: tomorrow
+    clock.set(Date.UTC(2026, 9, 14, 13, 0, 0));
+    const t = (await call(WALL, 'GET', '/wall')).json.school;
+    assert.deepEqual([t.day, t.date], ['tomorrow', '2026-10-15']);
+    assert.deepEqual(s.calls, ['2026-10-14', '2026-10-14', '2026-10-15']);
+    // the members' view of the wall is the same call (GET wall is the wall's own)
+    assert.equal((await call({ ...ANNA, portal: true, loggedIn: true }, 'GET', '/wall')).json.school.day, 'tomorrow');
+    assert.equal(s.calls.length, 3, 'from the cache');
+  });
+});
+
+test('GET wall: no school section without the Schule plugin, on an older GateControl, without students; a failure is cached too', async () => {
+  for (const o of [{}, { services: [schule()] }, { gatecontrol: '1.178.0' }]) {
+    await withFamily({ settings: { mod_wall: true }, ...o }, async (host, { admin, call }) => {
+      await wallSetup(admin);
+      assert.equal((await call(WALL, 'GET', '/wall')).json.school, null);
+    });
+  }
+  const empty = schule({ answer: () => ({ ok: true, students: [] }) });
+  await withFamily({ settings: { mod_wall: true }, services: [empty], gatecontrol: '1.178.0' }, async (host, { admin, call }) => {
+    await wallSetup(admin);
+    assert.equal((await call(WALL, 'GET', '/wall')).json.school, null);
+  });
+  const down = schule({ fail: true });
+  await withFamily({ settings: { mod_wall: true }, services: [down], gatecontrol: '1.178.0' }, async (host, { admin, call, clock }) => {
+    await wallSetup(admin);
+    assert.equal((await call(WALL, 'GET', '/wall')).status, 200);
+    clock.add(5 * MIN);
+    assert.equal((await call(WALL, 'GET', '/wall')).json.school, null);
+    assert.equal(down.calls.length, 1, 'not again within 10 minutes');
+  });
+});
+
+test('the wall view renders the school section safely (textContent only)', () => {
+  const ui = require('../server/ui');
+  const t = (lang, k) => require('../server/texts.json')[lang][k] || k;
+  const html = ui.render({ view: 'portal', wall: true, loggedIn: true, lang: 'de' }, t);
+  assert.ok(html.includes('id="fa-w-school"') && html.includes('Schule heute') && html.includes('function renderSchool()'));
+  const js = html.slice(html.indexOf('function renderSchool()'), html.indexOf('function done('));
+  assert.ok(!/innerHTML|insertAdjacentHTML|outerHTML/.test(js), 'no HTML from data');
+  assert.ok(html.includes('.fa-w-school{'), 'styled like the wall');
+});

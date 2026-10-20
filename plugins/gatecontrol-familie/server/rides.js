@@ -625,4 +625,6 @@ async function purge(gc, cfg, now) {
 module.exports = {
   ASK_GAP_MS, OPEN_BEFORE_MS, MAX_RANGE_DAYS, isoWd, seriesDates, inSeries, loadRange, list, one, create, update, remove, take, release, decline, setDriver, ask,
   overview, today, remind, purge,
+  // 1.13.0: for an early end of school (server/schoolend.js)
+  findOcc, saveOcc, liveDriver, status, names, ttlFor,
 };

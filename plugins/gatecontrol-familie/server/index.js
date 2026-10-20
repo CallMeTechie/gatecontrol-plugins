@@ -42,6 +42,11 @@
 //
 // 1.12.0: the rule trigger 'school_change' („Stunde fällt aus“) — the Schule plugin calls the service
 // rule_event (server/school.js, server/services.js); rules/options asks it for its students.
+//
+// 1.13.0: the Schule plugin again — an early end of a school day (service school_day_end) asks the
+// driver and the parents of the pickup, with buttons „Auf … verschieben“ / „Wer kann?“
+// (server/schoolend.js); the wall tablet shows „Schule heute“ / „Schule morgen“ (service school_day
+// of the Schule plugin, cached 10 minutes per date — server/school.js, server/wall.js).
 
 const ui = require('./ui');
 const api = require('./api');
@@ -70,6 +75,7 @@ const rules = require('./rules');
 const reminders = require('./reminders');
 const quick = require('./quick');
 const school = require('./school');
+const schoolend = require('./schoolend');
 const texts = require('./texts.json');
 const { STATUS, isKnown } = require('./util');
 
@@ -154,6 +160,7 @@ async function background(gc, now) {
       await presence.purge(gc, now);
       await reminders.purge(gc, now);
       await school.purge(gc, now);
+      await schoolend.purge(gc, now);
     });
   }
   await push.flush(gc, pushes);
@@ -229,11 +236,14 @@ module.exports = {
 
   /**
    * 1.9.0 (GateControl ≥ 1.181.0): a button of type 'callback' on one of our notifications was pressed —
-   * snooze / done of a reminder, another plugin's quick action (server/reminders.js). Errors are only logged.
+   * snooze / done of a reminder, another plugin's quick action (server/reminders.js); 1.13.0: „Auf … verschieben“ /
+   * „Wer kann?“ of an early end of school (server/schoolend.js). Errors are only logged.
    */
   async notifyAction(args, gc) {
     try {
       const cfg = await config.load(gc);
+      const d = args && args.data && args.data.familie;
+      if (d && d.type === schoolend.TYPE) return await schoolend.onAction(gc, cfg, args, Date.now());
       return await reminders.onAction(gc, cfg, args, Date.now());
     } catch (e) {
       gc.log.warn('notify action failed', (e && (e.code || e.message)) || 'error');

@@ -14,7 +14,12 @@
 //              (module presence, sharing members only, never for device trust alone —
 //              null otherwise); 1.3.0: every member with its face (avatarUrl,
 //              color, colorHex, initials) and presence 'home' | 'away' |
-//              'unknown' | null — the ring of the avatar (refreshed with the poll)
+//              'unknown' | null — the ring of the avatar (refreshed with the poll);
+//              1.13.0: `school` — the children's school day from the Schule plugin (service
+//              school_day, cached 10 minutes per date in server/school.js): „Schule heute“, from
+//              15:00 „Schule morgen“ — { day: 'today' | 'tomorrow', date, students: [{ userId, name,
+//              start, end, cancelled, changed, holiday, exams: [{ subject, name }], free }] }, null
+//              without the Schule plugin or without students to show
 //
 // A wall member is no family member: never listed, no pushes, no app tab.
 // It may read me / wall / dates / rides / tasks / shopping, tick tasks off
@@ -33,12 +38,14 @@ const rides = require('./rides');
 const meals = require('./meals');
 const presence = require('./presence');
 const members = require('./members');
+const school = require('./school');
 const { fail, iso } = require('./util');
 
 const DARK_FROM = 21;
 const DARK_UNTIL = 6;
 const BIRTHDAY_DAYS = 7;
 const MAX_ITEMS = 40;
+const SCHOOL_TOMORROW_FROM = 15;
 
 /** May a wall member call this? [method, segments] */
 function allowed(method, seg) {
@@ -69,7 +76,7 @@ async function view(gc, r) {
     dayLabel: format.dayShort(r.today, lang),
     members: [],
     modules: { tasks: !!mod.tasks, shopping: !!mod.shopping, dates: !!mod.dates, rides: !!mod.rides, stars: !!(mod.tasks && mod.stars), meals: !!mod.meals, presence: !!mod.presence },
-    today: null, tasks: null, shopping: null, meals: null,
+    today: null, tasks: null, shopping: null, meals: null, school: null,
   };
   // who is home: not for a viewer recognised only by device trust (like positions)
   const rings = await presence.rings(gc, r.fam, r.cfg, r.trustOnly);
@@ -87,6 +94,8 @@ async function view(gc, r) {
     if (mod.rides) t.rides = await rides.today(gc, r);
     out.today = t;
   }
+  // 1.13.0: the school day of the children (Schule plugin)
+  out.school = await schoolDay(gc, r, p.hh >= SCHOOL_TOMORROW_FROM ? 'tomorrow' : 'today');
   if (mod.tasks) out.tasks = await tasks.forWall(gc, r);
   if (mod.shopping) {
     const s = await shopping.wallList(gc, r.cfg.wallList);
@@ -95,8 +104,20 @@ async function view(gc, r) {
   return out;
 }
 
+/** „Schule heute“ / „Schule morgen“: the Schule plugin's day (names as the family knows them), or null. */
+async function schoolDay(gc, r, day) {
+  const date = day === 'tomorrow' ? tz.addDays(r.today, 1) : r.today;
+  let list = null;
+  try { list = await school.dayFor(gc, date, r.now); } catch { list = null; }
+  if (!list || !list.length) return null;
+  return {
+    day, date,
+    students: list.map((s) => ({ ...s, name: r.fam.byId.has(s.userId) ? r.fam.byId.get(s.userId).name : s.name })),
+  };
+}
+
 function dateView(e) {
   return { id: e.id, title: e.title, date: e.date, time: e.time, endDate: e.endDate, allDay: e.allDay };
 }
 
-module.exports = { allowed, guard, view, isDark, DARK_FROM, DARK_UNTIL };
+module.exports = { allowed, guard, view, isDark, DARK_FROM, DARK_UNTIL, SCHOOL_TOMORROW_FROM };

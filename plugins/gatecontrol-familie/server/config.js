@@ -21,6 +21,9 @@
 // default off), shopping_notify (how „<Name> bitten“ asks by default: direct |
 // family | push, default direct) and shopping_chat („Ich gehe einkaufen“ as a card
 // in the family chat: family | off, default family).
+//
+// 1.13.0: the declared setting school_early_end_notify (default on) — an early end of school
+// (Schule plugin) without a pickup in the rides tells the parents (server/schoolend.js).
 
 const tz = require('./tz');
 
@@ -56,7 +59,7 @@ const SHOPPING_CHAT = Object.freeze(['family', 'off']);
 
 /**
  * settings (gc.settings.all()) → { tz, tzSetting, lang, modules, wallList, location, messengerGroup,
- * childrenOwnRules, shoppingNotify, shoppingChat, problems }
+ * childrenOwnRules, shoppingNotify, shoppingChat, schoolEarlyEndNotify, problems }
  */
 function fromSettings(s) {
   const v = s || {};
@@ -78,9 +81,10 @@ function fromSettings(s) {
   const childrenOwnRules = bool(v.children_own_rules, false);
   const shoppingNotify = SHOPPING_NOTIFY.includes(v.shopping_notify) ? v.shopping_notify : 'direct';
   const shoppingChat = SHOPPING_CHAT.includes(v.shopping_chat) ? v.shopping_chat : 'family';
+  const schoolEarlyEndNotify = bool(v.school_early_end_notify, true);
   return {
     tz: zone, tzSetting: raw, lang: v.notify_lang === 'en' ? 'en' : 'de', modules, wallList, location, messengerGroup,
-    childrenOwnRules, shoppingNotify, shoppingChat, problems,
+    childrenOwnRules, shoppingNotify, shoppingChat, schoolEarlyEndNotify, problems,
   };
 }
 

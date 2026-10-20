@@ -22,6 +22,10 @@
 // The editor (GET rules/options) offers the trigger only while gc.services.available('gatecontrol-schule',
 // 'school_students') says so (GateControl ≥ 1.178.0), with the students of that plugin { userId, name }
 // (cached 5 minutes: service calls are limited to 60 an hour).
+//
+// 1.13.0: the wall tablet's „Schule heute“ asks the Schule plugin's service school_day { date } (GateControl
+// ≥ 1.178.0, permissions.services 'gatecontrol-schule:school_day') — cached 10 minutes per date, also a
+// failure (the wall polls every minute; service calls are limited to 60 an hour and plugin).
 
 const store = require('./store');
 const tz = require('./tz');
@@ -32,13 +36,14 @@ const { posInt, line, validDate, TIME_RE } = require('./util');
 const TRIGGER = 'school_change';
 const SCHULE = 'gatecontrol-schule';
 const STUDENTS = 'school_students';
+const DAY = 'school_day';
 const KINDS = rulerow.SCHOOL_KINDS;
 const DAYS = rulerow.SCHOOL_DAYS;
 const EVENTS_MAX = 20;
 const SUBJECT_MAX = 80;
 const TEXT_MAX = 200;
 const KEEP_DAYS = 14;
-const DAY = 86400000;
+const DAY_MS = 86400000;
 const CACHE_MS = 5 * 60000;
 const CACHE_FAIL_MS = 60000;
 
@@ -142,14 +147,14 @@ async function fire(gc, fam, cfg, now, events, runs) {
 }
 
 async function purge(gc, now) {
-  await store.run(gc, 'DELETE FROM rule_fired WHERE at < ?', [now - KEEP_DAYS * DAY]);
+  await store.run(gc, 'DELETE FROM rule_fired WHERE at < ?', [now - KEEP_DAYS * DAY_MS]);
 }
 
 // ─── the Schule plugin ──────────────────────────
 
 const cache = { at: 0, ok: false, students: [], ttl: 0 };
 
-function reset() { cache.at = 0; cache.ok = false; cache.students = []; cache.ttl = 0; }
+function reset() { cache.at = 0; cache.ok = false; cache.students = []; cache.ttl = 0; dayCache.clear(); }
 
 /** gc.services.available for the Schule plugin's students (GateControl ≥ 1.178.0; older: false). */
 async function available(gc) {
@@ -186,7 +191,56 @@ async function students(gc, now) {
   return list;
 }
 
+// ─── the school day on the wall tablet (1.13.0) ─
+
+const DAY_CACHE_MS = 10 * 60000;
+const DAY_CACHE_MAX = 8;
+const dayCache = new Map(); // date → { at, ok, students }
+
+const count = (v) => (Number.isInteger(v) && v >= 0 ? Math.min(v, 99) : 0);
+const hhmm = (v) => (typeof v === 'string' && TIME_RE.test(v) ? v : null);
+const short = (v, n) => { const s = line(typeof v === 'string' ? v : ''); return s ? s.slice(0, n) : ''; };
+
+/** One student of school_day's answer → { userId, name, start, end, cancelled, changed, holiday, exams, free } (null: unusable). */
+function dayStudent(s) {
+  const userId = s && posInt(s.userId);
+  if (!userId) return null;
+  const exams = (Array.isArray(s.exams) ? s.exams : []).filter((x) => x && typeof x === 'object').slice(0, 4)
+    .map((x) => ({ subject: short(x.subject, 40), name: short(x.name, 60) })).filter((x) => x.subject || x.name);
+  return {
+    userId, name: short(s.name, 40) || String(userId), start: hhmm(s.start), end: hhmm(s.end), cancelled: count(s.cancelled), changed: count(s.changed),
+    holiday: short(s.holiday, 60) || null, exams, free: s.free === true,
+  };
+}
+
+/**
+ * The Schule plugin's day for the wall: [student] for `date`, or null (not there, no answer). Cached 10 minutes
+ * per date (also a failure); gc.services.available is asked every time (it costs nothing).
+ */
+async function dayFor(gc, date, now) {
+  if (!gc || !gc.services || typeof gc.services.available !== 'function') return null;
+  try { if ((await gc.services.available(SCHULE, DAY)) !== true) return null; } catch { return null; }
+  const c = dayCache.get(date);
+  if (c && now >= c.at && now - c.at < DAY_CACHE_MS) return c.ok ? c.students : null;
+  let list = null;
+  try {
+    const r = await gc.services.call({ plugin: SCHULE, service: DAY, payload: { date } });
+    if (r && r.ok === true && Array.isArray(r.students)) {
+      const seen = new Set();
+      list = [];
+      for (const x of r.students.slice(0, 20)) {
+        const v = dayStudent(x);
+        if (v && !seen.has(v.userId)) { seen.add(v.userId); list.push(v); }
+      }
+    }
+  } catch { list = null; }
+  for (const [k, v] of dayCache) if (now - v.at >= DAY_CACHE_MS || dayCache.size >= DAY_CACHE_MAX) dayCache.delete(k);
+  dayCache.set(date, { at: now, ok: list !== null, students: list || [] });
+  return list;
+}
+
 module.exports = {
+  DAY, DAY_CACHE_MS, dayFor, dayStudent,
   TRIGGER, SCHULE, STUDENTS, KINDS, DAYS, EVENTS_MAX, Invalid, parseTrigger, optionsOf, childOf, parseEvents, keyOf, dayFits, matches, fire, purge,
   available, students, reset,
 };

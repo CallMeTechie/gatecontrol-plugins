@@ -2,7 +2,7 @@
 
 // Services for the Messenger (1.8.0, plugin.json services.provides; GateControl ≥ 1.177.0
 // gc.services). Only gatecontrol-messenger may call them (any other caller → forbidden) —
-// except rule_event (1.12.0), which only gatecontrol-schule may call;
+// except rule_event (1.12.0) and school_day_end (1.13.0), which only gatecontrol-schule may call;
 // the host lets only plugins that list a service in permissions.services call it at all.
 // Every answer is JSON ≤ 16 KB; a refusal is { ok: false, code } (never thrown):
 //
@@ -34,6 +34,10 @@
 //                   → { ok: true, fired }   (1.12.0, caller gatecontrol-schule only) — a child's timetable
 //                   changed: the matching rules with the trigger 'school_change' run (server/school.js).
 //                   Codes: invalid, forbidden.
+//   school_day_end  { events: [{ userId, date, plannedEnd, newEnd, text }] (≤ 20) } → { ok: true, notified, matched }
+//                   (1.13.0, caller gatecontrol-schule only) — a child's school day ends earlier: the pickup
+//                   around the planned end is looked for, its driver and the parents are asked
+//                   (server/schoolend.js). Codes: invalid, forbidden.
 //
 // The other way round (server/messenger.js placeStatus): Familie tells the Messenger the
 // place of a member (set_place_status) when presence or a place event changes it.
@@ -46,6 +50,7 @@ const shopping = require('./shopping');
 const dates = require('./dates');
 const ruleplaces = require('./ruleplaces');
 const school = require('./school');
+const schoolend = require('./schoolend');
 const presence = require('./presence');
 const push = require('./push');
 const texts = require('./texts.json');
@@ -276,9 +281,10 @@ const HANDLERS = {
   places,
   family_roles: (gc, cfg) => familyRoles(gc, cfg),
   rule_event: (gc, cfg, payload) => ruleEvent(gc, cfg, payload),
+  school_day_end: (gc, cfg, payload) => schoolend.handle(gc, cfg, payload, Date.now()),
 };
-/** Who may call a service: the Messenger, except rule_event (the Schule plugin). */
-const CALLERS = { rule_event: school.SCHULE };
+/** Who may call a service: the Messenger, except rule_event and school_day_end (the Schule plugin). */
+const CALLERS = { rule_event: school.SCHULE, school_day_end: school.SCHULE };
 const NAMES = Object.freeze(Object.keys(HANDLERS));
 
 /** service({ name, caller, user, payload }) → the answer (see the head of this file). */
