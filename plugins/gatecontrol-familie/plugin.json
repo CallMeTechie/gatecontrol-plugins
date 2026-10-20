@@ -4,7 +4,7 @@
     "de": "Familie",
     "en": "Family"
   },
-  "version": "1.12.0",
+  "version": "1.13.0",
   "publisher": "CallMeTechie",
   "description": {
     "de": "Die Familie in der GateControl-App und im Portal: gemeinsame Einkaufslisten (offline nutzbar), Aufgaben mit Erinnerung und Sternen für Kinder, Termine und Geburtstage, Abholen & Fahrten („Wer holt Tim?“), Notfall-Karte, Kinder orten auf Anfrage (das Kind sieht jede Abfrage, endet mit 18), „Bin angekommen“ und SOS, Orts-Erinnerungen, Taschengeld (nur Buchhaltung), Wunschlisten, Haushaltsbuch, Pinnwand & Packlisten, Essensplan, Anwesenheit mit Smart-Home-Regeln (nur mit Zustimmung), Erinnerungen und ein Dashboard für ein Wand-Tablet. Alles bleibt auf dem eigenen Server.",
@@ -32,7 +32,8 @@
       "gatecontrol-messenger:set_place_status",
       "gatecontrol-alltag:calendar_query",
       "gatecontrol-alltag:calendar_list",
-      "gatecontrol-schule:school_students"
+      "gatecontrol-schule:school_students",
+      "gatecontrol-schule:school_day"
     ]
   },
   "services": {
@@ -77,6 +78,12 @@
         "label": {
           "de": "Regel-Auslöser aus dem Stundenplan",
           "en": "Rule trigger from the timetable"
+        }
+      },
+      "school_day_end": {
+        "label": {
+          "de": "Früher Schulschluss (Abholen)",
+          "en": "Early end of school (pick-up)"
         }
       }
     }
@@ -244,6 +251,19 @@
           }
         ],
         "default": "family"
+      },
+      {
+        "key": "school_early_end_notify",
+        "type": "boolean",
+        "label": {
+          "de": "Früher Schulschluss ohne Abholung melden",
+          "en": "Report an early end of school without a pick-up"
+        },
+        "help": {
+          "de": "Mit dem Plugin „Schule“: endet der Unterricht eines Kindes früher, fragt Familie bei einer eingetragenen Abholung (± 60 Minuten um das geplante Ende) Fahrer und Eltern, ob sie verschoben werden soll. Ist keine eingetragen, bekommen die Eltern mit diesem Schalter trotzdem Bescheid (Thema „Abholen & Fahrten“).",
+          "en": "With the plugin “School”: when a child’s lessons end earlier, Familie asks the driver and the parents of a pick-up (± 60 minutes around the planned end) whether to move it. Without a pick-up the parents are still told with this switch (topic “Pick-ups & rides”)."
+        },
+        "default": true
       }
     ],
     "portal": {

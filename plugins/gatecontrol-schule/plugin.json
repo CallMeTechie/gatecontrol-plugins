@@ -4,11 +4,11 @@
     "de": "Schule",
     "en": "School"
   },
-  "version": "1.1.0",
+  "version": "1.2.0",
   "publisher": "CallMeTechie",
   "description": {
-    "de": "Stundenplan aus WebUntis für Schüler- und Elternkonten: Ausfälle, Vertretungen und Zusatzstunden als Push, Wochenplan im Portal (auch am Wand-Tablet), Kachel und Widget je Kind.",
-    "en": "Timetable from WebUntis for student and parent accounts: cancellations, substitutions and extra lessons as push notifications, a week view in the portal (also on the wall tablet), a tile and a widget per child."
+    "de": "Stundenplan aus WebUntis für Schüler- und Elternkonten: Ausfälle, Vertretungen und Zusatzstunden als Push, Arbeiten und Hausaufgaben mit Erinnerung am Vorabend, Wochenplan im Portal (auch am Wand-Tablet), Kachel und Widget je Kind.",
+    "en": "Timetable from WebUntis for student and parent accounts: cancellations, substitutions and extra lessons as push notifications, exams and homework with a reminder the evening before, a week view in the portal (also on the wall tablet), a tile and a widget per child."
   },
   "gatecontrol": ">=1.172.0",
   "entry": "server/index.js",
@@ -27,7 +27,8 @@
       "intervalSeconds": 60
     },
     "services": [
-      "gatecontrol-familie:rule_event"
+      "gatecontrol-familie:rule_event",
+      "gatecontrol-familie:school_day_end"
     ]
   },
   "services": {
@@ -36,6 +37,12 @@
         "label": {
           "de": "Schülerinnen und Schüler mit Stundenplan",
           "en": "Students with a timetable"
+        }
+      },
+      "school_day": {
+        "label": {
+          "de": "Schultag der Kinder (Wand-Tablet)",
+          "en": "The children’s school day (wall tablet)"
         }
       }
     }
@@ -149,6 +156,19 @@
           "en": "HH:MM, e.g. 06:00"
         },
         "default": "06:00"
+      },
+      {
+        "key": "reminder_time",
+        "type": "text",
+        "label": {
+          "de": "Erinnerung am Vorabend",
+          "en": "Reminder the evening before"
+        },
+        "help": {
+          "de": "HH:MM, z. B. 18:00 – dann kommt am Vortag eine Mitteilung zu den Arbeiten (Thema „Klassenarbeiten“) und den Hausaufgaben (Thema „Hausaufgaben“) für morgen, je Kind einmal. Nicht in der Ruhezeit. Leer = keine Erinnerung.",
+          "en": "HH:MM, e.g. 18:00 – the day before, a notification about tomorrow’s exams (topic “Exams”) and homework (topic “Homework”), once per child. Not during quiet hours. Empty = no reminder."
+        },
+        "default": "18:00"
       }
     ],
     "portal": {
@@ -169,6 +189,22 @@
       "label": {
         "de": "Stundenplan-Änderungen",
         "en": "Timetable changes"
+      },
+      "default": true
+    },
+    {
+      "id": "exams",
+      "label": {
+        "de": "Klassenarbeiten",
+        "en": "Exams"
+      },
+      "default": true
+    },
+    {
+      "id": "homework",
+      "label": {
+        "de": "Hausaufgaben",
+        "en": "Homework"
       },
       "default": true
     }

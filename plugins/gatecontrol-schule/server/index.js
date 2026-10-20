@@ -19,6 +19,10 @@
 //     GET    /portal/timetable?week=0|1       Mon–Sat of this / next week of the students the viewer sees
 //   services    (1.1.0, server/ruleevents.js) school_students for gatecontrol-familie; after each cycle the
 //               released changes go to Familie's rule_event (its trigger „Stunde fällt aus“)
+//               (1.2.0) school_day for Familie's wall tablet; early ends of a school day go to Familie's
+//               school_day_end (server/dayend.js)
+//   1.2.0       homework and exams (server/extras.js) in the timetable, the portal, the admin page and the
+//               evening reminders (topics exams / homework, server/remind.js)
 //   app API     (the GateControl apps, req.user.app; permissions.app, no app tab of its own)
 //     GET    /app/timetable?from=&to=         ≤ 14 days, see README "API"
 //     GET    /app/changes?days=7              the change log of the students the caller sees
@@ -44,6 +48,8 @@ const clock = require('./clock');
 const tz = require('./tz');
 const notifyLib = require('./notify');
 const ruleevents = require('./ruleevents');
+const dayend = require('./dayend');
+const remind = require('./remind');
 const texts = require('./texts.json');
 
 const DAY = 86400000;
@@ -115,11 +121,15 @@ function accountInput(body) {
   return { host, school, username, auth: mode === 'secret' ? 'secret' : 'password', value };
 }
 
+const extraView = (x) => (x && typeof x === 'object' && Number(x.until) > clock.now() ? { code: String(x.code || 'failed'), until: Number(x.until) } : null);
+
 function accountView(a, students, counts, users, lang) {
   return {
     id: a.id, host: a.host, school: a.school, username: a.username, auth: a.auth,
     person_type: a.person_type, status: a.status, last_error: a.last_error, error_text: codeText(lang, a.last_error), error_count: a.error_count,
     last_attempt_at: a.last_attempt_at, last_success_at: a.last_success_at, last_error_at: a.last_error_at, next_fetch_at: a.next_fetch_at,
+    // 1.2.0: an optional endpoint left alone after an error ({ code, until } | null)
+    extras: { homework: extraView(a.extras && a.extras.homework), exams: extraView(a.extras && a.extras.exams) },
     students: students.filter((s) => s.account_id === a.id).map((s) => ({
       id: s.id, person_id: s.person_id, name: s.name, alias: s.alias, display: s.display, klasse: s.klasse,
       enabled: s.enabled, missing: s.missing, show_on_wall: s.show_on_wall, baseline_done: s.baseline_done,
@@ -155,12 +165,29 @@ async function adminStatus(gc, cfg, lang) {
     config: {
       timezone: cfg.tz, notify_lang: cfg.lang, poll_minutes: cfg.pollMinutes, notify_days: cfg.notifyDays,
       quiet_from: cfg.quiet ? config.hhmm(cfg.quiet.from) : null, quiet_to: cfg.quiet ? config.hhmm(cfg.quiet.to) : null, problems: cfg.problems,
+      reminder_time: cfg.reminder ? config.hhmm(cfg.reminder) : null,
     },
     accounts: accounts.map((a) => accountView(a, students, counts, users, lang)),
     users: [...users.values()],
     changes: log.map((c) => changeView(c, byId)),
     // 1.1.0: the Familie plugin's rules — reachable, and the last rule_event call
     rules: await ruleevents.status(gc),
+    // 1.2.0: early ends for Familie's rides — reachable, and the last school_day_end call
+    dayEnds: await dayend.status(gc),
+    // 1.2.0: exams and homework of the next 14 days
+    upcoming: await upcoming(gc, cfg, byId),
+  };
+}
+
+/** 1.2.0: the exams and the homework (by due date) of the next 14 days, for the admin page. */
+async function upcoming(gc, cfg, byId) {
+  const today = tz.localDate(clock.now(), cfg.tz);
+  const ids = [...byId.keys()];
+  const to = tz.addDays(today, 13);
+  const name = (sid) => (byId.get(sid) ? byId.get(sid).display : null);
+  return {
+    exams: (await store.examsBetween(gc, ids, today, to)).slice(0, 60).map((x) => ({ studentId: x.student_id, student: name(x.student_id), date: x.date, ...views.examView(x) })),
+    homework: (await store.homeworkDue(gc, ids, today, to)).slice(0, 100).map((h) => ({ studentId: h.student_id, student: name(h.student_id), date: h.due_date, ...views.homeworkView(h) })),
   };
 }
 
@@ -417,9 +444,13 @@ module.exports = {
       const deadline = Date.now() + TICK_BUDGET_MS;
       await poll.tick(gc, cfg, clock.now(), deadline);
       const now = clock.now();
-      const d = await changes.dispatch(gc, notifierOf(gc), cfg, now, config.inQuiet(cfg, now));
+      const quiet = config.inQuiet(cfg, now);
+      const d = await changes.dispatch(gc, notifierOf(gc), cfg, now, quiet);
       // 1.1.0: the same changes to the Familie plugin's rules (one call; never throws)
       if (d && d.events && d.events.length) await ruleevents.send(gc, cfg, now, d.events);
+      // 1.2.0: early ends of a school day to Familie's rides (never throws); the evening reminders
+      await dayend.send(gc, cfg, now, quiet);
+      try { await remind.tick(gc, notifierOf(gc), cfg, now, quiet); } catch (e) { gc.log.warn('reminders failed', (e && (e.code || e.message)) || 'error'); }
       if (now - state.lastPrune > 3600000) {
         state.lastPrune = now;
         await store.prune(gc, tz.addDays(tz.localDate(now, cfg.tz), -14), now - 30 * DAY);
@@ -429,7 +460,7 @@ module.exports = {
     } finally { state.ticking = false; }
   },
 
-  /** 1.1.0: services.provides — school_students for the Familie plugin (server/ruleevents.js). */
+  /** 1.1.0: services.provides — school_students (1.2.0: school_day) for the Familie plugin (server/ruleevents.js). */
   async service(call, gc) {
     return ruleevents.handle(gc, call);
   },

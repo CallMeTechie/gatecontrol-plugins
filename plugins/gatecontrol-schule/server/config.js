@@ -14,6 +14,7 @@ const DEFAULTS = Object.freeze({
   notify_days: 2,
   quiet_from: '21:00',
   quiet_to: '06:00',
+  reminder_time: '18:00',
 });
 
 function int(v, min, max, d) {
@@ -45,8 +46,19 @@ function fromSettings(s) {
       quiet = { from: tz.parseTime(DEFAULTS.quiet_from), to: tz.parseTime(DEFAULTS.quiet_to) };
     }
   }
+  // 1.2.0: the evening reminder of tomorrow's exams and homework; empty = none
+  const rt = v.reminder_time == null ? DEFAULTS.reminder_time : String(v.reminder_time).trim();
+  let reminder = null;
+  if (rt !== '') {
+    reminder = tz.parseTime(rt);
+    if (!reminder) {
+      problems.push('reminder_time');
+      reminder = tz.parseTime(DEFAULTS.reminder_time);
+    }
+  }
   return {
     tz: zoneOk ? zone : DEFAULTS.timezone,
+    reminder,
     lang: v.notify_lang === 'en' ? 'en' : 'de',
     pollMinutes: poll == null ? DEFAULTS.poll_minutes : poll,
     notifyDays: days == null ? DEFAULTS.notify_days : days,

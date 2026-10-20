@@ -17,10 +17,15 @@
 //
 // The other way round, the service school_students (callers: gatecontrol-familie only):
 //   {} → { ok: true, students: [{ userId, name }] }   the enabled students mapped to a user, by display name.
+// 1.2.0: school_day (callers: gatecontrol-familie only — its wall tablet), see server/views.js schoolDay:
+//   { date } → { ok: true, date, students: [{ userId, name, start?, end?, cancelled, changed, holiday?, exams, free }] }
 
 const store = require('./store');
 const changes = require('./changes');
 const notify = require('./notify');
+const views = require('./views');
+const config = require('./config');
+const clock = require('./clock');
 const texts = require('./texts.json');
 
 const FAMILIE = 'gatecontrol-familie';
@@ -116,7 +121,12 @@ async function students(gc) {
   return { ok: true, students: out.slice(0, 100) };
 }
 
-const SERVICES = { school_students: { caller: FAMILIE, fn: students } };
+/** 1.2.0: the day of the students shown on the wall, for the Familie plugin's wall tablet. */
+async function schoolDay(gc, payload) {
+  return views.schoolDay(gc, await config.load(gc), payload, clock.now());
+}
+
+const SERVICES = { school_students: { caller: FAMILIE, fn: students }, school_day: { caller: FAMILIE, fn: schoolDay } };
 
 /** The hook service({ name, caller, user, payload }) → the answer; a refusal is { ok: false, code }. */
 async function handle(gc, call) {

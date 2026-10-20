@@ -3,6 +3,34 @@
 Die Familie in der GateControl-App (eigener Tab), im Portal (eigener Tab „Familie“) und auf
 drei Admin-Seiten. Alles bleibt auf dem eigenen Server.
 
+## 1.13.0
+- **Früher Schulschluss → Abholen** (mit dem Plugin **Schule** ≥ 1.2.0): endet der Unterricht eines Kindes
+  heute oder morgen früher als geplant, ruft Schule den neuen Dienst **`school_day_end`** auf (nur der Aufrufer
+  `gatecontrol-schule`, sonst `forbidden`): `{ events: [{ userId, date: 'YYYY-MM-DD', plannedEnd: 'HH:MM',
+  newEnd: 'HH:MM', text }] }` (1 … 20, `newEnd` vor `plannedEnd`, sonst `invalid`) → `{ ok: true, notified,
+  matched }`. Familie sucht eine **Abholung** (Modul „Abholen & Fahrten“, einzelne Fahrt oder Termin einer
+  Serie) dieses Kindes an dem Tag, nicht abgesagt, **± 60 Minuten um das geplante Ende** (die nächstgelegene).
+  Gefunden → Mitteilung (Thema **„Abholen & Fahrten“**, hoch) an den Fahrer (wenn ein Mitglied) und die Eltern:
+  „Früher Schluss: Lena“ / „Schule endet um 11:30 statt 13:05 – Abholung ist für 13:05 eingetragen.“ (für
+  morgen mit „Morgen: “ davor). Mit GateControl ≥ 1.181.0 mit Knöpfen: **„Auf 11:30 verschieben“** (Eltern
+  oder der Fahrer; nur solange die Abholung später ist; verschiebt nur diesen Termin, die anderen bekommen
+  „Anna hat die Abholung auf 11:30 verschoben“, protokolliert) und **„Wer kann?“** (die bekannte Anfrage des
+  Fahrten-Moduls an die Eltern, höchstens alle 5 Minuten; drückt der Fahrer, wird er vorher ausgetragen; bei
+  den Eltern nur, solange niemand fährt). Keine Abholung → Mitteilung nur an die Eltern mit dem Text von
+  Schule („Lena hat am Di 21.10. schon um 11:30 Schluss (statt 13:05)“), abschaltbar mit der neuen Einstellung
+  **„Früher Schulschluss ohne Abholung melden“** (`school_early_end_notify`, Vorgabe an). Je Kind, Tag und
+  neuem Ende nur einmal; das Modul „Abholen & Fahrten“ muss an sein, der Urlaubsmodus hält es nicht auf.
+  Migration `008_school_end.sql` (Protokoll `school_end_log`, 30 Tage).
+- **Wand-Tablet: „Schule heute“** (ab 15:00 „Schule morgen“) – eine Zeile je Kind aus dem Plugin Schule:
+  „Lena 07:45–13:05 · 1 Ausfall“, „Max frei“, der Ferienname, ein Hinweis „Arbeit: Mathe“. Nur mit dem
+  Plugin Schule (GateControl ≥ 1.178.0, `gc.services.available`) und nur Kinder, die dort „Am Wand-Tablet
+  zeigen“ haben. `GET wall` hat dafür `school: { day: 'today' | 'tomorrow', date, students: [{ userId, name,
+  start, end, cancelled, changed, holiday, exams: [{ subject, name }], free }] } | null`. Die Antwort des
+  Dienstes `school_day` wird je Datum 10 Minuten zwischengespeichert (auch ein Fehler) – das Wand-Tablet
+  fragt jede Minute, Dienste zwischen Plugins sind auf 60 Aufrufe pro Stunde begrenzt.
+- `permissions.services` zusätzlich `gatecontrol-schule:school_day`; `services.provides` zusätzlich
+  `school_day_end`. Mindestversion bleibt GateControl ≥ 1.173.0.
+
 ## 1.12.0
 - **Neuer Regel-Auslöser „Stunde fällt aus“** (Gruppe „Schule · Stundenplan“) mit dem Plugin **Schule**
   (`gatecontrol-schule` ≥ 1.1.0): welches Kind (oder jedes Kind), welche Änderung (fällt aus, Vertretung,

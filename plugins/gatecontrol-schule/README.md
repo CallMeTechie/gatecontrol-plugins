@@ -3,8 +3,8 @@
 *English: see [below](#english). API for the GateControl apps: [API](#api).*
 
 Der Stundenplan aus **WebUntis** in GateControl – für Schüler- und Elternkonten: Ausfälle,
-Vertretungen und Zusatzstunden als Push-Mitteilung, der Wochenplan im Portal (auch am
-Wand-Tablet), eine Startkachel und ein Widget je Kind.
+Vertretungen und Zusatzstunden als Push-Mitteilung, Arbeiten und Hausaufgaben mit Erinnerung am
+Vorabend, der Wochenplan im Portal (auch am Wand-Tablet), eine Startkachel und ein Widget je Kind.
 
 Braucht **GateControl ≥ 1.172.0**. Lizenzpflichtiges Plugin.
 
@@ -40,6 +40,14 @@ Braucht **GateControl ≥ 1.172.0**. Lizenzpflichtiges Plugin.
 * **Änderungsprotokoll und Diagnose** auf der Seite „Schule“.
 * **Regeln der Familie** (ab 1.1.0, mit dem Plugin „Familie“ ≥ 1.12.0): Auslöser **„Stunde fällt aus“** –
   z. B. „wenn bei Lena morgen eine Stunde ausfällt, Wecker später stellen“ (siehe unten).
+* **Arbeiten und Hausaufgaben** (ab 1.2.0): im Wochenplan (Arbeit oben am Tag, fällige Hausaufgaben unter
+  den Stunden), auf der Seite „Schule“, in der App-API und als **Erinnerung am Vorabend** (siehe unten).
+  Gibt es morgen eine Arbeit, zeigt die Kachel „Morgen · Arbeit: Mathematik“ und das Widget den
+  Messwert „Arbeit morgen“.
+* **Früher Schluss → Abholen** (ab 1.2.0, mit „Familie“ ≥ 1.13.0): endet der Schultag heute oder morgen
+  früher, fragt Familie bei einer eingetragenen Abholung nach (siehe unten).
+* **Schule am Wand-Tablet der Familie** (ab 1.2.0, mit „Familie“ ≥ 1.13.0): „Schule heute“ (ab 15 Uhr
+  „Schule morgen“) mit einer Zeile je Kind – „Lena 07:45–13:05 · 1 Ausfall“, „Max frei“, Ferien, Arbeiten.
 
 ### Regeln der Familie („Stunde fällt aus“)
 
@@ -53,6 +61,35 @@ aus“, Sprache der Mitteilungen). In der **Ruhezeit** gehaltene Änderungen geh
 ihrem Ende. Jede Änderung wird nur einmal gemeldet; ein Fehler (Familie nicht erreichbar, Limit von 60
 Aufrufen pro Stunde) hält den Abruf nie auf – die Seite „Schule“ zeigt das letzte Ergebnis. Braucht
 GateControl ≥ 1.178.0 (`gc.services.available`); auf einem älteren GateControl wird nichts gemeldet.
+
+### Arbeiten und Hausaufgaben (1.2.0)
+
+In jedem Abruf holt das Plugin – mit derselben Anmeldung – die **Hausaufgaben** (einmal je Konto, ab 14
+Tage vor dem Stundenplan) und die **Arbeiten/Tests** (je Kind) aus WebUntis. Bei einem Elternkonto mit
+mehreren Kindern gehört eine Arbeit dem Kind, dem sie WebUntis zuordnet (sonst seiner Klasse), eine
+Hausaufgabe dem Kind, das WebUntis nennt (sonst nur Fächer aus dem Stundenplan des Kindes). Noten werden
+nie gespeichert. Liefert die Schule das nicht (z. B. „keine Berechtigung“), läuft der Stundenplan wie
+bisher; das Plugin versucht es dann erst nach 6 Stunden wieder (die Seite „Schule“ zeigt das am Konto).
+
+**Erinnerung am Vorabend** (Einstellung „Erinnerung am Vorabend“, Vorgabe 18:00, leer = aus): ab dieser
+Uhrzeit bis Mitternacht je Kind **eine** Mitteilung zu den Arbeiten von morgen – Thema **„Klassenarbeiten“**,
+z. B. „Lena: morgen Mathematik-Arbeit (3. Std.)“ – und eine zu den morgen fälligen, noch nicht erledigten
+Hausaufgaben – Thema **„Hausaufgaben“**, „Lena: 2 Hausaufgaben für morgen“ mit einer Zeile je Aufgabe.
+Empfänger wie bei den Änderungen; nie in der Ruhezeit (liegt die Uhrzeit darin, kommt sie an deren Ende,
+nur am selben Abend); je Kind, Tag und Thema nur einmal, auch nach einem Neustart. Beide Themen lassen
+sich wie jedes Thema im Portal oder in der App abschalten.
+
+### Früher Schluss → Abholen (1.2.0, mit Familie ≥ 1.13.0)
+
+Das Plugin kennt je Kind und Schultag das **geplante Ende** (Ende der letzten Stunde laut Plan, auch wenn
+sie ausfällt) und das **tatsächliche Ende** (letzte Stunde, die stattfindet). Rückt das Ende von heute oder
+morgen durch eine Änderung **nach vorne** (nicht beim ersten Abruf), meldet es das Familie (Dienst
+`school_day_end`): „Lena hat am Di 21.10. schon um 11:30 Schluss (statt 13:05)“. Familie sucht eine
+Abholung (Modul „Abholen & Fahrten“) des Kindes um das geplante Ende (± 60 Minuten) und benachrichtigt
+Fahrer und Eltern mit den Knöpfen „Auf 11:30 verschieben“ und „Wer kann?“ – ohne Abholung nur die Eltern
+(abschaltbar in Familie). Je Kind, Tag und neuem Ende nur einmal, nur Kinder mit zugeordnetem
+GateControl-Benutzer, in der Ruhezeit gehalten; findet die Stunde doch statt oder ist das geplante Ende
+vorbei, entfällt die Meldung.
 
 ### Einrichtung
 
@@ -74,7 +111,7 @@ GateControl ≥ 1.178.0 (`gc.services.available`); auf einem älteren GateContro
    lässt sich ausschalten (kein Abruf, nirgends sichtbar).
 4. **Einstellungen** (Plugins › Schule › Einstellungen): Zeitzone der Schule (Europe/Berlin),
    Sprache der Mitteilungen, Abrufintervall (Vorgabe 15 min), Push für die nächsten Tage (Vorgabe 2),
-   Ruhezeit (beide Felder leer = keine).
+   Ruhezeit (beide Felder leer = keine), Erinnerung am Vorabend (Vorgabe 18:00, leer = keine).
 
 Der **erste Abruf** eines Schülers legt nur den Stand fest – es kommt keine Mitteilung über das, was
 schon vorher ausfiel. Wer wann welche Mitteilung bekommt, steuert GateControl zusätzlich über
@@ -109,8 +146,8 @@ nächsten Abruf, je Kind die gespeicherten Stunden und die letzte erkannte Ände
   verschlüsselt wie eine `secret`-Einstellung, von Backups mit umgeschlüsselt). Sie stehen nie in
   der Datenbank, nie im Protokoll und werden nie an den Browser geschickt. Auch Einmal-Codes und
   Sitzungs-IDs werden nie protokolliert.
-* Gespeichert werden der Stundenplan (14 Tage zurück bis Ende nächster Woche) und das
-  Änderungsprotokoll (30 Tage). „Entfernen“ löscht Zugang, Schüler, Stundenplan und Protokoll des
+* Gespeichert werden der Stundenplan (14 Tage zurück bis Ende nächster Woche), die Hausaufgaben und
+  Arbeiten (bis 14 Tage nach ihrem Datum, ohne Noten) und das Änderungsprotokoll (30 Tage). „Entfernen“ löscht Zugang, Schüler, Stundenplan und Protokoll des
   Kontos.
 
 ## API
@@ -129,7 +166,13 @@ GET app/timetable?from=YYYY-MM-DD&to=YYYY-MM-DD      höchstens 14 Tage, Vorgabe
                         subject: 'M', subjectLong: 'Mathematik', subjectOld?: 'D',
                         teacher: 'SCH', teacherOld?: 'MUE', room: '104', roomOld?: '201',
                         state: 'normal' | 'cancelled' | 'changed' | 'extra',
-                        info?: '…', substText?: '…', text?: '…' }] }] }] }
+                        info?: '…', substText?: '…', text?: '…' }],
+            homework?: [{ subject: 'M', subjectLong?: 'Mathematik',   1.2.0: an diesem Tag fällig
+                          text: 'S. 42 Nr. 3', givenDate?: 'YYYY-MM-DD',
+                          completed?: true }],                   fehlt = nicht erledigt
+            exams?: [{ subject: 'M', subjectLong?: 'Mathematik',      1.2.0: Arbeiten/Tests des Tages
+                       name: 'Klassenarbeit 2', start?: 'HH:MM', end?: 'HH:MM',
+                       type?: 'Klassenarbeit', text?: 'Bruchrechnung' }] }] }] }
   400 { ok: false, code: 'INVALID' }                    Datum ungültig, to < from, mehr als 14 Tage
 
 GET app/changes?days=7                                  1 … 30 Tage, Vorgabe 7
@@ -142,7 +185,11 @@ GET app/changes?days=7                                  1 … 30 Tage, Vorgabe 7
 `state`: `cancelled` = fällt aus (auch eine Stunde, die an einem Schultag aus WebUntis verschwand),
 `changed` = Vertretung/Änderung (WebUntis `irregular`, eine ursprüngliche Lehrkraft/Raum/Fach oder ein
 Vertretungstext), `extra` = nach dem ersten Abruf hinzugekommen. `period` / `periodEnd` aus dem
-Zeitraster (Doppelstunde 3.–4.). Die Felder mit `?` fehlen, wenn sie leer sind.
+Zeitraster (Doppelstunde 3.–4.). Die Felder mit `?` fehlen, wenn sie leer sind – auch `homework` und
+`exams` (1.2.0) fehlen an Tagen ohne Hausaufgaben bzw. Arbeiten; alle anderen Felder sind gegenüber 1.1.0
+unverändert. `subject` von Hausaufgaben und Arbeiten ist das Kürzel aus dem Stundenplan, wenn WebUntis das
+Fach dort kennt (sonst der Name, den die Hausaufgaben-/Prüfungsliste nennt); `subjectLong` nur, wenn es
+sich unterscheidet. `givenDate` = an dem Tag aufgegeben. Noten liefert die API nie.
 
 ### Dienste zwischen Plugins (1.1.0)
 
@@ -151,17 +198,30 @@ Zeitraster (Doppelstunde 3.–4.). Die Felder mit `?` fehlen, wenn sie leer sind
 ```
 school_students   {} → { ok: true, students: [{ userId, name }] }
                   die eingeschalteten Schüler mit zugeordnetem GateControl-Benutzer (Anzeigename)
+school_day        { date: 'YYYY-MM-DD' }                       1.2.0, Wand-Tablet der Familie
+                  → { ok: true, date, students: [{ userId, name, start?: 'HH:MM', end?: 'HH:MM',
+                        cancelled: n, changed: n, holiday?: 'Herbstferien',
+                        exams: [{ subject, name }], free: boolean }] }
+                  nur Schüler mit „Am Wand-Tablet zeigen“ und zugeordnetem Benutzer, deren letzter Abruf
+                  den Tag umfasst; start / end = erste / letzte Stunde, die stattfindet; free = keine.
+                  date: gestern … heute + 13, sonst { ok: false, code: 'invalid' }
 ```
 
-`permissions.services: ["gatecontrol-familie:rule_event"]` – nach jedem Abruf, nur wenn
-`gc.services.available('gatecontrol-familie', 'rule_event')`:
+`permissions.services: ["gatecontrol-familie:rule_event", "gatecontrol-familie:school_day_end"]` – nach jedem
+Abruf, nur wenn `gc.services.available('gatecontrol-familie', …)`:
 
 ```
 rule_event        { type: 'school_change',
                     events: [{ userId, kind: 'cancelled' | 'changed' | 'extra' | 'restored',
                                date: 'YYYY-MM-DD', start: 'HH:MM', subject, text }] }   1 … 20
                   → { ok: true, fired }   (Familie führt die passenden Regeln aus)
+school_day_end    { events: [{ userId, date: 'YYYY-MM-DD', plannedEnd: 'HH:MM', newEnd: 'HH:MM',
+                               text: 'Lena hat am Di 21.10. schon um 11:30 Schluss (statt 13:05)' }] }   1 … 20
+                  → { ok: true, notified, matched }   (1.2.0, Familie fragt bei der Abholung nach)
 ```
+
+Alle Aufrufe zählen zum Limit von 60 Aufrufen pro Stunde und Plugin; Schule ruft höchstens einmal je
+Abruf-Durchlauf und Dienst auf, und nur, wenn es etwas zu melden gibt.
 
 ## English
 
@@ -202,5 +262,22 @@ the baseline, lessons not over, within “Push for the next days”, students ma
 never stop a fetch, the page “School” shows the last result. Needs GateControl ≥ 1.178.0
 (`gc.services.available`). The service `school_students` (caller `gatecontrol-familie` only) answers
 `{ ok: true, students: [{ userId, name }] }`.
+
+**Exams and homework (1.2.0):** each cycle also fetches the homework (once per account, from 14 days
+before the timetable) and the exams (per student) from WebUntis' web interface with the same session —
+optional: errors never stop the timetable; an endpoint that answers with an error other than a network
+error is left alone for 6 hours. Shown in the week view (exam badge, homework due that day), on the page
+“School”, in `app/timetable` (`homework` / `exams` per day, only when there are any) and as an **evening
+reminder** (setting “Reminder the evening before”, default 18:00, empty = off): per child one notification
+about tomorrow's exams (topic **“Exams”**, “Lena: Mathematik exam tomorrow (lesson 3)”) and one about
+homework due tomorrow that is not done (topic **“Homework”**), to the change recipients, never during quiet
+hours, once per child, day and topic. The tile shows “Tomorrow · exam: Mathematik”, the widget the reading
+`exam`. Grades are never stored.
+
+**Early end → pick-up (1.2.0, Familie ≥ 1.13.0):** when a change moves today's or tomorrow's end of school
+earlier (not on the baseline; planned end = the plan's last lesson, cancelled or not), the plugin calls
+Familie's `school_day_end` once per child, date and new end (held during quiet hours, dropped when no longer
+true); Familie looks for a pick-up around the planned end and asks the driver and the parents. The service
+`school_day` (caller `gatecontrol-familie` only) feeds Familie's wall tablet („Schule heute“).
 
 **API:** see [API](#api) above.

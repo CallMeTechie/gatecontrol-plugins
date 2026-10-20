@@ -28,8 +28,44 @@
     var quiet = c.quiet_from ? T('info.quiet', { from: c.quiet_from, to: c.quiet_to }) : T('info.no_quiet');
     $('#sc-info').textContent = [T('info.poll', { n: c.poll_minutes }), T('info.days_' + (c.notify_days === 1 ? 'one' : (c.notify_days === 2 ? 'two' : 'n')), { n: c.notify_days }), quiet, T('info.tz', { tz: c.timezone })].join(' · ');
     renderRules();
+    renderDayEnds();
     renderAccounts();
+    renderUpcoming();
     renderLog();
+  }
+
+  /** 1.2.0: early ends handed to the Familie plugin's rides — shown after a call. */
+  function renderDayEnds() {
+    var r = data.dayEnds;
+    var box = $('#sc-dayends');
+    var l = r && r.last;
+    box.hidden = !l;
+    if (!l) return;
+    box.textContent = l.ok ? T('dayend.info_ok', { when: S.when(l.at), events: l.events, notified: l.notified }) : T('dayend.info_error', { when: S.when(l.at), code: l.code || 'failed' });
+  }
+
+  /** 1.2.0: exams and homework of the next 14 days, by date. */
+  function renderUpcoming() {
+    var u = data.upcoming || { exams: [], homework: [] };
+    var c = data.config;
+    $('#sc-upcoming-hint').textContent = c.reminder_time ? T('upcoming.hint', { time: c.reminder_time }) : T('upcoming.hint_off');
+    var box = S.clear($('#sc-upcoming'));
+    var rows = [];
+    u.exams.forEach(function (x) { rows.push({ date: x.date, k: 0, x: x }); });
+    u.homework.forEach(function (h) { rows.push({ date: h.date, k: 1, x: h }); });
+    rows.sort(function (a, b) { return a.date < b.date ? -1 : (a.date > b.date ? 1 : a.k - b.k); });
+    if (!rows.length) { box.appendChild(el('div', { class: 'sc-empty', text: T('upcoming.empty') })); return; }
+    rows.forEach(function (r) {
+      var x = r.x;
+      var subj = (x.subjectLong && x.subjectLong.length <= 24 ? x.subjectLong : x.subject) || '–';
+      var title = (x.student || '–') + ' · ' + subj + ' · ' + S.dayLabel(r.date) + (r.k === 0 && x.start ? ' ' + x.start + (x.end ? '–' + x.end : '') : '');
+      var sub = r.k === 0 ? [x.name, x.type, x.text].filter(Boolean).join(' · ') : (x.text || '');
+      box.appendChild(el('div', { class: 'sc-log-row', 'data-kind': r.k === 0 ? 'exam' : 'homework' }, [
+        el('span', { class: 'sc-log-kind', text: T(r.k === 0 ? 'upcoming.exam' : 'upcoming.homework') }),
+        el('div', { class: 'sc-log-main' }, [el('div', { class: 'sc-log-title', text: title }), sub ? el('div', { class: 'sc-log-sub', text: sub }) : null]),
+        r.k === 1 && x.completed ? el('span', { class: 'sc-log-status', text: T('upcoming.done') }) : null,
+      ]));
+    });
   }
 
   /** 1.1.0: the Familie plugin's rules — shown while it is reachable or after a call. */
@@ -83,6 +119,10 @@
     meta.push(el('span', { text: a.last_success_at ? T('meta.last', { when: S.when(a.last_success_at) }) : T('meta.never') }));
     if (a.last_error) meta.push(el('span', { class: 'is-error', text: T('meta.error', { when: S.when(a.last_error_at || a.last_attempt_at), error: a.error_text || a.last_error }) }));
     if (a.next_fetch_at) meta.push(el('span', { text: T('meta.next', { when: S.when(a.next_fetch_at) }) }));
+    ['homework', 'exams'].forEach(function (k) {
+      var x = a.extras && a.extras[k];
+      if (x) meta.push(el('span', { class: 'is-error', text: T('extras.skipped', { what: T('extras.' + k), error: x.code, when: S.when(x.until) }) }));
+    });
     var kind = T(a.auth === 'secret' ? 'auth.secret' : 'auth.password');
     var role = a.person_type === 12 ? T('role.parent') : (a.person_type === 5 ? T('role.student') : null);
     return el('div', { class: 'sc-card', 'data-id': String(a.id) }, [

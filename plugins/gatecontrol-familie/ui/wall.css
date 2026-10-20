@@ -55,3 +55,13 @@ body{padding:0}
 .fa-w-add-btn:disabled{opacity:.5;cursor:default}
 .fa-w-empty{color:var(--w-muted);font-size:16px;margin:0}
 .fa-w-person{position:relative}
+.fa-w-school{display:flex;align-items:center;gap:16px;padding:12px 18px;border-radius:20px;background:var(--w-card);flex:none;min-width:0}
+.fa-w-school[hidden]{display:none}
+.fa-w-school-h{margin:0;flex:none;font-size:19px;font-weight:800}
+.fa-w-school-list{flex:1;min-width:0;display:flex;flex-wrap:wrap;gap:10px;max-height:96px;overflow:hidden}
+.fa-w-school-kid{display:inline-flex;align-items:center;gap:8px;min-width:0;max-width:100%;padding:7px 16px;border-radius:999px;background:var(--w-soft);font-size:17px}
+.fa-w-school-name{font-weight:800;flex:none}
+.fa-w-school-sub{color:var(--w-muted);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.fa-w-school-kid.is-warn{background:var(--w-warm)}
+.fa-w-school-kid.is-warn .fa-w-school-sub{color:var(--w-warm-fg)}
+.fa-w-school-exam{flex:none;padding:2px 10px;border-radius:999px;background:var(--w-accent);color:#fff;font-size:14px;font-weight:800}

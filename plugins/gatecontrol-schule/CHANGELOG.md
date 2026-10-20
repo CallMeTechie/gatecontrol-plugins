@@ -2,6 +2,41 @@
 
 Stundenplan aus WebUntis für Schüler- und Elternkonten als GateControl-Plugin.
 
+## 1.2.0
+- **Hausaufgaben und Arbeiten aus WebUntis:** In jedem Abruf (gleiche Sitzung, gleiche Tage wie der
+  Stundenplan) holt das Plugin die Hausaufgaben (`GET /WebUntis/api/homeworks/lessons`, einmal je Konto,
+  ab 14 Tage vor dem Stundenplan) und die Arbeiten/Tests (`GET /WebUntis/api/exams`, je Schüler mit Klasse
+  und Schüler-ID). Bei Elternkonten gehören Arbeiten über `assignedStudents` (sonst die Klasse) und
+  Hausaufgaben über die `records` (sonst – mit mehreren Kindern im Konto – die Fächer des eigenen
+  Stundenplans) zum richtigen Kind. Noten werden nie gespeichert. Beides ist **optional**: ein Fehler hält
+  den Stundenplan nie auf und behält, was schon da ist; eine Schnittstelle, die mit etwas anderem als einem
+  Netzfehler antwortet (z. B. 403, 404), wird 6 Stunden in Ruhe gelassen (die Seite „Schule“ zeigt das am
+  Konto). Migration `003_homework_exams.sql`.
+- **API `app/timetable`:** jeder Tag hat zusätzlich – nur wenn vorhanden – `homework: [{ subject,
+  subjectLong?, text, givenDate?, completed?: true }]` (an dem Tag fällig) und `exams: [{ subject,
+  subjectLong?, name, start?, end?, type?, text? }]`. Alle bisherigen Felder bleiben unverändert.
+- **Portal-Wochenplan:** Arbeiten als Hinweis oben am Tag, die fälligen Hausaufgaben unter den Stunden.
+  **Seite „Schule“:** neuer Abschnitt „Arbeiten und Hausaufgaben“ (die nächsten 14 Tage).
+- **Erinnerung am Vorabend** (neue Einstellung „Erinnerung am Vorabend“, Vorgabe 18:00, leer = aus): je
+  Kind eine Mitteilung zu den Arbeiten von morgen (neues Thema **„Klassenarbeiten“**, z. B. „Lena: morgen
+  Mathematik-Arbeit (3. Std.)“) und eine zu den morgen fälligen, nicht erledigten Hausaufgaben (neues Thema
+  **„Hausaufgaben“**, „Lena: 2 Hausaufgaben für morgen“) – an dieselben Personen wie die Änderungen, nie in
+  der Ruhezeit, je Kind, Tag und Thema nur einmal (auch nach einem Neustart).
+- **Kachel und Widget:** gibt es morgen eine Arbeit, zeigt die Kachel einen Eintrag „Morgen · Arbeit:
+  Mathematik“ (höchstens 4 Einträge wie bisher) und das Widget den Messwert `exam` („Arbeit morgen“).
+- **Früher Schluss → Abholen (Plugin Familie ≥ 1.13.0):** endet der heutige oder morgige Schultag durch
+  eine Änderung früher als vorher (nicht beim ersten Abruf; geplantes Ende = letzte Stunde laut Plan, auch
+  wenn sie ausfällt), meldet das Plugin das dem Familie-Dienst `school_day_end` – `{ events: [{ userId,
+  date, plannedEnd, newEnd, text }] }`, z. B. „Lena hat am Di 21.10. schon um 11:30 Schluss (statt 13:05)“.
+  Je Kind, Tag und neuem Ende einmal, nur Schüler mit zugeordnetem Benutzer, in der Ruhezeit gehalten,
+  verfällt, wenn die Stunde doch stattfindet oder das geplante Ende vorbei ist. Familie schaut nach einer
+  Abholung um diese Zeit und fragt nach (siehe dort).
+- **Dienst `school_day`** (nur für `gatecontrol-familie`, sein Wand-Tablet): `{ date } → { ok, date,
+  students: [{ userId, name, start?, end?, cancelled, changed, holiday?, exams: [{ subject, name }], free }] }`
+  – die Schüler mit „Am Wand-Tablet zeigen“ und zugeordnetem Benutzer.
+- `permissions.services` zusätzlich `gatecontrol-familie:school_day_end`. Mindestversion bleibt
+  GateControl ≥ 1.172.0 (die Dienste zwischen Plugins nur ab 1.178.0).
+
 ## 1.1.0
 - **Regeln der Familie („Stunde fällt aus“):** Mit dem Plugin **Familie** (≥ 1.12.0) lösen Änderungen im
   Stundenplan dessen Regeln aus. Nach jedem Abruf gehen die Änderungen, die auch per Push gemeldet werden

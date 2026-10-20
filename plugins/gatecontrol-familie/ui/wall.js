@@ -6,6 +6,8 @@
    1.3.0: the avatars (picture or initials on the favourite colour) with the
    presence ring — home: favourite colour, away: red, otherwise a thin
    neutral border (A.avatar, ui/common.js); it follows the 60 s poll.
+   1.13.0: „Schule heute“ (from 15:00 „Schule morgen“) with one line per child from the
+   Schule plugin — times, cancellations, holidays, an exam badge (only when it is there).
    GET wall every 60 s; dark from 21:00 to 06:00 (server's local time); a
    small pixel shift every few minutes against burn-in. A paired kiosk
    device or a portal login writes; device trust only (no login): read-only. */
@@ -113,6 +115,31 @@
     }
   }
 
+  /** 1.13.0: „Lena 07:45–13:05 · 1 Ausfall“, „Max frei“, a holiday, exam badges. */
+  function renderSchool() {
+    var s = data.school;
+    $('#fa-w-school').hidden = !s;
+    if (!s) return;
+    $('#fa-w-school-h').textContent = T(s.day === 'tomorrow' ? 'wall.school_tomorrow' : 'wall.school_today');
+    var box = A.clear($('#fa-w-school-list'));
+    s.students.forEach(function (k) {
+      var sub;
+      if (k.holiday && k.free) sub = k.holiday;
+      else if (k.free) sub = T('wall.school_free');
+      else {
+        var parts = [k.start && k.end ? k.start + '–' + k.end : ''];
+        if (k.cancelled) parts.push(k.cancelled === 1 ? T('wall.school_cancelled_1') : T('wall.school_cancelled', { n: k.cancelled }));
+        if (k.changed) parts.push(k.changed === 1 ? T('wall.school_changed_1') : T('wall.school_changed', { n: k.changed }));
+        sub = parts.filter(Boolean).join(' · ');
+      }
+      var kids = [el('span', { class: 'fa-w-school-name', text: k.name }), el('span', { class: 'fa-w-school-sub', text: sub })];
+      (k.exams || []).slice(0, 2).forEach(function (x) {
+        kids.push(el('span', { class: 'fa-w-school-exam', text: T('wall.school_exam', { subject: x.subject || x.name }), title: x.name || '' }));
+      });
+      box.appendChild(el('div', { class: 'fa-w-school-kid' + (k.cancelled ? ' is-warn' : '') }, kids));
+    });
+  }
+
   function done(task, chip, btn) {
     if (!writable || busy) return;
     busy = true;
@@ -186,6 +213,7 @@
 
   function render() {
     renderPeople();
+    renderSchool();
     renderToday();
     renderTasks();
     renderShopping();

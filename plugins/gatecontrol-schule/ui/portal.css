@@ -33,4 +33,12 @@
 .pt-sc-key.is-cancelled::before{background:var(--crit)}
 .pt-sc-key.is-changed::before{background:var(--warn)}
 .pt-sc-key.is-extra::before{background:var(--accent)}
+.pt-sc-exam{display:flex;flex-direction:column;gap:1px;padding:6px 8px;border-radius:9px;background:var(--surface);border:1px solid var(--warn);color:var(--warn);font-size:12.5px;font-weight:700;overflow-wrap:anywhere}
+.pt-sc-exam-name{font-weight:500;font-size:12px;color:var(--text)}
+.pt-sc-hw{display:flex;flex-direction:column;gap:4px;margin-top:4px;padding-top:6px;border-top:1px dashed var(--line-2)}
+.pt-sc-hw-h{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:700}
+.pt-sc-hw-row{font-size:12px;overflow-wrap:anywhere}
+.pt-sc-hw-row.is-done{color:var(--muted);text-decoration:line-through}
+.pt-sc-hw-subj{font-weight:700;margin-right:5px}
+.pt-sc-key.is-exam::before{background:transparent;border:2px solid var(--warn);box-sizing:border-box}
 @media (max-width:760px){.pt-sc-week{grid-template-columns:1fr}}
