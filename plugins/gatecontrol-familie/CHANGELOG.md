@@ -3,6 +3,52 @@
 Die Familie in der GateControl-App (eigener Tab), im Portal (eigener Tab „Familie“) und auf
 drei Admin-Seiten. Alles bleibt auf dem eigenen Server.
 
+## 1.12.0
+- **Neuer Regel-Auslöser „Stunde fällt aus“** (Gruppe „Schule · Stundenplan“) mit dem Plugin **Schule**
+  (`gatecontrol-schule` ≥ 1.1.0): welches Kind (oder jedes Kind), welche Änderung (fällt aus, Vertretung,
+  Zusatzstunde, findet doch statt) und für welchen Tag die Stunde ist (heute, morgen, jeder Tag – in der
+  Zeitzone der Familie, wenn die Änderung kommt). Funktioniert mit allen Bedingungen (Zeitfenster, nach
+  Sonnenuntergang, Gerätewert, Termin) und allen Aktionen; braucht nur „Regeln und Erinnerungen“, nicht
+  „Anwesenheit“. Beispiel: „Wenn bei Lena morgen die 1. Stunde ausfällt, Wecker eine Stunde später“.
+  `{event}` ist der Text der Änderung („Lena: Mathe 3. Std. (09:50) fällt aus“, ohne eigenen Text auch der
+  Text der Mitteilung), `{name}` das Kind. Anders als bei Anwesenheitsregeln wird das betroffene Kind
+  nicht aus den Empfängern genommen – seine eigene Regel benachrichtigt es selbst (Thema „Regeln &
+  Erinnerungen“, eine Mitteilung je Änderung). Jede Änderung löst eine Regel höchstens
+  einmal aus, egal wie oft sie gemeldet wird; der Urlaubsmodus pausiert auch diese Hausregeln.
+- **Trigger in der API `rules`:**
+  `{ type: 'school_change', userId: <GateControl-ID eines Kindes> | null (jedes Kind), kinds: ['cancelled' |
+  'changed' | 'extra' | 'restored'] (mind. eins, Vorgabe ['cancelled']), days: 'today' | 'tomorrow' | 'any'
+  (Vorgabe 'any') }` – die Antwort zeigt ihn in derselben Form (kinds in dieser Reihenfolge, ohne
+  Doppelte), `kind: 'school'`. Fehler: `400 invalid` mit `field` `trigger.userId` (kein Kind der Familie),
+  `trigger.kinds`, `trigger.days`. Hausregeln (Eltern): jedes Kind oder `null`; die eigene Regel eines
+  Kindes nur für sich selbst (`userId` die eigene oder `null` = sich selbst, sonst `403 forbidden`,
+  `field: 'trigger.userId'`); die eigene Regel eines Elternteils jedes Kind.
+- **`GET rules/options`:** `triggers` enthält `{ type: 'school_change', group: 'school', available: true }` nur,
+  wenn `gc.services.available('gatecontrol-schule', 'school_students')` (GateControl ≥ 1.178.0) und Schule
+  geantwortet hat; dann zusätzlich `school: { students: [{ userId, name }] }` – die Kinder der Familie, die
+  Schule kennt (ein Kind sieht nur sich). Die Liste wird 5 Minuten zwischengespeichert (Dienstaufrufe sind
+  auf 60 pro Stunde begrenzt). `permissions.services` + `gatecontrol-schule:school_students`.
+- **Probelauf:** simuliert eine Änderung (das Kind der Regel bzw. das erste Kind, die erste gewählte Art,
+  heute bzw. morgen) und prüft die Bedingungen wie jetzt; ohne Schule „löst nicht aus“.
+- **Dienst `rule_event`** (`services.provides`, nur für den Aufrufer `gatecontrol-schule`, sonst
+  `{ ok: false, code: 'forbidden' }`):
+  `{ type: 'school_change', events: [{ userId, kind, date: 'YYYY-MM-DD', start: 'HH:MM', subject, text }] }`
+  (0–20 Ereignisse; `userId` Zahl, `kind` wie oben, `subject` ≤ 80, `text` 1–200 Zeichen; sonst
+  `{ ok: false, code: 'invalid' }`) → `{ ok: true, fired: <Regelläufe> }`. Je Ereignis und passender aktiver
+  Regel (Kind oder jedes Kind, Art, Tag) laufen Bedingungen und Aktionen wie bei einer Anwesenheitsregel;
+  Benutzer, die kein Kind der Familie sind, werden übergangen; ist „Regeln und Erinnerungen“ aus, läuft
+  nichts (`fired: 0`). Doppelte Ereignisse: Schlüssel `school:<userId>:<date>:<start>:<kind>` je Regel
+  (Tabelle `rule_fired`, 14 Tage aufbewahrt) – auch wenn eine Bedingung beim ersten Mal nicht erfüllt war.
+  Kein 10-Minuten-Abstand wie bei Anwesenheitsregeln: zwei Stunden, die ausfallen, sind zwei Läufe.
+- **Protokoll:** Läufe dieses Auslösers tragen `trigger: 'school_change'`, das Kind (`userId`) und neu
+  `event` (der Text der Änderung, sonst `null`) – Seite „Anwesenheit & Smart Home“ und Portal zeigen ihn.
+  Die Mitteilung trägt `data.familie.school: { date, start, kind }`.
+- **Editor** (Admin-Seite und Portal): der Auslöser „Stunde fällt aus“ mit Kind („Jedes Kind“ oder ein
+  Kind), Art(en) und Tag; der Listenfilter „Schule“ erscheint, sobald es eine solche Regel gibt.
+- Migration `007_school_trigger.sql` (`presence_rules.trigger_json`, `presence_log.event_text`, `rule_fired`).
+  Mindestversion bleibt **GateControl ≥ 1.173.0** – ohne `gc.services.available` (vor 1.178.0) wird der
+  Auslöser nicht angeboten.
+
 ## 1.11.0
 - **Offene Erinnerungen in der App:** `GET rules` liefert unter `open` die heute offenen Erinnerungen mit Person
   (`userId`) und „Später bis …“ – Kinder sehen ihre eigenen, Eltern (und die Admin-Seite) die der ganzen Familie.

@@ -7,10 +7,21 @@
 // A rule: { id, name, title, scope, trigger, userId, placeId, graceMinutes, schedule,
 // conditions: { time, afterSunset, device, calendar }, actions, active, ownerId, lastRunAt,
 // lastKey, createdAt, updatedAt }. title falls back to the name of rules made before 1.9.0;
-// scope 'house' | 'personal'; schedule { weekdays, time } for the trigger 'schedule'.
+// scope 'house' | 'personal'; schedule { weekdays, time } for the trigger 'schedule'; 1.12.0: school
+// { kinds, days } for the trigger 'school_change' (server/school.js), null for every other trigger.
 
 const store = require('./store');
 const { parseJson } = require('./util');
+
+const SCHOOL_KINDS = ['cancelled', 'changed', 'extra', 'restored'];
+const SCHOOL_DAYS = ['today', 'tomorrow', 'any'];
+
+/** The stored options of the trigger 'school_change' (trigger_json) → { kinds, days } (defaults for anything broken). */
+function schoolOptions(raw) {
+  const o = raw && typeof raw === 'object' ? raw : {};
+  const kinds = Array.isArray(o.kinds) ? SCHOOL_KINDS.filter((k) => o.kinds.includes(k)) : [];
+  return { kinds: kinds.length ? kinds : ['cancelled'], days: SCHOOL_DAYS.includes(o.days) ? o.days : 'any' };
+}
 
 function rowToRule(x) {
   const c = parseJson(x.conditions_json, {});
@@ -20,6 +31,7 @@ function rowToRule(x) {
     trigger: x.trigger_type, userId: x.user_id == null ? null : x.user_id, placeId: x.place_id == null ? null : x.place_id,
     graceMinutes: x.grace_minutes,
     schedule: s && Array.isArray(s.weekdays) && typeof s.time === 'string' ? { weekdays: s.weekdays, time: s.time } : null,
+    school: x.trigger_type === 'school_change' ? schoolOptions(parseJson(x.trigger_json, null)) : null,
     conditions: {
       time: c.time && c.time.from && c.time.to ? { from: c.time.from, to: c.time.to } : null, afterSunset: c.afterSunset === true,
       device: Array.isArray(c.device) ? c.device : [], calendar: c.calendar && typeof c.calendar === 'object' ? c.calendar : null,
@@ -38,4 +50,4 @@ async function activeRules(gc, trigger) {
   return (await store.all(gc, 'SELECT * FROM presence_rules WHERE active = 1 AND trigger_type = ? ORDER BY id', [trigger])).map(rowToRule);
 }
 
-module.exports = { rowToRule, ruleById, activeRules };
+module.exports = { SCHOOL_KINDS, SCHOOL_DAYS, schoolOptions, rowToRule, ruleById, activeRules };

@@ -61,9 +61,15 @@ function textOf(a, run, person, cfg, vars, rule) {
   const name = person ? person.name : '';
   const place = run.placeName || '';
   const v = vars || {};
-  const def = run.trigger === 'schedule' ? ((rule && rule.title) || push.t(cfg.lang, 'presence.schedule')) : push.t(cfg.lang, `presence.${run.trigger}`, { name, place });
+  // 1.12.0: a school event — its own text is the default and {event} (a snoozed reminder no longer has it: the title)
+  const school = run.trigger === 'school_change';
+  const event = school && run.event ? run.event : (v.event || '');
+  let def;
+  if (run.trigger === 'schedule') def = (rule && rule.title) || push.t(cfg.lang, 'presence.schedule');
+  else if (school) def = run.event || (rule && rule.title) || push.t(cfg.lang, 'presence.school_change', { name });
+  else def = push.t(cfg.lang, `presence.${run.trigger}`, { name, place });
   return (a.text || def).split('{name}').join(name).split('{place}').join(place)
-    .split('{value}').join(v.value || '').split('{device}').join(v.device || '').split('{event}').join(v.event || '');
+    .split('{value}').join(v.value || '').split('{device}').join(v.device || '').split('{event}').join(event);
 }
 
 /** The quick actions `userId` has: Set of '<plugin>/<id>' (empty when unknown). */
@@ -98,6 +104,8 @@ async function notifyPushes(gc, fam, cfg, now, o) {
   const { rule, run, action: a, person, ev, to, key } = o;
   if (!to.length) return { pushes: [], sent: 0, keyed: [] };
   const reminder = run.trigger === 'schedule';
+  // 1.12.0: a school event goes out as topic 'reminders', one notification per event (not collapsed)
+  const school = run.trigger === 'school_change';
   const text = textOf(a, run, person, cfg, ev && ev.vars, rule).slice(0, 120);
   const facts = a.facts && ev && ev.facts.length ? ev.facts : null;
   // without a text of its own a reminder's body says why it came (the values of its conditions)
@@ -112,13 +120,15 @@ async function notifyPushes(gc, fam, cfg, now, o) {
   const remembered = buttons.length > 0 || reminder;
   const familie = { type: reminder ? 'rule_reminder' : 'presence_rule', ruleId: rule.id, trigger: run.trigger, userId: run.userId || null };
   if (run.placeId) familie.placeId = run.placeId;
+  // 1.12.0: the lesson of a school event
+  if (run.school) familie.school = { date: run.school.date, start: run.school.start, kind: run.school.kind };
   // the reminder row the buttons act on (rule, key, person)
   if (remembered) familie.key = key;
   const withButtons = buttons.length && callbacks(gc);
   const qaRefs = buttons.filter((b) => b.startsWith('quick_action:')).map((b) => b.slice('quick_action:'.length));
   const base = {
-    topic: reminder ? 'reminders' : 'presence', priority: 'normal', ttl: 6 * 3600,
-    collapseKey: reminder ? `rule:${rule.id}:${key}`.slice(0, 120) : `presence:${rule.id}`, title, body,
+    topic: reminder || school ? 'reminders' : 'presence', priority: 'normal', ttl: 6 * 3600,
+    collapseKey: reminder || school ? `rule:${rule.id}:${key}`.slice(0, 120) : `presence:${rule.id}`, title, body,
   };
   const actionsFor = async (userId) => {
     const out = [];
@@ -264,7 +274,9 @@ async function tick(gc, fam, cfg, now, pushes) {
       }
       if (!ok) { await finish('resolved'); continue; }
       const run = { rule, trigger: rule.trigger === 'schedule' ? 'schedule' : rule.trigger, userId: null };
-      const out = await notifyPushes(gc, fam, cfg, now, { rule, run, action: a, person: null, ev, to: [row.user_id], key: row.fire_key, cache });
+      // 1.12.0: the child of a school event from its key 'school:<userId>:…'
+      if (rule.trigger === 'school_change') { const id = Number(String(row.fire_key).split(':')[1]); if (fam.byId.has(id)) run.userId = id; }
+      const out = await notifyPushes(gc, fam, cfg, now, { rule, run, action: a, person: run.userId ? fam.byId.get(run.userId) : null, ev, to: [row.user_id], key: row.fire_key, cache });
       pushes.push(...out.pushes);
       await finish('open', true);
     } catch (e) {

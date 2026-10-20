@@ -39,6 +39,9 @@
 // shopping list asked of a person and tasks from a chat with cards in the Messenger, the quick
 // actions of those cards (hooks quickActions / runQuickAction, server/quick.js) and the service
 // family_roles.
+//
+// 1.12.0: the rule trigger 'school_change' („Stunde fällt aus“) — the Schule plugin calls the service
+// rule_event (server/school.js, server/services.js); rules/options asks it for its students.
 
 const ui = require('./ui');
 const api = require('./api');
@@ -66,6 +69,7 @@ const services = require('./services');
 const rules = require('./rules');
 const reminders = require('./reminders');
 const quick = require('./quick');
+const school = require('./school');
 const texts = require('./texts.json');
 const { STATUS, isKnown } = require('./util');
 
@@ -149,6 +153,7 @@ async function background(gc, now) {
       await meals.purge(gc, cfg, now);
       await presence.purge(gc, now);
       await reminders.purge(gc, now);
+      await school.purge(gc, now);
     });
   }
   await push.flush(gc, pushes);
@@ -160,6 +165,7 @@ module.exports = {
   async start(gc) {
     push.reset();
     messenger.reset();
+    school.reset();
     state.lastPurge = 0;
     try {
       const cfg = await config.load(gc);

@@ -4,7 +4,7 @@
     "de": "Familie",
     "en": "Family"
   },
-  "version": "1.11.0",
+  "version": "1.12.0",
   "publisher": "CallMeTechie",
   "description": {
     "de": "Die Familie in der GateControl-App und im Portal: gemeinsame Einkaufslisten (offline nutzbar), Aufgaben mit Erinnerung und Sternen für Kinder, Termine und Geburtstage, Abholen & Fahrten („Wer holt Tim?“), Notfall-Karte, Kinder orten auf Anfrage (das Kind sieht jede Abfrage, endet mit 18), „Bin angekommen“ und SOS, Orts-Erinnerungen, Taschengeld (nur Buchhaltung), Wunschlisten, Haushaltsbuch, Pinnwand & Packlisten, Essensplan, Anwesenheit mit Smart-Home-Regeln (nur mit Zustimmung), Erinnerungen und ein Dashboard für ein Wand-Tablet. Alles bleibt auf dem eigenen Server.",
@@ -31,7 +31,8 @@
       "gatecontrol-messenger:release_group",
       "gatecontrol-messenger:set_place_status",
       "gatecontrol-alltag:calendar_query",
-      "gatecontrol-alltag:calendar_list"
+      "gatecontrol-alltag:calendar_list",
+      "gatecontrol-schule:school_students"
     ]
   },
   "services": {
@@ -70,6 +71,12 @@
         "label": {
           "de": "Eltern und Kinder der Familie",
           "en": "Parents and children of the family"
+        }
+      },
+      "rule_event": {
+        "label": {
+          "de": "Regel-Auslöser aus dem Stundenplan",
+          "en": "Rule trigger from the timetable"
         }
       }
     }
