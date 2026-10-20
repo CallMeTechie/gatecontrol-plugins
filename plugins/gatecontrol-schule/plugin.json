@@ -4,11 +4,11 @@
     "de": "Schule",
     "en": "School"
   },
-  "version": "1.3.0",
+  "version": "1.4.0",
   "publisher": "CallMeTechie",
   "description": {
-    "de": "Stundenplan aus WebUntis für Schüler- und Elternkonten: Ausfälle, Vertretungen und Zusatzstunden als Push, Arbeiten und Hausaufgaben mit Erinnerung am Vorabend, Wochenplan je Kind in seiner Farbe (Portal, Wand-Tablet, App). Konten per QR-Code-Scan in den Einstellungen; jeder kann sein eigenes Schülerkonto im Profil verknüpfen.",
-    "en": "Timetable from WebUntis for student and parent accounts: cancellations, substitutions and extra lessons as push notifications, exams and homework with a reminder the evening before, a week view per child in its colour (portal, wall tablet, app). Accounts by scanning the QR code in the settings; everyone can link their own student account in their profile."
+    "de": "Stundenplan aus WebUntis für Schüler- und Elternkonten: Ausfälle, Vertretungen und Zusatzstunden als Push, Arbeiten und Hausaufgaben mit Erinnerung am Vorabend, Nachrichten der Schule und Fehlzeiten, Wochenplan je Kind in seiner Farbe (Portal, Wand-Tablet, App). Konten per QR-Code-Scan in den Einstellungen; jeder kann sein eigenes Schülerkonto im Profil verknüpfen.",
+    "en": "Timetable from WebUntis for student and parent accounts: cancellations, substitutions and extra lessons as push notifications, exams and homework with a reminder the evening before, school messages and absences, a week view per child in its colour (portal, wall tablet, app). Accounts by scanning the QR code in the settings; everyone can link their own student account in their profile."
   },
   "gatecontrol": ">=1.172.0",
   "entry": "server/index.js",
@@ -88,8 +88,8 @@
           "en": "Notifications and quiet hours"
         },
         "help": {
-          "de": "Push bei Änderungen, Erinnerung am Vorabend an Arbeiten und Hausaufgaben.",
-          "en": "Pushes about changes, a reminder of exams and homework the evening before."
+          "de": "Push bei Änderungen, Erinnerung am Vorabend an Arbeiten und Hausaufgaben, neue Nachrichten der Schule und Fehlzeiten.",
+          "en": "Pushes about changes, a reminder of exams and homework the evening before, new school messages and absences."
         }
       },
       {
@@ -214,6 +214,20 @@
         "default": "18:00"
       },
       {
+        "key": "absence_notify_child",
+        "type": "boolean",
+        "group": "notify",
+        "label": {
+          "de": "Fehlzeiten auch dem Kind melden",
+          "en": "Tell the child about absences too"
+        },
+        "help": {
+          "de": "Neue oder geänderte Fehlzeiten (z. B. eingetragen, entschuldigt) gehen als Push (Thema „Fehlzeiten“) an die eingetragenen Empfänger – mit diesem Schalter auch an das Kind selbst. Sehen kann das Kind seine Fehlzeiten im Portal und in der App immer.",
+          "en": "New or changed absences (e.g. recorded, excused) are pushed (topic “Absences”) to the listed recipients – with this switch to the child itself as well. The child can always see its absences in the portal and the app."
+        },
+        "default": false
+      },
+      {
         "key": "self_link",
         "type": "boolean",
         "group": "profile",
@@ -272,6 +286,22 @@
       "label": {
         "de": "Hausaufgaben",
         "en": "Homework"
+      },
+      "default": true
+    },
+    {
+      "id": "messages",
+      "label": {
+        "de": "Nachrichten der Schule",
+        "en": "School messages"
+      },
+      "default": true
+    },
+    {
+      "id": "absences",
+      "label": {
+        "de": "Fehlzeiten",
+        "en": "Absences"
       },
       "default": true
     }

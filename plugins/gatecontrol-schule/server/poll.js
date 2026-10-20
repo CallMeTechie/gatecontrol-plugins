@@ -13,12 +13,16 @@
 // ≥ today + 7; the portal shows this and next week) → change detection (server/changes.js)
 // → 1.2.0: homework (once per account) and exams (per student) for the same dates — optional,
 // never failing the cycle (server/extras.js).
+// 1.4.0: then the account's school messages (≤ every 15 min, server/messages.js) and the fetched
+// students' absences (≤ hourly, server/absences.js) — optional the same way.
 
 const store = require('./store');
 const untis = require('./untis');
 const tt = require('./timetable');
 const changes = require('./changes');
 const extras = require('./extras');
+const messages = require('./messages');
+const absences = require('./absences');
 const tz = require('./tz');
 
 const MIN = 60000;
@@ -133,6 +137,9 @@ async function pollAccount(gc, acc, cfg, now, opts = {}) {
     if (due.length && failures === due.length) throw firstError;
     // 1.2.0: homework and exams (never throws)
     const extrasState = await extras.fetchAccount(gc, client, acc, fetched, range, now, deadline);
+    // 1.4.0: messages and absences (never throw; their pauses go into the same state)
+    await messages.fetchAccount(gc, client, acc, fetched, extrasState, cfg, now, deadline);
+    await absences.fetchAccount(gc, client, acc, fetched, extrasState, cfg, now, deadline);
     await store.updateAccount(gc, acc.id, {
       extras: extrasState,
       status: 'ok', last_error: failures ? untis.codeOf(firstError) : null, error_count: 0, last_success_at: now,

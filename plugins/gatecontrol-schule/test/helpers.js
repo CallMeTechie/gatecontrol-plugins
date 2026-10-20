@@ -34,7 +34,8 @@ const fixture = (name) => JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtu
 const clone = (v) => JSON.parse(JSON.stringify(v));
 
 /**
- * A fake WebUntis. opts: { account: 'parent' | 'student' | 'teacher', username, password, secret, noRight: [personId], down: bool }
+ * A fake WebUntis. opts: { account: 'parent' | 'student' | 'teacher', username, password, secret, noRight: [personId], down: bool,
+ * school: bool (1.4.0: answer api/token/new, the inbox and the absences — off: those paths answer 400 as before) }
  * state.timetable[personId] = raw lessons (a copy of the fixture, tests change it).
  */
 function fakeUntis(opts = {}) {
@@ -58,6 +59,14 @@ function fakeUntis(opts = {}) {
     // 1.3.0: (query) → an HTTP status for api/exams (e.g. 403 when it names a studentId), or null
     examsStatus: null,
     queries: [],
+    // 1.4.0: the inbox (raw incomingMessages), the absences per person id (raw), a status per endpoint
+    // { token, messages, absences } (e.g. 403), the issued JWTs (→ session) and the token answer's form
+    school: !!opts.school,
+    inbox: [],
+    absences: {},
+    schoolStatus: {},
+    jwts: new Map(),
+    tokenForm: 'text', // 'text' | 'json' (a JSON string) | 'garbage'
   };
   let n = 0;
   const json = (body, headers = {}) => ({ status: 200, headers: { 'content-type': 'application/json', ...headers }, body: JSON.stringify(body) });
@@ -99,6 +108,33 @@ function fakeUntis(opts = {}) {
       const to = Number(u.searchParams.get('endDate'));
       if (kind === 'exams') return json({ data: { exams: clone(state.exams.filter((e) => e.examDate >= from && e.examDate <= to)) } });
       return json({ data: clone(state.homework) });
+    }
+    const SCHOOL_PATHS = { '/WebUntis/api/token/new': 'token', '/WebUntis/api/rest/view/v1/messages': 'messages', '/WebUntis/api/classreg/absences/students': 'absences' };
+    if (state.school && SCHOOL_PATHS[p] && (o.method || 'GET') === 'GET') {
+      const kind = SCHOOL_PATHS[p];
+      const hdr = o.headers || {};
+      state.calls.push(kind);
+      state.queries.push({ kind, query: Object.fromEntries(u.searchParams), authorization: hdr.authorization || null });
+      const sid = sessionOf(o);
+      if (!sid) return { status: 401, body: '' };
+      if (state.schoolStatus[kind]) return { status: state.schoolStatus[kind], body: '' };
+      if (kind === 'token') {
+        const jwt = `eyJhbGciOiJIUzI1NiJ9.${Buffer.from(JSON.stringify({ sid, n: state.jwts.size })).toString('base64url')}.c2lnbmF0dXJl`;
+        state.jwts.set(jwt, sid);
+        const body = state.tokenForm === 'json' ? JSON.stringify(jwt) : (state.tokenForm === 'garbage' ? '<html>login</html>' : jwt);
+        return { status: 200, headers: { 'content-type': 'text/plain' }, body };
+      }
+      if (kind === 'messages') {
+        const m = /^Bearer (.+)$/.exec(String(hdr.authorization || ''));
+        if (!m || state.jwts.get(m[1]) !== sid) return { status: 401, body: '' };
+        return json({ incomingMessages: clone(state.inbox) });
+      }
+      const pid = Number(u.searchParams.get('studentId'));
+      const from = Number(u.searchParams.get('startDate'));
+      const to = Number(u.searchParams.get('endDate'));
+      if (u.searchParams.get('excuseStatusId') !== '-1') return { status: 400, body: '' };
+      const list = (state.absences[pid] || []).filter((a) => a.startDate <= to && (a.endDate || a.startDate) >= from);
+      return json({ data: { absences: clone(list), absenceReasons: [], excuseStatuses: false, showAbsenceReasonChange: false, showCreateAbsence: false } });
     }
     if (o.method !== 'POST' || !o.json || o.json.jsonrpc !== '2.0') return { status: 400, body: 'bad request' };
     const { id, method, params } = o.json;

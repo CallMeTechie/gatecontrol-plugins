@@ -36,9 +36,14 @@
 //               evening reminders (topics exams / homework, server/remind.js)
 //   1.3.0       a colour (and picture) per student (server/colors.js) everywhere; settingsStatus (status
 //               lines of the settings form); the profile section „WebUntis verknüpfen“
+//   1.4.0       school messages (the inbox of each account, server/messages.js) and absences (server/absences.js):
+//               fetched in the cycle, pushed (topics messages / absences), on the Schule page and the portal
+//               (per child „Nachrichten“ and „Fehlzeiten“), their state in words in the settings (school_info)
 //   app API     (the GateControl apps, req.user.app; permissions.app, no app tab of its own)
 //     GET    /app/timetable?from=&to=         ≤ 14 days, see README "API"
 //     GET    /app/changes?days=7              the change log of the students the caller sees
+//     GET    /app/messages?days=30            1.4.0: the school messages the caller may read (1…90 days, ≤ 100)
+//     GET    /app/absences?days=60            1.4.0: the absences of the students the caller may see them of (1…180 days, ≤ 200)
 //
 // Credentials: the QR key or the password of an account is a plugin secret
 // (gc.settings.setSecret('acct.<id>.secret' | 'acct.<id>.password')): encrypted by the host with
@@ -65,6 +70,8 @@ const dayend = require('./dayend');
 const remind = require('./remind');
 const link = require('./link');
 const colors = require('./colors');
+const messages = require('./messages');
+const absences = require('./absences');
 const { fail, str, accountInput, posInt } = require('./input');
 const texts = require('./texts.json');
 
@@ -138,10 +145,37 @@ function extrasInfo(a, cfg, lang) {
   return out;
 }
 
+/**
+ * 1.4.0: the state of the messages and the absences of an account in plain words — always both lines:
+ * read (when, how many), not read yet, not shared / not offered by WebUntis (asked again after a day),
+ * or failed (when it is tried again). → [{ kind: 'messages'|'absences', tone: 'good'|'info'|'warn', text }]
+ */
+function schoolInfo(a, students, counts, cfg, lang) {
+  const out = [];
+  const mine = students.filter((s) => s.account_id === a.id && s.enabled && !s.missing);
+  const absAt = mine.map((s) => s.absences_at).filter((x) => x != null);
+  const state = {
+    messages: { at: a.messages_at, n: counts.messages.get(a.id) || 0 },
+    absences: { at: absAt.length ? Math.max(...absAt) : null, n: mine.reduce((sum, s) => sum + (counts.absences.get(s.id) || 0), 0) },
+  };
+  for (const kind of ['messages', 'absences']) {
+    const p = kind === 'messages' ? 'school.msg' : 'school.abs';
+    const x = extraView(a.extras && a.extras[kind]);
+    if (x) {
+      const unshared = ['no_right', 'auth'].includes(x.code);
+      const key = unshared ? `${p}_unshared` : (x.code === 'unsupported' ? `${p}_unsupported` : `${p}_failed`);
+      out.push({ kind, tone: x.code === 'failed' ? 'warn' : 'info', text: t(lang, key, { when: whenText(x.until, cfg, lang) }) });
+    } else if (state[kind].at != null) {
+      out.push({ kind, tone: 'good', text: t(lang, `${p}_ok`, { when: whenText(state[kind].at, cfg, lang), n: state[kind].n }) });
+    } else out.push({ kind, tone: 'info', text: t(lang, `${p}_never`) });
+  }
+  return out;
+}
+
 /** A GateControl user as the settings page shows it (name, picture or initials on the colour). */
 const personView = (u) => (u ? { id: u.id, name: u.name, role: u.role, avatarUrl: u.avatarUrl, colorHex: u.colorHex, initials: u.initials } : null);
 
-function accountView(a, students, counts, users, lang, cfg) {
+function accountView(a, students, counts, users, lang, cfg, school) {
   return {
     id: a.id, host: a.host, school: a.school, username: a.username, auth: a.auth,
     person_type: a.person_type, status: a.status, last_error: a.last_error, error_text: codeText(lang, a.last_error), error_count: a.error_count,
@@ -150,6 +184,8 @@ function accountView(a, students, counts, users, lang, cfg) {
     extras: { homework: extraView(a.extras && a.extras.homework), exams: extraView(a.extras && a.extras.exams) },
     // 1.3.0: the same in plain words, and who connected the account in the profile (null = an administrator)
     extras_info: extrasInfo(a, cfg, lang),
+    // 1.4.0: messages and absences in plain words (always both)
+    school_info: school ? schoolInfo(a, students, school, cfg, lang) : [],
     owner: a.owner_user_id != null ? personView(users.get(a.owner_user_id)) || { id: a.owner_user_id, name: '#' + a.owner_user_id } : null,
     students: students.filter((s) => s.account_id === a.id).map((s) => {
       const f = colors.faceOf(s, users);
@@ -186,6 +222,7 @@ async function adminStatus(gc, cfg, lang) {
   const counts = await store.countLessons(gc);
   const byId = new Map(students.map((s) => [s.id, s]));
   const log = await store.listChanges(gc, null, clock.now() - 14 * DAY, 60);
+  const school = { messages: await store.countMessages(gc), absences: await store.countAbsences(gc) };
   return {
     ok: true,
     config: {
@@ -193,7 +230,7 @@ async function adminStatus(gc, cfg, lang) {
       quiet_from: cfg.quiet ? config.hhmm(cfg.quiet.from) : null, quiet_to: cfg.quiet ? config.hhmm(cfg.quiet.to) : null, problems: cfg.problems,
       reminder_time: cfg.reminder ? config.hhmm(cfg.reminder) : null,
     },
-    accounts: accounts.map((a) => accountView(a, students, counts, users, lang, cfg)),
+    accounts: accounts.map((a) => accountView(a, students, counts, users, lang, cfg, school)),
     users: [...users.values()].map(personView),
     // 1.3.0: the colours a student may get, and whether people may link their own account in the profile
     palette: colors.PALETTE, self_link: cfg.selfLink,
@@ -249,7 +286,8 @@ async function updateCredentials(gc, acc, body, cfg, lang) {
   const old = { host: acc.host, school: acc.school, username: acc.username, auth: acc.auth };
   await gc.db.run('UPDATE accounts SET host = ?, school = ?, username = ?, auth = ? WHERE id = ?', [inp.host, inp.school, inp.username, inp.auth, acc.id]);
   await store.setCred(gc, acc.id, inp.auth, inp.value);
-  await store.updateAccount(gc, acc.id, { error_count: 0, next_fetch_at: 0, meta_day: null });
+  // 1.4.0: perhaps another person's inbox now — its first fetch is a new baseline (no pushes)
+  await store.updateAccount(gc, acc.id, { error_count: 0, next_fetch_at: 0, meta_day: null, messages_at: null });
   const now = clock.now();
   const r = await poll.pollAccount(gc, await store.getAccount(gc, acc.id), cfg, now);
   if (!r.ok && !r.persons.length) {
@@ -303,7 +341,7 @@ async function studentPatch(gc, body, existing) {
     out.recipients = ids;
   }
   // switched on again: the next fetch is a new baseline (no pushes about what changed meanwhile)
-  if (out.enabled === true && !existing.enabled) out.baseline_done = false;
+  if (out.enabled === true && !existing.enabled) { out.baseline_done = false; out.absences_at = null; }
   return out;
 }
 
@@ -317,7 +355,7 @@ async function adminRoute(req, gc, seg, cfg, lang) {
     const students = (await store.listStudents(gc)).filter((s) => s.enabled && !s.missing);
     const accounts = await store.listAccounts(gc);
     const week = req.query && String(req.query.week) === '1' ? 1 : 0;
-    return { json: { ok: true, configured: accounts.length > 0, accountErrors: accounts.filter((x) => x.status === 'error').length, ...(await views.overview(gc, cfg, students, week, clock.now())) } };
+    return { json: { ok: true, configured: accounts.length > 0, accountErrors: accounts.filter((x) => x.status === 'error').length, ...(await overviewOf(gc, cfg, students, week, req.user)) } };
   }
   if (a === 'qr-decoder' && seg.length === 1 && m === 'GET') return { json: { ok: true, js: ui.qrDecoder() } };
 
@@ -356,6 +394,29 @@ async function adminRoute(req, gc, seg, cfg, lang) {
 
 // ─── Portal and app ─────────────────────────────
 
+/**
+ * The Schule page / portal tab (views.overview) — 1.4.0: per student `messages` (its account's inbox,
+ * only when `user` may read it) and `absences` (only when `user` may see them); left out otherwise.
+ */
+async function overviewOf(gc, cfg, students, week, user) {
+  const now = clock.now();
+  const ov = await views.overview(gc, cfg, students, week, now);
+  const msgs = await messages.forStudents(gc, user, students, now);
+  const abs = await absences.forStudents(gc, user, students, cfg, now);
+  for (const s of ov.students) {
+    if (msgs.has(s.id)) s.messages = msgs.get(s.id);
+    if (abs.has(s.id)) s.absences = abs.get(s.id);
+  }
+  return ov;
+}
+
+/** ?days= → an integer 1…max (default `d`); INVALID otherwise. */
+function daysOf(q, d, max) {
+  const days = q.days == null || q.days === '' ? d : posInt(q.days);
+  if (!days || days > max) throw fail('INVALID');
+  return days;
+}
+
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 async function portalRoute(req, gc, seg, cfg) {
@@ -375,7 +436,7 @@ async function portalRoute(req, gc, seg, cfg) {
   if (seg[1] === 'overview') {
     const week = req.query && String(req.query.week) === '1' ? 1 : 0;
     const students = await views.visibleStudents(gc, req.user);
-    return { json: { ok: true, configured: students.length > 0, ...(await views.overview(gc, cfg, students, week, clock.now())) } };
+    return { json: { ok: true, configured: students.length > 0, ...(await overviewOf(gc, cfg, students, week, req.user)) } };
   }
   if (seg[1] !== 'timetable') throw fail('NOT_FOUND');
   const week = req.query && String(req.query.week) === '1' ? 1 : 0;
@@ -402,6 +463,9 @@ async function appRoute(req, gc, seg, cfg) {
     const times = students.map((s) => s.last_fetch_at).filter((x) => x != null);
     return { json: { ok: true, updatedAt: times.length ? Math.max(...times) : null, students: list.map(({ updatedAt, ...s }) => s) } };
   }
+  // 1.4.0: school messages and absences
+  if (seg[1] === 'messages') return { json: { ok: true, messages: await messages.listFor(gc, req.user, daysOf(q, 30, 90), now) } };
+  if (seg[1] === 'absences') return { json: { ok: true, absences: await absences.listFor(gc, req.user, daysOf(q, 60, 180), cfg, now) } };
   if (seg[1] === 'changes') {
     const days = q.days == null || q.days === '' ? 7 : posInt(q.days);
     if (!days || days > 30) throw fail('INVALID');
@@ -508,7 +572,14 @@ module.exports = {
     const cfg = await config.load(gc);
     const now = clock.now();
     const out = [];
-    for (const s of (await views.visibleStudents(gc, user)).slice(0, 8)) out.push(views.tileOf(s, await views.summary(gc, s, cfg, now), lang === 'en' ? 'en' : 'de'));
+    const students = (await views.visibleStudents(gc, user)).slice(0, 8);
+    // 1.4.0: new school messages of the student's inbox (only when the viewer may read it)
+    const msgs = students.length ? await messages.forStudents(gc, user, students, now) : new Map();
+    for (const s of students) {
+      const sum = await views.summary(gc, s, cfg, now);
+      sum.newMessages = (msgs.get(s.id) || []).filter((m) => m.isNew);
+      out.push(views.tileOf(s, sum, lang === 'en' ? 'en' : 'de'));
+    }
     return out;
   },
 
@@ -561,9 +632,13 @@ module.exports = {
       // 1.2.0: early ends of a school day to Familie's rides (never throws); the evening reminders
       await dayend.send(gc, cfg, now, quiet);
       try { await remind.tick(gc, notifierOf(gc), cfg, now, quiet); } catch (e) { gc.log.warn('reminders failed', (e && (e.code || e.message)) || 'error'); }
+      // 1.4.0: new school messages and new / changed absences
+      try { await messages.dispatch(gc, notifierOf(gc), cfg, now, quiet); } catch (e) { gc.log.warn('message pushes failed', (e && (e.code || e.message)) || 'error'); }
+      try { await absences.dispatch(gc, notifierOf(gc), cfg, now, quiet); } catch (e) { gc.log.warn('absence pushes failed', (e && (e.code || e.message)) || 'error'); }
       if (now - state.lastPrune > 3600000) {
         state.lastPrune = now;
         await store.prune(gc, tz.addDays(tz.localDate(now, cfg.tz), -14), now - 30 * DAY);
+        await store.pruneSchool(gc, now - messages.KEEP_MS, absences.keepFrom(now, cfg));
       }
     } catch (e) {
       gc.log.warn('tick failed', (e && e.code) || (e && e.message) || 'error');

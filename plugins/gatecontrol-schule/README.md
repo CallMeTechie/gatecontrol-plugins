@@ -4,7 +4,7 @@
 
 Der Stundenplan aus **WebUntis** in GateControl – für Schüler- und Elternkonten: Ausfälle,
 Vertretungen und Zusatzstunden als Push-Mitteilung, Arbeiten und Hausaufgaben mit Erinnerung am
-Vorabend, der Wochenplan je Kind in seiner Farbe (Seite „Schule“, Portal, Wand-Tablet, App), eine
+Vorabend, Nachrichten der Schule und Fehlzeiten (1.4.0), der Wochenplan je Kind in seiner Farbe (Seite „Schule“, Portal, Wand-Tablet, App), eine
 Startkachel und ein Widget je Kind. Konten kommen per **QR-Code-Scan** in die Einstellungen; jede Person
 kann ihr eigenes Schülerkonto in ihrem **GateControl-Profil** verknüpfen.
 
@@ -92,6 +92,39 @@ Empfänger wie bei den Änderungen; nie in der Ruhezeit (liegt die Uhrzeit darin
 nur am selben Abend); je Kind, Tag und Thema nur einmal, auch nach einem Neustart. Beide Themen lassen
 sich wie jedes Thema im Portal oder in der App abschalten.
 
+### Nachrichten der Schule und Fehlzeiten (1.4.0)
+
+Im selben Abruf und mit derselben Anmeldung liest das Plugin – **nur lesend**, nichts wird in WebUntis
+als gelesen markiert oder geändert:
+
+* die **Nachrichten** des Kontos (der WebUntis-Posteingang: beim Elternkonto die Post an die Eltern, beim
+  Schülerkonto die an das Kind) – höchstens alle 15 Minuten je Konto. Dafür holt es mit der Sitzung ein
+  Token (`api/token/new`) und fragt den Posteingang mit `Authorization: Bearer …`. Gespeichert werden
+  Betreff, Absender, Zeit, die Vorschau und – nur wenn die Liste ihn mitliefert – der Text, jeweils als
+  reiner Text (HTML entfernt); Anhänge werden nicht geladen. 90 Tage aufbewahrt.
+* die **Fehlzeiten** je Kind aus dem Klassenbuch (`api/classreg/absences/students`) – höchstens stündlich
+  je Kind, für das Schuljahr (ab 1. August) bis 14 Tage voraus: Datum (ggf. bis), Uhrzeit, Grund, Text und
+  ob **entschuldigt**, **nicht entschuldigt** oder **offen**. Was WebUntis nicht mehr nennt, verschwindet.
+  Aufbewahrt für das Schuljahr, mindestens 180 Tage.
+
+Der **erste** gute Abruf je Konto (Nachrichten) bzw. Kind (Fehlzeiten) ist die Ausgangslage – keine
+Mitteilungen. Danach:
+
+* Thema **„Nachrichten der Schule“**: je neuer Nachricht ein Push „Schule: <Betreff>“ mit Absender und
+  Vorschau, höchstens 3 je Konto und Abruf, weitere in einer Sammelmitteilung („Schule: 2 weitere
+  Nachrichten“) – an die Empfänger der Kinder des Kontos, beim eigenen Schülerkonto an das Kind selbst.
+* Thema **„Fehlzeiten“**: neue oder geänderte Fehlzeiten (eingetragen, entschuldigt, nicht entschuldigt,
+  andere Zeit/Grund) – eine Mitteilung je Kind und Abruf an die Empfänger; an das Kind selbst nur mit der
+  Einstellung **„Fehlzeiten auch dem Kind melden“** (Vorgabe aus).
+* Beide halten die Ruhezeit ein (gesendet an ihrem Ende) und kommen nie doppelt, auch nach einem Neustart.
+
+Auf der Seite „Schule“ und im Portal hat jedes Kind die Abschnitte **„Nachrichten“** (antippen öffnet den
+Text) und **„Fehlzeiten“** (Datum, Uhrzeit, entschuldigt / nicht entschuldigt / offen, Grund); die
+Startkachel nennt „1 neue Nachricht“. Gibt WebUntis das für ein Konto nicht frei (401/403) oder kennt es
+das nicht (404), läuft alles andere weiter, und die Einstellungen sagen es je Konto in Worten
+(„Nachrichten der Schule sind für dieses Konto in WebUntis nicht freigegeben. GateControl schaut einmal am
+Tag wieder nach.“); sonst steht dort, wann zuletzt gelesen wurde und wie viele gespeichert sind.
+
 ### Früher Schluss → Abholen (1.2.0, mit Familie ≥ 1.13.0)
 
 Das Plugin kennt je Kind und Schultag das **geplante Ende** (Ende der letzten Stunde laut Plan, auch wenn
@@ -166,6 +199,11 @@ System › Benachrichtigungen; jede Person kann das Thema im Portal oder in der 
 * **Kiosk-Geräte** (Wand-Tablet) sehen genau die Schüler mit „Am Wand-Tablet zeigen“.
 * Andere Personen sehen nichts; ein Portal-Besucher, der nur per Geräte-Vertrauen erkannt ist
   (ohne Anmeldung), auch nicht – ein Stundenplan verrät, wo ein Kind ist.
+* **Nachrichten** (1.4.0) eines Kontos lesen Admins, die Empfänger der Kinder des Kontos und – beim eigenen
+  Schülerkonto – das Kind selbst. Ein Kind liest die Post an seine Eltern **nicht**, auch wenn es dem
+  Kind im Elternkonto zugeordnet ist.
+* **Fehlzeiten** (1.4.0) sehen Admins, die Empfänger des Kindes und das Kind selbst. Kiosk-Geräte sehen
+  weder Nachrichten noch Fehlzeiten.
 
 ### Abruf
 
@@ -188,15 +226,17 @@ letzten Abruf und Fehler.
   der Datenbank, nie im Protokoll und werden nie an den Browser geschickt. Auch Einmal-Codes und
   Sitzungs-IDs werden nie protokolliert.
 * Gespeichert werden der Stundenplan (14 Tage zurück bis Ende nächster Woche), die Hausaufgaben und
-  Arbeiten (bis 14 Tage nach ihrem Datum, ohne Noten) und das Änderungsprotokoll (30 Tage). „Entfernen“ löscht Zugang, Schüler, Stundenplan und Protokoll des
+  Arbeiten (bis 14 Tage nach ihrem Datum, ohne Noten), das Änderungsprotokoll (30 Tage), die Nachrichten
+  der Schule (90 Tage, ohne Anhänge) und die Fehlzeiten (Schuljahr, mindestens 180 Tage). Das Token für
+  den Posteingang lebt nur während eines Abrufs im Speicher. „Entfernen“ löscht Zugang, Schüler, Stundenplan und Protokoll des
   Kontos.
 
 ## API
 
 Für die GateControl-Apps (`permissions.app`, ohne eigenen App-Tab):
-`/api/v1/client/plugins/gatecontrol-schule/api/<pfad>` mit dem Geräte-Token. Beide Routen antworten
-nur mit den Schülern, die die Person sehen darf (wie im Portal), und nur Aufrufen aus der App
-(`403 FORBIDDEN` sonst). Zeiten sind Ortszeit der Schule (Einstellung Zeitzone).
+`/api/v1/client/plugins/gatecontrol-schule/api/<pfad>` mit dem Geräte-Token. Alle Routen antworten
+nur mit dem, was die Person sehen darf (wie im Portal, siehe „Wer sieht was“), und nur Aufrufen aus der
+App (`403 FORBIDDEN` sonst). Zeiten sind Ortszeit der Schule (Einstellung Zeitzone); `sentAt` ist UTC.
 
 ```
 GET app/timetable?from=YYYY-MM-DD&to=YYYY-MM-DD      höchstens 14 Tage, Vorgabe heute … heute + 6
@@ -225,6 +265,31 @@ GET app/changes?days=7                                  1 … 30 Tage, Vorgabe 7
           kind: 'cancelled' | 'changed' | 'extra' | 'restored', subject, subjectLong?, subjectOld?,
           teacher?, teacherOld?, room?, roomOld?, substText?, info?,
           detectedAt: <ms>, pushed: <boolean> }] }      neueste zuerst, höchstens 200
+
+GET app/messages?days=30                                1.4.0: 1 … 90 Tage, Vorgabe 30
+  200 { ok: true, messages: [{
+          id: '<kontoId>-<webuntisId>',                 Zeichenkette
+          accountId: 3,                                 das WebUntis-Konto (Posteingang)
+          studentIds: [12],                             die Kinder dieses Kontos, die die Person sieht
+                                                        (sieht sie keines: alle Kinder des Kontos)
+          subject: 'Elternabend', preview: 'Am Donnerstag …',   reiner Text (HTML entfernt)
+          body?: '…',                                   reiner Text – nur, wenn WebUntis ihn in der Liste
+                                                        liefert (fehlt sonst: dann nur die Vorschau)
+          sender: 'Frau Schmidt',
+          sentAt: '2026-10-20T06:10:00.000Z',           ISO (UTC); ohne Zeit von WebUntis: wann gefunden
+          hasAttachments: <boolean>,                    Anhänge selbst nur in WebUntis
+          isNew: <boolean> }] }                         in den letzten 24 h gefunden (nicht in der
+                                                        Ausgangslage); neueste zuerst, höchstens 100
+GET app/absences?days=60                                1.4.0: 1 … 180 Tage, Vorgabe 60
+  200 { ok: true, absences: [{
+          id: '<schülerId>-<webuntisId>', studentId: 12,
+          date: 'YYYY-MM-DD', start: 'HH:MM' | null, end: 'HH:MM' | null,   null = ohne Uhrzeit (ganztägig)
+          endDate?: 'YYYY-MM-DD',                       nur, wenn sie an einem anderen Tag endet
+          reason?: 'Krankheit',
+          excused: true | false | null,                 entschuldigt / nicht entschuldigt / offen
+          text?: '…' }] }                               beginnt (oder endet) in den letzten `days` Tagen
+                                                        oder später; neueste zuerst, höchstens 200
+  400 { ok: false, code: 'INVALID' }                    days ungültig
 ```
 
 `state`: `cancelled` = fällt aus (auch eine Stunde, die an einem Schultag aus WebUntis verschwand),
@@ -235,7 +300,10 @@ Zeitraster (Doppelstunde 3.–4.). Die Felder mit `?` fehlen, wenn sie leer sind
 unverändert. `subject` von Hausaufgaben und Arbeiten ist das Kürzel aus dem Stundenplan, wenn WebUntis das
 Fach dort kennt (sonst der Name, den die Hausaufgaben-/Prüfungsliste nennt); `subjectLong` nur, wenn es
 sich unterscheidet. `givenDate` = an dem Tag aufgegeben. Noten liefert die API nie. `color` und
-`avatarUrl` (1.3.0) kamen hinzu, sonst ist alles wie in 1.2.0.
+`avatarUrl` (1.3.0) kamen hinzu, sonst ist alles wie in 1.2.0. 1.4.0: `app/messages` und `app/absences`
+sind neu; die Mitteilungen tragen `data.schule` = `{ messageId, studentId? }` (Nachricht; `studentId` nur,
+wenn das Konto genau ein Kind hat) bzw. `{ studentId, date }` (Fehlzeit). `portal/overview` und `overview`
+haben je Kind zusätzlich `messages` und `absences` – nur, wenn die Person sie sehen darf (sonst fehlen sie).
 
 ### Dienste zwischen Plugins (1.1.0)
 
@@ -346,5 +414,24 @@ earlier (not on the baseline; planned end = the plan's last lesson, cancelled or
 Familie's `school_day_end` once per child, date and new end (held during quiet hours, dropped when no longer
 true); Familie looks for a pick-up around the planned end and asks the driver and the parents. The service
 `school_day` (caller `gatecontrol-familie` only) feeds Familie's wall tablet („Schule heute“).
+
+**School messages and absences (1.4.0):** each cycle also reads – **read only**, nothing is ever marked as
+read or changed in WebUntis – the account's **inbox** (at most every 15 minutes per account: a token from
+`api/token/new`, then the inbox with `Authorization: Bearer …`; subject, sender, time, the preview and –
+only when the list carries it – the text, all as plain text with HTML stripped; no attachments; kept 90 days)
+and each child's **absences** from the class register (at most hourly, the school year from 1 August up to
+14 days ahead: date, time, reason, text and excused / not excused / open; kept for the school year, at least
+180 days). The first good fetch is the baseline. Then topic **“School messages”**: one push per new message
+(“School: <subject>”, sender and preview), at most 3 per account and cycle plus one summary, to the
+recipients of the account's children (on a child's own student account: the child); topic **“Absences”**:
+new or changed absences, one push per child and cycle to the recipients – to the child itself only with the
+setting **“Tell the child about absences too”** (default off). Quiet hours hold both; never twice. **Who:**
+messages – admins, the recipients of the account's children and, on the child's own student account, the
+child; a child never reads its parents' inbox. Absences – admins, the child's recipients and the child.
+Kiosk devices neither. The page “School” and the portal show per child “Messages” (tap to read) and
+“Absences” (excused / not excused / open badge); the Start tile says “1 new message”. When WebUntis does not
+share it (401/403) or lacks it (404), everything else goes on and the settings say so per account in words
+(otherwise when it was last read and how many are stored). API: `app/messages?days=30` (1…90, ≤ 100) and
+`app/absences?days=60` (1…180, ≤ 200), see [API](#api).
 
 **API:** see [API](#api) above.

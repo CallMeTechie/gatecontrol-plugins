@@ -2,13 +2,16 @@
    per child (picture or initials in the child's colour) — choosing one shows its week (this / next,
    on a phone one day at a time), the coming changes, exams and homework. Without an account (or
    without children switched on) a clear pointer to the settings. Accounts, children and
-   diagnostics live in the settings (page 'setup'). */
+   diagnostics live in the settings (page 'setup').
+   1.4.0: per child „Nachrichten“ (its account's inbox — only when the viewer may read it; a message
+   opens in place to read its text) and „Fehlzeiten“ (date / time, excused / not excused / open, reason)
+   — each section only when the API sends it. */
 (function () {
   'use strict';
   var S = window.SC, T = S.T, $ = S.$, $$ = S.$$, el = S.el;
   var portal = S.CTX.view === 'portal';
   var base = portal ? 'portal/overview' : 'overview';
-  var st = { week: 0, current: null, day: null, data: null, failed: false };
+  var st = { week: 0, current: null, day: null, data: null, failed: false, open: {} };
 
   function subjName(x, max) { return (x.subjectLong && x.subjectLong.length <= (max || 18) ? x.subjectLong : x.subject) || x.name || x.text || '–'; }
   function pair(now, old) {
@@ -69,6 +72,8 @@
     var other = s.changes.length - cancelled;
     if (cancelled) flags.push(el('span', { class: 'pill', 'data-tone': 'crit', text: cancelled === 1 ? T('tile.one_cancelled') : T('tile.cancelled', { n: cancelled }) }));
     if (other) flags.push(el('span', { class: 'pill', 'data-tone': 'warn', text: other === 1 ? T('tile.one_changed') : T('tile.changed', { n: other }) }));
+    var news = (s.messages || []).filter(function (m) { return m.isNew; }).length;
+    if (news) flags.push(el('span', { class: 'pill', 'data-tone': 'info', text: news === 1 ? T('tile.one_message') : T('tile.messages', { n: news }) }));
     var exam = s.exams[0];
     if (exam) flags.push(el('span', { class: 'pill', 'data-tone': 'info', text: T('view.exam_on', { subject: subjName(exam, 14), day: S.weekday(exam.date) }) }));
     var on = s.id === st.current;
@@ -160,6 +165,66 @@
     fill('#sv-hw', s.homework, 'view.no_homework', function (h) {
       return item(h.completed ? 'is-done' : '', S.dayLabel(h.date), subjName(h, 22), (h.text || '') + (h.completed ? ' · ' + T('portal.hw_done') : ''));
     });
+    renderSchool(s);
+  }
+
+  // ── 1.4.0: messages and absences ───────────────────────────────────────
+  function localDay(iso) {
+    var d = new Date(iso);
+    if (isNaN(d.getTime())) return '';
+    var p = function (n) { return (n < 10 ? '0' : '') + n; };
+    return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
+  }
+
+  function messageItem(m) {
+    var key = m.id;
+    var open = !!st.open[key];
+    var bodyBox = el('div', { class: 'msg-body', hidden: !open }, [
+      el('div', { class: 'msg-from', text: m.sender ? T('view.msg_from', { sender: m.sender }) + ' · ' + S.when(Date.parse(m.sentAt)) : S.when(Date.parse(m.sentAt)) }),
+      el('div', { class: 'msg-text', text: m.body || m.preview || '' }),
+      !m.body ? el('div', { class: 'msg-note', text: T('view.msg_preview_only') }) : null,
+      m.hasAttachments ? el('div', { class: 'msg-note', text: T('view.msg_attach') }) : null,
+    ]);
+    var head = el('button', {
+      type: 'button', class: 'msg-head', 'aria-expanded': String(open),
+      on: { click: function () { st.open[key] = !st.open[key]; bodyBox.hidden = !st.open[key]; head.setAttribute('aria-expanded', String(!!st.open[key])); } },
+    }, [
+      el('span', { class: 'sv-when', text: S.dayLabel(localDay(m.sentAt)) }),
+      el('span', { class: 'sv-what' }, [
+        el('b', {}, [m.isNew ? el('span', { class: 'pill no-dot msg-new', 'data-tone': 'info', text: T('view.msg_new') }) : null, document.createTextNode(m.subject || '–')]),
+        el('small', { text: [m.sender, m.preview].filter(Boolean).join(' · ') }),
+      ]),
+    ]);
+    return el('li', { class: 'sv-item msg' + (m.isNew ? ' is-new' : '') }, [head, bodyBox]);
+  }
+
+  function absenceItem(a) {
+    var tone = a.excused === true ? 'good' : (a.excused === false ? 'crit' : 'warn');
+    var word = a.excused === true ? T('view.abs_excused') : (a.excused === false ? T('view.abs_unexcused') : T('view.abs_open'));
+    var when = S.dayLabel(a.date) + (a.endDate ? ' – ' + S.dayLabel(a.endDate) : '');
+    var time = a.start ? a.start + (a.end ? '–' + a.end : '') : T('view.abs_whole_day');
+    return el('li', { class: 'sv-item abs' }, [
+      el('span', { class: 'sv-when', text: when }),
+      el('span', { class: 'sv-what' }, [
+        el('b', { text: time }),
+        (a.reason || a.text) ? el('small', { text: [a.reason, a.text].filter(Boolean).join(' · ') }) : null,
+      ]),
+      el('span', { class: 'pill', 'data-tone': tone, text: word }),
+    ]);
+  }
+
+  function renderSchool(s) {
+    var hasMsg = Array.isArray(s.messages);
+    var hasAbs = Array.isArray(s.absences);
+    $('#sv-msg-box').hidden = !hasMsg;
+    $('#sv-abs-box').hidden = !hasAbs;
+    $('#sv-school').hidden = !hasMsg && !hasAbs;
+    if (hasMsg) fill('#sv-msgs', s.messages, 'view.no_messages', messageItem);
+    if (hasAbs) {
+      var open = s.absences.filter(function (a) { return a.excused == null; }).length;
+      $('#sv-abs-sum').textContent = s.absences.length ? T('view.abs_sum', { n: s.absences.length, open: open }) : '';
+      fill('#sv-abs', s.absences, 'view.no_absences', absenceItem);
+    }
   }
 
   function item(cls, whenText, title, sub) {
