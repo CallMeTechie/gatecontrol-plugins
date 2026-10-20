@@ -264,6 +264,11 @@ test('quick action: the last trip business/private, the widget with the month an
     assert.deepEqual(qa.widget.controls[0].options.map((o) => o.id), ['open', 'private', 'business', 'commute']);
     assert.equal(qa.widget.controls[0].value, 'open');
     assert.ok(qa.widget.readings.some((x) => x.id === 'open' && x.value === '1'));
+    // 1.5.4: a calendar beside the month's kilometres, small values without a unit, at most three, a short status
+    // (the mock host follows the GateControl it emulates: before 1.187 it drops the icon)
+    if ('icon' in qa.widget) assert.match(qa.widget.icon, /^M4 6h16/);
+    assert.ok(qa.widget.readings.length <= 3 && qa.widget.readings.every((x) => !x.unit), JSON.stringify(qa.widget.readings));
+    assert.match(qa.widget.status, /^Letzte: 22 km → /);
     let r = await host.runQuickAction(ADA, `logbook:${vehicleId}`, 'de', { control: 'purpose', value: 'commute' });
     assert.equal(r.body.ok, true, JSON.stringify(r.body));
     assert.match(r.body.message, /Arbeitsweg/);
