@@ -1,0 +1,28 @@
+{
+ "data": {
+  "loginServiceConfig": {
+   "user": {
+    "id": 77,
+    "name": "eva.muster",
+    "personId": 900,
+    "persons": [
+     {
+      "id": 900,
+      "type": 12,
+      "displayName": "Eva Muster"
+     },
+     {
+      "id": 101,
+      "type": 5,
+      "displayName": "Lena Muster"
+     },
+     {
+      "id": 102,
+      "type": 5,
+      "displayName": "Max Muster"
+     }
+    ]
+   }
+  }
+ }
+}

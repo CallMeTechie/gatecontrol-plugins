@@ -1,0 +1,17 @@
+<main class="pt-sc">
+  <div class="pt-sc-bar">
+    <div class="sc-seg pt-sc-students" id="pt-sc-students" role="tablist" hidden></div>
+    <div class="sc-seg pt-sc-weeks" role="tablist">
+      <button type="button" class="sc-seg-btn active" data-week="0">{{t:portal.this_week}}</button>
+      <button type="button" class="sc-seg-btn" data-week="1">{{t:portal.next_week}}</button>
+    </div>
+  </div>
+  <div class="pt-sc-head" id="pt-sc-head"></div>
+  <div class="pt-sc-week" id="pt-sc-week" aria-live="polite"></div>
+  <p class="muted pt-sc-empty" id="pt-sc-empty" hidden></p>
+  <div class="pt-sc-legend">
+    <span class="pt-sc-key is-cancelled">{{t:legend.cancelled}}</span>
+    <span class="pt-sc-key is-changed">{{t:legend.changed}}</span>
+    <span class="pt-sc-key is-extra">{{t:legend.extra}}</span>
+  </div>
+</main>

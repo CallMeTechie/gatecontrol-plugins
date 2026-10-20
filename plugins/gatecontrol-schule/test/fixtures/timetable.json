@@ -1,0 +1,3175 @@
+{
+ "101": [
+  {
+   "id": 10000,
+   "date": 20261019,
+   "startTime": 800,
+   "endTime": 845,
+   "kl": [
+    {
+     "id": 501,
+     "name": "5a",
+     "longname": "Klasse 5a"
+    }
+   ],
+   "te": [
+    {
+     "id": 11,
+     "name": "MUE",
+     "longname": "Müller"
+    }
+   ],
+   "su": [
+    {
+     "id": 1,
+     "name": "M",
+     "longname": "Mathematik"
+    }
+   ],
+   "ro": [
+    {
+     "id": 1,
+     "name": "101",
+     "longname": "Raum 101"
+    }
+   ],
+   "activityType": "Unterricht",
+   "lsnumber": 1000
+  },
+  {
+   "id": 10001,
+   "date": 20261019,
+   "startTime": 850,
+   "endTime": 935,
+   "kl": [
+    {
+     "id": 501,
+     "name": "5a",
+     "longname": "Klasse 5a"
+    }
+   ],
+   "te": [
+    {
+     "id": 12,
+     "name": "SCH",
+     "longname": "Schmidt"
+    }
+   ],
+   "su": [
+    {
+     "id": 2,
+     "name": "D",
+     "longname": "Deutsch"
+    }
+   ],
+   "ro": [
+    {
+     "id": 1,
+     "name": "101",
+     "longname": "Raum 101"
+    }
+   ],
+   "activityType": "Unterricht",
+   "lsnumber": 1001
+  },
+  {
+   "id": 10002,
+   "date": 20261019,
+   "startTime": 950,
+   "endTime": 1035,
+   "kl": [
+    {
+     "id": 501,
+     "name": "5a",
+     "longname": "Klasse 5a"
+    }
+   ],
+   "te": [
+    {
+     "id": 13,
+     "name": "WEB",
+     "longname": "Weber"
+    }
+   ],
+   "su": [
+    {
+     "id": 3,
+     "name": "E",
+     "longname": "Englisch"
+    }
+   ],
+   "ro": [
+    {
+     "id": 2,
+     "name": "201",
+     "longname": "Raum 201"
+    }
+   ],
+   "activityType": "Unterricht",
+   "lsnumber": 1002
+  },
+  {
+   "id": 10003,
+   "date": 20261019,
+   "startTime": 1040,
+   "endTime": 1125,
+   "kl": [
+    {
+     "id": 501,
+     "name": "5a",
+     "longname": "Klasse 5a"
+    }
+   ],
+   "te": [
+    {
+     "id": 14,
+     "name": "KLE",
+     "longname": "Klein"
+    }
+   ],
+   "su": [
+    {
+     "id": 4,
+     "name": "BIO",
+     "longname": "Biologie"
+    }
+   ],
+   "ro": [
+    {
+     "id": 3,
+     "name": "104",
+     "longname": "Raum 104"
+    }
+   ],
+   "activityType": "Unterricht",
+   "lsnumber": 1003
+  },
+  {
+   "id": 10004,
+   "date": 20261019,
+   "startTime": 1140,
+   "endTime": 1225,
+   "kl": [
+    {
+     "id": 501,
+     "name": "5a",
+     "longname": "Klasse 5a"
+    }
+   ],
+   "te": [
+    {
+     "id": 14,
+     "name": "KLE",
+     "longname": "Klein"
+    }
+   ],
+   "su": [
+    {
+     "id": 5,
+     "name": "SP",
+     "longname": "Sport"
+    }
+   ],
+   "ro": [
+    {
+     "id": 4,
+     "name": "TH",
+     "longname": "Turnhalle"
+    }
+   ],
+   "activityType": "Unterricht",
+   "lsnumber": 1004
+  },
+  {
+   "id": 10005,
+   "date": 20261020,
+   "startTime": 800,
+   "endTime": 845,
+   "kl": [
+    {
+     "id": 501,
+     "name": "5a",
+     "longname": "Klasse 5a"
+    }
+   ],
+   "te": [
+    {
+     "id": 12,
+     "name": "SCH",
+     "longname": "Schmidt"
+    }
+   ],
+   "su": [
+    {
+     "id": 2,
+     "name": "D",
+     "longname": "Deutsch"
+    }
+   ],
+   "ro": [
+    {
+     "id": 1,
+     "name": "101",
+     "longname": "Raum 101"
+    }
+   ],
+   "activityType": "Unterricht",
+   "lsnumber": 1000
+  },
+  {
+   "id": 10006,
+   "date": 20261020,
+   "startTime": 850,
+   "endTime": 935,
+   "kl": [
+    {
+     "id": 501,
+     "name": "5a",
+     "longname": "Klasse 5a"
+    }
+   ],
+   "te": [
+    {
+     "id": 11,
+     "name": "MUE",
+     "longname": "Müller"
+    }
+   ],
+   "su": [
+    {
+     "id": 1,
+     "name": "M",
+     "longname": "Mathematik"
+    }
+   ],
+   "ro": [
+    {
+     "id": 1,
+     "name": "101",
+     "longname": "Raum 101"
+    }
+   ],
+   "activityType": "Unterricht",
+   "lsnumber": 1001
+  },
+  {
+   "id": 10007,
+   "date": 20261020,
+   "startTime": 950,
+   "endTime": 1035,
+   "kl": [
+    {
+     "id": 501,
+     "name": "5a",
+     "longname": "Klasse 5a"
+    }
+   ],
+   "te": [
+    {
+     "id": 13,
+     "name": "WEB",
+     "longname": "Weber"
+    }
+   ],
+   "su": [
+    {
+     "id": 3,
+     "name": "E",
+     "longname": "Englisch"
+    }
+   ],
+   "ro": [
+    {
+     "id": 2,
+     "name": "201",
+     "longname": "Raum 201"
+    }
+   ],
+   "activityType": "Unterricht",
+   "lsnumber": 1002
+  },
+  {
+   "id": 10008,
+   "date": 20261020,
+   "startTime": 1040,
+   "endTime": 1125,
+   "kl": [
+    {
+     "id": 501,
+     "name": "5a",
+     "longname": "Klasse 5a"
+    }
+   ],
+   "te": [
+    {
+     "id": 12,
+     "name": "SCH",
+     "longname": "Schmidt"
+    }
+   ],
+   "su": [
+    {
+     "id": 7,
+     "name": "GE",
+     "longname": "Geschichte"
+    }
+   ],
+   "ro": [
+    {
+     "id": 1,
+     "name": "101",
+     "longname": "Raum 101"
+    }
+   ],
+   "activityType": "Unterricht",
+   "lsnumber": 1003
+  },
+  {
+   "id": 10009,
+   "date": 20261020,
+   "startTime": 1140,
+   "endTime": 1225,
+   "kl": [
+    {
+     "id": 501,
+     "name": "5a",
+     "longname": "Klasse 5a"
+    }
+   ],
+   "te": [
+    {
+     "id": 13,
+     "name": "WEB",
+     "longname": "Weber"
+    }
+   ],
+   "su": [
+    {
+     "id": 6,
+     "name": "MU",
+     "longname": "Musik"
+    }
+   ],
+   "ro": [
+    {
+     "id": 2,
+     "name": "201",
+     "longname": "Raum 201"
+    }
+   ],
+   "activityType": "Unterricht",
+   "lsnumber": 1004
+  },
+  {
+   "id": 10010,
+   "date": 20261021,
+   "startTime": 800,
+   "endTime": 845,
+   "kl": [
+    {
+     "id": 501,
+     "name": "5a",
+     "longname": "Klasse 5a"
+    }
+   ],
+   "te": [
+    {
+     "id": 13,
+     "name": "WEB",
+     "longname": "Weber"
+    }
+   ],
+   "su": [
+    {
+     "id": 3,
+     "name": "E",
+     "longname": "Englisch"
+    }
+   ],
+   "ro": [
+    {
+     "id": 2,
+     "name": "201",
+     "longname": "Raum 201"
+    }
+   ],
+   "activityType": "Unterricht",
+   "lsnumber": 1000
+  },
+  {
+   "id": 10011,
+   "date": 20261021,
+   "startTime": 850,
+   "endTime": 935,
+   "kl": [
+    {
+     "id": 501,
+     "name": "5a",
+     "longname": "Klasse 5a"
+    }
+   ],
+   "te": [
+    {
+     "id": 11,
+     "name": "MUE",
+     "longname": "Müller"
+    }
+   ],
+   "su": [
+    {
+     "id": 1,
+     "name": "M",
+     "longname": "Mathematik"
+    }
+   ],
+   "ro": [
+    {
+     "id": 1,
+     "name": "101",
+     "longname": "Raum 101"
+    }
+   ],
+   "activityType": "Unterricht",
+   "lsnumber": 1001
+  },
+  {
+   "id": 10012,
+   "date": 20261021,
+   "startTime": 950,
+   "endTime": 1035,
+   "kl": [
+    {
+     "id": 501,
+     "name": "5a",
+     "longname": "Klasse 5a"
+    }
+   ],
+   "te": [
+    {
+     "id": 12,
+     "name": "SCH",
+     "longname": "Schmidt"
+    }
+   ],
+   "su": [
+    {
+     "id": 2,
+     "name": "D",
+     "longname": "Deutsch"
+    }
+   ],
+   "ro": [
+    {
+     "id": 1,
+     "name": "101",
+     "longname": "Raum 101"
+    }
+   ],
+   "activityType": "Unterricht",
+   "lsnumber": 1002
+  },
+  {
+   "id": 10013,
+   "date": 20261021,
+   "startTime": 1040,
+   "endTime": 1125,
+   "kl": [
+    {
+     "id": 501,
+     "name": "5a",
+     "longname": "Klasse 5a"
+    }
+   ],
+   "te": [
+    {
+     "id": 14,
+     "name": "KLE",
+     "longname": "Klein"
+    }
+   ],
+   "su": [
+    {
+     "id": 4,
+     "name": "BIO",
+     "longname": "Biologie"
+    }
+   ],
+   "ro": [
+    {
+     "id": 3,
+     "name": "104",
+     "longname": "Raum 104"
+    }
+   ],
+   "activityType": "Unterricht",
+   "lsnumber": 1003
+  },
+  {
+   "id": 10014,
+   "date": 20261021,
+   "startTime": 1140,
+   "endTime": 1225,
+   "kl": [
+    {
+     "id": 501,
+     "name": "5a",
+     "longname": "Klasse 5a"
+    }
+   ],
+   "te": [
+    {
+     "id": 14,
+     "name": "KLE",
+     "longname": "Klein"
+    }
+   ],
+   "su": [
+    {
+     "id": 5,
+     "name": "SP",
+     "longname": "Sport"
+    }
+   ],
+   "ro": [
+    {
+     "id": 4,
+     "name": "TH",
+     "longname": "Turnhalle"
+    }
+   ],
+   "activityType": "Unterricht",
+   "lsnumber": 1004
+  },
+  {
+   "id": 10015,
+   "date": 20261022,
+   "startTime": 800,
+   "endTime": 845,
+   "kl": [
+    {
+     "id": 501,
+     "name": "5a",
+     "longname": "Klasse 5a"
+    }
+   ],
+   "te": [
+    {
+     "id": 11,
+     "name": "MUE",
+     "longname": "Müller"
+    }
+   ],
+   "su": [
+    {
+     "id": 1,
+     "name": "M",
+     "longname": "Mathematik"
+    }
+   ],
+   "ro": [
+    {
+     "id": 1,
+     "name": "101",
+     "longname": "Raum 101"
+    }
+   ],
+   "activityType": "Unterricht",
+   "lsnumber": 1000
+  },
+  {
+   "id": 10016,
+   "date": 20261022,
+   "startTime": 850,
+   "endTime": 935,
+   "kl": [
+    {
+     "id": 501,
+     "name": "5a",
+     "longname": "Klasse 5a"
+    }
+   ],
+   "te": [
+    {
+     "id": 12,
+     "name": "SCH",
+     "longname": "Schmidt"
+    }
+   ],
+   "su": [
+    {
+     "id": 7,
+     "name": "GE",
+     "longname": "Geschichte"
+    }
+   ],
+   "ro": [
+    {
+     "id": 1,
+     "name": "101",
+     "longname": "Raum 101"
+    }
+   ],
+   "activityType": "Unterricht",
+   "lsnumber": 1001
+  },
+  {
+   "id": 10017,
+   "date": 20261022,
+   "startTime": 950,
+   "endTime": 1035,
+   "kl": [
+    {
+     "id": 501,
+     "name": "5a",
+     "longname": "Klasse 5a"
+    }
+   ],
+   "te": [
+    {
+     "id": 12,
+     "name": "SCH",
+     "longname": "Schmidt"
+    }
+   ],
+   "su": [
+    {
+     "id": 2,
+     "name": "D",
+     "longname": "Deutsch"
+    }
+   ],
+   "ro": [
+    {
+     "id": 1,
+     "name": "101",
+     "longname": "Raum 101"
+    }
+   ],
+   "activityType": "Unterricht",
+   "lsnumber": 1002
+  },
+  {
+   "id": 10018,
+   "date": 20261022,
+   "startTime": 1040,
+   "endTime": 1125,
+   "kl": [
+    {
+     "id": 501,
+     "name": "5a",
+     "longname": "Klasse 5a"
+    }
+   ],
+   "te": [
+    {
+     "id": 13,
+     "name": "WEB",
+     "longname": "Weber"
+    }
+   ],
+   "su": [
+    {
+     "id": 3,
+     "name": "E",
+     "longname": "Englisch"
+    }
+   ],
+   "ro": [
+    {
+     "id": 2,
+     "name": "201",
+     "longname": "Raum 201"
+    }
+   ],
+   "activityType": "Unterricht",
+   "lsnumber": 1003
+  },
+  {
+   "id": 10019,
+   "date": 20261022,
+   "startTime": 1140,
+   "endTime": 1225,
+   "kl": [
+    {
+     "id": 501,
+     "name": "5a",
+     "longname": "Klasse 5a"
+    }
+   ],
+   "te": [
+    {
+     "id": 13,
+     "name": "WEB",
+     "longname": "Weber"
+    }
+   ],
+   "su": [
+    {
+     "id": 6,
+     "name": "MU",
+     "longname": "Musik"
+    }
+   ],
+   "ro": [
+    {
+     "id": 2,
+     "name": "201",
+     "longname": "Raum 201"
+    }
+   ],
+   "activityType": "Unterricht",
+   "lsnumber": 1004
+  },
+  {
+   "id": 10020,
+   "date": 20261023,
+   "startTime": 800,
+   "endTime": 845,
+   "kl": [
+    {
+     "id": 501,
+     "name": "5a",
+     "longname": "Klasse 5a"
+    }
+   ],
+   "te": [
+    {
+     "id": 14,
+     "name": "KLE",
+     "longname": "Klein"
+    }
+   ],
+   "su": [
+    {
+     "id": 4,
+     "name": "BIO",
+     "longname": "Biologie"
+    }
+   ],
+   "ro": [
+    {
+     "id": 3,
+     "name": "104",
+     "longname": "Raum 104"
+    }
+   ],
+   "activityType": "Unterricht",
+   "lsnumber": 1000
+  },
+  {
+   "id": 10021,
+   "date": 20261023,
+   "startTime": 850,
+   "endTime": 935,
+   "kl": [
+    {
+     "id": 501,
+     "name": "5a",
+     "longname": "Klasse 5a"
+    }
+   ],
+   "te": [
+    {
+     "id": 11,
+     "name": "MUE",
+     "longname": "Müller"
+    }
+   ],
+   "su": [
+    {
+     "id": 1,
+     "name": "M",
+     "longname": "Mathematik"
+    }
+   ],
+   "ro": [
+    {
+     "id": 1,
+     "name": "101",
+     "longname": "Raum 101"
+    }
+   ],
+   "activityType": "Unterricht",
+   "lsnumber": 1001
+  },
+  {
+   "id": 10022,
+   "date": 20261023,
+   "startTime": 950,
+   "endTime": 1035,
+   "kl": [
+    {
+     "id": 501,
+     "name": "5a",
+     "longname": "Klasse 5a"
+    }
+   ],
+   "te": [
+    {
+     "id": 12,
+     "name": "SCH",
+     "longname": "Schmidt"
+    }
+   ],
+   "su": [
+    {
+     "id": 2,
+     "name": "D",
+     "longname": "Deutsch"
+    }
+   ],
+   "ro": [
+    {
+     "id": 1,
+     "name": "101",
+     "longname": "Raum 101"
+    }
+   ],
+   "activityType": "Unterricht",
+   "lsnumber": 1002
+  },
+  {
+   "id": 10023,
+   "date": 20261023,
+   "startTime": 1040,
+   "endTime": 1125,
+   "kl": [
+    {
+     "id": 501,
+     "name": "5a",
+     "longname": "Klasse 5a"
+    }
+   ],
+   "te": [
+    {
+     "id": 13,
+     "name": "WEB",
+     "longname": "Weber"
+    }
+   ],
+   "su": [
+    {
+     "id": 3,
+     "name": "E",
+     "longname": "Englisch"
+    }
+   ],
+   "ro": [
+    {
+     "id": 2,
+     "name": "201",
+     "longname": "Raum 201"
+    }
+   ],
+   "activityType": "Unterricht",
+   "lsnumber": 1003
+  },
+  {
+   "id": 10024,
+   "date": 20261026,
+   "startTime": 800,
+   "endTime": 845,
+   "kl": [
+    {
+     "id": 501,
+     "name": "5a",
+     "longname": "Klasse 5a"
+    }
+   ],
+   "te": [
+    {
+     "id": 11,
+     "name": "MUE",
+     "longname": "Müller"
+    }
+   ],
+   "su": [
+    {
+     "id": 1,
+     "name": "M",
+     "longname": "Mathematik"
+    }
+   ],
+   "ro": [
+    {
+     "id": 1,
+     "name": "101",
+     "longname": "Raum 101"
+    }
+   ],
+   "activityType": "Unterricht",
+   "lsnumber": 1000
+  },
+  {
+   "id": 10025,
+   "date": 20261026,
+   "startTime": 850,
+   "endTime": 935,
+   "kl": [
+    {
+     "id": 501,
+     "name": "5a",
+     "longname": "Klasse 5a"
+    }
+   ],
+   "te": [
+    {
+     "id": 12,
+     "name": "SCH",
+     "longname": "Schmidt"
+    }
+   ],
+   "su": [
+    {
+     "id": 2,
+     "name": "D",
+     "longname": "Deutsch"
+    }
+   ],
+   "ro": [
+    {
+     "id": 1,
+     "name": "101",
+     "longname": "Raum 101"
+    }
+   ],
+   "activityType": "Unterricht",
+   "lsnumber": 1001
+  },
+  {
+   "id": 10026,
+   "date": 20261026,
+   "startTime": 950,
+   "endTime": 1035,
+   "kl": [
+    {
+     "id": 501,
+     "name": "5a",
+     "longname": "Klasse 5a"
+    }
+   ],
+   "te": [
+    {
+     "id": 13,
+     "name": "WEB",
+     "longname": "Weber"
+    }
+   ],
+   "su": [
+    {
+     "id": 3,
+     "name": "E",
+     "longname": "Englisch"
+    }
+   ],
+   "ro": [
+    {
+     "id": 2,
+     "name": "201",
+     "longname": "Raum 201"
+    }
+   ],
+   "activityType": "Unterricht",
+   "lsnumber": 1002
+  },
+  {
+   "id": 10027,
+   "date": 20261026,
+   "startTime": 1040,
+   "endTime": 1125,
+   "kl": [
+    {
+     "id": 501,
+     "name": "5a",
+     "longname": "Klasse 5a"
+    }
+   ],
+   "te": [
+    {
+     "id": 14,
+     "name": "KLE",
+     "longname": "Klein"
+    }
+   ],
+   "su": [
+    {
+     "id": 4,
+     "name": "BIO",
+     "longname": "Biologie"
+    }
+   ],
+   "ro": [
+    {
+     "id": 3,
+     "name": "104",
+     "longname": "Raum 104"
+    }
+   ],
+   "activityType": "Unterricht",
+   "lsnumber": 1003
+  },
+  {
+   "id": 10028,
+   "date": 20261026,
+   "startTime": 1140,
+   "endTime": 1225,
+   "kl": [
+    {
+     "id": 501,
+     "name": "5a",
+     "longname": "Klasse 5a"
+    }
+   ],
+   "te": [
+    {
+     "id": 14,
+     "name": "KLE",
+     "longname": "Klein"
+    }
+   ],
+   "su": [
+    {
+     "id": 5,
+     "name": "SP",
+     "longname": "Sport"
+    }
+   ],
+   "ro": [
+    {
+     "id": 4,
+     "name": "TH",
+     "longname": "Turnhalle"
+    }
+   ],
+   "activityType": "Unterricht",
+   "lsnumber": 1004
+  },
+  {
+   "id": 10029,
+   "date": 20261027,
+   "startTime": 800,
+   "endTime": 845,
+   "kl": [
+    {
+     "id": 501,
+     "name": "5a",
+     "longname": "Klasse 5a"
+    }
+   ],
+   "te": [
+    {
+     "id": 12,
+     "name": "SCH",
+     "longname": "Schmidt"
+    }
+   ],
+   "su": [
+    {
+     "id": 2,
+     "name": "D",
+     "longname": "Deutsch"
+    }
+   ],
+   "ro": [
+    {
+     "id": 1,
+     "name": "101",
+     "longname": "Raum 101"
+    }
+   ],
+   "activityType": "Unterricht",
+   "lsnumber": 1000
+  },
+  {
+   "id": 10030,
+   "date": 20261027,
+   "startTime": 850,
+   "endTime": 935,
+   "kl": [
+    {
+     "id": 501,
+     "name": "5a",
+     "longname": "Klasse 5a"
+    }
+   ],
+   "te": [
+    {
+     "id": 11,
+     "name": "MUE",
+     "longname": "Müller"
+    }
+   ],
+   "su": [
+    {
+     "id": 1,
+     "name": "M",
+     "longname": "Mathematik"
+    }
+   ],
+   "ro": [
+    {
+     "id": 1,
+     "name": "101",
+     "longname": "Raum 101"
+    }
+   ],
+   "activityType": "Unterricht",
+   "lsnumber": 1001
+  },
+  {
+   "id": 10031,
+   "date": 20261027,
+   "startTime": 950,
+   "endTime": 1035,
+   "kl": [
+    {
+     "id": 501,
+     "name": "5a",
+     "longname": "Klasse 5a"
+    }
+   ],
+   "te": [
+    {
+     "id": 13,
+     "name": "WEB",
+     "longname": "Weber"
+    }
+   ],
+   "su": [
+    {
+     "id": 3,
+     "name": "E",
+     "longname": "Englisch"
+    }
+   ],
+   "ro": [
+    {
+     "id": 2,
+     "name": "201",
+     "longname": "Raum 201"
+    }
+   ],
+   "activityType": "Unterricht",
+   "lsnumber": 1002
+  },
+  {
+   "id": 10032,
+   "date": 20261027,
+   "startTime": 1040,
+   "endTime": 1125,
+   "kl": [
+    {
+     "id": 501,
+     "name": "5a",
+     "longname": "Klasse 5a"
+    }
+   ],
+   "te": [
+    {
+     "id": 12,
+     "name": "SCH",
+     "longname": "Schmidt"
+    }
+   ],
+   "su": [
+    {
+     "id": 7,
+     "name": "GE",
+     "longname": "Geschichte"
+    }
+   ],
+   "ro": [
+    {
+     "id": 1,
+     "name": "101",
+     "longname": "Raum 101"
+    }
+   ],
+   "activityType": "Unterricht",
+   "lsnumber": 1003
+  },
+  {
+   "id": 10033,
+   "date": 20261027,
+   "startTime": 1140,
+   "endTime": 1225,
+   "kl": [
+    {
+     "id": 501,
+     "name": "5a",
+     "longname": "Klasse 5a"
+    }
+   ],
+   "te": [
+    {
+     "id": 13,
+     "name": "WEB",
+     "longname": "Weber"
+    }
+   ],
+   "su": [
+    {
+     "id": 6,
+     "name": "MU",
+     "longname": "Musik"
+    }
+   ],
+   "ro": [
+    {
+     "id": 2,
+     "name": "201",
+     "longname": "Raum 201"
+    }
+   ],
+   "activityType": "Unterricht",
+   "lsnumber": 1004
+  },
+  {
+   "id": 10034,
+   "date": 20261028,
+   "startTime": 800,
+   "endTime": 845,
+   "kl": [
+    {
+     "id": 501,
+     "name": "5a",
+     "longname": "Klasse 5a"
+    }
+   ],
+   "te": [
+    {
+     "id": 13,
+     "name": "WEB",
+     "longname": "Weber"
+    }
+   ],
+   "su": [
+    {
+     "id": 3,
+     "name": "E",
+     "longname": "Englisch"
+    }
+   ],
+   "ro": [
+    {
+     "id": 2,
+     "name": "201",
+     "longname": "Raum 201"
+    }
+   ],
+   "activityType": "Unterricht",
+   "lsnumber": 1000
+  },
+  {
+   "id": 10035,
+   "date": 20261028,
+   "startTime": 850,
+   "endTime": 935,
+   "kl": [
+    {
+     "id": 501,
+     "name": "5a",
+     "longname": "Klasse 5a"
+    }
+   ],
+   "te": [
+    {
+     "id": 11,
+     "name": "MUE",
+     "longname": "Müller"
+    }
+   ],
+   "su": [
+    {
+     "id": 1,
+     "name": "M",
+     "longname": "Mathematik"
+    }
+   ],
+   "ro": [
+    {
+     "id": 1,
+     "name": "101",
+     "longname": "Raum 101"
+    }
+   ],
+   "activityType": "Unterricht",
+   "lsnumber": 1001
+  },
+  {
+   "id": 10036,
+   "date": 20261028,
+   "startTime": 950,
+   "endTime": 1035,
+   "kl": [
+    {
+     "id": 501,
+     "name": "5a",
+     "longname": "Klasse 5a"
+    }
+   ],
+   "te": [
+    {
+     "id": 12,
+     "name": "SCH",
+     "longname": "Schmidt"
+    }
+   ],
+   "su": [
+    {
+     "id": 2,
+     "name": "D",
+     "longname": "Deutsch"
+    }
+   ],
+   "ro": [
+    {
+     "id": 1,
+     "name": "101",
+     "longname": "Raum 101"
+    }
+   ],
+   "activityType": "Unterricht",
+   "lsnumber": 1002
+  },
+  {
+   "id": 10037,
+   "date": 20261028,
+   "startTime": 1040,
+   "endTime": 1125,
+   "kl": [
+    {
+     "id": 501,
+     "name": "5a",
+     "longname": "Klasse 5a"
+    }
+   ],
+   "te": [
+    {
+     "id": 14,
+     "name": "KLE",
+     "longname": "Klein"
+    }
+   ],
+   "su": [
+    {
+     "id": 4,
+     "name": "BIO",
+     "longname": "Biologie"
+    }
+   ],
+   "ro": [
+    {
+     "id": 3,
+     "name": "104",
+     "longname": "Raum 104"
+    }
+   ],
+   "activityType": "Unterricht",
+   "lsnumber": 1003
+  },
+  {
+   "id": 10038,
+   "date": 20261028,
+   "startTime": 1140,
+   "endTime": 1225,
+   "kl": [
+    {
+     "id": 501,
+     "name": "5a",
+     "longname": "Klasse 5a"
+    }
+   ],
+   "te": [
+    {
+     "id": 14,
+     "name": "KLE",
+     "longname": "Klein"
+    }
+   ],
+   "su": [
+    {
+     "id": 5,
+     "name": "SP",
+     "longname": "Sport"
+    }
+   ],
+   "ro": [
+    {
+     "id": 4,
+     "name": "TH",
+     "longname": "Turnhalle"
+    }
+   ],
+   "activityType": "Unterricht",
+   "lsnumber": 1004
+  },
+  {
+   "id": 10039,
+   "date": 20261029,
+   "startTime": 800,
+   "endTime": 845,
+   "kl": [
+    {
+     "id": 501,
+     "name": "5a",
+     "longname": "Klasse 5a"
+    }
+   ],
+   "te": [
+    {
+     "id": 11,
+     "name": "MUE",
+     "longname": "Müller"
+    }
+   ],
+   "su": [
+    {
+     "id": 1,
+     "name": "M",
+     "longname": "Mathematik"
+    }
+   ],
+   "ro": [
+    {
+     "id": 1,
+     "name": "101",
+     "longname": "Raum 101"
+    }
+   ],
+   "activityType": "Unterricht",
+   "lsnumber": 1000
+  },
+  {
+   "id": 10040,
+   "date": 20261029,
+   "startTime": 850,
+   "endTime": 935,
+   "kl": [
+    {
+     "id": 501,
+     "name": "5a",
+     "longname": "Klasse 5a"
+    }
+   ],
+   "te": [
+    {
+     "id": 12,
+     "name": "SCH",
+     "longname": "Schmidt"
+    }
+   ],
+   "su": [
+    {
+     "id": 7,
+     "name": "GE",
+     "longname": "Geschichte"
+    }
+   ],
+   "ro": [
+    {
+     "id": 1,
+     "name": "101",
+     "longname": "Raum 101"
+    }
+   ],
+   "activityType": "Unterricht",
+   "lsnumber": 1001
+  },
+  {
+   "id": 10041,
+   "date": 20261029,
+   "startTime": 950,
+   "endTime": 1035,
+   "kl": [
+    {
+     "id": 501,
+     "name": "5a",
+     "longname": "Klasse 5a"
+    }
+   ],
+   "te": [
+    {
+     "id": 12,
+     "name": "SCH",
+     "longname": "Schmidt"
+    }
+   ],
+   "su": [
+    {
+     "id": 2,
+     "name": "D",
+     "longname": "Deutsch"
+    }
+   ],
+   "ro": [
+    {
+     "id": 1,
+     "name": "101",
+     "longname": "Raum 101"
+    }
+   ],
+   "activityType": "Unterricht",
+   "lsnumber": 1002
+  },
+  {
+   "id": 10042,
+   "date": 20261029,
+   "startTime": 1040,
+   "endTime": 1125,
+   "kl": [
+    {
+     "id": 501,
+     "name": "5a",
+     "longname": "Klasse 5a"
+    }
+   ],
+   "te": [
+    {
+     "id": 13,
+     "name": "WEB",
+     "longname": "Weber"
+    }
+   ],
+   "su": [
+    {
+     "id": 3,
+     "name": "E",
+     "longname": "Englisch"
+    }
+   ],
+   "ro": [
+    {
+     "id": 2,
+     "name": "201",
+     "longname": "Raum 201"
+    }
+   ],
+   "activityType": "Unterricht",
+   "lsnumber": 1003
+  },
+  {
+   "id": 10043,
+   "date": 20261029,
+   "startTime": 1140,
+   "endTime": 1225,
+   "kl": [
+    {
+     "id": 501,
+     "name": "5a",
+     "longname": "Klasse 5a"
+    }
+   ],
+   "te": [
+    {
+     "id": 13,
+     "name": "WEB",
+     "longname": "Weber"
+    }
+   ],
+   "su": [
+    {
+     "id": 6,
+     "name": "MU",
+     "longname": "Musik"
+    }
+   ],
+   "ro": [
+    {
+     "id": 2,
+     "name": "201",
+     "longname": "Raum 201"
+    }
+   ],
+   "activityType": "Unterricht",
+   "lsnumber": 1004
+  }
+ ],
+ "102": [
+  {
+   "id": 20000,
+   "date": 20261019,
+   "startTime": 800,
+   "endTime": 845,
+   "kl": [
+    {
+     "id": 701,
+     "name": "7b",
+     "longname": "Klasse 7b"
+    }
+   ],
+   "te": [
+    {
+     "id": 11,
+     "name": "MUE",
+     "longname": "Müller"
+    }
+   ],
+   "su": [
+    {
+     "id": 1,
+     "name": "M",
+     "longname": "Mathematik"
+    }
+   ],
+   "ro": [
+    {
+     "id": 1,
+     "name": "101",
+     "longname": "Raum 101"
+    }
+   ],
+   "activityType": "Unterricht",
+   "lsnumber": 1000
+  },
+  {
+   "id": 20001,
+   "date": 20261019,
+   "startTime": 850,
+   "endTime": 935,
+   "kl": [
+    {
+     "id": 701,
+     "name": "7b",
+     "longname": "Klasse 7b"
+    }
+   ],
+   "te": [
+    {
+     "id": 12,
+     "name": "SCH",
+     "longname": "Schmidt"
+    }
+   ],
+   "su": [
+    {
+     "id": 2,
+     "name": "D",
+     "longname": "Deutsch"
+    }
+   ],
+   "ro": [
+    {
+     "id": 1,
+     "name": "101",
+     "longname": "Raum 101"
+    }
+   ],
+   "activityType": "Unterricht",
+   "lsnumber": 1001
+  },
+  {
+   "id": 20002,
+   "date": 20261019,
+   "startTime": 950,
+   "endTime": 1035,
+   "kl": [
+    {
+     "id": 701,
+     "name": "7b",
+     "longname": "Klasse 7b"
+    }
+   ],
+   "te": [
+    {
+     "id": 13,
+     "name": "WEB",
+     "longname": "Weber"
+    }
+   ],
+   "su": [
+    {
+     "id": 3,
+     "name": "E",
+     "longname": "Englisch"
+    }
+   ],
+   "ro": [
+    {
+     "id": 2,
+     "name": "201",
+     "longname": "Raum 201"
+    }
+   ],
+   "activityType": "Unterricht",
+   "lsnumber": 1002
+  },
+  {
+   "id": 20003,
+   "date": 20261019,
+   "startTime": 1040,
+   "endTime": 1125,
+   "kl": [
+    {
+     "id": 701,
+     "name": "7b",
+     "longname": "Klasse 7b"
+    }
+   ],
+   "te": [
+    {
+     "id": 14,
+     "name": "KLE",
+     "longname": "Klein"
+    }
+   ],
+   "su": [
+    {
+     "id": 4,
+     "name": "BIO",
+     "longname": "Biologie"
+    }
+   ],
+   "ro": [
+    {
+     "id": 3,
+     "name": "104",
+     "longname": "Raum 104"
+    }
+   ],
+   "activityType": "Unterricht",
+   "lsnumber": 1003
+  },
+  {
+   "id": 20004,
+   "date": 20261019,
+   "startTime": 1140,
+   "endTime": 1225,
+   "kl": [
+    {
+     "id": 701,
+     "name": "7b",
+     "longname": "Klasse 7b"
+    }
+   ],
+   "te": [
+    {
+     "id": 14,
+     "name": "KLE",
+     "longname": "Klein"
+    }
+   ],
+   "su": [
+    {
+     "id": 5,
+     "name": "SP",
+     "longname": "Sport"
+    }
+   ],
+   "ro": [
+    {
+     "id": 4,
+     "name": "TH",
+     "longname": "Turnhalle"
+    }
+   ],
+   "activityType": "Unterricht",
+   "lsnumber": 1004
+  },
+  {
+   "id": 20005,
+   "date": 20261020,
+   "startTime": 800,
+   "endTime": 845,
+   "kl": [
+    {
+     "id": 701,
+     "name": "7b",
+     "longname": "Klasse 7b"
+    }
+   ],
+   "te": [
+    {
+     "id": 12,
+     "name": "SCH",
+     "longname": "Schmidt"
+    }
+   ],
+   "su": [
+    {
+     "id": 2,
+     "name": "D",
+     "longname": "Deutsch"
+    }
+   ],
+   "ro": [
+    {
+     "id": 1,
+     "name": "101",
+     "longname": "Raum 101"
+    }
+   ],
+   "activityType": "Unterricht",
+   "lsnumber": 1000
+  },
+  {
+   "id": 20006,
+   "date": 20261020,
+   "startTime": 850,
+   "endTime": 935,
+   "kl": [
+    {
+     "id": 701,
+     "name": "7b",
+     "longname": "Klasse 7b"
+    }
+   ],
+   "te": [
+    {
+     "id": 11,
+     "name": "MUE",
+     "longname": "Müller"
+    }
+   ],
+   "su": [
+    {
+     "id": 1,
+     "name": "M",
+     "longname": "Mathematik"
+    }
+   ],
+   "ro": [
+    {
+     "id": 1,
+     "name": "101",
+     "longname": "Raum 101"
+    }
+   ],
+   "activityType": "Unterricht",
+   "lsnumber": 1001
+  },
+  {
+   "id": 20007,
+   "date": 20261020,
+   "startTime": 950,
+   "endTime": 1035,
+   "kl": [
+    {
+     "id": 701,
+     "name": "7b",
+     "longname": "Klasse 7b"
+    }
+   ],
+   "te": [
+    {
+     "id": 13,
+     "name": "WEB",
+     "longname": "Weber"
+    }
+   ],
+   "su": [
+    {
+     "id": 3,
+     "name": "E",
+     "longname": "Englisch"
+    }
+   ],
+   "ro": [
+    {
+     "id": 2,
+     "name": "201",
+     "longname": "Raum 201"
+    }
+   ],
+   "activityType": "Unterricht",
+   "lsnumber": 1002
+  },
+  {
+   "id": 20008,
+   "date": 20261020,
+   "startTime": 1040,
+   "endTime": 1125,
+   "kl": [
+    {
+     "id": 701,
+     "name": "7b",
+     "longname": "Klasse 7b"
+    }
+   ],
+   "te": [
+    {
+     "id": 12,
+     "name": "SCH",
+     "longname": "Schmidt"
+    }
+   ],
+   "su": [
+    {
+     "id": 7,
+     "name": "GE",
+     "longname": "Geschichte"
+    }
+   ],
+   "ro": [
+    {
+     "id": 1,
+     "name": "101",
+     "longname": "Raum 101"
+    }
+   ],
+   "activityType": "Unterricht",
+   "lsnumber": 1003
+  },
+  {
+   "id": 20009,
+   "date": 20261020,
+   "startTime": 1140,
+   "endTime": 1225,
+   "kl": [
+    {
+     "id": 701,
+     "name": "7b",
+     "longname": "Klasse 7b"
+    }
+   ],
+   "te": [
+    {
+     "id": 13,
+     "name": "WEB",
+     "longname": "Weber"
+    }
+   ],
+   "su": [
+    {
+     "id": 6,
+     "name": "MU",
+     "longname": "Musik"
+    }
+   ],
+   "ro": [
+    {
+     "id": 2,
+     "name": "201",
+     "longname": "Raum 201"
+    }
+   ],
+   "activityType": "Unterricht",
+   "lsnumber": 1004
+  },
+  {
+   "id": 20010,
+   "date": 20261021,
+   "startTime": 800,
+   "endTime": 845,
+   "kl": [
+    {
+     "id": 701,
+     "name": "7b",
+     "longname": "Klasse 7b"
+    }
+   ],
+   "te": [
+    {
+     "id": 13,
+     "name": "WEB",
+     "longname": "Weber"
+    }
+   ],
+   "su": [
+    {
+     "id": 3,
+     "name": "E",
+     "longname": "Englisch"
+    }
+   ],
+   "ro": [
+    {
+     "id": 2,
+     "name": "201",
+     "longname": "Raum 201"
+    }
+   ],
+   "activityType": "Unterricht",
+   "lsnumber": 1000
+  },
+  {
+   "id": 20011,
+   "date": 20261021,
+   "startTime": 850,
+   "endTime": 935,
+   "kl": [
+    {
+     "id": 701,
+     "name": "7b",
+     "longname": "Klasse 7b"
+    }
+   ],
+   "te": [
+    {
+     "id": 11,
+     "name": "MUE",
+     "longname": "Müller"
+    }
+   ],
+   "su": [
+    {
+     "id": 1,
+     "name": "M",
+     "longname": "Mathematik"
+    }
+   ],
+   "ro": [
+    {
+     "id": 1,
+     "name": "101",
+     "longname": "Raum 101"
+    }
+   ],
+   "activityType": "Unterricht",
+   "lsnumber": 1001
+  },
+  {
+   "id": 20012,
+   "date": 20261021,
+   "startTime": 950,
+   "endTime": 1035,
+   "kl": [
+    {
+     "id": 701,
+     "name": "7b",
+     "longname": "Klasse 7b"
+    }
+   ],
+   "te": [
+    {
+     "id": 12,
+     "name": "SCH",
+     "longname": "Schmidt"
+    }
+   ],
+   "su": [
+    {
+     "id": 2,
+     "name": "D",
+     "longname": "Deutsch"
+    }
+   ],
+   "ro": [
+    {
+     "id": 1,
+     "name": "101",
+     "longname": "Raum 101"
+    }
+   ],
+   "activityType": "Unterricht",
+   "lsnumber": 1002
+  },
+  {
+   "id": 20013,
+   "date": 20261021,
+   "startTime": 1040,
+   "endTime": 1125,
+   "kl": [
+    {
+     "id": 701,
+     "name": "7b",
+     "longname": "Klasse 7b"
+    }
+   ],
+   "te": [
+    {
+     "id": 14,
+     "name": "KLE",
+     "longname": "Klein"
+    }
+   ],
+   "su": [
+    {
+     "id": 4,
+     "name": "BIO",
+     "longname": "Biologie"
+    }
+   ],
+   "ro": [
+    {
+     "id": 3,
+     "name": "104",
+     "longname": "Raum 104"
+    }
+   ],
+   "activityType": "Unterricht",
+   "lsnumber": 1003
+  },
+  {
+   "id": 20014,
+   "date": 20261021,
+   "startTime": 1140,
+   "endTime": 1225,
+   "kl": [
+    {
+     "id": 701,
+     "name": "7b",
+     "longname": "Klasse 7b"
+    }
+   ],
+   "te": [
+    {
+     "id": 14,
+     "name": "KLE",
+     "longname": "Klein"
+    }
+   ],
+   "su": [
+    {
+     "id": 5,
+     "name": "SP",
+     "longname": "Sport"
+    }
+   ],
+   "ro": [
+    {
+     "id": 4,
+     "name": "TH",
+     "longname": "Turnhalle"
+    }
+   ],
+   "activityType": "Unterricht",
+   "lsnumber": 1004
+  },
+  {
+   "id": 20015,
+   "date": 20261022,
+   "startTime": 800,
+   "endTime": 845,
+   "kl": [
+    {
+     "id": 701,
+     "name": "7b",
+     "longname": "Klasse 7b"
+    }
+   ],
+   "te": [
+    {
+     "id": 11,
+     "name": "MUE",
+     "longname": "Müller"
+    }
+   ],
+   "su": [
+    {
+     "id": 1,
+     "name": "M",
+     "longname": "Mathematik"
+    }
+   ],
+   "ro": [
+    {
+     "id": 1,
+     "name": "101",
+     "longname": "Raum 101"
+    }
+   ],
+   "activityType": "Unterricht",
+   "lsnumber": 1000
+  },
+  {
+   "id": 20016,
+   "date": 20261022,
+   "startTime": 850,
+   "endTime": 935,
+   "kl": [
+    {
+     "id": 701,
+     "name": "7b",
+     "longname": "Klasse 7b"
+    }
+   ],
+   "te": [
+    {
+     "id": 12,
+     "name": "SCH",
+     "longname": "Schmidt"
+    }
+   ],
+   "su": [
+    {
+     "id": 7,
+     "name": "GE",
+     "longname": "Geschichte"
+    }
+   ],
+   "ro": [
+    {
+     "id": 1,
+     "name": "101",
+     "longname": "Raum 101"
+    }
+   ],
+   "activityType": "Unterricht",
+   "lsnumber": 1001
+  },
+  {
+   "id": 20017,
+   "date": 20261022,
+   "startTime": 950,
+   "endTime": 1035,
+   "kl": [
+    {
+     "id": 701,
+     "name": "7b",
+     "longname": "Klasse 7b"
+    }
+   ],
+   "te": [
+    {
+     "id": 12,
+     "name": "SCH",
+     "longname": "Schmidt"
+    }
+   ],
+   "su": [
+    {
+     "id": 2,
+     "name": "D",
+     "longname": "Deutsch"
+    }
+   ],
+   "ro": [
+    {
+     "id": 1,
+     "name": "101",
+     "longname": "Raum 101"
+    }
+   ],
+   "activityType": "Unterricht",
+   "lsnumber": 1002
+  },
+  {
+   "id": 20018,
+   "date": 20261022,
+   "startTime": 1040,
+   "endTime": 1125,
+   "kl": [
+    {
+     "id": 701,
+     "name": "7b",
+     "longname": "Klasse 7b"
+    }
+   ],
+   "te": [
+    {
+     "id": 13,
+     "name": "WEB",
+     "longname": "Weber"
+    }
+   ],
+   "su": [
+    {
+     "id": 3,
+     "name": "E",
+     "longname": "Englisch"
+    }
+   ],
+   "ro": [
+    {
+     "id": 2,
+     "name": "201",
+     "longname": "Raum 201"
+    }
+   ],
+   "activityType": "Unterricht",
+   "lsnumber": 1003
+  },
+  {
+   "id": 20019,
+   "date": 20261022,
+   "startTime": 1140,
+   "endTime": 1225,
+   "kl": [
+    {
+     "id": 701,
+     "name": "7b",
+     "longname": "Klasse 7b"
+    }
+   ],
+   "te": [
+    {
+     "id": 13,
+     "name": "WEB",
+     "longname": "Weber"
+    }
+   ],
+   "su": [
+    {
+     "id": 6,
+     "name": "MU",
+     "longname": "Musik"
+    }
+   ],
+   "ro": [
+    {
+     "id": 2,
+     "name": "201",
+     "longname": "Raum 201"
+    }
+   ],
+   "activityType": "Unterricht",
+   "lsnumber": 1004
+  },
+  {
+   "id": 20020,
+   "date": 20261023,
+   "startTime": 800,
+   "endTime": 845,
+   "kl": [
+    {
+     "id": 701,
+     "name": "7b",
+     "longname": "Klasse 7b"
+    }
+   ],
+   "te": [
+    {
+     "id": 14,
+     "name": "KLE",
+     "longname": "Klein"
+    }
+   ],
+   "su": [
+    {
+     "id": 4,
+     "name": "BIO",
+     "longname": "Biologie"
+    }
+   ],
+   "ro": [
+    {
+     "id": 3,
+     "name": "104",
+     "longname": "Raum 104"
+    }
+   ],
+   "activityType": "Unterricht",
+   "lsnumber": 1000
+  },
+  {
+   "id": 20021,
+   "date": 20261023,
+   "startTime": 850,
+   "endTime": 935,
+   "kl": [
+    {
+     "id": 701,
+     "name": "7b",
+     "longname": "Klasse 7b"
+    }
+   ],
+   "te": [
+    {
+     "id": 11,
+     "name": "MUE",
+     "longname": "Müller"
+    }
+   ],
+   "su": [
+    {
+     "id": 1,
+     "name": "M",
+     "longname": "Mathematik"
+    }
+   ],
+   "ro": [
+    {
+     "id": 1,
+     "name": "101",
+     "longname": "Raum 101"
+    }
+   ],
+   "activityType": "Unterricht",
+   "lsnumber": 1001
+  },
+  {
+   "id": 20022,
+   "date": 20261023,
+   "startTime": 950,
+   "endTime": 1035,
+   "kl": [
+    {
+     "id": 701,
+     "name": "7b",
+     "longname": "Klasse 7b"
+    }
+   ],
+   "te": [
+    {
+     "id": 12,
+     "name": "SCH",
+     "longname": "Schmidt"
+    }
+   ],
+   "su": [
+    {
+     "id": 2,
+     "name": "D",
+     "longname": "Deutsch"
+    }
+   ],
+   "ro": [
+    {
+     "id": 1,
+     "name": "101",
+     "longname": "Raum 101"
+    }
+   ],
+   "activityType": "Unterricht",
+   "lsnumber": 1002
+  },
+  {
+   "id": 20023,
+   "date": 20261023,
+   "startTime": 1040,
+   "endTime": 1125,
+   "kl": [
+    {
+     "id": 701,
+     "name": "7b",
+     "longname": "Klasse 7b"
+    }
+   ],
+   "te": [
+    {
+     "id": 13,
+     "name": "WEB",
+     "longname": "Weber"
+    }
+   ],
+   "su": [
+    {
+     "id": 3,
+     "name": "E",
+     "longname": "Englisch"
+    }
+   ],
+   "ro": [
+    {
+     "id": 2,
+     "name": "201",
+     "longname": "Raum 201"
+    }
+   ],
+   "activityType": "Unterricht",
+   "lsnumber": 1003
+  },
+  {
+   "id": 20024,
+   "date": 20261026,
+   "startTime": 800,
+   "endTime": 845,
+   "kl": [
+    {
+     "id": 701,
+     "name": "7b",
+     "longname": "Klasse 7b"
+    }
+   ],
+   "te": [
+    {
+     "id": 11,
+     "name": "MUE",
+     "longname": "Müller"
+    }
+   ],
+   "su": [
+    {
+     "id": 1,
+     "name": "M",
+     "longname": "Mathematik"
+    }
+   ],
+   "ro": [
+    {
+     "id": 1,
+     "name": "101",
+     "longname": "Raum 101"
+    }
+   ],
+   "activityType": "Unterricht",
+   "lsnumber": 1000
+  },
+  {
+   "id": 20025,
+   "date": 20261026,
+   "startTime": 850,
+   "endTime": 935,
+   "kl": [
+    {
+     "id": 701,
+     "name": "7b",
+     "longname": "Klasse 7b"
+    }
+   ],
+   "te": [
+    {
+     "id": 12,
+     "name": "SCH",
+     "longname": "Schmidt"
+    }
+   ],
+   "su": [
+    {
+     "id": 2,
+     "name": "D",
+     "longname": "Deutsch"
+    }
+   ],
+   "ro": [
+    {
+     "id": 1,
+     "name": "101",
+     "longname": "Raum 101"
+    }
+   ],
+   "activityType": "Unterricht",
+   "lsnumber": 1001
+  },
+  {
+   "id": 20026,
+   "date": 20261026,
+   "startTime": 950,
+   "endTime": 1035,
+   "kl": [
+    {
+     "id": 701,
+     "name": "7b",
+     "longname": "Klasse 7b"
+    }
+   ],
+   "te": [
+    {
+     "id": 13,
+     "name": "WEB",
+     "longname": "Weber"
+    }
+   ],
+   "su": [
+    {
+     "id": 3,
+     "name": "E",
+     "longname": "Englisch"
+    }
+   ],
+   "ro": [
+    {
+     "id": 2,
+     "name": "201",
+     "longname": "Raum 201"
+    }
+   ],
+   "activityType": "Unterricht",
+   "lsnumber": 1002
+  },
+  {
+   "id": 20027,
+   "date": 20261026,
+   "startTime": 1040,
+   "endTime": 1125,
+   "kl": [
+    {
+     "id": 701,
+     "name": "7b",
+     "longname": "Klasse 7b"
+    }
+   ],
+   "te": [
+    {
+     "id": 14,
+     "name": "KLE",
+     "longname": "Klein"
+    }
+   ],
+   "su": [
+    {
+     "id": 4,
+     "name": "BIO",
+     "longname": "Biologie"
+    }
+   ],
+   "ro": [
+    {
+     "id": 3,
+     "name": "104",
+     "longname": "Raum 104"
+    }
+   ],
+   "activityType": "Unterricht",
+   "lsnumber": 1003
+  },
+  {
+   "id": 20028,
+   "date": 20261026,
+   "startTime": 1140,
+   "endTime": 1225,
+   "kl": [
+    {
+     "id": 701,
+     "name": "7b",
+     "longname": "Klasse 7b"
+    }
+   ],
+   "te": [
+    {
+     "id": 14,
+     "name": "KLE",
+     "longname": "Klein"
+    }
+   ],
+   "su": [
+    {
+     "id": 5,
+     "name": "SP",
+     "longname": "Sport"
+    }
+   ],
+   "ro": [
+    {
+     "id": 4,
+     "name": "TH",
+     "longname": "Turnhalle"
+    }
+   ],
+   "activityType": "Unterricht",
+   "lsnumber": 1004
+  },
+  {
+   "id": 20029,
+   "date": 20261027,
+   "startTime": 800,
+   "endTime": 845,
+   "kl": [
+    {
+     "id": 701,
+     "name": "7b",
+     "longname": "Klasse 7b"
+    }
+   ],
+   "te": [
+    {
+     "id": 12,
+     "name": "SCH",
+     "longname": "Schmidt"
+    }
+   ],
+   "su": [
+    {
+     "id": 2,
+     "name": "D",
+     "longname": "Deutsch"
+    }
+   ],
+   "ro": [
+    {
+     "id": 1,
+     "name": "101",
+     "longname": "Raum 101"
+    }
+   ],
+   "activityType": "Unterricht",
+   "lsnumber": 1000
+  },
+  {
+   "id": 20030,
+   "date": 20261027,
+   "startTime": 850,
+   "endTime": 935,
+   "kl": [
+    {
+     "id": 701,
+     "name": "7b",
+     "longname": "Klasse 7b"
+    }
+   ],
+   "te": [
+    {
+     "id": 11,
+     "name": "MUE",
+     "longname": "Müller"
+    }
+   ],
+   "su": [
+    {
+     "id": 1,
+     "name": "M",
+     "longname": "Mathematik"
+    }
+   ],
+   "ro": [
+    {
+     "id": 1,
+     "name": "101",
+     "longname": "Raum 101"
+    }
+   ],
+   "activityType": "Unterricht",
+   "lsnumber": 1001
+  },
+  {
+   "id": 20031,
+   "date": 20261027,
+   "startTime": 950,
+   "endTime": 1035,
+   "kl": [
+    {
+     "id": 701,
+     "name": "7b",
+     "longname": "Klasse 7b"
+    }
+   ],
+   "te": [
+    {
+     "id": 13,
+     "name": "WEB",
+     "longname": "Weber"
+    }
+   ],
+   "su": [
+    {
+     "id": 3,
+     "name": "E",
+     "longname": "Englisch"
+    }
+   ],
+   "ro": [
+    {
+     "id": 2,
+     "name": "201",
+     "longname": "Raum 201"
+    }
+   ],
+   "activityType": "Unterricht",
+   "lsnumber": 1002
+  },
+  {
+   "id": 20032,
+   "date": 20261027,
+   "startTime": 1040,
+   "endTime": 1125,
+   "kl": [
+    {
+     "id": 701,
+     "name": "7b",
+     "longname": "Klasse 7b"
+    }
+   ],
+   "te": [
+    {
+     "id": 12,
+     "name": "SCH",
+     "longname": "Schmidt"
+    }
+   ],
+   "su": [
+    {
+     "id": 7,
+     "name": "GE",
+     "longname": "Geschichte"
+    }
+   ],
+   "ro": [
+    {
+     "id": 1,
+     "name": "101",
+     "longname": "Raum 101"
+    }
+   ],
+   "activityType": "Unterricht",
+   "lsnumber": 1003
+  },
+  {
+   "id": 20033,
+   "date": 20261027,
+   "startTime": 1140,
+   "endTime": 1225,
+   "kl": [
+    {
+     "id": 701,
+     "name": "7b",
+     "longname": "Klasse 7b"
+    }
+   ],
+   "te": [
+    {
+     "id": 13,
+     "name": "WEB",
+     "longname": "Weber"
+    }
+   ],
+   "su": [
+    {
+     "id": 6,
+     "name": "MU",
+     "longname": "Musik"
+    }
+   ],
+   "ro": [
+    {
+     "id": 2,
+     "name": "201",
+     "longname": "Raum 201"
+    }
+   ],
+   "activityType": "Unterricht",
+   "lsnumber": 1004
+  },
+  {
+   "id": 20034,
+   "date": 20261028,
+   "startTime": 800,
+   "endTime": 845,
+   "kl": [
+    {
+     "id": 701,
+     "name": "7b",
+     "longname": "Klasse 7b"
+    }
+   ],
+   "te": [
+    {
+     "id": 13,
+     "name": "WEB",
+     "longname": "Weber"
+    }
+   ],
+   "su": [
+    {
+     "id": 3,
+     "name": "E",
+     "longname": "Englisch"
+    }
+   ],
+   "ro": [
+    {
+     "id": 2,
+     "name": "201",
+     "longname": "Raum 201"
+    }
+   ],
+   "activityType": "Unterricht",
+   "lsnumber": 1000
+  },
+  {
+   "id": 20035,
+   "date": 20261028,
+   "startTime": 850,
+   "endTime": 935,
+   "kl": [
+    {
+     "id": 701,
+     "name": "7b",
+     "longname": "Klasse 7b"
+    }
+   ],
+   "te": [
+    {
+     "id": 11,
+     "name": "MUE",
+     "longname": "Müller"
+    }
+   ],
+   "su": [
+    {
+     "id": 1,
+     "name": "M",
+     "longname": "Mathematik"
+    }
+   ],
+   "ro": [
+    {
+     "id": 1,
+     "name": "101",
+     "longname": "Raum 101"
+    }
+   ],
+   "activityType": "Unterricht",
+   "lsnumber": 1001
+  },
+  {
+   "id": 20036,
+   "date": 20261028,
+   "startTime": 950,
+   "endTime": 1035,
+   "kl": [
+    {
+     "id": 701,
+     "name": "7b",
+     "longname": "Klasse 7b"
+    }
+   ],
+   "te": [
+    {
+     "id": 12,
+     "name": "SCH",
+     "longname": "Schmidt"
+    }
+   ],
+   "su": [
+    {
+     "id": 2,
+     "name": "D",
+     "longname": "Deutsch"
+    }
+   ],
+   "ro": [
+    {
+     "id": 1,
+     "name": "101",
+     "longname": "Raum 101"
+    }
+   ],
+   "activityType": "Unterricht",
+   "lsnumber": 1002
+  },
+  {
+   "id": 20037,
+   "date": 20261028,
+   "startTime": 1040,
+   "endTime": 1125,
+   "kl": [
+    {
+     "id": 701,
+     "name": "7b",
+     "longname": "Klasse 7b"
+    }
+   ],
+   "te": [
+    {
+     "id": 14,
+     "name": "KLE",
+     "longname": "Klein"
+    }
+   ],
+   "su": [
+    {
+     "id": 4,
+     "name": "BIO",
+     "longname": "Biologie"
+    }
+   ],
+   "ro": [
+    {
+     "id": 3,
+     "name": "104",
+     "longname": "Raum 104"
+    }
+   ],
+   "activityType": "Unterricht",
+   "lsnumber": 1003
+  },
+  {
+   "id": 20038,
+   "date": 20261028,
+   "startTime": 1140,
+   "endTime": 1225,
+   "kl": [
+    {
+     "id": 701,
+     "name": "7b",
+     "longname": "Klasse 7b"
+    }
+   ],
+   "te": [
+    {
+     "id": 14,
+     "name": "KLE",
+     "longname": "Klein"
+    }
+   ],
+   "su": [
+    {
+     "id": 5,
+     "name": "SP",
+     "longname": "Sport"
+    }
+   ],
+   "ro": [
+    {
+     "id": 4,
+     "name": "TH",
+     "longname": "Turnhalle"
+    }
+   ],
+   "activityType": "Unterricht",
+   "lsnumber": 1004
+  },
+  {
+   "id": 20039,
+   "date": 20261029,
+   "startTime": 800,
+   "endTime": 845,
+   "kl": [
+    {
+     "id": 701,
+     "name": "7b",
+     "longname": "Klasse 7b"
+    }
+   ],
+   "te": [
+    {
+     "id": 11,
+     "name": "MUE",
+     "longname": "Müller"
+    }
+   ],
+   "su": [
+    {
+     "id": 1,
+     "name": "M",
+     "longname": "Mathematik"
+    }
+   ],
+   "ro": [
+    {
+     "id": 1,
+     "name": "101",
+     "longname": "Raum 101"
+    }
+   ],
+   "activityType": "Unterricht",
+   "lsnumber": 1000
+  },
+  {
+   "id": 20040,
+   "date": 20261029,
+   "startTime": 850,
+   "endTime": 935,
+   "kl": [
+    {
+     "id": 701,
+     "name": "7b",
+     "longname": "Klasse 7b"
+    }
+   ],
+   "te": [
+    {
+     "id": 12,
+     "name": "SCH",
+     "longname": "Schmidt"
+    }
+   ],
+   "su": [
+    {
+     "id": 7,
+     "name": "GE",
+     "longname": "Geschichte"
+    }
+   ],
+   "ro": [
+    {
+     "id": 1,
+     "name": "101",
+     "longname": "Raum 101"
+    }
+   ],
+   "activityType": "Unterricht",
+   "lsnumber": 1001
+  },
+  {
+   "id": 20041,
+   "date": 20261029,
+   "startTime": 950,
+   "endTime": 1035,
+   "kl": [
+    {
+     "id": 701,
+     "name": "7b",
+     "longname": "Klasse 7b"
+    }
+   ],
+   "te": [
+    {
+     "id": 12,
+     "name": "SCH",
+     "longname": "Schmidt"
+    }
+   ],
+   "su": [
+    {
+     "id": 2,
+     "name": "D",
+     "longname": "Deutsch"
+    }
+   ],
+   "ro": [
+    {
+     "id": 1,
+     "name": "101",
+     "longname": "Raum 101"
+    }
+   ],
+   "activityType": "Unterricht",
+   "lsnumber": 1002
+  },
+  {
+   "id": 20042,
+   "date": 20261029,
+   "startTime": 1040,
+   "endTime": 1125,
+   "kl": [
+    {
+     "id": 701,
+     "name": "7b",
+     "longname": "Klasse 7b"
+    }
+   ],
+   "te": [
+    {
+     "id": 13,
+     "name": "WEB",
+     "longname": "Weber"
+    }
+   ],
+   "su": [
+    {
+     "id": 3,
+     "name": "E",
+     "longname": "Englisch"
+    }
+   ],
+   "ro": [
+    {
+     "id": 2,
+     "name": "201",
+     "longname": "Raum 201"
+    }
+   ],
+   "activityType": "Unterricht",
+   "lsnumber": 1003
+  },
+  {
+   "id": 20043,
+   "date": 20261029,
+   "startTime": 1140,
+   "endTime": 1225,
+   "kl": [
+    {
+     "id": 701,
+     "name": "7b",
+     "longname": "Klasse 7b"
+    }
+   ],
+   "te": [
+    {
+     "id": 13,
+     "name": "WEB",
+     "longname": "Weber"
+    }
+   ],
+   "su": [
+    {
+     "id": 6,
+     "name": "MU",
+     "longname": "Musik"
+    }
+   ],
+   "ro": [
+    {
+     "id": 2,
+     "name": "201",
+     "longname": "Raum 201"
+    }
+   ],
+   "activityType": "Unterricht",
+   "lsnumber": 1004
+  }
+ ],
+ "comment": "getTimetable results per WebUntis person id, 2026-10-19 … 2026-11-01 (2026-10-30 Brückentag)"
+}

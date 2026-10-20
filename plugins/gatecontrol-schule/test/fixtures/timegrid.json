@@ -1,0 +1,181 @@
+{
+ "jsonrpc": "2.0",
+ "id": "gc",
+ "result": [
+  {
+   "day": 2,
+   "timeUnits": [
+    {
+     "name": "1",
+     "startTime": 800,
+     "endTime": 845
+    },
+    {
+     "name": "2",
+     "startTime": 850,
+     "endTime": 935
+    },
+    {
+     "name": "3",
+     "startTime": 950,
+     "endTime": 1035
+    },
+    {
+     "name": "4",
+     "startTime": 1040,
+     "endTime": 1125
+    },
+    {
+     "name": "5",
+     "startTime": 1140,
+     "endTime": 1225
+    },
+    {
+     "name": "6",
+     "startTime": 1230,
+     "endTime": 1315
+    }
+   ]
+  },
+  {
+   "day": 3,
+   "timeUnits": [
+    {
+     "name": "1",
+     "startTime": 800,
+     "endTime": 845
+    },
+    {
+     "name": "2",
+     "startTime": 850,
+     "endTime": 935
+    },
+    {
+     "name": "3",
+     "startTime": 950,
+     "endTime": 1035
+    },
+    {
+     "name": "4",
+     "startTime": 1040,
+     "endTime": 1125
+    },
+    {
+     "name": "5",
+     "startTime": 1140,
+     "endTime": 1225
+    },
+    {
+     "name": "6",
+     "startTime": 1230,
+     "endTime": 1315
+    }
+   ]
+  },
+  {
+   "day": 4,
+   "timeUnits": [
+    {
+     "name": "1",
+     "startTime": 800,
+     "endTime": 845
+    },
+    {
+     "name": "2",
+     "startTime": 850,
+     "endTime": 935
+    },
+    {
+     "name": "3",
+     "startTime": 950,
+     "endTime": 1035
+    },
+    {
+     "name": "4",
+     "startTime": 1040,
+     "endTime": 1125
+    },
+    {
+     "name": "5",
+     "startTime": 1140,
+     "endTime": 1225
+    },
+    {
+     "name": "6",
+     "startTime": 1230,
+     "endTime": 1315
+    }
+   ]
+  },
+  {
+   "day": 5,
+   "timeUnits": [
+    {
+     "name": "1",
+     "startTime": 800,
+     "endTime": 845
+    },
+    {
+     "name": "2",
+     "startTime": 850,
+     "endTime": 935
+    },
+    {
+     "name": "3",
+     "startTime": 950,
+     "endTime": 1035
+    },
+    {
+     "name": "4",
+     "startTime": 1040,
+     "endTime": 1125
+    },
+    {
+     "name": "5",
+     "startTime": 1140,
+     "endTime": 1225
+    },
+    {
+     "name": "6",
+     "startTime": 1230,
+     "endTime": 1315
+    }
+   ]
+  },
+  {
+   "day": 6,
+   "timeUnits": [
+    {
+     "name": "1",
+     "startTime": 800,
+     "endTime": 845
+    },
+    {
+     "name": "2",
+     "startTime": 850,
+     "endTime": 935
+    },
+    {
+     "name": "3",
+     "startTime": 950,
+     "endTime": 1035
+    },
+    {
+     "name": "4",
+     "startTime": 1040,
+     "endTime": 1125
+    },
+    {
+     "name": "5",
+     "startTime": 1140,
+     "endTime": 1225
+    },
+    {
+     "name": "6",
+     "startTime": 1230,
+     "endTime": 1315
+    }
+   ]
+  }
+ ]
+}
