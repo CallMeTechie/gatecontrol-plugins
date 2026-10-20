@@ -38,6 +38,21 @@ Braucht **GateControl ≥ 1.172.0**. Lizenzpflichtiges Plugin.
   `gatecontrol-schule/student:<id>`, Feld `value` (heute) oder `reading:tomorrow` (morgen) – z. B.
   „wenn morgen etwas ausfällt, abends erinnern“. Antippen fragt einen baldigen Abruf an.
 * **Änderungsprotokoll und Diagnose** auf der Seite „Schule“.
+* **Regeln der Familie** (ab 1.1.0, mit dem Plugin „Familie“ ≥ 1.12.0): Auslöser **„Stunde fällt aus“** –
+  z. B. „wenn bei Lena morgen eine Stunde ausfällt, Wecker später stellen“ (siehe unten).
+
+### Regeln der Familie („Stunde fällt aus“)
+
+Ist das Plugin **Familie** (≥ 1.12.0) installiert, bietet sein Regel-Editor den Auslöser „Stunde fällt
+aus“ an (welches Kind oder jedes Kind, Ausfall / Vertretung / Zusatzstunde / findet doch statt, heute /
+morgen / jeder Tag). Nach jedem Abruf meldet Schule die Änderungen, **die auch per Push gemeldet
+werden** – nicht der erste Abruf, nur Stunden, die noch nicht vorbei sind, innerhalb von „Push für die
+nächsten Tage“, nur Schüler mit zugeordnetem GateControl-Benutzer – in **einem** Aufruf an Familie
+(höchstens die 20 neuesten), mit dem Text wie in der Mitteilung („Lena: Englisch 3. Std. (09:50) fällt
+aus“, Sprache der Mitteilungen). In der **Ruhezeit** gehaltene Änderungen gehen mit den Mitteilungen an
+ihrem Ende. Jede Änderung wird nur einmal gemeldet; ein Fehler (Familie nicht erreichbar, Limit von 60
+Aufrufen pro Stunde) hält den Abruf nie auf – die Seite „Schule“ zeigt das letzte Ergebnis. Braucht
+GateControl ≥ 1.178.0 (`gc.services.available`); auf einem älteren GateControl wird nichts gemeldet.
 
 ### Einrichtung
 
@@ -129,6 +144,25 @@ GET app/changes?days=7                                  1 … 30 Tage, Vorgabe 7
 Vertretungstext), `extra` = nach dem ersten Abruf hinzugekommen. `period` / `periodEnd` aus dem
 Zeitraster (Doppelstunde 3.–4.). Die Felder mit `?` fehlen, wenn sie leer sind.
 
+### Dienste zwischen Plugins (1.1.0)
+
+`services.provides` – nur für den Aufrufer `gatecontrol-familie` (jeder andere: `{ ok: false, code: 'forbidden' }`):
+
+```
+school_students   {} → { ok: true, students: [{ userId, name }] }
+                  die eingeschalteten Schüler mit zugeordnetem GateControl-Benutzer (Anzeigename)
+```
+
+`permissions.services: ["gatecontrol-familie:rule_event"]` – nach jedem Abruf, nur wenn
+`gc.services.available('gatecontrol-familie', 'rule_event')`:
+
+```
+rule_event        { type: 'school_change',
+                    events: [{ userId, kind: 'cancelled' | 'changed' | 'extra' | 'restored',
+                               date: 'YYYY-MM-DD', start: 'HH:MM', subject, text }] }   1 … 20
+                  → { ok: true, fired }   (Familie führt die passenden Regeln aus)
+```
+
 ## English
 
 The timetable of **WebUntis** student and parent accounts in GateControl: cancellations,
@@ -158,5 +192,15 @@ baseline; quiet hours (default 21:00–06:00) hold pushes until they end.
 **Privacy:** all data stays on your server; only the school's WebUntis server (`*.webuntis.com`) is
 contacted. The key or password is a plugin secret encrypted by GateControl, never in the database,
 the log or the browser. Removing an account deletes its access, students, timetable and change log.
+
+**Family rules (1.1.0):** with the plugin **Familie** (≥ 1.12.0) its rule editor offers the trigger
+“Lesson cancelled” (a child or any child; cancelled / substitution / extra lesson / takes place after
+all; today / tomorrow / any day). After each fetch the plugin hands Familie the changes it pushes (not
+the baseline, lessons not over, within “Push for the next days”, students mapped to a user) in **one**
+`rule_event` call (at most the 20 newest), with the push line as text (“Lena: Englisch lesson 3
+(09:50) cancelled”); quiet hours hold them like the pushes. Each change is handed over once; errors
+never stop a fetch, the page “School” shows the last result. Needs GateControl ≥ 1.178.0
+(`gc.services.available`). The service `school_students` (caller `gatecontrol-familie` only) answers
+`{ ok: true, students: [{ userId, name }] }`.
 
 **API:** see [API](#api) above.

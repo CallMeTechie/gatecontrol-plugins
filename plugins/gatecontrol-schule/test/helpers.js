@@ -115,7 +115,10 @@ function fakeUntis(opts = {}) {
   return { handler, state };
 }
 
-/** A host with the household, a fake WebUntis and the pinned clock. fn(host, untis). */
+/**
+ * A host with the household, a fake WebUntis and the pinned clock. fn(host, untis).
+ * opts.services: other plugins (the Familie plugin's rule_event); opts.gatecontrol: '1.178.0' for gc.services.available.
+ */
 async function withHost(opts, fn) {
   const untis = fakeUntis(opts.untis);
   clock.set(opts.now || T0);
@@ -124,6 +127,8 @@ async function withHost(opts, fn) {
     settings: opts.settings || {},
     notifyFail: opts.notifyFail,
     fetch: (url, o) => untis.handler(url, o),
+    services: opts.services,
+    gatecontrol: opts.gatecontrol,
   });
   await host.start();
   try { return await fn(host, untis); } finally { await host.close(); clock.set(null); }

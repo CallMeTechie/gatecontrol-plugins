@@ -2,6 +2,24 @@
 
 Stundenplan aus WebUntis für Schüler- und Elternkonten als GateControl-Plugin.
 
+## 1.1.0
+- **Regeln der Familie („Stunde fällt aus“):** Mit dem Plugin **Familie** (≥ 1.12.0) lösen Änderungen im
+  Stundenplan dessen Regeln aus. Nach jedem Abruf gehen die Änderungen, die auch per Push gemeldet werden
+  (nicht der erste Abruf, Stunde noch nicht vorbei, innerhalb von „Push für die nächsten Tage“, nur Schüler
+  mit zugeordnetem GateControl-Benutzer), in **einem** Aufruf des Familie-Dienstes `rule_event` an Familie –
+  höchstens die 20 neuesten, `{ type: 'school_change', events: [{ userId, kind, date, start, subject, text }] }`,
+  der Text wie die Push-Zeile in der Sprache der Mitteilungen („Lena: Englisch 3. Std. (09:50) fällt aus“).
+  Ruhezeit wie bei den Mitteilungen: gehaltene Änderungen gehen mit ihnen am Ende der Ruhezeit. Jede Änderung
+  wird höchstens einmal gemeldet (`changes.rule_at`, Migration `002_rule_events.sql`) – auch wenn Familie
+  fehlt oder der Aufruf scheitert; ein Fehler hält den Abruf nie auf. Die Seite „Schule“ zeigt das letzte
+  Ergebnis (wann, wie viele Änderungen, ausgelöste Regeln oder der Fehler).
+- **Dienst `school_students`** (`services.provides`, nur für `gatecontrol-familie`): `{ ok: true, students:
+  [{ userId, name }] }` – die eingeschalteten Schüler mit zugeordnetem Benutzer; der Regel-Editor von Familie
+  bietet damit die Kinder an.
+- `permissions.services: ["gatecontrol-familie:rule_event"]`. Mindestversion bleibt **GateControl ≥ 1.172.0**:
+  gemeldet wird nur, wenn `gc.services.available` (ab GateControl 1.178.0) Familie bestätigt – auf einem
+  älteren GateControl bleibt alles wie in 1.0.0.
+
 ## 1.0.0
 - **WebUntis-Konten** auf der Seite „Schule“: hinzufügen per **Link des QR-Codes** aus WebUntis
   (Profil › Freigaben › Zugriff über Untis Mobile – empfohlen, ohne Passwort: das Plugin meldet sich

@@ -139,6 +139,14 @@
   "push.period": "{{n}}. Std.",
   "push.periods": "{{a}}.–{{b}}. Std.",
 
+  "rule.cancelled": "{{name}}: {{subject}} {{when}} fällt aus",
+  "rule.changed": "{{name}}: {{subject}} {{when}} – Vertretung",
+  "rule.extra": "{{name}}: Zusatzstunde {{subject}} {{when}}",
+  "rule.restored": "{{name}}: {{subject}} {{when}} findet doch statt",
+  "rules.info_ready": "Regeln der Familie („Stunde fällt aus“): verbunden, noch nichts gemeldet.",
+  "rules.info_ok": "Regeln der Familie: zuletzt {{when}} {{events}} Änderung(en) gemeldet, {{fired}} Regel(n) ausgelöst.",
+  "rules.info_error": "Regeln der Familie: zuletzt {{when}} nicht gemeldet ({{code}}).",
+
   "tile.title": "Schule",
   "tile.one_cancelled": "1 Ausfall",
   "tile.cancelled": "{{n}} Ausfälle",
@@ -310,6 +318,14 @@
   "push.n_changes": "{{n}} changes",
   "push.period": "lesson {{n}}",
   "push.periods": "lessons {{a}}–{{b}}",
+
+  "rule.cancelled": "{{name}}: {{subject}} {{when}} cancelled",
+  "rule.changed": "{{name}}: {{subject}} {{when}} – substitution",
+  "rule.extra": "{{name}}: extra lesson {{subject}} {{when}}",
+  "rule.restored": "{{name}}: {{subject}} {{when}} takes place after all",
+  "rules.info_ready": "Family rules (“Lesson cancelled”): connected, nothing reported yet.",
+  "rules.info_ok": "Family rules: last {{when}} {{events}} change(s) reported, {{fired}} rule(s) run.",
+  "rules.info_error": "Family rules: last {{when}} not reported ({{code}}).",
 
   "tile.title": "School",
   "tile.one_cancelled": "1 cancelled",
