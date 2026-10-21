@@ -129,7 +129,7 @@
 //   from the internet straight into the store (allowlist like http.fetch → ERR_NET_DENIED; opts.fetch(url, { method:
 //   'GET', headers, binary: true }) answers { status, headers, body (Buffer | string) }; not 2xx → ERR_HTTP (status);
 //   > min(maxBytes, media.maxBytes) → ERR_MEDIA_TOO_LARGE; type = mime || the answer's content-type, not in media.types
-//   → ERR_MEDIA_TYPE; quota → ERR_MEDIA_QUOTA) → { mediaId, mime, bytes, name }: unclaimed, no owner (only mediaAccess
+//   → ERR_MEDIA_TYPE; quota → ERR_MEDIA_QUOTA; an empty body → ERR_MEDIA_EMPTY) → { mediaId, mime, bytes, name }: unclaimed, no owner (only mediaAccess
 //   lets anybody read it); `name` (cleaned file name) comes back in info() and as the filename of Content-Disposition.
 //   media.uploads: false (≥ 1.190.0) → host.upload answers 403 uploads_disabled.
 //   Realtime events — permissions.events: gc.events.emit({ users (1–500 ids), type ([a-z][a-z0-9._-]{0,63}), data
@@ -1025,6 +1025,7 @@ async function createHost(pluginDir, opts = {}) {
     const buf = Buffer.isBuffer(r.body) ? r.body : Buffer.from(String(r.body == null ? '' : r.body));
     const limit = Math.min(Number.isSafeInteger(x.maxBytes) && x.maxBytes > 0 ? x.maxBytes : media.maxBytes, media.maxBytes);
     if (buf.length > limit) throw hostError('ERR_MEDIA_TOO_LARGE', 'file too large');
+    if (!buf.length) throw hostError('ERR_MEDIA_EMPTY', 'the response is empty');
     const ct = String((r.headers && (r.headers['content-type'] || r.headers['Content-Type'])) || '').split(';')[0].trim().toLowerCase();
     const type = typeof x.mime === 'string' && x.mime ? x.mime.trim().toLowerCase() : ct;
     if (!media.types.includes(type)) throw hostError('ERR_MEDIA_TYPE', `type not allowed: ${type}`);
