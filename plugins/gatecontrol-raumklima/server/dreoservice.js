@@ -10,7 +10,7 @@
 
 const store = require('./store');
 const model = require('./dreomodel');
-const { DreoApi, DreoLink } = require('./dreo');
+const { DreoApi, DreoOpenApi, DreoLink } = require('./dreo');
 
 const { codeError } = store;
 
@@ -24,6 +24,10 @@ const readAt = new Map();     // serial number → ms of the last REST state
 const refreshing = new Set(); // serial numbers with a REST read in flight
 const status = { connected: false, needsLogin: false, lastError: null, failures: 0, retryAt: 0 };
 let link = null;
+// 2.2.0: devices only Dreo's Open API lists (storage 'dreo_via': { sn: 'open' }) are read and controlled
+// over it (REST, no socket); its token lives in memory only (a login is one request).
+const VIA = 'dreo_via';
+let open = null;              // { token, region } of the Open API
 
 const supported = (gc) => Boolean(gc.http && typeof gc.http.websocket === 'function');
 const snOf = (d) => d.cloud_appliance_id;
@@ -31,6 +35,9 @@ const snOf = (d) => d.cloud_appliance_id;
 /** Tests replace these two. */
 function newApi(gc) {
   return new DreoApi({ fetch: (url, o) => gc.http.fetch(url, o) });
+}
+function newOpenApi(gc) {
+  return new DreoOpenApi({ fetch: (url, o) => gc.http.fetch(url, o) });
 }
 function newLink(gc) {
   return new DreoLink({ open: (url) => gc.http.websocket(url, { timeoutMs: 10000 }) });
@@ -103,6 +110,27 @@ async function withApi(gc, fn) {
   }
 }
 
+/** { sn: 'open' } — the devices reached through the Open API. */
+async function viaMap(gc) {
+  const v = await gc.storage.get(VIA);
+  return v && typeof v === 'object' && !Array.isArray(v) ? v : {};
+}
+const isOpen = async (gc, sn) => (await viaMap(gc))[sn] === 'open';
+
+/** The Open API with a token (one new login when it is refused). */
+async function withOpen(gc, fn) {
+  const cfg = await account(gc);
+  const api = module.exports.newOpenApi(gc);
+  if (!open) open = await api.login(cfg.email, cfg.passwordMd5);
+  try {
+    return await fn(api, open.region, open.token);
+  } catch (e) {
+    if (e.code !== 'DREO_AUTH') throw e;
+    open = await api.login(cfg.email, cfg.passwordMd5);
+    return fn(api, open.region, open.token);
+  }
+}
+
 // ─── Account and devices ────────────────────────
 
 /** Log in with the account of the settings (e-mail, MD5 of the password); keeps token and region. */
@@ -151,6 +179,22 @@ async function listCloudDevices(gc, diag = null) {
       if (diag) diag.push({ region: other, lists: there, error: e.code || 'ERROR' });
     }
   }
+  if (!list.length) {
+    // 2.2.0: Dreo's official Open API — some accounts list their devices only there
+    try {
+      const found = await withOpen(gc, (api, region, tk) => api.devices(region, tk));
+      if (diag) diag.push({ api: 'open', region: open ? open.region : 'NA', lists: [{ path: 'open', count: found.length }] });
+      if (found.length) {
+        const via = { ...(await viaMap(gc)) };
+        for (const x of found) via[x.sn] = 'open';
+        await gc.storage.set(VIA, via);
+        gc.log.info('dreo: the account\'s devices come from the Open API', found.length);
+        list = found;
+      }
+    } catch (e) {
+      if (diag) diag.push({ api: 'open', region: open ? open.region : 'NA', lists: [], error: e.code || 'ERROR' });
+    }
+  }
   return list.map((d) => ({ ...d, kind: model.kindOf(d.model) }));
 }
 
@@ -173,7 +217,9 @@ async function ensureLink(gc) {
 
 async function readState(gc, d) {
   const sn = snOf(d);
-  const values = await withApi(gc, (api, region, tk) => api.state(region, tk, sn));
+  const values = await isOpen(gc, sn)
+    ? await withOpen(gc, (api, region, tk) => api.state(region, tk, sn))
+    : await withApi(gc, (api, region, tk) => api.state(region, tk, sn));
   raw.set(sn, { ...(raw.get(sn) || {}), ...values });
   online.set(sn, values.connected !== false);
   readAt.set(sn, Date.now());
@@ -187,9 +233,10 @@ function stateOf(d) {
   return model.normalize(d.kind, d.model, r);
 }
 
-function stale(sn) {
+/** Open API devices have no live reports: they count as stale like devices while the socket is down. */
+function stale(sn, viaOpen = false) {
   const age = Date.now() - (readAt.get(sn) || 0);
-  return age >= (link && link.connected ? REFRESH_MS : REFRESH_DOWN_MS);
+  return age >= (!viaOpen && link && link.connected ? REFRESH_MS : REFRESH_DOWN_MS);
 }
 
 function refreshInBackground(gc, d) {
@@ -206,8 +253,9 @@ async function getState(gc, d) {
   const sn = snOf(d);
   try {
     needSupport(gc);
-    ensureLink(gc).catch((e) => { status.lastError = e.code || e.message; });
-    if (!raw.has(sn) || stale(sn)) await readState(gc, d);
+    const viaOpen = await isOpen(gc, sn);
+    if (!viaOpen) ensureLink(gc).catch((e) => { status.lastError = e.code || e.message; });
+    if (!raw.has(sn) || stale(sn, viaOpen)) await readState(gc, d);
   } catch (e) {
     gc.log.debug('dreo getState failed', d.id, e.code || e.message);
     status.lastError = e.code || e.message;
@@ -238,8 +286,11 @@ async function setState(gc, d, patch) {
   const r = raw.get(sn) || {};
   const params = model.toParams(d.kind, d.model, r, patch, capsOf(d, noText, 'de'));
   if (!params) throw codeError('MIDEA_INVALID_PATCH', 'not a change this device offers');
-  await ensureLink(gc);
-  await link.command(sn, params);
+  if (await isOpen(gc, sn)) await withOpen(gc, (api, region, tk) => api.control(region, tk, sn, params));
+  else {
+    await ensureLink(gc);
+    await link.command(sn, params);
+  }
   raw.set(sn, { ...(raw.get(sn) || r), ...params });  // the device's reports follow
   online.set(sn, true);
   return stateOf(d);
@@ -260,7 +311,10 @@ async function tick(gc, devices) {
   }
   const cfg = await store.loadDreo(gc);
   if (!cfg.email || !cfg.passwordMd5 || status.needsLogin) return [];
-  if (!(link && link.connected) && Date.now() >= status.retryAt) {
+  const via = await viaMap(gc);
+  const viaOpen = (d) => via[snOf(d)] === 'open';
+  // the socket only for devices of the app API
+  if (mine.some((d) => !viaOpen(d)) && !(link && link.connected) && Date.now() >= status.retryAt) {
     try {
       await ensureLink(gc);
       Object.assign(status, { failures: 0, retryAt: 0, lastError: null });
@@ -274,7 +328,7 @@ async function tick(gc, devices) {
   const out = [];
   for (const d of mine) {
     const sn = snOf(d);
-    if (stale(sn)) {
+    if (stale(sn, viaOpen(d))) {
       try { await readState(gc, d); } catch (e) { gc.log.debug('dreo state read failed', d.id, e.code || e.message); }
     }
     if (!raw.has(sn)) continue;
@@ -297,6 +351,7 @@ function getStatus() {
 function reset() {
   if (link) link.close();
   link = null;
+  open = null;
   raw.clear(); online.clear(); readAt.clear(); refreshing.clear();
   Object.assign(status, { connected: false, needsLogin: false, lastError: null, failures: 0, retryAt: 0 });
   loggingIn = null;
@@ -304,5 +359,5 @@ function reset() {
 
 module.exports = {
   supported, connect, disconnect, listCloudDevices, ensureLink, getState, cachedState, setState, capsOf, tick, forget, getStatus, reset,
-  newApi, newLink, _raw: raw,
+  newApi, newOpenApi, newLink, _raw: raw,
 };

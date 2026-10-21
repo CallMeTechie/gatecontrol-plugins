@@ -205,6 +205,7 @@
   "settings.dreo_checked": "(geprüft – {{list}})",
   "settings.dreo_list_devices": "Geräteliste",
   "settings.dreo_list_rooms": "Räume",
+  "settings.dreo_list_open": "Geräte",
   "settings.dreo_region_failed": "Anmeldung dort nicht möglich",
   "settings.not_checked": "Eingetragen – noch nicht angemeldet. Speichern meldet an."
  },
@@ -414,6 +415,7 @@
   "settings.dreo_checked": "(checked – {{list}})",
   "settings.dreo_list_devices": "device list",
   "settings.dreo_list_rooms": "rooms",
+  "settings.dreo_list_open": "devices",
   "settings.dreo_region_failed": "no login possible there",
   "settings.not_checked": "Entered – not signed in yet. Saving signs in."
  }

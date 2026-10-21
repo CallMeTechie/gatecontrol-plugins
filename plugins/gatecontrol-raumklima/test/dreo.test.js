@@ -326,7 +326,7 @@ test('2.1.1: really nothing in the account — the status line says which region
     const lines = await connectDreo(host, dreo);
     const text = lines.filter((l) => l.group === 'dreo').map((l) => l.text).join(' | ');
     assert.match(text, /kein Gerät/);
-    assert.match(text, /kein Gerät \(geprüft – EU: Geräteliste 0, Räume 0 · US: Geräteliste 0, Räume 0\)/);
+    assert.match(text, /kein Gerät \(geprüft – EU: Geräteliste 0, Räume 0 · US: Geräteliste 0, Räume 0 · Open-API EU: Geräte 0\)/);
     assert.match(text, /Apple\/Google/);
   });
 });
@@ -351,5 +351,35 @@ test('2.1.1: an empty look of 2.1.0 is redone right after the update', () => {
     await host.gc.storage.set('dreo_found', { at: Date.now(), devices: [], error: null });   // what 2.1.0 kept
     await host.tick();
     assert.deepEqual((await asAdmin(host, 'GET', '/devices')).json.devices.map((d) => d.device_sn), ['dreo-HSH034S-9']);
+  });
+});
+
+test('2.2.0: a heater only Dreo’s Open API lists — found, read and switched over it (no socket)', () => {
+  const wall = { sn: 'WALL-1', deviceName: 'Heizlüfter', model: 'DR-HSH040S' };
+  const dreo = fakeDreo({ devices: [], rooms: [], openDevices: [wall], states: {
+    'WALL-1': { poweron: false, connected: true, mode: 'hotair', htalevel: 1, ecolevel: 72, temperature: 64 },
+  } });
+  return withHost({ dreo }, async (host) => {
+    const lines = await connectDreo(host, dreo);
+    assert.match(lines.filter((l) => l.group === 'dreo').map((l) => l.text).join(' | '), /Heizlüfter \(DR-HSH040S\)/);
+    const devices = (await asAdmin(host, 'GET', '/devices')).json.devices;
+    assert.deepEqual(devices.map((d) => [d.device_sn, d.name, d.kind]), [['dreo-WALL-1', 'Heizlüfter', 'heater']]);
+    const st = await asAdmin(host, 'GET', `/devices/${devices[0].id}/state`);
+    assert.deepEqual([st.status, st.json.state.power, st.json.state.indoorTemp], [200, false, 17.8], JSON.stringify(st.json));
+    const on = await asAdmin(host, 'POST', `/devices/${devices[0].id}/state`, { power: true });
+    assert.equal(on.status, 200, JSON.stringify(on.json));
+    assert.deepEqual(dreo.openCommands.at(-1), { devicesn: 'WALL-1', desired: { power_switch: true } });
+    assert.equal(dreo.states['WALL-1'].poweron, true);
+    assert.equal(dreo.sockets.length, 0, 'no WebSocket for Open API devices');
+    await host.tick();
+    assert.equal(dreo.sockets.length, 0);
+  });
+});
+
+test('2.2.0: the status line names the Open API when nothing is anywhere', () => {
+  const dreo = fakeDreo({ devices: [], rooms: [] });
+  return withHost({ dreo }, async (host) => {
+    const text = (await connectDreo(host, dreo)).filter((l) => l.group === 'dreo').map((l) => l.text).join(' | ');
+    assert.match(text, /Open-API EU: Geräte 0/);
   });
 });
