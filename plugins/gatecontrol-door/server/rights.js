@@ -8,6 +8,11 @@
 // plus per user and Ring location the right "Ring-Modus schalten" (Inaktiv /
 // Zuhause / Abwesend — server/modes.js).
 //
+// 1.5.0: a camera follows the rights of the lock it is linked to (view or
+// more); a camera without a lock has its own list of people who see it
+// (camera_rights) — they see it in the apps and the portal, get its pushes and
+// find its rings in the history.
+//
 // Administrators get no lock rights automatically: they set their own rights
 // like anyone. The Ring mode is the exception — administrators may always
 // switch it (it is a setting of the house, like the plugin's own settings). Kiosk devices and portal viewers recognised only by device trust
@@ -83,7 +88,29 @@ async function load(gc) {
     if (!modes.has(m.user_id)) modes.set(m.user_id, new Set());
     modes.get(m.user_id).add(m.location_id);
   }
-  return { levels, prefs, modes };
+  const cams = new Map();
+  for (const c of await store.all(gc, 'SELECT user_id, camera_id FROM camera_rights')) {
+    if (!cams.has(c.user_id)) cams.set(c.user_id, new Set());
+    cams.get(c.user_id).add(c.camera_id);
+  }
+  return { levels, prefs, modes, cams };
+}
+
+/** Does this user see the camera (a cameras row)? Linked: a right on its lock; unlinked: its own list (1.5.0). */
+function seesCamera(r, userId, cam) {
+  if (!cam) return false;
+  if (cam.lock_id) return !!levelOf(r, userId, cam.lock_id);
+  const s = r.cams && r.cams.get(userId);
+  return !!s && s.has(cam.id);
+}
+
+/** The people who see a camera → [userId] (they get its pushes). */
+function cameraViewers(r, cam) {
+  if (!cam) return [];
+  if (cam.lock_id) return usersWith(r, cam.lock_id, 'view');
+  const out = [];
+  for (const [userId, s] of r.cams || []) if (s.has(cam.id)) out.push(userId);
+  return out.sort((a, b) => a - b);
 }
 
 /** May this user switch the Ring mode of a location? Administrators always; others with the right. */
@@ -110,10 +137,11 @@ function usersWith(r, lockId, min) {
   return out.sort((a, b) => a - b);
 }
 
-/** Has this user any right at all (portal tab, app tab)? */
+/** Has this user any right at all (portal tab, app tab)? 1.5.0: also a camera without a lock. */
 function hasAny(r, userId) {
   const m = r.levels.get(userId);
-  return !!m && m.size > 0;
+  const c = r.cams && r.cams.get(userId);
+  return (!!m && m.size > 0) || (!!c && c.size > 0);
 }
 
-module.exports = { LEVELS, ACTIONS, NEEDS, atLeast, canAct, parseWindow, windowAllows, load, levelOf, prefsOf, usersWith, hasAny, mayMode };
+module.exports = { LEVELS, ACTIONS, NEEDS, atLeast, canAct, parseWindow, windowAllows, load, levelOf, prefsOf, usersWith, hasAny, mayMode, seesCamera, cameraViewers };

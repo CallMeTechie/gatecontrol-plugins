@@ -1,6 +1,6 @@
 /* Admin page "Einstellungen": time zone, notification language, picture retention, motion gap, Ring polling, Nuki log import,
    the doorbell in the family chat (1.3.0), the doorbell diagnosis (1.4.0: last ring seen, last chat result with its reason,
-   how Ring's dings/active answers). */
+   how Ring's dings/active answers; 1.5.0: warnings — Ring not polled, a camera nobody sees). */
 (function () {
   'use strict';
   var D = window.DOOR;
@@ -33,20 +33,33 @@
     var a = d.active;
     $('#dr-d-active').textContent = !a ? T('diag.active_none') : (a.state === 'off' ? T('diag.active_off', { code: a.code || '?', time: time(a.offUntil) }) : T('diag.active_ok'));
   }
-  function fill(c, ch) {
+  /** 1.5.0: what keeps a ring from reaching anybody (server: admin/settings warnings). */
+  function warns(list) {
+    var box = D.clear($('#dr-d-warns'));
+    (list || []).forEach(function (w) {
+      var s = w.code === 'ring_off' ? T('diag.warn_ring_off')
+        : (w.lock ? T('diag.warn_no_viewers_lock', { camera: w.camera, lock: w.lock }) : T('diag.warn_no_viewers', { camera: w.camera }));
+      box.appendChild(D.el('div', { class: 'dr-note', text: s }));
+    });
+  }
+  function ringOff() { $('#dr-s-ring-off').hidden = $('#dr-s-ring').checked; }
+  function fill(c, ch, w) {
     $('#dr-s-tz').value = c.timezone; $('#dr-s-lang').value = c.notifyLang; $('#dr-s-media').value = String(c.mediaDays);
     $('#dr-s-gap').value = String(c.motionGapMin); $('#dr-s-ring').checked = c.ring; $('#dr-s-nlog').checked = c.nukiLogImport;
     $('#dr-s-chat').checked = c.familyChat;
     chatHint(ch);
     diag(ch);
+    warns(w);
+    ringOff();
   }
-  D.api('GET', 'admin/settings').then(function (r) { fill(r.config, r.chat); }).catch(D.warn);
+  $('#dr-s-ring').addEventListener('change', ringOff);
+  D.api('GET', 'admin/settings').then(function (r) { fill(r.config, r.chat, r.warnings); }).catch(D.warn);
   $('#dr-set').addEventListener('submit', function (e) {
     e.preventDefault();
     D.api('PUT', 'admin/settings', {
       timezone: $('#dr-s-tz').value.trim(), notifyLang: $('#dr-s-lang').value, mediaDays: Number($('#dr-s-media').value),
       motionGapMin: Number($('#dr-s-gap').value), ring: $('#dr-s-ring').checked, nukiLogImport: $('#dr-s-nlog').checked,
       familyChat: $('#dr-s-chat').checked,
-    }).then(function (r) { fill(r.config, r.chat); D.toast(T('common.saved')); }).catch(D.warn);
+    }).then(function (r) { fill(r.config, r.chat, r.warnings); D.toast(T('common.saved')); }).catch(D.warn);
   });
 })();

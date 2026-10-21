@@ -10,13 +10,18 @@
 //   POST   admin/ring/login { email, password, code? }      POST admin/ring/logout · admin/ring/sync
 //   PATCH  admin/cameras/<id> { name?, lockId?, enabled? }  GET admin/cameras/<id>/snapshot[?refresh=1]
 //   POST   admin/modes/<locationId>/<disarmed|home|away>    switch a Ring location's mode (server/modes.js)
-//   GET    admin/rights                      PUT admin/rights/<userId> { locks?, autoUnlock?, window?, cameras?, modes? }
+//   GET    admin/rights                      PUT admin/rights/<userId> { locks?, autoUnlock?, window?, cameras?, modes?, cameraRights? }
+//                                            1.5.0: cameraRights { <cameraId>: true|false } — who sees a camera without a lock
+//                                            (GET: cameraRights { <userId>: [cameraId] }, the cameras of a lock follow its rights)
 //   GET    admin/history[?cursor&limit&lockId&kind]          GET admin/events/<id>
 //   GET    admin/settings                    PUT admin/settings { timezone?, notifyLang?, mediaDays?, motionGapMin?, ring?, nukiLogImport?, familyChat? }
 //                                            both answer { config, chat: { api, available, last } } (1.3.0, server/chat.js)
 //                                            1.4.0: last.fallback { to, sent, failed } | null; chat.detect = the doorbell diagnosis
 //                                            { lastDing: { at, seenAt, delayS, source: 'active'|'events', camera, outcome, pushed } | null,
 //                                              active: { state: 'ok'|'off', code, since, offUntil } | null } (server/cameras.js)
+//                                            1.5.0: warnings [{ code: 'ring_off' } | { code: 'no_viewers', camera, lock }] —
+//                                            Ring connected but not polled (no ring is noticed: no push, no chat card),
+//                                            a camera (switched on) nobody sees (its rings reach nobody)
 //
 // Secrets (bridge tokens, the Nuki Web token, the Ring refresh token) are
 // written with gc.settings.setSecret and NEVER sent back — the pages only see
@@ -321,12 +326,14 @@ async function rightsView(gc) {
   }
   const modeRights = {};
   for (const [uid, set] of r.modes) modeRights[uid] = [...set].sort();
+  const cameraRights = {};
+  for (const [uid, set] of r.cams) cameraRights[uid] = [...set].sort((a, b) => a - b);
   return {
     users, locks: (await locks.all(gc)).map((l) => ({ id: l.id, name: l.name, type: nuki.isOpener(l.device_type) ? 'opener' : 'smartlock', actions: l.actions })),
     cameras: (await cameras.all(gc)).filter((c) => c.present === 1).map((c) => ({ id: c.id, name: c.name, lockId: c.lock_id || null })),
     // Ring locations a mode right makes sense for (present, cameras there, no Ring Alarm)
     locations: (await modes.all(gc)).filter(modes.readable).map((l) => ({ id: l.location_id, name: l.name, supported: modes.supported(l) })),
-    rights: levels, prefs, cameraPrefs: camPrefs, modeRights,
+    rights: levels, prefs, cameraPrefs: camPrefs, modeRights, cameraRights,
   };
 }
 
@@ -354,6 +361,15 @@ async function putRights(gc, userId, body, now) {
       modeSet.push([k, on]);
     }
   }
+  const camRights = [];
+  if (body.cameraRights !== undefined) {
+    if (!body.cameraRights || typeof body.cameraRights !== 'object' || Array.isArray(body.cameraRights)) throw fail('invalid', { field: 'cameraRights' });
+    for (const [k, on] of Object.entries(body.cameraRights)) {
+      const id = posInt(k);
+      if (!id || !camIds.has(id) || typeof on !== 'boolean') throw fail('invalid', { field: 'cameraRights' });
+      camRights.push([id, on]);
+    }
+  }
   const autoUnlock = body.autoUnlock === undefined ? undefined : bool(body.autoUnlock);
   const win = body.window === undefined ? undefined : rights.parseWindow(body.window);
   const camPrefs = [];
@@ -377,6 +393,10 @@ async function putRights(gc, userId, body, now) {
         userId, autoUnlock === undefined ? cur.auto_unlock : (autoUnlock ? 1 : 0), win === undefined ? cur.time_window : (win ? JSON.stringify(win) : null), now,
       ]);
     }
+    for (const [id, on] of camRights) {
+      if (on) await store.run(gc, 'INSERT OR IGNORE INTO camera_rights (user_id, camera_id) VALUES (?, ?)', [userId, id]);
+      else await store.run(gc, 'DELETE FROM camera_rights WHERE user_id = ? AND camera_id = ?', [userId, id]);
+    }
     for (const [loc, on] of modeSet) {
       if (on) await store.run(gc, 'INSERT OR IGNORE INTO mode_rights (user_id, location_id) VALUES (?, ?)', [userId, loc]);
       else await store.run(gc, 'DELETE FROM mode_rights WHERE user_id = ? AND location_id = ?', [userId, loc]);
@@ -389,6 +409,30 @@ async function putRights(gc, userId, body, now) {
   });
   gc.log.info('rights changed', userId);
   return rightsView(gc);
+}
+
+// ─── doorbell warnings (1.5.0) ─────────────────
+
+/**
+ * What keeps rings from reaching anybody, for the diagnosis: polling switched off while Ring is
+ * connected, and cameras (present, switched on) nobody sees — without a lock nobody was given them,
+ * with a lock nobody has a right on it.
+ */
+async function warnings(gc, cfg) {
+  if (!(await ring.hasToken(gc))) return [];
+  const out = [];
+  if (!cfg.ring) out.push({ code: 'ring_off' });
+  const r = await rights.load(gc);
+  const lockNames = new Map((await locks.all(gc)).map((l) => [l.id, l.name]));
+  for (const cam of await cameras.all(gc)) {
+    if (cam.present !== 1 || cam.enabled !== 1) continue;
+    if (!rights.cameraViewers(r, cam).length) out.push({ code: 'no_viewers', camera: cam.name, lock: cam.lock_id ? lockNames.get(cam.lock_id) || null : null });
+  }
+  return out;
+}
+
+async function settingsView(gc, config_) {
+  return { config: config_, chat: { ...(await chat.info(gc)), detect: await cameras.diagnosis(gc) }, warnings: await warnings(gc, config_) };
 }
 
 // ─── route ─────────────────────────────────────
@@ -452,8 +496,8 @@ async function route(req, gc, seg, cfg, now, t) {
     return api.event(gc, ctx, id, { admin: true });
   }
   if (a === 'settings') {
-    if (n === 2 && GET) return { config: cfg, chat: { ...(await chat.info(gc)), detect: await cameras.diagnosis(gc) } };
-    if (n === 2 && PATCH) return { config: await config.update(gc, body), chat: { ...(await chat.info(gc)), detect: await cameras.diagnosis(gc) } };
+    if (n === 2 && GET) return settingsView(gc, cfg);
+    if (n === 2 && PATCH) return settingsView(gc, await config.update(gc, body));
   }
   throw fail('not_found');
 }

@@ -231,7 +231,8 @@ async function handleEvent(gc, cfg, ev, now, opts = {}) {
   out.outcome = 'handled';
   const r = await rights.load(gc);
   const prefs = await prefsOf(gc, camera.id);
-  const viewers = lock ? rights.usersWith(r, lock.id, 'view') : [];
+  // 1.5.0: a camera without a lock has its own list of people (camera_rights) — before, nobody got its pushes
+  const viewers = lock ? rights.usersWith(r, lock.id, 'view') : rights.cameraViewers(r, { ...camera, lock_id: null });
   let users;
   if (ev.kind === 'ding') users = viewers.filter((u) => !prefs.has(u) || prefs.get(u).ding);
   else {

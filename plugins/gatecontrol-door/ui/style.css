@@ -63,3 +63,6 @@ body{padding:2px 2px 24px}
 .dr-seg button[aria-pressed="true"]:disabled{opacity:.8}
 .dr-seg[aria-busy="true"]{opacity:.7}
 @media (max-width:520px){.dr-seg{display:flex;width:100%}.dr-seg button{min-width:0}}
+/* 1.5.0: warnings of the doorbell diagnosis */
+.dr-warns{display:flex;flex-direction:column;gap:8px}
+.dr-warns:empty{display:none}
