@@ -2,6 +2,26 @@
 
 Škoda-Fahrzeuge (MySkoda) als GateControl-Plugin – bisher fest in GateControl eingebaut.
 
+## 1.6.0
+- **Fahrtenbuch mit Karte**: Jede Fahrt wird auf einer OpenStreetMap-Karte eingezeichnet – auf der
+  Seite „Fahrtenbuch“ und im Portal neben der Liste (auf schmalen Bildschirmen darüber): alle Fahrten
+  des Monats, farbig nach Zweck, gleiche Strecken einmal mit Anzahl („18×“), Filter nach Zweck;
+  „Auf der Karte“ an jeder Fahrt zoomt auf sie, ein Klick auf eine Strecke markiert die Fahrt in der Liste.
+  - Škoda meldet nur, wo das Auto parkt – nicht den gefahrenen Weg. Das Plugin fragt deshalb einmal je
+    Fahrt den Routendienst von OpenStreetMap (FOSSGIS, `routing.openstreetmap.de`) nach dem Straßenweg
+    zwischen Start und Ziel und speichert ihn bei der Fahrt („Strecke berechnet“). Sagt der
+    Kilometerstand deutlich mehr als der Weg (Umweg, Zwischenstopps) oder findet der Dienst keinen,
+    zeigt die Karte nur die Luftlinie (gestrichelt). Höchstens drei Anfragen pro Minute, mit Pause;
+    fällt der Dienst aus, wird es später erneut versucht.
+  - Im Portal gibt es die Karte wie den Fahrzeugstandort nur nach Anmeldung.
+- **Fahrtenbuch in der App** (Android ab 1.56): eigene Seite mit Monat, Summen, Liste, Gesamtkarte und
+  jeder Fahrt auf der Karte. Dafür hat das Plugin jetzt eine App-Schnittstelle (`app/logbook…`, nur die
+  Fahrzeuge der angemeldeten Person) – **das Update braucht deshalb einmal die Zustimmung eines
+  Administrators** (neue Berechtigungen: Apps, Routendienst, Karten).
+- **Widget „Fahrtenbuch“**: Der Knopf unten öffnet das Fahrtenbuch in der App (GateControl ab 1.189).
+  Er schaltet nicht mehr zwischen Geschäftlich und Privat um – den Zweck setzen weiter die vier Knöpfe
+  darüber. Ältere Apps zeigen beim Tippen, wo das Fahrtenbuch zu finden ist.
+
 ## 1.5.4
 - **Fahrtenbuch-Widget kompakter**: Die Monatssumme hat ein Kalender-Symbol statt „Diesen Monat“
   (GateControl ab 1.187 und App ab der nächsten Version; ältere zeigen weiter den Text). Die Zwecke

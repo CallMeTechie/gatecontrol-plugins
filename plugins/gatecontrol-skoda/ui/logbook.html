@@ -17,9 +17,20 @@
   </div>
   <div class="lb-hint" id="lb-hint" role="note" hidden></div>
   <div class="lb-sum" id="lb-sum"></div>
-  <div class="lb-list" id="lb-list" aria-label="{{t:logbook.title}}"></div>
-  <p class="muted lb-empty" id="lb-empty" hidden></p>
-  <p class="form-hint lb-note">{{t:logbook.how}} <span id="lb-detection" hidden></span></p>
+  <div class="lb-body">
+    <div class="lb-col">
+      <div class="lb-list" id="lb-list" aria-label="{{t:logbook.title}}"></div>
+      <p class="muted lb-empty" id="lb-empty" hidden></p>
+      <p class="form-hint lb-note">{{t:logbook.how}} <span id="lb-detection" hidden></span></p>
+    </div>
+    <!-- 1.6.0: every trip of the month on the map (ui/lbmap.js) -->
+    <section class="lb-map-box" id="lb-map-box" aria-label="{{t:logbook.map_title}}" hidden>
+      <div class="lb-map-filters" role="group" aria-label="{{t:logbook.purpose}}"></div>
+      <div class="lb-map" role="img" aria-label="{{t:logbook.map_title}}"></div>
+      <p class="muted lb-map-msg" role="status" hidden></p>
+      <p class="form-hint lb-map-hint">{{t:logbook.map_hint}}</p>
+    </section>
+  </div>
 
   <div class="modal-overlay" id="lb-export-modal" role="dialog" aria-modal="true" aria-labelledby="lb-x-title" hidden>
     <div class="modal">

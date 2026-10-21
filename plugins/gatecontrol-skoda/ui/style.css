@@ -125,4 +125,26 @@ body{padding:2px 2px 24px}
 .lb-left{margin-right:auto}
 .lb-msg{min-height:18px;margin:0;font-size:13px;color:var(--crit)}
 .pt-tag{display:inline-flex;align-items:center;min-height:24px;padding:0 9px;border-radius:999px;border:1px solid var(--line);font-size:12px;color:var(--muted)}
+/* 1.6.0: the map beside the list (ui/lbmap.js) — above it on narrow screens */
+.lb-body{display:grid;grid-template-columns:minmax(0,1fr);gap:14px}
+.lb-col{display:flex;flex-direction:column;gap:10px;min-width:0}
+.lb-map-box{display:flex;flex-direction:column;gap:8px;order:-1;min-width:0}
+.lb-map{height:300px;border-radius:14px;border:1px solid var(--line-2);overflow:hidden;background:var(--surface-2)}
+.lb-map-filters{display:flex;flex-wrap:wrap;gap:6px}
+.lb-chip{display:inline-flex;align-items:center;gap:6px;min-height:32px;padding:0 12px;border-radius:999px;border:1px solid var(--line-2);background:var(--surface);color:var(--text);font:600 12px var(--font);cursor:pointer}
+.lb-chip[aria-pressed="true"]{background:var(--btn-bg);color:var(--btn-text);border-color:transparent}
+.lb-dot{width:10px;height:10px;border-radius:5px;background:#566274}
+.lb-dot[data-p="commute"]{background:#0B8A5C}.lb-dot[data-p="business"]{background:#1A56C4}.lb-dot[data-p="private"]{background:#B45309}
+.lb-dot[data-p="open"]{background:transparent;border:2px dashed #566274;box-sizing:border-box}
+.lb-map-msg,.lb-map-hint{margin:0}
+.lb-count{width:0!important;height:0!important;background:none;border:0}
+.lb-count span{position:absolute;left:0;top:0;transform:translate(-50%,-50%);padding:2px 8px;border-radius:999px;background:#566274;color:#fff;font:700 12px var(--font,sans-serif);white-space:nowrap;box-shadow:0 1px 4px rgba(0,0,0,.25)}
+.lb-count span[data-p="commute"]{background:#0B8A5C}.lb-count span[data-p="business"]{background:#1A56C4}.lb-count span[data-p="private"]{background:#B45309}
+.lb-pop{display:flex;flex-direction:column;gap:3px;font:13px var(--font)}
+.lb-trip[data-sel="true"]{border-color:var(--accent,#2563EB);box-shadow:0 0 0 2px var(--accent,#2563EB) inset}
+@media (min-width:1000px){
+  .lb-body{grid-template-columns:minmax(0,1fr) minmax(0,1.1fr);align-items:start}
+  .lb-map-box{order:0;position:sticky;top:12px}
+  .lb-map{height:min(640px,calc(100vh - 160px));min-height:420px}
+}
 @media (max-width:560px){.lb-actions{margin-left:0}.lb-row3{grid-template-columns:1fr 1fr}}

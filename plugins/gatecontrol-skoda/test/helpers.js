@@ -65,6 +65,7 @@ const fx = {
   readiness: { unreachable: false, ignitionOn: false, inMotion: false },
   drivingScore: { weeklyScore: { main: 81 }, monthlyScore: { main: 78 }, lastCalculationDate: '2026-07-21' },
   nominatim: { address: { road: 'Hauptstraße', house_number: '5', postcode: '50667', city: 'Köln' }, display_name: 'Hauptstraße 5, Köln' },
+  route: { code: 'Ok', routes: [{ distance: 21000, duration: 1500, geometry: { type: 'LineString', coordinates: [[7.0, 51.0], [7.03, 51.04], [7.06, 51.07], [7.1, 51.1]] } }] },
 };
 
 /**
@@ -147,6 +148,12 @@ function fakeSkoda(opts = {}) {
       return o.binary ? { status: 200, headers: { 'content-type': 'image/png' }, bodyBase64: cloud.render.toString('base64') } : { status: 200, headers: {}, body: cloud.render.toString('latin1') };
     }
     if (url.startsWith('https://nominatim.openstreetmap.org/reverse?')) return json(fx.nominatim);
+    // OpenStreetMap routing (1.6.0): cloud.route = the answer (default: a road of 21 km), or a status
+    if (url.startsWith('https://routing.openstreetmap.de/routed-car/route/v1/driving/')) {
+      cloud.routings = (cloud.routings || 0) + 1;
+      if (typeof cloud.route === 'number') return json({}, cloud.route);
+      return json(cloud.route || fx.route);
+    }
 
     // MySkoda API (bearer)
     if (!url.startsWith(API)) return json({}, 404);

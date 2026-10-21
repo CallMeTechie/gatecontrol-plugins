@@ -11,7 +11,11 @@
 //          → { file: { name, type, encoding: 'base64', data } } (the frame saves it with GC.saveFile)
 //
 // In the portal the same under portal/logbook…, only for the viewer's own
-// vehicles; changes only after a real login (user.loggedIn).
+// vehicles; changes only after a real login (user.loggedIn). 1.6.0: the same
+// for the GateControl apps under app/logbook… (the token's owner, always
+// signed in), and every trip carries start / end and its way on the map
+// (route, server/routing.js) — all ways of a month together at most
+// ROUTE_POINTS_BUDGET points, so a busy month stays a small answer.
 
 const store = require('./store');
 const logbook = require('./logbook');
@@ -32,6 +36,18 @@ async function vehiclesFor(gc, user, admin) {
 }
 
 const vehicleView = (v) => ({ id: v.id, name: v.name || null, model: v.model || null, vin: v.vin });
+
+const ROUTE_POINTS_BUDGET = 20000;
+const ROUTE_POINTS_MIN = 12;
+const ROUTE_POINTS_MAX = 150;
+
+/** A trip without start / end / route for a portal viewer who did not sign in (keep: true leaves it as it is). */
+const withoutMap = (tr, keep) => (keep ? tr : { ...tr, start: null, end: null, route: null });
+
+/** Points per way for n trips: the budget shared, between 12 and 150. */
+function routeMaxFor(n) {
+  return Math.max(ROUTE_POINTS_MIN, Math.min(ROUTE_POINTS_MAX, Math.floor(ROUTE_POINTS_BUDGET / Math.max(1, n))));
+}
 
 async function tripAllowed(gc, trip, vehicles) {
   return trip && vehicles.some((v) => v.vin === trip.vin);
@@ -62,7 +78,8 @@ async function route(req, gc, seg, { admin }) {
     const trips = v ? await logbook.listTrips(gc, v.vin, range[0], range[1], logbook.EXPORT_ROWS_MAX) : [];
     return { json: {
       ok: true, month, currentMonth: logbook.currentMonth(), vehicles: vehicles.map(vehicleView), vehicleId: v ? v.id : null,
-      trips: trips.map((tr) => logbook.tripView(tr, lang, users)).reverse(), // newest first on screen
+      // newest first on screen; positions and ways (the map) like the vehicle's position only after a real login
+      trips: trips.map((tr) => withoutMap(logbook.tripView(tr, lang, users, routeMaxFor(trips.length)), canEdit)).reverse(),
       summary: logbook.summary(trips), moving: v ? await logbook.isMoving(gc, v.vin) : false,
       // 1.5.2: the last mileage and since when a trip waits for the higher one (shown under the list)
       detection: v ? await logbook.detection(gc, v.vin) : null,
@@ -113,4 +130,4 @@ async function route(req, gc, seg, { admin }) {
   throw fail('NOT_FOUND');
 }
 
-module.exports = { route, vehiclesFor };
+module.exports = { route, vehiclesFor, routeMaxFor };

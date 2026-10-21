@@ -14,6 +14,10 @@
 //     POST /portal/vehicles/:id/command   (the host lets only signed-in viewers change things)
 //   logbook (1.5.0, server/logbookapi.js): GET logbook · logbook/export, PUT/DELETE logbook/trips/:id,
 //     POST logbook/trips — on the admin page "Fahrtenbuch" and as portal/logbook… for the owners
+//   app API     (1.6.0, the GateControl apps, req.user.app; permissions.app, no app tab of its own)
+//     GET app/logbook · app/logbook/export, PUT app/logbook/trips/:id — the logbook of the token
+//     owner's vehicles (the Android app's logbook pages with their maps)
+//   ways of the trips on the map (1.6.0, server/routing.js): computed in the background (tick)
 //   quick actions of the GateControl apps (hooks quickActions / runQuickAction)
 //     the portal's controls for a signed-in owner, grouped per vehicle
 //     (device v:<id>): climate (with the vehicle's widget), charging, window
@@ -41,6 +45,7 @@ const legacy = require('./legacy');
 const alerts = require('./alerts');
 const logbook = require('./logbook');
 const logbookApi = require('./logbookapi');
+const routing = require('./routing');
 const texts = require('./texts.json');
 
 const state = { importing: false };
@@ -377,12 +382,13 @@ async function logbookAction(gc, v, lang) {
       options: ['open', 'private', 'business', 'commute'].map((p) => ({ id: p, label: clip(logbook.purposeLabel(p === 'open' ? null : p, lang), 20), icon: PURPOSE_ICONS[p] })),
     });
   }
+  // 1.6.0: a tap opens the logbook in the app (GateControl ≥ 1.189.0, opens) — no longer a
+  // business / private toggle (the choice above sets the purpose); an app without the page runs
+  // it and gets a hint where the logbook is
   const a = {
-    kind: 'toggle', title: t(lang, 'qa.logbook'), widget: w,
-    verbs: { on: t(lang, 'logbook.purpose_business'), off: t(lang, 'logbook.purpose_private') },
+    kind: 'button', title: t(lang, 'qa.logbook'), widget: w,
+    opens: { screen: 'logbook', ref: String(v.id) },
   };
-  if (last && last.purpose === 'business') a.state = 'on';
-  else if (last && last.purpose === 'private') a.state = 'off';
   a.subtitle = last ? clip(`${t(lang, 'qa.logbook_last')}: ${km(last.distanceKm)} km · ${logbook.purposeLabel(last.purpose, lang)}`, 60)
     : clip(t(lang, 'qa.logbook_none'), 60);
   return a;
@@ -401,7 +407,7 @@ async function runLogbookAction(gc, user, lang, vid, ctl, value, target) {
     if (ctl !== 'purpose' || !['open', ...logbook.PURPOSES].includes(value)) return { ok: false, message: t(lang, 'qa.unknown') };
     purpose = value === 'open' ? null : value;
   } else if (target === 'on' || target === 'off') purpose = target === 'on' ? 'business' : 'private';
-  else purpose = last.purpose === 'business' ? 'private' : 'business';
+  else return { ok: true, message: clip(t(lang, 'qa.logbook_open_hint'), 120), widget: (await logbookAction(gc, v, lang)).widget };
   await logbook.updateTrip(gc, last.id, { purpose });
   const action = await logbookAction(gc, v, lang);
   const out = { ok: true, message: clip(t(lang, 'qa.logbook_set', { km: logbook.fmtKm(last.distanceKm, lang), purpose: logbook.purposeLabel(purpose, lang) }), 120), widget: action.widget };
@@ -520,6 +526,12 @@ async function portalRoute(req, gc, seg) {
   throw fail('NOT_FOUND');
 }
 
+/** The apps (1.6.0): the logbook of the token owner's vehicles — like the portal's, always signed in. */
+async function appRoute(req, gc, seg) {
+  if (seg[1] === 'logbook') return logbookApi.route(req, gc, seg.slice(2), { admin: false });
+  throw fail('NOT_FOUND');
+}
+
 async function adminRoute(req, gc, seg) {
   const m = req.method;
   const body = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
@@ -590,6 +602,7 @@ function resetCaches() {
   geocode.reset();
   alerts.reset();
   logbook.reset();
+  routing.reset();
 }
 
 module.exports = {
@@ -602,6 +615,10 @@ module.exports = {
     const lang = req.lang;
     try {
       const seg = String(req.path || '/').split('/').filter(Boolean);
+      if (seg[0] === 'app') {
+        if (!req.user || !Number.isInteger(req.user.id) || req.user.app !== true) throw fail('FORBIDDEN');
+        return await appRoute(req, gc, seg);
+      }
       if (seg[0] === 'portal') {
         if (!req.user || !req.user.portal) throw fail('FORBIDDEN');
         return await portalRoute(req, gc, seg);
@@ -673,6 +690,7 @@ module.exports = {
   async tick(gc) {
     if (state.importing) return;
     await service.pollTick(gc);
+    await routing.fillRoutes(gc); // 1.6.0: the ways of new trips on the map (never throws)
   },
 
   _state: state,

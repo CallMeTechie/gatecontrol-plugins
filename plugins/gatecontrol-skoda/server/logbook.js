@@ -33,6 +33,7 @@
 const geocode = require('./geocode');
 const notify = require('./notify');
 const store = require('./store');
+const routing = require('./routing');
 const { PdfDoc } = require('./pdf');
 const texts = require('./texts.json');
 
@@ -154,6 +155,8 @@ function rowToTrip(r) {
     purpose: PURPOSES.includes(r.purpose) ? r.purpose : null, note: r.note || '',
     driverUserId: r.driver_user_id == null ? null : Number(r.driver_user_id),
     source: r.source === 'manual' ? 'manual' : 'auto', editedAt: r.edited_at || null,
+    // 1.6.0: the way on the map (server/routing.js)
+    route: r.route == null ? null : r.route, routeKind: r.route_kind || null, routeKm: r.route_km == null ? null : r.route_km,
   };
 }
 
@@ -368,14 +371,24 @@ async function deleteTrip(gc, id) {
 
 // ─── Views ──────────────────────────────────────
 
-function tripView(tr, lang, users) {
+const pos = (lat, lon) => (validCoord(lat, lon) ? { lat, lon } : null);
+
+/**
+ * A trip for the pages and apps. 1.6.0: startedAt / endedAt (ISO), start / end
+ * ({ lat, lon } or null) and route ({ kind, km, points } or null — the way on
+ * the map, at most routeMax points).
+ */
+function tripView(tr, lang, users, routeMax = routing.STORE_POINTS_MAX) {
   const s = Date.parse(tr.startedAt);
   const e = Date.parse(tr.endedAt);
   const p = parts(s);
   return {
     id: tr.id, date: `${p.y}-${pad(p.m)}-${pad(p.d)}`, dateLabel: fmtDate(s, lang), startTime: fmtTime(s), endTime: fmtTime(e),
+    startedAt: tr.startedAt, endedAt: tr.endedAt,
     startKm: tr.startKm, endKm: tr.endKm, distanceKm: tr.distanceKm,
     startAddress: tr.startAddress, endAddress: tr.endAddress,
+    start: pos(tr.startLat, tr.startLon), end: pos(tr.endLat, tr.endLon),
+    route: routing.viewOf({ route: tr.route, route_kind: tr.routeKind, route_km: tr.routeKm }, routeMax),
     purpose: tr.purpose, note: tr.note, source: tr.source, edited: Boolean(tr.editedAt),
     driver: tr.driverUserId != null && users.has(tr.driverUserId) ? users.get(tr.driverUserId) : null,
     driverUserId: tr.driverUserId,

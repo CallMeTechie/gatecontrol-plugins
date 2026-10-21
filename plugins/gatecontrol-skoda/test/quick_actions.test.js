@@ -51,7 +51,7 @@ test('quick actions: the portal\'s controls for the signed-in owner, stored stat
     [`climate:${v}`, 'Klimatisierung', 'Elroq', 'toggle', 'off', false],
     [`charging:${v}`, 'Laden', 'Elroq', 'toggle', 'on', false],
     [`windowheat:${v}`, 'Scheibenheizung', 'Elroq', 'toggle', 'off', false],
-    [`logbook:${v}`, 'Fahrtenbuch', 'Noch keine Fahrt erfasst', 'toggle', null, false],
+    [`logbook:${v}`, 'Fahrtenbuch', 'Noch keine Fahrt erfasst', 'button', null, false],
   ]);
   assert.ok(list.every((a) => /^M/.test(a.icon)));
   assert.ok(list.every((a) => a.look === null && a.confirmWhen === null));
@@ -143,12 +143,12 @@ test('target states (GateControl ≥ 1.173.0): every toggle declares its verbs a
   assert.deepEqual(await verbs('de'), [
     ['climate', { on: 'Einschalten', off: 'Ausschalten' }, true], ['charging', { on: 'Laden starten', off: 'Laden stoppen' }, true],
     ['windowheat', { on: 'Einschalten', off: 'Ausschalten' }, true], ['lock', { on: 'Verriegeln', off: 'Entriegeln' }, true],
-    ['logbook', { on: 'Geschäftlich', off: 'Privat' }, false],
+    ['logbook', null, false],
   ]);
   assert.deepEqual(await verbs('en'), [
     ['climate', { on: 'Turn on', off: 'Turn off' }, true], ['charging', { on: 'Start charging', off: 'Stop charging' }, true],
     ['windowheat', { on: 'Turn on', off: 'Turn off' }, true], ['lock', { on: 'Lock', off: 'Unlock' }, true],
-    ['logbook', { on: 'Business', off: 'Private' }, false],
+    ['logbook', null, false],
   ]);
   const last = () => cloud.commands.at(-1);
   const run = async (id, state, lang = 'de') => { const r = await host.runQuickAction(ADA, `${id}:${v}`, lang, { state }); await settle(); return r; };

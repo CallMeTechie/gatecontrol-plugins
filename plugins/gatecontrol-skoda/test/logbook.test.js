@@ -243,14 +243,16 @@ test('portal: the owner sees and classifies their own trips (signed in), others 
   });
 });
 
-test('quick action: the last trip business/private, the widget with the month and a choice; not for rules', () => {
+test('quick action: opens the logbook in the app (1.6.0), the widget with the month and a choice; not for rules', () => {
   const cloud = fakeSkoda();
   return withHost({ cloud, gatecontrol: GC }, async (host) => {
     const { vehicleId } = await connected(host, cloud);
     await asAdmin(host, 'PUT', `/vehicles/${vehicleId}/owners`, { user_ids: [ADA.id] });
     // before the first trip: offered (its widget can be placed), a tap only says how trips get in
     const first = (await host.quickActions(ADA)).find((a) => a.id === `logbook:${vehicleId}`);
-    assert.deepEqual([first.kind, first.state, first.subtitle, first.widget.value, first.widget.controls.length], ['toggle', null, 'Noch keine Fahrt erfasst', 0, 0]);
+    assert.deepEqual([first.kind, first.state, first.subtitle, first.widget.value, first.widget.controls.length], ['button', null, 'Noch keine Fahrt erfasst', 0, 0]);
+    // GateControl ≥ 1.189.0 lists opens (the mock host drops what the GateControl it emulates does not know)
+    if ('opens' in first) assert.deepEqual(first.opens, { screen: 'logbook', ref: String(vehicleId) });
     assert.match(first.widget.status, /^Noch keine Fahrt/);
     const none = await host.runQuickAction(ADA, `logbook:${vehicleId}`);
     assert.deepEqual([none.body.ok, none.body.widget.value], [false, 0]);
@@ -259,7 +261,7 @@ test('quick action: the last trip business/private, the widget with the month an
     await withState({ lat: 51.1, lon: 7.1, km: 5232 }, () => sync(host, 1));
     const qa = (await host.quickActions(ADA)).find((a) => a.id === `logbook:${vehicleId}`);
     assert.ok(qa);
-    assert.deepEqual([qa.kind, qa.state, qa.device.id, qa.widget.value, qa.widget.unit, qa.widget.state], ['toggle', null, `lb:${vehicleId}`, 22, 'km', 'warn']);
+    assert.deepEqual([qa.kind, qa.state, qa.device.id, qa.widget.value, qa.widget.unit, qa.widget.state], ['button', null, `lb:${vehicleId}`, 22, 'km', 'warn']);
     assert.match(qa.subtitle, /^Letzte Fahrt: 22 km · Offen$/);
     assert.deepEqual(qa.widget.controls[0].options.map((o) => o.id), ['open', 'private', 'business', 'commute']);
     assert.equal(qa.widget.controls[0].value, 'open');
@@ -273,10 +275,12 @@ test('quick action: the last trip business/private, the widget with the month an
     assert.equal(r.body.ok, true, JSON.stringify(r.body));
     assert.match(r.body.message, /Arbeitsweg/);
     assert.equal(r.body.widget.controls[0].value, 'commute');
-    r = await host.runQuickAction(ADA, `logbook:${vehicleId}`);   // a tap: → business
-    assert.deepEqual([r.body.ok, r.body.state], [true, 'on']);
-    r = await host.runQuickAction(ADA, `logbook:${vehicleId}`);   // again: → private
-    assert.deepEqual([r.body.ok, r.body.state], [true, 'off']);
+    // a tap in an app without the logbook page: where to find it, the purpose stays
+    r = await host.runQuickAction(ADA, `logbook:${vehicleId}`);
+    assert.equal(r.body.ok, true, JSON.stringify(r.body));
+    assert.match(r.body.message, /App/);
+    assert.equal(r.body.widget.controls[0].value, 'commute');
+    assert.equal((await asAdmin(host, 'GET', '/logbook')).json.trips[0].purpose, 'commute');
     const auto = await host.quickActions({ ...ADA, automation: true });
     assert.ok(!auto.some((a) => a.id.startsWith('logbook:')), 'rules of other plugins do not classify trips');
     assert.equal((await host.runQuickAction(BOB, `logbook:${vehicleId}`)).status, 404);

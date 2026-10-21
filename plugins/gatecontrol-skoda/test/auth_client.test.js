@@ -18,15 +18,17 @@ async function hostWith(cloud) {
   return createHost(DIR, { fetch: cloud.fetch });
 }
 
-test('plugin.json allows exactly the Škoda, render and geocoding hosts (HTTPS)', () => {
+test('plugin.json allows exactly the Škoda, render, geocoding and routing hosts (HTTPS)', () => {
   const list = require('../plugin.json').permissions.network.internet;
   for (const ok of ['https://identity.vwgroup.io/oidc/v1/authorize', 'https://mysmob.api.connect.skoda-auto.cz/api/v2/garage',
     'https://iprenders.blob.core.windows.net/r/1.png', 'https://ip-modcwp.azureedge.net/r.png', 'https://ip-xyz.azureedge.net/r.png',
-    'https://render.skoda-auto.cz/r.png', 'https://nominatim.openstreetmap.org/reverse']) {
+    'https://render.skoda-auto.cz/r.png', 'https://nominatim.openstreetmap.org/reverse',
+    'https://routing.openstreetmap.de/routed-car/route/v1/driving/7,51;7.1,51.1']) {
     assert.equal(internetAllowed(list, ok), true, ok);
   }
   for (const bad of ['https://evil.blob.core.windows.net/x', 'https://azureedge.net/x', 'https://skoda-auto.cz/', 'https://identity.vwgroup.io:8443/',
-    'https://ip-xyz.azureedge.net:8443/x', 'https://azureedge.net.evil.example/x', 'http://169.254.169.254/latest', 'https://example.com/']) {
+    'https://ip-xyz.azureedge.net:8443/x', 'https://azureedge.net.evil.example/x', 'http://169.254.169.254/latest', 'https://example.com/',
+    'https://openstreetmap.de/', 'https://router.project-osrm.org/route/v1/driving/1,2;3,4']) {
     assert.equal(internetAllowed(list, bad), false, bad);
   }
   const m = require('../plugin.json');
