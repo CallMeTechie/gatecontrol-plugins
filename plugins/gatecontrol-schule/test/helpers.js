@@ -127,7 +127,8 @@ function fakeUntis(opts = {}) {
       if (kind === 'messages') {
         const m = /^Bearer (.+)$/.exec(String(hdr.authorization || ''));
         if (!m || state.jwts.get(m[1]) !== sid) return { status: 401, body: '' };
-        return json({ incomingMessages: clone(state.inbox) });
+        // 1.4.1: state.confirm = the messages to be confirmed (their own list in WebUntis)
+        return json({ incomingMessages: clone(state.inbox), readConfirmationMessages: clone(state.confirm || []) });
       }
       const pid = Number(u.searchParams.get('studentId'));
       const from = Number(u.searchParams.get('startDate'));

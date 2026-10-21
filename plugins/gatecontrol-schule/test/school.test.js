@@ -89,6 +89,15 @@ test('client: the JWT of api/token/new (asked once per session) goes as a bearer
   answers.push({ status: 200, body: JSON.stringify(JWT) }, { status: 200, body: JSON.stringify({ data: { incomingMessages: [msg(2, 'B')] } }) });
   assert.deepEqual((await c2.inbox()).map((m) => m.id), [2]);
   assert.equal(calls.at(-1).o.headers.authorization, `Bearer ${JWT}`);
+  // 1.4.1: messages to be confirmed (school-wide information) come in their own list — read too
+  answers.push({ status: 200, body: JSON.stringify({ incomingMessages: [msg(3, 'C')], readConfirmationMessages: [msg(4, 'Elternbrief')] }) });
+  assert.deepEqual((await c2.inbox()).map((m) => m.id), [3, 4]);
+  answers.push({ status: 200, body: JSON.stringify({ readConfirmationMessages: [msg(5, 'Info')] }) });
+  assert.deepEqual((await c2.inbox()).map((m) => m.id), [5], 'only the list to be confirmed');
+  answers.push({ status: 200, body: JSON.stringify({ data: { incomingMessages: [], readConfirmationMessages: [msg(6, 'Info')] } }) });
+  assert.deepEqual((await c2.inbox()).map((m) => m.id), [6]);
+  answers.push({ status: 200, body: JSON.stringify({ incomingMessages: [], readConfirmationMessages: 'x' }) });
+  assert.equal(await code(() => c2.inbox()), 'failed');
   const c3 = untis.createClient(gc, { host: 'nessa.webuntis.com', school: 'X', username: 'u', auth: 'password' });
   answers.push(login);
   await c3.login({ password: 'pw' });
@@ -199,6 +208,23 @@ test('messages: the parents’ inbox — baseline without pushes, then one push 
   assert.equal((await app(host, EVA, '/app/messages')).json.messages[0].isNew, false);
 }));
 
+test('1.4.1: a school-wide message to be confirmed (its own list) is pushed too; an older one found only now is not', () => withHost(SCHOOL, async (host, untis) => {
+  untis.state.inbox = [msg(1, 'Wandertag')];
+  await setupParent(host);
+  assert.equal(pushes(host, 'messages').length, 0, 'baseline');
+  // the school writes to all parents and wants it confirmed — sent now; and an old one in that list (5 days ago)
+  untis.state.confirm = [
+    msg(20, 'Information der Schulleitung', { sentDateTime: '2026-10-20T06:05:00Z' }),
+    msg(19, 'Elternbrief September', { sentDateTime: '2026-10-15T09:00:00Z' }),
+  ];
+  await tickAt(host, T0 + 15 * MIN);
+  const p = pushes(host, 'messages');
+  assert.deepEqual(p.map((x) => x.title), ['Schule: Information der Schulleitung'], 'the new one only — the old one is no news');
+  assert.deepEqual(p[0].users, [EVA.id]);
+  const list = (await app(host, EVA, '/app/messages')).json.messages.map((m) => [m.subject, m.isNew]);
+  assert.deepEqual(list, [['Information der Schulleitung', true], ['Wandertag', false], ['Elternbrief September', false]]);
+}));
+
 test('messages: at most every 15 minutes per account; four new ones → three pushes and a summary; with one child the studentId', () => withHost({ ...SCHOOL, settings: { poll_minutes: 5 } }, async (host, untis) => {
   const { max } = await setupParent(host);
   // only Lena in the account: Max switched off
@@ -224,7 +250,7 @@ test('messages: at most every 15 minutes per account; four new ones → three pu
 test('messages: quiet hours hold them until the end; English', async () => {
   await withHost(SCHOOL, async (host, untis) => {
     await setupParent(host);
-    untis.state.inbox = [msg(21, 'Spät')];
+    untis.state.inbox = [msg(21, 'Spät', { sentDateTime: '2026-10-20T19:55:00Z' })];
     await tickAt(host, at('2026-10-20T20:00:00Z')); // 22:00, quiet
     assert.equal(pushes(host, 'messages').length, 0);
     await tickAt(host, at('2026-10-21T03:59:00Z')); // 05:59

@@ -39,6 +39,9 @@
 //                    sender: { displayName, className }, sentDateTime }] } — the account's inbox (a parent
 //                    account: the parents' inbox, a student account: the student's). No detail call: opening
 //                    a message in WebUntis may mark it as read.
+//                1.4.1: also readConfirmationMessages — a message the sender wants confirmed (school-wide
+//                    information to all parents often is) comes in that list, not in incomingMessages;
+//                    every list is read (top level or under data), the same id counts once.
 //              GET /WebUntis/api/classreg/absences/students?startDate&endDate&studentId&excuseStatusId=-1
 //                → { data: { absences: [{ id, startDate, endDate, startTime, endTime, reason, text,
 //                    excuseStatus, isExcused, excuse: { id, excuseStatus, isExcused, … }, studentName }] } }
@@ -66,6 +69,8 @@ class UntisError extends Error {
 }
 
 const fail = (code, detail) => new UntisError(code, detail);
+// 1.4.1: the lists of the inbox answer (api/rest/view/v1/messages)
+const INBOX_LISTS = Object.freeze(['incomingMessages', 'readConfirmationMessages', 'messages']);
 
 /** A server address as typed or pasted ("https://xyz.webuntis.com/WebUntis/…") → "xyz.webuntis.com"; null when not *.webuntis.com:443. */
 function normalizeHost(raw) {
@@ -321,13 +326,20 @@ function createClient(gc, account, opts = {}) {
       const b = body && typeof body === 'object' ? body : null;
       if (!b) throw fail('failed', 'messages');
       if (Array.isArray(b)) return b;
-      const list = b.incomingMessages || (b.data && typeof b.data === 'object' ? b.data.incomingMessages : undefined);
-      if (list == null) {
-        if (Array.isArray(b.messages)) return b.messages;
-        throw fail('failed', 'messages');
+      // 1.4.1: every list of the inbox — incoming, to be confirmed (school-wide information often is), plain
+      const out = [];
+      let found = false;
+      for (const o of [b, b.data && typeof b.data === 'object' && !Array.isArray(b.data) ? b.data : null]) {
+        if (!o) continue;
+        for (const k of INBOX_LISTS) {
+          if (o[k] == null) continue;
+          if (!Array.isArray(o[k])) throw fail('failed', 'messages');
+          found = true;
+          out.push(...o[k]);
+        }
       }
-      if (!Array.isArray(list)) throw fail('failed', 'messages');
-      return list;
+      if (!found) throw fail('failed', 'messages');
+      return out;
     },
 
     /** 1.4.0: a student's absences between two local dates (excuseStatusId=-1: all) → the raw absences. */

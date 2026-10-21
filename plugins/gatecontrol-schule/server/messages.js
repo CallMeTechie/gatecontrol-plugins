@@ -10,7 +10,8 @@
 //              (accounts.extras_json.messages { code, until }). Never stops or fails the cycle.
 //   store      table messages (account, WebUntis id): subject, preview and — only when the list gives
 //              the text — body, all HTML stripped to plain text (stripHtml); the sender; when it was sent.
-//              The account's first good fetch is the baseline (no pushes); later new ones are 'pending'.
+//              The account's first good fetch is the baseline (no pushes); later new ones are 'pending' —
+//              1.4.1: unless sent more than a day before they were found (stored, no push).
 //              Kept 90 days (messages sent earlier are never added — they would come back as "new").
 //   who        an administrator; the recipients of the account's students; the student himself when
 //              the account is his own student account (he linked it in his profile, or he is the
@@ -162,7 +163,9 @@ async function fetchAccount(gc, client, acc, fetched, state, cfg, now, deadline 
     try {
       const rows = messageRows(await client.inbox(), cfg);
       const baseline = acc.messages_at == null;
-      const added = await store.upsertMessages(gc, acc.id, rows, now, { baseline, oldest: now - KEEP_MS });
+      // 1.4.1: a message first seen but sent more than a day ago is not news (no push) — e.g. the older
+      // messages to be confirmed, read since 1.4.1
+      const added = await store.upsertMessages(gc, acc.id, rows, now, { baseline, oldest: now - KEEP_MS, quietBefore: now - DAY });
       await store.updateAccount(gc, acc.id, { messages_at: now });
       delete state.messages;
       if (added) gc.log.info('messages found', acc.id, added, baseline ? 'baseline' : 'new');
