@@ -176,6 +176,51 @@
 //   gc.notify({ …, image: { mediaId } }) (any topic, chat topics included): one of the plugin's own media files
 //   (nothing else in `image`; needs `media` → else ERR_MEDIA_DENIED; unknown id, a type other than PNG/JPEG/WebP,
 //   over 300 KB → ERR_INVALID "invalid image: …") is read and checked like a sent picture.
+//
+// GateControl 1.193.0 (opt-in: opts.gatecontrol: '1.193.0') — GateDrop's foundations (older hosts: none of this, the
+// functions are missing like in an older child bootstrap, unknown plugin.json keys are ignored):
+//   Large files — media.maxBytes up to 2 GB (2147483648); media.types may name families 'image/*', 'video/*', 'audio/*',
+//   'application/*' (never text/*; the denied types stay out); media.resumable (boolean, the apps' resumable uploads —
+//   not emulated, only reported) and media.handOverMaxBytes (≤ 2 GB and the quota, default maxBytes: what another plugin
+//   may hand over); gc.media.usage() also answers uploads, resumable, handOverMaxBytes.
+//   host.upload(user, buf, mime, { bytes }) may claim a larger size
+//   than the buffer holds (a big file without allocating it; checked against maxBytes and the quota like a real one).
+//   Devices — permissions.devices (a boolean): gc.devices.list({ userId }) → [{ id, name, platform, clientType, appVersion,
+//   online, lastSeen, via }] of that person, from opts.devices: [{ id, userId, name, platform ('android'|'windows'|'ios'|
+//   'web'), clientType?, appVersion?, online?, lastSeen?, via? }] (ERR_DEVICES_DENIED without the permission, ERR_INVALID for
+//   a userId that is not an enabled account). An app request carries user.device = { id, platform } — tests pass it in
+//   req.user. gc.notify({ …, users, devices: [deviceId] }) → only those devices (1…50 ids, each a device of opts.devices
+//   owned by one of `users`, `users` required — else ERR_INVALID; ids as strings or numbers, ≤ 100); gc.notify({ …,
+//   silent: true, data }) → a data push without a banner (title optional, no image, own budget 600 per hour); both need
+//   permissions.devices (ERR_DEVICES_DENIED), never on a chat topic (ERR_INVALID); recorded with `devices` and, for a data
+//   push, `kind: 'data', silent: true` (what the apps get: kind "data", silent true and `data`).
+//   Hand-over — gc.media.handOver(mediaId, { toPlugin, user }) → { mediaId, mime, bytes, name } in the other plugin's store (unclaimed, owner
+//   `user`, counts against its quota). The other plugin is an entry of opts.services: either { plugin, host } — another
+//   mock host (createHost of that plugin, its services and media are the real ones: callService, its media store) — or
+//   { plugin, provides, service, media: { maxBytes, types, quotaDefault } } (received files in entry.received). Refusals:
+//   ERR_SERVICES_DENIED (no service of that plugin in permissions.services), ERR_SERVICE_UNAVAILABLE (no such plugin),
+//   ERR_MEDIA_DENIED (it declares no media), ERR_MEDIA_TYPE, ERR_MEDIA_TOO_LARGE (its handOverMaxBytes), ERR_MEDIA_QUOTA,
+//   ERR_INVALID (unknown file, bad user). host.handOvers records { to, from: mediaId, mediaId, user, mime, bytes }.
+//   A services entry with `host` is reached by gc.services.call through host.callService (the provider's own checks).
+//   Home target upload — gc.net.uploadTarget(targetId, path, { index, method: 'POST'|'PUT', query, headers, form: { fields,
+//   file: { field, mediaId, name?, mime? } }, mediaFrom?: { plugin, mediaId } (a linked host that lists one of this plugin's
+//   services, else ERR_SERVICES_DENIED), timeoutMs (1 s … 30 min, default 10 min) }) → { status, headers, body } like
+//   fetchTarget: multipart/form-data with the file from the plugin's own media (or the linked host's, mediaFrom).
+//   The assigned target's `upload(path, { method, query, headers, fields, file: { field, name, mime, bytes, data } })` answers;
+//   recorded in host.uploads. ERR_NET_DENIED / ERR_NET like fetchTarget, ERR_INVALID for a bad form / unknown file.
+//   Public links — permissions.publicLinks (a boolean) and the administrator's switch (opts.publicLinks: true, default
+//   off; host.setPublicLinks(on)); opts.publicUrl (default 'https://gc.example.com', null = none configured).
+//   gc.publicLinks.create({ ownerUserId (required), title ≤ 120, note ≤ 500, files: [{ mediaId (own, claimed), name? }] (1…20),
+//   expiresAt (ms, 1 minute … 30 days ahead), maxDownloads? (1…1000 per file), pin? (4–8 digits) }) → { token (24 url-safe
+//   chars), url: '<origin of publicUrl>/s/<token>', expiresAt }; .list({ ownerUserId? }) (newest first), .get(token) → { token,
+//   url, title, note, ownerUserId, createdAt (ISO), expiresAt (ms), maxDownloads, pin (boolean), pinFailures, state
+//   ('active'|'expired'|'revoked'|'locked'|'used'|'gone'), active, revoked, locked, expired, downloads, files: [{ id ('1'…),
+//   mediaId, name, mime, bytes, downloads, lastDownloadAt }] } | null, .revoke(token) → true when it was active. Off →
+//   ERR_PUBLIC_LINKS_DISABLED (and the links answer 404), no public URL → ERR_NO_PUBLIC_URL (create), ERR_INVALID.
+//   host.publicLinks (Map), host.publicLinkUnlock(token, pin) (403 with `left`; the 5th wrong PIN locks → 410 + hook
+//   publicLinkEvent { token, event: 'locked', file: null, zip: false, downloads }) and host.publicLinkDownload(token,
+//   { pin, file (n from 1; none = the ZIP), now }) (per-file counts and maxDownloads; hook { token, event: 'download',
+//   file: { id, name } | null, zip, downloads } / 'expired').
 
 const fs = require('node:fs');
 const os = require('node:os');
@@ -254,6 +299,25 @@ const SERVICE_REF_RE = /^([a-z0-9]+(?:-[a-z0-9]+)*):([a-z][a-z0-9_]{0,31})$/;
 const SERVICES_PER_HOUR = 60;
 const SERVICE_JSON_MAX = 16 * 1024;
 const SERVICE_PAYLOAD_MAX_180 = 512 * 1024;
+// GateControl ≥ 1.193.0 (GateDrop)
+const MEDIA_MAX_BYTES_193 = 2 * 1024 * 1024 * 1024;
+const DEVICE_ID_RE = /^[A-Za-z0-9_.:-]{1,64}$/;
+const DEVICE_PLATFORMS = new Set(['android', 'windows', 'ios', 'web']);
+const UPLOAD_TIMEOUT_MAX = 30 * 60000;
+const TARGET_ANSWER_MAX = 5 * 1024 * 1024;
+const LINK_TTL_MAX = 30 * 86400000;
+const LINK_PIN_FAILS = 5;
+const LINK_FILES_MAX = 20;
+const MEDIA_FAMILY_RE = /^(?:image|audio|video|application)\/\*$/;
+const DATA_PUSH_PER_HOUR = 600;
+
+/** Is `mime` allowed by declared `types` — listed, or (GateControl ≥ 1.193.0) in a declared family "image/*"? */
+function typeAllowed(types, mime) {
+  const m = String(mime || '').toLowerCase();
+  if (types.includes(m)) return true;
+  if (!MEDIA_MIME_RE.test(m) || MEDIA_MIME_DENY_RE.test(m)) return false;
+  return types.includes(m.split('/')[0] + '/*');
+}
 
 function hostError(code, message) {
   return Object.assign(new Error(message), { code });
@@ -615,22 +679,29 @@ function checkQuickActions(out) {
  * @param {object} [opts]     see the header
  */
 /** plugin.json `media` → { maxBytes, types, quotaDefault } like GateControl's manifest.js (throws ERR_INVALID). */
-function mediaDecl(m, gc190 = false) {
+function mediaDecl(m, gc190 = false, gc193 = false) {
   if (m == null) return null;
   const bad = (what) => { throw hostError('ERR_INVALID', `plugin.json: ${what}: invalid`); };
-  const keys = gc190 ? ['maxBytes', 'types', 'quotaDefault', 'uploads'] : ['maxBytes', 'types', 'quotaDefault'];
+  // resumable / handOverMaxBytes (GateControl ≥ 1.193.0) are accepted at every emulated version, so a plugin's tests
+  // may still emulate an older host for its runtime fallbacks — the real older host refuses them (tools/validate.js
+  // against that core says so); they only act from 1.193.0 on.
+  const keys = gc190 ? ['maxBytes', 'types', 'quotaDefault', 'uploads', 'resumable', 'handOverMaxBytes'] : ['maxBytes', 'types', 'quotaDefault', 'resumable', 'handOverMaxBytes'];
   if (typeof m !== 'object' || Array.isArray(m) || Object.keys(m).some((k) => !keys.includes(k))) bad('media');
   if (m.uploads != null && typeof m.uploads !== 'boolean') bad('media.uploads');
-  if (!Number.isSafeInteger(m.maxBytes) || m.maxBytes < 1024 || m.maxBytes > MEDIA_MAX_BYTES) bad('media.maxBytes');
+  if (m.resumable != null && typeof m.resumable !== 'boolean') bad('media.resumable');
+  // GateControl ≥ 1.193.0: up to 2 GB per file (before 100 MB)
+  if (!Number.isSafeInteger(m.maxBytes) || m.maxBytes < 1024 || m.maxBytes > (gc193 ? MEDIA_MAX_BYTES_193 : MEDIA_MAX_BYTES)) bad('media.maxBytes');
   const types = Array.isArray(m.types) ? [...new Set(m.types.map((x) => (typeof x === 'string' ? x.trim().toLowerCase() : '')))] : null;
-  if (!types || !types.length || types.length > 32 || !types.every((x) => MEDIA_MIME_RE.test(x) && !MEDIA_MIME_DENY_RE.test(x))) bad('media.types');
+  if (!types || !types.length || types.length > 32 || !types.every((x) => (gc193 && MEDIA_FAMILY_RE.test(x)) || (MEDIA_MIME_RE.test(x) && !MEDIA_MIME_DENY_RE.test(x)))) bad('media.types');
   let quota = MEDIA_QUOTA_DEFAULT;
   if (m.quotaDefault != null) {
     const q = Number.isSafeInteger(m.quotaDefault) ? null : MEDIA_QUOTA_RE.exec(String(m.quotaDefault).trim());
     quota = Number.isSafeInteger(m.quotaDefault) ? m.quotaDefault : (q ? Number(q[1]) * MEDIA_UNIT[q[2].toUpperCase()] : null);
   }
   if (quota == null || quota < 1024 * 1024 || quota > 1024 ** 4 || quota < m.maxBytes) bad('media.quotaDefault');
-  return { maxBytes: m.maxBytes, types, quotaDefault: quota, uploads: m.uploads !== false };
+  const handOver = m.handOverMaxBytes == null ? m.maxBytes : m.handOverMaxBytes;
+  if (!Number.isSafeInteger(handOver) || handOver < 1024 || handOver > MEDIA_MAX_BYTES_193 || handOver > quota) bad('media.handOverMaxBytes');
+  return { maxBytes: m.maxBytes, types, quotaDefault: quota, uploads: m.uploads !== false, resumable: m.resumable === true, handOverMaxBytes: handOver };
 }
 
 /** Plain JSON ≤ max bytes, else the error code. */
@@ -667,7 +738,12 @@ async function createHost(pluginDir, opts = {}) {
   if (gc191 && perms.notifySink != null && typeof perms.notifySink !== 'boolean') throw hostError('ERR_INVALID', 'plugin.json: permissions.notifySink: invalid');
   const notifySink = gc191 && perms.notifySink === true;
   const gc192 = gcVersion[0] > 1 || (gcVersion[0] === 1 && gcVersion[1] >= 192);
-  const media = mediaDecl(manifest.media, gc190);
+  // GateControl ≥ 1.193.0: permissions.devices / permissions.publicLinks (booleans), media up to 2 GB, hand-over, target upload
+  const gc193 = gcVersion[0] > 1 || (gcVersion[0] === 1 && gcVersion[1] >= 193);
+  for (const k of ['devices', 'publicLinks']) {
+    if (gc193 && perms[k] != null && typeof perms[k] !== 'boolean') throw hostError('ERR_INVALID', `plugin.json: permissions.${k}: invalid`);
+  }
+  const media = mediaDecl(manifest.media, gc190, gc193);
   if (perms.events != null && typeof perms.events !== 'boolean') throw hostError('ERR_INVALID', 'plugin.json: permissions.events: invalid');
   if (perms.services != null && (!Array.isArray(perms.services) || perms.services.length > 32 || !perms.services.every((x) => typeof x === 'string' && SERVICE_REF_RE.test(x)))) {
     throw hostError('ERR_INVALID', 'plugin.json: permissions.services: invalid');
@@ -707,7 +783,7 @@ async function createHost(pluginDir, opts = {}) {
   // permissions.notify: true (30 per hour) or { perHour: 1–120 } (GateControl ≥ 1.164.0); the mock counts all of a test
   const notifyLimit = perms.notify && typeof perms.notify === 'object' && Number.isInteger(perms.notify.perHour) ? perms.notify.perHour : 30;
   // chat notifications (GateControl ≥ 1.177.0) have a budget of their own
-  const notifyCount = () => notifications.filter((x) => x.kind !== 'message').length;
+  const notifyCount = () => notifications.filter((x) => x.kind !== 'message' && x.kind !== 'data').length;
   const kiosk = new Set((opts.kiosk || []).map(Number));
   const actionPlugins = (opts.actions || []).filter((p) => p && p.plugin !== manifest.id);
   const actionRuns = [];
@@ -722,7 +798,20 @@ async function createHost(pluginDir, opts = {}) {
   const serviceCalls = [];
   const sinkCalls = []; // GateControl ≥ 1.191.0: host.deliverNotice
   const serviceAt = [];
-  const providers = (opts.services || []).filter((p) => p && typeof p.plugin === 'string' && p.plugin !== manifest.id);
+  // a provider may be another mock host (GateControl ≥ 1.193.0 multi-plugin tests: services and hand-over between them)
+  const linkedHost = (p) => (p && p.host && typeof p.host === 'object' && p.host.manifest ? p.host : null);
+  const providers = (opts.services || []).filter((p) => p && typeof p.plugin === 'string' && p.plugin !== manifest.id).map((p) => {
+    if (!linkedHost(p)) return p;
+    const h = p.host;
+    return Object.assign(p, {
+      provides: Object.keys((h.manifest.services && h.manifest.services.provides) || {}),
+      service: (c) => h.callService(c.name, { caller: c.caller, user: c.user, payload: c.payload }),
+    });
+  });
+  const handOvers = [];
+  const uploads = [];
+  const publicLinks = new Map(); // token → link
+  let publicLinksOn = opts.publicLinks === true;
   // the GateControl version emulated for features newer than 1.177.0 (opt-in)
   const hostAtLeast = (v) => {
     const parse = (x) => String(x).split('.').map((n) => Number(n) || 0);
@@ -869,8 +958,28 @@ async function createHost(pluginDir, opts = {}) {
         const topic = n.topic == null ? 'default' : String(n.topic);
         const declared = Array.isArray(manifest.notifyTopics) ? manifest.notifyTopics : [];
         if (topic !== 'default' && !declared.some((t) => t && t.id === topic)) throw hostError('ERR_INVALID', 'topic not declared in notifyTopics');
-        if (declared.some((t) => t && t.id === topic && t.chat === true)) return notifyChat(topic, n);
-        const title = String(n.title == null ? '' : n.title).replace(/\s+/g, ' ').trim().slice(0, 120);
+        const chatTopic = declared.some((t) => t && t.id === topic && t.chat === true);
+        // GateControl ≥ 1.193.0 (permissions.devices): silent data pushes and pushes to single devices of the listed users
+        if (gc193 && chatTopic && (n.devices != null || n.silent != null)) throw hostError('ERR_INVALID', 'devices / silent are not for chat topics');
+        if (chatTopic) return notifyChat(topic, n);
+        if (gc193 && n.silent != null && typeof n.silent !== 'boolean') throw hostError('ERR_INVALID', 'silent must be a boolean');
+        const silent = gc193 && n.silent === true;
+        if (gc193 && (silent || n.devices != null) && perms.devices !== true) throw hostError('ERR_DEVICES_DENIED', 'devices / silent need permissions.devices');
+        if (silent && n.image != null) throw hostError('ERR_INVALID', 'a silent push carries no image');
+        let devices = null;
+        if (gc193 && n.devices != null) {
+          if (!Array.isArray(n.devices) || !n.devices.length || n.devices.length > 100) throw hostError('ERR_INVALID', 'invalid devices');
+          const ids = n.devices.map((d) => (typeof d === 'number' && Number.isSafeInteger(d) ? String(d) : d));
+          if (!ids.every((d) => typeof d === 'string' && DEVICE_ID_RE.test(d))) throw hostError('ERR_INVALID', 'invalid devices');
+          if (!Array.isArray(n.users) || !n.users.length) throw hostError('ERR_INVALID', 'devices need users (their owners)');
+          for (const d of ids) {
+            const dev = deviceList().find((x) => x.id === d);
+            if (!dev || !n.users.includes(dev.userId)) throw hostError('ERR_INVALID', `device ${d} is not a device of these users`);
+          }
+          devices = [...new Set(ids)];
+        }
+        let title = String(n.title == null ? '' : n.title).replace(/\s+/g, ' ').trim().slice(0, 120);
+        if (!title && silent) title = loc(manifest.name, 'de') || manifest.id;
         if (!title) throw hostError('ERR_INVALID', 'empty title');
         const body = String(n.body == null ? '' : n.body).trim().slice(0, 1000);
         const priority = n.priority == null ? 'normal' : n.priority;
@@ -885,7 +994,10 @@ async function createHost(pluginDir, opts = {}) {
         // GateControl ≥ 1.191.0: `card` — the long form for a chat sink (deliverNotice); older hosts ignore it
         const card = hostAtLeast('1.191.0') && n.card != null ? notifyCard(n.card) : null;
         const image = n.image == null ? null : notifyImage(n.image);
-        if (notifyCount() >= notifyLimit) throw hostError('ERR_RATE_LIMIT', 'too many notifications');
+        if (silent) {
+          // a data push: own budget (600 per hour), never a banner; the apps get kind: 'data', silent: true and `data`
+          if (notifications.filter((x) => x.kind === 'data').length >= DATA_PUSH_PER_HOUR) throw hostError('ERR_RATE_LIMIT', `too many silent pushes (${DATA_PUSH_PER_HOUR} per hour)`);
+        } else if (notifyCount() >= notifyLimit) throw hostError('ERR_RATE_LIMIT', 'too many notifications');
         // 'critical' is capped to 'high' unless the topic declares allowCritical (GateControl ≥ 1.164.0)
         const critical = priority === 'critical' && declared.some((t) => t && t.id === topic && t.allowCritical === true);
         const rec = {
@@ -893,6 +1005,8 @@ async function createHost(pluginDir, opts = {}) {
           users: n.users == null ? null : [...new Set(n.users)], collapseKey: n.collapseKey == null ? null : String(n.collapseKey), ttl: n.ttl == null ? null : n.ttl, data,
         };
         if (card) rec.card = card;
+        if (devices) rec.devices = devices;
+        if (silent) Object.assign(rec, { kind: 'data', silent: true });
         if (image) {
           // notify_media: a capability URL (≥ 22 url-safe characters), expires with the push (24 h default, ≤ 7 days)
           const mediaId = require('node:crypto').randomBytes(18).toString('base64url');
@@ -1159,7 +1273,10 @@ async function createHost(pluginDir, opts = {}) {
     return mediaInfo(id);
   };
   api['media.delete'] = async (args) => { needMedia(); return mediaStore.delete(mediaIdOf(args)); };
-  api['media.usage'] = async () => { needMedia(); return { ...mediaUsage(), quota: mediaQuota, maxBytes: media.maxBytes, types: media.types }; };
+  api['media.usage'] = async () => {
+    needMedia();
+    return { ...mediaUsage(), quota: mediaQuota, maxBytes: media.maxBytes, types: media.types, ...(gc193 ? { uploads: media.uploads, resumable: media.resumable, handOverMaxBytes: media.handOverMaxBytes } : {}) };
+  };
   // GateControl ≥ 1.190.0: a file from the internet straight into the store (no owner, unclaimed)
   const mediaName = (v) => {
     const x = String(v == null ? '' : v).replace(/[\0-\x1f\x7f]/g, '').split(/[\\/]/).pop().trim().slice(0, 200);
@@ -1180,7 +1297,7 @@ async function createHost(pluginDir, opts = {}) {
     if (!buf.length) throw hostError('ERR_MEDIA_EMPTY', 'the response is empty');
     const ct = String((r.headers && (r.headers['content-type'] || r.headers['Content-Type'])) || '').split(';')[0].trim().toLowerCase();
     const type = typeof x.mime === 'string' && x.mime ? x.mime.trim().toLowerCase() : ct;
-    if (!media.types.includes(type)) throw hostError('ERR_MEDIA_TYPE', `type not allowed: ${type}`);
+    if (!typeAllowed(media.types, type)) throw hostError('ERR_MEDIA_TYPE', `type not allowed: ${type}`);
     if (mediaUsage().bytes + buf.length > mediaQuota) throw hostError('ERR_MEDIA_QUOTA', 'quota exceeded');
     const id = require('node:crypto').randomBytes(16).toString('hex');
     const name = mediaName(x.name);
@@ -1198,6 +1315,188 @@ async function createHost(pluginDir, opts = {}) {
     const exp = Math.ceil((Math.floor((args.now || Date.now()) / 1000) + ttl) / 300) * 300;
     const uid = user == null ? 0 : user;
     return `/plugin-media/${id}.${exp}.${uid}.${urlSig(id, exp, uid)}`;
+  };
+
+  // ─── GateControl ≥ 1.193.0: devices, hand-over, target upload, public links ───
+
+  const enabledUser = (v) => {
+    const uid = v && typeof v === 'object' ? v.id : v;
+    const u = Number.isSafeInteger(uid) && uid > 0 ? allUsers.find((x) => x.id === uid) : null;
+    return u && !u.disabled ? u : null;
+  };
+  /** opts.devices as the host lists them (read on every call: a test may change the array). */
+  const deviceList = () => (Array.isArray(opts.devices) ? opts.devices : []).map((d) => {
+    const platform = DEVICE_PLATFORMS.has(d.platform) ? d.platform : 'android';
+    return {
+      id: String(d.id), userId: d.userId, name: d.name == null ? String(d.id) : String(d.name), platform,
+      clientType: d.clientType || platform, appVersion: d.appVersion == null ? null : String(d.appVersion),
+      online: d.online === true, lastSeen: d.lastSeen == null ? null : d.lastSeen, via: d.via == null ? null : d.via,
+    };
+  });
+  api['devices.list'] = async (args) => {
+    if (perms.devices !== true) throw hostError('ERR_DEVICES_DENIED', 'this plugin has no devices permission');
+    const u = enabledUser(args && args.userId);
+    if (!u) throw hostError('ERR_INVALID', 'invalid user id');
+    return deviceList().filter((d) => d.userId === u.id).map(({ userId, ...rest }) => rest);
+  };
+
+  /** This plugin as the target of another plugin's hand-over (its media declaration, types, size and quota). */
+  function receiveHandOver({ mime, bytes, data, owner, name }) {
+    if (!media) throw hostError('ERR_MEDIA_DENIED', 'the target plugin declares no media');
+    if (!typeAllowed(media.types, mime)) throw hostError('ERR_MEDIA_TYPE', `type not allowed by the target: ${mime}`);
+    if (bytes > media.handOverMaxBytes) throw hostError('ERR_MEDIA_TOO_LARGE', 'file too large for the target (media.handOverMaxBytes)');
+    if (mediaUsage().bytes + bytes > mediaQuota) throw hostError('ERR_MEDIA_QUOTA', 'the target plugin\'s quota is exceeded');
+    const id = require('node:crypto').randomBytes(16).toString('hex');
+    mediaStore.set(id, { mime, bytes, owner: owner == null ? null : owner, data: Buffer.from(data), claimed: false, createdAt: Date.now(), name: name || null });
+    return { mediaId: id, mime, bytes, name: name || null };
+  }
+  api['media.handOver'] = async (args) => {
+    needMedia();
+    const id = mediaIdOf(args);
+    const to = args && args.toPlugin;
+    if (typeof to !== 'string' || to.length < 2 || to.length > 64 || !PLUGIN_ID_RE.test(to) || to === manifest.id) throw hostError('ERR_INVALID', 'invalid toPlugin');
+    if (!(perms.services || []).some((x) => SERVICE_REF_RE.exec(x)[1] === to)) throw hostError('ERR_SERVICES_DENIED', 'no service of that plugin in permissions.services');
+    const p = providers.find((x) => x.plugin === to);
+    if (!p) throw hostError('ERR_SERVICE_UNAVAILABLE', 'the target plugin is not available');
+    const u = enabledUser(args.user);
+    if (!u) throw hostError('ERR_INVALID', 'invalid user');
+    const m = mediaStore.get(id);
+    if (!m) throw hostError('ERR_INVALID', 'unknown media id');
+    let out;
+    if (linkedHost(p)) out = linkedHost(p)._receiveHandOver({ mime: m.mime, bytes: m.bytes, data: m.data, owner: u.id, name: m.name });
+    else {
+      // a fake provider: its declared media, the files land in p.received
+      const decl = p.media ? mediaDecl(p.media, true, true) : null;
+      if (!decl) throw hostError('ERR_MEDIA_DENIED', 'the target plugin declares no media');
+      if (!typeAllowed(decl.types, m.mime)) throw hostError('ERR_MEDIA_TYPE', `type not allowed by the target: ${m.mime}`);
+      if (m.bytes > decl.handOverMaxBytes) throw hostError('ERR_MEDIA_TOO_LARGE', 'file too large for the target');
+      p.received = p.received || [];
+      if (p.received.reduce((s, x) => s + x.bytes, 0) + m.bytes > decl.quotaDefault) throw hostError('ERR_MEDIA_QUOTA', 'the target plugin\'s quota is exceeded');
+      out = { mediaId: require('node:crypto').randomBytes(16).toString('hex'), mime: m.mime, bytes: m.bytes, name: m.name || null };
+      p.received.push({ mediaId: out.mediaId, mime: m.mime, bytes: m.bytes, owner: u.id, data: Buffer.from(m.data) });
+    }
+    handOvers.push({ to, from: id, mediaId: out.mediaId, user: u.id, mime: m.mime, bytes: m.bytes });
+    return { mediaId: out.mediaId, mime: out.mime, bytes: out.bytes, name: out.name };
+  };
+
+  api['target.upload'] = async ({ target, index, path: p, opts: o }) => {
+    const { t } = declaredTarget(target);
+    if (!t.protocols.includes('http')) throw hostError('ERR_NET_DENIED', `target ${target} has no http protocol`);
+    const a = pickAssigned(target, index);
+    const x = o && typeof o === 'object' ? o : {};
+    const form = x.form;
+    if (!form || typeof form !== 'object' || Array.isArray(form) || !form.file || typeof form.file !== 'object') throw hostError('ERR_INVALID', 'form.file required');
+    const fields = {};
+    if (form.fields != null) {
+      if (typeof form.fields !== 'object' || Array.isArray(form.fields) || Object.keys(form.fields).length > 50) throw hostError('ERR_INVALID', 'invalid form.fields');
+      for (const [k, v] of Object.entries(form.fields)) {
+        if (!/^[A-Za-z0-9_.-]{1,64}$/.test(k) || !['string', 'number', 'boolean'].includes(typeof v)) throw hostError('ERR_INVALID', 'invalid form field ' + k);
+        fields[k] = String(v);
+      }
+    }
+    const f = form.file;
+    if (typeof f.field !== 'string' || !/^[A-Za-z0-9_.-]{1,64}$/.test(f.field)) throw hostError('ERR_INVALID', 'invalid form.file.field');
+    if (f.name != null && (typeof f.name !== 'string' || !f.name.trim() || f.name.length > 255 || /[\0-\x1f\x7f/\\]/.test(f.name))) throw hostError('ERR_INVALID', 'invalid form.file.name');
+    if (f.mime != null && (typeof f.mime !== 'string' || !MEDIA_MIME_RE.test(f.mime.toLowerCase()))) throw hostError('ERR_INVALID', 'invalid form.file.mime');
+    if (x.method != null && x.method !== 'POST' && x.method !== 'PUT') throw hostError('ERR_INVALID', "method must be 'POST' or 'PUT'");
+    if (x.timeoutMs != null && !(Number.isSafeInteger(x.timeoutMs) && x.timeoutMs >= 1000 && x.timeoutMs <= UPLOAD_TIMEOUT_MAX)) throw hostError('ERR_INVALID', 'timeoutMs must be 1000…1800000');
+    let m;
+    if (x.mediaFrom != null) {
+      const mf = x.mediaFrom;
+      const src = mf && typeof mf === 'object' ? providers.find((q) => q.plugin === mf.plugin && linkedHost(q)) : null;
+      if (!src) throw hostError('ERR_INVALID', 'invalid mediaFrom');
+      // only a file the source plugin could hand over to this one: it lists one of this plugin's services
+      if (!((src.host.manifest.permissions || {}).services || []).some((x) => SERVICE_REF_RE.exec(x)[1] === manifest.id)) throw hostError('ERR_SERVICES_DENIED', 'the source plugin lists none of this plugin\'s services');
+      m = typeof mf.mediaId === 'string' ? src.host.media.get(mf.mediaId) : null;
+    } else {
+      needMedia();
+      m = typeof f.mediaId === 'string' && /^[0-9a-f]{32}$/.test(f.mediaId) ? mediaStore.get(f.mediaId) : null;
+    }
+    if (!m) throw hostError('ERR_INVALID', 'unknown media id');
+    const rec = {
+      target, index: Number(index) || 0, method: x.method || 'POST', path: p, query: x.query || null, headers: x.headers || {}, fields,
+      file: { field: f.field, name: f.name || m.name || 'file', mime: f.mime ? f.mime.toLowerCase() : m.mime, bytes: m.bytes }, timeoutMs: x.timeoutMs == null ? 600000 : x.timeoutMs,
+    };
+    uploads.push(rec);
+    if (!a.upload) throw hostError('ERR_NET', 'no upload handler for this target');
+    const r = await a.upload(p, { method: rec.method, query: rec.query, headers: rec.headers, fields, file: { ...rec.file, data: Buffer.from(m.data) } });
+    const out = { status: 200, headers: {}, redirects: [], ...r };
+    if (typeof out.body === 'string' && Buffer.byteLength(out.body, 'utf8') > TARGET_ANSWER_MAX) throw hostError('ERR_NET', 'answer too large');
+    return out;
+  };
+
+  const needLinks = () => {
+    if (perms.publicLinks !== true || !publicLinksOn) throw hostError('ERR_PUBLIC_LINKS_DISABLED', 'public links are off for this plugin');
+  };
+  const publicBase = () => (opts.publicUrl === undefined ? 'https://gc.example.com' : opts.publicUrl);
+  /** A link's state as GateControl derives it. */
+  function linkState(l, now = Date.now()) {
+    if (l.revoked) return 'revoked';
+    if (l.locked) return 'locked';
+    if (l.files.some((f) => !mediaStore.has(f.mediaId))) return 'gone';
+    if (now >= l.expiresAt) return 'expired';
+    if (l.maxDownloads != null && l.files.every((f) => f.downloads >= l.maxDownloads)) return 'used';
+    return 'active';
+  }
+  const linkView = (l) => {
+    const state = linkState(l);
+    return {
+      token: l.token, url: l.url, title: l.title, note: l.note, ownerUserId: l.ownerUserId, createdAt: new Date(l.createdAt).toISOString(),
+      expiresAt: l.expiresAt, maxDownloads: l.maxDownloads, pin: !!l.pin, pinFailures: l.pinFailures, state, active: state === 'active',
+      revoked: l.revoked, locked: l.locked, expired: state === 'expired', downloads: l.files.reduce((n, f) => n + f.downloads, 0),
+      files: l.files.map((f) => ({ id: f.id, mediaId: f.mediaId, name: f.name, mime: f.mime, bytes: f.bytes, downloads: f.downloads, lastDownloadAt: f.lastDownloadAt })),
+    };
+  };
+  api['publicLinks.create'] = async (args) => {
+    needLinks();
+    const x = args && typeof args === 'object' ? args : {};
+    const owner = enabledUser(x.ownerUserId);
+    if (!owner) throw hostError('ERR_INVALID', 'invalid ownerUserId');
+    const txt = (v, max, what) => {
+      if (v == null) return null;
+      if (typeof v !== 'string' || v.length > max) throw hostError('ERR_INVALID', `invalid ${what}`);
+      return v.replace(/[\0-\x09\x0b-\x1f\x7f]/g, ' ').trim() || null;
+    };
+    const title = txt(x.title, 120, 'title');
+    const note = txt(x.note, 500, 'note');
+    if (!Array.isArray(x.files) || !x.files.length || x.files.length > LINK_FILES_MAX) throw hostError('ERR_INVALID', `files must be 1…${LINK_FILES_MAX}`);
+    const files = x.files.map((f, i) => {
+      const m = f && typeof f.mediaId === 'string' ? mediaStore.get(f.mediaId) : null;
+      if (!m) throw hostError('ERR_INVALID', 'unknown media id');
+      if (!m.claimed) throw hostError('ERR_INVALID', 'the media of a link must be claimed');
+      if (f.name != null && (typeof f.name !== 'string' || !f.name.trim() || f.name.length > 200)) throw hostError('ERR_INVALID', 'invalid file name');
+      return { id: String(i + 1), mediaId: f.mediaId, name: f.name != null ? f.name.trim() : (m.name || 'file'), mime: m.mime, bytes: m.bytes, downloads: 0, lastDownloadAt: null };
+    });
+    const now = Date.now();
+    if (!Number.isSafeInteger(x.expiresAt) || x.expiresAt < now + 60000 || x.expiresAt > now + LINK_TTL_MAX) throw hostError('ERR_INVALID', 'expiresAt must be 1 minute … 30 days ahead');
+    if (x.maxDownloads != null && !(Number.isSafeInteger(x.maxDownloads) && x.maxDownloads >= 1 && x.maxDownloads <= 1000)) throw hostError('ERR_INVALID', 'invalid maxDownloads');
+    if (x.pin != null && !(typeof x.pin === 'string' && /^\d{4,8}$/.test(x.pin))) throw hostError('ERR_INVALID', 'pin must be 4–8 digits');
+    const base = publicBase();
+    if (!base) throw hostError('ERR_NO_PUBLIC_URL', 'no public https server URL configured (GC_BASE_URL)');
+    const token = require('node:crypto').randomBytes(18).toString('base64url');
+    const url = `${new URL(String(base)).origin}/s/${token}`;
+    publicLinks.set(token, {
+      token, url, title, note, files, expiresAt: x.expiresAt, maxDownloads: x.maxDownloads == null ? null : x.maxDownloads,
+      pin: x.pin == null ? null : x.pin, pinFailures: 0, locked: false, revoked: false, ownerUserId: owner.id, createdAt: now, expiredSent: false,
+    });
+    return { token, url, expiresAt: x.expiresAt };
+  };
+  api['publicLinks.list'] = async (args) => {
+    needLinks();
+    const owner = args && args.ownerUserId != null ? args.ownerUserId : null;
+    return [...publicLinks.values()].filter((l) => owner == null || l.ownerUserId === owner).sort((a, b) => b.createdAt - a.createdAt).map(linkView);
+  };
+  api['publicLinks.get'] = async (args) => {
+    needLinks();
+    const l = args && typeof args.token === 'string' ? publicLinks.get(args.token) : null;
+    return l ? linkView(l) : null;
+  };
+  api['publicLinks.revoke'] = async (args) => {
+    needLinks();
+    const l = args && typeof args.token === 'string' ? publicLinks.get(args.token) : null;
+    if (!l || linkState(l) !== 'active') { if (l) l.revoked = true; return false; }
+    l.revoked = true;
+    return true;
   };
 
   // gc.events.emit (events.js)
@@ -1415,7 +1714,19 @@ async function createHost(pluginDir, opts = {}) {
         const list = await call('discover', { dataBase64: buf.toString('base64'), ports: o && o.ports });
         return list.map((x) => ({ address: x.address, port: x.port, data: Buffer.from(x.dataBase64, 'base64') }));
       },
+      // GateControl ≥ 1.193.0: a multipart upload of a media file to a home target
+      ...(gc193 ? { uploadTarget: (id, p, o) => call('target.upload', { target: String(id), index: o && o.index, path: String(p || '/'), opts: o || {} }) } : {}),
     }),
+    // GateControl ≥ 1.193.0
+    ...(gc193 ? {
+      devices: Object.freeze({ list: (o) => call('devices.list', { userId: o && typeof o === 'object' ? o.userId : o }) }),
+      publicLinks: Object.freeze({
+        create: (o) => call('publicLinks.create', o && typeof o === 'object' ? o : {}),
+        list: (o) => call('publicLinks.list', { ownerUserId: o && typeof o === 'object' ? o.ownerUserId : undefined }),
+        get: (token) => call('publicLinks.get', { token }),
+        revoke: (token) => call('publicLinks.revoke', { token }),
+      }),
+    } : {}),
     storage: Object.freeze({
       get: (key) => call('storage.get', { key }),
       set: (key, value) => call('storage.set', { key, value }),
@@ -1471,6 +1782,8 @@ async function createHost(pluginDir, opts = {}) {
       usage: () => call('media.usage', {}),
       url: (id, o) => { const x = o && typeof o === 'object' ? o : {}; return call('media.url', { id, user: x.user, ttlS: x.ttlS }); },
       ...(gc190 ? { fetch: (url, o) => call('media.fetch', { url, opts: o || {} }) } : {}),
+      // GateControl ≥ 1.193.0: hand a file to another plugin (its store, unclaimed, owner `user`)
+      ...(gc193 ? { handOver: (id, o) => { const x = o && typeof o === 'object' ? o : {}; return call('media.handOver', { id, toPlugin: x.toPlugin, user: x.user }); } } : {}),
     }),
     events: Object.freeze({
       emit: (o) => { const x = o && typeof o === 'object' ? o : {}; return call('events.emit', { users: x.users, type: x.type, data: x.data }); },
@@ -1524,18 +1837,67 @@ async function createHost(pluginDir, opts = {}) {
     manifest, gc, plugin, logs, notifications, fetches, websockets, kv, settings, filesDir, kiosk, actionRuns,
     media: mediaStore, events, serviceCalls,
     /** GateControl ≥ 1.177.0: an upload of an app or a frame (PUT …/plugins/<id>/media) → { status, body } */
-    async upload(user, data, mime) {
+    async upload(user, data, mime, o = {}) {
       if (!media) return { status: 404, body: { ok: false, code: 'not_found' } };
       if (gc190 && media.uploads === false) return { status: 403, body: { ok: false, code: 'uploads_disabled' } };
       const buf = Buffer.isBuffer(data) ? data : Buffer.from(String(data == null ? '' : data));
+      // GateControl ≥ 1.193.0 tests: o.bytes claims a bigger file than the buffer (no 2 GB in memory)
+      const bytes = Number.isSafeInteger(o.bytes) && o.bytes >= buf.length ? o.bytes : buf.length;
       const type = String(mime || '').split(';')[0].trim().toLowerCase();
-      if (!media.types.includes(type)) return { status: 415, body: { ok: false, code: 'unsupported_type' } };
-      if (!buf.length) return { status: 411, body: { ok: false, code: 'length_required' } };
-      if (buf.length > media.maxBytes) return { status: 413, body: { ok: false, code: 'too_large' } };
-      if (mediaUsage().bytes + buf.length > mediaQuota) return { status: 507, body: { ok: false, code: 'quota_exceeded' } };
+      if (!typeAllowed(media.types, type)) return { status: 415, body: { ok: false, code: 'unsupported_type' } };
+      if (!bytes) return { status: 411, body: { ok: false, code: 'length_required' } };
+      if (bytes > media.maxBytes) return { status: 413, body: { ok: false, code: 'too_large' } };
+      if (mediaUsage().bytes + bytes > mediaQuota) return { status: 507, body: { ok: false, code: 'quota_exceeded' } };
       const id = require('node:crypto').randomBytes(16).toString('hex');
-      mediaStore.set(id, { mime: type, bytes: buf.length, owner: user && user.id != null ? user.id : null, data: Buffer.from(buf), claimed: false, createdAt: Date.now() });
-      return { status: 200, body: { ok: true, mediaId: id, mime: type, bytes: buf.length } };
+      mediaStore.set(id, { mime: type, bytes, owner: user && user.id != null ? user.id : null, data: Buffer.from(buf), claimed: false, createdAt: Date.now() });
+      return { status: 200, body: { ok: true, mediaId: id, mime: type, bytes } };
+    },
+    /** GateControl ≥ 1.193.0: what this plugin handed over (gc.media.handOver) and uploaded to home targets */
+    handOvers,
+    uploads,
+    /** GateControl ≥ 1.193.0: another mock host hands a file to this plugin (used by its gc.media.handOver) */
+    _receiveHandOver: (f) => receiveHandOver(f),
+    /** GateControl ≥ 1.193.0: the public links of this plugin (token → link) and the administrator's switch */
+    publicLinks,
+    setPublicLinks(on) { publicLinksOn = on === true; },
+    /**
+     * GateControl ≥ 1.193.0: a visitor of /s/<token> enters a PIN → { status: 200 | 403 (wrong, `left`) | 404 | 410 (ended) }.
+     * The fifth wrong PIN locks the link for good (hook publicLinkEvent { token, event: 'locked', file: null, zip: false, downloads }).
+     */
+    async publicLinkUnlock(token, pin, o = {}) {
+      const l = publicLinks.get(token);
+      if (!l || perms.publicLinks !== true || !publicLinksOn) return { status: 404 };
+      const ev = (event) => hook('publicLinkEvent', { token, event, file: null, zip: false, downloads: linkView(l).downloads });
+      const st = linkState(l, o.now || Date.now());
+      if (st === 'expired' && !l.expiredSent) { l.expiredSent = true; await ev('expired'); }
+      if (st !== 'active') return { status: 410, state: st };
+      if (!l.pin || String(pin) === l.pin) { l.pinFailures = 0; return { status: 200 }; }
+      l.pinFailures++;
+      if (l.pinFailures >= LINK_PIN_FAILS) {
+        l.locked = true;
+        await ev('locked');
+        return { status: 410, state: 'locked' };
+      }
+      return { status: 403, left: LINK_PIN_FAILS - l.pinFailures };
+    },
+    /**
+     * GateControl ≥ 1.193.0: GET /s/<token>/f/<n> (o.file = n, from 1) or /s/<token>/zip (no o.file) with o.pin for a PIN link
+     * → { status, files? }. Each file counts one download (the ZIP one of each), a file at maxDownloads → 410; hook
+     * publicLinkEvent { token, event: 'download', file: { id, name } | null, zip, downloads (all files) }.
+     */
+    async publicLinkDownload(token, o = {}) {
+      const l = publicLinks.get(token);
+      if (!l || perms.publicLinks !== true || !publicLinksOn) return { status: 404 };
+      const u = await this.publicLinkUnlock(token, l.pin ? o.pin : undefined, o);
+      if (u.status !== 200) return l.pin && u.status === 403 ? { status: 403 } : u;
+      const pick = o.file == null ? l.files : l.files.filter((f) => f.id === String(o.file));
+      if (!pick.length) return { status: 404 };
+      if (l.maxDownloads != null && pick.some((f) => f.downloads >= l.maxDownloads)) return { status: 410, state: 'used' };
+      const at = new Date(o.now || Date.now()).toISOString();
+      for (const f of pick) { f.downloads++; f.lastDownloadAt = at; }
+      const zip = o.file == null;
+      await hook('publicLinkEvent', { token, event: 'download', file: zip ? null : { id: pick[0].id, name: pick[0].name }, zip, downloads: linkView(l).downloads });
+      return { status: 200, files: pick.map((f) => ({ name: f.name, bytes: f.bytes, data: mediaStore.get(f.mediaId).data })) };
     },
     /** GateControl ≥ 1.177.0: GET /api/v1/client/plugins/<id>/media/<mediaId> for this app user → { status, headers, body } */
     async mediaGet(user, mediaId, o = {}) {

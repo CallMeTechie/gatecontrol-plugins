@@ -164,4 +164,5 @@ test('tasks/quick: a task from a chat with its card and „Erledigt“; due, rep
 test('family_roles: parents and children for the Messenger only', () => withFamily({}, async (host) => {
   assert.deepEqual(await host.callService('family_roles', { caller: 'gatecontrol-messenger', payload: {} }), { ok: true, parents: [ANNA.id, MARC.id], children: [LENA.id, TIM.id] });
   assert.deepEqual(await host.callService('family_roles', { caller: 'gatecontrol-door', payload: {} }), { ok: false, code: 'forbidden' });
+  assert.deepEqual(await host.callService('family_roles', { caller: 'gatecontrol-gatedrop', payload: {} }), { ok: true, parents: [ANNA.id, MARC.id], children: [LENA.id, TIM.id] }, '1.13.2: GateDrop too');
 }));

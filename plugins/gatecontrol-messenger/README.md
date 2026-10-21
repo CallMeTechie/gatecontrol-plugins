@@ -889,7 +889,18 @@ reminders, pins and Familie calendar entries along.
   — Familie's presence ("Zuhause", "Schule", …). Shown only while that
   person's status preset is `auto_place` (`applied: false` otherwise); who
   sees the place decides the person's `privacy.placeInStatus`.
-* Refusals answer `{ ok: false, code: "invalid" | "not_found" | "forbidden" }`.
+* `send_file` `{ conversation: "direct:<id>" | "family" | "group:<id>", user, mediaIds: [≤ 20], names?: [..], text? }`
+  (since 1.8.0, for GateDrop; GateControl ≥ 1.193.0) → `{ ok, conversationId, messageIds }` — the files were handed
+  over to the messenger first (`gc.media.handOver(id, { toPlugin: 'gatecontrol-messenger', user })`, up to
+  `media.handOverMaxBytes` = 2 GB; the messenger's own uploads stay at 25 MB). They become messages **of `user`**
+  (the calling `userId` must be the same person): one per file — `image` (JPEG, PNG, WebP, GIF), `voice` (audio/*),
+  `file` (everything else, a video/* file shown as a video) with `meta.fileName` from `names`; `text` (≤ 20 000) is
+  the first file's caption when ≤ 4000, else (or without files) text messages before the files (split at 4000, ≤ 5).
+  Pushed like any message of that person. `user` must be a member: `direct:<id>` found or created (a block either way
+  → `forbidden`), `family` the caller's managed group `family` else Familie's, `group:<id>` a group the person is in;
+  read-only → `readonly`. Each file must be handed over for `user`, unused and ≤ 2 GB → else `media_invalid`,
+  `media_in_use`, `file_too_large`.
+* Refusals answer `{ ok: false, code: "invalid" | "not_found" | "forbidden" }`. `send_file` also `readonly`, `media_invalid`, `media_in_use`, `file_too_large`.
 
 Messenger calls these Familie services (since 1.4.0, `permissions.services`,
 each feature-detected with `gc.services.available`; refusals `{ ok: false,

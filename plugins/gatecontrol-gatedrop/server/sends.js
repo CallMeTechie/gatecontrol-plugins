@@ -1,0 +1,467 @@
+'use strict';
+
+// Sends: POST sends (validation, permissions, the deliveries per target), the views of a send for its
+// sender and its recipients, the lists (GET inbox), late uploads after a failed direct transfer
+// (POST sends/<id>/items), "opened", files (GET items/<mediaId>) and ending links (DELETE links/<token>).
+// Every function gets ctx = { gc, viewer, user, deviceId, deviceName, lang, now, portal, users (Map), senderName }.
+
+const store = require('./store');
+const people = require('./people');
+const presence = require('./presence');
+const deliver = require('./deliver');
+const transfers = require('./transfers');
+const jobs = require('./bg');
+const { t } = require('./text');
+const { fail, posInt, optText, fileName, url, newId, iso, MEDIA_RE, DEVICE_RE } = require('./util');
+
+const LIMITS = Object.freeze({ items: 20, textMax: 20000, noteMax: 500, maxBytes: 2147483648, people: 20, devices: 10, nas: 5, retentionDays: 7 });
+const RETENTION_MS = LIMITS.retentionDays * 86400000;
+const PAGE_DEFAULT = 50;
+const PAGE_MAX = 100;
+const MIME_RE = /^[a-z0-9][a-z0-9.+-]{0,39}\/[a-z0-9][a-z0-9.+-]{0,99}$/;
+const SEGMENT_RE = /^[^\0-\x1f\x7f/\\:*?"<>|]{1,100}$/;
+
+// ─── parsing ────────────────────────────────────────────────────────────────
+
+function parseItems(v) {
+  if (v == null) return [];
+  if (!Array.isArray(v) || v.length > LIMITS.items) throw fail('invalid');
+  const seen = new Set();
+  return v.map((x, idx) => {
+    if (!x || typeof x !== 'object' || Array.isArray(x)) throw fail('invalid');
+    if (x.name != null && typeof x.name !== 'string') throw fail('invalid');
+    const name = fileName(x.name);
+    if (x.local === true) {
+      if (x.mediaId != null || !name) throw fail('invalid');
+      if (!Number.isSafeInteger(x.bytes) || x.bytes < 0 || x.bytes > LIMITS.maxBytes) throw fail('invalid');
+      if (x.mime != null && !(typeof x.mime === 'string' && MIME_RE.test(x.mime.toLowerCase()))) throw fail('invalid');
+      return { idx, local: true, mediaId: null, name, bytes: x.bytes, mime: x.mime == null ? 'application/octet-stream' : x.mime.toLowerCase() };
+    }
+    if (x.local != null && x.local !== false) throw fail('invalid');
+    if (typeof x.mediaId !== 'string' || !MEDIA_RE.test(x.mediaId) || seen.has(x.mediaId)) throw fail('invalid');
+    seen.add(x.mediaId);
+    return { idx, local: false, mediaId: x.mediaId, name, bytes: 0, mime: null };
+  });
+}
+
+/** An optional path below a drop folder: up to 4 segments, no '.'/'..', no characters File Station refuses. */
+function subPath(v) {
+  if (v == null || v === '') return '';
+  if (typeof v !== 'string' || v.length > 300) throw fail('invalid');
+  const segs = v.split('/').map((s) => s.trim()).filter(Boolean);
+  if (segs.length > 4 || segs.some((s) => s === '.' || s === '..' || !SEGMENT_RE.test(s))) throw fail('invalid');
+  return segs.join('/');
+}
+
+function list(v, max) {
+  if (v == null) return [];
+  if (!Array.isArray(v) || v.length > max) throw fail('invalid');
+  return v;
+}
+
+function parseTo(v) {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) throw fail('invalid');
+  const ppl = [];
+  for (const x of list(v.people, LIMITS.people)) {
+    const id = x === 'family' ? 'family' : posInt(x);
+    if (!id) throw fail('invalid');
+    if (!ppl.includes(String(id))) ppl.push(String(id));
+  }
+  const devices = [];
+  for (const x of list(v.devices, LIMITS.devices)) {
+    if (typeof x !== 'string' || !DEVICE_RE.test(x)) throw fail('invalid');
+    if (!devices.includes(x)) devices.push(x);
+  }
+  const nas = [];
+  for (const x of list(v.nas, LIMITS.nas)) {
+    if (!x || typeof x !== 'object' || Array.isArray(x)) throw fail('invalid');
+    const id = posInt(x.id);
+    if (!id) throw fail('invalid');
+    nas.push({ id, sub: subPath(x.path) });
+  }
+  let link = null;
+  if (v.link != null && v.link !== false) {
+    const l = v.link;
+    if (typeof l !== 'object' || Array.isArray(l) || !Object.prototype.hasOwnProperty.call(deliver.LINK_EXPIRES, l.expires)) throw fail('invalid');
+    if (l.pin != null && typeof l.pin !== 'boolean') throw fail('invalid');
+    link = { expires: l.expires, pin: l.pin === true };
+  }
+  return { people: ppl, devices, nas, link };
+}
+
+// ─── views ──────────────────────────────────────────────────────────────────
+
+const itemsOf = (gc, sendId) => store.all(gc, 'SELECT * FROM items WHERE send_id = ? ORDER BY idx', [sendId]);
+const deliveriesOf = (gc, sendId) => store.all(gc, 'SELECT * FROM deliveries WHERE send_id = ? ORDER BY id', [sendId]);
+
+function itemView(i, send) {
+  const available = !send.purged && !!i.media_id;
+  return { index: i.idx, mediaId: available ? i.media_id : null, name: i.name, mime: i.mime || null, bytes: i.bytes, local: i.local === 1 && !i.media_id, available };
+}
+
+function deliveryView(d) {
+  const out = { id: d.id, kind: d.kind, target: d.target, label: d.label || null, status: d.status, via: d.via || null, at: iso(d.at), error: d.error || null, openedAt: iso(d.opened_at) };
+  if (d.kind === 'person' && d.ref && d.ref.startsWith('chat:')) out.conversationId = Number(d.ref.slice(5)) || null;
+  if (d.kind === 'nas' && d.ref) out.paths = d.ref.split('\n');
+  return out;
+}
+
+/** May the viewer see this send as a recipient? → their deliveries of it ([] = no). */
+async function recipientDeliveries(ctx, send, dels) {
+  let fam = null;
+  const mine = [];
+  for (const d of dels) {
+    if (d.user_id === ctx.viewer && (d.kind === 'device' || d.kind === 'person')) { mine.push(d); continue; }
+    if (d.kind === 'person' && d.target === 'family' && !d.ref && ['delivered', 'opened', 'expired'].includes(d.status) && send.user_id !== ctx.viewer) {
+      if (fam === null) fam = (await deliver.familyOthers(ctx.gc, send.user_id, ctx.now)) || [];
+      if (fam.includes(ctx.viewer)) mine.push(d);
+    }
+  }
+  return mine;
+}
+
+/** A send as `role` ('sent' | 'received') sees it. */
+async function view(ctx, send, role, dels) {
+  const items = await itemsOf(ctx.gc, send.id);
+  const all = dels || await deliveriesOf(ctx.gc, send.id);
+  const shown = role === 'sent' ? all : await recipientDeliveries(ctx, send, all);
+  const u = ctx.users.get(send.user_id);
+  return {
+    id: send.id, role, createdAt: iso(send.created_at), expiresAt: iso(send.expires_at), expired: send.purged === 1,
+    from: { userId: send.user_id, name: u ? u.name : null, avatarUrl: u ? u.avatarUrl : null, deviceId: send.device_id || null, deviceName: send.device_name || null },
+    text: send.text || null, link: send.link || null, note: send.note || null,
+    items: items.map((i) => itemView(i, send)), deliveries: shown.map(deliveryView),
+  };
+}
+
+// ─── POST sends ─────────────────────────────────────────────────────────────
+
+/** The checked uploads of the viewer → their media info (owner, unused, an allowed type). */
+async function checkUploads(ctx, items) {
+  for (const it of items) {
+    if (it.local) continue;
+    let info = null;
+    try { info = await ctx.gc.media.info(it.mediaId); } catch { info = null; }
+    if (!info || info.owner !== ctx.viewer) throw fail('media_invalid');
+    if (await store.one(ctx.gc, 'SELECT 1 AS x FROM items WHERE media_id = ?', [it.mediaId])) throw fail('media_in_use');
+    it.mime = info.mime;
+    it.bytes = info.bytes;
+    if (!it.name) it.name = fileName(info.name) || 'Datei';
+  }
+}
+
+async function claim(ctx, mediaId) {
+  try { await ctx.gc.media.claim(mediaId); } catch { throw fail('media_invalid'); }
+}
+
+/**
+ * POST sends → { send (the sender's view), deliveries, link?, direct }
+ * See README "App-API". Deliveries to people and links run before the answer, NAS folders after it.
+ */
+async function create(ctx, body) {
+  const gc = ctx.gc;
+  const b = body && typeof body === 'object' && !Array.isArray(body) ? body : null;
+  if (!b) throw fail('invalid');
+  const items = parseItems(b.items);
+  const text = optText(b.text, LIMITS.textMax);
+  const link = url(b.link);
+  const note = optText(b.note, LIMITS.noteMax);
+  const to = parseTo(b.to);
+  if (!items.length && !text && !link) throw fail('invalid');
+  if (!to.people.length && !to.devices.length && !to.nas.length && !to.link) throw fail('invalid');
+  if ((to.nas.length || to.link) && !items.length) throw fail('invalid'); // NAS folders and links carry files
+  if ((to.nas.length || to.link) && !(await people.canShare(gc, ctx.user, ctx.now))) throw fail('forbidden');
+
+  // own devices — and how each is reached
+  const plans = [];
+  if (to.devices.length) {
+    const mine = await people.devicesOf(gc, ctx.viewer);
+    const me = ctx.deviceId ? await presence.get(gc, ctx.deviceId, ctx.viewer, ctx.now) : null;
+    for (const id of to.devices) {
+      const dev = mine.find((d) => d.id === id);
+      if (!dev || id === ctx.deviceId) throw fail('invalid');
+      plans.push({ dev, ...(await presence.plan(gc, me, dev, ctx.viewer, ctx.now)) });
+    }
+  }
+  // people (not oneself, not a kiosk device) and the family chat
+  const persons = [];
+  if (to.people.length) {
+    const kiosk = await people.kioskIds(gc);
+    for (const p of to.people) {
+      if (p === 'family') {
+        const fam = await deliver.familyOthers(gc, ctx.viewer, ctx.now);
+        const r = await people.roles(gc, ctx.now);
+        if (!fam || !r || ![...r.parents, ...r.children].includes(ctx.viewer)) throw fail('forbidden');
+        persons.push({ target: 'family', userId: null, label: t(ctx.lang, 'family') });
+        continue;
+      }
+      const uid = Number(p);
+      const u = ctx.users.get(uid);
+      if (!u || uid === ctx.viewer || kiosk.has(uid)) throw fail('invalid');
+      persons.push({ target: String(uid), userId: uid, label: u.name });
+    }
+  }
+  // NAS drop folders
+  const drops = [];
+  if (to.nas.length) {
+    const fl = await people.folders(gc, ctx.now);
+    for (const n of to.nas) {
+      const f = fl.find((x) => x.id === n.id);
+      if (!f) throw fail('not_found');
+      const p = f.path.replace(/\/+$/, '') + (n.sub ? '/' + n.sub : '');
+      drops.push({ target: p, label: `${f.label}${n.sub ? '/' + n.sub : ''}` });
+    }
+  }
+  if (to.link && !(await people.linksEnabled(gc, ctx.viewer, ctx.now))) throw fail('links_disabled');
+  // files only on the sender's device: every target must be one of its own devices reached directly
+  if (items.some((i) => i.local) && (persons.length || drops.length || to.link || plans.some((p) => !p.direct))) throw fail('upload_required');
+  await checkUploads(ctx, items);
+  for (const it of items) if (!it.local) await claim(ctx, it.mediaId);
+
+  const id = newId();
+  const direct = [];
+  const sendRow = {
+    id, user_id: ctx.viewer, device_id: ctx.deviceId || null, device_name: ctx.deviceName || null, created_at: ctx.now, expires_at: ctx.now + RETENTION_MS,
+    text, link, note, purged: 0,
+  };
+  const devDeliveries = [];
+  await store.tx(gc, async () => {
+    await store.run(gc, 'INSERT INTO sends (id, user_id, device_id, device_name, created_at, expires_at, text, link, note) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [id, ctx.viewer, sendRow.device_id, sendRow.device_name, ctx.now, sendRow.expires_at, text, link, note]);
+    for (const it of items) {
+      await store.run(gc, 'INSERT INTO items (send_id, idx, media_id, name, mime, bytes, local) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        [id, it.idx, it.mediaId, it.name, it.mime, it.bytes, it.local ? 1 : 0]);
+    }
+    const ins = async (kind, target, userId, status, label) => (await store.run(gc, 'INSERT INTO deliveries (send_id, kind, target, user_id, status, via, at, label) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+      [id, kind, target, userId, status, status === 'direct' ? 'direct' : null, ctx.now, label])).lastInsertRowid;
+    for (const p of plans) {
+      const dId = await ins('device', p.dev.id, ctx.viewer, p.direct ? 'direct' : 'pending', p.dev.name);
+      if (p.direct) {
+        const tr = await transfers.create(gc, { sendId: id, deliveryId: dId, fromDevice: ctx.deviceId, toDevice: p.dev.id, mode: p.mode, candidates: p.candidates }, ctx.now);
+        direct.push(tr);
+      } else devDeliveries.push(dId);
+    }
+    for (const p of persons) p.deliveryId = await ins('person', p.target, p.userId, 'pending', p.label);
+    for (const d of drops) d.deliveryId = await ins('nas', d.target, null, 'pending', d.label);
+    if (to.link) to.link.deliveryId = await ins('link', 'link', null, 'pending', null);
+  });
+
+  const stored = await itemsOf(gc, id);
+  const save = (dId, st) => store.run(gc, 'UPDATE deliveries SET status = ?, via = ?, error = ?, ref = ?, at = ?' + (st.target ? ', target = ?, label = ?' : '') + ' WHERE id = ?',
+    [st.status, st.via || null, st.error || null, st.ref || null, ctx.now, ...(st.target ? [st.target, st.label || null] : []), dId]);
+  // own devices: silent pushes for direct transfers, a push for the others
+  const from = { userId: ctx.viewer, name: ctx.user.name, deviceId: ctx.deviceId || null, deviceName: ctx.deviceName || null };
+  for (const tr of direct) await deliver.pushDirect(gc, sendRow, stored, tr, from, ctx.viewer);
+  for (const dId of devDeliveries) {
+    const d = await store.one(gc, 'SELECT * FROM deliveries WHERE id = ?', [dId]);
+    await save(dId, await deliver.deviceServer(gc, sendRow, stored, d, ctx.user.name));
+  }
+  // links, then people (the Messenger) — before the answer
+  let linkOut = null;
+  if (to.link) {
+    const d = await store.one(gc, 'SELECT * FROM deliveries WHERE id = ?', [to.link.deliveryId]);
+    const r = await deliver.link(ctx, sendRow, stored, d, to.link);
+    await save(d.id, r.state);
+    if (r.link) await store.run(gc, 'UPDATE links SET url = ? WHERE token = ?', [r.link.url, r.link.token]);
+    linkOut = r.link;
+  }
+  for (const p of persons) {
+    const d = await store.one(gc, 'SELECT * FROM deliveries WHERE id = ?', [p.deliveryId]);
+    await save(d.id, await deliver.person(ctx, sendRow, stored, d, ctx.user.name));
+  }
+  // NAS folders: after the answer (an upload may take minutes)
+  if (drops.length) {
+    const bgCtx = { ...ctx };
+    jobs.queue(async () => {
+      for (const dr of drops) {
+        const d = await store.one(gc, 'SELECT * FROM deliveries WHERE id = ?', [dr.deliveryId]);
+        if (!d || d.status !== 'pending') continue;
+        const st = await deliver.nas(bgCtx, sendRow, stored, d);
+        await store.run(gc, 'UPDATE deliveries SET status = ?, via = ?, error = ?, ref = ?, at = ? WHERE id = ?', [st.status, st.via || null, st.error || null, st.ref || null, Date.now(), d.id]);
+      }
+    }, gc);
+  }
+  const sendNow = await store.one(gc, 'SELECT * FROM sends WHERE id = ?', [id]);
+  const v = await view(ctx, sendNow, 'sent');
+  return { id, send: v, deliveries: v.deliveries, link: linkOut, direct: direct.map(transfers.directOut) };
+}
+
+// ─── after a send ───────────────────────────────────────────────────────────
+
+async function ownSend(ctx, id) {
+  if (typeof id !== 'string' || !/^[0-9a-f]{24}$/.test(id)) throw fail('not_found');
+  const send = await store.one(ctx.gc, 'SELECT * FROM sends WHERE id = ?', [id]);
+  if (!send || send.user_id !== ctx.viewer) throw fail('not_found');
+  return send;
+}
+
+/**
+ * POST sends/<id>/items { items: [{ index, mediaId }] } — the sender uploads files that were to go directly
+ * (after { fallback: 'upload' }); once every file is on the server, waiting device deliveries get their push.
+ */
+async function addItems(ctx, id, body) {
+  const b = body && typeof body === 'object' && !Array.isArray(body) ? body : null;
+  if (!b || !Array.isArray(b.items) || !b.items.length || b.items.length > LIMITS.items) throw fail('invalid');
+  const send = await ownSend(ctx, id);
+  if (send.purged) throw fail('gone');
+  const items = await itemsOf(ctx.gc, id);
+  const wanted = [];
+  for (const x of b.items) {
+    if (!x || typeof x !== 'object' || typeof x.mediaId !== 'string' || !MEDIA_RE.test(x.mediaId)) throw fail('invalid');
+    const it = Number.isInteger(x.index) ? items.find((i) => i.idx === x.index) : (typeof x.name === 'string' ? items.find((i) => !i.media_id && i.name === fileName(x.name)) : null);
+    if (!it || it.media_id || wanted.some((w) => w.it.idx === it.idx || w.mediaId === x.mediaId)) throw fail('invalid');
+    wanted.push({ it, mediaId: x.mediaId });
+  }
+  const infos = [];
+  for (const w of wanted) {
+    const probe = { local: false, mediaId: w.mediaId, name: w.it.name };
+    await checkUploads(ctx, [probe]);
+    infos.push({ ...w, mime: probe.mime, bytes: probe.bytes });
+  }
+  for (const w of infos) await claim(ctx, w.mediaId);
+  const jobsOut = [];
+  await store.tx(ctx.gc, async () => {
+    for (const w of infos) await store.run(ctx.gc, 'UPDATE items SET media_id = ?, mime = ?, bytes = ? WHERE send_id = ? AND idx = ?', [w.mediaId, w.mime, w.bytes, id, w.it.idx]);
+    const missing = await store.one(ctx.gc, 'SELECT COUNT(*) AS n FROM items WHERE send_id = ? AND media_id IS NULL', [id]);
+    if (missing.n) return;
+    // every file is there now: the device deliveries that wait for them (their direct transfer failed or expired)
+    for (const d of await store.all(ctx.gc, "SELECT * FROM deliveries WHERE send_id = ? AND kind = 'device' AND status = 'pending'", [id])) {
+      jobsOut.push((await transfers.fallback(ctx.gc, send, d, ctx.now)).job);
+    }
+  });
+  await transfers.runJobs(ctx.gc, jobsOut, ctx.user.name);
+  return { send: await view(ctx, await store.one(ctx.gc, 'SELECT * FROM sends WHERE id = ?', [id]), 'sent') };
+}
+
+/** GET sends/<id> — the sender's view, or a recipient's. */
+async function get(ctx, id) {
+  if (typeof id !== 'string' || !/^[0-9a-f]{24}$/.test(id)) throw fail('not_found');
+  const send = await store.one(ctx.gc, 'SELECT * FROM sends WHERE id = ?', [id]);
+  if (!send) throw fail('not_found');
+  if (send.user_id === ctx.viewer) return view(ctx, send, 'sent');
+  const dels = await deliveriesOf(ctx.gc, id);
+  if (!(await recipientDeliveries(ctx, send, dels)).length) throw fail('not_found');
+  return view(ctx, send, 'received', dels);
+}
+
+/** POST sends/<id>/opened — a recipient opened it (from an app: that device's delivery and the person ones). */
+async function opened(ctx, id) {
+  if (typeof id !== 'string' || !/^[0-9a-f]{24}$/.test(id)) throw fail('not_found');
+  const send = await store.one(ctx.gc, 'SELECT * FROM sends WHERE id = ?', [id]);
+  if (!send) throw fail('not_found');
+  const mine = await recipientDeliveries(ctx, send, await deliveriesOf(ctx.gc, id));
+  if (!mine.length) throw fail('not_found');
+  const pick = mine.filter((d) => d.kind !== 'device' || !ctx.deviceId || d.target === ctx.deviceId);
+  await store.tx(ctx.gc, async () => {
+    for (const d of pick) {
+      if (d.status === 'delivered') await store.run(ctx.gc, "UPDATE deliveries SET status = 'opened', opened_at = ? WHERE id = ?", [ctx.now, d.id]);
+    }
+  });
+  return view(ctx, await store.one(ctx.gc, 'SELECT * FROM sends WHERE id = ?', [id]), 'received');
+}
+
+/** May the viewer read this file (sender, a recipient; not after the send expired)? → { send, item } or null */
+async function fileAccess(ctx, mediaId) {
+  if (typeof mediaId !== 'string' || !MEDIA_RE.test(mediaId)) return null;
+  const item = await store.one(ctx.gc, 'SELECT * FROM items WHERE media_id = ?', [mediaId]);
+  if (!item) return null;
+  const send = await store.one(ctx.gc, 'SELECT * FROM sends WHERE id = ?', [item.send_id]);
+  if (!send || send.purged || send.expires_at <= ctx.now) return null;
+  if (send.user_id === ctx.viewer) return { send, item };
+  const mine = await recipientDeliveries(ctx, send, await deliveriesOf(ctx.gc, send.id));
+  return mine.some((d) => ['delivered', 'opened'].includes(d.status)) ? { send, item } : null;
+}
+
+/** GET items/<mediaId> → { item, url } — url: the app's media route, or a signed /plugin-media/ URL for the portal. */
+async function itemInfo(ctx, mediaId, pluginId) {
+  const a = await fileAccess(ctx, mediaId);
+  if (!a) throw fail('not_found');
+  let u = `/api/v1/client/plugins/${pluginId}/media/${mediaId}`;
+  if (ctx.portal) {
+    try { u = await ctx.gc.media.url(mediaId, { user: ctx.viewer, ttlS: 3600 }); } catch { throw fail('not_found'); }
+  }
+  return { item: { sendId: a.send.id, ...itemView(a.item, a.send) }, url: u };
+}
+
+// ─── lists ──────────────────────────────────────────────────────────────────
+
+function page(query) {
+  const q = query || {};
+  const limit = q.limit == null || q.limit === '' ? PAGE_DEFAULT : posInt(String(q.limit));
+  if (!limit || limit > PAGE_MAX) throw fail('invalid');
+  let before = null;
+  if (q.before != null && q.before !== '') {
+    before = Date.parse(String(q.before));
+    if (!Number.isFinite(before)) throw fail('invalid');
+  }
+  return { limit, before: before == null ? Number.MAX_SAFE_INTEGER : before };
+}
+
+/** GET inbox?kind=received|sent|links&before=<ISO>&limit= → { kind, items, hasMore } */
+async function inbox(ctx, query) {
+  const kind = query && query.kind != null && query.kind !== '' ? String(query.kind) : 'received';
+  if (!['received', 'sent', 'links'].includes(kind)) throw fail('invalid');
+  const { limit, before } = page(query);
+  const gc = ctx.gc;
+  if (kind === 'links') return { kind, ...(await links(ctx, limit, before)) };
+  let rows;
+  if (kind === 'sent') {
+    rows = await store.all(gc, 'SELECT * FROM sends WHERE user_id = ? AND created_at < ? ORDER BY created_at DESC LIMIT ?', [ctx.viewer, before, limit + 1]);
+  } else {
+    const r = await people.roles(gc, ctx.now);
+    const family = !!(r && [...r.parents, ...r.children].includes(ctx.viewer));
+    rows = await store.all(gc, `SELECT s.* FROM sends s WHERE s.created_at < ? AND EXISTS (SELECT 1 FROM deliveries d WHERE d.send_id = s.id AND d.status IN ('delivered', 'opened', 'expired') AND (
+        (d.user_id = ? AND (d.kind = 'device' OR (d.kind = 'person' AND (d.ref IS NULL OR d.ref NOT LIKE 'chat:%'))))
+        OR (? = 1 AND d.kind = 'person' AND d.target = 'family' AND d.ref IS NULL AND s.user_id != ?)))
+      ORDER BY s.created_at DESC LIMIT ?`, [before, ctx.viewer, family ? 1 : 0, ctx.viewer, limit + 1]);
+  }
+  const hasMore = rows.length > limit;
+  const out = [];
+  for (const s of rows.slice(0, limit)) out.push(await view(ctx, s, kind === 'sent' ? 'sent' : 'received'));
+  return { kind, items: out, hasMore };
+}
+
+/** The viewer's links with GateControl's counters (when links are on). */
+async function links(ctx, limit, before) {
+  const rows = await store.all(ctx.gc, 'SELECT * FROM links WHERE user_id = ? AND created_at < ? ORDER BY created_at DESC LIMIT ?', [ctx.viewer, before, limit + 1]);
+  const hasMore = rows.length > limit;
+  const items = [];
+  for (const l of rows.slice(0, limit)) {
+    let live = null;
+    if (ctx.gc.publicLinks && !l.revoked_at && l.expires_at > ctx.now) {
+      try { live = await ctx.gc.publicLinks.get(l.token); } catch { live = null; }
+    }
+    const downloads = live && Number.isSafeInteger(live.downloads) ? live.downloads : l.downloads;
+    const locked = live ? live.locked === true : l.locked === 1;
+    const revoked = !!l.revoked_at || (live ? live.revoked === true : false);
+    let state = live && typeof live.state === 'string' ? live.state : null;
+    if (!state) state = revoked ? 'revoked' : (locked ? 'locked' : (l.expires_at <= ctx.now ? 'expired' : 'active'));
+    if (l.revoked_at) state = 'revoked';
+    items.push({
+      token: l.token, url: (live && live.url) || l.url || null, sendId: l.send_id, title: l.title || null, pin: l.pin === 1, maxDownloads: l.max_downloads,
+      downloads, locked, revoked, state, createdAt: iso(l.created_at), expiresAt: iso(l.expires_at),
+      active: state === 'active' && l.expires_at > ctx.now,
+    });
+  }
+  return { items, hasMore };
+}
+
+/** DELETE links/<token> — the link's owner ends it. → { revoked } */
+async function endLink(ctx, token) {
+  if (typeof token !== 'string' || !/^[A-Za-z0-9_-]{16,128}$/.test(token)) throw fail('not_found');
+  const l = await store.one(ctx.gc, 'SELECT * FROM links WHERE token = ?', [token]);
+  if (!l || l.user_id !== ctx.viewer) throw fail('not_found');
+  let revoked = false;
+  if (!l.revoked_at && ctx.gc.publicLinks) {
+    try { revoked = (await ctx.gc.publicLinks.revoke(token)) === true; } catch (e) {
+      if (e && e.code === 'ERR_PUBLIC_LINKS_DISABLED') revoked = false; else throw e;
+    }
+  }
+  await store.tx(ctx.gc, async () => {
+    if (!l.revoked_at) await store.run(ctx.gc, 'UPDATE links SET revoked_at = ? WHERE token = ?', [ctx.now, token]);
+    await store.run(ctx.gc, "UPDATE deliveries SET status = 'expired', error = 'revoked', at = ? WHERE send_id = ? AND kind = 'link' AND target = ?", [ctx.now, l.send_id, token]);
+  });
+  return { revoked: revoked || !l.revoked_at };
+}
+
+module.exports = { create, addItems, get, opened, fileAccess, itemInfo, inbox, endLink, view, parseItems, parseTo, subPath, LIMITS, RETENTION_MS };

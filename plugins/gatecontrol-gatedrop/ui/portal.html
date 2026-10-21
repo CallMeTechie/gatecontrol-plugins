@@ -1,0 +1,46 @@
+<div class="gd-portal" id="gd-portal">
+  <div class="gd-main">
+    <p class="gd-storage" id="gd-storage" hidden></p>
+    <label class="gd-drop" id="gd-drop">
+      <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 16V4M7 9l5-5 5 5M5 20h14"></path></svg>
+      <b>{{t:portal.drop_title}}</b>
+      <small>{{t:portal.drop_hint}}</small>
+      <input type="file" id="gd-file" multiple class="gd-sr">
+      <span class="btn btn-sm" aria-hidden="true">{{t:portal.pick}}</span>
+    </label>
+    <div class="gd-files" id="gd-files"></div>
+    <label class="gd-sr" for="gd-text">{{t:portal.text}}</label>
+    <textarea id="gd-text" class="gd-text" maxlength="20000" placeholder="{{t:portal.text_ph}}"></textarea>
+    <div class="gd-box">
+      <span class="gd-sec">{{t:portal.send_to}}</span>
+      <div class="gd-chips" id="gd-targets"></div>
+      <div class="gd-linkopts" id="gd-linkopts" hidden>
+        <b>{{t:portal.link_options}}</b>
+        <p>{{t:portal.link_hint}}</p>
+        <span class="gd-sec">{{t:portal.valid}}</span>
+        <div class="gd-radios">
+          <label class="gd-radio"><input type="radio" name="gd-exp" value="1h">{{t:portal.exp_1h}}</label>
+          <label class="gd-radio"><input type="radio" name="gd-exp" value="1d" checked>{{t:portal.exp_1d}}</label>
+          <label class="gd-radio"><input type="radio" name="gd-exp" value="7d">{{t:portal.exp_7d}}</label>
+          <label class="gd-radio"><input type="radio" name="gd-exp" value="once">{{t:portal.exp_once}}</label>
+        </div>
+        <label class="gd-check"><span><b>{{t:portal.pin}}</b><small>{{t:portal.pin_hint}}</small></span><input type="checkbox" id="gd-pin" checked></label>
+      </div>
+      <div class="gd-actions">
+        <button type="button" class="btn btn-primary" id="gd-send">{{t:portal.send}}</button>
+        <span class="gd-muted" id="gd-progress" role="status"></span>
+      </div>
+      <div class="gd-result" id="gd-result" hidden></div>
+    </div>
+  </div>
+  <div class="gd-side">
+    <span class="gd-sec">{{t:portal.active_links}}</span>
+    <div class="gd-list" id="gd-links"></div>
+    <span class="gd-sec">{{t:portal.history}}</span>
+    <div class="gd-list" id="gd-history"></div>
+  </div>
+</div>
+<div class="gd-login" id="gd-login" hidden>
+  <b>{{t:portal.login_title}}</b>
+  <span class="gd-muted">{{t:portal.login_text}}</span>
+</div>

@@ -2,6 +2,7 @@
   "$comment": "Synthetic DSM 6.2.4 answers: SYNO.API.Auth at auth.cgi (max version 6), no SYNO.Storage.CGI.Storage in this fixture (fallback SYNO.Core.System type=storage), DSM 6 update shape.",
   "api_info": {
     "SYNO.API.Auth": { "maxVersion": 6, "minVersion": 1, "path": "auth.cgi" },
+    "SYNO.FileStation.Upload": { "maxVersion": 2, "minVersion": 1, "path": "entry.cgi" },
     "SYNO.DSM.Info": { "maxVersion": 2, "minVersion": 1, "path": "entry.cgi" },
     "SYNO.Core.System": { "maxVersion": 1, "minVersion": 1, "path": "entry.cgi" },
     "SYNO.Core.System.Utilization": { "maxVersion": 1, "minVersion": 1, "path": "entry.cgi" },

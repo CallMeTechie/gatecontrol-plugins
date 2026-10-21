@@ -2,6 +2,7 @@
   "$comment": "Synthetic DSM 7.2.1 answers (the data of { success: true, data }) in the shapes of the DSM Web API; no real device, example values only.",
   "api_info": {
     "SYNO.API.Auth": { "maxVersion": 7, "minVersion": 1, "path": "entry.cgi" },
+    "SYNO.FileStation.Upload": { "maxVersion": 3, "minVersion": 1, "path": "entry.cgi" },
     "SYNO.DSM.Info": { "maxVersion": 2, "minVersion": 1, "path": "entry.cgi" },
     "SYNO.Core.System": { "maxVersion": 3, "minVersion": 1, "path": "entry.cgi", "requestFormat": "JSON" },
     "SYNO.Core.System.Utilization": { "maxVersion": 1, "minVersion": 1, "path": "entry.cgi", "requestFormat": "JSON" },

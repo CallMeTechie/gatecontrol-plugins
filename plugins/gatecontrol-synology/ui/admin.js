@@ -44,6 +44,7 @@
       if (byId(detailId)) renderDetail(byId(detailId)); else showList();
     }
     fillSettings();
+    renderDrop();
   }
 
   // ── status of a NAS ─────────────────────────────────────────────────────
@@ -441,6 +442,36 @@
     S.api('PUT', 'settings', body).then(function () {
       settingsDirty = false;
       S.toast(T('settings.saved'));
+      return load();
+    }).catch(warn);
+  });
+
+  // ── GateDrop drop folders (1.2.0) ───────────────────────────────────────
+  function renderDrop() {
+    var list = $('#sy-drop-list');
+    while (list.firstChild) list.removeChild(list.firstChild);
+    var folders = data.drop_folders || [];
+    if (!folders.length) list.appendChild(el('p', { class: 'form-hint', text: T('drop.none') }));
+    folders.forEach(function (f) {
+      list.appendChild(el('div', { class: 'sy-drop-row' }, [
+        el('div', { class: 'sy-drop-tx' }, [el('b', { text: f.label }), el('span', { class: 'form-hint', text: (f.nas_name || '–') + ' · ' + f.path + (f.nas_enabled ? '' : ' · ' + T('drop.disabled')) })]),
+        el('button', { type: 'button', class: 'btn btn-sm', text: T('drop.remove'), on: { click: function () {
+          S.api('DELETE', 'drop-folders/' + f.id).then(function () { S.toast(T('drop.removed')); return load(); }).catch(warn);
+        } } }),
+      ]));
+    });
+    var sel = $('#sy-drop-nas');
+    var cur = sel.value;
+    while (sel.firstChild) sel.removeChild(sel.firstChild);
+    (data.nas || []).forEach(function (n) { sel.appendChild(el('option', { value: String(n.id), text: n.name })); });
+    if (cur) sel.value = cur;
+  }
+  $('#sy-drop-add').addEventListener('click', function () {
+    var body = { nas_id: Number($('#sy-drop-nas').value), path: $('#sy-drop-path').value.trim(), label: $('#sy-drop-label').value.trim() };
+    S.api('POST', 'drop-folders', body).then(function () {
+      $('#sy-drop-path').value = '';
+      $('#sy-drop-label').value = '';
+      S.toast(T('drop.added'));
       return load();
     }).catch(warn);
   });

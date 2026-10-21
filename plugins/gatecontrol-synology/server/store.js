@@ -66,6 +66,7 @@ async function updateNas(gc, id, patch) {
 
 async function deleteNas(gc, id) {
   await gc.db.run('DELETE FROM snapshots WHERE nas_id = ?', [id]);
+  await gc.db.run('DELETE FROM drop_folders WHERE nas_id = ?', [id]);
   const r = await gc.db.run('DELETE FROM nas WHERE id = ?', [id]);
   for (const k of SECRET_KINDS) await setSecret(gc, id, k, null);
   return r.changes > 0;
@@ -86,6 +87,32 @@ async function allSnapshots(gc) {
 async function saveSnapshot(gc, id, data, at) {
   await gc.db.run('INSERT INTO snapshots (nas_id, data, fetched_at) VALUES (?, ?, ?) ON CONFLICT(nas_id) DO UPDATE SET data = excluded.data, fetched_at = excluded.fetched_at',
     [id, JSON.stringify(data), at]);
+}
+
+// ─── GateDrop drop folders (1.2.0) ───────────────
+
+async function listFolders(gc) {
+  const { rows } = await gc.db.query('SELECT id, nas_id, label, path FROM drop_folders ORDER BY label COLLATE NOCASE, id');
+  return rows;
+}
+
+async function getFolder(gc, id) {
+  const { row } = await gc.db.get('SELECT id, nas_id, label, path FROM drop_folders WHERE id = ?', [id]);
+  return row || null;
+}
+
+async function createFolder(gc, f) {
+  const r = await gc.db.run('INSERT INTO drop_folders (nas_id, label, path) VALUES (?, ?, ?)', [f.nas_id, f.label, f.path]);
+  return getFolder(gc, r.lastInsertRowid);
+}
+
+async function updateFolder(gc, id, f) {
+  await gc.db.run('UPDATE drop_folders SET nas_id = ?, label = ?, path = ? WHERE id = ?', [f.nas_id, f.label, f.path, id]);
+  return getFolder(gc, id);
+}
+
+async function deleteFolder(gc, id) {
+  return (await gc.db.run('DELETE FROM drop_folders WHERE id = ?', [id])).changes > 0;
 }
 
 // ─── Secrets ────────────────────────────────────
@@ -111,5 +138,5 @@ async function credentials(gc, id) {
 
 module.exports = {
   listNas, getNas, createNas, updateNas, deleteNas, getSnapshot, allSnapshots, saveSnapshot,
-  secret, setSecret, credentials, secretKey, SECRET_KINDS,
+  secret, setSecret, credentials, secretKey, SECRET_KINDS, listFolders, getFolder, createFolder, updateFolder, deleteFolder,
 };

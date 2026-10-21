@@ -187,5 +187,5 @@ test('plugin.json: the chat topic "message", app + events + media + services', (
   assert.equal(m.media.maxBytes, 25 * 1024 * 1024);
   assert.equal(m.media.quotaDefault, '10GB');
   for (const t of ['image/jpeg', 'image/webp', 'audio/ogg', 'audio/mp4', 'audio/webm', 'application/pdf']) assert.ok(m.media.types.includes(t), t);
-  assert.deepEqual(Object.keys(m.services.provides), ['send_message', 'sync_group', 'release_group', 'set_place_status']);
+  assert.deepEqual(Object.keys(m.services.provides), ['send_message', 'sync_group', 'release_group', 'set_place_status', 'send_file']);
 });

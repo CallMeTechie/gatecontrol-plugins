@@ -65,6 +65,28 @@
         <button class="btn btn-primary" type="button" id="sy-set-save">{{t:common.save}}</button>
       </div>
     </div>
+    <div class="sy-card sy-settings" id="sy-drop">
+      <div class="sy-lbl">{{t:drop.title}}</div>
+      <p class="form-hint">{{t:drop.hint}}</p>
+      <div id="sy-drop-list"></div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label" for="sy-drop-nas">{{t:drop.nas}}</label>
+          <select class="form-select" id="sy-drop-nas"></select>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="sy-drop-path">{{t:drop.path}}</label>
+          <input class="form-input" id="sy-drop-path" type="text" maxlength="400" placeholder="{{t:drop.path_ph}}" autocomplete="off" spellcheck="false">
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="sy-drop-label">{{t:drop.label}}</label>
+          <input class="form-input" id="sy-drop-label" type="text" maxlength="60" autocomplete="off">
+        </div>
+      </div>
+      <div class="sy-foot">
+        <button class="btn btn-primary" type="button" id="sy-drop-add">{{t:drop.add}}</button>
+      </div>
+    </div>
     <div class="sy-card sy-help">
       <div class="sy-lbl">{{t:help.title}}</div>
       <p>{{t:help.target}}</p>

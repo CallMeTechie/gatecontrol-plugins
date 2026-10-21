@@ -47,7 +47,19 @@
 //   set_place_status { userId, place: string | null }   (1.4.0, from gatecontrol-familie only)
 //     Familie's presence: shown in that person's status when the preset is auto_place → { ok, applied }
 //
-// Refusals answer { ok: false, code } (invalid | not_found | forbidden) and are logged
+//   send_file { conversation: 'direct:<uid>' | 'family' | 'group:<id>', user (the sender, required), mediaIds: [≤ 20],
+//     names?: [..], text? }   (1.8.0, for GateDrop; the files handed over with gc.media.handOver, GateControl ≥ 1.193.0)
+//     → messages FROM `user` (not system messages), pushed like any message that person sends: one per file — kind
+//     image (JPEG, PNG, WebP, GIF), voice (audio/*), file (everything else; a video/* file is a file message the apps
+//     show as a video) with the name as meta.fileName; the text is the first file's caption (≤ 4000) or comes as text
+//     messages before the files (no files, or longer: split at 4000, at most 5 parts). The sender must be a member
+//     (direct chat: found or created, a block either way → blocked; 'family': the caller's managed group 'family',
+//     else Familie's; group: a member, not read-only → readonly). Each file must be handed over for `user` (owner),
+//     unused, at most HANDOVER_MAX_BYTES (2 GB — the messenger's own uploads stay at 25 MB) → else media_invalid,
+//     media_in_use, file_too_large. → { ok: true, conversationId, messageIds }
+//
+// Refusals answer { ok: false, code } (invalid | not_found | forbidden; send_file also blocked, readonly,
+// media_invalid, media_in_use, file_too_large) and are logged
 // (Protokoll: service_refused, with the code — never the text).
 
 const store = require('./store');
@@ -58,10 +70,17 @@ const conversations = require('./conversations');
 const messages = require('./messages');
 const homeactions = require('./homeactions');
 const status = require('./status');
-const { fail, isKnown, posInt, text, optText, iso } = require('./util');
+const crypto = require('node:crypto');
+const { fail, isKnown, posInt, text, optText, iso, multiline } = require('./util');
 
 const KEY_RE = /^[a-z0-9_-]{1,32}$/;
 const TARGETS_MAX = 20;
+// 1.8.0 send_file: files handed over by another plugin (GateDrop) may be larger than the messenger's own uploads
+const HANDOVER_MAX_BYTES = 2 * 1024 * 1024 * 1024;
+const FILES_MAX = 20;
+const FILE_TEXT_MAX = 20000;
+const TEXT_PARTS_MAX = 5;
+const IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
 
 async function managed(gc, caller, key) {
   return store.one(gc, 'SELECT * FROM conversations WHERE managed_by = ? AND managed_key = ?', [caller, key]);
@@ -208,6 +227,79 @@ async function sendMany(ctx, caller, user, payload) {
   return { sent, failed: results.length - sent, results };
 }
 
+/** The message kind of a handed-over file by its type. */
+function kindOf(mime) {
+  const m = String(mime || '').toLowerCase();
+  if (IMAGE_TYPES.includes(m)) return 'image';
+  if (/^audio\//.test(m)) return 'voice';
+  return 'file';
+}
+
+/** 1.8.0: send_file (GateDrop) → { conversationId, messageIds } — messages of `payload.user` (see the head of this file). */
+async function sendFile(ctx, caller, callUser, p) {
+  const uid = posInt(p.user);
+  if (!uid || !ctx.users.has(uid) || (callUser && callUser.id !== uid)) throw fail('invalid');
+  const ids = p.mediaIds == null ? [] : p.mediaIds;
+  if (!Array.isArray(ids) || ids.length > FILES_MAX || !ids.every((x) => typeof x === 'string' && /^[0-9a-f]{32}$/.test(x)) || new Set(ids).size !== ids.length) throw fail('invalid');
+  const names = p.names == null ? [] : p.names;
+  if (!Array.isArray(names) || names.length > ids.length || !names.every((n) => n == null || typeof n === 'string')) throw fail('invalid');
+  if (p.text != null && typeof p.text !== 'string') throw fail('invalid');
+  const body = p.text == null ? null : multiline(p.text) || null;
+  if ((body && body.length > FILE_TEXT_MAX) || (!ids.length && !body)) throw fail('invalid');
+  // the conversation, the sender a member of it
+  const c = typeof p.conversation === 'string' ? p.conversation : '';
+  let conv;
+  let m = /^direct:(\d{1,15})$/.exec(c);
+  if (m) conv = await directConv(ctx, { id: uid }, posInt(m[1]));
+  else if (c === 'family') {
+    conv = (await managed(ctx.gc, caller, 'family')) || (await managed(ctx.gc, 'gatecontrol-familie', 'family'));
+    if (!conv) throw fail('not_found');
+  } else if ((m = /^group:(\d{1,15})$/.exec(c))) {
+    conv = await conversations.getConv(ctx.gc, posInt(m[1]));
+    if (!conv || conv.kind !== 'group') throw fail('not_found');
+  } else throw fail('invalid');
+  const members = await conversations.membersOf(ctx.gc, conv.id);
+  const me = members.find((x) => x.user_id === uid);
+  if (!me) throw fail('forbidden');
+  if (conv.readonly) throw fail('readonly');
+  // every file first: handed over for this person, unused, not too large
+  const files = [];
+  for (let i = 0; i < ids.length; i++) {
+    let info = null;
+    try { info = await ctx.gc.media.info(ids[i]); } catch { info = null; }
+    if (!info || info.owner !== uid) throw fail('media_invalid');
+    if (info.bytes > HANDOVER_MAX_BYTES) throw fail('file_too_large');
+    if (await store.one(ctx.gc, 'SELECT 1 AS x FROM media WHERE media_id = ?', [ids[i]])) throw fail('media_in_use');
+    const name = typeof names[i] === 'string' ? optText(names[i].slice(0, 200), 200) : null;
+    files.push({ id: ids[i], kind: kindOf(info.mime), name: name || info.name || null });
+  }
+  const parts = [];
+  let caption = null;
+  if (body && files.length && body.length <= messages.TEXT_MAX) caption = body;
+  else if (body) {
+    for (let i = 0; i < body.length; i += messages.TEXT_MAX) parts.push(body.slice(i, i + messages.TEXT_MAX));
+    if (parts.length > TEXT_PARTS_MAX) throw fail('invalid');
+  }
+  // the messages as the person's own (messages.send: the same checks as the apps — blocks, read-only, the file's owner)
+  const before = ctx.viewer;
+  ctx.viewer = uid;
+  const messageIds = [];
+  try {
+    const one = async (b) => {
+      const r = await messages.send(ctx, conv, me, members, { clientId: 'gd-' + crypto.randomBytes(12).toString('hex'), ...b });
+      messages.queueNew(ctx, conv, members, r.row);
+      ctx.box.pushes.push({ conv, members, row: r.row, text: r.text, meta: r.meta, title: conversations.titleOf(conv) });
+      messageIds.push(r.row.id);
+    };
+    for (const t of parts) await one({ kind: 'text', text: t });
+    for (let i = 0; i < files.length; i++) {
+      const f = files[i];
+      await one({ kind: f.kind, mediaId: f.id, ...(i === 0 && caption ? { text: caption } : {}), ...(f.name ? { meta: { fileName: f.name } } : {}) });
+    }
+  } finally { ctx.viewer = before; }
+  return { conversationId: conv.id, messageIds };
+}
+
 /** sync_group → { conversationId, created, added, removed, ignored } */
 async function syncGroup(ctx, caller, payload) {
   const key = typeof payload.key === 'string' && KEY_RE.test(payload.key) ? payload.key : null;
@@ -315,6 +407,7 @@ async function handle(ctx, { name, caller, user, payload }, flush) {
     else if (name === 'sync_group') out = await store.tx(ctx.gc, () => syncGroup(ctx, who, p));
     else if (name === 'release_group') out = await store.tx(ctx.gc, () => releaseGroup(ctx, who, p));
     else if (name === 'set_place_status') out = await store.tx(ctx.gc, () => setPlaceStatus(ctx, who, p));
+    else if (name === 'send_file') out = await store.tx(ctx.gc, () => sendFile(ctx, who, u, p));
     else throw new Error('unknown service');
     await flush();
     return { ok: true, ...out };
@@ -325,4 +418,4 @@ async function handle(ctx, { name, caller, user, payload }, flush) {
   }
 }
 
-module.exports = { handle, sendMessage, sendMany, syncGroup, releaseGroup, KEY_RE, TARGETS_MAX };
+module.exports = { handle, sendMessage, sendMany, syncGroup, releaseGroup, sendFile, KEY_RE, TARGETS_MAX, HANDOVER_MAX_BYTES };
