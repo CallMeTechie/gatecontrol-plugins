@@ -144,6 +144,7 @@
   "add.dreo_first": "Trag zuerst dein Dreo-Konto in den Einstellungen des Plugins ein.",
   "add.dreo_hint": "Heizungen und Klimageräte deines Dreo-Kontos:",
   "add.dreo_none": "Alle Heizungen und Klimageräte des Kontos sind bereits hinzugefügt.",
+  "add.dreo_empty": "Im Dreo-Konto wurde kein Gerät gefunden. Ist der Heizlüfter in der Dreo-App mit genau diesem Konto verbunden?",
   "add.dreo_unsupported": "wird nicht unterstützt",
   "vendor.midea": "Midea",
   "vendor.dreo": "Dreo",
@@ -196,6 +197,10 @@
   "settings.login_failed": "Anmeldung fehlgeschlagen: {{error}}",
   "settings.midea_ok": "Verbunden als {{email}} ({{app}})",
   "settings.dreo_ok": "Verbunden als {{email}} (Region {{region}})",
+  "settings.dreo_devices": "Im Konto: {{list}} – erscheint auf der Raumklima-Seite",
+  "settings.dreo_unsupported": "nicht unterstützt: {{list}}",
+  "settings.dreo_no_devices": "Im Dreo-Konto ist kein Gerät. Ist der Heizlüfter in der Dreo-App mit genau diesem Konto verbunden (nicht nur geteilt)?",
+  "settings.dreo_list_failed": "Geräteliste des Kontos nicht lesbar: {{error}}",
   "settings.not_checked": "Eingetragen – noch nicht angemeldet. Speichern meldet an."
  },
  "en": {
@@ -343,6 +348,7 @@
   "add.dreo_first": "First enter your Dreo account in the plugin settings.",
   "add.dreo_hint": "Heaters and air conditioners of your Dreo account:",
   "add.dreo_none": "All heaters and air conditioners of the account have been added already.",
+  "add.dreo_empty": "No device was found in the Dreo account. Is the heater connected to exactly this account in the Dreo app?",
   "add.dreo_unsupported": "not supported",
   "vendor.midea": "Midea",
   "vendor.dreo": "Dreo",
@@ -395,6 +401,10 @@
   "settings.login_failed": "Sign-in failed: {{error}}",
   "settings.midea_ok": "Connected as {{email}} ({{app}})",
   "settings.dreo_ok": "Connected as {{email}} (region {{region}})",
+  "settings.dreo_devices": "In the account: {{list}} – shown on the Raumklima page",
+  "settings.dreo_unsupported": "not supported: {{list}}",
+  "settings.dreo_no_devices": "There is no device in the Dreo account. Is the heater connected to exactly this account in the Dreo app (not just shared)?",
+  "settings.dreo_list_failed": "Could not read the account's device list: {{error}}",
   "settings.not_checked": "Entered – not signed in yet. Saving signs in."
  }
 }

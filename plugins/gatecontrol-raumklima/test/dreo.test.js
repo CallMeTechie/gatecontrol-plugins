@@ -14,17 +14,17 @@ const model = require('../server/dreomodel');
 
 const settle = () => new Promise((r) => setTimeout(r, 30));
 
-/** Connect the fake Dreo account and add its heater (and air conditioner) for Ada. */
+/** Connect the fake Dreo account (its heater — and air conditioner — appear by themselves, 2.1.0) and give them to Ada. */
 async function setup(host, dreo, { ac = false } = {}) {
+  if (!ac) dreo.devices = dreo.devices.filter((x) => x.sn !== 'HAC006S-1');
   const lines = await connectDreo(host, dreo);
   assert.equal(lineOf(lines, 'dreo').tone, 'ok', JSON.stringify(lines));
-  const heater = (await asAdmin(host, 'POST', '/devices', { transport: 'dreo', sn: 'HSH009S-1' })).json.device;
+  const all = (await asAdmin(host, 'GET', '/devices')).json.devices;
+  const bySn = (sn) => all.find((d) => d.device_sn === 'dreo-' + sn) || null;
+  const heater = bySn('HSH009S-1');
   await asAdmin(host, 'PUT', `/devices/${heater.id}/owners`, { user_ids: [ADA.id] });
-  let air = null;
-  if (ac) {
-    air = (await asAdmin(host, 'POST', '/devices', { transport: 'dreo', sn: 'HAC006S-1', name: 'Klima oben' })).json.device;
-    await asAdmin(host, 'PUT', `/devices/${air.id}/owners`, { user_ids: [ADA.id] });
-  }
+  const air = ac ? bySn('HAC006S-1') : null;
+  if (air) await asAdmin(host, 'PUT', `/devices/${air.id}/owners`, { user_ids: [ADA.id] });
   return { heater, air };
 }
 
@@ -58,23 +58,70 @@ test('the account on the settings page: login at the account’s region, only th
   });
 });
 
-test('the device list: heaters and air conditioners can be added, other Dreo devices not', () => {
+test('the device list: the account’s heaters and air conditioners appear by themselves, other Dreo devices not', () => {
   const dreo = fakeDreo();
   return withHost({ dreo }, async (host) => {
     const before = await asAdmin(host, 'GET', '/dreo/devices');
     assert.equal(before.json.code, 'DREO_NOT_CONFIGURED');
-    await connectDreo(host, dreo);
+    const lines = await connectDreo(host, dreo);
     const list = (await asAdmin(host, 'GET', '/dreo/devices')).json.devices;
     assert.deepEqual(list.map((d) => [d.sn, d.model, d.kind]), [['HSH009S-1', 'DR-HSH009S', 'heater'], ['HAC006S-1', 'DR-HAC006S', 'ac'], ['HTF001S-1', 'DR-HTF001S', null]]);
+    // 2.1.0: saving the account added the heater and the air conditioner (names and models of the Dreo app)
+    let devices = (await asAdmin(host, 'GET', '/devices')).json.devices;
+    assert.deepEqual(devices.map((d) => [d.device_sn, d.name, d.vendor, d.kind, d.model]),
+      [['dreo-HSH009S-1', 'Bad', 'dreo', 'heater', 'DR-HSH009S'], ['dreo-HAC006S-1', 'Schlafzimmer', 'dreo', 'ac', 'DR-HAC006S']]);
+    assert.deepEqual(devices[0].caps.modes.map((m) => m.id), ['heat1', 'heat2', 'heat3', 'eco', 'fan']);
+    // the settings say what the account holds
+    const found = lines.filter((l) => l.group === 'dreo').map((l) => l.text).join(' | ');
+    assert.match(found, /Bad \(DR-HSH009S\), Schlafzimmer \(DR-HAC006S\)/);
+    assert.match(found, /nicht unterstützt: DR-HTF001S/);
+    // by hand: the fan is refused, an added one is refused twice, an unknown one is not in the account
     const fan = await asAdmin(host, 'POST', '/devices', { transport: 'dreo', sn: 'HTF001S-1' });
-    assert.equal(fan.status, 400);
-    assert.equal(fan.json.code, 'DREO_UNSUPPORTED');
-    const add = await asAdmin(host, 'POST', '/devices', { transport: 'dreo', sn: 'HSH009S-1' });
-    assert.deepEqual([add.json.device.name, add.json.device.vendor, add.json.device.kind, add.json.device.model], ['Bad', 'dreo', 'heater', 'DR-HSH009S']);
+    assert.deepEqual([fan.status, fan.json.code], [400, 'DREO_UNSUPPORTED']);
     assert.equal((await asAdmin(host, 'POST', '/devices', { transport: 'dreo', sn: 'HSH009S-1' })).json.code, 'MIDEA_DEVICE_EXISTS');
     assert.equal((await asAdmin(host, 'POST', '/devices', { transport: 'dreo', sn: 'nope' })).json.code, 'MIDEA_NOT_IN_CLOUD');
-    const devices = (await asAdmin(host, 'GET', '/devices')).json.devices;
-    assert.deepEqual(devices[0].caps.modes.map((m) => m.id), ['heat1', 'heat2', 'heat3', 'eco', 'fan']);
+    // removed by hand: it does not come back with the next look into the account …
+    await asAdmin(host, 'DELETE', `/devices/${devices[1].id}`);
+    await host.saveSettings({ 'dreo.email': dreo.email });
+    await require('../server/dreoimport').run(host.gc);
+    devices = (await asAdmin(host, 'GET', '/devices')).json.devices;
+    assert.deepEqual(devices.map((d) => d.device_sn), ['dreo-HSH009S-1']);
+    // … until it is added again by hand
+    const again = await asAdmin(host, 'POST', '/devices', { transport: 'dreo', sn: 'HAC006S-1' });
+    assert.equal(again.json.device.name, 'Schlafzimmer');
+    // a device added later in the Dreo app appears with the hourly look (background)
+    dreo.devices.push({ sn: 'HSH034S-1', deviceName: 'Wohnzimmer', model: 'DR-HSH034S', productName: 'Heater' });
+    await host.tick();
+    assert.equal((await asAdmin(host, 'GET', '/devices')).json.devices.length, 2, 'not before the hour is over');
+    const imp = require('../server/dreoimport');
+    await imp.maybe(host.gc, Date.now() + imp.EVERY_MS + 1000);
+    assert.deepEqual((await asAdmin(host, 'GET', '/devices')).json.devices.map((d) => d.name).sort(), ['Bad', 'Schlafzimmer', 'Wohnzimmer']);
+  });
+});
+
+test('an empty Dreo account: the settings and the add dialog say so', () => {
+  const dreo = fakeDreo({ devices: [] });
+  return withHost({ dreo }, async (host) => {
+    const lines = await connectDreo(host, dreo);
+    const dl = lines.filter((l) => l.group === 'dreo');
+    assert.equal(dl[0].tone, 'ok');
+    assert.deepEqual([dl[1].tone, /kein Gerät/.test(dl[1].text)], ['warn', true], JSON.stringify(dl));
+    assert.deepEqual((await asAdmin(host, 'GET', '/devices')).json.devices, []);
+    const ui = require('node:fs').readFileSync(require('node:path').join(__dirname, '..', 'ui', 'admin.js'), 'utf8');
+    assert.ok(ui.includes("!dreoDevices.length ? T('add.dreo_empty')"), 'the dialog does not claim "all added" for an empty account');
+  });
+});
+
+test('an account connected before 2.1.0: the first background run adds its devices', () => {
+  const dreo = fakeDreo();
+  return withHost({ dreo }, async (host) => {
+    await connectDreo(host, dreo);
+    // as if 2.0.x had connected it: no devices, no look into the account yet
+    for (const d of (await asAdmin(host, 'GET', '/devices')).json.devices) await host.gc.db.run('DELETE FROM devices WHERE id = ?', [d.id]);
+    await host.gc.storage.delete('dreo_found');
+    await host.gc.storage.delete('dreo_dismissed');
+    await host.tick();
+    assert.deepEqual((await asAdmin(host, 'GET', '/devices')).json.devices.map((d) => d.device_sn), ['dreo-HSH009S-1', 'dreo-HAC006S-1']);
   });
 });
 

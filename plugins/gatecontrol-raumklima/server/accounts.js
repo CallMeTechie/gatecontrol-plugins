@@ -11,6 +11,7 @@ const crypto = require('node:crypto');
 const store = require('./store');
 const service = require('./service');
 const dreo = require('./dreoservice');
+const dreoImport = require('./dreoimport');
 
 const KEY = 'accounts';
 const APP_LABEL = { msmarthome: 'MSmartHome', nethome: 'NetHome Plus' };
@@ -48,17 +49,24 @@ async function syncDreo(gc, prev) {
   const cfg = await store.loadDreo(gc);
   if (!cfg.email || !cfg.passwordMd5) {
     if (cfg.token) await dreo.disconnect(gc);
+    await dreoImport.clear(gc);
     return null;
   }
   if (!dreo.supported(gc)) return null;
   const fp = fingerprint(cfg.email, cfg.passwordMd5);
-  if (prev && prev.fp === fp && prev.ok && cfg.token) return prev;
-  try {
-    await dreo.connect(gc);
-    return outcome(fp, null);
-  } catch (e) {
-    return outcome(fp, e);
+  let out = prev && prev.fp === fp && prev.ok && cfg.token ? prev : null;
+  if (!out) {
+    if (prev && prev.fp !== fp) await dreoImport.clear(gc);
+    try {
+      await dreo.connect(gc);
+      out = outcome(fp, null);
+    } catch (e) {
+      return outcome(fp, e);
+    }
   }
+  // 2.1.0: the account's heaters and air conditioners appear by themselves (dreoimport.js)
+  try { await dreoImport.run(gc); } catch (e) { gc.log.debug('dreo import failed', e.code || e.message); }
+  return out;
 }
 
 /** Settings saved: log in with changed accounts (both at once), remember the outcome. */
@@ -66,6 +74,21 @@ async function settingsChanged(gc) {
   const prev = await load(gc);
   const [midea, dreoAcc] = await Promise.all([syncMidea(gc, prev.midea), syncDreo(gc, prev.dreo)]);
   await gc.storage.set(KEY, { midea, dreo: dreoAcc });
+}
+
+/** 2.1.0: what the Dreo account holds (the last look into it) — the answer to "where is my heater?". */
+async function dreoDevicesLine(gc, lang, t, errorText) {
+  const f = await dreoImport.found(gc);
+  if (!f) return null;
+  if (!Array.isArray(f.devices)) return { group: 'dreo', tone: 'warn', text: t(lang, 'settings.dreo_list_failed', { error: errorText({ code: f.error || 'ERROR' }, lang) }) };
+  if (!f.devices.length) return { group: 'dreo', tone: 'warn', text: t(lang, 'settings.dreo_no_devices') };
+  const name = (x) => (x.name ? `${x.name} (${x.model || '?'})` : (x.model || x.sn));
+  const ours = f.devices.filter((x) => x.kind).map(name);
+  const other = f.devices.filter((x) => !x.kind).map((x) => x.model || x.sn);
+  const parts = [];
+  if (ours.length) parts.push(t(lang, 'settings.dreo_devices', { list: ours.join(', ') }));
+  if (other.length) parts.push(t(lang, 'settings.dreo_unsupported', { list: other.join(', ') }));
+  return { group: 'dreo', tone: ours.length ? 'ok' : 'warn', text: parts.join(' · ') };
 }
 
 /**
@@ -95,6 +118,8 @@ async function settingsStatus(gc, lang, t, errorText) {
   else if (d.token) {
     out.push({ group: 'dreo', tone: 'ok', text: t(lang, 'settings.dreo_ok', { email: d.email, region })
       + (st.connected ? ' · ' + t(lang, 'dreo.live') : '') });
+    const line = await dreoDevicesLine(gc, lang, t, errorText);
+    if (line) out.push(line);
   } else out.push({ group: 'dreo', tone: 'info', text: t(lang, 'settings.not_checked') });
   return out;
 }

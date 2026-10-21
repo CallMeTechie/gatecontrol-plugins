@@ -3,6 +3,22 @@
 Klimageräte und Heizungen als GateControl-Plugin: Midea-Klimageräte (früher fest in GateControl
 eingebaut, „Klimaanlage“) und seit 1.6.0 Dreo-Heizlüfter und -Klimageräte.
 
+## 2.1.0
+- **Dreo-Geräte erscheinen von selbst**: Ist das Dreo-Konto in den Einstellungen verbunden,
+  stehen seine Heizlüfter und Klimageräte jetzt automatisch auf der Raumklima-Seite – mit dem
+  Namen und Modell aus der Dreo-App. Bisher musste man jedes Gerät erst über „Gerät
+  hinzufügen“ → „Dreo“ anlegen, und darauf wies nichts hin. Das passiert direkt beim Speichern
+  des Kontos und danach stündlich im Hintergrund (ein später in der Dreo-App hinzugefügtes
+  Gerät erscheint so innerhalb einer Stunde; Konten, die schon vor dem Update verbunden waren,
+  werden beim ersten Lauf nach dem Update übernommen). Ein hier entferntes Gerät bleibt
+  entfernt, bis es wieder von Hand hinzugefügt wird. Sichtbar sind neue Geräte wie bisher für
+  Admins; wer sie sonst nutzen darf, legst du unter „Besitzer“ fest.
+- **Statuszeile des Dreo-Kontos** in den Einstellungen sagt jetzt, was im Konto ist: „Im
+  Konto: Bad (DR-HSH009S) …“, nicht unterstützte Dreo-Geräte (Ventilatoren, Luftreiniger …)
+  mit Modell, „Im Dreo-Konto ist kein Gerät“ oder warum die Geräteliste nicht lesbar war.
+- **„Gerät hinzufügen“ → „Dreo“** meldete bei einem leeren Konto „Alle … bereits
+  hinzugefügt“ – jetzt „Im Dreo-Konto wurde kein Gerät gefunden“.
+
 ## 2.0.1
 - **Dreo auf der Plugin-Seite**: Die Kachel „Dreo“ blieb bei „Verbinde …“, wenn das Konto
   angemeldet, aber noch kein Dreo-Gerät angelegt war (die Live-Verbindung entsteht erst mit
