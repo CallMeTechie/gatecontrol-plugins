@@ -155,7 +155,7 @@ test('an older GateControl without gc.services: nothing breaks; the card helper;
   const big = Buffer.alloc(300 * 1024 + 1, 1);
   assert.equal(chat.cardOf({ lang: 'de', camera: { name: 'K' }, lock: { id: 3, name: 'Tür', actions: '["open"]' }, time: '07:05', image: big }).card.imageBase64, undefined, 'over 300 KB: never');
   const manifest = JSON.parse(fs.readFileSync(path.join(DIR, 'plugin.json'), 'utf8'));
-  assert.equal(manifest.version, '1.4.0');
+  assert.equal(manifest.version, '1.5.0');
   assert.deepEqual(manifest.permissions.services, ['gatecontrol-messenger:send_message']);
   assert.equal(manifest.gatecontrol, '>=1.169.0', 'the chat is optional: an older host ignores permissions.services');
   const texts = require('../server/texts.json');
