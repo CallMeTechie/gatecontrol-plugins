@@ -133,8 +133,8 @@ test('parsing: HTML stripped to safe plain text, times, ids; absences with their
     'Unsinn', null,
   ], cfg);
   assert.deepEqual(rows, [
-    { msg_id: '1', subject: 'Elternabend', preview: 'Am Donnerstag um 19 Uhr', body: null, sender: 'Frau Schmidt', sent_at: at('2026-10-19T16:00:00Z'), has_attachments: true },
-    { msg_id: '2', subject: '', preview: 'Ganzer Text Zeile 2', body: 'Ganzer Text\nZeile 2', sender: '', sent_at: null, has_attachments: false },
+    { msg_id: '1', subject: 'Elternabend', preview: 'Am Donnerstag um 19 Uhr', body: null, sender: 'Frau Schmidt', sent_at: at('2026-10-19T16:00:00Z'), has_attachments: true, confirm: false },
+    { msg_id: '2', subject: '', preview: 'Ganzer Text Zeile 2', body: 'Ganzer Text\nZeile 2', sender: '', sent_at: null, has_attachments: false, confirm: false },
   ]);
   assert.deepEqual(messages.messageRows({ incomingMessages: 'x' }, cfg), []);
 
@@ -188,6 +188,8 @@ test('messages: the parents’ inbox — baseline without pushes, then one push 
   assert.deepEqual(r.json.messages[0], {
     id: `${acc.id}-3`, accountId: acc.id, studentIds: [lena.id], subject: 'Hitzefrei morgen', preview: 'Die Schule endet um 11:30 Uhr.',
     sender: 'Frau Schmidt', sentAt: '2026-10-20T06:10:00.000Z', hasAttachments: true, isNew: true,
+    // 1.5.0 (no detail in this fake WebUntis: the preview only)
+    fullText: false, attachments: [], read: false, confirmation: null,
   });
   assert.deepEqual(r.json.messages.map((m) => m.id), [`${acc.id}-3`, `${acc.id}-2`, `${acc.id}-1`]);
   // the admin sees both children of the account; Lena (the child) and Bob see nothing
@@ -195,7 +197,7 @@ test('messages: the parents’ inbox — baseline without pushes, then one push 
   assert.deepEqual((await app(host, LENA, '/app/messages')).json, { ok: true, messages: [] });
   assert.deepEqual((await app(host, BOB, '/app/messages')).json, { ok: true, messages: [] });
 
-  // the next cycles: the same messages are no news; nothing is marked as read (only GETs)
+  // the next cycles: the same messages are no news; nothing is written to WebUntis (only GETs)
   await tickAt(host, T0 + 30 * MIN);
   await tickAt(host, T0 + 45 * MIN);
   assert.equal(pushes(host, 'messages').length, 1, 'never twice');
@@ -203,9 +205,11 @@ test('messages: the parents’ inbox — baseline without pushes, then one push 
   await tickAt(host, T0 + 60 * MIN);
   assert.equal(pushes(host, 'messages').length, 1);
   assert.ok(host.fetches.filter((f) => /\/api\/(rest|token)\//.test(f.url)).every((f) => (f.opts.method || 'GET') === 'GET'));
-  // isNew only for a day
+  // 1.5.0: new until opened (per person), at most 14 days
   clock.set(T0 + 15 * MIN + DAY + MIN);
-  assert.equal((await app(host, EVA, '/app/messages')).json.messages[0].isNew, false);
+  assert.equal((await app(host, EVA, '/app/messages')).json.messages[0].isNew, true, 'not opened yet');
+  clock.set(T0 + 15 * MIN + 14 * DAY + MIN);
+  assert.equal((await app(host, EVA, '/app/messages')).json.messages[0].isNew, false, 'older than 14 days');
 }));
 
 test('1.4.1: a school-wide message to be confirmed (its own list) is pushed too; an older one found only now is not', () => withHost(SCHOOL, async (host, untis) => {

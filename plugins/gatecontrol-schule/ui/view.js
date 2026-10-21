@@ -5,12 +5,16 @@
    diagnostics live in the settings (page 'setup').
    1.4.0: per child „Nachrichten“ (its account's inbox — only when the viewer may read it; a message
    opens in place to read its text) and „Fehlzeiten“ (date / time, excused / not excused / open, reason)
-   — each section only when the API sends it. */
+   — each section only when the API sends it.
+   1.5.0: without WebUntis — the full text, the attachments (pictures shown in the message, other files
+   as a download — fetched on the first tap), the read confirmation the school asks for (sent only after
+   a second tap: "Senden"); opening a message marks it read for the viewer (its "neu" goes). */
 (function () {
   'use strict';
   var S = window.SC, T = S.T, $ = S.$, $$ = S.$$, el = S.el;
   var portal = S.CTX.view === 'portal';
   var base = portal ? 'portal/overview' : 'overview';
+  var msgBase = portal ? 'portal/messages/' : 'messages/';
   var st = { week: 0, current: null, day: null, data: null, failed: false, open: {} };
 
   function subjName(x, max) { return (x.subjectLong && x.subjectLong.length <= (max || 18) ? x.subjectLong : x.subject) || x.name || x.text || '–'; }
@@ -176,26 +180,124 @@
     return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
   }
 
+  function sizeText(n) {
+    if (n == null || !isFinite(n)) return '';
+    if (n < 1024) return n + ' B';
+    if (n < 1024 * 1024) return Math.round(n / 1024) + ' KB';
+    return (Math.round(n / 104857.6) / 10).toLocaleString(S.CTX.lang === 'en' ? 'en' : 'de') + ' MB';
+  }
+  function isPicture(a) { return /^image\/(?:jpeg|png|gif|webp|bmp)$/.test(a.mime || ''); }
+
+  /** One attachment: a picture shown, another file a download link; not fetched yet → a button that fetches it. */
+  function attachmentNode(m, a) {
+    var label = a.name + (a.size != null ? ' · ' + sizeText(a.size) : '');
+    if (a.url && isPicture(a)) {
+      return el('figure', { class: 'msg-pic' }, [el('img', { src: a.url, alt: a.name, loading: 'lazy' }), el('figcaption', { text: label })]);
+    }
+    if (a.url) return el('a', { class: 'msg-att', href: a.url, download: a.name, text: label });
+    var box = el('span', { class: 'msg-att-box' });
+    var btn = el('button', {
+      type: 'button', class: 'msg-att', 'aria-label': T('view.msg_att_open', { name: a.name }),
+      on: {
+        click: function () {
+          btn.disabled = true;
+          btn.textContent = T('view.msg_att_loading');
+          S.api('POST', msgBase + encodeURIComponent(m.id) + '/attachments/' + encodeURIComponent(a.id)).then(function (r) {
+            a.url = r.file && r.file.url;
+            if (r.file && r.file.mime) a.mime = r.file.mime;
+            var node = attachmentNode(m, a);
+            box.parentNode.replaceChild(node, box);
+            if (node.tagName === 'A') node.click();
+          }).catch(function (e) {
+            btn.disabled = false;
+            btn.textContent = label;
+            S.toast(S.errText(e), 'crit');
+          });
+        },
+      },
+    }, [label]);
+    box.appendChild(btn);
+    return box;
+  }
+
+  /** The read confirmation: sent (when, by whom) or the button — a second tap sends it. */
+  function confirmNode(m) {
+    var c = m.confirmation;
+    if (!c) return null;
+    if (c.confirmedAt) {
+      var when = S.when(Date.parse(c.confirmedAt));
+      return el('div', { class: 'msg-confirm is-done', text: c.by ? T('view.msg_confirmed_by', { when: when, name: c.by }) : T('view.msg_confirmed', { when: when }) });
+    }
+    var box = el('div', { class: 'msg-confirm', role: 'group' });
+    function ask() {
+      S.clear(box);
+      box.appendChild(el('span', { text: T('view.msg_confirm_ask') }));
+      box.appendChild(el('button', { type: 'button', class: 'btn btn-sm', on: { click: sure } }, [T('view.msg_confirm')]));
+    }
+    function sure() {
+      S.clear(box);
+      box.appendChild(el('span', { text: T('view.msg_confirm_q') }));
+      var send = el('button', {
+        type: 'button', class: 'btn btn-sm btn-primary',
+        on: {
+          click: function () {
+            send.disabled = true;
+            S.api('POST', msgBase + encodeURIComponent(m.id) + '/confirm').then(function (r) {
+              if (r.message) { m.confirmation = r.message.confirmation; m.isNew = false; }
+              box.parentNode.replaceChild(confirmNode(m), box);
+            }).catch(function (e) { S.toast(S.errText(e), 'crit'); ask(); });
+          },
+        },
+      }, [T('common.ok')]);
+      box.appendChild(send);
+      box.appendChild(el('button', { type: 'button', class: 'btn btn-sm btn-ghost', on: { click: ask } }, [T('common.cancel')]));
+      send.focus();
+    }
+    ask();
+    return box;
+  }
+
   function messageItem(m) {
     var key = m.id;
     var open = !!st.open[key];
+    var atts = m.attachments || [];
+    var pending = m.confirmation && !m.confirmation.confirmedAt;
     var bodyBox = el('div', { class: 'msg-body', hidden: !open }, [
       el('div', { class: 'msg-from', text: m.sender ? T('view.msg_from', { sender: m.sender }) + ' · ' + S.when(Date.parse(m.sentAt)) : S.when(Date.parse(m.sentAt)) }),
       el('div', { class: 'msg-text', text: m.body || m.preview || '' }),
-      !m.body ? el('div', { class: 'msg-note', text: T('view.msg_preview_only') }) : null,
-      m.hasAttachments ? el('div', { class: 'msg-note', text: T('view.msg_attach') }) : null,
+      !m.fullText ? el('div', { class: 'msg-note', text: T('view.msg_preview_only') }) : null,
+      atts.length ? el('div', { class: 'msg-atts', role: 'group', 'aria-label': T('view.msg_attach') }, atts.map(function (a) { return attachmentNode(m, a); })) : null,
+      confirmNode(m),
     ]);
+    var li;
     var head = el('button', {
       type: 'button', class: 'msg-head', 'aria-expanded': String(open),
-      on: { click: function () { st.open[key] = !st.open[key]; bodyBox.hidden = !st.open[key]; head.setAttribute('aria-expanded', String(!!st.open[key])); } },
+      on: {
+        click: function () {
+          st.open[key] = !st.open[key];
+          bodyBox.hidden = !st.open[key];
+          head.setAttribute('aria-expanded', String(!!st.open[key]));
+          // opened: read for this viewer (the "neu" mark goes at once; the server keeps it)
+          if (st.open[key] && !m.read) {
+            m.read = true;
+            m.isNew = false;
+            li.classList.remove('is-new');
+            var pill = head.querySelector('.msg-new');
+            if (pill) pill.parentNode.removeChild(pill);
+            S.api('POST', msgBase + encodeURIComponent(m.id) + '/read').catch(function () { /* older plugin or offline */ });
+          }
+        },
+      },
     }, [
       el('span', { class: 'sv-when', text: S.dayLabel(localDay(m.sentAt)) }),
       el('span', { class: 'sv-what' }, [
         el('b', {}, [m.isNew ? el('span', { class: 'pill no-dot msg-new', 'data-tone': 'info', text: T('view.msg_new') }) : null, document.createTextNode(m.subject || '–')]),
         el('small', { text: [m.sender, m.preview].filter(Boolean).join(' · ') }),
+        pending ? el('span', { class: 'pill no-dot msg-ask', 'data-tone': 'warn', text: T('view.msg_confirm_pending') }) : null,
       ]),
     ]);
-    return el('li', { class: 'sv-item msg' + (m.isNew ? ' is-new' : '') }, [head, bodyBox]);
+    li = el('li', { class: 'sv-item msg' + (m.isNew ? ' is-new' : '') }, [head, bodyBox]);
+    return li;
   }
 
   function absenceItem(a) {

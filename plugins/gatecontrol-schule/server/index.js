@@ -44,6 +44,12 @@
 //     GET    /app/changes?days=7              the change log of the students the caller sees
 //     GET    /app/messages?days=30            1.4.0: the school messages the caller may read (1…90 days, ≤ 100)
 //     GET    /app/absences?days=60            1.4.0: the absences of the students the caller may see them of (1…180 days, ≤ 200)
+//     POST   /app/messages/<id>/read          1.5.0: the caller opened the message (its "new" mark goes)
+//     POST   /app/messages/<id>/confirm       1.5.0: send the read confirmation the sender asked for (WebUntis)
+//     POST   /app/messages/<id>/attachments/<attId>  1.5.0: the attachment in the media store → { file: { mediaId, name, mime, bytes } }
+//               (the apps load it from GET /api/v1/client/plugins/gatecontrol-schule/media/<mediaId>)
+//   1.5.0       the same three actions under portal/messages/… and messages/… (admin page) — pages get the
+//               attachment as `url` (a /plugin-media/ link); hook mediaAccess: who may read an attachment
 //
 // Credentials: the QR key or the password of an account is a plugin secret
 // (gc.settings.setSecret('acct.<id>.secret' | 'acct.<id>.password')): encrypted by the host with
@@ -104,6 +110,16 @@ const ERRORS = {
   LINK_ADMIN: [403, 'error.link_admin'],
   TOO_FAST: [429, 'error.too_fast'],
   COLOR_INVALID: [400, 'error.color_invalid'],
+  // 1.5.0: messages without WebUntis (server/messages.js)
+  SCHULE_MESSAGE_NOT_FOUND: [404, 'error.message_not_found'],
+  SCHULE_CONFIRM_NOT_REQUIRED: [409, 'error.confirm_not_required'],
+  SCHULE_CONFIRM_FAILED: [502, 'error.confirm_failed'],
+  SCHULE_UNTIS_UNAVAILABLE: [503, 'error.untis_unavailable'],
+  SCHULE_ATTACHMENT_NOT_FOUND: [404, 'error.attachment_not_found'],
+  SCHULE_ATTACHMENT_TOO_LARGE: [413, 'error.attachment_too_large'],
+  SCHULE_ATTACHMENT_TYPE: [415, 'error.attachment_type'],
+  SCHULE_ATTACHMENT_FAILED: [502, 'error.attachment_failed'],
+  SCHULE_GATECONTROL_TOO_OLD: [501, 'error.gatecontrol_too_old'],
 };
 
 function errorResponse(e, lang) {
@@ -351,6 +367,9 @@ async function adminRoute(req, gc, seg, cfg, lang) {
   const [a, b, c] = seg;
 
   if (a === 'status' && seg.length === 1 && m === 'GET') return { json: await adminStatus(gc, cfg, lang) };
+  // 1.5.0: open, confirm, attachments of a school message (the Schule page)
+  const act = await messageAction(req, gc, seg, { urls: true });
+  if (act) return act;
   if (a === 'overview' && seg.length === 1 && m === 'GET') {
     const students = (await store.listStudents(gc)).filter((s) => s.enabled && !s.missing);
     const accounts = await store.listAccounts(gc);
@@ -395,13 +414,27 @@ async function adminRoute(req, gc, seg, cfg, lang) {
 // ─── Portal and app ─────────────────────────────
 
 /**
+ * 1.5.0: POST messages/<id>/read | confirm | attachments/<attId> (app, portal, admin page; `seg` from
+ * "messages" on). Pages (urls) get the attachment's /plugin-media/ link. → null when not such a path.
+ */
+async function messageAction(req, gc, seg, { urls }) {
+  if (seg[0] !== 'messages' || req.method !== 'POST' || seg.length < 3) return null;
+  const now = clock.now();
+  const id = seg[1];
+  if (seg.length === 3 && seg[2] === 'read') return { json: { ok: true, message: await messages.markRead(gc, req.user, id, now, { urls }) } };
+  if (seg.length === 3 && seg[2] === 'confirm') return { json: { ok: true, message: await messages.confirm(gc, req.user, id, now, { urls }) } };
+  if (seg.length === 4 && seg[2] === 'attachments') return { json: { ok: true, file: await messages.attachment(gc, req.user, id, seg[3], now, { urls }) } };
+  return null;
+}
+
+/**
  * The Schule page / portal tab (views.overview) — 1.4.0: per student `messages` (its account's inbox,
  * only when `user` may read it) and `absences` (only when `user` may see them); left out otherwise.
  */
 async function overviewOf(gc, cfg, students, week, user) {
   const now = clock.now();
   const ov = await views.overview(gc, cfg, students, week, now);
-  const msgs = await messages.forStudents(gc, user, students, now);
+  const msgs = await messages.forStudents(gc, user, students, now, { urls: true });
   const abs = await absences.forStudents(gc, user, students, cfg, now);
   for (const s of ov.students) {
     if (msgs.has(s.id)) s.messages = msgs.get(s.id);
@@ -420,6 +453,9 @@ function daysOf(q, d, max) {
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 async function portalRoute(req, gc, seg, cfg) {
+  // 1.5.0: open, confirm, attachments of a school message
+  const act = await messageAction(req, gc, seg.slice(1), { urls: true });
+  if (act) return act;
   // 1.3.0: the viewer's own WebUntis link (profile section, server/link.js)
   if (seg[1] === 'link') {
     const body = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
@@ -449,6 +485,9 @@ async function portalRoute(req, gc, seg, cfg) {
 }
 
 async function appRoute(req, gc, seg, cfg) {
+  // 1.5.0: open, confirm, attachments of a school message
+  const act = await messageAction(req, gc, seg.slice(1), { urls: false });
+  if (act) return act;
   if (req.method !== 'GET' || seg.length !== 2) throw fail('NOT_FOUND');
   const q = req.query || {};
   const now = clock.now();
@@ -638,11 +677,18 @@ module.exports = {
       if (now - state.lastPrune > 3600000) {
         state.lastPrune = now;
         await store.prune(gc, tz.addDays(tz.localDate(now, cfg.tz), -14), now - 30 * DAY);
-        await store.pruneSchool(gc, now - messages.KEEP_MS, absences.keepFrom(now, cfg));
+        const media = await store.pruneSchool(gc, now - messages.KEEP_MS, absences.keepFrom(now, cfg));
+        // 1.5.0: the attachments of pruned messages
+        for (const id of media || []) { try { await gc.media.delete(id); } catch { /* gone */ } }
       }
     } catch (e) {
       gc.log.warn('tick failed', (e && e.code) || (e && e.message) || 'error');
     } finally { state.ticking = false; }
+  },
+
+  /** 1.5.0: an attachment (media store) only for the people who may read its message's inbox. */
+  async mediaAccess({ user, mediaId }, gc) {
+    try { return await messages.mayReadMedia(gc, user, mediaId); } catch { return false; }
   },
 
   /** 1.1.0: services.provides — school_students (1.2.0: school_day) for the Familie plugin (server/ruleevents.js). */

@@ -125,6 +125,13 @@
 //   decides (true only; no hook → the uploader only; a throwing hook → no) → { status: 200|206|404|416, headers, body }.
 //   host.mediaFromUrl(url, { range, now }) answers like /plugin-media/<token> (404 once expired, deleted or unknown).
 //   host.mediaCleanup(now) removes unclaimed files older than 24 h (as the host's hourly job) → count.
+//   GateControl ≥ 1.190.0 (opts.gatecontrol): gc.media.fetch(url, { headers, mime, name, maxBytes, timeoutMs }) — a file
+//   from the internet straight into the store (allowlist like http.fetch → ERR_NET_DENIED; opts.fetch(url, { method:
+//   'GET', headers, binary: true }) answers { status, headers, body (Buffer | string) }; not 2xx → ERR_HTTP (status);
+//   > min(maxBytes, media.maxBytes) → ERR_MEDIA_TOO_LARGE; type = mime || the answer's content-type, not in media.types
+//   → ERR_MEDIA_TYPE; quota → ERR_MEDIA_QUOTA) → { mediaId, mime, bytes, name }: unclaimed, no owner (only mediaAccess
+//   lets anybody read it); `name` (cleaned file name) comes back in info() and as the filename of Content-Disposition.
+//   media.uploads: false (≥ 1.190.0) → host.upload answers 403 uploads_disabled.
 //   Realtime events — permissions.events: gc.events.emit({ users (1–500 ids), type ([a-z][a-z0-9._-]{0,63}), data
 //   (JSON ≤ 4 KB) }) → { delivered } (one stream per listed user, or opts.connected(userId) → number of streams);
 //   ERR_EVENTS_DENIED / ERR_INVALID / ERR_RATE_LIMIT (600 per minute). host.events records { users, type, data }.
@@ -588,10 +595,12 @@ function checkQuickActions(out) {
  * @param {object} [opts]     see the header
  */
 /** plugin.json `media` → { maxBytes, types, quotaDefault } like GateControl's manifest.js (throws ERR_INVALID). */
-function mediaDecl(m) {
+function mediaDecl(m, gc190 = false) {
   if (m == null) return null;
   const bad = (what) => { throw hostError('ERR_INVALID', `plugin.json: ${what}: invalid`); };
-  if (typeof m !== 'object' || Array.isArray(m) || Object.keys(m).some((k) => !['maxBytes', 'types', 'quotaDefault'].includes(k))) bad('media');
+  const keys = gc190 ? ['maxBytes', 'types', 'quotaDefault', 'uploads'] : ['maxBytes', 'types', 'quotaDefault'];
+  if (typeof m !== 'object' || Array.isArray(m) || Object.keys(m).some((k) => !keys.includes(k))) bad('media');
+  if (m.uploads != null && typeof m.uploads !== 'boolean') bad('media.uploads');
   if (!Number.isSafeInteger(m.maxBytes) || m.maxBytes < 1024 || m.maxBytes > MEDIA_MAX_BYTES) bad('media.maxBytes');
   const types = Array.isArray(m.types) ? [...new Set(m.types.map((x) => (typeof x === 'string' ? x.trim().toLowerCase() : '')))] : null;
   if (!types || !types.length || types.length > 32 || !types.every((x) => MEDIA_MIME_RE.test(x) && !MEDIA_MIME_DENY_RE.test(x))) bad('media.types');
@@ -601,7 +610,7 @@ function mediaDecl(m) {
     quota = Number.isSafeInteger(m.quotaDefault) ? m.quotaDefault : (q ? Number(q[1]) * MEDIA_UNIT[q[2].toUpperCase()] : null);
   }
   if (quota == null || quota < 1024 * 1024 || quota > 1024 ** 4 || quota < m.maxBytes) bad('media.quotaDefault');
-  return { maxBytes: m.maxBytes, types, quotaDefault: quota };
+  return { maxBytes: m.maxBytes, types, quotaDefault: quota, uploads: m.uploads !== false };
 }
 
 /** Plain JSON ≤ max bytes, else the error code. */
@@ -630,7 +639,9 @@ async function createHost(pluginDir, opts = {}) {
     if (!Number.isInteger(iv) || iv < BACKGROUND_MIN_S || iv > 86400) throw hostError('ERR_INVALID', 'plugin.json: permissions.background.intervalSeconds: invalid');
   }
   // GateControl ≥ 1.177.0: media, permissions.events, services, permissions.services, notifyTopics[].chat
-  const media = mediaDecl(manifest.media);
+  const gcVersion = String(opts.gatecontrol || '1.177.0').split('.').map((n) => Number(n) || 0);
+  const gc190 = gcVersion[0] > 1 || (gcVersion[0] === 1 && gcVersion[1] >= 190);
+  const media = mediaDecl(manifest.media, gc190);
   if (perms.events != null && typeof perms.events !== 'boolean') throw hostError('ERR_INVALID', 'plugin.json: permissions.events: invalid');
   if (perms.services != null && (!Array.isArray(perms.services) || perms.services.length > 32 || !perms.services.every((x) => typeof x === 'string' && SERVICE_REF_RE.test(x)))) {
     throw hostError('ERR_INVALID', 'plugin.json: permissions.services: invalid');
@@ -981,7 +992,7 @@ async function createHost(pluginDir, opts = {}) {
   const mediaInfo = (id) => {
     const m = mediaStore.get(id);
     return m ? { mediaId: id, mime: m.mime, bytes: m.bytes, sha256: require('node:crypto').createHash('sha256').update(m.data).digest('hex'),
-      owner: m.owner, createdAt: new Date(m.createdAt).toISOString(), claimed: m.claimed } : null;
+      owner: m.owner, createdAt: new Date(m.createdAt).toISOString(), claimed: m.claimed, ...(gc190 ? { name: m.name || null } : {}) } : null;
   };
   const mediaUsage = () => { let bytes = 0; for (const m of mediaStore.values()) bytes += m.bytes; return { bytes, count: mediaStore.size }; };
   const urlSecret = require('node:crypto').randomBytes(16).toString('hex');
@@ -997,6 +1008,32 @@ async function createHost(pluginDir, opts = {}) {
   };
   api['media.delete'] = async (args) => { needMedia(); return mediaStore.delete(mediaIdOf(args)); };
   api['media.usage'] = async () => { needMedia(); return { ...mediaUsage(), quota: mediaQuota, maxBytes: media.maxBytes, types: media.types }; };
+  // GateControl ≥ 1.190.0: a file from the internet straight into the store (no owner, unclaimed)
+  const mediaName = (v) => {
+    const x = String(v == null ? '' : v).replace(/[\0-\x1f\x7f]/g, '').split(/[\\/]/).pop().trim().slice(0, 200);
+    return x || null;
+  };
+  api['media.fetch'] = async ({ url, opts: o }) => {
+    needMedia();
+    const x = o && typeof o === 'object' ? o : {};
+    if (!internetAllowed(net.internet, url)) throw hostError('ERR_NET_DENIED', `host not allowed: ${url}`);
+    fetches.push({ url, opts: { ...x, media: true } });
+    if (!opts.fetch) throw hostError('ERR_NET', 'no fetch handler in this test');
+    const r = await opts.fetch(url, { method: 'GET', headers: x.headers || {}, binary: true });
+    const status = Number(r && r.status != null ? r.status : 200);
+    if (!(status >= 200 && status < 300)) throw Object.assign(hostError('ERR_HTTP', `status ${status}`), { status });
+    const buf = Buffer.isBuffer(r.body) ? r.body : Buffer.from(String(r.body == null ? '' : r.body));
+    const limit = Math.min(Number.isSafeInteger(x.maxBytes) && x.maxBytes > 0 ? x.maxBytes : media.maxBytes, media.maxBytes);
+    if (buf.length > limit) throw hostError('ERR_MEDIA_TOO_LARGE', 'file too large');
+    const ct = String((r.headers && (r.headers['content-type'] || r.headers['Content-Type'])) || '').split(';')[0].trim().toLowerCase();
+    const type = typeof x.mime === 'string' && x.mime ? x.mime.trim().toLowerCase() : ct;
+    if (!media.types.includes(type)) throw hostError('ERR_MEDIA_TYPE', `type not allowed: ${type}`);
+    if (mediaUsage().bytes + buf.length > mediaQuota) throw hostError('ERR_MEDIA_QUOTA', 'quota exceeded');
+    const id = require('node:crypto').randomBytes(16).toString('hex');
+    const name = mediaName(x.name);
+    mediaStore.set(id, { mime: type, bytes: buf.length, owner: null, data: Buffer.from(buf), claimed: false, createdAt: Date.now(), name });
+    return { mediaId: id, mime: type, bytes: buf.length, name };
+  };
   api['media.url'] = async (args) => {
     needMedia();
     const id = mediaIdOf(args);
@@ -1275,6 +1312,7 @@ async function createHost(pluginDir, opts = {}) {
       delete: (id) => call('media.delete', { id }),
       usage: () => call('media.usage', {}),
       url: (id, o) => { const x = o && typeof o === 'object' ? o : {}; return call('media.url', { id, user: x.user, ttlS: x.ttlS }); },
+      ...(gc190 ? { fetch: (url, o) => call('media.fetch', { url, opts: o || {} }) } : {}),
     }),
     events: Object.freeze({
       emit: (o) => { const x = o && typeof o === 'object' ? o : {}; return call('events.emit', { users: x.users, type: x.type, data: x.data }); },
@@ -1315,7 +1353,11 @@ async function createHost(pluginDir, opts = {}) {
     const { start, end } = rg || { start: 0, end: m.bytes - 1 };
     const headers = { 'content-type': m.mime, 'accept-ranges': 'bytes', 'content-length': String(end - start + 1) };
     if (rg) headers['content-range'] = `bytes ${start}-${end}/${m.bytes}`;
-    if (!/^(?:image|audio|video)\//.test(m.mime)) headers['content-disposition'] = 'attachment';
+    const inline = /^(?:image|audio|video)\//.test(m.mime);
+    if (m.name) {
+      const ascii = m.name.replace(/[^\x20-\x7e]/g, '_').replace(/["\\]/g, '');
+      headers['content-disposition'] = `${inline ? 'inline' : 'attachment'}; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(m.name)}`;
+    } else if (!inline) headers['content-disposition'] = 'attachment';
     return { status: rg ? 206 : 200, headers, body: m.data.subarray(start, end + 1) };
   };
   const notFound = () => ({ status: 404, headers: {}, body: Buffer.alloc(0) });
@@ -1326,6 +1368,7 @@ async function createHost(pluginDir, opts = {}) {
     /** GateControl ≥ 1.177.0: an upload of an app or a frame (PUT …/plugins/<id>/media) → { status, body } */
     async upload(user, data, mime) {
       if (!media) return { status: 404, body: { ok: false, code: 'not_found' } };
+      if (gc190 && media.uploads === false) return { status: 403, body: { ok: false, code: 'uploads_disabled' } };
       const buf = Buffer.isBuffer(data) ? data : Buffer.from(String(data == null ? '' : data));
       const type = String(mime || '').split(';')[0].trim().toLowerCase();
       if (!media.types.includes(type)) return { status: 415, body: { ok: false, code: 'unsupported_type' } };

@@ -2,6 +2,20 @@
 
 Stundenplan aus WebUntis für Schüler- und Elternkonten als GateControl-Plugin.
 
+## 1.5.0
+- **Nachrichten ohne WebUntis.** Der **ganze Text** jeder Nachricht steht in App, Seite „Schule“ und
+  Portal (die Einzelansicht von WebUntis, einmal je Nachricht) – der Hinweis „Volltext in WebUntis“ ist weg.
+- **Anhänge** lassen sich direkt öffnen: neue holt GateControl im Abruf, ältere beim ersten Tippen
+  (≤ 25 MB, verschlüsselt im Medienspeicher von GateControl, nur für die, die die Nachrichten lesen dürfen).
+  Bilder erscheinen auf den Seiten direkt in der Nachricht.
+- **„Neu“ verschwindet nach dem Öffnen** – je Person (vorher: 24 Stunden lang für alle). Die Startkachel
+  zählt nur ungelesene Nachrichten.
+- **Lesebestätigung:** Bittet die Schule darum, gibt es den Knopf „Lesen bestätigen“ (mit Rückfrage);
+  gesendet wird nur auf Knopfdruck, danach steht da, wann und von wem.
+- Der Push nimmt den Anfang des ganzen Texts statt der Vorschau.
+- Braucht **GateControl 1.190.0** (Dateien aus dem Internet in den Medienspeicher) und zusätzlich den
+  Speicher der Anhänge (`*.amazonaws.com`) – das Update muss ein Admin bestätigen.
+
 ## 1.4.1
 - **Behoben: allgemeine Mitteilungen der Schule kamen nicht als Push.** WebUntis führt Nachrichten, deren
   Lesen die Schule bestätigt haben möchte (oft Informationen an alle Eltern), in einer eigenen Liste des

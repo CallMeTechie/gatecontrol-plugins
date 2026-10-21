@@ -2070,6 +2070,32 @@
           }
         },
         {
+          "icon": "network",
+          "title": {
+            "de": "Anhänge der Schulnachrichten laden",
+            "en": "Load the attachments of school messages"
+          },
+          "text": {
+            "de": "Vom Dateispeicher, den WebUntis nennt (Amazon S3, amazonaws.com) – nur die Anhänge, die WebUntis verlinkt.",
+            "en": "From the file storage WebUntis names (Amazon S3, amazonaws.com) – only the attachments WebUntis links."
+          },
+          "tag": {
+            "de": "Netzwerk",
+            "en": "Network"
+          }
+        },
+        {
+          "icon": "data",
+          "title": {
+            "de": "Dateien speichern",
+            "en": "Store files"
+          },
+          "text": {
+            "de": "Anhänge verschlüsselt im Medienspeicher von GateControl (≤ 25 MB je Datei, 90 Tage) – nur für die, die die Nachricht lesen dürfen.",
+            "en": "Attachments encrypted in GateControl's media store (≤ 25 MB per file, 90 days) – only for those who may read the message."
+          }
+        },
+        {
           "icon": "users",
           "title": {
             "de": "Benutzer sehen",

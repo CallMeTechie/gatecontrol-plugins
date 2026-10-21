@@ -54,7 +54,7 @@ test('end of a day: the last lesson that takes place; planned: the plan with can
 
 test('detected only when the end moves earlier after the baseline; once per date and new end; one call with the text', () => {
   const f = familie();
-  return withHost({ services: [f], gatecontrol: '1.178.0' }, async (host, untis) => {
+  return withHost({ services: [f], gatecontrol: '1.190.0' }, async (host, untis) => {
     // the baseline with the last lesson already cancelled: nothing
     lessonAt(untis, 101, 20261020, 1140).code = 'cancelled';
     const { lena } = await household(host);
@@ -102,7 +102,7 @@ test('detected only when the end moves earlier after the baseline; once per date
 
 test('quiet hours hold it; a lesson back meanwhile expires it; without Familie (or an old host) it is skipped', async () => {
   const f = familie();
-  await withHost({ services: [f], gatecontrol: '1.178.0', now: at('2026-10-20T19:30:00Z') }, async (host, untis) => {
+  await withHost({ services: [f], gatecontrol: '1.190.0', now: at('2026-10-20T19:30:00Z') }, async (host, untis) => {
     await household(host);
     lessonAt(untis, 101, 20261021, 1140).code = 'cancelled';
     await tickAt(host, at('2026-10-20T20:31:00Z')); // 22:31
@@ -112,7 +112,7 @@ test('quiet hours hold it; a lesson back meanwhile expires it; without Familie (
     assert.deepEqual(f.got.map((x) => x.payload.events.map((e) => [e.date, e.newEnd])), [[['2026-10-21', '11:25']]]);
   });
   const g = familie();
-  await withHost({ services: [g], gatecontrol: '1.178.0', now: at('2026-10-20T19:30:00Z') }, async (host, untis) => {
+  await withHost({ services: [g], gatecontrol: '1.190.0', now: at('2026-10-20T19:30:00Z') }, async (host, untis) => {
     await household(host);
     lessonAt(untis, 101, 20261021, 1140).code = 'cancelled';
     await tickAt(host, at('2026-10-20T20:31:00Z'));
@@ -121,7 +121,8 @@ test('quiet hours hold it; a lesson back meanwhile expires it; without Familie (
     assert.equal(g.got.length, 0, 'no longer true');
     assert.deepEqual((await host.gc.db.query('SELECT status FROM day_ends')).rows.map((r) => r.status), ['expired']);
   });
-  for (const opts of [{ gatecontrol: '1.178.0' }, { services: [familie()] }]) {
+  // 1.5.0 needs GateControl ≥ 1.190.0: an old host without gc.services.available cannot run it any more
+  for (const opts of [{ gatecontrol: '1.190.0' }]) {
     await withHost(opts, async (host, untis) => {
       await household(host);
       lessonAt(untis, 101, 20261020, 1140).code = 'cancelled';
@@ -134,7 +135,7 @@ test('quiet hours hold it; a lesson back meanwhile expires it; without Familie (
 });
 
 test('errors never stop the cycle; a refusal is kept for the admin page, a rate limit retries', async () => {
-  await withHost({ services: [familie({ throws: true })], gatecontrol: '1.178.0' }, async (host, untis) => {
+  await withHost({ services: [familie({ throws: true })], gatecontrol: '1.190.0' }, async (host, untis) => {
     await household(host);
     lessonAt(untis, 101, 20261020, 1140).code = 'cancelled';
     await tickAt(host, T0 + 15 * MIN);
@@ -144,7 +145,7 @@ test('errors never stop the cycle; a refusal is kept for the admin page, a rate 
     assert.equal(endCalls(host).length, 1, 'not again');
   });
   const later = familie();
-  await withHost({ services: [later], gatecontrol: '1.178.0' }, async (host, untis) => {
+  await withHost({ services: [later], gatecontrol: '1.190.0' }, async (host, untis) => {
     await household(host);
     lessonAt(untis, 101, 20261020, 1140).code = 'cancelled';
     // fetch only (no dispatch): the early end is recorded
