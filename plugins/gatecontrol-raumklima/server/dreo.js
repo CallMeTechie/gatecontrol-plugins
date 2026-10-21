@@ -19,7 +19,9 @@ const CLIENT_ID = '7de37c362ee54dcf9c4561812309347a';
 const CLIENT_SECRET = '32dfa0764f25451d99f94e1693498791';
 const HIMEI = 'faede31549d649f58864093158787ec9';
 const REGIONS = { NA: 'us', EU: 'eu' };
-const SN_RE = /^[A-Za-z0-9_-]{1,64}$/;
+// 2.2.2: Dreo serial numbers are not only letters, digits, - and _ (a user's heater was dropped): any
+// printable ASCII (blanks only inside) without quotes, angle brackets, backslash or backtick, ≤ 100 characters
+const SN_RE = /^(?=\S)[A-Za-z0-9 !#$%&()*+,./:;=?@[\]^_{|}~-]{1,100}(?<=\S)$/;
 
 const apiBase = (region) => `https://app-api-${REGIONS[region] || 'us'}.dreo-tech.com`;
 const wsBase = (region) => `wss://wsb-${REGIONS[region] || 'us'}.dreo-tech.com/websocket`;
@@ -73,6 +75,28 @@ function collectDevices(data) {
   };
   walk(data, 0);
   return out;
+}
+
+/**
+ * 2.2.2: why serial numbers in an answer were not taken — their length and the characters that are
+ * neither letters nor digits (never the number itself), e.g. "len 18, chars ' '". Empty: none refused.
+ */
+function refusedSn(data) {
+  const out = [];
+  const walk = (v, depth) => {
+    if (depth > 10 || out.length >= 3 || v == null || typeof v !== 'object') return;
+    if (Array.isArray(v)) { for (const x of v) walk(x, depth + 1); return; }
+    for (const k of ['sn', 'deviceSn', 'deviceSN', 'devicesn']) {
+      if (v[k] != null && !SN_RE.test(String(v[k]))) {
+        const sn = String(v[k]);
+        const other = [...new Set(sn.replace(/[A-Za-z0-9]/g, ''))].map((c) => (c === ' ' ? 'blank' : `U+${c.codePointAt(0).toString(16).padStart(4, '0')}`));
+        out.push(`${typeof v[k]} len ${sn.length}${other.length ? ', chars ' + other.slice(0, 6).join(' ') : ''}`);
+      }
+    }
+    for (const x of Object.values(v)) walk(x, depth + 1);
+  };
+  walk(data, 0);
+  return out.join('; ');
 }
 
 /**
@@ -172,7 +196,7 @@ class DreoApi {
         continue;
       }
       const found = collectDevices(d);
-      if (seen) seen.push({ path, count: found.length, shape: found.length ? null : shapeOf(d) });
+      if (seen) seen.push({ path, count: found.length, shape: found.length ? null : shapeOf(d), refused: found.length ? null : (refusedSn(d) || null) });
       for (const x of found) if (!out.has(x.sn)) out.set(x.sn, x);
       if (out.size) break;
     }
@@ -252,7 +276,7 @@ class DreoOpenApi {
   async devices(region, token, seen = null) {
     const d = await this.call(region, token, 'GET', '/api/device/list');
     const found = collectDevices(d);
-    if (seen) seen.push({ path: 'open', count: found.length, shape: found.length ? null : shapeOf(d) });
+    if (seen) seen.push({ path: 'open', count: found.length, shape: found.length ? null : shapeOf(d), refused: found.length ? null : (refusedSn(d) || null) });
     return found;
   }
 
@@ -392,4 +416,4 @@ class DreoLink extends EventEmitter {
 }
 
 module.exports = {
-  collectDevices, shapeOf, DreoApi, DreoOpenApi, DreoLink, openBase, md5, flatten, apiBase, wsBase, SN_RE, REGIONS };
+  collectDevices, shapeOf, refusedSn, DreoApi, DreoOpenApi, DreoLink, openBase, md5, flatten, apiBase, wsBase, SN_RE, REGIONS };

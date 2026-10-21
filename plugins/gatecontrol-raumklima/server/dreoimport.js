@@ -19,7 +19,7 @@ const DISMISSED = 'dreo_dismissed';
 const FOUND = 'dreo_found';
 const DISMISSED_MAX = 200;
 const FOUND_MAX = 50;
-const REV = 3;   // the look of an older version (another REV) is redone right after an update
+const REV = 4;   // the look of an older version (another REV) is redone right after an update
 
 const running = new WeakMap();   // gc → the run in progress (settings save and background never overlap)
 
@@ -55,7 +55,7 @@ function checkedOf(diag) {
     region: r.region === 'NA' ? 'NA' : 'EU',
     error: r.error || null,
     detail: r.detail || null,
-    lists: (r.lists || []).slice(0, 4).map((l) => ({ list: short(l.path), count: l.count == null ? null : l.count, error: l.error || null, detail: l.detail || null, shape: l.shape || null })),
+    lists: (r.lists || []).slice(0, 4).map((l) => ({ list: short(l.path), count: l.count == null ? null : l.count, error: l.error || null, detail: l.detail || null, shape: l.shape || null, refused: l.refused || null })),
   }));
 }
 
