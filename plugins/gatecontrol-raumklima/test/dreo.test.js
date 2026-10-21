@@ -383,3 +383,18 @@ test('2.2.0: the status line names the Open API when nothing is anywhere', () =>
     assert.match(text, /Open-API EU: Geräte 0/);
   });
 });
+
+test('2.2.1: devices under any key are found; an empty answer logs its shape, an error its HTTP status and Dreo message', () => {
+  const { collectDevices, shapeOf } = require('../server/dreo');
+  const answer = { familyList: [{ familyName: 'Zuhause', roomDeviceList: [{ room: 'Bad', deviceInfoList: [{ deviceSN: 'X9', productModel: 'DR-HSH040S', deviceName: 'Heizlüfter' }] }] }] };
+  assert.deepEqual(collectDevices(answer).map((d) => [d.sn, d.model, d.name]), [['X9', 'DR-HSH040S', 'Heizlüfter']]);
+  assert.equal(shapeOf({ list: [], totalNum: 0, owner: 'ma@example.com' }), '{list:[0],totalNum:0,owner:s}', 'no strings, no personal data');
+  const dreo = fakeDreo({ devices: [], rooms: [] });
+  return withHost({ dreo }, async (host) => {
+    await connectDreo(host, dreo);
+    const lines = host.logs.filter((l) => /dreo account without devices/.test(l.message || l.msg || JSON.stringify(l))).map((l) => JSON.stringify(l));
+    assert.equal(lines.length, 3, lines.join('\n'));
+    assert.ok(lines.some((l) => l.includes('{list:[0]')), 'the shape of the empty answer');
+    assert.ok(lines.some((l) => /HTTP 401|DREO_AUTH|DREO_CLOUD/.test(l)), 'the failed region with its detail');
+  });
+});

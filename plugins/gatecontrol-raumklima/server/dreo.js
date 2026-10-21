@@ -50,24 +50,52 @@ function flatten(mixed) {
 }
 
 /**
- * The devices in a list answer: { list: [device | room-with-devices …] } or a plain array; a room or
- * home nests its devices (devices / deviceList / list / children / rooms), a few levels deep.
+ * The devices in a list answer, wherever they sit (2.2.1: every object and array is searched, not
+ * only known keys — a flat list, rooms, homes with rooms …): an object with a serial number (sn,
+ * deviceSn, deviceSN, devicesn) and a model or name is a device; each serial number once.
  */
 function collectDevices(data) {
   const out = [];
+  const seen = new Set();
   const walk = (v, depth) => {
-    if (depth > 8 || out.length >= 200 || v == null) return;
+    if (depth > 10 || out.length >= 200 || v == null || typeof v !== 'object') return;
     if (Array.isArray(v)) { for (const x of v) walk(x, depth + 1); return; }
-    if (typeof v !== 'object') return;
-    const sn = v.sn != null ? v.sn : v.deviceSn;
-    if (sn != null && SN_RE.test(String(sn)) && (v.model || v.deviceName || v.productName)) {
-      out.push({ sn: String(sn), name: text(v.deviceName || v.name), model: text(v.model, 40), productName: text(v.productName) });
+    const sn = v.sn != null ? v.sn : (v.deviceSn != null ? v.deviceSn : (v.deviceSN != null ? v.deviceSN : v.devicesn));
+    const model = v.model || v.deviceModel || v.productModel;
+    if (sn != null && SN_RE.test(String(sn)) && (model || v.deviceName || v.productName)) {
+      if (!seen.has(String(sn))) {
+        seen.add(String(sn));
+        out.push({ sn: String(sn), name: text(v.deviceName || v.name), model: text(model, 40), productName: text(v.productName) });
+      }
       return;
     }
-    for (const k of ['list', 'devices', 'deviceList', 'children', 'rooms', 'roomList']) if (k in v) walk(v[k], depth + 1);
+    for (const x of Object.values(v)) walk(x, depth + 1);
   };
   walk(data, 0);
   return out;
+}
+
+/**
+ * 2.2.1: the shape of an answer for the log — key names, array lengths, numbers; never strings
+ * (names, e-mail addresses …). E.g. "{list:[0],totalNum:0}". At most 300 characters.
+ */
+function shapeOf(v, depth = 0) {
+  if (v == null) return 'null';
+  if (Array.isArray(v)) return `[${v.length}${v.length && depth < 3 ? ':' + shapeOf(v[0], depth + 1) : ''}]`;
+  if (typeof v === 'number' || typeof v === 'boolean') return String(v);
+  if (typeof v !== 'object') return typeof v === 'string' ? 's' : '?';
+  if (depth >= 3) return '{…}';
+  const keys = Object.keys(v).slice(0, 12).filter((k) => /^[A-Za-z0-9_]{1,40}$/.test(k));
+  return ('{' + keys.map((k) => `${k}:${shapeOf(v[k], depth + 1)}`).join(',') + '}').slice(0, 300);
+}
+
+/** A short hint from an error answer: Dreo's code and msg when it is JSON (no other content). */
+function bodyHint(body) {
+  try {
+    const j = JSON.parse(String(body || ''));
+    if (j && typeof j === 'object') return ` (code ${String(j.code).slice(0, 12)}${j.msg ? ': ' + text(j.msg, 80) : ''})`;
+  } catch { /* not JSON */ }
+  return '';
 }
 
 // ─── REST ───────────────────────────────────────
@@ -93,7 +121,7 @@ class DreoApi {
     }
     if (r.status === 401) throw dreoError('DREO_AUTH', 'access token rejected');
     if (r.status === 429) throw dreoError('DREO_RATE_LIMITED', 'too many requests');
-    if (r.status !== 200) throw dreoError('DREO_CLOUD', `HTTP ${r.status}`);
+    if (r.status !== 200) throw dreoError('DREO_CLOUD', `HTTP ${r.status}${bodyHint(r.body)}`);
     let j;
     try { j = JSON.parse(r.body); } catch { throw dreoError('DREO_CLOUD', 'invalid answer'); }
     if (!j || j.code !== 0) {
@@ -140,11 +168,11 @@ class DreoApi {
       } catch (e) {
         if (e.code === 'DREO_AUTH' || e.code === 'DREO_RATE_LIMITED') throw e;
         failure = failure || e;
-        if (seen) seen.push({ path, count: null, error: e.code || 'ERROR' });
+        if (seen) seen.push({ path, count: null, error: e.code || 'ERROR', detail: String(e.message || '').slice(0, 120) });
         continue;
       }
       const found = collectDevices(d);
-      if (seen) seen.push({ path, count: found.length });
+      if (seen) seen.push({ path, count: found.length, shape: found.length ? null : shapeOf(d) });
       for (const x of found) if (!out.has(x.sn)) out.set(x.sn, x);
       if (out.size) break;
     }
@@ -186,7 +214,8 @@ class DreoOpenApi {
   }
 
   async call(region, token, method, path, params, body) {
-    const q = new URLSearchParams({ ...(params || {}), timestamp: String(this.now()) }).toString();
+    // exactly what Dreo's own library sends (pydreo-cloud 1.0.0): timestamp + pydreover, UA openapi/1.0.0
+    const q = new URLSearchParams({ ...(params || {}), timestamp: String(this.now()), pydreover: '1.0.0' }).toString();
     const h = { 'content-type': 'application/json', ua: 'openapi/1.0.0' };
     if (token) h.authorization = 'Bearer ' + token;
     let r;
@@ -197,7 +226,7 @@ class DreoOpenApi {
     }
     if (r.status === 401) throw dreoError(path === '/api/oauth/login' ? 'DREO_LOGIN_FAILED' : 'DREO_AUTH', 'access token rejected');
     if (r.status === 429) throw dreoError('DREO_RATE_LIMITED', 'too many requests');
-    if (r.status !== 200) throw dreoError('DREO_CLOUD', `HTTP ${r.status}`);
+    if (r.status !== 200) throw dreoError('DREO_CLOUD', `HTTP ${r.status}${bodyHint(r.body)}`);
     let j;
     try { j = JSON.parse(r.body); } catch { throw dreoError('DREO_CLOUD', 'invalid answer'); }
     if (!j || j.code !== 0) {
@@ -220,8 +249,11 @@ class DreoOpenApi {
   }
 
   /** → [{ sn, name, model, productName }] */
-  async devices(region, token) {
-    return collectDevices(await this.call(region, token, 'GET', '/api/device/list'));
+  async devices(region, token, seen = null) {
+    const d = await this.call(region, token, 'GET', '/api/device/list');
+    const found = collectDevices(d);
+    if (seen) seen.push({ path: 'open', count: found.length, shape: found.length ? null : shapeOf(d) });
+    return found;
   }
 
   /** → the device's state as { key: value } in the app API's names */
@@ -360,4 +392,4 @@ class DreoLink extends EventEmitter {
 }
 
 module.exports = {
-  collectDevices, DreoApi, DreoOpenApi, DreoLink, openBase, md5, flatten, apiBase, wsBase, SN_RE, REGIONS };
+  collectDevices, shapeOf, DreoApi, DreoOpenApi, DreoLink, openBase, md5, flatten, apiBase, wsBase, SN_RE, REGIONS };
