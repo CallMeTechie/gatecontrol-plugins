@@ -2,6 +2,14 @@
 
 Stundenplan aus WebUntis für Schüler- und Elternkonten als GateControl-Plugin.
 
+## 1.4.1
+- **Behoben: allgemeine Mitteilungen der Schule kamen nicht als Push.** WebUntis führt Nachrichten, deren
+  Lesen die Schule bestätigt haben möchte (oft Informationen an alle Eltern), in einer eigenen Liste des
+  Posteingangs (`readConfirmationMessages`). Das Plugin las bisher nur die Liste der eingehenden
+  Nachrichten. Jetzt liest es alle Listen; dieselbe Nachricht zählt einmal.
+- Eine Nachricht, die erst jetzt gefunden wird, aber schon über einen Tag alt ist (z. B. ältere
+  Nachrichten dieser Liste nach dem Update), steht in der Liste, kommt aber nicht mehr als Push.
+
 ## 1.4.0
 - **Nachrichten der Schule.** Das Plugin liest im Abruf den WebUntis-Posteingang jedes Kontos (beim
   Elternkonto die Post an die Eltern, beim Schülerkonto die an das Kind) – höchstens alle 15 Minuten je

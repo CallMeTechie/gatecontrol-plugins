@@ -452,7 +452,11 @@ function messageRow(r) {
  * there is kept). Messages sent before `oldest` (ms) are not added (they would be pruned at once).
  * → the number of new messages.
  */
-async function upsertMessages(gc, accountId, rows, now, { baseline, oldest }) {
+/**
+ * Store an inbox: known messages updated, new ones added ('pending', or 'baseline' on the account's first
+ * fetch — 1.4.1: also a new one sent before `quietBefore`, e.g. an older message of a list read only now).
+ */
+async function upsertMessages(gc, accountId, rows, now, { baseline, oldest, quietBefore = null }) {
   return tx(gc, async () => {
     const have = new Set((await gc.db.query('SELECT msg_id FROM messages WHERE account_id = ?', [accountId])).rows.map((r) => r.msg_id));
     let added = 0;
@@ -466,7 +470,7 @@ async function upsertMessages(gc, accountId, rows, now, { baseline, oldest }) {
       if (m.sent_at != null && oldest != null && m.sent_at < oldest) continue;
       have.add(m.msg_id);
       await gc.db.run(`INSERT INTO messages (account_id, msg_id, ${MSG_FIELDS.join(', ')}, detected_at, seen_at, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [accountId, m.msg_id, ...vals, now, now, baseline ? 'baseline' : 'pending']);
+        [accountId, m.msg_id, ...vals, now, now, baseline || (quietBefore != null && m.sent_at != null && m.sent_at < quietBefore) ? 'baseline' : 'pending']);
       added += 1;
     }
     return added;
