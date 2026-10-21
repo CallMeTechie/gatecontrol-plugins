@@ -11,6 +11,7 @@
         <div class="form-group"><label class="form-label" for="dr-s-gap">{{t:set.motion_gap}}</label><input class="form-input" id="dr-s-gap" type="number" min="1" max="60"></div>
       </div>
       <label class="check"><input type="checkbox" id="dr-s-ring"> {{t:set.ring}}</label>
+      <div class="dr-note" id="dr-s-ring-off" role="note" hidden>{{t:set.ring_off_hint}}</div>
       <label class="check"><input type="checkbox" id="dr-s-nlog"> {{t:set.nuki_log}}</label>
       <label class="check"><input type="checkbox" id="dr-s-chat"> {{t:set.family_chat}}</label>
       <p class="dr-hint" id="dr-s-chat-hint">{{t:set.family_chat_hint}}</p>
@@ -19,6 +20,7 @@
   </section>
   <section class="dr-card" id="dr-diag">
     <div class="dr-card-head"><h2 class="dr-card-title">{{t:diag.title}}</h2></div>
+    <div class="dr-warns" id="dr-d-warns" role="status"></div>
     <p class="dr-hint">{{t:diag.hint}}</p>
     <p class="dr-hint"><strong>{{t:diag.ding}}:</strong> <span id="dr-d-ding">–</span></p>
     <p class="dr-hint"><strong>{{t:diag.chat}}:</strong> <span id="dr-d-chat">–</span></p>

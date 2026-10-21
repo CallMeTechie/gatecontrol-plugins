@@ -60,7 +60,8 @@ async function existingMedia(gc, ids, now) {
 
 /**
  * Rows for a viewer, newest first: filter = { all: true } or { userId, lockIds (all events of these
- * locks), ringLockIds (rings and motion of cameras linked to these locks) }; cursor = the last id seen.
+ * locks), ringLockIds (rings and motion of cameras linked to these locks), ringCameraIds (1.5.0: rings
+ * and motion of these cameras without a lock) }; cursor = the last id seen.
  */
 async function list(gc, filter, { cursor = null, limit = 30, lockId = null, kind = null } = {}) {
   const where = [];
@@ -75,6 +76,11 @@ async function list(gc, filter, { cursor = null, limit = 30, lockId = null, kind
     if (filter.ringLockIds && filter.ringLockIds.length) {
       or.push(`(h.kind IN ('ding','motion') AND h.camera_id IN (SELECT id FROM cameras WHERE lock_id IN (${store.marks(filter.ringLockIds.length)})))`);
       params.push(...filter.ringLockIds);
+    }
+    // 1.5.0: cameras without a lock the viewer was given (only while they have no lock)
+    if (filter.ringCameraIds && filter.ringCameraIds.length) {
+      or.push(`(h.kind IN ('ding','motion') AND h.camera_id IN (SELECT id FROM cameras WHERE lock_id IS NULL AND id IN (${store.marks(filter.ringCameraIds.length)})))`);
+      params.push(...filter.ringCameraIds);
     }
     where.push('(' + or.join(' OR ') + ')');
   }

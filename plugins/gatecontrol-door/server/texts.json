@@ -345,7 +345,14 @@
   "chat_reason.timeout": "Der Messenger hat nicht innerhalb von 15 s geantwortet – die Karte kann trotzdem angekommen sein.",
   "chat_reason.too_big": "Die Anfrage war zu groß.",
   "chat_reason.invalid": "Der Messenger hat die Karte abgelehnt – Messenger aktualisieren.",
-  "chat_reason.forbidden": "Der Messenger hat die Karte abgelehnt (keine Berechtigung)."
+  "chat_reason.forbidden": "Der Messenger hat die Karte abgelehnt (keine Berechtigung).",
+  "set.ring_off_hint": "Aus: Das Plugin erkennt kein Klingeln und keine Bewegung mehr – keine Mitteilung, keine Karte im Familien-Chat, kein Verlauf. Gong und Fernseher klingeln weiter (direkt von Ring).",
+  "diag.warn_ring_off": "„Ring abfragen“ ist aus: Klingeln und Bewegung werden nicht erkannt – niemand bekommt eine Mitteilung oder eine Karte im Chat. Oben einschalten und speichern.",
+  "diag.warn_no_viewers": "„{{camera}}“ sieht niemand: Ein Klingeln dort erreicht keinen. Unter „Berechtigungen“ einstellen, wer die Kamera sieht.",
+  "diag.warn_no_viewers_lock": "„{{camera}}“ hängt am Schloss „{{lock}}“, auf das niemand ein Recht hat: Ein Klingeln dort erreicht keinen. Unter „Berechtigungen“ Rechte vergeben.",
+  "rights.camera_col": "Kamera · {{name}}",
+  "rights.camera_sees": "sieht",
+  "rights.camera_hint": "Kameras ohne Schloss (z. B. am Briefkasten): Wer hier einen Haken hat, sieht die Kamera in App und Portal, bekommt ihr Klingeln und ihre Bewegung als Mitteilung und findet sie im Verlauf. Kameras an einem Schloss folgen den Rechten des Schlosses."
  },
  "en": {
   "error.invalid": "Invalid input.",
@@ -693,6 +700,13 @@
   "chat_reason.timeout": "The Messenger did not answer within 15 s – the card may still have arrived.",
   "chat_reason.too_big": "The request was too big.",
   "chat_reason.invalid": "The Messenger refused the card – update the Messenger.",
-  "chat_reason.forbidden": "The Messenger refused the card (no permission)."
+  "chat_reason.forbidden": "The Messenger refused the card (no permission).",
+  "set.ring_off_hint": "Off: the plugin no longer notices rings or motion – no notification, no card in the family chat, no history. The chime and the TV keep ringing (directly from Ring).",
+  "diag.warn_ring_off": "“Poll Ring” is off: rings and motion are not noticed – nobody gets a notification or a card in the chat. Switch it on above and save.",
+  "diag.warn_no_viewers": "Nobody sees “{{camera}}”: a ring there reaches nobody. Choose under “Permissions” who sees the camera.",
+  "diag.warn_no_viewers_lock": "“{{camera}}” is linked to the lock “{{lock}}”, on which nobody has a right: a ring there reaches nobody. Grant rights under “Permissions”.",
+  "rights.camera_col": "Camera · {{name}}",
+  "rights.camera_sees": "sees",
+  "rights.camera_hint": "Cameras without a lock (e.g. at the letterbox): whoever is ticked here sees the camera in the app and the portal, gets its rings and motion as notifications and finds it in the history. Cameras linked to a lock follow the lock's rights."
  }
 }

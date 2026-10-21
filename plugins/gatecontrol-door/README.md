@@ -202,7 +202,10 @@ working regardless).
   auth — the token never appears in a URL; one request per bridge at a time), or save a Nuki Web
   API token. Add locks (name, source, actions, door sensor, "open too long" minutes, night
   check). Sign in to Ring (email + password → 2FA code); only the rotating refresh token is
-  stored, never the password. Link each camera to a lock.
+  stored, never the password. Link each camera to a lock — or (1.5.0), for a camera without one (at
+the letterbox, in the garden), tick on the page "Berechtigungen" who sees it: those people see it, get
+its rings and motion and find them in the history. The page "Einstellungen" warns when "Ring abfragen"
+is off or a camera is seen by nobody (its rings reach nobody).
 * **Permissions:** per person and lock none / view / lock+unlock / also open; optional weekly
   time window; opt-in "allow automatic unlock on arrival"; doorbell/motion push per camera.
   Administrators get nothing automatically; kiosk devices and device-trust portal viewers are
@@ -279,7 +282,7 @@ Every answer is `{ "ok": true, … }` or `{ "ok": false, "code": "<code>", "erro
           "window": null,                 // or { "days": [1,2,3,4,5], "from": "07:00", "to": "20:00" } (1 = Monday)
           "windowOpen": true },
   "locks": [ LockView, … ],               // only locks with a right for this person
-  "cameras": [ CameraView, … ],           // enabled cameras linked to one of those locks
+  "cameras": [ CameraView, … ],           // enabled cameras linked to one of those locks, and (1.5.0) cameras without a lock the person was given
   "ring": { "connected": true, "broken": false },   // broken → show "Ring-Verbindung gestört"
   // 1.4.0: the last ring and its chat card — null for people who see no camera
   "doorbell": { "lastRingAt": "2026-10-14T08:00:00Z" | null, "source": "active" | "events" | null,
@@ -382,7 +385,8 @@ topic "Bewegung an der Kamera" switched on (default off).
 ### `GET history[?cursor=<id>&limit=<1-100, default 30>&lockId=<id>&kind=<kind>]`
 
 Newest first. A person sees their own actions, every event of locks where they have `open`, and
-the rings/motion of cameras linked to locks they can view (administrators: everything).
+the rings/motion of cameras linked to locks they can view and (1.5.0) of cameras without a lock they
+were given (administrators: everything).
 
 ```jsonc
 { "ok": true, "nextCursor": 118,          // null = no more; pass as ?cursor=

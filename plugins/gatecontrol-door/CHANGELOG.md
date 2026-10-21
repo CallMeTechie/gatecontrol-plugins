@@ -8,6 +8,24 @@ bleibt auf dem eigenen Server. Einrichtung, Risiken, Datenschutz und die App-API
 an; das Plugin nutzt die, die auch die Open-Source-Projekte ring-client-api (Homebridge) und
 python-ring-doorbell (Home Assistant) verwenden. Sie kann sich jederzeit ändern oder wegfallen.
 
+## 1.5.0
+Braucht weiterhin **GateControl ≥ 1.169.0**.
+- **Kameras ohne Schloss** (z. B. am Briefkasten oder im Garten): Bisher sah sie niemand – ein Klingeln
+  dort ging an keine Person, stand bei niemandem im Verlauf und die Kamera fehlte in App und Portal.
+  Unter „Berechtigungen“ gibt es jetzt pro Kamera ohne Schloss eine Spalte „sieht“: Wer einen Haken hat,
+  sieht die Kamera, bekommt ihr Klingeln (und auf Wunsch die Bewegung) als Mitteilung und findet die
+  Ereignisse im Verlauf – auch ohne jedes Recht auf ein Schloss. Kameras an einem Schloss folgen wie
+  bisher den Rechten des Schlosses; wird eine Kamera später einem Schloss zugeordnet, gelten dessen Rechte.
+- **Klingel-Diagnose warnt** auf der Seite „Einstellungen“:
+  - wenn „Ring abfragen“ aus ist, obwohl Ring verbunden ist – dann erkennt das Plugin kein Klingeln und
+    keine Bewegung (keine Mitteilung, keine Chat-Karte, kein Verlauf), Gong und Fernseher klingeln
+    trotzdem. Der Hinweis steht auch direkt unter dem Schalter.
+  - wenn eine Kamera (eingeschaltet) von niemandem gesehen wird: ohne Schloss niemand angehakt, mit
+    Schloss niemand mit einem Recht darauf.
+- **API:** `GET|PUT admin/settings` → `warnings: [{ code: 'ring_off' } | { code: 'no_viewers', camera, lock }]`;
+  `GET admin/rights` → `cameraRights { <userId>: [cameraId] }`, `PUT admin/rights/<userId>` nimmt
+  `cameraRights { <cameraId>: true|false }`. `GET me` / Verlauf / Ereignis berücksichtigen die neuen Rechte.
+
 ## 1.4.0
 Braucht weiterhin **GateControl ≥ 1.169.0** (Familien-Chat: ≥ 1.177.0 und Messenger ab 1.4.0).
 - **Behoben: ein Klingeln kam nicht im Familien-Chat an** (Gong und Fernseher klingelten). Ursachen:

@@ -1,4 +1,5 @@
-/* Admin page "Berechtigungen": per person and lock a level, per Ring location "Ring-Modus schalten"; per person time window, auto-unlock opt-in, pushes per camera. */
+/* Admin page "Berechtigungen": per person and lock a level, per Ring location "Ring-Modus schalten"; per person time window, auto-unlock opt-in, pushes per camera.
+   1.5.0: per camera without a lock "sieht" — who sees it, gets its pushes and its history. */
 (function () {
   'use strict';
   var D = window.DOOR;
@@ -28,6 +29,17 @@
     return el('label', { class: 'check' }, [box, T('rights.mode')]);
   }
 
+  /** 1.5.0: a camera without a lock — does this person see it? */
+  function sees(u, c) { return (S.cameraRights[u.id] || []).indexOf(c.id) >= 0; }
+  function cameraCheck(u, c) {
+    var box = el('input', { type: 'checkbox', checked: sees(u, c), 'aria-label': u.name + ' – ' + T('rights.camera_col', { name: c.name }), on: { change: function () {
+      var m = {}; m[c.id] = box.checked;
+      D.api('PUT', 'admin/rights/' + u.id, { cameraRights: m }).then(function (r) { S = r; D.toast(T('common.saved')); }).catch(function (e) { D.warn(e); render(); });
+    } } });
+    return el('label', { class: 'check' }, [box, T('rights.camera_sees')]);
+  }
+  function freeCameras() { return S.cameras.filter(function (c) { return !c.lockId; }); }
+
   function winText(p) {
     if (!p || !p.window) return T('rights.window_none');
     return p.window.days.map(function (d) { return T('wd.' + d); }).join(' ') + ' ' + p.window.from + '–' + p.window.to;
@@ -42,7 +54,8 @@
     var to = el('input', { class: 'form-input', type: 'time', value: w.to });
     var auto = el('input', { type: 'checkbox', checked: p.autoUnlock });
     var cp = S.cameraPrefs[u.id] || {};
-    var camRows = S.cameras.filter(function (c) { return c.lockId; }).map(function (c) {
+    // the pushes of the cameras this person sees: of a lock with a right, or (1.5.0) without a lock and ticked
+    var camRows = S.cameras.filter(function (c) { return c.lockId ? !!(S.rights[u.id] || {})[c.lockId] : sees(u, c); }).map(function (c) {
       var x = cp[c.id] || { ding: true, motion: false };
       var ding = el('input', { type: 'checkbox', checked: x.ding, 'data-c': String(c.id), 'data-k': 'ding' });
       var motion = el('input', { type: 'checkbox', checked: x.motion, 'data-c': String(c.id), 'data-k': 'motion' });
@@ -72,7 +85,9 @@
   function render() {
     var table = D.clear($('#dr-rights'));
     var locs = S.locations || [];
+    var free = freeCameras();
     table.appendChild(el('thead', {}, [el('tr', {}, [el('th', { text: T('rights.person') })].concat(S.locks.map(function (l) { return el('th', { text: l.name }); }),
+      free.map(function (c) { return el('th', { text: T('rights.camera_col', { name: c.name }) }); }),
       locs.map(function (x) { return el('th', { text: T('rights.mode_col', { name: x.name }) }); }),
       [el('th', { text: T('rights.window') }), el('th', { text: T('rights.auto') }), el('th', {})]))]));
     var body = el('tbody');
@@ -80,6 +95,7 @@
       var p = S.prefs[u.id];
       body.appendChild(el('tr', {}, [el('td', { text: u.name + (u.role === 'admin' ? ' (Admin)' : '') })].concat(
         S.locks.map(function (l) { return el('td', {}, [levelSelect(u, l)]); }),
+        free.map(function (c) { return el('td', {}, [cameraCheck(u, c)]); }),
         locs.map(function (x) { return el('td', {}, [modeCheck(u, x)]); }),
         [el('td', { text: winText(p) }), el('td', { text: p && p.autoUnlock ? T('common.yes') : T('common.no') }),
           el('td', {}, [el('button', { type: 'button', class: 'btn btn-sm', text: T('common.edit'), on: { click: function () { edit(u); } } })])])));
@@ -87,6 +103,7 @@
     table.appendChild(body);
     $('#dr-no-users').hidden = S.users.length > 0;
     $('#dr-mode-hint').hidden = !locs.length;
+    $('#dr-cam-hint').hidden = !free.length;
   }
 
   D.api('GET', 'admin/rights').then(function (r) { S = r; render(); }).catch(D.warn);

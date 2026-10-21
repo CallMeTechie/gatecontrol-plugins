@@ -13,7 +13,8 @@
 //
 // Every answer is { ok: true, … } or { ok: false, code, error[, retryAfter] }.
 // Who sees what: only locks with a right (view / lock / open) and the cameras
-// linked to them. Kiosk devices and portal viewers recognised only by device
+// linked to them; 1.5.0: and the cameras without a lock the person was given
+// (admin page "Berechtigungen"). Kiosk devices and portal viewers recognised only by device
 // trust read only (403 read_only for every action). Administrators get no
 // rights automatically; their history view in the portal shows everything.
 
@@ -46,7 +47,8 @@ function viaOf(user) {
 
 async function visibleCameras(gc, c) {
   const ids = new Set(c.mine.map((l) => l.id));
-  return (await cameras.all(gc)).filter((cam) => cam.enabled === 1 && cam.present === 1 && cam.lock_id && ids.has(cam.lock_id));
+  return (await cameras.all(gc)).filter((cam) => cam.enabled === 1 && cam.present === 1
+    && (cam.lock_id ? ids.has(cam.lock_id) : rights.seesCamera(c.r, c.user.id, cam)));
 }
 
 /** GET /me doorbell → { lastRingAt, source, chat: { at, ok, error, fallback } | null } */
@@ -123,10 +125,13 @@ async function prefs(gc, c, id, body) {
 /** The history filter of a viewer (admins: everything). */
 function historyFilter(c) {
   if (c.user.role === 'admin') return { all: true };
+  const own = c.r.cams && c.r.cams.get(c.user.id);
   return {
     userId: c.user.id,
     lockIds: c.mine.filter((l) => rights.atLeast(rights.levelOf(c.r, c.user.id, l.id), 'open')).map((l) => l.id),
     ringLockIds: c.mine.map((l) => l.id),
+    // 1.5.0: rings and motion of the cameras without a lock this person sees
+    ringCameraIds: own ? [...own] : [],
   };
 }
 
@@ -152,7 +157,9 @@ async function event(gc, c, id, { admin = false } = {}) {
   const cam = row.camera_id ? await cameras.get(gc, row.camera_id) : null;
   const lockId = cam && cam.lock_id ? cam.lock_id : row.lock_id;
   const level = lockId ? rights.levelOf(c.r, c.user.id, lockId) : null;
-  if (!admin && c.user.role !== 'admin' && !level) throw fail('not_found');
+  // 1.5.0: a camera without a lock — its own list of people
+  const sees = level || (cam && !cam.lock_id && rights.seesCamera(c.r, c.user.id, cam));
+  if (!admin && c.user.role !== 'admin' && !sees) throw fail('not_found');
   const m = await history.media(gc, row.media_id, c.now);
   const lockMap = new Map(c.all.map((l) => [l.id, l]));
   const camMap = new Map(cam ? [[cam.id, cam]] : []);
@@ -189,7 +196,8 @@ async function route(req, gc, seg, cfg, now, t) {
     if (x === 'prefs' && (method === 'PUT' || method === 'PATCH')) return prefs(gc, c, id, body);
   }
   if (a === 'history' && n === 1 && method === 'GET') {
-    if (!c.mine.length && c.user.role !== 'admin' && !(c.r.modes.get(c.user.id) || new Set()).size) return { items: [], nextCursor: null };
+    // nothing to see: no lock, no Ring mode right and (1.5.0) no camera without a lock
+    if (!c.mine.length && c.user.role !== 'admin' && !(c.r.modes.get(c.user.id) || new Set()).size && !(c.r.cams.get(c.user.id) || new Set()).size) return { items: [], nextCursor: null };
     return historyPage(gc, c, query, historyFilter(c));
   }
   if (a === 'events' && n === 2 && method === 'GET') {
@@ -201,14 +209,18 @@ async function route(req, gc, seg, cfg, now, t) {
 }
 
 /**
- * Is there something for this viewer (portal / app tab)? Any right on a lock — for the portal
- * (opts.modes) also a Ring location whose mode this person may switch. The app tab stays lock-only:
- * the apps reach the modes through their quick actions and widget.
+ * Is there something for this viewer (portal / app tab)? Any right on a lock or (1.5.0) a camera
+ * without a lock the person sees — for the portal (opts.modes) also a Ring location whose mode this
+ * person may switch. The app tab leaves the modes out: the apps reach them through their quick
+ * actions and widget.
  */
 async function visibleFor(gc, user, opts = {}) {
   if (!user || !Number.isSafeInteger(user.id)) return false;
   const r = await rights.load(gc);
   if (rights.hasAny(r, user.id) && (await locks.all(gc)).some((l) => rights.levelOf(r, user.id, l.id))) return true;
+  // 1.5.0: a camera without a lock the person sees (present, switched on)
+  const own = r.cams && r.cams.get(user.id);
+  if (own && own.size && (await cameras.all(gc)).some((cam) => !cam.lock_id && cam.enabled === 1 && cam.present === 1 && own.has(cam.id))) return true;
   return !!opts.modes && (await modes.forUser(gc, user, r)).length > 0;
 }
 
