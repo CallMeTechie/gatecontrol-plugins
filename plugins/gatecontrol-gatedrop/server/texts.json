@@ -122,7 +122,12 @@
     "admin.on": "verfügbar",
     "admin.off": "nicht verfügbar",
     "admin.loading": "Lädt …",
-    "admin.load_failed": "Konnte nicht geladen werden."
+    "admin.load_failed": "Konnte nicht geladen werden.",
+    "chat.extra_one": "+1 Datei in GateDrop: {{names}}",
+    "chat.extra": "+{{n}} Dateien in GateDrop: {{names}}",
+    "link.generic_files": "Geteilte Dateien",
+    "link.generic_text": "Geteilter Text",
+    "link.generic_link": "Geteilter Link"
   },
   "en": {
     "error.invalid": "Invalid input.",
@@ -247,6 +252,11 @@
     "admin.on": "available",
     "admin.off": "not available",
     "admin.loading": "Loading …",
-    "admin.load_failed": "Could not be loaded."
+    "admin.load_failed": "Could not be loaded.",
+    "chat.extra_one": "+1 file in GateDrop: {{names}}",
+    "chat.extra": "+{{n}} files in GateDrop: {{names}}",
+    "link.generic_files": "Shared files",
+    "link.generic_text": "Shared text",
+    "link.generic_link": "Shared link"
   }
 }

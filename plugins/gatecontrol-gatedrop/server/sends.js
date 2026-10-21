@@ -106,16 +106,20 @@ function deliveryView(d) {
   return out;
 }
 
-/** May the viewer see this send as a recipient? → their deliveries of it ([] = no). */
+const ARRIVED = ['delivered', 'opened', 'expired'];
+
+/**
+ * May the viewer see this send as a recipient? → their deliveries of it ([] = no). Own devices: always. A person
+ * delivery only when it reached the person through GateDrop (no chat, or files too large for the chat) — never a
+ * refused one; 'family' only for the members at sending (stored in `members`).
+ */
 async function recipientDeliveries(ctx, send, dels) {
-  let fam = null;
   const mine = [];
   for (const d of dels) {
-    if (d.user_id === ctx.viewer && (d.kind === 'device' || d.kind === 'person')) { mine.push(d); continue; }
-    if (d.kind === 'person' && d.target === 'family' && !d.ref && ['delivered', 'opened', 'expired'].includes(d.status) && send.user_id !== ctx.viewer) {
-      if (fam === null) fam = (await deliver.familyOthers(ctx.gc, send.user_id, ctx.now)) || [];
-      if (fam.includes(ctx.viewer)) mine.push(d);
-    }
+    if (d.kind === 'device') { if (d.user_id === ctx.viewer) mine.push(d); continue; }
+    if (d.kind !== 'person' || !ARRIVED.includes(d.status) || !(d.ref == null || d.gd_items > 0)) continue;
+    if (d.user_id === ctx.viewer) mine.push(d);
+    else if (d.target === 'family' && send.user_id !== ctx.viewer && deliver.membersOf(d).includes(ctx.viewer)) mine.push(d);
   }
   return mine;
 }
@@ -192,7 +196,8 @@ async function create(ctx, body) {
         const fam = await deliver.familyOthers(gc, ctx.viewer, ctx.now);
         const r = await people.roles(gc, ctx.now);
         if (!fam || !r || ![...r.parents, ...r.children].includes(ctx.viewer)) throw fail('forbidden');
-        persons.push({ target: 'family', userId: null, label: t(ctx.lang, 'family') });
+        // the family as it is now: only these people ever see this send
+        persons.push({ target: 'family', userId: null, label: t(ctx.lang, 'family'), members: deliver.membersText(fam) });
         continue;
       }
       const uid = Number(p);
@@ -209,7 +214,7 @@ async function create(ctx, body) {
       const f = fl.find((x) => x.id === n.id);
       if (!f) throw fail('not_found');
       const p = f.path.replace(/\/+$/, '') + (n.sub ? '/' + n.sub : '');
-      drops.push({ target: p, label: `${f.label}${n.sub ? '/' + n.sub : ''}` });
+      drops.push({ target: p, folderId: f.id, label: `${f.label}${n.sub ? '/' + n.sub : ''}` });
     }
   }
   if (to.link && !(await people.linksEnabled(gc, ctx.viewer, ctx.now))) throw fail('links_disabled');
@@ -241,14 +246,17 @@ async function create(ctx, body) {
         direct.push(tr);
       } else devDeliveries.push(dId);
     }
-    for (const p of persons) p.deliveryId = await ins('person', p.target, p.userId, 'pending', p.label);
+    for (const p of persons) {
+      p.deliveryId = await ins('person', p.target, p.userId, 'pending', p.label);
+      if (p.members) await store.run(gc, 'UPDATE deliveries SET members = ? WHERE id = ?', [p.members, p.deliveryId]);
+    }
     for (const d of drops) d.deliveryId = await ins('nas', d.target, null, 'pending', d.label);
     if (to.link) to.link.deliveryId = await ins('link', 'link', null, 'pending', null);
   });
 
   const stored = await itemsOf(gc, id);
-  const save = (dId, st) => store.run(gc, 'UPDATE deliveries SET status = ?, via = ?, error = ?, ref = ?, at = ?' + (st.target ? ', target = ?, label = ?' : '') + ' WHERE id = ?',
-    [st.status, st.via || null, st.error || null, st.ref || null, ctx.now, ...(st.target ? [st.target, st.label || null] : []), dId]);
+  const save = (dId, st) => store.run(gc, 'UPDATE deliveries SET status = ?, via = ?, error = ?, ref = ?, at = ?, handed = ?, gd_items = ?' + (st.target ? ', target = ?, label = ?' : '') + ' WHERE id = ?',
+    [st.status, st.via || null, st.error || null, st.ref || null, ctx.now, st.handed || 0, st.gd_items || 0, ...(st.target ? [st.target, st.label || null] : []), dId]);
   // own devices: silent pushes for direct transfers, a push for the others
   const from = { userId: ctx.viewer, name: ctx.user.name, deviceId: ctx.deviceId || null, deviceName: ctx.deviceName || null };
   for (const tr of direct) await deliver.pushDirect(gc, sendRow, stored, tr, from, ctx.viewer);
@@ -276,8 +284,8 @@ async function create(ctx, body) {
       for (const dr of drops) {
         const d = await store.one(gc, 'SELECT * FROM deliveries WHERE id = ?', [dr.deliveryId]);
         if (!d || d.status !== 'pending') continue;
-        const st = await deliver.nas(bgCtx, sendRow, stored, d);
-        await store.run(gc, 'UPDATE deliveries SET status = ?, via = ?, error = ?, ref = ?, at = ? WHERE id = ?', [st.status, st.via || null, st.error || null, st.ref || null, Date.now(), d.id]);
+        const st = await deliver.nas(bgCtx, sendRow, stored, d, dr.folderId);
+        await store.run(gc, 'UPDATE deliveries SET status = ?, via = ?, error = ?, ref = ?, at = ?, handed = ? WHERE id = ?', [st.status, st.via || null, st.error || null, st.ref || null, Date.now(), st.handed || 0, d.id]);
       }
     }, gc);
   }
@@ -408,12 +416,11 @@ async function inbox(ctx, query) {
   if (kind === 'sent') {
     rows = await store.all(gc, 'SELECT * FROM sends WHERE user_id = ? AND created_at < ? ORDER BY created_at DESC LIMIT ?', [ctx.viewer, before, limit + 1]);
   } else {
-    const r = await people.roles(gc, ctx.now);
-    const family = !!(r && [...r.parents, ...r.children].includes(ctx.viewer));
+    // own devices; a person delivery that reached the person through GateDrop; 'family' only for its members at sending
     rows = await store.all(gc, `SELECT s.* FROM sends s WHERE s.created_at < ? AND EXISTS (SELECT 1 FROM deliveries d WHERE d.send_id = s.id AND d.status IN ('delivered', 'opened', 'expired') AND (
-        (d.user_id = ? AND (d.kind = 'device' OR (d.kind = 'person' AND (d.ref IS NULL OR d.ref NOT LIKE 'chat:%'))))
-        OR (? = 1 AND d.kind = 'person' AND d.target = 'family' AND d.ref IS NULL AND s.user_id != ?)))
-      ORDER BY s.created_at DESC LIMIT ?`, [before, ctx.viewer, family ? 1 : 0, ctx.viewer, limit + 1]);
+        (d.user_id = ? AND d.kind = 'device')
+        OR (d.kind = 'person' AND (d.ref IS NULL OR d.gd_items > 0) AND (d.user_id = ? OR (d.target = 'family' AND s.user_id != ? AND d.members LIKE ?)))))
+      ORDER BY s.created_at DESC LIMIT ?`, [before, ctx.viewer, ctx.viewer, ctx.viewer, `%,${ctx.viewer},%`, limit + 1]);
   }
   const hasMore = rows.length > limit;
   const out = [];

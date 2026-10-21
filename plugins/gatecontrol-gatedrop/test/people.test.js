@@ -28,26 +28,29 @@ test('with the Messenger: the files handed over, a message from Anna in her dire
   });
 });
 
-test('the family chat with the Messenger; refusals fall back to a push (type, size) and are noted', async () => {
+test('the family chat with the Messenger; files the Messenger does not take (type, > 25 MB) stay in GateDrop', async () => {
   await withHost({ messenger: true }, async (host, c) => {
     await c.messenger.callService('sync_group', { caller: 'gatecontrol-familie', payload: { key: 'family', title: 'Familie', userIds: [ANNA.id, MARC.id, LENA.id] } });
     const img = await c.upload(ANNA, PNG, 'image/png');
     const r = (await c.as(ANNA)('POST', 'sends', { items: [{ mediaId: img, name: 'Wandertag.png' }], to: { people: ['family'] } })).json;
     assert.deepEqual([r.deliveries[0].target, r.deliveries[0].label, r.deliveries[0].status, !!r.deliveries[0].conversationId], ['family', 'Familie', 'delivered', true]);
-    // a video type the Messenger does not take → a push to Marc instead
+    // a type the Messenger does not take (video/quicktime) and a file over 25 MB stay in GateDrop: the chat message names
+    // them, GateDrop pushes and lists them; the small one goes into the chat
     const mov = await c.upload(ANNA, Buffer.from('moov'), 'video/quicktime');
-    const r2 = (await c.as(ANNA)('POST', 'sends', { items: [{ mediaId: mov, name: 'clip.mov' }], to: { people: [MARC.id] } })).json;
-    assert.deepEqual([r2.deliveries[0].status, r2.deliveries[0].via, r2.deliveries[0].error], ['delivered', 'server', 'file_type']);
-    const p = c.pushes().pop();
-    assert.deepEqual([p.users, p.devices, p.title, p.data.gatedrop.send], [[MARC.id], undefined, 'Anna hat dir eine Datei geschickt', r2.id]);
-    // larger than the Messenger's own uploads (25 MB): its media.handOverMaxBytes (2 GB) takes it into the chat
-    c.clock.add(1000);
     const big = await c.upload(ANNA, Buffer.from('big'), 'video/mp4', { bytes: 300 * 1024 * 1024 });
-    const r3 = (await c.as(ANNA)('POST', 'sends', { items: [{ mediaId: big, name: 'film.mp4' }], to: { people: [MARC.id] } })).json;
-    assert.deepEqual([r3.deliveries[0].status, r3.deliveries[0].error, !!r3.deliveries[0].conversationId], ['delivered', null, true]);
-    // Marc finds the refused one in GateDrop and may download it
+    const png = await c.upload(ANNA, PNG, 'image/png');
+    const r2 = (await c.as(ANNA)('POST', 'sends', { items: [{ mediaId: mov, name: 'clip.mov' }, { mediaId: big, name: 'film.mp4' }, { mediaId: png, name: 'foto.png' }], to: { people: [MARC.id] } })).json;
+    const d2 = r2.deliveries[0];
+    assert.deepEqual([d2.status, d2.via, d2.error, !!d2.conversationId], ['delivered', 'server', null, true]);
+    assert.deepEqual(host.handOvers.slice(-1).map((h) => h.from), [png], 'only the small file was handed over (the .mov was refused by type)');
+    const msgs = (await c.messenger.request({ method: 'GET', path: `conversations/${d2.conversationId}/messages`, user: app(MARC), query: {} })).json.messages;
+    assert.deepEqual(msgs.map((m) => [m.kind, m.text, m.senderId]), [['image', '+2 Dateien in GateDrop: clip.mov, film.mp4', ANNA.id]]);
+    const p = c.pushes().pop();
+    assert.deepEqual([p.users, p.devices, p.title, p.body, p.data.gatedrop.send], [[MARC.id], undefined, 'Anna hat dir 2 Dateien geschickt', 'clip.mov, film.mp4', r2.id]);
     const inbox = (await c.as(MARC)('GET', 'inbox', null, { kind: 'received' })).json.items;
-    assert.deepEqual(inbox.map((s) => s.items[0].name), ['clip.mov']);
+    assert.deepEqual(inbox.map((s) => s.id), [r2.id]);
+    assert.equal((await host.mediaGet({ ...MARC }, big)).status, 200);
+    assert.equal((await host.mediaGet({ ...LENA }, mov)).status, 404);
     assert.equal((await host.mediaGet({ ...MARC }, mov)).status, 200);
     assert.equal((await host.mediaGet({ ...LENA }, mov)).status, 404);
     assert.equal((await c.as(MARC)('POST', `sends/${r2.id}/opened`)).json.send.deliveries[0].status, 'opened');

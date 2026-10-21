@@ -11,7 +11,8 @@ Aktualisieren: Dateispeicher (nur übergebene Dateien, keine eigenen Uploads) un
   Admin-API `POST /drop-folders`, `PUT`/`DELETE /drop-folders/:id`, `GET /status` → `drop_folders`. Wird ein NAS
   entfernt, verschwinden seine Ordner; ein ausgeschaltetes NAS bietet keine an.
 - **Dienste** (nur für `gatecontrol-gatedrop`): `list_drop_folders {}` → `[{ id, label, path }]`; `save_file { user,
-  mediaId, name, path }` → `{ ok: true, path, nasId }` – die von GateDrop übergebene Datei wird mit
+  folderId, mediaId, name, path }` → `{ ok: true, path, nasId }` (genau der gewählte Ordner, `path` muss darin liegen;
+  ohne `folderId` nur, wenn genau ein Ordner passt) – die von GateDrop übergebene Datei wird mit
   `SYNO.FileStation.Upload` hochgeladen (GateControl streamt sie direkt zum NAS, `gc.net.uploadTarget`); ein schon
   vorhandener Name wird zu „name (2).ext“. Danach wird die übergebene Kopie gelöscht. Fehler `forbidden`, `invalid`,
   `not_found`, `nas_disabled`, `unsupported`, `unreachable`, `auth`, `permission`, `no_space`, `upload_failed`. Das

@@ -6,6 +6,7 @@
 // server. The listener accepts a transfer only with a ticket it learnt from the plugin (silent push or
 // GET transfers/<id>); both ends report POST transfers/<id>/result { ok, bytes?, error? }.
 //   ok              → the delivery is delivered via direct
+//   (done, failed or expired: key and ticket are removed from the database)
 //   failed/expired  → the server way: all files on the server → a push to the device (delivered via server);
 //                     files still local → the delivery waits (pending, error direct_failed) and the sender is
 //                     told { fallback: 'upload' }: it uploads them and calls POST sends/<id>/items.
@@ -107,10 +108,10 @@ async function result(ctx, id, body) {
     let missing;
     const settled = ['delivered', 'opened'].includes(delivery.status);
     if (b.ok) {
-      if (tr.status !== 'done') await store.run(ctx.gc, "UPDATE transfers SET status = 'done', done_at = ? WHERE id = ?", [ctx.now, tr.id]);
+      if (tr.status !== 'done') await store.run(ctx.gc, "UPDATE transfers SET status = 'done', key = NULL, ticket = NULL, done_at = ? WHERE id = ?", [ctx.now, tr.id]);
       if (!settled) await store.run(ctx.gc, "UPDATE deliveries SET status = 'delivered', via = 'direct', error = NULL, at = ? WHERE id = ?", [ctx.now, delivery.id]);
     } else if (tr.status === 'open') {
-      await store.run(ctx.gc, "UPDATE transfers SET status = 'failed', done_at = ? WHERE id = ?", [ctx.now, tr.id]);
+      await store.run(ctx.gc, "UPDATE transfers SET status = 'failed', key = NULL, ticket = NULL, done_at = ? WHERE id = ?", [ctx.now, tr.id]);
       if (!settled) {
         const f = await fallback(ctx.gc, send, delivery, ctx.now);
         way = f.way;
@@ -139,7 +140,7 @@ async function expire(gc, now, nameOf) {
     await store.tx(gc, async () => {
       const cur = await store.one(gc, 'SELECT status FROM transfers WHERE id = ?', [r.id]);
       if (!cur || cur.status !== 'open') return;
-      await store.run(gc, "UPDATE transfers SET status = 'expired', done_at = ? WHERE id = ?", [now, r.id]);
+      await store.run(gc, "UPDATE transfers SET status = 'expired', key = NULL, ticket = NULL, done_at = ? WHERE id = ?", [now, r.id]);
       send = await store.one(gc, 'SELECT * FROM sends WHERE id = ?', [r.send_id]);
       const delivery = await store.one(gc, 'SELECT * FROM deliveries WHERE id = ?', [r.delivery_id]);
       if (send && delivery && delivery.status === 'direct') job = (await fallback(gc, send, delivery, now)).job;

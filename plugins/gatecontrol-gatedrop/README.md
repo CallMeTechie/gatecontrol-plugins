@@ -107,6 +107,14 @@ informational when delivered): `direct_failed`, `push_failed`, `file_type` / `fi
 Messenger did not take it — the person got a push instead), `no_space`, `permission`, `unreachable`, `upload_failed`
 (NAS), `links_disabled`, `no_public_url`, `revoked`. `conversationId` (person via the Messenger), `paths` (NAS).
 
+**People:** with the Messenger, files ≤ 25 MB (≤ 100 MB per send in all, ≤ 200 hand-overs per sender and day,
+Messenger and NAS together) are handed over and sent with `send_file` as the sender's message; larger files and types
+the Messenger does not take stay in GateDrop (the person gets the `received` push for them, they are in `GET inbox`, the
+chat message names them "+2 Dateien in GateDrop: …"; the delivery has `conversationId` and is `delivered`). A refusal of
+the Messenger (`forbidden` for a block or not a member, `readonly`, …) **fails** the delivery — no push, nothing in the
+recipient's inbox. Only without the Messenger (not installed / not reachable) the person gets everything through GateDrop.
+`family` goes to the family's members **at sending** (only they ever see it).
+
 `local: true` items stay on the sender's device; every target must then be one of its own devices reached directly
 (else `409 upload_required`). Links and NAS folders need files.
 
@@ -131,7 +139,8 @@ receives `kind: "data"`, `silent: true`) whose `data` is
   2 s connect timeout per candidate, then the server way. The ticket is valid once, for 10 minutes.
 * `GET transfers/<id>` (either end, apps only) → `{ transfer: { id, sendId, side: "sender"|"receiver", mode, status:
   "open"|"done"|"failed"|"expired", fromDevice, toDevice, from: { userId, deviceId, deviceName }, candidates, key,
-  ticket, expiresAt, items: [{ index, name, bytes, mime }] } }` — `key` / `ticket` only while open.
+  ticket, expiresAt, items: [{ index, name, bytes, mime }] } }` — `key` / `ticket` only while open (deleted from the
+  database once the transfer is done, failed or expired).
 * `POST transfers/<id>/result` `{ ok, bytes?, error? ([a-z0-9_.-]{1,64}) }` (both ends) → `{ transfer: { id, status, side },
   delivery: { id, kind, target, status, via, error, at }, fallback: null | "server" | "upload", missing?: [indexes] }`.
   `ok: true` → delivered via direct. A failure: all files on the server → `fallback: "server"` (a push to the device
@@ -167,6 +176,8 @@ The app then reads `GET sends/<id>` and downloads each file with `GET items/<med
   allows the sender and the recipients until the send expires), in the portal a signed `/plugin-media/…` URL.
 * `POST sends/<id>/opened` (recipient; from an app only that device's delivery) → `{ send }`.
 * `DELETE links/<token>` (the link's owner) → `{ revoked }`.
+
+A link with a PIN gets a generic title ("Geteilte Dateien" / "Shared files"), so no file name shows before the PIN.
 
 ### Notifications
 

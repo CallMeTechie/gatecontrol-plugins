@@ -5,7 +5,9 @@
 // to a NAS: administrators and Familie's parents):
 //
 //   list_drop_folders {}  → a bare array [{ id, label, path }] — the folders of enabled NAS (a refused caller: [])
-//   save_file { user, mediaId, name, path } → { ok: true, path, nasId } | { ok: false, code }
+//   save_file { user, folderId, mediaId, name, path } → { ok: true, path, nasId } | { ok: false, code }
+//     folderId: the drop folder (list_drop_folders) — `path` must be that folder or below it; without folderId the
+//     path must fit exactly one folder (else invalid / not_found).
 //     mediaId: a file handed over to this plugin (gc.media.handOver, GateControl ≥ 1.193.0) — it is deleted from
 //     this plugin's media afterwards, saved or not; path: a drop folder or a folder below it (created); name: the
 //     file name (an existing one becomes "name (2).ext"). Uploaded with SYNO.FileStation.Upload through
@@ -65,9 +67,18 @@ async function saveFile(gc, payload) {
     const name = cleanName(p.name);
     const dir = cleanPath(p.path);
     if (!mediaId || !name || !dir || !(Number.isSafeInteger(p.user) && p.user > 0)) return { ok: false, code: 'invalid' };
-    const all = await store.listFolders(gc);
-    const folder = all.filter((f) => within(dir, f.path)).sort((a, b) => b.path.length - a.path.length)[0];
-    if (!folder) return { ok: false, code: 'not_found' };
+    // exactly the folder GateDrop chose (folderId), and `path` within it — never another NAS's folder with the same
+    // prefix; without folderId only when a single folder fits
+    let folder;
+    if (p.folderId != null) {
+      if (!Number.isSafeInteger(p.folderId) || p.folderId <= 0) return { ok: false, code: 'invalid' };
+      folder = await store.getFolder(gc, p.folderId);
+      if (!folder || !within(dir, folder.path)) return { ok: false, code: 'not_found' };
+    } else {
+      const fits = (await store.listFolders(gc)).filter((f) => within(dir, f.path));
+      if (fits.length !== 1) return { ok: false, code: fits.length ? 'invalid' : 'not_found' };
+      folder = fits[0];
+    }
     const nas = await store.getNas(gc, folder.nas_id);
     if (!nas) return { ok: false, code: 'not_found' };
     if (!nas.enabled) return { ok: false, code: 'nas_disabled' };

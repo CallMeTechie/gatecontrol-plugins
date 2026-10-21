@@ -26,7 +26,7 @@ async function purgeFiles(gc, now) {
       await store.run(gc, 'UPDATE items SET media_id = NULL WHERE send_id = ?', [s.id]);
       await store.run(gc, "UPDATE deliveries SET status = 'expired', at = ? WHERE send_id = ? AND status IN ('pending', 'direct')", [now, s.id]);
       await store.run(gc, "UPDATE deliveries SET status = 'expired', at = ? WHERE send_id = ? AND kind = 'link' AND status = 'delivered'", [now, s.id]);
-      await store.run(gc, "UPDATE transfers SET status = 'expired', done_at = ? WHERE send_id = ? AND status = 'open'", [now, s.id]);
+      await store.run(gc, "UPDATE transfers SET status = 'expired', key = NULL, ticket = NULL, done_at = ? WHERE send_id = ? AND status = 'open'", [now, s.id]);
       await store.run(gc, 'UPDATE sends SET purged = 1 WHERE id = ?', [s.id]);
     });
   }

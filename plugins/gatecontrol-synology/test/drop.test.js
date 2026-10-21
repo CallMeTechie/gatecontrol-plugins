@@ -116,3 +116,25 @@ test('save_file refusals: caller, paths, files, NAS state and DSM errors — the
     assert.equal((await host.mediaGet({ ...ADA, app: true }, handed(host))).status, 404);
   });
 });
+
+test('save_file: exactly the drop folder GateDrop chose (folderId) — never the longest prefix on another NAS', async () => {
+  const a = fakeDsm('dsm72.json');
+  const b = fakeDsm('dsm71.json');
+  await withHost({ nas: [a, b] }, async (host) => {
+    const na = await addNas(host);
+    const nb = await addNas(host, { name: 'Büro', target_index: 1 });
+    const fa = await folder(host, na, '/Familie');
+    const fb = await folder(host, nb, '/Familie/Fotos');
+    // folder A chosen, a path that NAS B's folder would match longer: saved on NAS A
+    const r = await save(host, { user: ADA.id, folderId: fa.id, mediaId: handed(host), name: 'x.pdf', path: '/Familie/Fotos' });
+    assert.deepEqual([r.ok, r.nasId], [true, na]);
+    assert.deepEqual([a.state.uploads.length, b.state.uploads.length], [1, 0]);
+    assert.equal((await save(host, { user: ADA.id, folderId: fb.id, mediaId: handed(host), name: 'x.pdf', path: '/Familie/Fotos/2026' })).nasId, nb);
+    assert.deepEqual(await save(host, { user: ADA.id, folderId: fb.id, mediaId: handed(host), name: 'x.pdf', path: '/Familie' }), { ok: false, code: 'not_found' }, 'outside the chosen folder');
+    assert.deepEqual(await save(host, { user: ADA.id, folderId: 99, mediaId: handed(host), name: 'x.pdf', path: '/Familie' }), { ok: false, code: 'not_found' });
+    assert.deepEqual(await save(host, { user: ADA.id, folderId: 'x', mediaId: handed(host), name: 'x.pdf', path: '/Familie' }), { ok: false, code: 'invalid' });
+    // without folderId only when exactly one folder fits
+    assert.deepEqual(await save(host, { user: ADA.id, mediaId: handed(host), name: 'x.pdf', path: '/Familie/Fotos' }), { ok: false, code: 'invalid' }, 'two folders fit');
+    assert.equal((await save(host, { user: ADA.id, mediaId: handed(host), name: 'y.pdf', path: '/Familie/Briefe' })).nasId, na);
+  });
+});
