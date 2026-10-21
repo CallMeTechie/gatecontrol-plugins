@@ -19,6 +19,11 @@
 //     - A picture (`image: { data, mime }`, GateControl ≥ 1.169.0) the host
 //       refuses (ERR_INVALID: too large, wrong type, an older host) never
 //       costs the message: it is sent again without the picture first.
+//     - `card` (GateControl ≥ 1.191.0: the long form a chat shows when the
+//       person routed the topic into a chat — { text ≤ 4000, link?: { label
+//       ≤ 40, route }, actions? }) is ignored by older hosts; one the host
+//       refuses (ERR_INVALID) never costs the message either: sent again
+//       without the card.
 // * Budget: the host allows 30 per hour and plugin. The notifier keeps its
 //   own sliding window below that (25/h) and holds the last 5 of them back
 //   for high-priority messages, so a burst of minor notices never crowds
@@ -45,7 +50,7 @@ function severityOf(priority) {
 /** The notification without empty fields, with the old-host string form attached. */
 function payload(n) {
   const out = {};
-  for (const k of ['topic', 'title', 'body', 'priority', 'users', 'collapseKey', 'ttl', 'data', 'image']) {
+  for (const k of ['topic', 'title', 'body', 'priority', 'users', 'collapseKey', 'ttl', 'data', 'image', 'card']) {
     if (n[k] != null && !(Array.isArray(n[k]) && !n[k].length)) out[k] = n[k];
   }
   Object.defineProperty(out, 'toString', { value: () => legacyText(out), enumerable: false });
@@ -54,7 +59,7 @@ function payload(n) {
 
 /**
  * One gc.notify call with the fallbacks above.
- * → { sent, pushed, form: 'v2'|'legacy', error } (+ imageDropped: true when sent without its picture)
+ * → { sent, pushed, form: 'v2'|'legacy', error } (+ imageDropped / cardDropped: true when sent without its picture / card)
  */
 async function deliver(gc, n) {
   const p = payload(n);
@@ -66,6 +71,11 @@ async function deliver(gc, n) {
   } catch (e) {
     const code = (e && e.code) || 'ERR_NOTIFY';
     if (code !== 'ERR_INVALID') return { sent: false, pushed: false, form: null, error: code };
+    if (p.card != null) {
+      const { card, ...rest } = n;
+      const r = await deliver(gc, rest);
+      return r.sent ? { ...r, cardDropped: true } : r;
+    }
     if (p.image != null) {
       const { image, ...rest } = n;
       const r = await deliver(gc, rest);

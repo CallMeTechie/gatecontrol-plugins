@@ -2,6 +2,13 @@
 
 Stundenplan aus WebUntis für Schüler- und Elternkonten als GateControl-Plugin.
 
+## 1.5.1
+- **Nachrichten der Schule im Chat:** Der Push einer Nachricht trägt jetzt eine Karte mit Absender und dem
+  **ganzen Text** (bis 4000 Zeichen) und dem Link „Ganze Nachricht lesen“ (öffnet „Schule“ in der App). Lenkt
+  jemand ab GateControl 1.191.0 das Thema „Nachrichten der Schule“ in einen Chat (Messenger 1.6.0: Familien-Chat
+  oder eigener Chat „Schule“), steht dort die ganze Nachricht statt nur des Anfangs. Ältere GateControl-Versionen
+  übergehen die Karte; der Push bleibt, wie er war.
+
 ## 1.5.0
 - **Nachrichten ohne WebUntis.** Der **ganze Text** jeder Nachricht steht in App, Seite „Schule“ und
   Portal (die Einzelansicht von WebUntis, einmal je Nachricht) – der Hinweis „Volltext in WebUntis“ ist weg.

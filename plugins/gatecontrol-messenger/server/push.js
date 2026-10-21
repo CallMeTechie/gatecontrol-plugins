@@ -22,6 +22,8 @@
 // home actions (a request only to its approvers) and plugin cards (a doorbell card high priority with its
 // picture) have texts of their own; custom pushes (send in `custom`) for poll nudges, event reminders,
 // departure hints, arrivals, reminders, answered action requests and reactions (notify.reactions).
+// 1.6.0: notification cards of the chat sink (server/notices.js): titled with their source, high / critical as high,
+// in the family group only to the people GateControl handed the notification for (job.only).
 
 const store = require('./store');
 const people = require('./people');
@@ -139,11 +141,15 @@ async function send(gc, job, users, now = Date.now()) {
   if (job.custom) return custom(gc, job.custom, users, now);
   const { conv, members, row } = job;
   const senderId = row.sender_id;
-  const to = await filter14(gc, conv, row, job, recipients(conv, members, senderId, users, now), users, now);
+  let to = await filter14(gc, conv, row, job, recipients(conv, members, senderId, users, now), users, now);
+  // 1.6.0: a notification in the family group goes to the people GateControl handed it for (job.only)
+  if (Array.isArray(job.only)) to = to.filter((u) => job.only.includes(u));
   if (!to.length) return [];
   const prefs = await people.prefsOf(gc, to);
   const sender = senderId == null ? null : users.get(senderId);
-  const senderName = senderId == null ? 'GateControl' : (sender ? sender.name : null);
+  // 1.6.0: a notification card (deliverNotice) comes from its source ("Schule"), high / critical as high
+  const notice = row.kind === 'card' && job.meta && job.meta.card && job.meta.card.notice ? job.meta.card.notice : null;
+  const senderName = senderId == null ? ((notice && notice.sourceLabel) || 'GateControl') : (sender ? sender.name : null);
   if (!senderName) return [];
   const groups = new Map();
   for (const u of to) {
@@ -169,7 +175,7 @@ async function send(gc, job, users, now = Date.now()) {
       title: g.preview ? senderName : t(g.lang, 'push.new_from', { name: senderName }),
       body: g.preview ? bodyOf(g.lang, row.kind, job.text, job.meta) : '',
       users: g.users,
-      priority: row.kind === 'card' && job.meta && job.meta.card && job.meta.card.kind === 'doorbell' ? 'high' : 'normal',
+      priority: (row.kind === 'card' && job.meta && job.meta.card && job.meta.card.kind === 'doorbell') || (notice && ['high', 'critical'].includes(notice.priority)) ? 'high' : 'normal',
       conversation: { id: String(conv.id), title: conv.kind === 'group' ? (job.title || null) : null, isGroup: conv.kind === 'group' },
       sender: { id: senderId == null ? 'gatecontrol' : senderId, name: senderName, avatarUrl: sender && sender.avatarUrl ? sender.avatarUrl : null },
       data: { messageId: row.id, conversationId: conv.id, actions },

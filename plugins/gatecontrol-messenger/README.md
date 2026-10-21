@@ -6,20 +6,24 @@ editing and deleting, read receipts, "typing …", disappearing chats and chat
 pushes with a reply field. The apps (Android, Windows) draw their own tab
 "Chats" from the API below; the portal has a tab "Chats" (sandboxed frame);
 administrators get two pages (Übersicht, Protokoll) without any message
-content. Paid plugin (`license.required`), needs **GateControl ≥ 1.180.0**
+content. Paid plugin (`license.required`), needs **GateControl ≥ 1.191.0**
 (plugin media, realtime events, chat notifications, services; since 1.4.0
 interactive home actions `permissions.actions { interactive: true }` and
-service payloads up to 512 KB). 1.4.0 adds status and stories, privacy
+service payloads up to 512 KB; since 1.6.0 the chat sink of the notification
+center, `permissions.notifySink`). 1.4.0 adds status and stories, privacy
 settings, last seen, blocks, archive, pins, chat lists, export, "remind me",
 suggestions, polls, events, live arrival, home actions and plugin cards — see
-"Since 1.4.0" in the App-API.
+"Since 1.4.0" in the App-API. 1.6.0 makes the chats the place for
+GateControl's notifications — see "Notifications in chats (since 1.6.0)".
 
 * Version 1 is internal only (GateControl ↔ GateControl); bridges (WhatsApp,
   Signal, Matrix, ntfy, Gotify) and end-to-end encryption come later.
 * Every enabled GateControl account may chat. Accounts seen on a kiosk device
   (wall tablet) are not offered as people and kiosk devices get no tab.
 * The pinned chat "GateControl" in the apps is the GateControl inbox (core
-  notifications) — not part of this plugin.
+  notifications) — not part of this plugin. Since 1.6.0 a person may route a
+  kind of notification (a push topic) into the family chat or a chat of its
+  own instead (GateControl ≥ 1.191.0 decides, this plugin delivers).
 
 ## Privacy and storage
 
@@ -116,6 +120,8 @@ account no longer exists (name null → show "Gelöschtes Konto").
   "avatarMediaId": "<32 hex>" | null,    // group picture — apps load GET /api/v1/client/plugins/gatecontrol-messenger/media/<id>
   "managedBy": "gatecontrol-familie" | null,
   "readonly": false,                     // a plugin's notice channel: members cannot send
+  "listPinned": false,                   // since 1.6.0: true for Familie's group — show it under "Angeheftet" after "GateControl"
+  "notice": { "source": "plugin:gatecontrol-schule", "label": "Schule" } | null, // since 1.6.0: a notice channel of GateControl's notifications (mark it "Mitteilungen")
   "disappearingS": 0 | 86400 | 604800 | 2592000,
   "createdBy": 7 | null, "createdAt": "…", "updatedAt": "…",
   "lastMessageId": 4711 | null,          // highest message id ever assigned in this chat
@@ -374,6 +380,8 @@ otherwise — never `false`):
 | `actions` | home actions (`GET actions`, message kind `action`, buttons of `card` messages); absent without `gc.actions` on the host or when the administrator switched them off — `homeActions.reason` says which (since 1.5.0) |
 | `action_requests` | since 1.5.0: `GET actions/requestable`, request `approvers`, `expiresAt`; present together with `actions` |
 | `grant_off` | since 1.5.0: grant `offAtEnd`, system message `grant_off`; present together with `actions` |
+| `notices` | since 1.6.0: conversations carry `listPinned` and `notice`, cards of kind `notice` ("Notifications in chats") |
+| `notice_routes` | since 1.6.0: `GET/PUT portal/notify-routes` (GateControl has `gc.notify.routes`) |
 | `msg_tools` | blocks, archive, pins, lists, export, remind me, suggest |
 | `privacy2` | `prefs.privacy` / `prefs.notify` / `prefs.chats`, last seen / online |
 
@@ -706,6 +714,71 @@ plugins offer to a person, run **as that person with their rights**
   "live_view" }`, set by the server) is a deep link to that app route.
   Push: title "GateControl", body "<title>: <text>", a doorbell card with
   priority high and its picture.
+* **Notification cards** (since 1.6.0, `card.kind: "notice"`, `via:
+  "gatecontrol-messenger"`): a notification of GateControl's notification
+  center the person routed into a chat — see "Notifications in chats".
+
+#### Notifications in chats (since 1.6.0)
+
+GateControl ≥ 1.191.0 lets each person choose per push topic where a
+notification appears: **GateControl** (the inbox, the pinned row — default),
+the **family chat** (Familie's group, for everyone in it; a household setting
+only administrators and Familie's parents may set) or an **own chat** per
+source (e.g. "Schule", only for the person). Locked topics (`security`,
+`admin_notice`) always stay in the inbox. The settings are GateControl's
+(`GET/PUT /api/v1/client/push/routes`, web `/api/v1/me/notify/routes`); this
+plugin is the **sink** (`permissions.notifySink: true`) that delivers them.
+`GET me` → `features.notices`.
+
+* Hook `deliverNotice(payload)` — GateControl hands over a notification after
+  it decided the recipients (subscriptions, mute, quiet hours): `{ id, topic,
+  source: "core" | "plugin:<id>", sourceLabel, topicLabel, title, body,
+  priority, createdAt, data, imageUrl?, card?: { text ≤ 4000, link?: { label
+  ≤ 40, route }, actions? }, family: [userIds], own: [userIds], lang }` →
+  `{ covered: [userIds] }`. Whoever is not covered (an error, more than 10 s,
+  no family group, an unknown account) gets it in GateControl's inbox instead.
+  * `family` → **one** card in Familie's group (`managedBy:
+    "gatecontrol-familie"`, key `family`); covered = the ids of `family` who
+    are members. No group → none covered.
+  * `own` → per person a read-only **notice channel per source** (a group with
+    only that person, `readonly`, `managedBy: "gatecontrol-messenger"`, title
+    = `sourceLabel`, created on first use and renamed with the source;
+    conversation field `notice: { source, label }`), one card there.
+  * The same notification id lands at most once per chat (a repeated call
+    answers the people it reached the first time; kept 7 days).
+* The card (message `kind: "card"`, `senderId: null`): `card: { kind:
+  "notice", title, text (card.text, else the body — ≤ 4000, the whole text),
+  image: null, imageUrl: "/notify-media/…" | null (the push picture, a
+  capability path of the server, valid as long as the push), link: { label,
+  route, kind: null } | null (card.link, else the first `open_app_route`
+  button), actions: [ { plugin, actionId, label, icon, needsConfirm, canRun } ]
+  (the `quick_action` buttons of card.actions / data.actions, ≤ 4, run as the
+  presser like every plugin card; other button types are left out), lastRun,
+  notice: { source, sourceLabel, topic, topicLabel, priority, data } }`. Head
+  of the card: "<sourceLabel> · <topicLabel>" (e.g. "Schule · Nachrichten der
+  Schule"); `notice.data` is what a push of that topic carries (route, the
+  plugin's own keys, e.g. `schule.messageId` — without the buttons, ≤ 2 KB),
+  so a link can open the same screen as the push. Counts as unread.
+* Pushed like a chat message: a muted chat stays silent, dnd and an open chat
+  as always; title = the source ("Schule"), body "<title>: <text>", priority
+  high for `high` / `critical`. In the family group only the people of
+  `family` get the push (the others see the card in the chat).
+* Hook `mayRouteToFamily({ user })` → boolean: administrators, and Familie's
+  parents (service `family_roles`, cached 10 min; Familie missing → false).
+  GateControl asks it before a person may set the family chat as a target
+  (administrators are allowed without asking).
+* Errors go to the Protokoll as `notice_failed` (no content).
+* `GET portal/notify-routes` / `PUT portal/notify-routes { topic, dest:
+  "inbox"|"own"|"family" }` (feature `notice_routes`: GateControl offers
+  `gc.notify.routes`) → `{ sink, canFamily, groups: [ { source, label, topics:
+  [ { id, label, dest, locked, familySetBy } ] } ] }` — GateControl's answer
+  for the caller (`gc.notify.routes.get / .set` with the caller's id, labels
+  in the request's language; the same as GateControl's own
+  `/api/v1/me/notify/routes`, which the apps call directly). Refusals: 400
+  `invalid` (topic / dest), 404 `not_found` (a topic the person cannot get),
+  403 `family_not_allowed` (the family chat — set or lifted — without
+  `canFamily`), 409 `locked`, 409 `no_sink`, 409 `routes_off` (GateControl
+  without `gc.notify.routes`, or the messenger is not the sink).
 
 #### Live events and pushes since 1.4.0
 
@@ -867,6 +940,22 @@ with the unread count and the newest title, from `window.GC.inbox.on()`
 calls `GC.inbox.open()`, which shows the portal's inbox (`#mitteilungen`).
 Feature-detected: without `GC.inbox` (GateControl 1.177/1.178) or with
 `available: false` (notification center off) there is no entry.
+
+Since 1.6.0: the status strip ("Mein Status") comes first, above
+"Angeheftet"; under "Angeheftet" the "GateControl" entry, then the chats the
+server pins (`listPinned`: Familie's group) — they are not repeated under
+"Chats". Notice channels carry the mark "Mitteilungen" in the list and "Mitteilungen
+von <Quelle>" in the head; notification cards show "<source> · <topic>", the
+title and the whole text with their buttons (the card's link and `imageUrl` are
+for the apps — the frame cannot navigate the portal or load `/notify-media/`).
+The page "Wo Mitteilungen erscheinen" (feature `notice_routes`) opens from the
+settings dialog (the first row) and from the info of a notice channel: per
+source the topics with their place as a chip — a choice dialog GateControl /
+Familien-Chat ("Für alle in Familie sichtbar", only with `canFamily`) / Eigener
+Chat „<Quelle>“; locked topics with a lock and "immer GateControl"; a household
+family route names who set it (only people with `canFamily` change it); without
+an active sink a hint and nothing to change. It goes through
+`portal/notify-routes` (below), because a frame reaches only its own plugin.
 
 Since 1.4.0 (`ui/rich.js`): the status strip under "Angeheftet" (own status
 first with a "+", a glowing ring for people with unseen stories; a click opens
