@@ -5,7 +5,7 @@
 (function () {
   'use strict';
   var SK = window.SK;
-  var T = SK.T, $ = SK.$, el = SK.el, clear = SK.clear, api = SK.api, toast = SK.toast;
+  var T = SK.T, $ = SK.$, $$ = SK.$$, el = SK.el, clear = SK.clear, api = SK.api, toast = SK.toast;
   var CTX = SK.CTX;
   var PORTAL = CTX.view === 'portal';
   var NO_POSITION_MS = 3 * 3600000;
@@ -87,6 +87,16 @@
     $('#lb-empty').hidden = d.trips.length > 0;
     $('#lb-empty').textContent = d.vehicles.length ? T('logbook.empty') : T('logbook.no_vehicles');
     d.trips.forEach(function (tr) { list.appendChild(tripCard(tr)); });
+    SK.lbMap.show($('#lb-map-box'), d.trips, { onSelect: markCard });
+  }
+
+  /** A way on the map was clicked: mark its trip in the list (1.6.0). */
+  function markCard(id) {
+    $$('.lb-trip[data-sel="true"]').forEach(function (n) { n.removeAttribute('data-sel'); });
+    var card = $('.lb-trip[data-id="' + id + '"]');
+    if (!card) return;
+    card.setAttribute('data-sel', 'true');
+    if (card.scrollIntoView) card.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
   }
 
   function tripCard(tr) {
@@ -102,14 +112,16 @@
     if (tr.driver) meta.push(el('span', { class: 'pt-tag', text: tr.driver.username }));
     if (tr.source === 'manual') meta.push(el('span', { class: 'pt-tag', text: T('logbook.manual') }));
     if (tr.edited) meta.push(el('span', { class: 'pt-tag', text: T('logbook.edited') }));
-    return el('article', { class: 'lb-trip', 'data-open': tr.purpose ? null : 'true' }, [
+    var onMap = tr.start && tr.end ? el('button', { type: 'button', class: 'btn btn-sm', text: T('logbook.show_map'),
+      on: { click: function () { markCard(tr.id); SK.lbMap.focus(tr.id); } } }) : null;
+    return el('article', { class: 'lb-trip', 'data-id': String(tr.id), 'data-open': tr.purpose ? null : 'true' }, [
       el('div', { class: 'lb-trip-head' }, [
         el('div', { class: 'lb-when' }, [el('b', { text: tr.dateLabel }), el('span', { class: 'muted', text: tr.startTime + '–' + tr.endTime })]),
         el('div', { class: 'lb-km' }, [el('b', { text: km(tr.distanceKm) }),
           tr.startKm != null ? el('span', { class: 'muted', text: SK.fmtNum(tr.startKm) + ' → ' + SK.fmtNum(tr.endKm) }) : null]),
       ]),
       el('div', { class: 'lb-route' }, [el('span', { text: route[0] }), el('span', { class: 'lb-arrow', 'aria-hidden': 'true', text: '→' }), el('span', { text: route[1] })]),
-      el('div', { class: 'lb-trip-foot' }, [seg, el('div', { class: 'lb-meta' }, meta),
+      el('div', { class: 'lb-trip-foot' }, [seg, el('div', { class: 'lb-meta' }, meta), onMap,
         canEdit() ? el('button', { type: 'button', class: 'btn btn-sm', text: T('logbook.edit'), on: { click: function () { openEdit(tr); } } }) : null]),
     ]);
   }

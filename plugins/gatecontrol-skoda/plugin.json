@@ -4,7 +4,7 @@
     "de": "Fahrzeuge",
     "en": "Vehicles"
   },
-  "version": "1.5.4",
+  "version": "1.6.0",
   "publisher": "CallMeTechie",
   "description": {
     "de": "Škoda-Fahrzeuge über MySkoda einbinden: Ladestand, Reichweite, Zustand, Position und Fahrzeugdetails sehen, Klima, Laden, Scheibenheizung, Ver- und Entriegeln und Abfahrtstimer steuern und Fahrzeuge Haushaltsmitgliedern zuweisen (Portal „Fahrzeug“).",
@@ -20,12 +20,14 @@
         "iprenders.blob.core.windows.net:443",
         "*.azureedge.net:443",
         "*.skoda-auto.cz:443",
-        "nominatim.openstreetmap.org:443"
+        "nominatim.openstreetmap.org:443",
+        "routing.openstreetmap.de:443"
       ]
     },
     "storage": true,
     "portal": true,
     "users": true,
+    "app": true,
     "notify": true,
     "background": {
       "intervalSeconds": 60
@@ -185,7 +187,8 @@
           "order": 30
         }
       ]
-    }
+    },
+    "maps": true
   },
   "license": {
     "required": true

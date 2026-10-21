@@ -12,12 +12,16 @@ const path = require('node:path');
 const texts = require('./texts.json');
 
 const UI = path.join(__dirname, '..', 'ui');
+// Maps (plugin.json ui.maps, 1.6.0): GateControl serves its bundled Leaflet at
+// this frame-loadable URL and relays the OpenStreetMap tiles (window.GC.tiles).
+const LEAFLET = Object.freeze({ js: '/plugins/_shared/leaflet/leaflet.js', css: '/plugins/_shared/leaflet/leaflet.css' });
 const read = (f) => fs.readFileSync(path.join(UI, f), 'utf8');
 const FILES = {
   css: read('style.css'),
   common: read('common.js'),
   main: { html: read('admin.html'), js: read('admin.js') },
-  logbook: { html: read('logbook.html'), js: read('logbook.js') },
+  // 1.6.0: the map module before the page script (SK.lbMap)
+  logbook: { html: read('logbook.html'), js: read('lbmap.js') + '\n' + read('logbook.js') },
   portal: { html: read('portal.html'), js: read('portal.js'), css: read('portal.css') },
 };
 
@@ -45,7 +49,7 @@ function render(view, t) {
   const portal = view && view.view === 'portal';
   const logbook = portal ? view.section === 'logbook' : view && view.page === 'logbook';
   const page = logbook ? FILES.logbook : (portal ? FILES.portal : FILES.main);
-  const ctx = { lang, view: portal ? 'portal' : 'page', page: portal ? null : (logbook ? 'logbook' : 'main'), loggedIn: portal ? !!view.loggedIn : true, section: portal ? (logbook ? 'logbook' : 'skoda') : null, texts: texts[lang] };
+  const ctx = { lang, view: portal ? 'portal' : 'page', page: portal ? null : (logbook ? 'logbook' : 'main'), loggedIn: portal ? !!view.loggedIn : true, section: portal ? (logbook ? 'logbook' : 'skoda') : null, texts: texts[lang], leaflet: logbook ? LEAFLET : null };
   return '<style>' + FILES.css + (page.css || '') + '</style>'
     + fill(page.html, t, lang)
     + '<script>window.SK_CTX=' + island(ctx) + ';</script>'

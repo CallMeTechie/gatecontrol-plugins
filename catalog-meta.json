@@ -484,34 +484,10 @@
           "en": "Rules with a schedule, device values and the calendar: “Sunday 6 pm, Elroq below 50 % and Monday is a work day – remind me to charge.”"
         },
         "tags": [
-          {
-            "icon": "clock",
-            "text": {
-              "de": "Sonntag · 18:00",
-              "en": "Sunday · 6 pm"
-            }
-          },
-          {
-            "icon": "car",
-            "text": {
-              "de": "Elroq · Ladestand < 50 %",
-              "en": "Elroq · charge level < 50 %"
-            }
-          },
-          {
-            "icon": "calendar",
-            "text": {
-              "de": "Montag: „Arbeit“ im Kalender",
-              "en": "Monday: “Work” in the calendar"
-            }
-          },
-          {
-            "icon": "bell",
-            "text": {
-              "de": "„Auto laden“ · Später · Erledigt",
-              "en": "“Charge car” · Later · Done"
-            }
-          }
+          {"icon": "clock", "text": {"de": "Sonntag · 18:00", "en": "Sunday · 6 pm"}},
+          {"icon": "car", "text": {"de": "Elroq · Ladestand < 50 %", "en": "Elroq · charge level < 50 %"}},
+          {"icon": "calendar", "text": {"de": "Montag: „Arbeit“ im Kalender", "en": "Monday: “Work” in the calendar"}},
+          {"icon": "bell", "text": {"de": "„Auto laden“ · Später · Erledigt", "en": "“Charge car” · Later · Done"}}
         ]
       },
       "adds": [
@@ -1414,17 +1390,17 @@
       "audience": "all",
       "keywords": ["auto", "car", "fahrzeug", "vehicle", "skoda", "škoda", "myskoda", "laden", "charging", "elektroauto", "fahrtenbuch", "logbook"],
       "highlight": {
-        "version": "1.5.0",
+        "version": "1.6.0",
         "title": {
-          "de": "Das Fahrtenbuch, das sich selbst schreibt.",
-          "en": "The logbook that writes itself."
+          "de": "Das Fahrtenbuch – jetzt mit Karte.",
+          "en": "The logbook – now with a map."
         },
         "text": {
-          "de": "Jede Fahrt wird beim Parken erfasst – Strecke, Start, Ziel und Kilometerstand. Privat oder geschäftlich wählst du direkt in der Mitteilung oder im Widget; den Export gibt es als PDF und CSV.",
-          "en": "Every trip is recorded when the car parks – distance, start, destination and mileage. Pick private or business right in the notification or the widget; export as PDF and CSV."
+          "de": "Jede Fahrt wird beim Parken erfasst und auf der Karte eingezeichnet: alle Fahrten des Monats auf einen Blick, gleiche Strecken mit Anzahl, jede Fahrt einzeln. In der App als eigene Seite, im Portal und auf der Fahrtenbuch-Seite; Export als PDF und CSV.",
+          "en": "Every trip is recorded when the car parks and drawn on the map: all trips of the month at a glance, repeated routes with a count, every trip on its own. In the app as a page of its own, in the portal and on the logbook page; export as PDF and CSV."
         },
         "tags": [
-          {"icon": "car", "text": {"de": "22 km · Köln → Bonn", "en": "22 km · Cologne → Bonn"}},
+          {"icon": "location", "text": {"de": "Lindenweg ↔ Büro · 18×", "en": "Home ↔ office · 18×"}},
           {"icon": "bell", "text": {"de": "Privat · Geschäftlich · Arbeitsweg", "en": "Private · Business · Commute"}},
           {"icon": "widget", "text": {"de": "Diesen Monat: 1.340 km", "en": "This month: 1,340 km"}},
           {"icon": "data", "text": {"de": "Export als PDF und CSV", "en": "Export as PDF and CSV"}}
@@ -1529,8 +1505,8 @@
             "en": "Reach the Škoda cloud"
           },
           "text": {
-            "de": "Nur VW-Identity, die MySkoda-Schnittstelle und die Škoda-Bildserver – keine anderen Adressen.",
-            "en": "Only VW Identity, the MySkoda interface and the Škoda image servers – no other addresses."
+            "de": "Nur VW-Identity, die MySkoda-Schnittstelle, die Škoda-Bildserver und für die Karte OpenStreetMap (Adressen über Nominatim, Strecken über den Routendienst von FOSSGIS) – keine anderen Adressen.",
+            "en": "Only VW Identity, the MySkoda interface, the Škoda image servers and for the map OpenStreetMap (addresses via Nominatim, routes via the FOSSGIS routing service) – no other addresses."
           },
           "tag": {
             "de": "Netzwerk",
@@ -1544,8 +1520,8 @@
             "en": "Vehicle location with address"
           },
           "text": {
-            "de": "Die Position kommt von Škoda, die Adresse von OpenStreetMap (Nominatim); im Portal nur nach Anmeldung.",
-            "en": "The position comes from Škoda, the address from OpenStreetMap (Nominatim); in the portal only after sign-in."
+            "de": "Position von Škoda, Adresse von OpenStreetMap (Nominatim); für die Karte gehen Start und Ziel einer Fahrt einmal an den Routendienst von FOSSGIS. Im Portal nur nach Anmeldung.",
+            "en": "Position from Škoda, address from OpenStreetMap (Nominatim); for the map a trip's start and end go once to the FOSSGIS routing service. In the portal only after sign-in."
           },
           "tag": {
             "de": "Standort",
@@ -1591,6 +1567,17 @@
           "text": {
             "de": "MySkoda-Passwort, S-PIN und Sitzung als verschlüsselte Plugin-Geheimnisse – die S-PIN steht nie im Protokoll.",
             "en": "MySkoda password, S-PIN and session as encrypted plugin secrets – the S-PIN is never logged."
+          }
+        },
+        {
+          "icon": "app",
+          "title": {
+            "de": "In den Apps",
+            "en": "In the apps"
+          },
+          "text": {
+            "de": "Das Fahrtenbuch als eigene Seite in der Android-App – nur die Fahrzeuge, die der Person zugewiesen sind.",
+            "en": "The logbook as a page of its own in the Android app – only the vehicles assigned to that person."
           }
         },
         {

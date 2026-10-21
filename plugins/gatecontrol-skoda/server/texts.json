@@ -293,7 +293,20 @@
   "logbook.push_title": "{{name}}: Fahrt erfasst",
   "logbook.push_body": "{{km}} km, {{time}}{{to}} – privat oder geschäftlich?",
   "logbook.pdf_km_start": "km Beginn",
-  "logbook.pdf_km_end": "km Ende"
+  "logbook.pdf_km_end": "km Ende",
+  "qa.logbook_open_hint": "Das Fahrtenbuch mit Karte findest du in der App (ab Version 1.56) und im Portal unter „Fahrzeug“.",
+  "logbook.map": "Karte",
+  "logbook.map_title": "Fahrten auf der Karte",
+  "logbook.map_road": "Strecke berechnet",
+  "logbook.map_line": "Luftlinie – Umweg oder Zwischenstopp",
+  "logbook.map_pending": "Strecke wird noch berechnet",
+  "logbook.map_unavailable": "Die Karte kann gerade nicht geladen werden.",
+  "logbook.map_hint": "Škoda meldet nur, wo das Auto parkt. Der Weg auf der Karte ist berechnet – der kürzeste zwischen Start und Ziel.",
+  "logbook.filter_all": "Alle",
+  "logbook.show_map": "Auf der Karte",
+  "logbook.times_n": "{{n}}×",
+  "logbook.route_group": "{{from}} ↔ {{to}}",
+  "logbook.group_trips": "{{n}} Fahrten · {{km}}"
  },
  "en": {
   "common.cancel": "Cancel",
@@ -589,6 +602,19 @@
   "logbook.push_title": "{{name}}: trip recorded",
   "logbook.push_body": "{{km}} km, {{time}}{{to}} – private or business?",
   "logbook.pdf_km_start": "km start",
-  "logbook.pdf_km_end": "km end"
+  "logbook.pdf_km_end": "km end",
+  "qa.logbook_open_hint": "The logbook with its map is in the app (version 1.56 or later) and in the portal under “Vehicle”.",
+  "logbook.map": "Map",
+  "logbook.map_title": "Trips on the map",
+  "logbook.map_road": "Route computed",
+  "logbook.map_line": "Straight line – detour or stops on the way",
+  "logbook.map_pending": "Route not computed yet",
+  "logbook.map_unavailable": "The map cannot be loaded right now.",
+  "logbook.map_hint": "Škoda only reports where the car parks. The way on the map is computed – the shortest between start and end.",
+  "logbook.filter_all": "All",
+  "logbook.show_map": "On the map",
+  "logbook.times_n": "{{n}}×",
+  "logbook.route_group": "{{from}} ↔ {{to}}",
+  "logbook.group_trips": "{{n}} trips · {{km}}"
  }
 }
