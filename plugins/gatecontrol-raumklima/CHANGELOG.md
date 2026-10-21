@@ -3,6 +3,15 @@
 Klimageräte und Heizungen als GateControl-Plugin: Midea-Klimageräte (früher fest in GateControl
 eingebaut, „Klimaanlage“) und seit 1.6.0 Dreo-Heizlüfter und -Klimageräte.
 
+## 2.2.2
+- **Der Dreo-Heizlüfter wurde verworfen**: Die Dreo-Cloud lieferte das Gerät, aber seine
+  Seriennummer enthielt Zeichen, die das Plugin nicht zuließ (bisher nur Buchstaben, Ziffern,
+  „-“ und „_“ bis 64 Zeichen). Jetzt gilt jedes druckbare Zeichen außer Anführungszeichen,
+  spitzen Klammern, Backslash und Backtick (Leerzeichen nur innen), bis 100 Zeichen – auch beim
+  Hinzufügen von Hand.
+- Wird eine Seriennummer doch verworfen, nennt das Protokoll Länge und Zeichenarten (nie die
+  Nummer selbst). Nach dem Update wird sofort neu nachgesehen.
+
 ## 2.2.1
 - **Dreo-Geräte unter jedem Feldnamen**: Die Antworten der Dreo-Cloud werden jetzt vollständig nach
   Geräten durchsucht (Seriennummer + Modell/Name, egal unter welchem Schlüssel – Zuhause, Räume,

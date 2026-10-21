@@ -398,3 +398,32 @@ test('2.2.1: devices under any key are found; an empty answer logs its shape, an
     assert.ok(lines.some((l) => /HTTP 401|DREO_AUTH|DREO_CLOUD/.test(l)), 'the failed region with its detail');
   });
 });
+
+test('2.2.2: a serial number with dots, colons and blanks (a user’s wall heater) is taken, read and switched', () => {
+  const sn = 'DR-HSH040S.EU:2024 0815';
+  const dreo = fakeDreo({ devices: [{ sn, deviceName: 'Heizlüfter', model: 'DR-HSH040S', productName: 'Heater' }], states: {
+    [sn]: { poweron: false, connected: true, mode: 'hotair', htalevel: 1, ecolevel: 72, temperature: 64 },
+  } });
+  return withHost({ dreo }, async (host) => {
+    await connectDreo(host, dreo);
+    const devices = (await asAdmin(host, 'GET', '/devices')).json.devices;
+    assert.deepEqual(devices.map((d) => [d.device_sn, d.name]), [['dreo-' + sn, 'Heizlüfter']]);
+    const st = await asAdmin(host, 'GET', `/devices/${devices[0].id}/state`);
+    assert.deepEqual([st.status, st.json.state.power], [200, false], JSON.stringify(st.json));
+    const restore = quickAcks();
+    try {
+      await asAdmin(host, 'POST', `/devices/${devices[0].id}/state`, { power: true });
+    } finally { restore(); }
+    assert.deepEqual(dreo.commands.at(-1), { sn, params: { poweron: true } });
+    // by hand too
+    await asAdmin(host, 'DELETE', `/devices/${devices[0].id}`);
+    const again = await asAdmin(host, 'POST', '/devices', { transport: 'dreo', sn });
+    assert.equal(again.status, 200, JSON.stringify(again.json));
+  });
+});
+
+test('2.2.2: a refused serial number is described in the log by length and character kinds, never itself', () => {
+  const { refusedSn } = require('../server/dreo');
+  assert.equal(refusedSn({ list: [{ sn: 'AB"12', model: 'DR-HSH040S' }] }), 'string len 5, chars U+0022');
+  assert.equal(refusedSn({ list: [{ sn: 'OK-1', model: 'x' }] }), '');
+});

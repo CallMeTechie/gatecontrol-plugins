@@ -439,7 +439,7 @@ async function adminRoute(req, gc, seg) {
       const str = (v) => (typeof v === 'string' && v.trim() ? v.trim().slice(0, 100) : null);
       if (body.transport === 'dreo') {
         const sn = typeof body.sn === 'string' ? body.sn.trim() : '';
-        if (!/^[A-Za-z0-9_-]{1,64}$/.test(sn)) throw fail('MIDEA_INVALID');
+        if (!require('./dreo').SN_RE.test(sn)) throw fail('MIDEA_INVALID');
         return { json: { ok: true, device: await service.addDevice(gc, { transport: 'dreo', sn, name }) } };
       }
       if (body.transport === 'cloud') {
