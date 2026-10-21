@@ -199,7 +199,8 @@ function fakeCloud(opts = {}) {
  * (REST, values in { state } wrappers, temperatures in °F) and the WebSocket
  * (wsb-<region>): control commands change the device and are acknowledged
  * (opts.rooms: the room list of the newer app, while the v2 list stays opts.devices; opts.silentRegion:
- * a login at the other region succeeds without naming the account's region, and lists nothing there)
+ * a login at the other region succeeds without naming the account's region, and lists nothing there;
+ * opts.openDevices: devices only Dreo's Open API lists — open-api-<region>, state with power_switch, control)
  * (control-reply + control-report); `push` sends a device's own report.
  */
 function fakeDreo(opts = {}) {
@@ -218,6 +219,7 @@ function fakeDreo(opts = {}) {
       'HTF001S-1': { poweron: false, connected: true },
     },
     rooms: opts.rooms || null, silentRegion: opts.silentRegion === true, elsewhere: new Set(),
+    openDevices: opts.openDevices || [], openTokens: new Set(), openCommands: [],
     logins: 0, tokens: new Set(), stateReads: 0, commands: [], sockets: [],
     silent: false, reject: null, rateLimited: false,
   };
@@ -226,6 +228,35 @@ function fakeDreo(opts = {}) {
     const u = new URL(url);
     const region = u.hostname.startsWith('app-api-eu.') ? 'EU' : 'NA';
     if (dreo.rateLimited) return { status: 429, body: '' };
+    // Dreo's Open API (open-api-<us|eu>): opts.openDevices are listed only here
+    if (u.hostname.startsWith('open-api-')) {
+      const openRegion = u.hostname.startsWith('open-api-eu.') ? 'EU' : 'NA';
+      if (u.pathname === '/api/oauth/login') {
+        const b = JSON.parse(o.body);
+        if (openRegion !== 'NA' || b.grant_type !== 'openapi' || b.email !== dreo.email || b.password !== md5(dreo.password)) return { status: 200, body: JSON.stringify({ code: 10001, msg: 'wrong account or password' }) };
+        const token = 'OPEN-' + (++dreo.logins);
+        dreo.openTokens.add(token);
+        return ok({ access_token: `${token}:${dreo.region}` });
+      }
+      const tk = String((o.headers && o.headers.authorization) || '').replace(/^Bearer /, '');
+      if (openRegion !== dreo.region || !dreo.openTokens.has(tk)) return { status: 401, body: '' };
+      if (u.pathname === '/api/device/list') return ok(dreo.openDevices.map((x) => ({ deviceSn: x.sn, model: x.model, deviceName: x.deviceName, deviceType: 'heater' })));
+      if (u.pathname === '/api/device/state') {
+        const st = dreo.states[u.searchParams.get('deviceSn')];
+        if (!st) return { status: 200, body: JSON.stringify({ code: 404, msg: 'no such device' }) };
+        const out = {};
+        for (const [k, v] of Object.entries(st)) out[k === 'poweron' ? 'power_switch' : k] = v;
+        return ok(out);
+      }
+      if (u.pathname === '/api/device/control') {
+        const b = JSON.parse(o.body);
+        dreo.openCommands.push(b);
+        const st = dreo.states[b.devicesn];
+        if (st) for (const [k, v] of Object.entries(b.desired || {})) st[k === 'power_switch' ? 'poweron' : k] = v;
+        return ok({});
+      }
+      return { status: 404, body: '' };
+    }
     if (u.pathname === '/api/oauth/login') {
       const b = JSON.parse(o.body);
       if (b.email !== dreo.email || b.password !== md5(dreo.password) || b.grant_type !== 'email-password') return { status: 200, body: JSON.stringify({ code: 10001, msg: 'wrong account or password' }) };

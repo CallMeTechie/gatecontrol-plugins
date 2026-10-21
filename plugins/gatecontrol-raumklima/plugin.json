@@ -4,7 +4,7 @@
     "de": "Raumklima",
     "en": "Indoor climate"
   },
-  "version": "2.1.1",
+  "version": "2.2.0",
   "publisher": "CallMeTechie",
   "description": {
     "de": "Klimageräte und Heizungen steuern: Midea-Klimageräte über die Midea-Cloud oder im Heimnetz, Dreo-Heizlüfter und -Klimageräte live über die Dreo-Cloud (Ein/Aus, Zieltemperatur, Modus, Lüfter, Schwenken) – und Haushaltsmitgliedern zuweisen (Portal „Zuhause“).",
@@ -22,6 +22,8 @@
         "mapp.appsmb.com:443",
         "app-api-eu.dreo-tech.com:443",
         "app-api-us.dreo-tech.com:443",
+        "open-api-eu.dreo-tech.com:443",
+        "open-api-us.dreo-tech.com:443",
         "wsb-eu.dreo-tech.com:443",
         "wsb-us.dreo-tech.com:443"
       ],

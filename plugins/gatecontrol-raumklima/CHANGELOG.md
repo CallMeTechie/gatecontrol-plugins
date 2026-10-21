@@ -3,6 +3,18 @@
 Klimageräte und Heizungen als GateControl-Plugin: Midea-Klimageräte (früher fest in GateControl
 eingebaut, „Klimaanlage“) und seit 1.6.0 Dreo-Heizlüfter und -Klimageräte.
 
+## 2.2.0
+- **Dreos offizielle Schnittstelle (Open API)**: Manche Dreo-Konten zeigen ihre Geräte der
+  App-Schnittstelle nicht (beide Listen leer, in beiden Regionen) – Dreos eigene Open API
+  (open-api-eu/us.dreo-tech.com, die auch Dreos offizielle Home-Assistant-Integration nutzt)
+  aber schon. Findet das Plugin sonst nichts, fragt es jetzt dort; Geräte von dort werden
+  über die Open API gelesen und gesteuert (Ein/Aus, Modus, Heizstufe, Zieltemperatur,
+  Schwenken – ohne Live-Verbindung: der Zustand wird alle 2 Minuten gelesen).
+- **Neue Netzwerk-Freigaben** `open-api-eu.dreo-tech.com` und `open-api-us.dreo-tech.com` –
+  das Update muss ein Admin bestätigen.
+- Die Statuszeile nennt die Open API mit („… · Open-API EU: Geräte 0“). Nach dem Update wird
+  sofort neu nachgesehen.
+
 ## 2.1.1
 - **Dreo-Konto „ohne Gerät“, obwohl der Heizlüfter in der Dreo-App ist**: Die Geräte werden
   jetzt auch aus der Räume-Liste der neueren Dreo-App gelesen (Konten mit Zuhause und Räumen

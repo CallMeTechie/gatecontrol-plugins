@@ -48,8 +48,9 @@ async function found(gc) {
 
 /** 2.1.1: which regions and lists were asked (for the status line): [{ region, lists: [{ list, count, error }], error }]. */
 function checkedOf(diag) {
-  const short = (p) => (/family\/room/.test(p) ? 'rooms' : 'devices');
+  const short = (p) => (p === 'open' ? 'open' : /family\/room/.test(p) ? 'rooms' : 'devices');
   return diag.slice(0, 4).map((r) => ({
+    api: r.api === 'open' ? 'open' : 'app',
     region: r.region === 'NA' ? 'NA' : 'EU',
     error: r.error || null,
     lists: (r.lists || []).slice(0, 4).map((l) => ({ list: short(l.path), count: l.count == null ? null : l.count, error: l.error || null })),
@@ -111,8 +112,9 @@ async function maybe(gc, now = Date.now()) {
   const cfg = await store.loadDreo(gc);
   if (!cfg.email || !cfg.passwordMd5 || !dreo.supported(gc)) return;
   const last = await found(gc);
-  // a look of 2.1.0 (no `checked`) is redone at once: 2.1.1 also asks the rooms and the other region
-  if (last && Array.isArray(last.checked) && now - last.at < EVERY_MS) return;
+  // a look of an older version is redone at once (2.1.0: no `checked`; 2.1.1: no `api` — 2.2.0 also asks
+  // the Open API)
+  if (last && Array.isArray(last.checked) && last.checked.some((r) => r && r.api) && now - last.at < EVERY_MS) return;
   try {
     await run(gc, now);
   } catch (e) {

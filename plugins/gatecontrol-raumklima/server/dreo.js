@@ -159,6 +159,90 @@ class DreoApi {
   }
 }
 
+// ─── Open API (2.2.0) ────────────────────────────
+//
+// Dreo's official Open API (pydreo-cloud, used by Dreo's own Home Assistant
+// integration hass-dreoverse): open-api-<us|eu>.dreo-tech.com. The login
+// (always at the US host, grant_type 'openapi', the MD5 of the password)
+// answers with a token whose suffix names the account's region ("…:EU");
+// device list, state and control are REST only (no WebSocket):
+//   GET  /api/device/list                 → [{ deviceSn, model, deviceName, deviceType, state }]
+//   GET  /api/device/state?deviceSn=…     → { key: value }  (power_switch instead of poweron)
+//   POST /api/device/control { devicesn, desired: { key: value } }
+// Some accounts list their devices only here (the app API answers empty lists).
+
+const OPEN_CLIENT_ID = '89ef537b2202481aaaf9077068bcb0c9';
+const OPEN_CLIENT_SECRET = '41b20a1f60e9499e89c8646c31f93ea1';
+const openBase = (region) => `https://open-api-${REGIONS[region] || 'us'}.dreo-tech.com`;
+// the Open API's names for the keys the plugin knows from the app API
+const OPEN_IN = { power_switch: 'poweron' };
+const OPEN_OUT = { poweron: 'power_switch' };
+
+class DreoOpenApi {
+  /** @param {{fetch: Function, now?: () => number}} o  fetch = gc.http.fetch */
+  constructor(o) {
+    this.fetch = o.fetch;
+    this.now = o.now || Date.now;
+  }
+
+  async call(region, token, method, path, params, body) {
+    const q = new URLSearchParams({ ...(params || {}), timestamp: String(this.now()) }).toString();
+    const h = { 'content-type': 'application/json', ua: 'openapi/1.0.0' };
+    if (token) h.authorization = 'Bearer ' + token;
+    let r;
+    try {
+      r = await this.fetch(`${openBase(region)}${path}?${q}`, { method, headers: h, body: body ? JSON.stringify(body) : undefined, timeoutMs: 15000 });
+    } catch (e) {
+      throw dreoError(e && e.code === 'ERR_NET_DENIED' ? 'ERR_NET_DENIED' : 'DREO_UNREACHABLE', String((e && e.message) || e));
+    }
+    if (r.status === 401) throw dreoError(path === '/api/oauth/login' ? 'DREO_LOGIN_FAILED' : 'DREO_AUTH', 'access token rejected');
+    if (r.status === 429) throw dreoError('DREO_RATE_LIMITED', 'too many requests');
+    if (r.status !== 200) throw dreoError('DREO_CLOUD', `HTTP ${r.status}`);
+    let j;
+    try { j = JSON.parse(r.body); } catch { throw dreoError('DREO_CLOUD', 'invalid answer'); }
+    if (!j || j.code !== 0) {
+      const detail = `${j && j.code} ${text(j && j.msg, 120)}`.trim();
+      throw dreoError(path === '/api/oauth/login' ? 'DREO_LOGIN_FAILED' : 'DREO_CLOUD', detail);
+    }
+    return j.data;
+  }
+
+  /** → { token, region } — the region from the token's suffix ("…:EU" / "…:NA", none = NA). */
+  async login(email, passwordMd5) {
+    const d = await this.call('NA', null, 'POST', '/api/oauth/login', null, {
+      client_id: OPEN_CLIENT_ID, client_secret: OPEN_CLIENT_SECRET, grant_type: 'openapi', scope: 'all', email, password: passwordMd5,
+    });
+    const full = d && typeof d.access_token === 'string' ? d.access_token : '';
+    if (!full || full.length > 2000) throw dreoError('DREO_LOGIN_FAILED', 'no access token');
+    const i = full.lastIndexOf(':');
+    const suffix = i > 0 ? full.slice(i + 1).toUpperCase() : '';
+    return { token: i > 0 && REGIONS[suffix] ? full.slice(0, i) : full, region: REGIONS[suffix] ? suffix : 'NA' };
+  }
+
+  /** → [{ sn, name, model, productName }] */
+  async devices(region, token) {
+    return collectDevices(await this.call(region, token, 'GET', '/api/device/list'));
+  }
+
+  /** → the device's state as { key: value } in the app API's names */
+  async state(region, token, sn) {
+    const d = await this.call(region, token, 'GET', '/api/device/state', { deviceSn: sn });
+    // plain { key: value }, or wrapped like the app API ({ mixed: { key: { state } } }) or in { state }
+    const inner = d && typeof d === 'object' ? (d.mixed && typeof d.mixed === 'object' ? d.mixed : (d.state && typeof d.state === 'object' ? d.state : d)) : null;
+    const out = flatten(inner);
+    for (const [from, to] of Object.entries(OPEN_IN)) if (from in out) { out[to] = out[from]; delete out[from]; }
+    return out;
+  }
+
+  /** Change values (the app API's names) → true when Dreo accepted them. */
+  async control(region, token, sn, params) {
+    const desired = {};
+    for (const [k, v] of Object.entries(params || {})) desired[OPEN_OUT[k] || k] = v;
+    await this.call(region, token, 'POST', '/api/device/control', null, { devicesn: sn, desired });
+    return true;
+  }
+}
+
 // ─── WebSocket ──────────────────────────────────
 
 const PING_MS = 15000;        // the Dreo socket's keep-alive: the text "2"
@@ -276,4 +360,4 @@ class DreoLink extends EventEmitter {
 }
 
 module.exports = {
-  collectDevices, DreoApi, DreoLink, md5, flatten, apiBase, wsBase, SN_RE, REGIONS };
+  collectDevices, DreoApi, DreoOpenApi, DreoLink, openBase, md5, flatten, apiBase, wsBase, SN_RE, REGIONS };

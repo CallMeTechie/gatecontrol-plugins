@@ -84,7 +84,7 @@ async function dreoDevicesLine(gc, lang, t, errorText) {
   if (!f.devices.length) {
     // 2.1.1: say what was asked — the region(s) and both lists of the Dreo app
     const asked = (f.checked || []).map((r) => {
-      const where = r.region === 'NA' ? 'US' : 'EU';
+      const where = (r.api === 'open' ? 'Open-API ' : '') + (r.region === 'NA' ? 'US' : 'EU');
       if (r.error && !(r.lists || []).length) return `${where}: ${t(lang, 'settings.dreo_region_failed')}`;
       return `${where}: ` + (r.lists || []).map((l) => `${t(lang, 'settings.dreo_list_' + l.list)} ${l.count == null ? '–' : l.count}`).join(', ');
     });
