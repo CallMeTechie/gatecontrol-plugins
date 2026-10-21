@@ -125,6 +125,29 @@ das nicht (404), läuft alles andere weiter, und die Einstellungen sagen es je K
 („Nachrichten der Schule sind für dieses Konto in WebUntis nicht freigegeben. GateControl schaut einmal am
 Tag wieder nach.“); sonst steht dort, wann zuletzt gelesen wurde und wie viele gespeichert sind.
 
+### Nachrichten ohne WebUntis (1.5.0, GateControl ≥ 1.190.0)
+
+Nachrichten der Schule werden komplett in GateControl gelesen – WebUntis braucht dafür niemand mehr:
+
+* **Volltext und Anhänge.** Für jede Nachricht fragt das Plugin einmal die Einzelansicht
+  (`api/rest/view/v1/messages/<id>`) – im selben Abruf, höchstens 10 je Abruf, neueste zuerst; klappt es
+  nicht, nach 1, 2, 4 … Stunden noch einmal (5 Versuche). Gespeichert werden der ganze Text (reiner Text,
+  HTML entfernt, ≤ 20 000 Zeichen) und die Liste der Anhänge. Die Einzelansicht kann die Nachricht in
+  WebUntis als gelesen markieren.
+* Die **Anhänge** neuer Nachrichten holt GateControl im Abruf in seinen Medienspeicher (`gc.media.fetch`:
+  WebUntis nennt mit `…/<anhangId>/attachmentstorageurl` einen kurzlebigen Link zum Speicher (Amazon S3) und
+  die nötigen Kopfzeilen; verschlüsselt abgelegt, ≤ 25 MB je Datei, höchstens 3 je Abruf), ältere beim
+  ersten Öffnen. Lesen dürfen sie nur die, die den Posteingang lesen dürfen (Hook `mediaAccess`);
+  sie verschwinden mit ihrer Nachricht nach 90 Tagen. Hochladen durch Personen gibt es nicht
+  (`media.uploads: false`).
+* **„Neu“ je Person.** Eine Nachricht ist für eine Person neu, bis sie sie öffnet (App, Seite „Schule“,
+  Portal) – höchstens 14 Tage, nie für die Ausgangslage. Die Startkachel zählt nur ungelesene.
+* **Lesebestätigung.** Bittet die Schule darum (die Nachricht steht in WebUntis' Liste
+  `readConfirmationMessages`), zeigen App und Seiten „Die Schule bittet um eine Lesebestätigung“ und einen
+  Knopf **„Lesen bestätigen“**. Erst nach einer Rückfrage geht die Bestätigung an die Schule (`POST
+  …/<id>/read-confirmation`) – das ist der einzige Schreibzugriff auf WebUntis, nie automatisch. Danach steht
+  dort, wann und von wem; in WebUntis selbst Bestätigtes erkennt das Plugin beim nächsten Abruf.
+
 ### Früher Schluss → Abholen (1.2.0, mit Familie ≥ 1.13.0)
 
 Das Plugin kennt je Kind und Schultag das **geplante Ende** (Ende der letzten Stunde laut Plan, auch wenn
@@ -277,9 +300,22 @@ GET app/messages?days=30                                1.4.0: 1 … 90 Tage, Vo
                                                         liefert (fehlt sonst: dann nur die Vorschau)
           sender: 'Frau Schmidt',
           sentAt: '2026-10-20T06:10:00.000Z',           ISO (UTC); ohne Zeit von WebUntis: wann gefunden
-          hasAttachments: <boolean>,                    Anhänge selbst nur in WebUntis
-          isNew: <boolean> }] }                         in den letzten 24 h gefunden (nicht in der
-                                                        Ausgangslage); neueste zuerst, höchstens 100
+          hasAttachments: <boolean>,
+          isNew: <boolean>,                             1.5.0: von dieser Person noch nicht geöffnet, in den
+                                                        letzten 14 Tagen gefunden, nicht Ausgangslage
+          fullText: <boolean>,                          1.5.0: body ist der ganze Text
+          attachments: [{ id, name, size, mime }],      1.5.0: size/mime null, wenn unbekannt
+          read: <boolean>,                              1.5.0: diese Person hat sie geöffnet
+          confirmation: null | { confirmedAt: ISO | null, by: 'Eva' | null } }] }
+                                                        1.5.0: Lesebestätigung erbeten (gesendet wann/von wem)
+                                                        neueste zuerst, höchstens 100
+POST app/messages/<id>/read                             1.5.0: geöffnet → { ok, message }
+POST app/messages/<id>/confirm                          1.5.0: Lesebestätigung an die Schule → { ok, message }
+  409 SCHULE_CONFIRM_NOT_REQUIRED · 502 SCHULE_CONFIRM_FAILED · 503 SCHULE_UNTIS_UNAVAILABLE
+POST app/messages/<id>/attachments/<anhangId>           1.5.0: → { ok, file: { mediaId, name, mime, bytes } };
+                                                        die Datei: GET /api/v1/client/plugins/gatecontrol-schule/media/<mediaId>
+  404 SCHULE_ATTACHMENT_NOT_FOUND · 413 SCHULE_ATTACHMENT_TOO_LARGE (> 25 MB) · 415 SCHULE_ATTACHMENT_TYPE
+  502 SCHULE_ATTACHMENT_FAILED · 503 SCHULE_UNTIS_UNAVAILABLE · 404 SCHULE_MESSAGE_NOT_FOUND (alle drei)
 GET app/absences?days=60                                1.4.0: 1 … 180 Tage, Vorgabe 60
   200 { ok: true, absences: [{
           id: '<schülerId>-<webuntisId>', studentId: 12,
@@ -304,6 +340,8 @@ sich unterscheidet. `givenDate` = an dem Tag aufgegeben. Noten liefert die API n
 sind neu; die Mitteilungen tragen `data.schule` = `{ messageId, studentId? }` (Nachricht; `studentId` nur,
 wenn das Konto genau ein Kind hat) bzw. `{ studentId, date }` (Fehlzeit). `portal/overview` und `overview`
 haben je Kind zusätzlich `messages` und `absences` – nur, wenn die Person sie sehen darf (sonst fehlen sie).
+1.5.0: dieselben drei Aktionen gibt es als `portal/messages/<id>/…` und `messages/<id>/…` (Seite „Schule“);
+dort tragen geladene Anhänge zusätzlich `url` (ein `/plugin-media/`-Link, 1 Stunde gültig).
 
 ### Dienste zwischen Plugins (1.1.0)
 
@@ -433,5 +471,13 @@ Kiosk devices neither. The page “School” and the portal show per child “Me
 share it (401/403) or lacks it (404), everything else goes on and the settings say so per account in words
 (otherwise when it was last read and how many are stored). API: `app/messages?days=30` (1…90, ≤ 100) and
 `app/absences?days=60` (1…180, ≤ 200), see [API](#api).
+
+**Messages without WebUntis (1.5.0, GateControl ≥ 1.190.0):** the full text and the attachments of every
+message (WebUntis' detail call, once per message); the attachments of new messages are fetched in the cycle
+into GateControl's encrypted media store (`gc.media.fetch`, ≤ 25 MB each), older ones on first open — only
+people who may read the inbox may read them. "New" is per person (until opened, at most 14 days). A read
+confirmation the school asks for is sent only when a person taps "Confirm reading" (and confirms the
+question) — the only write to WebUntis. API: `fullText`, `attachments`, `read`, `confirmation` and `POST
+app/messages/<id>/read | confirm | attachments/<attId>` (see [API](#api)).
 
 **API:** see [API](#api) above.

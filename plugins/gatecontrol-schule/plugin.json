@@ -4,18 +4,19 @@
     "de": "Schule",
     "en": "School"
   },
-  "version": "1.4.1",
+  "version": "1.5.0",
   "publisher": "CallMeTechie",
   "description": {
     "de": "Stundenplan aus WebUntis für Schüler- und Elternkonten: Ausfälle, Vertretungen und Zusatzstunden als Push, Arbeiten und Hausaufgaben mit Erinnerung am Vorabend, Nachrichten der Schule und Fehlzeiten, Wochenplan je Kind in seiner Farbe (Portal, Wand-Tablet, App). Konten per QR-Code-Scan in den Einstellungen; jeder kann sein eigenes Schülerkonto im Profil verknüpfen.",
     "en": "Timetable from WebUntis for student and parent accounts: cancellations, substitutions and extra lessons as push notifications, exams and homework with a reminder the evening before, school messages and absences, a week view per child in its colour (portal, wall tablet, app). Accounts by scanning the QR code in the settings; everyone can link their own student account in their profile."
   },
-  "gatecontrol": ">=1.172.0",
+  "gatecontrol": ">=1.190.0",
   "entry": "server/index.js",
   "permissions": {
     "network": {
       "internet": [
-        "*.webuntis.com:443"
+        "*.webuntis.com:443",
+        "*.amazonaws.com:443"
       ]
     },
     "storage": true,
@@ -30,6 +31,40 @@
       "gatecontrol-familie:rule_event",
       "gatecontrol-familie:school_day_end"
     ]
+  },
+  "media": {
+    "maxBytes": 26214400,
+    "types": [
+      "application/pdf",
+      "image/jpeg",
+      "image/png",
+      "image/gif",
+      "image/webp",
+      "image/heic",
+      "image/heif",
+      "image/bmp",
+      "image/tiff",
+      "application/msword",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "application/vnd.ms-excel",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "application/vnd.ms-powerpoint",
+      "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+      "application/vnd.oasis.opendocument.text",
+      "application/vnd.oasis.opendocument.spreadsheet",
+      "application/vnd.oasis.opendocument.presentation",
+      "application/rtf",
+      "text/plain",
+      "text/csv",
+      "application/zip",
+      "audio/mpeg",
+      "audio/mp4",
+      "video/mp4",
+      "video/quicktime",
+      "application/octet-stream"
+    ],
+    "quotaDefault": 524288000,
+    "uploads": false
   },
   "services": {
     "provides": {

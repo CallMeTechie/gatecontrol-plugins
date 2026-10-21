@@ -24,6 +24,7 @@ const USERS = [ADMIN, EVA, LENA, BOB, WALL];
 
 const HOST = 'nessa.webuntis.com';
 const SCHOOL = 'Gymnasium Musterstadt';
+const S3_HOST = 'untis-messaging.s3.eu-central-1.amazonaws.com'; // 1.5.0: where attachments are stored
 const SECRET = 'JBSWY3DPEHPK3PXP';
 const QR = `untis://setschool?url=${HOST}&school=${encodeURIComponent(SCHOOL)}&user=eva.muster&key=${SECRET}&schoolNumber=4711`;
 // 1.3.0: Lena's own student account (fakeUntis({ account: 'student', username: 'lena.muster' }))
@@ -67,6 +68,13 @@ function fakeUntis(opts = {}) {
     schoolStatus: {},
     jwts: new Map(),
     tokenForm: 'text', // 'text' | 'json' (a JSON string) | 'garbage'
+    // 1.5.0: the detail of a message (raw, by id; missing → 404), the files of attachments (by attachment id:
+    // { body, type }) at the storage (S3_HOST), the read confirmations sent (message ids), a status per call
+    // { detail, storage, confirm, file }
+    details: {},
+    files: {},
+    confirmed: [],
+    detailCalls: [],
   };
   let n = 0;
   const json = (body, headers = {}) => ({ status: 200, headers: { 'content-type': 'application/json', ...headers }, body: JSON.stringify(body) });
@@ -87,8 +95,41 @@ function fakeUntis(opts = {}) {
   async function handler(url, o = {}) {
     if (state.down) throw Object.assign(new Error('timeout'), { code: 'ERR_NET' });
     const u = new URL(url);
+    // 1.5.0: the storage of the attachments (a short-lived signed link + the headers WebUntis named)
+    if (u.hostname === S3_HOST) {
+      state.calls.push('file');
+      const f = state.files[u.searchParams.get('att')];
+      if (state.schoolStatus.file) return { status: state.schoolStatus.file, body: '' };
+      if (!f || u.searchParams.get('sig') !== 'ok' || (o.headers || {})['x-amz-server-side-encryption-customer-key'] !== 'k3y') return { status: 403, body: 'denied' };
+      return { status: 200, headers: { 'content-type': f.type || 'application/octet-stream' }, body: Buffer.from(f.body) };
+    }
     if (u.hostname !== HOST) return { status: 404, body: 'unknown host' };
     const p = u.pathname;
+    // 1.5.0: a message's detail, an attachment's storage link, the read confirmation
+    const msgCall = /^\/WebUntis\/api\/rest\/view\/v1\/messages\/([^/]+)(?:\/(attachmentstorageurl|read-confirmation))?$/.exec(p);
+    if (state.school && msgCall) {
+      const kind = msgCall[2] === 'attachmentstorageurl' ? 'storage' : (msgCall[2] === 'read-confirmation' ? 'confirm' : 'detail');
+      const method = o.method || 'GET';
+      state.calls.push(kind);
+      const sid = sessionOf(o);
+      const m = /^Bearer (.+)$/.exec(String((o.headers || {}).authorization || ''));
+      if (!sid || !m || state.jwts.get(m[1]) !== sid) return { status: 401, body: '' };
+      if (state.schoolStatus[kind]) return { status: state.schoolStatus[kind], body: '' };
+      const id = decodeURIComponent(msgCall[1]);
+      if (kind === 'detail' && method === 'GET') {
+        state.detailCalls.push(id);
+        return state.details[id] ? json(clone(state.details[id])) : { status: 404, body: '' };
+      }
+      if (kind === 'storage' && method === 'GET') {
+        if (!state.files[id]) return { status: 404, body: '' };
+        return json({ downloadUrl: `https://${S3_HOST}/files/${id}?att=${encodeURIComponent(id)}&sig=ok`, additionalHeaders: [{ key: 'x-amz-server-side-encryption-customer-key', value: 'k3y' }, { key: 'Host', value: 'evil' }] });
+      }
+      if (kind === 'confirm' && method === 'POST') {
+        state.confirmed.push(id);
+        return json({ confirmationDate: '2026-10-20T12:00:00Z' });
+      }
+      return { status: 405, body: '' };
+    }
     if (p === '/WebUntis/api/app/config' && (o.method || 'GET') === 'GET') {
       state.calls.push('app/config');
       if (!sessionOf(o)) return { status: 401, body: '' };
@@ -190,7 +231,9 @@ async function withHost(opts, fn) {
     notifyFail: opts.notifyFail,
     fetch: (url, o) => untis.handler(url, o),
     services: opts.services,
-    gatecontrol: opts.gatecontrol,
+    // 1.5.0: the manifest needs GateControl ≥ 1.190.0 (media.uploads, gc.media.fetch)
+    gatecontrol: opts.gatecontrol || '1.190.0',
+    mediaQuota: opts.mediaQuota,
   });
   await host.start();
   try { return await fn(host, untis); } finally { await host.close(); clock.set(null); }
@@ -198,7 +241,8 @@ async function withHost(opts, fn) {
 
 const asAdmin = (host, method, p, body, query) => host.request({ method, path: p, body: body === undefined ? null : body, query: query || {}, user: ADMIN });
 const asPortal = (host, user, p, query, extra) => host.request({ method: 'GET', path: p, query: query || {}, body: null, user: { ...user, portal: true, loggedIn: true, ...(extra || {}) } });
-const asApp = (host, user, p, query) => host.request({ method: 'GET', path: p, query: query || {}, body: null, user: { ...user, portal: true, loggedIn: true, app: true } });
+const asApp = (host, user, p, query, method = 'GET', body = null) => host.request({ method, path: p, query: query || {}, body, user: { ...user, portal: true, loggedIn: true, app: true } });
+const asPortalPost = (host, user, p, body = null) => host.request({ method: 'POST', path: p, query: {}, body, user: { ...user, portal: true, loggedIn: true } });
 
 /** Adds the parent account by QR link; Lena (101) → user LENA with EVA as recipient. → { account, lena, max } */
 async function setupParent(host, { wall = false } = {}) {
@@ -227,5 +271,5 @@ const at = (iso) => Date.parse(iso);
 
 module.exports = {
   DIR, ADMIN, EVA, LENA, BOB, WALL, USERS, HOST, SCHOOL, SECRET, QR, QR_LENA, T0,
-  fixture, clone, fakeUntis, withHost, asAdmin, asPortal, asApp, setupParent, lessonAt, tickAt, at, clock,
+  fixture, clone, fakeUntis, withHost, asAdmin, asPortal, asApp, asPortalPost, setupParent, lessonAt, tickAt, at, clock, S3_HOST,
 };

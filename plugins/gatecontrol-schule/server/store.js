@@ -126,6 +126,9 @@ async function clearCred(gc, id) {
 /** Deletes an account with its credentials, students, lessons and change log. */
 async function deleteAccount(gc, id) {
   await clearCred(gc, id);
+  // 1.5.0: the media files of its messages' attachments
+  const media = mediaIdsOf((await gc.db.query('SELECT * FROM messages WHERE account_id = ?', [id])).rows.map(messageRow));
+  for (const mid of media) { try { if (gc.media) await gc.media.delete(mid); } catch { /* gone already */ } }
   return tx(gc, async () => {
     const ids = (await gc.db.query('SELECT id FROM students WHERE account_id = ?', [id])).rows.map((r) => r.id);
     for (const sid of ids) {
@@ -134,6 +137,7 @@ async function deleteAccount(gc, id) {
       for (const t of ['homework', 'exams', 'day_ends', 'absences']) await gc.db.run(`DELETE FROM ${t} WHERE student_id = ?`, [sid]);
     }
     await gc.db.run('DELETE FROM messages WHERE account_id = ?', [id]);
+    await gc.db.run('DELETE FROM message_reads WHERE account_id = ?', [id]);
     await gc.db.run('DELETE FROM students WHERE account_id = ?', [id]);
     return (await gc.db.run('DELETE FROM accounts WHERE id = ?', [id])).changes > 0;
   });
@@ -437,12 +441,27 @@ async function setDayEndStatus(gc, list, status, sentAt = null) {
 
 const MSG_FIELDS = ['subject', 'preview', 'body', 'sender', 'sent_at', 'has_attachments'];
 
+const numOrNull = (v) => (v == null ? null : Number(v));
+
+/** attachments_json → [{ id, name, size, mime, mediaId? }] ([] when none or unreadable). */
+function attachmentsOf(json) {
+  if (!json) return [];
+  try {
+    const v = JSON.parse(json);
+    return Array.isArray(v) ? v.filter((a) => a && typeof a === 'object' && typeof a.id === 'string') : [];
+  } catch { return []; }
+}
+
 function messageRow(r) {
   if (!r) return null;
   return {
     account_id: Number(r.account_id), msg_id: r.msg_id, subject: r.subject || '', preview: r.preview || '', body: r.body || null, sender: r.sender || '',
-    sent_at: r.sent_at == null ? null : Number(r.sent_at), has_attachments: !!r.has_attachments, detected_at: Number(r.detected_at),
-    seen_at: Number(r.seen_at), status: r.status, pushed_at: r.pushed_at == null ? null : Number(r.pushed_at),
+    sent_at: numOrNull(r.sent_at), has_attachments: !!r.has_attachments, detected_at: Number(r.detected_at),
+    seen_at: Number(r.seen_at), status: r.status, pushed_at: numOrNull(r.pushed_at),
+    // 1.5.0
+    full_text: !!r.full_text, attachments: attachmentsOf(r.attachments_json), detail_at: numOrNull(r.detail_at),
+    detail_tries: Number(r.detail_tries) || 0, detail_next_at: numOrNull(r.detail_next_at),
+    confirm_required: !!r.confirm_required, confirmed_at: numOrNull(r.confirmed_at), confirmed_by: numOrNull(r.confirmed_by),
   };
 }
 
@@ -463,14 +482,18 @@ async function upsertMessages(gc, accountId, rows, now, { baseline, oldest, quie
     for (const m of rows) {
       const vals = [m.subject || '', m.preview || '', m.body || null, m.sender || '', m.sent_at == null ? null : m.sent_at, m.has_attachments ? 1 : 0];
       if (have.has(m.msg_id)) {
-        await gc.db.run(`UPDATE messages SET subject = ?, preview = ?, body = COALESCE(?, body), sender = ?, sent_at = ?, has_attachments = ?, seen_at = ? WHERE account_id = ? AND msg_id = ?`,
-          [...vals, now, accountId, m.msg_id]);
+        // 1.5.0: the full text of the detail call is kept (the list only has the preview); a message that
+        // asked for a read confirmation and is no longer listed so was confirmed elsewhere (WebUntis)
+        await gc.db.run(`UPDATE messages SET subject = ?, preview = ?, body = CASE WHEN full_text = 1 THEN body ELSE COALESCE(?, body) END, sender = ?, sent_at = ?,
+          has_attachments = ?, seen_at = ?, confirmed_at = CASE WHEN confirm_required = 1 AND confirmed_at IS NULL AND ? = 0 THEN ? ELSE confirmed_at END,
+          confirm_required = CASE WHEN ? = 1 THEN 1 ELSE confirm_required END WHERE account_id = ? AND msg_id = ?`,
+          [...vals, now, m.confirm ? 1 : 0, now, m.confirm ? 1 : 0, accountId, m.msg_id]);
         continue;
       }
       if (m.sent_at != null && oldest != null && m.sent_at < oldest) continue;
       have.add(m.msg_id);
-      await gc.db.run(`INSERT INTO messages (account_id, msg_id, ${MSG_FIELDS.join(', ')}, detected_at, seen_at, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [accountId, m.msg_id, ...vals, now, now, baseline || (quietBefore != null && m.sent_at != null && m.sent_at < quietBefore) ? 'baseline' : 'pending']);
+      await gc.db.run(`INSERT INTO messages (account_id, msg_id, ${MSG_FIELDS.join(', ')}, detected_at, seen_at, status, confirm_required) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [accountId, m.msg_id, ...vals, now, now, baseline || (quietBefore != null && m.sent_at != null && m.sent_at < quietBefore) ? 'baseline' : 'pending', m.confirm ? 1 : 0]);
       added += 1;
     }
     return added;
@@ -491,6 +514,64 @@ async function listMessages(gc, accountIds, since, limit = 100) {
   const r = await gc.db.query(`SELECT * FROM messages WHERE account_id IN (${accountIds.map(() => '?').join(',')}) AND COALESCE(sent_at, detected_at) >= ?
     ORDER BY COALESCE(sent_at, detected_at) DESC, msg_id DESC LIMIT ?`, [...accountIds, since, limit]);
   return r.rows.map(messageRow);
+}
+
+/** One stored message (null when unknown). */
+async function getMessage(gc, accountId, msgId) {
+  return messageRow((await gc.db.query('SELECT * FROM messages WHERE account_id = ? AND msg_id = ?', [accountId, msgId])).rows[0]);
+}
+
+/**
+ * 1.5.0: messages of an account still without their detail (full text, attachments) — newest first,
+ * not after `maxTries` failures, not before their retry time; ≤ `limit`.
+ */
+async function messagesWithoutDetail(gc, accountId, now, maxTries, limit) {
+  const r = await gc.db.query(`SELECT * FROM messages WHERE account_id = ? AND detail_at IS NULL AND detail_tries < ? AND (detail_next_at IS NULL OR detail_next_at <= ?)
+    ORDER BY COALESCE(sent_at, detected_at) DESC, msg_id DESC LIMIT ?`, [accountId, maxTries, now, limit]);
+  return r.rows.map(messageRow);
+}
+
+/** 1.5.0: the detail answered — the full text (null: keep the preview's) and the attachments. */
+async function setMessageDetail(gc, m, { body, attachments }, now) {
+  await gc.db.run(`UPDATE messages SET body = COALESCE(?, body), full_text = CASE WHEN ? IS NULL THEN full_text ELSE 1 END, attachments_json = ?,
+    has_attachments = CASE WHEN ? > 0 THEN 1 ELSE has_attachments END, detail_at = ?, detail_next_at = NULL WHERE account_id = ? AND msg_id = ?`,
+  [body, body, JSON.stringify(attachments || []), (attachments || []).length, now, m.account_id, m.msg_id]);
+}
+
+/** 1.5.0: a detail call failed — tried again at `next` (ms). */
+async function detailFailed(gc, m, next) {
+  await gc.db.run('UPDATE messages SET detail_tries = detail_tries + 1, detail_next_at = ? WHERE account_id = ? AND msg_id = ?', [next, m.account_id, m.msg_id]);
+}
+
+/** 1.5.0: the attachments of a message (after one was fetched into the media store). */
+async function setAttachments(gc, m, attachments) {
+  await gc.db.run('UPDATE messages SET attachments_json = ? WHERE account_id = ? AND msg_id = ?', [JSON.stringify(attachments), m.account_id, m.msg_id]);
+}
+
+/** 1.5.0: the read confirmation was sent (by `userId`). */
+async function setConfirmed(gc, m, now, userId) {
+  await gc.db.run('UPDATE messages SET confirmed_at = ?, confirmed_by = ? WHERE account_id = ? AND msg_id = ?', [now, userId, m.account_id, m.msg_id]);
+}
+
+/** 1.5.0: `userId` has opened the message. */
+async function markRead(gc, m, userId, now) {
+  await gc.db.run('INSERT OR IGNORE INTO message_reads (account_id, msg_id, user_id, read_at) VALUES (?, ?, ?, ?)', [m.account_id, m.msg_id, userId, now]);
+}
+
+/** 1.5.0: which of the messages `userId` has opened → Set of "<account>-<msg>". */
+async function readSet(gc, userId, list) {
+  const out = new Set();
+  if (!list.length || !Number.isInteger(userId)) return out;
+  const accs = [...new Set(list.map((m) => m.account_id))];
+  const r = await gc.db.query(`SELECT account_id, msg_id FROM message_reads WHERE user_id = ? AND account_id IN (${accs.map(() => '?').join(',')})`, [userId, ...accs]);
+  for (const x of r.rows) out.add(`${Number(x.account_id)}-${x.msg_id}`);
+  return out;
+}
+
+/** 1.5.0: the message holding the media file `mediaId` among its attachments (null when none). */
+async function messageOfMedia(gc, mediaId) {
+  const r = await gc.db.query('SELECT * FROM messages WHERE attachments_json LIKE ? LIMIT 5', [`%"mediaId":"${String(mediaId).replace(/[%_"\\]/g, '')}"%`]);
+  return r.rows.map(messageRow).find((m) => m.attachments.some((a) => a.mediaId === mediaId)) || null;
 }
 
 /** Per account: how many messages are stored. */
@@ -601,12 +682,23 @@ async function countAbsences(gc) {
 
 /** Housekeeping (1.4.0): messages sent (or, without a time, last listed) before `msgBefore` (ms); absences before `absBefore` (date). */
 async function pruneSchool(gc, msgBefore, absBefore) {
-  await gc.db.run('DELETE FROM messages WHERE (sent_at IS NOT NULL AND sent_at < ?) OR (sent_at IS NULL AND seen_at < ?)', [msgBefore, msgBefore]);
+  const where = '(sent_at IS NOT NULL AND sent_at < ?) OR (sent_at IS NULL AND seen_at < ?)';
+  // 1.5.0: the media files of their attachments go too (→ the media ids, the caller deletes them)
+  const gone = (await gc.db.query(`SELECT * FROM messages WHERE ${where}`, [msgBefore, msgBefore])).rows.map(messageRow);
+  await gc.db.run(`DELETE FROM message_reads WHERE EXISTS (SELECT 1 FROM messages m WHERE m.account_id = message_reads.account_id AND m.msg_id = message_reads.msg_id AND (${where.replace(/sent_at/g, 'm.sent_at').replace(/seen_at/g, 'm.seen_at')}))`, [msgBefore, msgBefore]);
+  await gc.db.run(`DELETE FROM messages WHERE ${where}`, [msgBefore, msgBefore]);
   await gc.db.run('DELETE FROM absences WHERE COALESCE(end_date, date) < ?', [absBefore]);
+  return mediaIdsOf(gone);
+}
+
+/** The media ids of the attachments of some messages. */
+function mediaIdsOf(list) {
+  return list.flatMap((m) => m.attachments.map((a) => a.mediaId).filter(Boolean));
 }
 
 module.exports = {
   upsertMessages, messagesWithStatus, setMessageStatus, listMessages, countMessages,
+  getMessage, messagesWithoutDetail, setMessageDetail, detailFailed, setAttachments, setConfirmed, markRead, readSet, messageOfMedia, mediaIdsOf, attachmentsOf,
   applyAbsences, absencesWithStatus, setAbsenceStatus, listAbsences, countAbsences, absenceSig, absenceChange, pruneSchool,
   tx, listAccounts, getAccount, findAccount, createAccount, updateAccount, deleteAccount, getCred, setCred, clearCred,
   listStudents, getStudent, updateStudent, syncStudents, ensureColors, takenColors, studentsOfPerson,

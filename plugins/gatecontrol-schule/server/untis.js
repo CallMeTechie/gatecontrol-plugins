@@ -46,6 +46,16 @@
 //                → { data: { absences: [{ id, startDate, endDate, startTime, endTime, reason, text,
 //                    excuseStatus, isExcused, excuse: { id, excuseStatus, isExcused, … }, studentName }] } }
 //              The JWT is asked once per session, kept in memory only and never logged.
+//   1.5.0      the messages without WebUntis (as the MIT-licensed "webuntis-fetcher" reads them — read, not
+//              bundled): every inbox item says which list it came from (`list`);
+//              GET  /WebUntis/api/rest/view/v1/messages/<id> (cookie + Bearer) → { content (HTML), storageAttachments:
+//                   [{ id, name, size? }], … } — the full text and the attachments, asked once per message (it
+//                   may mark the message as read in WebUntis);
+//              GET  /WebUntis/api/rest/view/v1/messages/<attachmentId>/attachmentstorageurl → { downloadUrl,
+//                   additionalHeaders: [{ key, value }] } — a short-lived link to the file at the storage (S3);
+//                   the file itself is fetched by GateControl (gc.media.fetch) with those headers;
+//              POST /WebUntis/api/rest/view/v1/messages/<id>/read-confirmation → { confirmationDate } — only when a
+//                   person taps "Lesen bestätigen" (the one write to WebUntis).
 //
 // Errors become stable codes (UntisError.code): 'auth' (bad credentials,
 // invalid one-time password, unknown school), 'no_right' (JSON-RPC -8509:
@@ -69,6 +79,33 @@ class UntisError extends Error {
 }
 
 const fail = (code, detail) => new UntisError(code, detail);
+// 1.5.0: ids in the paths of the message calls
+const MSG_ID_RE = /^[A-Za-z0-9_.-]{1,40}$/;
+const ATT_ID_RE = /^[A-Za-z0-9_.-]{1,80}$/;
+const HEADER_NAME_RE = /^[A-Za-z0-9-]{1,64}$/;
+const HOP_HEADERS = new Set(['host', 'cookie', 'authorization', 'connection', 'content-length', 'transfer-encoding']);
+
+/**
+ * 1.5.0: the answer of …/attachmentstorageurl → { url, headers }: an https link (≤ 4096 characters)
+ * and at most 16 extra headers (names plain, values without line breaks; host / cookie / authorization
+ * never). Throws 'failed' when unusable.
+ */
+function storageLink(body) {
+  const b = body && typeof body === 'object' && !Array.isArray(body) ? (body.data && typeof body.data === 'object' && body.downloadUrl === undefined ? body.data : body) : null;
+  const url = b && typeof b.downloadUrl === 'string' ? b.downloadUrl.trim() : '';
+  let u;
+  try { u = new URL(url); } catch { throw fail('failed', 'storage'); }
+  if (u.protocol !== 'https:' || url.length > 4096 || u.username || u.password) throw fail('failed', 'storage');
+  const headers = {};
+  const list = Array.isArray(b.additionalHeaders) ? b.additionalHeaders : [];
+  for (const h of list.slice(0, 16)) {
+    const k = h && typeof h.key === 'string' ? h.key.trim() : '';
+    const v = h && h.value != null ? String(h.value) : '';
+    if (!HEADER_NAME_RE.test(k) || HOP_HEADERS.has(k.toLowerCase()) || /[\r\n\0]/.test(v) || v.length > 2048) continue;
+    headers[k] = v;
+  }
+  return { url: u.toString(), headers };
+}
 // 1.4.1: the lists of the inbox answer (api/rest/view/v1/messages)
 const INBOX_LISTS = Object.freeze(['incomingMessages', 'readConfirmationMessages', 'messages']);
 
@@ -209,6 +246,7 @@ function createClient(gc, account, opts = {}) {
     if (st === 429 || st >= 500) throw fail('network', st);
     if (!(st >= 200 && st < 300)) throw fail('failed', st);
     if (opt.raw) return { res, text: typeof res.body === 'string' ? res.body : '' };
+    if (opt.allowEmpty && !(typeof res.body === 'string' && res.body.trim())) return { res, body: null };
     let body;
     try { body = JSON.parse(res.body); } catch { throw fail('failed', 'json'); }
     return { res, body };
@@ -326,7 +364,8 @@ function createClient(gc, account, opts = {}) {
       const b = body && typeof body === 'object' ? body : null;
       if (!b) throw fail('failed', 'messages');
       if (Array.isArray(b)) return b;
-      // 1.4.1: every list of the inbox — incoming, to be confirmed (school-wide information often is), plain
+      // 1.4.1: every list of the inbox — incoming, to be confirmed (school-wide information often is), plain;
+      // 1.5.0: each item says its list ({ ...item, list })
       const out = [];
       let found = false;
       for (const o of [b, b.data && typeof b.data === 'object' && !Array.isArray(b.data) ? b.data : null]) {
@@ -335,11 +374,44 @@ function createClient(gc, account, opts = {}) {
           if (o[k] == null) continue;
           if (!Array.isArray(o[k])) throw fail('failed', 'messages');
           found = true;
-          out.push(...o[k]);
+          for (const m of o[k]) out.push(m && typeof m === 'object' && !Array.isArray(m) ? { ...m, list: k } : m);
         }
       }
       if (!found) throw fail('failed', 'messages');
       return out;
+    },
+
+    /** 1.5.0: one message in full (the detail call) → the raw answer { content, storageAttachments, … }. */
+    async message(id) {
+      const mid = String(id);
+      if (!MSG_ID_RE.test(mid)) throw fail('failed', 'id');
+      const token = await this.token();
+      const { body } = await http(`${base}/api/rest/view/v1/messages/${encodeURIComponent(mid)}`, { method: 'GET', headers: { cookie: cookie(), authorization: `Bearer ${token}` } }, { optional: true });
+      if (!body || typeof body !== 'object' || Array.isArray(body)) throw fail('failed', 'message');
+      return body.data && typeof body.data === 'object' && !Array.isArray(body.data) && body.content === undefined ? body.data : body;
+    },
+
+    /**
+     * 1.5.0: where an attachment can be fetched → { url, headers } (an https link to the storage, valid for
+     * a short time, and the headers it needs). Throws 'failed' on anything else.
+     */
+    async attachmentUrl(attachmentId) {
+      const aid = String(attachmentId);
+      if (!ATT_ID_RE.test(aid)) throw fail('failed', 'id');
+      const token = await this.token();
+      const { body } = await http(`${base}/api/rest/view/v1/messages/${encodeURIComponent(aid)}/attachmentstorageurl`, { method: 'GET', headers: { cookie: cookie(), authorization: `Bearer ${token}` } }, { optional: true });
+      return storageLink(body);
+    },
+
+    /** 1.5.0: tell the school the message was read (the sender asked for it) → the confirmation time (ms) or null. */
+    async confirmRead(id) {
+      const mid = String(id);
+      if (!MSG_ID_RE.test(mid)) throw fail('failed', 'id');
+      const token = await this.token();
+      const { body } = await http(`${base}/api/rest/view/v1/messages/${encodeURIComponent(mid)}/read-confirmation`, { method: 'POST', headers: { cookie: cookie(), authorization: `Bearer ${token}` } }, { optional: true, allowEmpty: true });
+      const v = body && typeof body === 'object' ? body.confirmationDate : null;
+      const ms = typeof v === 'string' ? Date.parse(v) : (typeof v === 'number' ? v : NaN);
+      return Number.isFinite(ms) ? ms : null;
     },
 
     /** 1.4.0: a student's absences between two local dates (excuseStatusId=-1: all) → the raw absences. */
@@ -400,5 +472,5 @@ function studentsOf(account, login, cfg) {
 
 module.exports = {
   UntisError, normalizeHost, parseQrLink, schoolCookie, sessionFromSetCookie, rpcError, codeOf, createClient, studentsOf,
-  untisDate, pad2, CLIENT, EXAM_VARIANTS, examsQuery, jwtOf,
+  untisDate, pad2, CLIENT, EXAM_VARIANTS, examsQuery, jwtOf, storageLink,
 };

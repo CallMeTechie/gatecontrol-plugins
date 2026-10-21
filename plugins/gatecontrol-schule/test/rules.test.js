@@ -47,7 +47,7 @@ test('school_students: only for the Familie plugin; enabled students mapped to a
 
 test('the changes of a cycle in one call, like the push; never twice; the result on the admin page', () => {
   const f = familie();
-  return withHost({ services: [f], gatecontrol: '1.178.0' }, async (host, untis) => {
+  return withHost({ services: [f], gatecontrol: '1.190.0' }, async (host, untis) => {
     await household(host);
     assert.deepEqual((await asAdmin(host, 'GET', '/status')).json.rules, { available: true, last: null });
     lessonAt(untis, 101, 20261020, 950).code = 'cancelled';   // today 09:50
@@ -83,7 +83,7 @@ test('the changes of a cycle in one call, like the push; never twice; the result
   });
 });
 
-test('English texts in the notification language', () => withHost({ services: [familie()], gatecontrol: '1.178.0', settings: { notify_lang: 'en' } }, async (host, untis) => {
+test('English texts in the notification language', () => withHost({ services: [familie()], gatecontrol: '1.190.0', settings: { notify_lang: 'en' } }, async (host, untis) => {
   await household(host);
   lessonAt(untis, 101, 20261020, 950).code = 'cancelled';
   await tickAt(host, T0 + 16 * MIN);
@@ -92,7 +92,7 @@ test('English texts in the notification language', () => withHost({ services: [f
 
 test('quiet hours: no call while the pushes are held; the held changes go with the released pushes', () => {
   const f = familie();
-  return withHost({ services: [f], gatecontrol: '1.178.0', now: at('2026-10-20T19:30:00Z') }, async (host, untis) => {
+  return withHost({ services: [f], gatecontrol: '1.190.0', now: at('2026-10-20T19:30:00Z') }, async (host, untis) => {
     await household(host);
     lessonAt(untis, 101, 20261021, 800).code = 'cancelled';
     await tickAt(host, at('2026-10-20T20:31:00Z')); // 22:31
@@ -107,7 +107,8 @@ test('quiet hours: no call while the pushes are held; the held changes go with t
 });
 
 test('no call without the Familie plugin, or on a GateControl without gc.services.available', async () => {
-  for (const opts of [{ gatecontrol: '1.178.0' }, { services: [familie()] }]) {
+  // 1.5.0 needs GateControl ≥ 1.190.0: an old host without gc.services.available cannot run it any more
+  for (const opts of [{ gatecontrol: '1.190.0' }]) {
     await withHost(opts, async (host, untis) => {
       await household(host);
       lessonAt(untis, 101, 20261020, 950).code = 'cancelled';
@@ -124,7 +125,7 @@ test('no call without the Familie plugin, or on a GateControl without gc.service
 });
 
 test('errors never stop the cycle; the last error on the admin page', async () => {
-  await withHost({ services: [familie({ throws: true })], gatecontrol: '1.178.0' }, async (host, untis) => {
+  await withHost({ services: [familie({ throws: true })], gatecontrol: '1.190.0' }, async (host, untis) => {
     await household(host);
     lessonAt(untis, 101, 20261020, 950).code = 'cancelled';
     await tickAt(host, T0 + 16 * MIN);
@@ -139,7 +140,7 @@ test('errors never stop the cycle; the last error on the admin page', async () =
     const acc = (await asAdmin(host, 'GET', '/status')).json.accounts[0];
     assert.equal(acc.status, 'ok');
   });
-  await withHost({ services: [familie({ answer: () => ({ ok: false, code: 'forbidden' }) })], gatecontrol: '1.178.0' }, async (host, untis) => {
+  await withHost({ services: [familie({ answer: () => ({ ok: false, code: 'forbidden' }) })], gatecontrol: '1.190.0' }, async (host, untis) => {
     await household(host);
     lessonAt(untis, 101, 20261020, 950).code = 'cancelled';
     await tickAt(host, T0 + 16 * MIN);

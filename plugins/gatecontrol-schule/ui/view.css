@@ -93,6 +93,19 @@
 .msg-from{font-size:12px;color:var(--muted);font-weight:600}
 .msg-text{font-size:13px;white-space:pre-line;overflow-wrap:anywhere}
 .msg-note{font-size:12px;color:var(--muted)}
+.msg-atts{display:flex;flex-wrap:wrap;gap:8px;margin-top:2px}
+.msg-att{display:inline-flex;align-items:center;gap:6px;min-height:36px;padding:6px 12px;border-radius:9px;border:1px solid var(--line);background:var(--surface);color:inherit;font:inherit;font-size:12.5px;font-weight:600;text-decoration:none;cursor:pointer;overflow-wrap:anywhere}
+.msg-att::before{content:"";width:14px;height:14px;flex:none;background:currentColor;-webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M21.4 11.1l-9.2 9.2a6 6 0 01-8.5-8.5l9.2-9.2a4 4 0 015.7 5.7l-9.2 9.2a2 2 0 01-2.8-2.8l8.5-8.5'/%3E%3C/svg%3E") center/contain no-repeat;mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M21.4 11.1l-9.2 9.2a6 6 0 01-8.5-8.5l9.2-9.2a4 4 0 015.7 5.7l-9.2 9.2a2 2 0 01-2.8-2.8l8.5-8.5'/%3E%3C/svg%3E") center/contain no-repeat;opacity:.7}
+.msg-att:hover{border-color:var(--kid,var(--accent))}
+.msg-att:focus-visible{outline:2px solid var(--kid,var(--accent));outline-offset:2px}
+.msg-att[disabled]{opacity:.6;cursor:progress}
+.msg-pic{margin:0;max-width:100%}
+.msg-pic img{display:block;max-width:100%;max-height:420px;border-radius:8px;border:1px solid var(--line)}
+.msg-pic figcaption{font-size:11.5px;color:var(--muted);margin-top:3px}
+.msg-confirm{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:8px 10px;border-radius:9px;background:color-mix(in srgb,var(--warn,#B45309) 12%,transparent);font-size:12.5px}
+.msg-confirm.is-done{background:color-mix(in srgb,var(--good,#0B8A5C) 12%,transparent);font-weight:600}
+.msg-confirm span{flex:1 1 220px}
+.msg-ask{font-size:10.5px;padding:1px 7px;margin-top:3px;align-self:flex-start}
 .sv-item.abs{align-items:center}
 .sv-item.abs .pill{flex:none;font-size:11px;padding:2px 8px}
 @media (max-width:720px){
