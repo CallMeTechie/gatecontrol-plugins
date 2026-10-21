@@ -443,7 +443,7 @@
     if (dreo.supported === false) { hint.textContent = T('dreo.needs_update'); return; }
     if (!dreo.configured) { hint.textContent = T('add.dreo_first'); return; }
     var pending = dreoDevices.filter(function (x) { return !devices.some(function (d) { return d.device_sn === 'dreo-' + x.sn; }); });
-    hint.textContent = pending.some(function (x) { return x.kind; }) ? T('add.dreo_hint') : T('add.dreo_none');
+    hint.textContent = !dreoDevices.length ? T('add.dreo_empty') : (pending.some(function (x) { return x.kind; }) ? T('add.dreo_hint') : T('add.dreo_none'));
     pending.forEach(function (x) {
       list.appendChild(el('div', { class: 'md-cloud-row' }, [
         el('span', { class: 'md-cloud-name', text: (x.name || x.sn) + (x.model ? ' · ' + x.model : '') }),

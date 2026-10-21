@@ -34,6 +34,7 @@ const service = require('./service');
 const legacy = require('./legacy');
 const dreo = require('./dreoservice');
 const accounts = require('./accounts');
+const dreoImport = require('./dreoimport');
 const texts = require('./texts.json');
 
 const state = { importing: false };
@@ -574,9 +575,10 @@ module.exports = {
     } finally { state.importing = false; }
   },
 
-  /** Background: the LAN devices' state every 30 seconds (cloud devices only on demand, as before). */
+  /** Background: the LAN devices' state every 30 seconds (cloud devices only on demand, as before); Dreo devices of the account hourly. */
   async tick(gc) {
     if (state.importing) return;
+    await dreoImport.maybe(gc);   // 2.1.0: new devices of the Dreo account, at most hourly
     await service.pollTick(gc);
   },
 

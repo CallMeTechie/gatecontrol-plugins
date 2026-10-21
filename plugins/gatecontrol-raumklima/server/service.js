@@ -10,6 +10,7 @@ const lan = require('./lan');
 const ac = require('./ac');
 const alerts = require('./alerts');
 const dreo = require('./dreoservice');
+const dreoImport = require('./dreoimport');
 const { MideaCloud } = require('./cloud');
 
 const { codeError } = store;
@@ -289,15 +290,8 @@ async function addDevice(gc, { sn, name, transport, cloud_appliance_id, target_i
     const found = (await dreo.listCloudDevices(gc)).find((x) => x.sn === sn);
     if (!found) throw codeError('MIDEA_NOT_IN_CLOUD', 'device not found in the Dreo account');
     if (!found.kind) throw codeError('DREO_UNSUPPORTED', `${found.model || 'this device'} is not a heater or air conditioner`);
-    const d = await store.createDevice(gc, {
-      name: name || found.name || found.model || 'Dreo',
-      device_sn: 'dreo-' + sn,
-      transport: 'cloud',
-      cloud_appliance_id: sn,
-      model: found.model || null,
-      vendor: 'dreo',
-      kind: found.kind,
-    });
+    const d = await store.createDevice(gc, dreoImport.record(found, name));
+    await dreoImport.undismiss(gc, sn);
     return redacted(d, false);
   }
 
@@ -375,7 +369,11 @@ async function addDevice(gc, { sn, name, transport, cloud_appliance_id, target_i
 
 async function removeDevice(gc, id) {
   const d = await store.getDevice(gc, id);
-  if (d && d.vendor === 'dreo') dreo.forget(d);
+  if (d && d.vendor === 'dreo') {
+    dreo.forget(d);
+    // 2.1.0: removed by hand → the import of the account does not bring it back
+    if (d.cloud_appliance_id) await dreoImport.dismiss(gc, String(d.cloud_appliance_id));
+  }
   cache.delete(Number(id));
   return store.removeDevice(gc, id);
 }
