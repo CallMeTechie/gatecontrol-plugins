@@ -257,4 +257,50 @@ test('portal: "Wo Mitteilungen erscheinen" from the chat settings and a notice c
   assert.ok(rich.includes("if (v.canFamily) opts.push(['family', T('routes.family'), T('routes.family_hint')]);"));
   assert.ok(rich.includes("T('routes.locked')") && rich.includes("T('routes.no_sink')"));
   assert.ok(portal.includes('R.noticeRoutes()'));
+  assert.ok(rich.includes("T(r.chat.created ? 'routes.chat_created' : 'routes.chat_used'"), '1.7.0: the toast after "own chat"');
+});
+
+test('1.7.0 ensureNoticeChat: choosing "own chat" creates the source\'s channel at once, then finds it; portal toast data', async () => {
+  await withHost({ gatecontrol: '1.192.0', services: [familie()], routeTopics: TOPICS }, async (host, c) => {
+    // the portal page: own → GateControl had the chat created (empty, read-only, only Anna)
+    let r = await c.as(ANNA)('PUT', 'portal/notify-routes', { topic: 'plugin:gatecontrol-schule:messages', dest: 'own' });
+    assert.equal(r.status, 200, JSON.stringify(r.json));
+    const list = await convs(c, ANNA);
+    assert.equal(list.length, 1);
+    const ch = list[0];
+    assert.deepEqual([ch.title, ch.readonly, ch.notice, ch.members.map((m) => m.userId), ch.unread], ['Schule', true, { source: 'plugin:gatecontrol-schule', label: 'Schule' }, [ANNA.id], 0]);
+    assert.deepEqual(r.json.chat, { source: 'plugin:gatecontrol-schule', label: 'Schule', conversationId: String(ch.id), created: true });
+    assert.ok(c.events('conversation.update').some((e) => e.users.includes(ANNA.id) && e.data.reason === 'created'), 'the chat list learns of it at once');
+    // again (another topic of the same source would do the same): the existing chat
+    r = await c.as(ANNA)('PUT', 'portal/notify-routes', { topic: 'plugin:gatecontrol-schule:messages', dest: 'own' });
+    assert.deepEqual(r.json.chat, { source: 'plugin:gatecontrol-schule', label: 'Schule', conversationId: String(ch.id), created: false });
+    // the next notification lands in that very chat
+    await host.deliverNotice({ ...SCHULE, id: 77, own: [ANNA.id] });
+    assert.deepEqual((await convs(c, ANNA)).map((x) => [x.id, x.unread]), [[ch.id, 1]]);
+    // GateControl's own topics: a chat "GateControl" of its own
+    r = await c.as(ANNA)('PUT', 'portal/notify-routes', { topic: 'vpn_down', dest: 'own' });
+    assert.deepEqual([r.json.chat.source, r.json.chat.label, r.json.chat.created], ['core', 'GateControl', true]);
+    assert.equal((await convs(c, ANNA)).length, 2);
+    // inbox → no chat; Marc's chat is his own
+    r = await c.as(ANNA)('PUT', 'portal/notify-routes', { topic: 'vpn_down', dest: 'inbox' });
+    assert.equal(r.json.chat, null);
+    r = await c.as(MARC)('PUT', 'portal/notify-routes', { topic: 'plugin:gatecontrol-schule:messages', dest: 'own' });
+    assert.equal(r.json.chat.created, true);
+    assert.notEqual(r.json.chat.conversationId, String(ch.id));
+  });
+});
+
+test('1.7.0 ensureNoticeChat: bad arguments → null (never throws); an older GateControl → chat null', async () => {
+  await withHost({ gatecontrol: '1.192.0', routeTopics: TOPICS }, async (host, c) => {
+    const plugin = require('../server/index.js');
+    for (const arg of [null, {}, { user: { id: 999 }, source: 'core' }, { user: { id: ANNA.id }, source: 'nope' }, { user: { id: ANNA.id } }]) {
+      assert.equal(await plugin.ensureNoticeChat(arg, host.gc), null, JSON.stringify(arg));
+    }
+    assert.equal((await convs(c, ANNA)).length, 0);
+  });
+  await withHost({ gatecontrol: GC, routeTopics: TOPICS }, async (host, c) => {
+    const r = await c.as(ANNA)('PUT', 'portal/notify-routes', { topic: 'plugin:gatecontrol-schule:messages', dest: 'own' });
+    assert.deepEqual([r.status, r.json.chat], [200, null]);
+    assert.equal((await convs(c, ANNA)).length, 0, 'a 1.191 host: the chat comes with the first notification');
+  });
 });

@@ -3,6 +3,13 @@
 Chats zwischen den GateControl-Konten – in der GateControl-App (eigener Tab „Chats“), im
 Windows-Client und im Portal (eigener Tab „Chats“). Alles bleibt auf dem eigenen Server.
 
+## 1.7.0
+- **Eigener Chat sofort da:** Wer unter „Wo Mitteilungen erscheinen“ für eine Art von Mitteilung „Eigener Chat
+  „Schule““ (oder eine andere Quelle) wählt, bekommt den Chat jetzt sofort – gibt es ihn schon, wird er verwendet,
+  sonst wird er angelegt (nur lesen, nur für die Person). Bisher entstand er erst mit der ersten Mitteilung. Die
+  Seite zeigt „Chat „Schule“ angelegt“ bzw. „Erscheint im vorhandenen Chat „Schule““. Braucht GateControl ≥ 1.192.0
+  (Haken `ensureNoticeChat`); mit GateControl 1.191.0 bleibt es wie bisher.
+
 ## 1.6.0
 Braucht **GateControl ≥ 1.191.0**. Neu beim Aktualisieren: die Berechtigung „Mitteilungen in Chats zustellen“
 (`permissions.notifySink`) – das Update muss ein Admin bestätigen.

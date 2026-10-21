@@ -21,6 +21,8 @@
 //   1.6.0      the chat sink of GateControl's notification center (permissions.notifySink, GateControl ≥ 1.191.0):
 //              hooks deliverNotice (family group / own notice channels per source) and mayRouteToFamily, conversation
 //              fields listPinned and notice (notices.js, conversations.js)
+//   1.7.0      hook ensureNoticeChat (GateControl ≥ 1.192.0): choosing "own chat" creates the source's notice channel at
+//              once (or finds the existing one); portal/notify-routes PUT answers `chat` (notices.js)
 //
 // Needs GateControl ≥ 1.177.0 (media, realtime events, chat notifications, services); Familie integration
 // needs gc.services.available (1.178.0); home actions use gc.actions (1.166.0+, interactive runs 1.180.0).
@@ -193,6 +195,25 @@ module.exports = {
     } catch (e) {
       gc.log.warn('deliverNotice failed', (e && (e.code || e.message)) || 'error');
       return { covered: [] };
+    }
+  },
+
+  /**
+   * 1.7.0 (GateControl ≥ 1.192.0): someone chose "own chat" for a topic → that source's notice channel of the person
+   * exists from now on (the existing one, else created) → { conversationId, created } or null. Never throws.
+   */
+  async ensureNoticeChat(arg, gc) {
+    const now = Date.now();
+    try {
+      await ensureKey(gc);
+      const ctx = await context(gc, null, now, arg && arg.lang);
+      ctx.portal = false;
+      const out = await notices.ensure(ctx, arg);
+      await api.flush(ctx);
+      return out;
+    } catch (e) {
+      gc.log.warn('ensureNoticeChat failed', (e && (e.code || e.message)) || 'error');
+      return null;
     }
   },
 
