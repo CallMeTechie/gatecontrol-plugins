@@ -381,6 +381,7 @@ otherwise — never `false`):
 | `action_requests` | since 1.5.0: `GET actions/requestable`, request `approvers`, `expiresAt`; present together with `actions` |
 | `grant_off` | since 1.5.0: grant `offAtEnd`, system message `grant_off`; present together with `actions` |
 | `notices` | since 1.6.0: conversations carry `listPinned` and `notice`, cards of kind `notice` ("Notifications in chats") |
+| `notice_routes` | since 1.6.0: `GET/PUT portal/notify-routes` (GateControl has `gc.notify.routes`) |
 | `msg_tools` | blocks, archive, pins, lists, export, remind me, suggest |
 | `privacy2` | `prefs.privacy` / `prefs.notify` / `prefs.chats`, last seen / online |
 
@@ -767,6 +768,17 @@ plugin is the **sink** (`permissions.notifySink: true`) that delivers them.
   GateControl asks it before a person may set the family chat as a target
   (administrators are allowed without asking).
 * Errors go to the Protokoll as `notice_failed` (no content).
+* `GET portal/notify-routes` / `PUT portal/notify-routes { topic, dest:
+  "inbox"|"own"|"family" }` (feature `notice_routes`: GateControl offers
+  `gc.notify.routes`) → `{ sink, canFamily, groups: [ { source, label, topics:
+  [ { id, label, dest, locked, familySetBy } ] } ] }` — GateControl's answer
+  for the caller (`gc.notify.routes.get / .set` with the caller's id, labels
+  in the request's language; the same as GateControl's own
+  `/api/v1/me/notify/routes`, which the apps call directly). Refusals: 400
+  `invalid` (topic / dest), 404 `not_found` (a topic the person cannot get),
+  403 `family_not_allowed` (the family chat — set or lifted — without
+  `canFamily`), 409 `locked`, 409 `no_sink`, 409 `routes_off` (GateControl
+  without `gc.notify.routes`, or the messenger is not the sink).
 
 #### Live events and pushes since 1.4.0
 
@@ -936,10 +948,14 @@ server pins (`listPinned`: Familie's group) — they are not repeated under
 von <Quelle>" in the head; notification cards show "<source> · <topic>", the
 title and the whole text with their buttons (the card's link and `imageUrl` are
 for the apps — the frame cannot navigate the portal or load `/notify-media/`).
-The settings page "Wo Mitteilungen erscheinen" is not in the portal tab: a
-frame reaches only its own plugin's API, and GateControl gives plugins no way to
-read or change a person's routes (`/api/v1/me/notify/routes` is the portal's /
-the apps' own).
+The page "Wo Mitteilungen erscheinen" (feature `notice_routes`) opens from the
+settings dialog (the first row) and from the info of a notice channel: per
+source the topics with their place as a chip — a choice dialog GateControl /
+Familien-Chat ("Für alle in Familie sichtbar", only with `canFamily`) / Eigener
+Chat „<Quelle>“; locked topics with a lock and "immer GateControl"; a household
+family route names who set it (only people with `canFamily` change it); without
+an active sink a hint and nothing to change. It goes through
+`portal/notify-routes` (below), because a frame reaches only its own plugin.
 
 Since 1.4.0 (`ui/rich.js`): the status strip under "Angeheftet" (own status
 first with a "+", a glowing ring for people with unseen stories; a click opens

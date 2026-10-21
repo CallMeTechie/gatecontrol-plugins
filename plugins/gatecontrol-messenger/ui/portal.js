@@ -1383,6 +1383,10 @@
       ]));
     }
     pane.appendChild(top);
+    // 1.6.0: a notice channel leads to "Wo Mitteilungen erscheinen"
+    if (c.notice && R && feature('notice_routes')) {
+      pane.appendChild(el('div', { class: 'ms-info-sec' }, [el('button', { type: 'button', class: 'btn btn-sm', on: { click: function () { R.noticeRoutes(); } } }, [M.icon('bell', 14), T('routes.title')])]));
+    }
     // chat settings
     var sec = el('div', { class: 'ms-info-sec' }, [el('div', { class: 'ms-sec', text: T('info.chat') })]);
     var mute = el('select', { class: 'form-select', 'aria-label': T('info.notifications') }, [

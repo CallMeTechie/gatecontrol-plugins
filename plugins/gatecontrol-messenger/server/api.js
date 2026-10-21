@@ -81,8 +81,10 @@ function features14(ctx) {
   if (ctx.cfg.allowStories) out.splice(1, 0, 'stories', 'story_duration');
   // 1.5.0: action_requests (GET actions/requestable, request `approvers`), grant_off (grant `offAtEnd`)
   if (homeactions.available(ctx.gc, ctx.cfg)) out.push('actions', 'action_requests', 'grant_off');
-  // 1.6.0: conversations carry listPinned / notice, cards of kind 'notice' carry notice / imageUrl
+  // 1.6.0: conversations carry listPinned / notice, cards of kind 'notice' carry notice / imageUrl;
+  // notice_routes: the page "Wo Mitteilungen erscheinen" (portal/notify-routes) — GateControl has gc.notify.routes
   out.push('notices');
+  if (require('./notices').routesApi(ctx.gc)) out.push('notice_routes');
   return out;
 }
 
@@ -101,6 +103,12 @@ async function route(ctx, req, seg) {
   const tx = (fn) => store.tx(gc, fn);
 
   if (a === 'me' && seg.length === 1 && m === 'GET') return json(200, await me(ctx));
+  // 1.6.0: where the caller's notifications appear (GateControl's routes, server/notices.js)
+  if (a === 'portal' && b === 'notify-routes' && seg.length === 2) {
+    const notices = require('./notices');
+    if (m === 'GET') return json(200, await notices.routesGet(ctx));
+    if (m === 'PUT') return json(200, await notices.routesSet(ctx, req.body));
+  }
   if (a === 'prefs' && seg.length === 1 && (m === 'PUT' || m === 'PATCH')) {
     return json(200, { prefs: await tx(() => people.updatePrefs(gc, ctx.viewer, req.body, ctx.now)) });
   }

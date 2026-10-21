@@ -147,7 +147,7 @@ test('card (GateControl ≥ 1.191.0): passed on and checked by the host; ignored
   try {
     const r = await notify.deliver(h.gc, { ...N, card });
     assert.deepEqual(r, { sent: true, pushed: true, form: 'v2', error: null });
-    assert.deepEqual(h.notifications[0].card, { ...card, actions: null });
+    assert.deepEqual(h.notifications[0].card, card);
     // the host cuts the text to 4000 and the link label to 40
     await notify.deliver(h.gc, { ...N, card: { text: 'x'.repeat(5000), link: { label: 'y'.repeat(60), route: 'inbox' } } });
     assert.deepEqual([h.notifications[1].card.text.length, h.notifications[1].card.link.label.length], [4000, 40]);
@@ -155,6 +155,8 @@ test('card (GateControl ≥ 1.191.0): passed on and checked by the host; ignored
     const bad = await notify.deliver(h.gc, { ...N, card: { text: 'x', link: { label: 'x', route: 'https://example.com' } } });
     assert.deepEqual(bad, { sent: true, pushed: true, form: 'v2', error: null, cardDropped: true });
     assert.equal(h.notifications[2].card, undefined);
+    // the host needs a text
+    assert.equal((await notify.deliver(h.gc, { ...N, card: { link: card.link } })).cardDropped, true);
   } finally { await h.close(); }
   h = await host({ gatecontrol: '1.190.0' });
   try {

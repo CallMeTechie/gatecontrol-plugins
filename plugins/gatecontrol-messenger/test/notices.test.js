@@ -182,3 +182,79 @@ test('portal: "Mein Status" above "Angeheftet", then "GateControl" and the listP
   const rich = fs.readFileSync(path.join(__dirname, '..', 'ui', 'rich.js'), 'utf8');
   assert.ok(rich.includes("[n.sourceLabel, n.topicLabel].filter(Boolean).join(' · ')"), 'card head "<source> · <topic>"');
 });
+
+const TOPICS = [
+  { id: 'vpn_down', label: { de: 'VPN getrennt', en: 'VPN down' }, source: 'core', sourceLabel: 'GateControl' },
+  { id: 'security', label: { de: 'Sicherheit', en: 'Security' }, source: 'core', sourceLabel: 'GateControl' },
+  { id: 'plugin:gatecontrol-schule:messages', label: { de: 'Nachrichten der Schule', en: 'School messages' }, source: 'plugin:gatecontrol-schule', sourceLabel: 'Schule' },
+];
+
+test('portal/notify-routes: GateControl\'s routes of the caller — own, family (parents only), locked, unknown, refusals', async () => {
+  await withHost({ gatecontrol: GC, services: [familie()], routeTopics: TOPICS }, async (host, c) => {
+    const me = (await c.as(ANNA)('GET', 'me')).json;
+    assert.equal(me.features.notice_routes, true);
+    let r = await c.as(ANNA)('GET', 'portal/notify-routes');
+    assert.equal(r.status, 200);
+    assert.deepEqual(r.json, { ok: true, sink: true, canFamily: false, groups: [
+      { source: 'core', label: 'GateControl', topics: [
+        { id: 'vpn_down', label: 'VPN getrennt', dest: 'inbox', locked: false, familySetBy: null },
+        { id: 'security', label: 'Sicherheit', dest: 'inbox', locked: true, familySetBy: null }] },
+      { source: 'plugin:gatecontrol-schule', label: 'Schule', topics: [
+        { id: 'plugin:gatecontrol-schule:messages', label: 'Nachrichten der Schule', dest: 'inbox', locked: false, familySetBy: null }] },
+    ] });
+    // own chat: for Anna only
+    r = await c.as(ANNA)('PUT', 'portal/notify-routes', { topic: 'plugin:gatecontrol-schule:messages', dest: 'own' });
+    assert.equal(r.status, 200, JSON.stringify(r.json));
+    assert.equal(r.json.groups[1].topics[0].dest, 'own');
+    assert.ok(host.routes.own.get(ANNA.id).has('plugin:gatecontrol-schule:messages'));
+    // family: not for Anna (no parent), yes for Marc (Familie's parent) — then for everyone, lifted only by a parent
+    r = await c.as(ANNA)('PUT', 'portal/notify-routes', { topic: 'vpn_down', dest: 'family' });
+    assert.deepEqual([r.status, r.json.code], [403, 'family_not_allowed']);
+    r = await c.as(MARC)('PUT', 'portal/notify-routes', { topic: 'vpn_down', dest: 'family' });
+    assert.deepEqual([r.status, r.json.canFamily, r.json.groups[0].topics[0].dest, r.json.groups[0].topics[0].familySetBy], [200, true, 'family', 'Marc']);
+    assert.deepEqual((await c.as(ANNA)('GET', 'portal/notify-routes')).json.groups[0].topics[0], { id: 'vpn_down', label: 'VPN getrennt', dest: 'family', locked: false, familySetBy: 'Marc' });
+    r = await c.as(ANNA)('PUT', 'portal/notify-routes', { topic: 'vpn_down', dest: 'inbox' });
+    assert.deepEqual([r.status, r.json.code], [403, 'family_not_allowed'], 'lifting the household route needs the right');
+    r = await c.as(ADMIN)('PUT', 'portal/notify-routes', { topic: 'vpn_down', dest: 'inbox' });
+    assert.equal(r.json.groups[0].topics[0].dest, 'inbox', 'an administrator lifts it');
+    // refusals
+    for (const [body, st, code] of [
+      [{ topic: 'security', dest: 'own' }, 409, 'locked'],
+      [{ topic: 'plugin:other:x', dest: 'own' }, 404, 'not_found'],
+      [{ topic: 'vpn_down', dest: 'elsewhere' }, 400, 'invalid'],
+      [{ dest: 'own' }, 400, 'invalid'],
+    ]) {
+      r = await c.as(ANNA)('PUT', 'portal/notify-routes', body);
+      assert.deepEqual([r.status, r.json.code], [st, code], JSON.stringify(body));
+    }
+    // English labels in an English request
+    r = await host.request({ method: 'GET', path: 'portal/notify-routes', query: {}, body: null, user: { ...ANNA, portal: true, loggedIn: true }, lang: 'en' });
+    assert.equal(r.json.groups[0].topics[0].label, 'VPN down');
+  });
+});
+
+test('portal/notify-routes: no active sink → sink false and no_sink; older GateControl → routes_off, no feature', async () => {
+  await withHost({ gatecontrol: GC, routeTopics: TOPICS, sinkActive: false }, async (host, c) => {
+    const r = await c.as(ANNA)('GET', 'portal/notify-routes');
+    assert.deepEqual([r.json.sink, r.json.canFamily], [false, false]);
+    const p = await c.as(ANNA)('PUT', 'portal/notify-routes', { topic: 'vpn_down', dest: 'own' });
+    assert.deepEqual([p.status, p.json.code], [409, 'no_sink']);
+  });
+  await withHost({ gatecontrol: '1.190.0' }, async (host, c) => {
+    assert.equal((await c.as(ANNA)('GET', 'me')).json.features.notice_routes, undefined);
+    const r = await c.as(ANNA)('GET', 'portal/notify-routes');
+    assert.deepEqual([r.status, r.json.code], [409, 'routes_off']);
+  });
+});
+
+test('portal: "Wo Mitteilungen erscheinen" from the chat settings and a notice channel\'s info; GateControl / Familien-Chat (canFamily) / Eigener Chat', () => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const rich = fs.readFileSync(path.join(__dirname, '..', 'ui', 'rich.js'), 'utf8');
+  const portal = fs.readFileSync(path.join(__dirname, '..', 'ui', 'portal.js'), 'utf8');
+  assert.ok(rich.includes("if (f.notice_routes)") && rich.includes('noticeRoutes();'));
+  assert.ok(rich.includes("M.api('GET', 'portal/notify-routes')") && rich.includes("M.api('PUT', 'portal/notify-routes'"));
+  assert.ok(rich.includes("if (v.canFamily) opts.push(['family', T('routes.family'), T('routes.family_hint')]);"));
+  assert.ok(rich.includes("T('routes.locked')") && rich.includes("T('routes.no_sink')"));
+  assert.ok(portal.includes('R.noticeRoutes()'));
+});

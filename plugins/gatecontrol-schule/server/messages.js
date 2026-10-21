@@ -604,7 +604,8 @@ function pushOf(m, lang) {
   const body = [m.sender, text].filter(Boolean).join(': ') || t(lang, 'msg.push_open');
   const full = (m.full_text && m.body) || m.preview || '';
   const cardText = [m.sender ? t(lang, 'msg.card_from', { sender: m.sender }) : null, full].filter(Boolean).join('\n\n');
-  const card = { ...(cardText ? { text: clipText(cardText, CARD_TEXT_MAX) } : {}), link: { label: t(lang, 'msg.card_link'), route: ROUTE } };
+  // GateControl needs a text in a card: without one (nothing fetched yet, no sender) the push goes without a card
+  const card = cardText ? { text: clipText(cardText, CARD_TEXT_MAX), link: { label: t(lang, 'msg.card_link'), route: ROUTE } } : null;
   return { title: t(lang, 'msg.push_title', { subject: m.subject || t(lang, 'msg.no_subject') }), body, card };
 }
 

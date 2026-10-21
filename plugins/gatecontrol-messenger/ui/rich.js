@@ -489,6 +489,12 @@
         body.appendChild(el('div', { class: 'ms-pref' }, [el('span', { class: 'ms-pref-tx' }, [label, hint ? el('small', { text: hint }) : null]), s]));
       };
       var aud = [['all', T('set.aud_all')], ['family', T('set.aud_family')], ['nobody', T('set.aud_nobody')]];
+      // 1.6.0: where GateControl's notifications appear (GateControl ≥ 1.191.0)
+      if (f.notice_routes) {
+        body.appendChild(el('button', { type: 'button', class: 'ms-pref ms-pref-btn', on: { click: function () { closeTop(); noticeRoutes(); } } }, [
+          el('span', { class: 'ms-pref-tx' }, [T('routes.title'), el('small', { text: T('routes.open_hint') })]), M.icon('bell', 16),
+        ]));
+      }
       sec(T('set.chats'));
       [['readReceipts', 'prefs.read_receipts', 'prefs.read_receipts_hint'], ['typing', 'prefs.typing', 'prefs.typing_hint'], ['preview', 'prefs.preview', 'prefs.preview_hint']].forEach(function (x) {
         sw(T(x[1]), T(x[2]), !!p[x[0]], function (v, rev) { var o = {}; o[x[0]] = v; save(o, rev); });
@@ -525,6 +531,52 @@
       if (f.actions) body.appendChild(el('p', { class: 'ms-note' }, [ic('home', 14), T('set.actions_hint')]));
       body.appendChild(el('p', { class: 'ms-note', style: 'margin-top:10px' }, [M.icon('lock', 14), T('info.encrypted')]));
       M.dialog(T('prefs.title'), body, [{ label: T('common.close'), value: null }], { wide: true });
+    }).catch(M.warn);
+  }
+
+  // ── 1.6.0: "Wo Mitteilungen erscheinen" — GateControl's routes of the viewer (portal/notify-routes) ──
+  function destLabel(d, g) { return d === 'family' ? T('routes.family') : (d === 'own' ? T('routes.own', { label: g.label }) : T('routes.inbox')); }
+  function noticeRoutes() {
+    var body = el('div', { class: 'ms-settings ms-routes' });
+    var draw = function (v) {
+      M.clear(body);
+      body.appendChild(el('p', { class: 'ms-note', text: T('routes.intro') }));
+      if (!v.sink) body.appendChild(el('p', { class: 'ms-note' }, [M.icon('info', 14), T('routes.no_sink')]));
+      else if (!v.canFamily) body.appendChild(el('p', { class: 'ms-note' }, [M.icon('group', 14), T('routes.family_parents')]));
+      if (!v.groups.length) body.appendChild(el('p', { class: 'ms-muted', text: T('routes.empty') }));
+      v.groups.forEach(function (g) {
+        body.appendChild(el('div', { class: 'ms-sec', text: g.label }));
+        g.topics.forEach(function (tp) {
+          var sub = tp.locked ? T('routes.locked') : (tp.dest === 'family' && tp.familySetBy ? T('routes.set_by', { name: tp.familySetBy }) : null);
+          var canChange = v.sink && !tp.locked && !(tp.dest === 'family' && !v.canFamily);
+          var chip = tp.locked
+            ? el('span', { class: 'ms-chip ms-route-chip is-locked', title: T('routes.locked') }, [M.icon('lock', 12), T('routes.inbox')])
+            : el('button', { type: 'button', class: 'ms-chip ms-route-chip', 'aria-pressed': tp.dest !== 'inbox' ? 'true' : 'false', disabled: !canChange, 'aria-label': T('routes.choose', { topic: tp.label }),
+              on: { click: function () { choose(v, g, tp); } } }, [destLabel(tp.dest, g)]);
+          body.appendChild(el('div', { class: 'ms-pref' }, [el('span', { class: 'ms-pref-tx' }, [tp.label, sub ? el('small', { text: sub }) : null]), chip]));
+        });
+      });
+    };
+    var choose = function (v, g, tp) {
+      var opts = [['inbox', T('routes.inbox'), T('routes.inbox_hint')]];
+      if (v.canFamily) opts.push(['family', T('routes.family'), T('routes.family_hint')]);
+      opts.push(['own', T('routes.own', { label: g.label }), T('routes.own_hint')]);
+      var name = 'ms-route-' + tp.id;
+      var list = el('div', { class: 'ms-route-opts', role: 'radiogroup', 'aria-label': tp.label });
+      opts.forEach(function (o) {
+        list.appendChild(el('label', { class: 'ms-route-opt' }, [el('input', { type: 'radio', name: name, value: o[0], checked: tp.dest === o[0] }), el('span', { class: 'ms-pref-tx' }, [o[1], el('small', { text: o[2] })])]));
+      });
+      var msg = el('p', { class: 'form-hint', role: 'status' });
+      M.dialog(tp.label, el('div', {}, [list, msg]), [{ label: T('common.cancel'), value: null }, { label: T('common.save'), primary: true, onClick: function () {
+        var pick = list.querySelector('input:checked');
+        var dest = pick ? pick.value : tp.dest;
+        if (dest === tp.dest) return true;
+        return M.api('PUT', 'portal/notify-routes', { topic: tp.id, dest: dest }).then(function (r) { draw(r); return true; }, function (e) { msg.textContent = M.errText(e); return false; });
+      } }]);
+    };
+    M.api('GET', 'portal/notify-routes').then(function (v) {
+      draw(v);
+      M.dialog(T('routes.title'), body, [{ label: T('common.close'), value: null }], { wide: true });
     }).catch(M.warn);
   }
 
@@ -620,7 +672,7 @@
     init: function (host) { H = host; },
     body: body, summary: summary, systemText: systemText, replyStoryEl: replyStoryEl, strip: strip, statusLine: statusLine,
     createPoll: createPoll, createEvent: function (c) { eventDialog(c, null); }, createAction: createAction,
-    statusDialog: statusDialog, storyDialog: storyDialog, settings: settings, listsDialog: listsDialog, remind: remind, suggest: suggest, exportChat: exportChat,
+    statusDialog: statusDialog, storyDialog: storyDialog, settings: settings, noticeRoutes: noticeRoutes, listsDialog: listsDialog, remind: remind, suggest: suggest, exportChat: exportChat,
     icon: ic, presetIcon: function (p) { return PRESET_ICON[p] || null; }, iso: iso,
   };
 }(typeof window !== 'undefined' ? window : globalThis));

@@ -157,9 +157,13 @@
 // GateControl 1.191.0 (opt-in: opts.gatecontrol: '1.191.0') — the chat sink of the notification center:
 //   permissions.notifySink: a boolean (ERR_INVALID otherwise; ignored by older hosts). host.deliverNotice(payload)
 //   calls the hook deliverNotice(payload) as hub.js does (→ { covered, fallback, answer, error }, host.sinkCalls),
-//   host.mayRouteToFamily(user) the hook mayRouteToFamily({ user }) (administrators: true without asking).
-//   gc.notify({ …, card: { text ≤ 4000, link?: { label ≤ 40, route }, actions? } }) is checked and cut like the host and
-//   recorded as `card` in host.notifications (an older host ignores `card`).
+//   host.mayRouteToFamily(user) like chatRoutes.js (administrators without asking; others the hook with { user: { id,
+//   name, role } }, 3 s). gc.notify.routes.get({ userId, lang }) / .set({ userId, topic, dest }) → { ok, sink, canFamily,
+//   groups } with the host's refusals (ERR_NOTIFY_SINK_DENIED, ERR_INVALID invalid_user|invalid_topic|invalid_dest,
+//   ERR_NOT_FOUND unknown_topic, ERR_CONFLICT locked|no_sink, ERR_FORBIDDEN family_not_allowed); topics from
+//   opts.routeTopics, opts.sinkActive: false = no active sink, stored routes in host.routes.
+//   gc.notify({ …, card: { text (required) ≤ 4000, link?: { label ≤ 40, route }, actions? } }) is checked and cut like the
+//   host and recorded as `card` ({ text, link?, actions? }) in host.notifications (an older host ignores `card`).
 //
 // GateControl 1.178.0 (opt-in: opts.gatecontrol: '1.178.0'; default is the behaviour of 1.177.0 — gc.services
 // has no `available`, a push picture must be { data, mime }):
@@ -211,6 +215,7 @@ const QA_ID_RE = /^[A-Za-z0-9:._-]{1,64}$/;
 const APP_ROUTE_RE = /^(?:vpn|services|gateways|inbox|plg-[a-z0-9]+(?:-[a-z0-9]+)*)$/;
 const CARD_TEXT_MAX = 4000;
 const SINK_TIMEOUT_MS = 10000;
+const ASK_TIMEOUT_MS = 3000;
 const QA_ICON_RE = /^[MmLlHhVvCcSsQqTtAaZz0-9 .,-]{1,2000}$/;
 const QA_STATES = new Set(['on', 'off']);
 const QA_WIDGET_STATES = new Set(['on', 'off', 'good', 'warn', 'crit']);
@@ -898,6 +903,9 @@ async function createHost(pluginDir, opts = {}) {
       return {};
     },
     'license.status': async () => ({ ...license }),
+    // GateControl ≥ 1.191.0 (permissions.notifySink): where a person's notifications appear
+    'notify.routes.get': async (a) => notifyRoutes('get', a || {}),
+    'notify.routes.set': async (a) => notifyRoutes('set', a || {}),
     // GateControl ≥ 1.165.0: users this plugin marks as kiosk devices (wall tablet …); never administrators or disabled users
     'kiosk.allow': async ({ userId, allowed }) => {
       if (perms.kiosk !== true) throw hostError('ERR_KIOSK_DENIED', 'this plugin has no kiosk permission');
@@ -939,30 +947,105 @@ async function createHost(pluginDir, opts = {}) {
   }
 
   /**
-   * GateControl ≥ 1.191.0: gc.notify({ …, card }) — { text?, link?: { label, route }, actions? } checked and cut like the
-   * host: an object (else ERR_INVALID), text without control characters (\n kept) cut to 4000, link.route an app route
-   * (else ERR_INVALID) with a label of 1–40 characters (cut; empty → ERR_INVALID), actions like data.actions.
-   * → { text, link, actions } (null parts left out as null) or null when nothing is left.
+   * GateControl ≥ 1.191.0 (hostApi.js notifyCard): gc.notify({ …, card }) — { text, link?: { label, route }, actions? }.
+   * Not an object, text not a string or empty after cleaning (control characters out, \n kept), a link that is no object,
+   * without a label or whose route is no app route, actions not a list → ERR_INVALID; text cut to 4000, label to 40;
+   * actions checked like data.actions. → { text, link?, actions? } (absent parts left out, like the host).
    */
   function notifyCard(c) {
     if (!c || typeof c !== 'object' || Array.isArray(c)) throw hostError('ERR_INVALID', 'invalid card');
-    for (const k of Object.keys(c)) if (!['text', 'link', 'actions'].includes(k)) throw hostError('ERR_INVALID', `card: unknown key ${k} (test)`);
-    let text = null;
-    if (c.text != null) {
-      if (typeof c.text !== 'string') throw hostError('ERR_INVALID', 'card: invalid text');
-      text = c.text.replace(/\r\n?/g, '\n').replace(/[\0-\x08\x0b-\x1f\x7f]/g, '').trim().slice(0, CARD_TEXT_MAX) || null;
-    }
-    let link = null;
+    if (typeof c.text !== 'string') throw hostError('ERR_INVALID', 'card.text required');
+    const text = c.text.replace(/\r\n?/g, '\n').replace(/[\0-\x08\x0b-\x1f\x7f]/g, '').trim().slice(0, CARD_TEXT_MAX).trim();
+    if (!text) throw hostError('ERR_INVALID', 'card.text empty');
+    const out = { text };
     if (c.link != null) {
       const l = c.link;
-      if (!l || typeof l !== 'object' || Array.isArray(l) || !APP_ROUTE_RE.test(String(l.route))) throw hostError('ERR_INVALID', 'card: invalid link');
-      const label = typeof l.label === 'string' ? l.label.replace(/[\0-\x1f\x7f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 40) : '';
-      if (!label) throw hostError('ERR_INVALID', 'card: link label must be 1–40 characters');
-      link = { label, route: String(l.route) };
+      if (typeof l !== 'object' || Array.isArray(l)) throw hostError('ERR_INVALID', 'invalid card.link');
+      const label = typeof l.label === 'string' ? l.label.replace(/[\0-\x1f\x7f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 40).trim() : '';
+      if (!label) throw hostError('ERR_INVALID', 'card.link.label required');
+      if (typeof l.route !== 'string' || !APP_ROUTE_RE.test(l.route)) throw hostError('ERR_INVALID', 'card.link.route must be an app route');
+      out.link = { label, route: l.route };
     }
-    let actions = null;
-    if (c.actions != null) { checkNotifyActions(c.actions); actions = c.actions.length ? c.actions : null; }
-    return text || link || actions ? { text, link, actions } : null;
+    if (c.actions != null) {
+      if (!Array.isArray(c.actions)) throw hostError('ERR_INVALID', 'invalid card.actions');
+      checkNotifyActions(c.actions);
+      if (c.actions.length) out.actions = c.actions.slice(0, 4);
+    }
+    return out;
+  }
+
+  // ─── GateControl ≥ 1.191.0: where a person's notifications appear (chatRoutes.js, hostApi.js notifyRoutes) ───
+  // opts.routeTopics: the routable topics of every person [{ id, label ('…' | { de, en }), source, sourceLabel }]
+  // (default: GateControl's vpn_down and security, this plugin's non-chat notifyTopics); opts.sinkActive: false → the
+  // sink is not active (sink: false, every dest 'inbox', own/family → no_sink). host.routes = { own: Map(userId →
+  // Set(topic)), family: Map(topic → setBy userId) } — the stored routes.
+  const ROUTE_LOCKED = new Set(['security', 'admin_notice']);
+  const routes = { own: new Map(), family: new Map() };
+  const routeTopicList = () => (Array.isArray(opts.routeTopics) ? opts.routeTopics : [
+    { id: 'vpn_down', label: { de: 'VPN getrennt', en: 'VPN down' }, source: 'core', sourceLabel: 'GateControl' },
+    { id: 'security', label: { de: 'Sicherheit', en: 'Security' }, source: 'core', sourceLabel: 'GateControl' },
+    ...(Array.isArray(manifest.notifyTopics) ? manifest.notifyTopics : []).filter((t) => t && t.chat !== true).map((t) => ({
+      id: `plugin:${manifest.id}:${t.id}`, label: t.label || t.id, source: `plugin:${manifest.id}`, sourceLabel: manifest.name || manifest.id })),
+  ]);
+  const loc = (v, lang) => (v && typeof v === 'object' ? (v[lang] || v.de || v.en || '') : String(v == null ? '' : v));
+  const sinkActive = () => notifySink && opts.sinkActive !== false;
+  /** chatRoutes.mayRouteToFamily: no sink → no; administrators without asking; else the hook { allowed } within 3 s. */
+  async function mayRouteToFamilyOf(userId) {
+    if (!sinkActive()) return false;
+    const u = users.find((x) => x.id === userId);
+    if (!u) return false;
+    if (u.role === 'admin') return true;
+    if (typeof plugin.mayRouteToFamily !== 'function') return false;
+    let timer = null;
+    try {
+      const out = await Promise.race([hook('mayRouteToFamily', { user: { id: u.id, name: u.name, role: u.role } }),
+        new Promise((_, rej) => { timer = setTimeout(() => rej(hostError('ERR_TIMEOUT', 'mayRouteToFamily took over 3 s')), ASK_TIMEOUT_MS); })]);
+      return out === true;
+    } catch { return false; } finally { clearTimeout(timer); }
+  }
+  async function routesView(userId, lang) {
+    const canFamily = sinkActive() ? await mayRouteToFamilyOf(userId) : false;
+    const groups = [];
+    for (const t of routeTopicList()) {
+      let g = groups.find((x) => x.source === t.source);
+      if (!g) { g = { source: t.source, label: loc(t.sourceLabel, lang), topics: [] }; groups.push(g); }
+      const locked = ROUTE_LOCKED.has(t.id);
+      let dest = 'inbox';
+      let familySetBy = null;
+      if (!locked && sinkActive()) {
+        if (routes.family.has(t.id)) { dest = 'family'; const by = users.find((x) => x.id === routes.family.get(t.id)); familySetBy = by ? by.name : null; }
+        else if ((routes.own.get(userId) || new Set()).has(t.id)) dest = 'own';
+      }
+      g.topics.push({ id: t.id, label: loc(t.label, lang), dest, locked, familySetBy });
+    }
+    return { ok: true, sink: sinkActive(), canFamily, groups };
+  }
+  async function notifyRoutes(op, a) {
+    if (!gc191) throw hostError('ERR_INVALID', 'gc.notify.routes needs GateControl 1.191.0 (test)');
+    if (!notifySink) throw hostError('ERR_NOTIFY_SINK_DENIED', 'this plugin is no notification sink (permissions.notifySink)');
+    const uid = a && a.userId;
+    if (!Number.isSafeInteger(uid) || uid <= 0 || !users.some((u) => u.id === uid)) throw hostError('ERR_INVALID', 'invalid_user');
+    const lang = a.lang === 'de' || a.lang === 'en' ? a.lang : 'de';
+    if (op === 'set') {
+      const { topic, dest } = a;
+      const refuse = (code, msg) => { throw hostError(code, msg); };
+      if (!['inbox', 'own', 'family'].includes(dest)) refuse('ERR_INVALID', 'invalid_dest');
+      if (typeof topic !== 'string' || !topic || topic.length > 120) refuse('ERR_INVALID', 'invalid_topic');
+      if (!routeTopicList().some((t) => t.id === topic)) refuse('ERR_NOT_FOUND', 'unknown_topic');
+      if (ROUTE_LOCKED.has(topic)) refuse('ERR_CONFLICT', 'locked');
+      if (!sinkActive() && dest !== 'inbox') refuse('ERR_CONFLICT', 'no_sink');
+      if (dest === 'family') {
+        if (!(await mayRouteToFamilyOf(uid))) refuse('ERR_FORBIDDEN', 'family_not_allowed');
+        routes.family.set(topic, uid);
+      } else {
+        const lift = sinkActive() && routes.family.has(topic);
+        if (lift && !(await mayRouteToFamilyOf(uid))) refuse('ERR_FORBIDDEN', 'family_not_allowed');
+        if (lift) routes.family.delete(topic);
+        if (!routes.own.has(uid)) routes.own.set(uid, new Set());
+        if (dest === 'own') routes.own.get(uid).add(topic); else routes.own.get(uid).delete(topic);
+      }
+    }
+    return routesView(uid, lang);
   }
 
   // ─── GateControl ≥ 1.177.0: chat notifications, media, realtime events, services ───
@@ -1334,9 +1417,14 @@ async function createHost(pluginDir, opts = {}) {
     }),
     users: Object.freeze({ list: () => call('users.list', {}), get: (id) => call('users.get', { id }) }),
     // like the child bootstrap: GateControl ≥ 1.154.0 passes an object on; older ones String() it
-    notify: (message, o) => (opts.notifyApi !== 'legacy' && message && typeof message === 'object' && !Array.isArray(message)
+    notify: Object.assign((message, o) => (opts.notifyApi !== 'legacy' && message && typeof message === 'object' && !Array.isArray(message)
       ? call('notify', { notification: message })
       : call('notify', { message: String(message), opts: o || {} })),
+    // GateControl ≥ 1.191.0: gc.notify.routes (every plugin has it; the host refuses it without permissions.notifySink)
+    gc191 ? { routes: Object.freeze({
+      get: (x) => { const a = x && typeof x === 'object' ? x : {}; return call('notify.routes.get', { userId: a.userId, lang: a.lang }); },
+      set: (x) => { const a = x && typeof x === 'object' ? x : {}; return call('notify.routes.set', { userId: a.userId, topic: a.topic, dest: a.dest }); },
+    }) } : {}),
     license: Object.freeze({ status: () => call('license.status', {}) }),
     kiosk: Object.freeze({ allow: (userId, allowed) => call('kiosk.allow', { userId, allowed }), list: () => call('kiosk.list', {}) }),
     // opts.actionsApi: false emulates a host whose child has no gc.actions (feature detection in plugins);
@@ -1498,16 +1586,15 @@ async function createHost(pluginDir, opts = {}) {
       return out;
     },
     /**
-     * GateControl ≥ 1.191.0: may `user` route a topic into the family chat (PUT …/notify/routes dest 'family')? The host
-     * allows administrators without asking; others: the sink's hook mayRouteToFamily({ user }) === true (a throwing hook,
-     * no hook, no sink → false).
+     * GateControl ≥ 1.191.0: may `user` (an id or { id }, one of opts.users) set family routes? Like chatRoutes.js: no
+     * active sink → false; administrators without asking; others: the hook mayRouteToFamily({ user: { id, name, role } })
+     * === true within 3 s (a throwing or slow hook, no hook → false).
      */
     async mayRouteToFamily(user) {
-      const u = { portal: true, loggedIn: true, ...user };
-      if (u.role === 'admin') return true;
-      if (!notifySink || typeof plugin.mayRouteToFamily !== 'function') return false;
-      try { return (await hook('mayRouteToFamily', { user: u })) === true; } catch { return false; }
+      return mayRouteToFamilyOf(user && typeof user === 'object' ? user.id : user);
     },
+    /** GateControl ≥ 1.191.0: the stored routes { own: Map(userId → Set(topic)), family: Map(topic → setBy) } */
+    routes,
     /** GateControl ≥ 1.191.0: the deliverNotice calls { payload, covered, fallback, answer, error } */
     sinkCalls,
     start: () => hook('start'),

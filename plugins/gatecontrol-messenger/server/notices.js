@@ -27,6 +27,13 @@
 //
 // mayRouteToFamily(user) → may this person set the family chat as a household target? Administrators (the core
 // asks only for the others) and Familie's parents (service family_roles, cached 10 min; Familie missing → no).
+//
+// The page "Wo Mitteilungen erscheinen" (portal frame; the apps ask GateControl directly): GET / PUT
+// portal/notify-routes → GateControl's answer for the caller (gc.notify.routes.get / .set, GateControl ≥ 1.191.0)
+//   { ok, sink, canFamily, groups: [ { source, label, topics: [ { id, label, dest, locked, familySetBy } ] } ] }
+// PUT { topic, dest: 'inbox' | 'own' | 'family' }. Refusals of GateControl → invalid (400), not_found (404),
+// family_not_allowed (403), locked / no_sink (409); a host without gc.notify.routes or a messenger that is not
+// the sink → routes_off (409). Only ever for the person calling (ctx.viewer).
 
 const store = require('./store');
 const seal = require('./seal');
@@ -36,7 +43,7 @@ const conversations = require('./conversations');
 const messages = require('./messages');
 const homeactions = require('./homeactions');
 const familie = require('./familie');
-const { isKnown, line, multiline } = require('./util');
+const { fail, isKnown, line, multiline } = require('./util');
 
 const SELF = 'gatecontrol-messenger';
 const FAMILIE = 'gatecontrol-familie';
@@ -218,9 +225,51 @@ async function mayRouteToFamily(gc, user, now = Date.now()) {
   return !!(roles && roles.parents.includes(user.id));
 }
 
+const ROUTE_REFUSALS = {
+  invalid_topic: 'invalid', invalid_dest: 'invalid', invalid_user: 'forbidden', unknown_topic: 'not_found',
+  locked: 'locked', no_sink: 'no_sink', family_not_allowed: 'family_not_allowed',
+};
+
+/** GateControl's gc.notify.routes (≥ 1.191.0), or null. */
+function routesApi(gc) {
+  const r = gc && gc.notify && gc.notify.routes;
+  return r && typeof r.get === 'function' && typeof r.set === 'function' ? r : null;
+}
+
+/** A refusal of gc.notify.routes → the messenger's error code. */
+function routeFail(e) {
+  if (e && e.code === 'ERR_NOTIFY_SINK_DENIED') return fail('routes_off');
+  const m = e && typeof e.message === 'string' ? e.message : '';
+  return fail(ROUTE_REFUSALS[m] || (e && e.code === 'ERR_FORBIDDEN' ? 'family_not_allowed' : e && e.code === 'ERR_CONFLICT' ? 'no_sink' : 'invalid'));
+}
+
+function routesOut(v) {
+  const o = v && typeof v === 'object' ? v : {};
+  return { sink: o.sink === true, canFamily: o.canFamily === true, groups: Array.isArray(o.groups) ? o.groups : [] };
+}
+
+/** GET portal/notify-routes → { sink, canFamily, groups } of the caller. */
+async function routesGet(ctx) {
+  const api = routesApi(ctx.gc);
+  if (!api) throw fail('routes_off');
+  try { return routesOut(await api.get({ userId: ctx.viewer, lang: ctx.lang })); } catch (e) { throw routeFail(e); }
+}
+
+/** PUT portal/notify-routes { topic, dest } → { sink, canFamily, groups } after the change. */
+async function routesSet(ctx, body) {
+  const api = routesApi(ctx.gc);
+  if (!api) throw fail('routes_off');
+  const b = body && typeof body === 'object' && !Array.isArray(body) ? body : {};
+  if (typeof b.topic !== 'string' || !b.topic || b.topic.length > 120 || !['inbox', 'own', 'family'].includes(b.dest)) throw fail('invalid');
+  try {
+    await api.set({ userId: ctx.viewer, topic: b.topic, dest: b.dest });
+    return routesOut(await api.get({ userId: ctx.viewer, lang: ctx.lang }));
+  } catch (e) { throw routeFail(e); }
+}
+
 /** Background (hourly): the idempotency rows after 7 days. */
 async function purge(gc, now) {
   await store.run(gc, 'DELETE FROM notices WHERE at < ?', [now - KEEP_MS]);
 }
 
-module.exports = { deliver, mayRouteToFamily, clean, purge, sourceOfKey, SELF, FAMILIE, KEEP_MS };
+module.exports = { deliver, mayRouteToFamily, routesApi, routesGet, routesSet, clean, purge, sourceOfKey, SELF, FAMILIE, KEEP_MS };

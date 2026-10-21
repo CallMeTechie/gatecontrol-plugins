@@ -27,6 +27,11 @@ const STATUS = {
   no_approver: 409,
   unavailable: 409,
   action_failed: 409,
+  // 1.6.0: the page "Wo Mitteilungen erscheinen" (portal/notify-routes, GateControl's gc.notify.routes)
+  family_not_allowed: 403,
+  locked: 409,
+  no_sink: 409,
+  routes_off: 409,
   rate_limited: 429,
   internal: 500,
 };

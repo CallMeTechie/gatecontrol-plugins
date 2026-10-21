@@ -24,8 +24,13 @@ Braucht **GateControl ≥ 1.191.0**. Neu beim Aktualisieren: die Berechtigung �
   `features.notices`.
 - **Portal:** „Mein Status“ steht über „Angeheftet“; angeheftet sind „GateControl“ und darunter die Familie-Gruppe
   (nicht noch einmal unter „Chats“); Mitteilungs-Kanäle mit Kennzeichen „Mitteilungen“, Karten mit Quelle, Thema
-  und ganzem Text. Die Seite „Wo Mitteilungen erscheinen“ steht in der App (Chat-Einstellungen und Einstellungen ›
-  Benachrichtigungen) – der Rahmen des Portals kann diese Einstellungen von GateControl nicht erreichen.
+  und ganzem Text.
+- **Seite „Wo Mitteilungen erscheinen“ im Portal** (aus den Chat-Einstellungen und aus der Info eines
+  Mitteilungs-Kanals): je Quelle die Themen mit ihrem Ziel; Auswahl GateControl / Familien-Chat (nur für Admins und
+  Eltern, „Für alle in Familie sichtbar“) / Eigener Chat „<Quelle>“; gesperrte Themen mit Schloss („immer
+  GateControl“); wer den Familien-Chat gesetzt hat, steht dabei. Dazu `GET/PUT portal/notify-routes` – der Messenger
+  fragt GateControl (`gc.notify.routes`) für die angemeldete Person; `GET me` → `features.notice_routes`. In der App
+  kommt die Seite aus den Chat-Einstellungen und aus Einstellungen › Benachrichtigungen.
 - Protokoll: neuer Eintrag „Eine Mitteilung von GateControl konnte nicht in einen Chat gestellt werden“
   (`notice_failed`).
 
