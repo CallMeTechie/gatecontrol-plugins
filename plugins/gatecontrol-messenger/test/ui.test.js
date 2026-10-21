@@ -79,7 +79,7 @@ test('texts: every key used by the pages exists in de and en; both languages hav
 
 test('plugin.json: licence, GateControl 1.191.0, permissions, pages, app and portal tab "Chats"', () => {
   assert.equal(manifest.id, 'gatecontrol-messenger');
-  assert.equal(manifest.version, '1.6.0');
+  assert.equal(manifest.version, '1.7.0');
   assert.equal(manifest.gatecontrol, '>=1.191.0', '1.6.0: the chat sink of the notification center (permissions.notifySink, hook deliverNotice)');
   assert.equal(manifest.permissions.notifySink, true);
   assert.deepEqual(manifest.license, { required: true });

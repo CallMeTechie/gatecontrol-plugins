@@ -571,7 +571,12 @@
         var pick = list.querySelector('input:checked');
         var dest = pick ? pick.value : tp.dest;
         if (dest === tp.dest) return true;
-        return M.api('PUT', 'portal/notify-routes', { topic: tp.id, dest: dest }).then(function (r) { draw(r); return true; }, function (e) { msg.textContent = M.errText(e); return false; });
+        return M.api('PUT', 'portal/notify-routes', { topic: tp.id, dest: dest }).then(function (r) {
+          draw(r);
+          // 1.7.0: "own chat" — GateControl (≥ 1.192.0) had the chat created at once, or found the existing one
+          if (r.chat) M.toast(T(r.chat.created ? 'routes.chat_created' : 'routes.chat_used', { label: r.chat.label || g.label }), 'good');
+          return true;
+        }, function (e) { msg.textContent = M.errText(e); return false; });
       } }]);
     };
     M.api('GET', 'portal/notify-routes').then(function (v) {

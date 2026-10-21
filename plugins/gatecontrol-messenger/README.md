@@ -767,6 +767,16 @@ plugin is the **sink** (`permissions.notifySink: true`) that delivers them.
   parents (service `family_roles`, cached 10 min; Familie missing → false).
   GateControl asks it before a person may set the family chat as a target
   (administrators are allowed without asking).
+* Hook `ensureNoticeChat({ user: { id, name, role }, source, sourceLabel,
+  lang })` (since 1.7.0, GateControl ≥ 1.192.0) — someone chose **own chat**
+  for a topic: the person's notice channel of that source exists from now on
+  (the existing one, else created empty — `conversation.update` with `reason:
+  "created"` tells the open apps at once) → `{ conversationId, created }` or
+  null. GateControl's `PUT …/push/routes` with `dest: "own"` answers it as
+  `chat: { source, label, conversationId, created }` (else `chat: null`), so an
+  app can say "Chat „Schule“ angelegt" / "… wird verwendet" and refresh its
+  list. With GateControl 1.191.0 the channel still comes with the first
+  notification.
 * Errors go to the Protokoll as `notice_failed` (no content).
 * `GET portal/notify-routes` / `PUT portal/notify-routes { topic, dest:
   "inbox"|"own"|"family" }` (feature `notice_routes`: GateControl offers

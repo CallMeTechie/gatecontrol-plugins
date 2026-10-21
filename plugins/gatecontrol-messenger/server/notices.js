@@ -145,6 +145,7 @@ async function channel(ctx, uid, n) {
   const key = `notice:${n.source}:${uid}`;
   let conv = await managed(ctx.gc, SELF, key);
   if (!conv) {
+    n.created = true;
     const r = await store.run(ctx.gc, "INSERT INTO conversations (kind, title_enc, managed_by, managed_key, readonly, created_at, updated_at) VALUES ('group', ?, ?, ?, 1, ?, ?)",
       [seal.seal(n.sourceLabel), SELF, key, ctx.now, ctx.now]);
     conv = await conversations.getConv(ctx.gc, r.lastInsertRowid);
@@ -217,6 +218,22 @@ async function deliver(ctx, payload) {
   return [...new Set(covered)];
 }
 
+/**
+ * 1.7.0 — the hook ensureNoticeChat (GateControl ≥ 1.192.0): someone chose "own chat" for a topic → that source's
+ * notice channel exists from now on (the existing one, else a new one) → { conversationId, created } or null.
+ */
+async function ensure(ctx, arg) {
+  const a = arg && typeof arg === 'object' && !Array.isArray(arg) ? arg : {};
+  const uid = a.user && typeof a.user === 'object' ? a.user.id : null;
+  if (!Number.isSafeInteger(uid) || uid <= 0 || !ctx.users.has(uid)) return null;
+  const source = typeof a.source === 'string' && SOURCE_RE.test(a.source) ? a.source : null;
+  if (!source) return null;
+  const sourceLabel = cut(a.sourceLabel, conversations.TITLE_MAX) || (source === 'core' ? 'GateControl' : source.slice('plugin:'.length));
+  const n = { source, sourceLabel, created: false };
+  const conv = await store.tx(ctx.gc, async () => channel(ctx, uid, n));
+  return { conversationId: conv.id, created: n.created };
+}
+
 /** The hook mayRouteToFamily: an administrator, or a parent in Familie (family_roles). */
 async function mayRouteToFamily(gc, user, now = Date.now()) {
   if (!user || !Number.isSafeInteger(user.id) || user.id <= 0 || user.kiosk === true) return false;
@@ -248,6 +265,12 @@ function routesOut(v) {
   return { sink: o.sink === true, canFamily: o.canFamily === true, groups: Array.isArray(o.groups) ? o.groups : [] };
 }
 
+/** 1.7.0: the chat GateControl (≥ 1.192.0) reports after choosing "own chat" → { source, label, conversationId, created } or null. */
+function chatOut(c) {
+  if (!c || typeof c !== 'object' || c.conversationId == null || typeof c.source !== 'string') return null;
+  return { source: c.source, label: typeof c.label === 'string' ? c.label : '', conversationId: String(c.conversationId), created: c.created === true };
+}
+
 /** GET portal/notify-routes → { sink, canFamily, groups } of the caller. */
 async function routesGet(ctx) {
   const api = routesApi(ctx.gc);
@@ -255,15 +278,15 @@ async function routesGet(ctx) {
   try { return routesOut(await api.get({ userId: ctx.viewer, lang: ctx.lang })); } catch (e) { throw routeFail(e); }
 }
 
-/** PUT portal/notify-routes { topic, dest } → { sink, canFamily, groups } after the change. */
+/** PUT portal/notify-routes { topic, dest } → { sink, canFamily, groups, chat } after the change (chat: 1.7.0, see chatOut). */
 async function routesSet(ctx, body) {
   const api = routesApi(ctx.gc);
   if (!api) throw fail('routes_off');
   const b = body && typeof body === 'object' && !Array.isArray(body) ? body : {};
   if (typeof b.topic !== 'string' || !b.topic || b.topic.length > 120 || !['inbox', 'own', 'family'].includes(b.dest)) throw fail('invalid');
   try {
-    await api.set({ userId: ctx.viewer, topic: b.topic, dest: b.dest });
-    return routesOut(await api.get({ userId: ctx.viewer, lang: ctx.lang }));
+    const r = await api.set({ userId: ctx.viewer, topic: b.topic, dest: b.dest });
+    return { ...routesOut(await api.get({ userId: ctx.viewer, lang: ctx.lang })), chat: chatOut(r && r.chat) };
   } catch (e) { throw routeFail(e); }
 }
 
@@ -272,4 +295,4 @@ async function purge(gc, now) {
   await store.run(gc, 'DELETE FROM notices WHERE at < ?', [now - KEEP_MS]);
 }
 
-module.exports = { deliver, mayRouteToFamily, routesApi, routesGet, routesSet, clean, purge, sourceOfKey, SELF, FAMILIE, KEEP_MS };
+module.exports = { deliver, ensure, mayRouteToFamily, routesApi, routesGet, routesSet, clean, purge, sourceOfKey, SELF, FAMILIE, KEEP_MS };

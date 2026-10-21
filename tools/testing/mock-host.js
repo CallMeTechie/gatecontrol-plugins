@@ -162,6 +162,9 @@
 //   groups } with the host's refusals (ERR_NOTIFY_SINK_DENIED, ERR_INVALID invalid_user|invalid_topic|invalid_dest,
 //   ERR_NOT_FOUND unknown_topic, ERR_CONFLICT locked|no_sink, ERR_FORBIDDEN family_not_allowed); topics from
 //   opts.routeTopics, opts.sinkActive: false = no active sink, stored routes in host.routes.
+//   GateControl 1.192.0 (opts.gatecontrol: '1.192.0'): .set with dest 'own' also calls the hook
+//   ensureNoticeChat({ user: { id, name, role }, source, sourceLabel, lang }) (5 s) and answers { …view, chat: { source,
+//   label, conversationId, created } | null } (chat null for inbox/family, a missing/throwing/slow hook, a bad answer).
 //   gc.notify({ …, card: { text (required) ≤ 4000, link?: { label ≤ 40, route }, actions? } }) is checked and cut like the
 //   host and recorded as `card` ({ text, link?, actions? }) in host.notifications (an older host ignores `card`).
 //
@@ -216,6 +219,7 @@ const APP_ROUTE_RE = /^(?:vpn|services|gateways|inbox|plg-[a-z0-9]+(?:-[a-z0-9]+
 const CARD_TEXT_MAX = 4000;
 const SINK_TIMEOUT_MS = 10000;
 const ASK_TIMEOUT_MS = 3000;
+const ENSURE_TIMEOUT_MS = 5000;
 const QA_ICON_RE = /^[MmLlHhVvCcSsQqTtAaZz0-9 .,-]{1,2000}$/;
 const QA_STATES = new Set(['on', 'off']);
 const QA_WIDGET_STATES = new Set(['on', 'off', 'good', 'warn', 'crit']);
@@ -662,6 +666,7 @@ async function createHost(pluginDir, opts = {}) {
   const gc191 = gcVersion[0] > 1 || (gcVersion[0] === 1 && gcVersion[1] >= 191);
   if (gc191 && perms.notifySink != null && typeof perms.notifySink !== 'boolean') throw hostError('ERR_INVALID', 'plugin.json: permissions.notifySink: invalid');
   const notifySink = gc191 && perms.notifySink === true;
+  const gc192 = gcVersion[0] > 1 || (gcVersion[0] === 1 && gcVersion[1] >= 192);
   const media = mediaDecl(manifest.media, gc190);
   if (perms.events != null && typeof perms.events !== 'boolean') throw hostError('ERR_INVALID', 'plugin.json: permissions.events: invalid');
   if (perms.services != null && (!Array.isArray(perms.services) || perms.services.length > 32 || !perms.services.every((x) => typeof x === 'string' && SERVICE_REF_RE.test(x)))) {
@@ -1003,6 +1008,19 @@ async function createHost(pluginDir, opts = {}) {
       return out === true;
     } catch { return false; } finally { clearTimeout(timer); }
   }
+  /** 1.192.0 chatRoutes.ensureChat: the hook ensureNoticeChat within 5 s → { source, label, conversationId, created } or null. */
+  async function ensureChatOf(userId, topic, lang) {
+    const u = users.find((x) => x.id === userId);
+    const t = routeTopicList().find((x) => x.id === topic);
+    if (!u || !t || typeof plugin.ensureNoticeChat !== 'function') return null;
+    let timer = null;
+    try {
+      const out = await Promise.race([hook('ensureNoticeChat', { user: { id: u.id, name: u.name, role: u.role }, source: t.source, sourceLabel: loc(t.sourceLabel, lang), lang }),
+        new Promise((_, rej) => { timer = setTimeout(() => rej(hostError('ERR_TIMEOUT', 'ensureNoticeChat took over 5 s')), ENSURE_TIMEOUT_MS); })]);
+      if (!out || typeof out !== 'object' || out.conversationId == null || !/^[A-Za-z0-9_.:-]{1,80}$/.test(String(out.conversationId))) return null;
+      return { source: t.source, label: loc(t.sourceLabel, lang), conversationId: String(out.conversationId), created: out.created === true };
+    } catch { return null; } finally { clearTimeout(timer); }
+  }
   async function routesView(userId, lang) {
     const canFamily = sinkActive() ? await mayRouteToFamilyOf(userId) : false;
     const groups = [];
@@ -1044,6 +1062,7 @@ async function createHost(pluginDir, opts = {}) {
         if (!routes.own.has(uid)) routes.own.set(uid, new Set());
         if (dest === 'own') routes.own.get(uid).add(topic); else routes.own.get(uid).delete(topic);
       }
+      if (gc192) return { ...(await routesView(uid, lang)), chat: dest === 'own' ? await ensureChatOf(uid, topic, lang) : null };
     }
     return routesView(uid, lang);
   }
