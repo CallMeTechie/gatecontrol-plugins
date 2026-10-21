@@ -60,6 +60,9 @@ const EXPIRE_MS = 3 * DAY;
 const MAX_PUSH = 3;
 const MAX_LINES = 6;
 const TOPIC = 'messages';
+// 1.5.1: the card of a message push (GateControl ≥ 1.191.0): the whole text up to 4000, the link to the plugin's app route
+const CARD_TEXT_MAX = 4000;
+const ROUTE = 'plg-gatecontrol-schule';
 const ID_RE = /^[A-Za-z0-9_.-]{1,40}$/;
 
 const t = (lang, key, params) => notify.fmt(texts, lang, key, params);
@@ -590,12 +593,19 @@ async function mayReadMedia(gc, user, mediaId) {
 
 // ─── Pushes ─────────────────────────────────────
 
-/** The push of one message → { title, body } */
+/**
+ * The push of one message → { title, body, card }. 1.5.1: `card` (GateControl ≥ 1.191.0; older hosts ignore it) is
+ * what a chat shows when the person routed the topic into a chat (Messenger 1.6.0): the sender and the whole text
+ * (≤ 4000) and the link "Ganze Nachricht lesen" to the plugin's app route (the push data carries the message id).
+ */
 function pushOf(m, lang) {
   // 1.5.0: from the full text once the detail is there (the cycle fetches it before the push)
   const text = m.full_text && m.body ? oneLine(m.body, 300) : m.preview;
   const body = [m.sender, text].filter(Boolean).join(': ') || t(lang, 'msg.push_open');
-  return { title: t(lang, 'msg.push_title', { subject: m.subject || t(lang, 'msg.no_subject') }), body };
+  const full = (m.full_text && m.body) || m.preview || '';
+  const cardText = [m.sender ? t(lang, 'msg.card_from', { sender: m.sender }) : null, full].filter(Boolean).join('\n\n');
+  const card = { ...(cardText ? { text: clipText(cardText, CARD_TEXT_MAX) } : {}), link: { label: t(lang, 'msg.card_link'), route: ROUTE } };
+  return { title: t(lang, 'msg.push_title', { subject: m.subject || t(lang, 'msg.no_subject') }), body, card };
 }
 
 /** The summary push of further messages → { title, body } */
@@ -640,10 +650,10 @@ async function dispatch(gc, notifier, cfg, now, quiet) {
     const extra = live.length === 1 ? { studentId: live[0].id } : {};
     let stop = false;
     for (const m of fresh.slice(0, MAX_PUSH)) {
-      const { title, body } = pushOf(m, cfg.lang);
+      const { title, body, card } = pushOf(m, cfg.lang);
       const r = await notifier.send({
         topic: TOPIC, title: oneLine(title, 120), body: clipText(body, 1000), priority: 'normal', users: to,
-        collapseKey: `schule:msg:${aid}:${m.msg_id}`, ttl: 3 * 86400, data: { schule: { messageId: apiId(m), ...extra } },
+        collapseKey: `schule:msg:${aid}:${m.msg_id}`, ttl: 3 * 86400, data: { schule: { messageId: apiId(m), ...extra } }, card,
       });
       if (r.sent) { await store.setMessageStatus(gc, [m], 'sent', now); sent += 1; } else if (throttled(r)) { stop = true; break; } else await store.setMessageStatus(gc, [m], 'failed');
     }

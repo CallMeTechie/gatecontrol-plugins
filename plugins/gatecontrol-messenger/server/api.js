@@ -81,6 +81,8 @@ function features14(ctx) {
   if (ctx.cfg.allowStories) out.splice(1, 0, 'stories', 'story_duration');
   // 1.5.0: action_requests (GET actions/requestable, request `approvers`), grant_off (grant `offAtEnd`)
   if (homeactions.available(ctx.gc, ctx.cfg)) out.push('actions', 'action_requests', 'grant_off');
+  // 1.6.0: conversations carry listPinned / notice, cards of kind 'notice' carry notice / imageUrl
+  out.push('notices');
   return out;
 }
 

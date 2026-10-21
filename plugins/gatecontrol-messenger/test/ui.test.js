@@ -77,10 +77,11 @@ test('texts: every key used by the pages exists in de and en; both languages hav
   for (const k of dyn) for (const l of ['de', 'en']) assert.ok(texts[l][k], `${l}: ${k}`);
 });
 
-test('plugin.json: licence, GateControl 1.180.0, permissions, pages, app and portal tab "Chats"', () => {
+test('plugin.json: licence, GateControl 1.191.0, permissions, pages, app and portal tab "Chats"', () => {
   assert.equal(manifest.id, 'gatecontrol-messenger');
-  assert.equal(manifest.version, '1.5.0');
-  assert.equal(manifest.gatecontrol, '>=1.180.0', '1.4.0: interactive gc.actions runs (permissions.actions { interactive: true }), larger service payloads');
+  assert.equal(manifest.version, '1.6.0');
+  assert.equal(manifest.gatecontrol, '>=1.191.0', '1.6.0: the chat sink of the notification center (permissions.notifySink, hook deliverNotice)');
+  assert.equal(manifest.permissions.notifySink, true);
   assert.deepEqual(manifest.license, { required: true });
   const p = manifest.permissions;
   assert.deepEqual([p.storage, p.users, p.app, p.portal, p.notify, p.events, p.background], [true, true, true, true, true, true, { intervalSeconds: 60 }]);

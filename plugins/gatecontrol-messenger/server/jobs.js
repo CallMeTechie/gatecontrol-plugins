@@ -11,6 +11,7 @@
 //   departure hints, live arrivals after 3 h, open action requests after 24 h and ended grants, due
 //   "remind me" pushes, the daily story digest (hourly check), and the poll / event / arrival / action rows
 //   of purged messages.
+//   1.6.0: the idempotency rows of delivered notifications (notices) after 7 days.
 
 const store = require('./store');
 const live = require('./live');
@@ -120,6 +121,7 @@ async function tick(gc, now = Date.now()) {
       state.lastHourly = now;
       out.retention = await step('retention', () => store.tx(gc, () => retention(gc, now, box)));
       await step('log', () => log.purge(gc, now));
+      await step('notices', () => require('./notices').purge(gc, now));
       const list = await txStep('digest', () => status.digest(ctx));
       if (Array.isArray(list) && list.length) { out.digest = list.length; await step('digest_push', () => push.digest(gc, list, now)); }
     }

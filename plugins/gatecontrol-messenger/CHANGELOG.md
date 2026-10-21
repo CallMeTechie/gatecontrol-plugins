@@ -3,6 +3,32 @@
 Chats zwischen den GateControl-Konten – in der GateControl-App (eigener Tab „Chats“), im
 Windows-Client und im Portal (eigener Tab „Chats“). Alles bleibt auf dem eigenen Server.
 
+## 1.6.0
+Braucht **GateControl ≥ 1.191.0**. Neu beim Aktualisieren: die Berechtigung „Mitteilungen in Chats zustellen“
+(`permissions.notifySink`) – das Update muss ein Admin bestätigen.
+- **Der Chat als Zentrale für alle Mitteilungen:** In GateControl wählt jede Person je Art von Mitteilung (Push-Thema
+  des Kerns oder eines Plugins), wo sie erscheint – **GateControl** (der angeheftete Chat „GateControl“, wie bisher),
+  der **Familien-Chat** oder ein **eigener Chat** je Quelle (z. B. „Schule“). Den Familien-Chat als Ziel dürfen nur
+  Admins und Eltern (Familie-Rolle) setzen, er gilt dann für den ganzen Haushalt. Der Messenger stellt zu (Haken
+  `deliverNotice`): eine Karte in die Familie-Gruppe bzw. in den Mitteilungs-Kanal der Person (nur lesen, Titel =
+  Quelle, entsteht beim ersten Mal). Was nicht zugestellt werden kann (keine Familie-Gruppe, Fehler), landet wie
+  bisher in den GateControl-Mitteilungen – nichts geht verloren, nichts kommt doppelt.
+- **Mitteilungs-Karten:** Kopf „<Quelle> · <Thema>“, Titel, der ganze Text (bis 4000 Zeichen, wenn das Plugin ihn
+  mitgibt), Link (z. B. „Ganze Nachricht lesen“) und die Schnellaktions-Knöpfe der Mitteilung; Push wie jede
+  Chat-Nachricht (Chat stumm → still), Titel = die Quelle. In der Familie-Gruppe bekommen nur die den Push, für die
+  GateControl die Mitteilung bestimmt hat.
+- **Wer den Familien-Chat setzen darf** fragt GateControl über den Haken `mayRouteToFamily`: Admins und Eltern aus
+  dem Familie-Plugin (Dienst `family_roles`, wie bei den Anfragen).
+- **Gesprächsliste:** `listPinned: true` für die Familie-Gruppe (die Apps heften sie unter „GateControl“ an),
+  Mitteilungs-Kanäle tragen `notice: { source, label }` (Kennzeichen „Mitteilungen“); `GET me` →
+  `features.notices`.
+- **Portal:** „Mein Status“ steht über „Angeheftet“; angeheftet sind „GateControl“ und darunter die Familie-Gruppe
+  (nicht noch einmal unter „Chats“); Mitteilungs-Kanäle mit Kennzeichen „Mitteilungen“, Karten mit Quelle, Thema
+  und ganzem Text. Die Seite „Wo Mitteilungen erscheinen“ steht in der App (Chat-Einstellungen und Einstellungen ›
+  Benachrichtigungen) – der Rahmen des Portals kann diese Einstellungen von GateControl nicht erreichen.
+- Protokoll: neuer Eintrag „Eine Mitteilung von GateControl konnte nicht in einen Chat gestellt werden“
+  (`notice_failed`).
+
 ## 1.5.0
 Braucht weiterhin **GateControl ≥ 1.180.0**. Neu beim Aktualisieren: der Familie-Dienst „Rollen“
 (`gatecontrol-familie: family_roles`) in den Berechtigungen.

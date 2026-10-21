@@ -140,3 +140,25 @@ test('a picture the host refuses never costs the message: sent again without it 
     assert.deepEqual(Object.keys(notify.payload({ ...N, image: { data: 'x', mime: 'image/png' } })).includes('image'), true);
   } finally { await h.close(); }
 });
+
+test('card (GateControl ≥ 1.191.0): passed on and checked by the host; ignored by older hosts; refused → sent without it', async () => {
+  const card = { text: 'Ladung beendet.\nReichweite ca. 390 km', link: { label: 'Fahrzeug öffnen', route: 'plg-gatecontrol-skoda' } };
+  let h = await host({ gatecontrol: '1.191.0' });
+  try {
+    const r = await notify.deliver(h.gc, { ...N, card });
+    assert.deepEqual(r, { sent: true, pushed: true, form: 'v2', error: null });
+    assert.deepEqual(h.notifications[0].card, { ...card, actions: null });
+    // the host cuts the text to 4000 and the link label to 40
+    await notify.deliver(h.gc, { ...N, card: { text: 'x'.repeat(5000), link: { label: 'y'.repeat(60), route: 'inbox' } } });
+    assert.deepEqual([h.notifications[1].card.text.length, h.notifications[1].card.link.label.length], [4000, 40]);
+    // a card the host refuses (no app route): the notification without it
+    const bad = await notify.deliver(h.gc, { ...N, card: { text: 'x', link: { label: 'x', route: 'https://example.com' } } });
+    assert.deepEqual(bad, { sent: true, pushed: true, form: 'v2', error: null, cardDropped: true });
+    assert.equal(h.notifications[2].card, undefined);
+  } finally { await h.close(); }
+  h = await host({ gatecontrol: '1.190.0' });
+  try {
+    assert.equal((await notify.deliver(h.gc, { ...N, card })).sent, true);
+    assert.equal(h.notifications[0].card, undefined, 'an older host ignores card');
+  } finally { await h.close(); }
+});

@@ -4,13 +4,13 @@
     "de": "Messenger",
     "en": "Messenger"
   },
-  "version": "1.5.0",
+  "version": "1.6.0",
   "publisher": "CallMeTechie",
   "description": {
     "de": "Chats zwischen den GateControl-Konten – in der GateControl-App (eigener Tab „Chats“), im Windows-Client und im Portal: Einzel- und Gruppenchats mit Text, Bildern, Videos, Sprachnachrichten, Dateien und Standort, Antworten mit Zitat, Reaktionen, Bearbeiten und Löschen, Lesebestätigungen, „schreibt …“, selbstlöschende Chats und Push mit Antwortfeld. Neu: Status und Storys, Abstimmungen, Termine mit Zusagen, Live-Ankunft und Haus-Aktionen im Chat. Alles bleibt auf dem eigenen Server, Texte verschlüsselt gespeichert; Administratoren können private Chats nicht lesen.",
     "en": "Chats between the GateControl accounts – in the GateControl app (own tab “Chats”), the Windows client and the portal: direct and group chats with text, pictures, videos, voice messages, files and location, replies with quote, reactions, editing and deleting, read receipts, “typing …”, disappearing chats and pushes with a reply field. New: status and stories, polls, events with RSVPs, live arrival and home actions in chats. Everything stays on your own server, texts stored encrypted; administrators cannot read private chats."
   },
-  "gatecontrol": ">=1.180.0",
+  "gatecontrol": ">=1.191.0",
   "entry": "server/index.js",
   "permissions": {
     "storage": true,
@@ -18,6 +18,7 @@
     "app": true,
     "portal": true,
     "notify": true,
+    "notifySink": true,
     "events": true,
     "actions": {
       "interactive": true

@@ -294,6 +294,11 @@ function linkOut(ctx, link) {
   return { label: link.label || LIVE_LABEL[ctx.lang === 'en' ? 'en' : 'de'], route: link.route, kind: link.kind || null };
 }
 
+/** 1.6.0: card.notice of a delivered notification → { source, sourceLabel, topic, topicLabel, priority, data } */
+function noticeOut(n) {
+  return { source: n.source, sourceLabel: n.sourceLabel, topic: n.topic, topicLabel: n.topicLabel || null, priority: n.priority || 'normal', data: n.data || null };
+}
+
 async function cardImage(gc, msgId) {
   const r = await store.one(gc, 'SELECT * FROM card_images WHERE msg_id = ?', [msgId]);
   if (!r) return null;
@@ -319,6 +324,8 @@ async function decorate(ctx, rows) {
         kind: c.kind, title: c.title, text: typeof messages.bodyOf(r) === 'string' ? messages.bodyOf(r) : null, image: await cardImageInfo(ctx.gc, r.id), link: linkOut(ctx, c.link),
         actions: (c.actions || []).map((a) => { const e = findIn(mine, a.plugin, a.actionId); return { plugin: a.plugin, actionId: a.actionId, label: a.label || (e && e.label) || a.actionId, icon: e ? e.icon : null, needsConfirm: !!(e && e.needsConfirm), canRun: can && !!e }; }),
         lastRun: row.by_id ? { by: row.by_id, at: iso(row.updated_at), ok: result ? !!result.ok : null } : null,
+        // 1.6.0: a notification of GateControl's notification center (kind 'notice' through deliverNotice, server/notices.js)
+        ...(c.notice ? { notice: noticeOut(c.notice), imageUrl: c.notice.imageUrl || null } : {}),
       } });
       continue;
     }

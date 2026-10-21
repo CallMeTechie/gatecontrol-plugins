@@ -906,6 +906,17 @@
           }
         },
         {
+          "icon": "bell",
+          "title": {
+            "de": "Mitteilungen in Chats zustellen",
+            "en": "Deliver notifications in chats"
+          },
+          "text": {
+            "de": "Mitteilungen von GateControl und Plugins, die du in den Familien- oder einen eigenen Chat lenkst, kommen dort als Karte an.",
+            "en": "Notifications of GateControl and plugins that you route into the family chat or a chat of their own arrive there as a card."
+          }
+        },
+        {
           "icon": "app",
           "title": {
             "de": "Live-Ereignisse an die Apps",

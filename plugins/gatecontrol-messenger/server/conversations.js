@@ -6,6 +6,8 @@
 // another plugin (`managed_by`, services sync_group / send_message) cannot be
 // changed here except mute, notifications and disappearing messages; a
 // plugin's notice channel (`readonly`) takes no messages from its members.
+// 1.6.0: `listPinned` (Familie's group, shown under "Angeheftet") and `notice` { source, label } (the notice
+// channels of the chat sink, server/notices.js) in the conversation view.
 //
 // A non-member never learns that a conversation exists: every route answers
 // 404 not_found for a conversation the viewer is not an active member of.
@@ -52,6 +54,14 @@ function titleOf(conv) {
   return typeof t === 'string' ? t : null;
 }
 
+const FAMILIE = 'gatecontrol-familie';
+
+/** 1.6.0: { source, label } of a notice channel (deliverNotice, server/notices.js), else null. */
+function noticeOf(conv) {
+  const source = require('./notices').sourceOfKey(conv);
+  return source ? { source, label: titleOf(conv) } : null;
+}
+
 const mutedNow = (m, now) => m.notify === 'none' || (m.muted_until != null && m.muted_until > now);
 
 /**
@@ -93,6 +103,9 @@ async function view(ctx, conv, me, members) {
     avatarMediaId: isGroup ? conv.avatar_media_id || null : null,
     managedBy: managed,
     readonly: !!conv.readonly,
+    // 1.6.0: Familie's group is pinned in the list (under "GateControl"); a notice channel of the chat sink names its source
+    listPinned: managed === FAMILIE && conv.managed_key === 'family',
+    notice: noticeOf(conv),
     disappearingS: conv.disappearing_s,
     createdBy: conv.created_by,
     createdAt: iso(conv.created_at),
@@ -366,5 +379,5 @@ function active(ctx, conv, body) {
 }
 
 module.exports = {
-  getConv, membersOf, access, isMember, titleOf, view, list, create, patch, typing, active, receipts, addMember, dropMember, mutedNow, checkUsers, GROUP_MAX, TITLE_MAX,
+  getConv, membersOf, access, isMember, titleOf, noticeOf, view, list, create, patch, typing, active, receipts, addMember, dropMember, mutedNow, checkUsers, GROUP_MAX, TITLE_MAX,
 };

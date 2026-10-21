@@ -13,7 +13,10 @@
    in the chat; the status strip with stories under "Angeheftet"; own status; settings for privacy,
    notifications, chats and blocks; chat lists and the archive in the list; pinned messages and the next
    event above the chat; remind me, suggestions (Familie list / calendar), export — each only when GET me
-   lists its feature. */
+   lists its feature.
+   1.6.0: the status strip ("Mein Status") above "Angeheftet"; under it "GateControl", then the chats the server pins
+   (listPinned: Familie's group); notice channels of GateControl's notifications (`notice`) marked "Mitteilungen";
+   notification cards (card.notice) with "<source> · <topic>" and their full text (ui/rich.js). */
 (function () {
   'use strict';
   var M = window.MS;
@@ -158,10 +161,16 @@
       c.disappearingS ? M.icon('timer', 14) : null,
     ]);
     b.appendChild(el('span', { class: 'ms-row-tx' }, [
-      el('span', { class: 'ms-row-top' }, [el('span', { class: 'ms-row-name', text: convTitle(c) }), el('span', { class: 'ms-row-time', text: M.listTime(c.lastMessage ? c.lastMessage.createdAt : c.createdAt) })]),
+      el('span', { class: 'ms-row-top' }, [
+        el('span', { class: 'ms-row-name', text: convTitle(c) }),
+        // 1.6.0: a notice channel of GateControl's notifications
+        c.notice ? el('span', { class: 'ms-row-tag', text: T('notice.badge') }) : null,
+        el('span', { class: 'ms-row-time', text: M.listTime(c.lastMessage ? c.lastMessage.createdAt : c.createdAt) }),
+      ]),
       el('span', { class: 'ms-row-bottom' }, [
         el('span', { class: 'ms-row-pv' + (typ ? ' is-typing' : ''), text: typ || preview(c) }),
         icons,
+        c.listPinned ? el('span', { class: 'ms-row-icons', title: T('portal.pinned') }, [M.icon('pin', 14)]) : null,
         c.unread ? el('span', { class: 'ms-badge' + (c.muted ? ' is-muted' : ''), text: c.unread > 99 ? '99+' : String(c.unread), 'aria-label': T('portal.unread', { n: c.unread }) }) : null,
       ]),
     ]));
@@ -211,17 +220,22 @@
       if (lst) return lst.conversationIds.indexOf(c.id) >= 0;
       return S.showArchived ? !!c.archived : !c.archived;
     });
+    // 1.6.0: chats pinned by the server (listPinned: Familie's group) sit under "GateControl", not among the chats
+    var pinned = q || (!lst && !S.showArchived) ? list.filter(function (c) { return c.listPinned; }) : [];
+    if (pinned.length) list = list.filter(function (c) { return !c.listPinned; });
+    // 1.6.0: "Mein Status" (the status strip) above "Angeheftet"
     var strip = !q && S.feed && feature('status') ? R.strip(S.feed) : null;
-    if (inboxShown(q) || strip) {
+    if (strip) rows.appendChild(strip);
+    if (inboxShown(q) || pinned.length) {
       rows.appendChild(el('div', { class: 'ms-list-sec', text: T('portal.pinned') }));
       if (inboxShown(q)) rows.appendChild(inboxRow());
-      if (strip) rows.appendChild(strip);
-      if (list.length || tools) rows.appendChild(el('div', { class: 'ms-list-sec', text: T('portal.chats') }));
+      pinned.forEach(function (c) { rows.appendChild(row(c)); });
     }
+    if ((strip || inboxShown(q) || pinned.length) && (list.length || tools)) rows.appendChild(el('div', { class: 'ms-list-sec', text: T('portal.chats') }));
     if (tools && !q) rows.appendChild(chips());
     list.forEach(function (c) { rows.appendChild(row(c)); });
     var empty = $('#ms-list-empty');
-    empty.hidden = list.length > 0;
+    empty.hidden = list.length + pinned.length > 0;
     empty.textContent = S.convs.length ? T('portal.no_match') : T('portal.no_chats');
   }
 
@@ -237,6 +251,7 @@
       if (c.peer && c.peer.lastSeenAt) return { text: T('portal.last_seen', { time: M.listTime(c.peer.lastSeenAt) + (M.listTime(c.peer.lastSeenAt).indexOf(':') < 0 ? ' ' + M.hm(c.peer.lastSeenAt) : '') }), typing: false };
       return { text: T('portal.direct_sub'), typing: false };
     }
+    if (c.notice) return { text: T('notice.channel_sub', { label: c.notice.label || convTitle(c) }), typing: false };
     if (c.readonly) return { text: T('portal.channel_sub'), typing: false };
     var names = c.members.map(function (mb) { return mb.userId === S.me.user.id ? T('portal.you') : (mb.name || T('portal.gone')); });
     return { text: names.join(', '), typing: false };
@@ -1360,7 +1375,7 @@
     M.clear(pane);
     var closeBtn = el('button', { type: 'button', class: 'ms-ib ms-ib-flat', 'aria-label': narrow() ? T('common.back') : T('common.close'), on: { click: toggleInfo } }, [M.icon(narrow() ? 'back' : 'close', 18)]);
     pane.appendChild(el('div', { class: 'ms-info-head' }, narrow() ? [closeBtn, el('span', { text: T('info.title') })] : [el('span', { text: T('info.title') }), closeBtn]));
-    var top = el('div', { class: 'ms-info-top' }, [convAvatar(c, 76), el('b', { text: convTitle(c) }), el('span', { class: 'ms-muted', text: c.kind === 'group' ? (c.managedBy ? T('info.managed', { plugin: pluginName(c.managedBy) }) : T('info.members_n', { n: c.members.length })) : (c.peer && c.peer.gone ? T('portal.gone_hint') : T('portal.direct_sub')) })]);
+    var top = el('div', { class: 'ms-info-top' }, [convAvatar(c, 76), el('b', { text: convTitle(c) }), el('span', { class: 'ms-muted', text: c.notice ? T('notice.info', { label: c.notice.label || convTitle(c) }) : c.kind === 'group' ? (c.managedBy ? T('info.managed', { plugin: pluginName(c.managedBy) }) : T('info.members_n', { n: c.members.length })) : (c.peer && c.peer.gone ? T('portal.gone_hint') : T('portal.direct_sub')) })]);
     if (c.can.editInfo) {
       top.appendChild(el('div', { style: 'display:flex;gap:6px;flex-wrap:wrap;justify-content:center' }, [
         el('button', { type: 'button', class: 'btn btn-sm', on: { click: function () { rename(c); } } }, [M.icon('pen', 14), T('info.rename')]),

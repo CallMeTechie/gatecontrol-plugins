@@ -240,8 +240,14 @@
       box.appendChild(img);
       cardImage(m.id).then(function (r) { if (r && /^image\/(jpeg|webp)$/.test(r.mime) && /^[A-Za-z0-9+/=]+$/.test(r.data)) { img.src = 'data:' + r.mime + ';base64,' + r.data; img.hidden = false; } }).catch(function () {});
     }
-    box.appendChild(el('div', { class: 'ms-card-head' }, [ic(k.kind === 'doorbell' ? 'bell' : 'home', 16), el('b', { text: k.title })]));
-    if (k.text) box.appendChild(el('div', { class: 'ms-card-sub', text: k.text }));
+    // 1.6.0: a notification of GateControl (deliverNotice): "<source> · <topic>", title, the full text
+    var n = k.kind === 'notice' && k.notice ? k.notice : null;
+    if (n) {
+      if (n.priority === 'high' || n.priority === 'critical') box.classList.add('is-high');
+      box.appendChild(el('div', { class: 'ms-pcard-src', text: [n.sourceLabel, n.topicLabel].filter(Boolean).join(' · ') }));
+    }
+    box.appendChild(el('div', { class: 'ms-card-head' }, [ic(k.kind === 'doorbell' || n ? 'bell' : 'home', 16), el('b', { text: k.title })]));
+    if (k.text) box.appendChild(el('div', { class: n ? 'ms-pcard-text' : 'ms-card-sub', text: k.text }));
     var foot = el('div', { class: 'ms-card-foot' });
     k.actions.forEach(function (a) { if (a.canRun) foot.appendChild(runBtn(m, a.label, { actionId: a.actionId, plugin: a.plugin }, a.needsConfirm, true)); });
     if (k.lastRun) box.appendChild(el('div', { class: 'ms-card-sub', text: T('act.last_by', { name: H.nameOf(H.conv(m.conversationId), k.lastRun.by), time: M.hm(k.lastRun.at) }) }));

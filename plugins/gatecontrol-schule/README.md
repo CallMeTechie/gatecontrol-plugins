@@ -113,6 +113,10 @@ Mitteilungen. Danach:
 * Thema **„Nachrichten der Schule“**: je neuer Nachricht ein Push „Schule: <Betreff>“ mit Absender und
   Vorschau, höchstens 3 je Konto und Abruf, weitere in einer Sammelmitteilung („Schule: 2 weitere
   Nachrichten“) – an die Empfänger der Kinder des Kontos, beim eigenen Schülerkonto an das Kind selbst.
+  1.5.1: Jeder dieser Pushes trägt eine **Karte** (`card`, GateControl ≥ 1.191.0) mit „Von <Absender>“ und dem
+  ganzen Text (bis 4000 Zeichen) und dem Link „Ganze Nachricht lesen“ (App-Route `plg-gatecontrol-schule`; die
+  Nachricht selbst steht wie bisher in `data.schule.messageId`). Ein Chat zeigt sie, wenn die Person das Thema
+  in GateControl in einen Chat lenkt (Messenger 1.6.0); ältere GateControl-Versionen übergehen sie.
 * Thema **„Fehlzeiten“**: neue oder geänderte Fehlzeiten (eingetragen, entschuldigt, nicht entschuldigt,
   andere Zeit/Grund) – eine Mitteilung je Kind und Abruf an die Empfänger; an das Kind selbst nur mit der
   Einstellung **„Fehlzeiten auch dem Kind melden“** (Vorgabe aus).
@@ -461,7 +465,10 @@ and each child's **absences** from the class register (at most hourly, the schoo
 14 days ahead: date, time, reason, text and excused / not excused / open; kept for the school year, at least
 180 days). The first good fetch is the baseline. Then topic **“School messages”**: one push per new message
 (“School: <subject>”, sender and preview), at most 3 per account and cycle plus one summary, to the
-recipients of the account's children (on a child's own student account: the child); topic **“Absences”**:
+recipients of the account's children (on a child's own student account: the child) — 1.5.1: each with a `card`
+(GateControl ≥ 1.191.0: “From <sender>”, the whole text up to 4000 characters, the link “Read the whole message”
+to the app route `plg-gatecontrol-schule`) that a chat shows when the topic is routed into one (Messenger 1.6.0);
+topic **“Absences”**:
 new or changed absences, one push per child and cycle to the recipients – to the child itself only with the
 setting **“Tell the child about absences too”** (default off). Quiet hours hold both; never twice. **Who:**
 messages – admins, the recipients of the account's children and, on the child's own student account, the

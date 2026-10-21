@@ -18,6 +18,9 @@
 //   1.5.0      home actions for families: GET actions/requestable, request approvers (Familie's family_roles),
 //              request time, grant offAtEnd, send_message target direct:<id>, GET me homeActions (homeactions.js,
 //              services.js, familie.js)
+//   1.6.0      the chat sink of GateControl's notification center (permissions.notifySink, GateControl ≥ 1.191.0):
+//              hooks deliverNotice (family group / own notice channels per source) and mayRouteToFamily, conversation
+//              fields listPinned and notice (notices.js, conversations.js)
 //
 // Needs GateControl ≥ 1.177.0 (media, realtime events, chat notifications, services); Familie integration
 // needs gc.services.available (1.178.0); home actions use gc.actions (1.166.0+, interactive runs 1.180.0).
@@ -35,6 +38,7 @@ const services = require('./services');
 const social = require('./social');
 const status = require('./status');
 const homeactions = require('./homeactions');
+const notices = require('./notices');
 const texts = require('./texts.json');
 const { STATUS, isKnown } = require('./util');
 
@@ -171,6 +175,31 @@ module.exports = {
     const ctx = await context(gc, call && call.user, now);
     ctx.portal = false;
     return services.handle(ctx, call || {}, () => api.flush(ctx));
+  },
+
+  /**
+   * 1.6.0 (GateControl ≥ 1.191.0, permissions.notifySink): a notification people routed into chats → { covered: [ids] }
+   * (the others get it in GateControl's inbox) — server/notices.js. Never throws: whatever fails is not covered.
+   */
+  async deliverNotice(payload, gc) {
+    const now = Date.now();
+    try {
+      await ensureKey(gc);
+      const ctx = await context(gc, null, now, payload && payload.lang);
+      ctx.portal = false;
+      const covered = await notices.deliver(ctx, payload);
+      await api.flush(ctx);
+      return { covered };
+    } catch (e) {
+      gc.log.warn('deliverNotice failed', (e && (e.code || e.message)) || 'error');
+      return { covered: [] };
+    }
+  },
+
+  /** 1.6.0: may this person send a topic into the family chat (a household setting)? Administrators and Familie's parents. */
+  async mayRouteToFamily(arg, gc) {
+    const user = arg && typeof arg === 'object' && arg.user && typeof arg.user === 'object' ? arg.user : null;
+    try { return await notices.mayRouteToFamily(gc, user); } catch { return false; }
   },
 
   async tick(gc) {

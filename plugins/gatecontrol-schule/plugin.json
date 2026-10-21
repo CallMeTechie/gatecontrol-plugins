@@ -4,7 +4,7 @@
     "de": "Schule",
     "en": "School"
   },
-  "version": "1.5.0",
+  "version": "1.5.1",
   "publisher": "CallMeTechie",
   "description": {
     "de": "Stundenplan aus WebUntis für Schüler- und Elternkonten: Ausfälle, Vertretungen und Zusatzstunden als Push, Arbeiten und Hausaufgaben mit Erinnerung am Vorabend, Nachrichten der Schule und Fehlzeiten, Wochenplan je Kind in seiner Farbe (Portal, Wand-Tablet, App). Konten per QR-Code-Scan in den Einstellungen; jeder kann sein eigenes Schülerkonto im Profil verknüpfen.",

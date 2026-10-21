@@ -23,6 +23,8 @@ body{padding:0}
 .ms-row-pv.is-typing,.ms-typing{color:var(--accent);font-weight:600}
 .ms-row-icons{display:inline-flex;gap:4px;align-items:center;color:var(--muted);flex:none}
 .ms-row-pv.is-unread{color:var(--text);font-weight:700}
+/* 1.6.0: the mark of a notice channel (GateControl's notifications) */
+.ms-row-tag{flex:none;font-size:10.5px;font-weight:700;line-height:16px;padding:0 6px;border-radius:8px;background:var(--surface-2);border:1px solid var(--line-2);color:var(--muted)}
 .ms-list-sec{padding:10px 16px 4px;font-size:11px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;color:var(--muted)}
 .ms-badge{min-width:20px;height:20px;padding:0 6px;box-sizing:border-box;border-radius:10px;background:var(--accent);color:var(--btn-text);font-size:11px;font-weight:800;display:inline-flex;align-items:center;justify-content:center;flex:none}
 .ms-badge.is-muted{background:var(--line-2);color:var(--text)}
@@ -289,6 +291,10 @@ button.ms-loc:hover .ms-locmap{filter:brightness(1.05)}
 .ms-action.is-denied .ms-card-head svg,.ms-action.is-expired .ms-card-head svg{color:var(--muted)}
 .ms-pcard-img{display:block;width:100%;max-width:320px;border-radius:10px;margin-bottom:8px}
 .ms-pcard.is-doorbell .ms-card-head svg{color:var(--warn)}
+/* 1.6.0: a notification card (deliverNotice): source · topic, the full text */
+.ms-pcard-src{font-size:11.5px;font-weight:700;color:var(--muted);margin-bottom:3px}
+.ms-pcard-text{font-size:13.5px;margin-top:4px;white-space:pre-wrap;overflow-wrap:anywhere}
+.ms-pcard.is-notice.is-high .ms-card-head svg{color:var(--warn)}
 .ms-quote-story{border-left-color:#a855f7}
 .ms-opts{display:flex;flex-direction:column;gap:6px;margin-bottom:8px}
 .ms-settings .ms-sec{margin-top:14px}

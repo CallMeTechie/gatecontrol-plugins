@@ -212,3 +212,24 @@ test('attachments on demand (older messages), too large, failing storage; detail
   await host.tick();
   assert.equal(host.media.size, 0);
 }));
+
+test('1.5.1: the push of a message carries a card for the chats (GateControl ≥ 1.191.0): whole text, link to the message', () => withHost({ ...SCHOOL, gatecontrol: '1.191.0' }, async (host, untis) => {
+  untis.state.inbox = [];
+  await setupParent(host);
+  const long = 'Liebe Eltern, ' + 'am Freitag ist Wandertag. '.repeat(200);
+  untis.state.inbox.unshift(msg(3, 'Wandertag'));
+  untis.state.details[3] = { content: `<p>${long}</p>` };
+  await tickAt(host, T0 + 15 * MIN);
+  const p = pushes(host);
+  assert.equal(p.length, 1);
+  assert.equal(p[0].body.length <= 1000, true);
+  const card = p[0].card;
+  assert.deepEqual(card.link, { label: 'Ganze Nachricht lesen', route: 'plg-gatecontrol-schule' });
+  assert.ok(card.text.length <= 4000 && card.text.length > 3990, `the whole text, cut to 4000 (${card.text.length})`);
+  assert.ok(card.text.startsWith('Von Frau Schmidt\n\nLiebe Eltern, am Freitag ist Wandertag.'), card.text.slice(0, 60));
+  assert.ok(card.text.endsWith('…'));
+  assert.ok(p[0].data.schule.messageId, 'the push data still names the message (the app opens it)');
+  // pushOf: a message without the detail yet → the preview; no sender → only the text
+  const po = messages.pushOf({ subject: 'X', preview: 'Kurz', full_text: 0, body: null, sender: '' }, 'en');
+  assert.deepEqual(po.card, { text: 'Kurz', link: { label: 'Read the whole message', route: 'plg-gatecontrol-schule' } });
+}));
