@@ -20,6 +20,12 @@
 //     POST   /nas/:id/power           { action: 'reboot'|'shutdown', confirm: true }
 //     POST   /nas/:id/backups/:task/start   { confirm: true } — Hyper Backup "back up now"
 //     PUT    /settings                the plugin settings (same as Settings → Plugins)
+//     POST   /drop-folders            1.2.0: a folder GateDrop may save into { nas_id, label, path }
+//     PUT    /drop-folders/:id        edit it          DELETE /drop-folders/:id   remove it
+//
+//   services for GateDrop (1.2.0, services.provides; server/drop.js): list_drop_folders, save_file —
+//   files handed over to this plugin's media (plugin.json media, uploads off) and streamed to the NAS with
+//   File Station (gc.net.uploadTarget, GateControl ≥ 1.193.0); hook mediaAccess: nobody reads them.
 //
 // Every request is refused unless it comes from an administrator of the
 // admin interface (never a portal viewer, never another role). The DSM
@@ -33,6 +39,7 @@ const config = require('./config');
 const service = require('./service');
 const alerts = require('./alerts');
 const quick = require('./quick');
+const drop = require('./drop');
 const texts = require('./texts.json');
 
 function t(lang, key, params) {
@@ -54,6 +61,7 @@ const ERRORS = {
   FORBIDDEN: [403, 'error.forbidden'],
   NOT_FOUND: [404, 'error.not_found'],
   NAS_DISABLED: [409, 'error.nas_disabled'],
+  FOLDER_INVALID: [400, 'error.folder_invalid'],
 };
 // DSM and connection problems: 502 (the NAS answered so, not this request)
 const DSM_CODES = [
@@ -325,6 +333,7 @@ async function route(req, gc, seg, cfg, lang) {
       json: {
         ok: true, now: Date.now(), settings: config.view(cfg), targets,
         nas: list.map((n) => nasView(n, snaps.get(n.id), cfg, targets, all, lang)),
+        drop_folders: await folderViews(gc, list),
       },
     };
   }
@@ -345,6 +354,7 @@ async function route(req, gc, seg, cfg, lang) {
     return { json: { ok: true, settings: config.view(await config.load(gc)) } };
   }
 
+  if (a === 'drop-folders') return folderRoute(req, gc, seg, body);
   if (a !== 'nas') throw fail('NOT_FOUND');
   const targets = await targetsOf(gc);
 
@@ -433,6 +443,38 @@ async function route(req, gc, seg, cfg, lang) {
   throw fail('NOT_FOUND');
 }
 
+// ─── GateDrop drop folders (1.2.0) ──────────────
+
+async function folderViews(gc, list) {
+  const names = new Map(list.map((n) => [n.id, n]));
+  return (await store.listFolders(gc)).map((f) => ({ id: f.id, nas_id: f.nas_id, nas_name: names.has(f.nas_id) ? names.get(f.nas_id).name : null, nas_enabled: names.has(f.nas_id) ? names.get(f.nas_id).enabled : false, label: f.label, path: f.path }));
+}
+
+/** The fields of a drop folder (create: all; update: the given ones over `existing`). */
+async function folderFields(gc, body, existing) {
+  const nasId = body.nas_id === undefined && existing ? existing.nas_id : posInt(body.nas_id);
+  if (!nasId || !(await store.getNas(gc, nasId))) throw fail('FOLDER_INVALID');
+  const path = body.path === undefined && existing ? existing.path : drop.cleanPath(body.path);
+  if (!path) throw fail('FOLDER_INVALID');
+  const label = body.label === undefined && existing ? existing.label : (str(body.label, 60) || path.split('/').pop());
+  return { nas_id: nasId, label, path };
+}
+
+async function folderRoute(req, gc, seg, body) {
+  const m = req.method;
+  if (seg.length === 1 && m === 'POST') {
+    const f = await store.createFolder(gc, await folderFields(gc, body, null));
+    gc.log.info('GateDrop folder added', f.id, `by ${req.user.name || req.user.id}`);
+    return { status: 201, json: { ok: true, folder: f } };
+  }
+  const id = posInt(seg[1]);
+  const cur = id && seg.length === 2 ? await store.getFolder(gc, id) : null;
+  if (!cur) throw fail('NOT_FOUND');
+  if (m === 'PUT') return { json: { ok: true, folder: await store.updateFolder(gc, id, await folderFields(gc, body, cur)) } };
+  if (m === 'DELETE') return { json: { ok: await store.deleteFolder(gc, id) } };
+  throw fail('NOT_FOUND');
+}
+
 /** Only an administrator in the admin interface (never a portal viewer). */
 function isAdmin(user) {
   return !!user && user.portal !== true && user.role === 'admin';
@@ -498,6 +540,16 @@ module.exports = {
 
   async render(view, gc) {
     return { html: ui.render(view, t, isAdmin(view && view.user) && view.view !== 'portal') };
+  },
+
+  /** 1.2.0: services for GateDrop — list_drop_folders, save_file (server/drop.js). */
+  async service(call, gc) {
+    return drop.handle(gc, call);
+  },
+
+  /** 1.2.0: files handed over by GateDrop are only streamed to the NAS — nobody reads them here. */
+  async mediaAccess() {
+    return false;
   },
 
   /**

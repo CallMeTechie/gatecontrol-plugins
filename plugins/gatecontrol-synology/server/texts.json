@@ -245,7 +245,20 @@
   "tile.used": "{{pct}} % belegt",
   "tile.storage": "Speicher",
   "route.app": "App",
-  "route.rule": "Regel"
+  "route.rule": "Regel",
+  "error.folder_invalid": "Ungültiger Ordner – ein NAS wählen und den Pfad wie in der File Station angeben (z. B. /Familie/Fotos).",
+  "drop.title": "Ablage für GateDrop",
+  "drop.hint": "Ordner, in die GateDrop Dateien ablegen darf (nur Admins und Eltern aus dem Familie-Plugin). Pfad wie in der File Station, z. B. /Familie/Fotos – das DSM-Konto des NAS braucht dort Schreibrecht. Unterordner werden bei Bedarf angelegt.",
+  "drop.none": "Noch keine Ordner freigegeben.",
+  "drop.nas": "NAS",
+  "drop.path": "Ordner",
+  "drop.path_ph": "/Familie/Fotos",
+  "drop.label": "Name (optional)",
+  "drop.add": "Ordner freigeben",
+  "drop.remove": "Entfernen",
+  "drop.added": "Ordner freigegeben.",
+  "drop.removed": "Ordner entfernt.",
+  "drop.disabled": "NAS ausgeschaltet"
  },
  "en": {
   "page.admin_only": "This page is for administrators only.",
@@ -493,6 +506,19 @@
   "tile.used": "{{pct}} % used",
   "tile.storage": "Storage",
   "route.app": "App",
-  "route.rule": "Rule"
+  "route.rule": "Rule",
+  "error.folder_invalid": "Invalid folder – choose a NAS and give the path as in File Station (e.g. /Family/Photos).",
+  "drop.title": "Folders for GateDrop",
+  "drop.hint": "Folders GateDrop may save files into (administrators and parents of the Familie plugin only). The path as in File Station, e.g. /Family/Photos – the NAS's DSM account needs write access there. Subfolders are created when needed.",
+  "drop.none": "No folders shared yet.",
+  "drop.nas": "NAS",
+  "drop.path": "Folder",
+  "drop.path_ph": "/Family/Photos",
+  "drop.label": "Name (optional)",
+  "drop.add": "Share folder",
+  "drop.remove": "Remove",
+  "drop.added": "Folder shared.",
+  "drop.removed": "Folder removed.",
+  "drop.disabled": "NAS switched off"
  }
 }

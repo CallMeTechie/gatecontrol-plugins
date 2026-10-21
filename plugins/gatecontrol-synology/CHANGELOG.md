@@ -2,6 +2,22 @@
 
 Synology-NAS überwachen und steuern (DSM Web API) als GateControl-Plugin – nur für Administratoren.
 
+## 1.2.0
+Braucht **GateControl ≥ 1.193.0** (Dateien bis 2 GB von anderen Plugins übernehmen, Upload zum NAS). Neu beim
+Aktualisieren: Dateispeicher (nur übergebene Dateien, keine eigenen Uploads) und zwei Dienste für andere Plugins.
+- **Ablage für GateDrop:** Auf der Plugin-Seite unter „Einstellungen“ gibt ein Admin NAS-Ordner frei („Ablage für
+  GateDrop“: NAS, Pfad wie in der File Station, z. B. `/Familie/Fotos`, Name). Nur in diese Ordner (und Unterordner, die
+  bei Bedarf angelegt werden) darf GateDrop Dateien ablegen; wer das darf, entscheidet GateDrop (Admins und Eltern).
+  Admin-API `POST /drop-folders`, `PUT`/`DELETE /drop-folders/:id`, `GET /status` → `drop_folders`. Wird ein NAS
+  entfernt, verschwinden seine Ordner; ein ausgeschaltetes NAS bietet keine an.
+- **Dienste** (nur für `gatecontrol-gatedrop`): `list_drop_folders {}` → `[{ id, label, path }]`; `save_file { user,
+  folderId, mediaId, name, path }` → `{ ok: true, path, nasId }` (genau der gewählte Ordner, `path` muss darin liegen;
+  ohne `folderId` nur, wenn genau ein Ordner passt) – die von GateDrop übergebene Datei wird mit
+  `SYNO.FileStation.Upload` hochgeladen (GateControl streamt sie direkt zum NAS, `gc.net.uploadTarget`); ein schon
+  vorhandener Name wird zu „name (2).ext“. Danach wird die übergebene Kopie gelöscht. Fehler `forbidden`, `invalid`,
+  `not_found`, `nas_disabled`, `unsupported`, `unreachable`, `auth`, `permission`, `no_space`, `upload_failed`. Das
+  DSM-Konto braucht Schreibrecht im Ordner.
+
 ## 1.1.0
 - **Schnellaktionen und Widget in den GateControl-Apps** (nur für GateControl-Administratoren;
   alle anderen sehen nichts): je NAS ein Gerät mit

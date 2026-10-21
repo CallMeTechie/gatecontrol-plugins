@@ -726,6 +726,199 @@
       },
       "languages": ["de", "en"]
     },
+    "gatecontrol-gatedrop": {
+      "category": "family",
+      "icon": "puzzle",
+      "summary": {
+        "de": "Dateien, Texte und Links teilen wie Quick Share – an Personen, eigene Geräte, NAS-Ordner oder als Link für Externe.",
+        "en": "Share files, texts and links like Quick Share – to people, your own devices, NAS folders or as a link for outsiders."
+      },
+      "audience": "all",
+      "keywords": [
+        "teilen",
+        "share",
+        "senden",
+        "send",
+        "dateien",
+        "files",
+        "quick share",
+        "airdrop",
+        "link",
+        "nas",
+        "geräte",
+        "devices"
+      ],
+      "related": [
+        "gatecontrol-messenger",
+        "gatecontrol-synology",
+        "gatecontrol-familie"
+      ],
+      "adds": [
+        {
+          "icon": "portal",
+          "title": {
+            "de": "Portal-Tab „GateDrop“",
+            "en": "Portal tab “GateDrop”"
+          },
+          "text": {
+            "de": "Dateien ablegen, Ziele wählen, aktive Links und Verlauf",
+            "en": "Drop files, pick targets, active links and history"
+          }
+        },
+        {
+          "icon": "app",
+          "title": {
+            "de": "Teilen aus der App",
+            "en": "Share from the app"
+          },
+          "text": {
+            "de": "Das Teilen-Menü der GateControl-App und „Senden an“ unter Windows",
+            "en": "The share menu of the GateControl app and “Send to” on Windows"
+          }
+        },
+        {
+          "icon": "network",
+          "title": {
+            "de": "Direkt im WLAN",
+            "en": "Directly on the Wi-Fi"
+          },
+          "text": {
+            "de": "Zu eigenen Geräten direkt im gemeinsamen Netz, sonst über den Server",
+            "en": "To your own devices directly on the same network, otherwise through the server"
+          }
+        },
+        {
+          "icon": "link",
+          "title": {
+            "de": "Link für Externe",
+            "en": "Link for outsiders"
+          },
+          "text": {
+            "de": "Zeitlich begrenzt, optional mit PIN – nur wenn ein Admin es erlaubt",
+            "en": "Time-limited, optionally with a PIN – only when an administrator allows it"
+          }
+        },
+        {
+          "icon": "page",
+          "title": {
+            "de": "Admin-Seite „Übersicht“",
+            "en": "Admin page “Overview”"
+          },
+          "text": {
+            "de": "Speicher, Aufbewahrung, aktive Links – keine Inhalte",
+            "en": "Storage, retention, active links – no content"
+          }
+        },
+        {
+          "icon": "clock",
+          "title": {
+            "de": "Aufräumen im Hintergrund",
+            "en": "Clean-up in the background"
+          },
+          "text": {
+            "de": "Empfangenes wird nach 7 Tagen vom Server gelöscht",
+            "en": "Received items are deleted from the server after 7 days"
+          }
+        }
+      ],
+      "permissions": [
+        {
+          "icon": "users",
+          "title": {
+            "de": "Benutzer lesen",
+            "en": "Read users"
+          },
+          "text": {
+            "de": "Die GateControl-Konten erscheinen als Empfänger.",
+            "en": "The GateControl accounts appear as recipients."
+          }
+        },
+        {
+          "icon": "data",
+          "title": {
+            "de": "Dateien speichern",
+            "en": "Store files"
+          },
+          "text": {
+            "de": "Bis 2 GB je Datei, zusammen 10 GB (änderbar), 7 Tage lang.",
+            "en": "Up to 2 GB per file, 10 GB in all (adjustable), for 7 days."
+          }
+        },
+        {
+          "icon": "app",
+          "title": {
+            "de": "Geräte der Person",
+            "en": "A person’s devices"
+          },
+          "text": {
+            "de": "Sieht die eigenen GateControl-Apps und schickt ihnen (auch stille) Mitteilungen.",
+            "en": "Sees one’s own GateControl apps and sends them (also silent) notifications."
+          }
+        },
+        {
+          "icon": "link",
+          "title": {
+            "de": "Öffentliche Links",
+            "en": "Public links"
+          },
+          "text": {
+            "de": "Download-Links ohne Anmeldung – erst wenn ein Admin sie erlaubt.",
+            "en": "Download links without a login – only once an administrator allows them."
+          },
+          "tag": {
+            "de": "Öffentlich",
+            "en": "Public"
+          }
+        },
+        {
+          "icon": "chat",
+          "title": {
+            "de": "Andere Plugins",
+            "en": "Other plugins"
+          },
+          "text": {
+            "de": "Messenger (Datei als Nachricht), NAS (Ablage), Familie (Rollen).",
+            "en": "Messenger (file as a message), NAS (folders), Familie (roles)."
+          }
+        },
+        {
+          "icon": "bell",
+          "title": {
+            "de": "Mitteilungen",
+            "en": "Notifications"
+          },
+          "text": {
+            "de": "„Empfangen“ und „Link geladen“.",
+            "en": "“Received” and “Link downloaded”."
+          }
+        }
+      ],
+      "shows": [
+        {
+          "kind": "list",
+          "caption": {
+            "de": "Verlauf",
+            "en": "History"
+          }
+        },
+        {
+          "kind": "tile",
+          "caption": {
+            "de": "Speicher",
+            "en": "Storage"
+          },
+          "value": "1,4 GB"
+        }
+      ],
+      "needs": {
+        "de": "Für NAS-Ablage das NAS-Plugin, für Personen den Messenger",
+        "en": "The NAS plugin for folders, the Messenger for people"
+      },
+      "languages": [
+        "de",
+        "en"
+      ]
+    },
     "gatecontrol-messenger": {
       "category": "family",
       "icon": "chat",

@@ -29,7 +29,7 @@
 //                   Not a member (or a wall tablet) → [].
 //   family_roles    {} → { ok: true, parents: [userId], children: [userId] }   (1.9.0) who the parents and
 //                   the children of the family are (never a wall tablet) — the Messenger's door requests
-//                   („Eltern fragen“).
+//                   („Eltern fragen“); 1.13.2: also for GateDrop (callers gatecontrol-messenger, gatecontrol-gatedrop).
 //   rule_event      { type: 'school_change', events: [{ userId, kind, date, start, subject, text }] (≤ 20) }
 //                   → { ok: true, fired }   (1.12.0, caller gatecontrol-schule only) — a child's timetable
 //                   changed: the matching rules with the trigger 'school_change' run (server/school.js).
@@ -283,8 +283,11 @@ const HANDLERS = {
   rule_event: (gc, cfg, payload) => ruleEvent(gc, cfg, payload),
   school_day_end: (gc, cfg, payload) => schoolend.handle(gc, cfg, payload, Date.now()),
 };
-/** Who may call a service: the Messenger, except rule_event and school_day_end (the Schule plugin). */
-const CALLERS = { rule_event: school.SCHULE, school_day_end: school.SCHULE };
+/**
+ * Who may call a service: the Messenger, except rule_event and school_day_end (the Schule plugin);
+ * family_roles also GateDrop (1.13.2: links and NAS folders for parents).
+ */
+const CALLERS = { rule_event: [school.SCHULE], school_day_end: [school.SCHULE], family_roles: [CALLER, 'gatecontrol-gatedrop'] };
 const NAMES = Object.freeze(Object.keys(HANDLERS));
 
 /** service({ name, caller, user, payload }) → the answer (see the head of this file). */
@@ -292,7 +295,7 @@ async function handle(gc, cfg, call) {
   const c = call && typeof call === 'object' ? call : {};
   const fn = Object.prototype.hasOwnProperty.call(HANDLERS, c.name) ? HANDLERS[c.name] : null;
   if (!fn) return refuse('not_found');
-  if (c.caller !== (CALLERS[c.name] || CALLER)) return c.name === 'places' ? [] : refuse('forbidden');
+  if (!(CALLERS[c.name] || [CALLER]).includes(c.caller)) return c.name === 'places' ? [] : refuse('forbidden');
   const payload = c.payload && typeof c.payload === 'object' && !Array.isArray(c.payload) ? c.payload : {};
   try {
     return await fn(gc, cfg, payload, c.user || null);

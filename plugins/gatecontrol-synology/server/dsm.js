@@ -23,6 +23,12 @@
 // (like "Remember this device" in the DSM sign-in). Logout: method=logout.
 //
 // Passwords travel only in a POST body (never in a URL, never logged).
+//
+// 1.2.0 — File Station upload (GateDrop's service save_file):
+//   POST /webapi/<path>?api=SYNO.FileStation.Upload&version=2&method=upload&_sid=<sid>   (X-SYNO-TOKEN header)
+//        multipart/form-data: path (the folder), create_parents=true, then the file in the field "file" — sent by
+//        GateControl from the plugin's media (gc.net.uploadTarget, GateControl ≥ 1.193.0), never through the plugin.
+//        Without `overwrite` DSM refuses an existing name (414 / 1805): the caller tries the next free name.
 
 const DEVICE_NAME = 'GateControl';
 const SESSION_NAME = 'webui';
@@ -38,6 +44,7 @@ const APIS = [
   'SYNO.Core.Upgrade.Server',
   'SYNO.Backup.Task',
   'SYNO.Core.ExternalDevice.UPS',
+  'SYNO.FileStation.Upload', // 1.2.0: GateDrop's NAS folders (save_file)
 ];
 
 // Common error codes of every DSM API (DSM Web API guide, "Common error code")
@@ -141,6 +148,11 @@ async function request(send, path, { query, form, headers, timeoutMs, auth, api 
   try {
     res = await send(url, { method: form ? 'POST' : 'GET', form: form || undefined, headers: { accept: 'application/json', ...(headers || {}) }, timeoutMs: timeoutMs || TIMEOUT_MS, redirect: 'manual' });
   } catch (e) { throw netFail(e); }
+  return answer(res, { auth, api });
+}
+
+/** A DSM answer (status 200, JSON { success, data | error }) → data of a successful one (throws DsmError). */
+function answer(res, { auth = false, api = null } = {}) {
   const status = Number(res && res.status);
   const body = typeof (res && res.body) === 'string' ? res.body : '';
   if (status >= 300 && status < 400) {
@@ -166,10 +178,11 @@ function newSession() {
  * @param {Function} o.send                        (path, opts) → response (gc.net.fetchTarget bound to the NAS)
  * @param {() => Promise<{account, password, device}>} o.credentials  read when a login is needed
  * @param {object} [o.session]                     newSession() kept by the caller between polls
+ * @param {Function} [o.upload]                    (path, opts) → response (gc.net.uploadTarget bound to the NAS, 1.2.0)
  * @param {string} [o.deviceName]
  * @param {() => number} [o.now]
  */
-function createClient({ send, credentials, session, deviceName = DEVICE_NAME, now = () => Date.now() }) {
+function createClient({ send, upload: sendUpload, credentials, session, deviceName = DEVICE_NAME, now = () => Date.now() }) {
   const s = session || newSession();
 
   async function apis() {
@@ -267,10 +280,49 @@ function createClient({ send, credentials, session, deviceName = DEVICE_NAME, no
     await endSession(sid);
   }
 
-  return { apis, login, call, logout, session: s, has: (api) => !!(s.apis && s.apis[api]) };
+  /**
+   * 1.2.0: upload one media file into `dir` (SYNO.FileStation.Upload, create_parents) under `name` → { dir, name }.
+   * A stale session logs in again once, like call(). Errors: DsmError (EXISTS for a name already there).
+   */
+  async function uploadFile({ dir, name, mediaId, timeoutMs }) {
+    if (typeof sendUpload !== 'function') throw fail('UNSUPPORTED');
+    const info = (await apis())['SYNO.FileStation.Upload'];
+    if (!info) throw fail('API_MISSING', { api: 'SYNO.FileStation.Upload' });
+    const v = pickVersion(info, 2);
+    let fresh = false;
+    for (;;) {
+      if (!s.sid) { await login(); fresh = true; }
+      let res;
+      try {
+        res = await sendUpload(apiPath(info), {
+          query: { api: 'SYNO.FileStation.Upload', version: String(v), method: 'upload', _sid: s.sid },
+          headers: s.token ? { 'X-SYNO-TOKEN': s.token } : {},
+          form: { fields: { path: dir, create_parents: 'true' }, file: { field: 'file', mediaId, name } },
+          timeoutMs,
+        });
+      } catch (e) { throw netFail(e); }
+      try {
+        answer(res, { api: 'SYNO.FileStation.Upload' });
+        s.used = true;
+        return { dir, name };
+      } catch (e) {
+        if (e.dsm === 414 || e.dsm === 1805) throw fail('EXISTS', { dsm: e.dsm });
+        if (!fresh && (RELOGIN.has(e.dsm) || (e.dsm === 105 && s.used))) {
+          s.sid = null;
+          s.token = null;
+          fresh = true;
+          await login();
+          continue;
+        }
+        throw e;
+      }
+    }
+  }
+
+  return { apis, login, call, logout, upload: uploadFile, session: s, has: (api) => !!(s.apis && s.apis[api]) };
 }
 
 module.exports = {
-  createClient, newSession, request, pickVersion, encodeParams, netFail, dsmFail, DsmError, fail,
+  createClient, newSession, request, answer, pickVersion, encodeParams, netFail, dsmFail, DsmError, fail,
   APIS, COMMON, AUTH, RELOGIN, AUTH_CODES, OTP_CODES, NET_CODES, DEVICE_NAME, SESSION_NAME,
 };

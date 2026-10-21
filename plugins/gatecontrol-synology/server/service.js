@@ -17,6 +17,8 @@
 // Control:
 //   SYNO.Core.System v1 reboot / shutdown
 //   SYNO.Backup.Task v1 backup task_id=<id>  "back up now"
+// GateDrop (1.2.0):
+//   SYNO.FileStation.Upload v2 upload        a handed-over media file into a drop folder (gc.net.uploadTarget)
 
 const dsm = require('./dsm');
 const parse = require('./parse');
@@ -42,12 +44,14 @@ function withLock(id, fn) {
 }
 
 const sendTo = (gc, index) => (path, opts) => gc.net.fetchTarget('nas', path, { ...opts, index });
+// GateControl ≥ 1.193.0: a multipart upload of a media file to the NAS (null on older hosts)
+const uploadTo = (gc, index) => (gc.net && typeof gc.net.uploadTarget === 'function' ? (path, opts) => gc.net.uploadTarget('nas', path, { ...opts, index }) : null);
 
 function clientFor(gc, nas) {
   const key = String(nas.target_index);
   let e = sessions.get(nas.id);
   if (!e || e.key !== key) { e = { key, session: dsm.newSession() }; sessions.set(nas.id, e); }
-  return dsm.createClient({ send: sendTo(gc, nas.target_index), credentials: () => store.credentials(gc, nas.id), session: e.session });
+  return dsm.createClient({ send: sendTo(gc, nas.target_index), upload: uploadTo(gc, nas.target_index), credentials: () => store.credentials(gc, nas.id), session: e.session });
 }
 
 /** Forget the session of a NAS (credentials or target changed, deleted, poll failed). */
@@ -201,4 +205,31 @@ function startBackup(gc, nas, taskId) {
   });
 }
 
-module.exports = { poll, test, power, startBackup, collect, backoffMs, dropSession, logoutAll, sessions, UPDATE_EVERY_MS, AUTH_PAUSE_MS, POWER_SETTLE_MS };
+const UPLOAD_TIMEOUT_MS = 30 * 60000;
+const NAME_TRIES = 5;
+
+/** "bericht.pdf", 2 → "bericht (2).pdf" */
+function nthName(name, n) {
+  if (n <= 1) return name;
+  const dot = name.lastIndexOf('.');
+  return dot > 0 ? `${name.slice(0, dot)} (${n})${name.slice(dot)}` : `${name} (${n})`;
+}
+
+/**
+ * 1.2.0 (GateDrop): upload one of the plugin's media files into `dir` on the NAS; a name that exists already
+ * becomes "name (2).ext", … → { dir, name } (the name it got). Throws DsmError.
+ */
+function saveFile(gc, nas, { dir, name, mediaId }) {
+  return withLock(nas.id, async () => {
+    const c = clientFor(gc, nas);
+    for (let n = 1; ; n++) {
+      try {
+        return await c.upload({ dir, name: nthName(name, n), mediaId, timeoutMs: UPLOAD_TIMEOUT_MS });
+      } catch (e) {
+        if (e.code !== 'EXISTS' || n >= NAME_TRIES) throw e;
+      }
+    }
+  });
+}
+
+module.exports = { poll, test, power, startBackup, saveFile, nthName, collect, backoffMs, dropSession, logoutAll, sessions, UPDATE_EVERY_MS, AUTH_PAUSE_MS, POWER_SETTLE_MS };

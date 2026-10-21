@@ -113,3 +113,5 @@ body{padding:2px 2px 24px}
 .sy-help{max-width:720px;font-size:13px}
 .sy-help p{margin:0 0 8px}
 @media (max-width:520px){.sy-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.sy-kv{grid-template-columns:1fr}}
+.sy-drop-row{display:flex;gap:10px;align-items:center;border-top:1px solid var(--line);padding:8px 0}
+.sy-drop-tx{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}

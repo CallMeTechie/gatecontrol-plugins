@@ -1,0 +1,99 @@
+{
+  "id": "gatecontrol-gatedrop",
+  "name": {
+    "de": "GateDrop",
+    "en": "GateDrop"
+  },
+  "version": "1.0.0",
+  "publisher": "CallMeTechie",
+  "description": {
+    "de": "Teilen wie Quick Share – über den eigenen GateControl-Server: Dateien (bis 2 GB je Datei), Text und Links an Personen (als Nachricht im Messenger), an die eigenen Geräte (Android, Windows – im gemeinsamen WLAN direkt, sonst über den Server), in NAS-Ordner (Synology-Plugin) oder als zeitlich begrenzter Link für Externe mit PIN. Empfangenes bleibt 7 Tage auf dem Server.",
+    "en": "Share like Quick Share – through your own GateControl server: files (up to 2 GB each), text and links to people (as a Messenger message), to your own devices (Android, Windows – directly on the same Wi-Fi, otherwise through the server), into NAS folders (Synology plugin) or as a time-limited link for outsiders with a PIN. Received items stay on the server for 7 days."
+  },
+  "gatecontrol": ">=1.193.0",
+  "entry": "server/index.js",
+  "permissions": {
+    "storage": true,
+    "users": true,
+    "app": true,
+    "portal": true,
+    "notify": {
+      "perHour": 120
+    },
+    "devices": true,
+    "publicLinks": true,
+    "services": [
+      "gatecontrol-messenger:send_file",
+      "gatecontrol-synology:save_file",
+      "gatecontrol-synology:list_drop_folders",
+      "gatecontrol-familie:family_roles"
+    ],
+    "background": {
+      "intervalSeconds": 60
+    }
+  },
+  "media": {
+    "maxBytes": 2147483648,
+    "types": [
+      "image/*",
+      "video/*",
+      "audio/*",
+      "application/*",
+      "text/plain",
+      "text/csv",
+      "text/calendar",
+      "text/vcard",
+      "text/markdown"
+    ],
+    "quotaDefault": "10GB",
+    "uploads": true,
+    "resumable": true
+  },
+  "ui": {
+    "nav": {
+      "label": {
+        "de": "GateDrop",
+        "en": "GateDrop"
+      },
+      "icon": "M12 15V3M7 8l5-5 5 5M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"
+    },
+    "pages": [
+      {
+        "id": "overview",
+        "title": {
+          "de": "Übersicht",
+          "en": "Overview"
+        }
+      }
+    ],
+    "portal": {
+      "label": {
+        "de": "GateDrop",
+        "en": "GateDrop"
+      },
+      "icon": "M12 15V3M7 8l5-5 5 5M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"
+    }
+  },
+  "license": {
+    "required": true
+  },
+  "migrations": "migrations",
+  "notifyTopics": [
+    {
+      "id": "received",
+      "label": {
+        "de": "Empfangen",
+        "en": "Received"
+      },
+      "default": true
+    },
+    {
+      "id": "link",
+      "label": {
+        "de": "Link geladen",
+        "en": "Link downloaded"
+      },
+      "default": true
+    }
+  ]
+}

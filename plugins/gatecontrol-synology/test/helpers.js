@@ -33,6 +33,8 @@ function fakeDsm(fx, opts = {}) {
     fixture: f, account: opts.account || ACCOUNT, password: opts.password || PASSWORD, otp: opts.otp || null,
     denied: new Set(opts.denied || []), down: !!opts.down, error: null, loginError: null,
     sessions: new Map(), devices: new Set(), seq: 0, logins: [], logouts: 0, calls: [], requests: [], power: [], backups: [],
+    // 1.2.0: File Station uploads (GateDrop): the files on the NAS by path, a forced DSM error code
+    files: new Map(), uploads: [], uploadError: null,
   };
   const parseParam = (info, v) => {
     if (v == null) return v;
@@ -88,7 +90,23 @@ function fakeDsm(fx, opts = {}) {
     if (!(key in f.responses)) return json({ success: false, error: { code: 103 } });
     return json({ success: true, data: f.responses[key] });
   }
-  return { fetch, state, fixture: f };
+  /** SYNO.FileStation.Upload through gc.net.uploadTarget (multipart: fields + file, _sid in the query). */
+  async function upload(p, o = {}) {
+    if (state.down) throw netError('connect ECONNREFUSED 10.0.0.5:5000');
+    const q = o.query || {};
+    const info = f.api_info['SYNO.FileStation.Upload'];
+    if (!info || p !== '/webapi/' + info.path || q.api !== 'SYNO.FileStation.Upload' || q.method !== 'upload') return json({ success: false, error: { code: 102 } });
+    const token = state.sessions.get(q._sid);
+    if (!token || (o.headers || {})['X-SYNO-TOKEN'] !== token) return json({ success: false, error: { code: 119 } });
+    const fields = o.fields || {};
+    const full = `${fields.path}/${o.file.name}`;
+    state.uploads.push({ path: fields.path, name: o.file.name, bytes: o.file.bytes, mime: o.file.mime, createParents: fields.create_parents, version: q.version });
+    if (state.uploadError) return json({ success: false, error: { code: state.uploadError } });
+    if (state.files.has(full)) return json({ success: false, error: { code: 1805 } });
+    state.files.set(full, Buffer.from(o.file.data));
+    return json({ success: true, data: {} });
+  }
+  return { fetch, upload, state, fixture: f };
 }
 
 /**
@@ -101,7 +119,9 @@ async function withHost(opts, fn) {
     users: USERS,
     settings: opts.settings || {},
     notifyFail: opts.notifyFail,
-    targets: { nas: list.map((d, i) => ({ label: `nas-${i}.home.example`, fetch: d ? d.fetch : undefined })) },
+    // 1.2.0 needs GateControl 1.193.0 (media up to 2 GB for GateDrop's hand-over, gc.net.uploadTarget)
+    gatecontrol: opts.gatecontrol || '1.193.0',
+    targets: { nas: list.map((d, i) => ({ label: `nas-${i}.home.example`, fetch: d ? d.fetch : undefined, upload: d ? d.upload : undefined })) },
   });
   await host.start();
   try { return await fn(host); } finally { await host.close(); }

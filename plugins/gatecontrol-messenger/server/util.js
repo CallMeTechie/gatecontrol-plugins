@@ -21,6 +21,8 @@ const STATUS = {
   deleted: 409,
   media_invalid: 409,
   media_in_use: 409,
+  // 1.8.0 send_file: a handed-over file over 2 GB
+  file_too_large: 409,
   too_many: 409,
   // 1.4.0
   closed: 409,

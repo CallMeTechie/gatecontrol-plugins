@@ -3,6 +3,11 @@
 Die Familie in der GateControl-App (eigener Tab), im Portal (eigener Tab „Familie“) und auf
 drei Admin-Seiten. Alles bleibt auf dem eigenen Server.
 
+## 1.13.2
+- **Rollen auch für GateDrop:** Der Dienst `family_roles` antwortet jetzt auch dem Plugin **GateDrop**
+  (`gatecontrol-gatedrop`) – dort dürfen Admins und die Eltern Links für Externe erstellen und Dateien im NAS
+  ablegen. Andere Aufrufer bekommen weiterhin `forbidden`.
+
 ## 1.13.1
 - **Wand-Tablet „Schule heute“: jedes Kind mit Bild und Farbe** – vor dem Namen das Profilbild (sonst die
   Initialen auf der Lieblingsfarbe), die Zeile in der Farbe des Kindes umrandet. So sind Geschwister auf einen

@@ -3,6 +3,20 @@
 Chats zwischen den GateControl-Konten – in der GateControl-App (eigener Tab „Chats“), im
 Windows-Client und im Portal (eigener Tab „Chats“). Alles bleibt auf dem eigenen Server.
 
+## 1.8.0
+Braucht **GateControl ≥ 1.193.0** (`media.handOverMaxBytes`). Neu beim Aktualisieren: der Dienst „Datei als Nachricht
+senden“ für andere Plugins.
+- **Dienst `send_file` für GateDrop:** `{ conversation: 'direct:<id>' | 'family' | 'group:<id>', user (wer sendet),
+  mediaIds (≤ 20, von GateDrop übergeben), names?, text? }` → die Dateien erscheinen als **Nachrichten der sendenden
+  Person** (nicht „GateControl“) – Bild (JPEG, PNG, WebP, GIF), Sprachnachricht (Audio) oder Datei (alles andere; Videos
+  wie bisher als Datei mit Vorschau in den Apps), mit dem Dateinamen; der Text ist die Bildunterschrift der ersten Datei
+  (bis 4000 Zeichen) oder kommt vorher als Textnachricht(en). Push wie bei jeder Nachricht dieser Person. Die Person muss
+  Mitglied sein (Einzelchat wird gefunden oder angelegt; Blockierung → `forbidden`; Familie-Gruppe; Gruppe nicht nur
+  lesen → sonst `readonly`). → `{ ok, conversationId, messageIds }`; Fehler `invalid`, `not_found`, `forbidden`,
+  `readonly`, `media_invalid`, `media_in_use`, `file_too_large`.
+- **Große Dateien nur über GateDrop:** übergebene Dateien dürfen bis **2 GB** groß sein (`media.handOverMaxBytes`);
+  eigene Uploads der Apps und des Portals bleiben bei 25 MB.
+
 ## 1.7.0
 - **Eigener Chat sofort da:** Wer unter „Wo Mitteilungen erscheinen“ für eine Art von Mitteilung „Eigener Chat
   „Schule““ (oder eine andere Quelle) wählt, bekommt den Chat jetzt sofort – gibt es ihn schon, wird er verwendet,

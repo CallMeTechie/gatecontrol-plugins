@@ -78,8 +78,12 @@ test('rendered page: inline only (no external URL, no src/href to elsewhere), te
 
 test('manifest: admin only, topics and settings match the code; portal only for the apps\' quick actions and Start tiles', () => {
   assert.equal(manifest.id, 'gatecontrol-synology');
-  assert.equal(manifest.version, '1.1.0');
-  assert.equal(manifest.gatecontrol, '>=1.154.0');
+  assert.equal(manifest.version, '1.2.0');
+  assert.equal(manifest.gatecontrol, '>=1.193.0');
+  // 1.2.0: GateDrop — files handed over (media, no uploads of its own), two services for it only
+  assert.deepEqual(Object.keys(manifest.services.provides).sort(), ['list_drop_folders', 'save_file']);
+  assert.equal(manifest.media.uploads, false);
+  assert.equal(manifest.media.maxBytes, 2147483648);
   assert.deepEqual(manifest.name, { de: 'NAS (Synology)', en: 'NAS (Synology)' });
   assert.equal(manifest.license.required, true);
   // permissions.portal: the hooks quickActions / portalTiles; one section (no own tab) that only carries the tiles

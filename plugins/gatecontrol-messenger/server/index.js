@@ -23,6 +23,8 @@
 //              fields listPinned and notice (notices.js, conversations.js)
 //   1.7.0      hook ensureNoticeChat (GateControl ≥ 1.192.0): choosing "own chat" creates the source's notice channel at
 //              once (or finds the existing one); portal/notify-routes PUT answers `chat` (notices.js)
+//   1.8.0      service send_file for GateDrop (GateControl ≥ 1.193.0 hand-over, media.handOverMaxBytes 2 GB): handed-over
+//              files as messages of the sending person (services.js)
 //
 // Needs GateControl ≥ 1.177.0 (media, realtime events, chat notifications, services); Familie integration
 // needs gc.services.available (1.178.0); home actions use gc.actions (1.166.0+, interactive runs 1.180.0).
