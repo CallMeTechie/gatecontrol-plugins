@@ -176,14 +176,15 @@ async function listCloudDevices(gc, diag = null) {
         list = found;
       }
     } catch (e) {
-      if (diag) diag.push({ region: other, lists: there, error: e.code || 'ERROR' });
+      if (diag) diag.push({ region: other, lists: there, error: e.code || 'ERROR', detail: String(e.message || '').slice(0, 120) });
     }
   }
   if (!list.length) {
     // 2.2.0: Dreo's official Open API — some accounts list their devices only there
     try {
-      const found = await withOpen(gc, (api, region, tk) => api.devices(region, tk));
-      if (diag) diag.push({ api: 'open', region: open ? open.region : 'NA', lists: [{ path: 'open', count: found.length }] });
+      const lists = [];
+      const found = await withOpen(gc, (api, region, tk) => { lists.length = 0; return api.devices(region, tk, lists); });
+      if (diag) diag.push({ api: 'open', region: open ? open.region : 'NA', lists });
       if (found.length) {
         const via = { ...(await viaMap(gc)) };
         for (const x of found) via[x.sn] = 'open';
@@ -192,7 +193,7 @@ async function listCloudDevices(gc, diag = null) {
         list = found;
       }
     } catch (e) {
-      if (diag) diag.push({ api: 'open', region: open ? open.region : 'NA', lists: [], error: e.code || 'ERROR' });
+      if (diag) diag.push({ api: 'open', region: open ? open.region : 'NA', lists: [], error: e.code || 'ERROR', detail: String(e.message || '').slice(0, 120) });
     }
   }
   return list.map((d) => ({ ...d, kind: model.kindOf(d.model) }));

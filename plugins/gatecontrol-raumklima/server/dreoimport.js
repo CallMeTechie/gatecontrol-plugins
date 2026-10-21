@@ -19,6 +19,7 @@ const DISMISSED = 'dreo_dismissed';
 const FOUND = 'dreo_found';
 const DISMISSED_MAX = 200;
 const FOUND_MAX = 50;
+const REV = 3;   // the look of an older version (another REV) is redone right after an update
 
 const running = new WeakMap();   // gc → the run in progress (settings save and background never overlap)
 
@@ -53,7 +54,8 @@ function checkedOf(diag) {
     api: r.api === 'open' ? 'open' : 'app',
     region: r.region === 'NA' ? 'NA' : 'EU',
     error: r.error || null,
-    lists: (r.lists || []).slice(0, 4).map((l) => ({ list: short(l.path), count: l.count == null ? null : l.count, error: l.error || null })),
+    detail: r.detail || null,
+    lists: (r.lists || []).slice(0, 4).map((l) => ({ list: short(l.path), count: l.count == null ? null : l.count, error: l.error || null, detail: l.detail || null, shape: l.shape || null })),
   }));
 }
 
@@ -78,14 +80,15 @@ async function importNow(gc, now) {
   try {
     list = await dreo.listCloudDevices(gc, diag);
   } catch (e) {
-    await gc.storage.set(FOUND, { at: now, devices: null, error: e.code || 'ERROR', checked: checkedOf(diag) });
+    await gc.storage.set(FOUND, { rev: REV, at: now, devices: null, error: e.code || 'ERROR', checked: checkedOf(diag) });
     throw e;
   }
   await gc.storage.set(FOUND, {
-    at: now, error: null, checked: checkedOf(diag),
+    rev: REV, at: now, error: null, checked: checkedOf(diag),
     devices: list.slice(0, FOUND_MAX).map((x) => ({ sn: x.sn, name: x.name, model: x.model, kind: x.kind })),
   });
-  if (!list.length) gc.log.info('dreo account without devices', JSON.stringify(checkedOf(diag)));
+  // 2.2.1: one log line per source asked (a line holds 1000 characters): what came back, its shape, errors
+  if (!list.length) for (const r of checkedOf(diag)) gc.log.info('dreo account without devices', JSON.stringify(r));
   const skip = new Set(await dismissed(gc));
   const have = new Set((await store.listDevices(gc)).map((d) => d.device_sn));
   const added = [];
@@ -112,9 +115,8 @@ async function maybe(gc, now = Date.now()) {
   const cfg = await store.loadDreo(gc);
   if (!cfg.email || !cfg.passwordMd5 || !dreo.supported(gc)) return;
   const last = await found(gc);
-  // a look of an older version is redone at once (2.1.0: no `checked`; 2.1.1: no `api` — 2.2.0 also asks
-  // the Open API)
-  if (last && Array.isArray(last.checked) && last.checked.some((r) => r && r.api) && now - last.at < EVERY_MS) return;
+  // a look of an older version is redone at once (REV: 2.2.1 searches every key and logs shapes)
+  if (last && last.rev === REV && now - last.at < EVERY_MS) return;
   try {
     await run(gc, now);
   } catch (e) {
