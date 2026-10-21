@@ -81,7 +81,17 @@ async function dreoDevicesLine(gc, lang, t, errorText) {
   const f = await dreoImport.found(gc);
   if (!f) return null;
   if (!Array.isArray(f.devices)) return { group: 'dreo', tone: 'warn', text: t(lang, 'settings.dreo_list_failed', { error: errorText({ code: f.error || 'ERROR' }, lang) }) };
-  if (!f.devices.length) return { group: 'dreo', tone: 'warn', text: t(lang, 'settings.dreo_no_devices') };
+  if (!f.devices.length) {
+    // 2.1.1: say what was asked — the region(s) and both lists of the Dreo app
+    const asked = (f.checked || []).map((r) => {
+      const where = r.region === 'NA' ? 'US' : 'EU';
+      if (r.error && !(r.lists || []).length) return `${where}: ${t(lang, 'settings.dreo_region_failed')}`;
+      return `${where}: ` + (r.lists || []).map((l) => `${t(lang, 'settings.dreo_list_' + l.list)} ${l.count == null ? '–' : l.count}`).join(', ');
+    });
+    const lines = [{ group: 'dreo', tone: 'warn', text: t(lang, 'settings.dreo_no_devices') + (asked.length ? ' ' + t(lang, 'settings.dreo_checked', { list: asked.join(' · ') }) : '') }];
+    lines.push({ group: 'dreo', tone: 'info', text: t(lang, 'settings.dreo_no_devices_hint') });
+    return lines;
+  }
   const name = (x) => (x.name ? `${x.name} (${x.model || '?'})` : (x.model || x.sn));
   const ours = f.devices.filter((x) => x.kind).map(name);
   const other = f.devices.filter((x) => !x.kind).map((x) => x.model || x.sn);
@@ -119,7 +129,7 @@ async function settingsStatus(gc, lang, t, errorText) {
     out.push({ group: 'dreo', tone: 'ok', text: t(lang, 'settings.dreo_ok', { email: d.email, region })
       + (st.connected ? ' · ' + t(lang, 'dreo.live') : '') });
     const line = await dreoDevicesLine(gc, lang, t, errorText);
-    if (line) out.push(line);
+    if (line) out.push(...[].concat(line));
   } else out.push({ group: 'dreo', tone: 'info', text: t(lang, 'settings.not_checked') });
   return out;
 }

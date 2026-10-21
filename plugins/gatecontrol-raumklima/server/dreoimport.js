@@ -8,7 +8,8 @@
 // accounts that were connected before). A device removed here stays removed
 // (storage 'dreo_dismissed'; adding it again by hand lifts that). What the
 // account holds is kept for the settings' status line (storage 'dreo_found':
-// { at, devices: [{ sn, name, model, kind }] | null, error }).
+// { at, devices: [{ sn, name, model, kind }] | null, error, checked } — checked since 2.1.1: the regions
+// and lists asked).
 
 const store = require('./store');
 const dreo = require('./dreoservice');
@@ -45,6 +46,16 @@ async function found(gc) {
   return v && typeof v === 'object' && typeof v.at === 'number' ? v : null;
 }
 
+/** 2.1.1: which regions and lists were asked (for the status line): [{ region, lists: [{ list, count, error }], error }]. */
+function checkedOf(diag) {
+  const short = (p) => (/family\/room/.test(p) ? 'rooms' : 'devices');
+  return diag.slice(0, 4).map((r) => ({
+    region: r.region === 'NA' ? 'NA' : 'EU',
+    error: r.error || null,
+    lists: (r.lists || []).slice(0, 4).map((l) => ({ list: short(l.path), count: l.count == null ? null : l.count, error: l.error || null })),
+  }));
+}
+
 /** The plugin's record of a device of the account (also used when adding by hand). */
 function record(x, name) {
   return {
@@ -62,16 +73,18 @@ async function importNow(gc, now) {
   const cfg = await store.loadDreo(gc);
   if (!cfg.email || !cfg.passwordMd5 || !dreo.supported(gc)) return { added: [] };
   let list;
+  const diag = [];
   try {
-    list = await dreo.listCloudDevices(gc);
+    list = await dreo.listCloudDevices(gc, diag);
   } catch (e) {
-    await gc.storage.set(FOUND, { at: now, devices: null, error: e.code || 'ERROR' });
+    await gc.storage.set(FOUND, { at: now, devices: null, error: e.code || 'ERROR', checked: checkedOf(diag) });
     throw e;
   }
   await gc.storage.set(FOUND, {
-    at: now, error: null,
+    at: now, error: null, checked: checkedOf(diag),
     devices: list.slice(0, FOUND_MAX).map((x) => ({ sn: x.sn, name: x.name, model: x.model, kind: x.kind })),
   });
+  if (!list.length) gc.log.info('dreo account without devices', JSON.stringify(checkedOf(diag)));
   const skip = new Set(await dismissed(gc));
   const have = new Set((await store.listDevices(gc)).map((d) => d.device_sn));
   const added = [];
@@ -98,7 +111,8 @@ async function maybe(gc, now = Date.now()) {
   const cfg = await store.loadDreo(gc);
   if (!cfg.email || !cfg.passwordMd5 || !dreo.supported(gc)) return;
   const last = await found(gc);
-  if (last && now - last.at < EVERY_MS) return;
+  // a look of 2.1.0 (no `checked`) is redone at once: 2.1.1 also asks the rooms and the other region
+  if (last && Array.isArray(last.checked) && now - last.at < EVERY_MS) return;
   try {
     await run(gc, now);
   } catch (e) {

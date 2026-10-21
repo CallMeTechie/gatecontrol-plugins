@@ -122,9 +122,35 @@ async function disconnect(gc) {
   reset();
 }
 
-/** The account's devices → [{ sn, name, model, productName, kind }] (kind null = not a heater or air conditioner). */
-async function listCloudDevices(gc) {
-  const list = await withApi(gc, (api, region, tk) => api.devices(region, tk));
+/**
+ * The account's devices → [{ sn, name, model, productName, kind }] (kind null = not a heater or air
+ * conditioner). Nothing in the account's region → a look into the other region (2.1.1: the login does
+ * not always say where an account lives); devices there move the account to that region. `diag`
+ * (optional) gets { region, lists: [{ path, count, error? }], error? } per region asked.
+ */
+async function listCloudDevices(gc, diag = null) {
+  let seen = [];
+  let list = await withApi(gc, (api, region, tk) => { seen = []; return api.devices(region, tk, seen); });
+  const cfg = await store.loadDreo(gc);
+  if (diag) diag.push({ region: cfg.region, lists: seen });
+  if (!list.length) {
+    const other = cfg.region === 'NA' ? 'EU' : 'NA';
+    const there = [];
+    try {
+      const api = module.exports.newApi(gc);
+      const r = await api.login(cfg.email, cfg.passwordMd5, other, { follow: false });
+      const found = await api.devices(other, r.token, there);
+      if (diag) diag.push({ region: other, lists: there });
+      if (found.length) {
+        await store.saveDreo(gc, { ...cfg, region: other, token: r.token });
+        if (link) link.close();
+        gc.log.info('dreo: the account\'s devices are in region', other);
+        list = found;
+      }
+    } catch (e) {
+      if (diag) diag.push({ region: other, lists: there, error: e.code || 'ERROR' });
+    }
+  }
   return list.map((d) => ({ ...d, kind: model.kindOf(d.model) }));
 }
 
