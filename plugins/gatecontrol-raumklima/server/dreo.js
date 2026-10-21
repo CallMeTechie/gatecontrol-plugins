@@ -49,6 +49,27 @@ function flatten(mixed) {
   return out;
 }
 
+/**
+ * The devices in a list answer: { list: [device | room-with-devices …] } or a plain array; a room or
+ * home nests its devices (devices / deviceList / list / children / rooms), a few levels deep.
+ */
+function collectDevices(data) {
+  const out = [];
+  const walk = (v, depth) => {
+    if (depth > 8 || out.length >= 200 || v == null) return;
+    if (Array.isArray(v)) { for (const x of v) walk(x, depth + 1); return; }
+    if (typeof v !== 'object') return;
+    const sn = v.sn != null ? v.sn : v.deviceSn;
+    if (sn != null && SN_RE.test(String(sn)) && (v.model || v.deviceName || v.productName)) {
+      out.push({ sn: String(sn), name: text(v.deviceName || v.name), model: text(v.model, 40), productName: text(v.productName) });
+      return;
+    }
+    for (const k of ['list', 'devices', 'deviceList', 'children', 'rooms', 'roomList']) if (k in v) walk(v[k], depth + 1);
+  };
+  walk(data, 0);
+  return out;
+}
+
 // ─── REST ───────────────────────────────────────
 
 class DreoApi {
@@ -82,15 +103,15 @@ class DreoApi {
     return j.data;
   }
 
-  /** → { token, region }; follows the region the login answers with (one retry). */
-  async login(email, passwordMd5, region = 'EU') {
+  /** → { token, region }; follows the region the login answers with (one retry) — unless follow is false. */
+  async login(email, passwordMd5, region = 'EU', { follow = true } = {}) {
     const body = {
       acceptLanguage: 'en', client_id: CLIENT_ID, client_secret: CLIENT_SECRET, email,
       encrypt: 'ciphertext', grant_type: 'email-password', himei: HIMEI, password: passwordMd5, scope: 'all',
     };
     let reg = REGIONS[region] ? region : 'EU';
     let d = await this.call(reg, null, 'POST', '/api/oauth/login', body);
-    if (d && REGIONS[d.region] && d.region !== reg) {
+    if (follow && d && REGIONS[d.region] && d.region !== reg) {
       reg = d.region;
       d = await this.call(reg, null, 'POST', '/api/oauth/login', body);
     }
@@ -99,13 +120,36 @@ class DreoApi {
     return { token, region: reg };
   }
 
-  /** → [{ sn, name, model, productName }] */
-  async devices(region, token) {
-    const d = await this.call(region, token, 'GET', '/api/v2/user-device/device/list', { acceptLanguage: 'en', method: 'devices', pageNo: '1', pageSize: '100' });
-    const list = d && Array.isArray(d.list) ? d.list : [];
-    return list.filter((x) => x && SN_RE.test(String(x.sn || ''))).map((x) => ({
-      sn: String(x.sn), name: text(x.deviceName), model: text(x.model, 40), productName: text(x.productName),
-    }));
+  /**
+   * → [{ sn, name, model, productName }]. Two lists of the Dreo app: the device list (v2, as hass-dreo
+   * reads it) and — when that one is empty — the home's rooms (/api/app/index/family/room/devices, as
+   * the newer app and homebridge-dreo read it; accounts with homes and rooms can have an empty v2 list).
+   * `seen` (optional) collects { path, count } of every list asked, for the diagnosis.
+   */
+  async devices(region, token, seen = null) {
+    const lists = [
+      ['/api/v2/user-device/device/list', { acceptLanguage: 'en', method: 'devices', pageNo: '1', pageSize: '100' }],
+      ['/api/app/index/family/room/devices', { acceptLanguage: 'en' }],
+    ];
+    const out = new Map();
+    let failure = null;
+    for (const [path, params] of lists) {
+      let d;
+      try {
+        d = await this.call(region, token, 'GET', path, params);
+      } catch (e) {
+        if (e.code === 'DREO_AUTH' || e.code === 'DREO_RATE_LIMITED') throw e;
+        failure = failure || e;
+        if (seen) seen.push({ path, count: null, error: e.code || 'ERROR' });
+        continue;
+      }
+      const found = collectDevices(d);
+      if (seen) seen.push({ path, count: found.length });
+      for (const x of found) if (!out.has(x.sn)) out.set(x.sn, x);
+      if (out.size) break;
+    }
+    if (!out.size && failure) throw failure;
+    return [...out.values()];
   }
 
   /** → the device's state as { key: value } */
@@ -231,4 +275,5 @@ class DreoLink extends EventEmitter {
   }
 }
 
-module.exports = { DreoApi, DreoLink, md5, flatten, apiBase, wsBase, SN_RE, REGIONS };
+module.exports = {
+  collectDevices, DreoApi, DreoLink, md5, flatten, apiBase, wsBase, SN_RE, REGIONS };

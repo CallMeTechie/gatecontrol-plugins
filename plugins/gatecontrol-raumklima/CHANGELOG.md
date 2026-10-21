@@ -3,6 +3,17 @@
 Klimageräte und Heizungen als GateControl-Plugin: Midea-Klimageräte (früher fest in GateControl
 eingebaut, „Klimaanlage“) und seit 1.6.0 Dreo-Heizlüfter und -Klimageräte.
 
+## 2.1.1
+- **Dreo-Konto „ohne Gerät“, obwohl der Heizlüfter in der Dreo-App ist**: Die Geräte werden
+  jetzt auch aus der Räume-Liste der neueren Dreo-App gelesen (Konten mit Zuhause und Räumen
+  liefern die alte Geräteliste leer), und ist in der Region des Kontos nichts zu finden, wird
+  die andere Region (EU/US) gefragt – nicht jede Anmeldung sagt, wo ein Konto liegt. Findet sich
+  dort etwas, wechselt das Konto dorthin.
+- Die Statuszeile nennt bei einem leeren Konto, was gefragt wurde („geprüft – EU: Geräteliste 0,
+  Räume 0 · US: …“), und den Hinweis auf Apple/Google-Anmeldungen der Dreo-App (dann hat das
+  Konto mit E-Mail und Passwort keine Geräte).
+- Nach dem Update wird sofort neu nachgesehen (nicht erst nach einer Stunde).
+
 ## 2.1.0
 - **Dreo-Geräte erscheinen von selbst**: Ist das Dreo-Konto in den Einstellungen verbunden,
   stehen seine Heizlüfter und Klimageräte jetzt automatisch auf der Raumklima-Seite – mit dem

@@ -198,6 +198,8 @@ function fakeCloud(opts = {}) {
  * — a login at the wrong region is retried there), device list, device state
  * (REST, values in { state } wrappers, temperatures in °F) and the WebSocket
  * (wsb-<region>): control commands change the device and are acknowledged
+ * (opts.rooms: the room list of the newer app, while the v2 list stays opts.devices; opts.silentRegion:
+ * a login at the other region succeeds without naming the account's region, and lists nothing there)
  * (control-reply + control-report); `push` sends a device's own report.
  */
 function fakeDreo(opts = {}) {
@@ -215,6 +217,7 @@ function fakeDreo(opts = {}) {
       'HAC006S-1': { poweron: false, connected: true, mode: 1, templevel: 76, temperature: 79, windlevel: 4, oscmode: 0, rh: 55 },
       'HTF001S-1': { poweron: false, connected: true },
     },
+    rooms: opts.rooms || null, silentRegion: opts.silentRegion === true, elsewhere: new Set(),
     logins: 0, tokens: new Set(), stateReads: 0, commands: [], sockets: [],
     silent: false, reject: null, rateLimited: false,
   };
@@ -226,6 +229,12 @@ function fakeDreo(opts = {}) {
     if (u.pathname === '/api/oauth/login') {
       const b = JSON.parse(o.body);
       if (b.email !== dreo.email || b.password !== md5(dreo.password) || b.grant_type !== 'email-password') return { status: 200, body: JSON.stringify({ code: 10001, msg: 'wrong account or password' }) };
+      if (dreo.silentRegion && region !== dreo.region) {
+        // a login that does not say where the account lives: a token for this region, whose lists are empty
+        const token = 'ELSEWHERE-' + (++dreo.logins);
+        dreo.elsewhere.add(token);
+        return ok({ access_token: token });
+      }
       if (region !== dreo.region) return ok({ region: dreo.region, access_token: 'wrong-region' });
       dreo.logins += 1;
       const token = 'TOKEN-' + dreo.logins;
@@ -233,8 +242,14 @@ function fakeDreo(opts = {}) {
       return ok({ access_token: token, region: dreo.region });
     }
     const auth = String((o.headers && o.headers.authorization) || '').replace(/^Bearer /, '');
+    if (dreo.elsewhere.has(auth) && region !== dreo.region) {
+      if (u.pathname === '/api/v2/user-device/device/list' || u.pathname === '/api/app/index/family/room/devices') return ok({ list: [], totalNum: 0 });
+      return { status: 401, body: '' };
+    }
     if (region !== dreo.region || !dreo.tokens.has(auth)) return { status: 401, body: '' };
     if (u.pathname === '/api/v2/user-device/device/list') return ok({ list: dreo.devices, totalNum: dreo.devices.length });
+    // the home's rooms with their devices (the newer app) — opts.rooms, else the same devices in one room
+    if (u.pathname === '/api/app/index/family/room/devices') return ok({ list: dreo.rooms || [{ roomName: 'Default', devices: dreo.devices }] });
     if (u.pathname === '/api/user-device/device/state') {
       dreo.stateReads += 1;
       const st = dreo.states[u.searchParams.get('deviceSn')];

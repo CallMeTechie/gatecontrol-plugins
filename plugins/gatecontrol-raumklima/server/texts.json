@@ -199,8 +199,13 @@
   "settings.dreo_ok": "Verbunden als {{email}} (Region {{region}})",
   "settings.dreo_devices": "Im Konto: {{list}} – erscheint auf der Raumklima-Seite",
   "settings.dreo_unsupported": "nicht unterstützt: {{list}}",
-  "settings.dreo_no_devices": "Im Dreo-Konto ist kein Gerät. Ist der Heizlüfter in der Dreo-App mit genau diesem Konto verbunden (nicht nur geteilt)?",
+  "settings.dreo_no_devices": "Im Dreo-Konto ist kein Gerät",
+  "settings.dreo_no_devices_hint": "Ist der Heizlüfter in der Dreo-App mit genau diesem Konto verbunden – gleiche E-Mail, nicht per Apple/Google angemeldet, nicht nur geteilt?",
   "settings.dreo_list_failed": "Geräteliste des Kontos nicht lesbar: {{error}}",
+  "settings.dreo_checked": "(geprüft – {{list}})",
+  "settings.dreo_list_devices": "Geräteliste",
+  "settings.dreo_list_rooms": "Räume",
+  "settings.dreo_region_failed": "Anmeldung dort nicht möglich",
   "settings.not_checked": "Eingetragen – noch nicht angemeldet. Speichern meldet an."
  },
  "en": {
@@ -403,8 +408,13 @@
   "settings.dreo_ok": "Connected as {{email}} (region {{region}})",
   "settings.dreo_devices": "In the account: {{list}} – shown on the Raumklima page",
   "settings.dreo_unsupported": "not supported: {{list}}",
-  "settings.dreo_no_devices": "There is no device in the Dreo account. Is the heater connected to exactly this account in the Dreo app (not just shared)?",
+  "settings.dreo_no_devices": "There is no device in the Dreo account",
+  "settings.dreo_no_devices_hint": "Is the heater connected to exactly this account in the Dreo app – same e-mail, not signed in with Apple/Google, not just shared?",
   "settings.dreo_list_failed": "Could not read the account's device list: {{error}}",
+  "settings.dreo_checked": "(checked – {{list}})",
+  "settings.dreo_list_devices": "device list",
+  "settings.dreo_list_rooms": "rooms",
+  "settings.dreo_region_failed": "no login possible there",
   "settings.not_checked": "Entered – not signed in yet. Saving signs in."
  }
 }

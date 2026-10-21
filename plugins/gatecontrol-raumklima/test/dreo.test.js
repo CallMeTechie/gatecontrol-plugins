@@ -295,3 +295,61 @@ test('mapping: a device that reports °C gets °C back', () => {
   assert.deepEqual(model.toParams('heater', 'DR-HSH009S', raw, { targetTemp: 23 }, caps), { ecolevel: 23 });
   assert.deepEqual(model.toParams('heater', 'DR-HSH009S', { ...raw, ecolevel: 70 }, { targetTemp: 23 }, caps), { ecolevel: 73 });
 });
+
+test('2.1.1: an empty v2 device list — the devices come from the home’s rooms (newer Dreo app)', () => {
+  const heater = { sn: 'HSH034S-9', deviceName: 'Wohnzimmer', model: 'DR-HSH034S', productName: 'Heater' };
+  const dreo = fakeDreo({ devices: [], rooms: [{ roomName: 'Wohnzimmer', devices: [heater] }, { roomName: 'Flur', deviceList: [] }] });
+  return withHost({ dreo }, async (host) => {
+    const lines = await connectDreo(host, dreo);
+    const devices = (await asAdmin(host, 'GET', '/devices')).json.devices;
+    assert.deepEqual(devices.map((d) => [d.device_sn, d.name, d.model]), [['dreo-HSH034S-9', 'Wohnzimmer', 'DR-HSH034S']]);
+    assert.match(lines.filter((l) => l.group === 'dreo').map((l) => l.text).join(' | '), /Wohnzimmer \(DR-HSH034S\)/);
+  });
+});
+
+test('2.1.1: an account that lives in the other region without the login saying so — found there, the account moves', () => {
+  const dreo = fakeDreo({ region: 'NA', silentRegion: true });
+  return withHost({ dreo }, async (host) => {
+    await connectDreo(host, dreo);
+    // saving the account: the login stays in EU (nothing says otherwise), nothing there — then NA has the devices
+    const devices = (await asAdmin(host, 'GET', '/devices')).json.devices;
+    assert.deepEqual(devices.map((d) => d.device_sn), ['dreo-HSH009S-1', 'dreo-HAC006S-1']);
+    assert.equal((await host.gc.storage.get('dreo')).region, 'NA', 'the account moved to its region');
+    const st = (await asAdmin(host, 'GET', `/devices/${devices[0].id}/state`));
+    assert.equal(st.status, 200, JSON.stringify(st.json));
+  });
+});
+
+test('2.1.1: really nothing in the account — the status line says which regions and lists were asked', () => {
+  const dreo = fakeDreo({ devices: [], rooms: [] , silentRegion: true });
+  return withHost({ dreo }, async (host) => {
+    const lines = await connectDreo(host, dreo);
+    const text = lines.filter((l) => l.group === 'dreo').map((l) => l.text).join(' | ');
+    assert.match(text, /kein Gerät/);
+    assert.match(text, /kein Gerät \(geprüft – EU: Geräteliste 0, Räume 0 · US: Geräteliste 0, Räume 0\)/);
+    assert.match(text, /Apple\/Google/);
+  });
+});
+
+test('collectDevices: flat lists, rooms, homes with rooms; nothing else', () => {
+  const { collectDevices } = require('../server/dreo');
+  const h = (sn) => ({ sn, deviceName: sn, model: 'DR-HSH009S' });
+  assert.deepEqual(collectDevices({ list: [h('A1')] }).map((d) => d.sn), ['A1']);
+  assert.deepEqual(collectDevices({ list: [{ roomName: 'x', devices: [h('B1'), h('B2')] }] }).map((d) => d.sn), ['B1', 'B2']);
+  assert.deepEqual(collectDevices({ list: [{ rooms: [{ deviceList: [{ deviceSn: 'C1', model: 'WH719S' }] }] }] }).map((d) => d.sn), ['C1']);
+  assert.deepEqual(collectDevices([h('D1')]).map((d) => d.sn), ['D1']);
+  assert.deepEqual(collectDevices({ list: [{ sn: 'no model' }, { sn: 'E1' }, null, 7] }), []);
+  assert.deepEqual(collectDevices(null), []);
+});
+
+test('2.1.1: an empty look of 2.1.0 is redone right after the update', () => {
+  const heater = { sn: 'HSH034S-9', deviceName: 'Wohnzimmer', model: 'DR-HSH034S', productName: 'Heater' };
+  const dreo = fakeDreo({ devices: [], rooms: [{ roomName: 'Wohnzimmer', devices: [heater] }] });
+  return withHost({ dreo }, async (host) => {
+    await connectDreo(host, dreo);
+    for (const d of (await asAdmin(host, 'GET', '/devices')).json.devices) await host.gc.db.run('DELETE FROM devices WHERE id = ?', [d.id]);
+    await host.gc.storage.set('dreo_found', { at: Date.now(), devices: [], error: null });   // what 2.1.0 kept
+    await host.tick();
+    assert.deepEqual((await asAdmin(host, 'GET', '/devices')).json.devices.map((d) => d.device_sn), ['dreo-HSH034S-9']);
+  });
+});
