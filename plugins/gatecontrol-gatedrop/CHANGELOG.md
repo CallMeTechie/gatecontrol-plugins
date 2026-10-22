@@ -8,7 +8,8 @@ Teilen wie Quick Share – über den eigenen GateControl-Server.
   ist“** (Status `waiting`, kein Fehler) und die Mitteilung geht wie bisher raus (GateControl stellt sie zu, sobald das
   Gerät wieder da ist). Sobald das Gerät wieder online ist, holt es die Dateien **automatisch**: die Apps fragen den neuen
   Endpunkt `GET pending` ab (alles, was über den Server an dieses Gerät ging und dort noch nicht als empfangen gemeldet
-  ist; danach „zugestellt“). Mit `POST sends/<id>/opened` meldet das Gerät den Empfang, dann verschwindet die Sendung aus
+  ist – Dateien ebenso wie ein Text oder Link ohne Dateien, solange die Sendung nicht abgelaufen ist; danach
+  „zugestellt“). Mit `POST sends/<id>/opened` meldet das Gerät den Empfang, dann verschwindet die Sendung aus
   der Liste. Direktübertragung im WLAN weiterhin nur an Geräte, die online sind.
 - **Portal:** ausgeschaltete Geräte lassen sich auswählen, mit dem Hinweis „offline · kommt an, sobald es online ist“;
   das Ergebnis nach dem Senden zeigt „Wartet, bis „<Gerät>“ online ist“.

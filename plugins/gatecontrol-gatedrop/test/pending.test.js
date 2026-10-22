@@ -78,24 +78,33 @@ test('GET pending: only the target device — not another device, not another pe
   });
 });
 
-test('GET pending: expired sends, sends without files and direct deliveries are not listed; oldest first', async () => {
+test('GET pending: texts and links without files are listed too; expired sends and direct deliveries are not; oldest first', async () => {
   await withHost({}, async (host, c) => {
     const old = (await phone(c)('POST', 'sends', { items: [{ mediaId: await c.upload(ANNA, PDF, 'application/pdf'), name: 'alt.pdf' }], to: { devices: ['anna-tab'] } })).json;
     c.clock.add(DAY);
     const a = (await phone(c)('POST', 'sends', { items: [{ mediaId: await c.upload(ANNA, PDF, 'application/pdf'), name: 'a.pdf' }], to: { devices: ['anna-tab'] } })).json;
     c.clock.add(MIN);
     const b = (await phone(c)('POST', 'sends', { items: [{ mediaId: await c.upload(ANNA, PNG, 'image/png'), name: 'b.png' }], to: { devices: ['anna-tab'] } })).json;
-    const text = (await phone(c)('POST', 'sends', { text: 'nur Text', to: { devices: ['anna-tab'] } })).json;
-    assert.equal(text.deliveries[0].status, 'waiting');
+    c.clock.add(MIN);
+    const text = (await phone(c)('POST', 'sends', { text: 'WLAN-Passwort: geheim', to: { devices: ['anna-tab'] } })).json;
+    c.clock.add(MIN);
+    const link = (await phone(c)('POST', 'sends', { link: 'https://example.com/rezept', note: 'heute Abend', to: { devices: ['anna-tab'] } })).json;
+    assert.deepEqual([text.deliveries[0].status, link.deliveries[0].status], ['waiting', 'waiting']);
     // 6 days later the first send expires (7 days): not listed, even before the background removed its files
     c.clock.add(6 * DAY);
     const p = (await tab(c)('GET', 'pending')).json.items;
-    assert.deepEqual(p.map((s) => s.id), [a.id, b.id], 'oldest first, no expired send, no send without files');
+    assert.deepEqual(p.map((s) => s.id), [a.id, b.id, text.id, link.id], 'oldest first, no expired send; a text and a link without files too');
+    assert.deepEqual([p[2].text, p[2].items, p[3].link, p[3].note], ['WLAN-Passwort: geheim', [], 'https://example.com/rezept', 'heute Abend']);
+    assert.deepEqual(p[2], (await tab(c)('GET', `sends/${text.id}`)).json.send);
+    // acknowledged with opened like a file send
+    await tab(c)('POST', `sends/${text.id}/opened`);
+    assert.deepEqual((await tab(c)('GET', 'pending')).json.items.map((s) => s.id), [a.id, b.id, link.id]);
+    assert.equal((await phone(c)('GET', `sends/${text.id}`)).json.send.deliveries[0].status, 'opened');
     // the expired send's waiting delivery stays as it is; retention treats 'waiting' like 'delivered'
     await host.tick();
     const gone = (await phone(c)('GET', `sends/${old.id}`)).json.send;
     assert.deepEqual([gone.expired, gone.deliveries[0].status], [true, 'waiting']);
-    assert.equal((await phone(c)('GET', `sends/${text.id}`)).json.send.deliveries[0].status, 'delivered', 'the text: the device is online now');
+    assert.equal((await phone(c)('GET', `sends/${link.id}`)).json.send.deliveries[0].status, 'delivered');
     c.clock.add(2 * DAY);
     await host.tick();
     assert.deepEqual((await tab(c)('GET', 'pending')).json.items, []);

@@ -444,7 +444,7 @@ async function inbox(ctx, query) {
 /**
  * GET pending (apps only) → { items: [send as GET sends/<id> shows it] } — what the calling device still has to fetch:
  * sends with a device delivery to it through the server that is 'waiting' or 'delivered' (not yet 'opened'), not
- * expired, with at least one file on the server; oldest first, at most 50. The call means the device is online: its
+ * expired, with at least one file on the server or a text / link; oldest first, at most 50. The call means the device is online: its
  * 'waiting' deliveries (of sends not expired) become 'delivered' now. POST sends/<id>/opened from the device takes a send
  * off this list.
  */
@@ -454,7 +454,7 @@ async function pending(ctx) {
   const rows = await store.all(gc, `SELECT s.* FROM sends s WHERE s.purged = 0 AND s.expires_at > ?
       AND EXISTS (SELECT 1 FROM deliveries d WHERE d.send_id = s.id AND d.kind = 'device' AND d.user_id = ? AND d.target = ?
         AND d.via = 'server' AND d.status IN ('waiting', 'delivered'))
-      AND EXISTS (SELECT 1 FROM items i WHERE i.send_id = s.id AND i.media_id IS NOT NULL)
+      AND (s.text IS NOT NULL OR s.link IS NOT NULL OR EXISTS (SELECT 1 FROM items i WHERE i.send_id = s.id AND i.media_id IS NOT NULL))
     ORDER BY s.created_at ASC, s.id ASC LIMIT ?`, [ctx.now, ctx.viewer, ctx.deviceId, PENDING_MAX]);
   await store.run(gc, `UPDATE deliveries SET status = 'delivered', at = ? WHERE kind = 'device' AND user_id = ? AND target = ? AND status = 'waiting'
       AND send_id IN (SELECT id FROM sends WHERE purged = 0 AND expires_at > ?)`, [ctx.now, ctx.viewer, ctx.deviceId, ctx.now]);
