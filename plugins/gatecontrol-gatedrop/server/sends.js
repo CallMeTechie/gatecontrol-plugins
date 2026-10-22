@@ -71,8 +71,10 @@ function parseTo(v) {
   }
   const devices = [];
   for (const x of list(v.devices, LIMITS.devices)) {
-    if (typeof x !== 'string' || !DEVICE_RE.test(x)) throw fail('invalid');
-    if (!devices.includes(x)) devices.push(x);
+    // GateControl's device ids are token ids; Android 1.61 sends them as numbers
+    const id = Number.isSafeInteger(x) && x > 0 ? String(x) : x;
+    if (typeof id !== 'string' || !DEVICE_RE.test(id)) throw fail('invalid');
+    if (!devices.includes(id)) devices.push(id);
   }
   const nas = [];
   for (const x of list(v.nas, LIMITS.nas)) {
