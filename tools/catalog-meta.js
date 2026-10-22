@@ -7,7 +7,7 @@
 // Optional per released plugin id; tools/catalog.js copies the fields below
 // into that plugin's object in catalog.json. GateControl ignores unknown or
 // invalid values, this check is strict so mistakes never reach the store:
-//   category   family | home | mobility | infrastructure | other
+//   category   family | home | work | mobility | infrastructure | other
 //   icon       family | chat | calendar | door | bulb | snowflake | car | server | nas | puzzle
 //   summary    { de, en }  one sentence each, ≤ 160 characters
 //   audience   all | admins
@@ -31,7 +31,7 @@ const lib = require('./lib');
 
 const FILE = path.join(__dirname, '..', 'catalog-meta.json');
 const FIELDS = ['category', 'icon', 'summary', 'audience', 'keywords', 'related', 'highlight', 'adds', 'permissions', 'shows', 'needs', 'languages'];
-const CATEGORIES = ['family', 'home', 'mobility', 'infrastructure', 'other'];
+const CATEGORIES = ['family', 'home', 'work', 'mobility', 'infrastructure', 'other'];
 const ICONS = ['family', 'chat', 'calendar', 'door', 'bulb', 'snowflake', 'car', 'server', 'nas', 'puzzle'];
 const AUDIENCES = ['all', 'admins'];
 const LANGS = ['de', 'en'];
