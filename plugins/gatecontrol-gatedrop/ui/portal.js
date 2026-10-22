@@ -52,21 +52,22 @@
   });
 
   // ─── targets ──────────────────────────────────────────────────────
-  function chip(kind, id, label, extra) {
+  function chip(kind, id, label, extra, hint) {
     var k = key(kind, id);
     var on = !!S.picked[k];
-    return el('button', { type: 'button', class: 'gd-chip', 'aria-pressed': on ? 'true' : 'false', on: { click: function () {
+    return el('button', { type: 'button', class: 'gd-chip', title: hint || null, 'aria-pressed': on ? 'true' : 'false', on: { click: function () {
       if (S.picked[k]) delete S.picked[k]; else S.picked[k] = { kind: kind, id: id, label: label };
       G.$('#gd-linkopts').hidden = !S.picked['link:link'];
       renderTargets();
-    } } }, [extra || null, el('span', { text: label })]);
+    } } }, [extra || null, el('span', { text: label }), hint ? el('small', { class: 'gd-chip-hint', text: hint }) : null]);
   }
   function renderTargets() {
     var box = G.clear(G.$('#gd-targets'));
     var tg = S.targets;
     if (!tg) return;
     tg.people.forEach(function (p) { box.appendChild(chip('person', p.id, p.name)); });
-    tg.devices.forEach(function (d) { box.appendChild(chip('device', d.id, d.name, el('span', { class: 'gd-dot' + (d.online ? ' is-on' : '') }))); });
+    // an offline device can be chosen too: the server keeps the files and it fetches them once it is online again
+    tg.devices.forEach(function (d) { box.appendChild(chip('device', d.id, d.name, el('span', { class: 'gd-dot' + (d.online ? ' is-on' : '') }), d.online ? null : T('portal.offline_hint'))); });
     tg.nas.forEach(function (n) { box.appendChild(chip('nas', n.id, 'NAS: ' + n.path)); });
     if (tg.me.canLink && tg.links.enabled) box.appendChild(chip('link', 'link', T('portal.link_target')));
     if (!box.firstChild) box.appendChild(el('span', { class: 'gd-muted', text: T('portal.no_targets') }));
@@ -104,6 +105,7 @@
     return out;
   }
   function statusLabel(d) {
+    if (d.status === 'waiting') return T('status.waiting', { device: d.label || d.target });
     return T('status.' + d.status) + (d.via && d.status !== 'failed' ? ' · ' + T('via.' + d.via) : '');
   }
   function showResult(r) {

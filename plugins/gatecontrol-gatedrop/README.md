@@ -36,7 +36,7 @@ Answers: `{ ok: true, … }`; errors `{ ok: false, code, error }` (localized tex
 | `upload_required` | 409 | `local` items for a target that needs the files on the server |
 | `links_disabled` | 409 | public links are off |
 | `media_invalid`, `media_in_use` | 409 | a file is missing / not the caller's / already sent |
-| `no_device` | 409 | the route needs an app installation (`user.device`) |
+| `no_device` | 409 | the route needs an app installation (`user.device`): `PUT presence`, `GET pending`, `transfers/…` |
 
 Times are ISO-8601 UTC strings unless noted. Files are uploaded first with GateControl's media route
 (`PUT /api/v1/client/plugins/gatecontrol-gatedrop/media`, resumable for > 50 MB: `?uploadId=&offset=` + `Content-Range`)
@@ -101,8 +101,11 @@ freshS: 900 } }`. Windows: `listening: true` always (port 47731); Android: `true
                 "expiresAt": "…" } ] }
 ```
 
-Delivery `status`: `pending` (waiting: NAS upload running, or a failed direct transfer waits for the files), `direct`
-(direct transfer brokered), `delivered`, `opened`, `failed`, `expired`; `via`: `direct` | `server`; `error` (a code,
+Delivery `status`: `pending|direct|waiting|delivered|opened|failed|expired` — `pending` (NAS upload running, or a failed
+direct transfer waits for the files), `direct` (direct transfer brokered), `waiting` (an own device that was **offline**
+when sent: the send is kept on the server, the push is queued by GateControl; the device fetches it with `GET pending` —
+not a failure, retention treats it like `delivered`), `delivered`, `opened`, `failed`, `expired`; `via`: `direct` |
+`server`; `error` (a code,
 informational when delivered): `direct_failed`, `push_failed`, `file_type` / `file_too_large` / `unavailable` (the
 Messenger did not take it — the person got a push instead), `no_space`, `permission`, `unreachable`, `upload_failed`
 (NAS), `links_disabled`, `no_public_url`, `revoked`. `conversationId` (person via the Messenger), `paths` (NAS).
@@ -151,6 +154,10 @@ receives `kind: "data"`, `silent: true`) whose `data` is
 
 ### Deliveries through the server
 
+An own device that is online (`online` in `gc.devices.list`) gets the delivery as `delivered`; one that is offline as
+`waiting` — the push below is sent all the same (GateControl queues it), but an app that comes back does not act on
+pushes it missed: it polls `GET pending` (below). Direct transfers stay limited to online devices.
+
 A visible push on topic `received` — to the device (`devices: [id]`) or the person — titled "Pixel hat dir eine Datei
 geschickt" / "Anna hat dir 3 Dateien geschickt" / "… einen Text" / "… einen Link" (the recipient's language), body:
 file names or the text's start, `collapseKey` `gatedrop:<sendId>`, `data`:
@@ -160,6 +167,25 @@ file names or the text's start, `collapseKey` `gatedrop:<sendId>`, `data`:
 ```
 
 The app then reads `GET sends/<id>` and downloads each file with `GET items/<mediaId>`.
+
+### `GET pending` (apps only)
+
+What the calling device still has to fetch — for apps that were offline (poll it on start, on reconnect and now and
+then; it is cheap). Needs `user.device`, else `409 no_device`.
+
+```jsonc
+{ "ok": true, "items": [ /* send, exactly as GET sends/<id> returns it */ ] }
+```
+
+Listed: sends with a device delivery whose target is the calling device, `via: "server"` and `status` `waiting` or
+`delivered`, whose send is not expired (`expiresAt` in the future, files not removed), with at least one file on the
+server (`items[].available`) **or** a `text` / `link` (sends without files are listed too — the queued push is not acted
+on after a reconnect) — oldest first (`createdAt`), at most 50. Sends to one's own devices are one's own sends,
+so `role` is `"sent"` and `deliveries` lists every target (the calling device's entry: `target` = its id).
+The call itself means the device is online: its `waiting` deliveries (of sends not expired) become `delivered` with
+`at` = now (the sender sees it). A send stays listed until the device calls `POST sends/<id>/opened` (its "received"
+acknowledgement, for file sends and text / link sends alike: that device's delivery becomes `opened`). Download the
+files with `GET items/<mediaId>` as usual.
 
 ### Reading
 
@@ -174,7 +200,8 @@ The app then reads `GET sends/<id>` and downloads each file with `GET items/<med
 * `GET items/<mediaId>` → `{ item: { sendId, index, mediaId, name, mime, bytes, local, available }, url }` — `url`: the
   apps' media route `/api/v1/client/plugins/gatecontrol-gatedrop/media/<mediaId>` (Range, the hook `mediaAccess`
   allows the sender and the recipients until the send expires), in the portal a signed `/plugin-media/…` URL.
-* `POST sends/<id>/opened` (recipient; from an app only that device's delivery) → `{ send }`.
+* `POST sends/<id>/opened` (recipient) → `{ send }`: the person deliveries, and a device delivery only when that device
+  itself calls (`waiting` or `delivered` → `opened`; the portal or another device never marks it). The apps call it once a send is received (files saved, or a text / link shown) — it takes the send off `GET pending`.
 * `DELETE links/<token>` (the link's owner) → `{ revoked }`.
 
 A link with a PIN gets a generic title ("Geteilte Dateien" / "Shared files"), so no file name shows before the PIN.

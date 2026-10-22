@@ -13,7 +13,8 @@
 //   app API   /api/v1/client/plugins/gatecontrol-gatedrop/api/…   (the device token's owner, user.device)
 //   portal    /api/v1/portal/plugins/gatecontrol-gatedrop/api/…   (the same routes; also under portal/…)
 //     GET targets · PUT presence · POST sends · GET sends/<id> · POST sends/<id>/items · POST sends/<id>/opened
-//     GET transfers/<id> · POST transfers/<id>/result · GET inbox?kind= · GET items/<mediaId> · DELETE links/<token>
+//     GET transfers/<id> · POST transfers/<id>/result · GET pending · GET inbox?kind= · GET items/<mediaId>
+//     DELETE links/<token>
 //   admin     admin/overview (administrators in the admin UI)
 // The full contract (bodies, answers, codes, pushes) is in README.md "App-API".
 //
@@ -123,6 +124,7 @@ async function route(ctx, req, seg) {
       return ok({ transfer: r.transfer, delivery: { id: d.id, kind: d.kind, target: d.target, status: d.status, via: d.via || null, error: d.error || null, at: iso(d.at) }, fallback: r.fallback, ...(r.missing ? { missing: r.missing } : {}) });
     }
   }
+  if (a === 'pending' && seg.length === 1 && m === 'GET') return ok(await sends.pending(ctx));
   if (a === 'inbox' && seg.length === 1 && m === 'GET') return ok(await sends.inbox(ctx, req.query));
   if (a === 'items' && seg.length === 2 && m === 'GET') return ok(await sends.itemInfo(ctx, b, ID));
   if (a === 'links' && seg.length === 2 && m === 'DELETE') return ok(await sends.endLink(ctx, b));

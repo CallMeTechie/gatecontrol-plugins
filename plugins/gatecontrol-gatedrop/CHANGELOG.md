@@ -2,6 +2,21 @@
 
 Teilen wie Quick Share – über den eigenen GateControl-Server.
 
+## 1.1.0
+- **Senden an ausgeschaltete Geräte:** ist das eigene Gerät beim Senden offline (z. B. der Windows-PC ist aus), klappt
+  das Senden trotzdem – die Dateien bleiben auf dem Server, die Zustellung steht auf **„Wartet, bis „Büro-PC“ online
+  ist“** (Status `waiting`, kein Fehler) und die Mitteilung geht wie bisher raus (GateControl stellt sie zu, sobald das
+  Gerät wieder da ist). Sobald das Gerät wieder online ist, holt es die Dateien **automatisch**: die Apps fragen den neuen
+  Endpunkt `GET pending` ab (alles, was über den Server an dieses Gerät ging und dort noch nicht als empfangen gemeldet
+  ist – Dateien ebenso wie ein Text oder Link ohne Dateien, solange die Sendung nicht abgelaufen ist; danach
+  „zugestellt“). Mit `POST sends/<id>/opened` meldet das Gerät den Empfang, dann verschwindet die Sendung aus
+  der Liste. Direktübertragung im WLAN weiterhin nur an Geräte, die online sind.
+- **Portal:** ausgeschaltete Geräte lassen sich auswählen, mit dem Hinweis „offline · kommt an, sobald es online ist“;
+  das Ergebnis nach dem Senden zeigt „Wartet, bis „<Gerät>“ online ist“.
+- **„Geöffnet“ je Gerät:** eine Zustellung an ein Gerät markiert nur dieses Gerät selbst als geöffnet – das Öffnen im
+  Portal oder auf einem anderen Gerät nimmt dem Gerät die Sendung nicht mehr weg.
+- **App-API:** `GET pending`, Zustellstatus `waiting` – siehe README.
+
 ## 1.0.0
 Braucht **GateControl ≥ 1.193.0** (Dateien bis 2 GB, Geräte der Person, stille Mitteilungen, Übergabe von Dateien an
 andere Plugins, öffentliche Links). Kostenpflichtig wie die anderen Plugins (Lizenz).

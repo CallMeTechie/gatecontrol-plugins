@@ -4,7 +4,8 @@
 //   device  direct possible → a silent push to that device { gatedrop: { transfer, send, mode, from, items,
 //           candidates, key, ticket, expiresAt } } (the sender gets the same in the answer's `direct`);
 //           otherwise / after a failed direct transfer → a push "<device> hat dir … geschickt" to that device
-//           with data { gatedrop: { send } }; the device downloads with GET items/<mediaId>.
+//           with data { gatedrop: { send } }; the device downloads with GET items/<mediaId>. An offline device's
+//           delivery is 'waiting' until the app asks GET pending (then 'delivered').
 //   person  the Messenger's service send_file (the files handed over with gc.media.handOver) → a message of
 //           the sender in the direct chat / the family chat; without the Messenger (or when it refuses) a push
 //           to the person (to the family's members) like a device delivery through the server.
@@ -101,10 +102,14 @@ async function pushDirect(gc, send, items, tr, from, userId) {
   }
 }
 
-/** A device delivery through the server (all files uploaded) → the delivery's new state. */
-async function deviceServer(gc, send, items, delivery, senderName) {
+/**
+ * A device delivery through the server (all files uploaded) → the delivery's new state: 'delivered', or 'waiting' when
+ * the device is offline (`online === false`) — the visible push still goes out (GateControl queues it), and the app
+ * fetches the send with GET pending once it is back; that call makes it 'delivered'.
+ */
+async function deviceServer(gc, send, items, delivery, senderName, online = true) {
   const ok = await pushReceived(gc, send, items, { users: [send.user_id], devices: [delivery.target], senderName, toSelf: true });
-  return { status: 'delivered', via: 'server', error: ok ? null : 'push_failed' };
+  return { status: online === false ? 'waiting' : 'delivered', via: 'server', error: ok ? null : 'push_failed' };
 }
 
 /** The family's members (Familie's parents and children) other than `viewer`; null when Familie does not say. */

@@ -16,7 +16,7 @@ test('through the server: a push to that device only, the device downloads; nobo
     const r = await phone(c)('POST', 'sends', { items: [{ mediaId: m, name: 'angebot-kueche.pdf' }], note: 'fürs Büro', to: { devices: ['anna-pc', 'anna-tab'] } });
     assert.equal(r.status, 200);
     assert.deepEqual(r.json.direct, []);
-    assert.deepEqual(r.json.deliveries.map((d) => [d.kind, d.target, d.label, d.status, d.via]), [['device', 'anna-pc', 'Büro-PC', 'delivered', 'server'], ['device', 'anna-tab', 'Tablet', 'delivered', 'server']]);
+    assert.deepEqual(r.json.deliveries.map((d) => [d.kind, d.target, d.label, d.status, d.via]), [['device', 'anna-pc', 'Büro-PC', 'delivered', 'server'], ['device', 'anna-tab', 'Tablet', 'waiting', 'server']], 'the tablet is offline');
     const pushes = c.pushes();
     assert.equal(pushes.length, 2);
     assert.deepEqual(pushes.map((p) => [p.topic, p.users, p.devices, p.silent]), [['received', [ANNA.id], ['anna-pc'], undefined], ['received', [ANNA.id], ['anna-tab'], undefined]]);
@@ -37,7 +37,7 @@ test('through the server: a push to that device only, the device downloads; nobo
     assert.match((await c.portal(ANNA)('GET', `items/${m}`)).json.url, /^\/plugin-media\//);
     // opened from the PC
     const o = (await pc(c)('POST', `sends/${r.json.id}/opened`)).json.send;
-    assert.deepEqual(o.deliveries.map((d) => [d.target, d.status]), [['anna-pc', 'opened'], ['anna-tab', 'delivered']]);
+    assert.deepEqual(o.deliveries.map((d) => [d.target, d.status]), [['anna-pc', 'opened'], ['anna-tab', 'waiting']]);
     // a text to the PC: "einen Text"
     await phone(c)('POST', 'sends', { text: 'WLAN-Passwort: geheim', to: { devices: ['anna-pc'] } });
     assert.deepEqual([c.pushes().pop().title, c.pushes().pop().body], ['Pixel hat dir einen Text geschickt', 'WLAN-Passwort: geheim']);

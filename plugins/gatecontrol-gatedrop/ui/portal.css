@@ -23,6 +23,7 @@
 .gd-chip[aria-pressed="true"]{border:2px solid var(--accent);background:var(--accent-soft);padding:0 13px}
 .gd-chip .gd-dot{width:8px;height:8px;border-radius:4px;background:var(--line-2);flex:none}
 .gd-chip .gd-dot.is-on{background:var(--good)}
+.gd-chip .gd-chip-hint{font-weight:500;font-size:12px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .gd-linkopts{display:flex;flex-direction:column;gap:10px;padding:12px;border:1px solid var(--line);border-radius:14px;background:var(--surface-2)}
 .gd-linkopts p{margin:0;font-size:13px;color:var(--muted);line-height:1.45}
 .gd-radios{display:flex;gap:8px;flex-wrap:wrap}
