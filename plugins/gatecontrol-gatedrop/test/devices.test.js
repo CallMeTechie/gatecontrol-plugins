@@ -161,3 +161,18 @@ test('the ticket expires after 10 minutes without a result → the server way (b
     assert.equal((await pc(c)('GET', `transfers/${r.direct[0].transferId}`)).json.transfer.status, 'expired');
   });
 });
+
+test('device ids as numbers (Android 1.61 sends GateControl token ids as JSON numbers)', async () => {
+  const devs = [
+    { id: '106', userId: ANNA.id, name: 'Pixel', platform: 'android', online: true },
+    { id: '107', userId: ANNA.id, name: 'Surface Pro 8', platform: 'windows', online: false },
+  ];
+  await withHost({ devices: devs }, async (host, c) => {
+    const fold = c.as(ANNA, '106');
+    const r = await fold('POST', 'sends', { text: 'hallo', to: { devices: [107] } });
+    assert.equal(r.status, 200);
+    assert.deepEqual(r.json.deliveries.map((d) => [d.target, d.status]), [['107', 'waiting']]);
+    assert.equal((await fold('POST', 'sends', { text: 'hallo', to: { devices: [106] } })).json.code, 'invalid', 'not to itself');
+    for (const bad of [0, -1, 1.5, 2 ** 53]) assert.equal((await fold('POST', 'sends', { text: 'x', to: { devices: [bad] } })).json.code, 'invalid', String(bad));
+  });
+});

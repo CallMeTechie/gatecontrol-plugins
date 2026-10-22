@@ -2,6 +2,11 @@
 
 Teilen wie Quick Share – über den eigenen GateControl-Server.
 
+## 1.1.1
+- **Senden an eigene Geräte aus der Android-App:** die App schickt die Geräte-ID als Zahl (`"devices": [107]`),
+  GateDrop nahm nur Text an und lehnte die Sendung mit `invalid` ab („Nicht gesendet“). Positive ganze Zahlen werden
+  jetzt wie die gleiche ID als Text behandelt.
+
 ## 1.1.0
 - **Senden an ausgeschaltete Geräte:** ist das eigene Gerät beim Senden offline (z. B. der Windows-PC ist aus), klappt
   das Senden trotzdem – die Dateien bleiben auf dem Server, die Zustellung steht auf **„Wartet, bis „Büro-PC“ online
