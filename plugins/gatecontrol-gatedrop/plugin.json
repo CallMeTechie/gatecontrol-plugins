@@ -4,7 +4,7 @@
     "de": "GateDrop",
     "en": "GateDrop"
   },
-  "version": "1.0.0",
+  "version": "1.1.0",
   "publisher": "CallMeTechie",
   "description": {
     "de": "Teilen wie Quick Share – über den eigenen GateControl-Server: Dateien (bis 2 GB je Datei), Text und Links an Personen (als Nachricht im Messenger), an die eigenen Geräte (Android, Windows – im gemeinsamen WLAN direkt, sonst über den Server), in NAS-Ordner (Synology-Plugin) oder als zeitlich begrenzter Link für Externe mit PIN. Empfangenes bleibt 7 Tage auf dem Server.",

@@ -2,7 +2,8 @@
 
 // Sends: POST sends (validation, permissions, the deliveries per target), the views of a send for its
 // sender and its recipients, the lists (GET inbox), late uploads after a failed direct transfer
-// (POST sends/<id>/items), "opened", files (GET items/<mediaId>) and ending links (DELETE links/<token>).
+// (POST sends/<id>/items), "opened", what an app still has to fetch (GET pending), files (GET items/<mediaId>) and
+// ending links (DELETE links/<token>).
 // Every function gets ctx = { gc, viewer, user, deviceId, deviceName, lang, now, portal, users (Map), senderName }.
 
 const store = require('./store');
@@ -18,6 +19,7 @@ const LIMITS = Object.freeze({ items: 20, textMax: 20000, noteMax: 500, maxBytes
 const RETENTION_MS = LIMITS.retentionDays * 86400000;
 const PAGE_DEFAULT = 50;
 const PAGE_MAX = 100;
+const PENDING_MAX = 50;
 const MIME_RE = /^[a-z0-9][a-z0-9.+-]{0,39}\/[a-z0-9][a-z0-9.+-]{0,99}$/;
 const SEGMENT_RE = /^[^\0-\x1f\x7f/\\:*?"<>|]{1,100}$/;
 
@@ -106,7 +108,7 @@ function deliveryView(d) {
   return out;
 }
 
-const ARRIVED = ['delivered', 'opened', 'expired'];
+const ARRIVED = ['waiting', 'delivered', 'opened', 'expired'];
 
 /**
  * May the viewer see this send as a recipient? → their deliveries of it ([] = no). Own devices: always. A person
@@ -244,7 +246,7 @@ async function create(ctx, body) {
       if (p.direct) {
         const tr = await transfers.create(gc, { sendId: id, deliveryId: dId, fromDevice: ctx.deviceId, toDevice: p.dev.id, mode: p.mode, candidates: p.candidates }, ctx.now);
         direct.push(tr);
-      } else devDeliveries.push(dId);
+      } else devDeliveries.push({ id: dId, online: p.dev.online });
     }
     for (const p of persons) {
       p.deliveryId = await ins('person', p.target, p.userId, 'pending', p.label);
@@ -260,9 +262,10 @@ async function create(ctx, body) {
   // own devices: silent pushes for direct transfers, a push for the others
   const from = { userId: ctx.viewer, name: ctx.user.name, deviceId: ctx.deviceId || null, deviceName: ctx.deviceName || null };
   for (const tr of direct) await deliver.pushDirect(gc, sendRow, stored, tr, from, ctx.viewer);
-  for (const dId of devDeliveries) {
-    const d = await store.one(gc, 'SELECT * FROM deliveries WHERE id = ?', [dId]);
-    await save(dId, await deliver.deviceServer(gc, sendRow, stored, d, ctx.user.name));
+  // an offline device: 'waiting' (the push is queued by GateControl, the app fetches it with GET pending)
+  for (const dd of devDeliveries) {
+    const d = await store.one(gc, 'SELECT * FROM deliveries WHERE id = ?', [dd.id]);
+    await save(dd.id, await deliver.deviceServer(gc, sendRow, stored, d, ctx.user.name, dd.online));
   }
   // links, then people (the Messenger) — before the answer
   let linkOut = null;
@@ -346,23 +349,33 @@ async function get(ctx, id) {
   if (typeof id !== 'string' || !/^[0-9a-f]{24}$/.test(id)) throw fail('not_found');
   const send = await store.one(ctx.gc, 'SELECT * FROM sends WHERE id = ?', [id]);
   if (!send) throw fail('not_found');
+  return viewOf(ctx, send);
+}
+
+/** A send as GET sends/<id> shows it to the viewer (else not_found). */
+async function viewOf(ctx, send) {
+  const id = send.id;
   if (send.user_id === ctx.viewer) return view(ctx, send, 'sent');
   const dels = await deliveriesOf(ctx.gc, id);
   if (!(await recipientDeliveries(ctx, send, dels)).length) throw fail('not_found');
   return view(ctx, send, 'received', dels);
 }
 
-/** POST sends/<id>/opened — a recipient opened it (from an app: that device's delivery and the person ones). */
+/**
+ * POST sends/<id>/opened — a recipient opened it: the person deliveries, and a device delivery only when the target
+ * device itself calls (its "received" acknowledgement — it takes the send off that device's GET pending; the portal or
+ * another device never marks it).
+ */
 async function opened(ctx, id) {
   if (typeof id !== 'string' || !/^[0-9a-f]{24}$/.test(id)) throw fail('not_found');
   const send = await store.one(ctx.gc, 'SELECT * FROM sends WHERE id = ?', [id]);
   if (!send) throw fail('not_found');
   const mine = await recipientDeliveries(ctx, send, await deliveriesOf(ctx.gc, id));
   if (!mine.length) throw fail('not_found');
-  const pick = mine.filter((d) => d.kind !== 'device' || !ctx.deviceId || d.target === ctx.deviceId);
+  const pick = mine.filter((d) => d.kind !== 'device' || (!!ctx.deviceId && d.target === ctx.deviceId));
   await store.tx(ctx.gc, async () => {
     for (const d of pick) {
-      if (d.status === 'delivered') await store.run(ctx.gc, "UPDATE deliveries SET status = 'opened', opened_at = ? WHERE id = ?", [ctx.now, d.id]);
+      if (d.status === 'delivered' || d.status === 'waiting') await store.run(ctx.gc, "UPDATE deliveries SET status = 'opened', opened_at = ? WHERE id = ?", [ctx.now, d.id]);
     }
   });
   return view(ctx, await store.one(ctx.gc, 'SELECT * FROM sends WHERE id = ?', [id]), 'received');
@@ -377,7 +390,7 @@ async function fileAccess(ctx, mediaId) {
   if (!send || send.purged || send.expires_at <= ctx.now) return null;
   if (send.user_id === ctx.viewer) return { send, item };
   const mine = await recipientDeliveries(ctx, send, await deliveriesOf(ctx.gc, send.id));
-  return mine.some((d) => ['delivered', 'opened'].includes(d.status)) ? { send, item } : null;
+  return mine.some((d) => ['waiting', 'delivered', 'opened'].includes(d.status)) ? { send, item } : null;
 }
 
 /** GET items/<mediaId> → { item, url } — url: the app's media route, or a signed /plugin-media/ URL for the portal. */
@@ -417,7 +430,7 @@ async function inbox(ctx, query) {
     rows = await store.all(gc, 'SELECT * FROM sends WHERE user_id = ? AND created_at < ? ORDER BY created_at DESC LIMIT ?', [ctx.viewer, before, limit + 1]);
   } else {
     // own devices; a person delivery that reached the person through GateDrop; 'family' only for its members at sending
-    rows = await store.all(gc, `SELECT s.* FROM sends s WHERE s.created_at < ? AND EXISTS (SELECT 1 FROM deliveries d WHERE d.send_id = s.id AND d.status IN ('delivered', 'opened', 'expired') AND (
+    rows = await store.all(gc, `SELECT s.* FROM sends s WHERE s.created_at < ? AND EXISTS (SELECT 1 FROM deliveries d WHERE d.send_id = s.id AND d.status IN ('waiting', 'delivered', 'opened', 'expired') AND (
         (d.user_id = ? AND d.kind = 'device')
         OR (d.kind = 'person' AND (d.ref IS NULL OR d.gd_items > 0) AND (d.user_id = ? OR (d.target = 'family' AND s.user_id != ? AND d.members LIKE ?)))))
       ORDER BY s.created_at DESC LIMIT ?`, [before, ctx.viewer, ctx.viewer, ctx.viewer, `%,${ctx.viewer},%`, limit + 1]);
@@ -426,6 +439,28 @@ async function inbox(ctx, query) {
   const out = [];
   for (const s of rows.slice(0, limit)) out.push(await view(ctx, s, kind === 'sent' ? 'sent' : 'received'));
   return { kind, items: out, hasMore };
+}
+
+/**
+ * GET pending (apps only) → { items: [send as GET sends/<id> shows it] } — what the calling device still has to fetch:
+ * sends with a device delivery to it through the server that is 'waiting' or 'delivered' (not yet 'opened'), not
+ * expired, with at least one file on the server; oldest first, at most 50. The call means the device is online: its
+ * 'waiting' deliveries (of sends not expired) become 'delivered' now. POST sends/<id>/opened from the device takes a send
+ * off this list.
+ */
+async function pending(ctx) {
+  if (!ctx.deviceId) throw fail('no_device');
+  const gc = ctx.gc;
+  const rows = await store.all(gc, `SELECT s.* FROM sends s WHERE s.purged = 0 AND s.expires_at > ?
+      AND EXISTS (SELECT 1 FROM deliveries d WHERE d.send_id = s.id AND d.kind = 'device' AND d.user_id = ? AND d.target = ?
+        AND d.via = 'server' AND d.status IN ('waiting', 'delivered'))
+      AND EXISTS (SELECT 1 FROM items i WHERE i.send_id = s.id AND i.media_id IS NOT NULL)
+    ORDER BY s.created_at ASC, s.id ASC LIMIT ?`, [ctx.now, ctx.viewer, ctx.deviceId, PENDING_MAX]);
+  await store.run(gc, `UPDATE deliveries SET status = 'delivered', at = ? WHERE kind = 'device' AND user_id = ? AND target = ? AND status = 'waiting'
+      AND send_id IN (SELECT id FROM sends WHERE purged = 0 AND expires_at > ?)`, [ctx.now, ctx.viewer, ctx.deviceId, ctx.now]);
+  const items = [];
+  for (const s of rows) items.push(await viewOf(ctx, s));
+  return { items };
 }
 
 /** The viewer's links with GateControl's counters (when links are on). */
@@ -471,4 +506,4 @@ async function endLink(ctx, token) {
   return { revoked: revoked || !l.revoked_at };
 }
 
-module.exports = { create, addItems, get, opened, fileAccess, itemInfo, inbox, endLink, view, parseItems, parseTo, subPath, LIMITS, RETENTION_MS };
+module.exports = { create, addItems, get, opened, pending, fileAccess, itemInfo, inbox, endLink, view, parseItems, parseTo, subPath, LIMITS, RETENTION_MS };
