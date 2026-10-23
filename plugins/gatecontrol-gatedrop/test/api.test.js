@@ -32,7 +32,8 @@ test('access: app users and signed-in portal viewers only — never a kiosk devi
 test('GET targets: people, the family, own devices (not the asking one, no web clients), NAS folders and links by role', async () => {
   await withHost({ nas: true }, async (host, c) => {
     const t = (await c.as(ANNA, 'anna-phone')('GET', 'targets')).json;
-    assert.deepEqual(t.me, { id: ANNA.id, name: 'Anna', canLink: true, canNas: true, deviceId: 'anna-phone' });
+    assert.deepEqual(t.me, { id: ANNA.id, name: 'Anna', canLink: true, canNas: true, deviceId: 'anna-phone', receiveFrom: 'self' });
+    assert.deepEqual(t.peopleDevices, [], 'nobody opened a device');
     assert.deepEqual(t.people.map((p) => [p.id, p.kind]), [['family', 'family'], [ADMIN.id, 'user'], [WALL.id, 'user'], [LENA.id, 'user'], [MARC.id, 'user'], [OMA.id, 'user']]);
     assert.deepEqual(Object.keys(t.people[1]).sort(), ['avatar', 'colorHex', 'id', 'initials', 'kind', 'name']);
     assert.deepEqual(t.devices.map((d) => [d.id, d.platform, d.online, d.direct]), [['anna-pc', 'windows', true, false], ['anna-tab', 'android', false, false]]);

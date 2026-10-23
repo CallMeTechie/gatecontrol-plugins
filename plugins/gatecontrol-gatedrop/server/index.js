@@ -5,6 +5,7 @@
 //   people        as a message of the sender in the Messenger (service send_file; without it a push),
 //   own devices   directly on the same Wi-Fi when possible (contract C: tickets, keys, candidates brokered
 //                 here, the bytes never pass the server), otherwise through the server (push + download),
+//   others' devices  the same, for devices whose owner opened them for everyone (GET/PUT device, since 1.2.0),
 //   NAS folders   through the Synology plugin (services list_drop_folders, save_file),
 //   outsiders     as a public link of GateControl (gc.publicLinks: expiry, optional PIN).
 // Received files stay 7 days on the server (background). Links and NAS: administrators and Familie's
@@ -12,7 +13,7 @@
 //
 //   app API   /api/v1/client/plugins/gatecontrol-gatedrop/api/…   (the device token's owner, user.device)
 //   portal    /api/v1/portal/plugins/gatecontrol-gatedrop/api/…   (the same routes; also under portal/…)
-//     GET targets · PUT presence · POST sends · GET sends/<id> · POST sends/<id>/items · POST sends/<id>/opened
+//     GET targets · GET/PUT device · PUT presence · POST sends · GET sends/<id> · POST sends/<id>/items · POST sends/<id>/opened
 //     GET transfers/<id> · POST transfers/<id>/result · GET pending · GET inbox?kind= · GET items/<mediaId>
 //     DELETE links/<token>
 //   admin     admin/overview (administrators in the admin UI)
@@ -25,6 +26,7 @@ const ui = require('./ui');
 const store = require('./store');
 const people = require('./people');
 const presence = require('./presence');
+const access = require('./access');
 const sends = require('./sends');
 const transfers = require('./transfers');
 const admin = require('./admin');
@@ -77,13 +79,19 @@ async function targets(ctx) {
     const p = await presence.plan(gc, me, d, ctx.viewer, ctx.now);
     devices.push({ id: d.id, name: d.name, platform: d.platform, online: d.online, direct: p.direct === true, ...(p.direct ? { mode: p.mode } : {}) });
   }
+  // other people's devices that are open for everyone (their owner's GET/PUT device)
+  const peopleDevices = [];
+  for (const d of await access.openDevices(gc, ctx.viewer, ctx.users, kiosk)) {
+    const p = await presence.plan(gc, me, d, d.owner.id, ctx.now);
+    peopleDevices.push({ id: d.id, name: d.name, platform: d.platform, online: d.online, direct: p.direct === true, ...(p.direct ? { mode: p.mode } : {}), owner: d.owner });
+  }
   const nas = share ? await people.folders(gc, ctx.now) : [];
   const enabled = await people.linksEnabled(gc, ctx.viewer, ctx.now);
   let usage = null;
   try { usage = await gc.media.usage(); } catch { usage = null; }
   return {
-    me: { id: ctx.viewer, name: ctx.user.name, canLink: share, canNas: share, deviceId: ctx.deviceId },
-    people: list, devices, nas, links: { enabled },
+    me: { id: ctx.viewer, name: ctx.user.name, canLink: share, canNas: share, deviceId: ctx.deviceId, receiveFrom: ctx.deviceId ? await access.modeOf(gc, ctx.deviceId, ctx.viewer) : null },
+    people: list, devices, peopleDevices, nas, links: { enabled },
     messenger: await people.available(gc, people.MESSENGER, 'send_file'),
     limits: {
       maxItems: sends.LIMITS.items, maxBytes: usage ? usage.maxBytes : sends.LIMITS.maxBytes, types: usage ? usage.types : [], textMax: sends.LIMITS.textMax,
@@ -102,6 +110,8 @@ async function route(ctx, req, seg) {
   const [a, b, c] = seg;
   if (a === 'targets' && seg.length === 1 && m === 'GET') return ok(await targets(ctx));
   if (a === 'presence' && seg.length === 1 && (m === 'PUT' || m === 'POST')) return ok({ presence: await presence.put(ctx, req.body) });
+  if (a === 'device' && seg.length === 1 && m === 'GET') return ok({ device: await access.get(ctx) });
+  if (a === 'device' && seg.length === 1 && (m === 'PUT' || m === 'POST')) return ok({ device: await access.put(ctx, req.body) });
   if (a === 'sends') {
     if (seg.length === 1 && m === 'POST') {
       if (ctx.deviceId) {

@@ -2,6 +2,17 @@
 
 Teilen wie Quick Share – über den eigenen GateControl-Server.
 
+## 1.2.0
+- **Wer darf an dieses Gerät senden?** Neue Einstellung pro Gerät (in der Android-App und im Windows-Client auf der
+  GateDrop-Seite): **„Nur ich“** (Standard, wie bisher) oder **„Alle im GateControl-Netz“**. Ist ein Gerät für alle
+  freigegeben, sehen es die anderen Personen dieses Servers beim Teilen unter **„Geräte anderer“** (z. B. „Surface ·
+  Marc“) und können direkt dorthin senden – im selben WLAN direkt von Gerät zu Gerät, sonst über den Server; ist das
+  Gerät aus, wartet die Sendung, bis es wieder online ist. Der Besitzer bekommt „Anna hat dir … geschickt“ auf genau
+  diesem Gerät, die Sendung steht bei ihm unter „Empfangen“. Wird die Freigabe zurückgenommen, verschwindet das Gerät
+  sofort aus den Zielen der anderen. Kiosk-Geräte (Wand-Tablet) werden nie angeboten.
+- App-API: `GET`/`PUT device` (`receiveFrom: self | everyone`), `GET targets` mit `me.receiveFrom` und
+  `peopleDevices` (Geräte anderer mit `owner`), Zustellungen an fremde Geräte mit `ownerId`.
+
 ## 1.1.1
 - **Senden an eigene Geräte aus der Android-App:** die App schickt die Geräte-ID als Zahl (`"devices": [107]`),
   GateDrop nahm nur Text an und lehnte die Sendung mit `invalid` ab („Nicht gesendet“). Positive ganze Zahlen werden

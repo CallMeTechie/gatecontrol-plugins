@@ -68,6 +68,11 @@
     tg.people.forEach(function (p) { box.appendChild(chip('person', p.id, p.name)); });
     // an offline device can be chosen too: the server keeps the files and it fetches them once it is online again
     tg.devices.forEach(function (d) { box.appendChild(chip('device', d.id, d.name, el('span', { class: 'gd-dot' + (d.online ? ' is-on' : '') }), d.online ? null : T('portal.offline_hint'))); });
+    // other people's devices their owner opened for everyone (since 1.2.0)
+    (tg.peopleDevices || []).forEach(function (d) {
+      var label = T('portal.people_device', { device: d.name, owner: (d.owner && d.owner.name) || '?' });
+      box.appendChild(chip('device', d.id, label, el('span', { class: 'gd-dot' + (d.online ? ' is-on' : '') }), d.online ? null : T('portal.offline_hint')));
+    });
     tg.nas.forEach(function (n) { box.appendChild(chip('nas', n.id, 'NAS: ' + n.path)); });
     if (tg.me.canLink && tg.links.enabled) box.appendChild(chip('link', 'link', T('portal.link_target')));
     if (!box.firstChild) box.appendChild(el('span', { class: 'gd-muted', text: T('portal.no_targets') }));
