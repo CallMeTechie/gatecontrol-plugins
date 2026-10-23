@@ -1,0 +1,222 @@
+# gatecontrol-vault — Vault
+
+An end-to-end encrypted password manager on one's own GateControl server: logins, 2FA codes, notes, cards and Wi-Fi
+credentials — in a **personal vault** and in **shared vaults** (family, team) with roles. The apps (Android, Windows,
+later the portal) encrypt and decrypt; the server keeps only data it cannot read: encrypted entries, keys sealed to
+each member, a change counter for the offline copy, a trash (30 days), the last 10 versions of an entry and
+**emergency access** for trusted people. Syncing uses the server's normal public address — no VPN needed.
+
+*Deutsch:* Passwort-Manager auf dem eigenen Server, Ende-zu-Ende verschlüsselt. Ver- und entschlüsselt wird nur in
+den Apps; ohne Hauptpasswort, Wiederherstellungsschlüssel oder freigegebenen Notfallzugriff kann niemand die Daten
+lesen – auch kein Administrator. Details im CHANGELOG.
+
+Needs GateControl ≥ 1.193.0 (`permissions.app`, `permissions.notify`, `user.device`, `user.kiosk`).
+
+## Who may do what
+
+* Every signed-in person (portal or app) may set up Vault — never a kiosk device (`user.kiosk`: a wall tablet is no
+  person), never device trust alone (`loggedIn: false` → `403 login_required`), never the admin UI.
+* Shared vaults have roles: `read` (open entries), `write` (also create, change, trash, delete) and `manage` (also
+  rename, members, roles, key change, delete the vault). A vault always keeps one manager. The personal vault is
+  never shared.
+* Administrators see on the admin page *Übersicht* only who uses Vault and counts — never names of vaults, entries or
+  key material. There is **no reset by an administrator**.
+
+## App-API
+
+Apps: `/api/v1/client/plugins/gatecontrol-vault/api/<path>` (device token; a body is ≤ 64 KB). Portal frame:
+`GC.call(method, '<path>')` → `/api/v1/portal/plugins/gatecontrol-vault/api/<path>` (also under `portal/<path>`).
+Answers: `{ ok: true, … }`; errors `{ ok: false, code, error }` (localized text, sometimes more fields) with
+
+| code | HTTP | |
+|---|---|---|
+| `invalid` | 400 | bad body / query, a field of the wrong size (see Kryptoformat) |
+| `login_required`, `forbidden` | 403 | see above; the role does not allow it |
+| `no_account` | 404 | Vault is not set up for the caller (or for the person named) |
+| `not_found` | 404 | unknown, purged, or not one of the caller's vaults |
+| `exists` | 409 | the account / an id already exists, the person is already a member |
+| `conflict` | 409 | changed in the meantime: `account` (PUT account) or a request that does not fit the state |
+| `stale_key` | 409 | the vault's key generation changed — sync, then encrypt again |
+| `rekeying` | 409 | the vault is in a key change (finish: `left` = entries not yet on the new key) |
+| `last_manager` | 409 | a vault needs a manager |
+| `limit` | 409 | see Limits |
+
+Ids of vaults and entries are chosen by the app: 16–40 characters `[A-Za-z0-9_-]` (e.g. 16 random bytes in
+base64url). Every encrypted field is base64url **without padding**. Times are ISO-8601 UTC strings.
+
+### Konto (account)
+
+`GET account` → `{ account: null | Account }`
+
+```jsonc
+Account = { "kdf": { "alg": "argon2id", "m": 65536, "t": 3, "p": 1, "salt": "…" },  // m in KiB
+            "userKeyPw": "…", "userKeyRk": "…", "publicKey": "…", "privateKeyEnc": "…",
+            "rev": 1, "createdAt": "…", "updatedAt": "…" }
+```
+
+`POST account` — set up (once): `{ kdf, userKeyPw, userKeyRk, publicKey, privateKeyEnc, personal: { id, nameEnc,
+sealedKey } }` → `{ account }`. Creates the account and the personal vault in one step (`exists` the second time).
+The app shows the recovery key before it sends this and ends the setup only once the person confirmed they kept it.
+
+`PUT account` — `{ rev, kdf, userKeyPw, userKeyRk? }` → `{ account }`: a new master password (new salt, the user key
+stays, only its wrapping changes) or, after a recovery, a new password **and** a new recovery key. Compare-and-swap on
+`rev`; a stale `rev` → `conflict` with the current `account`.
+
+`POST account/delete` — `{ confirm: "DELETE" }` → `{ account: null }`: the account, the personal vault, the person's
+memberships and emergency grants (both ways). A shared vault the person was alone in goes; where they were the last
+manager, the longest-standing member becomes manager. Shared vaults they were in get `needsRekey`.
+
+`GET people` → `{ people: [{ id, name, publicKey | null }] }` — every GateControl account except the caller and kiosk
+accounts, by name; `publicKey` once that person set up Vault (only those can be added to a vault or trusted).
+
+### Tresore (vaults)
+
+```jsonc
+Vault = { "id": "…", "kind": "personal" | "shared", "ownerId": 2, "nameEnc": "…",
+          "role": "read" | "write" | "manage",                         // the caller's
+          "keyRev": 1, "sealedKey": "…",                               // the vault key of keyRev, sealed to the caller
+          "pending": null | { "keyRev": 2, "sealedKey": "…" },         // during a key change: the new key
+          "needsRekey": false,                                         // someone left: a manager's app changes the key
+          "members": [{ "userId": 2, "name": "Anna", "role": "manage" }],
+          "updatedAt": "…" }
+```
+
+* `POST vaults` — `{ id, nameEnc, sealedKey }` → `{ vault }`: a shared vault, the caller its manager.
+* `PUT vaults/<id>` — `{ nameEnc }` (manage; also the personal vault) → `{ vault }`. Not during a key change.
+* `DELETE vaults/<id>` — a shared vault with everything in it (manage) → `{ removed }`.
+* `POST vaults/<id>/members` — `{ userId, role, sealedKey }` (manage) → `{ vault }`: the app seals the vault key to
+  the person's `publicKey` (`GET people`). The person gets a push (topic `share`). Not during a key change.
+* `PUT vaults/<id>/members/<userId>` — `{ role }` (manage) → `{ vault }`.
+* `DELETE vaults/<id>/members/<userId>` — a manager removes someone, or a member leaves (own id) → `{ vault }`
+  (`{ vault: null }` after leaving). The last member leaving deletes the vault. Sets `needsRekey`: what the person
+  could read they know — and they knew the key. Not during a key change.
+
+### Schlüsselwechsel (key change)
+
+After someone left (`needsRekey`), a manager's app gives the vault a new key, in steps because a request is ≤ 64 KB:
+
+1. `POST vaults/<id>/rekey/start` — `{ keyRev: keyRev + 1, keys: [{ userId, sealedKey }] }` for **exactly** the
+   current members → `{ vault }` (with `pending`). May be repeated until an entry uses the new key.
+2. `POST items` for every entry not purged — trash included — encrypted with the new key, `keyRev` = the new one,
+   `baseRev` = its rev. From step 1 on only the new `keyRev` is accepted (`stale_key` otherwise), also from the
+   other members' apps: they read `pending` from the sync and use it.
+3. `POST vaults/<id>/rekey/finish` — `{ nameEnc }` (the name under the new key) → `{ vault }`. Refused with
+   `rekeying` and `left` while entries still use the old key. The new key becomes the current one, the members'
+   `pending` becomes their `sealedKey`, old versions under the old key are deleted, `needsRekey` clears (unless an
+   account was deleted during the change — then it stays set and the change runs again).
+
+### Einträge (entries)
+
+```jsonc
+Item = { "id": "…", "vaultId": "…", "rev": 3, "keyRev": 1, "blob": "…" | null,   // null when purged
+         "state": "live" | "trash" | "purged", "trashedAt": null, "updatedAt": "…", "updatedBy": 2,
+         "device": "Pixel 9" | null, "seq": 1234 }
+```
+
+`POST items` — `{ items: [{ id, vaultId, blob, keyRev, baseRev }], device? }` (1–100 entries, write role) →
+`{ results: [{ id, ok: true, rev, seq } | { id, ok: false, code, current? }] }`. `baseRev` 0 creates an entry, any
+other value is the revision the app changed (compare-and-swap). Each entry is answered on its own: `conflict` carries
+the `current` entry — the app keeps both (the other version as a copy "Konflikt …"), never silently one. A different
+`vaultId` moves the entry (write role in both; re-encrypted with the target's key; the old versions go). Saving keeps
+the trash state. The new revision is `baseRev + 1` (1 for a new entry) — the app encrypts with that number (AD).
+
+* `POST items/<id>/trash` · `POST items/<id>/restore` → `{ item }` (write). The trash is emptied after 30 days.
+* `DELETE items/<id>` → `{ item }` (write): purged now — the blob and its versions are gone, a tombstone
+  (`state: "purged"`) stays so every app drops its copy. A purged id is never used again (`not_found`).
+* `GET items/<id>/history` → `{ history: [{ rev, keyRev, blob, updatedAt, updatedBy, device }] }`, newest first, ≤ 10.
+
+### Abgleich (sync)
+
+`GET sync?since=<seq>&limit=<n>&vault=<id>` →
+
+```jsonc
+{ "ok": true, "seq": 1240,                 // the server's change counter now
+  "account": Account | null,               // when since = 0 or it changed since `since`
+  "vaults": [Vault, …],                    // every vault of the caller, always complete
+  "items": [Item, …],                      // changed entries (tombstones too), by seq, ≤ limit (200, max 500)
+  "more": false, "next": 1240 }            // more pages: call again with since = next
+```
+
+The app stores `next` of the last page as its new `since`. A vault in `vaults` it does not know yet (just shared with
+the person): `vault=<id>&since=0` for its entries. A vault missing from `vaults` is gone for the caller — drop its
+copy. An entry of a vault in a key change may still use the old `keyRev` (both keys are in the vault).
+
+### Notfallzugriff (emergency access)
+
+The grantor's app seals the grantor's **user key** to a trusted person's `publicKey`. The trusted person can ask for
+access; the grantor gets a push and can refuse. Only when the waiting time passed (or the grantor allows it early)
+does the server hand the sealed key out — read access to all of the grantor's vaults. The server cannot open it.
+
+```jsonc
+Emergency = { "id": "…", "grantor": { "id": 2, "name": "Anna" }, "grantee": { "id": 3, "name": "Marc" },
+              "waitHours": 48, "status": "ready" | "requested" | "granted",
+              "requestedAt": null, "releaseAt": null, "grantedAt": null }
+```
+
+* `GET emergency` → `{ granted: [Emergency] /* I gave */, received: [Emergency] /* I got */ }`.
+* `POST emergency` — `{ granteeId, waitHours (1–720), sealedKey }` → `{ emergency }`: name a trusted person (≤ 10),
+  or renew the key / waiting time while `ready` (`conflict` otherwise).
+* `DELETE emergency/<id>` — the grantor withdraws it or the trusted person declines it → `{ removed }`.
+* `POST emergency/<id>/request` (trusted person) → `requested`; the grantor gets a push with the waiting time.
+* `POST emergency/<id>/deny` (grantor) → back to `ready`, also from `granted` (takes access back); push to the
+  trusted person.
+* `POST emergency/<id>/approve` (grantor) → `granted` before the waiting time ends.
+* In the background (every 5 minutes) a request whose waiting time passed becomes `granted`; both get a push.
+* While `granted`, for the trusted person only:
+  `GET emergency/<id>/access` → `{ sealedKey, grantor: { id, name, publicKey, privateKeyEnc }, vaults: [Vault] }`
+  (the grantor's vaults with their keys sealed to the grantor) and `GET emergency/<id>/items?since=&limit=` →
+  `{ seq, items, more, next }` (live and trash, read-only).
+
+### Mitteilungen (pushes)
+
+Topics `share` ("Anna hat einen Tresor mit dir geteilt.") and `emergency` (requested, denied, granted, released).
+`data`: `{ vault: { topic: "share" | "emergency", event: "shared" | "requested" | "denied" | "granted" | "released",
+vault?: <id>, emergency?: <id> } }`. Pushes never carry names of vaults or entries, nor any key material.
+
+### Limits
+
+100 entries per `POST items`, 32 KiB per encrypted entry, 5000 entries and 64 MiB of encrypted text per vault,
+10 versions per entry, 20 shared vaults per person, 50 members per vault, 10 trusted people per person, trash
+30 days, sync pages of 200 (≤ 500). The log of actions (no content) is kept 90 days.
+
+## Kryptoformat
+
+libsodium on every platform (Android: lazysodium; Windows/Electron and the portal: libsodium-wrappers-sumo). The
+reference implementation and its fixed test vectors live in **gatecontrol-client-core** (`vault-crypto`); every app
+checks the same vectors, so all platforms encrypt and decrypt bit for bit alike. The server checks only shapes and
+sizes — it never holds a key.
+
+| Key | Made | Stored | Opens |
+|---|---|---|---|
+| master key (32 B) | `crypto_pwhash` Argon2id13 (master password, `kdf.salt` 16 B), `m` KiB, `t` passes; apps 64 MiB / 3, `p` = 1 | memory only | `userKeyPw` |
+| recovery key (32 B, random) | at setup, shown once (print, QR, word list) | with the person only | `userKeyRk` |
+| user key (32 B, random) | at setup | `userKeyPw`, `userKeyRk` | `privateKeyEnc` |
+| key pair (X25519) | `crypto_box_keypair` at setup | `publicKey` (raw 32 B), `privateKeyEnc` | `sealedKey`s |
+| vault key (32 B, random) | per vault and key generation | `sealedKey` per member | `nameEnc`, the vault's `blob`s |
+
+Server bounds: `m` 19456–1048576 KiB, `t` 2–10, `p` 1 (libsodium has one lane).
+
+**Wrapped** (`userKeyPw`, `userKeyRk`, `privateKeyEnc`, `nameEnc`, `blob`):
+`0x01 ‖ nonce (24 B, random) ‖ crypto_aead_xchacha20poly1305_ietf_encrypt(plaintext, AD, nonce, key)` — 41 bytes
+plus the plaintext. The **AD** (UTF-8) binds each ciphertext to its place, so the server cannot swap or replay them:
+
+| Field | Key | AD | Plaintext |
+|---|---|---|---|
+| `userKeyPw` | master key | `gcv1:user-key:pw` | user key |
+| `userKeyRk` | recovery key | `gcv1:user-key:rk` | user key |
+| `privateKeyEnc` | user key | `gcv1:private-key` | X25519 secret key (32 B) |
+| `nameEnc` | vault key | `gcv1:vault-name:<vaultId>` | name, UTF-8 |
+| `blob` | vault key | `gcv1:item:<vaultId>:<itemId>:<rev>` | entry JSON, UTF-8, `sodium_pad` to 256-byte blocks |
+
+**Sealed** (`sealedKey` of a member, `pending.sealedKey`, an emergency's `sealedKey`):
+`crypto_box_seal(key, recipient publicKey)` — 80 bytes for a 32-byte key. A member's holds the vault key; an
+emergency's holds the grantor's user key (→ `privateKeyEnc` → the grantor's `sealedKey`s).
+
+The entry JSON (`{ "v": 1, "type": "login" | "totp" | "note" | "card" | "wifi" | "identity", "title", "fields",
+"fav", "tags", … }`) is defined in client-core; the server never sees it. `rev` in the AD is the revision the save
+creates (`baseRev + 1`), so an app rejects an entry the server hands back under another revision, vault or id; it
+also never accepts a lower `rev` than the one it already has.
+
+## Tests
+
+`GATECONTROL_DIR=… node --test plugins/gatecontrol-vault/test/*.test.js` (or `node tools/test.js gatecontrol-vault`).

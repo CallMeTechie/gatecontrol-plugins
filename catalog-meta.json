@@ -2360,6 +2360,171 @@
         "en": "A WebUntis student or parent account"
       },
       "languages": ["de", "en"]
+    },
+    "gatecontrol-vault": {
+      "category": "other",
+      "icon": "puzzle",
+      "summary": {
+        "de": "Passwort-Manager auf dem eigenen Server, Ende-zu-Ende verschlüsselt – persönlich und in geteilten Tresoren für Familie oder Team.",
+        "en": "Password manager on your own server, end-to-end encrypted – personal and in shared vaults for family or team."
+      },
+      "audience": "all",
+      "keywords": [
+        "passwort",
+        "password",
+        "passwörter",
+        "passwords",
+        "tresor",
+        "vault",
+        "2fa",
+        "totp",
+        "autofill",
+        "ausfüllen",
+        "zugangsdaten",
+        "credentials"
+      ],
+      "related": [
+        "gatecontrol-familie"
+      ],
+      "adds": [
+        {
+          "icon": "app",
+          "title": {
+            "de": "Vault in der App",
+            "en": "Vault in the app"
+          },
+          "text": {
+            "de": "Einträge ansehen, anlegen und teilen – auch offline; Autofill unter Android",
+            "en": "View, create and share entries – offline too; autofill on Android"
+          }
+        },
+        {
+          "icon": "shield",
+          "title": {
+            "de": "Ende-zu-Ende verschlüsselt",
+            "en": "End-to-end encrypted"
+          },
+          "text": {
+            "de": "Nur die Apps können lesen – der Server und der Admin nicht",
+            "en": "Only the apps can read – not the server, not the administrator"
+          }
+        },
+        {
+          "icon": "users",
+          "title": {
+            "de": "Geteilte Tresore",
+            "en": "Shared vaults"
+          },
+          "text": {
+            "de": "Für Familie oder Team, mit den Rollen lesen, bearbeiten, verwalten",
+            "en": "For family or team, with the roles read, edit, manage"
+          }
+        },
+        {
+          "icon": "key",
+          "title": {
+            "de": "Wiederherstellung & Notfallzugriff",
+            "en": "Recovery & emergency access"
+          },
+          "text": {
+            "de": "Wiederherstellungsschlüssel und Vertrauenspersonen mit Wartezeit",
+            "en": "A recovery key and trusted people with a waiting time"
+          }
+        },
+        {
+          "icon": "page",
+          "title": {
+            "de": "Admin-Seite „Übersicht“",
+            "en": "Admin page “Overview”"
+          },
+          "text": {
+            "de": "Wer Vault nutzt und Zahlen – keine Inhalte",
+            "en": "Who uses Vault and counts – no content"
+          }
+        },
+        {
+          "icon": "clock",
+          "title": {
+            "de": "Papierkorb & Versionen",
+            "en": "Trash & versions"
+          },
+          "text": {
+            "de": "30 Tage Papierkorb, die letzten 10 Fassungen je Eintrag",
+            "en": "30 days of trash, the last 10 versions of an entry"
+          }
+        }
+      ],
+      "permissions": [
+        {
+          "icon": "users",
+          "title": {
+            "de": "Benutzer lesen",
+            "en": "Read users"
+          },
+          "text": {
+            "de": "Die GateControl-Konten erscheinen beim Teilen.",
+            "en": "The GateControl accounts appear when sharing."
+          }
+        },
+        {
+          "icon": "data",
+          "title": {
+            "de": "Daten speichern",
+            "en": "Store data"
+          },
+          "text": {
+            "de": "Nur verschlüsselte Einträge und Schlüssel, die der Server nicht öffnen kann.",
+            "en": "Only encrypted entries and keys the server cannot open."
+          }
+        },
+        {
+          "icon": "app",
+          "title": {
+            "de": "App-Schnittstelle",
+            "en": "App interface"
+          },
+          "text": {
+            "de": "Die GateControl-Apps gleichen ihre verschlüsselte Kopie ab – ohne VPN.",
+            "en": "The GateControl apps sync their encrypted copy – without the VPN."
+          }
+        },
+        {
+          "icon": "bell",
+          "title": {
+            "de": "Mitteilungen",
+            "en": "Notifications"
+          },
+          "text": {
+            "de": "„Tresor geteilt“ und Notfallzugriff – nie mit Inhalten.",
+            "en": "“Vault shared” and emergency access – never with content."
+          }
+        }
+      ],
+      "shows": [
+        {
+          "kind": "list",
+          "caption": {
+            "de": "App · Einträge eines Tresors",
+            "en": "App · the entries of a vault"
+          }
+        },
+        {
+          "kind": "tile",
+          "caption": {
+            "de": "Einträge",
+            "en": "Entries"
+          },
+          "value": "248"
+        }
+      ],
+      "needs": {
+        "de": "GateControl-App auf Android oder Windows (dort wird ver- und entschlüsselt)",
+        "en": "The GateControl app on Android or Windows (that is where encryption happens)"
+      },
+      "languages": [
+        "de",
+        "en"
+      ]
     }
   }
 }
