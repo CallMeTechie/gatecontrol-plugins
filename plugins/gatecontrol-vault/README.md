@@ -181,7 +181,8 @@ vault?: <id>, emergency?: <id> } }`. Pushes never carry names of vaults or entri
 
 ## Kryptoformat
 
-libsodium on every platform (Android: lazysodium; Windows/Electron and the portal: libsodium-wrappers-sumo). The
+libsodium semantics on every platform (Windows/Electron and the portal: libsodium-wrappers-sumo; Android: the same
+primitives from Bouncy Castle, pure Java, checked against the same vectors). The
 reference implementation and its fixed test vectors live in **gatecontrol-client-core** (`vault-crypto`); every app
 checks the same vectors, so all platforms encrypt and decrypt bit for bit alike. The server checks only shapes and
 sizes — it never holds a key.
@@ -189,7 +190,7 @@ sizes — it never holds a key.
 | Key | Made | Stored | Opens |
 |---|---|---|---|
 | master key (32 B) | `crypto_pwhash` Argon2id13 (master password, `kdf.salt` 16 B), `m` KiB, `t` passes; apps 64 MiB / 3, `p` = 1 | memory only | `userKeyPw` |
-| recovery key (32 B, random) | at setup, shown once (print, QR, word list) | with the person only | `userKeyRk` |
+| recovery key (32 B, random) | at setup, shown once (copy, print) | with the person only | `userKeyRk` |
 | user key (32 B, random) | at setup | `userKeyPw`, `userKeyRk` | `privateKeyEnc` |
 | key pair (X25519) | `crypto_box_keypair` at setup | `publicKey` (raw 32 B), `privateKeyEnc` | `sealedKey`s |
 | vault key (32 B, random) | per vault and key generation | `sealedKey` per member | `nameEnc`, the vault's `blob`s |
@@ -212,10 +213,22 @@ plus the plaintext. The **AD** (UTF-8) binds each ciphertext to its place, so th
 `crypto_box_seal(key, recipient publicKey)` — 80 bytes for a 32-byte key. A member's holds the vault key; an
 emergency's holds the grantor's user key (→ `privateKeyEnc` → the grantor's `sealedKey`s).
 
-The entry JSON (`{ "v": 1, "type": "login" | "totp" | "note" | "card" | "wifi" | "identity", "title", "fields",
-"fav", "tags", … }`) is defined in client-core; the server never sees it. `rev` in the AD is the revision the save
+The entry JSON (`{ "v": 1, "type": "login" | "totp" | "note" | "card" | "wifi" | "identity", "title", "fav",
+"notes", "urls": [], "apps": [], "fields": {}, "custom": [{ "name", "value", "secret" }] }`) is defined in
+client-core; apps keep keys they do not know. `fields` per type — login: `username`, `password`, `totp`; card:
+`holder`, `number`, `expiry`, `cvc`, `pin`; wifi: `ssid`, `password`, `security`; identity: `name`, `email`,
+`phone`, `address`, `birthday`. The server never sees it. `rev` in the AD is the revision the save
 creates (`baseRev + 1`), so an app rejects an entry the server hands back under another revision, vault or id; it
 also never accepts a lower `rev` than the one it already has.
+
+**Recovery key** (as shown and typed): the 32 bytes plus 3 check bytes (the first 3 of BLAKE2b-256 of the key) in
+Crockford base32 — 56 characters in 14 groups of 4 joined by dashes (`7KQ2-M9ZD-…`). Apps accept lower case, spaces and dashes, and read `O` as `0`,
+`I` / `L` as `1`; a wrong check refuses the key before any decryption.
+
+**Safety number** (to compare a person's key before sharing, mockups A8 / W3): `SHA-256("gcv1:fingerprint:" ‖
+publicKey)`; the 32-byte hash as 8 big-endian 4-byte words, each `mod 100000`, zero-padded to 5 digits — 8 groups
+like `48213 90577 …`. Both sides compute it from the `publicKey` the server hands out; if they match, the server
+did not swap the key.
 
 ## Tests
 
