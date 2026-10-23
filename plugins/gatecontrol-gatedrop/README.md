@@ -72,6 +72,9 @@ with addresses in the same private IPv4 network (10/8, 172.16/12, 192.168/16; th
 online, and one side listens (`mode`: `push` = the target listens, `pull` = the asking device listens). Show the link
 target only when `me.canLink && links.enabled`.
 
+A send's `from` (and a transfer's, and the silent push's) carries `own`: `true` when it came from the viewer's own
+account (one's own device: name it by `deviceName`), `false` from another person (name them by `name`).
+
 `peopleDevices` (since 1.2.0): other people's devices whose owner opened them for everyone (`PUT device`), same fields
 as `devices` plus `owner`; sorted by owner and name. Send to them like to own devices (`to.devices`); the delivery then
 belongs to the owner (`ownerId` in the sender's view, label `"Surface (Marc)"`), the owner's device gets the push

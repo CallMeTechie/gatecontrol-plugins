@@ -65,7 +65,7 @@ test('direct, push mode: the PC listens in the same network — ticket, key, can
     assert.deepEqual([p.silent, p.users, p.devices, p.topic], [true, [ANNA.id], ['anna-pc'], 'received']);
     const g = p.data.gatedrop;
     assert.deepEqual([g.transfer, g.send, g.mode, g.key, g.ticket, g.candidates], [d.transferId, r.id, 'push', d.key, d.ticket, d.candidates]);
-    assert.deepEqual(g.from, { userId: ANNA.id, name: 'Anna', deviceId: 'anna-phone', deviceName: 'Pixel' });
+    assert.deepEqual(g.from, { userId: ANNA.id, name: 'Anna', deviceId: 'anna-phone', deviceName: 'Pixel', own: true });
     assert.deepEqual(g.items, [{ index: 0, name: 'IMG_2041.jpg', bytes: 3100000, mime: 'image/jpeg' }, { index: 1, name: 'IMG_2044.jpg', bytes: 3300000, mime: 'application/octet-stream' }]);
     // the listener asks again (authenticated): ticket and key while open
     const tr = (await pc(c)('GET', `transfers/${d.transferId}`)).json.transfer;
@@ -204,7 +204,7 @@ test('who may send to a device: GET/PUT device — open for everyone, listed for
     const p = c.pushes().pop();
     assert.deepEqual([p.users, p.devices, p.title], [[ANNA.id], ['anna-pc'], 'Marc hat dir eine Datei geschickt']);
     const pend = (await pc(c)('GET', 'pending')).json.items;
-    assert.deepEqual(pend.map((s) => [s.id, s.role, s.from.name, s.items[0].name]), [[r.id, 'received', 'Marc', 'rechnung.pdf']]);
+    assert.deepEqual(pend.map((s) => [s.id, s.role, s.from.name, s.from.own, s.items[0].name]), [[r.id, 'received', 'Marc', false, 'rechnung.pdf']]);
     assert.deepEqual((await phone(c)('GET', 'pending')).json.items, [], 'only that device');
     assert.equal((await pc(c)('GET', `items/${m}`)).status, 200, 'Anna may download it');
     assert.equal((await host.mediaGet({ ...ANNA }, m)).status, 200);
@@ -241,10 +241,10 @@ test('another person\'s device directly in the same Wi-Fi: local items, the sile
     assert.deepEqual([d.deviceId, d.mode, d.candidates], ['anna-pc', 'push', ['192.168.1.20:47731']]);
     const p = c.pushes().pop();
     assert.deepEqual([p.silent, p.users, p.devices], [true, [ANNA.id], ['anna-pc']]);
-    assert.deepEqual(p.data.gatedrop.from, { userId: MARC.id, name: 'Marc', deviceId: 'marc-phone', deviceName: 'Marcs Handy' });
+    assert.deepEqual(p.data.gatedrop.from, { userId: MARC.id, name: 'Marc', deviceId: 'marc-phone', deviceName: 'Marcs Handy', own: false });
     // the PC (Anna) is the receiving end, Marc's phone the sending end; Anna's phone is neither
     const tr = (await pc(c)('GET', `transfers/${d.transferId}`)).json.transfer;
-    assert.deepEqual([tr.side, tr.status, tr.ticket, tr.from.name], ['receiver', 'open', d.ticket, 'Marc']);
+    assert.deepEqual([tr.side, tr.status, tr.ticket, tr.from.name, tr.from.own], ['receiver', 'open', d.ticket, 'Marc', false]);
     assert.equal((await phone(c)('GET', `transfers/${d.transferId}`)).status, 404);
     assert.equal((await marc('GET', `transfers/${d.transferId}`)).json.transfer.side, 'sender');
     const res = (await pc(c)('POST', `transfers/${d.transferId}/result`, { ok: true, bytes: 50_000_000 })).json;

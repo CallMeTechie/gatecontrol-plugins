@@ -138,7 +138,7 @@ async function view(ctx, send, role, dels) {
   const u = ctx.users.get(send.user_id);
   return {
     id: send.id, role, createdAt: iso(send.created_at), expiresAt: iso(send.expires_at), expired: send.purged === 1,
-    from: { userId: send.user_id, name: u ? u.name : null, avatarUrl: u ? u.avatarUrl : null, deviceId: send.device_id || null, deviceName: send.device_name || null },
+    from: { userId: send.user_id, name: u ? u.name : null, avatarUrl: u ? u.avatarUrl : null, deviceId: send.device_id || null, deviceName: send.device_name || null, own: send.user_id === ctx.viewer },
     text: send.text || null, link: send.link || null, note: send.note || null,
     items: items.map((i) => itemView(i, send)), deliveries: shown.map((d) => deliveryView(d, send)),
   };
@@ -276,7 +276,10 @@ async function create(ctx, body) {
     [st.status, st.via || null, st.error || null, st.ref || null, ctx.now, st.handed || 0, st.gd_items || 0, ...(st.target ? [st.target, st.label || null] : []), dId]);
   // own devices: silent pushes for direct transfers, a push for the others
   const from = { userId: ctx.viewer, name: ctx.user.name, deviceId: ctx.deviceId || null, deviceName: ctx.deviceName || null };
-  for (const tr of direct) await deliver.pushDirect(gc, sendRow, stored, tr, from, plans.find((p) => p.deliveryId === tr.delivery_id).owner);
+  for (const tr of direct) {
+    const owner = plans.find((p) => p.deliveryId === tr.delivery_id).owner;
+    await deliver.pushDirect(gc, sendRow, stored, tr, { ...from, own: owner === ctx.viewer }, owner); // own: one's own device
+  }
   // an offline device: 'waiting' (the push is queued by GateControl, the app fetches it with GET pending)
   for (const dd of devDeliveries) {
     const d = await store.one(gc, 'SELECT * FROM deliveries WHERE id = ?', [dd.id]);

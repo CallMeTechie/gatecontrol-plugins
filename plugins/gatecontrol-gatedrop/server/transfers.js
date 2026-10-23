@@ -62,7 +62,7 @@ async function get(ctx, id) {
   return {
     id: tr.id, sendId: send.id, side, mode: tr.mode, status: open ? 'open' : (tr.status === 'open' ? 'expired' : tr.status),
     fromDevice: tr.from_device, toDevice: tr.to_device,
-    from: { userId: send.user_id, name: ctx.users && ctx.users.get(send.user_id) ? ctx.users.get(send.user_id).name : null, deviceId: send.device_id, deviceName: send.device_name || null },
+    from: { userId: send.user_id, name: ctx.users && ctx.users.get(send.user_id) ? ctx.users.get(send.user_id).name : null, deviceId: send.device_id, deviceName: send.device_name || null, own: send.user_id === ctx.viewer },
     candidates: tr.candidates, key: open ? tr.key : null, ticket: open ? tr.ticket : null, expiresAt: iso(tr.expires_at),
     items: items.map((i) => ({ index: i.idx, name: i.name, bytes: i.bytes, mime: i.mime || null })),
   };
