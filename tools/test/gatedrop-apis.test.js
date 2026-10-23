@@ -169,6 +169,6 @@ test('public links: permission and switch, create checks, counters, PIN lock, do
   try {
     const m = (await nourl.upload({ id: 2 }, Buffer.from('%PDF'), 'application/pdf')).body.mediaId;
     await nourl.gc.media.claim(m);
-    await assert.rejects(nourl.gc.publicLinks.create({ files: [{ mediaId: m, name: 'a' }], expiresAt: Date.now() + 60000, ownerUserId: 2 }), (e) => e.code === 'ERR_NO_PUBLIC_URL');
+    await assert.rejects(nourl.gc.publicLinks.create({ files: [{ mediaId: m, name: 'a' }], expiresAt: Date.now() + 120000, ownerUserId: 2 }), (e) => e.code === 'ERR_NO_PUBLIC_URL');
   } finally { await nourl.close(); }
 });
