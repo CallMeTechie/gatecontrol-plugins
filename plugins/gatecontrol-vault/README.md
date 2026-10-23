@@ -96,7 +96,9 @@ Vault = { "id": "…", "kind": "personal" | "shared", "ownerId": 2, "nameEnc": "
 After someone left (`needsRekey`), a manager's app gives the vault a new key, in steps because a request is ≤ 64 KB:
 
 1. `POST vaults/<id>/rekey/start` — `{ keyRev: keyRev + 1, keys: [{ userId, sealedKey }] }` for **exactly** the
-   current members → `{ vault }` (with `pending`). May be repeated until an entry uses the new key.
+   current members → `{ vault }` (with `pending`). Refused with `rekeying` while a change is pending — another
+   manager's app continues with `pending` instead; only a change stuck for a day with no entry on the new key yet may
+   be started again.
 2. `POST items` for every entry not purged — trash included — encrypted with the new key, `keyRev` = the new one,
    `baseRev` = its rev. From step 1 on only the new `keyRev` is accepted (`stale_key` otherwise), also from the
    other members' apps: they read `pending` from the sync and use it.

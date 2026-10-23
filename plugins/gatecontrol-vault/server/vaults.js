@@ -195,8 +195,14 @@ async function removeMember(ctx, id, uidRaw) {
 
 /**
  * POST vaults/<id>/rekey/start — { keyRev, keys: [{ userId, sealedKey }] }: the new key (generation key_rev + 1)
- * sealed to exactly the current members. Repeating it is allowed until an entry uses the new key.
+ * sealed to exactly the current members. While a change is pending it is refused (`rekeying`): a second manager
+ * starting with another key under the same keyRev would leave entries under a key the vault no longer holds — the
+ * others continue with `pending` instead. Only a change stuck for a day with no entry on the new key yet (nobody
+ * could open it) may be started again.
  */
+// A pending key change nobody moved on for this long may be started again (see rekeyStart).
+const REKEY_STUCK_MS = 24 * 60 * 60 * 1000;
+
 async function rekeyStart(ctx, id, body) {
   const b = body || {};
   const keyRev = posInt(b.keyRev);
@@ -211,7 +217,11 @@ async function rekeyStart(ctx, id, body) {
   await store.tx(gc, async () => {
     const m = await needRole(gc, id, viewer, 'manage');
     if (keyRev !== m.key_rev + 1) throw fail('stale_key');
-    if (m.pending_key_rev && (await store.one(gc, 'SELECT 1 AS x FROM items WHERE vault_id = ? AND key_rev = ?', [id, m.pending_key_rev]))) throw fail('rekeying');
+    if (m.pending_key_rev) {
+      const started = await store.one(gc, "SELECT MAX(at) AS at FROM events WHERE vault_id = ? AND action = 'vault.rekey_start'", [id]);
+      const stuck = !started || !started.at || now - started.at >= REKEY_STUCK_MS;
+      if (!stuck || (await store.one(gc, 'SELECT 1 AS x FROM items WHERE vault_id = ? AND key_rev = ?', [id, m.pending_key_rev]))) throw fail('rekeying');
+    }
     const members = (await store.all(gc, 'SELECT user_id FROM members WHERE vault_id = ?', [id])).map((r) => r.user_id);
     if (members.length !== keys.size || !members.every((u) => keys.has(u))) throw fail('invalid');
     const seq = await store.nextSeq(gc);
