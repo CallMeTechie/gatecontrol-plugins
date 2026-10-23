@@ -45,10 +45,11 @@ async function locate(ctx, id) {
   if (!tr) throw fail('not_found');
   const send = await store.one(ctx.gc, 'SELECT * FROM sends WHERE id = ?', [tr.send_id]);
   const delivery = await store.one(ctx.gc, 'SELECT * FROM deliveries WHERE id = ?', [tr.delivery_id]);
-  if (!send || !delivery || send.user_id !== ctx.viewer) throw fail('not_found');
+  if (!send || !delivery) throw fail('not_found');
+  // the sender's device, or the receiving device of its owner (oneself, or another person whose device is open)
   let side = null;
-  if (ctx.deviceId === tr.to_device) side = 'receiver';
-  else if (ctx.deviceId === tr.from_device) side = 'sender';
+  if (ctx.deviceId === tr.to_device && (delivery.user_id || send.user_id) === ctx.viewer) side = 'receiver';
+  else if (ctx.deviceId === tr.from_device && send.user_id === ctx.viewer) side = 'sender';
   if (!side) throw fail('not_found');
   return { tr, side, send, delivery };
 }
@@ -60,7 +61,8 @@ async function get(ctx, id) {
   const open = tr.status === 'open' && tr.expires_at > ctx.now;
   return {
     id: tr.id, sendId: send.id, side, mode: tr.mode, status: open ? 'open' : (tr.status === 'open' ? 'expired' : tr.status),
-    fromDevice: tr.from_device, toDevice: tr.to_device, from: { userId: send.user_id, deviceId: send.device_id, deviceName: send.device_name || null },
+    fromDevice: tr.from_device, toDevice: tr.to_device,
+    from: { userId: send.user_id, name: ctx.users && ctx.users.get(send.user_id) ? ctx.users.get(send.user_id).name : null, deviceId: send.device_id, deviceName: send.device_name || null },
     candidates: tr.candidates, key: open ? tr.key : null, ticket: open ? tr.ticket : null, expiresAt: iso(tr.expires_at),
     items: items.map((i) => ({ index: i.idx, name: i.name, bytes: i.bytes, mime: i.mime || null })),
   };

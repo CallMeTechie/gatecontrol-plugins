@@ -5,7 +5,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { withHost, ANNA, MARC, PDF, PNG, MIN } = require('./helpers');
+const { withHost, ANNA, MARC, LENA, WALL, PDF, PNG, MIN } = require('./helpers');
 
 const phone = (c) => c.as(ANNA, 'anna-phone');
 const pc = (c) => c.as(ANNA, 'anna-pc');
@@ -174,5 +174,89 @@ test('device ids as numbers (Android 1.61 sends GateControl token ids as JSON nu
     assert.deepEqual(r.json.deliveries.map((d) => [d.target, d.status]), [['107', 'waiting']]);
     assert.equal((await fold('POST', 'sends', { text: 'hallo', to: { devices: [106] } })).json.code, 'invalid', 'not to itself');
     for (const bad of [0, -1, 1.5, 2 ** 53]) assert.equal((await fold('POST', 'sends', { text: 'x', to: { devices: [bad] } })).json.code, 'invalid', String(bad));
+  });
+});
+
+test('who may send to a device: GET/PUT device — open for everyone, listed for others with the owner, closed again', async () => {
+  await withHost({}, async (host, c) => {
+    const marc = c.as(MARC, 'marc-phone');
+    // the default: only the owner
+    assert.deepEqual((await pc(c)('GET', 'device')).json.device, { id: 'anna-pc', receiveFrom: 'self' });
+    assert.equal((await c.portal(ANNA)('GET', 'device')).json.code, 'no_device');
+    assert.equal((await c.portal(ANNA)('PUT', 'device', { receiveFrom: 'everyone' })).json.code, 'no_device');
+    for (const body of [{}, { receiveFrom: 'all' }, { receiveFrom: true }, null]) assert.equal((await pc(c)('PUT', 'device', body)).json.code, 'invalid');
+    assert.deepEqual((await marc('GET', 'targets')).json.peopleDevices, []);
+    assert.equal((await marc('POST', 'sends', { text: 'hi', to: { devices: ['anna-pc'] } })).json.code, 'invalid', 'not open');
+    // Anna opens her PC (and her tablet); Marc sees both with the owner; Anna's phone never lists them as someone else's
+    assert.deepEqual((await pc(c)('PUT', 'device', { receiveFrom: 'everyone' })).json.device, { id: 'anna-pc', receiveFrom: 'everyone' });
+    await c.as(ANNA, 'anna-tab')('PUT', 'device', { receiveFrom: 'everyone' });
+    assert.equal((await pc(c)('GET', 'targets')).json.me.receiveFrom, 'everyone');
+    const t = (await marc('GET', 'targets')).json;
+    assert.deepEqual(t.peopleDevices.map((d) => [d.id, d.name, d.platform, d.online, d.direct, d.owner]),
+      [['anna-pc', 'Büro-PC', 'windows', true, false, { id: ANNA.id, name: 'Anna' }], ['anna-tab', 'Tablet', 'android', false, false, { id: ANNA.id, name: 'Anna' }]]);
+    assert.deepEqual(t.devices, [], 'Marc has no other device of his own');
+    assert.deepEqual((await phone(c)('GET', 'targets')).json.peopleDevices, []);
+    // Marc sends a file to Anna's PC: the delivery belongs to Anna — her PC's push, GET pending, her inbox
+    const m = await c.upload(MARC, PDF, 'application/pdf');
+    const r = (await marc('POST', 'sends', { items: [{ mediaId: m, name: 'rechnung.pdf' }], to: { devices: ['anna-pc'] } })).json;
+    assert.equal(r.ok, true);
+    assert.deepEqual(r.deliveries.map((d) => [d.kind, d.target, d.label, d.status, d.via, d.ownerId]), [['device', 'anna-pc', 'Büro-PC (Anna)', 'delivered', 'server', ANNA.id]]);
+    const p = c.pushes().pop();
+    assert.deepEqual([p.users, p.devices, p.title], [[ANNA.id], ['anna-pc'], 'Marc hat dir eine Datei geschickt']);
+    const pend = (await pc(c)('GET', 'pending')).json.items;
+    assert.deepEqual(pend.map((s) => [s.id, s.role, s.from.name, s.items[0].name]), [[r.id, 'received', 'Marc', 'rechnung.pdf']]);
+    assert.deepEqual((await phone(c)('GET', 'pending')).json.items, [], 'only that device');
+    assert.equal((await pc(c)('GET', `items/${m}`)).status, 200, 'Anna may download it');
+    assert.equal((await host.mediaGet({ ...ANNA }, m)).status, 200);
+    assert.equal((await c.as(LENA)('GET', `items/${m}`)).status, 404, 'nobody else');
+    assert.deepEqual((await pc(c)('GET', 'inbox', null, { kind: 'received' })).json.items.map((s) => [s.id, s.from.name]), [[r.id, 'Marc']]);
+    assert.deepEqual((await marc('GET', 'inbox', null, { kind: 'sent' })).json.items.map((s) => s.id), [r.id]);
+    assert.deepEqual((await marc('GET', 'inbox', null, { kind: 'received' })).json.items, [], 'not Marc\'s device');
+    const o = (await pc(c)('POST', `sends/${r.id}/opened`)).json.send;
+    assert.deepEqual(o.deliveries.map((d) => [d.target, d.status]), [['anna-pc', 'opened']]);
+    assert.deepEqual((await marc('GET', `sends/${r.id}`)).json.send.deliveries.map((d) => d.status), ['opened'], 'the sender sees it opened');
+    // the offline tablet: waiting until it asks
+    const r2 = (await marc('POST', 'sends', { text: 'Bis später', to: { devices: ['anna-tab'] } })).json;
+    assert.deepEqual(r2.deliveries.map((d) => [d.status, d.ownerId]), [['waiting', ANNA.id]]);
+    // Anna closes the PC: gone for Marc, a send to it is refused as unavailable (not invalid)
+    await pc(c)('PUT', 'device', { receiveFrom: 'self' });
+    assert.deepEqual((await marc('GET', 'targets')).json.peopleDevices.map((d) => d.id), ['anna-tab']);
+    assert.equal((await marc('POST', 'sends', { text: 'hi', to: { devices: ['anna-pc'] } })).json.code, 'unavailable');
+    // kiosk accounts are never listed and never send
+    await c.as(WALL, 'wall-tab')('PUT', 'device', { receiveFrom: 'everyone' });
+    assert.equal((await c.call({ ...WALL, app: true, kiosk: true, device: { id: 'wall-tab', platform: 'android' } }, 'GET', 'targets')).json.code, 'forbidden');
+  });
+});
+
+test('another person\'s device directly in the same Wi-Fi: local items, the silent push to its owner, both ends report', async () => {
+  await withHost({}, async (host, c) => {
+    const marc = c.as(MARC, 'marc-phone');
+    await pc(c)('PUT', 'device', { receiveFrom: 'everyone' });
+    await c.presence(MARC, 'marc-phone', '192.168.1.40', false);
+    await c.presence(ANNA, 'anna-pc', '192.168.1.20', true);
+    const t = (await marc('GET', 'targets')).json.peopleDevices;
+    assert.deepEqual(t.map((d) => [d.id, d.direct, d.mode]), [['anna-pc', true, 'push']]);
+    const r = (await marc('POST', 'sends', { items: [{ name: 'urlaub.mp4', bytes: 50_000_000, mime: 'video/mp4', local: true }], to: { devices: ['anna-pc'] } })).json;
+    const d = r.direct[0];
+    assert.deepEqual([d.deviceId, d.mode, d.candidates], ['anna-pc', 'push', ['192.168.1.20:47731']]);
+    const p = c.pushes().pop();
+    assert.deepEqual([p.silent, p.users, p.devices], [true, [ANNA.id], ['anna-pc']]);
+    assert.deepEqual(p.data.gatedrop.from, { userId: MARC.id, name: 'Marc', deviceId: 'marc-phone', deviceName: 'Marcs Handy' });
+    // the PC (Anna) is the receiving end, Marc's phone the sending end; Anna's phone is neither
+    const tr = (await pc(c)('GET', `transfers/${d.transferId}`)).json.transfer;
+    assert.deepEqual([tr.side, tr.status, tr.ticket, tr.from.name], ['receiver', 'open', d.ticket, 'Marc']);
+    assert.equal((await phone(c)('GET', `transfers/${d.transferId}`)).status, 404);
+    assert.equal((await marc('GET', `transfers/${d.transferId}`)).json.transfer.side, 'sender');
+    const res = (await pc(c)('POST', `transfers/${d.transferId}/result`, { ok: true, bytes: 50_000_000 })).json;
+    assert.deepEqual([res.delivery.status, res.delivery.via], ['delivered', 'direct']);
+    // a failed direct transfer: the server way to Anna's PC after Marc uploads
+    const r2 = (await marc('POST', 'sends', { items: [{ name: 'b.jpg', bytes: 10, local: true }], to: { devices: ['anna-pc'] } })).json;
+    const f = (await marc('POST', `transfers/${r2.direct[0].transferId}/result`, { ok: false, error: 'not_fetched' })).json;
+    assert.deepEqual([f.fallback, f.missing], ['upload', [0]]);
+    const m = await c.upload(MARC, PNG, 'image/jpeg');
+    await marc('POST', `sends/${r2.id}/items`, { items: [{ index: 0, mediaId: m }] });
+    const push = c.pushes().pop();
+    assert.deepEqual([push.silent, push.users, push.devices, push.title], [undefined, [ANNA.id], ['anna-pc'], 'Marc hat dir eine Datei geschickt']);
+    assert.deepEqual((await pc(c)('GET', 'pending')).json.items.map((s) => s.id), [r2.id]);
   });
 });

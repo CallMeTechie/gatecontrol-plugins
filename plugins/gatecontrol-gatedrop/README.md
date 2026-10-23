@@ -17,6 +17,8 @@ Needs GateControl ≥ 1.193.0: `media` up to 2 GB (`resumable`), `permissions.de
 
 * Every account may send to people and to its own devices — never a kiosk device (`user.kiosk`), never device trust
   alone (`loggedIn: false` → `403 login_required`), never the admin UI.
+* Another person's device only when its owner opened it on that device (`PUT device { receiveFrom: 'everyone' }`,
+  default `self`); kiosk accounts' devices are never listed for others.
 * Links for outsiders and NAS folders: administrators and Familie's parents (`family_roles`, cached 10 minutes).
   Links also need the administrator's switch *Öffentliche Links erlauben* (default off).
 
@@ -47,10 +49,13 @@ anything else (HTML, XML, JSON, SVG, …) goes up as `application/octet-stream`.
 
 ```jsonc
 { "ok": true,
-  "me": { "id": 2, "name": "Anna", "canLink": true, "canNas": true, "deviceId": "42" },   // deviceId: the asking app or null
+  "me": { "id": 2, "name": "Anna", "canLink": true, "canNas": true, "deviceId": "42",     // deviceId: the asking app or null
+          "receiveFrom": "self" },                                                        // this device's setting (null: portal)
   "people": [ { "id": "family", "name": "Familie", "avatar": null, "initials": null, "colorHex": null, "kind": "family" },
               { "id": 3, "name": "Marc", "avatar": "/avatars/….webp", "initials": "MA", "colorHex": "#84CC16", "kind": "user" } ],
   "devices": [ { "id": "43", "name": "Büro-PC", "platform": "windows", "online": true, "direct": true, "mode": "push" } ],
+  "peopleDevices": [ { "id": "51", "name": "Surface", "platform": "windows", "online": false, "direct": false,   // since 1.2.0
+                       "owner": { "id": 3, "name": "Marc" } } ],
   "nas": [ { "id": 1, "label": "Ablage", "path": "/Familie/Ablage" } ],                   // [] unless canNas
   "links": { "enabled": true },                                                           // the administrator's switch
   "messenger": true,                                                                      // people get a chat message
@@ -66,6 +71,19 @@ anything else (HTML, XML, JSON, SVG, …) goes up as `application/octet-stream`.
 with addresses in the same private IPv4 network (10/8, 172.16/12, 192.168/16; the shorter prefix of both), the target is
 online, and one side listens (`mode`: `push` = the target listens, `pull` = the asking device listens). Show the link
 target only when `me.canLink && links.enabled`.
+
+`peopleDevices` (since 1.2.0): other people's devices whose owner opened them for everyone (`PUT device`), same fields
+as `devices` plus `owner`; sorted by owner and name. Send to them like to own devices (`to.devices`); the delivery then
+belongs to the owner (`ownerId` in the sender's view, label `"Surface (Marc)"`), the owner's device gets the push
+("Marc hat dir … geschickt"), `GET pending`, `GET transfers/<id>` as the receiving end, and the send in its inbox
+(`received`). A device closed meanwhile → `409 unavailable`.
+
+### `GET device`, `PUT device` (apps only, since 1.2.0)
+
+Who may send to the asking app installation: `{ "receiveFrom": "self" | "everyone" }` → `{ ok, device: { id,
+receiveFrom } }`. `self` (default): only its owner; `everyone`: every account of this GateControl (not kiosk devices)
+sees it under `peopleDevices` and may send to it. Set on the device itself (the Android app's and the Windows client's
+GateDrop page).
 
 ### `PUT presence` (apps only)
 

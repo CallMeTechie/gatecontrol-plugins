@@ -5,7 +5,8 @@
 //           candidates, key, ticket, expiresAt } } (the sender gets the same in the answer's `direct`);
 //           otherwise / after a failed direct transfer → a push "<device> hat dir … geschickt" to that device
 //           with data { gatedrop: { send } }; the device downloads with GET items/<mediaId>. An offline device's
-//           delivery is 'waiting' until the app asks GET pending (then 'delivered').
+//           delivery is 'waiting' until the app asks GET pending (then 'delivered'). Another person's device (open
+//           for everyone): the same, the delivery belongs to its owner (user_id) and the push names the sender.
 //   person  the Messenger's service send_file (the files handed over with gc.media.handOver) → a message of
 //           the sender in the direct chat / the family chat; without the Messenger (or when it refuses) a push
 //           to the person (to the family's members) like a device delivery through the server.
@@ -108,7 +109,8 @@ async function pushDirect(gc, send, items, tr, from, userId) {
  * fetches the send with GET pending once it is back; that call makes it 'delivered'.
  */
 async function deviceServer(gc, send, items, delivery, senderName, online = true) {
-  const ok = await pushReceived(gc, send, items, { users: [send.user_id], devices: [delivery.target], senderName, toSelf: true });
+  const owner = delivery.user_id || send.user_id; // another person's device open for everyone: its owner
+  const ok = await pushReceived(gc, send, items, { users: [owner], devices: [delivery.target], senderName, toSelf: owner === send.user_id });
   return { status: online === false ? 'waiting' : 'delivered', via: 'server', error: ok ? null : 'push_failed' };
 }
 

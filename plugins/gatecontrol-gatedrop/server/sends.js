@@ -9,6 +9,7 @@
 const store = require('./store');
 const people = require('./people');
 const presence = require('./presence');
+const access = require('./access');
 const deliver = require('./deliver');
 const transfers = require('./transfers');
 const jobs = require('./bg');
@@ -103,9 +104,10 @@ function itemView(i, send) {
   return { index: i.idx, mediaId: available ? i.media_id : null, name: i.name, mime: i.mime || null, bytes: i.bytes, local: i.local === 1 && !i.media_id, available };
 }
 
-function deliveryView(d) {
+function deliveryView(d, send) {
   const out = { id: d.id, kind: d.kind, target: d.target, label: d.label || null, status: d.status, via: d.via || null, at: iso(d.at), error: d.error || null, openedAt: iso(d.opened_at) };
   if (d.kind === 'person' && d.ref && d.ref.startsWith('chat:')) out.conversationId = Number(d.ref.slice(5)) || null;
+  if (d.kind === 'device' && send && d.user_id && d.user_id !== send.user_id) out.ownerId = d.user_id; // another person's device
   if (d.kind === 'nas' && d.ref) out.paths = d.ref.split('\n');
   return out;
 }
@@ -138,7 +140,7 @@ async function view(ctx, send, role, dels) {
     id: send.id, role, createdAt: iso(send.created_at), expiresAt: iso(send.expires_at), expired: send.purged === 1,
     from: { userId: send.user_id, name: u ? u.name : null, avatarUrl: u ? u.avatarUrl : null, deviceId: send.device_id || null, deviceName: send.device_name || null },
     text: send.text || null, link: send.link || null, note: send.note || null,
-    items: items.map((i) => itemView(i, send)), deliveries: shown.map(deliveryView),
+    items: items.map((i) => itemView(i, send)), deliveries: shown.map((d) => deliveryView(d, send)),
   };
 }
 
@@ -180,15 +182,24 @@ async function create(ctx, body) {
   if ((to.nas.length || to.link) && !items.length) throw fail('invalid'); // NAS folders and links carry files
   if ((to.nas.length || to.link) && !(await people.canShare(gc, ctx.user, ctx.now))) throw fail('forbidden');
 
-  // own devices — and how each is reached
+  // own devices and other people's devices open for everyone — and how each is reached
   const plans = [];
   if (to.devices.length) {
     const mine = await people.devicesOf(gc, ctx.viewer);
     const me = ctx.deviceId ? await presence.get(gc, ctx.deviceId, ctx.viewer, ctx.now) : null;
+    let open = null;
     for (const id of to.devices) {
-      const dev = mine.find((d) => d.id === id);
-      if (!dev || id === ctx.deviceId) throw fail('invalid');
-      plans.push({ dev, ...(await presence.plan(gc, me, dev, ctx.viewer, ctx.now)) });
+      if (id === ctx.deviceId) throw fail('invalid');
+      let dev = mine.find((d) => d.id === id);
+      let owner = ctx.viewer;
+      if (!dev) {
+        if (!open) open = await access.openDevices(gc, ctx.viewer, ctx.users, await people.kioskIds(gc));
+        dev = open.find((d) => d.id === id);
+        // closed meanwhile (or never open): the target is gone, not a bad request
+        if (!dev) throw fail((await access.closedForOthers(gc, id, ctx.viewer)) ? 'unavailable' : 'invalid');
+        owner = dev.owner.id;
+      }
+      plans.push({ dev, owner, ...(await presence.plan(gc, me, dev, owner, ctx.now)) });
     }
   }
   // people (not oneself, not a kiosk device) and the family chat
@@ -244,7 +255,9 @@ async function create(ctx, body) {
     const ins = async (kind, target, userId, status, label) => (await store.run(gc, 'INSERT INTO deliveries (send_id, kind, target, user_id, status, via, at, label) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
       [id, kind, target, userId, status, status === 'direct' ? 'direct' : null, ctx.now, label])).lastInsertRowid;
     for (const p of plans) {
-      const dId = await ins('device', p.dev.id, ctx.viewer, p.direct ? 'direct' : 'pending', p.dev.name);
+      const label = p.owner === ctx.viewer ? p.dev.name : `${p.dev.name} (${p.dev.owner.name || '?'})`;
+      const dId = await ins('device', p.dev.id, p.owner, p.direct ? 'direct' : 'pending', label);
+      p.deliveryId = dId;
       if (p.direct) {
         const tr = await transfers.create(gc, { sendId: id, deliveryId: dId, fromDevice: ctx.deviceId, toDevice: p.dev.id, mode: p.mode, candidates: p.candidates }, ctx.now);
         direct.push(tr);
@@ -263,7 +276,7 @@ async function create(ctx, body) {
     [st.status, st.via || null, st.error || null, st.ref || null, ctx.now, st.handed || 0, st.gd_items || 0, ...(st.target ? [st.target, st.label || null] : []), dId]);
   // own devices: silent pushes for direct transfers, a push for the others
   const from = { userId: ctx.viewer, name: ctx.user.name, deviceId: ctx.deviceId || null, deviceName: ctx.deviceName || null };
-  for (const tr of direct) await deliver.pushDirect(gc, sendRow, stored, tr, from, ctx.viewer);
+  for (const tr of direct) await deliver.pushDirect(gc, sendRow, stored, tr, from, plans.find((p) => p.deliveryId === tr.delivery_id).owner);
   // an offline device: 'waiting' (the push is queued by GateControl, the app fetches it with GET pending)
   for (const dd of devDeliveries) {
     const d = await store.one(gc, 'SELECT * FROM deliveries WHERE id = ?', [dd.id]);
