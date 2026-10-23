@@ -2,6 +2,12 @@
 
 Passwort-Manager auf dem eigenen GateControl-Server – Ende-zu-Ende verschlüsselt.
 
+## 1.0.1
+- **Schlüsselwechsel nur noch einer zur Zeit:** Starten zwei Verwalter gleichzeitig einen Schlüsselwechsel, lehnt der
+  Server den zweiten ab (`rekeying`); dessen App macht mit dem bereits begonnenen Wechsel weiter. Bisher konnten
+  Einträge unter einem Schlüssel landen, den der Tresor danach nicht mehr kannte. Ein Wechsel, der einen Tag lang
+  ohne Fortschritt hängt, darf neu begonnen werden.
+
 ## 1.0.0
 - **Der Server-Teil von Vault.** Logins, 2FA-Codes, Notizen, Karten und WLAN-Zugänge liegen verschlüsselt auf dem
   eigenen Server. Ver- und entschlüsselt wird nur in den Apps (Android, Windows, später das Portal); der Server

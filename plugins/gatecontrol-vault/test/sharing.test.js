@@ -103,13 +103,18 @@ test('key change: start (exactly the members), entries only with the new key, fi
     assert.equal((await start({ keyRev: 2, keys }, MARC)).json.code, 'forbidden');
     const v = (await start({ keyRev: 2, keys })).json.vault;
     assert.deepEqual(v.pending, { keyRev: 2, sealedKey: keys[0].sealedKey });
+    // a second start (another manager's app, another key) is refused: the others go on with `pending`
+    const other = [{ userId: ANNA.id, sealedKey: fake.sealed() }, { userId: MARC.id, sealedKey: fake.sealed() }];
+    assert.equal((await start({ keyRev: 2, keys: other })).json.code, 'rekeying');
+    assert.equal((await c.as(ANNA)('GET', 'sync')).json.vaults.find((x) => x.id === fam).pending.sealedKey, keys[0].sealedKey);
     assert.equal((await c.as(MARC)('GET', 'sync')).json.vaults.find((x) => x.id === fam).pending.sealedKey, keys[1].sealedKey);
     assert.equal((await c.as(ANNA)('POST', `vaults/${fam}/members`, { userId: LENA.id, role: 'read', sealedKey: fake.sealed() })).json.code, 'rekeying');
     // during the change only the new key
     assert.equal((await c.item(MARC, fam, 1)).code, 'stale_key');
     assert.equal((await c.as(ANNA)('POST', `vaults/${fam}/rekey/finish`, { nameEnc: fake.name() })).json.code, 'rekeying');
     assert.equal((await c.item(ANNA, fam, 2, { id: a.id, baseRev: 2 })).ok, true);
-    // repeating start is fine until an entry uses the new key — then not any more
+    // never while an entry uses the new key — not even after a day
+    c.clock.add(25 * 3600 * 1000);
     assert.equal((await start({ keyRev: 2, keys })).json.code, 'rekeying');
     const fin = await c.as(ANNA)('POST', `vaults/${fam}/rekey/finish`, { nameEnc: fake.name() });
     assert.deepEqual([fin.json.code, fin.json.left], ['rekeying', 2], 'b and the trashed entry are left; the purged one does not count');
@@ -160,3 +165,19 @@ test('key change and leaving: nobody leaves during a change; an account deleted 
   });
 });
 
+
+test('key change stuck for a day with no entry on the new key may start again — earlier it may not', async () => {
+  await withHost({}, async (host, c) => {
+    const { fam } = await family(c);
+    await c.as(LENA)('DELETE', `vaults/${fam}/members/${LENA.id}`);
+    const keys = () => [{ userId: ANNA.id, sealedKey: fake.sealed() }, { userId: MARC.id, sealedKey: fake.sealed() }];
+    const start = (k) => c.as(ANNA)('POST', `vaults/${fam}/rekey/start`, { keyRev: 2, keys: k });
+    await start(keys());
+    c.clock.add(23 * 3600 * 1000);
+    assert.equal((await start(keys())).json.code, 'rekeying', 'not yet');
+    c.clock.add(2 * 3600 * 1000);
+    const again = keys();
+    assert.equal((await start(again)).json.vault.pending.sealedKey, again[0].sealedKey, 'stuck for a day: a new key');
+    assert.equal((await start(keys())).json.code, 'rekeying', 'the day counts from the latest start');
+  });
+});
