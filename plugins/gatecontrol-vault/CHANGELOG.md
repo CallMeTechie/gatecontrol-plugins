@@ -24,6 +24,12 @@ Passwort-Manager auf dem eigenen GateControl-Server – Ende-zu-Ende verschlüss
   Fassung und fragt, ob die eigene gespeichert oder als Kopie abgelegt werden soll. Während eines Schlüsselwechsels
   speichert der Tab mit dem neuen Schlüssel; den Wechsel selbst erledigen weiterhin die Apps.
 - Der Portal-Tab erscheint nicht auf Wand-Tablets (Kiosk-Geräten) und nur nach einer Anmeldung im Portal.
+- Sicherheit im Browser: Bei der Wiederherstellung gelten neues Passwort und neuer Schlüssel erst nach „Ich habe ihn
+  sicher aufbewahrt“; solange ein Wiederherstellungsschlüssel angezeigt wird, sperrt der Tab nicht von selbst. Die
+  Seite bleibt bedienbar, während das Hauptpasswort geprüft wird; wird dabei gesperrt, wird nichts gesendet. Konten,
+  die mehr als 256 MB für das Hauptpasswort verlangen, öffnet der Tab nicht (das schützt vor einem Server, der den
+  Browser überlasten will). Im CSV-Export werden Werte, die eine Tabellenkalkulation als Formel ausführen würde, mit
+  einem ' entschärft (Passwörter und 2FA-Schlüssel bleiben unverändert).
 
 ## 1.0.1
 - **Schlüsselwechsel nur noch einer zur Zeit:** Starten zwei Verwalter gleichzeitig einen Schlüsselwechsel, lehnt der

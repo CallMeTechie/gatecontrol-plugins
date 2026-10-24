@@ -330,6 +330,8 @@
     if (S.setup) { VC.wipe(S.setup.keys); S.setup = null; }
     if (S.emergency) S.emergency = null;
     S.newKey = null;
+    S.recovery = null;
+    S.syncing = null;
     S.decrypted.clear();
     S.entries = [];
     S.views = [];
@@ -350,6 +352,10 @@
     ['vp-nav', 'vp-rows', 'vp-detail', 'vp-screen', 'vp-dialog'].forEach(function (id) { clear($(id)); });
     $('vp-dialog').hidden = true;
     $('vp-q').value = '';
+    // a toast may name an entry or a person: gone with the rest
+    clearTimeout(toastTimer);
+    $('vp-toast').hidden = true;
+    $('vp-toast').textContent = '';
     if (S.phase !== 'loading' && S.phase !== 'login' && S.phase !== 'failed') S.phase = S.account ? 'locked' : 'intro';
     S.lockReason = had ? reason : null;
     render();
@@ -358,6 +364,9 @@
   function touch() { S.lastInput = Date.now(); }
   ['pointerdown', 'keydown', 'input', 'wheel', 'touchstart'].forEach(function (ev) { document.addEventListener(ev, touch, { capture: true, passive: true }); });
   setInterval(function () {
+    // not while a recovery key is on screen: copying it down by hand may take longer (nothing is sent before
+    // "Ich habe ihn sicher aufbewahrt"; closing the tab still locks)
+    if (S.phase === 'setup_key' || S.phase === 'recover_key') return;
     if ((S.keys || S.setup) && Date.now() - S.lastInput >= LOCK_MS) lock('timeout');
   }, 5000);
   window.addEventListener('pagehide', function () { if (S.keys || S.setup) lock('closed'); });
@@ -393,9 +402,12 @@
 
   /** Fetch what changed (and the entries of vaults shared since), then redraw. One at a time. */
   function syncAll() {
-    if (S.syncing) return S.syncing;
+    // a sync started before a lock belongs to that session: a new one runs for this one
+    if (S.syncing && S.syncing.epoch === S.epoch) return S.syncing.promise;
     var epoch = S.epoch;
-    S.syncing = pull(null, S.data.seq, epoch).then(function (ok) {
+    var run = { epoch: epoch, promise: null };
+    S.syncing = run;
+    run.promise = pull(null, S.data.seq, epoch).then(function (ok) {
       if (!ok) return false;
       var fresh = (S.data.fresh || []).slice();
       return fresh.reduce(function (p, id) {
@@ -413,8 +425,8 @@
     }, function (e) {
       if (epoch === S.epoch && e.code === 'no_account') { S.account = null; lock('account'); }
       throw e;
-    }).finally(function () { S.syncing = null; });
-    return S.syncing;
+    }).finally(function () { if (S.syncing === run) S.syncing = null; });
+    return run.promise;
   }
 
   setInterval(function () { if (S.keys && S.phase === 'open' && !document.hidden) syncAll().catch(function () { /* next round */ }); }, SYNC_EVERY_MS);
@@ -641,26 +653,38 @@
     return syncAll().catch(function (e) { toast(errText(e), 'error'); });
   }
 
-  function putAccount(make) {
+  /**
+   * A copy of the user key for a KDF path (changePassword, recover): lock() zeroes S.keys in place while Argon2id
+   * runs (the page stays responsive), and a body wrapping 32 zero bytes must never be sent. The caller wipes it.
+   */
+  function userKeyCopy() {
+    if (!S.keys) throw codeErr('locked');
+    return { userKey: S.keys.userKey.slice() };
+  }
+
+  /**
+   * PUT account with a body made in the session `epoch` — refused (locked) when the tab was locked meanwhile. A
+   * stale rev (another device changed the account): once more on top of the current one; the wrapping does not
+   * depend on rev.
+   */
+  function putAccount(body, epoch) {
     var tries = 0;
-    function attempt() {
-      var a = S.account;
-      if (!a || !S.keys) return Promise.reject(codeErr('locked'));
-      return make(a, S.keys).then(function (r) {
-        return api('PUT', 'account', r.body).then(function (raw) {
-          var acc = L.parseAccount(raw.account);
-          if (!acc) throw codeErr('invalid_answer');
-          S.account = acc;
-          return r.extra;
-        }, function (e) {
-          var cur = e.code === 'conflict' && e.extra ? L.parseAccount(e.extra.account) : null;
-          if (!cur || tries++ > 0) throw e;
-          S.account = cur;
-          return attempt();
-        });
+    function attempt(b) {
+      if (epoch !== S.epoch || !S.keys || !S.account) return Promise.reject(codeErr('locked'));
+      return api('PUT', 'account', b).then(function (raw) {
+        var acc = L.parseAccount(raw.account);
+        if (!acc) throw codeErr('invalid_answer');
+        S.account = acc;
+        if (epoch !== S.epoch) throw codeErr('locked');
+        return acc;
+      }, function (e) {
+        var cur = e.code === 'conflict' && e.extra ? L.parseAccount(e.extra.account) : null;
+        if (!cur || tries++ > 0) throw e;
+        S.account = cur;
+        return attempt(Object.assign({}, b, { rev: cur.rev }));
       });
     }
-    return attempt();
+    return attempt(body);
   }
 
   // ── rendering: top level ─────────────────────────────────
@@ -956,15 +980,20 @@
       bar.hidden = false;
       var value = m.value();
       var epoch = S.epoch;
-      putAccount(function (a, keys) {
+      var k;
+      // only made here: PUT account follows once the new recovery key was shown and kept (screenRecoverKey) —
+      // the old one stays valid until then
+      Promise.resolve().then(function () {
+        k = userKeyCopy();
         bar.set(0);
-        return VC.recover(a, keys, value, { onProgress: bar.set }).then(function (r) { return { body: r.body, extra: r.recoveryKey }; });
-      }).then(function (recoveryKey) {
+        return VC.recover(S.account, k, value, { onProgress: bar.set });
+      }).finally(function () { if (k) VC.wipe(k); }).then(function (r) {
         S.busy = false;
         value = '';
         m.clear();
-        if (epoch !== S.epoch) return;
-        S.newKey = recoveryKey;
+        if (epoch !== S.epoch || !S.keys) return;
+        S.recovery = { body: r.body };
+        S.newKey = r.recoveryKey;
         S.phase = 'recover_key';
         render();
       }, function (e) {
@@ -984,16 +1013,34 @@
 
   function screenRecoverKey() {
     var key = S.newKey;
-    if (!key || !S.keys) { S.phase = 'locked'; return screenLocked(); }
+    if (!key || !S.keys || !S.recovery) { S.phase = 'locked'; return screenLocked(); }
+    var err = h('p', { class: 'vp-err', attrs: { role: 'alert' } });
     return card([
       h('h2', { text: T('recover.new_key_title') }),
       h('p', { class: 'vp-muted', text: T('rk.text') }),
-      recoveryKeyBlock(key, function () {
-        S.newKey = null;
-        var keys = S.keys;
-        S.keys = null;
-        opened(keys);
+      recoveryKeyBlock(key, function (button) {
+        if (S.busy) return;
+        S.busy = true;
+        button.disabled = true;
+        err.textContent = '';
+        var epoch = S.epoch;
+        // now the new password and the new recovery key take effect (the old key stops working)
+        putAccount(S.recovery.body, epoch).then(function () {
+          S.busy = false;
+          if (epoch !== S.epoch) return;
+          S.newKey = null;
+          S.recovery = null;
+          var keys = S.keys;
+          S.keys = null;
+          opened(keys);
+        }, function (e) {
+          S.busy = false;
+          button.disabled = false;
+          err.textContent = errText(e);
+        });
       }, T('rk.done')),
+      err,
+      h('div', { class: 'vp-actions' }, [btn(T('p.cancel'), function () { if (!S.busy) lock('cancel'); })]),
     ], 'vp-narrow');
   }
 
@@ -2010,12 +2057,16 @@
       var epoch = S.epoch;
       var value = pw.value;
       pw.value = '';
+      var mine;
       // the master password once more: an unattended unlocked tab does not hand out everything in plain text
-      VC.unlock(S.account, value, { onProgress: bar.set }).then(function (k) {
-        var same = S.keys && VC.equal(k.userKey, S.keys.userKey);
-        VC.wipe(k);
+      Promise.resolve().then(function () {
+        mine = userKeyCopy();
+        return VC.unlock(S.account, value, { onProgress: bar.set });
+      }).then(function (k) {
+        var same = VC.equal(k.userKey, mine.userKey);
+        VC.wipe(k, mine);
         value = '';
-        if (epoch !== S.epoch) return;
+        if (epoch !== S.epoch || !S.keys) return null; // locked meanwhile: nothing is exported
         if (!same) throw codeErr('wrong_password');
         var list = S.entries.filter(function (e) { return !e.trashed && (scope === 'all' || e.vaultId === scope); })
           .map(function (e) { return { data: e.data, vaultName: vaultName(e.vaultId) }; });
@@ -2028,6 +2079,8 @@
         });
       }).catch(function (e) {
         value = '';
+        if (mine) VC.wipe(mine);
+        if (epoch !== S.epoch) return;
         go.disabled = false;
         bar.hidden = true;
         err.textContent = e && e.code === 'decrypt' ? T('err.wrong_password') : errText(e);
@@ -2059,15 +2112,22 @@
       var current = cur.value;
       var next = m.value();
       var epoch = S.epoch;
-      VC.unlock(S.account, current, { onProgress: function (f) { bar.set(f / 2); } }).then(function (k) {
-        var same = S.keys && VC.equal(k.userKey, S.keys.userKey);
+      var account = S.account;
+      var mine;
+      // the user key is copied first: a lock while Argon2id runs zeroes S.keys, never what gets wrapped
+      Promise.resolve().then(function () {
+        mine = userKeyCopy();
+        return VC.unlock(account, current, { onProgress: function (f) { bar.set(f / 2); } });
+      }).then(function (k) {
+        var same = VC.equal(k.userKey, mine.userKey);
         VC.wipe(k);
         current = '';
+        if (epoch !== S.epoch || !S.keys) throw codeErr('locked');
         if (!same) throw codeErr('wrong_password');
-        return putAccount(function (a, keys) {
-          return VC.changePassword(a, keys, next, { onProgress: function (f) { bar.set(0.5 + f / 2); } }).then(function (body) { return { body: body, extra: null }; });
-        });
-      }).then(function () {
+        return VC.changePassword(account, mine, next, { onProgress: function (f) { bar.set(0.5 + f / 2); } });
+      }).then(function (body) {
+        return putAccount(body, epoch);
+      }).finally(function () { if (mine) VC.wipe(mine); }).then(function () {
         next = '';
         if (epoch !== S.epoch) return;
         cur.value = '';
@@ -2077,6 +2137,7 @@
       }, function (e) {
         current = '';
         next = '';
+        if (epoch !== S.epoch) return;
         go.disabled = false;
         bar.hidden = true;
         err.textContent = e && e.code === 'decrypt' ? T('err.wrong_password') : errText(e);

@@ -681,7 +681,15 @@
     });
     if (col.password < 0 && col.notes < 0) return { ok: false, code: 'unknown' };
     var source = 'CSV';
-    if (header.indexOf('login_uri') >= 0) source = 'Bitwarden';
+    // Vault's own export (exportCsv): the formula escape of the other columns comes off again
+    var own = header.join(',') === EXPORT_COLUMNS.join(',');
+    if (own) {
+      source = 'Vault';
+      rows = rows.slice(0, 1).concat(rows.slice(1).map(function (r) {
+        return r.map(function (cell, i) { return EXPORT_VERBATIM.indexOf(header[i]) >= 0 ? cell : unFormula(cell); });
+      }));
+    }
+    else if (header.indexOf('login_uri') >= 0) source = 'Bitwarden';
     else if (header.indexOf('httprealm') >= 0) source = 'Firefox';
     else if (header.indexOf('group') >= 0) source = 'KeePass';
     else if (header.indexOf('otpauth') >= 0) source = '1Password';
@@ -741,7 +749,19 @@
   // ── export ───────────────────────────────────────────────
 
   var EXPORT_COLUMNS = ['vault', 'type', 'title', 'favorite', 'url', 'username', 'password', 'totp', 'notes', 'fields'];
-  var csvCell = function (v) { return '"' + str(v).replace(/"/g, '""') + '"'; };
+  // columns kept exactly as they are: a password or 2FA key must stay usable (no formula escape)
+  var EXPORT_VERBATIM = ['password', 'totp'];
+  var FORMULA_START = /^[=+\-@\t\r]/;
+  /**
+   * A CSV cell, quoted. In the other columns a value a spreadsheet would run as a formula (starting with = + - @, a
+   * tab or CR) gets a leading ' (CSV injection); this importer takes it off again (source "Vault").
+   */
+  function csvCell(v, column) {
+    var s = str(v);
+    if (EXPORT_VERBATIM.indexOf(column) < 0 && FORMULA_START.test(s)) s = "'" + s;
+    return '"' + s.replace(/"/g, '""') + '"';
+  }
+  var unFormula = function (s) { return /^'[=+\-@\t\r]/.test(s) ? s.slice(1) : s; };
 
   /**
    * Decrypted entries [{ data, vaultName }] → CSV text (UTF-8 with BOM, CRLF): one row per entry; a login's user
@@ -758,7 +778,8 @@
       d.urls.slice(1).forEach(function (u) { rest.push('url: ' + u); });
       d.apps.forEach(function (a) { rest.push('app: ' + a); });
       d.custom.forEach(function (c) { rest.push((c.name || 'field') + ': ' + c.value); });
-      lines.push([x.vaultName, d.type, d.title, d.fav ? '1' : '', d.urls[0] || '', field(d, 'username'), field(d, 'password'), field(d, 'totp'), d.notes || '', rest.join('\n')].map(csvCell).join(','));
+      lines.push([x.vaultName, d.type, d.title, d.fav ? '1' : '', d.urls[0] || '', field(d, 'username'), field(d, 'password'), field(d, 'totp'), d.notes || '', rest.join('\n')]
+        .map(function (v, i) { return csvCell(v, EXPORT_COLUMNS[i]); }).join(','));
     });
     return '\uFEFF' + lines.join('\r\n') + '\r\n';
   }
@@ -943,7 +964,7 @@
 
   root.VaultLogic = Object.freeze({
     ID_RE: ID_RE, EMERGENCY_ID_RE: EMERGENCY_ID_RE, ROLES: ROLES, TYPES: TYPES, FIELDS: FIELDS, WAIT_CHOICES: WAIT_CHOICES,
-    BATCH_BYTES: BATCH_BYTES, BATCH_ITEMS: BATCH_ITEMS, MIN_MASTER: MIN_MASTER, EXPORT_COLUMNS: EXPORT_COLUMNS,
+    BATCH_BYTES: BATCH_BYTES, BATCH_ITEMS: BATCH_ITEMS, MIN_MASTER: MIN_MASTER, EXPORT_COLUMNS: EXPORT_COLUMNS, EXPORT_VERBATIM: EXPORT_VERBATIM,
     randomInt: randomInt, isId: isId, errorCode: errorCode, failureCode: failureCode,
     parseKdf: parseKdf, parseAccount: parseAccount, parseAccountAnswer: parseAccountAnswer, parseVault: parseVault,
     parseItem: parseItem, parseSync: parseSync, parsePeople: parsePeople, parseSaveResults: parseSaveResults,

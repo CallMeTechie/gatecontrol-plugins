@@ -398,7 +398,8 @@
     "err.recovery_key": "Dieser Wiederherstellungsschlüssel stimmt nicht – prüfe ihn auf Tippfehler.",
     "err.wrong_recovery": "Mit diesem Wiederherstellungsschlüssel lässt sich dein Vault nicht öffnen.",
     "err.decrypt": "Das ließ sich nicht entschlüsseln.",
-    "err.empty": "Nichts zum Kopieren."
+    "err.empty": "Nichts zum Kopieren.",
+    "err.kdf_too_large": "Dieses Konto verlangt für das Hauptpasswort mehr Speicher, als Vault im Browser verwendet (höchstens 256 MB). Entsperre Vault in der App."
   },
   "en": {
     "error.invalid": "Invalid input.",
@@ -799,6 +800,7 @@
     "err.recovery_key": "This recovery key is not right – check it for typos.",
     "err.wrong_recovery": "This recovery key does not open your vault.",
     "err.decrypt": "That could not be decrypted.",
-    "err.empty": "Nothing to copy."
+    "err.empty": "Nothing to copy.",
+    "err.kdf_too_large": "This account asks for more memory for the master password than Vault uses in the browser (256 MB at most). Unlock Vault in the app."
   }
 }

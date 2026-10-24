@@ -187,3 +187,23 @@ test('base64url matches Node; wipe zeroes keys (also in Maps)', () => {
   VC.wipe(k, m);
   assert.ok(k.userKey.every((x) => x === 0) && k.secretKey.every((x) => x === 0) && m.get(1).every((x) => x === 0));
 });
+
+test('Argon2id yields to the page with a macrotask (the bundle\'s patch); more than 256 MiB is refused in the browser', async () => {
+  // with noble's own microtask-only nextTick, no timer could run before Argon2id ends
+  let ticks = 0;
+  let done = false;
+  const spin = () => { if (!done) { ticks++; setImmediate(spin); } };
+  setImmediate(spin);
+  await VC.masterKey('pw', KDF(), { onProgress: () => {} });
+  done = true;
+  assert.ok(ticks >= 3, `timers ran meanwhile (${ticks})`);
+  assert.equal(VC.MAX_M_BROWSER, 262144);
+  const t0 = Date.now();
+  await assert.rejects(VC.masterKey('pw', { ...KDF(), m: 262145 }), code('kdf_too_large'));
+  await assert.rejects(VC.unlock({ ...V.account.body, kdf: { ...V.account.body.kdf, m: 1048576 } }, 'x'), code('kdf_too_large'), 'a server cannot make the tab allocate 1 GiB');
+  assert.ok(Date.now() - t0 < 500, 'refused before any work');
+  const noble = require('node:fs').readFileSync(require('node:path').join(__dirname, '..', 'ui', 'vendor', 'noble.js'), 'utf8');
+  assert.match(noble, /MessageChannel/);
+  assert.match(noble, /Patched: argon2idAsync yields with a macrotask/);
+  assert.match(noble, /setTimeout\(\w+,0\)/);
+});

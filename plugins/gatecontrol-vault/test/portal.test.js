@@ -85,7 +85,7 @@ test('texts: every key the portal uses exists in de and en (with .one/.other for
     ...['favorites', 'all', 'trash'].map((x) => 'p.section_' + x),
     ...['invalid', 'login_required', 'forbidden', 'no_account', 'not_found', 'exists', 'conflict', 'stale_key', 'rekeying', 'last_manager', 'limit',
       'rate_limited', 'internal', 'network', 'timeout', 'not_running', 'plugin_error', 'invalid_answer', 'too_large', 'read_only', 'locked',
-      'wrong_password', 'recovery_key', 'decrypt', 'failed', 'empty'].map((c) => 'err.' + c),
+      'wrong_password', 'recovery_key', 'decrypt', 'failed', 'empty', 'kdf_too_large'].map((c) => 'err.' + c),
   ];
   for (const k of [...plain, ...dyn]) {
     if (k.endsWith('.') || k.endsWith('_')) continue;
@@ -101,6 +101,9 @@ test('plugin.json 1.1.0: the portal tab "Vault"; GateControl 1.193.0 still enoug
   assert.deepEqual(manifest.ui.portal, { label: { de: 'Vault', en: 'Vault' }, icon: manifest.ui.nav.icon });
   assert.equal(manifest.permissions.portal, true);
   assert.deepEqual(manifest.ui.pages.map((p) => p.id), ['overview']);
+  const packed = require('../../../tools/stage').stagedFiles(path.join(__dirname, '..'));
+  assert.ok(packed.includes('ui/vendor/noble.js'));
+  assert.deepEqual(packed.filter((x) => /^(test|tools)\/|vendor-build|package(-lock)?\.json$/.test(x)), [], 'the bundle\'s build files are not packed');
   const changelog = fs.readFileSync(path.join(__dirname, '..', 'CHANGELOG.md'), 'utf8');
   assert.match(changelog, /^## 1\.1\.0$/m);
   await withHost({}, async (host) => {
@@ -128,40 +131,38 @@ async function until(what, fn, ms = 30000) {
 function frame(host, user, lang = 'de') {
   const calls = [];
   const saved = [];
+  const ctl = { holdSync: false, held: [] }; // holdSync: GET sync answers wait until released (ctl.held)
   const gc = {
     call(method, p, body) {
       calls.push({ method, path: p, body });
       const [pathPart, q] = String(p).split('?');
       const query = Object.fromEntries(new URLSearchParams(q || ''));
       const wire = body === undefined || body === null ? null : JSON.parse(JSON.stringify(body));
-      return host.request({ method, path: pathPart, query, body: wire, user: { ...user, portal: true, loggedIn: true }, lang }).then((r) => {
+      const go = () => host.request({ method, path: pathPart, query, body: wire, user: { ...user, portal: true, loggedIn: true }, lang }).then((r) => {
         const data = JSON.parse(JSON.stringify(r.json));
         if (r.status >= 200 && r.status < 300) return data;
         throw Object.assign(new Error(data.error || 'HTTP ' + r.status), { status: r.status, data });
       });
+      if (ctl.holdSync && pathPart === 'sync') return new Promise((resolve, reject) => ctl.held.push(() => go().then(resolve, reject)));
+      return go();
     },
     saveFile(blob, name) { return blob.text().then((text) => { saved.push({ name, type: blob.type, text }); return { ok: true, name }; }); },
   };
-  return { gc, calls, saved };
+  return { gc, calls, saved, ctl };
 }
 
 const text = (el) => (el ? el.textContent : '');
 const byText = (doc, tag, label) => doc.body.all().find((e) => e.localName === tag && e.textContent.trim() === label && !e.disabled);
 function type(el, value) { el.value = value; el.dispatchEvent({ type: 'input' }); }
 
-test('smoke: the real portal.js — set up, add a login, reveal, copy, lock (nothing left), unlock', async () => {
-  await withHost({}, async (host) => {
+test('smoke: the real portal.js — set up, add a login, reveal, copy, lock (nothing left), unlock, recover', async () => {
+  await withHost({}, async (host, c) => {
     const html = (await host.render({ view: 'portal', lang: 'de', user: { ...ANNA, portal: true, loggedIn: true } })).html;
     const f = frame(host, ANNA);
     const w = createWindow(html, f.gc);
     const doc = w.document;
     try {
-      // Argon2id at 64 MiB runs ~20× slower inside a vm context (global lookups) than in a browser or in Node's own
-      // realm: the frame's VaultNoble gets the same library's argon2idAsync from this realm (the vectors check it)
-      const { N } = loadUi();
-      w.run((i, win) => {
-        if (i === 1 && win.VaultNoble) win.VaultNoble = Object.freeze({ ...win.VaultNoble, argon2idAsync: N.argon2idAsync });
-      });
+      w.run(fastKdf({ started: 0, finished: 0 }));
       // not set up yet → the intro
       const start = await until('intro', () => byText(doc, 'button', 'Vault einrichten'));
       start.click();
@@ -223,6 +224,7 @@ test('smoke: the real portal.js — set up, add a login, reveal, copy, lock (not
       // lock: no key, no decrypted value, no DOM showing them
       doc.getElementById('vp-lock-now').click();
       assert.ok(doc.getElementById('vp-app').hidden);
+      assert.equal(text(doc.getElementById('vp-toast')), 'Vault gesperrt.', 'no earlier toast (titles, names) stays');
       const all = text(doc.body);
       assert.ok(!all.includes(SECRET) && !all.includes('Stadtwerke') && !all.includes('anna@example.org'), 'nothing decrypted left on the page');
       assert.ok(all.includes('Vault ist gesperrt'));
@@ -252,16 +254,41 @@ test('smoke: the real portal.js — set up, add a login, reveal, copy, lock (not
       const rk2 = await until('new recovery key', () => doc.querySelector('.vp-rk'));
       const key2 = rk2.childNodes.map((x) => x.textContent).join('-');
       assert.notEqual(key2, key);
-      const acc2 = (await host.request({ method: 'GET', path: 'account', user: { ...ANNA, portal: true, loggedIn: true } })).json.account;
-      assert.equal(acc2.rev, 2);
+      const asAnna = { ...ANNA, portal: true, loggedIn: true };
       const { VC } = loadUi();
-      assert.ok((await VC.unlock(acc2, PW2)).userKey.length === 32, 'the new password opens it');
-      assert.throws(() => VC.unlockWithRecovery(acc2, key), (e) => e.code === 'decrypt', 'the old recovery key is spent');
+      // nothing changes on the server before the new key was kept: the old key and password still work
+      assert.ok(!f.calls.some((x) => x.method === 'PUT' && x.path === 'account'), 'no PUT account before "kept it"');
+      assert.equal((await host.request({ method: 'GET', path: 'account', user: asAnna })).json.account.rev, 1);
+      // and the tab does not lock itself while the key is being copied down
+      c.clock.add(6 * MIN);
+      await new Promise((r) => setTimeout(r, 5600));
+      assert.ok(doc.querySelector('.vp-rk'), 'still showing the recovery key after 6 minutes');
       const kept2 = doc.getElementById('vp-screen').querySelectorAll('input').find((i) => i.type === 'checkbox');
       kept2.checked = true;
       kept2.dispatchEvent({ type: 'change' });
       byText(doc, 'button', 'Fertig').click();
       await until('open after recovery', () => text(doc.getElementById('vp-rows')).includes('Stadtwerke'));
+      const acc2 = (await host.request({ method: 'GET', path: 'account', user: asAnna })).json.account;
+      assert.equal(acc2.rev, 2);
+      assert.ok((await VC.unlock(acc2, PW2)).userKey.length === 32, 'the new password opens it');
+      assert.deepEqual(VC.unlockWithRecovery(acc2, key2).userKey.length, 32, 'the new recovery key opens it');
+      assert.throws(() => VC.unlockWithRecovery(acc2, key), (e) => e.code === 'decrypt', 'the old recovery key is spent');
+      // lock → unlock → lock → unlock while the first sync still hangs: the second session syncs on its own
+      const unlockWith = async (password) => {
+        const input = await until('unlock screen', () => doc.getElementById('vp-screen').querySelector('input'));
+        type(input, password);
+        byText(doc, 'button', 'Entsperren').click();
+      };
+      f.ctl.holdSync = true;
+      doc.getElementById('vp-lock-now').click();
+      await unlockWith(PW2);
+      await until('first sync waiting', () => f.ctl.held.length === 1);
+      doc.getElementById('vp-lock-now').click();
+      await unlockWith(PW2);
+      await until('second sync started', () => f.ctl.held.length === 2, 15000);
+      f.ctl.holdSync = false;
+      for (const go of f.ctl.held.splice(0)) go();
+      await until('entries after the second unlock', () => text(doc.getElementById('vp-rows')).includes('Stadtwerke'), 5000);
     } finally {
       w.stop();
       await tick();
@@ -269,14 +296,32 @@ test('smoke: the real portal.js — set up, add a login, reveal, copy, lock (not
   });
 });
 
-/** The portal tab of `user`, set up through the page and open → { w, doc, f, PW, stop } */
+/**
+ * kdf.onStart(n) runs as the n-th Argon2id starts (the mock host freezes Date, so noble's time-based yields do not
+ * happen here; in a browser the page stays responsive while it runs). Argon2id at 64 MiB runs ~20× slower inside a vm context (global lookups) than in a browser or in Node's own realm:
+ * the frame's VaultNoble gets the same library's argon2idAsync from this realm (the vectors check it), counted.
+ */
+function fastKdf(kdf) {
+  const { N } = loadUi();
+  return (i, win) => {
+    if (i !== 1 || !win.VaultNoble) return;
+    const argon2idAsync = (...a) => {
+      kdf.started++;
+      if (kdf.onStart) kdf.onStart(kdf.started);
+      return N.argon2idAsync(...a).finally(() => { kdf.finished++; });
+    };
+    win.VaultNoble = Object.freeze({ ...win.VaultNoble, argon2idAsync });
+  };
+}
+
+/** The portal tab of `user`, set up through the page and open → { w, doc, f, PW, kdf } */
 async function openPortal(host, user) {
   const html = (await host.render({ view: 'portal', lang: 'de', user: { ...user, portal: true, loggedIn: true } })).html;
   const f = frame(host, user);
   const w = createWindow(html, f.gc);
   const doc = w.document;
-  const { N } = loadUi();
-  w.run((i, win) => { if (i === 1 && win.VaultNoble) win.VaultNoble = Object.freeze({ ...win.VaultNoble, argon2idAsync: N.argon2idAsync }); });
+  const kdf = { started: 0, finished: 0 };
+  w.run(fastKdf(kdf));
   (await until('intro', () => byText(doc, 'button', 'Vault einrichten'))).click();
   const PW = 'Sonnenblume-Kanu-Turm-47';
   doc.getElementById('vp-screen').querySelectorAll('input').filter((i) => i.type === 'password').forEach((i) => type(i, PW));
@@ -287,7 +332,7 @@ async function openPortal(host, user) {
   kept.dispatchEvent({ type: 'change' });
   doc.body.all().find((e) => e.localName === 'button' && e.textContent === 'Vault einrichten').click();
   await until('app', () => !doc.getElementById('vp-app').hidden && text(doc.getElementById('vp-nav')).includes('Persönlich'));
-  return { w, doc, f, PW };
+  return { w, doc, f, PW, kdf };
 }
 
 const navTo = (doc, label) => doc.getElementById('vp-nav').querySelectorAll('button').find((b) => b.textContent.startsWith(label)).click();
@@ -493,6 +538,23 @@ test('smoke: emergency access between two portal tabs (request, approve, open re
       type(ad.querySelector('input'), 'Meins');
       ad.querySelectorAll('button').find((b) => b.textContent === 'Umbenennen').click();
       await until('renamed', () => text(anna.doc.getElementById('vp-nav')).includes('Meins'));
+      // "Jetzt sperren" while Argon2id runs for a new master password (the page stays responsive): nothing is sent —
+      // in particular no body wrapping the user key the lock just zeroed
+      navTo(anna.doc, 'Hauptpasswort ändern');
+      const pws = ad.querySelectorAll('input').filter((i) => i.type === 'password');
+      type(pws[0], anna.PW);
+      type(pws[1], 'Wolke-Fahrrad-Leuchtturm-92');
+      type(pws[2], 'Wolke-Fahrrad-Leuchtturm-92');
+      const before = anna.kdf.started;
+      // the lock comes while the second Argon2id (the new password's) runs
+      anna.kdf.onStart = (n) => { if (n === before + 2) anna.doc.getElementById('vp-lock-now').click(); };
+      byText(anna.doc, 'button', 'Speichern').click();
+      await until('both Argon2id done', () => anna.kdf.started === before + 2 && anna.kdf.finished === anna.kdf.started);
+      anna.kdf.onStart = null;
+      for (let i = 0; i < 20; i++) await tick();
+      assert.ok(!anna.f.calls.some((x) => x.method === 'PUT' && x.path === 'account'), 'no PUT account after the lock');
+      assert.equal((await host.request({ method: 'GET', path: 'account', user: { ...ANNA, portal: true, loggedIn: true } })).json.account.rev, 1);
+      assert.ok(text(anna.doc.getElementById('vp-screen')).includes('Vault ist gesperrt'));
       // 5 minutes without input: Marc's tab locks itself and forgets everything
       c.clock.add(5 * MIN + 1000);
       await until('auto lock', () => marc.doc.getElementById('vp-app').hidden, 12000);

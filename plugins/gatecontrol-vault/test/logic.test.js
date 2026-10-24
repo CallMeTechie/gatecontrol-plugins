@@ -251,3 +251,24 @@ test('Wi-Fi QR code: the WIFI: text escapes; the matrix decodes back (jsQR)', ()
   assert.ok(got, 'decodes');
   assert.equal(got.data, text);
 });
+
+test('export: spreadsheet formulas are defused (\'), passwords and 2FA keys stay as they are; the importer undoes it', () => {
+  const d = L.normalizeEntry({ type: 'login', title: '=HYPERLINK("http://x","klick")', urls: ['@evil'], fields: { username: '+49 170 1234', password: '=1+1', totp: '-JBSWY3DPEHPK3PXP' }, notes: '-minus', custom: [{ name: 'x', value: 'y' }] });
+  const csv = L.exportCsv([{ vaultName: '=Familie', data: d }, { vaultName: 'Tab', data: L.normalizeEntry({ type: 'note', title: '\tTab', notes: '\rCR' }) }]);
+  const rows = L.csvRows(csv.slice(1));
+  assert.deepEqual(rows[1].slice(0, 9), ["'=Familie", 'login', '\'=HYPERLINK("http://x","klick")', '', "'@evil", "'+49 170 1234", '=1+1', '-JBSWY3DPEHPK3PXP', "'-minus"]);
+  assert.equal(rows[2][2], "'\tTab");
+  for (const r of rows.slice(1)) {
+    r.forEach((cell, i) => {
+      if (L.EXPORT_VERBATIM.includes(L.EXPORT_COLUMNS[i])) return;
+      assert.ok(!/^[=+\-@\t\r]/.test(cell), `${L.EXPORT_COLUMNS[i]}: ${JSON.stringify(cell)}`);
+    });
+  }
+  const back = L.parseImport(csv);
+  assert.equal(back.source, 'Vault');
+  assert.deepEqual([back.entries[0].title, back.entries[0].urls[0], back.entries[0].notes], ['=HYPERLINK("http://x","klick")', '@evil', '-minus']);
+  assert.deepEqual(back.entries[0].fields, { password: '=1+1', totp: '-JBSWY3DPEHPK3PXP', username: '+49 170 1234' });
+  assert.equal(back.entries[1].title, 'Tab', 'the escape is gone (the importer trims titles anyway)');
+  // another program's CSV is read as it is
+  assert.equal(L.parseImport("name,url,username,password,note\n'=x,https://a.de,u,p,\n").entries[0].title, "'=x");
+});

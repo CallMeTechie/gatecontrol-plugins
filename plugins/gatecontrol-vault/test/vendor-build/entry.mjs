@@ -1,4 +1,4 @@
-// What the portal tab needs of the noble libraries and uqr, bundled by tools/build-noble.sh into ui/vendor/noble.js
+// What the portal tab needs of the noble libraries and uqr, bundled by test/vendor-build/build.sh into ui/vendor/noble.js
 // (one minified IIFE, window.VaultNoble). Pure JavaScript: the sandboxed frame allows no WebAssembly and no
 // external scripts (frame CSP script-src 'unsafe-inline').
 export { argon2id, argon2idAsync } from '@noble/hashes/argon2';

@@ -252,11 +252,21 @@ access (trusted people, requests, a released vault opened read-only), a new mast
   [@noble/curves](https://github.com/paulmillr/noble-curves) 1.9.7 (X25519) and [uqr](https://github.com/unjs/uqr)
   0.1.2 (QR codes) — all MIT, the notices at the top of the file. `ui/crypto.js` (`window.VaultCrypto`) is the
   client-core `vault-crypto` API on top of it: `crypto_box_seal` = X25519 with an ephemeral key, HSalsa20 →
-  XSalsa20-Poly1305, nonce BLAKE2b-192(epk ‖ pk); Argon2id runs as `argon2idAsync` (the page stays responsive, with
-  progress; ~3 s for 64 MiB / 3 passes on a desktop). `test/crypto.test.js` checks every vector of
+  XSalsa20-Poly1305, nonce BLAKE2b-192(epk ‖ pk); Argon2id runs as `argon2idAsync`, which the bundle patches to yield
+  to the page with a macrotask every 25 ms (noble 1.8.0 yields only a microtask: no repaint, input or timer would
+  run) — with progress, ~3 s for 64 MiB / 3 passes on a desktop. The tab refuses an account whose `kdf.m` is above
+  256 MiB (`kdf_too_large`, "open it in the app"): the server allows 1 GiB, which would make a tab run out of memory.
+  Every path that runs Argon2id while unlocked works on a copy of the user key and sends nothing when the tab was
+  locked meanwhile. `test/crypto.test.js` checks every vector of
   `test/fixtures/vault-vectors.json` (a copy of client-core's) and a box libsodium opened (`fixtures/portal-seal.json`).
 * **Keys only in memory.** The frame has no storage; nothing is kept. The tab locks after 5 minutes without input,
-  on "Jetzt sperren" and when it is closed: keys are zeroed, the decrypted entries and the DOM that showed them dropped.
+  on "Jetzt sperren" and when it is closed: keys are zeroed, the decrypted entries, toasts and the DOM that showed them
+  dropped; a sync still running for the earlier session is ignored. Not while a recovery key is on screen (setup,
+  recovery): copying it down may take longer. Like the setup, a recovery sends the new password and recovery key
+  (`PUT account`) only after "Ich habe ihn sicher aufbewahrt" — until then the old recovery key stays valid.
+* **Export:** plain CSV (UTF-8 with BOM); a value a spreadsheet would run as a formula (starting with `= + - @`, tab,
+  CR) gets a leading `'` — not in the password and 2FA columns, which stay exactly as they are. Vault's importer
+  recognises its own export and takes the `'` off again.
 * **Online only:** `GET sync` pages fill an encrypted copy in memory (smaller pages when an answer is too large for
   the host), every minute again; saves go straight to `POST items` (device `Portal`). `conflict` → the newer version is
   loaded and the person chooses "Meine Fassung speichern" (on top of it; the other stays in the history) or "Als Kopie
@@ -268,9 +278,11 @@ access (trusted people, requests, a released vault opened read-only), a new mast
 
 ### Rebuilding `ui/vendor/noble.js`
 
-`sh plugins/gatecontrol-vault/tools/build-noble.sh` installs the pinned versions and esbuild into a temporary folder
-(never into the repository), bundles `tools/noble-entry.mjs` as a minified IIFE and writes the file with the licence
-notices. Then run the tests — the vectors must still pass.
+`sh plugins/gatecontrol-vault/test/vendor-build/build.sh` copies `package.json` + `package-lock.json` (pinned versions
+with integrity hashes) into a temporary folder, runs `npm ci` there (never in the repository), bundles `entry.mjs`
+with esbuild (`build.mjs`: the one patch above; the build fails if the patched line is not found) and writes the file
+with the licence notices. Two builds give the same bytes. It lives under `test/`, so it is not packed into the
+.gcplugin. Then run the tests — the vectors must still pass.
 
 ## Tests
 

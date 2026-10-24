@@ -29,6 +29,9 @@
   var MAX_BLOB = 32768;
   var DEFAULT_KDF = { m: 65536, t: 3, p: 1 };
   var KDF_BOUNDS = { m: [19456, 1048576], t: [2, 10], p: [1, 1] };
+  // what the browser tab spends at most on Argon2id (KiB): the server allows 1 GiB, which a malicious or broken
+  // server could use to make the tab run out of memory; the apps use 64 MiB. More → 'kdf_too_large' (open it in an app)
+  var MAX_M_BROWSER = 262144;
   var ITEM_TYPES = ['login', 'totp', 'note', 'card', 'wifi', 'identity'];
 
   var AD = {
@@ -39,7 +42,8 @@
     item: function (vaultId, itemId, rev) { return 'gcv1:item:' + vaultId + ':' + itemId + ':' + rev; },
   };
 
-  /** code: 'decrypt' (wrong key, tampered, not where it belongs) · 'invalid' · 'recovery_key' · 'too_large' */
+  /** code: 'decrypt' (wrong key, tampered, not where it belongs) · 'invalid' · 'recovery_key' · 'too_large' ·
+   * 'kdf_too_large' (Argon2id asks for more memory than the browser tab spends, MAX_M_BROWSER) */
   function VaultCryptoError(code, message) {
     var e = new Error(message || code);
     e.name = 'VaultCryptoError';
@@ -267,12 +271,14 @@
 
   /**
    * Argon2id(password) → Promise of the 32-byte master key; the password as UTF-8 after NFC normalization.
-   * opts.onProgress(0…1) while it runs.
+   * opts.onProgress(0…1) while it runs. argon2idAsync yields to the page with a macrotask every 25 ms (the bundle's
+   * patch, test/vendor-build/build.mjs), so input, timers and repaints go on meanwhile.
    */
   function masterKey(password, kdf, opts) {
     try {
       if (typeof password !== 'string' || !password.length) throw fail('invalid', 'password');
       var salt = checkKdf(kdf);
+      if (kdf.m > MAX_M_BROWSER) throw fail('kdf_too_large', 'kdf.m');
       var o = opts || {};
       var pw = utf8(password.normalize('NFC'));
       return N.argon2idAsync(pw, salt, { t: kdf.t, m: kdf.m, p: 1, dkLen: KEY_BYTES, asyncTick: 25, onProgress: o.onProgress })
@@ -518,7 +524,7 @@
   }
 
   root.VaultCrypto = Object.freeze({
-    VaultCryptoError: VaultCryptoError, AD: AD, ITEM_TYPES: ITEM_TYPES, DEFAULT_KDF: DEFAULT_KDF, KDF_BOUNDS: KDF_BOUNDS,
+    VaultCryptoError: VaultCryptoError, AD: AD, ITEM_TYPES: ITEM_TYPES, DEFAULT_KDF: DEFAULT_KDF, KDF_BOUNDS: KDF_BOUNDS, MAX_M_BROWSER: MAX_M_BROWSER,
     b64: b64, unb64: unb64, utf8: utf8, fromUtf8: fromUtf8, randomBytes: randomBytes, equal: equal, newId: newId,
     wrap: wrap, unwrap: unwrap, boxKeypair: boxKeypair, seal: seal, openSealed: openSealed, pad: pad, unpad: unpad,
     newKdf: newKdf, checkKdf: checkKdf, masterKey: masterKey, formatRecoveryKey: formatRecoveryKey, parseRecoveryKey: parseRecoveryKey,
