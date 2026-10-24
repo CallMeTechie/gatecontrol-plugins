@@ -117,8 +117,13 @@ test('direct failed: the server way — a push when the files are there, else th
     // files on the phone only
     const r = (await phone(c)('POST', 'sends', { items: [{ name: 'video.mp4', bytes: 900_000_000, mime: 'video/mp4', local: true }], text: 'Urlaub', to: { devices: ['anna-pc'] } })).json;
     const id = r.direct[0].transferId;
+    assert.equal((await pc(c)('GET', `transfers/${id}`)).json.transfer.peer, null, 'nothing reported yet');
     const f = (await phone(c)('POST', `transfers/${id}/result`, { ok: false, error: 'connect_timeout' })).json;
     assert.deepEqual([f.transfer.status, f.delivery.status, f.delivery.error, f.fallback, f.missing], ['failed', 'pending', 'direct_failed', 'upload', [0]]);
+    // the waiting end (the PC's listener) learns at once that the phone gave up, and why
+    const seen = (await pc(c)('GET', `transfers/${id}`)).json.transfer;
+    assert.deepEqual([seen.status, seen.peer, seen.key, seen.ticket], ['failed', { ok: false, error: 'connect_timeout' }, null, null]);
+    assert.equal((await phone(c)('GET', `transfers/${id}`)).json.transfer.peer, null, 'the phone sees the PC\'s report only');
     assert.equal((await pc(c)('POST', `transfers/${id}/result`, { ok: false })).json.fallback, 'upload', 'the receiver learns it too');
     assert.equal(c.pushes().filter((x) => !x.silent).length, 0);
     // the sender uploads the file (the real size is checked by GateControl, 2 GB at most)

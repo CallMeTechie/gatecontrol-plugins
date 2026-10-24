@@ -2,6 +2,12 @@
 
 Teilen wie Quick Share – über den eigenen GateControl-Server.
 
+## 1.2.1
+- **Direktübertragung im WLAN – schneller Wechsel auf den Server:** `GET transfers/<id>` nennt jetzt unter `peer`, was
+  die andere Seite gemeldet hat (`{ ok, error }`, z. B. `pull_failed`). Die Apps fragen das ab, während sie auf die
+  Gegenseite warten, und nehmen sofort den Weg über den Server, wenn diese aufgegeben hat – statt bis zu einer Minute
+  (Abholen) bzw. zehn Minuten (Empfang) zu warten. Im Protokoll der Apps steht dann auch der Grund.
+
 ## 1.2.0
 - **Wer darf an dieses Gerät senden?** Neue Einstellung pro Gerät (in der Android-App und im Windows-Client auf der
   GateDrop-Seite): **„Nur ich“** (Standard, wie bisher) oder **„Alle im GateControl-Netz“**. Ist ein Gerät für alle
