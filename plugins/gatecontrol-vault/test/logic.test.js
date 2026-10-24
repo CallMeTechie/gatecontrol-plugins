@@ -3,15 +3,16 @@
 // The portal tab's pure parts (ui/logic.js, window.VaultLogic) — the same cases as gatecontrol-client-core's
 // utils/vault tests where the rules are shared: entry JSON v1, 2FA codes (RFC 6238 vectors), the generator,
 // imports of other password managers, the server's JSON and merging a sync page; plus the portal's own: list
-// sections, drafts, the CSV export (read back by the importer), the Wi-Fi QR code (decoded again with jsQR).
+// sections, drafts, the CSV export (read back by the importer), the Wi-Fi QR code (decoded again with jsQR); 1.2.0:
+// the text of a scanned 2FA QR code (otpauth://totp, HOTP refused, Google Authenticator's export) and the bundled
+// decoder reading pictures made with the bundled encoder.
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const path = require('node:path');
 const { loadUi } = require('./load-ui');
+const { qrPicture, blankPicture, migrationUri, bytesField, intField } = require('./qr-image');
 
-const { L } = loadUi();
+const { L, N } = loadUi();
 const VID = 'Vt9bJm0n2QwErTyUiOpAsD';
 const V2 = 'Wt9bJm0n2QwErTyUiOpAsE';
 const A = 'Aa1111111111111111111a';
@@ -229,27 +230,107 @@ test('Wi-Fi QR code: the WIFI: text escapes; the matrix decodes back (jsQR)', ()
   // the finder pattern in the top left corner
   assert.deepEqual(m.data[0].slice(0, 7), [true, true, true, true, true, true, true]);
   assert.deepEqual(m.data[1].slice(0, 7), [true, false, false, false, false, false, true]);
-  const jsqrPath = path.join(__dirname, '..', '..', 'gatecontrol-schule', 'ui', 'vendor', 'jsqr', 'jsQR.js');
-  if (!fs.existsSync(jsqrPath)) return;
-  const jsQR = require(jsqrPath);
-  const scale = 4;
-  const border = 4;
-  const w = (m.size + 2 * border) * scale;
-  const px = new Uint8ClampedArray(w * w * 4).fill(255);
-  for (let y = 0; y < m.size; y++) {
-    for (let x = 0; x < m.size; x++) {
-      if (!m.data[y][x]) continue;
-      for (let dy = 0; dy < scale; dy++) {
-        for (let dx = 0; dx < scale; dx++) {
-          const o = (((y + border) * scale + dy) * w + (x + border) * scale + dx) * 4;
-          px[o] = 0; px[o + 1] = 0; px[o + 2] = 0;
-        }
-      }
-    }
-  }
-  const got = jsQR(px, w, w);
+  const pic = qrPicture(N, text);
+  const got = N.qrDecode(pic.data, pic.width, pic.height);
   assert.ok(got, 'decodes');
   assert.equal(got.data, text);
+});
+
+test('2FA QR code (1.2.0): otpauth://totp taken with title and account; HOTP, other links and other codes refused', () => {
+  const s = 'JBSWY3DPEHPK3PXP';
+  const uri = `otpauth://totp/ACME%20Corp:anna%40example.org?secret=${s}&issuer=ACME%20Corp&algorithm=SHA256&digits=8&period=60`;
+  assert.deepEqual(L.qrTotp(uri), { kind: 'totp', uri, title: 'ACME Corp', account: 'anna@example.org' });
+  assert.deepEqual(L.qrTotp(`  otpauth://totp/GitHub:marc?secret=${s}\n`), { kind: 'totp', uri: `otpauth://totp/GitHub:marc?secret=${s}`, title: 'GitHub', account: 'marc' });
+  assert.deepEqual(L.qrTotp(`OTPAUTH://TOTP/marc?secret=${s}`), { kind: 'totp', uri: `OTPAUTH://TOTP/marc?secret=${s}`, title: 'marc', account: 'marc' });
+  assert.deepEqual(L.qrTotp(`otpauth://totp/?secret=${s}&issuer=Bank`), { kind: 'totp', uri: `otpauth://totp/?secret=${s}&issuer=Bank`, title: 'Bank', account: null });
+  const code = (t) => L.qrTotp(t).code;
+  assert.equal(code(`otpauth://hotp/ACME:anna?secret=${s}&counter=0`), 'hotp');
+  assert.equal(code(`otpauth://HOTP?secret=${s}`), 'hotp');
+  assert.equal(code('otpauth://totp/x?secret=not!base32'), 'invalid');
+  assert.equal(code('otpauth://totp/x'), 'invalid', 'no secret');
+  assert.equal(code(`otpauth://totp/x?secret=${s}&algorithm=MD5`), 'invalid');
+  assert.equal(code(`otpauth://steam/x?secret=${s}`), 'invalid');
+  assert.equal(code(`otpauth://totpx/x?secret=${s}`), 'invalid');
+  assert.equal(code(`otpauth://totp/a\u0000b?secret=${s}`), 'invalid', 'control characters');
+  assert.equal(code(`otpauth://totp/${'a'.repeat(2100)}?secret=${s}`), 'invalid', 'too long');
+  for (const other of ['https://example.org', 'WIFI:T:WPA;S:x;P:y;;', s, '', null]) assert.equal(code(other), 'not_2fa', String(other));
+  assert.equal(L.totpAccount(`otpauth://totp/GitHub%3Amarc?secret=${s}`), 'marc');
+  assert.equal(L.totpAccount('https://x'), null);
+  // base32 both ways
+  for (const n of [1, 5, 10, 16, 20, 33]) {
+    const bytes = Uint8Array.from({ length: n }, (_, i) => (i * 37 + n) & 255);
+    assert.deepEqual([...L.base32Decode(L.base32Encode(bytes))], [...bytes], `${n} bytes`);
+  }
+  assert.equal(L.base32Encode(Buffer.from('12345678901234567890')), b32('12345678901234567890'));
+});
+
+test('2FA QR code (1.2.0): Google Authenticator export — entries to pick from, HOTP / MD5 marked, broken data refused', () => {
+  const secret = Buffer.from('12345678901234567890');
+  const r = L.qrTotp(migrationUri([
+    { secret, name: 'anna@example.org', issuer: 'ACME', algorithm: 1, digits: 1, type: 2 },
+    { secret, name: 'GitHub:marc', algorithm: 2, digits: 2, type: 2 },
+    { secret, name: 'Bank: Lena', issuer: 'Bank', type: 1, counter: 5 },
+    { secret, name: 'Alt', issuer: 'Old', algorithm: 4 },
+    { secret, name: 'Grüße', issuer: '', algorithm: 0, digits: 0, type: 0 },
+  ], { batchSize: 3, batchIndex: 1 }));
+  assert.equal(r.kind, 'migration');
+  assert.deepEqual([r.batchIndex, r.batchSize], [1, 3]);
+  const s = b32('12345678901234567890');
+  assert.deepEqual(r.entries, [
+    { title: 'ACME', issuer: 'ACME', account: 'anna@example.org', uri: `otpauth://totp/ACME:anna%40example.org?secret=${s}&issuer=ACME`, code: null },
+    { title: 'GitHub', issuer: 'GitHub', account: 'marc', uri: `otpauth://totp/GitHub:marc?secret=${s}&issuer=GitHub&algorithm=SHA256&digits=8`, code: null },
+    { title: 'Bank', issuer: 'Bank', account: 'Lena', uri: null, code: 'hotp' },
+    { title: 'Old', issuer: 'Old', account: 'Alt', uri: null, code: 'invalid' },
+    { title: 'Grüße', issuer: null, account: 'Grüße', uri: `otpauth://totp/Gr%C3%BC%C3%9Fe?secret=${s}`, code: null },
+  ]);
+  // each link is a valid 2FA key with the right code (RFC 6238 SHA1 at T=59)
+  const first = L.qrTotp(r.entries[0].uri);
+  assert.deepEqual([first.kind, first.title, first.account], ['totp', 'ACME', 'anna@example.org']);
+  assert.equal(L.totpCode(L.parseTotp(r.entries[0].uri), 59000).code, '287082');
+  assert.equal(L.parseTotp(r.entries[1].uri).digits, 8);
+  // '+' / '/' of base64 not percent-encoded; URL-safe alphabet
+  const raw = decodeURIComponent(migrationUri([{ secret: Buffer.from([0xfb, 0xff, 0xfe, 0x01]), name: 'x' }]).split('data=')[1]);
+  assert.match(raw, /[+/]/);
+  assert.equal(L.qrTotp('otpauth-migration://offline?data=' + raw).entries[0].uri, 'otpauth://totp/x?secret=7P774AI');
+  assert.equal(L.qrTotp('otpauth-migration://offline?data=' + raw.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')).kind, 'migration');
+  // unknown fields (also fixed64 / fixed32) are skipped
+  const withExtra = migrationUri([{ secret, name: 'a', issuer: 'b' }], { extra: [...intField(9, 7), 0x51, 1, 2, 3, 4, 5, 6, 7, 8, 0x6d, 1, 2, 3, 4, ...bytesField(10, [1, 2])] });
+  assert.equal(L.qrTotp(withExtra).entries.length, 1);
+  const code = (t) => L.qrTotp(t).code;
+  assert.equal(code('otpauth-migration://offline?data='), 'invalid');
+  assert.equal(code('otpauth-migration://offline?data=%%%'), 'invalid');
+  assert.equal(code('otpauth-migration://offline?data=' + Buffer.from([0x0a, 0x50, 1, 2]).toString('base64')), 'invalid', 'length past the end');
+  assert.equal(code('otpauth-migration://offline?data=' + Buffer.from([0x0b]).toString('base64')), 'invalid', 'wire type 3');
+  assert.equal(code('otpauth-migration://offline?data=' + Buffer.from(intField(2, 1)).toString('base64')), 'invalid', 'no entries');
+  assert.equal(code('otpauth-migration://online?data=' + Buffer.from(intField(2, 1)).toString('base64')), 'invalid');
+  const unusable = L.qrTotp(migrationUri([{ secret: Buffer.alloc(0), name: 'a' }]));
+  assert.deepEqual([unusable.kind, unusable.entries[0].code], ['migration', 'invalid'], 'shown in the list, not usable');
+  const many = Array.from({ length: 101 }, (_, i) => ({ secret: Buffer.from([i + 1]), name: 'n' + i }));
+  assert.equal(code(migrationUri(many)), 'too_big');
+  assert.equal(code('otpauth-migration://offline?data=' + 'A'.repeat(9000)), 'too_big');
+});
+
+test('2FA QR code (1.2.0): pictures made with the bundled encoder (uqr) decode with the bundled decoder (jsQR)', () => {
+  const texts = [
+    'otpauth://totp/ACME:anna%40example.org?secret=JBSWY3DPEHPK3PXP&issuer=ACME',
+    migrationUri([{ secret: Buffer.from('12345678901234567890'), name: 'anna', issuer: 'ACME' }, { secret: Buffer.from('abc'), name: 'b', type: 1 }]),
+  ];
+  for (const t of texts) {
+    for (const o of [{}, { scale: 2 }, { scale: 7, border: 10 }, { invert: true }]) {
+      const pic = qrPicture(N, t, o);
+      const got = N.qrDecode(pic.data, pic.width, pic.height, { inversionAttempts: 'attemptBoth' });
+      assert.ok(got, `decodes ${JSON.stringify(o)}`);
+      assert.equal(got.data, t);
+    }
+  }
+  const mig = qrPicture(N, texts[1]);
+  const r = L.qrTotp(N.qrDecode(mig.data, mig.width, mig.height).data);
+  assert.deepEqual(r.entries.map((e) => [e.title, e.code]), [['ACME', null], ['b', 'hotp']]);
+  const blank = blankPicture();
+  assert.equal(N.qrDecode(blank.data, blank.width, blank.height, { inversionAttempts: 'attemptBoth' }), null);
+  // inverted pictures only with attemptBoth (the camera reads 'dontInvert' for speed)
+  const inv = qrPicture(N, texts[0], { invert: true });
+  assert.equal(N.qrDecode(inv.data, inv.width, inv.height, { inversionAttempts: 'dontInvert' }), null);
 });
 
 test('export: spreadsheet formulas are defused (\'), passwords and 2FA keys stay as they are; the importer undoes it', () => {

@@ -5,6 +5,7 @@
  *   - the server's answers → checked records (README "App-API"); a sync page merged into the tab's copy;
  *   - the entry JSON v1 { v: 1, type, title, fav, notes, urls, apps, fields, custom } (unknown keys kept);
  *   - 2FA codes (TOTP, RFC 6238; HMAC from ui/vendor/noble.js), the password generator and its strength estimate;
+ *   - 1.2.0: the text of a scanned 2FA QR code (otpauth://totp, Google Authenticator's otpauth-migration export);
  *   - import of other password managers' exports, the CSV export, the Wi-Fi QR text;
  *   - list, detail and edit helpers of the page (search, sections, drafts, labels).
  * Random numbers: crypto.getRandomValues. Nothing in here is sent anywhere or kept.
@@ -440,6 +441,179 @@
     if (c.length === 6) return c.slice(0, 3) + ' ' + c.slice(3);
     if (c.length === 8) return c.slice(0, 4) + ' ' + c.slice(4);
     return c;
+  }
+
+  // ── 2FA from a QR code (1.2.0) ───────────────────────────
+
+  var MAX_OTP_URI = 2048;
+  var MAX_MIGRATION_URI = 8192; // a QR code holds at most ~4300 characters
+  var MAX_MIGRATION_ENTRIES = 100;
+
+  function base32Encode(bytes) {
+    var out = '';
+    var acc = 0;
+    var bits = 0;
+    for (var i = 0; i < bytes.length; i++) {
+      acc = (acc << 8) | bytes[i];
+      bits += 8;
+      while (bits >= 5) { bits -= 5; out += B32[(acc >> bits) & 31]; }
+      acc &= (1 << bits) - 1;
+    }
+    if (bits > 0) out += B32[(acc << (5 - bits)) & 31];
+    return out;
+  }
+
+  /** The account an otpauth URI names (its label without "Issuer:"), else null. */
+  function totpAccount(text) {
+    if (typeof text !== 'string' || !/^otpauth:\/\//i.test(text)) return null;
+    var rest = text.slice(text.indexOf('://') + 3);
+    var slash = rest.indexOf('/');
+    if (slash < 0) return null;
+    var label = decodePart(rest.slice(slash + 1).split('?')[0].split('#')[0]);
+    var colon = label.indexOf(':');
+    var account = (colon < 0 ? label : label.slice(colon + 1)).trim();
+    return account ? account.slice(0, 200) : null;
+  }
+
+  var B64_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+
+  /** Base64 (standard or URL-safe, padding optional) → bytes, or null. */
+  function base64Bytes(text) {
+    var s = str(text).replace(/-/g, '+').replace(/_/g, '/').replace(/=+$/, '');
+    if (!s || /[^A-Za-z0-9+/]/.test(s) || s.length % 4 === 1) return null;
+    var out = new Uint8Array(Math.floor(s.length * 3 / 4));
+    var acc = 0;
+    var bits = 0;
+    var n = 0;
+    for (var i = 0; i < s.length; i++) {
+      acc = (acc << 6) | B64_CHARS.indexOf(s[i]);
+      bits += 6;
+      if (bits >= 8) { bits -= 8; out[n++] = (acc >> bits) & 0xff; }
+      acc &= (1 << bits) - 1;
+    }
+    return out;
+  }
+
+  /** Protocol Buffers wire format → [{ f: field, v: number }] (varints) / [{ f, b: bytes }] (length-delimited). */
+  function protoFields(buf) {
+    var out = [];
+    var i = 0;
+    function varint() {
+      var v = 0;
+      var mul = 1;
+      for (var n = 0; n < 10; n++) {
+        if (i >= buf.length) throw new Error('proto');
+        var b = buf[i++];
+        if (n < 7) v += (b & 0x7f) * mul; // 49 bits are plenty for the enums read here
+        mul *= 128;
+        if (!(b & 0x80)) return v;
+      }
+      throw new Error('proto');
+    }
+    while (i < buf.length) {
+      var key = varint();
+      var wire = key % 8;
+      var field = Math.floor(key / 8);
+      if (wire === 0) out.push({ f: field, v: varint() });
+      else if (wire === 2) {
+        var len = varint();
+        if (len > buf.length - i) throw new Error('proto');
+        out.push({ f: field, b: buf.subarray(i, i + len) });
+        i += len;
+      } else if (wire === 1) i += 8;
+      else if (wire === 5) i += 4;
+      else throw new Error('proto');
+      if (i > buf.length) throw new Error('proto');
+    }
+    return out;
+  }
+
+  function utf8(bytes) {
+    try { return new root.TextDecoder('utf-8').decode(bytes); } catch (e) { return ''; }
+  }
+
+  // Google Authenticator's MigrationPayload.OtpParameters: algorithm 0/1 SHA1, 2 SHA256, 3 SHA512 (4 MD5: not
+  // supported); digits 0/1 six, 2 eight; type 1 HOTP, 2 TOTP (0 unspecified: taken as TOTP).
+  var MIGRATION_ALG = { 0: 'SHA1', 1: 'SHA1', 2: 'SHA256', 3: 'SHA512' };
+
+  function migrationEntry(fields) {
+    var secret = null;
+    var name = '';
+    var issuer = '';
+    var alg = 0;
+    var digits = 0;
+    var type = 0;
+    fields.forEach(function (x) {
+      if (x.f === 1 && x.b) secret = x.b;
+      else if (x.f === 2 && x.b) name = utf8(x.b).trim().slice(0, 200);
+      else if (x.f === 3 && x.b) issuer = utf8(x.b).trim().slice(0, 200);
+      else if (x.f === 4 && x.v != null) alg = x.v;
+      else if (x.f === 5 && x.v != null) digits = x.v;
+      else if (x.f === 6 && x.v != null) type = x.v;
+    });
+    var account = name;
+    var colon = name.indexOf(':');
+    if (colon >= 0) {
+      if (!issuer) issuer = name.slice(0, colon).trim();
+      account = name.slice(colon + 1).trim();
+    }
+    var e = { title: issuer || account || null, issuer: issuer || null, account: account || null, uri: null, code: null };
+    if (type === 1) e.code = 'hotp';
+    else if ((type !== 0 && type !== 2) || !secret || !secret.length || secret.length > 128 || !MIGRATION_ALG[alg] || digits > 2) e.code = 'invalid';
+    else {
+      var uri = 'otpauth://totp/' + (issuer ? encodeURIComponent(issuer) + ':' : '') + encodeURIComponent(account)
+        + '?secret=' + base32Encode(secret) + (issuer ? '&issuer=' + encodeURIComponent(issuer) : '')
+        + (MIGRATION_ALG[alg] !== 'SHA1' ? '&algorithm=' + MIGRATION_ALG[alg] : '') + (digits === 2 ? '&digits=8' : '');
+      if (uri.length <= MAX_OTP_URI && parseTotp(uri)) e.uri = uri;
+      else e.code = 'invalid';
+    }
+    return e;
+  }
+
+  /** otpauth-migration://offline?data=… (Google Authenticator's export) → { kind: 'migration', … } or an error. */
+  function parseMigration(text) {
+    if (text.length > MAX_MIGRATION_URI) return { kind: 'error', code: 'too_big' };
+    if (!/^otpauth-migration:\/\/offline\?/i.test(text)) return { kind: 'error', code: 'invalid' };
+    // a '+' that was not percent-encoded became a space in otpQuery
+    var bytes = base64Bytes(str(otpQuery(text).data).replace(/ /g, '+'));
+    if (!bytes || !bytes.length) return { kind: 'error', code: 'invalid' };
+    var entries = [];
+    var batchSize = 1;
+    var batchIndex = 0;
+    try {
+      protoFields(bytes).forEach(function (x) {
+        if (x.f === 1 && x.b) {
+          if (entries.length >= MAX_MIGRATION_ENTRIES) throw new Error('too_big');
+          entries.push(migrationEntry(protoFields(x.b)));
+        } else if (x.f === 3 && x.v != null) batchSize = x.v;
+        else if (x.f === 4 && x.v != null) batchIndex = x.v;
+      });
+    } catch (e) {
+      return { kind: 'error', code: e && e.message === 'too_big' ? 'too_big' : 'invalid' };
+    } finally {
+      bytes.fill(0);
+    }
+    if (!entries.length) return { kind: 'error', code: 'invalid' };
+    var ok = batchSize >= 1 && batchSize <= 1000 && batchIndex >= 0 && batchIndex < batchSize;
+    return { kind: 'migration', entries: entries, batchIndex: ok ? batchIndex : 0, batchSize: ok ? batchSize : 1 };
+  }
+
+  /**
+   * The text of a scanned QR code → what the 2FA field takes:
+   *   { kind: 'totp', uri, title, account }                      an otpauth://totp link with a readable secret;
+   *   { kind: 'migration', entries, batchIndex, batchSize }     Google Authenticator's export, entries
+   *                                                              [{ title, issuer, account, uri | null, code | null }];
+   *   { kind: 'error', code: 'hotp' | 'invalid' | 'not_2fa' | 'too_big' }.
+   * Only time-based codes: HOTP (a counter the server and the app must keep in step) is refused.
+   */
+  function qrTotp(text) {
+    var f = str(text).trim();
+    var err = function (code) { return { kind: 'error', code: code }; };
+    if (/^otpauth:\/\/hotp(?:[/?#]|$)/i.test(f)) return err('hotp');
+    if (/^otpauth-migration:/i.test(f)) return parseMigration(f);
+    if (!/^otpauth:/i.test(f)) return err('not_2fa');
+    if (!/^otpauth:\/\/totp(?:[/?#]|$)/i.test(f) || f.length > MAX_OTP_URI || /[\u0000-\u001f\u007f]/.test(f) || !parseTotp(f)) return err('invalid');
+    return { kind: 'totp', uri: f, title: totpLabel(f), account: totpAccount(f) };
   }
 
   // ── password generator and strength ──────────────────────
@@ -974,6 +1148,7 @@
     emptyState: emptyState, mergePage: mergePage, putItem: putItem, savedItem: savedItem, putVault: putVault, dropVault: dropVault,
     normalizeEntry: normalizeEntry, field: field, entryUsername: entryUsername, entrySubtitle: entrySubtitle, entrySummary: entrySummary,
     base32Decode: base32Decode, parseTotp: parseTotp, totpLabel: totpLabel, totpCode: totpCode, prettyCode: prettyCode,
+    base32Encode: base32Encode, totpAccount: totpAccount, base64Bytes: base64Bytes, protoFields: protoFields, qrTotp: qrTotp,
     generatorOptions: generatorOptions, generatePassword: generatePassword, passwordBits: passwordBits,
     passwordStrength: passwordStrength, wordCount: wordCount, goodMasterPassword: goodMasterPassword, masterCheck: masterCheck,
     urlHost: urlHost, siteOf: siteOf, openableUrl: openableUrl,
