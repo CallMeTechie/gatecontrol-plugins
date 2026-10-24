@@ -1,13 +1,13 @@
 # gatecontrol-vault — Vault
 
 An end-to-end encrypted password manager on one's own GateControl server: logins, 2FA codes, notes, cards and Wi-Fi
-credentials — in a **personal vault** and in **shared vaults** (family, team) with roles. The apps (Android, Windows,
-later the portal) encrypt and decrypt; the server keeps only data it cannot read: encrypted entries, keys sealed to
+credentials — in a **personal vault** and in **shared vaults** (family, team) with roles. The apps (Android, Windows)
+and the portal tab "Vault" (1.1.0) encrypt and decrypt; the server keeps only data it cannot read: encrypted entries, keys sealed to
 each member, a change counter for the offline copy, a trash (30 days), the last 10 versions of an entry and
 **emergency access** for trusted people. Syncing uses the server's normal public address — no VPN needed.
 
 *Deutsch:* Passwort-Manager auf dem eigenen Server, Ende-zu-Ende verschlüsselt. Ver- und entschlüsselt wird nur in
-den Apps; ohne Hauptpasswort, Wiederherstellungsschlüssel oder freigegebenen Notfallzugriff kann niemand die Daten
+den Apps und im Portal-Tab „Vault“ (nur in diesem Browser-Tab); ohne Hauptpasswort, Wiederherstellungsschlüssel oder freigegebenen Notfallzugriff kann niemand die Daten
 lesen – auch kein Administrator. Details im CHANGELOG.
 
 Needs GateControl ≥ 1.193.0 (`permissions.app`, `permissions.notify`, `user.device`, `user.kiosk`).
@@ -183,8 +183,9 @@ vault?: <id>, emergency?: <id> } }`. Pushes never carry names of vaults or entri
 
 ## Kryptoformat
 
-libsodium semantics on every platform (Windows/Electron and the portal: libsodium-wrappers-sumo; Android: the same
-primitives from Bouncy Castle, pure Java, checked against the same vectors). The
+libsodium semantics on every platform (Windows/Electron: libsodium-wrappers-sumo; Android: the same primitives from
+Bouncy Castle, pure Java; the portal tab: the pure-JavaScript noble libraries, see "Portal-Tab" — all checked against
+the same vectors). The
 reference implementation and its fixed test vectors live in **gatecontrol-client-core** (`vault-crypto`); every app
 checks the same vectors, so all platforms encrypt and decrypt bit for bit alike. The server checks only shapes and
 sizes — it never holds a key.
@@ -231,6 +232,45 @@ Crockford base32 — 56 characters in 14 groups of 4 joined by dashes (`7KQ2-M9Z
 publicKey)`; the 32-byte hash as 8 big-endian 4-byte words, each `mod 100000`, zero-padded to 5 digits — 8 groups
 like `48213 90577 …`. Both sides compute it from the `publicKey` the server hands out; if they match, the server
 did not swap the key.
+
+## Portal-Tab
+
+`ui.portal` (1.1.0): the tab "Vault" in the portal is the whole password manager in the browser — set up (recovery key
+shown, copied or saved as a text file with `GC.saveFile`, confirmed before `POST account`), unlock (master password, or
+the recovery key → a new password and a new recovery key), vaults with counts, search, favourites, the detail per type
+(secrets masked until shown, copy, 2FA code with countdown, Wi-Fi QR code), edit / create all six types with custom
+fields and the generator, trash, history, vaults and members (the safety number before adding someone), emergency
+access (trusted people, requests, a released vault opened read-only), a new master password, import (the formats of
+`parseImport`) and a plaintext CSV export (after a warning, a checkbox and the master password once more).
+
+* **Only for a signed-in person** — `render` gets the viewer; device trust only (`loggedIn: false`) or a kiosk device
+  gets "Bitte melde dich an" and the page calls nothing; `portalVisible` hides the tab on a kiosk device.
+* **Everything inline** (`server/ui.js`): the frame CSP allows only inline scripts — no external script and no
+  WebAssembly, so no libsodium. `ui/vendor/noble.js` is one minified IIFE (`window.VaultNoble`) of
+  [@noble/hashes](https://github.com/paulmillr/noble-hashes) 1.8.0 (Argon2id, BLAKE2b, SHA-1/256/512, HMAC),
+  [@noble/ciphers](https://github.com/paulmillr/noble-ciphers) 1.3.0 (XChaCha20-Poly1305, XSalsa20-Poly1305, HSalsa20),
+  [@noble/curves](https://github.com/paulmillr/noble-curves) 1.9.7 (X25519) and [uqr](https://github.com/unjs/uqr)
+  0.1.2 (QR codes) — all MIT, the notices at the top of the file. `ui/crypto.js` (`window.VaultCrypto`) is the
+  client-core `vault-crypto` API on top of it: `crypto_box_seal` = X25519 with an ephemeral key, HSalsa20 →
+  XSalsa20-Poly1305, nonce BLAKE2b-192(epk ‖ pk); Argon2id runs as `argon2idAsync` (the page stays responsive, with
+  progress; ~3 s for 64 MiB / 3 passes on a desktop). `test/crypto.test.js` checks every vector of
+  `test/fixtures/vault-vectors.json` (a copy of client-core's) and a box libsodium opened (`fixtures/portal-seal.json`).
+* **Keys only in memory.** The frame has no storage; nothing is kept. The tab locks after 5 minutes without input,
+  on "Jetzt sperren" and when it is closed: keys are zeroed, the decrypted entries and the DOM that showed them dropped.
+* **Online only:** `GET sync` pages fill an encrypted copy in memory (smaller pages when an answer is too large for
+  the host), every minute again; saves go straight to `POST items` (device `Portal`). `conflict` → the newer version is
+  loaded and the person chooses "Meine Fassung speichern" (on top of it; the other stays in the history) or "Als Kopie
+  speichern". `stale_key` → sync (the vault's `pending` key), encrypt again, retry once. A save during a key change uses
+  `pending.keyRev`; the key change itself (`rekey/*`) is left to the apps; renaming and members wait for it (`rekeying`).
+* **Clipboard and links:** copying uses a hidden text area + `execCommand('copy')` (works in the sandbox during the
+  click), then `navigator.clipboard` if the host allows it; the frame cannot clear the clipboard afterwards. A sandbox
+  without `allow-popups` opens no new tab, so web addresses are shown (selectable, with "Kopieren"), not linked.
+
+### Rebuilding `ui/vendor/noble.js`
+
+`sh plugins/gatecontrol-vault/tools/build-noble.sh` installs the pinned versions and esbuild into a temporary folder
+(never into the repository), bundles `tools/noble-entry.mjs` as a minified IIFE and writes the file with the licence
+notices. Then run the tests — the vectors must still pass.
 
 ## Tests
 

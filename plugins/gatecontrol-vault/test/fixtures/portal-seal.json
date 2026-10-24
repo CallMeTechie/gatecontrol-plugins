@@ -1,0 +1,8 @@
+{
+  "$comment": "A crypto_box_seal made by ui/crypto.js (noble) with a fixed ephemeral key pair (crypto_box_seed_keypair(ephemeralSeed)) to the key pair of vault-vectors.json sealed; opened once with libsodium (libsodium-wrappers-sumo 0.8.4, crypto_box_seal_open) when this file was written.",
+  "recipientPublicKey": "5730800ab340fcb18ce5111eda9d705f91388b41e4544cbd103ba5942db2233e",
+  "key": "808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9f",
+  "ephemeralSeed": "606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f",
+  "ephemeralPublicKey": "e240f142b821efa128c8a1b1ee98c5c2d0d6186429edeedd3cccde89f7bf754a",
+  "sealed": "4kDxQrgh76EoyKGx7pjFwtDWGGQp7e7dPMzeife_dUqVKBBHlAy67yemFB5xNZ-M123wnU0fsIPFYzdirE4pjiYNi4Qga3i_vGIUV7G4in4"
+}

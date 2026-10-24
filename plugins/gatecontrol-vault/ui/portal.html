@@ -1,0 +1,29 @@
+<div class="vp" id="vp-root">
+  <div class="vp-login" id="vp-login" hidden>
+    <b>{{t:p.login_title}}</b>
+    <span class="vp-muted">{{t:p.login_text}}</span>
+  </div>
+  <div class="vp-screen" id="vp-screen" hidden></div>
+  <div class="vp-app" id="vp-app" hidden>
+    <div class="vp-bar" role="status">
+      <span class="vp-bar-ic" id="vp-bar-ic" aria-hidden="true"></span>
+      <span class="vp-bar-tx">{{t:p.session_note}}</span>
+      <button type="button" class="vp-btn vp-btn-sm" id="vp-lock-now">{{t:p.lock_now}}</button>
+    </div>
+    <div class="vp-cols" id="vp-cols" data-pane="list">
+      <aside class="vp-nav" id="vp-nav" aria-label="{{t:p.vaults}}"></aside>
+      <section class="vp-list" aria-label="{{t:p.entries}}">
+        <div class="vp-list-head">
+          <label class="vp-search"><span class="vp-search-ic" id="vp-search-ic" aria-hidden="true"></span><span class="vp-sr">{{t:p.search}}</span><input id="vp-q" type="search" autocomplete="off" spellcheck="false"></label>
+          <button type="button" class="vp-btn vp-btn-primary" id="vp-new">{{t:p.new}}</button>
+        </div>
+        <div class="vp-list-banner" id="vp-list-banner" hidden></div>
+        <div class="vp-rows" id="vp-rows" role="list"></div>
+      </section>
+      <section class="vp-detail" id="vp-detail" aria-label="{{t:p.entry}}"></section>
+    </div>
+  </div>
+  <div class="vp-toast" id="vp-toast" role="status" aria-live="polite" hidden></div>
+  <div class="vp-dialog-back" id="vp-dialog" hidden></div>
+  <input type="file" id="vp-file" accept=".json,.csv,text/csv,application/json,text/plain" hidden>
+</div>

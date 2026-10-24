@@ -1,7 +1,7 @@
 'use strict';
 
 // gatecontrol-vault — "Vault": an end-to-end encrypted password manager on one's own GateControl server.
-// The apps (Android, Windows, later the portal) encrypt and decrypt; this plugin keeps encrypted blobs, who may open
+// The apps (Android, Windows) and the portal tab (1.1.0, ui/portal.js) encrypt and decrypt; this plugin keeps encrypted blobs, who may open
 // which vault (keys sealed to each member), the sync counter, a trash, versions, and emergency access. Nothing here
 // can be read without a person's master password, recovery key or a granted emergency access.
 //
@@ -135,8 +135,15 @@ module.exports = {
     }
   },
 
+  /** The admin page and the portal tab "Vault" (server/ui.js). */
   async render(view) {
     return { html: ui.render(view || {}, t) };
+  },
+
+  /** The portal tab is for people: not shown on a kiosk device (a wall tablet). */
+  async portalVisible(q) {
+    const user = (q && q.user) || {};
+    return user.kiosk !== true;
   },
 
   async tick(gc) {
