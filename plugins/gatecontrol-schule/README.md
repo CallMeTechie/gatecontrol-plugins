@@ -8,10 +8,10 @@ Vorabend, Nachrichten der Schule und Fehlzeiten (1.4.0), der Wochenplan je Kind 
 Startkachel und ein Widget je Kind. Konten kommen per **QR-Code-Scan** in die Einstellungen; jede Person
 kann ihr eigenes Schülerkonto in ihrem **GateControl-Profil** verknüpfen.
 
-Braucht **GateControl ≥ 1.172.0**. Ab GateControl **1.188.0** stehen „Konten & Kinder“ direkt in den
-Einstellungen des Plugins, die Kamera darf den QR-Code lesen und das Profil hat den Abschnitt
-„WebUntis“; auf älteren Versionen ist „Konten & Kinder“ ein zweiter Reiter der Seite „Schule“, und statt
-der Kamera geht ein Bild des QR-Codes oder die Eingabe von Hand. Lizenzpflichtiges Plugin.
+Braucht **GateControl ≥ 1.196.0** (1.6.0). „Konten & Kinder“ stehen direkt in den Einstellungen des
+Plugins, das Profil hat den Abschnitt „WebUntis“, und den QR-Code liest der Kamera-Dialog von GateControl
+selbst – das Bild bleibt in GateControl, das Plugin bekommt nur den gelesenen Link. Statt der Kamera geht
+auch ein Bild des QR-Codes oder die Eingabe von Hand. Lizenzpflichtiges Plugin.
 
 > **Inoffizielle Schnittstelle, ohne Gewähr.** WebUntis bietet für das keine öffentliche
 > Schnittstelle an. Das Plugin verwendet die Schnittstelle der WebUntis-Web-App (JSON-RPC) so, wie
@@ -175,8 +175,9 @@ nur noch die Informationen.
    Untis Mobile“** auf **„Anzeigen“** (je nach Schule und Version kann das etwas anders heißen). WebUntis
    zeigt einen QR-Code – darin steht ein Link `untis://setschool?url=…&school=…&user=…&key=…`.
 2. **„WebUntis-Konto hinzufügen“** und eine der drei Arten wählen:
-   * **„QR-Code scannen“** – die Kamera dieses Geräts liest den QR-Code direkt vom Bildschirm (der
-     Browser fragt einmal nach der Kamera; braucht GateControl ≥ 1.188.0 und HTTPS);
+   * **„QR-Code scannen“** – GateControl öffnet seinen Kamera-Dialog und liest den QR-Code direkt vom
+     Bildschirm (der Browser fragt einmal nach der Kamera; braucht HTTPS). Das Bild bleibt in
+     GateControl, das Plugin bekommt nur den Link; andere QR-Codes nimmt der Dialog nicht;
    * **„QR-Bild hochladen“** – ein Screenshot oder Foto des QR-Codes; gelesen wird im Browser, das Bild
      verlässt ihn nicht;
    * **„Manuell eingeben“** – Server (z. B. `xyz.webuntis.com`), Schule, Benutzer und den **Schlüssel**
@@ -385,9 +386,9 @@ Abruf-Durchlauf und Dienst auf, und nur, wenn es etwas zu melden gibt.
 The timetable of **WebUntis** student and parent accounts in GateControl: cancellations,
 substitutions and extra lessons as push notifications, a week view in the portal (also on wall
 tablets), a Start tile and a widget per child, every child in its own colour. Needs **GateControl ≥
-1.172.0**; from **1.188.0** “Accounts & children” sit right in the plugin's settings, the camera may read
-the QR code and the portal profile has the section “WebUntis” (older hosts: a second tab of the page
-“School”, upload a picture of the QR code or type it in instead of the camera).
+1.196.0** (1.6.0): “Accounts & children” sit right in the plugin's settings, the portal profile has the
+section “WebUntis”, and GateControl's own camera dialog reads the QR code (`GC.scanQr`: the picture stays
+in GateControl, the plugin only gets the link); a picture of the QR code or typing it in work as well.
 
 **Unofficial interface, no warranty:** WebUntis has no public API for this. The plugin uses the
 interface of the WebUntis web app as documented by the MIT-licensed `webuntis` npm project; it may
@@ -397,7 +398,7 @@ change or stop working at any time. Not affiliated with Untis GmbH.
 page “School” only shows the information (per child a card in its colour, the week, changes, exams,
 homework; without an account a pointer to the settings). In WebUntis (browser) the QR code is usually
 under the profile › “Sharing” › “Access via Untis Mobile” › “Display” (names vary by school). “Add WebUntis
-account” offers **“Scan QR code”** (this device's camera), **“Upload QR picture”** (a screenshot or photo,
+account” offers **“Scan QR code”** (GateControl's camera dialog), **“Upload QR picture”** (a screenshot or photo,
 decoded in the browser) and **“Enter manually”** (server, school, user and key or password); pasting the
 `untis://` link is a small fallback. The plugin signs in once (a TOTP from the key, no password) and lists
 the students – the student itself, or a parent's children. Each account is a card (status, last/next

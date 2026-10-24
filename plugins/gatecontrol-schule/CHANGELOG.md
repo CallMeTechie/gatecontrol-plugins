@@ -2,6 +2,17 @@
 
 Stundenplan aus WebUntis für Schüler- und Elternkonten als GateControl-Plugin.
 
+## 1.6.0
+- **„QR-Code scannen“ geht jetzt auch in Chrome, Edge und auf Android.** Bisher blieb die Kamera dort mit
+  „Kein Zugriff auf die Kamera“ aus: Der Browser lässt die Kamera im abgeschotteten Fenster eines Plugins nicht
+  zu. Jetzt öffnet GateControl selbst den Kamera-Dialog („QR-Code scannen – für Schule“), liest den QR-Code
+  aus WebUntis und gibt dem Plugin nur den gelesenen Link – das Bild bleibt in GateControl, die Kamera geht
+  sofort wieder aus. Andere QR-Codes werden nicht genommen („passt hier nicht“), der Dialog sucht weiter.
+- Gilt für „WebUntis-Konto hinzufügen“ und „Zugang ändern“ in den Einstellungen und für „WebUntis“ in
+  „Meine Geräte“ im Portal. „QR-Bild hochladen“ und „Manuell eingeben“ bleiben wie gehabt.
+- Braucht **GateControl 1.196.0**; die Berechtigung heißt jetzt „QR-Codes: Kamera zum Scannen von QR-Codes
+  (das Bild bleibt in GateControl, das Plugin bekommt nur den gelesenen Text)“ statt „Kamera“.
+
 ## 1.5.1
 - **Nachrichten der Schule im Chat:** Der Push einer Nachricht trägt jetzt eine Karte mit Absender und dem
   **ganzen Text** (bis 4000 Zeichen) und dem Link „Ganze Nachricht lesen“ (öffnet „Schule“ in der App). Lenkt
