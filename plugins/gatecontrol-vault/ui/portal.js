@@ -65,6 +65,7 @@
     grid: 'M4 4h7v7H4z|M13 4h7v7h-7z|M4 13h7v7H4z|M13 13h7v7h-7z',
     qr: 'M4 4h6v6H4z|M14 4h6v6h-6z|M4 14h6v6H4z|M14 14h2v2h-2z|M18 18h2v2h-2z|M14 18h2|M18 14h2',
     image: 'M4 5h16v14H4z|M4 16l5-5 4 4 2-2 5 5|M15 9h.01',
+    camera: 'M4 8h3l2-3h6l2 3h3v11H4z|M12 16.5a3.5 3.5 0 1 0 0-7a3.5 3.5 0 1 0 0 7',
   };
 
   function icon(name, size) {
@@ -1417,9 +1418,15 @@
   // A picture — chosen, pasted with Ctrl+V or dropped — → a canvas → its pixels → VaultNoble.qrDecode (jsQR, bundled
   // in ui/vendor/noble.js) → L.qrTotp. All of it stays in this frame: the picture is drawn once, read and dropped
   // (bitmap closed, pixels zeroed, canvas emptied, file input reset). A result that comes after a lock (S.epoch) or
-  // after its panel was closed (pane changed, field closed) is dropped. No camera: GateControl's ui.camera gives the
-  // frame allow="camera *", but Chromium refuses getUserMedia to a sandboxed frame without allow-same-origin (its
-  // origin is opaque: "SecurityError: Invalid security origin"), so the permission would buy nothing there.
+  // after its panel was closed (pane changed, field closed) is dropped. The frame itself gets no camera: Chromium
+  // refuses getUserMedia to a sandboxed frame without allow-same-origin (its origin is opaque: "SecurityError: Invalid
+  // security origin").
+  //
+  // 1.3.0 — „Mit Kamera scannen“: GateControl ≥ 1.196.0 (plugin.json ui.scanQr) reads the code in its own camera
+  // dialog (window.GC.scanQr) and hands this frame only the text — otpauth:// or otpauth-migration:// (the dialog
+  // keeps scanning past other codes). The text goes through the same L.qrTotp / account choice as a picture, and the
+  // same rule: an answer that comes after a lock or after the panel was closed is dropped. The button is only there
+  // when the host has GC.scanQr.
 
   var MAX_QR_IMAGE_BYTES = 25 * 1024 * 1024;
   var QR_SIDES = [1280, 2560]; // a picture is read with its longer side at most this (big screenshots: small codes)
@@ -1477,6 +1484,11 @@
   function dropBitmap(b) {
     try { if (b && typeof b.close === 'function') b.close(); else if (b) b.src = ''; } catch (e) { /* gone */ }
   }
+
+  /** GateControl reads QR codes with its own camera dialog (GC.scanQr, GateControl ≥ 1.196.0). */
+  function hostScan() { return !!(window.GC && typeof window.GC.scanQr === 'function'); }
+  var CAMERA_ERR = { denied: 'qr.camera_denied', no_camera: 'qr.camera_none', insecure: 'qr.camera_insecure', timeout: 'qr.camera_timeout' };
+  var CAMERA_QUIET = ['cancelled', 'hidden', 'busy', 'rate_limited', 'no_gesture'];
 
   function qrErrText(code) {
     if (code === 'hotp') return T('qr.hotp');
@@ -1595,6 +1607,25 @@
       else say(T('qr.unreadable'), true);
     }
 
+    // „Mit Kamera scannen“ (1.3.0): GateControl's dialog → the text → the same handling as a picture
+    run.camera = function () {
+      if (busy || !alive() || !hostScan()) return;
+      busy = true;
+      clear(choices);
+      choices.hidden = true;
+      say(T('qr.camera_open'));
+      var done = function (r) {
+        busy = false;
+        if (!alive()) return; // locked or closed meanwhile: the text is dropped unread
+        if (r && typeof r.text === 'string' && r.text) { handle(r.text); return; }
+        var code = r && r.code;
+        if (!code || CAMERA_QUIET.indexOf(code) >= 0) { say(''); return; }
+        say(T(CAMERA_ERR[code] || 'qr.camera_failed'), true);
+      };
+      var p;
+      try { p = window.GC.scanQr({ hint: T('qr.camera_hint'), accept: ['otpauth://', 'otpauth-migration://'] }); } catch (e) { p = null; }
+      Promise.resolve(p).then(done, function () { done(null); });
+    };
     run.stop = function () {
       document.removeEventListener('paste', onPaste);
       document.removeEventListener('dragover', onDragOver);
@@ -1693,8 +1724,7 @@
         // 1.2.0: the key from a QR code (picture or screenshot) instead of typing it
         var qrBox = h('div', { hidden: true });
         var closeQr = function () { stopQr(); clear(qrBox); qrBox.hidden = true; };
-        var qrBtn = btn(T('qr.from_image'), function () {
-          if (!qrBox.hidden) { closeQr(); return; }
+        var openQr = function () {
           qrBox.appendChild(qrPanel(function (r) {
             closeQr();
             input.value = r.uri;
@@ -1708,8 +1738,17 @@
             toast(T('qr.applied'));
           }));
           qrBox.hidden = false;
+        };
+        var qrBtn = btn(T('qr.from_image'), function () {
+          if (!qrBox.hidden) { closeQr(); return; }
+          openQr();
         }, { small: true, icon: 'qr' });
-        form.push(h('div', { class: 'vp-field' }, [h('span', { class: 'vp-label', text: label }), h('span', { class: 'vp-pw vp-totp-in' }, [input, qrBtn]), tHint, qrBox]));
+        // 1.3.0: GateControl's camera dialog (only when the host has GC.scanQr); the panel shows the outcome
+        var camBtn = hostScan() ? btn(T('qr.camera'), function () {
+          if (qrBox.hidden) openQr();
+          if (qrRun && qrRun.camera) qrRun.camera();
+        }, { small: true, icon: 'camera' }) : null;
+        form.push(h('div', { class: 'vp-field' }, [h('span', { class: 'vp-label', text: label }), h('span', { class: 'vp-pw vp-totp-in' }, [input, qrBtn, camBtn]), tHint, qrBox]));
       } else if (f.secret) {
         var genBox = h('div', { hidden: true });
         var row = h('span', { class: 'vp-pw' }, [input,

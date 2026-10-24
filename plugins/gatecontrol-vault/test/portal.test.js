@@ -101,10 +101,11 @@ test('texts: every key the portal uses exists in de and en (with .one/.other for
   assert.ok(texts.de['p.session_note'].includes('5 Minuten'));
 });
 
-test('plugin.json 1.2.0: the portal tab "Vault"; GateControl 1.193.0 still enough; portalVisible hides it on a kiosk device', async () => {
-  assert.equal(manifest.version, '1.2.0');
-  assert.equal(manifest.gatecontrol, '>=1.193.0', 'GC.saveFile is 1.186.0, the rest was already needed');
+test('plugin.json 1.3.0: the portal tab "Vault"; GateControl 1.193.0 still enough; portalVisible hides it on a kiosk device', async () => {
+  assert.equal(manifest.version, '1.3.0');
+  assert.equal(manifest.gatecontrol, '>=1.193.0', 'GC.saveFile is 1.186.0, GC.scanQr (1.196.0) is feature-detected');
   assert.equal(manifest.ui.camera, undefined, 'no camera: a sandboxed frame (opaque origin) gets none in Chromium');
+  assert.equal(manifest.ui.scanQr, true, 'GateControl\'s own camera dialog (GC.scanQr), the frame gets the text only');
   assert.deepEqual(manifest.ui.portal, { label: { de: 'Vault', en: 'Vault' }, icon: manifest.ui.nav.icon });
   assert.equal(manifest.permissions.portal, true);
   assert.deepEqual(manifest.ui.pages.map((p) => p.id), ['overview']);
@@ -115,6 +116,7 @@ test('plugin.json 1.2.0: the portal tab "Vault"; GateControl 1.193.0 still enoug
   const changelog = fs.readFileSync(path.join(__dirname, '..', 'CHANGELOG.md'), 'utf8');
   assert.match(changelog, /^## 1\.1\.0$/m);
   assert.match(changelog, /^## 1\.2\.0$/m);
+  assert.match(changelog, /^## 1\.3\.0$/m);
   await withHost({}, async (host) => {
     assert.equal(await host.portalVisible({ ...ANNA, loggedIn: true }), true);
     assert.equal(await host.portalVisible({ ...WALL, loggedIn: true, kiosk: true }), false);
@@ -720,6 +722,90 @@ test('smoke (1.2.0): a 2FA key from a QR code — chosen picture, pasted screens
       assert.equal(seen.pixels.length, before, 'not even decoded after the lock');
       assert.ok(seen.bitmaps[seen.bitmaps.length - 1].closed);
       assert.ok(!text(doc.body).includes('JBSWY3DPEHPK3PXP') && !text(doc.body).includes('übernommen'));
+      assert.ok(text(doc.getElementById('vp-screen')).includes('Vault ist gesperrt'));
+    } finally {
+      w.stop();
+      await tick();
+    }
+  });
+});
+
+// ── 1.3.0: „Mit Kamera scannen“ through GateControl's dialog (GC.scanQr) ──
+
+test('smoke (1.3.0): „Mit Kamera scannen“ — only with GC.scanQr; the text goes the way of a picture; errors, cancel, a lock while scanning', async () => {
+  await withHost({}, async (host) => {
+    const { doc, w } = await openPortal(host, ANNA);
+    const detail = doc.getElementById('vp-detail');
+    const status = () => text(detail.querySelector('.vp-qr-panel') && detail.querySelector('.vp-qr-panel').querySelectorAll('p').find((p) => p.getAttribute('role') === 'status'));
+    const totpInput = () => detail.querySelectorAll('input').find((i) => i.getAttribute('aria-label') === '2FA-Schlüssel (otpauth-Link oder Base32)');
+    const camBtn = () => detail.querySelectorAll('button').find((b) => b.textContent === 'Mit Kamera scannen');
+    const newItem = (kind) => {
+      doc.getElementById('vp-new').click();
+      doc.querySelectorAll('.vp-type').find((b) => b.lastChild.textContent === kind).click();
+    };
+    try {
+      // an older GateControl (no GC.scanQr): no camera button, the picture stays
+      newItem('Login');
+      assert.equal(camBtn(), undefined, 'no button without GC.scanQr');
+      assert.ok(byText(doc, 'button', 'QR-Code aus Bild'));
+
+      // GateControl ≥ 1.196.0: the button next to "QR-Code aus Bild"
+      const calls = [];
+      let answer = null;
+      w.window.GC.scanQr = (o) => { calls.push(JSON.parse(JSON.stringify(o))); return new Promise((r) => { answer = r; }); };
+      newItem('Login');
+      const row = totpInput().parentNode;
+      assert.deepEqual(row.querySelectorAll('button').map((b) => b.textContent), ['QR-Code aus Bild', 'Mit Kamera scannen'], 'next to "QR-Code aus Bild"');
+      camBtn().click();
+      assert.equal(calls.length, 1);
+      assert.deepEqual(calls[0].accept, ['otpauth://', 'otpauth-migration://']);
+      assert.match(calls[0].hint, /2FA-QR-Code/);
+      assert.ok(detail.querySelector('.vp-qr-panel'), 'the panel shows the outcome');
+      assert.equal(status(), 'Die Kamera öffnet sich in GateControl …');
+      camBtn().click();
+      assert.equal(calls.length, 1, 'one scan at a time');
+      const URI = 'otpauth://totp/ACME%20Corp:anna%40example.org?secret=JBSWY3DPEHPK3PXP&issuer=ACME%20Corp';
+      answer({ text: URI, code: null });
+      await until('applied', toastIs(doc, '2FA-Schlüssel aus dem QR-Code übernommen.'));
+      assert.equal(totpInput().value, URI);
+      assert.equal(detail.querySelectorAll('input').find((i) => i.type === 'text').value, 'ACME Corp', 'the title from the issuer');
+      assert.equal(detail.querySelector('.vp-qr-panel'), null, 'the panel closes');
+
+      // a Google Authenticator export → the same choice as from a picture
+      newItem('2FA-Code');
+      camBtn().click();
+      answer({
+        text: migrationUri([
+          { secret: Buffer.from('12345678901234567890'), name: 'lena@example.org', issuer: 'Schule' },
+          { secret: Buffer.from('abcdefghij'), name: 'Bank:lena', type: 1 },
+        ]),
+        code: null,
+      });
+      await until('choices', () => detail.querySelectorAll('.vp-qr-choice').length === 2);
+      detail.querySelectorAll('.vp-qr-choice')[0].click();
+      await until('applied from the export', () => /^otpauth:\/\/totp\/Schule:lena%40example\.org\?secret=/.test(totpInput().value));
+
+      // HOTP, a refusal of the camera, a cancel
+      camBtn().click();
+      answer({ text: 'otpauth://hotp/ACME:anna?secret=JBSWY3DPEHPK3PXP&counter=1', code: null });
+      await until('hotp', () => status() === 'HOTP wird nicht unterstützt – nur zeitbasierte 2FA-Codes (TOTP).');
+      camBtn().click();
+      answer({ text: null, code: 'denied' });
+      await until('denied', () => status() === 'Kein Zugriff auf die Kamera. Erlaube ihn im Browser – oder lies ein Bild des QR-Codes ein.');
+      camBtn().click();
+      answer({ text: null, code: 'insecure' });
+      await until('insecure', () => /nur, wenn GateControl über HTTPS/.test(status()));
+      camBtn().click();
+      answer({ text: null, code: 'cancelled' });
+      await until('cancelled', () => status() === '');
+      assert.match(totpInput().value, /^otpauth:\/\/totp\/Schule:lena/, 'nothing changed by a failed scan');
+
+      // a lock while GateControl's dialog is open: the late text is dropped unread
+      camBtn().click();
+      doc.getElementById('vp-lock-now').click();
+      answer({ text: 'otpauth://totp/Late:x?secret=KRSXG5CTMVRXEZLU', code: null });
+      for (let i = 0; i < 20; i++) await tick();
+      assert.ok(!text(doc.body).includes('KRSXG5CTMVRXEZLU') && !text(doc.body).includes('übernommen'));
       assert.ok(text(doc.getElementById('vp-screen')).includes('Vault ist gesperrt'));
     } finally {
       w.stop();
