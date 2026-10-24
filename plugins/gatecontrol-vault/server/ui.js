@@ -5,8 +5,9 @@
 // external script, no WebAssembly, no network of its own, no storage): the pages talk to this plugin's API through
 // window.GC.call and hand files to the page with GC.saveFile. Everything is inlined here, read once from ui/:
 //
-//   portal tab   portal.css · portal.html · VA_CTX · vendor/noble.js (noble hashes/ciphers/curves + uqr, MIT; built
-//                by test/vendor-build/build.sh — under test/, so not packed) · crypto.js (window.VaultCrypto) · logic.js (window.VaultLogic) · portal.js
+//   portal tab   portal.css · portal.html · VA_CTX · vendor/noble.js (noble hashes/ciphers/curves + uqr, MIT; 1.2.0
+//                jsQR, Apache-2.0; built by test/vendor-build/build.sh — under test/, so not packed) · crypto.js
+//                (window.VaultCrypto) · logic.js (window.VaultLogic) · portal.js
 //
 // The portal tab is for a signed-in person only (never a kiosk device, never a viewer known only by device trust):
 // the others get the page with loggedIn: false, which shows "Bitte melde dich an" and calls nothing.

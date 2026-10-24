@@ -16,6 +16,7 @@ const { t } = require('../server/text');
 const { withHost, ANNA, MARC, WALL, MIN } = require('./helpers');
 const { createWindow } = require('./fake-dom');
 const { loadUi } = require('./load-ui');
+const { qrPicture, blankPicture, migrationUri } = require('./qr-image');
 
 const UI = path.join(__dirname, '..', 'ui');
 const ctxOf = (html) => JSON.parse(html.split('window.VA_CTX=')[1].split(';</script>')[0]);
@@ -61,6 +62,11 @@ test('the frame\'s rules: no modals, no storage, no WebAssembly, no innerHTML, n
   assert.ok(noble.startsWith('/*! ui/vendor/noble.js'), 'the licence notice first');
   assert.match(noble, /@noble\/hashes 1\.8\.0, @noble\/ciphers 1\.3\.0, @noble\/curves 1\.9\.7/);
   assert.match(noble, /Permission is hereby granted/);
+  assert.match(noble, /jsQR 1\.4\.0 - .*Apache License,/, 'jsQR (1.2.0) with its licence');
+  assert.match(fs.readFileSync(path.join(UI, 'vendor', 'LICENSE-jsqr.txt'), 'utf8'), /Apache License\s+Version 2\.0/);
+  const lock = require('./vendor-build/package-lock.json');
+  assert.equal(require('./vendor-build/package.json').dependencies.jsqr, '1.4.0', 'pinned exactly');
+  assert.match(lock.packages['node_modules/jsqr'].integrity, /^sha512-/);
   assert.ok(!/WebAssembly|\beval\(|new Function|<\/script|<!--/i.test(noble.slice(noble.indexOf('*/'))), 'pure JS, inlinable');
 });
 
@@ -95,17 +101,20 @@ test('texts: every key the portal uses exists in de and en (with .one/.other for
   assert.ok(texts.de['p.session_note'].includes('5 Minuten'));
 });
 
-test('plugin.json 1.1.0: the portal tab "Vault"; GateControl 1.193.0 still enough; portalVisible hides it on a kiosk device', async () => {
-  assert.equal(manifest.version, '1.1.0');
+test('plugin.json 1.2.0: the portal tab "Vault"; GateControl 1.193.0 still enough; portalVisible hides it on a kiosk device', async () => {
+  assert.equal(manifest.version, '1.2.0');
   assert.equal(manifest.gatecontrol, '>=1.193.0', 'GC.saveFile is 1.186.0, the rest was already needed');
+  assert.equal(manifest.ui.camera, undefined, 'no camera: a sandboxed frame (opaque origin) gets none in Chromium');
   assert.deepEqual(manifest.ui.portal, { label: { de: 'Vault', en: 'Vault' }, icon: manifest.ui.nav.icon });
   assert.equal(manifest.permissions.portal, true);
   assert.deepEqual(manifest.ui.pages.map((p) => p.id), ['overview']);
   const packed = require('../../../tools/stage').stagedFiles(path.join(__dirname, '..'));
   assert.ok(packed.includes('ui/vendor/noble.js'));
+  assert.ok(packed.includes('ui/vendor/LICENSE-jsqr.txt'), 'jsQR\'s Apache-2.0 licence goes with the bundle');
   assert.deepEqual(packed.filter((x) => /^(test|tools)\/|vendor-build|package(-lock)?\.json$/.test(x)), [], 'the bundle\'s build files are not packed');
   const changelog = fs.readFileSync(path.join(__dirname, '..', 'CHANGELOG.md'), 'utf8');
   assert.match(changelog, /^## 1\.1\.0$/m);
+  assert.match(changelog, /^## 1\.2\.0$/m);
   await withHost({}, async (host) => {
     assert.equal(await host.portalVisible({ ...ANNA, loggedIn: true }), true);
     assert.equal(await host.portalVisible({ ...WALL, loggedIn: true, kiosk: true }), false);
@@ -563,6 +572,157 @@ test('smoke: emergency access between two portal tabs (request, approve, open re
     } finally {
       marc.w.stop();
       anna.w.stop();
+      await tick();
+    }
+  });
+});
+
+// ── 1.2.0: the 2FA key from a QR code ────────────────────────
+
+/**
+ * The browser's picture APIs for the fake DOM: window.createImageBitmap(file) hands out file.bitmap (a picture
+ * { width, height, data } or a promise of one), a <canvas> draws it and getImageData returns its RGBA pixels. Records
+ * what the page did with them: bitmaps closed, pixel arrays handed out (to check they were zeroed), canvases emptied.
+ */
+function pictureApis(w) {
+  const seen = { pixels: [], canvases: [], bitmaps: [] };
+  w.window.createImageBitmap = (file) => Promise.resolve(file.bitmap).then((pic) => {
+    const bmp = { width: pic.width, height: pic.height, pic, closed: false, close() { this.closed = true; } };
+    seen.bitmaps.push(bmp);
+    return bmp;
+  });
+  const doc = w.document;
+  const make = doc.createElement.bind(doc);
+  doc.createElement = (tag) => {
+    const el = make(tag);
+    if (String(tag).toLowerCase() !== 'canvas') return el;
+    let drawn = null;
+    seen.canvases.push(el);
+    el.getContext = () => ({
+      drawImage(src, x, y, cw, ch) { drawn = { src, cw, ch }; },
+      getImageData(x, y, cw, ch) {
+        assert.deepEqual([cw, ch], [drawn.src.width, drawn.src.height], 'small pictures are read at their own size');
+        const data = Uint8ClampedArray.from(drawn.src.pic.data);
+        seen.pixels.push(data);
+        return { width: cw, height: ch, data };
+      },
+    });
+    return el;
+  };
+  return seen;
+}
+const picFile = (bitmap, o = {}) => ({ name: 'qr.png', type: 'image/png', size: 2048, bitmap, ...o });
+
+test('smoke (1.2.0): a 2FA key from a QR code — chosen picture, pasted screenshot, HOTP / no code / unreadable, a Google Authenticator export, a lock while reading', async () => {
+  await withHost({}, async (host) => {
+    const anna = await openPortal(host, ANNA);
+    const { doc, w } = anna;
+    const { N } = loadUi();
+    const seen = pictureApis(w);
+    const detail = doc.getElementById('vp-detail');
+    const status = () => text(detail.querySelector('.vp-qr-panel') && detail.querySelector('.vp-qr-panel').querySelectorAll('p').find((p) => p.getAttribute('role') === 'status'));
+    const totpInput = () => detail.querySelectorAll('input').find((i) => i.getAttribute('aria-label') === '2FA-Schlüssel (otpauth-Link oder Base32)');
+    const openPanel = () => {
+      byText(doc, 'button', 'QR-Code aus Bild').click();
+      const panel = detail.querySelector('.vp-qr-panel');
+      assert.ok(panel, 'the panel opens under the field');
+      return panel;
+    };
+    const paste = (file, o = {}) => {
+      const ev = { type: 'paste', defaultPrevented: false, preventDefault() { ev.defaultPrevented = true; }, clipboardData: { items: file ? [{ kind: 'file', type: file.type, getAsFile: () => file }] : [{ kind: 'string', type: 'text/plain' }], files: [] }, ...o };
+      doc.dispatchEvent(ev);
+      return ev;
+    };
+    try {
+      // a new login: "QR-Code aus Bild" › "Bild wählen…"
+      doc.getElementById('vp-new').click();
+      doc.querySelectorAll('.vp-type').find((b) => b.lastChild.textContent === 'Login').click();
+      const panel = openPanel();
+      assert.ok(text(panel).includes('Bild wählen…'));
+      assert.ok(text(panel).includes('oder Screenshot hier einfügen (Strg+V) / hineinziehen'));
+      assert.ok(!text(panel).includes('Kamera'), 'no camera');
+      const file = panel.querySelectorAll('input').find((i) => i.type === 'file');
+      assert.equal(file.getAttribute('accept'), 'image/*');
+      const URI = 'otpauth://totp/ACME%20Corp:anna%40example.org?secret=JBSWY3DPEHPK3PXP&issuer=ACME%20Corp';
+      file.files = [picFile(qrPicture(N, URI))];
+      file.value = 'C:\\fakepath\\qr.png';
+      file.dispatchEvent({ type: 'change' });
+      await until('applied', toastIs(doc, '2FA-Schlüssel aus dem QR-Code übernommen.'));
+      assert.equal(totpInput().value, URI, 'the whole otpauth link goes into the field');
+      const inputs = detail.querySelectorAll('input');
+      const title = inputs.find((i) => i.type === 'text');
+      const pwField = inputs.find((i) => i.type === 'password');
+      const userField = inputs[inputs.indexOf(pwField) - 1];
+      assert.equal(title.value, 'ACME Corp', 'the title from the issuer');
+      assert.equal(userField.value, 'anna@example.org', 'the user name from the account');
+      assert.equal(detail.querySelector('.vp-qr-panel'), null, 'the panel closes');
+      // nothing of the picture is kept
+      assert.equal(seen.bitmaps.length, 1);
+      assert.ok(seen.bitmaps[0].closed, 'bitmap closed');
+      assert.ok(seen.pixels[0].every((x) => x === 0), 'pixels zeroed');
+      assert.ok(seen.canvases.every((c) => c.width === 0 && c.height === 0), 'canvas emptied');
+      assert.equal(file.value, '', 'file input reset');
+      assert.equal(doc.docListeners.paste.length, 0, 'no paste listener left');
+      // saved like a typed key: the code shows up in the detail
+      byText(doc, 'button', 'Speichern').click();
+      await until('saved', toastIs(doc, 'Gespeichert.'));
+      assert.ok(text(doc.getElementById('vp-rows')).includes('ACME Corp'));
+
+      // a "2FA-Code" entry: a filled title and user name stay; a pasted screenshot
+      doc.getElementById('vp-new').click();
+      doc.querySelectorAll('.vp-type').find((b) => b.lastChild.textContent === '2FA-Code').click();
+      type(detail.querySelectorAll('input').find((i) => i.type === 'text'), 'Mein Titel');
+      openPanel();
+      const textPaste = paste(null);
+      assert.equal(textPaste.defaultPrevented, false, 'pasted text goes where it was pasted');
+      // HOTP, a picture without a code, another kind of code, a picture the browser cannot read
+      assert.ok(paste(picFile(qrPicture(N, 'otpauth://hotp/ACME:anna?secret=JBSWY3DPEHPK3PXP&counter=1'))).defaultPrevented);
+      await until('hotp', () => status() === 'HOTP wird nicht unterstützt – nur zeitbasierte 2FA-Codes (TOTP).');
+      paste(picFile(blankPicture()));
+      await until('no code', () => status() === 'Kein 2FA-QR-Code im Bild gefunden.');
+      paste(picFile(qrPicture(N, 'https://example.org/login')));
+      await until('not 2fa', () => status() === 'Kein 2FA-QR-Code im Bild gefunden.' && seen.bitmaps.length === 4);
+      paste(picFile(Promise.reject(new Error('decode'))));
+      await until('unreadable', () => status() === 'Bild konnte nicht gelesen werden.');
+      paste(picFile(null, { type: 'image/png', size: 30 * 1024 * 1024 }));
+      await until('too large', () => status() === 'Das Bild ist zu groß (höchstens 25 MB).');
+      assert.equal(totpInput().value, '', 'nothing taken so far');
+      // dropped: a Google Authenticator export with two accounts (one HOTP) → pick one
+      const mig = migrationUri([
+        { secret: Buffer.from('12345678901234567890'), name: 'lena@example.org', issuer: 'Schule' },
+        { secret: Buffer.from('abcdefghij'), name: 'Bank:lena', type: 1 },
+      ], { batchSize: 2, batchIndex: 0 });
+      const drop = { type: 'drop', defaultPrevented: false, preventDefault() { drop.defaultPrevented = true; }, dataTransfer: { types: ['Files'], files: [picFile(qrPicture(N, mig))], items: [] } };
+      doc.dispatchEvent(drop);
+      assert.ok(drop.defaultPrevented, 'the browser does not open the dropped file');
+      await until('choices', () => detail.querySelectorAll('.vp-qr-choice').length === 2);
+      const choices = detail.querySelectorAll('.vp-qr-choice');
+      assert.ok(text(detail).includes('Wähle eines:'));
+      assert.ok(text(detail).includes('QR-Code 1 von 2 des Exports'));
+      assert.equal(text(choices[0]), 'Schule · lena@example.org');
+      assert.ok(choices[1].disabled && text(choices[1]).includes('HOTP – nicht unterstützt'));
+      choices[0].click();
+      await until('applied from the export', toastIs(doc, '2FA-Schlüssel aus dem QR-Code übernommen.'));
+      assert.match(totpInput().value, /^otpauth:\/\/totp\/Schule:lena%40example\.org\?secret=[A-Z2-7]+&issuer=Schule$/);
+      assert.equal(detail.querySelectorAll('input').find((i) => i.type === 'text').value, 'Mein Titel', 'a title typed before stays');
+
+      // a lock while a picture is read: the late result is dropped, nothing is filled in, the bitmap still closed
+      openPanel();
+      let release;
+      const late = new Promise((r) => { release = r; });
+      const before = seen.pixels.length;
+      paste(picFile(late));
+      await until('reading', () => status() === 'Bild wird gelesen …');
+      doc.getElementById('vp-lock-now').click();
+      assert.equal(doc.docListeners.paste.length, 0, 'the lock removes the paste listener');
+      release(qrPicture(N, URI));
+      for (let i = 0; i < 20; i++) await tick();
+      assert.equal(seen.pixels.length, before, 'not even decoded after the lock');
+      assert.ok(seen.bitmaps[seen.bitmaps.length - 1].closed);
+      assert.ok(!text(doc.body).includes('JBSWY3DPEHPK3PXP') && !text(doc.body).includes('übernommen'));
+      assert.ok(text(doc.getElementById('vp-screen')).includes('Vault ist gesperrt'));
+    } finally {
+      w.stop();
       await tick();
     }
   });

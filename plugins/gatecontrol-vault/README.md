@@ -249,8 +249,10 @@ access (trusted people, requests, a released vault opened read-only), a new mast
   WebAssembly, so no libsodium. `ui/vendor/noble.js` is one minified IIFE (`window.VaultNoble`) of
   [@noble/hashes](https://github.com/paulmillr/noble-hashes) 1.8.0 (Argon2id, BLAKE2b, SHA-1/256/512, HMAC),
   [@noble/ciphers](https://github.com/paulmillr/noble-ciphers) 1.3.0 (XChaCha20-Poly1305, XSalsa20-Poly1305, HSalsa20),
-  [@noble/curves](https://github.com/paulmillr/noble-curves) 1.9.7 (X25519) and [uqr](https://github.com/unjs/uqr)
-  0.1.2 (QR codes) — all MIT, the notices at the top of the file. `ui/crypto.js` (`window.VaultCrypto`) is the
+  [@noble/curves](https://github.com/paulmillr/noble-curves) 1.9.7 (X25519), [uqr](https://github.com/unjs/uqr)
+  0.1.2 (making QR codes) — all MIT — and, since 1.2.0, [jsQR](https://github.com/cozmo/jsQR) 1.4.0 (reading QR
+  codes, `VaultNoble.qrDecode`; Apache-2.0, the full licence in `ui/vendor/LICENSE-jsqr.txt`, packed with it); the
+  notices at the top of the file. `ui/crypto.js` (`window.VaultCrypto`) is the
   client-core `vault-crypto` API on top of it: `crypto_box_seal` = X25519 with an ephemeral key, HSalsa20 →
   XSalsa20-Poly1305, nonce BLAKE2b-192(epk ‖ pk); Argon2id runs as `argon2idAsync`, which the bundle patches to yield
   to the page with a macrotask every 25 ms (noble 1.8.0 yields only a microtask: no repaint, input or timer would
@@ -264,6 +266,23 @@ access (trusted people, requests, a released vault opened read-only), a new mast
   dropped; a sync still running for the earlier session is ignored. Not while a recovery key is on screen (setup,
   recovery): copying it down may take longer. Like the setup, a recovery sends the new password and recovery key
   (`PUT account`) only after "Ich habe ihn sicher aufbewahrt" — until then the old recovery key stays valid.
+* **2FA from a QR code (1.2.0):** next to the 2FA key of a login or a "2FA-Code" entry, "QR-Code aus Bild" opens a
+  panel: "Bild wählen…" (`<input type=file accept=image/*>`), a screenshot pasted with Ctrl+V (`paste`,
+  `clipboardData.items`) or a picture dropped anywhere on the tab while the panel is open (dragged text still goes into
+  the field it is dropped on). The picture is decoded with `createImageBitmap` (else `FileReader` → a `data:` image,
+  which the frame CSP allows), drawn on a canvas, read with `getImageData` (longer side 1280 px, then 2560 px for big
+  screenshots with a small code) and handed to jsQR. Nothing leaves the tab and nothing is kept: the bitmap is closed,
+  the pixels are zeroed, the canvas is emptied, the file input reset; a result that arrives after a lock (`S.epoch`)
+  or after the panel was closed is dropped. `VaultLogic.qrTotp` takes only `otpauth://totp` with a readable key (the
+  whole link goes into the field; the title from the issuer and, for a login, the user name from the account when
+  they are empty); `otpauth://hotp` → "HOTP wird nicht unterstützt"; other codes → "Kein 2FA-QR-Code im Bild
+  gefunden". Google Authenticator's export (`otpauth-migration://offline?data=…`, protobuf `MigrationPayload`, up to
+  100 accounts per code) lists its accounts to pick one; HOTP and MD5 accounts are shown, not selectable.
+  **No camera:** GateControl's `ui.camera` (1.188.0) gives the frame `allow="camera *"`, but Chromium refuses
+  `getUserMedia` to a sandboxed frame without `allow-same-origin` — its origin is opaque ("SecurityError: Invalid
+  security origin"; checked with Chromium 141), so Vault does not ask for that permission. A camera would need the
+  host to scan on its own page (e.g. a `GC.scanQr()` that opens the camera in GateControl's origin and hands the frame
+  only the decoded text).
 * **Export:** plain CSV (UTF-8 with BOM); a value a spreadsheet would run as a formula (starting with `= + - @`, tab,
   CR) gets a leading `'` — not in the password and 2FA columns, which stay exactly as they are. Vault's importer
   recognises its own export and takes the `'` off again.
@@ -281,9 +300,16 @@ access (trusted people, requests, a released vault opened read-only), a new mast
 `sh plugins/gatecontrol-vault/test/vendor-build/build.sh` copies `package.json` + `package-lock.json` (pinned versions
 with integrity hashes) into a temporary folder, runs `npm ci` there (never in the repository), bundles `entry.mjs`
 with esbuild (`build.mjs`: the one patch above; the build fails if the patched line is not found) and writes the file
-with the licence notices. Two builds give the same bytes. It lives under `test/`, so it is not packed into the
+with the licence notices, plus jsQR's `LICENSE` as `ui/vendor/LICENSE-jsqr.txt`. Two builds give the same bytes. It lives under `test/`, so it is not packed into the
 .gcplugin. Then run the tests — the vectors must still pass.
 
 ## Tests
 
 `GATECONTROL_DIR=… node --test plugins/gatecontrol-vault/test/*.test.js` (or `node tools/test.js gatecontrol-vault`).
+
+The 2FA QR code (1.2.0): `test/qr-image.js` draws QR codes with the bundled encoder (uqr) as RGBA pixels;
+`logic.test.js` reads them back with the bundled decoder (jsQR) and checks `qrTotp` (TOTP, HOTP, other codes, Google
+Authenticator exports built with a small protobuf writer); `portal.test.js` hands such pictures to the real page
+through a fake `createImageBitmap` / canvas (chosen file, paste, drop, a lock while reading). In a real browser:
+Portal › Vault › Neu › Login › „QR-Code aus Bild“ — a PNG screenshot of a 2FA QR code chosen, pasted with Ctrl+V and
+dropped is read within a moment; the key, the title and the user name are filled in.

@@ -1,6 +1,7 @@
 #!/bin/sh
-# Rebuilds ui/vendor/noble.js (window.VaultNoble) of gatecontrol-vault. Lives under test/ so it is never packed into
-# the .gcplugin (tools/stage.js leaves test/ out).
+# Rebuilds ui/vendor/noble.js (window.VaultNoble) and ui/vendor/LICENSE-jsqr.txt (jsQR's Apache-2.0 licence, packed
+# next to the bundle) of gatecontrol-vault. Lives under test/ so it is never packed into the .gcplugin (tools/stage.js
+# leaves test/ out).
 #
 #   sh plugins/gatecontrol-vault/test/vendor-build/build.sh
 #
@@ -11,6 +12,7 @@
 set -eu
 here=$(cd "$(dirname "$0")" && pwd)
 out="$here/../../ui/vendor/noble.js"
+license="$here/../../ui/vendor/LICENSE-jsqr.txt"
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 cp "$here/package.json" "$here/package-lock.json" "$here/entry.mjs" "$here/build.mjs" "$work/"
@@ -21,10 +23,14 @@ cat > banner.txt <<BANNER
 /*! ui/vendor/noble.js - built by test/vendor-build/build.sh (esbuild $(ver esbuild), IIFE, window.VaultNoble).
  * @noble/hashes $(ver @noble/hashes), @noble/ciphers $(ver @noble/ciphers), @noble/curves $(ver @noble/curves) - Copyright (c) 2022 Paul Miller (https://paulmillr.com)
  * uqr $(ver uqr) - Copyright (c) Project Nayuki, Copyright (c) 2023 Anthony Fu <https://github.com/antfu>
+ * jsQR $(ver jsqr) - Cosmo Wolfe, Jefff Nelson (https://github.com/cozmo/jsQR) - Licensed under the Apache License,
+ *   Version 2.0 (the plugin package has the full text in ui/vendor/LICENSE-jsqr.txt, also at
+ *   http://www.apache.org/licenses/LICENSE-2.0); distributed "AS IS", WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND.
+ *   Unchanged, bundled as VaultNoble.qrDecode.
  * Patched: argon2idAsync yields with a macrotask (MessageChannel, every 5th time setTimeout) instead of a microtask,
  * so the page stays responsive (test/vendor-build/build.mjs).
  *
- * The MIT License (MIT)
+ * @noble/*, uqr: The MIT License (MIT)
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated
  * documentation files (the "Software"), to deal in the Software without restriction, including without limitation
@@ -42,3 +48,4 @@ cat > banner.txt <<BANNER
  */
 BANNER
 node build.mjs "$out" banner.txt
+cp node_modules/jsqr/LICENSE "$license"

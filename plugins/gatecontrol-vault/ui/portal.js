@@ -6,7 +6,8 @@
  * with search and favourites, the detail per type (secrets masked until revealed, copy, 2FA code with countdown,
  * Wi-Fi QR code), edit and create all six types with custom fields and the password generator, trash and history,
  * vaults and sharing (roles, safety number before adding someone), emergency access (trusted people, requests,
- * opening a released vault read-only), a new master password, import and a plaintext CSV export.
+ * opening a released vault read-only), a new master password, import and a plaintext CSV export; 1.2.0: a 2FA key
+ * read from a QR code in a picture (chosen, pasted or dropped — decoded in this frame, never sent or kept).
  *
  * Keys and decrypted data live only in this script's memory: nothing is stored (the frame has no storage), the tab
  * locks after 5 minutes without input and on "Jetzt sperren" — keys are zeroed, every decrypted value and the DOM
@@ -62,6 +63,8 @@
     dice: 'M4 4h16v16H4z|M9 9h.01M15 15h.01M15 9h.01M9 15h.01',
     edit: 'M4 20h4L19 9l-4-4L4 16z|M14 6l4 4',
     grid: 'M4 4h7v7H4z|M13 4h7v7h-7z|M4 13h7v7H4z|M13 13h7v7h-7z',
+    qr: 'M4 4h6v6H4z|M14 4h6v6h-6z|M4 14h6v6H4z|M14 14h2v2h-2z|M18 18h2v2h-2z|M14 18h2|M18 14h2',
+    image: 'M4 5h16v14H4z|M4 16l5-5 4 4 2-2 5 5|M15 9h.01',
   };
 
   function icon(name, size) {
@@ -348,6 +351,7 @@
   function lock(reason) {
     var had = !!(S.keys || S.setup);
     stopTicker();
+    stopQr();
     wipeAll();
     ['vp-nav', 'vp-rows', 'vp-detail', 'vp-screen', 'vp-dialog'].forEach(function (id) { clear($(id)); });
     $('vp-dialog').hidden = true;
@@ -1185,6 +1189,7 @@
     var d = $('vp-detail');
     clear(d);
     stopTicker();
+    stopQr();
     var k = S.pane.kind;
     var node;
     if (k === 'entry') node = paneEntry(S.pane.id);
@@ -1407,6 +1412,213 @@
     setPane('edit', { draft: draft, orig: L.emptyDraft(type || 'login', target), baseRev: 0, conflict: null });
   }
 
+  // ── 2FA key from a QR code (1.2.0) ───────────────────────
+  //
+  // A picture — chosen, pasted with Ctrl+V or dropped — → a canvas → its pixels → VaultNoble.qrDecode (jsQR, bundled
+  // in ui/vendor/noble.js) → L.qrTotp. All of it stays in this frame: the picture is drawn once, read and dropped
+  // (bitmap closed, pixels zeroed, canvas emptied, file input reset). A result that comes after a lock (S.epoch) or
+  // after its panel was closed (pane changed, field closed) is dropped. No camera: GateControl's ui.camera gives the
+  // frame allow="camera *", but Chromium refuses getUserMedia to a sandboxed frame without allow-same-origin (its
+  // origin is opaque: "SecurityError: Invalid security origin"), so the permission would buy nothing there.
+
+  var MAX_QR_IMAGE_BYTES = 25 * 1024 * 1024;
+  var QR_SIDES = [1280, 2560]; // a picture is read with its longer side at most this (big screenshots: small codes)
+  var qrRun = null; // the open panel: { stop() }
+
+  function stopQr() {
+    var r = qrRun;
+    qrRun = null;
+    if (r) r.stop();
+  }
+
+  /** A picture (w × hh pixels) → the text of the QR code in it, or null. */
+  function qrFromPicture(src, w, hh) {
+    var N = window.VaultNoble;
+    if (!(w > 0 && hh > 0) || !N || typeof N.qrDecode !== 'function') throw new Error('unreadable');
+    var c = document.createElement('canvas');
+    try {
+      for (var i = 0; i < QR_SIDES.length; i++) {
+        var scale = Math.min(1, QR_SIDES[i] / Math.max(w, hh));
+        var cw = Math.max(1, Math.round(w * scale));
+        var ch = Math.max(1, Math.round(hh * scale));
+        c.width = cw;
+        c.height = ch;
+        var g = c.getContext('2d', { willReadFrequently: true });
+        if (!g) throw new Error('unreadable');
+        g.drawImage(src, 0, 0, cw, ch);
+        var img = g.getImageData(0, 0, cw, ch);
+        var code = N.qrDecode(img.data, cw, ch, { inversionAttempts: 'attemptBoth' });
+        img.data.fill(0);
+        if (code && typeof code.data === 'string' && code.data) return code.data;
+        if (scale === 1) break;
+      }
+      return null;
+    } finally {
+      c.width = 0;
+      c.height = 0;
+    }
+  }
+
+  /** A picture file → something to draw (ImageBitmap; an <img> from a data: URL where there is no createImageBitmap). */
+  function bitmapOf(file) {
+    if (typeof window.createImageBitmap === 'function') return window.createImageBitmap(file);
+    return new Promise(function (resolve, reject) {
+      var fr = new FileReader();
+      fr.onload = function () {
+        var img = new Image();
+        img.onload = function () { img.onload = img.onerror = null; resolve(img); };
+        img.onerror = function () { img.onload = img.onerror = null; reject(new Error('unreadable')); };
+        img.src = String(fr.result);
+      };
+      fr.onerror = function () { reject(new Error('unreadable')); };
+      fr.readAsDataURL(file);
+    });
+  }
+  function dropBitmap(b) {
+    try { if (b && typeof b.close === 'function') b.close(); else if (b) b.src = ''; } catch (e) { /* gone */ }
+  }
+
+  function qrErrText(code) {
+    if (code === 'hotp') return T('qr.hotp');
+    if (code === 'invalid') return T('qr.invalid');
+    if (code === 'too_big') return T('qr.too_many');
+    return T('qr.none');
+  }
+
+  /** The panel under the 2FA field → onResult({ uri, title, account }) once a usable code was read. */
+  function qrPanel(onResult) {
+    stopQr();
+    var epoch = S.epoch;
+    var run = { stop: null };
+    var busy = false;
+    var alive = function () { return qrRun === run && epoch === S.epoch; };
+    var status = h('p', { class: 'vp-hint', attrs: { role: 'status', 'aria-live': 'polite' } });
+    var choices = h('div', { class: 'vp-qr-pick', hidden: true });
+    var file = h('input', { type: 'file', hidden: true, attrs: { accept: 'image/*', 'aria-hidden': 'true', tabindex: '-1' } });
+
+    function say(text, bad) {
+      status.textContent = text || '';
+      status.className = 'vp-hint' + (bad ? ' is-bad' : '');
+    }
+    function finish(r) {
+      stopQr();
+      onResult({ uri: r.uri, title: r.title || null, account: r.account || null });
+    }
+    function showChoices(r) {
+      clear(choices);
+      choices.appendChild(h('p', { class: 'vp-hint', text: T('qr.pick_account') }));
+      if (r.batchSize > 1) choices.appendChild(h('p', { class: 'vp-hint', text: T('qr.batch', { index: r.batchIndex + 1, count: r.batchSize }) }));
+      r.entries.forEach(function (x) {
+        var name = [x.issuer, x.account].filter(Boolean).join(' · ') || T('type.totp');
+        choices.appendChild(h('button', { type: 'button', class: 'vp-qr-choice', disabled: !x.uri, on: { click: function () { if (alive() && x.uri) finish(x); } } }, [
+          h('span', { class: 'vp-qr-choice-n', text: name }),
+          x.uri ? null : h('span', { class: 'vp-hint is-bad', text: x.code === 'hotp' ? T('qr.hotp_short') : T('qr.unsupported') }),
+        ]));
+      });
+      choices.hidden = false;
+      say('');
+    }
+    /** The text a QR code held (null: none found). */
+    function handle(text) {
+      clear(choices);
+      choices.hidden = true;
+      if (text == null) { say(T('qr.none'), true); return; }
+      var r = L.qrTotp(text);
+      if (r.kind === 'totp') { finish(r); return; }
+      if (r.kind === 'migration') {
+        var usable = r.entries.filter(function (x) { return x.uri; });
+        if (r.entries.length === 1 && usable.length === 1) { finish(usable[0]); return; }
+        showChoices(r);
+        return;
+      }
+      say(qrErrText(r.code), true);
+    }
+    function readFile(f) {
+      if (!f || busy || !alive()) return;
+      file.value = '';
+      if (f.type && !/^image\//i.test(f.type)) { say(T('qr.unreadable'), true); return; }
+      if (f.size > MAX_QR_IMAGE_BYTES) { say(T('qr.too_large'), true); return; }
+      busy = true;
+      say(T('qr.reading'));
+      bitmapOf(f).then(function (bmp) {
+        try {
+          if (!alive()) return { gone: true };
+          return { text: qrFromPicture(bmp, bmp.width || bmp.naturalWidth, bmp.height || bmp.naturalHeight) };
+        } finally {
+          dropBitmap(bmp);
+        }
+      }).then(function (res) {
+        busy = false;
+        if (res.gone || !alive()) return;
+        handle(res.text);
+      }, function () {
+        busy = false;
+        if (alive()) say(T('qr.unreadable'), true);
+      });
+    }
+    /** The first picture of a DataTransferItemList (kind 'file') or a FileList. */
+    function imageOf(list) {
+      for (var i = 0; list && i < list.length; i++) {
+        var it = list[i];
+        if (!it || !/^image\//i.test(it.type || '')) continue;
+        if (it.kind === 'file' && typeof it.getAsFile === 'function') return it.getAsFile();
+        if (it.kind === undefined) return it;
+      }
+      return null;
+    }
+    function onPaste(e) {
+      if (!alive()) return;
+      var cd = e.clipboardData;
+      var f = cd ? imageOf(cd.items) || imageOf(cd.files) : null;
+      if (!f) return; // text goes where it was pasted
+      e.preventDefault();
+      readFile(f);
+    }
+    // a file dropped anywhere in the tab while the panel is open (the browser would try to open it instead); dragged
+    // text still goes into the field it is dropped on
+    function hasFiles(dt) {
+      var t = dt && dt.types;
+      for (var i = 0; t && i < t.length; i++) if (t[i] === 'Files') return true;
+      return false;
+    }
+    function onDragOver(e) {
+      if (!alive() || !hasFiles(e.dataTransfer)) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'copy';
+    }
+    function onDrop(e) {
+      var dt = e.dataTransfer;
+      if (!alive() || !hasFiles(dt)) return;
+      e.preventDefault();
+      var f = imageOf(dt.files) || imageOf(dt.items);
+      if (f) readFile(f);
+      else say(T('qr.unreadable'), true);
+    }
+
+    run.stop = function () {
+      document.removeEventListener('paste', onPaste);
+      document.removeEventListener('dragover', onDragOver);
+      document.removeEventListener('drop', onDrop);
+      file.value = '';
+      file.onchange = null;
+      clear(choices);
+    };
+    qrRun = run;
+    document.addEventListener('paste', onPaste);
+    document.addEventListener('dragover', onDragOver);
+    document.addEventListener('drop', onDrop);
+    file.onchange = function () { readFile(file.files && file.files[0]); };
+
+    return h('div', { class: 'vp-gen vp-qr-panel' }, [
+      h('div', { class: 'vp-actions vp-actions-left' }, [btn(T('qr.pick'), function () { if (!busy) { file.value = ''; file.click(); } }, { small: true, icon: 'image' })]),
+      h('span', { class: 'vp-hint', text: T('qr.paste_hint') }),
+      choices,
+      status,
+      h('span', { class: 'vp-hint', text: T('qr.privacy') }),
+      file,
+    ]);
+  }
+
   function genPanel(onUse) {
     var opts = { words: false, length: 20, upper: true, digits: true, symbols: true, avoidAmbiguous: false, wordCount: 4 };
     var out = h('input', { type: 'text', class: 'vp-input vp-mono', readOnly: true, attrs: { 'aria-label': T('gen.title'), spellcheck: 'false' } });
@@ -1457,6 +1669,7 @@
       h('div', { class: 'vp-grid2' }, [inputRow(T('edit.type'), typeSel), inputRow(T('field.vault'), vaultSel)]),
       inputRow(T('field.title'), title),
     ];
+    var inputs = {};
     (L.FIELDS[dr.type] || []).forEach(function (f) {
       var val = dr.fields[f.key] || '';
       var label = f.totp ? T('field.totp_secret') : T('field.' + f.key);
@@ -1466,7 +1679,7 @@
         form.push(inputRow(label, input));
         return;
       }
-      input = h('input', { type: f.secret && !f.totp ? 'password' : 'text', class: 'vp-input' + (f.secret ? ' vp-mono' : ''), value: val, attrs: { autocomplete: 'off', spellcheck: 'false' }, on: { input: function () {
+      input = h('input', { type: f.secret && !f.totp ? 'password' : 'text', class: 'vp-input' + (f.secret ? ' vp-mono' : ''), value: val, attrs: { autocomplete: 'off', spellcheck: 'false', 'aria-label': f.totp ? label : null }, on: { input: function () {
         dr.fields[f.key] = input.value;
         if (f.totp) {
           tHint.textContent = input.value.trim() && !L.parseTotp(input.value) ? T('totp.invalid') : '';
@@ -1475,7 +1688,29 @@
         }
       } } });
       var tHint = h('span', { class: 'vp-hint is-bad' });
-      if (f.secret && !f.totp) {
+      inputs[f.key] = input;
+      if (f.totp) {
+        // 1.2.0: the key from a QR code (picture or screenshot) instead of typing it
+        var qrBox = h('div', { hidden: true });
+        var closeQr = function () { stopQr(); clear(qrBox); qrBox.hidden = true; };
+        var qrBtn = btn(T('qr.from_image'), function () {
+          if (!qrBox.hidden) { closeQr(); return; }
+          qrBox.appendChild(qrPanel(function (r) {
+            closeQr();
+            input.value = r.uri;
+            dr.fields[f.key] = r.uri;
+            tHint.textContent = '';
+            if (r.title && !dr.title.trim()) { dr.title = r.title; title.value = r.title; }
+            if (dr.type === 'login' && r.account && inputs.username && !String(dr.fields.username || '').trim()) {
+              dr.fields.username = r.account;
+              inputs.username.value = r.account;
+            }
+            toast(T('qr.applied'));
+          }));
+          qrBox.hidden = false;
+        }, { small: true, icon: 'qr' });
+        form.push(h('div', { class: 'vp-field' }, [h('span', { class: 'vp-label', text: label }), h('span', { class: 'vp-pw vp-totp-in' }, [input, qrBtn]), tHint, qrBox]));
+      } else if (f.secret) {
         var genBox = h('div', { hidden: true });
         var row = h('span', { class: 'vp-pw' }, [input,
           ibtn('eye', T('p.reveal'), function () { input.type = input.type === 'password' ? 'text' : 'password'; }),
@@ -1486,7 +1721,7 @@
         ]);
         form.push(h('div', { class: 'vp-field' }, [h('span', { class: 'vp-label', text: label }), row, genBox]));
       } else {
-        form.push(h('label', { class: 'vp-field' }, [h('span', { class: 'vp-label', text: label }), input, f.totp ? tHint : null]));
+        form.push(h('label', { class: 'vp-field' }, [h('span', { class: 'vp-label', text: label }), input]));
       }
     });
     if (dr.type === 'login' || dr.urls.length) {

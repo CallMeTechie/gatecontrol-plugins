@@ -168,6 +168,15 @@ select.vp-input{padding-right:8px}
 .vp-gen-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.4fr);gap:12px;align-items:end}
 .vp-gen-len{display:flex;flex-direction:column;gap:4px}
 .vp-gen-opts{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:8px}
+/* 1.2.0: the 2FA key from a QR code */
+.vp-totp-in{flex-wrap:wrap}
+.vp-totp-in .vp-input{min-width:200px}
+.vp-qr-panel .vp-hint{margin:0}
+.vp-qr-pick{display:flex;flex-direction:column;gap:6px}
+.vp-qr-choice{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between;text-align:left;padding:9px 12px;border-radius:10px;border:1px solid var(--line-2);background:transparent;color:var(--text);font:inherit;cursor:pointer}
+.vp-qr-choice:hover:not(:disabled){background:var(--accent-soft)}
+.vp-qr-choice:disabled{cursor:default;opacity:.7}
+.vp-qr-choice-n{font-weight:600;overflow-wrap:anywhere}
 .vp-hist{display:flex;flex-direction:column;gap:10px}
 .vp-hist-it{border:1px solid var(--line);border-radius:12px;padding:10px 12px;display:flex;flex-direction:column;gap:8px}
 .vp-hist-head{display:flex;flex-wrap:wrap;gap:8px;align-items:center}

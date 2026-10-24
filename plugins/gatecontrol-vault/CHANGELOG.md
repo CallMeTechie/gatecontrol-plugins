@@ -2,6 +2,21 @@
 
 Passwort-Manager auf dem eigenen GateControl-Server – Ende-zu-Ende verschlüsselt.
 
+## 1.2.0
+- **2FA per QR-Code einrichten:** Beim Anlegen oder Bearbeiten eines Logins oder eines 2FA-Codes gibt es neben dem
+  2FA-Schlüssel den Knopf „QR-Code aus Bild“. Dort ein Bild wählen, einen Screenshot mit Strg+V einfügen oder das Bild
+  hineinziehen: Der Schlüssel wird übernommen, ein leerer Titel kommt vom Anbieter, bei Logins ein leerer
+  Benutzername vom Konto.
+- Nur zeitbasierte Codes (TOTP): Für HOTP-Codes, Bilder ohne 2FA-QR-Code und Bilder, die der Browser nicht lesen kann,
+  sagt der Tab, was nicht geht.
+- **Export aus Google Authenticator:** Enthält der QR-Code mehrere Konten, wählt man eines davon aus; Konten, die Vault
+  nicht nutzen kann (HOTP), werden angezeigt, lassen sich aber nicht wählen. Bei einem Export aus mehreren QR-Codes
+  liest man die anderen einzeln ein.
+- Das Bild wird nur im Browser-Tab gelesen und danach verworfen – es wird weder gespeichert noch gesendet. Ein
+  Ergebnis, das erst nach dem Sperren fertig wird, wird verworfen.
+- Mit der Kamera scannen geht im Portal-Tab nicht: Der Browser gibt dem abgeschotteten Tab keine Kamera. Ein Foto
+  oder Screenshot des QR-Codes funktioniert.
+
 ## 1.1.0
 - **Vault im Portal:** Der neue Portal-Tab „Vault“ ist der ganze Passwort-Manager im Browser – Ende-zu-Ende
   verschlüsselt wie in den Apps. Entschlüsselt wird nur in diesem Browser-Tab: Er sperrt nach 5 Minuten ohne Eingabe,
