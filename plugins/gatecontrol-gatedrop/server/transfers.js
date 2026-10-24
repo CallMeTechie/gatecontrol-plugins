@@ -54,7 +54,18 @@ async function locate(ctx, id) {
   return { tr, side, send, delivery };
 }
 
-/** GET transfers/<id> (either end) → the transfer; the ticket and key only while it is open. */
+/** What the other end of the transfer reported (POST …/result) → { ok, error } or null (nothing yet). */
+function peerOf(tr, side) {
+  const r = parseJson(side === 'sender' ? tr.receiver_result : tr.sender_result, null);
+  if (!r || typeof r !== 'object' || typeof r.ok !== 'boolean') return null;
+  return { ok: r.ok, error: r.ok ? null : (typeof r.error === 'string' && ERROR_RE.test(r.error) ? r.error : 'failed') };
+}
+
+/**
+ * GET transfers/<id> (either end) → the transfer; the ticket and key only while it is open. `peer` (1.2.1): what the
+ * other end reported — a device that waits for it (the sender offering for pull, the receiver waiting for a push)
+ * polls this and takes the server way as soon as the other end gave up, instead of waiting for its own timeout.
+ */
 async function get(ctx, id) {
   const { tr, side, send } = await locate(ctx, id);
   const items = await store.all(ctx.gc, 'SELECT idx, name, mime, bytes FROM items WHERE send_id = ? ORDER BY idx', [send.id]);
@@ -64,6 +75,7 @@ async function get(ctx, id) {
     fromDevice: tr.from_device, toDevice: tr.to_device,
     from: { userId: send.user_id, name: ctx.users && ctx.users.get(send.user_id) ? ctx.users.get(send.user_id).name : null, deviceId: send.device_id, deviceName: send.device_name || null, own: send.user_id === ctx.viewer },
     candidates: tr.candidates, key: open ? tr.key : null, ticket: open ? tr.ticket : null, expiresAt: iso(tr.expires_at),
+    peer: peerOf(tr, side),
     items: items.map((i) => ({ index: i.idx, name: i.name, bytes: i.bytes, mime: i.mime || null })),
   };
 }

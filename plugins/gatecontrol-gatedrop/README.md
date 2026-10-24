@@ -163,8 +163,10 @@ receives `kind: "data"`, `silent: true`) whose `data` is
   2 s connect timeout per candidate, then the server way. The ticket is valid once, for 10 minutes.
 * `GET transfers/<id>` (either end, apps only) → `{ transfer: { id, sendId, side: "sender"|"receiver", mode, status:
   "open"|"done"|"failed"|"expired", fromDevice, toDevice, from: { userId, deviceId, deviceName }, candidates, key,
-  ticket, expiresAt, items: [{ index, name, bytes, mime }] } }` — `key` / `ticket` only while open (deleted from the
-  database once the transfer is done, failed or expired).
+  ticket, expiresAt, peer, items: [{ index, name, bytes, mime }] } }` — `key` / `ticket` only while open (deleted from the
+  database once the transfer is done, failed or expired). `peer` (since 1.2.1): what the other end reported,
+  `{ ok, error }` or `null` — the end that waits (pull: the sender's listener, push: the receiver's) polls this every
+  few seconds and takes the server way as soon as the other end gave up (`status: "failed"`).
 * `POST transfers/<id>/result` `{ ok, bytes?, error? ([a-z0-9_.-]{1,64}) }` (both ends) → `{ transfer: { id, status, side },
   delivery: { id, kind, target, status, via, error, at }, fallback: null | "server" | "upload", missing?: [indexes] }`.
   `ok: true` → delivered via direct. A failure: all files on the server → `fallback: "server"` (a push to the device
