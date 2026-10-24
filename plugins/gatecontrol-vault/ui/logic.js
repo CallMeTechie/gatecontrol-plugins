@@ -962,14 +962,63 @@
 
   var wifiEsc = function (s) { return str(s).replace(/([\\;,:"])/g, '\\$1'); };
 
-  /** The text of a Wi-Fi QR code (WIFI:T:WPA;S:…;P:…;;) or null without a network name. */
-  function wifiQrText(d) {
+  /**
+   * The Wi-Fi of an entry as a QR code and a share (1.4.0) need it → { ssid, security: 'WPA'|'WEP'|'SAE'|'nopass',
+   * password ('' for nopass), hidden } or null without a network name. The same rules in every app: no password or
+   * security none/offen/open/keine → nopass; WEP → WEP; WPA3/SAE without WPA2 → SAE; else WPA. hidden: the field
+   * `hidden` is true/1/ja/yes.
+   */
+  function wifiOf(d) {
     var ssid = field(d, 'ssid');
     if (!ssid) return null;
     var pw = field(d, 'password');
     var sec = field(d, 'security').toUpperCase();
     var t = !pw || /^(NONE|OFFEN|OPEN|KEINE)$/.test(sec) ? 'nopass' : /WEP/.test(sec) ? 'WEP' : /SAE|WPA3/.test(sec) && !/WPA2/.test(sec) ? 'SAE' : 'WPA';
-    return 'WIFI:T:' + t + ';S:' + wifiEsc(ssid) + ';' + (t === 'nopass' ? '' : 'P:' + wifiEsc(pw) + ';') + ';';
+    return { ssid: ssid, security: t, password: t === 'nopass' ? '' : pw, hidden: /^(true|1|ja|yes)$/i.test(field(d, 'hidden').trim()) };
+  }
+
+  /** WIFI:T:<type>;S:<ssid>;P:<password>;H:true;; of { ssid, security, password, hidden } (\ ; , : " escaped). */
+  function wifiText(w) {
+    return 'WIFI:T:' + w.security + ';S:' + wifiEsc(w.ssid) + ';' + (w.security === 'nopass' ? '' : 'P:' + wifiEsc(w.password) + ';') + (w.hidden ? 'H:true;' : '') + ';';
+  }
+
+  /** The text of a Wi-Fi QR code (WIFI:T:WPA;S:…;P:…;;) or null without a network name. */
+  function wifiQrText(d) {
+    var w = wifiOf(d);
+    return w ? wifiText(w) : null;
+  }
+
+  /** Does a running share (GET wifi-shares) still show what the entry holds? */
+  function wifiSame(d, share) {
+    var w = wifiOf(d);
+    return !!(w && share && w.ssid === share.ssid && w.security === share.security && w.password === (share.password || '') && w.hidden === !!share.hidden);
+  }
+
+  /** GET wifi-shares → { shares: [{ id, itemId, target, ssid, security, password, hidden, expiresAt, canEnd, … }], targets } or null. */
+  function parseShares(raw) {
+    if (!raw || !Array.isArray(raw.shares)) return null;
+    var list = raw.shares.filter(function (x) {
+      return x && typeof x.id === 'string' && typeof x.itemId === 'string' && (x.target === 'wall' || x.target === 'portal') && typeof x.ssid === 'string';
+    }).map(function (x) {
+      return {
+        id: x.id, itemId: x.itemId, vaultId: str(x.vaultId), target: x.target, ssid: x.ssid, security: str(x.security), password: str(x.password),
+        hidden: x.hidden === true, expiresAt: typeof x.expiresAt === 'string' ? x.expiresAt : null, canEnd: x.canEnd === true,
+        createdBy: x.createdBy && typeof x.createdBy.name === 'string' ? x.createdBy.name : '',
+      };
+    });
+    var t = raw.targets || {};
+    return { shares: list, targets: { wall: t.wall === true, portal: t.portal !== false } };
+  }
+
+  /** Time left of a share: { key, params } for the texts share.left_* (null: until it is ended; 'gone' when over). */
+  function shareLeft(expiresAt, now) {
+    if (!expiresAt) return null;
+    var ms = Date.parse(expiresAt) - (now == null ? Date.now() : now);
+    if (!(ms > 0)) return { key: 'gone' };
+    var s = Math.floor(ms / 1000);
+    if (s < 3600) return { key: 'mm', params: { time: Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0') } };
+    if (s < 2 * 86400) return { key: 'hours', params: { n: Math.ceil(s / 3600) } };
+    return { key: 'days', params: { n: Math.ceil(s / 86400) } };
   }
 
   /** The QR modules of a text (ui/vendor/noble.js: uqr, Nayuki's encoder) → { size, data: boolean[][] } or null. */
@@ -1153,7 +1202,7 @@
     passwordStrength: passwordStrength, wordCount: wordCount, goodMasterPassword: goodMasterPassword, masterCheck: masterCheck,
     urlHost: urlHost, siteOf: siteOf, openableUrl: openableUrl,
     csvRows: csvRows, parseImport: parseImport, importCounts: importCounts, duplicateFlags: duplicateFlags,
-    exportCsv: exportCsv, wifiQrText: wifiQrText, qrMatrix: qrMatrix,
+    exportCsv: exportCsv, wifiQrText: wifiQrText, wifiOf: wifiOf, wifiText: wifiText, wifiSame: wifiSame, parseShares: parseShares, shareLeft: shareLeft, qrMatrix: qrMatrix,
     letter: letter, tone: tone, matches: matches, listSections: listSections, mask: mask, maskedNumber: maskedNumber,
     emptyDraft: emptyDraft, draftFrom: draftFrom, draftToData: draftToData, draftError: draftError, draftChanged: draftChanged,
     recoveryGroups: recoveryGroups, recoveryComplete: recoveryComplete, waitParts: waitParts, remaining: remaining, candidates: candidates,

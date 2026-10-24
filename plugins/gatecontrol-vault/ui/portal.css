@@ -217,3 +217,13 @@ select.vp-input{padding-right:8px}
   .vp-card{padding:20px}
   .vp-rk{grid-template-columns:repeat(2,1fr)}
 }
+/* 1.4.0: Wi-Fi shares on an entry */
+.vp-share-sec{margin-top:4px}
+.vp-shares{display:flex;flex-direction:column;gap:8px}
+.vp-share{display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;flex-wrap:wrap}
+.vp-share>svg{flex:none;color:var(--accent)}
+.vp-share-tx{flex:1;min-width:160px;display:flex;flex-direction:column;gap:2px}
+.vp-share-left{font-variant-numeric:tabular-nums}
+.vp-share-durations{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:4px 0 12px}
+.vp-share-dur{display:flex;align-items:center;gap:8px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;cursor:pointer}
+.vp-share-dur:has(input:checked){border-color:var(--accent)}

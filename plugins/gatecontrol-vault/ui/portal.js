@@ -66,6 +66,8 @@
     qr: 'M4 4h6v6H4z|M14 4h6v6h-6z|M4 14h6v6H4z|M14 14h2v2h-2z|M18 18h2v2h-2z|M14 18h2|M18 14h2',
     image: 'M4 5h16v14H4z|M4 16l5-5 4 4 2-2 5 5|M15 9h.01',
     camera: 'M4 8h3l2-3h6l2 3h3v11H4z|M12 16.5a3.5 3.5 0 1 0 0-7a3.5 3.5 0 1 0 0 7',
+    tablet: 'M6 3h12v18H6z|M11 18h2',
+    globe: 'M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18|M3 12h18|M12 3c2.5 2.5 3.8 5.5 3.8 9s-1.3 6.5-3.8 9c-2.5-2.5-3.8-5.5-3.8-9s1.3-6.5 3.8-9',
   };
 
   function icon(name, size) {
@@ -345,6 +347,7 @@
     S.pane = { kind: 'none' };
     S.reveal = {};
     S.filter = { vaultId: 'all', query: '' };
+    S.shares = null;
     S.epoch++;
   }
 
@@ -1321,6 +1324,146 @@
     return h('div', { class: 'vp-qr-box' }, [holder, showBtn]);
   }
 
+  // ── Wi-Fi shares (1.4.0): „Freigabe auf Wandtablet“ / „Freigabe auf Portalseite“ ──
+  // A share is a copy: this tab decrypts the entry and sends the network name, the security and the password
+  // (L.wifiOf) — POST wifi-shares; the server keeps it for the chosen time (5 minutes, an hour, a day, until ended)
+  // and shows it on the wall tablet (Familie plugin) or on the portal's start page to everyone there. The running
+  // shares of the selected entry come from GET wifi-shares?item=<id> (S.shares); a share that no longer matches
+  // the entry offers „Aktualisieren“ (duration 'keep').
+
+  var SHARE_DURATIONS = ['5m', '1h', '24h', 'forever'];
+
+  function loadShares(id) {
+    var epoch = S.epoch;
+    S.shares = { itemId: id, list: null, targets: { wall: false, portal: true }, error: null, at: Date.now() };
+    return api('GET', 'wifi-shares?item=' + encodeURIComponent(id)).then(function (raw) {
+      if (epoch !== S.epoch || !S.shares || S.shares.itemId !== id) return;
+      var p = L.parseShares(raw);
+      if (!p) throw codeErr('invalid_answer');
+      S.shares.list = p.shares;
+      S.shares.targets = p.targets;
+    }).catch(function (e) {
+      if (epoch !== S.epoch || !S.shares || S.shares.itemId !== id) return;
+      S.shares.list = [];
+      S.shares.error = errText(e);
+    }).then(function () {
+      if (epoch === S.epoch && S.selected === id) renderDetail();
+    });
+  }
+
+  function leftLabel(expiresAt) {
+    var l = L.shareLeft(expiresAt);
+    if (!l) return T('share.forever');
+    if (l.key === 'gone') return T('share.ended');
+    return T('share.left_' + l.key, l.params);
+  }
+
+  /** The dialog: how long, and that everyone there sees the password → Promise<duration | null>. */
+  function askShare(target, ssid) {
+    return new Promise(function (resolve) {
+      var back = $('vp-dialog');
+      clear(back);
+      var choice = '1h';
+      var done = function (v) { back.hidden = true; clear(back); document.removeEventListener('keydown', onKey, true); resolve(v); };
+      var onKey = function (e) { if (e.key === 'Escape') { e.preventDefault(); done(null); } };
+      var opts = h('div', { class: 'vp-share-durations', attrs: { role: 'radiogroup', 'aria-label': T('share.duration') } }, SHARE_DURATIONS.map(function (k) {
+        return h('label', { class: 'vp-share-dur' }, [
+          h('input', { type: 'radio', name: 'vp-share-dur', value: k, checked: k === choice, on: { change: function () { choice = k; } } }),
+          h('span', { text: T('share.d_' + k) }),
+        ]);
+      }));
+      var ok = btn(T('share.start'), function () { done(choice); }, { primary: true });
+      back.appendChild(h('div', { class: 'vp-dialog', attrs: { role: 'dialog', 'aria-modal': 'true', 'aria-label': T('share.title_' + target) } }, [
+        h('h3', { text: T('share.title_' + target) }),
+        h('p', { text: T('share.ask', { name: ssid }) }),
+        opts,
+        notice('warn', T('share.warn_' + target)),
+        h('p', { class: 'vp-hint', text: T('share.copy_hint') }),
+        h('div', { class: 'vp-actions' }, [btn(T('p.cancel'), function () { done(null); }), ok]),
+      ]));
+      back.hidden = false;
+      document.addEventListener('keydown', onKey, true);
+      ok.focus();
+    });
+  }
+
+  function startShare(e, target, duration) {
+    var w = L.wifiOf(e.data);
+    if (!w) return Promise.reject(codeErr('invalid'));
+    var epoch = S.epoch;
+    var body = { itemId: e.id, target: target, duration: duration, ssid: w.ssid, security: w.security, password: w.password, hidden: w.hidden };
+    return api('POST', 'wifi-shares', body).then(function (r) {
+      if (epoch !== S.epoch) throw codeErr('locked');
+      return r;
+    });
+  }
+
+  function sharePanel(e, writable) {
+    var d = e.data;
+    var w = L.wifiOf(d);
+    if (!S.shares || S.shares.itemId !== e.id) { loadShares(e.id); }
+    var sh = S.shares;
+    var rows = [];
+    if (!sh || sh.list === null) rows.push(h('span', { class: 'vp-muted', text: T('share.loading') }));
+    else {
+      if (sh.error) rows.push(notice('error', sh.error));
+      sh.list.forEach(function (x) {
+        var same = L.wifiSame(d, x);
+        rows.push(h('div', { class: 'vp-share' }, [
+          icon(x.target === 'wall' ? 'tablet' : 'globe', 18),
+          h('div', { class: 'vp-share-tx' }, [
+            h('b', { text: T('share.on_' + x.target) }),
+            h('span', { class: 'vp-muted vp-share-left', attrs: { 'data-until': x.expiresAt || '' }, text: leftLabel(x.expiresAt) }),
+            x.createdBy ? h('span', { class: 'vp-hint', text: T('share.by', { name: x.createdBy }) }) : null,
+            same ? null : h('span', { class: 'vp-hint is-bad', text: T('share.stale') }),
+          ]),
+          x.canEnd && !same && w && !e.trashed ? btn(T('share.update'), function () {
+            act(startShare(e, x.target, 'keep').then(function () { return loadShares(e.id); }), T('share.updated'));
+          }, { small: true, icon: 'refresh' }) : null,
+          x.canEnd ? btn(T('share.end'), function () {
+            var epoch = S.epoch;
+            act(api('DELETE', 'wifi-shares/' + encodeURIComponent(x.id)).then(function () {
+              if (epoch === S.epoch) return loadShares(e.id);
+            }), T('share.ended_toast'));
+          }, { small: true, danger: true }) : null,
+        ]));
+      });
+      if (!sh.list.length && !sh.error) rows.push(h('span', { class: 'vp-muted', text: T('share.none') }));
+    }
+    var running = sh && sh.list ? sh.list.map(function (x) { return x.target; }) : [];
+    var actions = [];
+    if (writable && !e.trashed && w && sh && sh.list) {
+      ['wall', 'portal'].forEach(function (target) {
+        if (running.indexOf(target) >= 0) return;
+        if (target === 'wall' && !sh.targets.wall) return;
+        actions.push(btn(T('share.title_' + target), function () {
+          askShare(target, w.ssid).then(function (duration) {
+            if (!duration) return;
+            act(startShare(e, target, duration).then(function () { return loadShares(e.id); }), T('share.started_' + target));
+          });
+        }, { small: true, icon: target === 'wall' ? 'tablet' : 'globe' }));
+      });
+    }
+    var kids = [h('div', { class: 'vp-shares' }, rows)];
+    if (actions.length) kids.push(h('div', { class: 'vp-actions vp-actions-left' }, actions));
+    if (writable && sh && sh.list && !sh.targets.wall && running.indexOf('wall') < 0) kids.push(h('p', { class: 'vp-hint', text: T('share.no_wall') }));
+    return section(T('share.section'), kids, 'vp-share-sec');
+  }
+
+  // the countdowns of the shares on screen; one that is over → the list again
+  setInterval(function () {
+    var spans = document.querySelectorAll('.vp-share-left');
+    var over = false;
+    for (var i = 0; i < spans.length; i++) {
+      var until = spans[i].getAttribute('data-until');
+      if (!until) continue;
+      var l = L.shareLeft(until);
+      if (l && l.key === 'gone') over = true;
+      spans[i].textContent = leftLabel(until);
+    }
+    if (over && S.shares && S.selected === S.shares.itemId && S.shares.list && Date.now() - (S.shares.at || 0) > 15000) loadShares(S.shares.itemId);
+  }, 1000);
+
   var PRIMARY = { login: 'password', wifi: 'password', card: 'number', totp: 'totp' };
 
   function paneEntry(id) {
@@ -1352,6 +1495,7 @@
     var grid = h('div', { class: 'vp-fields' }, entryRows(d, ''));
     var body = h('div', { class: 'vp-ebody' }, [grid, d.type === 'wifi' ? wifiQr(d) : null]);
     kids.push(body);
+    if (d.type === 'wifi' && !S.emergency) kids.push(sharePanel(e, writable));
     var primaryKey = PRIMARY[d.type];
     var primaryVal = primaryKey ? (d.fields || {})[primaryKey] : '';
     var actions = [];

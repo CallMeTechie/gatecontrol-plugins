@@ -110,7 +110,7 @@ test('admin page: administrators only, counts and names — never key material o
     await c.item(ANNA, anna.personalId, 1);
     const r = await host.request({ method: 'GET', path: 'admin/overview', user: ADMIN });
     assert.equal(r.status, 200);
-    assert.deepEqual(r.json.counts, { accounts: 2, sharedVaults: 0, items: 1, trash: 0, emergency: 1, emergencyOpen: 0 });
+    assert.deepEqual(r.json.counts, { accounts: 2, sharedVaults: 0, items: 1, trash: 0, emergency: 1, emergencyOpen: 0, wifiShares: { wall: 0, portal: 0 } });
     assert.deepEqual(r.json.accounts.map((a) => a.name), ['Anna', 'Marc']);
     const text = JSON.stringify(r.json);
     const acc = (await c.as(ANNA)('GET', 'account')).json.account;

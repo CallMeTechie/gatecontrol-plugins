@@ -13,6 +13,8 @@
 //     POST items · POST items/<id>/trash · POST items/<id>/restore · DELETE items/<id> · GET items/<id>/history
 //     GET/POST emergency · DELETE emergency/<id> · POST emergency/<id>/request|deny|approve
 //     GET emergency/<id>/access · GET emergency/<id>/items
+//     GET/POST wifi-shares · DELETE wifi-shares/<id>   (1.4.0: a Wi-Fi entry on the wall tablet / portal start page)
+//   hooks     portalTiles (the portal Wi-Fi shares as Start tiles) · tick (background, server/jobs.js)
 //   admin     admin/overview (administrators in the admin UI: counts, who uses Vault)
 // The full contract (bodies, answers, codes, the crypto format) is in README.md.
 //
@@ -26,6 +28,7 @@ const items = require('./items');
 const emergency = require('./emergency');
 const admin = require('./admin');
 const jobs = require('./jobs');
+const wifi = require('./wifi');
 const ui = require('./ui');
 const { t } = require('./text');
 const { STATUS, fail, isKnown } = require('./util');
@@ -99,6 +102,11 @@ async function route(ctx, req, seg) {
     if (n === 3 && m === 'GET' && c === 'access') return ok(await emergency.access(ctx, b));
     if (n === 3 && m === 'GET' && c === 'items') return ok(await emergency.entries(ctx, b, req.query));
   }
+  if (a === 'wifi-shares') {
+    if (n === 1 && m === 'GET') return ok(await wifi.list(ctx, req.query));
+    if (n === 1 && m === 'POST') return ok(await wifi.share(ctx, req.body));
+    if (n === 2 && m === 'DELETE') return ok(await wifi.end(ctx, b));
+  }
   throw fail('not_found');
 }
 
@@ -128,7 +136,9 @@ module.exports = {
       if (!users.has(req.user.id) || (await people.kioskIds(gc)).has(req.user.id)) throw fail('forbidden');
       await people.touch(gc, req.user, lang, now);
       const ctx = { gc, viewer: req.user.id, user: users.get(req.user.id), users, lang: lang === 'en' ? 'en' : 'de', now, device: null };
-      return await route(ctx, req, seg);
+      const out = await route(ctx, req, seg);
+      await wifi.flush(gc); // an entry trashed, purged, moved or a vault deleted ended a wall share: the tablet's new set
+      return out;
     } catch (e) {
       if (!isKnown(e)) gc.log.warn('request failed', req && req.method, String((req && req.path) || '').split('/').slice(0, 2).join('/'), (e && (e.code || e.message)) || 'error');
       return errorResponse(e, lang);
@@ -138,6 +148,16 @@ module.exports = {
   /** The admin page and the portal tab "Vault" (server/ui.js). */
   async render(view) {
     return { html: ui.render(view || {}, t) };
+  },
+
+  /** Start tiles: the Wi-Fi shares for the portal's start page (signed-in people only; server/wifi.js). */
+  async portalTiles(q, gc) {
+    try {
+      return await wifi.tiles(gc, q);
+    } catch (e) {
+      gc.log.warn('portal tiles failed', (e && e.code) || 'error');
+      return [];
+    }
   },
 
   /** The portal tab is for people: not shown on a kiosk device (a wall tablet). */

@@ -137,6 +137,7 @@ async function remove(ctx, body) {
 
 /** A vault with everything in it (inside tx). */
 async function dropVault(gc, id) {
+  await require('./wifi').dropVault(gc, id); // its Wi-Fi shares (lazy: wifi.js needs this module)
   await store.run(gc, 'DELETE FROM history WHERE item_id IN (SELECT id FROM items WHERE vault_id = ?)', [id]);
   await store.run(gc, 'DELETE FROM items WHERE vault_id = ?', [id]);
   await store.run(gc, 'DELETE FROM members WHERE vault_id = ?', [id]);

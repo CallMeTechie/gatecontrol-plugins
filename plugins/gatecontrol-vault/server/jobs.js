@@ -1,12 +1,14 @@
 'use strict';
 
 // The background run (permissions.background, every 5 minutes): emergency requests whose waiting time passed are
-// released, entries 30 days in the trash are purged (a tombstone stays for the apps), events older than 90 days go.
+// released, entries 30 days in the trash are purged (a tombstone stays for the apps), events older than 90 days go;
+// 1.4.0: expired Wi-Fi shares go, the wall tablet's set is sent again when out of step (server/wifi.js).
 
 const store = require('./store');
 const people = require('./people');
 const items = require('./items');
 const emergency = require('./emergency');
+const wifi = require('./wifi');
 
 const DAY = 86400000;
 const EVENTS_DAYS = 90;
@@ -21,7 +23,8 @@ async function tick(gc, now) {
     await store.run(gc, 'DELETE FROM events WHERE at < ?', [now - EVENTS_DAYS * DAY]);
     return old.length;
   });
-  return { released, purged };
+  const shares = await wifi.tick(gc, now);
+  return { released, purged, shares };
 }
 
 module.exports = { tick };

@@ -55,9 +55,9 @@ async function currentSeq(gc) {
   return (await one(gc, "SELECT value FROM meta WHERE key = 'seq'")).value;
 }
 
-/** A line in the event log — what happened, never content. */
-function event(gc, at, userId, action, vaultId, itemId) {
-  return run(gc, 'INSERT INTO events (at, user_id, action, vault_id, item_id) VALUES (?, ?, ?, ?, ?)', [at, userId, action, vaultId || null, itemId || null]);
+/** A line in the event log — what happened, never content (detail: e.g. where and how long a Wi-Fi share runs). */
+function event(gc, at, userId, action, vaultId, itemId, detail) {
+  return run(gc, 'INSERT INTO events (at, user_id, action, vault_id, item_id, detail) VALUES (?, ?, ?, ?, ?, ?)', [at, userId, action, vaultId || null, itemId || null, detail || null]);
 }
 
 module.exports = { tx, all, one, run, marks, nextSeq, currentSeq, event };

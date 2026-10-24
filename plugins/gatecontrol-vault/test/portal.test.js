@@ -101,9 +101,10 @@ test('texts: every key the portal uses exists in de and en (with .one/.other for
   assert.ok(texts.de['p.session_note'].includes('5 Minuten'));
 });
 
-test('plugin.json 1.3.0: the portal tab "Vault"; GateControl 1.193.0 still enough; portalVisible hides it on a kiosk device', async () => {
-  assert.equal(manifest.version, '1.3.0');
-  assert.equal(manifest.gatecontrol, '>=1.193.0', 'GC.saveFile is 1.186.0, GC.scanQr (1.196.0) is feature-detected');
+test('plugin.json 1.4.0: the portal tab "Vault"; GateControl 1.197.0 (Start tiles with a QR code); portalVisible hides it on a kiosk device', async () => {
+  assert.equal(manifest.version, '1.4.0');
+  assert.equal(manifest.gatecontrol, '>=1.197.0', 'the Wi-Fi share on the portal start page needs tiles with qr / secret / until (1.197.0); GC.scanQr (1.196.0) is feature-detected');
+  assert.deepEqual(manifest.permissions.services, ['gatecontrol-familie:wall_wifi'], 'the wall tablet\'s Wi-Fi through the Familie plugin');
   assert.equal(manifest.ui.camera, undefined, 'no camera: a sandboxed frame (opaque origin) gets none in Chromium');
   assert.equal(manifest.ui.scanQr, true, 'GateControl\'s own camera dialog (GC.scanQr), the frame gets the text only');
   assert.deepEqual(manifest.ui.portal, { label: { de: 'Vault', en: 'Vault' }, icon: manifest.ui.nav.icon });
@@ -117,6 +118,7 @@ test('plugin.json 1.3.0: the portal tab "Vault"; GateControl 1.193.0 still enoug
   assert.match(changelog, /^## 1\.1\.0$/m);
   assert.match(changelog, /^## 1\.2\.0$/m);
   assert.match(changelog, /^## 1\.3\.0$/m);
+  assert.match(changelog, /^## 1\.4\.0$/m);
   await withHost({}, async (host) => {
     assert.equal(await host.portalVisible({ ...ANNA, loggedIn: true }), true);
     assert.equal(await host.portalVisible({ ...WALL, loggedIn: true, kiosk: true }), false);
@@ -810,6 +812,58 @@ test('smoke (1.3.0): „Mit Kamera scannen“ — only with GC.scanQr; the text 
     } finally {
       w.stop();
       await tick();
+    }
+  });
+});
+
+test('smoke (1.4.0): a Wi-Fi entry — „Freigabe auf Portalseite“ with a duration and the warning, the running share, „Aktualisieren“ after a change, „Beenden“', async () => {
+  await withHost({}, async (host) => {
+    const { doc, f } = await openPortal(host, ANNA);
+    const detail = doc.getElementById('vp-detail');
+    try {
+      await newEntry(doc, 'WLAN', { Titel: 'Gäste', Netzwerk: 'Gäste;WLAN', Passwort: 'Korrekt:Pferd', Sicherheit: 'WPA2' });
+      doc.getElementById('vp-rows').querySelectorAll('button').find((b) => text(b).includes('Gäste')).click();
+      await until('shares loaded', () => text(detail).includes('Dieses WLAN wird gerade nirgends gezeigt.'));
+      assert.equal(byText(doc, 'button', 'Freigabe auf Wandtablet'), undefined, 'no Familie plugin: no wall button');
+      assert.ok(text(detail).includes('sobald das Familie-Plugin'), 'and why');
+      byText(doc, 'button', 'Freigabe auf Portalseite').click();
+      const dlg = doc.getElementById('vp-dialog');
+      assert.ok(!dlg.hidden);
+      assert.ok(text(dlg).includes('alle angemeldeten Portal-Nutzer'), 'the warning');
+      assert.ok(text(dlg).includes('Kopie'), 'that it is a copy');
+      const radios = dlg.querySelectorAll('input').filter((i) => i.type === 'radio');
+      assert.deepEqual(radios.map((r) => r.value), ['5m', '1h', '24h', 'forever']);
+      assert.equal(radios.find((r) => r.checked).value, '1h', 'an hour by default');
+      radios[0].checked = true;
+      radios[0].dispatchEvent({ type: 'change' });
+      byText(doc, 'button', 'Freigeben').click();
+      await until('shared', toastIs(doc, 'Wird jetzt auf der Portal-Startseite gezeigt.'));
+      const post = f.calls.find((c) => c.method === 'POST' && c.path === 'wifi-shares');
+      assert.deepEqual({ ...post.body, itemId: undefined }, { itemId: undefined, target: 'portal', duration: '5m', ssid: 'Gäste;WLAN', security: 'WPA', password: 'Korrekt:Pferd', hidden: false });
+      const tiles = await host.portalTiles({ ...MARC, loggedIn: true });
+      assert.equal(tiles[0].qr, 'WIFI:T:WPA;S:Gäste\\;WLAN;P:Korrekt\\:Pferd;;');
+      await until('running share', () => text(detail).includes('Auf der Portal-Startseite') && /noch \d:\d\d/.test(text(detail)));
+      assert.equal(byText(doc, 'button', 'Freigabe auf Portalseite'), undefined, 'one per target');
+      // the entry changes: the share is an older copy → „Aktualisieren“
+      byText(doc, 'button', 'Bearbeiten').click();
+      const pwIn = detail.querySelectorAll('.vp-field').find((x) => x.firstChild && x.firstChild.textContent === 'Passwort').querySelectorAll('input')[0];
+      type(pwIn, 'Neues:Passwort');
+      byText(doc, 'button', 'Speichern').click();
+      await until('saved', toastIs(doc, 'Gespeichert.'));
+      await until('stale', () => text(detail).includes('Zeigt einen älteren Stand'));
+      byText(doc, 'button', 'Aktualisieren').click();
+      await until('updated', toastIs(doc, 'Freigabe aktualisiert.'));
+      assert.equal((await host.portalTiles({ ...MARC, loggedIn: true }))[0].secret.value, 'Neues:Passwort');
+      assert.equal(f.calls.filter((c) => c.path === 'wifi-shares' && c.method === 'POST').pop().body.duration, 'keep');
+      await until('fresh', () => !text(detail).includes('Zeigt einen älteren Stand'));
+      byText(doc, 'button', 'Beenden').click();
+      await until('ended', toastIs(doc, 'Freigabe beendet.'));
+      assert.deepEqual(await host.portalTiles({ ...MARC, loggedIn: true }), []);
+      // a lock forgets the shares with everything else
+      doc.getElementById('vp-lock-now').click();
+      assert.ok(!text(doc.body).includes('Gäste'));
+    } finally {
+      doc.getElementById('vp-lock-now') && doc.getElementById('vp-lock-now').click();
     }
   });
 });

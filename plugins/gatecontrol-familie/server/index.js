@@ -47,6 +47,10 @@
 // driver and the parents of the pickup, with buttons „Auf … verschieben“ / „Wer kann?“
 // (server/schoolend.js); the wall tablet shows „Schule heute“ / „Schule morgen“ (service school_day
 // of the Schule plugin, cached 10 minutes per date — server/school.js, server/wall.js).
+//
+// 1.14.0: Wi-Fi on the wall — the Vault plugin's „Freigabe auf Wandtablet“ sends its running wall shares
+// (service wall_wifi), the wall shows a card with the network, the QR code and the password behind a tap
+// (server/wifi.js, server/wall.js, ui/wall.js).
 
 const ui = require('./ui');
 const api = require('./api');
@@ -76,6 +80,7 @@ const reminders = require('./reminders');
 const quick = require('./quick');
 const school = require('./school');
 const schoolend = require('./schoolend');
+const wifi = require('./wifi');
 const texts = require('./texts.json');
 const { STATUS, isKnown } = require('./util');
 
@@ -161,6 +166,7 @@ async function background(gc, now) {
       await reminders.purge(gc, now);
       await school.purge(gc, now);
       await schoolend.purge(gc, now);
+      await wifi.purge(gc, now);
     });
   }
   await push.flush(gc, pushes);

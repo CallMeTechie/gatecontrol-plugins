@@ -1032,7 +1032,19 @@
     "rule.m_school_kinds_missing": "Bitte mindestens eine Änderung wählen.",
     "rule.m_school_hint": "Die Änderungen meldet das Plugin „Schule“ (WebUntis) – in der Ruhezeit erst an ihrem Ende, wie seine Mitteilungen. Jede Änderung einer Stunde löst die Regel nur einmal aus; {event} ist ihr Text.",
     "rr.filter_school": "Schule",
-    "rr.trig_school_change": "Stunde fällt aus"
+    "rr.trig_school_change": "Stunde fällt aus",
+    "wall.wifi": "WLAN",
+    "wall.wifi_password": "Passwort",
+    "wall.wifi_show": "Anzeigen",
+    "wall.wifi_hide": "Verbergen",
+    "wall.wifi_open": "kein Passwort",
+    "wall.wifi_scan": "Mit der Handy-Kamera scannen, um zu verbinden.",
+    "wall.wifi_by": "geteilt von {{name}}",
+    "wall.wifi_left": "noch {{time}}",
+    "wall.wifi_hours": "{{n}} Std.",
+    "wall.wifi_days": "{{n}} Tage",
+    "wall.wifi_forever": "bis es beendet wird",
+    "wall.wifi_qr": "QR-Code für das WLAN {{name}}"
   },
   "en": {
     "account.admin": "Admin",
@@ -2067,6 +2079,18 @@
     "rule.m_school_kinds_missing": "Please choose at least one change.",
     "rule.m_school_hint": "The changes come from the plugin “School” (WebUntis) – during its quiet hours only when they end, like its notifications. Each change of a lesson runs the rule once; {event} is its text.",
     "rr.filter_school": "School",
-    "rr.trig_school_change": "Lesson cancelled"
+    "rr.trig_school_change": "Lesson cancelled",
+    "wall.wifi": "Wi-Fi",
+    "wall.wifi_password": "Password",
+    "wall.wifi_show": "Show",
+    "wall.wifi_hide": "Hide",
+    "wall.wifi_open": "no password",
+    "wall.wifi_scan": "Scan with a phone camera to connect.",
+    "wall.wifi_by": "shared by {{name}}",
+    "wall.wifi_left": "{{time}} left",
+    "wall.wifi_hours": "{{n}} h",
+    "wall.wifi_days": "{{n}} days",
+    "wall.wifi_forever": "until it is ended",
+    "wall.wifi_qr": "QR code for the Wi-Fi {{name}}"
   }
 }
