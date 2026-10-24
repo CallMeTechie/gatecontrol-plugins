@@ -72,7 +72,7 @@ async function withHost(opts, fn) {
   const o = opts || {};
   const clock = startClock(o.at || T0);
   try {
-    const host = await createHost(DIR, { users: USERS, gatecontrol: '1.193.0' });
+    const host = await createHost(DIR, { users: USERS, gatecontrol: '1.193.0', ...(o.services ? { services: o.services } : {}) });
     await host.start();
     const call = (user, method, p, body, query) => host.request({ method, path: p, body: body === undefined ? null : body, query: query || {}, user, lang: o.lang || 'de' });
     const c = {

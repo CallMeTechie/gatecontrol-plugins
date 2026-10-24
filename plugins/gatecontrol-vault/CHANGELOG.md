@@ -2,6 +2,28 @@
 
 Passwort-Manager auf dem eigenen GateControl-Server – Ende-zu-Ende verschlüsselt.
 
+## 1.4.0
+- **WLAN freigeben – auf dem Wandtablet und der Portal-Startseite:** Bei einem WLAN-Eintrag gibt es den Bereich
+  „Freigaben“ mit „Freigabe auf Wandtablet“ und „Freigabe auf Portalseite“. Dauer: 5 Minuten, 1 Stunde, 24 Stunden
+  oder dauerhaft. Laufende Freigaben stehen am Eintrag mit Restzeit und lassen sich jederzeit beenden.
+- **Wandtablet:** Die Startseite des Wandtablets (Plugin **Familie** ab 1.14.0, Wand-Tablet eingeschaltet) zeigt eine
+  Karte „WLAN“ mit Netzname, großem QR-Code und dem Passwort per Tippen; nach Ablauf verschwindet sie von selbst.
+- **Portal-Startseite:** Alle angemeldeten Portal-Nutzer sehen auf der Startseite dieselbe Karte (QR-Code, Passwort per
+  „Anzeigen“, Restzeit) – nie ein Kiosk-Gerät, nie ohne Anmeldung, nie in der Start-Karte der Apps. Braucht
+  **GateControl 1.197.0**.
+- **Sicherheit, bewusst entschieden:** Vault bleibt Ende-zu-Ende verschlüsselt. Eine Freigabe ist eine **Kopie**: Die
+  App entschlüsselt nur Netzname, Sicherheit und Passwort des Eintrags und legt diese Kopie lesbar auf dem Server ab,
+  damit Tablet und Portal sie zeigen können. Der Dialog sagt das vorher. Nur WLAN-Einträge, nur diese Felder; nur wer
+  im Tresor schreiben darf, gibt frei oder beendet; die Mitglieder des Tresors sehen laufende Freigaben. Das Ende
+  setzt der Server durch (abgelaufene werden nie ausgeliefert und gelöscht), „Beenden“ löscht sofort. Papierkorb,
+  Löschen oder Verschieben des Eintrags und das Löschen des Tresors beenden die Freigabe; eine Änderung des Eintrags
+  nicht – die Freigabe zeigt dann den alten Stand und der Eintrag bietet „Aktualisieren“ an.
+- Höchstens 4 laufende Freigaben je Ziel, 30 Freigaben pro Person und Stunde. Jede Freigabe und jedes Ende steht im
+  Protokoll (wer, welcher Eintrag, wo, wie lange – ohne Inhalt); die Übersicht für Administratoren zählt die laufenden.
+- App-API: `GET wifi-shares`, `POST wifi-shares`, `DELETE wifi-shares/<id>` (README „WLAN-Freigaben“). Das Update
+  fragt einmal nach der neuen Berechtigung „Dienste anderer Plugins: Familie – WLAN auf dem Wand-Tablet zeigen“.
+- Der WLAN-QR-Code kennt jetzt auch versteckte Netze (`H:true`, Feld `hidden`).
+
 ## 1.3.0
 - **2FA mit der Kamera scannen:** Neben „QR-Code aus Bild“ gibt es beim 2FA-Schlüssel den Knopf „Mit Kamera
   scannen“. GateControl öffnet dafür seinen eigenen Kamera-Dialog, liest den QR-Code der Website (oder den Export

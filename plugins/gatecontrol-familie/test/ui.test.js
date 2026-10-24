@@ -128,6 +128,7 @@ test('Leaflet: one constant (server/ui.js), nowhere else', () => {
   const hits = [];
   for (const sub of ['server', 'ui']) {
     for (const f of fs.readdirSync(path.join(root, sub))) {
+      if (!fs.statSync(path.join(root, sub, f)).isFile()) continue; // server/vendor (1.14.0: the QR encoder)
       const src = fs.readFileSync(path.join(root, sub, f), 'utf8');
       if (src.includes('/leaflet/leaflet.js')) hits.push(`${sub}/${f}`);
     }
@@ -140,7 +141,7 @@ test('Leaflet: one constant (server/ui.js), nowhere else', () => {
 
 test('plugin.json: permissions (kiosk, actions), app tab, maps, the eleven topics with SOS allowed critical', () => {
   assert.equal(manifest.id, 'gatecontrol-familie');
-  assert.equal(manifest.version, '1.13.2');
+  assert.equal(manifest.version, '1.14.0');
   // 1.6.0 stays on 1.173.0: the messenger services (GateControl ≥ 1.177.0) are optional — an older host ignores
   // permissions.services and has no gc.services, so the group and the rule action stay hidden there
   assert.equal(manifest.gatecontrol, '>=1.173.0', 'target states of switches (gc.actions.run state, verbs/targets/device in gc.actions.list) need GateControl 1.173.0');
@@ -150,8 +151,8 @@ test('plugin.json: permissions (kiosk, actions), app tab, maps, the eleven topic
     'gatecontrol-messenger:set_place_status', 'gatecontrol-alltag:calendar_query', 'gatecontrol-alltag:calendar_list', 'gatecontrol-schule:school_students',
     'gatecontrol-schule:school_day'],
   '1.7.0: release_group (messenger ≥ 1.1.0); 1.8.0: set_place_status (messenger ≥ 1.4.0); 1.9.0: the Alltag calendars for calendar conditions; 1.12.0: the Schule students; 1.13.0: the school day on the wall');
-  assert.deepEqual(Object.keys(manifest.services.provides), ['list_add', 'calendar_add', 'calendar_upsert', 'calendar_remove', 'places', 'family_roles', 'rule_event', 'school_day_end'],
-    '1.8.0: services for the Messenger; 1.9.0: family_roles; 1.12.0: rule_event for the Schule plugin; 1.13.0: school_day_end');
+  assert.deepEqual(Object.keys(manifest.services.provides), ['list_add', 'calendar_add', 'calendar_upsert', 'calendar_remove', 'places', 'family_roles', 'rule_event', 'school_day_end', 'wall_wifi'],
+    '1.8.0: services for the Messenger; 1.9.0: family_roles; 1.12.0: rule_event for the Schule plugin; 1.13.0: school_day_end; 1.14.0: wall_wifi for Vault');
   for (const sv of Object.values(manifest.services.provides)) assert.ok(sv.label.de && sv.label.en && sv.label.de.length <= 60 && sv.label.en.length <= 60);
   // 1.10.0: no page „Regeln & Erinnerungen“ — every rule is on „Anwesenheit & Smart Home“
   assert.deepEqual(manifest.ui.pages.map((x) => x.id), ['members', 'modules', 'presence', 'log']);

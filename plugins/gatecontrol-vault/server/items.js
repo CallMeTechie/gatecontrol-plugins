@@ -6,6 +6,7 @@
 const store = require('./store');
 const vaults = require('./vaults');
 const account = require('./account');
+const wifi = require('./wifi');
 const { fail, b64, SIZE, clientId, posInt, nonNeg, optLine, canWrite, iso } = require('./util');
 
 // vaultChars: the encrypted entries of one vault (base64 text) — 64 MiB; with ≤ 21 vaults per person that bounds what
@@ -88,8 +89,10 @@ async function saveOne(ctx, it, seq, cache) {
       [id, cur.rev, cur.key_rev, cur.blob, cur.updated_at, cur.updated_by, cur.device]);
     await store.run(gc, `DELETE FROM history WHERE item_id = ? AND rev NOT IN (SELECT rev FROM history WHERE item_id = ? ORDER BY rev DESC LIMIT ${LIMITS.history})`, [id, id]);
   } else {
-    // moved to another vault: the old versions were encrypted with the other vault's key
+    // moved to another vault: the old versions were encrypted with the other vault's key; its Wi-Fi shares end
+    // (they belong to the vault's people)
     await store.run(gc, 'DELETE FROM history WHERE item_id = ?', [id]);
+    await wifi.dropItem(gc, id, now, viewer, 'move');
   }
   // the trash state stays: a key change re-encrypts trashed entries too (restore is its own call)
   await store.run(gc, `UPDATE items SET vault_id = ?, rev = rev + 1, key_rev = ?, blob = ?, seq = ?, updated_at = ?, updated_by = ?, device = ?
@@ -144,14 +147,16 @@ async function setTrash(ctx, idRaw, trash) {
     if (cur.state === 2) throw fail('not_found');
     const seq = await store.nextSeq(gc);
     await store.run(gc, 'UPDATE items SET state = ?, trashed_at = ?, seq = ? WHERE id = ?', [trash ? 1 : 0, trash ? now : null, seq, cur.id]);
+    if (trash) await wifi.dropItem(gc, cur.id, now, viewer, 'trash');
     await store.event(gc, now, viewer, trash ? 'item.trash' : 'item.restore', cur.vault_id, cur.id);
     out = view(await store.one(gc, 'SELECT * FROM items WHERE id = ?', [cur.id]));
   });
   return { item: out };
 }
 
-/** Purge (inside tx): blob and versions gone, a tombstone stays so every app drops its copy. */
-async function purgeRow(gc, id, seq) {
+/** Purge (inside tx): blob and versions gone, a tombstone stays so every app drops its copy; Wi-Fi shares end. */
+async function purgeRow(gc, id, seq, userId = 0) {
+  await wifi.dropItem(gc, id, Date.now(), userId, 'purge');
   await store.run(gc, 'DELETE FROM history WHERE item_id = ?', [id]);
   await store.run(gc, 'UPDATE items SET blob = NULL, state = 2, seq = ? WHERE id = ?', [seq, id]);
 }
@@ -165,7 +170,7 @@ async function purge(ctx, idRaw) {
     if (!canWrite(m.role)) throw fail('forbidden');
     if (cur.state === 2) throw fail('not_found');
     const seq = await store.nextSeq(gc);
-    await purgeRow(gc, cur.id, seq);
+    await purgeRow(gc, cur.id, seq, viewer);
     await store.event(gc, now, viewer, 'item.purge', cur.vault_id, cur.id);
     out = view(await store.one(gc, 'SELECT * FROM items WHERE id = ?', [cur.id]));
   });

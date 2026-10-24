@@ -6,6 +6,7 @@
 const store = require('./store');
 const people = require('./people');
 const { iso } = require('./util');
+const wifi = require('./wifi');
 
 async function overview(gc) {
   const users = await people.users(gc);
@@ -19,6 +20,7 @@ async function overview(gc) {
       trash: await c('SELECT COUNT(*) AS n FROM items WHERE state = 1'),
       emergency: await c('SELECT COUNT(*) AS n FROM emergency'),
       emergencyOpen: await c("SELECT COUNT(*) AS n FROM emergency WHERE status != 'ready'"),
+      wifiShares: await wifi.counts(gc),
     },
     accounts: accounts.map((a) => ({
       userId: a.user_id,

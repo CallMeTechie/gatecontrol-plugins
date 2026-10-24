@@ -8,6 +8,9 @@
    neutral border (A.avatar, ui/common.js); it follows the 60 s poll.
    1.13.0: „Schule heute“ (from 15:00 „Schule morgen“) with one line per child from the
    Schule plugin — times, cancellations, holidays, an exam badge (only when it is there).
+   1.14.0: „WLAN“ — Wi-Fi shared from the Vault plugin („Freigabe auf Wandtablet“): network name,
+   the QR code (always dark on white, large), the password behind a tap (hidden again after 30 s),
+   who shared it and the time left; a card goes by itself when its time is up.
    GET wall every 60 s; dark from 21:00 to 06:00 (server's local time); a
    small pixel shift every few minutes against burn-in. A paired kiosk
    device or a portal login writes; device trust only (no login): read-only. */
@@ -23,11 +26,15 @@
   var MAX_TODAY = 6;
   var MAX_TASKS = 5;
   var MAX_ITEMS = 18;
+  var ICON_WIFI = 'M2 9a15 15 0 0 1 20 0M5 12.5a10 10 0 0 1 14 0M8.5 16a5 5 0 0 1 7 0M12 19.5h.01';
+  var SHOW_MS = 30000;
+  var SVGNS = 'http://www.w3.org/2000/svg';
 
   var writable = CTX.loggedIn === true;
   var data = null;
   var offset = 0;     // server clock − browser clock (ms)
   var busy = false;
+  var wifiShown = {}; // share id → until when its password is shown (ms)
 
   function banner(text) { var b = $('#fa-w-banner'); b.textContent = text || ''; b.hidden = !text; }
 
@@ -145,6 +152,99 @@
     });
   }
 
+  /** The QR code ({ size, rows: ['0101…'] }) as an SVG: dark modules on white with a quiet zone of 4. */
+  function qrSvg(qr, label) {
+    var q = 4;
+    var n = qr.size + q * 2;
+    var svg = document.createElementNS(SVGNS, 'svg');
+    svg.setAttribute('viewBox', '0 0 ' + n + ' ' + n);
+    svg.setAttribute('class', 'fa-w-wifi-qr');
+    svg.setAttribute('role', 'img');
+    svg.setAttribute('aria-label', label);
+    svg.setAttribute('shape-rendering', 'crispEdges');
+    var bg = document.createElementNS(SVGNS, 'rect');
+    bg.setAttribute('width', String(n)); bg.setAttribute('height', String(n)); bg.setAttribute('fill', '#ffffff');
+    svg.appendChild(bg);
+    var d = '';
+    qr.rows.forEach(function (r, y) {
+      for (var x = 0; x < r.length; x++) if (r.charAt(x) === '1') d += 'M' + (x + q) + ' ' + (y + q) + 'h1v1h-1z';
+    });
+    var path = document.createElementNS(SVGNS, 'path');
+    path.setAttribute('d', d);
+    path.setAttribute('fill', '#000000');
+    svg.appendChild(path);
+    return svg;
+  }
+
+  /** Time left: „4:59“ under an hour, „5 Std.“ under two days, else days. */
+  function leftText(ms) {
+    var s = Math.max(0, Math.floor(ms / 1000));
+    if (s < 3600) return T('wall.wifi_left', { time: Math.floor(s / 60) + ':' + (s % 60 < 10 ? '0' : '') + (s % 60) });
+    if (s < 2 * 86400) return T('wall.wifi_left', { time: T('wall.wifi_hours', { n: Math.ceil(s / 3600) }) });
+    return T('wall.wifi_left', { time: T('wall.wifi_days', { n: Math.ceil(s / 86400) }) });
+  }
+
+  function renderWifi() {
+    var list = (data.wifi || []).filter(function (w) { return !w.expiresAt || Date.parse(w.expiresAt) > Date.now() + offset; });
+    $('#fa-w-wifi').hidden = !list.length;
+    var box = A.clear($('#fa-w-wifi-list'));
+    var ids = {};
+    list.forEach(function (w) {
+      ids[w.id] = true;
+      var open = w.security === 'nopass';
+      var pw = el('span', { class: 'fa-w-wifi-pw' });
+      var btn = open ? null : el('button', { type: 'button', class: 'fa-w-wifi-show' });
+      function paint() {
+        var shown = (wifiShown[w.id] || 0) > Date.now();
+        pw.textContent = open ? T('wall.wifi_open') : (shown ? w.password : '••••••••');
+        pw.classList.toggle('is-shown', shown);
+        if (btn) {
+          btn.textContent = T(shown ? 'wall.wifi_hide' : 'wall.wifi_show');
+          btn.setAttribute('aria-pressed', shown ? 'true' : 'false');
+        }
+      }
+      if (btn) {
+        btn.addEventListener('click', function () {
+          wifiShown[w.id] = (wifiShown[w.id] || 0) > Date.now() ? 0 : Date.now() + SHOW_MS;
+          paint();
+        });
+      }
+      paint();
+      var card = el('div', { class: 'fa-w-wifi-card', 'data-until': w.expiresAt ? String(Date.parse(w.expiresAt)) : '' }, [
+        w.qr ? qrSvg(w.qr, T('wall.wifi_qr', { name: w.ssid })) : null,
+        el('div', { class: 'fa-w-wifi-info' }, [
+          el('div', { class: 'fa-w-wifi-label' }, [A.svg(ICON_WIFI, 20), ' ', T('wall.wifi')]),
+          el('div', { class: 'fa-w-wifi-ssid', text: w.ssid }),
+          el('div', { class: 'fa-w-wifi-row' }, [el('span', { class: 'fa-w-muted', text: T('wall.wifi_password') }), pw, btn]),
+          el('div', { class: 'fa-w-muted fa-w-wifi-hint', text: T('wall.wifi_scan') }),
+          el('div', { class: 'fa-w-muted fa-w-wifi-meta' }, [
+            w.sharedBy ? el('span', { text: T('wall.wifi_by', { name: w.sharedBy }) }) : null,
+            el('span', { class: 'fa-w-wifi-left' }),
+          ]),
+        ]),
+      ]);
+      card._paint = paint;
+      box.appendChild(card);
+    });
+    Object.keys(wifiShown).forEach(function (id) { if (!ids[id]) delete wifiShown[id]; });
+    tickWifi();
+  }
+
+  /** Every second: the time left, a password hidden again after 30 s, a card whose time is up goes. */
+  function tickWifi() {
+    var box = $('#fa-w-wifi-list');
+    if (!box) return;
+    var now = Date.now() + offset;
+    Array.prototype.slice.call(box.children).forEach(function (c) {
+      var until = Number(c.getAttribute('data-until')) || 0;
+      if (until && until <= now) { c.remove(); return; }
+      var left = c.querySelector('.fa-w-wifi-left');
+      if (left) left.textContent = until ? leftText(until - now) : T('wall.wifi_forever');
+      if (c._paint) c._paint();
+    });
+    if (!box.children.length) $('#fa-w-wifi').hidden = true;
+  }
+
   function done(task, chip, btn) {
     if (!writable || busy) return;
     busy = true;
@@ -219,6 +319,7 @@
   function render() {
     renderPeople();
     renderSchool();
+    renderWifi();
     renderToday();
     renderTasks();
     renderShopping();
@@ -248,5 +349,6 @@
   load();
   setInterval(function () { if (!busy) load(); }, REFRESH_MS);
   setInterval(tickClock, 10000);
+  setInterval(tickWifi, 1000);
   setInterval(shift, SHIFT_MS);
 }());

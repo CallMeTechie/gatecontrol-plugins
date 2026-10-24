@@ -12,7 +12,9 @@
 //              chosen shopping list (setting wall_list, page "Funktionen");
 //              1.2.0: today's meals (module meals) and, per member, home/away
 //              (module presence, sharing members only, never for device trust alone —
-//              null otherwise); 1.3.0: every member with its face (avatarUrl,
+//              null otherwise); 1.14.0: `wifi` — Wi-Fi shared from the Vault plugin („Freigabe auf
+//              Wandtablet“, server/wifi.js) with its QR code, null without (or for device trust alone);
+//              1.3.0: every member with its face (avatarUrl,
 //              color, colorHex, initials) and presence 'home' | 'away' |
 //              'unknown' | null — the ring of the avatar (refreshed with the poll);
 //              1.13.0: `school` — the children's school day from the Schule plugin (service
@@ -39,6 +41,7 @@ const meals = require('./meals');
 const presence = require('./presence');
 const members = require('./members');
 const school = require('./school');
+const wifi = require('./wifi');
 const { fail, iso } = require('./util');
 
 const DARK_FROM = 21;
@@ -76,7 +79,7 @@ async function view(gc, r) {
     dayLabel: format.dayShort(r.today, lang),
     members: [],
     modules: { tasks: !!mod.tasks, shopping: !!mod.shopping, dates: !!mod.dates, rides: !!mod.rides, stars: !!(mod.tasks && mod.stars), meals: !!mod.meals, presence: !!mod.presence },
-    today: null, tasks: null, shopping: null, meals: null, school: null,
+    today: null, tasks: null, shopping: null, meals: null, school: null, wifi: null,
   };
   // who is home: not for a viewer recognised only by device trust (like positions)
   const rings = await presence.rings(gc, r.fam, r.cfg, r.trustOnly);
@@ -96,6 +99,8 @@ async function view(gc, r) {
   }
   // 1.13.0: the school day of the children (Schule plugin)
   out.school = await schoolDay(gc, r, p.hh >= SCHOOL_TOMORROW_FROM ? 'tomorrow' : 'today');
+  // 1.14.0: Wi-Fi shared from Vault (a kiosk device or a signed-in wall account only)
+  out.wifi = await wifi.forWall(gc, r);
   if (mod.tasks) out.tasks = await tasks.forWall(gc, r);
   if (mod.shopping) {
     const s = await shopping.wallList(gc, r.cfg.wallList);

@@ -38,6 +38,9 @@
 //                   (1.13.0, caller gatecontrol-schule only) — a child's school day ends earlier: the pickup
 //                   around the planned end is looked for, its driver and the parents are asked
 //                   (server/schoolend.js). Codes: invalid, forbidden.
+//   wall_wifi       { shares: [{ id, ssid, security, password, hidden, expiresAt, sharedBy }] (0–4) }
+//                   → { ok: true, walls, wall }   (1.14.0, caller gatecontrol-vault only) — the Wi-Fi shares for the
+//                   wall tablet, always the whole set (server/wifi.js). Codes: invalid, forbidden.
 //
 // The other way round (server/messenger.js placeStatus): Familie tells the Messenger the
 // place of a member (set_place_status) when presence or a place event changes it.
@@ -52,6 +55,7 @@ const ruleplaces = require('./ruleplaces');
 const school = require('./school');
 const schoolend = require('./schoolend');
 const presence = require('./presence');
+const wifi = require('./wifi');
 const push = require('./push');
 const texts = require('./texts.json');
 const { line, posInt, validDate, parseIso } = require('./util');
@@ -282,12 +286,13 @@ const HANDLERS = {
   family_roles: (gc, cfg) => familyRoles(gc, cfg),
   rule_event: (gc, cfg, payload) => ruleEvent(gc, cfg, payload),
   school_day_end: (gc, cfg, payload) => schoolend.handle(gc, cfg, payload, Date.now()),
+  wall_wifi: (gc, cfg, payload) => wifi.receive(gc, cfg, { caller: wifi.VAULT, payload }, Date.now()),
 };
 /**
- * Who may call a service: the Messenger, except rule_event and school_day_end (the Schule plugin);
- * family_roles also GateDrop (1.13.2: links and NAS folders for parents).
+ * Who may call a service: the Messenger, except rule_event and school_day_end (the Schule plugin) and wall_wifi
+ * (1.14.0, the Vault plugin); family_roles also GateDrop (1.13.2: links and NAS folders for parents).
  */
-const CALLERS = { rule_event: [school.SCHULE], school_day_end: [school.SCHULE], family_roles: [CALLER, 'gatecontrol-gatedrop'] };
+const CALLERS = { rule_event: [school.SCHULE], school_day_end: [school.SCHULE], family_roles: [CALLER, 'gatecontrol-gatedrop'], wall_wifi: [wifi.VAULT] };
 const NAMES = Object.freeze(Object.keys(HANDLERS));
 
 /** service({ name, caller, user, payload }) → the answer (see the head of this file). */

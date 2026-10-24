@@ -3,6 +3,18 @@
 Die Familie in der GateControl-App (eigener Tab), im Portal (eigener Tab „Familie“) und auf
 drei Admin-Seiten. Alles bleibt auf dem eigenen Server.
 
+## 1.14.0
+- **WLAN auf dem Wand-Tablet:** Im Plugin **Vault** (ab 1.4.0) lässt sich ein WLAN-Eintrag „auf dem Wandtablet“
+  freigeben – für 5 Minuten, 1 Stunde, 24 Stunden oder dauerhaft. Das Wand-Tablet zeigt dann eine Karte „WLAN“ mit
+  Netzname, großem QR-Code (immer schwarz auf weiß, auch nachts), dem Passwort hinter „Anzeigen“ (nach 30 Sekunden
+  wieder verdeckt), wer es geteilt hat und der Restzeit. Nach Ablauf oder „Beenden“ in Vault verschwindet die Karte
+  (spätestens mit der nächsten Aktualisierung nach einer Minute; das Ende kennt das Tablet selbst).
+- Neuer Dienst **`wall_wifi`** (nur der Aufrufer `gatecontrol-vault`, sonst `forbidden`): `{ shares: [{ id, ssid,
+  security, password, hidden, expiresAt, sharedBy }] }` (0 … 4, immer der ganze Satz) → `{ ok: true, walls, wall }`.
+  `GET wall` hat dafür `wifi` (mit dem QR-Code als Zeilen) – nur für ein Kiosk-Gerät oder ein angemeldetes
+  Wand-Konto, nie bei Geräte-Vertrauen allein.
+- Der QR-Code wird auf dem Server gezeichnet (uqr 0.1.2, MIT, `server/vendor/uqr.js`).
+
 ## 1.13.2
 - **Rollen auch für GateDrop:** Der Dienst `family_roles` antwortet jetzt auch dem Plugin **GateDrop**
   (`gatecontrol-gatedrop`) – dort dürfen Admins und die Eltern Links für Externe erstellen und Dateien im NAS

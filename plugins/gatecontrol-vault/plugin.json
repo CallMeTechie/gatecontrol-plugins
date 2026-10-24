@@ -4,13 +4,13 @@
     "de": "Vault",
     "en": "Vault"
   },
-  "version": "1.3.0",
+  "version": "1.4.0",
   "publisher": "CallMeTechie",
   "description": {
-    "de": "Passwort-Manager auf dem eigenen GateControl-Server, Ende-zu-Ende verschlüsselt: Logins, 2FA-Codes, Notizen, Karten und WLAN-Zugänge – persönlich oder in geteilten Tresoren (Familie, Team) mit Rollen. Ver- und entschlüsselt wird nur in den Apps und im Portal-Tab „Vault“ im Browser; der Server speichert ausschließlich Daten, die er nicht lesen kann. Funktioniert offline, gleicht ohne VPN ab, mit Wiederherstellungsschlüssel und Notfallzugriff für Vertrauenspersonen.",
-    "en": "Password manager on your own GateControl server, end-to-end encrypted: logins, 2FA codes, notes, cards and Wi-Fi credentials – personal or in shared vaults (family, team) with roles. Only the apps and the portal tab “Vault” in the browser encrypt and decrypt; the server stores nothing but data it cannot read. Works offline, syncs without the VPN, with a recovery key and emergency access for trusted people."
+    "de": "Passwort-Manager auf dem eigenen GateControl-Server, Ende-zu-Ende verschlüsselt: Logins, 2FA-Codes, Notizen, Karten und WLAN-Zugänge – persönlich oder in geteilten Tresoren (Familie, Team) mit Rollen. Ver- und entschlüsselt wird nur in den Apps und im Portal-Tab „Vault“ im Browser; der Server speichert ausschließlich Daten, die er nicht lesen kann – außer einem WLAN, das du bewusst eine Zeit lang auf Wandtablet oder Portal-Startseite zeigst. Funktioniert offline, gleicht ohne VPN ab, mit Wiederherstellungsschlüssel und Notfallzugriff für Vertrauenspersonen.",
+    "en": "Password manager on your own GateControl server, end-to-end encrypted: logins, 2FA codes, notes, cards and Wi-Fi credentials – personal or in shared vaults (family, team) with roles. Only the apps and the portal tab “Vault” in the browser encrypt and decrypt; the server stores nothing but data it cannot read – except a Wi-Fi you choose to show for a while on the wall tablet or the portal’s start page. Works offline, syncs without the VPN, with a recovery key and emergency access for trusted people."
   },
-  "gatecontrol": ">=1.193.0",
+  "gatecontrol": ">=1.197.0",
   "entry": "server/index.js",
   "permissions": {
     "storage": true,
@@ -22,7 +22,10 @@
     },
     "background": {
       "intervalSeconds": 300
-    }
+    },
+    "services": [
+      "gatecontrol-familie:wall_wifi"
+    ]
   },
   "ui": {
     "nav": {

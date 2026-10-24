@@ -10,8 +10,9 @@ each member, a change counter for the offline copy, a trash (30 days), the last 
 den Apps und im Portal-Tab „Vault“ (nur in diesem Browser-Tab); ohne Hauptpasswort, Wiederherstellungsschlüssel oder freigegebenen Notfallzugriff kann niemand die Daten
 lesen – auch kein Administrator. Details im CHANGELOG.
 
-Needs GateControl ≥ 1.193.0 (`permissions.app`, `permissions.notify`, `user.device`, `user.kiosk`); scanning a 2FA QR
-code with the camera (1.3.0) needs GateControl ≥ 1.196.0 (`GC.scanQr`), older hosts keep reading it from a picture.
+Needs GateControl ≥ 1.197.0 since 1.4.0 (Start tiles with a QR code for the Wi-Fi share on the portal's start page;
+before: 1.193.0 — `permissions.app`, `permissions.notify`, `user.device`, `user.kiosk`); scanning a 2FA QR code with the
+camera (1.3.0) uses `GC.scanQr` (GateControl ≥ 1.196.0).
 
 ## Who may do what
 
@@ -169,6 +170,61 @@ Emergency = { "id": "…", "grantor": { "id": 2, "name": "Anna" }, "grantee": { 
   `GET emergency/<id>/access` → `{ sealedKey, grantor: { id, name, publicKey, privateKeyEnc }, vaults: [Vault] }`
   (the grantor's vaults with their keys sealed to the grantor) and `GET emergency/<id>/items?since=&limit=` →
   `{ seq, items, more, next }` (live and trash, read-only).
+
+### WLAN-Freigaben (Wi-Fi shares, 1.4.0)
+
+A Wi-Fi entry shown for a while on the **wall tablet** (the Familie plugin's wall view, ≥ 1.14.0) or on the
+**portal's start page** — a card with the network name, a QR code and the password behind a tap.
+
+**This is the one place where the server holds a secret in the clear, on purpose.** The tablet and the portal have no
+key, so the app that shares decrypts the entry and sends a **copy** of three fields — network name, security, password
+(and `hidden`) — nothing else of the entry. The apps say so in the share dialog ("everyone in front of the tablet /
+signed in to the portal sees it and can show the password; a copy is kept readable on the server").
+
+```jsonc
+Share = { "id": "…24 hex…", "itemId": "…", "vaultId": "…", "target": "wall" | "portal",
+          "ssid": "Gäste", "security": "WPA" | "WEP" | "SAE" | "nopass", "password": "…" /* '' for nopass */,
+          "hidden": false, "expiresAt": "…" | null /* null = until ended */, "createdAt": "…",
+          "createdBy": { "id": 2, "name": "Anna" }, "updatedAt": "…", "updatedBy": { … }, "canEnd": true }
+```
+
+* `GET wifi-shares?item=<id>` → `{ shares: [Share], targets: { wall, portal } }` — the running shares of entries in
+  the caller's vaults (any role: they can read the entry anyway), of one entry with `item`. `targets.wall`: the
+  Familie plugin's service is there (`gc.services.available`).
+* `POST wifi-shares` — `{ itemId, target, duration: "5m" | "1h" | "24h" | "forever" | "keep", ssid, security,
+  password, hidden? }` → `{ share }`. The entry: live (`conflict` from the trash), in a vault where the caller has the
+  write role (`forbidden`). One share per entry and target: sharing again replaces the copy and the time; `keep`
+  renews the copy of a running share and keeps its end ("Aktualisieren", `not_found` without one). `target: "wall"`:
+  `no_wall` without the Familie plugin, or when it has no wall tablet or its wall module is off (the share is undone);
+  `unavailable` (503) when it does not answer.
+* `DELETE wifi-shares/<id>` → `{ removed }` (write role): ends it at once.
+
+The apps build the copy with the same rules everywhere (`VaultLogic.wifiOf`; client-core and Android alike): no
+password, or security none / offen / open / keine → `nopass`; WEP → `WEP`; WPA3 / SAE without WPA2 → `SAE`; else
+`WPA`; `hidden` when the field `hidden` is true / 1 / ja / yes. The QR code's text:
+`WIFI:T:<security>;S:<ssid>;P:<password>;H:true;;` — `\ ; , : "` escaped with `\`, no `P:` for `nopass`, `H:true;`
+only for a hidden network. An app compares a running share with the entry and offers "Aktualisieren" when they differ.
+
+Rules (server/wifi.js):
+
+* **The end is enforced here:** an expired share is never handed out (API, tiles, the wall's set) and the background
+  run deletes it (a log row "… expired"). "Beenden" deletes it at once.
+* **The entry decides:** trashing, purging or moving it to another vault, and deleting its vault, end its shares.
+  Changing it does not — the share stays the copy that was shared (shown as an older state with "Aktualisieren").
+* **Limits:** ≤ 4 running shares per target, ≤ 30 `POST wifi-shares` per person and hour (`rate_limited`), ending is
+  never limited; `ssid` ≤ 64, `password` ≤ 128 characters, no control characters.
+* **Log:** every share and end is an `events` row with who, which entry and vault, and `detail` = where and how long
+  (`wall 1h`, `portal forever`, `portal ended`, `wall ended: trash`, `wall expired`) — never the content. The admin
+  page counts the running shares per target.
+* **Portal:** the hook `portalTiles` answers the running portal shares (≤ 4) as Start tiles — `{ title: "WLAN", value:
+  ssid, icon, state: "on", qr, secret: { label, value } (not for nopass), until }` (GateControl ≥ 1.197.0 draws the QR
+  code and counts down) — only for a signed-in person in the portal: never a kiosk device, never device trust alone
+  (`loggedIn: false`), never an app (the apps' start card).
+* **Wall:** the Familie plugin's service `wall_wifi` (`permissions.services`) gets the whole set of running wall shares
+  `{ shares: [{ id, ssid, security, password, hidden, expiresAt, sharedBy }] }` on every change (one call, not a stream
+  — service calls are limited to 60 an hour); it shows them to its wall tablets only (a kiosk device or a signed-in
+  wall account) and enforces the end itself. A failed call marks the set dirty: the background run (5 minutes) sends
+  it again, and once an hour anyway while wall shares run.
 
 ### Mitteilungen (pushes)
 

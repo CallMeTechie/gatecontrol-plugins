@@ -20,6 +20,8 @@ const STATUS = {
   last_manager: 409,
   limit: 409,
   rate_limited: 429,
+  no_wall: 409,
+  unavailable: 503,
   internal: 500,
 };
 
