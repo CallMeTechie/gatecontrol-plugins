@@ -2399,14 +2399,25 @@
           }
         },
         {
+          "icon": "portal",
+          "title": {
+            "de": "Portal-Tab „Vault“",
+            "en": "Portal tab “Vault”"
+          },
+          "text": {
+            "de": "Der ganze Passwort-Manager im Browser-Tab – entschlüsselt nur dort, sperrt sich selbst",
+            "en": "The whole password manager in a browser tab – decrypted only there, locks itself"
+          }
+        },
+        {
           "icon": "shield",
           "title": {
             "de": "Ende-zu-Ende verschlüsselt",
             "en": "End-to-end encrypted"
           },
           "text": {
-            "de": "Nur die Apps können lesen – der Server und der Admin nicht",
-            "en": "Only the apps can read – not the server, not the administrator"
+            "de": "Nur die Apps und der Portal-Tab können lesen – der Server und der Admin nicht",
+            "en": "Only the apps and the portal tab can read – not the server, not the administrator"
           }
         },
         {
@@ -2518,8 +2529,8 @@
         }
       ],
       "needs": {
-        "de": "GateControl-App auf Android oder Windows (dort wird ver- und entschlüsselt)",
-        "en": "The GateControl app on Android or Windows (that is where encryption happens)"
+        "de": "GateControl-App (Android, Windows) oder das Portal im Browser",
+        "en": "The GateControl app (Android, Windows) or the portal in a browser"
       },
       "languages": [
         "de",

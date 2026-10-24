@@ -4,11 +4,11 @@
     "de": "Vault",
     "en": "Vault"
   },
-  "version": "1.0.1",
+  "version": "1.1.0",
   "publisher": "CallMeTechie",
   "description": {
-    "de": "Passwort-Manager auf dem eigenen GateControl-Server, Ende-zu-Ende verschlüsselt: Logins, 2FA-Codes, Notizen, Karten und WLAN-Zugänge – persönlich oder in geteilten Tresoren (Familie, Team) mit Rollen. Ver- und entschlüsselt wird nur in den Apps; der Server speichert ausschließlich Daten, die er nicht lesen kann. Funktioniert offline, gleicht ohne VPN ab, mit Wiederherstellungsschlüssel und Notfallzugriff für Vertrauenspersonen.",
-    "en": "Password manager on your own GateControl server, end-to-end encrypted: logins, 2FA codes, notes, cards and Wi-Fi credentials – personal or in shared vaults (family, team) with roles. Only the apps encrypt and decrypt; the server stores nothing but data it cannot read. Works offline, syncs without the VPN, with a recovery key and emergency access for trusted people."
+    "de": "Passwort-Manager auf dem eigenen GateControl-Server, Ende-zu-Ende verschlüsselt: Logins, 2FA-Codes, Notizen, Karten und WLAN-Zugänge – persönlich oder in geteilten Tresoren (Familie, Team) mit Rollen. Ver- und entschlüsselt wird nur in den Apps und im Portal-Tab „Vault“ im Browser; der Server speichert ausschließlich Daten, die er nicht lesen kann. Funktioniert offline, gleicht ohne VPN ab, mit Wiederherstellungsschlüssel und Notfallzugriff für Vertrauenspersonen.",
+    "en": "Password manager on your own GateControl server, end-to-end encrypted: logins, 2FA codes, notes, cards and Wi-Fi credentials – personal or in shared vaults (family, team) with roles. Only the apps and the portal tab “Vault” in the browser encrypt and decrypt; the server stores nothing but data it cannot read. Works offline, syncs without the VPN, with a recovery key and emergency access for trusted people."
   },
   "gatecontrol": ">=1.193.0",
   "entry": "server/index.js",
@@ -40,7 +40,14 @@
           "en": "Overview"
         }
       }
-    ]
+    ],
+    "portal": {
+      "label": {
+        "de": "Vault",
+        "en": "Vault"
+      },
+      "icon": "M5 11h14v10H5zM8 11V8a4 4 0 0 1 8 0v3"
+    }
   },
   "license": {
     "required": true
