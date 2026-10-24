@@ -1,20 +1,25 @@
 /* Adding a WebUntis account (1.3.0), shared by the settings (page 'setup') and the profile section:
-   1. „QR-Code scannen“ — the camera (getUserMedia; GateControl ≥ 1.188.0 allows it with plugin.json
-      ui.camera) reads the WebUntis QR code (untis://setschool?…) directly;
+   1. „QR-Code scannen“ — since 1.6.0 GateControl's own camera dialog reads the WebUntis QR code
+      (untis://setschool?…): window.GC.scanQr (GateControl ≥ 1.196.0, plugin.json ui.scanQr) answers
+      only the text, the picture stays in GateControl. The frame itself cannot use the camera in Chrome,
+      Edge and Android (its sandbox has an opaque origin: getUserMedia fails with „SecurityError: Invalid
+      security origin“); the older in-frame camera (getUserMedia with allow="camera") is only the
+      fallback for a host without GC.scanQr;
    2. „QR-Bild hochladen“ — a screenshot or photo of the QR code, read in the browser;
    3. „Manuell eingeben“ — server, school, user and key or password;
    and, small, „Link einfügen“ for the untis:// link itself.
-   Reading uses the browser's BarcodeDetector where there is one, else the vendored jsQR
+   Reading a picture uses the browser's BarcodeDetector where there is one, else the vendored jsQR
    (ui/vendor/jsqr, Apache-2.0), which the frame asks the plugin for only then (GET qr-decoder) and runs
    as an inline script. Nothing leaves the browser but the link that was read, to the plugin.
    Manual test (camera and image decoding need a real browser; the automated tests cover the API):
-   GateControl ≥ 1.188.0 over HTTPS › Einstellungen › Plugins › Schule › Einstellungen › „WebUntis-Konto
-   hinzufügen“ › „QR-Code scannen“: the browser asks for the camera, the QR code shown by WebUntis is read
-   within a second or two and the account is added; denying the camera shows the hint to upload a picture.
-   „QR-Bild hochladen“ with a screenshot of the QR code: added. Repeat in Firefox/Safari (no
-   BarcodeDetector → jsQR is fetched once) and on a phone (rear camera), and in the portal under „Meine
-   Geräte“ › „WebUntis“ with a student account. On GateControl < 1.188.0 the camera tile is hidden
-   (no allow="camera"); upload and manual entry still work. */
+   GateControl ≥ 1.196.0 over HTTPS › Einstellungen › Plugins › Schule › Einstellungen › „WebUntis-Konto
+   hinzufügen“ › „QR-Code scannen“: GateControl's dialog „QR-Code scannen – für Schule“ opens, the browser
+   asks for the camera, the QR code shown by WebUntis is read within a second or two and the account is
+   added; another QR code shows „passt hier nicht“ and keeps scanning; „Abbrechen“ returns to the
+   choice; denying the camera shows the hint to upload a picture. „QR-Bild hochladen“ with a screenshot
+   of the QR code: added. Repeat in Chrome/Edge (Windows: jsQR in GateControl), Firefox, and on an
+   Android phone (rear camera), and in the portal under „Meine Geräte“ › „WebUntis“ with a student
+   account. */
 (function () {
   'use strict';
   var S = window.SC, T = S.T, el = S.el;
@@ -77,7 +82,10 @@
   }
   function isUntis(text) { return /^untis:\/\/setschool\?/i.test(String(text || '').trim()); }
 
+  /** GateControl ≥ 1.196.0 reads the code in its own dialog (GC.scanQr). */
+  function hostScan() { return !!(window.GC && typeof window.GC.scanQr === 'function'); }
   function cameraPossible() {
+    if (hostScan()) return true;
     if (!navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== 'function') return false;
     // an older GateControl does not allow the camera in the frame (no allow="camera")
     try { if (document.featurePolicy && typeof document.featurePolicy.allowsFeature === 'function' && !document.featurePolicy.allowsFeature('camera')) return false; } catch (_) { /* unknown */ }
@@ -108,6 +116,24 @@
     });
   }
 
+  // GC.scanQr: GateControl's dialog; called right from the click (the host starts the camera at once)
+  var HOST_ERR = { denied: 'scan.camera_denied', no_camera: 'scan.camera_none', insecure: 'scan.camera_insecure', timeout: 'scan.camera_timeout' };
+  function scanWithHost() {
+    if (!cur || cur.busy || cur.hostScan) return;
+    var mine = cur;
+    mine.hostScan = true;
+    msg(T('scan.camera_host'));
+    window.GC.scanQr({ hint: T('scan.camera_hint'), accept: ['untis://setschool?'], timeout: 180 }).then(function (r) {
+      mine.hostScan = false;
+      if (cur !== mine || cur.step !== 'choose') return; // the dialog was closed meanwhile
+      var text = r && typeof r.text === 'string' ? r.text.trim() : '';
+      if (text && isUntis(text)) { submit({ mode: 'qr', link: text }); return; }
+      var code = r && r.code;
+      if (!code || ['cancelled', 'hidden', 'busy', 'rate_limited', 'no_gesture'].indexOf(code) >= 0) { msg(''); return; }
+      msg(T(HOST_ERR[code] || 'scan.camera_failed'), 'error');
+    });
+  }
+
   function tile(icon, title, sub, onClick, id) {
     return el('button', { type: 'button', class: 'pick', id: id || null, on: { click: onClick } }, [
       el('span', { class: 'pick-ic' }, [S.svg(icon, 22)]),
@@ -126,7 +152,7 @@
     if (name === 'choose') {
       if (cur.opts.intro) b.appendChild(el('p', { class: 'hint sc-intro', text: cur.opts.intro }));
       var tiles = el('div', { class: 'picks' });
-      if (cameraPossible()) tiles.appendChild(tile(S.ICON.camera, T('scan.camera'), T('scan.camera_sub'), function () { step('camera'); }, 'sc-pick-camera'));
+      if (cameraPossible()) tiles.appendChild(tile(S.ICON.camera, T('scan.camera'), T('scan.camera_sub'), function () { if (hostScan()) scanWithHost(); else step('camera'); }, 'sc-pick-camera'));
       tiles.appendChild(tile(S.ICON.image, T('scan.upload'), T('scan.upload_sub'), function () { step('upload'); }, 'sc-pick-upload'));
       tiles.appendChild(tile(S.ICON.keyboard, T('scan.manual'), T('scan.manual_sub'), function () { step('manual'); }, 'sc-pick-manual'));
       b.appendChild(tiles);
@@ -249,11 +275,11 @@
   function open(opts) {
     ensureModal();
     stopCamera();
-    cur = { opts: opts || {}, step: null, stream: null, timer: null, busy: false };
+    cur = { opts: opts || {}, step: null, stream: null, timer: null, busy: false, hostScan: false };
     document.getElementById('sc-add-title').textContent = cur.opts.title || T('account.add');
     S.openModal(ID);
     step(cur.opts.start || 'choose');
   }
 
-  window.SCScan = { open: open, isUntis: isUntis, cameraPossible: cameraPossible };
+  window.SCScan = { open: open, isUntis: isUntis, cameraPossible: cameraPossible, hostScan: hostScan };
 }());

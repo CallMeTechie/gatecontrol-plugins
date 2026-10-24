@@ -4,13 +4,13 @@
     "de": "Schule",
     "en": "School"
   },
-  "version": "1.5.1",
+  "version": "1.6.0",
   "publisher": "CallMeTechie",
   "description": {
     "de": "Stundenplan aus WebUntis für Schüler- und Elternkonten: Ausfälle, Vertretungen und Zusatzstunden als Push, Arbeiten und Hausaufgaben mit Erinnerung am Vorabend, Nachrichten der Schule und Fehlzeiten, Wochenplan je Kind in seiner Farbe (Portal, Wand-Tablet, App). Konten per QR-Code-Scan in den Einstellungen; jeder kann sein eigenes Schülerkonto im Profil verknüpfen.",
     "en": "Timetable from WebUntis for student and parent accounts: cancellations, substitutions and extra lessons as push notifications, exams and homework with a reminder the evening before, school messages and absences, a week view per child in its colour (portal, wall tablet, app). Accounts by scanning the QR code in the settings; everyone can link their own student account in their profile."
   },
-  "gatecontrol": ">=1.190.0",
+  "gatecontrol": ">=1.196.0",
   "entry": "server/index.js",
   "permissions": {
     "network": {
@@ -107,7 +107,7 @@
       }
     ],
     "settingsPage": "setup",
-    "camera": true,
+    "scanQr": true,
     "settingsGroups": [
       {
         "id": "fetch",
