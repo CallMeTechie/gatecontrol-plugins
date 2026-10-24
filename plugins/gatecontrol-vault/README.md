@@ -10,7 +10,8 @@ each member, a change counter for the offline copy, a trash (30 days), the last 
 den Apps und im Portal-Tab „Vault“ (nur in diesem Browser-Tab); ohne Hauptpasswort, Wiederherstellungsschlüssel oder freigegebenen Notfallzugriff kann niemand die Daten
 lesen – auch kein Administrator. Details im CHANGELOG.
 
-Needs GateControl ≥ 1.193.0 (`permissions.app`, `permissions.notify`, `user.device`, `user.kiosk`).
+Needs GateControl ≥ 1.193.0 (`permissions.app`, `permissions.notify`, `user.device`, `user.kiosk`); scanning a 2FA QR
+code with the camera (1.3.0) needs GateControl ≥ 1.196.0 (`GC.scanQr`), older hosts keep reading it from a picture.
 
 ## Who may do what
 
@@ -278,11 +279,17 @@ access (trusted people, requests, a released vault opened read-only), a new mast
   they are empty); `otpauth://hotp` → "HOTP wird nicht unterstützt"; other codes → "Kein 2FA-QR-Code im Bild
   gefunden". Google Authenticator's export (`otpauth-migration://offline?data=…`, protobuf `MigrationPayload`, up to
   100 accounts per code) lists its accounts to pick one; HOTP and MD5 accounts are shown, not selectable.
-  **No camera:** GateControl's `ui.camera` (1.188.0) gives the frame `allow="camera *"`, but Chromium refuses
-  `getUserMedia` to a sandboxed frame without `allow-same-origin` — its origin is opaque ("SecurityError: Invalid
-  security origin"; checked with Chromium 141), so Vault does not ask for that permission. A camera would need the
-  host to scan on its own page (e.g. a `GC.scanQr()` that opens the camera in GateControl's origin and hands the frame
-  only the decoded text).
+  **No camera in the frame:** GateControl's `ui.camera` (1.188.0) gives the frame `allow="camera *"`, but Chromium
+  refuses `getUserMedia` to a sandboxed frame without `allow-same-origin` — its origin is opaque ("SecurityError:
+  Invalid security origin"; checked with Chromium 141), so Vault does not ask for that permission.
+* **2FA with the camera (1.3.0):** plugin.json `ui.scanQr` — on GateControl ≥ 1.196.0 the frame has
+  `window.GC.scanQr`, and "Mit Kamera scannen" sits next to "QR-Code aus Bild" (no button on older hosts). GateControl
+  opens its own camera dialog on its own page (its origin, HTTPS), reads the code there and hands the frame only the
+  text — `accept: ['otpauth://', 'otpauth-migration://']`, so the dialog keeps scanning past other codes; the picture
+  never reaches the frame. The text goes through the same `VaultLogic.qrTotp` and account choice as a picture (the
+  panel opens to show the outcome); the dialog's codes `denied`, `no_camera`, `insecure`, `timeout` get a message
+  pointing to the picture, `cancelled` none. The same rule as for pictures: an answer that arrives after a lock
+  (`S.epoch`) or after the panel was closed is dropped unread.
 * **Export:** plain CSV (UTF-8 with BOM); a value a spreadsheet would run as a formula (starting with `= + - @`, tab,
   CR) gets a leading `'` — not in the password and 2FA columns, which stay exactly as they are. Vault's importer
   recognises its own export and takes the `'` off again.
@@ -312,4 +319,7 @@ The 2FA QR code (1.2.0): `test/qr-image.js` draws QR codes with the bundled enco
 Authenticator exports built with a small protobuf writer); `portal.test.js` hands such pictures to the real page
 through a fake `createImageBitmap` / canvas (chosen file, paste, drop, a lock while reading). In a real browser:
 Portal › Vault › Neu › Login › „QR-Code aus Bild“ — a PNG screenshot of a 2FA QR code chosen, pasted with Ctrl+V and
-dropped is read within a moment; the key, the title and the user name are filled in.
+dropped is read within a moment; the key, the title and the user name are filled in. With the camera (1.3.0,
+GateControl ≥ 1.196.0 over HTTPS, Chrome/Edge and Android Chrome): „Mit Kamera scannen“ › GateControl's dialog „QR-Code
+scannen – für Vault“ › a 2FA QR code on another screen is read, the dialog closes, the key is filled in; a QR code that
+is no 2FA code shows „passt hier nicht“ and the dialog keeps scanning; „Abbrechen“ leaves the field as it was.

@@ -2,6 +2,18 @@
 
 Passwort-Manager auf dem eigenen GateControl-Server – Ende-zu-Ende verschlüsselt.
 
+## 1.3.0
+- **2FA mit der Kamera scannen:** Neben „QR-Code aus Bild“ gibt es beim 2FA-Schlüssel den Knopf „Mit Kamera
+  scannen“. GateControl öffnet dafür seinen eigenen Kamera-Dialog, liest den QR-Code der Website (oder den Export
+  aus Google Authenticator) und gibt dem Vault-Tab nur den gelesenen Text – das Kamerabild bleibt in GateControl und
+  wird nirgends gespeichert, die Kamera geht sofort wieder aus. Andere QR-Codes nimmt der Dialog nicht.
+- Danach geht es weiter wie mit einem Bild: Schlüssel übernehmen, leeren Titel und Benutzernamen ergänzen, bei einem
+  Export mit mehreren Konten eines auswählen, HOTP wird abgelehnt.
+- Wird der Tab gesperrt, während der Kamera-Dialog offen ist, wird das Ergebnis verworfen.
+- Der Knopf erscheint ab **GateControl 1.196.0**; auf älteren Versionen bleibt „QR-Code aus Bild“. Das Update fragt
+  einmal nach der neuen Berechtigung „QR-Codes: Kamera zum Scannen von QR-Codes (das Bild bleibt in GateControl, das
+  Plugin bekommt nur den gelesenen Text)“.
+
 ## 1.2.0
 - **2FA per QR-Code einrichten:** Beim Anlegen oder Bearbeiten eines Logins oder eines 2FA-Codes gibt es neben dem
   2FA-Schlüssel den Knopf „QR-Code aus Bild“. Dort ein Bild wählen, einen Screenshot mit Strg+V einfügen oder das Bild
