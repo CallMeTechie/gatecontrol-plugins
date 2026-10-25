@@ -66,18 +66,49 @@ body{padding:0}
 .fa-w-school-kid.is-warn{background:var(--w-warm)}
 .fa-w-school-kid.is-warn .fa-w-school-sub{color:var(--w-warm-fg)}
 .fa-w-school-exam{flex:none;padding:2px 10px;border-radius:999px;background:var(--w-accent);color:#fff;font-size:14px;font-weight:800}
-/* 1.14.0: Wi-Fi shared from Vault — the QR code always dark on white (also at night) so phones read it */
-.fa-w-wifi{flex:none;min-width:0}
+/* Wi-Fi shared from Vault (1.14.0; 1.14.1: a column of the grid, QR code ≥ 200 px, one share at a time).
+   The QR code always dark on white (also at night) so phones read it. */
+.fa-w-wifi{min-width:0;min-height:0;display:flex;flex-direction:column;gap:8px;background:var(--w-card);border-radius:22px;padding:14px;overflow:hidden}
 .fa-w-wifi[hidden]{display:none}
-.fa-w-wifi-list{display:flex;gap:18px;min-width:0;overflow:hidden}
-.fa-w-wifi-card{flex:1 1 0;min-width:0;display:flex;align-items:center;gap:20px;padding:14px 20px 14px 14px;border-radius:22px;background:var(--w-card)}
-.fa-w-wifi-qr{width:184px;height:184px;flex:none;border-radius:12px;background:#fff}
-.fa-w-wifi-info{flex:1;min-width:0;display:flex;flex-direction:column;gap:8px}
-.fa-w-wifi-label{display:flex;align-items:center;gap:6px;font-size:16px;font-weight:800;color:var(--w-accent)}
-.fa-w-wifi-ssid{font-size:28px;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.fa-w-wifi-row{display:flex;align-items:center;gap:12px;flex-wrap:wrap;min-width:0}
-.fa-w-wifi-pw{font:700 22px ui-monospace,SFMono-Regular,Menlo,monospace;overflow-wrap:anywhere;min-width:0}
-.fa-w-wifi-show{min-height:48px;padding:6px 18px;border-radius:999px;border:2px solid var(--w-ring);background:var(--w-soft);color:var(--w-fg);font:700 16px var(--w-font);cursor:pointer}
+.fa-w-grid.has-wifi{grid-template-columns:minmax(250px,1.1fr) repeat(3,minmax(0,1fr))}
+.fa-w-wifi-list{flex:1;min-height:0;display:flex;min-width:0}
+.fa-w-wifi-card{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;gap:6px;text-align:center}
+.fa-w-wifi-card[hidden]{display:none}
+.fa-w-wifi-qr{width:204px;height:204px;max-width:100%;flex:none;border-radius:12px;background:#fff}
+.fa-w-wifi-info{flex:1;min-width:0;width:100%;display:flex;flex-direction:column;align-items:center;gap:4px}
+.fa-w-wifi-head{display:flex;align-items:center;gap:8px;min-height:32px}
+.fa-w-wifi-label{flex:1;margin:0;display:flex;align-items:center;gap:6px;font-size:16px;font-weight:800;color:var(--w-accent)}
+.fa-w-wifi-next{width:40px;height:40px;border-radius:50%;border:2px solid var(--w-ring);background:var(--w-soft);color:var(--w-fg);font:800 22px var(--w-font);line-height:1;cursor:pointer}
+.fa-w-wifi-ssid{max-width:100%;font-size:19px;font-weight:800;line-height:1.15;overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.fa-w-wifi-row{display:flex;align-items:center;justify-content:center;gap:10px;flex-wrap:wrap;min-width:0;max-width:100%}
+.fa-w-wifi-row>.fa-w-muted{display:none}
+.fa-w-wifi-pw{font:700 19px ui-monospace,SFMono-Regular,Menlo,monospace;overflow-wrap:anywhere;min-width:0}
+.fa-w-wifi-show{min-height:44px;padding:4px 16px;border-radius:999px;border:2px solid var(--w-ring);background:var(--w-soft);color:var(--w-fg);font:700 15px var(--w-font);cursor:pointer}
 .fa-w-wifi-show[aria-pressed="true"]{border-color:var(--w-accent)}
-.fa-w-wifi-meta{display:flex;gap:14px;flex-wrap:wrap}
+.fa-w-wifi-hint{display:none}
+.fa-w-wifi-meta{display:flex;gap:4px 12px;flex-wrap:wrap;justify-content:center;font-size:13px}
+/* the password shown in the narrow column: it takes the QR code's place for those 30 s (no room for both) */
+.fa-w-wifi-card.is-revealed .fa-w-wifi-qr{display:none}
+.fa-w-wifi-card.is-revealed .fa-w-wifi-info{flex:1;justify-content:center}
+.fa-w-wifi-card.is-revealed .fa-w-wifi-row{flex-direction:column;gap:14px;padding:8px 0}
+.fa-w-wifi-card.is-revealed .fa-w-wifi-pw{font-size:24px;line-height:1.3;padding:14px;border-radius:14px;background:var(--w-soft);max-width:100%;box-sizing:border-box}
 .fa-w-wifi-left{font-variant-numeric:tabular-nums}
+.fa-w-wifi-nav{display:flex;align-items:center;gap:8px}
+.fa-w-wifi-nav[hidden]{display:none}
+/* a narrow frame (a tablet upright): the card is a row of its own above the three cards, the wall grows */
+@media (max-width:999px){
+  .fa-wall.has-wifi{height:960px}
+  .fa-w-grid.has-wifi{grid-template-columns:repeat(3,minmax(0,1fr));grid-template-rows:auto minmax(0,1fr)}
+  .fa-w-grid.has-wifi .fa-w-wifi{grid-column:1/-1}
+  .fa-w-wifi-card{flex-direction:row;align-items:center;gap:20px;text-align:left}
+  .fa-w-wifi-qr{width:220px;height:220px}
+  .fa-w-wifi-info{align-items:flex-start;gap:8px}
+  .fa-w-wifi-ssid{font-size:28px}
+  .fa-w-wifi-row{justify-content:flex-start}
+  .fa-w-wifi-row>.fa-w-muted,.fa-w-wifi-hint{display:block}
+  .fa-w-wifi-meta{justify-content:flex-start;font-size:15px}
+  .fa-w-wifi-card.is-revealed .fa-w-wifi-qr{display:block}
+  .fa-w-wifi-card.is-revealed .fa-w-wifi-info{justify-content:flex-start}
+  .fa-w-wifi-card.is-revealed .fa-w-wifi-row{flex-direction:row;gap:12px;padding:0}
+  .fa-w-wifi-card.is-revealed .fa-w-wifi-pw{font-size:19px;padding:0;background:none}
+}

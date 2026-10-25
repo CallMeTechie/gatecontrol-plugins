@@ -33,7 +33,7 @@
     totp: [{ key: 'totp', secret: true, totp: true }],
     note: [],
     card: [{ key: 'holder' }, { key: 'number', secret: true }, { key: 'expiry' }, { key: 'cvc', secret: true }, { key: 'pin', secret: true }],
-    wifi: [{ key: 'ssid' }, { key: 'password', secret: true }, { key: 'security' }],
+    wifi: [{ key: 'ssid' }, { key: 'password', secret: true }, { key: 'security' }, { key: 'hidden', check: true }],
     identity: [{ key: 'name' }, { key: 'email' }, { key: 'phone' }, { key: 'address', multiline: true }, { key: 'birthday' }],
   };
 
@@ -977,6 +977,9 @@
     return { ssid: ssid, security: t, password: t === 'nopass' ? '' : pw, hidden: /^(true|1|ja|yes)$/i.test(field(d, 'hidden').trim()) };
   }
 
+  /** Is a check field (1.4.1: the Wi-Fi's `hidden`) on? true / 1 / ja / yes — the rule of wifiOf. */
+  function fieldOn(v) { return /^(true|1|ja|yes)$/i.test(str(v).trim()); }
+
   /** WIFI:T:<type>;S:<ssid>;P:<password>;H:true;; of { ssid, security, password, hidden } (\ ; , : " escaped). */
   function wifiText(w) {
     return 'WIFI:T:' + w.security + ';S:' + wifiEsc(w.ssid) + ';' + (w.security === 'nopass' ? '' : 'P:' + wifiEsc(w.password) + ';') + (w.hidden ? 'H:true;' : '') + ';';
@@ -1202,7 +1205,7 @@
     passwordStrength: passwordStrength, wordCount: wordCount, goodMasterPassword: goodMasterPassword, masterCheck: masterCheck,
     urlHost: urlHost, siteOf: siteOf, openableUrl: openableUrl,
     csvRows: csvRows, parseImport: parseImport, importCounts: importCounts, duplicateFlags: duplicateFlags,
-    exportCsv: exportCsv, wifiQrText: wifiQrText, wifiOf: wifiOf, wifiText: wifiText, wifiSame: wifiSame, parseShares: parseShares, shareLeft: shareLeft, qrMatrix: qrMatrix,
+    exportCsv: exportCsv, fieldOn: fieldOn, wifiQrText: wifiQrText, wifiOf: wifiOf, wifiText: wifiText, wifiSame: wifiSame, parseShares: parseShares, shareLeft: shareLeft, qrMatrix: qrMatrix,
     letter: letter, tone: tone, matches: matches, listSections: listSections, mask: mask, maskedNumber: maskedNumber,
     emptyDraft: emptyDraft, draftFrom: draftFrom, draftToData: draftToData, draftError: draftError, draftChanged: draftChanged,
     recoveryGroups: recoveryGroups, recoveryComplete: recoveryComplete, waitParts: waitParts, remaining: remaining, candidates: candidates,

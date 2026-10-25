@@ -3,6 +3,18 @@
 Die Familie in der GateControl-App (eigener Tab), im Portal (eigener Tab „Familie“) und auf
 drei Admin-Seiten. Alles bleibt auf dem eigenen Server.
 
+## 1.14.1
+- **WLAN-Karte auf Tablet-Größe geprüft und verbessert** (Browser-Prüfung in 1280×800, 800×1280 und 1920×1200, hell
+  und dunkel – `test/browser/wall-layout.js`): Die Karte ist jetzt eine eigene Spalte neben „Heute“, „Aufgaben“ und
+  „Einkauf“ statt einer Zeile darüber, die diese Karten auf wenige Pixel zusammendrückte. Der QR-Code ist mindestens
+  200 px groß (vorher 184 px), lange Netznamen brechen um statt abgeschnitten zu werden.
+- Bei einem schmalen Bild (Tablet hochkant) steht die Karte quer über den drei Karten und die Wand wird dafür höher
+  (960 statt 640 px), damit nichts zusammengequetscht wird.
+- Mehrere Freigaben gleichzeitig: eine Karte zur Zeit, „1 / 2“ und ein Knopf „Nächstes WLAN“; alle 20 Sekunden geht
+  es von selbst weiter (nicht, solange ein Passwort eingeblendet ist).
+- „Anzeigen“ in der schmalen Spalte zeigt das Passwort groß an der Stelle des QR-Codes (für die 30 Sekunden), damit auch
+  lange Passwörter vollständig zu lesen sind.
+
 ## 1.14.0
 - **WLAN auf dem Wand-Tablet:** Im Plugin **Vault** (ab 1.4.0) lässt sich ein WLAN-Eintrag „auf dem Wandtablet“
   freigeben – für 5 Minuten, 1 Stunde, 24 Stunden oder dauerhaft. Das Wand-Tablet zeigt dann eine Karte „WLAN“ mit

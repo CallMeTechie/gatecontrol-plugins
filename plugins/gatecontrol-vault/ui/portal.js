@@ -1269,6 +1269,7 @@
       var v = fields[f.key];
       if (!v) return;
       var label = T('field.' + f.key);
+      if (f.check) { if (L.fieldOn(v)) rows.push(plainRow(label, T('field.on'))); return; }
       if (f.totp) rows.push(prefix ? secretRow(prefix + ':' + f.key, label, v) : totpRow(label, v));
       else if (f.secret) rows.push(secretRow(prefix + ':' + f.key, label, v, { card: f.key === 'number' }));
       else rows.push(plainRow(label, v, f.multiline));
@@ -1849,6 +1850,12 @@
       var val = dr.fields[f.key] || '';
       var label = f.totp ? T('field.totp_secret') : T('field.' + f.key);
       var input;
+      if (f.check) {
+        // 1.4.1: „Verstecktes Netz“ — stored as fields.hidden 'true' (gone when off); the QR code gets H:true
+        var box = h('input', { type: 'checkbox', checked: L.fieldOn(val), attrs: { 'data-field': f.key }, on: { change: function () { dr.fields[f.key] = box.checked ? 'true' : ''; } } });
+        form.push(h('label', { class: 'vp-check' }, [box, h('span', null, [T('field.' + f.key), h('span', { class: 'vp-hint', text: ' · ' + T('field.' + f.key + '_hint') })])]));
+        return;
+      }
       if (f.multiline) {
         input = h('textarea', { class: 'vp-input', rows: 3, value: val, on: { input: function () { dr.fields[f.key] = input.value; } } });
         form.push(inputRow(label, input));

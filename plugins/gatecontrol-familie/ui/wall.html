@@ -12,10 +12,17 @@
       <h2 class="fa-w-school-h" id="fa-w-school-h">{{t:wall.school_today}}</h2>
       <div class="fa-w-school-list" id="fa-w-school-list"></div>
     </section>
-    <section class="fa-w-wifi" id="fa-w-wifi" aria-label="{{t:wall.wifi}}" hidden>
-      <div class="fa-w-wifi-list" id="fa-w-wifi-list"></div>
-    </section>
-    <div class="fa-w-grid">
+    <div class="fa-w-grid" id="fa-w-grid">
+      <section class="fa-w-wifi" id="fa-w-wifi" aria-labelledby="fa-w-wifi-h" hidden>
+        <div class="fa-w-wifi-head">
+          <h2 class="fa-w-wifi-label" id="fa-w-wifi-h">{{t:wall.wifi}}</h2>
+          <span class="fa-w-wifi-nav" id="fa-w-wifi-nav" hidden>
+            <span class="fa-w-muted" id="fa-w-wifi-count"></span>
+            <button class="fa-w-wifi-next" id="fa-w-wifi-next" type="button" aria-label="{{t:wall.wifi_next}}" title="{{t:wall.wifi_next}}">›</button>
+          </span>
+        </div>
+        <div class="fa-w-wifi-list" id="fa-w-wifi-list"></div>
+      </section>
       <section class="fa-w-card" id="fa-w-today" aria-labelledby="fa-w-today-h">
         <h2 class="fa-w-h" id="fa-w-today-h">{{t:wall.today}}</h2>
         <div class="fa-w-list" id="fa-w-today-list"></div>

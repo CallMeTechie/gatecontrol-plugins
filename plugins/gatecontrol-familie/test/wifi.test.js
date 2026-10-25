@@ -103,6 +103,15 @@ test('the wall page draws the card: QR code, password behind „Anzeigen“, tim
   assert.match(js, /SHOW_MS = 30000/);
   assert.match(js, /setInterval\(tickWifi, 1000\)/);
   assert.doesNotMatch(js, /innerHTML/);
+  // 1.14.1: a column of the grid (a row of its own on a narrow frame, the wall taller), one share at a time, QR ≥ 200 px
+  const css = fs.readFileSync(path.join(__dirname, '..', 'ui', 'wall.css'), 'utf8');
+  assert.match(html, /<div class="fa-w-grid" id="fa-w-grid">\s*<section class="fa-w-wifi"/, 'the card is the first item of the grid');
+  assert.match(css, /\.fa-w-grid\.has-wifi\{grid-template-columns:minmax\(250px,1\.1fr\) repeat\(3,minmax\(0,1fr\)\)\}/);
+  assert.match(css, /@media \(max-width:999px\)\{\s*\.fa-wall\.has-wifi\{height:960px\}/);
+  for (const m of css.matchAll(/\.fa-w-wifi-qr\{width:(\d+)px;height:(\d+)px/g)) assert.ok(Number(m[1]) >= 200 && m[1] === m[2], `QR code ${m[1]} px`);
+  assert.match(js, /ROTATE_MS = 20000/);
+  assert.match(js, /function showWifi\(step\)/);
+  assert.match(html, /id="fa-w-wifi-next"/);
   const texts = require('../server/texts.json');
   for (const k of ['wall.wifi', 'wall.wifi_password', 'wall.wifi_show', 'wall.wifi_hide', 'wall.wifi_open', 'wall.wifi_scan', 'wall.wifi_by', 'wall.wifi_left', 'wall.wifi_hours', 'wall.wifi_days', 'wall.wifi_forever', 'wall.wifi_qr']) {
     assert.ok(texts.de[k] && texts.en[k], k);

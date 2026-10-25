@@ -276,7 +276,7 @@ emergency's holds the grantor's user key (→ `privateKeyEnc` → the grantor's 
 The entry JSON (`{ "v": 1, "type": "login" | "totp" | "note" | "card" | "wifi" | "identity", "title", "fav",
 "notes", "urls": [], "apps": [], "fields": {}, "custom": [{ "name", "value", "secret" }] }`) is defined in
 client-core; apps keep keys they do not know. `fields` per type — login: `username`, `password`, `totp`; card:
-`holder`, `number`, `expiry`, `cvc`, `pin`; wifi: `ssid`, `password`, `security`; identity: `name`, `email`,
+`holder`, `number`, `expiry`, `cvc`, `pin`; wifi: `ssid`, `password`, `security`, `hidden` (1.4.1: `"true"` for a hidden network — the editors' „Verstecktes Netz“, absent otherwise; the QR code then carries `H:true`); identity: `name`, `email`,
 `phone`, `address`, `birthday`. The server never sees it. `rev` in the AD is the revision the save
 creates (`baseRev + 1`), so an app rejects an entry the server hands back under another revision, vault or id; it
 also never accepts a lower `rev` than the one it already has.
