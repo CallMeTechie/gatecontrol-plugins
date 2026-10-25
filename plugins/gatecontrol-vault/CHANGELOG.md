@@ -2,6 +2,11 @@
 
 Passwort-Manager auf dem eigenen GateControl-Server – Ende-zu-Ende verschlüsselt.
 
+## 1.4.1
+- **„Verstecktes Netz“:** Der WLAN-Editor im Portal-Tab hat eine Checkbox „Verstecktes Netz“ (wie die Apps). Sie
+  wird im Eintrag als `hidden` gespeichert; der WLAN-QR-Code und eine Freigabe bekommen dann `H:true`, damit Handys
+  auch ein Netz finden, das seinen Namen nicht ausstrahlt. Die Ansicht zeigt „Verstecktes Netz: Ja“.
+
 ## 1.4.0
 - **WLAN freigeben – auf dem Wandtablet und der Portal-Startseite:** Bei einem WLAN-Eintrag gibt es den Bereich
   „Freigaben“ mit „Freigabe auf Wandtablet“ und „Freigabe auf Portalseite“. Dauer: 5 Minuten, 1 Stunde, 24 Stunden

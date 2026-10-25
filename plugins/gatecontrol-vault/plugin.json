@@ -4,7 +4,7 @@
     "de": "Vault",
     "en": "Vault"
   },
-  "version": "1.4.0",
+  "version": "1.4.1",
   "publisher": "CallMeTechie",
   "description": {
     "de": "Passwort-Manager auf dem eigenen GateControl-Server, Ende-zu-Ende verschlüsselt: Logins, 2FA-Codes, Notizen, Karten und WLAN-Zugänge – persönlich oder in geteilten Tresoren (Familie, Team) mit Rollen. Ver- und entschlüsselt wird nur in den Apps und im Portal-Tab „Vault“ im Browser; der Server speichert ausschließlich Daten, die er nicht lesen kann – außer einem WLAN, das du bewusst eine Zeit lang auf Wandtablet oder Portal-Startseite zeigst. Funktioniert offline, gleicht ohne VPN ab, mit Wiederherstellungsschlüssel und Notfallzugriff für Vertrauenspersonen.",

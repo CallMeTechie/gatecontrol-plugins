@@ -1044,7 +1044,9 @@
     "wall.wifi_hours": "{{n}} Std.",
     "wall.wifi_days": "{{n}} Tage",
     "wall.wifi_forever": "bis es beendet wird",
-    "wall.wifi_qr": "QR-Code für das WLAN {{name}}"
+    "wall.wifi_qr": "QR-Code für das WLAN {{name}}",
+    "wall.wifi_next": "Nächstes WLAN",
+    "wall.wifi_count": "WLAN {{n}} von {{of}}"
   },
   "en": {
     "account.admin": "Admin",
@@ -2091,6 +2093,8 @@
     "wall.wifi_hours": "{{n}} h",
     "wall.wifi_days": "{{n}} days",
     "wall.wifi_forever": "until it is ended",
-    "wall.wifi_qr": "QR code for the Wi-Fi {{name}}"
+    "wall.wifi_qr": "QR code for the Wi-Fi {{name}}",
+    "wall.wifi_next": "Next Wi-Fi",
+    "wall.wifi_count": "Wi-Fi {{n}} of {{of}}"
   }
 }

@@ -101,8 +101,8 @@ test('texts: every key the portal uses exists in de and en (with .one/.other for
   assert.ok(texts.de['p.session_note'].includes('5 Minuten'));
 });
 
-test('plugin.json 1.4.0: the portal tab "Vault"; GateControl 1.197.0 (Start tiles with a QR code); portalVisible hides it on a kiosk device', async () => {
-  assert.equal(manifest.version, '1.4.0');
+test('plugin.json 1.4.1: the portal tab "Vault"; GateControl 1.197.0 (Start tiles with a QR code); portalVisible hides it on a kiosk device', async () => {
+  assert.equal(manifest.version, '1.4.1');
   assert.equal(manifest.gatecontrol, '>=1.197.0', 'the Wi-Fi share on the portal start page needs tiles with qr / secret / until (1.197.0); GC.scanQr (1.196.0) is feature-detected');
   assert.deepEqual(manifest.permissions.services, ['gatecontrol-familie:wall_wifi'], 'the wall tablet\'s Wi-Fi through the Familie plugin');
   assert.equal(manifest.ui.camera, undefined, 'no camera: a sandboxed frame (opaque origin) gets none in Chromium');
@@ -119,6 +119,7 @@ test('plugin.json 1.4.0: the portal tab "Vault"; GateControl 1.197.0 (Start tile
   assert.match(changelog, /^## 1\.2\.0$/m);
   assert.match(changelog, /^## 1\.3\.0$/m);
   assert.match(changelog, /^## 1\.4\.0$/m);
+  assert.match(changelog, /^## 1\.4\.1$/m);
   await withHost({}, async (host) => {
     assert.equal(await host.portalVisible({ ...ANNA, loggedIn: true }), true);
     assert.equal(await host.portalVisible({ ...WALL, loggedIn: true, kiosk: true }), false);
@@ -862,6 +863,47 @@ test('smoke (1.4.0): a Wi-Fi entry — „Freigabe auf Portalseite“ with a dur
       // a lock forgets the shares with everything else
       doc.getElementById('vp-lock-now').click();
       assert.ok(!text(doc.body).includes('Gäste'));
+    } finally {
+      doc.getElementById('vp-lock-now') && doc.getElementById('vp-lock-now').click();
+    }
+  });
+});
+
+test('smoke (1.4.1): „Verstecktes Netz“ in the Wi-Fi editor → fields.hidden, the QR code and the share get H:true', async () => {
+  await withHost({}, async (host) => {
+    const { doc, f } = await openPortal(host, ANNA);
+    const detail = doc.getElementById('vp-detail');
+    try {
+      doc.getElementById('vp-new').click();
+      doc.querySelectorAll('.vp-type').find((b) => b.lastChild.textContent === 'WLAN').click();
+      const field = (label) => detail.querySelectorAll('.vp-field').find((x) => x.firstChild && x.firstChild.textContent === label).querySelectorAll('input')[0];
+      type(field('Titel'), 'Keller');
+      type(field('Netzwerk'), 'Keller-AP');
+      type(field('Passwort'), 'geheim');
+      const box = detail.querySelectorAll('input').find((i) => i.type === 'checkbox' && i.getAttribute('data-field') === 'hidden');
+      assert.ok(box, 'the checkbox is there');
+      assert.equal(box.checked, false);
+      box.checked = true;
+      box.dispatchEvent({ type: 'change' });
+      byText(doc, 'button', 'Speichern').click();
+      await until('saved', toastIs(doc, 'Gespeichert.'));
+      assert.ok(text(detail).includes('Verstecktes Netz'), 'the detail says so');
+      byText(doc, 'button', 'Freigabe auf Portalseite').click();
+      byText(doc, 'button', 'Freigeben').click();
+      await until('shared', toastIs(doc, 'Wird jetzt auf der Portal-Startseite gezeigt.'));
+      const post = f.calls.find((c) => c.method === 'POST' && c.path === 'wifi-shares');
+      assert.equal(post.body.hidden, true);
+      assert.equal((await host.portalTiles({ ...MARC, loggedIn: true }))[0].qr, 'WIFI:T:WPA;S:Keller-AP;P:geheim;H:true;;');
+      // off again: the field goes
+      byText(doc, 'button', 'Bearbeiten').click();
+      const again = detail.querySelectorAll('input').find((i) => i.type === 'checkbox' && i.getAttribute('data-field') === 'hidden');
+      assert.equal(again.checked, true);
+      again.checked = false;
+      again.dispatchEvent({ type: 'change' });
+      byText(doc, 'button', 'Speichern').click();
+      await until('saved again', toastIs(doc, 'Gespeichert.'));
+      assert.ok(!text(detail).includes('Verstecktes Netz'));
+      await until('stale (the share is the older state now)', () => text(detail).includes('Zeigt einen älteren Stand'));
     } finally {
       doc.getElementById('vp-lock-now') && doc.getElementById('vp-lock-now').click();
     }

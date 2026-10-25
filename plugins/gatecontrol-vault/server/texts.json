@@ -460,7 +460,10 @@
     "share.left_hours": "noch {{n}} Std.",
     "share.left_days": "noch {{n}} Tage",
     "share.by": "freigegeben von {{name}}",
-    "share.no_wall": "Auf dem Wandtablet zeigen geht, sobald das Familie-Plugin mit Wand-Tablet installiert ist."
+    "share.no_wall": "Auf dem Wandtablet zeigen geht, sobald das Familie-Plugin mit Wand-Tablet installiert ist.",
+    "field.hidden": "Verstecktes Netz",
+    "field.hidden_hint": "der Netzname wird nicht ausgestrahlt; der QR-Code sagt es dem Handy (H:true)",
+    "field.on": "Ja"
   },
   "en": {
     "error.invalid": "Invalid input.",
@@ -923,6 +926,9 @@
     "share.left_hours": "{{n}} h left",
     "share.left_days": "{{n}} days left",
     "share.by": "shared by {{name}}",
-    "share.no_wall": "Showing it on the wall tablet works once the Family plugin with a wall tablet is installed."
+    "share.no_wall": "Showing it on the wall tablet works once the Family plugin with a wall tablet is installed.",
+    "field.hidden": "Hidden network",
+    "field.hidden_hint": "the network name is not broadcast; the QR code tells the phone (H:true)",
+    "field.on": "Yes"
   }
 }

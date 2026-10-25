@@ -8,6 +8,8 @@
    neutral border (A.avatar, ui/common.js); it follows the 60 s poll.
    1.13.0: „Schule heute“ (from 15:00 „Schule morgen“) with one line per child from the
    Schule plugin — times, cancellations, holidays, an exam badge (only when it is there).
+   1.14.1: the Wi-Fi card is a column of the grid (QR code ≥ 200 px), a row of its own on a narrow frame
+   (the wall is then taller), several shares one at a time.
    1.14.0: „WLAN“ — Wi-Fi shared from the Vault plugin („Freigabe auf Wandtablet“): network name,
    the QR code (always dark on white, large), the password behind a tap (hidden again after 30 s),
    who shared it and the time left; a card goes by itself when its time is up.
@@ -35,6 +37,9 @@
   var offset = 0;     // server clock − browser clock (ms)
   var busy = false;
   var wifiShown = {}; // share id → until when its password is shown (ms)
+  var wifiIdx = 0;    // 1.14.1: the share on screen when there are several (one at a time, 20 s each)
+  var wifiNext = 0;   // when to move on (ms)
+  var ROTATE_MS = 20000;
 
   function banner(text) { var b = $('#fa-w-banner'); b.textContent = text || ''; b.hidden = !text; }
 
@@ -187,6 +192,11 @@
   function renderWifi() {
     var list = (data.wifi || []).filter(function (w) { return !w.expiresAt || Date.parse(w.expiresAt) > Date.now() + offset; });
     $('#fa-w-wifi').hidden = !list.length;
+    var h = $('#fa-w-wifi-h');
+    if (!h.firstChild || h.firstChild.nodeName.toLowerCase() !== 'svg') h.insertBefore(A.svg(ICON_WIFI, 20), h.firstChild);
+    // 1.14.1: the card takes a column of the grid (a row of its own on a narrow frame, the wall grows then)
+    $('#fa-w-grid').classList.toggle('has-wifi', list.length > 0);
+    $('#fa-wall').classList.toggle('has-wifi', list.length > 0);
     var box = A.clear($('#fa-w-wifi-list'));
     var ids = {};
     list.forEach(function (w) {
@@ -194,10 +204,12 @@
       var open = w.security === 'nopass';
       var pw = el('span', { class: 'fa-w-wifi-pw' });
       var btn = open ? null : el('button', { type: 'button', class: 'fa-w-wifi-show' });
+      var card = null;
       function paint() {
         var shown = (wifiShown[w.id] || 0) > Date.now();
         pw.textContent = open ? T('wall.wifi_open') : (shown ? w.password : '••••••••');
         pw.classList.toggle('is-shown', shown);
+        if (card) card.classList.toggle('is-revealed', shown);
         if (btn) {
           btn.textContent = T(shown ? 'wall.wifi_hide' : 'wall.wifi_show');
           btn.setAttribute('aria-pressed', shown ? 'true' : 'false');
@@ -210,10 +222,9 @@
         });
       }
       paint();
-      var card = el('div', { class: 'fa-w-wifi-card', 'data-until': w.expiresAt ? String(Date.parse(w.expiresAt)) : '' }, [
+      card = el('div', { class: 'fa-w-wifi-card', 'data-until': w.expiresAt ? String(Date.parse(w.expiresAt)) : '' }, [
         w.qr ? qrSvg(w.qr, T('wall.wifi_qr', { name: w.ssid })) : null,
         el('div', { class: 'fa-w-wifi-info' }, [
-          el('div', { class: 'fa-w-wifi-label' }, [A.svg(ICON_WIFI, 20), ' ', T('wall.wifi')]),
           el('div', { class: 'fa-w-wifi-ssid', text: w.ssid }),
           el('div', { class: 'fa-w-wifi-row' }, [el('span', { class: 'fa-w-muted', text: T('wall.wifi_password') }), pw, btn]),
           el('div', { class: 'fa-w-muted fa-w-wifi-hint', text: T('wall.wifi_scan') }),
@@ -224,11 +235,27 @@
         ]),
       ]);
       card._paint = paint;
+      card._id = w.id;
       box.appendChild(card);
     });
     Object.keys(wifiShown).forEach(function (id) { if (!ids[id]) delete wifiShown[id]; });
+    if (!wifiNext) wifiNext = Date.now() + ROTATE_MS;
     tickWifi();
   }
+
+  /** Several shares: one card at a time, „1 / 2“ and „Nächstes WLAN“; on by itself every 20 s (not while a password shows). */
+  function showWifi(step) {
+    var box = $('#fa-w-wifi-list');
+    var cards = Array.prototype.slice.call(box.children);
+    var n = cards.length;
+    if (n) wifiIdx = ((wifiIdx + (step || 0)) % n + n) % n;
+    cards.forEach(function (c, i) { c.hidden = i !== wifiIdx; });
+    var nav = $('#fa-w-wifi-nav');
+    nav.hidden = n < 2;
+    if (n >= 2) $('#fa-w-wifi-count').textContent = (wifiIdx + 1) + ' / ' + n;
+    $('#fa-w-wifi-next').setAttribute('aria-label', T('wall.wifi_next') + ' (' + T('wall.wifi_count', { n: wifiIdx + 1, of: n }) + ')');
+  }
+  $('#fa-w-wifi-next').addEventListener('click', function () { wifiNext = Date.now() + ROTATE_MS; showWifi(1); });
 
   /** Every second: the time left, a password hidden again after 30 s, a card whose time is up goes. */
   function tickWifi() {
@@ -242,7 +269,14 @@
       if (left) left.textContent = until ? leftText(until - now) : T('wall.wifi_forever');
       if (c._paint) c._paint();
     });
-    if (!box.children.length) $('#fa-w-wifi').hidden = true;
+    if (!box.children.length) {
+      $('#fa-w-wifi').hidden = true;
+      $('#fa-w-grid').classList.remove('has-wifi');
+      $('#fa-wall').classList.remove('has-wifi');
+      return;
+    }
+    var showing = Object.keys(wifiShown).some(function (id) { return wifiShown[id] > Date.now(); });
+    if (box.children.length > 1 && !showing && Date.now() >= wifiNext) { wifiNext = Date.now() + ROTATE_MS; showWifi(1); } else showWifi(0);
   }
 
   function done(task, chip, btn) {
