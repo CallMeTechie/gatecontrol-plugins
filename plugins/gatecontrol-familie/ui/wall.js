@@ -40,6 +40,10 @@
   var wifiIdx = 0;    // 1.14.1: the share on screen when there are several (one at a time, 20 s each)
   var wifiNext = 0;   // when to move on (ms)
   var ROTATE_MS = 20000;
+  // 1.14.2: the wall is as high as the screen allows (GateControl ≥ 1.199.0: GC.viewport / --gc-viewport-height)
+  var SHORT_PX = 560;
+  var TALL_PX = 900;
+  var short = false;
 
   function banner(text) { var b = $('#fa-w-banner'); b.textContent = text || ''; b.hidden = !text; }
 
@@ -68,7 +72,7 @@
     var box = A.clear($('#fa-w-people'));
     data.members.slice(0, 6).forEach(function (m) {
       var label = A.avatarLabel(m);
-      var a = A.avatar(m, 58, { cls: 'fa-w-avatar' });
+      var a = A.avatar(m, short ? 40 : 58, { cls: 'fa-w-avatar' });
       a.removeAttribute('role'); a.removeAttribute('aria-label'); a.setAttribute('aria-hidden', 'true');
       box.appendChild(el('div', { class: 'fa-w-person', title: label, role: 'img', 'aria-label': label }, [a, el('span', { text: m.name, 'aria-hidden': 'true' })]));
     });
@@ -379,6 +383,23 @@
     var dy = Math.round(Math.random() * 6) - 3;
     $('#fa-w-shift').style.transform = 'translate(' + dx + 'px,' + dy + 'px)';
   }
+
+  /** The height GateControl gives the frame → compact below 560 px, a bigger clock from 900 px; the QR size upright. */
+  function fit() {
+    var vp = window.GC && window.GC.viewport;
+    var h = vp && vp.height ? vp.height : 640;
+    var wall = $('#fa-wall');
+    var wasShort = short;
+    short = h < SHORT_PX;
+    wall.classList.toggle('is-short', short);
+    wall.classList.toggle('is-tall', h >= TALL_PX);
+    // upright: the QR code beside the text, as big as a third of the height allows (160 … 240 px)
+    // (≤ 640 px wide at most 170 px — the text beside it and two rows of cards below need the room)
+    wall.style.setProperty('--fa-qr', Math.max(160, Math.min(window.innerWidth <= 640 ? 170 : 240, Math.round(h * 0.26))) + 'px');
+    if (data && wasShort !== short) renderPeople();
+  }
+  window.addEventListener('gc:viewport', fit);
+  fit();
 
   load();
   setInterval(function () { if (!busy) load(); }, REFRESH_MS);

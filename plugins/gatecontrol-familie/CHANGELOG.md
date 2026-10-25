@@ -3,6 +3,19 @@
 Die Familie in der GateControl-App (eigener Tab), im Portal (eigener Tab „Familie“) und auf
 drei Admin-Seiten. Alles bleibt auf dem eigenen Server.
 
+## 1.14.2
+- **Die Wand nutzt die Höhe des Bildschirms** (ab GateControl 1.199.0): Statt fest 640 px ist das Wand-Tablet so
+  hoch, wie das Fenster ohne Scrollen hergibt – auf 1920×1200 oder 2560×1440 also deutlich größer, mit größerer Uhr.
+  GateControl teilt der Seite dafür die verfügbare Höhe mit (`GC.viewport`); im Kiosk-Modus entfällt die Fußzeile.
+  Mit einem älteren GateControl bleibt es bei 640 px (Mindestversion daher unverändert 1.173.0).
+- **Kleine Tablets** (z. B. 1024×600 quer oder 600×960 hochkant): kompakter – kleinere Uhrzeile, weniger Abstand,
+  kleinere Bilder der Familie. Die WLAN-Karte steht hochkant als Zeile mit dem QR-Code (mindestens 160 px) und dem Text
+  daneben, quer als schmale Spalte. Die Seite scrollt nicht mehr; wo der Inhalt einer Karte nicht passt, lässt sich nur
+  diese Karte scrollen.
+- Unter 640 px Breite zwei Spalten („Heute“, „Aufgaben“) und „Einkauf“ quer darunter statt drei schmaler Spalten.
+- Browser-Prüfung (`test/browser/wall-layout.js`) jetzt mit GateControls echtem Rahmen und Bridge in 1280×800,
+  800×1280, 1920×1200, 2560×1440, 600×960, 1024×600 und 600×1024, hell und dunkel, mit 0, 1 und 2 WLAN-Freigaben.
+
 ## 1.14.1
 - **WLAN-Karte auf Tablet-Größe geprüft und verbessert** (Browser-Prüfung in 1280×800, 800×1280 und 1920×1200, hell
   und dunkel – `test/browser/wall-layout.js`): Die Karte ist jetzt eine eigene Spalte neben „Heute“, „Aufgaben“ und

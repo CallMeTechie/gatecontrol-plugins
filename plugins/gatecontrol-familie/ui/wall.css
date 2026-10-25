@@ -1,9 +1,12 @@
 /* Wall tablet (mockup WallDashboard): a fixed 10" landscape tablet in the
    portal's "Familie" tab — big touch targets, no scrolling (fixed height),
-   own light/dark palette switched by the server's local time (21:00–06:00). */
+   own light/dark palette switched by the server's local time (21:00–06:00).
+   1.14.2: as high as the screen allows without the page scrolling (GateControl ≥ 1.199.0 gives the frame
+   --gc-viewport-height; 640 px on an older GateControl); .is-short (below 560 px) is compact, .is-tall
+   (from 900 px) has a bigger clock — ui/wall.js sets them from GC.viewport. */
 body{padding:0}
 .fa-wall{--w-bg:#EEF1EC;--w-fg:#121826;--w-muted:#5B6474;--w-card:#FFFFFF;--w-soft:#F1F3F0;--w-accent:#0B7A55;--w-done:#E3F2EC;--w-ring:#A9B2C1;--w-warm:#FDF0E1;--w-warm-fg:#5A2A06;
-  --w-font:var(--font,system-ui,sans-serif);height:640px;box-sizing:border-box;overflow:hidden;background:var(--w-bg);color:var(--w-fg);border-radius:20px;font-family:var(--w-font)}
+  --w-font:var(--font,system-ui,sans-serif);height:var(--gc-viewport-height,640px);min-height:360px;box-sizing:border-box;overflow:hidden;background:var(--w-bg);color:var(--w-fg);border-radius:20px;font-family:var(--w-font)}
 .fa-wall.is-dark{--w-bg:#0F1512;--w-fg:#EEF2EF;--w-muted:#A3B0A8;--w-card:#18201C;--w-soft:#222C27;--w-done:#14342A;--w-ring:#6B7A72;--w-warm:#3A2A18;--w-warm-fg:#F6D9B8}
 .fa-w-shift{height:100%;box-sizing:border-box;padding:22px 26px;display:flex;flex-direction:column;gap:16px;transition:transform 2s ease}
 .fa-w-head{display:flex;align-items:flex-end;gap:24px}
@@ -24,7 +27,7 @@ body{padding:0}
 .fa-w-h{margin:0;flex:none;font-size:22px;font-weight:800}
 .fa-w-card-head .fa-w-h{flex:1}
 .fa-w-muted{color:var(--w-muted);font-size:15px}
-.fa-w-list{display:flex;flex-direction:column;gap:10px;min-height:0;overflow:hidden;flex:1}
+.fa-w-list{display:flex;flex-direction:column;gap:10px;min-height:0;overflow:hidden auto;overscroll-behavior:contain;flex:1}
 .fa-w-row{display:flex;gap:14px;font-size:18px;align-items:baseline;min-width:0}
 .fa-w-row-when{width:72px;flex:none;color:var(--w-muted);font-size:16px}
 .fa-w-row-main{flex:1;min-width:0;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -46,7 +49,7 @@ body{padding:0}
 .fa-w-chip[aria-pressed="true"] .fa-w-dot:not(.has-img){background:transparent}
 .fa-w-chip:disabled{cursor:default}
 .fa-w-chip:disabled:not([aria-pressed="true"]){opacity:.7}
-.fa-w-chips{display:flex;flex-wrap:wrap;gap:10px;align-content:flex-start;min-height:0;overflow:hidden;flex:1}
+.fa-w-chips{display:flex;flex-wrap:wrap;gap:10px;align-content:flex-start;min-height:0;overflow:hidden auto;overscroll-behavior:contain;flex:1}
 .fa-w-item{min-height:52px;padding:8px 18px;border-radius:999px;border:0;background:var(--w-soft);color:var(--w-fg);font:600 18px var(--w-font);cursor:pointer}
 .fa-w-item:disabled{cursor:default}
 .fa-w-add{display:flex;gap:10px}
@@ -66,17 +69,18 @@ body{padding:0}
 .fa-w-school-kid.is-warn{background:var(--w-warm)}
 .fa-w-school-kid.is-warn .fa-w-school-sub{color:var(--w-warm-fg)}
 .fa-w-school-exam{flex:none;padding:2px 10px;border-radius:999px;background:var(--w-accent);color:#fff;font-size:14px;font-weight:800}
-/* Wi-Fi shared from Vault (1.14.0; 1.14.1: a column of the grid, QR code ≥ 200 px, one share at a time).
-   The QR code always dark on white (also at night) so phones read it. */
+/* Wi-Fi shared from Vault (1.14.0; 1.14.1: a column of the grid; 1.14.2: the QR code takes the room the card has,
+   at least 160 px — what still does not fit scrolls inside the card, never the page). The QR code always dark on
+   white (also at night) so phones read it. */
 .fa-w-wifi{min-width:0;min-height:0;display:flex;flex-direction:column;gap:8px;background:var(--w-card);border-radius:22px;padding:14px;overflow:hidden}
 .fa-w-wifi[hidden]{display:none}
 .fa-w-grid.has-wifi{grid-template-columns:minmax(250px,1.1fr) repeat(3,minmax(0,1fr))}
-.fa-w-wifi-list{flex:1;min-height:0;display:flex;min-width:0}
-.fa-w-wifi-card{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;gap:6px;text-align:center}
+.fa-w-wifi-list{flex:1;min-height:0;display:flex;min-width:0;overflow-y:auto;overscroll-behavior:contain}
+.fa-w-wifi-card{flex:1;min-width:0;min-height:0;display:flex;flex-direction:column;align-items:center;gap:6px;text-align:center}
 .fa-w-wifi-card[hidden]{display:none}
-.fa-w-wifi-qr{width:204px;height:204px;max-width:100%;flex:none;border-radius:12px;background:#fff}
-.fa-w-wifi-info{flex:1;min-width:0;width:100%;display:flex;flex-direction:column;align-items:center;gap:4px}
-.fa-w-wifi-head{display:flex;align-items:center;gap:8px;min-height:32px}
+.fa-w-wifi-qr{flex:1 1 auto;width:100%;min-height:160px;max-height:360px;border-radius:12px}
+.fa-w-wifi-info{flex:none;min-width:0;width:100%;display:flex;flex-direction:column;align-items:center;gap:4px}
+.fa-w-wifi-head{display:flex;align-items:center;gap:8px;min-height:32px;flex:none}
 .fa-w-wifi-label{flex:1;margin:0;display:flex;align-items:center;gap:6px;font-size:16px;font-weight:800;color:var(--w-accent)}
 .fa-w-wifi-next{width:40px;height:40px;border-radius:50%;border:2px solid var(--w-ring);background:var(--w-soft);color:var(--w-fg);font:800 22px var(--w-font);line-height:1;cursor:pointer}
 .fa-w-wifi-ssid{max-width:100%;font-size:19px;font-weight:800;line-height:1.15;overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
@@ -87,22 +91,22 @@ body{padding:0}
 .fa-w-wifi-show[aria-pressed="true"]{border-color:var(--w-accent)}
 .fa-w-wifi-hint{display:none}
 .fa-w-wifi-meta{display:flex;gap:4px 12px;flex-wrap:wrap;justify-content:center;font-size:13px}
+.fa-w-wifi-left{font-variant-numeric:tabular-nums}
+.fa-w-wifi-nav{display:flex;align-items:center;gap:8px}
+.fa-w-wifi-nav[hidden]{display:none}
 /* the password shown in the narrow column: it takes the QR code's place for those 30 s (no room for both) */
 .fa-w-wifi-card.is-revealed .fa-w-wifi-qr{display:none}
 .fa-w-wifi-card.is-revealed .fa-w-wifi-info{flex:1;justify-content:center}
 .fa-w-wifi-card.is-revealed .fa-w-wifi-row{flex-direction:column;gap:14px;padding:8px 0}
 .fa-w-wifi-card.is-revealed .fa-w-wifi-pw{font-size:24px;line-height:1.3;padding:14px;border-radius:14px;background:var(--w-soft);max-width:100%;box-sizing:border-box}
-.fa-w-wifi-left{font-variant-numeric:tabular-nums}
-.fa-w-wifi-nav{display:flex;align-items:center;gap:8px}
-.fa-w-wifi-nav[hidden]{display:none}
-/* a narrow frame (a tablet upright): the card is a row of its own above the three cards, the wall grows */
+/* a narrow frame (a tablet upright): the card is a row of its own above the three cards */
 @media (max-width:999px){
-  .fa-wall.has-wifi{height:960px}
   .fa-w-grid.has-wifi{grid-template-columns:repeat(3,minmax(0,1fr));grid-template-rows:auto minmax(0,1fr)}
   .fa-w-grid.has-wifi .fa-w-wifi{grid-column:1/-1}
+  .fa-w-wifi-list{flex:none}
   .fa-w-wifi-card{flex-direction:row;align-items:center;gap:20px;text-align:left}
-  .fa-w-wifi-qr{width:220px;height:220px}
-  .fa-w-wifi-info{align-items:flex-start;gap:8px}
+  .fa-w-wifi-qr{flex:none;width:var(--fa-qr,220px);height:var(--fa-qr,220px);min-height:0;max-height:none}
+  .fa-w-wifi-info{flex:1;align-items:flex-start;gap:8px}
   .fa-w-wifi-ssid{font-size:28px}
   .fa-w-wifi-row{justify-content:flex-start}
   .fa-w-wifi-row>.fa-w-muted,.fa-w-wifi-hint{display:block}
@@ -112,3 +116,64 @@ body{padding:0}
   .fa-w-wifi-card.is-revealed .fa-w-wifi-row{flex-direction:row;gap:12px;padding:0}
   .fa-w-wifi-card.is-revealed .fa-w-wifi-pw{font-size:19px;padding:0;background:none}
 }
+/* a small tablet lying (narrow and short, e.g. 1024×600): no room for a row above the cards — the column again */
+@media (min-width:700px) and (max-width:999px){
+  .fa-wall.is-short .fa-w-grid.has-wifi{grid-template-columns:minmax(200px,1fr) repeat(3,minmax(0,1fr));grid-template-rows:none}
+  .fa-wall.is-short .fa-w-grid.has-wifi .fa-w-wifi{grid-column:auto}
+  .fa-wall.is-short .fa-w-wifi-list{flex:1}
+  .fa-wall.is-short .fa-w-wifi-card{flex-direction:column;align-items:center;gap:4px;text-align:center}
+  .fa-wall.is-short .fa-w-wifi-qr{flex:1 1 auto;width:100%;height:auto;min-height:160px;max-height:360px}
+  .fa-wall.is-short .fa-w-wifi-info{flex:none;align-items:center;gap:4px}
+  .fa-wall.is-short .fa-w-wifi-row{justify-content:center;gap:8px}
+  .fa-wall.is-short .fa-w-wifi-row>.fa-w-muted,.fa-wall.is-short .fa-w-wifi-hint{display:none}
+  .fa-wall.is-short .fa-w-wifi-card.is-revealed .fa-w-wifi-qr{display:none}
+  .fa-wall.is-short .fa-w-wifi-card.is-revealed .fa-w-wifi-info{flex:1;justify-content:center}
+  .fa-wall.is-short .fa-w-wifi-card.is-revealed .fa-w-wifi-row{flex-direction:column;gap:10px}
+  .fa-wall.is-short .fa-w-wifi{padding:8px 10px}
+  .fa-wall.is-short .fa-w-wifi-card{gap:2px}
+  .fa-wall.is-short .fa-w-wifi-ssid{font-size:16px}
+  .fa-wall.is-short .fa-w-wifi-next{width:32px;height:32px;font-size:18px}
+  .fa-wall.is-short .fa-w-wifi-show{min-height:32px;padding:0 12px;font-size:14px}
+  .fa-wall.is-short .fa-w-wifi-pw{font-size:16px}
+}
+/* a small tablet upright (≤ 640 px wide): two columns, the shopping list across both below */
+@media (max-width:640px){
+  .fa-w-grid{grid-template-columns:repeat(2,minmax(0,1fr));grid-template-rows:minmax(0,1.2fr) minmax(0,1fr)}
+  .fa-w-grid.has-wifi{grid-template-columns:repeat(2,minmax(0,1fr));grid-template-rows:auto minmax(0,1.2fr) minmax(0,1fr)}
+  .fa-w-grid #fa-w-shop{grid-column:1/-1;display:grid;grid-template-columns:minmax(0,1fr) auto;grid-template-rows:auto minmax(0,1fr);column-gap:12px}
+  #fa-w-shop .fa-w-card-head{grid-column:1/-1}
+  #fa-w-shop .fa-w-add{align-self:end}
+  #fa-w-shop .fa-w-input{width:150px;height:52px}
+  #fa-w-shop .fa-w-add-btn{width:52px;height:52px}
+  .fa-w-shift{padding:16px;gap:12px}
+  .fa-w-head{gap:12px}
+  .fa-w-time{font-size:48px}
+  .fa-w-date{font-size:16px;margin-top:4px}
+  .fa-w-people{gap:8px;padding:4px}
+  .fa-w-person{gap:6px;font-size:13px}
+  .fa-w-grid{gap:12px}
+  .fa-w-card{padding:14px 16px;gap:8px}
+  .fa-w-wifi-card{gap:14px}
+  .fa-w-wifi-ssid{font-size:22px}
+  .fa-w-wifi-hint{display:none}
+}
+/* little height (a small tablet, the portal's header above): compact, so it fits without scrolling */
+.fa-wall.is-short .fa-w-shift{padding:12px 16px;gap:10px}
+.fa-wall.is-short .fa-w-time{font-size:40px;letter-spacing:-1px}
+.fa-wall.is-short .fa-w-date{font-size:15px;margin-top:2px}
+.fa-wall.is-short .fa-w-people{gap:10px;padding:4px}
+.fa-wall.is-short .fa-w-person{gap:4px;font-size:12px}
+.fa-wall.is-short .fa-w-school{padding:6px 12px;border-radius:14px}
+.fa-wall.is-short .fa-w-school-h{font-size:16px}
+.fa-wall.is-short .fa-w-grid{gap:10px}
+.fa-wall.is-short .fa-w-card{padding:12px 14px;gap:8px;border-radius:16px}
+.fa-wall.is-short .fa-w-h{font-size:18px}
+.fa-wall.is-short .fa-w-wifi{padding:10px;gap:4px;border-radius:16px}
+.fa-wall.is-short .fa-w-wifi-head{min-height:26px}
+.fa-wall.is-short .fa-w-wifi-ssid{font-size:17px;-webkit-line-clamp:1}
+.fa-wall.is-short .fa-w-wifi-show{min-height:38px;padding:2px 12px}
+.fa-wall.is-short .fa-w-wifi-meta{display:none}
+.fa-wall.is-short .fa-w-add .fa-w-input,.fa-wall.is-short .fa-w-add-btn{height:48px}
+.fa-wall.is-short .fa-w-add-btn{width:48px}
+.fa-wall.is-tall .fa-w-time{font-size:76px}
+.fa-wall.is-tall .fa-w-date{font-size:22px}
