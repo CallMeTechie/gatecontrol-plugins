@@ -3,6 +3,32 @@
 Chats zwischen den GateControl-Konten – in der GateControl-App (eigener Tab „Chats“), im
 Windows-Client und im Portal (eigener Tab „Chats“). Alles bleibt auf dem eigenen Server.
 
+## 1.9.0
+Braucht weiterhin **GateControl ≥ 1.193.0**; die Gruppenchats für GateControl-Gruppen gibt es ab **GateControl 1.200.0**
+(Gruppenverwaltung, `permissions.groups: "read"` – wird erkannt, nicht vorausgesetzt). Neu beim Aktualisieren: das Recht
+„Gruppen lesen“.
+- **Gruppenchats für GateControl-Gruppen** (Admin-Seite „Übersicht“): Der Administrator wählt Gruppen aus GateControls
+  Gruppenverwaltung (GateControls Auswahldialog `GC.pickPrincipals`; ohne ihn eine Auswahlliste aus `gc.groups.list`).
+  Für jede gewählte Gruppe hält der Messenger einen Gruppenchat aktuell: alle Mitglieder der Gruppe einschließlich ihrer
+  Untergruppen (archivierte Untergruppen und gesperrte Konten nicht), der Pfad der Gruppe als Titel („Verwaltung ›
+  Buchhaltung“; über 80 Zeichen ihr Name), Leitung, Vertretung und Gruppen-Admins als Chat-Admins. Wie bei der
+  Familien-Gruppe können Mitglieder Mitglieder, Titel und Bild nicht ändern und den Chat nicht verlassen.
+- Abgeglichen wird gleich nach der Auswahl, bei jeder Änderung in GateControl (Hook `groupsChanged`: Mitglieder, Rollen,
+  Untergruppen, Umbenennen, Verschieben), nach einem Start und alle 6 Stunden – geschrieben wird nur, was sich geändert
+  hat.
+- **Abgewählt, archiviert oder gelöscht:** Der Chat bleibt als normaler Gruppenchat ohne Abgleich, Admins sind die
+  bisherigen Leitungen (wie `release_group`); eine archivierte oder gelöschte Gruppe fällt aus der Auswahl. Beim Löschen
+  gibt der Messenger den Chat schon vorher frei (Hook `groupDeleting`), der Löschdialog in GateControl nennt ihn
+  („Gruppenchat <Titel> bleibt als normaler Chat ohne Abgleich“, Hook `groupUsage`).
+- **Keine doppelte Familie:** Die Familien-Gruppe (Art Familie, vom Familie-Plugin gepflegt) wird hier nie abgeglichen –
+  ihren Chat hält Familie selbst über `sync_group`. Wer sie trotzdem wählt, bekommt einen Hinweis; sie wird nicht
+  übernommen.
+- Gespräche tragen `coreGroupId` (die Gruppe in GateControl, sonst `null`); das Portal schreibt „Gruppe · aus einer
+  GateControl-Gruppe abgeglichen“. Admin-API `GET`/`PUT admin/group-chats`; Fehler beim Abgleich stehen im Protokoll
+  (`group_chat_failed`), Freigaben im Plugin-Log von GateControl.
+- Intern: `sync_group` / `release_group` nutzen dieselben Funktionen wie die Gruppenchats (Antworten unverändert);
+  eine freigegebene Gruppe mit benannten Admins setzt alle übrigen Mitglieder auf „Mitglied“.
+
 ## 1.8.0
 Braucht **GateControl ≥ 1.193.0** (`media.handOverMaxBytes`). Neu beim Aktualisieren: der Dienst „Datei als Nachricht
 senden“ für andere Plugins.

@@ -106,6 +106,8 @@ async function view(ctx, conv, me, members) {
     // 1.6.0: Familie's group is pinned in the list (under "GateControl"); a notice channel of the chat sink names its source
     listPinned: managed === FAMILIE && conv.managed_key === 'family',
     notice: noticeOf(conv),
+    // 1.9.0: the chat of a GateControl group (server/groupchats.js) → that group's id, else null
+    coreGroupId: managed === 'gatecontrol-messenger' && /^group:\d{1,15}$/.test(conv.managed_key || '') ? Number(conv.managed_key.slice(6)) : null,
     disappearingS: conv.disappearing_s,
     createdBy: conv.created_by,
     createdAt: iso(conv.created_at),

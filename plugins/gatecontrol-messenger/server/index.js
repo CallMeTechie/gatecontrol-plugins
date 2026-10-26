@@ -25,6 +25,9 @@
 //              once (or finds the existing one); portal/notify-routes PUT answers `chat` (notices.js)
 //   1.8.0      service send_file for GateDrop (GateControl ≥ 1.193.0 hand-over, media.handOverMaxBytes 2 GB): handed-over
 //              files as messages of the sending person (services.js)
+//   1.9.0      group chats for GateControl groups (GateControl ≥ 1.200.0, permissions.groups "read", feature-detected): the
+//              administrator picks groups on „Übersicht“, each gets a managed chat with the group's effective members, leads
+//              as chat admins; hooks groupsChanged / groupUsage / groupDeleting (groupchats.js)
 //
 // Needs GateControl ≥ 1.177.0 (media, realtime events, chat notifications, services); Familie integration
 // needs gc.services.available (1.178.0); home actions use gc.actions (1.166.0+, interactive runs 1.180.0).
@@ -43,6 +46,7 @@ const social = require('./social');
 const status = require('./status');
 const homeactions = require('./homeactions');
 const notices = require('./notices');
+const groupchats = require('./groupchats');
 const texts = require('./texts.json');
 const { STATUS, isKnown } = require('./util');
 
@@ -86,6 +90,7 @@ module.exports = {
     config.reset();
     people.reset();
     homeactions.reset();
+    groupchats.reset();
     require('./familie').reset();
     seal._reset();
     await seal.init(gc);
@@ -225,8 +230,35 @@ module.exports = {
     try { return await notices.mayRouteToFamily(gc, user); } catch { return false; }
   },
 
+  /**
+   * 1.9.0 (GateControl ≥ 1.200.0, permissions.groups): GateControl's groups changed → the chats of the selected groups
+   * follow (an archived or deleted group's chat becomes a normal chat) — server/groupchats.js. Never throws.
+   */
+  async groupsChanged(arg, gc) {
+    try {
+      await ensureKey(gc);
+      await groupchats.changed(gc, arg && arg.changes);
+    } catch (e) { gc.log.warn('groupsChanged failed', (e && (e.code || e.message)) || 'error'); }
+  },
+
+  /** 1.9.0: what the messenger keeps for a group („Wird genutzt von“, the delete dialog): its group chat. */
+  async groupUsage(arg, gc) {
+    try { return await groupchats.usage(gc, arg && arg.groupId); } catch { return []; }
+  },
+
+  /** 1.9.0: a group is about to be deleted → its chat becomes a normal chat now (admins: the group's leads). */
+  async groupDeleting(arg, gc) {
+    try {
+      await ensureKey(gc);
+      await groupchats.deleting(gc, arg && arg.groupId);
+    } catch (e) { gc.log.warn('groupDeleting failed', (e && (e.code || e.message)) || 'error'); }
+  },
+
   async tick(gc) {
     await ensureKey(gc);
-    return jobs.tick(gc, Date.now());
+    const out = await jobs.tick(gc, Date.now());
+    // 1.9.0: the group chats of GateControl groups — after a start and every 6 hours
+    try { await groupchats.tick(gc, Date.now()); } catch (e) { gc.log.warn('group chats tick failed', (e && (e.code || e.message)) || 'error'); }
+    return out;
   },
 };

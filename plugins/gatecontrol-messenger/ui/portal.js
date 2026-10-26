@@ -1375,7 +1375,7 @@
     M.clear(pane);
     var closeBtn = el('button', { type: 'button', class: 'ms-ib ms-ib-flat', 'aria-label': narrow() ? T('common.back') : T('common.close'), on: { click: toggleInfo } }, [M.icon(narrow() ? 'back' : 'close', 18)]);
     pane.appendChild(el('div', { class: 'ms-info-head' }, narrow() ? [closeBtn, el('span', { text: T('info.title') })] : [el('span', { text: T('info.title') }), closeBtn]));
-    var top = el('div', { class: 'ms-info-top' }, [convAvatar(c, 76), el('b', { text: convTitle(c) }), el('span', { class: 'ms-muted', text: c.notice ? T('notice.info', { label: c.notice.label || convTitle(c) }) : c.kind === 'group' ? (c.managedBy ? T('info.managed', { plugin: pluginName(c.managedBy) }) : T('info.members_n', { n: c.members.length })) : (c.peer && c.peer.gone ? T('portal.gone_hint') : T('portal.direct_sub')) })]);
+    var top = el('div', { class: 'ms-info-top' }, [convAvatar(c, 76), el('b', { text: convTitle(c) }), el('span', { class: 'ms-muted', text: c.notice ? T('notice.info', { label: c.notice.label || convTitle(c) }) : c.kind === 'group' ? (c.coreGroupId ? T('info.managed_group') : c.managedBy ? T('info.managed', { plugin: pluginName(c.managedBy) }) : T('info.members_n', { n: c.members.length })) : (c.peer && c.peer.gone ? T('portal.gone_hint') : T('portal.direct_sub')) })]);
     if (c.can.editInfo) {
       top.appendChild(el('div', { style: 'display:flex;gap:6px;flex-wrap:wrap;justify-content:center' }, [
         el('button', { type: 'button', class: 'btn btn-sm', on: { click: function () { rename(c); } } }, [M.icon('pen', 14), T('info.rename')]),
@@ -1467,7 +1467,7 @@
         }
         ms.appendChild(rowEl);
       });
-      if (c.managedBy) ms.appendChild(el('p', { class: 'ms-note', text: T('info.managed_hint', { plugin: pluginName(c.managedBy) }) }));
+      if (c.managedBy) ms.appendChild(el('p', { class: 'ms-note', text: c.coreGroupId ? T('info.managed_group_hint') : T('info.managed_hint', { plugin: pluginName(c.managedBy) }) }));
       pane.appendChild(ms);
     }
     // 1.4.0: archive, export, block

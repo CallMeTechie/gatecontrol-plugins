@@ -114,9 +114,71 @@
     }).catch(M.warn).then(function () { btn.disabled = false; });
   }
 
+  // ── 1.9.0: group chats for GateControl groups (GateControl ≥ 1.200.0; GC.pickPrincipals, else a select) ──
+  var gcState = null;
+  function gcNote(lines) { var n = $('#ms-gc-note'); n.hidden = !lines.length; n.textContent = lines.join(' '); }
+  function gcStatus(it) {
+    if (it.gone) return { text: T('admin.gc_pending'), bad: false };
+    if (it.error === 'family') return { text: T('admin.gc_family'), bad: false };
+    if (it.error === 'too_many') return { text: T('admin.gc_too_many'), bad: true };
+    if (it.error) return { text: T('admin.gc_error', { code: it.error }), bad: true };
+    if (!it.ok) return { text: T('admin.gc_pending'), bad: false };
+    return { text: [it.members != null ? T('admin.gc_members', { n: it.members }) : null, it.syncedAt ? T('admin.gc_synced', { when: M.when(it.syncedAt) }) : null].filter(Boolean).join(' · '), bad: false };
+  }
+  function renderGc(g) {
+    gcState = g;
+    $('#ms-gc-off').hidden = !!g.available;
+    var list = M.clear($('#ms-gc-list'));
+    var add = M.clear($('#ms-gc-add'));
+    if (!g.available) return;
+    if (!g.selected.length) list.appendChild(el('li', { class: 'ms-muted', text: T('admin.gc_none') }));
+    g.selected.forEach(function (it) {
+      var st = gcStatus(it);
+      var path = it.path || ('#' + it.id);
+      list.appendChild(el('li', null, [
+        el('span', { class: 'ms-gc-path' }, [el('span', { text: path }), el('small', { class: st.bad ? 'is-bad' : null, text: st.text })]),
+        el('button', { type: 'button', class: 'btn btn-sm', 'aria-label': T('admin.gc_remove', { path: path }), title: T('admin.gc_remove', { path: path }), on: { click: function () { removeGc(it, path); } } }, [M.icon('close', 14)]),
+      ]));
+    });
+    var full = g.selected.length >= g.max;
+    var chosen = g.selected.map(function (x) { return x.id; });
+    if (window.GC && typeof window.GC.pickPrincipals === 'function') {
+      add.appendChild(el('button', { type: 'button', class: 'btn', text: T('admin.gc_pick'), disabled: full, on: { click: pickGc } }));
+    } else {
+      // an older GateControl without the picker: a select fed by gc.groups.list (the family left out)
+      var opts = g.options.filter(function (o) { return !o.family && chosen.indexOf(o.id) < 0; });
+      var sel = el('select', { class: 'form-select', 'aria-label': T('admin.gc_choose') }, [el('option', { value: '', text: T('admin.gc_choose') })].concat(opts.map(function (o) { return el('option', { value: String(o.id), text: o.path }); })));
+      add.appendChild(sel);
+      add.appendChild(el('button', { type: 'button', class: 'btn', text: T('admin.gc_add'), disabled: full || !opts.length, on: { click: function () { if (sel.value) saveGc(chosen.concat([Number(sel.value)])); } } }));
+    }
+  }
+  function saveGc(ids) {
+    return M.api('PUT', 'admin/group-chats', { groupIds: ids }).then(function (r) {
+      var g = r.groupChats;
+      renderGc(g);
+      gcNote((g.skipped || []).map(function (x) { return T(x.reason === 'family' ? 'admin.gc_skipped_family' : 'admin.gc_skipped_archived', { path: x.path }); }));
+      M.toast(T('admin.gc_saved'));
+    }).catch(M.warn);
+  }
+  function pickGc() {
+    window.GC.pickPrincipals({ groups: true, users: false, multiple: true, title: T('admin.gc_pick_title') }).then(function (picked) {
+      if (!picked || !picked.length || !gcState) return;
+      var ids = gcState.selected.map(function (x) { return x.id; });
+      picked.forEach(function (p) { if (p && p.type === 'group' && ids.indexOf(p.id) < 0) ids.push(p.id); });
+      saveGc(ids.slice(0, gcState.max));
+    });
+  }
+  function removeGc(it, path) {
+    M.confirm(T('admin.gc_remove_confirm', { path: path }), T('common.ok'), true).then(function (ok) {
+      if (!ok) return;
+      saveGc(gcState.selected.filter(function (x) { return x.id !== it.id; }).map(function (x) { return x.id; }));
+    });
+  }
+
   function load() {
     M.api('GET', 'admin/overview').then(renderOverview).catch(M.warn);
     M.api('GET', 'admin/settings').then(renderSettings).catch(M.warn);
+    M.api('GET', 'admin/group-chats').then(function (r) { renderGc(r.groupChats); }).catch(M.warn);
   }
 
   $('#ms-save').addEventListener('click', save);

@@ -314,11 +314,22 @@ async function syncGroup(ctx, caller, payload) {
     if (!ctx.users.has(id)) { if (!ignored.includes(id)) ignored.push(id); continue; }
     if (!wanted.includes(id)) wanted.push(id);
   }
-  let conv = await managed(ctx.gc, caller, key);
+  return syncManaged(ctx, caller, key, title, wanted, { ignored });
+}
+
+/**
+ * The managed group `key` of `owner` with exactly `wanted` (enabled accounts, checked by the caller) and `title`
+ * → { conversationId, created, added, removed, ignored, at }. Also for the messenger's own group chats of
+ * GateControl groups (1.9.0, server/groupchats.js — owner gatecontrol-messenger, key 'group:<id>'): with
+ * o.adminIds the members' roles follow (those admins, everybody else member); without, roles stay as they are.
+ */
+async function syncManaged(ctx, owner, key, title, wanted, o = {}) {
+  const ignored = o.ignored || [];
+  let conv = await managed(ctx.gc, owner, key);
   let created = false;
   if (!conv) {
     const r = await store.run(ctx.gc, "INSERT INTO conversations (kind, title_enc, managed_by, managed_key, created_at, updated_at) VALUES ('group', ?, ?, ?, ?, ?)",
-      [seal.seal(title), caller, key, ctx.now, ctx.now]);
+      [seal.seal(title), owner, key, ctx.now, ctx.now]);
     conv = await conversations.getConv(ctx.gc, r.lastInsertRowid);
     created = true;
   } else if (conversations.titleOf(conv) !== title) {
@@ -329,19 +340,29 @@ async function syncGroup(ctx, caller, payload) {
   const current = await conversations.membersOf(ctx.gc, conv.id);
   const added = wanted.filter((id) => !current.some((m) => m.user_id === id));
   const removed = current.map((m) => m.user_id).filter((id) => !wanted.includes(id));
-  for (const id of added) await conversations.addMember(ctx.gc, conv, id, 'member', ctx.now);
+  const admins = Array.isArray(o.adminIds) ? new Set(o.adminIds) : null;
+  const roleOf = (id) => (admins && admins.has(id) ? 'admin' : 'member');
+  for (const id of added) await conversations.addMember(ctx.gc, conv, id, roleOf(id), ctx.now);
   for (const id of removed) await conversations.dropMember(ctx.gc, conv.id, id, ctx.now);
+  let roles = 0;
+  if (admins) {
+    for (const m of current) {
+      if (removed.includes(m.user_id) || m.role === roleOf(m.user_id)) continue;
+      await store.run(ctx.gc, 'UPDATE members SET role = ?, updated_at = ? WHERE conv_id = ? AND user_id = ?', [roleOf(m.user_id), ctx.now, conv.id, m.user_id]);
+      roles++;
+    }
+  }
   // the members see who made the group (they joined before this message)
   if (created) await messages.system(ctx, conv, 'created', { by: null, title });
   if (added.length && !created) await messages.system(ctx, conv, 'member_added', { by: null, userIds: added });
   if (removed.length) await messages.system(ctx, conv, 'member_removed', { by: null, userIds: removed });
   await store.run(ctx.gc, 'UPDATE conversations SET updated_at = ? WHERE id = ?', [ctx.now, conv.id]);
   const now = await conversations.membersOf(ctx.gc, conv.id);
-  if (created || added.length || removed.length || conv.last_msg_id) {
+  if (created || added.length || removed.length || roles || conv.last_msg_id) {
     live.queue(ctx.box, now.map((m) => m.user_id), 'conversation.update', { conversationId: conv.id, reason: created ? 'created' : 'members' });
   }
   live.queue(ctx.box, removed, 'conversation.remove', { conversationId: conv.id });
-  return { conversationId: conv.id, created, added, removed, ignored, at: iso(ctx.now) };
+  return { conversationId: conv.id, created, added, removed, ignored, ...(admins ? { roles } : {}), at: iso(ctx.now) };
 }
 
 /** release_group (1.1.0) → { conversationId, released, deleted, admins } */
@@ -355,11 +376,20 @@ async function releaseGroup(ctx, caller, payload) {
     adminIds = payload.adminIds.map((x) => posInt(x));
     if (adminIds.some((x) => !x)) throw fail('invalid');
   }
-  const conv = await managed(ctx.gc, caller, key);
+  return releaseManaged(ctx, caller, key, { delete: payload.delete === true, adminIds });
+}
+
+/**
+ * Hand the managed group `key` of `owner` back (see release_group) → { conversationId, released, deleted, admins }.
+ * not_found when there is none. o.adminIds: members who become admins (else the member who joined first).
+ */
+async function releaseManaged(ctx, owner, key, o = {}) {
+  const adminIds = o.adminIds || [];
+  const conv = await managed(ctx.gc, owner, key);
   if (!conv) throw fail('not_found');
   const members = await conversations.membersOf(ctx.gc, conv.id);
   const ids = members.map((m) => m.user_id);
-  if (payload.delete === true) {
+  if (o.delete === true) {
     // everything of the group goes: messages (with reactions, "hidden" marks), files and picture
     // (deleted from GateControl's store by the background run); the members are out
     await store.run(ctx.gc, 'UPDATE media SET orphan = 1, msg_id = NULL WHERE conv_id = ?', [conv.id]);
@@ -380,6 +410,8 @@ async function releaseGroup(ctx, caller, payload) {
   conv.managed_key = null;
   const admins = [...new Set(adminIds)].filter((id) => ids.includes(id));
   for (const id of admins) await store.run(ctx.gc, "UPDATE members SET role = 'admin', updated_at = ? WHERE conv_id = ? AND user_id = ?", [ctx.now, conv.id, id]);
+  // everybody else is a plain member of the normal group (a managed group may have had other admins)
+  if (admins.length) await store.run(ctx.gc, `UPDATE members SET role = 'member', updated_at = ? WHERE conv_id = ? AND left_at IS NULL AND role = 'admin' AND user_id NOT IN (${store.marks(admins.length)})`, [ctx.now, conv.id, ...admins]);
   if (!admins.length && members.length) {
     // a group always keeps an admin: the member who joined first
     await store.run(ctx.gc, "UPDATE members SET role = 'admin', updated_at = ? WHERE conv_id = ? AND user_id = ?", [ctx.now, conv.id, members[0].user_id]);
@@ -418,4 +450,4 @@ async function handle(ctx, { name, caller, user, payload }, flush) {
   }
 }
 
-module.exports = { handle, sendMessage, sendMany, syncGroup, releaseGroup, sendFile, KEY_RE, TARGETS_MAX, HANDOVER_MAX_BYTES };
+module.exports = { handle, sendMessage, sendMany, syncGroup, syncManaged, releaseGroup, releaseManaged, sendFile, managed, KEY_RE, TARGETS_MAX, HANDOVER_MAX_BYTES };

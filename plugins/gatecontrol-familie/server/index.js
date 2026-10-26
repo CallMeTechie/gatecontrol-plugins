@@ -51,6 +51,11 @@
 // 1.14.0: Wi-Fi on the wall — the Vault plugin's „Freigabe auf Wandtablet“ sends its running wall shares
 // (service wall_wifi), the wall shows a card with the network, the QR code and the password behind a tap
 // (server/wifi.js, server/wall.js, ui/wall.js).
+//
+// 1.15.0: the family as a GateControl group (GateControl ≥ 1.200.0, permissions.groups "manage"): gc.groups.ensure
+// with key 'family', kind 'family' — parents as parent, children as child, never a wall tablet — at start, after
+// every member change and when it differs (server/groups.js); hook groupsChanged. Older GateControl: nothing changes,
+// the service family_roles stays for older callers.
 
 const ui = require('./ui');
 const api = require('./api');
@@ -81,6 +86,7 @@ const quick = require('./quick');
 const school = require('./school');
 const schoolend = require('./schoolend');
 const wifi = require('./wifi');
+const groups = require('./groups');
 const texts = require('./texts.json');
 const { STATUS, isKnown } = require('./util');
 
@@ -170,6 +176,8 @@ async function background(gc, now) {
     });
   }
   await push.flush(gc, pushes);
+  // 1.15.0: the GateControl group „Familie“ (GateControl ≥ 1.200.0) — when it differs, after a start, every 6 h
+  try { await groups.tick(gc, fam, cfg, now); } catch (e) { gc.log.warn('background step failed', 'group', (e && (e.code || e.message)) || 'error'); }
   // the messenger group, last (outside any transaction: a service call may take a while)
   await messenger.tick(gc, fam, cfg, now);
 }
@@ -178,6 +186,7 @@ module.exports = {
   async start(gc) {
     push.reset();
     messenger.reset();
+    groups.reset();
     school.reset();
     state.lastPurge = 0;
     try {
@@ -186,6 +195,13 @@ module.exports = {
       if (k.allowed.length || k.removed.length) gc.log.info('kiosk users reconciled', k.allowed.length, k.removed.length);
     } catch (e) {
       gc.log.warn('kiosk reconcile failed', (e && e.code) || (e && e.message) || 'error');
+    }
+    // 1.15.0: the GateControl group „Familie“ at once (GateControl ≥ 1.200.0; never fails the start)
+    try {
+      const cfg = await config.load(gc);
+      await groups.tick(gc, await members.load(gc, tz.localDate(Date.now(), cfg.tz)), cfg, Date.now());
+    } catch (e) {
+      gc.log.warn('family group failed', (e && e.code) || (e && e.message) || 'error');
     }
     gc.log.info('familie started', gc.plugin.version);
   },
@@ -264,6 +280,14 @@ module.exports = {
 
   async runQuickAction(args, gc) {
     return quick.run(gc, await config.load(gc), args, Date.now());
+  },
+
+  /**
+   * 1.15.0 (GateControl ≥ 1.200.0, permissions.groups): our group „Familie“ archived or deleted in GateControl → ensured
+   * again by the next background run (server/groups.js). Other groups do not concern Familie.
+   */
+  async groupsChanged(arg, gc) {
+    try { await groups.changed(gc, arg && arg.changes); } catch (e) { gc.log.warn('groupsChanged failed', (e && (e.code || e.message)) || 'error'); }
   },
 
   async tick(gc) {
