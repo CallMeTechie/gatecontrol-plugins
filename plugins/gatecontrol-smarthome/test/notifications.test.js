@@ -78,6 +78,19 @@ test('battery_low: once per device and day, all of a gateway in one event', () =
   assert.deepEqual(out.events[0].items.map((o) => o.id), ['3', '4']);
 });
 
+test('battery_low: the sensors of one device are one entry (the lowest battery), other devices stay apart', () => {
+  const mac = '00:15:8d:00:02:aa:bb:cc';
+  const motion = (id, ep, battery) => obs(id, { uniqueid: `${mac}-01-${ep}`, name: 'Bewegungsmelder Wintergarten', type: 'ZHAPresence', battery });
+  const sensors = (b) => [motion(10, '0406', b), motion(11, '0400', b), motion(12, '0402', b + 1), obs(13, { battery: b })];
+  const r = run([[{ sensors: sensors(50) }, 0]]);
+  const out = alerts.evaluate(r.memo, [{ gateway: GW, reachable: true, sensors: sensors(14) }], CFG, T0 + 10 * MIN);
+  assert.equal(out.events.length, 1);
+  assert.deepEqual(out.events[0].items.map((o) => [o.name, o.battery]), [['Bewegungsmelder Wintergarten', 14], ['Sensor 13', 14]]);
+  const n = alerts.toNotification({ plugin: { id: 'gatecontrol-smarthome' } }, out.events[0], CFG, null);
+  assert.equal(n.body, 'Bewegungsmelder Wintergarten 14 %, Sensor 13 14 % · Wohnung');
+  assert.equal(n.data.facts.length, 2);
+});
+
 test('gateway_unreachable: after 5 minutes (high), "reachable again" with the same collapse key; sensors are kept while down', () => {
   const up = { sensors: [obs(1, { alarm: false, alarmKind: 'water' })] };
   const r = run([[up, 0], [{ reachable: false }, 1], [{ reachable: false }, 4], [{ reachable: false }, 6], [{ reachable: false }, 30], [up, 31], [{ reachable: false }, 32], [up, 33]]);

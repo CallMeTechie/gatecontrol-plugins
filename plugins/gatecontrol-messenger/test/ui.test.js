@@ -79,7 +79,7 @@ test('texts: every key used by the pages exists in de and en; both languages hav
 
 test('plugin.json: licence, GateControl 1.193.0, permissions, pages, app and portal tab "Chats"', () => {
   assert.equal(manifest.id, 'gatecontrol-messenger');
-  assert.equal(manifest.version, '1.9.0');
+  assert.equal(manifest.version, '1.9.1');
   assert.equal(manifest.gatecontrol, '>=1.193.0', '1.8.0: media.handOverMaxBytes for send_file (1.6.0: the chat sink, GateControl 1.191.0)');
   assert.equal(manifest.media.handOverMaxBytes, 2147483648, '1.8.0: GateDrop hands over files up to 2 GB; own uploads stay at 25 MB');
   assert.equal(manifest.permissions.notifySink, true);

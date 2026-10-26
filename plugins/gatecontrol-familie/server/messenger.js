@@ -9,7 +9,8 @@
 //                change it in the messenger, they can mute it
 //   send_message { conversation: 'family' | 'user:<id>', text, title? }   the rule action
 //                „Messenger-Nachricht senden“ (server/presence.js): a message from „GateControl“
-//                into the group, or into the person's own read-only channel „Familie“
+//                into the group, or into the person's own read-only channel „Familie-Hinweise“
+//                (before 1.15.1 „Familie“ like the group; the messenger renames old ones)
 //
 // Optional in every way: without the messenger (not installed, stopped, an older
 // GateControl without gc.services) nothing fails — the rule action is not offered,
@@ -72,6 +73,9 @@ const KEY = 'family';
 const STORE_KEY = 'messenger';
 const SETTING = 'messenger_group';
 const TITLE = { de: 'Familie', en: 'Family' };
+// 1.15.1: the person's own read-only channel has its own name — called „Familie“ like the group it
+// showed up twice in the chat list
+const CHANNEL_TITLE = { de: 'Familie-Hinweise', en: 'Family notices' };
 const HEAL_MS = 6 * 3600000;
 const RETRY_UNAVAILABLE_MS = 5 * 60000;
 const RETRY_FAILED_MS = 15 * 60000;
@@ -91,6 +95,7 @@ const hasApi = (gc) => !!(gc && gc.services && typeof gc.services.call === 'func
 const hasAvailable = (gc) => hasApi(gc) && typeof gc.services.available === 'function';
 
 const groupTitle = (cfg) => TITLE[cfg && cfg.lang === 'en' ? 'en' : 'de'];
+const channelTitle = (cfg) => CHANNEL_TITLE[cfg && cfg.lang === 'en' ? 'en' : 'de'];
 
 async function loadState(gc) {
   let v = null;
@@ -439,10 +444,10 @@ async function sendAction(gc, fam, cfg, now, action, text, triggerUser) {
     await finish(res);
     return { ...base, ok: res.ok, sent: res.ok ? 1 : 0, error: res.ok ? null : res.code };
   }
-  // single people: each into the person's own channel „Familie“ (the person who sets the rule off gets none)
+  // single people: each into the person's own channel „Familie-Hinweise“ (the person who sets the rule off gets none)
   const ids = to.filter((id) => fam.byId.has(id) && id !== triggerUser);
   if (!ids.length) return { ...base, ok: false, sent: 0, error: 'no_recipients' };
-  const title = groupTitle(cfg);
+  const title = channelTitle(cfg);
   // 1.7.0: several people in one call (messenger ≥ 1.1.0) — unless an older messenger refused the list lately
   if (ids.length > 1 && (proc.multiAt == null || now - proc.multiAt >= HEAL_MS)) {
     const res = await call(gc, 'send_message', { conversation: ids.map((id) => `user:${id}`), text: body, title });

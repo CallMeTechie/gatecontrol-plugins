@@ -46,7 +46,7 @@
 //            1.6.0: { type: 'messenger', to: 'family' | [userId] (1–20 members), text? (≤ 500, same placeholders) }
 //            — „Messenger-Nachricht senden“ through the Messenger plugin (server/messenger.js): into the
 //            group „Familie“ (only while the group is switched on: else error 'group_off') or into each
-//            person's own channel „Familie“ (not to the person who sets the rule off). Without the
+//            person's own channel „Familie-Hinweise“ (not to the person who sets the rule off). Without the
 //            messenger the action is not offered (listRules: `messenger.available`); a rule that still has
 //            one logs { ok: false, error: 'unavailable' } and the rest of the rule runs.
 // A rule fires once per transition and at most once per 10 minutes; a

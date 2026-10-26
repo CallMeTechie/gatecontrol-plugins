@@ -163,11 +163,11 @@ test('rule action „Messenger-Nachricht senden“: into the group with the plac
   // the group: a message from „GateControl“ (no sender, via Familie)
   const last = (await m.messages(MARC, g.id)).at(-1);
   assert.deepEqual([last.senderId, last.via, last.text, last.system], [null, 'gatecontrol-familie', 'Anna ist da', { event: 'notice' }]);
-  // single people: their own read-only channel „Familie“ with the default text; never the person who set it off
+  // single people: their own read-only channel „Familie-Hinweise“ (1.15.1, not „Familie“ like the group) with the default text; never the person who set it off
   for (const u of [MARC, LENA]) {
     const ch = (await m.managed(u)).filter((c) => c.readonly);
     assert.equal(ch.length, 1, u.name);
-    assert.equal(ch[0].title, 'Familie');
+    assert.equal(ch[0].title, 'Familie-Hinweise');
     assert.equal((await m.messages(u, ch[0].id)).at(-1).text, 'Anna ist zuhause');
   }
   assert.equal((await m.managed(ANNA)).filter((c) => c.readonly).length, 0, 'Anna set it off');
