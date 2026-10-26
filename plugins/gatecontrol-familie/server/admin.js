@@ -2,7 +2,8 @@
 
 // The admin pages' API (administrators only, never a portal or app caller):
 //
-//   GET    admin/status                        members, users, modules, settings
+//   GET    admin/status                        members, users, modules, settings; 1.15.0: group { available, groupId, name,
+//                                              ok, error, at, members } — the GateControl group „Familie“ (server/groups.js)
 //   POST   admin/members                       { userId, role, birthdate, locateMode, starGoal }
 //                                              (1.3.0: colour and picture come from the GateControl account —
 //                                              avatarUrl, color, colorHex, initials and presence in every member;
@@ -45,6 +46,7 @@ const kiosk = require('./kiosk');
 const presence = require('./presence');
 const ruleplaces = require('./ruleplaces');
 const messenger = require('./messenger');
+const groups = require('./groups');
 const rules = require('./rules');
 const { fail, posInt, iso } = require('./util');
 
@@ -75,6 +77,8 @@ async function status(gc, cfg, now) {
     },
     wall: { listId: cfg.wallList || null, lists: (await shopping.summary(gc)).map((l) => ({ id: l.id, name: l.name })) },
     messenger: await messenger.info(gc, cfg),
+    // 1.15.0: the family as a GateControl group (GateControl ≥ 1.200.0) — server/groups.js
+    group: await groups.info(gc),
     today,
   };
 }
@@ -204,11 +208,16 @@ async function rulesRoute(req, gc, seg, cfg, now, m, body) {
   throw fail('not_found');
 }
 
-/** After a member change: the messenger group follows at once (when on; never fails the change). */
+/**
+ * After a member change: the GateControl group „Familie“ (1.15.0, GateControl ≥ 1.200.0) and the messenger group
+ * (when on) follow at once — never failing the change.
+ */
 async function memberChanged(gc, cfg, now) {
+  const fam = await members.load(gc, tz.localDate(now, cfg.tz));
+  await groups.sync(gc, fam, cfg, now);
   if (!cfg.messengerGroup) return;
   try {
-    await messenger.sync(gc, await members.load(gc, tz.localDate(now, cfg.tz)), cfg, now);
+    await messenger.sync(gc, fam, cfg, now);
   } catch (e) { gc.log.warn('messenger sync after member change failed', (e && (e.code || e.message)) || 'error'); }
 }
 

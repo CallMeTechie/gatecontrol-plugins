@@ -642,6 +642,21 @@
           }
         },
         {
+          "icon": "users",
+          "title": {
+            "de": "Gruppe „Familie“ in GateControl pflegen",
+            "en": "Keep the group “Family” in GateControl"
+          },
+          "text": {
+            "de": "Eltern und Kinder als GateControl-Gruppe (Benutzer › Gruppen), die andere Plugins und Freigaben nutzen – nur diese eine Gruppe, ab GateControl 1.200.0.",
+            "en": "Parents and children as a GateControl group (Users › Groups) that other plugins and access rules use – only this one group, from GateControl 1.200.0."
+          },
+          "tag": {
+            "de": "Benutzer",
+            "en": "Users"
+          }
+        },
+        {
           "icon": "key",
           "title": {
             "de": "Kiosk-Geräte freigeben",

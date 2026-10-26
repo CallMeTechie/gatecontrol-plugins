@@ -55,14 +55,15 @@ const kioskViewer = (u, loggedIn = true) => ({ ...u, portal: true, loggedIn, kio
 /**
  * A host with the users above (o.users replaces them; o.kiosk pre-fills the host's kiosk users;
  * o.actions: other plugins' quick actions for gc.actions; o.services: other plugins' services for gc.services;
- * o.gatecontrol: '1.178.0' for gc.services.available — see tools/testing/mock-host.js);
+ * o.gatecontrol: '1.178.0' for gc.services.available, '1.200.0' for gc.groups; o.groups: GateControl's person groups —
+ * see tools/testing/mock-host.js);
  * family: true adds the family through the admin API.
  * fn(host, ctx) with ctx = { clock, call(user, method, path, body, query), admin(method, path, body, query) }
  */
 async function withFamily(opts, fn) {
   const o = opts || {};
   const clock = startClock(o.at || T0);
-  const host = await createHost(DIR, { users: o.users || USERS, settings: { timezone: BERLIN, ...(o.settings || {}) }, notifyFail: o.notifyFail, kiosk: o.kiosk, actions: o.actions, services: o.services, gatecontrol: o.gatecontrol });
+  const host = await createHost(DIR, { users: o.users || USERS, settings: { timezone: BERLIN, ...(o.settings || {}) }, notifyFail: o.notifyFail, kiosk: o.kiosk, actions: o.actions, services: o.services, gatecontrol: o.gatecontrol, groups: o.groups });
   await host.start();
   const call = (user, method, p, body, query) => host.request({ method, path: p, body: body === undefined ? null : body, query: query || {}, user, lang: o.lang || 'de' });
   const admin = (method, p, body, query) => call(ADMIN, method, '/admin/' + p.replace(/^\//, ''), body, query);

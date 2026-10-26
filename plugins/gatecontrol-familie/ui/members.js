@@ -67,6 +67,13 @@
     var probs = (data.settings.problems || []).map(function (p) { return T('problem.' + p); });
     $('#fa-problems').hidden = !probs.length;
     $('#fa-problems').textContent = probs.join(' ');
+    // 1.15.0: the family as a GateControl group (GateControl ≥ 1.200.0)
+    var g = data.group;
+    var gh = $('#fa-group-hint');
+    if (gh) {
+      gh.hidden = !(g && g.available && (g.ok || g.error));
+      if (!gh.hidden) gh.textContent = g.ok ? T('members.group_hint', { name: g.name || '' }) : T('members.group_error', { code: g.error });
+    }
     var rows = A.clear($('#fa-member-rows'));
     data.members.forEach(function (m) { rows.appendChild(memberRow(m)); });
     $('#fa-members-empty').hidden = data.members.length > 0;

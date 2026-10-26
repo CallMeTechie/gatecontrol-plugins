@@ -3,6 +3,25 @@
 Die Familie in der GateControl-App (eigener Tab), im Portal (eigener Tab „Familie“) und auf
 drei Admin-Seiten. Alles bleibt auf dem eigenen Server.
 
+## 1.15.0
+- **Die Familie als GateControl-Gruppe** (ab GateControl 1.200.0, `permissions.groups: "manage"`): Familie hält die
+  Gruppe „Familie“ (Art Familie) in GateControls Gruppenverwaltung aktuell – Eltern mit der Rolle Eltern, Kinder mit der
+  Rolle Kind, Wand-Tablets nie (`gc.groups.ensure({ key: 'family', kind: 'family', members })`). Die Gruppe gehört dem
+  Plugin: unter Benutzer › Gruppen und in „Meine Gruppen“ im Portal ist sie nur lesbar, andere Plugins lesen sie über
+  `gc.groups` (z. B. Freigaben oder Mitteilungen an die Familie). Gepflegt wird die Familie weiter nur in Familie.
+- Abgeglichen wird gleich nach jeder Änderung auf der Seite „Mitglieder“ (Hinzufügen, Rolle ändern, Entfernen), beim
+  Start, sobald Name oder Mitglieder abweichen (die Hintergrundrunde vergleicht jede Minute – so folgt die Gruppe auch
+  gesperrten, wieder freigegebenen oder gelöschten Konten), nach einem Fehler alle 15 Minuten und alle 6 Stunden zur
+  Sicherheit. Eine leere Familie legt keine Gruppe an. Der Name folgt der Sprache der Mitteilungen („Familie“ /
+  „Family“); gibt es auf oberster Ebene schon eine eigene Gruppe „Familie“, heißt die des Plugins „Familie (Plugin)“.
+- Wird die Gruppe in GateControl archiviert oder gelöscht (Hook `groupsChanged`), stellt Familie sie bei der nächsten
+  Hintergrundrunde wieder her bzw. legt sie neu an.
+- Seite „Mitglieder“: ein Hinweis, unter welchem Namen die Familie in GateControl geführt wird (oder warum der Abgleich
+  gerade nicht klappt); `GET admin/status` liefert dazu `group { available, groupId, name, ok, error, at, members }`.
+- **Übergang:** Der Dienst `family_roles` bleibt unverändert für ältere Aufrufer (Messenger, GateDrop) und ältere
+  GateControl-Versionen. Mit einem GateControl vor 1.200.0 ändert sich nichts (die Gruppen-API wird erkannt, nicht
+  vorausgesetzt) – die Mindestversion bleibt 1.173.0.
+
 ## 1.14.2
 - **Die Wand nutzt die Höhe des Bildschirms** (ab GateControl 1.199.0): Statt fest 640 px ist das Wand-Tablet so
   hoch, wie das Fenster ohne Scrollen hergibt – auf 1920×1200 oder 2560×1440 also deutlich größer, mit größerer Uhr.

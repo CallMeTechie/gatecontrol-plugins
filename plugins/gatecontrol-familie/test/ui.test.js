@@ -141,13 +141,16 @@ test('Leaflet: one constant (server/ui.js), nowhere else', () => {
 
 test('plugin.json: permissions (kiosk, actions), app tab, maps, the eleven topics with SOS allowed critical', () => {
   assert.equal(manifest.id, 'gatecontrol-familie');
-  assert.equal(manifest.version, '1.14.2');
+  assert.equal(manifest.version, '1.15.0');
   // 1.6.0 stays on 1.173.0: the messenger services (GateControl ≥ 1.177.0) are optional — an older host ignores
   // permissions.services and has no gc.services, so the group and the rule action stay hidden there.
   // 1.14.2 too: GC.viewport (GateControl ≥ 1.199.0) is optional — without it the wall keeps its 640 px
+  // 1.15.0 too: the GateControl group „Familie“ (gc.groups, GateControl ≥ 1.200.0) is feature-detected — an older host
+  // ignores permissions.groups and has no gc.groups
   assert.equal(manifest.gatecontrol, '>=1.173.0', 'target states of switches (gc.actions.run state, verbs/targets/device in gc.actions.list) need GateControl 1.173.0');
   const p = manifest.permissions;
   assert.deepEqual([p.storage, p.portal, p.users, p.app, p.notify, p.background, p.kiosk, p.actions], [true, true, true, true, { perHour: 120 }, { intervalSeconds: 60 }, true, true]);
+  assert.equal(p.groups, 'manage', '1.15.0: the family as a GateControl group of the plugin (gc.groups.ensure)');
   assert.deepEqual(p.services, ['gatecontrol-messenger:sync_group', 'gatecontrol-messenger:send_message', 'gatecontrol-messenger:release_group',
     'gatecontrol-messenger:set_place_status', 'gatecontrol-alltag:calendar_query', 'gatecontrol-alltag:calendar_list', 'gatecontrol-schule:school_students',
     'gatecontrol-schule:school_day'],

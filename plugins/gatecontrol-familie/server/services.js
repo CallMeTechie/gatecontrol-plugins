@@ -30,6 +30,10 @@
 //   family_roles    {} → { ok: true, parents: [userId], children: [userId] }   (1.9.0) who the parents and
 //                   the children of the family are (never a wall tablet) — the Messenger's door requests
 //                   („Eltern fragen“); 1.13.2: also for GateDrop (callers gatecontrol-messenger, gatecontrol-gatedrop).
+//                   Transitional since 1.15.0: on GateControl ≥ 1.200.0 the family is also the GateControl group
+//                   with the key 'family' (kind 'family', roles parent / child — server/groups.js), which plugins
+//                   with permissions.groups read through gc.groups. family_roles stays unchanged for older callers
+//                   and older GateControl versions.
 //   rule_event      { type: 'school_change', events: [{ userId, kind, date, start, subject, text }] (≤ 20) }
 //                   → { ok: true, fired }   (1.12.0, caller gatecontrol-schule only) — a child's timetable
 //                   changed: the matching rules with the trigger 'school_change' run (server/school.js).
@@ -249,7 +253,7 @@ async function places(gc, cfg, payload, user) {
   return out;
 }
 
-// ─── family_roles (1.9.0) ───────────────────────
+// ─── family_roles (1.9.0; transitional since 1.15.0 — see the head of this file) ───
 
 async function familyRoles(gc, cfg) {
   const fam = await family(gc, cfg);
