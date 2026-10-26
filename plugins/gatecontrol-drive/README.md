@@ -1,8 +1,8 @@
 # gatecontrol-drive — Drive
 
 The files of the family and the team on one's own storage — this server, a NAS or S3 — with areas and rights,
-versions, a trash and sync with every device. This version is the core (the API); the portal, the apps and the admin
-pages follow.
+versions, a trash, links for people without an account and sync with every device. The portal tab "Drive" is here
+(0.2.0); the apps and the admin pages follow.
 
 *Deutsch:* Dateien der Familie und des Teams auf dem eigenen Speicher – Bereiche mit Rechten, Versionen, Papierkorb,
 Abgleich mit allen Geräten. Details im CHANGELOG.
@@ -65,6 +65,10 @@ login_required`). Every answer has `ok`; errors `{ ok: false, code, error }` (+ 
 | `POST trash/<id>/restore` | | `node` (a free name; the area's top when its folder is gone) |
 | `DELETE trash/<id>` | | `{ id, files }` — gone for good |
 | `GET search` | `q` (2–100 characters), `area?` | `items` with `path` (≤ 100) |
+| `POST links` | `{ nodeId, mode: 'view' \| 'download' \| 'upload', expires: '1d' \| '7d' \| '30d' \| 'never', pin?, maxFiles?, maxBytes? }` | `link` (with `url`) |
+| `GET links` | `nodeId?` | `{ links, enabled }` — mine, or those of a node I write to |
+| `GET links/<token>/events` | `before?` | `events` — the log (newest first, ≤ 100) |
+| `DELETE links/<token>` | | `{ ended }` — whoever made it, or who manages the area |
 
 A node: `{ id, areaId, parentId, name, isDir, size, mime, sha256, mediaId, mtime, rev, createdAt, createdBy, updatedAt,
 updatedBy, deleted }`.
@@ -80,8 +84,28 @@ fetch `GET changes?since=`. `op`: `create`, `update`, `move`, `delete`, `restore
 another area shows as `delete` in the old area (`node: null`) and `create` in the new one; `device` is the device
 that made the change (`nas` for changes made on the NAS).
 
+**Links** (GateControl's public links v2, `permissions.publicLinks`; an administrator allows them under Einstellungen ›
+Plugins › Drive › Berechtigungen, else `403 links_disabled`): a file (`kind: 'files'`, the file as it is now), a folder
+(`'folder'`, its current content) or an upload folder (`'upload'`). Whoever may write in the area may share. `expires:
+'never'` only while the administrator allows links without an end (`403 no_unlimited`); no public https address → `409
+no_public_url`. A link: `{ token, url, nodeId, areaId, kind, mode, title, name, path, state, active, endedWhy,
+expiresAt, pin, opens, downloads, upload?, createdAt, createdBy }`. Drive ends the folder and upload links of a folder
+that is renamed or moved (and of the folders below it — `endedWhy: 'moved'`) and every link of what goes into the trash
+(`'trashed'`): a folder link points at a path, and a new folder with the old name must never be shared by it. A file
+that comes in through an upload link becomes a node at once (hook `publicLinkEvent`, device `link`, made by the link's
+owner, who gets the notification `link_upload`); the background run reads `gc.publicLinks.uploads` in case the hook was
+missed.
+
 **Files of other apps:** `GET …/media/<mediaId>` (hook `mediaAccess`) — the readers of the area, a fresh upload its
 uploader.
+
+## Portal
+
+The portal tab "Drive" (`ui/portal.*`, rendered inline by `server/ui.js` into GateControl's sandboxed frame): the areas,
+tiles or a list, breadcrumbs, search, upload (button, or files and folders dropped; `GC.upload`, then `uploads/commit` —
+a name that exists asks), a preview for pictures, videos and sound, new folder, rename, move, versions, trash, sharing,
+"Geteilte Links". Live through `GC.on('event')`. Pictures and videos are shown inline by GateControl and cannot be
+downloaded from the frame (right-click › Save as); other files download.
 
 ## Admin (GateControl's admin UI)
 
@@ -92,7 +116,8 @@ more people).
 ## Background
 
 Every 5 minutes: the trash after *trash_days*, versions after *versions_days* (and more than *versions_max* per file
-at once), the NAS journals (in case the hook was missed), old notes of `child_view`.
+at once), the NAS journals (in case the hook was missed), uploads through links the hook did not bring, rows of links
+GateControl has forgotten, old notes of `child_view`.
 
 ## Development
 

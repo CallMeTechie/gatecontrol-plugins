@@ -13,6 +13,7 @@
 //     GET nodes/<id>/versions · GET nodes/<id>/versions/<vid>/content · POST nodes/<id>/versions/<vid>/restore
 //     DELETE nodes/<id>/versions/<vid> · POST uploads/check · POST uploads/commit
 //     GET trash?area= · POST trash/<id>/restore · DELETE trash/<id>
+//     POST links · GET links?nodeId= · GET links/<token>/events · DELETE links/<token>   (links.js, since 0.2.0)
 //   admin     admin/… (administrators in the admin UI, admin.js)
 // The full contract (bodies, answers, codes, events) is in README.md "API".
 //
@@ -29,6 +30,8 @@ const changes = require('./changes');
 const sync = require('./sync');
 const admin = require('./admin');
 const jobs = require('./jobs');
+const links = require('./links');
+const ui = require('./ui');
 const { t } = require('./text');
 const { STATUS, fail, isKnown, posInt, DEVICE_RE, day, iso } = require('./util');
 
@@ -66,6 +69,7 @@ async function context(gc, user, lang, now) {
   ctx.groups = once(() => people.groupsOf(gc, user.id));
   ctx.visible = once(() => areas.visible(ctx));
   ctx.noteChildView = (area) => noteChildView(ctx, area);
+  ctx.areaLabel = (area) => labelOf(ctx, area);
   return ctx;
 }
 
@@ -79,14 +83,18 @@ async function noteChildView(ctx, area) {
   if (r && r.changes) ctx.notes.push({ child, viewer: ctx.viewer });
 }
 
+/** An area's label in the viewer's language. */
+function labelOf(ctx, a) {
+  if (a.kind === 'mine') return t(ctx.lang, 'area.mine');
+  if (a.kind === 'child') return t(ctx.lang, 'area.child', { name: nameOf(ctx, a.owner_user) });
+  return a.label;
+}
+
 /** The area as a person sees it: its label in their language. */
 function areaView(ctx, v, storage) {
   const a = v.area;
-  let label = a.label;
-  if (a.kind === 'mine') label = t(ctx.lang, 'area.mine');
-  else if (a.kind === 'child') label = t(ctx.lang, 'area.child', { name: nameOf(ctx, a.owner_user) });
   return {
-    id: a.id, kind: a.kind, label, role: v.role, via: v.via, rootId: a.root_id, owner: a.owner_user || null,
+    id: a.id, kind: a.kind, label: labelOf(ctx, a), role: v.role, via: v.via, rootId: a.root_id, owner: a.owner_user || null,
     archived: a.archived_at != null, ...(storage !== undefined ? { storage } : {}),
   };
 }
@@ -110,8 +118,23 @@ async function me(ctx) {
     latest: await changes.latest(ctx.gc),
     settings: { versionsDays: ctx.settings.versionsDays, versionsMax: ctx.settings.versionsMax, trashDays: ctx.settings.trashDays, parentsView: ctx.settings.parentsView },
     limits: { maxBytes: usage ? usage.maxBytes : null },
+    // names for "changed by …" (the accounts of this server; the apps and the portal show them)
+    people: ctx.seat ? [...ctx.users.values()].map((u) => ({ id: u.id, name: u.name })) : [],
     serverTime: iso(ctx.now),
   };
+}
+
+const THUMBS_MAX = 200;
+
+/** GET nodes/<id>/children?thumbs=1: pictures get `thumb`, a signed URL of the picture itself (the portal's tiles). */
+async function withThumbs(ctx, r) {
+  let n = 0;
+  for (const it of r.items) {
+    if (it.isDir || !it.mediaId || !/^image\//.test(String(it.mime || '')) || n >= THUMBS_MAX) continue;
+    n++;
+    try { it.thumb = await ctx.gc.media.url(it.mediaId, { user: ctx.viewer, ttlS: files.URL_TTL_S }); } catch { it.thumb = null; }
+  }
+  return r;
 }
 
 async function areaList(ctx) {
@@ -149,7 +172,10 @@ async function route(ctx, req, seg) {
       if (m === 'DELETE') return ok(await nodes.trash(ctx, idArg(b)));
     }
     if (seg.length === 3 && m === 'GET') {
-      if (c === 'children') return ok(await nodes.children(ctx, idArg(b), q));
+      if (c === 'children') {
+        const r = await nodes.children(ctx, idArg(b), q);
+        return ok(q.thumbs ? await withThumbs(ctx, r) : r);
+      }
       if (c === 'content') return ok(await files.content(ctx, idArg(b)));
       if (c === 'versions') return ok(await files.versions(ctx, idArg(b)));
     }
@@ -163,6 +189,12 @@ async function route(ctx, req, seg) {
     if (b === 'check') return ok(await files.check(ctx, body));
     if (b === 'commit') return ok(await files.commit(ctx, body));
   }
+  if (a === 'links') {
+    if (seg.length === 1 && m === 'POST') return ok({ link: await links.create(ctx, body) });
+    if (seg.length === 1 && m === 'GET') return ok(await links.list(ctx, q));
+    if (seg.length === 2 && m === 'DELETE') return ok(await links.revoke(ctx, b));
+    if (seg.length === 3 && c === 'events' && m === 'GET') return ok(await links.events(ctx, b, q));
+  }
   if (a === 'trash') {
     if (seg.length === 1 && m === 'GET') return ok(await nodes.trashList(ctx, q.area ? String(q.area) : null));
     if (seg.length === 3 && c === 'restore' && m === 'POST') return ok({ node: await nodes.restore(ctx, idArg(b)) });
@@ -171,8 +203,14 @@ async function route(ctx, req, seg) {
   throw fail('not_found');
 }
 
-/** After the answer: the live event to the readers of what changed, the notes to children (best effort). */
-async function after(gc, ctx) {
+/**
+ * After the answer: links that point at a moved or trashed folder end (only when the request succeeded), the live
+ * event to the readers of what changed, the notes to children (best effort).
+ */
+async function after(gc, ctx, done) {
+  if (done && ctx.unlink) {
+    try { await links.endFor(gc, ctx.unlink, ctx.now); } catch (e) { gc.log.warn('ending links failed', (e && e.code) || 'error'); }
+  }
   try { await changes.announce(gc, ctx.touched, ctx.settings); } catch (e) { gc.log.warn('announce failed', (e && e.code) || 'error'); }
   for (const n of ctx.notes) {
     const lang = (ctx.users.get(n.child) || {}).lang === 'en' ? 'en' : 'de';
@@ -206,15 +244,22 @@ module.exports = {
       if (no) throw fail(no);
       const ctx = await context(gc, req.user, lang, now);
       if (!ctx.user) throw fail('forbidden');
+      let done = false;
       try {
-        return await route(ctx, req, seg);
+        const out = await route(ctx, req, seg);
+        done = true;
+        return out;
       } finally {
-        await after(gc, ctx);
+        await after(gc, ctx, done);
       }
     } catch (e) {
       if (!isKnown(e) && !(e && HOST_CODES[e.code])) gc.log.warn('request failed', req && req.method, String((req && req.path) || '').split('/').slice(0, 2).join('/'), (e && (e.code || e.message)) || 'error');
       return errorResponse(e, lang);
     }
+  },
+
+  async render(view) {
+    return { html: ui.render(view || {}, t) };
   },
 
   /** The portal tab "Drive": people switched on (not a kiosk device). */
@@ -239,6 +284,32 @@ module.exports = {
     const ctx = await context(gc, user, 'de', Date.now());
     if (!ctx.seat) return false;
     return (await ctx.visible()).some((x) => x.area.id === n.area_id);
+  },
+
+  /**
+   * GateControl's public links (hook publicLinkEvent): a file that came in through an upload link becomes a file of
+   * the tree, and its owner is told (topic link_upload). Downloads and the rest are in the link's log.
+   */
+  async publicLinkEvent(arg, gc) {
+    if (!arg || arg.event !== 'upload' || typeof arg.token !== 'string') return;
+    const now = Date.now();
+    const r = await links.adoptUpload(gc, arg.token, { mediaId: arg.mediaId, path: arg.path }, now);
+    if (!r.row) return;
+    if (r.touched.size) await changes.announce(gc, r.touched, await areas.settingsOf(gc));
+    if (!r.adopted) return;
+    const us = await people.users(gc);
+    const owner = us.get(r.row.created_by);
+    if (!owner) return;
+    const lang = owner.lang === 'en' ? 'en' : 'de';
+    const folder = r.row.path ? r.row.path.split('/').pop() : t(lang, 'area.mine');
+    try {
+      await gc.notify({
+        topic: 'link_upload', users: [owner.id], collapseKey: `drive-link:${arg.token}`,
+        title: t(lang, 'link_upload.title', { file: String(arg.name || '') }),
+        body: t(lang, 'link_upload.body', { who: arg.uploader ? String(arg.uploader) : t(lang, 'link_upload.someone'), folder }),
+        data: { drive: { node: r.row.node_id, area: r.row.area_id } },
+      });
+    } catch (e) { gc.log.warn('link note failed', (e && e.code) || 'error'); }
   },
 
   /** GateControl read the NAS (an area in the readable form): its journal becomes the tree. */

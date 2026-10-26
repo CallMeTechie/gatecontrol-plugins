@@ -25,7 +25,8 @@ async function folders(gc, area, segs, ctx) {
     let next = await nodes.taken(gc, area.id, cur.id, s);
     if (next && next.is_dir !== 1) return null;
     if (!next) {
-      const r = await store.run(gc, 'INSERT INTO nodes (area_id, parent_id, name, is_dir, created_at, updated_at) VALUES (?, ?, ?, 1, ?, ?)', [area.id, cur.id, s, ctx.now, ctx.now]);
+      const by = ctx.viewer || null;
+    const r = await store.run(gc, 'INSERT INTO nodes (area_id, parent_id, name, is_dir, created_at, created_by, updated_at, updated_by) VALUES (?, ?, ?, 1, ?, ?, ?, ?)', [area.id, cur.id, s, ctx.now, by, ctx.now, by]);
       await nodes.log(gc, area.id, r.lastInsertRowid, 'create', ctx);
       next = await nodes.row(gc, r.lastInsertRowid);
     }
@@ -34,19 +35,22 @@ async function folders(gc, area, segs, ctx) {
   return cur;
 }
 
+/** A file at c.path (the folders on the way made) → true when it became a node. Also for uploads through a link. */
 async function added(gc, area, c, ctx) {
-  if (await nodeOfMedia(gc, c.mediaId)) return;
+  if (await nodeOfMedia(gc, c.mediaId)) return false;
   const segs = String(c.path || '').split('/').filter(Boolean);
   const name = segs.pop();
-  if (!name) return;
+  if (!name) return false;
   const parent = await folders(gc, area, segs, ctx);
   const info = await gc.media.info(c.mediaId);
-  if (!parent || !info) return;
+  if (!parent || !info) return false;
   const there = await nodes.taken(gc, area.id, parent.id, name);
-  if (there) { gc.log.warn('nas: a node has this name already', there.is_dir ? 'folder' : 'file'); return; }
-  const r = await store.run(gc, `INSERT INTO nodes (area_id, parent_id, name, is_dir, media_id, size, sha256, mime, created_at, updated_at)
-    VALUES (?, ?, ?, 0, ?, ?, ?, ?, ?, ?)`, [area.id, parent.id, name, c.mediaId, info.bytes, info.sha256 || null, info.mime || null, ctx.now, ctx.now]);
+  if (there) { gc.log.warn('a node has this name already', there.is_dir ? 'folder' : 'file'); return false; }
+  const by = ctx.viewer || null;
+  const r = await store.run(gc, `INSERT INTO nodes (area_id, parent_id, name, is_dir, media_id, size, sha256, mime, created_at, created_by, updated_at, updated_by)
+    VALUES (?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?)`, [area.id, parent.id, name, c.mediaId, info.bytes, info.sha256 || null, info.mime || null, ctx.now, by, ctx.now, by]);
   await nodes.log(gc, area.id, r.lastInsertRowid, 'create', ctx);
+  return true;
 }
 
 async function changed(gc, area, c, ctx) {
@@ -109,4 +113,4 @@ async function area(gc, mediaArea, now = Date.now()) {
   return { applied, touched: ctx.touched };
 }
 
-module.exports = { area };
+module.exports = { area, adopt: added };

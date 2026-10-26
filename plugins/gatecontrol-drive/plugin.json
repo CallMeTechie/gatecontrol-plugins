@@ -4,7 +4,7 @@
     "de": "Drive",
     "en": "Drive"
   },
-  "version": "0.1.0",
+  "version": "0.2.0",
   "publisher": "CallMeTechie",
   "description": {
     "de": "Dateien der Familie und des Teams auf dem eigenen Speicher – auf diesem Server, einer NAS oder in S3: Meine Dateien, Familie, Ordner der Kinder und Team-Ordner mit Rechten, Versionen, Papierkorb und Abgleich mit allen Geräten.",
@@ -18,6 +18,7 @@
     "app": true,
     "portal": true,
     "events": true,
+    "publicLinks": true,
     "groups": "read",
     "notify": {
       "perHour": 60
@@ -40,12 +41,25 @@
     "areas": true
   },
   "ui": {
+    "portal": {
+      "label": {
+        "de": "Drive",
+        "en": "Drive"
+      },
+      "icon": "M7 18h10a4 4 0 0 0 .5-8A6 6 0 0 0 6 9.5 4.3 4.3 0 0 0 7 18z"
+    },
     "settings": [
       {
         "key": "versions_days",
         "type": "number",
-        "label": { "de": "Versionen aufbewahren (Tage)", "en": "Keep versions (days)" },
-        "help": { "de": "Ältere Fassungen einer Datei werden danach gelöscht.", "en": "Older versions of a file are deleted after that." },
+        "label": {
+          "de": "Versionen aufbewahren (Tage)",
+          "en": "Keep versions (days)"
+        },
+        "help": {
+          "de": "Ältere Fassungen einer Datei werden danach gelöscht.",
+          "en": "Older versions of a file are deleted after that."
+        },
         "default": 30,
         "min": 1,
         "max": 3650
@@ -53,7 +67,10 @@
       {
         "key": "versions_max",
         "type": "number",
-        "label": { "de": "Höchstens Versionen je Datei", "en": "At most versions per file" },
+        "label": {
+          "de": "Höchstens Versionen je Datei",
+          "en": "At most versions per file"
+        },
         "default": 25,
         "min": 1,
         "max": 500
@@ -61,7 +78,10 @@
       {
         "key": "trash_days",
         "type": "number",
-        "label": { "de": "Papierkorb leeren nach (Tagen)", "en": "Empty the trash after (days)" },
+        "label": {
+          "de": "Papierkorb leeren nach (Tagen)",
+          "en": "Empty the trash after (days)"
+        },
         "default": 30,
         "min": 1,
         "max": 3650
@@ -69,8 +89,14 @@
       {
         "key": "mine_quota_gb",
         "type": "number",
-        "label": { "de": "Meine Dateien: Platz je Person (GB)", "en": "My files: space per person (GB)" },
-        "help": { "de": "0 = ohne eigene Grenze.", "en": "0 = no limit of its own." },
+        "label": {
+          "de": "Meine Dateien: Platz je Person (GB)",
+          "en": "My files: space per person (GB)"
+        },
+        "help": {
+          "de": "0 = ohne eigene Grenze.",
+          "en": "0 = no limit of its own."
+        },
         "default": 50,
         "min": 0,
         "max": 100000
@@ -78,8 +104,14 @@
       {
         "key": "child_parents_view",
         "type": "boolean",
-        "label": { "de": "Eltern dürfen die Ordner der Kinder ansehen", "en": "Parents may look into the children's folders" },
-        "help": { "de": "Das Kind bekommt dann einmal am Tag den Hinweis, wer hineingesehen hat.", "en": "The child then gets a note once a day saying who looked." },
+        "label": {
+          "de": "Eltern dürfen die Ordner der Kinder ansehen",
+          "en": "Parents may look into the children's folders"
+        },
+        "help": {
+          "de": "Das Kind bekommt dann einmal am Tag den Hinweis, wer hineingesehen hat.",
+          "en": "The child then gets a note once a day saying who looked."
+        },
         "default": true
       }
     ]
@@ -91,7 +123,18 @@
   "notifyTopics": [
     {
       "id": "child_view",
-      "label": { "de": "Jemand hat in meinen Ordner gesehen", "en": "Someone looked into my folder" },
+      "label": {
+        "de": "Jemand hat in meinen Ordner gesehen",
+        "en": "Someone looked into my folder"
+      },
+      "default": true
+    },
+    {
+      "id": "link_upload",
+      "label": {
+        "de": "Jemand hat über meinen Link etwas hochgeladen",
+        "en": "Someone uploaded through my link"
+      },
       "default": true
     }
   ]

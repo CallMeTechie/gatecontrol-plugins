@@ -205,7 +205,8 @@ async function update(ctx, id, body) {
   const b = body && typeof body === 'object' ? body : {};
   const wantName = b.name != null ? nodeName(b.name) : null;
   const wantParent = b.parentId != null ? Number(b.parentId) : null;
-  return store.tx(ctx.gc, async () => {
+  let moved = null;
+  const out = await store.tx(ctx.gc, async () => {
     const { node, area } = await reach(ctx, Number(id), 'write');
     if (node.parent_id == null) throw fail('invalid');
     if (area.archived_at != null) throw fail('forbidden');
@@ -226,6 +227,8 @@ async function update(ctx, id, body) {
     const oldPaths = new Map();
     if (node.is_dir === 1) {
       const rows = await below(ctx.gc, node.id);
+      // links of this folder and the folders below point at old paths now (links.js endFor)
+      moved = [node.id, ...rows.filter((r) => r.is_dir === 1).map((r) => r.id)];
       const now = pathsBelow(node.id, base, rows);
       const before = pathsBelow(node.id, oldBase, rows);
       files = rows.filter((r) => r.is_dir === 0 && r.deleted_at == null && r.media_id).map((r) => ({ id: r.id, media_id: r.media_id, path: now.get(r.id) }));
@@ -255,11 +258,20 @@ async function update(ctx, id, body) {
     }
     return view(await row(ctx.gc, node.id));
   });
+  if (moved) unlinkLater(ctx, 'folders', moved);
+  return out;
+}
+
+/** Links to end once the change is committed (index.js after → links.endFor). */
+function unlinkLater(ctx, kind, ids) {
+  const u = ctx.unlink || (ctx.unlink = { folders: [], all: [] });
+  u[kind].push(...ids);
 }
 
 /** DELETE nodes/<id> → into the trash (the node and everything below it). */
 async function trash(ctx, id) {
-  return store.tx(ctx.gc, async () => {
+  let gone = null;
+  const out = await store.tx(ctx.gc, async () => {
     const { node, area } = await reach(ctx, Number(id), 'write');
     if (node.parent_id == null) throw fail('invalid');
     if (area.archived_at != null) throw fail('forbidden');
@@ -278,8 +290,11 @@ async function trash(ctx, id) {
     await store.run(ctx.gc, `UPDATE nodes SET deleted_at = ?, deleted_by = ?, trash_id = ? WHERE id IN (${store.marks(all.length)})`,
       [ctx.now, ctx.viewer, node.id, ...all.map((r) => r.id)]);
     await log(ctx.gc, area.id, node.id, 'delete', ctx);
+    gone = all.map((r) => r.id);
     return { id: node.id, trashed: all.length };
   });
+  unlinkLater(ctx, 'all', gone);
+  return out;
 }
 
 /** GET trash?area= → what was deleted in the areas the viewer writes to (the deleted node, not each one below). */
