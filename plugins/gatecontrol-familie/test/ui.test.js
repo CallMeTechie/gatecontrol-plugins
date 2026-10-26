@@ -141,7 +141,7 @@ test('Leaflet: one constant (server/ui.js), nowhere else', () => {
 
 test('plugin.json: permissions (kiosk, actions), app tab, maps, the eleven topics with SOS allowed critical', () => {
   assert.equal(manifest.id, 'gatecontrol-familie');
-  assert.equal(manifest.version, '1.15.1');
+  assert.equal(manifest.version, '1.15.2');
   // 1.6.0 stays on 1.173.0: the messenger services (GateControl ≥ 1.177.0) are optional — an older host ignores
   // permissions.services and has no gc.services, so the group and the rule action stay hidden there.
   // 1.14.2 too: GC.viewport (GateControl ≥ 1.199.0) is optional — without it the wall keeps its 640 px

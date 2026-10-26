@@ -13,7 +13,6 @@
 
 const log = require('./log');
 const store = require('./store');
-const seal = require('./seal');
 const { fail } = require('./util');
 
 const PLUGIN = 'gatecontrol-familie';
@@ -80,25 +79,25 @@ function day(ms) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-// 1.9.1: Familie (≥ 1.15.1) names a person's own notice channel („user:<id>“, send_message) „Familie-Hinweise“ — before,
-// it was called „Familie“ like the family group and showed up twice in the chat list. Channels left with the old
-// name are renamed once at start (Familie would do it only with its next message there).
-const OLD_TITLES = { Familie: 'Familie-Hinweise', Family: 'Family notices' };
+// 1.9.2: Familie (≥ 1.15.2) no longer has a notice channel per person: a rule message to single people goes to
+// GateControl's own inbox (the pinned chat „GateControl“) like every other notification. The channels Familie
+// created before („user:<id>“ via send_message, titled „Familie“ / „Familie-Hinweise“ — a second „Familie“ chat in
+// the list) are deleted at start, for everyone, with their messages (notices only; nobody could write there).
 
-/** Rename Familie's notice channels still called „Familie“ / „Family“ → how many were renamed (never throws). */
-async function renameNoticeChannels(gc) {
+/** Delete Familie's per-person notice channels → how many (never throws). */
+async function removeNoticeChannels(gc, ctx) {
   let n = 0;
   try {
-    const rows = await store.all(gc, "SELECT id, title_enc FROM conversations WHERE managed_by = ? AND managed_key LIKE 'user:%'", [PLUGIN]);
+    const rows = await store.all(gc, "SELECT managed_key FROM conversations WHERE managed_by = ? AND managed_key LIKE 'user:%'", [PLUGIN]);
+    if (!rows.length) return 0;
+    const services = require('./services');
     for (const r of rows) {
-      const title = seal.open(r.title_enc);
-      if (typeof title !== 'string' || !Object.hasOwn(OLD_TITLES, title)) continue;
-      await store.run(gc, 'UPDATE conversations SET title_enc = ? WHERE id = ?', [seal.seal(OLD_TITLES[title]), r.id]);
+      await store.tx(gc, () => services.releaseManaged(ctx, PLUGIN, r.managed_key, { delete: true }));
       n++;
     }
-    if (n) gc.log.info('familie notice channels renamed', n);
-  } catch (e) { gc.log.warn('renaming familie notice channels failed', (e && (e.code || e.message)) || 'error'); }
+    gc.log.info('familie notice channels removed', n);
+  } catch (e) { gc.log.warn('removing familie notice channels failed', (e && (e.code || e.message)) || 'error'); }
   return n;
 }
 
-module.exports = { available, offers, call, calendar, day, roles, reset, renameNoticeChannels, PLUGIN, SERVICES };
+module.exports = { available, offers, call, calendar, day, roles, reset, removeNoticeChannels, PLUGIN, SERVICES };

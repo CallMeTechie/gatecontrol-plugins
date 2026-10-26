@@ -9,8 +9,9 @@
 //                change it in the messenger, they can mute it
 //   send_message { conversation: 'family' | 'user:<id>', text, title? }   the rule action
 //                „Messenger-Nachricht senden“ (server/presence.js): a message from „GateControl“
-//                into the group, or into the person's own read-only channel „Familie-Hinweise“
-//                (before 1.15.1 „Familie“ like the group; the messenger renames old ones)
+//                into the group (1.15.2: to single people the rule sends a notification to GateControl's inbox
+//                instead — server/presence.js; the channels per person of earlier versions are deleted by the
+//                messenger ≥ 1.9.2)
 //
 // Optional in every way: without the messenger (not installed, stopped, an older
 // GateControl without gc.services) nothing fails — the rule action is not offered,
@@ -444,7 +445,8 @@ async function sendAction(gc, fam, cfg, now, action, text, triggerUser) {
     await finish(res);
     return { ...base, ok: res.ok, sent: res.ok ? 1 : 0, error: res.ok ? null : res.code };
   }
-  // single people: each into the person's own channel „Familie-Hinweise“ (the person who sets the rule off gets none)
+  // single people: each into the person's own channel (since 1.15.2 server/presence.js sends to single people through
+  // GateControl's inbox and no longer calls this; kept for the family path's callers)
   const ids = to.filter((id) => fam.byId.has(id) && id !== triggerUser);
   if (!ids.length) return { ...base, ok: false, sent: 0, error: 'no_recipients' };
   const title = channelTitle(cfg);

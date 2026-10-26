@@ -83,22 +83,21 @@ test('send_message user:<id>: the caller\'s notice channel for that person (read
   });
 });
 
-test('1.9.1: Familie\'s notice channels still called „Familie“ / „Family“ are renamed once at start, nothing else', async () => {
+test('1.9.2: Familie\'s per-person notice channels are deleted at start; the family group and other plugins\' channels stay', async () => {
   await withHost({}, async (host, c) => {
     const familie = require('../server/familie');
-    const titleOf = async (u, id) => (await c.as(u)('GET', `conversations/${id}`)).json.conversation.title;
-    const lena = (await host.callService('send_message', { caller: FAM, payload: { conversation: `user:${LENA.id}`, text: 'a', title: 'Familie' } })).conversationId;
-    const oma = (await host.callService('send_message', { caller: FAM, payload: { conversation: `user:${OMA.id}`, text: 'b', title: 'Family' } })).conversationId;
-    const own = (await host.callService('send_message', { caller: FAM, payload: { conversation: `user:${MARC.id}`, text: 'c', title: 'Familie-Hinweise' } })).conversationId;
-    const door = (await host.callService('send_message', { caller: 'gatecontrol-door', payload: { conversation: `user:${LENA.id}`, text: 'd', title: 'Familie' } })).conversationId;
+    const lena = (await host.callService('send_message', { caller: FAM, payload: { conversation: `user:${LENA.id}`, text: 'Auto laden', title: 'Familie' } })).conversationId;
+    const oma = (await host.callService('send_message', { caller: FAM, payload: { conversation: `user:${OMA.id}`, text: 'b', title: 'Familie-Hinweise' } })).conversationId;
+    const door = (await host.callService('send_message', { caller: 'gatecontrol-door', payload: { conversation: `user:${LENA.id}`, text: 'd', title: 'Tür & Kamera' } })).conversationId;
     const group = (await host.callService('sync_group', { caller: FAM, payload: { key: 'family', title: 'Familie', userIds: [ANNA.id, LENA.id] } })).conversationId;
-    assert.equal(await familie.renameNoticeChannels(host.gc), 2);
-    assert.equal(await titleOf(LENA, lena), 'Familie-Hinweise');
-    assert.equal(await titleOf(OMA, oma), 'Family notices');
-    assert.equal(await titleOf(MARC, own), 'Familie-Hinweise');
-    assert.equal(await titleOf(LENA, door), 'Familie', 'another plugin\'s channel keeps its name');
-    assert.equal(await titleOf(ANNA, group), 'Familie', 'the family group keeps its name');
-    assert.equal(await familie.renameNoticeChannels(host.gc), 0, 'once');
+    c.resetEvents();
+    const ctx = { gc: host.gc, now: Date.now(), box: require('../server/live').outbox() };
+    assert.equal(await familie.removeNoticeChannels(host.gc, ctx), 2);
+    for (const [u, id] of [[LENA, lena], [OMA, oma]]) assert.equal((await c.as(u)('GET', `conversations/${id}`)).status, 404, 'gone');
+    assert.ok(ctx.box.events.some((e) => e.type === 'conversation.remove'), 'the apps are told');
+    assert.equal((await c.as(LENA)('GET', `conversations/${door}`)).status, 200, 'another plugin\'s channel stays');
+    assert.equal((await c.as(ANNA)('GET', `conversations/${group}`)).json.conversation.title, 'Familie', 'the family group stays');
+    assert.equal(await familie.removeNoticeChannels(host.gc, ctx), 0, 'nothing left');
   });
 });
 

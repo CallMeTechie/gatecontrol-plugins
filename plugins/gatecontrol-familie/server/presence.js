@@ -46,7 +46,7 @@
 //            1.6.0: { type: 'messenger', to: 'family' | [userId] (1–20 members), text? (≤ 500, same placeholders) }
 //            — „Messenger-Nachricht senden“ through the Messenger plugin (server/messenger.js): into the
 //            group „Familie“ (only while the group is switched on: else error 'group_off') or into each
-//            person's own channel „Familie-Hinweise“ (not to the person who sets the rule off). Without the
+//            person's GateControl inbox (1.15.2; before a messenger channel of its own) (not to the person who sets the rule off). Without the
 //            messenger the action is not offered (listRules: `messenger.available`); a rule that still has
 //            one logs { ok: false, error: 'unavailable' } and the rest of the rule runs.
 // A rule fires once per transition and at most once per 10 minutes; a
@@ -392,10 +392,18 @@ async function execute(gc, fam, cfg, now, runs, pushes) {
         pushes.push(...out.pushes);
         if (out.keyed.length) await reminders.remember(gc, cfg, now, rule.id, key, out.keyed);
         results.push({ type: 'notify', ok: to.length > 0, sent: to.length, error: to.length ? null : 'no_recipients' });
+      } else if (a.type === 'messenger' && (rule.scope === 'personal' || a.to !== 'family')) {
+        // 1.15.2: to single people (and a person's own rule, which only ever writes to its owner) the message goes to
+        // GateControl's inbox — the pinned chat „GateControl“ in the apps — like a notification, not into a
+        // messenger channel of its own (that showed up as a second chat „Familie“); works without the messenger
+        const n = { type: 'notify', to: rule.scope === 'personal' ? [rule.ownerId] : a.to, text: a.text || null, facts: false, buttons: [] };
+        const to = recipients(n, fam, rule.scope === 'personal' ? null : causer, rule);
+        const out = await reminders.notifyPushes(gc, fam, cfg, now, { rule, run, action: n, person, ev, to, key, cache });
+        pushes.push(...out.pushes);
+        results.push({ type: 'messenger', to: Array.isArray(n.to) ? n.to.slice() : [], via: 'inbox', ok: to.length > 0, sent: to.length, error: to.length ? null : 'no_recipients' });
       } else if (a.type === 'messenger') {
         // 1.6.0: never throws; without the messenger { ok: false, error: 'unavailable' } and the rest runs
-        // 1.9.0: a person's own rule only writes to that person
-        const target = rule.scope === 'personal' ? { ...a, to: [rule.ownerId] } : a;
+        const target = a;
         const res = await messenger.sendAction(gc, fam, cfg, now, target, actionText(a, run, person, cfg, ev && ev.vars), rule.scope === 'personal' ? null : causer);
         if (res.error === 'unavailable') gc.log.warn('messenger not available – rule action skipped', rule.id);
         results.push(res);
