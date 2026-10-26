@@ -324,11 +324,21 @@ const LINK_TTL_MAX = 30 * 86400000;
 const LINK_PIN_FAILS = 5;
 const LINK_FILES_MAX = 20;
 const MEDIA_FAMILY_RE = /^(?:image|audio|video|application)\/\*$/;
+// GateControl ≥ 1.204.0 (media.areas): files up to 100 GB, quota up to 1 PB, the type "*/*"
+const MEDIA_MAX_BYTES_AREAS = 100 * 1024 ** 3;
+const MEDIA_QUOTA_MAX_AREAS = 1024 ** 5;
+const AREA_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/;
+const AREA_HIDDEN = '.gcdrive';
+const AREA_SEG_BAD_RE = /[\u0000-\u001f\u007f\\]/;
 const DATA_PUSH_PER_HOUR = 600;
 
 /** Is `mime` allowed by declared `types` — listed, or (GateControl ≥ 1.193.0) in a declared family "image/*"? */
+// GateControl ≥ 1.204.0: "*/*" (media.areas only) — any well-formed type
+const MEDIA_MIME_ANY_RE = /^[a-z][a-z0-9-]{0,30}\/[a-z0-9][a-z0-9.+_-]{0,99}$/;
+
 function typeAllowed(types, mime) {
   const m = String(mime || '').toLowerCase();
+  if (types.includes('*/*')) return MEDIA_MIME_ANY_RE.test(m);
   if (types.includes(m)) return true;
   if (!MEDIA_MIME_RE.test(m) || MEDIA_MIME_DENY_RE.test(m)) return false;
   return types.includes(m.split('/')[0] + '/*');
@@ -694,29 +704,33 @@ function checkQuickActions(out) {
  * @param {object} [opts]     see the header
  */
 /** plugin.json `media` → { maxBytes, types, quotaDefault } like GateControl's manifest.js (throws ERR_INVALID). */
-function mediaDecl(m, gc190 = false, gc193 = false) {
+function mediaDecl(m, gc190 = false, gc193 = false, gc204 = false) {
   if (m == null) return null;
   const bad = (what) => { throw hostError('ERR_INVALID', `plugin.json: ${what}: invalid`); };
   // resumable / handOverMaxBytes (GateControl ≥ 1.193.0) are accepted at every emulated version, so a plugin's tests
   // may still emulate an older host for its runtime fallbacks — the real older host refuses them (tools/validate.js
   // against that core says so); they only act from 1.193.0 on.
   const keys = gc190 ? ['maxBytes', 'types', 'quotaDefault', 'uploads', 'resumable', 'handOverMaxBytes'] : ['maxBytes', 'types', 'quotaDefault', 'resumable', 'handOverMaxBytes'];
+  if (gc204) keys.push('areas');
   if (typeof m !== 'object' || Array.isArray(m) || Object.keys(m).some((k) => !keys.includes(k))) bad('media');
   if (m.uploads != null && typeof m.uploads !== 'boolean') bad('media.uploads');
   if (m.resumable != null && typeof m.resumable !== 'boolean') bad('media.resumable');
-  // GateControl ≥ 1.193.0: up to 2 GB per file (before 100 MB)
-  if (!Number.isSafeInteger(m.maxBytes) || m.maxBytes < 1024 || m.maxBytes > (gc193 ? MEDIA_MAX_BYTES_193 : MEDIA_MAX_BYTES)) bad('media.maxBytes');
+  if (m.areas != null && typeof m.areas !== 'boolean') bad('media.areas');
+  const areas = gc204 && m.areas === true;
+  // GateControl ≥ 1.193.0: up to 2 GB per file (before 100 MB); ≥ 1.204.0 with areas up to 100 GB
+  const maxB = areas ? MEDIA_MAX_BYTES_AREAS : (gc193 ? MEDIA_MAX_BYTES_193 : MEDIA_MAX_BYTES);
+  if (!Number.isSafeInteger(m.maxBytes) || m.maxBytes < 1024 || m.maxBytes > maxB) bad('media.maxBytes');
   const types = Array.isArray(m.types) ? [...new Set(m.types.map((x) => (typeof x === 'string' ? x.trim().toLowerCase() : '')))] : null;
-  if (!types || !types.length || types.length > 32 || !types.every((x) => (gc193 && MEDIA_FAMILY_RE.test(x)) || (MEDIA_MIME_RE.test(x) && !MEDIA_MIME_DENY_RE.test(x)))) bad('media.types');
+  if (!types || !types.length || types.length > 32 || !types.every((x) => (areas && x === '*/*') || (gc193 && MEDIA_FAMILY_RE.test(x)) || (MEDIA_MIME_RE.test(x) && !MEDIA_MIME_DENY_RE.test(x)))) bad('media.types');
   let quota = MEDIA_QUOTA_DEFAULT;
   if (m.quotaDefault != null) {
     const q = Number.isSafeInteger(m.quotaDefault) ? null : MEDIA_QUOTA_RE.exec(String(m.quotaDefault).trim());
     quota = Number.isSafeInteger(m.quotaDefault) ? m.quotaDefault : (q ? Number(q[1]) * MEDIA_UNIT[q[2].toUpperCase()] : null);
   }
-  if (quota == null || quota < 1024 * 1024 || quota > 1024 ** 4 || quota < m.maxBytes) bad('media.quotaDefault');
+  if (quota == null || quota < 1024 * 1024 || quota > (areas ? MEDIA_QUOTA_MAX_AREAS : 1024 ** 4) || quota < m.maxBytes) bad('media.quotaDefault');
   const handOver = m.handOverMaxBytes == null ? m.maxBytes : m.handOverMaxBytes;
-  if (!Number.isSafeInteger(handOver) || handOver < 1024 || handOver > MEDIA_MAX_BYTES_193 || handOver > quota) bad('media.handOverMaxBytes');
-  return { maxBytes: m.maxBytes, types, quotaDefault: quota, uploads: m.uploads !== false, resumable: m.resumable === true, handOverMaxBytes: handOver };
+  if (!Number.isSafeInteger(handOver) || handOver < 1024 || handOver > (areas ? MEDIA_MAX_BYTES_AREAS : MEDIA_MAX_BYTES_193) || handOver > quota) bad('media.handOverMaxBytes');
+  return { maxBytes: m.maxBytes, types, quotaDefault: quota, uploads: m.uploads !== false, resumable: m.resumable === true, handOverMaxBytes: handOver, ...(areas ? { areas: true } : {}) };
 }
 
 /** Plain JSON ≤ max bytes, else the error code. */
@@ -758,7 +772,9 @@ async function createHost(pluginDir, opts = {}) {
   for (const k of ['devices', 'publicLinks']) {
     if (gc193 && perms[k] != null && typeof perms[k] !== 'boolean') throw hostError('ERR_INVALID', `plugin.json: permissions.${k}: invalid`);
   }
-  const media = mediaDecl(manifest.media, gc190, gc193);
+  // GateControl ≥ 1.204.0: media.areas (areas, paths, move, version, the NAS journal); ≥ 1.206.0 gc.license.info / refresh
+  const gc204 = gcVersion[0] > 1 || (gcVersion[0] === 1 && gcVersion[1] >= 204);
+  const media = mediaDecl(manifest.media, gc190, gc193, gc204);
   if (perms.events != null && typeof perms.events !== 'boolean') throw hostError('ERR_INVALID', 'plugin.json: permissions.events: invalid');
   if (perms.services != null && (!Array.isArray(perms.services) || perms.services.length > 32 || !perms.services.every((x) => typeof x === 'string' && SERVICE_REF_RE.test(x)))) {
     throw hostError('ERR_INVALID', 'plugin.json: permissions.services: invalid');
@@ -794,7 +810,22 @@ async function createHost(pluginDir, opts = {}) {
   const allUsers = (opts.users || [DEFAULT_USER]).map((u) => ({ id: u.id, name: u.name, role: u.role, disabled: u.disabled === true, ...userFace(u) }));
   // gc.users lists enabled accounts only (GateControl ≥ 1.168.0: with avatarUrl, color, colorHex, initials)
   const users = allUsers.filter((u) => !u.disabled).map(({ id, name, role, avatarUrl, color, colorHex, initials }) => ({ id, name, role, avatarUrl, color, colorHex, initials }));
-  const license = { required: !!(manifest.license && manifest.license.required), licensed: true, state: 'valid', expiresAt: null, ...(opts.license || {}) };
+  const license = { required: !!(manifest.license && manifest.license.required), licensed: true, state: 'valid', expiresAt: null, tier: null, seats: null, ...(opts.license || {}) };
+  const licenseRefreshes = [];
+  // like GateControl's licensing.info / seatLimits (≥ 1.206.0)
+  const licenseInfo = () => {
+    const tier = license.licensed && ['family', 'business', 'combo'].includes(license.tier) ? license.tier : null;
+    let seats = null;
+    if (tier) {
+      const n = (v) => (Number.isSafeInteger(v) && v >= 0 ? v : 0);
+      const s = license.seats || {};
+      const inc = n(s.included); const f = n(s.family); const b = n(s.business);
+      seats = tier === 'family' ? { total: inc + f, family: inc + f, business: 0, included: inc, extra: { family: f, business: 0 } }
+        : tier === 'business' ? { total: inc + b, family: 0, business: inc + b, included: inc, extra: { family: 0, business: b } }
+          : { total: inc + f + b, family: inc + f, business: inc + b, included: inc, extra: { family: f, business: b } };
+    }
+    return { required: license.required, valid: license.licensed, state: license.state, expiresAt: license.expiresAt, source: license.source || (license.required ? 'license' : null), tier, seats };
+  };
   // permissions.notify: true (30 per hour) or { perHour: 1–120 } (GateControl ≥ 1.164.0); the mock counts all of a test
   const notifyLimit = perms.notify && typeof perms.notify === 'object' && Number.isInteger(perms.notify.perHour) ? perms.notify.perHour : 30;
   // chat notifications (GateControl ≥ 1.177.0) have a budget of their own
@@ -1036,7 +1067,12 @@ async function createHost(pluginDir, opts = {}) {
       notifications.push({ message: msg, severity: (o && o.severity) || 'info' });
       return {};
     },
-    'license.status': async () => ({ ...license }),
+    'license.status': async () => { const { tier, seats, ...rest } = license; return rest; },
+    // GateControl ≥ 1.206.0: tier and seats (opts.license { tier, seats: { included, family, business } }), a refresh
+    ...(hostAtLeast('1.206.0') ? {
+      'license.info': async () => licenseInfo(),
+      'license.refresh': async () => { licenseRefreshes.push(Date.now()); if (typeof opts.licenseRefresh === 'function') Object.assign(license, opts.licenseRefresh(license) || {}); return { refreshed: true, ...licenseInfo() }; },
+    } : {}),
     // GateControl ≥ 1.191.0 (permissions.notifySink): where a person's notifications appear
     'notify.routes.get': async (a) => notifyRoutes('get', a || {}),
     'notify.routes.set': async (a) => notifyRoutes('set', a || {}),
@@ -1272,8 +1308,17 @@ async function createHost(pluginDir, opts = {}) {
   };
   const mediaInfo = (id) => {
     const m = mediaStore.get(id);
-    return m ? { mediaId: id, mime: m.mime, bytes: m.bytes, sha256: require('node:crypto').createHash('sha256').update(m.data).digest('hex'),
-      owner: m.owner, createdAt: new Date(m.createdAt).toISOString(), claimed: m.claimed, ...(gc190 ? { name: m.name || null } : {}) } : null;
+    if (!m) return null;
+    const out = { mediaId: id, mime: m.mime, bytes: m.bytes, sha256: require('node:crypto').createHash('sha256').update(m.data).digest('hex'),
+      owner: m.owner, createdAt: new Date(m.createdAt).toISOString(), claimed: m.claimed, ...(gc190 ? { name: m.name || null } : {}) };
+    // GateControl ≥ 1.204.0: the area, the plugin's path, where the bytes are; a version (path null)
+    if (gc204 && m.area != null) {
+      out.area = m.area;
+      out.path = m.path == null ? null : m.path;
+      out.stored = 'server';
+      if (m.versionOf != null) { out.versionOf = m.versionOf; out.versionAt = m.versionAt; }
+    }
+    return out;
   };
   const mediaUsage = () => { let bytes = 0; for (const m of mediaStore.values()) bytes += m.bytes; return { bytes, count: mediaStore.size }; };
   const urlSecret = require('node:crypto').randomBytes(16).toString('hex');
@@ -1284,13 +1329,29 @@ async function createHost(pluginDir, opts = {}) {
     const id = mediaIdOf(args);
     const m = mediaStore.get(id);
     if (!m) throw hostError('ERR_INVALID', 'unknown media id');
+    // GateControl ≥ 1.204.0: claim(id, { area, path }) — into an area of the plugin, a path unique there
+    const o = gc204 && args.opts != null ? args.opts : null;
+    if (o !== null && (typeof o !== 'object' || Array.isArray(o))) throw hostError('ERR_INVALID', 'invalid options');
+    if (o && o.area != null) {
+      needAreas();
+      const area = String(o.area);
+      if (!areaStore.has(area)) throw areaFail('invalid', 'unknown area — gc.media.areas.ensure() it first');
+      const p = cleanAreaPath(o.path);
+      if (m.area != null && m.area !== area) throw areaFail('invalid', 'the file is in another area — gc.media.move() it');
+      if (m.versionOf != null) throw areaFail('invalid', 'the file is a version');
+      if (p != null && pathTaken(area, p, id)) throw areaFail('exists', 'another file has this path');
+      if (m.area == null && areaQuotaFull(area, m.bytes)) throw areaFail('quota', 'the area is full');
+      m.area = area;
+      m.path = p;
+    }
     m.claimed = true;
     return mediaInfo(id);
   };
   api['media.delete'] = async (args) => { needMedia(); return mediaStore.delete(mediaIdOf(args)); };
   api['media.usage'] = async () => {
     needMedia();
-    return { ...mediaUsage(), quota: mediaQuota, maxBytes: media.maxBytes, types: media.types, ...(gc193 ? { uploads: media.uploads, resumable: media.resumable, handOverMaxBytes: media.handOverMaxBytes } : {}) };
+    return { ...mediaUsage(), quota: mediaQuota, maxBytes: media.maxBytes, types: media.types, ...(gc193 ? { uploads: media.uploads, resumable: media.resumable, handOverMaxBytes: media.handOverMaxBytes } : {}),
+      ...(gc204 ? { areas: media.areas === true } : {}) };
   };
   // GateControl ≥ 1.190.0: a file from the internet straight into the store (no owner, unclaimed)
   const mediaName = (v) => {
@@ -1319,6 +1380,107 @@ async function createHost(pluginDir, opts = {}) {
     mediaStore.set(id, { mime: type, bytes: buf.length, owner: null, data: Buffer.from(buf), claimed: false, createdAt: Date.now(), name });
     return { mediaId: id, mime: type, bytes: buf.length, name };
   };
+  // ─── GateControl ≥ 1.204.0: media areas (src/services/plugins/mediaAreas.js) ───
+  // Areas live on "this server" (no storage target): form 'blocks', nothing is ever pending. Paths are unique per
+  // area; gc.media.move (a new path / area; ≥ 1.207.0 a version back to a path, a file off its path with path: null),
+  // gc.media.version (keep as a version of its path). host.mediaScan(area, changes) plays a scan of a NAS target:
+  // [{ type: 'added', path, data, mime } | { type: 'changed', path, data, mime, keep } | { type: 'removed', path }] →
+  // journal (gc.media.areas.changes), then the hook mediaChanged({ area, seq, count }). host.mediaAreas is the store.
+  const areaStore = new Map(); // area → { area, label, quota }
+  const areaJournal = []; // { seq, area, type, mediaId, previous, path, at }
+  let areaSeq = 0;
+  const AREA_ERR = { invalid: 'ERR_INVALID', exists: 'ERR_CONFLICT', quota: 'ERR_MEDIA_QUOTA', limit: 'ERR_RATE_LIMIT' };
+  const areaFail = (code, msg) => hostError(AREA_ERR[code] || 'ERR_INVALID', msg);
+  const needAreas = () => { needMedia(); if (!media.areas) throw hostError('ERR_MEDIA_DENIED', 'plugin.json declares no media.areas'); };
+  const cleanAreaPath = (v) => {
+    if (v == null || v === '') return null;
+    if (typeof v !== 'string' || v.length > 1024) throw areaFail('invalid', 'path too long');
+    const segs = v.split('/').filter((x) => x !== '');
+    if (!segs.length || segs.length > 64 || segs.some((x) => x === '.' || x === '..' || x.length > 255 || AREA_SEG_BAD_RE.test(x))) throw areaFail('invalid', 'invalid path');
+    if (segs[0] === AREA_HIDDEN) throw areaFail('invalid', `paths below ${AREA_HIDDEN} are reserved`);
+    return segs.join('/');
+  };
+  const areaUsage = (area) => { let bytes = 0; let count = 0; for (const m of mediaStore.values()) if (m.area === area) { bytes += m.bytes; count++; } return { bytes, count }; };
+  const pathTaken = (area, p, exceptId) => [...mediaStore.entries()].some(([id, m]) => id !== exceptId && m.area === area && m.path === p);
+  const areaInfo = (area) => {
+    const a = areaStore.get(area);
+    if (!a) return null;
+    const u = areaUsage(area);
+    return { area, label: a.label, target: null, form: 'blocks', moving: null, bytes: u.bytes, count: u.count, quota: a.quota, quotaDefault: a.quota,
+      pending: { count: 0, bytes: 0 }, state: 'ok', error: null, encrypted: true, free: null, scan: null };
+  };
+  const areaQuotaFull = (area, add) => { const a = areaStore.get(area); return a.quota != null && areaUsage(area).bytes + add > a.quota; };
+  if (gc204) {
+    api['media.areas.ensure'] = async ({ area, opts: o }) => {
+      needAreas();
+      if (typeof area !== 'string' || !AREA_RE.test(area)) throw areaFail('invalid', 'area: 1 … 64 of a-z 0-9 _ -');
+      const x = o && typeof o === 'object' ? o : {};
+      const label = x.label == null ? '' : String(x.label).replace(/[\u0000-\u001f]/g, '').trim();
+      if (label.length > 80) throw areaFail('invalid', 'label too long');
+      if (x.quota != null && (!Number.isSafeInteger(x.quota) || x.quota < 1024 * 1024 || x.quota > MEDIA_QUOTA_MAX_AREAS)) throw areaFail('invalid', 'quota must be 1 MB … 1 PB in bytes');
+      if (!areaStore.has(area) && areaStore.size >= 1000) throw areaFail('limit', 'at most 1000 areas');
+      areaStore.set(area, { area, label: label || area, quota: x.quota == null ? null : x.quota });
+      return areaInfo(area);
+    };
+    api['media.areas.info'] = async ({ area }) => { needAreas(); return areaInfo(String(area || '')); };
+    api['media.areas.list'] = async () => { needAreas(); return [...areaStore.keys()].map(areaInfo); };
+    api['media.areas.remove'] = async ({ area }) => {
+      needAreas();
+      const a = String(area || '');
+      if (!areaStore.has(a)) return false;
+      if (areaUsage(a).count) throw areaFail('invalid', 'the area still has files');
+      areaStore.delete(a);
+      return true;
+    };
+    api['media.areas.scan'] = async ({ area }) => {
+      needAreas();
+      if (!areaStore.has(String(area || ''))) throw areaFail('invalid', 'unknown area');
+      return { files: areaUsage(String(area)).count, added: 0, changed: 0, removed: 0, waiting: 0, conflicts: 0 };
+    };
+    api['media.areas.changes'] = async ({ area, opts: o }) => {
+      needAreas();
+      const a = String(area || '');
+      if (!areaStore.has(a)) throw areaFail('invalid', 'unknown area');
+      const x = o && typeof o === 'object' ? o : {};
+      const since = Number.isSafeInteger(x.since) && x.since >= 0 ? x.since : 0;
+      const n = Number.isSafeInteger(x.limit) && x.limit > 0 ? Math.min(x.limit, 1000) : 500;
+      const list = areaJournal.filter((c) => c.area === a && c.seq > since);
+      const page = list.slice(0, n).map((c) => ({ seq: c.seq, type: c.type, mediaId: c.mediaId, previous: c.previous, path: c.path, at: c.at }));
+      return { changes: page, next: page.length ? page[page.length - 1].seq : since, more: list.length > n };
+    };
+    api['media.move'] = async ({ id: rawId, opts: o }) => {
+      needAreas();
+      const id = mediaIdOf({ id: rawId });
+      if (o == null || typeof o !== 'object' || Array.isArray(o)) throw hostError('ERR_INVALID', 'invalid options');
+      const m = mediaStore.get(id);
+      if (!m) throw hostError('ERR_INVALID', 'unknown media id');
+      if (m.area == null) throw areaFail('invalid', 'the file is in no area — gc.media.claim() it into one');
+      const restore = m.versionOf != null;
+      if (restore && !hostAtLeast('1.207.0')) throw areaFail('invalid', 'a version does not move');
+      if (restore && (o.path == null || o.path === '')) throw areaFail('invalid', 'a version moves only to a path (restore)');
+      const area = o.area == null ? m.area : String(o.area);
+      if (!areaStore.has(area)) throw areaFail('invalid', 'unknown area');
+      const p = Object.prototype.hasOwnProperty.call(o, 'path') ? cleanAreaPath(o.path) : m.path;
+      if (p != null && pathTaken(area, p, id)) throw areaFail('exists', 'another file has this path');
+      if (area !== m.area && areaQuotaFull(area, m.bytes)) throw areaFail('quota', 'the area is full');
+      m.area = area;
+      m.path = p;
+      if (restore) { m.versionOf = null; m.versionAt = null; }
+      return mediaInfo(id);
+    };
+    api['media.version'] = async ({ id: rawId }) => {
+      needAreas();
+      const id = mediaIdOf({ id: rawId });
+      const m = mediaStore.get(id);
+      if (!m) throw hostError('ERR_INVALID', 'unknown media id');
+      if (m.area == null || m.path == null) throw areaFail('invalid', 'only a file with an area and a path has versions');
+      m.versionOf = m.path;
+      m.versionAt = new Date().toISOString();
+      m.path = null;
+      return mediaInfo(id);
+    };
+  }
+
   api['media.url'] = async (args) => {
     needMedia();
     const id = mediaIdOf(args);
@@ -2050,7 +2212,10 @@ async function createHost(pluginDir, opts = {}) {
       get: (x) => { const a = x && typeof x === 'object' ? x : {}; return call('notify.routes.get', { userId: a.userId, lang: a.lang }); },
       set: (x) => { const a = x && typeof x === 'object' ? x : {}; return call('notify.routes.set', { userId: a.userId, topic: a.topic, dest: a.dest }); },
     }) } : {}),
-    license: Object.freeze({ status: () => call('license.status', {}) }),
+    license: Object.freeze({
+      status: () => call('license.status', {}),
+      ...(hostAtLeast('1.206.0') ? { info: () => call('license.info', {}), refresh: () => call('license.refresh', {}) } : {}),
+    }),
     kiosk: Object.freeze({ allow: (userId, allowed) => call('kiosk.allow', { userId, allowed }), list: () => call('kiosk.list', {}) }),
     // opts.actionsApi: false emulates a host whose child has no gc.actions (feature detection in plugins);
     // GateControl ≥ 1.180.0 (opts.gatecontrol) passes actionId, params, via and interactive on — older child
@@ -2072,13 +2237,26 @@ async function createHost(pluginDir, opts = {}) {
     // GateControl ≥ 1.177.0
     media: Object.freeze({
       info: (id) => call('media.info', { id }),
-      claim: (id) => call('media.claim', { id }),
+      claim: (id, o) => call('media.claim', { id, ...(o !== undefined ? { opts: o } : {}) }),
       delete: (id) => call('media.delete', { id }),
       usage: () => call('media.usage', {}),
       url: (id, o) => { const x = o && typeof o === 'object' ? o : {}; return call('media.url', { id, user: x.user, ttlS: x.ttlS }); },
       ...(gc190 ? { fetch: (url, o) => call('media.fetch', { url, opts: o || {} }) } : {}),
       // GateControl ≥ 1.193.0: hand a file to another plugin (its store, unclaimed, owner `user`)
       ...(gc193 ? { handOver: (id, o) => { const x = o && typeof o === 'object' ? o : {}; return call('media.handOver', { id, toPlugin: x.toPlugin, user: x.user }); } } : {}),
+      // GateControl ≥ 1.204.0 (media.areas)
+      ...(gc204 ? {
+        move: (id, o) => call('media.move', { id, opts: o }),
+        version: (id) => call('media.version', { id }),
+        areas: Object.freeze({
+          ensure: (area, o) => call('media.areas.ensure', { area, opts: o || {} }),
+          info: (area) => call('media.areas.info', { area }),
+          list: () => call('media.areas.list', {}),
+          remove: (area) => call('media.areas.remove', { area }),
+          scan: (area) => call('media.areas.scan', { area }),
+          changes: (area, o) => call('media.areas.changes', { area, opts: o || {} }),
+        }),
+      } : {}),
     }),
     events: Object.freeze({
       emit: (o) => { const x = o && typeof o === 'object' ? o : {}; return call('events.emit', { users: x.users, type: x.type, data: x.data }); },
@@ -2226,6 +2404,50 @@ async function createHost(pluginDir, opts = {}) {
       if (!(s2 < exp && exp <= s2 + 86400 + 300) || urlSig(r[1], exp, Number(r[3])) !== r[4]) return notFound();
       const m = mediaStore.get(r[1]);
       return m ? mediaAnswer(m, o.range) : notFound();
+    },
+    /** GateControl ≥ 1.204.0: the areas (Map area → { area, label, quota }) and the NAS journal */
+    mediaAreas: areaStore,
+    mediaJournal: areaJournal,
+    /** GateControl ≥ 1.206.0: the licence the plugin sees (change it: tier, seats, licensed, state) and its refreshes */
+    license,
+    licenseRefreshes,
+    /**
+     * GateControl ≥ 1.204.0: a scan of a NAS target found changes in `area` (form 'files'), like mediaAreas.scanArea:
+     * added → a new claimed file at the path (no owner); changed → the file at the path becomes a version (keep !== false)
+     * or goes, a new file takes the path; removed → the file at the path goes. Journal, then the hook mediaChanged.
+     * → [{ type, mediaId, previous, path, seq }]
+     */
+    async mediaScan(area, list) {
+      if (!areaStore.has(area)) throw new Error(`mock host: unknown area ${area}`);
+      const crypto = require('node:crypto');
+      const out = [];
+      const at = () => new Date().toISOString();
+      const atPath = (p) => [...mediaStore.entries()].find(([, m]) => m.area === area && m.path === p);
+      const journal = (type, mediaId, previous, p) => { const seq = ++areaSeq; areaJournal.push({ seq, area, type, mediaId, previous, path: p, at: at() }); return seq; };
+      for (const c of list) {
+        if (c.type === 'removed') {
+          const hit = atPath(c.path);
+          if (!hit) continue;
+          mediaStore.delete(hit[0]);
+          out.push({ type: 'removed', mediaId: hit[0], previous: null, path: c.path, seq: journal('removed', hit[0], null, c.path) });
+          continue;
+        }
+        const data = Buffer.from(c.data == null ? '' : c.data);
+        const id = crypto.randomBytes(16).toString('hex');
+        const mime = c.mime || 'application/octet-stream';
+        let previous = null;
+        if (c.type === 'changed') {
+          const hit = atPath(c.path);
+          if (hit) {
+            if (c.keep === false) mediaStore.delete(hit[0]);
+            else { hit[1].versionOf = hit[1].path; hit[1].versionAt = at(); hit[1].path = null; previous = hit[0]; }
+          }
+        }
+        mediaStore.set(id, { mime, bytes: data.length, owner: null, data, claimed: true, createdAt: Date.now(), name: c.path.split('/').pop(), area, path: c.path });
+        out.push({ type: c.type, mediaId: id, previous, path: c.path, seq: journal(c.type, id, previous, c.path) });
+      }
+      if (out.length) await hook('mediaChanged', { area, seq: out[out.length - 1].seq, count: out.length });
+      return out;
     },
     /** GateControl ≥ 1.177.0: the hourly clean-up — unclaimed files older than 24 h at `now` go → count */
     mediaCleanup(now = Date.now()) {
