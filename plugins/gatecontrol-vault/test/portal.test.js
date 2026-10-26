@@ -455,7 +455,7 @@ test('smoke: sharing (safety number first), a save during a key change, a confli
       navTo(doc, 'Importieren / Exportieren');
       const input = doc.getElementById('vp-file');
       byText(doc, 'button', 'Datei wählen').click();
-      const csv = 'name,url,username,password,note\nBahn.de,https://bahn.de,marc,pw1,\nBahn.de,https://bahn.de,marc,pw1,\nKita,https://kita.de,anna,pw2,\n';
+      const csv = 'name,url,username,password,note\nBahn.de,https://bahn.de,marc,pw1,\nBahn.de,https://bahn.de,marc,pw1,\nKita,https://kita.de,anna,Kita-Kennwort-5821,\n';
       input.files = [{ size: csv.length, text: async () => csv }];
       input.onchange();
       await until('preview', () => text(detail).includes('3 Einträge erkannt'));
@@ -473,7 +473,7 @@ test('smoke: sharing (safety number first), a save during a key change, a confli
       await until('exported', () => f.saved.length === 1);
       assert.equal(f.saved[0].type, 'text/csv');
       assert.match(f.saved[0].name, /^Vault-Export \d{4}-\d{2}-\d{2}\.csv$/);
-      for (const s of ['Kita', 'pw2', 'Korrekt-Pferd', 'Code 4711', 'Familie', 'Persönlich']) assert.ok(f.saved[0].text.includes(s), s);
+      for (const s of ['Kita', 'Kita-Kennwort-5821', 'Korrekt-Pferd', 'Code 4711', 'Familie', 'Persönlich']) assert.ok(f.saved[0].text.includes(s), s);
       // a new master password: the old one stops working, the content stays
       navTo(doc, 'Hauptpasswort ändern');
       const pws = detail.querySelectorAll('input').filter((i) => i.type === 'password');
@@ -488,7 +488,7 @@ test('smoke: sharing (safety number first), a save during a key change, a confli
       assert.ok((await VC.unlock(acc, 'Wolke-Fahrrad-Leuchtturm-92')).userKey.length === 32);
       // no request with a secret in the clear ever left the frame
       const wire = JSON.stringify(f.calls);
-      for (const s of ['Korrekt-Pferd', 'Code 4711', 'pw2', PW, 'Wolke-Fahrrad-Leuchtturm-92']) assert.ok(!wire.includes(s), 'never sent: ' + s);
+      for (const s of ['Korrekt-Pferd', 'Code 4711', 'Kita-Kennwort-5821', PW, 'Wolke-Fahrrad-Leuchtturm-92']) assert.ok(!wire.includes(s), 'never sent: ' + s);
     } finally {
       w.stop();
       await tick();
