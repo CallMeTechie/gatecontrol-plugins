@@ -169,6 +169,13 @@ other plugin's real services and media store), `gc.net.uploadTarget` (a target's
 `upload` handler, `host.uploads`) and `permissions.publicLinks` (`gc.publicLinks.*`,
 `opts.publicLinks` / `host.setPublicLinks`, `host.publicLinkUnlock` /
 `host.publicLinkDownload` with the hook `publicLinkEvent`).
+`opts.gatecontrol: '1.200.0'` adds the person groups (`permissions.groups` `"read"` /
+`"manage"`): `gc.groups.list/get/members/isMember/leadersOf/ensure/remove` with the host's
+checks and codes over `opts.groups` (seed: `[{ id, name, kind, parentId, source, key, archived,
+members: [{ userId, role }] }]`), `host.groupStore` / `host.groupChanges`, `host.editGroups.*`
+(an administrator's changes: create, setMember, removeMember, rename, move, archive, unarchive,
+remove — the latter asks the hook `groupDeleting`), `host.groupsChanged(changes?)` (the queued
+changes by default), `host.groupUsage(groupId, successorUserId)` and `host.groupDeleting(…)`.
 
 Dev builds are always unsigned (`tools/pack.js` drops `GC_PLUGIN_SIGNING_KEY`
 unless `--sign` is passed). Install them on a test server with

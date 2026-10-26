@@ -221,6 +221,17 @@
 //   publicLinkEvent { token, event: 'locked', file: null, zip: false, downloads }) and host.publicLinkDownload(token,
 //   { pin, file (n from 1; none = the ZIP), now }) (per-file counts and maxDownloads; hook { token, event: 'download',
 //   file: { id, name } | null, zip, downloads } / 'expired').
+//
+// GateControl 1.200.0 (opt-in: opts.gatecontrol: '1.200.0') — person groups, src/services/plugins/groups.js:
+//   permissions.groups 'read' | 'manage' (anything else → ERR_INVALID); every plugin has gc.groups, without the
+//   permission each call → ERR_GROUPS_DENIED; ensure / remove need 'manage'. Seed: opts.groups [{ id, name, kind,
+//   parentId, source, key, archived, endsAt, members: [{ userId, role }] }] (accounts from opts.users; a disabled one
+//   stays a member with enabled: false, counts for nothing else). gc.groups.list / get / members ({ nested, roles }) /
+//   isMember / leadersOf (leadership walks up, nobody leads themselves) / ensure (own groups, source plugin:<id>, members
+//   set exactly, NAME_TAKEN per level, family top level, at most 3 levels) / remove (own groups; HAS_CHILDREN).
+//   host.groupStore, host.groupChanges (every change), host.editGroups.* (an administrator's changes), host.groupsChanged
+//   (changes?) — the queued changes to the hook groupsChanged —, host.groupUsage(groupId, successorUserId) read like the
+//   host (≤ 50, label required), host.groupDeleting(groupId, successorUserId). gc.notify({ groups }) is not mirrored.
 
 const fs = require('node:fs');
 const os = require('node:os');
@@ -277,6 +288,10 @@ const QA_READINGS = 4;
 const TILE_ITEMS = 4;
 const TILE_STATES = new Set(['on', 'off', 'good', 'warn', 'crit']);
 const PLUGIN_ID_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+// GateControl ≥ 1.200.0: person groups (services/groups.js KINDS, ROLES, FAMILY_ROLES)
+const GROUP_KINDS = ['department', 'team', 'project', 'site', 'family'];
+const GROUP_ROLES = ['member', 'lead', 'deputy', 'admin'];
+const GROUP_FAMILY_ROLES = ['parent', 'child'];
 const ACTIONS_PER_HOUR = 60;
 // GateControl ≥ 1.177.0 (manifest.js, media.js, events.js, hostApi.js)
 const MEDIA_MAX_BYTES = 100 * 1024 * 1024;
@@ -1657,6 +1672,286 @@ async function createHost(pluginDir, opts = {}) {
     return result;
   };
 
+  // ─── GateControl ≥ 1.200.0: person groups (permissions.groups, src/services/plugins/groups.js) ───
+  // opts.groups seeds the groups: [{ id, name, kind ('team'), parentId, source ('local' | 'directory:x' | 'plugin:<id>'),
+  // key (the external id of a plugin group), archived, endsAt, members: [{ userId, role }] }]. Accounts are opts.users
+  // (a disabled one stays a member with enabled: false). Changes (the plugin's own ensure / remove and host.editGroups)
+  // are recorded in host.groupChanges and queued for host.groupsChanged() — the hook is never called by itself.
+  const gc200 = hostAtLeast('1.200.0');
+  if (gc200 && perms.groups != null && perms.groups !== 'read' && perms.groups !== 'manage') throw hostError('ERR_INVALID', 'plugin.json: permissions.groups: invalid');
+  const groupsLevel = gc200 && (perms.groups === 'read' || perms.groups === 'manage') ? perms.groups : null;
+  const groupStore = new Map(); // id → { id, name, kind, parentId, source, externalId, endsAt, archived, members: Map(userId → { role, source, seq }) }
+  const groupChanges = [];
+  const pendingGroupChanges = [];
+  let groupSeq = 0;
+  let memberSeq = 0;
+  const ownSource = `plugin:${manifest.id}`;
+  const rolesForKind = (kind) => (kind === 'family' ? GROUP_FAMILY_ROLES : GROUP_ROLES);
+  const queueGroupChange = (c) => {
+    const x = { type: c.type, groupId: c.groupId };
+    if (c.userId != null) x.userId = c.userId;
+    if (c.role != null) x.role = c.role;
+    if (c.reason != null) x.reason = c.reason;
+    groupChanges.push(x);
+    pendingGroupChanges.push(x);
+  };
+  const childIdsOf = (id) => [...groupStore.values()].filter((g) => g.parentId === id).sort((a, b) => a.name.localeCompare(b.name)).map((g) => g.id);
+  const ancestorIdsOf = (id) => { const out = []; let g = groupStore.get(id); while (g && g.parentId != null && !out.includes(g.parentId)) { out.push(g.parentId); g = groupStore.get(g.parentId); } return out; };
+  const descendantIdsOf = (id) => { const out = []; const st = childIdsOf(id); while (st.length) { const c = st.shift(); if (out.includes(c)) continue; out.push(c); st.push(...childIdsOf(c)); } return out; };
+  const groupPath = (id) => [...ancestorIdsOf(id).reverse(), id].map((g) => (groupStore.get(g) || {}).name).join(' › ');
+  const heightOf = (id) => childIdsOf(id).reduce((h, c) => Math.max(h, 1 + heightOf(c)), 0);
+  const groupUser = (uid) => allUsers.find((u) => u.id === uid) || null;
+  const totalIds = (id) => { const s = new Set(groupStore.get(id).members.keys()); for (const d of descendantIdsOf(id)) for (const u of groupStore.get(d).members.keys()) s.add(u); return s; };
+  function groupView(g) {
+    if (!g) return null;
+    const own = g.source === ownSource;
+    return {
+      id: g.id, name: g.name, path: groupPath(g.id), kind: g.kind, parentId: g.parentId, childIds: childIdsOf(g.id), depth: ancestorIdsOf(g.id).length + 1,
+      source: g.source, own, key: own ? g.externalId : null, endsAt: g.endsAt, archived: g.archived, memberCount: g.members.size, totalMemberCount: totalIds(g.id).size,
+    };
+  }
+  function addGroup(spec, { quiet = false } = {}) {
+    const id = Number.isSafeInteger(spec.id) && spec.id > 0 ? spec.id : groupSeq + 1;
+    if (groupStore.has(id)) throw hostError('ERR_INVALID', `mock host: group ${id} exists`);
+    groupSeq = Math.max(groupSeq, id);
+    const kind = spec.kind || 'team';
+    if (!GROUP_KINDS.includes(kind)) throw hostError('ERR_INVALID', 'mock host: invalid kind');
+    const parentId = spec.parentId == null ? null : spec.parentId;
+    if (parentId != null && !groupStore.has(parentId)) throw hostError('ERR_INVALID', 'mock host: unknown parentId');
+    const g = { id, name: String(spec.name || `Gruppe ${id}`), kind, parentId, source: spec.source || 'local', externalId: spec.key == null ? null : String(spec.key), endsAt: spec.endsAt || null, archived: spec.archived === true, members: new Map() };
+    groupStore.set(id, g);
+    if (!quiet) queueGroupChange({ type: 'group_created', groupId: id });
+    for (const m of spec.members || []) {
+      const role = m.role == null ? (kind === 'family' ? 'child' : 'member') : m.role;
+      if (!rolesForKind(kind).includes(role)) throw hostError('ERR_INVALID', `mock host: role ${role} in a ${kind}`);
+      g.members.set(m.userId, { role, source: g.source, seq: ++memberSeq });
+      if (!quiet) queueGroupChange({ type: 'member_added', groupId: id, userId: m.userId, role });
+    }
+    return g;
+  }
+  for (const spec of opts.groups || []) addGroup(spec, { quiet: true });
+  function setGroupMember(g, uid, role, source) {
+    const cur = g.members.get(uid);
+    if (cur && cur.role === role) return { created: false, changed: false };
+    if (cur) { cur.role = role; queueGroupChange({ type: 'role_changed', groupId: g.id, userId: uid, role }); return { created: false, changed: true }; }
+    g.members.set(uid, { role, source, seq: ++memberSeq });
+    queueGroupChange({ type: 'member_added', groupId: g.id, userId: uid, role });
+    return { created: true, changed: true };
+  }
+  function removeGroupMember(g, uid, reason) {
+    const cur = g.members.get(uid);
+    if (!cur) return false;
+    g.members.delete(uid);
+    queueGroupChange({ type: 'member_removed', groupId: g.id, userId: uid, role: cur.role, reason });
+    return true;
+  }
+  function deleteGroup(g) {
+    for (const [uid, m] of [...g.members]) { g.members.delete(uid); queueGroupChange({ type: 'member_removed', groupId: g.id, userId: uid, role: m.role, reason: 'group_deleted' }); }
+    groupStore.delete(g.id);
+    queueGroupChange({ type: 'group_deleted', groupId: g.id });
+  }
+  function archiveGroup(g, archived) {
+    const ids = archived ? [g.id, ...descendantIdsOf(g.id)] : [g.id];
+    for (const id of ids) {
+      const x = groupStore.get(id);
+      if (x.archived === archived) continue;
+      x.archived = archived;
+      queueGroupChange({ type: archived ? 'group_archived' : 'group_unarchived', groupId: id });
+    }
+  }
+  const needGroups = () => {
+    if (!groupsLevel) throw hostError('ERR_GROUPS_DENIED', 'this plugin has no groups permission (permissions.groups)');
+  };
+  const groupIdOf = (v, what) => {
+    const n = typeof v === 'string' && /^\d{1,15}$/.test(v) ? Number(v) : v;
+    if (!Number.isSafeInteger(n) || n <= 0) throw hostError('ERR_INVALID', `invalid ${what}`);
+    return n;
+  };
+  const groupBool = (v, what) => {
+    if (v != null && typeof v !== 'boolean') throw hostError('ERR_INVALID', `${what} must be a boolean`);
+    return v === true;
+  };
+  const groupOr404 = (id) => {
+    const g = groupStore.get(id);
+    if (!g) throw hostError('ERR_NOT_FOUND', 'group not found');
+    return g;
+  };
+  function groupMembers(g, { nested = false, roles } = {}) {
+    const row = (uid, m, direct, groupId) => {
+      const u = groupUser(uid) || { name: String(uid), disabled: false };
+      return { userId: uid, name: u.name, role: direct ? m.role : 'member', direct, source: m.source, groupId, enabled: !u.disabled };
+    };
+    const out = new Map();
+    for (const [uid, m] of g.members) out.set(uid, row(uid, m, true, g.id));
+    if (nested) {
+      const queue = childIdsOf(g.id);
+      const seen = new Set([g.id]);
+      while (queue.length) {
+        const cid = queue.shift();
+        if (seen.has(cid)) continue;
+        seen.add(cid);
+        const c = groupStore.get(cid);
+        if (!c || c.archived) continue;
+        for (const [uid, m] of c.members) if (!out.has(uid)) out.set(uid, row(uid, m, false, cid));
+        queue.push(...childIdsOf(cid));
+      }
+    }
+    let res = [...out.values()];
+    if (Array.isArray(roles) && roles.length) res = res.filter((m) => roles.includes(m.role));
+    const rank = { lead: 0, parent: 0, deputy: 1, admin: 2, member: 3, child: 3 };
+    return res.sort((a, b) => (Number(b.direct) - Number(a.direct)) || (rank[a.role] - rank[b.role]) || a.name.localeCompare(b.name));
+  }
+  function leadersAt(gid, uid) {
+    const g = groupStore.get(gid);
+    if (!g || g.archived) return [];
+    const lead = g.kind === 'family' ? 'parent' : 'lead';
+    return [...g.members].filter(([u, m]) => (m.role === lead || m.role === 'deputy') && u !== uid && !(groupUser(u) || {}).disabled)
+      .sort((a, b) => (Number(a[1].role !== lead) - Number(b[1].role !== lead)) || (a[1].seq - b[1].seq))
+      .map(([u, m]) => ({ userId: u, name: (groupUser(u) || {}).name || null, role: m.role, groupId: gid }));
+  }
+  const leadersWalk = (gid, uid) => { for (const id of [gid, ...ancestorIdsOf(gid)]) { const f = leadersAt(id, uid); if (f.length) return f; } return []; };
+
+  api['groups.list'] = async (a) => {
+    needGroups();
+    const o = a || {};
+    if (o.kind != null && !GROUP_KINDS.includes(o.kind)) throw hostError('ERR_INVALID', 'invalid kind');
+    const inherited = groupBool(o.includeInherited, 'includeInherited');
+    const archived = groupBool(o.includeArchived, 'includeArchived');
+    if (o.userId != null) {
+      const uid = groupIdOf(o.userId, 'userId');
+      const out = new Map();
+      for (const g of groupStore.values()) {
+        const m = g.members.get(uid);
+        if (!m || (!archived && g.archived)) continue;
+        out.set(g.id, { id: g.id, name: g.name, path: groupPath(g.id), kind: g.kind, role: m.role, direct: true, source: g.source, archived: g.archived });
+      }
+      if (inherited) {
+        for (const x of [...out.values()]) {
+          for (const aid of ancestorIdsOf(x.id)) {
+            const p = groupStore.get(aid);
+            if (out.has(aid) || (!archived && p.archived)) continue;
+            out.set(aid, { id: p.id, name: p.name, path: groupPath(p.id), kind: p.kind, role: 'member', direct: false, source: p.source, archived: p.archived });
+          }
+        }
+      }
+      return [...out.values()].filter((g) => !o.kind || g.kind === o.kind).sort((x, y) => x.path.localeCompare(y.path));
+    }
+    return [...groupStore.values()].filter((g) => (archived || !g.archived) && (!o.kind || g.kind === o.kind)).map(groupView).sort((x, y) => x.path.localeCompare(y.path));
+  };
+  api['groups.get'] = async (a) => { needGroups(); return groupView(groupStore.get(groupIdOf(a && a.id, 'group id'))); };
+  api['groups.members'] = async (a) => {
+    needGroups();
+    const o = a || {};
+    const gid = groupIdOf(o.id, 'group id');
+    const nested = groupBool(o.nested, 'nested');
+    if (o.roles != null && !(Array.isArray(o.roles) && o.roles.length <= 6 && o.roles.every((r) => GROUP_ROLES.includes(r) || GROUP_FAMILY_ROLES.includes(r)))) throw hostError('ERR_INVALID', 'invalid roles');
+    return groupMembers(groupOr404(gid), { nested, roles: o.roles || undefined });
+  };
+  api['groups.isMember'] = async (a) => {
+    needGroups();
+    const o = a || {};
+    const uid = groupIdOf(o.userId, 'userId');
+    const gid = groupIdOf(o.groupId, 'group id');
+    const nested = groupBool(o.nested, 'nested');
+    const g = groupOr404(gid);
+    if (g.archived || !groupUser(uid) || groupUser(uid).disabled) return false;
+    const ids = nested ? [gid, ...descendantIdsOf(gid).filter((d) => !groupStore.get(d).archived)] : [gid];
+    return ids.some((id) => groupStore.get(id).members.has(uid));
+  };
+  api['groups.leadersOf'] = async (a) => {
+    needGroups();
+    const o = a || {};
+    const uid = groupIdOf(o.userId, 'userId');
+    if (o.groupId != null) return leadersWalk(groupOr404(groupIdOf(o.groupId, 'group id')).id, uid);
+    const out = [];
+    for (const g of groupStore.values()) {
+      if (!g.members.has(uid) || g.archived) continue;
+      for (const l of leadersWalk(g.id, uid)) if (!out.some((x) => x.userId === l.userId)) out.push(l);
+    }
+    return out.sort((x, y) => Number(x.role === 'deputy') - Number(y.role === 'deputy'));
+  };
+  const ownGroupByKey = (key) => [...groupStore.values()].find((g) => g.source === ownSource && g.externalId === key) || null;
+  const groupKey = (v, what) => {
+    if (typeof v !== 'string' || !/^[A-Za-z0-9_.:-]{1,100}$/.test(v)) throw hostError('ERR_INVALID', `${what} must be 1–100 characters A-Z a-z 0-9 _ . : -`);
+    return v;
+  };
+  const nameTaken = (parentId, name, except) => [...groupStore.values()].some((g) => g.parentId === parentId && g.id !== except && g.name.toLowerCase() === name.toLowerCase());
+  api['groups.ensure'] = async (a) => {
+    needGroups();
+    if (groupsLevel !== 'manage') throw hostError('ERR_GROUPS_DENIED', 'gc.groups.ensure / remove need permissions.groups "manage"');
+    const o = a || {};
+    const key = groupKey(o.key, 'key');
+    if (!GROUP_KINDS.includes(o.kind)) throw hostError('ERR_INVALID', 'invalid kind');
+    if (typeof o.name !== 'string' || !o.name.trim()) throw hostError('ERR_INVALID', 'name required');
+    const name = o.name.replace(/\s+/g, ' ').trim();
+    if (name.length > 100) throw hostError('ERR_INVALID', 'INVALID_NAME: name must be 1–100 characters');
+    let parentId = null;
+    if (o.parentKey != null) {
+      const pk = groupKey(o.parentKey, 'parentKey');
+      if (pk === key) throw hostError('ERR_INVALID', 'a group cannot be its own parent');
+      const p = ownGroupByKey(pk);
+      if (!p) throw hostError('ERR_NOT_FOUND', 'no group of this plugin with that parentKey');
+      parentId = p.id;
+    }
+    if (!Array.isArray(o.members) || o.members.length > 2000) throw hostError('ERR_INVALID', 'members must be a list of at most 2000');
+    const want = new Map();
+    for (const m of o.members) {
+      if (!m || typeof m !== 'object' || Array.isArray(m)) throw hostError('ERR_INVALID', 'invalid member');
+      const uid = groupIdOf(m.userId, 'member userId');
+      if (want.has(uid)) throw hostError('ERR_INVALID', 'a person is listed twice');
+      const role = m.role == null ? (o.kind === 'family' ? 'child' : 'member') : m.role;
+      if (!rolesForKind(o.kind).includes(role)) throw hostError('ERR_INVALID', `role must be one of ${rolesForKind(o.kind).join(', ')}`);
+      if (!groupUser(uid)) throw hostError('ERR_INVALID', `unknown user ${uid}`);
+      want.set(uid, role);
+    }
+    if (parentId != null) {
+      if (o.kind === 'family' || groupStore.get(parentId).kind === 'family') throw hostError('ERR_INVALID', 'FAMILY_TOP_LEVEL: family groups stay at the top level');
+      if (ancestorIdsOf(parentId).length + 2 > 3) throw hostError('ERR_INVALID', 'DEPTH_EXCEEDED: at most 3 levels');
+    }
+    const result = { created: false, added: 0, removed: 0, changed: 0 };
+    let g = ownGroupByKey(key);
+    if (!g) {
+      if (nameTaken(parentId, name, null)) throw hostError('ERR_INVALID', 'NAME_TAKEN: a group with this name exists here');
+      g = addGroup({ name, kind: o.kind, parentId, source: ownSource, key });
+      result.created = true;
+    } else {
+      if (g.archived) archiveGroup(g, false);
+      if (name !== g.name) {
+        if (nameTaken(g.parentId, name, g.id)) throw hostError('ERR_INVALID', 'NAME_TAKEN: a group with this name exists here');
+        g.name = name;
+        queueGroupChange({ type: 'group_renamed', groupId: g.id });
+      }
+      if (o.kind !== g.kind) {
+        if (o.kind === 'family' || g.kind === 'family') for (const uid of [...g.members.keys()]) if (removeGroupMember(g, uid)) result.removed++;
+        g.kind = o.kind;
+      }
+      if (g.parentId !== parentId) { g.parentId = parentId; queueGroupChange({ type: 'group_moved', groupId: g.id }); }
+    }
+    for (const uid of [...g.members.keys()]) if (!want.has(uid) && removeGroupMember(g, uid)) result.removed++;
+    for (const [uid, role] of want) {
+      const r = setGroupMember(g, uid, role, ownSource);
+      if (r.created) result.added++; else if (r.changed) result.changed++;
+    }
+    return { ...groupView(g), ...result };
+  };
+  api['groups.remove'] = async (a) => {
+    needGroups();
+    if (groupsLevel !== 'manage') throw hostError('ERR_GROUPS_DENIED', 'gc.groups.ensure / remove need permissions.groups "manage"');
+    const k = a && a.key;
+    let g;
+    if (typeof k === 'number') {
+      g = groupOr404(groupIdOf(k, 'group id'));
+      if (g.source !== ownSource) throw hostError('ERR_READ_ONLY', `this group is managed by ${g.source}`);
+    } else {
+      g = ownGroupByKey(groupKey(k, 'key'));
+      if (!g) return false;
+    }
+    if (childIdsOf(g.id).length) throw hostError('ERR_INVALID', 'HAS_CHILDREN: delete or move the subgroups first');
+    // the plugin that removes its own group is not asked (groupDeleting)
+    deleteGroup(g);
+    return true;
+  };
+
   const call = async (name, args) => wire(await api[name](wire(args)));
 
   /** A WebSocket like the host's (EventEmitter: message, close, error; send, close) wired to opts.websocket. */
@@ -1788,6 +2083,19 @@ async function createHost(pluginDir, opts = {}) {
     events: Object.freeze({
       emit: (o) => { const x = o && typeof o === 'object' ? o : {}; return call('events.emit', { users: x.users, type: x.type, data: x.data }); },
     }),
+    // GateControl ≥ 1.200.0: person groups — like the child bootstrap every plugin has gc.groups, the host refuses it
+    // without permissions.groups (ERR_GROUPS_DENIED); an older host has no gc.groups at all
+    ...(gc200 ? {
+      groups: Object.freeze({
+        list: (o) => { const x = o && typeof o === 'object' ? o : {}; return call('groups.list', { userId: x.userId, kind: x.kind, includeInherited: x.includeInherited, includeArchived: x.includeArchived }); },
+        get: (id) => call('groups.get', { id }),
+        members: (id, o) => { const x = o && typeof o === 'object' ? o : {}; return call('groups.members', { id, nested: x.nested, roles: x.roles }); },
+        isMember: (userId, groupId, o) => { const x = o && typeof o === 'object' ? o : {}; return call('groups.isMember', { userId, groupId, nested: x.nested }); },
+        leadersOf: (userId, o) => { const x = o && typeof o === 'object' ? o : {}; return call('groups.leadersOf', { userId, groupId: x.groupId }); },
+        ensure: (spec) => { const x = spec && typeof spec === 'object' ? spec : {}; return call('groups.ensure', { key: x.key, name: x.name, kind: x.kind, parentKey: x.parentKey, members: x.members }); },
+        remove: (key) => call('groups.remove', { key }),
+      }),
+    } : {}),
     services: Object.freeze({
       call: (o) => { const x = o && typeof o === 'object' ? o : {}; return call('services.call', { plugin: x.plugin, service: x.service, userId: x.userId, payload: x.payload }); },
       // GateControl ≥ 1.178.0 only (like the child bootstrap of an older host, the function is missing before)
@@ -1978,6 +2286,60 @@ async function createHost(pluginDir, opts = {}) {
     routes,
     /** GateControl ≥ 1.191.0: the deliverNotice calls { payload, covered, fallback, answer, error } */
     sinkCalls,
+    /**
+     * GateControl ≥ 1.200.0 (opts.gatecontrol: '1.200.0'): the person groups. groupStore: id → { id, name, kind, parentId,
+     * source, externalId, endsAt, archived, members: Map(userId → { role, source }) }; groupChanges: every change so far
+     * ({ type, groupId, userId?, role?, reason? } like groups.events 'change').
+     */
+    groupStore,
+    groupChanges,
+    /**
+     * Changes made by an administrator / another source (each queues its changes for groupsChanged()):
+     * create({ name, kind, parentId, source, key, members }) → id, setMember(id, userId, role), removeMember(id, userId),
+     * rename(id, name), move(id, parentId), archive(id) (with its subgroups), unarchive(id),
+     * remove(id, { successorUserId }) — asks this plugin's groupDeleting first (not for its own group), like removeWithHooks.
+     */
+    editGroups: {
+      create: (spec) => addGroup(spec || {}).id,
+      setMember: (id, userId, role) => { const g = groupOr404(id); const r = role == null ? (g.kind === 'family' ? 'child' : 'member') : role; if (!rolesForKind(g.kind).includes(r)) throw hostError('ERR_INVALID', 'mock host: invalid role'); return setGroupMember(g, userId, r, 'local'); },
+      removeMember: (id, userId, reason) => removeGroupMember(groupOr404(id), userId, reason),
+      rename: (id, name) => { const g = groupOr404(id); g.name = String(name); queueGroupChange({ type: 'group_renamed', groupId: id }); },
+      move: (id, parentId) => { const g = groupOr404(id); g.parentId = parentId == null ? null : groupOr404(parentId).id; queueGroupChange({ type: 'group_moved', groupId: id }); },
+      archive: (id) => archiveGroup(groupOr404(id), true),
+      unarchive: (id) => archiveGroup(groupOr404(id), false),
+      async remove(id, o = {}) {
+        const g = groupOr404(id);
+        if (childIdsOf(id).length) throw hostError('ERR_INVALID', 'HAS_CHILDREN: delete or move the subgroups first');
+        if (g.source !== ownSource) await this._deleting(id, o.successorUserId);
+        deleteGroup(g);
+      },
+      _deleting: async (id, successorUserId) => {
+        if (!groupsLevel || typeof plugin.groupDeleting !== 'function') return;
+        try { await hook('groupDeleting', { groupId: id, successorUserId: successorUserId == null ? null : successorUserId }); } catch (e) { logs.push({ level: 'warn', message: 'groupDeleting failed: ' + String((e && e.message) || e) }); }
+      },
+    },
+    /**
+     * The hook groupsChanged({ changes }) as the host calls it (only with permissions.groups and the hook): `changes`
+     * defaults to every change queued since the last call → the changes handed over ([] when none or not called).
+     */
+    async groupsChanged(changes) {
+      const list = changes == null ? pendingGroupChanges.splice(0) : changes;
+      if (!groupsLevel || typeof plugin.groupsChanged !== 'function' || !list.length) return [];
+      await hook('groupsChanged', { changes: list });
+      return list;
+    },
+    /** The hook groupUsage({ groupId, successorUserId }) read like the host: a list (≤ 50), label required → [{ kind, label, onDelete }]. */
+    async groupUsage(groupId, successorUserId = null) {
+      if (!groupsLevel || typeof plugin.groupUsage !== 'function') return [];
+      let out;
+      try { out = await hook('groupUsage', { groupId, successorUserId }); } catch { return []; }
+      if (!Array.isArray(out)) return [];
+      const txt = (v, max) => { if (typeof v !== 'string') return null; const s = v.replace(/[\0-\x1f\x7f]/g, ' ').trim(); return s ? s.slice(0, max) : null; };
+      const name = (manifest.name && typeof manifest.name === 'object' ? manifest.name.de || manifest.name.en : manifest.name) || manifest.id;
+      return out.slice(0, 50).filter((e) => e && typeof e === 'object' && txt(e.label, 200)).map((e) => ({ kind: txt(e.kind, 60) || name, label: txt(e.label, 200), onDelete: txt(e.onDelete, 300) }));
+    },
+    /** The hook groupDeleting({ groupId, successorUserId }) (failures are only logged, like the host). */
+    groupDeleting(groupId, successorUserId = null) { return this.editGroups._deleting(groupId, successorUserId); },
     start: () => hook('start'),
     stop: () => hook('stop'),
     tick: () => hook('tick'),
