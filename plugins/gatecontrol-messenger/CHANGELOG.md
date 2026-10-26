@@ -3,6 +3,11 @@
 Chats zwischen den GateControl-Konten – in der GateControl-App (eigener Tab „Chats“), im
 Windows-Client und im Portal (eigener Tab „Chats“). Alles bleibt auf dem eigenen Server.
 
+## 1.9.1
+- **Kein zweiter Chat „Familie“ mehr**: Der eigene, nur lesbare Kanal, in den Regeln von Familie Nachrichten an einzelne
+  Personen schreiben, hieß wie die Familiengruppe „Familie“. Familie 1.15.1 nennt ihn „Familie-Hinweise“; der Messenger
+  benennt beim Start die schon vorhandenen Kanäle einmal um (englisch „Family notices“). Andere Chats behalten ihren Namen.
+
 ## 1.9.0
 Braucht weiterhin **GateControl ≥ 1.193.0**; die Gruppenchats für GateControl-Gruppen gibt es ab **GateControl 1.200.0**
 (Gruppenverwaltung, `permissions.groups: "read"` – wird erkannt, nicht vorausgesetzt). Neu beim Aktualisieren: das Recht

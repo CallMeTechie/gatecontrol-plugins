@@ -3,6 +3,12 @@
 Die Familie in der GateControl-App (eigener Tab), im Portal (eigener Tab „Familie“) und auf
 drei Admin-Seiten. Alles bleibt auf dem eigenen Server.
 
+## 1.15.1
+- **Kein zweiter Chat „Familie“ mehr**: Eine Regel, die eine Messenger-Nachricht an einzelne Personen schickt, schreibt in
+  deren eigenen, nur lesbaren Kanal. Der hieß bisher wie die Familiengruppe „Familie“ und stand so zweimal in der
+  Chatliste – jetzt heißt er „Familie-Hinweise“ (englisch „Family notices“). Bestehende Kanäle benennt der Messenger
+  ab 1.9.1 gleich um, sonst geschieht es mit der nächsten Nachricht.
+
 ## 1.15.0
 - **Die Familie als GateControl-Gruppe** (ab GateControl 1.200.0, `permissions.groups: "manage"`): Familie hält die
   Gruppe „Familie“ (Art Familie) in GateControls Gruppenverwaltung aktuell – Eltern mit der Rolle Eltern, Kinder mit der

@@ -12,6 +12,8 @@
 // A refusal of the host or of Familie answers `unavailable` (and is logged as service_refused, no content).
 
 const log = require('./log');
+const store = require('./store');
+const seal = require('./seal');
 const { fail } = require('./util');
 
 const PLUGIN = 'gatecontrol-familie';
@@ -78,4 +80,25 @@ function day(ms) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-module.exports = { available, offers, call, calendar, day, roles, reset, PLUGIN, SERVICES };
+// 1.9.1: Familie (≥ 1.15.1) names a person's own notice channel („user:<id>“, send_message) „Familie-Hinweise“ — before,
+// it was called „Familie“ like the family group and showed up twice in the chat list. Channels left with the old
+// name are renamed once at start (Familie would do it only with its next message there).
+const OLD_TITLES = { Familie: 'Familie-Hinweise', Family: 'Family notices' };
+
+/** Rename Familie's notice channels still called „Familie“ / „Family“ → how many were renamed (never throws). */
+async function renameNoticeChannels(gc) {
+  let n = 0;
+  try {
+    const rows = await store.all(gc, "SELECT id, title_enc FROM conversations WHERE managed_by = ? AND managed_key LIKE 'user:%'", [PLUGIN]);
+    for (const r of rows) {
+      const title = seal.open(r.title_enc);
+      if (typeof title !== 'string' || !Object.hasOwn(OLD_TITLES, title)) continue;
+      await store.run(gc, 'UPDATE conversations SET title_enc = ? WHERE id = ?', [seal.seal(OLD_TITLES[title]), r.id]);
+      n++;
+    }
+    if (n) gc.log.info('familie notice channels renamed', n);
+  } catch (e) { gc.log.warn('renaming familie notice channels failed', (e && (e.code || e.message)) || 'error'); }
+  return n;
+}
+
+module.exports = { available, offers, call, calendar, day, roles, reset, renameNoticeChannels, PLUGIN, SERVICES };

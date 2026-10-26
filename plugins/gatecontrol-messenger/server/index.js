@@ -94,6 +94,8 @@ module.exports = {
     require('./familie').reset();
     seal._reset();
     await seal.init(gc);
+    // 1.9.1: Familie's notice channels get their own name (server/familie.js)
+    await require('./familie').renameNoticeChannels(gc);
     gc.log.info('messenger started', gc.plugin.version);
   },
 
