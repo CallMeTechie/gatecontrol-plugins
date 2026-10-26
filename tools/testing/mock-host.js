@@ -1415,8 +1415,11 @@ async function createHost(pluginDir, opts = {}) {
     const a = areaStore.get(area);
     if (!a) return null;
     const u = areaUsage(area);
-    return { area, label: a.label, target: null, form: 'blocks', moving: null, bytes: u.bytes, count: u.count, quota: a.quota, quotaDefault: a.quota,
-      pending: { count: 0, bytes: 0 }, state: 'ok', error: null, encrypted: true, free: null, scan: null };
+    // like GateControl: { id: null, kind: 'server' } for this server; a test may set a.target ({ id, kind: 'local'|'smb'|'webdav'|'s3', label })
+    const target = a.target || { id: null, kind: 'server', label: null };
+    const form = a.form || 'blocks';
+    return { area, label: a.label, target, form, moving: null, bytes: u.bytes, count: u.count, quota: a.quota, quotaDefault: a.quota,
+      pending: { count: 0, bytes: 0 }, state: 'ok', error: null, encrypted: form === 'blocks', free: null, scan: null };
   };
   const areaQuotaFull = (area, add) => { const a = areaStore.get(area); return a.quota != null && areaUsage(area).bytes + add > a.quota; };
   if (gc204) {

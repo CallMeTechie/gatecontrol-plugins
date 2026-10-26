@@ -8,15 +8,17 @@
 //   PUT  admin/teams/<id>             { label?, members?, quota?, archived? }
 //   DELETE admin/teams/<id>           an empty team folder (one with files: archive it)
 //   POST admin/license/refresh        fetch the licence now (after "Personen hinzubuchen")
+//   PUT  admin/backup-hint            { on } — the hint "Das GateControl-Backup sichert keine Drive-Dateien" (backup.js)
 
 const store = require('./store');
 const people = require('./people');
 const seats = require('./seats');
 const areas = require('./areas');
+const backup = require('./backup');
 const { fail, posInt } = require('./util');
 
 async function overview(gc) {
-  const [s, us, rows] = await Promise.all([seats.summary(gc), people.users(gc), store.all(gc, 'SELECT * FROM areas ORDER BY kind, label')]);
+  const [s, us, rows, settings] = await Promise.all([seats.summary(gc), people.users(gc), store.all(gc, 'SELECT * FROM areas ORDER BY kind, label'), areas.settingsOf(gc)]);
   const seatOf = new Map(s.seats.map((x) => [x.userId, x.kind]));
   const list = [];
   for (const a of rows) {
@@ -29,7 +31,7 @@ async function overview(gc) {
     });
   }
   return {
-    licence: s.licence, limits: s.limits, counts: s.counts, exceeded: s.exceeded,
+    licence: s.licence, limits: s.limits, counts: s.counts, exceeded: s.exceeded, backup: await backup.state(gc, settings.backupHint),
     people: [...us.values()].map((u) => ({ id: u.id, name: u.name, role: u.role, seat: seatOf.get(u.id) || null })),
     areas: list,
   };
@@ -56,6 +58,11 @@ async function route(gc, req, seg, user, now) {
   if (a === 'teams' && seg.length === 2 && m === 'POST') return { team: await areas.createTeam(gc, req.body || {}, now) };
   if (a === 'teams' && seg.length === 3 && (m === 'PUT' || m === 'PATCH')) return { team: await areas.updateTeam(gc, String(b), req.body || {}, now) };
   if (a === 'teams' && seg.length === 3 && m === 'DELETE') return { removed: await areas.removeTeam(gc, String(b)) };
+  if (a === 'backup-hint' && seg.length === 2 && (m === 'PUT' || m === 'POST')) {
+    const on = !!(req.body && req.body.on === true);
+    await gc.settings.set('backup_hint', on);
+    return { backup: await backup.state(gc, on) };
+  }
   if (a === 'license' && b === 'refresh' && seg.length === 3 && m === 'POST') {
     if (!gc.license || typeof gc.license.refresh !== 'function') throw fail('invalid');
     const r = await gc.license.refresh();

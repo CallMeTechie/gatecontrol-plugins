@@ -32,6 +32,7 @@ const admin = require('./admin');
 const jobs = require('./jobs');
 const links = require('./links');
 const ui = require('./ui');
+const services = require('./services');
 const { t } = require('./text');
 const { STATUS, fail, isKnown, posInt, DEVICE_RE, day, iso } = require('./util');
 
@@ -260,6 +261,29 @@ module.exports = {
 
   async render(view) {
     return { html: ui.render(view || {}, t) };
+  },
+
+  /** Services for other plugins (services.js): list_areas, save_file — for the person of the call (userId). */
+  async service({ name, caller, user, payload } = {}, gc) {
+    if (name !== 'save_file' && name !== 'list_areas') return { ok: false, code: 'not_found' };
+    if (!user || !Number.isSafeInteger(user.id) || user.id <= 0) return { ok: false, code: 'invalid' };
+    const lang = payload && payload.lang === 'en' ? 'en' : 'de';
+    let ctx = null;
+    try {
+      ctx = await context(gc, { ...user, loggedIn: true }, lang, Date.now());
+      ctx.deviceId = typeof caller === 'string' && DEVICE_RE.test(caller) ? caller : null;
+      if (!ctx.user) throw fail('forbidden');
+      if (!ctx.licence.valid) throw fail('not_licensed');
+      if (!ctx.seat) throw fail('no_seat');
+      await ctx.visible();
+      const out = name === 'list_areas' ? await services.listAreas(ctx) : await services.saveFile(ctx, payload);
+      await after(gc, ctx, true);
+      return { ok: true, ...out };
+    } catch (e) {
+      if (ctx) await after(gc, ctx, false);
+      if (!isKnown(e) && !(e && HOST_CODES[e.code])) gc.log.warn('service failed', name, (e && (e.code || e.message)) || 'error');
+      return { ok: false, code: isKnown(e) ? e.code : (e && HOST_CODES[e.code]) || 'internal' };
+    }
   },
 
   /** The portal tab "Drive": people switched on (not a kiosk device). */

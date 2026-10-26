@@ -1,6 +1,6 @@
 'use strict';
 
-// The portal tab "Drive". The host shows plugin HTML only in a sandboxed frame (opaque origin, inline scripts and
+// The portal tab "Drive" and the admin pages (overview, people, teams — 0.3.0). The host shows plugin HTML only in a sandboxed frame (opaque origin, inline scripts and
 // styles only — no external script, no network of its own, no storage): the page talks to this plugin's API through
 // window.GC.call, uploads with GC.upload and gets live events with GC.on. Everything is inlined here, read once from
 // ui/: portal.css · portal.html · DP_CTX · portal.js.
@@ -21,7 +21,11 @@ function inlineScript(name, src) {
   return src;
 }
 
-const FILES = { css: read('portal.css'), html: read('portal.html'), js: inlineScript('portal.js', read('portal.js')) };
+const FILES = {
+  css: read('portal.css'), html: read('portal.html'), js: inlineScript('portal.js', read('portal.js')),
+  admin: { css: read('admin.css'), html: read('admin.html'), js: inlineScript('admin.js', read('admin.js')) },
+};
+const PAGES = ['overview', 'people', 'teams'];
 
 function esc(s) {
   return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -34,11 +38,11 @@ function island(v) {
 
 const fill = (html, t, lang) => html.replace(/\{\{t:([a-z0-9_.-]+)\}\}/g, (_, k) => esc(t(lang, k)));
 
-/** The portal texts (p.*, err.*) of one language. */
-function portalTexts(lang) {
+/** The page texts (p.* for the portal, a.* for the admin pages; err.*) of one language. */
+function portalTexts(lang, prefix = 'p.') {
   const all = texts[lang];
   const out = {};
-  for (const [k, v] of Object.entries(all)) if (k.startsWith('p.') || k.startsWith('err.')) out[k] = v;
+  for (const [k, v] of Object.entries(all)) if (k.startsWith(prefix) || k.startsWith('err.')) out[k] = v;
   for (const [k, v] of Object.entries(all)) if (k.startsWith('error.')) out['err.' + k.slice(6)] = out['err.' + k.slice(6)] || v;
   return out;
 }
@@ -50,7 +54,15 @@ function portalTexts(lang) {
 function render(view, t) {
   const v = view || {};
   const lang = v.lang === 'en' ? 'en' : 'de';
-  if (v.view !== 'portal') return `<p style="font-family:var(--font);color:var(--muted)">${esc(t(lang, 'p.admin_later'))}</p>`;
+  if (v.view !== 'portal') {
+    // an admin page (GateControl's admin UI, administrators only)
+    const pageId = PAGES.includes(v.page) ? v.page : 'overview';
+    const a = FILES.admin;
+    return '<style>' + FILES.css + a.css + '</style>'
+      + fill(a.html, t, lang)
+      + '<script>window.DA_CTX=' + island({ lang, page: pageId, texts: portalTexts(lang, 'a.') }) + ';</script>'
+      + '<script>' + a.js + '</script>';
+  }
   const u = v.user || {};
   const loggedIn = (v.loggedIn === true || u.loggedIn === true) && u.kiosk !== true;
   const ctx = { lang, view: 'portal', loggedIn, viewer: Number.isSafeInteger(u.id) ? u.id : null, texts: portalTexts(lang) };

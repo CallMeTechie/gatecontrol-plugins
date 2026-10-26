@@ -2,7 +2,7 @@
 
 The files of the family and the team on one's own storage — this server, a NAS or S3 — with areas and rights,
 versions, a trash, links for people without an account and sync with every device. The portal tab "Drive" is here
-(0.2.0); the apps and the admin pages follow.
+(0.2.0), the admin pages and the services for other plugins too (0.3.0); the apps follow.
 
 *Deutsch:* Dateien der Familie und des Teams auf dem eigenen Speicher – Bereiche mit Rechten, Versionen, Papierkorb,
 Abgleich mit allen Geräten. Details im CHANGELOG.
@@ -109,15 +109,38 @@ downloaded from the frame (right-click › Save as); other files download.
 
 ## Admin (GateControl's admin UI)
 
-`/api/v1/plugins/gatecontrol-drive/api/admin/…`: `GET overview`, `PUT seats/<userId>`, `GET|POST teams`,
-`PUT|DELETE teams/<id>` (a team folder with files is archived, not removed), `POST license/refresh` (after booking
-more people).
+Pages (`ui.pages`, `ui/admin.*`): **Übersicht** (licence and people, the areas with their storage, the backup hint),
+**Personen** (switch people on as family / business), **Team-Ordner** (members picked with `GC.pickPrincipals`).
+API `/api/v1/plugins/gatecontrol-drive/api/admin/…`: `GET overview` (`licence`, `limits`, `counts`, `exceeded`,
+`backup { level: 'strong' | 'subtle' | 'off', areas }`, `people`, `areas`), `PUT seats/<userId> { kind }`,
+`GET|POST teams`, `PUT|DELETE teams/<id>` (members with `label`; a team folder with files is archived, not removed),
+`POST license/refresh`, `PUT backup-hint { on }`.
+
+**Backup hint:** GateControl's backup holds Drive's database, never the files of its media areas. While an area lies
+on this server, a folder or a NAS (one copy), the overview shows a box and the administrators get the notification
+`backup_hint` once a week; every area in S3 → one line; setting `backup_hint` off → nothing.
+
+## Services for other plugins
+
+`services.provides` — the caller lists `"gatecontrol-drive:<service>"` in `permissions.services` and calls with the
+person's `userId`; the person needs a seat and write access (a call can do no more than they can):
+
+| Service | Payload | Answer |
+|---|---|---|
+| `list_areas` | `{ lang? }` | `{ ok, areas: [{ id, kind, label, role, writable }] }` |
+| `save_file` | `{ mediaId, area?: 'mine' \| 'family' \| '<area id>', path: 'Schule/Brief.pdf', onConflict?: 'rename' \| 'version' }` | `{ ok, nodeId, areaId, path, name, created }` |
+
+`mediaId`: a file the caller handed over first — `gc.media.handOver(id, { toPlugin: 'gatecontrol-drive', user: userId })`
+(unclaimed, owned by that person). The folders on the way are made; a name that exists gets a free name ("Brief
+(2).pdf") or, with `onConflict: 'version'`, becomes a new version. Codes: `invalid`, `forbidden`, `not_found`,
+`no_seat`, `not_licensed`, `quota`, `upload_invalid` (not the person's fresh file), `exists` (a file where a folder of
+the path should be). The change log names the calling plugin as the device.
 
 ## Background
 
 Every 5 minutes: the trash after *trash_days*, versions after *versions_days* (and more than *versions_max* per file
 at once), the NAS journals (in case the hook was missed), uploads through links the hook did not bring, rows of links
-GateControl has forgotten, old notes of `child_view`.
+GateControl has forgotten, the weekly backup hint, old notes of `child_view`.
 
 ## Development
 

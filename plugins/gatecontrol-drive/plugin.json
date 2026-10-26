@@ -4,7 +4,7 @@
     "de": "Drive",
     "en": "Drive"
   },
-  "version": "0.2.0",
+  "version": "0.3.0",
   "publisher": "CallMeTechie",
   "description": {
     "de": "Dateien der Familie und des Teams auf dem eigenen Speicher – auf diesem Server, einer NAS oder in S3: Meine Dateien, Familie, Ordner der Kinder und Team-Ordner mit Rechten, Versionen, Papierkorb und Abgleich mit allen Geräten.",
@@ -113,8 +113,51 @@
           "en": "The child then gets a note once a day saying who looked."
         },
         "default": true
+      },
+      {
+        "key": "backup_hint",
+        "type": "boolean",
+        "label": {
+          "de": "Hinweis: Das GateControl-Backup sichert keine Drive-Dateien",
+          "en": "Hint: GateControl's backup holds no Drive files"
+        },
+        "help": {
+          "de": "Auffällig, solange ein Bereich nur auf diesem Server oder einer NAS liegt (dann einmal pro Woche auch als Mitteilung an Admins); dezent, wenn alles in S3 liegt.",
+          "en": "Prominent while an area lies only on this server or a NAS (then also once a week as a notification to administrators); subtle when everything lies in S3."
+        },
+        "default": true
       }
-    ]
+    ],
+    "pages": [
+      {
+        "id": "overview",
+        "title": {
+          "de": "Übersicht",
+          "en": "Overview"
+        }
+      },
+      {
+        "id": "people",
+        "title": {
+          "de": "Personen",
+          "en": "People"
+        }
+      },
+      {
+        "id": "teams",
+        "title": {
+          "de": "Team-Ordner",
+          "en": "Team folders"
+        }
+      }
+    ],
+    "nav": {
+      "label": {
+        "de": "Drive",
+        "en": "Drive"
+      },
+      "icon": "M7 18h10a4 4 0 0 0 .5-8A6 6 0 0 0 6 9.5 4.3 4.3 0 0 0 7 18z"
+    }
   },
   "license": {
     "required": true
@@ -136,6 +179,30 @@
         "en": "Someone uploaded through my link"
       },
       "default": true
+    },
+    {
+      "id": "backup_hint",
+      "label": {
+        "de": "Drive-Dateien sind nicht gesichert (Admins)",
+        "en": "Drive files are not backed up (administrators)"
+      },
+      "default": true
     }
-  ]
+  ],
+  "services": {
+    "provides": {
+      "list_areas": {
+        "label": {
+          "de": "Drive-Bereiche einer Person",
+          "en": "A person's Drive areas"
+        }
+      },
+      "save_file": {
+        "label": {
+          "de": "Datei in Drive ablegen",
+          "en": "Save a file in Drive"
+        }
+      }
+    }
+  }
 }

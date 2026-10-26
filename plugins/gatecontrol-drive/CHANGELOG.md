@@ -2,6 +2,30 @@
 
 Dateien der Familie und des Teams auf dem eigenen Speicher – auf diesem Server, einer NAS oder in S3.
 
+## 0.3.0
+- **Admin-Seiten** unter Einstellungen › Plugins › Drive (nach dem Mockup):
+  - **Übersicht:**
+    - Lizenz mit Stufe und Personen („3 von 5 Personen“, Familie/Business getrennt, Hinweis bei Überschreitung).
+    - „Lizenz jetzt abrufen“ nach dem Hinzubuchen.
+    - Alle Bereiche mit Speicherort, Belegung, Dateien, Verschlüsselung und Zustand.
+  - **Personen:** jedes Konto mit Auswahl „nicht freigeschaltet“, „Familie“ oder „Business“, so wie die Lizenz es
+    erlaubt.
+  - **Team-Ordner:**
+    - Anlegen, bearbeiten, archivieren und entfernen (nur leere).
+    - Mitglieder sind Personen oder ganze Gruppen, ausgewählt mit GateControls eigener Auswahl, und haben die Rechte
+      Lesen, Schreiben oder Verwalten.
+    - Platz pro Team-Ordner.
+- **Hinweis „Das GateControl-Backup sichert keine Drive-Dateien“:**
+  - Auffällig, solange ein Bereich nur auf diesem Server, in einem Ordner oder auf einer NAS liegt. Admins bekommen
+    dann einmal pro Woche eine Mitteilung (Thema `backup_hint`).
+  - Dezent, wenn alles in S3 liegt.
+  - Abschaltbar mit „Ausblenden“ oder in den Einstellungen.
+- **Dienste für andere Plugins** (für „In Drive speichern“ in Messenger, GateDrop, Schule):
+  - `list_areas`: wohin eine Person speichern darf.
+  - `save_file`: eine übergebene Datei unter einem Pfad ablegen; fehlende Ordner entstehen dabei, bei gleichem Namen
+    gibt es einen freien Namen oder eine neue Version.
+  - Es gelten die Rechte der Person: Freischaltung und Schreibrecht im Bereich.
+
 ## 0.2.0
 - **Portal-Tab „Drive“** nach dem Mockup:
   - Bereiche links (auf dem Handy als Reihe oben), Kacheln mit Vorschaubildern oder Liste, Pfad, Sortieren, Suche.

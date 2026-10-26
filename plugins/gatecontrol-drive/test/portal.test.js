@@ -35,13 +35,12 @@ test('render: the portal tab inlines its style, the context and the script; no t
   for (const id of ['dp-app', 'dp-nav', 'dp-main', 'dp-crumbs', 'dp-q', 'dp-tools', 'dp-msg', 'dp-dialog', 'dp-file', 'dp-ups', 'dp-drop']) assert.ok(portalHtml().includes(`id="${id}"`), id);
   assert.equal(ctxOf(portalHtml({ user: { id: 2, loggedIn: false } })).loggedIn, false, 'device trust only: no files');
   assert.equal(ctxOf(portalHtml({ user: { id: 2, loggedIn: true, kiosk: true } })).loggedIn, false, 'never on a kiosk device');
-  assert.match(ui.render({ view: 'page', lang: 'de' }, t), /nächsten Version/);
   assert.deepEqual(manifest.ui.portal.label, { de: 'Drive', en: 'Drive' });
   assert.equal(manifest.permissions.publicLinks, true);
 });
 
 test('the frame\'s rules: no modals, no storage, no innerHTML, no eval, nothing in the console, no external URL', () => {
-  for (const f of ['portal.js', 'portal.html', 'portal.css']) {
+  for (const f of ['portal.js', 'portal.html', 'portal.css', 'admin.js', 'admin.html', 'admin.css']) {
     const src = fs.readFileSync(path.join(UI, f), 'utf8');
     assert.ok(!/\b(alert|confirm|prompt|print)\(/.test(src), `${f}: sandboxed frames have no modals`);
     assert.ok(!/\.(innerHTML|outerHTML)\s*=|insertAdjacentHTML|document\.write|DOMParser|createContextualFragment/.test(src), `${f}: text only through textContent / attributes`);

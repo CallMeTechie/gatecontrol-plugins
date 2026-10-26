@@ -73,6 +73,7 @@ async function settingsOf(gc) {
     trashDays: Math.max(1, n('trash_days', 30)),
     mineQuota: n('mine_quota_gb', 50) > 0 ? Math.round(n('mine_quota_gb', 50) * GB) : null,
     parentsView: all.child_parents_view !== false && all.child_parents_view !== 'false',
+    backupHint: all.backup_hint !== false && all.backup_hint !== 'false',
   };
 }
 
@@ -231,10 +232,23 @@ async function removeTeam(gc, id) {
   return true;
 }
 
+/** A team folder for administrators: members with a label (a person's name, a group's path), files, space. */
 async function teamView(gc, id) {
   const a = await row(gc, id);
-  const members = await store.all(gc, 'SELECT principal, role FROM members WHERE area_id = ? ORDER BY principal', [id]);
-  return { id: a.id, label: a.label, quota: a.quota_bytes, archived: a.archived_at != null, members };
+  const rows = await store.all(gc, 'SELECT principal, role FROM members WHERE area_id = ? ORDER BY principal', [id]);
+  const us = await people.users(gc);
+  const members = [];
+  for (const m of rows) {
+    const [kind, pid] = m.principal.split(':');
+    let label = null;
+    if (kind === 'u') label = (us.get(Number(pid)) || {}).name || null;
+    else if (gc.groups && typeof gc.groups.get === 'function') {
+      try { const g = await gc.groups.get(Number(pid)); label = g ? (g.path || g.name) : null; } catch { label = null; }
+    }
+    members.push({ principal: m.principal, role: m.role, type: kind === 'u' ? 'user' : 'group', id: Number(pid), label, gone: label == null });
+  }
+  const files = await store.one(gc, 'SELECT COUNT(*) AS n FROM nodes WHERE area_id = ? AND is_dir = 0 AND deleted_at IS NULL', [id]);
+  return { id: a.id, label: a.label, quota: a.quota_bytes, archived: a.archived_at != null, members, files: files.n };
 }
 
 module.exports = { RANK, can, best, idOf, mediaOf, row, ensure, settingsOf, visible, roleIn, readers, createTeam, updateTeam, removeTeam, teamView };
