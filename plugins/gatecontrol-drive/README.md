@@ -1,8 +1,10 @@
 # gatecontrol-drive — Drive
 
 The files of the family and the team on one's own storage — this server, a NAS or S3 — with areas and rights,
-versions, a trash, links for people without an account and sync with every device. The portal tab "Drive" is here
-(0.2.0), the admin pages and the services for other plugins too (0.3.0); the apps follow.
+versions, a trash, links for people without an account and sync with every device. Released with 1.0.0: the portal
+tab "Drive", the admin pages and the services for other plugins; the apps follow. Sold as its own subscription
+(Familie, Business or Kombi, five people included, more bookable on callmetechie.de), not part of GateControl
+Lifetime.
 
 *Deutsch:* Dateien der Familie und des Teams auf dem eigenen Speicher – Bereiche mit Rechten, Versionen, Papierkorb,
 Abgleich mit allen Geräten. Details im CHANGELOG.

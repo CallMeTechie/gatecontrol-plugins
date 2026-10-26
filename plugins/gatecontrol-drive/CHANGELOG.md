@@ -2,6 +2,16 @@
 
 Dateien der Familie und des Teams auf dem eigenen Speicher – auf diesem Server, einer NAS oder in S3.
 
+## 1.0.0
+- **Erste Veröffentlichung im Plugin-Katalog.** Drive ist ein eigenes Abo und nicht in GateControl Lifetime enthalten:
+  - **Familie:** nur Familienmitglieder.
+  - **Business:** nur Team.
+  - **Kombi:** beides.
+  - Fünf Personen sind enthalten, weitere werden im Kundenkonto auf callmetechie.de hinzugebucht. Danach holt
+    „Lizenz jetzt abrufen“ die neue Zahl sofort.
+- Katalog-Eintrag mit Beschreibung, Rechten und Vorschau (Symbol „cloud“).
+- Die Apps (Android, Windows) folgen; bis dahin wird Drive im Portal benutzt.
+
 ## 0.3.0
 - **Admin-Seiten** unter Einstellungen › Plugins › Drive (nach dem Mockup):
   - **Übersicht:**
