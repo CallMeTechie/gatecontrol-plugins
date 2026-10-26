@@ -149,7 +149,7 @@ test('the switch on „Funktionen“ with a messenger 1.0.x: off stops the sync 
   assert.equal((await admin('PUT', 'messenger', { group: 'yes' })).status, 400);
 }));
 
-test('rule action „Messenger-Nachricht senden“: into the group with the placeholders, to single people into their own channel', () => withMessenger({ settings: { mod_presence: true } }, async (host, { as }, m) => {
+test('rule action „Messenger-Nachricht senden“: into the group with the placeholders, to single people into GateControl\'s inbox (1.15.2)', () => withMessenger({ settings: { mod_presence: true } }, async (host, { as }, m) => {
   const rules = (await as(ANNA)('GET', '/presence/rules')).json;
   assert.deepEqual([rules.messenger.available, rules.messenger.group], [true, true], 'the editor offers the action');
   const g = await m.family();
@@ -163,21 +163,17 @@ test('rule action „Messenger-Nachricht senden“: into the group with the plac
   // the group: a message from „GateControl“ (no sender, via Familie)
   const last = (await m.messages(MARC, g.id)).at(-1);
   assert.deepEqual([last.senderId, last.via, last.text, last.system], [null, 'gatecontrol-familie', 'Anna ist da', { event: 'notice' }]);
-  // single people: their own read-only channel „Familie-Hinweise“ (1.15.1, not „Familie“ like the group) with the default text; never the person who set it off
-  for (const u of [MARC, LENA]) {
-    const ch = (await m.managed(u)).filter((c) => c.readonly);
-    assert.equal(ch.length, 1, u.name);
-    assert.equal(ch[0].title, 'Familie-Hinweise');
-    assert.equal((await m.messages(u, ch[0].id)).at(-1).text, 'Anna ist zuhause');
-  }
-  assert.equal((await m.managed(ANNA)).filter((c) => c.readonly).length, 0, 'Anna set it off');
-  const multi = host.serviceCalls.filter((c) => c.service === 'send_message' && Array.isArray(c.payload.conversation));
-  assert.deepEqual(multi.map((c) => c.payload.conversation), [[`user:${MARC.id}`, `user:${LENA.id}`]], '1.7.0: both people in one call');
+  // 1.15.2: single people get a notification in GateControl's inbox (the pinned chat „GateControl“), no messenger
+  // channel of their own (that was a second chat „Familie“); never the person who set it off
+  for (const u of [MARC, LENA, ANNA]) assert.equal((await m.managed(u)).filter((c) => c.readonly).length, 0, u.name);
+  assert.equal(host.serviceCalls.filter((c) => c.service === 'send_message' && c.payload.conversation !== 'family').length, 0);
+  const n = host.notifications.filter((x) => x.data && x.data.familie && x.data.familie.type === 'presence_rule');
+  assert.deepEqual(n.map((x) => [x.topic, x.title, x.users.slice().sort()]), [['presence', 'Anna ist zuhause', [MARC.id, LENA.id].sort()]]);
   const log = (await as(ANNA)('GET', '/presence/rules')).json.log;
   const res = log.map((x) => x.results[0]).sort((a, b) => (a.to === 'family' ? -1 : 1) - (b.to === 'family' ? -1 : 1));
   assert.deepEqual(res, [
     { type: 'messenger', to: 'family', ok: true, sent: 1, error: null },
-    { type: 'messenger', to: [MARC.id, LENA.id, ANNA.id], ok: true, sent: 2, error: null },
+    { type: 'messenger', to: [MARC.id, LENA.id, ANNA.id], via: 'inbox', ok: true, sent: 2, error: null },
   ]);
   // validation
   for (const [a, field] of [[{ type: 'messenger', to: [] }, 'actions.0.to'], [{ type: 'messenger', to: [OMA.id] }, 'actions.0.to'], [{ type: 'messenger', to: 'all' }, 'actions.0.to'],
@@ -332,27 +328,14 @@ test('1.7.0: a messenger 1.0.x has no release_group — the group stays; once it
   assert.deepEqual([info.release.ok, info.sync], [true, null]);
 }));
 
-test('1.7.0: several people with a messenger 1.0.x — the list is refused, then one call per person (and so for 6 hours)', () => withMessenger({ v10: true, settings: { mod_presence: true } }, async (host, { as, clock }, m) => {
-  await as(ANNA)('POST', '/presence/rules', { trigger: 'person_home', userId: ANNA.id, actions: [{ type: 'messenger', to: [MARC.id, LENA.id] }] });
-  await as(ANNA)('PUT', '/presence/consent', { share: true });
-  const sends = () => host.serviceCalls.filter((c) => c.service === 'send_message').map((c) => c.payload.conversation);
-  await as(ANNA)('POST', '/presence', { home: true });
-  assert.deepEqual(sends(), [[`user:${MARC.id}`, `user:${LENA.id}`], `user:${MARC.id}`, `user:${LENA.id}`]);
-  assert.deepEqual((await lastLog(as)).results, [{ type: 'messenger', to: [MARC.id, LENA.id], ok: true, sent: 2, error: null }]);
-  for (const u of [MARC, LENA]) assert.equal((await m.messages(u, (await m.managed(u)).find((c) => c.readonly).id)).length, 1, u.name);
-  // the next run: one call per person straight away
-  await as(ANNA)('POST', '/presence', { home: false });
-  clock.add(MIN);
-  await as(ANNA)('POST', '/presence', { home: true });
-  assert.equal(sends().filter((x) => Array.isArray(x)).length, 1);
-}));
-
-test('1.7.0: several people — refused targets are counted and named in the rule log', () => withMessenger({ settings: { mod_presence: true }, msgUsers: USERS.filter((u) => u.id !== LENA.id) }, async (host, { as }) => {
-  await as(ANNA)('POST', '/presence/rules', { trigger: 'person_home', userId: ANNA.id, actions: [{ type: 'messenger', to: [MARC.id, LENA.id] }] });
+test('1.15.2: single people get their rule message without the messenger (GateControl\'s inbox)', () => withMessenger({ settings: { mod_presence: true } }, async (host, { as }, m) => {
+  await as(ANNA)('POST', '/presence/rules', { trigger: 'person_home', userId: ANNA.id, actions: [{ type: 'messenger', to: [MARC.id], text: 'Auto laden' }] });
+  m.provides = [];
   await as(ANNA)('PUT', '/presence/consent', { share: true });
   await as(ANNA)('POST', '/presence', { home: true });
-  const res = (await lastLog(as)).results[0];
-  assert.deepEqual([res.ok, res.sent, res.error], [false, 1, 'invalid']);
+  assert.deepEqual((await lastLog(as)).results, [{ type: 'messenger', to: [MARC.id], via: 'inbox', ok: true, sent: 1, error: null }]);
+  const n = host.notifications.filter((x) => x.data && x.data.familie && x.data.familie.type === 'presence_rule');
+  assert.deepEqual(n.map((x) => [x.title, x.users]), [['Auto laden', [MARC.id]]]);
 }));
 
 test('1.7.0: GateControl 1.178.0 — with the group off, gc.services.available replaces the empty send_message', () => withMessenger({ gatecontrol: '1.178.0', settings: { messenger_group: false } }, async (host, { clock, admin }, m) => {

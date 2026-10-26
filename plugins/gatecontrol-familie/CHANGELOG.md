@@ -3,6 +3,13 @@
 Die Familie in der GateControl-App (eigener Tab), im Portal (eigener Tab „Familie“) und auf
 drei Admin-Seiten. Alles bleibt auf dem eigenen Server.
 
+## 1.15.2
+- **Kein zweiter Chat „Familie“ mehr – auch kein umbenannter**: Schickt eine Regel eine Messenger-Nachricht an einzelne
+  Personen, kommt sie jetzt als Mitteilung in den angehefteten Chat „GateControl“ (GateControls Posteingang, mit Push)
+  – wie die Regel-Aktion „Mitteilung“. Einen eigenen Kanal pro Person legt Familie nicht mehr an; Nachrichten an die
+  ganze Familie gehen weiter in die Familiengruppe. Das klappt jetzt auch ohne Messenger. Die alten Kanäle löscht der
+  Messenger ab 1.9.2.
+
 ## 1.15.1
 - **Kein zweiter Chat „Familie“ mehr**: Eine Regel, die eine Messenger-Nachricht an einzelne Personen schickt, schreibt in
   deren eigenen, nur lesbaren Kanal. Der hieß bisher wie die Familiengruppe „Familie“ und stand so zweimal in der

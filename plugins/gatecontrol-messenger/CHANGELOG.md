@@ -3,6 +3,12 @@
 Chats zwischen den GateControl-Konten – in der GateControl-App (eigener Tab „Chats“), im
 Windows-Client und im Portal (eigener Tab „Chats“). Alles bleibt auf dem eigenen Server.
 
+## 1.9.2
+- **Der zweite Chat „Familie“ verschwindet**: Familie (ab 1.15.2) schickt Regel-Nachrichten an einzelne Personen in den
+  angehefteten Chat „GateControl“. Die Kanäle, die Familie dafür früher pro Person angelegt hat („Familie“ bzw.
+  „Familie-Hinweise“, nur GateControl konnte dort schreiben), löscht der Messenger beim Start samt ihren Hinweisen; die
+  Apps entfernen den Chat sofort. Die Familiengruppe und die Kanäle anderer Plugins bleiben.
+
 ## 1.9.1
 - **Kein zweiter Chat „Familie“ mehr**: Der eigene, nur lesbare Kanal, in den Regeln von Familie Nachrichten an einzelne
   Personen schreiben, hieß wie die Familiengruppe „Familie“. Familie 1.15.1 nennt ihn „Familie-Hinweise“; der Messenger

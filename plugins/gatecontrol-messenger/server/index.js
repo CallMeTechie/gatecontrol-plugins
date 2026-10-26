@@ -94,8 +94,12 @@ module.exports = {
     require('./familie').reset();
     seal._reset();
     await seal.init(gc);
-    // 1.9.1: Familie's notice channels get their own name (server/familie.js)
-    await require('./familie').renameNoticeChannels(gc);
+    // 1.9.2: Familie's per-person notice channels go — its messages to single people use GateControl's inbox
+    // (server/familie.js removeNoticeChannels)
+    try {
+      const ctx = await context(gc, null, Date.now(), 'de');
+      if (await require('./familie').removeNoticeChannels(gc, ctx)) await api.flush(ctx);
+    } catch (e) { gc.log.warn('removing familie notice channels failed', (e && (e.code || e.message)) || 'error'); }
     gc.log.info('messenger started', gc.plugin.version);
   },
 
