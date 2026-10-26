@@ -2,6 +2,29 @@
 
 Dateien der Familie und des Teams auf dem eigenen Speicher – auf diesem Server, einer NAS oder in S3.
 
+## 0.2.0
+- **Portal-Tab „Drive“** nach dem Mockup:
+  - Bereiche links (auf dem Handy als Reihe oben), Kacheln mit Vorschaubildern oder Liste, Pfad, Sortieren, Suche.
+  - Hochladen über den Knopf oder durch Hineinziehen von Dateien und ganzen Ordnern. Gibt es den Namen schon, fragt
+    Drive: als neue Version, beide behalten oder überspringen, auf Wunsch für alle weiteren Dateien.
+  - Vorschau für Bilder, Videos und Ton; andere Dateien werden heruntergeladen.
+  - Neuer Ordner, Umbenennen, Verschieben (auch in einen anderen Bereich), ältere Versionen (ansehen,
+    wiederherstellen, löschen), Papierkorb (wiederherstellen, endgültig löschen).
+  - Live: Ändert ein anderes Gerät etwas im angezeigten Bereich, lädt der Ordner neu.
+  - Eltern sehen im Ordner eines Kindes den Hinweis, dass das Kind davon erfährt.
+- **Teilen mit Menschen ohne Konto** (Links v2 von GateControl):
+  - Datei oder Ordner: „Ansehen“, „Ansehen + Laden“ oder bei Ordnern „Hochladen“.
+  - Gültig 1, 7 oder 30 Tage oder ohne Ablauf (nur wenn der Admin das erlaubt), auf Wunsch mit PIN.
+  - Seite „Geteilte Links“ mit Zustand, Öffnungen, Downloads, Protokoll und „Beenden“.
+  - Über einen Upload-Link hochgeladene Dateien landen sofort im Ordner. Wer den Link erstellt hat, bekommt eine
+    Mitteilung („… ist über deinen Link angekommen“, Thema `link_upload`).
+  - Wird ein geteilter Ordner umbenannt, verschoben oder gelöscht, beendet Drive seine Links. So zeigt ein alter Link
+    nie einen neuen Ordner gleichen Namens. Eine Datei im Papierkorb beendet ihre Links ebenso.
+- App-/Portal-API: `POST links`, `GET links`, `GET links/<token>/events`, `DELETE links/<token>`;
+  `GET nodes/<id>/children?thumbs=1` liefert Vorschaubilder; `GET me` nennt die Namen der Personen.
+- Braucht weiterhin GateControl 1.207.0. Der Admin muss Links unter Einstellungen › Plugins › Drive › Berechtigungen
+  erlauben.
+
 ## 0.1.0
 - **Erste Fassung (noch nicht veröffentlicht):** der Kern des Plugins ohne Oberfläche – die App-/Portal-API, auf
   der Portal, Android und Windows aufbauen.

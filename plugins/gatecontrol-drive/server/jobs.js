@@ -11,6 +11,7 @@ const nodes = require('./nodes');
 const areas = require('./areas');
 const sync = require('./sync');
 const changes = require('./changes');
+const links = require('./links');
 
 const DAY = 86400000;
 const BATCH = 200;
@@ -38,6 +39,9 @@ async function tick(gc, now = Date.now()) {
         for (const id of r.touched) ctx.touched.add(id);
       } catch (e) { gc.log.warn('nas journal failed', (e && e.code) || 'error'); }
     }
+    // uploads through links the hook did not bring; rows of links GateControl has forgotten
+    try { for (const id of await links.catchUp(gc, now)) ctx.touched.add(id); } catch (e) { gc.log.warn('link uploads failed', (e && e.code) || 'error'); }
+    try { await links.forget(gc); } catch (e) { gc.log.warn('link rows failed', (e && e.code) || 'error'); }
     await store.run(gc, 'DELETE FROM child_views WHERE day < ?', [new Date(now - 7 * DAY).toISOString().slice(0, 10)]);
     await changes.announce(gc, ctx.touched, settings);
     return { purged, versions: old.length, synced };

@@ -16,6 +16,9 @@ const STATUS = {
   seat_limit: 409,
   seat_kind: 409,
   in_use: 409,
+  links_disabled: 403,
+  no_unlimited: 403,
+  no_public_url: 409,
   quota: 507,
   internal: 500,
 };

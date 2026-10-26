@@ -221,6 +221,13 @@
 //   publicLinkEvent { token, event: 'locked', file: null, zip: false, downloads }) and host.publicLinkDownload(token,
 //   { pin, file (n from 1; none = the ZIP), now }) (per-file counts and maxDownloads; hook { token, event: 'download',
 //   file: { id, name } | null, zip, downloads } / 'expired').
+//   GateControl ≥ 1.205.0 (links v2): create({ kind: 'files'|'folder'|'upload', mode: 'view'|'download', area, path,
+//   maxFiles, maxBytes, types, expiresAt: null (only with opts.publicLinksUnlimited / host.setPublicLinksUnlimited(true),
+//   else ERR_INVALID) }); a link has kind, mode, opens, area / path, upload { maxFiles, maxBytes, types, files, bytes };
+//   'gone' also when its area is removed. gc.publicLinks.events(token, { limit, before }) (the log, newest first) and
+//   .uploads(token). host.publicLinkUpload(token, { name, data, mime, by }) plays a visitor's upload: limits, a free name
+//   (" (2)") at <path>/<name> in the link's area, claimed, owned by the link's owner; hook { token, event: 'upload',
+//   mediaId, name, path, uploader, bytes } → { status: 200, name, mediaId } | { status, code }.
 //
 // GateControl 1.200.0 (opt-in: opts.gatecontrol: '1.200.0') — person groups, src/services/plugins/groups.js:
 //   permissions.groups 'read' | 'manage' (anything else → ERR_INVALID); every plugin has gc.groups, without the
@@ -858,6 +865,7 @@ async function createHost(pluginDir, opts = {}) {
   const uploads = [];
   const publicLinks = new Map(); // token → link
   let publicLinksOn = opts.publicLinks === true;
+  let publicLinksUnlimited = opts.publicLinksUnlimited === true; // GateControl ≥ 1.205.0: links without an end
   // the GateControl version emulated for features newer than 1.177.0 (opt-in)
   const hostAtLeast = (v) => {
     const parse = (x) => String(x).split('.').map((n) => Number(n) || 0);
@@ -865,6 +873,7 @@ async function createHost(pluginDir, opts = {}) {
     for (let i = 0; i < 3; i++) if ((a[i] || 0) !== (b[i] || 0)) return (a[i] || 0) > (b[i] || 0);
     return true;
   };
+  const gc205 = hostAtLeast('1.205.0'); // links v2
 
   // Storage: the plugin's own SQLite database with its migrations applied.
   let db = null;
@@ -1611,7 +1620,8 @@ async function createHost(pluginDir, opts = {}) {
     if (l.revoked) return 'revoked';
     if (l.locked) return 'locked';
     if (l.files.some((f) => !mediaStore.has(f.mediaId))) return 'gone';
-    if (now >= l.expiresAt) return 'expired';
+    if (l.kind && l.kind !== 'files' && !areaStore.has(l.area)) return 'gone';
+    if (l.expiresAt != null && now >= l.expiresAt) return 'expired';
     if (l.maxDownloads != null && l.files.every((f) => f.downloads >= l.maxDownloads)) return 'used';
     return 'active';
   }
@@ -1622,6 +1632,9 @@ async function createHost(pluginDir, opts = {}) {
       expiresAt: l.expiresAt, maxDownloads: l.maxDownloads, pin: !!l.pin, pinFailures: l.pinFailures, state, active: state === 'active',
       revoked: l.revoked, locked: l.locked, expired: state === 'expired', downloads: l.files.reduce((n, f) => n + f.downloads, 0),
       files: l.files.map((f) => ({ id: f.id, mediaId: f.mediaId, name: f.name, mime: f.mime, bytes: f.bytes, downloads: f.downloads, lastDownloadAt: f.lastDownloadAt })),
+      ...(gc205 ? { kind: l.kind, mode: l.mode, opens: l.opens } : {}),
+      ...(gc205 && l.kind !== 'files' ? { area: l.area, path: l.path } : {}),
+      ...(gc205 && l.kind === 'upload' ? { upload: { ...l.upload, files: l.uploads.length, bytes: l.uploads.reduce((n, u) => n + u.bytes, 0) } } : {}),
     };
   };
   api['publicLinks.create'] = async (args) => {
@@ -1636,8 +1649,32 @@ async function createHost(pluginDir, opts = {}) {
     };
     const title = txt(x.title, 120, 'title');
     const note = txt(x.note, 500, 'note');
-    if (!Array.isArray(x.files) || !x.files.length || x.files.length > LINK_FILES_MAX) throw hostError('ERR_INVALID', `files must be 1…${LINK_FILES_MAX}`);
-    const files = x.files.map((f, i) => {
+    // GateControl ≥ 1.205.0: folder and upload links, view only, no end
+    const kind = gc205 && x.kind != null ? x.kind : 'files';
+    const mode = gc205 && x.mode != null ? x.mode : 'download';
+    if (!['files', 'folder', 'upload'].includes(kind)) throw hostError('ERR_INVALID', 'kind: files, folder, upload');
+    if (!['view', 'download'].includes(mode)) throw hostError('ERR_INVALID', 'mode: view, download');
+    let folder = null;
+    let upload = null;
+    if (kind !== 'files') {
+      if (x.files != null) throw hostError('ERR_INVALID', 'files belong to kind "files"');
+      if (!media || !media.areas) throw hostError('ERR_INVALID', 'folder and upload links need media.areas in plugin.json');
+      if (typeof x.area !== 'string' || !areaStore.has(x.area)) throw hostError('ERR_INVALID', 'unknown area');
+      let fp;
+      try { fp = cleanAreaPath(x.path == null ? null : String(x.path)); } catch { throw hostError('ERR_INVALID', 'invalid path'); }
+      folder = { area: x.area, path: fp || '' };
+      if (kind === 'upload') {
+        if (media.uploads === false) throw hostError('ERR_INVALID', 'the plugin takes no uploads (media.uploads false)');
+        const maxFiles = x.maxFiles == null ? 500 : x.maxFiles;
+        const maxBytes = x.maxBytes == null ? 5 * 1024 ** 3 : x.maxBytes;
+        if (!Number.isSafeInteger(maxFiles) || maxFiles < 1 || maxFiles > 10000) throw hostError('ERR_INVALID', 'maxFiles must be 1 … 10000');
+        if (!Number.isSafeInteger(maxBytes) || maxBytes < 1024 * 1024 || maxBytes > 1024 ** 4) throw hostError('ERR_INVALID', 'maxBytes must be 1 MB … 1 TB');
+        if (x.types != null && !(Array.isArray(x.types) && x.types.length <= 32 && x.types.every((t) => typeof t === 'string' && /^(?:\.[a-z0-9]{1,10}|[a-z0-9][a-z0-9!#$&^_.+-]{0,63}\/(?:\*|[a-z0-9][a-z0-9!#$&^_.+-]{0,126}))$/.test(t)))) throw hostError('ERR_INVALID', 'invalid types');
+        upload = { maxFiles, maxBytes, types: x.types && x.types.length ? x.types.slice() : null };
+      }
+    }
+    if (kind === 'files' && (!Array.isArray(x.files) || !x.files.length || x.files.length > LINK_FILES_MAX)) throw hostError('ERR_INVALID', `files must be 1…${LINK_FILES_MAX}`);
+    const files = kind !== 'files' ? [] : x.files.map((f, i) => {
       const m = f && typeof f.mediaId === 'string' ? mediaStore.get(f.mediaId) : null;
       if (!m) throw hostError('ERR_INVALID', 'unknown media id');
       if (!m.claimed) throw hostError('ERR_INVALID', 'the media of a link must be claimed');
@@ -1645,18 +1682,38 @@ async function createHost(pluginDir, opts = {}) {
       return { id: String(i + 1), mediaId: f.mediaId, name: f.name != null ? f.name.trim() : (m.name || 'file'), mime: m.mime, bytes: m.bytes, downloads: 0, lastDownloadAt: null };
     });
     const now = Date.now();
-    if (!Number.isSafeInteger(x.expiresAt) || x.expiresAt < now + 60000 || x.expiresAt > now + LINK_TTL_MAX) throw hostError('ERR_INVALID', 'expiresAt must be 1 minute … 30 days ahead');
-    if (x.maxDownloads != null && !(Number.isSafeInteger(x.maxDownloads) && x.maxDownloads >= 1 && x.maxDownloads <= 1000)) throw hostError('ERR_INVALID', 'invalid maxDownloads');
+    const noExpiry = gc205 && x.expiresAt === null;
+    if (noExpiry && !publicLinksUnlimited) throw hostError('ERR_INVALID', 'links without an end are not allowed by an administrator for this plugin');
+    if (!noExpiry && (!Number.isSafeInteger(x.expiresAt) || x.expiresAt < now + 60000 || x.expiresAt > now + LINK_TTL_MAX)) throw hostError('ERR_INVALID', 'expiresAt must be 1 minute … 30 days ahead');
+    if (x.maxDownloads != null && !(kind === 'files' && Number.isSafeInteger(x.maxDownloads) && x.maxDownloads >= 1 && x.maxDownloads <= 1000)) throw hostError('ERR_INVALID', 'invalid maxDownloads');
     if (x.pin != null && !(typeof x.pin === 'string' && /^\d{4,8}$/.test(x.pin))) throw hostError('ERR_INVALID', 'pin must be 4–8 digits');
     const base = publicBase();
     if (!base) throw hostError('ERR_NO_PUBLIC_URL', 'no public https server URL configured (GC_BASE_URL)');
     const token = require('node:crypto').randomBytes(18).toString('base64url');
     const url = `${new URL(String(base)).origin}/s/${token}`;
     publicLinks.set(token, {
-      token, url, title, note, files, expiresAt: x.expiresAt, maxDownloads: x.maxDownloads == null ? null : x.maxDownloads,
+      token, url, title, note, files, expiresAt: noExpiry ? null : x.expiresAt, maxDownloads: x.maxDownloads == null ? null : x.maxDownloads,
       pin: x.pin == null ? null : x.pin, pinFailures: 0, locked: false, revoked: false, ownerUserId: owner.id, createdAt: now, expiredSent: false,
+      kind, mode: kind === 'upload' ? 'download' : mode, area: folder ? folder.area : null, path: folder ? folder.path : null, upload, uploads: [], log: [], opens: 0,
     });
-    return { token, url, expiresAt: x.expiresAt };
+    return { token, url, expiresAt: noExpiry ? null : x.expiresAt };
+  };
+  // GateControl ≥ 1.205.0: the log and what came in through an upload link
+  api['publicLinks.events'] = async (args) => {
+    needLinks();
+    const a = args && typeof args === 'object' ? args : {};
+    const l = typeof a.token === 'string' ? publicLinks.get(a.token) : null;
+    if (!l) return null;
+    const limit = a.limit == null ? 100 : a.limit;
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 500) throw hostError('ERR_INVALID', 'limit must be 1 … 500');
+    const rows = l.log.slice().reverse().filter((e) => a.before == null || e.id < a.before);
+    return rows.slice(0, limit);
+  };
+  api['publicLinks.uploads'] = async (args) => {
+    needLinks();
+    const l = args && typeof args.token === 'string' ? publicLinks.get(args.token) : null;
+    if (!l) return null;
+    return l.uploads.map((u) => ({ ...u }));
   };
   api['publicLinks.list'] = async (args) => {
     needLinks();
@@ -2182,6 +2239,10 @@ async function createHost(pluginDir, opts = {}) {
         list: (o) => call('publicLinks.list', { ownerUserId: o && typeof o === 'object' ? o.ownerUserId : undefined }),
         get: (token) => call('publicLinks.get', { token }),
         revoke: (token) => call('publicLinks.revoke', { token }),
+        ...(gc205 ? {
+          events: (token, o) => { const x = o && typeof o === 'object' ? o : {}; return call('publicLinks.events', { token, limit: x.limit, before: x.before }); },
+          uploads: (token) => call('publicLinks.uploads', { token }),
+        } : {}),
       }),
     } : {}),
     storage: Object.freeze({
@@ -2346,6 +2407,39 @@ async function createHost(pluginDir, opts = {}) {
     /** GateControl ≥ 1.193.0: the public links of this plugin (token → link) and the administrator's switch */
     publicLinks,
     setPublicLinks(on) { publicLinksOn = on === true; },
+    /** GateControl ≥ 1.205.0: the administrator's second switch "Links ohne Ablaufdatum" (off ends every such link) */
+    setPublicLinksUnlimited(on) {
+      publicLinksUnlimited = on === true;
+      if (!publicLinksUnlimited) for (const l of publicLinks.values()) if (l.expiresAt == null) l.revoked = true;
+    },
+    /** GateControl ≥ 1.205.0: a visitor uploads a file through an upload link (PUT /s/<token>/u) */
+    async publicLinkUpload(token, o = {}) {
+      const l = publicLinks.get(token);
+      if (!l || perms.publicLinks !== true || !publicLinksOn) return { status: 404, code: 'not_found' };
+      if (l.kind !== 'upload') return { status: 404, code: 'not_found' };
+      if (linkState(l) !== 'active') return { status: 410, code: linkState(l) };
+      const data = Buffer.from(o.data == null ? '' : o.data);
+      const name = typeof o.name === 'string' ? o.name.trim() : '';
+      if (!name || name.length > 255 || /[\0-\x1f\x7f/\\]/.test(name) || name === '.' || name === '..') return { status: 400, code: 'name' };
+      const mime = String(o.mime || 'application/octet-stream').toLowerCase();
+      if (!typeAllowed(media.types, mime)) return { status: 415, code: 'type' };
+      if (l.upload.types && !l.upload.types.some((t) => (t.startsWith('.') ? name.toLowerCase().endsWith(t) : (t.endsWith('/*') ? mime.startsWith(t.slice(0, -1)) : mime === t)))) return { status: 415, code: 'type' };
+      const used = l.uploads.reduce((n, u) => n + u.bytes, 0);
+      if (l.uploads.length + 1 > l.upload.maxFiles || used + data.length > l.upload.maxBytes) return { status: 413, code: 'limit' };
+      const dot = name.lastIndexOf('.');
+      let got = name;
+      const at = (n) => (l.path ? `${l.path}/${n}` : n);
+      for (let i = 2; pathTaken(l.area, at(got)); i++) got = dot > 0 ? `${name.slice(0, dot)} (${i})${name.slice(dot)}` : `${name} (${i})`;
+      const id = require('node:crypto').randomBytes(16).toString('hex');
+      const p2 = at(got);
+      mediaStore.set(id, { mime, bytes: data.length, owner: l.ownerUserId, data, claimed: true, createdAt: Date.now(), name: got, area: l.area, path: p2 });
+      const by = typeof o.by === 'string' && o.by.trim() ? o.by.trim().slice(0, 80) : null;
+      const rec = { mediaId: id, name: got, path: p2, uploader: by, bytes: data.length, at: new Date().toISOString() };
+      l.uploads.push(rec);
+      l.log.push({ id: l.log.length + 1, at: rec.at, kind: 'upload', ip: '203.0.113.0', visitor: 'v-test', name: got, mediaId: id, bytes: data.length, uploader: by });
+      await hook('publicLinkEvent', { token, event: 'upload', mediaId: id, name: got, path: p2, uploader: by, bytes: data.length });
+      return { status: 200, name: got, mediaId: id, bytes: data.length };
+    },
     /**
      * GateControl ≥ 1.193.0: a visitor of /s/<token> enters a PIN → { status: 200 | 403 (wrong, `left`) | 404 | 410 (ended) }.
      * The fifth wrong PIN locks the link for good (hook publicLinkEvent { token, event: 'locked', file: null, zip: false, downloads }).
