@@ -4,9 +4,6 @@
     "gatecontrol-hello": {
       "release": false,
       "example": true
-    },
-    "gatecontrol-drive": {
-      "release": false
     }
   }
 }

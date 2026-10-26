@@ -2551,6 +2551,215 @@
         "de",
         "en"
       ]
+    },
+    "gatecontrol-drive": {
+      "category": "other",
+      "icon": "cloud",
+      "summary": {
+        "de": "Dateien der Familie und des Teams auf dem eigenen Speicher – Server, NAS oder S3 – mit Rechten, Versionen, Papierkorb und Links.",
+        "en": "Files of the family and the team on your own storage – server, NAS or S3 – with rights, versions, a trash and links."
+      },
+      "audience": "all",
+      "keywords": [
+        "dateien",
+        "files",
+        "cloud",
+        "speicher",
+        "storage",
+        "ordner",
+        "folders",
+        "nas",
+        "s3",
+        "teilen",
+        "share",
+        "versionen"
+      ],
+      "related": [
+        "gatecontrol-familie",
+        "gatecontrol-synology",
+        "gatecontrol-gatedrop",
+        "gatecontrol-messenger"
+      ],
+      "adds": [
+        {
+          "icon": "portal",
+          "title": {
+            "de": "Portal-Tab „Drive“",
+            "en": "Portal tab “Drive”"
+          },
+          "text": {
+            "de": "Hochladen (auch ganze Ordner), Vorschau, Verschieben, Suche – als Kacheln oder Liste",
+            "en": "Upload (whole folders too), preview, move, search – as tiles or a list"
+          }
+        },
+        {
+          "icon": "users",
+          "title": {
+            "de": "Bereiche mit Rechten",
+            "en": "Areas with rights"
+          },
+          "text": {
+            "de": "Meine Dateien, Familie, Ordner der Kinder und Team-Ordner mit Lesen, Schreiben, Verwalten",
+            "en": "My files, family, the children's folders and team folders with read, write, manage"
+          }
+        },
+        {
+          "icon": "cloud",
+          "title": {
+            "de": "Dein Speicher",
+            "en": "Your storage"
+          },
+          "text": {
+            "de": "Je Bereich auf diesem Server, einer NAS oder in S3 – auf der NAS als ganz normale Dateien",
+            "en": "Per area on this server, a NAS or S3 – on the NAS as plain files"
+          }
+        },
+        {
+          "icon": "clock",
+          "title": {
+            "de": "Versionen & Papierkorb",
+            "en": "Versions & trash"
+          },
+          "text": {
+            "de": "Ältere Fassungen wiederherstellen, Gelöschtes zurückholen",
+            "en": "Restore older versions, bring back what was deleted"
+          }
+        },
+        {
+          "icon": "link",
+          "title": {
+            "de": "Links ohne Konto",
+            "en": "Links without an account"
+          },
+          "text": {
+            "de": "Ansehen, Laden oder Hochladen – mit PIN und Ablauf",
+            "en": "View, download or upload – with a PIN and expiry"
+          }
+        },
+        {
+          "icon": "page",
+          "title": {
+            "de": "Admin-Seiten",
+            "en": "Admin pages"
+          },
+          "text": {
+            "de": "Lizenz und Speicher im Überblick, Personen freischalten, Team-Ordner verwalten",
+            "en": "Licence and storage at a glance, switch people on, manage team folders"
+          }
+        },
+        {
+          "icon": "shield",
+          "title": {
+            "de": "Sicherungshinweis",
+            "en": "Backup hint"
+          },
+          "text": {
+            "de": "Erinnert daran, solange Dateien nur auf dem Server oder der NAS liegen",
+            "en": "Reminds you while files lie only on the server or the NAS"
+          }
+        }
+      ],
+      "permissions": [
+        {
+          "icon": "users",
+          "title": {
+            "de": "Benutzer und Gruppen lesen",
+            "en": "Read users and groups"
+          },
+          "text": {
+            "de": "Wer freigeschaltet werden kann, Familien mit Eltern und Kindern, Gruppen für Team-Ordner.",
+            "en": "Who can be switched on, families with parents and children, groups for team folders."
+          },
+          "tag": {
+            "de": "Benutzer",
+            "en": "Users"
+          }
+        },
+        {
+          "icon": "data",
+          "title": {
+            "de": "Daten speichern",
+            "en": "Store data"
+          },
+          "text": {
+            "de": "Ordner, Versionen und Rechte. Die Dateien selbst liegen im Medienspeicher am gewählten Speicherort.",
+            "en": "Folders, versions and rights. The files themselves lie in the media store at the chosen storage location."
+          }
+        },
+        {
+          "icon": "link",
+          "title": {
+            "de": "Öffentliche Links",
+            "en": "Public links"
+          },
+          "text": {
+            "de": "Links für Menschen ohne Konto – nur wenn der Administrator sie erlaubt.",
+            "en": "Links for people without an account – only when the administrator allows them."
+          },
+          "tag": {
+            "de": "Öffentlich",
+            "en": "Public"
+          }
+        },
+        {
+          "icon": "app",
+          "title": {
+            "de": "App- und Portal-Schnittstelle",
+            "en": "App and portal interface"
+          },
+          "text": {
+            "de": "Der Portal-Tab und die GateControl-Apps lesen und ändern Dateien mit den Rechten der Person.",
+            "en": "The portal tab and the GateControl apps read and change files with the person's rights."
+          }
+        },
+        {
+          "icon": "bell",
+          "title": {
+            "de": "Mitteilungen",
+            "en": "Notifications"
+          },
+          "text": {
+            "de": "Hochladen über einen Link, Sicherungshinweis an Admins, Hinweis an Kinder, wenn Eltern hineinsehen.",
+            "en": "Uploads through a link, the backup hint to administrators, a note to children when parents look in."
+          }
+        },
+        {
+          "icon": "clock",
+          "title": {
+            "de": "Im Hintergrund",
+            "en": "In the background"
+          },
+          "text": {
+            "de": "Alle 5 Minuten: Papierkorb und alte Versionen aufräumen, Änderungen von der NAS übernehmen.",
+            "en": "Every 5 minutes: clean up the trash and old versions, take over changes made on the NAS."
+          }
+        }
+      ],
+      "shows": [
+        {
+          "kind": "list",
+          "caption": {
+            "de": "Portal · ein Ordner der Familie",
+            "en": "Portal · a folder of the family"
+          }
+        },
+        {
+          "kind": "tile",
+          "caption": {
+            "de": "Belegt",
+            "en": "Used"
+          },
+          "value": "38 GB"
+        }
+      ],
+      "needs": {
+        "de": "Eine Drive-Lizenz (Familie, Business oder Kombi) und das Portal im Browser",
+        "en": "A Drive licence (Family, Business or Combo) and the portal in a browser"
+      },
+      "languages": [
+        "de",
+        "en"
+      ]
     }
   }
 }
