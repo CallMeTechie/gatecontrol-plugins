@@ -11,6 +11,8 @@
 //                        on a gateway with thermostats only while one of them heats
 //   battery_low          sensor battery below the threshold (setting, default 15 %)
 //                        or "low battery": once per device and day, one message per gateway
+//                        (1.6.1: the sensors of one device — same uniqueid before the first "-" —
+//                        are one entry, not one per sensor)
 //   gateway_unreachable  gateway not answering for 5 minutes (priority high);
 //                        "reachable again" replaces it (same collapse key)
 //
@@ -86,6 +88,22 @@ function dayOf(ms) {
 }
 
 const sensorKey = (o) => (o.uniqueid ? `u:${o.uniqueid}` : `i:${o.id}`);
+
+// One physical device shows up in deCONZ as several sensors (a motion sensor: presence, light
+// level, temperature — "00:15:8d:…-01-0406", "…-01-0400", "…-01-0402"), all with the same name
+// and battery. The device is the uniqueid up to the first "-" (no uniqueid: the name).
+const deviceKey = (o) => (o.uniqueid ? `u:${String(o.uniqueid).split('-')[0].toLowerCase()}` : `n:${o.name}`);
+
+/** The weak batteries of a gateway, one entry per device (the lowest value of its sensors). */
+function byDevice(list) {
+  const out = new Map();
+  for (const o of list) {
+    const k = deviceKey(o);
+    const prev = out.get(k);
+    if (!prev || (o.battery != null && (prev.battery == null || o.battery < prev.battery))) out.set(k, o);
+  }
+  return [...out.values()];
+}
 
 /**
  * Pure transition logic.
@@ -167,7 +185,7 @@ function evaluate(prevMemo, results, cfg, now) {
 
       g.sensors[key] = cur;
     }
-    if (lowBatteries.length) events.push({ topic: 'battery_low', kind: 'low', gateway: gw, items: lowBatteries });
+    if (lowBatteries.length) events.push({ topic: 'battery_low', kind: 'low', gateway: gw, items: byDevice(lowBatteries) });
     memo.gateways[gw.id] = g;
   }
   // gateways without a result this time (sync error, disabled): keep what was known

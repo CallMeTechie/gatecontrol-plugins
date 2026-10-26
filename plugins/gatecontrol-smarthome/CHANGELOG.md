@@ -2,6 +2,11 @@
 
 Phoscon/deCONZ-Integration als GateControl-Plugin – bisher fest in GateControl eingebaut.
 
+## 1.6.1
+- **Batterie-Hinweis ohne Wiederholungen**: Ein Gerät mit mehreren Sensoren (z. B. ein
+  Bewegungsmelder mit Bewegung, Helligkeit und Temperatur) stand bisher mit jedem Sensor
+  einzeln in „Batterie schwach“ – jetzt einmal pro Gerät, mit dem niedrigsten Wert.
+
 ## 1.6.0
 - **Zielzustand statt Umschalten** (GateControl ≥ 1.173.0): Lampen, Steckdosen und Gruppen
   nennen ihre Befehle („Einschalten“ / „Ausschalten“, englisch „Turn on“ / „Turn off“) und
