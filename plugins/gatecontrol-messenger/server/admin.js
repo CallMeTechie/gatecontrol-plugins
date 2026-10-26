@@ -11,10 +11,17 @@
 //                           GET answers familyRoles (Familie offers family_roles)
 //   1.4.0: overview.v14 — counts only (statuses, stories, polls, events, live arrivals, home actions, blocks, reminders)
 //   GET admin/log?days=     errors and limits (log.js)
+//   1.9.0 (GateControl ≥ 1.200.0, permissions.groups "read"): group chats for GateControl groups (groupchats.js)
+//   GET admin/group-chats   { groupChats: { available, max, selected: [{ id, path, kind, gone, archived, members, conversationId,
+//                           ok, error, syncedAt }], options: [{ id, path, kind, family }] } } — GateControl's group paths
+//                           (what the administrator sees under Benutzer › Gruppen anyway), never a chat's content
+//   PUT admin/group-chats   { groupIds: [id] (≤ 50) } → the same + skipped [{ id, path, reason: 'family' | 'archived' }]
+//                           and result { synced, released, dropped, errors }; unknown id → invalid, no gc.groups → unavailable
 
 const store = require('./store');
 const config = require('./config');
 const people = require('./people');
+const groupchats = require('./groupchats');
 const { fail, posInt, iso } = require('./util');
 
 const DAY = 86400000;
@@ -101,6 +108,9 @@ async function route(req, gc, seg, now) {
   if (seg.length === 2 && a === 'settings' && m === 'GET') return settings(gc);
   if (seg.length === 2 && a === 'settings' && (m === 'PUT' || m === 'PATCH')) { await config.update(gc, req.body); return settings(gc); }
   if (seg.length === 2 && a === 'log' && m === 'GET') return logPage(gc, req.query, now);
+  // 1.9.0: group chats for GateControl groups (GateControl ≥ 1.200.0) — server/groupchats.js
+  if (seg.length === 2 && a === 'group-chats' && m === 'GET') return { groupChats: await groupchats.view(gc) };
+  if (seg.length === 2 && a === 'group-chats' && (m === 'PUT' || m === 'PATCH')) return { groupChats: await groupchats.select(gc, req.body, now) };
   throw fail('not_found');
 }
 

@@ -1038,12 +1038,12 @@
         {
           "icon": "users",
           "title": {
-            "de": "Benutzer lesen",
-            "en": "Read users"
+            "de": "Benutzer und Gruppen lesen",
+            "en": "Read users and groups"
           },
           "text": {
-            "de": "Die aktiven GateControl-Konten erscheinen als Kontakte – keine Passwörter, keine Schlüssel.",
-            "en": "The enabled GateControl accounts appear as contacts – no passwords, no keys."
+            "de": "Die aktiven GateControl-Konten erscheinen als Kontakte, gewählte GateControl-Gruppen als Gruppenchats – keine Passwörter, keine Schlüssel.",
+            "en": "The enabled GateControl accounts appear as contacts, chosen GateControl groups as group chats – no passwords, no keys."
           },
           "tag": {
             "de": "Benutzer",

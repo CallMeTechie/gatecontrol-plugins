@@ -70,7 +70,7 @@ const cid = () => `client-${Date.now()}-${++seq}`;
 async function withHost(opts, fn) {
   const o = opts || {};
   const clock = startClock(o.at || T0);
-  const host = await createHost(DIR, { users: o.users || USERS, settings: o.settings || {}, services: o.services, mediaQuota: o.mediaQuota, connected: o.connected, gatecontrol: o.gatecontrol || '1.180.0', actions: o.actions, actionsApi: o.actionsApi, routeTopics: o.routeTopics, sinkActive: o.sinkActive });
+  const host = await createHost(DIR, { users: o.users || USERS, settings: o.settings || {}, services: o.services, mediaQuota: o.mediaQuota, connected: o.connected, gatecontrol: o.gatecontrol || '1.180.0', actions: o.actions, actionsApi: o.actionsApi, routeTopics: o.routeTopics, sinkActive: o.sinkActive, groups: o.groups });
   await host.start();
   const call = (user, method, p, body, query) => host.request({ method, path: p, body: body === undefined ? null : body, query: query || {}, user, lang: o.lang || 'de' });
   const as = (u, viewer = app) => (method, p, body, query) => call(viewer(u), method, p, body, query);

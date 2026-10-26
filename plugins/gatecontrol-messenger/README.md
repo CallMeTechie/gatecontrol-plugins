@@ -60,9 +60,30 @@ GateControl's notifications — see "Notifications in chats (since 1.6.0)".
   `family_roles`, else everyone with the right; `parents`; `rights`), "Kinder
   dürfen anfragen" (`childrenMayRequest`, default on) and the longest "Gerät
   teilen" (`grantMaxDays`: 1, 2, 3, 7, 14, 30 days; default 7).
+* **Gruppenchats für GateControl-Gruppen** (since 1.9.0, GateControl ≥ 1.200.0,
+  `permissions.groups: "read"`): the administrator picks groups with
+  GateControl's picker (`GC.pickPrincipals`; an older GateControl without it:
+  a select fed by `gc.groups.list`). For each chosen group the messenger keeps
+  a managed group chat (`managedBy: "gatecontrol-messenger"`, `coreGroupId`)
+  in step: its effective members (members of subgroups included, archived
+  subgroups and disabled accounts not), the group's path as title (longer
+  than 80 characters: its name), its direct leads, deputies and group admins
+  as chat admins. Members cannot change members, title or picture, nor leave.
+  In step right after the choice, on the hook `groupsChanged`, after a start
+  and every 6 hours (only what differs is written). A group that is
+  deselected, archived or deleted (hook `groupDeleting`, before it goes) hands
+  its chat back like `release_group`: a normal group chat without sync whose
+  admins are the former leads; an archived or deleted group leaves the
+  selection. The family group (kind `family`) is never offered for this:
+  Familie keeps the family chat itself (`sync_group`); choosing it is refused
+  with a note. `groupUsage` reports "Gruppenchat <Titel>" — "bleibt als
+  normaler Chat ohne Abgleich". Admin API: `GET admin/group-chats`,
+  `PUT admin/group-chats { groupIds }` (≤ 50; `skipped` names family and
+  archived groups).
 * **Protokoll**: errors and limits only (push limit, live event limit, file
   clean-up, decryption, refused service calls, failed background steps, since
-  1.4.0 failed home actions).
+  1.4.0 failed home actions, since 1.9.0 group chats that could not be kept
+  in step).
 
 ## App-API
 
@@ -118,7 +139,9 @@ account no longer exists (name null → show "Gelöschtes Konto").
   "peer": Person | null,                 // direct only
   "avatarUrl": "/avatars/…" | "/plugin-media/…" | null, // direct: peer's picture; group: signed URL (portal only)
   "avatarMediaId": "<32 hex>" | null,    // group picture — apps load GET /api/v1/client/plugins/gatecontrol-messenger/media/<id>
-  "managedBy": "gatecontrol-familie" | null,
+  "managedBy": "gatecontrol-familie" | "gatecontrol-messenger" | null,
+  "coreGroupId": 7 | null,               // since 1.9.0: the chat of a GateControl group (managedBy "gatecontrol-messenger") —
+                                         // suggested wording "Gruppe · aus einer GateControl-Gruppe abgeglichen"
   "readonly": false,                     // a plugin's notice channel: members cannot send
   "listPinned": false,                   // since 1.6.0: true for Familie's group — show it under "Angeheftet" after "GateControl"
   "notice": { "source": "plugin:gatecontrol-schule", "label": "Schule" } | null, // since 1.6.0: a notice channel of GateControl's notifications (mark it "Mitteilungen")
