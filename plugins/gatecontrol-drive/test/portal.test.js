@@ -134,6 +134,7 @@ test('smoke: areas, a new folder, uploads with a name that exists, a file\'s act
       await until('both uploaded', () => textOf($('dp-ups')).includes('Hochgeladen'));
       await until('in the folder', () => byText($('dp-main'), 'span', 'Brief.pdf') && byText($('dp-main'), 'span', 'Foto.jpg'));
       assert.ok($('dp-main').querySelector('img'), 'the picture has a tile');
+      assert.match($('dp-main').querySelector('img').getAttribute('src'), /^\/plugin-media\/[0-9a-f]{32}\.\d+\.\d+\.[A-Za-z0-9_-]{22}\/preview$/, 'its preview');
       fileInput.files = [file('Brief.pdf', '%PDF-22', 'application/pdf')];
       fileInput.dispatchEvent({ type: 'change', target: fileInput });
       await until('the question', () => byText($('dp-dialog'), 'span', 'Als neue Version'));

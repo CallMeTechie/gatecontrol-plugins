@@ -239,6 +239,19 @@
 //   host.groupStore, host.groupChanges (every change), host.editGroups.* (an administrator's changes), host.groupsChanged
 //   (changes?) — the queued changes to the hook groupsChanged —, host.groupUsage(groupId, successorUserId) read like the
 //   host (≤ 50, label required), host.groupDeleting(groupId, successorUserId). gc.notify({ groups }) is not mirrored.
+//
+// GateControl ≥ 1.208.0 (opt-in: opts.gatecontrol: '1.208.0') — media previews, src/services/plugins/mediaPreviews.js:
+//   plugin.json media.previews (boolean; accepted at every emulated version like resumable — the real older host
+//   refuses it — and acting from 1.208.0 on). gc.media.previews(ids, { user, ttlS }) → { <id>: null | { ready, source,
+//   url: '<gc.media.url>/preview', appUrl: '/api/v1/client/plugins/<id>/media/<mediaId>/preview' } } (≤ 1000 ids; unknown
+//   → null; without media.previews ERR_MEDIA_DENIED; an older host has no gc.media.previews). A file stored as image/jpeg,
+//   png, webp, gif or avif (≤ 64 MB) has a server preview (ready once host.previewGet asked for it or host.previewMade(id));
+//   host.previewNone(id) plays a picture the server could not read. host.previewPut(user, mediaId, data, mime) plays the
+//   device's PUT …/media/<mediaId>/preview → { status, body }: 404 not_found (no previews, unknown, not the uploader's),
+//   409 preview_by_server, 415 unsupported_type (jpeg/webp/png only), 411 length_required, 413 too_large (> 512 KB) —
+//   the bytes are kept as they came (no decoding here). host.previewGet(user, mediaId, { size }) answers like GET
+//   …/media/<mediaId>/preview (hook mediaAccess like mediaGet) → { status: 200 (image/jpeg, body 'preview:<id>:<size>')
+//   | 400 | 404 }; host.mediaFromUrl also answers '<url>/preview[?size=large]'.
 
 const fs = require('node:fs');
 const os = require('node:os');
@@ -712,6 +725,7 @@ function checkQuickActions(out) {
  */
 /** plugin.json `media` → { maxBytes, types, quotaDefault } like GateControl's manifest.js (throws ERR_INVALID). */
 function mediaDecl(m, gc190 = false, gc193 = false, gc204 = false) {
+  // previews (GateControl ≥ 1.208.0) is accepted at every emulated version (see resumable below); it acts from 1.208.0 on
   if (m == null) return null;
   const bad = (what) => { throw hostError('ERR_INVALID', `plugin.json: ${what}: invalid`); };
   // resumable / handOverMaxBytes (GateControl ≥ 1.193.0) are accepted at every emulated version, so a plugin's tests
@@ -719,7 +733,9 @@ function mediaDecl(m, gc190 = false, gc193 = false, gc204 = false) {
   // against that core says so); they only act from 1.193.0 on.
   const keys = gc190 ? ['maxBytes', 'types', 'quotaDefault', 'uploads', 'resumable', 'handOverMaxBytes'] : ['maxBytes', 'types', 'quotaDefault', 'resumable', 'handOverMaxBytes'];
   if (gc204) keys.push('areas');
+  keys.push('previews');
   if (typeof m !== 'object' || Array.isArray(m) || Object.keys(m).some((k) => !keys.includes(k))) bad('media');
+  if (m.previews != null && typeof m.previews !== 'boolean') bad('media.previews');
   if (m.uploads != null && typeof m.uploads !== 'boolean') bad('media.uploads');
   if (m.resumable != null && typeof m.resumable !== 'boolean') bad('media.resumable');
   if (m.areas != null && typeof m.areas !== 'boolean') bad('media.areas');
@@ -737,7 +753,8 @@ function mediaDecl(m, gc190 = false, gc193 = false, gc204 = false) {
   if (quota == null || quota < 1024 * 1024 || quota > (areas ? MEDIA_QUOTA_MAX_AREAS : 1024 ** 4) || quota < m.maxBytes) bad('media.quotaDefault');
   const handOver = m.handOverMaxBytes == null ? m.maxBytes : m.handOverMaxBytes;
   if (!Number.isSafeInteger(handOver) || handOver < 1024 || handOver > (areas ? MEDIA_MAX_BYTES_AREAS : MEDIA_MAX_BYTES_193) || handOver > quota) bad('media.handOverMaxBytes');
-  return { maxBytes: m.maxBytes, types, quotaDefault: quota, uploads: m.uploads !== false, resumable: m.resumable === true, handOverMaxBytes: handOver, ...(areas ? { areas: true } : {}) };
+  return { maxBytes: m.maxBytes, types, quotaDefault: quota, uploads: m.uploads !== false, resumable: m.resumable === true, handOverMaxBytes: handOver, ...(areas ? { areas: true } : {}),
+    ...(m.previews === true ? { previews: true } : {}) };
 }
 
 /** Plain JSON ≤ max bytes, else the error code. */
@@ -874,6 +891,7 @@ async function createHost(pluginDir, opts = {}) {
     return true;
   };
   const gc205 = hostAtLeast('1.205.0'); // links v2
+  const gc208 = hostAtLeast('1.208.0'); // media previews
 
   // Storage: the plugin's own SQLite database with its migrations applied.
   let db = null;
@@ -1505,6 +1523,31 @@ async function createHost(pluginDir, opts = {}) {
     const uid = user == null ? 0 : user;
     return `/plugin-media/${id}.${exp}.${uid}.${urlSig(id, exp, uid)}`;
   };
+
+  // ─── GateControl ≥ 1.208.0: media previews (src/services/plugins/mediaPreviews.js) ───
+  const PREVIEW_RENDER = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/avif']);
+  const previewsOn = () => gc208 && !!media && media.previews === true;
+  const previewRenderable = (m) => PREVIEW_RENDER.has(m.mime) && m.bytes <= 64 * 1024 * 1024;
+  const previewState = (m) => {
+    if (!m || !previewsOn()) return null;
+    if (m.preview === 'client') return { ready: true, source: 'client' };
+    if (m.preview === 'none' || !previewRenderable(m)) return null;
+    return { ready: m.preview === 'server', source: 'server' };
+  };
+  if (gc208) {
+    api['media.previews'] = async (args) => {
+      needMedia();
+      if (!media.previews) throw hostError('ERR_MEDIA_DENIED', 'plugin.json declares no media.previews');
+      const ids = args && args.ids;
+      if (!Array.isArray(ids) || ids.length > 1000 || !ids.every((id) => typeof id === 'string' && /^[0-9a-f]{32}$/.test(id))) throw hostError('ERR_INVALID', 'ids must be up to 1000 media ids');
+      const out = {};
+      for (const id of ids) {
+        const st = previewState(mediaStore.get(id));
+        out[id] = st ? { ...st, url: `${await api['media.url']({ id, user: args.user, ttlS: args.ttlS })}/preview`, appUrl: `/api/v1/client/plugins/${manifest.id}/media/${id}/preview` } : null;
+      }
+      return out;
+    };
+  }
 
   // ─── GateControl ≥ 1.193.0: devices, hand-over, target upload, public links ───
 
@@ -2305,6 +2348,8 @@ async function createHost(pluginDir, opts = {}) {
       delete: (id) => call('media.delete', { id }),
       usage: () => call('media.usage', {}),
       url: (id, o) => { const x = o && typeof o === 'object' ? o : {}; return call('media.url', { id, user: x.user, ttlS: x.ttlS }); },
+      // GateControl ≥ 1.208.0 (media.previews)
+      ...(gc208 ? { previews: (ids, o) => { const x = o && typeof o === 'object' ? o : {}; return call('media.previews', { ids: Array.isArray(ids) ? ids : [], user: x.user, ttlS: x.ttlS }); } } : {}),
       ...(gc190 ? { fetch: (url, o) => call('media.fetch', { url, opts: o || {} }) } : {}),
       // GateControl ≥ 1.193.0: hand a file to another plugin (its store, unclaimed, owner `user`)
       ...(gc193 ? { handOver: (id, o) => { const x = o && typeof o === 'object' ? o : {}; return call('media.handOver', { id, toPlugin: x.toPlugin, user: x.user }); } } : {}),
@@ -2382,6 +2427,13 @@ async function createHost(pluginDir, opts = {}) {
     return { status: rg ? 206 : 200, headers, body: m.data.subarray(start, end + 1) };
   };
   const notFound = () => ({ status: 404, headers: {}, body: Buffer.alloc(0) });
+  const previewAnswer = (id, m, size) => {
+    const sz = size == null || size === '' ? 'small' : size;
+    if (sz !== 'small' && sz !== 'large') return { status: 400, headers: {}, body: Buffer.alloc(0) };
+    if (!previewState(m)) return notFound();
+    if (m.preview == null) m.preview = 'server';
+    return { status: 200, headers: { 'content-type': 'image/jpeg', 'cache-control': 'private, max-age=31536000, immutable' }, body: Buffer.from(`preview:${id}:${sz}`) };
+  };
 
   return {
     manifest, gc, plugin, logs, notifications, fetches, websockets, kv, settings, filesDir, kiosk, actionRuns,
@@ -2492,15 +2544,44 @@ async function createHost(pluginDir, opts = {}) {
       else { try { allowed = (await hook('mediaAccess', { user: viewer, mediaId, owner: m.owner, mime: m.mime })) === true; } catch { allowed = false; } }
       return allowed ? mediaAnswer(m, o.range) : notFound();
     },
-    /** GateControl ≥ 1.177.0: GET /plugin-media/<token> (a gc.media.url) → { status, headers, body } */
+    /** GateControl ≥ 1.177.0: GET /plugin-media/<token> (a gc.media.url) → { status, headers, body }; ≥ 1.208.0 also …/preview[?size=] */
     async mediaFromUrl(url, o = {}) {
-      const r = /^\/plugin-media\/([0-9a-f]{32})\.(\d{1,12})\.(\d{1,12})\.([A-Za-z0-9_-]{22})$/.exec(String(url || ''));
-      if (!r) return notFound();
+      const r = /^\/plugin-media\/([0-9a-f]{32})\.(\d{1,12})\.(\d{1,12})\.([A-Za-z0-9_-]{22})(\/preview(?:\?size=([a-z]+))?)?$/.exec(String(url || ''));
+      if (!r || (r[5] && !gc208)) return notFound();
       const s2 = Math.floor((o.now || Date.now()) / 1000);
       const exp = Number(r[2]);
       if (!(s2 < exp && exp <= s2 + 86400 + 300) || urlSig(r[1], exp, Number(r[3])) !== r[4]) return notFound();
       const m = mediaStore.get(r[1]);
+      if (m && r[5]) return previewAnswer(r[1], m, r[6]);
       return m ? mediaAnswer(m, o.range) : notFound();
+    },
+    /** GateControl ≥ 1.208.0: the server made the preview of a picture (as a request or the background would) */
+    previewMade(mediaId) { const m = mediaStore.get(mediaId); if (m && previewRenderable(m) && m.preview == null) m.preview = 'server'; },
+    /** GateControl ≥ 1.208.0: the server could not read the picture (no preview, a device may send one) */
+    previewNone(mediaId) { const m = mediaStore.get(mediaId); if (m) m.preview = 'none'; },
+    /** GateControl ≥ 1.208.0: PUT /api/v1/client/plugins/<id>/media/<mediaId>/preview of the uploader's device → { status, body } */
+    async previewPut(user, mediaId, data, mime) {
+      const m = typeof mediaId === 'string' ? mediaStore.get(mediaId) : null;
+      const no = (status, code) => ({ status, body: { ok: false, code } });
+      if (!previewsOn() || !m || m.owner == null || !user || m.owner !== user.id) return no(404, 'not_found');
+      if (previewRenderable(m) && m.preview !== 'none') return no(409, 'preview_by_server');
+      if (!['image/jpeg', 'image/webp', 'image/png'].includes(String(mime || '').split(';')[0].trim().toLowerCase())) return no(415, 'unsupported_type');
+      const buf = Buffer.isBuffer(data) ? data : Buffer.from(String(data == null ? '' : data));
+      if (!buf.length) return no(411, 'length_required');
+      if (buf.length > 512 * 1024) return no(413, 'too_large');
+      m.preview = 'client';
+      m.previewData = Buffer.from(buf);
+      return { status: 200, body: { ok: true, ready: true, source: 'client' } };
+    },
+    /** GateControl ≥ 1.208.0: GET /api/v1/client/plugins/<id>/media/<mediaId>/preview?size= for this app user → { status, headers, body } */
+    async previewGet(user, mediaId, o = {}) {
+      const m = typeof mediaId === 'string' ? mediaStore.get(mediaId) : null;
+      if (!m || !previewsOn()) return notFound();
+      const viewer = { portal: true, loggedIn: true, app: true, ...user };
+      let allowed;
+      if (typeof plugin.mediaAccess !== 'function') allowed = m.owner != null && m.owner === viewer.id;
+      else { try { allowed = (await hook('mediaAccess', { user: viewer, mediaId, owner: m.owner, mime: m.mime })) === true; } catch { allowed = false; } }
+      return allowed ? previewAnswer(mediaId, m, o.size) : notFound();
     },
     /** GateControl ≥ 1.204.0: the areas (Map area → { area, label, quota }) and the NAS journal */
     mediaAreas: areaStore,

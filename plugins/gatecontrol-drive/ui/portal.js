@@ -1,7 +1,7 @@
 /* Drive (gatecontrol-drive) — the portal tab "Drive" (mockup "Portal – Dateien & Freigabe").
  *
- * The areas (my files, the family, the children's folders, team folders) on the left, the folder as tiles or a list,
- * breadcrumbs, search; upload with the button or by dropping files and folders (GC.upload, then uploads/commit — a
+ * The areas (my files, the family, the children's folders, team folders) on the left, the folder as tiles or a list
+ * (with GateControl's previews — pictures, and HEIC photos and videos whose device sent one), breadcrumbs, search; upload with the button or by dropping files and folders (GC.upload, then uploads/commit — a
  * name that exists asks: a new version, keep both, or skip); a preview for pictures, videos and sound (the signed
  * media URL — every other type downloads); new folder, rename, move (also into another area), versions, trash;
  * sharing with people without an account (links v2: view, view + download, upload into a folder; 1 / 7 / 30 days or
@@ -411,17 +411,30 @@
     return fmtSize(n.size) + ' · ' + fmtDate(n.mtime || n.updatedAt);
   }
 
-  function thumbOf(n, cls) {
-    var k = kindOf(n);
-    if (k === 'image' && n.thumb) return h('img', { attrs: { src: n.thumb, alt: '', loading: 'lazy' } });
-    var box = h('span', { class: cls || '' }, [icon(KIND_ICON[k], cls ? 16 : 30)]);
-    return box;
+  // The small picture of a file: its preview (GateControl ≥ 1.208.0 — pictures, and HEIC / videos whose device sent
+  // one), else for pictures the older `thumb`; else the icon of its kind. A preview still being made answers 503: the
+  // picture is asked for twice more, then the icon stays.
+  function previewSrc(n) {
+    if (n.isDir) return null;
+    if (n.preview && n.preview.url) return n.preview.url;
+    return kindOf(n) === 'image' && n.thumb ? n.thumb : null;
+  }
+  function picOf(n, size) {
+    var src = previewSrc(n);
+    var fallback = function () { return icon(KIND_ICON[kindOf(n)], size); };
+    if (!src) return fallback();
+    var tries = 0;
+    var img = h('img', { attrs: { src: src, alt: '', loading: 'lazy' }, on: { error: function () {
+      if (tries++ < 2) { setTimeout(function () { img.setAttribute('src', src); }, 3000); return; }
+      if (img.parentNode) img.parentNode.replaceChild(fallback(), img);
+    } } });
+    return img;
   }
 
   function gridOf(items) {
     var g = h('div', { class: 'dp-grid', attrs: { role: 'list' } });
     items.forEach(function (n) {
-      var thumb = h('div', { class: 'dp-thumb' }, [n.isDir || kindOf(n) !== 'image' || !n.thumb ? icon(KIND_ICON[kindOf(n)], 34) : h('img', { attrs: { src: n.thumb, alt: '', loading: 'lazy' } })]);
+      var thumb = h('div', { class: 'dp-thumb' }, [picOf(n, 34)]);
       var ext = extOf(n.name);
       g.appendChild(h('div', { class: 'dp-card', attrs: { role: 'listitem' } }, [
         h('button', { type: 'button', class: 'dp-open', on: { click: function () { openNode(n); } }, attrs: { 'aria-label': n.name } }, [
@@ -444,7 +457,7 @@
       h('span', { class: 'dp-num dp-right', text: T('p.col_size'), attrs: { role: 'columnheader' } }), h('span'),
     ]));
     items.forEach(function (n) {
-      var ic = h('span', { class: 'dp-ic' }, [kindOf(n) === 'image' && n.thumb ? h('img', { attrs: { src: n.thumb, alt: '', loading: 'lazy' } }) : icon(KIND_ICON[kindOf(n)])]);
+      var ic = h('span', { class: 'dp-ic' }, [picOf(n)]);
       l.appendChild(h('div', { class: 'dp-row', attrs: { role: 'row' } }, [
         h('button', { type: 'button', class: 'dp-open', on: { click: function () { openNode(n); } } }, [ic, h('span', { class: 'dp-name', text: n.name, attrs: { title: n.name } }),
           n.path && S.page === 'search' ? h('span', { class: 'dp-meta', text: n.path }) : null]),
@@ -564,7 +577,9 @@
   function preview(n, got) {
     var k = kindOf(n);
     var show = function (r) {
-      var media = k === 'image' ? h('img', { attrs: { src: r.url, alt: n.name } })
+      // a picture the browser cannot show (HEIC): the large preview, when there is one
+      var src = k === 'image' && /^image\/hei[cf]/.test(String(n.mime || '')) && n.preview && n.preview.largeUrl ? n.preview.largeUrl : r.url;
+      var media = k === 'image' ? h('img', { attrs: { src: src, alt: n.name } })
         : k === 'video' ? h('video', { attrs: { src: r.url, controls: true, preload: 'metadata' } })
           : k === 'audio' ? h('audio', { attrs: { src: r.url, controls: true, preload: 'metadata' } })
             : h('div', { class: 'dp-empty', text: T('p.no_preview') });

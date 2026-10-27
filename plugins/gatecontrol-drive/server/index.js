@@ -15,10 +15,11 @@
 //     GET trash?area= · POST trash/<id>/restore · DELETE trash/<id>
 //     POST links · GET links?nodeId= · GET links/<token>/events · DELETE links/<token>   (links.js, since 0.2.0)
 //   admin     admin/… (administrators in the admin UI, admin.js)
-// The full contract (bodies, answers, codes, events) is in README.md "API".
+// The full contract (bodies, answers, codes, events) is in README.md "API". Every file node of an answer carries
+// `preview` (previews.js, since 1.1.0).
 //
-// Needs GateControl ≥ 1.207.0 (media areas and paths, versions and their restore, the NAS journal, gc.license.info
-// with tier and seats, a database up to 4 GB).
+// Needs GateControl ≥ 1.208.0 (media areas and paths, versions and their restore, the NAS journal, gc.license.info
+// with tier and seats, a database up to 4 GB, media previews).
 
 const store = require('./store');
 const people = require('./people');
@@ -33,6 +34,7 @@ const jobs = require('./jobs');
 const links = require('./links');
 const ui = require('./ui');
 const services = require('./services');
+const previews = require('./previews');
 const { t } = require('./text');
 const { STATUS, fail, isKnown, posInt, DEVICE_RE, day, iso } = require('./util');
 
@@ -63,7 +65,7 @@ async function context(gc, user, lang, now) {
   const [users, settings, lic, seat] = await Promise.all([people.users(gc), areas.settingsOf(gc), people.licence(gc), seats.get(gc, user.id)]);
   const deviceId = user.app === true && user.device && typeof user.device.id === 'string' && DEVICE_RE.test(user.device.id) ? user.device.id : null;
   const ctx = {
-    gc, viewer: user.id, user: users.get(user.id) || null, deviceId, lang: lang === 'en' ? 'en' : 'de', now,
+    gc, viewer: user.id, user: users.get(user.id) || null, deviceId, app: user.app === true, lang: lang === 'en' ? 'en' : 'de', now,
     users, settings, licence: lic, seat: lic.valid ? seat : null, touched: new Set(), notes: [],
   };
   ctx.families = once(() => people.families(gc));
@@ -127,11 +129,16 @@ async function me(ctx) {
 
 const THUMBS_MAX = 200;
 
-/** GET nodes/<id>/children?thumbs=1: pictures get `thumb`, a signed URL of the picture itself (the portal's tiles). */
+/**
+ * GET nodes/<id>/children?thumbs=1: pictures get `thumb` (kept for older portals) — their preview, or with a
+ * GateControl without previews a signed URL of the picture itself (the portal's tiles).
+ */
 async function withThumbs(ctx, r) {
   let n = 0;
   for (const it of r.items) {
-    if (it.isDir || !it.mediaId || !/^image\//.test(String(it.mime || '')) || n >= THUMBS_MAX) continue;
+    if (it.isDir || !it.mediaId || !/^image\//.test(String(it.mime || ''))) continue;
+    if (it.preview) { it.thumb = it.preview.url; continue; }
+    if (n >= THUMBS_MAX) continue;
     n++;
     try { it.thumb = await ctx.gc.media.url(it.mediaId, { user: ctx.viewer, ttlS: files.URL_TTL_S }); } catch { it.thumb = null; }
   }
@@ -174,7 +181,7 @@ async function route(ctx, req, seg) {
     }
     if (seg.length === 3 && m === 'GET') {
       if (c === 'children') {
-        const r = await nodes.children(ctx, idArg(b), q);
+        const r = await previews.attach(ctx, await nodes.children(ctx, idArg(b), q));
         return ok(q.thumbs ? await withThumbs(ctx, r) : r);
       }
       if (c === 'content') return ok(await files.content(ctx, idArg(b)));
@@ -249,6 +256,8 @@ module.exports = {
       try {
         const out = await route(ctx, req, seg);
         done = true;
+        // every file node gets its preview (previews.js; nodes that have one already are left alone)
+        if (out && out.json && out.json.ok) await previews.attach(ctx, out.json);
         return out;
       } finally {
         await after(gc, ctx, done);

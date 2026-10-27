@@ -1,7 +1,7 @@
 'use strict';
 
-// Test helpers: the mock host as GateControl 1.207.0 (media areas and paths, versions and their restore, the NAS
-// journal, gc.license.info with tier and seats) with a household and a small firm — an administrator, the parents
+// Test helpers: the mock host as GateControl 1.208.0 (media areas and paths, versions and their restore, the NAS
+// journal, gc.license.info with tier and seats, media previews) with a household and a small firm — an administrator, the parents
 // Anna and Marc, their child Lena (a GateControl family group), Oma (no family), Bob (a colleague in the group
 // "Büro") — and a combo licence for 5 people. A controllable clock (node:test mock timers, Date only).
 
@@ -55,7 +55,7 @@ async function withHost(opts, fn) {
   const clock = startClock(o.at || T0);
   try {
     const host = await createHost(DIR, {
-      users: USERS, gatecontrol: o.gatecontrol || '1.207.0', groups: o.groups || GROUPS, license: o.license === undefined ? LICENSE : o.license,
+      users: USERS, gatecontrol: o.gatecontrol || '1.208.0', groups: o.groups || GROUPS, license: o.license === undefined ? LICENSE : o.license,
       settings: o.settings || {}, publicLinks: o.links !== false, publicLinksUnlimited: o.unlimited === true,
     });
     await host.start();
