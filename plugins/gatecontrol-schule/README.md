@@ -152,6 +152,34 @@ Nachrichten der Schule werden komplett in GateControl gelesen – WebUntis brauc
   …/<id>/read-confirmation`) – das ist der einzige Schreibzugriff auf WebUntis, nie automatisch. Danach steht
   dort, wann und von wem; in WebUntis selbst Bestätigtes erkennt das Plugin beim nächsten Abruf.
 
+### Anhänge in Drive (1.7.0, mit Drive ≥ 1.4.0)
+
+Ist das Plugin **Drive** installiert, lassen sich Anhänge (Elternbriefe, Formulare, Fotos) dort ablegen.
+Drive bekommt eine eigene Kopie (`gc.media.handOver` an `gatecontrol-drive`, dann dessen Dienst
+`save_file` für die Person) – die Datei in Schule bleibt, wie sie ist, und verschwindet nach 90 Tagen
+mit ihrer Nachricht; die Kopie in Drive bleibt. Drive prüft selbst, ob die Person einen Drive-Zugang hat
+und dort schreiben darf – über Schule geht nicht mehr als in Drive selbst.
+
+* **„In Drive speichern“** an jedem Anhang (App, Portal, Seite „Schule“), sobald Drive erreichbar ist.
+  Ohne gewählten Ordner landet die Datei im **Familienbereich** unter `Schule/<Kind>/<Dateiname>` (das Kind
+  der Nachricht, wie es in Schule heißt – Kurzname, sonst Name; sieht die Person mehrere Kinder dieses
+  Posteingangs, direkt unter `Schule`); darf die Person dort nicht schreiben (keine Familie, Kinder lesen
+  nur), in **„Meine Dateien“** mit demselben Pfad. In der App kann man auch einen Ordner wählen
+  (`folderId`). Gibt es den Namen schon, legt Drive „Elternbrief (2).pdf“ an. Danach: „Gespeichert in
+  Familie › Schule › Lena › Elternbrief.pdf“.
+* **Automatisch** (Einstellung „Anhänge von Schulnachrichten automatisch in Drive ablegen“, Vorgabe aus):
+  jeder Anhang einer neuen Nachricht (nicht die Ausgangslage, in den letzten 7 Tagen gefunden) kommt
+  im Hintergrund **einmal** in den Familienbereich: `Schule/<Kind>/<JJJJ-MM-TT> <Dateiname>` (Datum = gesendet;
+  bei einem Elternkonto mit mehreren Kindern ohne die Ebene `<Kind>`). Gespeichert wird im Namen eines
+  eingetragenen **Empfängers** des Kindes (nicht des Kindes selbst), nach Benutzer-ID der Reihe nach, bis
+  einer einen Drive-Zugang und eine Familie hat. Was passiert ist, merkt sich das Plugin (Tabelle
+  `drive_saves`): nie doppelt; klappt es nicht (niemand mit Drive-Zugang und Familie, kein Platz, Anhang
+  nicht ladbar), steht es einmal im Protokoll und wird nicht wiederholt. Ist Drive gerade nicht erreichbar
+  oder ausgelastet, versucht es das Plugin in einem späteren Abruf (nach 10 Minuten Pause). Höchstens 3
+  Dienstaufrufe je Abruf (GateControl erlaubt einem Plugin 60 je Stunde).
+* Braucht die Berechtigung `gatecontrol-drive:save_file` (`permissions.services`) – mit dem Update auf
+  1.7.0 bestätigt ein Administrator sie einmal.
+
 ### Früher Schluss → Abholen (1.2.0, mit Familie ≥ 1.13.0)
 
 Das Plugin kennt je Kind und Schultag das **geplante Ende** (Ende der letzten Stunde laut Plan, auch wenn
@@ -311,9 +339,10 @@ GET app/messages?days=30                                1.4.0: 1 … 90 Tage, Vo
           fullText: <boolean>,                          1.5.0: body ist der ganze Text
           attachments: [{ id, name, size, mime }],      1.5.0: size/mime null, wenn unbekannt
           read: <boolean>,                              1.5.0: diese Person hat sie geöffnet
-          confirmation: null | { confirmedAt: ISO | null, by: 'Eva' | null } }] }
+          confirmation: null | { confirmedAt: ISO | null, by: 'Eva' | null } }],
                                                         1.5.0: Lesebestätigung erbeten (gesendet wann/von wem)
                                                         neueste zuerst, höchstens 100
+        drive: <boolean> }                              1.7.0: „In Drive speichern“ anbieten (Drive erreichbar)
 POST app/messages/<id>/read                             1.5.0: geöffnet → { ok, message }
 POST app/messages/<id>/confirm                          1.5.0: Lesebestätigung an die Schule → { ok, message }
   409 SCHULE_CONFIRM_NOT_REQUIRED · 502 SCHULE_CONFIRM_FAILED · 503 SCHULE_UNTIS_UNAVAILABLE
@@ -321,6 +350,17 @@ POST app/messages/<id>/attachments/<anhangId>           1.5.0: → { ok, file: {
                                                         die Datei: GET /api/v1/client/plugins/gatecontrol-schule/media/<mediaId>
   404 SCHULE_ATTACHMENT_NOT_FOUND · 413 SCHULE_ATTACHMENT_TOO_LARGE (> 25 MB) · 415 SCHULE_ATTACHMENT_TYPE
   502 SCHULE_ATTACHMENT_FAILED · 503 SCHULE_UNTIS_UNAVAILABLE · 404 SCHULE_MESSAGE_NOT_FOUND (alle drei)
+POST app/messages/<id>/attachments/<anhangId>/drive     1.7.0: den Anhang in Drive ablegen
+  Body { folderId?: 17 }                                ein in der App gewählter Drive-Ordner; ohne: Familienbereich
+                                                        Schule/<Kind>/<Dateiname>, sonst „Meine Dateien“
+  200 { ok: true, saved: { nodeId: 812, name: 'Elternbrief.pdf',
+          where: 'Familie › Schule › Lena › Elternbrief.pdf' } }   `where` für „Gespeichert in …“
+  Fehler { ok: false, code, error }  (error: der Text in der Sprache der Person)
+  Drives Codes, wie Drive sie nennt: 400 invalid · 403 forbidden · 404 not_found (Ordner) · 403 no_seat
+  · 403 not_licensed · 507 quota · 409 upload_invalid · 409 exists; dazu 503 drive_unavailable (Drive nicht
+  installiert/aus) · 429 rate_limited · 413 too_large · 502 failed; wie beim Öffnen: 404 SCHULE_MESSAGE_NOT_FOUND
+  (auch: darf sie nicht lesen) · 404 SCHULE_ATTACHMENT_NOT_FOUND · 413/415/502/503 SCHULE_ATTACHMENT_… /
+  SCHULE_UNTIS_UNAVAILABLE (der Anhang musste erst geladen werden) · 400 INVALID (folderId)
 GET app/absences?days=60                                1.4.0: 1 … 180 Tage, Vorgabe 60
   200 { ok: true, absences: [{
           id: '<schülerId>-<webuntisId>', studentId: 12,
@@ -347,6 +387,8 @@ wenn das Konto genau ein Kind hat) bzw. `{ studentId, date }` (Fehlzeit). `porta
 haben je Kind zusätzlich `messages` und `absences` – nur, wenn die Person sie sehen darf (sonst fehlen sie).
 1.5.0: dieselben drei Aktionen gibt es als `portal/messages/<id>/…` und `messages/<id>/…` (Seite „Schule“);
 dort tragen geladene Anhänge zusätzlich `url` (ein `/plugin-media/`-Link, 1 Stunde gültig).
+1.7.0: `…/attachments/<anhangId>/drive` ebenso unter `portal/messages/` und `messages/`; `portal/overview` und
+`overview` sagen wie `app/messages` `drive: <boolean>`.
 
 ### Dienste zwischen Plugins (1.1.0)
 
@@ -487,5 +529,16 @@ people who may read the inbox may read them. "New" is per person (until opened, 
 confirmation the school asks for is sent only when a person taps "Confirm reading" (and confirms the
 question) — the only write to WebUntis. API: `fullText`, `attachments`, `read`, `confirmation` and `POST
 app/messages/<id>/read | confirm | attachments/<attId>` (see [API](#api)).
+
+**Attachments into Drive (1.7.0, with Drive ≥ 1.4.0):** "Save to Drive" on every attachment (app, portal, the
+Schule page) when Drive is reachable (`drive: true` in `app/messages` and the overviews): `POST
+app/messages/<id>/attachments/<attId>/drive { folderId? }` → `{ saved: { nodeId, name, where } }` — without a
+folder into the family area `Schule/<child>/<file name>`, or "My files" when the person cannot write there.
+Drive gets its own copy (`gc.media.handOver`, then its service `save_file` for that person); Drive's error codes
+are passed through, plus `drive_unavailable`. The setting "Save attachments of school messages to Drive
+automatically" (default off) puts every attachment of a new message once into the family area
+(`Schule/<child>/<YYYY-MM-DD> <file name>`) as the first of the child's recipients (by user id) with a Drive seat
+and a family; done or failed is kept (`drive_saves`), a failure is logged once and not retried. Needs the new
+permission `gatecontrol-drive:save_file`, confirmed once by an administrator with the update.
 
 **API:** see [API](#api) above.

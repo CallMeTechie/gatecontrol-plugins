@@ -8,7 +8,9 @@
    — each section only when the API sends it.
    1.5.0: without WebUntis — the full text, the attachments (pictures shown in the message, other files
    as a download — fetched on the first tap), the read confirmation the school asks for (sent only after
-   a second tap: "Senden"); opening a message marks it read for the viewer (its "neu" goes). */
+   a second tap: "Senden"); opening a message marks it read for the viewer (its "neu" goes).
+   1.7.0: „In Drive speichern“ next to each attachment when the API says `drive` (Drive's family area,
+   Schule › child, or the viewer's own area) — a toast says where it went. */
 (function () {
   'use strict';
   var S = window.SC, T = S.T, $ = S.$, $$ = S.$$, el = S.el;
@@ -220,6 +222,31 @@
     return box;
   }
 
+  /** 1.7.0: „In Drive speichern“ for one attachment → a toast „Gespeichert in …“ or the error. */
+  function driveNode(m, a) {
+    var btn = el('button', {
+      type: 'button', class: 'msg-att msg-drive', 'aria-label': T('view.msg_drive_aria', { name: a.name }),
+      on: {
+        click: function () {
+          btn.disabled = true;
+          btn.textContent = T('view.msg_drive_saving');
+          S.api('POST', msgBase + encodeURIComponent(m.id) + '/attachments/' + encodeURIComponent(a.id) + '/drive', {}).then(function (r) {
+            var s = r.saved || {};
+            S.toast(T('view.msg_drive_saved', { where: s.where || s.name || '' }));
+          }).catch(function (e) { S.toast(S.errText(e), 'crit'); }).then(function () {
+            btn.disabled = false;
+            btn.textContent = T('view.msg_drive');
+          });
+        },
+      },
+    }, [T('view.msg_drive')]);
+    return btn;
+  }
+  function attachmentRow(m, a) {
+    if (!(st.data && st.data.drive)) return attachmentNode(m, a);
+    return el('span', { class: 'msg-att-row' }, [attachmentNode(m, a), driveNode(m, a)]);
+  }
+
   /** The read confirmation: sent (when, by whom) or the button — a second tap sends it. */
   function confirmNode(m) {
     var c = m.confirmation;
@@ -266,7 +293,7 @@
       el('div', { class: 'msg-from', text: m.sender ? T('view.msg_from', { sender: m.sender }) + ' · ' + S.when(Date.parse(m.sentAt)) : S.when(Date.parse(m.sentAt)) }),
       el('div', { class: 'msg-text', text: m.body || m.preview || '' }),
       !m.fullText ? el('div', { class: 'msg-note', text: T('view.msg_preview_only') }) : null,
-      atts.length ? el('div', { class: 'msg-atts', role: 'group', 'aria-label': T('view.msg_attach') }, atts.map(function (a) { return attachmentNode(m, a); })) : null,
+      atts.length ? el('div', { class: 'msg-atts', role: 'group', 'aria-label': T('view.msg_attach') }, atts.map(function (a) { return attachmentRow(m, a); })) : null,
       confirmNode(m),
     ]);
     var li;

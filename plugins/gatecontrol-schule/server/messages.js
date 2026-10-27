@@ -31,6 +31,7 @@
 //              person taps "Lesen bestätigen" (the one write to WebUntis). API: messages gain fullText,
 //              attachments [{ id, name, size, mime }] (pages: also `url` once fetched), read, confirmation
 //              { confirmedAt, by } | null; POST …/messages/<id>/read | confirm | attachments/<attId>.
+//   1.7.0      POST …/messages/<id>/attachments/<attId>/drive — the attachment into Drive (server/drive.js).
 
 const store = require('./store');
 const untis = require('./untis');
@@ -671,8 +672,8 @@ async function dispatch(gc, notifier, cfg, now, quiet) {
 }
 
 module.exports = {
-  GAP_MS, KEEP_MS, NEW_MS, MAX_PUSH, TOPIC, ATT_MAX_BYTES,
+  GAP_MS, KEEP_MS, NEW_MS, MAX_PUSH, TOPIC, ATT_MAX_BYTES, ATT_TRIES,
   stripHtml, decodeEntities, parseSent, messageRows, fetchAccount, isStudentAccount, canViewMessages, recipientsOf, inboxesOf,
   messageView, listFor, forStudents, pushOf, summaryOf, dispatch, apiId,
-  detailOf, mimeOf, fileName, parseApiId, markRead, confirm, attachment, mayReadMedia,
+  detailOf, mimeOf, fileName, parseApiId, markRead, confirm, attachment, mayReadMedia, accessible,
 };

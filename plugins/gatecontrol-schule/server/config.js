@@ -17,6 +17,7 @@ const DEFAULTS = Object.freeze({
   reminder_time: '18:00',
   self_link: true,
   absence_notify_child: false,
+  drive_auto_save: false,
 });
 
 function int(v, min, max, d) {
@@ -69,6 +70,8 @@ function fromSettings(s) {
     selfLink: v.self_link == null ? DEFAULTS.self_link : v.self_link === true || v.self_link === 'true',
     // 1.4.0: absence pushes also to the child itself (default: only the recipients)
     absenceNotifyChild: v.absence_notify_child === true || v.absence_notify_child === 'true',
+    // 1.7.0: attachments of new school messages into Drive's family area (server/drive.js; default off)
+    driveAuto: v.drive_auto_save === true || v.drive_auto_save === 'true',
     problems,
   };
 }

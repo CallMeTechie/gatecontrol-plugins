@@ -50,6 +50,9 @@
 //               (the apps load it from GET /api/v1/client/plugins/gatecontrol-schule/media/<mediaId>)
 //   1.5.0       the same three actions under portal/messages/… and messages/… (admin page) — pages get the
 //               attachment as `url` (a /plugin-media/ link); hook mediaAccess: who may read an attachment
+//   1.7.0       Drive (server/drive.js): POST …/messages/<id>/attachments/<attId>/drive { folderId? } → { saved:
+//               { nodeId, name, where } } (app, portal, admin page); app/messages and the overviews say `drive`
+//               (Drive's save_file reachable); setting drive_auto_save: new attachments into the family area
 //
 // Credentials: the QR key or the password of an account is a plugin secret
 // (gc.settings.setSecret('acct.<id>.secret' | 'acct.<id>.password')): encrypted by the host with
@@ -78,6 +81,7 @@ const link = require('./link');
 const colors = require('./colors');
 const messages = require('./messages');
 const absences = require('./absences');
+const drive = require('./drive');
 const { fail, str, accountInput, posInt } = require('./input');
 const texts = require('./texts.json');
 
@@ -120,6 +124,19 @@ const ERRORS = {
   SCHULE_ATTACHMENT_TYPE: [415, 'error.attachment_type'],
   SCHULE_ATTACHMENT_FAILED: [502, 'error.attachment_failed'],
   SCHULE_GATECONTROL_TOO_OLD: [501, 'error.gatecontrol_too_old'],
+  // 1.7.0: an attachment into Drive (server/drive.js) — Drive's own codes passed through, lower case
+  drive_unavailable: [503, 'error.drive.drive_unavailable'],
+  invalid: [400, 'error.drive.invalid'],
+  forbidden: [403, 'error.drive.forbidden'],
+  not_found: [404, 'error.drive.not_found'],
+  no_seat: [403, 'error.drive.no_seat'],
+  not_licensed: [403, 'error.drive.not_licensed'],
+  quota: [507, 'error.drive.quota'],
+  upload_invalid: [409, 'error.drive.upload_invalid'],
+  exists: [409, 'error.drive.exists'],
+  rate_limited: [429, 'error.drive.rate_limited'],
+  too_large: [413, 'error.drive.too_large'],
+  failed: [502, 'error.drive.failed'],
 };
 
 function errorResponse(e, lang) {
@@ -374,7 +391,7 @@ async function adminRoute(req, gc, seg, cfg, lang) {
     const students = (await store.listStudents(gc)).filter((s) => s.enabled && !s.missing);
     const accounts = await store.listAccounts(gc);
     const week = req.query && String(req.query.week) === '1' ? 1 : 0;
-    return { json: { ok: true, configured: accounts.length > 0, accountErrors: accounts.filter((x) => x.status === 'error').length, ...(await overviewOf(gc, cfg, students, week, req.user)) } };
+    return { json: { ok: true, configured: accounts.length > 0, accountErrors: accounts.filter((x) => x.status === 'error').length, ...(await overviewOf(gc, cfg, students, week, req.user)), drive: await drive.available(gc) } };
   }
   if (a === 'qr-decoder' && seg.length === 1 && m === 'GET') return { json: { ok: true, js: ui.qrDecoder() } };
 
@@ -416,11 +433,15 @@ async function adminRoute(req, gc, seg, cfg, lang) {
 /**
  * 1.5.0: POST messages/<id>/read | confirm | attachments/<attId> (app, portal, admin page; `seg` from
  * "messages" on). Pages (urls) get the attachment's /plugin-media/ link. → null when not such a path.
+ * 1.7.0: POST messages/<id>/attachments/<attId>/drive { folderId? } → { saved: { nodeId, name, where } }.
  */
 async function messageAction(req, gc, seg, { urls }) {
   if (seg[0] !== 'messages' || req.method !== 'POST' || seg.length < 3) return null;
   const now = clock.now();
   const id = seg[1];
+  if (seg.length === 5 && seg[2] === 'attachments' && seg[4] === 'drive') {
+    return { json: { ok: true, saved: await drive.saveManual(gc, req.user, id, seg[3], req.body, now, req.lang === 'en' ? 'en' : 'de') } };
+  }
   if (seg.length === 3 && seg[2] === 'read') return { json: { ok: true, message: await messages.markRead(gc, req.user, id, now, { urls }) } };
   if (seg.length === 3 && seg[2] === 'confirm') return { json: { ok: true, message: await messages.confirm(gc, req.user, id, now, { urls }) } };
   if (seg.length === 4 && seg[2] === 'attachments') return { json: { ok: true, file: await messages.attachment(gc, req.user, id, seg[3], now, { urls }) } };
@@ -472,7 +493,7 @@ async function portalRoute(req, gc, seg, cfg) {
   if (seg[1] === 'overview') {
     const week = req.query && String(req.query.week) === '1' ? 1 : 0;
     const students = await views.visibleStudents(gc, req.user);
-    return { json: { ok: true, configured: students.length > 0, ...(await overviewOf(gc, cfg, students, week, req.user)) } };
+    return { json: { ok: true, configured: students.length > 0, ...(await overviewOf(gc, cfg, students, week, req.user)), drive: await drive.available(gc) } };
   }
   if (seg[1] !== 'timetable') throw fail('NOT_FOUND');
   const week = req.query && String(req.query.week) === '1' ? 1 : 0;
@@ -503,7 +524,8 @@ async function appRoute(req, gc, seg, cfg) {
     return { json: { ok: true, updatedAt: times.length ? Math.max(...times) : null, students: list.map(({ updatedAt, ...s }) => s) } };
   }
   // 1.4.0: school messages and absences
-  if (seg[1] === 'messages') return { json: { ok: true, messages: await messages.listFor(gc, req.user, daysOf(q, 30, 90), now) } };
+  // 1.7.0: drive — the attachments can go into Drive (POST …/attachments/<attId>/drive)
+  if (seg[1] === 'messages') return { json: { ok: true, messages: await messages.listFor(gc, req.user, daysOf(q, 30, 90), now), drive: await drive.available(gc) } };
   if (seg[1] === 'absences') return { json: { ok: true, absences: await absences.listFor(gc, req.user, daysOf(q, 60, 180), cfg, now) } };
   if (seg[1] === 'changes') {
     const days = q.days == null || q.days === '' ? 7 : posInt(q.days);
@@ -674,6 +696,8 @@ module.exports = {
       // 1.4.0: new school messages and new / changed absences
       try { await messages.dispatch(gc, notifierOf(gc), cfg, now, quiet); } catch (e) { gc.log.warn('message pushes failed', (e && (e.code || e.message)) || 'error'); }
       try { await absences.dispatch(gc, notifierOf(gc), cfg, now, quiet); } catch (e) { gc.log.warn('absence pushes failed', (e && (e.code || e.message)) || 'error'); }
+      // 1.7.0: new attachments into Drive's family area (setting drive_auto_save; never throws)
+      await drive.autoSave(gc, cfg, now, Math.max(deadline, Date.now() + 15000));
       if (now - state.lastPrune > 3600000) {
         state.lastPrune = now;
         await store.prune(gc, tz.addDays(tz.localDate(now, cfg.tz), -14), now - 30 * DAY);

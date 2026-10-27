@@ -194,8 +194,8 @@ test('messages: the parents’ inbox — baseline without pushes, then one push 
   assert.deepEqual(r.json.messages.map((m) => m.id), [`${acc.id}-3`, `${acc.id}-2`, `${acc.id}-1`]);
   // the admin sees both children of the account; Lena (the child) and Bob see nothing
   assert.deepEqual((await app(host, ADMIN, '/app/messages')).json.messages[0].studentIds.length, 2);
-  assert.deepEqual((await app(host, LENA, '/app/messages')).json, { ok: true, messages: [] });
-  assert.deepEqual((await app(host, BOB, '/app/messages')).json, { ok: true, messages: [] });
+  assert.deepEqual((await app(host, LENA, '/app/messages')).json, { ok: true, messages: [], drive: false });
+  assert.deepEqual((await app(host, BOB, '/app/messages')).json, { ok: true, messages: [], drive: false });
 
   // the next cycles: the same messages are no news; nothing is written to WebUntis (only GETs)
   await tickAt(host, T0 + 30 * MIN);
