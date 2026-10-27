@@ -4,11 +4,11 @@
     "de": "Schule",
     "en": "School"
   },
-  "version": "1.6.0",
+  "version": "1.7.0",
   "publisher": "CallMeTechie",
   "description": {
-    "de": "Stundenplan aus WebUntis für Schüler- und Elternkonten: Ausfälle, Vertretungen und Zusatzstunden als Push, Arbeiten und Hausaufgaben mit Erinnerung am Vorabend, Nachrichten der Schule und Fehlzeiten, Wochenplan je Kind in seiner Farbe (Portal, Wand-Tablet, App). Konten per QR-Code-Scan in den Einstellungen; jeder kann sein eigenes Schülerkonto im Profil verknüpfen.",
-    "en": "Timetable from WebUntis for student and parent accounts: cancellations, substitutions and extra lessons as push notifications, exams and homework with a reminder the evening before, school messages and absences, a week view per child in its colour (portal, wall tablet, app). Accounts by scanning the QR code in the settings; everyone can link their own student account in their profile."
+    "de": "Stundenplan aus WebUntis für Schüler- und Elternkonten: Ausfälle, Vertretungen und Zusatzstunden als Push, Arbeiten und Hausaufgaben mit Erinnerung am Vorabend, Nachrichten der Schule und Fehlzeiten, Wochenplan je Kind in seiner Farbe (Portal, Wand-Tablet, App), Anhänge auf Wunsch in Drive. Konten per QR-Code-Scan in den Einstellungen; jeder kann sein eigenes Schülerkonto im Profil verknüpfen.",
+    "en": "Timetable from WebUntis for student and parent accounts: cancellations, substitutions and extra lessons as push notifications, exams and homework with a reminder the evening before, school messages and absences, a week view per child in its colour (portal, wall tablet, app), attachments into Drive if wanted. Accounts by scanning the QR code in the settings; everyone can link their own student account in their profile."
   },
   "gatecontrol": ">=1.196.0",
   "entry": "server/index.js",
@@ -29,7 +29,8 @@
     },
     "services": [
       "gatecontrol-familie:rule_event",
-      "gatecontrol-familie:school_day_end"
+      "gatecontrol-familie:school_day_end",
+      "gatecontrol-drive:save_file"
     ]
   },
   "media": {
@@ -132,6 +133,17 @@
         "label": {
           "de": "Verknüpfen im Profil",
           "en": "Linking in the profile"
+        }
+      },
+      {
+        "id": "drive",
+        "label": {
+          "de": "Drive",
+          "en": "Drive"
+        },
+        "help": {
+          "de": "Braucht das Plugin Drive (1.4.0 oder neuer). „In Drive speichern“ an jedem Anhang gibt es in App und Portal, sobald Drive da ist.",
+          "en": "Needs the Drive plugin (1.4.0 or newer). “Save to Drive” on each attachment is offered in the app and the portal as soon as Drive is there."
         }
       }
     ],
@@ -275,6 +287,20 @@
           "en": "In the portal under “My devices” › “WebUntis” everyone links their own student account (scan or enter the QR code) – only for themselves. Needs GateControl 1.188.0."
         },
         "default": true
+      },
+      {
+        "key": "drive_auto_save",
+        "type": "boolean",
+        "group": "drive",
+        "label": {
+          "de": "Anhänge von Schulnachrichten automatisch in Drive ablegen",
+          "en": "Save attachments of school messages to Drive automatically"
+        },
+        "help": {
+          "de": "Jeder Anhang einer neuen Nachricht der Schule kommt einmal in den Familienbereich von Drive, unter Schule › Kind (z. B. „Schule › Lena › 2026-10-27 Elternbrief.pdf“; bei einem Elternkonto mit mehreren Kindern direkt unter „Schule“). Gespeichert wird im Namen eines eingetragenen Empfängers (Elternteil) mit Drive-Zugang – braucht Drive mit einer Familie. Klappt es nicht (z. B. niemand mit Drive-Zugang), steht es einmal im Protokoll und wird nicht wiederholt.",
+          "en": "Every attachment of a new school message goes once into Drive’s family area, under School › child (e.g. “Schule › Lena › 2026-10-27 Elternbrief.pdf”; with a parent account of several children right under “Schule”). It is saved in the name of a listed recipient (parent) with access to Drive – needs Drive with a family. When that fails (e.g. nobody with Drive access), it is logged once and not tried again."
+        },
+        "default": false
       }
     ],
     "portal": {

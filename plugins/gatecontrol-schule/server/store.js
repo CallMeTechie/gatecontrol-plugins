@@ -138,6 +138,7 @@ async function deleteAccount(gc, id) {
     }
     await gc.db.run('DELETE FROM messages WHERE account_id = ?', [id]);
     await gc.db.run('DELETE FROM message_reads WHERE account_id = ?', [id]);
+    await gc.db.run('DELETE FROM drive_saves WHERE account_id = ?', [id]);
     await gc.db.run('DELETE FROM students WHERE account_id = ?', [id]);
     return (await gc.db.run('DELETE FROM accounts WHERE id = ?', [id])).changes > 0;
   });
@@ -574,6 +575,33 @@ async function messageOfMedia(gc, mediaId) {
   return r.rows.map(messageRow).find((m) => m.attachments.some((a) => a.mediaId === mediaId)) || null;
 }
 
+// ─── Drive (1.7.0) ──────────────────────────────
+
+/** The messages whose attachments may go into Drive automatically: new ones (not the baseline) found since `since`, oldest first. */
+async function messagesForDrive(gc, since) {
+  const r = await gc.db.query(`SELECT * FROM messages WHERE status <> 'baseline' AND detected_at >= ? AND attachments_json IS NOT NULL AND attachments_json <> '[]'
+    ORDER BY detected_at, account_id, msg_id LIMIT 200`, [since]);
+  return r.rows.map(messageRow).filter((m) => m.attachments.length);
+}
+
+const driveKey = (m, a) => `${m.account_id}|${m.msg_id}|${a.id}`;
+
+/** The attachments of `list` handled already (saved or failed) → Set of driveKey. */
+async function driveDone(gc, list) {
+  const out = new Set();
+  const accs = [...new Set(list.map((m) => m.account_id))];
+  if (!accs.length) return out;
+  const r = await gc.db.query(`SELECT account_id, msg_id, att_id FROM drive_saves WHERE account_id IN (${accs.map(() => '?').join(',')})`, accs);
+  for (const x of r.rows) out.add(`${Number(x.account_id)}|${x.msg_id}|${x.att_id}`);
+  return out;
+}
+
+/** An attachment handled: { status: 'saved' | 'failed', code?, userId?, nodeId? } (kept once). */
+async function driveRecord(gc, m, a, row, now) {
+  await gc.db.run('INSERT OR IGNORE INTO drive_saves (account_id, msg_id, att_id, status, code, user_id, node_id, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+    [m.account_id, m.msg_id, a.id, row.status, row.code || null, row.userId == null ? null : row.userId, row.nodeId == null ? null : row.nodeId, now]);
+}
+
 /** Per account: how many messages are stored. */
 async function countMessages(gc) {
   const m = new Map();
@@ -686,6 +714,8 @@ async function pruneSchool(gc, msgBefore, absBefore) {
   // 1.5.0: the media files of their attachments go too (→ the media ids, the caller deletes them)
   const gone = (await gc.db.query(`SELECT * FROM messages WHERE ${where}`, [msgBefore, msgBefore])).rows.map(messageRow);
   await gc.db.run(`DELETE FROM message_reads WHERE EXISTS (SELECT 1 FROM messages m WHERE m.account_id = message_reads.account_id AND m.msg_id = message_reads.msg_id AND (${where.replace(/sent_at/g, 'm.sent_at').replace(/seen_at/g, 'm.seen_at')}))`, [msgBefore, msgBefore]);
+  // 1.7.0: what was saved into Drive goes with them (Drive keeps its copy)
+  await gc.db.run(`DELETE FROM drive_saves WHERE EXISTS (SELECT 1 FROM messages m WHERE m.account_id = drive_saves.account_id AND m.msg_id = drive_saves.msg_id AND (${where.replace(/sent_at/g, 'm.sent_at').replace(/seen_at/g, 'm.seen_at')}))`, [msgBefore, msgBefore]);
   await gc.db.run(`DELETE FROM messages WHERE ${where}`, [msgBefore, msgBefore]);
   await gc.db.run('DELETE FROM absences WHERE COALESCE(end_date, date) < ?', [absBefore]);
   return mediaIdsOf(gone);
@@ -698,6 +728,7 @@ function mediaIdsOf(list) {
 
 module.exports = {
   upsertMessages, messagesWithStatus, setMessageStatus, listMessages, countMessages,
+  messagesForDrive, driveKey, driveDone, driveRecord,
   getMessage, messagesWithoutDetail, setMessageDetail, detailFailed, setAttachments, setConfirmed, markRead, readSet, messageOfMedia, mediaIdsOf, attachmentsOf,
   applyAbsences, absencesWithStatus, setAbsenceStatus, listAbsences, countAbsences, absenceSig, absenceChange, pruneSchool,
   tx, listAccounts, getAccount, findAccount, createAccount, updateAccount, deleteAccount, getCred, setCred, clearCred,

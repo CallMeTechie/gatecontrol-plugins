@@ -99,6 +99,10 @@
 .msg-att:hover{border-color:var(--kid,var(--accent))}
 .msg-att:focus-visible{outline:2px solid var(--kid,var(--accent));outline-offset:2px}
 .msg-att[disabled]{opacity:.6;cursor:progress}
+/* 1.7.0: „In Drive speichern“ next to an attachment */
+.msg-att-row{display:inline-flex;flex-wrap:wrap;align-items:flex-start;gap:6px;max-width:100%}
+.msg-drive{font-weight:500}
+.msg-drive::before{-webkit-mask-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z'/%3E%3Cpath d='M12 10v6M9 13l3 3 3-3'/%3E%3C/svg%3E");mask-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z'/%3E%3Cpath d='M12 10v6M9 13l3 3 3-3'/%3E%3C/svg%3E")}
 .msg-pic{margin:0;max-width:100%}
 .msg-pic img{display:block;max-width:100%;max-height:420px;border-radius:8px;border:1px solid var(--line)}
 .msg-pic figcaption{font-size:11.5px;color:var(--muted);margin-top:3px}

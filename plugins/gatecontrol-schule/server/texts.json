@@ -364,7 +364,23 @@
   "error.attachment_too_large": "Der Anhang ist größer als 25 MB und kann nicht geladen werden.",
   "error.attachment_type": "Diese Art von Datei kann GateControl nicht laden.",
   "error.attachment_failed": "Der Anhang konnte nicht geladen werden. Bitte später noch einmal.",
-  "error.gatecontrol_too_old": "Für Anhänge braucht es GateControl 1.190.0 oder neuer."
+  "error.gatecontrol_too_old": "Für Anhänge braucht es GateControl 1.190.0 oder neuer.",
+  "view.msg_drive": "In Drive speichern",
+  "view.msg_drive_aria": "{{name}} in Drive speichern",
+  "view.msg_drive_saving": "Wird gespeichert …",
+  "view.msg_drive_saved": "Gespeichert in {{where}}",
+  "error.drive.drive_unavailable": "Drive ist gerade nicht verfügbar.",
+  "error.drive.invalid": "Drive hat den Ordner oder den Dateinamen nicht angenommen.",
+  "error.drive.forbidden": "Du darfst dort in Drive nicht speichern.",
+  "error.drive.not_found": "Diesen Ordner gibt es in Drive nicht (mehr).",
+  "error.drive.no_seat": "Du hast keinen Zugang zu Drive. Ein Administrator kann ihn dir geben.",
+  "error.drive.not_licensed": "Drive ist nicht lizenziert.",
+  "error.drive.quota": "In Drive ist kein Platz mehr frei.",
+  "error.drive.upload_invalid": "Die Datei konnte nicht an Drive übergeben werden. Bitte noch einmal.",
+  "error.drive.exists": "In Drive gibt es dort schon einen Ordner mit diesem Namen.",
+  "error.drive.rate_limited": "Gerade zu viele Anfragen an Drive – bitte in ein paar Minuten noch einmal.",
+  "error.drive.too_large": "Der Anhang ist für Drive zu groß.",
+  "error.drive.failed": "Speichern in Drive hat nicht geklappt. Bitte später noch einmal."
  },
  "en": {
   "common.ok": "OK",
@@ -731,6 +747,22 @@
   "error.attachment_too_large": "The attachment is larger than 25 MB and cannot be loaded.",
   "error.attachment_type": "GateControl cannot load this kind of file.",
   "error.attachment_failed": "The attachment could not be loaded. Please try again later.",
-  "error.gatecontrol_too_old": "Attachments need GateControl 1.190.0 or newer."
+  "error.gatecontrol_too_old": "Attachments need GateControl 1.190.0 or newer.",
+  "view.msg_drive": "Save to Drive",
+  "view.msg_drive_aria": "Save {{name}} to Drive",
+  "view.msg_drive_saving": "Saving …",
+  "view.msg_drive_saved": "Saved in {{where}}",
+  "error.drive.drive_unavailable": "Drive is not available right now.",
+  "error.drive.invalid": "Drive did not accept the folder or the file name.",
+  "error.drive.forbidden": "You may not save there in Drive.",
+  "error.drive.not_found": "This folder does not exist in Drive (any more).",
+  "error.drive.no_seat": "You have no access to Drive. An administrator can give it to you.",
+  "error.drive.not_licensed": "Drive is not licensed.",
+  "error.drive.quota": "Drive has no space left.",
+  "error.drive.upload_invalid": "The file could not be handed over to Drive. Please try again.",
+  "error.drive.exists": "There is a folder of this name there in Drive already.",
+  "error.drive.rate_limited": "Too many requests to Drive right now – please try again in a few minutes.",
+  "error.drive.too_large": "The attachment is too large for Drive.",
+  "error.drive.failed": "Saving to Drive did not work. Please try again later."
  }
 }

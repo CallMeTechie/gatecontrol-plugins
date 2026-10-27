@@ -2,6 +2,23 @@
 
 Stundenplan aus WebUntis für Schüler- und Elternkonten als GateControl-Plugin.
 
+## 1.7.0
+- **Anhänge in Drive speichern.** Ist das Plugin Drive (1.4.0 oder neuer) installiert, steht an jedem Anhang
+  einer Nachricht der Schule **„In Drive speichern“** – im Portal, auf der Seite „Schule“ und (mit dem
+  nächsten App-Update) in der App. Ohne gewählten Ordner kommt die Datei in den **Familienbereich** unter
+  „Schule › Kind“ (z. B. „Familie › Schule › Lena › Elternbrief.pdf“), wer dort nicht schreiben darf, in
+  „Meine Dateien“. Danach steht da, wo sie liegt. Drive bekommt eine eigene Kopie; Drive prüft selbst, ob die
+  Person einen Drive-Zugang hat und dort speichern darf.
+- **Neue Einstellung „Anhänge von Schulnachrichten automatisch in Drive ablegen“** (Gruppe „Drive“, Vorgabe:
+  aus). Eingeschaltet kommt jeder Anhang einer neuen Nachricht einmal von selbst in den Familienbereich unter
+  „Schule › Kind“, mit dem Datum vorn („2026-10-27 Elternbrief.pdf“) – im Namen eines eingetragenen Empfängers
+  (Elternteil) mit Drive-Zugang; braucht Drive mit einer Familie. Nie doppelt; klappt es nicht, steht es einmal
+  im Protokoll und wird nicht wiederholt.
+- **Neue Berechtigung – ein Administrator muss das Update bestätigen:** „Dienste anderer Plugins:
+  gatecontrol-drive:save_file“ (Dateien in Drive ablegen). Ohne Drive ändert sich nichts.
+- Für die App: `GET app/messages` sagt jetzt `drive: true|false`; neu ist `POST
+  app/messages/<id>/attachments/<anhangId>/drive` (siehe README „API“).
+
 ## 1.6.0
 - **„QR-Code scannen“ geht jetzt auch in Chrome, Edge und auf Android.** Bisher blieb die Kamera dort mit
   „Kein Zugriff auf die Kamera“ aus: Der Browser lässt die Kamera im abgeschotteten Fenster eines Plugins nicht
