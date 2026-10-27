@@ -38,7 +38,7 @@ test('admin overview: storage, retention, links, sends, what works with GateDrop
     await c.as(ANNA)('POST', 'sends', { items: [{ mediaId: m }], to: { link: { expires: '1d' } } });
     const o = (await c.call(ADMIN, 'GET', 'admin/overview')).json;
     assert.deepEqual([o.storage.bytes, o.storage.quota, o.retentionDays, o.sends7d, o.activeLinks, o.linksEnabled], [PNG.length, 10 * 1024 ** 3, 7, 1, 1, true]);
-    assert.deepEqual(o.integrations, { messenger: true, nas: false, familie: true });
+    assert.deepEqual(o.integrations, { messenger: true, nas: false, drive: false, familie: true });
   });
 });
 
@@ -62,7 +62,7 @@ test('pages: the portal tab and the admin page render in both languages; the man
   assert.equal(manifest.license.required, true);
   assert.deepEqual(manifest.notifyTopics.map((t) => t.id), ['received', 'link']);
   assert.deepEqual([manifest.permissions.devices, manifest.permissions.publicLinks, manifest.permissions.app, manifest.permissions.portal], [true, true, true, true]);
-  assert.deepEqual(manifest.permissions.services.sort(), ['gatecontrol-familie:family_roles', 'gatecontrol-messenger:send_file', 'gatecontrol-synology:list_drop_folders', 'gatecontrol-synology:save_file']);
+  assert.deepEqual(manifest.permissions.services.sort(), ['gatecontrol-drive:list_areas', 'gatecontrol-drive:save_file', 'gatecontrol-familie:family_roles', 'gatecontrol-messenger:send_file', 'gatecontrol-synology:list_drop_folders', 'gatecontrol-synology:save_file']);
   const texts = require('../server/texts.json');
   assert.deepEqual(Object.keys(texts.de).sort(), Object.keys(texts.en).sort());
 });

@@ -2,6 +2,19 @@
 
 Teilen wie Quick Share – über den eigenen GateControl-Server.
 
+## 1.3.0
+- **Neues Ziel „Mein Drive“:** Dateien lassen sich jetzt ins eigene Drive schicken (Drive-Plugin ab 1.4.0). Ohne
+  weitere Angabe landen sie in **Meine Dateien › GateDrop**, aus einer App auch in einem dort gewählten Ordner; ist ein
+  Name schon vergeben, heißt die Datei „Foto (2).jpg“. Text, Link und Notiz bleiben in GateDrop (wie beim NAS). Das
+  Speichern läuft nach dem Senden im Hintergrund; danach zeigt die Sendung „Gespeichert in Meine Dateien › GateDrop ›
+  Foto.jpg“ bzw. den Grund, z. B. „kein Drive-Platz“ (`no_seat`) oder „Drive ist voll“ (`quota`).
+- Angeboten wird das Ziel nur Personen mit Drive-Platz (im Portal als Chip „Mein Drive“ neben den NAS-Ordnern, in den
+  Apps über `GET targets` → `drive`). Die Übersicht im Admin-Bereich zeigt, ob Drive verfügbar ist.
+- App-API: `POST sends` mit `to.drive` (`true` oder `{ "folderId": 12 }`), Zustellungen der Art `drive` mit `files`
+  und `where`, `GET targets` mit `drive: true|false` – siehe README.
+- **Neue Berechtigung:** GateDrop nutzt die Dienste `gatecontrol-drive:save_file` und `gatecontrol-drive:list_areas`.
+  Ein Admin muss das Update deshalb unter Einstellungen › Plugins bestätigen, bevor es aktiv wird.
+
 ## 1.2.1
 - **Direktübertragung im WLAN – schneller Wechsel auf den Server:** `GET transfers/<id>` nennt jetzt unter `peer`, was
   die andere Seite gemeldet hat (`{ ok, error }`, z. B. `pull_failed`). Die Apps fragen das ab, während sie auf die

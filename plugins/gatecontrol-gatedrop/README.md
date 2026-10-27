@@ -3,15 +3,17 @@
 Sharing like Quick Share through one's own GateControl server: files (1–20 per send, ≤ 2 GB each), a text
 (≤ 20 000 characters) or a link go to **people** (a message of the sender in the Messenger), to one's **own
 devices** (Android, Windows — directly on the same Wi-Fi when possible, otherwise through the server), into **NAS
-folders** (the Synology plugin) or out as a **link for outsiders** (time-limited, optional PIN). Received files stay
+folders** (the Synology plugin), into one's **own Drive** (the Drive plugin, since 1.3.0) or out as a **link for
+outsiders** (time-limited, optional PIN). Received files stay
 7 days on the server.
 
 *Deutsch:* Teilen wie Quick Share über den eigenen Server – an Personen (im Messenger), eigene Geräte (im WLAN direkt,
-sonst über den Server), NAS-Ordner oder als Link für Externe. Details im CHANGELOG.
+sonst über den Server), NAS-Ordner, ins eigene Drive oder als Link für Externe. Details im CHANGELOG.
 
 Needs GateControl ≥ 1.193.0: `media` up to 2 GB (`resumable`), `permissions.devices` (`gc.devices.list`,
 `user.device`, `gc.notify` `devices` / `silent`), `gc.media.handOver`, `permissions.publicLinks` (`gc.publicLinks`),
-`permissions.services` (Messenger `send_file`, Synology `save_file` / `list_drop_folders`, Familie `family_roles`).
+`permissions.services` (Messenger `send_file`, Synology `save_file` / `list_drop_folders`, Drive `save_file` /
+`list_areas` (Drive ≥ 1.4.0), Familie `family_roles`).
 
 ## Who may do what
 
@@ -21,6 +23,8 @@ Needs GateControl ≥ 1.193.0: `media` up to 2 GB (`resumable`), `permissions.de
   default `self`); kiosk accounts' devices are never listed for others.
 * Links for outsiders and NAS folders: administrators and Familie's parents (`family_roles`, cached 10 minutes).
   Links also need the administrator's switch *Öffentliche Links erlauben* (default off).
+* One's own Drive: every account with a Drive seat (Drive's `list_areas` for the person answers with a writable own
+  area `mine`; cached 30 minutes per person).
 
 ## App-API
 
@@ -36,6 +40,7 @@ Answers: `{ ok: true, … }`; errors `{ ok: false, code, error }` (localized tex
 | `not_found` | 404 | unknown or not yours |
 | `gone` | 410 | the send expired (files removed) |
 | `upload_required` | 409 | `local` items for a target that needs the files on the server |
+| `unavailable` | 409 | the target is gone: a device closed for others, Drive not installed / no seat / no licence |
 | `links_disabled` | 409 | public links are off |
 | `media_invalid`, `media_in_use` | 409 | a file is missing / not the caller's / already sent |
 | `no_device` | 409 | the route needs an app installation (`user.device`): `PUT presence`, `GET pending`, `transfers/…` |
@@ -58,6 +63,7 @@ anything else (HTML, XML, JSON, SVG, …) goes up as `application/octet-stream`.
                        "owner": { "id": 3, "name": "Marc" } } ],
   "nas": [ { "id": 1, "label": "Ablage", "path": "/Familie/Ablage" } ],                   // [] unless canNas
   "links": { "enabled": true },                                                           // the administrator's switch
+  "drive": true,                                                                          // since 1.3.0: "Mein Drive" offered
   "messenger": true,                                                                      // people get a chat message
   "limits": { "maxItems": 20, "maxBytes": 2147483648, "types": ["image/*", …], "textMax": 20000, "noteMax": 500,
               "retentionDays": 7, "linkExpires": ["1h", "1d", "7d", "once"], "directPort": 47731,
@@ -71,6 +77,11 @@ anything else (HTML, XML, JSON, SVG, …) goes up as `application/octet-stream`.
 with addresses in the same private IPv4 network (10/8, 172.16/12, 192.168/16; the shorter prefix of both), the target is
 online, and one side listens (`mode`: `push` = the target listens, `pull` = the asking device listens). Show the link
 target only when `me.canLink && links.enabled`.
+
+`drive` (since 1.3.0): `true` when the Drive plugin is installed and reachable (`save_file`, `list_areas`) and the
+person has a Drive seat with a writable own area — offer the target **"Mein Drive"** then (send with `to.drive`).
+Cached per person for 30 minutes (GateDrop has 60 service calls an hour); a delivery that Drive refuses with `no_seat`
+or `not_licensed` sets it to `false` right away.
 
 A send's `from` (and a transfer's, and the silent push's) carries `own`: `true` when it came from the viewer's own
 account (one's own device: name it by `deviceName`), `false` from another person (name them by `name`).
@@ -101,6 +112,7 @@ freshS: 900 } }`. Windows: `listening: true` always (port 47731); Android: `true
              { "name": "IMG_2041.jpg", "bytes": 3100000, "mime": "image/jpeg", "local": true } ],  // only for direct targets
   "text": "…", "link": "https://…", "note": "…",                               // each optional; something to send is required
   "to": { "people": [3, "family"], "devices": ["43"], "nas": [{ "id": 1, "path": "Rechnungen/2026" }],
+          "drive": true | { "folderId": 12 },                                  // since 1.3.0: one's own Drive
           "link": { "expires": "1h" | "1d" | "7d" | "once", "pin": true } } }
 ```
 
@@ -114,6 +126,8 @@ freshS: 900 } }`. Windows: `listening: true` always (port 47731); Android: `true
                     "conversationId": 17, … },
                   { "id": 3, "kind": "nas", "target": "/Familie/Ablage/Rechnungen/2026", "label": "Ablage/Rechnungen/2026",
                     "status": "pending", … },                                  // saved after the answer → GET sends/<id>
+                  { "id": 5, "kind": "drive", "target": "mine", "label": "Mein Drive", "status": "pending",
+                    "files": [], "where": [], … },                             // saved after the answer → GET sends/<id>
                   { "id": 4, "kind": "link", "target": "<token>", "label": "angebot.pdf", "status": "delivered", … } ],
   "link": { "token": "…", "url": "https://gc.example.com/s/<token>", "pin": "4819" | null, "expiresAt": "…",
             "maxDownloads": 1 | null } | null,                                 // the PIN is shown once, GateDrop keeps no copy
@@ -129,10 +143,13 @@ not a failure, retention treats it like `delivered`), `delivered`, `opened`, `fa
 `server`; `error` (a code,
 informational when delivered): `direct_failed`, `push_failed`, `file_type` / `file_too_large` / `unavailable` (the
 Messenger did not take it — the person got a push instead), `no_space`, `permission`, `unreachable`, `upload_failed`
-(NAS), `links_disabled`, `no_public_url`, `revoked`. `conversationId` (person via the Messenger), `paths` (NAS).
+(NAS), `links_disabled`, `no_public_url`, `revoked`; Drive passes its codes through: `no_seat`, `not_licensed`,
+`not_found` (the folder is gone), `forbidden` (no write access to it), `quota`, `upload_invalid`, `invalid`, `exists`,
+`internal`, plus `unavailable`, `rate_limited`, `timeout`. `conversationId` (person via the Messenger), `paths` (NAS),
+`files` / `where` (Drive).
 
 **People:** with the Messenger, files ≤ 25 MB (≤ 100 MB per send in all, ≤ 200 hand-overs per sender and day,
-Messenger and NAS together) are handed over and sent with `send_file` as the sender's message; larger files and types
+Messenger, NAS and Drive together) are handed over and sent with `send_file` as the sender's message; larger files and types
 the Messenger does not take stay in GateDrop (the person gets the `received` push for them, they are in `GET inbox`, the
 chat message names them "+2 Dateien in GateDrop: …"; the delivery has `conversationId` and is `delivered`). A refusal of
 the Messenger (`forbidden` for a block or not a member, `readonly`, …) **fails** the delivery — no push, nothing in the
@@ -140,7 +157,20 @@ recipient's inbox. Only without the Messenger (not installed / not reachable) th
 `family` goes to the family's members **at sending** (only they ever see it).
 
 `local: true` items stay on the sender's device; every target must then be one of its own devices reached directly
-(else `409 upload_required`). Links and NAS folders need files.
+(else `409 upload_required`). Links, NAS folders and Drive need files.
+
+**Drive** (since 1.3.0): `to.drive` = `true` (or `{}`) → every file goes into the **sender's own** Drive as
+`GateDrop/<name>` in their own area (`area: 'mine'`, the folder is made when missing); `{ "folderId": 12 }` → into that
+folder (one the sender picked in Drive's own API — any area they may write to). A name taken → `"<name> (2)"`. A text, a
+link or a note is not saved (it stays in GateDrop like for NAS); a send to Drive needs at least one file. Checked before
+the answer: Drive available and a seat (`GET targets`' `drive`), else `409 unavailable`; a bad `drive` / `folderId`
+→ `400 invalid`. Each file is handed over (`gc.media.handOver`, a copy — GateDrop keeps its own for 7 days) and saved
+with Drive's `save_file` for the sender **after the answer** (the delivery is `pending`, then `delivered` or `failed`;
+poll `GET sends/<id>`). Delivery: `target` `"mine"` | `"folder:<id>"`; `label` `"Mein Drive"` until saved, then the
+folder as Drive names it (`"Meine Dateien › GateDrop"`); `files: [{ nodeId, areaId, name, where }]` and `where:
+["Meine Dateien › GateDrop › Foto.jpg", …]` (in the sender's language, for "Gespeichert in …") — the files saved, also
+for a delivery that failed partway. `error` is Drive's code of the first file that failed; after `no_seat`,
+`not_licensed`, `not_found`, `forbidden` the remaining files are not tried.
 
 ### Direct transfers (protocol v1, contract C)
 
@@ -237,9 +267,10 @@ Topics `received` ("Empfangen": deliveries, silent transfer pushes) and `link` (
 ## Admin page
 
 "Übersicht" (`admin/overview`): storage (`gc.media.usage`), retention (7 days), active links, sends of 7 days, whether
-links are on (with the way to the switch), Messenger / NAS / Familie available. No content.
+links are on (with the way to the switch), Messenger / NAS / Drive / Familie available. No content.
 
 ## Development
 
 `GATECONTROL_DIR=… node tools/test.js gatecontrol-gatedrop` — the tests use the mock host as GateControl 1.193.0 with
-the real Messenger and NAS plugins linked (hand-over, services, File Station upload against a fake DSM).
+the real Messenger and NAS plugins linked (hand-over, services, File Station upload against a fake DSM) and a fake
+of Drive's `list_areas` / `save_file` (`test/helpers.js` `fakeDrive`).

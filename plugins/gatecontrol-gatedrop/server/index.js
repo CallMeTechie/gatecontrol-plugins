@@ -7,6 +7,7 @@
 //                 here, the bytes never pass the server), otherwise through the server (push + download),
 //   others' devices  the same, for devices whose owner opened them for everyone (GET/PUT device, since 1.2.0),
 //   NAS folders   through the Synology plugin (services list_drop_folders, save_file),
+//   own Drive     through the Drive plugin (services list_areas, save_file; since 1.3.0),
 //   outsiders     as a public link of GateControl (gc.publicLinks: expiry, optional PIN).
 // Received files stay 7 days on the server (background). Links and NAS: administrators and Familie's
 // parents (service family_roles); people and own devices: every account, never a kiosk device.
@@ -92,6 +93,7 @@ async function targets(ctx) {
   return {
     me: { id: ctx.viewer, name: ctx.user.name, canLink: share, canNas: share, deviceId: ctx.deviceId, receiveFrom: ctx.deviceId ? await access.modeOf(gc, ctx.deviceId, ctx.viewer) : null },
     people: list, devices, peopleDevices, nas, links: { enabled },
+    drive: await people.drive(gc, ctx.viewer, ctx.now),
     messenger: await people.available(gc, people.MESSENGER, 'send_file'),
     limits: {
       maxItems: sends.LIMITS.items, maxBytes: usage ? usage.maxBytes : sends.LIMITS.maxBytes, types: usage ? usage.types : [], textMax: sends.LIMITS.textMax,
@@ -235,6 +237,6 @@ module.exports = {
     return jobs.tick(gc, Date.now());
   },
 
-  /** Tests: wait for the work after an answer (NAS uploads). */
+  /** Tests: wait for the work after an answer (NAS and Drive uploads). */
   _idle: () => bg.idle(),
 };
