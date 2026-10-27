@@ -35,6 +35,13 @@ const STATUS = {
   no_sink: 409,
   routes_off: 409,
   rate_limited: 429,
+  // 1.10.0 "In Drive speichern" (POST messages/:id/to-drive): Drive's own answers, and Drive not there
+  no_seat: 403,
+  not_licensed: 403,
+  quota: 409,
+  upload_invalid: 409,
+  exists: 409,
+  drive_unavailable: 409,
   internal: 500,
 };
 

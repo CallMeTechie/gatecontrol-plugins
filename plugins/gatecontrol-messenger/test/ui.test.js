@@ -79,7 +79,7 @@ test('texts: every key used by the pages exists in de and en; both languages hav
 
 test('plugin.json: licence, GateControl 1.193.0, permissions, pages, app and portal tab "Chats"', () => {
   assert.equal(manifest.id, 'gatecontrol-messenger');
-  assert.equal(manifest.version, '1.9.2');
+  assert.equal(manifest.version, '1.10.0');
   assert.equal(manifest.gatecontrol, '>=1.193.0', '1.8.0: media.handOverMaxBytes for send_file (1.6.0: the chat sink, GateControl 1.191.0)');
   assert.equal(manifest.media.handOverMaxBytes, 2147483648, '1.8.0: GateDrop hands over files up to 2 GB; own uploads stay at 25 MB');
   assert.equal(manifest.permissions.notifySink, true);
@@ -91,7 +91,8 @@ test('plugin.json: licence, GateControl 1.193.0, permissions, pages, app and por
   // 1.9.0: group chats for GateControl groups — gc.groups (GateControl ≥ 1.200.0) is feature-detected, the requirement stays
   assert.equal(p.groups, 'read');
   // 1.5.0: family_roles (who approves requests, who is a child)
-  assert.deepEqual(p.services, ['list_add', 'calendar_add', 'calendar_upsert', 'calendar_remove', 'places', 'family_roles'].map((x) => 'gatecontrol-familie:' + x));
+  // 1.10.0: "In Drive speichern" (hand-over and save_file of gatecontrol-drive)
+  assert.deepEqual(p.services, [...['list_add', 'calendar_add', 'calendar_upsert', 'calendar_remove', 'places', 'family_roles'].map((x) => 'gatecontrol-familie:' + x), 'gatecontrol-drive:save_file']);
   assert.ok(manifest.services.provides.set_place_status);
   assert.deepEqual(manifest.ui.pages.map((x) => x.id), ['overview', 'log']);
   for (const k of ['portal', 'app']) assert.deepEqual(manifest.ui[k].label, { de: 'Chats', en: 'Chats' });

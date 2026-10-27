@@ -15,6 +15,8 @@ settings, last seen, blocks, archive, pins, chat lists, export, "remind me",
 suggestions, polls, events, live arrival, home actions and plugin cards — see
 "Since 1.4.0" in the App-API. 1.6.0 makes the chats the place for
 GateControl's notifications — see "Notifications in chats (since 1.6.0)".
+1.10.0 saves a chat's pictures, voice messages and files into the Drive plugin
+— see "Save to Drive (since 1.10.0)".
 
 * Version 1 is internal only (GateControl ↔ GateControl); bridges (WhatsApp,
   Signal, Matrix, ntfy, Gotify) and end-to-end encryption come later.
@@ -203,7 +205,7 @@ counts as unread and is pushed.
 
 | Method & path | Body / query | Answer |
 |---|---|---|
-| `GET me` | | since 1.4.0 also `integrations`, more `prefs`, `features` and `limits` (see "Since 1.4.0"); `{ user: { id, name, avatarUrl, initials, colorHex }, prefs: { readReceipts, typing, preview }, license: { licensed, state, expiresAt }, features: { direct, groups, voice, files, location, reactions, edit, search, disappearing, bridges: false, e2e: false, video_meta: true, file_thumbs: true }, limits: { maxBytes, types[], quotaFull, editWindowS, maxVoiceS, textMax: 4000, thumbMaxBytes: 65536, thumbMaxSide: 640, imageMaxSide: 2048, groupMax: 256, titleMax: 80, pageMax: 100, typingS: 6, typingEveryS: 3, activeS: 30, disappearingS: [0, 86400, 604800, 2592000], retentionDays }, serverTime }` — `video_meta`, `file_thumbs`, `thumbMaxSide` since 1.3.0, see "Videos and file previews" |
+| `GET me` | | since 1.4.0 also `integrations` (since 1.10.0 `integrations.drive`), more `prefs`, `features` and `limits` (see "Since 1.4.0"); `{ user: { id, name, avatarUrl, initials, colorHex }, prefs: { readReceipts, typing, preview }, license: { licensed, state, expiresAt }, features: { direct, groups, voice, files, location, reactions, edit, search, disappearing, bridges: false, e2e: false, video_meta: true, file_thumbs: true }, limits: { maxBytes, types[], quotaFull, editWindowS, maxVoiceS, textMax: 4000, thumbMaxBytes: 65536, thumbMaxSide: 640, imageMaxSide: 2048, groupMax: 256, titleMax: 80, pageMax: 100, typingS: 6, typingEveryS: 3, activeS: 30, disappearingS: [0, 86400, 604800, 2592000], retentionDays }, serverTime }` — `video_meta`, `file_thumbs`, `thumbMaxSide` since 1.3.0, see "Videos and file previews" |
 | `PUT prefs` | `{ readReceipts?, typing?, preview? }` (booleans) | `{ prefs }` |
 | `GET people` | | `{ people: [ { id, name, avatarUrl, initials, colorHex, color } ] }` — enabled accounts but the caller and kiosk accounts, by name |
 | `GET conversations` | `?since=<ISO>` (optional) | `{ conversations: [Conversation] (newest activity first), removed: [ids] (left/removed since), serverTime }` — with `since` only conversations changed after it; use the answer's `serverTime` as the next `since`. A direct chat without messages is listed only for the person who opened it. Marks the newest message of each listed chat as delivered. |
@@ -437,6 +439,9 @@ Nachricht braucht eine neuere App-Version". New error codes:
 | 409 | `no_approver` | an action request nobody in the chat may run |
 | 409 | `unavailable` | the Familie plugin does not offer that service (or refused it) |
 | 429 | `rate_limited` | poll nudge more than once an hour |
+| 403 | `no_seat` / `not_licensed` | since 1.10.0, Drive: no Drive seat / Drive not licensed ("Save to Drive") |
+| 409 | `quota` / `upload_invalid` / `exists` | since 1.10.0, Drive: storage full / file not taken / name taken |
+| 409 | `drive_unavailable` | since 1.10.0: the Drive plugin does not take files right now |
 
 #### Preferences (`GET me` → `prefs`, `PUT prefs`)
 
@@ -577,6 +582,42 @@ only in the direct chat with its owner). The message then carries
   Uhr", "15:30", "9.15 Uhr", "halb 4") — relative to when the message was sent,
   server time zone; `allDay` without a time; `label` e.g. "Sa., 24.10. 15:00";
   `title` the sentence without the date words.
+
+#### Save to Drive (since 1.10.0)
+
+"In Drive speichern" for the file of a message: the Drive plugin
+(`gatecontrol-drive` ≥ 1.4.0, service `save_file`; this plugin lists
+`gatecontrol-drive:save_file` in `permissions.services`). `GET me` →
+`integrations.drive` (boolean): Drive takes files right now
+(`gc.services.available`) — show the action only then.
+
+| Method & path | Body | Answer |
+|---|---|---|
+| `POST messages/:id/to-drive` | `{}` or `{ folderId }` (a Drive folder id the person picked with Drive's own API) | `{ saved: { nodeId, name, where } }` |
+
+* Which messages: pictures, voice messages and files (`kind` image / voice /
+  file with `media`) the caller may download — the rule of `GET …/media/<id>`:
+  an active member who sees the message (joined before it, not hidden for
+  them, not deleted for everyone); otherwise `404 not_found` like every
+  message route. The id is the **message** id (`message.id`), not the
+  `mediaId`; one file per message.
+* Where: without `folderId` **Meine Dateien › Messenger › <name>** (the folder
+  is made when missing), with `folderId` into that folder. `name`: the
+  message's `meta.fileName`, else e.g. "Foto 2026-10-17 12-00.jpg" /
+  "Sprachnachricht … .ogg" (sent at, server time zone; "Photo", "Voice
+  message", "File" in English). A name already taken gets " (2)".
+* The file is handed over (`gc.media.handOver`, a copy — the chat keeps its
+  own) and saved for the caller; Drive checks the seat, licence, write access
+  and quota. `saved.where` is Drive's text in the caller's language, e.g.
+  "Meine Dateien › Messenger › Foto.jpg" → toast "Gespeichert in <where>".
+* Errors: Drive's codes as they are — `403 no_seat` (no Drive seat), `403
+  not_licensed`, `403 forbidden` (no write access to the folder), `404
+  not_found` (also: unknown folder), `400 invalid` (bad `folderId` or name),
+  `409 quota` (Drive's storage full), `409 upload_invalid` (Drive does not
+  take the file), `409 exists`; `409 drive_unavailable` (Drive not installed,
+  not running or refusing, GateControl without the hand-over), `429
+  rate_limited` (20 saves per hour and person, or GateControl's limit of 60
+  service calls per hour for the messenger).
 
 #### Polls (`kind: "poll"`)
 
@@ -1011,7 +1052,8 @@ above the chat), live arrivals read-only (the apps share the way), home action
 messages and plugin cards with their buttons (a confirmation first for
 `needsConfirm`); the attach menu offers poll, event and home action; the
 message menu pin / unpin, "Erinnern" and "Zur Liste / In Kalender" (with
-Familie); the chat info archive, export (shown as text to copy — frames have
+Familie) and, since 1.10.0, "In Drive speichern" for pictures, voice messages and files
+(with Drive, into Meine Dateien › Messenger; a toast names the place); the chat info archive, export (shown as text to copy — frames have
 no downloads) and block; chips for chat lists and the archive above the chat
 list; the settings dialog for privacy, notifications, chats and blocks. Each
 part only when `GET me` lists its feature.

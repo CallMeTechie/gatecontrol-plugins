@@ -155,7 +155,7 @@ test('event: familyCalendar → Familie calendar_upsert / calendar_remove (featu
     assert.deepEqual([r.json.eventId, calls[3].name, calls[3].user.id], ['e1', 'calendar_add', ANNA.id]);
     r = await c.as(ANNA)('GET', 'familie/places');
     assert.deepEqual(r.json.places, [{ id: 'p1', name: 'Zuhause', lat: 50, lon: 7, radiusM: 100 }]);
-    assert.deepEqual((await c.as(ANNA)('GET', 'me')).json.integrations, { familie: { lists: true, calendar: true, places: true } });
+    assert.deepEqual((await c.as(ANNA)('GET', 'me')).json.integrations, { familie: { lists: true, calendar: true, places: true }, drive: false });
   });
   // without Familie (or on 1.177, which cannot ask): unavailable, nothing called
   await withHost({}, async (host, c) => {
@@ -165,6 +165,6 @@ test('event: familyCalendar → Familie calendar_upsert / calendar_remove (featu
     assert.equal((await c.as(ANNA)('GET', 'familie/places')).json.code, 'unavailable');
     const m = await c.send(ANNA, g.id, { kind: 'event', event: { title: 'x', startsAt: iso(T0 + HOUR), familyCalendar: true } });
     assert.equal(m.event.familyCalendar, true, 'kept, synced once Familie is there');
-    assert.deepEqual((await c.as(ANNA)('GET', 'me')).json.integrations, { familie: { lists: false, calendar: false, places: false } });
+    assert.deepEqual((await c.as(ANNA)('GET', 'me')).json.integrations, { familie: { lists: false, calendar: false, places: false }, drive: false });
   });
 });
