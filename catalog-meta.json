@@ -2713,6 +2713,17 @@
           }
         },
         {
+          "icon": "app",
+          "title": {
+            "de": "Geräte der Person",
+            "en": "A person’s devices"
+          },
+          "text": {
+            "de": "Erkennt, von welchem eigenen Gerät eine Anfrage kommt – für „Löschen auf allen Geräten“ und das Änderungsprotokoll.",
+            "en": "Knows which of one’s own devices a request comes from – for “delete on all devices” and the change log."
+          }
+        },
+        {
           "icon": "bell",
           "title": {
             "de": "Mitteilungen",

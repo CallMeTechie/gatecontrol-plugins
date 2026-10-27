@@ -227,6 +227,7 @@
     order: 'asc',
     q: '',
     meSettings: null,
+    meDevices: 0,         // my devices that use Drive (GET me devices): "also on all my devices" when deleting
     linksEnabled: true,
     seq: 0,               // guards against an older answer arriving last
     uploads: [],
@@ -253,6 +254,7 @@
     api('GET', 'me').then(function (r) {
       S.me = r.me;
       S.meSettings = r.settings || null;
+      S.meDevices = r.devices || 0;
       (r.people || []).forEach(function (p) { S.people.set(p.id, p.name); });
       if (!r.licence || !r.licence.valid) { message(T('p.unlicensed_title'), T('p.unlicensed_text')); return; }
       if (!r.me || !r.me.seat) { message(T('p.noseat_title'), T('p.noseat_text')); return; }
@@ -518,10 +520,10 @@
     try { input.setSelectionRange(0, dot > 0 ? dot : (value || '').length); } catch (e) { /* not a text field */ }
   }
 
-  function confirmDialog(title, text, okLabel, onOk, danger) {
+  function confirmDialog(title, text, okLabel, onOk, danger, extra) {
     var err = h('p', { class: 'dp-err', attrs: { role: 'alert' } });
-    dialog(title, [h('p', { class: 'dp-hint', text: text }), err, h('div', { class: 'dp-actions' }, [btn(T('p.cancel'), closeDialog),
-      btn(okLabel, function () { onOk().then(closeDialog, function (e) { err.textContent = errText(e); }); }, { primary: !danger, danger: !!danger })])]);
+    dialog(title, [h('p', { class: 'dp-hint', text: text })].concat(extra || []).concat([err, h('div', { class: 'dp-actions' }, [btn(T('p.cancel'), closeDialog),
+      btn(okLabel, function () { onOk().then(closeDialog, function (e) { err.textContent = errText(e); }); }, { primary: !danger, danger: !!danger })])]));
   }
 
   // ── actions of a node ────────────────────────────────────
@@ -558,9 +560,14 @@
     });
   }
   function toTrash(n) {
+    // "also on all my devices" (wipes, since 1.2.0): only when Drive knows devices of mine — the browser keeps no copies
+    var everywhere = h('input', { type: 'checkbox' });
+    var extra = S.meDevices > 0 ? [h('label', { class: 'dp-check' }, [everywhere, h('span', { text: P('p.everywhere', S.meDevices) })]),
+      h('p', { class: 'dp-hint', text: T('p.everywhere_hint') })] : null;
     confirmDialog(T('p.to_trash'), T(n.isDir ? 'p.to_trash_folder' : 'p.to_trash_file', { name: n.name, days: (S.meSettings && S.meSettings.trashDays) || 30 }), T('p.to_trash'), function () {
-      return api('DELETE', 'nodes/' + n.id).then(function () { reload(); loadStorage(); toast(T('p.trashed', { name: n.name })); });
-    }, true);
+      var all = !!(extra && everywhere.checked);
+      return api('DELETE', 'nodes/' + n.id, null, all ? { everywhere: 1 } : null).then(function () { reload(); loadStorage(); toast(T(all ? 'p.trashed_everywhere' : 'p.trashed', { name: n.name })); });
+    }, true, extra);
   }
 
   function download(n) {

@@ -4,7 +4,9 @@
 //   * the trash: what was deleted more than trash_days ago goes for good (files and their versions);
 //   * versions older than versions_days go;
 //   * the NAS journals are read (in case a call of the hook mediaChanged was missed);
-//   * the notes "… hat deinen Ordner angesehen" older than a week are forgotten.
+//   * the notes "… hat deinen Ordner angesehen" older than a week are forgotten;
+//   * "delete on all devices": wipes older than 90 days go, devices GateControl no longer lists stop being waited for
+//     (wipes.js, since 1.2.0).
 
 const store = require('./store');
 const nodes = require('./nodes');
@@ -13,6 +15,7 @@ const sync = require('./sync');
 const changes = require('./changes');
 const links = require('./links');
 const backup = require('./backup');
+const wipes = require('./wipes');
 
 const DAY = 86400000;
 const BATCH = 200;
@@ -44,9 +47,11 @@ async function tick(gc, now = Date.now()) {
     try { for (const id of await links.catchUp(gc, now)) ctx.touched.add(id); } catch (e) { gc.log.warn('link uploads failed', (e && e.code) || 'error'); }
     try { await links.forget(gc); } catch (e) { gc.log.warn('link rows failed', (e && e.code) || 'error'); }
     try { await backup.weekly(gc, settings.backupHint, now); } catch (e) { gc.log.warn('backup hint failed', (e && e.code) || 'error'); }
+    let wiped = { expired: 0, dropped: 0 };
+    try { wiped = await wipes.housekeeping(gc, now); } catch (e) { gc.log.warn('wipes failed', (e && e.code) || 'error'); }
     await store.run(gc, 'DELETE FROM child_views WHERE day < ?', [new Date(now - 7 * DAY).toISOString().slice(0, 10)]);
     await changes.announce(gc, ctx.touched, settings);
-    return { purged, versions: old.length, synced };
+    return { purged, versions: old.length, synced, wipesExpired: wiped.expired, wipesDropped: wiped.dropped };
   } finally {
     running = false;
   }

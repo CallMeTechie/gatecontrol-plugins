@@ -12,7 +12,9 @@ Abgleich mit allen Geräten. Details im CHANGELOG.
 Needs GateControl ≥ 1.208.0: `media.areas` (an area per Drive area, paths, `gc.media.move` / `version`, a version back
 to its path, the NAS journal and the hook `mediaChanged`), `gc.license.info` (tier and seats), `storage.maxMB` 4096,
 `permissions.groups: 'read'` (family groups and their roles, groups of team folders), `permissions.events`,
-`media.previews` (since 1.1.0: previews of files, `gc.media.previews`).
+`media.previews` (since 1.1.0: previews of files, `gc.media.previews`), `permissions.devices` (since 1.2.0: the asking
+device of an app request, `user.device` — GateControl passes it only with this permission; see "Delete on all
+devices").
 
 ## Areas and rights
 
@@ -48,14 +50,14 @@ login_required`). Every answer has `ok`; errors `{ ok: false, code, error }` (+ 
 
 | Route | Body / query | Answer |
 |---|---|---|
-| `GET me` | | `me { id, name, seat, deviceId }`, `licence { valid, tier }`, `areas`, `latest` (change log seq), `settings`, `limits { maxBytes }` |
+| `GET me` | | `me { id, name, seat, deviceId }`, `licence { valid, tier }`, `areas`, `latest` (change log seq), `settings`, `limits { maxBytes }`, `wipes` (entries this device has yet to handle, since 1.2.0), `devices` (my devices a new wipe reaches) |
 | `GET areas` | | `areas [{ id, kind, label, role, via, rootId, owner, archived, storage { bytes, quota, form, target, state } }]` |
 | `GET nodes/<id>` | | `node` + `path`, `role`, `crumbs [{ id, name }]` |
 | `GET nodes/<id>/children` | `sort=name\|mtime\|size\|updated`, `order`, `offset`, `limit` (≤ 1000) | `items` (folders first), `total`, `next`, `role` |
 | `GET nodes/by-path` | `area`, `path` | `node` |
 | `POST nodes` | `{ parentId, name, rename? }` | `node` (a folder; `409 exists`, or a free name with `rename`) |
 | `PATCH nodes/<id>` | `{ name?, parentId? }` | `node` — rename / move, also into another area one writes to |
-| `DELETE nodes/<id>` | | `{ id, trashed }` — into the trash |
+| `DELETE nodes/<id>` | `everywhere=1` (since 1.2.0) | `{ id, trashed }` — into the trash; with `everywhere=1` also `wipe { id, devices, files }` (see "Delete on all devices") |
 | `GET nodes/<id>/content` | | `{ url, name, mime, size, mediaId }` — `url` signed for the viewer, 1 h |
 | `GET nodes/<id>/versions` | | `{ current, versions [{ id, rev, size, sha256, at, by }] }` |
 | `GET nodes/<id>/versions/<vid>/content` | | `{ url, … }` |
@@ -66,7 +68,9 @@ login_required`). Every answer has `ok`; errors `{ ok: false, code, error }` (+ 
 | `GET changes` | `since`, `limit` (≤ 1000) | `{ changes [{ seq, op, areaId, nodeId, at, by, device, node }], next, more }` |
 | `GET trash` | `area?` | `items` (the deleted node with `from`, folders with `size`, `files`) |
 | `POST trash/<id>/restore` | | `node` (a free name; the area's top when its folder is gone) |
-| `DELETE trash/<id>` | | `{ id, files }` — gone for good |
+| `DELETE trash/<id>` | | `{ id, files }` — gone for good (wipes stay) |
+| `GET wipes` | | `{ wipes [{ id, wipeId, nodeId, name, sha256, size, mime, createdAt }], more }` — this device's, oldest first, ≤ 500 (since 1.2.0) |
+| `POST wipes/done` | `{ ids: [<entry id>, …] }` (≤ 1000) | `{ done, wipes }` — this device handled them (since 1.2.0) |
 | `GET search` | `q` (2–100 characters), `area?` | `items` with `path` (≤ 100) |
 | `POST links` | `{ nodeId, mode: 'view' \| 'download' \| 'upload', expires: '1d' \| '7d' \| '30d' \| 'never', pin?, maxFiles?, maxBytes? }` | `link` (with `url`) |
 | `GET links` | `nodeId?` | `{ links, enabled }` — mine, or those of a node I write to |
@@ -122,6 +126,54 @@ fetch `GET changes?since=`. `op`: `create`, `update`, `move`, `delete`, `restore
 another area shows as `delete` in the old area (`node: null`) and `create` in the new one; `device` is the device
 that made the change (`nas` for changes made on the NAS).
 
+**Delete on all devices** (since 1.2.0): "Nur auf diesem Gerät" is the app's own business (it removes its local copy
+and calls nothing). "Auch auf dem Server" is the plain `DELETE nodes/<id>` (into the trash). "Auf allen Geräten" is
+`DELETE nodes/<id>?everywhere=1`: the trash as before **plus** a wipe for the person who deleted — every device of that
+person removes its local copy (the original the photo backup left in the gallery, a downloaded or synced copy) when it
+is next online:
+
+```
+DELETE /api/v1/client/plugins/gatecontrol-drive/api/nodes/<id>?everywhere=1        X-API-Token: <device token>
+  → 200 { ok: true, id, trashed, wipe: { id, devices, files } }
+       wipe.id: the wipe (null when there is nothing to do: no device of mine is known, or no file)
+       wipe.devices: my devices that will be asked (the asking one included), wipe.files: its entries
+  errors as for DELETE nodes/<id>: 404 not_found · 403 forbidden (no write right, archived) · 400 invalid (the root)
+  `everywhere`: 1 | true | yes; anything else is a plain delete.
+
+GET /api/v1/client/plugins/gatecontrol-drive/api/wipes
+  → 200 { ok: true, wipes: [{ id, wipeId, nodeId, name, sha256, size, mime, createdAt }], more }
+       oldest first, ≤ 500 (more: true — confirm these, then ask again); [] for a request without a device (portal)
+
+POST /api/v1/client/plugins/gatecontrol-drive/api/wipes/done      { "ids": [17, 18] }
+  → 200 { ok: true, done, wipes }
+       done: entries confirmed now (unknown ids, those of other people and ones confirmed before count 0)
+       wipes: what this device has left
+  400 invalid { field: 'ids' }: not an array, more than 1000, an id not a positive integer
+```
+
+- **Entries:** one per file — a folder: every file below it that was not in the trash already, at most 5000 (by id).
+  `nodeId`, `name`, `sha256` (64 hex characters or `null`), `size` (bytes), `mime` are the file as it was deleted;
+  `wipeId` is the `wipe.id` of the delete, `createdAt` when it was made. A device finds its copy by `nodeId` (a synced
+  or downloaded file) or by `sha256` and `size` (the photo in the gallery), removes it — or has none — and confirms the
+  entry with `wipes/done`, also when it had no copy. An entry goes once every target device confirmed it.
+- **Which devices:** the device is GateControl's `user.device.id` of the request — the id of the app's device token
+  (the same as `me.deviceId` and `device` in `changes`). Drive remembers every device of a person that makes an app
+  request (last seen, written at most every 10 minutes). The targets of a wipe are the person's devices Drive saw in the
+  last 180 days when it is made, the deleting device included (it confirms like the others, right away if it removed
+  its copy already); a device first seen later is no target. The portal (`/api/v1/portal/…`) has no device: it can
+  delete everywhere (the targets are then all my devices), `GET wipes` answers `[]` there. Without `permissions.devices`
+  (an administrator did not approve the update) there is no device: `me.deviceId` is `null`, no device is remembered.
+- **Without a licence or a seat** `GET wipes` and `POST wipes/done` still work (they only remove the person's own
+  copies); `GET me` always has `wipes`.
+- **Live:** after the delete the person's apps get the live event `wipes { wipe, files }` (`gc.events`, the push
+  stream's `event: plugin`). An app that was offline checks `GET me` → `wipes > 0` (on start, on reconnect, with the
+  change sync) and then fetches `GET wipes`.
+- **Restoring** the node from the trash (`POST trash/<id>/restore`) cancels its wipes: entries not confirmed yet go,
+  devices that already deleted their copy stay without it (a synced copy comes back through `changes`). Purging
+  (`DELETE trash/<id>`, the trash's days) changes nothing.
+- **The end:** a wipe goes after 90 days whatever happened; a device GateControl no longer lists (its token was
+  removed) and Drive has not seen for 7 days is not waited for any more (background run).
+
 **Links** (GateControl's public links v2, `permissions.publicLinks`; an administrator allows them under Einstellungen ›
 Plugins › Drive › Berechtigungen, else `403 links_disabled`): a file (`kind: 'files'`, the file as it is now), a folder
 (`'folder'`, its current content) or an upload folder (`'upload'`). Whoever may write in the area may share. `expires:
@@ -141,7 +193,8 @@ uploader.
 
 The portal tab "Drive" (`ui/portal.*`, rendered inline by `server/ui.js` into GateControl's sandboxed frame): the areas,
 tiles or a list, breadcrumbs, search, upload (button, or files and folders dropped; `GC.upload`, then `uploads/commit` —
-a name that exists asks), the previews of the files on tiles and in the list (HEIC photos: the large preview in the
+a name that exists asks), "In den Papierkorb" with the option "Auch auf allen meinen Geräten löschen" while Drive knows
+devices of the person (`me.devices`), the previews of the files on tiles and in the list (HEIC photos: the large preview in the
 viewer), a preview for pictures, videos and sound, new folder, rename, move, versions, trash, sharing,
 "Geteilte Links". Live through `GC.on('event')`. Pictures and videos are shown inline by GateControl and cannot be
 downloaded from the frame (right-click › Save as); other files download.
@@ -179,7 +232,8 @@ the path should be). The change log names the calling plugin as the device.
 
 Every 5 minutes: the trash after *trash_days*, versions after *versions_days* (and more than *versions_max* per file
 at once), the NAS journals (in case the hook was missed), uploads through links the hook did not bring, rows of links
-GateControl has forgotten, the weekly backup hint, old notes of `child_view`.
+GateControl has forgotten, the weekly backup hint, old notes of `child_view`, wipes after 90 days and the waiting for
+devices GateControl no longer lists.
 
 ## Development
 

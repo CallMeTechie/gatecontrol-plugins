@@ -46,7 +46,7 @@ const portal = (u, loggedIn = true) => ({ ...u, portal: true, loggedIn });
 /**
  * opts: { license (licence of the plugin), groups, settings, links (the administrator's switch, default on), unlimited
  *   (links without an end allowed), seats: { userId: kind } (switched on by the admin before fn;
- * default Anna, Marc, Lena family, Bob business), gatecontrol }
+ * default Anna, Marc, Lena family, Bob business), gatecontrol, devices (the mock host's gc.devices.list) }
  * fn(host, c): c = { clock, as(user, device?) → (method, path, body, query), portal(user), admin(method, path, body),
  *   upload(user, data, mime) → mediaId, put(user, parentId, name, data, o) → node, root(user, kind) → area, events() }
  */
@@ -57,6 +57,7 @@ async function withHost(opts, fn) {
     const host = await createHost(DIR, {
       users: USERS, gatecontrol: o.gatecontrol || '1.208.0', groups: o.groups || GROUPS, license: o.license === undefined ? LICENSE : o.license,
       settings: o.settings || {}, publicLinks: o.links !== false, publicLinksUnlimited: o.unlimited === true,
+      ...(o.devices ? { devices: o.devices } : {}),
     });
     await host.start();
     const call = (user, method, p, body, query) => host.request({ method, path: p, body: body === undefined ? null : body, query: query || {}, user, lang: o.lang || 'de' });

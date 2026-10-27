@@ -10,6 +10,7 @@
 //     GET me · GET areas · GET changes?since=&limit= · GET search?q=&area=
 //     GET nodes/by-path?area=&path= · GET nodes/<id> · GET nodes/<id>/children?sort=&order=&offset=&limit=
 //     POST nodes · PATCH nodes/<id> · DELETE nodes/<id> · GET nodes/<id>/content
+//     DELETE nodes/<id>?everywhere=1 (also on every device of mine — wipes.js, since 1.2.0) · GET wipes · POST wipes/done
 //     GET nodes/<id>/versions · GET nodes/<id>/versions/<vid>/content · POST nodes/<id>/versions/<vid>/restore
 //     DELETE nodes/<id>/versions/<vid> · POST uploads/check · POST uploads/commit
 //     GET trash?area= · POST trash/<id>/restore · DELETE trash/<id>
@@ -19,7 +20,8 @@
 // `preview` (previews.js, since 1.1.0).
 //
 // Needs GateControl ≥ 1.208.0 (media areas and paths, versions and their restore, the NAS journal, gc.license.info
-// with tier and seats, a database up to 4 GB, media previews).
+// with tier and seats, a database up to 4 GB, media previews). permissions.devices (since 1.2.0): the asking device
+// of an app request (user.device) — the change log's `device` and the targets of "delete on all devices".
 
 const store = require('./store');
 const people = require('./people');
@@ -35,6 +37,7 @@ const links = require('./links');
 const ui = require('./ui');
 const services = require('./services');
 const previews = require('./previews');
+const wipes = require('./wipes');
 const { t } = require('./text');
 const { STATUS, fail, isKnown, posInt, DEVICE_RE, day, iso } = require('./util');
 
@@ -63,6 +66,7 @@ const once = (fn) => { let p = null; return () => (p || (p = fn())); };
  */
 async function context(gc, user, lang, now) {
   const [users, settings, lic, seat] = await Promise.all([people.users(gc), areas.settingsOf(gc), people.licence(gc), seats.get(gc, user.id)]);
+  // the asking device: GateControl's user.device (permissions.devices) — the id of the app's device token
   const deviceId = user.app === true && user.device && typeof user.device.id === 'string' && DEVICE_RE.test(user.device.id) ? user.device.id : null;
   const ctx = {
     gc, viewer: user.id, user: users.get(user.id) || null, deviceId, app: user.app === true, lang: lang === 'en' ? 'en' : 'de', now,
@@ -116,6 +120,9 @@ async function me(ctx) {
   try { usage = await ctx.gc.media.usage(); } catch { usage = null; }
   return {
     me: { id: ctx.viewer, name: ctx.user ? ctx.user.name : null, seat: ctx.seat ? ctx.seat.kind : null, deviceId: ctx.deviceId },
+    // "delete on all devices": entries this device has yet to handle (GET wipes), my devices a new wipe would reach
+    wipes: await wipes.pending(ctx),
+    devices: await wipes.deviceCount(ctx.gc, ctx.viewer, ctx.now),
     licence: { valid: ctx.licence.valid, tier: ctx.licence.tier },
     areas: list.map((v) => areaView(ctx, v)),
     latest: await changes.latest(ctx.gc),
@@ -151,6 +158,9 @@ async function areaList(ctx) {
   return { areas: out };
 }
 
+/** A query switch: 1, true, yes. */
+const flag = (v) => ['1', 'true', 'yes'].includes(String(v == null ? '' : v).toLowerCase());
+
 const ok = (body) => ({ status: 200, json: { ok: true, ...body } });
 
 function idArg(v) {
@@ -165,6 +175,9 @@ async function route(ctx, req, seg) {
   const body = req.body;
   const [a, b, c, d, e] = seg;
   if (a === 'me' && seg.length === 1 && m === 'GET') return ok(await me(ctx));
+  // the device's wipes: also without a licence or a seat (they only remove the person's own copies)
+  if (a === 'wipes' && seg.length === 1 && m === 'GET') return ok(await wipes.list(ctx));
+  if (a === 'wipes' && b === 'done' && seg.length === 2 && m === 'POST') return ok(await wipes.done(ctx, body));
   if (!ctx.licence.valid) throw fail('not_licensed');
   if (!ctx.seat) throw fail('no_seat');
   await ctx.visible();
@@ -177,7 +190,7 @@ async function route(ctx, req, seg) {
     if (seg.length === 2) {
       if (m === 'GET') return ok({ node: await nodes.get(ctx, idArg(b)) });
       if (m === 'PATCH' || m === 'PUT') return ok({ node: await nodes.update(ctx, idArg(b), body) });
-      if (m === 'DELETE') return ok(await nodes.trash(ctx, idArg(b)));
+      if (m === 'DELETE') return ok(await nodes.trash(ctx, idArg(b), flag(q.everywhere)));
     }
     if (seg.length === 3 && m === 'GET') {
       if (c === 'children') {
@@ -220,6 +233,9 @@ async function after(gc, ctx, done) {
     try { await links.endFor(gc, ctx.unlink, ctx.now); } catch (e) { gc.log.warn('ending links failed', (e && e.code) || 'error'); }
   }
   try { await changes.announce(gc, ctx.touched, ctx.settings); } catch (e) { gc.log.warn('announce failed', (e && e.code) || 'error'); }
+  if (done) {
+    try { await wipes.nudge(gc, ctx); } catch (e) { gc.log.warn('wipe event failed', (e && e.code) || 'error'); }
+  }
   for (const n of ctx.notes) {
     const lang = (ctx.users.get(n.child) || {}).lang === 'en' ? 'en' : 'de';
     try {
@@ -252,6 +268,10 @@ module.exports = {
       if (no) throw fail(no);
       const ctx = await context(gc, req.user, lang, now);
       if (!ctx.user) throw fail('forbidden');
+      // the person's devices that use Drive: the targets of "delete on all devices" (best effort)
+      if (ctx.deviceId) {
+        try { await wipes.seen(gc, ctx.viewer, ctx.deviceId, req.user.device.platform, now); } catch (e) { gc.log.warn('device record failed', (e && e.code) || 'error'); }
+      }
       let done = false;
       try {
         const out = await route(ctx, req, seg);
