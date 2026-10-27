@@ -233,3 +233,55 @@ test('smoke: a person not switched on sees why; a signed-out viewer is asked to 
     } finally { g.stop(); }
   });
 });
+
+test('smoke (1.5.0): a file deleted on a device shows it and can be kept; an empty file uploads; the page "Geräte"', async () => {
+  await withHost({}, async (host, c) => {
+    const pc = c.as(ANNA, 'tok-pc');
+    const mine = await c.area(ANNA, 'mine');
+    const dev = (await pc('PUT', 'devices/pc-1', { name: 'PC', platform: 'windows', version: '1.40.0' })).json.device;
+    await pc('PUT', 'devices/pc-1/folders', [{ localPath: 'C:\\Users\\Anna\\Pictures', mode: 'backup', nodeId: dev.folder.id, lastBackup: '2026-10-26T08:00:00Z' }]);
+    const f = (await c.put(ANNA, mine.rootId, 'Alt.txt', 'x')).json.node;
+    await pc('DELETE', `nodes/${f.id}`, null, { after: String(30 * 86400) });
+    const calls = [];
+    const w = createWindow(portalHtml(), frameGc(host, ANNA, calls));
+    const $ = (id) => w.document.getElementById(id);
+    try {
+      w.run();
+      await until('files', () => !$('dp-app').hidden && byText($('dp-main'), 'span', 'Alt.txt'));
+      const card = $('dp-main').querySelectorAll('.dp-card').find((x) => textOf(x).includes('Alt.txt'));
+      assert.match(textOf(card.querySelector('.dp-mark')), /^wird am \d\d\.\d\d\.\d{4} gelöscht$/);
+      assert.match(card.querySelector('.dp-mark').getAttribute('title'), /^Auf „PC“ gelöscht – kommt am .* in den Papierkorb\.$/);
+      card.querySelector('.dp-more').click();
+      await until('menu', () => byText($('dp-dialog'), 'span', 'Behalten'));
+      byText($('dp-dialog'), 'span', 'Behalten').parentNode.click();
+      await until('kept', () => textOf($('dp-toast')).includes('„Alt.txt“ bleibt.'));
+      assert.equal(JSON.stringify(calls.filter((x) => x.method === 'PATCH').map((x) => x.body)), '[{"deleteAt":null}]');
+      assert.equal((await pc('GET', `nodes/${f.id}`)).json.node.deleteAt, undefined);
+      await until('no mark', () => !$('dp-main').querySelector('.dp-mark'));
+
+      // an empty file: no GC.upload, commit { size: 0 }
+      const fileInput = $('dp-file');
+      fileInput.files = [file('leer.txt', '', 'text/plain')];
+      fileInput.dispatchEvent({ type: 'change', target: fileInput });
+      await until('uploaded', () => byText($('dp-main'), 'span', 'leer.txt'));
+      const commit = calls.filter((x) => x.path === 'uploads/commit').pop();
+      assert.equal(commit.body.mediaId, undefined);
+      assert.equal(commit.body.size, 0);
+      assert.equal((await pc('GET', 'nodes/by-path', null, { area: mine.id, path: 'leer.txt' })).json.node.size, 0);
+
+      // Geräte: the PC with its folder, then forgotten
+      byText($('dp-nav'), 'span', 'Geräte').parentNode.click();
+      await until('devices', () => textOf($('dp-main')).includes('C:\\Users\\Anna\\Pictures'));
+      const main = textOf($('dp-main'));
+      for (const s of ['PC', 'windows · 1.40.0', 'Nur sichern', 'Meine Dateien › Geräte › PC', 'zuletzt gesichert']) assert.ok(main.includes(s), s);
+      byText($('dp-main'), 'span', 'Gerät vergessen').parentNode.click();
+      await until('confirm', () => $('dp-dialog').querySelectorAll('button').find((b) => b.className.includes('dp-btn-danger')));
+      $('dp-dialog').querySelectorAll('button').find((b) => b.className.includes('dp-btn-danger')).click();
+      await until('forgotten', () => textOf($('dp-main')).includes('Noch keine Geräte'));
+      assert.deepEqual((await pc('GET', 'devices')).json.devices, []);
+      assert.equal((await pc('GET', `nodes/${dev.folder.id}`)).status, 200, 'its folder stays');
+    } finally {
+      w.stop();
+    }
+  });
+});

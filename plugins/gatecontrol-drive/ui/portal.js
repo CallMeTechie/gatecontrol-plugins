@@ -7,6 +7,9 @@
  * sharing with people without an account (links v2: view, view + download, upload into a folder; 1 / 7 / 30 days or
  * without an end; an optional PIN; the log); "Geteilte Links" and "Papierkorb" as pages. Live: the event 'changed'
  * (GC.on) reloads the folder shown when its area changed.
+ * Since 1.5.0: "Geräte" as a page (my PCs and phones that back up or sync folders, their folders and last backup,
+ * "Gerät vergessen"); a file deleted on such a device shows "wird am … gelöscht" and can be kept ("Behalten"); empty
+ * files upload without GC.upload (uploads/commit { size: 0 }).
  *
  * The frame is sandboxed (opaque origin, no storage, no network of its own): everything goes through GC.call /
  * GC.upload. Server and user text only ever goes into textContent or attributes — never innerHTML.
@@ -57,6 +60,7 @@
     info: 'M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18|M12 11v5M12 8h.01',
     restore: 'M3 12a9 9 0 1 0 3-6.7L3 8|M3 3v5h5',
     up: 'M12 19V5|M5 12l7-7 7 7',
+    device: 'M3 5h18v11H3z|M8 20h8|M12 16v4',
   };
 
   function icon(name, size) {
@@ -162,6 +166,19 @@
     if (sameDay) return T('p.today_at', { time: d.toLocaleTimeString(LOCALE, { hour: '2-digit', minute: '2-digit' }) });
     return d.toLocaleDateString(LOCALE, { day: '2-digit', month: '2-digit', year: 'numeric' }) + ' ' + d.toLocaleTimeString(LOCALE, { hour: '2-digit', minute: '2-digit' });
   }
+  function fmtDay(iso) {
+    var d = iso ? new Date(iso) : null;
+    return d && !isNaN(d.getTime()) ? d.toLocaleDateString(LOCALE, { day: '2-digit', month: '2-digit', year: 'numeric' }) : '';
+  }
+  /** "Auf „PC“ gelöscht – kommt am … in den Papierkorb." of a marked node (since 1.5.0). */
+  function markText(n) {
+    return n.deletedOnDevice ? T('p.marked_on', { device: n.deletedOnDevice, date: fmtDay(n.deleteAt) }) : T('p.marked_plain', { date: fmtDay(n.deleteAt) });
+  }
+  /** The quiet note on a tile or row of a marked node. */
+  function markOf(n) {
+    if (!n.deleteAt) return null;
+    return h('span', { class: 'dp-mark', text: T('p.marked', { date: fmtDay(n.deleteAt) }), attrs: { title: markText(n) } });
+  }
   function personName(id) {
     if (id == null) return '';
     var p = S.people.get(id);
@@ -216,7 +233,7 @@
     areas: [],            // from GET me / GET areas
     storage: new Map(),   // area id → storage
     people: new Map(),    // user id → name
-    page: 'files',        // files · trash · links · search
+    page: 'files',        // files · trash · links · search · devices
     areaId: null,
     folder: null,         // the node shown (GET nodes/<id>) with crumbs and role
     items: [],
@@ -311,6 +328,7 @@
     nav.appendChild(h('hr'));
     nav.appendChild(h('button', { type: 'button', attrs: { 'aria-current': S.page === 'links' ? 'page' : null }, on: { click: showLinks } }, [icon('link'), h('span', { text: T('p.links') })]));
     nav.appendChild(h('button', { type: 'button', attrs: { 'aria-current': S.page === 'trash' ? 'page' : null }, on: { click: showTrash } }, [icon('trash'), h('span', { text: T('p.trash') })]));
+    nav.appendChild(h('button', { type: 'button', attrs: { 'aria-current': S.page === 'devices' ? 'page' : null }, on: { click: showDevices } }, [icon('device'), h('span', { text: T('p.devices') })]));
     var a = areaOf(S.areaId);
     var st = a ? S.storage.get(a.id) : null;
     if (a && st && S.page === 'files') {
@@ -327,7 +345,7 @@
     var c = $('dp-crumbs');
     clear(c);
     if (S.page !== 'files' || !S.folder) {
-      c.appendChild(h('button', { type: 'button', attrs: { 'aria-current': 'page' }, text: S.page === 'trash' ? T('p.trash') : S.page === 'links' ? T('p.links') : T('p.results', { q: S.q }) }));
+      c.appendChild(h('button', { type: 'button', attrs: { 'aria-current': 'page' }, text: S.page === 'trash' ? T('p.trash') : S.page === 'links' ? T('p.links') : S.page === 'devices' ? T('p.devices') : T('p.results', { q: S.q }) }));
       return;
     }
     var a = areaOf(S.areaId);
@@ -444,6 +462,7 @@
           h('div', { class: 'dp-card-tx' }, [
             h('span', { class: 'dp-name', text: n.name, attrs: { title: n.name } }),
             h('span', { class: 'dp-meta' }, [!n.isDir && ext ? h('span', { class: 'dp-badge', text: ext }) : null, ' ', metaOf(n)]),
+            markOf(n),
           ]),
         ]),
         ibtn('more', T('p.actions_for', { name: n.name }), function () { actions(n); }, { cls: 'dp-more' }),
@@ -462,7 +481,7 @@
       var ic = h('span', { class: 'dp-ic' }, [picOf(n)]);
       l.appendChild(h('div', { class: 'dp-row', attrs: { role: 'row' } }, [
         h('button', { type: 'button', class: 'dp-open', on: { click: function () { openNode(n); } } }, [ic, h('span', { class: 'dp-name', text: n.name, attrs: { title: n.name } }),
-          n.path && S.page === 'search' ? h('span', { class: 'dp-meta', text: n.path }) : null]),
+          n.path && S.page === 'search' ? h('span', { class: 'dp-meta', text: n.path }) : null, markOf(n)]),
         h('span', { class: 'dp-num', text: fmtDate(n.mtime || n.updatedAt) }),
         h('span', { class: 'dp-num dp-right', text: n.isDir ? '—' : fmtSize(n.size) }),
         ibtn('more', T('p.actions_for', { name: n.name }), function () { actions(n); }),
@@ -537,12 +556,19 @@
     else if (k === 'image' || k === 'video' || k === 'audio') item('eye', T('p.preview'), function () { preview(n); });
     if (!n.isDir) item('download', T('p.download'), function () { download(n); });
     if (S.page === 'search') item('folder', T('p.show_in_folder'), function () { $('dp-q').value = ''; openFolder(n.areaId, n.parentId); });
-    if (write) item('share', T('p.share'), function () { share(n); });
+    // an empty file has nothing to share (no media object, since 1.5.0)
+    if (write && (n.isDir || n.mediaId)) item('share', T('p.share'), function () { share(n); });
     if (write) item('edit', T('p.rename'), function () { rename(n); });
     if (write) item('move', T('p.move'), function () { moveDialog(n); });
     if (!n.isDir) item('history', T('p.versions'), function () { versions(n); });
+    if (write && n.deleteAt) item('restore', T('p.keep'), function () { keep(n); });
     if (write) item('trash', T('p.to_trash'), function () { toTrash(n); }, true);
-    dialog(n.name, [h('div', { class: 'dp-menu' }, items)], { sub: n.isDir ? T('p.folder') : fmtSize(n.size) + ' · ' + fmtDate(n.mtime || n.updatedAt) });
+    dialog(n.name, [n.deleteAt ? h('div', { class: 'dp-note' }, [icon('info'), h('span', { text: markText(n) })]) : null, h('div', { class: 'dp-menu' }, items)],
+      { sub: n.isDir ? T('p.folder') : fmtSize(n.size) + ' · ' + fmtDate(n.mtime || n.updatedAt) });
+  }
+  /** "Behalten": the mark ends — the file stays (PATCH { deleteAt: null }). */
+  function keep(n) {
+    api('PATCH', 'nodes/' + n.id, { deleteAt: null }).then(function () { reload(); toast(T('p.kept', { name: n.name })); }, fail);
   }
   function canWriteNode(n) {
     var a = areaOf(n.areaId);
@@ -592,7 +618,7 @@
             : h('div', { class: 'dp-empty', text: T('p.no_preview') });
       var acts = [];
       if (k !== 'image' && k !== 'video' && k !== 'audio') acts.push(btn(T('p.download'), function () { download(n); }, { icon: 'download', primary: true }));
-      if (canWriteNode(n)) acts.push(btn(T('p.share'), function () { share(n); }, { icon: 'share' }));
+      if (canWriteNode(n) && n.mediaId) acts.push(btn(T('p.share'), function () { share(n); }, { icon: 'share' }));
       acts.push(btn(T('p.versions'), function () { versions(n); }, { icon: 'history' }));
       dialog(n.name, [h('div', { class: 'dp-preview' }, media), (k === 'image' || k === 'video') ? h('p', { class: 'dp-hint', text: T('p.save_hint') }) : null, h('div', { class: 'dp-actions' }, acts)],
         { wide: true, sub: fmtSize(n.size) + ' · ' + fmtDate(n.mtime || n.updatedAt) + (n.updatedBy ? ' · ' + personName(n.updatedBy) : '') });
@@ -809,6 +835,65 @@
     }, fail);
   }
 
+  function showDevices() {
+    $('dp-q').value = '';
+    S.page = 'devices';
+    S.seq++;
+    renderNav(); renderCrumbs(); renderTools();
+    var main = $('dp-main');
+    clear(main);
+    api('GET', 'devices').then(function (r) {
+      if (S.page !== 'devices') return;
+      clear(main);
+      main.appendChild(h('p', { class: 'dp-hint', text: T('p.devices_hint'), attrs: { style: 'margin-bottom:12px' } }));
+      var list = r.devices || [];
+      if (!list.length) { main.appendChild(h('div', { class: 'dp-empty', text: T('p.devices_none') })); return; }
+      var box = h('div', { class: 'dp-devices' });
+      list.forEach(function (d) { box.appendChild(deviceCard(d)); });
+      main.appendChild(box);
+    }, fail);
+  }
+
+  function deviceCard(d) {
+    var mine = areaOf('mine:' + (S.me && S.me.id));
+    var openIn = function (node) {
+      var a = areaOf(node.areaId) || mine;
+      return a ? function () { openFolder(a.id, node.id); } : null;
+    };
+    var folders = (d.folders || []).map(function (f) {
+      var go = f.node ? openIn(f.node) : null;
+      return h('li', { class: 'dp-dev-folder' }, [
+        h('span', { class: 'dp-name', text: f.localPath, attrs: { title: f.localPath } }),
+        h('span', { class: 'dp-meta', text: [f.mode === 'sync' ? T('p.mode_sync') : T('p.mode_backup'),
+          f.node ? f.node.where : T('p.folder_gone'),
+          f.lastBackup ? T('p.last_backup', { date: fmtDate(f.lastBackup) }) : T('p.never_backed_up')].join(' · ') }),
+        go ? btn(T('p.device_open'), go, { small: true, icon: 'folder' }) : null,
+      ]);
+    });
+    var openFolderBtn = d.folder ? openIn(d.folder) : null;
+    return h('section', { class: 'dp-device' }, [
+      h('div', { class: 'dp-dev-head' }, [
+        h('span', { class: 'dp-ic' }, icon('device')),
+        h('div', { class: 'dp-dev-tx' }, [
+          h('span', { class: 'dp-name', text: d.name + (d.current ? ' (' + T('p.device_this') + ')' : '') }),
+          h('span', { class: 'dp-meta', text: [d.platform, d.version, T('p.device_seen', { date: fmtDate(d.lastSeen) })].filter(Boolean).join(' · ') }),
+          d.folder ? h('span', { class: 'dp-meta', text: T('p.device_folder', { where: d.folder.where }) }) : null,
+        ]),
+        h('div', { class: 'dp-actions' }, [
+          openFolderBtn ? btn(T('p.device_open'), openFolderBtn, { small: true, icon: 'folder' }) : null,
+          btn(T('p.device_forget'), function () { forgetDevice(d); }, { small: true, danger: true }),
+        ]),
+      ]),
+      folders.length ? h('ul', { class: 'dp-dev-folders' }, folders) : h('p', { class: 'dp-hint', text: T('p.device_no_folders') }),
+    ]);
+  }
+
+  function forgetDevice(d) {
+    confirmDialog(T('p.device_forget'), T('p.device_forget_text', { name: d.name }), T('p.device_forget'), function () {
+      return api('DELETE', 'devices/' + encodeURIComponent(d.id)).then(function () { toast(T('p.device_forgotten', { name: d.name })); showDevices(); });
+    }, true);
+  }
+
   function search(q) {
     var seq = ++S.seq;
     S.page = 'search';
@@ -903,6 +988,8 @@
     var done = function () { S.uploading = false; renderUploads(); pump(); };
     folderFor(u.target, u.dirs).then(function (parentId) {
       u.parentId = parentId;
+      // an empty file: GateControl's upload takes no empty body — the commit makes it (since 1.5.0)
+      if (!u.file.size) return { mediaId: null };
       if (!window.GC || typeof window.GC.upload !== 'function') throw codeErr('upload_unsupported');
       return window.GC.upload(u.file, { onProgress: function (p) { u.loaded = p && p.loaded ? p.loaded : 0; renderUploads(); } });
     }).then(function (up) {
@@ -921,7 +1008,8 @@
   }
 
   function commit(u, onConflict) {
-    var body = { mediaId: u.mediaId, parentId: u.parentId, name: u.file.name, mtime: u.file.lastModified || undefined };
+    var body = u.mediaId ? { mediaId: u.mediaId, parentId: u.parentId, name: u.file.name, mtime: u.file.lastModified || undefined }
+      : { size: 0, mime: u.file.type || undefined, parentId: u.parentId, name: u.file.name, mtime: u.file.lastModified || undefined };
     if (onConflict) body.onConflict = onConflict;
     return api('POST', 'uploads/commit', body).then(function () { return 'done'; }, function (e) {
       if (e.code !== 'conflict' && e.code !== 'exists') throw e;

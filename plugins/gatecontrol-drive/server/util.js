@@ -19,6 +19,7 @@ const STATUS = {
   links_disabled: 403,
   no_unlimited: 403,
   no_public_url: 409,
+  device_limit: 409,
   quota: 507,
   internal: 500,
 };
@@ -73,6 +74,21 @@ function numbered(name, n) {
 const MEDIA_RE = /^[0-9a-f]{32}$/;
 const SHA_RE = /^[0-9a-f]{64}$/;
 const DEVICE_RE = /^[A-Za-z0-9_.:-]{1,64}$/;
+/** SHA-256 of no bytes: an empty file (since 1.5.0 a file without a media object). */
+const EMPTY_SHA = 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855';
+
+/**
+ * A time from a body: ms since the epoch (a number or decimal string) or an ISO-8601 text → ms; null / undefined → null;
+ * anything else → NaN.
+ */
+function msArg(v) {
+  if (v == null) return null;
+  if (typeof v === 'number') return Number.isSafeInteger(v) ? v : NaN;
+  if (typeof v !== 'string' || v.length > 40) return NaN;
+  if (/^\d{1,15}$/.test(v)) return Number(v);
+  const t = Date.parse(v);
+  return Number.isFinite(t) ? t : NaN;
+}
 
 /** ms → ISO-8601 UTC; null stays null. */
 function iso(ms) {
@@ -91,4 +107,4 @@ function docText(v) {
   return t ? t.slice(0, TEXT_MAX) : null;
 }
 
-module.exports = { STATUS, fail, isKnown, posInt, nonNeg, line, nodeName, numbered, MEDIA_RE, SHA_RE, DEVICE_RE, iso, day, docText, TEXT_MAX };
+module.exports = { STATUS, fail, isKnown, posInt, nonNeg, line, nodeName, numbered, MEDIA_RE, SHA_RE, DEVICE_RE, EMPTY_SHA, msArg, iso, day, docText, TEXT_MAX };

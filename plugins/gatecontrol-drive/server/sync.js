@@ -45,6 +45,8 @@ async function added(gc, area, c, ctx) {
   const info = await gc.media.info(c.mediaId);
   if (!parent || !info) return false;
   const there = await nodes.taken(gc, area.id, parent.id, name);
+  // an empty file (no media object, since 1.5.0) is not on the NAS: a file put at its path is its new content
+  if (there && there.is_dir === 0 && !there.media_id) { await replace(gc, area, there, c.mediaId, info, ctx, false); return true; }
   if (there) { gc.log.warn('a node has this name already', there.is_dir ? 'folder' : 'file'); return false; }
   const by = ctx.viewer || null;
   const r = await store.run(gc, `INSERT INTO nodes (area_id, parent_id, name, is_dir, media_id, size, sha256, mime, created_at, created_by, updated_at, updated_by)
@@ -67,13 +69,20 @@ async function changed(gc, area, c, ctx) {
   if (!n) return added(gc, area, c, ctx);
   const info = await gc.media.info(c.mediaId);
   if (!info) return;
-  if (c.previous && c.previous === n.media_id) {
+  await replace(gc, area, n, c.mediaId, info, ctx, !!(c.previous && c.previous === n.media_id));
+}
+
+/** File `n` has new bytes `mediaId` (`keep`: its old ones are a version GateControl kept; an empty file's always are). */
+async function replace(gc, area, n, mediaId, info, ctx, keep) {
+  if (keep || !n.media_id) {
     await store.run(gc, 'INSERT INTO versions (node_id, rev, media_id, size, sha256, at, by) VALUES (?, ?, ?, ?, ?, ?, ?)',
-      [n.id, n.rev, n.media_id, n.size, n.sha256, ctx.now, n.updated_by]);
+      [n.id, n.rev, n.media_id || null, n.size, n.sha256, ctx.now, n.updated_by]);
   }
   await store.run(gc, 'UPDATE nodes SET media_id = ?, size = ?, sha256 = ?, mime = ?, rev = rev + 1, updated_at = ?, updated_by = NULL WHERE id = ?',
-    [c.mediaId, info.bytes, info.sha256 || null, info.mime || n.mime, ctx.now, n.id]);
+    [mediaId, info.bytes, info.sha256 || null, info.mime || n.mime, ctx.now, n.id]);
   await nodes.log(gc, area.id, n.id, 'update', ctx);
+  // new content: a mark ("deleted on the device") ends
+  await nodes.unmarkUp(gc, n.id, ctx, n.id);
 }
 
 async function removed(gc, area, c, ctx) {

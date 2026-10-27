@@ -50,21 +50,23 @@ login_required`). Every answer has `ok`; errors `{ ok: false, code, error }` (+ 
 
 | Route | Body / query | Answer |
 |---|---|---|
-| `GET me` | | `me { id, name, seat, deviceId }`, `licence { valid, tier }`, `areas`, `latest` (change log seq), `settings`, `limits { maxBytes }`, `wipes` (entries this device has yet to handle, since 1.2.0), `devices` (my devices a new wipe reaches) |
+| `GET me` | | `me { id, name, seat, deviceId }`, `licence { valid, tier }`, `areas`, `latest` (change log seq), `settings`, `limits { maxBytes }`, `wipes` (entries this device has yet to handle, since 1.2.0), `devices` (my devices a new wipe reaches), `features` (since 1.5.0: `['previews', 'wipes', 'textSearch', 'devices', 'deleteAfter', 'emptyFiles']`) |
 | `GET areas` | | `areas [{ id, kind, label, role, via, rootId, owner, archived, storage { bytes, quota, form, target, state } }]` |
 | `GET nodes/<id>` | | `node` + `path`, `role`, `crumbs [{ id, name }]` |
 | `GET nodes/<id>/children` | `sort=name\|mtime\|size\|updated`, `order`, `offset`, `limit` (≤ 1000) | `items` (folders first), `total`, `next`, `role` |
 | `GET nodes/by-path` | `area`, `path` | `node` |
 | `POST nodes` | `{ parentId, name, rename? }` | `node` (a folder; `409 exists`, or a free name with `rename`) |
 | `PATCH nodes/<id>` | `{ name?, parentId? }` | `node` — rename / move, also into another area one writes to |
+| `PATCH nodes/<id>` | `{ deleteAt: <ISO \| ms> \| null, device? }` (since 1.5.0, alone — not with `name` / `parentId`) | `node` — set the mark exactly / end it (see "Delete later") |
 | `DELETE nodes/<id>` | `everywhere=1` (since 1.2.0) | `{ id, trashed }` — into the trash; with `everywhere=1` also `wipe { id, devices, files }` (see "Delete on all devices") |
-| `GET nodes/<id>/content` | | `{ url, name, mime, size, mediaId }` — `url` signed for the viewer, 1 h |
+| `DELETE nodes/<id>` | `after=<seconds>` (1 … 31 536 000), `device?` (since 1.5.0) | `{ id, marked: true, deleteAt, node }` — into the trash later (see "Delete later"); `after=0` is the plain delete |
+| `GET nodes/<id>/content` | | `{ url, name, mime, size, mediaId }` — `url` signed for the viewer, 1 h; an empty file (since 1.5.0): `{ url: 'data:<mime>;base64,', size: 0, mediaId: null, empty: true }` |
 | `GET nodes/<id>/versions` | | `{ current, versions [{ id, rev, size, sha256, at, by }] }` |
 | `GET nodes/<id>/versions/<vid>/content` | | `{ url, … }` |
 | `POST nodes/<id>/versions/<vid>/restore` | | `node` — the version is current again, the current bytes become a version |
 | `DELETE nodes/<id>/versions/<vid>` | | `{ id }` |
-| `POST uploads/check` | `{ parentId, name, sha256?, size? }` | `{ exists, same, node }` — `same`: no need to upload |
-| `POST uploads/commit` | `{ mediaId, parentId, name, baseRev?, mtime?, onConflict?: 'rename' \| 'version', text? }` — `text`: recognised text of a scan (≤ 100 000 characters, searchable) | `{ node, created }` |
+| `POST uploads/check` | `{ parentId, name, sha256?, size? }` | `{ exists, same, node }` — `same`: no need to upload (two empty files are the same, also without `sha256`) |
+| `POST uploads/commit` | `{ mediaId, parentId, name, baseRev?, mtime?, onConflict?: 'rename' \| 'version', text? }` — `text`: recognised text of a scan (≤ 100 000 characters, searchable); an empty file (since 1.5.0): `{ parentId, name, size: 0, mime?, sha256?, … }` without `mediaId` | `{ node, created }` |
 | `GET changes` | `since`, `limit` (≤ 1000) | `{ changes [{ seq, op, areaId, nodeId, at, by, device, node }], next, more }` |
 | `GET trash` | `area?` | `items` (the deleted node with `from`, folders with `size`, `files`) |
 | `POST trash/<id>/restore` | | `node` (a free name; the area's top when its folder is gone) |
@@ -72,6 +74,10 @@ login_required`). Every answer has `ok`; errors `{ ok: false, code, error }` (+ 
 | `GET wipes` | | `{ wipes [{ id, wipeId, nodeId, name, sha256, size, mime, createdAt }], more }` — this device's, oldest first, ≤ 500 (since 1.2.0) |
 | `POST wipes/done` | `{ ids: [<entry id>, …] }` (≤ 1000) | `{ done, wipes }` — this device handled them (since 1.2.0) |
 | `GET search` | `q` (2–100 characters), `area?` | `items` with `path` and `match` (`name`, then `text` with a `snippet`) (≤ 100) |
+| `PUT devices/<id>` | `{ name, platform?, version? }` (since 1.5.0) | `device` — register / update my device (see "Devices") |
+| `GET devices` | | `devices` — mine, last seen first |
+| `PUT devices/<id>/folders` | `[{ localPath, mode: 'backup' \| 'sync', nodeId, lastBackup }]` or `{ folders: […] }` (≤ 100) | `device` |
+| `DELETE devices/<id>` | | `{ id, removed }` — forgets the device; its files and folders stay |
 | `POST links` | `{ nodeId, mode: 'view' \| 'download' \| 'upload', expires: '1d' \| '7d' \| '30d' \| 'never', pin?, maxFiles?, maxBytes? }` | `link` (with `url`) |
 | `GET links` | `nodeId?` | `{ links, enabled }` — mine, or those of a node I write to |
 | `GET links/<token>/events` | `before?` | `events` — the log (newest first, ≤ 100) |
@@ -80,7 +86,9 @@ login_required`). Every answer has `ok`; errors `{ ok: false, code, error }` (+ 
 A node: `{ id, areaId, parentId, name, isDir, size, mime, sha256, mediaId, mtime, rev, createdAt, createdBy, updatedAt,
 updatedBy, deleted }`; a file node also `preview: { url, largeUrl } | null` (since 1.1.0, see "Previews") — in every
 answer: `nodes/<id>`, `children`, `by-path`, `search`, `changes`, `versions` (`current`), `uploads/check`,
-`uploads/commit`, `trash` (always `null` there).
+`uploads/commit`, `trash` (always `null` there). A marked node (since 1.5.0, only while marked) also `deleteAt` (ISO),
+`deletedOnDevice` (the device's name or `null`), `deleteMarkedBy` (user id). An empty file: `size: 0`, `mediaId: null`,
+`sha256: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'`, `preview: null`.
 
 **Uploading:** GateControl's media upload (`PUT …/plugins/gatecontrol-drive/media`, resumable, ≤ 100 GB, any type)
 answers a `mediaId`; for a HEIC photo or a video the app then sends its preview (`PUT …/media/<mediaId>/preview`, see
@@ -122,7 +130,9 @@ or space, ≤ 255 characters, not `.gcdrive`); unique per folder ignoring case.
   the commit). On a GateControl before 1.208.0 there are no previews: every `preview` is `null`.
 
 **Sync:** after every change the readers of the area get the live event `changed { areas, seq }` (`gc.events`) and
-fetch `GET changes?since=`. `op`: `create`, `update`, `move`, `delete`, `restore`, `purge`; a node that moved to
+fetch `GET changes?since=`. `op`: `create`, `update`, `move`, `delete`, `restore`, `purge`, since 1.5.0 `mark` and
+`unmark` (the node's `deleteAt` was set or ended; the node is live — an app that knows neither may treat it as an
+update of the node's fields); a node that moved to
 another area shows as `delete` in the old area (`node: null`) and `create` in the new one; `device` is the device
 that made the change (`nas` for changes made on the NAS).
 
@@ -174,6 +184,72 @@ POST /api/v1/client/plugins/gatecontrol-drive/api/wipes/done      { "ids": [17, 
 - **The end:** a wipe goes after 90 days whatever happened; a device GateControl no longer lists (its token was
   removed) and Drive has not seen for 7 days is not waited for any more (background run).
 
+**Devices** (since 1.5.0): a PC or phone that backs up or syncs folders registers itself and tells Drive its folders;
+the portal lists them on the page "Geräte".
+
+```
+PUT /api/v1/client/plugins/gatecontrol-drive/api/devices/<id>      { "name": "PC", "platform": "windows", "version": "1.40.0" }
+  → 200 { ok: true, device }
+  device: { id, name, platform, version, firstSeen, lastSeen, current,
+            folder: { id, name, areaId, path, where } | null,                 — Meine Dateien › Geräte › <name>
+            folders: [{ localPath, mode, nodeId, lastBackup, node: { id, name, areaId, path, where } | null }] }
+  400 invalid { field: 'id' | 'name' | 'platform' | 'version' } · 409 device_limit { max: 50 } · 409 exists (a file
+  "Geräte" is in the way) · 403 no_seat / not_licensed
+PUT …/devices/<id>/folders     [{ "localPath": "C:\\Users\\Anna\\Pictures", "mode": "backup", "nodeId": 812, "lastBackup": "2026-10-27T08:00:00Z" }]
+  → 200 { ok: true, device }    404 not_found (PUT devices/<id> first) · 400 invalid { field: 'folders[0].mode' … }
+GET …/devices                 → 200 { ok: true, devices: [device, …] }       last seen first
+DELETE …/devices/<id>         → 200 { ok: true, id, removed }                  idempotent; no file or folder goes
+```
+
+- **id:** the device's own stable id (`A–Z a–z 0–9 _ . : -`, ≤ 64), per person — the same id of another person is
+  another device. It is not the device token's id (`me.deviceId`); the token that made the last PUT counts as the
+  device's (`current`, last seen, `deletedOnDevice`).
+- **name:** unique per person ignoring case — a second "PC" becomes "PC (2)", so two PCs with the same host name never
+  share a folder; the device keeps what it got as long as it asks for the same name. What a folder cannot hold
+  (`< > : " / \ | ? *`) becomes `_`, ≤ 60 characters.
+- **folder:** made on the first PUT below Meine Dateien › Geräte; an existing folder of that name no other device of
+  the person uses is taken over (made by an app before 1.5.0); a free name ("PC (2)") when it is taken. The app backs
+  up below `folder.id` (its path is in `path`, readable in `where`). The device renamed: its folder follows while it
+  still has the old name. The folder in the trash: the next PUT makes it again (a new id).
+- **folders:** what the device keeps where — `localPath` (≤ 1024 characters), `mode` `backup` (Nur sichern) or `sync`
+  (Abgleichen), `nodeId` (the Drive folder or `null`), `lastBackup` (ISO or ms or `null`); the list replaces the last
+  one. `node` resolves `nodeId` for the viewer (`null` when it is gone or not readable).
+- **Last seen:** every PUT, and every request of the token that made the last PUT (at most every 10 minutes).
+- **Rights:** a person sees and changes only their own devices; Drive's seat is needed (the folder is in Meine Dateien).
+
+**Delete later** (since 1.5.0): a file deleted on a device that backs it up stays in Drive for a while, then goes into
+the trash.
+
+```
+DELETE …/nodes/<id>?after=2592000[&device=<registered device id>]
+  → 200 { ok: true, id, marked: true, deleteAt, node }
+  marked already: the earlier time stays (sending it again changes nothing); after=0: the plain delete (into the trash now)
+  400 invalid { field: 'after' } (not 0 … 31536000) · 403 forbidden (no write right, archived) · 404 · 400 invalid (the root)
+PATCH …/nodes/<id>    { "deleteAt": "2026-11-26T09:00:00Z" | <ms> | null, "device"?: "<registered device id>" }
+  → 200 { ok: true, node }      exactly that time (≤ 365 days ahead; in the past: the next background run) / null ends it
+  400 invalid { field: 'deleteAt' } (no time, too far, or together with name / parentId)
+```
+
+- Until then the node is an ordinary node — listed, read, synced, shared — with `deleteAt`, `deletedOnDevice` (the
+  name of the registered device: `device` of the call, else the device of the asking token, else `null`) and
+  `deleteMarkedBy`. The change log has `mark` (set or changed) and `unmark` (ended), with the node as it is now.
+- **New content ends a mark:** a new version (`uploads/commit`, a NAS change), a restored version, a rename or a move,
+  anything new in a marked folder (a file, a folder — the marks of the folders above end too, `unmark` each), a
+  device folder taken over again. Into the trash and back: no mark.
+- **The background run** (every 5 minutes) puts what is due into the trash — the node and everything below it, as
+  the person who marked it, from their device (`deletedBy`, `device` in the change log); links to it end. A node in an
+  archived team folder only loses its mark. From the trash it is purged after *trash_days* like any other.
+- Rights: as for `DELETE` — writing in the area, never the root, never in an archived team folder.
+
+**Empty files** (since 1.5.0): GateControl's media upload takes no empty body (`411`), so an empty file has no media
+object: `POST uploads/commit { parentId, name, size: 0 }` (or `empty: true`; `mime?` the type to show; `sha256?` must
+be that of no bytes) without a `mediaId` makes it — with `baseRev` / `onConflict` as for any file. Its node has `size:
+0`, `mediaId: null`, `sha256: e3b0c442…b855`; `GET nodes/<id>/content` answers `empty: true` and `url:
+'data:<mime>;base64,'` — an app writes an empty file and downloads nothing. Versions work both ways (an empty version
+has `size: 0` and an empty `content`); a share link of a single empty file is `400 invalid` (no media to share). A file
+the NAS puts at its path becomes its new content. Apps before 1.5.0 cannot upload empty files; one that meets an
+empty file finds `mediaId: null` (nothing to download).
+
 **Links** (GateControl's public links v2, `permissions.publicLinks`; an administrator allows them under Einstellungen ›
 Plugins › Drive › Berechtigungen, else `403 links_disabled`): a file (`kind: 'files'`, the file as it is now), a folder
 (`'folder'`, its current content) or an upload folder (`'upload'`). Whoever may write in the area may share. `expires:
@@ -193,10 +269,12 @@ uploader.
 
 The portal tab "Drive" (`ui/portal.*`, rendered inline by `server/ui.js` into GateControl's sandboxed frame): the areas,
 tiles or a list, breadcrumbs, search, upload (button, or files and folders dropped; `GC.upload`, then `uploads/commit` —
-a name that exists asks), "In den Papierkorb" with the option "Auch auf allen meinen Geräten löschen" while Drive knows
+a name that exists asks; empty files too, since 1.5.0), "In den Papierkorb" with the option "Auch auf allen meinen Geräten löschen" while Drive knows
 devices of the person (`me.devices`), the previews of the files on tiles and in the list (HEIC photos: the large preview in the
 viewer), a preview for pictures, videos and sound, new folder, rename, move, versions, trash, sharing,
-"Geteilte Links". Live through `GC.on('event')`. Pictures and videos are shown inline by GateControl and cannot be
+"Geteilte Links", "Geräte" (since 1.5.0: my devices with their folders, the last backup, "Ordner öffnen" and "Gerät
+vergessen"), and on a marked node the quiet note "wird am … gelöscht" (with the device in its title) and "Behalten" in
+its actions. Live through `GC.on('event')`. Pictures and videos are shown inline by GateControl and cannot be
 downloaded from the frame (right-click › Save as); other files download.
 
 ## Admin (GateControl's admin UI)
@@ -233,7 +311,7 @@ the path should be). The change log names the calling plugin as the device.
 Every 5 minutes: the trash after *trash_days*, versions after *versions_days* (and more than *versions_max* per file
 at once), the NAS journals (in case the hook was missed), uploads through links the hook did not bring, rows of links
 GateControl has forgotten, the weekly backup hint, old notes of `child_view`, wipes after 90 days and the waiting for
-devices GateControl no longer lists.
+devices GateControl no longer lists, marked nodes whose time came (into the trash, since 1.5.0).
 
 ## Development
 
