@@ -220,7 +220,7 @@ person's `userId`; the person needs a seat and write access (a call can do no mo
 | Service | Payload | Answer |
 |---|---|---|
 | `list_areas` | `{ lang? }` | `{ ok, areas: [{ id, kind, label, role, writable }] }` |
-| `save_file` | `{ mediaId, area?: 'mine' \| 'family' \| '<area id>', path: 'Schule/Brief.pdf', onConflict?: 'rename' \| 'version' }` | `{ ok, nodeId, areaId, path, name, created }` |
+| `save_file` | `{ mediaId, area?: 'mine' \| 'family' \| '<area id>', path: 'Schule/Brief.pdf', onConflict?: 'rename' \| 'version' }` or (1.4.0) `{ mediaId, folderId, name, onConflict? }` — a folder the person picked | `{ ok, nodeId, areaId, path, name, created, where }` — `where`: "Meine Dateien › Messenger › Foto.jpg" |
 
 `mediaId`: a file the caller handed over first — `gc.media.handOver(id, { toPlugin: 'gatecontrol-drive', user: userId })`
 (unclaimed, owned by that person). The folders on the way are made; a name that exists gets a free name ("Brief
