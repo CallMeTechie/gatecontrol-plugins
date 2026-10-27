@@ -74,6 +74,7 @@ async function settingsOf(gc) {
     mineQuota: n('mine_quota_gb', 50) > 0 ? Math.round(n('mine_quota_gb', 50) * GB) : null,
     parentsView: all.child_parents_view !== false && all.child_parents_view !== 'false',
     backupHint: all.backup_hint !== false && all.backup_hint !== 'false',
+    scanFormat: all.scan_format === 'image' ? 'image' : 'pdf',
   };
 }
 

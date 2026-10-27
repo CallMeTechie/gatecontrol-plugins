@@ -147,7 +147,10 @@ async function byPath(ctx, areaId, p) {
   return get(ctx, cur.id);
 }
 
-/** GET search?q=&area= → nodes whose name contains q (≥ 2 characters), in the areas the viewer reads. */
+/**
+ * GET search?q=&area= → files and folders whose name contains q (≥ 2 characters), then files whose recognised text
+ * does (a scan: `match: 'text'` with a `snippet` around the first hit), in the areas the viewer reads.
+ */
 async function search(ctx, q, areaId) {
   const term = typeof q === 'string' ? q.trim() : '';
   if (term.length < 2 || term.length > 100) throw fail('invalid', { field: 'q' });
@@ -157,8 +160,29 @@ async function search(ctx, q, areaId) {
   const rows = await store.all(ctx.gc, `SELECT * FROM nodes WHERE area_id IN (${store.marks(ids.length)}) AND parent_id IS NOT NULL
     AND deleted_at IS NULL AND name LIKE ? ESCAPE '\\' ORDER BY is_dir DESC, updated_at DESC LIMIT ?`, [...ids, like, SEARCH_MAX]);
   const items = [];
-  for (const r of rows) items.push(view(r, { path: await pathOf(ctx.gc, r) }));
+  for (const r of rows) items.push(view(r, { path: await pathOf(ctx.gc, r), match: 'name' }));
+  if (rows.length < SEARCH_MAX) {
+    const seen = new Set(rows.map((r) => r.id));
+    const hits = await store.all(ctx.gc, `SELECT n.*, t.text AS doc_text FROM doc_text t JOIN nodes n ON n.id = t.node_id
+      WHERE n.area_id IN (${store.marks(ids.length)}) AND n.deleted_at IS NULL AND t.text LIKE ? ESCAPE '\\'
+      ORDER BY n.updated_at DESC LIMIT ?`, [...ids, like, SEARCH_MAX]);
+    for (const r of hits) {
+      if (seen.has(r.id) || items.length >= SEARCH_MAX) continue;
+      const { doc_text: text, ...n } = r;
+      items.push(view(n, { path: await pathOf(ctx.gc, n), match: 'text', snippet: snippet(text, term) }));
+    }
+  }
   return { items };
+}
+
+/** About 120 characters of [text] around the first [term] (case-insensitive), on one line. */
+function snippet(text, term) {
+  const flat = String(text).replace(/\s+/g, ' ');
+  const at = flat.toLowerCase().indexOf(term.toLowerCase());
+  if (at < 0) return flat.slice(0, 120);
+  const from = Math.max(0, at - 50);
+  const to = Math.min(flat.length, at + term.length + 70);
+  return (from > 0 ? '…' : '') + flat.slice(from, to).trim() + (to < flat.length ? '…' : '');
 }
 
 // ─── Changing ───────────────────────────────────
@@ -360,6 +384,7 @@ async function purgeBatch(gc, trashId, ctx) {
     try { await gc.media.delete(m); } catch (e) { gc.log.warn('purge: media delete failed', (e && e.code) || 'error'); }
   }
   await store.run(gc, `DELETE FROM versions WHERE node_id IN (${store.marks(ids.length)})`, ids);
+  await store.run(gc, `DELETE FROM doc_text WHERE node_id IN (${store.marks(ids.length)})`, ids);
   await store.run(gc, `DELETE FROM nodes WHERE id IN (${store.marks(ids.length)})`, ids);
   const top = batch.find((r) => r.id === trashId) || batch[0];
   await log(gc, top.area_id, trashId, 'purge', ctx);

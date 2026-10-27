@@ -83,4 +83,12 @@ function iso(ms) {
 /** YYYY-MM-DD (UTC) of ms. */
 const day = (ms) => new Date(ms).toISOString().slice(0, 10);
 
-module.exports = { STATUS, fail, isKnown, posInt, nonNeg, line, nodeName, numbered, MEDIA_RE, SHA_RE, DEVICE_RE, iso, day };
+/** Recognised text of a document: control characters except line breaks removed, at most TEXT_MAX characters; null when empty or not a string. */
+const TEXT_MAX = 100000;
+function docText(v) {
+  if (typeof v !== 'string') return null;
+  const t = v.replace(/\r\n?/g, '\n').replace(/[\u0000-\u0009\u000B-\u001F\u007F]/g, ' ').replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
+  return t ? t.slice(0, TEXT_MAX) : null;
+}
+
+module.exports = { STATUS, fail, isKnown, posInt, nonNeg, line, nodeName, numbered, MEDIA_RE, SHA_RE, DEVICE_RE, iso, day, docText, TEXT_MAX };

@@ -4,7 +4,7 @@
     "de": "Drive",
     "en": "Drive"
   },
-  "version": "1.2.0",
+  "version": "1.3.0",
   "publisher": "CallMeTechie",
   "description": {
     "de": "Dateien der Familie und des Teams auf dem eigenen Speicher – auf diesem Server, einer NAS oder in S3: Meine Dateien, Familie, Ordner der Kinder und Team-Ordner mit Rechten, Versionen, Papierkorb und Abgleich mit allen Geräten.",
@@ -115,6 +115,35 @@
           "en": "The child then gets a note once a day saying who looked."
         },
         "default": true
+      },
+      {
+        "key": "scan_format",
+        "type": "select",
+        "label": {
+          "de": "Scans speichern als",
+          "en": "Save scans as"
+        },
+        "help": {
+          "de": "Standard beim Scannen in der App, pro Scan änderbar. Der erkannte Text macht Scans in beiden Fällen durchsuchbar.",
+          "en": "Default when scanning in the app, can be changed per scan. Either way the recognised text makes scans searchable."
+        },
+        "options": [
+          {
+            "value": "pdf",
+            "label": {
+              "de": "PDF",
+              "en": "PDF"
+            }
+          },
+          {
+            "value": "image",
+            "label": {
+              "de": "Bild (JPEG)",
+              "en": "Picture (JPEG)"
+            }
+          }
+        ],
+        "default": "pdf"
       },
       {
         "key": "backup_hint",

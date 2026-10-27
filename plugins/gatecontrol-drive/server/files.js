@@ -14,7 +14,7 @@
 
 const store = require('./store');
 const nodes = require('./nodes');
-const { fail, nodeName, MEDIA_RE, SHA_RE, iso, nonNeg } = require('./util');
+const { fail, nodeName, MEDIA_RE, SHA_RE, iso, nonNeg, docText } = require('./util');
 
 const URL_TTL_S = 3600;
 
@@ -59,6 +59,8 @@ async function commit(ctx, body) {
   const baseRev = b.baseRev == null ? null : nonNeg(b.baseRev);
   const onConflict = b.onConflict == null ? null : String(b.onConflict);
   if (onConflict && onConflict !== 'rename' && onConflict !== 'version') throw fail('invalid', { field: 'onConflict' });
+  if (b.text != null && typeof b.text !== 'string') throw fail('invalid', { field: 'text' });
+  const text = docText(b.text);
   return store.tx(ctx.gc, async () => {
     const { node: parent, area } = await nodes.folderFor(ctx, Number(b.parentId));
     let existing = await nodes.taken(ctx.gc, area.id, parent.id, name);
@@ -80,6 +82,7 @@ async function commit(ctx, body) {
       await store.run(ctx.gc, `UPDATE nodes SET media_id = ?, size = ?, sha256 = ?, mime = ?, mtime = ?, rev = rev + 1, updated_at = ?, updated_by = ?
         WHERE id = ?`, [info.mediaId, info.bytes, info.sha256 || null, info.mime || null, mtime, ctx.now, ctx.viewer, existing.id]);
       await nodes.log(ctx.gc, area.id, existing.id, 'update', ctx);
+      await setText(ctx, existing.id, text);
       await trimVersions(ctx.gc, existing.id, ctx.settings.versionsMax);
       return { node: nodes.view(await nodes.row(ctx.gc, existing.id)), created: false };
     }
@@ -89,8 +92,15 @@ async function commit(ctx, body) {
     const r = await store.run(ctx.gc, `INSERT INTO nodes (area_id, parent_id, name, is_dir, media_id, size, sha256, mime, mtime, created_at, created_by, updated_at, updated_by)
       VALUES (?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [area.id, parent.id, name, info.mediaId, info.bytes, info.sha256 || null, info.mime || null, mtime, ctx.now, ctx.viewer, ctx.now, ctx.viewer]);
     await nodes.log(ctx.gc, area.id, r.lastInsertRowid, 'create', ctx);
+    await setText(ctx, r.lastInsertRowid, text);
     return { node: nodes.view(await nodes.row(ctx.gc, r.lastInsertRowid)), created: true };
   });
+}
+
+/** The recognised text of the file [id] (a new content without one drops the old: it belonged to other bytes). */
+async function setText(ctx, id, text) {
+  if (text) await store.run(ctx.gc, 'INSERT INTO doc_text (node_id, text, at) VALUES (?, ?, ?) ON CONFLICT(node_id) DO UPDATE SET text = excluded.text, at = excluded.at', [id, text, ctx.now]);
+  else await store.run(ctx.gc, 'DELETE FROM doc_text WHERE node_id = ?', [id]);
 }
 
 /** POST uploads/check { parentId, name, sha256, size } → { exists, same, node } — "same": no need to upload. */
@@ -162,6 +172,7 @@ async function restoreVersion(ctx, id, vid) {
     await store.run(ctx.gc, 'UPDATE nodes SET media_id = ?, size = ?, sha256 = ?, rev = rev + 1, updated_at = ?, updated_by = ? WHERE id = ?',
       [v.media_id, v.size, v.sha256, ctx.now, ctx.viewer, node.id]);
     await nodes.log(ctx.gc, area.id, node.id, 'update', ctx);
+    await setText(ctx, node.id, null);
     return nodes.view(await nodes.row(ctx.gc, node.id));
   });
 }
