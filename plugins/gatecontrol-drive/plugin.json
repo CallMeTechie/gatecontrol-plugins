@@ -4,13 +4,13 @@
     "de": "Drive",
     "en": "Drive"
   },
-  "version": "1.0.0",
+  "version": "1.1.0",
   "publisher": "CallMeTechie",
   "description": {
     "de": "Dateien der Familie und des Teams auf dem eigenen Speicher – auf diesem Server, einer NAS oder in S3: Meine Dateien, Familie, Ordner der Kinder und Team-Ordner mit Rechten, Versionen, Papierkorb und Abgleich mit allen Geräten.",
     "en": "Files of the family and the team on your own storage – on this server, a NAS or S3: my files, family, the children's folders and team folders with rights, versions, a trash and sync with every device."
   },
-  "gatecontrol": ">=1.207.0",
+  "gatecontrol": ">=1.208.0",
   "entry": "server/index.js",
   "permissions": {
     "storage": true,
@@ -38,7 +38,8 @@
     "quotaDefault": "100TB",
     "uploads": true,
     "resumable": true,
-    "areas": true
+    "areas": true,
+    "previews": true
   },
   "ui": {
     "portal": {

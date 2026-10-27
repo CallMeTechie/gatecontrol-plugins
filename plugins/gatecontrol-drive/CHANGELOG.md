@@ -2,6 +2,25 @@
 
 Dateien der Familie und des Teams auf dem eigenen Speicher – auf diesem Server, einer NAS oder in S3.
 
+## 1.1.0
+- **Vorschaubilder in allen Listen** (GateControls Vorschaubilder, `media.previews`):
+  - Jede Datei in den Antworten der App- und Portal-API hat jetzt `preview: { url, largeUrl }` oder `null`. Das gilt für
+    `nodes/<id>`, `children`, `by-path`, `search`, `changes`, `versions` (`current`), `uploads/check` und `uploads/commit`.
+  - Die App bekommt GateControls App-Adresse `/api/v1/client/plugins/gatecontrol-drive/media/<mediaId>/preview`. Sie wird
+    mit dem Geräte-Token abgerufen, mit denselben Rechten wie die Datei, und darf dauerhaft im Cache bleiben.
+  - Das Portal bekommt eine signierte Adresse für die Seite.
+  - `?size=large` liefert die große Fassung (1280 px statt 320 px).
+- **Fotos, Bilder, HEIC und Videos:**
+  - Für JPEG, PNG, WebP, GIF und AVIF macht GateControl die Vorschaubilder selbst.
+  - Für HEIC-Fotos und Videos schickt die hochladende App ein eigenes Vorschaubild
+    (`PUT …/media/<mediaId>/preview`, JPEG/WebP/PNG bis 512 KB), am besten gleich nach dem Upload und vor
+    `uploads/commit`.
+- **Portal:**
+  - Kacheln und Liste zeigen die Vorschaubilder statt der Symbole, auch für HEIC und Videos mit Vorschaubild.
+  - Die Vorschau eines HEIC-Fotos zeigt das große Vorschaubild, weil der Browser HEIC nicht anzeigen kann.
+- Kein Vorschaubild (`null`) haben Dokumente und Dateien im Papierkorb. Ordner haben das Feld nicht.
+- Braucht GateControl 1.208.0.
+
 ## 1.0.0
 - **Erste Veröffentlichung im Plugin-Katalog.** Drive ist ein eigenes Abo und nicht in GateControl Lifetime enthalten:
   - **Familie:** nur Familienmitglieder.

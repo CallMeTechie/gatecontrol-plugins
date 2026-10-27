@@ -9,9 +9,10 @@ Lifetime.
 *Deutsch:* Dateien der Familie und des Teams auf dem eigenen Speicher – Bereiche mit Rechten, Versionen, Papierkorb,
 Abgleich mit allen Geräten. Details im CHANGELOG.
 
-Needs GateControl ≥ 1.207.0: `media.areas` (an area per Drive area, paths, `gc.media.move` / `version`, a version back
+Needs GateControl ≥ 1.208.0: `media.areas` (an area per Drive area, paths, `gc.media.move` / `version`, a version back
 to its path, the NAS journal and the hook `mediaChanged`), `gc.license.info` (tier and seats), `storage.maxMB` 4096,
-`permissions.groups: 'read'` (family groups and their roles, groups of team folders), `permissions.events`.
+`permissions.groups: 'read'` (family groups and their roles, groups of team folders), `permissions.events`,
+`media.previews` (since 1.1.0: previews of files, `gc.media.previews`).
 
 ## Areas and rights
 
@@ -73,13 +74,48 @@ login_required`). Every answer has `ok`; errors `{ ok: false, code, error }` (+ 
 | `DELETE links/<token>` | | `{ ended }` — whoever made it, or who manages the area |
 
 A node: `{ id, areaId, parentId, name, isDir, size, mime, sha256, mediaId, mtime, rev, createdAt, createdBy, updatedAt,
-updatedBy, deleted }`.
+updatedBy, deleted }`; a file node also `preview: { url, largeUrl } | null` (since 1.1.0, see "Previews") — in every
+answer: `nodes/<id>`, `children`, `by-path`, `search`, `changes`, `versions` (`current`), `uploads/check`,
+`uploads/commit`, `trash` (always `null` there).
 
 **Uploading:** GateControl's media upload (`PUT …/plugins/gatecontrol-drive/media`, resumable, ≤ 100 GB, any type)
-answers a `mediaId`; `POST uploads/commit` makes it a file. A name that exists: with `baseRev` = its `rev` or
+answers a `mediaId`; for a HEIC photo or a video the app then sends its preview (`PUT …/media/<mediaId>/preview`, see
+"Previews"); `POST uploads/commit` makes it a file. A name that exists: with `baseRev` = its `rev` or
 `onConflict: 'version'` a new version, with `onConflict: 'rename'` a free name ("Brief (2).pdf"), otherwise `409
 conflict { current }` — the device keeps its copy. Names: what a NAS holds (no `/ \ : * ? " < > |`, no trailing dot
 or space, ≤ 255 characters, not `.gcdrive`); unique per folder ignoring case.
+
+**Previews** (since 1.1.0, GateControl's media previews — docs/plugins.md "Previews" of GateControl ≥ 1.208.0):
+
+- `preview.url` — the small picture (JPEG, fits 320 × 320 px), `preview.largeUrl` — the large one (fits 1280 × 1280
+  px; `url` + `?size=large`). Upright, without metadata, never enlarged. `null`: no preview and none possible
+  (documents, a HEIC or video without the device's preview, a file in the trash, a picture the server could not read).
+- **App** (`/api/v1/client/plugins/…` callers): `url` is
+  `/api/v1/client/plugins/gatecontrol-drive/media/<mediaId>/preview` (relative to the server). Load it with the device
+  token (`X-API-Token`, like the file itself); the reader rules are those of the file (hook `mediaAccess`).
+  `Cache-Control: private, max-age=31536000, immutable` — cache it by `mediaId` for good (a new version of a file is a
+  new `mediaId`). Own rate limit of 1200 per minute and token. Answers: `200 image/jpeg`; `404` none; `503
+  preview_pending` with `Retry-After` while GateControl is still making it (ask again later — the list does not need to
+  be reloaded); `503 preview_unavailable` (storage target unreachable).
+- **Portal** (`/api/v1/portal/…` callers): `url` is a signed `/plugin-media/<token>/preview` for the frame, valid for
+  an hour like the file's `content` URL.
+- **Made by GateControl** for pictures stored as JPEG, PNG, WebP, GIF (first frame) and AVIF up to 64 MB / 50
+  megapixels — in the background right after `uploads/commit`, else on the first request.
+- **From the device** for what GateControl cannot read — HEIC / HEIF photos and videos (photo backup): the uploader
+  sends a preview of the file it uploaded, best right after the upload and **before** `uploads/commit` (then the
+  commit's answer already has `preview`); afterwards works too (the next list has it):
+
+  ```
+  PUT /api/v1/client/plugins/gatecontrol-drive/media/<mediaId>/preview     X-API-Token: <the uploader's device token>
+    Content-Type: image/jpeg | image/webp | image/png    Content-Length: ≤ 524288 (512 KB; e.g. 640 px long side)
+    → 200 { ok: true, ready: true, source: 'client' }
+    404 not_found (not this token owner's upload) · 409 preview_by_server (JPEG, PNG, WebP, GIF, AVIF — GateControl makes
+    those itself, send nothing) · 411 · 413 too_large · 415 unsupported_type · 400 invalid_image (not decodable,
+    over 4096 × 4096 px)
+  ```
+
+  GateControl decodes it and makes both sizes from it; sending again replaces it. Only the uploader may (also after
+  the commit). On a GateControl before 1.208.0 there are no previews: every `preview` is `null`.
 
 **Sync:** after every change the readers of the area get the live event `changed { areas, seq }` (`gc.events`) and
 fetch `GET changes?since=`. `op`: `create`, `update`, `move`, `delete`, `restore`, `purge`; a node that moved to
@@ -105,7 +141,8 @@ uploader.
 
 The portal tab "Drive" (`ui/portal.*`, rendered inline by `server/ui.js` into GateControl's sandboxed frame): the areas,
 tiles or a list, breadcrumbs, search, upload (button, or files and folders dropped; `GC.upload`, then `uploads/commit` —
-a name that exists asks), a preview for pictures, videos and sound, new folder, rename, move, versions, trash, sharing,
+a name that exists asks), the previews of the files on tiles and in the list (HEIC photos: the large preview in the
+viewer), a preview for pictures, videos and sound, new folder, rename, move, versions, trash, sharing,
 "Geteilte Links". Live through `GC.on('event')`. Pictures and videos are shown inline by GateControl and cannot be
 downloaded from the frame (right-click › Save as); other files download.
 
@@ -146,5 +183,5 @@ GateControl has forgotten, the weekly backup hint, old notes of `child_view`.
 
 ## Development
 
-`node tools/test.js gatecontrol-drive` — the mock host as GateControl 1.207.0 with a family group, a team group and a
+`node tools/test.js gatecontrol-drive` — the mock host as GateControl 1.208.0 with a family group, a team group and a
 combo licence (`test/helpers.js`).
