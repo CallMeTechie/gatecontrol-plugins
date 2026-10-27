@@ -26,6 +26,7 @@
       el('div', { class: 'gd-card' }, [el('h2', { text: T('admin.integrations') }),
         el('div', { class: 'gd-int' }, [el('span', { text: T('admin.int_messenger') }), pill(o.integrations.messenger)]),
         el('div', { class: 'gd-int' }, [el('span', { text: T('admin.int_nas') }), pill(o.integrations.nas)]),
+        el('div', { class: 'gd-int' }, [el('span', { text: T('admin.int_drive') }), pill(o.integrations.drive)]),
         el('div', { class: 'gd-int' }, [el('span', { text: T('admin.int_familie') }), pill(o.integrations.familie)])]),
     ]));
   }

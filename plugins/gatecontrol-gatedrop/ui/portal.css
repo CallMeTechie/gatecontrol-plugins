@@ -37,6 +37,7 @@
 .gd-result{display:flex;flex-direction:column;gap:8px;padding:12px;border:1px solid color-mix(in srgb,var(--accent) 35%,var(--line));border-radius:14px;background:var(--accent-soft)}
 .gd-result-row{display:flex;gap:10px;font-size:13.5px;align-items:baseline;flex-wrap:wrap}
 .gd-result-row b{flex:1;min-width:0}
+.gd-result-row small{flex-basis:100%;overflow-wrap:anywhere}
 .gd-st{font-size:12px;font-weight:700;color:var(--muted)}
 .gd-st.is-good{color:var(--good)}
 .gd-st.is-crit{color:var(--crit)}

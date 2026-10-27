@@ -1,6 +1,6 @@
 'use strict';
 
-// Work after the answer (NAS uploads may take minutes): one chain, errors logged. idle() for tests.
+// Work after the answer (NAS and Drive uploads may take minutes): one chain, errors logged. idle() for tests.
 
 let chain = Promise.resolve();
 

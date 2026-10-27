@@ -2,23 +2,29 @@
 
 // Who is who: the accounts (gc.users), Familie's parents (service family_roles), the person's devices
 // (gc.devices.list, GateControl ≥ 1.193.0), what the other plugins offer right now (gc.services.available),
+// whether the person can save into their own Drive (the Drive plugin's list_areas, cached per person),
 // whether public links are on (gc.publicLinks), and the people table (language for pushes, kiosk marks).
 //
 // Permission rules (contract B): sending to people and to one's own devices — every account, never a kiosk
-// device; links for outsiders and NAS folders — administrators and Familie's parents.
+// device; links for outsiders and NAS folders — administrators and Familie's parents; one's own Drive — every
+// account with a Drive seat.
 
 const store = require('./store');
 
 const MESSENGER = 'gatecontrol-messenger';
 const SYNOLOGY = 'gatecontrol-synology';
 const FAMILIE = 'gatecontrol-familie';
+const DRIVE = 'gatecontrol-drive';
 const ROLES_MS = 10 * 60000;    // family_roles at most every 10 minutes (60 service calls per hour for everything)
 const FOLDERS_MS = 5 * 60000;   // list_drop_folders
 const LINKS_MS = 60000;         // is the administrator's switch on?
+const DRIVE_MS = 30 * 60000;    // list_areas per person: GateDrop has 60 service calls per hour for everything
+const DRIVE_RETRY_MS = 60000;   // … after a call that did not answer (rate limit, timeout)
+const DRIVE_KEEP = 500;         // people remembered at most
 
-const cache = { roles: null, folders: null, links: null };
+const cache = { roles: null, folders: null, links: null, drive: new Map() };
 
-function reset() { cache.roles = null; cache.folders = null; cache.links = null; }
+function reset() { cache.roles = null; cache.folders = null; cache.links = null; cache.drive.clear(); }
 
 /** Enabled accounts → Map id → { id, name, role, avatarUrl, initials, colorHex }. */
 async function users(gc) {
@@ -90,6 +96,31 @@ async function linksEnabled(gc, userId, now = Date.now()) {
 
 function forgetLinks() { cache.links = null; }
 
+/** Remember whether `userId` can save into their own Drive (also from a delivery's outcome). */
+function setDrive(userId, value, now = Date.now(), ttl = DRIVE_MS) {
+  if (cache.drive.size >= DRIVE_KEEP && !cache.drive.has(userId)) cache.drive.clear();
+  cache.drive.set(userId, { at: now, until: now + ttl, value: value === true });
+}
+
+/**
+ * Can this person save into their own Drive (target "Mein Drive")? The Drive plugin offers save_file, and its list_areas
+ * for the person answers with a writable area of their own ('mine') — no seat or no licence → false. Cached per person
+ * (30 minutes; a minute when Drive did not answer); a delivery's outcome updates it.
+ */
+async function drive(gc, userId, now = Date.now()) {
+  if (!(await available(gc, DRIVE, 'save_file')) || !(await available(gc, DRIVE, 'list_areas'))) return false;
+  const c = cache.drive.get(userId);
+  if (c && now < c.until && now >= c.at) return c.value;
+  let value = false;
+  let ttl = DRIVE_MS;
+  try {
+    const r = await gc.services.call({ plugin: DRIVE, service: 'list_areas', userId, payload: {} });
+    value = !!(r && r.ok === true && Array.isArray(r.areas) && r.areas.some((a) => a && a.kind === 'mine' && a.writable === true));
+  } catch { value = false; ttl = DRIVE_RETRY_MS; }
+  setDrive(userId, value, now, ttl);
+  return value;
+}
+
 /** The person's own app installations (no web clients) → [{ id, name, platform, online, lastSeen, via }]. */
 async function devicesOf(gc, userId) {
   if (!gc.devices || typeof gc.devices.list !== 'function') return [];
@@ -118,4 +149,4 @@ async function langOf(gc, userId) {
   return r && r.lang === 'en' ? 'en' : 'de';
 }
 
-module.exports = { MESSENGER, SYNOLOGY, FAMILIE, users, available, roles, canShare, folders, linksEnabled, forgetLinks, devicesOf, touch, markKiosk, kioskIds, langOf, reset };
+module.exports = { MESSENGER, SYNOLOGY, FAMILIE, DRIVE, users, available, roles, canShare, folders, linksEnabled, forgetLinks, drive, setDrive, devicesOf, touch, markKiosk, kioskIds, langOf, reset };

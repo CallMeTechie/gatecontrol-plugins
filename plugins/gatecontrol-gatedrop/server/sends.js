@@ -84,6 +84,18 @@ function parseTo(v) {
     if (!id) throw fail('invalid');
     nas.push({ id, sub: subPath(x.path) });
   }
+  // one's own Drive: true, {} or { folderId } (a folder the sender picked in Drive)
+  let drive = null;
+  if (v.drive != null && v.drive !== false) {
+    if (v.drive === true) drive = { folderId: null };
+    else {
+      const d = v.drive;
+      if (typeof d !== 'object' || Array.isArray(d)) throw fail('invalid');
+      const folderId = d.folderId == null ? null : posInt(d.folderId);
+      if (d.folderId != null && !folderId) throw fail('invalid');
+      drive = { folderId };
+    }
+  }
   let link = null;
   if (v.link != null && v.link !== false) {
     const l = v.link;
@@ -91,7 +103,7 @@ function parseTo(v) {
     if (l.pin != null && typeof l.pin !== 'boolean') throw fail('invalid');
     link = { expires: l.expires, pin: l.pin === true };
   }
-  return { people: ppl, devices, nas, link };
+  return { people: ppl, devices, nas, drive, link };
 }
 
 // ─── views ──────────────────────────────────────────────────────────────────
@@ -109,6 +121,11 @@ function deliveryView(d, send) {
   if (d.kind === 'person' && d.ref && d.ref.startsWith('chat:')) out.conversationId = Number(d.ref.slice(5)) || null;
   if (d.kind === 'device' && send && d.user_id && d.user_id !== send.user_id) out.ownerId = d.user_id; // another person's device
   if (d.kind === 'nas' && d.ref) out.paths = d.ref.split('\n');
+  if (d.kind === 'drive') {
+    const files = d.ref ? deliver.driveFiles(d.ref) : [];
+    out.files = files;
+    out.where = files.map((f) => f.where).filter(Boolean);
+  }
   return out;
 }
 
@@ -166,7 +183,7 @@ async function claim(ctx, mediaId) {
 
 /**
  * POST sends → { send (the sender's view), deliveries, link?, direct }
- * See README "App-API". Deliveries to people and links run before the answer, NAS folders after it.
+ * See README "App-API". Deliveries to people and links run before the answer, NAS folders and Drive after it.
  */
 async function create(ctx, body) {
   const gc = ctx.gc;
@@ -178,8 +195,8 @@ async function create(ctx, body) {
   const note = optText(b.note, LIMITS.noteMax);
   const to = parseTo(b.to);
   if (!items.length && !text && !link) throw fail('invalid');
-  if (!to.people.length && !to.devices.length && !to.nas.length && !to.link) throw fail('invalid');
-  if ((to.nas.length || to.link) && !items.length) throw fail('invalid'); // NAS folders and links carry files
+  if (!to.people.length && !to.devices.length && !to.nas.length && !to.drive && !to.link) throw fail('invalid');
+  if ((to.nas.length || to.drive || to.link) && !items.length) throw fail('invalid'); // NAS folders, Drive and links carry files
   if ((to.nas.length || to.link) && !(await people.canShare(gc, ctx.user, ctx.now))) throw fail('forbidden');
 
   // own devices and other people's devices open for everyone — and how each is reached
@@ -233,8 +250,10 @@ async function create(ctx, body) {
     }
   }
   if (to.link && !(await people.linksEnabled(gc, ctx.viewer, ctx.now))) throw fail('links_disabled');
+  // one's own Drive: installed and the sender has a seat (GET targets' drive)
+  if (to.drive && !(await people.drive(gc, ctx.viewer, ctx.now))) throw fail('unavailable');
   // files only on the sender's device: every target must be one of its own devices reached directly
-  if (items.some((i) => i.local) && (persons.length || drops.length || to.link || plans.some((p) => !p.direct))) throw fail('upload_required');
+  if (items.some((i) => i.local) && (persons.length || drops.length || to.drive || to.link || plans.some((p) => !p.direct))) throw fail('upload_required');
   await checkUploads(ctx, items);
   for (const it of items) if (!it.local) await claim(ctx, it.mediaId);
 
@@ -268,6 +287,7 @@ async function create(ctx, body) {
       if (p.members) await store.run(gc, 'UPDATE deliveries SET members = ? WHERE id = ?', [p.members, p.deliveryId]);
     }
     for (const d of drops) d.deliveryId = await ins('nas', d.target, null, 'pending', d.label);
+    if (to.drive) to.drive.deliveryId = await ins('drive', deliver.driveTarget(to.drive.folderId), ctx.viewer, 'pending', t(ctx.lang, 'drive.label'));
     if (to.link) to.link.deliveryId = await ins('link', 'link', null, 'pending', null);
   });
 
@@ -298,15 +318,20 @@ async function create(ctx, body) {
     const d = await store.one(gc, 'SELECT * FROM deliveries WHERE id = ?', [p.deliveryId]);
     await save(d.id, await deliver.person(ctx, sendRow, stored, d, ctx.user.name));
   }
-  // NAS folders: after the answer (an upload may take minutes)
-  if (drops.length) {
+  // NAS folders and Drive: after the answer (an upload may take minutes)
+  if (drops.length || to.drive) {
     const bgCtx = { ...ctx };
+    const later = (dId, st) => store.run(gc, 'UPDATE deliveries SET status = ?, via = ?, error = ?, ref = ?, at = ?, handed = ?' + (st.label ? ', label = ?' : '') + ' WHERE id = ?',
+      [st.status, st.via || null, st.error || null, st.ref || null, Date.now(), st.handed || 0, ...(st.label ? [st.label] : []), dId]);
     jobs.queue(async () => {
       for (const dr of drops) {
         const d = await store.one(gc, 'SELECT * FROM deliveries WHERE id = ?', [dr.deliveryId]);
         if (!d || d.status !== 'pending') continue;
-        const st = await deliver.nas(bgCtx, sendRow, stored, d, dr.folderId);
-        await store.run(gc, 'UPDATE deliveries SET status = ?, via = ?, error = ?, ref = ?, at = ?, handed = ? WHERE id = ?', [st.status, st.via || null, st.error || null, st.ref || null, Date.now(), st.handed || 0, d.id]);
+        await later(d.id, await deliver.nas(bgCtx, sendRow, stored, d, dr.folderId));
+      }
+      if (to.drive) {
+        const d = await store.one(gc, 'SELECT * FROM deliveries WHERE id = ?', [to.drive.deliveryId]);
+        if (d && d.status === 'pending') await later(d.id, await deliver.drive(bgCtx, sendRow, stored, d));
       }
     }, gc);
   }

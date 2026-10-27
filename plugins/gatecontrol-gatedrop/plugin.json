@@ -4,11 +4,11 @@
     "de": "GateDrop",
     "en": "GateDrop"
   },
-  "version": "1.2.1",
+  "version": "1.3.0",
   "publisher": "CallMeTechie",
   "description": {
-    "de": "Teilen wie Quick Share – über den eigenen GateControl-Server: Dateien (bis 2 GB je Datei), Text und Links an Personen (als Nachricht im Messenger), an die eigenen Geräte (Android, Windows – im gemeinsamen WLAN direkt, sonst über den Server), in NAS-Ordner (Synology-Plugin) oder als zeitlich begrenzter Link für Externe mit PIN. Empfangenes bleibt 7 Tage auf dem Server.",
-    "en": "Share like Quick Share – through your own GateControl server: files (up to 2 GB each), text and links to people (as a Messenger message), to your own devices (Android, Windows – directly on the same Wi-Fi, otherwise through the server), into NAS folders (Synology plugin) or as a time-limited link for outsiders with a PIN. Received items stay on the server for 7 days."
+    "de": "Teilen wie Quick Share – über den eigenen GateControl-Server: Dateien (bis 2 GB je Datei), Text und Links an Personen (als Nachricht im Messenger), an die eigenen Geräte (Android, Windows – im gemeinsamen WLAN direkt, sonst über den Server), in NAS-Ordner (Synology-Plugin), ins eigene Drive (Drive-Plugin) oder als zeitlich begrenzter Link für Externe mit PIN. Empfangenes bleibt 7 Tage auf dem Server.",
+    "en": "Share like Quick Share – through your own GateControl server: files (up to 2 GB each), text and links to people (as a Messenger message), to your own devices (Android, Windows – directly on the same Wi-Fi, otherwise through the server), into NAS folders (Synology plugin), into your own Drive (Drive plugin) or as a time-limited link for outsiders with a PIN. Received items stay on the server for 7 days."
   },
   "gatecontrol": ">=1.193.0",
   "entry": "server/index.js",
@@ -26,6 +26,8 @@
       "gatecontrol-messenger:send_file",
       "gatecontrol-synology:save_file",
       "gatecontrol-synology:list_drop_folders",
+      "gatecontrol-drive:save_file",
+      "gatecontrol-drive:list_areas",
       "gatecontrol-familie:family_roles"
     ],
     "background": {

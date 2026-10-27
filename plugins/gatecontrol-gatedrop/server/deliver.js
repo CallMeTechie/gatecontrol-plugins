@@ -11,6 +11,8 @@
 //           the sender in the direct chat / the family chat; without the Messenger (or when it refuses) a push
 //           to the person (to the family's members) like a device delivery through the server.
 //   nas     the Synology plugin's save_file per file (handed over first) into the chosen drop folder.
+//   drive   the Drive plugin's save_file per file (handed over first) for the sender: into the folder they picked
+//           (folderId), else into their own area as 'GateDrop/<name>'; a name taken → "<name> (2)".
 //   link    gc.publicLinks.create — a link for outsiders, optionally with a PIN (4 digits, given to the sender once;
 //           GateControl keeps only a hash), 'once' = maxDownloads 1 (per file; the ZIP counts one of each).
 // Every function answers the delivery's new { status, via, error, ref } — the caller stores it.
@@ -126,7 +128,7 @@ const membersText = (ids) => (ids && ids.length ? `,${ids.join(',')},` : null);
 const membersOf = (d) => String((d && d.members) || '').split(',').map(Number).filter((x) => Number.isSafeInteger(x) && x > 0);
 
 // The Messenger's quota is shared by everyone: only small files go into a chat, the rest stays in GateDrop
-// (its push, its inbox, 7 days). A sender hands over at most 200 files a day (Messenger and NAS together).
+// (its push, its inbox, 7 days). A sender hands over at most 200 files a day (Messenger, NAS and Drive together).
 const CHAT_ITEM_MAX = 25 * 1024 * 1024;
 const CHAT_SEND_MAX = 100 * 1024 * 1024;
 const HANDOVERS_PER_DAY = 200;
@@ -231,6 +233,67 @@ async function nas(ctx, send, items, delivery, folderId) {
   return { status: 'failed', via: saved.length ? 'server' : null, error: err, ref, handed };
 }
 
+const DRIVE_FOLDER = 'GateDrop';
+const DRIVE_NO_ACCESS = new Set(['no_seat', 'not_licensed']);
+
+/** The Drive delivery's target: 'mine' (GateDrop/<name> in the sender's own area) or 'folder:<id>'. */
+const driveTarget = (folderId) => (folderId ? `folder:${folderId}` : 'mine');
+const driveFolderOf = (target) => (typeof target === 'string' && /^folder:\d{1,15}$/.test(target) ? Number(target.slice(7)) : null);
+
+/** The saved files of a Drive delivery (its ref, JSON) → [{ nodeId, areaId, name, where }]. */
+function driveFiles(ref) {
+  try {
+    const v = JSON.parse(ref);
+    return Array.isArray(v) ? v.filter((x) => x && typeof x === 'object') : [];
+  } catch { return []; }
+}
+
+/**
+ * A Drive delivery: each file handed over to the Drive plugin and saved with save_file for the sender — into the
+ * folder of the delivery's target ('folder:<id>'), else 'GateDrop/<name>' in their own area → the delivery's new state.
+ * ref: the saved files as JSON [{ nodeId, areaId, name, where }]; label: the folder as Drive names it ("Meine Dateien › GateDrop").
+ * Drive's codes pass through (no_seat, not_licensed, not_found, forbidden, quota, …); no seat / no licence also
+ * takes the target off GET targets.
+ */
+async function drive(ctx, send, items, delivery) {
+  const { gc } = ctx;
+  if (!(await people.available(gc, people.DRIVE, 'save_file'))) return { status: 'failed', via: null, error: 'unavailable', ref: null };
+  const folderId = driveFolderOf(delivery.target);
+  const saved = [];
+  let err = null;
+  let handed = 0;
+  let budget = HANDOVERS_PER_DAY - (await handedToday(gc, ctx.viewer, Date.now()));
+  for (const it of items) {
+    if (!it.media_id) { err = err || 'failed'; continue; }
+    if (budget <= 0) { err = err || 'rate_limited'; continue; }
+    // no seat, no licence, the folder gone or not writable: the same for every other file
+    if (err && (DRIVE_NO_ACCESS.has(err) || err === 'not_found' || err === 'forbidden' || err === 'unavailable')) continue;
+    try {
+      const h = await gc.media.handOver(it.media_id, { toPlugin: people.DRIVE, user: ctx.viewer });
+      handed++;
+      budget--;
+      const payload = folderId
+        ? { mediaId: h.mediaId, folderId, name: it.name, onConflict: 'rename', lang: ctx.lang }
+        : { mediaId: h.mediaId, area: 'mine', path: `${DRIVE_FOLDER}/${it.name}`, onConflict: 'rename', lang: ctx.lang };
+      const res = await gc.services.call({ plugin: people.DRIVE, service: 'save_file', userId: ctx.viewer, payload });
+      if (res && res.ok === true) {
+        saved.push({
+          nodeId: Number.isSafeInteger(res.nodeId) ? res.nodeId : null, areaId: typeof res.areaId === 'string' ? res.areaId.slice(0, 60) : null,
+          name: typeof res.name === 'string' ? res.name.slice(0, 255) : it.name, where: typeof res.where === 'string' ? res.where.slice(0, 400) : null,
+        });
+      } else err = err || (res && typeof res.code === 'string' ? res.code.slice(0, 40) : 'failed');
+    } catch (e) { err = err || codeOf(e); }
+  }
+  if (DRIVE_NO_ACCESS.has(err)) people.setDrive(ctx.viewer, false);
+  else if (saved.length) people.setDrive(ctx.viewer, true);
+  const ref = saved.length ? JSON.stringify(saved) : null;
+  // the label: where the files went, as Drive names it ("Meine Dateien › GateDrop")
+  const w = saved.length && saved[0].where ? saved[0].where.split(' › ') : null;
+  const label = w && w.length > 1 ? w.slice(0, -1).join(' › ').slice(0, 200) : null;
+  const out = { via: saved.length ? 'server' : null, error: err, ref, handed, ...(label ? { label } : {}) };
+  return { status: err ? 'failed' : 'delivered', ...out };
+}
+
 /** A random 4-digit PIN. */
 const newPin = () => String(crypto.randomInt(0, 10000)).padStart(4, '0');
 
@@ -264,4 +327,4 @@ async function link(ctx, send, items, delivery, opts) {
   }
 }
 
-module.exports = { pushReceived, pushDirect, deviceServer, person, nas, link, familyOthers, membersText, membersOf, handedToday, codeOf, what, body, LINK_EXPIRES, CHAT_ITEM_MAX, CHAT_SEND_MAX, HANDOVERS_PER_DAY };
+module.exports = { pushReceived, pushDirect, deviceServer, person, nas, drive, driveTarget, driveFiles, link, familyOthers, membersText, membersOf, handedToday, codeOf, what, body, LINK_EXPIRES, CHAT_ITEM_MAX, CHAT_SEND_MAX, HANDOVERS_PER_DAY };

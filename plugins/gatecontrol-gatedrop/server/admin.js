@@ -21,6 +21,7 @@ async function overview(gc, user, now) {
     integrations: {
       messenger: await people.available(gc, people.MESSENGER, 'send_file'),
       nas: await people.available(gc, people.SYNOLOGY, 'save_file'),
+      drive: await people.available(gc, people.DRIVE, 'save_file'),
       familie: await people.available(gc, people.FAMILIE, 'family_roles'),
     },
   };

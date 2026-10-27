@@ -37,6 +37,41 @@ function devices() {
   ];
 }
 
+/**
+ * The Drive plugin (a fake of Drive 1.4.0's services list_areas / save_file): `seats` have a Drive seat; folders
+ * { id: 'Meine Dateien › Schule' } a person picked in Drive; `licensed` false → not_licensed; `refuse` a code save_file
+ * answers. d.saved: [{ user, payload }], d.received: the handed-over files.
+ */
+function fakeDrive({ seats = [ANNA.id, MARC.id], folders = { 7: 'Meine Dateien › Schule' }, licensed = true, refuse = null } = {}) {
+  const d = {
+    plugin: 'gatecontrol-drive', provides: ['list_areas', 'save_file'], media: { maxBytes: 2147483648, types: ['image/*', 'video/*', 'audio/*', 'application/*', 'text/plain'], quotaDefault: '10GB' },
+    seats, folders, licensed, refuse, saved: [], nodes: 0,
+    async service({ name, user, payload }) {
+      if (!d.licensed) return { ok: false, code: 'not_licensed' };
+      if (!user || !d.seats.includes(user.id)) return { ok: false, code: 'no_seat' };
+      if (name === 'list_areas') return { ok: true, areas: [{ id: `mine:${user.id}`, kind: 'mine', label: 'Meine Dateien', role: 'owner', writable: true }] };
+      d.saved.push({ user: user.id, payload });
+      if (d.refuse) return { ok: false, code: d.refuse };
+      if (!d.received.some((r) => r.mediaId === payload.mediaId && r.owner === user.id)) return { ok: false, code: 'upload_invalid' };
+      let dir;
+      let name2;
+      if (payload.folderId != null) {
+        if (!d.folders[payload.folderId]) return { ok: false, code: 'not_found' };
+        dir = d.folders[payload.folderId];
+        name2 = payload.name;
+      } else {
+        const segs = String(payload.path).split('/');
+        name2 = segs.pop();
+        dir = ['Meine Dateien', ...segs].join(' › ');
+      }
+      d.nodes++;
+      return { ok: true, nodeId: 100 + d.nodes, areaId: `mine:${user.id}`, path: name2, name: name2, created: true, where: `${dir} › ${name2}` };
+    },
+    received: [],
+  };
+  return d;
+}
+
 const familie = (roles = ROLES) => ({ plugin: 'gatecontrol-familie', provides: ['family_roles'], service: async () => (roles ? { ok: true, ...roles } : { ok: false, code: 'forbidden' }) });
 
 function startClock(at = T0) {
@@ -58,7 +93,7 @@ const PDF = Buffer.from('%PDF-1.4\n%fake\n');
 
 /**
  * opts: { messenger: true (the real Messenger, linked), nas: true (the real NAS plugin with a fake DSM, a NAS and a drop
- * folder /Familie/Ablage), roles (Familie's answer; null = Familie refuses, false = no Familie), links (the admin switch,
+ * folder /Familie/Ablage), drive: true | fakeDrive options (the fake Drive plugin, c.drive), roles (Familie's answer; null = Familie refuses, false = no Familie), links (the admin switch,
  * default on), publicUrl, mediaQuota, devices }
  * fn(host, c): c = { clock, as(user, device?) → (method, path, body, query), portal(user), upload(user, buf, mime, o) → mediaId,
  *   presence(user, device, ip, listening, prefix?), pushes(), messenger (its host), nas: { host, dsm, folderId } }
@@ -70,6 +105,8 @@ async function withHost(opts, fn) {
   if (o.roles !== false) services.push(familie(o.roles === undefined ? ROLES : o.roles));
   let mh = null;
   let nas = null;
+  const drive = o.drive ? fakeDrive(o.drive === true ? {} : o.drive) : null;
+  if (drive) services.push(drive);
   try {
     if (o.messenger) {
       mh = await createHost(MESSENGER_DIR, { users: USERS, gatecontrol: '1.193.0', services: services.slice() });
@@ -93,7 +130,7 @@ async function withHost(opts, fn) {
     await host.start();
     const call = (user, method, p, body, query) => host.request({ method, path: p, body: body === undefined ? null : body, query: query || {}, user, lang: o.lang || 'de' });
     const c = {
-      clock, call, messenger: mh, nas,
+      clock, call, messenger: mh, nas, drive,
       as: (u, device) => (method, p, body, query) => call(app(u, device), method, p, body, query),
       portal: (u, loggedIn) => (method, p, body, query) => call(portal(u, loggedIn), method, p, body, query),
       async upload(user, buf, mime, uo) {
@@ -118,4 +155,4 @@ async function withHost(opts, fn) {
   }
 }
 
-module.exports = { DIR, ADMIN, ANNA, MARC, LENA, OMA, WALL, USERS, ROLES, T0, MIN, DAY, devices, familie, app, portal, withHost, PNG, PDF };
+module.exports = { DIR, ADMIN, ANNA, MARC, LENA, OMA, WALL, USERS, ROLES, T0, MIN, DAY, devices, familie, fakeDrive, app, portal, withHost, PNG, PDF };

@@ -1,5 +1,5 @@
 /* Portal tab "GateDrop": choose files (or drop / paste them) and a text or link, pick targets (people, own
-   devices, NAS folders, a link for outsiders), send. Files go up with GC.upload first (a type GateDrop does not
+   devices, one's own Drive, NAS folders, a link for outsiders), send. Files go up with GC.upload first (a type GateDrop does not
    take — e.g. HTML, JSON, SVG — goes up as application/octet-stream); then POST sends. Right: active links (end them) and the history
    (sent and received; received files open through signed /plugin-media/ URLs from GET items/<mediaId>). */
 (function () {
@@ -7,7 +7,7 @@
   var G = window.GD;
   var T = G.T;
   var el = G.el;
-  var S = { files: [], targets: null, picked: {}, busy: false };
+  var S = { files: [], targets: null, picked: {}, busy: false, shown: null };
   var ICON_X = 'M6 6l12 12M18 6L6 18';
   var MAX_BYTES = 2147483648;
 
@@ -73,6 +73,8 @@
       var label = T('portal.people_device', { device: d.name, owner: (d.owner && d.owner.name) || '?' });
       box.appendChild(chip('device', d.id, label, el('span', { class: 'gd-dot' + (d.online ? ' is-on' : '') }), d.online ? null : T('portal.offline_hint')));
     });
+    // one's own Drive (since 1.3.0): the files go into "GateDrop" in the sender's own area
+    if (tg.drive) box.appendChild(chip('drive', 'mine', T('portal.drive_target')));
     tg.nas.forEach(function (n) { box.appendChild(chip('nas', n.id, 'NAS: ' + n.path)); });
     if (tg.me.canLink && tg.links.enabled) box.appendChild(chip('link', 'link', T('portal.link_target')));
     if (!box.firstChild) box.appendChild(el('span', { class: 'gd-muted', text: T('portal.no_targets') }));
@@ -102,6 +104,7 @@
       if (p.kind === 'person') out.to.people.push(p.id);
       else if (p.kind === 'device') out.to.devices.push(p.id);
       else if (p.kind === 'nas') out.to.nas.push({ id: p.id });
+      else if (p.kind === 'drive') out.to.drive = true;
       else if (p.kind === 'link') {
         var exp = document.querySelector('input[name="gd-exp"]:checked');
         out.to.link = { expires: exp ? exp.value : '1d', pin: G.$('#gd-pin').checked };
@@ -113,15 +116,47 @@
     if (d.status === 'waiting') return T('status.waiting', { device: d.label || d.target });
     return T('status.' + d.status) + (d.via && d.status !== 'failed' ? ' · ' + T('via.' + d.via) : '');
   }
-  function showResult(r) {
+  function driveReason(code) {
+    var k = 'drive.error.' + code;
+    var s = T(k);
+    return s === k ? T('drive.error.other') : s;
+  }
+  function driveLine(d) {
+    if (d.kind !== 'drive') return null;
+    if (d.status === 'delivered' && d.where && d.where.length) return T('portal.drive_saved', { where: d.where.length === 1 ? d.where[0] : d.label + ' (' + T('what.files', { n: d.where.length }) + ')' });
+    if (d.status === 'failed' && d.error) return T('portal.drive_failed', { reason: driveReason(d.error) });
+    return null;
+  }
+  // NAS folders and Drive are saved after the answer: the send is asked again for a while until they are done
+  function follow(r, tries) {
+    var waiting = r.deliveries.some(function (d) { return (d.kind === 'nas' || d.kind === 'drive') && d.status === 'pending'; });
+    if (!waiting || tries > 30) return;
+    setTimeout(function () {
+      if (S.shown !== r.id) return; // another send's result is shown now
+      G.api('GET', 'sends/' + r.id).then(function (x) {
+        if (S.shown !== r.id) return;
+        var next = { id: r.id, deliveries: x.send.deliveries, link: r.link };
+        showResult(next, tries + 1);
+        x.send.deliveries.forEach(function (d) {
+          var was = r.deliveries.find(function (o) { return o.id === d.id; });
+          var line = was && was.status === 'pending' && d.status !== 'pending' ? driveLine(d) : null;
+          if (line) G.toast(line, d.status === 'failed' ? 'error' : null);
+        });
+        if (!next.deliveries.some(function (d) { return d.status === 'pending'; })) loadSide();
+      }, function () {});
+    }, 2000);
+  }
+  function showResult(r, tries) {
     var box = G.clear(G.$('#gd-result'));
     box.hidden = false;
     box.appendChild(el('b', { text: T('portal.sent') }));
     r.deliveries.forEach(function (d) {
       if (d.kind === 'link') return;
       var tone = d.status === 'failed' ? ' is-crit' : (d.status === 'delivered' ? ' is-good' : '');
-      box.appendChild(el('div', { class: 'gd-result-row' }, [el('b', { text: d.label || d.target }), el('span', { class: 'gd-st' + tone, text: statusLabel(d) })]));
+      var line = driveLine(d);
+      box.appendChild(el('div', { class: 'gd-result-row' }, [el('b', { text: d.label || d.target }), el('span', { class: 'gd-st' + tone, text: statusLabel(d) }), line ? el('small', { class: 'gd-muted', text: line }) : null]));
     });
+    follow(r, tries || 0);
     if (r.link) {
       var copy = el('button', { type: 'button', class: 'btn btn-sm', text: T('portal.copy'), on: { click: function () {
         var txt = r.link.url + (r.link.pin ? '\nPIN: ' + r.link.pin : '');
@@ -154,6 +189,7 @@
     }).then(function (r) {
       S.files = [];
       G.$('#gd-text').value = '';
+      S.shown = r.id;
       showResult(r);
       loadSide();
     }, function (e) {
