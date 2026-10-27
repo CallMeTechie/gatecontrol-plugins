@@ -90,6 +90,7 @@
     image: 'M4 5h16v14H4z|M4 16l5-5 4 4 3-3 4 4|M15 8.5h.01',
     down: 'M12 5v14M6 13l6 6 6-6',
     clock: 'M12 7v5l3 2|M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18',
+    drive: 'M7 19a4.5 4.5 0 0 1-.6-9A6 6 0 0 1 17.8 9a4.5 4.5 0 0 1-.3 10z|M12 10v6M9.5 13.5L12 16l2.5-2.5',
   };
   function icon(name, size, opts) { return svg(ICONS[name] || ICONS.info, size, opts); }
   var COLOR_RE = /^#[0-9a-fA-F]{6}$/;

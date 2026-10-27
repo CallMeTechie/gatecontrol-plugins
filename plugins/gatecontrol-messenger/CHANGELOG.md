@@ -3,6 +3,23 @@
 Chats zwischen den GateControl-Konten – in der GateControl-App (eigener Tab „Chats“), im
 Windows-Client und im Portal (eigener Tab „Chats“). Alles bleibt auf dem eigenen Server.
 
+## 1.10.0
+Braucht weiterhin **GateControl ≥ 1.193.0** und für die neue Funktion das Drive-Plugin (**Drive ≥ 1.4.0**). Neu beim
+Aktualisieren: der Drive-Dienst „Datei in Drive ablegen“ (`gatecontrol-drive:save_file`) in den Berechtigungen – das
+Update installiert sich deshalb nicht von selbst, ein Admin muss es bestätigen.
+- **In Drive speichern:** Ein Foto, eine Sprachnachricht oder eine Datei aus einem Chat landet mit einem Tipp in der
+  eigenen Drive – ohne Ordnerwahl unter **Meine Dateien › Messenger** mit dem Dateinamen (Fotos und Sprachnachrichten
+  ohne Namen als „Foto 2026-10-27 14-30.jpg“ usw.), in den Apps auch in einem gewählten Drive-Ordner. Ist der Name
+  schon vergeben, heißt die Datei „Foto (2).jpg“. Der Chat behält seine Datei (Drive bekommt eine Kopie). Erlaubt ist
+  es, wo die Person die Datei auch herunterladen darf; Drive prüft Platz (Seat), Lizenz, Schreibrecht und Speicher selbst.
+- App-API: `POST messages/:id/to-drive` `{ folderId? }` → `{ saved: { nodeId, name, where } }` (`where` z. B. „Meine
+  Dateien › Messenger › Foto.jpg“); Fehler von Drive werden durchgereicht (`no_seat`, `not_licensed`, `forbidden`,
+  `quota`, `not_found`, `invalid`, `upload_invalid`, `exists`), `drive_unavailable` ohne Drive, `rate_limited` nach
+  20 Ablagen pro Stunde und Person. `GET me` hat `integrations.drive` (true, wenn Drive gerade Dateien annimmt) – nur
+  dann zeigen die Apps die Aktion.
+- **Portal:** „In Drive speichern“ im Menü einer Nachricht mit Foto, Sprachnachricht oder Datei; ein Hinweis nennt den
+  Ort („Gespeichert in Meine Dateien › Messenger › …“) oder den Fehler.
+
 ## 1.9.2
 - **Der zweite Chat „Familie“ verschwindet**: Familie (ab 1.15.2) schickt Regel-Nachrichten an einzelne Personen in den
   angehefteten Chat „GateControl“. Die Kanäle, die Familie dafür früher pro Person angelegt hat („Familie“ bzw.

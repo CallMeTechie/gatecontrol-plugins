@@ -28,6 +28,8 @@
 //   1.9.0      group chats for GateControl groups (GateControl ≥ 1.200.0, permissions.groups "read", feature-detected): the
 //              administrator picks groups on „Übersicht“, each gets a managed chat with the group's effective members, leads
 //              as chat admins; hooks groupsChanged / groupUsage / groupDeleting (groupchats.js)
+//   1.10.0     "In Drive speichern": POST messages/:id/to-drive hands a message's file over to Drive (service save_file,
+//              permissions.services "gatecontrol-drive:save_file"), GET me integrations.drive (drive.js)
 //
 // Needs GateControl ≥ 1.177.0 (media, realtime events, chat notifications, services); Familie integration
 // needs gc.services.available (1.178.0); home actions use gc.actions (1.166.0+, interactive runs 1.180.0).
@@ -92,6 +94,7 @@ module.exports = {
     homeactions.reset();
     groupchats.reset();
     require('./familie').reset();
+    require('./drive').reset();
     seal._reset();
     await seal.init(gc);
     // 1.9.2: Familie's per-person notice channels go — its messages to single people use GateControl's inbox

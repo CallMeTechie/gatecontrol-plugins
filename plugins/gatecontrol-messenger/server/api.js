@@ -42,8 +42,9 @@ async function me(ctx) {
       // 1.4.0 (README "App-API", since 1.4.0): only true keys are present
       ...Object.fromEntries(features14(ctx).map((f) => [f, true])),
     },
-    // 1.4.0: what the Familie plugin offers here (gc.services.available) — "Zur Liste", "In Kalender", places
-    integrations: { familie: await familie.offers(ctx.gc) },
+    // 1.4.0: what the Familie plugin offers here (gc.services.available) — "Zur Liste", "In Kalender", places;
+    // 1.10.0: drive — Drive takes files (save_file): "In Drive speichern" (POST messages/:id/to-drive)
+    integrations: { familie: await familie.offers(ctx.gc), drive: await require('./drive').available(ctx.gc) },
     // 1.5.0: home actions in detail — why they are missing (reason), the request defaults, the last doorbell card
     homeActions: await homeactions.info(ctx),
     limits: {

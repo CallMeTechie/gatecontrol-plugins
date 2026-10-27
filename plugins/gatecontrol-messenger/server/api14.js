@@ -4,6 +4,7 @@
 // blocks, archive, pins, lists, export, reminders, suggestions, polls, events, live arrival, home
 // actions, the Familie proxies. api.js calls route14() before answering not_found.
 // 1.5.0: GET actions/requestable (homeactions.requestable).
+// 1.10.0: POST messages/:id/to-drive (drive.js).
 
 const store = require('./store');
 const conversations = require('./conversations');
@@ -15,6 +16,7 @@ const eventmsg = require('./eventmsg');
 const arrival = require('./arrival');
 const homeactions = require('./homeactions');
 const familie = require('./familie');
+const drive = require('./drive');
 const texts = require('./texts.json');
 const { fail, posInt, text, iso, parseIso } = require('./util');
 
@@ -148,6 +150,8 @@ async function route14(ctx, req, seg) {
           added: r && Number.isInteger(r.added) ? r.added : items.length, skipped: r && Number.isInteger(r.skipped) ? r.skipped : 0,
         });
       }
+      // 1.10.0: the message's file into the viewer's Drive (read, then hand over and save outside a transaction)
+      if (c === 'to-drive') return json(200, await drive.save(ctx, await locate(), id, req.body));
       if (c === 'to-calendar') {
         const x = await locate();
         await messages.visibleMessage(ctx, x.me, id);

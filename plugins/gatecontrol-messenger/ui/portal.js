@@ -32,7 +32,7 @@
     me: null, prefs: null, limits: {}, features: {}, people: null, convs: [], cur: null, msgs: {}, typing: {}, reply: null, edit: null,
     rec: null, uploads: [], q: '', inbox: null, lastSync: null, activeTimer: null, firstUnread: null, infoOpen: false, loading: false, menu: null, refreshTimers: {}, typingAt: 0,
     // 1.4.0
-    feed: null, lists: [], listFilter: null, showArchived: false, integrations: {}, feedTimer: null,
+    feed: null, lists: [], listFilter: null, showArchived: false, integrations: {}, feedTimer: null, drive: false,
   };
   var R = window.MSRich;
 
@@ -1270,6 +1270,8 @@
       item('clock', T('tools.remind'), function () { R.remind(m); });
       if (m.text && (m.kind === 'text' || m.kind === 'image' || m.kind === 'file')) item('search', T('tools.suggest'), function () { R.suggest(m); });
     }
+    // 1.10.0: "In Drive speichern" — pictures, voice messages and files, when Drive takes files (GET me integrations.drive)
+    if (S.drive && !m.deleted && m.media && (m.kind === 'image' || m.kind === 'voice' || m.kind === 'file')) item('drive', T('msg.to_drive'), function () { saveToDrive(m); });
     item('trash', T('msg.delete_me'), function () { removeMsg(m, 'me'); }, true);
     if (m.mine && !m.deleted && withinWindow(m)) item('trash', T('msg.delete_all'), function () { removeMsg(m, 'all'); }, true);
     var layer = el('div', { style: 'position:absolute;inset:0;z-index:19', on: { click: function (e) { if (e.target === layer) closeMenu(); } } });
@@ -1289,6 +1291,13 @@
     S.menu = { layer: layer, wrap: wrap };
     var first = menu.querySelector('button');
     if (first) first.focus();
+  }
+  /** 1.10.0: the message's file into the viewer's Drive (Meine Dateien › Messenger) — the toast names where it went. */
+  function saveToDrive(m) {
+    M.api('POST', 'messages/' + m.id + '/to-drive', {}).then(function (r) {
+      var s = (r && r.saved) || {};
+      M.toast(T('msg.drive_saved', { where: s.where || s.name || T('msg.drive_default') }), 'good');
+    }).catch(M.warn);
   }
   function pinMsg(c, m, on) {
     var p = on ? M.api('POST', 'conversations/' + c.id + '/pins', { messageId: m.id }) : M.api('DELETE', 'conversations/' + c.id + '/pins/' + m.id);
@@ -1778,6 +1787,7 @@
       S.limits = r.limits || {};
       S.features = r.features || {};
       S.integrations = (r.integrations && r.integrations.familie) || {};
+      S.drive = !!(r.integrations && r.integrations.drive === true);
       if (R) R.init(richHost());
       if (feature('status')) refreshFeed(true);
       if (feature('msg_tools')) loadLists();
