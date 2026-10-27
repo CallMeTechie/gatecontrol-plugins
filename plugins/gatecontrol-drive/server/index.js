@@ -7,7 +7,7 @@
 //
 //   app API   /api/v1/client/plugins/gatecontrol-drive/api/…   (the device token's owner, user.device)
 //   portal    /api/v1/portal/plugins/gatecontrol-drive/api/…   (the same routes; also under portal/…)
-//     GET me · GET areas · GET changes?since=&limit= · GET search?q=&area=
+//     GET me · GET areas · GET changes?since=&limit= · GET search?q=&area= (name, then recognised text: doc_text)
 //     GET nodes/by-path?area=&path= · GET nodes/<id> · GET nodes/<id>/children?sort=&order=&offset=&limit=
 //     POST nodes · PATCH nodes/<id> · DELETE nodes/<id> · GET nodes/<id>/content
 //     DELETE nodes/<id>?everywhere=1 (also on every device of mine — wipes.js, since 1.2.0) · GET wipes · POST wipes/done
@@ -126,7 +126,7 @@ async function me(ctx) {
     licence: { valid: ctx.licence.valid, tier: ctx.licence.tier },
     areas: list.map((v) => areaView(ctx, v)),
     latest: await changes.latest(ctx.gc),
-    settings: { versionsDays: ctx.settings.versionsDays, versionsMax: ctx.settings.versionsMax, trashDays: ctx.settings.trashDays, parentsView: ctx.settings.parentsView },
+    settings: { versionsDays: ctx.settings.versionsDays, versionsMax: ctx.settings.versionsMax, trashDays: ctx.settings.trashDays, parentsView: ctx.settings.parentsView, scanFormat: ctx.settings.scanFormat },
     limits: { maxBytes: usage ? usage.maxBytes : null },
     // names for "changed by …" (the accounts of this server; the apps and the portal show them)
     people: ctx.seat ? [...ctx.users.values()].map((u) => ({ id: u.id, name: u.name })) : [],

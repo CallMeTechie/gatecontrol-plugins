@@ -2,6 +2,18 @@
 
 Dateien der Familie und des Teams auf dem eigenen Speicher – auf diesem Server, einer NAS oder in S3.
 
+## 1.3.0
+- **Scans durchsuchbar:** Die App erkennt den Text eines Scans auf dem Handy und schickt ihn mit dem Hochladen mit
+  (`uploads/commit { text }`, höchstens 100.000 Zeichen).
+  - `GET search` findet Dateien jetzt auch über diesen Text. Treffer im Namen kommen zuerst. Jeder Treffer hat `match`
+    (`name` oder `text`), Treffer im Text zusätzlich `snippet` mit etwa 120 Zeichen rund um die Fundstelle.
+  - Eine neue Fassung ohne Text, das Zurückholen einer älteren Fassung und das endgültige Löschen entfernen den
+    gespeicherten Text.
+- **Neue Einstellung „Scans speichern als“:** PDF (Standard) oder Bild. Die App nimmt das als Vorgabe beim Scannen,
+  ändern lässt es sich pro Scan. `GET me` liefert es als `settings.scanFormat` mit.
+- Braucht weiterhin GateControl 1.208.0. Es kommen keine neuen Rechte dazu, darum installiert GateControl das Update
+  automatisch, wenn automatische Updates an sind.
+
 ## 1.2.0
 - **Löschen auf allen Geräten:** Beim Löschen kann die App fragen: nur auf diesem Gerät, auch auf dem Server oder auf
   allen Geräten.
