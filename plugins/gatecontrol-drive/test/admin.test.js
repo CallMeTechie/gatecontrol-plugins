@@ -110,6 +110,18 @@ test('services: list_areas and save_file for the person of the call', async () =
     assert.equal((await call(null, 'save_file', { mediaId: await handed(ANNA, 'x'), path: 'a.pdf' })).code, 'invalid', 'without userId');
     const onTheWay = await call(ANNA, 'save_file', { mediaId: await handed(ANNA, 'x'), area: 'family', path: 'Schule/2026-10/Elternbrief.pdf/x.pdf' });
     assert.equal(onTheWay.code, 'exists', 'a file on the way');
+    // a folder picked in an app (folderId + name, since 1.4.0), "where" for the message
+    const mine = await c.area(ANNA, 'mine');
+    const f = await c.as(ANNA)('POST', 'nodes', { parentId: mine.rootId, name: 'Belege' });
+    const r5 = await call(ANNA, 'save_file', { mediaId: await handed(ANNA, '%PDF-5'), folderId: f.json.node.id, name: 'Rechnung.pdf' });
+    assert.deepEqual([r5.ok, r5.path, r5.where], [true, 'Belege/Rechnung.pdf', 'Meine Dateien › Belege › Rechnung.pdf']);
+    assert.match(r1.where, / › Schule › 2026-10 › Elternbrief\.pdf$/);
+    const kid = await c.area(LENA, 'child');
+    assert.equal((await call(ANNA, 'save_file', { mediaId: await handed(ANNA, 'x'), folderId: kid.rootId, name: 'a.pdf' })).code, 'forbidden', 'a parent only reads');
+    assert.equal((await call(MARC, 'save_file', { mediaId: await handed(MARC, 'x'), folderId: f.json.node.id, name: 'a.pdf' })).code, 'not_found', 'someone else\'s folder');
+    assert.equal((await call(ANNA, 'save_file', { mediaId: await handed(ANNA, 'x'), folderId: r5.nodeId, name: 'a.pdf' })).code, 'invalid', 'a file is no folder');
+    assert.equal((await call(ANNA, 'save_file', { mediaId: await handed(ANNA, 'x'), folderId: '7', name: 'a.pdf' })).code, 'invalid');
+    assert.equal((await call(ANNA, 'save_file', { mediaId: await handed(ANNA, 'x'), folderId: f.json.node.id, name: 'a/b.pdf' })).code, 'invalid');
     host.license.licensed = false;
     assert.equal((await call(ANNA, 'list_areas', {})).code, 'not_licensed');
   });

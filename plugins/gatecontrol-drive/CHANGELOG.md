@@ -2,6 +2,14 @@
 
 Dateien der Familie und des Teams auf dem eigenen Speicher – auf diesem Server, einer NAS oder in S3.
 
+## 1.4.0
+- **Dienst `save_file` für einen gewählten Ordner:** Andere Plugins (Messenger, GateDrop, Schule) können jetzt statt
+  `area` + `path` auch `folderId` + `name` übergeben. Das ist ein Ordner, den die Person in einer App gewählt hat.
+  Er muss ihr gehören oder für sie beschreibbar sein, sonst lautet die Antwort `forbidden` oder `not_found`.
+- Jede Antwort von `save_file` enthält jetzt `where` mit dem Ablageort in Lesbar, zum Beispiel
+  „Meine Dateien › Messenger › Foto.jpg“. Damit kann das aufrufende Plugin melden, wo die Datei gelandet ist.
+- Keine neuen Rechte, das Update kommt automatisch.
+
 ## 1.3.0
 - **Scans durchsuchbar:** Die App erkennt den Text eines Scans auf dem Handy und schickt ihn mit dem Hochladen mit
   (`uploads/commit { text }`, höchstens 100.000 Zeichen).

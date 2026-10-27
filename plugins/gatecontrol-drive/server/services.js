@@ -4,13 +4,16 @@
 // permissions.services and calls with userId — the person the file belongs to):
 //
 //   list_areas  {}  → { ok, areas: [{ id, kind, label, role, writable }] }   where the person may save
-//   save_file   { mediaId, area, path, onConflict? }
+//   save_file   { mediaId, area, path, onConflict? }  or  { mediaId, folderId, name, onConflict? }
 //               mediaId    a file the caller handed over to Drive first (gc.media.handOver(id, { toPlugin:
 //                          'gatecontrol-drive', user: userId }) — unclaimed, owned by that person)
 //               area       'mine' | 'family' (the person's family) | an area id ('child:4', 'team:2', …)
 //               path       'Schule/2026-10 Elternbrief.pdf' — the folders on the way are made
+//               folderId   instead of area + path (since 1.4.0): a folder the person picked in an app (Drive's own
+//                          API), the file goes in as `name`
 //               onConflict 'rename' (default: "Elternbrief (2).pdf") | 'version' (a new version of that file)
-//               → { ok, nodeId, areaId, path, name, created }
+//               → { ok, nodeId, areaId, path, name, created, where }   where: "Familie › Schule › Elternbrief.pdf"
+//                 in the person's language, for a message like "Gespeichert in …"
 //   Codes: invalid, forbidden, not_found, no_seat, not_licensed, quota, upload_invalid, exists.
 // The person needs a Drive seat and write access to the area — a service call can do no more than they can.
 
@@ -62,17 +65,28 @@ async function folders(ctx, area, segs) {
 async function saveFile(ctx, payload) {
   const p = payload && typeof payload === 'object' ? payload : {};
   if (typeof p.mediaId !== 'string' || !MEDIA_RE.test(p.mediaId)) throw fail('invalid', { field: 'mediaId' });
-  const raw = typeof p.path === 'string' ? p.path.split('/').filter((s) => s.trim() !== '') : [];
-  if (!raw.length || raw.length > 32) throw fail('invalid', { field: 'path' });
-  const segs = raw.map((s) => nodeName(s));
-  const name = segs.pop();
   const onConflict = p.onConflict == null ? 'rename' : String(p.onConflict);
   if (onConflict !== 'rename' && onConflict !== 'version') throw fail('invalid', { field: 'onConflict' });
-  const area = await areaFor(ctx, p.area);
-  const parent = await folders(ctx, area, segs);
+  let area;
+  let parent;
+  let name;
+  if (p.folderId != null) {
+    if (!Number.isSafeInteger(p.folderId) || p.folderId <= 0) throw fail('invalid', { field: 'folderId' });
+    name = nodeName(p.name);
+    const f = await nodes.folderFor(ctx, p.folderId).catch((e) => { throw e.code === 'invalid' ? fail('invalid', { field: 'folderId' }) : e; });
+    ({ node: parent, area } = f);
+  } else {
+    const raw = typeof p.path === 'string' ? p.path.split('/').filter((s) => s.trim() !== '') : [];
+    if (!raw.length || raw.length > 32) throw fail('invalid', { field: 'path' });
+    const segs = raw.map((s) => nodeName(s));
+    name = segs.pop();
+    area = await areaFor(ctx, p.area);
+    parent = await folders(ctx, area, segs);
+  }
   const r = await files.commit(ctx, { mediaId: p.mediaId, parentId: parent.id, name, onConflict });
   const node = r.node;
-  return { nodeId: node.id, areaId: area.id, path: nodes.join(await nodes.pathOf(ctx.gc, parent), node.name), name: node.name, created: r.created };
+  const path = nodes.join(await nodes.pathOf(ctx.gc, parent), node.name);
+  return { nodeId: node.id, areaId: area.id, path, name: node.name, created: r.created, where: [ctx.areaLabel(area), ...path.split('/')].join(' › ') };
 }
 
 module.exports = { listAreas, saveFile };
