@@ -12,6 +12,7 @@
 
 const store = require('./store');
 const areas = require('./areas');
+const wipes = require('./wipes');
 const { fail, nodeName, numbered, iso } = require('./util');
 
 const CHILDREN_MAX = 1000;
@@ -268,8 +269,11 @@ function unlinkLater(ctx, kind, ids) {
   u[kind].push(...ids);
 }
 
-/** DELETE nodes/<id> → into the trash (the node and everything below it). */
-async function trash(ctx, id) {
+/**
+ * DELETE nodes/<id> → into the trash (the node and everything below it). `everywhere` (?everywhere=1, since 1.2.0):
+ * also a wipe — every device of the viewer removes its local copies of the files (wipes.js) → + wipe { id, devices, files }.
+ */
+async function trash(ctx, id, everywhere = false) {
   let gone = null;
   const out = await store.tx(ctx.gc, async () => {
     const { node, area } = await reach(ctx, Number(id), 'write');
@@ -291,7 +295,8 @@ async function trash(ctx, id) {
       [ctx.now, ctx.viewer, node.id, ...all.map((r) => r.id)]);
     await log(ctx.gc, area.id, node.id, 'delete', ctx);
     gone = all.map((r) => r.id);
-    return { id: node.id, trashed: all.length };
+    const wipe = everywhere ? await wipes.create(ctx, node, all.filter((r) => r.is_dir === 0)) : null;
+    return { id: node.id, trashed: all.length, ...(wipe ? { wipe } : {}) };
   });
   unlinkLater(ctx, 'all', gone);
   return out;
@@ -339,6 +344,8 @@ async function restore(ctx, id) {
       [parent.id, name, ctx.now, ctx.viewer, node.id]);
     await store.run(ctx.gc, 'UPDATE nodes SET deleted_at = NULL, deleted_by = NULL, trash_id = NULL WHERE trash_id = ?', [node.id]);
     await log(ctx.gc, area.id, node.id, 'restore', ctx);
+    // "deleted on all devices" ends: devices that have not removed their copy yet keep it
+    await wipes.cancel(ctx.gc, node.id);
     return view(await row(ctx.gc, node.id));
   });
 }

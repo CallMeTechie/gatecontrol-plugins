@@ -186,6 +186,39 @@ test('smoke: areas, a new folder, uploads with a name that exists, a file\'s act
   });
 });
 
+test('smoke: into the trash and also on all my devices (Drive knows a phone of mine)', async () => {
+  await withHost({}, async (host, c) => {
+    const mine = await c.area(ANNA, 'mine'); // from Anna's phone: Drive knows it now
+    await c.put(ANNA, mine.rootId, 'Foto.jpg', 'jpeg', { mime: 'image/jpeg' });
+    await c.put(ANNA, mine.rootId, 'Notiz.txt', 'x');
+    const calls = [];
+    const f = createWindow(portalHtml(), frameGc(host, ANNA, calls));
+    const $ = (id) => f.document.getElementById(id);
+    const trash = async (name, everywhere) => {
+      $('dp-main').querySelectorAll('.dp-card').find((x) => textOf(x).includes(name)).querySelector('.dp-more').click();
+      await until('menu', () => byText($('dp-dialog'), 'span', 'In den Papierkorb'));
+      byText($('dp-dialog'), 'span', 'In den Papierkorb').parentNode.click();
+      const box = await until('the option', () => byText($('dp-dialog'), 'span', 'Auch auf meinem Gerät löschen'));
+      if (everywhere) box.parentNode.querySelector('input').checked = true;
+      $('dp-dialog').querySelectorAll('button').find((b) => b.className.includes('dp-btn-danger')).click();
+      await until('gone', () => !byText($('dp-main'), 'span', name));
+    };
+    try {
+      f.run();
+      await until('files', () => !$('dp-app').hidden && byText($('dp-main'), 'span', 'Foto.jpg'));
+      await trash('Notiz.txt', false);
+      assert.deepEqual(calls.filter((x) => x.method === 'DELETE').map((x) => x.query), [{}]);
+      await trash('Foto.jpg', true);
+      assert.deepEqual(calls.filter((x) => x.method === 'DELETE').map((x) => x.query), [{}, { everywhere: '1' }]);
+      await until('toast', () => textOf($('dp-toast')).includes('auf deinen Geräten gelöscht'));
+      const w = (await c.as(ANNA)('GET', 'wipes')).json.wipes;
+      assert.deepEqual(w.map((x) => x.name), ['Foto.jpg']);
+    } finally {
+      f.stop();
+    }
+  });
+});
+
 test('smoke: a person not switched on sees why; a signed-out viewer is asked to sign in', async () => {
   await withHost({}, async (host) => {
     const f = createWindow(portalHtml({ user: { id: OMA.id, loggedIn: true } }), frameGc(host, OMA, []));

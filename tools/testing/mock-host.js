@@ -189,7 +189,7 @@
 //   online, lastSeen, via }] of that person, from opts.devices: [{ id, userId, name, platform ('android'|'windows'|'ios'|
 //   'web'), clientType?, appVersion?, online?, lastSeen?, via? }] (ERR_DEVICES_DENIED without the permission, ERR_INVALID for
 //   a userId that is not an enabled account). An app request carries user.device = { id, platform } — tests pass it in
-//   req.user. gc.notify({ …, users, devices: [deviceId] }) → only those devices (1…50 ids, each a device of opts.devices
+//   req.user; like GateControl, host.request drops it for a plugin without permissions.devices. gc.notify({ …, users, devices: [deviceId] }) → only those devices (1…50 ids, each a device of opts.devices
 //   owned by one of `users`, `users` required — else ERR_INVALID; ids as strings or numbers, ≤ 100); gc.notify({ …,
 //   silent: true, data }) → a data push without a banner (title optional, no image, own budget 600 per hour); both need
 //   permissions.devices (ERR_DEVICES_DENIED), never on a chat topic (ERR_INVALID); recorded with `devices` and, for a data
@@ -2877,7 +2877,13 @@ async function createHost(pluginDir, opts = {}) {
     secrets,
     /** req = { method, path, query, body, user, lang } (defaults filled in); returns { status, json | html … } */
     async request(req) {
-      const r = await hook('request', { method: 'GET', query: {}, body: null, user: sessionUser(), lang: 'de', ...req });
+      const q = { method: 'GET', query: {}, body: null, user: sessionUser(), lang: 'de', ...req };
+      // like GateControl: the asking device (user.device) only for plugins with permissions.devices
+      if (q.user && typeof q.user === 'object' && 'device' in q.user && perms.devices !== true) {
+        q.user = { ...q.user };
+        delete q.user.device;
+      }
+      const r = await hook('request', q);
       return { status: 200, ...r };
     },
     /** view = { view: 'page'|'portal', page, section, user, lang, loggedIn } */
