@@ -7,8 +7,12 @@
 // (gc.media.move: on the NAS a rename, no bytes travel); a file in the trash leaves its path (gc.media.move path
 // null — on the NAS it goes below .gcdrive/files) and gets it back on a restore.
 //
-// Every change writes a row of `changes` (op create | update | move | delete | restore | purge); devices read
-// them with GET changes?since=<seq> and get a live event 'changed' (gc.events) to fetch them at once.
+// Every change writes a row of `changes` (op create | update | move | delete | restore | purge, since 1.5.0 also
+// mark | unmark — marks.js); devices read them with GET changes?since=<seq> and get a live event 'changed'
+// (gc.events) to fetch them at once.
+//
+// A mark (since 1.5.0, marks.js): "deleted on the device, goes into the trash on …" (delete_at). New content ends it —
+// a new version of the file, a restored version, a rename or a move, and anything new in a marked folder (unmarkUp).
 
 const store = require('./store');
 const areas = require('./areas');
@@ -62,6 +66,8 @@ function view(n, extra) {
     mtime: n.mtime == null ? null : iso(n.mtime), rev: n.rev,
     createdAt: iso(n.created_at), createdBy: n.created_by, updatedAt: iso(n.updated_at), updatedBy: n.updated_by,
     deleted: n.deleted_at != null, ...(n.deleted_at != null ? { deletedAt: iso(n.deleted_at), deletedBy: n.deleted_by } : {}),
+    // the mark (since 1.5.0): only while there is one
+    ...(n.delete_at != null && n.deleted_at == null ? { deleteAt: iso(n.delete_at), deletedOnDevice: n.delete_device_name || null, deleteMarkedBy: n.delete_by == null ? null : n.delete_by } : {}),
     ...(extra || {}),
   };
 }
@@ -71,6 +77,23 @@ async function log(gc, areaId, nodeId, op, ctx) {
     [areaId, nodeId, op, ctx.now, ctx.viewer || null, ctx.deviceId || null]);
   (ctx.touched || (ctx.touched = new Set())).add(areaId);
   return r.lastInsertRowid;
+}
+
+const UNMARKED = 'delete_at = NULL, delete_by = NULL, delete_device = NULL, delete_device_name = NULL';
+
+/**
+ * The marks of node `id` and of the folders above it end (it got new content, or something new is in the folder).
+ * Each one cleared gets 'unmark' in the change log — except `quiet` (a node whose change is logged anyway). → count
+ */
+async function unmarkUp(gc, id, ctx, quiet = null) {
+  const rows = await store.all(gc, `WITH RECURSIVE up(id, parent_id) AS (
+      SELECT id, parent_id FROM nodes WHERE id = ?
+      UNION ALL SELECT p.id, p.parent_id FROM nodes p JOIN up ON p.id = up.parent_id)
+    SELECT n.id, n.area_id FROM nodes n JOIN up ON n.id = up.id WHERE n.delete_at IS NOT NULL`, [id]);
+  if (!rows.length) return 0;
+  await store.run(gc, `UPDATE nodes SET ${UNMARKED} WHERE id IN (${store.marks(rows.length)})`, rows.map((r) => r.id));
+  for (const r of rows) if (r.id !== quiet) await log(gc, r.area_id, r.id, 'unmark', ctx);
+  return rows.length;
 }
 
 /** A live node the viewer may read (`need`: least role) → { node, area, role }. */
@@ -105,6 +128,14 @@ async function freeName(gc, areaId, parentId, name, exceptId = 0) {
 }
 
 const join = (a, b) => (a ? `${a}/${b}` : b);
+
+/** Inside a transaction: a new folder `name` in `parentId` (the name must be free) → its row. */
+async function insertFolder(ctx, areaId, parentId, name) {
+  const r = await store.run(ctx.gc, `INSERT INTO nodes (area_id, parent_id, name, is_dir, created_at, created_by, updated_at, updated_by)
+    VALUES (?, ?, ?, 1, ?, ?, ?, ?)`, [areaId, parentId, name, ctx.now, ctx.viewer, ctx.now, ctx.viewer]);
+  await log(ctx.gc, areaId, r.lastInsertRowid, 'create', ctx);
+  return row(ctx.gc, r.lastInsertRowid);
+}
 
 // ─── Reading ────────────────────────────────────
 
@@ -197,10 +228,8 @@ async function mkdir(ctx, body) {
       if (!body.rename) throw fail('exists');
       name = await freeName(ctx.gc, parent.area_id, parent.id, name);
     }
-    const r = await store.run(ctx.gc, `INSERT INTO nodes (area_id, parent_id, name, is_dir, created_at, created_by, updated_at, updated_by)
-      VALUES (?, ?, ?, 1, ?, ?, ?, ?)`, [parent.area_id, parent.id, name, ctx.now, ctx.viewer, ctx.now, ctx.viewer]);
-    await log(ctx.gc, parent.area_id, r.lastInsertRowid, 'create', ctx);
-    return view(await row(ctx.gc, r.lastInsertRowid));
+    await unmarkUp(ctx.gc, parent.id, ctx);
+    return view(await insertFolder(ctx, parent.area_id, parent.id, name));
   });
 }
 
@@ -268,8 +297,10 @@ async function update(ctx, id, body) {
       oldPaths.set(node.id, oldBase);
     }
     await moveMedia(ctx.gc, files, toArea.media_area, area.media_area, oldPaths);
-    await store.run(ctx.gc, 'UPDATE nodes SET parent_id = ?, name = ?, area_id = ?, updated_at = ?, updated_by = ? WHERE id = ?',
+    await store.run(ctx.gc, `UPDATE nodes SET parent_id = ?, name = ?, area_id = ?, updated_at = ?, updated_by = ?, ${UNMARKED} WHERE id = ?`,
       [parent.node.id, name, toArea.id, ctx.now, ctx.viewer, node.id]);
+    // a renamed or moved node is in use: its mark ends, and so do those of the folder it is in now
+    await unmarkUp(ctx.gc, parent.node.id, ctx);
     if (toArea.id !== area.id) {
       // older versions stay in the media area they were made in (a version only moves back to a path); a restore
       // brings one over (files.js restoreVersion)
@@ -303,27 +334,37 @@ async function trash(ctx, id, everywhere = false) {
     const { node, area } = await reach(ctx, Number(id), 'write');
     if (node.parent_id == null) throw fail('invalid');
     if (area.archived_at != null) throw fail('forbidden');
-    const rows = node.is_dir === 1 ? (await below(ctx.gc, node.id)).filter((r) => r.deleted_at == null) : [];
-    const all = [node, ...rows];
-    // the files leave their paths (free for new files; on a NAS below .gcdrive/files)
-    const moved = [];
-    try {
-      for (const r of all) if (r.is_dir === 0 && r.media_id) { await ctx.gc.media.move(r.media_id, { path: null }); moved.push(r); }
-    } catch (e) {
-      const base = await pathOf(ctx.gc, node);
-      const paths = node.is_dir === 1 ? pathsBelow(node.id, base, rows) : new Map([[node.id, base]]);
-      for (const r of moved) { try { await ctx.gc.media.move(r.media_id, { path: paths.get(r.id) }); } catch { /* best effort */ } }
-      throw e;
-    }
-    await store.run(ctx.gc, `UPDATE nodes SET deleted_at = ?, deleted_by = ?, trash_id = ? WHERE id IN (${store.marks(all.length)})`,
-      [ctx.now, ctx.viewer, node.id, ...all.map((r) => r.id)]);
-    await log(ctx.gc, area.id, node.id, 'delete', ctx);
+    const all = await trashRows(ctx, node, area);
     gone = all.map((r) => r.id);
     const wipe = everywhere ? await wipes.create(ctx, node, all.filter((r) => r.is_dir === 0)) : null;
     return { id: node.id, trashed: all.length, ...(wipe ? { wipe } : {}) };
   });
   unlinkLater(ctx, 'all', gone);
   return out;
+}
+
+/**
+ * Inside a transaction: live node `node` of `area` (not the root) and everything live below it into the trash — the
+ * files leave their paths, one 'delete' in the change log, marks end → the rows trashed. Also the background run's
+ * delete of a marked node (marks.js).
+ */
+async function trashRows(ctx, node, area) {
+  const rows = node.is_dir === 1 ? (await below(ctx.gc, node.id)).filter((r) => r.deleted_at == null) : [];
+  const all = [node, ...rows];
+  // the files leave their paths (free for new files; on a NAS below .gcdrive/files)
+  const moved = [];
+  try {
+    for (const r of all) if (r.is_dir === 0 && r.media_id) { await ctx.gc.media.move(r.media_id, { path: null }); moved.push(r); }
+  } catch (e) {
+    const base = await pathOf(ctx.gc, node);
+    const paths = node.is_dir === 1 ? pathsBelow(node.id, base, rows) : new Map([[node.id, base]]);
+    for (const r of moved) { try { await ctx.gc.media.move(r.media_id, { path: paths.get(r.id) }); } catch { /* best effort */ } }
+    throw e;
+  }
+  await store.run(ctx.gc, `UPDATE nodes SET deleted_at = ?, deleted_by = ?, trash_id = ?, ${UNMARKED} WHERE id IN (${store.marks(all.length)})`,
+    [ctx.now, ctx.viewer || null, node.id, ...all.map((r) => r.id)]);
+  await log(ctx.gc, area.id, node.id, 'delete', ctx);
+  return all;
 }
 
 /** GET trash?area= → what was deleted in the areas the viewer writes to (the deleted node, not each one below). */
@@ -379,7 +420,8 @@ async function purgeBatch(gc, trashId, ctx) {
   const batch = await store.all(gc, 'SELECT * FROM nodes WHERE trash_id = ?', [trashId]);
   if (!batch.length) return 0;
   const ids = batch.map((r) => r.id);
-  const versions = await store.all(gc, `SELECT media_id FROM versions WHERE node_id IN (${store.marks(ids.length)})`, ids);
+  // versions of an empty file have no media (since 1.5.0)
+  const versions = await store.all(gc, `SELECT media_id FROM versions WHERE node_id IN (${store.marks(ids.length)}) AND media_id IS NOT NULL`, ids);
   for (const m of [...batch.filter((r) => r.media_id).map((r) => r.media_id), ...versions.map((v) => v.media_id)]) {
     try { await gc.media.delete(m); } catch (e) { gc.log.warn('purge: media delete failed', (e && e.code) || 'error'); }
   }
@@ -399,4 +441,7 @@ async function purge(ctx, id) {
   });
 }
 
-module.exports = { row, pathOf, below, pathsBelow, view, log, reach, folderFor, taken, freeName, join, get, children, byPath, search, mkdir, update, trash, trashList, restore, purge, purgeBatch, moveMedia };
+module.exports = {
+  row, pathOf, below, pathsBelow, view, log, reach, folderFor, taken, freeName, join, insertFolder, unmarkUp, UNMARKED, get, children, byPath, search,
+  mkdir, update, trash, trashRows, unlinkLater, trashList, restore, purge, purgeBatch, moveMedia,
+};

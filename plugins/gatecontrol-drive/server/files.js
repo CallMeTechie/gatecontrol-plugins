@@ -11,10 +11,14 @@
 //   the name of a file otherwise → 409 conflict { current } — the device keeps its copy as
 //                                  "Name (Konflikt …)" or sends again with onConflict 'rename' (a free name)
 // POST uploads/check { parentId, name, sha256, size } says first whether the very same file is there already.
+//
+// Empty files (since 1.5.0): GateControl's media upload takes no empty body (411), so an empty file has no media object —
+// POST uploads/commit { parentId, name, size: 0 } without a mediaId makes it (media_id null, size 0, sha256 of no bytes).
+// Its content is an empty data: URL ({ empty: true }); its versions are rows without media.
 
 const store = require('./store');
 const nodes = require('./nodes');
-const { fail, nodeName, MEDIA_RE, SHA_RE, iso, nonNeg, docText } = require('./util');
+const { fail, nodeName, MEDIA_RE, SHA_RE, EMPTY_SHA, iso, nonNeg, docText } = require('./util');
 
 const URL_TTL_S = 3600;
 
@@ -32,27 +36,44 @@ async function freshUpload(ctx, mediaId) {
   return info;
 }
 
+const MIME_RE = /^[a-z0-9][a-z0-9!#$&^_.+-]{0,63}\/[a-z0-9][a-z0-9!#$&^_.+-]{0,127}$/;
+
+/** commit { size: 0 } (or { empty: true }) without a mediaId: an empty file. A sha256 sent with it must be that of no bytes. */
+function isEmpty(b) {
+  if (b.mediaId != null) return false;
+  if (!(b.size === 0 || b.size === '0' || b.empty === true)) return false;
+  if (b.sha256 != null && String(b.sha256).toLowerCase() !== EMPTY_SHA) throw fail('invalid', { field: 'sha256' });
+  return true;
+}
+
+/** The type the device names for an empty file (there are no bytes GateControl could look at), else null. */
+const mimeArg = (v) => (typeof v === 'string' && MIME_RE.test(v.toLowerCase()) ? v.toLowerCase() : null);
+
+/** The content of an empty file or version: an empty data: URL — nothing to download. */
+const emptyContent = (name, mime) => ({ url: `data:${mime || 'application/octet-stream'};base64,`, name, mime: mime || null, size: 0, mediaId: null, empty: true });
+
 /** Older versions over the limit (count) of node `id` go → count removed. */
 async function trimVersions(gc, id, max) {
   const extra = await store.all(gc, 'SELECT * FROM versions WHERE node_id = ? ORDER BY at DESC, id DESC LIMIT -1 OFFSET ?', [id, max]);
   for (const v of extra) {
-    try { await gc.media.delete(v.media_id); } catch (e) { gc.log.warn('version delete failed', (e && e.code) || 'error'); }
+    if (v.media_id) { try { await gc.media.delete(v.media_id); } catch (e) { gc.log.warn('version delete failed', (e && e.code) || 'error'); } }
     await store.run(gc, 'DELETE FROM versions WHERE id = ?', [v.id]);
   }
   return extra.length;
 }
 
-/** Keep the current bytes of file `n` as a version (gc.media.version + a versions row). */
+/** Keep the current bytes of file `n` as a version (gc.media.version + a versions row; an empty file: the row alone). */
 async function keepVersion(ctx, n) {
-  await ctx.gc.media.version(n.media_id);
+  if (n.media_id) await ctx.gc.media.version(n.media_id);
   await store.run(ctx.gc, 'INSERT INTO versions (node_id, rev, media_id, size, sha256, at, by) VALUES (?, ?, ?, ?, ?, ?, ?)',
-    [n.id, n.rev, n.media_id, n.size, n.sha256, ctx.now, n.updated_by]);
+    [n.id, n.rev, n.media_id || null, n.media_id ? n.size : 0, n.media_id ? n.sha256 : (n.sha256 || EMPTY_SHA), ctx.now, n.updated_by]);
 }
 
 /** POST uploads/commit → { node, created }. */
 async function commit(ctx, body) {
   const b = body && typeof body === 'object' ? body : {};
-  const info = await freshUpload(ctx, b.mediaId);
+  const empty = isEmpty(b);
+  const info = empty ? { mediaId: null, bytes: 0, sha256: EMPTY_SHA, mime: mimeArg(b.mime) } : await freshUpload(ctx, b.mediaId);
   let name = nodeName(b.name);
   const mtime = b.mtime == null ? null : (Number.isSafeInteger(Number(b.mtime)) ? Number(b.mtime) : Date.parse(b.mtime));
   if (b.mtime != null && !Number.isFinite(mtime)) throw fail('invalid', { field: 'mtime' });
@@ -71,24 +92,31 @@ async function commit(ctx, body) {
     }
     const p = nodes.join(await nodes.pathOf(ctx.gc, parent), name);
     if (existing) {
-      if (existing.media_id) await keepVersion(ctx, existing);
-      try {
-        await ctx.gc.media.claim(info.mediaId, { area: area.media_area, path: p });
-      } catch (e) {
-        // the old bytes take their path again
-        if (existing.media_id) { try { await ctx.gc.media.move(existing.media_id, { path: p }); } catch { /* best effort */ } }
-        throw mediaFail(e);
+      await keepVersion(ctx, existing);
+      if (info.mediaId) {
+        try {
+          await ctx.gc.media.claim(info.mediaId, { area: area.media_area, path: p });
+        } catch (e) {
+          // the old bytes take their path again
+          if (existing.media_id) { try { await ctx.gc.media.move(existing.media_id, { path: p }); } catch { /* best effort */ } }
+          throw mediaFail(e);
+        }
       }
       await store.run(ctx.gc, `UPDATE nodes SET media_id = ?, size = ?, sha256 = ?, mime = ?, mtime = ?, rev = rev + 1, updated_at = ?, updated_by = ?
-        WHERE id = ?`, [info.mediaId, info.bytes, info.sha256 || null, info.mime || null, mtime, ctx.now, ctx.viewer, existing.id]);
+        WHERE id = ?`, [info.mediaId, info.bytes, info.sha256 || null, (empty ? info.mime || existing.mime : info.mime) || null, mtime, ctx.now, ctx.viewer, existing.id]);
       await nodes.log(ctx.gc, area.id, existing.id, 'update', ctx);
+      // new content: a mark of the file ("deleted on the device") ends, and those of the folders above it
+      await nodes.unmarkUp(ctx.gc, existing.id, ctx, existing.id);
       await setText(ctx, existing.id, text);
       await trimVersions(ctx.gc, existing.id, ctx.settings.versionsMax);
       return { node: nodes.view(await nodes.row(ctx.gc, existing.id)), created: false };
     }
-    try {
-      await ctx.gc.media.claim(info.mediaId, { area: area.media_area, path: p });
-    } catch (e) { throw mediaFail(e); }
+    if (info.mediaId) {
+      try {
+        await ctx.gc.media.claim(info.mediaId, { area: area.media_area, path: p });
+      } catch (e) { throw mediaFail(e); }
+    }
+    await nodes.unmarkUp(ctx.gc, parent.id, ctx);
     const r = await store.run(ctx.gc, `INSERT INTO nodes (area_id, parent_id, name, is_dir, media_id, size, sha256, mime, mtime, created_at, created_by, updated_at, updated_by)
       VALUES (?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [area.id, parent.id, name, info.mediaId, info.bytes, info.sha256 || null, info.mime || null, mtime, ctx.now, ctx.viewer, ctx.now, ctx.viewer]);
     await nodes.log(ctx.gc, area.id, r.lastInsertRowid, 'create', ctx);
@@ -112,15 +140,18 @@ async function check(ctx, body) {
   const { node: parent, area } = await nodes.folderFor(ctx, Number(b.parentId));
   const n = await nodes.taken(ctx.gc, area.id, parent.id, name);
   if (!n) return { exists: false, same: false, node: null };
-  const same = n.is_dir === 0 && sha != null && n.sha256 === sha && (b.size == null || Number(b.size) === n.size);
+  // an empty file is the same as an empty one, also without a sha256
+  const same = n.is_dir === 0 && ((sha != null && n.sha256 === sha && (b.size == null || Number(b.size) === n.size))
+    || (sha == null && b.size != null && Number(b.size) === 0 && n.size === 0 && !n.media_id));
   return { exists: true, same, node: nodes.view(n) };
 }
 
 /** GET nodes/<id>/content → { url, name, mime, size, mediaId } — the URL is signed for the viewer, 1 h. */
 async function content(ctx, id) {
   const { node, area, via } = await nodes.reach(ctx, Number(id));
-  if (node.is_dir === 1 || !node.media_id) throw fail('invalid');
+  if (node.is_dir === 1 || (!node.media_id && node.size !== 0)) throw fail('invalid');
   if (via === 'parent') await ctx.noteChildView(area);
+  if (!node.media_id) return emptyContent(node.name, node.mime);
   const url = await ctx.gc.media.url(node.media_id, { user: ctx.viewer, ttlS: URL_TTL_S });
   return { url, name: node.name, mime: node.mime, size: node.size, mediaId: node.media_id };
 }
@@ -148,6 +179,7 @@ async function versionContent(ctx, id, vid) {
   const { node, area, via } = await nodes.reach(ctx, Number(id));
   const v = await versionOf(ctx, node.id, Number(vid));
   if (via === 'parent') await ctx.noteChildView(area);
+  if (!v.media_id) return { ...emptyContent(node.name, node.mime), rev: v.rev };
   const url = await ctx.gc.media.url(v.media_id, { user: ctx.viewer, ttlS: URL_TTL_S });
   return { url, name: node.name, mime: node.mime, size: v.size, mediaId: v.media_id, rev: v.rev };
 }
@@ -159,19 +191,23 @@ async function restoreVersion(ctx, id, vid) {
     if (area.archived_at != null) throw fail('forbidden');
     const v = await versionOf(ctx, node.id, Number(vid));
     const p = await nodes.pathOf(ctx.gc, node);
-    const info = await ctx.gc.media.info(v.media_id);
-    if (!info) throw fail('not_found');
-    if (node.media_id) await keepVersion(ctx, node);
-    try {
-      await ctx.gc.media.move(v.media_id, { path: p, ...(info.area !== area.media_area ? { area: area.media_area } : {}) });
-    } catch (e) {
-      if (node.media_id) { try { await ctx.gc.media.move(node.media_id, { path: p }); } catch { /* best effort */ } }
-      throw mediaFail(e);
+    // a version of an empty file has no media
+    const info = v.media_id ? await ctx.gc.media.info(v.media_id) : null;
+    if (v.media_id && !info) throw fail('not_found');
+    await keepVersion(ctx, node);
+    if (v.media_id) {
+      try {
+        await ctx.gc.media.move(v.media_id, { path: p, ...(info.area !== area.media_area ? { area: area.media_area } : {}) });
+      } catch (e) {
+        if (node.media_id) { try { await ctx.gc.media.move(node.media_id, { path: p }); } catch { /* best effort */ } }
+        throw mediaFail(e);
+      }
     }
     await store.run(ctx.gc, 'DELETE FROM versions WHERE id = ?', [v.id]);
     await store.run(ctx.gc, 'UPDATE nodes SET media_id = ?, size = ?, sha256 = ?, rev = rev + 1, updated_at = ?, updated_by = ? WHERE id = ?',
-      [v.media_id, v.size, v.sha256, ctx.now, ctx.viewer, node.id]);
+      [v.media_id || null, v.media_id ? v.size : 0, v.media_id ? v.sha256 : EMPTY_SHA, ctx.now, ctx.viewer, node.id]);
     await nodes.log(ctx.gc, area.id, node.id, 'update', ctx);
+    await nodes.unmarkUp(ctx.gc, node.id, ctx, node.id);
     await setText(ctx, node.id, null);
     return nodes.view(await nodes.row(ctx.gc, node.id));
   });
@@ -182,7 +218,7 @@ async function deleteVersion(ctx, id, vid) {
   return store.tx(ctx.gc, async () => {
     const { node } = await nodes.reach(ctx, Number(id), 'write');
     const v = await versionOf(ctx, node.id, Number(vid));
-    try { await ctx.gc.media.delete(v.media_id); } catch (e) { ctx.gc.log.warn('version delete failed', (e && e.code) || 'error'); }
+    if (v.media_id) { try { await ctx.gc.media.delete(v.media_id); } catch (e) { ctx.gc.log.warn('version delete failed', (e && e.code) || 'error'); } }
     await store.run(ctx.gc, 'DELETE FROM versions WHERE id = ?', [v.id]);
     return { id: v.id };
   });

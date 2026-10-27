@@ -11,6 +11,8 @@
 //     GET nodes/by-path?area=&path= · GET nodes/<id> · GET nodes/<id>/children?sort=&order=&offset=&limit=
 //     POST nodes · PATCH nodes/<id> · DELETE nodes/<id> · GET nodes/<id>/content
 //     DELETE nodes/<id>?everywhere=1 (also on every device of mine — wipes.js, since 1.2.0) · GET wipes · POST wipes/done
+//     DELETE nodes/<id>?after=<s> · PATCH nodes/<id> { deleteAt } (into the trash later — marks.js, since 1.5.0)
+//     GET devices · PUT devices/<id> · PUT devices/<id>/folders · DELETE devices/<id>   (devices.js, since 1.5.0)
 //     GET nodes/<id>/versions · GET nodes/<id>/versions/<vid>/content · POST nodes/<id>/versions/<vid>/restore
 //     DELETE nodes/<id>/versions/<vid> · POST uploads/check · POST uploads/commit
 //     GET trash?area= · POST trash/<id>/restore · DELETE trash/<id>
@@ -38,6 +40,8 @@ const ui = require('./ui');
 const services = require('./services');
 const previews = require('./previews');
 const wipes = require('./wipes');
+const marks = require('./marks');
+const devices = require('./devices');
 const { t } = require('./text');
 const { STATUS, fail, isKnown, posInt, DEVICE_RE, day, iso } = require('./util');
 
@@ -131,8 +135,15 @@ async function me(ctx) {
     // names for "changed by …" (the accounts of this server; the apps and the portal show them)
     people: ctx.seat ? [...ctx.users.values()].map((u) => ({ id: u.id, name: u.name })) : [],
     serverTime: iso(ctx.now),
+    // what this Drive can (since 1.5.0): an app checks before it uses a newer route
+    features: FEATURES,
   };
 }
+
+// devices: GET/PUT/DELETE devices (1.5.0) · deleteAfter: DELETE nodes/<id>?after=, PATCH { deleteAt } (1.5.0) ·
+// emptyFiles: uploads/commit { size: 0 } without a mediaId (1.5.0) · wipes: DELETE ?everywhere=1 (1.2.0) ·
+// textSearch: uploads/commit { text } (1.3.0) · previews (1.1.0)
+const FEATURES = ['previews', 'wipes', 'textSearch', 'devices', 'deleteAfter', 'emptyFiles'];
 
 const THUMBS_MAX = 200;
 
@@ -189,8 +200,20 @@ async function route(ctx, req, seg) {
     if (b === 'by-path' && seg.length === 2 && m === 'GET') return ok({ node: await nodes.byPath(ctx, q.area, q.path) });
     if (seg.length === 2) {
       if (m === 'GET') return ok({ node: await nodes.get(ctx, idArg(b)) });
-      if (m === 'PATCH' || m === 'PUT') return ok({ node: await nodes.update(ctx, idArg(b), body) });
-      if (m === 'DELETE') return ok(await nodes.trash(ctx, idArg(b), flag(q.everywhere)));
+      if (m === 'PATCH' || m === 'PUT') {
+        // { deleteAt } alone: the mark (marks.js); with a name or a parent too: invalid
+        if (body && typeof body === 'object' && Object.prototype.hasOwnProperty.call(body, 'deleteAt')) {
+          if (body.name != null || body.parentId != null) throw fail('invalid', { field: 'deleteAt' });
+          return ok({ node: await marks.set(ctx, idArg(b), body) });
+        }
+        return ok({ node: await nodes.update(ctx, idArg(b), body) });
+      }
+      if (m === 'DELETE') {
+        // ?after=<seconds>: into the trash later (0: now); `everywhere` only with a delete now
+        const after = q.after == null || q.after === '' ? 0 : marks.afterArg(q.after);
+        if (after > 0) return ok(await marks.after(ctx, idArg(b), after, q.device == null ? null : String(q.device)));
+        return ok(await nodes.trash(ctx, idArg(b), flag(q.everywhere)));
+      }
     }
     if (seg.length === 3 && m === 'GET') {
       if (c === 'children') {
@@ -205,6 +228,12 @@ async function route(ctx, req, seg) {
       if (seg.length === 5 && e === 'content' && m === 'GET') return ok(await files.versionContent(ctx, idArg(b), idArg(d)));
       if (seg.length === 5 && e === 'restore' && m === 'POST') return ok({ node: await files.restoreVersion(ctx, idArg(b), idArg(d)) });
     }
+  }
+  if (a === 'devices') {
+    if (seg.length === 1 && m === 'GET') return ok(await devices.list(ctx));
+    if (seg.length === 2 && m === 'PUT') return ok(await devices.put(ctx, b, body));
+    if (seg.length === 2 && m === 'DELETE') return ok(await devices.remove(ctx, b));
+    if (seg.length === 3 && c === 'folders' && m === 'PUT') return ok(await devices.setFolders(ctx, b, body));
   }
   if (a === 'uploads' && seg.length === 2 && m === 'POST') {
     if (b === 'check') return ok(await files.check(ctx, body));
@@ -271,6 +300,8 @@ module.exports = {
       // the person's devices that use Drive: the targets of "delete on all devices" (best effort)
       if (ctx.deviceId) {
         try { await wipes.seen(gc, ctx.viewer, ctx.deviceId, req.user.device.platform, now); } catch (e) { gc.log.warn('device record failed', (e && e.code) || 'error'); }
+        // the registered device (devices.js) of this token: last seen
+        try { await devices.seen(gc, ctx.viewer, ctx.deviceId, now); } catch (e) { gc.log.warn('device seen failed', (e && e.code) || 'error'); }
       }
       let done = false;
       try {

@@ -2,6 +2,40 @@
 
 Dateien der Familie und des Teams auf dem eigenen Speicher – auf diesem Server, einer NAS oder in S3.
 
+## 1.5.0
+- **Geräte:** PCs und Handys, die Ordner mit Drive sichern oder abgleichen, melden sich jetzt an.
+  - `PUT devices/<id> { name, platform?, version? }` meldet ein Gerät an oder aktualisiert es (zuletzt gesehen). Die
+    `id` vergibt das Gerät selbst und behält sie. Sie gilt je Person.
+  - Gerätenamen sind je Person eindeutig, ohne auf Groß- und Kleinschreibung zu achten. Ein zweiter „PC“ heißt
+    „PC (2)“. So teilen sich zwei PCs mit gleichem Hostnamen nicht mehr denselben Ordner.
+  - Jedes Gerät bekommt seinen Ordner „Meine Dateien › Geräte › <Name>“. Die Antwort enthält ihn als
+    `folder { id, name, path, where }`. Ein vorhandener Ordner mit diesem Namen, den kein anderes Gerät nutzt, wird
+    übernommen (das hat eine ältere App angelegt). Wird ein Gerät umbenannt, zieht sein Ordner mit.
+  - `GET devices` liefert meine Geräte mit Ordnern und letzter Sicherung. `PUT devices/<id>/folders` speichert die
+    Ordnerliste (`localPath`, `mode: 'backup' | 'sync'`, `nodeId`, `lastBackup`). `DELETE devices/<id>` vergisst ein
+    Gerät, seine Dateien bleiben.
+  - Im Portal gibt es die neue Seite „Geräte“ mit den Ordnern, der letzten Sicherung und „Gerät vergessen“.
+- **Verzögertes Löschen:** `DELETE nodes/<id>?after=<Sekunden>` (höchstens 365 Tage) legt die Datei oder den Ordner
+  erst später in den Papierkorb. `PATCH nodes/<id> { deleteAt }` setzt den Zeitpunkt genau, `deleteAt: null` hebt ihn
+  auf.
+  - Bis dahin bleibt alles normal sichtbar. Der Knoten trägt `deleteAt`, `deletedOnDevice` (Name des Geräts) und
+    `deleteMarkedBy`. Das Änderungsprotokoll schreibt dafür `mark` und `unmark`.
+  - Eine neue Fassung, eine zurückgeholte Version, Umbenennen, Verschieben oder etwas Neues im markierten Ordner hebt
+    die Markierung auf.
+  - Der Hintergrundlauf legt fällige Knoten in den Papierkorb, im Namen der Person, die markiert hat.
+  - Das Portal zeigt dezent „wird am … gelöscht“ und bietet „Behalten“ an.
+- **Leere Dateien:** GateControl nimmt beim Hochladen keine 0 Byte an. `uploads/commit { parentId, name, size: 0 }`
+  ohne `mediaId` legt deshalb eine leere Datei ohne Medienobjekt an (`mediaId: null`, `size: 0`, SHA-256 der leeren
+  Datei).
+  - `GET nodes/<id>/content` liefert dafür `empty: true` und eine leere `data:`-Adresse.
+  - Versionen gehen in beide Richtungen. `uploads/check` erkennt zwei leere Dateien als gleich.
+  - Das Portal lädt leere Dateien jetzt auch hoch.
+- `GET me` nennt in `features` die Fähigkeiten dieses Drive (`devices`, `deleteAfter`, `emptyFiles` …). So prüft eine
+  App vorher, ob sie die neuen Wege nutzen kann.
+- Bestehende Apps arbeiten unverändert weiter: Ohne `after` löscht `DELETE` sofort wie bisher, und die neuen Felder
+  erscheinen nur, wenn sie gesetzt sind.
+- Migration `005`. Keine neuen Rechte, das Update kommt automatisch.
+
 ## 1.4.0
 - **Dienst `save_file` für einen gewählten Ordner:** Andere Plugins (Messenger, GateDrop, Schule) können jetzt statt
   `area` + `path` auch `folderId` + `name` übergeben. Das ist ein Ordner, den die Person in einer App gewählt hat.
