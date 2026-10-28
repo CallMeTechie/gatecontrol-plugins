@@ -40,8 +40,9 @@ test('render: the portal tab inlines its style, the context and the script; no t
 });
 
 test('the frame\'s rules: no modals, no storage, no innerHTML, no eval, nothing in the console, no external URL', () => {
-  for (const f of ['portal.js', 'portal.html', 'portal.css', 'admin.js', 'admin.html', 'admin.css']) {
-    const src = fs.readFileSync(path.join(UI, f), 'utf8');
+  for (const f of ['portal.js', 'portal.html', 'portal.css', 'admin.js', 'admin.html', 'admin.css', 'vault.js', 'vaultcrypto.js']) {
+    // vault.js (1.9.0): a decrypted file leaves the frame as a download of a blob: URL (allow-downloads) — never shown
+    const src = fs.readFileSync(path.join(UI, f), 'utf8').replace(f === 'vault.js' ? /URL\.(createObjectURL|revokeObjectURL)/g : /$^/, 'URL.x');
     assert.ok(!/\b(alert|confirm|prompt|print)\(/.test(src), `${f}: sandboxed frames have no modals`);
     assert.ok(!/\.(innerHTML|outerHTML)\s*=|insertAdjacentHTML|document\.write|DOMParser|createContextualFragment/.test(src), `${f}: text only through textContent / attributes`);
     assert.ok(!/localStorage|sessionStorage|indexedDB|document\.cookie/.test(src), `${f}: the frame has no storage`);
@@ -54,7 +55,7 @@ test('the frame\'s rules: no modals, no storage, no innerHTML, no eval, nothing 
 test('texts: every key the portal uses exists in de and en; the same keys in both', () => {
   assert.deepEqual(Object.keys(texts.de).sort(), Object.keys(texts.en).sort());
   for (const l of ['de', 'en']) for (const [k, v] of Object.entries(texts[l])) assert.ok(typeof v === 'string' && v.trim(), `${l}: ${k} empty`);
-  const src = fs.readFileSync(path.join(UI, 'portal.js'), 'utf8');
+  const src = fs.readFileSync(path.join(UI, 'portal.js'), 'utf8') + fs.readFileSync(path.join(UI, 'vault.js'), 'utf8');
   const html = fs.readFileSync(path.join(UI, 'portal.html'), 'utf8');
   const keys = new Set();
   for (const m of src.matchAll(/\bT\('([a-z0-9_.]+)'\s*[,)]/gi)) keys.add(m[1]);
@@ -62,7 +63,7 @@ test('texts: every key the portal uses exists in de and en; the same keys in bot
   for (const m of html.matchAll(/\{\{t:([a-z0-9_.]+)\}\}/g)) keys.add(m[1]);
   const ctx = ctxOf(portalHtml());
   for (const k of keys) assert.ok(ctx.texts[k] != null || texts.de[k] != null, `missing text ${k}`);
-  for (const m of src.matchAll(/\bP\('([a-z0-9_.]+)'/g)) for (const l of ['de', 'en']) for (const s of ['.one', '.other']) assert.ok(texts[l][m[1] + s], `${l}: ${m[1]}${s}`);
+  for (const m of src.matchAll(/\b(?:U\.)?P\('([a-z0-9_.]+)'/g)) for (const l of ['de', 'en']) for (const s of ['.one', '.other']) assert.ok(texts[l][m[1] + s], `${l}: ${m[1]}${s}`);
   for (const s of ['active', 'expired', 'revoked', 'locked', 'used', 'gone', 'ended']) assert.ok(texts.de['p.state_' + s], s);
   for (const s of ['open', 'download', 'zip', 'upload', 'unlock', 'pin_failed', 'locked']) assert.ok(texts.de['p.ev_' + s], s);
   for (const s of ['moved', 'trashed', 'revoked']) assert.ok(texts.de['p.ended_' + s], s);

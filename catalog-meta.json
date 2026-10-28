@@ -2563,13 +2563,13 @@
       "keywords": [
         "dateien",
         "files",
-        "cloud",
+        "tresor",
         "speicher",
         "storage",
         "nas",
         "s3",
         "teilen",
-        "versionen",
+        "office",
         "fotos",
         "alben",
         "zeitreise"
@@ -2588,8 +2588,8 @@
             "en": "Portal tab “Drive”"
           },
           "text": {
-            "de": "Hochladen (auch ganze Ordner), Vorschau, Verschieben, Suche – als Kacheln oder Liste",
-            "en": "Upload (whole folders too), preview, move, search – as tiles or a list"
+            "de": "Hochladen (auch ganze Ordner), Vorschau, Suche, Office im Browser (Collabora, OnlyOffice)",
+            "en": "Upload (whole folders too), preview, search, office in the browser (Collabora, OnlyOffice)"
           }
         },
         {
@@ -2661,12 +2661,12 @@
         {
           "icon": "shield",
           "title": {
-            "de": "Schutz & Admin-Seiten",
-            "en": "Protection & admin pages"
+            "de": "Tresor-Ordner & Schutz",
+            "en": "Vault folders & protection"
           },
           "text": {
-            "de": "Stoppt Erpressungstrojaner mit „Rückgängig machen“; Lizenz, Personen, Team-Ordner und Sicherungshinweis",
-            "en": "Stops ransomware with “Undo”; licence, people, team folders and the backup hint"
+            "de": "Ende-zu-Ende verschlüsselte Tresor-Ordner; stoppt Erpressungstrojaner mit „Rückgängig machen“",
+            "en": "End-to-end encrypted vault folders; stops ransomware with “Undo”"
           }
         }
       ],
@@ -2732,6 +2732,36 @@
           "text": {
             "de": "Erkennt, von welchem eigenen Gerät eine Anfrage kommt – für „Löschen auf allen Geräten“, das Änderungsprotokoll und den Schutz vor Erpressungstrojanern.",
             "en": "Knows which of one’s own devices a request comes from – for “delete on all devices”, the change log and the protection against ransomware."
+          }
+        },
+        {
+          "icon": "network",
+          "title": {
+            "de": "Office-Server im Heimnetz",
+            "en": "Office server in the home network"
+          },
+          "text": {
+            "de": "Liest die Discovery von Collabora Online oder OnlyOffice über ein Zugriffsziel, das der Administrator zuweist – nur für „Im Browser bearbeiten“.",
+            "en": "Reads the discovery of Collabora Online or OnlyOffice through an access target the administrator assigns – only for “Edit in the browser”."
+          },
+          "tag": {
+            "de": "Heimnetz",
+            "en": "Home network"
+          }
+        },
+        {
+          "icon": "link",
+          "title": {
+            "de": "Öffentliche Endpunkte",
+            "en": "Public endpoints"
+          },
+          "text": {
+            "de": "Der Office-Server liest und speichert Dokumente ohne Portal-Anmeldung – nur mit einem kurzlebigen Schlüssel für eine Datei und eine Person (WOPI).",
+            "en": "The office server reads and saves documents without a portal sign-in – only with a short-lived token for one file and one person (WOPI)."
+          },
+          "tag": {
+            "de": "Öffentlich",
+            "en": "Public"
           }
         },
         {

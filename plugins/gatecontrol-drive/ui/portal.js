@@ -22,6 +22,10 @@
  * old versions cleaned up by those who may), "Zeitreise" for a folder (a preview, then back to a time; the result can be
  * undone) and the date a photo was taken on upload (EXIF of a JPEG, else the file's date).
  *
+ * Since 1.9.0: vault folders, end-to-end encrypted (ui/vault.js with ui/vaultcrypto.js: names decrypted here, files
+ * encrypted before GC.upload and decrypted after GC.mediaBytes, the device key in GC.keys — GateControl ≥ 1.211.0);
+ * "Im Browser bearbeiten" for documents while an office server is set up (POST nodes/<id>/office, GC.openTab).
+ *
  * The frame is sandboxed (opaque origin, no storage, no network of its own): everything goes through GC.call /
  * GC.upload. Server and user text only ever goes into textContent or attributes — never innerHTML.
  */
@@ -80,6 +84,9 @@
     clock: 'M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18|M12 7v5l3 2',
     check: 'M5 12l5 5 9-10',
     frame: 'M3 4h18v14H3z|M7 21h10|M7 14l3-3 3 3 2-2 3 3',
+    lock: 'M5 11h14v10H5z|M8 11V8a4 4 0 0 1 8 0v3',
+    key: 'M7 14a4 4 0 1 0 0-8a4 4 0 1 0 0 8|M10.5 11.5L20 21|M16 17l2-2|M18 19l2-2',
+    office: 'M6 3h8l4 4v14H6z|M14 3v4h4|M9 13h6M9 17h4',
   };
 
   function icon(name, size) {
@@ -272,9 +279,12 @@
     links: null,          // GET me links { node, drive } (since 1.6.0) or null
     incidents: [],        // the open incidents of the ransomware protection the banner shows (mine; an admin: everyone's)
     admin: false,         // GET me me.admin: the page "Vorfälle" with everyone's incidents
+    office: false,        // GET me features 'office' (since 1.9.0): "Im Browser bearbeiten"
   };
 
   function areaOf(id) { for (var i = 0; i < S.areas.length; i++) if (S.areas[i].id === id) return S.areas[i]; return null; }
+  /** The name a person sees: a vault's node decrypted (ui/vault.js), else its name. */
+  function nm(n) { return n && n.encrypted && V ? V.nameOf(n) : (n ? n.name : ''); }
   function canWrite() { return !!(S.folder && (S.folder.role === 'write' || S.folder.role === 'manage')); }
 
   // ── screens ──────────────────────────────────────────────
@@ -300,6 +310,7 @@
       S.areas = r.areas || [];
       S.links = r.links || null;
       S.admin = !!r.me.admin;
+      S.office = (r.features || []).indexOf('office') >= 0;
       S.incidents = (r.incidents || []).slice();
       $('dp-msg').hidden = true;
       $('dp-app').hidden = false;
@@ -398,7 +409,8 @@
     var parts = S.folder.crumbs.concat([{ id: S.folder.id, name: S.folder.name }]);
     parts.forEach(function (x, i) {
       if (i) c.appendChild(h('span', { class: 'dp-sep', text: '›', attrs: { 'aria-hidden': 'true' } }));
-      var label = i === 0 ? (a ? a.label : '') : x.name;
+      // in a vault: the decrypted names (an opaque one not decrypted yet: the placeholder)
+      var label = i === 0 ? (a ? a.label : '') : (V && S.folder.encrypted ? (V.cached(x.id) || (/^[0-9a-f]{32}$/.test(x.name) ? T('p.v.locked_name') : x.name)) : x.name);
       var last = i === parts.length - 1;
       c.appendChild(h('button', { type: 'button', text: label, attrs: { 'aria-current': last ? 'page' : null }, on: { click: last ? null : function () { openFolder(S.areaId, x.id); } } }));
     });
@@ -414,10 +426,15 @@
       [['name:asc', T('p.sort_name')], ['updated:desc', T('p.sort_new')], ['size:desc', T('p.sort_size')]].map(function (o) { return h('option', { value: o[0], text: o[1], selected: o[0] === S.sort + ':' + S.order }); }));
     sel.style.width = 'auto';
     t.appendChild(sel);
+    var vault = S.folder && S.folder.encrypted;
+    // a vault this browser cannot open: nothing to do here but the lock screen
+    if (vault && !(V && V.keysOf(S.folder.vaultId))) return;
     if (canWrite()) {
       t.appendChild(btn(T('p.tt'), function () { timeTravel(S.folder); }, { icon: 'clock' }));
-      t.appendChild(btn(T('p.new_folder'), newFolder, { icon: 'plus' }));
-      t.appendChild(btn(T('p.upload_folder'), function () { $('dp-dir').click(); }, { icon: 'folderUp' }));
+      // a vault folder (since 1.9.0): not inside another one
+      if (!vault && V) t.appendChild(btn(T('p.v.new'), function () { V.create(S.folder); }, { icon: 'lock' }));
+      t.appendChild(btn(T('p.new_folder'), vault ? function () { V.newFolder(S.folder); } : newFolder, { icon: 'plus' }));
+      if (!vault) t.appendChild(btn(T('p.upload_folder'), function () { $('dp-dir').click(); }, { icon: 'folderUp' }));
       t.appendChild(btn(T('p.upload'), function () { $('dp-file').click(); }, { icon: 'upload', primary: true }));
     }
   }
@@ -433,6 +450,9 @@
       api('GET', 'nodes/' + folderId),
       api('GET', 'nodes/' + folderId + '/children', null, { sort: S.sort, order: S.order, limit: PAGE, thumbs: 1 }),
     ]).then(function (r) {
+      // a vault's folder (or vault folders in it): unlock and decrypt the names first
+      return (V ? V.prepare(r[0].node, r[1].items || []) : Promise.resolve()).then(function () { return r; });
+    }).then(function (r) {
       if (seq !== S.seq) return;
       S.folder = r[0].node;
       S.items = r[1].items || [];
@@ -453,6 +473,8 @@
   function loadMore() {
     if (S.next == null || !S.folder) return;
     api('GET', 'nodes/' + S.folder.id + '/children', null, { sort: S.sort, order: S.order, limit: PAGE, offset: S.next, thumbs: 1 }).then(function (r) {
+      return (V ? V.prepare(S.folder, r.items || []) : Promise.resolve()).then(function () { return r; });
+    }).then(function (r) {
       S.items = S.items.concat(r.items || []);
       S.next = r.next;
       renderMain();
@@ -464,6 +486,9 @@
   function renderMain() {
     var main = $('dp-main');
     clear(main);
+    // a vault (since 1.9.0): its lock screen while this browser cannot open it; requests and a new key above the list
+    if (S.page === 'files' && V && V.renderLocked(main)) return;
+    if (S.page === 'files' && V) V.banner(main);
     if (S.page === 'files' && S.folder && S.folder.role === 'read' && areaOf(S.areaId) && areaOf(S.areaId).via === 'parent') {
       main.appendChild(h('div', { class: 'dp-note' }, [icon('info'), h('span', { text: T('p.parent_note') })]));
     }
@@ -503,18 +528,19 @@
   function gridOf(items) {
     var g = h('div', { class: 'dp-grid', attrs: { role: 'list' } });
     items.forEach(function (n) {
-      var thumb = h('div', { class: 'dp-thumb' }, [picOf(n, 34)]);
-      var ext = extOf(n.name);
+      var thumb = h('div', { class: 'dp-thumb' }, [picOf(n, 34), n.encrypted ? h('span', { class: 'dp-lockb' }, icon('lock', 12)) : null]);
+      var name = nm(n);
+      var ext = extOf(name);
       g.appendChild(h('div', { class: 'dp-card', attrs: { role: 'listitem', 'data-node': String(n.id) } }, [
-        h('button', { type: 'button', class: 'dp-open', on: { click: function () { openNode(n); } }, attrs: { 'aria-label': n.name } }, [
+        h('button', { type: 'button', class: 'dp-open', on: { click: function () { openNode(n); } }, attrs: { 'aria-label': name } }, [
           thumb,
           h('div', { class: 'dp-card-tx' }, [
-            h('span', { class: 'dp-name', text: n.name, attrs: { title: n.name } }),
+            h('span', { class: 'dp-name', text: name, attrs: { title: name } }),
             h('span', { class: 'dp-meta' }, [!n.isDir && ext ? h('span', { class: 'dp-badge', text: ext }) : null, ' ', metaOf(n)]),
             markOf(n),
           ]),
         ]),
-        ibtn('more', T('p.actions_for', { name: n.name }), function () { actions(n); }, { cls: 'dp-more' }),
+        ibtn('more', T('p.actions_for', { name: name }), function () { actions(n); }, { cls: 'dp-more' }),
       ]));
     });
     return g;
@@ -527,13 +553,14 @@
       h('span', { class: 'dp-num dp-right', text: T('p.col_size'), attrs: { role: 'columnheader' } }), h('span'),
     ]));
     items.forEach(function (n) {
-      var ic = h('span', { class: 'dp-ic' }, [picOf(n)]);
+      var ic = h('span', { class: 'dp-ic' }, [n.encrypted && n.isDir ? icon('lock') : picOf(n)]);
+      var name = nm(n);
       l.appendChild(h('div', { class: 'dp-row', attrs: { role: 'row', 'data-node': String(n.id) } }, [
-        h('button', { type: 'button', class: 'dp-open', on: { click: function () { openNode(n); } } }, [ic, h('span', { class: 'dp-name', text: n.name, attrs: { title: n.name } }),
+        h('button', { type: 'button', class: 'dp-open', on: { click: function () { openNode(n); } } }, [ic, h('span', { class: 'dp-name', text: name, attrs: { title: name } }),
           n.path && S.page === 'search' ? h('span', { class: 'dp-meta', text: n.path }) : null, markOf(n)]),
         h('span', { class: 'dp-num', text: fmtDate(n.mtime || n.updatedAt) }),
         h('span', { class: 'dp-num dp-right', text: n.isDir ? '—' : fmtSize(n.size) }),
-        ibtn('more', T('p.actions_for', { name: n.name }), function () { actions(n); }),
+        ibtn('more', T('p.actions_for', { name: name }), function () { actions(n); }),
       ]));
     });
     return l;
@@ -541,6 +568,8 @@
 
   function openNode(n) {
     if (n.isDir) { $('dp-q').value = ''; openFolder(n.areaId, n.id); return; }
+    // a vault's file: decrypted here, then downloaded (no preview — the server has none, the frame shows no blob:)
+    if (n.encrypted && V) { V.download(n); return; }
     preview(n);
   }
 
@@ -601,9 +630,12 @@
     var k = kindOf(n);
     var items = [];
     var item = function (ic, label, fn, danger) { items.push(h('button', { type: 'button', class: danger ? 'is-danger' : '', on: { click: function () { closeDialog(); fn(); } } }, [icon(ic), h('span', { text: label })])); };
+    if (n.encrypted) { vaultActions(n, write, item); return; }
     if (n.isDir) item('folder', T('p.open'), function () { openNode(n); });
     else if (k === 'image' || k === 'video' || k === 'audio') item('eye', T('p.preview'), function () { preview(n); });
     if (!n.isDir) item('download', T('p.download'), function () { download(n); });
+    // office in the browser (since 1.9.0): documents, while an office server is set up
+    if (!n.isDir && S.office && OFFICE_RE.test(n.name)) item('office', T(write ? 'p.office_edit' : 'p.office_view'), function () { openOffice(n); });
     if (S.page === 'search') item('folder', T('p.show_in_folder'), function () { $('dp-q').value = ''; openFolder(n.areaId, n.parentId); });
     // an empty file has nothing to share (no media object, since 1.5.0)
     if (write && (n.isDir || n.mediaId)) item('share', T('p.share'), function () { share(n); });
@@ -617,6 +649,35 @@
     dialog(n.name, [n.deleteAt ? h('div', { class: 'dp-note' }, [icon('info'), h('span', { text: markText(n) })]) : null, h('div', { class: 'dp-menu' }, items)],
       { sub: n.isDir ? T('p.folder') : fmtSize(n.size) + ' · ' + fmtDate(n.mtime || n.updatedAt) });
   }
+  /** The menu of a vault's node: open / download (decrypted here), rename, versions, the trash — nothing shared. */
+  function vaultActions(n, write, item) {
+    var unlocked = !!(V && V.keysOf(n.vaultId));
+    if (n.isDir) item('folder', T('p.open'), function () { openNode(n); });
+    else if (unlocked) item('download', T('p.download'), function () { V.download(n); });
+    if (S.links && S.links.node) item('link', T('p.copy_link'), function () { copyText(nodeLink(n.id)); });
+    if (write && unlocked) item('edit', T('p.rename'), function () { V.rename(n); });
+    if (!n.isDir && unlocked) item('history', T('p.versions'), function () { versions(n); });
+    if (write) item('trash', T('p.to_trash'), function () { toTrash(n); }, true);
+    dialog(nm(n), [h('div', { class: 'dp-note' }, [icon('lock'), h('span', { text: T('p.v.node_note') })]), h('div', { class: 'dp-menu' }, items)],
+      { sub: n.isDir ? T('p.folder') : fmtSize(n.size) + ' · ' + fmtDate(n.mtime || n.updatedAt) });
+  }
+
+  // office in the browser (since 1.9.0): the types the office server opens
+  var OFFICE_RE = /\.(docx|xlsx|pptx|odt|ods|odp|csv|doc|xls|ppt|rtf)$/i;
+  /** "Im Browser bearbeiten": a new tab with the office editor (GC.openTab — during the click; else a button). */
+  function openOffice(n) {
+    api('POST', 'nodes/' + n.id + '/office').then(function (r) {
+      if (!window.GC || typeof window.GC.openTab !== 'function') throw codeErr('office_unavailable');
+      return window.GC.openTab(r.url).then(function (x) {
+        if (x && x.ok) return;
+        // the click's moment has passed: one more click opens it
+        dialog(T('p.office_title'), [h('p', { class: 'dp-hint', text: T('p.office_click') }), h('div', { class: 'dp-actions' }, [btn(T('p.office_open'), function () {
+          window.GC.openTab(r.url).then(function (y) { if (y && y.ok) closeDialog(); else toast(T('err.office_unavailable'), 'error'); });
+        }, { primary: true, icon: 'office' })])]);
+      });
+    }).catch(fail);
+  }
+
   /** "Behalten": the mark ends — the file stays (PATCH { deleteAt: null }). */
   function keep(n) {
     api('PATCH', 'nodes/' + n.id, { deleteAt: null }).then(function () { reload(); toast(T('p.kept', { name: n.name })); }, fail);
@@ -641,9 +702,9 @@
     var everywhere = h('input', { type: 'checkbox' });
     var extra = S.meDevices > 0 ? [h('label', { class: 'dp-check' }, [everywhere, h('span', { text: P('p.everywhere', S.meDevices) })]),
       h('p', { class: 'dp-hint', text: T('p.everywhere_hint') })] : null;
-    confirmDialog(T('p.to_trash'), T(n.isDir ? 'p.to_trash_folder' : 'p.to_trash_file', { name: n.name, days: (S.meSettings && S.meSettings.trashDays) || 30 }), T('p.to_trash'), function () {
+    confirmDialog(T('p.to_trash'), T(n.isDir ? 'p.to_trash_folder' : 'p.to_trash_file', { name: nm(n), days: (S.meSettings && S.meSettings.trashDays) || 30 }), T('p.to_trash'), function () {
       var all = !!(extra && everywhere.checked);
-      return api('DELETE', 'nodes/' + n.id, null, all ? { everywhere: 1 } : null).then(function () { reload(); loadStorage(); toast(T(all ? 'p.trashed_everywhere' : 'p.trashed', { name: n.name })); });
+      return api('DELETE', 'nodes/' + n.id, null, all ? { everywhere: 1 } : null).then(function () { reload(); loadStorage(); toast(T(all ? 'p.trashed_everywhere' : 'p.trashed', { name: nm(n) })); });
     }, true, extra);
   }
 
@@ -720,14 +781,14 @@
         return h('tr', null, [
           h('td', { text: fmtDate(v.at) }), h('td', { text: v.by != null ? personName(v.by) : T('p.nas') }), h('td', { class: 'dp-num', text: fmtSize(v.size) }),
           h('td', { class: 'dp-right' }, [
-            btn(T('p.open'), function () { api('GET', 'nodes/' + n.id + '/versions/' + v.id + '/content').then(function (c) { if (/^(image|video|audio)\//.test(String(c.mime || ''))) preview(n, c); else { var a = h('a', { attrs: { href: c.url, download: n.name } }); document.body.appendChild(a); a.click(); document.body.removeChild(a); } }, fail); }, { small: true }),
+            btn(T('p.open'), function () { api('GET', 'nodes/' + n.id + '/versions/' + v.id + '/content').then(function (c) { if (n.encrypted && V) V.download(n, c); else if (/^(image|video|audio)\//.test(String(c.mime || ''))) preview(n, c); else { var a = h('a', { attrs: { href: c.url, download: n.name } }); document.body.appendChild(a); a.click(); document.body.removeChild(a); } }, fail); }, { small: true }),
             write ? btn(T('p.restore'), function () { api('POST', 'nodes/' + n.id + '/versions/' + v.id + '/restore').then(function () { closeDialog(); reload(); toast(T('p.version_restored')); }, fail); }, { small: true }) : null,
             write ? btn(T('p.delete'), function () { api('DELETE', 'nodes/' + n.id + '/versions/' + v.id).then(function () { versions(n); }, fail); }, { small: true, danger: true }) : null,
           ]),
         ]);
       });
       var cur = r.current;
-      dialog(T('p.versions_of', { name: n.name }), [
+      dialog(T('p.versions_of', { name: nm(n) }), [
         h('p', { class: 'dp-hint', text: T('p.current_version', { date: fmtDate(cur.updatedAt), size: fmtSize(cur.size), who: personName(cur.updatedBy) || T('p.nas') }) }),
         rows.length ? h('div', { attrs: { style: 'overflow-x:auto' } }, h('table', { class: 'dp-table' }, [h('thead', null, h('tr', null, [h('th', { text: T('p.col_changed') }), h('th', { text: T('p.col_by') }), h('th', { text: T('p.col_size') }), h('th')])), h('tbody', null, rows)]))
           : h('p', { class: 'dp-hint', text: T('p.no_versions') }),
@@ -860,6 +921,8 @@
     var main = $('dp-main');
     clear(main);
     api('GET', 'trash').then(function (r) {
+      return (V ? V.names(r.items || []) : Promise.resolve()).then(function () { return r; });
+    }).then(function (r) {
       if (S.page !== 'trash') return;
       clear(main);
       var items = r.items || [];
@@ -870,12 +933,12 @@
         var a = areaOf(n.areaId);
         l.appendChild(h('div', { class: 'dp-row', attrs: { style: 'grid-template-columns:minmax(0,1fr) auto' } }, [
           h('div', { attrs: { style: 'display:flex;gap:10px;align-items:center;min-width:0' } }, [h('span', { class: 'dp-ic' }, icon(KIND_ICON[kindOf(n)])),
-            h('div', { attrs: { style: 'display:flex;flex-direction:column;min-width:0' } }, [h('span', { class: 'dp-name', text: n.name }),
+            h('div', { attrs: { style: 'display:flex;flex-direction:column;min-width:0' } }, [h('span', { class: 'dp-name', text: nm(n) }),
               h('span', { class: 'dp-meta', text: [(a ? a.label : '') + (n.from ? ' › ' + n.from : ''), T('p.deleted_at', { date: fmtDate(n.deletedAt), who: personName(n.deletedBy) }), n.isDir ? P('p.files_n', n.files || 0) : fmtSize(n.size)].join(' · ') })])]),
           h('div', { class: 'dp-actions' }, [
-            btn(T('p.restore'), function () { api('POST', 'trash/' + n.id + '/restore').then(function () { toast(T('p.restored', { name: n.name })); showTrash(); loadStorage(); }, fail); }, { small: true, icon: 'restore' }),
+            btn(T('p.restore'), function () { api('POST', 'trash/' + n.id + '/restore').then(function () { toast(T('p.restored', { name: nm(n) })); showTrash(); loadStorage(); }, fail); }, { small: true, icon: 'restore' }),
             btn(T('p.delete_forever'), function () {
-              confirmDialog(T('p.delete_forever'), T('p.delete_forever_text', { name: n.name }), T('p.delete_forever'), function () {
+              confirmDialog(T('p.delete_forever'), T('p.delete_forever_text', { name: nm(n) }), T('p.delete_forever'), function () {
                 return api('DELETE', 'trash/' + n.id).then(function () { showTrash(); loadStorage(); });
               }, true);
             }, { small: true, danger: true }),
@@ -1005,7 +1068,14 @@
   }
 
   function enqueue(list) {
-    var target = { areaId: S.areaId, folderId: S.folder.id };
+    var target = { areaId: S.areaId, folderId: S.folder.id, vaultId: S.folder.encrypted ? S.folder.vaultId : null };
+    // a vault: files only (folders of files are made in the apps)
+    if (target.vaultId) {
+      var flat = list.filter(function (x) { return x.file && !x.dirs.length; });
+      if (flat.length < list.length) toast(T('p.v.no_folders'), 'error');
+      list = flat;
+      if (!list.length) return;
+    }
     list.forEach(function (x) { S.uploads.push({ file: x.file, dirs: x.dirs, target: target, state: 'waiting', loaded: 0, error: null }); });
     S.conflictAll = null;
     renderUploads();
@@ -1044,6 +1114,12 @@
     var done = function () { S.uploading = false; renderUploads(); pump(); };
     folderFor(u.target, u.dirs).then(function (parentId) {
       u.parentId = parentId;
+      // into a vault (since 1.9.0): encrypted here, the encrypted name with the commit (ui/vault.js)
+      if (u.target.vaultId) {
+        if (!V) throw codeErr('vault_locked');
+        u.vaultId = u.target.vaultId;
+        return V.upload(u, askConflict).then(function (r) { return { folder: true, result: r }; });
+      }
       // an empty folder: made, nothing to upload
       if (!u.file) return { folder: true };
       // an empty file: GateControl's upload takes no empty body — the commit makes it (since 1.5.0)
@@ -1051,7 +1127,7 @@
       if (!window.GC || typeof window.GC.upload !== 'function') throw codeErr('upload_unsupported');
       return takenOf(u.file).then(function (t) { u.takenAt = t; }).then(function () { return window.GC.upload(u.file, { onProgress: function (p) { u.loaded = p && p.loaded ? p.loaded : 0; renderUploads(); } }); });
     }).then(function (up) {
-      if (up && up.folder) return 'done';
+      if (up && up.folder) return up.result || 'done';
       u.mediaId = up.mediaId;
       return commit(u, null);
     }).then(function (r) {
@@ -1847,11 +1923,20 @@
         if (S.page === 'incidents') showIncidents();
         return;
       }
+      // vault folders (since 1.9.0): a device asks, was approved, a new key
+      if (ev && ev.type === 'vault') { if (V) V.onEvent(d); return; }
       if (!ev || ev.type !== 'changed' || !d || !Array.isArray(d.areas)) return;
       if (S.page === 'files' && d.areas.indexOf(S.areaId) >= 0 && !S.uploading) scheduleReload();
       else if (S.page === 'trash') showTrash();
     });
   }
+
+  // vault folders (ui/vault.js, since 1.9.0): its helpers from here
+  var V = window.DriveVault ? window.DriveVault.attach({
+    CTX: CTX, S: S, T: T, P: P, h: h, icon: icon, btn: btn, api: api, dialog: dialog, closeDialog: closeDialog, askName: askName, toast: toast,
+    fail: fail, errText: errText, copyText: copyText, fmtDate: fmtDate, personName: personName, canWrite: canWrite, reload: reload,
+    renderMain: renderMain, renderUploads: renderUploads,
+  }) : null;
 
   boot();
 }());

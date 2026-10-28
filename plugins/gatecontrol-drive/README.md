@@ -15,7 +15,9 @@ to its path, the NAS journal and the hook `mediaChanged`), `gc.license.info` (ti
 `media.previews` (since 1.1.0: previews of files, `gc.media.previews`), `permissions.devices` (since 1.2.0: the asking
 device of an app request, `user.device` — GateControl passes it only with this permission; see "Delete on all
 devices"; since 1.6.0 also the device the ransomware protection watches and stops). The photo frame on kiosk devices
-(since 1.7.0) shows pictures only with GateControl ≥ 1.210.0 (preview-only URLs); everything else works with 1.208.0.
+(since 1.7.0) shows pictures only with GateControl ≥ 1.210.0 (preview-only URLs); vault folders in the portal (since
+1.9.0: `GC.keys`, `GC.mediaBytes`) and office in the browser (`permissions.publicEndpoints`, `GC.openTab`) need
+GateControl ≥ 1.211.0 — the apps use vaults with 1.208.0; everything else works with 1.208.0.
 
 ## Areas and rights
 
@@ -51,7 +53,7 @@ reaches `GET frame` (the photo frame, since 1.7.0) and nothing else (`403 forbid
 
 | Route | Body / query | Answer |
 |---|---|---|
-| `GET me` | | `me { id, name, seat, deviceId, admin }`, `licence { valid, tier }`, `areas`, `latest` (change log seq), `settings`, `limits { maxBytes }`, `wipes` (entries this device has yet to handle, since 1.2.0), `devices` (my devices a new wipe reaches), `features` (since 1.5.0: `['previews', 'wipes', 'textSearch', 'devices', 'deleteAfter', 'emptyFiles']`, since 1.6.0 also `'links'`, `'guard'`, since 1.7.0 `'timeTravel'`, `'takenAt'`, `'photos'`, `'albums'`, `'frame'`, `'storage'`), `links { node, drive } \| null` (since 1.6.0, see "Direct links"), `guard { on, locked, incident }` and `incidents` (since 1.6.0, see "Ransomware protection") |
+| `GET me` | | `me { id, name, seat, deviceId, admin }`, `licence { valid, tier }`, `areas`, `latest` (change log seq), `settings`, `limits { maxBytes }`, `wipes` (entries this device has yet to handle, since 1.2.0), `devices` (my devices a new wipe reaches), `features` (since 1.5.0: `['previews', 'wipes', 'textSearch', 'devices', 'deleteAfter', 'emptyFiles']`, since 1.6.0 also `'links'`, `'guard'`, since 1.7.0 `'timeTravel'`, `'takenAt'`, `'photos'`, `'albums'`, `'frame'`, `'storage'`, since 1.9.0 `'vault'` and — while set up — `'office'`), `links { node, drive } \| null` (since 1.6.0, see "Direct links"), `guard { on, locked, incident }` and `incidents` (since 1.6.0, see "Ransomware protection") |
 | `GET areas` | | `areas [{ id, kind, label, role, via, rootId, owner, archived, storage { bytes, quota, form, target, state } }]` |
 | `GET nodes/<id>` | | `node` + `path`, `role`, `crumbs [{ id, name }]` |
 | `GET nodes/<id>/children` | `sort=name\|mtime\|size\|updated`, `order`, `offset`, `limit` (≤ 1000) | `items` (folders first), `total`, `next`, `role` |
@@ -67,7 +69,7 @@ reaches `GET frame` (the photo frame, since 1.7.0) and nothing else (`403 forbid
 | `POST nodes/<id>/versions/<vid>/restore` | | `node` — the version is current again, the current bytes become a version |
 | `DELETE nodes/<id>/versions/<vid>` | | `{ id }` |
 | `POST uploads/check` | `{ parentId, name, sha256?, size? }` | `{ exists, same, node }` — `same`: no need to upload (two empty files are the same, also without `sha256`) |
-| `POST uploads/commit` | `{ mediaId, parentId, name, baseRev?, mtime?, onConflict?: 'rename' \| 'version', text?, entropy?, takenAt? }` — `takenAt` (since 1.7.0): when the picture or video was taken, ISO-8601 or ms (else `400 invalid`, `field: 'takenAt'`; more than a day ahead or before 1900: ignored); — `text`: recognised text of a scan (≤ 100 000 characters, searchable); an empty file (since 1.5.0): `{ parentId, name, size: 0, mime?, sha256?, … }` without `mediaId`; `entropy` (since 1.6.0, optional): how random the device found the bytes, 0–8 bits per byte (else `400 invalid`, `field: 'entropy'`) | `{ node, created }` |
+| `POST uploads/commit` | `{ mediaId, parentId, name, baseRev?, mtime?, onConflict?: 'rename' \| 'version', text?, entropy?, takenAt? }` — `takenAt` (since 1.7.0): when the picture or video was taken, ISO-8601 or ms (else `400 invalid`, `field: 'takenAt'`; more than a day ahead or before 1900: ignored); — `text`: recognised text of a scan (≤ 100 000 characters, searchable); an empty file (since 1.5.0): `{ parentId, name, size: 0, mime?, sha256?, … }` without `mediaId`; `entropy` (since 1.6.0, optional): how random the device found the bytes, 0–8 bits per byte (else `400 invalid`, `field: 'entropy'`); into a vault (since 1.9.0): `{ mediaId, parentId, encrypted: true, nameCipher, keyVersion, name?, … }` — see "Vault folders" | `{ node, created }` |
 | `GET changes` | `since`, `limit` (≤ 1000) | `{ changes [{ seq, op, areaId, nodeId, at, by, device, node }], next, more }` |
 | `GET trash` | `area?` | `items` (the deleted node with `from`, folders with `size`, `files`) |
 | `POST trash/<id>/restore` | | `node` (a free name; the area's top when its folder is gone) |
@@ -89,6 +91,8 @@ reaches `GET frame` (the photo frame, since 1.7.0) and nothing else (`403 forbid
 | `POST guard/incidents/<id>/undo` | | `{ incident, restored, trashed, failed }` — every file back to how it was before, then released |
 | `GET nodes/<id>/timetravel` | `at` (ISO or ms, before now) (since 1.7.0) | `{ at, historySince, restore, revert, trash, move, sample [{ op, name, path }] (≤ 20), limited, lost, ops, max }` — the preview, changes nothing (see "Time travel") |
 | `POST nodes/<id>/timetravel` | `{ at }` | `{ at, before, restored, reverted, trashed, moved, failed, lost }` |
+| `POST nodes/<id>/office` | | since 1.9.0: `{ url, mode, expiresAt }` — see "Office in the browser" |
+| `GET\|POST vaults`, `vaults/<id>/…` | | since 1.9.0 — see "Vault folders" |
 | `GET photos` | `area?`, `before?` (ISO), `limit?` (≤ 200, default 100) (since 1.7.0) | `{ items [photo], next }` (see "Photos and albums") |
 | `GET photos/months` | `area?` | `{ months [{ month: 'YYYY-MM', count }] }` |
 | `GET photos/memories` | `date?` (YYYY-MM-DD) | `{ date, groups [{ yearsAgo, date, items [photo] }] }` |
@@ -401,6 +405,153 @@ each (oldest first). Cleaning up is `DELETE nodes/<id>`. `POST storage/versions/
 the area keeps its newest `keep` versions; administrators (any area) and managers of the area (`403`); what the
 ransomware protection or a time travel still needs stays; ≤ 2000 a call (`more`).
 
+## Vault folders (Tresor-Ordner, since 1.9.0, feature `vault`)
+
+A vault is a folder whose **contents and names are encrypted on the devices** (end-to-end). The server (`server/vault.js`)
+keeps ciphertext, sizes, times, public keys and wrapped keys only — never a name, a content or a key it could read
+(`test/vault.test.js` searches every table, the kv store, every media file, the pushes, events and logs for them).
+Who may use a vault: whoever reads its area (see "Areas and rights"); write rights as in the area.
+
+What a vault does **not** have: previews (`preview: null`), recognised text (`text` of a commit is dropped), search
+(its nodes are never found), public links (`409 encrypted` for the vault, anything in it and every folder holding one;
+a folder link of a folder a vault is made in ends — `endedWhy: 'vault'`),
+albums and the photo frame, office in the browser (`409 encrypted`), the type of a file (always
+`application/octet-stream`), `takenAt`, the entropy hint of the ransomware protection (a vault's files are random by
+design; the protection still counts overwrites, renames and deletes). What works as everywhere: versions, the trash,
+the time travel (also an encrypted name of then), the change log, the NAS (opaque names, ciphertext), quotas.
+
+### API
+
+```
+POST   vaults                     { id, parentId, nameCipher, recoveryPub, recoveryAuth, recoveryWrap, device: { publicKey, name?, platform? }, wrap }
+                                  → { vault, node } — id: 22 characters base64url the device chose (16 random bytes);
+                                    not inside another vault; the creating device approved with the wrap of key version 1
+GET    vaults                     → { vaults: [Vault] } — the vaults of the areas the person reads (not in the trash)
+GET    vaults/<id>                → { vault }
+GET    vaults/<id>/keys?deviceId= → { deviceId, state: 'approved'|'pending'|'revoked', keyVersion, keys: [{ keyVersion, wrap }] }
+                                    — one of the person's own devices only (another's: 404); keys only when approved
+GET    vaults/<id>/recovery       → { recoveryPub, keyVersion, keys: [{ keyVersion, wrap }] } — the recovery key's wraps
+PUT    vaults/<id>/recovery       { pub, auth, wraps: [{ keyVersion, wrap }] (every version) } → { vault } — a new recovery key
+                                    (write right and an approved device; the person becomes its holder)
+GET    vaults/<id>/devices        → { devices: [Device] } — every device of the vault, with its public key (to approve)
+POST   vaults/<id>/devices        { publicKey, name?, platform? } → { device } — a device of the person asks (pending; an
+                                    approved one stays approved). The people with an approved device get the push
+                                    topic `vault` and the live event `vault` { vault, event: 'request', device }
+POST   vaults/<id>/devices/<deviceId>/approve  { wraps: [{ keyVersion, wrap }] } or { wrap } (the current version only),
+                                    via?: 'recovery', recoveryAuth?
+                                  → { device } — at least the current version (better: every version the approver has,
+                                    so older files open too). Who: a person with an approved device of this vault, or —
+                                    for their own device only — the person with the recovery key (via 'recovery' and its
+                                    proof recoveryAuth; a wrong one: 403 { reason: 'recovery_auth' }). Live event 'approved'
+DELETE vaults/<id>/devices/<deviceId>  → { device } — declined / removed (its wraps go; an approved one: needsRotation).
+                                    The device's person, anyone with an approved device for a request, another
+                                    person's approved device only with the write right
+POST   vaults/<id>/rotate         { keyVersion: current + 1, wraps: [{ deviceId, wrap }] — exactly every approved device,
+                                    recoveryWrap | recovery: { pub, auth, wraps: [{ keyVersion, wrap }] (every version) } }
+                                  → { vault } — write right and an approved device. 409 { devices } when the list does not
+                                    match, 409 { keyVersion } for another version, 409 { reason: 'recovery_required' }
+                                    when the holder of the recovery key no longer reads the area (then `recovery`)
+
+Vault  = { id, nodeId, areaId, parentId, nameCipher, keyVersion, recoveryPub, recoveryHolder, needsRotation, createdAt,
+           createdBy, rotatedAt, myDevices: [{ deviceId, state, name }], pending (requests an approved device of mine
+           can answer, else 0) }
+Device = { deviceId, userId, name, platform, publicKey, state, via: 'create'|'device'|'recovery'|null, createdAt,
+           approvedAt, approvedBy, revokedAt }
+```
+
+Nodes of a vault (its folder and everything below) carry `encrypted: true`, `vaultId`, `nameCipher`, `keyVersion` (of
+the content; `null` after a version was restored — the content's header says it); their `name` is opaque (32 hex
+characters, also the file name on a NAS). In a vault:
+
+* `POST nodes { parentId, encrypted: true, nameCipher, keyVersion }` — a folder;
+* `POST uploads/commit { mediaId, parentId, encrypted: true, nameCipher, keyVersion, mtime? }` — a file (the upload is
+  the ciphertext, any type); a new version of a file: `{ …, name: <its opaque name>, baseRev | onConflict: 'version' }`
+  (`nameCipher` optional then). An encrypted file is never empty (its header), so `size: 0` without `mediaId` is
+  refused;
+* `PATCH nodes/<id> { nameCipher }` renames, `{ parentId }` moves within the same vault (the vault's folder: within
+  its area);
+* `keyVersion` (and the version in `nameCipher`) must be the vault's current one: `409 { code: 'conflict', reason:
+  'stale_key', keyVersion }` — fetch the keys again (after a rotation);
+* refused with `400 { field }`: a plain node in a vault, `encrypted` outside one, a `name` that is not opaque, moving
+  anything into or out of a vault, a vault inside a vault, a vault (or a folder holding one) into another area.
+
+A device of someone who no longer reads the area (a person left the family or the team, a parent may no longer look
+in) is revoked on the next request about the vault — its wraps are deleted, `needsRotation` turns on. The rotation
+gives new files the new key; older files stay readable for those who had the old one (every device keeps every
+version it got). A file whose folder is gone comes back from the trash into the vault's folder (`409 { reason:
+'vault_trashed' }` while that is in the trash too); purging the vault's folder deletes its keys.
+
+### Kryptografie (the format every client builds)
+
+Reference: `ui/vaultcrypto.js` (WebCrypto only); fixed vectors `test/vault-vectors.json` (inputs and outputs, never
+changed — a new format gets a new version byte); `test/vault.test.js` reads them with a second implementation using
+only Node's `crypto` — the way Android (Keystore + Tink or JCA) and Windows (Node `crypto` + safeStorage) build it.
+All strings UTF-8, integers big-endian, binary fields **base64url without padding**. HKDF is HKDF-SHA256 (RFC 5869);
+"salt empty" = 32 zero bytes. AES-GCM always with a 16-byte tag.
+
+| Item | Definition |
+|---|---|
+| Device key | X25519 key pair per device. Portal: WebCrypto, private key **not extractable**, kept by GateControl's page (`GC.keys`, name `drive-device-<userId>`); Android: Keystore (e.g. the X25519 private key wrapped with a Keystore AES-GCM key, or Tink's Android keyset manager); Windows: DPAPI / `safeStorage`. `publicKey` = the raw 32 bytes |
+| Device id | `base64url(SHA-256("gcdrive-v1:device:" ‖ publicKey)[0..16])` (22 characters) — the server computes the same |
+| Safety number | `SHA-256("gcdrive-v1:fingerprint:" ‖ publicKey)`: the first 16 bytes as 4 uint32, each `mod 100000`, zero-padded to 5 digits, joined by spaces — `44626 75008 87340 28578`. Both devices show it; approve only when equal |
+| Vault id | 16 random bytes, base64url (22 characters), chosen by the creating device |
+| Vault key TK | 32 random bytes per vault and **key version** (1, 2, …; a rotation adds one) |
+| `wrap` | `0x01 ‖ enc (32) ‖ ct (48)` = 81 bytes. HPKE (RFC 9180) mode base, suite DHKEM(X25519, HKDF-SHA256) `0x0020`, HKDF-SHA256 `0x0001`, AES-256-GCM `0x0002`; single-shot `Seal(pkR, info, aad = "", pt = TK)`, `info = "gcdrive-v1:tk:<vaultId>:<keyVersion>"`. Tink: `HybridEncrypt` with these HPKE parameters, output prefix RAW, contextInfo = info; strip / add the 0x01 |
+| `nameCipher` | `0x01 ‖ keyVersion (uint32) ‖ nonce (12, random) ‖ AES-256-GCM(nameKey, nonce, aad = the first 5 bytes, plaintext = pad(name))`; `nameKey = HKDF(TK, salt empty, info "gcdrive-v1:name:<vaultId>", 32)`; `pad`: the name in Unicode NFC as UTF-8, then `0x80`, then `0x00` up to a multiple of 32 bytes (unpad: drop trailing zeros, expect 0x80). 65 … 1057 bytes |
+| Content | Header (29 bytes) `"GCDV" ‖ 0x01 ‖ keyVersion (uint32) ‖ chunkSize (uint32, 1048576; readers accept 1 KiB … 16 MiB) ‖ salt (16, random)`, then the chunks: the plaintext in pieces of `chunkSize` (the last shorter; an empty file is one empty chunk; a size that is a multiple has no extra empty chunk), chunk *i* = `AES-256-GCM(fileKey, nonce = 0^8 ‖ uint32(i), aad = header ‖ uint32(i) ‖ (last ? 0x01 : 0x00), piece)`; `fileKey = HKDF(TK, salt = the header's salt, info "gcdrive-v1:content:<vaultId>", 32)`. Size = 29 + plaintext + 16 × max(1, ⌈plaintext / chunkSize⌉). Reading: any range of whole chunks |
+| Recovery key | 32 random bytes, shown once as Crockford base32 of `key ‖ BLAKE2b-256(key)[0..3]` — 56 characters in 14 groups of 4 joined by `-` (the format of the Vault plugin: accept lower case, spaces, dashes, `O` = `0`, `I`/`L` = `1`; a wrong check refuses it). Its X25519 private key = `HKDF(key, salt empty, info "gcdrive-v1:recovery", 32)` (clamped by X25519); `recoveryPub` its public key. The vault key of every version is wrapped for it like for a device (`recoveryWrap`, device id `recovery` on the server). Its proof `recoveryAuth` = base64url(`HKDF(key, salt empty, info "gcdrive-v1:recovery-auth", 32)`) — the server keeps only its SHA-256 and lets a device approve itself with the recovery key only with it |
+
+Flows: **make** — TK, the vault id, the recovery key (shown, kept — only then `POST vaults`), the name encrypted with
+version 1, wraps for the device and the recovery key. **New device** — `POST …/devices`, show the safety number; an
+approved device lists `GET …/devices`, compares the number, unwraps its keys, wraps each version for the new public key
+and approves. **Recovery** — derive the recovery key pair, check it against `recoveryPub`, unwrap `GET …/recovery`,
+register and approve the own device with `via: 'recovery'` and `recoveryAuth`. **Rotation** (`needsRotation`) — a new TK with version + 1,
+wrapped for exactly the approved devices and the recovery key (a new recovery key with every version when the server
+says `recovery_required`), then new files and names use it.
+
+Security assumptions: the server is trusted to serve the right public keys only as far as the safety number is
+compared (otherwise a malicious server could add its own key to a request); a person who once had a vault key can
+keep reading what was encrypted with it (rotation protects only new files); names and contents are hidden, not sizes,
+times, the folder structure, who changed what, or how many files there are. The portal's device key never leaves
+GateControl's page (not extractable), but a vault opened in the browser keeps its keys in the tab's memory until it
+is closed.
+
+## Office in the browser (since 1.9.0, feature `office`)
+
+Drive is a **WOPI host** for Collabora Online and OnlyOffice (`server/office.js`). Needs GateControl ≥ 1.211.0
+(`permissions.publicEndpoints`: the office server reaches `/plugin-public/gatecontrol-drive/…` without a session) and:
+
+* the setting **office_url** — the office server's address as the browser reaches it;
+* the home target **office** (Plugins › Drive › Zugriffsziele) — the same server as GateControl reaches it; Drive reads
+  `/hosting/discovery` through it (12 hours, again when the setting changes; the settings show the state);
+* the office server must reach GateControl's public address (`GC_BASE_URL`), the WOPI host's base.
+
+`me.features` has `office` only while all that works. Documents: docx, xlsx, pptx, odt, ods, odp, csv (also doc, xls,
+ppt, rtf when the server offers them); never a vault's file.
+
+```
+POST nodes/<id>/office  → { url, mode: 'edit' | 'view', expiresAt } — `url` (2 minutes) opens the editor in a new tab;
+                          the portal uses GC.openTab, an app the system browser. 409 office_unavailable (no setup, an
+                          older GateControl, a type it does not open), 409 encrypted (a vault's file)
+```
+
+That address answers GateControl's form page: `access_token` (4 hours, bound to the file, the person and the right
+`w`/`r`) and `access_token_ttl` posted to the discovery's `urlsrc` (its placeholders filled, the origin of office_url)
+with `WOPISrc=<GateControl>/plugin-public/gatecontrol-drive/wopi/files/<id>`. WOPI (each request checks the person's
+right again — a token outlives no right):
+
+| Request | |
+|---|---|
+| `GET wopi/files/<id>` | CheckFileInfo: `BaseFileName`, `Size`, `Version` (rev), `LastModifiedTime`, `OwnerId`, `UserId`, `UserFriendlyName`, `UserCanWrite`, `ReadOnly`, `SupportsLocks`, `SupportsGetLock`, `SupportsUpdate`, `UserCanNotWriteRelative: true`, … |
+| `GET wopi/files/<id>/contents` | GetFile (GateControl streams the media) |
+| `POST wopi/files/<id>/contents` (`X-WOPI-Override: PUT`) | PutFile → a new version of the file (its type kept), `X-WOPI-ItemVersion`; a foreign lock → 409 with `X-WOPI-Lock`; Collabora's `X-COOL-WOPI-Timestamp` older than the file → 409 `{ COOLStatusCode: 1010 }`; read only → 401 |
+| `POST wopi/files/<id>` | `X-WOPI-Override`: `LOCK` (with `X-WOPI-OldLock`: UnlockAndRelock), `GET_LOCK`, `REFRESH_LOCK`, `UNLOCK` — 30 minutes; others 501 |
+
+**Proof keys:** when the discovery has `<proof-key modulus exponent oldmodulus oldexponent>`, every WOPI request must
+carry `X-WOPI-Proof` (or `X-WOPI-ProofOld`) and `X-WOPI-TimeStamp` (not older than 20 minutes): RSA-SHA256 over
+`len ‖ access_token ‖ len ‖ URL in capitals ‖ len ‖ timestamp (int64)` (each `len` a 4-byte big-endian length), the
+current or the old key — else `500`, as WOPI asks.
+
 ## Portal
 
 The portal tab "Drive" (`ui/portal.*`, rendered inline by `server/ui.js` into GateControl's sandboxed frame): the areas,
@@ -421,7 +572,13 @@ into an album), "Alben" (make, rename, cover, take out, delete, "Im Fotorahmen z
 administrator also everyone and every person; the largest files; duplicates with "Behalten" / "Löschen" — into the
 trash after asking; "Alte Versionen aufräumen" for those who may), "Zeitreise" in a folder's tools (the preview, the
 run, "Rückgängig machen"), and the date a photo was taken on upload (a JPEG's EXIF DateTimeOriginal, else the file's
-date). The section "Fotorahmen" (`ui/frame.*`) is the slide show of a kiosk device.
+date). The section "Fotorahmen" (`ui/frame.*`) is the slide show of a kiosk device. Since 1.9.0: **vault folders**
+(`ui/vault.js`, `ui/vaultcrypto.js` — "Tresor-Ordner" in a folder's tools; the recovery key shown, copied or saved as a
+text file and confirmed before the vault is made; names decrypted in the list; uploads encrypted in the browser — files
+only, ≤ 100 MB; downloads decrypted in the browser; "Freigabe anfragen" with the safety number, "Mit
+Wiederherstellungsschlüssel öffnen", the requests of other devices with "Freigeben" / "Ablehnen", "Schlüssel erneuern";
+a browser without X25519 or a GateControl without `GC.keys` shows a note) and **"Im Browser bearbeiten"** for documents
+while `features` has `office` (`GC.openTab`; a second click when the browser took the first one's moment).
 
 ## Admin (GateControl's admin UI)
 
@@ -461,7 +618,8 @@ at once), the NAS journals (in case the hook was missed), uploads through links 
 GateControl has forgotten, the weekly backup hint, old notes of `child_view`, wipes after 90 days and the waiting for
 devices GateControl no longer lists, marked nodes whose time came (into the trash, since 1.5.0), the ransomware
 protection's journal (rows of no incident older than the window) and closed incidents after 30 days, the public address
-for direct links (since 1.6.0). A version a time travel made stays until its hold ends (since 1.7.0).
+for direct links (since 1.6.0). A version a time travel made stays until its hold ends (since 1.7.0). Expired WOPI
+locks go (since 1.9.0).
 
 ## Development
 

@@ -228,6 +228,14 @@
 //   .uploads(token). host.publicLinkUpload(token, { name, data, mime, by }) plays a visitor's upload: limits, a free name
 //   (" (2)") at <path>/<name> in the link's area, claimed, owned by the link's owner; hook { token, event: 'upload',
 //   mediaId, name, path, uploader, bytes } → { status: 200, name, mediaId } | { status, code }.
+//   GateControl ≥ 1.211.0 (public endpoints): permissions.publicEndpoints (true | { maxBodyBytes });
+//   gc.publicEndpoints.token({ user, path, ttlS (60…86400), data (≤ 256) }) → { token, url: '<opts.baseUrl, default
+//   https://gc.example.com>/plugin-public/<id>/<path>', expiresAt } and .base() → { url } (ERR_PUBLIC_ENDPOINTS_DENIED
+//   without the permission, ERR_INVALID); host.publicRequest({ method, path, query: { access_token }, headers, body })
+//   plays a request of /plugin-public/<id>/<path>: the token (its path and below, still valid, an enabled person —
+//   else 401), a body as an unclaimed media file of the person (≤ maxBodyBytes, else 413; dropped when the hook fails
+//   or answers ≥ 400 unclaimed), the hook publicRequest → { status, headers (x-… only), json | text | body (a media
+//   answer's bytes) | form }.
 //
 // GateControl 1.200.0 (opt-in: opts.gatecontrol: '1.200.0') — person groups, src/services/plugins/groups.js:
 //   permissions.groups 'read' | 'manage' (anything else → ERR_INVALID); every plugin has gc.groups, without the
@@ -898,6 +906,7 @@ async function createHost(pluginDir, opts = {}) {
   const gc205 = hostAtLeast('1.205.0'); // links v2
   const gc208 = hostAtLeast('1.208.0'); // media previews
   const gc210 = hostAtLeast('1.210.0'); // preview-only URLs
+  const gc211 = hostAtLeast('1.211.0'); // public endpoints (permissions.publicEndpoints)
 
   // Storage: the plugin's own SQLite database with its migrations applied.
   let db = null;
@@ -1381,6 +1390,41 @@ async function createHost(pluginDir, opts = {}) {
     return mediaInfo(id);
   };
   api['media.delete'] = async (args) => { needMedia(); return mediaStore.delete(mediaIdOf(args)); };
+
+  // GateControl ≥ 1.211.0: public endpoints — tokens for /plugin-public/<id>/<path> (host.publicRequest)
+  const peDecl = () => {
+    const pe = perms.publicEndpoints;
+    if (pe === true) return { maxBodyBytes: 0 };
+    return pe && typeof pe === 'object' ? { maxBodyBytes: Number(pe.maxBodyBytes) || 0 } : null;
+  };
+  const peSign = (payload) => require('node:crypto').createHmac('sha256', urlSecret).update('plugin-public:' + payload).digest('base64url');
+  api['publicEndpoints.token'] = async ({ user, path: p, ttlS, data }) => {
+    if (!peDecl()) throw hostError('ERR_PUBLIC_ENDPOINTS_DENIED', 'this plugin has no publicEndpoints permission');
+    if (!Number.isSafeInteger(user) || user <= 0 || !users.some((u) => u.id === user)) throw hostError('ERR_INVALID', 'invalid user');
+    const scope = typeof p === 'string' ? p.replace(/^\/+|\/+$/g, '') : '';
+    if (!scope || scope.length > 200 || !/^[A-Za-z0-9._~-]+(?:\/[A-Za-z0-9._~-]+)*$/.test(scope) || scope.split('/').some((x) => x === '.' || x === '..')) throw hostError('ERR_INVALID', 'invalid path');
+    const ttl = ttlS == null ? 3600 : ttlS;
+    if (!Number.isSafeInteger(ttl) || ttl < 60 || ttl > 86400) throw hostError('ERR_INVALID', 'invalid ttlS');
+    if (data != null && (typeof data !== 'string' || data.length > 256)) throw hostError('ERR_INVALID', 'invalid data');
+    const exp = Math.floor(Date.now() / 1000) + ttl;
+    const payload = Buffer.from(JSON.stringify({ v: 1, p: manifest.id, u: user, s: scope, e: exp, d: data == null ? null : data })).toString('base64url');
+    const base = opts.baseUrl === undefined ? 'https://gc.example.com' : opts.baseUrl;
+    return { token: `${payload}.${peSign(payload)}`, url: base ? `${base}/plugin-public/${manifest.id}/${scope}` : null, expiresAt: exp * 1000 };
+  };
+  api['publicEndpoints.base'] = async () => {
+    if (!peDecl()) throw hostError('ERR_PUBLIC_ENDPOINTS_DENIED', 'this plugin has no publicEndpoints permission');
+    const base = opts.baseUrl === undefined ? 'https://gc.example.com' : opts.baseUrl;
+    return { url: base ? `${base}/plugin-public/${manifest.id}/` : null };
+  };
+  const peVerify = (token, p) => {
+    const m = /^([A-Za-z0-9_-]{16,960})\.([A-Za-z0-9_-]{43})$/.exec(String(token || ''));
+    if (!m || peSign(m[1]) !== m[2]) return null;
+    let t;
+    try { t = JSON.parse(Buffer.from(m[1], 'base64url').toString('utf8')); } catch { return null; }
+    if (!t || t.p !== manifest.id || !(Math.floor(Date.now() / 1000) < t.e)) return null;
+    if (!(p === t.s || p.startsWith(t.s + '/'))) return null;
+    return { user: t.u, scope: t.s, data: t.d, expiresAt: t.e * 1000 };
+  };
   api['media.usage'] = async () => {
     needMedia();
     return { ...mediaUsage(), quota: mediaQuota, maxBytes: media.maxBytes, types: media.types, ...(gc193 ? { uploads: media.uploads, resumable: media.resumable, handOverMaxBytes: media.handOverMaxBytes } : {}),
@@ -2286,6 +2330,13 @@ async function createHost(pluginDir, opts = {}) {
       // GateControl ≥ 1.193.0: a multipart upload of a media file to a home target
       ...(gc193 ? { uploadTarget: (id, p, o) => call('target.upload', { target: String(id), index: o && o.index, path: String(p || '/'), opts: o || {} }) } : {}),
     }),
+    // GateControl ≥ 1.211.0: tokens for public endpoints (host.publicRequest)
+    ...(gc211 ? {
+      publicEndpoints: Object.freeze({
+        token: (o) => call('publicEndpoints.token', o && typeof o === 'object' ? o : {}),
+        base: () => call('publicEndpoints.base', {}),
+      }),
+    } : {}),
     // GateControl ≥ 1.193.0
     ...(gc193 ? {
       devices: Object.freeze({ list: (o) => call('devices.list', { userId: o && typeof o === 'object' ? o.userId : o }) }),
@@ -2462,6 +2513,53 @@ async function createHost(pluginDir, opts = {}) {
       const id = require('node:crypto').randomBytes(16).toString('hex');
       mediaStore.set(id, { mime: type, bytes, owner: user && user.id != null ? user.id : null, data: Buffer.from(buf), claimed: false, createdAt: Date.now() });
       return { status: 200, body: { ok: true, mediaId: id, mime: type, bytes } };
+    },
+    /**
+     * GateControl ≥ 1.211.0: a request to /plugin-public/<id>/<path> as routes/pluginPublic.js answers it —
+     * req = { method, path, query: { access_token, … }, headers, body (Buffer, a POST / PUT body) } →
+     * { status, headers, json | text | body (Buffer of a media answer) | form }. 404 without the permission,
+     * 401 for a missing / wrong / expired token or another path, 413 for a body over maxBodyBytes; a body becomes an
+     * unclaimed media file of the token's person, deleted again when the hook fails or answers ≥ 400 unclaimed.
+     */
+    async publicRequest(req) {
+      const decl = gc211 ? peDecl() : null;
+      if (!decl) return { status: 404, headers: {}, text: 'not found' };
+      const method = String(req.method || 'GET').toUpperCase();
+      const p = String(req.path || '').replace(/^\/+/, '');
+      const q = { ...(req.query || {}) };
+      const tok = peVerify(q.access_token || (/^Bearer (\S+)$/.exec(String((req.headers || {}).authorization || '')) || [])[1], p);
+      const who = tok ? users.find((u) => u.id === tok.user) : null;
+      if (!tok || !who) return { status: 401, headers: {}, text: 'unauthorized' };
+      delete q.access_token;
+      let body = null;
+      if ((method === 'POST' || method === 'PUT') && req.body && req.body.length) {
+        if (!decl.maxBodyBytes || !media || req.body.length > decl.maxBodyBytes) return { status: 413, headers: {}, text: 'too_large' };
+        const id = require('node:crypto').randomBytes(16).toString('hex');
+        mediaStore.set(id, { mime: 'application/octet-stream', bytes: req.body.length, owner: who.id, data: Buffer.from(req.body), claimed: false, createdAt: Date.now() });
+        body = { mediaId: id, bytes: req.body.length, mime: 'application/octet-stream', sha256: require('node:crypto').createHash('sha256').update(req.body).digest('hex') };
+      }
+      const drop = () => { if (body && mediaStore.has(body.mediaId) && !mediaStore.get(body.mediaId).claimed) mediaStore.delete(body.mediaId); };
+      const headers = {};
+      for (const [k, v] of Object.entries(req.headers || {})) if (/^x-[a-z0-9-]+$/i.test(k) || /^content-(type|length)$/i.test(k)) headers[k.toLowerCase()] = String(v);
+      const qs = new URLSearchParams(req.query || {}).toString();
+      const originalUrl = `/plugin-public/${manifest.id}/${p}` + (qs ? '?' + qs : '');
+      let out;
+      try {
+        out = await hook('publicRequest', { method, path: '/' + p, query: q, headers, user: { id: who.id, name: who.name, role: who.role }, token: tok, body,
+          url: 'https://gc.example.com' + originalUrl, originalUrl, lang: 'de' });
+      } catch (e) { drop(); return { status: 502, headers: {}, text: 'plugin unavailable', error: e }; }
+      if (!out || typeof out !== 'object') { drop(); return { status: 502, headers: {}, text: 'invalid plugin answer' }; }
+      const status = out.status == null ? 200 : out.status;
+      if (status >= 400) drop();
+      const h = {};
+      for (const [k, v] of Object.entries(out.headers || {})) if (/^x-[a-z0-9-]+$/i.test(k)) h[k.toLowerCase()] = String(v);
+      if (out.form) return { status: 200, headers: h, form: out.form };
+      if (out.media) {
+        const m = mediaStore.get(out.media);
+        return m ? { status: 200, headers: h, body: Buffer.from(m.data) } : { status: 404, headers: h, text: 'not found' };
+      }
+      if (out.text != null) return { status, headers: h, text: out.text };
+      return { status, headers: h, json: out.json };
     },
     /** GateControl ≥ 1.193.0: what this plugin handed over (gc.media.handOver) and uploaded to home targets */
     handOvers,

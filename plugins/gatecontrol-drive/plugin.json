@@ -4,7 +4,7 @@
     "de": "Drive",
     "en": "Drive"
   },
-  "version": "1.7.0",
+  "version": "1.9.0",
   "publisher": "CallMeTechie",
   "description": {
     "de": "Dateien der Familie und des Teams auf dem eigenen Speicher – auf diesem Server, einer NAS oder in S3: Meine Dateien, Familie, Ordner der Kinder und Team-Ordner mit Rechten, Versionen, Papierkorb und Abgleich mit allen Geräten.",
@@ -13,6 +13,20 @@
   "gatecontrol": ">=1.208.0",
   "entry": "server/index.js",
   "permissions": {
+    "network": {
+      "homeTargets": [
+        {
+          "id": "office",
+          "label": {
+            "de": "Office-Server (Collabora Online oder OnlyOffice)",
+            "en": "Office server (Collabora Online or OnlyOffice)"
+          },
+          "protocols": [
+            "http"
+          ]
+        }
+      ]
+    },
     "storage": true,
     "users": true,
     "app": true,
@@ -26,6 +40,9 @@
     },
     "background": {
       "intervalSeconds": 300
+    },
+    "publicEndpoints": {
+      "maxBodyBytes": 536870912
     }
   },
   "storage": {
@@ -297,6 +314,19 @@
           "en": "Names or ids of the accounts, separated by commas (e.g. “Kitchen, Hall”). Empty: every kiosk device."
         },
         "default": ""
+      },
+      {
+        "key": "office_url",
+        "type": "text",
+        "label": {
+          "de": "Office im Browser: Adresse des Office-Servers",
+          "en": "Office in the browser: address of the office server"
+        },
+        "help": {
+          "de": "Collabora Online oder OnlyOffice, so wie der Browser ihn erreicht (z. B. https://office.example.de). Drive liest dessen Discovery über das Zugriffsziel „Office-Server“ (unter Zugriffsziele zuweisen); der Office-Server muss GateControl unter seiner öffentlichen Adresse erreichen. Leer: aus.",
+          "en": "Collabora Online or OnlyOffice, as the browser reaches it (e.g. https://office.example.com). Drive reads its discovery through the access target “Office server” (assign it under access targets); the office server must reach GateControl at its public address. Empty: off."
+        },
+        "default": ""
       }
     ],
     "pages": [
@@ -364,6 +394,14 @@
       "label": {
         "de": "Drive hat ein Gerät wegen ungewöhnlicher Änderungen gestoppt",
         "en": "Drive stopped a device for unusual changes"
+      },
+      "default": true
+    },
+    {
+      "id": "vault",
+      "label": {
+        "de": "Ein Gerät möchte einen Tresor-Ordner öffnen",
+        "en": "A device asks to open a vault folder"
       },
       "default": true
     }

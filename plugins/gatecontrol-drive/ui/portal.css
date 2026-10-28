@@ -204,3 +204,18 @@ textarea.dp-input{padding:9px 12px;line-height:1.45;resize:vertical}
 .dp-tt{display:flex;flex-direction:column;gap:10px}
 .dp-tt-list{margin:0;padding-left:18px;font-size:14px;line-height:1.6}
 @media (max-width:760px){.dp-st-file{grid-template-columns:minmax(0,1fr) auto}.dp-st-file>.dp-num{display:none}}
+/* vault folders (since 1.9.0): the lock screen, the lock on a tile, safety numbers and the recovery key */
+.dp-vault-lock{display:flex;flex-direction:column;align-items:center;gap:10px;text-align:center;padding:40px 16px;border:1px dashed var(--line-2);border-radius:14px;color:var(--text)}
+.dp-vault-lock svg{color:var(--accent)}
+.dp-vault-lock .dp-hint{max-width:440px}
+.dp-vault-lock .dp-actions{justify-content:center;flex-wrap:wrap}
+.dp-thumb{position:relative}
+.dp-lockb{position:absolute;right:6px;top:6px;display:inline-flex;padding:3px;border-radius:7px;background:var(--surface);color:var(--accent);border:1px solid var(--line)}
+.dp-vault-note{align-items:center;flex-wrap:wrap}
+.dp-vault-note > span{flex:1;min-width:180px}
+.dp-safety{font:600 18px var(--mono);letter-spacing:.06em;text-align:center;margin:4px 0;padding:10px;border-radius:10px;background:var(--surface-2);word-spacing:.35em}
+.dp-recovery{font:600 15px/1.7 var(--mono);letter-spacing:.04em;text-align:center;margin:0;padding:12px;border-radius:10px;background:var(--surface-2);word-break:break-all;user-select:all}
+.dp-recovery-in{width:100%;min-height:76px;padding:8px 10px;font:14px/1.5 var(--mono);resize:vertical}
+.dp-vault-reqs{display:flex;flex-direction:column;gap:12px}
+.dp-vault-req{display:flex;flex-direction:column;gap:6px;padding:12px;border:1px solid var(--line);border-radius:12px}
+.dp-vault-req > div:first-child{display:flex;flex-direction:column}

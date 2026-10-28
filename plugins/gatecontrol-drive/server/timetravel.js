@@ -102,6 +102,8 @@ async function plan(ctx, folderId, at) {
     then.set(n.id, {
       existed: n.created_at <= at, trashed,
       parent: first ? first.parent_id : n.parent_id, name: first ? first.name : n.name, area: first ? first.area_id : n.area_id,
+      // a vault's node (since 1.9.0): its encrypted name of then (the opaque name never changes)
+      cipher: first ? first.name_cipher || null : n.name_cipher || null,
     });
   }
   // there then: it existed, was not in the trash, and its folders lead up to the top
@@ -137,7 +139,7 @@ async function plan(ctx, folderId, at) {
   for (const n of all.values()) {
     if (!present(n.id) || !liveAfter(n)) continue;
     const s = then.get(n.id);
-    if (s.parent !== n.parent_id || s.name !== n.name) moves.push(n);
+    if (s.parent !== n.parent_id || s.name !== n.name || (n.vault_id && s.cipher && s.cipher !== n.name_cipher)) moves.push(n);
   }
   moves.sort((a, b) => depth.get(a.id) - depth.get(b.id));
   // nodes that came in from elsewhere: back to their folder of then (when it is there and writable), else the trash
@@ -250,9 +252,16 @@ async function run(ctx, id, body) {
   }
   // 2. names and folders of then (a name taken by what goes into the trash: a free one now, the right one after)
   const later = [];
-  const place = async (nodeId, parentId, name, exact) => {
+  const place = async (nodeId, parentId, name, exact, cipher = null) => {
     const n = await nodes.row(gc, nodeId);
     if (!n || n.deleted_at != null) return false;
+    if (n.vault_id) {
+      // a vault's node: its folder and its encrypted name of then (an older key's name is fine — the devices keep every key)
+      const want = cipher && cipher !== n.name_cipher ? cipher : null;
+      if (n.parent_id === parentId && !want) return true;
+      await nodes.update(ctx, nodeId, { ...(want ? { nameCipher: want } : {}), ...(n.parent_id !== parentId ? { parentId } : {}) }, { anyKey: true });
+      return true;
+    }
     if (n.parent_id === parentId && n.name === name) return true;
     const parent = await nodes.row(gc, parentId);
     if (!parent || parent.deleted_at != null) return false;
@@ -266,7 +275,7 @@ async function run(ctx, id, body) {
   };
   for (const n of p.moves) {
     const s = p.then.get(n.id);
-    try { if (await place(n.id, s.parent, s.name, false)) moved++; else failed++; } catch (e) { tolerate(e); failed++; }
+    try { if (await place(n.id, s.parent, s.name, false, s.cipher)) moved++; else failed++; } catch (e) { tolerate(e); failed++; }
   }
   for (const b of p.back) {
     try { if (await place(b.node.id, b.parent, b.name, false)) moved++; else failed++; } catch (e) { tolerate(e); failed++; }
@@ -276,7 +285,7 @@ async function run(ctx, id, body) {
   for (const n of p.restore) {
     if (movedIds.has(n.id)) continue;
     const s = p.then.get(n.id);
-    try { await place(n.id, s.parent, s.name, false); } catch (e) { tolerate(e); }
+    try { await place(n.id, s.parent, s.name, false, s.cipher); } catch (e) { tolerate(e); }
   }
   // 3. into the trash: what is new since then
   for (const tid of topsOf(p)) {
