@@ -78,11 +78,12 @@ const KNOWN_EXT = new Set([
   'part', 'crdownload', 'download', 'swp', 'gpg', 'pgp', 'asc', 'sig', 'p7m', 'p12', 'pfx', 'pem', 'crt', 'cer', 'der', 'ovpn',
 ]);
 
-// types that are never as dense as random bytes (a high entropy there: encrypted)
+// types that are never as dense as random bytes (a high entropy there: encrypted) — not the ones that may hold
+// compressed parts (doc/xls/ppt with pictures, tif/psd compressed, dwg, binary stl): only a jump counts there
 const LOW_ENTROPY_EXT = new Set([
   'txt', 'md', 'rtf', 'csv', 'tsv', 'log', 'json', 'xml', 'yaml', 'yml', 'ini', 'cfg', 'conf', 'toml', 'html', 'htm', 'css', 'js',
   'ts', 'py', 'java', 'c', 'h', 'cpp', 'cs', 'go', 'rs', 'rb', 'php', 'sh', 'bat', 'ps1', 'sql', 'svg', 'tex', 'bib', 'vcf', 'ics',
-  'eml', 'bmp', 'wav', 'aiff', 'doc', 'xls', 'ppt', 'dot', 'tif', 'tiff', 'psd', 'dwg', 'dxf', 'stl', 'obj',
+  'eml', 'bmp', 'wav', 'aiff', 'dxf', 'obj',
 ]);
 
 /** The ending of a name (lower case, without the dot), '' without one. */

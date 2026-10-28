@@ -34,6 +34,7 @@ test('signs: known ransomware endings, an ending added or turned random, entropy
   assert.equal(guard.entropySign('a.txt', 7.9, null), true);
   assert.equal(guard.entropySign('a.jpg', 7.95, null), false, 'a photo is that dense anyway');
   assert.equal(guard.entropySign('a.docx', 7.9, 5.1), true, 'clearly below before');
+  for (const n of ['scan.tif', 'alt.doc', 'plan.dwg', 'teil.stl', 'bild.psd']) assert.equal(guard.entropySign(n, 7.9, null), false, `${n} may hold compressed parts`);
   assert.equal(guard.entropySign('a.txt', 6.2, null), false);
   assert.throws(() => guard.entropyArg(9), /invalid/);
   assert.throws(() => guard.entropyArg('viel'), /invalid/);
