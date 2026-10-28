@@ -4,7 +4,7 @@
     "de": "Drive",
     "en": "Drive"
   },
-  "version": "1.6.0",
+  "version": "1.7.0",
   "publisher": "CallMeTechie",
   "description": {
     "de": "Dateien der Familie und des Teams auf dem eigenen Speicher – auf diesem Server, einer NAS oder in S3: Meine Dateien, Familie, Ordner der Kinder und Team-Ordner mit Rechten, Versionen, Papierkorb und Abgleich mit allen Geräten.",
@@ -48,7 +48,18 @@
         "de": "Drive",
         "en": "Drive"
       },
-      "icon": "M7 18h10a4 4 0 0 0 .5-8A6 6 0 0 0 6 9.5 4.3 4.3 0 0 0 7 18z"
+      "icon": "M7 18h10a4 4 0 0 0 .5-8A6 6 0 0 0 6 9.5 4.3 4.3 0 0 0 7 18z",
+      "sections": [
+        {
+          "id": "frame",
+          "tab": "home",
+          "title": {
+            "de": "Fotorahmen",
+            "en": "Photo frame"
+          },
+          "order": 60
+        }
+      ]
     },
     "settings": [
       {
@@ -222,6 +233,68 @@
         "help": {
           "de": "Z. B. https://gc.example.de – Apps und Mitteilungen verlinken damit direkt auf Ordner und Dateien im Portal. Leer: die öffentliche Adresse, die GateControl für Links verwendet (sobald Drive sie kennt).",
           "en": "E.g. https://gc.example.com – apps and notifications link straight to folders and files in the portal with it. Empty: the public address GateControl uses for links (once Drive knows it)."
+        },
+        "default": ""
+      },
+      {
+        "key": "frame_on",
+        "type": "boolean",
+        "label": {
+          "de": "Fotorahmen auf Wandtablets",
+          "en": "Photo frame on wall tablets"
+        },
+        "help": {
+          "de": "Alben mit „Im Fotorahmen zeigen“ laufen als Diashow im Bereich „Fotorahmen“ (Tab „Zuhause“) der Kiosk-Geräte – nur Vorschaubilder, ohne Namen. Kiosk-Geräte sehen sonst nichts von Drive.",
+          "en": "Albums with “Show in the photo frame” run as a slide show in the section “Photo frame” (tab “Home”) of the kiosk devices – previews only, without names. Kiosk devices see nothing else of Drive."
+        },
+        "default": true
+      },
+      {
+        "key": "frame_seconds",
+        "type": "number",
+        "label": {
+          "de": "Fotorahmen: Sekunden je Bild",
+          "en": "Photo frame: seconds per picture"
+        },
+        "default": 20,
+        "min": 5,
+        "max": 3600
+      },
+      {
+        "key": "frame_order",
+        "type": "select",
+        "label": {
+          "de": "Fotorahmen: Reihenfolge",
+          "en": "Photo frame: order"
+        },
+        "options": [
+          {
+            "value": "random",
+            "label": {
+              "de": "Zufällig",
+              "en": "Random"
+            }
+          },
+          {
+            "value": "date",
+            "label": {
+              "de": "Nach Datum, neueste zuerst",
+              "en": "By date, newest first"
+            }
+          }
+        ],
+        "default": "random"
+      },
+      {
+        "key": "frame_accounts",
+        "type": "text",
+        "label": {
+          "de": "Fotorahmen: nur diese Kiosk-Konten",
+          "en": "Photo frame: only these kiosk accounts"
+        },
+        "help": {
+          "de": "Namen oder IDs der Konten, durch Komma getrennt (z. B. „Küche, Flur“). Leer: alle Kiosk-Geräte.",
+          "en": "Names or ids of the accounts, separated by commas (e.g. “Kitchen, Hall”). Empty: every kiosk device."
         },
         "default": ""
       }

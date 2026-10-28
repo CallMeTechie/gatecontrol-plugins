@@ -15,6 +15,11 @@
 // a new version of the file, a restored version, a rename or a move, and anything new in a marked folder (unmarkUp).
 //
 // Renames, moves and deletes of an app request are rows of the ransomware protection's journal (guard.js, since 1.6.0).
+//
+// The history (since 1.7.0, table node_log — the time travel, timetravel.js): before each rename or move the name,
+// folder and area the node had (op 'move'), before each restore from the trash where each node of the batch was and
+// since when it was in the trash (op 'restore'). A node's `takenAt` (since 1.7.0): when the picture was taken
+// (uploads/commit { takenAt }), else its mtime, else when it came.
 
 const store = require('./store');
 const areas = require('./areas');
@@ -62,11 +67,17 @@ function pathsBelow(top, base, rows) {
   return out;
 }
 
+/** ms of a file's takenAt: taken_at, else mtime, else created_at (TAKEN in SQL). */
+const takenOf = (n) => (n.taken_at != null ? n.taken_at : n.mtime != null ? n.mtime : n.created_at);
+const TAKEN = 'COALESCE(taken_at, mtime, created_at)';
+
 function view(n, extra) {
   return {
     id: n.id, areaId: n.area_id, parentId: n.parent_id, name: n.name, isDir: n.is_dir === 1,
     size: n.size, mime: n.mime || null, sha256: n.sha256 || null, mediaId: n.media_id || null,
     mtime: n.mtime == null ? null : iso(n.mtime), rev: n.rev,
+    // when the picture was taken (since 1.7.0): uploads/commit { takenAt }, else mtime, else when it came; folders null
+    takenAt: n.is_dir === 1 ? null : iso(takenOf(n)),
     createdAt: iso(n.created_at), createdBy: n.created_by, updatedAt: iso(n.updated_at), updatedBy: n.updated_by,
     deleted: n.deleted_at != null, ...(n.deleted_at != null ? { deletedAt: iso(n.deleted_at), deletedBy: n.deleted_by } : {}),
     // the mark (since 1.5.0): only while there is one
@@ -300,6 +311,9 @@ async function update(ctx, id, body) {
       oldPaths.set(node.id, oldBase);
     }
     await moveMedia(ctx.gc, files, toArea.media_area, area.media_area, oldPaths);
+    // the history: where it was (the time travel brings it back — timetravel.js)
+    await store.run(ctx.gc, "INSERT INTO node_log (node_id, at, op, area_id, parent_id, name) VALUES (?, ?, 'move', ?, ?, ?)",
+      [node.id, ctx.now, node.area_id, node.parent_id, node.name]);
     await store.run(ctx.gc, `UPDATE nodes SET parent_id = ?, name = ?, area_id = ?, updated_at = ?, updated_by = ?, ${UNMARKED} WHERE id = ?`,
       [parent.node.id, name, toArea.id, ctx.now, ctx.viewer, node.id]);
     // a renamed or moved node is in use: its mark ends, and so do those of the folder it is in now
@@ -367,8 +381,11 @@ async function trashRows(ctx, node, area) {
     for (const r of moved) { try { await ctx.gc.media.move(r.media_id, { path: paths.get(r.id) }); } catch { /* best effort */ } }
     throw e;
   }
-  await store.run(ctx.gc, `UPDATE nodes SET deleted_at = ?, deleted_by = ?, trash_id = ?, ${UNMARKED} WHERE id IN (${store.marks(all.length)})`,
-    [ctx.now, ctx.viewer || null, node.id, ...all.map((r) => r.id)]);
+  // (in parts: the host takes at most 100 parameters a statement)
+  for (const part of store.chunks(all.map((r) => r.id))) {
+    await store.run(ctx.gc, `UPDATE nodes SET deleted_at = ?, deleted_by = ?, trash_id = ?, ${UNMARKED} WHERE id IN (${store.marks(part.length)})`,
+      [ctx.now, ctx.viewer || null, node.id, ...part]);
+  }
   await log(ctx.gc, area.id, node.id, 'delete', ctx);
   return all;
 }
@@ -410,6 +427,9 @@ async function restore(ctx, id) {
     paths.set(node.id, base);
     const files = batch.filter((r) => r.is_dir === 0 && r.media_id).map((r) => ({ id: r.id, media_id: r.media_id, path: paths.get(r.id) }));
     await moveMedia(ctx.gc, files, area.media_area, area.media_area, new Map(files.map((f) => [f.id, null])));
+    // the history: each node of the batch was in the trash since … (the time travel puts it back — timetravel.js)
+    await store.run(ctx.gc, `INSERT INTO node_log (node_id, at, op, area_id, parent_id, name, deleted_since)
+      SELECT id, ?, 'restore', area_id, parent_id, name, deleted_at FROM nodes WHERE trash_id = ?`, [ctx.now, node.id]);
     // the top node first, under its free name (names are unique among the live nodes of a folder)
     await store.run(ctx.gc, 'UPDATE nodes SET parent_id = ?, name = ?, updated_at = ?, updated_by = ?, deleted_at = NULL, deleted_by = NULL, trash_id = NULL WHERE id = ?',
       [parent.id, name, ctx.now, ctx.viewer, node.id]);
@@ -426,17 +446,31 @@ async function purgeBatch(gc, trashId, ctx) {
   const batch = await store.all(gc, 'SELECT * FROM nodes WHERE trash_id = ?', [trashId]);
   if (!batch.length) return 0;
   const ids = batch.map((r) => r.id);
-  // versions of an empty file have no media (since 1.5.0)
-  const versions = await store.all(gc, `SELECT media_id FROM versions WHERE node_id IN (${store.marks(ids.length)}) AND media_id IS NOT NULL`, ids);
+  // versions of an empty file have no media (since 1.5.0); the ids in parts (≤ 100 parameters a statement)
+  const versions = await store.all(gc, 'SELECT v.media_id FROM versions v JOIN nodes n ON n.id = v.node_id WHERE n.trash_id = ? AND v.media_id IS NOT NULL', [trashId]);
   for (const m of [...batch.filter((r) => r.media_id).map((r) => r.media_id), ...versions.map((v) => v.media_id)]) {
     try { await gc.media.delete(m); } catch (e) { gc.log.warn('purge: media delete failed', (e && e.code) || 'error'); }
   }
-  await store.run(gc, `DELETE FROM versions WHERE node_id IN (${store.marks(ids.length)})`, ids);
-  await store.run(gc, `DELETE FROM doc_text WHERE node_id IN (${store.marks(ids.length)})`, ids);
-  await store.run(gc, `DELETE FROM nodes WHERE id IN (${store.marks(ids.length)})`, ids);
+  for (const part of store.chunks(ids)) {
+    const m = store.marks(part.length);
+    await store.run(gc, `DELETE FROM versions WHERE node_id IN (${m})`, part);
+    await store.run(gc, `DELETE FROM doc_text WHERE node_id IN (${m})`, part);
+  }
+  await forget(gc, ids);
+  for (const part of store.chunks(ids)) await store.run(gc, `DELETE FROM nodes WHERE id IN (${store.marks(part.length)})`, part);
   const top = batch.find((r) => r.id === trashId) || batch[0];
   await log(gc, top.area_id, trashId, 'purge', ctx);
   return batch.filter((r) => r.is_dir === 0).length;
+}
+
+/** Nodes `ids` go for good: their history, their places in albums (since 1.7.0). */
+async function forget(gc, ids) {
+  for (const part of store.chunks(ids)) {
+    const m = store.marks(part.length);
+    await store.run(gc, `DELETE FROM node_log WHERE node_id IN (${m})`, part);
+    await store.run(gc, `DELETE FROM album_items WHERE node_id IN (${m})`, part);
+    await store.run(gc, `UPDATE albums SET cover_id = NULL WHERE cover_id IN (${m})`, part);
+  }
 }
 
 /** DELETE trash/<id> → gone for good. */
@@ -448,6 +482,6 @@ async function purge(ctx, id) {
 }
 
 module.exports = {
-  row, pathOf, below, pathsBelow, view, log, reach, folderFor, taken, freeName, join, insertFolder, unmarkUp, UNMARKED, get, children, byPath, search,
+  row, pathOf, below, pathsBelow, view, takenOf, TAKEN, forget, log, reach, folderFor, taken, freeName, join, insertFolder, unmarkUp, UNMARKED, get, children, byPath, search,
   mkdir, update, trash, trashRows, unlinkLater, trashList, restore, purge, purgeBatch, moveMedia,
 };

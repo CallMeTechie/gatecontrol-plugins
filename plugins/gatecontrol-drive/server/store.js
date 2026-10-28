@@ -45,4 +45,13 @@ function run(gc, sql, params) {
 /** "?,?,?" for n parameters. */
 const marks = (n) => new Array(n).fill('?').join(',');
 
-module.exports = { tx, all, one, run, marks };
+// GateControl's database worker takes at most 100 parameters a statement: lists of ids go in parts of CHUNK
+const CHUNK = 90;
+/** `list` in parts of at most `n`. */
+function chunks(list, n = CHUNK) {
+  const out = [];
+  for (let i = 0; i < list.length; i += n) out.push(list.slice(i, i + n));
+  return out;
+}
+
+module.exports = { tx, all, one, run, marks, chunks, CHUNK };

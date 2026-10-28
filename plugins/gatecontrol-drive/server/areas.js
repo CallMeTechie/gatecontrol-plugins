@@ -234,6 +234,10 @@ async function removeTeam(gc, id) {
   await store.tx(gc, async () => {
     await store.run(gc, 'DELETE FROM members WHERE area_id = ?', [id]);
     await store.run(gc, 'DELETE FROM changes WHERE area_id = ?', [id]);
+    // its albums and the history of its nodes (since 1.7.0)
+    await store.run(gc, 'DELETE FROM album_items WHERE album_id IN (SELECT id FROM albums WHERE area_id = ?) OR node_id IN (SELECT id FROM nodes WHERE area_id = ?)', [id, id]);
+    await store.run(gc, 'DELETE FROM albums WHERE area_id = ?', [id]);
+    await store.run(gc, 'DELETE FROM node_log WHERE node_id IN (SELECT id FROM nodes WHERE area_id = ?)', [id]);
     await store.run(gc, 'DELETE FROM nodes WHERE area_id = ?', [id]);
     await store.run(gc, 'DELETE FROM areas WHERE id = ?', [id]);
   });

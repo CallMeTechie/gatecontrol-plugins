@@ -19,6 +19,10 @@
 //     DELETE nodes/<id>/versions/<vid> · POST uploads/check · POST uploads/commit
 //     GET trash?area= · POST trash/<id>/restore · DELETE trash/<id>
 //     POST links · GET links?nodeId= · GET links/<token>/events · DELETE links/<token>   (links.js, since 0.2.0)
+//     GET nodes/<id>/timetravel?at= · POST nodes/<id>/timetravel { at }  (a folder as it was — timetravel.js, 1.7.0)
+//     GET photos · GET photos/months · GET photos/memories (photos.js) · GET|POST albums · GET|PATCH|DELETE albums/<id>
+//     POST|DELETE albums/<id>/items (albums.js) · GET storage[?all=1] · POST storage/versions/prune (storage.js) — 1.7.0
+//     GET frame   a kiosk device only — the photo frame (frame.js, 1.7.0); every other route refuses a kiosk device
 //   admin     admin/… (administrators in the admin UI, admin.js; admin/guard/… the incidents, since 1.6.0)
 // The full contract (bodies, answers, codes, events) is in README.md "API". Every file node of an answer carries
 // `preview` (previews.js, since 1.1.0).
@@ -48,6 +52,11 @@ const marks = require('./marks');
 const devices = require('./devices');
 const guard = require('./guard');
 const address = require('./address');
+const timetravel = require('./timetravel');
+const photos = require('./photos');
+const albums = require('./albums');
+const frame = require('./frame');
+const storage = require('./storage');
 const { t } = require('./text');
 const { STATUS, fail, isKnown, posInt, DEVICE_RE, day, iso } = require('./util');
 
@@ -153,12 +162,14 @@ async function me(ctx) {
   };
 }
 
+// timeTravel: nodes/<id>/timetravel · takenAt: uploads/commit { takenAt }, node takenAt · photos: photos, months,
+// memories · albums · frame: albums { frame } and the kiosk's photo frame · storage: GET storage, versions/prune (1.7.0) ·
 // links: GET me links, ?drive=<id> in the portal (1.6.0) · guard: ransomware protection, 423 device_locked,
 // guard/incidents/…, uploads/commit { entropy } (1.6.0) ·
 // devices: GET/PUT/DELETE devices (1.5.0) · deleteAfter: DELETE nodes/<id>?after=, PATCH { deleteAt } (1.5.0) ·
 // emptyFiles: uploads/commit { size: 0 } without a mediaId (1.5.0) · wipes: DELETE ?everywhere=1 (1.2.0) ·
 // textSearch: uploads/commit { text } (1.3.0) · previews (1.1.0)
-const FEATURES = ['previews', 'wipes', 'textSearch', 'devices', 'deleteAfter', 'emptyFiles', 'links', 'guard'];
+const FEATURES = ['previews', 'wipes', 'textSearch', 'devices', 'deleteAfter', 'emptyFiles', 'links', 'guard', 'timeTravel', 'takenAt', 'photos', 'albums', 'frame', 'storage'];
 
 const THUMBS_MAX = 200;
 
@@ -212,6 +223,14 @@ async function route(ctx, req, seg) {
   if (a === 'wipes' && seg.length === 1 && m === 'GET') return ok(await wipes.list(ctx));
   if (a === 'wipes' && b === 'done' && seg.length === 2 && m === 'POST') return ok(await wipes.done(ctx, body));
   if (!ctx.licence.valid) throw fail('not_licensed');
+  // the overview of the storage: an administrator's of every area also without a seat of their own
+  if (a === 'storage') {
+    const adminAll = ctx.user && ctx.user.role === 'admin';
+    if (!ctx.seat && !(adminAll && (flag(q.all) || m === 'POST'))) throw fail('no_seat');
+    if (seg.length === 1 && m === 'GET') return ok(await storage.overview(ctx, q));
+    if (b === 'versions' && c === 'prune' && seg.length === 3 && m === 'POST') return ok(await storage.prune(ctx, body));
+    throw fail('not_found');
+  }
   if (!ctx.seat) throw fail('no_seat');
   await ctx.visible();
   if (a === 'areas' && seg.length === 1 && m === 'GET') return ok(await areaList(ctx));
@@ -244,12 +263,28 @@ async function route(ctx, req, seg) {
       }
       if (c === 'content') return ok(await files.content(ctx, idArg(b)));
       if (c === 'versions') return ok(await files.versions(ctx, idArg(b)));
+      if (c === 'timetravel') return ok(await timetravel.preview(ctx, idArg(b), q));
     }
+    if (seg.length === 3 && c === 'timetravel' && m === 'POST') return ok(await timetravel.run(ctx, idArg(b), body));
     if (c === 'versions' && seg.length >= 4) {
       if (seg.length === 4 && m === 'DELETE') return ok(await files.deleteVersion(ctx, idArg(b), idArg(d)));
       if (seg.length === 5 && e === 'content' && m === 'GET') return ok(await files.versionContent(ctx, idArg(b), idArg(d)));
       if (seg.length === 5 && e === 'restore' && m === 'POST') return ok({ node: await files.restoreVersion(ctx, idArg(b), idArg(d)) });
     }
+  }
+  if (a === 'photos' && m === 'GET') {
+    if (seg.length === 1) return ok(await photos.list(ctx, q));
+    if (seg.length === 2 && b === 'months') return ok(await photos.months(ctx, q));
+    if (seg.length === 2 && b === 'memories') return ok(await photos.memories(ctx, q));
+  }
+  if (a === 'albums') {
+    if (seg.length === 1 && m === 'GET') return ok(await albums.list(ctx));
+    if (seg.length === 1 && m === 'POST') return ok(await albums.create(ctx, body));
+    if (seg.length === 2 && m === 'GET') return ok(await albums.get(ctx, b, q));
+    if (seg.length === 2 && (m === 'PATCH' || m === 'PUT')) return ok(await albums.update(ctx, b, body));
+    if (seg.length === 2 && m === 'DELETE') return ok(await albums.remove(ctx, b));
+    if (seg.length === 3 && c === 'items' && m === 'POST') return ok(await albums.addItems(ctx, b, body));
+    if (seg.length === 3 && c === 'items' && m === 'DELETE') return ok(await albums.removeItems(ctx, b, body, q));
   }
   if (a === 'devices') {
     if (seg.length === 1 && m === 'GET') return ok(await devices.list(ctx));
@@ -332,6 +367,35 @@ async function after(gc, ctx, done) {
 }
 
 /**
+ * A kiosk device (since 1.7.0): `GET frame` — the pictures of the frame albums (frame.js) — and nothing else (403).
+ * The pictures are those the person who switched an album on may read now, as preview-only URLs.
+ */
+async function kioskRequest(gc, req, seg, now) {
+  const user = req.user;
+  const m = String(req.method || 'GET').toUpperCase();
+  if (!(m === 'GET' && seg.length === 1 && seg[0] === 'frame')) throw fail('forbidden');
+  if (!Number.isSafeInteger(user.id) || user.id <= 0 || user.portal !== true || user.loggedIn !== true || user.app === true) throw fail('forbidden');
+  const [settings, users, lic] = await Promise.all([gc.settings.all(), people.users(gc), people.licence(gc)]);
+  if (!users.get(user.id)) throw fail('forbidden');
+  return frame.show(gc, user, {
+    settings, users, licensed: lic.valid,
+    asPerson: async (uid) => {
+      if (!users.get(uid)) return null;
+      const c = await context(gc, { id: uid, portal: true, loggedIn: true }, 'de', now);
+      return c.licence.valid && c.seat && c.user ? c : null;
+    },
+  });
+}
+
+/** The section "Fotorahmen": a kiosk device allowed to show the frame, while an album is on it. */
+async function frameVisible(gc, user) {
+  if (user.kiosk !== true || user.loggedIn === false) return false;
+  const [settings, users, lic] = await Promise.all([gc.settings.all(), people.users(gc), people.licence(gc)]);
+  if (!lic.valid || !frame.allowed(frame.settingsOf(settings), user, users)) return false;
+  return frame.any(gc);
+}
+
+/**
  * The direct link of a notification (since 1.6.0): data.link (absolute, when Drive knows the address) and the button
  * "Öffnen" (open_portal — GateControl opens the portal tab; the node travels as ?drive=<id>, address.js).
  */
@@ -365,6 +429,8 @@ async function adminGuard(gc, req, seg, lang, now) {
 
 module.exports = {
   async start(gc) {
+    // the history of names and folders (time travel) starts with the first start of 1.7.0
+    try { await timetravel.historySince(gc, Date.now()); } catch (e) { gc.log.warn('history start failed', (e && e.code) || 'error'); }
     gc.log.info('drive started', gc.plugin.version);
   },
 
@@ -381,6 +447,8 @@ module.exports = {
         return ok(await admin.route(gc, req, seg, req.user, now));
       }
       if (seg[0] === 'portal' && seg.length > 1) seg = seg.slice(1); // the same routes under portal/…
+      // a kiosk device (the wall tablet): the photo frame and nothing else
+      if (req.user && req.user.kiosk === true) return ok(await kioskRequest(gc, req, seg, now));
       const no = refusal(req.user);
       if (no) throw fail(no);
       const ctx = await context(gc, req.user, lang, now);
@@ -438,9 +506,11 @@ module.exports = {
     }
   },
 
-  /** The portal tab "Drive": people switched on (not a kiosk device). */
+  /** The portal tab "Drive": people switched on (not a kiosk device); the section "Fotorahmen": kiosk devices (1.7.0). */
   async portalVisible({ user, section } = {}, gc) {
-    if (section || !user || user.kiosk === true || !Number.isSafeInteger(user.id)) return false;
+    if (!user || !Number.isSafeInteger(user.id)) return false;
+    if (section === 'frame') return frameVisible(gc, user);
+    if (section || user.kiosk === true) return false;
     return !!(await seats.get(gc, user.id));
   },
 
