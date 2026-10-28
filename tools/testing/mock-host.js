@@ -905,6 +905,25 @@ async function createHost(pluginDir, opts = {}) {
     if (t && t.chat != null && typeof t.chat !== 'boolean') throw hostError('ERR_INVALID', 'plugin.json: notifyTopics: invalid');
     if (t && t.chat === true && (t.allowCritical === true || t.id === 'default')) throw hostError('ERR_INVALID', 'plugin.json: notifyTopics: chat topic cannot be critical or default');
   }
+  // ─── The AI service (gc.ai) and cloud accounts (gc.cloud) — opt-in: opts.ai / opts.cloud (see the head) ───
+  // Without the option the plugin gets no gc.ai / gc.cloud at all (a host without them: feature detection).
+  const aiOpt = opts.ai && typeof opts.ai === 'object' ? opts.ai : null;
+  const cloudOpt = opts.cloud && typeof opts.cloud === 'object' ? opts.cloud : null;
+  const purposeOk = (p) => !!(p && typeof p === 'object' && !Array.isArray(p) && p.purpose && typeof p.purpose === 'object'
+    && ['de', 'en'].some((l) => typeof p.purpose[l] === 'string' && p.purpose[l].trim()) && Object.values(p.purpose).every((v) => typeof v === 'string' && v.length <= 200));
+  let aiPerm = null;
+  if (aiOpt && perms.ai != null) {
+    const p = perms.ai;
+    const caps = p && Array.isArray(p.capabilities) ? p.capabilities : null;
+    if (!purposeOk(p) || !caps || !caps.length || !caps.every((c) => AI_CAPS.includes(c)) || Object.keys(p).some((k) => k !== 'purpose' && k !== 'capabilities')) {
+      throw hostError('ERR_INVALID', 'plugin.json: permissions.ai: invalid');
+    }
+    aiPerm = { capabilities: [...new Set(caps)] };
+  }
+  if (cloudOpt && perms.cloudImport != null && (!purposeOk(perms.cloudImport) || Object.keys(perms.cloudImport).some((k) => k !== 'purpose'))) {
+    throw hostError('ERR_INVALID', 'plugin.json: permissions.cloudImport: invalid');
+  }
+  const cloudPerm = !!(cloudOpt && perms.cloudImport != null);
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), `gcmock-${manifest.id}-`));
   const filesDir = path.join(tmp, 'files');
   fs.mkdirSync(filesDir);
@@ -2306,25 +2325,6 @@ async function createHost(pluginDir, opts = {}) {
     return true;
   };
 
-  // ─── The AI service (gc.ai) and cloud accounts (gc.cloud) — opt-in: opts.ai / opts.cloud (see the head) ───
-  // Without the option the plugin gets no gc.ai / gc.cloud at all (a host without them: feature detection).
-  const aiOpt = opts.ai && typeof opts.ai === 'object' ? opts.ai : null;
-  const cloudOpt = opts.cloud && typeof opts.cloud === 'object' ? opts.cloud : null;
-  const purposeOk = (p) => !!(p && typeof p === 'object' && !Array.isArray(p) && p.purpose && typeof p.purpose === 'object'
-    && ['de', 'en'].some((l) => typeof p.purpose[l] === 'string' && p.purpose[l].trim()) && Object.values(p.purpose).every((v) => typeof v === 'string' && v.length <= 200));
-  let aiPerm = null;
-  if (aiOpt && perms.ai != null) {
-    const p = perms.ai;
-    const caps = p && Array.isArray(p.capabilities) ? p.capabilities : null;
-    if (!purposeOk(p) || !caps || !caps.length || !caps.every((c) => AI_CAPS.includes(c)) || Object.keys(p).some((k) => k !== 'purpose' && k !== 'capabilities')) {
-      throw hostError('ERR_INVALID', 'plugin.json: permissions.ai: invalid');
-    }
-    aiPerm = { capabilities: [...new Set(caps)] };
-  }
-  if (cloudOpt && perms.cloudImport != null && (!purposeOk(perms.cloudImport) || Object.keys(perms.cloudImport).some((k) => k !== 'purpose'))) {
-    throw hostError('ERR_INVALID', 'plugin.json: permissions.cloudImport: invalid');
-  }
-  const cloudPerm = !!(cloudOpt && perms.cloudImport != null);
   // the administrator's side (GateControl › Einstellungen › KI-Anbieter): change it while the plugin runs
   const aiState = aiOpt ? {
     configured: aiOpt.configured !== false, allowed: aiOpt.allowed !== false, mediaAllowed: aiOpt.mediaAllowed !== false,
