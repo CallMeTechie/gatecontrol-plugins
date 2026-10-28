@@ -550,7 +550,8 @@ right again — a token outlives no right):
 **Proof keys:** when the discovery has `<proof-key modulus exponent oldmodulus oldexponent>`, every WOPI request must
 carry `X-WOPI-Proof` (or `X-WOPI-ProofOld`) and `X-WOPI-TimeStamp` (not older than 20 minutes): RSA-SHA256 over
 `len ‖ access_token ‖ len ‖ URL in capitals ‖ len ‖ timestamp (int64)` (each `len` a 4-byte big-endian length), the
-current or the old key — else `500`, as WOPI asks.
+current or the old key — else `500`, as WOPI asks. The URL with the token comes from GateControl as `proofUrl` (only for
+signed requests; `url` and `originalUrl` never carry the token).
 
 ## Portal
 

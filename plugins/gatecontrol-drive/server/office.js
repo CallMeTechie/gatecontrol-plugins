@@ -22,7 +22,8 @@
 //                                       REFRESH_LOCK, UNLOCK — 30 minutes (table office_locks); others 501
 // Every request checks the person's right to the file again (a token outlives no right), the file is no vault's, and —
 // when the discovery has proof keys — the proof (X-WOPI-Proof / X-WOPI-ProofOld, RSA-SHA256 over the token, the URL
-// in capitals and X-WOPI-TimeStamp, not older than 20 minutes; failing → 500 as WOPI asks).
+// in capitals and X-WOPI-TimeStamp, not older than 20 minutes; failing → 500 as WOPI asks). The URL with the token comes
+// from GateControl as proofUrl (only for signed requests; url and originalUrl never carry the token).
 
 const crypto = require('node:crypto');
 const store = require('./store');
@@ -251,10 +252,15 @@ async function publicRequest(gc, req, asPerson) {
   if (seg[0] !== 'wopi' || seg[1] !== 'files' || !Number.isSafeInteger(id) || id <= 0 || seg.length > 4 || (seg.length === 4 && seg[3] !== 'contents')) return wopiErr(404, { text: 'not found' });
   // the proof of the office server (when its discovery has keys)
   if (d.proof) {
-    const base = typeof req.url === 'string' ? (() => { try { return new URL(req.url).origin; } catch { return null; } })() : null;
+    // GateControl hands the URL as called (token included) only as proofUrl of a request with X-WOPI-Proof; url and
+    // originalUrl come without the token. Our own origin (the WOPISrc we gave) or GateControl's, with that path and query
+    let path = null;
+    let token = null;
+    try { const u = new URL(String(req.proofUrl || '')); path = u.pathname + u.search; token = u.searchParams.get('access_token'); } catch { path = null; }
     const own = await ownOrigin(gc);
-    const token = req.query && typeof req.query.access_token === 'string' ? req.query.access_token : accessTokenOf(req.originalUrl);
-    const urls = [...new Set([own, base].filter(Boolean))].map((o) => o + req.originalUrl);
+    let base = null;
+    try { base = new URL(String(req.proofUrl || '')).origin; } catch { base = null; }
+    const urls = path ? [...new Set([own, base].filter(Boolean))].map((o) => o + path) : [];
     if (!token || !urls.some((u) => checkProof(d.proof, req.headers || {}, token, u, now))) return wopiErr(500, { text: 'proof' });
   }
   let o;
@@ -330,10 +336,6 @@ async function publicRequest(gc, req, asPerson) {
   if (override === 'REFRESH_LOCK') { await set(); return { status: 200 }; }
   await store.run(gc, 'DELETE FROM office_locks WHERE node_id = ?', [o.node.id]);
   return { status: 200, headers: { 'X-WOPI-ItemVersion': version } };
-}
-
-function accessTokenOf(originalUrl) {
-  try { return new URL(String(originalUrl || ''), 'http://x').searchParams.get('access_token'); } catch { return null; }
 }
 
 /** The origin of GateControl's public endpoints (gc.publicEndpoints.base). */

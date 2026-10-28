@@ -234,8 +234,8 @@
 //   without the permission, ERR_INVALID); host.publicRequest({ method, path, query: { access_token }, headers, body })
 //   plays a request of /plugin-public/<id>/<path>: the token (its path and below, still valid, an enabled person —
 //   else 401), a body as an unclaimed media file of the person (≤ maxBodyBytes, else 413; dropped when the hook fails
-//   or answers ≥ 400 unclaimed), the hook publicRequest → { status, headers (x-… only), json | text | body (a media
-//   answer's bytes) | form }.
+//   or answers ≥ 400 unclaimed), the hook publicRequest (url / originalUrl without the token, proofUrl with it only for
+//   a request with X-WOPI-Proof) → { status, headers (x-… only), json | text | body (a media answer's bytes) | form }.
 //
 // GateControl 1.200.0 (opt-in: opts.gatecontrol: '1.200.0') — person groups, src/services/plugins/groups.js:
 //   permissions.groups 'read' | 'manage' (anything else → ERR_INVALID); every plugin has gc.groups, without the
@@ -2541,12 +2541,16 @@ async function createHost(pluginDir, opts = {}) {
       const drop = () => { if (body && mediaStore.has(body.mediaId) && !mediaStore.get(body.mediaId).claimed) mediaStore.delete(body.mediaId); };
       const headers = {};
       for (const [k, v] of Object.entries(req.headers || {})) if (/^x-[a-z0-9-]+$/i.test(k) || /^content-(type|length)$/i.test(k)) headers[k.toLowerCase()] = String(v);
+      // like GateControl: url / originalUrl without the token; proofUrl (as called) only for a request with X-WOPI-Proof
       const qs = new URLSearchParams(req.query || {}).toString();
-      const originalUrl = `/plugin-public/${manifest.id}/${p}` + (qs ? '?' + qs : '');
+      const plainQs = new URLSearchParams(q).toString();
+      const originalUrl = `/plugin-public/${manifest.id}/${p}` + (plainQs ? '?' + plainQs : '');
+      const signed = Object.keys(req.headers || {}).some((k) => /^x-wopi-proof(old)?$/i.test(k));
+      const proofUrl = signed ? `https://gc.example.com/plugin-public/${manifest.id}/${p}` + (qs ? '?' + qs : '') : null;
       let out;
       try {
         out = await hook('publicRequest', { method, path: '/' + p, query: q, headers, user: { id: who.id, name: who.name, role: who.role }, token: tok, body,
-          url: 'https://gc.example.com' + originalUrl, originalUrl, lang: 'de' });
+          url: 'https://gc.example.com' + originalUrl, originalUrl, proofUrl, lang: 'de' });
       } catch (e) { drop(); return { status: 502, headers: {}, text: 'plugin unavailable', error: e }; }
       if (!out || typeof out !== 'object') { drop(); return { status: 502, headers: {}, text: 'invalid plugin answer' }; }
       const status = out.status == null ? 200 : out.status;
