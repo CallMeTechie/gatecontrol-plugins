@@ -49,6 +49,8 @@ test('without GateControl\'s AI service (or switched off): no docAi, no insight 
     assert.deepEqual((await a('GET', 'deadlines')).json.deadlines, []);
   });
   await check({});
+  // GateControl 1.214.0 without a provider set up: gc.ai is there, not available
+  await check({ gatecontrol: '1.214.0' });
   await check({ ai: invoiceAi(), settings: { doc_ai: false } });
   await check({ ai: invoiceAi({ allowed: false }) });
   await check({ ai: invoiceAi({ configured: false }) });
@@ -206,10 +208,17 @@ test('pictures: only when GateControl allows them — on request, or on their ow
     await host.tick();
     assert.deepEqual(host.aiRequests[0].input.at(-1), { type: 'media', mediaId: pic.mediaId });
     assert.equal((await a('GET', `nodes/${pic.id}/insight`)).json.status, 'ready');
-    // a PDF without text cannot be read
-    const pdf = (await c.put(ANNA, mine.rootId, 'leer.pdf', 'pdf', { mime: 'application/pdf' })).json.node;
-    const no = await a('POST', `nodes/${pdf.id}/insight`);
-    assert.deepEqual([no.status, no.json.code, no.json.reason], [422, 'unsupported', 'no_text']);
+    // a PDF or a HEIC picture without text cannot be read (gc.ai takes JPEG, PNG, WebP, GIF only)
+    for (const [name, mime] of [['leer.pdf', 'application/pdf'], ['Scan.heic', 'image/heic']]) {
+      const f = (await c.put(ANNA, mine.rootId, name, 'bytes', { mime })).json.node;
+      const no = await a('POST', `nodes/${f.id}/insight`);
+      assert.deepEqual([no.status, no.json.code, no.json.reason], [422, 'unsupported', 'no_text'], name);
+    }
+    // with its recognised text a HEIC scan goes as text
+    const heic = (await c.put(ANNA, mine.rootId, 'Scan2.heic', 'bytes2', { mime: 'image/heic', text: TEXT })).json.node;
+    assert.equal(heic.insight.status, 'pending');
+    await host.tick();
+    assert.ok(host.aiRequests.at(-1).input.every((x) => x.type === 'text'));
     // GateControl's switch "Bilder an KI senden" off
     host.ai.mediaAllowed = false;
     const pic2 = (await c.put(ANNA, mine.rootId, 'Brief2.jpg', 'jpeg2', { mime: 'image/jpeg' })).json.node;

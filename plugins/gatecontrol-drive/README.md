@@ -17,7 +17,8 @@ device of an app request, `user.device` — GateControl passes it only with this
 devices"; since 1.6.0 also the device the ransomware protection watches and stops). The photo frame on kiosk devices
 (since 1.7.0) shows pictures only with GateControl ≥ 1.210.0 (preview-only URLs); everything else works with 1.208.0.
 AI for documents and the import from Google Drive and OneDrive (since 1.8.0) need GateControl's AI service (`gc.ai`,
-`permissions.ai`) and cloud accounts (`gc.cloud`, `permissions.cloudImport`); Drive checks for them at run time
+`permissions.ai`, GateControl ≥ 1.214.0) and cloud accounts (`gc.cloud`, `permissions.cloudImport`, GateControl ≥ 1.213.0);
+Drive checks for them at run time
 (`typeof gc.ai?.extract === 'function'`, `typeof gc.cloud?.list === 'function'`) and hides both without them. Settings
 *doc_ai* (default on), *doc_ai_images* (default off), *cloud_import* (default on).
 
@@ -113,10 +114,10 @@ reaches `GET frame` (the photo frame, since 1.7.0) and nothing else (`403 forbid
 | `GET deadlines` | `from?`, `to?` (YYYY-MM-DD; today, + 365 days) | `{ deadlines [{ id, kind, date, label, reminder, node }] }` (≤ 500, by date) |
 | `POST deadlines/<id>/remind` | `{ daysBefore }` (0 … 90) | `{ deadline }` — my reminder |
 | `DELETE deadlines/<id>/remind` | | `{ deadline }` |
-| `GET import/sources` | (since 1.8.0) | `{ google, microsoft, connections [{ id, provider, account, connectedAt }] }` (see "Import") |
+| `GET import/sources` | (since 1.8.0) | `{ google, microsoft, connections [{ id, provider, account, connectedAt, error? }] }` (see "Import"; `error: 'auth'`: connect again) |
 | `POST import/connect` | `{ provider: 'google' \| 'microsoft' }` | `{ url }` — GateControl's OAuth start, back to the portal |
 | `DELETE import/connections/<id>` | | `{ removed }` — its running jobs pause (`cloud_auth`) |
-| `GET import/browse` | `connection`, `folder?`, `cursor?` | `{ items [{ id, name, isDir, size, mime, modifiedAt }], next, connection }` |
+| `GET import/browse` | `connection`, `folder?`, `cursor?` | `{ items [{ id, name, isDir, size, mime, modifiedAt }], next, connection }` (100 a page; `size`, `mime`, `modifiedAt` may be `null` — folders, Google documents) |
 | `POST import/jobs` | `{ connection, items: [{ id, isDir, name? }] (1 … 500; a folder needs its name), targetFolderId }` | `{ job }` |
 | `GET import/jobs` | | `{ jobs }` — mine, newest first (≤ 50) |
 | `GET import/jobs/<id>` | | `{ job }` |
@@ -434,9 +435,10 @@ in `features`, no `insight` on nodes, `GET nodes/<id>/insight` answers `status: 
 feature_off`.
 
 - What goes to the AI: the recognised text of a file (`uploads/commit { text }`, ≤ 20 000 characters), its name, today's
-  date and the folder paths of its area (≤ 300) — never the file. A picture (JPEG, PNG, WebP, GIF ≤ 10 MB) without text
-  only while GateControl allows pictures to AI: on its own with the setting *doc_ai_images* (default off), else when
-  someone asks (`POST nodes/<id>/insight`). A PDF without text: `422 unsupported`.
+  date and the folder paths of its area (≤ 300) — never the file. A picture (JPEG, PNG, WebP, GIF ≤ 10 MB — what `gc.ai`
+  takes) without text only while GateControl allows pictures to AI (`gc.ai.available({ capability: 'vision' })`): on its
+  own with the setting *doc_ai_images* (default off), else when someone asks (`POST nodes/<id>/insight`). A PDF or HEIC
+  scan goes as its recognised text only; without text: `422 unsupported`.
 - When: a new file or version (an upload, a service call) goes into the queue (`status: 'pending'`); the background run
   works it off, at most three a run. At most one recognition per version (`rev`); a failed one (`status: 'failed'`,
   `error`: `ai_budget`, `media_disabled`, `ai_capability`, `ai_invalid`, `ai_timeout`, `ai_provider`, `no_text`) is not
@@ -466,9 +468,11 @@ feature_off`.
 Cloud-Konten). Without `gc.cloud`, with no OAuth app (`gc.cloud.available()`) or with the setting *cloud_import* off: no
 `cloudImport` in `features`, the routes answer `403 feature_off` (a person's jobs stay readable and cancellable).
 
-- `POST import/connect { provider }` → `{ url }`: GateControl's OAuth start; afterwards GateControl returns to
-  `/portal?drive=import#plg-gatecontrol-drive` (the portal opens "Importieren"). A connection belongs to one person and
-  this plugin (`gc.cloud.connections`).
+- `POST import/connect { provider }` → `{ url }`: GateControl's OAuth start (`<GC_BASE_URL>/oauth/cloud/start?flow=…`; the
+  portal opens it with `GC.openUrl`, else it shows the address to copy); afterwards GateControl returns to
+  `/portal?drive=import&cloud=connected#plg-gatecontrol-drive` (or `cloud=error&cloudError=<code>`) — the portal opens
+  "Importieren", says how it went and lets the jobs that waited for the account go on. A connection belongs to one person
+  and this plugin (`gc.cloud.connections`); `error: 'auth'` on it: connect the account again (it keeps its id).
 - A job (`POST import/jobs`) runs in the background as its person (their seat and rights, the change log's device
   `import:<provider>`), at most 200 items or 45 s a run, the jobs in turn; at most five running ones a person. Folders
   are made in the target (a folder of that name is used), their contents listed page by page; a file comes through

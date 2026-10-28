@@ -47,18 +47,20 @@ test('sources, connecting (back to the portal), browsing with pages; another per
     assert.equal((await a('POST', 'import/connect', { provider: 'microsoft' })).json.code, 'feature_off');
     assert.equal((await a('POST', 'import/connect', { provider: 'dropbox' })).status, 400);
     const u = await a('POST', 'import/connect', { provider: 'google' });
-    assert.match(u.json.url, /^\/oauth\/cloud\/start\?state=/);
+    assert.match(u.json.url, /^https:\/\/gc\.example\.com\/oauth\/cloud\/start\?flow=[A-Za-z0-9_-]{16,64}$/);
     assert.deepEqual([host.cloudConnectUrls[0].user, host.cloudConnectUrls[0].returnTo], [ANNA.id, '/portal?drive=import#plg-gatecontrol-drive']);
     const conn = host.cloudConnect(ANNA.id, 'google', ACCOUNT);
     assert.deepEqual((await a('GET', 'import/sources')).json.connections, [conn]);
     let b = (await a('GET', 'import/browse', null, { connection: conn.id })).json;
-    assert.deepEqual(b.items.map((x) => [x.name, x.isDir]), [['Belege', true], ['Einkaufsliste', false], ['Gleich.txt', false]]);
+    assert.deepEqual(b.items.map((x) => [x.name, x.isDir]), [['Belege', true], ['Einkaufsliste.docx', false], ['Gleich.txt', false]]);
     assert.equal(b.next, '3');
+    // a Google document: its export, without a size
+    assert.deepEqual([b.items[1].size, b.items[1].mime], [null, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document']);
     assert.deepEqual(b.connection, conn);
     b = (await a('GET', 'import/browse', null, { connection: conn.id, cursor: b.next })).json;
     assert.deepEqual([b.items.map((x) => x.name), b.next], [['Notiz.txt'], null]);
     b = (await a('GET', 'import/browse', null, { connection: conn.id, folder: 'f-belege' })).json;
-    assert.deepEqual(b.items.map((x) => [x.name, x.size, x.modifiedAt]), [['Alt: 2025', 0, null], ['Strom.pdf', 5, '2026-03-01T10:00:00.000Z']]);
+    assert.deepEqual(b.items.map((x) => [x.name, x.size, x.modifiedAt]), [['Alt: 2025', null, null], ['Strom.pdf', 5, '2026-03-01T10:00:00.000Z']]);
     assert.equal((await a('GET', 'import/browse', null, { connection: conn.id, folder: 'nix' })).status, 404);
     // Bob does not reach Anna's connection
     const bob = c.as(BOB);
@@ -68,6 +70,11 @@ test('sources, connecting (back to the portal), browsing with pages; another per
     // the provider took the consent back
     host.cloudRevoke(conn.id);
     assert.equal((await a('GET', 'import/browse', null, { connection: conn.id })).json.code, 'cloud_auth');
+    assert.equal((await a('GET', 'import/sources')).json.connections[0].error, 'auth', 'shown as "connect again"');
+    // connecting the same account again: the same connection, working
+    assert.equal(host.cloudConnect(ANNA.id, 'google', ACCOUNT).id, conn.id);
+    assert.equal((await a('GET', 'import/sources')).json.connections[0].error, undefined);
+    assert.equal((await a('GET', 'import/browse', null, { connection: conn.id })).status, 200);
     assert.deepEqual((await a('DELETE', `import/connections/${conn.id}`)).json, { ok: true, removed: true });
     assert.deepEqual((await a('GET', 'import/sources')).json.connections, []);
   });

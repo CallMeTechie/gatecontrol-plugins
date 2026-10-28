@@ -5,12 +5,12 @@ Dateien der Familie und des Teams auf dem eigenen Speicher – auf diesem Server
 ## 1.8.0
 - **KI für Dokumente** (Feature `docAi`): Für neue Dokumente schlägt die KI Art, Titel, Datum, Absender, Betrag, einen
   Zielordner des Bereichs, einen Dateinamen und Fristen vor. Nichts passiert automatisch – übernommen wird per Klick.
-  - Nutzt den KI-Dienst von GateControl (`gc.ai`, neue Berechtigung `ai` mit Text und Bildern). Ohne ihn, wenn der Admin
+  - Nutzt den KI-Dienst von GateControl ≥ 1.214.0 (`gc.ai`, neue Berechtigung `ai` mit Text und Bildern). Ohne ihn, wenn der Admin
     das Plugin dort sperrt oder die neue Einstellung `doc_ai` aus ist, fehlt `docAi` in `GET me` `features`, Knoten haben
     kein `insight` und `GET nodes/<id>/insight` antwortet `status: 'off'`.
-  - Datensparsam: gesendet wird der erkannte Text (`uploads/commit { text }`), nie die Datei. Bilder ohne Text nur, wenn
-    GateControl „Bilder an KI senden“ erlaubt – automatisch nur mit der neuen Einstellung `doc_ai_images` (Standard aus),
-    sonst auf Wunsch (`POST nodes/<id>/insight`).
+  - Datensparsam: gesendet wird der erkannte Text (`uploads/commit { text }`), nie die Datei. Bilder ohne Text (nur JPEG,
+    PNG, WebP, GIF) nur, wenn GateControl „Bilder an KI senden“ erlaubt – automatisch nur mit der neuen Einstellung
+    `doc_ai_images` (Standard aus), sonst auf Wunsch (`POST nodes/<id>/insight`). HEIC- und PDF-Scans nur als Text.
   - Kosten: höchstens eine Erkennung je Fassung (`rev`), keine Wiederholung ohne Anlass (neue Fassung oder `POST …/insight`),
     die Warteschlange arbeitet der Hintergrund ab – höchstens drei Erkennungen je Lauf.
   - `GET nodes/<id>/insight` → `{ status, kind, title, date, sender, amount, currency, suggestion { folderId, folderPath,
@@ -24,8 +24,10 @@ Dateien der Familie und des Teams auf dem eigenen Speicher – auf diesem Server
   bietet keinen Erinnerungsdienst, den ein anderes Plugin aufrufen darf – deshalb erinnert Drive selbst.
 - **Import aus Google Drive und OneDrive** (Feature `cloudImport`): neue Portal-Seite „Importieren“ – Konto verbinden,
   durchsuchen, Dateien oder ganze Ordner wählen, Zielordner wählen.
-  - Nutzt die Cloud-Konten von GateControl (`gc.cloud`, neue Berechtigung `cloudImport`) und die neue Einstellung
-    `cloud_import`.
+  - Nutzt die Cloud-Konten von GateControl ≥ 1.213.0 (`gc.cloud`, neue Berechtigung `cloudImport`) und die neue
+    Einstellung `cloud_import`. Das Portal öffnet die Anmeldung mit `GC.openUrl` und wertet die Rückkehr aus
+    (`cloud=connected` bzw. `cloud=error&cloudError=…`); danach laufen wartende Importe weiter. Eine abgelaufene
+    Verbindung (`error: 'auth'`) zeigt „Neu verbinden“.
   - Aufträge laufen im Hintergrund als die Person, setzen nach einem Abbruch dort fort, wo sie waren, und zeigen ihren
     Fortschritt (Live-Ereignis `import`).
   - Ordnerstruktur und Änderungsdatum (`mtime`) bleiben erhalten. Ein vorhandener Name wird zur neuen Version, gleiche

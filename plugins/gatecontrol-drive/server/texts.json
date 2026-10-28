@@ -582,7 +582,11 @@
     "p.imp_ferr_exists": "Name schon vergeben",
     "p.imp_ferr_cloud_error": "Cloud-Konto antwortet nicht",
     "p.imp_ferr_too_many": "zu viele Dateien",
-    "p.imp_ferr_failed": "fehlgeschlagen"
+    "p.imp_ferr_failed": "fehlgeschlagen",
+    "p.imp_stale": "Verbindung abgelaufen",
+    "p.imp_reconnect": "Neu verbinden",
+    "p.imp_connected": "Konto verbunden.",
+    "p.imp_connect_failed": "Das Verbinden hat nicht geklappt ({{code}})."
   },
   "en": {
     "error.invalid": "Invalid input.",
@@ -1167,6 +1171,10 @@
     "p.imp_ferr_exists": "name taken",
     "p.imp_ferr_cloud_error": "cloud account does not answer",
     "p.imp_ferr_too_many": "too many files",
-    "p.imp_ferr_failed": "failed"
+    "p.imp_ferr_failed": "failed",
+    "p.imp_stale": "Connection expired",
+    "p.imp_reconnect": "Connect again",
+    "p.imp_connected": "Account connected.",
+    "p.imp_connect_failed": "Connecting did not work ({{code}})."
   }
 }

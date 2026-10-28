@@ -1,14 +1,17 @@
 'use strict';
 
-// The import from Google Drive and OneDrive (since 1.8.0, feature `cloudImport`): GateControl's cloud accounts
-// (gc.cloud, permissions.cloudImport — the OAuth apps are the administrator's, in GateControl › Einstellungen ›
+// The import from Google Drive and OneDrive (since 1.8.0, feature `cloudImport`): GateControl's cloud accounts (≥ 1.213.0,
+// gc.cloud, permissions.cloudImport — the OAuth apps are the administrator's, in GateControl › Einstellungen ›
 // Cloud-Konten). A person connects their account, browses it, picks files or whole folders and a Drive folder; the
 // background run imports them as that person (their rights, their seat): folders are made (or a folder of that name is
 // used), the original change date becomes the file's mtime, a file of the same name becomes a new version (the same
 // bytes: skipped). A job goes on where it stopped (import_items) — after a restart, a pause or a resume.
 //
-//   GET    import/sources                 → { google, microsoft, connections: [{ id, provider, account, connectedAt }] }
-//   POST   import/connect                 { provider } → { url } — GateControl's OAuth start, back to the portal
+//   GET    import/sources                 → { google, microsoft, connections: [{ id, provider, account, connectedAt, error? }] }
+//                                           (error 'auth': connect again — the same account keeps its connection id)
+//   POST   import/connect                 { provider } → { url } — GateControl's OAuth start (<GC_BASE_URL>/oauth/cloud/
+//                                           start?flow=…, the portal opens it with GC.openUrl); back to the portal with
+//                                           cloud=connected | cloud=error&cloudError=<code>
 //   DELETE import/connections/<id>        → { removed } — its jobs pause (cloud_auth)
 //   GET    import/browse                  connection, folder?, cursor? → { items: [{ id, name, isDir, size, mime,
 //                                           modifiedAt }], next, connection: { id, provider, account } }
@@ -78,7 +81,9 @@ const cloudFail = (e) => (e && CLOUD_CODES[e.code] ? fail(CLOUD_CODES[e.code]) :
 
 async function connections(gc, uid) {
   const list = await gc.cloud.connections({ user: uid });
-  return (Array.isArray(list) ? list : []).map((c) => ({ id: String(c.id), provider: c.provider, account: c.account || null, connectedAt: c.connectedAt || null }));
+  // error 'auth': the provider no longer accepts it — connect again (the same account keeps its connection)
+  return (Array.isArray(list) ? list : []).map((c) => ({ id: String(c.id), provider: c.provider, account: c.account || null, connectedAt: c.connectedAt || null,
+    ...(c.error ? { error: String(c.error) } : {}) }));
 }
 
 async function connOf(ctx, id) {
@@ -370,7 +375,7 @@ const ITEM_ERRORS = {
   ERR_MEDIA_TYPE: 'unsupported', invalid: 'invalid', ERR_INVALID: 'invalid', upload_invalid: 'invalid', exists: 'exists', conflict: 'exists',
 };
 // a job's refusals that pause it (resume) or end it
-const JOB_PAUSE = { ERR_CLOUD_AUTH: 'cloud_auth', ERR_CLOUD_DENIED: 'cloud_off', ERR_CLOUD_NOT_CONFIGURED: 'cloud_off', ERR_MEDIA_QUOTA: 'quota', quota: 'quota' };
+const JOB_PAUSE = { ERR_CLOUD_AUTH: 'cloud_auth', ERR_CLOUD_DENIED: 'cloud_off', ERR_CLOUD_NOT_CONFIGURED: 'cloud_off', ERR_MEDIA_DENIED: 'cloud_off', ERR_MEDIA_QUOTA: 'quota', quota: 'quota' };
 const JOB_FAIL = { no_seat: 'no_seat', not_licensed: 'no_seat', forbidden: 'forbidden' };
 
 /** One job's turn → { steps, stop } (stop: GateControl asked to wait — the whole run stops). */
@@ -383,7 +388,8 @@ async function runJob(gc, j, settings, now, asPerson, budget) {
     if (e && JOB_PAUSE[e.code]) { await setJob(gc, j, 'paused', JOB_PAUSE[e.code], now); return { steps: 0, stop: false }; }
     return { steps: 0, stop: true };
   }
-  if (!conns.some((c) => c.id === j.connection)) { await setJob(gc, j, 'paused', 'cloud_auth', now); return { steps: 0, stop: false }; }
+  const conn = conns.find((c) => c.id === j.connection);
+  if (!conn || conn.error === 'auth') { await setJob(gc, j, 'paused', 'cloud_auth', now); return { steps: 0, stop: false }; }
   // the target: still there, still writable
   try { await nodes.folderFor(ctx, j.target_id); } catch (e) {
     await setJob(gc, j, 'failed', (e && (JOB_FAIL[e.code] || (e.code === 'not_found' ? 'not_found' : null))) || 'forbidden', now);

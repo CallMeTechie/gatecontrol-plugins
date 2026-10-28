@@ -318,8 +318,8 @@
       if (S.admin) loadIncidents();
       var first = areaOf('mine:' + r.me.id) || S.areas[0];
       var want = wanted();
-      // back from connecting a cloud drive (drive=import)
-      if (want === 'import' && has('cloudImport')) { if (first) openFolder(first.id, first.rootId, showImport); else showImport(); }
+      // back from connecting a cloud drive (drive=import, GateControl adds cloud=connected | cloud=error&cloudError=<code>)
+      if (want === 'import' && has('cloudImport')) { var back = function () { showImport(cloudReturn()); }; if (first) openFolder(first.id, first.rootId, back); else back(); }
       else if (want && want !== 'import') openTarget(want, first);
       else if (first) openFolder(first.id, first.rootId);
       loadStorage();
@@ -385,7 +385,7 @@
     nav.appendChild(h('button', { type: 'button', attrs: { 'aria-current': S.page === 'devices' ? 'page' : null }, on: { click: showDevices } }, [icon('device'), h('span', { text: T('p.devices') })]));
     nav.appendChild(h('button', { type: 'button', attrs: { 'aria-current': S.page === 'storage' ? 'page' : null }, on: { click: function () { showStorage(); } } }, [icon('storage'), h('span', { text: T('p.storage') })]));
     if (has('docAi')) nav.appendChild(h('button', { type: 'button', attrs: { 'aria-current': S.page === 'deadlines' ? 'page' : null }, on: { click: showDeadlines } }, [icon('bell'), h('span', { text: T('p.deadlines') })]));
-    if (has('cloudImport')) nav.appendChild(h('button', { type: 'button', attrs: { 'aria-current': S.page === 'import' ? 'page' : null }, on: { click: showImport } }, [icon('cloudIn'), h('span', { text: T('p.import') })]));
+    if (has('cloudImport')) nav.appendChild(h('button', { type: 'button', attrs: { 'aria-current': S.page === 'import' ? 'page' : null }, on: { click: function () { showImport(); } } }, [icon('cloudIn'), h('span', { text: T('p.import') })]));
     if (S.admin) nav.appendChild(h('button', { type: 'button', attrs: { 'aria-current': S.page === 'incidents' ? 'page' : null }, on: { click: showIncidents } }, [icon('shield'), h('span', { text: T('p.guard_incidents') })]));
     var a = areaOf(S.areaId);
     var st = a ? S.storage.get(a.id) : null;
@@ -1184,6 +1184,16 @@
     return m ? (m[1] === 'import' ? 'import' : Number(m[1])) : null;
   }
 
+  /** The outcome of GateControl's OAuth dialog in the frame's address → { ok, code } or null. */
+  function cloudReturn() {
+    var where = '';
+    try { where = String(window.location && window.location.search || '') + '&' + String(window.location && window.location.hash || '').replace(/^#/, ''); } catch (e) { where = ''; }
+    var m = /(?:^|[?&#])cloud=(connected|error)(?:$|[&#])/.exec(where);
+    if (!m) return null;
+    var c = /(?:^|[?&#])cloudError=([A-Za-z0-9_.-]{1,64})(?:$|[&#])/.exec(where);
+    return { cloud: true, ok: m[1] === 'connected', code: c ? c[1] : null };
+  }
+
   /** Open node `id`: a folder opens, a file opens its folder, is marked and shown. Not there: my files and a note. */
   function openTarget(id, fallback) {
     api('GET', 'nodes/' + id).then(function (r) {
@@ -1964,14 +1974,22 @@
   var IM = { sources: null, jobs: [], conn: null, crumbs: [], folder: null, items: [], next: null, chosen: {}, target: null, bar: null, seq: 0 };
   function providerName(p) { return p === 'google' ? 'Google Drive' : p === 'microsoft' ? 'OneDrive' : String(p || ''); }
 
-  function showImport() {
+  /** The page "Importieren"; `back`: the outcome of connecting an account ({ ok, code } — then the jobs that waited for it go on). */
+  function showImport(back) {
     var main = startPage('import');
     Promise.all([api('GET', 'import/sources'), api('GET', 'import/jobs')]).then(function (r) {
       if (S.page !== 'import') return;
       IM.sources = r[0];
       IM.jobs = r[1].jobs || [];
-      if (IM.conn && !(IM.sources.connections || []).some(function (c) { return c.id === IM.conn.id; })) IM.conn = null;
+      if (IM.conn && !(IM.sources.connections || []).some(function (c) { return c.id === IM.conn.id && !c.error; })) IM.conn = null;
       renderImport(main);
+      var cloud = back && back.cloud === true ? back : null;
+      if (cloud && !cloud.ok) toast(T('p.imp_connect_failed', { code: cloud.code || 'failed' }), 'error');
+      if (cloud && cloud.ok) {
+        toast(T('p.imp_connected'));
+        var waiting = IM.jobs.filter(function (j) { return j.state === 'paused' && j.error === 'cloud_auth'; });
+        if (waiting.length) Promise.all(waiting.map(function (j) { return api('POST', 'import/jobs/' + j.id + '/resume', {}).catch(function () { return null; }); })).then(function () { loadJobs(); });
+      }
     }, function (e) {
       if (S.page !== 'import') return;
       clear(main);
@@ -1990,11 +2008,14 @@
     if (IM.jobs.length) main.appendChild(h('section', { class: 'dp-st-sec' }, [h('h2', { class: 'dp-h2', text: T('p.imp_jobs') })].concat(IM.jobs.map(jobRow))));
     var accs = h('div', { class: 'dp-imp-accs' });
     (src.connections || []).forEach(function (c) {
+      // error 'auth': the provider no longer accepts the connection — connect the account again
+      var stale = c.error === 'auth';
       accs.appendChild(h('div', { class: 'dp-device' + (IM.conn && IM.conn.id === c.id ? ' is-on' : '') }, h('div', { class: 'dp-dev-head' }, [
         h('span', { class: 'dp-ic' }, icon('cloud')),
-        h('div', { class: 'dp-dev-tx' }, [h('span', { class: 'dp-name', text: providerName(c.provider) }), h('span', { class: 'dp-meta', text: c.account || '' })]),
+        h('div', { class: 'dp-dev-tx' }, [h('span', { class: 'dp-name', text: providerName(c.provider) }), h('span', { class: 'dp-meta', text: [c.account || '', stale ? T('p.imp_stale') : null].filter(Boolean).join(' · ') })]),
         h('div', { class: 'dp-actions' }, [
-          btn(T('p.imp_browse'), function () { openConn(c); }, { small: true, icon: 'folder' }),
+          stale ? btn(T('p.imp_reconnect'), function () { connectProvider(c.provider); }, { small: true, primary: true, icon: 'restore' })
+            : btn(T('p.imp_browse'), function () { openConn(c); }, { small: true, icon: 'folder' }),
           btn(T('p.imp_disconnect'), function () { disconnectConn(c); }, { small: true, danger: true }),
         ]),
       ])));
@@ -2018,7 +2039,7 @@
       h('div', { class: 'dp-meter', attrs: { role: 'progressbar', 'aria-valuemin': '0', 'aria-valuemax': '100', 'aria-valuenow': String(pct), 'aria-label': T('p.imp_progress') } }, h('span', { attrs: { style: 'width:' + pct + '%' } })),
       h('div', { class: 'dp-st-row' }, [h('span', { class: 'dp-meta', text: meta.filter(Boolean).join(' · ') }), h('div', { class: 'dp-actions' }, [
         j.state === 'paused' || j.state === 'failed' ? btn(T('p.imp_resume'), function () { resumeJob(j); }, { small: true, icon: 'restore' }) : null,
-        btn(T(active ? 'p.imp_cancel' : 'p.imp_remove'), function () { api('DELETE', 'import/jobs/' + j.id).then(showImport, fail); }, { small: true, danger: active }),
+        btn(T(active ? 'p.imp_cancel' : 'p.imp_remove'), function () { api('DELETE', 'import/jobs/' + j.id).then(function () { showImport(); }, fail); }, { small: true, danger: active }),
       ])]),
       j.failures && j.failures.length ? h('ul', { class: 'dp-imp-fails' }, j.failures.map(function (f) { return h('li', { text: f.name + ' – ' + T('p.imp_ferr_' + f.error) }); })) : null,
     ]);
@@ -2037,12 +2058,16 @@
       var url = String(r.url || '');
       var origin = S.links && S.links.drive ? String(S.links.drive).split('/').slice(0, 3).join('/') : '';
       var abs = url.charAt(0) === '/' && origin ? origin + url : url;
-      if (window.GC && typeof window.GC.openUrl === 'function') { window.GC.openUrl(abs); toast(T('p.imp_connecting')); return; }
-      dialog(T('p.imp_connect', { provider: providerName(p) }), [
-        h('p', { class: 'dp-hint', text: T('p.imp_connect_text') }),
-        h('input', { class: 'dp-input', type: 'text', value: abs, attrs: { readonly: true, 'aria-label': T('p.imp_address') } }),
-        h('div', { class: 'dp-actions' }, [btn(T('p.close'), closeDialog), btn(T('p.imp_copy'), function () { copyText(abs); }, { primary: true, icon: 'copy' })]),
-      ]);
+      var show = function () {
+        dialog(T('p.imp_connect', { provider: providerName(p) }), [
+          h('p', { class: 'dp-hint', text: T('p.imp_connect_text') }),
+          h('input', { class: 'dp-input', type: 'text', value: abs, attrs: { readonly: true, 'aria-label': T('p.imp_address') } }),
+          h('div', { class: 'dp-actions' }, [btn(T('p.close'), closeDialog), btn(T('p.imp_copy'), function () { copyText(abs); }, { primary: true, icon: 'copy' })]),
+        ]);
+      };
+      // GateControl ≥ 1.213.0: the page opens the address itself (only that address, at most once in 1.5 s)
+      if (!window.GC || typeof window.GC.openUrl !== 'function') { show(); return; }
+      Promise.resolve().then(function () { return window.GC.openUrl(abs); }).then(function () { toast(T('p.imp_connecting')); }, show);
     }, fail);
   }
 

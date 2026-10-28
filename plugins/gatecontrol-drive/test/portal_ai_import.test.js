@@ -136,7 +136,7 @@ test('smoke: "Importieren" — connect (GC.openUrl), browse, pick, a job with pr
   await withHost({ cloud: CLOUD }, async (host, c) => {
     const opened = [];
     const calls = [];
-    const gc = frameGc(host, ANNA, calls, { openUrl: (u) => opened.push(u) });
+    const gc = frameGc(host, ANNA, calls, { openUrl: async (u) => { opened.push(u); return { ok: true }; } });
     const f = createWindow(portalHtml(), gc);
     const $ = (id) => f.document.getElementById(id);
     try {
@@ -147,7 +147,7 @@ test('smoke: "Importieren" — connect (GC.openUrl), browse, pick, a job with pr
       assert.ok(!byText($('dp-main'), 'span', 'OneDrive verbinden'));
       byText($('dp-main'), 'span', 'Google Drive verbinden').parentNode.click();
       await until('opened', () => opened.length === 1);
-      assert.match(opened[0], /\/oauth\/cloud\/start\?state=/);
+      assert.match(opened[0], /^https:\/\/gc\.example\.com\/oauth\/cloud\/start\?flow=[A-Za-z0-9_-]{16,64}$/);
       // back from GateControl's OAuth dialog
       host.cloudConnect(ANNA.id, 'google', 'anna@example.com');
       byText($('dp-nav'), 'span', 'Importieren').parentNode.click();
@@ -187,9 +187,60 @@ test('smoke: without GC.openUrl the address is shown to copy; drive=import opens
       await until('the page', () => byText($('dp-main'), 'span', 'Google Drive verbinden'));
       byText($('dp-main'), 'span', 'Google Drive verbinden').parentNode.click();
       const input = await until('the address', () => $('dp-dialog').querySelector('input'));
-      assert.match(input.value, /\/oauth\/cloud\/start\?state=/);
+      assert.match(input.value, /^https:\/\/gc\.example\.com\/oauth\/cloud\/start\?flow=[A-Za-z0-9_-]{16,64}$/);
       assert.ok(byText($('dp-dialog'), 'span', 'Adresse kopieren'));
       assert.equal(host.cloudConnectUrls[0].returnTo, '/portal?drive=import#plg-gatecontrol-drive');
+    } finally {
+      f.stop();
+    }
+  });
+});
+
+test('smoke: back from GateControl\'s OAuth dialog — connected (waiting jobs go on) or an error; an expired connection; openUrl refused', async () => {
+  await withHost({ cloud: CLOUD }, async (host, c) => {
+    const conn = host.cloudConnect(ANNA.id, 'google', 'anna@example.com');
+    const mine = await c.area(ANNA, 'mine');
+    const job = (await c.as(ANNA)('POST', 'import/jobs', { connection: conn.id, items: [{ id: 'f2', isDir: false }], targetFolderId: mine.rootId })).json.job;
+    host.cloudRevoke(conn.id);
+    await host.tick();
+    assert.equal((await c.as(ANNA)('GET', `import/jobs/${job.id}`)).json.job.error, 'cloud_auth');
+    // the expired connection: "Neu verbinden"; GateControl refuses the address (too soon) — then it is shown to copy
+    let f = createWindow(portalHtml(), frameGc(host, ANNA, [], { openUrl: async () => { throw new Error('not allowed'); } }));
+    let $ = (id) => f.document.getElementById(id);
+    try {
+      f.run();
+      await until('the nav', () => byText($('dp-nav'), 'span', 'Importieren'));
+      byText($('dp-nav'), 'span', 'Importieren').parentNode.click();
+      await until('stale', () => textOf($('dp-main')).includes('Verbindung abgelaufen'));
+      assert.ok(!byText($('dp-main'), 'span', 'Durchsuchen'));
+      byText($('dp-main'), 'span', 'Neu verbinden').parentNode.click();
+      await until('the address', () => $('dp-dialog').querySelector('input'));
+    } finally {
+      f.stop();
+    }
+    // back with an error
+    f = createWindow(portalHtml(), frameGc(host, ANNA, []));
+    $ = (id) => f.document.getElementById(id);
+    try {
+      f.window.location = { search: '?drive=import&cloud=error&cloudError=ERR_CLOUD_AUTH', hash: '' };
+      f.run();
+      await until('the error', () => textOf($('dp-toast')).includes('Das Verbinden hat nicht geklappt (ERR_CLOUD_AUTH)'));
+    } finally {
+      f.stop();
+    }
+    // connected again: the job that waited goes on
+    host.cloudConnect(ANNA.id, 'google', 'anna@example.com');
+    const calls = [];
+    f = createWindow(portalHtml(), frameGc(host, ANNA, calls));
+    $ = (id) => f.document.getElementById(id);
+    try {
+      f.window.location = { search: '?drive=import&cloud=connected', hash: '' };
+      f.run();
+      await until('connected', () => textOf($('dp-toast')).includes('Konto verbunden'));
+      await until('resumed', () => calls.some((x) => x.method === 'POST' && x.path === `import/jobs/${job.id}/resume`));
+      await until('queued', () => textOf($('dp-main')).includes('Wartet'));
+      await host.tick();
+      assert.equal((await c.as(ANNA)('GET', `import/jobs/${job.id}`)).json.job.state, 'done');
     } finally {
       f.stop();
     }

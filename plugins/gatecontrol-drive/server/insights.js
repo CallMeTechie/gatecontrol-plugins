@@ -1,6 +1,6 @@
 'use strict';
 
-// AI for documents (since 1.8.0, feature `docAi`): GateControl's AI service (gc.ai, permissions.ai — the provider, its
+// AI for documents (since 1.8.0, feature `docAi`): GateControl's AI service (≥ 1.214.0, gc.ai, permissions.ai — the provider, its
 // keys and the monthly budget are the administrator's, in GateControl › Einstellungen › KI-Anbieter) reads a document
 // and suggests its kind, title, date, sender and amount, a folder of its area and a file name, and the deadlines in it
 // (deadlines.js). Nothing happens on its own: the suggestion is shown and taken with one click (apply → rename / move).
@@ -85,8 +85,10 @@ const SCHEMA = {
 const hasAi = (gc) => !!(gc.ai && typeof gc.ai.extract === 'function' && typeof gc.ai.available === 'function');
 
 /**
- * Is AI for documents usable now → { on, media }: the setting doc_ai, a GateControl with gc.ai that allows this plugin
- * (gc.ai.available()); media: pictures may go to the AI (gc.ai.status() mediaAllowed and a provider that reads them).
+ * Is AI for documents usable now → { on, media }: the setting doc_ai, a GateControl with gc.ai (≥ 1.214.0) that allows
+ * this plugin (gc.ai.available()); media: pictures may go to the AI (gc.ai.available({ capability: 'vision' }) — a
+ * provider that reads them and "Bilder an KI senden" on). Pictures are JPEG, PNG, WebP or GIF only (what gc.ai takes); a
+ * HEIC or PDF scan goes as its recognised text or not at all.
  */
 async function state(gc, settings) {
   if (!settings.docAi || !hasAi(gc)) return { on: false, media: false };
@@ -99,13 +101,9 @@ const memo = new WeakMap();
 async function ask(gc) {
   let on = false;
   try { on = (await gc.ai.available()) === true; } catch { on = false; }
+  // 'vision' is available only while GateControl's "Bilder an KI senden" is on
   let media = false;
-  if (on && typeof gc.ai.status === 'function') {
-    try {
-      const s = await gc.ai.status();
-      media = !!(s && s.mediaAllowed === true && Array.isArray(s.capabilities) && s.capabilities.includes('vision'));
-    } catch { media = false; }
-  }
+  if (on) { try { media = (await gc.ai.available({ capability: 'vision' })) === true; } catch { media = false; } }
   return { on, media };
 }
 
