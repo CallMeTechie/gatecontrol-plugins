@@ -2657,6 +2657,17 @@
             "de": "Erinnert daran, solange Dateien nur auf dem Server oder der NAS liegen",
             "en": "Reminds you while files lie only on the server or the NAS"
           }
+        },
+        {
+          "icon": "shield",
+          "title": {
+            "de": "Schutz vor Erpressungstrojanern",
+            "en": "Protection against ransomware"
+          },
+          "text": {
+            "de": "Stoppt ein Gerät, das viele Dateien verschlüsselt oder umbenennt – mit „Rückgängig machen“",
+            "en": "Stops a device that encrypts or renames many files – with “Undo”"
+          }
         }
       ],
       "permissions": [
@@ -2719,8 +2730,8 @@
             "en": "A person’s devices"
           },
           "text": {
-            "de": "Erkennt, von welchem eigenen Gerät eine Anfrage kommt – für „Löschen auf allen Geräten“ und das Änderungsprotokoll.",
-            "en": "Knows which of one’s own devices a request comes from – for “delete on all devices” and the change log."
+            "de": "Erkennt, von welchem eigenen Gerät eine Anfrage kommt – für „Löschen auf allen Geräten“, das Änderungsprotokoll und den Schutz vor Erpressungstrojanern.",
+            "en": "Knows which of one’s own devices a request comes from – for “delete on all devices”, the change log and the protection against ransomware."
           }
         },
         {
@@ -2730,8 +2741,8 @@
             "en": "Notifications"
           },
           "text": {
-            "de": "Hochladen über einen Link, Sicherungshinweis an Admins, Hinweis an Kinder, wenn Eltern hineinsehen.",
-            "en": "Uploads through a link, the backup hint to administrators, a note to children when parents look in."
+            "de": "Hochladen über einen Link, Sicherungshinweis an Admins, Hinweis an Kinder, wenn Eltern hineinsehen, ein gestopptes Gerät.",
+            "en": "Uploads through a link, the backup hint to administrators, a note to children when parents look in, a stopped device."
           }
         },
         {

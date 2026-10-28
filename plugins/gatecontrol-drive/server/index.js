@@ -13,17 +13,21 @@
 //     DELETE nodes/<id>?everywhere=1 (also on every device of mine — wipes.js, since 1.2.0) · GET wipes · POST wipes/done
 //     DELETE nodes/<id>?after=<s> · PATCH nodes/<id> { deleteAt } (into the trash later — marks.js, since 1.5.0)
 //     GET devices · PUT devices/<id> · PUT devices/<id>/folders · DELETE devices/<id>   (devices.js, since 1.5.0)
+//     GET guard/incidents[?all=1] · GET guard/incidents/<id> · POST guard/incidents/<id>/release · …/undo
+//                                         (ransomware protection — guard.js, since 1.6.0; a locked device: 423)
 //     GET nodes/<id>/versions · GET nodes/<id>/versions/<vid>/content · POST nodes/<id>/versions/<vid>/restore
 //     DELETE nodes/<id>/versions/<vid> · POST uploads/check · POST uploads/commit
 //     GET trash?area= · POST trash/<id>/restore · DELETE trash/<id>
 //     POST links · GET links?nodeId= · GET links/<token>/events · DELETE links/<token>   (links.js, since 0.2.0)
-//   admin     admin/… (administrators in the admin UI, admin.js)
+//   admin     admin/… (administrators in the admin UI, admin.js; admin/guard/… the incidents, since 1.6.0)
 // The full contract (bodies, answers, codes, events) is in README.md "API". Every file node of an answer carries
 // `preview` (previews.js, since 1.1.0).
 //
 // Needs GateControl ≥ 1.208.0 (media areas and paths, versions and their restore, the NAS journal, gc.license.info
 // with tier and seats, a database up to 4 GB, media previews). permissions.devices (since 1.2.0): the asking device
-// of an app request (user.device) — the change log's `device` and the targets of "delete on all devices".
+// of an app request (user.device) — the change log's `device`, the targets of "delete on all devices" and the device
+// the ransomware protection watches and locks (since 1.6.0). GET me links (since 1.6.0, address.js): direct links into
+// the portal tab, also on notifications.
 
 const store = require('./store');
 const people = require('./people');
@@ -42,6 +46,8 @@ const previews = require('./previews');
 const wipes = require('./wipes');
 const marks = require('./marks');
 const devices = require('./devices');
+const guard = require('./guard');
+const address = require('./address');
 const { t } = require('./text');
 const { STATUS, fail, isKnown, posInt, DEVICE_RE, day, iso } = require('./util');
 
@@ -50,6 +56,8 @@ const HOST_CODES = { ERR_MEDIA_QUOTA: 'quota', ERR_CONFLICT: 'exists', ERR_NOT_F
 
 function errorResponse(e, lang) {
   const code = isKnown(e) ? e.code : (e && HOST_CODES[e.code]) || 'internal';
+  // a locked device (guard.js): { error: 'device_locked', code: 'device_locked', incident } — the text as `message`
+  if (code === 'device_locked') return { status: STATUS[code], json: { ok: false, code, error: code, message: t(lang, 'error.' + code), ...((e && e.extra) || {}) } };
   return { status: STATUS[code], json: { ok: false, code, error: t(lang, 'error.' + code), ...((isKnown(e) && e.extra) || {}) } };
 }
 
@@ -75,6 +83,7 @@ async function context(gc, user, lang, now) {
   const ctx = {
     gc, viewer: user.id, user: users.get(user.id) || null, deviceId, app: user.app === true, lang: lang === 'en' ? 'en' : 'de', now,
     users, settings, licence: lic, seat: lic.valid ? seat : null, touched: new Set(), notes: [],
+    guardOn: settings.guardOn,
   };
   ctx.families = once(() => people.families(gc));
   ctx.groups = once(() => people.groupsOf(gc, user.id));
@@ -123,7 +132,7 @@ async function me(ctx) {
   let usage = null;
   try { usage = await ctx.gc.media.usage(); } catch { usage = null; }
   return {
-    me: { id: ctx.viewer, name: ctx.user ? ctx.user.name : null, seat: ctx.seat ? ctx.seat.kind : null, deviceId: ctx.deviceId },
+    me: { id: ctx.viewer, name: ctx.user ? ctx.user.name : null, seat: ctx.seat ? ctx.seat.kind : null, deviceId: ctx.deviceId, admin: !!(ctx.user && ctx.user.role === 'admin') },
     // "delete on all devices": entries this device has yet to handle (GET wipes), my devices a new wipe would reach
     wipes: await wipes.pending(ctx),
     devices: await wipes.deviceCount(ctx.gc, ctx.viewer, ctx.now),
@@ -137,13 +146,19 @@ async function me(ctx) {
     serverTime: iso(ctx.now),
     // what this Drive can (since 1.5.0): an app checks before it uses a newer route
     features: FEATURES,
+    // direct links into the portal (since 1.6.0): node with {id} for the apps to replace, drive the tab; null: no address
+    links: await address.links(ctx.gc, ctx.settings, ctx.now),
+    // the ransomware protection (since 1.6.0): this device locked? the person's open incidents
+    ...(await guard.meOf(ctx)),
   };
 }
 
+// links: GET me links, ?drive=<id> in the portal (1.6.0) · guard: ransomware protection, 423 device_locked,
+// guard/incidents/…, uploads/commit { entropy } (1.6.0) ·
 // devices: GET/PUT/DELETE devices (1.5.0) · deleteAfter: DELETE nodes/<id>?after=, PATCH { deleteAt } (1.5.0) ·
 // emptyFiles: uploads/commit { size: 0 } without a mediaId (1.5.0) · wipes: DELETE ?everywhere=1 (1.2.0) ·
 // textSearch: uploads/commit { text } (1.3.0) · previews (1.1.0)
-const FEATURES = ['previews', 'wipes', 'textSearch', 'devices', 'deleteAfter', 'emptyFiles'];
+const FEATURES = ['previews', 'wipes', 'textSearch', 'devices', 'deleteAfter', 'emptyFiles', 'links', 'guard'];
 
 const THUMBS_MAX = 200;
 
@@ -185,7 +200,14 @@ async function route(ctx, req, seg) {
   const q = req.query || {};
   const body = req.body;
   const [a, b, c, d, e] = seg;
+  // a device the ransomware protection stopped: it may read, not write (guard.js)
+  if (guard.writes(m, seg)) {
+    const locked = await guard.lockOf(ctx);
+    if (locked) throw fail('device_locked', { incident: locked.id });
+  }
   if (a === 'me' && seg.length === 1 && m === 'GET') return ok(await me(ctx));
+  // the incidents: the person (also without a seat now) and administrators
+  if (a === 'guard' && b === 'incidents') return ok(await guardRoute(ctx, m, seg, q));
   // the device's wipes: also without a licence or a seat (they only remove the person's own copies)
   if (a === 'wipes' && seg.length === 1 && m === 'GET') return ok(await wipes.list(ctx));
   if (a === 'wipes' && b === 'done' && seg.length === 2 && m === 'POST') return ok(await wipes.done(ctx, body));
@@ -253,6 +275,32 @@ async function route(ctx, req, seg) {
   throw fail('not_found');
 }
 
+/** guard/incidents/… (guard.js). */
+async function guardRoute(ctx, m, seg, q) {
+  const [, , id, act] = seg;
+  if (seg.length === 2 && m === 'GET') return guard.list(ctx, q);
+  if (seg.length === 3 && m === 'GET') return guard.get(ctx, id);
+  if (seg.length === 4 && m === 'POST' && act === 'release') return guard.release(ctx, id);
+  if (seg.length === 4 && m === 'POST' && act === 'undo') return undoIncident(ctx, id);
+  throw fail('not_found');
+}
+
+/** The undo runs as the incident's person (their rights); its changes are announced like a request's. */
+async function undoIncident(ctx, id) {
+  const out = await guard.undo(ctx, id, async (uid) => {
+    const u = ctx.users.get(uid);
+    if (!u) throw fail('not_found');
+    const octx = await context(ctx.gc, { id: uid, portal: true, loggedIn: true }, ctx.lang, ctx.now);
+    if (!octx.licence.valid) throw fail('not_licensed');
+    if (!octx.seat) throw fail('no_seat');
+    await octx.visible();
+    return octx;
+  });
+  const { octx, ...answer } = out;
+  if (octx) await after(ctx.gc, octx, true);
+  return answer;
+}
+
 /**
  * After the answer: links that point at a moved or trashed folder end (only when the request succeeded), the live
  * event to the readers of what changed, the notes to children (best effort).
@@ -265,15 +313,53 @@ async function after(gc, ctx, done) {
   if (done) {
     try { await wipes.nudge(gc, ctx); } catch (e) { gc.log.warn('wipe event failed', (e && e.code) || 'error'); }
   }
+  // the ransomware protection: a new incident is told, the live event 'guard' (also after a release or an undo)
+  if (ctx.guardIncident || (ctx.guardEvents && ctx.guardEvents.length)) {
+    try { await guard.announce(gc, ctx, await address.linkOf(gc, ctx.settings, null, ctx.now)); } catch (e) { gc.log.warn('guard announce failed', (e && e.code) || 'error'); }
+  }
   for (const n of ctx.notes) {
     const lang = (ctx.users.get(n.child) || {}).lang === 'en' ? 'en' : 'de';
     try {
+      const a = await areas.row(gc, areas.idOf.child(n.child));
+      const go = await linkData(gc, ctx.settings, a && a.root_id, lang);
       await gc.notify({
         topic: 'child_view', users: [n.child], collapseKey: `drive-child-view:${n.viewer}`,
         title: t(lang, 'child_view.title', { name: nameOf(ctx, n.viewer) }), body: t(lang, 'child_view.body', { child: nameOf(ctx, n.child) }),
-        data: { drive: { area: areas.idOf.child(n.child) } },
+        data: { drive: { area: areas.idOf.child(n.child), ...(a && a.root_id ? { node: a.root_id } : {}) }, ...go },
       });
     } catch (e) { gc.log.warn('child note failed', (e && e.code) || 'error'); }
+  }
+}
+
+/**
+ * The direct link of a notification (since 1.6.0): data.link (absolute, when Drive knows the address) and the button
+ * "Öffnen" (open_portal — GateControl opens the portal tab; the node travels as ?drive=<id>, address.js).
+ */
+async function linkData(gc, settings, nodeId, lang) {
+  let link = null;
+  try { link = await address.linkOf(gc, settings, nodeId == null ? null : nodeId); } catch { link = null; }
+  return {
+    ...(link ? { link } : {}),
+    actions: [{ id: 'open', type: 'open_portal', label: t(lang, 'notify.open'), target: nodeId == null ? address.drivePath() : address.nodePath(nodeId) }],
+  };
+}
+
+/**
+ * admin/guard/incidents[/<id>[/release|/undo]] — an administrator in GateControl's admin UI: every incident, release,
+ * undo (guard.js; the undo runs as the incident's person).
+ */
+async function adminGuard(gc, req, seg, lang, now) {
+  const m = String(req.method || 'GET').toUpperCase();
+  const users = await people.users(gc);
+  const settings = await areas.settingsOf(gc);
+  const ctx = { gc, viewer: req.user.id, user: { ...(users.get(req.user.id) || {}), role: 'admin' }, users, settings, lang: lang === 'en' ? 'en' : 'de', now, app: false, deviceId: null, touched: new Set(), notes: [], guardOn: settings.guardOn };
+  let done = false;
+  try {
+    const out = await guardRoute(ctx, m, seg.slice(1), { all: '1', ...(req.query || {}) });
+    done = true;
+    return ok(out);
+  } finally {
+    if (done) await after(gc, ctx, true);
   }
 }
 
@@ -290,6 +376,8 @@ module.exports = {
       const now = Date.now();
       if (seg[0] === 'admin') {
         if (!req.user || req.user.portal || req.user.app || req.user.role !== 'admin') throw fail('forbidden');
+        // the incidents of the ransomware protection (guard.js): as an administrator of the portal would
+        if (seg[1] === 'guard' && seg[2] === 'incidents') return await adminGuard(gc, req, seg, lang, now);
         return ok(await admin.route(gc, req, seg, req.user, now));
       }
       if (seg[0] === 'portal' && seg.length > 1) seg = seg.slice(1); // the same routes under portal/…
@@ -307,6 +395,10 @@ module.exports = {
       try {
         const out = await route(ctx, req, seg);
         done = true;
+        // the ransomware protection: did this device's recent work just turn suspicious? (guard.js; never fails the answer)
+        if (ctx.guardNoted) {
+          try { ctx.guardIncident = await guard.check(ctx); } catch (e) { gc.log.warn('guard check failed', (e && e.code) || 'error'); }
+        }
         // every file node gets its preview (previews.js; nodes that have one already are left alone)
         if (out && out.json && out.json.ok) await previews.attach(ctx, out.json);
         return out;
@@ -387,11 +479,14 @@ module.exports = {
     const lang = owner.lang === 'en' ? 'en' : 'de';
     const folder = r.row.path ? r.row.path.split('/').pop() : t(lang, 'area.mine');
     try {
+      // the direct link: the file that came in (its folder opens with it), else the link's folder
+      const got = typeof arg.mediaId === 'string' ? await store.one(gc, 'SELECT id FROM nodes WHERE media_id = ? AND deleted_at IS NULL', [arg.mediaId]) : null;
+      const go = await linkData(gc, await areas.settingsOf(gc), got ? got.id : r.row.node_id, lang);
       await gc.notify({
         topic: 'link_upload', users: [owner.id], collapseKey: `drive-link:${arg.token}`,
         title: t(lang, 'link_upload.title', { file: String(arg.name || '') }),
         body: t(lang, 'link_upload.body', { who: arg.uploader ? String(arg.uploader) : t(lang, 'link_upload.someone'), folder }),
-        data: { drive: { node: r.row.node_id, area: r.row.area_id } },
+        data: { drive: { node: r.row.node_id, area: r.row.area_id, ...(got ? { file: got.id } : {}) }, ...go },
       });
     } catch (e) { gc.log.warn('link note failed', (e && e.code) || 'error'); }
   },

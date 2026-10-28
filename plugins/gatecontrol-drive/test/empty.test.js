@@ -99,12 +99,13 @@ test('migration 005 on a database of 1.4.0: versions and nodes kept, versions ta
   const { DatabaseSync } = require('node:sqlite');
   const dir = path.join(__dirname, '..', 'migrations');
   const files = fs.readdirSync(dir).filter((f) => /^\d+_.*\.sql$/.test(f)).sort();
-  assert.equal(files[files.length - 1], '005_devices_marks_empty.sql');
+  const at = files.indexOf('005_devices_marks_empty.sql');
+  assert.ok(at > 0);
   const db = new DatabaseSync(':memory:');
-  for (const f of files.slice(0, -1)) db.exec('BEGIN;' + fs.readFileSync(path.join(dir, f), 'utf8') + ';COMMIT;');
+  for (const f of files.slice(0, at)) db.exec('BEGIN;' + fs.readFileSync(path.join(dir, f), 'utf8') + ';COMMIT;');
   db.exec(`INSERT INTO nodes (id, area_id, parent_id, name, is_dir, media_id, size, created_at, updated_at) VALUES (7, 'mine:2', 1, 'a.txt', 0, '${'a'.repeat(32)}', 3, 1, 1)`);
   db.exec(`INSERT INTO versions (id, node_id, rev, media_id, size, sha256, at, by) VALUES (4, 7, 1, '${'b'.repeat(32)}', 2, NULL, 5, 2)`);
-  db.exec('BEGIN;' + fs.readFileSync(path.join(dir, files[files.length - 1]), 'utf8') + ';COMMIT;');
+  db.exec('BEGIN;' + fs.readFileSync(path.join(dir, files[at]), 'utf8') + ';COMMIT;');
   assert.deepEqual({ ...db.prepare('SELECT * FROM versions').get() }, { id: 4, node_id: 7, rev: 1, media_id: 'b'.repeat(32), size: 2, sha256: null, at: 5, by: 2 });
   db.exec(`INSERT INTO versions (node_id, rev, media_id, size, sha256, at) VALUES (7, 2, NULL, 0, '${EMPTY}', 6), (7, 3, NULL, 0, '${EMPTY}', 7)`);
   assert.equal(db.prepare('SELECT COUNT(*) AS n FROM versions WHERE media_id IS NULL').get().n, 2);

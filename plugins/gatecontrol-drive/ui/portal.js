@@ -10,6 +10,11 @@
  * Since 1.5.0: "Geräte" as a page (my PCs and phones that back up or sync folders, their folders and last backup,
  * "Gerät vergessen"); a file deleted on such a device shows "wird am … gelöscht" and can be kept ("Behalten"); empty
  * files upload without GC.upload (uploads/commit { size: 0 }).
+ * Since 1.6.0: a direct link opens its node (`drive=<id>` in the frame's address — GateControl passes the portal's
+ * parameter on to the frame; a folder opens, a file opens its folder and shows itself), "Direktlink kopieren" (GET me
+ * links); "Ordner hochladen" (<input webkitdirectory>) besides dropping folders — sub folders are made, empty ones too,
+ * with the overall progress; the ransomware protection: a banner while a device of mine is stopped ("Rückgängig
+ * machen", "War ich – freigeben", the changes), for administrators the page "Vorfälle" with everyone's (live: 'guard').
  *
  * The frame is sandboxed (opaque origin, no storage, no network of its own): everything goes through GC.call /
  * GC.upload. Server and user text only ever goes into textContent or attributes — never innerHTML.
@@ -61,6 +66,8 @@
     restore: 'M3 12a9 9 0 1 0 3-6.7L3 8|M3 3v5h5',
     up: 'M12 19V5|M5 12l7-7 7 7',
     device: 'M3 5h18v11H3z|M8 20h8|M12 16v4',
+    shield: 'M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z|M12 8v5M12 16h.01',
+    folderUp: 'M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z|M12 16v-6|M9 13l3-3 3 3',
   };
 
   function icon(name, size) {
@@ -250,6 +257,9 @@
     uploads: [],
     uploading: false,
     conflictAll: null,    // 'version' | 'rename' | 'skip' — the choice "for all" of this batch
+    links: null,          // GET me links { node, drive } (since 1.6.0) or null
+    incidents: [],        // the open incidents of the ransomware protection the banner shows (mine; an admin: everyone's)
+    admin: false,         // GET me me.admin: the page "Vorfälle" with everyone's incidents
   };
 
   function areaOf(id) { for (var i = 0; i < S.areas.length; i++) if (S.areas[i].id === id) return S.areas[i]; return null; }
@@ -276,11 +286,18 @@
       if (!r.licence || !r.licence.valid) { message(T('p.unlicensed_title'), T('p.unlicensed_text')); return; }
       if (!r.me || !r.me.seat) { message(T('p.noseat_title'), T('p.noseat_text')); return; }
       S.areas = r.areas || [];
+      S.links = r.links || null;
+      S.admin = !!r.me.admin;
+      S.incidents = (r.incidents || []).slice();
       $('dp-msg').hidden = true;
       $('dp-app').hidden = false;
       setupChrome();
+      renderGuard();
+      if (S.admin) loadIncidents();
       var first = areaOf('mine:' + r.me.id) || S.areas[0];
-      if (first) openFolder(first.id, first.rootId);
+      var want = wanted();
+      if (want) openTarget(want, first);
+      else if (first) openFolder(first.id, first.rootId);
       loadStorage();
       live();
     }, function (e) { message(T('p.failed_title'), errText(e)); });
@@ -304,6 +321,17 @@
       var files = [].slice.call((ev.target && ev.target.files) || []);
       ev.target.value = '';
       if (files.length) enqueue(files.map(function (f) { return { file: f, dirs: [] }; }));
+    });
+    // "Ordner hochladen": every file with its path below the chosen folder (webkitRelativePath "Fotos/2026/a.jpg")
+    $('dp-dir').addEventListener('change', function (ev) {
+      var files = [].slice.call((ev.target && ev.target.files) || []);
+      ev.target.value = '';
+      var list = files.map(function (f) {
+        var parts = String(f.webkitRelativePath || f.name).split('/').filter(Boolean);
+        parts.pop();
+        return { file: f, dirs: parts };
+      });
+      if (list.length) enqueue(list);
     });
     setupDrop();
   }
@@ -329,6 +357,7 @@
     nav.appendChild(h('button', { type: 'button', attrs: { 'aria-current': S.page === 'links' ? 'page' : null }, on: { click: showLinks } }, [icon('link'), h('span', { text: T('p.links') })]));
     nav.appendChild(h('button', { type: 'button', attrs: { 'aria-current': S.page === 'trash' ? 'page' : null }, on: { click: showTrash } }, [icon('trash'), h('span', { text: T('p.trash') })]));
     nav.appendChild(h('button', { type: 'button', attrs: { 'aria-current': S.page === 'devices' ? 'page' : null }, on: { click: showDevices } }, [icon('device'), h('span', { text: T('p.devices') })]));
+    if (S.admin) nav.appendChild(h('button', { type: 'button', attrs: { 'aria-current': S.page === 'incidents' ? 'page' : null }, on: { click: showIncidents } }, [icon('shield'), h('span', { text: T('p.guard_incidents') })]));
     var a = areaOf(S.areaId);
     var st = a ? S.storage.get(a.id) : null;
     if (a && st && S.page === 'files') {
@@ -345,7 +374,8 @@
     var c = $('dp-crumbs');
     clear(c);
     if (S.page !== 'files' || !S.folder) {
-      c.appendChild(h('button', { type: 'button', attrs: { 'aria-current': 'page' }, text: S.page === 'trash' ? T('p.trash') : S.page === 'links' ? T('p.links') : S.page === 'devices' ? T('p.devices') : T('p.results', { q: S.q }) }));
+      c.appendChild(h('button', { type: 'button', attrs: { 'aria-current': 'page' }, text: S.page === 'trash' ? T('p.trash') : S.page === 'links' ? T('p.links') : S.page === 'devices' ? T('p.devices')
+        : S.page === 'incidents' ? T('p.guard_incidents') : T('p.results', { q: S.q }) }));
       return;
     }
     var a = areaOf(S.areaId);
@@ -370,13 +400,14 @@
     t.appendChild(sel);
     if (canWrite()) {
       t.appendChild(btn(T('p.new_folder'), newFolder, { icon: 'plus' }));
+      t.appendChild(btn(T('p.upload_folder'), function () { $('dp-dir').click(); }, { icon: 'folderUp' }));
       t.appendChild(btn(T('p.upload'), function () { $('dp-file').click(); }, { icon: 'upload', primary: true }));
     }
   }
 
   // ── a folder ─────────────────────────────────────────────
 
-  function openFolder(areaId, folderId) {
+  function openFolder(areaId, folderId, then) {
     if (!areaId || !folderId) return;
     var seq = ++S.seq;
     S.page = 'files';
@@ -391,6 +422,7 @@
       S.total = r[1].total || 0;
       S.next = r[1].next;
       renderAll();
+      if (then) then();
     }, function (e) {
       if (seq !== S.seq) return;
       fail(e);
@@ -456,7 +488,7 @@
     items.forEach(function (n) {
       var thumb = h('div', { class: 'dp-thumb' }, [picOf(n, 34)]);
       var ext = extOf(n.name);
-      g.appendChild(h('div', { class: 'dp-card', attrs: { role: 'listitem' } }, [
+      g.appendChild(h('div', { class: 'dp-card', attrs: { role: 'listitem', 'data-node': String(n.id) } }, [
         h('button', { type: 'button', class: 'dp-open', on: { click: function () { openNode(n); } }, attrs: { 'aria-label': n.name } }, [
           thumb,
           h('div', { class: 'dp-card-tx' }, [
@@ -479,7 +511,7 @@
     ]));
     items.forEach(function (n) {
       var ic = h('span', { class: 'dp-ic' }, [picOf(n)]);
-      l.appendChild(h('div', { class: 'dp-row', attrs: { role: 'row' } }, [
+      l.appendChild(h('div', { class: 'dp-row', attrs: { role: 'row', 'data-node': String(n.id) } }, [
         h('button', { type: 'button', class: 'dp-open', on: { click: function () { openNode(n); } } }, [ic, h('span', { class: 'dp-name', text: n.name, attrs: { title: n.name } }),
           n.path && S.page === 'search' ? h('span', { class: 'dp-meta', text: n.path }) : null, markOf(n)]),
         h('span', { class: 'dp-num', text: fmtDate(n.mtime || n.updatedAt) }),
@@ -558,6 +590,8 @@
     if (S.page === 'search') item('folder', T('p.show_in_folder'), function () { $('dp-q').value = ''; openFolder(n.areaId, n.parentId); });
     // an empty file has nothing to share (no media object, since 1.5.0)
     if (write && (n.isDir || n.mediaId)) item('share', T('p.share'), function () { share(n); });
+    // the direct link into the portal (GET me links, since 1.6.0) — for people with an account
+    if (S.links && S.links.node) item('link', T('p.copy_link'), function () { copyText(nodeLink(n.id)); });
     if (write) item('edit', T('p.rename'), function () { rename(n); });
     if (write) item('move', T('p.move'), function () { moveDialog(n); });
     if (!n.isDir) item('history', T('p.versions'), function () { versions(n); });
@@ -936,6 +970,7 @@
       if (!entry.isDirectory) return Promise.resolve();
       var reader = entry.createReader();
       var all = [];
+      var here = dirs.concat([entry.name]);
       var more = function () {
         return new Promise(function (res) { reader.readEntries(function (batch) { res(batch); }, function () { res([]); }); }).then(function (batch) {
           if (!batch.length) return null;
@@ -943,7 +978,11 @@
           return more();
         });
       };
-      return more().then(function () { return all.reduce(function (p, e) { return p.then(function () { return walk(e, dirs.concat([entry.name])); }); }, Promise.resolve()); });
+      return more().then(function () {
+        // an empty folder is made too (nothing below it would make it)
+        if (!all.length) out.push({ file: null, dirs: here });
+        return all.reduce(function (p, e) { return p.then(function () { return walk(e, here); }); }, Promise.resolve());
+      });
     };
     return entries.reduce(function (p, e) { return p.then(function () { return walk(e, []); }); }, Promise.resolve()).then(function () { return out; });
   }
@@ -988,11 +1027,14 @@
     var done = function () { S.uploading = false; renderUploads(); pump(); };
     folderFor(u.target, u.dirs).then(function (parentId) {
       u.parentId = parentId;
+      // an empty folder: made, nothing to upload
+      if (!u.file) return { folder: true };
       // an empty file: GateControl's upload takes no empty body — the commit makes it (since 1.5.0)
       if (!u.file.size) return { mediaId: null };
       if (!window.GC || typeof window.GC.upload !== 'function') throw codeErr('upload_unsupported');
       return window.GC.upload(u.file, { onProgress: function (p) { u.loaded = p && p.loaded ? p.loaded : 0; renderUploads(); } });
     }).then(function (up) {
+      if (up && up.folder) return 'done';
       u.mediaId = up.mediaId;
       return commit(u, null);
     }).then(function (r) {
@@ -1059,7 +1101,25 @@
       h('span', { text: open ? P('p.uploading', open) : failed ? P('p.upload_failed_n', failed) : T('p.uploads_done') }),
       open ? null : ibtn('close', T('p.close'), function () { S.uploads = []; renderUploads(); }),
     ]));
+    // the overall progress (bytes) while a batch runs — a folder of many files
+    if (open && list.length > 1) {
+      var total = 0;
+      var got = 0;
+      list.forEach(function (u) {
+        var size = u.file ? u.file.size || 0 : 0;
+        total += size;
+        got += u.state === 'done' || u.state === 'skipped' || u.state === 'error' ? size : Math.min(size, u.loaded || 0);
+      });
+      var all = total ? Math.round((got / total) * 100) : 0;
+      box.appendChild(h('div', { class: 'dp-ups-all', attrs: { role: 'progressbar', 'aria-valuemin': '0', 'aria-valuemax': '100', 'aria-valuenow': String(all) } }, h('span', { attrs: { style: 'width:' + all + '%' } })));
+    }
     list.slice(-8).forEach(function (u) {
+      if (!u.file) {
+        box.appendChild(h('div', { class: 'dp-up' + (u.state === 'error' ? ' is-error' : u.state === 'done' ? ' is-done' : '') }, [
+          h('div', { class: 'dp-up-l' }, [h('span', { text: u.dirs.join('/') + '/' }), h('span', { text: u.state === 'done' ? T('p.up_done') : u.state === 'error' ? (u.error || T('p.up_error')) : T('p.up_waiting') })]),
+        ]));
+        return;
+      }
       var pct = u.state === 'done' ? 100 : u.file.size ? Math.round((u.loaded / u.file.size) * 100) : 0;
       var st = u.state === 'done' ? T('p.up_done') : u.state === 'skipped' ? T('p.up_skipped') : u.state === 'error' ? (u.error || T('p.up_error')) : u.state === 'waiting' ? T('p.up_waiting') : pct + ' %';
       box.appendChild(h('div', { class: 'dp-up' + (u.state === 'error' ? ' is-error' : u.state === 'done' ? ' is-done' : '') }, [
@@ -1069,12 +1129,173 @@
     });
   }
 
+  // ── direct links (since 1.6.0) ───────────────────────────
+
+  function nodeLink(id) { return String(S.links.node).split('{id}').join(encodeURIComponent(String(id))); }
+
+  /**
+   * The node a direct link names: `drive=<id>` in the frame's own address (query or hash) — GateControl hands the
+   * portal's parameter on to the frame; a link without one opens the Drive tab as before. → id or null
+   */
+  function wanted() {
+    var where = '';
+    try { where = String(window.location && window.location.search || '') + '&' + String(window.location && window.location.hash || '').replace(/^#/, ''); } catch (e) { where = ''; }
+    var m = /(?:^|[?&#])drive=(\d{1,15})(?:$|[&#])/.exec(where);
+    return m ? Number(m[1]) : null;
+  }
+
+  /** Open node `id`: a folder opens, a file opens its folder, is marked and shown. Not there: my files and a note. */
+  function openTarget(id, fallback) {
+    api('GET', 'nodes/' + id).then(function (r) {
+      var n = r.node;
+      if (n.isDir) { openFolder(n.areaId, n.id); return; }
+      openFolder(n.areaId, n.parentId, function () {
+        var el = [].slice.call($('dp-main').querySelectorAll('[data-node]')).filter(function (x) { return x.getAttribute('data-node') === String(n.id); })[0];
+        if (el) {
+          el.className += ' dp-hl';
+          if (el.scrollIntoView) { try { el.scrollIntoView({ block: 'center' }); } catch (e) { /* old browsers */ } }
+        }
+        preview(n);
+      });
+    }, function () {
+      toast(T('p.open_missing'), 'error');
+      if (fallback) openFolder(fallback.id, fallback.rootId);
+    });
+  }
+
+  // ── ransomware protection (since 1.6.0) ──────────────────
+
+  function incidentTitle(x) {
+    var mineOne = S.me && x.user === S.me.id;
+    var device = x.deviceName || x.device;
+    return mineOne ? T('p.guard_title', { device: device }) : T('p.guard_title_other', { device: device, name: x.userName || String(x.user) });
+  }
+
+  /** The banner above the files: every open incident (mine; an administrator: everyone's). */
+  function renderGuard() {
+    var box = $('dp-guard');
+    if (!box) return;
+    clear(box);
+    var open = S.incidents.filter(function (x) { return x.state === 'open' || x.locked; });
+    box.hidden = !open.length;
+    open.forEach(function (x) {
+      box.appendChild(h('div', { class: 'dp-guard-box' }, [
+        icon('shield', 24),
+        h('div', { class: 'dp-guard-tx' }, [
+          h('b', { text: incidentTitle(x) }),
+          h('span', { text: T('p.guard_text', { date: fmtDate(x.at), count: x.files }) }),
+          x.sample && x.sample.length ? h('span', { class: 'dp-muted', text: T('p.guard_sample') }) : null,
+          x.sample && x.sample.length ? h('ul', null, x.sample.map(function (nm) { return h('li', { text: nm, attrs: { title: nm } }); })) : null,
+        ]),
+        h('div', { class: 'dp-actions' }, incidentButtons(x)),
+      ]));
+    });
+  }
+
+  function incidentButtons(x) {
+    if (x.state !== 'open' && x.state !== 'released') return [btn(T('p.guard_details'), function () { incidentDetails(x); }, { small: true })];
+    return [
+      btn(T('p.guard_undo'), function () { undoIncident(x); }, { primary: true, icon: 'restore' }),
+      x.state === 'open' ? btn(T('p.guard_release'), function () { releaseIncident(x); }) : null,
+      btn(T('p.guard_details'), function () { incidentDetails(x); }, { small: true }),
+    ];
+  }
+
+  function settled(x) {
+    S.incidents = S.incidents.filter(function (y) { return y.id !== x.id; });
+    renderGuard();
+    if (S.page === 'incidents') showIncidents();
+  }
+
+  function undoIncident(x) {
+    confirmDialog(T('p.guard_undo_title'), T('p.guard_undo_text'), T('p.guard_undo'), function () {
+      return api('POST', 'guard/incidents/' + x.id + '/undo').then(function (r) {
+        toast(T('p.guard_undone', { restored: r.restored || 0, trashed: r.trashed || 0 }));
+        settled(x);
+        reload();
+        loadStorage();
+      });
+    });
+  }
+
+  function releaseIncident(x) {
+    var device = x.deviceName || x.device;
+    confirmDialog(T('p.guard_release_title'), T('p.guard_release_text', { device: device }), T('p.guard_release'), function () {
+      return api('POST', 'guard/incidents/' + x.id + '/release').then(function () {
+        toast(T('p.guard_released', { device: device }));
+        settled(x);
+      });
+    });
+  }
+
+  function incidentDetails(x) {
+    api('GET', 'guard/incidents/' + x.id).then(function (r) {
+      var rows = (r.entries || []).map(function (e) {
+        return h('tr', null, [
+          h('td', { text: fmtDate(e.at) }), h('td', { text: T('p.guard_op_' + e.op) }),
+          h('td', null, [h('span', { text: e.name }), e.oldName && e.oldName !== e.name ? h('span', { class: 'dp-meta', text: ' · ' + T('p.guard_was', { name: e.oldName }) }) : null]),
+        ]);
+      });
+      dialog(incidentTitle(r.incident), [
+        h('p', { class: 'dp-hint', text: T('p.guard_text', { date: fmtDate(r.incident.at), count: r.incident.files }) }),
+        h('div', { attrs: { style: 'overflow-x:auto' } }, h('table', { class: 'dp-table' }, [h('thead', null, h('tr', null, [h('th', { text: T('p.col_when') }), h('th', { text: T('p.col_what') }), h('th', { text: T('p.col_file') })])), h('tbody', null, rows)])),
+        h('div', { class: 'dp-actions' }, incidentButtons(r.incident).map(function (b) { return b; })),
+      ], { wide: true });
+    }, fail);
+  }
+
+  /** An administrator: everyone's open incidents into the banner. */
+  function loadIncidents() {
+    return api('GET', 'guard/incidents', null, { all: S.admin ? 1 : null }).then(function (r) {
+      S.incidents = (r.incidents || []).filter(function (x) { return x.state === 'open'; });
+      renderGuard();
+      return r.incidents || [];
+    }, function () { return []; });
+  }
+
+  /** The page "Vorfälle" (administrators): every incident, open ones first. */
+  function showIncidents() {
+    $('dp-q').value = '';
+    S.page = 'incidents';
+    S.seq++;
+    renderNav(); renderCrumbs(); renderTools();
+    var main = $('dp-main');
+    clear(main);
+    loadIncidents().then(function (list) {
+      if (S.page !== 'incidents') return;
+      clear(main);
+      main.appendChild(h('p', { class: 'dp-hint', text: T('p.guard_hint'), attrs: { style: 'margin-bottom:12px' } }));
+      if (!list.length) { main.appendChild(h('div', { class: 'dp-empty', text: T('p.guard_none') })); return; }
+      var box = h('div', { class: 'dp-incidents' });
+      list.forEach(function (x) {
+        box.appendChild(h('div', { class: 'dp-incident' }, [
+          h('div', { attrs: { style: 'display:flex;gap:10px;align-items:center;flex-wrap:wrap' } }, [
+            h('span', { class: 'dp-name', text: incidentTitle(x), attrs: { style: 'flex:1;min-width:0' } }),
+            h('span', { class: 'dp-state' + (x.state === 'open' ? ' is-open' : ''), text: T('p.guard_state_' + x.state) }),
+          ]),
+          h('span', { class: 'dp-meta', text: [fmtDate(x.at), P('p.files_n', x.files || 0)].concat(x.sample || []).join(' · ') }),
+          h('div', { class: 'dp-actions' }, incidentButtons(x)),
+        ]));
+      });
+      main.appendChild(box);
+    });
+  }
+
   // ── live ─────────────────────────────────────────────────
 
   function live() {
     if (!window.GC || typeof window.GC.on !== 'function') return;
     window.GC.on('event', function (ev) {
       var d = ev && ev.data;
+      // the ransomware protection stopped a device, or an incident was settled elsewhere
+      if (ev && ev.type === 'guard' && d && d.incident) {
+        var x = d.incident;
+        S.incidents = S.incidents.filter(function (y) { return y.id !== x.id; });
+        if (x.state === 'open') S.incidents.unshift(x);
+        renderGuard();
+        if (S.page === 'incidents') showIncidents();
+        return;
+      }
       if (!ev || ev.type !== 'changed' || !d || !Array.isArray(d.areas)) return;
       if (S.page === 'files' && d.areas.indexOf(S.areaId) >= 0 && !S.uploading) scheduleReload();
       else if (S.page === 'trash') showTrash();

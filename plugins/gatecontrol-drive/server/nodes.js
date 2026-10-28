@@ -13,10 +13,13 @@
 //
 // A mark (since 1.5.0, marks.js): "deleted on the device, goes into the trash on …" (delete_at). New content ends it —
 // a new version of the file, a restored version, a rename or a move, and anything new in a marked folder (unmarkUp).
+//
+// Renames, moves and deletes of an app request are rows of the ransomware protection's journal (guard.js, since 1.6.0).
 
 const store = require('./store');
 const areas = require('./areas');
 const wipes = require('./wipes');
+const guard = require('./guard');
 const { fail, nodeName, numbered, iso } = require('./util');
 
 const CHILDREN_MAX = 1000;
@@ -312,7 +315,9 @@ async function update(ctx, id, body) {
     } else {
       await log(ctx.gc, area.id, node.id, 'move', ctx);
     }
-    return view(await row(ctx.gc, node.id));
+    const now = await row(ctx.gc, node.id);
+    await guard.note(ctx, { op: 'rename', node: now, name, oldName: node.name, parentId: node.parent_id });
+    return view(now);
   });
   if (moved) unlinkLater(ctx, 'folders', moved);
   return out;
@@ -336,6 +341,7 @@ async function trash(ctx, id, everywhere = false) {
     if (area.archived_at != null) throw fail('forbidden');
     const all = await trashRows(ctx, node, area);
     gone = all.map((r) => r.id);
+    await guard.note(ctx, { op: 'delete', node, name: node.name });
     const wipe = everywhere ? await wipes.create(ctx, node, all.filter((r) => r.is_dir === 0)) : null;
     return { id: node.id, trashed: all.length, ...(wipe ? { wipe } : {}) };
   });

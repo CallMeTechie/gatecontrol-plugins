@@ -285,3 +285,117 @@ test('smoke (1.5.0): a file deleted on a device shows it and can be kept; an emp
     }
   });
 });
+
+test('smoke (1.6.0): a direct link opens its file, "Direktlink kopieren", "Ordner hochladen" and a dropped folder with an empty one', async () => {
+  await withHost({ settings: { portal_url: 'https://gc.example.com' } }, async (host, c) => {
+    const mine = await c.area(ANNA, 'mine');
+    const dir = (await c.as(ANNA)('POST', 'nodes', { parentId: mine.rootId, name: 'Rechnungen' })).json.node;
+    const pdf = (await c.put(ANNA, dir.id, 'Strom.pdf', '%PDF-1', { mime: 'application/pdf' })).json.node;
+    const calls = [];
+    const w = createWindow(portalHtml(), frameGc(host, ANNA, calls));
+    w.window.location = { search: `?drive=${pdf.id}`, hash: '' };
+    const $ = (id) => w.document.getElementById(id);
+    try {
+      w.run();
+      // the file's folder, the file marked and shown
+      await until('the preview', () => !$('dp-dialog').hidden && byText($('dp-dialog'), 'h3', 'Strom.pdf'));
+      assert.equal(textOf($('dp-crumbs')).replace(/\s+/g, ''), 'MeineDateien›Rechnungen');
+      const card = $('dp-main').querySelectorAll('.dp-card').find((x) => textOf(x).includes('Strom.pdf'));
+      assert.ok(card.className.includes('dp-hl'));
+      $('dp-dialog').querySelector('.dp-ib').click();
+      // the direct link of a file
+      card.querySelector('.dp-more').click();
+      await until('menu', () => byText($('dp-dialog'), 'span', 'Direktlink kopieren'));
+      byText($('dp-dialog'), 'span', 'Direktlink kopieren').parentNode.click();
+      assert.equal(w.document.copied.pop(), `https://gc.example.com/portal?drive=${pdf.id}#plg-gatecontrol-drive`);
+
+      // "Ordner hochladen": the chosen folder with its sub folders, an empty file too
+      assert.ok(byText($('dp-tools'), 'span', 'Ordner hochladen'));
+      const rel = (p, data, type) => Object.assign(file(p.split('/').pop(), data, type), { webkitRelativePath: p });
+      $('dp-dir').files = [rel('Urlaub/2026/Strand.jpg', 'jpeg', 'image/jpeg'), rel('Urlaub/Liste.txt', 'Sonnencreme'), rel('Urlaub/leer.txt', '')];
+      $('dp-dir').dispatchEvent({ type: 'change', target: $('dp-dir') });
+      await until('uploaded', () => textOf($('dp-ups')).includes('Hochgeladen') && byText($('dp-main'), 'span', 'Urlaub'));
+      const a = c.as(ANNA);
+      for (const p of ['Rechnungen/Urlaub/2026/Strand.jpg', 'Rechnungen/Urlaub/Liste.txt', 'Rechnungen/Urlaub/leer.txt']) {
+        assert.equal((await a('GET', 'nodes/by-path', null, { area: mine.id, path: p })).status, 200, p);
+      }
+      // a dropped folder: its files and an empty sub folder
+      const entry = {
+        isFile: false, isDirectory: true, name: 'Projekt',
+        createReader() {
+          let done = false;
+          return { readEntries(cb) { const out = done ? [] : [
+            { isFile: true, isDirectory: false, name: 'Plan.txt', file(ok) { ok(file('Plan.txt', 'Schritt 1')); } },
+            { isFile: false, isDirectory: true, name: 'Leer', createReader() { return { readEntries(cb2) { cb2([]); } }; } },
+          ]; done = true; cb(out); } };
+        },
+      };
+      $('dp-root').dispatchEvent({ type: 'drop', dataTransfer: { types: ['Files'], items: [{ webkitGetAsEntry: () => entry }], files: [] } });
+      await until('dropped', () => byText($('dp-main'), 'span', 'Projekt'));
+      await until('all done', () => textOf($('dp-ups')).includes('Hochgeladen'));
+      assert.equal((await a('GET', 'nodes/by-path', null, { area: mine.id, path: 'Rechnungen/Projekt/Plan.txt' })).status, 200);
+      const leer = await a('GET', 'nodes/by-path', null, { area: mine.id, path: 'Rechnungen/Projekt/Leer' });
+      assert.equal(leer.status, 200);
+      assert.equal(leer.json.node.isDir, true);
+    } finally {
+      w.stop();
+    }
+  });
+});
+
+test('smoke (1.6.0): a stopped device of mine shows the banner — "Rückgängig machen"; an administrator\'s page "Vorfälle"', async () => {
+  const { ADMIN } = require('./helpers');
+  const seats = { [ANNA.id]: 'family', [ADMIN.id]: 'business' };
+  await withHost({ settings: { guard_files: 5 }, seats }, async (host, c) => {
+    const mine = await c.area(ANNA, 'mine');
+    const pc = c.as(ANNA, 'tok-pc');
+    await pc('PUT', 'devices/pc-1', { name: 'Arbeits-PC' });
+    const files = [];
+    for (let i = 1; i <= 6; i++) files.push((await c.put(ANNA, mine.rootId, `Text${i}.txt`, `t${i}`)).json.node);
+    for (let i = 0; i < 5; i++) await pc('PATCH', `nodes/${files[i].id}`, { name: files[i].name + '.locked' });
+    assert.equal((await pc('GET', 'me')).json.guard.locked, true);
+    const gc = frameGc(host, ANNA, []);
+    const w = createWindow(portalHtml(), gc);
+    const $ = (id) => w.document.getElementById(id);
+    try {
+      w.run();
+      await until('banner', () => !$('dp-guard').hidden && textOf($('dp-guard')).includes('Arbeits-PC'));
+      assert.ok(textOf($('dp-guard')).includes('Drive hat ungewöhnliche Änderungen von „Arbeits-PC“ gestoppt'));
+      assert.ok(textOf($('dp-guard')).includes('Text1.txt.locked'));
+      assert.ok(byText($('dp-guard'), 'span', 'War ich – freigeben'));
+      byText($('dp-guard'), 'span', 'Rückgängig machen').parentNode.click();
+      await until('confirm', () => byText($('dp-dialog'), 'h3', 'Änderungen rückgängig machen?'));
+      $('dp-dialog').querySelectorAll('button').find((b) => b.className.includes('dp-btn-primary')).click();
+      await until('undone', () => textOf($('dp-toast')).includes('Rückgängig gemacht: 5 wiederhergestellt, 0 in den Papierkorb.'));
+      assert.ok($('dp-guard').hidden);
+      await until('names back', () => byText($('dp-main'), 'span', 'Text1.txt'));
+      assert.equal((await pc('GET', 'me')).json.guard.locked, false);
+      // live: a new incident shows at once
+      for (let i = 0; i < 5; i++) await pc('PATCH', `nodes/${files[i].id}`, { name: files[i].name + '.wncry' });
+      const ev = c.events().filter((e) => e.type === 'guard').pop();
+      assert.equal(ev.data.incident.state, 'open');
+      for (const fn of gc.listeners) fn({ plugin: 'gatecontrol-drive', type: ev.type, data: ev.data });
+      await until('banner again', () => !$('dp-guard').hidden);
+    } finally {
+      w.stop();
+    }
+    // an administrator: everyone's incidents in the banner and on the page "Vorfälle"
+    const g = createWindow(portalHtml({ user: { id: ADMIN.id, loggedIn: true } }), frameGc(host, ADMIN, []));
+    const $$ = (id) => g.document.getElementById(id);
+    try {
+      g.run();
+      await until('admin banner', () => !$$('dp-guard').hidden && textOf($$('dp-guard')).includes('(Anna)'));
+      byText($$('dp-nav'), 'span', 'Vorfälle').parentNode.click();
+      await until('page', () => textOf($$('dp-main')).includes('rückgängig gemacht') && textOf($$('dp-main')).includes('gestoppt'));
+      const open = $$('dp-main').querySelectorAll('.dp-incident').find((x) => textOf(x).includes('gestoppt'));
+      byText(open, 'span', 'War ich – freigeben').parentNode.click();
+      await until('confirm', () => byText($$('dp-dialog'), 'h3', 'Gerät freigeben?'));
+      $$('dp-dialog').querySelectorAll('button').find((b) => b.className.includes('dp-btn-primary')).click();
+      await until('released', () => textOf($$('dp-toast')).includes('darf wieder schreiben'));
+      await until('banner gone', () => $$('dp-guard').hidden);
+      assert.equal((await pc('GET', 'me')).json.guard.locked, false);
+    } finally {
+      g.stop();
+    }
+  });
+});

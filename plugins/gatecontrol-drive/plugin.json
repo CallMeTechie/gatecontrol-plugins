@@ -4,7 +4,7 @@
     "de": "Drive",
     "en": "Drive"
   },
-  "version": "1.5.0",
+  "version": "1.6.0",
   "publisher": "CallMeTechie",
   "description": {
     "de": "Dateien der Familie und des Teams auf dem eigenen Speicher – auf diesem Server, einer NAS oder in S3: Meine Dateien, Familie, Ordner der Kinder und Team-Ordner mit Rechten, Versionen, Papierkorb und Abgleich mit allen Geräten.",
@@ -157,6 +157,73 @@
           "en": "Prominent while an area lies only on this server or a NAS (then also once a week as a notification to administrators); subtle when everything lies in S3."
         },
         "default": true
+      },
+      {
+        "key": "guard_on",
+        "type": "boolean",
+        "label": {
+          "de": "Schutz vor Erpressungstrojanern aktiv",
+          "en": "Protection against ransomware on"
+        },
+        "help": {
+          "de": "Drive stoppt ein PC oder Handy, das in kurzer Zeit viele bestehende Dateien so verändert, wie es Erpressungstrojaner tun (fremde Endungen, verschlüsselter Inhalt, Originale gelöscht). Es kann dann nur noch lesen, bis die Person oder ein Admin „Rückgängig machen“ oder „Freigeben“ wählt.",
+          "en": "Drive stops a PC or phone that changes many existing files within a short time the way ransomware does (strange endings, encrypted content, originals deleted). It can then only read until the person or an administrator chooses “Undo” or “Release”."
+        },
+        "default": true
+      },
+      {
+        "key": "guard_files",
+        "type": "number",
+        "label": {
+          "de": "Schutz: verdächtig ab … geänderten Dateien",
+          "en": "Protection: suspicious from … changed files"
+        },
+        "help": {
+          "de": "Überschriebene, umbenannte oder gelöschte bestehende Dateien eines Geräts im Zeitfenster – neue Dateien zählen nie.",
+          "en": "Existing files a device overwrote, renamed or deleted within the time window – new files never count."
+        },
+        "default": 50,
+        "min": 5,
+        "max": 100000
+      },
+      {
+        "key": "guard_percent",
+        "type": "number",
+        "label": {
+          "de": "Schutz: oder ab … % eines Bereichs",
+          "en": "Protection: or from … % of an area"
+        },
+        "help": {
+          "de": "Gilt für Bereiche mit mindestens 20 Dateien.",
+          "en": "Applies to areas with at least 20 files."
+        },
+        "default": 20,
+        "min": 1,
+        "max": 100
+      },
+      {
+        "key": "guard_minutes",
+        "type": "number",
+        "label": {
+          "de": "Schutz: Zeitfenster (Minuten)",
+          "en": "Protection: time window (minutes)"
+        },
+        "default": 10,
+        "min": 1,
+        "max": 240
+      },
+      {
+        "key": "portal_url",
+        "type": "text",
+        "label": {
+          "de": "Adresse von GateControl für Direktlinks",
+          "en": "Address of GateControl for direct links"
+        },
+        "help": {
+          "de": "Z. B. https://gc.example.de – Apps und Mitteilungen verlinken damit direkt auf Ordner und Dateien im Portal. Leer: die öffentliche Adresse, die GateControl für Links verwendet (sobald Drive sie kennt).",
+          "en": "E.g. https://gc.example.com – apps and notifications link straight to folders and files in the portal with it. Empty: the public address GateControl uses for links (once Drive knows it)."
+        },
+        "default": ""
       }
     ],
     "pages": [
@@ -216,6 +283,14 @@
       "label": {
         "de": "Drive-Dateien sind nicht gesichert (Admins)",
         "en": "Drive files are not backed up (administrators)"
+      },
+      "default": true
+    },
+    {
+      "id": "guard",
+      "label": {
+        "de": "Drive hat ein Gerät wegen ungewöhnlicher Änderungen gestoppt",
+        "en": "Drive stopped a device for unusual changes"
       },
       "default": true
     }

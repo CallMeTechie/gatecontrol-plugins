@@ -26,3 +26,6 @@
 .da-member{display:flex;gap:10px;align-items:center;padding:6px 8px;border:1px solid var(--line);border-radius:10px}
 .da-member span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .da-chips{display:flex;flex-wrap:wrap;gap:6px}
+.da-alert.is-crit{border-color:color-mix(in srgb,var(--crit) 55%,transparent);background:color-mix(in srgb,var(--crit) 12%,transparent)}
+.da-alert.is-crit svg{color:var(--crit)}
+.da-incident{display:flex;flex-direction:column;gap:4px;padding-top:8px;border-top:1px solid var(--line)}

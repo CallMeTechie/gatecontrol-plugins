@@ -2,6 +2,43 @@
 
 Dateien der Familie und des Teams auf dem eigenen Speicher – auf diesem Server, einer NAS oder in S3.
 
+## 1.6.0
+- **Direktlinks ins Portal:** `GET me` liefert `links: { node, drive }` – absolute Adressen des Drive-Tabs im Portal,
+  `node` mit dem Platzhalter `{id}` (z. B. `https://gc.example.de/portal?drive={id}#plg-gatecontrol-drive`). Apps
+  ersetzen nur `{id}`. Ohne bekannte Adresse ist `links` `null`.
+  - Die Adresse kommt aus der neuen Einstellung „Adresse von GateControl für Direktlinks“ (`portal_url`) oder aus der
+    öffentlichen Adresse, auf der GateControl seine Links baut. Drive lernt sie aus der Adresse eines geteilten Links
+    (beim Anlegen, sonst höchstens einmal pro Stunde über `gc.publicLinks.list`).
+  - Das Portal öffnet beim Laden den Knoten aus `drive=<id>` seiner Frame-Adresse: ein Ordner öffnet sich, bei einer
+    Datei ihr Ordner, die Datei wird markiert und angezeigt. **GateControl 1.208.0 reicht den Parameter noch nicht an
+    den Frame weiter** – bis dahin öffnet der Link den Drive-Tab.
+  - Neu im Aktionsmenü: „Direktlink kopieren“.
+  - Mitteilungen (`link_upload`, `child_view`, `guard`) tragen `data.link` und den Knopf „Öffnen“ (`open_portal`).
+- **Ordner hochladen im Portal:** „Ordner hochladen“ (`<input webkitdirectory>`) neben dem Ziehen ganzer Ordner. Die
+  Unterordner entstehen, auch leere, dazu der Gesamtfortschritt. Leere Dateien gehen wie bisher per `size: 0`.
+- **Schutz vor Erpressungstrojanern** (Einstellung „Schutz vor Erpressungstrojanern aktiv“, Standard an):
+  - Drive beobachtet je Gerät, was eine App ändert: neue Dateien, neue Fassungen, Umbenennen und Verschieben, Löschen
+    (auch das verzögerte Löschen der Sicherung, `?after=`).
+  - Verdächtig ist, wenn ein Gerät im Zeitfenster (`guard_minutes`, 10 Minuten) viele bestehende Dateien überschreibt,
+    umbenennt oder löscht (`guard_files`, 50, oder `guard_percent`, 20 % eines Bereichs mit mindestens 20 Dateien) und
+    mindestens die Hälfte davon ein Merkmal zeigt. Neue Dateien zählen nie – viele Fotos hochladen ist kein Angriff.
+  - Merkmale: bekannte Endungen von Erpressungstrojanern oder eine neue, zufällige Endung; der Hinweis des Geräts, dass
+    der Inhalt zufällig aussieht (`uploads/commit { entropy }`, 0–8); Originale, die kurz nach einer gleichnamigen Datei
+    mit anderer Endung gelöscht werden.
+  - Dann wird das Gerät gesperrt. Schreibende Anfragen antworten mit `423 { code: 'device_locked', error:
+    'device_locked', incident }`, Lesen geht weiter. Die Person und die Admins bekommen eine Mitteilung mit Direktlink,
+    dazu kommt das Live-Ereignis `guard { incident }`.
+  - `GET me` nennt `guard { on, locked, incident }` für das fragende Gerät und `incidents` (offene Vorfälle der Person).
+  - `POST guard/incidents/<id>/undo` setzt jede Datei auf den Stand vor dem Vorfall zurück und gibt das Gerät frei:
+    Fassung, Name und Ordner kommen zurück, Gelöschtes kommt aus dem Papierkorb, Löschmarkierungen enden, neu
+    Angelegtes kommt in den Papierkorb.
+    `POST …/release` gibt das Gerät nur frei. Beides dürfen die Person und Admins, beides ist idempotent.
+  - Im Portal erscheint ein auffälliges Banner mit Beispielen, „Rückgängig machen“, „War ich – freigeben“ und „Alle
+    Änderungen“. Admins sehen die Seite „Vorfälle“, die Admin-Übersicht zeigt gestoppte Geräte ganz oben.
+- `features` in `GET me` enthält zusätzlich `links` und `guard`.
+- Migration `006`. Keine neuen Rechte, das Update kommt automatisch. Neu sind fünf Einstellungen und das
+  Mitteilungsthema `guard`.
+
 ## 1.5.0
 - **Geräte:** PCs und Handys, die Ordner mit Drive sichern oder abgleichen, melden sich jetzt an.
   - `PUT devices/<id> { name, platform?, version? }` meldet ein Gerät an oder aktualisiert es (zuletzt gesehen). Die

@@ -20,6 +20,7 @@ const store = require('./store');
 const nodes = require('./nodes');
 const areas = require('./areas');
 const sync = require('./sync');
+const address = require('./address');
 const { fail, posInt, iso, line } = require('./util');
 
 const DAY = 86400000;
@@ -92,6 +93,8 @@ async function create(ctx, body) {
     [row.token, row.node_id, row.area_id, row.kind, row.mode, row.path, row.created_by, row.created_at]);
   let link = null;
   try { link = await pl.get(made.token); } catch { link = null; }
+  // the public address GateControl builds links on: Drive's direct links use it too (address.js)
+  await address.learn(ctx.gc, made.url);
   return view(row, link || { url: made.url, expiresAt: made.expiresAt, active: true, state: 'active', pin: !!pin, title }, node);
 }
 
