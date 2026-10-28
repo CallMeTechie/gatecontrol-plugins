@@ -1,6 +1,7 @@
 /* Drive (gatecontrol-drive) — the admin pages (mockup "Plugin-Einstellungen – Speicher, Sicherung, Lizenz"):
  *
- *   overview  the backup hint ("Das GateControl-Backup sichert keine Drive-Dateien", hidable), the licence with its
+ *   overview  devices the ransomware protection stopped (since 1.6.0: "Rückgängig machen", "Freigeben"), the backup
+ *             hint ("Das GateControl-Backup sichert keine Drive-Dateien", hidable), the licence with its
  *             people (tier, x of y, exceeded, "Lizenz jetzt abrufen"), the areas with their storage
  *   people    every account with its seat: none, family or business (as the licence allows)
  *   teams     team folders: name, members (people and groups — GateControl's own picker GC.pickPrincipals) with
@@ -133,10 +134,38 @@
     return base + (st.form === 'files' ? ' · ' + T('a.form_files') : '');
   }
 
+  function fmtDate(iso) {
+    var d = iso ? new Date(iso) : null;
+    return d && !isNaN(d.getTime()) ? d.toLocaleDateString(LOCALE, { day: '2-digit', month: '2-digit', year: 'numeric' }) + ' ' + d.toLocaleTimeString(LOCALE, { hour: '2-digit', minute: '2-digit' }) : '';
+  }
+
+  /** The open incidents of the ransomware protection (admin/guard/incidents): a box above everything else. */
+  function incidents() {
+    var box = h('div');
+    api('GET', 'admin/guard/incidents').then(function (r) {
+      var open = (r.incidents || []).filter(function (x) { return x.state === 'open'; });
+      if (!open.length) return;
+      box.appendChild(h('div', { class: 'da-alert is-crit', attrs: { role: 'alert' } }, [icon('alert', 22),
+        h('div', { class: 'da-alert-tx' }, [h('b', { text: T('a.guard_title') }), h('span', { text: T('a.guard_text') })].concat(open.map(function (x) {
+          return h('div', { class: 'da-incident' }, [
+            h('span', { text: T('a.guard_line', { device: x.deviceName || x.device, name: x.userName || String(x.user), count: x.files, date: fmtDate(x.at) }) }),
+            x.sample && x.sample.length ? h('span', { class: 'da-sub', text: x.sample.join(' · ') }) : null,
+            h('div', { class: 'dp-actions', attrs: { style: 'justify-content:flex-start' } }, [
+              btn(T('a.guard_undo'), function () { api('POST', 'admin/guard/incidents/' + x.id + '/undo').then(function (u) { toast(T('a.guard_undone', { restored: u.restored || 0, trashed: u.trashed || 0 })); overview(); }, fail); }, { small: true, primary: true }),
+              btn(T('a.guard_release'), function () { api('POST', 'admin/guard/incidents/' + x.id + '/release').then(function () { toast(T('a.guard_released')); overview(); }, fail); }, { small: true }),
+            ]),
+          ]);
+        }))),
+      ]));
+    }, function () { /* nothing to show */ });
+    return box;
+  }
+
   function overview() {
     api('GET', 'admin/overview').then(function (r) {
       var o = r.overview;
       clear(page);
+      page.appendChild(incidents());
       // the backup hint
       var b = o.backup || { level: 'off', areas: [] };
       if (b.level === 'strong') {

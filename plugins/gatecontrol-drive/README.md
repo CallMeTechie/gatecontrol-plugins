@@ -14,7 +14,7 @@ to its path, the NAS journal and the hook `mediaChanged`), `gc.license.info` (ti
 `permissions.groups: 'read'` (family groups and their roles, groups of team folders), `permissions.events`,
 `media.previews` (since 1.1.0: previews of files, `gc.media.previews`), `permissions.devices` (since 1.2.0: the asking
 device of an app request, `user.device` — GateControl passes it only with this permission; see "Delete on all
-devices").
+devices"; since 1.6.0 also the device the ransomware protection watches and stops).
 
 ## Areas and rights
 
@@ -50,7 +50,7 @@ login_required`). Every answer has `ok`; errors `{ ok: false, code, error }` (+ 
 
 | Route | Body / query | Answer |
 |---|---|---|
-| `GET me` | | `me { id, name, seat, deviceId }`, `licence { valid, tier }`, `areas`, `latest` (change log seq), `settings`, `limits { maxBytes }`, `wipes` (entries this device has yet to handle, since 1.2.0), `devices` (my devices a new wipe reaches), `features` (since 1.5.0: `['previews', 'wipes', 'textSearch', 'devices', 'deleteAfter', 'emptyFiles']`) |
+| `GET me` | | `me { id, name, seat, deviceId, admin }`, `licence { valid, tier }`, `areas`, `latest` (change log seq), `settings`, `limits { maxBytes }`, `wipes` (entries this device has yet to handle, since 1.2.0), `devices` (my devices a new wipe reaches), `features` (since 1.5.0: `['previews', 'wipes', 'textSearch', 'devices', 'deleteAfter', 'emptyFiles']`, since 1.6.0 also `'links'`, `'guard'`), `links { node, drive } \| null` (since 1.6.0, see "Direct links"), `guard { on, locked, incident }` and `incidents` (since 1.6.0, see "Ransomware protection") |
 | `GET areas` | | `areas [{ id, kind, label, role, via, rootId, owner, archived, storage { bytes, quota, form, target, state } }]` |
 | `GET nodes/<id>` | | `node` + `path`, `role`, `crumbs [{ id, name }]` |
 | `GET nodes/<id>/children` | `sort=name\|mtime\|size\|updated`, `order`, `offset`, `limit` (≤ 1000) | `items` (folders first), `total`, `next`, `role` |
@@ -66,7 +66,7 @@ login_required`). Every answer has `ok`; errors `{ ok: false, code, error }` (+ 
 | `POST nodes/<id>/versions/<vid>/restore` | | `node` — the version is current again, the current bytes become a version |
 | `DELETE nodes/<id>/versions/<vid>` | | `{ id }` |
 | `POST uploads/check` | `{ parentId, name, sha256?, size? }` | `{ exists, same, node }` — `same`: no need to upload (two empty files are the same, also without `sha256`) |
-| `POST uploads/commit` | `{ mediaId, parentId, name, baseRev?, mtime?, onConflict?: 'rename' \| 'version', text? }` — `text`: recognised text of a scan (≤ 100 000 characters, searchable); an empty file (since 1.5.0): `{ parentId, name, size: 0, mime?, sha256?, … }` without `mediaId` | `{ node, created }` |
+| `POST uploads/commit` | `{ mediaId, parentId, name, baseRev?, mtime?, onConflict?: 'rename' \| 'version', text?, entropy? }` — `text`: recognised text of a scan (≤ 100 000 characters, searchable); an empty file (since 1.5.0): `{ parentId, name, size: 0, mime?, sha256?, … }` without `mediaId`; `entropy` (since 1.6.0, optional): how random the device found the bytes, 0–8 bits per byte (else `400 invalid`, `field: 'entropy'`) | `{ node, created }` |
 | `GET changes` | `since`, `limit` (≤ 1000) | `{ changes [{ seq, op, areaId, nodeId, at, by, device, node }], next, more }` |
 | `GET trash` | `area?` | `items` (the deleted node with `from`, folders with `size`, `files`) |
 | `POST trash/<id>/restore` | | `node` (a free name; the area's top when its folder is gone) |
@@ -82,6 +82,10 @@ login_required`). Every answer has `ok`; errors `{ ok: false, code, error }` (+ 
 | `GET links` | `nodeId?` | `{ links, enabled }` — mine, or those of a node I write to |
 | `GET links/<token>/events` | `before?` | `events` — the log (newest first, ≤ 100) |
 | `DELETE links/<token>` | | `{ ended }` — whoever made it, or who manages the area |
+| `GET guard/incidents` | `all=1` (administrators: everyone's) | `{ incidents, admin }` — mine, open ones first (since 1.6.0) |
+| `GET guard/incidents/<id>` | | `{ incident, entries [{ op, name, oldName, nodeId, at, flags }] }` (≤ 500) |
+| `POST guard/incidents/<id>/release` | | `{ incident, restored: 0, trashed: 0 }` — a false alarm: the device may write again |
+| `POST guard/incidents/<id>/undo` | | `{ incident, restored, trashed, failed }` — every file back to how it was before, then released |
 
 A node: `{ id, areaId, parentId, name, isDir, size, mime, sha256, mediaId, mtime, rev, createdAt, createdBy, updatedAt,
 updatedBy, deleted }`; a file node also `preview: { url, largeUrl } | null` (since 1.1.0, see "Previews") — in every
@@ -265,6 +269,56 @@ missed.
 **Files of other apps:** `GET …/media/<mediaId>` (hook `mediaAccess`) — the readers of the area, a fresh upload its
 uploader.
 
+**Direct links** (since 1.6.0, `server/address.js`): `GET me` answers `links`
+
+```
+links: { node:  "https://gc.example.com/portal?drive={id}#plg-gatecontrol-drive",
+         drive: "https://gc.example.com/portal#plg-gatecontrol-drive" }   — or null
+```
+
+An app replaces only `{id}` by a node id (a folder opens; a file opens its folder, is marked and shown). The address:
+the setting *portal_url* (an administrator's own address of GateControl, its origin), else the public address
+GateControl builds its public links on (GC_BASE_URL when it is https and public — Drive learns it from a public link's
+URL, there is no host call for it: when a link is made, else by asking `gc.publicLinks.list` at most once an hour);
+neither → `null`. `#plg-gatecontrol-drive` opens the Drive tab of the portal; the node travels as the portal's query
+parameter `drive`. **GateControl 1.208.0 hands that parameter on to no plugin frame** (the frame's `src` is fixed, it
+has an opaque origin and no referrer): there the link opens the Drive tab and the portal tab reads `drive=` from its own
+frame address (`location.search` / `location.hash`) as soon as GateControl passes it on. Notifications of Drive
+(`link_upload` — the file that came in, `child_view` — the child's folder, `guard`) carry `data.link` (absolute, when
+the address is known) and the button `open_portal` "Öffnen" to `/portal?drive=<id>#plg-gatecontrol-drive`.
+
+**Ransomware protection** (since 1.6.0, `server/guard.js`, settings *guard_on* (default on), *guard_files* (50),
+*guard_percent* (20), *guard_minutes* (10)):
+
+- Watched: every change of an app request, per device (`user.device` of the token — the registered device's name from
+  `devices`): `create` (a new file), `overwrite` (a new version), `rename` (also a move), `delete` (into the trash
+  now), `mark` (into the trash later — `?after=` / `{ deleteAt }`, what a backup app sends; counts like a delete). The
+  portal, services of other plugins, the NAS and the background run are not watched.
+- Signs: `ext` — a known ransomware ending ("Brief.pdf.locked", `.wncry`, `.lockbit` …), an unknown ending after a known
+  one ("Brief.pdf.id-1234.eking", not a number like "app.log.1") or a random-looking one; `entropy` — the device's hint
+  ≥ 7.5 for a type that is never that dense (text, CSV, HTML, BMP, WAV, old Office …) or for a file whose last hint
+  was below 7; `swap` — a file deleted shortly after the same device made "Name.ext.xyz" or "Name.other" (with a sign)
+  in its folder. GateControl stores media sealed, the plugin reads no bytes: magic bytes are the device's to check —
+  its `entropy` is the hint the server takes.
+- Suspicious, checked after each such request: within *guard_minutes* the device changed existing files (`overwrite`,
+  `rename`, `delete`, `mark` — new files never count, so uploading many photos is no attack) — at least *guard_files* of them,
+  or *guard_percent* % of an area with ≥ 20 files (and at least 5 of them) — and at least half of them, or
+  *guard_files* of them, show a sign.
+- Then an incident: the device is locked. Its writing requests answer **`423 { ok: false, code: 'device_locked',
+  error: 'device_locked', message, incident: <id> }`** — reading, `uploads/check`, `wipes/done`, `devices/…` and
+  `guard/…` stay allowed. The person and the administrators get the notification `guard` ("Drive hat ungewöhnliche
+  Änderungen von <Gerät> gestoppt", with the direct link); the live event `guard { incident }` goes to them (also
+  after a release or an undo — then with `state`).
+- `GET me`: `guard { on, locked, incident }` for the asking device, `incidents` — the person's open incidents (≤ 20).
+  An incident: `{ id, at, device, deviceName, files, sample: [name …] (≤ 5), user, userName, state: 'open' |
+  'released' | 'undone', locked, reasons: ['ext' | 'entropy' | 'swap'], since, endedAt, endedBy }`, undone also
+  `undoneAt, undoneBy, restored, trashed, failed`.
+- `release`: a false alarm — the device writes again. `undo`: what the incident made goes into the trash, deleted files
+  come out of it, marks end, overwritten ones get the version before back, renamed or moved ones their name and folder (a free
+  name when it is taken) — then released. Both by the person or an administrator (others `404`), both idempotent (an
+  undo again answers the same counts). The undo runs as the person (their rights, their name in the change log). A
+  version an incident still needs is not removed by *versions_max* or *versions_days*.
+
 ## Portal
 
 The portal tab "Drive" (`ui/portal.*`, rendered inline by `server/ui.js` into GateControl's sandboxed frame): the areas,
@@ -275,7 +329,12 @@ viewer), a preview for pictures, videos and sound, new folder, rename, move, ver
 "Geteilte Links", "Geräte" (since 1.5.0: my devices with their folders, the last backup, "Ordner öffnen" and "Gerät
 vergessen"), and on a marked node the quiet note "wird am … gelöscht" (with the device in its title) and "Behalten" in
 its actions. Live through `GC.on('event')`. Pictures and videos are shown inline by GateControl and cannot be
-downloaded from the frame (right-click › Save as); other files download.
+downloaded from the frame (right-click › Save as); other files download. Since 1.6.0: a direct link (`drive=<id>` in
+the frame's address) opens its folder or file, "Direktlink kopieren" in a node's actions (with `me.links`), "Ordner
+hochladen" (`<input webkitdirectory>`) besides dropping folders — sub folders are made (empty ones too), with the
+overall progress —, a red banner while a device of the person (an administrator: anyone's) is stopped by the
+ransomware protection ("Rückgängig machen", "War ich – freigeben", "Alle Änderungen"), and for administrators the page
+"Vorfälle".
 
 ## Admin (GateControl's admin UI)
 
@@ -284,7 +343,8 @@ Pages (`ui.pages`, `ui/admin.*`): **Übersicht** (licence and people, the areas 
 API `/api/v1/plugins/gatecontrol-drive/api/admin/…`: `GET overview` (`licence`, `limits`, `counts`, `exceeded`,
 `backup { level: 'strong' | 'subtle' | 'off', areas }`, `people`, `areas`), `PUT seats/<userId> { kind }`,
 `GET|POST teams`, `PUT|DELETE teams/<id>` (members with `label`; a team folder with files is archived, not removed),
-`POST license/refresh`, `PUT backup-hint { on }`.
+`POST license/refresh`, `PUT backup-hint { on }`, since 1.6.0 `GET guard/incidents`, `POST guard/incidents/<id>/release |
+undo` (the ransomware protection; the overview shows stopped devices on top with "Rückgängig machen" / "Freigeben").
 
 **Backup hint:** GateControl's backup holds Drive's database, never the files of its media areas. While an area lies
 on this server, a folder or a NAS (one copy), the overview shows a box and the administrators get the notification
@@ -311,7 +371,9 @@ the path should be). The change log names the calling plugin as the device.
 Every 5 minutes: the trash after *trash_days*, versions after *versions_days* (and more than *versions_max* per file
 at once), the NAS journals (in case the hook was missed), uploads through links the hook did not bring, rows of links
 GateControl has forgotten, the weekly backup hint, old notes of `child_view`, wipes after 90 days and the waiting for
-devices GateControl no longer lists, marked nodes whose time came (into the trash, since 1.5.0).
+devices GateControl no longer lists, marked nodes whose time came (into the trash, since 1.5.0), the ransomware
+protection's journal (rows of no incident older than the window) and closed incidents after 30 days, the public address
+for direct links (since 1.6.0).
 
 ## Development
 

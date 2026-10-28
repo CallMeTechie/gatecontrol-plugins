@@ -19,6 +19,7 @@
 const store = require('./store');
 const nodes = require('./nodes');
 const links = require('./links');
+const guard = require('./guard');
 const { fail, nonNeg, msArg, DEVICE_RE, iso } = require('./util');
 
 const DAY = 86400000;
@@ -50,6 +51,8 @@ async function setMark(ctx, node, at, name) {
   await store.run(ctx.gc, 'UPDATE nodes SET delete_at = ?, delete_by = ?, delete_device = ?, delete_device_name = ? WHERE id = ?',
     [at, ctx.viewer || null, ctx.deviceId || null, name, node.id]);
   await nodes.log(ctx.gc, node.area_id, node.id, 'mark', ctx);
+  // a new mark of an app is a delete for the ransomware protection (guard.js, since 1.6.0)
+  if (node.delete_at == null) await guard.note(ctx, { op: 'mark', node, name: node.name });
 }
 
 async function endMark(ctx, node) {

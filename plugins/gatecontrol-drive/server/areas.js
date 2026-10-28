@@ -75,6 +75,13 @@ async function settingsOf(gc) {
     parentsView: all.child_parents_view !== false && all.child_parents_view !== 'false',
     backupHint: all.backup_hint !== false && all.backup_hint !== 'false',
     scanFormat: all.scan_format === 'image' ? 'image' : 'pdf',
+    // ransomware protection (guard.js, since 1.6.0)
+    guardOn: all.guard_on !== false && all.guard_on !== 'false',
+    guardFiles: Math.min(100000, Math.max(5, Math.round(n('guard_files', 50)))),
+    guardPercent: Math.min(100, Math.max(1, n('guard_percent', 20))),
+    guardMinutes: Math.min(240, Math.max(1, n('guard_minutes', 10))),
+    // direct links (address.js, since 1.6.0): an administrator's own address of GateControl
+    portalUrl: typeof all.portal_url === 'string' ? all.portal_url.trim() : '',
   };
 }
 

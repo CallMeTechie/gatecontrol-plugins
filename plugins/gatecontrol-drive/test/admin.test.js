@@ -189,3 +189,27 @@ test('smoke: the admin pages switch people on, make a team folder, show the over
     } finally { f.stop(); }
   });
 });
+
+test('smoke (1.6.0): the overview shows a stopped device; "Rückgängig machen" settles it', async () => {
+  await withHost({ settings: { guard_files: 5 } }, async (host, c) => {
+    const mine = await c.area(ANNA, 'mine');
+    const pc = c.as(ANNA, 'tok-pc');
+    await pc('PUT', 'devices/pc-1', { name: 'Arbeits-PC' });
+    const files = [];
+    for (let i = 1; i <= 5; i++) files.push((await c.put(ANNA, mine.rootId, `T${i}.txt`, `t${i}`)).json.node);
+    for (const f of files) await pc('PATCH', `nodes/${f.id}`, { name: f.name + '.locked' });
+    assert.equal((await pc('GET', 'me')).json.guard.locked, true);
+    const f = createWindow(ui.render({ view: 'page', page: 'overview', lang: 'de' }, t), adminGc(host, null));
+    try {
+      f.run();
+      const doc = f.document;
+      await until('incident', () => textOf(doc.getElementById('da-page')).includes('Drive hat Geräte gestoppt'));
+      assert.ok(textOf(doc.getElementById('da-page')).includes('Arbeits-PC · Anna · 5 Dateien'));
+      byText(doc.getElementById('da-page'), 'span', 'Rückgängig machen').parentNode.click();
+      await until('undone', () => textOf(doc.getElementById('dp-toast')).includes('Rückgängig gemacht: 5 wiederhergestellt'));
+      await until('gone', () => !textOf(doc.getElementById('da-page')).includes('Drive hat Geräte gestoppt') && textOf(doc.getElementById('da-page')).includes('Lizenz'));
+    } finally { f.stop(); }
+    assert.equal((await pc('GET', 'me')).json.guard.locked, false);
+    assert.equal((await pc('GET', `nodes/${files[0].id}`)).json.node.name, 'T1.txt');
+  });
+});

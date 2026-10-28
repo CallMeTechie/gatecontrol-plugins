@@ -7,7 +7,10 @@
 //   * the notes "… hat deinen Ordner angesehen" older than a week are forgotten;
 //   * "delete on all devices": wipes older than 90 days go, devices GateControl no longer lists stop being waited for
 //     (wipes.js, since 1.2.0);
-//   * marked nodes ("deleted on the device, goes on …") whose time came go into the trash (marks.js, since 1.5.0).
+//   * marked nodes ("deleted on the device, goes on …") whose time came go into the trash (marks.js, since 1.5.0);
+//   * the ransomware protection's journal is kept short, closed incidents go after 30 days (guard.js, since 1.6.0) —
+//     a version an incident may still bring back is not removed for its age;
+//   * the public address for direct links is looked up when Drive does not know it yet (address.js, since 1.6.0).
 
 const store = require('./store');
 const nodes = require('./nodes');
@@ -18,6 +21,8 @@ const links = require('./links');
 const backup = require('./backup');
 const wipes = require('./wipes');
 const marks = require('./marks');
+const guard = require('./guard');
+const address = require('./address');
 
 const DAY = 86400000;
 const BATCH = 200;
@@ -36,7 +41,9 @@ async function tick(gc, now = Date.now()) {
     let purged = 0;
     const due = await store.all(gc, 'SELECT id FROM nodes WHERE trash_id = id AND deleted_at < ? ORDER BY deleted_at LIMIT ?', [now - settings.trashDays * DAY, BATCH]);
     for (const d of due) purged += await store.tx(gc, () => nodes.purgeBatch(gc, d.id, ctx));
-    const old = await store.all(gc, 'SELECT * FROM versions WHERE at < ? ORDER BY at LIMIT ?', [now - settings.versionsDays * DAY, BATCH]);
+    const old = await store.all(gc, `SELECT * FROM versions WHERE at < ? AND id NOT IN (SELECT l.version_id FROM guard_log l JOIN guard_incidents i ON i.id = l.incident_id
+      WHERE l.version_id IS NOT NULL AND i.state <> 'undone')
+      ORDER BY at LIMIT ?`, [now - settings.versionsDays * DAY, BATCH]);
     for (const v of old) {
       if (v.media_id) { try { await gc.media.delete(v.media_id); } catch (e) { gc.log.warn('version delete failed', (e && e.code) || 'error'); } }
       await store.run(gc, 'DELETE FROM versions WHERE id = ?', [v.id]);
@@ -56,8 +63,11 @@ async function tick(gc, now = Date.now()) {
     let wiped = { expired: 0, dropped: 0 };
     try { wiped = await wipes.housekeeping(gc, now); } catch (e) { gc.log.warn('wipes failed', (e && e.code) || 'error'); }
     await store.run(gc, 'DELETE FROM child_views WHERE day < ?', [new Date(now - 7 * DAY).toISOString().slice(0, 10)]);
+    let incidents = 0;
+    try { incidents = await guard.housekeeping(gc, settings, now); } catch (e) { gc.log.warn('guard housekeeping failed', (e && e.code) || 'error'); }
+    try { await address.origin(gc, settings, now); } catch (e) { gc.log.warn('address failed', (e && e.code) || 'error'); }
     await changes.announce(gc, ctx.touched, settings);
-    return { purged, versions: old.length, synced, wipesExpired: wiped.expired, wipesDropped: wiped.dropped, markedTrashed: marked.trashed };
+    return { purged, versions: old.length, synced, wipesExpired: wiped.expired, wipesDropped: wiped.dropped, markedTrashed: marked.trashed, incidentsRemoved: incidents };
   } finally {
     running = false;
   }

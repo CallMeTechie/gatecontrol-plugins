@@ -20,6 +20,7 @@ const STATUS = {
   no_unlimited: 403,
   no_public_url: 409,
   device_limit: 409,
+  device_locked: 423,
   quota: 507,
   internal: 500,
 };
