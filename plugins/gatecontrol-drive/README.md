@@ -58,7 +58,7 @@ reaches `GET frame` (the photo frame, since 1.7.0) and nothing else (`403 forbid
 
 | Route | Body / query | Answer |
 |---|---|---|
-| `GET me` | | `me { id, name, seat, deviceId, admin }`, `licence { valid, tier }`, `areas`, `latest` (change log seq), `settings`, `limits { maxBytes }`, `wipes` (entries this device has yet to handle, since 1.2.0), `devices` (my devices a new wipe reaches), `features` (since 1.5.0: `['previews', 'wipes', 'textSearch', 'devices', 'deleteAfter', 'emptyFiles']`, since 1.6.0 also `'links'`, `'guard'`, since 1.7.0 `'timeTravel'`, `'takenAt'`, `'photos'`, `'albums'`, `'frame'`, `'storage'`, since 1.8.0 `'docAi'` and `'cloudImport'` — only while GateControl offers the AI service / cloud accounts and they are allowed, see "AI for documents" and "Import"; since 1.9.0 `'vault'` and — while set up — `'office'`), `links { node, drive } \| null` (since 1.6.0, see "Direct links"), `guard { on, locked, incident }` and `incidents` (since 1.6.0, see "Ransomware protection") |
+| `GET me` | | `me { id, name, seat, deviceId, admin }`, `licence { valid, tier }`, `areas`, `latest` (change log seq), `settings`, `limits { maxBytes }`, `wipes` (entries this device has yet to handle, since 1.2.0), `devices` (my devices a new wipe reaches), `features` (since 1.5.0: `['previews', 'wipes', 'textSearch', 'devices', 'deleteAfter', 'emptyFiles']`, since 1.6.0 also `'links'`, `'guard'`, since 1.7.0 `'timeTravel'`, `'takenAt'`, `'photos'`, `'albums'`, `'frame'`, `'storage'`, since 1.8.0 `'docAi'` and `'cloudImport'` — only while GateControl offers the AI service / cloud accounts and they are allowed, see "AI for documents" and "Import"; since 1.9.0 `'vault'` and — while set up — `'office'`, since 1.10.0 `'photosFolder'`), `links { node, drive } \| null` (since 1.6.0, see "Direct links"), `guard { on, locked, incident }` and `incidents` (since 1.6.0, see "Ransomware protection") |
 | `GET areas` | | `areas [{ id, kind, label, role, via, rootId, owner, archived, storage { bytes, quota, form, target, state } }]` (+ `docAi` while the feature is on, also in `GET me` `areas`) |
 | `PATCH areas/<id>` | `{ docAi: boolean }` (since 1.8.0, write in the area) | `{ area: { id, docAi } }` — AI for documents on / off in this area |
 | `GET nodes/<id>` | | `node` + `path`, `role`, `crumbs [{ id, name }]` |
@@ -99,9 +99,11 @@ reaches `GET frame` (the photo frame, since 1.7.0) and nothing else (`403 forbid
 | `POST nodes/<id>/timetravel` | `{ at }` | `{ at, before, restored, reverted, trashed, moved, failed, lost }` |
 | `POST nodes/<id>/office` | | since 1.9.0: `{ url, mode, expiresAt }` — see "Office in the browser" |
 | `GET\|POST vaults`, `vaults/<id>/…` | | since 1.9.0 — see "Vault folders" |
-| `GET photos` | `area?`, `before?` (ISO), `limit?` (≤ 200, default 100) (since 1.7.0) | `{ items [photo], next }` (see "Photos and albums") |
-| `GET photos/months` | `area?` | `{ months [{ month: 'YYYY-MM', count }] }` |
-| `GET photos/memories` | `date?` (YYYY-MM-DD) | `{ date, groups [{ yearsAgo, date, items [photo] }] }` |
+| `GET photos` | `area?`, `before?` (ISO), `limit?` (≤ 200, default 100) (since 1.7.0); `folder?` (node id) or `camera?` (`1`) (since 1.10.0) | `{ items [photo], next }` (see "Photos and albums") |
+| `GET photos/months` | `area?`, `folder?` or `camera?` | `{ months [{ month: 'YYYY-MM', count }] }` |
+| `GET photos/memories` | `date?` (YYYY-MM-DD); `area?`, `folder?` or `camera?` (since 1.10.0) | `{ date, groups [{ yearsAgo, date, items [photo] }] }` |
+| `GET photos/camera` | (since 1.10.0) | `{ folder { id, path, areaId } \| null }` — `Bilder/Kamera-Uploads` of my files |
+| `POST photos/camera` | (since 1.10.0) | `{ folder { id, path, areaId }, created }` — made where missing; a file in the way: `409 exists { field: 'path' }` |
 | `GET albums` | | `{ albums [album] }` |
 | `POST albums` | `{ name, areaId? }` | `{ album }` |
 | `PATCH albums/<id>` | `{ name?, coverId?, frame? }` | `{ album }` |
@@ -396,6 +398,20 @@ failed).
   between two pages. Months and memories use the server's time zone; memories: this calendar day ± 1 day of every
   earlier year, ≤ 30 a year, nearest year first. A parent seeing photos of a child's folder: the child is told as for
   the folder.
+- Photos are files (since 1.10.0, feature `photosFolder` — as with OneDrive): they lie in their folders and show in
+  the file view; "Fotos" is only a view over every picture and video. `folder=<node id>` narrows `GET photos`,
+  `photos/months` and `photos/memories` to that folder and every folder below it (a folder the person reads, else `404
+  not_found`; a vault's folder or file `409 encrypted`; a file, a bad id or a folder outside `area` `400 invalid
+  { field: 'folder' }`). `camera=1` does the same for the **camera uploads**: the folder `Bilder/Kamera-Uploads` below
+  the root of my files (`mine:<me>`) — the fixed path, in every language, where the apps' photo backup puts the
+  photos (`Bilder/Kamera-Uploads/<year>/<month>`); names compared as in every path (case-insensitive); while there is
+  none the answers are empty (no error). `folder` and `camera` together: `400 invalid { field: 'camera' }`; `camera`
+  with an `area` other than my files: `400 invalid { field: 'area' }`. `GET photos/camera` answers that folder (`path`
+  as it is spelt, e.g. `Bilder/Kamera-Uploads`) or `null`; `POST photos/camera` makes what is missing of it like `POST
+  nodes` (write access, the change log and the live event; a device the ransomware protection stopped: `423`) and
+  answers `created: false` when it was there — call it before the first backup instead of looking for the folder.
+  A vault's contents never show (not with `folder`, `camera` or without them). `photos/memories` takes `area` too
+  since 1.10.0. No new permission.
 - An album: `{ id, name, areaId, count, coverId, frame, updatedAt, canEdit, canFrame, coverUrl, createdBy }` — of an
   area (default `mine:<me>`); whoever reads the area sees it, whoever writes in it (not archived) changes it (name ≤
   100 characters, cover — one of its items, items, delete). Items point at nodes: an item the viewer cannot read or
@@ -671,7 +687,10 @@ text file and confirmed before the vault is made; names decrypted in the list; u
 only, ≤ 100 MB; downloads decrypted in the browser; "Freigabe anfragen" with the safety number, "Mit
 Wiederherstellungsschlüssel öffnen", the requests of other devices with "Freigeben" / "Ablehnen", "Schlüssel erneuern";
 a browser without X25519 or a GateControl without `GC.keys` shows a note) and **"Im Browser bearbeiten"** for documents
-while `features` has `office` (`GC.openTab`; a second click when the browser took the first one's moment). The section "Fotorahmen" (`ui/frame.*`) is the slide show of a kiosk device.
+while `features` has `office` (`GC.openTab`; a second click when the browser took the first one's moment). Since
+1.10.0: "Nur Kamera-Uploads" on the page "Fotos" (with `photosFolder`: `camera=1` on photos, months and memories, the
+area picker hidden meanwhile; kept while the tab is open — the frame has no storage); pictures and videos stay in the
+file view as every file. The section "Fotorahmen" (`ui/frame.*`) is the slide show of a kiosk device.
 
 ## Admin (GateControl's admin UI)
 

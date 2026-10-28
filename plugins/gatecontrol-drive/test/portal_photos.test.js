@@ -1,6 +1,7 @@
 'use strict';
 
-// The portal's pages of 1.7.0 in the small fake DOM against the mock host: "Fotos" (months, choosing, into an album),
+// The portal's pages of 1.7.0 in the small fake DOM against the mock host: "Fotos" (months, choosing, into an album;
+// since 1.10.0 "Nur Kamera-Uploads"),
 // "Alben" (the photo frame), "Speicher" (duplicates into the trash), "Zeitreise" (preview, run, undo) — and the photo
 // frame's own page on a kiosk device.
 
@@ -85,6 +86,54 @@ test('smoke: "Fotos" by month, choose two, a new album; "Alben": the photo frame
       $('dp-dialog').querySelectorAll('button').find((b) => b.className.includes('dp-btn-primary')).click();
       await until('on', () => textOf($('dp-toast')).includes('läuft jetzt im Fotorahmen'));
       assert.equal((await c.as(ANNA)('GET', `albums/${al.id}`)).json.album.frame, true);
+    } finally {
+      f.stop();
+    }
+  });
+});
+
+test('smoke: "Nur Kamera-Uploads" (1.10.0) — camera=1 on photos, months and memories, the areas hidden, back to all', async () => {
+  await withHost({}, async (host, c) => {
+    const mine = await c.area(ANNA, 'mine');
+    await c.put(ANNA, mine.rootId, 'Lose.jpg', 'l', { mime: 'image/jpeg', takenAt: Date.UTC(2026, 5, 3, 12) });
+    const calls = [];
+    const f = createWindow(portalHtml(), frameGc(host, ANNA, calls));
+    const $ = (id) => f.document.getElementById(id);
+    try {
+      f.run();
+      await until('the app', () => !$('dp-app').hidden && byText($('dp-nav'), 'span', 'Fotos'));
+      byText($('dp-nav'), 'span', 'Fotos').parentNode.click();
+      await until('photos', () => $('dp-main').querySelectorAll('.dp-ph').length === 1);
+      const sw = () => byText($('dp-main'), 'span', 'Nur Kamera-Uploads').parentNode;
+      assert.equal(sw().getAttribute('aria-pressed'), 'false');
+      assert.ok($('dp-main').querySelector('select'), 'the areas');
+      // on: none yet — the note where the app puts them
+      calls.length = 0;
+      sw().click();
+      await until('none', () => textOf($('dp-main')).includes('Noch keine Kamera-Uploads'));
+      assert.equal(sw().getAttribute('aria-pressed'), 'true');
+      assert.equal($('dp-main').querySelector('select'), null, 'no areas while on');
+      for (const p of ['photos', 'photos/months', 'photos/memories']) {
+        const call = calls.find((x) => x.path === p);
+        assert.ok(call, p);
+        assert.equal(call.query.camera, '1', p);
+        assert.equal(call.query.area, undefined, p);
+      }
+      // the app's backup: Bilder/Kamera-Uploads/2026/06
+      const cam = (await c.as(ANNA)('POST', 'photos/camera')).json.folder;
+      const y = (await c.as(ANNA)('POST', 'nodes', { parentId: cam.id, name: '2026' })).json.node;
+      const m = (await c.as(ANNA)('POST', 'nodes', { parentId: y.id, name: '06' })).json.node;
+      await c.put(ANNA, m.id, 'IMG_1.jpg', '1', { mime: 'image/jpeg', takenAt: Date.UTC(2026, 5, 4, 12) });
+      // kept while the tab is open: away and back again
+      byText($('dp-nav'), 'span', 'Alben').parentNode.click();
+      await until('albums', () => !byText($('dp-main'), 'span', 'Nur Kamera-Uploads'));
+      byText($('dp-nav'), 'span', 'Fotos').parentNode.click();
+      await until('camera uploads', () => $('dp-main').querySelectorAll('.dp-ph').length === 1 && $('dp-main').querySelector('.dp-ph').getAttribute('aria-label') === 'IMG_1.jpg');
+      assert.equal(sw().getAttribute('aria-pressed'), 'true');
+      // off: every photo again (photos are files — in the file view too)
+      sw().click();
+      await until('all', () => $('dp-main').querySelectorAll('.dp-ph').length === 2);
+      assert.ok($('dp-main').querySelector('select'));
     } finally {
       f.stop();
     }
