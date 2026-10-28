@@ -23,6 +23,14 @@ async function until(what, fn, n = 1500) {
 }
 const textOf = (n) => (n.nodeType === 3 ? n.data : n.childNodes.map(textOf).join(''));
 const byText = (root, tag, text) => root.querySelectorAll(tag).find((e) => textOf(e).trim() === text);
+/** A button of the menu (since 1.11.0): an area, a folder, a page — by its text, or an icon by its label. */
+const navItem = (nav, label) => {
+  const icon = nav.querySelectorAll('[aria-label]').find((e) => e.getAttribute('aria-label') === label);
+  if (icon) return icon;
+  let n = byText(nav, 'span', label);
+  while (n && n.localName !== 'button') n = n.parentNode;
+  return n || null;
+};
 
 function frameGc(host, user, calls, extra) {
   const viewer = { ...user, portal: true, loggedIn: true };
@@ -69,7 +77,7 @@ test('smoke: without GateControl\'s AI service and cloud accounts there is no "F
     try {
       f.run();
       await until('the file', () => byText($('dp-main'), 'span', 'Rechnung.pdf'));
-      for (const label of ['Fristen', 'Importieren']) assert.ok(!byText($('dp-nav'), 'span', label), label);
+      for (const label of ['Fristen', 'Importieren']) assert.ok(!navItem($('dp-nav'), label), label);
       assert.ok(!textOf($('dp-tools')).includes('KI für Dokumente'));
       $('dp-main').querySelector('.dp-more').click();
       await until('actions', () => byText($('dp-dialog'), 'span', 'Ältere Versionen'));
@@ -94,13 +102,22 @@ test('smoke: "Dokument-Infos" — the suggestion taken, a reminder; the area swi
       f.run();
       await until('the file', () => byText($('dp-main'), 'span', 'Scan.pdf'));
       assert.ok(textOf($('dp-main')).includes('Rechnung · '), 'the kind on the tile');
-      assert.ok(byText($('dp-nav'), 'span', 'Fristen'));
-      // the area's switch
-      byText($('dp-tools'), 'span', 'KI für Dokumente: an').parentNode.click();
-      await until('off', () => byText($('dp-tools'), 'span', 'KI für Dokumente: aus'));
+      assert.ok(navItem($('dp-nav'), 'Fristen'));
+      // the area's switch (in the Drive settings since 1.11.0)
+      assert.ok(!textOf($('dp-tools')).includes('KI für Dokumente'));
+      navItem($('dp-nav'), 'Drive-Einstellungen').click();
+      const sw = () => $('dp-main').querySelectorAll('input').find((x) => x.getAttribute('aria-label') === 'Meine Dateien');
+      await until('the switch', () => sw() && sw().checked);
+      assert.ok(textOf($('dp-main')).includes('Tresore werden nie von der KI gelesen.'));
+      sw().checked = false;
+      sw().dispatchEvent({ type: 'change', target: sw() });
+      await until('off', () => textOf($('dp-toast')).includes('aus') && sw() && !sw().checked);
       assert.equal((await a('GET', `nodes/${file.id}/insight`)).json.status, 'off');
-      byText($('dp-tools'), 'span', 'KI für Dokumente: aus').parentNode.click();
-      await until('on', () => byText($('dp-tools'), 'span', 'KI für Dokumente: an'));
+      sw().checked = true;
+      sw().dispatchEvent({ type: 'change', target: sw() });
+      await until('on', () => sw() && sw().checked && textOf($('dp-toast')).includes(' an'));
+      navItem($('dp-nav'), 'Meine Dateien').click();
+      await until('the file again', () => byText($('dp-main'), 'span', 'Scan.pdf'));
       // the dialog
       const card = $('dp-main').querySelectorAll('[data-node]').find((x) => x.getAttribute('data-node') === String(file.id));
       card.querySelector('.dp-more').click();
@@ -120,7 +137,7 @@ test('smoke: "Dokument-Infos" — the suggestion taken, a reminder; the area swi
       const n = (await a('GET', `nodes/${file.id}`)).json.node;
       assert.deepEqual([n.parentId, n.name], [bills.id, 'Stadtwerke Rechnung.pdf']);
       // "Fristen"
-      byText($('dp-nav'), 'span', 'Fristen').parentNode.click();
+      navItem($('dp-nav'), 'Fristen').click();
       await until('the list', () => byText($('dp-main'), 'button', 'Stadtwerke Rechnung.pdf'));
       assert.ok(textOf($('dp-main')).includes('Zahlungsfrist'));
       byText($('dp-main'), 'span', 'Erinnerung entfernen').parentNode.click();
@@ -141,8 +158,8 @@ test('smoke: "Importieren" — connect (GC.openUrl), browse, pick, a job with pr
     const $ = (id) => f.document.getElementById(id);
     try {
       f.run();
-      await until('the nav', () => byText($('dp-nav'), 'span', 'Importieren'));
-      byText($('dp-nav'), 'span', 'Importieren').parentNode.click();
+      await until('the nav', () => navItem($('dp-nav'), 'Importieren'));
+      navItem($('dp-nav'), 'Importieren').click();
       await until('the page', () => byText($('dp-main'), 'span', 'Google Drive verbinden'));
       assert.ok(!byText($('dp-main'), 'span', 'OneDrive verbinden'));
       byText($('dp-main'), 'span', 'Google Drive verbinden').parentNode.click();
@@ -150,7 +167,7 @@ test('smoke: "Importieren" — connect (GC.openUrl), browse, pick, a job with pr
       assert.match(opened[0], /^https:\/\/gc\.example\.com\/oauth\/cloud\/start\?flow=[A-Za-z0-9_-]{16,64}$/);
       // back from GateControl's OAuth dialog
       host.cloudConnect(ANNA.id, 'google', 'anna@example.com');
-      byText($('dp-nav'), 'span', 'Importieren').parentNode.click();
+      navItem($('dp-nav'), 'Importieren').click();
       await until('the account', () => textOf($('dp-main')).includes('anna@example.com'));
       byText($('dp-main'), 'span', 'Durchsuchen').parentNode.click();
       await until('the files', () => byText($('dp-main'), 'span', 'Belege') && byText($('dp-main'), 'span', 'Notiz.txt'));
@@ -209,8 +226,8 @@ test('smoke: back from GateControl\'s OAuth dialog — connected (waiting jobs g
     let $ = (id) => f.document.getElementById(id);
     try {
       f.run();
-      await until('the nav', () => byText($('dp-nav'), 'span', 'Importieren'));
-      byText($('dp-nav'), 'span', 'Importieren').parentNode.click();
+      await until('the nav', () => navItem($('dp-nav'), 'Importieren'));
+      navItem($('dp-nav'), 'Importieren').click();
       await until('stale', () => textOf($('dp-main')).includes('Verbindung abgelaufen'));
       assert.ok(!byText($('dp-main'), 'span', 'Durchsuchen'));
       byText($('dp-main'), 'span', 'Neu verbinden').parentNode.click();

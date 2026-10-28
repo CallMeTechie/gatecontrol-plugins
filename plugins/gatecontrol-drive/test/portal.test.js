@@ -82,6 +82,14 @@ async function until(what, fn, n = 1500) {
 }
 const textOf = (n) => (n.nodeType === 3 ? n.data : n.childNodes.map(textOf).join(''));
 const byText = (root, tag, text) => root.querySelectorAll(tag).find((e) => textOf(e).trim() === text);
+/** A button of the menu (since 1.11.0): an area, a folder, a page — by its text, or an icon by its label. */
+const navItem = (nav, label) => {
+  const icon = nav.querySelectorAll('[aria-label]').find((e) => e.getAttribute('aria-label') === label);
+  if (icon) return icon;
+  let n = byText(nav, 'span', label);
+  while (n && n.localName !== 'button') n = n.parentNode;
+  return n || null;
+};
 
 /** window.GC of a portal frame for `user` against the mock host: call, upload, on. */
 function frameGc(host, user, calls) {
@@ -119,11 +127,15 @@ test('smoke: areas, a new folder, uploads with a name that exists, a file\'s act
     try {
       f.run();
       // the areas: my files, the family, Lena's folder (read)
-      await until('the app', () => !$('dp-app').hidden && byText($('dp-nav'), 'span', 'Familie Berg'));
-      for (const label of ['Meine Dateien', 'Familie Berg', 'Kinder · Lena', 'Geteilte Links', 'Papierkorb']) assert.ok(byText($('dp-nav'), 'span', label), label);
+      await until('the app', () => !$('dp-app').hidden && navItem($('dp-nav'), 'Familie Berg'));
+      for (const label of ['Meine Dateien', 'Familie Berg', 'Kinder · Lena', 'Geteilte Links', 'Papierkorb']) assert.ok(navItem($('dp-nav'), label), label);
       await until('empty folder', () => textOf($('dp-main')).includes('Dieser Ordner ist leer'));
       // a new folder
-      byText($('dp-tools'), 'span', 'Neuer Ordner').parentNode.click();
+      // (in the menu "Neu" since 1.11.0: a folder, files, a folder from the computer, a vault)
+      byText($('dp-tools'), 'span', 'Neu').parentNode.click();
+      await until('the menu', () => byText($('dp-dialog'), 'span', 'Neuer Tresor'));
+      assert.ok(textOf($('dp-dialog')).includes('Erscheint im Menü unter „Tresore“'));
+      byText($('dp-dialog'), 'span', 'Neuer Ordner').parentNode.click();
       const input = await until('name field', () => $('dp-dialog').querySelector('input'));
       input.value = 'Rechnungen';
       byText($('dp-dialog'), 'span', 'Anlegen').parentNode.click();
@@ -159,10 +171,10 @@ test('smoke: areas, a new folder, uploads with a name that exists, a file\'s act
       byText($('dp-dialog'), 'span', 'Kopieren').parentNode.click();
       assert.equal(doc.copied[doc.copied.length - 1], textOf(urlSpan), 'copied');
       // the shared links page
-      byText($('dp-nav'), 'span', 'Geteilte Links').parentNode.click();
+      navItem($('dp-nav'), 'Geteilte Links').click();
       await until('links page', () => textOf($('dp-main')).includes('Brief.pdf') && textOf($('dp-main')).includes('aktiv'));
       // back to my files, Foto.jpg into the trash
-      byText($('dp-nav'), 'span', 'Meine Dateien').parentNode.click();
+      navItem($('dp-nav'), 'Meine Dateien').click();
       await until('files', () => byText($('dp-main'), 'span', 'Foto.jpg'));
       $('dp-main').querySelectorAll('.dp-card').find((x) => textOf(x).includes('Foto.jpg')).querySelector('.dp-more').click();
       await until('menu', () => byText($('dp-dialog'), 'span', 'In den Papierkorb'));
@@ -170,12 +182,12 @@ test('smoke: areas, a new folder, uploads with a name that exists, a file\'s act
       await until('confirm', () => $('dp-dialog').querySelectorAll('button').find((b) => b.className.includes('dp-btn-danger')));
       $('dp-dialog').querySelectorAll('button').find((b) => b.className.includes('dp-btn-danger')).click();
       await until('gone', () => !byText($('dp-main'), 'span', 'Foto.jpg'));
-      byText($('dp-nav'), 'span', 'Papierkorb').parentNode.click();
+      navItem($('dp-nav'), 'Papierkorb').click();
       await until('in the trash', () => byText($('dp-main'), 'span', 'Foto.jpg'));
       byText($('dp-main'), 'span', 'Wiederherstellen').parentNode.click();
       await until('restored', () => textOf($('dp-toast')).includes('ist wieder da'));
       // a live event of another device reloads the folder
-      byText($('dp-nav'), 'span', 'Meine Dateien').parentNode.click();
+      navItem($('dp-nav'), 'Meine Dateien').click();
       await until('files', () => byText($('dp-main'), 'span', 'Foto.jpg'));
       await c.put(ANNA, mine.rootId, 'Vom Handy.txt', 'hi');
       const ev = c.events().filter((e) => e.type === 'changed').pop();
@@ -271,7 +283,7 @@ test('smoke (1.5.0): a file deleted on a device shows it and can be kept; an emp
       assert.equal((await pc('GET', 'nodes/by-path', null, { area: mine.id, path: 'leer.txt' })).json.node.size, 0);
 
       // Geräte: the PC with its folder, then forgotten
-      byText($('dp-nav'), 'span', 'Geräte').parentNode.click();
+      navItem($('dp-nav'), 'Geräte').click();
       await until('devices', () => textOf($('dp-main')).includes('C:\\Users\\Anna\\Pictures'));
       const main = textOf($('dp-main'));
       for (const s of ['PC', 'windows · 1.40.0', 'Nur sichern', 'Meine Dateien › Geräte › PC', 'zuletzt gesichert']) assert.ok(main.includes(s), s);
@@ -311,7 +323,9 @@ test('smoke (1.6.0): a direct link opens its file, "Direktlink kopieren", "Ordne
       assert.equal(w.document.copied.pop(), `https://gc.example.com/portal?drive=${pdf.id}#plg-gatecontrol-drive`);
 
       // "Ordner hochladen": the chosen folder with its sub folders, an empty file too
-      assert.ok(byText($('dp-tools'), 'span', 'Ordner hochladen'));
+      byText($('dp-tools'), 'span', 'Neu').parentNode.click();
+      assert.ok(await until('the menu', () => byText($('dp-dialog'), 'span', 'Ordner hochladen')));
+      $('dp-dialog').querySelector('.dp-ib').click();
       const rel = (p, data, type) => Object.assign(file(p.split('/').pop(), data, type), { webkitRelativePath: p });
       $('dp-dir').files = [rel('Urlaub/2026/Strand.jpg', 'jpeg', 'image/jpeg'), rel('Urlaub/Liste.txt', 'Sonnencreme'), rel('Urlaub/leer.txt', '')];
       $('dp-dir').dispatchEvent({ type: 'change', target: $('dp-dir') });
@@ -386,7 +400,7 @@ test('smoke (1.6.0): a stopped device of mine shows the banner — "Rückgängig
     try {
       g.run();
       await until('admin banner', () => !$$('dp-guard').hidden && textOf($$('dp-guard')).includes('(Anna)'));
-      byText($$('dp-nav'), 'span', 'Vorfälle').parentNode.click();
+      navItem($$('dp-nav'), 'Vorfälle').click();
       await until('page', () => textOf($$('dp-main')).includes('rückgängig gemacht') && textOf($$('dp-main')).includes('gestoppt'));
       const open = $$('dp-main').querySelectorAll('.dp-incident').find((x) => textOf(x).includes('gestoppt'));
       byText(open, 'span', 'War ich – freigeben').parentNode.click();

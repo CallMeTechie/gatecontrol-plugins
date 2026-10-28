@@ -2,13 +2,14 @@
   <div class="dp-msg" id="dp-msg" hidden></div>
   <div class="dp-app" id="dp-app" hidden>
     <div class="dp-bar">
+      <button type="button" class="dp-ib dp-navtoggle" id="dp-navtoggle" aria-label="{{t:p.menu}}" title="{{t:p.menu}}" aria-expanded="false" aria-controls="dp-nav"></button>
       <nav class="dp-crumbs" id="dp-crumbs" aria-label="{{t:p.path}}"></nav>
       <label class="dp-search"><span class="dp-search-ic" id="dp-search-ic" aria-hidden="true"></span><span class="dp-sr">{{t:p.search}}</span><input id="dp-q" type="search" placeholder="{{t:p.search}}" autocomplete="off" spellcheck="false"></label>
       <div class="dp-tools" id="dp-tools"></div>
     </div>
     <div class="dp-guard" id="dp-guard" role="alert" hidden></div>
     <div class="dp-cols">
-      <aside class="dp-nav" id="dp-nav" aria-label="{{t:p.areas}}"></aside>
+      <aside class="dp-nav" id="dp-nav" aria-label="{{t:p.nav}}"></aside>
       <section class="dp-main" id="dp-main" aria-label="{{t:p.files}}"></section>
     </div>
   </div>

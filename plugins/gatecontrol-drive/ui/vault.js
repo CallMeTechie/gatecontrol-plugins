@@ -11,8 +11,16 @@
  * Everything with DriveVaultCrypto (ui/vaultcrypto.js); keys of vaults live in memory only. The server never gets a
  * name, a content or a key it could read.
  *
+ * Since 1.11.0 the vaults are in the menu only (list()), a new one goes into the top folder of the area chosen ("Wer darf
+ * ihn öffnen?"), and they lock (like OneDrive's personal vault): opening one is a click on "Entsperren" (the keys are
+ * unwrapped then, not on their own); after the minutes of the Drive settings without anything done in the tab
+ * (touch()), when the tab is left (if so set) and always when it is closed, lockAll() overwrites the vault keys in
+ * memory, forgets the decrypted names and closes a vault shown. A confirmation of the device (WebAuthn) is not possible
+ * here: the frame has an opaque origin, which WebAuthn refuses — only the apps ask for a fingerprint or Windows Hello.
+ *
  * portal.js calls DriveVault.attach(ui) with its helpers and asks it: nameOf(node), prepare(folder, items),
- * renderLocked(main), banner(main), tools(target), actionsFor(node, item), upload(u), onEvent(data), trashNames(items).
+ * renderLocked(main), banner(main), upload(u), onEvent(data), names(items), load(), list(), touch(), lockAll(why),
+ * anyOpen(), deviceInfo().
  */
 (function () {
   'use strict';
@@ -32,6 +40,8 @@
       names: new Map(),    // node id → its name (decrypted)
       state: new Map(),    // vault id → 'approved' | 'pending' | 'none' | 'error'
       loading: null,
+      lastUse: Date.now(), // the last thing done in the tab (touch)
+      timer: null,
     };
 
     function err(code) { var e = new Error(code); e.code = code; return e; }
@@ -136,9 +146,19 @@
       return VC.decryptName(m, v.id, v.nameCipher).then(function (name) { st.names.set(v.nodeId, name); st.names.set('vault:' + v.id, name); return name; }, function () { return null; });
     }
 
+    /** What this browser may do with vault `v` without unwrapping a key: 'approved' | 'pending' | 'none'. */
+    function probe(v) {
+      return device().then(function (d) {
+        return U.api('GET', 'vaults/' + encodeURIComponent(v.id) + '/keys', null, { deviceId: d.id }).then(function (r) { return r.state; }, function (e) {
+          if (e && e.code === 'not_found') return 'none';
+          throw e;
+        });
+      }).then(function (s) { st.state.set(v.id, s); return s; });
+    }
+
     /**
-     * Before a folder is shown: when it is a vault's (or holds vault folders), unlock what can be unlocked and decrypt
-     * the names. Never fails (a locked vault shows its lock screen).
+     * Before a folder is shown: when it is a vault's (or holds vault nodes), decrypt the names of the vaults open here;
+     * a locked one only learns what this browser may do (its lock screen: "Entsperren", ask, the recovery key). Never fails.
      */
     function prepare(folder, items) {
       var ids = {};
@@ -146,17 +166,113 @@
       (items || []).forEach(function (n) { if (n.encrypted) ids[n.vaultId] = true; });
       var list = Object.keys(ids);
       if (!list.length) return Promise.resolve();
+      idle();
       return supported().then(function (ok) {
         if (!ok) return null;
         return loadVaults().then(function () {
           return Promise.all(list.map(function (id) {
             var v = st.vaults.get(id);
             if (!v) return null;
-            var p = keysOf(id) ? Promise.resolve('approved') : unlock(v).catch(function () { st.state.set(id, 'error'); return 'error'; });
-            return p.then(function () { return vaultName(v); }).then(function () { return decryptNames(id, (items || []).concat(folder ? [folder] : [])); });
+            if (!keysOf(id)) return probe(v).catch(function () { st.state.set(id, 'error'); return 'error'; });
+            return vaultName(v).then(function () { return decryptNames(id, (items || []).concat(folder ? [folder] : [])); });
           }));
         });
       }).catch(function () { /* shown as locked */ });
+    }
+
+    /** "Entsperren": the keys of vault `v` for this browser, then the folder again. */
+    function open(v) {
+      unlock(v).then(function (s) {
+        if (s !== 'approved') { U.reload(); return; }
+        touch();
+        return vaultName(v).then(function () { U.renderNav(); U.reload(); });
+      }).catch(function (e) { st.state.set(v.id, 'error'); U.fail(e); U.reload(); });
+    }
+
+    // ── the lock (since 1.11.0) ────────────────────────────
+
+    function anyOpen() { return st.keys.size > 0; }
+
+    /** Lock every vault: the keys overwritten and forgotten, the decrypted names too, a vault shown closes. */
+    function lockAll(why) {
+      var had = st.keys.size > 0;
+      st.keys.forEach(function (m) { m.forEach(function (tk) { try { VC.wipe(tk); } catch (e) { /* not a byte array */ } }); m.clear(); });
+      st.keys.clear();
+      st.names.clear();
+      st.state.clear();
+      if (st.timer) { clearTimeout(st.timer); st.timer = null; }
+      if (!had) return false;
+      if (why !== 'closed') {
+        U.leaveVault();
+        if (why !== 'manual') U.toast(T('p.v.locked_now'));
+      }
+      return true;
+    }
+
+    /** Too long without anything done in the tab: lock (the minutes of the Drive settings; 0: never). → locked */
+    function idle() {
+      var mins = Number(U.prefs().lockMinutes) || 0;
+      if (!mins || !st.keys.size) return false;
+      if (Date.now() - st.lastUse < mins * 60000) return false;
+      return lockAll('idle');
+    }
+
+    /** Something was done in the tab: first lock when it came too late, then the time starts again. */
+    function touch() {
+      idle();
+      st.lastUse = Date.now();
+      schedule();
+    }
+
+    /** The check while a vault is open (every 15 s; a timer that never keeps anything alive). */
+    function schedule() {
+      if (st.timer || !st.keys.size) return;
+      st.timer = setTimeout(function () { st.timer = null; idle(); schedule(); }, 15000);
+      if (st.timer && st.timer.unref) st.timer.unref();
+    }
+
+    // the tab left (another tab or window in front): lock when so set; closed: always
+    if (typeof document !== 'undefined' && document.addEventListener) {
+      document.addEventListener('visibilitychange', function () {
+        if (document.visibilityState === 'hidden' && U.prefs().lockHidden) lockAll('hidden');
+      });
+    }
+    if (typeof window !== 'undefined' && window.addEventListener) {
+      window.addEventListener('pagehide', function () { lockAll('closed'); });
+      window.addEventListener('beforeunload', function () { lockAll('closed'); });
+    }
+
+    /** The vaults for the menu: [{ id, nodeId, areaId, name (null while locked), unlocked }]. */
+    function list() {
+      var out = [];
+      st.vaults.forEach(function (v) {
+        var open = !!keysOf(v.id);
+        out.push({ id: v.id, nodeId: v.nodeId, areaId: v.areaId, unlocked: open, name: open && st.names.has('vault:' + v.id) ? st.names.get('vault:' + v.id) : null });
+      });
+      return out;
+    }
+
+    /** The settings' facts: supported, the safety number of this browser, the vaults it is approved for (names while open). */
+    function deviceInfo() {
+      return supported().then(function (ok) {
+        if (!ok) return { supported: false };
+        // only an existing key: the settings make none
+        return window.GC.keys.get(keyName()).then(function (kp) {
+          if (!kp || !kp.publicKey) return { supported: true, number: null, vaults: [] };
+          return device().then(function (d) {
+            return Promise.all([VC.safetyNumber(d.publicRaw), loadVaults()]).then(function (x) {
+              var names = [];
+              st.vaults.forEach(function (v) {
+                var mine = (v.myDevices || []).some(function (m) { return m.deviceId === d.id && m.state === 'approved'; });
+                if (!mine) return;
+                var a = U.areaOf(v.areaId);
+                names.push((keysOf(v.id) && st.names.get('vault:' + v.id)) || (T('p.v.locked_name') + ' · ' + U.vaultScope(a)));
+              });
+              return { supported: true, number: x[0], vaults: names };
+            });
+          });
+        });
+      });
     }
 
     // ── the lock screen ────────────────────────────────────
@@ -174,6 +290,11 @@
       var s = st.state.get(f.vaultId);
       var acts = [];
       var text = T('p.v.locked_text');
+      // approved here and locked (since 1.11.0): open it with a click
+      if (s === 'approved' && v) {
+        main.appendChild(lockBox(T('p.v.unlock_title'), T('p.v.unlock_text'), [U.btn(T('p.v.unlock'), function () { open(v); }, { primary: true, icon: 'lock' })]));
+        return true;
+      }
       if (s === 'pending') {
         text = T('p.v.pending_text');
         acts.push(U.btn(T('p.v.show_number'), function () { showMyNumber(); }));
@@ -370,38 +491,73 @@
       });
     }
 
-    /** "Tresor-Ordner": a new vault in folder `parent`. */
-    function create(parent) {
+    /**
+     * "Neuer Tresor" (the menu "Neu"): its name and who may open it — my files, the family, a team folder; it goes into the
+     * top folder of that area (the server puts it there too), wherever "Neu" was chosen. `from`: the folder shown.
+     */
+    function create(from) {
       supported().then(function (ok) {
         if (!ok) { U.dialog(T('p.v.unsupported_title'), [h('p', { class: 'dp-hint', text: T('p.v.unsupported_text') })]); return; }
-        U.askName(T('p.v.new'), T('p.v.new_name'), T('p.v.next'), function (name) {
-          return device().then(function (d) {
-            var id = VC.newVaultId();
-            var tk = VC.newVaultKey();
-            var rec = VC.newRecoveryKey();
-            return VC.recoveryKeyPair(rec.key).then(function (kp) {
-              return Promise.all([VC.encryptName(tk, id, 1, name), VC.wrapKey(tk, kp.publicRaw, id, 1), VC.wrapKey(tk, d.publicRaw, id, 1), VC.recoveryAuth(rec.key)]).then(function (x) {
-                return { id: id, tk: tk, rec: rec, body: { id: id, parentId: parent.id, nameCipher: x[0], recoveryPub: VC.b64u(kp.publicRaw), recoveryAuth: x[3], recoveryWrap: x[1],
-                  device: { publicKey: VC.b64u(d.publicRaw), name: deviceName(), platform: 'web' }, wrap: x[2] } };
-              });
-            });
-          }).then(function (plan) {
-            // the name dialog closes; the recovery key comes next and the vault is made once it is kept
-            setTimeout(function () {
-              showRecovery(plan.rec.text, T('p.v.recovery_text'), function () {
-                return U.api('POST', 'vaults', plan.body).then(function (r) {
-                  st.keys.set(plan.id, new Map([[1, plan.tk]]));
-                  st.state.set(plan.id, 'approved');
-                  st.vaults.set(plan.id, r.vault);
-                  st.names.set(r.node.id, name);
-                  st.names.set('vault:' + plan.id, name);
-                  U.toast(T('p.v.created', { name: name }));
-                  U.reload();
-                });
-              }).catch(function () { /* cancelled: nothing was made */ });
-            }, 0);
+        var targets = U.vaultTargets();
+        if (!targets.length) { U.toast(T('err.forbidden'), 'error'); return; }
+        var pick = targets.filter(function (x) { return from && x.areaId === from.areaId; })[0] || targets[0];
+        var input = h('input', { class: 'dp-input', type: 'text', value: T('p.v.new_name'), attrs: { maxlength: '255', 'aria-label': T('p.name') } });
+        var errBox = h('p', { class: 'dp-err', attrs: { role: 'alert' } });
+        var choices = h('fieldset', { class: 'dp-choices' }, [h('legend', { class: 'dp-label', text: T('p.v.who') })]);
+        targets.forEach(function (x) {
+          var radio = h('input', { type: 'radio', checked: x === pick, attrs: { name: 'dp-vault-who', value: x.areaId }, on: { change: function () { pick = x; } } });
+          choices.appendChild(h('label', { class: 'dp-choice' }, [radio, h('span', { class: 'dp-choice-tx' }, [h('span', { class: 'dp-name', text: x.label }), h('span', { class: 'dp-meta dp-wrap', text: x.hint })])]));
+        });
+        var mins = Number(U.prefs().lockMinutes) || 0;
+        var go = function () {
+          errBox.textContent = '';
+          var name = input.value.trim();
+          if (!name) { errBox.textContent = T('err.invalid'); return; }
+          var target = pick;
+          make(target, name).then(function () { /* done or cancelled */ }, function (e) { errBox.textContent = U.errText(e); });
+        };
+        input.addEventListener('keydown', function (ev) { if (ev.key === 'Enter') go(); });
+        U.dialog(T('p.v.new'), [
+          h('label', { class: 'dp-field' }, [h('span', { class: 'dp-label', text: T('p.name') }), input]),
+          choices,
+          h('div', { class: 'dp-note' }, [U.icon('lock'), h('span', { text: mins ? T('p.v.new_note', { minutes: mins }) : T('p.v.new_note_nolock') })]),
+          errBox,
+          h('div', { class: 'dp-actions' }, [U.btn(T('p.cancel'), U.closeDialog), U.btn(T('p.v.next'), go, { primary: true })]),
+        ]);
+        input.focus();
+        try { input.setSelectionRange(0, input.value.length); } catch (e) { /* not a text field */ }
+      });
+    }
+
+    /** Make vault `name` in the top folder of `target` ({ areaId, rootId }): the keys here, the recovery key shown first. */
+    function make(target, name) {
+      return device().then(function (d) {
+        var id = VC.newVaultId();
+        var tk = VC.newVaultKey();
+        var rec = VC.newRecoveryKey();
+        return VC.recoveryKeyPair(rec.key).then(function (kp) {
+          return Promise.all([VC.encryptName(tk, id, 1, name), VC.wrapKey(tk, kp.publicRaw, id, 1), VC.wrapKey(tk, d.publicRaw, id, 1), VC.recoveryAuth(rec.key)]).then(function (x) {
+            return { id: id, tk: tk, rec: rec, body: { id: id, parentId: target.rootId, nameCipher: x[0], recoveryPub: VC.b64u(kp.publicRaw), recoveryAuth: x[3], recoveryWrap: x[1],
+              device: { publicKey: VC.b64u(d.publicRaw), name: deviceName(), platform: 'web' }, wrap: x[2] } };
           });
         });
+      }).then(function (plan) {
+        U.closeDialog();
+        // the name dialog closes; the recovery key comes next and the vault is made once it is kept
+        setTimeout(function () {
+          showRecovery(plan.rec.text, T('p.v.recovery_text'), function () {
+            return U.api('POST', 'vaults', plan.body).then(function (r) {
+              st.keys.set(plan.id, new Map([[1, plan.tk]]));
+              st.state.set(plan.id, 'approved');
+              st.vaults.set(plan.id, r.vault);
+              st.names.set(r.node.id, name);
+              st.names.set('vault:' + plan.id, name);
+              touch();
+              U.toast(T('p.v.created', { name: name }));
+              U.renderNav();
+            });
+          }).catch(function () { /* cancelled: nothing was made */ });
+        }, 0);
       });
     }
 
@@ -508,17 +664,20 @@
       if (!d || !d.vault) return;
       if (d.event === 'approved') st.state.delete(d.vault);
       loadVaults().then(function () {
+        var v = st.vaults.get(d.vault);
+        // a new key while the vault is open here: its keys again (it stays open)
+        if (d.event === 'rotated' && v && keysOf(d.vault)) return unlock(v).then(function () { U.renderNav(); U.reload(); });
+        U.renderNav();
         var f = U.S.folder;
-        if (f && f.encrypted && f.vaultId === d.vault) {
-          if (d.event === 'rotated' || d.event === 'approved') { st.keys.delete(d.vault); U.reload(); } else U.renderMain();
-        }
-      }, function () { /* later */ });
+        if (f && f.encrypted && f.vaultId === d.vault) U.renderMain();
+      }).catch(function () { /* later */ });
     }
 
     return {
       cached: function (id) { return st.names.has(id) ? st.names.get(id) : null; },
       supported: supported, nameOf: nameOf, prepare: prepare, renderLocked: renderLocked, banner: banner, create: create, newFolder: newFolder,
       rename: rename, download: download, upload: upload, names: names, onEvent: onEvent, folderVault: folderVault, keysOf: keysOf,
+      load: loadVaults, list: list, touch: touch, lockAll: lockAll, anyOpen: anyOpen, deviceInfo: deviceInfo,
     };
   }
 

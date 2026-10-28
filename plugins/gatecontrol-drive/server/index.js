@@ -9,6 +9,7 @@
 //   portal    /api/v1/portal/plugins/gatecontrol-drive/api/…   (the same routes; also under portal/…)
 //     GET me · GET areas · GET changes?since=&limit= · GET search?q=&area= (name, then recognised text: doc_text)
 //     GET nodes/by-path?area=&path= · GET nodes/<id> · GET nodes/<id>/children?sort=&order=&offset=&limit=
+//     (since 1.11.0 without vault folders — &vaults=1 with them; &dirs=1 only folders with hasDirs: the menu's tree)
 //     POST nodes · PATCH nodes/<id> · DELETE nodes/<id> · GET nodes/<id>/content
 //     DELETE nodes/<id>?everywhere=1 (also on every device of mine — wipes.js, since 1.2.0) · GET wipes · POST wipes/done
 //     DELETE nodes/<id>?after=<s> · PATCH nodes/<id> { deleteAt } (into the trash later — marks.js, since 1.5.0)
@@ -188,6 +189,8 @@ async function me(ctx) {
   };
 }
 
+// vaultsApart: vault folders only in the top folder of their area and not in children (vaults=1), children?dirs=1 with
+// hasDirs (1.11.0) ·
 // photosFolder: photos, months, memories with folder= / camera=1, GET|POST photos/camera (1.10.0) ·
 // vault: vault folders, end-to-end encrypted (vaults/…, nodes and uploads/commit with encrypted / nameCipher / keyVersion, 1.9.0) ·
 // office (1.9.0, only while set up): POST nodes/<id>/office ·
@@ -198,7 +201,7 @@ async function me(ctx) {
 // devices: GET/PUT/DELETE devices (1.5.0) · deleteAfter: DELETE nodes/<id>?after=, PATCH { deleteAt } (1.5.0) ·
 // emptyFiles: uploads/commit { size: 0 } without a mediaId (1.5.0) · wipes: DELETE ?everywhere=1 (1.2.0) ·
 // textSearch: uploads/commit { text } (1.3.0) · previews (1.1.0)
-const FEATURES = ['previews', 'wipes', 'textSearch', 'devices', 'deleteAfter', 'emptyFiles', 'links', 'guard', 'timeTravel', 'takenAt', 'photos', 'albums', 'frame', 'storage', 'vault', 'photosFolder'];
+const FEATURES = ['previews', 'wipes', 'textSearch', 'devices', 'deleteAfter', 'emptyFiles', 'links', 'guard', 'timeTravel', 'takenAt', 'photos', 'albums', 'frame', 'storage', 'vault', 'photosFolder', 'vaultsApart'];
 
 /**
  * What needs GateControl's AI service or cloud accounts (1.8.0) — only while the host has it and it is allowed (the
@@ -513,6 +516,11 @@ module.exports = {
   async start(gc) {
     // the history of names and folders (time travel) starts with the first start of 1.7.0
     try { await timetravel.historySince(gc, Date.now()); } catch (e) { gc.log.warn('history start failed', (e && e.code) || 'error'); }
+    // vault folders of older versions into the top folder of their area (1.11.0; the background run keeps it so)
+    try {
+      const touched = await vault.toRoots(gc, Date.now());
+      if (touched.size) await changes.announce(gc, touched, await areas.settingsOf(gc));
+    } catch (e) { gc.log.warn('vaults to the top folder failed', (e && e.code) || 'error'); }
     gc.log.info('drive started', gc.plugin.version);
   },
 

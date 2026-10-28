@@ -171,19 +171,34 @@ async function get(ctx, id) {
 
 const SORTS = { name: 'name COLLATE NOCASE', mtime: 'COALESCE(mtime, updated_at)', size: 'size', updated: 'updated_at' };
 
-/** GET nodes/<id>/children?sort=name|mtime|size|updated&order=asc|desc&offset=&limit= → { items, total, next } (folders first). */
+/** A query switch: 1, true, yes. */
+const on = (v) => ['1', 'true', 'yes'].includes(String(v == null ? '' : v).toLowerCase());
+
+/**
+ * GET nodes/<id>/children?sort=name|mtime|size|updated&order=asc|desc&offset=&limit= → { items, total, next } (folders
+ * first). Since 1.11.0 (feature vaultsApart) without the vault folders of a folder outside a vault (they are in the menu
+ * only) — `vaults=1` lists them as before; inside a vault everything. `dirs=1`: only the folders, by name, each with
+ * `hasDirs` (live folders below it, vault folders not counted) — the folder tree of the menu.
+ */
 async function children(ctx, id, q) {
   const { node, area, role, via } = await reach(ctx, id);
   if (node.is_dir !== 1) throw fail('invalid');
-  const sort = SORTS[q && q.sort] || SORTS.name;
+  const dirs = on(q && q.dirs);
+  const sort = dirs ? SORTS.name : SORTS[q && q.sort] || SORTS.name;
   const dir = q && q.order === 'desc' ? 'DESC' : 'ASC';
   const limit = Math.min(CHILDREN_MAX, Math.max(1, Number(q && q.limit) || 200));
   const offset = Math.max(0, Number(q && q.offset) || 0);
-  const rows = await store.all(ctx.gc, `SELECT * FROM nodes WHERE parent_id = ? AND deleted_at IS NULL
+  // the vault folders of a folder outside a vault: the nodes of a vault right below it
+  const vaultsToo = !!node.vault_id || on(q && q.vaults);
+  const where = `parent_id = ? AND deleted_at IS NULL${vaultsToo ? '' : ' AND vault_id IS NULL'}${dirs ? ' AND is_dir = 1' : ''}`;
+  const sub = vaultsToo ? '' : ' AND (c.vault_id IS NULL OR nodes.vault_id IS NOT NULL)';
+  const hasDirs = dirs ? `, EXISTS (SELECT 1 FROM nodes c WHERE c.parent_id = nodes.id AND c.is_dir = 1 AND c.deleted_at IS NULL${sub}) AS has_dirs` : '';
+  const rows = await store.all(ctx.gc, `SELECT *${hasDirs} FROM nodes WHERE ${where}
     ORDER BY is_dir DESC, ${sort} ${dir}, id LIMIT ? OFFSET ?`, [node.id, limit + 1, offset]);
-  const total = (await store.one(ctx.gc, 'SELECT COUNT(*) AS n FROM nodes WHERE parent_id = ? AND deleted_at IS NULL', [node.id])).n;
+  const total = (await store.one(ctx.gc, `SELECT COUNT(*) AS n FROM nodes WHERE ${where}`, [node.id])).n;
   if (via === 'parent') await ctx.noteChildView(area);
-  return { items: rows.slice(0, limit).map((r) => view(r)), total, next: rows.length > limit ? offset + limit : null, role };
+  const items = rows.slice(0, limit).map(({ has_dirs: h, ...r }) => view(r, dirs ? { hasDirs: !!h } : null));
+  return { items, total, next: rows.length > limit ? offset + limit : null, role };
 }
 
 /** GET nodes/by-path?area=<id>&path=<a/b> → the node. */
@@ -289,7 +304,7 @@ async function moveMedia(gc, files, mediaArea, oldMediaArea, oldPaths) {
 /**
  * PATCH nodes/<id> { name?, parentId? } — rename and / or move (also into another area the viewer writes to). A node of
  * a vault (since 1.9.0): { nameCipher?, parentId? } — its opaque name stays; it moves only within its vault, the vault's
- * folder only within its area; nothing moves into or out of a vault.
+ * folder not at all (since 1.11.0; it stays in the top folder of its area); nothing moves into or out of a vault.
  */
 async function update(ctx, id, body, opts = {}) {
   const b = body && typeof body === 'object' ? body : {};
@@ -305,7 +320,8 @@ async function update(ctx, id, body, opts = {}) {
       if (b.name != null && b.name !== node.name) throw fail('invalid', { field: 'name' });
       const v = await vaults().row(ctx.gc, node.vault_id);
       const root = v && v.node_id === node.id;
-      if (root ? (parent.node.vault_id || parent.node.area_id !== node.area_id) : parent.node.vault_id !== node.vault_id) throw fail('invalid', { field: 'parentId' });
+      // the vault's folder stays in the top folder of its area (since 1.11.0 — the vaults are in the menu)
+      if (root ? parent.node.id !== node.parent_id : parent.node.vault_id !== node.vault_id) throw fail('invalid', { field: 'parentId' });
       if (b.nameCipher != null) {
         cipher = vaults().nameCipherArg(b.nameCipher);
         // a new name under the current key; the time travel (opts.anyKey) brings back one of an older key
@@ -383,6 +399,29 @@ async function update(ctx, id, body, opts = {}) {
   });
   if (moved) unlinkLater(ctx, 'folders', moved);
   return out;
+}
+
+/**
+ * Inside a transaction: vault folder `node` of `area` into the area's top folder (since 1.11.0, vault.js toRoots) — the
+ * files below get their new paths, the history and the change log a move (the live event follows with ctx.touched).
+ * Its opaque name stays (a new one only should another node of the top folder have it). The encryption knows nothing of
+ * the folder a vault is in (README "Tresor-Ordner – Kryptografie"): names and contents stay as they are.
+ */
+async function vaultToRoot(ctx, node, area) {
+  const root = await row(ctx.gc, area.root_id);
+  if (!root || node.parent_id === root.id) return false;
+  let name = node.name;
+  while (await taken(ctx.gc, area.id, root.id, name, node.id)) name = vaults().opaqueName();
+  const rows = await below(ctx.gc, node.id);
+  const now = pathsBelow(node.id, name, rows);
+  const before = pathsBelow(node.id, await pathOf(ctx.gc, node), rows);
+  const files = rows.filter((r) => r.is_dir === 0 && r.deleted_at == null && r.media_id).map((r) => ({ id: r.id, media_id: r.media_id, path: now.get(r.id) }));
+  await moveMedia(ctx.gc, files, area.media_area, area.media_area, new Map(files.map((f) => [f.id, before.get(f.id)])));
+  await store.run(ctx.gc, "INSERT INTO node_log (node_id, at, op, area_id, parent_id, name, name_cipher) VALUES (?, ?, 'move', ?, ?, ?, ?)",
+    [node.id, ctx.now, node.area_id, node.parent_id, node.name, node.name_cipher || null]);
+  await store.run(ctx.gc, 'UPDATE nodes SET parent_id = ?, name = ?, updated_at = ? WHERE id = ?', [root.id, name, ctx.now, node.id]);
+  await log(ctx.gc, area.id, node.id, 'move', ctx);
+  return true;
 }
 
 /** Links to end once the change is committed (index.js after → links.endFor). */
@@ -466,6 +505,9 @@ async function restore(ctx, id) {
   return store.tx(ctx.gc, async () => {
     const { node, area } = await trashed(ctx, Number(id));
     let parent = await row(ctx.gc, node.parent_id);
+    // a vault's folder (since 1.11.0): back into the top folder of its area, wherever it was
+    const vaultTop = node.vault_id ? await vaults().row(ctx.gc, node.vault_id) : null;
+    if (vaultTop && vaultTop.node_id === node.id) parent = await row(ctx.gc, area.root_id);
     if (!parent || parent.deleted_at != null) {
       // a node of a vault goes back into its vault (the vault's folder first, when that is in the trash too)
       const v = node.vault_id ? await vaults().row(ctx.gc, node.vault_id) : null;
@@ -545,5 +587,5 @@ async function purge(ctx, id) {
 
 module.exports = {
   row, pathOf, below, pathsBelow, view, takenOf, TAKEN, forget, log, reach, folderFor, taken, freeName, join, insertFolder, unmarkUp, UNMARKED, get, children, byPath, search,
-  mkdir, update, trash, trashRows, unlinkLater, trashList, restore, purge, purgeBatch, moveMedia,
+  mkdir, update, vaultToRoot, trash, trashRows, unlinkLater, trashList, restore, purge, purgeBatch, moveMedia,
 };

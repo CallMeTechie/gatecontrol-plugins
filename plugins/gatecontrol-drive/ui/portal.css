@@ -53,21 +53,53 @@ textarea.dp-input{padding:9px 12px;line-height:1.45;resize:vertical}
 .dp-search input{flex:1;min-width:0;border:0;background:transparent;color:var(--text);font:14px var(--font);outline:none;height:100%}
 .dp-tools{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 /* columns */
-.dp-cols{display:grid;grid-template-columns:220px minmax(0,1fr);gap:20px;align-items:start}
-.dp-nav{display:flex;flex-direction:column;gap:3px;position:sticky;top:0}
-.dp-nav button{display:flex;align-items:center;gap:9px;text-align:left;min-height:38px;padding:0 12px;border-radius:10px;border:0;background:transparent;color:var(--text);font:500 14px var(--font);cursor:pointer;width:100%}
-.dp-nav button span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.dp-nav button:hover{background:color-mix(in srgb,var(--text) 6%,transparent)}
-.dp-nav button[aria-current="page"]{background:var(--accent-soft);color:var(--accent);font-weight:700}
-.dp-nav hr{border:0;border-top:1px solid var(--line);margin:8px 4px;width:calc(100% - 8px)}
+.dp-cols{display:grid;grid-template-columns:250px minmax(0,1fr);gap:20px;align-items:start}
+/* the menu (since 1.11.0): "Drive" and me, Fotos / Alben, Persönlich and Gemeinsam with their folder trees, Tresore, the
+   row of icons; at phone width behind the menu button */
+.dp-nav{display:flex;flex-direction:column;gap:2px;position:sticky;top:0;max-height:calc(100vh - 20px);overflow-y:auto}
+.dp-nav-head{display:flex;flex-direction:column;gap:10px;padding:2px 8px 8px}
+.dp-nav-title{font-size:20px;font-weight:800;letter-spacing:-.01em}
+.dp-nav-me{display:flex;align-items:center;gap:10px;min-width:0}
+.dp-avatar{width:34px;height:34px;border-radius:999px;background:var(--accent-soft);color:var(--accent);display:flex;align-items:center;justify-content:center;font-weight:700;flex:none}
+.dp-nav-tx{display:flex;flex-direction:column;min-width:0;gap:1px}
+.dp-nav-lab{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:700;padding:14px 10px 4px}
+.dp-nav-page{display:flex;align-items:center;gap:9px;text-align:left;min-height:38px;padding:0 12px;border-radius:10px;border:0;background:transparent;color:var(--text);font:500 14px var(--font);cursor:pointer;width:100%}
+.dp-nav-page span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dp-nav-page:hover,.dp-pick:hover,.dp-chev:hover{background:color-mix(in srgb,var(--text) 6%,transparent)}
+.dp-nav-page[aria-current="page"]{background:var(--accent-soft);color:var(--accent);font-weight:700}
+.dp-nav-none{padding:0 10px 4px}
+.dp-tree{display:flex;flex-direction:column;gap:1px}
+.dp-tree-row{display:flex;align-items:center;border-radius:10px;min-width:0}
+.dp-tree-row.is-sel{background:var(--accent-soft)}
+.dp-tree-row.is-sel .dp-pick,.dp-tree-row.is-sel .dp-pick svg{color:var(--accent)}
+.dp-tree-row.is-sel .dp-name{font-weight:700}
+.dp-indent{flex:none}
+.dp-chev{flex:none;width:28px;height:32px;display:flex;align-items:center;justify-content:center;border:0;border-radius:8px;background:transparent;color:var(--muted);cursor:pointer;padding:0}
+.dp-chev-sp{flex:none;width:28px}
+.dp-pick{flex:1;min-width:0;display:flex;align-items:center;gap:9px;min-height:34px;padding:2px 8px 2px 2px;border:0;border-radius:8px;background:transparent;color:var(--text);font:500 14px var(--font);cursor:pointer;text-align:left}
+.dp-pick svg{flex:none;color:var(--muted)}
+.dp-tree-row.is-area .dp-pick{min-height:44px}
+.dp-tree-row.is-area .dp-name{font-weight:600}
+.dp-area-ic{width:30px;height:30px;border-radius:9px;display:flex;align-items:center;justify-content:center;flex:none;background:var(--surface-2)}
+.dp-area-ic svg{color:var(--text)}
+.dp-area-ic.is-family svg,.dp-area-ic.is-team svg{color:var(--accent)}
+.dp-area-ic.is-family,.dp-area-ic.is-team{background:var(--accent-soft)}
+.dp-area-ic.is-child,.dp-area-ic.is-vault{background:color-mix(in srgb,var(--warn) 14%,transparent)}
+.dp-area-ic.is-child svg,.dp-area-ic.is-vault svg{color:var(--warn)}
+.dp-tree-wait{padding:4px 0}
+.dp-iconbar{display:flex;flex-wrap:wrap;gap:4px;border-top:1px solid var(--line);margin-top:12px;padding:10px 4px 2px}
+.dp-iconbar .dp-ib{width:36px;height:36px;background:var(--surface-2)}
+.dp-iconbar .dp-ib.is-on{background:var(--accent-soft);color:var(--accent)}
+.dp-navtoggle{display:none}
 .dp-store{margin-top:10px;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px;font-size:12px;color:var(--muted);display:flex;flex-direction:column;gap:7px}
 .dp-meter{height:6px;border-radius:3px;background:var(--line-2);overflow:hidden}
 .dp-meter span{display:block;height:100%;background:var(--accent)}
 @media (max-width:760px){
   .dp-cols{grid-template-columns:minmax(0,1fr)}
-  .dp-nav{flex-direction:row;overflow-x:auto;position:static;padding-bottom:4px}
-  .dp-nav button{width:auto;flex:none;border:1px solid var(--line-2);border-radius:999px;min-height:34px}
-  .dp-nav hr,.dp-store{display:none}
+  .dp-navtoggle{display:inline-flex}
+  .dp-nav{display:none;position:static;max-height:none;border:1px solid var(--line);border-radius:14px;background:var(--surface);padding:10px 6px}
+  .dp-nav.is-open{display:flex}
+  .dp-store{display:none}
   .dp-search{flex-basis:100%}
 }
 /* grid and list */
@@ -235,3 +267,32 @@ textarea.dp-input{padding:9px 12px;line-height:1.45;resize:vertical}
 .dp-vault-reqs{display:flex;flex-direction:column;gap:12px}
 .dp-vault-req{display:flex;flex-direction:column;gap:6px;padding:12px;border:1px solid var(--line);border-radius:12px}
 .dp-vault-req > div:first-child{display:flex;flex-direction:column}
+.dp-menu-sep{border:0;border-top:1px solid var(--line);margin:6px 8px}
+.dp-menu-tx{display:flex;flex-direction:column;gap:1px;padding:4px 0}
+.dp-menu button.is-vault svg{color:var(--warn)}
+.dp-wrap{white-space:normal}
+/* a new vault: who may open it (since 1.11.0) */
+.dp-choices{border:0;margin:0;padding:0;display:flex;flex-direction:column;gap:8px;min-width:0}
+.dp-choices legend{padding:0;margin-bottom:6px}
+.dp-choice{display:flex;align-items:center;gap:12px;padding:10px 13px;border:1px solid var(--line-2);border-radius:12px;cursor:pointer}
+.dp-choice input{margin:0;width:18px;height:18px;flex:none;accent-color:var(--accent)}
+.dp-choice:has(input:checked){border-color:color-mix(in srgb,var(--accent) 55%,transparent);background:var(--accent-soft)}
+.dp-choice-tx{display:flex;flex-direction:column;min-width:0;gap:2px}
+/* the Drive settings (since 1.11.0) */
+.dp-set-sec{margin:0 0 6px;max-width:720px}
+.dp-set-lab{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:700;margin:18px 4px 8px}
+.dp-set-card{background:var(--surface);border:1px solid var(--line);border-radius:14px;overflow:hidden}
+.dp-set-row{display:flex;align-items:center;gap:14px;padding:11px 14px;min-height:44px;border-top:1px solid var(--line);box-sizing:border-box}
+.dp-set-card > .dp-set-row:first-child{border-top:0}
+label.dp-set-row{cursor:pointer}
+.dp-set-tx{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.dp-set-t{font-weight:600}
+.dp-set-row.is-note .dp-set-t{font-weight:400;color:var(--muted);font-size:13px;line-height:1.45}
+.dp-safety-sm{font:600 13.5px var(--mono);letter-spacing:.04em;white-space:nowrap}
+.dp-seg-sm button{min-height:32px;padding:0 12px}
+.dp-sw{appearance:none;-webkit-appearance:none;width:42px;height:24px;border-radius:999px;background:var(--line-2);position:relative;margin:0;flex:none;cursor:pointer;transition:background .15s}
+.dp-sw::after{content:"";position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:999px;background:var(--surface);transition:transform .15s}
+.dp-sw:checked{background:var(--accent)}
+.dp-sw:checked::after{transform:translateX(18px)}
+.dp-sw:focus-visible{outline:2px solid color-mix(in srgb,var(--accent) 55%,transparent);outline-offset:2px}
+@media (max-width:760px){.dp-set-row{flex-wrap:wrap}}
