@@ -13,7 +13,7 @@ const sha = (s) => require('node:crypto').createHash('sha256').update(s).digest(
 test('plugin.json: permissions.devices — GateControl passes the asking device only then', () => {
   const m = JSON.parse(fs.readFileSync(path.join(DIR, 'plugin.json'), 'utf8'));
   assert.equal(m.permissions.devices, true);
-  assert.equal(m.version, '1.7.0');
+  assert.equal(m.version, '1.8.0');
 });
 
 test('a file deleted everywhere: every device of mine removes its copy, then the entry goes', async () => {

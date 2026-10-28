@@ -16,6 +16,11 @@ to its path, the NAS journal and the hook `mediaChanged`), `gc.license.info` (ti
 device of an app request, `user.device` — GateControl passes it only with this permission; see "Delete on all
 devices"; since 1.6.0 also the device the ransomware protection watches and stops). The photo frame on kiosk devices
 (since 1.7.0) shows pictures only with GateControl ≥ 1.210.0 (preview-only URLs); everything else works with 1.208.0.
+AI for documents and the import from Google Drive and OneDrive (since 1.8.0) need GateControl's AI service (`gc.ai`,
+`permissions.ai`, GateControl ≥ 1.214.0) and cloud accounts (`gc.cloud`, `permissions.cloudImport`, GateControl ≥ 1.213.0);
+Drive checks for them at run time
+(`typeof gc.ai?.extract === 'function'`, `typeof gc.cloud?.list === 'function'`) and hides both without them. Settings
+*doc_ai* (default on), *doc_ai_images* (default off), *cloud_import* (default on).
 
 ## Areas and rights
 
@@ -51,8 +56,9 @@ reaches `GET frame` (the photo frame, since 1.7.0) and nothing else (`403 forbid
 
 | Route | Body / query | Answer |
 |---|---|---|
-| `GET me` | | `me { id, name, seat, deviceId, admin }`, `licence { valid, tier }`, `areas`, `latest` (change log seq), `settings`, `limits { maxBytes }`, `wipes` (entries this device has yet to handle, since 1.2.0), `devices` (my devices a new wipe reaches), `features` (since 1.5.0: `['previews', 'wipes', 'textSearch', 'devices', 'deleteAfter', 'emptyFiles']`, since 1.6.0 also `'links'`, `'guard'`, since 1.7.0 `'timeTravel'`, `'takenAt'`, `'photos'`, `'albums'`, `'frame'`, `'storage'`), `links { node, drive } \| null` (since 1.6.0, see "Direct links"), `guard { on, locked, incident }` and `incidents` (since 1.6.0, see "Ransomware protection") |
-| `GET areas` | | `areas [{ id, kind, label, role, via, rootId, owner, archived, storage { bytes, quota, form, target, state } }]` |
+| `GET me` | | `me { id, name, seat, deviceId, admin }`, `licence { valid, tier }`, `areas`, `latest` (change log seq), `settings`, `limits { maxBytes }`, `wipes` (entries this device has yet to handle, since 1.2.0), `devices` (my devices a new wipe reaches), `features` (since 1.5.0: `['previews', 'wipes', 'textSearch', 'devices', 'deleteAfter', 'emptyFiles']`, since 1.6.0 also `'links'`, `'guard'`, since 1.7.0 `'timeTravel'`, `'takenAt'`, `'photos'`, `'albums'`, `'frame'`, `'storage'`, since 1.8.0 `'docAi'` and `'cloudImport'` — only while GateControl offers the AI service / cloud accounts and they are allowed, see "AI for documents" and "Import"), `links { node, drive } \| null` (since 1.6.0, see "Direct links"), `guard { on, locked, incident }` and `incidents` (since 1.6.0, see "Ransomware protection") |
+| `GET areas` | | `areas [{ id, kind, label, role, via, rootId, owner, archived, storage { bytes, quota, form, target, state } }]` (+ `docAi` while the feature is on, also in `GET me` `areas`) |
+| `PATCH areas/<id>` | `{ docAi: boolean }` (since 1.8.0, write in the area) | `{ area: { id, docAi } }` — AI for documents on / off in this area |
 | `GET nodes/<id>` | | `node` + `path`, `role`, `crumbs [{ id, name }]` |
 | `GET nodes/<id>/children` | `sort=name\|mtime\|size\|updated`, `order`, `offset`, `limit` (≤ 1000) | `items` (folders first), `total`, `next`, `role` |
 | `GET nodes/by-path` | `area`, `path` | `node` |
@@ -102,6 +108,21 @@ reaches `GET frame` (the photo frame, since 1.7.0) and nothing else (`403 forbid
 | `GET storage` | `all=1` (administrators) (since 1.7.0) | see "Storage" |
 | `POST storage/versions/prune` | `{ areaId, keep }` (0 … 500) | `{ removed, freedBytes, more }` — administrators and managers of the area |
 | `GET frame` | (a kiosk device only) | `{ on, ready, seconds, order, items [{ url, takenAt }] }` (see "Photo frame") |
+| `GET nodes/<id>/insight` | (since 1.8.0) | `{ status, kind, title, date, sender, amount, currency, suggestion, deadlines, error, at }` (see "AI for documents") |
+| `POST nodes/<id>/insight` | | the same — recognise (again); write in the area |
+| `POST nodes/<id>/insight/apply` | `{ name?: true, folder?: true }` | `{ node, insight }` — the suggestion taken (renamed / moved) |
+| `GET deadlines` | `from?`, `to?` (YYYY-MM-DD; today, + 365 days) | `{ deadlines [{ id, kind, date, label, reminder, node }] }` (≤ 500, by date) |
+| `POST deadlines/<id>/remind` | `{ daysBefore }` (0 … 90) | `{ deadline }` — my reminder |
+| `DELETE deadlines/<id>/remind` | | `{ deadline }` |
+| `GET import/sources` | (since 1.8.0) | `{ google, microsoft, connections [{ id, provider, account, connectedAt, error? }] }` (see "Import"; `error: 'auth'`: connect again) |
+| `POST import/connect` | `{ provider: 'google' \| 'microsoft' }` | `{ url }` — GateControl's OAuth start, back to the portal |
+| `DELETE import/connections/<id>` | | `{ removed }` — its running jobs pause (`cloud_auth`) |
+| `GET import/browse` | `connection`, `folder?`, `cursor?` | `{ items [{ id, name, isDir, size, mime, modifiedAt }], next, connection }` (100 a page; `size`, `mime`, `modifiedAt` may be `null` — folders, Google documents) |
+| `POST import/jobs` | `{ connection, items: [{ id, isDir, name? }] (1 … 500; a folder needs its name), targetFolderId }` | `{ job }` |
+| `GET import/jobs` | | `{ jobs }` — mine, newest first (≤ 50) |
+| `GET import/jobs/<id>` | | `{ job }` |
+| `POST import/jobs/<id>/resume` | `{ connection? }` | `{ job }` — a paused / failed one goes on; a done one tries its `cloud_error` items again |
+| `DELETE import/jobs/<id>` | | running: `{ job }` (cancelled, what came stays); ended: `{ removed: true, id }` |
 
 A node: `{ id, areaId, parentId, name, isDir, size, mime, sha256, mediaId, mtime, rev, createdAt, createdBy, updatedAt,
 updatedBy, deleted, takenAt }` (`takenAt` since 1.7.0: ISO, `null` for a folder); a file node also `preview: { url, largeUrl } | null` (since 1.1.0, see "Previews") — in every
@@ -109,6 +130,11 @@ answer: `nodes/<id>`, `children`, `by-path`, `search`, `changes`, `versions` (`c
 `uploads/commit`, `trash` (always `null` there). A marked node (since 1.5.0, only while marked) also `deleteAt` (ISO),
 `deletedOnDevice` (the device's name or `null`), `deleteMarkedBy` (user id). An empty file: `size: 0`, `mediaId: null`,
 `sha256: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'`, `preview: null`.
+
+Since 1.8.0, while AI for documents is on, a file node also carries `insight: { status, kind }` (see "AI for
+documents"). New codes: `feature_off` (403 — the feature is not available), `unsupported` (422 — nothing the AI may read,
+`reason: 'no_text' | 'media_disabled'`), `cloud_auth` (409 — connect the cloud account again), `cloud_error` (502),
+`rate_limit` (429), `too_large` (413), `job_limit` (409 — five imports run already).
 
 **Uploading:** GateControl's media upload (`PUT …/plugins/gatecontrol-drive/media`, resumable, ≤ 100 GB, any type)
 answers a `mediaId`; for a HEIC photo or a video the app then sends its preview (`PUT …/media/<mediaId>/preview`, see
@@ -401,6 +427,67 @@ each (oldest first). Cleaning up is `DELETE nodes/<id>`. `POST storage/versions/
 the area keeps its newest `keep` versions; administrators (any area) and managers of the area (`403`); what the
 ransomware protection or a time travel still needs stays; ≤ 2000 a call (`more`).
 
+**AI for documents** (since 1.8.0, `server/insights.js`, `server/deadlines.js`, feature `docAi`): GateControl's AI
+service (`gc.ai`, `permissions.ai` with `text` and `vision` — the provider, its keys, "Bilder an KI senden" and the monthly
+budget are set in GateControl › Einstellungen › KI-Anbieter, where an administrator also allows or locks the plugin).
+Without `gc.ai`, while GateControl does not allow it (`gc.ai.available()`) or with the setting *doc_ai* off: no `docAi`
+in `features`, no `insight` on nodes, `GET nodes/<id>/insight` answers `status: 'off'`, the other routes `403
+feature_off`.
+
+- What goes to the AI: the recognised text of a file (`uploads/commit { text }`, ≤ 20 000 characters), its name, today's
+  date and the folder paths of its area (≤ 300) — never the file. A picture (JPEG, PNG, WebP, GIF ≤ 10 MB — what `gc.ai`
+  takes) without text only while GateControl allows pictures to AI (`gc.ai.available({ capability: 'vision' })`): on its
+  own with the setting *doc_ai_images* (default off), else when someone asks (`POST nodes/<id>/insight`). A PDF or HEIC
+  scan goes as its recognised text only; without text: `422 unsupported`.
+- When: a new file or version (an upload, a service call) goes into the queue (`status: 'pending'`); the background run
+  works it off, at most three a run. At most one recognition per version (`rev`); a failed one (`status: 'failed'`,
+  `error`: `ai_budget`, `media_disabled`, `ai_capability`, `ai_invalid`, `ai_timeout`, `ai_provider`, `no_text`) is not
+  tried again without a reason (a new version, `POST …/insight`). GateControl's refusals before a provider is asked
+  (`ERR_RATE_LIMIT`, not configured, denied) leave it in the queue. A finished one sends the readers the event `changed`.
+  An import (see "Import") queues nothing.
+- `GET nodes/<id>/insight` → `{ status: 'none' | 'pending' | 'ready' | 'failed' | 'off', kind: 'invoice' | 'contract' |
+  'notice' | 'medical' | 'certificate' | 'statement' | 'insurance' | 'warranty' | 'other' | null, title, date
+  (YYYY-MM-DD), sender, amount (number), currency (ISO 4217), suggestion: { folderId, folderPath (below the area's top,
+  '' the top), name (with the file's own extension) } | null, deadlines, error, at }` — `none`: nothing for this version;
+  a suggestion that is already true (the same folder or name) or was taken is left out (`null` parts). Readers see it.
+- `POST nodes/<id>/insight/apply { name?: true, folder?: true }`: renamed and / or moved like `PATCH nodes/<id>` (a taken
+  name gets a free one, "… (2).pdf"); write in the area; only a `ready` insight of the current version (`400 invalid
+  { field: 'insight' | 'name' | 'folder' }`); a suggested folder that is gone: `404 { field: 'folder' }`.
+- Per area (`area_prefs`): `PATCH areas/<id> { docAi }` (write in the area); default off in a child's folder, on
+  otherwise. Off: its queue is emptied, `status: 'off'`.
+- A deadline: `{ id, kind: 'payment' | 'cancellation' | 'objection', date: 'YYYY-MM-DD', label, reminder: { at, daysBefore,
+  sent } | null }` (the reminder is the viewer's own). A new recognition replaces the deadlines of a file; one of the same
+  kind and date keeps its reminders. `POST deadlines/<id>/remind { daysBefore }` (read is enough): Drive's notification
+  (topic `deadline`, `data.drive { node, area, deadline }`, a direct link) at 07:00 UTC of the day minus `daysBefore`
+  (already past: with the next run), once; not for a file in the trash or one the person no longer reads. A deadline
+  whose day is over takes none (`400 { field: 'date' }`). The Familie plugin offers no reminder service another plugin
+  may call (its calendar services answer the Messenger only), so Drive reminds on its own.
+
+**Import** (since 1.8.0, `server/imports.js`, feature `cloudImport`): GateControl's cloud accounts (`gc.cloud`,
+`permissions.cloudImport` — the OAuth apps of Google and Microsoft are set up in GateControl › Einstellungen ›
+Cloud-Konten). Without `gc.cloud`, with no OAuth app (`gc.cloud.available()`) or with the setting *cloud_import* off: no
+`cloudImport` in `features`, the routes answer `403 feature_off` (a person's jobs stay readable and cancellable).
+
+- `POST import/connect { provider }` → `{ url }`: GateControl's OAuth start (`<GC_BASE_URL>/oauth/cloud/start?flow=…`; the
+  portal opens it with `GC.openUrl`, else it shows the address to copy); afterwards GateControl returns to
+  `/portal?drive=import&cloud=connected#plg-gatecontrol-drive` (or `cloud=error&cloudError=<code>`) — the portal opens
+  "Importieren", says how it went and lets the jobs that waited for the account go on. A connection belongs to one person
+  and this plugin (`gc.cloud.connections`); `error: 'auth'` on it: connect the account again (it keeps its id).
+- A job (`POST import/jobs`) runs in the background as its person (their seat and rights, the change log's device
+  `import:<provider>`), at most 200 items or 45 s a run, the jobs in turn; at most five running ones a person. Folders
+  are made in the target (a folder of that name is used), their contents listed page by page; a file comes through
+  `gc.cloud.import` (Google documents as docx / xlsx / pptx, drawings as pdf) and is committed with the original change
+  date as `mtime`; a name that exists becomes a new version, the same bytes are skipped (`skipped`), an empty file is
+  made without media. Where it stopped (a restart, GateControl's rate limit, a pause) it goes on — nothing is imported
+  twice.
+- A job: `{ id, provider, account, connection, state: 'queued' | 'running' | 'paused' | 'done' | 'failed' | 'cancelled',
+  targetFolderId, areaId, targetPath, total (files found so far), done, failed, skipped, folders, bytes, scanning, error,
+  createdAt, updatedAt, finishedAt, failures [{ name, error }] (≤ 20) }`. `paused`: `error` `cloud_auth` (connect again,
+  then `resume` with the new connection), `quota`, `cloud_off`; `failed`: `no_seat`, `not_found` / `forbidden` (the
+  target is gone or no longer writable). An item fails with `not_found`, `too_large`, `unsupported`, `invalid`,
+  `too_many` (≥ 50 000 items a job) or `cloud_error` (three tries; `resume` tries them again). The person gets the live
+  event `import { job: { id, state, total, done, failed, skipped } }` after each run. Ended jobs go after 30 days.
+
 ## Portal
 
 The portal tab "Drive" (`ui/portal.*`, rendered inline by `server/ui.js` into GateControl's sandboxed frame): the areas,
@@ -421,7 +508,10 @@ into an album), "Alben" (make, rename, cover, take out, delete, "Im Fotorahmen z
 administrator also everyone and every person; the largest files; duplicates with "Behalten" / "Löschen" — into the
 trash after asking; "Alte Versionen aufräumen" for those who may), "Zeitreise" in a folder's tools (the preview, the
 run, "Rückgängig machen"), and the date a photo was taken on upload (a JPEG's EXIF DateTimeOriginal, else the file's
-date). The section "Fotorahmen" (`ui/frame.*`) is the slide show of a kiosk device.
+date). Since 1.8.0 (only with the features): "Dokument-Infos" in a file's actions (what the AI suggests, "Übernehmen",
+the deadlines with "Erinnern"), the kind on the tiles ("Rechnung · …"), "KI für Dokumente: an / aus" in a folder's
+tools, the page "Fristen", and "Importieren" (connect — through `GC.openUrl` when the portal offers it, else the address
+to open in a new tab —, browse, pick, choose the target; the jobs with progress, "Fortsetzen", "Abbrechen"). The section "Fotorahmen" (`ui/frame.*`) is the slide show of a kiosk device.
 
 ## Admin (GateControl's admin UI)
 
@@ -456,7 +546,7 @@ the path should be). The change log names the calling plugin as the device.
 
 ## Background
 
-Every 5 minutes: the trash after *trash_days*, versions after *versions_days* (and more than *versions_max* per file
+Every minute (since 1.8.0): the queue of AI for documents, the reminders of deadlines, the imports. Every 5 minutes: the trash after *trash_days*, versions after *versions_days* (and more than *versions_max* per file
 at once), the NAS journals (in case the hook was missed), uploads through links the hook did not bring, rows of links
 GateControl has forgotten, the weekly backup hint, old notes of `child_view`, wipes after 90 days and the waiting for
 devices GateControl no longer lists, marked nodes whose time came (into the trash, since 1.5.0), the ransomware
@@ -466,4 +556,4 @@ for direct links (since 1.6.0). A version a time travel made stays until its hol
 ## Development
 
 `node tools/test.js gatecontrol-drive` — the mock host as GateControl 1.208.0 with a family group, a team group and a
-combo licence (`test/helpers.js`).
+combo licence (`test/helpers.js`); `withHost({ ai, cloud })` adds the mock host's `gc.ai` / `gc.cloud` (since 1.8.0).

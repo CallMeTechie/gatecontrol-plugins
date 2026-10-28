@@ -2580,6 +2580,33 @@
         "gatecontrol-gatedrop",
         "gatecontrol-messenger"
       ],
+      "highlight": {
+        "version": "1.8.0",
+        "title": {
+          "de": "KI für Dokumente und Import aus der Cloud",
+          "en": "AI for documents and import from the cloud"
+        },
+        "text": {
+          "de": "Drive schlägt für neue Dokumente Art, Ordner, Dateinamen und Fristen vor – übernommen wird nur, was du anklickst, mit Erinnerung vor der Frist. Dateien und Ordner aus Google Drive oder OneDrive kommen mit Struktur und Datum nach Drive.",
+          "en": "Drive suggests kind, folder, file name and deadlines for new documents – only what you click is taken, with a reminder before the deadline. Files and folders from Google Drive or OneDrive come into Drive with their structure and dates."
+        },
+        "tags": [
+          {
+            "icon": "key",
+            "text": {
+              "de": "Über den KI-Anbieter von GateControl",
+              "en": "Through GateControl’s AI provider"
+            }
+          },
+          {
+            "icon": "cloud",
+            "text": {
+              "de": "Google Drive & OneDrive",
+              "en": "Google Drive & OneDrive"
+            }
+          }
+        ]
+      },
       "adds": [
         {
           "icon": "portal",
@@ -2588,8 +2615,8 @@
             "en": "Portal tab “Drive”"
           },
           "text": {
-            "de": "Hochladen (auch ganze Ordner), Vorschau, Verschieben, Suche – als Kacheln oder Liste",
-            "en": "Upload (whole folders too), preview, move, search – as tiles or a list"
+            "de": "Hochladen (auch ganze Ordner), Import aus Google Drive und OneDrive, Vorschau, Verschieben, Suche",
+            "en": "Upload (whole folders too), import from Google Drive and OneDrive, preview, move, search"
           }
         },
         {
@@ -2741,8 +2768,8 @@
             "en": "Notifications"
           },
           "text": {
-            "de": "Hochladen über einen Link, Sicherungshinweis an Admins, Hinweis an Kinder, wenn Eltern hineinsehen, ein gestopptes Gerät.",
-            "en": "Uploads through a link, the backup hint to administrators, a note to children when parents look in, a stopped device."
+            "de": "Hochladen über einen Link, Sicherungshinweis an Admins, Hinweis an Kinder, wenn Eltern hineinsehen, ein gestopptes Gerät, Erinnerung an Fristen.",
+            "en": "Uploads through a link, the backup hint to administrators, a note to children when parents look in, a stopped device, reminders of deadlines."
           }
         },
         {
@@ -2752,8 +2779,38 @@
             "en": "In the background"
           },
           "text": {
-            "de": "Alle 5 Minuten: Papierkorb und alte Versionen aufräumen, Änderungen von der NAS übernehmen.",
-            "en": "Every 5 minutes: clean up the trash and old versions, take over changes made on the NAS."
+            "de": "Jede Minute: Dokumente für die KI, Importe, Erinnerungen. Alle 5 Minuten: Papierkorb und alte Versionen aufräumen, Änderungen von der NAS übernehmen.",
+            "en": "Every minute: documents for the AI, imports, reminders. Every 5 minutes: clean up the trash and old versions, take over changes made on the NAS."
+          }
+        },
+        {
+          "icon": "key",
+          "title": {
+            "de": "KI-Anfragen",
+            "en": "AI requests"
+          },
+          "text": {
+            "de": "Schickt den erkannten Text eines Dokuments (Bilder nur, wenn erlaubt) an den KI-Anbieter von GateControl – für Vorschläge zu Ordner, Name und Fristen.",
+            "en": "Sends a document’s recognised text (pictures only when allowed) to GateControl’s AI provider – for suggestions of folder, name and deadlines."
+          },
+          "tag": {
+            "de": "KI",
+            "en": "AI"
+          }
+        },
+        {
+          "icon": "cloud",
+          "title": {
+            "de": "Cloud-Konten",
+            "en": "Cloud accounts"
+          },
+          "text": {
+            "de": "Liest nach deiner Anmeldung Dateien aus deinem Google Drive oder OneDrive, um sie nach Drive zu importieren.",
+            "en": "After you sign in, reads files of your Google Drive or OneDrive to import them into Drive."
+          },
+          "tag": {
+            "de": "Cloud",
+            "en": "Cloud"
           }
         }
       ],
