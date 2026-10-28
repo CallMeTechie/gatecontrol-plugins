@@ -15,6 +15,7 @@
 //   * a version a time travel made stays until its hold ends (timetravel.js, since 1.7.0).
 // Every run (since 1.8.0): AI for documents works off its queue (insights.js), the reminders of deadlines whose time came
 // go out (deadlines.js), the imports from cloud drives go on (imports.js) — the last two as their person (o.asPerson).
+// Every run (since 1.11.0): a vault folder outside the top folder of its area goes there (vault.js toRoots).
 
 const store = require('./store');
 const nodes = require('./nodes');
@@ -30,6 +31,7 @@ const address = require('./address');
 const insights = require('./insights');
 const deadlines = require('./deadlines');
 const imports = require('./imports');
+const vault = require('./vault');
 
 const DAY = 86400000;
 const BATCH = 200;
@@ -51,6 +53,10 @@ async function tick(gc, now = Date.now(), o = {}) {
   try {
     const settings = await areas.settingsOf(gc);
     const out = (await housekeepingDue(gc, now)) ? await housekeeping(gc, settings, now) : { housekeeping: false };
+    try {
+      const touched = await vault.toRoots(gc, now);
+      if (touched.size) await changes.announce(gc, touched, settings);
+    } catch (e) { gc.log.warn('vaults to the top folder failed', (e && e.code) || 'error'); }
     try { out.insights = await insights.tick(gc, settings, now); } catch (e) { gc.log.warn('document recognition failed', (e && e.code) || 'error'); }
     try { out.reminders = await deadlines.due(gc, settings, now, o.asPerson); } catch (e) { gc.log.warn('deadline reminders failed', (e && e.code) || 'error'); }
     try { out.imports = await imports.tick(gc, settings, now, o.asPerson); } catch (e) { gc.log.warn('imports failed', (e && e.code) || 'error'); }

@@ -256,7 +256,10 @@ async function run(ctx, id, body) {
     const n = await nodes.row(gc, nodeId);
     if (!n || n.deleted_at != null) return false;
     if (n.vault_id) {
-      // a vault's node: its folder and its encrypted name of then (an older key's name is fine — the devices keep every key)
+      // a vault's node: its folder and its encrypted name of then (an older key's name is fine — the devices keep every key);
+      // the vault's own folder stays in the top folder of its area (since 1.11.0)
+      const v = await store.one(gc, 'SELECT node_id FROM vaults WHERE id = ?', [n.vault_id]);
+      if (v && v.node_id === n.id) parentId = n.parent_id;
       const want = cipher && cipher !== n.name_cipher ? cipher : null;
       if (n.parent_id === parentId && !want) return true;
       await nodes.update(ctx, nodeId, { ...(want ? { nameCipher: want } : {}), ...(n.parent_id !== parentId ? { parentId } : {}) }, { anyKey: true });

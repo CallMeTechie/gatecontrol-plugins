@@ -95,6 +95,15 @@
     lock: 'M5 11h14v10H5z|M8 11V8a4 4 0 0 1 8 0v3',
     key: 'M7 14a4 4 0 1 0 0-8a4 4 0 1 0 0 8|M10.5 11.5L20 21|M16 17l2-2|M18 19l2-2',
     office: 'M6 3h8l4 4v14H6z|M14 3v4h4|M9 13h6M9 17h4',
+    // the menu (since 1.11.0)
+    person: 'M12 4a4 4 0 1 0 0 8a4 4 0 1 0 0-8|M4 20c1.5-4 4.5-6 8-6s6.5 2 8 6',
+    people: 'M9 4.5a3.5 3.5 0 1 0 0 7a3.5 3.5 0 1 0 0-7|M2.5 20c1-3.5 3.5-5.5 6.5-5.5s5.5 2 6.5 5.5|M17 6.5a2.5 2.5 0 1 0 0 5a2.5 2.5 0 1 0 0-5|M17 14.5c2.2.2 3.8 2 4.5 4.5',
+    child: 'M2 9l10-5 10 5-10 5z|M6 11v5c2 2 10 2 12 0v-5',
+    chevRight: 'M9 6l6 6-6 6',
+    chevDown: 'M6 9l6 6 6-6',
+    menu: 'M4 6h16M4 12h16M4 18h16',
+    folderPlus: 'M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z|M12 10v6M9 13h6',
+    gear: 'M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z|M12 9a3 3 0 1 0 0 6a3 3 0 1 0 0-6',
   };
 
   function icon(name, size) {
@@ -288,6 +297,12 @@
     incidents: [],        // the open incidents of the ransomware protection the banner shows (mine; an admin: everyone's)
     admin: false,         // GET me me.admin: the page "Vorfälle" with everyone's incidents
     features: [],         // GET me features (since 1.8.0: docAi, cloudImport only while GateControl offers them)
+    // the menu's folder tree (since 1.11.0): open folders (id → area id) and their folders (id → [{ id, name, hasDirs }])
+    tree: { open: {}, kids: {} },
+    navOpen: false,       // the menu at phone width
+    // the Drive settings of this tab (since 1.11.0; the frame has no storage — they last while the tab is open):
+    // vaults lock after lockMinutes without use (0: never) and when the tab is left (lockHidden)
+    prefs: { lockMinutes: 3, lockHidden: true, cameraFirst: false },
   };
 
   function areaOf(id) { for (var i = 0; i < S.areas.length; i++) if (S.areas[i].id === id) return S.areas[i]; return null; }
@@ -322,6 +337,9 @@
       S.features = Array.isArray(r.features) ? r.features : [];
       $('dp-msg').hidden = true;
       $('dp-app').hidden = false;
+      // the menu opens my files' folders
+      var mineArea = areaOf('mine:' + r.me.id);
+      if (mineArea) S.tree.open[mineArea.rootId] = mineArea.id;
       setupChrome();
       renderGuard();
       if (S.admin) loadIncidents();
@@ -332,6 +350,9 @@
       else if (want && want !== 'import') openTarget(want, first);
       else if (first) openFolder(first.id, first.rootId);
       loadStorage();
+      if (mineArea) loadTree(mineArea.rootId);
+      // the vaults of the menu
+      if (V) V.load().then(renderNav, function () { /* the menu shows none */ });
       live();
     }, function (e) { message(T('p.failed_title'), errText(e)); });
   }
@@ -367,6 +388,13 @@
       if (list.length) enqueue(list);
     });
     setupDrop();
+    // the menu's button at phone width
+    var tg = $('dp-navtoggle');
+    clear(tg);
+    tg.appendChild(icon('menu', 20));
+    tg.addEventListener('click', toggleNav);
+    // what is done in this tab keeps open vaults open; after a while without it they lock (ui/vault.js)
+    ['pointerdown', 'keydown', 'wheel', 'touchstart', 'click'].forEach(function (t) { document.addEventListener(t, function () { if (V) V.touch(); }); });
   }
 
   function loadStorage() {
@@ -376,26 +404,67 @@
     }, function () { /* the meter stays empty */ });
   }
 
-  // ── navigation ───────────────────────────────────────────
+  // ── navigation (since 1.11.0: the menu with the folder tree) ──
+  //
+  // "Drive", my name and seat; "Persönlich" (my files) and "Gemeinsam" (the family, the children's folders, team folders),
+  // each area with its folders as a tree (the arrow opens and closes — loaded when opened, GET children?dirs=1 with
+  // hasDirs; the name opens the folder; the folder shown is marked); "Tresore" (only here — never among the files);
+  // below a row of icons (trash, storage, devices, shared links, deadlines, import, incidents, settings). At phone
+  // width the menu folds away behind its button.
 
   function renderNav() {
     var nav = $('dp-nav');
     clear(nav);
-    S.areas.forEach(function (a) {
-      var cur = S.page === 'files' && S.areaId === a.id;
-      nav.appendChild(h('button', { type: 'button', attrs: { 'aria-current': cur ? 'page' : null }, on: { click: function () { $('dp-q').value = ''; openFolder(a.id, a.rootId); } } },
-        [icon(a.kind === 'mine' ? 'cloud' : 'folder'), h('span', { text: a.label })]));
-    });
-    nav.appendChild(h('hr'));
-    nav.appendChild(h('button', { type: 'button', attrs: { 'aria-current': S.page === 'photos' ? 'page' : null }, on: { click: function () { showPhotos(); } } }, [icon('photos'), h('span', { text: T('p.photos') })]));
-    nav.appendChild(h('button', { type: 'button', attrs: { 'aria-current': S.page === 'albums' || S.page === 'album' ? 'page' : null }, on: { click: showAlbums } }, [icon('album'), h('span', { text: T('p.albums') })]));
-    nav.appendChild(h('button', { type: 'button', attrs: { 'aria-current': S.page === 'links' ? 'page' : null }, on: { click: showLinks } }, [icon('link'), h('span', { text: T('p.links') })]));
-    nav.appendChild(h('button', { type: 'button', attrs: { 'aria-current': S.page === 'trash' ? 'page' : null }, on: { click: showTrash } }, [icon('trash'), h('span', { text: T('p.trash') })]));
-    nav.appendChild(h('button', { type: 'button', attrs: { 'aria-current': S.page === 'devices' ? 'page' : null }, on: { click: showDevices } }, [icon('device'), h('span', { text: T('p.devices') })]));
-    nav.appendChild(h('button', { type: 'button', attrs: { 'aria-current': S.page === 'storage' ? 'page' : null }, on: { click: function () { showStorage(); } } }, [icon('storage'), h('span', { text: T('p.storage') })]));
-    if (has('docAi')) nav.appendChild(h('button', { type: 'button', attrs: { 'aria-current': S.page === 'deadlines' ? 'page' : null }, on: { click: showDeadlines } }, [icon('bell'), h('span', { text: T('p.deadlines') })]));
-    if (has('cloudImport')) nav.appendChild(h('button', { type: 'button', attrs: { 'aria-current': S.page === 'import' ? 'page' : null }, on: { click: function () { showImport(); } } }, [icon('cloudIn'), h('span', { text: T('p.import') })]));
-    if (S.admin) nav.appendChild(h('button', { type: 'button', attrs: { 'aria-current': S.page === 'incidents' ? 'page' : null }, on: { click: showIncidents } }, [icon('shield'), h('span', { text: T('p.guard_incidents') })]));
+    var seat = S.me && S.me.seat ? T('p.seat_' + S.me.seat) : '';
+    nav.appendChild(h('div', { class: 'dp-nav-head' }, [
+      h('b', { class: 'dp-nav-title', text: T('p.drive') }),
+      h('div', { class: 'dp-nav-me' }, [h('span', { class: 'dp-avatar', text: initial(S.me && S.me.name), attrs: { 'aria-hidden': 'true' } }),
+        h('span', { class: 'dp-nav-tx' }, [h('span', { class: 'dp-name', text: (S.me && S.me.name) || '' }), seat ? h('span', { class: 'dp-meta', text: seat }) : null])]),
+    ]));
+    navRow(nav, 'photos', T('p.photos'), S.page === 'photos', function () { showPhotos(); });
+    navRow(nav, 'album', T('p.albums'), S.page === 'albums' || S.page === 'album', showAlbums);
+    var mine = S.areas.filter(function (a) { return a.kind === 'mine'; });
+    var shared = S.areas.filter(function (a) { return a.kind !== 'mine'; });
+    if (mine.length) {
+      nav.appendChild(h('div', { class: 'dp-nav-lab', text: T('p.group_personal') }));
+      nav.appendChild(h('div', { class: 'dp-tree', attrs: { role: 'tree', 'aria-label': T('p.group_personal') } }, mine.map(function (a) { return areaTree(a); })));
+    }
+    if (shared.length) {
+      nav.appendChild(h('div', { class: 'dp-nav-lab', text: T('p.group_shared') }));
+      nav.appendChild(h('div', { class: 'dp-tree', attrs: { role: 'tree', 'aria-label': T('p.group_shared') } }, shared.map(function (a) { return areaTree(a); })));
+    }
+    // the vaults (only here — the lists of files, the search and the pickers never show them)
+    if (V) {
+      var vaults = V.list();
+      nav.appendChild(h('div', { class: 'dp-nav-lab', text: T('p.group_vaults') }));
+      if (!vaults.length) nav.appendChild(h('p', { class: 'dp-hint dp-nav-none', text: T('p.vaults_none') }));
+      vaults.forEach(function (v) {
+        var a = areaOf(v.areaId);
+        var cur = S.page === 'files' && S.folder && S.folder.encrypted && S.folder.vaultId === v.id;
+        nav.appendChild(h('div', { class: 'dp-tree-row is-area' + (cur ? ' is-sel' : '') }, [
+          h('span', { class: 'dp-chev-sp' }),
+          h('button', { type: 'button', class: 'dp-pick', attrs: { 'aria-current': cur ? 'page' : null }, on: { click: function () { $('dp-q').value = ''; navGo(); openFolder(v.areaId, v.nodeId); } } }, [
+            h('span', { class: 'dp-area-ic is-vault' }, icon('lock')),
+            h('span', { class: 'dp-nav-tx' }, [h('span', { class: 'dp-name', text: v.name || T('p.v.locked_name') }),
+              h('span', { class: 'dp-meta', text: vaultScope(a) + ' · ' + T(v.unlocked ? 'p.v.state_open' : 'p.v.state_locked') })]),
+          ]),
+        ]));
+      });
+    }
+    // the row of icons
+    var bar = h('div', { class: 'dp-iconbar', attrs: { role: 'toolbar', 'aria-label': T('p.more_pages') } });
+    var ib = function (ic, label, page, fn) {
+      bar.appendChild(h('button', { type: 'button', class: 'dp-ib' + (page ? ' is-on' : ''), attrs: { 'aria-label': label, title: label, 'aria-current': page ? 'page' : null }, on: { click: function () { navGo(); fn(); } } }, icon(ic, 18)));
+    };
+    ib('trash', T('p.trash'), S.page === 'trash', showTrash);
+    ib('storage', T('p.storage'), S.page === 'storage', function () { showStorage(); });
+    ib('device', T('p.devices'), S.page === 'devices', showDevices);
+    ib('link', T('p.links'), S.page === 'links', showLinks);
+    if (has('docAi')) ib('bell', T('p.deadlines'), S.page === 'deadlines', showDeadlines);
+    if (has('cloudImport')) ib('cloudIn', T('p.import'), S.page === 'import', function () { showImport(); });
+    if (S.admin) ib('shield', T('p.guard_incidents'), S.page === 'incidents', showIncidents);
+    ib('gear', T('p.settings_title'), S.page === 'settings', showSettings);
+    nav.appendChild(bar);
     var a = areaOf(S.areaId);
     var st = a ? S.storage.get(a.id) : null;
     if (a && st && S.page === 'files') {
@@ -406,13 +475,127 @@
         h('span', { text: st.quota ? T('p.used_of', { used: fmtSize(st.bytes), quota: fmtSize(st.quota) }) : T('p.used', { used: fmtSize(st.bytes) }) }),
       ]));
     }
+    var tg = $('dp-navtoggle');
+    if (tg) tg.setAttribute('aria-expanded', String(!!S.navOpen));
+    nav.className = 'dp-nav' + (S.navOpen ? ' is-open' : '');
+  }
+
+  function initial(name) { var s = String(name || '').trim(); return s ? s.charAt(0).toUpperCase() : '?'; }
+
+  /** A row of the menu that opens a page (Fotos, Alben). */
+  function navRow(nav, ic, label, cur, fn) {
+    nav.appendChild(h('button', { type: 'button', class: 'dp-nav-page', attrs: { 'aria-current': cur ? 'page' : null }, on: { click: function () { navGo(); fn(); } } }, [icon(ic), h('span', { text: label })]));
+  }
+
+  /** At phone width the menu closes once something was chosen. */
+  function navGo() { if (S.navOpen) { S.navOpen = false; var n = $('dp-nav'); if (n) n.className = 'dp-nav'; var t = $('dp-navtoggle'); if (t) t.setAttribute('aria-expanded', 'false'); } }
+  function toggleNav() { S.navOpen = !S.navOpen; renderNav(); }
+
+  /** Who a vault is for, by its area: private, the family, a team, a child's folder. */
+  function vaultScope(a) {
+    if (!a) return '';
+    if (a.kind === 'mine') return T('p.v.scope_mine');
+    if (a.kind === 'family') return T('p.v.scope_family');
+    if (a.kind === 'team') return T('p.v.scope_team', { name: a.label });
+    return a.label;
+  }
+
+  var AREA_ICON = { mine: 'person', family: 'people', child: 'child', team: 'people' };
+
+  /** An area with its folder tree. */
+  function areaTree(a) {
+    var box = h('div', { attrs: { role: 'none' } });
+    box.appendChild(treeRow(a, { id: a.rootId, name: a.label, areaId: a.id, hasDirs: true }, 0));
+    return box;
+  }
+
+  /** One row of the tree (and, when open, the rows below it). `depth` 0: the area itself. */
+  function treeRow(a, n, depth) {
+    var open = !!S.tree.open[n.id];
+    var kids = S.tree.kids[n.id];
+    // the arrow: as long as the folder may have folders (hasDirs; unknown until loaded)
+    var arrow = kids ? kids.length > 0 : n.hasDirs !== false;
+    var cur = S.page === 'files' && S.folder && !S.folder.encrypted && S.folder.id === n.id;
+    var name = depth === 0 ? a.label : n.name;
+    var row = h('div', { class: 'dp-tree-row' + (depth === 0 ? ' is-area' : '') + (cur ? ' is-sel' : ''), attrs: { role: 'treeitem', 'aria-expanded': arrow ? String(open) : null, 'aria-level': String(depth + 1), 'data-tree': String(n.id) } }, [
+      depth > 0 ? h('span', { class: 'dp-indent', attrs: { style: 'width:' + (depth * 16) + 'px' } }) : null,
+      arrow ? h('button', { type: 'button', class: 'dp-chev', attrs: { 'aria-label': T(open ? 'p.tree_close' : 'p.tree_open', { name: name }), 'aria-expanded': String(open) }, on: { click: function () { toggleTree(a, n); } } }, icon(open ? 'chevDown' : 'chevRight', 16))
+        : h('span', { class: 'dp-chev-sp' }),
+      h('button', { type: 'button', class: 'dp-pick', attrs: { 'aria-current': cur ? 'page' : null }, on: { click: function () { $('dp-q').value = ''; navGo(); openFolder(a.id, n.id); } } }, depth === 0
+        ? [h('span', { class: 'dp-area-ic is-' + a.kind }, icon(AREA_ICON[a.kind] || 'folder')),
+          h('span', { class: 'dp-nav-tx' }, [h('span', { class: 'dp-name', text: name }), a.role === 'read' ? h('span', { class: 'dp-meta', text: T('p.read_only') }) : null])]
+        : [icon('folder'), h('span', { class: 'dp-name', text: name, attrs: { title: name } })]),
+    ]);
+    if (!open) return row;
+    var group = h('div', { attrs: { role: 'group' } });
+    if (!kids) group.appendChild(h('p', { class: 'dp-hint dp-tree-wait', text: T('p.loading'), attrs: { style: 'padding-left:' + ((depth + 1) * 16 + 34) + 'px' } }));
+    else kids.forEach(function (k) { group.appendChild(treeRow(a, k, depth + 1)); });
+    return h('div', { attrs: { role: 'none' } }, [row, group]);
+  }
+
+  /** The arrow: open (load the folders) or close. Open ones stay open in this tab. */
+  function toggleTree(a, n) {
+    if (S.tree.open[n.id]) { delete S.tree.open[n.id]; renderNav(); return; }
+    S.tree.open[n.id] = a.id;
+    renderNav();
+    if (!S.tree.kids[n.id]) loadTree(n.id);
+  }
+
+  /** The folders of `id` (no vaults; hasDirs for the arrows) → into the tree. */
+  function loadTree(id) {
+    return api('GET', 'nodes/' + id + '/children', null, { dirs: 1, limit: 1000 }).then(function (r) {
+      S.tree.kids[id] = (r.items || []).filter(function (x) { return x.isDir && !x.encrypted; })
+        .map(function (x) { return { id: x.id, name: x.name, areaId: x.areaId, hasDirs: x.hasDirs !== false }; });
+      renderNav();
+    }, function (e) {
+      // gone or no longer readable: closed again
+      delete S.tree.open[id];
+      delete S.tree.kids[id];
+      renderNav();
+      if (e && e.code !== 'not_found') fail(e);
+    });
+  }
+
+  /** The folders shown open in the tree of `areaIds` again (something changed there; the old rows stay until then). */
+  function refreshTree(areaIds) {
+    Object.keys(S.tree.kids).forEach(function (id) { if (!S.tree.open[id]) delete S.tree.kids[id]; });
+    Object.keys(S.tree.open).forEach(function (id) {
+      if (!areaIds || areaIds.indexOf(S.tree.open[id]) >= 0) loadTree(Number(id));
+    });
+  }
+
+  // live: many changes in a row (an upload of a folder) load the menu once
+  var menuTimer = null;
+  var menuAreas = [];
+  function scheduleMenu(areaIds) {
+    areaIds.forEach(function (x) { if (menuAreas.indexOf(x) < 0) menuAreas.push(x); });
+    if (menuTimer) clearTimeout(menuTimer);
+    menuTimer = setTimeout(function () {
+      var list = menuAreas;
+      menuTimer = null;
+      menuAreas = [];
+      refreshTree(list);
+      if (V) V.load().then(renderNav, function () { /* later */ });
+    }, 1000);
+  }
+
+  /** The folder shown: the folders above it open in the tree, so it can be marked there. */
+  function revealInTree(folder) {
+    if (!folder || folder.encrypted) return;
+    var a = areaOf(folder.areaId);
+    if (!a) return;
+    (folder.crumbs || []).forEach(function (c) {
+      if (S.tree.open[c.id]) return;
+      S.tree.open[c.id] = a.id;
+      if (!S.tree.kids[c.id]) loadTree(c.id);
+    });
   }
 
   function renderCrumbs() {
     var c = $('dp-crumbs');
     clear(c);
     if (S.page !== 'files' || !S.folder) {
-      c.appendChild(h('button', { type: 'button', attrs: { 'aria-current': 'page' }, text: S.page === 'import' ? T('p.import') : S.page === 'deadlines' ? T('p.deadlines') : S.page === 'trash' ? T('p.trash') : S.page === 'links' ? T('p.links') : S.page === 'devices' ? T('p.devices')
+      c.appendChild(h('button', { type: 'button', attrs: { 'aria-current': 'page' }, text: S.page === 'settings' ? T('p.settings_title') : S.page === 'import' ? T('p.import') : S.page === 'deadlines' ? T('p.deadlines') : S.page === 'trash' ? T('p.trash') : S.page === 'links' ? T('p.links') : S.page === 'devices' ? T('p.devices')
         : S.page === 'incidents' ? T('p.guard_incidents') : S.page === 'photos' ? T('p.photos') : S.page === 'albums' ? T('p.albums')
           : S.page === 'album' ? (S.album ? S.album.name : T('p.albums')) : S.page === 'storage' ? T('p.storage') : T('p.results', { q: S.q }) }));
       return;
@@ -428,33 +611,49 @@
     });
   }
 
+  var SORT_OPTIONS = [['name:asc', 'p.sort_name'], ['updated:desc', 'p.sort_new'], ['size:desc', 'p.sort_size']];
+  function sortSelect(onChange, cls) {
+    var sel = h('select', { class: 'dp-input' + (cls ? ' ' + cls : ''), attrs: { 'aria-label': T('p.sort') }, on: { change: function (ev) { var v = ev.target.value.split(':'); S.sort = v[0]; S.order = v[1]; onChange(); } } },
+      SORT_OPTIONS.map(function (o) { return h('option', { value: o[0], text: T(o[1]), selected: o[0] === S.sort + ':' + S.order }); }));
+    sel.style.width = 'auto';
+    return sel;
+  }
+
   function renderTools() {
     var t = $('dp-tools');
     clear(t);
     if (S.page !== 'files') return;
     t.appendChild(ibtn('grid', T('p.view_grid'), function () { S.view = 'grid'; renderMain(); renderTools(); }, { pressed: S.view === 'grid' }));
     t.appendChild(ibtn('list', T('p.view_list'), function () { S.view = 'list'; renderMain(); renderTools(); }, { pressed: S.view === 'list' }));
-    var sel = h('select', { class: 'dp-input dp-btn-sm', attrs: { 'aria-label': T('p.sort') }, on: { change: function (ev) { var v = ev.target.value.split(':'); S.sort = v[0]; S.order = v[1]; reload(); } } },
-      [['name:asc', T('p.sort_name')], ['updated:desc', T('p.sort_new')], ['size:desc', T('p.sort_size')]].map(function (o) { return h('option', { value: o[0], text: o[1], selected: o[0] === S.sort + ':' + S.order }); }));
-    sel.style.width = 'auto';
-    t.appendChild(sel);
+    t.appendChild(sortSelect(reload, 'dp-btn-sm'));
     var vault = S.folder && S.folder.encrypted;
     // a vault this browser cannot open: nothing to do here but the lock screen
     if (vault && !(V && V.keysOf(S.folder.vaultId))) return;
-    // AI for documents in this area (since 1.8.0): on / off for those who write in it
-    var ar = areaOf(S.areaId);
-    if (!vault && has('docAi') && canWrite() && ar && typeof ar.docAi === 'boolean') {
-      t.appendChild(h('button', { type: 'button', class: 'dp-btn dp-btn-sm', attrs: { 'aria-pressed': String(ar.docAi), title: T('p.ai_area_hint') }, on: { click: function () { toggleAi(ar); } } },
-        [icon('spark'), h('span', { text: T(ar.docAi ? 'p.ai_on' : 'p.ai_off') })]));
-    }
+    // (AI for documents per area: in the Drive settings since 1.11.0)
     if (canWrite()) {
       t.appendChild(btn(T('p.tt'), function () { timeTravel(S.folder); }, { icon: 'clock' }));
-      // a vault folder (since 1.9.0): not inside another one
-      if (!vault && V) t.appendChild(btn(T('p.v.new'), function () { V.create(S.folder); }, { icon: 'lock' }));
-      t.appendChild(btn(T('p.new_folder'), vault ? function () { V.newFolder(S.folder); } : newFolder, { icon: 'plus' }));
-      if (!vault) t.appendChild(btn(T('p.upload_folder'), function () { $('dp-dir').click(); }, { icon: 'folderUp' }));
+      // "Neu" (since 1.11.0): a folder, files, a folder from the computer, a vault (it goes into the top folder of the area chosen)
+      t.appendChild(btn(T('p.new'), newMenu, { icon: 'plus' }));
       t.appendChild(btn(T('p.upload'), function () { $('dp-file').click(); }, { icon: 'upload', primary: true }));
     }
+  }
+
+  /** The menu "Neu": Neuer Ordner, Dateien hochladen, Ordner hochladen — a line — Neuer Tresor (it shows in the menu, not here). */
+  function newMenu() {
+    var vault = S.folder && S.folder.encrypted;
+    var items = [];
+    var item = function (ic, label, hint, fn, cls) {
+      items.push(h('button', { type: 'button', class: cls || '', on: { click: function () { closeDialog(); fn(); } } }, [icon(ic),
+        hint ? h('span', { class: 'dp-menu-tx' }, [h('span', { text: label }), h('span', { class: 'dp-meta', text: hint })]) : h('span', { text: label })]));
+    };
+    item('folderPlus', T('p.new_folder'), null, vault ? function () { V.newFolder(S.folder); } : newFolder);
+    item('upload', T('p.upload_files'), null, function () { $('dp-file').click(); });
+    if (!vault) item('folderUp', T('p.upload_folder'), null, function () { $('dp-dir').click(); });
+    if (V) {
+      items.push(h('hr', { class: 'dp-menu-sep' }));
+      item('lock', T('p.v.new'), T('p.v.new_hint'), function () { V.create(S.folder); }, 'is-vault');
+    }
+    dialog(T('p.new'), [h('div', { class: 'dp-menu' }, items)], { sub: T('p.new_in', { name: S.folder.parentId == null ? (areaOf(S.areaId) || {}).label || '' : nm(S.folder) }) });
   }
 
   // ── a folder ─────────────────────────────────────────────
@@ -476,6 +675,7 @@
       S.items = r[1].items || [];
       S.total = r[1].total || 0;
       S.next = r[1].next;
+      revealInTree(S.folder);
       renderAll();
       if (then) then();
     }, function (e) {
@@ -710,12 +910,12 @@
 
   function newFolder() {
     askName(T('p.new_folder'), T('p.new_folder_name'), T('p.create'), function (name) {
-      return api('POST', 'nodes', { parentId: S.folder.id, name: name }).then(function () { reload(); });
+      return api('POST', 'nodes', { parentId: S.folder.id, name: name }).then(function () { reload(); refreshTree([S.areaId]); });
     });
   }
   function rename(n) {
     askName(T('p.rename'), n.name, T('p.save'), function (name) {
-      return api('PATCH', 'nodes/' + n.id, { name: name }).then(function () { reload(); toast(T('p.renamed')); });
+      return api('PATCH', 'nodes/' + n.id, { name: name }).then(function () { reload(); if (n.isDir) refreshTree([n.areaId]); toast(T('p.renamed')); });
     });
   }
   function toTrash(n) {
@@ -725,7 +925,7 @@
       h('p', { class: 'dp-hint', text: T('p.everywhere_hint') })] : null;
     confirmDialog(T('p.to_trash'), T(n.isDir ? 'p.to_trash_folder' : 'p.to_trash_file', { name: nm(n), days: (S.meSettings && S.meSettings.trashDays) || 30 }), T('p.to_trash'), function () {
       var all = !!(extra && everywhere.checked);
-      return api('DELETE', 'nodes/' + n.id, null, all ? { everywhere: 1 } : null).then(function () { reload(); loadStorage(); toast(T(all ? 'p.trashed_everywhere' : 'p.trashed', { name: nm(n) })); });
+      return api('DELETE', 'nodes/' + n.id, null, all ? { everywhere: 1 } : null).then(function () { reload(); loadStorage(); if (n.isDir) refreshTree([n.areaId]); if (n.encrypted && V) V.load().then(renderNav, function () {}); toast(T(all ? 'p.trashed_everywhere' : 'p.trashed', { name: nm(n) })); });
     }, true, extra);
   }
 
@@ -772,13 +972,13 @@
     var go = function (areaId, folderId) {
       target.areaId = areaId;
       target.folderId = folderId;
-      Promise.all([api('GET', 'nodes/' + folderId), api('GET', 'nodes/' + folderId + '/children', null, { limit: 1000 })]).then(function (r) {
+      Promise.all([api('GET', 'nodes/' + folderId), api('GET', 'nodes/' + folderId + '/children', null, { dirs: 1, limit: 1000 })]).then(function (r) {
         clear(picker);
         var node = r[0].node;
         target.crumbs = node.crumbs.concat([{ id: node.id, name: node.name }]);
         where.textContent = T('p.move_to', { path: [areaOf(areaId).label].concat(target.crumbs.slice(1).map(function (c) { return c.name; })).join(' › ') });
         if (node.parentId != null) picker.appendChild(h('button', { type: 'button', on: { click: function () { go(areaId, node.parentId); } } }, [icon('up'), h('span', { text: T('p.up') })]));
-        (r[1].items || []).filter(function (x) { return x.isDir && x.id !== n.id; }).forEach(function (x) {
+        (r[1].items || []).filter(function (x) { return x.isDir && !x.encrypted && x.id !== n.id; }).forEach(function (x) {
           picker.appendChild(h('button', { type: 'button', attrs: { role: 'listitem' }, on: { click: function () { go(areaId, x.id); } } }, [icon('folder'), h('span', { text: x.name })]));
         });
         if (!picker.firstChild) picker.appendChild(h('p', { class: 'dp-hint', text: T('p.no_folders'), attrs: { style: 'padding:12px' } }));
@@ -787,7 +987,7 @@
     dialog(T('p.move_title', { name: n.name }), [h('label', { class: 'dp-field' }, [h('span', { class: 'dp-label', text: T('p.area') }), areaSel]), where, picker, err,
       h('div', { class: 'dp-actions' }, [btn(T('p.cancel'), closeDialog), btn(T('p.move_here'), function () {
         if (!target.folderId) return;
-        api('PATCH', 'nodes/' + n.id, { parentId: target.folderId }).then(function () { closeDialog(); reload(); loadStorage(); toast(T('p.moved')); }, function (e) { err.textContent = errText(e); });
+        api('PATCH', 'nodes/' + n.id, { parentId: target.folderId }).then(function () { closeDialog(); reload(); loadStorage(); if (n.isDir) refreshTree([n.areaId, target.areaId]); toast(T('p.moved')); }, function (e) { err.textContent = errText(e); });
       }, { primary: true })])]);
     var a = areaOf(n.areaId);
     go(n.areaId, n.parentId || (a && a.rootId));
@@ -957,7 +1157,7 @@
             h('div', { attrs: { style: 'display:flex;flex-direction:column;min-width:0' } }, [h('span', { class: 'dp-name', text: nm(n) }),
               h('span', { class: 'dp-meta', text: [(a ? a.label : '') + (n.from ? ' › ' + n.from : ''), T('p.deleted_at', { date: fmtDate(n.deletedAt), who: personName(n.deletedBy) }), n.isDir ? P('p.files_n', n.files || 0) : fmtSize(n.size)].join(' · ') })])]),
           h('div', { class: 'dp-actions' }, [
-            btn(T('p.restore'), function () { api('POST', 'trash/' + n.id + '/restore').then(function () { toast(T('p.restored', { name: nm(n) })); showTrash(); loadStorage(); }, fail); }, { small: true, icon: 'restore' }),
+            btn(T('p.restore'), function () { api('POST', 'trash/' + n.id + '/restore').then(function () { toast(T('p.restored', { name: nm(n) })); showTrash(); loadStorage(); if (n.isDir) refreshTree([n.areaId]); if (n.encrypted && V) V.load().then(renderNav, function () {}); }, fail); }, { small: true, icon: 'restore' }),
             btn(T('p.delete_forever'), function () {
               confirmDialog(T('p.delete_forever'), T('p.delete_forever_text', { name: nm(n) }), T('p.delete_forever'), function () {
                 return api('DELETE', 'trash/' + n.id).then(function () { showTrash(); loadStorage(); });
@@ -1954,6 +2154,105 @@
       }, { icon: 'restore' }), btn(T('p.close'), closeDialog, { primary: true })])]);
   }
 
+  // ── the Drive settings (since 1.11.0) ────────────────────
+  //
+  // A page of its own (the gear of the menu): Sicherung (the devices that back up folders), Tresore (lock after … without
+  // use, lock when the tab is left, the safety number of this browser, the vaults it is approved for), KI für Dokumente
+  // (per area — PATCH areas/<id> { docAi }, where I write), Ansicht (order, tiles or list, the photos' start),
+  // Benachrichtigungen (where GateControl sets them). What is not the server's lasts while the tab is open.
+
+  var LOCK_MINUTES = [1, 3, 5, 15, 0];
+
+  function showSettings() {
+    var main = startPage('settings');
+    renderSettings(main);
+  }
+
+  function setRow(title, hint, control, o) {
+    var x = o || {};
+    var tx = h('span', { class: 'dp-set-tx' }, [h('span', { class: 'dp-set-t', text: title }), hint ? h('span', { class: 'dp-meta dp-wrap', text: hint }) : null]);
+    return h(x.label ? 'label' : 'div', { class: 'dp-set-row' + (x.cls ? ' ' + x.cls : '') }, [tx, control || null]);
+  }
+  function setSwitch(on, label, onChange) {
+    return h('input', { type: 'checkbox', class: 'dp-sw', checked: !!on, attrs: { role: 'switch', 'aria-label': label }, on: { change: function (ev) { onChange(!!ev.target.checked); } } });
+  }
+  function setSection(title, rows) {
+    return h('section', { class: 'dp-set-sec' }, [h('h2', { class: 'dp-set-lab', text: title }), h('div', { class: 'dp-set-card' }, rows)]);
+  }
+
+  function renderSettings(main) {
+    if (S.page !== 'settings') return;
+    clear(main);
+    main.appendChild(h('p', { class: 'dp-hint', text: T('p.st_intro'), attrs: { style: 'margin-bottom:4px' } }));
+    // Sicherung: the PCs and phones that back up folders (their own settings are in the apps)
+    main.appendChild(setSection(T('p.st_backup'), [
+      setRow(T('p.st_backup_folders'), T('p.st_backup_folders_hint'), btn(T('p.open'), showDevices, { small: true, icon: 'device' })),
+    ]));
+    // Tresore
+    if (V) {
+      var p = S.prefs;
+      var lockSel = h('select', { class: 'dp-input dp-btn-sm', attrs: { 'aria-label': T('p.st_lock_after') }, on: { change: function (ev) { p.lockMinutes = Number(ev.target.value) || 0; V.touch(); renderSettings(main); } } },
+        LOCK_MINUTES.map(function (m) { return h('option', { value: String(m), text: m ? P('p.st_lock_min', m) : T('p.st_lock_never'), selected: m === p.lockMinutes }); }));
+      lockSel.style.width = 'auto';
+      var number = h('span', { class: 'dp-safety-sm' });
+      var approvedFor = h('span', { class: 'dp-meta dp-wrap' });
+      var rows = [
+        setRow(T('p.st_lock_after'), T('p.st_lock_after_hint'), lockSel),
+        setRow(T('p.st_lock_hidden'), T('p.st_lock_hidden_hint'), setSwitch(p.lockHidden, T('p.st_lock_hidden'), function (on) { p.lockHidden = on; }), { label: true }),
+        setRow(T('p.st_lock_close'), T('p.st_no_hello'), null, { cls: 'is-note' }),
+        setRow(T('p.v.number_title'), T('p.st_number_hint'), number),
+        h('div', { class: 'dp-set-row' }, [h('span', { class: 'dp-set-tx' }, [h('span', { class: 'dp-set-t', text: T('p.st_approved_for') }), approvedFor]),
+          V.anyOpen() ? btn(T('p.v.lock_now'), function () { V.lockAll('manual'); renderSettings(main); }, { small: true, icon: 'lock' }) : null]),
+      ];
+      main.appendChild(setSection(T('p.group_vaults'), rows));
+      V.deviceInfo().then(function (d) {
+        if (!d.supported) { number.textContent = '—'; approvedFor.textContent = T('p.v.unsupported_text'); return; }
+        number.textContent = d.number || '—';
+        approvedFor.textContent = d.vaults.length ? d.vaults.join(', ') : T('p.st_approved_none');
+      }, function () { number.textContent = '—'; });
+    }
+    // KI für Dokumente: per area where I write
+    var aiRows = [];
+    if (has('docAi')) {
+      S.areas.filter(function (a) { return !a.archived && (a.role === 'write' || a.role === 'manage') && typeof a.docAi === 'boolean'; }).forEach(function (a) {
+        aiRows.push(setRow(a.label, T(a.kind === 'mine' ? 'p.st_ai_mine' : 'p.st_ai_shared'), setSwitch(a.docAi, a.label, function () { toggleAi(a); }), { label: true }));
+      });
+      if (!aiRows.length) aiRows.push(setRow(T('p.st_ai_none'), null, null, { cls: 'is-note' }));
+    } else aiRows.push(setRow(T('p.st_ai_off'), null, null, { cls: 'is-note' }));
+    aiRows.push(setRow(T('p.st_ai_vaults'), null, null, { cls: 'is-note' }));
+    main.appendChild(setSection(T('p.st_ai'), aiRows));
+    // Ansicht
+    var layout = h('div', { class: 'dp-seg dp-seg-sm', attrs: { role: 'group', 'aria-label': T('p.st_layout') } }, [['grid', 'p.view_grid'], ['list', 'p.view_list']].map(function (o) {
+      return h('button', { type: 'button', text: T(o[1]), attrs: { 'aria-pressed': String(S.view === o[0]) }, on: { click: function () { S.view = o[0]; renderSettings(main); } } });
+    }));
+    var viewRows = [setRow(T('p.st_sort'), null, sortSelect(function () { /* the next folder shows it */ }, 'dp-btn-sm')), setRow(T('p.st_layout'), null, layout)];
+    if (has('photosFolder')) {
+      viewRows.push(setRow(T('p.st_camera'), T('p.photos_camera_hint'), setSwitch(S.prefs.cameraFirst, T('p.st_camera'), function (on) { S.prefs.cameraFirst = on; PH.camera = on; }), { label: true }));
+    }
+    main.appendChild(setSection(T('p.st_view'), viewRows));
+    // Benachrichtigungen: GateControl's own settings
+    main.appendChild(setSection(T('p.st_notify'), [setRow(T('p.st_notify_text'), null, null, { cls: 'is-note' })]));
+  }
+
+  /** The areas a new vault may go into: my files, the family (with a family seat), team folders I write to. */
+  function vaultTargets() {
+    var out = [];
+    S.areas.forEach(function (a) {
+      if (a.archived || !(a.role === 'write' || a.role === 'manage')) return;
+      if (a.kind === 'mine') out.push({ areaId: a.id, rootId: a.rootId, label: T('p.v.who_me'), hint: T('p.v.who_me_hint') });
+      else if (a.kind === 'family' && S.me && S.me.seat === 'family') out.push({ areaId: a.id, rootId: a.rootId, label: T('p.v.who_family'), hint: T('p.v.who_family_hint') });
+      else if (a.kind === 'team') out.push({ areaId: a.id, rootId: a.rootId, label: T('p.v.who_team', { name: a.label }), hint: T('p.v.who_team_hint') });
+    });
+    return out;
+  }
+
+  /** A vault shown locked itself (ui/vault.js): back to the top of my files. */
+  function leaveVault() {
+    if (S.page !== 'files' || !S.folder || !S.folder.encrypted) { renderNav(); return; }
+    var mine = areaOf('mine:' + (S.me && S.me.id)) || S.areas[0];
+    if (mine) openFolder(mine.id, mine.rootId); else renderAll();
+  }
+
   // ── AI for documents (since 1.8.0, feature docAi) ─────────
 
   function has(f) { return S.features.indexOf(f) >= 0; }
@@ -1965,14 +2264,14 @@
   }
   function today() { var d = new Date(); return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); }
 
-  /** "KI für Dokumente" in this area on or off (PATCH areas/<id> { docAi }). */
+  /** "KI für Dokumente" in this area on or off (PATCH areas/<id> { docAi }) — in the Drive settings since 1.11.0. */
   function toggleAi(a) {
+    var again = function () { if (S.page === 'settings') renderSettings($('dp-main')); };
     api('PATCH', 'areas/' + encodeURIComponent(a.id), { docAi: !a.docAi }).then(function (r) {
       a.docAi = !!(r.area && r.area.docAi);
-      renderTools();
-      reload();
+      again();
       toast(T(a.docAi ? 'p.ai_now_on' : 'p.ai_now_off', { area: a.label }));
-    }, fail);
+    }, function (e) { fail(e); again(); });
   }
 
   function insightDialog(n) {
@@ -2253,14 +2552,14 @@
     var err = h('p', { class: 'dp-err', attrs: { role: 'alert' } });
     var writable = S.areas.filter(function (a) { return !a.archived && (a.role === 'write' || a.role === 'manage'); });
     var go = function (areaId, folderId) {
-      Promise.all([api('GET', 'nodes/' + folderId), api('GET', 'nodes/' + folderId + '/children', null, { limit: 1000 })]).then(function (r) {
+      Promise.all([api('GET', 'nodes/' + folderId), api('GET', 'nodes/' + folderId + '/children', null, { dirs: 1, limit: 1000 })]).then(function (r) {
         clear(picker);
         var node = r[0].node;
         var a = areaOf(areaId);
         cur = { id: node.id, areaId: areaId, label: [a ? a.label : ''].concat(node.crumbs.slice(1).map(function (c) { return c.name; })).concat(node.parentId != null ? [node.name] : []).join(' › ') };
         where.textContent = T('p.imp_target', { path: cur.label });
         if (node.parentId != null) picker.appendChild(h('button', { type: 'button', on: { click: function () { go(areaId, node.parentId); } } }, [icon('up'), h('span', { text: T('p.up') })]));
-        (r[1].items || []).filter(function (x) { return x.isDir; }).forEach(function (x) {
+        (r[1].items || []).filter(function (x) { return x.isDir && !x.encrypted; }).forEach(function (x) {
           picker.appendChild(h('button', { type: 'button', attrs: { role: 'listitem' }, on: { click: function () { go(areaId, x.id); } } }, [icon('folder'), h('span', { text: x.name })]));
         });
         if (!picker.firstChild) picker.appendChild(h('p', { class: 'dp-hint', text: T('p.no_folders'), attrs: { style: 'padding:12px' } }));
@@ -2294,6 +2593,8 @@
       // an import went on (since 1.8.0)
       if (ev && ev.type === 'import') { if (S.page === 'import') loadJobs(); return; }
       if (!ev || ev.type !== 'changed' || !d || !Array.isArray(d.areas)) return;
+      // the menu: the folders open in its tree, the vaults (one may have come or gone)
+      scheduleMenu(d.areas);
       if (S.page === 'files' && d.areas.indexOf(S.areaId) >= 0 && !S.uploading) scheduleReload();
       else if (S.page === 'trash') showTrash();
     });
@@ -2304,6 +2605,9 @@
     CTX: CTX, S: S, T: T, P: P, h: h, icon: icon, btn: btn, api: api, dialog: dialog, closeDialog: closeDialog, askName: askName, toast: toast,
     fail: fail, errText: errText, copyText: copyText, fmtDate: fmtDate, personName: personName, canWrite: canWrite, reload: reload,
     renderMain: renderMain, renderUploads: renderUploads,
+    // since 1.11.0: the menu, the areas a new vault may go into, the settings of this tab, leaving a vault that locked
+    renderNav: renderNav, areaOf: areaOf, prefs: function () { return S.prefs; }, vaultTargets: vaultTargets, vaultScope: vaultScope,
+    leaveVault: leaveVault, ibtn: ibtn,
   }) : null;
 
   boot();

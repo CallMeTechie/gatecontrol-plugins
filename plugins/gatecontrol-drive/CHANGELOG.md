@@ -2,6 +2,27 @@
 
 Dateien der Familie und des Teams auf dem eigenen Speicher – auf diesem Server, einer NAS oder in S3.
 
+## 1.11.0
+- **Tresore nur im Menü (wie bei OneDrive):** Tresor-Ordner liegen immer im Wurzelordner ihres Bereichs und erscheinen
+  nicht mehr unter den Dateien. Neues Feature `vaultsApart` in `GET me`.
+  - `GET nodes/<id>/children` lässt Tresor-Ordner weg (`total` passt dazu); `vaults=1` listet sie wie bisher, innerhalb
+    eines Tresors ist alles wie bisher. Neu `dirs=1`: nur Ordner (ohne Tresore), nach Name, jeder mit `hasDirs` – für
+    den Ordnerbaum im Menü.
+  - `POST vaults`: `parentId` bestimmt nur den Bereich, der Tresor kommt in dessen Wurzelordner (ältere Apps
+    funktionieren weiter). Tresor-Ordner lassen sich nicht mehr verschieben (`400 invalid { field: 'parentId' }`),
+    umbenennen und löschen wie bisher; Wiederherstellen aus dem Papierkorb und Zeitreise lassen sie oben.
+  - Tresor-Ordner älterer Versionen in Unterordnern ziehen beim Start und im Hintergrund (idempotent) in den
+    Wurzelordner ihres Bereichs – mit Verlauf, Änderungsprotokoll (`move`) und Live-Ereignis; die Pfade der Dateien
+    folgen. Die Verschlüsselung hängt nicht am Elternordner, Namen und Inhalte bleiben lesbar.
+- Portal: **Menü mit Ordnerbaum** (Persönlich / Gemeinsam, aufklappbar, der offene Ordner hervorgehoben), **Tresore**
+  nur dort, unten eine Icon-Leiste (Papierkorb, Speicher, Geräte, Geteilte Links, Fristen, Importieren, Vorfälle,
+  Einstellungen). „Neu“ mit Neuer Ordner, Hochladen, Ordner hochladen und **Neuer Tresor** („Wer darf ihn öffnen?“:
+  Nur ich, Familie, Team-Ordner). **Tresor-Sperre:** öffnen mit „Entsperren“, sperrt nach 1 / 3 / 5 / 15 Minuten ohne
+  Nutzung, beim Verlassen und immer beim Schließen des Tabs (Schlüssel und Namen vergessen). **Drive-Einstellungen**
+  als eigene Seite (Sicherung, Tresore, KI für Dokumente pro Bereich – aus den Ordner-Werkzeugen hierher –, Ansicht,
+  Benachrichtigungen). Gerätebestätigung per WebAuthn gibt es im Portal nicht (der Rahmen hat einen opaken Ursprung).
+- Keine neue Berechtigung, keine Datenbank-Migration, weiterhin GateControl ≥ 1.208.0.
+
 ## 1.10.0
 - **Fotos sind Dateien (wie bei OneDrive):** Bilder und Videos liegen in ihren Ordnern und erscheinen auch in der
   Dateiansicht; „Fotos“ ist nur eine Ansicht über alle Bilder und Videos. Neues Feature `photosFolder` in `GET me`.

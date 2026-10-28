@@ -26,6 +26,14 @@ async function until(what, fn, n = 1500) {
 }
 const textOf = (n) => (n.nodeType === 3 ? n.data : n.childNodes.map(textOf).join(''));
 const byText = (root, tag, text) => root.querySelectorAll(tag).find((e) => textOf(e).trim() === text);
+/** A button of the menu (since 1.11.0): an area, a folder, a page — by its text, or an icon by its label. */
+const navItem = (nav, label) => {
+  const icon = nav.querySelectorAll('[aria-label]').find((e) => e.getAttribute('aria-label') === label);
+  if (icon) return icon;
+  let n = byText(nav, 'span', label);
+  while (n && n.localName !== 'button') n = n.parentNode;
+  return n || null;
+};
 
 function frameGc(host, user, calls) {
   const viewer = { ...user, portal: true, loggedIn: true };
@@ -55,8 +63,8 @@ test('smoke: "Fotos" by month, choose two, a new album; "Alben": the photo frame
     const $ = (id) => f.document.getElementById(id);
     try {
       f.run();
-      await until('the app', () => !$('dp-app').hidden && byText($('dp-nav'), 'span', 'Fotos'));
-      byText($('dp-nav'), 'span', 'Fotos').parentNode.click();
+      await until('the app', () => !$('dp-app').hidden && navItem($('dp-nav'), 'Fotos'));
+      navItem($('dp-nav'), 'Fotos').click();
       await until('months', () => textOf($('dp-main')).includes('Juli 2026') && textOf($('dp-main')).includes('Juni 2026'));
       assert.ok(textOf($('dp-main')).includes('2 Fotos'), 'the month\'s count');
       const tiles = $('dp-main').querySelectorAll('.dp-ph');
@@ -76,7 +84,7 @@ test('smoke: "Fotos" by month, choose two, a new album; "Alben": the photo frame
       const al = (await c.as(ANNA)('GET', 'albums')).json.albums[0];
       assert.deepEqual([al.name, al.count], ['Sommer', 2]);
       // the album: on the photo frame (asks first)
-      byText($('dp-nav'), 'span', 'Alben').parentNode.click();
+      navItem($('dp-nav'), 'Alben').click();
       await until('album card', () => byText($('dp-main'), 'span', 'Sommer'));
       byText($('dp-main'), 'span', 'Sommer').parentNode.parentNode.click();
       await until('album page', () => byText($('dp-main'), 'span', 'Im Fotorahmen zeigen'));
@@ -101,8 +109,8 @@ test('smoke: "Nur Kamera-Uploads" (1.10.0) — camera=1 on photos, months and me
     const $ = (id) => f.document.getElementById(id);
     try {
       f.run();
-      await until('the app', () => !$('dp-app').hidden && byText($('dp-nav'), 'span', 'Fotos'));
-      byText($('dp-nav'), 'span', 'Fotos').parentNode.click();
+      await until('the app', () => !$('dp-app').hidden && navItem($('dp-nav'), 'Fotos'));
+      navItem($('dp-nav'), 'Fotos').click();
       await until('photos', () => $('dp-main').querySelectorAll('.dp-ph').length === 1);
       const sw = () => byText($('dp-main'), 'span', 'Nur Kamera-Uploads').parentNode;
       assert.equal(sw().getAttribute('aria-pressed'), 'false');
@@ -125,9 +133,9 @@ test('smoke: "Nur Kamera-Uploads" (1.10.0) — camera=1 on photos, months and me
       const m = (await c.as(ANNA)('POST', 'nodes', { parentId: y.id, name: '06' })).json.node;
       await c.put(ANNA, m.id, 'IMG_1.jpg', '1', { mime: 'image/jpeg', takenAt: Date.UTC(2026, 5, 4, 12) });
       // kept while the tab is open: away and back again
-      byText($('dp-nav'), 'span', 'Alben').parentNode.click();
+      navItem($('dp-nav'), 'Alben').click();
       await until('albums', () => !byText($('dp-main'), 'span', 'Nur Kamera-Uploads'));
-      byText($('dp-nav'), 'span', 'Fotos').parentNode.click();
+      navItem($('dp-nav'), 'Fotos').click();
       await until('camera uploads', () => $('dp-main').querySelectorAll('.dp-ph').length === 1 && $('dp-main').querySelector('.dp-ph').getAttribute('aria-label') === 'IMG_1.jpg');
       assert.equal(sw().getAttribute('aria-pressed'), 'true');
       // off: every photo again (photos are files — in the file view too)
@@ -153,8 +161,8 @@ test('smoke: "Speicher" — duplicates, the copy into the trash; "Zeitreise" —
     const $ = (id) => f.document.getElementById(id);
     try {
       f.run();
-      await until('the app', () => !$('dp-app').hidden && byText($('dp-nav'), 'span', 'Speicher'));
-      byText($('dp-nav'), 'span', 'Speicher').parentNode.click();
+      await until('the app', () => !$('dp-app').hidden && navItem($('dp-nav'), 'Speicher'));
+      navItem($('dp-nav'), 'Speicher').click();
       await until('duplicates', () => textOf($('dp-main')).includes('Doppelte Dateien') && byText($('dp-main'), 'span', '1 Datei in den Papierkorb'));
       assert.ok(textOf($('dp-main')).includes('Die größten Dateien'));
       byText($('dp-main'), 'span', '1 Datei in den Papierkorb').parentNode.click();
@@ -164,7 +172,7 @@ test('smoke: "Speicher" — duplicates, the copy into the trash; "Zeitreise" —
       assert.equal((await c.as(ANNA)('GET', `nodes/${copy.id}`)).status, 404, 'the younger copy is in the trash');
       // the time travel of my files: back to before the copy went into the trash
       c.clock.add(120000);
-      byText($('dp-nav'), 'span', 'Familie Berg').parentNode.click();
+      navItem($('dp-nav'), 'Familie Berg').click();
       await until('family', () => byText($('dp-tools'), 'span', 'Zeitreise'));
       byText($('dp-tools'), 'span', 'Zeitreise').parentNode.click();
       const when = await until('the field', () => $('dp-dialog').querySelector('input'));

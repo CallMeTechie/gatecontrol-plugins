@@ -173,8 +173,9 @@ async function view(ctx, v, n, area) {
 
 /**
  * POST vaults { id, parentId, nameCipher, recoveryPub, recoveryAuth, recoveryWrap, device: { publicKey, name, platform }, wrap }
- * → { vault, node }: a new vault folder in `parentId` (not inside another vault), the creating device approved with
- * the wrap of key version 1, the recovery key's wrap.
+ * → { vault, node }: a new vault folder in the top folder of the area of `parentId` (since 1.11.0 `parentId` only names
+ * the area — any folder of it the viewer writes to, not inside a vault), the creating device approved with the wrap of
+ * key version 1, the recovery key's wrap.
  */
 async function create(ctx, body) {
   const b = body && typeof body === 'object' ? body : {};
@@ -187,8 +188,9 @@ async function create(ctx, body) {
   const dev = deviceArg(b.device);
   const wrap = wrapArg(b.wrap);
   const out = await store.tx(ctx.gc, async () => {
-    const { node: parent, area } = await nodes.folderFor(ctx, Number(b.parentId));
-    if (parent.vault_id) throw fail('invalid', { field: 'parentId' });
+    const { node: given, area } = await nodes.folderFor(ctx, Number(b.parentId));
+    if (given.vault_id) throw fail('invalid', { field: 'parentId' });
+    const parent = given.id === area.root_id ? given : await nodes.row(ctx.gc, area.root_id);
     if (await row(ctx.gc, b.id)) throw fail('exists');
     await nodes.unmarkUp(ctx.gc, parent.id, ctx);
     const r = await store.run(ctx.gc, `INSERT INTO nodes (area_id, parent_id, name, is_dir, created_at, created_by, updated_at, updated_by, vault_id, name_cipher, key_version)
@@ -462,6 +464,30 @@ async function forNewNode(ctx, parent, b, { needName = true } = {}) {
   return { vaultId: v.id, name: name || opaqueName(), nameCipher, keyVersion: kv };
 }
 
+/**
+ * Vault folders that are not in the top folder of their area go there (since 1.11.0: the vaults are in the menu, not
+ * among the files) — once for the vaults of older versions, then whatever brings one elsewhere (the NAS, an older time).
+ * Idempotent; each vault in a transaction of its own; one that fails stays where it is until the next run.
+ * → Set of the area ids changed (the live event: changes.announce)
+ */
+async function toRoots(gc, now = Date.now()) {
+  const touched = new Set();
+  const rows = await store.all(gc, `SELECT n.* FROM vaults v JOIN nodes n ON n.id = v.node_id JOIN areas a ON a.id = n.area_id
+    WHERE n.deleted_at IS NULL AND a.root_id IS NOT NULL AND n.parent_id <> a.root_id ORDER BY n.id LIMIT 100`);
+  for (const n of rows) {
+    const ctx = { gc, viewer: null, deviceId: null, now, touched: new Set() };
+    try {
+      const moved = await store.tx(gc, async () => {
+        const cur = await nodes.row(gc, n.id);
+        const area = cur && cur.deleted_at == null ? await areas.row(gc, cur.area_id) : null;
+        return area ? nodes.vaultToRoot(ctx, cur, area) : false;
+      });
+      if (moved) for (const id of ctx.touched) touched.add(id);
+    } catch (e) { gc.log.warn('vault to the top folder failed', (e && e.code) || 'error'); }
+  }
+  return touched;
+}
+
 /** Remove the vault data of nodes `ids` that are vault folders (a purge for good). */
 async function forget(gc, ids) {
   for (const part of store.chunks(ids)) {
@@ -503,5 +529,5 @@ async function announce(gc, ctx, texts) {
 module.exports = {
   VAULT_ID_RE, DEVICE_ID_RE, OPAQUE_RE, RECOVERY, WRAP_BYTES,
   pubArg, wrapArg, nameCipherArg, nameVersion, deviceIdOf, opaqueName, keyVersionArg,
-  row, reach, of, refresh, view, create, list, get, keys, recovery, devices, ask, approve, revoke, rotate, setRecovery, forNewNode, forget, announce,
+  row, reach, of, refresh, view, create, list, get, keys, recovery, devices, ask, approve, revoke, rotate, setRecovery, forNewNode, forget, announce, toRoots,
 };

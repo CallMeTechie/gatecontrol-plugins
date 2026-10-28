@@ -58,14 +58,14 @@ reaches `GET frame` (the photo frame, since 1.7.0) and nothing else (`403 forbid
 
 | Route | Body / query | Answer |
 |---|---|---|
-| `GET me` | | `me { id, name, seat, deviceId, admin }`, `licence { valid, tier }`, `areas`, `latest` (change log seq), `settings`, `limits { maxBytes }`, `wipes` (entries this device has yet to handle, since 1.2.0), `devices` (my devices a new wipe reaches), `features` (since 1.5.0: `['previews', 'wipes', 'textSearch', 'devices', 'deleteAfter', 'emptyFiles']`, since 1.6.0 also `'links'`, `'guard'`, since 1.7.0 `'timeTravel'`, `'takenAt'`, `'photos'`, `'albums'`, `'frame'`, `'storage'`, since 1.8.0 `'docAi'` and `'cloudImport'` — only while GateControl offers the AI service / cloud accounts and they are allowed, see "AI for documents" and "Import"; since 1.9.0 `'vault'` and — while set up — `'office'`, since 1.10.0 `'photosFolder'`), `links { node, drive } \| null` (since 1.6.0, see "Direct links"), `guard { on, locked, incident }` and `incidents` (since 1.6.0, see "Ransomware protection") |
+| `GET me` | | `me { id, name, seat, deviceId, admin }`, `licence { valid, tier }`, `areas`, `latest` (change log seq), `settings`, `limits { maxBytes }`, `wipes` (entries this device has yet to handle, since 1.2.0), `devices` (my devices a new wipe reaches), `features` (since 1.5.0: `['previews', 'wipes', 'textSearch', 'devices', 'deleteAfter', 'emptyFiles']`, since 1.6.0 also `'links'`, `'guard'`, since 1.7.0 `'timeTravel'`, `'takenAt'`, `'photos'`, `'albums'`, `'frame'`, `'storage'`, since 1.8.0 `'docAi'` and `'cloudImport'` — only while GateControl offers the AI service / cloud accounts and they are allowed, see "AI for documents" and "Import"; since 1.9.0 `'vault'` and — while set up — `'office'`, since 1.10.0 `'photosFolder'`, since 1.11.0 `'vaultsApart'`), `links { node, drive } \| null` (since 1.6.0, see "Direct links"), `guard { on, locked, incident }` and `incidents` (since 1.6.0, see "Ransomware protection") |
 | `GET areas` | | `areas [{ id, kind, label, role, via, rootId, owner, archived, storage { bytes, quota, form, target, state } }]` (+ `docAi` while the feature is on, also in `GET me` `areas`) |
 | `PATCH areas/<id>` | `{ docAi: boolean }` (since 1.8.0, write in the area) | `{ area: { id, docAi } }` — AI for documents on / off in this area |
 | `GET nodes/<id>` | | `node` + `path`, `role`, `crumbs [{ id, name }]` |
-| `GET nodes/<id>/children` | `sort=name\|mtime\|size\|updated`, `order`, `offset`, `limit` (≤ 1000) | `items` (folders first), `total`, `next`, `role` |
+| `GET nodes/<id>/children` | `sort=name\|mtime\|size\|updated`, `order`, `offset`, `limit` (≤ 1000); since 1.11.0 `vaults=1`, `dirs=1` | `items` (folders first), `total`, `next`, `role` — since 1.11.0 (feature `vaultsApart`) **without vault folders** (their nodes right below a folder outside a vault; `total` counts the same), `vaults=1` lists them as before; inside a vault everything. `dirs=1`: only the folders (no vaults), by name (`order` applies, `sort` not), each with `hasDirs` (live folders below it, vault folders not counted) — the folder tree of the menus |
 | `GET nodes/by-path` | `area`, `path` | `node` |
 | `POST nodes` | `{ parentId, name, rename? }` | `node` (a folder; `409 exists`, or a free name with `rename`) |
-| `PATCH nodes/<id>` | `{ name?, parentId? }` | `node` — rename / move, also into another area one writes to |
+| `PATCH nodes/<id>` | `{ name?, parentId? }` | `node` — rename / move, also into another area one writes to (a vault's folder never moves since 1.11.0: `400 invalid { field: 'parentId' }`) |
 | `PATCH nodes/<id>` | `{ deleteAt: <ISO \| ms> \| null, device? }` (since 1.5.0, alone — not with `name` / `parentId`) | `node` — set the mark exactly / end it (see "Delete later") |
 | `DELETE nodes/<id>` | `everywhere=1` (since 1.2.0) | `{ id, trashed }` — into the trash; with `everywhere=1` also `wipe { id, devices, files }` (see "Delete on all devices") |
 | `DELETE nodes/<id>` | `after=<seconds>` (1 … 31 536 000), `device?` (since 1.5.0) | `{ id, marked: true, deleteAt, node }` — into the trash later (see "Delete later"); `after=0` is the plain delete |
@@ -530,7 +530,9 @@ the time travel (also an encrypted name of then), the change log, the NAS (opaqu
 ```
 POST   vaults                     { id, parentId, nameCipher, recoveryPub, recoveryAuth, recoveryWrap, device: { publicKey, name?, platform? }, wrap }
                                   → { vault, node } — id: 22 characters base64url the device chose (16 random bytes);
-                                    not inside another vault; the creating device approved with the wrap of key version 1
+                                    not inside another vault; the creating device approved with the wrap of key version 1.
+                                    Since 1.11.0 `parentId` (a folder the person writes to) only names the area: the vault
+                                    goes into the top folder of that area, wherever the person was
 GET    vaults                     → { vaults: [Vault] } — the vaults of the areas the person reads (not in the trash)
 GET    vaults/<id>                → { vault }
 GET    vaults/<id>/keys?deviceId= → { deviceId, state: 'approved'|'pending'|'revoked', keyVersion, keys: [{ keyVersion, wrap }] }
@@ -573,8 +575,8 @@ characters, also the file name on a NAS). In a vault:
   the ciphertext, any type); a new version of a file: `{ …, name: <its opaque name>, baseRev | onConflict: 'version' }`
   (`nameCipher` optional then). An encrypted file is never empty (its header), so `size: 0` without `mediaId` is
   refused;
-* `PATCH nodes/<id> { nameCipher }` renames, `{ parentId }` moves within the same vault (the vault's folder: within
-  its area);
+* `PATCH nodes/<id> { nameCipher }` renames, `{ parentId }` moves within the same vault (the vault's folder: not at all
+  since 1.11.0 — it stays in the top folder of its area);
 * `keyVersion` (and the version in `nameCipher`) must be the vault's current one: `409 { code: 'conflict', reason:
   'stale_key', keyVersion }` — fetch the keys again (after a rotation);
 * refused with `400 { field }`: a plain node in a vault, `encrypted` outside one, a `name` that is not opaque, moving
@@ -585,6 +587,19 @@ in) is revoked on the next request about the vault — its wraps are deleted, `n
 gives new files the new key; older files stay readable for those who had the old one (every device keeps every
 version it got). A file whose folder is gone comes back from the trash into the vault's folder (`409 { reason:
 'vault_trashed' }` while that is in the trash too); purging the vault's folder deletes its keys.
+
+**Vaults apart (since 1.11.0, feature `vaultsApart`):** the vaults are in the apps' menu and the portal's menu only, not
+among the files. Every vault folder lies in the **top folder of its area**: `POST vaults` puts it there, it cannot be
+moved (renamed and deleted it can), a restore from the trash and the time travel leave it there. Vault folders an older
+version left in a folder below move there on the first start of 1.11.0 and whenever the background run finds one
+(idempotent; each in a transaction of its own): the paths of its files follow (`gc.media.move` — on a NAS a rename), the
+history (`node_log`) and the change log get a `move`, the readers of the area the live event `changed`. Nothing of the
+encryption depends on the folder a vault is in (the name's AAD is its header, the key's HPKE info is the vault id and
+key version, the content's AAD its header and chunk index — see "Kryptografie"); the opaque name stays (a new one only
+should another node of the top folder have it). A folder that held a vault is a plain folder afterwards. `GET
+children` leaves vault folders out (`vaults=1`: as before, e.g. for a sync that wants them); search, photos and the
+pickers never had them. Apps without `vaultsApart` filter vault folders themselves (`encrypted` folders whose parent
+is not encrypted) and send the top folder of the area as `parentId`.
 
 ### Kryptografie (the format every client builds)
 
@@ -690,7 +705,27 @@ a browser without X25519 or a GateControl without `GC.keys` shows a note) and **
 while `features` has `office` (`GC.openTab`; a second click when the browser took the first one's moment). Since
 1.10.0: "Nur Kamera-Uploads" on the page "Fotos" (with `photosFolder`: `camera=1` on photos, months and memories, the
 area picker hidden meanwhile; kept while the tab is open — the frame has no storage); pictures and videos stay in the
-file view as every file. The section "Fotorahmen" (`ui/frame.*`) is the slide show of a kiosk device.
+file view as every file. Since 1.11.0 the **menu** on the left: "Drive" with the person and their seat, "Fotos" and
+"Alben", "Persönlich" (my files) and "Gemeinsam" (the family, the children's folders, team folders) — each area with its
+folders as a **tree** (the arrow opens and closes, loaded when opened with `children?dirs=1`, any depth; the name opens
+the folder; the folder shown is marked and the folders above it open; what is open stays open while the tab is open),
+"**Tresore**" (the vaults, only here: their name while open, "Privat" / "Mit Familie geteilt" / "Team · …" and "offen" /
+"gesperrt"), and below a row of icons with tooltips (Papierkorb, Speicher, Geräte, Geteilte Links, Fristen,
+Importieren, Vorfälle for administrators, **Drive-Einstellungen**); at phone width behind a menu button. Folder tools:
+"Neu" (Neuer Ordner, Dateien hochladen, Ordner hochladen, a line, "**Neuer Tresor**" — "Erscheint im Menü unter
+„Tresore“"; the vault dialog asks "Wer darf ihn öffnen?": "Nur ich", "Mit der Familie teilen" with a family seat, a team
+folder one writes to — the vault goes into that area's top folder) and "Hochladen". Vaults never show among the files,
+in the search or in the folder pickers. **The vault lock:** a vault opens with "Entsperren" (this browser's keys are
+unwrapped then, not on their own); after 1 / 3 (default) / 5 / 15 minutes without anything done in the tab, when the tab
+is left (on by default) and always when it is closed the vault keys in memory are overwritten and forgotten with the
+decrypted names, and a vault shown closes. **Drive-Einstellungen** (a page of its own): Sicherung ("Ordner sichern" →
+"Geräte"), Tresore (lock after …, lock when leaving the tab, the safety number of this browser, the vaults it is
+approved for, "Jetzt sperren"), KI für Dokumente per area one writes to (`PATCH areas/<id> { docAi }` — moved here from
+the folder tools; "Tresore werden nie von der KI gelesen."), Ansicht (order, tiles or list, "Fotos startet mit „Nur
+Kamera-Uploads“"), Benachrichtigungen (a pointer to GateControl's "Meine Benachrichtigungen"). All but the AI last while
+the tab is open (the frame has no storage). A confirmation with a fingerprint or Windows Hello (WebAuthn) is not
+possible in the portal: GateControl's frame has an opaque origin, for which browsers refuse WebAuthn — the apps ask
+for it. The section "Fotorahmen" (`ui/frame.*`) is the slide show of a kiosk device.
 
 ## Admin (GateControl's admin UI)
 
@@ -731,7 +766,8 @@ GateControl has forgotten, the weekly backup hint, old notes of `child_view`, wi
 devices GateControl no longer lists, marked nodes whose time came (into the trash, since 1.5.0), the ransomware
 protection's journal (rows of no incident older than the window) and closed incidents after 30 days, the public address
 for direct links (since 1.6.0). A version a time travel made stays until its hold ends (since 1.7.0). Expired WOPI
-locks go (since 1.9.0).
+locks go (since 1.9.0). Every minute and on start (since 1.11.0): a vault folder outside the top folder of its area
+moves there (see "Vaults apart").
 
 ## Development
 
