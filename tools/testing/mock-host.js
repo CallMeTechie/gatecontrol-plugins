@@ -257,6 +257,39 @@
 //   previewOnly: true }) → each state with previewOnly: true and a `url` whose token opens '/preview' only
 //   (host.mediaFromUrl answers 404 for the file itself with it). An older host drops the option (states without
 //   previewOnly, the ordinary URL).
+//
+// The AI service (opt-in: opts.ai — GateControl's coming src/services/ai/, the concept "Rezepte & KI-Anbieter" part A):
+//   permissions.ai { purpose: { de, en }, capabilities: ['text', 'vision', 'audio', 'video'] } is validated. opts.ai
+//   { configured (true), allowed (true: the administrator allowed the plugin), mediaAllowed (true: "Bilder an KI senden"),
+//   capabilities (['text', 'vision'] — the providers'), budgetLeftCents (1000), perHour (120), costCents (0.2 a request),
+//   extract: async (req) => data, generate: async (req) => text } — the handlers play the provider: req is the request as
+//   recorded ({ kind, task, user, instructions, input, schema, maxOutputTokens, timeoutMs }); a handler may throw
+//   hostError(code). gc.ai.available({ capability }) → boolean (never throws for a missing permission: false);
+//   gc.ai.status() → { available, mediaAllowed, capabilities, budgetLeftCents }; gc.ai.extract({ task, user, instructions,
+//   input: [{ type: 'text', label, text } | { type: 'media', mediaId }], schema, maxOutputTokens, timeoutMs }) → { ok: true,
+//   data, provider, model, usage: { inputTokens, outputTokens, costCents }, fallback: false }; gc.ai.generate(…) → { ok,
+//   text, … }. Checked like the concept: ERR_AI_DENIED (no permission, locked, vision not declared), ERR_INVALID (task
+//   [a-z][a-z0-9_.-]{0,63}, an enabled user or null, text ≤ 200 000 characters, ≤ 8 pictures of the plugin's own media ≤ 10 MB,
+//   maxOutputTokens 1…64 000, timeoutMs 1…180 s, a schema outside the subset type / properties / required / items / enum /
+//   minimum / maximum / maxLength / maxItems / nullable / description), ERR_AI_NOT_CONFIGURED, ERR_AI_MEDIA_DISABLED,
+//   ERR_AI_CAPABILITY, ERR_RATE_LIMIT (perHour), ERR_AI_BUDGET (budgetLeftCents ≤ 0; each answer costs costCents),
+//   ERR_AI_INVALID_OUTPUT (the handler's data does not fit the schema). host.ai is the state (change it while the plugin
+//   runs), host.aiRequests every request with its outcome. Without opts.ai: no gc.ai at all.
+// Cloud accounts (opt-in: opts.cloud — GateControl's coming "Cloud-Konten", import for people):
+//   permissions.cloudImport { purpose: { de, en } } is validated. opts.cloud { google (true), microsoft (false) — an OAuth
+//   app is set up —, files: { '<provider>:<account>': [{ id, parent (null: the top), name, isDir, mime, modifiedAt (ISO),
+//   data | size }] }, pageSize (100), perHour (3600), fail: (op 'list' | 'import', args) => error code | null }.
+//   host.cloudConnect(userId, provider, account) plays the finished OAuth dialog → { id, provider, account, connectedAt };
+//   host.cloudRevoke(id) the consent taken back (→ ERR_CLOUD_AUTH). gc.cloud.available() → { google, microsoft };
+//   .connectUrl({ user, provider, returnTo }) → { url: '/oauth/cloud/start?state=…' } (returnTo: a path of the portal or
+//   the app; recorded in host.cloudConnectUrls); .connections({ user }) → [{ id, provider, account, connectedAt }] (this
+//   plugin's of that person); .disconnect({ user, connection }) → boolean; .list({ user, connection, folderId?, cursor? })
+//   → { items: [{ id, name, isDir, size, mime, modifiedAt }] (folders first), next }; .import({ user, connection, fileId })
+//   → { mediaId, name, size, mime, modifiedAt }: the file in the plugin's media store (unclaimed, owner `user`), Google
+//   documents exported (docx / xlsx / pptx, drawings pdf); recorded in host.cloudImports. Refusals: ERR_CLOUD_DENIED (no
+//   permission), ERR_CLOUD_NOT_CONFIGURED, ERR_CLOUD_AUTH, ERR_CLOUD_NOT_FOUND (also another person's connection),
+//   ERR_CLOUD_TOO_LARGE (> media.maxBytes), ERR_MEDIA_TYPE, ERR_MEDIA_EMPTY, ERR_MEDIA_QUOTA, ERR_RATE_LIMIT, ERR_INVALID.
+//   Without opts.cloud: no gc.cloud at all.
 
 const fs = require('node:fs');
 const os = require('node:os');
@@ -371,6 +404,53 @@ function typeAllowed(types, mime) {
 
 function hostError(code, message) {
   return Object.assign(new Error(message), { code });
+}
+
+// The AI service (GateControl's coming src/services/ai/, opt-in opts.ai): permissions.ai, the request limits and the JSON
+// schema subset every provider understands (src/services/ai/schema.js of the concept).
+const AI_CAPS = ['text', 'vision', 'audio', 'video'];
+const AI_TASK_RE = /^[a-z][a-z0-9_.-]{0,63}$/;
+const AI_TEXT_MAX = 200000;
+const AI_PER_HOUR = 120;
+const AI_SCHEMA_KEYS = new Set(['type', 'properties', 'required', 'items', 'enum', 'minimum', 'maximum', 'maxLength', 'maxItems', 'nullable', 'description']);
+const AI_TYPES = new Set(['object', 'array', 'string', 'number', 'integer', 'boolean']);
+
+/** A schema of the subset, else ERR_INVALID (like extract() of the host). */
+function aiSchemaCheck(s, depth) {
+  if (!s || typeof s !== 'object' || Array.isArray(s) || depth > 8) throw hostError('ERR_INVALID', 'invalid schema');
+  for (const k of Object.keys(s)) if (!AI_SCHEMA_KEYS.has(k)) throw hostError('ERR_INVALID', `schema keyword not supported: ${k}`);
+  if (!AI_TYPES.has(s.type)) throw hostError('ERR_INVALID', 'schema: invalid type');
+  if (s.type === 'object') {
+    if (!s.properties || typeof s.properties !== 'object') throw hostError('ERR_INVALID', 'schema: object without properties');
+    for (const v of Object.values(s.properties)) aiSchemaCheck(v, depth + 1);
+    if (s.required != null && (!Array.isArray(s.required) || !s.required.every((r) => Object.prototype.hasOwnProperty.call(s.properties, r)))) throw hostError('ERR_INVALID', 'schema: invalid required');
+  }
+  if (s.type === 'array') aiSchemaCheck(s.items, depth + 1);
+  if (s.enum != null && (!Array.isArray(s.enum) || !s.enum.length)) throw hostError('ERR_INVALID', 'schema: invalid enum');
+}
+
+/** Does `v` fit schema `s` (the subset)? */
+function aiValid(v, s) {
+  if (v === null) return s.nullable === true;
+  if (s.enum && !s.enum.includes(v)) return false;
+  switch (s.type) {
+    case 'object':
+      if (!v || typeof v !== 'object' || Array.isArray(v)) return false;
+      for (const r of s.required || []) if (!Object.prototype.hasOwnProperty.call(v, r)) return false;
+      return Object.entries(v).every(([k, x]) => s.properties[k] && aiValid(x, s.properties[k]));
+    case 'array':
+      return Array.isArray(v) && (s.maxItems == null || v.length <= s.maxItems) && v.every((x) => aiValid(x, s.items));
+    case 'string':
+      return typeof v === 'string' && (s.maxLength == null || v.length <= s.maxLength);
+    case 'integer':
+    case 'number':
+      return typeof v === 'number' && Number.isFinite(v) && (s.type === 'number' || Number.isInteger(v))
+        && (s.minimum == null || v >= s.minimum) && (s.maximum == null || v <= s.maximum);
+    case 'boolean':
+      return typeof v === 'boolean';
+    default:
+      return false;
+  }
 }
 
 /**
@@ -2226,6 +2306,200 @@ async function createHost(pluginDir, opts = {}) {
     return true;
   };
 
+  // ─── The AI service (gc.ai) and cloud accounts (gc.cloud) — opt-in: opts.ai / opts.cloud (see the head) ───
+  // Without the option the plugin gets no gc.ai / gc.cloud at all (a host without them: feature detection).
+  const aiOpt = opts.ai && typeof opts.ai === 'object' ? opts.ai : null;
+  const cloudOpt = opts.cloud && typeof opts.cloud === 'object' ? opts.cloud : null;
+  const purposeOk = (p) => !!(p && typeof p === 'object' && !Array.isArray(p) && p.purpose && typeof p.purpose === 'object'
+    && ['de', 'en'].some((l) => typeof p.purpose[l] === 'string' && p.purpose[l].trim()) && Object.values(p.purpose).every((v) => typeof v === 'string' && v.length <= 200));
+  let aiPerm = null;
+  if (aiOpt && perms.ai != null) {
+    const p = perms.ai;
+    const caps = p && Array.isArray(p.capabilities) ? p.capabilities : null;
+    if (!purposeOk(p) || !caps || !caps.length || !caps.every((c) => AI_CAPS.includes(c)) || Object.keys(p).some((k) => k !== 'purpose' && k !== 'capabilities')) {
+      throw hostError('ERR_INVALID', 'plugin.json: permissions.ai: invalid');
+    }
+    aiPerm = { capabilities: [...new Set(caps)] };
+  }
+  if (cloudOpt && perms.cloudImport != null && (!purposeOk(perms.cloudImport) || Object.keys(perms.cloudImport).some((k) => k !== 'purpose'))) {
+    throw hostError('ERR_INVALID', 'plugin.json: permissions.cloudImport: invalid');
+  }
+  const cloudPerm = !!(cloudOpt && perms.cloudImport != null);
+  // the administrator's side (GateControl › Einstellungen › KI-Anbieter): change it while the plugin runs
+  const aiState = aiOpt ? {
+    configured: aiOpt.configured !== false, allowed: aiOpt.allowed !== false, mediaAllowed: aiOpt.mediaAllowed !== false,
+    capabilities: Array.isArray(aiOpt.capabilities) ? aiOpt.capabilities.slice() : ['text', 'vision'],
+    budgetLeftCents: Number.isFinite(aiOpt.budgetLeftCents) ? aiOpt.budgetLeftCents : 1000,
+    perHour: Number.isInteger(aiOpt.perHour) ? aiOpt.perHour : AI_PER_HOUR, costCents: Number.isFinite(aiOpt.costCents) ? aiOpt.costCents : 0.2,
+  } : null;
+  const aiRequests = [];
+  const aiAt = [];
+  const needAi = () => { if (!aiPerm || !aiState.allowed) throw hostError('ERR_AI_DENIED', 'no permissions.ai, or locked by the administrator'); };
+  const aiUsable = (cap) => !!(aiPerm && aiState.allowed && aiState.configured && aiPerm.capabilities.includes(cap) && aiState.capabilities.includes(cap));
+  api['ai.available'] = async ({ capability }) => {
+    if (capability != null && !AI_CAPS.includes(capability)) throw hostError('ERR_INVALID', 'invalid capability');
+    return aiUsable(capability || 'text');
+  };
+  api['ai.status'] = async () => {
+    needAi();
+    const caps = aiState.configured ? aiState.capabilities.filter((c) => aiPerm.capabilities.includes(c)) : [];
+    return { available: aiUsable('text'), mediaAllowed: aiState.mediaAllowed, capabilities: caps, budgetLeftCents: aiState.budgetLeftCents };
+  };
+  const aiRequest = async (kind, a) => {
+    needAi();
+    const x = a && typeof a === 'object' ? a : {};
+    if (typeof x.task !== 'string' || !AI_TASK_RE.test(x.task)) throw hostError('ERR_INVALID', 'invalid task');
+    if (x.user != null && !users.some((u) => u.id === x.user)) throw hostError('ERR_INVALID', 'invalid user');
+    if (x.instructions != null && (typeof x.instructions !== 'string' || x.instructions.length > 20000)) throw hostError('ERR_INVALID', 'invalid instructions');
+    if (!Array.isArray(x.input) || !x.input.length || x.input.length > 50) throw hostError('ERR_INVALID', 'invalid input');
+    let chars = 0;
+    const mediaIds = [];
+    for (const it of x.input) {
+      if (it && it.type === 'text' && typeof it.text === 'string' && (it.label == null || (typeof it.label === 'string' && it.label.length <= 80))) chars += it.text.length;
+      else if (it && it.type === 'media' && typeof it.mediaId === 'string' && Object.keys(it).length === 2) mediaIds.push(it.mediaId);
+      else throw hostError('ERR_INVALID', 'invalid input item');
+    }
+    if (chars > AI_TEXT_MAX) throw hostError('ERR_INVALID', 'input text over 200 000 characters');
+    if (mediaIds.length > 8) throw hostError('ERR_INVALID', 'at most 8 pictures a request');
+    const maxOut = x.maxOutputTokens == null ? 1000 : x.maxOutputTokens;
+    if (!Number.isInteger(maxOut) || maxOut < 1 || maxOut > 64000) throw hostError('ERR_INVALID', 'invalid maxOutputTokens');
+    const timeoutMs = x.timeoutMs == null ? 60000 : x.timeoutMs;
+    if (!Number.isInteger(timeoutMs) || timeoutMs < 1000 || timeoutMs > 180000) throw hostError('ERR_INVALID', 'invalid timeoutMs');
+    if (kind === 'extract') aiSchemaCheck(x.schema, 0);
+    if (!aiState.configured) throw hostError('ERR_AI_NOT_CONFIGURED', 'no AI provider set up');
+    if (mediaIds.length) {
+      if (!aiPerm.capabilities.includes('vision')) throw hostError('ERR_AI_DENIED', 'permissions.ai does not declare vision');
+      if (!aiState.mediaAllowed) throw hostError('ERR_AI_MEDIA_DISABLED', 'pictures to AI are switched off');
+      if (!aiState.capabilities.includes('vision')) throw hostError('ERR_AI_CAPABILITY', 'no allowed provider reads pictures');
+      for (const id of mediaIds) {
+        const m = mediaStore.get(id);
+        if (!m || !/^image\//.test(m.mime) || m.bytes > 10 * 1024 * 1024) throw hostError('ERR_INVALID', 'invalid media: ' + id);
+      }
+    }
+    const now = Date.now();
+    while (aiAt.length && aiAt[0] <= now - 3600000) aiAt.shift();
+    if (aiAt.length >= aiState.perHour) throw hostError('ERR_RATE_LIMIT', 'too many AI requests');
+    if (aiState.budgetLeftCents <= 0) throw hostError('ERR_AI_BUDGET', 'the monthly budget is used up');
+    aiAt.push(now);
+    const rec = { kind, task: x.task, user: x.user == null ? null : x.user, instructions: x.instructions || null, input: wire(x.input), schema: x.schema == null ? null : wire(x.schema), maxOutputTokens: maxOut, timeoutMs, outcome: null };
+    aiRequests.push(rec);
+    const handler = kind === 'extract' ? aiOpt.extract : aiOpt.generate;
+    let out;
+    try {
+      if (typeof handler !== 'function') throw hostError('ERR_AI_PROVIDER', 'no ' + kind + ' handler in this test');
+      out = await handler(wire(rec));
+    } catch (e) {
+      rec.outcome = (e && e.code) || 'ERR_AI_PROVIDER';
+      throw e && typeof e.code === 'string' ? e : hostError('ERR_AI_PROVIDER', 'the provider failed');
+    }
+    if (kind === 'extract' && !aiValid(out, x.schema)) { rec.outcome = 'ERR_AI_INVALID_OUTPUT'; throw hostError('ERR_AI_INVALID_OUTPUT', 'the answer does not fit the schema'); }
+    if (kind === 'generate' && typeof out !== 'string') { rec.outcome = 'ERR_AI_INVALID_OUTPUT'; throw hostError('ERR_AI_INVALID_OUTPUT', 'no text'); }
+    rec.outcome = 'ok';
+    aiState.budgetLeftCents -= aiState.costCents;
+    const usage = { inputTokens: Math.ceil(chars / 4) + mediaIds.length * 1000, outputTokens: Math.ceil(JSON.stringify(out).length / 4), costCents: aiState.costCents };
+    return { ok: true, ...(kind === 'extract' ? { data: out } : { text: out }), provider: aiOpt.provider || 'mock', model: aiOpt.model || 'mock-model', usage, fallback: false };
+  };
+  api['ai.extract'] = (a) => aiRequest('extract', a);
+  api['ai.generate'] = (a) => aiRequest('generate', a);
+
+  // cloud accounts: opts.cloud { google, microsoft (an OAuth app is set up), files: { '<provider>:<account>': [{ id, parent
+  // (null: the top), name, isDir, mime, modifiedAt, data | size }] }, pageSize, perHour, fail(op, args) → code | null }
+  const cloudConns = []; // { id, plugin, user, provider, account, connectedAt, revoked }
+  const cloudImports = [];
+  const cloudConnectUrls = [];
+  const cloudAt = [];
+  let cloudSeq = 0;
+  const needCloud = () => { if (!cloudPerm) throw hostError('ERR_CLOUD_DENIED', 'no permissions.cloudImport'); };
+  const cloudUser = (u) => { if (!users.some((x) => x.id === u)) throw hostError('ERR_INVALID', 'invalid user'); return u; };
+  const cloudConfigured = (p) => (p === 'google' ? cloudOpt.google !== false : p === 'microsoft' ? cloudOpt.microsoft === true : false);
+  const cloudConnOf = (user, id) => {
+    const c = cloudConns.find((x) => String(x.id) === String(id) && x.user === user && x.plugin === manifest.id);
+    if (!c) throw hostError('ERR_CLOUD_NOT_FOUND', 'unknown connection');
+    if (c.revoked) throw hostError('ERR_CLOUD_AUTH', 'connect again');
+    if (!cloudConfigured(c.provider)) throw hostError('ERR_CLOUD_NOT_CONFIGURED', 'the OAuth app is gone');
+    return c;
+  };
+  const cloudFilesOf = (c) => ((cloudOpt.files || {})[`${c.provider}:${c.account}`] || []);
+  const cloudCount = (op, args) => {
+    const now = Date.now();
+    while (cloudAt.length && cloudAt[0] <= now - 3600000) cloudAt.shift();
+    if (cloudAt.length >= (Number.isInteger(cloudOpt.perHour) ? cloudOpt.perHour : 3600)) throw hostError('ERR_RATE_LIMIT', 'too many cloud calls');
+    cloudAt.push(now);
+    const code = typeof cloudOpt.fail === 'function' ? cloudOpt.fail(op, wire(args)) : null;
+    if (code) throw hostError(code, 'mock host: ' + op + ' fails');
+  };
+  const GOOGLE_EXPORT = {
+    'application/vnd.google-apps.document': ['application/vnd.openxmlformats-officedocument.wordprocessingml.document', '.docx'],
+    'application/vnd.google-apps.spreadsheet': ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', '.xlsx'],
+    'application/vnd.google-apps.presentation': ['application/vnd.openxmlformats-officedocument.presentationml.presentation', '.pptx'],
+    'application/vnd.google-apps.drawing': ['application/pdf', '.pdf'],
+  };
+  const cloudItem = (f) => ({ id: String(f.id), name: f.name, isDir: f.isDir === true, size: f.isDir ? 0 : (f.size != null ? f.size : Buffer.byteLength(f.data == null ? '' : f.data)),
+    mime: f.isDir ? null : (f.mime || 'application/octet-stream'), modifiedAt: f.modifiedAt || null });
+  api['cloud.available'] = async () => { needCloud(); return { google: cloudConfigured('google'), microsoft: cloudConfigured('microsoft') }; };
+  api['cloud.connectUrl'] = async ({ user, provider, returnTo }) => {
+    needCloud();
+    cloudUser(user);
+    if (provider !== 'google' && provider !== 'microsoft') throw hostError('ERR_INVALID', 'invalid provider');
+    if (!cloudConfigured(provider)) throw hostError('ERR_CLOUD_NOT_CONFIGURED', 'no OAuth app for ' + provider);
+    if (typeof returnTo !== 'string' || !/^\/(?:portal|app)(?:[/?#]|$)/.test(returnTo) || returnTo.length > 500 || /[\s\\]/.test(returnTo)) throw hostError('ERR_INVALID', 'invalid returnTo');
+    const state = require('node:crypto').randomBytes(12).toString('base64url');
+    cloudConnectUrls.push({ user, provider, returnTo, state });
+    return { url: `/oauth/cloud/start?state=${state}` };
+  };
+  api['cloud.connections'] = async ({ user }) => {
+    needCloud();
+    cloudUser(user);
+    return cloudConns.filter((c) => c.user === user && c.plugin === manifest.id).map((c) => ({ id: c.id, provider: c.provider, account: c.account, connectedAt: c.connectedAt }));
+  };
+  api['cloud.disconnect'] = async ({ user, connection }) => {
+    needCloud();
+    cloudUser(user);
+    const i = cloudConns.findIndex((c) => String(c.id) === String(connection) && c.user === user && c.plugin === manifest.id);
+    if (i < 0) return false;
+    cloudConns.splice(i, 1);
+    return true;
+  };
+  api['cloud.list'] = async ({ user, connection, folderId, cursor }) => {
+    needCloud();
+    cloudUser(user);
+    const c = cloudConnOf(user, connection);
+    cloudCount('list', { connection, folderId, cursor });
+    const all = cloudFilesOf(c);
+    const parent = folderId == null || folderId === '' ? null : String(folderId);
+    if (parent != null && !all.some((f) => String(f.id) === parent && f.isDir)) throw hostError('ERR_CLOUD_NOT_FOUND', 'unknown folder');
+    const kids = all.filter((f) => (f.parent == null ? null : String(f.parent)) === parent).map(cloudItem)
+      .sort((a, b) => (a.isDir === b.isDir ? a.name.localeCompare(b.name) : a.isDir ? -1 : 1));
+    const size = Number.isInteger(cloudOpt.pageSize) ? cloudOpt.pageSize : 100;
+    const from = cursor == null || cursor === '' ? 0 : Number(cursor);
+    if (!Number.isInteger(from) || from < 0) throw hostError('ERR_INVALID', 'invalid cursor');
+    return { items: kids.slice(from, from + size), next: from + size < kids.length ? String(from + size) : null };
+  };
+  api['cloud.import'] = async ({ user, connection, fileId }) => {
+    needCloud();
+    cloudUser(user);
+    const c = cloudConnOf(user, connection);
+    cloudCount('import', { connection, fileId });
+    const f = cloudFilesOf(c).find((x) => String(x.id) === String(fileId));
+    if (!f) throw hostError('ERR_CLOUD_NOT_FOUND', 'unknown file');
+    if (f.isDir) throw hostError('ERR_INVALID', 'a folder cannot be imported');
+    needMedia();
+    let mime = f.mime || 'application/octet-stream';
+    let name = f.name;
+    const ex = GOOGLE_EXPORT[mime];
+    if (c.provider === 'google' && ex) { mime = ex[0]; if (!name.toLowerCase().endsWith(ex[1])) name += ex[1]; }
+    const data = Buffer.from(f.data == null ? '' : f.data);
+    const bytes = f.size != null ? f.size : data.length;
+    if (bytes > media.maxBytes) throw hostError('ERR_CLOUD_TOO_LARGE', 'larger than media.maxBytes');
+    if (!typeAllowed(media.types, mime)) throw hostError('ERR_MEDIA_TYPE', `type not allowed: ${mime}`);
+    if (!bytes) throw hostError('ERR_MEDIA_EMPTY', 'the file is empty');
+    if (mediaUsage().bytes + bytes > mediaQuota) throw hostError('ERR_MEDIA_QUOTA', 'quota exceeded');
+    const id = require('node:crypto').randomBytes(16).toString('hex');
+    mediaStore.set(id, { mime, bytes, owner: user, data, claimed: false, createdAt: Date.now(), name });
+    cloudImports.push({ user, connection: c.id, fileId: String(fileId), mediaId: id });
+    return { mediaId: id, name, size: bytes, mime, modifiedAt: f.modifiedAt || null };
+  };
+
   const call = async (name, args) => wire(await api[name](wire(args)));
 
   /** A WebSocket like the host's (EventEmitter: message, close, error; send, close) wired to opts.websocket. */
@@ -2390,6 +2664,26 @@ async function createHost(pluginDir, opts = {}) {
         leadersOf: (userId, o) => { const x = o && typeof o === 'object' ? o : {}; return call('groups.leadersOf', { userId, groupId: x.groupId }); },
         ensure: (spec) => { const x = spec && typeof spec === 'object' ? spec : {}; return call('groups.ensure', { key: x.key, name: x.name, kind: x.kind, parentKey: x.parentKey, members: x.members }); },
         remove: (key) => call('groups.remove', { key }),
+      }),
+    } : {}),
+    // the AI service (opts.ai) and cloud accounts (opts.cloud): every plugin of such a host has them, the host refuses
+    // them without permissions.ai / permissions.cloudImport (ERR_AI_DENIED / ERR_CLOUD_DENIED)
+    ...(aiOpt ? {
+      ai: Object.freeze({
+        available: (o) => call('ai.available', { capability: o && typeof o === 'object' ? o.capability : undefined }),
+        status: () => call('ai.status', {}),
+        extract: (o) => call('ai.extract', o && typeof o === 'object' ? o : {}),
+        generate: (o) => call('ai.generate', o && typeof o === 'object' ? o : {}),
+      }),
+    } : {}),
+    ...(cloudOpt ? {
+      cloud: Object.freeze({
+        available: () => call('cloud.available', {}),
+        connectUrl: (o) => { const x = o && typeof o === 'object' ? o : {}; return call('cloud.connectUrl', { user: x.user, provider: x.provider, returnTo: x.returnTo }); },
+        connections: (o) => call('cloud.connections', { user: o && typeof o === 'object' ? o.user : undefined }),
+        disconnect: (o) => { const x = o && typeof o === 'object' ? o : {}; return call('cloud.disconnect', { user: x.user, connection: x.connection }); },
+        list: (o) => { const x = o && typeof o === 'object' ? o : {}; return call('cloud.list', { user: x.user, connection: x.connection, folderId: x.folderId, cursor: x.cursor }); },
+        import: (o) => { const x = o && typeof o === 'object' ? o : {}; return call('cloud.import', { user: x.user, connection: x.connection, fileId: x.fileId }); },
       }),
     } : {}),
     services: Object.freeze({
@@ -2883,6 +3177,24 @@ async function createHost(pluginDir, opts = {}) {
       const next = { ...cur, color: f.color === undefined ? cur.color : f.color, avatarUrl: f.avatarUrl === undefined ? cur.avatarUrl : f.avatarUrl };
       users[i] = { ...cur, ...userFace(next) };
     },
+    /** opts.ai: the administrator's side of the AI service (configured, allowed, mediaAllowed, capabilities, budgetLeftCents — change it) and every request */
+    ai: aiState,
+    aiRequests,
+    /**
+     * opts.cloud: a person finished the OAuth dialog of `provider` with `account` (the host's /oauth/cloud/callback) →
+     * the connection { id, provider, account, connectedAt } of this plugin; cloudRevoke(id): the provider took the
+     * consent back (calls → ERR_CLOUD_AUTH). cloudImports / cloudConnectUrls: what the plugin did.
+     */
+    cloudConnect(userId, provider, account) {
+      if (!cloudOpt) throw new Error('mock host: no opts.cloud');
+      const c = { id: `conn${++cloudSeq}`, plugin: manifest.id, user: userId, provider, account, connectedAt: new Date().toISOString(), revoked: false };
+      cloudConns.push(c);
+      return { id: c.id, provider, account, connectedAt: c.connectedAt };
+    },
+    cloudRevoke(id) { const c = cloudConns.find((x) => x.id === id); if (c) c.revoked = true; return !!c; },
+    cloudConnections: cloudConns,
+    cloudImports,
+    cloudConnectUrls,
     /** legacyImport hook: the host hands over the built-in data (first-party plugins only) */
     legacyImport: (snapshot) => hook('legacyImport', snapshot),
     /** keys stored with gc.settings.setSecret */
