@@ -26,6 +26,14 @@ const STATUS = {
   // office in the browser (office.js): no office server set up, or not a document it opens
   office_unavailable: 409,
   quota: 507,
+  // since 1.8.0: AI for documents and the import (insights.js, imports.js)
+  feature_off: 403,
+  unsupported: 422,
+  cloud_auth: 409,
+  cloud_error: 502,
+  rate_limit: 429,
+  too_large: 413,
+  job_limit: 409,
   internal: 500,
 };
 

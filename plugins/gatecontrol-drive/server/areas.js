@@ -82,6 +82,10 @@ async function settingsOf(gc) {
     guardMinutes: Math.min(240, Math.max(1, n('guard_minutes', 10))),
     // direct links (address.js, since 1.6.0): an administrator's own address of GateControl
     portalUrl: typeof all.portal_url === 'string' ? all.portal_url.trim() : '',
+    // AI for documents and the import from cloud drives (since 1.8.0) — an administrator's switches for all of Drive
+    docAi: all.doc_ai !== false && all.doc_ai !== 'false',
+    docAiImages: all.doc_ai_images === true || all.doc_ai_images === 'true',
+    cloudImport: all.cloud_import !== false && all.cloud_import !== 'false',
   };
 }
 

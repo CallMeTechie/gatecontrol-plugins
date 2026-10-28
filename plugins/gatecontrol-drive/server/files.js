@@ -162,6 +162,7 @@ async function commit(ctx, body, opts = {}) {
       await nodes.unmarkUp(ctx.gc, existing.id, ctx, existing.id);
       await setText(ctx, existing.id, text);
       await trimVersions(ctx.gc, existing.id, ctx.settings.versionsMax);
+      noteInsight(ctx, existing.id);
       return { node: nodes.view(await nodes.row(ctx.gc, existing.id)), created: false };
     }
     if (info.mediaId) {
@@ -177,8 +178,14 @@ async function commit(ctx, body, opts = {}) {
     await nodes.log(ctx.gc, area.id, r.lastInsertRowid, 'create', ctx);
     await guard.note(ctx, { op: 'create', node: await nodes.row(ctx.gc, r.lastInsertRowid), name, entropy });
     await setText(ctx, r.lastInsertRowid, text);
+    noteInsight(ctx, Number(r.lastInsertRowid));
     return { node: nodes.view(await nodes.row(ctx.gc, r.lastInsertRowid)), created: true };
   });
+}
+
+/** A new file or version: AI for documents may look at it after the request (insights.js consider, since 1.8.0). */
+function noteInsight(ctx, id) {
+  (ctx.insightIds || (ctx.insightIds = new Set())).add(id);
 }
 
 /** The recognised text of the file [id] (a new content without one drops the old: it belonged to other bytes). */

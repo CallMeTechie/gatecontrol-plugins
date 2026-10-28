@@ -39,7 +39,23 @@
       "perHour": 60
     },
     "background": {
-      "intervalSeconds": 300
+      "intervalSeconds": 60
+    },
+    "ai": {
+      "purpose": {
+        "de": "Dokumente lesen und vorschlagen, wie sie heißen und wo sie hingehören, und Fristen darin finden – nur auf Wunsch übernommen",
+        "en": "Read documents, suggest their name and folder and find deadlines in them – only taken when you choose"
+      },
+      "capabilities": [
+        "text",
+        "vision"
+      ]
+    },
+    "cloudImport": {
+      "purpose": {
+        "de": "Dateien und Ordner aus deinem Google Drive oder OneDrive nach Drive importieren",
+        "en": "Import files and folders from your Google Drive or OneDrive into Drive"
+      }
     },
     "publicEndpoints": {
       "maxBodyBytes": 536870912
@@ -316,6 +332,45 @@
         "default": ""
       },
       {
+        "key": "doc_ai",
+        "type": "boolean",
+        "label": {
+          "de": "KI für Dokumente",
+          "en": "AI for documents"
+        },
+        "help": {
+          "de": "Schlägt bei neuen Dokumenten mit erkanntem Text Art, Titel, Ordner, Dateinamen und Fristen vor – über den KI-Anbieter von GateControl (Einstellungen › KI-Anbieter). Nichts wird automatisch verschoben. Pro Bereich abschaltbar, in Kinderordnern aus.",
+          "en": "Suggests kind, title, folder, file name and deadlines for new documents with recognised text – through GateControl's AI provider (Settings › AI providers). Nothing is moved on its own. Can be switched off per area, off in children's folders."
+        },
+        "default": true
+      },
+      {
+        "key": "doc_ai_images",
+        "type": "boolean",
+        "label": {
+          "de": "KI für Dokumente: Bilder ohne Text automatisch senden",
+          "en": "AI for documents: send pictures without text on their own"
+        },
+        "help": {
+          "de": "Aus: Bilder ohne erkannten Text gehen nur an die KI, wenn jemand „Erkennen“ wählt. Nur wenn GateControl „Bilder an KI senden“ erlaubt.",
+          "en": "Off: pictures without recognised text only go to the AI when someone chooses “Recognise”. Only while GateControl allows “Send pictures to AI”."
+        },
+        "default": false
+      },
+      {
+        "key": "cloud_import",
+        "type": "boolean",
+        "label": {
+          "de": "Import aus Google Drive und OneDrive",
+          "en": "Import from Google Drive and OneDrive"
+        },
+        "help": {
+          "de": "Personen verbinden im Portal (Drive › Importieren) ihr Konto und holen Dateien und Ordner nach Drive. Braucht die Cloud-Konten von GateControl (Einstellungen › Cloud-Konten).",
+          "en": "People connect their account in the portal (Drive › Import) and bring files and folders into Drive. Needs GateControl's cloud accounts (Settings › Cloud accounts)."
+        },
+        "default": true
+      },
+      {
         "key": "office_url",
         "type": "text",
         "label": {
@@ -394,6 +449,14 @@
       "label": {
         "de": "Drive hat ein Gerät wegen ungewöhnlicher Änderungen gestoppt",
         "en": "Drive stopped a device for unusual changes"
+      },
+      "default": true
+    },
+    {
+      "id": "deadline",
+      "label": {
+        "de": "Erinnerung an eine Frist eines Dokuments",
+        "en": "Reminder of a document's deadline"
       },
       "default": true
     },

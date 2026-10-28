@@ -518,7 +518,8 @@ async function purgeBatch(gc, trashId, ctx) {
   return batch.filter((r) => r.is_dir === 0).length;
 }
 
-/** Nodes `ids` go for good: their history, their places in albums (since 1.7.0), a vault's keys, office locks (1.9.0). */
+/** Nodes `ids` go for good: their history, their places in albums (since 1.7.0), their insights and deadlines (1.8.0), a
+ * vault's keys, office locks (1.9.0). */
 async function forget(gc, ids) {
   await vaults().forget(gc, ids);
   for (const part of store.chunks(ids)) {
@@ -527,6 +528,10 @@ async function forget(gc, ids) {
     await store.run(gc, `DELETE FROM office_locks WHERE node_id IN (${m})`, part);
     await store.run(gc, `DELETE FROM album_items WHERE node_id IN (${m})`, part);
     await store.run(gc, `UPDATE albums SET cover_id = NULL WHERE cover_id IN (${m})`, part);
+    // AI for documents (since 1.8.0): the suggestion, the deadlines and their reminders
+    await store.run(gc, `DELETE FROM doc_insights WHERE node_id IN (${m})`, part);
+    await store.run(gc, `DELETE FROM doc_reminders WHERE deadline_id IN (SELECT id FROM doc_deadlines WHERE node_id IN (${m}))`, part);
+    await store.run(gc, `DELETE FROM doc_deadlines WHERE node_id IN (${m})`, part);
   }
 }
 

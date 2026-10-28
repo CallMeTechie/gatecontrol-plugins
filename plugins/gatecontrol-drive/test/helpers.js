@@ -45,6 +45,7 @@ const portal = (u, loggedIn = true) => ({ ...u, portal: true, loggedIn });
 
 /**
  * opts: { license (licence of the plugin), groups, settings, links (the administrator's switch, default on), unlimited
+ *   ai / cloud (the mock host's opts.ai / opts.cloud — GateControl's AI service and cloud accounts, since 1.8.0),
  *   (links without an end allowed), seats: { userId: kind } (switched on by the admin before fn;
  * default Anna, Marc, Lena family, Bob business), gatecontrol, devices (the mock host's gc.devices.list), targets (the
  * assigned home targets: { office: [{ fetch }] }) }
@@ -59,6 +60,9 @@ async function withHost(opts, fn) {
       users: USERS, gatecontrol: o.gatecontrol || '1.208.0', groups: o.groups || GROUPS, license: o.license === undefined ? LICENSE : o.license,
       settings: o.settings || {}, publicLinks: o.links !== false, publicLinksUnlimited: o.unlimited === true,
       ...(o.devices ? { devices: o.devices } : {}),
+      // GateControl's AI service and cloud accounts (since 1.8.0; without them the host has no gc.ai / gc.cloud)
+      ...(o.ai ? { ai: o.ai } : {}),
+      ...(o.cloud ? { cloud: o.cloud } : {}),
       // the home targets an administrator assigned (office.js: "office")
       ...(o.targets ? { targets: o.targets } : {}),
     });

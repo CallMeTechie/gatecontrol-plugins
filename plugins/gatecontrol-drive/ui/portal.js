@@ -22,6 +22,10 @@
  * old versions cleaned up by those who may), "Zeitreise" for a folder (a preview, then back to a time; the result can be
  * undone) and the date a photo was taken on upload (EXIF of a JPEG, else the file's date).
  *
+ * Since 1.8.0 (only while GET me features say so): "Dokument-Infos" in a file's actions (AI for documents — what the AI
+ * suggests: rename / move with one click, the deadlines with a reminder; "KI für Dokumente" on or off per area in the
+ * folder's tools), the page "Fristen", and "Importieren" (connect Google Drive or OneDrive, browse, pick files and
+ * folders, a Drive folder as the target; the jobs with their progress, live: 'import').
  * Since 1.9.0: vault folders, end-to-end encrypted (ui/vault.js with ui/vaultcrypto.js: names decrypted here, files
  * encrypted before GC.upload and decrypted after GC.mediaBytes, the device key in GC.keys — GateControl ≥ 1.211.0);
  * "Im Browser bearbeiten" for documents while an office server is set up (POST nodes/<id>/office, GC.openTab).
@@ -84,6 +88,9 @@
     clock: 'M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18|M12 7v5l3 2',
     check: 'M5 12l5 5 9-10',
     frame: 'M3 4h18v14H3z|M7 21h10|M7 14l3-3 3 3 2-2 3 3',
+    spark: 'M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z|M19 15l.7 1.8 1.8.7-1.8.7-.7 1.8-.7-1.8-1.8-.7 1.8-.7z',
+    bell: 'M6 16v-5a6 6 0 0 1 12 0v5l2 2H4z|M10 20a2 2 0 0 0 4 0',
+    cloudIn: 'M7 18h10a4 4 0 0 0 .5-8A6 6 0 0 0 6 9.5 4.3 4.3 0 0 0 7 18z|M12 9v6|M9.5 12.5L12 15l2.5-2.5',
     lock: 'M5 11h14v10H5z|M8 11V8a4 4 0 0 1 8 0v3',
     key: 'M7 14a4 4 0 1 0 0-8a4 4 0 1 0 0 8|M10.5 11.5L20 21|M16 17l2-2|M18 19l2-2',
     office: 'M6 3h8l4 4v14H6z|M14 3v4h4|M9 13h6M9 17h4',
@@ -279,7 +286,7 @@
     links: null,          // GET me links { node, drive } (since 1.6.0) or null
     incidents: [],        // the open incidents of the ransomware protection the banner shows (mine; an admin: everyone's)
     admin: false,         // GET me me.admin: the page "Vorfälle" with everyone's incidents
-    office: false,        // GET me features 'office' (since 1.9.0): "Im Browser bearbeiten"
+    features: [],         // GET me features (since 1.8.0: docAi, cloudImport only while GateControl offers them)
   };
 
   function areaOf(id) { for (var i = 0; i < S.areas.length; i++) if (S.areas[i].id === id) return S.areas[i]; return null; }
@@ -310,8 +317,8 @@
       S.areas = r.areas || [];
       S.links = r.links || null;
       S.admin = !!r.me.admin;
-      S.office = (r.features || []).indexOf('office') >= 0;
       S.incidents = (r.incidents || []).slice();
+      S.features = Array.isArray(r.features) ? r.features : [];
       $('dp-msg').hidden = true;
       $('dp-app').hidden = false;
       setupChrome();
@@ -319,7 +326,9 @@
       if (S.admin) loadIncidents();
       var first = areaOf('mine:' + r.me.id) || S.areas[0];
       var want = wanted();
-      if (want) openTarget(want, first);
+      // back from connecting a cloud drive (drive=import, GateControl adds cloud=connected | cloud=error&cloudError=<code>)
+      if (want === 'import' && has('cloudImport')) { var back = function () { showImport(cloudReturn()); }; if (first) openFolder(first.id, first.rootId, back); else back(); }
+      else if (want && want !== 'import') openTarget(want, first);
       else if (first) openFolder(first.id, first.rootId);
       loadStorage();
       live();
@@ -383,6 +392,8 @@
     nav.appendChild(h('button', { type: 'button', attrs: { 'aria-current': S.page === 'trash' ? 'page' : null }, on: { click: showTrash } }, [icon('trash'), h('span', { text: T('p.trash') })]));
     nav.appendChild(h('button', { type: 'button', attrs: { 'aria-current': S.page === 'devices' ? 'page' : null }, on: { click: showDevices } }, [icon('device'), h('span', { text: T('p.devices') })]));
     nav.appendChild(h('button', { type: 'button', attrs: { 'aria-current': S.page === 'storage' ? 'page' : null }, on: { click: function () { showStorage(); } } }, [icon('storage'), h('span', { text: T('p.storage') })]));
+    if (has('docAi')) nav.appendChild(h('button', { type: 'button', attrs: { 'aria-current': S.page === 'deadlines' ? 'page' : null }, on: { click: showDeadlines } }, [icon('bell'), h('span', { text: T('p.deadlines') })]));
+    if (has('cloudImport')) nav.appendChild(h('button', { type: 'button', attrs: { 'aria-current': S.page === 'import' ? 'page' : null }, on: { click: function () { showImport(); } } }, [icon('cloudIn'), h('span', { text: T('p.import') })]));
     if (S.admin) nav.appendChild(h('button', { type: 'button', attrs: { 'aria-current': S.page === 'incidents' ? 'page' : null }, on: { click: showIncidents } }, [icon('shield'), h('span', { text: T('p.guard_incidents') })]));
     var a = areaOf(S.areaId);
     var st = a ? S.storage.get(a.id) : null;
@@ -400,7 +411,7 @@
     var c = $('dp-crumbs');
     clear(c);
     if (S.page !== 'files' || !S.folder) {
-      c.appendChild(h('button', { type: 'button', attrs: { 'aria-current': 'page' }, text: S.page === 'trash' ? T('p.trash') : S.page === 'links' ? T('p.links') : S.page === 'devices' ? T('p.devices')
+      c.appendChild(h('button', { type: 'button', attrs: { 'aria-current': 'page' }, text: S.page === 'import' ? T('p.import') : S.page === 'deadlines' ? T('p.deadlines') : S.page === 'trash' ? T('p.trash') : S.page === 'links' ? T('p.links') : S.page === 'devices' ? T('p.devices')
         : S.page === 'incidents' ? T('p.guard_incidents') : S.page === 'photos' ? T('p.photos') : S.page === 'albums' ? T('p.albums')
           : S.page === 'album' ? (S.album ? S.album.name : T('p.albums')) : S.page === 'storage' ? T('p.storage') : T('p.results', { q: S.q }) }));
       return;
@@ -429,6 +440,12 @@
     var vault = S.folder && S.folder.encrypted;
     // a vault this browser cannot open: nothing to do here but the lock screen
     if (vault && !(V && V.keysOf(S.folder.vaultId))) return;
+    // AI for documents in this area (since 1.8.0): on / off for those who write in it
+    var ar = areaOf(S.areaId);
+    if (!vault && has('docAi') && canWrite() && ar && typeof ar.docAi === 'boolean') {
+      t.appendChild(h('button', { type: 'button', class: 'dp-btn dp-btn-sm', attrs: { 'aria-pressed': String(ar.docAi), title: T('p.ai_area_hint') }, on: { click: function () { toggleAi(ar); } } },
+        [icon('spark'), h('span', { text: T(ar.docAi ? 'p.ai_on' : 'p.ai_off') })]));
+    }
     if (canWrite()) {
       t.appendChild(btn(T('p.tt'), function () { timeTravel(S.folder); }, { icon: 'clock' }));
       // a vault folder (since 1.9.0): not inside another one
@@ -502,7 +519,9 @@
 
   function metaOf(n) {
     if (n.isDir) return fmtDate(n.updatedAt);
-    return fmtSize(n.size) + ' · ' + fmtDate(n.mtime || n.updatedAt);
+    // what the AI recognised (since 1.8.0): "Rechnung · 12 KB · …"
+    var kind = n.insight && n.insight.status === 'ready' ? kindText(n.insight.kind) : '';
+    return (kind ? kind + ' · ' : '') + fmtSize(n.size) + ' · ' + fmtDate(n.mtime || n.updatedAt);
   }
 
   // The small picture of a file: its preview (GateControl ≥ 1.208.0 — pictures, and HEIC / videos whose device sent
@@ -635,7 +654,7 @@
     else if (k === 'image' || k === 'video' || k === 'audio') item('eye', T('p.preview'), function () { preview(n); });
     if (!n.isDir) item('download', T('p.download'), function () { download(n); });
     // office in the browser (since 1.9.0): documents, while an office server is set up
-    if (!n.isDir && S.office && OFFICE_RE.test(n.name)) item('office', T(write ? 'p.office_edit' : 'p.office_view'), function () { openOffice(n); });
+    if (!n.isDir && has('office') && OFFICE_RE.test(n.name)) item('office', T(write ? 'p.office_edit' : 'p.office_view'), function () { openOffice(n); });
     if (S.page === 'search') item('folder', T('p.show_in_folder'), function () { $('dp-q').value = ''; openFolder(n.areaId, n.parentId); });
     // an empty file has nothing to share (no media object, since 1.5.0)
     if (write && (n.isDir || n.mediaId)) item('share', T('p.share'), function () { share(n); });
@@ -644,6 +663,7 @@
     if (write) item('edit', T('p.rename'), function () { rename(n); });
     if (write) item('move', T('p.move'), function () { moveDialog(n); });
     if (!n.isDir) item('history', T('p.versions'), function () { versions(n); });
+    if (!n.isDir && has('docAi')) item('spark', T('p.insight'), function () { insightDialog(n); });
     if (write && n.deleteAt) item('restore', T('p.keep'), function () { keep(n); });
     if (write) item('trash', T('p.to_trash'), function () { toTrash(n); }, true);
     dialog(n.name, [n.deleteAt ? h('div', { class: 'dp-note' }, [icon('info'), h('span', { text: markText(n) })]) : null, h('div', { class: 'dp-menu' }, items)],
@@ -1233,8 +1253,18 @@
   function wanted() {
     var where = '';
     try { where = String(window.location && window.location.search || '') + '&' + String(window.location && window.location.hash || '').replace(/^#/, ''); } catch (e) { where = ''; }
-    var m = /(?:^|[?&#])drive=(\d{1,15})(?:$|[&#])/.exec(where);
-    return m ? Number(m[1]) : null;
+    var m = /(?:^|[?&#])drive=(\d{1,15}|import)(?:$|[&#])/.exec(where);
+    return m ? (m[1] === 'import' ? 'import' : Number(m[1])) : null;
+  }
+
+  /** The outcome of GateControl's OAuth dialog in the frame's address → { ok, code } or null. */
+  function cloudReturn() {
+    var where = '';
+    try { where = String(window.location && window.location.search || '') + '&' + String(window.location && window.location.hash || '').replace(/^#/, ''); } catch (e) { where = ''; }
+    var m = /(?:^|[?&#])cloud=(connected|error)(?:$|[&#])/.exec(where);
+    if (!m) return null;
+    var c = /(?:^|[?&#])cloudError=([A-Za-z0-9_.-]{1,64})(?:$|[&#])/.exec(where);
+    return { cloud: true, ok: m[1] === 'connected', code: c ? c[1] : null };
   }
 
   /** Open node `id`: a folder opens, a file opens its folder, is marked and shown. Not there: my files and a note. */
@@ -1908,6 +1938,326 @@
       }, { icon: 'restore' }), btn(T('p.close'), closeDialog, { primary: true })])]);
   }
 
+  // ── AI for documents (since 1.8.0, feature docAi) ─────────
+
+  function has(f) { return S.features.indexOf(f) >= 0; }
+  var KINDS = ['invoice', 'contract', 'notice', 'medical', 'certificate', 'statement', 'insurance', 'warranty', 'other'];
+  function kindText(k) { return KINDS.indexOf(k) >= 0 ? T('p.kind_' + k) : ''; }
+  function fmtAmount(v, cur) {
+    try { if (cur) return new Intl.NumberFormat(LOCALE, { style: 'currency', currency: cur }).format(v); } catch (e) { /* an unknown currency */ }
+    return new Intl.NumberFormat(LOCALE, { maximumFractionDigits: 2 }).format(v) + (cur ? ' ' + cur : '');
+  }
+  function today() { var d = new Date(); return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); }
+
+  /** "KI für Dokumente" in this area on or off (PATCH areas/<id> { docAi }). */
+  function toggleAi(a) {
+    api('PATCH', 'areas/' + encodeURIComponent(a.id), { docAi: !a.docAi }).then(function (r) {
+      a.docAi = !!(r.area && r.area.docAi);
+      renderTools();
+      reload();
+      toast(T(a.docAi ? 'p.ai_now_on' : 'p.ai_now_off', { area: a.label }));
+    }, fail);
+  }
+
+  function insightDialog(n) {
+    api('GET', 'nodes/' + n.id + '/insight').then(function (r) { showInsight(n, r); }, fail);
+  }
+
+  /** What the AI suggests for a file: the facts, rename / move with one click, the deadlines with a reminder. */
+  function showInsight(n, r) {
+    var write = canWriteNode(n);
+    var err = h('p', { class: 'dp-err', attrs: { role: 'alert' } });
+    var body = [];
+    var applyIt = function (what) {
+      api('POST', 'nodes/' + n.id + '/insight/apply', what).then(function () { closeDialog(); reload(); toast(T('p.ins_applied')); }, function (e) { err.textContent = errText(e); });
+    };
+    var again = function () {
+      api('POST', 'nodes/' + n.id + '/insight').then(function (x) { showInsight(n, x); toast(T('p.ins_queued')); }, function (e) { err.textContent = errText(e); });
+    };
+    if (r.status === 'off') body.push(h('div', { class: 'dp-note' }, [icon('info'), h('span', { text: T('p.ins_off') })]));
+    else if (r.status === 'pending') body.push(h('div', { class: 'dp-note' }, [icon('clock'), h('span', { text: T('p.ins_pending') })]));
+    else if (r.status === 'none') body.push(h('p', { class: 'dp-hint', text: T('p.ins_none') }));
+    else if (r.status === 'failed') body.push(h('div', { class: 'dp-note is-warn' }, [icon('info'), h('span', { text: T('p.ins_failed', { why: T('p.ins_err_' + (r.error || 'ai_provider')) }) })]));
+    if (r.status === 'ready') {
+      var facts = [[T('p.ins_kind'), kindText(r.kind)], [T('p.ins_title'), r.title], [T('p.ins_date'), r.date ? fmtDay(r.date) : null],
+        [T('p.ins_sender'), r.sender], [T('p.ins_amount'), r.amount != null ? fmtAmount(r.amount, r.currency) : null]].filter(function (x) { return x[1]; });
+      body.push(h('dl', { class: 'dp-facts' }, facts.map(function (x) { return [h('dt', { text: x[0] }), h('dd', { text: x[1] })]; })));
+      var sg = r.suggestion;
+      if (sg && write) {
+        var a = areaOf(n.areaId);
+        var box = h('div', { class: 'dp-suggest' }, [h('span', { class: 'dp-label', text: T('p.ins_suggestion') })]);
+        if (sg.name) box.appendChild(h('div', { class: 'dp-st-row' }, [h('span', { text: T('p.ins_rename', { name: sg.name }) }), btn(T('p.ins_take'), function () { applyIt({ name: true }); }, { small: true, icon: 'edit' })]));
+        if (sg.folderId != null) {
+          var path = [a ? a.label : ''].concat(sg.folderPath ? sg.folderPath.split('/') : []).join(' › ');
+          box.appendChild(h('div', { class: 'dp-st-row' }, [h('span', { text: T('p.ins_move', { path: path }) }), btn(T('p.ins_take'), function () { applyIt({ folder: true }); }, { small: true, icon: 'move' })]));
+        }
+        if (sg.name && sg.folderId != null) box.appendChild(h('div', { class: 'dp-actions' }, btn(T('p.ins_take_both'), function () { applyIt({ name: true, folder: true }); }, { primary: true, small: true })));
+        body.push(box);
+      }
+    }
+    if (r.deadlines && r.deadlines.length) {
+      body.push(h('span', { class: 'dp-label', text: T('p.dl_title') }));
+      body.push(h('div', { class: 'dp-list' }, r.deadlines.map(function (d) { return deadlineRow(d, function () { insightDialog(n); }); })));
+    }
+    var acts = [btn(T('p.close'), closeDialog)];
+    if (write && (r.status === 'none' || r.status === 'failed' || r.status === 'ready')) acts.unshift(btn(T(r.status === 'none' ? 'p.ins_start' : 'p.ins_again'), again, { icon: 'spark' }));
+    body.push(err, h('div', { class: 'dp-actions' }, acts));
+    dialog(T('p.ins_of', { name: n.name }), body, { wide: true, sub: T('p.ins_sub') });
+  }
+
+  /** A deadline: what and when, my reminder ("3 Tage vorher erinnern") or "Erinnerung entfernen"; `node`: its file. */
+  function deadlineRow(d, after, node) {
+    var sel = h('select', { class: 'dp-input dp-btn-sm', attrs: { 'aria-label': T('p.dl_when') } }, [0, 1, 3, 7, 14].map(function (x) {
+      return h('option', { value: String(x), text: x === 0 ? T('p.dl_same_day') : P('p.dl_days_before', x), selected: x === 3 });
+    }));
+    sel.style.width = 'auto';
+    var what = d.label || T('p.dl_' + d.kind);
+    var meta = [T('p.dl_' + d.kind), fmtDay(d.date), d.reminder ? T(d.reminder.sent ? 'p.dl_sent' : 'p.dl_reminder', { date: fmtDate(d.reminder.at) }) : null];
+    var acts = d.date < today() ? [] : d.reminder
+      ? [btn(T('p.dl_remove'), function () { api('DELETE', 'deadlines/' + d.id + '/remind').then(after, fail); }, { small: true })]
+      : [sel, btn(T('p.dl_remind'), function () {
+        api('POST', 'deadlines/' + d.id + '/remind', { daysBefore: Number(sel.value) }).then(function () { toast(T('p.dl_set')); after(); }, fail);
+      }, { small: true, icon: 'bell' })];
+    return h('div', { class: 'dp-row dp-dl' }, [
+      h('span', { class: 'dp-ic' }, icon('bell')),
+      h('div', { class: 'dp-dl-tx' }, [
+        h('span', { class: 'dp-name', text: what }),
+        h('span', { class: 'dp-meta', text: meta.filter(Boolean).join(' · ') }),
+        node ? h('button', { type: 'button', class: 'dp-linkish', text: node.name, attrs: { title: node.path || node.name }, on: { click: function () { openTarget(node.id, null); } } }) : null,
+      ]),
+      h('div', { class: 'dp-actions' }, acts),
+    ]);
+  }
+
+  /** The page "Fristen": the deadlines of every file I read, from today on. */
+  function showDeadlines() {
+    var main = startPage('deadlines');
+    api('GET', 'deadlines').then(function (r) {
+      if (S.page !== 'deadlines') return;
+      clear(main);
+      main.appendChild(h('p', { class: 'dp-hint', text: T('p.dl_hint'), attrs: { style: 'margin-bottom:12px' } }));
+      var list = r.deadlines || [];
+      if (!list.length) { main.appendChild(h('div', { class: 'dp-empty', text: T('p.dl_none') })); return; }
+      main.appendChild(h('div', { class: 'dp-list' }, list.map(function (d) { return deadlineRow(d, showDeadlines, d.node); })));
+    }, fail);
+  }
+
+  // ── import from Google Drive and OneDrive (since 1.8.0, feature cloudImport) ──
+
+  var IM = { sources: null, jobs: [], conn: null, crumbs: [], folder: null, items: [], next: null, chosen: {}, target: null, bar: null, seq: 0 };
+  function providerName(p) { return p === 'google' ? 'Google Drive' : p === 'microsoft' ? 'OneDrive' : String(p || ''); }
+
+  /** The page "Importieren"; `back`: the outcome of connecting an account ({ ok, code } — then the jobs that waited for it go on). */
+  function showImport(back) {
+    var main = startPage('import');
+    Promise.all([api('GET', 'import/sources'), api('GET', 'import/jobs')]).then(function (r) {
+      if (S.page !== 'import') return;
+      IM.sources = r[0];
+      IM.jobs = r[1].jobs || [];
+      if (IM.conn && !(IM.sources.connections || []).some(function (c) { return c.id === IM.conn.id && !c.error; })) IM.conn = null;
+      renderImport(main);
+      var cloud = back && back.cloud === true ? back : null;
+      if (cloud && !cloud.ok) toast(T('p.imp_connect_failed', { code: cloud.code || 'failed' }), 'error');
+      if (cloud && cloud.ok) {
+        toast(T('p.imp_connected'));
+        var waiting = IM.jobs.filter(function (j) { return j.state === 'paused' && j.error === 'cloud_auth'; });
+        if (waiting.length) Promise.all(waiting.map(function (j) { return api('POST', 'import/jobs/' + j.id + '/resume', {}).catch(function () { return null; }); })).then(function () { loadJobs(); });
+      }
+    }, function (e) {
+      if (S.page !== 'import') return;
+      clear(main);
+      main.appendChild(h('div', { class: 'dp-empty', text: errText(e) }));
+    });
+  }
+
+  function loadJobs() {
+    api('GET', 'import/jobs').then(function (r) { IM.jobs = r.jobs || []; if (S.page === 'import' && IM.sources) renderImport($('dp-main')); }, function () { /* the next event */ });
+  }
+
+  function renderImport(main) {
+    clear(main);
+    var src = IM.sources || {};
+    main.appendChild(h('p', { class: 'dp-hint', text: T('p.imp_hint'), attrs: { style: 'margin-bottom:12px' } }));
+    if (IM.jobs.length) main.appendChild(h('section', { class: 'dp-st-sec' }, [h('h2', { class: 'dp-h2', text: T('p.imp_jobs') })].concat(IM.jobs.map(jobRow))));
+    var accs = h('div', { class: 'dp-imp-accs' });
+    (src.connections || []).forEach(function (c) {
+      // error 'auth': the provider no longer accepts the connection — connect the account again
+      var stale = c.error === 'auth';
+      accs.appendChild(h('div', { class: 'dp-device' + (IM.conn && IM.conn.id === c.id ? ' is-on' : '') }, h('div', { class: 'dp-dev-head' }, [
+        h('span', { class: 'dp-ic' }, icon('cloud')),
+        h('div', { class: 'dp-dev-tx' }, [h('span', { class: 'dp-name', text: providerName(c.provider) }), h('span', { class: 'dp-meta', text: [c.account || '', stale ? T('p.imp_stale') : null].filter(Boolean).join(' · ') })]),
+        h('div', { class: 'dp-actions' }, [
+          stale ? btn(T('p.imp_reconnect'), function () { connectProvider(c.provider); }, { small: true, primary: true, icon: 'restore' })
+            : btn(T('p.imp_browse'), function () { openConn(c); }, { small: true, icon: 'folder' }),
+          btn(T('p.imp_disconnect'), function () { disconnectConn(c); }, { small: true, danger: true }),
+        ]),
+      ])));
+    });
+    var add = h('div', { class: 'dp-actions', attrs: { style: 'justify-content:flex-start' } });
+    ['google', 'microsoft'].forEach(function (p) { if (src[p]) add.appendChild(btn(T('p.imp_connect', { provider: providerName(p) }), function () { connectProvider(p); }, { icon: 'plus' })); });
+    main.appendChild(h('section', { class: 'dp-st-sec' }, [h('h2', { class: 'dp-h2', text: T('p.imp_accounts') }), accs, add]));
+    if (IM.conn) main.appendChild(browser());
+  }
+
+  function jobRow(j) {
+    var a = areaOf(j.areaId);
+    var where = [a ? a.label : ''].concat(j.targetPath ? j.targetPath.split('/') : []).join(' › ');
+    var active = j.state === 'queued' || j.state === 'running' || j.state === 'paused';
+    var pct = j.state === 'done' ? 100 : j.total ? Math.min(100, Math.round(((j.done + j.skipped + j.failed) / j.total) * 100)) : 0;
+    var meta = [T('p.imp_counts', { done: j.done + j.skipped, total: j.total }), j.failed ? T('p.imp_failed', { count: j.failed }) : null,
+      j.scanning ? T('p.imp_scanning') : null, j.bytes ? fmtSize(j.bytes) : null, j.error ? T('p.imp_err_' + j.error) : null];
+    return h('div', { class: 'dp-device dp-imp-job' }, [
+      h('div', { class: 'dp-st-row' }, [h('span', { class: 'dp-name', text: providerName(j.provider) + (j.account ? ' · ' + j.account : '') + ' → ' + where }),
+        h('span', { class: 'dp-meta', text: T('p.imp_state_' + j.state) })]),
+      h('div', { class: 'dp-meter', attrs: { role: 'progressbar', 'aria-valuemin': '0', 'aria-valuemax': '100', 'aria-valuenow': String(pct), 'aria-label': T('p.imp_progress') } }, h('span', { attrs: { style: 'width:' + pct + '%' } })),
+      h('div', { class: 'dp-st-row' }, [h('span', { class: 'dp-meta', text: meta.filter(Boolean).join(' · ') }), h('div', { class: 'dp-actions' }, [
+        j.state === 'paused' || j.state === 'failed' ? btn(T('p.imp_resume'), function () { resumeJob(j); }, { small: true, icon: 'restore' }) : null,
+        btn(T(active ? 'p.imp_cancel' : 'p.imp_remove'), function () { api('DELETE', 'import/jobs/' + j.id).then(function () { showImport(); }, fail); }, { small: true, danger: active }),
+      ])]),
+      j.failures && j.failures.length ? h('ul', { class: 'dp-imp-fails' }, j.failures.map(function (f) { return h('li', { text: f.name + ' – ' + T('p.imp_ferr_' + f.error) }); })) : null,
+    ]);
+  }
+
+  /** Go on: after connecting again, with the newest connection of the same provider. */
+  function resumeJob(j) {
+    var conns = ((IM.sources && IM.sources.connections) || []).filter(function (c) { return c.provider === j.provider; });
+    var body = j.error === 'cloud_auth' && conns.length ? { connection: conns[conns.length - 1].id } : {};
+    api('POST', 'import/jobs/' + j.id + '/resume', body).then(function () { toast(T('p.imp_resumed')); showImport(); }, fail);
+  }
+
+  /** GateControl's OAuth start: the frame cannot leave itself — GC.openUrl when the portal offers it, else the address to open. */
+  function connectProvider(p) {
+    api('POST', 'import/connect', { provider: p }).then(function (r) {
+      var url = String(r.url || '');
+      var origin = S.links && S.links.drive ? String(S.links.drive).split('/').slice(0, 3).join('/') : '';
+      var abs = url.charAt(0) === '/' && origin ? origin + url : url;
+      var show = function () {
+        dialog(T('p.imp_connect', { provider: providerName(p) }), [
+          h('p', { class: 'dp-hint', text: T('p.imp_connect_text') }),
+          h('input', { class: 'dp-input', type: 'text', value: abs, attrs: { readonly: true, 'aria-label': T('p.imp_address') } }),
+          h('div', { class: 'dp-actions' }, [btn(T('p.close'), closeDialog), btn(T('p.imp_copy'), function () { copyText(abs); }, { primary: true, icon: 'copy' })]),
+        ]);
+      };
+      // GateControl ≥ 1.213.0: the page opens the address itself (only that address, at most once in 1.5 s)
+      if (!window.GC || typeof window.GC.openUrl !== 'function') { show(); return; }
+      Promise.resolve().then(function () { return window.GC.openUrl(abs); }).then(function () { toast(T('p.imp_connecting')); }, show);
+    }, fail);
+  }
+
+  function disconnectConn(c) {
+    confirmDialog(T('p.imp_disconnect'), T('p.imp_disconnect_text', { provider: providerName(c.provider), account: c.account || '' }), T('p.imp_disconnect'), function () {
+      return api('DELETE', 'import/connections/' + encodeURIComponent(c.id)).then(function () { if (IM.conn && IM.conn.id === c.id) IM.conn = null; showImport(); });
+    }, true);
+  }
+
+  function openConn(c) {
+    IM.conn = c;
+    IM.crumbs = [{ id: null, name: providerName(c.provider) }];
+    IM.chosen = {};
+    loadCloud(null, false);
+  }
+
+  function loadCloud(folderId, more) {
+    var seq = ++IM.seq;
+    api('GET', 'import/browse', null, { connection: IM.conn.id, folder: folderId, cursor: more ? IM.next : null }).then(function (r) {
+      if (seq !== IM.seq || S.page !== 'import') return;
+      IM.folder = folderId;
+      IM.items = more ? IM.items.concat(r.items || []) : (r.items || []);
+      IM.next = r.next || null;
+      renderImport($('dp-main'));
+    }, function (e) { fail(e); if (e && e.code === 'cloud_auth') { IM.conn = null; showImport(); } });
+  }
+
+  function browser() {
+    var crumbs = h('nav', { class: 'dp-crumbs', attrs: { 'aria-label': T('p.path') } });
+    IM.crumbs.forEach(function (x, i) {
+      if (i) crumbs.appendChild(h('span', { class: 'dp-sep', text: '›', attrs: { 'aria-hidden': 'true' } }));
+      var last = i === IM.crumbs.length - 1;
+      crumbs.appendChild(h('button', { type: 'button', text: x.name, attrs: { 'aria-current': last ? 'page' : null }, on: { click: last ? null : function () { IM.crumbs = IM.crumbs.slice(0, i + 1); loadCloud(x.id, false); } } }));
+    });
+    var l = h('div', { class: 'dp-list' });
+    if (!IM.items.length) l.appendChild(h('div', { class: 'dp-empty', text: T('p.imp_empty') }));
+    IM.items.forEach(function (x) {
+      var cb = h('input', { type: 'checkbox', checked: !!IM.chosen[x.id], attrs: { 'aria-label': T('p.imp_pick', { name: x.name }) }, on: { change: function (ev) {
+        if (ev.target.checked) IM.chosen[x.id] = x; else delete IM.chosen[x.id];
+        bar();
+      } } });
+      var name = [h('span', { class: 'dp-ic' }, icon(x.isDir ? 'folder' : 'file')), h('span', { class: 'dp-name', text: x.name, attrs: { title: x.name } })];
+      l.appendChild(h('div', { class: 'dp-row dp-imp-row', attrs: { role: 'row' } }, [
+        h('label', { class: 'dp-check' }, cb),
+        x.isDir ? h('button', { type: 'button', class: 'dp-open', on: { click: function () { IM.crumbs.push({ id: x.id, name: x.name }); loadCloud(x.id, false); } } }, name) : h('span', { class: 'dp-open' }, name),
+        h('span', { class: 'dp-num', text: x.modifiedAt ? fmtDate(x.modifiedAt) : '' }),
+        h('span', { class: 'dp-num dp-right', text: x.isDir ? '—' : fmtSize(x.size || 0) }),
+      ]));
+    });
+    IM.bar = h('div', { class: 'dp-imp-bar' });
+    bar();
+    return h('section', { class: 'dp-st-sec' }, [h('h2', { class: 'dp-h2', text: T('p.imp_choose') }), crumbs, l,
+      IM.next ? h('div', { class: 'dp-more-row' }, btn(T('p.more'), function () { loadCloud(IM.folder, true); })) : null, IM.bar]);
+  }
+
+  /** Where the import goes: the folder chosen, else the folder open before (when I write there), else my files. */
+  function target() {
+    if (IM.target) return IM.target;
+    var a = S.folder && canWrite() ? areaOf(S.areaId) : null;
+    if (a) return { id: S.folder.id, areaId: a.id, label: [a.label].concat(S.folder.crumbs.slice(1).map(function (c) { return c.name; })).concat(S.folder.parentId != null ? [S.folder.name] : []).join(' › ') };
+    var mine = areaOf('mine:' + (S.me && S.me.id));
+    return mine ? { id: mine.rootId, areaId: mine.id, label: mine.label } : null;
+  }
+
+  function bar() {
+    var b = IM.bar;
+    if (!b) return;
+    clear(b);
+    var n = Object.keys(IM.chosen).length;
+    var t = target();
+    b.appendChild(h('span', { class: 'dp-meta', text: T('p.imp_target', { path: t ? t.label : '—' }) }));
+    b.appendChild(h('div', { class: 'dp-actions' }, [
+      btn(T('p.imp_change_target'), function () { pickFolder(t, function (x) { IM.target = x; bar(); }); }, { small: true, icon: 'folder' }),
+      btn(n ? P('p.imp_start', n) : T('p.imp_none'), startImport, { primary: true, disabled: !n || !t, icon: 'download' }),
+    ]));
+  }
+
+  function startImport() {
+    var t = target();
+    var items = Object.keys(IM.chosen).map(function (k) { var x = IM.chosen[k]; return { id: x.id, isDir: !!x.isDir, name: x.name }; });
+    if (!items.length || !t) return;
+    api('POST', 'import/jobs', { connection: IM.conn.id, items: items, targetFolderId: t.id }).then(function () {
+      IM.chosen = {};
+      toast(T('p.imp_started'));
+      showImport();
+    }, fail);
+  }
+
+  /** A folder I write to: an area, then down its folders. */
+  function pickFolder(start, onPick) {
+    var cur = start ? { id: start.id, areaId: start.areaId, label: start.label } : null;
+    var picker = h('div', { class: 'dp-picker', attrs: { role: 'list' } });
+    var where = h('p', { class: 'dp-hint' });
+    var err = h('p', { class: 'dp-err', attrs: { role: 'alert' } });
+    var writable = S.areas.filter(function (a) { return !a.archived && (a.role === 'write' || a.role === 'manage'); });
+    var go = function (areaId, folderId) {
+      Promise.all([api('GET', 'nodes/' + folderId), api('GET', 'nodes/' + folderId + '/children', null, { limit: 1000 })]).then(function (r) {
+        clear(picker);
+        var node = r[0].node;
+        var a = areaOf(areaId);
+        cur = { id: node.id, areaId: areaId, label: [a ? a.label : ''].concat(node.crumbs.slice(1).map(function (c) { return c.name; })).concat(node.parentId != null ? [node.name] : []).join(' › ') };
+        where.textContent = T('p.imp_target', { path: cur.label });
+        if (node.parentId != null) picker.appendChild(h('button', { type: 'button', on: { click: function () { go(areaId, node.parentId); } } }, [icon('up'), h('span', { text: T('p.up') })]));
+        (r[1].items || []).filter(function (x) { return x.isDir; }).forEach(function (x) {
+          picker.appendChild(h('button', { type: 'button', attrs: { role: 'listitem' }, on: { click: function () { go(areaId, x.id); } } }, [icon('folder'), h('span', { text: x.name })]));
+        });
+        if (!picker.firstChild) picker.appendChild(h('p', { class: 'dp-hint', text: T('p.no_folders'), attrs: { style: 'padding:12px' } }));
+      }, function (e) { err.textContent = errText(e); });
+    };
+    var areaSel = h('select', { class: 'dp-input', attrs: { 'aria-label': T('p.area') }, on: { change: function (ev) { var a = areaOf(ev.target.value); if (a) go(a.id, a.rootId); } } },
+      writable.map(function (a) { return h('option', { value: a.id, text: a.label, selected: !!(cur && a.id === cur.areaId) }); }));
+    dialog(T('p.imp_change_target'), [h('label', { class: 'dp-field' }, [h('span', { class: 'dp-label', text: T('p.area') }), areaSel]), where, picker, err,
+      h('div', { class: 'dp-actions' }, [btn(T('p.cancel'), closeDialog), btn(T('p.imp_here'), function () { if (cur) { onPick(cur); closeDialog(); } }, { primary: true })])]);
+    var first = cur || (writable[0] ? { id: writable[0].rootId, areaId: writable[0].id } : null);
+    if (first) go(first.areaId, first.id);
+  }
+
   // ── live ─────────────────────────────────────────────────
 
   function live() {
@@ -1925,6 +2275,8 @@
       }
       // vault folders (since 1.9.0): a device asks, was approved, a new key
       if (ev && ev.type === 'vault') { if (V) V.onEvent(d); return; }
+      // an import went on (since 1.8.0)
+      if (ev && ev.type === 'import') { if (S.page === 'import') loadJobs(); return; }
       if (!ev || ev.type !== 'changed' || !d || !Array.isArray(d.areas)) return;
       if (S.page === 'files' && d.areas.indexOf(S.areaId) >= 0 && !S.uploading) scheduleReload();
       else if (S.page === 'trash') showTrash();

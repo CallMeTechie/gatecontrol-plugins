@@ -21,7 +21,12 @@ Dateien der Familie und des Teams auf dem eigenen Speicher – auf diesem Server
   - Wer den Bereich verliert, dessen Geräte werden widerrufen und der Tresor verlangt einen neuen Schlüssel
     (`needsRotation`). Neue Dateien bekommen ihn, ältere bleiben für die Übrigen lesbar.
   - Kein Tresor-Inhalt in Vorschau, Textsuche, Suche, öffentlichen Links (`409 encrypted`; ein Ordner-Link auf einen
-    Ordner, in dem ein Tresor entsteht, endet mit `endedWhy: 'vault'`), Alben, Fotorahmen und Office. Der Erpressungsschutz filtert dort nicht nach Entropie. Papierkorb, Versionen und Zeitreise (auch der
+    Ordner, in dem ein Tresor entsteht, endet mit `endedWhy: 'vault'`), Alben, Fotorahmen und Office.
+  - Die KI für Dokumente (1.8.0) liest keine Tresor-Datei: Sie kommt nicht in die Warteschlange, `GET nodes/<id>/insight`
+    liefert `status: 'off'`, `POST nodes/<id>/insight` und `…/insight/apply` antworten `409 encrypted`. Fristen gibt
+    es dort keine, sie erscheinen nicht in `GET deadlines` und nehmen keine Erinnerung (`409 encrypted`).
+  - Der Import (1.8.0) schreibt nie in einen Tresor: Ein Ziel im Tresor ergibt `409 encrypted`, ein laufender Job mit
+    einem solchen Ziel endet mit `failed` / `encrypted`. Der Erpressungsschutz filtert dort nicht nach Entropie. Papierkorb, Versionen und Zeitreise (auch der
     verschlüsselte Name) funktionieren weiter.
   - Portal (braucht GateControl ≥ 1.211.0 für `GC.keys` und `GC.mediaBytes`): „Tresor-Ordner“ anlegen
     (Wiederherstellungsschlüssel einmal anzeigen, kopieren oder als Textdatei speichern), öffnen, Dateien
@@ -37,9 +42,53 @@ Dateien der Familie und des Teams auf dem eigenen Speicher – auf diesem Server
     erneut geprüft.
   - Braucht GateControl ≥ 1.211.0 (`permissions.publicEndpoints`). `me.features` enthält `office` nur, wenn alles
     eingerichtet ist.
-- **Neue Berechtigungen:** `publicEndpoints` (der Office-Server erreicht die WOPI-Endpunkte ohne Portal-Sitzung, Bodies
-  bis 512 MB als Medien) und das Heimnetz-Zugriffsziel `office` (Discovery lesen).
+- **Neue Berechtigungen – der Admin muss beim Update zustimmen:**
+  - `permissions.publicEndpoints`: Der Office-Server erreicht die WOPI-Endpunkte ohne Portal-Sitzung, nur mit einem
+    kurzlebigen Token pro Datei und Person; Bodies bis 512 MB werden als Medien gespeichert.
+  - Das Heimnetz-Zugriffsziel `office`: Darüber wird die Discovery gelesen. Der Admin weist es nach dem Update unter
+    Plugins › Drive › Zugriffsziele zu.
+  GateControl zeigt beide Berechtigungen beim Update an. Ohne Zuweisung des Zugriffsziels und ohne `office_url` fehlt
+  nur das Feature `office`, alles andere läuft.
 - `me.features`: `vault`, `office`.
+## 1.8.0
+- **KI für Dokumente** (Feature `docAi`): Für neue Dokumente schlägt die KI Art, Titel, Datum, Absender, Betrag, einen
+  Zielordner des Bereichs, einen Dateinamen und Fristen vor. Nichts passiert automatisch – übernommen wird per Klick.
+  - Nutzt den KI-Dienst von GateControl ≥ 1.214.0 (`gc.ai`, neue Berechtigung `ai` mit Text und Bildern). Ohne ihn, wenn der Admin
+    das Plugin dort sperrt oder die neue Einstellung `doc_ai` aus ist, fehlt `docAi` in `GET me` `features`, Knoten haben
+    kein `insight` und `GET nodes/<id>/insight` antwortet `status: 'off'`.
+  - Datensparsam: gesendet wird der erkannte Text (`uploads/commit { text }`), nie die Datei. Bilder ohne Text (nur JPEG,
+    PNG, WebP, GIF) nur, wenn GateControl „Bilder an KI senden“ erlaubt – automatisch nur mit der neuen Einstellung
+    `doc_ai_images` (Standard aus), sonst auf Wunsch (`POST nodes/<id>/insight`). HEIC- und PDF-Scans nur als Text.
+  - Kosten: höchstens eine Erkennung je Fassung (`rev`), keine Wiederholung ohne Anlass (neue Fassung oder `POST …/insight`),
+    die Warteschlange arbeitet der Hintergrund ab – höchstens drei Erkennungen je Lauf.
+  - `GET nodes/<id>/insight` → `{ status, kind, title, date, sender, amount, currency, suggestion { folderId, folderPath,
+    name } | null, deadlines, error, at }`; `POST nodes/<id>/insight`; `POST nodes/<id>/insight/apply { name?, folder? }`
+    → `{ node, insight }` (ein belegter Name wird zu „… (2)“). Jeder Dateiknoten trägt `insight { status, kind }`.
+  - Pro Bereich an oder aus: `PATCH areas/<id> { docAi }`, `GET me`/`GET areas` liefern `docAi` je Bereich. Standard: aus
+    in Kinderordnern, sonst an.
+  - Rechte: Lesen genügt zum Ansehen und für eigene Erinnerungen; Erkennen, Übernehmen und Umschalten brauchen Schreibrecht.
+- **Fristen:** `GET deadlines?from=&to=`, `POST deadlines/<id>/remind { daysBefore }`, `DELETE deadlines/<id>/remind`.
+  Erinnert wird über Drives eigene Mitteilung (neues Thema `deadline`) am Tag minus N Tage, je Person. Das Familie-Plugin
+  bietet keinen Erinnerungsdienst, den ein anderes Plugin aufrufen darf – deshalb erinnert Drive selbst.
+- **Import aus Google Drive und OneDrive** (Feature `cloudImport`): neue Portal-Seite „Importieren“ – Konto verbinden,
+  durchsuchen, Dateien oder ganze Ordner wählen, Zielordner wählen.
+  - Nutzt die Cloud-Konten von GateControl ≥ 1.213.0 (`gc.cloud`, neue Berechtigung `cloudImport`) und die neue
+    Einstellung `cloud_import`. Das Portal öffnet die Anmeldung mit `GC.openUrl` und wertet die Rückkehr aus
+    (`cloud=connected` bzw. `cloud=error&cloudError=…`); danach laufen wartende Importe weiter. Eine abgelaufene
+    Verbindung (`error: 'auth'`) zeigt „Neu verbinden“.
+  - Aufträge laufen im Hintergrund als die Person, setzen nach einem Abbruch dort fort, wo sie waren, und zeigen ihren
+    Fortschritt (Live-Ereignis `import`).
+  - Ordnerstruktur und Änderungsdatum (`mtime`) bleiben erhalten. Ein vorhandener Name wird zur neuen Version, gleiche
+    Bytes werden übersprungen, ein gleichnamiger Ordner wird weiterverwendet.
+  - API: `GET import/sources`, `POST import/connect`, `DELETE import/connections/<id>`, `GET import/browse`,
+    `POST|GET import/jobs`, `GET import/jobs/<id>`, `POST import/jobs/<id>/resume`, `DELETE import/jobs/<id>`.
+- Der Hintergrund läuft jetzt jede Minute (`permissions.background.intervalSeconds: 60`); das Aufräumen bleibt bei alle
+  5 Minuten.
+- Neue Fehlercodes: `feature_off` (403), `unsupported` (422), `cloud_auth` (409), `cloud_error` (502), `rate_limit` (429),
+  `too_large` (413), `job_limit` (409).
+- Migration `008_insights_imports.sql`.
+- **Hinweis:** Die neuen Berechtigungen `ai` und `cloudImport` verhindern das automatische Update – der Admin muss 1.8.0
+  bestätigen.
 
 ## 1.7.0
 - **Zeitreise:** Ein Ordner lässt sich mit allem darin auf einen Zeitpunkt zurücksetzen.

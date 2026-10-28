@@ -23,6 +23,10 @@
 //     GET photos · GET photos/months · GET photos/memories (photos.js) · GET|POST albums · GET|PATCH|DELETE albums/<id>
 //     POST|DELETE albums/<id>/items (albums.js) · GET storage[?all=1] · POST storage/versions/prune (storage.js) — 1.7.0
 //     GET frame   a kiosk device only — the photo frame (frame.js, 1.7.0); every other route refuses a kiosk device
+//     GET|POST nodes/<id>/insight · POST nodes/<id>/insight/apply · PATCH areas/<id> { docAi } (insights.js) · GET deadlines
+//     · POST|DELETE deadlines/<id>/remind (deadlines.js) — AI for documents, GateControl's gc.ai (1.8.0)
+//     import/sources|connect|connections/<id>|browse|jobs[/<id>[/resume]] — the import from Google Drive and OneDrive,
+//     GateControl's gc.cloud (imports.js, 1.8.0)
 //     POST|GET vaults · GET vaults/<id> · GET vaults/<id>/keys?deviceId= · GET vaults/<id>/recovery · PUT vaults/<id>/recovery
 //     GET|POST vaults/<id>/devices · POST vaults/<id>/devices/<deviceId>/approve · DELETE vaults/<id>/devices/<deviceId>
 //     POST vaults/<id>/rotate   (vault folders, end-to-end encrypted — vault.js, 1.9.0; nodes and uploads/commit take
@@ -63,6 +67,9 @@ const photos = require('./photos');
 const albums = require('./albums');
 const frame = require('./frame');
 const storage = require('./storage');
+const insights = require('./insights');
+const deadlines = require('./deadlines');
+const imports = require('./imports');
 const vault = require('./vault');
 const office = require('./office');
 const { t } = require('./text');
@@ -112,6 +119,16 @@ async function context(gc, user, lang, now) {
 
 const nameOf = (ctx, uid) => (ctx.users.get(uid) || {}).name || String(uid);
 
+/** Person `uid` for the background run (1.8.0: reminders, imports) — null without an account, a licence or a seat. */
+async function personContext(gc, uid, now) {
+  const u = (await people.users(gc)).get(uid);
+  if (!u) return null;
+  const c = await context(gc, { id: uid, portal: true, loggedIn: true }, u.lang === 'en' ? 'en' : 'de', now);
+  if (!c.licence.valid || !c.seat || !c.user) return null;
+  await c.visible();
+  return c;
+}
+
 /** A parent looked into a child's folder: the child is told once a day per parent (after the answer). */
 async function noteChildView(ctx, area) {
   const child = area.owner_user;
@@ -154,16 +171,15 @@ async function me(ctx) {
     wipes: await wipes.pending(ctx),
     devices: await wipes.deviceCount(ctx.gc, ctx.viewer, ctx.now),
     licence: { valid: ctx.licence.valid, tier: ctx.licence.tier },
-    areas: list.map((v) => areaView(ctx, v)),
+    areas: await insights.decorate(ctx, list.map((v) => areaView(ctx, v))),
     latest: await changes.latest(ctx.gc),
     settings: { versionsDays: ctx.settings.versionsDays, versionsMax: ctx.settings.versionsMax, trashDays: ctx.settings.trashDays, parentsView: ctx.settings.parentsView, scanFormat: ctx.settings.scanFormat },
     limits: { maxBytes: usage ? usage.maxBytes : null },
     // names for "changed by …" (the accounts of this server; the apps and the portal show them)
     people: ctx.seat ? [...ctx.users.values()].map((u) => ({ id: u.id, name: u.name })) : [],
     serverTime: iso(ctx.now),
-    // what this Drive can (since 1.5.0): an app checks before it uses a newer route; `office` (1.9.0) only while an office
-    // server is set up and GateControl has public endpoints
-    features: (await office.available(ctx.gc, await ctx.gc.settings.all(), ctx.now).catch(() => false)) ? [...FEATURES, 'office'] : FEATURES,
+    // what this Drive can (since 1.5.0): an app checks before it uses a newer route
+    features: [...FEATURES, ...(await optional(ctx))],
     // direct links into the portal (since 1.6.0): node with {id} for the apps to replace, drive the tab; null: no address
     links: await address.links(ctx.gc, ctx.settings, ctx.now),
     // the ransomware protection (since 1.6.0): this device locked? the person's open incidents
@@ -181,6 +197,19 @@ async function me(ctx) {
 // emptyFiles: uploads/commit { size: 0 } without a mediaId (1.5.0) · wipes: DELETE ?everywhere=1 (1.2.0) ·
 // textSearch: uploads/commit { text } (1.3.0) · previews (1.1.0)
 const FEATURES = ['previews', 'wipes', 'textSearch', 'devices', 'deleteAfter', 'emptyFiles', 'links', 'guard', 'timeTravel', 'takenAt', 'photos', 'albums', 'frame', 'storage', 'vault'];
+
+/**
+ * What needs GateControl's AI service or cloud accounts (1.8.0) — only while the host has it and it is allowed (the
+ * administrator in GateControl and Drive's settings): docAi (insights.js, deadlines.js), cloudImport (imports.js).
+ */
+async function optional(ctx) {
+  const out = [];
+  if ((await insights.state(ctx.gc, ctx.settings)).on) out.push('docAi');
+  if (await imports.sources(ctx.gc, ctx.settings)) out.push('cloudImport');
+  // office in the browser (1.9.0): only while an office server is set up and GateControl has public endpoints
+  if (await office.available(ctx.gc, await ctx.gc.settings.all(), ctx.now).catch(() => false)) out.push('office');
+  return out;
+}
 
 const THUMBS_MAX = 200;
 
@@ -203,7 +232,7 @@ async function withThumbs(ctx, r) {
 async function areaList(ctx) {
   const out = [];
   for (const v of await ctx.visible()) out.push(areaView(ctx, v, await storageOf(ctx.gc, v.area)));
-  return { areas: out };
+  return { areas: await insights.decorate(ctx, out) };
 }
 
 /** A query switch: 1, true, yes. */
@@ -320,6 +349,17 @@ async function route(ctx, req, seg) {
     if (seg.length === 3 && c === 'restore' && m === 'POST') return ok({ node: await nodes.restore(ctx, idArg(b)) });
     if (seg.length === 2 && m === 'DELETE') return ok(await nodes.purge(ctx, idArg(b)));
   }
+  // AI for documents and the import (1.8.0)
+  if (a === 'nodes' && c === 'insight') {
+    if (seg.length === 3 && m === 'GET') return ok(await insights.get(ctx, b));
+    if (seg.length === 3 && m === 'POST') return ok(await insights.restart(ctx, b));
+    if (seg.length === 4 && d === 'apply' && m === 'POST') return ok(await insights.apply(ctx, b, body));
+  }
+  if (a === 'areas' && seg.length === 2 && (m === 'PATCH' || m === 'PUT')) return ok(await insights.setArea(ctx, b, body));
+  if (a === 'deadlines' && seg.length === 1 && m === 'GET') return ok(await deadlines.list(ctx, q));
+  if (a === 'deadlines' && seg.length === 3 && c === 'remind' && m === 'POST') return ok(await deadlines.remind(ctx, b, body));
+  if (a === 'deadlines' && seg.length === 3 && c === 'remind' && m === 'DELETE') return ok(await deadlines.unremind(ctx, b));
+  if (a === 'import') return ok(await imports.route(ctx, m, seg, q, body));
   throw fail('not_found');
 }
 
@@ -375,6 +415,10 @@ async function after(gc, ctx, done) {
     try { await links.endFor(gc, ctx.unlink, ctx.now); } catch (e) { gc.log.warn('ending links failed', (e && e.code) || 'error'); }
   }
   try { await changes.announce(gc, ctx.touched, ctx.settings); } catch (e) { gc.log.warn('announce failed', (e && e.code) || 'error'); }
+  // new files and versions into the queue of AI for documents (1.8.0; a service call — a request did it already)
+  if (done && ctx.insightIds && ctx.insightIds.size) {
+    try { await insights.consider(gc, ctx); } catch (e) { gc.log.warn('document queue failed', (e && e.code) || 'error'); }
+  }
   if (done) {
     try { await wipes.nudge(gc, ctx); } catch (e) { gc.log.warn('wipe event failed', (e && e.code) || 'error'); }
   }
@@ -497,12 +541,21 @@ module.exports = {
       try {
         const out = await route(ctx, req, seg);
         done = true;
+        // new files and versions into the queue of AI for documents (1.8.0) — before the answer shows their insight
+        if (ctx.insightIds && ctx.insightIds.size) {
+          try { await insights.consider(gc, ctx); } catch (e) { gc.log.warn('document queue failed', (e && e.code) || 'error'); }
+          ctx.insightIds = null;
+        }
         // the ransomware protection: did this device's recent work just turn suspicious? (guard.js; never fails the answer)
         if (ctx.guardNoted) {
           try { ctx.guardIncident = await guard.check(ctx); } catch (e) { gc.log.warn('guard check failed', (e && e.code) || 'error'); }
         }
         // every file node gets its preview (previews.js; nodes that have one already are left alone)
         if (out && out.json && out.json.ok) await previews.attach(ctx, out.json);
+        // and, with AI for documents (1.8.0), the short form of its insight
+        if (out && out.json && out.json.ok) {
+          try { await insights.attach(ctx, out.json); } catch (e) { gc.log.warn('insights failed', (e && e.code) || 'error'); }
+        }
         return out;
       } finally {
         await after(gc, ctx, done);
@@ -605,7 +658,9 @@ module.exports = {
 
   async tick(gc) {
     try { await office.sweep(gc, Date.now()); } catch (e) { gc.log.warn('office locks sweep failed', (e && e.code) || 'error'); }
-    return jobs.tick(gc, Date.now());
+    const now = Date.now();
+    // reminders and imports (1.8.0) run as their person
+    return jobs.tick(gc, now, { asPerson: (uid) => personContext(gc, uid, now) });
   },
 
   /**
