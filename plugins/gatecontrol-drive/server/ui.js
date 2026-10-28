@@ -7,6 +7,8 @@
 //
 // The portal tab is for a signed-in person only (never a kiosk device, never a viewer known only by device trust):
 // the others get the page with loggedIn: false, which shows "Bitte melde dich an" and calls nothing.
+// The section "Fotorahmen" (since 1.7.0, `section=frame` in the tab "Zuhause"): ui/frame.* — a slide show of the
+// frame albums for a kiosk device (GET frame, frame.js); anyone else gets the page with kiosk: false and a note.
 
 const fs = require('node:fs');
 const path = require('node:path');
@@ -24,6 +26,7 @@ function inlineScript(name, src) {
 const FILES = {
   css: read('portal.css'), html: read('portal.html'), js: inlineScript('portal.js', read('portal.js')),
   admin: { css: read('admin.css'), html: read('admin.html'), js: inlineScript('admin.js', read('admin.js')) },
+  frame: { css: read('frame.css'), html: read('frame.html'), js: inlineScript('frame.js', read('frame.js')) },
 };
 const PAGES = ['overview', 'people', 'teams'];
 
@@ -64,6 +67,14 @@ function render(view, t) {
       + '<script>' + a.js + '</script>';
   }
   const u = v.user || {};
+  if (v.section === 'frame') {
+    // the photo frame of a kiosk device (frame.js answers GET frame to nobody else)
+    const f = FILES.frame;
+    const fctx = { lang, view: 'frame', kiosk: u.kiosk === true, texts: portalTexts(lang, 'f.') };
+    return '<style>' + f.css + '</style>' + fill(f.html, t, lang)
+      + '<script>window.DF_CTX=' + island(fctx) + ';</script>'
+      + '<script>' + f.js + '</script>';
+  }
   const loggedIn = (v.loggedIn === true || u.loggedIn === true) && u.kiosk !== true;
   const ctx = { lang, view: 'portal', loggedIn, viewer: Number.isSafeInteger(u.id) ? u.id : null, texts: portalTexts(lang) };
   return '<style>' + FILES.css + '</style>'

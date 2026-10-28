@@ -16,6 +16,12 @@
  * with the overall progress; the ransomware protection: a banner while a device of mine is stopped ("Rückgängig
  * machen", "War ich – freigeben", the changes), for administrators the page "Vorfälle" with everyone's (live: 'guard').
  *
+ * Since 1.7.0: "Fotos" (a timeline by month with previews, "Vor einem Jahr", choosing several to put them into an
+ * album), "Alben" (make, rename, cover, the photo frame of the wall tablet, remove photos, delete), "Speicher" (space
+ * per area — an administrator: every area and person —, the largest files, duplicates to keep or put into the trash,
+ * old versions cleaned up by those who may), "Zeitreise" for a folder (a preview, then back to a time; the result can be
+ * undone) and the date a photo was taken on upload (EXIF of a JPEG, else the file's date).
+ *
  * The frame is sandboxed (opaque origin, no storage, no network of its own): everything goes through GC.call /
  * GC.upload. Server and user text only ever goes into textContent or attributes — never innerHTML.
  */
@@ -68,6 +74,12 @@
     device: 'M3 5h18v11H3z|M8 20h8|M12 16v4',
     shield: 'M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z|M12 8v5M12 16h.01',
     folderUp: 'M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z|M12 16v-6|M9 13l3-3 3 3',
+    photos: 'M4 6h16v13H4z|M4 15l4-4 4 4 3-3 5 5|M15 10h.01',
+    album: 'M5 4h12a2 2 0 0 1 2 2v14l-4-3-4 3-4-3-4 3V6a2 2 0 0 1 2-2z',
+    storage: 'M4 6c0-1.7 3.6-3 8-3s8 1.3 8 3-3.6 3-8 3-8-1.3-8-3z|M4 6v6c0 1.7 3.6 3 8 3s8-1.3 8-3V6|M4 12v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6',
+    clock: 'M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18|M12 7v5l3 2',
+    check: 'M5 12l5 5 9-10',
+    frame: 'M3 4h18v14H3z|M7 21h10|M7 14l3-3 3 3 2-2 3 3',
   };
 
   function icon(name, size) {
@@ -354,9 +366,12 @@
         [icon(a.kind === 'mine' ? 'cloud' : 'folder'), h('span', { text: a.label })]));
     });
     nav.appendChild(h('hr'));
+    nav.appendChild(h('button', { type: 'button', attrs: { 'aria-current': S.page === 'photos' ? 'page' : null }, on: { click: function () { showPhotos(); } } }, [icon('photos'), h('span', { text: T('p.photos') })]));
+    nav.appendChild(h('button', { type: 'button', attrs: { 'aria-current': S.page === 'albums' || S.page === 'album' ? 'page' : null }, on: { click: showAlbums } }, [icon('album'), h('span', { text: T('p.albums') })]));
     nav.appendChild(h('button', { type: 'button', attrs: { 'aria-current': S.page === 'links' ? 'page' : null }, on: { click: showLinks } }, [icon('link'), h('span', { text: T('p.links') })]));
     nav.appendChild(h('button', { type: 'button', attrs: { 'aria-current': S.page === 'trash' ? 'page' : null }, on: { click: showTrash } }, [icon('trash'), h('span', { text: T('p.trash') })]));
     nav.appendChild(h('button', { type: 'button', attrs: { 'aria-current': S.page === 'devices' ? 'page' : null }, on: { click: showDevices } }, [icon('device'), h('span', { text: T('p.devices') })]));
+    nav.appendChild(h('button', { type: 'button', attrs: { 'aria-current': S.page === 'storage' ? 'page' : null }, on: { click: function () { showStorage(); } } }, [icon('storage'), h('span', { text: T('p.storage') })]));
     if (S.admin) nav.appendChild(h('button', { type: 'button', attrs: { 'aria-current': S.page === 'incidents' ? 'page' : null }, on: { click: showIncidents } }, [icon('shield'), h('span', { text: T('p.guard_incidents') })]));
     var a = areaOf(S.areaId);
     var st = a ? S.storage.get(a.id) : null;
@@ -375,7 +390,8 @@
     clear(c);
     if (S.page !== 'files' || !S.folder) {
       c.appendChild(h('button', { type: 'button', attrs: { 'aria-current': 'page' }, text: S.page === 'trash' ? T('p.trash') : S.page === 'links' ? T('p.links') : S.page === 'devices' ? T('p.devices')
-        : S.page === 'incidents' ? T('p.guard_incidents') : T('p.results', { q: S.q }) }));
+        : S.page === 'incidents' ? T('p.guard_incidents') : S.page === 'photos' ? T('p.photos') : S.page === 'albums' ? T('p.albums')
+          : S.page === 'album' ? (S.album ? S.album.name : T('p.albums')) : S.page === 'storage' ? T('p.storage') : T('p.results', { q: S.q }) }));
       return;
     }
     var a = areaOf(S.areaId);
@@ -399,6 +415,7 @@
     sel.style.width = 'auto';
     t.appendChild(sel);
     if (canWrite()) {
+      t.appendChild(btn(T('p.tt'), function () { timeTravel(S.folder); }, { icon: 'clock' }));
       t.appendChild(btn(T('p.new_folder'), newFolder, { icon: 'plus' }));
       t.appendChild(btn(T('p.upload_folder'), function () { $('dp-dir').click(); }, { icon: 'folderUp' }));
       t.appendChild(btn(T('p.upload'), function () { $('dp-file').click(); }, { icon: 'upload', primary: true }));
@@ -1032,7 +1049,7 @@
       // an empty file: GateControl's upload takes no empty body — the commit makes it (since 1.5.0)
       if (!u.file.size) return { mediaId: null };
       if (!window.GC || typeof window.GC.upload !== 'function') throw codeErr('upload_unsupported');
-      return window.GC.upload(u.file, { onProgress: function (p) { u.loaded = p && p.loaded ? p.loaded : 0; renderUploads(); } });
+      return takenOf(u.file).then(function (t) { u.takenAt = t; }).then(function () { return window.GC.upload(u.file, { onProgress: function (p) { u.loaded = p && p.loaded ? p.loaded : 0; renderUploads(); } }); });
     }).then(function (up) {
       if (up && up.folder) return 'done';
       u.mediaId = up.mediaId;
@@ -1050,7 +1067,7 @@
   }
 
   function commit(u, onConflict) {
-    var body = u.mediaId ? { mediaId: u.mediaId, parentId: u.parentId, name: u.file.name, mtime: u.file.lastModified || undefined }
+    var body = u.mediaId ? { mediaId: u.mediaId, parentId: u.parentId, name: u.file.name, mtime: u.file.lastModified || undefined, takenAt: u.takenAt || undefined }
       : { size: 0, mime: u.file.type || undefined, parentId: u.parentId, name: u.file.name, mtime: u.file.lastModified || undefined };
     if (onConflict) body.onConflict = onConflict;
     return api('POST', 'uploads/commit', body).then(function () { return 'done'; }, function (e) {
@@ -1279,6 +1296,540 @@
       });
       main.appendChild(box);
     });
+  }
+
+  // ── when a photo was taken (since 1.7.0) ─────────────────
+
+  /**
+   * takenAt of a picture or video to upload (ms): a JPEG's EXIF DateTimeOriginal (else DateTime; the device's time
+   * unless the photo names its offset), else the file's date. Other files: none (the server takes mtime).
+   */
+  function takenOf(file) {
+    var type = String((file && file.type) || '');
+    if (!/^(image|video)\//.test(type)) return Promise.resolve(null);
+    var fallback = file.lastModified || null;
+    if (type !== 'image/jpeg' || typeof file.slice !== 'function') return Promise.resolve(fallback);
+    var part = file.slice(0, 256 * 1024);
+    if (!part || typeof part.arrayBuffer !== 'function') return Promise.resolve(fallback);
+    return part.arrayBuffer().then(function (buf) { return exifTaken(new DataView(buf)) || fallback; }, function () { return fallback; });
+  }
+
+  /** DateTimeOriginal (0x9003, with OffsetTimeOriginal 0x9011) or DateTime (0x0132) of a JPEG's EXIF → ms or null. */
+  function exifTaken(v) {
+    try {
+      if (v.byteLength < 12 || v.getUint16(0) !== 0xFFD8) return null;
+      var off = 2;
+      while (off + 4 <= v.byteLength) {
+        var marker = v.getUint16(off);
+        var len = v.getUint16(off + 2);
+        if ((marker & 0xFF00) !== 0xFF00 || marker === 0xFFDA) return null;
+        if (marker === 0xFFE1 && v.getUint32(off + 4) === 0x45786966) return tiffTaken(v, off + 10);
+        off += 2 + len;
+      }
+    } catch (e) { return null; }
+    return null;
+  }
+  function tiffTaken(v, t) {
+    var le = v.getUint16(t) === 0x4949;
+    var u16 = function (o) { return v.getUint16(t + o, le); };
+    var u32 = function (o) { return v.getUint32(t + o, le); };
+    var str = function (o, n) { var s = ''; for (var i = 0; i < n; i++) { var c = v.getUint8(t + o + i); if (!c) break; s += String.fromCharCode(c); } return s; };
+    var tags = function (ifd) {
+      var out = {};
+      var n = u16(ifd);
+      for (var i = 0; i < n && i < 500; i++) {
+        var e = ifd + 2 + i * 12;
+        var tag = u16(e);
+        var count = u32(e + 4);
+        out[tag] = { type: u16(e + 2), count: count, value: u32(e + 8), at: count > 4 ? u32(e + 8) : e + 8 };
+      }
+      return out;
+    };
+    var ifd0 = tags(u32(4));
+    var exif = ifd0[0x8769] ? tags(ifd0[0x8769].value) : {};
+    var when = exif[0x9003] || ifd0[0x0132];
+    if (!when) return null;
+    var m = /^(\d{4}):(\d{2}):(\d{2}) (\d{2}):(\d{2}):(\d{2})/.exec(str(when.at, 19));
+    if (!m) return null;
+    var off = exif[0x9011] ? /^([+-])(\d{2}):(\d{2})$/.exec(str(exif[0x9011].at, 6)) : null;
+    var p = m.slice(1).map(Number);
+    if (off) return Date.UTC(p[0], p[1] - 1, p[2], p[3], p[4], p[5]) - (off[1] === '-' ? -1 : 1) * (Number(off[2]) * 60 + Number(off[3])) * 60000;
+    var d = new Date(p[0], p[1] - 1, p[2], p[3], p[4], p[5]).getTime();
+    return isNaN(d) ? null : d;
+  }
+
+  // ── photos (since 1.7.0) ─────────────────────────────────
+
+  var PH = { area: '', items: [], next: null, months: {}, memories: [], select: false, chosen: {}, seq: 0 };
+  var PHOTO_PAGE = 120;
+
+  /** A photo item (GET photos, albums) as a node for the viewer (preview, actions). */
+  function photoNode(x) {
+    return { id: x.id, name: x.name, mime: x.mime, size: x.size, isDir: false, areaId: x.areaId, parentId: x.parentId, mediaId: x.mediaId,
+      mtime: x.takenAt, updatedAt: x.takenAt, preview: x.previewUrl ? { url: x.previewUrl, largeUrl: x.largeUrl } : null };
+  }
+  function monthKey(iso) { var d = new Date(iso); return isNaN(d.getTime()) ? '' : d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2); }
+  function monthLabel(key) {
+    var p = key.split('-');
+    var d = new Date(Number(p[0]), Number(p[1]) - 1, 1);
+    return isNaN(d.getTime()) ? key : d.toLocaleDateString(LOCALE, { month: 'long', year: 'numeric' });
+  }
+  function chosenIds() { return Object.keys(PH.chosen).filter(function (k) { return PH.chosen[k]; }).map(Number); }
+
+  /** A square tile of a photo: a click opens it, or chooses it while choosing. */
+  function photoTile(x, onPick) {
+    var n = photoNode(x);
+    var on = !!PH.chosen[x.id];
+    var tile = h('button', { type: 'button', class: 'dp-ph' + (on ? ' is-on' : ''), attrs: { 'aria-label': x.name, 'aria-pressed': PH.select ? String(on) : null, 'data-node': String(x.id) },
+      on: { click: function () {
+        if (PH.select) { PH.chosen[x.id] = !PH.chosen[x.id]; tile.className = 'dp-ph' + (PH.chosen[x.id] ? ' is-on' : ''); tile.setAttribute('aria-pressed', String(!!PH.chosen[x.id])); if (onPick) onPick(); return; }
+        preview(n);
+      } } }, [picOf(n, 28), /^video\//.test(String(x.mime || '')) ? h('span', { class: 'dp-ph-kind' }, icon('video', 14)) : null, PH.select ? h('span', { class: 'dp-ph-check' }, icon('check', 14)) : null]);
+    return tile;
+  }
+
+  function startPage(page) {
+    $('dp-q').value = '';
+    S.page = page;
+    S.seq++;
+    renderNav(); renderCrumbs(); renderTools();
+    var main = $('dp-main');
+    clear(main);
+    return main;
+  }
+
+  /** The page "Fotos": "Vor einem Jahr", then every month with its photos. */
+  function showPhotos(keep) {
+    if (!keep) { PH.select = false; PH.chosen = {}; }
+    var main = startPage('photos');
+    var seq = ++PH.seq;
+    Promise.all([
+      api('GET', 'photos', null, { area: PH.area || null, limit: PHOTO_PAGE }),
+      api('GET', 'photos/months', null, { area: PH.area || null }).catch(function () { return { months: [] }; }),
+      PH.area ? Promise.resolve({ groups: [] }) : api('GET', 'photos/memories').catch(function () { return { groups: [] }; }),
+    ]).then(function (r) {
+      if (seq !== PH.seq || S.page !== 'photos') return;
+      PH.items = r[0].items || [];
+      PH.next = r[0].next;
+      PH.months = {};
+      (r[1].months || []).forEach(function (m) { PH.months[m.month] = m.count; });
+      PH.memories = r[2].groups || [];
+      renderPhotos(main);
+    }, fail);
+  }
+
+  function photoBar(onDone) {
+    var bar = h('div', { class: 'dp-ph-bar' });
+    var areaSel = h('select', { class: 'dp-input dp-btn-sm', attrs: { 'aria-label': T('p.area') }, on: { change: function (ev) { PH.area = ev.target.value; showPhotos(true); } } },
+      [h('option', { value: '', text: T('p.photos_all'), selected: !PH.area })].concat(S.areas.map(function (a) { return h('option', { value: a.id, text: a.label, selected: PH.area === a.id }); })));
+    areaSel.style.width = 'auto';
+    var count = chosenIds().length;
+    add(bar, [onDone ? null : areaSel, h('span', { class: 'dp-ph-grow' }),
+      PH.select ? h('span', { class: 'dp-meta', text: P('p.chosen', count) }) : null,
+      PH.select && onDone ? onDone(count) : null,
+      PH.select && !onDone ? btn(T('p.album_add'), function () { addToAlbum(chosenIds()); }, { primary: true, disabled: !count, icon: 'album' }) : null,
+      btn(PH.select ? T('p.cancel') : T('p.choose'), function () { PH.select = !PH.select; PH.chosen = {}; rerender(); }, { icon: PH.select ? null : 'check' })]);
+    return bar;
+  }
+  function rerender() {
+    var main = $('dp-main');
+    clear(main);
+    if (S.page === 'photos') renderPhotos(main);
+    else if (S.page === 'album') renderAlbum(main);
+  }
+
+  function renderPhotos(main) {
+    clear(main);
+    main.appendChild(photoBar(null));
+    if (PH.memories.length) {
+      var mem = h('section', { class: 'dp-mem' }, [h('h2', { class: 'dp-h2', text: T('p.memories') })]);
+      PH.memories.forEach(function (g) {
+        var d = new Date(g.date + 'T12:00:00');
+        mem.appendChild(h('div', { class: 'dp-mem-group' }, [
+          h('span', { class: 'dp-label', text: P('p.years_ago', g.yearsAgo) + ' · ' + (isNaN(d.getTime()) ? g.date : d.toLocaleDateString(LOCALE, { day: '2-digit', month: 'long', year: 'numeric' })) }),
+          h('div', { class: 'dp-mem-row' }, g.items.map(function (x) { return photoTile(x, rerenderBar); })),
+        ]));
+      });
+      main.appendChild(mem);
+    }
+    if (!PH.items.length) { main.appendChild(h('div', { class: 'dp-empty', text: T('p.photos_none') })); return; }
+    var groups = [];
+    PH.items.forEach(function (x) {
+      var k = monthKey(x.takenAt);
+      if (!groups.length || groups[groups.length - 1].key !== k) groups.push({ key: k, items: [] });
+      groups[groups.length - 1].items.push(x);
+    });
+    groups.forEach(function (g) {
+      main.appendChild(h('h2', { class: 'dp-month' }, [h('span', { text: monthLabel(g.key) }), PH.months[g.key] ? h('span', { class: 'dp-meta', text: P('p.photos_n', PH.months[g.key]) }) : null]));
+      main.appendChild(h('div', { class: 'dp-phs' }, g.items.map(function (x) { return photoTile(x, rerenderBar); })));
+    });
+    if (PH.next) main.appendChild(h('div', { class: 'dp-more-row' }, btn(T('p.more'), function () {
+      api('GET', 'photos', null, { area: PH.area || null, limit: PHOTO_PAGE, before: PH.next }).then(function (r) {
+        PH.items = PH.items.concat(r.items || []);
+        PH.next = r.next;
+        renderPhotos(main);
+      }, fail);
+    })));
+  }
+  /** Choosing changed: only the bar (the count, the buttons) is drawn again. */
+  function rerenderBar() {
+    var main = $('dp-main');
+    var old = main.querySelector('.dp-ph-bar');
+    if (!old) return;
+    var bar = S.page === 'album' ? albumBar() : photoBar(null);
+    main.replaceChild ? main.replaceChild(bar, old) : rerender();
+  }
+
+  // ── albums (since 1.7.0) ─────────────────────────────────
+
+  function albumAreas() { return S.areas.filter(function (a) { return !a.archived && (a.role === 'write' || a.role === 'manage'); }); }
+
+  /** "Zum Album hinzufügen": the albums I may change, or a new one. */
+  function addToAlbum(ids) {
+    if (!ids.length) return;
+    api('GET', 'albums').then(function (r) {
+      var list = (r.albums || []).filter(function (a) { return a.canEdit; });
+      var err = h('p', { class: 'dp-err', attrs: { role: 'alert' } });
+      var put = function (id) {
+        return api('POST', 'albums/' + id + '/items', { ids: ids }).then(function (x) {
+          closeDialog();
+          PH.select = false; PH.chosen = {};
+          rerender();
+          toast(P('p.album_added', ids.length, { album: x.album.name }));
+        }, function (e) { err.textContent = errText(e); });
+      };
+      var input = h('input', { class: 'dp-input', type: 'text', placeholder: T('p.album_new_name'), attrs: { maxlength: '100', 'aria-label': T('p.album_new_name') } });
+      var picker = h('div', { class: 'dp-picker', attrs: { role: 'list' } }, list.map(function (a) {
+        return h('button', { type: 'button', attrs: { role: 'listitem' }, on: { click: function () { put(a.id); } } }, [icon('album'), h('span', { text: a.name + ' · ' + P('p.photos_n', a.count) })]);
+      }));
+      dialog(P('p.album_add_title', ids.length), [list.length ? picker : h('p', { class: 'dp-hint', text: T('p.albums_none') }),
+        h('label', { class: 'dp-field' }, [h('span', { class: 'dp-label', text: T('p.album_new') }), input]), err,
+        h('div', { class: 'dp-actions' }, [btn(T('p.cancel'), closeDialog), btn(T('p.album_create_add'), function () {
+          var name = input.value.trim();
+          if (!name) { err.textContent = T('err.invalid'); return; }
+          api('POST', 'albums', { name: name }).then(function (x) { put(x.album.id); }, function (e) { err.textContent = errText(e); });
+        }, { primary: true })])]);
+    }, fail);
+  }
+
+  function showAlbums() {
+    var main = startPage('albums');
+    api('GET', 'albums').then(function (r) {
+      if (S.page !== 'albums') return;
+      clear(main);
+      var writable = albumAreas();
+      main.appendChild(h('div', { class: 'dp-ph-bar' }, [h('p', { class: 'dp-hint dp-ph-grow', text: T('p.albums_hint') }),
+        writable.length ? btn(T('p.album_new'), newAlbum, { primary: true, icon: 'plus' }) : null]));
+      var list = r.albums || [];
+      if (!list.length) { main.appendChild(h('div', { class: 'dp-empty', text: T('p.albums_none') })); return; }
+      main.appendChild(h('div', { class: 'dp-grid' }, list.map(function (a) {
+        var area = areaOf(a.areaId);
+        return h('div', { class: 'dp-card', attrs: { role: 'listitem' } }, [
+          h('button', { type: 'button', class: 'dp-open', on: { click: function () { openAlbum(a.id); } }, attrs: { 'aria-label': a.name } }, [
+            h('div', { class: 'dp-thumb dp-thumb-tall' }, a.coverUrl ? h('img', { attrs: { src: a.coverUrl, alt: '', loading: 'lazy' } }) : icon('album', 34)),
+            h('div', { class: 'dp-card-tx' }, [
+              h('span', { class: 'dp-name', text: a.name, attrs: { title: a.name } }),
+              h('span', { class: 'dp-meta', text: P('p.photos_n', a.count) + (area ? ' · ' + area.label : '') }),
+              a.frame ? h('span', { class: 'dp-frame-badge' }, [icon('frame', 12), h('span', { text: T('p.frame_on') })]) : null,
+            ]),
+          ]),
+        ]);
+      })));
+    }, fail);
+  }
+
+  function newAlbum() {
+    var writable = albumAreas();
+    var input = h('input', { class: 'dp-input', type: 'text', attrs: { maxlength: '100', 'aria-label': T('p.name') } });
+    var mine = 'mine:' + (S.me && S.me.id);
+    var sel = h('select', { class: 'dp-input', attrs: { 'aria-label': T('p.area') } }, writable.map(function (a) { return h('option', { value: a.id, text: a.label, selected: a.id === mine }); }));
+    var err = h('p', { class: 'dp-err', attrs: { role: 'alert' } });
+    dialog(T('p.album_new'), [h('label', { class: 'dp-field' }, [h('span', { class: 'dp-label', text: T('p.name') }), input]),
+      h('label', { class: 'dp-field' }, [h('span', { class: 'dp-label', text: T('p.area') }), sel]),
+      h('p', { class: 'dp-hint', text: T('p.album_area_hint') }), err,
+      h('div', { class: 'dp-actions' }, [btn(T('p.cancel'), closeDialog), btn(T('p.create'), function () {
+        var name = input.value.trim();
+        if (!name) { err.textContent = T('err.invalid'); return; }
+        api('POST', 'albums', { name: name, areaId: sel.value }).then(function (r) { closeDialog(); openAlbum(r.album.id); }, function (e) { err.textContent = errText(e); });
+      }, { primary: true })])]);
+    input.focus();
+  }
+
+  function openAlbum(id, keep) {
+    if (!keep) { PH.select = false; PH.chosen = {}; }
+    var main = startPage('album');
+    api('GET', 'albums/' + id, null, { limit: PHOTO_PAGE }).then(function (r) {
+      if (S.page !== 'album') return;
+      S.album = r.album;
+      PH.items = r.items || [];
+      PH.next = r.next;
+      renderCrumbs();
+      renderAlbum(main);
+    }, function (e) { fail(e); showAlbums(); });
+  }
+
+  function albumBar() {
+    var a = S.album;
+    return photoBar(function (count) {
+      return h('span', { class: 'dp-actions' }, [
+        btn(T('p.album_cover'), function () {
+          api('PATCH', 'albums/' + a.id, { coverId: chosenIds()[0] }).then(function () { toast(T('p.album_cover_set')); openAlbum(a.id); }, fail);
+        }, { disabled: count !== 1 }),
+        btn(T('p.album_remove'), function () {
+          var ids = chosenIds();
+          api('DELETE', 'albums/' + a.id + '/items', { ids: ids }).then(function () { toast(P('p.album_removed', ids.length)); openAlbum(a.id); }, fail);
+        }, { danger: true, disabled: !count }),
+      ]);
+    });
+  }
+
+  function renderAlbum(main) {
+    var a = S.album;
+    clear(main);
+    var area = areaOf(a.areaId);
+    main.appendChild(h('div', { class: 'dp-album-head' }, [
+      h('div', { class: 'dp-album-tx' }, [h('h2', { class: 'dp-h2', text: a.name }), h('span', { class: 'dp-meta', text: P('p.photos_n', a.count) + (area ? ' · ' + area.label : '') }),
+        a.frame ? h('span', { class: 'dp-frame-badge' }, [icon('frame', 12), h('span', { text: T('p.frame_on') })]) : null]),
+      h('div', { class: 'dp-actions' }, [
+        a.canFrame ? btn(a.frame ? T('p.frame_stop') : T('p.frame_start'), function () { setFrame(a, !a.frame); }, { icon: 'frame' }) : null,
+        a.canEdit ? btn(T('p.rename'), function () { askName(T('p.rename'), a.name, T('p.save'), function (name) { return api('PATCH', 'albums/' + a.id, { name: name }).then(function () { openAlbum(a.id); }); }); }, { icon: 'edit' }) : null,
+        a.canEdit ? btn(T('p.album_delete'), function () {
+          confirmDialog(T('p.album_delete'), T('p.album_delete_text', { name: a.name }), T('p.album_delete'), function () {
+            return api('DELETE', 'albums/' + a.id).then(function () { toast(T('p.album_deleted', { name: a.name })); showAlbums(); });
+          }, true);
+        }, { danger: true, icon: 'trash' }) : null,
+      ]),
+    ]));
+    if (a.canEdit) main.appendChild(albumBar());
+    if (!PH.items.length) { main.appendChild(h('div', { class: 'dp-empty', text: T('p.album_empty') })); return; }
+    main.appendChild(h('div', { class: 'dp-phs' }, PH.items.map(function (x) { return photoTile(x, rerenderBar); })));
+    if (PH.next) main.appendChild(h('div', { class: 'dp-more-row' }, btn(T('p.more'), function () {
+      api('GET', 'albums/' + a.id, null, { limit: PHOTO_PAGE, before: PH.next }).then(function (r) {
+        PH.items = PH.items.concat(r.items || []);
+        PH.next = r.next;
+        renderAlbum(main);
+      }, fail);
+    })));
+  }
+
+  /** The photo frame of the wall tablet on or off (asks first: everyone in front of the tablet sees the photos). */
+  function setFrame(a, on) {
+    var go = function () { return api('PATCH', 'albums/' + a.id, { frame: on }).then(function () { toast(T(on ? 'p.frame_started' : 'p.frame_stopped')); openAlbum(a.id); }); };
+    if (!on) { go().catch(fail); return; }
+    confirmDialog(T('p.frame_start'), T('p.frame_text'), T('p.frame_start'), go);
+  }
+
+  // ── storage (since 1.7.0) ────────────────────────────────
+
+  var ST = { all: false, keep: {} };
+
+  function showStorage(all) {
+    if (all !== undefined) ST.all = !!(all && S.admin);
+    var main = startPage('storage');
+    api('GET', 'storage', null, { all: ST.all ? 1 : null }).then(function (r) {
+      if (S.page !== 'storage') return;
+      clear(main);
+      ST.keep = {};
+      renderStorage(main, r);
+    }, fail);
+  }
+
+  function renderStorage(main, r) {
+    if (S.admin) {
+      main.appendChild(h('div', { class: 'dp-chips', attrs: { style: 'margin-bottom:14px' } }, [
+        h('button', { type: 'button', text: T('p.storage_mine'), attrs: { 'aria-pressed': String(!ST.all) }, on: { click: function () { showStorage(false); } } }),
+        h('button', { type: 'button', text: T('p.storage_all'), attrs: { 'aria-pressed': String(ST.all) }, on: { click: function () { showStorage(true); } } }),
+      ]));
+    }
+    var tot = r.total || {};
+    main.appendChild(h('div', { class: 'dp-st-sum' }, [
+      stat(T('p.st_files'), fmtSize(tot.bytes), P('p.files_n', tot.files || 0)),
+      stat(T('p.st_versions'), fmtSize(tot.versionsBytes), null),
+      stat(T('p.st_trash'), fmtSize(tot.trashBytes), null),
+      r.limit && r.limit.maxBytes ? stat(T('p.st_limit'), fmtSize(r.limit.maxBytes), null) : null,
+    ]));
+    // per area
+    var max = Math.max.apply(null, [1].concat((r.areas || []).map(function (a) { return a.bytes + a.versionsBytes + a.trashBytes; })));
+    var areasBox = h('section', { class: 'dp-st-sec' }, [h('h2', { class: 'dp-h2', text: T('p.st_areas') })]);
+    (r.areas || []).forEach(function (a) {
+      var all3 = a.bytes + a.versionsBytes + a.trashBytes;
+      var w = function (n) { return (Math.round((n / (a.quota || max)) * 1000) / 10) + '%'; };
+      areasBox.appendChild(h('div', { class: 'dp-st-area' }, [
+        h('div', { class: 'dp-st-row' }, [h('span', { class: 'dp-name', text: a.label }), h('span', { class: 'dp-num', text: a.quota ? T('p.used_of', { used: fmtSize(all3), quota: fmtSize(a.quota) }) : fmtSize(all3) })]),
+        h('div', { class: 'dp-st-bar', attrs: { role: 'img', 'aria-label': T('p.st_bar', { files: fmtSize(a.bytes), versions: fmtSize(a.versionsBytes), trash: fmtSize(a.trashBytes) }) } }, [
+          h('span', { class: 'is-files', attrs: { style: 'width:' + w(a.bytes) } }), h('span', { class: 'is-versions', attrs: { style: 'width:' + w(a.versionsBytes) } }),
+          h('span', { class: 'is-trash', attrs: { style: 'width:' + w(a.trashBytes) } })]),
+        h('div', { class: 'dp-st-row' }, [h('span', { class: 'dp-meta', text: [P('p.files_n', a.files), T('p.st_versions') + ' ' + fmtSize(a.versionsBytes), T('p.st_trash') + ' ' + fmtSize(a.trashBytes)].join(' · ') }),
+          a.canPrune && a.versionsBytes > 0 ? btn(T('p.prune'), function () { prune(a); }, { small: true, icon: 'history' }) : null]),
+      ]));
+    });
+    main.appendChild(areasBox);
+    if (r.people && r.people.length) {
+      main.appendChild(h('section', { class: 'dp-st-sec' }, [h('h2', { class: 'dp-h2', text: T('p.st_people') }),
+        h('table', { class: 'dp-table' }, [h('tbody', null, r.people.map(function (p) {
+          return h('tr', null, [h('td', { text: p.name || String(p.user) }), h('td', { class: 'dp-num', text: P('p.files_n', p.files) }), h('td', { class: 'dp-num dp-right', text: fmtSize(p.bytes) })]);
+        }))])]));
+    }
+    if (r.largest && r.largest.length) {
+      main.appendChild(h('section', { class: 'dp-st-sec' }, [h('h2', { class: 'dp-h2', text: T('p.st_largest') }),
+        h('div', { class: 'dp-list' }, r.largest.map(function (f) { return fileRow(f, [f.canDelete ? btn(T('p.to_trash'), function () { trashOne(f); }, { small: true, danger: true }) : null]); }))]));
+    }
+    main.appendChild(dupSection(r.duplicates || []));
+  }
+
+  function stat(label, value, sub) {
+    return h('div', { class: 'dp-st-stat' }, [h('span', { class: 'dp-label', text: label }), h('b', { text: value }), sub ? h('span', { class: 'dp-meta', text: sub }) : null]);
+  }
+
+  /** A file of the overview: its name, where it is, its size — a click shows it in its folder (when I read the area). */
+  function fileRow(f, extra) {
+    var a = areaOf(f.areaId);
+    var where = (a ? a.label : f.areaId) + (f.path && f.path.indexOf('/') > 0 ? ' › ' + f.path.split('/').slice(0, -1).join(' › ') : '');
+    return h('div', { class: 'dp-row dp-st-file' }, [
+      h('button', { type: 'button', class: 'dp-open', disabled: !a, on: { click: function () { if (a) openTarget(f.id, null); } } }, [
+        h('span', { class: 'dp-ic' }, icon('file')),
+        h('span', { class: 'dp-st-tx' }, [h('span', { class: 'dp-name', text: f.name, attrs: { title: f.path } }), h('span', { class: 'dp-meta', text: where + ' · ' + fmtDate(f.updatedAt) })]),
+      ]),
+      h('span', { class: 'dp-num dp-right', text: fmtSize(f.size) }),
+      h('span', { class: 'dp-actions' }, extra),
+    ]);
+  }
+
+  function trashOne(f) {
+    confirmDialog(T('p.to_trash'), T('p.to_trash_file', { name: f.name, days: (S.meSettings && S.meSettings.trashDays) || 30 }), T('p.to_trash'), function () {
+      return api('DELETE', 'nodes/' + f.id).then(function () { toast(T('p.trashed', { name: f.name })); showStorage(); });
+    }, true);
+  }
+
+  /** Duplicates: in each group the oldest is kept, the rest marked "Löschen" — changeable; one button for all. */
+  function dupSection(groups) {
+    var sec = h('section', { class: 'dp-st-sec' }, [h('h2', { class: 'dp-h2', text: T('p.st_dups') })]);
+    if (!groups.length) { sec.appendChild(h('p', { class: 'dp-hint', text: T('p.st_dups_none') })); return sec; }
+    var drop = {};
+    var go = btn('', function () {
+      var ids = Object.keys(drop).filter(function (k) { return drop[k]; });
+      if (!ids.length) return;
+      confirmDialog(T('p.dups_trash_title'), P('p.dups_trash_text', ids.length, { days: (S.meSettings && S.meSettings.trashDays) || 30 }), T('p.to_trash'), function () {
+        var n = 0;
+        return ids.reduce(function (p, id) { return p.then(function () { return api('DELETE', 'nodes/' + id).then(function () { n++; }); }); }, Promise.resolve()).then(function () {
+          toast(P('p.dups_trashed', n));
+          loadStorage();
+          showStorage();
+        });
+      }, true);
+    }, { danger: true, icon: 'trash' });
+    var label = go.querySelector('span');
+    var count = function () {
+      var n = Object.keys(drop).filter(function (k) { return drop[k]; }).length;
+      label.textContent = P('p.dups_trash', n);
+      go.disabled = !n;
+    };
+    groups.forEach(function (g) {
+      var box = h('div', { class: 'dp-dup' }, [h('div', { class: 'dp-st-row' }, [h('b', { text: P('p.dup_title', g.count, { size: fmtSize(g.size) }) }), h('span', { class: 'dp-meta', text: T('p.dup_wasted', { size: fmtSize(g.wasted) }) })])]);
+      g.items.forEach(function (f, i) {
+        if (i > 0 && f.canDelete) drop[f.id] = true;
+        var sel = h('select', { class: 'dp-input dp-btn-sm', disabled: !f.canDelete, attrs: { 'aria-label': T('p.dup_choice', { name: f.name }) }, on: { change: function (ev) { drop[f.id] = ev.target.value === 'drop'; count(); } } }, [
+          h('option', { value: 'keep', text: T('p.dup_keep'), selected: !drop[f.id] }), h('option', { value: 'drop', text: T('p.dup_drop'), selected: !!drop[f.id] })]);
+        sel.style.width = 'auto';
+        box.appendChild(fileRow(f, [sel]));
+      });
+      sec.appendChild(box);
+    });
+    sec.appendChild(h('div', { class: 'dp-actions', attrs: { style: 'margin-top:12px' } }, [go]));
+    count();
+    return sec;
+  }
+
+  /** "Alte Versionen aufräumen": every file of the area keeps its newest `keep` versions. */
+  function prune(a) {
+    var input = h('input', { class: 'dp-input', type: 'number', value: '3', attrs: { min: '0', max: '500', 'aria-label': T('p.prune_keep') } });
+    var err = h('p', { class: 'dp-err', attrs: { role: 'alert' } });
+    dialog(T('p.prune_title', { area: a.label }), [h('p', { class: 'dp-hint', text: T('p.prune_text', { size: fmtSize(a.versionsBytes) }) }),
+      h('label', { class: 'dp-field' }, [h('span', { class: 'dp-label', text: T('p.prune_keep') }), input]), err,
+      h('div', { class: 'dp-actions' }, [btn(T('p.cancel'), closeDialog), btn(T('p.prune'), function () {
+        var keep = Number(input.value);
+        if (!(keep >= 0 && keep <= 500 && Math.floor(keep) === keep)) { err.textContent = T('err.invalid'); return; }
+        api('POST', 'storage/versions/prune', { areaId: a.id, keep: keep }).then(function (r) {
+          closeDialog();
+          toast(P('p.pruned', r.removed, { size: fmtSize(r.freedBytes) }));
+          showStorage();
+        }, function (e) { err.textContent = errText(e); });
+      }, { danger: true })])]);
+  }
+
+  // ── time travel (since 1.7.0) ────────────────────────────
+
+  /** "YYYY-MM-DDTHH:MM" of a time in the browser's zone (a datetime-local field). */
+  function localInput(ms) {
+    var d = new Date(ms);
+    var p = function (n) { return ('0' + n).slice(-2); };
+    return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + 'T' + p(d.getHours()) + ':' + p(d.getMinutes());
+  }
+
+  /** "Zeitreise": a time, the preview of what changes, then the run — its result can be undone. */
+  function timeTravel(folder) {
+    if (!folder) return;
+    var input = h('input', { class: 'dp-input', type: 'datetime-local', value: localInput(Date.now() - 86400000), attrs: { 'aria-label': T('p.tt_when') } });
+    var out = h('div', { class: 'dp-tt' });
+    var err = h('p', { class: 'dp-err', attrs: { role: 'alert' } });
+    var run = btn(T('p.tt_run'), function () { go(); }, { primary: true, disabled: true });
+    var plan = null;
+    var at = function () { var d = new Date(input.value); return isNaN(d.getTime()) ? null : d.toISOString(); };
+    var look = function () {
+      err.textContent = '';
+      clear(out);
+      run.disabled = true;
+      plan = null;
+      var when = at();
+      if (!when) return;
+      out.appendChild(h('p', { class: 'dp-hint', text: T('p.loading') }));
+      api('GET', 'nodes/' + folder.id + '/timetravel', null, { at: when }).then(function (r) {
+        if (at() !== when) return;
+        plan = r;
+        clear(out);
+        var total = r.restore + r.revert + r.trash + r.move;
+        if (r.limited) out.appendChild(h('div', { class: 'dp-note is-warn' }, [icon('info'), h('span', { text: T('p.tt_limited', { date: fmtDate(r.historySince) }) })]));
+        if (r.lost) out.appendChild(h('div', { class: 'dp-note is-warn' }, [icon('info'), h('span', { text: P('p.tt_lost', r.lost, { days: (S.meSettings && S.meSettings.versionsDays) || 30 }) })]));
+        if (!total) { out.appendChild(h('p', { class: 'dp-hint', text: T('p.tt_nothing') })); return; }
+        out.appendChild(h('ul', { class: 'dp-tt-list' }, [
+          r.restore ? h('li', { text: P('p.tt_restore', r.restore) }) : null, r.revert ? h('li', { text: P('p.tt_revert', r.revert) }) : null,
+          r.move ? h('li', { text: P('p.tt_move', r.move) }) : null, r.trash ? h('li', { text: P('p.tt_trash', r.trash) }) : null]));
+        if (r.sample && r.sample.length) {
+          out.appendChild(h('div', { attrs: { style: 'overflow-x:auto' } }, h('table', { class: 'dp-table' }, [h('tbody', null, r.sample.map(function (x) {
+            return h('tr', null, [h('td', { text: T('p.tt_op_' + x.op) }), h('td', { text: x.path || x.name })]);
+          }))])));
+        }
+        if (r.ops > r.max) { out.appendChild(h('p', { class: 'dp-err', text: T('p.tt_too_many', { max: r.max }) })); return; }
+        out.appendChild(h('p', { class: 'dp-hint', text: T('p.tt_safe') }));
+        run.disabled = false;
+      }, function (e) { clear(out); err.textContent = errText(e); });
+    };
+    var go = function () {
+      if (!plan) return;
+      run.disabled = true;
+      api('POST', 'nodes/' + folder.id + '/timetravel', { at: plan.at }).then(function (r) {
+        closeDialog();
+        reload();
+        loadStorage();
+        ttDone(folder, r);
+      }, function (e) { run.disabled = false; err.textContent = errText(e); });
+    };
+    input.addEventListener('change', look);
+    dialog(T('p.tt_title', { name: folder.name || (areaOf(S.areaId) || {}).label || '' }), [h('p', { class: 'dp-hint', text: T('p.tt_hint') }),
+      h('label', { class: 'dp-field' }, [h('span', { class: 'dp-label', text: T('p.tt_when') }), input]), out, err,
+      h('div', { class: 'dp-actions' }, [btn(T('p.cancel'), closeDialog), run])], { wide: true });
+    look();
+  }
+
+  /** The result of a time travel, with "Rückgängig machen" (a time travel to the moment before it). */
+  function ttDone(folder, r) {
+    var err = h('p', { class: 'dp-err', attrs: { role: 'alert' } });
+    dialog(T('p.tt_done'), [h('ul', { class: 'dp-tt-list' }, [
+      h('li', { text: P('p.tt_restore', r.restored) }), h('li', { text: P('p.tt_revert', r.reverted) }), h('li', { text: P('p.tt_move', r.moved) }), h('li', { text: P('p.tt_trash', r.trashed) }),
+      r.failed ? h('li', { class: 'dp-err', text: P('p.tt_failed', r.failed) }) : null]), err,
+      h('div', { class: 'dp-actions' }, [btn(T('p.tt_undo'), function () {
+        api('POST', 'nodes/' + folder.id + '/timetravel', { at: r.before }).then(function () { closeDialog(); reload(); loadStorage(); toast(T('p.tt_undone')); }, function (e) { err.textContent = errText(e); });
+      }, { icon: 'restore' }), btn(T('p.close'), closeDialog, { primary: true })])]);
   }
 
   // ── live ─────────────────────────────────────────────────

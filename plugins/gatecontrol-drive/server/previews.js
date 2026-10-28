@@ -50,4 +50,40 @@ async function attach(ctx, body) {
   return body;
 }
 
-module.exports = { attach, nodesOf, URL_TTL_S };
+/**
+ * The previews of media `ids` for the viewer → Map id → { url, largeUrl } (app or frame URL as in attach) or null.
+ * o.user: sign for this user instead of the viewer; o.ttlS; o.previewOnly (the photo frame, GateControl ≥ 1.210.0):
+ * URLs that open the preview only, never the file — a host that cannot (its state has no previewOnly) gives none at all
+ * (→ { ready: false }). Never fails: an error is no preview.
+ */
+async function urls(ctx, ids, o = {}) {
+  const out = new Map();
+  const list = [...new Set(ids.filter(Boolean))];
+  for (const id of list) out.set(id, null);
+  const media = ctx.gc.media;
+  if (!list.length) return { map: out, ready: true };
+  if (!media || typeof media.previews !== 'function') return { map: out, ready: !o.previewOnly };
+  const states = {};
+  try {
+    for (let i = 0; i < list.length; i += BATCH) {
+      Object.assign(states, await media.previews(list.slice(i, i + BATCH), {
+        user: o.user || ctx.viewer, ttlS: o.ttlS || URL_TTL_S, ...(o.previewOnly ? { previewOnly: true } : {}),
+      }));
+    }
+  } catch (e) {
+    ctx.gc.log.warn('previews failed', (e && e.code) || 'error');
+    return { map: out, ready: !o.previewOnly };
+  }
+  let ready = true;
+  for (const id of list) {
+    const st = states[id];
+    if (!st) continue;
+    if (o.previewOnly && st.previewOnly !== true) { ready = false; continue; }
+    const url = ctx.app && !o.previewOnly ? st.appUrl : st.url;
+    if (typeof url === 'string' && url) out.set(id, { url, largeUrl: `${url}?size=large` });
+  }
+  if (!ready) for (const id of list) out.set(id, null);
+  return { map: out, ready };
+}
+
+module.exports = { attach, urls, nodesOf, URL_TTL_S };

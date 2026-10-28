@@ -2,7 +2,8 @@
  *
  *   overview  devices the ransomware protection stopped (since 1.6.0: "Rückgängig machen", "Freigeben"), the backup
  *             hint ("Das GateControl-Backup sichert keine Drive-Dateien", hidable), the licence with its
- *             people (tier, x of y, exceeded, "Lizenz jetzt abrufen"), the areas with their storage
+ *             people (tier, x of y, exceeded, "Lizenz jetzt abrufen"), the areas with their storage; since 1.7.0 the
+ *             storage in short (files, versions, trash, what duplicates waste — the details: portal › Drive › Speicher)
  *   people    every account with its seat: none, family or business (as the licence allows)
  *   teams     team folders: name, members (people and groups — GateControl's own picker GC.pickPrincipals) with
  *             read / write / manage, space, archive, remove (an empty one)
@@ -204,6 +205,21 @@
           })),
         ]),
       ]));
+      // the storage in short (since 1.7.0)
+      var sg = o.storage;
+      if (sg) {
+        page.appendChild(h('section', { class: 'da-card', attrs: { 'aria-label': T('a.storage') } }, [
+          h('h2', { text: T('a.storage') }),
+          h('div', { class: 'da-stats' }, [
+            h('div', null, [h('span', { class: 'da-sub', text: T('a.st_files') }), h('b', { text: fmtSize(sg.bytes) }), h('span', { class: 'da-sub', text: T('a.st_files_n', { n: sg.files }) })]),
+            h('div', null, [h('span', { class: 'da-sub', text: T('a.st_versions') }), h('b', { text: fmtSize(sg.versionsBytes) })]),
+            h('div', null, [h('span', { class: 'da-sub', text: T('a.st_trash') }), h('b', { text: fmtSize(sg.trashBytes) })]),
+            h('div', null, [h('span', { class: 'da-sub', text: T('a.st_dups') }), h('b', { text: fmtSize(sg.duplicates ? sg.duplicates.wastedBytes : 0) }),
+              h('span', { class: 'da-sub', text: T('a.st_dups_n', { n: sg.duplicates ? sg.duplicates.groups : 0 }) })]),
+          ]),
+          h('p', { class: 'da-line', text: T('a.st_text') }),
+        ]));
+      }
       // the areas
       var rows = (o.areas || []).map(function (a) {
         var st = a.storage;

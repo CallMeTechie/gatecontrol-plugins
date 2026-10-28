@@ -19,13 +19,29 @@
 // Ransomware protection (since 1.6.0, guard.js): commit { entropy } — the device's hint how random the bytes are (0–8
 // bits per byte, optional) — is kept with the file (nodes.entropy); every new file and every new version of an app
 // request is a row of the guard's journal.
+//
+// When a picture was taken (since 1.7.0): commit { takenAt } — ISO-8601 or ms since the epoch (else 400 invalid, field
+// takenAt); a time more than a day ahead or before 1900 is ignored (stored as null). Without it the node's takenAt is
+// its mtime, else when it came. A new version keeps the takenAt of the file unless it sends one. Every content keeps
+// since when it was the file's (nodes.content_at, versions.since) — the time travel (timetravel.js) knows which
+// version was the file's at a time.
 
 const store = require('./store');
 const nodes = require('./nodes');
 const guard = require('./guard');
-const { fail, nodeName, MEDIA_RE, SHA_RE, EMPTY_SHA, iso, nonNeg, docText } = require('./util');
+const { fail, nodeName, MEDIA_RE, SHA_RE, EMPTY_SHA, iso, nonNeg, docText, msArg } = require('./util');
 
 const URL_TTL_S = 3600;
+const DAY = 86400000;
+const TAKEN_MIN = Date.UTC(1900, 0, 1);
+
+/** commit { takenAt } → ms or null (absent, more than a day ahead, before 1900); not a time → 400 invalid. */
+function takenArg(v, now) {
+  if (v == null || v === '') return null;
+  const ms = msArg(v);
+  if (!Number.isFinite(ms)) throw fail('invalid', { field: 'takenAt' });
+  return ms > now + DAY || ms < TAKEN_MIN ? null : ms;
+}
 
 function mediaFail(e) {
   if (e && e.code === 'ERR_MEDIA_QUOTA') return fail('quota');
@@ -62,7 +78,8 @@ const emptyContent = (name, mime) => ({ url: `data:${mime || 'application/octet-
  * protection may still bring back (guard.js) stays.
  */
 async function trimVersions(gc, id, max) {
-  const extra = await store.all(gc, 'SELECT * FROM versions WHERE node_id = ? ORDER BY at DESC, id DESC LIMIT -1 OFFSET ?', [id, max]);
+  // a version a time travel made (its undo needs it — hold_until) is neither counted nor removed
+  const extra = await store.all(gc, 'SELECT * FROM versions WHERE node_id = ? AND (hold_until IS NULL OR hold_until < ?) ORDER BY at DESC, id DESC LIMIT -1 OFFSET ?', [id, Date.now(), max]);
   const kept = new Set((await store.all(gc, `SELECT l.version_id FROM guard_log l JOIN guard_incidents i ON i.id = l.incident_id
     WHERE l.node_id = ? AND l.version_id IS NOT NULL AND i.state <> 'undone'`, [id])).map((r) => r.version_id));
   const drop = extra.filter((v) => !kept.has(v.id));
@@ -73,11 +90,16 @@ async function trimVersions(gc, id, max) {
   return drop.length;
 }
 
-/** Keep the current bytes of file `n` as a version (gc.media.version + a versions row; an empty file: the row alone) → its id. */
-async function keepVersion(ctx, n) {
+/**
+ * Keep the current bytes of file `n` as a version (gc.media.version + a versions row; an empty file: the row alone) → its
+ * id. `since`: since when they were the file's (null before 1.7.0 — the first content: since the file came); `holdUntil`:
+ * a time travel's version, kept until then.
+ */
+async function keepVersion(ctx, n, holdUntil = null) {
   if (n.media_id) await ctx.gc.media.version(n.media_id);
-  const r = await store.run(ctx.gc, 'INSERT INTO versions (node_id, rev, media_id, size, sha256, at, by) VALUES (?, ?, ?, ?, ?, ?, ?)',
-    [n.id, n.rev, n.media_id || null, n.media_id ? n.size : 0, n.media_id ? n.sha256 : (n.sha256 || EMPTY_SHA), ctx.now, n.updated_by]);
+  const since = n.content_at != null ? n.content_at : (n.rev === 1 ? n.created_at : null);
+  const r = await store.run(ctx.gc, 'INSERT INTO versions (node_id, rev, media_id, size, sha256, at, by, since, hold_until) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    [n.id, n.rev, n.media_id || null, n.media_id ? n.size : 0, n.media_id ? n.sha256 : (n.sha256 || EMPTY_SHA), ctx.now, n.updated_by, since, holdUntil]);
   return Number(r.lastInsertRowid);
 }
 
@@ -95,6 +117,7 @@ async function commit(ctx, body) {
   if (b.text != null && typeof b.text !== 'string') throw fail('invalid', { field: 'text' });
   const text = docText(b.text);
   const entropy = guard.entropyArg(b.entropy);
+  const taken = takenArg(b.takenAt, ctx.now);
   return store.tx(ctx.gc, async () => {
     const { node: parent, area } = await nodes.folderFor(ctx, Number(b.parentId));
     let existing = await nodes.taken(ctx.gc, area.id, parent.id, name);
@@ -115,8 +138,9 @@ async function commit(ctx, body) {
           throw mediaFail(e);
         }
       }
-      await store.run(ctx.gc, `UPDATE nodes SET media_id = ?, size = ?, sha256 = ?, mime = ?, mtime = ?, rev = rev + 1, updated_at = ?, updated_by = ?, entropy = ?
-        WHERE id = ?`, [info.mediaId, info.bytes, info.sha256 || null, (empty ? info.mime || existing.mime : info.mime) || null, mtime, ctx.now, ctx.viewer, entropy, existing.id]);
+      await store.run(ctx.gc, `UPDATE nodes SET media_id = ?, size = ?, sha256 = ?, mime = ?, mtime = ?, rev = rev + 1, updated_at = ?, updated_by = ?, entropy = ?,
+        taken_at = COALESCE(?, taken_at), content_at = ? WHERE id = ?`, [info.mediaId, info.bytes, info.sha256 || null, (empty ? info.mime || existing.mime : info.mime) || null, mtime, ctx.now, ctx.viewer, entropy,
+        taken, ctx.now, existing.id]);
       await nodes.log(ctx.gc, area.id, existing.id, 'update', ctx);
       await guard.note(ctx, { op: 'overwrite', node: existing, name, versionId, entropy, entropyBefore: existing.entropy });
       // new content: a mark of the file ("deleted on the device") ends, and those of the folders above it
@@ -131,8 +155,8 @@ async function commit(ctx, body) {
       } catch (e) { throw mediaFail(e); }
     }
     await nodes.unmarkUp(ctx.gc, parent.id, ctx);
-    const r = await store.run(ctx.gc, `INSERT INTO nodes (area_id, parent_id, name, is_dir, media_id, size, sha256, mime, mtime, created_at, created_by, updated_at, updated_by, entropy)
-      VALUES (?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [area.id, parent.id, name, info.mediaId, info.bytes, info.sha256 || null, info.mime || null, mtime, ctx.now, ctx.viewer, ctx.now, ctx.viewer, entropy]);
+    const r = await store.run(ctx.gc, `INSERT INTO nodes (area_id, parent_id, name, is_dir, media_id, size, sha256, mime, mtime, created_at, created_by, updated_at, updated_by, entropy, taken_at, content_at)
+      VALUES (?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [area.id, parent.id, name, info.mediaId, info.bytes, info.sha256 || null, info.mime || null, mtime, ctx.now, ctx.viewer, ctx.now, ctx.viewer, entropy, taken, ctx.now]);
     await nodes.log(ctx.gc, area.id, r.lastInsertRowid, 'create', ctx);
     await guard.note(ctx, { op: 'create', node: await nodes.row(ctx.gc, r.lastInsertRowid), name, entropy });
     await setText(ctx, r.lastInsertRowid, text);
@@ -199,8 +223,11 @@ async function versionContent(ctx, id, vid) {
   return { url, name: node.name, mime: node.mime, size: v.size, mediaId: v.media_id, rev: v.rev };
 }
 
-/** POST nodes/<id>/versions/<vid>/restore → the version is the file again; the current bytes become a version. */
-async function restoreVersion(ctx, id, vid) {
+/**
+ * POST nodes/<id>/versions/<vid>/restore → the version is the file again; the current bytes become a version
+ * (`holdUntil`: a time travel's — kept until then for its undo).
+ */
+async function restoreVersion(ctx, id, vid, holdUntil = null) {
   return store.tx(ctx.gc, async () => {
     const { node, area } = await nodes.reach(ctx, Number(id), 'write');
     if (area.archived_at != null) throw fail('forbidden');
@@ -209,7 +236,7 @@ async function restoreVersion(ctx, id, vid) {
     // a version of an empty file has no media
     const info = v.media_id ? await ctx.gc.media.info(v.media_id) : null;
     if (v.media_id && !info) throw fail('not_found');
-    await keepVersion(ctx, node);
+    await keepVersion(ctx, node, holdUntil);
     if (v.media_id) {
       try {
         await ctx.gc.media.move(v.media_id, { path: p, ...(info.area !== area.media_area ? { area: area.media_area } : {}) });
@@ -219,8 +246,8 @@ async function restoreVersion(ctx, id, vid) {
       }
     }
     await store.run(ctx.gc, 'DELETE FROM versions WHERE id = ?', [v.id]);
-    await store.run(ctx.gc, 'UPDATE nodes SET media_id = ?, size = ?, sha256 = ?, rev = rev + 1, updated_at = ?, updated_by = ?, entropy = NULL WHERE id = ?',
-      [v.media_id || null, v.media_id ? v.size : 0, v.media_id ? v.sha256 : EMPTY_SHA, ctx.now, ctx.viewer, node.id]);
+    await store.run(ctx.gc, 'UPDATE nodes SET media_id = ?, size = ?, sha256 = ?, rev = rev + 1, updated_at = ?, updated_by = ?, entropy = NULL, content_at = ? WHERE id = ?',
+      [v.media_id || null, v.media_id ? v.size : 0, v.media_id ? v.sha256 : EMPTY_SHA, ctx.now, ctx.viewer, ctx.now, node.id]);
     await nodes.log(ctx.gc, area.id, node.id, 'update', ctx);
     await nodes.unmarkUp(ctx.gc, node.id, ctx, node.id);
     await setText(ctx, node.id, null);
@@ -239,4 +266,4 @@ async function deleteVersion(ctx, id, vid) {
   });
 }
 
-module.exports = { commit, check, content, versions, versionContent, restoreVersion, deleteVersion, trimVersions, URL_TTL_S };
+module.exports = { commit, check, content, versions, versionContent, restoreVersion, deleteVersion, trimVersions, takenArg, URL_TTL_S };

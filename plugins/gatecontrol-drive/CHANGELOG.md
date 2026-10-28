@@ -2,6 +2,49 @@
 
 Dateien der Familie und des Teams auf dem eigenen Speicher – auf diesem Server, einer NAS oder in S3.
 
+## 1.7.0
+- **Zeitreise:** Ein Ordner lässt sich mit allem darin auf einen Zeitpunkt zurücksetzen.
+  - `GET nodes/<id>/timetravel?at=` zeigt vorher, was passiert: `restore`, `revert`, `move`, `trash`, Beispiele,
+    `limited`, `historySince`, zusätzlich `lost`, `ops` und `max`. `POST nodes/<id>/timetravel { at }` führt es aus
+    und antwortet mit `restored`, `reverted`, `moved`, `trashed`, `failed`, `lost` und `before`.
+  - Gelöschtes kommt aus dem Papierkorb, Dateien bekommen die Fassung von damals, Namen und Ordner werden wie damals,
+    seitdem Neues kommt in den Papierkorb. Endgültig gelöscht wird nichts.
+  - „Rückgängig“ ist eine Zeitreise auf `before`.
+  - Dafür ist Schreibrecht auf den Ordner nötig. Der Schutz vor Erpressungstrojanern beobachtet die Zeitreise nicht.
+  - Ab 1.7.0 merkt sich Drive vor jeder Umbenennung, Verschiebung und Wiederherstellung den alten Stand (Tabelle
+    `node_log`). Ältere Umbenennungen kann die Zeitreise nicht zurückdrehen (`limited`).
+  - Fassungen, die älter sind als die Versionsaufbewahrung (`versions_days`, `versions_max`), sind weg. Die Vorschau
+    zählt sie als `lost`.
+  - Fassungen, die eine Zeitreise anlegt, behält Drive für ihr Rückgängig mindestens so lange wie den Papierkorb –
+    egal was `versions_max` und `versions_days` sagen.
+- **Aufnahmedatum:** `uploads/commit { takenAt }` (ISO-8601 oder Millisekunden). Ein falsches Format ergibt `400`
+  mit `field: 'takenAt'`. Mehr als einen Tag in der Zukunft oder vor 1900 wird ignoriert.
+  - Jeder Knoten hat `takenAt`: das gesendete Datum, sonst `mtime`, sonst den Zeitpunkt des Hochladens. Bei Ordnern
+    ist es `null`.
+  - Das Portal liest beim Hochladen das EXIF-Aufnahmedatum aus JPEGs, sonst nimmt es das Dateidatum.
+- **Fotos** (`GET photos`, `photos/months`, `photos/memories`) und **Alben** (`GET|POST albums`,
+  `GET|PATCH|DELETE albums/<id>`, `POST|DELETE albums/<id>/items`).
+  - Im Portal gibt es die neuen Seiten „Fotos“ (Zeitleiste nach Monaten, „Vor einem Jahr“, Mehrfachauswahl) und
+    „Alben“ (Titelbild, Umbenennen, Herausnehmen, Löschen).
+  - Ein Album gehört zu einem Bereich. Wer den Bereich lesen kann, sieht das Album; wer dort schreiben darf, darf es
+    ändern.
+- **Fotorahmen am Wandtablet:** Alben mit `frame: true` laufen als Diashow im neuen Portal-Abschnitt „Fotorahmen“
+  (Tab „Zuhause“) – nur auf Kiosk-Geräten.
+  - Kiosk-Geräte erreichen nur `GET frame`, alles andere von Drive ist für sie gesperrt.
+  - Sie bekommen nur Vorschaubilder in Anzeigegröße, ohne Namen. Das braucht **GateControl ≥ 1.210.0** (Adressen nur
+    für das Vorschaubild), davor zeigt der Rahmen einen Hinweis.
+  - Den Rahmen darf einschalten, wer im Bereich des Albums schreiben darf – nie ein Kind, im Familienbereich nur
+    Eltern und Admins.
+  - Neue Einstellungen: `frame_on`, `frame_seconds`, `frame_order`, `frame_accounts`.
+- **Speicher:** `GET storage[?all=1]` liefert die Belegung je Bereich (bei Admins mit „alle“ auch je Person), die
+  größten Dateien und Duplikate. `POST storage/versions/prune` räumt alte Versionen auf (nur Admins und Verwalter).
+  - Im Portal gibt es die Seite „Speicher“ mit Duplikaten zum Behalten oder Löschen (in den Papierkorb).
+  - Die Admin-Übersicht zeigt eine kurze Speicher-Zusammenfassung.
+- Behoben: Ordner mit mehr als etwa 100 Einträgen ließen sich nicht in den Papierkorb legen oder endgültig löschen.
+  GateControl nimmt höchstens 100 Parameter je Datenbankbefehl, Drive teilt die Listen jetzt auf.
+- `features` in `GET me` enthält zusätzlich `timeTravel`, `takenAt`, `photos`, `albums`, `frame` und `storage`.
+- Migration `007`. Keine neuen Rechte, das Update kommt automatisch.
+
 ## 1.6.0
 - **Direktlinks ins Portal:** `GET me` liefert `links: { node, drive }` – absolute Adressen des Drive-Tabs im Portal,
   `node` mit dem Platzhalter `{id}` (z. B. `https://gc.example.de/portal?drive={id}#plg-gatecontrol-drive`). Apps

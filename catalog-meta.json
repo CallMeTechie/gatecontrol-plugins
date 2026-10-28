@@ -2556,8 +2556,8 @@
       "category": "other",
       "icon": "cloud",
       "summary": {
-        "de": "Dateien der Familie und des Teams auf dem eigenen Speicher – Server, NAS oder S3 – mit Rechten, Versionen, Papierkorb und Links.",
-        "en": "Files of the family and the team on your own storage – server, NAS or S3 – with rights, versions, a trash and links."
+        "de": "Dateien und Fotos der Familie und des Teams auf dem eigenen Speicher – Server, NAS oder S3 – mit Rechten, Versionen, Zeitreise, Alben und Links.",
+        "en": "Files and photos of the family and the team on your own storage – server, NAS or S3 – with rights, versions, time travel, albums and links."
       },
       "audience": "all",
       "keywords": [
@@ -2566,13 +2566,13 @@
         "cloud",
         "speicher",
         "storage",
-        "ordner",
-        "folders",
         "nas",
         "s3",
         "teilen",
-        "share",
-        "versionen"
+        "versionen",
+        "fotos",
+        "alben",
+        "zeitreise"
       ],
       "related": [
         "gatecontrol-familie",
@@ -2610,19 +2610,19 @@
             "en": "Your storage"
           },
           "text": {
-            "de": "Je Bereich auf diesem Server, einer NAS oder in S3 – auf der NAS als ganz normale Dateien",
-            "en": "Per area on this server, a NAS or S3 – on the NAS as plain files"
+            "de": "Je Bereich auf diesem Server, einer NAS oder in S3 – mit Übersicht, größten Dateien und Duplikaten",
+            "en": "Per area on this server, a NAS or S3 – with an overview, the largest files and duplicates"
           }
         },
         {
           "icon": "clock",
           "title": {
-            "de": "Versionen & Papierkorb",
-            "en": "Versions & trash"
+            "de": "Versionen, Papierkorb & Zeitreise",
+            "en": "Versions, trash & time travel"
           },
           "text": {
-            "de": "Ältere Fassungen wiederherstellen, Gelöschtes zurückholen",
-            "en": "Restore older versions, bring back what was deleted"
+            "de": "Ältere Fassungen, Gelöschtes zurückholen, einen Ordner auf einen Zeitpunkt zurücksetzen",
+            "en": "Older versions, bring back what was deleted, put a folder back to a point in time"
           }
         },
         {
@@ -2637,36 +2637,36 @@
           }
         },
         {
-          "icon": "page",
+          "icon": "camera",
           "title": {
-            "de": "Admin-Seiten",
-            "en": "Admin pages"
+            "de": "Fotos & Alben",
+            "en": "Photos & albums"
           },
           "text": {
-            "de": "Lizenz und Speicher im Überblick, Personen freischalten, Team-Ordner verwalten",
-            "en": "Licence and storage at a glance, switch people on, manage team folders"
+            "de": "Zeitleiste nach Aufnahmedatum, „Vor einem Jahr“, Alben für Familie und Team",
+            "en": "Timeline by the date taken, “A year ago”, albums for the family and the team"
+          }
+        },
+        {
+          "icon": "door",
+          "title": {
+            "de": "Fotorahmen am Wandtablet",
+            "en": "Photo frame on the wall tablet"
+          },
+          "text": {
+            "de": "Alben als Diashow auf dem Kiosk-Gerät – nur Vorschaubilder, sonst nichts von Drive",
+            "en": "Albums as a slide show on the kiosk device – previews only, nothing else of Drive"
           }
         },
         {
           "icon": "shield",
           "title": {
-            "de": "Sicherungshinweis",
-            "en": "Backup hint"
+            "de": "Schutz & Admin-Seiten",
+            "en": "Protection & admin pages"
           },
           "text": {
-            "de": "Erinnert daran, solange Dateien nur auf dem Server oder der NAS liegen",
-            "en": "Reminds you while files lie only on the server or the NAS"
-          }
-        },
-        {
-          "icon": "shield",
-          "title": {
-            "de": "Schutz vor Erpressungstrojanern",
-            "en": "Protection against ransomware"
-          },
-          "text": {
-            "de": "Stoppt ein Gerät, das viele Dateien verschlüsselt oder umbenennt – mit „Rückgängig machen“",
-            "en": "Stops a device that encrypts or renames many files – with “Undo”"
+            "de": "Stoppt Erpressungstrojaner mit „Rückgängig machen“; Lizenz, Personen, Team-Ordner und Sicherungshinweis",
+            "en": "Stops ransomware with “Undo”; licence, people, team folders and the backup hint"
           }
         }
       ],

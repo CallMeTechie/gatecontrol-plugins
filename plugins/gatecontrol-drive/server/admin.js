@@ -1,7 +1,8 @@
 'use strict';
 
 // Administrators (GateControl's admin UI, /api/v1/plugins/gatecontrol-drive/api/admin/…):
-//   GET  admin/overview               licence, people (seats) and every account, the areas with their space
+//   GET  admin/overview               licence, people (seats) and every account, the areas with their space, since 1.7.0
+//                                     `storage` (the sums of every area, duplicates)
 //   PUT  admin/seats/<userId>         { kind: 'family' | 'business' | null } — switch a person on / off
 //   GET  admin/teams                  the team folders
 //   POST admin/teams                  { label, members: [{ principal: 'u:<id>' | 'g:<id>', role }], quota }
@@ -15,6 +16,7 @@ const people = require('./people');
 const seats = require('./seats');
 const areas = require('./areas');
 const backup = require('./backup');
+const storage = require('./storage');
 const { fail, posInt } = require('./util');
 
 async function overview(gc) {
@@ -34,6 +36,8 @@ async function overview(gc) {
     licence: s.licence, limits: s.limits, counts: s.counts, exceeded: s.exceeded, backup: await backup.state(gc, settings.backupHint),
     people: [...us.values()].map((u) => ({ id: u.id, name: u.name, role: u.role, seat: seatOf.get(u.id) || null })),
     areas: list,
+    // the storage in short (since 1.7.0): every area's files, versions, trash, what duplicates waste
+    storage: await storage.summary(gc),
   };
 }
 

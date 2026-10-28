@@ -252,6 +252,11 @@
 //   the bytes are kept as they came (no decoding here). host.previewGet(user, mediaId, { size }) answers like GET
 //   …/media/<mediaId>/preview (hook mediaAccess like mediaGet) → { status: 200 (image/jpeg, body 'preview:<id>:<size>')
 //   | 400 | 404 }; host.mediaFromUrl also answers '<url>/preview[?size=large]'.
+//
+// GateControl ≥ 1.210.0 (opt-in: opts.gatecontrol: '1.210.0') — preview-only URLs: gc.media.previews(ids, { user, ttlS,
+//   previewOnly: true }) → each state with previewOnly: true and a `url` whose token opens '/preview' only
+//   (host.mediaFromUrl answers 404 for the file itself with it). An older host drops the option (states without
+//   previewOnly, the ordinary URL).
 
 const fs = require('node:fs');
 const os = require('node:os');
@@ -892,6 +897,7 @@ async function createHost(pluginDir, opts = {}) {
   };
   const gc205 = hostAtLeast('1.205.0'); // links v2
   const gc208 = hostAtLeast('1.208.0'); // media previews
+  const gc210 = hostAtLeast('1.210.0'); // preview-only URLs
 
   // Storage: the plugin's own SQLite database with its migrations applied.
   let db = null;
@@ -1349,7 +1355,7 @@ async function createHost(pluginDir, opts = {}) {
   };
   const mediaUsage = () => { let bytes = 0; for (const m of mediaStore.values()) bytes += m.bytes; return { bytes, count: mediaStore.size }; };
   const urlSecret = require('node:crypto').randomBytes(16).toString('hex');
-  const urlSig = (id, exp, uid) => require('node:crypto').createHmac('sha256', urlSecret).update(`plugin-media:${id}:${manifest.id}:${exp}:${uid}`).digest('base64url').slice(0, 22);
+  const urlSig = (id, exp, uid, scope = '') => require('node:crypto').createHmac('sha256', urlSecret).update(`plugin-media${scope}:${id}:${manifest.id}:${exp}:${uid}`).digest('base64url').slice(0, 22);
   api['media.info'] = async (args) => { needMedia(); return mediaInfo(mediaIdOf(args)); };
   api['media.claim'] = async (args) => {
     needMedia();
@@ -1521,7 +1527,8 @@ async function createHost(pluginDir, opts = {}) {
     if (!(Number.isSafeInteger(ttl) && ttl >= 60 && ttl <= 86400)) throw hostError('ERR_INVALID', 'ttlS must be 60…86400');
     const exp = Math.ceil((Math.floor((args.now || Date.now()) / 1000) + ttl) / 300) * 300;
     const uid = user == null ? 0 : user;
-    return `/plugin-media/${id}.${exp}.${uid}.${urlSig(id, exp, uid)}`;
+    // GateControl ≥ 1.210.0: a token of the preview only (gc.media.previews { previewOnly })
+    return `/plugin-media/${id}.${exp}.${uid}.${urlSig(id, exp, uid, args.previewOnly ? '-preview' : '')}`;
   };
 
   // ─── GateControl ≥ 1.208.0: media previews (src/services/plugins/mediaPreviews.js) ───
@@ -1540,10 +1547,12 @@ async function createHost(pluginDir, opts = {}) {
       if (!media.previews) throw hostError('ERR_MEDIA_DENIED', 'plugin.json declares no media.previews');
       const ids = args && args.ids;
       if (!Array.isArray(ids) || ids.length > 1000 || !ids.every((id) => typeof id === 'string' && /^[0-9a-f]{32}$/.test(id))) throw hostError('ERR_INVALID', 'ids must be up to 1000 media ids');
+      const only = gc210 && args.previewOnly === true;
+      if (gc210 && args.previewOnly != null && typeof args.previewOnly !== 'boolean') throw hostError('ERR_INVALID', 'previewOnly must be a boolean');
       const out = {};
       for (const id of ids) {
         const st = previewState(mediaStore.get(id));
-        out[id] = st ? { ...st, url: `${await api['media.url']({ id, user: args.user, ttlS: args.ttlS })}/preview`, appUrl: `/api/v1/client/plugins/${manifest.id}/media/${id}/preview` } : null;
+        out[id] = st ? { ...st, ...(only ? { previewOnly: true } : {}), url: `${await api['media.url']({ id, user: args.user, ttlS: args.ttlS, previewOnly: only })}/preview`, appUrl: `/api/v1/client/plugins/${manifest.id}/media/${id}/preview` } : null;
       }
       return out;
     };
@@ -2349,7 +2358,7 @@ async function createHost(pluginDir, opts = {}) {
       usage: () => call('media.usage', {}),
       url: (id, o) => { const x = o && typeof o === 'object' ? o : {}; return call('media.url', { id, user: x.user, ttlS: x.ttlS }); },
       // GateControl ≥ 1.208.0 (media.previews)
-      ...(gc208 ? { previews: (ids, o) => { const x = o && typeof o === 'object' ? o : {}; return call('media.previews', { ids: Array.isArray(ids) ? ids : [], user: x.user, ttlS: x.ttlS }); } } : {}),
+      ...(gc208 ? { previews: (ids, o) => { const x = o && typeof o === 'object' ? o : {}; return call('media.previews', { ids: Array.isArray(ids) ? ids : [], user: x.user, ttlS: x.ttlS, ...(gc210 ? { previewOnly: x.previewOnly } : {}) }); } } : {}),
       ...(gc190 ? { fetch: (url, o) => call('media.fetch', { url, opts: o || {} }) } : {}),
       // GateControl ≥ 1.193.0: hand a file to another plugin (its store, unclaimed, owner `user`)
       ...(gc193 ? { handOver: (id, o) => { const x = o && typeof o === 'object' ? o : {}; return call('media.handOver', { id, toPlugin: x.toPlugin, user: x.user }); } } : {}),
@@ -2550,7 +2559,10 @@ async function createHost(pluginDir, opts = {}) {
       if (!r || (r[5] && !gc208)) return notFound();
       const s2 = Math.floor((o.now || Date.now()) / 1000);
       const exp = Number(r[2]);
-      if (!(s2 < exp && exp <= s2 + 86400 + 300) || urlSig(r[1], exp, Number(r[3])) !== r[4]) return notFound();
+      // a preview-only token (≥ 1.210.0) opens …/preview, never the file
+      const full = urlSig(r[1], exp, Number(r[3])) === r[4];
+      const previewOnly = gc210 && !!r[5] && urlSig(r[1], exp, Number(r[3]), '-preview') === r[4];
+      if (!(s2 < exp && exp <= s2 + 86400 + 300) || !(full || previewOnly)) return notFound();
       const m = mediaStore.get(r[1]);
       if (m && r[5]) return previewAnswer(r[1], m, r[6]);
       return m ? mediaAnswer(m, o.range) : notFound();

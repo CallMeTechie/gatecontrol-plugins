@@ -1,0 +1,12 @@
+/* Drive — the photo frame on a kiosk device (section "Fotorahmen" in the tab "Zuhause"): the pictures fill the height
+   GateControl gives the frame (--gc-viewport-height), two layers cross-fade; the month in a corner. */
+html,body{background:transparent}
+body{padding:0;margin:0;color:var(--text);font-family:var(--font)}
+[hidden]{display:none !important}
+.df{font-family:var(--font)}
+.df-stage{position:relative;width:100%;height:var(--gc-viewport-height,70vh);min-height:240px;border-radius:16px;overflow:hidden;background:#000}
+.df-pic{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;opacity:0;transition:opacity 1.2s ease}
+.df-pic.is-on{opacity:1}
+.df-when{position:absolute;left:14px;bottom:12px;padding:4px 10px;border-radius:999px;background:rgba(0,0,0,.45);color:#fff;font:600 13px var(--font);letter-spacing:.2px}
+.df-msg{display:flex;align-items:center;justify-content:center;min-height:160px;padding:24px;text-align:center;border:1px solid var(--line);border-radius:16px;background:var(--surface);color:var(--muted);font-size:14px;line-height:1.5}
+@media (prefers-reduced-motion: reduce){.df-pic{transition:none}}

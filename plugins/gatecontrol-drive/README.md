@@ -14,7 +14,8 @@ to its path, the NAS journal and the hook `mediaChanged`), `gc.license.info` (ti
 `permissions.groups: 'read'` (family groups and their roles, groups of team folders), `permissions.events`,
 `media.previews` (since 1.1.0: previews of files, `gc.media.previews`), `permissions.devices` (since 1.2.0: the asking
 device of an app request, `user.device` — GateControl passes it only with this permission; see "Delete on all
-devices"; since 1.6.0 also the device the ransomware protection watches and stops).
+devices"; since 1.6.0 also the device the ransomware protection watches and stops). The photo frame on kiosk devices
+(since 1.7.0) shows pictures only with GateControl ≥ 1.210.0 (preview-only URLs); everything else works with 1.208.0.
 
 ## Areas and rights
 
@@ -45,12 +46,12 @@ overview). Without a valid licence every route but `GET me` answers `403 not_lic
 ## API
 
 App: `/api/v1/client/plugins/gatecontrol-drive/api/…` · portal: `/api/v1/portal/plugins/gatecontrol-drive/api/…`
-(also under `portal/…`). Signed-in people only — never a kiosk device, never device trust alone (`403
-login_required`). Every answer has `ok`; errors `{ ok: false, code, error }` (+ details).
+(also under `portal/…`). Signed-in people only — never device trust alone (`403 login_required`); a kiosk device
+reaches `GET frame` (the photo frame, since 1.7.0) and nothing else (`403 forbidden`). Every answer has `ok`; errors `{ ok: false, code, error }` (+ details).
 
 | Route | Body / query | Answer |
 |---|---|---|
-| `GET me` | | `me { id, name, seat, deviceId, admin }`, `licence { valid, tier }`, `areas`, `latest` (change log seq), `settings`, `limits { maxBytes }`, `wipes` (entries this device has yet to handle, since 1.2.0), `devices` (my devices a new wipe reaches), `features` (since 1.5.0: `['previews', 'wipes', 'textSearch', 'devices', 'deleteAfter', 'emptyFiles']`, since 1.6.0 also `'links'`, `'guard'`), `links { node, drive } \| null` (since 1.6.0, see "Direct links"), `guard { on, locked, incident }` and `incidents` (since 1.6.0, see "Ransomware protection") |
+| `GET me` | | `me { id, name, seat, deviceId, admin }`, `licence { valid, tier }`, `areas`, `latest` (change log seq), `settings`, `limits { maxBytes }`, `wipes` (entries this device has yet to handle, since 1.2.0), `devices` (my devices a new wipe reaches), `features` (since 1.5.0: `['previews', 'wipes', 'textSearch', 'devices', 'deleteAfter', 'emptyFiles']`, since 1.6.0 also `'links'`, `'guard'`, since 1.7.0 `'timeTravel'`, `'takenAt'`, `'photos'`, `'albums'`, `'frame'`, `'storage'`), `links { node, drive } \| null` (since 1.6.0, see "Direct links"), `guard { on, locked, incident }` and `incidents` (since 1.6.0, see "Ransomware protection") |
 | `GET areas` | | `areas [{ id, kind, label, role, via, rootId, owner, archived, storage { bytes, quota, form, target, state } }]` |
 | `GET nodes/<id>` | | `node` + `path`, `role`, `crumbs [{ id, name }]` |
 | `GET nodes/<id>/children` | `sort=name\|mtime\|size\|updated`, `order`, `offset`, `limit` (≤ 1000) | `items` (folders first), `total`, `next`, `role` |
@@ -66,7 +67,7 @@ login_required`). Every answer has `ok`; errors `{ ok: false, code, error }` (+ 
 | `POST nodes/<id>/versions/<vid>/restore` | | `node` — the version is current again, the current bytes become a version |
 | `DELETE nodes/<id>/versions/<vid>` | | `{ id }` |
 | `POST uploads/check` | `{ parentId, name, sha256?, size? }` | `{ exists, same, node }` — `same`: no need to upload (two empty files are the same, also without `sha256`) |
-| `POST uploads/commit` | `{ mediaId, parentId, name, baseRev?, mtime?, onConflict?: 'rename' \| 'version', text?, entropy? }` — `text`: recognised text of a scan (≤ 100 000 characters, searchable); an empty file (since 1.5.0): `{ parentId, name, size: 0, mime?, sha256?, … }` without `mediaId`; `entropy` (since 1.6.0, optional): how random the device found the bytes, 0–8 bits per byte (else `400 invalid`, `field: 'entropy'`) | `{ node, created }` |
+| `POST uploads/commit` | `{ mediaId, parentId, name, baseRev?, mtime?, onConflict?: 'rename' \| 'version', text?, entropy?, takenAt? }` — `takenAt` (since 1.7.0): when the picture or video was taken, ISO-8601 or ms (else `400 invalid`, `field: 'takenAt'`; more than a day ahead or before 1900: ignored); — `text`: recognised text of a scan (≤ 100 000 characters, searchable); an empty file (since 1.5.0): `{ parentId, name, size: 0, mime?, sha256?, … }` without `mediaId`; `entropy` (since 1.6.0, optional): how random the device found the bytes, 0–8 bits per byte (else `400 invalid`, `field: 'entropy'`) | `{ node, created }` |
 | `GET changes` | `since`, `limit` (≤ 1000) | `{ changes [{ seq, op, areaId, nodeId, at, by, device, node }], next, more }` |
 | `GET trash` | `area?` | `items` (the deleted node with `from`, folders with `size`, `files`) |
 | `POST trash/<id>/restore` | | `node` (a free name; the area's top when its folder is gone) |
@@ -86,9 +87,24 @@ login_required`). Every answer has `ok`; errors `{ ok: false, code, error }` (+ 
 | `GET guard/incidents/<id>` | | `{ incident, entries [{ op, name, oldName, nodeId, at, flags }] }` (≤ 500) |
 | `POST guard/incidents/<id>/release` | | `{ incident, restored: 0, trashed: 0 }` — a false alarm: the device may write again |
 | `POST guard/incidents/<id>/undo` | | `{ incident, restored, trashed, failed }` — every file back to how it was before, then released |
+| `GET nodes/<id>/timetravel` | `at` (ISO or ms, before now) (since 1.7.0) | `{ at, historySince, restore, revert, trash, move, sample [{ op, name, path }] (≤ 20), limited, lost, ops, max }` — the preview, changes nothing (see "Time travel") |
+| `POST nodes/<id>/timetravel` | `{ at }` | `{ at, before, restored, reverted, trashed, moved, failed, lost }` |
+| `GET photos` | `area?`, `before?` (ISO), `limit?` (≤ 200, default 100) (since 1.7.0) | `{ items [photo], next }` (see "Photos and albums") |
+| `GET photos/months` | `area?` | `{ months [{ month: 'YYYY-MM', count }] }` |
+| `GET photos/memories` | `date?` (YYYY-MM-DD) | `{ date, groups [{ yearsAgo, date, items [photo] }] }` |
+| `GET albums` | | `{ albums [album] }` |
+| `POST albums` | `{ name, areaId? }` | `{ album }` |
+| `PATCH albums/<id>` | `{ name?, coverId?, frame? }` | `{ album }` |
+| `DELETE albums/<id>` | | `{ ok, id }` — the photos stay |
+| `GET albums/<id>` | `before?`, `limit?` | `{ album, items [photo], next }` |
+| `POST albums/<id>/items` | `{ ids }` (≤ 500, pictures and videos one reads) | `{ album }`; else `400 invalid { field: 'ids', ids }` |
+| `DELETE albums/<id>/items` | `{ ids }` or `?ids=1,2,3` (≤ 500) | `{ album }` |
+| `GET storage` | `all=1` (administrators) (since 1.7.0) | see "Storage" |
+| `POST storage/versions/prune` | `{ areaId, keep }` (0 … 500) | `{ removed, freedBytes, more }` — administrators and managers of the area |
+| `GET frame` | (a kiosk device only) | `{ on, ready, seconds, order, items [{ url, takenAt }] }` (see "Photo frame") |
 
 A node: `{ id, areaId, parentId, name, isDir, size, mime, sha256, mediaId, mtime, rev, createdAt, createdBy, updatedAt,
-updatedBy, deleted }`; a file node also `preview: { url, largeUrl } | null` (since 1.1.0, see "Previews") — in every
+updatedBy, deleted, takenAt }` (`takenAt` since 1.7.0: ISO, `null` for a folder); a file node also `preview: { url, largeUrl } | null` (since 1.1.0, see "Previews") — in every
 answer: `nodes/<id>`, `children`, `by-path`, `search`, `changes`, `versions` (`current`), `uploads/check`,
 `uploads/commit`, `trash` (always `null` there). A marked node (since 1.5.0, only while marked) also `deleteAt` (ISO),
 `deletedOnDevice` (the device's name or `null`), `deleteMarkedBy` (user id). An empty file: `size: 0`, `mediaId: null`,
@@ -319,6 +335,72 @@ the address is known) and the button `open_portal` "Öffnen" to `/portal?drive=<
   undo again answers the same counts). The undo runs as the person (their rights, their name in the change log). A
   version an incident still needs is not removed by *versions_max* or *versions_days*.
 
+**Time travel** (since 1.7.0, `server/timetravel.js`): a folder — with everything below it — back to how it was at
+`at`. The preview (`GET`) and the run (`POST`) compute the same plan; the run's counts are the preview's (less what
+failed).
+
+- `restore`: in the trash now, there then — out of the trash (its batch; what of it was not there then goes back in).
+  `revert`: a file whose bytes changed — the version that was its content then is current again, the current bytes
+  become a version. `move`: a name or folder that changed — the name and folder of then; a node that came into the
+  folder from elsewhere goes back there (still there and writable), else into the trash. `trash`: new since then (or
+  in the trash then) — into the trash. Counts are nodes (files and folders). Nothing is deleted for good.
+- `before` (the run): the moment just before it — a time travel to `before` is its undo.
+- `historySince`: since when Drive keeps the history of names and folders (`node_log`, the first start of 1.7.0) —
+  older renames and moves cannot be turned back (`limited: true` for an earlier `at`). `lost`: files whose content of
+  then is gone (older than *versions_days* or beyond *versions_max*); they stay as they are. What was purged from the
+  trash is gone.
+- A version a time travel makes is held for its undo at least *trash_days* (and *versions_days*): *versions_max* and
+  *versions_days* leave it until then, and so does `storage/versions/prune`.
+- Rights: write on the folder (`403 forbidden`, `404`); runs with the person's rights (moves out of the folder need
+  write on the target); the ransomware protection does not watch it (no journal rows, no lock). At most `max` (2000)
+  operations a run (else `400 invalid { field: 'at', ops, max }`). `at` must be a time before now (`400 invalid
+  { field: 'at' }`).
+
+**Photos and albums** (since 1.7.0, `server/photos.js`, `server/albums.js`):
+
+- A photo item: `{ id, name, mime, size, takenAt, areaId, parentId, preview, mediaId, previewUrl, largeUrl }` —
+  `preview` is `true` when there is a preview; `previewUrl` / `largeUrl` the same URLs as a node's `preview` (app:
+  the endpoint with the device token; portal: signed). Pictures and videos by their type, newest first by `takenAt`,
+  the areas the person reads (`area` narrows it, `404` for an area they do not read), never the trash. `next` is the
+  `before` of the next page: a page ends after every photo of its last moment, so photos of the same second never fall
+  between two pages. Months and memories use the server's time zone; memories: this calendar day ± 1 day of every
+  earlier year, ≤ 30 a year, nearest year first. A parent seeing photos of a child's folder: the child is told as for
+  the folder.
+- An album: `{ id, name, areaId, count, coverId, frame, updatedAt, canEdit, canFrame, coverUrl, createdBy }` — of an
+  area (default `mine:<me>`); whoever reads the area sees it, whoever writes in it (not archived) changes it (name ≤
+  100 characters, cover — one of its items, items, delete). Items point at nodes: an item the viewer cannot read or
+  that is in the trash is left out of `count` and `items`; a purged file leaves its albums.
+- `frame` (the photo frame): switched on and off by whoever may change the album, but never by a child of a family,
+  never in a child's folder, and in a family's area only by a parent of that family or an administrator (`403
+  forbidden { field: 'frame' }`); `canFrame` says whether the viewer may.
+
+**Photo frame** (since 1.7.0, `server/frame.js`, portal section `frame` in GateControl's tab "Zuhause"): a kiosk
+device (GateControl's paired wall tablet — `user.kiosk`; Drive needs no `permissions.kiosk`, the Familie plugin's
+wall account is one) sees the section while an album is on the frame, the setting *frame_on* is on and its account is
+allowed (*frame_accounts*: names or ids, empty = every kiosk device). `GET frame` answers the pictures (not videos) of
+every frame album, each once (≤ 1000), as large previews signed for the kiosk account with **preview-only URLs**
+(`gc.media.previews { previewOnly }`, GateControl ≥ 1.210.0 — the file itself stays closed); an older GateControl:
+`ready: false` and no picture at all. An album shows only what the person who switched it on reads now and while they
+still may switch it (no seat, no right: it leaves the frame). Items carry `url` and `takenAt`, no names, no node ids.
+*frame_seconds* (20), *frame_order* (`random` | `date`). The kiosk device reaches no other route of Drive and no file
+(`mediaAccess` says no).
+
+**Storage** (since 1.7.0, `server/storage.js`): `GET storage` →
+
+```
+{ total: { bytes, files, versionsBytes, trashBytes }, limit: { maxBytes } | null, all,
+  areas: [{ id, label, kind, bytes, files, versionsBytes, trashBytes, quota, canPrune }],
+  people: [{ user, name, bytes, files }],                 — administrators with all=1 (by the files' creator), else []
+  largest: [{ id, name, size, areaId, parentId, path, updatedAt, canDelete }],          — the 20 largest
+  duplicates: [{ sha256, size, count, wasted, items: [{ id, name, areaId, parentId, path, updatedAt, canDelete }] }] }
+```
+
+Without `all`: the areas the person reads (a seat is needed). `all=1` from an administrator (also without a seat):
+every area. Duplicates: the same `sha256` and size, empty files not counted, the 20 groups wasting the most, ≤ 50 items
+each (oldest first). Cleaning up is `DELETE nodes/<id>`. `POST storage/versions/prune { areaId, keep }`: every file of
+the area keeps its newest `keep` versions; administrators (any area) and managers of the area (`403`); what the
+ransomware protection or a time travel still needs stays; ≤ 2000 a call (`more`).
+
 ## Portal
 
 The portal tab "Drive" (`ui/portal.*`, rendered inline by `server/ui.js` into GateControl's sandboxed frame): the areas,
@@ -334,7 +416,12 @@ the frame's address) opens its folder or file, "Direktlink kopieren" in a node's
 hochladen" (`<input webkitdirectory>`) besides dropping folders — sub folders are made (empty ones too), with the
 overall progress —, a red banner while a device of the person (an administrator: anyone's) is stopped by the
 ransomware protection ("Rückgängig machen", "War ich – freigeben", "Alle Änderungen"), and for administrators the page
-"Vorfälle".
+"Vorfälle". Since 1.7.0: "Fotos" (a timeline by month with previews, "Vor einem Jahr", choosing several to put them
+into an album), "Alben" (make, rename, cover, take out, delete, "Im Fotorahmen zeigen"), "Speicher" (per area, an
+administrator also everyone and every person; the largest files; duplicates with "Behalten" / "Löschen" — into the
+trash after asking; "Alte Versionen aufräumen" for those who may), "Zeitreise" in a folder's tools (the preview, the
+run, "Rückgängig machen"), and the date a photo was taken on upload (a JPEG's EXIF DateTimeOriginal, else the file's
+date). The section "Fotorahmen" (`ui/frame.*`) is the slide show of a kiosk device.
 
 ## Admin (GateControl's admin UI)
 
@@ -343,7 +430,8 @@ Pages (`ui.pages`, `ui/admin.*`): **Übersicht** (licence and people, the areas 
 API `/api/v1/plugins/gatecontrol-drive/api/admin/…`: `GET overview` (`licence`, `limits`, `counts`, `exceeded`,
 `backup { level: 'strong' | 'subtle' | 'off', areas }`, `people`, `areas`), `PUT seats/<userId> { kind }`,
 `GET|POST teams`, `PUT|DELETE teams/<id>` (members with `label`; a team folder with files is archived, not removed),
-`POST license/refresh`, `PUT backup-hint { on }`, since 1.6.0 `GET guard/incidents`, `POST guard/incidents/<id>/release |
+`POST license/refresh`, `PUT backup-hint { on }`, since 1.7.0 `overview.storage` (`bytes`, `files`, `versionsBytes`,
+`trashBytes`, `duplicates { groups, wastedBytes }` — shown in short on the overview), since 1.6.0 `GET guard/incidents`, `POST guard/incidents/<id>/release |
 undo` (the ransomware protection; the overview shows stopped devices on top with "Rückgängig machen" / "Freigeben").
 
 **Backup hint:** GateControl's backup holds Drive's database, never the files of its media areas. While an area lies
@@ -373,7 +461,7 @@ at once), the NAS journals (in case the hook was missed), uploads through links 
 GateControl has forgotten, the weekly backup hint, old notes of `child_view`, wipes after 90 days and the waiting for
 devices GateControl no longer lists, marked nodes whose time came (into the trash, since 1.5.0), the ransomware
 protection's journal (rows of no incident older than the window) and closed incidents after 30 days, the public address
-for direct links (since 1.6.0).
+for direct links (since 1.6.0). A version a time travel made stays until its hold ends (since 1.7.0).
 
 ## Development
 
