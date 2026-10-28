@@ -556,12 +556,27 @@
     });
   }
 
-  /** The folders shown open in the tree of `areaIds` again (something changed there). */
+  /** The folders shown open in the tree of `areaIds` again (something changed there; the old rows stay until then). */
   function refreshTree(areaIds) {
-    Object.keys(S.tree.open).forEach(function (id) {
-      if (!areaIds || areaIds.indexOf(S.tree.open[id]) >= 0) { delete S.tree.kids[id]; loadTree(Number(id)); }
-    });
     Object.keys(S.tree.kids).forEach(function (id) { if (!S.tree.open[id]) delete S.tree.kids[id]; });
+    Object.keys(S.tree.open).forEach(function (id) {
+      if (!areaIds || areaIds.indexOf(S.tree.open[id]) >= 0) loadTree(Number(id));
+    });
+  }
+
+  // live: many changes in a row (an upload of a folder) load the menu once
+  var menuTimer = null;
+  var menuAreas = [];
+  function scheduleMenu(areaIds) {
+    areaIds.forEach(function (x) { if (menuAreas.indexOf(x) < 0) menuAreas.push(x); });
+    if (menuTimer) clearTimeout(menuTimer);
+    menuTimer = setTimeout(function () {
+      var list = menuAreas;
+      menuTimer = null;
+      menuAreas = [];
+      refreshTree(list);
+      if (V) V.load().then(renderNav, function () { /* later */ });
+    }, 1000);
   }
 
   /** The folder shown: the folders above it open in the tree, so it can be marked there. */
@@ -2579,8 +2594,7 @@
       if (ev && ev.type === 'import') { if (S.page === 'import') loadJobs(); return; }
       if (!ev || ev.type !== 'changed' || !d || !Array.isArray(d.areas)) return;
       // the menu: the folders open in its tree, the vaults (one may have come or gone)
-      refreshTree(d.areas);
-      if (V) V.load().then(renderNav, function () { /* later */ });
+      scheduleMenu(d.areas);
       if (S.page === 'files' && d.areas.indexOf(S.areaId) >= 0 && !S.uploading) scheduleReload();
       else if (S.page === 'trash') showTrash();
     });

@@ -199,6 +199,67 @@ test('smoke: areas, a new folder, uploads with a name that exists, a file\'s act
   });
 });
 
+test('smoke (1.11.0): the menu — me and my seat, the folder tree (loaded when opened, marked, live), the icons; phone width', async () => {
+  await withHost({}, async (host, c) => {
+    const a = c.as(ANNA);
+    const mine = await c.area(ANNA, 'mine');
+    const fam = await c.area(ANNA, 'family');
+    const docs = (await a('POST', 'nodes', { parentId: mine.rootId, name: 'Dokumente' })).json.node;
+    const ins = (await a('POST', 'nodes', { parentId: docs.id, name: 'Versicherungen' })).json.node;
+    await a('POST', 'nodes', { parentId: fam.rootId, name: 'Urlaub' });
+    await c.put(ANNA, mine.rootId, 'Brief.pdf', '%PDF');
+    const calls = [];
+    const gc = frameGc(host, ANNA, calls);
+    const f = createWindow(portalHtml(), gc);
+    const doc = f.document;
+    const $ = (id) => doc.getElementById(id);
+    const row = (name) => $('dp-nav').querySelectorAll('.dp-tree-row').find((r) => textOf(r).trim() === name);
+    try {
+      f.run();
+      // my files are open with their folders (only folders: dirs=1); the family is closed
+      await until('the tree', () => row('Dokumente'));
+      const nav = textOf($('dp-nav'));
+      for (const x of ['Drive', 'Anna', 'Familien-Platz', 'Persönlich', 'Gemeinsam']) assert.ok(nav.includes(x), x);
+      assert.ok(!row('Brief.pdf'), 'no files in the tree');
+      assert.ok(calls.some((x) => x.path === `nodes/${mine.rootId}/children` && x.query.dirs === '1'));
+      assert.ok(!row('Urlaub'), 'the family is closed');
+      assert.ok(row('Meine Dateien').className.includes('is-sel'), 'the folder shown is marked');
+      // the arrow of "Dokumente" (it has folders): loaded when opened
+      assert.ok(!calls.some((x) => x.path === `nodes/${docs.id}/children`));
+      const arrow = row('Dokumente').querySelector('.dp-chev');
+      assert.equal(arrow.getAttribute('aria-label'), 'Aufklappen: Dokumente');
+      arrow.click();
+      await until('Versicherungen', () => row('Versicherungen'));
+      assert.equal(row('Versicherungen').querySelector('.dp-chev'), null, 'no arrow without folders below');
+      // the name opens the folder; it is marked
+      navItem($('dp-nav'), 'Versicherungen').click();
+      await until('opened', () => textOf($('dp-crumbs')).includes('Versicherungen') && row('Versicherungen').className.includes('is-sel'));
+      // the family: opened by its arrow
+      row('Familie Berg').querySelector('.dp-chev').click();
+      await until('Urlaub', () => row('Urlaub'));
+      // live: a folder made elsewhere shows in the open tree
+      await a('POST', 'nodes', { parentId: ins.id, name: 'Auto' });
+      const ev = c.events().filter((e) => e.type === 'changed').pop();
+      for (const fn of gc.listeners) fn({ plugin: 'gatecontrol-drive', type: ev.type, data: ev.data });
+      await until('the arrow of Versicherungen', () => row('Versicherungen') && row('Versicherungen').querySelector('.dp-chev'), 3000);
+      // closed by its arrow
+      row('Dokumente').querySelector('.dp-chev').click();
+      assert.ok(!row('Versicherungen'));
+      // the icons with their labels (tooltips)
+      const icons = $('dp-nav').querySelectorAll('.dp-iconbar').pop().querySelectorAll('button').map((b) => b.getAttribute('title'));
+      assert.deepEqual(icons, ['Papierkorb', 'Speicher', 'Geräte', 'Geteilte Links', 'Drive-Einstellungen']);
+      // phone width: the menu button opens the menu, choosing closes it
+      $('dp-navtoggle').click();
+      assert.ok($('dp-nav').className.includes('is-open'));
+      assert.equal($('dp-navtoggle').getAttribute('aria-expanded'), 'true');
+      navItem($('dp-nav'), 'Papierkorb').click();
+      assert.ok(!$('dp-nav').className.includes('is-open'));
+    } finally {
+      f.stop();
+    }
+  });
+});
+
 test('smoke: into the trash and also on all my devices (Drive knows a phone of mine)', async () => {
   await withHost({}, async (host, c) => {
     const mine = await c.area(ANNA, 'mine'); // from Anna's phone: Drive knows it now
