@@ -24,7 +24,8 @@ const YEARS_MAX = 100;
 const TIES_MAX = 1000;
 
 // a picture or a video, live
-const MEDIA = "is_dir = 0 AND deleted_at IS NULL AND (mime LIKE 'image/%' OR mime LIKE 'video/%')";
+// a vault's files never (since 1.9.0: their type is application/octet-stream anyway — the server cannot see them)
+const MEDIA = "is_dir = 0 AND deleted_at IS NULL AND vault_id IS NULL AND (mime LIKE 'image/%' OR mime LIKE 'video/%')";
 const TAKEN = nodes.TAKEN;
 
 /** The areas of `area` (or every one the person reads) → [area ids]; an area not readable: not_found. */
@@ -147,6 +148,6 @@ async function memories(ctx, q) {
 }
 
 /** Is node row `n` a live picture or video? */
-const isMedia = (n) => !!n && n.is_dir === 0 && n.deleted_at == null && /^(image|video)\//.test(String(n.mime || ''));
+const isMedia = (n) => !!n && n.is_dir === 0 && n.deleted_at == null && !n.vault_id && /^(image|video)\//.test(String(n.mime || ''));
 
 module.exports = { list, months, memories, page, itemsOf, isMedia, areaIds, noteViews, limitArg, beforeArg, MEDIA, LIMIT_MAX };

@@ -84,6 +84,8 @@ async function reach(ctx, id) {
   const d = n ? await store.one(ctx.gc, 'SELECT * FROM doc_deadlines WHERE id = ?', [n]) : null;
   if (!d) throw fail('not_found');
   const { node } = await nodes.reach(ctx, d.node_id);
+  // a vault's file (since 1.9.0) has no deadlines; should one be left, it takes no reminder
+  if (node.vault_id) throw fail('encrypted');
   return { d, node };
 }
 
@@ -121,7 +123,7 @@ async function list(ctx, q) {
   const ids = (await ctx.visible()).map((x) => x.area.id);
   if (!ids.length) return { deadlines: [] };
   const rows = await store.all(ctx.gc, `SELECT d.id AS dl_id, d.kind AS dl_kind, d.date AS dl_date, d.label AS dl_label, n.* FROM doc_deadlines d
-    JOIN nodes n ON n.id = d.node_id WHERE n.area_id IN (${store.marks(ids.length)}) AND n.deleted_at IS NULL AND d.date >= ? AND d.date <= ?
+    JOIN nodes n ON n.id = d.node_id WHERE n.area_id IN (${store.marks(ids.length)}) AND n.deleted_at IS NULL AND n.vault_id IS NULL AND d.date >= ? AND d.date <= ?
     ORDER BY d.date, d.id LIMIT ?`, [...ids, from, to, LIST_MAX]);
   const rem = await remindersOf(ctx.gc, ctx.viewer, rows.map((r) => r.dl_id));
   const out = [];

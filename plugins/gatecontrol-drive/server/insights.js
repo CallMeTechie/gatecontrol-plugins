@@ -158,7 +158,8 @@ const isImage = (n) => !!(n.media_id && IMAGE_RE.test(String(n.mime || '')) && n
 
 /** What the AI may read of file `n`: 'text', 'media' (a picture — `asked`: someone asked for it), or null. */
 async function sourceOf(gc, n, st, settings, asked) {
-  if (!n || n.is_dir === 1 || n.deleted_at != null) return null;
+  // a vault's file (since 1.9.0): the server holds only ciphertext — never to the AI
+  if (!n || n.is_dir === 1 || n.deleted_at != null || n.vault_id) return null;
   if (await hasText(gc, n.id)) return 'text';
   if (isImage(n) && st.media && (asked || settings.docAiImages)) return 'media';
   return null;
@@ -314,6 +315,8 @@ async function tick(gc, settings, now) {
   const st = await state(gc, settings);
   if (!st.on) return out;
   const started = Date.now();
+  // nothing of a vault (1.9.0) — such rows cannot come from consider(), this is the second lock
+  await store.run(gc, 'DELETE FROM doc_insights WHERE node_id IN (SELECT id FROM nodes WHERE vault_id IS NOT NULL)');
   const rows = await store.all(gc, "SELECT * FROM doc_insights WHERE status = 'pending' ORDER BY queued_at, node_id LIMIT ?", [PER_TICK]);
   const touched = new Set();
   for (const r of rows) {
@@ -344,6 +347,8 @@ const EMPTY = { kind: null, title: null, date: null, sender: null, amount: null,
 
 /** The answer of GET nodes/<id>/insight for node `n` of area `a`. */
 async function view(ctx, n, a, st) {
+  // a vault's file (since 1.9.0): always off, no deadlines
+  if (n.vault_id) return { status: 'off', ...EMPTY, deadlines: [] };
   const dl = await deadlines.ofNode(ctx, n.id);
   if (!st.on || !(await areaOn(ctx.gc, a))) return { status: 'off', ...EMPTY, deadlines: dl };
   const r = await store.one(ctx.gc, 'SELECT * FROM doc_insights WHERE node_id = ?', [n.id]);
@@ -371,9 +376,11 @@ async function get(ctx, id) {
 
 /** POST nodes/<id>/insight — recognise (again): someone asked, so a picture may go too (when GateControl allows it). */
 async function restart(ctx, id) {
+  const { node, area } = await nodes.reach(ctx, idArg(id), 'write');
+  // a vault's file (since 1.9.0): the server cannot read it — 409 encrypted
+  if (node.vault_id) throw fail('encrypted');
   const st = await state(ctx.gc, ctx.settings);
   if (!st.on) throw fail('feature_off');
-  const { node, area } = await nodes.reach(ctx, idArg(id), 'write');
   if (node.is_dir === 1) throw fail('invalid');
   if (!(await areaOn(ctx.gc, area))) throw fail('feature_off', { field: 'area' });
   const src = await sourceOf(ctx.gc, node, st, ctx.settings, true);
@@ -392,6 +399,7 @@ async function apply(ctx, id, body) {
   const wantFolder = b.folder === true;
   if (!wantName && !wantFolder) throw fail('invalid', { field: 'name' });
   const { node, area } = await nodes.reach(ctx, idArg(id), 'write');
+  if (node.vault_id) throw fail('encrypted');
   if (node.is_dir === 1) throw fail('invalid');
   if (!(await areaOn(ctx.gc, area))) throw fail('feature_off', { field: 'area' });
   const r = await store.one(ctx.gc, 'SELECT * FROM doc_insights WHERE node_id = ?', [node.id]);
@@ -431,7 +439,7 @@ async function attach(ctx, body) {
   const on = await prefsOf(ctx.gc, areaRows);
   for (const n of list) {
     const r = rows.get(n.id);
-    if (on.get(n.areaId) !== true) n.insight = { status: 'off', kind: null };
+    if (on.get(n.areaId) !== true || n.encrypted) n.insight = { status: 'off', kind: null };
     else if (!r || r.rev !== n.rev) n.insight = { status: 'none', kind: null };
     else n.insight = { status: r.status, kind: r.status === 'ready' ? r.kind : null };
   }

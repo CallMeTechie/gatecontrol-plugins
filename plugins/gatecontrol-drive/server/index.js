@@ -27,6 +27,12 @@
 //     · POST|DELETE deadlines/<id>/remind (deadlines.js) — AI for documents, GateControl's gc.ai (1.8.0)
 //     import/sources|connect|connections/<id>|browse|jobs[/<id>[/resume]] — the import from Google Drive and OneDrive,
 //     GateControl's gc.cloud (imports.js, 1.8.0)
+//     POST|GET vaults · GET vaults/<id> · GET vaults/<id>/keys?deviceId= · GET vaults/<id>/recovery · PUT vaults/<id>/recovery
+//     GET|POST vaults/<id>/devices · POST vaults/<id>/devices/<deviceId>/approve · DELETE vaults/<id>/devices/<deviceId>
+//     POST vaults/<id>/rotate   (vault folders, end-to-end encrypted — vault.js, 1.9.0; nodes and uploads/commit take
+//                               encrypted, nameCipher, keyVersion)
+//     POST nodes/<id>/office    (office in the browser — office.js, 1.9.0; the office server's WOPI requests come
+//                               without a session through GateControl's public endpoints: hook publicRequest)
 //   admin     admin/… (administrators in the admin UI, admin.js; admin/guard/… the incidents, since 1.6.0)
 // The full contract (bodies, answers, codes, events) is in README.md "API". Every file node of an answer carries
 // `preview` (previews.js, since 1.1.0).
@@ -64,6 +70,8 @@ const storage = require('./storage');
 const insights = require('./insights');
 const deadlines = require('./deadlines');
 const imports = require('./imports');
+const vault = require('./vault');
+const office = require('./office');
 const { t } = require('./text');
 const { STATUS, fail, isKnown, posInt, DEVICE_RE, day, iso } = require('./util');
 
@@ -179,6 +187,8 @@ async function me(ctx) {
   };
 }
 
+// vault: vault folders, end-to-end encrypted (vaults/…, nodes and uploads/commit with encrypted / nameCipher / keyVersion, 1.9.0) ·
+// office (1.9.0, only while set up): POST nodes/<id>/office ·
 // timeTravel: nodes/<id>/timetravel · takenAt: uploads/commit { takenAt }, node takenAt · photos: photos, months,
 // memories · albums · frame: albums { frame } and the kiosk's photo frame · storage: GET storage, versions/prune (1.7.0) ·
 // links: GET me links, ?drive=<id> in the portal (1.6.0) · guard: ransomware protection, 423 device_locked,
@@ -186,7 +196,7 @@ async function me(ctx) {
 // devices: GET/PUT/DELETE devices (1.5.0) · deleteAfter: DELETE nodes/<id>?after=, PATCH { deleteAt } (1.5.0) ·
 // emptyFiles: uploads/commit { size: 0 } without a mediaId (1.5.0) · wipes: DELETE ?everywhere=1 (1.2.0) ·
 // textSearch: uploads/commit { text } (1.3.0) · previews (1.1.0)
-const FEATURES = ['previews', 'wipes', 'textSearch', 'devices', 'deleteAfter', 'emptyFiles', 'links', 'guard', 'timeTravel', 'takenAt', 'photos', 'albums', 'frame', 'storage'];
+const FEATURES = ['previews', 'wipes', 'textSearch', 'devices', 'deleteAfter', 'emptyFiles', 'links', 'guard', 'timeTravel', 'takenAt', 'photos', 'albums', 'frame', 'storage', 'vault'];
 
 /**
  * What needs GateControl's AI service or cloud accounts (1.8.0) — only while the host has it and it is allowed (the
@@ -196,6 +206,8 @@ async function optional(ctx) {
   const out = [];
   if ((await insights.state(ctx.gc, ctx.settings)).on) out.push('docAi');
   if (await imports.sources(ctx.gc, ctx.settings)) out.push('cloudImport');
+  // office in the browser (1.9.0): only while an office server is set up and GateControl has public endpoints
+  if (await office.available(ctx.gc, await ctx.gc.settings.all(), ctx.now).catch(() => false)) out.push('office');
   return out;
 }
 
@@ -294,12 +306,14 @@ async function route(ctx, req, seg) {
       if (c === 'timetravel') return ok(await timetravel.preview(ctx, idArg(b), q));
     }
     if (seg.length === 3 && c === 'timetravel' && m === 'POST') return ok(await timetravel.run(ctx, idArg(b), body));
+    if (seg.length === 3 && c === 'office' && m === 'POST') return ok(await office.open(ctx, idArg(b)));
     if (c === 'versions' && seg.length >= 4) {
       if (seg.length === 4 && m === 'DELETE') return ok(await files.deleteVersion(ctx, idArg(b), idArg(d)));
       if (seg.length === 5 && e === 'content' && m === 'GET') return ok(await files.versionContent(ctx, idArg(b), idArg(d)));
       if (seg.length === 5 && e === 'restore' && m === 'POST') return ok({ node: await files.restoreVersion(ctx, idArg(b), idArg(d)) });
     }
   }
+  if (a === 'vaults') return ok(await vaultRoute(ctx, m, seg, q, body));
   if (a === 'photos' && m === 'GET') {
     if (seg.length === 1) return ok(await photos.list(ctx, q));
     if (seg.length === 2 && b === 'months') return ok(await photos.months(ctx, q));
@@ -349,6 +363,23 @@ async function route(ctx, req, seg) {
   throw fail('not_found');
 }
 
+/** vaults/… (vault.js, since 1.9.0). */
+async function vaultRoute(ctx, m, seg, q, body) {
+  const [, id, c, d, e] = seg;
+  if (seg.length === 1 && m === 'GET') return vault.list(ctx);
+  if (seg.length === 1 && m === 'POST') return vault.create(ctx, body);
+  if (seg.length === 2 && m === 'GET') return vault.get(ctx, id);
+  if (seg.length === 3 && c === 'keys' && m === 'GET') return vault.keys(ctx, id, q);
+  if (seg.length === 3 && c === 'recovery' && m === 'GET') return vault.recovery(ctx, id);
+  if (seg.length === 3 && c === 'recovery' && m === 'PUT') return vault.setRecovery(ctx, id, body);
+  if (seg.length === 3 && c === 'rotate' && m === 'POST') return vault.rotate(ctx, id, body);
+  if (seg.length === 3 && c === 'devices' && m === 'GET') return vault.devices(ctx, id);
+  if (seg.length === 3 && c === 'devices' && m === 'POST') return vault.ask(ctx, id, body);
+  if (seg.length === 4 && c === 'devices' && m === 'DELETE') return vault.revoke(ctx, id, d);
+  if (seg.length === 5 && c === 'devices' && e === 'approve' && m === 'POST') return vault.approve(ctx, id, d, body);
+  throw fail('not_found');
+}
+
 /** guard/incidents/… (guard.js). */
 async function guardRoute(ctx, m, seg, q) {
   const [, , id, act] = seg;
@@ -394,6 +425,10 @@ async function after(gc, ctx, done) {
   // the ransomware protection: a new incident is told, the live event 'guard' (also after a release or an undo)
   if (ctx.guardIncident || (ctx.guardEvents && ctx.guardEvents.length)) {
     try { await guard.announce(gc, ctx, await address.linkOf(gc, ctx.settings, null, ctx.now)); } catch (e) { gc.log.warn('guard announce failed', (e && e.code) || 'error'); }
+  }
+  // vault folders (since 1.9.0): a device asks (push + live event 'vault'), approved, a new key
+  if ((ctx.vaultNotes && ctx.vaultNotes.length) || (ctx.vaultEvents && ctx.vaultEvents.length)) {
+    try { await vault.announce(gc, ctx, t); } catch (e) { gc.log.warn('vault announce failed', (e && e.code) || 'error'); }
   }
   for (const n of ctx.notes) {
     const lang = (ctx.users.get(n.child) || {}).lang === 'en' ? 'en' : 'de';
@@ -622,8 +657,38 @@ module.exports = {
   },
 
   async tick(gc) {
+    try { await office.sweep(gc, Date.now()); } catch (e) { gc.log.warn('office locks sweep failed', (e && e.code) || 'error'); }
     const now = Date.now();
     // reminders and imports (1.8.0) run as their person
     return jobs.tick(gc, now, { asPerson: (uid) => personContext(gc, uid, now) });
+  },
+
+  /**
+   * GateControl's public endpoints (≥ 1.211.0, permissions.publicEndpoints): the office server's WOPI requests and the
+   * portal's "open in the office" (office.js) — no session; GateControl checked the token (one person, one path).
+   */
+  async publicRequest(req, gc) {
+    try {
+      return await office.publicRequest(gc, req || {}, async (uid) => {
+        const c = await context(gc, { id: uid, portal: true, loggedIn: true }, req && req.lang, Date.now());
+        if (!c.user || !c.licence.valid || !c.seat) return null;
+        await c.visible();
+        c.after = (done = true) => after(gc, c, done);
+        return c;
+      });
+    } catch (e) {
+      gc.log.warn('office request failed', (e && (e.code || e.message)) || 'error');
+      return { status: 500, text: 'error' };
+    }
+  },
+
+  /** The office server's state below the settings (office_url): the discovery read now. */
+  async settingsStatus({ lang } = {}, gc) {
+    try { return await office.status(gc, await gc.settings.all(), lang === 'en' ? 'en' : 'de', t); } catch { return []; }
+  },
+
+  /** A new office address: read its discovery again. */
+  async settingsChanged(values, gc) {
+    try { if (office.officeUrl(await gc.settings.all())) await office.refreshDiscovery(gc); } catch (e) { gc.log.warn('office discovery failed', (e && e.code) || 'error'); }
   },
 };

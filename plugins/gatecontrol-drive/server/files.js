@@ -29,6 +29,7 @@
 const store = require('./store');
 const nodes = require('./nodes');
 const guard = require('./guard');
+const vaults = require('./vault');
 const { fail, nodeName, MEDIA_RE, SHA_RE, EMPTY_SHA, iso, nonNeg, docText, msArg } = require('./util');
 
 const URL_TTL_S = 3600;
@@ -103,29 +104,42 @@ async function keepVersion(ctx, n, holdUntil = null) {
   return Number(r.lastInsertRowid);
 }
 
-/** POST uploads/commit → { node, created }. */
-async function commit(ctx, body) {
+/**
+ * POST uploads/commit → { node, created }. Into a vault (since 1.9.0): { mediaId, parentId, encrypted: true, nameCipher,
+ * keyVersion, name? (the opaque name of a file of the vault — then a new version of it, with baseRev or onConflict
+ * 'version'), baseRev?, onConflict?, mtime? } — the content is the device's ciphertext; text, takenAt, entropy and the
+ * type are not kept (application/octet-stream), an empty file has a header too (never size 0).
+ */
+async function commit(ctx, body, opts = {}) {
   const b = body && typeof body === 'object' ? body : {};
-  const empty = isEmpty(b);
+  const encrypted = b.encrypted === true || b.encrypted === 'true';
+  const empty = !encrypted && isEmpty(b);
   const info = empty ? { mediaId: null, bytes: 0, sha256: EMPTY_SHA, mime: mimeArg(b.mime) } : await freshUpload(ctx, b.mediaId);
-  let name = nodeName(b.name);
+  let name = encrypted ? null : nodeName(b.name);
   const mtime = b.mtime == null ? null : (Number.isSafeInteger(Number(b.mtime)) ? Number(b.mtime) : Date.parse(b.mtime));
   if (b.mtime != null && !Number.isFinite(mtime)) throw fail('invalid', { field: 'mtime' });
   const baseRev = b.baseRev == null ? null : nonNeg(b.baseRev);
   const onConflict = b.onConflict == null ? null : String(b.onConflict);
   if (onConflict && onConflict !== 'rename' && onConflict !== 'version') throw fail('invalid', { field: 'onConflict' });
   if (b.text != null && typeof b.text !== 'string') throw fail('invalid', { field: 'text' });
-  const text = docText(b.text);
-  const entropy = guard.entropyArg(b.entropy);
-  const taken = takenArg(b.takenAt, ctx.now);
+  // a vault's file: nothing the server could read about it (no text, no time it was taken, no entropy hint, no type)
+  const text = encrypted ? null : docText(b.text);
+  const entropy = encrypted ? null : guard.entropyArg(b.entropy);
+  const taken = encrypted ? null : takenArg(b.takenAt, ctx.now);
+  if (encrypted) info.mime = 'application/octet-stream';
+  // the office's save (office.js): GateControl stored the body as application/octet-stream — the document's type stays
+  else if (opts.mime) info.mime = opts.mime;
   return store.tx(ctx.gc, async () => {
     const { node: parent, area } = await nodes.folderFor(ctx, Number(b.parentId));
+    const enc = await vaults.forNewNode(ctx, parent, b, { needName: false });
+    if (enc) name = enc.name;
     let existing = await nodes.taken(ctx.gc, area.id, parent.id, name);
     if (existing && (existing.is_dir === 1 || !((baseRev != null && baseRev === existing.rev) || onConflict === 'version'))) {
       if (onConflict !== 'rename') throw fail(existing.is_dir === 1 ? 'exists' : 'conflict', { current: nodes.view(existing) });
-      name = await nodes.freeName(ctx.gc, area.id, parent.id, name);
+      name = enc ? vaults.opaqueName() : await nodes.freeName(ctx.gc, area.id, parent.id, name);
       existing = null;
     }
+    if (enc && !existing && !enc.nameCipher) throw fail('invalid', { field: 'nameCipher' });
     const p = nodes.join(await nodes.pathOf(ctx.gc, parent), name);
     if (existing) {
       const versionId = await keepVersion(ctx, existing);
@@ -139,8 +153,9 @@ async function commit(ctx, body) {
         }
       }
       await store.run(ctx.gc, `UPDATE nodes SET media_id = ?, size = ?, sha256 = ?, mime = ?, mtime = ?, rev = rev + 1, updated_at = ?, updated_by = ?, entropy = ?,
-        taken_at = COALESCE(?, taken_at), content_at = ? WHERE id = ?`, [info.mediaId, info.bytes, info.sha256 || null, (empty ? info.mime || existing.mime : info.mime) || null, mtime, ctx.now, ctx.viewer, entropy,
-        taken, ctx.now, existing.id]);
+        taken_at = COALESCE(?, taken_at), content_at = ?, key_version = COALESCE(?, key_version), name_cipher = COALESCE(?, name_cipher) WHERE id = ?`,
+      [info.mediaId, info.bytes, info.sha256 || null, (empty ? info.mime || existing.mime : info.mime) || null, mtime, ctx.now, ctx.viewer, entropy,
+        taken, ctx.now, enc ? enc.keyVersion : null, enc ? enc.nameCipher : null, existing.id]);
       await nodes.log(ctx.gc, area.id, existing.id, 'update', ctx);
       await guard.note(ctx, { op: 'overwrite', node: existing, name, versionId, entropy, entropyBefore: existing.entropy });
       // new content: a mark of the file ("deleted on the device") ends, and those of the folders above it
@@ -156,8 +171,10 @@ async function commit(ctx, body) {
       } catch (e) { throw mediaFail(e); }
     }
     await nodes.unmarkUp(ctx.gc, parent.id, ctx);
-    const r = await store.run(ctx.gc, `INSERT INTO nodes (area_id, parent_id, name, is_dir, media_id, size, sha256, mime, mtime, created_at, created_by, updated_at, updated_by, entropy, taken_at, content_at)
-      VALUES (?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [area.id, parent.id, name, info.mediaId, info.bytes, info.sha256 || null, info.mime || null, mtime, ctx.now, ctx.viewer, ctx.now, ctx.viewer, entropy, taken, ctx.now]);
+    const r = await store.run(ctx.gc, `INSERT INTO nodes (area_id, parent_id, name, is_dir, media_id, size, sha256, mime, mtime, created_at, created_by, updated_at, updated_by, entropy, taken_at, content_at,
+        vault_id, name_cipher, key_version)
+      VALUES (?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [area.id, parent.id, name, info.mediaId, info.bytes, info.sha256 || null, info.mime || null, mtime, ctx.now, ctx.viewer, ctx.now, ctx.viewer, entropy, taken, ctx.now,
+      enc ? enc.vaultId : null, enc ? enc.nameCipher : null, enc ? enc.keyVersion : null]);
     await nodes.log(ctx.gc, area.id, r.lastInsertRowid, 'create', ctx);
     await guard.note(ctx, { op: 'create', node: await nodes.row(ctx.gc, r.lastInsertRowid), name, entropy });
     await setText(ctx, r.lastInsertRowid, text);
@@ -199,7 +216,7 @@ async function content(ctx, id) {
   if (via === 'parent') await ctx.noteChildView(area);
   if (!node.media_id) return emptyContent(node.name, node.mime);
   const url = await ctx.gc.media.url(node.media_id, { user: ctx.viewer, ttlS: URL_TTL_S });
-  return { url, name: node.name, mime: node.mime, size: node.size, mediaId: node.media_id };
+  return { url, name: node.name, mime: node.mime, size: node.size, mediaId: node.media_id, ...(node.vault_id ? { encrypted: true, vaultId: node.vault_id, nameCipher: node.name_cipher } : {}) };
 }
 
 function versionView(v) {
@@ -253,7 +270,8 @@ async function restoreVersion(ctx, id, vid, holdUntil = null) {
       }
     }
     await store.run(ctx.gc, 'DELETE FROM versions WHERE id = ?', [v.id]);
-    await store.run(ctx.gc, 'UPDATE nodes SET media_id = ?, size = ?, sha256 = ?, rev = rev + 1, updated_at = ?, updated_by = ?, entropy = NULL, content_at = ? WHERE id = ?',
+    // a vault's file: the restored content's key version is in its header (key_version unknown here → null)
+    await store.run(ctx.gc, 'UPDATE nodes SET media_id = ?, size = ?, sha256 = ?, rev = rev + 1, updated_at = ?, updated_by = ?, entropy = NULL, content_at = ?, key_version = NULL WHERE id = ?',
       [v.media_id || null, v.media_id ? v.size : 0, v.media_id ? v.sha256 : EMPTY_SHA, ctx.now, ctx.viewer, ctx.now, node.id]);
     await nodes.log(ctx.gc, area.id, node.id, 'update', ctx);
     await nodes.unmarkUp(ctx.gc, node.id, ctx, node.id);

@@ -2563,13 +2563,13 @@
       "keywords": [
         "dateien",
         "files",
-        "cloud",
+        "tresor",
         "speicher",
         "storage",
         "nas",
         "s3",
         "teilen",
-        "versionen",
+        "office",
         "fotos",
         "alben",
         "zeitreise"
@@ -2615,8 +2615,8 @@
             "en": "Portal tab “Drive”"
           },
           "text": {
-            "de": "Hochladen (auch ganze Ordner), Import aus Google Drive und OneDrive, Vorschau, Verschieben, Suche",
-            "en": "Upload (whole folders too), import from Google Drive and OneDrive, preview, move, search"
+            "de": "Hochladen (auch ganze Ordner), Import aus Google Drive und OneDrive, Suche, Office im Browser",
+            "en": "Upload (whole folders too), import from Google Drive and OneDrive, search, office in the browser"
           }
         },
         {
@@ -2688,12 +2688,12 @@
         {
           "icon": "shield",
           "title": {
-            "de": "Schutz & Admin-Seiten",
-            "en": "Protection & admin pages"
+            "de": "Tresor-Ordner & Schutz",
+            "en": "Vault folders & protection"
           },
           "text": {
-            "de": "Stoppt Erpressungstrojaner mit „Rückgängig machen“; Lizenz, Personen, Team-Ordner und Sicherungshinweis",
-            "en": "Stops ransomware with “Undo”; licence, people, team folders and the backup hint"
+            "de": "Ende-zu-Ende verschlüsselte Tresor-Ordner; stoppt Erpressungstrojaner mit „Rückgängig machen“",
+            "en": "End-to-end encrypted vault folders; stops ransomware with “Undo”"
           }
         }
       ],
@@ -2759,6 +2759,21 @@
           "text": {
             "de": "Erkennt, von welchem eigenen Gerät eine Anfrage kommt – für „Löschen auf allen Geräten“, das Änderungsprotokoll und den Schutz vor Erpressungstrojanern.",
             "en": "Knows which of one’s own devices a request comes from – for “delete on all devices”, the change log and the protection against ransomware."
+          }
+        },
+        {
+          "icon": "network",
+          "title": {
+            "de": "Office-Server: Heimnetz und öffentliche Endpunkte",
+            "en": "Office server: home network and public endpoints"
+          },
+          "text": {
+            "de": "Liest die Discovery über ein Zugriffsziel des Admins; der Office-Server speichert Dokumente ohne Anmeldung – nur mit kurzlebigem Schlüssel für eine Datei und Person (WOPI).",
+            "en": "Reads the discovery through an access target the admin assigns; the office server saves documents without sign-in – only with a short-lived token for one file and person (WOPI)."
+          },
+          "tag": {
+            "de": "Öffentlich",
+            "en": "Public"
           }
         },
         {

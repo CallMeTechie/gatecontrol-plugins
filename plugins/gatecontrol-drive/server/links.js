@@ -70,6 +70,10 @@ async function create(ctx, body) {
   if (note != null && note.length > 500) throw fail('invalid', { field: 'note' });
   const { node, area } = await nodes.reach(ctx, nodeId, 'write');
   if (area.archived_at != null) throw fail('forbidden');
+  // a vault (since 1.9.0): nothing in it is ever shared — the server holds only ciphertext, a link would hand that out
+  if (node.vault_id || (node.is_dir === 1 && await store.one(ctx.gc, 'SELECT 1 AS x FROM nodes WHERE vault_id IS NOT NULL AND id IN (WITH RECURSIVE down(id) AS (SELECT id FROM nodes WHERE parent_id = ? UNION ALL SELECT n.id FROM nodes n JOIN down ON n.parent_id = down.id) SELECT id FROM down) LIMIT 1', [node.id]))) {
+    throw fail('encrypted');
+  }
   if (node.is_dir !== 1 && mode === 'upload') throw fail('invalid', { field: 'mode' });
   if (node.is_dir !== 1 && !node.media_id) throw fail('invalid');
   const p = await nodes.pathOf(ctx.gc, node);
@@ -166,7 +170,8 @@ async function events(ctx, token, q) {
 async function endFor(gc, unlink, now) {
   if (!unlink) return 0;
   const pl = api(gc);
-  const sets = [['moved', unlink.folders, "kind IN ('folder', 'upload')"], ['trashed', unlink.all, '1 = 1']];
+  // vault (since 1.9.0): a vault folder was made inside a shared folder — its ciphertext would show in the folder link
+  const sets = [['moved', unlink.folders, "kind IN ('folder', 'upload')"], ['trashed', unlink.all, '1 = 1'], ['vault', unlink.vault, "kind = 'folder'"]];
   let n = 0;
   for (const [why, ids, cond] of sets) {
     if (!ids || !ids.length) continue;

@@ -2,6 +2,54 @@
 
 Dateien der Familie und des Teams auf dem eigenen Speicher – auf diesem Server, einer NAS oder in S3.
 
+## 1.9.0
+- **Tresor-Ordner (Ende-zu-Ende verschlüsselt):** Inhalte und Namen verschlüsseln die Geräte, der Server bekommt nur
+  Chiffretext, Größen, Zeitpunkte, öffentliche Schlüssel und verpackte Schlüssel. Neue Tabellen `vaults`,
+  `vault_devices`, `vault_wraps` und die Spalten `vault_id`, `name_cipher`, `key_version` an `nodes` (Migration 009).
+  - API: `POST|GET vaults`, `GET vaults/<id>`, `GET vaults/<id>/keys?deviceId=` (nur eigene Geräte),
+    `GET|PUT vaults/<id>/recovery`, `GET|POST vaults/<id>/devices` (Freigabe-Anfrage, Push-Thema `vault`),
+    `POST vaults/<id>/devices/<deviceId>/approve`, `DELETE vaults/<id>/devices/<deviceId>`, `POST vaults/<id>/rotate`.
+  - Knoten im Tresor: `encrypted`, `vaultId`, `nameCipher`, `keyVersion`; der Klarname ist opak (32 Hexzeichen, auch
+    auf der NAS). `POST nodes`, `uploads/commit` und `PATCH nodes/<id>` nehmen `encrypted`, `nameCipher`,
+    `keyVersion`; ein veralteter Schlüssel ergibt `409 stale_key`.
+  - Kryptografie: X25519-Geräteschlüssel, Tresor-Schlüssel per HPKE (RFC 9180, DHKEM(X25519), HKDF-SHA256,
+    AES-256-GCM) je Gerät verpackt, Namen und Inhalte mit AES-256-GCM (1-MiB-Blöcke, Header `GCDV`),
+    Wiederherstellungsschlüssel im Format des Vault-Plugins (56 Zeichen Crockford-Base32 mit Prüfbytes); wer sich damit
+    selbst freischaltet, weist ihn mit `recoveryAuth` nach (der Server kennt nur dessen SHA-256).
+    Sicherheitszahl zum Vergleichen beim Freigeben. Genaue Beschreibung im README, feste Testvektoren in
+    `test/vault-vectors.json`.
+  - Wer den Bereich verliert, dessen Geräte werden widerrufen und der Tresor verlangt einen neuen Schlüssel
+    (`needsRotation`). Neue Dateien bekommen ihn, ältere bleiben für die Übrigen lesbar.
+  - Kein Tresor-Inhalt in Vorschau, Textsuche, Suche, öffentlichen Links (`409 encrypted`; ein Ordner-Link auf einen
+    Ordner, in dem ein Tresor entsteht, endet mit `endedWhy: 'vault'`), Alben, Fotorahmen und Office.
+  - Die KI für Dokumente (1.8.0) liest keine Tresor-Datei: Sie kommt nicht in die Warteschlange, `GET nodes/<id>/insight`
+    liefert `status: 'off'`, `POST nodes/<id>/insight` und `…/insight/apply` antworten `409 encrypted`. Fristen gibt
+    es dort keine, sie erscheinen nicht in `GET deadlines` und nehmen keine Erinnerung (`409 encrypted`).
+  - Der Import (1.8.0) schreibt nie in einen Tresor: Ein Ziel im Tresor ergibt `409 encrypted`, ein laufender Job mit
+    einem solchen Ziel endet mit `failed` / `encrypted`. Der Erpressungsschutz filtert dort nicht nach Entropie. Papierkorb, Versionen und Zeitreise (auch der
+    verschlüsselte Name) funktionieren weiter.
+  - Portal (braucht GateControl ≥ 1.211.0 für `GC.keys` und `GC.mediaBytes`): „Tresor-Ordner“ anlegen
+    (Wiederherstellungsschlüssel einmal anzeigen, kopieren oder als Textdatei speichern), öffnen, Dateien
+    verschlüsselt hochladen und entschlüsselt herunterladen, umbenennen, Freigabe anfragen, mit dem
+    Wiederherstellungsschlüssel öffnen, andere Geräte freigeben, den Schlüssel erneuern. Der Geräteschlüssel ist nicht
+    exportierbar.
+- **Office im Browser (WOPI-Host für Collabora Online und OnlyOffice):** neue Einstellung `office_url`, neues
+  Zugriffsziel „Office-Server“ für die Discovery. „Im Browser bearbeiten“ im Portal (`POST nodes/<id>/office`,
+  neuer Tab über `GC.openTab`).
+  - CheckFileInfo, GetFile, PutFile (neue Version), Lock, Unlock, RefreshLock, GetLock (Tabelle `office_locks`).
+  - Prüfung der Proof Keys, wenn die Discovery welche liefert.
+  - Das `access_token` gilt 4 Stunden für eine Datei, eine Person und ein Recht; bei jedem Aufruf werden die Rechte
+    erneut geprüft.
+  - Braucht GateControl ≥ 1.211.0 (`permissions.publicEndpoints`). `me.features` enthält `office` nur, wenn alles
+    eingerichtet ist.
+- **Neue Berechtigungen – der Admin muss beim Update zustimmen:**
+  - `permissions.publicEndpoints`: Der Office-Server erreicht die WOPI-Endpunkte ohne Portal-Sitzung, nur mit einem
+    kurzlebigen Token pro Datei und Person; Bodies bis 512 MB werden als Medien gespeichert.
+  - Das Heimnetz-Zugriffsziel `office`: Darüber wird die Discovery gelesen. Der Admin weist es nach dem Update unter
+    Plugins › Drive › Zugriffsziele zu.
+  GateControl zeigt beide Berechtigungen beim Update an. Ohne Zuweisung des Zugriffsziels und ohne `office_url` fehlt
+  nur das Feature `office`, alles andere läuft.
+- `me.features`: `vault`, `office`.
 ## 1.8.0
 - **KI für Dokumente** (Feature `docAi`): Für neue Dokumente schlägt die KI Art, Titel, Datum, Absender, Betrag, einen
   Zielordner des Bereichs, einen Dateinamen und Fristen vor. Nichts passiert automatisch – übernommen wird per Klick.

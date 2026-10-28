@@ -31,7 +31,8 @@ async function attach(ctx, body) {
   for (const n of files) n.preview = null;
   const media = ctx.gc.media;
   if (!media || typeof media.previews !== 'function') return body;
-  const ids = [...new Set(files.filter((n) => !n.deleted && n.mediaId).map((n) => n.mediaId))];
+  // a vault's file (since 1.9.0) never has one: the server holds only its ciphertext
+  const ids = [...new Set(files.filter((n) => !n.deleted && n.mediaId && !n.encrypted).map((n) => n.mediaId))];
   const states = {};
   try {
     for (let i = 0; i < ids.length; i += BATCH) {
@@ -42,7 +43,7 @@ async function attach(ctx, body) {
     return body;
   }
   for (const n of files) {
-    const st = !n.deleted && n.mediaId ? states[n.mediaId] : null;
+    const st = !n.deleted && n.mediaId && !n.encrypted ? states[n.mediaId] : null;
     if (!st) continue;
     const url = ctx.app ? st.appUrl : st.url;
     if (typeof url === 'string' && url) n.preview = { url, largeUrl: `${url}?size=large` };

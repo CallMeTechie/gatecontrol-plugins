@@ -21,6 +21,10 @@ const STATUS = {
   no_public_url: 409,
   device_limit: 409,
   device_locked: 423,
+  // since 1.9.0: not for a vault (links, office, AI …: the server holds only ciphertext)
+  encrypted: 409,
+  // office in the browser (office.js): no office server set up, or not a document it opens
+  office_unavailable: 409,
   quota: 507,
   // since 1.8.0: AI for documents and the import (insights.js, imports.js)
   feature_off: 403,

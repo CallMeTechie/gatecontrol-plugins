@@ -27,6 +27,9 @@ const wipes = require('./wipes');
 const guard = require('./guard');
 const { fail, nodeName, numbered, iso } = require('./util');
 
+// vault.js needs this module; it is loaded when first used (vault folders, since 1.9.0)
+const vaults = () => require('./vault');
+
 const CHILDREN_MAX = 1000;
 const SEARCH_MAX = 100;
 
@@ -82,6 +85,9 @@ function view(n, extra) {
     deleted: n.deleted_at != null, ...(n.deleted_at != null ? { deletedAt: iso(n.deleted_at), deletedBy: n.deleted_by } : {}),
     // the mark (since 1.5.0): only while there is one
     ...(n.delete_at != null && n.deleted_at == null ? { deleteAt: iso(n.delete_at), deletedOnDevice: n.delete_device_name || null, deleteMarkedBy: n.delete_by == null ? null : n.delete_by } : {}),
+    // a node of a vault (since 1.9.0, vault.js): `name` is opaque, the device decrypts nameCipher; files carry their
+    // content's key version (the content's header says it too)
+    ...(n.vault_id ? { encrypted: true, vaultId: n.vault_id, nameCipher: n.name_cipher || null, keyVersion: n.key_version == null ? null : n.key_version } : {}),
     ...(extra || {}),
   };
 }
@@ -203,13 +209,13 @@ async function search(ctx, q, areaId) {
   if (!ids.length) return { items: [] };
   const like = '%' + term.replace(/[\\%_]/g, (c) => '\\' + c) + '%';
   const rows = await store.all(ctx.gc, `SELECT * FROM nodes WHERE area_id IN (${store.marks(ids.length)}) AND parent_id IS NOT NULL
-    AND deleted_at IS NULL AND name LIKE ? ESCAPE '\\' ORDER BY is_dir DESC, updated_at DESC LIMIT ?`, [...ids, like, SEARCH_MAX]);
+    AND deleted_at IS NULL AND vault_id IS NULL AND name LIKE ? ESCAPE '\\' ORDER BY is_dir DESC, updated_at DESC LIMIT ?`, [...ids, like, SEARCH_MAX]);
   const items = [];
   for (const r of rows) items.push(view(r, { path: await pathOf(ctx.gc, r), match: 'name' }));
   if (rows.length < SEARCH_MAX) {
     const seen = new Set(rows.map((r) => r.id));
     const hits = await store.all(ctx.gc, `SELECT n.*, t.text AS doc_text FROM doc_text t JOIN nodes n ON n.id = t.node_id
-      WHERE n.area_id IN (${store.marks(ids.length)}) AND n.deleted_at IS NULL AND t.text LIKE ? ESCAPE '\\'
+      WHERE n.area_id IN (${store.marks(ids.length)}) AND n.deleted_at IS NULL AND n.vault_id IS NULL AND t.text LIKE ? ESCAPE '\\'
       ORDER BY n.updated_at DESC LIMIT ?`, [...ids, like, SEARCH_MAX]);
     for (const r of hits) {
       if (seen.has(r.id) || items.length >= SEARCH_MAX) continue;
@@ -232,14 +238,26 @@ function snippet(text, term) {
 
 // ─── Changing ───────────────────────────────────
 
-/** POST nodes { parentId, name } → a new folder (a free name: "Neuer Ordner (2)" with { rename: true }). */
+/**
+ * POST nodes { parentId, name } → a new folder (a free name: "Neuer Ordner (2)" with { rename: true }). In a vault
+ * (since 1.9.0): { parentId, encrypted: true, nameCipher, keyVersion } — the name is opaque.
+ */
 async function mkdir(ctx, body) {
-  const parentId = Number(body && body.parentId);
-  let name = nodeName(body && body.name);
+  const b = body && typeof body === 'object' ? body : {};
+  const parentId = Number(b.parentId);
   return store.tx(ctx.gc, async () => {
     const { node: parent } = await folderFor(ctx, parentId);
+    const enc = await vaults().forNewNode(ctx, parent, { ...b, name: null });
+    if (enc) {
+      await unmarkUp(ctx.gc, parent.id, ctx);
+      const r = await store.run(ctx.gc, `INSERT INTO nodes (area_id, parent_id, name, is_dir, created_at, created_by, updated_at, updated_by, vault_id, name_cipher, key_version)
+        VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?)`, [parent.area_id, parent.id, enc.name, ctx.now, ctx.viewer, ctx.now, ctx.viewer, enc.vaultId, enc.nameCipher, enc.keyVersion]);
+      await log(ctx.gc, parent.area_id, r.lastInsertRowid, 'create', ctx);
+      return view(await row(ctx.gc, r.lastInsertRowid));
+    }
+    let name = nodeName(b.name);
     if (await taken(ctx.gc, parent.area_id, parent.id, name)) {
-      if (!body.rename) throw fail('exists');
+      if (!b.rename) throw fail('exists');
       name = await freeName(ctx.gc, parent.area_id, parent.id, name);
     }
     await unmarkUp(ctx.gc, parent.id, ctx);
@@ -268,10 +286,13 @@ async function moveMedia(gc, files, mediaArea, oldMediaArea, oldPaths) {
   }
 }
 
-/** PATCH nodes/<id> { name?, parentId? } — rename and / or move (also into another area the viewer writes to). */
-async function update(ctx, id, body) {
+/**
+ * PATCH nodes/<id> { name?, parentId? } — rename and / or move (also into another area the viewer writes to). A node of
+ * a vault (since 1.9.0): { nameCipher?, parentId? } — its opaque name stays; it moves only within its vault, the vault's
+ * folder only within its area; nothing moves into or out of a vault.
+ */
+async function update(ctx, id, body, opts = {}) {
   const b = body && typeof body === 'object' ? body : {};
-  const wantName = b.name != null ? nodeName(b.name) : null;
   const wantParent = b.parentId != null ? Number(b.parentId) : null;
   let moved = null;
   const out = await store.tx(ctx.gc, async () => {
@@ -279,14 +300,39 @@ async function update(ctx, id, body) {
     if (node.parent_id == null) throw fail('invalid');
     if (area.archived_at != null) throw fail('forbidden');
     const parent = wantParent != null && wantParent !== node.parent_id ? (await folderFor(ctx, wantParent)) : { node: await row(ctx.gc, node.parent_id), area };
-    const name = wantName || node.name;
+    let cipher = null;
+    if (node.vault_id) {
+      if (b.name != null && b.name !== node.name) throw fail('invalid', { field: 'name' });
+      const v = await vaults().row(ctx.gc, node.vault_id);
+      const root = v && v.node_id === node.id;
+      if (root ? (parent.node.vault_id || parent.node.area_id !== node.area_id) : parent.node.vault_id !== node.vault_id) throw fail('invalid', { field: 'parentId' });
+      if (b.nameCipher != null) {
+        cipher = vaults().nameCipherArg(b.nameCipher);
+        // a new name under the current key; the time travel (opts.anyKey) brings back one of an older key
+        const kv = vaults().nameVersion(cipher);
+        if (!v || (opts.anyKey ? kv > v.key_version : kv !== v.key_version)) throw fail('conflict', { reason: 'stale_key', keyVersion: v ? v.key_version : null });
+        if (cipher === node.name_cipher) cipher = null;
+      }
+    } else if (b.nameCipher != null || parent.node.vault_id) throw fail('invalid', { field: b.nameCipher != null ? 'nameCipher' : 'parentId' });
+    const name = node.vault_id ? node.name : (b.name != null ? nodeName(b.name) : node.name);
     if (parent.node.id === node.id) throw fail('invalid');
     if (node.is_dir === 1 && parent.node.area_id === node.area_id) {
       const under = await below(ctx.gc, node.id);
       if (under.some((r) => r.id === parent.node.id)) throw fail('invalid', { field: 'parentId' });
     }
-    if (parent.node.id === node.parent_id && name === node.name) return view(node);
+    if (parent.node.id === node.parent_id && name === node.name && !cipher) return view(node);
     if (await taken(ctx.gc, parent.node.area_id, parent.node.id, name, node.id)) throw fail('exists');
+    if (parent.node.id === node.parent_id && name === node.name) {
+      // a vault node's new encrypted name: no path changes (its opaque name stays)
+      await store.run(ctx.gc, "INSERT INTO node_log (node_id, at, op, area_id, parent_id, name, name_cipher) VALUES (?, ?, 'move', ?, ?, ?, ?)",
+        [node.id, ctx.now, node.area_id, node.parent_id, node.name, node.name_cipher || null]);
+      await store.run(ctx.gc, `UPDATE nodes SET name_cipher = ?, updated_at = ?, updated_by = ?, ${UNMARKED} WHERE id = ?`, [cipher, ctx.now, ctx.viewer, node.id]);
+      await unmarkUp(ctx.gc, node.parent_id, ctx);
+      await log(ctx.gc, area.id, node.id, 'move', ctx);
+      const now = await row(ctx.gc, node.id);
+      await guard.note(ctx, { op: 'rename', node: now, name, oldName: node.name, parentId: node.parent_id });
+      return view(now);
+    }
     const toArea = parent.area;
     const base = join(await pathOf(ctx.gc, parent.node), name);
     const oldBase = await pathOf(ctx.gc, node);
@@ -295,6 +341,8 @@ async function update(ctx, id, body) {
     const oldPaths = new Map();
     if (node.is_dir === 1) {
       const rows = await below(ctx.gc, node.id);
+      // a vault stays in its area (its people are the area's)
+      if (toArea.id !== area.id && rows.some((r) => r.vault_id)) throw fail('invalid', { field: 'parentId' });
       // links of this folder and the folders below point at old paths now (links.js endFor)
       moved = [node.id, ...rows.filter((r) => r.is_dir === 1).map((r) => r.id)];
       const now = pathsBelow(node.id, base, rows);
@@ -312,10 +360,10 @@ async function update(ctx, id, body) {
     }
     await moveMedia(ctx.gc, files, toArea.media_area, area.media_area, oldPaths);
     // the history: where it was (the time travel brings it back — timetravel.js)
-    await store.run(ctx.gc, "INSERT INTO node_log (node_id, at, op, area_id, parent_id, name) VALUES (?, ?, 'move', ?, ?, ?)",
-      [node.id, ctx.now, node.area_id, node.parent_id, node.name]);
-    await store.run(ctx.gc, `UPDATE nodes SET parent_id = ?, name = ?, area_id = ?, updated_at = ?, updated_by = ?, ${UNMARKED} WHERE id = ?`,
-      [parent.node.id, name, toArea.id, ctx.now, ctx.viewer, node.id]);
+    await store.run(ctx.gc, "INSERT INTO node_log (node_id, at, op, area_id, parent_id, name, name_cipher) VALUES (?, ?, 'move', ?, ?, ?, ?)",
+      [node.id, ctx.now, node.area_id, node.parent_id, node.name, node.name_cipher || null]);
+    await store.run(ctx.gc, `UPDATE nodes SET parent_id = ?, name = ?, name_cipher = COALESCE(?, name_cipher), area_id = ?, updated_at = ?, updated_by = ?, ${UNMARKED} WHERE id = ?`,
+      [parent.node.id, name, cipher, toArea.id, ctx.now, ctx.viewer, node.id]);
     // a renamed or moved node is in use: its mark ends, and so do those of the folder it is in now
     await unmarkUp(ctx.gc, parent.node.id, ctx);
     if (toArea.id !== area.id) {
@@ -418,7 +466,14 @@ async function restore(ctx, id) {
   return store.tx(ctx.gc, async () => {
     const { node, area } = await trashed(ctx, Number(id));
     let parent = await row(ctx.gc, node.parent_id);
-    if (!parent || parent.deleted_at != null) parent = await row(ctx.gc, area.root_id);
+    if (!parent || parent.deleted_at != null) {
+      // a node of a vault goes back into its vault (the vault's folder first, when that is in the trash too)
+      const v = node.vault_id ? await vaults().row(ctx.gc, node.vault_id) : null;
+      if (v && v.node_id !== node.id) {
+        parent = await row(ctx.gc, v.node_id);
+        if (!parent || parent.deleted_at != null) throw fail('conflict', { reason: 'vault_trashed', nodeId: v.node_id });
+      } else parent = await row(ctx.gc, area.root_id);
+    }
     const name = await freeName(ctx.gc, area.id, parent.id, node.name);
     const batch = await store.all(ctx.gc, 'SELECT * FROM nodes WHERE trash_id = ?', [node.id]);
     const base = join(await pathOf(ctx.gc, parent), name);
@@ -428,8 +483,8 @@ async function restore(ctx, id) {
     const files = batch.filter((r) => r.is_dir === 0 && r.media_id).map((r) => ({ id: r.id, media_id: r.media_id, path: paths.get(r.id) }));
     await moveMedia(ctx.gc, files, area.media_area, area.media_area, new Map(files.map((f) => [f.id, null])));
     // the history: each node of the batch was in the trash since … (the time travel puts it back — timetravel.js)
-    await store.run(ctx.gc, `INSERT INTO node_log (node_id, at, op, area_id, parent_id, name, deleted_since)
-      SELECT id, ?, 'restore', area_id, parent_id, name, deleted_at FROM nodes WHERE trash_id = ?`, [ctx.now, node.id]);
+    await store.run(ctx.gc, `INSERT INTO node_log (node_id, at, op, area_id, parent_id, name, deleted_since, name_cipher)
+      SELECT id, ?, 'restore', area_id, parent_id, name, deleted_at, name_cipher FROM nodes WHERE trash_id = ?`, [ctx.now, node.id]);
     // the top node first, under its free name (names are unique among the live nodes of a folder)
     await store.run(ctx.gc, 'UPDATE nodes SET parent_id = ?, name = ?, updated_at = ?, updated_by = ?, deleted_at = NULL, deleted_by = NULL, trash_id = NULL WHERE id = ?',
       [parent.id, name, ctx.now, ctx.viewer, node.id]);
@@ -463,11 +518,14 @@ async function purgeBatch(gc, trashId, ctx) {
   return batch.filter((r) => r.is_dir === 0).length;
 }
 
-/** Nodes `ids` go for good: their history, their places in albums (since 1.7.0), their insights and deadlines (1.8.0). */
+/** Nodes `ids` go for good: their history, their places in albums (since 1.7.0), their insights and deadlines (1.8.0), a
+ * vault's keys, office locks (1.9.0). */
 async function forget(gc, ids) {
+  await vaults().forget(gc, ids);
   for (const part of store.chunks(ids)) {
     const m = store.marks(part.length);
     await store.run(gc, `DELETE FROM node_log WHERE node_id IN (${m})`, part);
+    await store.run(gc, `DELETE FROM office_locks WHERE node_id IN (${m})`, part);
     await store.run(gc, `DELETE FROM album_items WHERE node_id IN (${m})`, part);
     await store.run(gc, `UPDATE albums SET cover_id = NULL WHERE cover_id IN (${m})`, part);
     // AI for documents (since 1.8.0): the suggestion, the deadlines and their reminders

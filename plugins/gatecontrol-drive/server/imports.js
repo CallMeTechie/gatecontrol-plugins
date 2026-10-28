@@ -187,6 +187,8 @@ async function create(ctx, body) {
   const b = body && typeof body === 'object' ? body : {};
   const items = itemsArg(b.items);
   const { node: target, area } = await nodes.folderFor(ctx, posInt(b.targetFolderId));
+  // never into a vault (since 1.9.0): the server may keep no plaintext there
+  if (target.vault_id) throw fail('encrypted');
   const c = await connOf(ctx, b.connection);
   const active = await store.one(ctx.gc, `SELECT COUNT(*) AS n FROM import_jobs WHERE user_id = ? AND state IN (${store.marks(ACTIVE.length)})`, [ctx.viewer, ...ACTIVE]);
   if (active.n >= ACTIVE_MAX) throw fail('job_limit');
@@ -304,8 +306,9 @@ async function stepFolder(ctx, j, it) {
     const name = cleanName(it.name, it.cloud_id);
     folderId = await store.tx(gc, async () => {
       const { node: parent, area } = await nodes.folderFor(ctx, it.parent_node);
+      if (parent.vault_id) throw fail('encrypted');
       const have = await nodes.taken(gc, area.id, parent.id, name);
-      if (have && have.is_dir === 1) return have.id;
+      if (have && have.is_dir === 1 && !have.vault_id) return have.id;
       const free = have ? await nodes.freeName(gc, area.id, parent.id, name) : name;
       await nodes.unmarkUp(gc, parent.id, ctx);
       return (await nodes.insertFolder(ctx, area.id, parent.id, free)).id;
@@ -376,7 +379,7 @@ const ITEM_ERRORS = {
 };
 // a job's refusals that pause it (resume) or end it
 const JOB_PAUSE = { ERR_CLOUD_AUTH: 'cloud_auth', ERR_CLOUD_DENIED: 'cloud_off', ERR_CLOUD_NOT_CONFIGURED: 'cloud_off', ERR_MEDIA_DENIED: 'cloud_off', ERR_MEDIA_QUOTA: 'quota', quota: 'quota' };
-const JOB_FAIL = { no_seat: 'no_seat', not_licensed: 'no_seat', forbidden: 'forbidden' };
+const JOB_FAIL = { no_seat: 'no_seat', not_licensed: 'no_seat', forbidden: 'forbidden', encrypted: 'encrypted' };
 
 /** One job's turn → { steps, stop } (stop: GateControl asked to wait — the whole run stops). */
 async function runJob(gc, j, settings, now, asPerson, budget) {
@@ -391,7 +394,10 @@ async function runJob(gc, j, settings, now, asPerson, budget) {
   const conn = conns.find((c) => c.id === j.connection);
   if (!conn || conn.error === 'auth') { await setJob(gc, j, 'paused', 'cloud_auth', now); return { steps: 0, stop: false }; }
   // the target: still there, still writable
-  try { await nodes.folderFor(ctx, j.target_id); } catch (e) {
+  try {
+    const t = await nodes.folderFor(ctx, j.target_id);
+    if (t.node.vault_id) throw fail('encrypted');
+  } catch (e) {
     await setJob(gc, j, 'failed', (e && (JOB_FAIL[e.code] || (e.code === 'not_found' ? 'not_found' : null))) || 'forbidden', now);
     return { steps: 0, stop: false };
   }
