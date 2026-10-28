@@ -2,6 +2,24 @@
 
 Dateien der Familie und des Teams auf dem eigenen Speicher – auf diesem Server, einer NAS oder in S3.
 
+## 1.10.0
+- **Fotos sind Dateien (wie bei OneDrive):** Bilder und Videos liegen in ihren Ordnern und erscheinen auch in der
+  Dateiansicht; „Fotos“ ist nur eine Ansicht über alle Bilder und Videos. Neues Feature `photosFolder` in `GET me`.
+  - `GET photos`, `photos/months` und `photos/memories` nehmen `folder=<Knoten-ID>`: nur dieser Ordner und alle
+    Ordner darunter (Leserecht nötig, sonst `404`; Tresor `409 encrypted`; Datei, ungültige ID oder Ordner außerhalb
+    von `area` `400 invalid { field: 'folder' }`).
+  - `camera=1`: dasselbe für die **Kamera-Uploads**, den festen, sprachunabhängigen Ordner `Bilder/Kamera-Uploads` in
+    „Meine Dateien“ (die Foto-Sicherung der Apps legt darunter `<Jahr>/<Monat>` ab). Gibt es ihn nicht, sind die
+    Antworten leer. `folder` und `camera` zusammen: `400 invalid { field: 'camera' }`; `camera` mit einem anderen
+    Bereich als „Meine Dateien“: `400 invalid { field: 'area' }`. `photos/memories` nimmt jetzt auch `area`.
+  - Neu: `GET photos/camera` → `{ folder: { id, path, areaId } | null }` und `POST photos/camera` → `{ folder, created }`
+    (legt fehlende Ordner an wie `POST nodes`, mit Rechteprüfung, Änderungsprotokoll und Live-Ereignis; eine Datei im
+    Weg: `409 exists`).
+  - Tresor-Inhalte erscheinen nie, auch nicht über `folder` oder `camera`.
+- Portal: Schalter „Nur Kamera-Uploads“ auf der Seite „Fotos“ (nur mit `photosFolder`; gemerkt, solange der Tab offen
+  ist). Bilder und Videos bleiben in der Dateiansicht sichtbar.
+- Keine neue Berechtigung, keine Migration, weiterhin GateControl ≥ 1.208.0.
+
 ## 1.9.0
 - **Tresor-Ordner (Ende-zu-Ende verschlüsselt):** Inhalte und Namen verschlüsseln die Geräte, der Server bekommt nur
   Chiffretext, Größen, Zeitpunkte, öffentliche Schlüssel und verpackte Schlüssel. Neue Tabellen `vaults`,

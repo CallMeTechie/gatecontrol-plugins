@@ -20,7 +20,8 @@
 //     GET trash?area= · POST trash/<id>/restore · DELETE trash/<id>
 //     POST links · GET links?nodeId= · GET links/<token>/events · DELETE links/<token>   (links.js, since 0.2.0)
 //     GET nodes/<id>/timetravel?at= · POST nodes/<id>/timetravel { at }  (a folder as it was — timetravel.js, 1.7.0)
-//     GET photos · GET photos/months · GET photos/memories (photos.js) · GET|POST albums · GET|PATCH|DELETE albums/<id>
+//     GET photos · GET photos/months · GET photos/memories (photos.js; ?folder= / ?camera=1 and GET|POST photos/camera
+//     since 1.10.0) · GET|POST albums · GET|PATCH|DELETE albums/<id>
 //     POST|DELETE albums/<id>/items (albums.js) · GET storage[?all=1] · POST storage/versions/prune (storage.js) — 1.7.0
 //     GET frame   a kiosk device only — the photo frame (frame.js, 1.7.0); every other route refuses a kiosk device
 //     GET|POST nodes/<id>/insight · POST nodes/<id>/insight/apply · PATCH areas/<id> { docAi } (insights.js) · GET deadlines
@@ -187,6 +188,7 @@ async function me(ctx) {
   };
 }
 
+// photosFolder: photos, months, memories with folder= / camera=1, GET|POST photos/camera (1.10.0) ·
 // vault: vault folders, end-to-end encrypted (vaults/…, nodes and uploads/commit with encrypted / nameCipher / keyVersion, 1.9.0) ·
 // office (1.9.0, only while set up): POST nodes/<id>/office ·
 // timeTravel: nodes/<id>/timetravel · takenAt: uploads/commit { takenAt }, node takenAt · photos: photos, months,
@@ -196,7 +198,7 @@ async function me(ctx) {
 // devices: GET/PUT/DELETE devices (1.5.0) · deleteAfter: DELETE nodes/<id>?after=, PATCH { deleteAt } (1.5.0) ·
 // emptyFiles: uploads/commit { size: 0 } without a mediaId (1.5.0) · wipes: DELETE ?everywhere=1 (1.2.0) ·
 // textSearch: uploads/commit { text } (1.3.0) · previews (1.1.0)
-const FEATURES = ['previews', 'wipes', 'textSearch', 'devices', 'deleteAfter', 'emptyFiles', 'links', 'guard', 'timeTravel', 'takenAt', 'photos', 'albums', 'frame', 'storage', 'vault'];
+const FEATURES = ['previews', 'wipes', 'textSearch', 'devices', 'deleteAfter', 'emptyFiles', 'links', 'guard', 'timeTravel', 'takenAt', 'photos', 'albums', 'frame', 'storage', 'vault', 'photosFolder'];
 
 /**
  * What needs GateControl's AI service or cloud accounts (1.8.0) — only while the host has it and it is allowed (the
@@ -318,7 +320,9 @@ async function route(ctx, req, seg) {
     if (seg.length === 1) return ok(await photos.list(ctx, q));
     if (seg.length === 2 && b === 'months') return ok(await photos.months(ctx, q));
     if (seg.length === 2 && b === 'memories') return ok(await photos.memories(ctx, q));
+    if (seg.length === 2 && b === 'camera') return ok(await photos.camera(ctx));
   }
+  if (a === 'photos' && seg.length === 2 && b === 'camera' && m === 'POST') return ok(await photos.makeCamera(ctx));
   if (a === 'albums') {
     if (seg.length === 1 && m === 'GET') return ok(await albums.list(ctx));
     if (seg.length === 1 && m === 'POST') return ok(await albums.create(ctx, body));

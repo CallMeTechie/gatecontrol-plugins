@@ -83,6 +83,7 @@
     shield: 'M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z|M12 8v5M12 16h.01',
     folderUp: 'M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z|M12 16v-6|M9 13l3-3 3 3',
     photos: 'M4 6h16v13H4z|M4 15l4-4 4 4 3-3 5 5|M15 10h.01',
+    camera: 'M4 8h3l2-3h6l2 3h3v11H4z|M12 10a3.5 3.5 0 1 0 0 7a3.5 3.5 0 1 0 0-7',
     album: 'M5 4h12a2 2 0 0 1 2 2v14l-4-3-4 3-4-3-4 3V6a2 2 0 0 1 2-2z',
     storage: 'M4 6c0-1.7 3.6-3 8-3s8 1.3 8 3-3.6 3-8 3-8-1.3-8-3z|M4 6v6c0 1.7 3.6 3 8 3s8-1.3 8-3V6|M4 12v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6',
     clock: 'M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18|M12 7v5l3 2',
@@ -1466,7 +1467,9 @@
 
   // ── photos (since 1.7.0) ─────────────────────────────────
 
-  var PH = { area: '', items: [], next: null, months: {}, memories: [], select: false, chosen: {}, seq: 0 };
+  // camera: "Nur Kamera-Uploads" (since 1.10.0, feature photosFolder) — Bilder/Kamera-Uploads of my files; kept while the
+  // tab is open (the frame has no storage)
+  var PH = { area: '', camera: false, items: [], next: null, months: {}, memories: [], select: false, chosen: {}, seq: 0 };
   var PHOTO_PAGE = 120;
 
   /** A photo item (GET photos, albums) as a node for the viewer (preview, actions). */
@@ -1504,15 +1507,23 @@
     return main;
   }
 
+  /** The query of the photos shown: the camera uploads only (photosFolder), else an area or all. */
+  function photoQuery(more) {
+    var q = PH.camera && has('photosFolder') ? { camera: 1 } : { area: PH.area || null };
+    for (var k in more || {}) q[k] = more[k];
+    return q;
+  }
+
   /** The page "Fotos": "Vor einem Jahr", then every month with its photos. */
   function showPhotos(keep) {
     if (!keep) { PH.select = false; PH.chosen = {}; }
     var main = startPage('photos');
     var seq = ++PH.seq;
+    var cam = PH.camera && has('photosFolder');
     Promise.all([
-      api('GET', 'photos', null, { area: PH.area || null, limit: PHOTO_PAGE }),
-      api('GET', 'photos/months', null, { area: PH.area || null }).catch(function () { return { months: [] }; }),
-      PH.area ? Promise.resolve({ groups: [] }) : api('GET', 'photos/memories').catch(function () { return { groups: [] }; }),
+      api('GET', 'photos', null, photoQuery({ limit: PHOTO_PAGE })),
+      api('GET', 'photos/months', null, photoQuery()).catch(function () { return { months: [] }; }),
+      PH.area && !cam ? Promise.resolve({ groups: [] }) : api('GET', 'photos/memories', null, cam ? { camera: 1 } : null).catch(function () { return { groups: [] }; }),
     ]).then(function (r) {
       if (seq !== PH.seq || S.page !== 'photos') return;
       PH.items = r[0].items || [];
@@ -1529,8 +1540,13 @@
     var areaSel = h('select', { class: 'dp-input dp-btn-sm', attrs: { 'aria-label': T('p.area') }, on: { change: function (ev) { PH.area = ev.target.value; showPhotos(true); } } },
       [h('option', { value: '', text: T('p.photos_all'), selected: !PH.area })].concat(S.areas.map(function (a) { return h('option', { value: a.id, text: a.label, selected: PH.area === a.id }); })));
     areaSel.style.width = 'auto';
+    // "Nur Kamera-Uploads" (since 1.10.0): what the phones backed up to Bilder/Kamera-Uploads; the areas then do not apply
+    var cam = !onDone && has('photosFolder')
+      ? h('button', { type: 'button', class: 'dp-btn dp-btn-sm dp-ph-cam', attrs: { 'aria-pressed': String(PH.camera), title: T('p.photos_camera_hint') },
+        on: { click: function () { PH.camera = !PH.camera; showPhotos(true); } } }, [icon('camera'), h('span', { text: T('p.photos_camera') })])
+      : null;
     var count = chosenIds().length;
-    add(bar, [onDone ? null : areaSel, h('span', { class: 'dp-ph-grow' }),
+    add(bar, [onDone || (cam && PH.camera) ? null : areaSel, cam, h('span', { class: 'dp-ph-grow' }),
       PH.select ? h('span', { class: 'dp-meta', text: P('p.chosen', count) }) : null,
       PH.select && onDone ? onDone(count) : null,
       PH.select && !onDone ? btn(T('p.album_add'), function () { addToAlbum(chosenIds()); }, { primary: true, disabled: !count, icon: 'album' }) : null,
@@ -1558,7 +1574,7 @@
       });
       main.appendChild(mem);
     }
-    if (!PH.items.length) { main.appendChild(h('div', { class: 'dp-empty', text: T('p.photos_none') })); return; }
+    if (!PH.items.length) { main.appendChild(h('div', { class: 'dp-empty', text: T(PH.camera && has('photosFolder') ? 'p.photos_camera_none' : 'p.photos_none') })); return; }
     var groups = [];
     PH.items.forEach(function (x) {
       var k = monthKey(x.takenAt);
@@ -1570,7 +1586,7 @@
       main.appendChild(h('div', { class: 'dp-phs' }, g.items.map(function (x) { return photoTile(x, rerenderBar); })));
     });
     if (PH.next) main.appendChild(h('div', { class: 'dp-more-row' }, btn(T('p.more'), function () {
-      api('GET', 'photos', null, { area: PH.area || null, limit: PHOTO_PAGE, before: PH.next }).then(function (r) {
+      api('GET', 'photos', null, photoQuery({ limit: PHOTO_PAGE, before: PH.next })).then(function (r) {
         PH.items = PH.items.concat(r.items || []);
         PH.next = r.next;
         renderPhotos(main);

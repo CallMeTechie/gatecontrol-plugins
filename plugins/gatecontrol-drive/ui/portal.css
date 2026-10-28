@@ -168,6 +168,7 @@ textarea.dp-input{padding:9px 12px;line-height:1.45;resize:vertical}
 /* 1.7.0: photos (a timeline by month, "Vor einem Jahr", choosing), albums, the storage, the time travel */
 .dp-ph-bar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:14px}
 .dp-ph-grow{flex:1 1 auto}
+.dp-ph-cam[aria-pressed="true"]{border-color:color-mix(in srgb,var(--accent) 55%,transparent);background:var(--accent-soft);color:var(--accent)}
 .dp-month{display:flex;gap:10px;align-items:baseline;font-size:15px;margin:18px 0 10px}
 .dp-month:first-of-type{margin-top:4px}
 .dp-phs{display:grid;grid-template-columns:repeat(auto-fill,minmax(118px,1fr));gap:6px}
