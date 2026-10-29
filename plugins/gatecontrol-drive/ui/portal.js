@@ -105,6 +105,10 @@
     chevRight: 'M9 6l6 6-6 6',
     chevDown: 'M6 9l6 6 6-6',
     menu: 'M4 6h16M4 12h16M4 18h16',
+    // work photos apart (since 1.13.0): the review mark, the bag of a work photo, home (private)
+    help: 'M9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.7v.5|M12 17.5v.5',
+    bag: 'M5 7h14a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2z|M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2',
+    home: 'M3 11l9-7 9 7|M5 10v10h14V10',
     folderPlus: 'M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z|M12 10v6M9 13h6',
     gear: 'M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z|M12 9a3 3 0 1 0 0 6a3 3 0 1 0 0-6',
   };
@@ -764,7 +768,9 @@
   function gridOf(items) {
     var g = h('div', { class: 'dp-grid', attrs: { role: 'list' } });
     items.forEach(function (n) {
-      var thumb = h('div', { class: 'dp-thumb' }, [picOf(n, 34), n.encrypted ? h('span', { class: 'dp-lockb' }, icon('lock', 12)) : null]);
+      var thumb = h('div', { class: 'dp-thumb' }, [picOf(n, 34), n.encrypted ? h('span', { class: 'dp-lockb' }, icon('lock', 12)) : null,
+        // the review mark of a photo (since 1.13.0)
+        n.review ? h('span', { class: 'dp-ph-mk', attrs: { title: T('p.wk_marked') } }, icon('help', 14)) : null]);
       var name = nm(n);
       var ext = extOf(name);
       var pick = B && has('bulk');
@@ -1697,7 +1703,10 @@
 
   // camera: "Nur Kamera-Uploads" (since 1.10.0, feature photosFolder) — Bilder/Kamera-Uploads of my files; kept while the
   // tab is open (the frame has no storage)
-  var PH = { area: '', camera: false, items: [], next: null, months: {}, memories: [], select: false, chosen: {}, seq: 0, anchor: null };
+  var PH = { area: '', camera: false, items: [], next: null, months: {}, memories: [], select: false, chosen: {}, seq: 0, anchor: null,
+    // work photos apart (since 1.13.0, feature photoClasses): the chip shown (all | private | work | review), the counts
+    // of the classes (GET photos/classes) and my photo settings (GET photos/settings — the work folder)
+    cls: 'all', counts: null, wk: null };
   var PHOTO_PAGE = 120;
 
   /** A photo item (GET photos, albums) as a node for the viewer (preview, actions). */
@@ -1725,7 +1734,10 @@
         if (B && B.photoPick(x, ev, PH.items, PH)) { rerender(); return; }
         if (PH.select) { PH.chosen[x.id] = !PH.chosen[x.id]; PH.anchor = x.id; tile.className = 'dp-ph' + (PH.chosen[x.id] ? ' is-on' : ''); tile.setAttribute('aria-pressed', String(!!PH.chosen[x.id])); if (onPick) onPick(); return; }
         preview(n);
-      } } }, [picOf(n, 28), /^video\//.test(String(x.mime || '')) ? h('span', { class: 'dp-ph-kind' }, icon('video', 14)) : null, PH.select ? h('span', { class: 'dp-ph-check' }, icon('check', 14)) : null]);
+      } } }, [picOf(n, 28), /^video\//.test(String(x.mime || '')) ? h('span', { class: 'dp-ph-kind' }, icon('video', 14)) : null, PH.select ? h('span', { class: 'dp-ph-check' }, icon('check', 14)) : null,
+        // since 1.13.0: the yellow question mark (to check), the blue bag of a work photo (in "Alle")
+        x.review ? h('span', { class: 'dp-ph-mk', attrs: { title: T('p.wk_marked') } }, icon('help', 14)) : null,
+        x.work && PH.cls === 'all' ? h('span', { class: 'dp-ph-wk', attrs: { title: T('p.wk_work_photo') } }, icon('bag', 13)) : null]);
     return tile;
   }
 
@@ -1744,6 +1756,9 @@
   function photoQuery(more) {
     var q = PH.camera && has('photosFolder') ? { camera: 1 } : { area: PH.area || null };
     for (var k in more || {}) q[k] = more[k];
+    // a class (since 1.13.0): private, work or to check
+    if (PH.cls !== 'all' && has('photoClasses') && !(more && more.noClass)) q['class'] = PH.cls;
+    delete q.noClass;
     return q;
   }
 
@@ -1753,10 +1768,14 @@
     var main = startPage('photos');
     var seq = ++PH.seq;
     var cam = PH.camera && has('photosFolder');
+    var classes = has('photoClasses');
+    if (!classes) PH.cls = 'all';
     Promise.all([
       api('GET', 'photos', null, photoQuery({ limit: PHOTO_PAGE })),
       api('GET', 'photos/months', null, photoQuery()).catch(function () { return { months: [] }; }),
-      PH.area && !cam ? Promise.resolve({ groups: [] }) : api('GET', 'photos/memories', null, cam ? { camera: 1 } : null).catch(function () { return { groups: [] }; }),
+      (PH.area && !cam) || PH.cls !== 'all' ? Promise.resolve({ groups: [] }) : api('GET', 'photos/memories', null, cam ? { camera: 1 } : null).catch(function () { return { groups: [] }; }),
+      classes ? api('GET', 'photos/classes', null, photoQuery({ noClass: true })).catch(function () { return null; }) : Promise.resolve(null),
+      classes ? api('GET', 'photos/settings').catch(function () { return null; }) : Promise.resolve(null),
     ]).then(function (r) {
       if (seq !== PH.seq || S.page !== 'photos') return;
       PH.items = r[0].items || [];
@@ -1764,6 +1783,8 @@
       PH.months = {};
       (r[1].months || []).forEach(function (m) { PH.months[m.month] = m.count; });
       PH.memories = r[2].groups || [];
+      PH.counts = r[3];
+      PH.wk = r[4];
       renderPhotos(main);
     }, fail);
   }
@@ -1779,8 +1800,17 @@
         on: { click: function () { PH.camera = !PH.camera; showPhotos(true); } } }, [icon('camera'), h('span', { text: T('p.photos_camera') })])
       : null;
     var count = chosenIds().length;
+    // work photos apart (since 1.13.0): everything chosen is to be checked — "Arbeit" and "Privat" up front with the
+    // AI's guess; else "Zuordnung" with the three choices
+    var raw = PH.select && !onDone && has('photoClasses') ? chosenItems() : [];
+    var allReview = raw.length > 0 && raw.every(function (x) { return !!x.review; });
+    var guess = allReview ? guessText(raw) : '';
     add(bar, [onDone || (cam && PH.camera) ? null : areaSel, cam, h('span', { class: 'dp-ph-grow' }),
       PH.select ? h('span', { class: 'dp-meta', text: P('p.chosen', count) }) : null,
+      allReview && guess ? h('span', { class: 'dp-meta dp-wk-guess' }, [icon('spark', 14), h('span', { text: guess })]) : null,
+      allReview ? withClass(btn(T('p.wk_work'), function () { assignPhotos('work', chosenItems()); }, { icon: 'bag' }), 'dp-wk-work') : null,
+      allReview ? btn(T('p.wk_private'), function () { assignPhotos('private', chosenItems()); }, { primary: true, icon: 'home' }) : null,
+      raw.length && !allReview ? btn(T('p.wk_assign'), function () { assignMenu(chosenItems()); }, { icon: 'bag' }) : null,
       PH.select && onDone ? onDone(count) : null,
       PH.select && !onDone ? btn(T('p.album_add'), function () { addToAlbum(chosenIds()); }, { primary: true, disabled: !count, icon: 'album' }) : null,
       // several at once (since 1.12.0): a ZIP, move, delete
@@ -1798,7 +1828,8 @@
   function renderPhotos(main) {
     clear(main);
     main.appendChild(photoBar(null));
-    if (PH.memories.length) {
+    if (has('photoClasses')) renderClasses(main);
+    if (PH.memories.length && PH.cls === 'all') {
       var mem = h('section', { class: 'dp-mem' }, [h('h2', { class: 'dp-h2', text: T('p.memories') })]);
       PH.memories.forEach(function (g) {
         var d = new Date(g.date + 'T12:00:00');
@@ -1809,7 +1840,7 @@
       });
       main.appendChild(mem);
     }
-    if (!PH.items.length) { main.appendChild(h('div', { class: 'dp-empty', text: T(PH.camera && has('photosFolder') ? 'p.photos_camera_none' : 'p.photos_none') })); return; }
+    if (!PH.items.length) { main.appendChild(h('div', { class: 'dp-empty', text: T(PH.cls !== 'all' ? 'p.wk_none_' + PH.cls : PH.camera && has('photosFolder') ? 'p.photos_camera_none' : 'p.photos_none') })); return; }
     var groups = [];
     PH.items.forEach(function (x) {
       var k = monthKey(x.takenAt);
@@ -1836,6 +1867,240 @@
     if (!old) return;
     var bar = S.page === 'album' ? albumBar() : photoBar(null);
     main.replaceChild ? main.replaceChild(bar, old) : rerender();
+  }
+
+  // ── work photos apart (since 1.13.0, feature photoClasses) ──
+  //
+  // The chips "Alle | Privat | Arbeit | Prüfen (N)" (class= on photos and months, the counts of GET photos/classes), the
+  // band "N Fotos zu prüfen – aufgenommen außerhalb von Firma und Zuhause", the yellow question mark and the blue bag on
+  // the tiles; chosen photos that are all to be checked get "Arbeit" and "Privat" up front (with the AI's guess the phone
+  // left), others "Zuordnung" (Ist ein Arbeitsfoto, Ist privat, Zum Prüfen markieren). Arbeit: into my work folder
+  // (<year>/<month> below it while the setting says so) as a move job — the server ends the marks; Privat: a work photo
+  // back to Bilder/Kamera-Uploads/<year>/<month>, the marks end (POST photos/review { review: false }). The snackbar
+  // "N Fotos → Ziel" undoes it (the move jobs back, the marks as they were).
+
+  function withClass(el, cls) { el.className += ' ' + cls; return el; }
+
+  /** The photos chosen as items (with review and work). */
+  function chosenItems() { var on = PH.chosen; return PH.items.filter(function (x) { return on[x.id]; }); }
+
+  /** "KI: wahrscheinlich Arbeit · 72 % sicher" from the hints the phone left (none: ''). */
+  function guessText(items) {
+    var hints = items.map(function (x) { return x.review && x.review.hint; }).filter(function (v) { return typeof v === 'number'; });
+    if (!hints.length) return '';
+    var pct = Math.round(hints.reduce(function (a, b) { return a + b; }, 0) / hints.length);
+    return pct >= 50 ? T('p.wk_guess_work', { pct: pct }) : T('p.wk_guess_private', { pct: 100 - pct });
+  }
+
+  function renderClasses(main) {
+    var c = PH.counts || { work: 0, private: 0, review: 0 };
+    var chips = h('div', { class: 'dp-chips dp-wk-chips', attrs: { role: 'tablist', 'aria-label': T('p.wk_filter') } },
+      [['all', 'p.wk_all'], ['private', 'p.wk_private'], ['work', 'p.wk_work'], ['review', 'p.wk_review']].map(function (d) {
+        var on = PH.cls === d[0];
+        return h('button', { type: 'button', attrs: { role: 'tab', 'aria-selected': String(on), 'aria-pressed': String(on) }, on: { click: function () { PH.cls = d[0]; showPhotos(); } } },
+          [h('span', { text: T(d[1]) }), d[0] === 'review' && c.review > 0 ? h('span', { class: 'dp-wk-cnt', text: String(c.review) }) : null]);
+      }));
+    main.appendChild(chips);
+    if (c.review > 0 && !PH.select && PH.cls !== 'review') {
+      main.appendChild(h('button', { type: 'button', class: 'dp-wk-band', on: { click: function () { PH.cls = 'review'; showPhotos(); } } },
+        [h('span', { class: 'dp-ph-mk is-static' }, icon('help', 14)), h('span', { text: P('p.wk_band', c.review) })]));
+    }
+  }
+
+  /** "Meine Dateien › Arbeit" — where work photos go (my settings), or ''. */
+  function workLabel(wk) {
+    var w = wk || PH.wk;
+    if (!w || !w.folder) return '';
+    var a = areaOf(w.folder.areaId);
+    return [a ? a.label : ''].concat(String(w.folder.path || '').split('/').filter(Boolean)).join(' › ');
+  }
+
+  /** "Zuordnung" for chosen photos that are not all to be checked. */
+  function assignMenu(items) {
+    var work = items.every(function (x) { return x.work && !x.review; });
+    var priv = items.every(function (x) { return !x.work && !x.review; });
+    var review = items.every(function (x) { return !!x.review; });
+    var rows = [];
+    var item = function (ic, label, hint, fn, off, cls) {
+      rows.push(h('button', { type: 'button', class: cls || '', disabled: !!off, on: { click: function () { closeDialog(); fn(); } } }, [icon(ic),
+        h('span', { class: 'dp-menu-tx' }, [h('span', { text: label }), hint ? h('span', { class: 'dp-meta', text: hint }) : null])]));
+    };
+    var wl = workLabel();
+    item('bag', T('p.wk_is_work'), work ? T('p.wk_already_work') : wl ? T('p.wk_is_work_hint', { target: wl }) : T('p.wk_no_folder'), function () { assignPhotos('work', items); }, work, 'is-work');
+    item('home', T('p.wk_is_private'), priv ? T('p.wk_already_private') : T('p.wk_is_private_hint'), function () { assignPhotos('private', items); }, priv);
+    item('help', T('p.wk_mark'), review ? T('p.wk_already_marked') : null, function () { assignPhotos('review', items); }, review, 'is-mark');
+    dialog(P('p.chosen', items.length), [h('span', { class: 'dp-label', text: T('p.wk_assign') }), h('div', { class: 'dp-menu dp-wk-menu' }, rows)]);
+  }
+
+  function pad2(n) { return ('0' + n).slice(-2); }
+
+  /** The folder `names` below folder `id` (made where missing) → its id. */
+  function ensurePath(id, names) {
+    if (!names.length) return Promise.resolve(id);
+    var name = names[0];
+    var find = function () {
+      return api('GET', 'nodes/' + id + '/children', null, { dirs: 1, limit: 1000 }).then(function (r) {
+        var lower = name.toLowerCase();
+        return (r.items || []).filter(function (x) { return x.isDir && !x.encrypted && String(x.name).toLowerCase() === lower; })[0] || null;
+      });
+    };
+    return find().then(function (got) {
+      if (got) return got.id;
+      return api('POST', 'nodes', { parentId: id, name: name }).then(function (r) { return r.node.id; }, function (e) {
+        // made meanwhile (another tab, a phone): take that one
+        if (e && e.code === 'exists') return find().then(function (g) { if (!g) throw e; return g.id; });
+        throw e;
+      });
+    }).then(function (next) { return ensurePath(next, names.slice(1)); });
+  }
+
+  /** Move `items` below folder `top` — by the month they were taken (<year>/<month>) when `byMonth` → [jobs]. */
+  function moveByMonth(items, top, byMonth) {
+    var groups = {};
+    var order = [];
+    items.forEach(function (x) {
+      var d = new Date(x.takenAt);
+      var k = byMonth && !isNaN(d.getTime()) ? d.getFullYear() + '/' + pad2(d.getMonth() + 1) : '';
+      if (!groups[k]) { groups[k] = []; order.push(k); }
+      groups[k].push(x);
+    });
+    var out = [];
+    var next = Promise.resolve();
+    order.forEach(function (k) {
+      next = next.then(function () { return ensurePath(top, k ? k.split('/') : []); }).then(function (target) {
+        var ids = groups[k].filter(function (x) { return x.parentId !== target; }).map(function (x) { return x.id; });
+        if (!ids.length) return null;
+        return api('POST', 'ops', { op: 'move', ids: ids, target: target, onConflict: 'rename' }).then(function (r) {
+          out.push(r.op);
+          if (B && B.track) B.track(r.op);
+        });
+      });
+    });
+    return next.then(function () { return out; });
+  }
+
+  /** The marks of `before` ([{ id, review }]) as they were. */
+  function marksBack(before) {
+    var off = before.filter(function (b) { return !b.review; }).map(function (b) { return b.id; });
+    var byHint = {};
+    before.forEach(function (b) { if (b.review) { var k = b.review.hint == null ? 'null' : String(b.review.hint); (byHint[k] = byHint[k] || []).push(b.id); } });
+    var calls = Object.keys(byHint).map(function (k) { return api('POST', 'photos/review', { ids: byHint[k], review: true, hint: k === 'null' ? null : Number(k) }); });
+    if (off.length) calls.push(api('POST', 'photos/review', { ids: off, review: false }));
+    return Promise.all(calls);
+  }
+
+  /** A job's end (its undo before the marks come back: a move out of the work folder ends them). */
+  function jobEnd(id, n) {
+    return api('GET', 'ops/' + encodeURIComponent(id)).then(function (r) {
+      if (r.op.state !== 'running' || (n || 0) > 60) return r.op;
+      return new Promise(function (res) { setTimeout(res, 500); }).then(function () { return jobEnd(id, (n || 0) + 1); });
+    });
+  }
+
+  /** Arbeit | Privat | Prüfen for photo items `items`; the snackbar undoes it. */
+  function assignPhotos(to, items) {
+    if (!items.length) return;
+    var wk = PH.wk || {};
+    var before = items.map(function (x) { return { id: x.id, review: x.review || null }; });
+    var ids = items.map(function (x) { return x.id; });
+    var target = '';
+    var run;
+    if (to === 'work') {
+      if (!wk.workFolder || !wk.folder) { toast(T('p.wk_no_folder'), 'error'); showSettings(); return; }
+      target = workLabel(wk);
+      run = moveByMonth(items.filter(function (x) { return !x.work; }), wk.folder.id, wk.workSubfolders !== false)
+        // marked ones already in the work folder: only the mark ends
+        .then(function (jobs) { return api('POST', 'photos/review', { ids: ids, review: false }).then(function () { return jobs; }); });
+    } else if (to === 'private') {
+      target = T('p.wk_private_target');
+      var away = items.filter(function (x) { return x.work; });
+      run = (away.length ? api('POST', 'photos/camera').then(function (r) { return moveByMonth(away, r.folder.id, true); }) : Promise.resolve([]))
+        .then(function (jobs) { return api('POST', 'photos/review', { ids: ids, review: false }).then(function () { return jobs; }); });
+    } else {
+      run = api('POST', 'photos/review', { ids: ids, review: true }).then(function () { return []; });
+    }
+    run.then(function (jobs) {
+      PH.select = false;
+      PH.chosen = {};
+      var text = to === 'review' ? P('p.wk_done_mark', items.length) : P('p.wk_done', items.length, { target: target });
+      var undo = function () {
+        Promise.all(jobs.map(function (op) { return jobEnd(op.id).then(function () { return api('POST', 'ops/' + encodeURIComponent(op.id) + '/undo'); }).then(function (r) { return jobEnd(r.op.id); }); }))
+          .then(function () { return marksBack(before); })
+          .then(function () { if (S.page === 'photos') showPhotos(true); }, fail);
+      };
+      if (B && B.snack) B.snack(text, undo); else toast(text);
+      if (S.page === 'photos') showPhotos(true);
+    }, fail);
+  }
+
+  /** "Arbeitsfotos nach": a folder I write to (not the camera uploads or above them) → PUT photos/settings. */
+  function workFolderDialog(wk, then) {
+    var start = wk && wk.folder ? { areaId: wk.folder.areaId, id: wk.folder.id } : null;
+    var areasW = S.areas.filter(function (a) { return !a.archived && (a.role === 'write' || a.role === 'manage'); });
+    var mine = areaOf('mine:' + (S.me && S.me.id)) || areasW[0];
+    var cur = { areaId: null, id: null };
+    var picker = h('div', { class: 'dp-picker', attrs: { role: 'list' } });
+    var where = h('p', { class: 'dp-hint' });
+    var err = h('p', { class: 'dp-err', attrs: { role: 'alert' } });
+    var areaSel = h('select', { class: 'dp-input', attrs: { 'aria-label': T('p.area') }, on: { change: function (ev) { var a = areaOf(ev.target.value); go(a.id, a.rootId); } } },
+      areasW.map(function (a) { return h('option', { value: a.id, text: a.label }); }));
+    var go = function (areaId, id) {
+      cur.areaId = areaId;
+      cur.id = id;
+      err.textContent = '';
+      areaSel.value = areaId;
+      Promise.all([api('GET', 'nodes/' + id), api('GET', 'nodes/' + id + '/children', null, { dirs: 1, limit: 1000 })]).then(function (r) {
+        clear(picker);
+        var node = r[0].node;
+        where.textContent = T('p.wk_folder_here', { path: [areaOf(areaId).label].concat(node.crumbs.slice(1).map(function (c) { return c.name; })).concat(node.parentId != null ? [node.name] : []).join(' › ') });
+        if (node.parentId != null) picker.appendChild(h('button', { type: 'button', on: { click: function () { go(areaId, node.parentId); } } }, [icon('up'), h('span', { text: T('p.up') })]));
+        (r[1].items || []).filter(function (x) { return x.isDir && !x.encrypted; }).forEach(function (x) {
+          picker.appendChild(h('button', { type: 'button', attrs: { role: 'listitem' }, on: { click: function () { go(areaId, x.id); } } }, [icon('folder'), h('span', { text: x.name })]));
+        });
+        if (!picker.firstChild) picker.appendChild(h('p', { class: 'dp-hint', text: T('p.no_folders'), attrs: { style: 'padding:12px' } }));
+      }, function (e) { err.textContent = errText(e); });
+    };
+    var save = function (body) {
+      return api('PUT', 'photos/settings', body).then(function (r) { closeDialog(); PH.wk = r; toast(T('p.wk_saved')); if (then) then(r); }, function (e) {
+        err.textContent = e && e.extra && e.extra.reason ? T('p.wk_why_' + e.extra.reason) : errText(e);
+      });
+    };
+    dialog(T('p.wk_folder_title'), [
+      h('p', { class: 'dp-hint', text: T('p.wk_folder_text') }),
+      h('label', { class: 'dp-field' }, [h('span', { class: 'dp-label', text: T('p.area') }), areaSel]), where, picker,
+      h('div', { class: 'dp-actions', attrs: { style: 'justify-content:flex-start' } }, [btn(T('p.wk_new_folder'), function () {
+        if (!cur.id) return;
+        api('POST', 'nodes', { parentId: cur.id, name: T('p.wk_new_name'), rename: true }).then(function (r) { go(cur.areaId, r.node.id); }, function (e) { err.textContent = errText(e); });
+      }, { small: true, icon: 'folderPlus' })]),
+      err,
+      h('div', { class: 'dp-actions' }, [
+        wk && wk.workFolder ? btn(T('p.wk_folder_none'), function () { save({ workFolder: null }); }, { danger: true }) : null,
+        btn(T('p.cancel'), closeDialog),
+        btn(T('p.wk_folder_take'), function () { if (cur.id) save({ workFolder: cur.id }); }, { primary: true }),
+      ]),
+    ], { wide: true });
+    if (start && areaOf(start.areaId)) go(start.areaId, start.id);
+    else if (mine) go(mine.id, mine.rootId);
+  }
+
+  /** The section "Fotos" of the Drive settings: where work photos go, by month, never in memories and on the frame. */
+  function workSettingsSection(main) {
+    var box = h('div', { class: 'dp-set-card' }, [setRow(T('p.loading'), null, null, { cls: 'is-note' })]);
+    main.appendChild(h('section', { class: 'dp-set-sec' }, [h('h2', { class: 'dp-set-lab', text: T('p.wk_section') }), box]));
+    var draw = function (wk) {
+      clear(box);
+      var put = function (body) { api('PUT', 'photos/settings', body).then(function (r) { PH.wk = r; draw(r); }, function (e) { fail(e); draw(wk); }); };
+      var label = workLabel(wk);
+      var sub = (label || T('p.wk_work')) + ' › ' + new Date().getFullYear() + ' › ' + pad2(new Date().getMonth() + 1);
+      add(box, [
+        setRow(T('p.wk_private_title'), T('p.wk_private_path'), null),
+        setRow(T('p.wk_folder_row'), label || T('p.wk_folder_unset'), btn(T(wk.workFolder ? 'p.wk_change' : 'p.wk_choose'), function () { workFolderDialog(wk, draw); }, { small: true, icon: 'bag' })),
+        setRow(T('p.wk_subfolders'), sub, setSwitch(wk.workSubfolders, T('p.wk_subfolders'), function (on) { put({ workSubfolders: on }); }), { label: true }),
+        setRow(T('p.wk_memories'), T('p.wk_memories_hint'), setSwitch(!wk.workInMemories, T('p.wk_memories'), function (on) { put({ workInMemories: !on }); }), { label: true }),
+        setRow(T('p.wk_team_note'), null, null, { cls: 'is-note' }),
+      ]);
+    };
+    api('GET', 'photos/settings').then(function (r) { PH.wk = r; draw(r); }, function () { clear(box); box.appendChild(setRow(T('err.generic', { code: '' }), null, null, { cls: 'is-note' })); });
   }
 
   // ── albums (since 1.7.0) ─────────────────────────────────
@@ -2247,6 +2512,8 @@
         approvedFor.textContent = d.vaults.length ? d.vaults.join(', ') : T('p.st_approved_none');
       }, function () { number.textContent = '—'; });
     }
+    // Fotos (since 1.13.0): where work photos go
+    if (has('photoClasses')) workSettingsSection(main);
     // KI für Dokumente: per area where I write
     var aiRows = [];
     if (has('docAi')) {
