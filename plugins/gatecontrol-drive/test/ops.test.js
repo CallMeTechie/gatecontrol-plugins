@@ -8,7 +8,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const VC = require('../ui/vaultcrypto');
 const ops = require('../server/ops');
-const { withHost, ANNA, MARC, LENA, BOB, DAY, MIN } = require('./helpers');
+const { withHost, ANNA, MARC, LENA, BOB, FAMILY, DAY, MIN } = require('./helpers');
 
 /** A tree in Anna's files: Projekte/{a.txt, b.txt, Fotos/{c.jpg}}, Archiv/{a.txt (other content), b.txt (same)}. */
 async function tree(c) {
@@ -271,25 +271,76 @@ test('copy: nobody brings the bytes — the background run ends it after a day; 
   });
 });
 
-test('copy: empty files and a host that copies by itself (gc.media.copy) need no device', async () => {
+test('copy: empty files need no bytes; GET me without copyServer on GateControl 1.208', async () => {
   await withHost({}, async (host, c) => {
     const t = await tree(c);
     const e = await t.a('POST', 'uploads/commit', { parentId: t.projekte.id, name: 'leer.txt', size: 0 });
     const r = await t.a('POST', 'ops', { op: 'copy', ids: [e.json.node.id], target: t.archiv.id });
     assert.equal(r.json.op.state, 'done');
     assert.ok((await names(t.a, t.archiv.id)).includes('leer.txt'));
-    // a GateControl with a copy of media files (not yet there): the server copies the bytes itself
+    const f = (await t.a('GET', 'me')).json.features;
+    assert.ok(!f.includes('copyServer') && !f.includes('zipMixed'));
+  });
+});
+
+test('copy on GateControl 1.215: gc.media.copy on the server — no device, into the target area, the job goes on alone, undo', async () => {
+  await withHost({ gatecontrol: '1.215.0' }, async (host, c) => {
+    const t = await tree(c);
+    assert.ok((await t.a('GET', 'me')).json.features.includes('copyServer'));
+    const fam = await c.area(ANNA, 'family');
+    const before = (await t.a('GET', 'changes', null, { since: 0 })).json.next;
+    const r = await t.a('POST', 'ops', { op: 'copy', ids: [t.projekte.id], target: fam.rootId });
+    assert.equal(r.status, 200, JSON.stringify(r.json));
+    let op = r.json.op;
+    assert.deepEqual([op.transfer, op.transfersLeft], ['server', 0]);
+    await ops.idle();
+    op = (await t.a('GET', `ops/${op.id}`)).json.op;
+    assert.deepEqual([op.state, op.done, op.total, op.bytesDone, op.bytesTotal], ['done', 3, 3, 10, 10]);
+    assert.equal(host.mediaCopies.length, 3);
+    assert.ok(host.mediaCopies.every((x) => x.area === `f${FAMILY}`), 'copied straight into the family area');
+    const copied = (await t.a('GET', 'nodes/by-path', null, { area: fam.id, path: 'Projekte/Fotos/c.jpg' })).json.node;
+    assert.equal(copied.sha256, t.fc.sha256);
+    assert.notEqual(copied.mediaId, t.fc.mediaId);
+    assert.deepEqual([host.media.get(copied.mediaId).area, host.media.get(copied.mediaId).path], [`f${FAMILY}`, 'Projekte/Fotos/c.jpg']);
+    const ch = (await c.as(MARC)('GET', 'changes', null, { since: before })).json.changes.filter((x) => x.op === 'create');
+    assert.equal(ch.length, 5, 'Marc\'s devices see the copies as new');
+    // a version: the copy becomes the new content of the file there; undo
+    const v = await t.a('POST', 'ops', { op: 'copy', ids: [t.fa.id], target: t.archiv.id });
+    await ops.idle();
+    assert.equal((await t.a('GET', `nodes/${t.xa.id}`)).json.node.sha256, t.fa.sha256);
+    const u = await t.a('POST', `ops/${v.json.op.id}/undo`);
+    assert.equal(u.json.op.state, 'done');
+    assert.equal((await t.a('GET', `nodes/${t.xa.id}`)).json.node.sha256, t.xa.sha256);
+    // the transfers route has nothing to hand out
+    const w = await t.a('POST', 'ops', { op: 'copy', ids: [t.fb.id], target: t.mine.rootId, onConflict: 'rename' });
+    assert.equal((await t.a('POST', `ops/${w.json.op.id}/transfers`)).json.transfers.length, 0);
+    await ops.idle();
+    // the quota of the target area ends the job
+    await host.gc.media.areas.ensure(`f${FAMILY}`, { quota: 1024 * 1024 });
+    const big = (await c.put(ANNA, t.projekte.id, 'gross.bin', Buffer.alloc(1100 * 1024))).json.node;
+    const q = await t.a('POST', 'ops', { op: 'copy', ids: [big.id], target: fam.rootId });
+    assert.deepEqual([q.status, q.json.code], [507, 'quota']);
+  });
+});
+
+test('copy: a job waiting for a device goes on on the server once GateControl copies (the hook stands in)', async () => {
+  await withHost({}, async (host, c) => {
+    const t = await tree(c);
+    const r = await t.a('POST', 'ops', { op: 'copy', ids: [t.fotos.id], target: t.archiv.id });
+    assert.deepEqual([r.json.op.state, r.json.op.transfer], ['running', 'client']);
     const copied = [];
-    ops._setCopy(async (id) => {
+    ops._setCopy(async (id, o) => {
       const m = host.media.get(id);
-      copied.push(id);
+      copied.push([id, o.area]);
       const r2 = await host.upload(ANNA, m.data, m.mime);
-      return { mediaId: r2.body.mediaId };
+      return { id: r2.body.mediaId };
     });
     try {
-      const s = await t.a('POST', 'ops', { op: 'copy', ids: [t.fotos.id], target: t.archiv.id });
-      assert.deepEqual([s.json.op.state, s.json.op.transfer], ['done', 'server']);
-      assert.deepEqual(copied, [t.fc.mediaId]);
+      await host.tick();
+      await ops.idle();
+      const op = (await t.a('GET', `ops/${r.json.op.id}`)).json.op;
+      assert.deepEqual([op.state, op.transfer], ['done', 'server']);
+      assert.deepEqual(copied, [[t.fc.mediaId, `u${ANNA.id}`]]);
       assert.ok((await t.a('GET', 'nodes/by-path', null, { area: t.mine.id, path: 'Archiv/Fotos/c.jpg' })).json.node);
     } finally { ops._setCopy(null); }
   });

@@ -266,6 +266,13 @@
 //   (host.mediaFromUrl answers 404 for the file itself with it). An older host drops the option (states without
 //   previewOnly, the ordinary URL).
 //
+// GateControl ≥ 1.215.0 (opt-in: opts.gatecontrol: '1.215.0') — copies and paths in links:
+//   gc.media.copy(mediaId, { area? }) → { id, size, sha256, mime }: a new file of the plugin with the same bytes, claimed,
+//   in `area` (default the source's; media.areas) without a path (gc.media.move gives it one); unknown → ERR_INVALID,
+//   the area's quota or the plugin's → ERR_MEDIA_QUOTA. host.mediaCopies records { from, id, area }.
+//   gc.publicLinks.create kind 'files': up to 5000 entries, each { mediaId, name?, path? } — `path` a folder in the ZIP
+//   and the page ('a/b', no '..', no leading '/'), kept on the link's file (host.publicLinks).
+//
 // GateControl 1.214.0 — the AI service (src/services/ai/): every plugin has gc.ai with opts.gatecontrol ≥ '1.214.0' or with
 //   opts.ai (any version; an older host has no gc.ai). permissions.ai { purpose: { de, en }, capabilities: [...] } is validated
 //   ('text' required; 'text' | 'vision' | 'audio' | 'video'). opts.ai { configured (true; without opts.ai: false), allowed (true:
@@ -395,6 +402,7 @@ const TARGET_ANSWER_MAX = 5 * 1024 * 1024;
 const LINK_TTL_MAX = 30 * 86400000;
 const LINK_PIN_FAILS = 5;
 const LINK_FILES_MAX = 20;
+const LINK_FILES_MAX_215 = 5000; // GateControl ≥ 1.215.0
 const MEDIA_FAMILY_RE = /^(?:image|audio|video|application)\/\*$/;
 // GateControl ≥ 1.204.0 (media.areas): files up to 100 GB, quota up to 1 PB, the type "*/*"
 const MEDIA_MAX_BYTES_AREAS = 100 * 1024 ** 3;
@@ -1034,6 +1042,8 @@ async function createHost(pluginDir, opts = {}) {
   const gc205 = hostAtLeast('1.205.0'); // links v2
   const gc208 = hostAtLeast('1.208.0'); // media previews
   const gc210 = hostAtLeast('1.210.0'); // preview-only URLs
+  const gc215 = hostAtLeast('1.215.0'); // gc.media.copy, files links with paths
+  const mediaCopies = [];
   const gc211 = hostAtLeast('1.211.0'); // public endpoints (permissions.publicEndpoints)
 
   // Storage: the plugin's own SQLite database with its migrations applied.
@@ -1518,6 +1528,26 @@ async function createHost(pluginDir, opts = {}) {
     return mediaInfo(id);
   };
   api['media.delete'] = async (args) => { needMedia(); return mediaStore.delete(mediaIdOf(args)); };
+  // GateControl ≥ 1.215.0: a copy of a file on the server (claimed, in the area asked for, no path)
+  api['media.copy'] = async (args) => {
+    needMedia();
+    if (!gc215) throw hostError('ERR_UNKNOWN_API', 'unknown host API');
+    const src = mediaStore.get(mediaIdOf(args));
+    if (!src) throw hostError('ERR_INVALID', 'unknown media id');
+    const o = args.opts && typeof args.opts === 'object' ? args.opts : {};
+    const area = o.area != null ? String(o.area) : src.area;
+    if (area != null) {
+      needAreas();
+      if (!areaStore.has(area)) throw areaFail('invalid', 'unknown area');
+      if (areaQuotaFull(area, src.bytes)) throw areaFail('quota', 'the area is full');
+    }
+    if (mediaUsage().bytes + src.bytes > mediaQuota) throw hostError('ERR_MEDIA_QUOTA', 'quota exceeded');
+    const id = require('node:crypto').randomBytes(16).toString('hex');
+    mediaStore.set(id, { mime: src.mime, bytes: src.bytes, owner: src.owner, data: Buffer.from(src.data), claimed: true, createdAt: Date.now(), name: src.name || null,
+      ...(area != null ? { area, path: null } : {}) });
+    mediaCopies.push({ from: args.id, id, area: area == null ? null : area });
+    return { id, size: src.bytes, sha256: require('node:crypto').createHash('sha256').update(src.data).digest('hex'), mime: src.mime };
+  };
 
   // GateControl ≥ 1.211.0: public endpoints — tokens for /plugin-public/<id>/<path> (host.publicRequest)
   const peDecl = () => {
@@ -1900,13 +1930,20 @@ async function createHost(pluginDir, opts = {}) {
         upload = { maxFiles, maxBytes, types: x.types && x.types.length ? x.types.slice() : null };
       }
     }
-    if (kind === 'files' && (!Array.isArray(x.files) || !x.files.length || x.files.length > LINK_FILES_MAX)) throw hostError('ERR_INVALID', `files must be 1…${LINK_FILES_MAX}`);
+    const filesMax = gc215 ? LINK_FILES_MAX_215 : LINK_FILES_MAX;
+    if (kind === 'files' && (!Array.isArray(x.files) || !x.files.length || x.files.length > filesMax)) throw hostError('ERR_INVALID', `files must be 1…${filesMax}`);
     const files = kind !== 'files' ? [] : x.files.map((f, i) => {
       const m = f && typeof f.mediaId === 'string' ? mediaStore.get(f.mediaId) : null;
       if (!m) throw hostError('ERR_INVALID', 'unknown media id');
       if (!m.claimed) throw hostError('ERR_INVALID', 'the media of a link must be claimed');
       if (f.name != null && (typeof f.name !== 'string' || !f.name.trim() || f.name.length > 200)) throw hostError('ERR_INVALID', 'invalid file name');
-      return { id: String(i + 1), mediaId: f.mediaId, name: f.name != null ? f.name.trim() : (m.name || 'file'), mime: m.mime, bytes: m.bytes, downloads: 0, lastDownloadAt: null };
+      // GateControl ≥ 1.215.0: a folder of the entry in the ZIP and the page
+      let fp = null;
+      if (f.path != null && f.path !== '') {
+        if (!gc215 || typeof f.path !== 'string' || f.path.length > 1024 || /^\//.test(f.path) || f.path.split('/').some((x) => !x || x === '.' || x === '..') || /[\0-\x1f\\]/.test(f.path)) throw hostError('ERR_INVALID', 'invalid file path');
+        fp = f.path;
+      }
+      return { id: String(i + 1), mediaId: f.mediaId, name: f.name != null ? f.name.trim() : (m.name || 'file'), ...(fp ? { path: fp } : {}), mime: m.mime, bytes: m.bytes, downloads: 0, lastDownloadAt: null };
     });
     const now = Date.now();
     const noExpiry = gc205 && x.expiresAt === null;
@@ -2748,6 +2785,8 @@ async function createHost(pluginDir, opts = {}) {
       ...(gc190 ? { fetch: (url, o) => call('media.fetch', { url, opts: o || {} }) } : {}),
       // GateControl ≥ 1.193.0: hand a file to another plugin (its store, unclaimed, owner `user`)
       ...(gc193 ? { handOver: (id, o) => { const x = o && typeof o === 'object' ? o : {}; return call('media.handOver', { id, toPlugin: x.toPlugin, user: x.user }); } } : {}),
+      // GateControl ≥ 1.215.0: a copy on the server
+      ...(gc215 ? { copy: (id, o) => call('media.copy', { id, opts: o || {} }) } : {}),
       // GateControl ≥ 1.204.0 (media.areas)
       ...(gc204 ? {
         move: (id, o) => call('media.move', { id, opts: o }),
@@ -2852,7 +2891,7 @@ async function createHost(pluginDir, opts = {}) {
 
   return {
     manifest, gc, plugin, logs, notifications, fetches, websockets, kv, settings, filesDir, kiosk, actionRuns,
-    media: mediaStore, events, serviceCalls,
+    media: mediaStore, mediaCopies, events, serviceCalls,
     /** GateControl ≥ 1.177.0: an upload of an app or a frame (PUT …/plugins/<id>/media) → { status, body } */
     async upload(user, data, mime, o = {}) {
       if (!media) return { status: 404, body: { ok: false, code: 'not_found' } };

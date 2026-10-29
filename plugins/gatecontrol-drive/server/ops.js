@@ -38,8 +38,9 @@
 // up to 20 at a time (POST ops/<id>/transfers { limit, maxSize } → { transfers: [{ id, nodeId, name, size, sha256,
 // mime, url, encrypted?, vaultId?, nameCipher? }], left }, leased to it for 15 minutes), downloads each `url` (signed
 // for the person, 1 h), uploads it like any file (PUT …/media, resumable) and hands the mediaId over (POST
-// ops/<id>/transfers/<id> { mediaId } — the SHA-256 must be the original's; { failed: true } gives one up). A host with
-// gc.media.copy(id) does it without a device (transfer 'server'). Empty files and folders need no bytes. A copy nobody
+// ops/<id>/transfers/<id> { mediaId } — the SHA-256 must be the original's; { failed: true } gives one up). GateControl
+// ≥ 1.215.0 copies on the server (gc.media.copy, feature copyServer): transfer 'server', no device, the job goes on in
+// the plugin process and the background run like any other. Empty files and folders need no bytes. A copy nobody
 // brings bytes for in 24 h ends as failed (abandoned). `maxSize`: only files up to that size (the portal: 100 MB).
 //
 // Undo (POST ops/<id>/undo, until undoUntil — 15 minutes after the end): a move goes back, a trash comes out of the
@@ -284,10 +285,24 @@ async function mine(ctx, id) {
   return op;
 }
 
-// GateControl's copy of a media file — none yet (≤ 1.214); `copyHook` stands in for it in the tests
+// GateControl's copy of a media file (≥ 1.215.0: gc.media.copy(mediaId, { area }) → { id, size, sha256, mime }, a new
+// file of its own, done on the server — a hard link, S3's CopyObject or a stream); `copyHook` stands in for it in the tests
 let copyHook = null;
-const copier = (gc) => copyHook || (gc.media && typeof gc.media.copy === 'function' ? (id) => gc.media.copy(id) : null);
+const copier = (gc) => copyHook || (gc.media && typeof gc.media.copy === 'function' ? (id, o) => gc.media.copy(id, o) : null);
 const hostCopy = (gc) => !!copier(gc);
+
+/**
+ * Media file `mediaId` at `path` of media area `mediaArea`: a fresh upload is claimed there; a file GateControl copied
+ * (already in an area) gets its path — and its area — with a move.
+ */
+async function place(gc, mediaId, mediaArea, path) {
+  const info = await gc.media.info(mediaId);
+  if (info && info.claimed && info.area) {
+    await gc.media.move(mediaId, { path, ...(info.area !== mediaArea ? { area: mediaArea } : {}) });
+    return;
+  }
+  await gc.media.claim(mediaId, { area: mediaArea, path });
+}
 
 /** The job as the apps see it. */
 async function view(gc, op) {
@@ -681,13 +696,27 @@ async function copyItem(ctx, op, item) {
   const cur = await itemOf(gc, op, item.seq);
   // an empty file has no bytes; a host that copies files (gc.media.copy) needs no device
   if (!src.media_id) return commitCopy(ctx, op, cur, src, null);
+  // GateControl copies on the server (≥ 1.215.0): no device needed, the job goes on without one
   if (hostCopy(gc)) {
-    let made = null;
-    try { made = await copier(gc)(src.media_id); } catch (e) {
+    const a = await areas.row(gc, dest.area_id);
+    let made;
+    try { made = await copier(gc)(src.media_id, { area: a.media_area }); } catch (e) {
       if (e && e.code === 'ERR_MEDIA_QUOTA') throw fail('quota');
-      made = null;
+      gc.log.warn('media copy failed', (e && e.code) || 'error');
+      return settle(gc, op, cur, 'failed', { reason: e && e.code === 'ERR_INVALID' ? 'not_found' : 'copy' });
     }
-    if (made && typeof made.mediaId === 'string') return commitCopy(ctx, op, cur, src, made.mediaId);
+    const id = made && (typeof made.id === 'string' ? made.id : made.mediaId);
+    if (typeof id !== 'string') return settle(gc, op, cur, 'failed', { reason: 'copy' });
+    if (made.sha256 && src.sha256 && made.sha256 !== src.sha256) {
+      try { await gc.media.delete(id); } catch { /* best effort */ }
+      return settle(gc, op, cur, 'failed', { reason: 'changed' });
+    }
+    try {
+      return await commitCopy(ctx, op, cur, src, id);
+    } catch (e) {
+      try { await gc.media.delete(id); } catch { /* best effort */ }
+      throw e;
+    }
   }
   await store.run(gc, "UPDATE op_items SET state = 'transfer' WHERE op_id = ? AND seq = ?", [op.id, item.seq]);
   return null;
@@ -721,7 +750,7 @@ async function commitCopy(ctx, op, item, src, mediaId) {
       const p = await nodes.pathOf(gc, ex);
       const versionId = await files.keepVersion(ctx, ex);
       if (mediaId) {
-        try { await gc.media.claim(mediaId, { area: area.media_area, path: p }); } catch (e) {
+        try { await place(gc, mediaId, area.media_area, p); } catch (e) {
           if (ex.media_id) { try { await gc.media.move(ex.media_id, { path: p }); } catch { /* best effort */ } }
           if (e && e.code === 'ERR_MEDIA_QUOTA') throw fail('quota');
           throw e;
@@ -741,7 +770,7 @@ async function commitCopy(ctx, op, item, src, mediaId) {
     }
     const p = nodes.join(await nodes.pathOf(gc, dest), name);
     if (mediaId) {
-      try { await gc.media.claim(mediaId, { area: area.media_area, path: p }); } catch (e) {
+      try { await place(gc, mediaId, area.media_area, p); } catch (e) {
         if (e && e.code === 'ERR_MEDIA_QUOTA') throw fail('quota');
         if (e && e.code === 'ERR_CONFLICT') throw fail('exists');
         throw e;
@@ -1024,6 +1053,11 @@ async function tick(gc, now, hooks) {
   const stale = await store.all(gc, `SELECT * FROM ops o WHERE state = 'running' AND kind = 'copy' AND COALESCE(transfer_at, updated_at) < ?
     AND NOT EXISTS (SELECT 1 FROM op_items i WHERE i.op_id = o.id AND i.state = 'pending')`, [now - ABANDON_MS]);
   for (const op of stale) await finish(gc, op, 'failed', 'abandoned');
+  // GateControl copies on the server now (an update to ≥ 1.215.0): what still waits for a device goes on here
+  if (hostCopy(gc)) {
+    await store.run(gc, `UPDATE op_items SET state = 'pending', lease_until = NULL WHERE state = 'transfer' AND (lease_until IS NULL OR lease_until < ?)
+      AND op_id IN (SELECT id FROM ops WHERE state = 'running' AND kind = 'copy')`, [now]);
+  }
   // (a runner of this process already at work goes on by itself — the background run does not wait for it)
   if (hooks && typeof hooks.asPerson === 'function' && !runner) await drain(hooks, 45000);
   return { removed: old.length, abandoned: stale.length };
@@ -1035,6 +1069,6 @@ async function idle() {
 }
 
 module.exports = {
-  check, create, get, list, cancel, undo, transfers, transferDone, tick, drain, idle, view, NODES_MAX, IDS_MAX, RUNNING_MAX, UNDO_MS,
+  check, create, get, list, cancel, undo, transfers, transferDone, tick, drain, idle, view, hostCopy, NODES_MAX, IDS_MAX, RUNNING_MAX, UNDO_MS,
   _setCopy: (fn) => { copyHook = fn; },
 };

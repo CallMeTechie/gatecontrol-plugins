@@ -83,11 +83,13 @@ CREATE TABLE op_steps (
   PRIMARY KEY (op_id, seq)
 );
 
--- One link for several files (since 1.12.0): every file of a link (links.node_id is the first). A ZIP of a selection is
--- a short-lived link of GateControl too (zip = 1: not in the lists).
+-- One link for several files (since 1.12.0): the nodes of a link (links.node_id is the first) — top = 1 the ones chosen,
+-- top = 0 the files of a chosen folder (GateControl ≥ 1.215.0: a files link with a path per file); any of them in the
+-- trash ends the link. A ZIP of a selection is a short-lived link of GateControl too (zip = 1: not in the lists).
 CREATE TABLE link_nodes (
   token   TEXT NOT NULL,
   node_id INTEGER NOT NULL,
+  top     INTEGER NOT NULL DEFAULT 1,
   PRIMARY KEY (token, node_id)
 );
 CREATE INDEX link_nodes_node ON link_nodes (node_id);

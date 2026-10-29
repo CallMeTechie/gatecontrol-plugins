@@ -19,7 +19,9 @@
 //   POST zip { ids, name? }  a ZIP of a selection (since 1.12.0, feature zip) → { url, name, expiresAt, files, skipped }:
 //            GateControl streams it (stored entries, ZIP64, UTF-8 names) through a link of 15 minutes that is in no list
 //            — one folder (with everything in it), or up to 20 files from anywhere (empty files are left out: skipped);
-//            anything else 400 invalid { reason: 'mixed' | 'too_many', max }; a vault: 409 encrypted
+//            anything else 400 invalid { reason: 'mixed' | 'too_many', max }; a vault: 409 encrypted. GateControl ≥ 1.215.0
+//            (files links with a path per entry, feature zipMixed): any selection for both — a folder's files under the
+//            folder's name (a snapshot), up to GateControl's limit (too_many { max })
 //   GET links?nodeId=        the viewer's links (or those of a node the viewer may write to)
 //   GET links/<token>/events the log (opened, downloaded, uploaded — addresses shortened by GateControl)
 //   DELETE links/<token>     end it (whoever made it, or who manages the area)
@@ -118,7 +120,72 @@ async function create(ctx, body) {
 }
 
 const FILES_MAX = 20;
+const PATHS_MAX = 5000;
 const ZIP_MS = 15 * 60000;
+
+/**
+ * GateControl ≥ 1.215.0: files links with a path per entry ({ mediaId, name, path }) and far more entries — a ZIP and a
+ * link of any selection, folders resolved into their files (feature zipMixed). → the most entries a link takes, or 0
+ */
+function paths(gc) {
+  const pl = api(gc);
+  if (!pl) return 0;
+  const caps = pl.capabilities || pl.limits || null;
+  const max = Number((caps && (caps.filesMax || caps.files)) || pl.filesMax || 0);
+  if (max > FILES_MAX) return max;
+  if (caps && (caps.filesPath === true || caps.paths === true)) return PATHS_MAX;
+  // both came with GateControl 1.215.0: a host that copies media files takes paths in files links too
+  return gc.media && typeof gc.media.copy === 'function' ? PATHS_MAX : 0;
+}
+
+/** The parent path of "a/b/c.pdf" ("a/b"), '' at the top. */
+const dirOf = (p) => (p.lastIndexOf('/') > 0 ? p.slice(0, p.lastIndexOf('/')) : '');
+
+/**
+ * The files of a selection with their paths (GateControl ≥ 1.215.0): a file as itself, a folder as every live file below
+ * it under the folder's name → { entries: [{ node, path, name }], tops: [{ node, area }], files: [node ids], skipped }.
+ * The same file twice (a file and its folder chosen) once; the same name in one path gets "(2)".
+ */
+async function expand(ctx, ids, need, max) {
+  const gc = ctx.gc;
+  const entries = [];
+  const tops = [];
+  const skipped = [];
+  const seen = new Set();
+  for (const id of ids) {
+    const r = await nodes.reach(ctx, id, need);
+    if (r.node.vault_id || (r.node.is_dir === 1 && await holdsVault(gc, r.node))) throw fail('encrypted');
+    if (need === 'write' && r.area.archived_at != null) throw fail('forbidden');
+    if (r.via === 'parent') await ctx.noteChildView(r.area);
+    tops.push(r);
+    const add = (n, p) => {
+      if (seen.has(n.id)) return;
+      seen.add(n.id);
+      if (!n.media_id) { skipped.push({ id: n.id, reason: 'empty' }); return; }
+      entries.push({ node: n, path: p });
+      if (entries.length > max) throw fail('invalid', { reason: 'too_many', max });
+    };
+    if (r.node.is_dir !== 1) { add(r.node, ''); continue; }
+    const top = r.node.parent_id == null ? ctx.areaLabel(r.area) : r.node.name;
+    const rows = (await nodes.below(gc, r.node.id)).filter((x) => x.deleted_at == null);
+    const where = nodes.pathsBelow(r.node.id, top, rows);
+    for (const x of rows.filter((y) => y.is_dir === 0).sort((a, b) => String(where.get(a.id)).localeCompare(String(where.get(b.id))))) add(x, dirOf(where.get(x.id)));
+  }
+  // names once per path
+  const byPath = new Map();
+  for (const e of entries) { if (!byPath.has(e.path)) byPath.set(e.path, []); byPath.get(e.path).push(e); }
+  for (const list of byPath.values()) distinct(list.map((e) => e.node.name)).forEach((n, i) => { list[i].name = n; });
+  return { entries, tops, skipped };
+}
+
+/** The link's nodes: the ones chosen (top) and the files of chosen folders. */
+async function linkNodes(gc, token, tops, files) {
+  for (const id of tops) await store.run(gc, 'INSERT OR IGNORE INTO link_nodes (token, node_id, top) VALUES (?, ?, 1)', [token, id]);
+  const rest = files.filter((id) => !tops.includes(id));
+  for (const part of store.chunks(rest, 30)) {
+    await store.run(gc, `INSERT OR IGNORE INTO link_nodes (token, node_id, top) VALUES ${part.map(() => '(?, ?, 0)').join(', ')}`, part.flatMap((id) => [token, id]));
+  }
+}
 
 /** A list of node ids (1 … 10 000, each once). */
 function idsOf(v, field) {
@@ -169,6 +236,8 @@ async function createMany(ctx, pl, b, ids) {
   if (note != null && note.length > 500) throw fail('invalid', { field: 'note' });
   const given = b.title == null ? null : line(b.title);
   if (given != null && given.length > 120) throw fail('invalid', { field: 'title' });
+  const max = paths(ctx.gc);
+  if (max) return createMixed(ctx, pl, ids, { mode, expires, pin, note, given, max });
   if (ids.length > FILES_MAX) throw fail('invalid', { reason: 'too_many', max: FILES_MAX });
   const list = await filesOf(ctx, ids, 'write');
   if (list.some((x) => x.area.archived_at != null)) throw fail('forbidden');
@@ -197,6 +266,35 @@ async function createMany(ctx, pl, b, ids) {
 }
 
 /**
+ * POST links { nodeIds } with GateControl ≥ 1.215.0 (feature zipMixed): files and folders together — every file of a
+ * chosen folder under the folder's name (a snapshot: what comes later is not in it), up to GateControl's limit.
+ */
+async function createMixed(ctx, pl, ids, o) {
+  const x = await expand(ctx, ids, 'write', o.max);
+  if (!x.entries.length) throw fail('invalid', { reason: 'empty', ids: x.skipped.map((s) => s.id) });
+  const title = o.given || (x.tops.length === 1 && x.tops[0].node.is_dir === 1 ? x.tops[0].node.name : t(ctx.lang, 'link.files', { n: x.entries.length }));
+  const args = {
+    ownerUserId: ctx.viewer, title: title.slice(0, 120), ...(o.note ? { note: o.note } : {}), ...(o.pin ? { pin: o.pin } : {}), kind: 'files', mode: o.mode,
+    expiresAt: EXPIRES[o.expires] == null ? null : ctx.now + EXPIRES[o.expires],
+    files: x.entries.map((e) => ({ mediaId: e.node.media_id, name: e.name, ...(e.path ? { path: e.path } : {}) })),
+  };
+  let made;
+  try { made = await pl.create(args); } catch (e) { throw linkFail(e, args.expiresAt === null); }
+  const first = x.tops[0];
+  const row = { token: made.token, node_id: first.node.id, area_id: first.area.id, kind: 'files', mode: o.mode, path: '', created_by: ctx.viewer, created_at: ctx.now };
+  await store.tx(ctx.gc, async () => {
+    await store.run(ctx.gc, 'INSERT INTO links (token, node_id, area_id, kind, mode, path, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+      [row.token, row.node_id, row.area_id, row.kind, row.mode, row.path, row.created_by, row.created_at]);
+    await linkNodes(ctx.gc, row.token, x.tops.map((r) => r.node.id), x.entries.map((e) => e.node.id));
+  });
+  let link = null;
+  try { link = await pl.get(made.token); } catch { link = null; }
+  await address.learn(ctx.gc, made.url);
+  const out = view(row, link || { url: made.url, expiresAt: made.expiresAt, active: true, state: 'active', pin: !!o.pin, title: args.title }, first.node, x.tops.map((r) => r.node.id));
+  return { ...out, nodeIds: x.tops.map((r) => r.node.id), count: x.tops.length, files: x.entries.length, ...(x.skipped.length ? { skipped: x.skipped } : {}) };
+}
+
+/**
  * POST zip { ids, name? } → { url, name, expiresAt, files, skipped } — a ZIP GateControl streams through a link of 15
  * minutes (a folder link, or a files link of up to 20 files); the person may read each.
  */
@@ -213,6 +311,7 @@ async function zip(ctx, body) {
   let count;
   let skipped = [];
   let tops = [];
+  let files = [];
   if (ids.length === 1 && (await nodes.reach(ctx, ids[0])).node.is_dir === 1) {
     const { node, area, via } = await nodes.reach(ctx, ids[0]);
     if (node.vault_id || await holdsVault(ctx.gc, node)) throw fail('encrypted');
@@ -226,6 +325,18 @@ async function zip(ctx, body) {
     args = { ownerUserId: ctx.viewer, title, kind: 'folder', mode: 'download', area: area.media_area, path: p, expiresAt };
     row = { node_id: node.id, area_id: area.id, kind: 'folder', path: p };
     tops = [node.id];
+  } else if (paths(ctx.gc)) {
+    // GateControl ≥ 1.215.0 (feature zipMixed): any selection — folders as their files under the folder's name
+    const x = await expand(ctx, ids, 'read', paths(ctx.gc));
+    skipped = x.skipped;
+    if (!x.entries.length) throw fail('invalid', { reason: 'empty' });
+    const one = x.tops.length === 1 ? x.tops[0].node : null;
+    const title = (given || (one && one.is_dir !== 1 ? one.name.replace(/\.[^.]{1,16}$/, '') : t(ctx.lang, 'zip.files', { n: x.entries.length }))).slice(0, 120);
+    args = { ownerUserId: ctx.viewer, title, kind: 'files', mode: 'download', expiresAt, files: x.entries.map((e) => ({ mediaId: e.node.media_id, name: e.name, ...(e.path ? { path: e.path } : {}) })) };
+    row = { node_id: x.tops[0].node.id, area_id: x.tops[0].area.id, kind: 'files', path: '' };
+    count = x.entries.length;
+    tops = x.tops.map((r) => r.node.id);
+    files = x.entries.map((e) => e.node.id);
   } else {
     if (ids.length > FILES_MAX) throw fail('invalid', { reason: 'too_many', max: FILES_MAX });
     const list = await filesOf(ctx, ids, 'read');
@@ -245,7 +356,7 @@ async function zip(ctx, body) {
   await store.tx(ctx.gc, async () => {
     await store.run(ctx.gc, "INSERT INTO links (token, node_id, area_id, kind, mode, path, created_by, created_at, zip) VALUES (?, ?, ?, ?, 'download', ?, ?, ?, 1)",
       [made.token, row.node_id, row.area_id, row.kind, row.path, ctx.viewer, ctx.now]);
-    for (const id of tops) await store.run(ctx.gc, 'INSERT OR IGNORE INTO link_nodes (token, node_id) VALUES (?, ?)', [made.token, id]);
+    await linkNodes(ctx.gc, made.token, tops, files);
   });
   await address.learn(ctx.gc, made.url);
   return { url: `${made.url}/zip`, name: `${args.title}.zip`, expiresAt: iso(made.expiresAt == null ? expiresAt : made.expiresAt), files: count, skipped };
@@ -293,7 +404,7 @@ async function list(ctx, q) {
         if (e && e.code === 'ERR_PUBLIC_LINKS_DISABLED') enabled = false; else throw e;
       }
     }
-    const many = r.kind === 'files' ? (await store.all(ctx.gc, 'SELECT node_id FROM link_nodes WHERE token = ? ORDER BY rowid', [r.token])).map((x) => x.node_id) : null;
+    const many = r.kind === 'files' ? (await store.all(ctx.gc, 'SELECT node_id FROM link_nodes WHERE token = ? AND top = 1 ORDER BY rowid', [r.token])).map((x) => x.node_id) : null;
     out.push(view(r, link, await nodes.row(ctx.gc, r.node_id), many));
   }
   return { links: out, enabled };
@@ -401,4 +512,4 @@ async function forget(gc) {
   return n;
 }
 
-module.exports = { create, list, revoke, events, endFor, adoptUpload, catchUp, forget, zip, usable, EXPIRES, MODES, FILES_MAX };
+module.exports = { create, list, revoke, events, endFor, adoptUpload, catchUp, forget, zip, usable, paths, EXPIRES, MODES, FILES_MAX };

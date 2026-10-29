@@ -85,3 +85,35 @@ test('POST links { nodeIds }: one link for several files; a folder among them is
     assert.deepEqual([after.state, after.endedWhy], ['ended', 'trashed']);
   });
 });
+
+test('GateControl 1.215 (zipMixed): a ZIP and one link of any selection — folders as their files with paths', async () => {
+  await withHost({ gatecontrol: '1.215.0' }, async (host, c) => {
+    const s = await setup(c);
+    assert.ok((await s.a('GET', 'me')).json.features.includes('zipMixed'));
+    const other = (await s.a('POST', 'nodes', { parentId: s.mine.rootId, name: 'Andere' })).json.node;
+    const o1 = (await c.put(ANNA, other.id, 'Brief.pdf', 'other')).json.node;
+    // a folder and a file of elsewhere: the folder's files under its name, the file at the top
+    const z = await s.a('POST', 'zip', { ids: [s.d.id, o1.id] });
+    assert.equal(z.status, 200, JSON.stringify(z.json));
+    assert.deepEqual([z.json.name, z.json.files], ['Drive – 4 Dateien.zip', 4]);
+    const g = host.publicLinks.get(z.json.url.split('/')[4]);
+    assert.equal(g.kind, 'files');
+    assert.deepEqual(g.files.map((x) => [x.path || '', x.name]).sort(), [['', 'Brief.pdf'], ['Urlaub', 'Brief.pdf'], ['Urlaub/Tag 1', 'Bild.jpg'], ['Urlaub/Tag 1', 'Brief.pdf']]);
+    // a single folder alone stays a folder link
+    assert.equal(host.publicLinks.get((await s.a('POST', 'zip', { ids: [s.d.id] })).json.url.split('/')[4]).kind, 'folder');
+    // more than 20 files now
+    const many = (await s.a('POST', 'nodes', { parentId: s.mine.rootId, name: 'Viele' })).json.node;
+    for (let i = 0; i < 25; i++) await c.put(ANNA, many.id, `f${i}.txt`, `x${i}`);
+    const zm = await s.a('POST', 'zip', { ids: [many.id, s.f1.id] });
+    assert.equal(zm.json.files, 26);
+    // one link: a folder among the files; a file of the folder in the trash ends it
+    const l = await s.a('POST', 'links', { nodeIds: [s.sub.id, o1.id], mode: 'view', expires: '1d' });
+    assert.equal(l.status, 200, JSON.stringify(l.json));
+    assert.deepEqual([l.json.link.count, l.json.link.files, l.json.link.nodeIds], [2, 3, [s.sub.id, o1.id]]);
+    assert.deepEqual(host.publicLinks.get(l.json.link.token).files.map((x) => x.path || '').sort(), ['', 'Tag 1', 'Tag 1']);
+    assert.deepEqual((await s.a('GET', 'links')).json.links.find((x) => x.token === l.json.link.token).nodeIds, [s.sub.id, o1.id]);
+    await s.a('DELETE', `nodes/${s.f3.id}`);
+    const after = (await s.a('GET', 'links')).json.links.find((x) => x.token === l.json.link.token);
+    assert.deepEqual([after.state, after.endedWhy], ['ended', 'trashed']);
+  });
+});

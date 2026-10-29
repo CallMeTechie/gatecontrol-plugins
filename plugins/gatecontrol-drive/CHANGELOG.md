@@ -27,6 +27,10 @@ Dateien der Familie und des Teams auf dem eigenen Speicher – auf diesem Server
   Ziehen auf Ordner in der Liste und im Menübaum (mit Strg: kopieren), Tastenkürzel-Zeile; „Ziel wählen“, „Gleiche
   Namen am Ziel“, Auftragskarten mit Abbrechen, Snackbar mit „Rückgängig“, „neu hier“. Fotos: Strg / Umschalt, „Alle“ /
   „Keine“ je Monat, ZIP, Verschieben, Löschen.
+- **Mit GateControl ≥ 1.215.0:** Kopieren läuft ganz auf dem Server (`gc.media.copy`, Feature `copyServer`,
+  `transfer: 'server'`) – auch wenn alle Apps zu sind; wartende Kopien eines älteren GateControl gehen nach dem Update
+  dort weiter. ZIP und ein Link für mehrere gehen für jede Auswahl (Ordner als ihre Dateien mit Pfad, Feature
+  `zipMixed`).
 - Behoben: Links endeten bei mehr als 100 auf einmal verschobenen oder gelöschten Knoten nicht (zu viele Parameter je
   Abfrage).
 - Datenbank-Migration `010_ops.sql`; keine neue Berechtigung.

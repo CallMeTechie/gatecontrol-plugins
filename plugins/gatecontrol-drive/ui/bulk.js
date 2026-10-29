@@ -277,6 +277,8 @@
         if (!U.has('zip')) return no('p.b.why_links');
         if (vault) return no('p.b.why_vault');
         var dirs = list.filter(function (x) { return x.isDir; }).length;
+        // GateControl ≥ 1.215.0 (zipMixed): any selection
+        if (U.has('zipMixed')) return { ok: true };
         if (dirs && list.length > 1) return no('p.b.why_zip_mixed');
         if (!dirs && list.length > ZIP_FILES) return { ok: false, why: T('p.b.why_zip_many', { max: ZIP_FILES }) };
         if (!dirs && list.every(function (x) { return !x.mediaId; })) return no('p.b.why_empty');
@@ -287,6 +289,7 @@
         if (!writable) return no('p.b.why_read');
         if (list.length === 1) return list[0].isDir || list[0].mediaId ? { ok: true } : no('p.b.why_empty');
         if (!U.has('multiLink')) return no('p.b.why_links');
+        if (U.has('zipMixed')) return { ok: true };
         if (list.some(function (x) { return x.isDir; })) return no('p.b.why_link_mixed');
         if (list.length > ZIP_FILES) return { ok: false, why: T('p.b.why_link_many', { max: ZIP_FILES }) };
         if (list.some(function (x) { return !x.mediaId; })) return no('p.b.why_empty');
@@ -458,7 +461,13 @@
         a.click();
         document.body.removeChild(a);
         U.toast(r.skipped && r.skipped.length ? T('p.b.zip_started_skip', { name: r.name, count: r.skipped.length }) : T('p.b.zip_started', { name: r.name }));
-      }, U.fail);
+      }, function (e) {
+        var why = e && e.extra && e.extra.reason;
+        if (why === 'too_many') U.toast(T('p.b.why_zip_many', { max: e.extra.max || ZIP_FILES }), 'error');
+        else if (why === 'mixed') U.toast(T('p.b.why_zip_mixed'), 'error');
+        else if (why === 'empty') U.toast(T('p.b.why_empty'), 'error');
+        else U.fail(e);
+      });
     }
 
     function link(list) {
@@ -501,7 +510,7 @@
     function linkErr(e) {
       var r = e && e.extra && e.extra.reason;
       if (r === 'mixed') return T('p.b.why_link_mixed');
-      if (r === 'too_many') return T('p.b.why_link_many', { max: ZIP_FILES });
+      if (r === 'too_many') return T('p.b.why_link_many', { max: (e.extra && e.extra.max) || ZIP_FILES });
       if (r === 'empty') return T('p.b.why_empty');
       return U.errText(e);
     }

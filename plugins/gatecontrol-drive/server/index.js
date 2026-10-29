@@ -220,7 +220,13 @@ async function optional(ctx) {
   // office in the browser (1.9.0): only while an office server is set up and GateControl has public endpoints
   if (await office.available(ctx.gc, await ctx.gc.settings.all(), ctx.now).catch(() => false)) out.push('office');
   // a ZIP of a selection and one link for several files (1.12.0): GateControl's public links, while an administrator allows them
-  if (await links.usable(ctx.gc)) out.push('zip', 'multiLink');
+  if (await links.usable(ctx.gc)) {
+    out.push('zip', 'multiLink');
+    // GateControl ≥ 1.215.0: files links with a path per entry — a ZIP and a link of any selection (folders and files)
+    if (links.paths(ctx.gc)) out.push('zipMixed');
+  }
+  // GateControl ≥ 1.215.0 copies media files on the server (gc.media.copy): a copy needs no device
+  if (ops.hostCopy(ctx.gc)) out.push('copyServer');
   return out;
 }
 

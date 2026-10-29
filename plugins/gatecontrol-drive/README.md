@@ -58,7 +58,7 @@ reaches `GET frame` (the photo frame, since 1.7.0) and nothing else (`403 forbid
 
 | Route | Body / query | Answer |
 |---|---|---|
-| `GET me` | | `me { id, name, seat, deviceId, admin }`, `licence { valid, tier }`, `areas`, `latest` (change log seq), `settings`, `limits { maxBytes }`, `wipes` (entries this device has yet to handle, since 1.2.0), `devices` (my devices a new wipe reaches), `features` (since 1.5.0: `['previews', 'wipes', 'textSearch', 'devices', 'deleteAfter', 'emptyFiles']`, since 1.6.0 also `'links'`, `'guard'`, since 1.7.0 `'timeTravel'`, `'takenAt'`, `'photos'`, `'albums'`, `'frame'`, `'storage'`, since 1.8.0 `'docAi'` and `'cloudImport'` — only while GateControl offers the AI service / cloud accounts and they are allowed, see "AI for documents" and "Import"; since 1.9.0 `'vault'` and — while set up — `'office'`, since 1.10.0 `'photosFolder'`, since 1.11.0 `'vaultsApart'`, since 1.12.0 `'bulk'` and — while GateControl's public links are allowed — `'zip'` and `'multiLink'`), `links { node, drive } \| null` (since 1.6.0, see "Direct links"), `guard { on, locked, incident }` and `incidents` (since 1.6.0, see "Ransomware protection") |
+| `GET me` | | `me { id, name, seat, deviceId, admin }`, `licence { valid, tier }`, `areas`, `latest` (change log seq), `settings`, `limits { maxBytes }`, `wipes` (entries this device has yet to handle, since 1.2.0), `devices` (my devices a new wipe reaches), `features` (since 1.5.0: `['previews', 'wipes', 'textSearch', 'devices', 'deleteAfter', 'emptyFiles']`, since 1.6.0 also `'links'`, `'guard'`, since 1.7.0 `'timeTravel'`, `'takenAt'`, `'photos'`, `'albums'`, `'frame'`, `'storage'`, since 1.8.0 `'docAi'` and `'cloudImport'` — only while GateControl offers the AI service / cloud accounts and they are allowed, see "AI for documents" and "Import"; since 1.9.0 `'vault'` and — while set up — `'office'`, since 1.10.0 `'photosFolder'`, since 1.11.0 `'vaultsApart'`, since 1.12.0 `'bulk'`, — while GateControl's public links are allowed — `'zip'` and `'multiLink'`, with GateControl ≥ 1.215.0 also `'copyServer'` (copies on the server) and `'zipMixed'` (a ZIP and one link of any selection)), `links { node, drive } \| null` (since 1.6.0, see "Direct links"), `guard { on, locked, incident }` and `incidents` (since 1.6.0, see "Ransomware protection") |
 | `GET areas` | | `areas [{ id, kind, label, role, via, rootId, owner, archived, storage { bytes, quota, form, target, state } }]` (+ `docAi` while the feature is on, also in `GET me` `areas`) |
 | `PATCH areas/<id>` | `{ docAi: boolean }` (since 1.8.0, write in the area) | `{ area: { id, docAi } }` — AI for documents on / off in this area |
 | `GET nodes/<id>` | | `node` + `path`, `role`, `crumbs [{ id, name }]` |
@@ -563,8 +563,12 @@ answer); the rest goes on in the plugin process right after the answer and, afte
   `changed`; not the person's fresh upload: `409 upload_invalid`; a job no longer running: `409 conflict { reason }`,
   the upload is dropped), or gives it up with `{ failed: true, reason? }`. Folders, empty files and the same content at
   the target need no bytes. The portal brings files up to 100 MB (`GC.mediaBytes`, `GC.upload`), larger ones wait for
-  the Windows or Android app; a copy nobody brings bytes for within 24 hours ends as `failed` (`error: 'abandoned'`). A
-  GateControl with `gc.media.copy(id)` (not there yet) would copy on the server (`transfer: 'server'`).
+  the Windows or Android app; a copy nobody brings bytes for within 24 hours ends as `failed` (`error: 'abandoned'`).
+  **GateControl ≥ 1.215.0** copies on the server (`gc.media.copy(mediaId, { area })` — a hard link, S3's CopyObject or a
+  stream; feature `copyServer`): `transfer: 'server'`, no device, the job goes on in the plugin process and the
+  background run like a move, also when every app is closed; the apps offer copying only then ("Braucht GateControl
+  1.215"), the portal keeps bringing bytes on an older GateControl. A copy waiting for a device when GateControl is
+  updated goes on on the server. A copy that fails on the server: that file `failed` (`copy`), the quota ends the job.
 * **Vaults:** nothing goes into or out of a vault, its folder is never moved or copied (`encrypted`); inside **the same
   vault** move, copy and trash work — a copy keeps the ciphertext and `nameCipher` as they are (the encryption is bound
   to the vault, not to a folder), with a new opaque name; there are no conflicts between opaque names.
@@ -574,11 +578,15 @@ answer); the rest goes on in the plugin process right after the answer and, afte
   anywhere (the same name twice gets "(2)"; empty files are left out: `skipped`). Reading is enough. Anything else
   `400 invalid { reason: 'mixed' }` (a folder with other ids) or `{ reason: 'too_many', max: 20 }` — GateControl's
   links take one folder or up to 20 files; a vault `409 encrypted`; `403 links_disabled`, `409 no_public_url`.
+  **GateControl ≥ 1.215.0** (files links with a path per entry, feature `zipMixed`): any selection — a chosen folder
+  becomes its files under the folder's name ("Fotos/2026/a.jpg"; a snapshot of now), up to GateControl's limit
+  (`400 invalid { reason: 'too_many', max }`); a single folder alone stays a folder link.
 * **One link for several files** (feature `multiLink`): `POST links { nodeIds }` → a link of kind `files` for 2 … 20
   files (`nodeIds`, `count`; title "N Dateien" unless given). A folder among them: `400 invalid { reason: 'mixed' }`
   (GateControl's links take no folders and files together); more than 20: `{ reason: 'too_many', max: 20 }`; an empty
   file: `{ reason: 'empty', ids }`. `GET links?nodeId=` finds such a link by any of its files; one of them in the trash
-  ends it.
+  ends it. With `zipMixed` folders may be among them too (their files with paths, a snapshot; the answer also has
+  `files` and `skipped` — empty files); any file of it in the trash ends the link.
 
 ## Vault folders (Tresor-Ordner, since 1.9.0, feature `vault`)
 

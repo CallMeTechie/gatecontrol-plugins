@@ -299,3 +299,38 @@ test('portal: photos — Strg / Umschalt with a click choose, "Alle" / "Keine" p
     }
   });
 });
+
+test('portal on GateControl 1.215: a folder and files in one ZIP, a copy on the server (no bytes through the tab)', async () => {
+  await withHost({ gatecontrol: '1.215.0' }, async (host, c) => {
+    const s = await setup(c);
+    const calls = [];
+    const gc = frameGc(host, ANNA, calls);
+    const f = createWindow(portalHtml(), gc);
+    const $ = (id) => f.document.getElementById(id);
+    const card = (name) => $('dp-main').querySelectorAll('.dp-card').find((x) => textOf(x).includes(name));
+    try {
+      f.run();
+      await until('the tree', () => $('dp-nav').querySelectorAll('.dp-tree-row').find((r) => textOf(r).trim() === 'Dokumente'));
+      byText($('dp-nav'), 'span', 'Dokumente').parentNode.click();
+      await until('Dokumente', () => textOf($('dp-crumbs')).includes('Dokumente') && card('a.pdf'));
+      card('Verträge').querySelector('.dp-cb').click();
+      card('a.pdf').querySelector('.dp-cb').click();
+      const bar = $('dp-main').querySelector('.dp-selbar');
+      const zip = bar.querySelectorAll('button').find((b) => b.getAttribute('data-act') === 'zip');
+      assert.equal(zip.disabled, false, 'a folder and a file: one ZIP');
+      zip.click();
+      await until('the zip', () => textOf($('dp-toast')).includes('wird heruntergeladen'));
+      // copy b.pdf into Verträge by dragging with Strg: done on the server
+      const dt = { setData() {}, effectAllowed: '' };
+      card('b.pdf').dispatchEvent({ type: 'click' });
+      card('b.pdf').dispatchEvent({ type: 'dragstart', dataTransfer: dt });
+      card('Verträge').dispatchEvent({ type: 'drop', ctrlKey: true, dataTransfer: dt });
+      await until('copied', () => textOf($('dp-snack')).includes('1 Element nach „Verträge“ kopiert'));
+      assert.ok(!calls.some((x) => x.path.includes('/transfers')), 'no bytes through the tab');
+      assert.equal(host.mediaCopies.length, 1);
+    } finally {
+      await ops.idle();
+      f.stop();
+    }
+  });
+});
