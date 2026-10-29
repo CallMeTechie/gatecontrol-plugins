@@ -11,8 +11,8 @@
 //   GET    ops        ?state=running|done|failed|cancelled → { ops } (mine, newest first; without state: the running ones
 //                     and those that ended in the last hour)
 //   GET    ops/<id>   → { op } · DELETE ops/<id> → { op } (cancelled: what is done stays) · POST ops/<id>/undo → { op }
-//   POST   ops/<id>/transfers { limit?, maxSize? } → { transfers, left } · POST ops/<id>/transfers/<n> { mediaId } | { failed: true }
-//                     → { op, node? } — the bytes of a copy (below)
+//   POST   ops/<id>/transfers { limit?, maxSize? } → { transfers, left }
+//   POST   ops/<id>/transfers/<n> { mediaId } | { failed: true } → { op, node? } — the bytes of a copy (below)
 //
 // A job runs as its person (their rights, their device — the change log, the live event 'changed', the ransomware
 // protection and the sync of every device see each node it moves, makes or trashes like a single request's). A small
@@ -35,12 +35,12 @@
 // Copying: files with their current content (no older versions, no links, no AI suggestions — AI for documents looks
 // at the copies by the area's setting), folders with everything in them. GateControl's media API has no copy of a file
 // (≤ 1.214): the bytes are brought by a device — the job's op says transfer 'client' and transfersLeft; a device takes
-// up to 20 at a time (POST ops/<id>/transfers { limit, maxSize } → { transfers: [{ id, nodeId, name, size, sha256, mime, url, encrypted?,
-// vaultId?, nameCipher? }], left }, leased to it for 15 minutes), downloads each `url` (signed for the person, 1 h),
-// uploads it like any file (PUT …/media, resumable) and hands the mediaId over (POST ops/<id>/transfers/<id>
-// { mediaId } — the SHA-256 must be the original's; { failed: true } gives one up). A host with gc.media.copy(id) does
-// it without a device (transfer 'server'). Empty files and folders need no bytes. A copy nobody brings bytes for in
-// 24 h ends as failed (abandoned).
+// up to 20 at a time (POST ops/<id>/transfers { limit, maxSize } → { transfers: [{ id, nodeId, name, size, sha256,
+// mime, url, encrypted?, vaultId?, nameCipher? }], left }, leased to it for 15 minutes), downloads each `url` (signed
+// for the person, 1 h), uploads it like any file (PUT …/media, resumable) and hands the mediaId over (POST
+// ops/<id>/transfers/<id> { mediaId } — the SHA-256 must be the original's; { failed: true } gives one up). A host with
+// gc.media.copy(id) does it without a device (transfer 'server'). Empty files and folders need no bytes. A copy nobody
+// brings bytes for in 24 h ends as failed (abandoned). `maxSize`: only files up to that size (the portal: 100 MB).
 //
 // Undo (POST ops/<id>/undo, until undoUntil — 15 minutes after the end): a move goes back, a trash comes out of the
 // trash, the copies go into the trash (a copy that became the new content of a file: the content before comes back).
@@ -156,6 +156,8 @@ async function examine(ctx, kind, ids, target) {
   const visible = await ctx.visible();
   const up = target ? await above(gc, target.node.id) : null;
   const trashBin = kind === 'restore' || kind === 'purge';
+  // documents open in the browser right now (office.js) — looked at only while there are any
+  const locks = (kind === 'move' || kind === 'trash') && (await store.one(gc, 'SELECT COUNT(*) AS n FROM office_locks WHERE expires_at > ?', [ctx.now])).n > 0;
   for (const id of ids) {
     const n = await nodes.row(gc, id);
     const no = (reason) => blocked.push({ id, name: n ? n.name : null, reason, ...(n && n.vault_id ? { encrypted: true, nameCipher: n.name_cipher || null } : {}) });
@@ -173,15 +175,14 @@ async function examine(ctx, kind, ids, target) {
       if (n.is_dir === 1 && !n.vault_id && (kind === 'copy' || target.area.id !== n.area_id)
         && (await liveBelow(gc, n.id)).some((r) => r.vault_id)) { no('encrypted'); continue; }
     }
-    if ((kind === 'move' || kind === 'trash') && await officeLocked(gc, n, ctx.now)) { no('locked'); continue; }
+    if (locks && await officeLocked(gc, n, ctx.now)) { no('locked'); continue; }
     ok.push({ node: n, area: v.area, role: v.role, via: v.via });
   }
   // a node below another selected folder goes with it
-  const chosen = new Set(ok.map((x) => x.node.id));
+  const folders = new Set(ok.filter((x) => x.node.is_dir === 1).map((x) => x.node.id));
   const out = [];
   for (const x of ok) {
-    const anc = await above(gc, x.node.parent_id);
-    if ([...anc].some((a) => chosen.has(a))) continue;
+    if (folders.size && [...await above(gc, x.node.parent_id)].some((a) => folders.has(a))) continue;
     out.push(x);
   }
   for (const x of out) {

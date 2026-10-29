@@ -58,7 +58,7 @@ reaches `GET frame` (the photo frame, since 1.7.0) and nothing else (`403 forbid
 
 | Route | Body / query | Answer |
 |---|---|---|
-| `GET me` | | `me { id, name, seat, deviceId, admin }`, `licence { valid, tier }`, `areas`, `latest` (change log seq), `settings`, `limits { maxBytes }`, `wipes` (entries this device has yet to handle, since 1.2.0), `devices` (my devices a new wipe reaches), `features` (since 1.5.0: `['previews', 'wipes', 'textSearch', 'devices', 'deleteAfter', 'emptyFiles']`, since 1.6.0 also `'links'`, `'guard'`, since 1.7.0 `'timeTravel'`, `'takenAt'`, `'photos'`, `'albums'`, `'frame'`, `'storage'`, since 1.8.0 `'docAi'` and `'cloudImport'` — only while GateControl offers the AI service / cloud accounts and they are allowed, see "AI for documents" and "Import"; since 1.9.0 `'vault'` and — while set up — `'office'`, since 1.10.0 `'photosFolder'`, since 1.11.0 `'vaultsApart'`), `links { node, drive } \| null` (since 1.6.0, see "Direct links"), `guard { on, locked, incident }` and `incidents` (since 1.6.0, see "Ransomware protection") |
+| `GET me` | | `me { id, name, seat, deviceId, admin }`, `licence { valid, tier }`, `areas`, `latest` (change log seq), `settings`, `limits { maxBytes }`, `wipes` (entries this device has yet to handle, since 1.2.0), `devices` (my devices a new wipe reaches), `features` (since 1.5.0: `['previews', 'wipes', 'textSearch', 'devices', 'deleteAfter', 'emptyFiles']`, since 1.6.0 also `'links'`, `'guard'`, since 1.7.0 `'timeTravel'`, `'takenAt'`, `'photos'`, `'albums'`, `'frame'`, `'storage'`, since 1.8.0 `'docAi'` and `'cloudImport'` — only while GateControl offers the AI service / cloud accounts and they are allowed, see "AI for documents" and "Import"; since 1.9.0 `'vault'` and — while set up — `'office'`, since 1.10.0 `'photosFolder'`, since 1.11.0 `'vaultsApart'`, since 1.12.0 `'bulk'` and — while GateControl's public links are allowed — `'zip'` and `'multiLink'`), `links { node, drive } \| null` (since 1.6.0, see "Direct links"), `guard { on, locked, incident }` and `incidents` (since 1.6.0, see "Ransomware protection") |
 | `GET areas` | | `areas [{ id, kind, label, role, via, rootId, owner, archived, storage { bytes, quota, form, target, state } }]` (+ `docAi` while the feature is on, also in `GET me` `areas`) |
 | `PATCH areas/<id>` | `{ docAi: boolean }` (since 1.8.0, write in the area) | `{ area: { id, docAi } }` — AI for documents on / off in this area |
 | `GET nodes/<id>` | | `node` + `path`, `role`, `crumbs [{ id, name }]` |
@@ -88,6 +88,13 @@ reaches `GET frame` (the photo frame, since 1.7.0) and nothing else (`403 forbid
 | `PUT devices/<id>/folders` | `[{ localPath, mode: 'backup' \| 'sync', nodeId, lastBackup }]` or `{ folders: […] }` (≤ 100) | `device` |
 | `DELETE devices/<id>` | | `{ id, removed }` — forgets the device; its files and folders stay |
 | `POST links` | `{ nodeId, mode: 'view' \| 'download' \| 'upload', expires: '1d' \| '7d' \| '30d' \| 'never', pin?, maxFiles?, maxBytes? }` | `link` (with `url`) |
+| `POST links` | `{ nodeIds: [id, …], mode?: 'view' \| 'download', expires?, pin?, note?, title? }` (since 1.12.0, feature `multiLink`) | `link` with `nodeIds`, `count` — one link for 2 … 20 files (see "Several at once") |
+| `POST zip` | `{ ids, name? }` (since 1.12.0, feature `zip`) | `{ url, name, expiresAt, files, skipped }` — see "Several at once" |
+| `POST ops/check` | `{ op, ids, target? }` (since 1.12.0, feature `bulk`) | `{ items, files, folders, bytes, conflicts, conflictsMore, merges, blocked, quota, limit, tooMany }` |
+| `POST ops` | `{ op: 'move' \| 'copy' \| 'trash' \| 'restore' \| 'purge', ids, target?, onConflict?: 'version' \| 'rename' \| 'skip' }` | `{ op }` |
+| `GET ops` | `state?` | `{ ops }` — mine (without `state`: running and ended in the last hour) |
+| `GET ops/<id>` · `DELETE ops/<id>` · `POST ops/<id>/undo` | | `{ op }` — the job, cancel it, undo it |
+| `POST ops/<id>/transfers` · `POST ops/<id>/transfers/<n>` | `{ limit?, maxSize? }` · `{ mediaId }` \| `{ failed: true, reason? }` | `{ transfers, left }` · `{ op, node? }` — the bytes of a copy |
 | `GET links` | `nodeId?` | `{ links, enabled }` — mine, or those of a node I write to |
 | `GET links/<token>/events` | `before?` | `events` — the log (newest first, ≤ 100) |
 | `DELETE links/<token>` | | `{ ended }` — whoever made it, or who manages the area |
@@ -508,6 +515,71 @@ Cloud-Konten). Without `gc.cloud`, with no OAuth app (`gc.cloud.available()`) or
   `too_many` (≥ 50 000 items a job) or `cloud_error` (three tries; `resume` tries them again). The person gets the live
   event `import { job: { id, state, total, done, failed, skipped } }` after each run. Ended jobs go after 30 days.
 
+## Several at once (since 1.12.0, feature `bulk`)
+
+Move, copy, trash, restore and purge of a selection as **one job** (`server/ops.js`, migration `010_ops.sql`) — the
+selection of the apps and the portal (mockup "Mehrfachauswahl"). A job runs as its person (their rights, their device:
+the change log, the live event `changed`, the ransomware protection and the sync of every device see each node it
+moves, makes or trashes like a single request's). A small one is done within its request (`state: 'done'` in the
+answer); the rest goes on in the plugin process right after the answer and, after a restart, in the background run.
+
+* `POST ops/check { op, ids, target? }` looks first: `items` (the ids that may go — a node inside another chosen folder
+  goes with it), `files`, `folders`, `bytes` (folders with everything in them), `conflicts` (≤ 500, then
+  `conflictsMore`): `{ id, name, path, isDir, size, mtime, existing: { id, size, mtime, isDir }, same }` — the names at
+  the target; folders of the same name merge (`merges`), what is in them is looked at too (`path` "Ordner/datei");
+  `same`: the same content (SHA-256 and size) — `blocked`: `{ id, name, reason }` with `not_found`, `forbidden` (no
+  right: a reader, a parent in a child's folder, an archived team folder), `root` (the top folder of an area),
+  `into_itself`, `same_folder` (a move to where it is), `encrypted` (see vaults below), `locked` (a document someone
+  edits in the browser — move and trash); `quota { needed, free }` (a copy, a move into another area); `tooMany`.
+  Moving, trashing, restoring and purging need the right to write; **copying needs the right to read** the source.
+* `POST ops { op, ids, target?, onConflict? }` → `{ op }`; blocked ids are not refused but end in `results.failed`.
+  The same name at the target (`onConflict`, default `version`): a file onto a file with **the same content counts as
+  done — nothing is stored twice** (a move puts the moved one into the trash); `version`: it becomes the new content of
+  the file there (the content there a version; a moved file's own older versions go with it — such a move cannot be
+  undone); `rename`: both stay ("Brief (2).pdf"); `skip`: it stays where it is. A folder onto a folder: merged. A file
+  onto a folder or the other way round: `skip` skips, otherwise a free name. A copy of a folder into the folder it is in:
+  "Ordner (2)". Errors: `400 invalid { field }`, `404` / `403` of the target, `409 job_limit { max: 5 }` (running jobs a
+  person), `413 too_large { max: 10000 }` (nodes after the folders are counted; ≤ 10 000 ids), `507 quota { needed,
+  free }`, `423 device_locked`.
+* A job: `{ id, kind ('move' | 'copy' | 'trash' | 'restore' | 'purge' | 'undo'), state ('running' | 'done' | 'failed' |
+  'cancelled'), items (ids asked for), total, done (files), bytesTotal, bytesDone, label (the first one's name; null in a
+  vault), onConflict, targetId?, targetAreaId?, targetPath?, targetName?, transfer? ('client' | 'server'),
+  transfersLeft?, results { done, skipped, failedCount, failed: [{ id, name, reason }] (≤ 100), resultIds (the top
+  nodes at the target, ≤ 500 — "neu hier") }, createdAt, updatedAt, finishedAt, undoUntil?, undoOf?, undoneBy?, error? }`.
+  The live event **`op`** `{ op }` goes to the person (at most one a second per job, the last always). `GET ops?state=`,
+  `GET ops/<id>`; `DELETE ops/<id>` cancels (what is done stays and can be undone).
+* **Undo** — `POST ops/<id>/undo` until `undoUntil` (15 minutes after the end; move, copy, trash): a move goes back, a
+  trash comes out of the trash, the copies go into the trash (a copy that became the new content of a file: the content
+  before comes back). What changed since is skipped (`results.skipped`). The undo is a job of its own (`kind: 'undo'`);
+  `409 conflict { reason: 'expired' | 'undone' | 'running' | 'nothing' }`.
+* **Copying** takes files with their current content (no older versions, no links, no AI suggestion — AI for documents
+  looks at the copies by the area's setting; the recognised text goes along) and folders with everything in them.
+  GateControl's media API (≤ 1.214) has **no copy of a media file** and a plugin may not fetch its own media: the bytes
+  are brought by a device. While `op.transfer` is `client` and `transfersLeft` > 0, a device takes up to 20 files at a
+  time — `POST ops/<id>/transfers { limit?, maxSize? }` → `{ transfers: [{ id, nodeId, name, size, sha256, mime, url,
+  encrypted?, vaultId?, nameCipher? }], left }` (leased to it for 15 minutes; `url` signed for the person, 1 h, ranges
+  work) —, downloads each, uploads it unchanged like any file (`PUT …/media`, resumable) and hands it over:
+  `POST ops/<id>/transfers/<id> { mediaId }` → `{ op, node }` (another SHA-256 than the original's: that file fails as
+  `changed`; not the person's fresh upload: `409 upload_invalid`; a job no longer running: `409 conflict { reason }`,
+  the upload is dropped), or gives it up with `{ failed: true, reason? }`. Folders, empty files and the same content at
+  the target need no bytes. The portal brings files up to 100 MB (`GC.mediaBytes`, `GC.upload`), larger ones wait for
+  the Windows or Android app; a copy nobody brings bytes for within 24 hours ends as `failed` (`error: 'abandoned'`). A
+  GateControl with `gc.media.copy(id)` (not there yet) would copy on the server (`transfer: 'server'`).
+* **Vaults:** nothing goes into or out of a vault, its folder is never moved or copied (`encrypted`); inside **the same
+  vault** move, copy and trash work — a copy keeps the ciphertext and `nameCipher` as they are (the encryption is bound
+  to the vault, not to a folder), with a new opaque name; there are no conflicts between opaque names.
+* **A ZIP of a selection** (feature `zip`): `POST zip { ids, name? }` → `{ url, name, expiresAt, files, skipped }` — a
+  link of GateControl's public links for 15 minutes that is in no list (`url` ends in `/zip`: GateControl streams stored
+  entries, ZIP64 beyond 4 GiB, UTF-8 names). One folder with everything in it (≤ 10 000 files), or 1 … 20 files from
+  anywhere (the same name twice gets "(2)"; empty files are left out: `skipped`). Reading is enough. Anything else
+  `400 invalid { reason: 'mixed' }` (a folder with other ids) or `{ reason: 'too_many', max: 20 }` — GateControl's
+  links take one folder or up to 20 files; a vault `409 encrypted`; `403 links_disabled`, `409 no_public_url`.
+* **One link for several files** (feature `multiLink`): `POST links { nodeIds }` → a link of kind `files` for 2 … 20
+  files (`nodeIds`, `count`; title "N Dateien" unless given). A folder among them: `400 invalid { reason: 'mixed' }`
+  (GateControl's links take no folders and files together); more than 20: `{ reason: 'too_many', max: 20 }`; an empty
+  file: `{ reason: 'empty', ids }`. `GET links?nodeId=` finds such a link by any of its files; one of them in the trash
+  ends it.
+
 ## Vault folders (Tresor-Ordner, since 1.9.0, feature `vault`)
 
 A vault is a folder whose **contents and names are encrypted on the devices** (end-to-end). The server (`server/vault.js`)
@@ -725,7 +797,23 @@ the folder tools; "Tresore werden nie von der KI gelesen."), Ansicht (order, til
 Kamera-Uploads“"), Benachrichtigungen (a pointer to GateControl's "Meine Benachrichtigungen"). All but the AI last while
 the tab is open (the frame has no storage). A confirmation with a fingerprint or Windows Hello (WebAuthn) is not
 possible in the portal: GateControl's frame has an opaque origin, for which browsers refuse WebAuthn — the apps ask
-for it. The section "Fotorahmen" (`ui/frame.*`) is the slide show of a kiosk device.
+for it. Since 1.12.0 **several at once** (`ui/bulk.js`, mockup "Drive am Desktop"): a checkbox in front of every row
+and on every tile (the head: all / some / none), a click on a row chooses it (its name opens it as before, a double
+click too), Strg+Klick one more, Umschalt+Klick a range, Strg+A all, Esc none; while something is chosen the green bar
+above the list ("N ausgewählt · x Dateien, y Ordner", Herunterladen (ZIP), Verschieben nach …, Kopieren nach …, Link
+teilen, Löschen — what the rights or GateControl do not allow is greyed with its reason), the right-click menu
+(Herunterladen als ZIP, Ausschneiden Strg+X, Kopieren Strg+C, Verschieben nach …, Kopieren nach …, Umbenennen F2 — one
+only, Link teilen, In den Papierkorb Entf), Strg+V in a folder, dragging onto a folder in the list or the menu's tree
+moves — with Strg held when dropping it copies ("N Elemente hierher verschieben") —, the row of shortcuts below the list
+and the hint in the menu. "Ziel wählen" (Verschieben | Kopieren, the areas — read-only ones greyed "(nur ansehen)", the
+path, the folders — a chosen one greyed "Wird verschoben – nicht in sich selbst", "Neuer Ordner hier", "Zuletzt
+benutzt" while the tab is open, "Ziel: …", "Hierher verschieben (N)"), "Gleiche Namen am Ziel" (one question: Als neue
+Version speichern, Beide behalten, Überspringen; "Gleicher Inhalt wird nie doppelt gespeichert"), the running jobs as
+cards above the list ("Kopiere „X“ nach Y", "58 von 128 Dateien · 1,4 von 3,1 GB", "Abbrechen", live through the event
+`op`), the snackbar "N Elemente nach „Ziel“ verschoben · Rückgängig" and the new nodes at the target marked "neu hier".
+A copy's bytes come through the tab (`GC.mediaBytes`, `GC.upload`, ≤ 100 MB a file). "Fotos": Strg / Umschalt with a
+click choose, "Alle" / "Keine" per month, Herunterladen (ZIP), Verschieben nach …, Löschen besides "Zum Album
+hinzufügen". The section "Fotorahmen" (`ui/frame.*`) is the slide show of a kiosk device.
 
 ## Admin (GateControl's admin UI)
 
@@ -767,7 +855,8 @@ devices GateControl no longer lists, marked nodes whose time came (into the tras
 protection's journal (rows of no incident older than the window) and closed incidents after 30 days, the public address
 for direct links (since 1.6.0). A version a time travel made stays until its hold ends (since 1.7.0). Expired WOPI
 locks go (since 1.9.0). Every minute and on start (since 1.11.0): a vault folder outside the top folder of its area
-moves there (see "Vaults apart").
+moves there (see "Vaults apart"). Every minute (since 1.12.0): jobs of several at once a restart interrupted go on,
+copies nobody brought bytes for in 24 hours end, jobs ended more than 7 days ago go (see "Several at once").
 
 ## Development
 
