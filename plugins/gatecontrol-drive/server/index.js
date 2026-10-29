@@ -398,7 +398,7 @@ async function opsRoute(ctx, m, seg, q, body) {
   if (seg.length === 2 && id === 'check' && m === 'POST') return ops.check(ctx, body);
   if (seg.length === 1 && m === 'POST') return ops.create(ctx, body, opsHooks(ctx.gc));
   if (seg.length === 1 && m === 'GET') return ops.list(ctx, q);
-  if (seg.length === 2 && m === 'GET') return ops.get(ctx, id);
+  if (seg.length === 2 && m === 'GET') return ops.get(ctx, id, q);
   if (seg.length === 2 && m === 'DELETE') return ops.cancel(ctx, id);
   if (seg.length === 3 && c === 'undo' && m === 'POST') return ops.undo(ctx, id, opsHooks(ctx.gc));
   if (seg.length === 3 && c === 'transfers' && m === 'POST') return ops.transfers(ctx, id, body);
