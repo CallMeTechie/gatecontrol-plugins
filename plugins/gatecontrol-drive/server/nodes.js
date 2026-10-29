@@ -29,6 +29,8 @@ const { fail, nodeName, numbered, iso } = require('./util');
 
 // vault.js needs this module; it is loaded when first used (vault folders, since 1.9.0)
 const vaults = () => require('./vault');
+// the work folder and the review marks (since 1.13.0) — the same
+const work = () => require('./work');
 
 const CHILDREN_MAX = 1000;
 const SEARCH_MAX = 100;
@@ -88,6 +90,8 @@ function view(n, extra) {
     // a node of a vault (since 1.9.0, vault.js): `name` is opaque, the device decrypts nameCipher; files carry their
     // content's key version (the content's header says it too)
     ...(n.vault_id ? { encrypted: true, vaultId: n.vault_id, nameCipher: n.name_cipher || null, keyVersion: n.key_version == null ? null : n.key_version } : {}),
+    // the review mark of a photo (since 1.13.0, work.js): only while there is one
+    ...(n.review_at != null && n.is_dir === 0 ? { review: { hint: n.review_hint == null ? null : n.review_hint } } : {}),
     ...(extra || {}),
   };
 }
@@ -388,6 +392,10 @@ async function update(ctx, id, body, opts = {}) {
       await store.run(ctx.gc, `UPDATE nodes SET area_id = ? WHERE id IN (WITH RECURSIVE down(id) AS (
           SELECT id FROM nodes WHERE parent_id = ? UNION ALL SELECT n.id FROM nodes n JOIN down ON n.parent_id = down.id) SELECT id FROM down)`,
       [toArea.id, node.id]);
+    }
+    // into or out of the mover's work folder: the review marks end (since 1.13.0, work.js)
+    if (parent.node.id !== node.parent_id) await work().moved(ctx, node, node.parent_id, parent.node.id);
+    if (toArea.id !== area.id) {
       await log(ctx.gc, area.id, node.id, 'delete', ctx);
       await log(ctx.gc, toArea.id, node.id, 'create', ctx);
     } else {
