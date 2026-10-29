@@ -569,8 +569,10 @@ answer); the rest goes on in the plugin process right after the answer and, afte
   background run like a move, also when every app is closed; the apps offer copying only then ("Braucht GateControl
   1.215"), the portal keeps bringing bytes on an older GateControl. A copy waiting for a device when GateControl is
   updated goes on on the server. GateControl's copy is unclaimed until Drive claims it at its path (an orphan goes after
-  24 h); a storage target that does not answer (`ERR_BUSY`) makes the job wait a minute; a copy that fails otherwise:
-  that file `failed` (`copy`); the quota ends the job. Links with paths take up to 5000 files and 1 TiB together
+  24 h); a file over 16 MB is never copied within the request (a copy between storage targets may take up to 30
+  minutes) — the job goes on right after the answer; a storage target that does not answer (`ERR_BUSY`) makes the job
+  wait a minute; a source changed on its target: that file `failed` (`changed`); a copy that fails otherwise (also
+  `ERR_TIMEOUT`): `failed` (`copy`); the quota ends the job. Links with paths take up to 5000 files and 1 TiB together
   (`413 too_large { maxBytes }`).
 * **Vaults:** nothing goes into or out of a vault, its folder is never moved or copied (`encrypted`); inside **the same
   vault** move, copy and trash work — a copy keeps the ciphertext and `nameCipher` as they are (the encryption is bound

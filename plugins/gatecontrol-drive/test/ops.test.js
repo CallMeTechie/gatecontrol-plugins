@@ -346,6 +346,35 @@ test('copy on the server: a storage target that does not answer (ERR_BUSY) — t
   });
 });
 
+test('copy on the server: a large file is not copied within the request; a timeout and a changed source fail that file', async () => {
+  await withHost({}, async (host, c) => {
+    const t = await tree(c);
+    const big = (await c.put(ANNA, t.projekte.id, 'gross.bin', Buffer.alloc(17 * 1024 * 1024))).json.node;
+    const seen = [];
+    let fail = null;
+    ops._setCopy(async (id) => {
+      seen.push(id);
+      if (fail) throw Object.assign(new Error(fail.msg), { code: fail.code });
+      const m = host.media.get(id);
+      return { id: (await host.upload(ANNA, m.data, m.mime)).body.mediaId };
+    });
+    try {
+      const r = await t.a('POST', 'ops', { op: 'copy', ids: [big.id], target: t.archiv.id });
+      assert.equal(r.json.op.state, 'running', 'the answer comes before the copy');
+      await ops.idle();
+      assert.equal((await t.a('GET', `ops/${r.json.op.id}`)).json.op.state, 'done');
+      assert.deepEqual(seen, [big.mediaId]);
+      for (const [code, msg, reason] of [['ERR_TIMEOUT', 'timeout', 'copy'], ['ERR_INVALID', 'changed', 'changed'], ['ERR_INVALID', 'unknown media id', 'not_found']]) {
+        fail = { code, msg };
+        const x = await t.a('POST', 'ops', { op: 'copy', ids: [t.fa.id], target: t.mine.rootId, onConflict: 'rename' });
+        await ops.idle();
+        const op = (await t.a('GET', `ops/${x.json.op.id}`)).json.op;
+        assert.deepEqual([op.state, op.results.failed[0].reason], ['done', reason], code);
+      }
+    } finally { ops._setCopy(null); }
+  });
+});
+
 test('copy: a job waiting for a device goes on on the server once GateControl copies (the hook stands in)', async () => {
   await withHost({}, async (host, c) => {
     const t = await tree(c);

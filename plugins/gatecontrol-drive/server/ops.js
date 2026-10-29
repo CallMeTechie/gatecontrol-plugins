@@ -85,6 +85,10 @@ const UNDOABLE = ['move', 'copy', 'trash'];
 // a copy GateControl cannot make right now (its storage target is away): the job waits a minute
 const BUSY = Symbol('busy');
 const RETRY_MS = 60000;
+// a copy GateControl may take long for (up to 30 minutes: between storage targets) is not made within a request — the
+// job goes on right after the answer
+const LATER = Symbol('later');
+const INLINE_COPY_BYTES = 16 * 1024 * 1024;
 const retryAt = new Map();
 
 const json = (s, d) => { try { const v = JSON.parse(s); return v == null ? d : v; } catch { return d; } };
@@ -406,7 +410,8 @@ async function create(ctx, body, hooks) {
     await insertItems(ctx.gc, id, rows);
   });
   let op = await opRow(ctx.gc, id);
-  op = await work(ctx, op, Date.now() + INLINE_MS);
+  ctx.opsInline = true;
+  try { op = await work(ctx, op, Date.now() + INLINE_MS); } finally { ctx.opsInline = false; }
   if (op.state === 'running') later(hooks);
   return { op: await view(ctx.gc, op) };
 }
@@ -500,7 +505,9 @@ async function work(ctx, op, until) {
     }
     ctx.now = Date.now();
     try {
-      if (await handle(ctx, cur, item) === BUSY) {
+      const r = await handle(ctx, cur, item);
+      if (r === LATER) return cur;
+      if (r === BUSY) {
         retryAt.set(cur.id, Date.now() + RETRY_MS);
         return cur;
       }
@@ -708,6 +715,7 @@ async function copyItem(ctx, op, item) {
   if (!src.media_id) return commitCopy(ctx, op, cur, src, null);
   // GateControl copies on the server (≥ 1.215.0): no device needed, the job goes on without one
   if (hostCopy(gc)) {
+    if (ctx.opsInline && (src.size || 0) > INLINE_COPY_BYTES) return LATER;
     const a = await areas.row(gc, dest.area_id);
     let made;
     try { made = await copier(gc)(src.media_id, { area: a.media_area, user: ctx.viewer }); } catch (e) {
@@ -715,7 +723,9 @@ async function copyItem(ctx, op, item) {
       // the storage target of the source does not answer: this file again in a minute
       if (e && e.code === 'ERR_BUSY') return BUSY;
       gc.log.warn('media copy failed', (e && e.code) || 'error');
-      return settle(gc, op, cur, 'failed', { reason: e && e.code === 'ERR_INVALID' ? 'not_found' : 'copy' });
+      // ERR_INVALID 'changed': the source changed on its storage target (the scan takes it in); else it is gone
+      const reason = e && e.code === 'ERR_INVALID' ? (/changed/.test(String(e.message)) ? 'changed' : 'not_found') : 'copy';
+      return settle(gc, op, cur, 'failed', { reason });
     }
     const id = made && (typeof made.id === 'string' ? made.id : made.mediaId);
     if (typeof id !== 'string') return settle(gc, op, cur, 'failed', { reason: 'copy' });
@@ -1011,9 +1021,12 @@ const busy = new Set();
 let runner = null;
 
 /** Go on with the running jobs in this process right after the answer (`hooks` of index.js). */
+let kick = null;
 function later(hooks) {
-  if (!hooks || runner) return;
-  setImmediate(() => { drain(hooks).catch(() => {}); });
+  if (!hooks || runner || kick) return;
+  kick = new Promise((resolve) => {
+    setImmediate(() => { kick = null; drain(hooks).catch(() => {}).then(resolve); });
+  });
 }
 
 /** Work off every running job that has rows to do (one runner at a time). → its promise */
@@ -1078,7 +1091,7 @@ async function tick(gc, now, hooks) {
 
 /** Tests: wait for the runner of this process. */
 async function idle() {
-  while (runner) await runner;
+  while (kick || runner) await (kick || runner);
 }
 
 module.exports = {
