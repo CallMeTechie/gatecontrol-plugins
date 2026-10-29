@@ -11,7 +11,7 @@
 //   GET    ops        ?state=running|done|failed|cancelled → { ops } (mine, newest first; without state: the running ones
 //                     and those that ended in the last hour)
 //   GET    ops/<id>   → { op } · DELETE ops/<id> → { op } (cancelled: what is done stays) · POST ops/<id>/undo → { op }
-//   POST   ops/<id>/transfers { limit? } → { transfers, left } · POST ops/<id>/transfers/<n> { mediaId } | { failed: true }
+//   POST   ops/<id>/transfers { limit?, maxSize? } → { transfers, left } · POST ops/<id>/transfers/<n> { mediaId } | { failed: true }
 //                     → { op, node? } — the bytes of a copy (below)
 //
 // A job runs as its person (their rights, their device — the change log, the live event 'changed', the ransomware
@@ -35,7 +35,7 @@
 // Copying: files with their current content (no older versions, no links, no AI suggestions — AI for documents looks
 // at the copies by the area's setting), folders with everything in them. GateControl's media API has no copy of a file
 // (≤ 1.214): the bytes are brought by a device — the job's op says transfer 'client' and transfersLeft; a device takes
-// up to 20 at a time (POST ops/<id>/transfers → { transfers: [{ id, nodeId, name, size, sha256, mime, url, encrypted?,
+// up to 20 at a time (POST ops/<id>/transfers { limit, maxSize } → { transfers: [{ id, nodeId, name, size, sha256, mime, url, encrypted?,
 // vaultId?, nameCipher? }], left }, leased to it for 15 minutes), downloads each `url` (signed for the person, 1 h),
 // uploads it like any file (PUT …/media, resumable) and hands the mediaId over (POST ops/<id>/transfers/<id>
 // { mediaId } — the SHA-256 must be the original's; { failed: true } gives one up). A host with gc.media.copy(id) does
@@ -778,9 +778,12 @@ async function transfers(ctx, id, body) {
   const op = await mine(ctx, id);
   if (op.kind !== 'copy') throw fail('invalid');
   const limit = Math.min(TRANSFERS_MAX, Math.max(1, posInt(body && body.limit) || 5));
+  // maxSize: only files up to that size (the portal uploads at most 100 MB a file — the larger ones wait for an app)
+  const maxSize = body && body.maxSize != null ? posInt(body.maxSize) : null;
   if (op.state !== 'running') return { transfers: [], left: 0 };
   const now = Date.now();
-  const rows = await store.all(gc, "SELECT * FROM op_items WHERE op_id = ? AND state = 'transfer' AND (lease_until IS NULL OR lease_until < ?) ORDER BY seq LIMIT ?", [op.id, now, limit]);
+  const rows = await store.all(gc, `SELECT * FROM op_items WHERE op_id = ? AND state = 'transfer' AND (lease_until IS NULL OR lease_until < ?)${maxSize ? ' AND size <= ?' : ''}
+    ORDER BY seq LIMIT ?`, [op.id, now, ...(maxSize ? [maxSize] : []), limit]);
   const out = [];
   for (const it of rows) {
     const src = await nodes.row(gc, it.node_id);
