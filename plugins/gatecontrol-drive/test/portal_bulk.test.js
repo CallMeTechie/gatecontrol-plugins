@@ -163,7 +163,8 @@ test('portal: choosing in the list, the bar, "Ziel wählen", the same names, und
       rowOf('Verträge').dispatchEvent({ type: 'dragover', ctrlKey: true, dataTransfer: dt });
       assert.ok(textOf(rowOf('Verträge')).includes('1 Element hierher kopieren'));
       rowOf('Verträge').dispatchEvent({ type: 'drop', ctrlKey: true, dataTransfer: dt });
-      await until('copied', () => !$('dp-snack').hidden && textOf($('dp-snack')).includes('1 Element nach „Verträge“ kopiert'));
+      // (1.12.2: the answer comes at once, the copy goes on — the live events tell the tab)
+      await until('copied', () => { seen = deliver(c, gc, seen); return !$('dp-snack').hidden && textOf($('dp-snack')).includes('1 Element nach „Verträge“ kopiert'); });
       const copy = (await s.a('GET', 'nodes/by-path', null, { area: s.mine.id, path: 'Dokumente/Verträge/a.pdf' })).json.node;
       assert.equal(copy.sha256, s.fa.sha256);
       assert.ok(calls.some((x) => x.path.endsWith('/transfers') && x.body && x.body.maxSize === 100 * 1024 * 1024), 'the tab brings the bytes, up to 100 MB a file');
@@ -324,10 +325,28 @@ test('portal on GateControl 1.215: a folder and files in one ZIP, a copy on the 
       const dt = { setData() {}, effectAllowed: '' };
       card('b.pdf').dispatchEvent({ type: 'click' });
       card('b.pdf').dispatchEvent({ type: 'dragstart', dataTransfer: dt });
+      let seen = c.events().length;
       card('Verträge').dispatchEvent({ type: 'drop', ctrlKey: true, dataTransfer: dt });
-      await until('copied', () => textOf($('dp-snack')).includes('1 Element nach „Verträge“ kopiert'));
+      await until('copied', () => { seen = deliver(c, gc, seen); return textOf($('dp-snack')).includes('1 Element nach „Verträge“ kopiert'); });
       assert.ok(!calls.some((x) => x.path.includes('/transfers')), 'no bytes through the tab');
       assert.equal(host.mediaCopies.length, 1);
+      // 1.12.2: the answer comes at once and the job goes on — its last event may come before the answer: the end
+      // stays (no card left running), the snackbar still comes
+      const call = gc.call;
+      gc.call = async (method, p, body) => {
+        const out = await call(method, p, body);
+        if (method === 'POST' && /(^|\/)ops$/.test(String(p).split('?')[0])) { await ops.idle(); seen = deliver(c, gc, seen); }
+        return out;
+      };
+      $('dp-snack').hidden = true;
+      await until('the list', () => card('c.pdf'));
+      card('c.pdf').dispatchEvent({ type: 'click' });
+      card('c.pdf').dispatchEvent({ type: 'dragstart', dataTransfer: dt });
+      card('Verträge').dispatchEvent({ type: 'drop', ctrlKey: true, dataTransfer: dt });
+      await until('copied again', () => !$('dp-snack').hidden && textOf($('dp-snack')).includes('1 Element nach „Verträge“ kopiert'));
+      assert.equal(host.mediaCopies.length, 2);
+      await tick();
+      assert.equal($('dp-root').querySelectorAll('.dp-opcard').length, 0, 'no card of a job that ended');
     } finally {
       await ops.idle();
       f.stop();

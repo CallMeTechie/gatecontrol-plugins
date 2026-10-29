@@ -35,6 +35,8 @@ const names = async (a, id) => (await a('GET', `nodes/${id}/children`)).json.ite
 async function pump(host, c, user, opId, o = {}) {
   const a = c.as(user);
   let last = null;
+  // (1.12.2: the answer comes at once — the job hands its files out right after it)
+  await ops.idle();
   for (let round = 0; round < 50; round++) {
     const t = await a('POST', `ops/${opId}/transfers`, { limit: 3 });
     assert.equal(t.status, 200, JSON.stringify(t.json));
@@ -181,8 +183,15 @@ test('copy: folders made at once, the bytes brought by a device, the same conten
     const r = await t.a('POST', 'ops', { op: 'copy', ids: [t.projekte.id, t.xb.id], target: ziel.id });
     assert.equal(r.status, 200, JSON.stringify(r.json));
     let op = r.json.op;
+    // the answer at once (1.12.2), with its files — nothing done yet
+    assert.deepEqual([op.kind, op.state, op.transfer, op.done], ['copy', 'running', 'client', 0]);
+    assert.deepEqual(op.files.map((f) => [f.name, f.isDir]), [['Projekte', true], ['a.txt', false], ['b.txt', false], ['c.jpg', false], ['b.txt', false]]);
+    await ops.idle();
+    op = (await t.a('GET', `ops/${op.id}`)).json.op;
     assert.deepEqual([op.kind, op.state, op.transfer, op.transfersLeft], ['copy', 'running', 'client', 3]);
     assert.deepEqual([op.total, op.done], [4, 1], 'Archiv/b.txt: the same content is there — done');
+    const told = host.events.filter((e) => e.type === 'op' && e.data.op.id === op.id).pop();
+    assert.equal(told.data.op.transfersLeft, 3, 'the event tells the portal what waits for its bytes');
     // the folders are there already
     const p = (await t.a('GET', 'nodes/by-path', null, { area: t.mine.id, path: 'Ziel/Projekte/Fotos' })).json.node;
     assert.ok(p && p.isDir);
@@ -232,6 +241,7 @@ test('copy: version and rename, a device that brings other bytes, a file gone me
     assert.deepEqual([bad.json.op.state, bad.json.op.results.failed[0].reason], ['done', 'changed']);
     // a mediaId that is not the person's fresh upload
     r = await t.a('POST', 'ops', { op: 'copy', ids: [t.fb.id], target: t.mine.rootId });
+    await ops.idle();
     const tr = await t.a('POST', `ops/${r.json.op.id}/transfers`);
     assert.equal(tr.json.transfers.length, 1);
     assert.equal(tr.json.left, 1);
@@ -247,6 +257,7 @@ test('copy: version and rename, a device that brings other bytes, a file gone me
     assert.equal(host.media.has(mediaId), false, 'the upload is dropped');
     // a device gives one up
     r = await t.a('POST', 'ops', { op: 'copy', ids: [t.fb.id], target: t.mine.rootId, onConflict: 'rename' });
+    await ops.idle();
     const tr2 = await t.a('POST', `ops/${r.json.op.id}/transfers`);
     const gave = await t.a('POST', `ops/${r.json.op.id}/transfers/${tr2.json.transfers[0].id}`, { failed: true, reason: 'download' });
     assert.deepEqual([gave.json.op.state, gave.json.op.results.failed[0].reason], ['done', 'download']);
@@ -276,7 +287,8 @@ test('copy: empty files need no bytes; GET me without copyServer on GateControl 
     const t = await tree(c);
     const e = await t.a('POST', 'uploads/commit', { parentId: t.projekte.id, name: 'leer.txt', size: 0 });
     const r = await t.a('POST', 'ops', { op: 'copy', ids: [e.json.node.id], target: t.archiv.id });
-    assert.equal(r.json.op.state, 'done');
+    await ops.idle();
+    assert.equal((await t.a('GET', `ops/${r.json.op.id}`)).json.op.state, 'done');
     assert.ok((await names(t.a, t.archiv.id)).includes('leer.txt'));
     const f = (await t.a('GET', 'me')).json.features;
     assert.ok(!f.includes('copyServer') && !f.includes('zipMixed'));
@@ -508,6 +520,8 @@ test('vaults: nothing into or out of one, its folder never moves; inside the sam
     assert.equal(mv.json.op.state, 'done');
     assert.equal(mv.json.op.label, null, 'no name of a vault in a job');
     const cp = await a('POST', 'ops', { op: 'copy', ids: [file.id], target: vroot.id });
+    assert.deepEqual(cp.json.op.files.map((f) => [f.name, f.encrypted, f.nameCipher]), [[null, true, file.nameCipher]], 'the answer\'s files: no name of a vault');
+    await ops.idle();
     const tr = await a('POST', `ops/${cp.json.op.id}/transfers`);
     const x = tr.json.transfers[0];
     assert.deepEqual([x.encrypted, x.vaultId, x.nameCipher], [true, id, file.nameCipher]);

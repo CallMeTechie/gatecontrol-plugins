@@ -17,9 +17,13 @@
 //   POST   ops/<id>/transfers/<n> { mediaId } | { failed: true } → { op, node? } — the bytes of a copy (below)
 //
 // A job runs as its person (their rights, their device — the change log, the live event 'changed', the ransomware
-// protection and the sync of every device see each node it moves, makes or trashes like a single request's). A small
-// one is done within its request; the rest goes on in the plugin process right after the answer and, after a restart,
-// in the background run — the live event 'op' { op } (at most one a second, and the last) tells the person.
+// protection and the sync of every device see each node it moves, makes or trashes like a single request's). The answer
+// comes at once (1.12.2: 1.12.1 worked up to 5 s within the request — the apps' "Ziel wählen" waited that long): a
+// small job without bytes to copy (≤ 50 nodes, no copy) is worked on for at most 0.3 s within its request and mostly
+// comes back done; every other one comes back 'running' with its files (op.files, as the live event) and goes on in the
+// plugin process right after the answer and, after a restart, in the background run — the live event 'op' { op } (at
+// most one a second, and the last; with its files) tells the person. That event may come before the answer: a client
+// keeps an ended state it has (updatedAt).
 //
 // Rules per id (`blocked`): not_found, forbidden (no right — a parent in a child's folder, a reader, an archived team
 // folder; copying needs the right to read only), root (the top folder of an area), into_itself (a folder into itself
@@ -69,7 +73,11 @@ const IDS_MAX = 10000;
 const NODES_MAX = 10000;
 const RUNNING_MAX = 5;
 const UNDO_MS = 15 * 60000;
-const INLINE_MS = 5000;
+// the time a quick job gets within its request (1.12.2; 1.12.1: 5 s for any job) — only one that will most likely end in
+// it: no copy (bytes on a storage target), at most QUICK_NODES nodes with what is in the folders (a move of a folder
+// moves the media file of each file in it)
+const INLINE_MS = 300;
+const QUICK_NODES = 50;
 const SLICE_MS = 5000;
 const KEEP_MS = 7 * 86400000;
 const ABANDON_MS = 86400000;
@@ -87,10 +95,6 @@ const UNDOABLE = ['move', 'copy', 'trash'];
 // a copy GateControl cannot make right now (its storage target is away): the job waits a minute
 const BUSY = Symbol('busy');
 const RETRY_MS = 60000;
-// a copy GateControl may take long for (up to 30 minutes: between storage targets) is not made within a request — the
-// job goes on right after the answer
-const LATER = Symbol('later');
-const INLINE_COPY_BYTES = 16 * 1024 * 1024;
 const retryAt = new Map();
 
 const json = (s, d) => { try { const v = JSON.parse(s); return v == null ? d : v; } catch { return d; } };
@@ -459,11 +463,18 @@ async function create(ctx, body, hooks) {
       a.onConflict, label, a.ids.length, s.files, s.bytes, s.blocked.length, JSON.stringify(failures), now, now]);
     await insertItems(ctx.gc, id, rows);
   });
-  let op = await opRow(ctx.gc, id);
-  ctx.opsInline = true;
-  try { op = await work(ctx, op, Date.now() + INLINE_MS); } finally { ctx.opsInline = false; }
-  if (op.state === 'running') later(hooks);
-  return { op: await view(ctx.gc, op) };
+  return { op: await begin(ctx, await opRow(ctx.gc, id), a.kind !== 'copy' && s.nodes <= QUICK_NODES, hooks) };
+}
+
+/**
+ * A new job (POST ops, POST ops/<id>/undo) → the answer's op: a quick one is worked on for a moment (INLINE_MS), any other
+ * goes on right after the answer (1.12.2: the answer comes at once — the apps close their dialog on it). With its files
+ * (as the live event) — the apps show them from the start.
+ */
+async function begin(ctx, op, quick, hooks) {
+  const cur = quick ? await work(ctx, op, Date.now() + INLINE_MS) : op;
+  if (cur.state === 'running') later(hooks);
+  return view(ctx.gc, cur, { files: EVENT_FILES });
 }
 
 // ─── Working ────────────────────────────────────
@@ -549,7 +560,11 @@ async function work(ctx, op, until) {
     const item = await store.one(gc, "SELECT * FROM op_items WHERE op_id = ? AND state = 'pending' ORDER BY seq LIMIT 1", [cur.id]);
     if (!item) {
       const waiting = await store.one(gc, "SELECT COUNT(*) AS n FROM op_items WHERE op_id = ? AND state = 'transfer'", [cur.id]);
-      if (waiting.n) return cur;
+      if (waiting.n) {
+        // everything left waits for a device's bytes: the portal learns how many (1.12.2 — no longer in the answer)
+        await announce(gc, cur, true);
+        return cur;
+      }
       return finish(gc, cur, 'done');
     }
     if (Date.now() > until) return cur;
@@ -559,7 +574,6 @@ async function work(ctx, op, until) {
     try {
       const r = await handle(ctx, cur, item);
       if (itemHook) await itemHook(cur, item);
-      if (r === LATER) return cur;
       if (r === BUSY) {
         retryAt.set(cur.id, Date.now() + RETRY_MS);
         return cur;
@@ -768,7 +782,6 @@ async function copyItem(ctx, op, item) {
   if (!src.media_id) return commitCopy(ctx, op, cur, src, null);
   // GateControl copies on the server (≥ 1.215.0): no device needed, the job goes on without one
   if (hostCopy(gc)) {
-    if (ctx.opsInline && (src.size || 0) > INLINE_COPY_BYTES) return LATER;
     const a = await areas.row(gc, dest.area_id);
     let made;
     try { made = await copier(gc)(src.media_id, { area: a.media_area, user: ctx.viewer }); } catch (e) {
@@ -989,10 +1002,8 @@ async function undo(ctx, id, hooks) {
       op.items, steps.length, 0, now, now]);
     await insertItems(gc, uid, steps.map((s, i) => ({ seq: i + 1, node_id: s.node_id, files: 1, step_seq: s.seq, name: null })));
   });
-  let u = await opRow(gc, uid);
-  u = await work(ctx, u, Date.now() + INLINE_MS);
-  if (u.state === 'running') later(hooks);
-  return { op: await view(gc, u) };
+  // quick: an undo of a job that touched few nodes (its steps, its files)
+  return { op: await begin(ctx, await opRow(gc, uid), Math.max(steps.length, op.total || 0) <= QUICK_NODES, hooks) };
 }
 
 /** Did node `id` (and what is below it) stay as job `op` left it? */
@@ -1073,12 +1084,25 @@ async function cancel(ctx, id) {
 const busy = new Set();
 let runner = null;
 
-/** Go on with the running jobs in this process right after the answer (`hooks` of index.js). */
+/**
+ * Go on with the running jobs in this process right after the answer (`hooks` of index.js). A runner at work already
+ * looks again when it is through (1.12.2: it may have looked for jobs just before this one came — nothing else is done
+ * within the request now); the latest hooks are the ones it goes on with.
+ */
 let kick = null;
+let again = null;
 function later(hooks) {
-  if (!hooks || runner || kick) return;
+  if (!hooks) return;
+  again = hooks;
+  if (runner || kick) return;
   kick = new Promise((resolve) => {
-    setImmediate(() => { kick = null; drain(hooks).catch(() => {}).then(resolve); });
+    setImmediate(() => {
+      kick = null;
+      const h = again;
+      // (a runner the background run started meanwhile: it looks again when it is through)
+      if (!runner) again = null;
+      (runner || (h ? drain(h) : Promise.resolve())).catch(() => {}).then(resolve);
+    });
   });
 }
 
@@ -1097,7 +1121,10 @@ function drain(hooks, budgetMs = Infinity) {
         if (!todo.length) return;
         for (const op of todo) await slice(hooks, op);
       }
-    } finally { runner = null; }
+    } finally {
+      runner = null;
+      if (again) later(again);
+    }
   })();
   return runner;
 }
