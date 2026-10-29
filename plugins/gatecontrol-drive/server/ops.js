@@ -1024,7 +1024,8 @@ async function tick(gc, now, hooks) {
   const stale = await store.all(gc, `SELECT * FROM ops o WHERE state = 'running' AND kind = 'copy' AND COALESCE(transfer_at, updated_at) < ?
     AND NOT EXISTS (SELECT 1 FROM op_items i WHERE i.op_id = o.id AND i.state = 'pending')`, [now - ABANDON_MS]);
   for (const op of stale) await finish(gc, op, 'failed', 'abandoned');
-  if (hooks && typeof hooks.asPerson === 'function') await drain(hooks, 45000);
+  // (a runner of this process already at work goes on by itself — the background run does not wait for it)
+  if (hooks && typeof hooks.asPerson === 'function' && !runner) await drain(hooks, 45000);
   return { removed: old.length, abandoned: stale.length };
 }
 

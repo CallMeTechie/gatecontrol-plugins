@@ -423,8 +423,7 @@
       if (ctrl && (key === 'x' || key === 'X')) { stop(); act('cut'); return; }
       if (ctrl && (key === 'c' || key === 'C')) { stop(); act('copyclip'); return; }
       if (key === 'Delete' || key === 'Del') { stop(); act('trash'); return; }
-      if (key === 'F2') { stop(); act('rename'); return; }
-      if (key === 'Enter' && count() === 1) { stop(); U.openNode(nodes()[0]); }
+      if (key === 'F2') { stop(); act('rename'); }
     });
 
     // ── cut, copy, paste ───────────────────────────────────
