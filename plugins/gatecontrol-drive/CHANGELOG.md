@@ -2,6 +2,26 @@
 
 Dateien der Familie und des Teams auf dem eigenen Speicher – auf diesem Server, einer NAS oder in S3.
 
+## 1.13.0
+- **Arbeitsfotos getrennt (Feature `photoClasses`):** Die Handys ordnen ein neues Foto nach dem WLAN, in dem es
+  aufgenommen wurde (Firma / Zuhause), oder nach ihrer eigenen KI ein – beides nur auf dem Handy. Drive hält, was alle
+  Geräte und das Portal teilen:
+  - **Arbeitsordner je Person:** `GET|PUT photos/settings` → `{ workFolder, workSubfolders, workInMemories, folder }` –
+    ein Ordner, in den man schreibt (auch ein Team-Ordner), kein Tresor, nicht `Bilder/Kamera-Uploads` oder ein Ordner
+    darüber (`400 invalid { field: 'workFolder', reason }`). Auf allen Geräten dieselbe Einstellung.
+  - **Prüfen-Marker:** `POST photos/review { ids, review, hint? }` (hint = KI-Wahrscheinlichkeit „Arbeit“ in %), Rechte
+    wie Schreiben, alles oder nichts. `review: { hint }` an Knoten und Foto-Items, op `review` im Änderungsprotokoll.
+    Verschieben in den oder aus dem Arbeitsordner (auch als Sammel-Auftrag, auch ein Ordner mit Fotos darin) beendet
+    den Marker.
+  - **Klassen:** `class=work|private|review` an `GET photos` und `photos/months`, Zähler `GET photos/classes`; Foto-Items
+    tragen `work` (die Tasche).
+  - Erinnerungen und Fotorahmen lassen den Arbeitsordner weg, solange `workInMemories` aus ist (Standard).
+  - Keine neue Berechtigung.
+- Portal: Chips „Alle | Privat | Arbeit | Prüfen (N)“, Hinweisband „N Fotos zu prüfen – aufgenommen außerhalb von Firma
+  und Zuhause“, gelbes Fragezeichen und blaue Tasche an den Kacheln; sind alle ausgewählten Fotos zu prüfen, stehen
+  „Arbeit“ und „Privat“ vorne (mit dem KI-Hinweis des Handys), sonst „Zuordnung“. Snackbar „N Fotos → Ziel“ mit
+  „Rückgängig“. Drive-Einstellungen: Abschnitt „Arbeitsfotos“ mit dem Arbeitsordner.
+
 ## 1.12.2
 - **Sammel-Aufträge antworten sofort:** `POST ops` und `POST ops/<id>/undo` arbeiteten bis zu 5 s innerhalb der
   Anfrage am Auftrag, bevor sie antworteten – in den Apps drehte der Knopf im Dialog „Ziel wählen“ so lange, und der
