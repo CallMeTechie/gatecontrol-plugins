@@ -267,9 +267,11 @@
 //   previewOnly, the ordinary URL).
 //
 // GateControl ≥ 1.215.0 (opt-in: opts.gatecontrol: '1.215.0') — copies and paths in links:
-//   gc.media.copy(mediaId, { area? }) → { id, size, sha256, mime }: a new file of the plugin with the same bytes, claimed,
-//   in `area` (default the source's; media.areas) without a path (gc.media.move gives it one); unknown → ERR_INVALID,
-//   the area's quota or the plugin's → ERR_MEDIA_QUOTA. host.mediaCopies records { from, id, area }.
+//   gc.media.copy(mediaId, { area?, path?, claim?, user? }) → { id, mediaId, size, bytes, sha256, mime, name, area, path,
+//   claimed, method: 'link' }: a new file of the plugin with the same bytes in `area` (default the source's; media.areas)
+//   at `path` (null; only with an area; taken → ERR_CONFLICT), unclaimed unless claim: true (gc.media.claim keeps it),
+//   owner `user` (default the source's); unknown id, area, user or option → ERR_INVALID, the area's quota or the plugin's
+//   → ERR_MEDIA_QUOTA. host.mediaCopies records { from, id, area, path, claim }.
 //   gc.publicLinks.create kind 'files': up to 5000 entries, each { mediaId, name?, path? } — `path` a folder in the ZIP
 //   and the page ('a/b', no '..', no leading '/'), kept on the link's file (host.publicLinks).
 //
@@ -1534,19 +1536,32 @@ async function createHost(pluginDir, opts = {}) {
     if (!gc215) throw hostError('ERR_UNKNOWN_API', 'unknown host API');
     const src = mediaStore.get(mediaIdOf(args));
     if (!src) throw hostError('ERR_INVALID', 'unknown media id');
-    const o = args.opts && typeof args.opts === 'object' ? args.opts : {};
-    const area = o.area != null ? String(o.area) : src.area;
+    const o = args.opts == null ? {} : args.opts;
+    if (typeof o !== 'object' || Array.isArray(o) || Object.keys(o).some((k) => !['area', 'path', 'claim', 'user'].includes(k))) throw hostError('ERR_INVALID', 'invalid options');
+    const area = o.area != null ? String(o.area) : (src.area == null ? null : src.area);
+    let p = null;
     if (area != null) {
       needAreas();
       if (!areaStore.has(area)) throw areaFail('invalid', 'unknown area');
+      if (o.path != null) {
+        p = cleanAreaPath(o.path);
+        if (p != null && pathTaken(area, p, null)) throw areaFail('exists', 'another file has this path');
+      }
       if (areaQuotaFull(area, src.bytes)) throw areaFail('quota', 'the area is full');
+    } else if (o.path != null) throw hostError('ERR_INVALID', 'path needs an area');
+    let owner = src.owner;
+    if (o.user != null) {
+      if (!enabledUser(o.user)) throw hostError('ERR_INVALID', 'unknown user');
+      owner = o.user;
     }
     if (mediaUsage().bytes + src.bytes > mediaQuota) throw hostError('ERR_MEDIA_QUOTA', 'quota exceeded');
     const id = require('node:crypto').randomBytes(16).toString('hex');
-    mediaStore.set(id, { mime: src.mime, bytes: src.bytes, owner: src.owner, data: Buffer.from(src.data), claimed: true, createdAt: Date.now(), name: src.name || null,
-      ...(area != null ? { area, path: null } : {}) });
-    mediaCopies.push({ from: args.id, id, area: area == null ? null : area });
-    return { id, size: src.bytes, sha256: require('node:crypto').createHash('sha256').update(src.data).digest('hex'), mime: src.mime };
+    const claimed = o.claim === true;
+    mediaStore.set(id, { mime: src.mime, bytes: src.bytes, owner, data: Buffer.from(src.data), claimed, createdAt: Date.now(), name: src.name || null,
+      ...(area != null ? { area, path: p } : {}) });
+    mediaCopies.push({ from: args.id, id, area, path: p, claim: claimed });
+    return { id, mediaId: id, size: src.bytes, bytes: src.bytes, sha256: require('node:crypto').createHash('sha256').update(src.data).digest('hex'), mime: src.mime,
+      name: src.name || null, area, path: p, claimed, method: 'link' };
   };
 
   // GateControl ≥ 1.211.0: public endpoints — tokens for /plugin-public/<id>/<path> (host.publicRequest)

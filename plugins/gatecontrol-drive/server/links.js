@@ -124,18 +124,24 @@ const PATHS_MAX = 5000;
 const ZIP_MS = 15 * 60000;
 
 /**
- * GateControl ≥ 1.215.0: files links with a path per entry ({ mediaId, name, path }) and far more entries — a ZIP and a
- * link of any selection, folders resolved into their files (feature zipMixed). → the most entries a link takes, or 0
+ * GateControl ≥ 1.215.0: files links with a path per entry ({ mediaId, name, path }), up to 5000 entries and 1 TiB — a ZIP
+ * and a link of any selection, folders resolved into their files (feature zipMixed). GateControl has no switch of its own
+ * for it: it came with gc.media.copy (an older host refuses more than 20 files and ignores `path`). → the most entries
+ * a link takes, or 0
  */
 function paths(gc) {
-  const pl = api(gc);
-  if (!pl) return 0;
-  const caps = pl.capabilities || pl.limits || null;
-  const max = Number((caps && (caps.filesMax || caps.files)) || pl.filesMax || 0);
-  if (max > FILES_MAX) return max;
-  if (caps && (caps.filesPath === true || caps.paths === true)) return PATHS_MAX;
-  // both came with GateControl 1.215.0: a host that copies media files takes paths in files links too
-  return gc.media && typeof gc.media.copy === 'function' ? PATHS_MAX : 0;
+  return api(gc) && gc.media && typeof gc.media.copy === 'function' ? PATHS_MAX : 0;
+}
+const PATHS_BYTES = 1024 ** 4;
+const PATH_DEPTH = 64;
+// what GateControl refuses in a path besides control characters: bidi controls
+const BIDI_RE = /[\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/g;
+
+/** A path as GateControl takes it: segments without bidi controls, ≤ 255 characters, at most 64 levels. */
+function linkPath(p) {
+  let segs = String(p || '').split('/').map((x) => x.replace(BIDI_RE, '').slice(0, 255).trim()).filter((x) => x && x !== '.' && x !== '..');
+  if (segs.length > PATH_DEPTH) segs = segs.slice(0, PATH_DEPTH - 1).concat([segs.slice(PATH_DEPTH - 1).join('_').slice(0, 255)]);
+  return segs.join('/');
 }
 
 /** The parent path of "a/b/c.pdf" ("a/b"), '' at the top. */
@@ -162,7 +168,7 @@ async function expand(ctx, ids, need, max) {
       if (seen.has(n.id)) return;
       seen.add(n.id);
       if (!n.media_id) { skipped.push({ id: n.id, reason: 'empty' }); return; }
-      entries.push({ node: n, path: p });
+      entries.push({ node: n, path: linkPath(p) });
       if (entries.length > max) throw fail('invalid', { reason: 'too_many', max });
     };
     if (r.node.is_dir !== 1) { add(r.node, ''); continue; }
@@ -171,6 +177,7 @@ async function expand(ctx, ids, need, max) {
     const where = nodes.pathsBelow(r.node.id, top, rows);
     for (const x of rows.filter((y) => y.is_dir === 0).sort((a, b) => String(where.get(a.id)).localeCompare(String(where.get(b.id))))) add(x, dirOf(where.get(x.id)));
   }
+  if (entries.reduce((t, e) => t + (e.node.size || 0), 0) > PATHS_BYTES) throw fail('too_large', { maxBytes: PATHS_BYTES });
   // names once per path
   const byPath = new Map();
   for (const e of entries) { if (!byPath.has(e.path)) byPath.set(e.path, []); byPath.get(e.path).push(e); }

@@ -82,6 +82,11 @@ const RECENT_MS = 3600000;
 const OP_ID_RE = /^[A-Za-z0-9_-]{22}$/;
 const UNDOABLE = ['move', 'copy', 'trash'];
 
+// a copy GateControl cannot make right now (its storage target is away): the job waits a minute
+const BUSY = Symbol('busy');
+const RETRY_MS = 60000;
+const retryAt = new Map();
+
 const json = (s, d) => { try { const v = JSON.parse(s); return v == null ? d : v; } catch { return d; } };
 
 // ─── Arguments ──────────────────────────────────
@@ -285,15 +290,16 @@ async function mine(ctx, id) {
   return op;
 }
 
-// GateControl's copy of a media file (≥ 1.215.0: gc.media.copy(mediaId, { area }) → { id, size, sha256, mime }, a new
-// file of its own, done on the server — a hard link, S3's CopyObject or a stream); `copyHook` stands in for it in the tests
+// GateControl's copy of a media file (≥ 1.215.0: gc.media.copy(mediaId, { area, user }) → { id, sha256, area, claimed, … },
+// a new file of its own, done on the server — on the storage target itself, a hard link or a copy; unclaimed until Drive
+// claims it at its path, so GateControl removes one Drive never took after 24 h); `copyHook` stands in for it in tests
 let copyHook = null;
 const copier = (gc) => copyHook || (gc.media && typeof gc.media.copy === 'function' ? (id, o) => gc.media.copy(id, o) : null);
 const hostCopy = (gc) => !!copier(gc);
 
 /**
- * Media file `mediaId` at `path` of media area `mediaArea`: a fresh upload is claimed there; a file GateControl copied
- * (already in an area) gets its path — and its area — with a move.
+ * Media file `mediaId` at `path` of media area `mediaArea`: a fresh upload or GateControl's unclaimed copy is claimed
+ * there; a file already kept in an area gets its path — and its area — with a move.
  */
 async function place(gc, mediaId, mediaArea, path) {
   const info = await gc.media.info(mediaId);
@@ -459,6 +465,7 @@ async function finish(gc, op, state, error = null) {
   if (op.undo_of && state !== 'failed') {
     await store.run(gc, 'UPDATE ops SET undone_by = ?, undo_until = NULL WHERE id = ?', [op.id, op.undo_of]);
   }
+  retryAt.delete(op.id);
   const out = await opRow(gc, op.id);
   await announce(gc, out, true);
   return out;
@@ -493,7 +500,10 @@ async function work(ctx, op, until) {
     }
     ctx.now = Date.now();
     try {
-      await handle(ctx, cur, item);
+      if (await handle(ctx, cur, item) === BUSY) {
+        retryAt.set(cur.id, Date.now() + RETRY_MS);
+        return cur;
+      }
     } catch (e) {
       if (reasonOf(e) === 'error') gc.log.warn('op item failed', cur.kind, (e && (e.code || e.message)) || 'error', e && e.message);
       if (e && e.code === 'quota' && cur.kind === 'copy') {
@@ -700,8 +710,10 @@ async function copyItem(ctx, op, item) {
   if (hostCopy(gc)) {
     const a = await areas.row(gc, dest.area_id);
     let made;
-    try { made = await copier(gc)(src.media_id, { area: a.media_area }); } catch (e) {
+    try { made = await copier(gc)(src.media_id, { area: a.media_area, user: ctx.viewer }); } catch (e) {
       if (e && e.code === 'ERR_MEDIA_QUOTA') throw fail('quota');
+      // the storage target of the source does not answer: this file again in a minute
+      if (e && e.code === 'ERR_BUSY') return BUSY;
       gc.log.warn('media copy failed', (e && e.code) || 'error');
       return settle(gc, op, cur, 'failed', { reason: e && e.code === 'ERR_INVALID' ? 'not_found' : 'copy' });
     }
@@ -1014,7 +1026,8 @@ function drain(hooks, budgetMs = Infinity) {
         if (Date.now() - started > budgetMs) return;
         const rows = await store.all(hooks.gc, `SELECT * FROM ops o WHERE state = 'running' AND EXISTS (SELECT 1 FROM op_items i WHERE i.op_id = o.id AND i.state = 'pending')
           ORDER BY created_at LIMIT 20`);
-        const todo = rows.filter((r) => !busy.has(r.id));
+        const now = Date.now();
+        const todo = rows.filter((r) => !busy.has(r.id) && !(retryAt.get(r.id) > now));
         if (!todo.length) return;
         for (const op of todo) await slice(hooks, op);
       }

@@ -297,7 +297,8 @@ test('copy on GateControl 1.215: gc.media.copy on the server — no device, into
     op = (await t.a('GET', `ops/${op.id}`)).json.op;
     assert.deepEqual([op.state, op.done, op.total, op.bytesDone, op.bytesTotal], ['done', 3, 3, 10, 10]);
     assert.equal(host.mediaCopies.length, 3);
-    assert.ok(host.mediaCopies.every((x) => x.area === `f${FAMILY}`), 'copied straight into the family area');
+    assert.ok(host.mediaCopies.every((x) => x.area === `f${FAMILY}` && !x.claim), 'copied straight into the family area, claimed by Drive');
+    assert.ok(host.mediaCopies.every((x) => host.media.get(x.id).claimed && host.media.get(x.id).owner === ANNA.id));
     const copied = (await t.a('GET', 'nodes/by-path', null, { area: fam.id, path: 'Projekte/Fotos/c.jpg' })).json.node;
     assert.equal(copied.sha256, t.fc.sha256);
     assert.notEqual(copied.mediaId, t.fc.mediaId);
@@ -320,6 +321,28 @@ test('copy on GateControl 1.215: gc.media.copy on the server — no device, into
     const big = (await c.put(ANNA, t.projekte.id, 'gross.bin', Buffer.alloc(1100 * 1024))).json.node;
     const q = await t.a('POST', 'ops', { op: 'copy', ids: [big.id], target: fam.rootId });
     assert.deepEqual([q.status, q.json.code], [507, 'quota']);
+  });
+});
+
+test('copy on the server: a storage target that does not answer (ERR_BUSY) — the job waits and goes on', async () => {
+  await withHost({}, async (host, c) => {
+    const t = await tree(c);
+    let busy = true;
+    ops._setCopy(async (id) => {
+      if (busy) throw Object.assign(new Error('busy'), { code: 'ERR_BUSY' });
+      const m = host.media.get(id);
+      return { id: (await host.upload(ANNA, m.data, m.mime)).body.mediaId };
+    });
+    try {
+      const r = await t.a('POST', 'ops', { op: 'copy', ids: [t.fa.id], target: t.mine.rootId });
+      assert.deepEqual([r.json.op.state, r.json.op.transfer, r.json.op.done], ['running', 'server', 0]);
+      await ops.idle();
+      busy = false;
+      c.clock.add(2 * MIN);
+      await host.tick();
+      await ops.idle();
+      assert.equal((await t.a('GET', `ops/${r.json.op.id}`)).json.op.state, 'done');
+    } finally { ops._setCopy(null); }
   });
 });
 
