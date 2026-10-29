@@ -722,7 +722,9 @@
     "p.v.unlock_title": "Tresor gesperrt",
     "p.v.unlock_text": "Dieser Browser ist für den Tresor freigegeben. Entsperre ihn, um die Inhalte zu sehen – er sperrt sich wieder nach einiger Zeit ohne Nutzung und wenn du den Tab schließt.",
     "p.v.locked_now": "Tresore gesperrt.",
-    "p.v.lock_now": "Jetzt sperren"
+    "p.v.lock_now": "Jetzt sperren",
+    "link.files": "{{n}} Dateien",
+    "zip.files": "Drive – {{n}} Dateien"
   },
   "en": {
     "error.invalid": "Invalid input.",
@@ -1447,6 +1449,8 @@
     "p.v.unlock_title": "Vault locked",
     "p.v.unlock_text": "This browser is approved for the vault. Unlock it to see what is inside – it locks again after a while without use and when you close the tab.",
     "p.v.locked_now": "Vaults locked.",
-    "p.v.lock_now": "Lock now"
+    "p.v.lock_now": "Lock now",
+    "link.files": "{{n}} files",
+    "zip.files": "Drive – {{n}} files"
   }
 }

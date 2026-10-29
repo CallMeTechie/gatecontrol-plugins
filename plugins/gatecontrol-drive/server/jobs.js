@@ -16,6 +16,8 @@
 // Every run (since 1.8.0): AI for documents works off its queue (insights.js), the reminders of deadlines whose time came
 // go out (deadlines.js), the imports from cloud drives go on (imports.js) — the last two as their person (o.asPerson).
 // Every run (since 1.11.0): a vault folder outside the top folder of its area goes there (vault.js toRoots).
+// Every run (since 1.12.0): jobs of several at once a restart interrupted go on, copies nobody brings bytes for end, old
+// jobs go (ops.js).
 
 const store = require('./store');
 const nodes = require('./nodes');
@@ -32,6 +34,7 @@ const insights = require('./insights');
 const deadlines = require('./deadlines');
 const imports = require('./imports');
 const vault = require('./vault');
+const ops = require('./ops');
 
 const DAY = 86400000;
 const BATCH = 200;
@@ -60,6 +63,7 @@ async function tick(gc, now = Date.now(), o = {}) {
     try { out.insights = await insights.tick(gc, settings, now); } catch (e) { gc.log.warn('document recognition failed', (e && e.code) || 'error'); }
     try { out.reminders = await deadlines.due(gc, settings, now, o.asPerson); } catch (e) { gc.log.warn('deadline reminders failed', (e && e.code) || 'error'); }
     try { out.imports = await imports.tick(gc, settings, now, o.asPerson); } catch (e) { gc.log.warn('imports failed', (e && e.code) || 'error'); }
+    try { out.ops = await ops.tick(gc, now, o.ops); } catch (e) { gc.log.warn('jobs failed', (e && e.code) || 'error'); }
     return out;
   } finally {
     running = false;

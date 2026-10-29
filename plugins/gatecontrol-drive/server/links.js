@@ -12,6 +12,14 @@
 // by them); a file in the trash ends its links too.
 //
 //   POST links { nodeId, mode: 'view'|'download'|'upload', expires: '1d'|'7d'|'30d'|'never', pin?, maxFiles?, maxBytes? }
+//   POST links { nodeIds: [id, …], mode: 'view'|'download', expires, pin?, note?, title? }   one link for several files
+//            (since 1.12.0, feature multiLink): files only (a folder among them: 400 invalid { reason: 'mixed' }), at most
+//            20 (GateControl's limit of a files link: 400 invalid { reason: 'too_many', max: 20 }), none empty (400
+//            invalid { reason: 'empty', ids }) — the link has nodeIds; a file of it in the trash ends it
+//   POST zip { ids, name? }  a ZIP of a selection (since 1.12.0, feature zip) → { url, name, expiresAt, files, skipped }:
+//            GateControl streams it (stored entries, ZIP64, UTF-8 names) through a link of 15 minutes that is in no list
+//            — one folder (with everything in it), or up to 20 files from anywhere (empty files are left out: skipped);
+//            anything else 400 invalid { reason: 'mixed' | 'too_many', max }; a vault: 409 encrypted
 //   GET links?nodeId=        the viewer's links (or those of a node the viewer may write to)
 //   GET links/<token>/events the log (opened, downloaded, uploaded — addresses shortened by GateControl)
 //   DELETE links/<token>     end it (whoever made it, or who manages the area)
@@ -21,7 +29,8 @@ const nodes = require('./nodes');
 const areas = require('./areas');
 const sync = require('./sync');
 const address = require('./address');
-const { fail, posInt, iso, line } = require('./util');
+const { fail, posInt, iso, line, numbered } = require('./util');
+const { t } = require('./text');
 
 const DAY = 86400000;
 const EXPIRES = { '1d': DAY, '7d': 7 * DAY, '30d': 30 * DAY, never: null };
@@ -41,10 +50,11 @@ function linkFail(e, noEnd) {
 
 const api = (gc) => (gc.publicLinks && typeof gc.publicLinks.create === 'function' ? gc.publicLinks : null);
 
-function view(row, link, node) {
+function view(row, link, node, nodeIds) {
   const l = link || {};
   return {
     token: row.token, url: l.url || null, nodeId: row.node_id, areaId: row.area_id, kind: row.kind, mode: row.mode,
+    ...(nodeIds && nodeIds.length > 1 ? { nodeIds, count: nodeIds.length } : {}),
     title: l.title || null, name: node ? node.name : null, path: row.path,
     state: row.ended_at != null && (!link || !l.active) ? 'ended' : (l.state || 'gone'), active: !!l.active, endedWhy: row.ended_why || null,
     expiresAt: l.expiresAt == null ? null : iso(l.expiresAt), pin: !!l.pin, opens: l.opens || 0, downloads: l.downloads || 0,
@@ -58,6 +68,11 @@ async function create(ctx, body) {
   const b = body && typeof body === 'object' ? body : {};
   const pl = api(ctx.gc);
   if (!pl) throw fail('links_disabled');
+  if (b.nodeIds != null) {
+    const ids = idsOf(b.nodeIds, 'nodeIds');
+    if (ids.length > 1) return createMany(ctx, pl, b, ids);
+    b.nodeId = ids[0];
+  }
   const nodeId = posInt(b.nodeId);
   if (!nodeId) throw fail('invalid', { field: 'nodeId' });
   const mode = b.mode == null ? 'download' : String(b.mode);
@@ -102,6 +117,147 @@ async function create(ctx, body) {
   return view(row, link || { url: made.url, expiresAt: made.expiresAt, active: true, state: 'active', pin: !!pin, title }, node);
 }
 
+const FILES_MAX = 20;
+const ZIP_MS = 15 * 60000;
+
+/** A list of node ids (1 … 10 000, each once). */
+function idsOf(v, field) {
+  if (!Array.isArray(v) || !v.length || v.length > 10000) throw fail('invalid', { field });
+  const out = [];
+  for (const x of v) {
+    const n = posInt(x);
+    if (!n) throw fail('invalid', { field });
+    if (!out.includes(n)) out.push(n);
+  }
+  return out;
+}
+
+/** Names of the files of one link, each once ("Brief.pdf", "Brief (2).pdf"). */
+function distinct(names) {
+  const seen = new Set();
+  return names.map((n) => {
+    let c = n;
+    for (let i = 2; seen.has(c.toLowerCase()); i++) c = numbered(n, i);
+    seen.add(c.toLowerCase());
+    return c;
+  });
+}
+
+/** Does folder `n` hold a node of a vault? */
+async function holdsVault(gc, n) {
+  return !!(await store.one(gc, 'SELECT 1 AS x FROM nodes WHERE vault_id IS NOT NULL AND id IN (WITH RECURSIVE down(id) AS (SELECT id FROM nodes WHERE parent_id = ? UNION ALL SELECT n.id FROM nodes n JOIN down ON n.parent_id = down.id) SELECT id FROM down) LIMIT 1', [n.id]));
+}
+
+/** The files of a link for several (each one the viewer may share). */
+async function filesOf(ctx, ids, need) {
+  const list = [];
+  for (const id of ids) list.push(await nodes.reach(ctx, id, need));
+  if (list.some((x) => x.node.vault_id)) throw fail('encrypted');
+  if (list.some((x) => x.node.is_dir === 1)) throw fail('invalid', { reason: 'mixed' });
+  return list;
+}
+
+/** POST links { nodeIds } — one link of kind files for several files (since 1.12.0). */
+async function createMany(ctx, pl, b, ids) {
+  const mode = b.mode == null ? 'download' : String(b.mode);
+  if (mode !== 'view' && mode !== 'download') throw fail('invalid', { field: 'mode' });
+  const expires = b.expires == null ? '7d' : String(b.expires);
+  if (!Object.prototype.hasOwnProperty.call(EXPIRES, expires)) throw fail('invalid', { field: 'expires' });
+  const pin = b.pin == null || b.pin === '' ? null : String(b.pin);
+  if (pin != null && !PIN_RE.test(pin)) throw fail('invalid', { field: 'pin' });
+  const note = b.note == null ? null : line(b.note);
+  if (note != null && note.length > 500) throw fail('invalid', { field: 'note' });
+  const given = b.title == null ? null : line(b.title);
+  if (given != null && given.length > 120) throw fail('invalid', { field: 'title' });
+  if (ids.length > FILES_MAX) throw fail('invalid', { reason: 'too_many', max: FILES_MAX });
+  const list = await filesOf(ctx, ids, 'write');
+  if (list.some((x) => x.area.archived_at != null)) throw fail('forbidden');
+  const empty = list.filter((x) => !x.node.media_id).map((x) => x.node.id);
+  if (empty.length) throw fail('invalid', { reason: 'empty', ids: empty });
+  const names = distinct(list.map((x) => x.node.name));
+  const title = given || t(ctx.lang, 'link.files', { n: list.length });
+  const args = {
+    ownerUserId: ctx.viewer, title, ...(note ? { note } : {}), ...(pin ? { pin } : {}), kind: 'files', mode,
+    expiresAt: EXPIRES[expires] == null ? null : ctx.now + EXPIRES[expires],
+    files: list.map((x, i) => ({ mediaId: x.node.media_id, name: names[i] })),
+  };
+  let made;
+  try { made = await pl.create(args); } catch (e) { throw linkFail(e, args.expiresAt === null); }
+  const first = list[0];
+  const row = { token: made.token, node_id: first.node.id, area_id: first.area.id, kind: 'files', mode, path: '', created_by: ctx.viewer, created_at: ctx.now };
+  await store.tx(ctx.gc, async () => {
+    await store.run(ctx.gc, 'INSERT INTO links (token, node_id, area_id, kind, mode, path, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+      [row.token, row.node_id, row.area_id, row.kind, row.mode, row.path, row.created_by, row.created_at]);
+    for (const x of list) await store.run(ctx.gc, 'INSERT OR IGNORE INTO link_nodes (token, node_id) VALUES (?, ?)', [row.token, x.node.id]);
+  });
+  let link = null;
+  try { link = await pl.get(made.token); } catch { link = null; }
+  await address.learn(ctx.gc, made.url);
+  return view(row, link || { url: made.url, expiresAt: made.expiresAt, active: true, state: 'active', pin: !!pin, title }, first.node, list.map((x) => x.node.id));
+}
+
+/**
+ * POST zip { ids, name? } → { url, name, expiresAt, files, skipped } — a ZIP GateControl streams through a link of 15
+ * minutes (a folder link, or a files link of up to 20 files); the person may read each.
+ */
+async function zip(ctx, body) {
+  const b = body && typeof body === 'object' ? body : {};
+  const pl = api(ctx.gc);
+  if (!pl) throw fail('links_disabled');
+  const ids = idsOf(b.ids, 'ids');
+  const given = b.name == null ? null : line(b.name);
+  if (given != null && (given.length > 120 || !given)) throw fail('invalid', { field: 'name' });
+  const expiresAt = ctx.now + ZIP_MS;
+  let args;
+  let row;
+  let count;
+  let skipped = [];
+  let tops = [];
+  if (ids.length === 1 && (await nodes.reach(ctx, ids[0])).node.is_dir === 1) {
+    const { node, area, via } = await nodes.reach(ctx, ids[0]);
+    if (node.vault_id || await holdsVault(ctx.gc, node)) throw fail('encrypted');
+    if (via === 'parent') await ctx.noteChildView(area);
+    const p = await nodes.pathOf(ctx.gc, node);
+    const title = (given || (node.parent_id == null ? ctx.areaLabel(area) : node.name)).slice(0, 120);
+    count = (await store.one(ctx.gc, `SELECT COUNT(*) AS n FROM nodes WHERE is_dir = 0 AND deleted_at IS NULL AND media_id IS NOT NULL AND id IN (WITH RECURSIVE down(id) AS (
+        SELECT id FROM nodes WHERE parent_id = ? UNION ALL SELECT n.id FROM nodes n JOIN down ON n.parent_id = down.id) SELECT id FROM down)`, [node.id])).n;
+    if (!count) throw fail('invalid', { reason: 'empty' });
+    if (count > 10000) throw fail('too_large', { max: 10000 });
+    args = { ownerUserId: ctx.viewer, title, kind: 'folder', mode: 'download', area: area.media_area, path: p, expiresAt };
+    row = { node_id: node.id, area_id: area.id, kind: 'folder', path: p };
+    tops = [node.id];
+  } else {
+    if (ids.length > FILES_MAX) throw fail('invalid', { reason: 'too_many', max: FILES_MAX });
+    const list = await filesOf(ctx, ids, 'read');
+    for (const x of list) if (x.via === 'parent') await ctx.noteChildView(x.area);
+    skipped = list.filter((x) => !x.node.media_id).map((x) => ({ id: x.node.id, reason: 'empty' }));
+    const real = list.filter((x) => x.node.media_id);
+    if (!real.length) throw fail('invalid', { reason: 'empty' });
+    const names = distinct(real.map((x) => x.node.name));
+    const title = (given || (real.length === 1 ? real[0].node.name.replace(/\.[^.]{1,16}$/, '') : t(ctx.lang, 'zip.files', { n: real.length }))).slice(0, 120);
+    args = { ownerUserId: ctx.viewer, title, kind: 'files', mode: 'download', expiresAt, files: real.map((x, i) => ({ mediaId: x.node.media_id, name: names[i] })) };
+    row = { node_id: real[0].node.id, area_id: real[0].area.id, kind: 'files', path: '' };
+    count = real.length;
+    tops = real.map((x) => x.node.id);
+  }
+  let made;
+  try { made = await pl.create(args); } catch (e) { throw linkFail(e); }
+  await store.tx(ctx.gc, async () => {
+    await store.run(ctx.gc, "INSERT INTO links (token, node_id, area_id, kind, mode, path, created_by, created_at, zip) VALUES (?, ?, ?, ?, 'download', ?, ?, ?, 1)",
+      [made.token, row.node_id, row.area_id, row.kind, row.path, ctx.viewer, ctx.now]);
+    for (const id of tops) await store.run(ctx.gc, 'INSERT OR IGNORE INTO link_nodes (token, node_id) VALUES (?, ?)', [made.token, id]);
+  });
+  await address.learn(ctx.gc, made.url);
+  return { url: `${made.url}/zip`, name: `${args.title}.zip`, expiresAt: iso(made.expiresAt == null ? expiresAt : made.expiresAt), files: count, skipped };
+}
+
+/** Is GateControl's public link service usable (on, switched on by an administrator)? — features zip, multiLink */
+async function usable(gc) {
+  const pl = api(gc);
+  if (!pl || typeof pl.get !== 'function') return false;
+  try { await pl.get('drive-probe-0000000000000000'); return true; } catch { return false; }
+}
+
 /** May the viewer see / end the link of `row`? Whoever made it, or who manages its area. */
 async function mayHandle(ctx, row) {
   if (row.created_by === ctx.viewer) return true;
@@ -123,9 +279,10 @@ async function list(ctx, q) {
   if (q && q.nodeId != null) {
     if (!nodeId) throw fail('not_found');
     await nodes.reach(ctx, nodeId, 'write');
-    rows = await store.all(ctx.gc, 'SELECT * FROM links WHERE node_id = ? ORDER BY created_at DESC LIMIT 200', [nodeId]);
+    rows = await store.all(ctx.gc, `SELECT * FROM links WHERE zip = 0 AND (node_id = ? OR token IN (SELECT token FROM link_nodes WHERE node_id = ?))
+      ORDER BY created_at DESC LIMIT 200`, [nodeId, nodeId]);
   } else {
-    rows = await store.all(ctx.gc, 'SELECT * FROM links WHERE created_by = ? ORDER BY created_at DESC LIMIT 500', [ctx.viewer]);
+    rows = await store.all(ctx.gc, 'SELECT * FROM links WHERE created_by = ? AND zip = 0 ORDER BY created_at DESC LIMIT 500', [ctx.viewer]);
   }
   const out = [];
   let enabled = !!pl;
@@ -136,7 +293,8 @@ async function list(ctx, q) {
         if (e && e.code === 'ERR_PUBLIC_LINKS_DISABLED') enabled = false; else throw e;
       }
     }
-    out.push(view(r, link, await nodes.row(ctx.gc, r.node_id)));
+    const many = r.kind === 'files' ? (await store.all(ctx.gc, 'SELECT node_id FROM link_nodes WHERE token = ? ORDER BY rowid', [r.token])).map((x) => x.node_id) : null;
+    out.push(view(r, link, await nodes.row(ctx.gc, r.node_id), many));
   }
   return { links: out, enabled };
 }
@@ -175,9 +333,12 @@ async function endFor(gc, unlink, now) {
   let n = 0;
   for (const [why, ids, cond] of sets) {
     if (!ids || !ids.length) continue;
-    for (let i = 0; i < ids.length; i += 500) {
-      const part = ids.slice(i, i + 500);
-      const rows = await store.all(gc, `SELECT token FROM links WHERE ended_at IS NULL AND ${cond} AND node_id IN (${store.marks(part.length)})`, part);
+    // (in parts: the host takes at most 100 parameters a statement — each id twice)
+    for (const part of store.chunks(ids, 45)) {
+      const m = store.marks(part.length);
+      // a link for several files (since 1.12.0): any of its files
+      const rows = await store.all(gc, `SELECT token FROM links WHERE ended_at IS NULL AND ${cond} AND (node_id IN (${m})
+        OR token IN (SELECT token FROM link_nodes WHERE node_id IN (${m})))`, [...part, ...part]);
       for (const r of rows) {
         try { if (pl) await pl.revoke(r.token); } catch (e) { gc.log.warn('link end failed', (e && e.code) || 'error'); }
         await store.run(gc, 'UPDATE links SET ended_at = ?, ended_why = ? WHERE token = ?', [now, why, r.token]);
@@ -231,9 +392,13 @@ async function forget(gc) {
   for (const r of rows) {
     let l;
     try { l = await pl.get(r.token); } catch { return n; }
-    if (l == null) { await store.run(gc, 'DELETE FROM links WHERE token = ?', [r.token]); n++; }
+    if (l == null) {
+      await store.run(gc, 'DELETE FROM links WHERE token = ?', [r.token]);
+      await store.run(gc, 'DELETE FROM link_nodes WHERE token = ?', [r.token]);
+      n++;
+    }
   }
   return n;
 }
 
-module.exports = { create, list, revoke, events, endFor, adoptUpload, catchUp, forget, EXPIRES, MODES };
+module.exports = { create, list, revoke, events, endFor, adoptUpload, catchUp, forget, zip, usable, EXPIRES, MODES, FILES_MAX };
