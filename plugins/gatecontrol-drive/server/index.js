@@ -22,7 +22,8 @@
 //     POST links · GET links?nodeId= · GET links/<token>/events · DELETE links/<token>   (links.js, since 0.2.0)
 //     GET nodes/<id>/timetravel?at= · POST nodes/<id>/timetravel { at }  (a folder as it was — timetravel.js, 1.7.0)
 //     GET photos · GET photos/months · GET photos/memories (photos.js; ?folder= / ?camera=1 and GET|POST photos/camera
-//     since 1.10.0) · GET|POST albums · GET|PATCH|DELETE albums/<id>
+//     since 1.10.0; GET photos/classes, GET|PUT photos/settings, POST photos/review and class= since 1.13.0 — work.js)
+//     · GET|POST albums · GET|PATCH|DELETE albums/<id>
 //     POST|DELETE albums/<id>/items (albums.js) · GET storage[?all=1] · POST storage/versions/prune (storage.js) — 1.7.0
 //     GET frame   a kiosk device only — the photo frame (frame.js, 1.7.0); every other route refuses a kiosk device
 //     GET|POST nodes/<id>/insight · POST nodes/<id>/insight/apply · PATCH areas/<id> { docAi } (insights.js) · GET deadlines
@@ -70,6 +71,7 @@ const guard = require('./guard');
 const address = require('./address');
 const timetravel = require('./timetravel');
 const photos = require('./photos');
+const work = require('./work');
 const albums = require('./albums');
 const frame = require('./frame');
 const storage = require('./storage');
@@ -194,6 +196,9 @@ async function me(ctx) {
   };
 }
 
+// photoClasses: work photos apart — GET|PUT photos/settings (the work folder), POST photos/review (the review mark,
+// `review` on nodes and photo items, op 'review' in the change log), class= on photos and months, GET photos/classes;
+// memories and the frame without the work folder (1.13.0) ·
 // bulk: ops/… — move, copy, trash, restore, purge of several at once with progress, cancel and undo (1.12.0) ·
 // vaultsApart: vault folders only in the top folder of their area and not in children (vaults=1), children?dirs=1 with
 // hasDirs (1.11.0) ·
@@ -207,7 +212,7 @@ async function me(ctx) {
 // devices: GET/PUT/DELETE devices (1.5.0) · deleteAfter: DELETE nodes/<id>?after=, PATCH { deleteAt } (1.5.0) ·
 // emptyFiles: uploads/commit { size: 0 } without a mediaId (1.5.0) · wipes: DELETE ?everywhere=1 (1.2.0) ·
 // textSearch: uploads/commit { text } (1.3.0) · previews (1.1.0)
-const FEATURES = ['previews', 'wipes', 'textSearch', 'devices', 'deleteAfter', 'emptyFiles', 'links', 'guard', 'timeTravel', 'takenAt', 'photos', 'albums', 'frame', 'storage', 'vault', 'photosFolder', 'vaultsApart', 'bulk'];
+const FEATURES = ['previews', 'wipes', 'textSearch', 'devices', 'deleteAfter', 'emptyFiles', 'links', 'guard', 'timeTravel', 'takenAt', 'photos', 'albums', 'frame', 'storage', 'vault', 'photosFolder', 'vaultsApart', 'bulk', 'photoClasses'];
 
 /**
  * What needs GateControl's AI service or cloud accounts (1.8.0) — only while the host has it and it is allowed (the
@@ -338,8 +343,12 @@ async function route(ctx, req, seg) {
     if (seg.length === 2 && b === 'months') return ok(await photos.months(ctx, q));
     if (seg.length === 2 && b === 'memories') return ok(await photos.memories(ctx, q));
     if (seg.length === 2 && b === 'camera') return ok(await photos.camera(ctx));
+    if (seg.length === 2 && b === 'classes') return ok(await photos.classes(ctx, q));
+    if (seg.length === 2 && b === 'settings') return ok(await work.get(ctx));
   }
   if (a === 'photos' && seg.length === 2 && b === 'camera' && m === 'POST') return ok(await photos.makeCamera(ctx));
+  if (a === 'photos' && seg.length === 2 && b === 'settings' && (m === 'PUT' || m === 'PATCH')) return ok(await work.put(ctx, body));
+  if (a === 'photos' && seg.length === 2 && b === 'review' && m === 'POST') return ok(await work.review(ctx, body));
   if (a === 'albums') {
     if (seg.length === 1 && m === 'GET') return ok(await albums.list(ctx));
     if (seg.length === 1 && m === 'POST') return ok(await albums.create(ctx, body));

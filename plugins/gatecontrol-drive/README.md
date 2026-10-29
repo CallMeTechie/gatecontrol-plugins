@@ -58,7 +58,7 @@ reaches `GET frame` (the photo frame, since 1.7.0) and nothing else (`403 forbid
 
 | Route | Body / query | Answer |
 |---|---|---|
-| `GET me` | | `me { id, name, seat, deviceId, admin }`, `licence { valid, tier }`, `areas`, `latest` (change log seq), `settings`, `limits { maxBytes }`, `wipes` (entries this device has yet to handle, since 1.2.0), `devices` (my devices a new wipe reaches), `features` (since 1.5.0: `['previews', 'wipes', 'textSearch', 'devices', 'deleteAfter', 'emptyFiles']`, since 1.6.0 also `'links'`, `'guard'`, since 1.7.0 `'timeTravel'`, `'takenAt'`, `'photos'`, `'albums'`, `'frame'`, `'storage'`, since 1.8.0 `'docAi'` and `'cloudImport'` — only while GateControl offers the AI service / cloud accounts and they are allowed, see "AI for documents" and "Import"; since 1.9.0 `'vault'` and — while set up — `'office'`, since 1.10.0 `'photosFolder'`, since 1.11.0 `'vaultsApart'`, since 1.12.0 `'bulk'`, — while GateControl's public links are allowed — `'zip'` and `'multiLink'`, with GateControl ≥ 1.215.0 also `'copyServer'` (copies on the server) and `'zipMixed'` (a ZIP and one link of any selection)), `links { node, drive } \| null` (since 1.6.0, see "Direct links"), `guard { on, locked, incident }` and `incidents` (since 1.6.0, see "Ransomware protection") |
+| `GET me` | | `me { id, name, seat, deviceId, admin }`, `licence { valid, tier }`, `areas`, `latest` (change log seq), `settings`, `limits { maxBytes }`, `wipes` (entries this device has yet to handle, since 1.2.0), `devices` (my devices a new wipe reaches), `features` (since 1.5.0: `['previews', 'wipes', 'textSearch', 'devices', 'deleteAfter', 'emptyFiles']`, since 1.6.0 also `'links'`, `'guard'`, since 1.7.0 `'timeTravel'`, `'takenAt'`, `'photos'`, `'albums'`, `'frame'`, `'storage'`, since 1.8.0 `'docAi'` and `'cloudImport'` — only while GateControl offers the AI service / cloud accounts and they are allowed, see "AI for documents" and "Import"; since 1.9.0 `'vault'` and — while set up — `'office'`, since 1.10.0 `'photosFolder'`, since 1.11.0 `'vaultsApart'`, since 1.12.0 `'bulk'`, — while GateControl's public links are allowed — `'zip'` and `'multiLink'`, with GateControl ≥ 1.215.0 also `'copyServer'` (copies on the server) and `'zipMixed'` (a ZIP and one link of any selection); since 1.13.0 `'photoClasses'` (work photos apart)), `links { node, drive } \| null` (since 1.6.0, see "Direct links"), `guard { on, locked, incident }` and `incidents` (since 1.6.0, see "Ransomware protection") |
 | `GET areas` | | `areas [{ id, kind, label, role, via, rootId, owner, archived, storage { bytes, quota, form, target, state } }]` (+ `docAi` while the feature is on, also in `GET me` `areas`) |
 | `PATCH areas/<id>` | `{ docAi: boolean }` (since 1.8.0, write in the area) | `{ area: { id, docAi } }` — AI for documents on / off in this area |
 | `GET nodes/<id>` | | `node` + `path`, `role`, `crumbs [{ id, name }]` |
@@ -106,8 +106,11 @@ reaches `GET frame` (the photo frame, since 1.7.0) and nothing else (`403 forbid
 | `POST nodes/<id>/timetravel` | `{ at }` | `{ at, before, restored, reverted, trashed, moved, failed, lost }` |
 | `POST nodes/<id>/office` | | since 1.9.0: `{ url, mode, expiresAt }` — see "Office in the browser" |
 | `GET\|POST vaults`, `vaults/<id>/…` | | since 1.9.0 — see "Vault folders" |
-| `GET photos` | `area?`, `before?` (ISO), `limit?` (≤ 200, default 100) (since 1.7.0); `folder?` (node id) or `camera?` (`1`) (since 1.10.0) | `{ items [photo], next }` (see "Photos and albums") |
-| `GET photos/months` | `area?`, `folder?` or `camera?` | `{ months [{ month: 'YYYY-MM', count }] }` |
+| `GET photos` | `area?`, `before?` (ISO), `limit?` (≤ 200, default 100) (since 1.7.0); `folder?` (node id) or `camera?` (`1`) (since 1.10.0); `class?` (`work` \| `private` \| `review`, since 1.13.0) | `{ items [photo], next }` (see "Photos and albums") |
+| `GET photos/months` | `area?`, `folder?` or `camera?`; `class?` (since 1.13.0) | `{ months [{ month: 'YYYY-MM', count }] }` |
+| `GET photos/classes` | `area?`, `folder?` or `camera?` (since 1.13.0, feature `photoClasses`) | `{ work, private, review }` — the counts (see "Work photos apart") |
+| `GET photos/settings` · `PUT photos/settings` | PUT: `{ workFolder?: id \| null, workSubfolders?: bool, workInMemories?: bool }` (since 1.13.0) | `{ workFolder, workSubfolders, workInMemories, folder { id, path, areaId } \| null }` — mine, on every device |
+| `POST photos/review` | `{ ids (≤ 500), review: bool, hint?: 0 … 100 \| null }` (since 1.13.0) | `{ changed, items [{ id, review { hint } \| null }] }` — the review mark |
 | `GET photos/memories` | `date?` (YYYY-MM-DD); `area?`, `folder?` or `camera?` (since 1.10.0) | `{ date, groups [{ yearsAgo, date, items [photo] }] }` |
 | `GET photos/camera` | (since 1.10.0) | `{ folder { id, path, areaId } \| null }` — `Bilder/Kamera-Uploads` of my files |
 | `POST photos/camera` | (since 1.10.0) | `{ folder { id, path, areaId }, created }` — made where missing; a file in the way: `409 exists { field: 'path' }` |
@@ -141,7 +144,8 @@ A node: `{ id, areaId, parentId, name, isDir, size, mime, sha256, mediaId, mtime
 updatedBy, deleted, takenAt }` (`takenAt` since 1.7.0: ISO, `null` for a folder); a file node also `preview: { url, largeUrl } | null` (since 1.1.0, see "Previews") — in every
 answer: `nodes/<id>`, `children`, `by-path`, `search`, `changes`, `versions` (`current`), `uploads/check`,
 `uploads/commit`, `trash` (always `null` there). A marked node (since 1.5.0, only while marked) also `deleteAt` (ISO),
-`deletedOnDevice` (the device's name or `null`), `deleteMarkedBy` (user id). An empty file: `size: 0`, `mediaId: null`,
+`deletedOnDevice` (the device's name or `null`), `deleteMarkedBy` (user id). A picture or video with the review mark
+(since 1.13.0, only while marked) also `review: { hint }` (see "Work photos apart"). An empty file: `size: 0`, `mediaId: null`,
 `sha256: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'`, `preview: null`.
 
 Since 1.8.0, while AI for documents is on, a file node also carries `insight: { status, kind }` (see "AI for
@@ -191,7 +195,7 @@ or space, ≤ 255 characters, not `.gcdrive`); unique per folder ignoring case.
 **Sync:** after every change the readers of the area get the live event `changed { areas, seq }` (`gc.events`) and
 fetch `GET changes?since=`. `op`: `create`, `update`, `move`, `delete`, `restore`, `purge`, since 1.5.0 `mark` and
 `unmark` (the node's `deleteAt` was set or ended; the node is live — an app that knows neither may treat it as an
-update of the node's fields); a node that moved to
+update of the node's fields), since 1.13.0 `review` (the review mark of a photo was set, changed or ended — the same); a node that moved to
 another area shows as `delete` in the old area (`node: null`) and `create` in the new one; `device` is the device
 that made the change (`nas` for changes made on the NAS).
 
@@ -419,6 +423,30 @@ failed).
   answers `created: false` when it was there — call it before the first backup instead of looking for the folder.
   A vault's contents never show (not with `folder`, `camera` or without them). `photos/memories` takes `area` too
   since 1.10.0. No new permission.
+- **Work photos apart** (since 1.13.0, feature `photoClasses`, `server/work.js`) — the phones sort a new photo by the
+  Wi-Fi it was taken in (work / home) or their own AI, both on the phone; Drive keeps what every device and the portal
+  share:
+  - *My work folder* — `GET|PUT photos/settings`: `workFolder` (a folder I write to in any area, not archived, never in a
+    vault, never `Bilder/Kamera-Uploads` of my files or a folder above it — else `400 invalid { field: 'workFolder',
+    reason: 'not_found' | 'forbidden' | 'archived' | 'not_folder' | 'encrypted' | 'camera' }`), `workSubfolders` (the
+    devices and the portal put work photos into `<work folder>/<year>/<month>`; Drive only keeps the switch, default on),
+    `workInMemories` (default off). The answer's `folder` is the work folder's path for showing it; a stored folder in
+    the trash, gone or no longer readable answers `null` (it stays stored and is back after a restore). PUT changes only
+    the fields sent (`400 invalid { field }` for a value that is not a boolean). Per person, the same on every device.
+  - *The review mark* — "to check: work or private?" — on a picture or video: `POST photos/review { ids, review, hint }`
+    sets it (`hint`: how likely it is a work photo in %, the phone's AI; sent replaces it, left out keeps it) or ends it
+    (`review: false`). Write access to each one (not archived): all or nothing — `400 invalid { field: 'ids', ids }`
+    (not there, not readable, no picture or video, a vault's file), `403 forbidden { field: 'ids', ids }` (read only).
+    `changed` counts those whose mark or hint changed; each is `review` in the change log. The mark is the node's — who
+    reads the area sees it — and ends by itself when the person moving it moves a photo **into or out of their work
+    folder** (`PATCH nodes/<id>`, a move job and its undo; a folder: every photo below it). A move elsewhere keeps it,
+    and an undo does not bring it back (the apps and the portal set it again).
+  - *Classes* — `review`: marked; `work`: below my work folder (that folder and every folder below it), not marked;
+    `private`: every other picture and video. `class=` on `GET photos` and `photos/months` (with `area`, `folder`,
+    `camera`; another value: `400 invalid { field: 'class' }`), `GET photos/classes` the counts. Without a work folder:
+    `work` is empty. A photo item carries `review` (`{ hint }` or `null`) and `work` (below my work folder, not marked).
+  - `photos/memories` and the photo frame leave the work folder out while `workInMemories` is off — the frame that of
+    the person who switched the album on. Albums and the timeline still show work photos. No new permission.
 - An album: `{ id, name, areaId, count, coverId, frame, updatedAt, canEdit, canFrame, coverUrl, createdBy }` — of an
   area (default `mine:<me>`); whoever reads the area sees it, whoever writes in it (not archived) changes it (name ≤
   100 characters, cover — one of its items, items, delete). Items point at nodes: an item the viewer cannot read or
@@ -434,7 +462,8 @@ allowed (*frame_accounts*: names or ids, empty = every kiosk device). `GET frame
 every frame album, each once (≤ 1000), as large previews signed for the kiosk account with **preview-only URLs**
 (`gc.media.previews { previewOnly }`, GateControl ≥ 1.210.0 — the file itself stays closed); an older GateControl:
 `ready: false` and no picture at all. An album shows only what the person who switched it on reads now and while they
-still may switch it (no seat, no right: it leaves the frame). Items carry `url` and `takenAt`, no names, no node ids.
+still may switch it (no seat, no right: it leaves the frame) — since 1.13.0 without that person's work folder unless
+their `workInMemories` is on. Items carry `url` and `takenAt`, no names, no node ids.
 *frame_seconds* (20), *frame_order* (`random` | `date`). The kiosk device reaches no other route of Drive and no file
 (`mediaAccess` says no).
 
@@ -840,7 +869,16 @@ cards above the list ("Kopiere „X“ nach Y", "58 von 128 Dateien · 1,4 von 3
 `op`), the snackbar "N Elemente nach „Ziel“ verschoben · Rückgängig" and the new nodes at the target marked "neu hier".
 A copy's bytes come through the tab (`GC.mediaBytes`, `GC.upload`, ≤ 100 MB a file). "Fotos": Strg / Umschalt with a
 click choose, "Alle" / "Keine" per month, Herunterladen (ZIP), Verschieben nach …, Löschen besides "Zum Album
-hinzufügen". The section "Fotorahmen" (`ui/frame.*`) is the slide show of a kiosk device.
+hinzufügen". Since 1.13.0 (with `photoClasses`, mockup "Drive Arbeitsfotos"): the chips "Alle | Privat | Arbeit |
+Prüfen (N)" on "Fotos", the band "N Fotos zu prüfen – aufgenommen außerhalb von Firma und Zuhause" (it opens "Prüfen"),
+the yellow question mark on photos to check (also on the tiles of the file view) and the blue bag on work photos in
+"Alle"; chosen photos that are all to be checked get "Arbeit" and "Privat" up front with the AI's guess the phone left
+("KI: wahrscheinlich Arbeit · 72 % sicher"), any other choice "Zuordnung" (Ist ein Arbeitsfoto, Ist privat, Zum Prüfen
+markieren). Arbeit moves them into the work folder (by month while `workSubfolders`) as move jobs, Privat moves work
+photos back to `Bilder/Kamera-Uploads/<year>/<month>` and ends the marks; the snackbar "N Fotos → Ziel · Rückgängig"
+undoes it (the jobs back, the marks as they were). Drive-Einstellungen: the section "Arbeitsfotos" (Private Fotos,
+"Arbeitsfotos nach" — a folder picker with "Neuer Ordner „Arbeit“ hier" —, Unterordner nach Jahr und Monat, Arbeitsfotos
+nie in Erinnerungen und Fotorahmen). The section "Fotorahmen" (`ui/frame.*`) is the slide show of a kiosk device.
 
 ## Admin (GateControl's admin UI)
 

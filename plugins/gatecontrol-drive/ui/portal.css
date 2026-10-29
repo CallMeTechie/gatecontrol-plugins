@@ -211,6 +211,23 @@ textarea.dp-input{padding:9px 12px;line-height:1.45;resize:vertical}
 .dp-ph-kind{position:absolute;right:6px;bottom:6px;display:flex;padding:3px;border-radius:6px;background:rgba(0,0,0,.5);color:#fff}
 .dp-ph-check{position:absolute;left:6px;top:6px;display:flex;width:20px;height:20px;align-items:center;justify-content:center;border-radius:50%;border:2px solid #fff;background:rgba(0,0,0,.3);color:transparent}
 .dp-ph.is-on .dp-ph-check{background:var(--accent);border-color:var(--accent);color:#fff}
+/* work photos apart (1.13.0): the review mark (yellow question mark), the work bag (blue), the chips, the band, the bar */
+.dp-ph-mk{position:absolute;right:6px;top:6px;display:flex;width:24px;height:24px;align-items:center;justify-content:center;border-radius:50%;background:var(--warn);color:#0d1015;box-shadow:0 0 0 2px rgba(13,16,21,.45)}
+.dp-ph-mk svg{stroke-width:3}
+.dp-ph-mk.is-static{position:static;box-shadow:none;flex:none}
+.dp-ph-wk{position:absolute;left:6px;bottom:6px;display:flex;width:22px;height:22px;align-items:center;justify-content:center;border-radius:7px;background:rgba(13,16,21,.7);color:#79b8ff}
+.dp-ph.is-on .dp-ph-wk{display:none}
+.dp-wk-chips{margin:-4px 0 12px}
+.dp-wk-chips button{display:inline-flex;align-items:center;gap:6px}
+.dp-wk-cnt{min-width:18px;height:18px;padding:0 5px;box-sizing:border-box;border-radius:999px;background:var(--warn);color:#0d1015;font-size:11px;font-weight:700;display:inline-flex;align-items:center;justify-content:center}
+.dp-wk-band{all:unset;box-sizing:border-box;display:flex;gap:10px;align-items:center;width:100%;margin:0 0 14px;padding:10px 12px;border-radius:12px;background:color-mix(in srgb,var(--warn) 13%,transparent);font-size:13px;line-height:1.4;cursor:pointer}
+.dp-wk-band:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.dp-wk-guess{display:inline-flex;align-items:center;gap:6px}
+.dp-wk-guess svg{color:#79b8ff}
+.dp-btn.dp-wk-work{background:#79b8ff;color:#0d1015;border:0}
+.dp-wk-menu .is-work svg{color:#79b8ff}
+.dp-wk-menu .is-mark svg{color:var(--warn)}
+.dp-wk-menu button:disabled{opacity:.5;cursor:default}
 .dp-mem{display:flex;flex-direction:column;gap:10px;padding:14px;border:1px solid var(--line);border-radius:14px;background:var(--surface);margin-bottom:8px}
 .dp-mem-group{display:flex;flex-direction:column;gap:8px}
 .dp-mem-row{display:grid;grid-auto-flow:column;grid-auto-columns:110px;gap:6px;overflow-x:auto;padding-bottom:4px}

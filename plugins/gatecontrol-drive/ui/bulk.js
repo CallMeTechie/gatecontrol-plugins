@@ -19,7 +19,8 @@
  *
  * portal.js calls DriveBulk.attach(ui) with its helpers and asks it: reset(), check(n), headCheck(items), bind(el, n),
  * dropTarget(el, folder), bar(main), cards(main), keys(main), navHint(), freshBadge(n), isCut(n), onEvent(data), load(),
- * photoPick(x, ev, list), photoMonth(items), photoActions(ids, done), count().
+ * photoPick(x, ev, list), photoMonth(items), photoActions(ids, done), count(); since 1.13.0 track(op) (a job portal.js started:
+ * its card) and snack(text, onUndo).
  */
 (function () {
   'use strict';
@@ -959,6 +960,8 @@
       reset: reset, check: check, headCheck: headCheck, bind: bind, chooseClick: chooseClick, dropTarget: dropTarget, bar: bar, cards: cards, keys: keys, navHint: navHint,
       freshBadge: freshBadge, isCut: isCut, onEvent: onEvent, load: load, photoPick: photoPick, photoMonth: photoMonth, photoActions: photoActions,
       count: count, selected: nodes, run: run, paste: paste,
+      // work photos apart (since 1.13.0): portal.js starts its own move jobs (their cards here) and shows the snackbar
+      track: took, snack: snack,
     };
   }
 

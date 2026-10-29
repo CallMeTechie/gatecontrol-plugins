@@ -22,11 +22,18 @@
 // file or a folder outside `area`); `camera=1` — the same for the folder of the phones' photo backup, CAMERA below the
 // root of my files (none yet: nothing, no error). Not both (invalid { field: 'camera' }); `camera` with an `area`
 // other than my files: invalid { field: 'area' }.
+//
+// Since 1.13.0 (feature `photoClasses`, work.js): `class=work|private|review` on photos and months — review: the
+// marked ones (POST photos/review); work: below the viewer's work folder (GET|PUT photos/settings), not marked; private:
+// the rest. GET photos/classes?area=&folder=&camera= → { work, private, review } (the counts). An item carries
+// `review` ({ hint } | null) and `work` (below my work folder, not marked). Memories leave the work folder out while
+// the setting workInMemories is off (the default), and so does the photo frame (frame.js).
 
 const store = require('./store');
 const nodes = require('./nodes');
 const areas = require('./areas');
 const previews = require('./previews');
+const work = require('./work');
 const { fail, iso, msArg, posInt } = require('./util');
 
 const LIMIT_MAX = 200;
@@ -112,6 +119,34 @@ async function scope(ctx, q) {
   return { where: `area_id IN (${store.marks(ids.length)}) AND ${MEDIA}`, args: ids };
 }
 
+const CLASSES = ['work', 'private', 'review'];
+
+/** `class=` → 'work' | 'private' | 'review' | null (none); else invalid { field: 'class' }. */
+function classArg(v) {
+  if (v == null || v === '') return null;
+  const c = String(v).toLowerCase();
+  if (!CLASSES.includes(c)) throw fail('invalid', { field: 'class' });
+  return c;
+}
+
+/** Scope `sc` narrowed to class `cls` (since 1.13.0) → { where, args }, or null: none at all. */
+async function classed(ctx, sc, cls) {
+  if (!sc || !cls) return sc;
+  if (cls === 'review') return { where: `${sc.where} AND review_at IS NOT NULL`, args: sc.args };
+  const { folder } = await work.of(ctx);
+  if (cls === 'work') return folder ? { where: `${sc.where} AND review_at IS NULL AND parent_id IN (${TREE})`, args: [...sc.args, folder.id] } : null;
+  return folder ? { where: `${sc.where} AND review_at IS NULL AND parent_id NOT IN (${TREE})`, args: [...sc.args, folder.id] }
+    : { where: `${sc.where} AND review_at IS NULL`, args: sc.args };
+}
+
+/** Scope `sc` without the work folder (memories while workInMemories is off). */
+async function withoutWork(ctx, sc) {
+  if (!sc) return sc;
+  const { settings, folder } = await work.of(ctx);
+  if (!folder || settings.workInMemories) return sc;
+  return { where: `${sc.where} AND parent_id NOT IN (${TREE})`, args: [...sc.args, folder.id] };
+}
+
 /** A parent who sees photos of a child's folder: the child hears of it as for the folder (once a day). */
 async function noteViews(ctx, rows) {
   const ids = new Set(rows.map((r) => r.area_id));
@@ -121,11 +156,15 @@ async function noteViews(ctx, rows) {
 /** Items of node rows with their previews for the viewer. */
 async function itemsOf(ctx, rows) {
   const { map } = await previews.urls(ctx, rows.map((r) => r.media_id));
+  const tree = rows.length ? await work.tree(ctx) : null;
   return rows.map((r) => {
     const p = r.media_id ? map.get(r.media_id) : null;
+    const review = work.reviewOf(r);
     return {
       id: r.id, name: r.name, mime: r.mime || null, size: r.size, takenAt: iso(nodes.takenOf(r)), areaId: r.area_id, parentId: r.parent_id,
       preview: !!p, mediaId: r.media_id || null, previewUrl: p ? p.url : null, largeUrl: p ? p.largeUrl : null,
+      // since 1.13.0: the review mark, and below my work folder (not marked)
+      review, work: !review && !!tree && tree.has(r.parent_id),
     };
   });
 }
@@ -165,7 +204,8 @@ async function page(gc, where, args, before, limit) {
 async function list(ctx, q) {
   const limit = limitArg(q && q.limit);
   const before = beforeArg(q && q.before);
-  const sc = await scope(ctx, q);
+  const cls = classArg(q && q.class);
+  const sc = await classed(ctx, await scope(ctx, q), cls);
   if (!sc) return { items: [], next: null };
   const r = await page(ctx.gc, sc.where, sc.args, before, limit);
   await noteViews(ctx, r.rows);
@@ -174,7 +214,8 @@ async function list(ctx, q) {
 
 /** GET photos/months → { months: [{ month, count }] } newest first. */
 async function months(ctx, q) {
-  const sc = await scope(ctx, q);
+  const cls = classArg(q && q.class);
+  const sc = await classed(ctx, await scope(ctx, q), cls);
   if (!sc) return { months: [] };
   const rows = await store.all(ctx.gc, `SELECT strftime('%Y-%m', ${TAKEN} / 1000, 'unixepoch', 'localtime') AS month, COUNT(*) AS n FROM nodes
     WHERE ${sc.where} GROUP BY month ORDER BY month DESC`, sc.args);
@@ -198,7 +239,8 @@ async function memories(ctx, q) {
     const now = new Date(ctx.now);
     [y, m, d] = [now.getFullYear(), now.getMonth(), now.getDate()];
   }
-  const sc = await scope(ctx, q);
+  // without the work folder unless the person wants it there (since 1.13.0)
+  const sc = await withoutWork(ctx, await scope(ctx, q));
   const groups = [];
   if (sc) {
     const { where, args } = sc;
@@ -218,6 +260,20 @@ async function memories(ctx, q) {
     for (const g of groups) { g.items = await itemsOf(ctx, g.rows); delete g.rows; }
   }
   return { date: `${y}-${pad(m + 1)}-${pad(d)}`, groups };
+}
+
+/** GET photos/classes → { work, private, review } — the counts of the classes (since 1.13.0). */
+async function classes(ctx, q) {
+  const sc = await scope(ctx, q);
+  if (!sc) return { work: 0, private: 0, review: 0 };
+  const { folder } = await work.of(ctx);
+  const workSql = folder ? `SUM(CASE WHEN review_at IS NULL AND parent_id IN (${TREE}) THEN 1 ELSE 0 END)` : '0';
+  const r = await store.one(ctx.gc, `SELECT COUNT(*) AS total, SUM(CASE WHEN review_at IS NOT NULL THEN 1 ELSE 0 END) AS review, ${workSql} AS work
+    FROM nodes WHERE ${sc.where}`, [...(folder ? [folder.id] : []), ...sc.args]);
+  const total = (r && r.total) || 0;
+  const reviews = (r && r.review) || 0;
+  const works = (r && r.work) || 0;
+  return { work: works, private: total - reviews - works, review: reviews };
 }
 
 /** GET photos/camera → { folder: { id, path, areaId } | null } — the folder of the phones' photo backup (1.10.0). */
@@ -254,4 +310,7 @@ async function makeCamera(ctx) {
 /** Is node row `n` a live picture or video? */
 const isMedia = (n) => !!n && n.is_dir === 0 && n.deleted_at == null && !n.vault_id && /^(image|video)\//.test(String(n.mime || ''));
 
-module.exports = { list, months, memories, camera, makeCamera, scope, CAMERA, page, itemsOf, isMedia, areaIds, noteViews, limitArg, beforeArg, MEDIA, LIMIT_MAX };
+module.exports = {
+  list, months, memories, camera, makeCamera, classes, scope, classed, withoutWork, CAMERA, page, itemsOf, isMedia, areaIds, noteViews, limitArg, beforeArg,
+  cameraRow, mineOf, MEDIA, TREE, LIMIT_MAX,
+};

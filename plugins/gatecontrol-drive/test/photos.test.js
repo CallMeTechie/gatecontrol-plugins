@@ -65,7 +65,9 @@ test('photos: pictures and videos newest first by takenAt, the areas one reads, 
     assert.deepEqual(all.json.items.map((x) => x.name), ['d.jpg', 'burst3.jpg', 'burst2.jpg', 'burst1.jpg', 'burst0.jpg', 'b.mp4', 'a.jpg']);
     assert.equal(all.json.next, null);
     const item = all.json.items.find((x) => x.id === a.id);
-    assert.deepEqual(Object.keys(item).sort(), ['areaId', 'id', 'largeUrl', 'mediaId', 'mime', 'name', 'parentId', 'preview', 'previewUrl', 'size', 'takenAt'].sort());
+    assert.deepEqual(Object.keys(item).sort(), ['areaId', 'id', 'largeUrl', 'mediaId', 'mime', 'name', 'parentId', 'preview', 'previewUrl', 'size', 'takenAt', 'review', 'work'].sort());
+    // since 1.13.0: the review mark and the work bag
+    assert.deepEqual([item.review, item.work], [null, false]);
     assert.equal(item.takenAt, iso(base));
     assert.equal(item.preview, true);
     assert.equal(item.previewUrl, `/api/v1/client/plugins/gatecontrol-drive/media/${a.mediaId}/preview`, 'the app\'s endpoint');
