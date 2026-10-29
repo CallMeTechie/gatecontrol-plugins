@@ -291,4 +291,4 @@ async function deleteVersion(ctx, id, vid) {
   });
 }
 
-module.exports = { commit, check, content, versions, versionContent, restoreVersion, deleteVersion, trimVersions, takenArg, URL_TTL_S };
+module.exports = { commit, check, content, versions, versionContent, restoreVersion, deleteVersion, trimVersions, keepVersion, takenArg, URL_TTL_S };

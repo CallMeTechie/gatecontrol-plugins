@@ -26,6 +26,9 @@
  * suggests: rename / move with one click, the deadlines with a reminder; "KI für Dokumente" on or off per area in the
  * folder's tools), the page "Fristen", and "Importieren" (connect Google Drive or OneDrive, browse, pick files and
  * folders, a Drive folder as the target; the jobs with their progress, live: 'import').
+ * Since 1.12.0: several files and folders at once (ui/bulk.js — the checkboxes, the green bar, the right-click menu,
+ * Strg+X / C / V, dragging onto a folder, "Ziel wählen", one question for the same names, the jobs with their progress
+ * and "Rückgängig"; in the photos Strg / Umschalt and "Alle" / "Keine" per month).
  * Since 1.9.0: vault folders, end-to-end encrypted (ui/vault.js with ui/vaultcrypto.js: names decrypted here, files
  * encrypted before GC.upload and decrypted after GC.mediaBytes, the device key in GC.keys — GateControl ≥ 1.211.0);
  * "Im Browser bearbeiten" for documents while an office server is set up (POST nodes/<id>/office, GC.openTab).
@@ -353,6 +356,8 @@
       if (mineArea) loadTree(mineArea.rootId);
       // the vaults of the menu
       if (V) V.load().then(renderNav, function () { /* the menu shows none */ });
+      // my running jobs (several at once, since 1.12.0): their cards
+      if (B && has('bulk')) B.load();
       live();
     }, function (e) { message(T('p.failed_title'), errText(e)); });
   }
@@ -465,6 +470,8 @@
     if (S.admin) ib('shield', T('p.guard_incidents'), S.page === 'incidents', showIncidents);
     ib('gear', T('p.settings_title'), S.page === 'settings', showSettings);
     nav.appendChild(bar);
+    // dragging onto a folder of the tree (since 1.12.0)
+    if (B && has('bulk')) nav.appendChild(B.navHint());
     var a = areaOf(S.areaId);
     var st = a ? S.storage.get(a.id) : null;
     if (a && st && S.page === 'files') {
@@ -526,6 +533,8 @@
           h('span', { class: 'dp-nav-tx' }, [h('span', { class: 'dp-name', text: name }), a.role === 'read' ? h('span', { class: 'dp-meta', text: T('p.read_only') }) : null])]
         : [icon('folder'), h('span', { class: 'dp-name', text: name, attrs: { title: name } })]),
     ]);
+    // a folder of the tree takes what is dragged onto it (since 1.12.0)
+    if (B && has('bulk')) B.dropTarget(row, { id: n.id, areaId: a.id, label: name, vaultId: null });
     if (!open) return row;
     var group = h('div', { attrs: { role: 'group' } });
     if (!kids) group.appendChild(h('p', { class: 'dp-hint dp-tree-wait', text: T('p.loading'), attrs: { style: 'padding-left:' + ((depth + 1) * 16 + 34) + 'px' } }));
@@ -661,6 +670,7 @@
   function openFolder(areaId, folderId, then) {
     if (!areaId || !folderId) return;
     var seq = ++S.seq;
+    if (B && S.page !== 'files') B.reset();
     S.page = 'files';
     S.areaId = areaId;
     return Promise.all([
@@ -671,6 +681,7 @@
       return (V ? V.prepare(r[0].node, r[1].items || []) : Promise.resolve()).then(function () { return r; });
     }).then(function (r) {
       if (seq !== S.seq) return;
+      if (B && (S.page !== 'files' || !S.folder || S.folder.id !== r[0].node.id)) B.reset();
       S.folder = r[0].node;
       S.items = r[1].items || [];
       S.total = r[1].total || 0;
@@ -710,12 +721,17 @@
     if (S.page === 'files' && S.folder && S.folder.role === 'read' && areaOf(S.areaId) && areaOf(S.areaId).via === 'parent') {
       main.appendChild(h('div', { class: 'dp-note' }, [icon('info'), h('span', { text: T('p.parent_note') })]));
     }
+    // several at once (since 1.12.0): the running jobs, the green bar of the choice
+    var bulk = B && has('bulk') && (S.page === 'files' || S.page === 'search');
+    if (bulk) B.cards(main);
     if (!S.items.length) {
       main.appendChild(h('div', { class: 'dp-empty', text: S.page === 'search' ? T('p.no_results') : canWrite() ? T('p.empty_write') : T('p.empty') }));
       return;
     }
+    if (bulk) B.bar(main);
     main.appendChild(S.view === 'list' || S.page === 'search' ? listOf(S.items) : gridOf(S.items));
     if (S.next != null && S.page === 'files') main.appendChild(h('div', { class: 'dp-more-row' }, btn(T('p.more'), loadMore)));
+    if (bulk) B.keys(main);
   }
 
   function metaOf(n) {
@@ -751,37 +767,48 @@
       var thumb = h('div', { class: 'dp-thumb' }, [picOf(n, 34), n.encrypted ? h('span', { class: 'dp-lockb' }, icon('lock', 12)) : null]);
       var name = nm(n);
       var ext = extOf(name);
-      g.appendChild(h('div', { class: 'dp-card', attrs: { role: 'listitem', 'data-node': String(n.id) } }, [
-        h('button', { type: 'button', class: 'dp-open', on: { click: function () { openNode(n); } }, attrs: { 'aria-label': name } }, [
+      var pick = B && has('bulk');
+      var card = h('div', { class: 'dp-card' + (pick && B.isCut(n) ? ' is-cut' : ''), attrs: { role: 'listitem', 'data-node': String(n.id) } }, [
+        pick ? B.check(n) : null,
+        h('button', { type: 'button', class: 'dp-open', on: { click: function (ev) { if (pick && B.chooseClick(ev, n)) return; openNode(n); } }, attrs: { 'aria-label': name } }, [
           thumb,
           h('div', { class: 'dp-card-tx' }, [
             h('span', { class: 'dp-name', text: name, attrs: { title: name } }),
             h('span', { class: 'dp-meta' }, [!n.isDir && ext ? h('span', { class: 'dp-badge', text: ext }) : null, ' ', metaOf(n)]),
             markOf(n),
+            pick ? B.freshBadge(n) : null,
           ]),
         ]),
         ibtn('more', T('p.actions_for', { name: name }), function () { actions(n); }, { cls: 'dp-more' }),
-      ]));
+      ]);
+      if (pick) B.bind(card, n);
+      g.appendChild(card);
     });
     return g;
   }
 
   function listOf(items) {
-    var l = h('div', { class: 'dp-list', attrs: { role: 'table' } });
-    l.appendChild(h('div', { class: 'dp-row dp-head', attrs: { role: 'row' } }, [
+    // with a checkbox in front of every row (several at once, since 1.12.0)
+    var pick = B && has('bulk');
+    var l = h('div', { class: 'dp-list', attrs: { role: pick ? 'grid' : 'table', 'aria-multiselectable': pick ? 'true' : null } });
+    l.appendChild(h('div', { class: 'dp-row dp-head' + (pick ? ' is-pick' : ''), attrs: { role: 'row' } }, [
+      pick ? h('span', { attrs: { role: 'columnheader' } }, B.headCheck(items)) : null,
       h('span', { text: T('p.col_name'), attrs: { role: 'columnheader' } }), h('span', { class: 'dp-num', text: T('p.col_changed'), attrs: { role: 'columnheader' } }),
       h('span', { class: 'dp-num dp-right', text: T('p.col_size'), attrs: { role: 'columnheader' } }), h('span'),
     ]));
     items.forEach(function (n) {
       var ic = h('span', { class: 'dp-ic' }, [n.encrypted && n.isDir ? icon('lock') : picOf(n)]);
       var name = nm(n);
-      l.appendChild(h('div', { class: 'dp-row', attrs: { role: 'row', 'data-node': String(n.id) } }, [
-        h('button', { type: 'button', class: 'dp-open', on: { click: function () { openNode(n); } } }, [ic, h('span', { class: 'dp-name', text: name, attrs: { title: name } }),
-          n.path && S.page === 'search' ? h('span', { class: 'dp-meta', text: n.path }) : null, markOf(n)]),
+      var row = h('div', { class: 'dp-row' + (pick ? ' is-pick' : '') + (pick && B.isCut(n) ? ' is-cut' : ''), attrs: { role: 'row', 'data-node': String(n.id) } }, [
+        pick ? h('span', { class: 'dp-cbcell' }, B.check(n)) : null,
+        h('button', { type: 'button', class: 'dp-open', on: { click: function (ev) { if (pick && B.chooseClick(ev, n)) return; openNode(n); } } }, [ic, h('span', { class: 'dp-name', text: name, attrs: { title: name } }),
+          n.path && S.page === 'search' ? h('span', { class: 'dp-meta', text: n.path }) : null, markOf(n), pick ? B.freshBadge(n) : null]),
         h('span', { class: 'dp-num', text: fmtDate(n.mtime || n.updatedAt) }),
         h('span', { class: 'dp-num dp-right', text: n.isDir ? '—' : fmtSize(n.size) }),
         ibtn('more', T('p.actions_for', { name: name }), function () { actions(n); }),
-      ]));
+      ]);
+      if (pick) B.bind(row, n);
+      l.appendChild(row);
     });
     return l;
   }
@@ -817,7 +844,7 @@
     clear(back);
     if (lastFocus && lastFocus.focus) { try { lastFocus.focus(); } catch (e) { /* gone */ } }
   }
-  document.addEventListener('keydown', function (ev) { if (ev.key === 'Escape' && !$('dp-dialog').hidden) closeDialog(); });
+  document.addEventListener('keydown', function (ev) { if (ev.key === 'Escape' && !$('dp-dialog').hidden) { ev.dpHandled = true; closeDialog(); } });
 
   /** A name: { title, label, value, ok } → onOk(name) (a promise; its error shows in the dialog). */
   function askName(title, value, okLabel, onOk) {
@@ -1231,6 +1258,7 @@
 
   function search(q) {
     var seq = ++S.seq;
+    if (B) B.reset();
     S.page = 'search';
     S.q = q;
     api('GET', 'search', null, { q: q }).then(function (r) {
@@ -1669,7 +1697,7 @@
 
   // camera: "Nur Kamera-Uploads" (since 1.10.0, feature photosFolder) — Bilder/Kamera-Uploads of my files; kept while the
   // tab is open (the frame has no storage)
-  var PH = { area: '', camera: false, items: [], next: null, months: {}, memories: [], select: false, chosen: {}, seq: 0 };
+  var PH = { area: '', camera: false, items: [], next: null, months: {}, memories: [], select: false, chosen: {}, seq: 0, anchor: null };
   var PHOTO_PAGE = 120;
 
   /** A photo item (GET photos, albums) as a node for the viewer (preview, actions). */
@@ -1684,14 +1712,18 @@
     return isNaN(d.getTime()) ? key : d.toLocaleDateString(LOCALE, { month: 'long', year: 'numeric' });
   }
   function chosenIds() { return Object.keys(PH.chosen).filter(function (k) { return PH.chosen[k]; }).map(Number); }
+  /** The photos chosen as nodes (for the jobs of several at once). */
+  function chosenPhotos() { var on = PH.chosen; return PH.items.filter(function (x) { return on[x.id]; }).map(photoNode); }
 
   /** A square tile of a photo: a click opens it, or chooses it while choosing. */
   function photoTile(x, onPick) {
     var n = photoNode(x);
     var on = !!PH.chosen[x.id];
     var tile = h('button', { type: 'button', class: 'dp-ph' + (on ? ' is-on' : ''), attrs: { 'aria-label': x.name, 'aria-pressed': PH.select ? String(on) : null, 'data-node': String(x.id) },
-      on: { click: function () {
-        if (PH.select) { PH.chosen[x.id] = !PH.chosen[x.id]; tile.className = 'dp-ph' + (PH.chosen[x.id] ? ' is-on' : ''); tile.setAttribute('aria-pressed', String(!!PH.chosen[x.id])); if (onPick) onPick(); return; }
+      on: { click: function (ev) {
+        // Strg / Umschalt with a click choose (since 1.12.0; a range in the order shown)
+        if (B && B.photoPick(x, ev, PH.items, PH)) { rerender(); return; }
+        if (PH.select) { PH.chosen[x.id] = !PH.chosen[x.id]; PH.anchor = x.id; tile.className = 'dp-ph' + (PH.chosen[x.id] ? ' is-on' : ''); tile.setAttribute('aria-pressed', String(!!PH.chosen[x.id])); if (onPick) onPick(); return; }
         preview(n);
       } } }, [picOf(n, 28), /^video\//.test(String(x.mime || '')) ? h('span', { class: 'dp-ph-kind' }, icon('video', 14)) : null, PH.select ? h('span', { class: 'dp-ph-check' }, icon('check', 14)) : null]);
     return tile;
@@ -1699,6 +1731,7 @@
 
   function startPage(page) {
     $('dp-q').value = '';
+    if (B) B.reset();
     S.page = page;
     S.seq++;
     renderNav(); renderCrumbs(); renderTools();
@@ -1750,6 +1783,8 @@
       PH.select ? h('span', { class: 'dp-meta', text: P('p.chosen', count) }) : null,
       PH.select && onDone ? onDone(count) : null,
       PH.select && !onDone ? btn(T('p.album_add'), function () { addToAlbum(chosenIds()); }, { primary: true, disabled: !count, icon: 'album' }) : null,
+      // several at once (since 1.12.0): a ZIP, move, delete
+      PH.select && !onDone && B && has('bulk') ? h('span', { class: 'dp-actions' }, B.photoActions(chosenPhotos(), function () { PH.select = false; PH.chosen = {}; showPhotos(true); })) : null,
       btn(PH.select ? T('p.cancel') : T('p.choose'), function () { PH.select = !PH.select; PH.chosen = {}; rerender(); }, { icon: PH.select ? null : 'check' })]);
     return bar;
   }
@@ -1782,7 +1817,8 @@
       groups[groups.length - 1].items.push(x);
     });
     groups.forEach(function (g) {
-      main.appendChild(h('h2', { class: 'dp-month' }, [h('span', { text: monthLabel(g.key) }), PH.months[g.key] ? h('span', { class: 'dp-meta', text: P('p.photos_n', PH.months[g.key]) }) : null]));
+      main.appendChild(h('h2', { class: 'dp-month' }, [h('span', { text: monthLabel(g.key) }), PH.months[g.key] ? h('span', { class: 'dp-meta', text: P('p.photos_n', PH.months[g.key]) }) : null,
+        PH.select && B ? B.photoMonth(g.items, PH, rerender) : null]));
       main.appendChild(h('div', { class: 'dp-phs' }, g.items.map(function (x) { return photoTile(x, rerenderBar); })));
     });
     if (PH.next) main.appendChild(h('div', { class: 'dp-more-row' }, btn(T('p.more'), function () {
@@ -2592,6 +2628,8 @@
       if (ev && ev.type === 'vault') { if (V) V.onEvent(d); return; }
       // an import went on (since 1.8.0)
       if (ev && ev.type === 'import') { if (S.page === 'import') loadJobs(); return; }
+      // a job of several at once (since 1.12.0)
+      if (ev && ev.type === 'op') { if (B) B.onEvent(d); return; }
       if (!ev || ev.type !== 'changed' || !d || !Array.isArray(d.areas)) return;
       // the menu: the folders open in its tree, the vaults (one may have come or gone)
       scheduleMenu(d.areas);
@@ -2608,6 +2646,14 @@
     // since 1.11.0: the menu, the areas a new vault may go into, the settings of this tab, leaving a vault that locked
     renderNav: renderNav, areaOf: areaOf, prefs: function () { return S.prefs; }, vaultTargets: vaultTargets, vaultScope: vaultScope,
     leaveVault: leaveVault, ibtn: ibtn,
+  }) : null;
+
+  // several at once (ui/bulk.js, since 1.12.0): its helpers from here
+  var B = window.DriveBulk ? window.DriveBulk.attach({
+    S: S, T: T, P: P, h: h, add: add, icon: icon, btn: btn, ibtn: ibtn, api: api, dialog: dialog, closeDialog: closeDialog, confirmDialog: confirmDialog,
+    toast: toast, fail: fail, errText: errText, fmtSize: fmtSize, fmtDate: fmtDate, LOCALE: LOCALE, areaOf: areaOf, nm: nm, has: has,
+    canWriteNode: canWriteNode, reload: reload, loadStorage: loadStorage, refreshTree: refreshTree, openNode: openNode, actions: actions,
+    share: share, showLink: showLink, rename: rename, V: V,
   }) : null;
 
   boot();

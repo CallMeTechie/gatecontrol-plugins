@@ -190,6 +190,9 @@ function writes(method, seg) {
   const [a, b] = seg;
   if (a === 'guard' || a === 'wipes' || a === 'devices') return false;
   if (a === 'uploads' && b === 'check') return false;
+  // several at once (1.12.0): looking at a selection, stopping a job, a ZIP to download
+  if (a === 'ops' && (b === 'check' || method === 'DELETE')) return false;
+  if (a === 'zip') return false;
   return true;
 }
 

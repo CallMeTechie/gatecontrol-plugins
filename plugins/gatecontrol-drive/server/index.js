@@ -35,6 +35,10 @@
 //                               encrypted, nameCipher, keyVersion)
 //     POST nodes/<id>/office    (office in the browser — office.js, 1.9.0; the office server's WOPI requests come
 //                               without a session through GateControl's public endpoints: hook publicRequest)
+//     POST ops/check · POST ops · GET ops[?state=] · GET|DELETE ops/<id> · POST ops/<id>/undo · POST ops/<id>/transfers
+//     · POST ops/<id>/transfers/<n>   (several files and folders at once: move, copy, trash, restore, purge as a job —
+//                                     ops.js, 1.12.0; live event 'op') · POST zip (a ZIP of a selection) · POST links
+//                                     { nodeIds } (one link for several files) — links.js, 1.12.0
 //   admin     admin/… (administrators in the admin UI, admin.js; admin/guard/… the incidents, since 1.6.0)
 // The full contract (bodies, answers, codes, events) is in README.md "API". Every file node of an answer carries
 // `preview` (previews.js, since 1.1.0).
@@ -74,6 +78,7 @@ const deadlines = require('./deadlines');
 const imports = require('./imports');
 const vault = require('./vault');
 const office = require('./office');
+const ops = require('./ops');
 const { t } = require('./text');
 const { STATUS, fail, isKnown, posInt, DEVICE_RE, day, iso } = require('./util');
 
@@ -189,6 +194,7 @@ async function me(ctx) {
   };
 }
 
+// bulk: ops/… — move, copy, trash, restore, purge of several at once with progress, cancel and undo (1.12.0) ·
 // vaultsApart: vault folders only in the top folder of their area and not in children (vaults=1), children?dirs=1 with
 // hasDirs (1.11.0) ·
 // photosFolder: photos, months, memories with folder= / camera=1, GET|POST photos/camera (1.10.0) ·
@@ -201,7 +207,7 @@ async function me(ctx) {
 // devices: GET/PUT/DELETE devices (1.5.0) · deleteAfter: DELETE nodes/<id>?after=, PATCH { deleteAt } (1.5.0) ·
 // emptyFiles: uploads/commit { size: 0 } without a mediaId (1.5.0) · wipes: DELETE ?everywhere=1 (1.2.0) ·
 // textSearch: uploads/commit { text } (1.3.0) · previews (1.1.0)
-const FEATURES = ['previews', 'wipes', 'textSearch', 'devices', 'deleteAfter', 'emptyFiles', 'links', 'guard', 'timeTravel', 'takenAt', 'photos', 'albums', 'frame', 'storage', 'vault', 'photosFolder', 'vaultsApart'];
+const FEATURES = ['previews', 'wipes', 'textSearch', 'devices', 'deleteAfter', 'emptyFiles', 'links', 'guard', 'timeTravel', 'takenAt', 'photos', 'albums', 'frame', 'storage', 'vault', 'photosFolder', 'vaultsApart', 'bulk'];
 
 /**
  * What needs GateControl's AI service or cloud accounts (1.8.0) — only while the host has it and it is allowed (the
@@ -213,6 +219,14 @@ async function optional(ctx) {
   if (await imports.sources(ctx.gc, ctx.settings)) out.push('cloudImport');
   // office in the browser (1.9.0): only while an office server is set up and GateControl has public endpoints
   if (await office.available(ctx.gc, await ctx.gc.settings.all(), ctx.now).catch(() => false)) out.push('office');
+  // a ZIP of a selection and one link for several files (1.12.0): GateControl's public links, while an administrator allows them
+  if (await links.usable(ctx.gc)) {
+    out.push('zip', 'multiLink');
+    // GateControl ≥ 1.215.0: files links with a path per entry — a ZIP and a link of any selection (folders and files)
+    if (links.paths(ctx.gc)) out.push('zipMixed');
+  }
+  // GateControl ≥ 1.215.0 copies media files on the server (gc.media.copy): a copy needs no device
+  if (ops.hostCopy(ctx.gc)) out.push('copyServer');
   return out;
 }
 
@@ -345,6 +359,9 @@ async function route(ctx, req, seg) {
     if (b === 'check') return ok(await files.check(ctx, body));
     if (b === 'commit') return ok(await files.commit(ctx, body));
   }
+  // several at once (1.12.0)
+  if (a === 'ops') return ok(await opsRoute(ctx, m, seg, q, body));
+  if (a === 'zip' && seg.length === 1 && m === 'POST') return ok(await links.zip(ctx, body));
   if (a === 'links') {
     if (seg.length === 1 && m === 'POST') return ok({ link: await links.create(ctx, body) });
     if (seg.length === 1 && m === 'GET') return ok(await links.list(ctx, q));
@@ -367,6 +384,25 @@ async function route(ctx, req, seg) {
   if (a === 'deadlines' && seg.length === 3 && c === 'remind' && m === 'POST') return ok(await deadlines.remind(ctx, b, body));
   if (a === 'deadlines' && seg.length === 3 && c === 'remind' && m === 'DELETE') return ok(await deadlines.unremind(ctx, b));
   if (a === 'import') return ok(await imports.route(ctx, m, seg, q, body));
+  throw fail('not_found');
+}
+
+/** What a job needs to go on after the answer: its person, and the live events of what it changed (ops.js). */
+function opsHooks(gc) {
+  return { gc, asPerson: (uid, now) => personContext(gc, uid, now), finish: (c) => after(gc, c, true) };
+}
+
+/** ops/… (ops.js, since 1.12.0). */
+async function opsRoute(ctx, m, seg, q, body) {
+  const [, id, c, d] = seg;
+  if (seg.length === 2 && id === 'check' && m === 'POST') return ops.check(ctx, body);
+  if (seg.length === 1 && m === 'POST') return ops.create(ctx, body, opsHooks(ctx.gc));
+  if (seg.length === 1 && m === 'GET') return ops.list(ctx, q);
+  if (seg.length === 2 && m === 'GET') return ops.get(ctx, id);
+  if (seg.length === 2 && m === 'DELETE') return ops.cancel(ctx, id);
+  if (seg.length === 3 && c === 'undo' && m === 'POST') return ops.undo(ctx, id, opsHooks(ctx.gc));
+  if (seg.length === 3 && c === 'transfers' && m === 'POST') return ops.transfers(ctx, id, body);
+  if (seg.length === 4 && c === 'transfers' && m === 'POST') return ops.transferDone(ctx, id, d, body);
   throw fail('not_found');
 }
 
@@ -671,8 +707,8 @@ module.exports = {
   async tick(gc) {
     try { await office.sweep(gc, Date.now()); } catch (e) { gc.log.warn('office locks sweep failed', (e && e.code) || 'error'); }
     const now = Date.now();
-    // reminders and imports (1.8.0) run as their person
-    return jobs.tick(gc, now, { asPerson: (uid) => personContext(gc, uid, now) });
+    // reminders and imports (1.8.0) run as their person, and so do the jobs of several at once (1.12.0)
+    return jobs.tick(gc, now, { asPerson: (uid) => personContext(gc, uid, now), ops: opsHooks(gc) });
   },
 
   /**

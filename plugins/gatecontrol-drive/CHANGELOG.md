@@ -2,6 +2,39 @@
 
 Dateien der Familie und des Teams auf dem eigenen Speicher – auf diesem Server, einer NAS oder in S3.
 
+## 1.12.0
+- **Mehrere auf einmal (Server, Feature `bulk`):** Verschieben, Kopieren, Papierkorb, Wiederherstellen und endgültig
+  Löschen einer Auswahl als ein Auftrag mit Fortschritt, Abbrechen und Rückgängig.
+  - `POST ops/check` zeigt vorher Anzahl, Größe, gleiche Namen am Ziel (zusammengeführte Ordner mit ihrem Inhalt,
+    „gleicher Inhalt“) und was nicht geht (`forbidden`, `root`, `into_itself`, `same_folder`, `encrypted`, `locked`,
+    `not_found`) samt Platz am Ziel.
+  - `POST ops` mit `onConflict` `version` (Standard) / `rename` / `skip`; gleicher Inhalt am Ziel gilt als erledigt und
+    wird nie doppelt gespeichert. `GET ops`, `GET|DELETE ops/<id>`, `POST ops/<id>/undo` (15 Minuten), Live-Ereignis
+    `op`. Kleine Aufträge sind in der Antwort fertig, große laufen im Serverprozess weiter und nach einem Neustart im
+    Hintergrundlauf. Grenzen: 10 000 Knoten, 5 laufende Aufträge je Person, Speicherplatz (`507 quota`).
+  - **Kopieren** ist neu: Dateien mit ihrem aktuellen Inhalt, Ordner mit allem darin. GateControl kann Mediendateien
+    nicht kopieren – die Bytes bringt ein Gerät (`POST ops/<id>/transfers`), Ordner, leere Dateien und gleicher Inhalt
+    kommen sofort. Änderungsprotokoll, Live-Ereignis, Schutz vor Erpressungstrojanern und Abgleich sehen Kopien wie
+    neue Dateien; KI für Dokumente nach der Einstellung des Bereichs.
+  - Rechte je Element; Kopieren braucht nur Leserecht an der Quelle. Tresore: nichts hinein oder hinaus, der
+    Tresor-Ordner selbst nie; innerhalb desselben Tresors Verschieben, Kopieren (Ciphertext unverändert) und Löschen.
+- **ZIP einer Auswahl** (`POST zip`, Feature `zip`): ein Ordner oder bis zu 20 Dateien, gestreamt von GateControl über
+  einen Link von 15 Minuten, der in keiner Liste steht.
+- **Ein Link für mehrere Dateien** (`POST links { nodeIds }`, Feature `multiLink`): bis zu 20 Dateien; Ordner dabei:
+  `400 invalid { reason: 'mixed' }`. Kommt eine der Dateien in den Papierkorb, endet der Link.
+- Portal: **Mehrfachauswahl wie am Desktop** – Checkboxen mit Kopf (alle / einige / keine), Klick wählt (der Name
+  öffnet wie bisher), Strg / Umschalt, Strg+A, Esc, grüne Aktionsleiste, Rechtsklick-Menü, Strg+X / C / V, Entf, F2,
+  Ziehen auf Ordner in der Liste und im Menübaum (mit Strg: kopieren), Tastenkürzel-Zeile; „Ziel wählen“, „Gleiche
+  Namen am Ziel“, Auftragskarten mit Abbrechen, Snackbar mit „Rückgängig“, „neu hier“. Fotos: Strg / Umschalt, „Alle“ /
+  „Keine“ je Monat, ZIP, Verschieben, Löschen.
+- **Mit GateControl ≥ 1.215.0:** Kopieren läuft ganz auf dem Server (`gc.media.copy`, Feature `copyServer`,
+  `transfer: 'server'`) – auch wenn alle Apps zu sind; wartende Kopien eines älteren GateControl gehen nach dem Update
+  dort weiter. ZIP und ein Link für mehrere gehen für jede Auswahl (Ordner als ihre Dateien mit Pfad, Feature
+  `zipMixed`).
+- Behoben: Links endeten bei mehr als 100 auf einmal verschobenen oder gelöschten Knoten nicht (zu viele Parameter je
+  Abfrage).
+- Datenbank-Migration `010_ops.sql`; keine neue Berechtigung.
+
 ## 1.11.0
 - **Tresore nur im Menü (wie bei OneDrive):** Tresor-Ordner liegen immer im Wurzelordner ihres Bereichs und erscheinen
   nicht mehr unter den Dateien. Neues Feature `vaultsApart` in `GET me`.
