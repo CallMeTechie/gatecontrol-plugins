@@ -92,8 +92,8 @@ reaches `GET frame` (the photo frame, since 1.7.0) and nothing else (`403 forbid
 | `POST zip` | `{ ids, name? }` (since 1.12.0, feature `zip`) | `{ url, name, expiresAt, files, skipped }` — see "Several at once" |
 | `POST ops/check` | `{ op, ids, target? }` (since 1.12.0, feature `bulk`) | `{ items, files, folders, bytes, conflicts, conflictsMore, merges, blocked, quota, limit, tooMany }` |
 | `POST ops` | `{ op: 'move' \| 'copy' \| 'trash' \| 'restore' \| 'purge', ids, target?, onConflict?: 'version' \| 'rename' \| 'skip' }` | `{ op }` |
-| `GET ops` | `state?` | `{ ops }` — mine (without `state`: running and ended in the last hour) |
-| `GET ops/<id>` · `DELETE ops/<id>` · `POST ops/<id>/undo` | | `{ op }` — the job, cancel it, undo it |
+| `GET ops` | `state?`, `files?` (since 1.12.1) | `{ ops }` — mine (without `state`: running and ended in the last hour; `files=1`: at most 50 files a job) |
+| `GET ops/<id>` · `DELETE ops/<id>` · `POST ops/<id>/undo` | `?files=1` (GET, since 1.12.1) | `{ op }` — the job (with `files`, `filesMore`), cancel it, undo it |
 | `POST ops/<id>/transfers` · `POST ops/<id>/transfers/<n>` | `{ limit?, maxSize? }` · `{ mediaId }` \| `{ failed: true, reason? }` | `{ transfers, left }` · `{ op, node? }` — the bytes of a copy |
 | `GET links` | `nodeId?` | `{ links, enabled }` — mine, or those of a node I write to |
 | `GET links/<token>/events` | `before?` | `events` — the log (newest first, ≤ 100) |
@@ -547,7 +547,14 @@ answer); the rest goes on in the plugin process right after the answer and, afte
   transfersLeft?, results { done, skipped, failedCount, failed: [{ id, name, reason }] (≤ 100), resultIds (the top
   nodes at the target, ≤ 500 — "neu hier") }, createdAt, updatedAt, finishedAt, undoUntil?, undoOf?, undoneBy?, error? }`.
   The live event **`op`** `{ op }` goes to the person (at most one a second per job, the last always). `GET ops?state=`,
-  `GET ops/<id>`; `DELETE ops/<id>` cancels (what is done stays and can be undone).
+  `GET ops/<id>`; `DELETE ops/<id>` cancels (what is done stays and can be undone). A job always ends right after its
+  last row (since 1.12.1; 1.12.0 could leave one `running` with everything done — the background run ends those).
+* **The files of a job** (since 1.12.1) — `GET ops/<id>?files=1` adds `files: [{ seq, nodeId, name, size, isDir, state
+  ('waiting' | 'running' | 'done' | 'skipped' | 'failed'), reason?, bytesDone? }]` and `filesMore`: the job's rows (a
+  move, trash, restore, purge, undo: the chosen items; a copy: its files and the chosen folders; a vault's: `name` null,
+  `encrypted`, `nameCipher`), at most 500 from a few before the one at work. The one at work is `running` without
+  `bytesDone` (no measure of its bytes — an indeterminate bar); a cancelled job's rest is `skipped` (`reason:
+  'cancelled'`). `GET ops?files=1` and the live event `op` carry at most 50 a job. Without `files=1` nothing changes.
 * **Undo** — `POST ops/<id>/undo` until `undoUntil` (15 minutes after the end; move, copy, trash): a move goes back, a
   trash comes out of the trash, the copies go into the trash (a copy that became the new content of a file: the content
   before comes back). What changed since is skipped (`results.skipped`). The undo is a job of its own (`kind: 'undo'`);

@@ -2,6 +2,18 @@
 
 Dateien der Familie und des Teams auf dem eigenen Speicher – auf diesem Server, einer NAS oder in S3.
 
+## 1.12.1
+- Behoben: Ein Sammel-Auftrag endete nicht, wenn die Zeit seiner Anfrage (5 s) oder eines Abschnitts im Serverprozess
+  bzw. Hintergrundlauf gerade während des letzten Elements ablief (langsames Speicherziel, z. B. 5 Dateien
+  verschieben). Er blieb `running` mit `done == total` – ohne letztes Live-Ereignis `op`, ohne Rückgängig und belegte
+  einen der 5 Plätze je Person. Die Elemente selbst waren verschoben. Der Auftrag endet jetzt immer nach dem letzten
+  Element; so hängengebliebene Aufträge beendet der Hintergrundlauf.
+- **Die Dateien eines Auftrags:** `GET ops/<id>?files=1` liefert `op.files` – je Element `{ seq, nodeId, name, size,
+  isDir, state: 'waiting'|'running'|'done'|'skipped'|'failed', reason?, bytesDone? }` (bei Kopien die Dateien und die
+  gewählten Ordner; Tresor: `name` null, `nameCipher`) – höchstens 500 ab kurz vor dem gerade laufenden, der Rest in
+  `filesMore`. `GET ops?files=1` und das Live-Ereignis `op` tragen höchstens 50 je Auftrag. Das laufende Element hat
+  keine `bytesDone` (Fortschritt ohne Maß). Ohne `files=1` bleibt alles wie bisher.
+
 ## 1.12.0
 - **Mehrere auf einmal (Server, Feature `bulk`):** Verschieben, Kopieren, Papierkorb, Wiederherstellen und endgültig
   Löschen einer Auswahl als ein Auftrag mit Fortschritt, Abbrechen und Rückgängig.

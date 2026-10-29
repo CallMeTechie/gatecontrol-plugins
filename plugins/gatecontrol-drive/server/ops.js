@@ -10,7 +10,9 @@
 //   POST   ops        { op, ids, target?, onConflict?: 'version'|'rename'|'skip' } → { op }
 //   GET    ops        ?state=running|done|failed|cancelled → { ops } (mine, newest first; without state: the running ones
 //                     and those that ended in the last hour)
-//   GET    ops/<id>   → { op } · DELETE ops/<id> → { op } (cancelled: what is done stays) · POST ops/<id>/undo → { op }
+//   GET    ops/<id>   ?files=1 → { op } · DELETE ops/<id> → { op } (cancelled: what is done stays) · POST ops/<id>/undo → { op }
+//                     (?files=1, 1.12.1: op.files — its files one by one with their state — and op.filesMore; GET ops
+//                     ?files=1 and the live event 'op': at most 50 a job)
 //   POST   ops/<id>/transfers { limit?, maxSize? } → { transfers, left }
 //   POST   ops/<id>/transfers/<n> { mediaId } | { failed: true } → { op, node? } — the bytes of a copy (below)
 //
@@ -298,6 +300,8 @@ async function mine(ctx, id) {
 // a new file of its own, done on the server — on the storage target itself, a hard link or a copy; unclaimed until Drive
 // claims it at its path, so GateControl removes one Drive never took after 24 h); `copyHook` stands in for it in tests
 let copyHook = null;
+// tests: called after each row a job handled (the time a slow storage target takes)
+let itemHook = null;
 const copier = (gc) => copyHook || (gc.media && typeof gc.media.copy === 'function' ? (id, o) => gc.media.copy(id, o) : null);
 const hostCopy = (gc) => !!copier(gc);
 
@@ -314,8 +318,50 @@ async function place(gc, mediaId, mediaArea, path) {
   await gc.media.claim(mediaId, { area: mediaArea, path });
 }
 
-/** The job as the apps see it. */
-async function view(gc, op) {
+const FILES_MAX = 500;
+const EVENT_FILES = 50;
+const FILES_BEFORE = 20;
+
+/**
+ * The files of a job (1.12.1) — its rows (a move, a trash …: the chosen items; a copy: its files and the chosen folders)
+ * → { files: [{ seq, nodeId, name, size, isDir, state: waiting|running|done|skipped|failed, reason?, bytesDone? }],
+ * filesMore }: at most `limit`, from a few done ones before the first still to do (a vault's: name null, nameCipher).
+ * The row at work is 'running' (no bytes known: the apps show it without a measure).
+ */
+async function filesOf(gc, op, limit) {
+  const only = op.kind === 'copy' ? ' AND (i.is_dir = 0 OR i.parent_seq IS NULL)' : '';
+  const count = (await store.one(gc, `SELECT COUNT(*) AS n FROM op_items i WHERE i.op_id = ?${only}`, [op.id])).n;
+  let from = 0;
+  if (count > limit) {
+    const at = await store.one(gc, `SELECT MIN(seq) AS s FROM op_items i WHERE i.op_id = ? AND i.state IN ('pending', 'transfer')${only}`, [op.id]);
+    const before = at && at.s != null
+      ? (await store.one(gc, `SELECT COUNT(*) AS n FROM op_items i WHERE i.op_id = ? AND i.seq < ?${only}`, [op.id, at.s])).n : count;
+    from = Math.max(0, Math.min(before - FILES_BEFORE, count - limit));
+  }
+  const rows = await store.all(gc, `SELECT i.seq, i.node_id, i.name, i.size, COALESCE(n.is_dir, i.is_dir) AS is_dir, i.state, i.reason, i.lease_until, n.vault_id, n.name_cipher, n.name AS node_name
+    FROM op_items i LEFT JOIN nodes n ON n.id = i.node_id WHERE i.op_id = ?${only} ORDER BY i.seq LIMIT ? OFFSET ?`, [op.id, limit, from]);
+  const now = Date.now();
+  const waits = retryAt.get(op.id) > now;
+  let first = op.state === 'running' && !waits;
+  const files = rows.map((r) => {
+    let state = r.state === 'pending' ? 'waiting' : r.state === 'transfer' ? (r.lease_until > now ? 'running' : 'waiting')
+      : r.state === 'cancelled' ? 'skipped' : r.state;
+    if (r.state === 'pending' && first) { state = 'running'; first = false; }
+    if (!['waiting', 'running', 'done', 'skipped', 'failed'].includes(state)) state = 'failed';
+    const vault = !!r.vault_id;
+    const size = r.is_dir === 1 && op.kind === 'copy' ? 0 : r.size || 0;
+    return {
+      seq: r.seq, nodeId: r.node_id, name: vault ? null : (r.name == null ? r.node_name : r.name) || null, size, isDir: r.is_dir === 1,
+      state, ...(vault ? { encrypted: true, nameCipher: r.name_cipher || null } : {}),
+      ...((state === 'failed' || state === 'skipped') ? { reason: r.state === 'cancelled' ? 'cancelled' : r.reason || null } : {}),
+      ...(state === 'done' ? { bytesDone: size } : state === 'waiting' ? { bytesDone: 0 } : {}),
+    };
+  });
+  return { files, filesMore: count - files.length };
+}
+
+/** The job as the apps see it; o.files: with its files (at most that many — filesOf). */
+async function view(gc, op, o = {}) {
   const now = Date.now();
   const r = json(op.results, {});
   const left = op.kind === 'copy' && op.state === 'running'
@@ -330,8 +376,12 @@ async function view(gc, op) {
     ...(op.undo_until && !op.undone_by && op.undo_until > now && op.state !== 'running' ? { undoUntil: iso(op.undo_until) } : {}),
     ...(op.undo_of ? { undoOf: op.undo_of } : {}), ...(op.undone_by ? { undoneBy: op.undone_by } : {}),
     ...(op.error ? { error: op.error } : {}),
+    ...(o.files ? await filesOf(gc, op, o.files) : {}),
   };
 }
+
+/** `?files=1` (1.12.1): the files of a job too. */
+const wantsFiles = (q) => !!q && (q.files === '1' || q.files === 'true' || q.files === 1 || q.files === true);
 
 const lastEvent = new Map();
 
@@ -342,7 +392,7 @@ async function announce(gc, op, force = false) {
   if (!force && now - (lastEvent.get(op.id) || 0) < EVENT_MS) return;
   lastEvent.set(op.id, now);
   if (force) lastEvent.delete(op.id);
-  try { await gc.events.emit({ users: [op.user_id], type: 'op', data: { op: await view(gc, op) } }); } catch (e) { gc.log.warn('op event failed', (e && e.code) || 'error'); }
+  try { await gc.events.emit({ users: [op.user_id], type: 'op', data: { op: await view(gc, op, { files: EVENT_FILES }) } }); } catch (e) { gc.log.warn('op event failed', (e && e.code) || 'error'); }
 }
 
 async function insertItems(gc, opId, rows) {
@@ -494,18 +544,21 @@ async function work(ctx, op, until) {
   for (;;) {
     cur = await opRow(gc, op.id);
     if (!cur || cur.state !== 'running') return cur;
-    if (Date.now() > until) return cur;
-    // a device the ransomware protection stopped: its job stops too
-    if (cur.app === 1 && ctx.deviceId && await guard.lockOf(ctx)) return finish(gc, cur, 'failed', 'device_locked');
+    // nothing left: the job ends now — also when the time is up (1.12.0 looked at the time first: a job whose last row
+    // took the rest of the time stayed 'running' with everything done, and nothing came back to it)
     const item = await store.one(gc, "SELECT * FROM op_items WHERE op_id = ? AND state = 'pending' ORDER BY seq LIMIT 1", [cur.id]);
     if (!item) {
       const waiting = await store.one(gc, "SELECT COUNT(*) AS n FROM op_items WHERE op_id = ? AND state = 'transfer'", [cur.id]);
       if (waiting.n) return cur;
       return finish(gc, cur, 'done');
     }
+    if (Date.now() > until) return cur;
+    // a device the ransomware protection stopped: its job stops too
+    if (cur.app === 1 && ctx.deviceId && await guard.lockOf(ctx)) return finish(gc, cur, 'failed', 'device_locked');
     ctx.now = Date.now();
     try {
       const r = await handle(ctx, cur, item);
+      if (itemHook) await itemHook(cur, item);
       if (r === LATER) return cur;
       if (r === BUSY) {
         retryAt.set(cur.id, Date.now() + RETRY_MS);
@@ -991,8 +1044,8 @@ async function undoItem(ctx, uop, item) {
 
 // ─── Reading, cancelling ────────────────────────
 
-async function get(ctx, id) {
-  return { op: await view(ctx.gc, await mine(ctx, id)) };
+async function get(ctx, id, q) {
+  return { op: await view(ctx.gc, await mine(ctx, id), { files: wantsFiles(q) ? FILES_MAX : 0 }) };
 }
 
 /** GET ops?state= → { ops } */
@@ -1003,7 +1056,7 @@ async function list(ctx, q) {
     ? await store.all(ctx.gc, 'SELECT * FROM ops WHERE user_id = ? AND state = ? ORDER BY created_at DESC LIMIT ?', [ctx.viewer, state, LIST_MAX])
     : await store.all(ctx.gc, "SELECT * FROM ops WHERE user_id = ? AND (state = 'running' OR finished_at > ?) ORDER BY created_at DESC LIMIT ?", [ctx.viewer, Date.now() - RECENT_MS, LIST_MAX]);
   const out = [];
-  for (const r of rows) out.push(await view(ctx.gc, r));
+  for (const r of rows) out.push(await view(ctx.gc, r, { files: wantsFiles(q) ? EVENT_FILES : 0 }));
   return { ops: out };
 }
 
@@ -1084,6 +1137,10 @@ async function tick(gc, now, hooks) {
     await store.run(gc, `UPDATE op_items SET state = 'pending', lease_until = NULL WHERE state = 'transfer' AND (lease_until IS NULL OR lease_until < ?)
       AND op_id IN (SELECT id FROM ops WHERE state = 'running' AND kind = 'copy')`, [now]);
   }
+  // jobs with nothing left to do that still run (left so by 1.12.0, see work): they end now
+  const ended = await store.all(gc, `SELECT * FROM ops o WHERE state = 'running'
+    AND NOT EXISTS (SELECT 1 FROM op_items i WHERE i.op_id = o.id AND i.state IN ('pending', 'transfer'))`);
+  for (const op of ended) if (!busy.has(op.id)) await finish(gc, op, 'done');
   // (a runner of this process already at work goes on by itself — the background run does not wait for it)
   if (hooks && typeof hooks.asPerson === 'function' && !runner) await drain(hooks, 45000);
   return { removed: old.length, abandoned: stale.length };
@@ -1097,4 +1154,5 @@ async function idle() {
 module.exports = {
   check, create, get, list, cancel, undo, transfers, transferDone, tick, drain, idle, view, hostCopy, NODES_MAX, IDS_MAX, RUNNING_MAX, UNDO_MS,
   _setCopy: (fn) => { copyHook = fn; },
+  _setItemHook: (fn) => { itemHook = fn; },
 };
