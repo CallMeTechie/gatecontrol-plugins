@@ -3,7 +3,8 @@
 // Drive 1.12.1: a job ends — also when the time of its request or of a slice of the background run is up right after
 // its last row (1.12.0 left it 'running' with done == total: no end, no last event 'op', no undo, a slot of the five
 // taken for good); jobs left so by 1.12.0 end in the background run. The files of a job (GET ops/<id>?files=1, the
-// live event 'op').
+// live event 'op'). Drive 1.12.2: the answer comes at once — a quick job gets 0.3 s within its request, any other goes
+// on right after the answer (the apps' "Ziel wählen" waited up to 5 s).
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -31,10 +32,11 @@ const lastOp = (host, id) => host.events.filter((e) => e.type === 'op' && e.data
 
 test('move of five files: the time of the request is up during the last one — the job still ends (done, last event, undo)', async () => {
   await withHost({}, async (host, c) => {
-    const t = await five(host, c, [1200]);
+    const t = await five(host, c, [0, 0, 0, 0, 400]);
     host.events.length = 0;
     const r = await t.a('POST', 'ops', { op: 'move', ids: t.files.map((f) => f.id), target: t.fec.id });
     assert.equal(r.status, 200, JSON.stringify(r.json));
+    assert.equal(r.json.op.state, 'done', 'a quick job ends within its request');
     await ops.idle();
     const op = (await t.a('GET', `ops/${r.json.op.id}`)).json.op;
     assert.deepEqual([op.state, op.items, op.total, op.done, op.results.done], ['done', 5, 5, 5, 5]);
@@ -48,11 +50,11 @@ test('move of five files: the time of the request is up during the last one — 
 
 test('move of five files: the rest after the answer — the slice ends during the last one, the job still ends', async () => {
   await withHost({}, async (host, c) => {
-    const t = await five(host, c, [2600, 2600, 1800]);
+    const t = await five(host, c, [400, 1000, 1000, 1000, 2600]);
     host.events.length = 0;
     const r = await t.a('POST', 'ops', { op: 'move', ids: t.files.map((f) => f.id), target: t.fec.id });
-    assert.equal(r.json.op.state, 'running', 'two within the request');
-    assert.equal(r.json.op.done, 2);
+    assert.equal(r.json.op.state, 'running', 'one within the request (0.3 s)');
+    assert.equal(r.json.op.done, 1);
     await ops.idle();
     const op = (await t.a('GET', `ops/${r.json.op.id}`)).json.op;
     assert.deepEqual([op.state, op.done, op.results.done], ['done', 5, 5]);
@@ -106,18 +108,18 @@ test('a job 1.12.0 left running with nothing left to do ends in the background r
 
 test('the files of a job: GET ops/<id>?files=1, the live event (fewer), a copy waiting for a device', async () => {
   await withHost({}, async (host, c) => {
-    const t = await five(host, c, [2600, 2600, 0]);
+    const t = await five(host, c, [400, 0]);
     host.events.length = 0;
     const r = await t.a('POST', 'ops', { op: 'move', ids: t.files.map((f) => f.id), target: t.fec.id });
     assert.equal(r.json.op.state, 'running');
-    assert.equal(r.json.op.files, undefined, 'only when asked');
+    const states = [['PXL_20261020.jpg', 'done'], ['Scan 2026-10-21.pdf', 'running'], ['Screenshot_20261022.jpg', 'waiting'], ['Zeichnung_1.pdf', 'waiting'], ['Notiz.txt', 'waiting']];
+    assert.deepEqual(r.json.op.files.map((f) => [f.name, f.state]), states, 'the answer carries them (1.12.2)');
     const g = (await t.a('GET', `ops/${r.json.op.id}`, null, { files: '1' })).json.op;
-    assert.deepEqual(g.files.map((f) => [f.name, f.state]), [
-      ['PXL_20261020.jpg', 'done'], ['Scan 2026-10-21.pdf', 'done'], ['Screenshot_20261022.jpg', 'running'], ['Zeichnung_1.pdf', 'waiting'], ['Notiz.txt', 'waiting'],
-    ]);
+    assert.deepEqual(g.files.map((f) => [f.name, f.state]), states);
+    assert.equal((await t.a('GET', `ops/${r.json.op.id}`)).json.op.files, undefined, 'GET only when asked');
     assert.deepEqual(Object.keys(g.files[0]).sort(), ['bytesDone', 'isDir', 'name', 'nodeId', 'seq', 'size', 'state']);
     assert.equal(g.files[0].bytesDone, g.files[0].size);
-    assert.equal(g.files[2].bytesDone, undefined, 'no byte progress of a move: an indeterminate bar');
+    assert.equal(g.files[1].bytesDone, undefined, 'no byte progress of a move: an indeterminate bar');
     assert.equal(g.filesMore, 0);
     await ops.idle();
     const done = (await t.a('GET', `ops/${r.json.op.id}`, null, { files: 'true' })).json.op;
@@ -129,6 +131,7 @@ test('the files of a job: GET ops/<id>?files=1, the live event (fewer), a copy w
     // a copy waiting for a device (GateControl 1.208), a failed one (blocked: into itself) with its reason
     const sub = (await t.a('POST', 'nodes', { parentId: t.fec.id, name: 'Unter' })).json.node;
     const again = await t.a('POST', 'ops', { op: 'copy', ids: [t.files[0].id, t.fec.id], target: sub.id });
+    await ops.idle();
     const cf = (await t.a('GET', `ops/${again.json.op.id}`, null, { files: '1' })).json.op;
     assert.deepEqual(cf.files.map((f) => [f.name, f.isDir, f.state, f.reason || null]), [
       ['PXL_20261020.jpg', false, 'waiting', null], ['FEC', true, 'failed', 'into_itself'],
@@ -160,5 +163,69 @@ test('the files of a large job: a window of 500 around where it is, filesMore', 
     await host.gc.db.run("UPDATE op_items SET state = 'done' WHERE op_id = ? AND seq < 1150", [id]);
     const e = (await a('GET', `ops/${id}`, null, { files: '1' })).json.op;
     assert.deepEqual([e.files[0].seq, e.files[e.files.length - 1].seq, e.filesMore], [701, 1200, 700]);
+  });
+});
+
+test('1.12.2: the answer comes at once — a larger job goes on right after it (the events with its files), its undo too', async () => {
+  await withHost({}, async (host, c) => {
+    const a = c.as(ANNA);
+    const mine = await c.area(ANNA, 'mine');
+    const fotos = (await a('POST', 'nodes', { parentId: mine.rootId, name: 'Fotos' })).json.node;
+    for (let i = 0; i < 60; i++) await c.put(ANNA, fotos.id, `IMG_${String(i).padStart(4, '0')}.jpg`, `jpeg ${i}`);
+    const dest = (await a('POST', 'nodes', { parentId: mine.rootId, name: 'Familie' })).json.node;
+    let rows = 0;
+    ops._setItemHook(() => { rows++; c.clock.add(50); });
+    host.events.length = 0;
+    // a folder with 60 files (more than a quick job's 50 nodes): nothing done within the request
+    const r = await a('POST', 'ops', { op: 'move', ids: [fotos.id], target: dest.id });
+    assert.equal(r.status, 200, JSON.stringify(r.json));
+    assert.deepEqual([r.json.op.state, r.json.op.done, r.json.op.total, rows], ['running', 0, 60, 0], 'the answer before any work');
+    assert.deepEqual(r.json.op.files.map((f) => [f.name, f.isDir, f.state]), [['Fotos', true, 'running']], 'its files from the start');
+    await ops.idle();
+    const op = (await a('GET', `ops/${r.json.op.id}`)).json.op;
+    assert.deepEqual([op.state, op.done, op.results.done], ['done', 60, 1]);
+    assert.ok(op.undoUntil);
+    assert.deepEqual(await kids(a, dest.id), ['Fotos']);
+    const evs = host.events.filter((e) => e.type === 'op' && e.data.op.id === op.id);
+    assert.equal(evs[evs.length - 1].data.op.state, 'done', 'the last event says so');
+    assert.deepEqual(evs[evs.length - 1].data.op.files.map((f) => f.state), ['done'], 'with its files');
+    // a quick job still comes back done: three files into the trash
+    const some = (await a('GET', `nodes/${fotos.id}/children`)).json.items.slice(0, 3).map((x) => x.id);
+    const q = await a('POST', 'ops', { op: 'trash', ids: some });
+    assert.equal(q.json.op.state, 'done');
+    assert.deepEqual(q.json.op.files.map((f) => f.state), ['done', 'done', 'done']);
+    // the undo of the large move: at once too, it goes on after the answer
+    rows = 0;
+    const u = await a('POST', `ops/${op.id}/undo`);
+    assert.equal(u.status, 200, JSON.stringify(u.json));
+    assert.deepEqual([u.json.op.kind, u.json.op.state, rows], ['undo', 'running', 0]);
+    await ops.idle();
+    assert.equal((await a('GET', `ops/${u.json.op.id}`)).json.op.state, 'done');
+    assert.deepEqual(await kids(a, mine.rootId), ['Familie', 'Fotos']);
+  });
+});
+
+test('1.12.2: a job that comes while the process works on another one is not left for the background run', async () => {
+  await withHost({}, async (host, c) => {
+    const a = c.as(ANNA);
+    const mine = await c.area(ANNA, 'mine');
+    const mk = async (name) => (await a('POST', 'nodes', { parentId: mine.rootId, name })).json.node;
+    const big = await mk('Gross');
+    for (let i = 0; i < 55; i++) await c.put(ANNA, big.id, `f${i}.txt`, `x${i}`);
+    const big2 = await mk('Gross2');
+    for (let i = 0; i < 55; i++) await c.put(ANNA, big2.id, `g${i}.txt`, `y${i}`);
+    const d1 = await mk('Ziel1');
+    const d2 = await mk('Ziel2');
+    let second = null;
+    // while the first job is at work in the plugin process, the second one is asked for
+    ops._setItemHook(async () => {
+      if (!second) second = await a('POST', 'ops', { op: 'move', ids: [big2.id], target: d2.id });
+    });
+    const first = await a('POST', 'ops', { op: 'move', ids: [big.id], target: d1.id });
+    assert.equal(first.json.op.state, 'running');
+    await ops.idle();
+    assert.equal(second && second.status, 200, 'the second came while the first one was at work');
+    assert.equal((await a('GET', `ops/${first.json.op.id}`)).json.op.state, 'done');
+    assert.equal((await a('GET', `ops/${second.json.op.id}`)).json.op.state, 'done', 'not left for the background run');
   });
 });

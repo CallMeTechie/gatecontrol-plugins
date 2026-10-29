@@ -2,6 +2,22 @@
 
 Dateien der Familie und des Teams auf dem eigenen Speicher – auf diesem Server, einer NAS oder in S3.
 
+## 1.12.2
+- **Sammel-Aufträge antworten sofort:** `POST ops` und `POST ops/<id>/undo` arbeiteten bis zu 5 s innerhalb der
+  Anfrage am Auftrag, bevor sie antworteten – in den Apps drehte der Knopf im Dialog „Ziel wählen“ so lange, und der
+  Fortschritt erschien erst, als der Auftrag fast fertig war. Jetzt legt die Anfrage den Auftrag an und antwortet
+  gleich: ein kleiner Auftrag ohne Kopie (höchstens 50 Knoten samt Ordnerinhalt) bekommt höchstens 0,3 s und kommt
+  meist fertig zurück (`done`), jeder andere kommt `running` zurück und läuft direkt nach der Antwort im Serverprozess
+  weiter (nach einem Neustart im Hintergrundlauf) – das Live-Ereignis `op` meldet den Fortschritt mit den Dateien.
+  Kopien laufen nie mehr in der Anfrage (bisher nur Dateien über 16 MB nicht).
+- Die Antwort trägt die Dateien des Auftrags (`op.files`, höchstens 50 wie das Live-Ereignis), damit die Apps sie
+  von Anfang an zeigen.
+- Das Live-Ereignis kann vor der Antwort ankommen: Clients behalten einen beendeten Stand (`updatedAt`). Das Portal
+  tut das jetzt (sonst blieb die Karte des Auftrags stehen) und zeigt die Snackbar mit „Rückgängig“ trotzdem. Eine
+  Kopie, deren Bytes das Portal bringt, erfährt es über das Ereignis (der Server meldet, sobald alles auf Bytes wartet).
+- Behoben: Ein Auftrag, der angelegt wurde, während der Serverprozess gerade nach laufenden Aufträgen schaute, wartete
+  bis zum nächsten Hintergrundlauf. Der Fix aus 1.12.1 (ein Auftrag endet immer nach dem letzten Element) bleibt.
+
 ## 1.12.1
 - Behoben: Ein Sammel-Auftrag endete nicht, wenn die Zeit seiner Anfrage (5 s) oder eines Abschnitts im Serverprozess
   bzw. Hintergrundlauf gerade während des letzten Elements ablief (langsames Speicherziel, z. B. 5 Dateien

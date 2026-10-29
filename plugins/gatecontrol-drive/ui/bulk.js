@@ -55,6 +55,7 @@
       drag: null,         // the nodes being dragged
       pumping: {},        // job id → true while this tab brings the bytes of a copy
       over: {},           // job id → true once its end was shown
+      early: {},          // job id → its end, come before the answer of this tab's POST ops (1.12.2)
       bigLeft: {},        // job id → files this tab cannot bring (too large)
       ctx: null,          // the right-click menu shown
     };
@@ -738,7 +739,11 @@
       return api('POST', 'ops', body).then(function (r) {
         var op = r.op;
         st.mine[op.id] = { label: target ? target.label : null, count: list.length, target: target };
-        took(op);
+        // (1.12.2: the answer comes at once — the job's last event may have come before it)
+        var fin = st.early[op.id];
+        delete st.early[op.id];
+        if (fin) ended(fin);
+        else took(op);
         return op;
       });
     }
@@ -747,6 +752,8 @@
     function took(op) {
       if (!op || !op.id) return;
       var was = st.ops[op.id];
+      // an older state than the one here (the answer after the job's events): kept out
+      if (op.state === 'running' && (st.over[op.id] || (was && was.updatedAt && op.updatedAt && op.updatedAt < was.updatedAt))) return;
       st.ops[op.id] = op;
       if (op.state === 'running') {
         drawCards();
@@ -774,7 +781,11 @@
         U.toast(sk ? P('p.b.undone_skipped', sk) : T('p.b.undone'));
         return;
       }
-      if (!m) return;
+      if (!m) {
+        // the answer of this tab's POST ops may still come (the snackbar then)
+        if (op.kind !== 'undo') { st.early[op.id] = op; setTimeout(function () { delete st.early[op.id]; }, FRESH_MS); }
+        return;
+      }
       var n = op.items;
       var res = op.results || {};
       var key = op.kind === 'move' ? 'p.b.done_move' : op.kind === 'copy' ? 'p.b.done_copy' : op.kind === 'trash' ? 'p.b.done_trash' : op.kind === 'restore' ? 'p.b.done_restore' : 'p.b.done_purge';

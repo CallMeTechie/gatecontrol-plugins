@@ -91,9 +91,9 @@ reaches `GET frame` (the photo frame, since 1.7.0) and nothing else (`403 forbid
 | `POST links` | `{ nodeIds: [id, …], mode?: 'view' \| 'download', expires?, pin?, note?, title? }` (since 1.12.0, feature `multiLink`) | `link` with `nodeIds`, `count` — one link for 2 … 20 files (see "Several at once") |
 | `POST zip` | `{ ids, name? }` (since 1.12.0, feature `zip`) | `{ url, name, expiresAt, files, skipped }` — see "Several at once" |
 | `POST ops/check` | `{ op, ids, target? }` (since 1.12.0, feature `bulk`) | `{ items, files, folders, bytes, conflicts, conflictsMore, merges, blocked, quota, limit, tooMany }` |
-| `POST ops` | `{ op: 'move' \| 'copy' \| 'trash' \| 'restore' \| 'purge', ids, target?, onConflict?: 'version' \| 'rename' \| 'skip' }` | `{ op }` |
+| `POST ops` | `{ op: 'move' \| 'copy' \| 'trash' \| 'restore' \| 'purge', ids, target?, onConflict?: 'version' \| 'rename' \| 'skip' }` | `{ op }` — at once (since 1.12.2), with `files` (≤ 50) |
 | `GET ops` | `state?`, `files?` (since 1.12.1) | `{ ops }` — mine (without `state`: running and ended in the last hour; `files=1`: at most 50 files a job) |
-| `GET ops/<id>` · `DELETE ops/<id>` · `POST ops/<id>/undo` | `?files=1` (GET, since 1.12.1) | `{ op }` — the job (with `files`, `filesMore`), cancel it, undo it |
+| `GET ops/<id>` · `DELETE ops/<id>` · `POST ops/<id>/undo` | `?files=1` (GET, since 1.12.1) | `{ op }` — the job (with `files`, `filesMore`), cancel it, undo it (at once, with `files`, since 1.12.2) |
 | `POST ops/<id>/transfers` · `POST ops/<id>/transfers/<n>` | `{ limit?, maxSize? }` · `{ mediaId }` \| `{ failed: true, reason? }` | `{ transfers, left }` · `{ op, node? }` — the bytes of a copy |
 | `GET links` | `nodeId?` | `{ links, enabled }` — mine, or those of a node I write to |
 | `GET links/<token>/events` | `before?` | `events` — the log (newest first, ≤ 100) |
@@ -541,6 +541,13 @@ answer); the rest goes on in the plugin process right after the answer and, afte
   "Ordner (2)". Errors: `400 invalid { field }`, `404` / `403` of the target, `409 job_limit { max: 5 }` (running jobs a
   person), `413 too_large { max: 10000 }` (nodes after the folders are counted; ≤ 10 000 ids), `507 quota { needed,
   free }`, `423 device_locked`.
+  **The answer comes at once** (since 1.12.2; up to 1.12.1 the request worked on the job for up to 5 s — the apps'
+  "Ziel wählen" waited that long): a quick job — no copy, at most 50 nodes with what is in the folders — is worked on
+  for at most 0.3 s within its request and mostly comes back `done`; any other comes back `running` and goes on in the
+  plugin process right after the answer (after a restart: in the background run), the live event `op` tells how it
+  goes. The answer carries the job's `files` (at most 50, as the live event) so an app can list them from the start.
+  The live event may come before the answer: a client keeps an ended state it already has (`updatedAt`). The same for
+  `POST ops/<id>/undo` (quick: the job touched at most 50 nodes).
 * A job: `{ id, kind ('move' | 'copy' | 'trash' | 'restore' | 'purge' | 'undo'), state ('running' | 'done' | 'failed' |
   'cancelled'), items (ids asked for), total, done (files), bytesTotal, bytesDone, label (the first one's name; null in a
   vault), onConflict, targetId?, targetAreaId?, targetPath?, targetName?, transfer? ('client' | 'server'),
@@ -576,8 +583,8 @@ answer); the rest goes on in the plugin process right after the answer and, afte
   background run like a move, also when every app is closed; the apps offer copying only then ("Braucht GateControl
   1.215"), the portal keeps bringing bytes on an older GateControl. A copy waiting for a device when GateControl is
   updated goes on on the server. GateControl's copy is unclaimed until Drive claims it at its path (an orphan goes after
-  24 h); a file over 16 MB is never copied within the request (a copy between storage targets may take up to 30
-  minutes) — the job goes on right after the answer; a storage target that does not answer (`ERR_BUSY`) makes the job
+  24 h); no copy is made within the request (a copy between storage targets may take up to 30 minutes;
+  up to 1.12.1: no file over 16 MB) — the job goes on right after the answer; a storage target that does not answer (`ERR_BUSY`) makes the job
   wait a minute; a source changed on its target: that file `failed` (`changed`); a copy that fails otherwise (also
   `ERR_TIMEOUT`): `failed` (`copy`); the quota ends the job. Links with paths take up to 5000 files and 1 TiB together
   (`413 too_large { maxBytes }`).
