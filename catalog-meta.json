@@ -2854,6 +2854,168 @@
         "de",
         "en"
       ]
+    },
+    "gatecontrol-mail": {
+      "category": "family",
+      "icon": "mail",
+      "summary": {
+        "de": "Alle E-Mail-Konten in einem Posteingang – mit Relevant und Sonstige, Push, Schutz vor Zählpixeln, Anhängen in Drive und KI.",
+        "en": "Every e-mail account in one inbox – with Relevant and Other, push, protection from tracking pixels, attachments in Drive and AI."
+      },
+      "audience": "all",
+      "keywords": [
+        "mail",
+        "e-mail",
+        "email",
+        "posteingang",
+        "inbox",
+        "gmx",
+        "gmail",
+        "outlook",
+        "imap",
+        "anhänge",
+        "attachments",
+        "ki"
+      ],
+      "related": [
+        "gatecontrol-drive",
+        "gatecontrol-familie"
+      ],
+      "adds": [
+        {
+          "icon": "app",
+          "title": {
+            "de": "App-Tab „Mail“",
+            "en": "App tab “Mail”"
+          },
+          "text": {
+            "de": "Alle Posteingänge, Relevant und Sonstige, Wischgesten – auch als Seite neben Start",
+            "en": "All inboxes, Relevant and Other, swipe actions – also as a page next to Start"
+          }
+        },
+        {
+          "icon": "portal",
+          "title": {
+            "de": "Portal-Seite „Mail“",
+            "en": "Portal page “Mail”"
+          },
+          "text": {
+            "de": "Lesen, Schreiben, Konten hinzufügen – auch Microsoft per Gerätecode",
+            "en": "Read, write, add accounts – Microsoft too, by device code"
+          }
+        },
+        {
+          "icon": "shield",
+          "title": {
+            "de": "Schutz vor Zählpixeln",
+            "en": "Protection from tracking pixels"
+          },
+          "text": {
+            "de": "Bilder nur auf Wunsch und über GateControl geladen – der Absender sieht dich nicht",
+            "en": "Pictures only on request and loaded through GateControl – the sender does not see you"
+          }
+        },
+        {
+          "icon": "cloud",
+          "title": {
+            "de": "Anhänge in Drive",
+            "en": "Attachments in Drive"
+          },
+          "text": {
+            "de": "Mit Vorschlag, „Immer für diesen Absender“ oder automatisch – und aus Drive anhängen",
+            "en": "With a suggestion, “always for this sender” or on their own – and attach from Drive"
+          }
+        },
+        {
+          "icon": "key",
+          "title": {
+            "de": "KI",
+            "en": "AI"
+          },
+          "text": {
+            "de": "Kurz gesagt, Zu tun, Antwortvorschläge – über den KI-Anbieter von GateControl",
+            "en": "In short, to-dos, reply suggestions – through GateControl’s AI provider"
+          }
+        },
+        {
+          "icon": "bell",
+          "title": {
+            "de": "Push",
+            "en": "Push"
+          },
+          "text": {
+            "de": "Neue Mail je Konto: aus, nur Relevante oder alle",
+            "en": "New mail per account: off, relevant only or all"
+          }
+        }
+      ],
+      "permissions": [
+        {
+          "icon": "network",
+          "title": {
+            "de": "Mail-Server",
+            "en": "Mail servers"
+          },
+          "text": {
+            "de": "Verbindet sich mit euren IMAP- und SMTP-Servern (nur verschlüsselt) und mit Microsoft Graph",
+            "en": "Connects to your IMAP and SMTP servers (encrypted only) and to Microsoft Graph"
+          },
+          "tag": {
+            "de": "Netzwerk",
+            "en": "Network"
+          }
+        },
+        {
+          "icon": "key",
+          "title": {
+            "de": "Zugangsdaten",
+            "en": "Credentials"
+          },
+          "text": {
+            "de": "Passwörter und Microsoft-Token verschlüsselt auf eurem Server – nie in den Apps",
+            "en": "Passwords and Microsoft tokens encrypted on your server – never in the apps"
+          },
+          "tag": {
+            "de": "Geheimnisse",
+            "en": "Secrets"
+          }
+        },
+        {
+          "icon": "data",
+          "title": {
+            "de": "Mails auf dem Server",
+            "en": "Mail on the server"
+          },
+          "text": {
+            "de": "Eine Kopie der letzten Monate bis zur Speichergrenze je Person; Admins sehen nur Zahlen",
+            "en": "A copy of the last months up to the quota per person; administrators see numbers only"
+          }
+        }
+      ],
+      "shows": [
+        {
+          "kind": "list",
+          "caption": {
+            "de": "Alle Posteingänge",
+            "en": "All inboxes"
+          }
+        },
+        {
+          "kind": "list",
+          "caption": {
+            "de": "Mail mit KI-Leiste",
+            "en": "Mail with the AI bar"
+          }
+        }
+      ],
+      "needs": {
+        "de": "ein E-Mail-Konto (IMAP oder Microsoft)",
+        "en": "an e-mail account (IMAP or Microsoft)"
+      },
+      "languages": [
+        "de",
+        "en"
+      ]
     }
   }
 }
