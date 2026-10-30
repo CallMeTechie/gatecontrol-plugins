@@ -144,7 +144,7 @@
       s.microsoft.registration === 'custom' ? row(T('a.ms_client_id'), T('a.ms_client_id_d'), custom) : null,
       ms.consentUrl ? row(T('a.ms_consent'), T('a.ms_consent_d'), h('div', { style: 'display:flex;gap:8px;align-items:center;flex-wrap:wrap' }, [h('span', { class: 'ma-mono', text: ms.consentUrl }),
         h('button', { type: 'button', class: 'dp-btn dp-btn-sm', text: T('a.copy'), on: { click: function () { copyText(ms.consentUrl); } } })])) : row(T('a.ms_state'), null, h('span', { class: 'ma-d', text: T('a.ms_off') })),
-      row(T('a.ms_state'), null, h('span', { class: 'ma-d', text: T('a.ms_accounts', { n: ms.accounts }) })),
+      row(T('a.ms_connected'), null, h('span', { class: 'ma-d', text: T('a.ms_accounts', { n: ms.accounts }) })),
     ]));
   }
 
