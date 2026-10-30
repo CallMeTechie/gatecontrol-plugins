@@ -546,7 +546,7 @@ reads. GateControl's errors: `429 rate_limited` (its requests per hour), `409 ai
   Drive keeps `{ eventId, at }` per person and deadline; a second call answers the same. Familie not installed, not
   running, or refusing (not a family member, its dates module off, a Familie that does not take Drive as a caller):
   `409 familie_unavailable { reason }` (`unavailable`, `rate_limited`, `timeout` or Familie's code); after Familie's
-  `forbidden` (a Familie that takes `calendar_add` from the Messenger only) `deadlineCalendar` is left out of `GET me`
+  `forbidden` (Familie before 1.15.3 takes `calendar_add` from the Messenger only — the calendar needs Familie ≥ 1.15.3) `deadlineCalendar` is left out of `GET me`
   for 6 hours, then tried again. Per area `PATCH
   areas/<id> { deadlinesToCalendar: true }` (default off): new deadlines of a recognition go in on their own — for the
   person whose upload or "Erkennen" it was, else the owner of the area — while they read the file and the day is ahead

@@ -39,9 +39,9 @@ Dateien der Familie und des Teams auf dem eigenen Speicher – auf diesem Server
   Ordner, „Original-Scan behalten“, Kostenzeile), „Fotos nach Inhalt suchen“ mit den Chips „+ Meer“; in den
   Drive-Einstellungen „Neue Fristen in den Familienkalender“ je Bereich.
 - D4 (Ablegen gleich nach dem Scan) ist nur in den Apps – der Server bleibt dafür unverändert.
-- Hinweis: Das Plugin Familie nimmt `calendar_add` bisher nur vom Messenger an. Verweigert es Drive (`forbidden`),
-  antwortet „In den Familienkalender“ mit `409 familie_unavailable { reason: 'forbidden' }` und `deadlineCalendar`
-  verschwindet für 6 Stunden aus `GET me` (dann wird es wieder versucht) – bis Familie Drive als Aufrufer zulässt.
+- Der Familienkalender braucht **Familie ab 1.15.3** (nimmt `calendar_add` von Drive an). Ein älteres Familie verweigert
+  Drive (`forbidden`): „In den Familienkalender“ antwortet dann mit `409 familie_unavailable { reason: 'forbidden' }` und
+  `deadlineCalendar` verschwindet für 6 Stunden aus `GET me` (dann wird es wieder versucht).
 
 ## 1.13.0
 - **Arbeitsfotos getrennt (Feature `photoClasses`):** Die Handys ordnen ein neues Foto nach dem WLAN, in dem es
