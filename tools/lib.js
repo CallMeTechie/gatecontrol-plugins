@@ -41,6 +41,30 @@ function gcRequire(rel) {
   return require(path.join(gatecontrolDir(), rel));
 }
 
+/** The version of the GateControl checkout (its package.json), e.g. '1.214.0'. */
+function gatecontrolVersion() {
+  return readJson(path.join(gatecontrolDir(), 'package.json')).version;
+}
+
+/** The lowest GateControl version a plugin.json `gatecontrol` range allows (its first ">=x.y.z" / "^x.y.z" / "~x.y.z"), or null. */
+function minGatecontrol(range) {
+  const m = /(?:>=|\^|~)\s*v?(\d+\.\d+\.\d+)/.exec(String(range || ''));
+  return m ? m[1] : null;
+}
+
+/**
+ * Does a plugin need a newer GateControl than the pinned checkout (gatecontrol.ref)? → the version it needs, else null.
+ * Such a plugin is built for a GateControl that is not released yet: validate.js checks it without the keys the pinned
+ * validator does not know (NEWER_KEYS), pack.js leaves it out of --all. Bump gatecontrol.ref once that version is out.
+ */
+function needsNewerHost(raw) {
+  const min = minGatecontrol(raw && raw.gatecontrol);
+  if (!min) return null;
+  let pinned;
+  try { pinned = gatecontrolVersion(); } catch { return null; }
+  return compareSemver(min, pinned) > 0 ? min : null;
+}
+
 function readJson(file) {
   return JSON.parse(fs.readFileSync(file, 'utf8'));
 }
@@ -130,6 +154,6 @@ function setOutputs(obj) {
 
 module.exports = {
   ROOT, PLUGINS, ID_RE, SEMVER_RE, TAG_RE,
-  fail, gatecontrolRef, gatecontrolDir, gcRequire, readJson, config, pluginConfig, listPlugins, pluginDir,
+  fail, gatecontrolRef, gatecontrolDir, gatecontrolVersion, minGatecontrol, needsNewerHost, gcRequire, readJson, config, pluginConfig, listPlugins, pluginDir,
   changelogSection, parseSemver, compareSemver, parseTag, setOutputs,
 };

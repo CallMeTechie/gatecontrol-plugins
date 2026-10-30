@@ -313,11 +313,21 @@
 //   host.cloudImports. Refusals: ERR_CLOUD_DENIED, ERR_CLOUD_NOT_CONFIGURED, ERR_CLOUD_AUTH, ERR_CLOUD_NOT_FOUND (also another
 //   person's or plugin's connection), ERR_CLOUD_TOO_LARGE (> media.maxBytes), ERR_MEDIA_DENIED, ERR_MEDIA_TYPE,
 //   ERR_MEDIA_EMPTY, ERR_MEDIA_QUOTA, ERR_RATE_LIMIT, ERR_INVALID (a folder, a bad returnTo or cursor).
+//
+// GateControl 1.216.0 (opt-in: opts.gatecontrol: '1.216.0', or opts.mail / opts.fetchImage on an older version) — mail,
+// tools/testing/mock-mail.js: permissions.mail { purpose, maxConnections (1…200, default 50) } is validated; gc.mail
+// (imap.connect → a session proxy with the host's checks: ports 993/tls, 143/starttls, 465/tls, 587/starttls, public hosts,
+// maxConnections → ERR_MAIL_LIMIT, ≤ 500 per fetch; smtp.send with appendCopy → raw; compose / parse / sanitize /
+// autoconfig) talks to the test's opts.mail { imap, smtp, autoconfig, denied }; gc.http.fetchImage(url, { maxBytes })
+// (permissions.network.images) to opts.fetchImage(url) → { status, mime, body }; services.provides.<name>.maxPerHour
+// (60…3600; accepted at every emulated version, acting from 1.216.0) — that many calls per hour of that service instead of the 60. host.mailSessions, host.mailSent,
+// host.imageFetches record them.
 
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const EventEmitter = require('node:events');
+const mockMail = require('./mock-mail');
 
 // GateControl's favourite colour palette (services/avatars.js PALETTE, GateControl ≥ 1.168.0)
 const PALETTE = Object.freeze([
@@ -593,7 +603,7 @@ function internetAllowed(list, url) {
 function networkOf(manifest) {
   const n = (manifest.permissions && manifest.permissions.network) || {};
   const obj = Array.isArray(n) ? { internet: n } : n;
-  return { internet: obj.internet || [], homeTargets: obj.homeTargets || [], localDiscovery: obj.localDiscovery || null };
+  return { internet: obj.internet || [], homeTargets: obj.homeTargets || [], localDiscovery: obj.localDiscovery || null, images: obj.images };
 }
 
 function settingDefaults(manifest) {
@@ -940,8 +950,10 @@ async function createHost(pluginDir, opts = {}) {
     for (const [name, def] of Object.entries(prov)) {
       const label = def && def.label;
       const okLabel = (typeof label === 'string' && label.trim() && label.length <= 60) || (label && typeof label === 'object' && (label.de || label.en));
-      if (!SERVICE_NAME_RE.test(name) || !okLabel || Object.keys(def).some((k) => k !== 'label')) throw hostError('ERR_INVALID', 'plugin.json: services.provides: invalid');
-      provides[name] = { label };
+      // GateControl ≥ 1.216.0: maxPerHour (60 … 3600) — calls per hour and caller of this service instead of the 60
+      if (!SERVICE_NAME_RE.test(name) || !okLabel || Object.keys(def).some((k) => k !== 'label' && k !== 'maxPerHour')) throw hostError('ERR_INVALID', 'plugin.json: services.provides: invalid');
+      const mph = mockMail.maxPerHourOf(def, gcVersion[0] > 1 || (gcVersion[0] === 1 && gcVersion[1] >= 216), hostError);
+      provides[name] = { label, ...(mph ? { maxPerHour: mph } : {}) };
     }
   }
   for (const t of Array.isArray(manifest.notifyTopics) ? manifest.notifyTopics : []) {
@@ -971,6 +983,10 @@ async function createHost(pluginDir, opts = {}) {
     throw hostError('ERR_INVALID', 'plugin.json: permissions.cloudImport: invalid');
   }
   const cloudPerm = !!(cloudOn && perms.cloudImport != null);
+  // ─── GateControl 1.216.0: gc.mail (permissions.mail), gc.http.fetchImage (permissions.network.images) — mock-mail.js ───
+  const gc216 = atLeast(216);
+  if (gc216 || opts.mail) mockMail.mailPermission(perms.mail, hostError);
+  if (gc216 && net.images != null && typeof net.images !== 'boolean') throw hostError('ERR_INVALID', 'plugin.json: permissions.network: invalid images');
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), `gcmock-${manifest.id}-`));
   const filesDir = path.join(tmp, 'files');
   fs.mkdirSync(filesDir);
@@ -1019,6 +1035,7 @@ async function createHost(pluginDir, opts = {}) {
   const serviceCalls = [];
   const sinkCalls = []; // GateControl ≥ 1.191.0: host.deliverNotice
   const serviceAt = [];
+  const serviceAtBy = new Map(); // GateControl ≥ 1.216.0: service → call times (maxPerHour)
   // a provider may be another mock host (GateControl ≥ 1.193.0 multi-plugin tests: services and hand-over between them)
   const linkedHost = (p) => (p && p.host && typeof p.host === 'object' && p.host.manifest ? p.host : null);
   const providers = (opts.services || []).filter((p) => p && typeof p.plugin === 'string' && p.plugin !== manifest.id).map((p) => {
@@ -2049,8 +2066,19 @@ async function createHost(pluginDir, opts = {}) {
     const offered = p ? (Array.isArray(p.provides) ? p.provides : Object.keys(p.provides || {})) : [];
     if (!p || !offered.includes(a.service) || typeof p.service !== 'function') throw hostError('ERR_SERVICE_UNAVAILABLE', 'the providing plugin or service is not available');
     const now = Date.now();
-    if (recentAt(serviceAt, now).length >= SERVICES_PER_HOUR) throw hostError('ERR_RATE_LIMIT', `too many service calls (${SERVICES_PER_HOUR} per hour)`);
-    serviceAt.push(now);
+    // GateControl ≥ 1.216.0: the provider's maxPerHour for this service (per caller) instead of the 60 per hour
+    const lh = linkedHost(p);
+    const def = lh ? ((lh.manifest.services || {}).provides || {})[a.service] : (p.provides && typeof p.provides === 'object' && !Array.isArray(p.provides) ? p.provides[a.service] : null);
+    const mph = gc216 && def && Number.isInteger(def.maxPerHour) ? def.maxPerHour : null;
+    if (mph) {
+      const list = serviceAtBy.get(a.service) || [];
+      serviceAtBy.set(a.service, list);
+      if (recentAt(list, now).length >= mph) throw hostError('ERR_RATE_LIMIT', `too many calls of ${a.service} (${mph} per hour)`);
+      list.push(now);
+    } else {
+      if (recentAt(serviceAt, now).length >= SERVICES_PER_HOUR) throw hostError('ERR_RATE_LIMIT', `too many service calls (${SERVICES_PER_HOUR} per hour)`);
+      serviceAt.push(now);
+    }
     let result;
     try {
       result = wire(await p.service(wire({ name: a.service, caller: manifest.id, user, payload })));
@@ -2692,13 +2720,19 @@ async function createHost(pluginDir, opts = {}) {
   }
   const log = (level) => (...a) => logs.push({ level, message: a.map((x) => (typeof x === 'string' ? x : JSON.stringify(x))).join(' ') });
 
+  // GateControl 1.216.0 (mock-mail.js)
+  const mail216 = mockMail.install({ perms, opts, hostError, wire, gc216, mediaStore, mediaQuota, mediaUsage, media });
   const gc = Object.freeze({
     plugin: Object.freeze({ id: manifest.id, version: manifest.version, filesDir }),
+    // GateControl ≥ 1.216.0: IMAP / SMTP / MIME / sanitizer (permissions.mail; missing without it)
+    ...(mail216.gcMail ? { mail: mail216.gcMail } : {}),
     log: Object.freeze({ debug: log('debug'), info: log('info'), warn: log('warn'), error: log('error') }),
     http: Object.freeze({
       fetch: (url, o) => call('http.fetch', { url: String(url), opts: o || {} }),
       /** GateControl ≥ 1.184.0 (only when the test passes a websocket handler, like an older host without it otherwise) */
       ...(opts.websocket ? { websocket: (url, o) => openWebSocket(url, o) } : {}),
+      // GateControl ≥ 1.216.0: pictures of mails through the host (permissions.network.images)
+      ...(mail216.fetchImage ? { fetchImage: (url, o) => mail216.fetchImage(url, o) } : {}),
     }),
     net: Object.freeze({
       targets: () => call('targets.list', {}),
@@ -2907,6 +2941,8 @@ async function createHost(pluginDir, opts = {}) {
   return {
     manifest, gc, plugin, logs, notifications, fetches, websockets, kv, settings, filesDir, kiosk, actionRuns,
     media: mediaStore, mediaCopies, events, serviceCalls,
+    /** GateControl ≥ 1.216.0 (mock-mail.js): IMAP sessions opened, SMTP sends, pictures fetched */
+    mailSessions: mail216.records.mailSessions, mailSent: mail216.records.mailSent, imageFetches: mail216.records.imageFetches,
     /** GateControl ≥ 1.177.0: an upload of an app or a frame (PUT …/plugins/<id>/media) → { status, body } */
     async upload(user, data, mime, o = {}) {
       if (!media) return { status: 404, body: { ok: false, code: 'not_found' } };
@@ -3432,6 +3468,7 @@ async function createHost(pluginDir, opts = {}) {
     /** view = { view: 'page'|'portal', page, section, user, lang, loggedIn } */
     render: (view) => hook('render', { view: 'page', page: 'main', user: sessionUser(), lang: 'de', ...view }),
     async close() {
+      mail216.closeAll();
       if (db) { db.close(); db = null; }
       fs.rmSync(tmp, { recursive: true, force: true });
     },
