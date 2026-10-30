@@ -13,6 +13,7 @@ const compose = require('./compose');
 const ai = require('./ai');
 const drive = require('./drive');
 const mailstore = require('./mailstore');
+const avatars = require('./avatars');
 const { fail } = require('./util');
 
 const SWIPES = ['archive', 'delete', 'read', 'none'];
@@ -81,6 +82,7 @@ async function route(gc, ctx, req, seg) {
       if (n === 2 && m === 'PATCH') return accounts.patch(gc, ctx, id(s1), b);
       if (n === 2 && m === 'DELETE') return accounts.remove(gc, ctx, id(s1));
       if (n === 3 && s2 === 'microsoft' && m === 'POST') return accounts.reMicrosoft(gc, ctx, id(s1), b);
+      if (n === 3 && s2 === 'avatar' && m === 'GET') return avatars.get(gc, ctx.userId, id(s1));
       break;
     case 'folders': if (n === 1 && m === 'GET') return messages.folders(gc, ctx.userId); break;
     case 'messages':

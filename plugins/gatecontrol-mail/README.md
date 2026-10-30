@@ -81,11 +81,19 @@ before 503).
 | `PATCH accounts/<id>` | `{ name?, color?, kind?, push?, ai?, attachments?, signature?, password? }` → `{ account }` (a new password is tried first: IMAP, and SMTP on ≥ 1.217.0) |
 | `POST accounts/<id>/microsoft` | `{ code, codeVerifier, redirectUri }` → `{ account }` (signed in anew; another address → `invalid`) |
 | `DELETE accounts/<id>` | `{ ok }` — the server's copy goes, the mail at the provider stays |
+| `GET accounts/<id>/avatar` | `{ mediaId, mime, size, url }` — the account's picture (`url`: signed for the portal's frame, 24 h); none: 404 `not_found` |
 
 `Account` = `{ id, provider: 'gmx'|'webde'|'tonline'|'gmail'|'outlook'|'m365'|'imap', email, name, color ('#RRGGBB'), kind:
 'personal'|'business', state: 'ok'|'syncing'|'auth_failed'|'unreachable', error: { code, at } | null, push:
-'off'|'relevant'|'all', ai, attachments: 'off'|'suggest'|'auto', signature }`. A Microsoft sign-in of an address the
+'off'|'relevant'|'all', ai, attachments: 'off'|'suggest'|'auto', signature, avatar: { mediaId, mime } | null }`. A Microsoft sign-in of an address the
 person has already signs that account in anew (also at the account limit).
+
+`avatar` (since 1.1.2): the account's picture at the provider — Microsoft only (Graph `/me/photos/96x96`, else
+`/me/photo`; many Microsoft 365 accounts have none → `null`), IMAP accounts always `null`. Fetched with the sign-in, then
+at most once a day (an unchanged picture is not loaded again, a failure again within the hour); a new or removed picture
+sends the live event `mail` `{ kind: 'changed', accountId, folderId: null }`. The apps load it as the plugin's media
+(`/api/v1/client/plugins/gatecontrol-mail/media/<mediaId>`, only the account's person); without a picture they show the
+provider's mark (`provider`) with `email` below the name.
 
 ### Folders, lists, search, reading
 

@@ -24,6 +24,14 @@ Alle E-Mail-Konten an einem Ort – im eigenen Tab der GateControl-Apps und im P
 - Erster Abgleich: zuerst die neuesten 50 Mails des Posteingangs (Microsoft: nach Datum, das Delta folgt seitenweise;
   IMAP: die neuesten 50, dann je 300), die Liste ist sofort da und füllt sich während des Abgleichs (Live-Event höchstens
   alle 5 s).
+- **Konten mit Bild und Adresse:** Das Profilbild beim Anbieter (Microsoft: Graph `/me/photos/96x96`, sonst
+  `/me/photo`; 404 = keins, bei Microsoft 365 häufig) liegt als Media des Plugins vor – geholt beim Anmelden, danach
+  höchstens einmal am Tag (unverändertes Bild laut `mediaEtag` wird nicht neu geladen, nach einem Fehler erneut binnen
+  einer Stunde). `Account.avatar` = `{ mediaId, mime } | null` (IMAP-Konten: immer `null`); die Apps laden es über
+  `media/<mediaId>` (nur die Person des Kontos), das Portal über `GET accounts/<id>/avatar` → `{ mediaId, mime, size, url }`.
+  Ein neues oder entferntes Bild schickt das Live-Event `mail` mit `accountId`. Migration 003 (`accounts.avatar_*`).
+- Portal: Konten im Menü und in den Einstellungen als kleiner Kreis mit Bild oder Zeichen des Anbieters (Outlook,
+  Microsoft 365, Gmail, GMX, WEB.DE, T-Online, sonst @) und der Farbe des Kontos als Punkt, darunter die Adresse.
 - Portal: Fehlt der Inhalt noch, steht „Der Inhalt wird noch vom Anbieter geladen“ mit „Erneut versuchen“ da, die Mail
   lädt von selbst neu, sobald er da ist; ein Anhang, der noch geladen wird, startet seinen Download von selbst.
 

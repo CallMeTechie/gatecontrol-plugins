@@ -192,14 +192,17 @@ async function message(gc, a, m) {
 
 /** An attachment into the plugin's media (gc.media.fetch with the token) → { mediaId, bytes, mime, name }. */
 async function download(gc, a, m, att, maxBytes) {
+  return mediaFetch(gc, a, `/me/messages/${encodeURIComponent(m.remote_id)}/attachments/${encodeURIComponent(att.remote_id)}/$value`, { name: att.name, mime: att.mime, maxBytes, timeoutMs: 60000 });
+}
+
+/** A Graph file (`path` below v1.0) into the plugin's media with the account's token → gc.media.fetch's answer. */
+async function mediaFetch(gc, a, path, opts) {
   let stale = null;
   for (let attempt = 0; ; attempt++) {
     const token = await ms.accessToken(gc, a, attempt > 0, stale);
     stale = token;
     try {
-      return await gc.media.fetch(`${ms.GRAPH}/me/messages/${encodeURIComponent(m.remote_id)}/attachments/${encodeURIComponent(att.remote_id)}/$value`, {
-        headers: { authorization: `Bearer ${token}` }, name: att.name, mime: att.mime, maxBytes, timeoutMs: 60000,
-      });
+      return await gc.media.fetch(`${ms.GRAPH}${path}`, { headers: { authorization: `Bearer ${token}` }, ...opts });
     } catch (e) {
       // 401: the token once more (renewed — or the one someone else renewed meanwhile), then auth_failed
       if (e && e.code === 'ERR_HTTP' && e.status === 401) { if (attempt === 0) continue; throw Object.assign(fail('auth_failed'), { auth: true }); }
@@ -354,9 +357,22 @@ async function send(gc, a, d, original) {
 }
 
 /** GET /me → { email, name } of a freshly signed-in account. */
+/**
+ * The account's picture: the metadata of the 96×96 one, else of the original (Microsoft 365 / outlook.com) → { path,
+ * mime, etag } | null (404: none — many Microsoft 365 accounts have none).
+ */
+async function photo(gc, a) {
+  for (const path of ['/me/photos/96x96', '/me/photo']) {
+    const x = await get(gc, a, path);
+    if (!x) continue;
+    return { path: `${path}/$value`, mime: String(x['@odata.mediaContentType'] || 'image/jpeg').toLowerCase(), etag: x['@odata.mediaEtag'] ? String(x['@odata.mediaEtag']).slice(0, 200) : null };
+  }
+  return null;
+}
+
 async function me(gc, a) {
   const x = await get(gc, a, '/me?$select=displayName,mail,userPrincipalName');
   return { email: String((x && (x.mail || x.userPrincipalName)) || '').toLowerCase(), name: (x && x.displayName) || '' };
 }
 
-module.exports = { syncFolders, syncFolder, latest, older, message, download, patch, move, destroy, search, send, me, headerOf, canAttach, ownReply, WELL_KNOWN, SMALL_MAX, PIECE };
+module.exports = { syncFolders, syncFolder, latest, older, message, download, mediaFetch, photo, patch, move, destroy, search, send, me, headerOf, canAttach, ownReply, WELL_KNOWN, SMALL_MAX, PIECE };
