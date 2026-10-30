@@ -96,7 +96,10 @@ async function syncFolders(gc, a) {
   return store.all(gc, 'SELECT * FROM folders WHERE account_id = ?', [a.id]);
 }
 
-/** One delta run of folder `f` → { created, changed }. o: { since, arrival }. */
+/**
+ * One delta run of folder `f` → { created, changed, more }. o: { since, arrival, pages (at most this many pages, default
+ * PAGES) } — `more`: the round has pages left (its nextLink is kept for the next run).
+ */
 async function syncFolder(gc, a, f, o) {
   const now = Date.now();
   const out = { created: [], changed: false };
@@ -108,7 +111,8 @@ async function syncFolder(gc, a, f, o) {
   const first = !f.synced_at;
   let pages = 0;
   let done = false;
-  while (url && pages < PAGES) {
+  const most = o.pages || PAGES;
+  while (url && pages < most) {
     const r = await ms.graph(gc, a, 'GET', url, undefined, { headers: { prefer: `odata.maxpagesize=${PAGE}` } });
     if (r.status === 410 || (r.status === 400 && /sync/i.test(ms.graphError(r)))) {
       // the delta token ran out: start over
@@ -135,7 +139,24 @@ async function syncFolder(gc, a, f, o) {
   }
   await store.run(gc, 'UPDATE folders SET delta = ?, synced_at = ?, complete = ? WHERE id = ?', [url, done || f.synced_at ? now : null, done && !o.since ? 1 : 0, f.id]);
   if (out.created.length) out.changed = true;
+  out.more = !done && !!url;
   return out;
+}
+
+/**
+ * The newest `count` messages of folder `f` (the first sync of a posteingang: the list is there at once, the delta round
+ * follows in steps — Graph's delta has no order) → { created, changed }.
+ */
+async function latest(gc, a, f, count, since) {
+  const filter = since ? `&$filter=${encodeURIComponent(`receivedDateTime ge ${new Date(since).toISOString()}`)}` : '';
+  const j = await get(gc, a, `/me/mailFolders/${encodeURIComponent(f.remote_id)}/messages?$select=${SELECT}${filter}&$orderby=receivedDateTime desc&$top=${count}`);
+  const now = Date.now();
+  const created = [];
+  for (const x of (j && j.value) || []) {
+    const r = await mailstore.upsert(gc, a, f, headerOf(x), { arrival: false, now });
+    if (r.created) created.push(r.id);
+  }
+  return { created, changed: created.length > 0 };
 }
 
 /** Older messages of folder `f` than `before` (beyond the retention) → created ids. */
@@ -171,14 +192,24 @@ async function message(gc, a, m) {
 
 /** An attachment into the plugin's media (gc.media.fetch with the token) → { mediaId, bytes, mime, name }. */
 async function download(gc, a, m, att, maxBytes) {
-  const token = await ms.accessToken(gc, a);
-  try {
-    return await gc.media.fetch(`${ms.GRAPH}/me/messages/${encodeURIComponent(m.remote_id)}/attachments/${encodeURIComponent(att.remote_id)}/$value`, {
-      headers: { authorization: `Bearer ${token}` }, name: att.name, mime: att.mime, maxBytes, timeoutMs: 60000,
-    });
-  } catch (e) {
-    if (e && e.code === 'ERR_HTTP' && e.status === 401) throw Object.assign(fail('auth_failed'), { auth: true });
-    throw e;
+  return mediaFetch(gc, a, `/me/messages/${encodeURIComponent(m.remote_id)}/attachments/${encodeURIComponent(att.remote_id)}/$value`, { name: att.name, mime: att.mime, maxBytes, timeoutMs: 60000 });
+}
+
+/** A Graph file (`path` below v1.0) into the plugin's media with the account's token → gc.media.fetch's answer. */
+async function mediaFetch(gc, a, path, opts) {
+  let stale = null;
+  for (let attempt = 0; ; attempt++) {
+    const token = await ms.accessToken(gc, a, attempt > 0, stale);
+    stale = token;
+    try {
+      return await gc.media.fetch(`${ms.GRAPH}${path}`, { headers: { authorization: `Bearer ${token}` }, ...opts });
+    } catch (e) {
+      // 401: the token once more (renewed — or the one someone else renewed meanwhile), then auth_failed
+      if (e && e.code === 'ERR_HTTP' && e.status === 401) { if (attempt === 0) continue; throw Object.assign(fail('auth_failed'), { auth: true }); }
+      if (e && e.code === 'ERR_HTTP' && (e.status === 429 || e.status === 503)) throw fail('busy', { retryAfter: 30 });
+      if (e && e.code === 'ERR_HTTP' && e.status === 404) throw fail('not_found');
+      throw e;
+    }
   }
 }
 
@@ -326,9 +357,22 @@ async function send(gc, a, d, original) {
 }
 
 /** GET /me → { email, name } of a freshly signed-in account. */
+/**
+ * The account's picture: the metadata of the 96×96 one, else of the original (Microsoft 365 / outlook.com) → { path,
+ * mime, etag } | null (404: none — many Microsoft 365 accounts have none).
+ */
+async function photo(gc, a) {
+  for (const path of ['/me/photos/96x96', '/me/photo']) {
+    const x = await get(gc, a, path);
+    if (!x) continue;
+    return { path: `${path}/$value`, mime: String(x['@odata.mediaContentType'] || 'image/jpeg').toLowerCase(), etag: x['@odata.mediaEtag'] ? String(x['@odata.mediaEtag']).slice(0, 200) : null };
+  }
+  return null;
+}
+
 async function me(gc, a) {
   const x = await get(gc, a, '/me?$select=displayName,mail,userPrincipalName');
   return { email: String((x && (x.mail || x.userPrincipalName)) || '').toLowerCase(), name: (x && x.displayName) || '' };
 }
 
-module.exports = { syncFolders, syncFolder, older, message, download, patch, move, destroy, search, send, me, headerOf, canAttach, ownReply, WELL_KNOWN, SMALL_MAX, PIECE };
+module.exports = { syncFolders, syncFolder, latest, older, message, download, mediaFetch, photo, patch, move, destroy, search, send, me, headerOf, canAttach, ownReply, WELL_KNOWN, SMALL_MAX, PIECE };

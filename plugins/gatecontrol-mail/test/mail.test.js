@@ -11,7 +11,7 @@ const { withMail, settle, ANNA, MARC, BOB, ADMIN, DIR } = require('./helpers');
 
 test('plugin.json: GateControl 1.216.0, mail, images, Drive and Familie services, the app tab', () => {
   const m = JSON.parse(fs.readFileSync(path.join(DIR, 'plugin.json'), 'utf8'));
-  assert.equal(m.version, '1.1.1');
+  assert.equal(m.version, '1.1.2');
   assert.equal(m.gatecontrol, '>=1.216.0');
   assert.equal(m.permissions.mail.maxConnections, 100);
   assert.ok(m.permissions.mail.purpose.de && m.permissions.mail.purpose.en);

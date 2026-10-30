@@ -2,6 +2,39 @@
 
 Alle E-Mail-Konten an einem Ort – im eigenen Tab der GateControl-Apps und im Portal.
 
+## 1.1.2
+- **Eine Mail öffnet sich auch während eines langen Abgleichs.** Bisher lief pro Konto alles nacheinander: Der erste
+  Abgleich eines frisch hinzugefügten Kontos (12 Monate, bei Microsoft viele Delta-Seiten) hielt das Öffnen einer Mail,
+  Anhänge und Markierungen minutenlang auf – die Apps meldeten nach 25 s „Der Server ist gerade nicht erreichbar“.
+  - Der Abgleich läuft in kurzen Schritten (Ordnerliste, eine Graph-Delta-Seite, ein IMAP-Ordnerlauf mit Budget, ein
+    Inhalt); was eine Person anstößt, kommt vor die wartenden Schritte.
+  - Microsoft: Inhalt, Anhänge, Markierungen, Verschieben und Löschen laufen neben dem Abgleich (Graph ist zustandsloses
+    HTTP; höchstens 3 solche Anfragen je Postfach gleichzeitig). Das Zugriffstoken wird für alle nur einmal erneuert –
+    wer währenddessen fragt (oder ein 401 bekommt), wartet auf diese eine Erneuerung.
+  - IMAP: Inhalt und Anhang kommen bei freiem Konto über dessen Sitzung, während eines Abgleichschritts über eine kurze
+    eigene Sitzung, die danach gleich wieder schließt (höchstens 2 je Konto, 8 insgesamt, innerhalb der 100
+    Verbindungen); sonst als Erstes nach dem laufenden Schritt.
+  - Ein Inhalt oder Anhang, der schon geladen wird, wird nie ein zweites Mal geholt.
+- **Antwort spätestens nach etwa 12 s:** `GET messages/<id>` und `GET threads/<id>` antworten dann mit `bodyMissing:
+  true` (die Vorschau als Text), das Laden geht weiter und meldet sich mit dem Live-Event `mail` `{ kind: 'changed',
+  accountId, folderId, messageId }` (Unterhaltung: `threadId`). `GET messages/<id>/attachments/<aid>` und
+  `GET cid/…` antworten statt zu hängen mit 409 `busy { reason: 'loading', retryAfter: 5 }`; erneutes Fragen hängt sich
+  an den laufenden Download, sein Ende meldet das Live-Event mit `messageId` und `attachmentId`.
+- `busy` hat jetzt den Status 409 (vorher 503 – Clients werteten das als „offline“).
+- Erster Abgleich: zuerst die neuesten 50 Mails des Posteingangs (Microsoft: nach Datum, das Delta folgt seitenweise;
+  IMAP: die neuesten 50, dann je 300), die Liste ist sofort da und füllt sich während des Abgleichs (Live-Event höchstens
+  alle 5 s).
+- **Konten mit Bild und Adresse:** Das Profilbild beim Anbieter (Microsoft: Graph `/me/photos/96x96`, sonst
+  `/me/photo`; 404 = keins, bei Microsoft 365 häufig) liegt als Media des Plugins vor – geholt beim Anmelden, danach
+  höchstens einmal am Tag (unverändertes Bild laut `mediaEtag` wird nicht neu geladen, nach einem Fehler erneut binnen
+  einer Stunde). `Account.avatar` = `{ mediaId, mime } | null` (IMAP-Konten: immer `null`); die Apps laden es über
+  `media/<mediaId>` (nur die Person des Kontos), das Portal über `GET accounts/<id>/avatar` → `{ mediaId, mime, size, url }`.
+  Ein neues oder entferntes Bild schickt das Live-Event `mail` mit `accountId`. Migration 003 (`accounts.avatar_*`).
+- Portal: Konten im Menü und in den Einstellungen als kleiner Kreis mit Bild oder Zeichen des Anbieters (Outlook,
+  Microsoft 365, Gmail, GMX, WEB.DE, T-Online, sonst @) und der Farbe des Kontos als Punkt, darunter die Adresse.
+- Portal: Fehlt der Inhalt noch, steht „Der Inhalt wird noch vom Anbieter geladen“ mit „Erneut versuchen“ da, die Mail
+  lädt von selbst neu, sobald er da ist; ein Anhang, der noch geladen wird, startet seinen Download von selbst.
+
 ## 1.1.1
 - Admin-Einstellungen: die Schalter haben wieder ihre normale Form (feste Größe, unabhängig von den Eingabe-Stilen des Portals).
 - Microsoft-Karte: die zweite Zeile heißt „Verbundene Konten“ statt noch einmal „Status“.

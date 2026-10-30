@@ -27,8 +27,12 @@ checked before saving (`gc.mail.smtp.verify`). On 1.216.0 both stay as in 1.0.0.
   mail is synced at once (its body too, then the push); the posteingang is checked again every 5 minutes, the other
   folders every 15 minutes and whenever their list is opened. Microsoft: a Graph delta query per folder (posteingang
   every minute, the rest every 15 minutes), the token renewed with the refresh token. The first sync takes the last
-  `retentionMonths` (newest first, in parts); older mail comes from the server when a list is scrolled past it or by
-  the search. Bodies of the rest come in the background (10 per account and run), within the quota.
+  `retentionMonths` (newest first, in parts: the newest 50 of the posteingang at once, then Graph delta page by page /
+  IMAP 300 at a time); older mail comes from the server when a list is scrolled past it or by the search. Bodies of the
+  rest come in the background (10 per account and run), within the quota.
+  Since 1.1.2 every sync goes in short steps, and what a person waits for never waits behind them: Microsoft bodies,
+  attachments, flags and moves go beside the sync (one token renewal for all), IMAP bodies and attachments on a short
+  session of their own while a sync step runs (≤ 2 per account, 8 in all), flags and moves first after the running step.
 * **Storage**: headers, snippet, flags, body (sanitized HTML + text) in the plugin's database; attachments as the
   plugin's media only when needed (administrator: `on_demand`, or `always` up to 10 MB), least used first out when the
   person is over `quotaGB` (bodies of the oldest mail next — the headers stay; `limits.usedBytes`). Mail older than the
@@ -58,7 +62,9 @@ with `seat: null`, everything else `403 no_seat`; without a valid licence `403 n
 images_blocked`, 404 `not_found`, 409 `auth_failed { hint, server? } | imap_disabled { hint } | unreachable { server? } |
 tls { server? } | exists | ai_off | ai_unavailable | seat_limit | seat_kind
 | familie_unavailable | drive_unavailable | no_folder | not_waiting | microsoft_off | attachments_unsupported |
-images_off | links_disabled`, 413 `too_large { max }`, 429 `rate_limited`.
+images_off | links_disabled | busy { retryAfter?, reason? }`, 413 `too_large { max }`, 429 `rate_limited`. `busy`: the provider
+throttles, or (`reason: 'loading'`) an attachment is still on its way — ask again after `retryAfter` s (since 1.1.2 409,
+before 503).
 
 ### Account, state
 
@@ -75,11 +81,19 @@ images_off | links_disabled`, 413 `too_large { max }`, 429 `rate_limited`.
 | `PATCH accounts/<id>` | `{ name?, color?, kind?, push?, ai?, attachments?, signature?, password? }` → `{ account }` (a new password is tried first: IMAP, and SMTP on ≥ 1.217.0) |
 | `POST accounts/<id>/microsoft` | `{ code, codeVerifier, redirectUri }` → `{ account }` (signed in anew; another address → `invalid`) |
 | `DELETE accounts/<id>` | `{ ok }` — the server's copy goes, the mail at the provider stays |
+| `GET accounts/<id>/avatar` | `{ mediaId, mime, size, url }` — the account's picture (`url`: signed for the portal's frame, 24 h); none: 404 `not_found` |
 
 `Account` = `{ id, provider: 'gmx'|'webde'|'tonline'|'gmail'|'outlook'|'m365'|'imap', email, name, color ('#RRGGBB'), kind:
 'personal'|'business', state: 'ok'|'syncing'|'auth_failed'|'unreachable', error: { code, at } | null, push:
-'off'|'relevant'|'all', ai, attachments: 'off'|'suggest'|'auto', signature }`. A Microsoft sign-in of an address the
+'off'|'relevant'|'all', ai, attachments: 'off'|'suggest'|'auto', signature, avatar: { mediaId, mime } | null }`. A Microsoft sign-in of an address the
 person has already signs that account in anew (also at the account limit).
+
+`avatar` (since 1.1.2): the account's picture at the provider — Microsoft only (Graph `/me/photos/96x96`, else
+`/me/photo`; many Microsoft 365 accounts have none → `null`), IMAP accounts always `null`. Fetched with the sign-in, then
+at most once a day (an unchanged picture is not loaded again, a failure again within the hour); a new or removed picture
+sends the live event `mail` `{ kind: 'changed', accountId, folderId: null }`. The apps load it as the plugin's media
+(`/api/v1/client/plugins/gatecontrol-mail/media/<mediaId>`, only the account's person); without a picture they show the
+provider's mark (`provider`) with `email` below the name.
 
 ### Folders, lists, search, reading
 
@@ -88,12 +102,12 @@ person has already signs that account in anew (also at the account limit).
 | `GET folders` | `{ accounts: [{ accountId, folders: [{ id, name, path, role, parentId, unread, total }] }] }` |
 | `GET messages` | `?box=all\|<accountId>&folder=&tab=relevant\|other\|all&unread=1&flagged=1&attachments=1&before=<cursor>&limit=50` → `{ items: [Summary], next, counts: { relevant, other } }` — `counts`: unread per tab of the posteingänge. With `settings.threads` one row per conversation (its newest mail; `threadCount`), not with `unread` / `flagged`. A single folder whose copy ends before the server's mail gives a `next` at the end; that page loads older mail from the server |
 | `GET search` | `?q=&box=&from=&after=&before=&attachments=1&unread=1&cursor=` → `{ items, next, remote }` — the copy first; the first page with few hits also asks the servers (`remote: true`) |
-| `GET threads/<threadId>` | `{ items: [Message] }` oldest first |
-| `GET messages/<id>` | `Message` = Summary + `{ cc, bcc, replyTo, html \| null, text, imagesBlocked, trackers, attachments: [Attachment], listUnsubscribe, bodyMissing }` — the body from the server when it is not here |
+| `GET threads/<threadId>` | `{ items: [Message] }` oldest first — up to 10 missing bodies are loaded at once; what is not there after ~12 s comes with `bodyMissing` (live event with `threadId` when through) |
+| `GET messages/<id>` | `Message` = Summary + `{ cc, bcc, replyTo, html \| null, text, imagesBlocked, trackers, attachments: [Attachment], listUnsubscribe, bodyMissing }` — the body from the server when it is not here. Since 1.1.2 at most ~12 s: then `bodyMissing: true` with the snippet as `text`, the load goes on (asking again joins it) and the live event `mail` with this `messageId` tells when it is there |
 | `POST messages/<id>/images` | `{ allow: 'once' \| 'sender' }` → `Message` |
 | `GET img/<token>` | `{ mime, size, data }` — the picture as base64 (≤ 700 KB, else 413) |
-| `GET cid/<messageId>/<attachmentId>` | `{ mediaId, mime, size, url }` — an embedded picture (the apps load `media/<mediaId>`, the portal `url`) |
-| `GET messages/<id>/attachments/<aid>` | `{ mediaId, name, mime, size, url }` |
+| `GET cid/<messageId>/<attachmentId>` | `{ mediaId, mime, size, url }` — an embedded picture (the apps load `media/<mediaId>`, the portal `url`); like attachments |
+| `GET messages/<id>/attachments/<aid>` | `{ mediaId, name, mime, size, url }` — not there after ~12 s: 409 `busy { reason: 'loading', retryAfter }`, the download goes on (asking again joins it), the live event `mail` with `messageId` and `attachmentId` tells when it is there |
 | `POST messages/flags` | `{ ids, unread?, flagged? }` → `{ ok, items }` |
 | `POST messages/move` | `{ ids, folderId }` (one account) |
 | `POST messages/archive` / `delete` / `junk` | `{ ids }` — delete: into the trash, in the trash for good; Gmail archives into "All Mail" |
@@ -172,7 +186,9 @@ to Drive (`gc.media.handOver`) before Drive sees it.
 * Topic `mail`: title = sender, text = subject, data `{ mail: { messageId, accountId } }` — per the account's `push`
   (`relevant`: mail of the tab Relevant); more new mail of a person in one run → one push "3 neue Mails" (data of the
   newest). Topic `mail_failed`: data `{ mail: { outboxId } }`.
-* Live event `mail` `{ kind: 'changed', accountId, folderId }` — load the lists again.
+* Live event `mail` `{ kind: 'changed', accountId, folderId }` — load the lists again. Since 1.1.2 also with `messageId`
+  (the body the answer did not wait for is there — load the open mail again; with `attachmentId`: that attachment) or
+  `threadId`; a long sync sends it while it goes on (at most every 5 s per folder).
 
 ### Service for other plugins
 

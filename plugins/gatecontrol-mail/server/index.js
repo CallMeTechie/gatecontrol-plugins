@@ -9,9 +9,9 @@
 //   portal    /api/v1/portal/plugins/gatecontrol-mail/api/…   (a signed-in portal viewer)      the same routes
 //   admin     admin/settings · admin/overview                   (administrators, admin.js)
 //
-// Hooks: start/stop (the sync engine), tick (every 15 s: syncing, the outbox, AI sorting, filing, quota and retention),
-// render (the portal tab, the admin pages), appVisible / portalVisible (who may use Mail), mediaAccess (attachments and
-// draft files of the person), service (new_draft for Drive), settingsChanged.
+// Hooks: start/stop (the sync engine), tick (every 15 s: syncing, the outbox, account pictures, AI sorting, filing, quota
+// and retention), render (the portal tab, the admin pages), appVisible / portalVisible (who may use Mail), mediaAccess
+// (attachments, draft files and account pictures of the person), service (new_draft for Drive), settingsChanged.
 
 const store = require('./store');
 const config = require('./config');
@@ -24,6 +24,8 @@ const drive = require('./drive');
 const api = require('./api');
 const admin = require('./admin');
 const seats = require('./seats');
+const avatars = require('./avatars');
+const push = require('./push');
 const ui = require('./ui');
 const { t } = require('./text');
 const { STATUS, fail, isKnown } = require('./util');
@@ -120,6 +122,7 @@ module.exports = {
     const skip = (off && off.users) || new Set();
     try { await compose.due(gc, now, skip); } catch (e) { gc.log.warn('outbox failed', (e && e.code) || 'error'); }
     try { await engine.tick(gc, now, 70000, skip); } catch (e) { gc.log.warn('sync run failed', (e && e.code) || 'error'); }
+    try { for (const a of await avatars.tick(gc, Date.now(), skip)) await push.changed(gc, a.user_id, a.id, null); } catch (e) { gc.log.warn('pictures failed', (e && e.code) || 'error'); }
     try { await compose.due(gc, Date.now(), skip); } catch { /* next run */ }
     try { await ai.tick(gc); } catch (e) { gc.log.warn('ai sorting failed', (e && e.code) || 'error'); }
     try { await drive.tick(gc, Date.now()); } catch (e) { gc.log.warn('filing failed', (e && e.code) || 'error'); }
@@ -137,9 +140,10 @@ module.exports = {
     return config.allowed(gc, await config.get(gc), user.id);
   },
 
-  /** Who may read a file: attachments of the person's mail and the files of the person's drafts. */
+  /** Who may read a file: attachments of the person's mail, the files of the person's drafts, the pictures of their accounts. */
   async mediaAccess({ user, mediaId } = {}, gc) {
     if (!user || !Number.isSafeInteger(user.id) || user.kiosk === true || typeof mediaId !== 'string') return false;
+    if (await store.one(gc, 'SELECT 1 AS x FROM accounts WHERE avatar_media = ? AND user_id = ?', [mediaId, user.id])) return true;
     if (await store.one(gc, 'SELECT 1 AS x FROM attachments t JOIN messages m ON m.id = t.message_id WHERE t.media_id = ? AND m.user_id = ?', [mediaId, user.id])) return true;
     return !!(await store.one(gc, 'SELECT 1 AS x FROM draft_atts x JOIN drafts d ON d.id = x.draft_id WHERE x.media_id = ? AND d.user_id = ?', [mediaId, user.id]));
   },

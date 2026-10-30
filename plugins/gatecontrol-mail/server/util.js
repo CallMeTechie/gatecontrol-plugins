@@ -32,7 +32,7 @@ const STATUS = {
   links_disabled: 409,
   too_large: 413,
   rate_limited: 429,
-  busy: 503,
+  busy: 409,
   internal: 500,
 };
 

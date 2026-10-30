@@ -14,18 +14,19 @@ const ms = require('./microsoft');
 const graph = require('./graph');
 const mailstore = require('./mailstore');
 const push = require('./push');
+const avatars = require('./avatars');
 const { fail, email, line, clip, COLOR_RE, PALETTE } = require('./util');
 
 const PUSH = ['off', 'relevant', 'all'];
 const ATTS = ['off', 'suggest', 'auto'];
 const DEVICE_RE = /^[0-9a-f]{24}$/;
 
-/** A row → the Account of the API. */
+/** A row → the Account of the API (avatar since 1.1.2: the picture at the provider, the plugin's media — or null). */
 function view(a) {
   return {
     id: a.id, provider: a.provider, email: a.email, name: a.name || '', color: a.color, kind: a.kind === 'business' ? 'business' : 'personal',
     state: a.state, error: a.error_code ? { code: a.error_code, at: a.error_at } : null, push: a.push, ai: a.ai === 1,
-    attachments: a.attachments, signature: a.signature || '',
+    attachments: a.attachments, signature: a.signature || '', avatar: avatars.view(a),
   };
 }
 
@@ -123,9 +124,12 @@ async function add(gc, ctx, b) {
   return { account: view(a) };
 }
 
-/** The first sync in the background (the answer does not wait). */
+/** The first sync in the background (the answer does not wait); Microsoft: the account's picture too (the lists follow). */
 function kick(gc, a) {
   engine.syncInbox(gc, a).catch(() => {});
+  if (providers.isMicrosoft(a.provider)) {
+    avatars.refresh(gc, a).then((changed) => (changed ? push.changed(gc, a.user_id, a.id, null) : null)).catch(() => {});
+  }
 }
 
 /** A Microsoft sign-in's tokens → a new account (or the same address again: signed in anew). */
@@ -273,6 +277,7 @@ async function remove(gc, ctx, id) {
   const a = await own(gc, ctx.userId, id);
   await engine.forget(a.id);
   await secrets.remove(gc, a.id);
+  await avatars.drop(gc, a);
   const ids = (await store.all(gc, 'SELECT id FROM messages WHERE account_id = ?', [a.id])).map((r) => r.id);
   await mailstore.remove(gc, ids);
   for (const d of await store.all(gc, 'SELECT id FROM drafts WHERE account_id = ?', [a.id])) {

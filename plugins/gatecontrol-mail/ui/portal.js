@@ -1,7 +1,8 @@
 /* Mail (gatecontrol-mail) — the portal tab (mockups Main, Menue, Lesen, Schreiben, Ablegen, Konto):
  *
  *   menu     Alle Posteingänge, Zum Ablegen, Ausgang, the accounts with their folders, "Konto hinzufügen", settings
- *   list     Relevant / Sonstige in posteingänge, search, more on scrolling; live reload on the event 'mail'
+ *   list     Relevant / Sonstige in posteingänge, search, more on scrolling; live reload on the event 'mail' (and of the open
+ *            mail whose body was still loading: the event names its messageId)
  *   mail     AI bar (Kurz gesagt, Zu tun — into the family calendar —, reply suggestions), attachments (download, "In Drive
  *            speichern" with Drive's suggestion, another folder, "Immer für diesen Absender"), pictures only on request,
  *            the conversation, answer / forward / archive / delete / move to Sonstige
@@ -191,7 +192,7 @@
   var S = {
     me: null, features: [], accounts: [], folders: {}, unread: { all: 0, byAccount: {} }, settings: {},
     view: 'box', box: 'all', folderId: null, tab: 'relevant', q: '', items: [], next: null, counts: {}, loading: false,
-    openId: null, open: null, filing: [], outbox: [], expanded: {},
+    openId: null, open: null, filing: [], outbox: [], expanded: {}, avatars: {},
   };
   var lastFocus = null;
 
@@ -228,6 +229,21 @@
       S.unread = r.unread || { all: 0, byAccount: {} };
       S.settings = r.settings || {};
       S.limits = r.limits || {};
+      loadAvatars();
+    });
+  }
+
+  // the pictures of the accounts (signed urls of the plugin's media, kept while the picture stays the same)
+  function loadAvatars() {
+    S.accounts.forEach(function (a) {
+      if (!a.avatar) return;
+      var have = S.avatars[a.id];
+      if (have && have.mediaId === a.avatar.mediaId) return;
+      S.avatars[a.id] = { mediaId: a.avatar.mediaId, url: null };
+      api('GET', 'accounts/' + a.id + '/avatar').then(function (r) {
+        S.avatars[a.id] = { mediaId: a.avatar.mediaId, url: r.url || null };
+        if (r.url) renderNav();
+      }, function () {});
     });
   }
 
@@ -243,6 +259,9 @@
     if (!window.GC || typeof window.GC.on !== 'function') return;
     window.GC.on('event', function (ev) {
       if (!ev || ev.type !== 'mail') return;
+      var d = ev.data || {};
+      // the body of the open mail came after the answer: show it now
+      if (S.open && S.open.bodyMissing && d.messageId === S.open.id) reloadOpen();
       if (liveTimer) clearTimeout(liveTimer);
       liveTimer = setTimeout(function () {
         loadMe().then(function () { renderNav(); if (S.view === 'box') loadList(true); }, function () {});
@@ -252,14 +271,32 @@
 
   function accountOf(id) { for (var i = 0; i < S.accounts.length; i++) if (S.accounts[i].id === id) return S.accounts[i]; return null; }
   function accountLabel(a) { return a ? (a.name ? a.name + ' · ' + a.email : a.email) : ''; }
+
+  // an account as a small circle: its picture at the provider, else the provider's mark (like the Outlook app); the dot: its colour
+  var MARKS = {
+    outlook: ['O', '#0F6CBD'], m365: ['M', '#0F6CBD'], gmail: ['G', '#EA4335'], gmx: ['GMX', '#1C449B'], webde: ['W', '#F4C400', '#1D1D1F'], tonline: ['T', '#E20074'],
+  };
+  function accAvatar(a, big) {
+    var pic = a.avatar && S.avatars[a.id] && S.avatars[a.id].mediaId === a.avatar.mediaId ? S.avatars[a.id].url : null;
+    var mark = MARKS[a.provider] || ['@', a.color];
+    var box = h('span', { class: 'mp-acc' + (big ? ' is-big' : '') + (mark[0].length > 2 ? ' is-long' : ''), style: pic ? null : 'background:' + mark[1] + ';color:' + (mark[2] || '#fff') });
+    if (pic) box.appendChild(h('img', { attrs: { src: pic, alt: '' } }));
+    else box.appendChild(h('span', { text: mark[0], attrs: { 'aria-hidden': 'true' } }));
+    box.appendChild(h('span', { class: 'mp-dot', attrs: { style: 'background:' + a.color } }));
+    return box;
+  }
+  // name and address in two lines (the address alone when there is no name)
+  function accText(a) {
+    return h('span', { class: 'mp-tx mp-two' }, [h('span', { text: a.name || a.email }), a.name ? h('span', { class: 'mp-sub', text: a.email }) : null]);
+  }
   function folderOf(id) { var out = null; Object.keys(S.folders).forEach(function (k) { S.folders[k].forEach(function (f) { if (f.id === id) out = f; }); }); return out; }
   function roleName(f) { return f.role ? T('p.role_' + f.role) : f.name; }
 
   // ── the menu ─────────────────────────────────────────────
 
   function navRow(ic, label, current, onClick, count, extra) {
-    return h('button', { type: 'button', class: 'mp-row' + (extra && extra.sub ? ' is-sub' : ''), attrs: { 'aria-current': current ? 'page' : null }, on: { click: function () { showPane('list'); onClick(); } } },
-      [ic, h('span', { class: 'mp-tx', text: label }), extra && extra.warn ? h('span', { class: 'mp-warn', text: '!' , attrs: { title: extra.warn } }) : null,
+    return h('button', { type: 'button', class: 'mp-row' + (extra && extra.sub ? ' is-sub' : '') + (extra && extra.account ? ' is-acc' : ''), attrs: { 'aria-current': current ? 'page' : null }, on: { click: function () { showPane('list'); onClick(); } } },
+      [ic, extra && extra.account ? accText(extra.account) : h('span', { class: 'mp-tx', text: label }), extra && extra.warn ? h('span', { class: 'mp-warn', text: '!' , attrs: { title: extra.warn } }) : null,
         count ? h('span', { class: 'mp-count', text: String(count) }) : null]);
   }
 
@@ -272,10 +309,9 @@
     if (S.outbox.length) nav.appendChild(navRow(icon('send'), T('p.outbox'), S.view === 'outbox', showOutbox, S.outbox.length));
     nav.appendChild(h('div', { class: 'mp-lab', text: T('p.accounts') }));
     S.accounts.forEach(function (a) {
-      var dot = h('span', { class: 'mp-dot', attrs: { style: 'background:' + a.color } });
       var bad = a.state === 'auth_failed' ? T('p.state_auth_failed') : a.state === 'unreachable' ? T('p.state_unreachable') : null;
-      nav.appendChild(navRow(dot, a.name || a.email, S.view === 'box' && S.box === a.id && !S.folderId, function () { S.expanded[a.id] = true; go({ box: a.id, folderId: null }); },
-        (S.unread.byAccount || {})[a.id], { warn: bad }));
+      nav.appendChild(navRow(accAvatar(a), a.name || a.email, S.view === 'box' && S.box === a.id && !S.folderId, function () { S.expanded[a.id] = true; go({ box: a.id, folderId: null }); },
+        (S.unread.byAccount || {})[a.id], { warn: bad, account: a }));
       if (S.expanded[a.id] || S.box === a.id) {
         (S.folders[a.id] || []).filter(function (f) { return f.role !== 'inbox'; }).forEach(function (f) {
           nav.appendChild(navRow(icon(f.role === 'sent' ? 'send' : f.role === 'trash' ? 'trash' : f.role === 'archive' ? 'archive' : 'folder'), roleName(f), S.folderId === f.id,
@@ -416,6 +452,11 @@
     }, fail);
   }
 
+  function reloadOpen() {
+    var id = S.openId;
+    api('GET', 'messages/' + id).then(function (m) { if (S.openId !== id) return; S.open = m; renderRead(m); }, function () {});
+  }
+
   function markRead(id) { S.items.forEach(function (x) { if (x.id === id) x.unread = false; }); renderList(); }
 
   function act(path, body, okText, after) {
@@ -532,15 +573,24 @@
     ]);
     var acts = h('div', { class: 'mp-tools' });
     row.appendChild(acts);
-    acts.appendChild(btn(T('p.download'), function () {
+    acts.appendChild(btn(T('p.download'), function () { download(0); }, { small: true }));
+    // a large attachment still loading at the provider: 409 busy (reason loading) — asked again a few times
+    function download(n) {
       api('GET', 'messages/' + m.id + '/attachments/' + t.id).then(function (r) {
         if (!r.url) { toast(T('p.no_download'), 'error'); return; }
         var link = h('a', { attrs: { href: r.url, download: t.name } });
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
-      }, fail);
-    }, { small: true }));
+      }, function (e) {
+        if (e && e.code === 'busy' && e.extra && e.extra.reason === 'loading' && n < 12) {
+          if (n === 0) toast(T('p.att_loading'));
+          setTimeout(function () { download(n + 1); }, Math.min(Math.max(Number(e.extra.retryAfter) || 5, 2), 30) * 1000);
+          return;
+        }
+        fail(e);
+      });
+    }
     if (!has('drive')) return row;
     if (t.savedTo) { add(sugg, [T('p.in_drive') + ' ', h('b', { text: t.savedTo.where })]); return row; }
     var remember = h('input', { type: 'checkbox' });
@@ -575,6 +625,10 @@
   // the body: sanitized HTML in a shadow root, pictures only when allowed
   function bodyCard(m) {
     var card = h('div', { class: 'mp-card' });
+    if (m.bodyMissing) {
+      // the provider is slow (a first sync, a large mail): the snippet meanwhile, the body follows (live event)
+      card.appendChild(h('div', { class: 'mp-note' }, [icon('mail'), h('span', { text: T('p.body_loading') }), btn(T('p.body_retry'), reloadOpen, { small: true })]));
+    }
     if (m.imagesBlocked || m.trackers) {
       var note = h('div', { class: 'mp-note' }, [icon('shield'), h('span', { text: m.imagesBlocked ? T('p.images_blocked', { n: m.trackers || 0 }) : T('p.trackers', { n: m.trackers }) })]);
       if (m.imagesBlocked && has('images')) {
@@ -903,7 +957,7 @@
     threads.addEventListener('change', function () { api('PUT', 'settings', { threads: threads.checked }).then(function (r) { S.settings = r.settings; loadList(); }, fail); });
     var rows = [h('label', { class: 'dp-check' }, [threads, h('span', { text: T('p.threads') })]), h('div', { class: 'mp-lab', text: T('p.accounts') })];
     S.accounts.forEach(function (a) {
-      rows.push(h('button', { type: 'button', class: 'mp-row', on: { click: function () { accountDialog(a); } } }, [h('span', { class: 'mp-dot', attrs: { style: 'background:' + a.color } }), h('span', { class: 'mp-tx', text: accountLabel(a) }),
+      rows.push(h('button', { type: 'button', class: 'mp-row is-acc', on: { click: function () { accountDialog(a); } } }, [accAvatar(a, true), accText(a),
         a.state !== 'ok' && a.state !== 'syncing' ? h('span', { class: 'mp-warn', text: T('p.state_' + a.state) }) : null]));
     });
     rows.push(h('div', { class: 'dp-actions', style: 'justify-content:flex-start' }, btn(T('p.add_account'), addAccount, { icon: 'plus', small: true })));
