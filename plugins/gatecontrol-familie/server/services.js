@@ -3,7 +3,7 @@
 // Services for the Messenger (1.8.0, plugin.json services.provides; GateControl ≥ 1.177.0
 // gc.services). Only gatecontrol-messenger may call them (any other caller → forbidden) —
 // except rule_event (1.12.0) and school_day_end (1.13.0), which only gatecontrol-schule may call,
-// and calendar_add, which gatecontrol-drive may call too (1.15.3);
+// and calendar_add, which gatecontrol-drive (1.15.3) and gatecontrol-mail (1.15.4) may call too;
 // the host lets only plugins that list a service in permissions.services call it at all.
 // Every answer is JSON ≤ 16 KB; a refusal is { ok: false, code } (never thrown):
 //
@@ -21,6 +21,7 @@
 //                   1.15.3: also for gatecontrol-drive (deadlines of documents into the family calendar) — only for
 //                   the person of the call: GateControl's `user` must be there and be `userId` (else forbidden), a
 //                   family member (no wall tablet, else not_member); an ordinary date without the chat's origin.
+//                   1.15.4: the same for gatecontrol-mail (dates and deadlines of a mail into the family calendar).
 //   calendar_upsert { sourceRef, title, startsAt, endsAt?, allDay?, place?, userIds? } → { ok: true, eventId, created }
 //                   an event message of the family chat kept in step, idempotent by sourceRef
 //                   ('<word>:<id>', e.g. 'messenger:123'); read-only in Familie, marked „aus dem
@@ -71,6 +72,10 @@ const { line, posInt, validDate, parseIso } = require('./util');
 const CALLER = 'gatecontrol-messenger';
 // 1.15.3: Drive puts deadlines of documents into the family calendar (calendar_add)
 const DRIVE = 'gatecontrol-drive';
+// 1.15.4: Mail puts dates and deadlines of a mail into the family calendar (calendar_add) — like Drive
+const MAIL = 'gatecontrol-mail';
+// callers of calendar_add that enter dates for the person of the call only (no chat origin)
+const PERSONAL = [DRIVE, MAIL];
 const ITEMS_MAX = 50;
 const ITEM_MAX = 120;
 const NAME_MAX = 40;
@@ -193,8 +198,8 @@ function eventFields(payload, cfg) {
 }
 
 async function calendarAdd(gc, cfg, payload, user, caller) {
-  // Drive (1.15.3) enters dates for the person of the call only — never for another member
-  if (caller === DRIVE && !(user && posInt(user.id) && posInt(payload.userId) === posInt(user.id))) throw no('forbidden');
+  // Drive (1.15.3) and Mail (1.15.4) enter dates for the person of the call only — never for another member
+  if (PERSONAL.includes(caller) && !(user && posInt(user.id) && posInt(payload.userId) === posInt(user.id))) throw no('forbidden');
   const fam = await family(gc, cfg);
   const me = memberOf(fam, payload, user);
   if (!cfg.modules.dates) throw no('module_off');
@@ -202,7 +207,7 @@ async function calendarAdd(gc, cfg, payload, user, caller) {
   const now = Date.now();
   const res = await store.tx(gc, () => store.run(gc, `INSERT INTO events (title, date, time, end_date, all_day, repeat, member_ids_json, kind, remind_days, note,
     place, end_time, source, source_ref, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 'none', '[]', 'event', NULL, '', ?, ?, ?, NULL, ?, ?, ?)`,
-  [f.title, f.date, f.time, f.endDate, f.allDay ? 1 : 0, f.place, f.endTime, caller === DRIVE ? null : 'chat', me.userId, now, now]));
+  [f.title, f.date, f.time, f.endDate, f.allDay ? 1 : 0, f.place, f.endTime, PERSONAL.includes(caller) ? null : 'chat', me.userId, now, now]));
   return { ok: true, eventId: Number(res.lastInsertRowid) };
 }
 
@@ -303,12 +308,12 @@ const HANDLERS = {
 /**
  * Who may call a service: the Messenger, except rule_event and school_day_end (the Schule plugin) and wall_wifi
  * (1.14.0, the Vault plugin); family_roles also GateDrop (1.13.2: links and NAS folders for parents); calendar_add also
- * Drive (1.15.3).
+ * Drive (1.15.3) and Mail (1.15.4).
  */
 const CALLERS = {
   rule_event: [school.SCHULE], school_day_end: [school.SCHULE], family_roles: [CALLER, 'gatecontrol-gatedrop'], wall_wifi: [wifi.VAULT],
-  // 1.15.3: Drive's deadlines (for the person of the call only)
-  calendar_add: [CALLER, DRIVE],
+  // 1.15.3: Drive's deadlines, 1.15.4: Mail's dates and deadlines (both for the person of the call only)
+  calendar_add: [CALLER, DRIVE, MAIL],
 };
 const NAMES = Object.freeze(Object.keys(HANDLERS));
 
