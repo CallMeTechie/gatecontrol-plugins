@@ -1,0 +1,152 @@
+{
+  "id": "gatecontrol-mail",
+  "name": {
+    "de": "Mail",
+    "en": "Mail"
+  },
+  "version": "1.0.0",
+  "publisher": "CallMeTechie",
+  "description": {
+    "de": "Alle E-Mail-Konten an einem Ort – GMX, Web.de, T-Online, Gmail, Outlook und Microsoft 365 oder jedes IMAP-Konto: ein gemeinsamer Posteingang mit Relevant und Sonstige, Push, Schutz vor Zählpixeln, Anhänge in Drive und eine KI, die zusammenfasst, Aufgaben findet und Antworten vorschlägt.",
+    "en": "Every e-mail account in one place – GMX, Web.de, T-Online, Gmail, Outlook and Microsoft 365 or any IMAP account: one inbox with Relevant and Other, push, protection from tracking pixels, attachments in Drive and an AI that sums up, finds to-dos and suggests replies."
+  },
+  "gatecontrol": ">=1.216.0",
+  "entry": "server/index.js",
+  "permissions": {
+    "mail": {
+      "purpose": {
+        "de": "Deine E-Mail-Konten abrufen (IMAP) und in deinem Namen Mails senden (SMTP)",
+        "en": "Fetch your e-mail accounts (IMAP) and send mail on your behalf (SMTP)"
+      },
+      "maxConnections": 100
+    },
+    "network": {
+      "internet": [
+        "graph.microsoft.com:443",
+        "login.microsoftonline.com:443"
+      ],
+      "images": true
+    },
+    "storage": true,
+    "users": true,
+    "app": true,
+    "portal": true,
+    "events": true,
+    "groups": "read",
+    "notify": {
+      "perHour": 120
+    },
+    "background": {
+      "intervalSeconds": 15
+    },
+    "ai": {
+      "purpose": {
+        "de": "Mails kurz zusammenfassen, Aufgaben und Termine finden, Antworten vorschlagen, in Relevant und Sonstige sortieren und Ablageorte für Anhänge vorschlagen – nur wenn du es eingeschaltet hast",
+        "en": "Sum up mails, find to-dos and dates, suggest replies, sort into Relevant and Other and suggest where to file attachments – only when you switched it on"
+      },
+      "capabilities": [
+        "text",
+        "vision"
+      ]
+    },
+    "services": [
+      "gatecontrol-drive:list_areas",
+      "gatecontrol-drive:save_file",
+      "gatecontrol-drive:suggest_folder",
+      "gatecontrol-drive:give_file",
+      "gatecontrol-drive:share_link",
+      "gatecontrol-drive:browse",
+      "gatecontrol-familie:calendar_add"
+    ]
+  },
+  "storage": {
+    "maxMB": 4096
+  },
+  "media": {
+    "maxBytes": 52428800,
+    "types": [
+      "image/*",
+      "audio/*",
+      "video/*",
+      "application/*",
+      "text/plain",
+      "text/calendar",
+      "text/csv",
+      "text/vcard"
+    ],
+    "quotaDefault": "500GB",
+    "handOverMaxBytes": 52428800
+  },
+  "services": {
+    "provides": {
+      "new_draft": {
+        "label": {
+          "de": "Neue Mail mit Dateien anlegen",
+          "en": "Start a new mail with files"
+        }
+      }
+    }
+  },
+  "ui": {
+    "nav": {
+      "label": {
+        "de": "Mail",
+        "en": "Mail"
+      },
+      "icon": "M4 6h16v12H4zM4 7l8 6 8-6"
+    },
+    "pages": [
+      {
+        "id": "overview",
+        "title": {
+          "de": "Übersicht",
+          "en": "Overview"
+        }
+      },
+      {
+        "id": "settings",
+        "title": {
+          "de": "Einstellungen",
+          "en": "Settings"
+        }
+      }
+    ],
+    "settingsPage": "settings",
+    "portal": {
+      "label": {
+        "de": "Mail",
+        "en": "Mail"
+      },
+      "icon": "M4 6h16v12H4zM4 7l8 6 8-6"
+    },
+    "app": {
+      "label": {
+        "de": "Mail",
+        "en": "Mail"
+      },
+      "icon": "M4 6h16v12H4zM4 7l8 6 8-6"
+    }
+  },
+  "notifyTopics": [
+    {
+      "id": "mail",
+      "label": {
+        "de": "Neue Mail",
+        "en": "New mail"
+      },
+      "default": true
+    },
+    {
+      "id": "mail_failed",
+      "label": {
+        "de": "Eine Mail konnte nicht gesendet werden",
+        "en": "A mail could not be sent"
+      },
+      "default": true
+    }
+  ],
+  "license": {
+    "required": true
+  },
+  "migrations": "migrations"
+}
