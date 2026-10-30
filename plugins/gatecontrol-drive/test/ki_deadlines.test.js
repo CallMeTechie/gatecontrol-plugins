@@ -129,6 +129,12 @@ test('Familie not there or refusing: 409 familie_unavailable, no feature, the sw
     const r = await a('POST', `deadlines/${d.id}/calendar`);
     assert.deepEqual([r.status, r.json.code, r.json.reason], [409, 'familie_unavailable', 'forbidden']);
     assert.equal((await a('GET', 'deadlines')).json.deadlines[0].calendar, null, 'nothing kept');
+    // a Familie that does not take Drive: the feature goes for six hours, then it is tried again
+    assert.ok(!(await a('GET', 'me')).json.features.includes('deadlineCalendar'));
+    assert.equal((await a('POST', `deadlines/${d.id}/calendar`)).json.reason, 'unavailable');
+    assert.equal(fam.calls.length, 1);
+    c.clock.add(6 * 3600000 + 1);
+    assert.ok((await a('GET', 'me')).json.features.includes('deadlineCalendar'));
   });
 });
 

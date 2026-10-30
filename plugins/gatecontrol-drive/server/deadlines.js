@@ -26,7 +26,9 @@
 // 409 familie_unavailable { reason }. Per area (PATCH areas/<id> { deadlinesToCalendar }, default off) new deadlines go
 // into the calendar on their own — for the person whose upload or "Erkennen" the recognition came from, else the
 // owner of the area (my files, a child's folder), as long as they read the file (insights.js → auto()).
-// Feature `deadlineCalendar` in GET me: while Familie's calendar_add is reachable (gc.services.available).
+// Feature `deadlineCalendar` in GET me: while Familie's calendar_add is reachable (gc.services.available) — and not
+// for REFUSED_MS after Familie refused Drive as a caller (`forbidden`: a Familie that takes calendar_add only from the
+// Messenger), so the apps do not offer a button that cannot work; then it is tried again.
 
 const store = require('./store');
 const nodes = require('./nodes');
@@ -40,6 +42,9 @@ const CALENDAR = 'calendar_add';
 const TITLE_MAX = 80;
 // new deadlines into the calendar on their own: at most this many service calls a background run (60 an hour for all)
 const AUTO_MAX = 5;
+// Familie refused Drive as a caller: the feature is off this long (gc.storage)
+const REFUSED_KEY = 'familie_calendar_refused';
+const REFUSED_MS = 6 * 3600000;
 const DAY = 86400000;
 const REMIND_HOUR_UTC = 7;
 const DAYS_MAX = 90;
@@ -196,7 +201,12 @@ async function docsOf(gc, rows) {
 /** Can Drive reach Familie's calendar_add now (asks nobody)? */
 async function calendarReachable(gc) {
   if (!gc.services || typeof gc.services.available !== 'function' || typeof gc.services.call !== 'function') return false;
-  try { return (await gc.services.available(FAMILIE, CALENDAR)) === true; } catch { return false; }
+  let on = false;
+  try { on = (await gc.services.available(FAMILIE, CALENDAR)) === true; } catch { on = false; }
+  if (!on) return false;
+  let refused = null;
+  try { refused = await gc.storage.get(REFUSED_KEY); } catch { refused = null; }
+  return !(Number.isFinite(refused) && Date.now() - refused < REFUSED_MS);
 }
 
 /** What the calendar entry is called: what to do, about what — ≤ 80 characters ("Kfz-Versicherung kündigen"). */
@@ -236,7 +246,12 @@ async function addToCalendar(gc, d, node, uid, lang, now, auto = false) {
     const code = e && e.code;
     throw calendarFail(code === 'ERR_RATE_LIMIT' ? 'rate_limited' : code === 'ERR_TIMEOUT' ? 'timeout' : 'unavailable');
   }
-  if (!res || res.ok !== true) throw calendarFail(res && typeof res.code === 'string' ? res.code : 'failed');
+  if (!res || res.ok !== true) {
+    const code = res && typeof res.code === 'string' ? res.code : 'failed';
+    // a Familie that does not take Drive as a caller: the feature goes for a while
+    if (code === 'forbidden') { try { await gc.storage.set(REFUSED_KEY, now); } catch { /* best effort */ } }
+    throw calendarFail(code);
+  }
   const eventId = Number.isSafeInteger(res.eventId) ? res.eventId : null;
   await store.run(gc, 'INSERT INTO doc_calendar (deadline_id, user_id, event_id, at, auto) VALUES (?, ?, ?, ?, ?) ON CONFLICT(deadline_id, user_id) DO NOTHING',
     [d.id, uid, eventId, now, auto ? 1 : 0]);

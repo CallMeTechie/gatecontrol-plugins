@@ -32,7 +32,15 @@ Dateien der Familie und des Teams auf dem eigenen Speicher – auf diesem Server
   Bildbegriffe, die das Handy erkannt hat; `GET photos?q=` findet Fotos mit deutschen Wörtern (≈ 400 ML-Kit-Begriffe mit
   Synonymen, auch Wortanfang und Mehrzahl) und liefert `search { terms, labels, total, chips }`; `GET photos?unlabeled=1`
   für das Nachtragen; Foto-Items tragen `labeled`.
+- **Portal:** „Dateien | Fragen“ unter der Suche (Frage mit Enter, Antwortkarte mit Quellen und Zitat, „Frist in den
+  Familienkalender“, „nichts gefunden“ mit „Gesucht nach“), „Fristen“ nach Monat mit „In den Familienkalender“ und
+  „Erinnern“, „In Dokument umwandeln“ für Bilder und PDF-Scans („Scan prüfen“: Word, Excel, PDF mit Vorschau, Name,
+  Ordner, „Original-Scan behalten“, Kostenzeile), „Fotos nach Inhalt suchen“ mit den Chips „+ Meer“; in den
+  Drive-Einstellungen „Neue Fristen in den Familienkalender“ je Bereich.
 - D4 (Ablegen gleich nach dem Scan) ist nur in den Apps – der Server bleibt dafür unverändert.
+- Hinweis: Das Plugin Familie nimmt `calendar_add` bisher nur vom Messenger an. Verweigert es Drive (`forbidden`),
+  antwortet „In den Familienkalender“ mit `409 familie_unavailable { reason: 'forbidden' }` und `deadlineCalendar`
+  verschwindet für 6 Stunden aus `GET me` (dann wird es wieder versucht) – bis Familie Drive als Aufrufer zulässt.
 
 ## 1.13.0
 - **Arbeitsfotos getrennt (Feature `photoClasses`):** Die Handys ordnen ein neues Foto nach dem WLAN, in dem es

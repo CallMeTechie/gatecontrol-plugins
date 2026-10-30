@@ -545,7 +545,9 @@ reads. GateControl's errors: `429 rate_limited` (its requests per hour), `409 ai
   for the viewer — the title is the deadline's label („Kfz-Versicherung kündigen“), else what to do and the sender (≤ 80).
   Drive keeps `{ eventId, at }` per person and deadline; a second call answers the same. Familie not installed, not
   running, or refusing (not a family member, its dates module off, a Familie that does not take Drive as a caller):
-  `409 familie_unavailable { reason }` (`unavailable`, `rate_limited`, `timeout` or Familie's code). Per area `PATCH
+  `409 familie_unavailable { reason }` (`unavailable`, `rate_limited`, `timeout` or Familie's code); after Familie's
+  `forbidden` (a Familie that takes `calendar_add` from the Messenger only) `deadlineCalendar` is left out of `GET me`
+  for 6 hours, then tried again. Per area `PATCH
   areas/<id> { deadlinesToCalendar: true }` (default off): new deadlines of a recognition go in on their own — for the
   person whose upload or "Erkennen" it was, else the owner of the area — while they read the file and the day is ahead
   (≤ 5 a recognition).
@@ -947,7 +949,21 @@ markieren). Arbeit moves them into the work folder (by month while `workSubfolde
 photos back to `Bilder/Kamera-Uploads/<year>/<month>` and ends the marks; the snackbar "N Fotos → Ziel · Rückgängig"
 undoes it (the jobs back, the marks as they were). Drive-Einstellungen: the section "Arbeitsfotos" (Private Fotos,
 "Arbeitsfotos nach" — a folder picker with "Neuer Ordner „Arbeit“ hier" —, Unterordner nach Jahr und Monat, Arbeitsfotos
-nie in Erinnerungen und Fotorahmen). The section "Fotorahmen" (`ui/frame.*`) is the slide show of a kiosk device.
+nie in Erinnerungen und Fotorahmen). Since 1.14.0 (**AI in Drive**, `ui/ki.js`, mockups "KI in Drive", only with the
+features): "Dateien | Fragen" below the search (`docAsk` — a question, the chip "Fragen" or a "?" at the end, is asked
+with Enter, never while typing: the answer card with the dates bold, "Frist in den Familienkalender" when a deadline of
+a source fits, "N Quellen" with path and quote — a click opens the file —, "Dazu habe ich in deinen Dateien nichts
+gefunden." with "Gesucht nach: … · in …", and "Antwort nur aus deinen Dateien. Tresore werden nie durchsucht."); the
+page "Fristen" by month (the kind as a tag, the day with "in N Tagen", a renewal "kündigen bis …", "neu", what and from
+whom, the file; "In den Familienkalender" / "Im Familienkalender ✓" with `deadlineCalendar`, "Erinnern" / "Erinnerung N
+Tage vorher ✓"), the same calendar button in "Dokument-Infos", and per area "Neue Fristen in den Familienkalender" in
+the Drive settings; "In Dokument umwandeln" in the actions of a picture or PDF scan (`scanDocs` — "Scan prüfen":
+"Erkannt: <Art>", the formats PDF (a JPEG ≤ 600 KB) · Word · Excel (a table), the preview — the first rows as a grid
+with the sum row, the start of the document —, the line on what the format does, name and "Ablegen in" with "Ändern",
+"Original-Scan behalten" (default *scan_keep_original*), the cost line; saving uploads the bytes the server made with
+`GC.upload` and files them with `scans/save`); on "Fotos" the field "Fotos nach Inhalt suchen" (`photoSearch`, Enter) —
+the count, the chips "+ Meer" (one more word), "Begriffe auf dem Handy erkannt." and the note on photos from the PC.
+The section "Fotorahmen" (`ui/frame.*`) is the slide show of a kiosk device.
 
 ## Admin (GateControl's admin UI)
 
