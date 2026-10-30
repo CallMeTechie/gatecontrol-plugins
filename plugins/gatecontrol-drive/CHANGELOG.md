@@ -24,8 +24,8 @@ Dateien der Familie und des Teams auf dem eigenen Speicher – auf diesem Server
 - **Neue Berechtigung – Admin bestätigt beim Update:** `permissions.services` nennt zusätzlich
   `gatecontrol-mail:new_draft`. GateControl erlaubt eine Übergabe von Dateien (`give_file`) nur an ein Plugin, dessen
   Dienst der Gebende nennt.
-- Noch ohne `maxPerHour` an den Diensten: GateControl bis 1.215 lehnt das Feld ab (`services.provides: invalid`). Bis
-  Drive GateControl 1.216.0 voraussetzt, gilt für Mail das allgemeine Limit von 60 Dienst-Aufrufen je Stunde.
+- **Braucht GateControl ≥ 1.216.0:** jeder Dienst hat `maxPerHour: 600` – 600 Aufrufe je Stunde und aufrufendem
+  Plugin statt der gemeinsamen 60 (GateControl bis 1.215 lehnt das Feld ab).
 - Migration 013 (`filing_rules`, `node_sources`).
 
 ## 1.14.0

@@ -48,7 +48,7 @@
 // The full contract (bodies, answers, codes, events) is in README.md "API". Every file node of an answer carries
 // `preview` (previews.js, since 1.1.0).
 //
-// Needs GateControl ≥ 1.208.0 (media areas and paths, versions and their restore, the NAS journal, gc.license.info
+// Needs GateControl ≥ 1.216.0 since 1.15.0 (maxPerHour of the services; ≥ 1.208.0 before: media areas and paths, versions and their restore, the NAS journal, gc.license.info
 // with tier and seats, a database up to 4 GB, media previews). permissions.devices (since 1.2.0): the asking device
 // of an app request (user.device) — the change log's `device`, the targets of "delete on all devices" and the device
 // the ransomware protection watches and locks (since 1.6.0). GET me links (since 1.6.0, address.js): direct links into

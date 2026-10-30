@@ -9,7 +9,8 @@ Lifetime.
 *Deutsch:* Dateien der Familie und des Teams auf dem eigenen Speicher – Bereiche mit Rechten, Versionen, Papierkorb,
 Abgleich mit allen Geräten. Details im CHANGELOG.
 
-Needs GateControl ≥ 1.208.0: `media.areas` (an area per Drive area, paths, `gc.media.move` / `version`, a version back
+Needs GateControl ≥ 1.216.0 since 1.15.0 (the services' own limit `maxPerHour`, which older versions refuse; before
+1.15.0: ≥ 1.208.0): `media.areas` (an area per Drive area, paths, `gc.media.move` / `version`, a version back
 to its path, the NAS journal and the hook `mediaChanged`), `gc.license.info` (tier and seats), `storage.maxMB` 4096,
 `permissions.groups: 'read'` (family groups and their roles, groups of team folders), `permissions.events`,
 `media.previews` (since 1.1.0: previews of files, `gc.media.previews`), `permissions.devices` (since 1.2.0: the asking
@@ -1030,8 +1031,8 @@ the path should be). The change log names the calling plugin as the device.
   only folders — the pickers of Mail's portal ("Aus Drive", "Anderer Ordner"). Never the inside of a vault (`encrypted`);
   a vault folder is left out of a list.
 * Codes as above, also `encrypted`, `too_large`, `links_disabled`, `no_public_url`, `unavailable` (the hand-over was
-  refused). The services count against GateControl's 60 calls per hour and caller (a limit per service, `maxPerHour`,
-  needs GateControl 1.216.0 — Drive does not declare it yet).
+  refused). Every service declares `maxPerHour: 600` (GateControl ≥ 1.216.0): 600 calls per hour and calling plugin
+  each, instead of the shared 60.
 
 The other way round (since 1.14.0): Drive calls the Familie plugin's `calendar_add` for a deadline (see "AI in Drive").
 
