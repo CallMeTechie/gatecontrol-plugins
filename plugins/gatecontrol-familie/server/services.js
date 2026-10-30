@@ -2,7 +2,8 @@
 
 // Services for the Messenger (1.8.0, plugin.json services.provides; GateControl ≥ 1.177.0
 // gc.services). Only gatecontrol-messenger may call them (any other caller → forbidden) —
-// except rule_event (1.12.0) and school_day_end (1.13.0), which only gatecontrol-schule may call;
+// except rule_event (1.12.0) and school_day_end (1.13.0), which only gatecontrol-schule may call,
+// and calendar_add, which gatecontrol-drive may call too (1.15.3);
 // the host lets only plugins that list a service in permissions.services call it at all.
 // Every answer is JSON ≤ 16 KB; a refusal is { ok: false, code } (never thrown):
 //
@@ -17,6 +18,9 @@
 //                   for the whole family). startsAt / endsAt: ISO-8601 with time, or a date
 //                   YYYY-MM-DD (all-day); converted to the plugin's time zone. place: a label
 //                   (string, or { label }) ≤ 80. Codes: invalid, not_member, module_off.
+//                   1.15.3: also for gatecontrol-drive (deadlines of documents into the family calendar) — only for
+//                   the person of the call: GateControl's `user` must be there and be `userId` (else forbidden), a
+//                   family member (no wall tablet, else not_member); an ordinary date without the chat's origin.
 //   calendar_upsert { sourceRef, title, startsAt, endsAt?, allDay?, place?, userIds? } → { ok: true, eventId, created }
 //                   an event message of the family chat kept in step, idempotent by sourceRef
 //                   ('<word>:<id>', e.g. 'messenger:123'); read-only in Familie, marked „aus dem
@@ -65,6 +69,8 @@ const texts = require('./texts.json');
 const { line, posInt, validDate, parseIso } = require('./util');
 
 const CALLER = 'gatecontrol-messenger';
+// 1.15.3: Drive puts deadlines of documents into the family calendar (calendar_add)
+const DRIVE = 'gatecontrol-drive';
 const ITEMS_MAX = 50;
 const ITEM_MAX = 120;
 const NAME_MAX = 40;
@@ -186,15 +192,17 @@ function eventFields(payload, cfg) {
   return { title, date: start.date, time: allDay ? null : start.time, allDay, endDate, endTime, place: placeLabel(payload.place) };
 }
 
-async function calendarAdd(gc, cfg, payload, user) {
+async function calendarAdd(gc, cfg, payload, user, caller) {
+  // Drive (1.15.3) enters dates for the person of the call only — never for another member
+  if (caller === DRIVE && !(user && posInt(user.id) && posInt(payload.userId) === posInt(user.id))) throw no('forbidden');
   const fam = await family(gc, cfg);
   const me = memberOf(fam, payload, user);
   if (!cfg.modules.dates) throw no('module_off');
   const f = eventFields(payload, cfg);
   const now = Date.now();
   const res = await store.tx(gc, () => store.run(gc, `INSERT INTO events (title, date, time, end_date, all_day, repeat, member_ids_json, kind, remind_days, note,
-    place, end_time, source, source_ref, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 'none', '[]', 'event', NULL, '', ?, ?, 'chat', NULL, ?, ?, ?)`,
-  [f.title, f.date, f.time, f.endDate, f.allDay ? 1 : 0, f.place, f.endTime, me.userId, now, now]));
+    place, end_time, source, source_ref, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 'none', '[]', 'event', NULL, '', ?, ?, ?, NULL, ?, ?, ?)`,
+  [f.title, f.date, f.time, f.endDate, f.allDay ? 1 : 0, f.place, f.endTime, caller === DRIVE ? null : 'chat', me.userId, now, now]));
   return { ok: true, eventId: Number(res.lastInsertRowid) };
 }
 
@@ -283,7 +291,7 @@ async function ruleEvent(gc, cfg, payload) {
 
 const HANDLERS = {
   list_add: listAdd,
-  calendar_add: calendarAdd,
+  calendar_add: (gc, cfg, payload, user, caller) => calendarAdd(gc, cfg, payload, user, caller),
   calendar_upsert: (gc, cfg, payload) => calendarUpsert(gc, cfg, payload),
   calendar_remove: (gc, cfg, payload) => calendarRemove(gc, payload),
   places,
@@ -294,9 +302,14 @@ const HANDLERS = {
 };
 /**
  * Who may call a service: the Messenger, except rule_event and school_day_end (the Schule plugin) and wall_wifi
- * (1.14.0, the Vault plugin); family_roles also GateDrop (1.13.2: links and NAS folders for parents).
+ * (1.14.0, the Vault plugin); family_roles also GateDrop (1.13.2: links and NAS folders for parents); calendar_add also
+ * Drive (1.15.3).
  */
-const CALLERS = { rule_event: [school.SCHULE], school_day_end: [school.SCHULE], family_roles: [CALLER, 'gatecontrol-gatedrop'], wall_wifi: [wifi.VAULT] };
+const CALLERS = {
+  rule_event: [school.SCHULE], school_day_end: [school.SCHULE], family_roles: [CALLER, 'gatecontrol-gatedrop'], wall_wifi: [wifi.VAULT],
+  // 1.15.3: Drive's deadlines (for the person of the call only)
+  calendar_add: [CALLER, DRIVE],
+};
 const NAMES = Object.freeze(Object.keys(HANDLERS));
 
 /** service({ name, caller, user, payload }) → the answer (see the head of this file). */
@@ -307,7 +320,7 @@ async function handle(gc, cfg, call) {
   if (!(CALLERS[c.name] || [CALLER]).includes(c.caller)) return c.name === 'places' ? [] : refuse('forbidden');
   const payload = c.payload && typeof c.payload === 'object' && !Array.isArray(c.payload) ? c.payload : {};
   try {
-    return await fn(gc, cfg, payload, c.user || null);
+    return await fn(gc, cfg, payload, c.user || null, c.caller);
   } catch (e) {
     if (e instanceof Refusal) return refuse(e.code);
     gc.log.warn('service failed', c.name, (e && (e.code || e.message)) || 'error');
