@@ -23,6 +23,7 @@ const messages = require('./messages');
 const drive = require('./drive');
 const api = require('./api');
 const admin = require('./admin');
+const seats = require('./seats');
 const ui = require('./ui');
 const { t } = require('./text');
 const { STATUS, fail, isKnown } = require('./util');
@@ -34,7 +35,9 @@ let lastClean = 0;
 function errorResponse(e, lang) {
   const code = isKnown(e) ? e.code : (e && HOST_CODES[e.code]) || 'internal';
   const extra = isKnown(e) && e.extra ? e.extra : {};
-  return { status: STATUS[code] || 500, json: { error: { code, message: t(lang, 'error.' + code), ...extra } } };
+  // the SMTP check of a new account (accounts.js) has its own words: the IMAP login worked
+  const key = extra.server === 'smtp' && ['auth_failed', 'unreachable', 'tls'].includes(code) ? `error.smtp_${code}` : `error.${code}`;
+  return { status: STATUS[code] || 500, json: { error: { code, message: t(lang, key), ...extra } } };
 }
 
 /** A person: a signed-in portal viewer or an app user — never a kiosk device, never the admin UI. */
@@ -88,7 +91,12 @@ module.exports = {
       if (no) throw fail(no);
       const cfg = await config.get(gc);
       if (!(await config.allowed(gc, cfg, req.user.id))) throw fail('not_allowed');
-      const ctx = { userId: req.user.id, userName: req.user.name || '', lang };
+      // the licence's people (seats.js, like Drive): GET me answers also without a place (seat: null), the rest needs one
+      const { licence, seat } = await seats.access(gc, cfg, req.user.id, Date.now());
+      const isMe = s.length === 1 && s[0] === 'me' && String(req.method || 'GET').toUpperCase() === 'GET';
+      if (!isMe && !licence.valid) throw fail('not_licensed');
+      if (!isMe && !seat) throw fail('no_seat');
+      const ctx = { userId: req.user.id, userName: req.user.name || '', lang, seat, licence };
       return { status: 200, json: await api.route(gc, ctx, req, s) };
     } catch (e) {
       if (!isKnown(e) && !(e && HOST_CODES[e.code])) gc.log.warn('request failed', req && req.method, String((req && req.path) || '').split('/').slice(0, 2).join('/'), (e && (e.code || e.message)) || 'error');
@@ -105,9 +113,14 @@ module.exports = {
 
   async tick(gc) {
     const now = Date.now();
-    try { await compose.due(gc, now); } catch (e) { gc.log.warn('outbox failed', (e && e.code) || 'error'); }
-    try { await engine.tick(gc, now, 70000); } catch (e) { gc.log.warn('sync run failed', (e && e.code) || 'error'); }
-    try { await compose.due(gc, Date.now()); } catch { /* next run */ }
+    // without a valid licence nothing is synced or sent; people an administrator switched off neither (seats.js)
+    let off;
+    try { off = await seats.idle(gc); } catch { off = null; }
+    if (off && off.all) { try { await clean(gc, Date.now()); } catch (e) { gc.log.warn('clean failed', (e && e.code) || 'error'); } return; }
+    const skip = (off && off.users) || new Set();
+    try { await compose.due(gc, now, skip); } catch (e) { gc.log.warn('outbox failed', (e && e.code) || 'error'); }
+    try { await engine.tick(gc, now, 70000, skip); } catch (e) { gc.log.warn('sync run failed', (e && e.code) || 'error'); }
+    try { await compose.due(gc, Date.now(), skip); } catch { /* next run */ }
     try { await ai.tick(gc); } catch (e) { gc.log.warn('ai sorting failed', (e && e.code) || 'error'); }
     try { await drive.tick(gc, Date.now()); } catch (e) { gc.log.warn('filing failed', (e && e.code) || 'error'); }
     try { await clean(gc, Date.now()); } catch (e) { gc.log.warn('clean failed', (e && e.code) || 'error'); }
@@ -136,6 +149,9 @@ module.exports = {
     if (name !== 'new_draft') return { ok: false, code: 'not_found' };
     const cfg = await config.get(gc);
     if (!user || !(await config.allowed(gc, cfg, user.id))) return { ok: false, code: 'forbidden' };
+    const { licence, seat } = await seats.access(gc, cfg, user.id, Date.now());
+    if (!licence.valid) return { ok: false, code: 'not_licensed' };
+    if (!seat) return { ok: false, code: 'no_seat' };
     return compose.serviceDraft(gc, user, payload);
   },
 

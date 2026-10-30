@@ -3,8 +3,9 @@
 // Writing (C2 "Schreiben"): drafts with attachments from the device, from a mail (forward) or from Drive (a copy or a
 // link), the warnings, the outbox (sent 10 s after "Senden" — undo until then — or at the planned time) and sending:
 // IMAP accounts through GateControl's SMTP (gc.mail.smtp.send) with a copy into "Gesendet" (not Gmail: it keeps one
-// itself), Microsoft accounts through Graph (graph.js — attachments there only as links: the plugin never holds the
-// bytes Graph wants inline). Contacts for the suggestions.
+// itself), Microsoft accounts through Graph (graph.js — every file along with GateControl ≥ 1.217.0, which streams the
+// plugin's media to Graph; on older hosts files only as links: the plugin never holds the bytes Graph wants inline).
+// Contacts for the suggestions.
 
 const store = require('./store');
 const providers = require('./providers');
@@ -86,18 +87,24 @@ async function attsOf(gc, draftId) {
   }));
 }
 
-/** Can Graph send attachment `x` of draft `d`: a link, or an attachment of the mail it forwards (Graph's own forward)? */
-const graphOk = (d, x) => !!x.as_link || (x.kind === 'message' && d.mode === 'forward' && x.src_message === d.reply_msg);
+/**
+ * Can Graph send attachment `x` of draft `d`? Every one with GateControl ≥ 1.217.0 (graph.canAttach); on older hosts a
+ * link, or an attachment of the mail it forwards (Graph's own forward).
+ */
+const graphOk = (gc, d, x) => graph.canAttach(gc) || !!x.as_link || (x.kind === 'message' && d.mode === 'forward' && x.src_message === d.reply_msg);
 
-/** Warnings of a draft: no subject, a password, too large (switched to links), files Microsoft cannot send. */
+/** A Microsoft account on a host that cannot send files to Graph (older than 1.217.0): Drive copies always as links. */
+const linksOnly = (gc, a) => engine.isGraph(a) && !graph.canAttach(gc);
+
+/** Warnings of a draft: no subject, a password, too large (switched to links), files Microsoft cannot send (older hosts). */
 async function warnings(gc, lang, d, a) {
   const out = [];
   const atts = await store.all(gc, 'SELECT * FROM draft_atts WHERE draft_id = ?', [d.id]);
   if (!String(d.subject || '').trim()) out.push({ kind: 'no_subject', text: t(lang, 'warn.no_subject') });
   if (atts.some((x) => x.has_password)) out.push({ kind: 'password', text: t(lang, 'warn.link_password') });
   else if (/\b(passwor[dt]|kennwort|pin)\s*[:=]\s*\S{3,}/i.test(htmlText(d.html || ''))) out.push({ kind: 'password', text: t(lang, 'warn.password') });
-  if (atts.some((x) => x.auto_link)) out.push({ kind: 'too_large', text: t(lang, engine.isGraph(a) ? 'warn.graph_links' : 'warn.too_large') });
-  if (engine.isGraph(a) && atts.some((x) => !graphOk(d, x))) out.push({ kind: 'too_large', text: t(lang, 'warn.graph_files') });
+  if (atts.some((x) => x.auto_link)) out.push({ kind: 'too_large', text: t(lang, linksOnly(gc, a) ? 'warn.graph_links' : 'warn.too_large') });
+  if (engine.isGraph(a) && atts.some((x) => !graphOk(gc, d, x))) out.push({ kind: 'too_large', text: t(lang, 'warn.graph_files') });
   return out;
 }
 
@@ -150,14 +157,14 @@ async function addAtt(gc, ctx, d, a, x) {
 }
 
 /**
- * Too large for the provider (or a Microsoft account): copies from Drive become links (auto_link); files from the device
- * or a mail cannot → 413 too_large.
+ * Too large for the provider (or a Microsoft account on a host older than 1.217.0): copies from Drive become links
+ * (auto_link); files from the device or a mail cannot → 413 too_large.
  */
 async function fit(gc, ctx, d, a, staying = () => true) {
   const atts = (await store.all(gc, 'SELECT * FROM draft_atts WHERE draft_id = ? AND as_link = 0', [d.id])).filter(staying);
   const limit = providers.maxBytes(a.provider);
   let total = atts.reduce((s, x) => s + (Number(x.size) || 0), 0) + Buffer.byteLength(d.html || '');
-  const graphAcc = engine.isGraph(a);
+  const graphAcc = linksOnly(gc, a);
   for (const x of atts.filter((y) => y.kind === 'drive' && y.drive_node).sort((p, q) => q.size - p.size)) {
     if (!graphAcc && total * 1.37 <= limit) break;
     const link = await drive.shareLink(gc, ctx.userId, x.drive_node, 14, null).catch(() => null);
@@ -308,7 +315,7 @@ async function send(gc, ctx, id, b) {
     at = Math.max(at, s);
   }
   const a = await store.one(gc, 'SELECT * FROM accounts WHERE id = ?', [d.account_id]);
-  if (engine.isGraph(a) && (await store.all(gc, 'SELECT * FROM draft_atts WHERE draft_id = ?', [d.id])).some((x) => !graphOk(d, x))) throw fail('attachments_unsupported');
+  if (engine.isGraph(a) && (await store.all(gc, 'SELECT * FROM draft_atts WHERE draft_id = ?', [d.id])).some((x) => !graphOk(gc, d, x))) throw fail('attachments_unsupported');
   await store.run(gc, "DELETE FROM outbox WHERE draft_id = ? AND state = 'failed'", [d.id]);
   if (await store.one(gc, 'SELECT 1 AS x FROM outbox WHERE draft_id = ?', [d.id])) throw fail('not_waiting');
   const r = await store.run(gc, 'INSERT INTO outbox (draft_id, user_id, account_id, subject, send_at, undo_until, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
@@ -344,11 +351,14 @@ function schedule(gc, id, at) {
   timers.set(id, tm);
 }
 
-/** The draft's message for gc.mail.smtp.send (attachments as media of the plugin; links into the text). */
-async function messageOf(gc, d, a) {
+/**
+ * The draft's message for gc.mail.smtp.send / graph.send (attachments as media of the plugin; links into the text).
+ * skip(x): attachments that do not go as files (the ones Graph's own forward carries itself).
+ */
+async function messageOf(gc, d, a, skip = () => false) {
   const atts = await store.all(gc, 'SELECT * FROM draft_atts WHERE draft_id = ? ORDER BY id', [d.id]);
   const files = [];
-  for (const x of atts.filter((y) => !y.as_link)) {
+  for (const x of atts.filter((y) => !y.as_link && !skip(y))) {
     let mediaId = x.media_id;
     if (x.kind === 'message') {
       const m = await store.one(gc, 'SELECT * FROM messages WHERE id = ?', [x.src_message]);
@@ -383,8 +393,15 @@ async function sendOne(gc, id) {
   try {
     const original = d.reply_msg ? await store.one(gc, 'SELECT * FROM messages WHERE id = ?', [d.reply_msg]) : null;
     if (engine.isGraph(a)) {
-      const msg = await messageOf(gc, { ...d, html: d.html }, a);
-      await engine.withAccount(gc, a, () => graph.send(gc, a, { mode: d.mode, subject: d.subject, html: msg.html, to: parse(d.to_json, []), cc: parse(d.cc_json, []), bcc: parse(d.bcc_json, []) }, original));
+      // Graph's own forward carries the original's attachments: those stay out of the files, the others it drops (keep)
+      const own = graph.ownReply(a, d.mode, original) && d.mode === 'forward';
+      const fromOriginal = (x) => own && x.kind === 'message' && x.src_message === d.reply_msg;
+      // older hosts: no files at all (send refused them already, links go in the text)
+      const msg = await messageOf(gc, d, a, (x) => fromOriginal(x) || !graph.canAttach(gc));
+      const keep = own ? (await store.all(gc, 'SELECT * FROM draft_atts WHERE draft_id = ?', [d.id])).filter(fromOriginal).map((x) => ({ name: x.name, size: x.size })) : null;
+      await engine.withAccount(gc, a, () => graph.send(gc, a, {
+        mode: d.mode, subject: d.subject, html: msg.html, to: parse(d.to_json, []), cc: parse(d.cc_json, []), bcc: parse(d.bcc_json, []), files: msg.attachments, keep,
+      }, original));
     } else {
       const cred = await secrets.get(gc, a.id);
       if (!cred || !cred.password) throw Object.assign(fail('auth_failed'), { auth: true });
@@ -428,10 +445,11 @@ async function sendOne(gc, id) {
 }
 
 /** The background run: every due entry (timers are lost with a restart). */
-async function due(gc, now) {
+async function due(gc, now, skipUsers = new Set()) {
   // an entry stuck in "sending" (the process ended meanwhile) is tried again
   await store.run(gc, "UPDATE outbox SET state = 'waiting' WHERE state = 'sending' AND send_at < ?", [now - 10 * 60000]);
-  const rows = await store.all(gc, "SELECT id FROM outbox WHERE state = 'waiting' AND send_at <= ? ORDER BY send_at LIMIT 20", [now + 1000]);
+  const rows = (await store.all(gc, "SELECT id, user_id FROM outbox WHERE state = 'waiting' AND send_at <= ? ORDER BY send_at LIMIT 20", [now + 1000]))
+    .filter((r) => !skipUsers.has(r.user_id)); // switched off (seats.js): their outbox waits
   for (const r of rows) await sendOne(gc, r.id);
   for (const r of await store.all(gc, "SELECT id, send_at FROM outbox WHERE state = 'waiting' AND send_at > ? AND send_at <= ?", [now + 1000, now + TIMER_MS])) schedule(gc, r.id, r.send_at);
   return rows.length;

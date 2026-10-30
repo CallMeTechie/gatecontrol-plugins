@@ -4,14 +4,18 @@
 //   GET admin/settings → { settings, usage: { bytes, quotaBytes, people: [{ userId, name, bytes, accounts }] },
 //                          microsoft: { clientId, consentUrl, accounts, lastSignIn }, ai: { ready }, version }
 //   PUT admin/settings (a part of settings) → the same
-//   GET admin/overview → { people, accounts, byState: { ok, syncing, auth_failed, unreachable }, bytes }
+//   GET admin/overview → { people, accounts, byState: { ok, syncing, auth_failed, unreachable }, bytes, seats }
+//   PUT admin/seats/<userId> { kind: 'family' | 'business' | null } → { seat, seats } — a person's place in the licence
+//                       (null: switched off) — since 1.1.0, like Drive (seats.js); GET admin/settings carries `seats` too
+//   POST admin/license/refresh → { refreshed, seats } — fetch the licence now (after "Personen hinzubuchen")
 // Administrators see numbers only — never mail, subjects or addresses of other people.
 
 const store = require('./store');
 const config = require('./config');
 const mailstore = require('./mailstore');
 const ai = require('./ai');
-const { fail } = require('./util');
+const seats = require('./seats');
+const { fail, posInt } = require('./util');
 
 async function usage(gc, cfg) {
   const rows = await store.all(gc, 'SELECT user_id, COUNT(*) AS n FROM accounts GROUP BY user_id');
@@ -36,6 +40,8 @@ async function settingsView(gc, cfg) {
     settings: cfg, usage: await usage(gc, cfg),
     microsoft: { clientId, defaultClientId: config.DEFAULT_MS_CLIENT_ID, consentUrl: config.adminConsentUrl(clientId), accounts: ms.n, lastSignIn: ms.last || null },
     ai: { ready: await ai.ready(gc) }, version: gc.plugin.version,
+    // since 1.1.0: the licence and its people (seats.js)
+    seats: await seats.summary(gc, cfg),
   };
 }
 
@@ -46,7 +52,9 @@ async function overview(gc) {
   const people = await store.one(gc, 'SELECT COUNT(DISTINCT user_id) AS n FROM accounts');
   const cfg = await config.get(gc);
   const u = await usage(gc, cfg);
-  return { people: people.n, accounts: Object.values(byState).reduce((s, n) => s + n, 0), byState, bytes: u.bytes };
+  const s = await seats.summary(gc, cfg);
+  return { people: people.n, accounts: Object.values(byState).reduce((x, n) => x + n, 0), byState, bytes: u.bytes,
+    seats: { licence: s.licence, limits: s.limits, counts: s.counts, exceeded: s.exceeded } };
 }
 
 async function route(gc, req, seg) {
@@ -56,6 +64,20 @@ async function route(gc, req, seg) {
     if (m === 'PUT') return settingsView(gc, await config.put(gc, req.body));
   }
   if (seg[1] === 'overview' && seg.length === 2 && m === 'GET') return overview(gc);
+  if (seg[1] === 'seats' && seg.length === 3 && m === 'PUT') {
+    const uid = posInt(seg[2]);
+    if (!uid) throw fail('invalid', { field: 'userId' });
+    const cfg = await config.get(gc);
+    const body = req.body && typeof req.body === 'object' ? req.body : {};
+    const seat = await seats.set(gc, cfg, uid, body.kind == null ? null : String(body.kind), req.user.id, Date.now());
+    gc.log.info(seat ? `seat on (${seat.kind})` : 'seat off', uid);
+    return { seat: seat ? { userId: seat.user_id, kind: seat.kind } : null, seats: await seats.summary(gc, cfg) };
+  }
+  if (seg[1] === 'license' && seg[2] === 'refresh' && seg.length === 3 && m === 'POST') {
+    if (!gc.license || typeof gc.license.refresh !== 'function') throw fail('invalid');
+    const r = await gc.license.refresh();
+    return { refreshed: r.refreshed === true, seats: await seats.summary(gc, await config.get(gc)) };
+  }
   throw fail('not_found');
 }
 

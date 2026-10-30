@@ -507,13 +507,15 @@ async function retention(gc, cfg, now) {
  * The background run (every 15 s, GateControl's tick; ≤ budgetMs): per account the posteingang when due (IMAP: lost
  * session, a new-mail event, every 5 minutes; Microsoft: every minute), the other folders every 15 minutes, a few bodies.
  */
-async function tick(gc, now, budgetMs = 60000) {
+async function tick(gc, now, budgetMs = 60000, skipUsers = new Set()) {
   gcRef = gc;
   const started = Date.now();
   const cfg = await config.get(gc);
   const accounts = await store.all(gc, "SELECT * FROM accounts WHERE state <> 'auth_failed' ORDER BY COALESCE(synced_at, 0)");
   for (const a of accounts) {
     if (Date.now() - started > budgetMs) break;
+    // a person an administrator switched off (seats.js): their accounts rest
+    if (skipUsers.has(a.user_id)) continue;
     const x = stateOf(a.id);
     if (x.retryAt > now) continue;
     const due = isGraph(a) ? now - x.lastInbox >= INBOX_GRAPH_MS : (!x.s || x.dirty || now - x.lastInbox >= INBOX_IMAP_MS);

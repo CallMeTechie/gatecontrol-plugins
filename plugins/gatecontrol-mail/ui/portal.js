@@ -208,6 +208,10 @@
     if (!CTX.allowed) { message(T('p.not_allowed_title'), T('p.not_allowed_text')); return; }
     message(T('p.loading'), '');
     loadMe().then(function () {
+      // the licence's people (since 1.1.0, like Drive): without a licence or a place only the note
+      var lic = S.me.licence;
+      if (lic && lic.valid === false) { message(T('p.unlicensed_title'), T('p.unlicensed_text')); return; }
+      if (lic && !S.me.seat) { message(T('p.no_seat_title'), T('p.no_seat_text')); return; }
       $('mp-msg').hidden = true;
       $('mp-app').hidden = false;
       if (!S.accounts.length) { renderNav(); renderEmpty(); return; }

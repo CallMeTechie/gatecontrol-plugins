@@ -23,6 +23,13 @@
 // gc.http.fetchImage with ≥ 1.216.0 or opts.fetchImage, and refuses (ERR_NET_DENIED) without permissions.network.images.
 // The host records: host.mailSessions (every connect: { id, host, port, security, user, open, closed }), host.mailSent
 // (every smtp.send argument), host.imageFetches (urls).
+//
+// GateControl 1.217.0 (opt-in: opts.gatecontrol: '1.217.0'): gc.mail.smtp.verify({ host, port, security, auth, timeoutMs })
+// → { ok: true } with the checks of smtp.send, asks opts.mail.verify(opts) (missing: every login passes; throw
+// hostError('ERR_MAIL_AUTH') to refuse; recorded in host.mailVerified); gc.http.fetch(url, { bodyMedia: { mediaId, start,
+// end, encoding } }) and gc.http.MEDIA_BASE64 — the test's opts.fetch gets the body the host would send (`body` as a
+// Buffer, `headers` with content-length / content-range / content-type; bodyMedia and json stay for the record). Older emulated
+// versions: no verify, no MEDIA_BASE64, and opts.fetch sees bodyMedia without a body (the real older host ignores it).
 
 const EventEmitter = require('node:events');
 const crypto = require('node:crypto');
@@ -32,6 +39,9 @@ const SESSION_METHODS = ['list', 'status', 'open', 'fetch', 'message', 'download
 const SEND_MAX = 50 * 1024 * 1024;
 const FETCH_MAX = 500;
 const IMAGE_MAX = 5 * 1024 * 1024;
+const MEDIA_BASE64 = '{{gc:media:base64}}';
+const BODY_MEDIA_MAX = 64 * 1024 * 1024;
+const BODY_MEDIA_BASE64_MAX = 4 * 1024 * 1024;
 const TRACKER_HOSTS = ['pixel.example', 'track.example', 'open.mailchimp.example', 'mailtrack.io', 'list-manage.com'];
 
 const purposeOk = (p) => !!(p && typeof p === 'object' && !Array.isArray(p) && p.purpose && typeof p.purpose === 'object'
@@ -155,7 +165,7 @@ function install(h) {
   const mailOpt = opts.mail && typeof opts.mail === 'object' ? opts.mail : null;
   const mailOn = !!mailOpt || h.gc216;
   const perm = mailOn ? mailPermission(perms.mail, hostError) : null;
-  const records = { mailSessions: [], mailSent: [], imageFetches: [] };
+  const records = { mailSessions: [], mailSent: [], imageFetches: [], mailVerified: [] };
   const sessions = new Map(); // id → { impl, emitter, open, rec }
 
   const putMedia = ({ data, mime, name }) => {
@@ -241,6 +251,16 @@ function install(h) {
           }
           return { messageId, accepted: r.accepted || [...(m.to || []), ...(m.cc || []), ...(m.bcc || [])].map((a) => a.address), rejected: r.rejected || [], raw };
         },
+        // GateControl ≥ 1.217.0: log in without sending
+        ...(h.gc217 ? {
+          verify: async (o) => {
+            const x = wire(o) || {};
+            const t = checkTarget('smtp', x, mailOpt || {}, hostError);
+            records.mailVerified.push({ host: t.host, port: t.port, security: t.security, user: t.auth.user });
+            if (mailOpt && typeof mailOpt.verify === 'function') await mailOpt.verify(wire(t));
+            return { ok: true };
+          },
+        } : {}),
       }),
       compose: async (m) => {
         const x = wire(m) || {};
@@ -292,6 +312,66 @@ function install(h) {
 }
 
 /**
+ * gc.http.fetch's bodyMedia (GateControl ≥ 1.217.0) → the options as the test's fetch handler sees the request: `body`
+ * (Buffer) and the host's headers. The host's checks: own media (plugin.json media), POST/PUT/PATCH, a range raw only
+ * (Content-Range), raw ≤ 64 MB, base64 ≤ 4 MB, exactly one json value MEDIA_BASE64.
+ */
+function resolveBodyMedia(o, { mediaStore, media, hostError }) {
+  const bm = o.bodyMedia;
+  if (!media) throw hostError('ERR_MEDIA_DENIED', 'plugin.json declares no media');
+  if (!bm || typeof bm !== 'object' || typeof bm.mediaId !== 'string') throw hostError('ERR_INVALID', 'invalid bodyMedia');
+  if (o.body != null || o.form != null || o.bodyBase64 != null) throw hostError('ERR_INVALID', 'bodyMedia replaces body, form and bodyBase64');
+  if (bm.encoding != null && bm.encoding !== 'base64') throw hostError('ERR_INVALID', "bodyMedia.encoding must be 'base64'");
+  const method = String(o.method || 'POST').toUpperCase();
+  if (!['POST', 'PUT', 'PATCH'].includes(method)) throw hostError('ERR_INVALID', 'bodyMedia needs POST, PUT or PATCH');
+  const f = mediaStore.get(bm.mediaId);
+  if (!f) throw hostError('ERR_INVALID', 'unknown media id');
+  const headers = {};
+  for (const [k, v] of Object.entries(o.headers || {})) if (!['content-range', 'content-length'].includes(k.toLowerCase())) headers[k.toLowerCase()] = String(v);
+  const ranged = bm.start != null || bm.end != null;
+  const data = Buffer.isBuffer(f.data) ? f.data : Buffer.from(String(f.data || ''));
+  const size = f.bytes;
+  let body;
+  if (bm.encoding !== 'base64' && o.json === undefined) {
+    let start = 0;
+    let end = size - 1;
+    if (ranged) {
+      start = bm.start == null ? 0 : bm.start;
+      end = bm.end == null ? size - 1 : bm.end;
+      if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < 0 || start > end || end >= size) throw hostError('ERR_INVALID', 'invalid bodyMedia range');
+      headers['content-range'] = `bytes ${start}-${end}/${size}`;
+    }
+    if (end - start + 1 > BODY_MEDIA_MAX) throw hostError('ERR_MEDIA_TOO_LARGE', 'at most 64 MB per request');
+    // the test's media may hold fewer bytes than `bytes` claims (a stand-in): the range of what is there
+    body = data.subarray(Math.min(start, data.length), Math.min(end + 1, data.length));
+    if (!headers['content-type']) headers['content-type'] = f.mime || 'application/octet-stream';
+  } else {
+    if (ranged) throw hostError('ERR_INVALID', 'a bodyMedia range is sent raw only');
+    if (size > BODY_MEDIA_BASE64_MAX) throw hostError('ERR_MEDIA_TOO_LARGE', 'at most 4 MB base64');
+    const b64 = data.toString('base64');
+    if (o.json !== undefined) {
+      let n = 0;
+      const swap = (v) => {
+        if (v === MEDIA_BASE64) { n++; return b64; }
+        if (Array.isArray(v)) return v.map(swap);
+        if (v && typeof v === 'object') return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, swap(x)]));
+        return v;
+      };
+      const json = swap(o.json);
+      if (n !== 1) throw hostError('ERR_INVALID', 'json needs exactly one value gc.http.MEDIA_BASE64');
+      body = Buffer.from(JSON.stringify(json));
+      if (!headers['content-type']) headers['content-type'] = 'application/json';
+    } else {
+      body = Buffer.from(b64);
+      if (!headers['content-type']) headers['content-type'] = 'text/plain';
+    }
+  }
+  headers['content-length'] = String(body.length);
+  // `json` stays as the plugin gave it (with the placeholder) for the record; `body` is what goes out
+  return { ...o, method, headers, body };
+}
+
+/**
  * services.provides.<name>.maxPerHour (GateControl ≥ 1.216.0): 60 … 3600 → the number, else throws. Accepted at every
  * emulated version (like media.resumable — the real older host refuses it), acting from 1.216.0 on.
  */
@@ -302,4 +382,4 @@ function maxPerHourOf(def, gc216, hostError) {
   return def.maxPerHour;
 }
 
-module.exports = { install, mailPermission, maxPerHourOf, sanitize, compose, parse, notPublic, escHtml };
+module.exports = { resolveBodyMedia, MEDIA_BASE64, install, mailPermission, maxPerHourOf, sanitize, compose, parse, notPublic, escHtml };

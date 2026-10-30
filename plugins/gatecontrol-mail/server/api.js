@@ -54,6 +54,9 @@ async function me(gc, ctx) {
     limits: { accountsMax: cfg.accountsMax, quotaBytes: config.quotaBytes(cfg), usedBytes: await mailstore.usage(gc, ctx.userId), retentionMonths: cfg.retentionMonths },
     microsoft: { clientId: config.msClientId(cfg), authority: config.MS_AUTHORITY, scopes: [...config.MS_SCOPES] },
     accounts: list.map(accounts.view), unread: await messages.unread(gc, ctx.userId), settings: await prefs(gc, ctx.userId),
+    // since 1.1.0 (like Drive): the person's place in the licence — without one (null) every other call answers 403
+    // no_seat, without a valid licence not_licensed
+    seat: ctx.seat ? ctx.seat.kind : null, licence: { valid: !!(ctx.licence && ctx.licence.valid), tier: (ctx.licence && ctx.licence.tier) || null },
   };
 }
 
