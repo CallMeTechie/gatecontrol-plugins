@@ -1005,6 +1005,7 @@ the path should be). The change log names the calling plugin as the device.
 | `save_file` | also `source?: { plugin (the caller), label ('Aus Mail von Stadtwerke, 03.11.', ≤ 120), ref ('4711', ≤ 200, `[A-Za-z0-9._:@+=-]`) }` and `learn?: { from: address, always?: true }` | as above |
 | `give_file` | `{ nodeId }` | `{ ok, mediaId, name, mime, size }` — the file handed over to the caller (`gc.media.handOver`, unclaimed there) |
 | `share_link` | `{ nodeId, expiresDays?: 1…90 (14), password?: '4711' }` | `{ ok, url, expiresAt (ms) }` |
+| `browse` | `{ area?: 'mine' \| 'family' \| '<area id>', folderId?, dirs?: true }` | `{ ok, folder: { id, name, path, where, areaId, writable }, items: [{ id, name, isDir, size, mime }], next }` |
 
 * `suggest_folder` looks, in this order, for the person's rule for the sender (`rule`: saved with `learn.always` —
   "Immer für diesen Absender", confidence 1), the folder the sender's files went to last (`learned`: every
@@ -1025,6 +1026,9 @@ the path should be). The change log names the calling plugin as the device.
   `no_public_url` without a public address); whoever may write in the area, never a vault (`encrypted`). GateControl
   keeps a link at most 30 days: 31…90 days end after 30 (`expiresAt` says when). `password` is the link's PIN, 4 to
   8 digits (GateControl's rule) — anything else `invalid`.
+* `browse`: what a folder the person reads holds (default the top of "Meine Dateien"), at most 200 entries, `dirs`
+  only folders — the pickers of Mail's portal ("Aus Drive", "Anderer Ordner"). Never the inside of a vault (`encrypted`);
+  a vault folder is left out of a list.
 * Codes as above, also `encrypted`, `too_large`, `links_disabled`, `no_public_url`, `unavailable` (the hand-over was
   refused). The services count against GateControl's 60 calls per hour and caller (a limit per service, `maxPerHour`,
   needs GateControl 1.216.0 — Drive does not declare it yet).

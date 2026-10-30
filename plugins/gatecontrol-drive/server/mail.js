@@ -20,6 +20,10 @@
 //   give_file { nodeId } → { ok, mediaId, name, mime, size }   a file the person reads, handed over to the caller
 //                (gc.media.handOver — Drive lists one of the caller's services for that); a folder, an empty file:
 //                invalid; a vault: encrypted; over 50 MB: too_large
+//   browse     { area?, folderId?, dirs? } → { ok, folder: { id, name, path, where, areaId, writable }, items: [{ id, name, isDir,
+//                size, mime }], next }   the contents of a folder the person reads (default: the top of 'mine'; an area id
+//                or 'family'), for the pickers of Mail's portal ("Aus Drive", "Anderer Ordner"); never the inside of a vault —
+//                a vault folder is left out; dirs: only folders; at most 200
 //   share_link { nodeId, expiresDays (1…90, default 14), password? } → { ok, url, expiresAt }   a download link
 //                (GateControl's public links — off until an administrator allows them: links_disabled); only who may
 //                write in the area, never a vault. GateControl keeps a link at most 30 days: longer asks end then.
@@ -334,4 +338,30 @@ async function shareLink(ctx, payload) {
   return { url: link.url, expiresAt: link.expiresAt == null ? null : Date.parse(link.expiresAt) };
 }
 
-module.exports = { suggestFolder, giveFile, shareLink, learn, sourceArg, setSource, attach, addressOf, GIVE_MAX, LINK_DAYS_MAX };
+async function browse(ctx, payload) {
+  const p = payload && typeof payload === 'object' ? payload : {};
+  let folderId = p.folderId == null ? null : posInt(p.folderId);
+  if (p.folderId != null && !folderId) throw fail('invalid', { field: 'folderId' });
+  let area;
+  if (!folderId) {
+    const vis = await ctx.visible();
+    const spec = p.area == null ? 'mine' : String(p.area);
+    const v = vis.find((x) => (spec === 'mine' ? x.area.kind === 'mine' : spec === 'family' ? x.area.kind === 'family' : x.area.id === spec));
+    if (!v) throw fail('not_found', { field: 'area' });
+    area = v.area;
+    folderId = area.root_id;
+  }
+  const { node, area: a, role } = await nodes.reach(ctx, folderId, 'read');
+  area = a;
+  if (node.is_dir !== 1 || node.vault_id) throw fail(node.vault_id ? 'encrypted' : 'invalid', { field: 'folderId' });
+  const list = await nodes.children(ctx, node.id, { dirs: p.dirs === true ? '1' : '', limit: 200 });
+  const path = await nodes.pathOf(ctx.gc, node);
+  return {
+    folder: { id: node.id, name: node.parent_id == null ? ctx.areaLabel(area) : node.name, path, where: [ctx.areaLabel(area), ...(path ? path.split('/') : [])].join(' › '),
+      areaId: area.id, writable: areas.can(role, 'write') && area.archived_at == null },
+    items: list.items.filter((n) => !n.encrypted).map((n) => ({ id: n.id, name: n.name, isDir: n.isDir, size: n.size, mime: n.mime })),
+    next: list.next,
+  };
+}
+
+module.exports = { suggestFolder, giveFile, shareLink, browse, learn, sourceArg, setSource, attach, addressOf, GIVE_MAX, LINK_DAYS_MAX };

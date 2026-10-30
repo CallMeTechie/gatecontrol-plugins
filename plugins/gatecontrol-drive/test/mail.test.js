@@ -173,3 +173,29 @@ test('share_link: a download link of 1 to 90 days (GateControl ends it after 30 
     assert.equal((await call(ANNA, 'share_link', { nodeId: f.id })).code, 'links_disabled');
   });
 });
+
+test('browse: the folders and files of an area or folder the person reads; never inside a vault; dirs only', async () => {
+  await withHost({ services: [mailPlugin()] }, async (host, c) => {
+    const { call, mkdir } = setup(host, c);
+    const fam = await c.area(ANNA, 'family');
+    const sub = await mkdir(ANNA, fam.rootId, 'Schule');
+    await c.put(ANNA, fam.rootId, 'Brief.pdf', '%PDF', { mime: 'application/pdf' });
+    const top = await call(ANNA, 'browse', { area: 'family' });
+    assert.equal(top.ok, true, JSON.stringify(top));
+    assert.deepEqual([top.folder.id, top.folder.areaId, top.folder.path, top.folder.writable], [fam.rootId, `family:${FAMILY}`, '', true]);
+    assert.deepEqual(top.items.map((x) => [x.name, x.isDir]), [['Schule', true], ['Brief.pdf', false]]);
+    assert.deepEqual((await call(ANNA, 'browse', { area: 'family', dirs: true })).items.map((x) => x.name), ['Schule']);
+    const inSub = await call(ANNA, 'browse', { folderId: sub.id });
+    assert.deepEqual([inSub.folder.path, inSub.folder.where, inSub.items.length], ['Schule', `${fam.label} › Schule`, 0]);
+    const mine = await call(ANNA, 'browse', {});
+    assert.equal(mine.folder.areaId, `mine:${ANNA.id}`);
+    // a child's folder: the parent only reads it
+    const lena = await c.area(LENA, 'child');
+    assert.equal((await call(ANNA, 'browse', { area: lena.id })).folder.writable, false);
+    assert.equal((await call(OMA, 'browse', {})).code, 'no_seat');
+    assert.equal((await call(ANNA, 'browse', { folderId: 99999 })).code, 'not_found');
+    await host.gc.db.run('UPDATE nodes SET vault_id = 1 WHERE id = ?', [sub.id]);
+    assert.equal((await call(ANNA, 'browse', { folderId: sub.id })).code, 'encrypted');
+    assert.ok(!(await call(ANNA, 'browse', { area: 'family' })).items.some((x) => x.name === 'Schule'), 'a vault folder is left out');
+  });
+});

@@ -16,6 +16,8 @@ Dateien der Familie und des Teams auf dem eigenen Speicher – auf diesem Server
     zeigt sie in der Vorschau. `learn { from, always? }` merkt sich Absender → Ordner.
   - `give_file { nodeId }` übergibt eine lesbare Datei (bis 50 MB, kein Ordner, kein Tresor) an den Aufrufer
     (`gc.media.handOver`).
+  - `browse { area?, folderId?, dirs? }` → `{ folder, items, next }`: der Inhalt eines lesbaren Ordners für die Auswahl
+    in Mails Portal („Aus Drive“, „Anderer Ordner“); nie das Innere eines Tresors.
   - `share_link { nodeId, expiresDays (1…90, Standard 14), password? }` → `{ url, expiresAt }`: ein Download-Link über
     GateControls öffentliche Links (nur mit Schreibrecht, nie Tresor). GateControl hält einen Link höchstens 30 Tage –
     längere Wünsche enden dann; `password` ist die PIN des Links (4 bis 8 Ziffern).

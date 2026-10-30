@@ -517,6 +517,12 @@
           "de": "Link zu einer Drive-Datei erstellen",
           "en": "Create a link to a Drive file"
         }
+      },
+      "browse": {
+        "label": {
+          "de": "Drive-Ordner ansehen",
+          "en": "Look into a Drive folder"
+        }
       }
     }
   }

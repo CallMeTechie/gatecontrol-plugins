@@ -100,6 +100,7 @@ const SERVICES = {
   suggest_folder: (ctx, payload) => mail.suggestFolder(ctx, payload),
   give_file: (ctx, payload, caller) => mail.giveFile(ctx, payload, caller),
   share_link: (ctx, payload) => mail.shareLink(ctx, payload),
+  browse: (ctx, payload) => mail.browse(ctx, payload),
 };
 
 // GateControl's media errors a request may end in
@@ -671,7 +672,7 @@ module.exports = {
 
   /**
    * Services for other plugins (services.js): list_areas, save_file — and since 1.15.0 for GateControl Mail (mail.js):
-   * suggest_folder, give_file, share_link — for the person of the call (userId).
+   * suggest_folder, give_file, share_link, browse — for the person of the call (userId).
    */
   async service({ name, caller, user, payload } = {}, gc) {
     if (!Object.prototype.hasOwnProperty.call(SERVICES, name)) return { ok: false, code: 'not_found' };
