@@ -28,7 +28,7 @@ function inRange(range, maxUid) {
 
 const ms = (v) => (typeof v === 'number' ? v : Date.parse(v));
 
-/** A fake mail world: logins → mailboxes; mail(), deliver() add mail; sent[] records SMTP. */
+/** A fake mail world: logins → mailboxes; mail(), deliver() add mail; sent[] records SMTP; hold / held: a slow sync (fetch). */
 class FakeMail {
   constructor() {
     this.logins = new Map(); // user → { pass, token, boxes: Map path → box, specialUse }
@@ -126,6 +126,8 @@ class FakeMail {
           },
           search: async (q) => [...box().msgs.values()].filter((m) => match(m, q || {})).map((m) => m.uid),
           fetch: async (range, o2) => {
+            // world.hold (a promise): header fetches (a sync step) wait for it — a slow server in the middle of a sync
+            if (o2.envelope && world.hold) { world.held = (world.held || 0) + 1; await world.hold; }
             const b = box();
             const test = inRange(range, b.uidNext - 1);
             return [...b.msgs.values()].filter((m) => test(m.uid) && (o2.changedSince == null || (m.modseq || 0) > o2.changedSince)).map((m) => ({

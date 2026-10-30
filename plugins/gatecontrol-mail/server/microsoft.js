@@ -16,6 +16,8 @@ const CONSUMER_TENANT = '9188040d-6c67-4c5b-b112-36a304b66dad';
 const TIMEOUT = 30000;
 
 const tokens = new Map(); // account id → { token, until }
+const renewing = new Map(); // account id → the renewal that runs
+const gens = new Map(); // account id → a counter: forget() makes a renewal that runs stale
 
 function scope() { return config.MS_SCOPES.join(' '); }
 
@@ -95,10 +97,24 @@ async function devicePoll(gc, cfg, deviceCode) {
   return { status: 'denied' };
 }
 
-/** A valid access token for account `a` (renewed with the refresh token when needed); auth_failed when it is gone. */
-async function accessToken(gc, a, force = false) {
+/**
+ * A valid access token for account `a` (renewed with the refresh token when needed); auth_failed when it is gone. One
+ * renewal per account at a time: who asks meanwhile (the sync, a mail being opened, an attachment) waits for it — two
+ * renewals at once would both spend the refresh token Microsoft rotates. `force` (Graph answered 401 to `stale`): a
+ * token renewed meanwhile by someone else is taken as it is.
+ */
+async function accessToken(gc, a, force = false, stale = null) {
   const have = tokens.get(a.id);
-  if (!force && have && have.until > Date.now() + 60000) return have.token;
+  if (have && have.until > Date.now() + 60000 && (!force || (stale && have.token !== stale))) return have.token;
+  let p = renewing.get(a.id);
+  if (!p) {
+    p = renew(gc, a, gens.get(a.id) || 0).finally(() => { if (renewing.get(a.id) === p) renewing.delete(a.id); });
+    renewing.set(a.id, p);
+  }
+  return p;
+}
+
+async function renew(gc, a, gen) {
   const cfg = await config.get(gc);
   const clientId = config.msClientId(cfg);
   const cred = await secrets.get(gc, a.id);
@@ -109,12 +125,18 @@ async function accessToken(gc, a, force = false) {
     if (e === 'invalid_grant' || e === 'interaction_required' || e === 'invalid_client' || e === 'unauthorized_client') throw Object.assign(fail('auth_failed'), { auth: true });
     throw fail('unreachable', { reason: e || String(r.status) });
   }
+  // the account was removed or signed in anew meanwhile: its new tokens stay as they are
+  if ((gens.get(a.id) || 0) !== gen) return r.body.access_token;
   if (r.body.refresh_token && r.body.refresh_token !== cred.refreshToken) await secrets.set(gc, a.id, { refreshToken: r.body.refresh_token });
   tokens.set(a.id, { token: r.body.access_token, until: Date.now() + (Number(r.body.expires_in) || 3600) * 1000 });
   return r.body.access_token;
 }
 
-function forget(accountId) { tokens.delete(accountId); }
+function forget(accountId) {
+  tokens.delete(accountId);
+  renewing.delete(accountId);
+  gens.set(accountId, (gens.get(accountId) || 0) + 1);
+}
 
 /** Remember a fresh token of a sign-in (no refresh needed right after it). */
 function remember(accountId, info) {
@@ -128,8 +150,10 @@ function remember(accountId, info) {
  */
 async function graph(gc, a, method, path, body, extra = {}) {
   const url = /^https:\/\/graph\.microsoft\.com\//.test(path) ? path : GRAPH + path;
+  let stale = null;
   for (let attempt = 0; attempt < 2; attempt++) {
-    const token = await accessToken(gc, a, attempt > 0);
+    const token = await accessToken(gc, a, attempt > 0, stale);
+    stale = token;
     const headers = { authorization: `Bearer ${token}`, accept: 'application/json', ...(extra.headers || {}) };
     let r;
     try {

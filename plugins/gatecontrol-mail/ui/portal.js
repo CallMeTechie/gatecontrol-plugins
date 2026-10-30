@@ -1,7 +1,8 @@
 /* Mail (gatecontrol-mail) — the portal tab (mockups Main, Menue, Lesen, Schreiben, Ablegen, Konto):
  *
  *   menu     Alle Posteingänge, Zum Ablegen, Ausgang, the accounts with their folders, "Konto hinzufügen", settings
- *   list     Relevant / Sonstige in posteingänge, search, more on scrolling; live reload on the event 'mail'
+ *   list     Relevant / Sonstige in posteingänge, search, more on scrolling; live reload on the event 'mail' (and of the open
+ *            mail whose body was still loading: the event names its messageId)
  *   mail     AI bar (Kurz gesagt, Zu tun — into the family calendar —, reply suggestions), attachments (download, "In Drive
  *            speichern" with Drive's suggestion, another folder, "Immer für diesen Absender"), pictures only on request,
  *            the conversation, answer / forward / archive / delete / move to Sonstige
@@ -243,6 +244,9 @@
     if (!window.GC || typeof window.GC.on !== 'function') return;
     window.GC.on('event', function (ev) {
       if (!ev || ev.type !== 'mail') return;
+      var d = ev.data || {};
+      // the body of the open mail came after the answer: show it now
+      if (S.open && S.open.bodyMissing && d.messageId === S.open.id) reloadOpen();
       if (liveTimer) clearTimeout(liveTimer);
       liveTimer = setTimeout(function () {
         loadMe().then(function () { renderNav(); if (S.view === 'box') loadList(true); }, function () {});
@@ -416,6 +420,11 @@
     }, fail);
   }
 
+  function reloadOpen() {
+    var id = S.openId;
+    api('GET', 'messages/' + id).then(function (m) { if (S.openId !== id) return; S.open = m; renderRead(m); }, function () {});
+  }
+
   function markRead(id) { S.items.forEach(function (x) { if (x.id === id) x.unread = false; }); renderList(); }
 
   function act(path, body, okText, after) {
@@ -532,15 +541,24 @@
     ]);
     var acts = h('div', { class: 'mp-tools' });
     row.appendChild(acts);
-    acts.appendChild(btn(T('p.download'), function () {
+    acts.appendChild(btn(T('p.download'), function () { download(0); }, { small: true }));
+    // a large attachment still loading at the provider: 409 busy (reason loading) — asked again a few times
+    function download(n) {
       api('GET', 'messages/' + m.id + '/attachments/' + t.id).then(function (r) {
         if (!r.url) { toast(T('p.no_download'), 'error'); return; }
         var link = h('a', { attrs: { href: r.url, download: t.name } });
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
-      }, fail);
-    }, { small: true }));
+      }, function (e) {
+        if (e && e.code === 'busy' && e.extra && e.extra.reason === 'loading' && n < 12) {
+          if (n === 0) toast(T('p.att_loading'));
+          setTimeout(function () { download(n + 1); }, Math.min(Math.max(Number(e.extra.retryAfter) || 5, 2), 30) * 1000);
+          return;
+        }
+        fail(e);
+      });
+    }
     if (!has('drive')) return row;
     if (t.savedTo) { add(sugg, [T('p.in_drive') + ' ', h('b', { text: t.savedTo.where })]); return row; }
     var remember = h('input', { type: 'checkbox' });
@@ -575,6 +593,10 @@
   // the body: sanitized HTML in a shadow root, pictures only when allowed
   function bodyCard(m) {
     var card = h('div', { class: 'mp-card' });
+    if (m.bodyMissing) {
+      // the provider is slow (a first sync, a large mail): the snippet meanwhile, the body follows (live event)
+      card.appendChild(h('div', { class: 'mp-note' }, [icon('mail'), h('span', { text: T('p.body_loading') }), btn(T('p.body_retry'), reloadOpen, { small: true })]));
+    }
     if (m.imagesBlocked || m.trackers) {
       var note = h('div', { class: 'mp-note' }, [icon('shield'), h('span', { text: m.imagesBlocked ? T('p.images_blocked', { n: m.trackers || 0 }) : T('p.trackers', { n: m.trackers }) })]);
       if (m.imagesBlocked && has('images')) {

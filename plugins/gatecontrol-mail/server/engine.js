@@ -1,11 +1,23 @@
 'use strict';
 
-// The sync engine: one worker per account, everything of an account in order (a chain of promises). IMAP accounts keep
+// The sync engine: one worker per account, the work of an account in order (its line of steps). IMAP accounts keep
 // a session with IDLE on the posteingang (new mail → a sync of the posteingang at once), the other folders every 15
 // minutes and when a list of them is opened; Microsoft accounts are asked every minute (posteingang) and every 15
 // minutes (the rest). A session that breaks is opened again in the next background run (with a growing pause); a
 // refused sign-in marks the account auth_failed until the person enters the password again or signs in anew.
 // GateControl allows the plugin MAX_SESSIONS IMAP sessions at once — beyond them an account works with a session per run.
+//
+// Syncing goes in short steps (a folder listing, a Graph delta page, an IMAP folder run with a budget, a body), each a
+// job of the line — never a whole first sync in one go. What a person waits for never waits behind a sync:
+// * Microsoft: bodies, attachments, flags, moves and deletes go beside the line (Graph is plain HTTP; at most
+//   DIRECT_PER_ACCOUNT requests of the person per mailbox at once). The access token is renewed once for all
+//   (microsoft.js).
+// * IMAP: a body or an attachment runs at once in the line when it is free; while a step runs, on a short session of
+//   its own beside it (closed right after; at most SIDE_PER_ACCOUNT per account and SIDE_MAX in all, within the plugin's
+//   maxConnections) — an IMAP command cannot be broken off and one session has one open mailbox, so sharing the busy
+//   session is no option, and a step (300 headers, a large body) may take longer than the person can wait. Without a
+//   free short session, and for flags, moves and deletes, the work goes first in the line, before the waiting steps.
+// A body or an attachment that loads already is joined, never loaded twice.
 
 const store = require('./store');
 const config = require('./config');
@@ -19,6 +31,13 @@ const push = require('./push');
 const { fail, MONTH } = require('./util');
 
 const MAX_SESSIONS = 90;
+const MAX_CONNECTIONS = 100;          // plugin.json permissions.mail.maxConnections
+const SIDE_MAX = 8;
+const SIDE_PER_ACCOUNT = 2;
+const DIRECT_PER_ACCOUNT = 3;         // Graph allows 4 requests at once per mailbox — one stays for the sync
+const FIRST_STEP = 50;                // the first step of a first sync: the newest mail of the posteingang
+const PAGES = 10;                     // Graph delta pages per folder and run (a step each)
+const LIVE_MS = 5000;                 // the live event while a long sync goes on, at most this often per folder
 const INBOX_IMAP_MS = 5 * 60000;
 const INBOX_GRAPH_MS = 60000;
 const FOLDERS_MS = 15 * 60000;
@@ -30,6 +49,9 @@ const ATT_MAX = 50 * 1024 * 1024;
 const BODY_MAX = 50 * 1024 * 1024;
 
 const st = new Map();
+const bodies = new Map();   // message id → the load of its body that runs
+const files = new Map();    // attachment id → its download that runs
+let sideOpen = 0;
 let stopped = false;
 let gcRef = null;
 
@@ -37,17 +59,39 @@ const isGraph = (a) => providers.isMicrosoft(a.provider);
 
 function stateOf(id) {
   let s = st.get(id);
-  if (!s) { s = { chain: Promise.resolve(), s: null, openPath: null, retryAt: 0, pause: 0, dirty: false, lastInbox: 0, lastAll: 0, lastReconcile: 0, timer: null }; st.set(id, s); }
+  if (!s) {
+    s = {
+      prio: [], queue: [], busy: false, s: null, openPath: null, retryAt: 0, pause: 0, dirty: false, lastInbox: 0, lastAll: 0, lastReconcile: 0, timer: null,
+      side: 0, direct: 0, directWait: [], inbox: null, again: false, newest: new Set(), liveAt: new Map(),
+    };
+    st.set(id, s);
+  }
   return s;
 }
 
-/** Run fn for account `a` after whatever runs for it now. */
-function run(gc, a, fn) {
+/**
+ * Run fn(x) for account `a` in its line, after the step that runs now: `prio` (a person waits) before the waiting
+ * background steps, else after them.
+ */
+function run(gc, a, fn, o = {}) {
   const x = stateOf(a.id);
-  const p = x.chain.then(() => fn(x), () => fn(x));
-  x.chain = p.catch(() => {});
-  return p;
+  return new Promise((resolve, reject) => {
+    (o.prio ? x.prio : x.queue).push({ fn, resolve, reject });
+    pump(x);
+  });
 }
+
+async function pump(x) {
+  if (x.busy) return;
+  x.busy = true;
+  let job;
+  while ((job = x.prio.shift() || x.queue.shift())) {
+    try { job.resolve(await job.fn(x)); } catch (e) { job.reject(e); }
+  }
+  x.busy = false;
+}
+
+const waiting = (x) => x.prio.length + x.queue.length;
 
 async function row(gc, id) {
   return store.one(gc, 'SELECT * FROM accounts WHERE id = ?', [id]);
@@ -72,7 +116,8 @@ async function mailError(gc, a, e) {
     await setState(gc, a, 'unreachable', code === 'ERR_NETWORK_DENIED' ? 'network_denied' : code === 'ERR_MAIL_PROTOCOL' ? 'protocol' : 'network');
     return fail('unreachable');
   }
-  if (code === 'ERR_MAIL_LIMIT' || code === 'busy') return fail('busy');
+  if (code === 'busy') return e;
+  if (code === 'ERR_MAIL_LIMIT') return fail('busy');
   return e;
 }
 
@@ -124,10 +169,11 @@ async function backToIdle(gc, a, x) {
 }
 
 /**
- * Work with the account's session (IMAP) inside its chain: fn(s) for IMAP, fn(null) for Microsoft. A session beyond
- * MAX_SESSIONS is closed after the work.
+ * Work with the account's session (IMAP) inside its line: fn(s) for IMAP, fn(null) for Microsoft. A session beyond
+ * MAX_SESSIONS is closed after the work; else it goes back to the posteingang and IDLE — unless more work waits or
+ * follows at once (o.stay: the next step of the same run). o: { prio (run), stay }.
  */
-function withAccount(gc, a, fn) {
+function withAccount(gc, a, fn, o = {}) {
   return run(gc, a, async (x) => {
     if (isGraph(a)) {
       try { return await fn(null, x); } catch (e) { throw await mailError(gc, a, e); }
@@ -142,9 +188,68 @@ function withAccount(gc, a, fn) {
       if (e && (e.code === 'ERR_MAIL_NET' || e.code === 'ERR_MAIL_PROTOCOL')) { try { await s.close(); } catch { /* gone */ } x.s = null; }
       throw await mailError(gc, a, e);
     } finally {
-      if (temp && x.s) { try { await x.s.close(); } catch { /* gone */ } x.s = null; x.openPath = null; } else await backToIdle(gc, a, x);
+      if (temp && x.s) { try { await x.s.close(); } catch { /* gone */ } x.s = null; x.openPath = null; } else if (!waiting(x) && !o.stay) await backToIdle(gc, a, x);
     }
-  });
+  }, o);
+}
+
+/** Microsoft: work of a person beside the account's line — at most DIRECT_PER_ACCOUNT at once (the rest waits for a turn). */
+async function direct(gc, a, fn) {
+  const x = stateOf(a.id);
+  if (x.direct >= DIRECT_PER_ACCOUNT) await new Promise((r) => x.directWait.push(r)); else x.direct++;
+  try {
+    return await fn();
+  } catch (e) {
+    throw await mailError(gc, a, e);
+  } finally {
+    // the turn goes straight to the next one waiting
+    const next = x.directWait.shift();
+    if (next) next(); else x.direct--;
+  }
+}
+
+const NO_SIDE = Symbol('no side session');
+
+/** IMAP: fn(s, x) on a short session of its own (closed after) → its result, or NO_SIDE when none could be opened. */
+async function beside(gc, a, x, fn) {
+  x.side++;
+  sideOpen++;
+  let s = null;
+  try {
+    try {
+      s = await gc.mail.imap.connect(await imapOpts(gc, a));
+    } catch {
+      // the provider's own limit, a hiccup, a refused login: the account's line decides (and reports)
+      return NO_SIDE;
+    }
+    s.on('error', () => { /* closed below */ });
+    try { return await fn(s, { openPath: null }); } catch (e) { throw await mailError(gc, a, e); }
+  } finally {
+    if (s) { try { await s.close(); } catch { /* gone */ } }
+    x.side--;
+    sideOpen--;
+  }
+}
+
+/**
+ * Work a person waits for (a body, an attachment): Microsoft beside the line; IMAP at once in a free line, beside a busy
+ * one on a short session, else first in the line. fn(s, x) like withAccount.
+ */
+async function forPerson(gc, a, fn) {
+  if (isGraph(a)) return direct(gc, a, () => fn(null, { openPath: null }));
+  const x = stateOf(a.id);
+  const room = x.busy && x.side < SIDE_PER_ACCOUNT && sideOpen < SIDE_MAX && openSessions() + sideOpen < MAX_CONNECTIONS - 1 && gc.mail && gc.mail.imap;
+  if (room) {
+    const r = await beside(gc, a, x, fn);
+    if (r !== NO_SIDE) return r;
+  }
+  return withAccount(gc, a, fn, { prio: true });
+}
+
+/** Work a person waits for that changes the account (flags, moves, deletes): Microsoft beside the line, IMAP first in it. */
+function change(gc, a, fn) {
+  if (isGraph(a)) return direct(gc, a, () => fn(null, { openPath: null }));
+  return withAccount(gc, a, fn, { prio: true });
 }
 
 function backoff(x) {
@@ -165,83 +270,158 @@ async function foldersOf(gc, a) {
   return store.all(gc, 'SELECT * FROM folders WHERE account_id = ?', [a.id]);
 }
 
-/** Sync the posteingang of account `a` now (in its chain). → { created } */
-async function syncInbox(gc, a, o = {}) {
+/** The live event while a long sync goes on (at most every LIVE_MS per folder; the end of the sync sends its own). */
+function liveSoon(gc, a, x, folderId) {
+  const now = Date.now();
+  if (now - (x.liveAt.get(folderId) || 0) < LIVE_MS) return;
+  x.liveAt.set(folderId, now);
+  push.changed(gc, a.user_id, a.id, folderId).catch(() => {});
+}
+
+/**
+ * One step of folder row `f` (in the line) → { created, changed, more }. The first sync of a posteingang begins with its
+ * newest mail (Graph: the newest FIRST_STEP by date, then the delta round; IMAP: the newest FIRST_STEP).
+ */
+async function folderStep(gc, a, s, x, f, o) {
+  if (isGraph(a)) {
+    if (o.newest && !f.synced_at && !f.delta && !x.newest.has(f.id)) {
+      x.newest.add(f.id);
+      try {
+        return { ...(await graph.latest(gc, a, f, FIRST_STEP, o.since)), more: true };
+      } catch (e) {
+        // only a head start: the delta round brings the same
+        if (e && (e.auth || e.code === 'auth_failed')) throw e;
+        return { created: [], changed: false, more: true };
+      }
+    }
+    return graph.syncFolder(gc, a, f, { since: o.since, arrival: o.arrival, pages: 1 });
+  }
+  const budget = o.budget || (o.newest && f.uid_next == null ? FIRST_STEP : undefined);
+  const r = await imap.syncFolder(gc, a, s, f, { since: o.since, arrival: o.arrival, reconcile: o.reconcile, budget });
+  x.openPath = f.path;
+  return { ...r, more: false };
+}
+
+const hardError = (e) => !!(e && (e.code === 'ERR_MAIL_AUTH' || e.auth || e.code === 'auth_failed' || e.code === 'ERR_MAIL_NET'));
+
+/**
+ * Sync a folder in steps (each a job of the line; Graph: a page each, at most PAGES + 1) → { created, changed, folder }.
+ * pick(s, x) → the folder row (in the first step; later steps read it again). o: { since, arrival, reconcile, budget,
+ * newest, prio, live (events between the steps), soft (a failing folder is skipped with a warning, unless the sign-in
+ * or the network failed) }.
+ */
+async function folderSteps(gc, a, pick, o) {
+  const out = { created: [], changed: false, folder: null };
+  const steps = isGraph(a) ? PAGES + 1 : 1;
+  let id = null;
+  for (let i = 0; i < steps; i++) {
+    const r = await withAccount(gc, a, async (s, x) => {
+      const f = id == null ? await pick(s, x) : await store.one(gc, 'SELECT * FROM folders WHERE id = ?', [id]);
+      if (!f) return null;
+      id = f.id;
+      try {
+        return await folderStep(gc, a, s, x, f, o);
+      } catch (e) {
+        if (!o.soft || hardError(e)) throw e;
+        gc.log.warn('folder sync failed', a.id, (e && e.code) || 'error');
+        return null;
+      }
+    }, { prio: o.prio, stay: o.stay });
+    if (!r) break;
+    out.created.push(...r.created);
+    if (r.changed) out.changed = true;
+    if (!r.more) break;
+    if (o.live && r.changed) liveSoon(gc, a, stateOf(a.id), id);
+  }
+  if (id != null) out.folder = await store.one(gc, 'SELECT * FROM folders WHERE id = ?', [id]);
+  return out;
+}
+
+/**
+ * Sync the posteingang of account `a` now (in steps of its line) → { created }. A sync of it that runs already is
+ * joined (and goes once more when asked meanwhile — new mail during a long first sync).
+ */
+function syncInbox(gc, a, o = {}) {
+  const x = stateOf(a.id);
+  if (x.inbox) { x.again = true; return x.inbox; }
+  const p = (async () => {
+    let out;
+    do {
+      x.again = false;
+      out = await inboxRun(gc, a, x, o);
+    } while (x.again && !stopped);
+    return out;
+  })();
+  x.inbox = p;
+  p.finally(() => { if (x.inbox === p) x.inbox = null; }).catch(() => {});
+  return p;
+}
+
+async function inboxRun(gc, a, x, o) {
   const cfg = await config.get(gc);
   const since = config.retentionStart(cfg, Date.now());
-  const created = [];
-  await withAccount(gc, a, async (s, x) => {
+  const arrival = a.first_done === 1;
+  const reconcile = Date.now() - x.lastReconcile > RECONCILE_MS;
+  const r = await folderSteps(gc, a, async (s) => {
     let folders = await foldersOf(gc, a);
     if (!folders.length || Date.now() - x.lastAll > FOLDERS_MS * 4) {
       folders = isGraph(a) ? await graph.syncFolders(gc, a) : await imap.syncFolders(gc, a, s, Date.now());
     }
-    const inbox = folders.find((f) => f.role === 'inbox');
-    if (!inbox) return;
-    const arrival = a.first_done === 1;
-    const reconcile = Date.now() - x.lastReconcile > RECONCILE_MS;
-    const r = isGraph(a) ? await graph.syncFolder(gc, a, inbox, { since, arrival })
-      : await imap.syncFolder(gc, a, s, inbox, { since, arrival, reconcile, budget: o.budget });
-    if (!isGraph(a)) x.openPath = inbox.path;
-    if (reconcile) x.lastReconcile = Date.now();
-    x.dirty = false;
-    x.lastInbox = Date.now();
-    created.push(...r.created);
-    const f = await store.one(gc, 'SELECT * FROM folders WHERE id = ?', [inbox.id]);
-    // the newest bodies at once (snippets; new mail: before its push), the rest in the background
-    await afterArrivalInChain(gc, a, s, x, r.created);
-    if (arrival) { /* first_done already */ } else if (f && (isGraph(a) ? !!f.synced_at : (f.uid_next != null && !f.low_uid))) {
-      // the first sync of the posteingang is through: new mail from now on is "arrival" (pushes, bodies at once)
-      await store.run(gc, 'UPDATE accounts SET first_done = 1 WHERE id = ?', [a.id]);
-      a.first_done = 1;
-    }
-    await store.run(gc, 'UPDATE accounts SET synced_at = ? WHERE id = ?', [Date.now(), a.id]);
-    if (a.state !== 'ok') await setState(gc, a, 'ok', null);
-    if (r.changed) await push.changed(gc, a.user_id, a.id, inbox.id);
-  });
-  if (a.first_done === 1 && created.length) await push.newMail(gc, a);
-  return { created };
+    return folders.find((f) => f.role === 'inbox') || null;
+  }, { since, arrival, reconcile, budget: o.budget, newest: !arrival, live: !arrival });
+  const f = r.folder;
+  if (!f) return { created: [] };
+  if (reconcile) x.lastReconcile = Date.now();
+  x.dirty = false;
+  x.lastInbox = Date.now();
+  // the newest bodies at once (snippets; new mail: before its push), a step each; the rest in the background
+  await arrivalBodies(gc, a, r.created);
+  if (!arrival && (isGraph(a) ? !!f.synced_at : (f.uid_next != null && !f.low_uid))) {
+    // the first sync of the posteingang is through: new mail from now on is "arrival" (pushes, bodies at once)
+    await store.run(gc, 'UPDATE accounts SET first_done = 1 WHERE id = ?', [a.id]);
+    a.first_done = 1;
+  }
+  await store.run(gc, 'UPDATE accounts SET synced_at = ? WHERE id = ?', [Date.now(), a.id]);
+  if (a.state !== 'ok') await setState(gc, a, 'ok', null);
+  if (r.changed) await push.changed(gc, a.user_id, a.id, f.id);
+  if (arrival && r.created.length) await push.newMail(gc, a);
+  return { created: r.created };
 }
 
-/** In the chain already: bodies of new mail. */
-async function afterArrivalInChain(gc, a, s, x, created) {
+/** The bodies of the newest ARRIVAL_BODIES of `created` (message ids), a job of the line each. */
+async function arrivalBodies(gc, a, created) {
   if (!created.length) return;
-  const ids = created.slice(-ARRIVAL_BODIES);
-  const rows = await store.all(gc, `SELECT * FROM messages WHERE id IN (${store.marks(ids.length)})`, ids);
-  for (const m of rows) {
-    try { await bodyNow(gc, a, s, x, m); } catch (e) { if (e && (e.code === 'ERR_MAIL_AUTH' || e.auth)) throw e; }
+  const rows = [];
+  for (const part of store.chunks(created)) rows.push(...await store.all(gc, `SELECT * FROM messages WHERE id IN (${store.marks(part.length)})`, part));
+  rows.sort((p, q) => q.date - p.date || q.id - p.id);
+  const take = rows.slice(0, ARRIVAL_BODIES);
+  for (const [i, m] of take.entries()) {
+    await withAccount(gc, a, async (s, x) => {
+      try { await bodyInLine(gc, a, s, x, m); } catch (e) { if (e && (e.code === 'ERR_MAIL_AUTH' || e.auth)) throw e; }
+    }, { stay: i < take.length - 1 });
   }
 }
 
-/** Sync every other folder of account `a` (the posteingang has its own rhythm). */
+/** Sync every other folder of account `a` (the posteingang has its own rhythm) — a folder at a time. */
 async function syncAll(gc, a) {
   const cfg = await config.get(gc);
   const since = config.retentionStart(cfg, Date.now());
-  await withAccount(gc, a, async (s, x) => {
-    const folders = isGraph(a) ? await graph.syncFolders(gc, a) : await imap.syncFolders(gc, a, s, Date.now());
-    x.lastAll = Date.now();
-    for (const f of folders) {
-      if (f.role === 'inbox' || f.role === 'all') continue;
-      try {
-        const r = isGraph(a) ? await graph.syncFolder(gc, a, f, { since, arrival: false }) : await imap.syncFolder(gc, a, s, f, { since, arrival: false, reconcile: true, budget: 200 });
-        if (!isGraph(a)) x.openPath = f.path;
-        if (r.changed) await push.changed(gc, a.user_id, a.id, f.id);
-      } catch (e) {
-        if (e && (e.code === 'ERR_MAIL_AUTH' || e.auth || e.code === 'auth_failed' || e.code === 'ERR_MAIL_NET')) throw e;
-        gc.log.warn('folder sync failed', a.id, (e && e.code) || 'error');
-      }
-    }
-  });
+  const x = stateOf(a.id);
+  const folders = await withAccount(gc, a, (s) => (isGraph(a) ? graph.syncFolders(gc, a) : imap.syncFolders(gc, a, s, Date.now())), { stay: true });
+  x.lastAll = Date.now();
+  const todo = folders.filter((f) => f.role !== 'inbox' && f.role !== 'all');
+  if (!todo.length) await withAccount(gc, a, () => null);
+  for (const [i, f] of todo.entries()) {
+    const r = await folderSteps(gc, a, () => store.one(gc, 'SELECT * FROM folders WHERE id = ?', [f.id]), { since, arrival: false, reconcile: true, budget: 200, soft: true, stay: i < todo.length - 1 });
+    if (r.changed) await push.changed(gc, a.user_id, a.id, f.id);
+  }
 }
 
-/** One folder now (a list of it was opened and its copy is older than a few minutes). */
+/** One folder now (a list of it was opened and its copy is older than a few minutes) — before the background steps. */
 async function syncOne(gc, a, f) {
   const cfg = await config.get(gc);
   const since = config.retentionStart(cfg, Date.now());
-  await withAccount(gc, a, async (s, x) => {
-    const r = isGraph(a) ? await graph.syncFolder(gc, a, f, { since, arrival: false }) : await imap.syncFolder(gc, a, s, f, { since, arrival: false, reconcile: true, budget: 200 });
-    if (!isGraph(a)) x.openPath = f.path;
-    return r;
-  });
+  return folderSteps(gc, a, () => store.one(gc, 'SELECT * FROM folders WHERE id = ?', [f.id]), { since, arrival: false, reconcile: true, budget: 200, prio: true });
 }
 
 /** Headers of folder `f` older than `before` from the server (a list scrolled past the retention). */
@@ -250,13 +430,16 @@ async function loadOlder(gc, a, f, before, count = 50) {
     const r = isGraph(a) ? await graph.older(gc, a, f, before, count) : await imap.older(gc, a, s, f, before, count);
     if (!isGraph(a)) x.openPath = null;
     return r;
-  });
+  }, { prio: true });
 }
 
 // ─── bodies and attachments ─────────────────────
 
-/** Sanitize and store a parsed mail of row `m` (in the chain). */
-async function storeParsed(gc, a, m, p) {
+/**
+ * Sanitize and store a parsed mail of row `m` (read with session `s` / state `x`). The administrator's "always": its
+ * attachments follow — at once in the line, later in the line when a person waits for the body (`person`).
+ */
+async function storeParsed(gc, a, m, p, s, x, person) {
   const now = Date.now();
   let html = null;
   let images = [];
@@ -276,14 +459,29 @@ async function storeParsed(gc, a, m, p) {
     }
   }
   const cfg = await config.get(gc);
-  if (cfg.attachments === 'always') {
-    const atts = await store.all(gc, 'SELECT * FROM attachments WHERE message_id = ? AND media_id IS NULL AND inline = 0 AND size <= ?', [m.id, ATT_ALWAYS_MAX]);
-    for (const t of atts) { try { await downloadNow(gc, a, m, t, null, null); } catch { /* on demand later */ } }
+  if (cfg.attachments !== 'always') return;
+  if (person) withAccount(gc, a, (s2, x2) => alwaysFiles(gc, a, m, s2, x2)).catch(() => {});
+  else await alwaysFiles(gc, a, m, s, x);
+}
+
+/** The attachments of row `m` up to ATT_ALWAYS_MAX into the media (in the line; one that loads already is left to it). */
+async function alwaysFiles(gc, a, m, s, x) {
+  const atts = await store.all(gc, 'SELECT * FROM attachments WHERE message_id = ? AND media_id IS NULL AND inline = 0 AND size <= ?', [m.id, ATT_ALWAYS_MAX]);
+  for (const t of atts) {
+    if (files.has(t.id)) continue;
+    try { await once(files, t.id, () => downloadNow(gc, a, m, t, s, x)); } catch { /* on demand later */ }
   }
 }
 
-/** The body of row `m` from the server in the chain. */
-async function bodyNow(gc, a, s, x, m) {
+/** fn() as the one run of `key` in `map` (removed when it ends). */
+function once(map, key, fn) {
+  const p = Promise.resolve().then(fn).finally(() => { if (map.get(key) === p) map.delete(key); });
+  map.set(key, p);
+  return p;
+}
+
+/** The body of row `m` from the server with session `s` (IMAP) / state `x`. */
+async function bodyNow(gc, a, s, x, m, person = false) {
   const f = await store.one(gc, 'SELECT * FROM folders WHERE id = ?', [m.folder_id]);
   if (!f) throw fail('not_found');
   let p;
@@ -300,25 +498,36 @@ async function bodyNow(gc, a, s, x, m) {
     x.openPath = null;
   }
   if (!p) throw fail('not_found');
-  await storeParsed(gc, a, m, p);
+  await storeParsed(gc, a, m, p, s, x, person);
 }
 
-/** The body of message row `m` (from the server when it is not here). */
-async function loadBody(gc, a, m, o = {}) {
-  void o;
-  return withAccount(gc, a, (s, x) => bodyNow(gc, a, s, x, m));
+/** In the line (arrivals, the background): the body of row `m` — unless a person's load of it runs already. */
+async function bodyInLine(gc, a, s, x, m) {
+  if (bodies.has(m.id)) return;
+  await once(bodies, m.id, () => bodyNow(gc, a, s, x, m));
 }
 
-/** An attachment into the plugin's media (claimed) → { mediaId, bytes }. In the chain when s / x are given. */
+/**
+ * The body of message row `m` from the server, for a person who waits (forPerson: never behind a sync step). A load of
+ * it that runs already is joined.
+ */
+function loadBody(gc, a, m) {
+  return bodies.get(m.id) || once(bodies, m.id, () => forPerson(gc, a, (s, x) => bodyNow(gc, a, s, x, m, true)));
+}
+
+/** Is the body of message `id` being loaded? */
+const loading = (id) => bodies.has(id);
+
+/** An attachment into the plugin's media (claimed) with session `s` (IMAP) → { mediaId, bytes, mime }. */
 async function downloadNow(gc, a, m, t, s, x) {
   let got;
   if (isGraph(a)) got = await graph.download(gc, a, m, t, ATT_MAX);
   else {
     const f = await store.one(gc, 'SELECT * FROM folders WHERE id = ?', [m.folder_id]);
-    const sess = s || (stateOf(a.id).s);
-    if (!sess) throw fail('unreachable');
-    got = await imap.download(sess, f, m, t, ATT_MAX);
-    if (x) x.openPath = null; else stateOf(a.id).openPath = null;
+    if (!f) throw fail('not_found');
+    if (!s) throw fail('unreachable');
+    got = await imap.download(s, f, m, t, ATT_MAX);
+    if (x) x.openPath = null;
   }
   await gc.media.claim(got.mediaId);
   const bytes = Number(got.bytes) || Number(t.size) || 0;
@@ -326,7 +535,7 @@ async function downloadNow(gc, a, m, t, s, x) {
   return { mediaId: got.mediaId, bytes, mime: got.mime || t.mime };
 }
 
-/** The cached copy of attachment `t` of row `m` (downloaded when needed). */
+/** The cached copy of attachment `t` of row `m` (downloaded when needed — never behind a sync step; a download that runs is joined). */
 async function attachment(gc, a, m, t) {
   if (t.media_id) {
     const info = await gc.media.info(t.media_id).catch(() => null);
@@ -335,7 +544,7 @@ async function attachment(gc, a, m, t) {
       return { mediaId: t.media_id, bytes: info.bytes, mime: info.mime || t.mime };
     }
   }
-  return withAccount(gc, a, (s, x) => downloadNow(gc, a, m, t, s, x));
+  return files.get(t.id) || once(files, t.id, () => forPerson(gc, a, (s, x) => downloadNow(gc, a, m, t, s, x)));
 }
 
 // ─── changes the person makes ───────────────────
@@ -343,7 +552,7 @@ async function attachment(gc, a, m, t) {
 /** Flags of rows `list` (one account): { unread?, flagged?, answered? } — on the server, then here. */
 async function setFlags(gc, a, list, want) {
   if (!list.length) return;
-  await withAccount(gc, a, async (s, x) => {
+  await change(gc, a, async (s, x) => {
     if (isGraph(a)) {
       for (const m of list) {
         const body = {};
@@ -384,7 +593,7 @@ function byFolder(list) {
 /** Move rows `list` (one account) to folder row `to`; on the server, then here (new uid / id where known). */
 async function move(gc, a, list, to) {
   const moved = [];
-  await withAccount(gc, a, async (s, x) => {
+  await change(gc, a, async (s, x) => {
     for (const [folderId, rows] of byFolder(list)) {
       if (folderId === to.id) continue;
       const f = await store.one(gc, 'SELECT * FROM folders WHERE id = ?', [folderId]);
@@ -415,7 +624,7 @@ async function move(gc, a, list, to) {
 
 /** Delete rows `list` for good (they are in the trash). */
 async function destroy(gc, a, list) {
-  await withAccount(gc, a, async (s, x) => {
+  await change(gc, a, async (s, x) => {
     for (const [folderId, rows] of byFolder(list)) {
       const f = await store.one(gc, 'SELECT * FROM folders WHERE id = ?', [folderId]);
       if (!f) continue;
@@ -471,26 +680,26 @@ async function remoteSearch(gc, a, q) {
       }
       for (const u of uids) if (known.has(u)) { const r = await store.one(gc, 'SELECT id FROM messages WHERE folder_id = ? AND uid = ?', [f.id, u]); if (r) found.push(r.id); }
     }
-  });
+  }, { prio: true });
   return found;
 }
 
 // ─── the background run ─────────────────────────
 
-/** Bodies of mail without one (newest first, within the quota) — BACKFILL per account and run. */
+/** Bodies of mail without one (newest first, within the quota) — BACKFILL per account and run, a step each. */
 async function backfill(gc, a, quota) {
   if (await mailstore.usage(gc, a.user_id) > quota * 0.85) return 0;
   const rows = await store.all(gc, `SELECT m.* FROM messages m JOIN folders f ON f.id = m.folder_id WHERE m.account_id = ? AND m.body_state = 'none'
     AND f.role IN ('inbox', 'sent', 'archive') ORDER BY m.date DESC LIMIT ?`, [a.id, BACKFILL]);
   if (!rows.length) return 0;
-  await withAccount(gc, a, async (s, x) => {
-    for (const m of rows) {
-      try { await bodyNow(gc, a, s, x, m); } catch (e) {
+  for (const [i, m] of rows.entries()) {
+    await withAccount(gc, a, async (s, x) => {
+      try { await bodyInLine(gc, a, s, x, m); } catch (e) {
         if (e && (e.code === 'ERR_MAIL_AUTH' || e.auth || e.code === 'ERR_MAIL_NET')) throw e;
         await store.run(gc, "UPDATE messages SET body_state = 'failed' WHERE id = ?", [m.id]);
       }
-    }
-  });
+    }, { stay: i < rows.length - 1 });
+  }
   return rows.length;
 }
 
@@ -533,7 +742,7 @@ async function tick(gc, now, budgetMs = 60000, skipUsers = new Set()) {
 }
 
 /** Start: the sessions come with the first background run. */
-function start(gc) { gcRef = gc; stopped = false; st.clear(); }
+function start(gc) { gcRef = gc; stopped = false; st.clear(); bodies.clear(); files.clear(); sideOpen = 0; }
 
 async function stop() {
   stopped = true;
@@ -570,6 +779,6 @@ function adopt(gc, a, s) {
 }
 
 module.exports = {
-  run, withAccount, syncInbox, syncAll, syncOne, loadOlder, loadBody, attachment, setFlags, move, destroy, appendSent, remoteSearch, retention,
-  tick, start, stop, forget, probe, adopt, setState, isGraph, mailError, stateOf, backfill, MONTH,
+  run, withAccount, direct, syncInbox, syncAll, syncOne, loadOlder, loadBody, loading, attachment, setFlags, move, destroy, appendSent, remoteSearch,
+  retention, tick, start, stop, forget, probe, adopt, setState, isGraph, mailError, stateOf, backfill, MONTH,
 };

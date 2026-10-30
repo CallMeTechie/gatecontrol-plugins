@@ -17,6 +17,9 @@ const { fail, posInt, parse, clip } = require('./util');
 const LIMIT = 50;
 const OPEN_SYNC_MS = 5 * 60000;
 const WAIT_MS = 8000;
+// what a person waits for at most before the answer goes without it (the apps give up after 25 s); the work goes on and
+// the live event `mail` { kind: 'changed', …, messageId } tells when it is there
+const timing = { bodyMs: 12000, fileMs: 12000 };
 const IMG_MAX = 700 * 1024; // the picture travels as base64 in a JSON answer (≤ 1 MB)
 
 const SUMMARY_COLS = `m.*, (SELECT COUNT(*) FROM messages t WHERE t.thread_id = m.thread_id AND t.user_id = m.user_id) AS thread_count,
@@ -28,6 +31,23 @@ function within(p, ms) {
   let timer;
   return Promise.race([p.catch(() => null), new Promise((res) => { timer = setTimeout(res, ms); if (timer.unref) timer.unref(); })]).finally(() => clearTimeout(timer));
 }
+
+/** p within `ms` → { done: true, value } | { done: true, error } | { done: false } (p goes on). */
+function settled(p, ms) {
+  let timer;
+  return Promise.race([
+    p.then((value) => ({ done: true, value }), (error) => ({ done: true, error })),
+    new Promise((res) => { timer = setTimeout(() => res({ done: false }), ms); }),
+  ]).finally(() => clearTimeout(timer));
+}
+
+/** Work the answer did not wait for: the live event to the person when it is through (lists and the open mail load again). */
+function later(gc, userId, accountId, folderId, p, extra) {
+  p.then(() => push.changed(gc, userId, accountId, folderId, extra), () => {});
+}
+
+/** Errors of loading a body the answer goes without (the copy's snippet, bodyMissing) — the rest is the answer. */
+const tolerated = (e) => !!(e && (e.code === 'unreachable' || e.code === 'not_found' || e.code === 'busy'));
 
 async function accountsOf(gc, userId) {
   return store.all(gc, 'SELECT * FROM accounts WHERE user_id = ? ORDER BY id', [userId]);
@@ -210,12 +230,18 @@ async function attachmentsOf(gc, m) {
   }));
 }
 
-/** The full Message of row `m` (the body from the server when it is not here). */
+/**
+ * The full Message of row `m` (the body from the server when it is not here — waited for timing.bodyMs at most: then
+ * the answer goes with bodyMissing, the load goes on and its end comes as the live event with the messageId).
+ */
 async function full(gc, m, { load = true } = {}) {
   let b = await store.one(gc, 'SELECT * FROM bodies WHERE message_id = ?', [m.id]);
   if (!b && load) {
     const a = await store.one(gc, 'SELECT * FROM accounts WHERE id = ?', [m.account_id]);
-    try { await engine.loadBody(gc, a, m); } catch (e) { if (e && e.code === 'auth_failed') throw e; if (!(e && (e.code === 'unreachable' || e.code === 'not_found' || e.code === 'busy'))) throw e; }
+    const p = engine.loadBody(gc, a, m);
+    const r = await settled(p, timing.bodyMs);
+    if (!r.done) later(gc, m.user_id, m.account_id, m.folder_id, p, { messageId: m.id });
+    else if (r.error && !tolerated(r.error)) throw r.error;
     b = await store.one(gc, 'SELECT * FROM bodies WHERE message_id = ?', [m.id]);
     m = await store.one(gc, 'SELECT * FROM messages WHERE id = ?', [m.id]) || m;
   }
@@ -243,18 +269,37 @@ async function get(gc, userId, id) {
   return full(gc, await own(gc, userId, id));
 }
 
-/** GET threads/<threadId> → { items } oldest first. */
+/**
+ * GET threads/<threadId> → { items } oldest first. Up to 10 missing bodies load at once, waited for timing.bodyMs in
+ * all; what is not there by then comes with bodyMissing (the live event with the threadId follows).
+ */
 async function thread(gc, userId, threadId) {
   const tid = posInt(threadId);
   if (!tid) throw fail('not_found');
   const rows = await store.all(gc, 'SELECT * FROM messages WHERE thread_id = ? AND user_id = ? ORDER BY date, id LIMIT 100', [tid, userId]);
   if (!rows.length) throw fail('not_found');
-  const out = [];
-  let loads = 0;
+  const missing = [];
   for (const m of rows) {
-    const has = await store.one(gc, 'SELECT 1 AS x FROM bodies WHERE message_id = ?', [m.id]);
-    out.push(await full(gc, m, { load: !has && loads++ < 10 }));
+    if (missing.length >= 10) break;
+    if (!(await store.one(gc, 'SELECT 1 AS x FROM bodies WHERE message_id = ?', [m.id]))) missing.push(m);
   }
+  if (missing.length) {
+    const accs = new Map();
+    const loads = [];
+    for (const m of missing) {
+      if (!accs.has(m.account_id)) accs.set(m.account_id, await store.one(gc, 'SELECT * FROM accounts WHERE id = ?', [m.account_id]));
+      loads.push(engine.loadBody(gc, accs.get(m.account_id), m).then(() => null, (e) => e));
+    }
+    const all = Promise.all(loads);
+    const r = await settled(all, timing.bodyMs);
+    if (!r.done) for (const accountId of accs.keys()) later(gc, userId, accountId, null, all, { threadId: tid });
+    else {
+      const bad = r.value.filter((e) => e && !tolerated(e));
+      if (bad.length) throw bad.find((e) => e.code === 'auth_failed') || bad[0];
+    }
+  }
+  const out = [];
+  for (const m of rows) out.push(await full(gc, m, { load: false }));
   return { items: out };
 }
 
@@ -308,10 +353,26 @@ async function attachmentRow(gc, userId, messageId, attId) {
   return { m, t, a };
 }
 
+/**
+ * The cached copy of attachment `t` for a person (waited for timing.fileMs at most: then 409 busy { reason: 'loading',
+ * retryAfter } — the download goes on, the live event with messageId and attachmentId tells when it is there, and asking
+ * again joins it).
+ */
+async function fileFor(gc, m, t, a) {
+  const p = engine.attachment(gc, a, m, t);
+  const r = await settled(p, timing.fileMs);
+  if (!r.done) {
+    later(gc, m.user_id, m.account_id, m.folder_id, p, { messageId: m.id, attachmentId: t.id });
+    throw fail('busy', { reason: 'loading', retryAfter: 5 });
+  }
+  if (r.error) throw r.error;
+  return r.value;
+}
+
 /** GET messages/<id>/attachments/<aid> → { mediaId, name, mime, size } */
 async function attachment(gc, userId, messageId, attId) {
   const { m, t, a } = await attachmentRow(gc, userId, messageId, attId);
-  const got = await engine.attachment(gc, a, m, t);
+  const got = await fileFor(gc, m, t, a);
   // url: a signed address the portal's frame can open (the apps load the media with their token)
   let url = null;
   try { url = await gc.media.url(got.mediaId, { user: userId, ttlS: 3600 }); } catch { url = null; }
@@ -321,7 +382,7 @@ async function attachment(gc, userId, messageId, attId) {
 /** GET cid/<messageId>/<attachmentId> → { mediaId, mime, size, url } (url: a signed address for the portal's frame). */
 async function cid(gc, userId, messageId, attId) {
   const { m, t, a } = await attachmentRow(gc, userId, messageId, attId);
-  const got = await engine.attachment(gc, a, m, t);
+  const got = await fileFor(gc, m, t, a);
   let url = null;
   try { url = await gc.media.url(got.mediaId, { user: userId, ttlS: 3600 }); } catch { url = null; }
   return { mediaId: got.mediaId, mime: got.mime || t.mime, size: got.bytes || t.size, url };
@@ -459,4 +520,7 @@ async function unread(gc, userId) {
 
 function reset() { secret = null; imgCache.clear(); }
 
-module.exports = { reset, folders, list, search, get, thread, allowImages, image, attachment, cid, flags, move, archive, remove, junk, tab, unread, own, full, attachmentRow, folderOfRole, within };
+module.exports = {
+  reset, folders, list, search, get, thread, allowImages, image, attachment, cid, flags, move, archive, remove, junk, tab, unread, own, full, attachmentRow,
+  folderOfRole, within, settled, timing,
+};

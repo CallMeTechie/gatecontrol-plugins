@@ -2,7 +2,8 @@
 
 // Pushes (topic mail: title = sender, text = subject, data { mail: { messageId, accountId } }; more than one new mail of a
 // person in one run: one push "3 neue Mails"; topic mail_failed with data { mail: { outboxId } }) and the live event
-// 'mail' { kind: 'changed', accountId, folderId } (lists load again). GateControl's quiet hours and the person's topic
+// 'mail' { kind: 'changed', accountId, folderId } (lists load again; since 1.1.2 with messageId — a body or an attachment
+// the answer did not wait for is there now, with attachmentId —, or threadId). GateControl's quiet hours and the person's topic
 // switch apply; the plugin keeps to its 120 pushes an hour (a refused push is dropped, the mail is not lost).
 
 const store = require('./store');
@@ -13,10 +14,10 @@ async function langOf(gc, userId) {
   try { const u = await gc.users.get(userId); return u && u.lang === 'en' ? 'en' : 'de'; } catch { return 'de'; }
 }
 
-/** The live event to `userId`: lists of the account / folder changed. Never fails. */
-async function changed(gc, userId, accountId, folderId) {
+/** The live event to `userId`: lists of the account / folder changed (extra: { messageId?, attachmentId?, threadId? }). Never fails. */
+async function changed(gc, userId, accountId, folderId, extra) {
   try {
-    await gc.events.emit({ users: [userId], type: 'mail', data: { kind: 'changed', accountId: accountId || null, folderId: folderId || null } });
+    await gc.events.emit({ users: [userId], type: 'mail', data: { kind: 'changed', accountId: accountId || null, folderId: folderId || null, ...(extra || {}) } });
   } catch { /* nobody listening, or the budget is used up */ }
 }
 
