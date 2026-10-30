@@ -1,6 +1,7 @@
 'use strict';
 
-// Test helpers: the mock host as GateControl 1.216.0 (gc.mail, gc.http.fetchImage) with a fake IMAP/SMTP world
+// Test helpers: the mock host as GateControl 1.216.0 (gc.mail, gc.http.fetchImage; opts.gatecontrol '1.217.0': also
+// gc.mail.smtp.verify and gc.http.fetch with bodyMedia) with a fake IMAP/SMTP world
 // (FakeMail — mailboxes per login, IDLE events, SMTP records), a fake Microsoft (token endpoint and Graph through the
 // mock host's opts.fetch), fake Drive and Familie (opts.services) and the mock host's gc.ai. No network anywhere.
 
@@ -42,7 +43,8 @@ class FakeMail {
     const mk = (p, use) => boxes.set(p, { path: p, specialUse: use || null, uidValidity: 7, uidNext: 1, modseq: o.condstore ? 1 : null, msgs: new Map() });
     mk('INBOX', '\\Inbox');
     for (const [p, use] of Object.entries(o.folders || { Gesendet: '\\Sent', Entwürfe: '\\Drafts', Archiv: '\\Archive', Spam: '\\Junk', Papierkorb: '\\Trash' })) mk(p, use);
-    this.logins.set(user, { pass, token: o.token || null, boxes, imapDisabled: !!o.imapDisabled });
+    // smtpPass: SMTP wants another password than IMAP (gc.mail.smtp.verify refuses the IMAP one, GateControl ≥ 1.217.0)
+    this.logins.set(user, { pass, token: o.token || null, boxes, imapDisabled: !!o.imapDisabled, smtpPass: o.smtpPass || null });
     return this;
   }
 
@@ -81,6 +83,12 @@ class FakeMail {
     const world = this;
     return {
       autoconfig: async (email) => (email.endsWith('@firma.example') ? { imap: { host: 'imap.firma.example', port: 993, security: 'tls' }, smtp: { host: 'smtp.firma.example', port: 587, security: 'starttls' }, source: 'ispdb' } : { imap: null, smtp: null, source: null }),
+      verify: async (o) => {
+        const l = world.logins.get(o.auth.user);
+        const pass = l && (l.smtpPass || l.pass);
+        if (!l || (o.auth.pass !== pass && o.auth.accessToken !== l.token)) throw Object.assign(hostError('ERR_MAIL_AUTH', 'bad'), { serverText: '535 5.7.8 authentication failed' });
+        return { ok: true };
+      },
       smtp: async (o, ctx) => {
         const l = world.logins.get(o.auth.user);
         if (!l || (o.auth.pass !== l.pass && o.auth.accessToken !== l.token)) throw hostError('ERR_MAIL_AUTH', 'bad');
@@ -208,7 +216,8 @@ function fakeFamilie() {
 }
 
 /**
- * opts: { settings (admin settings via PUT admin/settings), ai (the mock host's opts.ai), services, fetch (Microsoft), fetchImage, gatecontrol }
+ * opts: { settings (admin settings via PUT admin/settings), ai (the mock host's opts.ai), services, fetch (Microsoft), fetchImage, gatecontrol,
+ *   license, groups, licenseRefresh }
  * fn(host, c): c = { as(user) → (method, path, body, query), admin(method, path, body), mail (FakeMail), tick(), addGmx(user, o) → account,
  *   drive, familie }
  */
@@ -222,7 +231,9 @@ async function withMail(opts, fn) {
     users: USERS, gatecontrol: o.gatecontrol || '1.216.0', mail: world.handler(),
     services, ...(o.ai ? { ai: o.ai } : {}), ...(o.fetch ? { fetch: o.fetch } : {}),
     fetchImage: o.fetchImage || (async () => ({ status: 200, mime: 'image/png', body: Buffer.from('PNGDATA') })),
-    license: { required: true, licensed: true, state: 'valid', expiresAt: null },
+    // o.license { tier, seats: { included, family, business }, licensed } — the licence's people (seats.js); o.groups: person groups
+    license: { required: true, licensed: true, state: 'valid', expiresAt: null, ...(o.license || {}) },
+    ...(o.groups ? { groups: o.groups } : {}), ...(o.licenseRefresh ? { licenseRefresh: o.licenseRefresh } : {}),
   });
   // a file Drive hands over: straight into this plugin's media (like gc.media.handOver of the real Drive)
   if (drive) {

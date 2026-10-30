@@ -4,6 +4,11 @@
 // posteingang every minute, the rest every 15 minutes — engine.js), bodies and attachments on demand, flags, moves and
 // sending through Graph. The delta round's nextLink is kept until it ends (a long first sync goes on in the next run),
 // then its deltaLink.
+//
+// Files go along through GateControl ≥ 1.217.0 (gc.http.fetch with bodyMedia — the host streams the plugin's media file,
+// the plugin never holds the bytes): a Graph draft, every file < 3 MB as fileAttachment with contentBytes (the host puts
+// the file in base64 where gc.http.MEDIA_BASE64 stands), larger ones through an upload session in pieces of < 4 MB, then
+// send. Older hosts: files only as links (compose.js refuses the rest with attachments_unsupported).
 
 const store = require('./store');
 const mailstore = require('./mailstore');
@@ -15,6 +20,11 @@ const SELECT = 'id,internetMessageId,conversationId,subject,bodyPreview,from,toR
 const PAGE = 50;
 const PAGES = 10;
 const FOLDERS_MAX = 300;
+const SMALL_MAX = 3 * 1024 * 1024;   // below: one POST with contentBytes; from here: an upload session (Graph: 3 MB … 150 MB)
+const PIECE = 9 * 320 * 1024;        // bytes per PUT of an upload session (Graph: keep each under 4 MB)
+const PIECES_MAX = 200;
+const UPLOAD_TIMEOUT = 120000;
+const UPLOAD_URL_RE = /^https:\/\/outlook\.office(365)?\.com\//;
 
 const person = (r) => (r && r.emailAddress ? { name: r.emailAddress.name || '', email: r.emailAddress.address || '' } : null);
 const people = (l) => (Array.isArray(l) ? l.map(person).filter(Boolean) : []);
@@ -197,25 +207,121 @@ async function search(gc, a, q) {
 
 const recip = (l) => (l || []).map((p) => ({ emailAddress: { address: p.email, ...(p.name ? { name: p.name } : {}) } }));
 
+/** Can this GateControl send media files as a request body (gc.http.fetch bodyMedia, ≥ 1.217.0)? */
+const canAttach = (gc) => !!(gc && gc.http && typeof gc.http.MEDIA_BASE64 === 'string');
+
+/** Does a draft with `mode` on `original` go out as Graph's own reply / forward of account `a`? */
+const ownReply = (a, mode, original) => !!(mode && original && original.remote_id && original.account_id === a.id);
+
+/** The start of the first range Graph still expects (nextExpectedRanges: ['2097152-'] …) → a number or null. */
+function nextStart(j) {
+  const r = j && (j.nextExpectedRanges || j.NextExpectedRanges);
+  const m = Array.isArray(r) && r.length ? /^(\d+)/.exec(String(r[0])) : null;
+  return m ? Number(m[1]) : null;
+}
+
+/** File `f` ({ mediaId, filename, contentType }) onto Graph message `id` — streamed by GateControl. */
+async function attach(gc, a, id, f) {
+  const info = await gc.media.info(f.mediaId);
+  if (!info) throw fail('not_found', { field: 'attachments' });
+  const name = f.filename || info.name || 'Datei';
+  const contentType = f.contentType || info.mime || 'application/octet-stream';
+  const base = `/me/messages/${encodeURIComponent(id)}/attachments`;
+  if (info.bytes < SMALL_MAX) {
+    const r = await ms.graph(gc, a, 'POST', base, { '@odata.type': '#microsoft.graph.fileAttachment', name, contentType, contentBytes: gc.http.MEDIA_BASE64 },
+      { bodyMedia: { mediaId: f.mediaId }, timeoutMs: UPLOAD_TIMEOUT });
+    if (r.status >= 400) throw fail(r.status === 413 ? 'too_large' : 'unreachable', { reason: ms.graphError(r) });
+    return;
+  }
+  const s = await ms.graph(gc, a, 'POST', `${base}/createUploadSession`, { AttachmentItem: { attachmentType: 'file', name, size: info.bytes, contentType } });
+  const url = s.json && s.json.uploadUrl;
+  if (s.status >= 400 || typeof url !== 'string' || !UPLOAD_URL_RE.test(url)) throw fail(s.status === 413 ? 'too_large' : 'unreachable', { reason: ms.graphError(s) });
+  let start = nextStart(s.json) || 0;
+  for (let i = 0; i < PIECES_MAX && start < info.bytes; i++) {
+    const end = Math.min(info.bytes, start + PIECE) - 1;
+    let r;
+    try {
+      // the upload URL carries its own authorization: no Bearer token here
+      r = await gc.http.fetch(url, { method: 'PUT', headers: { 'content-type': 'application/octet-stream' }, bodyMedia: { mediaId: f.mediaId, start, end }, timeoutMs: UPLOAD_TIMEOUT });
+    } catch (e) {
+      throw fail('unreachable', { reason: (e && e.code) || 'network' });
+    }
+    if (r.status === 201) return;
+    if (r.status === 429 || r.status === 503) throw fail('busy', { retryAfter: Number((r.headers || {})['retry-after']) || 30 });
+    if (r.status !== 200) throw fail('unreachable', { reason: `upload_${r.status}` });
+    let j = null;
+    try { j = typeof r.body === 'string' ? JSON.parse(r.body || '{}') : r.body; } catch { j = null; }
+    const next = nextStart(j);
+    if (next == null) return; // nothing more expected
+    start = next > start ? next : end + 1;
+  }
+  if (start < info.bytes) throw fail('unreachable', { reason: 'upload_incomplete' });
+}
+
 /**
- * Send a draft through Graph: an answer or forward of a Graph message as Graph's own reply (threading, the forwarded
- * attachments stay), anything else with sendMail. Attachments of the draft must be links here (the plugin never holds
- * a file's bytes; Graph needs them inline).
+ * Graph's own forward carries every attachment of the original: the ones the person took out of the draft go again.
+ * keep: [{ name, size }] of the original's attachments that stay.
+ */
+async function pruneForward(gc, a, id, keep) {
+  const j = await get(gc, a, `/me/messages/${encodeURIComponent(id)}/attachments?$select=id,name,size,isInline`);
+  const left = [...keep];
+  for (const t of (j && j.value) || []) {
+    if (t.isInline) continue;
+    let i = left.findIndex((k) => k.name === t.name && Number(k.size) === Number(t.size));
+    if (i < 0) i = left.findIndex((k) => k.name === t.name);
+    if (i >= 0) { left.splice(i, 1); continue; }
+    const r = await ms.graph(gc, a, 'DELETE', `/me/messages/${encodeURIComponent(id)}/attachments/${encodeURIComponent(t.id)}`);
+    if (r.status >= 400 && r.status !== 404) throw fail('unreachable', { reason: ms.graphError(r) });
+  }
+}
+
+/** A Graph draft that did not go out is removed again (best effort). */
+async function discard(gc, a, id) {
+  try { await ms.graph(gc, a, 'DELETE', `/me/messages/${encodeURIComponent(id)}`); } catch { /* stays in Entwürfe */ }
+}
+
+/**
+ * Send a draft through Graph: an answer or forward of a Graph message of this account as Graph's own reply (threading,
+ * the forwarded attachments stay — those taken out go), anything else as a new message. d.files: [{ mediaId, filename,
+ * contentType }] go along as attachments (GateControl ≥ 1.217.0, `canAttach`); d.keep: the original's attachments that
+ * stay in a forward (null: all). Without files and own reply: one sendMail.
  */
 async function send(gc, a, d, original) {
   const message = { subject: d.subject, body: { contentType: 'HTML', content: d.html }, toRecipients: recip(d.to), ccRecipients: recip(d.cc), bccRecipients: recip(d.bcc) };
-  if (original && original.remote_id && original.account_id === a.id && d.mode) {
+  const files = canAttach(gc) ? (d.files || []) : [];
+  const own = ownReply(a, d.mode, original);
+  if (!own && !files.length) {
+    const r = await ms.graph(gc, a, 'POST', '/me/sendMail', { message, saveToSentItems: true });
+    if (r.status >= 400) throw fail(r.status === 400 ? 'invalid' : 'unreachable', { reason: ms.graphError(r) });
+    return { messageId: null };
+  }
+  let id;
+  if (own) {
     const action = d.mode === 'forward' ? 'createForward' : d.mode === 'replyAll' ? 'createReplyAll' : 'createReply';
     const c = await ms.graph(gc, a, 'POST', `/me/messages/${encodeURIComponent(original.remote_id)}/${action}`, {});
     if (c.status >= 400 || !c.json || !c.json.id) throw fail('unreachable', { reason: ms.graphError(c) });
-    const u = await ms.graph(gc, a, 'PATCH', `/me/messages/${encodeURIComponent(c.json.id)}`, message);
-    if (u.status >= 400) throw fail('unreachable', { reason: ms.graphError(u) });
-    const s = await ms.graph(gc, a, 'POST', `/me/messages/${encodeURIComponent(c.json.id)}/send`, {});
-    if (s.status >= 400) throw fail('unreachable', { reason: ms.graphError(s) });
-    return { messageId: null };
+    id = c.json.id;
+  } else {
+    const c = await ms.graph(gc, a, 'POST', '/me/messages', message);
+    if (c.status >= 400 || !c.json || !c.json.id) throw fail(c.status === 400 ? 'invalid' : 'unreachable', { reason: ms.graphError(c) });
+    id = c.json.id;
   }
-  const r = await ms.graph(gc, a, 'POST', '/me/sendMail', { message, saveToSentItems: true });
-  if (r.status >= 400) throw fail(r.status === 400 ? 'invalid' : 'unreachable', { reason: ms.graphError(r) });
+  try {
+    if (own) {
+      const u = await ms.graph(gc, a, 'PATCH', `/me/messages/${encodeURIComponent(id)}`, message);
+      if (u.status >= 400) throw fail('unreachable', { reason: ms.graphError(u) });
+      if (d.mode === 'forward' && Array.isArray(d.keep)) await pruneForward(gc, a, id, d.keep);
+    }
+    for (const f of files) await attach(gc, a, id, f);
+  } catch (e) {
+    await discard(gc, a, id);
+    throw e;
+  }
+  const s = await ms.graph(gc, a, 'POST', `/me/messages/${encodeURIComponent(id)}/send`, {});
+  if (s.status >= 400) {
+    await discard(gc, a, id);
+    throw fail('unreachable', { reason: ms.graphError(s) });
+  }
   return { messageId: null };
 }
 
@@ -225,4 +331,4 @@ async function me(gc, a) {
   return { email: String((x && (x.mail || x.userPrincipalName)) || '').toLowerCase(), name: (x && x.displayName) || '' };
 }
 
-module.exports = { syncFolders, syncFolder, older, message, download, patch, move, destroy, search, send, me, headerOf, WELL_KNOWN };
+module.exports = { syncFolders, syncFolder, older, message, download, patch, move, destroy, search, send, me, headerOf, canAttach, ownReply, WELL_KNOWN, SMALL_MAX, PIECE };

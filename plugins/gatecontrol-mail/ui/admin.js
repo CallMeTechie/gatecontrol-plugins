@@ -113,6 +113,8 @@
       s.allowed.all ? null : who,
       row(T('a.accounts_max'), null, select(s.accountsMax, [1, 2, 3, 4, 5, 6, 8, 10, 15, 20].map(function (n) { return [n, T('a.up_to', { n: n })]; }), function (v) { put({ accountsMax: Number(v) }); })),
     ]));
+    // the licence and its people (since 1.1.0, like Drive)
+    if (V.seats) page.appendChild(seatsCard(V.seats));
     // storage
     var u = V.usage;
     var total = u.quotaBytes * Math.max(1, u.people.length);
@@ -146,6 +148,54 @@
     ]));
   }
 
+  /** "x of y people" of a seats summary (null limits: no number). */
+  function seatsLine(x) {
+    var c = x.counts || { total: 0 }; var l = x.limits || {};
+    return l.total == null ? T('a.people_unlimited', { n: c.total }) : T('a.people_of', { n: c.total, total: l.total });
+  }
+
+  /** The card "Personen und Lizenz": tier, x of y, exceeded / full, "Lizenz jetzt abrufen", every person with their place. */
+  function seatsCard(x) {
+    var l = x.licence || {}; var lim = x.limits || {}; var c = x.counts || {};
+    var kinds = lim.kinds || [];
+    var head = [h('span', { class: 'ma-chip', text: T('a.licence') + (l.tier ? ' · ' + T('a.tier_' + l.tier) : '') }), h('span', { class: 'ma-d', text: seatsLine(x) })];
+    if (x.exceeded) head.push(h('span', { class: 'ma-chip ma-warn', text: T('a.exceeded') }));
+    var full = lim.total != null && !x.exceeded && kinds.every(function (k) { return (lim[k] != null && c[k] >= lim[k]) || (lim.total != null && c.total >= lim.total); });
+    var notes = [];
+    if (!l.valid) notes.push(h('p', { class: 'dp-err', text: T('a.licence_invalid') }));
+    else if (!l.tier) notes.push(h('p', { class: 'ma-d', text: T('a.no_tier_text') }));
+    else {
+      if (l.tier === 'combo') notes.push(h('p', { class: 'ma-d', text: T('a.people_kinds', { family: c.family, familyMax: lim.family, business: c.business, businessMax: lim.business }) }));
+      if (x.exceeded) notes.push(h('p', { class: 'dp-err', text: T('a.exceeded_text') }));
+      else if (full) notes.push(h('p', { class: 'dp-err', text: T('a.full_text') }));
+      notes.push(h('p', { class: 'ma-d', text: T('a.book_text') }));
+    }
+    var refresh = h('button', { type: 'button', class: 'dp-btn dp-btn-sm', text: T('a.refresh'), on: { click: function () {
+      api('POST', 'admin/license/refresh').then(function (r) { V.seats = r.seats; toast(r.refreshed ? T('a.refreshed') : T('a.refresh_later')); render(); }, function (e) { toast(errText(e), 'error'); });
+    } } });
+    var rows = (x.people || []).map(function (p) {
+      var cell;
+      if (!p.allowed) cell = h('span', { class: 'ma-d', text: T('a.seat_not_allowed') });
+      else {
+        var opts = [h('option', { value: '', text: p.seat ? T('a.seat_none') : T('a.seat_unused'), selected: !p.seat || p.seat === 'none' })].concat(['family', 'business'].map(function (k) {
+          return h('option', { value: k, text: T('a.seat_' + k), selected: p.seat === k, disabled: kinds.indexOf(k) < 0 && p.seat !== k });
+        }));
+        cell = h('select', { class: 'dp-input', attrs: { 'aria-label': T('a.seat_for', { name: p.name || '' }) } }, opts);
+        cell.addEventListener('change', function () {
+          var v = cell.value;
+          api('PUT', 'admin/seats/' + p.userId, { kind: v || null }).then(function (r) { V.seats = r.seats; toast(v ? T('a.seat_on', { name: p.name || '' }) : T('a.seat_off', { name: p.name || '' })); render(); },
+            function (e) { toast(errText(e), 'error'); render(); });
+        });
+      }
+      return h('tr', null, [h('td', { text: p.name || String(p.userId) }), h('td', null, cell)]);
+    });
+    return h('div', { class: 'ma-card', attrs: { 'aria-label': T('a.seats_title') } }, [h('h2', { text: T('a.seats_title') }),
+      h('div', { class: 'ma-chips', style: 'display:flex;gap:8px;align-items:center;flex-wrap:wrap' }, head.concat([refresh]))].concat(notes).concat([
+      h('p', { class: 'ma-d', text: T('a.seats_text') }),
+      rows.length ? h('table', { class: 'ma-table' }, [h('tr', null, [h('th', { text: T('a.person') }), h('th', { text: T('a.col_seat') })])].concat(rows)) : null,
+    ]));
+  }
+
   function overviewPage(o) {
     var page = $('ma-page');
     clear(page);
@@ -154,6 +204,11 @@
       stat(o.people, T('a.people')), stat(o.accounts, T('a.accounts')), stat(o.byState.ok, T('a.state_ok')), stat(o.byState.auth_failed, T('a.state_auth_failed')),
       stat(o.byState.unreachable, T('a.state_unreachable')), stat(fmtGB(o.bytes), T('a.storage')),
     ])]));
+    if (o.seats) {
+      var x = o.seats; var l = x.licence || {};
+      page.appendChild(h('div', { class: 'ma-card' }, [h('h2', { text: T('a.licence') + (l.tier ? ' · ' + T('a.tier_' + l.tier) : '') }),
+        h('p', { class: x.exceeded || !l.valid ? 'dp-err' : 'ma-d', text: !l.valid ? T('a.licence_invalid') : seatsLine(x) + (x.exceeded ? ' · ' + T('a.exceeded') : '') })]));
+    }
     page.appendChild(h('p', { class: 'ma-d', text: T('a.privacy') }));
   }
 

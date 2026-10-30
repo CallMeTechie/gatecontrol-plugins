@@ -12,8 +12,14 @@ Anhänge in Drive und KI. Details im CHANGELOG.
 Needs **GateControl ≥ 1.216.0**: `gc.mail` (IMAP sessions with IDLE, SMTP, MIME, the HTML sanitizer, autoconfig —
 `permissions.mail`, at most 100 IMAP sessions at once), `gc.http.fetchImage` (`permissions.network.images`),
 `maxPerHour` of Drive's services (Drive ≥ 1.15.0). Microsoft accounts go through Microsoft Graph
-(`graph.microsoft.com`, `login.microsoftonline.com` — `gc.http.fetch`). Optional: Drive ≥ 1.15.0 (`gatecontrol-drive`),
-Familie ≥ 1.15.4 (`gatecontrol-familie`, `calendar_add`), GateControl's AI service (`gc.ai`). No npm dependencies.
+(`graph.microsoft.com`, `login.microsoftonline.com`, the upload sessions of large attachments on `outlook.office.com` /
+`outlook.office365.com` — `gc.http.fetch`). Optional: Drive ≥ 1.15.0 (`gatecontrol-drive`), Familie ≥ 1.15.4
+(`gatecontrol-familie`, `calendar_add`), GateControl's AI service (`gc.ai`). No npm dependencies.
+
+**GateControl ≥ 1.217.0** (found by feature detection, `"gatecontrol"` stays `>=1.216.0`): Microsoft accounts send files
+from the device, from other mails and from Drive (`gc.http.fetch` with `bodyMedia` — the host streams the plugin's media
+file to Graph; test `typeof gc.http.MEDIA_BASE64 === 'string'`), and a new account's or a new password's SMTP login is
+checked before saving (`gc.mail.smtp.verify`). On 1.216.0 both stay as in 1.0.0.
 
 ## How it works
 
@@ -37,16 +43,20 @@ Familie ≥ 1.15.4 (`gatecontrol-familie`, `calendar_add`), GateControl's AI ser
   Absender".
 * **Sending**: an outbox — sent 10 s after "Senden" (undo until then) or at the planned time (background run every
   15 s, a timer for the next two minutes). IMAP accounts through `gc.mail.smtp.send` with a copy into "Gesendet" (not
-  Gmail: it keeps one itself); Microsoft through Graph (`sendMail`, answers and forwards as Graph's own reply). A busy or
+  Gmail: it keeps one itself); Microsoft through Graph (`sendMail`, answers and forwards as Graph's own reply; with
+  files a Graph draft: each file < 3 MB as `fileAttachment` with `contentBytes`, larger ones through an upload session
+  in pieces of 2.8 MB, then `send` — a draft that does not go out is removed again). A busy or
   unreachable server: 3 tries a minute apart, then `failed` and the push `mail_failed`.
 
 ## API (apps and portal)
 
 `/api/v1/client/plugins/gatecontrol-mail/api/<path>` (device token) and `/api/v1/portal/plugins/gatecontrol-mail/api/<path>`
 (a signed-in portal viewer). Only people the administrator allows (`403 not_allowed`; the app tab is hidden for them —
-`appVisible`). IDs are positive integers, times ms since the epoch. Errors: `{ error: { code, message, … } }` with
-400 `invalid { field }`, 403 `forbidden | not_allowed | limit { max } | login_required | images_blocked`, 404
-`not_found`, 409 `auth_failed { hint } | imap_disabled { hint } | unreachable | tls | exists | ai_off | ai_unavailable
+`appVisible`) and who have a place in the licence (since 1.1.0, like Drive — see "Licence and people": `GET me` answers
+with `seat: null`, everything else `403 no_seat`; without a valid licence `403 not_licensed`). IDs are positive integers, times ms since the epoch. Errors: `{ error: { code, message, … } }` with
+400 `invalid { field }`, 403 `forbidden | not_allowed | no_seat | not_licensed | limit { max } | login_required |
+images_blocked`, 404 `not_found`, 409 `auth_failed { hint, server? } | imap_disabled { hint } | unreachable { server? } |
+tls { server? } | exists | ai_off | ai_unavailable | seat_limit | seat_kind
 | familie_unavailable | drive_unavailable | no_folder | not_waiting | microsoft_off | attachments_unsupported |
 images_off | links_disabled`, 413 `too_large { max }`, 429 `rate_limited`.
 
@@ -54,15 +64,15 @@ images_off | links_disabled`, 413 `too_large { max }`, 429 `rate_limited`.
 
 | | |
 |---|---|
-| `GET me` | `{ features, limits: { accountsMax, quotaBytes, usedBytes, retentionMonths }, microsoft: { clientId \| null, authority, scopes }, accounts: [Account], unread: { all, byAccount }, settings: { threads, swipeLeft, swipeRight } }` — features `mail`, `ai`, `microsoft`, `drive`, `familyCalendar`, `images` |
+| `GET me` | `{ features, limits: { accountsMax, quotaBytes, usedBytes, retentionMonths }, microsoft: { clientId \| null, authority, scopes }, accounts: [Account], unread: { all, byAccount }, settings: { threads, swipeLeft, swipeRight }, seat: 'family' \| 'business' \| null, licence: { valid, tier } }` — features `mail`, `ai`, `microsoft`, `drive`, `familyCalendar`, `images`; `seat` / `licence` since 1.1.0 (answered also without a place) |
 | `PUT settings` | `{ threads?, swipeLeft?, swipeRight? }` (`archive \| delete \| read \| none`) → `{ settings }` |
 | `GET providers` | `[{ id, label, auth: 'password' \| 'app_password' \| 'microsoft' \| 'imap', hint: { de, en } \| null, help }]` |
 | `POST accounts/discover` | `{ email }` → `{ provider, auth, imap, smtp, hint }` (known domains, else `gc.mail.autoconfig`) |
-| `POST accounts` | `{ provider, email, password, username?, name?, color?, kind?, imap?, smtp? }` → `{ account }` — the IMAP login is tried first |
+| `POST accounts` | `{ provider, email, password, username?, name?, color?, kind?, imap?, smtp? }` → `{ account }` — the IMAP login is tried first, on GateControl ≥ 1.217.0 the SMTP login too (`gc.mail.smtp.verify`; its refusal names `server: 'smtp'`) |
 | `POST accounts/microsoft` | `{ code, codeVerifier, redirectUri, name?, color?, kind? }` → `{ account }` — the server redeems the code (public client, PKCE, no secret). `redirectUri`: `msauth://com.gatecontrol.client/<…>` or `http://localhost[:port][/path]` |
 | `POST accounts/microsoft/device` | `{ kind? }` → `{ deviceId, userCode, verificationUri, expiresIn, interval }` |
 | `GET accounts/microsoft/device/<deviceId>` | `{ status: 'pending' \| 'done' \| 'expired' \| 'denied', account? }` — asks Microsoft at most every `interval` s |
-| `PATCH accounts/<id>` | `{ name?, color?, kind?, push?, ai?, attachments?, signature?, password? }` → `{ account }` (a new password is tried first) |
+| `PATCH accounts/<id>` | `{ name?, color?, kind?, push?, ai?, attachments?, signature?, password? }` → `{ account }` (a new password is tried first: IMAP, and SMTP on ≥ 1.217.0) |
 | `POST accounts/<id>/microsoft` | `{ code, codeVerifier, redirectUri }` → `{ account }` (signed in anew; another address → `invalid`) |
 | `DELETE accounts/<id>` | `{ ok }` — the server's copy goes, the mail at the provider stays |
 
@@ -120,9 +130,12 @@ never adds it. An answer always goes out of the account the mail came to.
 Too large for the provider (GMX / WEB.DE 20 MB, others 25 MB): files from Drive become links (14 days, warning
 `too_large`), files from the device or a mail → 413 `too_large`. A refused attachment is not added (the draft keeps
 its attachments).
-**Microsoft accounts** send through Graph, which needs a file's bytes inline — the plugin never holds them: files from
-Drive go as links (warning), files from the device or another account's mail → warning, and `send` answers 409
-`attachments_unsupported`; a forward of the same Microsoft mail keeps its attachments (Graph's own forward).
+**Microsoft accounts** send through Graph. On GateControl ≥ 1.217.0 every file goes along like on IMAP accounts
+(the host streams the plugin's media file to Graph — the plugin never holds the bytes; the size limit 25 MB, Drive copies
+become links only above it). A forward of the same Microsoft mail is Graph's own forward: it carries the original's
+attachments itself, the ones the person took out of the draft are deleted from it. On 1.216.0 (no `bodyMedia`): files
+from Drive go as links (warning), files from the device or another account's mail → warning, and `send` answers 409
+`attachments_unsupported`.
 
 ### AI
 
@@ -166,6 +179,18 @@ to Drive (`gc.media.handOver`) before Drive sees it.
 `new_draft` `{ files: [{ mediaId, name? }], subject? }` → `{ ok, draftId }` — files the caller handed over first
 (Drive: "Per Mail senden"); a draft of the person's first account.
 
+## Licence and people
+
+Like Drive (same codes and words): the signed plugin token carries `tier` (`family` | `business` | `combo`) and
+`seats { included, family, business }` (`gc.license.info`). A person the administrator allows gets a **place** of their
+kind the first time they use Mail, while the licence has room — the only kind of the licence, on `combo` `family` for a
+member of a family group (GateControl groups), `business` otherwise. `family` counts against the family people,
+`business` against the business people, `combo` shares the included ones (`seats.total`). Without a place `GET me`
+answers `seat: null` and everything else `403 no_seat` (the portal shows the note "Mail ist für dich noch nicht
+freigeschaltet"); without a valid licence `403 not_licensed`, and nothing is synced or sent. People with a place keep
+working when the licence gets smaller (the settings page says "überschritten"). A licence without `tier` (lifetime, plan)
+counts nobody. Seats of people no longer allowed or whose GateControl account is gone do not count.
+
 ## Administration
 
 Plugins › Mail › Einstellungen (the page `settings`, `ui.settingsPage`): who may use Mail (everybody, or people and
@@ -173,7 +198,12 @@ groups — `GC.pickPrincipals`), accounts per person (1…20), retention (1/3/6/
 (`on_demand` / `always`), quota per person (1…100 GB) with what is used in all and per person, AI (`bar`, `sort`,
 `autoFile`, `blockBusiness`), Microsoft (`registration: 'default'|'custom'`, `customClientId`, the consent link
 `https://login.microsoftonline.com/organizations/v2.0/adminconsent?client_id=<id>&scope=https://graph.microsoft.com/.default`).
-Admin API `GET|PUT admin/settings`, `GET admin/overview`. Administrators see numbers only — never anybody's mail.
+The card **Personen und Lizenz** (since 1.1.0): tier, "x von y Personen", exceeded / full with the hint to add people in
+the account on callmetechie.de, "Lizenz jetzt abrufen", every person with their place (Familie / Business / abgeschaltet
+— switched off: no place, never given again on its own; their accounts rest).
+Admin API `GET|PUT admin/settings` (with `seats`), `GET admin/overview` (with `seats`), `PUT admin/seats/<userId>`
+`{ kind: 'family' | 'business' | null }` → `{ seat, seats }` (409 `seat_kind` | `seat_limit`), `POST admin/license/refresh`
+→ `{ refreshed, seats }`. Administrators see numbers only — never anybody's mail.
 
 **Microsoft app registration**: `DEFAULT_MS_CLIENT_ID` (`server/config.js`) is `null` until the publisher's registration
 exists — until then `features.microsoft` is off unless an administrator enters an own client id (Microsoft Entra:
@@ -183,5 +213,5 @@ public client; redirects `msauth://com.gatecontrol.client/<signature hash>` for 
 
 ## Development
 
-`node tools/test.js gatecontrol-mail` — the mock host as GateControl 1.216.0 with a fake IMAP / SMTP world, a fake
+`node tools/test.js gatecontrol-mail` — the mock host as GateControl 1.216.0 (and 1.217.0: `smtp.verify`, `bodyMedia`) with a fake IMAP / SMTP world, a fake
 Microsoft (token endpoint and Graph), fake Drive and Familie and the mock host's `gc.ai` (`test/helpers.js`). No network.

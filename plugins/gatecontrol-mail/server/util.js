@@ -7,6 +7,11 @@ const STATUS = {
   login_required: 403,
   forbidden: 403,
   not_allowed: 403,
+  // the licence's people (seats.js, like Drive)
+  no_seat: 403,
+  not_licensed: 403,
+  seat_limit: 409,
+  seat_kind: 409,
   limit: 403,
   not_found: 404,
   exists: 409,

@@ -4,7 +4,7 @@
     "de": "Mail",
     "en": "Mail"
   },
-  "version": "1.0.0",
+  "version": "1.1.0",
   "publisher": "CallMeTechie",
   "description": {
     "de": "Alle E-Mail-Konten an einem Ort – GMX, Web.de, T-Online, Gmail, Outlook und Microsoft 365 oder jedes IMAP-Konto: ein gemeinsamer Posteingang mit Relevant und Sonstige, Push, Schutz vor Zählpixeln, Anhänge in Drive und eine KI, die zusammenfasst, Aufgaben findet und Antworten vorschlägt.",
@@ -23,7 +23,9 @@
     "network": {
       "internet": [
         "graph.microsoft.com:443",
-        "login.microsoftonline.com:443"
+        "login.microsoftonline.com:443",
+        "outlook.office.com:443",
+        "outlook.office365.com:443"
       ],
       "images": true
     },

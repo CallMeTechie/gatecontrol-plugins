@@ -1,7 +1,8 @@
 'use strict';
 
-// Accounts of a person (C2 "Konto, Status"): add one with a password (IMAP/SMTP — the login is tried first) or with the
-// Microsoft sign-in (code of the apps, device code of the portal), change it, sign in again, remove it with its copy.
+// Accounts of a person (C2 "Konto, Status"): add one with a password (IMAP/SMTP — the login is tried first: IMAP, and
+// SMTP with gc.mail.smtp.verify on GateControl ≥ 1.217.0) or with the Microsoft sign-in (code of the apps, device code of
+// the portal), change it, sign in again, remove it with its copy.
 
 const crypto = require('node:crypto');
 const store = require('./store');
@@ -47,20 +48,43 @@ async function limitCheck(gc, cfg, userId) {
   if (n.n >= cfg.accountsMax) throw fail('limit', { max: cfg.accountsMax });
 }
 
-/** gc.mail's refusal of a login → the API's code (409 auth_failed { hint } | imap_disabled | unreachable | tls). */
-function loginFail(e, provider, lang) {
+/**
+ * gc.mail's refusal of a login → the API's code (409 auth_failed { hint } | imap_disabled | unreachable | tls). `server`
+ * 'smtp': the SMTP check failed (the IMAP login worked) — the error names it ({ server: 'smtp' }).
+ */
+function loginFail(e, provider, lang, server = 'imap') {
   const code = e && e.code;
   const text = String((e && (e.serverText || e.message)) || '');
   const p = providers.get(provider);
   const hint = p && p.hint ? p.hint[lang === 'en' ? 'en' : 'de'] : null;
+  const which = server === 'smtp' ? { server: 'smtp' } : {};
   if (code === 'ERR_MAIL_AUTH') {
-    if (/imap.{0,40}(disabled|not enabled|nicht (aktiviert|freigeschaltet)|deaktiviert)|enable imap|web ?mail/i.test(text)) return fail('imap_disabled', { hint });
-    return fail('auth_failed', { hint });
+    if (server === 'imap' && /imap.{0,40}(disabled|not enabled|nicht (aktiviert|freigeschaltet)|deaktiviert)|enable imap|web ?mail/i.test(text)) return fail('imap_disabled', { hint });
+    return fail('auth_failed', { hint, ...which });
   }
-  if (code === 'ERR_MAIL_NET' && /certificate|tls|ssl|handshake/i.test(text)) return fail('tls');
-  if (code === 'ERR_MAIL_NET' || code === 'ERR_NETWORK_DENIED' || code === 'ERR_MAIL_PROTOCOL' || code === 'ERR_MAIL_LIMIT') return fail('unreachable', { reason: code === 'ERR_NETWORK_DENIED' ? 'network_denied' : code === 'ERR_MAIL_LIMIT' ? 'busy' : 'network' });
-  if (code === 'ERR_INVALID') return fail('invalid', { field: 'imap' });
+  if (code === 'ERR_MAIL_NET' && /certificate|tls|ssl|handshake/i.test(text)) return fail('tls', which);
+  if (code === 'ERR_MAIL_NET' || code === 'ERR_NETWORK_DENIED' || code === 'ERR_MAIL_PROTOCOL' || code === 'ERR_MAIL_LIMIT' || code === 'ERR_MAIL_REJECTED') {
+    return fail('unreachable', { reason: code === 'ERR_NETWORK_DENIED' ? 'network_denied' : code === 'ERR_MAIL_LIMIT' ? 'busy' : 'network', ...which });
+  }
+  if (code === 'ERR_INVALID') return fail('invalid', { field: server });
   return e;
+}
+
+/** Can this GateControl check an SMTP login without sending (gc.mail.smtp.verify, ≥ 1.217.0)? */
+const canVerify = (gc) => !!(gc.mail && gc.mail.smtp && typeof gc.mail.smtp.verify === 'function');
+
+/**
+ * The SMTP login with `pass` (GateControl ≥ 1.217.0; older hosts: checked with the first send) — closes the probed IMAP
+ * session `s` when it fails, then throws the API's error.
+ */
+async function verifySmtp(gc, srv, user, pass, provider, lang, s) {
+  if (!canVerify(gc)) return;
+  try {
+    await gc.mail.smtp.verify({ host: srv.host, port: srv.port, security: srv.security, auth: { user, pass }, timeoutMs: 30000 });
+  } catch (e) {
+    try { await s.close(); } catch { /* gone */ }
+    throw loginFail(e, provider, lang, 'smtp');
+  }
 }
 
 /** POST accounts { provider, email, password, username?, name?, color?, kind?, imap?, smtp? } → { account } */
@@ -84,9 +108,7 @@ async function add(gc, ctx, b) {
   let s;
   const opts = { ...imapSrv, auth: { user: username || addr, pass: b.password }, timeoutMs: 30000 };
   try { s = await engine.probe(gc, opts); } catch (e) { throw loginFail(e, provider, ctx.lang); }
-  if (typeof gc.mail.smtp.verify === 'function') {
-    try { await gc.mail.smtp.verify({ ...smtpSrv, auth: { user: username || addr, pass: b.password } }); } catch (e) { try { await s.close(); } catch { /* gone */ } throw loginFail(e, provider, ctx.lang); }
-  }
+  await verifySmtp(gc, smtpSrv, username || addr, b.password, provider, ctx.lang, s);
   const used = (await list(gc, ctx.userId)).map((x) => x.color);
   const now = Date.now();
   const r = await store.run(gc, `INSERT INTO accounts (user_id, provider, email, name, color, kind, username, imap_host, imap_port, imap_security, smtp_host, smtp_port, smtp_security,
@@ -232,6 +254,7 @@ async function patch(gc, ctx, id, b) {
     // the new password is tried first
     let s;
     try { s = await engine.probe(gc, { host: a.imap_host, port: a.imap_port, security: a.imap_security, auth: { user: a.username || a.email, pass: b.password }, timeoutMs: 30000 }); } catch (e) { throw loginFail(e, a.provider, ctx.lang); }
+    if (a.smtp_host) await verifySmtp(gc, { host: a.smtp_host, port: a.smtp_port, security: a.smtp_security }, a.username || a.email, b.password, a.provider, ctx.lang, s);
     await secrets.set(gc, a.id, { password: b.password });
     await engine.forget(a.id);
     set('state', 'syncing'); set('error_code', null); set('error_at', null);

@@ -123,7 +123,8 @@ function remember(accountId, info) {
 
 /**
  * A Graph request for account `a` → { status, json, headers }. `path` relative to v1.0 or an absolute graph URL (a nextLink).
- * 401 renews the token once; 429 / 503 → fail('busy', { retryAfter }).
+ * 401 renews the token once; 429 / 503 → fail('busy', { retryAfter }). extra: { headers, bodyMedia, timeoutMs } — bodyMedia
+ * (GateControl ≥ 1.217.0) sends a media file of the plugin with `body` as the JSON around it (graph.js attachments).
  */
 async function graph(gc, a, method, path, body, extra = {}) {
   const url = /^https:\/\/graph\.microsoft\.com\//.test(path) ? path : GRAPH + path;
@@ -132,7 +133,8 @@ async function graph(gc, a, method, path, body, extra = {}) {
     const headers = { authorization: `Bearer ${token}`, accept: 'application/json', ...(extra.headers || {}) };
     let r;
     try {
-      r = await gc.http.fetch(url, { method, headers, ...(body !== undefined ? { json: body } : {}), timeoutMs: TIMEOUT });
+      r = await gc.http.fetch(url, { method, headers, ...(body !== undefined ? { json: body } : {}), ...(extra.bodyMedia ? { bodyMedia: extra.bodyMedia } : {}),
+        timeoutMs: extra.timeoutMs || TIMEOUT });
     } catch (e) {
       throw fail('unreachable', { reason: (e && e.code) || 'network' });
     }

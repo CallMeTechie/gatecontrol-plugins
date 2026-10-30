@@ -11,12 +11,13 @@ const { withMail, settle, ANNA, MARC, BOB, ADMIN, DIR } = require('./helpers');
 
 test('plugin.json: GateControl 1.216.0, mail, images, Drive and Familie services, the app tab', () => {
   const m = JSON.parse(fs.readFileSync(path.join(DIR, 'plugin.json'), 'utf8'));
-  assert.equal(m.version, '1.0.0');
+  assert.equal(m.version, '1.1.0');
   assert.equal(m.gatecontrol, '>=1.216.0');
   assert.equal(m.permissions.mail.maxConnections, 100);
   assert.ok(m.permissions.mail.purpose.de && m.permissions.mail.purpose.en);
   assert.equal(m.permissions.network.images, true);
-  assert.deepEqual(m.permissions.network.internet, ['graph.microsoft.com:443', 'login.microsoftonline.com:443']);
+  // outlook.office(365).com: the upload sessions of large attachments (Graph hands out their URLs there)
+  assert.deepEqual(m.permissions.network.internet, ['graph.microsoft.com:443', 'login.microsoftonline.com:443', 'outlook.office.com:443', 'outlook.office365.com:443']);
   for (const s of ['list_areas', 'save_file', 'suggest_folder', 'give_file', 'share_link']) assert.ok(m.permissions.services.includes(`gatecontrol-drive:${s}`), s);
   assert.ok(m.permissions.services.includes('gatecontrol-familie:calendar_add'));
   assert.equal(m.storage.maxMB, 4096);

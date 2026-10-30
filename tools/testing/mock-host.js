@@ -322,6 +322,9 @@
 // (permissions.network.images) to opts.fetchImage(url) → { status, mime, body }; services.provides.<name>.maxPerHour
 // (60…3600; accepted at every emulated version, acting from 1.216.0) — that many calls per hour of that service instead of the 60. host.mailSessions, host.mailSent,
 // host.imageFetches record them.
+//
+// GateControl 1.217.0 (opt-in: opts.gatecontrol: '1.217.0') — gc.mail.smtp.verify (opts.mail.verify; host.mailVerified)
+// and gc.http.fetch with bodyMedia / gc.http.MEDIA_BASE64: opts.fetch gets the body the host would send (see mock-mail.js).
 
 const fs = require('node:fs');
 const os = require('node:os');
@@ -985,6 +988,7 @@ async function createHost(pluginDir, opts = {}) {
   const cloudPerm = !!(cloudOn && perms.cloudImport != null);
   // ─── GateControl 1.216.0: gc.mail (permissions.mail), gc.http.fetchImage (permissions.network.images) — mock-mail.js ───
   const gc216 = atLeast(216);
+  const gc217 = atLeast(217); // gc.mail.smtp.verify, gc.http.fetch with bodyMedia (mock-mail.js)
   if (gc216 || opts.mail) mockMail.mailPermission(perms.mail, hostError);
   if (gc216 && net.images != null && typeof net.images !== 'boolean') throw hostError('ERR_INVALID', 'plugin.json: permissions.network: invalid images');
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), `gcmock-${manifest.id}-`));
@@ -1100,8 +1104,10 @@ async function createHost(pluginDir, opts = {}) {
   };
 
   const api = {
-    'http.fetch': async ({ url, opts: o }) => {
+    'http.fetch': async ({ url, opts: o0 }) => {
       if (!internetAllowed(net.internet, url)) throw hostError('ERR_NET_DENIED', `host not allowed: ${url}`);
+      // GateControl ≥ 1.217.0: a media file of the plugin as the body (older hosts ignore bodyMedia)
+      const o = gc217 && o0 && o0.bodyMedia != null ? mockMail.resolveBodyMedia(o0, { mediaStore, media, hostError }) : o0;
       fetches.push({ url, opts: o });
       if (!opts.fetch) throw hostError('ERR_NET', 'no fetch handler in this test');
       const r = await opts.fetch(url, o);
@@ -2721,7 +2727,7 @@ async function createHost(pluginDir, opts = {}) {
   const log = (level) => (...a) => logs.push({ level, message: a.map((x) => (typeof x === 'string' ? x : JSON.stringify(x))).join(' ') });
 
   // GateControl 1.216.0 (mock-mail.js)
-  const mail216 = mockMail.install({ perms, opts, hostError, wire, gc216, mediaStore, mediaQuota, mediaUsage, media });
+  const mail216 = mockMail.install({ perms, opts, hostError, wire, gc216, gc217, mediaStore, mediaQuota, mediaUsage, media });
   const gc = Object.freeze({
     plugin: Object.freeze({ id: manifest.id, version: manifest.version, filesDir }),
     // GateControl ≥ 1.216.0: IMAP / SMTP / MIME / sanitizer (permissions.mail; missing without it)
@@ -2733,6 +2739,8 @@ async function createHost(pluginDir, opts = {}) {
       ...(opts.websocket ? { websocket: (url, o) => openWebSocket(url, o) } : {}),
       // GateControl ≥ 1.216.0: pictures of mails through the host (permissions.network.images)
       ...(mail216.fetchImage ? { fetchImage: (url, o) => mail216.fetchImage(url, o) } : {}),
+      // GateControl ≥ 1.217.0: the json value fetch replaces with a bodyMedia file in base64 (the feature test)
+      ...(gc217 ? { MEDIA_BASE64: mockMail.MEDIA_BASE64 } : {}),
     }),
     net: Object.freeze({
       targets: () => call('targets.list', {}),
@@ -2943,6 +2951,8 @@ async function createHost(pluginDir, opts = {}) {
     media: mediaStore, mediaCopies, events, serviceCalls,
     /** GateControl ≥ 1.216.0 (mock-mail.js): IMAP sessions opened, SMTP sends, pictures fetched */
     mailSessions: mail216.records.mailSessions, mailSent: mail216.records.mailSent, imageFetches: mail216.records.imageFetches,
+    /** GateControl ≥ 1.217.0: every smtp.verify ({ host, port, security, user }) */
+    mailVerified: mail216.records.mailVerified,
     /** GateControl ≥ 1.177.0: an upload of an app or a frame (PUT …/plugins/<id>/media) → { status, body } */
     async upload(user, data, mime, o = {}) {
       if (!media) return { status: 404, body: { ok: false, code: 'not_found' } };
