@@ -55,7 +55,7 @@ textarea.dp-input{padding:9px 12px;line-height:1.45;resize:vertical}
 .dp-menu{display:flex;flex-direction:column;gap:2px}
 .dp-menu button{display:flex;align-items:center;gap:10px;min-height:42px;padding:0 12px;border-radius:10px;border:0;background:transparent;color:var(--text);font:500 14px var(--font);cursor:pointer;text-align:left}
 .dp-menu button:hover{background:color-mix(in srgb,var(--text) 7%,transparent)}
-.dp-sw{appearance:none;-webkit-appearance:none;width:42px;height:24px;border-radius:999px;background:var(--line-2);position:relative;margin:0;flex:none;cursor:pointer;transition:background .15s}
+input.dp-sw{appearance:none;-webkit-appearance:none;box-sizing:border-box;width:42px;min-width:42px;max-width:42px;height:24px;min-height:24px;max-height:24px;padding:0;border:0;border-radius:999px;background:var(--line-2);position:relative;margin:0;flex:none;cursor:pointer;transition:background .15s}
 .dp-sw::after{content:"";position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:999px;background:var(--surface);transition:transform .15s}
 .dp-sw:checked{background:var(--accent)}
 .dp-sw:checked::after{transform:translateX(18px)}
