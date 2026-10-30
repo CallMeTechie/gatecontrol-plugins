@@ -174,6 +174,8 @@ test('convert a whiteboard into a Word file with the picture on top; a handwritt
     const r = await a('POST', 'scans/convert', { mediaIds: [media], text: 'Sprint-Planung KW 45 Ziele Release', kind: 'whiteboard', target: 'docx', folderId: fam.rootId, name: 'Besprechung.jpg', images: [JPEG.toString('base64')] });
     assert.equal(r.status, 200, JSON.stringify(r.json));
     assert.deepEqual([r.json.name, r.json.folderId, r.json.source], ['Besprechung.docx', fam.rootId, 'media']);
+    // a name with its extension keeps one
+    assert.equal(require('../server/scans').nameWith('2026-10-30 Kassenbon.xlsx', 'xlsx'), '2026-10-30 Kassenbon.xlsx');
     assert.equal(r.json.content.blocks.length, 6);
     assert.deepEqual(r.json.content.blocks[3], { type: 'check', text: 'Testplan schreiben – Anna', done: false });
     assert.match(r.json.text, /☐ Testplan schreiben – Anna\n☑ Kunden informieren – Tim\n• Budget für Testgeräte\?/);

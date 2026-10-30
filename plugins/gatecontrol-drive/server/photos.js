@@ -30,7 +30,8 @@
 // the setting workInMemories is off (the default), and so does the photo frame (frame.js).
 //
 // Since 1.14.0 (feature `photoSearch`, labels.js): `q=<words>` on photos and months — the photos with a label the
-// phones recognised for every word (German words too); GET photos then adds `search` { terms, labels, total, chips }.
+// phones recognised for every word (German words too); GET photos then adds `search` { terms, labels, total, chips }
+// and at the top `terms` [{ term, label, count }] (the chips: term is the word to add to q) and `total`.
 // `unlabeled=1` — only those without labels in areas one writes to (the phones fill them in). Items carry `labeled`.
 
 const store = require('./store');
@@ -235,10 +236,12 @@ async function list(ctx, q) {
   const before = beforeArg(q && q.before);
   const { sc, search } = await filtered(ctx, q);
   const found = search ? { ...search, ...(sc ? await labels.summary(ctx, sc, search.labels) : { total: 0, chips: [] }) } : null;
-  if (!sc) return { items: [], next: null, ...(found ? { search: found } : {}) };
+  // the chips also at the top (the Windows app): terms [{ term (to add to q), label, count }] and total
+  const flat = found ? { search: found, terms: found.chips.map((x) => ({ term: x.text, label: x.label, count: x.count })), total: found.total } : {};
+  if (!sc) return { items: [], next: null, ...flat };
   const r = await page(ctx.gc, sc.where, sc.args, before, limit);
   await noteViews(ctx, r.rows);
-  return { items: await itemsOf(ctx, r.rows), next: r.next, ...(found ? { search: found } : {}) };
+  return { items: await itemsOf(ctx, r.rows), next: r.next, ...flat };
 }
 
 /** GET photos/months → { months: [{ month, count }] } newest first. */

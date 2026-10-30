@@ -52,7 +52,8 @@ const TEXT_AI_MAX = 20000;
 const SURE = 0.6;
 const IMAGES_MAX_BYTES = 600 * 1024;
 const IMAGES_MAX = 8;
-const TIMEOUT_MS = 90000;
+// per provider call; GateControl may take twice that (a correction round or the fallback) — the apps wait 60 s
+const TIMEOUT_MS = 27000;
 const MIME = {
   docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
   xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',

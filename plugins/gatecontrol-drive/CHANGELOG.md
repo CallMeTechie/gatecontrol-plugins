@@ -27,7 +27,8 @@ Dateien der Familie und des Teams auf dem eigenen Speicher – auf diesem Server
   Seite) oder den Text eines durchsuchbaren PDFs (mit Bildern auch das PDF selbst, der Text unsichtbar darüber) – selbst
   geschrieben, ohne Fremdbibliothek. GateControl lässt Plugins keine eigenen Dateien anlegen: die App bzw. das Portal
   lädt die erzeugten Bytes hoch und legt sie mit `POST scans/save` ab (erkannter Text → Suche und Fragen; Original
-  behalten oder in den Papierkorb). Einstellung *scan_keep_original* (Standard an).
+  behalten oder in den Papierkorb). Einstellung *scan_keep_original* (Standard an). Jede KI-Anfrage von Fragen und Scans ist so
+  begrenzt, dass die Antwort unter 60 s bleibt.
 - **Fotos nach Inhalt finden (Feature `photoSearch`):** `PUT nodes/<id>/labels { labels, source: 'device' }` – die
   Bildbegriffe, die das Handy erkannt hat; `GET photos?q=` findet Fotos mit deutschen Wörtern (≈ 400 ML-Kit-Begriffe mit
   Synonymen, auch Wortanfang und Mehrzahl) und liefert `search { terms, labels, total, chips }`; `GET photos?unlabeled=1`

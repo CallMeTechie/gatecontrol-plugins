@@ -54,6 +54,9 @@ test('labels of a photo, the search with chips, the backfill list, rights', asyn
     assert.equal(r.json.search.total, 3);
     assert.deepEqual(r.json.search.chips.slice(0, 1), [{ label: 'sea', text: 'Meer', count: 2 }]);
     assert.ok(r.json.search.chips.every((x) => x.count < 3));
+    // the same at the top: terms [{ term, label, count }] and total
+    assert.equal(r.json.total, 3);
+    assert.deepEqual(r.json.terms[0], { term: 'Meer', label: 'sea', count: 2 });
     // „Strand Meer“ (a chip taken): both words
     r = await a('GET', 'photos', null, { q: 'Strand Meer' });
     assert.deepEqual(r.json.items.map((x) => x.name), ['strand2.jpg', 'strand1.jpg']);

@@ -34,7 +34,8 @@ const CANDIDATES = 300;
 const SOURCES_MAX = 8;
 const EXCERPT = 2000;
 const QUOTE_MAX = 300;
-const TIMEOUT_MS = 45000;
+// per provider call (twice that at most each): both calls stay below the apps' 60 s
+const TIMEOUT_MS = 14000;
 
 const TERMS_INSTRUCTIONS = [
   'A person asks a question about the documents in their own file storage (letters, invoices, contracts, insurance',

@@ -588,7 +588,8 @@ reads. GateControl's errors: `429 rate_limited` (its requests per hour), `409 ai
   to (the phones' backfill). `GET photos?q=<words>` (also `photos/months`): the photos with a label for every word —
   German words through `server/labels.json` (ML Kit's ~400 labels → German words and synonyms; a start of a word or a
   plural is enough: „Sonnen…“, „Hunde“), else the word as a label — and `search { terms, labels, total, chips: [{ label,
-  text, count }] }` (the most frequent other labels of the hits, ≤ 6, `text` in the person's language).
+  text, count }] }` (the most frequent other labels of the hits, ≤ 6, `text` in the person's language) — and the same
+  chips at the top of the answer as `terms: [{ term (the word to add to q), label, count }]` with `total`.
 
 **Import** (since 1.8.0, `server/imports.js`, feature `cloudImport`): GateControl's cloud accounts (`gc.cloud`,
 `permissions.cloudImport` — the OAuth apps of Google and Microsoft are set up in GateControl › Einstellungen ›
