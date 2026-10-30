@@ -3,6 +3,14 @@
 Die Familie in der GateControl-App (eigener Tab), im Portal (eigener Tab „Familie“) und auf
 drei Admin-Seiten. Alles bleibt auf dem eigenen Server.
 
+## 1.15.3
+- **Fristen aus Drive in den Familienkalender:** Der Dienst `calendar_add` nimmt jetzt auch Aufrufe von
+  `gatecontrol-drive` an (Drive ab 1.14.0: „In den Familienkalender“ für eine erkannte Frist). Drive darf nur für die
+  Person des Aufrufs eintragen: GateControls `user` muss vorhanden und gleich `userId` sein (sonst `forbidden`), die
+  Person muss Mitglied der Familie sein (kein Wand-Tablet, sonst `not_member`), das Modul Termine an (sonst
+  `module_off`). Der Termin ist ein gewöhnlicher Termin der Person – ohne den Hinweis „aus dem Familien-Chat“.
+- Keine neue Berechtigung; andere Plugins bekommen weiter `forbidden`.
+
 ## 1.15.2
 - **Kein zweiter Chat „Familie“ mehr – auch kein umbenannter**: Schickt eine Regel eine Messenger-Nachricht an einzelne
   Personen, kommt sie jetzt als Mitteilung in den angehefteten Chat „GateControl“ (GateControls Posteingang, mit Push)

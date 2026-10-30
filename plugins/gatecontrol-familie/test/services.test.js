@@ -93,6 +93,28 @@ test('calendar_add: an ordinary date of that person, from the chat (place, end t
   assert.deepEqual(await call(host, 'calendar_add', { userId: ANNA.id, title: 'x', startsAt: '2026-10-20' }), { ok: false, code: 'module_off' });
 }));
 
+test('calendar_add from Drive (1.15.3): only for the person of the call, a family member; an ordinary date', () => withFamily({ settings: { mod_wall: true } }, async (host, { as, admin }) => {
+  const drive = (payload, user) => call(host, 'calendar_add', payload, { caller: 'gatecontrol-drive', user });
+  const anna = { id: ANNA.id, name: 'Anna', role: 'user' };
+  const a = await drive({ userId: ANNA.id, title: 'Kfz-Versicherung kündigen', startsAt: '2026-11-30', allDay: true }, anna);
+  assert.equal(a.ok, true, JSON.stringify(a));
+  const ev = (await as(MARC)('GET', '/dates', null, { from: '2026-11-01', to: '2026-12-31' })).json.events.find((e) => e.id === a.eventId);
+  assert.deepEqual([ev.title, ev.date, ev.allDay, ev.createdBy, ev.origin], ['Kfz-Versicherung kündigen', '2026-11-30', true, ANNA.id, null], 'no "aus dem Familien-Chat"');
+  // never for someone else, never without the person of the call
+  assert.deepEqual(await drive({ userId: LENA.id, title: 'x', startsAt: '2026-11-30' }, anna), { ok: false, code: 'forbidden' });
+  assert.deepEqual(await drive({ userId: ANNA.id, title: 'x', startsAt: '2026-11-30' }, null), { ok: false, code: 'forbidden' });
+  assert.deepEqual(await drive({ title: 'x', startsAt: '2026-11-30' }, anna), { ok: false, code: 'forbidden' }, 'userId must be named');
+  // not in the family, a wall tablet
+  assert.deepEqual(await drive({ userId: OMA.id, title: 'x', startsAt: '2026-11-30' }, { id: OMA.id, name: 'Oma', role: 'user' }), { ok: false, code: 'not_member' });
+  await admin('POST', 'members', { userId: KUECHE.id, role: 'wall' });
+  assert.deepEqual(await drive({ userId: KUECHE.id, title: 'x', startsAt: '2026-11-30' }, { id: KUECHE.id, name: 'Küche', role: 'user' }), { ok: false, code: 'not_member' });
+  // Drive may call nothing else
+  assert.deepEqual(await call(host, 'list_add', { userId: ANNA.id, items: ['x'] }, { caller: 'gatecontrol-drive', user: anna }), { ok: false, code: 'forbidden' });
+  assert.deepEqual(await call(host, 'calendar_upsert', { sourceRef: 'drive:1', title: 'x', startsAt: '2026-11-30' }, { caller: 'gatecontrol-drive' }), { ok: false, code: 'forbidden' });
+  await admin('PUT', 'modules', { dates: false });
+  assert.deepEqual(await drive({ userId: ANNA.id, title: 'x', startsAt: '2026-11-30' }, anna), { ok: false, code: 'module_off' });
+}));
+
 test('calendar_upsert / calendar_remove: idempotent by sourceRef, read-only in Familie, members of the family only', () => withFamily({}, async (host, { as }) => {
   const ev = { sourceRef: 'messenger:42', title: 'Grillen', startsAt: '2026-10-25T14:00:00Z', place: { label: 'Garten' }, userIds: [ANNA.id, LENA.id, OMA.id, 999] };
   const a = await call(host, 'calendar_upsert', ev);
