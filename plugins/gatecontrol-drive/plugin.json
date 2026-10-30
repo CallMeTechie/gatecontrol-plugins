@@ -4,7 +4,7 @@
     "de": "Drive",
     "en": "Drive"
   },
-  "version": "1.13.0",
+  "version": "1.14.0",
   "publisher": "CallMeTechie",
   "description": {
     "de": "Dateien der Familie und des Teams auf dem eigenen Speicher – auf diesem Server, einer NAS oder in S3: Meine Dateien, Familie, Ordner der Kinder und Team-Ordner mit Rechten, Versionen, Papierkorb und Abgleich mit allen Geräten.",
@@ -43,14 +43,17 @@
     },
     "ai": {
       "purpose": {
-        "de": "Dokumente lesen und vorschlagen, wie sie heißen und wo sie hingehören, und Fristen darin finden – nur auf Wunsch übernommen",
-        "en": "Read documents, suggest their name and folder and find deadlines in them – only taken when you choose"
+        "de": "Dokumente lesen, Name, Ordner und Fristen vorschlagen, Fragen aus deinen Dateien beantworten und Scans in Word- oder Excel-Dateien umwandeln – nur auf Wunsch",
+        "en": "Read documents, suggest name, folder and deadlines, answer questions from your files and turn scans into Word or Excel files – only when you choose"
       },
       "capabilities": [
         "text",
         "vision"
       ]
     },
+    "services": [
+      "gatecontrol-familie:calendar_add"
+    ],
     "cloudImport": {
       "purpose": {
         "de": "Dateien und Ordner aus deinem Google Drive oder OneDrive nach Drive importieren",
@@ -356,6 +359,19 @@
           "en": "Off: pictures without recognised text only go to the AI when someone chooses “Recognise”. Only while GateControl allows “Send pictures to AI”."
         },
         "default": false
+      },
+      {
+        "key": "scan_keep_original",
+        "type": "boolean",
+        "label": {
+          "de": "Scans als Dokument: Original-Scan behalten",
+          "en": "Scans as documents: keep the original scan"
+        },
+        "help": {
+          "de": "Standard des Schalters „Original-Scan behalten“, wenn ein Scan zur Word-, Excel- oder PDF-Datei wird (pro Scan änderbar). Aus: der Scan kommt nach dem Umwandeln in den Papierkorb.",
+          "en": "Default of the switch “Keep the original scan” when a scan becomes a Word, Excel or PDF file (can be changed per scan). Off: the scan goes into the trash once it is converted."
+        },
+        "default": true
       },
       {
         "key": "cloud_import",

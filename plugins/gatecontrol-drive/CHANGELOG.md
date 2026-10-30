@@ -2,6 +2,47 @@
 
 Dateien der Familie und des Teams auf dem eigenen Speicher – auf diesem Server, einer NAS oder in S3.
 
+## 1.14.0
+- **KI in Drive (D1–D5).** Die KI schlägt nur vor, übernommen wird mit einem Tipp. Alles läuft über den KI-Anbieter von
+  GateControl wie „KI für Dokumente“ (Einstellung *doc_ai*); ohne ihn sind die Funktionen ausgeblendet. Nie Tresor-Dateien,
+  nur Dateien, die die Person lesen darf.
+- **Neue Berechtigung – Admin bestätigt beim Update:** `permissions.services: ["gatecontrol-familie:calendar_add"]` (Fristen
+  in den Familienkalender). Der Zweck der KI-Anfragen nennt jetzt auch Fragen und Scans.
+- **Fristen und Familienkalender (Feature `deadlineCalendar`):** neue Fristarten `warranty` (Garantieende) und `renewal`
+  (Vertragsverlängerung – das Datum ist der letzte Tag zum Kündigen). `GET deadlines` trägt `doc { kind, title, sender,
+  amount, currency }`, `foundAt` und `calendar`. `POST deadlines/<id>/calendar` legt über den Dienst `calendar_add` des
+  Plugins Familie einen ganztägigen Termin für die Person an („Kfz-Versicherung kündigen“) → `{ deadline }` mit
+  `calendar { eventId, at }`; einmal je Person. Familie nicht da oder verweigert: `409 familie_unavailable { reason }`.
+  Pro Bereich `PATCH areas/<id> { deadlinesToCalendar }` (Standard aus): neue Fristen kommen von selbst in den
+  Kalender der Person, die hochgeladen oder „Erkennen“ gewählt hat, sonst des Bereichsbesitzers.
+- **Fragen an die Dokumente (Feature `docAsk`):** `POST ask { q, area? }` → `{ status: 'answered' | 'not_found', answer,
+  sources [{ nodeId, name, path, areaId, page, quote }], terms, areas, deadline }`. Die Frage allein geht an die KI
+  (Suchbegriffe), Drive sucht ohne KI im erkannten Text und in den Dokument-Infos, die besten 8 Dateien gehen als
+  Ausschnitte (≤ 2 000 Zeichen) an die KI; eine Quelle zählt nur mit einem Zitat, das wirklich darin steht. Nur Bereiche
+  mit „KI für Dokumente“, nie der Papierkorb. Höchstens 30 Fragen je Stunde und Person (`429 rate_limited`).
+- **Scans werden Dokumente (Feature `scanDocs`):** `POST scans/classify` (gedruckt, Handschrift, Tabelle, Whiteboard –
+  erst der Text, das Bild nur wenn nötig und erlaubt), `POST scans/convert` erzeugt eine Excel-Datei (Kopfzeile fixiert,
+  Zahlen als Zahl, Datum als Datum, Spaltenbreiten, Summenzeile als Formel), eine Word-Datei (Überschriften,
+  Stichpunkte, Aufgaben als Checkliste, „Offen“, das Whiteboard-Foto obenauf bzw. der handschriftliche Scan als letzte
+  Seite) oder den Text eines durchsuchbaren PDFs (mit Bildern auch das PDF selbst, der Text unsichtbar darüber) – selbst
+  geschrieben, ohne Fremdbibliothek. GateControl lässt Plugins keine eigenen Dateien anlegen: die App bzw. das Portal
+  lädt die erzeugten Bytes hoch und legt sie mit `POST scans/save` ab (erkannter Text → Suche und Fragen; Original
+  behalten oder in den Papierkorb). Einstellung *scan_keep_original* (Standard an). Jede KI-Anfrage von Fragen und Scans ist so
+  begrenzt, dass die Antwort unter 60 s bleibt.
+- **Fotos nach Inhalt finden (Feature `photoSearch`):** `PUT nodes/<id>/labels { labels, source: 'device' }` – die
+  Bildbegriffe, die das Handy erkannt hat; `GET photos?q=` findet Fotos mit deutschen Wörtern (≈ 400 ML-Kit-Begriffe mit
+  Synonymen, auch Wortanfang und Mehrzahl) und liefert `search { terms, labels, total, chips }`; `GET photos?unlabeled=1`
+  für das Nachtragen; Foto-Items tragen `labeled`.
+- **Portal:** „Dateien | Fragen“ unter der Suche (Frage mit Enter, Antwortkarte mit Quellen und Zitat, „Frist in den
+  Familienkalender“, „nichts gefunden“ mit „Gesucht nach“), „Fristen“ nach Monat mit „In den Familienkalender“ und
+  „Erinnern“, „In Dokument umwandeln“ für Bilder und PDF-Scans („Scan prüfen“: Word, Excel, PDF mit Vorschau, Name,
+  Ordner, „Original-Scan behalten“, Kostenzeile), „Fotos nach Inhalt suchen“ mit den Chips „+ Meer“; in den
+  Drive-Einstellungen „Neue Fristen in den Familienkalender“ je Bereich.
+- D4 (Ablegen gleich nach dem Scan) ist nur in den Apps – der Server bleibt dafür unverändert.
+- Der Familienkalender braucht **Familie ab 1.15.3** (nimmt `calendar_add` von Drive an). Ein älteres Familie verweigert
+  Drive (`forbidden`): „In den Familienkalender“ antwortet dann mit `409 familie_unavailable { reason: 'forbidden' }` und
+  `deadlineCalendar` verschwindet für 6 Stunden aus `GET me` (dann wird es wieder versucht).
+
 ## 1.13.0
 - **Arbeitsfotos getrennt (Feature `photoClasses`):** Die Handys ordnen ein neues Foto nach dem WLAN, in dem es
   aufgenommen wurde (Firma / Zuhause), oder nach ihrer eigenen KI ein – beides nur auf dem Handy. Drive hält, was alle

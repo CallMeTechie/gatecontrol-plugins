@@ -2805,8 +2805,8 @@
             "en": "AI requests"
           },
           "text": {
-            "de": "Schickt den erkannten Text eines Dokuments (Bilder nur, wenn erlaubt) an den KI-Anbieter von GateControl – für Vorschläge zu Ordner, Name und Fristen.",
-            "en": "Sends a document’s recognised text (pictures only when allowed) to GateControl’s AI provider – for suggestions of folder, name and deadlines."
+            "de": "Schickt erkannten Text (Bilder nur, wenn erlaubt) an den KI-Anbieter von GateControl – für Vorschläge, Fristen, Antworten auf Fragen, Scans als Word/Excel. Fristen auf Wunsch in den Familienkalender.",
+            "en": "Sends recognised text (pictures only when allowed) to GateControl’s AI provider – for suggestions, deadlines, answers to questions, scans as Word/Excel. Deadlines into the family calendar on request."
           },
           "tag": {
             "de": "KI",

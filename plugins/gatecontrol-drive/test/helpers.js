@@ -44,7 +44,8 @@ const app = (u, device = 'phone-' + u.id) => ({ ...u, portal: true, loggedIn: tr
 const portal = (u, loggedIn = true) => ({ ...u, portal: true, loggedIn });
 
 /**
- * opts: { license (licence of the plugin), groups, settings, links (the administrator's switch, default on), unlimited
+ * opts: { license (licence of the plugin), groups, settings, links (the administrator's switch, default on), unlimited,
+ *   services (the mock host's opts.services — other plugins' services, since 1.14.0)
  *   ai / cloud (the mock host's opts.ai / opts.cloud — GateControl's AI service and cloud accounts, since 1.8.0),
  *   (links without an end allowed), seats: { userId: kind } (switched on by the admin before fn;
  * default Anna, Marc, Lena family, Bob business), gatecontrol, devices (the mock host's gc.devices.list), targets (the
@@ -65,6 +66,8 @@ async function withHost(opts, fn) {
       ...(o.cloud ? { cloud: o.cloud } : {}),
       // the home targets an administrator assigned (office.js: "office")
       ...(o.targets ? { targets: o.targets } : {}),
+      // other plugins' services (since 1.14.0: Familie's calendar_add for the family calendar)
+      ...(o.services ? { services: o.services } : {}),
     });
     await host.start();
     const call = (user, method, p, body, query) => host.request({ method, path: p, body: body === undefined ? null : body, query: query || {}, user, lang: o.lang || 'de' });

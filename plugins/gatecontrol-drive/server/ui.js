@@ -4,7 +4,7 @@
 // styles only — no external script, no network of its own, no storage): the page talks to this plugin's API through
 // window.GC.call, uploads with GC.upload and gets live events with GC.on. Everything is inlined here, read once from
 // ui/: portal.css · portal.html · DP_CTX · vaultcrypto.js · vault.js (vault folders, 1.9.0) · bulk.js (several at once,
-// 1.12.0) · portal.js.
+// 1.12.0) · ki.js (AI in Drive, 1.14.0) · portal.js.
 //
 // The portal tab is for a signed-in person only (never a kiosk device, never a viewer known only by device trust):
 // the others get the page with loggedIn: false, which shows "Bitte melde dich an" and calls nothing.
@@ -27,7 +27,7 @@ function inlineScript(name, src) {
 const FILES = {
   css: read('portal.css'), html: read('portal.html'),
   js: inlineScript('vaultcrypto.js', read('vaultcrypto.js')) + '\n' + inlineScript('vault.js', read('vault.js')) + '\n' + inlineScript('bulk.js', read('bulk.js')) + '\n'
-    + inlineScript('portal.js', read('portal.js')),
+    + inlineScript('ki.js', read('ki.js')) + '\n' + inlineScript('portal.js', read('portal.js')),
   admin: { css: read('admin.css'), html: read('admin.html'), js: inlineScript('admin.js', read('admin.js')) },
   frame: { css: read('frame.css'), html: read('frame.html'), js: inlineScript('frame.js', read('frame.js')) },
 };

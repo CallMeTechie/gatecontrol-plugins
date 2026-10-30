@@ -34,6 +34,11 @@ const STATUS = {
   rate_limit: 429,
   too_large: 413,
   job_limit: 409,
+  // since 1.14.0: the family calendar (deadlines.js), questions and scans (ask.js, scans.js)
+  familie_unavailable: 409,
+  rate_limited: 429,
+  ai_budget: 409,
+  ai_failed: 502,
   internal: 500,
 };
 

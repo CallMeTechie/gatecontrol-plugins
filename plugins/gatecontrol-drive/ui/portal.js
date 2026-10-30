@@ -33,6 +33,11 @@
  * encrypted before GC.upload and decrypted after GC.mediaBytes, the device key in GC.keys — GateControl ≥ 1.211.0);
  * "Im Browser bearbeiten" for documents while an office server is set up (POST nodes/<id>/office, GC.openTab).
  *
+ * Since 1.14.0 (AI in Drive, ui/ki.js — only while GET me features say so): "Dateien | Fragen" at the search (a question
+ * asked with Enter, the answer card with its sources), the page "Fristen" by month with "In den Familienkalender",
+ * "In Dokument umwandeln" for pictures and PDF scans ("Scan prüfen": Word, Excel, PDF), and on "Fotos" the search by
+ * what is on them (the words the phones recognised, the chips "+ Meer").
+ *
  * The frame is sandboxed (opaque origin, no storage, no network of its own): everything goes through GC.call /
  * GC.upload. Server and user text only ever goes into textContent or attributes — never innerHTML.
  */
@@ -110,6 +115,8 @@
     bag: 'M5 7h14a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2z|M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2',
     home: 'M3 11l9-7 9 7|M5 10v10h14V10',
     folderPlus: 'M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z|M12 10v6M9 13h6',
+    // AI in Drive (since 1.14.0): the family calendar
+    calendar: 'M4 6h16v14H4z|M4 10h16|M8 3v4M16 3v4',
     gear: 'M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z|M12 9a3 3 0 1 0 0 6a3 3 0 1 0 0-6',
   };
 
@@ -376,9 +383,15 @@
       if (timer) clearTimeout(timer);
       timer = setTimeout(function () {
         var v = q.value.trim();
-        if (v.length >= 2) search(v);
-        else if (S.page === 'search') openFolder(S.areaId, S.folder ? S.folder.id : null);
+        // a question (since 1.14.0, "Fragen" or a "?" at the end): asked with Enter, not while typing
+        if (K && K.isQuestion(v)) K.typed(v);
+        else if (v.length >= 2) search(v);
+        else if (S.page === 'search' || S.page === 'ask') openFolder(S.areaId, S.folder ? S.folder.id : null);
       }, 300);
+    });
+    q.addEventListener('keydown', function (ev) {
+      var v = q.value.trim();
+      if (ev.key === 'Enter' && K && K.isQuestion(v)) { if (timer) clearTimeout(timer); K.ask(v); }
     });
     $('dp-file').addEventListener('change', function (ev) {
       var files = [].slice.call((ev.target && ev.target.files) || []);
@@ -610,7 +623,7 @@
     if (S.page !== 'files' || !S.folder) {
       c.appendChild(h('button', { type: 'button', attrs: { 'aria-current': 'page' }, text: S.page === 'settings' ? T('p.settings_title') : S.page === 'import' ? T('p.import') : S.page === 'deadlines' ? T('p.deadlines') : S.page === 'trash' ? T('p.trash') : S.page === 'links' ? T('p.links') : S.page === 'devices' ? T('p.devices')
         : S.page === 'incidents' ? T('p.guard_incidents') : S.page === 'photos' ? T('p.photos') : S.page === 'albums' ? T('p.albums')
-          : S.page === 'album' ? (S.album ? S.album.name : T('p.albums')) : S.page === 'storage' ? T('p.storage') : T('p.results', { q: S.q }) }));
+          : S.page === 'album' ? (S.album ? S.album.name : T('p.albums')) : S.page === 'storage' ? T('p.storage') : S.page === 'ask' ? T('p.k.ask_title') : T('p.results', { q: S.q }) }));
       return;
     }
     var a = areaOf(S.areaId);
@@ -728,6 +741,8 @@
     // several at once (since 1.12.0): the running jobs, the green bar of the choice
     var bulk = B && has('bulk') && (S.page === 'files' || S.page === 'search');
     if (bulk) B.cards(main);
+    // "Dateien | Fragen" (since 1.14.0, docAsk)
+    if (S.page === 'search' && K) K.chips(main, 'files');
     if (!S.items.length) {
       main.appendChild(h('div', { class: 'dp-empty', text: S.page === 'search' ? T('p.no_results') : canWrite() ? T('p.empty_write') : T('p.empty') }));
       return;
@@ -898,6 +913,8 @@
     if (write) item('move', T('p.move'), function () { moveDialog(n); });
     if (!n.isDir) item('history', T('p.versions'), function () { versions(n); });
     if (!n.isDir && has('docAi')) item('spark', T('p.insight'), function () { insightDialog(n); });
+    // a picture or a PDF scan becomes a Word, Excel or PDF file (since 1.14.0, scanDocs)
+    if (K && K.canConvert(n)) item('office', T('p.k.convert'), function () { K.convert(n); });
     if (write && n.deleteAt) item('restore', T('p.keep'), function () { keep(n); });
     if (write) item('trash', T('p.to_trash'), function () { toTrash(n); }, true);
     dialog(n.name, [n.deleteAt ? h('div', { class: 'dp-note' }, [icon('info'), h('span', { text: markText(n) })]) : null, h('div', { class: 'dp-menu' }, items)],
@@ -1706,7 +1723,9 @@
   var PH = { area: '', camera: false, items: [], next: null, months: {}, memories: [], select: false, chosen: {}, seq: 0, anchor: null,
     // work photos apart (since 1.13.0, feature photoClasses): the chip shown (all | private | work | review), the counts
     // of the classes (GET photos/classes) and my photo settings (GET photos/settings — the work folder)
-    cls: 'all', counts: null, wk: null };
+    cls: 'all', counts: null, wk: null,
+    // photos by what is on them (since 1.14.0, feature photoSearch): the words searched for, the answer's search
+    q: '', search: null };
   var PHOTO_PAGE = 120;
 
   /** A photo item (GET photos, albums) as a node for the viewer (preview, actions). */
@@ -1759,6 +1778,7 @@
     // a class (since 1.13.0): private, work or to check
     if (PH.cls !== 'all' && has('photoClasses') && !(more && more.noClass)) q['class'] = PH.cls;
     delete q.noClass;
+    if (PH.q && has('photoSearch')) q.q = PH.q;
     return q;
   }
 
@@ -1773,13 +1793,14 @@
     Promise.all([
       api('GET', 'photos', null, photoQuery({ limit: PHOTO_PAGE })),
       api('GET', 'photos/months', null, photoQuery()).catch(function () { return { months: [] }; }),
-      (PH.area && !cam) || PH.cls !== 'all' ? Promise.resolve({ groups: [] }) : api('GET', 'photos/memories', null, cam ? { camera: 1 } : null).catch(function () { return { groups: [] }; }),
+      (PH.area && !cam) || PH.cls !== 'all' || PH.q ? Promise.resolve({ groups: [] }) : api('GET', 'photos/memories', null, cam ? { camera: 1 } : null).catch(function () { return { groups: [] }; }),
       classes ? api('GET', 'photos/classes', null, photoQuery({ noClass: true })).catch(function () { return null; }) : Promise.resolve(null),
       classes ? api('GET', 'photos/settings').catch(function () { return null; }) : Promise.resolve(null),
     ]).then(function (r) {
       if (seq !== PH.seq || S.page !== 'photos') return;
       PH.items = r[0].items || [];
       PH.next = r[0].next;
+      PH.search = r[0].search || null;
       PH.months = {};
       (r[1].months || []).forEach(function (m) { PH.months[m.month] = m.count; });
       PH.memories = r[2].groups || [];
@@ -1800,12 +1821,18 @@
         on: { click: function () { PH.camera = !PH.camera; showPhotos(true); } } }, [icon('camera'), h('span', { text: T('p.photos_camera') })])
       : null;
     var count = chosenIds().length;
+    // the search by what is on them (since 1.14.0): Enter searches, empty shows all again
+    var find = null;
+    if (!onDone && has('photoSearch')) {
+      find = h('input', { class: 'dp-input dp-btn-sm dp-k-phq', type: 'search', value: PH.q, placeholder: T('p.k.ph_search'), attrs: { 'aria-label': T('p.k.ph_search') },
+        on: { keydown: function (ev) { if (ev.key === 'Enter') { PH.q = ev.target.value.trim(); showPhotos(true); } }, search: function (ev) { if (!ev.target.value.trim() && PH.q) { PH.q = ''; showPhotos(true); } } } });
+    }
     // work photos apart (since 1.13.0): everything chosen is to be checked — "Arbeit" and "Privat" up front with the
     // AI's guess; else "Zuordnung" with the three choices
     var raw = PH.select && !onDone && has('photoClasses') ? chosenItems() : [];
     var allReview = raw.length > 0 && raw.every(function (x) { return !!x.review; });
     var guess = allReview ? guessText(raw) : '';
-    add(bar, [onDone || (cam && PH.camera) ? null : areaSel, cam, h('span', { class: 'dp-ph-grow' }),
+    add(bar, [onDone || (cam && PH.camera) ? null : areaSel, cam, find, h('span', { class: 'dp-ph-grow' }),
       PH.select ? h('span', { class: 'dp-meta', text: P('p.chosen', count) }) : null,
       allReview && guess ? h('span', { class: 'dp-meta dp-wk-guess' }, [icon('spark', 14), h('span', { text: guess })]) : null,
       allReview ? withClass(btn(T('p.wk_work'), function () { assignPhotos('work', chosenItems()); }, { icon: 'bag' }), 'dp-wk-work') : null,
@@ -1828,6 +1855,8 @@
   function renderPhotos(main) {
     clear(main);
     main.appendChild(photoBar(null));
+    // the search's summary: how many, the chips of more words (since 1.14.0)
+    if (PH.q && PH.search && K) main.appendChild(K.photoSummary(PH.search, function (word) { PH.q = (PH.q + ' ' + word).trim(); showPhotos(true); }));
     if (has('photoClasses')) renderClasses(main);
     if (PH.memories.length && PH.cls === 'all') {
       var mem = h('section', { class: 'dp-mem' }, [h('h2', { class: 'dp-h2', text: T('p.memories') })]);
@@ -1840,7 +1869,7 @@
       });
       main.appendChild(mem);
     }
-    if (!PH.items.length) { main.appendChild(h('div', { class: 'dp-empty', text: T(PH.cls !== 'all' ? 'p.wk_none_' + PH.cls : PH.camera && has('photosFolder') ? 'p.photos_camera_none' : 'p.photos_none') })); return; }
+    if (!PH.items.length) { main.appendChild(h('div', { class: 'dp-empty', text: T(PH.q ? 'p.k.ph_none' : PH.cls !== 'all' ? 'p.wk_none_' + PH.cls : PH.camera && has('photosFolder') ? 'p.photos_camera_none' : 'p.photos_none') })); return; }
     var groups = [];
     PH.items.forEach(function (x) {
       var k = monthKey(x.takenAt);
@@ -2521,6 +2550,12 @@
         aiRows.push(setRow(a.label, T(a.kind === 'mine' ? 'p.st_ai_mine' : 'p.st_ai_shared'), setSwitch(a.docAi, a.label, function () { toggleAi(a); }), { label: true }));
       });
       if (!aiRows.length) aiRows.push(setRow(T('p.st_ai_none'), null, null, { cls: 'is-note' }));
+      // new deadlines into the family calendar on their own (since 1.14.0, deadlineCalendar)
+      S.areas.filter(function (a) { return !a.archived && (a.role === 'write' || a.role === 'manage') && typeof a.deadlinesToCalendar === 'boolean'; }).forEach(function (a) {
+        aiRows.push(setRow(T('p.k.st_cal', { area: a.label }), T('p.k.st_cal_hint'), setSwitch(a.deadlinesToCalendar, T('p.k.st_cal', { area: a.label }), function (on) {
+          api('PATCH', 'areas/' + encodeURIComponent(a.id), { deadlinesToCalendar: on }).then(function (r) { a.deadlinesToCalendar = !!(r.area && r.area.deadlinesToCalendar); renderSettings(main); }, function (e) { fail(e); renderSettings(main); });
+        }), { label: true }));
+      });
     } else aiRows.push(setRow(T('p.st_ai_off'), null, null, { cls: 'is-note' }));
     aiRows.push(setRow(T('p.st_ai_vaults'), null, null, { cls: 'is-note' }));
     main.appendChild(setSection(T('p.st_ai'), aiRows));
@@ -2636,6 +2671,8 @@
       : [sel, btn(T('p.dl_remind'), function () {
         api('POST', 'deadlines/' + d.id + '/remind', { daysBefore: Number(sel.value) }).then(function () { toast(T('p.dl_set')); after(); }, fail);
       }, { small: true, icon: 'bell' })];
+    // into the family calendar (since 1.14.0, deadlineCalendar)
+    if (d.date >= today() && K) { var cal = K.calendarButton(d, after); if (cal) acts.unshift(cal); }
     return h('div', { class: 'dp-row dp-dl' }, [
       h('span', { class: 'dp-ic' }, icon('bell')),
       h('div', { class: 'dp-dl-tx' }, [
@@ -2650,6 +2687,8 @@
   /** The page "Fristen": the deadlines of every file I read, from today on. */
   function showDeadlines() {
     var main = startPage('deadlines');
+    // since 1.14.0 by month with the family calendar (ui/ki.js)
+    if (K) { K.showDeadlines(main); return; }
     api('GET', 'deadlines').then(function (r) {
       if (S.page !== 'deadlines') return;
       clear(main);
@@ -2921,6 +2960,15 @@
     toast: toast, fail: fail, errText: errText, fmtSize: fmtSize, fmtDate: fmtDate, LOCALE: LOCALE, areaOf: areaOf, nm: nm, has: has,
     canWriteNode: canWriteNode, reload: reload, loadStorage: loadStorage, refreshTree: refreshTree, openNode: openNode, actions: actions,
     share: share, showLink: showLink, rename: rename, V: V,
+  }) : null;
+
+  // AI in Drive (ui/ki.js, since 1.14.0): its helpers from here
+  var K = window.DriveKi ? window.DriveKi.attach({
+    S: S, T: T, P: P, h: h, icon: icon, btn: btn, ibtn: ibtn, api: api, has: has, $: $, clear: clear, dialog: dialog, closeDialog: closeDialog,
+    toast: toast, fail: fail, errText: errText, LOCALE: LOCALE, fmtAmount: fmtAmount, today: today, areaOf: areaOf, openTarget: openTarget,
+    renderNav: renderNav, renderCrumbs: renderCrumbs, renderTools: renderTools, pickFolder: pickFolder, reload: reload, search: search,
+    query: function () { return $('dp-q').value.trim(); },
+    home: function () { openFolder(S.areaId, S.folder ? S.folder.id : null); },
   }) : null;
 
   boot();

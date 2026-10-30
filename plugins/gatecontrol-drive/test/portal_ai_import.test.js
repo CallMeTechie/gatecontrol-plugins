@@ -139,8 +139,10 @@ test('smoke: "Dokument-Infos" — the suggestion taken, a reminder; the area swi
       // "Fristen"
       navItem($('dp-nav'), 'Fristen').click();
       await until('the list', () => byText($('dp-main'), 'button', 'Stadtwerke Rechnung.pdf'));
-      assert.ok(textOf($('dp-main')).includes('Zahlungsfrist'));
-      byText($('dp-main'), 'span', 'Erinnerung entfernen').parentNode.click();
+      // since 1.14.0 by month with the kind as a tag and the reminder as „Erinnerung 3 Tage vorher ✓“ (ui/ki.js)
+      assert.ok(textOf($('dp-main')).includes('Zahlung'));
+      assert.ok(textOf($('dp-main')).includes('Erinnerung 3 Tage vorher'));
+      $('dp-main').querySelectorAll('button').find((b) => b.getAttribute('aria-label') === 'Erinnerung entfernen').click();
       await until('removed', () => byText($('dp-main'), 'span', 'Erinnern'));
       assert.equal((await a('GET', `nodes/${file.id}/insight`)).json.deadlines[0].reminder, null);
     } finally {

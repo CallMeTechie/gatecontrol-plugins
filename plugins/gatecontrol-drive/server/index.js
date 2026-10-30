@@ -40,6 +40,10 @@
 //     · POST ops/<id>/transfers/<n>   (several files and folders at once: move, copy, trash, restore, purge as a job —
 //                                     ops.js, 1.12.0; live event 'op') · POST zip (a ZIP of a selection) · POST links
 //                                     { nodeIds } (one link for several files) — links.js, 1.12.0
+//     AI in Drive (1.14.0): POST deadlines/<id>/calendar (the family calendar — deadlines.js) · POST ask (questions to the
+//     documents — ask.js) · POST scans/classify · POST scans/convert · POST scans/save (scans become Word, Excel or a
+//     searchable PDF — scans.js, ooxml.js) · PUT nodes/<id>/labels, GET photos?q= / ?unlabeled=1 (photos by what is on
+//     them — labels.js) · PATCH areas/<id> { deadlinesToCalendar }
 //   admin     admin/… (administrators in the admin UI, admin.js; admin/guard/… the incidents, since 1.6.0)
 // The full contract (bodies, answers, codes, events) is in README.md "API". Every file node of an answer carries
 // `preview` (previews.js, since 1.1.0).
@@ -81,6 +85,9 @@ const imports = require('./imports');
 const vault = require('./vault');
 const office = require('./office');
 const ops = require('./ops');
+const ask = require('./ask');
+const scans = require('./scans');
+const labels = require('./labels');
 const { t } = require('./text');
 const { STATUS, fail, isKnown, posInt, DEVICE_RE, day, iso } = require('./util');
 
@@ -182,7 +189,11 @@ async function me(ctx) {
     licence: { valid: ctx.licence.valid, tier: ctx.licence.tier },
     areas: await insights.decorate(ctx, list.map((v) => areaView(ctx, v))),
     latest: await changes.latest(ctx.gc),
-    settings: { versionsDays: ctx.settings.versionsDays, versionsMax: ctx.settings.versionsMax, trashDays: ctx.settings.trashDays, parentsView: ctx.settings.parentsView, scanFormat: ctx.settings.scanFormat },
+    settings: {
+      versionsDays: ctx.settings.versionsDays, versionsMax: ctx.settings.versionsMax, trashDays: ctx.settings.trashDays, parentsView: ctx.settings.parentsView, scanFormat: ctx.settings.scanFormat,
+      // since 1.14.0: "Original-Scan behalten" — the default of the switch when a scan becomes a document
+      scanKeepOriginal: ctx.settings.scanKeepOriginal,
+    },
     limits: { maxBytes: usage ? usage.maxBytes : null },
     // names for "changed by …" (the accounts of this server; the apps and the portal show them)
     people: ctx.seat ? [...ctx.users.values()].map((u) => ({ id: u.id, name: u.name })) : [],
@@ -196,6 +207,7 @@ async function me(ctx) {
   };
 }
 
+// photoSearch: PUT nodes/<id>/labels, GET photos?q= / ?unlabeled=1, `labeled` on photo items (1.14.0) ·
 // photoClasses: work photos apart — GET|PUT photos/settings (the work folder), POST photos/review (the review mark,
 // `review` on nodes and photo items, op 'review' in the change log), class= on photos and months, GET photos/classes;
 // memories and the frame without the work folder (1.13.0) ·
@@ -212,7 +224,7 @@ async function me(ctx) {
 // devices: GET/PUT/DELETE devices (1.5.0) · deleteAfter: DELETE nodes/<id>?after=, PATCH { deleteAt } (1.5.0) ·
 // emptyFiles: uploads/commit { size: 0 } without a mediaId (1.5.0) · wipes: DELETE ?everywhere=1 (1.2.0) ·
 // textSearch: uploads/commit { text } (1.3.0) · previews (1.1.0)
-const FEATURES = ['previews', 'wipes', 'textSearch', 'devices', 'deleteAfter', 'emptyFiles', 'links', 'guard', 'timeTravel', 'takenAt', 'photos', 'albums', 'frame', 'storage', 'vault', 'photosFolder', 'vaultsApart', 'bulk', 'photoClasses'];
+const FEATURES = ['previews', 'wipes', 'textSearch', 'devices', 'deleteAfter', 'emptyFiles', 'links', 'guard', 'timeTravel', 'takenAt', 'photos', 'albums', 'frame', 'storage', 'vault', 'photosFolder', 'vaultsApart', 'bulk', 'photoClasses', 'photoSearch'];
 
 /**
  * What needs GateControl's AI service or cloud accounts (1.8.0) — only while the host has it and it is allowed (the
@@ -220,7 +232,12 @@ const FEATURES = ['previews', 'wipes', 'textSearch', 'devices', 'deleteAfter', '
  */
 async function optional(ctx) {
   const out = [];
-  if ((await insights.state(ctx.gc, ctx.settings)).on) out.push('docAi');
+  // AI in Drive (1.14.0): questions to the documents and scans as documents with AI for documents (gc.ai, doc_ai)
+  if ((await insights.state(ctx.gc, ctx.settings)).on) {
+    out.push('docAi', 'docAsk', 'scanDocs');
+    // deadlines into the family calendar (1.14.0): while the Familie plugin's calendar_add is reachable
+    if (await deadlines.calendarReachable(ctx.gc)) out.push('deadlineCalendar');
+  }
   if (await imports.sources(ctx.gc, ctx.settings)) out.push('cloudImport');
   // office in the browser (1.9.0): only while an office server is set up and GateControl has public endpoints
   if (await office.available(ctx.gc, await ctx.gc.settings.all(), ctx.now).catch(() => false)) out.push('office');
@@ -331,6 +348,8 @@ async function route(ctx, req, seg) {
     }
     if (seg.length === 3 && c === 'timetravel' && m === 'POST') return ok(await timetravel.run(ctx, idArg(b), body));
     if (seg.length === 3 && c === 'office' && m === 'POST') return ok(await office.open(ctx, idArg(b)));
+    // what is on a photo (1.14.0, labels.js)
+    if (seg.length === 3 && c === 'labels' && m === 'PUT') return ok(await labels.put(ctx, b, body));
     if (c === 'versions' && seg.length >= 4) {
       if (seg.length === 4 && m === 'DELETE') return ok(await files.deleteVersion(ctx, idArg(b), idArg(d)));
       if (seg.length === 5 && e === 'content' && m === 'GET') return ok(await files.versionContent(ctx, idArg(b), idArg(d)));
@@ -392,6 +411,14 @@ async function route(ctx, req, seg) {
   if (a === 'deadlines' && seg.length === 1 && m === 'GET') return ok(await deadlines.list(ctx, q));
   if (a === 'deadlines' && seg.length === 3 && c === 'remind' && m === 'POST') return ok(await deadlines.remind(ctx, b, body));
   if (a === 'deadlines' && seg.length === 3 && c === 'remind' && m === 'DELETE') return ok(await deadlines.unremind(ctx, b));
+  // AI in Drive (1.14.0): the family calendar, questions, scans as documents
+  if (a === 'deadlines' && seg.length === 3 && c === 'calendar' && m === 'POST') return ok(await deadlines.calendar(ctx, b));
+  if (a === 'ask' && seg.length === 1 && m === 'POST') return ok(await ask.ask(ctx, body));
+  if (a === 'scans' && seg.length === 2 && m === 'POST') {
+    if (b === 'classify') return ok(await scans.classify(ctx, body));
+    if (b === 'convert') return ok(await scans.convert(ctx, body));
+    if (b === 'save') return ok(await scans.save(ctx, body));
+  }
   if (a === 'import') return ok(await imports.route(ctx, m, seg, q, body));
   throw fail('not_found');
 }

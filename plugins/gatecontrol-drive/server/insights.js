@@ -9,7 +9,12 @@
 //                                          error, at } — status none | pending | ready | failed | off
 //   POST nodes/<id>/insight            recognise again (write in the area) → the same
 //   POST nodes/<id>/insight/apply      { name?: true, folder?: true } → { node, insight }
-//   PATCH areas/<id>                   { docAi: boolean } (write in the area) → { area: { id, docAi } }
+//   PATCH areas/<id>                   { docAi?: boolean, deadlinesToCalendar?: boolean } (write in the area)
+//                                      → { area: { id, docAi, deadlinesToCalendar } }
+//
+// Since 1.14.0: the deadline kinds warranty and renewal (deadlines.js), and per area deadlinesToCalendar (default off):
+// new deadlines go into the family calendar on their own (deadlines.auto — the person who uploaded or asked, else the
+// owner of the area); the area views carry `deadlinesToCalendar` while the feature deadlineCalendar is on.
 //
 // Sparing with data and money:
 //   * the recognised text first (uploads/commit { text } — textSearch, the apps' scans): the text goes, never the file;
@@ -58,6 +63,10 @@ const INSTRUCTIONS = [
   'name: a file name without extension like "2026-03-14 Stadtwerke Rechnung", or null.',
   'deadlines: payment, cancellation or objection deadlines with their date (YYYY-MM-DD) — work out dates like',
   '"within 14 days" from the date of the document, else from "Today"; an empty list when the document names none.',
+  'Also warranty: the day a warranty or guarantee ends (from the date of purchase and its length, e.g. 2 years), and',
+  'renewal: for a contract that renews on its own, the last day to cancel before it renews (date) — its label says',
+  'when and by how long it renews and the notice period. label: a short to-do in the language of the document, e.g.',
+  '"Kfz-Versicherung kündigen", "Stadtwerke bezahlen", "Garantie Geschirrspüler endet".',
 ].join('\n');
 
 const SCHEMA = {
@@ -132,20 +141,41 @@ async function decorate(ctx, list) {
   if (!list.length || !(await state(ctx.gc, ctx.settings)).on) return list;
   const on = await prefsOf(ctx.gc, list);
   for (const a of list) a.docAi = on.get(a.id) === true;
+  // since 1.14.0: new deadlines into the family calendar on their own — while Familie's calendar is reachable
+  if (await deadlines.calendarReachable(ctx.gc)) for (const a of list) a.deadlinesToCalendar = await toCalendar(ctx.gc, a.id);
   return list;
 }
 
-/** PATCH areas/<id> { docAi } → { area: { id, docAi } } */
+/** PATCH areas/<id> { docAi?, deadlinesToCalendar? } → { area: { id, docAi, deadlinesToCalendar } } */
 async function setArea(ctx, areaId, body) {
   if (!(await state(ctx.gc, ctx.settings)).on) throw fail('feature_off');
   const b = body && typeof body === 'object' ? body : {};
-  if (typeof b.docAi !== 'boolean') throw fail('invalid', { field: 'docAi' });
+  const hasAiArg = Object.prototype.hasOwnProperty.call(b, 'docAi');
+  const hasCal = Object.prototype.hasOwnProperty.call(b, 'deadlinesToCalendar');
+  if ((!hasAiArg && !hasCal) || (hasAiArg && typeof b.docAi !== 'boolean')) throw fail('invalid', { field: 'docAi' });
+  if (hasCal && typeof b.deadlinesToCalendar !== 'boolean') throw fail('invalid', { field: 'deadlinesToCalendar' });
+  if (hasCal && !(await deadlines.calendarReachable(ctx.gc))) throw fail('familie_unavailable', { reason: 'unavailable' });
   const v = await areas.roleIn(ctx, String(areaId || ''), 'write');
   if (v.area.archived_at != null) throw fail('forbidden');
-  await store.run(ctx.gc, 'INSERT INTO area_prefs (area_id, doc_ai) VALUES (?, ?) ON CONFLICT(area_id) DO UPDATE SET doc_ai = excluded.doc_ai', [v.area.id, b.docAi ? 1 : 0]);
-  // switched off: what waits in the queue there goes
-  if (!b.docAi) await store.run(ctx.gc, "DELETE FROM doc_insights WHERE status = 'pending' AND node_id IN (SELECT id FROM nodes WHERE area_id = ?)", [v.area.id]);
-  return { area: { id: v.area.id, docAi: b.docAi } };
+  if (hasAiArg) {
+    await store.run(ctx.gc, 'INSERT INTO area_prefs (area_id, doc_ai) VALUES (?, ?) ON CONFLICT(area_id) DO UPDATE SET doc_ai = excluded.doc_ai', [v.area.id, b.docAi ? 1 : 0]);
+    // switched off: what waits in the queue there goes
+    if (!b.docAi) await store.run(ctx.gc, "DELETE FROM doc_insights WHERE status = 'pending' AND node_id IN (SELECT id FROM nodes WHERE area_id = ?)", [v.area.id]);
+  }
+  if (hasCal) {
+    await store.run(ctx.gc, `INSERT INTO area_prefs (area_id, deadlines_to_calendar) VALUES (?, ?)
+      ON CONFLICT(area_id) DO UPDATE SET deadlines_to_calendar = excluded.deadlines_to_calendar`, [v.area.id, b.deadlinesToCalendar ? 1 : 0]);
+  }
+  const out = { id: v.area.id, docAi: (await prefsOf(ctx.gc, [v.area])).get(v.area.id) === true };
+  // since 1.14.0, while Familie's calendar is reachable (as in GET me)
+  if (hasCal || (await deadlines.calendarReachable(ctx.gc))) out.deadlinesToCalendar = await toCalendar(ctx.gc, v.area.id);
+  return { area: out };
+}
+
+/** Do new deadlines of area `areaId` go into the family calendar on their own (since 1.14.0; default off)? */
+async function toCalendar(gc, areaId) {
+  const r = await store.one(gc, 'SELECT deadlines_to_calendar AS c FROM area_prefs WHERE area_id = ?', [areaId]);
+  return !!(r && r.c === 1);
 }
 
 // ─── the queue ──────────────────────────────────
@@ -251,7 +281,7 @@ async function userOf(gc, r, n) {
  * Recognise queued row `r` → 'ready' | 'failed' | 'gone' | 'stop' (GateControl refused before asking a provider: it
  * stays in the queue, the run stops).
  */
-async function recognise(gc, r, st, settings, now) {
+async function recognise(gc, r, st, settings, now, asPerson) {
   const n = await nodes.row(gc, r.node_id);
   const a = n ? await areas.row(gc, n.area_id) : null;
   if (!n || n.deleted_at != null || n.is_dir === 1 || !a || !(await areaOn(gc, a))) {
@@ -297,18 +327,25 @@ async function recognise(gc, r, st, settings, now) {
     if (k && dd && !found.some((y) => y.kind === k && y.date === dd)) found.push({ kind: k, date: dd, label: clean(x.label, 120) });
   }
   const cost = res && res.usage && Number.isFinite(res.usage.costCents) ? res.usage.costCents : null;
+  let added = [];
   await store.tx(gc, async () => {
     await store.run(gc, `UPDATE doc_insights SET status = 'ready', rev = ?, source = ?, kind = ?, title = ?, doc_date = ?, sender = ?, amount = ?, currency = ?,
       folder_id = ?, name = ?, error = NULL, done_at = ?, cost_cents = ? WHERE node_id = ?`,
     [n.rev, source, KINDS.includes(d.kind) ? d.kind : 'other', clean(d.title, 120), dayArg(d.date), clean(d.sender, 120), amount, amount == null ? null : cur,
       folder, suggestName(d.name, n.name), now, cost, n.id]);
-    await deadlines.replace(gc, n.id, found.slice(0, 5));
+    added = await deadlines.replace(gc, n.id, found.slice(0, 5), now);
   });
+  // since 1.14.0: new deadlines into the family calendar, when the area wants it — for who asked or uploaded, else the
+  // area's owner (best effort; Familie not there: nothing)
+  if (added.length && (await toCalendar(gc, a.id))) {
+    const uid = (await userOf(gc, r, n)) || a.owner_user || null;
+    try { await deadlines.auto(gc, n.id, added, uid, asPerson, now); } catch (e) { gc.log.warn('deadlines into the calendar failed', (e && e.code) || 'error'); }
+  }
   return 'ready';
 }
 
 /** The background run: up to PER_TICK queued recognitions (oldest first). */
-async function tick(gc, settings, now) {
+async function tick(gc, settings, now, asPerson) {
   const out = { recognised: 0, failed: 0, waiting: 0 };
   // rows of files that are gone for good (a team folder removed)
   await store.run(gc, 'DELETE FROM doc_insights WHERE node_id NOT IN (SELECT id FROM nodes)');
@@ -321,7 +358,7 @@ async function tick(gc, settings, now) {
   const touched = new Set();
   for (const r of rows) {
     if (Date.now() - started > TICK_MS) break;
-    const res = await recognise(gc, r, st, settings, now);
+    const res = await recognise(gc, r, st, settings, now, asPerson);
     if (res === 'stop') { out.waiting++; break; }
     if (res === 'ready') out.recognised++;
     if (res === 'failed') out.failed++;
@@ -446,4 +483,4 @@ async function attach(ctx, body) {
   return body;
 }
 
-module.exports = { KINDS, SCHEMA, state, decorate, setArea, consider, tick, get, restart, apply, attach, suggestName, prefsOf };
+module.exports = { KINDS, SCHEMA, AI_ERRORS, state, decorate, setArea, consider, tick, get, restart, apply, attach, suggestName, prefsOf, areaOn, hasAi, clean, dayArg, userOf, IMAGE_RE, IMAGE_MAX };
