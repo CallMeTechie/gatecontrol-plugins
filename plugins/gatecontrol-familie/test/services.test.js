@@ -115,6 +115,26 @@ test('calendar_add from Drive (1.15.3): only for the person of the call, a famil
   assert.deepEqual(await drive({ userId: ANNA.id, title: 'x', startsAt: '2026-11-30' }, anna), { ok: false, code: 'module_off' });
 }));
 
+test('calendar_add from Mail (1.15.4): the same check as for Drive — only the person of the call, a family member', () => withFamily({ settings: { mod_wall: true } }, async (host, { as, admin }) => {
+  const mail = (payload, user) => call(host, 'calendar_add', payload, { caller: 'gatecontrol-mail', user });
+  const anna = { id: ANNA.id, name: 'Anna', role: 'user' };
+  const a = await mail({ userId: ANNA.id, title: 'Elternabend', startsAt: '2026-11-12T19:00:00+01:00' }, anna);
+  assert.equal(a.ok, true, JSON.stringify(a));
+  const ev = (await as(MARC)('GET', '/dates', null, { from: '2026-11-01', to: '2026-12-31' })).json.events.find((e) => e.id === a.eventId);
+  assert.deepEqual([ev.title, ev.date, ev.allDay, ev.createdBy, ev.origin], ['Elternabend', '2026-11-12', false, ANNA.id, null], 'no "aus dem Familien-Chat"');
+  assert.deepEqual(await mail({ userId: LENA.id, title: 'x', startsAt: '2026-11-30' }, anna), { ok: false, code: 'forbidden' });
+  assert.deepEqual(await mail({ userId: ANNA.id, title: 'x', startsAt: '2026-11-30' }, null), { ok: false, code: 'forbidden' });
+  assert.deepEqual(await mail({ title: 'x', startsAt: '2026-11-30' }, anna), { ok: false, code: 'forbidden' }, 'userId must be named');
+  assert.deepEqual(await mail({ userId: OMA.id, title: 'x', startsAt: '2026-11-30' }, { id: OMA.id, name: 'Oma', role: 'user' }), { ok: false, code: 'not_member' });
+  await admin('POST', 'members', { userId: KUECHE.id, role: 'wall' });
+  assert.deepEqual(await mail({ userId: KUECHE.id, title: 'x', startsAt: '2026-11-30' }, { id: KUECHE.id, name: 'Küche', role: 'user' }), { ok: false, code: 'not_member' });
+  // Mail may call nothing else
+  assert.deepEqual(await call(host, 'list_add', { userId: ANNA.id, items: ['x'] }, { caller: 'gatecontrol-mail', user: anna }), { ok: false, code: 'forbidden' });
+  assert.deepEqual(await call(host, 'family_roles', {}, { caller: 'gatecontrol-mail', user: anna }), { ok: false, code: 'forbidden' });
+  await admin('PUT', 'modules', { dates: false });
+  assert.deepEqual(await mail({ userId: ANNA.id, title: 'x', startsAt: '2026-11-30' }, anna), { ok: false, code: 'module_off' });
+}));
+
 test('calendar_upsert / calendar_remove: idempotent by sourceRef, read-only in Familie, members of the family only', () => withFamily({}, async (host, { as }) => {
   const ev = { sourceRef: 'messenger:42', title: 'Grillen', startsAt: '2026-10-25T14:00:00Z', place: { label: 'Garten' }, userIds: [ANNA.id, LENA.id, OMA.id, 999] };
   const a = await call(host, 'calendar_upsert', ev);

@@ -39,6 +39,8 @@ const STATUS = {
   rate_limited: 429,
   ai_budget: 409,
   ai_failed: 502,
+  // since 1.15.0: the services for Mail (mail.js) — GateControl refused the hand-over
+  unavailable: 409,
   internal: 500,
 };
 

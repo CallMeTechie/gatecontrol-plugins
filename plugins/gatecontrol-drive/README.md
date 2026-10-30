@@ -9,7 +9,8 @@ Lifetime.
 *Deutsch:* Dateien der Familie und des Teams auf dem eigenen Speicher – Bereiche mit Rechten, Versionen, Papierkorb,
 Abgleich mit allen Geräten. Details im CHANGELOG.
 
-Needs GateControl ≥ 1.208.0: `media.areas` (an area per Drive area, paths, `gc.media.move` / `version`, a version back
+Needs GateControl ≥ 1.216.0 since 1.15.0 (the services' own limit `maxPerHour`, which older versions refuse; before
+1.15.0: ≥ 1.208.0): `media.areas` (an area per Drive area, paths, `gc.media.move` / `version`, a version back
 to its path, the NAS journal and the hook `mediaChanged`), `gc.license.info` (tier and seats), `storage.maxMB` 4096,
 `permissions.groups: 'read'` (family groups and their roles, groups of team folders), `permissions.events`,
 `media.previews` (since 1.1.0: previews of files, `gc.media.previews`), `permissions.devices` (since 1.2.0: the asking
@@ -996,6 +997,42 @@ person's `userId`; the person needs a seat and write access (a call can do no mo
 (2).pdf") or, with `onConflict: 'version'`, becomes a new version. Codes: `invalid`, `forbidden`, `not_found`,
 `no_seat`, `not_licensed`, `quota`, `upload_invalid` (not the person's fresh file), `exists` (a file where a folder of
 the path should be). The change log names the calling plugin as the device.
+
+**For GateControl Mail (since 1.15.0, `server/mail.js`):**
+
+| Service | Payload | Answer |
+|---|---|---|
+| `suggest_folder` | `{ mediaId, name, from?: { name, address }, subject?, date? }` — `mediaId` handed over like for `save_file`; it stays unclaimed, `save_file` may take it later | `{ ok, suggestion: { folderId, areaId, path, where, name, confidence (0…1), reason: 'rule' \| 'learned' \| 'ai' \| 'kind' } \| null, kind?, title?, sha256Exists }` |
+| `save_file` | also `source?: { plugin (the caller), label ('Aus Mail von Stadtwerke, 03.11.', ≤ 120), ref ('4711', ≤ 200, `[A-Za-z0-9._:@+=-]`) }` and `learn?: { from: address, always?: true }` | as above |
+| `give_file` | `{ nodeId }` | `{ ok, mediaId, name, mime, size }` — the file handed over to the caller (`gc.media.handOver`, unclaimed there) |
+| `share_link` | `{ nodeId, expiresDays?: 1…90 (14), password?: '4711' }` | `{ ok, url, expiresAt (ms) }` |
+| `browse` | `{ area?: 'mine' \| 'family' \| '<area id>', folderId?, dirs?: true }` | `{ ok, folder: { id, name, path, where, areaId, writable }, items: [{ id, name, isDir, size, mime }], next }` |
+
+* `suggest_folder` looks, in this order, for the person's rule for the sender (`rule`: saved with `learn.always` —
+  "Immer für diesen Absender", confidence 1), the folder the sender's files went to last (`learned`: every
+  `save_file` with `learn`; 0.75 after one save, 0.9 after two in a row, at most 0.95), AI for documents (`ai`: the
+  setting *doc_ai*, GateControl's AI service, only areas with "KI für Dokumente" on; the name, sender, subject and date
+  go, the file itself only when it is a picture and GateControl lets pictures go to the AI; the AI's own confidence),
+  a folder named for the kind of document by name and subject (`kind`: "Rechnungen", "Verträge", "Versicherungen",
+  "Steuern", "Gesundheit", "Zeugnisse", "Garantie", … — 0.5). Only folders the person may write to, never a vault or
+  an archived team folder. `sha256Exists`: the same bytes lie in an area the person reads (not counting vaults).
+  `kind` and `title` come with an AI or kind match.
+* `source` is kept with the file: every file node of the API carries `source: { plugin, label, ref, at, appLink }` —
+  `appLink` `gatecontrol://plugin/<plugin>/message/<ref>` (the apps jump to the mail); the portal shows the label in
+  the file's preview. It goes when the file is deleted for good.
+* `give_file`: a file the person may read; a folder or an empty file → `invalid`, a vault → `encrypted`, over 50 MB →
+  `too_large`. Drive lists `gatecontrol-mail:new_draft` in `permissions.services` — GateControl allows a hand-over
+  only to a plugin one of whose services the giver lists.
+* `share_link`: a download link (GateControl's public links — `links_disabled` until an administrator allows them,
+  `no_public_url` without a public address); whoever may write in the area, never a vault (`encrypted`). GateControl
+  keeps a link at most 30 days: 31…90 days end after 30 (`expiresAt` says when). `password` is the link's PIN, 4 to
+  8 digits (GateControl's rule) — anything else `invalid`.
+* `browse`: what a folder the person reads holds (default the top of "Meine Dateien"), at most 200 entries, `dirs`
+  only folders — the pickers of Mail's portal ("Aus Drive", "Anderer Ordner"). Never the inside of a vault (`encrypted`);
+  a vault folder is left out of a list.
+* Codes as above, also `encrypted`, `too_large`, `links_disabled`, `no_public_url`, `unavailable` (the hand-over was
+  refused). Every service declares `maxPerHour: 600` (GateControl ≥ 1.216.0): 600 calls per hour and calling plugin
+  each, instead of the shared 60.
 
 The other way round (since 1.14.0): Drive calls the Familie plugin's `calendar_add` for a deadline (see "AI in Drive").
 

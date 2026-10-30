@@ -3,6 +3,14 @@
 Die Familie in der GateControl-App (eigener Tab), im Portal (eigener Tab „Familie“) und auf
 drei Admin-Seiten. Alles bleibt auf dem eigenen Server.
 
+## 1.15.4
+- **Termine aus Mail in den Familienkalender:** Der Dienst `calendar_add` nimmt jetzt auch Aufrufe von
+  `gatecontrol-mail` an (Mail ab 1.0.0: „In den Familienkalender“ für einen Termin oder eine Frist aus einer Mail) – mit
+  derselben Prüfung wie für Drive: nur für die Person des Aufrufs (GateControls `user` vorhanden und gleich `userId`,
+  sonst `forbidden`), Mitglied der Familie (kein Wand-Tablet, sonst `not_member`), Modul Termine an (sonst
+  `module_off`). Ein gewöhnlicher Termin der Person, ohne „aus dem Familien-Chat“.
+- Keine neue Berechtigung; andere Dienste bleiben für Mail `forbidden`.
+
 ## 1.15.3
 - **Fristen aus Drive in den Familienkalender:** Der Dienst `calendar_add` nimmt jetzt auch Aufrufe von
   `gatecontrol-drive` an (Drive ab 1.14.0: „In den Familienkalender“ für eine erkannte Frist). Drive darf nur für die

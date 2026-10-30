@@ -12,15 +12,19 @@
 //               folderId   instead of area + path (since 1.4.0): a folder the person picked in an app (Drive's own
 //                          API), the file goes in as `name`
 //               onConflict 'rename' (default: "Elternbrief (2).pdf") | 'version' (a new version of that file)
+//               source     since 1.15.0: { plugin (the caller), label, ref } — where the file came from (mail.js)
+//               learn      since 1.15.0: { from: address, always? } — the sender's files go there next time (mail.js)
 //               → { ok, nodeId, areaId, path, name, created, where }   where: "Familie › Schule › Elternbrief.pdf"
 //                 in the person's language, for a message like "Gespeichert in …"
 //   Codes: invalid, forbidden, not_found, no_seat, not_licensed, quota, upload_invalid, exists.
+// Since 1.15.0 also suggest_folder, give_file and share_link for GateControl Mail (mail.js).
 // The person needs a Drive seat and write access to the area — a service call can do no more than they can.
 
 const store = require('./store');
 const nodes = require('./nodes');
 const files = require('./files');
 const areas = require('./areas');
+const mail = require('./mail');
 const { fail, nodeName, MEDIA_RE } = require('./util');
 
 async function listAreas(ctx) {
@@ -62,9 +66,12 @@ async function folders(ctx, area, segs) {
   });
 }
 
-async function saveFile(ctx, payload) {
+async function saveFile(ctx, payload, caller) {
   const p = payload && typeof payload === 'object' ? payload : {};
   if (typeof p.mediaId !== 'string' || !MEDIA_RE.test(p.mediaId)) throw fail('invalid', { field: 'mediaId' });
+  // since 1.15.0 (Mail): where it came from, and the sender to remember — checked before anything is stored
+  const source = mail.sourceArg(p.source, caller);
+  if (p.learn != null && !mail.addressOf(p.learn && p.learn.from)) throw fail('invalid', { field: 'learn' });
   const onConflict = p.onConflict == null ? 'rename' : String(p.onConflict);
   if (onConflict !== 'rename' && onConflict !== 'version') throw fail('invalid', { field: 'onConflict' });
   let area;
@@ -85,6 +92,8 @@ async function saveFile(ctx, payload) {
   }
   const r = await files.commit(ctx, { mediaId: p.mediaId, parentId: parent.id, name, onConflict });
   const node = r.node;
+  await mail.setSource(ctx, node.id, source);
+  await mail.learn(ctx, p.learn, parent.id);
   const path = nodes.join(await nodes.pathOf(ctx.gc, parent), node.name);
   return { nodeId: node.id, areaId: area.id, path, name: node.name, created: r.created, where: [ctx.areaLabel(area), ...path.split('/')].join(' › ') };
 }
