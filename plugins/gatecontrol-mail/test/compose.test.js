@@ -28,7 +28,7 @@ test('reply all: recipients without the own address, Re:, the quote; send after 
   assert.deepEqual(d.cc.map((p) => p.email), ['chef@example.com']);
   assert.equal(d.subject, 'Re: Angebot Kunde Müller');
   assert.equal(d.accountId, acc.id);
-  assert.match(d.html, /Viele Grüße<br>Anna/);
+  assert.ok(!d.html.includes('Viele Grüße'), 'the signature is the clients\'');
   assert.match(d.html, /<blockquote>.*Kannst du bis Freitag/s);
   assert.deepEqual(d.warnings, []);
   const put = (await c.as(ANNA)('PUT', `drafts/${d.id}`, { html: '<p onmouseover="x()">Mach ich!</p><script>bad()</script>' + d.html })).json.draft;

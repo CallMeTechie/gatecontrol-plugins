@@ -247,15 +247,11 @@ async function create(gc, ctx, b) {
       if (body.cc === undefined) body.cc = cc;
     }
     if (body.subject === undefined) body.subject = prefixed(original.subject || '', mode === 'forward' ? 'Fwd' : 'Re');
-    if (body.html === undefined) {
-      const sigHtml = a.signature ? `<p>-- <br>${esc(a.signature).replace(/\n/g, '<br>')}</p>` : '';
-      body.html = `<p></p>${sigHtml}${quoteOf(ctx.lang, original, full, mode)}`;
-    }
+    // the signature is the clients' (they put it on top of new mail, answers and forwards)
+    if (body.html === undefined) body.html = `<p></p>${quoteOf(ctx.lang, original, full, mode)}`;
     if (mode === 'forward' && body.attachments === undefined) {
       body.attachments = (await store.all(gc, 'SELECT id FROM attachments WHERE message_id = ? AND inline = 0', [original.id])).map((x) => ({ messageId: original.id, attachmentId: x.id }));
     }
-  } else if (body.html === undefined && a.signature) {
-    body.html = `<p></p><p>-- <br>${esc(a.signature).replace(/\n/g, '<br>')}</p>`;
   }
   const now = Date.now();
   const refs = original ? [...String(original.refs || '').split(/\s+/).filter(Boolean), original.message_id].filter(Boolean).slice(-20).join(' ') : null;

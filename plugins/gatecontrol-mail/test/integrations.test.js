@@ -106,6 +106,12 @@ test('AI: Kurz gesagt, Zu tun, replies; short mail without summary; into the fam
   assert.deepEqual((await c.as(ANNA)('GET', `ai/${lang.id}`)).json, r);
   assert.equal((await c.list(ANNA, { tab: 'all' })).items.find((x) => x.id === lang.id).ai.summary, r.summary);
   assert.equal((await c.as(ANNA)('POST', `ai/${kurz.id}`)).json.summary, null, 'short mail: no summary');
+  // a result that is there is answered without asking again; two runs at once share one request; again: true asks anew
+  const n0 = host.aiRequests.filter((x) => x.task === 'mail_assist').length;
+  assert.deepEqual((await c.as(ANNA)('POST', `ai/${lang.id}`)).json, r);
+  assert.equal(host.aiRequests.filter((x) => x.task === 'mail_assist').length, n0);
+  await Promise.all([c.as(ANNA)('POST', `ai/${lang.id}`, { again: true }), c.as(ANNA)('POST', `ai/${lang.id}`, { again: true })]);
+  assert.equal(host.aiRequests.filter((x) => x.task === 'mail_assist').length, n0 + 1);
   const req = host.aiRequests.find((x) => x.task === 'mail_assist');
   assert.equal(req.user, ANNA.id);
   assert.ok(req.input.every((x) => x.type === 'text'), 'text first, never a picture of a mail with text');

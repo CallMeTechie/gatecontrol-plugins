@@ -115,7 +115,7 @@ async function route(gc, ctx, req, seg) {
     case 'contacts': if (n === 1 && m === 'GET') return compose.contacts(gc, ctx, q.q); break;
     case 'ai':
       if (n === 2 && m === 'GET') return ai.get(gc, ctx.userId, s1);
-      if (n === 2 && m === 'POST') return ai.run(gc, ctx.userId, s1);
+      if (n === 2 && m === 'POST') return ai.run(gc, ctx.userId, s1, b);
       if (n === 4 && s2 === 'todo' && m === 'POST') return ai.todo(gc, ctx.userId, ctx.lang, s1, s3, b);
       break;
     case 'drive':

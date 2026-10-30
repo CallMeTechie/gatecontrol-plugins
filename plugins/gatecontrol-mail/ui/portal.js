@@ -689,7 +689,7 @@
     if (o.mode) { body.mode = o.mode; body.replyTo = o.replyTo; }
     if (o.to) body.to = o.to;
     if (!o.mode && S.box !== 'all') body.accountId = S.box;
-    api('POST', 'drafts', body).then(function (r) { editDraft(r.draft, o.text); }, fail);
+    api('POST', 'drafts', body).then(function (r) { editDraft(r.draft, o.text, true); }, fail);
   }
 
   function suggestBox(input) {
@@ -718,7 +718,7 @@
     return box;
   }
 
-  function editDraft(d, text) {
+  function editDraft(d, text, fresh) {
     var from = h('select', { class: 'dp-input' }, S.accounts.map(function (a) { return h('option', { value: String(a.id), selected: a.id === d.accountId, text: accountLabel(a) }); }));
     var to = h('input', { class: 'dp-input', type: 'text', value: peopleText(d.to), attrs: { autocomplete: 'off' } });
     var cc = h('input', { class: 'dp-input', type: 'text', value: peopleText(d.cc), attrs: { autocomplete: 'off' } });
@@ -726,6 +726,15 @@
     var subject = h('input', { class: 'dp-input', type: 'text', value: d.subject || '' });
     var editor = h('div', { class: 'mp-editor', attrs: { contenteditable: 'true', role: 'textbox', 'aria-multiline': 'true', 'aria-label': T('p.text') } });
     editor.innerHTML = d.html || ''; // the person's own draft (the server keeps no script in it)
+    // a new draft: the account's signature on top (the server never adds it)
+    var acc = accountOf(d.accountId);
+    if (fresh && acc && acc.signature) {
+      var sg = document.createElement('p');
+      sg.appendChild(document.createTextNode('-- '));
+      acc.signature.split('\n').forEach(function (l) { sg.appendChild(document.createElement('br')); sg.appendChild(document.createTextNode(l)); });
+      editor.insertBefore(sg, editor.firstChild);
+      editor.insertBefore(document.createElement('p'), editor.firstChild);
+    }
     if (text) { var p = document.createElement('p'); p.textContent = text; editor.insertBefore(p, editor.firstChild); }
     var atts = h('div', { class: 'mp-atts' });
     var warns = h('div', { class: 'mp-warns' });

@@ -65,6 +65,7 @@ module.exports = {
     config.reset();
     messages.reset();
     drive.reset();
+    ai.reset();
     engine.start(gc);
   },
 

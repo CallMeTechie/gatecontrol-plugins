@@ -113,8 +113,10 @@ mime, size, inline, cid, savedTo: { nodeId, where } | null, suggestion }`.
 attachmentId }` | `{ driveNodeId, as: 'copy'|'link', expiresDays?, password? }` | `{ id }` (an attachment of this draft).
 `draft` = `{ id, accountId, to, cc, bcc, subject, html, attachments: [{ id, name, size, mime, as, url? }], warnings: [{ kind:
 'password'|'too_large'|'no_subject', text }] }`. With `mode` the server fills in what is missing: recipients (reply:
-Reply-To or the sender; reply all: also To and Cc, never the person's own addresses), `Re:` / `Fwd:`, the signature
-and the quote; a forward takes the mail's attachments. An answer always goes out of the account the mail came to.
+Reply-To or the sender; reply all: also To and Cc, never the person's own addresses), `Re:` / `Fwd:` and the quote; a
+forward without `attachments` takes the mail's attachments (a client that sends them as `{ messageId, attachmentId }`
+gets exactly those). The account's **signature is the clients'**: they put it on top (`Account.signature`); the server
+never adds it. An answer always goes out of the account the mail came to.
 Too large for the provider (GMX / WEB.DE 20 MB, others 25 MB): files from Drive become links (14 days, warning
 `too_large`), files from the device or a mail → 413 `too_large`. A refused attachment is not added (the draft keeps
 its attachments).
@@ -127,7 +129,7 @@ Drive go as links (warning), files from the device or another account's mail →
 | | |
 |---|---|
 | `GET ai/<messageId>` | `AiResult` \| `{ status: 'none' }` |
-| `POST ai/<messageId>` | `AiResult` (asks the AI now) — 409 `ai_off` (administrator, account, business accounts blocked) / `ai_unavailable`, 429 `rate_limited` |
+| `POST ai/<messageId>` | `{ again? }` → `AiResult` — a result that is there is answered as it is (no new request; the apps ask on opening a mail), `again: true` asks anew; runs for the same mail at once share one request; at most 60 runs a person and hour (429) — 409 `ai_off` (administrator, account, business accounts blocked) / `ai_unavailable`, 429 `rate_limited` |
 | `POST ai/<messageId>/todo/<index>` | `{ action: 'family_calendar' }` → `{ where }` (Familie's `calendar_add` for the person; 409 `familie_unavailable`) |
 
 `AiResult` = `{ status: 'done', summary | null (mail < 600 characters), todos: [{ kind:

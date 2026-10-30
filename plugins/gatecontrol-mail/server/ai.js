@@ -90,11 +90,41 @@ async function get(gc, userId, messageId) {
   return r ? view(r) : { status: 'none' };
 }
 
-/** POST ai/<messageId> → AiResult (asks the AI now). */
-async function run(gc, userId, messageId) {
-  const { m, a } = await ctxOf(gc, userId, messageId);
+/** ai_off (the administrator, the account, business accounts blocked) / ai_unavailable (GateControl's AI) — or nothing. */
+async function mayRun(gc, a) {
   const cfg = await config.get(gc);
   if (!(await allowedFor(gc, cfg, a, 'bar'))) throw fail(hasAi(gc) && cfg.ai.bar && a.ai === 1 && !(cfg.ai.blockBusiness && a.kind === 'business') ? 'ai_unavailable' : 'ai_off');
+}
+
+const running = new Map(); // message id → the promise of its run (one at a time)
+const recent = new Map(); // user id → [times] (PER_HOUR runs an hour)
+const PER_HOUR = 60;
+
+/**
+ * POST ai/<messageId> { again? } → AiResult. A result that is there is answered as it is (the apps ask on opening a
+ * mail) — `again: true` asks the AI anew; a run for the same mail in progress is shared; PER_HOUR runs a person and hour.
+ */
+async function run(gc, userId, messageId, b) {
+  const { m, a } = await ctxOf(gc, userId, messageId);
+  await mayRun(gc, a);
+  if (!(b && b.again === true)) {
+    const have = await store.one(gc, 'SELECT * FROM ai_results WHERE message_id = ?', [m.id]);
+    if (have) return view(have);
+  }
+  if (running.has(m.id)) return running.get(m.id);
+  const now = Date.now();
+  const list = (recent.get(userId) || []).filter((x) => now - x < 3600000);
+  if (list.length >= PER_HOUR) throw fail('rate_limited');
+  list.push(now);
+  recent.set(userId, list);
+  const p = runNow(gc, userId, m.id).finally(() => running.delete(m.id));
+  running.set(m.id, p);
+  return p;
+}
+
+async function runNow(gc, userId, messageId) {
+  const { m, a } = await ctxOf(gc, userId, messageId);
+  await mayRun(gc, a);
   let b = await store.one(gc, 'SELECT * FROM bodies WHERE message_id = ?', [m.id]);
   if (!b) {
     try { await engine.loadBody(gc, a, m); } catch (e) { throw fail(e && e.code === 'auth_failed' ? 'auth_failed' : 'unreachable'); }
@@ -191,4 +221,6 @@ async function tick(gc) {
   return n;
 }
 
-module.exports = { get, run, todo, tick, ready, allowedFor, familyCalendar, SHORT };
+function reset() { running.clear(); recent.clear(); }
+
+module.exports = { reset, get, run, todo, tick, ready, allowedFor, familyCalendar, SHORT };
