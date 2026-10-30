@@ -86,6 +86,8 @@ async function settingsOf(gc) {
     docAi: all.doc_ai !== false && all.doc_ai !== 'false',
     docAiImages: all.doc_ai_images === true || all.doc_ai_images === 'true',
     cloudImport: all.cloud_import !== false && all.cloud_import !== 'false',
+    // since 1.14.0: the default of "Original-Scan behalten" when a scan becomes a document (scans.js)
+    scanKeepOriginal: all.scan_keep_original !== false && all.scan_keep_original !== 'false',
   };
 }
 

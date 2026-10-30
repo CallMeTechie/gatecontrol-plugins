@@ -14,7 +14,8 @@
 //   * the public address for direct links is looked up when Drive does not know it yet (address.js, since 1.6.0);
 //   * a version a time travel made stays until its hold ends (timetravel.js, since 1.7.0).
 // Every run (since 1.8.0): AI for documents works off its queue (insights.js), the reminders of deadlines whose time came
-// go out (deadlines.js), the imports from cloud drives go on (imports.js) — the last two as their person (o.asPerson).
+// go out (deadlines.js), the imports from cloud drives go on (imports.js) — the last two as their person (o.asPerson);
+// since 1.14.0 new deadlines of an area with deadlinesToCalendar go into the family calendar as their person too.
 // Every run (since 1.11.0): a vault folder outside the top folder of its area goes there (vault.js toRoots).
 // Every run (since 1.12.0): jobs of several at once a restart interrupted go on, copies nobody brings bytes for end, old
 // jobs go (ops.js).
@@ -60,7 +61,7 @@ async function tick(gc, now = Date.now(), o = {}) {
       const touched = await vault.toRoots(gc, now);
       if (touched.size) await changes.announce(gc, touched, settings);
     } catch (e) { gc.log.warn('vaults to the top folder failed', (e && e.code) || 'error'); }
-    try { out.insights = await insights.tick(gc, settings, now); } catch (e) { gc.log.warn('document recognition failed', (e && e.code) || 'error'); }
+    try { out.insights = await insights.tick(gc, settings, now, o.asPerson); } catch (e) { gc.log.warn('document recognition failed', (e && e.code) || 'error'); }
     try { out.reminders = await deadlines.due(gc, settings, now, o.asPerson); } catch (e) { gc.log.warn('deadline reminders failed', (e && e.code) || 'error'); }
     try { out.imports = await imports.tick(gc, settings, now, o.asPerson); } catch (e) { gc.log.warn('imports failed', (e && e.code) || 'error'); }
     try { out.ops = await ops.tick(gc, now, o.ops); } catch (e) { gc.log.warn('jobs failed', (e && e.code) || 'error'); }

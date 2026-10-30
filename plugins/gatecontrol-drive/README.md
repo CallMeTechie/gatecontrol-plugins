@@ -23,6 +23,10 @@ AI for documents and the import from Google Drive and OneDrive (since 1.8.0) nee
 Drive checks for them at run time
 (`typeof gc.ai?.extract === 'function'`, `typeof gc.cloud?.list === 'function'`) and hides both without them. Settings
 *doc_ai* (default on), *doc_ai_images* (default off), *cloud_import* (default on).
+AI in Drive (since 1.14.0, see "AI in Drive") uses the same AI service; deadlines into the family calendar call the
+Familie plugin's service `calendar_add` (`permissions.services: ["gatecontrol-familie:calendar_add"]` — a new permission
+the administrator confirms with the update; GateControl ≥ 1.178.0 for `gc.services.available`). Setting
+*scan_keep_original* (default on).
 
 ## Areas and rights
 
@@ -58,9 +62,9 @@ reaches `GET frame` (the photo frame, since 1.7.0) and nothing else (`403 forbid
 
 | Route | Body / query | Answer |
 |---|---|---|
-| `GET me` | | `me { id, name, seat, deviceId, admin }`, `licence { valid, tier }`, `areas`, `latest` (change log seq), `settings`, `limits { maxBytes }`, `wipes` (entries this device has yet to handle, since 1.2.0), `devices` (my devices a new wipe reaches), `features` (since 1.5.0: `['previews', 'wipes', 'textSearch', 'devices', 'deleteAfter', 'emptyFiles']`, since 1.6.0 also `'links'`, `'guard'`, since 1.7.0 `'timeTravel'`, `'takenAt'`, `'photos'`, `'albums'`, `'frame'`, `'storage'`, since 1.8.0 `'docAi'` and `'cloudImport'` — only while GateControl offers the AI service / cloud accounts and they are allowed, see "AI for documents" and "Import"; since 1.9.0 `'vault'` and — while set up — `'office'`, since 1.10.0 `'photosFolder'`, since 1.11.0 `'vaultsApart'`, since 1.12.0 `'bulk'`, — while GateControl's public links are allowed — `'zip'` and `'multiLink'`, with GateControl ≥ 1.215.0 also `'copyServer'` (copies on the server) and `'zipMixed'` (a ZIP and one link of any selection); since 1.13.0 `'photoClasses'` (work photos apart)), `links { node, drive } \| null` (since 1.6.0, see "Direct links"), `guard { on, locked, incident }` and `incidents` (since 1.6.0, see "Ransomware protection") |
-| `GET areas` | | `areas [{ id, kind, label, role, via, rootId, owner, archived, storage { bytes, quota, form, target, state } }]` (+ `docAi` while the feature is on, also in `GET me` `areas`) |
-| `PATCH areas/<id>` | `{ docAi: boolean }` (since 1.8.0, write in the area) | `{ area: { id, docAi } }` — AI for documents on / off in this area |
+| `GET me` | | `me { id, name, seat, deviceId, admin }`, `licence { valid, tier }`, `areas`, `latest` (change log seq), `settings`, `limits { maxBytes }`, `wipes` (entries this device has yet to handle, since 1.2.0), `devices` (my devices a new wipe reaches), `features` (since 1.5.0: `['previews', 'wipes', 'textSearch', 'devices', 'deleteAfter', 'emptyFiles']`, since 1.6.0 also `'links'`, `'guard'`, since 1.7.0 `'timeTravel'`, `'takenAt'`, `'photos'`, `'albums'`, `'frame'`, `'storage'`, since 1.8.0 `'docAi'` and `'cloudImport'` — only while GateControl offers the AI service / cloud accounts and they are allowed, see "AI for documents" and "Import"; since 1.9.0 `'vault'` and — while set up — `'office'`, since 1.10.0 `'photosFolder'`, since 1.11.0 `'vaultsApart'`, since 1.12.0 `'bulk'`, — while GateControl's public links are allowed — `'zip'` and `'multiLink'`, with GateControl ≥ 1.215.0 also `'copyServer'` (copies on the server) and `'zipMixed'` (a ZIP and one link of any selection); since 1.13.0 `'photoClasses'` (work photos apart); since 1.14.0 `'photoSearch'` (photos by what is on them) and — with `docAi` — `'docAsk'` (questions to the documents), `'scanDocs'` (scans become documents) and, while the Familie plugin's `calendar_add` is reachable, `'deadlineCalendar'` (see "AI in Drive")), `settings` (since 1.14.0 also `scanKeepOriginal`), `links { node, drive } \| null` (since 1.6.0, see "Direct links"), `guard { on, locked, incident }` and `incidents` (since 1.6.0, see "Ransomware protection") |
+| `GET areas` | | `areas [{ id, kind, label, role, via, rootId, owner, archived, storage { bytes, quota, form, target, state } }]` (+ `docAi` while the feature is on, since 1.14.0 `deadlinesToCalendar` with `deadlineCalendar`, also in `GET me` `areas`) |
+| `PATCH areas/<id>` | `{ docAi?: boolean, deadlinesToCalendar?: boolean }` (since 1.8.0 / 1.14.0, write in the area) | `{ area: { id, docAi, deadlinesToCalendar? } }` — AI for documents on / off in this area; new deadlines into the family calendar on their own (Familie not reachable: `409 familie_unavailable`) |
 | `GET nodes/<id>` | | `node` + `path`, `role`, `crumbs [{ id, name }]` |
 | `GET nodes/<id>/children` | `sort=name\|mtime\|size\|updated`, `order`, `offset`, `limit` (≤ 1000); since 1.11.0 `vaults=1`, `dirs=1` | `items` (folders first), `total`, `next`, `role` — since 1.11.0 (feature `vaultsApart`) **without vault folders** (their nodes right below a folder outside a vault; `total` counts the same), `vaults=1` lists them as before; inside a vault everything. `dirs=1`: only the folders (no vaults), by name (`order` applies, `sort` not), each with `hasDirs` (live folders below it, vault folders not counted) — the folder tree of the menus |
 | `GET nodes/by-path` | `area`, `path` | `node` |
@@ -106,8 +110,8 @@ reaches `GET frame` (the photo frame, since 1.7.0) and nothing else (`403 forbid
 | `POST nodes/<id>/timetravel` | `{ at }` | `{ at, before, restored, reverted, trashed, moved, failed, lost }` |
 | `POST nodes/<id>/office` | | since 1.9.0: `{ url, mode, expiresAt }` — see "Office in the browser" |
 | `GET\|POST vaults`, `vaults/<id>/…` | | since 1.9.0 — see "Vault folders" |
-| `GET photos` | `area?`, `before?` (ISO), `limit?` (≤ 200, default 100) (since 1.7.0); `folder?` (node id) or `camera?` (`1`) (since 1.10.0); `class?` (`work` \| `private` \| `review`, since 1.13.0) | `{ items [photo], next }` (see "Photos and albums") |
-| `GET photos/months` | `area?`, `folder?` or `camera?`; `class?` (since 1.13.0) | `{ months [{ month: 'YYYY-MM', count }] }` |
+| `GET photos` | `area?`, `before?` (ISO), `limit?` (≤ 200, default 100) (since 1.7.0); `folder?` (node id) or `camera?` (`1`) (since 1.10.0); `class?` (`work` \| `private` \| `review`, since 1.13.0); `q?` (words), `unlabeled?` (`1`) (since 1.14.0) | `{ items [photo], next, search? }` (see "Photos and albums", "AI in Drive") |
+| `GET photos/months` | `area?`, `folder?` or `camera?`; `class?` (since 1.13.0); `q?`, `unlabeled?` (since 1.14.0) | `{ months [{ month: 'YYYY-MM', count }] }` |
 | `GET photos/classes` | `area?`, `folder?` or `camera?` (since 1.13.0, feature `photoClasses`) | `{ work, private, review }` — the counts (see "Work photos apart") |
 | `GET photos/settings` · `PUT photos/settings` | PUT: `{ workFolder?: id \| null, workSubfolders?: bool, workInMemories?: bool }` (since 1.13.0) | `{ workFolder, workSubfolders, workInMemories, folder { id, path, areaId } \| null }` — mine, on every device |
 | `POST photos/review` | `{ ids (≤ 500), review: bool, hint?: 0 … 100 \| null }` (since 1.13.0) | `{ changed, items [{ id, review { hint } \| null }] }` — the review mark |
@@ -127,9 +131,15 @@ reaches `GET frame` (the photo frame, since 1.7.0) and nothing else (`403 forbid
 | `GET nodes/<id>/insight` | (since 1.8.0) | `{ status, kind, title, date, sender, amount, currency, suggestion, deadlines, error, at }` (see "AI for documents") |
 | `POST nodes/<id>/insight` | | the same — recognise (again); write in the area |
 | `POST nodes/<id>/insight/apply` | `{ name?: true, folder?: true }` | `{ node, insight }` — the suggestion taken (renamed / moved) |
-| `GET deadlines` | `from?`, `to?` (YYYY-MM-DD; today, + 365 days) | `{ deadlines [{ id, kind, date, label, reminder, node }] }` (≤ 500, by date) |
+| `GET deadlines` | `from?`, `to?` (YYYY-MM-DD; today, + 365 days) | `{ deadlines [{ id, kind, date, label, reminder, calendar, foundAt, doc, node }] }` (≤ 500, by date; `calendar`, `foundAt`, `doc` since 1.14.0) |
 | `POST deadlines/<id>/remind` | `{ daysBefore }` (0 … 90) | `{ deadline }` — my reminder |
 | `DELETE deadlines/<id>/remind` | | `{ deadline }` |
+| `POST deadlines/<id>/calendar` | (since 1.14.0) | `{ deadline }` with `calendar { eventId, at }` — into my family calendar (see "AI in Drive") |
+| `POST ask` | `{ q, area? }` (since 1.14.0) | `{ status: 'answered' \| 'not_found', answer, sources [{ nodeId, name, path, areaId, page, quote }], terms, areas, deadline }` |
+| `POST scans/classify` | `{ mediaIds? \| nodeId?, text? }` (since 1.14.0) | `{ kind, confidence, summary, title, source, usage }` |
+| `POST scans/convert` | `{ mediaIds? \| nodeId?, text?, kind, target: 'docx' \| 'xlsx' \| 'pdf', name?, folderId?, images? }` | `{ kind, target, title, name, folderId, folderPath, text, content, file { name, mime, size, sha256, data } \| null, source, usage }` |
+| `POST scans/save` | `{ mediaId, folderId, name, text?, sourceId?, keepOriginal? }` | `{ node, original }` |
+| `PUT nodes/<id>/labels` | `{ labels: [string ≤ 40] (≤ 20), source: 'device' }` (since 1.14.0) | `{ id, labels, labeledAt }` — what a phone recognised on a picture or video |
 | `GET import/sources` | (since 1.8.0) | `{ google, microsoft, connections [{ id, provider, account, connectedAt, error? }] }` (see "Import"; `error: 'auth'`: connect again) |
 | `POST import/connect` | `{ provider: 'google' \| 'microsoft' }` | `{ url }` — GateControl's OAuth start, back to the portal |
 | `DELETE import/connections/<id>` | | `{ removed }` — its running jobs pause (`cloud_auth`) |
@@ -511,13 +521,72 @@ feature_off`.
   { field: 'insight' | 'name' | 'folder' }`); a suggested folder that is gone: `404 { field: 'folder' }`.
 - Per area (`area_prefs`): `PATCH areas/<id> { docAi }` (write in the area); default off in a child's folder, on
   otherwise. Off: its queue is emptied, `status: 'off'`.
-- A deadline: `{ id, kind: 'payment' | 'cancellation' | 'objection', date: 'YYYY-MM-DD', label, reminder: { at, daysBefore,
-  sent } | null }` (the reminder is the viewer's own). A new recognition replaces the deadlines of a file; one of the same
+- A deadline: `{ id, kind: 'payment' | 'cancellation' | 'objection' | 'warranty' | 'renewal', date: 'YYYY-MM-DD', label,
+  reminder: { at, daysBefore, sent } | null, calendar: { eventId, at } | null, foundAt }` (the reminder and the calendar
+  entry are the viewer's own; `warranty`, `renewal`, `calendar` and `foundAt` since 1.14.0 — see "AI in Drive"). A new recognition replaces the deadlines of a file; one of the same
   kind and date keeps its reminders. `POST deadlines/<id>/remind { daysBefore }` (read is enough): Drive's notification
   (topic `deadline`, `data.drive { node, area, deadline }`, a direct link) at 07:00 UTC of the day minus `daysBefore`
   (already past: with the next run), once; not for a file in the trash or one the person no longer reads. A deadline
-  whose day is over takes none (`400 { field: 'date' }`). The Familie plugin offers no reminder service another plugin
-  may call (its calendar services answer the Messenger only), so Drive reminds on its own.
+  whose day is over takes none (`400 { field: 'date' }`). Drive reminds on its own; since 1.14.0 a deadline can also go
+  into the family calendar (`POST deadlines/<id>/calendar`).
+
+**AI in Drive** (since 1.14.0, `server/deadlines.js`, `server/ask.js`, `server/scans.js`, `server/ooxml.js`,
+`server/labels.js`). The AI parts run through GateControl's AI service exactly like AI for documents (the setting
+*doc_ai*, `gc.ai` allowed) — without it `docAsk` and `scanDocs` are not in `features` and the routes answer `403
+feature_off`. The AI only suggests; a person takes it. Never a vault's file (`409 encrypted`), only files the person
+reads. GateControl's errors: `429 rate_limited` (its requests per hour), `409 ai_budget`, `422 unsupported { reason:
+'media_disabled' }`, `502 ai_failed { reason }`.
+
+- **Deadlines into the family calendar** (feature `deadlineCalendar`): two new kinds — `warranty` (the day a warranty
+  ends) and `renewal` (the last day to cancel before a contract renews; the label says when and how). `GET deadlines`
+  adds `doc { kind, title, sender, amount, currency }` (what the AI read in the file, `null` without) and `foundAt`.
+  `POST deadlines/<id>/calendar` (read is enough) calls the Familie plugin's service `calendar_add` (`permissions.services`
+  `gatecontrol-familie:calendar_add`, GateControl ≥ 1.178.0) with `{ userId, title, startsAt: 'YYYY-MM-DD', allDay: true }`
+  for the viewer — the title is the deadline's label („Kfz-Versicherung kündigen“), else what to do and the sender (≤ 80).
+  Drive keeps `{ eventId, at }` per person and deadline; a second call answers the same. Familie not installed, not
+  running, or refusing (not a family member, its dates module off, a Familie that does not take Drive as a caller):
+  `409 familie_unavailable { reason }` (`unavailable`, `rate_limited`, `timeout` or Familie's code). Per area `PATCH
+  areas/<id> { deadlinesToCalendar: true }` (default off): new deadlines of a recognition go in on their own — for the
+  person whose upload or "Erkennen" it was, else the owner of the area — while they read the file and the day is ahead
+  (≤ 5 a recognition).
+- **Questions to the documents** (feature `docAsk`): `POST ask { q (3 … 300 characters), area? }`. 1. The question alone
+  goes to the AI for search terms and filters (kind, sender, year). 2. Drive searches without AI in the recognised text
+  and what AI for documents read (title, sender, kind) of the files the person reads in the areas with AI for documents
+  on (a child's folder is off by default) — never the trash, never a vault. 3. The best ≤ 8 files go as excerpts (≤ 2 000
+  characters: the start of the text and the part with the most and rarest hits) to the AI, which answers only from them.
+  → `{ status: 'answered' | 'not_found', answer, sources: [{ nodeId, name, path, areaId, page: null, quote }], terms,
+  areas: [label], deadline }` — a source counts only with a quote that really is in its excerpt; `not_found` has `answer:
+  null`, `sources: []` and says what was searched for (`terms`) and where (`areas`). `deadline`: a deadline (with
+  `nodeId`) of a source whose date the answer names — the button „Frist in den Familienkalender“. At most 30 questions an
+  hour per person (`429 rate_limited { reason: 'questions' }`).
+- **Scans become documents** (feature `scanDocs`): `POST scans/classify { mediaIds? | nodeId?, text? }` → `{ kind:
+  'printed' | 'handwriting' | 'table' | 'whiteboard' | 'other', confidence (0 … 1), summary, title, source: 'text' |
+  'media', usage: { costCents } }` — the text first (the device's, else the file's recognised text), the picture only
+  when the text leaves it open (confidence < 0.6) and pictures may go. `mediaIds`: ≤ 8 pictures (JPEG, PNG, WebP, GIF ≤
+  10 MB) the person uploaded and did not file yet, or pictures of files they read; `nodeId`: a picture or PDF they read.
+  `POST scans/convert { …the scan, kind, target, name?, folderId?, images? }`: `xlsx` (kind `table` only) — the header
+  bold and frozen, numbers as numbers, dates as dates, the columns as wide as their content, a sum row as formulas (sum,
+  difference of the last and first value, average) when the scan has one; `docx` — headings, paragraphs, bullets, tasks
+  as a check list, „Offen“ for what is circled or marked, a table as a Word table; a whiteboard's picture at the top, a
+  handwritten page as the last page (from `images`); `pdf` — the text (the device's needs no AI), and with `images`
+  (JPEG) the PDF itself: each picture a page at 150 dpi, the text invisible on it. Printed text and the PDF's text go as
+  text; handwriting, tables and whiteboards as the picture (with the text) while pictures may go, else as text. `images`:
+  base64 JPEG / PNG, ≤ 600 KB together (`413 too_large`). GateControl lets no plugin write a file of its own: `file` is
+  `{ name, mime, size, sha256, data (base64) }` — the app or the portal uploads these bytes (GateControl's media upload)
+  and files them with `POST scans/save { mediaId, folderId, name, text, sourceId?, keepOriginal? }` → `{ node, original }`
+  (like `uploads/commit` with `onConflict: 'rename'` and `text` as the recognised text — search and questions find it;
+  `keepOriginal: false` puts the scan's file `sourceId` into the trash when one may, `original` is it while it stays).
+  `name`: given (the extension made right) or `<YYYY-MM-DD> <title>.<ext>`, free in the folder; `folderId`: given (a
+  folder one writes to), else the scan file's folder, else `null` (the device chooses). The setting *scan_keep_original*
+  (`GET me settings.scanKeepOriginal`, default on) is the default of the switch "Original-Scan behalten".
+- **Photos by what is on them** (feature `photoSearch`, no AI on the server): the phones recognise image labels on the
+  device (ML Kit, English) and send them: `PUT nodes/<id>/labels { labels, source: 'device' }` — a picture or video one
+  writes to (`403` for a reader, `400` for another file), lower case, each once, replacing the old ones; `[]` = looked at,
+  nothing found. Photo items carry `labeled`; `GET photos?unlabeled=1` lists the ones without labels in areas one writes
+  to (the phones' backfill). `GET photos?q=<words>` (also `photos/months`): the photos with a label for every word —
+  German words through `server/labels.json` (ML Kit's ~400 labels → German words and synonyms; a start of a word or a
+  plural is enough: „Sonnen…“, „Hunde“), else the word as a label — and `search { terms, labels, total, chips: [{ label,
+  text, count }] }` (the most frequent other labels of the hits, ≤ 6, `text` in the person's language).
 
 **Import** (since 1.8.0, `server/imports.js`, feature `cloudImport`): GateControl's cloud accounts (`gc.cloud`,
 `permissions.cloudImport` — the OAuth apps of Google and Microsoft are set up in GateControl › Einstellungen ›
@@ -910,6 +979,8 @@ person's `userId`; the person needs a seat and write access (a call can do no mo
 (2).pdf") or, with `onConflict: 'version'`, becomes a new version. Codes: `invalid`, `forbidden`, `not_found`,
 `no_seat`, `not_licensed`, `quota`, `upload_invalid` (not the person's fresh file), `exists` (a file where a folder of
 the path should be). The change log names the calling plugin as the device.
+
+The other way round (since 1.14.0): Drive calls the Familie plugin's `calendar_add` for a deadline (see "AI in Drive").
 
 ## Background
 

@@ -28,12 +28,17 @@
 // the rest. GET photos/classes?area=&folder=&camera= → { work, private, review } (the counts). An item carries
 // `review` ({ hint } | null) and `work` (below my work folder, not marked). Memories leave the work folder out while
 // the setting workInMemories is off (the default), and so does the photo frame (frame.js).
+//
+// Since 1.14.0 (feature `photoSearch`, labels.js): `q=<words>` on photos and months — the photos with a label the
+// phones recognised for every word (German words too); GET photos then adds `search` { terms, labels, total, chips }.
+// `unlabeled=1` — only those without labels in areas one writes to (the phones fill them in). Items carry `labeled`.
 
 const store = require('./store');
 const nodes = require('./nodes');
 const areas = require('./areas');
 const previews = require('./previews');
 const work = require('./work');
+const labels = require('./labels');
 const { fail, iso, msArg, posInt } = require('./util');
 
 const LIMIT_MAX = 200;
@@ -165,6 +170,8 @@ async function itemsOf(ctx, rows) {
       preview: !!p, mediaId: r.media_id || null, previewUrl: p ? p.url : null, largeUrl: p ? p.largeUrl : null,
       // since 1.13.0: the review mark, and below my work folder (not marked)
       review, work: !review && !!tree && tree.has(r.parent_id),
+      // since 1.14.0: a phone recognised its labels (also: none found)
+      labeled: r.labels_at != null,
     };
   });
 }
@@ -200,22 +207,43 @@ async function page(gc, where, args, before, limit) {
   return { rows: out, next: more ? iso(t) : null };
 }
 
-/** GET photos → { items, next } */
+/**
+ * The photos of a list query: scope, class, and since 1.14.0 unlabeled=1 / q= (labels.js) → { sc, search } — sc null:
+ * none at all; search: { terms, labels } of q, else null.
+ */
+async function filtered(ctx, q) {
+  const cls = classArg(q && q.class);
+  let sc = await classed(ctx, await scope(ctx, q), cls);
+  if (sc && switchArg(q && q.unlabeled, 'unlabeled')) {
+    const ids = (await ctx.visible()).filter((v) => areas.can(v.role, 'write') && v.area.archived_at == null).map((v) => v.area.id);
+    sc = ids.length ? { where: `${sc.where} AND labels_at IS NULL AND area_id IN (${store.marks(ids.length)})`, args: [...sc.args, ...ids] } : null;
+  }
+  let search = null;
+  if (q && q.q != null && q.q !== '') {
+    const words = labels.wordsOf(q.q);
+    if (!sc) return { sc: null, search: { terms: words, labels: [] } };
+    const r = labels.narrow(sc, q.q);
+    sc = r.sc;
+    search = { terms: r.terms, labels: r.labels };
+  }
+  return { sc, search };
+}
+
+/** GET photos → { items, next, search? } */
 async function list(ctx, q) {
   const limit = limitArg(q && q.limit);
   const before = beforeArg(q && q.before);
-  const cls = classArg(q && q.class);
-  const sc = await classed(ctx, await scope(ctx, q), cls);
-  if (!sc) return { items: [], next: null };
+  const { sc, search } = await filtered(ctx, q);
+  const found = search ? { ...search, ...(sc ? await labels.summary(ctx, sc, search.labels) : { total: 0, chips: [] }) } : null;
+  if (!sc) return { items: [], next: null, ...(found ? { search: found } : {}) };
   const r = await page(ctx.gc, sc.where, sc.args, before, limit);
   await noteViews(ctx, r.rows);
-  return { items: await itemsOf(ctx, r.rows), next: r.next };
+  return { items: await itemsOf(ctx, r.rows), next: r.next, ...(found ? { search: found } : {}) };
 }
 
 /** GET photos/months → { months: [{ month, count }] } newest first. */
 async function months(ctx, q) {
-  const cls = classArg(q && q.class);
-  const sc = await classed(ctx, await scope(ctx, q), cls);
+  const { sc } = await filtered(ctx, q);
   if (!sc) return { months: [] };
   const rows = await store.all(ctx.gc, `SELECT strftime('%Y-%m', ${TAKEN} / 1000, 'unixepoch', 'localtime') AS month, COUNT(*) AS n FROM nodes
     WHERE ${sc.where} GROUP BY month ORDER BY month DESC`, sc.args);

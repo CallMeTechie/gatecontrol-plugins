@@ -925,7 +925,21 @@
     "p.b.trash_title.other": "{{count}} Elemente in den Papierkorb?",
     "p.b.trash_text": "Sie bleiben {{days}} Tage im Papierkorb und lassen sich gleich danach rückgängig machen.",
     "p.b.all": "Alle",
-    "p.b.none": "Keine"
+    "p.b.none": "Keine",
+    "error.familie_unavailable": "Der Familienkalender ist gerade nicht erreichbar – ist das Plugin Familie installiert und bist du dort Mitglied?",
+    "error.rate_limited": "Gerade sind es zu viele Fragen. Bitte versuch es in einer Weile noch einmal.",
+    "error.ai_budget": "Das Monatsbudget für KI ist aufgebraucht.",
+    "error.ai_failed": "Die KI hat gerade nicht geantwortet. Bitte gleich noch einmal.",
+    "deadline.warranty": "Garantieende am {{date}}",
+    "deadline.renewal": "Kündigen bis {{date}} – der Vertrag verlängert sich",
+    "deadline.warranty.short": "Garantieende",
+    "deadline.renewal.short": "Vertragsverlängerung",
+    "deadline.cal.payment": "{{what}} bezahlen",
+    "deadline.cal.cancellation": "{{what}} kündigen",
+    "deadline.cal.objection": "Widerspruch: {{what}}",
+    "deadline.cal.warranty": "Garantie endet: {{what}}",
+    "deadline.cal.renewal": "{{what}} kündigen (verlängert sich)",
+    "scan.name": "Scan"
   },
   "en": {
     "error.invalid": "Invalid input.",
@@ -1853,6 +1867,20 @@
     "p.b.trash_title.other": "Move {{count}} items to the trash?",
     "p.b.trash_text": "They stay in the trash for {{days}} days and can be undone right afterwards.",
     "p.b.all": "All",
-    "p.b.none": "None"
+    "p.b.none": "None",
+    "error.familie_unavailable": "The family calendar cannot be reached right now – is the Family plugin installed and are you a member there?",
+    "error.rate_limited": "Too many questions right now. Please try again in a while.",
+    "error.ai_budget": "The monthly budget for AI is used up.",
+    "error.ai_failed": "The AI did not answer just now. Please try again.",
+    "deadline.warranty": "Warranty ends on {{date}}",
+    "deadline.renewal": "Cancel by {{date}} – the contract renews",
+    "deadline.warranty.short": "Warranty ends",
+    "deadline.renewal.short": "Contract renewal",
+    "deadline.cal.payment": "Pay {{what}}",
+    "deadline.cal.cancellation": "Cancel {{what}}",
+    "deadline.cal.objection": "Objection: {{what}}",
+    "deadline.cal.warranty": "Warranty ends: {{what}}",
+    "deadline.cal.renewal": "Cancel {{what}} (renews)",
+    "scan.name": "Scan"
   }
 }
