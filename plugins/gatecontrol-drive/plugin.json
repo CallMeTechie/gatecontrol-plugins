@@ -4,7 +4,7 @@
     "de": "Drive",
     "en": "Drive"
   },
-  "version": "1.14.0",
+  "version": "1.15.0",
   "publisher": "CallMeTechie",
   "description": {
     "de": "Dateien der Familie und des Teams auf dem eigenen Speicher – auf diesem Server, einer NAS oder in S3: Meine Dateien, Familie, Ordner der Kinder und Team-Ordner mit Rechten, Versionen, Papierkorb und Abgleich mit allen Geräten.",
@@ -52,7 +52,8 @@
       ]
     },
     "services": [
-      "gatecontrol-familie:calendar_add"
+      "gatecontrol-familie:calendar_add",
+      "gatecontrol-mail:new_draft"
     ],
     "cloudImport": {
       "purpose": {
@@ -497,6 +498,24 @@
         "label": {
           "de": "Datei in Drive ablegen",
           "en": "Save a file in Drive"
+        }
+      },
+      "suggest_folder": {
+        "label": {
+          "de": "Ablageort in Drive vorschlagen",
+          "en": "Suggest where to file in Drive"
+        }
+      },
+      "give_file": {
+        "label": {
+          "de": "Datei aus Drive übergeben",
+          "en": "Hand over a file from Drive"
+        }
+      },
+      "share_link": {
+        "label": {
+          "de": "Link zu einer Drive-Datei erstellen",
+          "en": "Create a link to a Drive file"
         }
       }
     }

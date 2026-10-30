@@ -65,8 +65,11 @@ function view(row, link, node, nodeIds) {
   };
 }
 
-/** POST links → the link (with its url, shown once and again in the list). */
-async function create(ctx, body) {
+/**
+ * POST links → the link (with its url, shown once and again in the list). opts.expiresAt (ms, since 1.15.0): the end of
+ * a link Mail asked for (service share_link, mail.js) instead of `expires`.
+ */
+async function create(ctx, body, opts = {}) {
   const b = body && typeof body === 'object' ? body : {};
   const pl = api(ctx.gc);
   if (!pl) throw fail('links_disabled');
@@ -98,7 +101,7 @@ async function create(ctx, body) {
   const title = (node.parent_id == null ? ctx.areaLabel(area) : node.name).slice(0, 120);
   const args = {
     ownerUserId: ctx.viewer, title, ...(note ? { note } : {}), ...(pin ? { pin } : {}),
-    expiresAt: EXPIRES[expires] == null ? null : ctx.now + EXPIRES[expires],
+    expiresAt: Number.isSafeInteger(opts.expiresAt) ? opts.expiresAt : EXPIRES[expires] == null ? null : ctx.now + EXPIRES[expires],
   };
   if (kind === 'files') Object.assign(args, { kind, mode, files: [{ mediaId: node.media_id, name: node.name }] });
   else if (kind === 'folder') Object.assign(args, { kind, mode, area: area.media_area, path: p });

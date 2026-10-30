@@ -88,8 +88,19 @@ const ops = require('./ops');
 const ask = require('./ask');
 const scans = require('./scans');
 const labels = require('./labels');
+const mail = require('./mail');
 const { t } = require('./text');
 const { STATUS, fail, isKnown, posInt, DEVICE_RE, day, iso } = require('./util');
+
+// the services for other plugins (plugin.json services.provides)
+const SERVICES = {
+  list_areas: (ctx) => services.listAreas(ctx),
+  save_file: (ctx, payload, caller) => services.saveFile(ctx, payload, caller),
+  // since 1.15.0: GateControl Mail (mail.js)
+  suggest_folder: (ctx, payload) => mail.suggestFolder(ctx, payload),
+  give_file: (ctx, payload, caller) => mail.giveFile(ctx, payload, caller),
+  share_link: (ctx, payload) => mail.shareLink(ctx, payload),
+};
 
 // GateControl's media errors a request may end in
 const HOST_CODES = { ERR_MEDIA_QUOTA: 'quota', ERR_CONFLICT: 'exists', ERR_NOT_FOUND: 'not_found' };
@@ -636,6 +647,10 @@ module.exports = {
         }
         // every file node gets its preview (previews.js; nodes that have one already are left alone)
         if (out && out.json && out.json.ok) await previews.attach(ctx, out.json);
+        // where a file came from (since 1.15.0: saved from a mail — mail.js)
+        if (out && out.json && out.json.ok) {
+          try { await mail.attach(ctx, previews.nodesOf(out.json)); } catch (e) { gc.log.warn('sources failed', (e && e.code) || 'error'); }
+        }
         // and, with AI for documents (1.8.0), the short form of its insight
         if (out && out.json && out.json.ok) {
           try { await insights.attach(ctx, out.json); } catch (e) { gc.log.warn('insights failed', (e && e.code) || 'error'); }
@@ -654,9 +669,12 @@ module.exports = {
     return { html: ui.render(view || {}, t) };
   },
 
-  /** Services for other plugins (services.js): list_areas, save_file — for the person of the call (userId). */
+  /**
+   * Services for other plugins (services.js): list_areas, save_file — and since 1.15.0 for GateControl Mail (mail.js):
+   * suggest_folder, give_file, share_link — for the person of the call (userId).
+   */
   async service({ name, caller, user, payload } = {}, gc) {
-    if (name !== 'save_file' && name !== 'list_areas') return { ok: false, code: 'not_found' };
+    if (!Object.prototype.hasOwnProperty.call(SERVICES, name)) return { ok: false, code: 'not_found' };
     if (!user || !Number.isSafeInteger(user.id) || user.id <= 0) return { ok: false, code: 'invalid' };
     const lang = payload && payload.lang === 'en' ? 'en' : 'de';
     let ctx = null;
@@ -667,7 +685,7 @@ module.exports = {
       if (!ctx.licence.valid) throw fail('not_licensed');
       if (!ctx.seat) throw fail('no_seat');
       await ctx.visible();
-      const out = name === 'list_areas' ? await services.listAreas(ctx) : await services.saveFile(ctx, payload);
+      const out = await SERVICES[name](ctx, payload, caller);
       await after(gc, ctx, true);
       return { ok: true, ...out };
     } catch (e) {
