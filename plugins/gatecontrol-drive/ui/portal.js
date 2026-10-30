@@ -1003,7 +1003,9 @@
       if (k !== 'image' && k !== 'video' && k !== 'audio') acts.push(btn(T('p.download'), function () { download(n); }, { icon: 'download', primary: true }));
       if (canWriteNode(n) && n.mediaId) acts.push(btn(T('p.share'), function () { share(n); }, { icon: 'share' }));
       acts.push(btn(T('p.versions'), function () { versions(n); }, { icon: 'history' }));
-      dialog(n.name, [h('div', { class: 'dp-preview' }, media), (k === 'image' || k === 'video') ? h('p', { class: 'dp-hint', text: T('p.save_hint') }) : null, h('div', { class: 'dp-actions' }, acts)],
+      // where it came from (since 1.15.0: saved from a mail — "Aus Mail von Stadtwerke, 03.11."; the apps jump there)
+      var from = n.source && n.source.label ? h('p', { class: 'dp-hint dp-source', text: n.source.label }) : null;
+      dialog(n.name, [h('div', { class: 'dp-preview' }, media), from, (k === 'image' || k === 'video') ? h('p', { class: 'dp-hint', text: T('p.save_hint') }) : null, h('div', { class: 'dp-actions' }, acts)],
         { wide: true, sub: fmtSize(n.size) + ' · ' + fmtDate(n.mtime || n.updatedAt) + (n.updatedBy ? ' · ' + personName(n.updatedBy) : '') });
     };
     if (got) { show(got); return; }

@@ -64,7 +64,14 @@ if (require.main === module) {
   const sign = args.includes('--sign');
   const noLicense = args.includes('--no-license');
   let ids = args.filter((a, i) => !a.startsWith('--') && (oi < 0 || i !== oi + 1));
-  if (args.includes('--all')) ids = lib.listPlugins();
+  if (args.includes('--all')) {
+    // a plugin built for a GateControl newer than the pinned one cannot be packed by its packer yet (validate.js says so)
+    ids = lib.listPlugins().filter((id) => {
+      const newer = lib.needsNewerHost(lib.readJson(path.join(lib.pluginDir(id), 'plugin.json')));
+      if (newer) process.stdout.write(`skipped ${id}: needs GateControl ${newer}, gatecontrol.ref pins ${lib.gatecontrolVersion()}\n`);
+      return !newer;
+    });
+  }
   if (!ids.length) lib.fail('usage: node tools/pack.js <id> [<id> ...] | --all [--out dist] [--sign]');
   if (sign && ids.length !== 1) lib.fail('--sign packs exactly one plugin');
   for (const id of ids) {

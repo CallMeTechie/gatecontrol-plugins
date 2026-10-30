@@ -8,7 +8,7 @@
 // into that plugin's object in catalog.json. GateControl ignores unknown or
 // invalid values, this check is strict so mistakes never reach the store:
 //   category   family | home | work | mobility | infrastructure | other
-//   icon       family | chat | calendar | door | bulb | snowflake | car | server | nas | puzzle | cloud (GateControl ≥ 1.206)
+//   icon       family | chat | calendar | door | bulb | snowflake | car | server | nas | puzzle | cloud (GateControl ≥ 1.206) | mail (≥ 1.216)
 //   summary    { de, en }  one sentence each, ≤ 160 characters
 //   audience   all | admins
 //   keywords   ≤ 12 lowercase search words (German and English), each ≤ 32 characters
@@ -32,7 +32,7 @@ const lib = require('./lib');
 const FILE = path.join(__dirname, '..', 'catalog-meta.json');
 const FIELDS = ['category', 'icon', 'summary', 'audience', 'keywords', 'related', 'highlight', 'adds', 'permissions', 'shows', 'needs', 'languages'];
 const CATEGORIES = ['family', 'home', 'work', 'mobility', 'infrastructure', 'other'];
-const ICONS = ['family', 'chat', 'calendar', 'door', 'bulb', 'snowflake', 'car', 'server', 'nas', 'puzzle', 'cloud'];
+const ICONS = ['family', 'chat', 'calendar', 'door', 'bulb', 'snowflake', 'car', 'server', 'nas', 'puzzle', 'cloud', 'mail'];
 const AUDIENCES = ['all', 'admins'];
 const LANGS = ['de', 'en'];
 const DETAIL_ICONS = ['page', 'app', 'portal', 'widget', 'tile', 'action', 'bell', 'clock', 'data', 'network', 'chat', 'key',

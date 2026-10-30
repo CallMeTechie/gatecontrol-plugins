@@ -2,6 +2,32 @@
 
 Dateien der Familie und des Teams auf dem eigenen Speicher – auf diesem Server, einer NAS oder in S3.
 
+## 1.15.0
+- **Dienste für GateControl Mail.** Drei neue Dienste und zwei Erweiterungen von `save_file` (README „Services for
+  other plugins“):
+  - `suggest_folder { mediaId, name, from?, subject?, date? }` → `{ suggestion: { folderId, areaId, path, where, name,
+    confidence, reason }, kind?, title?, sha256Exists }` – wohin ein Mail-Anhang gehört: die Regel der Person für den
+    Absender („Immer für diesen Absender“, `rule`), der Ordner, in den die Dateien des Absenders zuletzt kamen
+    (`learned`), KI für Dokumente (`ai`, nur Bereiche mit KI, das Bild nur wenn erlaubt), die Art des Dokuments nach
+    Name und Betreff (`kind`, ein Ordner wie „Rechnungen“). Nur Ordner mit Schreibrecht, nie ein Tresor.
+    `sha256Exists`: dieselbe Datei liegt schon in einem lesbaren Bereich.
+  - `save_file` mit `source { plugin, label, ref }`: die Datei zeigt ihre Herkunft („Aus Mail von Stadtwerke, 03.11.“) –
+    jeder Datei-Knoten trägt `source` mit `appLink` `gatecontrol://plugin/gatecontrol-mail/message/<ref>`, das Portal
+    zeigt sie in der Vorschau. `learn { from, always? }` merkt sich Absender → Ordner.
+  - `give_file { nodeId }` übergibt eine lesbare Datei (bis 50 MB, kein Ordner, kein Tresor) an den Aufrufer
+    (`gc.media.handOver`).
+  - `browse { area?, folderId?, dirs? }` → `{ folder, items, next }`: der Inhalt eines lesbaren Ordners für die Auswahl
+    in Mails Portal („Aus Drive“, „Anderer Ordner“); nie das Innere eines Tresors.
+  - `share_link { nodeId, expiresDays (1…90, Standard 14), password? }` → `{ url, expiresAt }`: ein Download-Link über
+    GateControls öffentliche Links (nur mit Schreibrecht, nie Tresor). GateControl hält einen Link höchstens 30 Tage –
+    längere Wünsche enden dann; `password` ist die PIN des Links (4 bis 8 Ziffern).
+- **Neue Berechtigung – Admin bestätigt beim Update:** `permissions.services` nennt zusätzlich
+  `gatecontrol-mail:new_draft`. GateControl erlaubt eine Übergabe von Dateien (`give_file`) nur an ein Plugin, dessen
+  Dienst der Gebende nennt.
+- **Braucht GateControl ≥ 1.216.0:** jeder Dienst hat `maxPerHour: 600` – 600 Aufrufe je Stunde und aufrufendem
+  Plugin statt der gemeinsamen 60 (GateControl bis 1.215 lehnt das Feld ab).
+- Migration 013 (`filing_rules`, `node_sources`).
+
 ## 1.14.0
 - **KI in Drive (D1–D5).** Die KI schlägt nur vor, übernommen wird mit einem Tipp. Alles läuft über den KI-Anbieter von
   GateControl wie „KI für Dokumente“ (Einstellung *doc_ai*); ohne ihn sind die Funktionen ausgeblendet. Nie Tresor-Dateien,

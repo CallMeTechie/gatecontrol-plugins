@@ -4,13 +4,13 @@
     "de": "Drive",
     "en": "Drive"
   },
-  "version": "1.14.0",
+  "version": "1.15.0",
   "publisher": "CallMeTechie",
   "description": {
     "de": "Dateien der Familie und des Teams auf dem eigenen Speicher – auf diesem Server, einer NAS oder in S3: Meine Dateien, Familie, Ordner der Kinder und Team-Ordner mit Rechten, Versionen, Papierkorb und Abgleich mit allen Geräten.",
     "en": "Files of the family and the team on your own storage – on this server, a NAS or S3: my files, family, the children's folders and team folders with rights, versions, a trash and sync with every device."
   },
-  "gatecontrol": ">=1.208.0",
+  "gatecontrol": ">=1.216.0",
   "entry": "server/index.js",
   "permissions": {
     "network": {
@@ -52,7 +52,8 @@
       ]
     },
     "services": [
-      "gatecontrol-familie:calendar_add"
+      "gatecontrol-familie:calendar_add",
+      "gatecontrol-mail:new_draft"
     ],
     "cloudImport": {
       "purpose": {
@@ -491,13 +492,43 @@
         "label": {
           "de": "Drive-Bereiche einer Person",
           "en": "A person's Drive areas"
-        }
+        },
+        "maxPerHour": 600
       },
       "save_file": {
         "label": {
           "de": "Datei in Drive ablegen",
           "en": "Save a file in Drive"
-        }
+        },
+        "maxPerHour": 600
+      },
+      "suggest_folder": {
+        "label": {
+          "de": "Ablageort in Drive vorschlagen",
+          "en": "Suggest where to file in Drive"
+        },
+        "maxPerHour": 600
+      },
+      "give_file": {
+        "label": {
+          "de": "Datei aus Drive übergeben",
+          "en": "Hand over a file from Drive"
+        },
+        "maxPerHour": 600
+      },
+      "share_link": {
+        "label": {
+          "de": "Link zu einer Drive-Datei erstellen",
+          "en": "Create a link to a Drive file"
+        },
+        "maxPerHour": 600
+      },
+      "browse": {
+        "label": {
+          "de": "Drive-Ordner ansehen",
+          "en": "Look into a Drive folder"
+        },
+        "maxPerHour": 600
       }
     }
   }
