@@ -214,7 +214,9 @@ function summary(r, extra = {}) {
     from: { name: r.from_name || '', email: r.from_email || '' }, to: to.slice(0, 3).map((p) => ({ name: p.name || '', email: p.email })),
     subject: r.subject || '', snippet: r.snippet || '', date: r.date, unread: r.unread === 1, flagged: r.flagged === 1, answered: r.answered === 1,
     hasAttachments: r.has_att === 1, tab: r.tab === 'other' ? 'other' : 'relevant', savedToDrive: r.saved_count > 0,
-    ai: r.ai_summary != null ? { summary: r.ai_summary } : null, ...extra,
+    ai: r.ai_summary != null ? { summary: r.ai_summary } : null,
+    // since 1.2.0: an invitation in this mail (the list shows „Einladung“)
+    invite: ['request', 'cancel', 'reply', 'counter'].includes(r.invite) ? r.invite : null, ...extra,
   };
 }
 

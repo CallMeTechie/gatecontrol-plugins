@@ -9,8 +9,11 @@
 //   portal    /api/v1/portal/plugins/gatecontrol-mail/api/…   (a signed-in portal viewer)      the same routes
 //   admin     admin/settings · admin/overview                   (administrators, admin.js)
 //
-// Hooks: start/stop (the sync engine), tick (every 15 s: syncing, the outbox, account pictures, AI sorting, filing, quota
-// and retention), render (the portal tab, the admin pages), appVisible / portalVisible (who may use Mail), mediaAccess
+// Since 1.2.0 also calendars and contacts (C3: calendars.js, events.js, invites.js, cards.js; the sync pim.js beside the
+// mail's engine.js, reminders.js).
+//
+// Hooks: start/stop (the sync engine), tick (every 15 s: syncing — mail first, then a calendar / contact step per
+// account in what is left of the run —, the outbox, reminders, account pictures, AI sorting, filing, quota and retention), render (the portal tab, the admin pages), appVisible / portalVisible (who may use Mail), mediaAccess
 // (attachments, draft files and account pictures of the person), service (new_draft for Drive), settingsChanged.
 
 const store = require('./store');
@@ -27,6 +30,9 @@ const seats = require('./seats');
 const avatars = require('./avatars');
 const push = require('./push');
 const ui = require('./ui');
+const pim = require('./pim');
+const overlays = require('./overlays');
+const reminders = require('./reminders');
 const { t } = require('./text');
 const { STATUS, fail, isKnown } = require('./util');
 
@@ -58,7 +64,8 @@ async function clean(gc, now) {
   const cfg = await config.get(gc);
   try { await engine.retention(gc, cfg, now); } catch (e) { gc.log.warn('retention failed', (e && e.code) || 'error'); }
   for (const r of await store.all(gc, 'SELECT DISTINCT user_id FROM accounts')) {
-    try { await mailstore.evict(gc, r.user_id, config.quotaBytes(cfg), now); } catch (e) { gc.log.warn('quota failed', (e && e.code) || 'error'); }
+    // events and contacts count too (1.2.0) — only mail is cleared up
+    try { await mailstore.evict(gc, r.user_id, Math.max(0, config.quotaBytes(cfg) - await require('./pimstore').usage(gc, r.user_id)), now); } catch (e) { gc.log.warn('quota failed', (e && e.code) || 'error'); }
   }
   // device sign-ins nobody finished, drafts' uploads that never became a draft are GateControl's (24 h unclaimed)
   await store.run(gc, 'DELETE FROM ms_device WHERE expires_at < ?', [now - 86400000]);
@@ -71,6 +78,8 @@ module.exports = {
     messages.reset();
     drive.reset();
     ai.reset();
+    pim.reset();
+    overlays.reset();
     engine.start(gc);
   },
 
@@ -122,6 +131,9 @@ module.exports = {
     const skip = (off && off.users) || new Set();
     try { await compose.due(gc, now, skip); } catch (e) { gc.log.warn('outbox failed', (e && e.code) || 'error'); }
     try { await engine.tick(gc, now, 70000, skip); } catch (e) { gc.log.warn('sync run failed', (e && e.code) || 'error'); }
+    // calendars and contacts: after the mail, in what is left of the run (1.2.0)
+    try { await pim.tick(gc, Date.now(), now, 70000, skip); } catch (e) { gc.log.warn('calendar sync failed', (e && e.code) || 'error'); }
+    try { await reminders.tick(gc, Date.now(), skip); } catch (e) { gc.log.warn('reminders failed', (e && e.code) || 'error'); }
     try { for (const a of await avatars.tick(gc, Date.now(), skip)) await push.changed(gc, a.user_id, a.id, null); } catch (e) { gc.log.warn('pictures failed', (e && e.code) || 'error'); }
     try { await compose.due(gc, Date.now(), skip); } catch { /* next run */ }
     try { await ai.tick(gc); } catch (e) { gc.log.warn('ai sorting failed', (e && e.code) || 'error'); }

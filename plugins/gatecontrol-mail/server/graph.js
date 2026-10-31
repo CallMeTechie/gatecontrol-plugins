@@ -40,6 +40,15 @@ function headerOf(x) {
   };
 }
 
+/** A Graph message of an event type (@odata.type) → its invite kind, else null. */
+function eventKind(x) {
+  const t = String((x && x['@odata.type']) || '');
+  if (!/eventMessage/i.test(t)) return null;
+  if (/Response/i.test(t)) return 'reply';
+  if (/Request/i.test(t)) return 'request';
+  return /cancel/i.test(String(x.subject || '')) ? 'cancel' : 'request';
+}
+
 async function get(gc, a, path, extra) {
   const r = await ms.graph(gc, a, 'GET', path, undefined, extra);
   if (r.status === 404) return null;
@@ -130,6 +139,9 @@ async function syncFolder(gc, a, f, o) {
         continue;
       }
       const res = await mailstore.upsert(gc, a, f, headerOf(x), { arrival: o.arrival && !first, now });
+      // an invitation (1.2.0): the event follows with the body (invites.fromGraph)
+      const ev = eventKind(x);
+      if (ev && res.created) await store.run(gc, 'UPDATE messages SET invite = ? WHERE id = ?', [ev, res.id]);
       if (res.created) out.created.push(res.id);
       if (res.changed) out.changed = true;
     }
@@ -375,4 +387,4 @@ async function me(gc, a) {
   return { email: String((x && (x.mail || x.userPrincipalName)) || '').toLowerCase(), name: (x && x.displayName) || '' };
 }
 
-module.exports = { syncFolders, syncFolder, latest, older, message, download, mediaFetch, photo, patch, move, destroy, search, send, me, headerOf, canAttach, ownReply, WELL_KNOWN, SMALL_MAX, PIECE };
+module.exports = { eventKind, syncFolders, syncFolder, latest, older, message, download, mediaFetch, photo, patch, move, destroy, search, send, me, headerOf, canAttach, ownReply, WELL_KNOWN, SMALL_MAX, PIECE };

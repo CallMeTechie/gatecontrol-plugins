@@ -8,6 +8,8 @@
 //   PUT admin/seats/<userId> { kind: 'family' | 'business' | null } → { seat, seats } — a person's place in the licence
 //                       (null: switched off) — since 1.1.0, like Drive (seats.js); GET admin/settings carries `seats` too
 //   POST admin/license/refresh → { refreshed, seats } — fetch the licence now (after "Personen hinzubuchen")
+// Since 1.2.0 also the numbers of calendars and contacts (calendars, events, contacts and their bytes, in all and per
+// person) and the settings `calendar` / `contacts` (config.js); never an event or a contact of anyone.
 // Administrators see numbers only — never mail, subjects or addresses of other people.
 
 const store = require('./store');
@@ -15,19 +17,33 @@ const config = require('./config');
 const mailstore = require('./mailstore');
 const ai = require('./ai');
 const seats = require('./seats');
+const pimstore = require('./pimstore');
 const { fail, posInt } = require('./util');
 
+/** Numbers of the calendars and contacts of a person (or of everybody: userId null). */
+async function pimCounts(gc, userId) {
+  const w = userId == null ? '' : ' WHERE user_id = ?';
+  const args = userId == null ? [] : [userId];
+  const c = await store.one(gc, `SELECT COUNT(*) AS n FROM calendars${w}`, args);
+  const e = await store.one(gc, `SELECT COUNT(*) AS n FROM events${w}`, args);
+  const k = await store.one(gc, `SELECT COUNT(*) AS n FROM cards${w}`, args);
+  return { calendars: c.n, events: e.n, contacts: k.n };
+}
+
 async function usage(gc, cfg) {
-  const rows = await store.all(gc, 'SELECT user_id, COUNT(*) AS n FROM accounts GROUP BY user_id');
+  const rows = await store.all(gc, `SELECT u.user_id, (SELECT COUNT(*) FROM accounts a WHERE a.user_id = u.user_id) AS n FROM
+    (SELECT user_id FROM accounts UNION SELECT user_id FROM calendars UNION SELECT user_id FROM cards) u`);
   let users = [];
   try { users = await gc.users.list(); } catch { users = []; }
   const names = new Map(users.map((u) => [u.id, u.name]));
   const people = [];
   let bytes = 0;
   for (const r of rows) {
-    const b = await mailstore.usage(gc, r.user_id);
+    const mail = await mailstore.usage(gc, r.user_id);
+    const pim = await pimstore.usage(gc, r.user_id);
+    const b = mail + pim;
     bytes += b;
-    people.push({ userId: r.user_id, name: names.get(r.user_id) || String(r.user_id), bytes: b, accounts: r.n });
+    people.push({ userId: r.user_id, name: names.get(r.user_id) || String(r.user_id), bytes: b, accounts: r.n, pimBytes: pim, ...(await pimCounts(gc, r.user_id)) });
   }
   people.sort((x, y) => y.bytes - x.bytes);
   return { bytes, quotaBytes: config.quotaBytes(cfg), people };
@@ -38,7 +54,9 @@ async function settingsView(gc, cfg) {
   const clientId = config.msClientId(cfg);
   return {
     settings: cfg, usage: await usage(gc, cfg),
-    microsoft: { clientId, defaultClientId: config.DEFAULT_MS_CLIENT_ID, consentUrl: config.adminConsentUrl(clientId), accounts: ms.n, lastSignIn: ms.last || null },
+    microsoft: { clientId, defaultClientId: config.DEFAULT_MS_CLIENT_ID, consentUrl: config.adminConsentUrl(clientId), accounts: ms.n, lastSignIn: ms.last || null,
+      // since 1.2.0: what a sign-in asks for, and what the app registration needs besides the mail (the note of the page)
+      scopes: config.msScopes(cfg), registrationNeeds: [config.MS_CALENDAR_SCOPE, config.MS_CONTACTS_SCOPE] },
     ai: { ready: await ai.ready(gc) }, version: gc.plugin.version,
     // since 1.1.0: the licence and its people (seats.js)
     seats: await seats.summary(gc, cfg),
@@ -53,7 +71,11 @@ async function overview(gc) {
   const cfg = await config.get(gc);
   const u = await usage(gc, cfg);
   const s = await seats.summary(gc, cfg);
+  const pc = await pimCounts(gc, null);
+  const pb = u.people.reduce((x, p) => x + (p.pimBytes || 0), 0);
   return { people: people.n, accounts: Object.values(byState).reduce((x, n) => x + n, 0), byState, bytes: u.bytes,
+    // since 1.2.0: calendars and contacts in numbers
+    pim: { ...pc, bytes: pb },
     seats: { licence: s.licence, limits: s.limits, counts: s.counts, exceeded: s.exceeded } };
 }
 

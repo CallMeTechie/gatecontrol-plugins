@@ -4,12 +4,20 @@ Every mail account of a person in one place: GMX, WEB.DE, T-Online, Gmail (app p
 (Microsoft sign-in) or any IMAP account. The server keeps a copy (headers, flags, bodies within a quota), so the apps
 and the portal show one posteingang of all accounts ("Alle Posteingänge") with **Relevant** and **Sonstige**, push for new
 mail, pictures only on request (tracking pixels removed), attachments into Drive (with a suggestion, or on their own) and
-from Drive, and AI ("Kurz gesagt", "Zu tun", reply suggestions) through GateControl's AI provider.
+from Drive, and AI ("Kurz gesagt", "Zu tun", reply suggestions) through GateControl's AI provider. Since 1.2.0 also
+**calendars and contacts**: own GateControl calendars, the calendars of the accounts (Microsoft 365 / outlook.com via
+Graph, GMX / WEB.DE / an own server via CalDAV both ways, Gmail read only via its secret iCal address), Familie, Alltag
+and the contacts' birthdays shown alongside, invitations (a card in the mail, answers, own invitations), reminders as
+push; an own address book with the accounts' contacts (Graph, CardDAV; Gmail: vCard import), groups, duplicates,
+„Als Kontakt speichern“, the sender view and suggestions while writing.
 
 *Deutsch:* Alle E-Mail-Konten an einem Ort – ein Posteingang mit Relevant und Sonstige, Push, Schutz vor Zählpixeln,
-Anhänge in Drive und KI. Details im CHANGELOG.
+Anhänge in Drive und KI; dazu Kalender und Kontakte. Details im CHANGELOG.
 
-Needs **GateControl ≥ 1.216.0**: `gc.mail` (IMAP sessions with IDLE, SMTP, MIME, the HTML sanitizer, autoconfig —
+Needs **GateControl ≥ 1.219.0** (since 1.2.0): `gc.mail.dav.request` (`permissions.mail.dav` — CalDAV/CardDAV to the
+servers people enter, through the host's network checks), the calendar parts of a mail and `icalEvent` when sending
+(iMIP), `autoconfig` with `caldav` / `carddav`, up to 1000 pushes an hour (`permissions.notify.perHour: 600` — the
+reminders of all people go through this plugin). Before: **GateControl ≥ 1.216.0**: `gc.mail` (IMAP sessions with IDLE, SMTP, MIME, the HTML sanitizer, autoconfig —
 `permissions.mail`, at most 100 IMAP sessions at once), `gc.http.fetchImage` (`permissions.network.images`),
 `maxPerHour` of Drive's services (Drive ≥ 1.15.0). Microsoft accounts go through Microsoft Graph
 (`graph.microsoft.com`, `login.microsoftonline.com`, the upload sessions of large attachments on `outlook.office.com` /
@@ -52,6 +60,38 @@ checked before saving (`gc.mail.smtp.verify`). On 1.216.0 both stay as in 1.0.0.
   in pieces of 2.8 MB, then `send` — a draft that does not go out is removed again). A busy or
   unreachable server: 3 tries a minute apart, then `failed` and the push `mail_failed`.
 
+* **Calendars** (since 1.2.0; `server/pim.js` with `pimgraph.js`, `pimdav.js`): a line of its own per account beside
+  the mail line, and mail goes first — in every background run after the posteingänge at most one calendar or contact
+  step per account, within the rest of the run's budget, calendars before contacts. Graph: `/me/calendars` every 6 h and
+  when the calendars are opened (at most every 5 min); the default calendar by `/me/calendarView/delta` in the window
+  −13 … +24 months (UTC, 100 a page, a page per step; every 5 min, 1 min while the person has the calendar open), the
+  others by `calendarView` in the same window (15 / 5 min, compared by `changeKey`). Background steps only while the
+  person's own Graph work uses fewer than 2 of the 4 requests per mailbox; a 429 / 503 pauses mail and calendar of the
+  account. CalDAV: discovery (`current-user-principal` → `calendar-home-set` → the VEVENT collections, `OPTIONS` for
+  `calendar-auto-schedule`), then per collection `PROPFIND` Depth 0 (`getctag`, `sync-token`), `sync-collection` (an
+  invalid token: a full comparison), else the ETags by `calendar-query` in the window; changed objects by `multiget` in
+  blocks of 50 (15 / 2 min). iCal subscriptions every 30 min with `If-None-Match` / `If-Modified-Since`, after a failure
+  15 min … 6 h. Contacts: Graph delta per folder (photos ≤ 256 KB when the `changeKey` moved), CardDAV like calendars
+  (60 / 5 min). More than 50 % and more than 200 objects of a collection gone at once: nothing is deleted, the collection
+  shows `unreachable` / `mass_delete` until a second sync confirms it.
+* **Calendar objects** (`server/ics.js`, ical.js 2.2.1 vendored): own events are stored as iCalendar with a VTIMEZONE of
+  timezones-ical-library 2.3.2 (vendored), CalDAV objects as the provider has them; a change touches only its
+  properties (unknown ones stay — two-way sync). Occurrences of the window are stored for ranges and reminders
+  (RRULE / RDATE / EXDATE / RECURRENCE-ID; wall clocks converted with Intl, TZIDs resolved like Alltag incl. Windows
+  names); a range outside the window is expanded when asked. A 412 of the provider is merged field by field against the
+  state before the own change: the change goes once more when the provider touched other fields, else 409 `conflict`.
+  Contacts (`server/vcard.js`) the same way as vCard 3.0 / 4.0 (the server's version), the photo apart.
+* **Invitations** (`server/invites.js`): the calendar parts of a received mail (IMAP) or Microsoft's event messages; one
+  row per person + UID + occurrence, a newer SEQUENCE / DTSTAMP outdates the older one; only invitations naming an
+  address of the person. Answers: Graph's event API, a CalDAV server with auto-schedule by PUT, else iMIP through the
+  account's SMTP (`icalEvent`) or Graph `sendMail` with the `.ics`. Own events with attendees (GateControl calendars,
+  CalDAV without auto-schedule): `SEQUENCE` + 1 and a REQUEST when time, place, rule or title change, CANCEL to removed
+  attendees and on delete. GateControl people with a Mail place get invitations of GateControl calendars internally
+  (no mail, push `calendar_invite`) and answer the same way (`calendar.internalInvites`).
+* **Reminders** (`server/reminders.js`): every run (15 s) the occurrences due (start − minutes within the last 10 min;
+  all-day ones against midnight in the person's zone) of calendars with `notify`, for people with reminders on, not
+  cancelled or declined — each exactly once (`reminders_sent`), several of a person in one minute as one push.
+
 ## API (apps and portal)
 
 `/api/v1/client/plugins/gatecontrol-mail/api/<path>` (device token) and `/api/v1/portal/plugins/gatecontrol-mail/api/<path>`
@@ -62,7 +102,10 @@ with `seat: null`, everything else `403 no_seat`; without a valid licence `403 n
 images_blocked`, 404 `not_found`, 409 `auth_failed { hint, server? } | imap_disabled { hint } | unreachable { server? } |
 tls { server? } | exists | ai_off | ai_unavailable | seat_limit | seat_kind
 | familie_unavailable | drive_unavailable | no_folder | not_waiting | microsoft_off | attachments_unsupported |
-images_off | links_disabled | busy { retryAfter?, reason? }`, 413 `too_large { max }`, 429 `rate_limited`. `busy`: the provider
+images_off | links_disabled | busy { retryAfter?, reason? }`, 413 `too_large { max }`, 429 `rate_limited`. Since 1.2.0:
+403 `feature_off { feature: 'calendar' | 'contacts' }` (switched off by the administrator), 400 `invalid_ics | invalid_vcard`,
+409 `read_only | conflict { current } | consent_required { accountId, missing } | dav_unavailable { reason: 'not_found' |
+'no_calendar' | 'redirect' | 'host_old' } | not_supported { what } | send_failed { reason } | invitation_outdated`. `busy`: the provider
 throttles, or (`reason: 'loading'`) an attachment is still on its way — ask again after `retryAfter` s (since 1.1.2 409,
 before 503).
 
@@ -70,7 +113,7 @@ before 503).
 
 | | |
 |---|---|
-| `GET me` | `{ features, limits: { accountsMax, quotaBytes, usedBytes, retentionMonths }, microsoft: { clientId \| null, authority, scopes }, accounts: [Account], unread: { all, byAccount }, settings: { threads, swipeLeft, swipeRight }, seat: 'family' \| 'business' \| null, licence: { valid, tier } }` — features `mail`, `ai`, `microsoft`, `drive`, `familyCalendar`, `images`; `seat` / `licence` since 1.1.0 (answered also without a place) |
+| `GET me` | `{ features, limits: { accountsMax, quotaBytes, usedBytes, retentionMonths }, microsoft: { clientId \| null, authority, scopes, adminConsentUrl }, accounts: [Account], unread: { all, byAccount }, settings: { threads, swipeLeft, swipeRight }, seat: 'family' \| 'business' \| null, licence: { valid, tier } }` — features `mail`, `ai`, `microsoft`, `drive`, `familyCalendar`, `images`, since 1.2.0 `calendar`, `contacts` (the administrator), `dav` (the host has `gc.mail.dav`), `familyOverlay`, `alltagOverlay`; `seat` / `licence` since 1.1.0 (answered also without a place). `microsoft.scopes`: mail + `Calendars.ReadWrite` / `Contacts.ReadWrite` while on; `usedBytes` counts events and contacts too |
 | `PUT settings` | `{ threads?, swipeLeft?, swipeRight? }` (`archive \| delete \| read \| none`) → `{ settings }` |
 | `GET providers` | `[{ id, label, auth: 'password' \| 'app_password' \| 'microsoft' \| 'imap', hint: { de, en } \| null, help }]` |
 | `POST accounts/discover` | `{ email }` → `{ provider, auth, imap, smtp, hint }` (known domains, else `gc.mail.autoconfig`) |
@@ -78,7 +121,7 @@ before 503).
 | `POST accounts/microsoft` | `{ code, codeVerifier, redirectUri, name?, color?, kind? }` → `{ account }` — the server redeems the code (public client, PKCE, no secret). `redirectUri`: `msauth://com.gatecontrol.client/<…>` or `http://localhost[:port][/path]` |
 | `POST accounts/microsoft/device` | `{ kind? }` → `{ deviceId, userCode, verificationUri, expiresIn, interval }` |
 | `GET accounts/microsoft/device/<deviceId>` | `{ status: 'pending' \| 'done' \| 'expired' \| 'denied', account? }` — asks Microsoft at most every `interval` s |
-| `PATCH accounts/<id>` | `{ name?, color?, kind?, push?, ai?, attachments?, signature?, password? }` → `{ account }` (a new password is tried first: IMAP, and SMTP on ≥ 1.217.0) |
+| `PATCH accounts/<id>` | `{ name?, color?, kind?, push?, ai?, attachments?, signature?, password? }` → `{ account }` (a new password is tried first: IMAP, and SMTP on ≥ 1.217.0). Since 1.2.0 also `{ calendarSync?, contactsSync?, caldavUrl?, carddavUrl?, davUsername?, davPassword?, icsUrl? }` (`https:`, `webcal:` → `https:`; `icsUrl` for Gmail / IMAP accounts, a secret; `davPassword` only when it differs from the mail password) — tried at once: 409 `auth_failed \| unreachable \| dav_unavailable { reason }`; sync off removes that side here |
 | `POST accounts/<id>/microsoft` | `{ code, codeVerifier, redirectUri }` → `{ account }` (signed in anew; another address → `invalid`) |
 | `DELETE accounts/<id>` | `{ ok }` — the server's copy goes, the mail at the provider stays |
 | `GET accounts/<id>/avatar` | `{ mediaId, mime, size, url }` — the account's picture (`url`: signed for the portal's frame, 24 h); none: 404 `not_found` |
@@ -94,6 +137,13 @@ at most once a day (an unchanged picture is not loaded again, a failure again wi
 sends the live event `mail` `{ kind: 'changed', accountId, folderId: null }`. The apps load it as the plugin's media
 (`/api/v1/client/plugins/gatecontrol-mail/media/<mediaId>`, only the account's person); without a picture they show the
 provider's mark (`provider`) with `email` below the name.
+
+Since 1.2.0 `Account` also has `calendar` and `contacts` = `{ sync, state: 'ok'|'syncing'|'auth_failed'|'unreachable'|
+'consent_required'|'none'|'off', readOnly, server }` (`none`: no calendar / address book for this account, `off`: the
+person or the administrator switched it off; `server`: the host only, never a secret address) and `missingScopes`
+(Microsoft: `['Calendars.ReadWrite', 'Contacts.ReadWrite']` not granted yet, else `[]`). A Microsoft sign-in keeps the
+scopes Microsoft granted (`accounts.ms_scopes`) and tokens are only renewed with those — a missing scope never stops the
+mail; „Neu anmelden“ (`POST accounts/<id>/microsoft`) adds them.
 
 ### Folders, lists, search, reading
 
@@ -181,6 +231,59 @@ go to the AI.
 or invitations (`.ics`). With `suggest` the suggestion is ready when the mail is opened. Every attachment is handed over
 to Drive (`gc.media.handOver`) before Drive sees it.
 
+### Calendars (since 1.2.0)
+
+| | |
+|---|---|
+| `GET calendars` | `{ calendars: [Calendar], overlays: [Overlay], prefs: CalPrefs, consent: [{ accountId, missing }] }` — the first call makes „Privat“ (default) and „Firma“ (not with `calendar.business: 'exchange'` and a Microsoft 365 account) and „Meine Kontakte“ |
+| `POST calendars` | `{ name, color? }` → `{ calendar }` (GateControl calendar, ≤ 20, else 403 `limit`) |
+| `PATCH calendars/<id>` | `{ name?, color?, visible?, notify? }` → `{ calendar }` (an account's calendar: name / colour only in GateControl) |
+| `DELETE calendars/<id>` | `{ ok }` — GateControl calendars but the last one, subscriptions; their events go |
+| `PATCH overlays/<id>` | `{ visible?, color? }` → `{ overlay }` |
+| `POST calendars/subscribe` | `{ url, name?, color?, accountId? }` → `{ calendar }` — an iCal subscription (read only) |
+| `PUT calendar/settings` | `{ defaultCalendarId?, view?, weekStart?, workWeek?, timeZone?, reminders?, defaultReminder?, allDayReminder? }` → `{ prefs }` |
+| `GET events?from=&to=&calendars=` | `{ items: [Occurrence], overlays: [OverlayItem], pending: [calendarId] }` — ≤ 62 days (else 400 `invalid { field: 'to' }`), without `calendars` the visible ones |
+| `GET events/<id>?occurrence=` | `Event` |
+| `POST events` | `{ calendarId, title, allDay, start?, end?, startDate?, endDate?, timeZone?, location?, description?, online?: { create: 'teams' } \| { url }, reminders?, recurrence?: { freq, interval, byDay, byMonthDay, bySetPos, until, count } \| { rrule }, attendees?, busy?, private?, sendInvites?, fromAccountId? }` → `{ event, sent: { mail, internal } }` |
+| `PATCH events/<id>` | the same fields + `{ scope: 'occurrence' \| 'series', occurrence?, etag?, sendInvites? }` → `{ event, sent }` (an old `etag` → 409 `conflict { current }`) |
+| `DELETE events/<id>?scope=&occurrence=&notify=1&comment=` | `{ ok, sent }` |
+| `POST events/<id>/respond` | `{ response: 'accepted' \| 'tentative' \| 'declined', comment?, occurrence?, proposeStart?, proposeEnd?, send? }` → `{ event }` |
+| `GET invitations?state=open` | `{ items: [Invitation] }` |
+| `GET invitations/<id>` | `Invitation` |
+| `POST invitations/<id>/respond` | `{ response, comment?, calendarId?, proposeStart?, proposeEnd? }` → `{ invitation, event }` (sent first; failing → 409 `send_failed`, nothing stored) |
+| `POST invitations/<id>/apply` | `{ invitation, event }` — COUNTER: the proposal taken over (a REQUEST to all), CANCEL: out of the calendar |
+| `POST invitations/<id>/dismiss` | `{ decline? }` → `{ ok }` (a COUNTER declined: DECLINECOUNTER) |
+| `POST ai/<id>/todo/<i>` | `{ action: 'calendar', calendarId? }` → `{ where, eventId }` (into the own calendar; `family_calendar` stays) |
+
+The shapes (`Calendar`, `Overlay`, `CalPrefs`, `Occurrence`, `OverlayItem`, `Event`, `Recurrence`, `Invitation`) are those
+of the contract of Phase 2: times in ms (UTC), zones as IANA names, all-day with `startDate` / `endDate` (`YYYY-MM-DD`,
+`endDate` inclusive), an occurrence's key `occurrence` = the ms of its original start (all-day: its date), `key =
+"<eventId>:<occurrence>"` (single events `"<eventId>"`). `Summary.invite` (`'request'|'cancel'|'reply'|'counter'|null`)
+and `Message.invite` (`Invitation | null`) mark invitations in mail. Overlays: `familie` (Familie ≥ 1.16.0
+`calendar_range`), `alltag:<subId>` (Alltag ≥ 1.4.0 `calendar_list` / `calendar_query`), `birthdays` (the person's
+contacts) — read per person and month, kept 10 minutes.
+
+### Contacts (since 1.2.0)
+
+| | |
+|---|---|
+| `GET addressbooks` | `{ items: [Addressbook], groups: [Group], prefs: CardPrefs }` |
+| `PATCH addressbooks/<id>` | `{ visible?, name? }` → `{ addressbook }` |
+| `PUT cards/settings` | `{ sort?, show?, defaultAddressbookId?, birthdays? }` → `{ prefs }` |
+| `GET cards?q=&book=&group=&cursor=&limit=&since=` | `{ items: [CardSummary], next, version, deleted? }` — linked cards once (`linked`); `q` in names, company, addresses, numbers (digits); `since` (a `version`): changes and `deleted` ids |
+| `GET cards/<id>` · `POST cards` · `PATCH cards/<id>` (`etag`; 409 `conflict { current }` / `read_only`) · `DELETE cards/<id>` | `Card` / `{ card }` / `{ ok }` |
+| `GET/PUT/DELETE cards/<id>/photo` | `{ mime, size, data }` / `{ mime: 'image/jpeg' \| 'image/png', data }` (≤ 256 KB) → `{ card }` |
+| `GET cards/lookup?email=` | `{ card, person: { userId, name } \| null, recent: { name, sent, received, lastAt } \| null }` |
+| `GET cards/<id>/activity` | `{ mails: [Summary] (≤ 5), events: [Occurrence] (≤ 5) }` |
+| `GET cards/draft?messageId=&email=` | `{ draft, existing }` — „Als Kontakt speichern“: name and address of the mail, phone, company and position from the signature (rules; with the AI when allowed); nothing is stored |
+| `GET cards/duplicates` | `{ items: [{ key, reason: 'email' \| 'phone' \| 'name', cards }] }` |
+| `POST cards/merge` | `{ ids (2…10), primaryId, pick? }` → `{ card }` — one address book: merged (the others deleted at the provider); several: linked |
+| `POST cards/duplicates/ignore` | `{ ids }` → `{ ok }` |
+| `POST cards/import` | `{ addressbookId?, vcf (≤ 5 MB) }` → `{ imported, updated, skipped }` (e.g. Google Kontakte › Exportieren › vCard) |
+| `GET cards/export?book=&group=` | `{ name: 'kontakte.vcf', mime: 'text/vcard', data }` (vCard 4.0) |
+| `POST groups` · `PATCH groups/<id>` · `DELETE groups/<id>` · `GET groups/<id>` · `POST groups/<id>/members` | GateControl's own distribution lists (≤ 200, ≤ 500 members), across sources: `{ add: [{ contactId } \| { email, name? }], remove: [memberId] }` |
+| `GET contacts?q=` | as before `{ items: [{ name, email, source }] }` (≤ 10), since 1.2.0 own contacts first (`source: 'contact'`, `contactId`, `photo`), then groups (`source: 'group'`, `email: null`, `groupId`, `members` ≤ 50), GateControl people, recent addresses |
+
 ### Push and live events
 
 * Topic `mail`: title = sender, text = subject, data `{ mail: { messageId, accountId } }` — per the account's `push`
@@ -189,6 +292,13 @@ to Drive (`gc.media.handOver`) before Drive sees it.
 * Live event `mail` `{ kind: 'changed', accountId, folderId }` — load the lists again. Since 1.1.2 also with `messageId`
   (the body the answer did not wait for is there — load the open mail again; with `attachmentId`: that attachment) or
   `threadId`; a long sync sends it while it goes on (at most every 5 s per folder).
+* Since 1.2.0 topic `calendar_reminder`: title = the event, text „14:00–15:00 · Raum 1“ / „Morgen, ganztägig“, data
+  `{ calendar: { eventId, occurrence } }` (`facts` with the place); several in one minute: „3 Termine um 9:00“. Topic
+  `calendar_invite` (internal invitations): title = the organizer, text „Einladung: <Titel>, <Zeit>“, data
+  `{ calendar: { invitationId } }`.
+* Live event `calendar` `{ kind: 'changed', calendarId, accountId, from?, to? }` | `{ kind: 'calendars' }` |
+  `{ kind: 'invitation', invitationId, messageId }` and `contacts` `{ kind: 'changed', addressbookId, contactIds? }` |
+  `{ kind: 'addressbooks' }` | `{ kind: 'groups' }`; a mail with a new invitation card: `mail` with its `messageId`.
 
 ### Service for other plugins
 
@@ -220,14 +330,24 @@ the account on callmetechie.de, "Lizenz jetzt abrufen", every person with their 
 Admin API `GET|PUT admin/settings` (with `seats`), `GET admin/overview` (with `seats`), `PUT admin/seats/<userId>`
 `{ kind: 'family' | 'business' | null }` → `{ seat, seats }` (409 `seat_kind` | `seat_limit`), `POST admin/license/refresh`
 → `{ refreshed, seats }`. Administrators see numbers only — never anybody's mail.
+Since 1.2.0 the settings `calendar: { enabled, accounts, business: 'gatecontrol' | 'exchange', defaultReminder (0 | 5 |
+10 | 15 | 30 | 60 | 1440 | null), internalInvites, overlays: { familie, alltag, birthdays } }` and `contacts: { enabled,
+accounts, ai }`; `usage.people[]` with `calendars`, `events`, `contacts`, `pimBytes`, `GET admin/overview` with `pim:
+{ calendars, events, contacts, bytes }` — numbers only, never an event or a contact. `microsoft.registrationNeeds`: the
+app registration needs `Calendars.ReadWrite` and `Contacts.ReadWrite` besides the mail.
 
 **Microsoft app registration**: `DEFAULT_MS_CLIENT_ID` (`server/config.js`) is `null` until the publisher's registration
 exists — until then `features.microsoft` is off unless an administrator enters an own client id (Microsoft Entra:
 public client; redirects `msauth://com.gatecontrol.client/<signature hash>` for Android, `http://localhost` for Windows,
 "Allow public client flows" for the device code; delegated permissions `User.Read`, `Mail.ReadWrite`, `Mail.Send`,
-`offline_access`).
+`offline_access`; since 1.2.0 also `Calendars.ReadWrite` and `Contacts.ReadWrite` — companies that block user consent
+open the admin consent link again).
 
 ## Development
 
-`node tools/test.js gatecontrol-mail` — the mock host as GateControl 1.216.0 (and 1.217.0: `smtp.verify`, `bodyMedia`) with a fake IMAP / SMTP world, a fake
-Microsoft (token endpoint and Graph), fake Drive and Familie and the mock host's `gc.ai` (`test/helpers.js`). No network.
+`node tools/test.js gatecontrol-mail` — the mock host as GateControl 1.216.0 (and 1.217.0: `smtp.verify`, `bodyMedia`; 1.219.0: `gc.mail.dav`, iMIP) with a fake IMAP / SMTP world, a fake
+Microsoft (token endpoint and Graph), fake Drive and Familie and the mock host's `gc.ai` (`test/helpers.js`); a fake
+CalDAV/CardDAV server, Graph's calendars and contacts, Familie's and Alltag's calendars (`test/pim-helpers.js`). No network.
+
+Vendored, unchanged (`server/vendor/`): ical.js 2.2.1 (`dist/ical.es5.cjs`, MPL-2.0, `LICENSE-ical.js.txt`) and
+timezones-ical-library 2.3.2 (`dist/cjs/index.js`, Apache-2.0, `LICENSE-timezones-ical-library.txt`).

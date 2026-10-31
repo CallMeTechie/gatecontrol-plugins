@@ -450,6 +450,15 @@ async function storeParsed(gc, a, m, p, s, x, person) {
   }
   await mailstore.setBody(gc, m.id, { html, text: p.text, images, trackers }, now);
   await mailstore.setAttachments(gc, m.id, p.attachments || [], now);
+  // invitations (1.2.0): the calendar parts of gc.mail ≥ 1.219.0, Microsoft's event messages — never fail the mail
+  try {
+    const invites = require('./invites');
+    if (Array.isArray(p.calendar) && p.calendar.length) {
+      if (await invites.fromParts(gc, a, m, p.calendar)) await push.changed(gc, m.user_id, a.id, m.folder_id, { messageId: m.id });
+    } else if (isGraph(a) && m.invite) {
+      if (await invites.fromGraph(gc, a, m)) await push.changed(gc, m.user_id, a.id, m.folder_id, { messageId: m.id });
+    }
+  } catch (e) { gc.log.warn('invitation failed', (e && e.code) || 'error'); }
   // a Microsoft message: List-Id & co. only come with the body — the rules may decide now
   if (p.headers && m.tab_by !== 'user' && m.tab_by !== 'learned') {
     const h = p.headers;

@@ -9,10 +9,14 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { withMail, settle, ANNA, MARC, BOB, ADMIN, DIR } = require('./helpers');
 
-test('plugin.json: GateControl 1.216.0, mail, images, Drive and Familie services, the app tab', () => {
+test('plugin.json: GateControl 1.219.0, mail with dav, images, Drive, Familie and Alltag services, the app tab', () => {
   const m = JSON.parse(fs.readFileSync(path.join(DIR, 'plugin.json'), 'utf8'));
-  assert.equal(m.version, '1.1.2');
-  assert.equal(m.gatecontrol, '>=1.216.0');
+  assert.equal(m.version, '1.2.0');
+  // 1.2.0: gc.mail.dav (CalDAV/CardDAV), iMIP and up to 1000 pushes an hour need GateControl 1.219.0
+  assert.equal(m.gatecontrol, '>=1.219.0');
+  assert.ok(m.permissions.mail.dav.purpose.de && m.permissions.mail.dav.purpose.en);
+  assert.deepEqual(m.permissions.notify, { perHour: 600 });
+  for (const s of ['gatecontrol-familie:calendar_range', 'gatecontrol-alltag:calendar_list', 'gatecontrol-alltag:calendar_query']) assert.ok(m.permissions.services.includes(s), s);
   assert.equal(m.permissions.mail.maxConnections, 100);
   assert.ok(m.permissions.mail.purpose.de && m.permissions.mail.purpose.en);
   assert.equal(m.permissions.network.images, true);
@@ -21,7 +25,8 @@ test('plugin.json: GateControl 1.216.0, mail, images, Drive and Familie services
   for (const s of ['list_areas', 'save_file', 'suggest_folder', 'give_file', 'share_link']) assert.ok(m.permissions.services.includes(`gatecontrol-drive:${s}`), s);
   assert.ok(m.permissions.services.includes('gatecontrol-familie:calendar_add'));
   assert.equal(m.storage.maxMB, 4096);
-  assert.deepEqual(m.notifyTopics.map((t) => t.id), ['mail', 'mail_failed']);
+  assert.deepEqual(m.notifyTopics.map((t) => t.id), ['mail', 'mail_failed', 'calendar_reminder', 'calendar_invite']);
+  assert.ok(m.notifyTopics.every((t) => t.default === true));
   assert.ok(m.ui.app && m.ui.portal);
 });
 
@@ -36,7 +41,11 @@ test('GET me without accounts; who may use Mail (the administrator), not for a v
   assert.ok(!me.json.features.includes('microsoft'), 'no client id yet');
   assert.ok(!me.json.features.includes('ai'), 'no AI in GateControl');
   assert.deepEqual(me.json.limits, { accountsMax: 5, quotaBytes: 5 * 1024 ** 3, usedBytes: 0, retentionMonths: 12 });
-  assert.deepEqual(me.json.microsoft, { clientId: null, authority: 'https://login.microsoftonline.com/common', scopes: ['openid', 'profile', 'email', 'offline_access', 'User.Read', 'Mail.ReadWrite', 'Mail.Send'] });
+  // 1.2.0: the calendar and contact scopes (the administrator has both on), the admin consent link (no client id: null)
+  assert.deepEqual(me.json.microsoft, { clientId: null, authority: 'https://login.microsoftonline.com/common',
+    scopes: ['openid', 'profile', 'email', 'offline_access', 'User.Read', 'Mail.ReadWrite', 'Mail.Send', 'Calendars.ReadWrite', 'Contacts.ReadWrite'], adminConsentUrl: null });
+  assert.ok(me.json.features.includes('calendar') && me.json.features.includes('contacts'));
+  assert.ok(!me.json.features.includes('dav'), 'GateControl 1.216.0 has no gc.mail.dav');
   assert.deepEqual(me.json.settings, { threads: true, swipeLeft: 'archive', swipeRight: 'read' });
   assert.deepEqual((await c.as(ANNA)('PUT', 'settings', { swipeLeft: 'delete', threads: false })).json.settings, { threads: false, swipeLeft: 'delete', swipeRight: 'read' });
   assert.equal((await c.as(ANNA)('PUT', 'settings', { swipeLeft: 'fly' })).json.error.code, 'invalid');
@@ -239,12 +248,16 @@ test('admin settings: checked values, usage per person (numbers only), Microsoft
   await c.tick();
   const r = (await c.admin('GET', 'admin/settings')).json;
   assert.deepEqual(r.settings, { allowed: { all: true, principals: [] }, accountsMax: 5, retentionMonths: 12, attachments: 'on_demand', quotaGB: 5,
-    ai: { bar: true, sort: true, autoFile: true, blockBusiness: false }, microsoft: { registration: 'default', customClientId: null } });
+    ai: { bar: true, sort: true, autoFile: true, blockBusiness: false }, microsoft: { registration: 'default', customClientId: null },
+    // 1.2.0: calendars and contacts (C9)
+    calendar: { enabled: true, accounts: true, business: 'gatecontrol', defaultReminder: 15, internalInvites: true, overlays: { familie: true, alltag: true, birthdays: true } },
+    contacts: { enabled: true, accounts: true, ai: true } });
   assert.equal(r.usage.people[0].name, 'Bob');
   assert.ok(r.usage.people[0].bytes > 0);
   assert.ok(!JSON.stringify(r).includes('Geheimes') && !JSON.stringify(r).includes('bob@gmx.de'), 'never mail or addresses of others');
   assert.deepEqual([r.microsoft.clientId, r.microsoft.consentUrl], [null, null]);
-  for (const bad of [{ accountsMax: 21 }, { retentionMonths: 5 }, { quotaGB: 0 }, { attachments: 'never' }, { ai: { bar: 'yes' } }, { microsoft: { customClientId: 'abc' } }]) {
+  for (const bad of [{ accountsMax: 21 }, { retentionMonths: 5 }, { quotaGB: 0 }, { attachments: 'never' }, { ai: { bar: 'yes' } }, { microsoft: { customClientId: 'abc' } },
+    { calendar: { business: 'outlook' } }, { calendar: { defaultReminder: 7 } }, { calendar: { overlays: { schule: true } } }, { contacts: { enabled: 'no' } }, { calendar: { foo: true } }]) {
     assert.equal((await c.admin('PUT', 'admin/settings', bad)).json.error.code, 'invalid', JSON.stringify(bad));
   }
   const id = '11111111-2222-3333-4444-555555555555';

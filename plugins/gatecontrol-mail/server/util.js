@@ -33,6 +33,17 @@ const STATUS = {
   too_large: 413,
   rate_limited: 429,
   busy: 409,
+  // calendars and contacts (1.2.0)
+  feature_off: 403,
+  read_only: 409,
+  conflict: 409,
+  consent_required: 409,
+  dav_unavailable: 409,
+  not_supported: 409,
+  send_failed: 409,
+  invitation_outdated: 409,
+  invalid_ics: 400,
+  invalid_vcard: 400,
   internal: 500,
 };
 

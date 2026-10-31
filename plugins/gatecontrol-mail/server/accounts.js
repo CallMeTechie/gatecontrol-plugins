@@ -15,6 +15,11 @@ const graph = require('./graph');
 const mailstore = require('./mailstore');
 const push = require('./push');
 const avatars = require('./avatars');
+const dav = require('./dav');
+const pim = require('./pim');
+const pimdav = require('./pimdav');
+const pimstore = require('./pimstore');
+const cardstore = require('./cardstore');
 const { fail, email, line, clip, COLOR_RE, PALETTE } = require('./util');
 
 const PUSH = ['off', 'relevant', 'all'];
@@ -127,6 +132,8 @@ async function add(gc, ctx, b) {
 /** The first sync in the background (the answer does not wait); Microsoft: the account's picture too (the lists follow). */
 function kick(gc, a) {
   engine.syncInbox(gc, a).catch(() => {});
+  // calendars and contacts with the next background run (1.2.0)
+  pim.soon(a.id);
   if (providers.isMicrosoft(a.provider)) {
     avatars.refresh(gc, a).then((changed) => (changed ? push.changed(gc, a.user_id, a.id, null) : null)).catch(() => {});
   }
@@ -140,20 +147,22 @@ async function fromMicrosoft(gc, ctx, info, b) {
   const provider = info.business ? 'm365' : 'outlook';
   const kind = kindArg(b.kind, info.business ? 'business' : 'personal');
   const have = addr ? await store.one(gc, 'SELECT * FROM accounts WHERE user_id = ? AND email = ?', [ctx.userId, addr]) : null;
+  // the scopes Microsoft granted (1.2.0): tokens are only ever renewed with these
+  const scopes = (info.scopes || config.msScopes(cfg)).join(' ');
   if (have) {
     await secrets.set(gc, have.id, { refreshToken: info.refreshToken });
     await engine.forget(have.id);
     ms.remember(have.id, info);
-    await store.run(gc, "UPDATE accounts SET state = 'syncing', error_code = NULL, error_at = NULL, ms_tenant = ? WHERE id = ?", [info.business ? info.tenant : null, have.id]);
+    await store.run(gc, "UPDATE accounts SET state = 'syncing', error_code = NULL, error_at = NULL, ms_tenant = ?, ms_scopes = ? WHERE id = ?", [info.business ? info.tenant : null, scopes, have.id]);
     const a = await store.one(gc, 'SELECT * FROM accounts WHERE id = ?', [have.id]);
     kick(gc, a);
     return a;
   }
   await limitCheck(gc, cfg, ctx.userId);
   const used = (await list(gc, ctx.userId)).map((x) => x.color);
-  const r = await store.run(gc, `INSERT INTO accounts (user_id, provider, email, name, color, kind, ms_tenant, state, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, 'syncing', ?)`,
+  const r = await store.run(gc, `INSERT INTO accounts (user_id, provider, email, name, color, kind, ms_tenant, ms_scopes, state, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'syncing', ?)`,
     [ctx.userId, provider, addr || 'unknown@outlook.com', nameArg(b.name) || clip(line(info.name), 80) || ctx.userName || '', colorArg(b.color, used), kind,
-      info.business ? info.tenant : null, Date.now()]);
+      info.business ? info.tenant : null, scopes, Date.now()]);
   const id = Number(r.lastInsertRowid);
   await secrets.set(gc, id, { refreshToken: info.refreshToken });
   ms.remember(id, info);
@@ -185,7 +194,8 @@ async function reMicrosoft(gc, ctx, id, b) {
   await secrets.set(gc, a.id, { refreshToken: info.refreshToken });
   await engine.forget(a.id);
   ms.remember(a.id, info);
-  await store.run(gc, "UPDATE accounts SET state = 'syncing', error_code = NULL, error_at = NULL WHERE id = ?", [a.id]);
+  // the scopes granted now (1.2.0: a sign-in anew for calendars and contacts)
+  await store.run(gc, "UPDATE accounts SET state = 'syncing', error_code = NULL, error_at = NULL, ms_scopes = ? WHERE id = ?", [(info.scopes || config.msScopes(cfg)).join(' '), a.id]);
   const now = await store.one(gc, 'SELECT * FROM accounts WHERE id = ?', [a.id]);
   kick(gc, now);
   return { account: view(now) };
@@ -259,7 +269,8 @@ async function patch(gc, ctx, id, b) {
     let s;
     try { s = await engine.probe(gc, { host: a.imap_host, port: a.imap_port, security: a.imap_security, auth: { user: a.username || a.email, pass: b.password }, timeoutMs: 30000 }); } catch (e) { throw loginFail(e, a.provider, ctx.lang); }
     if (a.smtp_host) await verifySmtp(gc, { host: a.smtp_host, port: a.smtp_port, security: a.smtp_security }, a.username || a.email, b.password, a.provider, ctx.lang, s);
-    await secrets.set(gc, a.id, { password: b.password });
+    const old = await secrets.get(gc, a.id);
+    await secrets.set(gc, a.id, { password: b.password, ...(old && old.davPassword ? { davPassword: old.davPassword } : {}) });
     await engine.forget(a.id);
     set('state', 'syncing'); set('error_code', null); set('error_at', null);
     if (sets.length) await store.run(gc, `UPDATE accounts SET ${sets.join(', ')} WHERE id = ?`, [...args, a.id]);
@@ -268,14 +279,91 @@ async function patch(gc, ctx, id, b) {
     kick(gc, now);
     return { account: view(now) };
   }
+  await davPatch(gc, ctx, a, b, set);
   if (sets.length) await store.run(gc, `UPDATE accounts SET ${sets.join(', ')} WHERE id = ?`, [...args, a.id]);
   return { account: view(await store.one(gc, 'SELECT * FROM accounts WHERE id = ?', [a.id])) };
+}
+
+const DAV_KEYS = ['calendarSync', 'contactsSync', 'caldavUrl', 'carddavUrl', 'davUsername', 'davPassword', 'icsUrl'];
+
+/**
+ * PATCH accounts/<id> — the calendar and contact side (1.2.0): { calendarSync?, contactsSync?, caldavUrl?, carddavUrl?,
+ * davUsername?, davPassword?, icsUrl? }. A new address or login is tried at once (PROPFIND / GET) → 409 auth_failed |
+ * unreachable | dav_unavailable { reason }; the iCal address (Gmail, IMAP accounts) is a secret of the plugin.
+ */
+async function davPatch(gc, ctx, a, b, set) {
+  if (!DAV_KEYS.some((k) => b[k] !== undefined)) return;
+  const isMs = providers.isMicrosoft(a.provider);
+  for (const k of ['calendarSync', 'contactsSync']) if (b[k] !== undefined && typeof b[k] !== 'boolean') throw fail('invalid', { field: k });
+  const url = (k) => {
+    if (b[k] === undefined) return undefined;
+    if (b[k] === null || b[k] === '') return null;
+    if (isMs) throw fail('invalid', { field: k });
+    const u = dav.httpsUrl(b[k]);
+    if (!u) throw fail('invalid', { field: k });
+    return u;
+  };
+  const caldav = url('caldavUrl');
+  const carddav = url('carddavUrl');
+  if (b.davUsername !== undefined && (isMs || (b.davUsername !== null && (typeof b.davUsername !== 'string' || b.davUsername.length > 254)))) throw fail('invalid', { field: 'davUsername' });
+  if (b.davPassword !== undefined && (isMs || (b.davPassword !== null && (typeof b.davPassword !== 'string' || !b.davPassword || b.davPassword.length > 1000)))) throw fail('invalid', { field: 'davPassword' });
+  if (b.icsUrl !== undefined && !['gmail', 'imap', 'tonline'].includes(a.provider)) throw fail('invalid', { field: 'icsUrl' });
+  const ics = url('icsUrl');
+  const t = { ...a };
+  if (caldav !== undefined) t.caldav_url = caldav;
+  if (carddav !== undefined) t.carddav_url = carddav;
+  if (b.davUsername !== undefined) t.dav_username = b.davUsername ? clip(String(b.davUsername).trim(), 254) : null;
+  const cred = (await secrets.get(gc, a.id)) || {};
+  const pass = b.davPassword !== undefined ? (b.davPassword || cred.password) : (cred.davPassword || cred.password);
+  const loginChanged = b.davUsername !== undefined || b.davPassword !== undefined;
+  // the check: the addresses and the login that changed
+  if (caldav || carddav || loginChanged) {
+    if (!dav.can(gc)) throw fail('dav_unavailable', { reason: 'host_old' });
+    const auth = { user: t.dav_username || t.username || t.email, pass };
+    const kinds = [];
+    if (caldav || (loginChanged && (t.caldav_url || pimdav.KNOWN[a.provider]))) kinds.push('caldav');
+    if (carddav || (loginChanged && (t.carddav_url || pimdav.KNOWN[a.provider]))) kinds.push('carddav');
+    for (const kind of kinds) {
+      const base = kind === 'caldav' ? (caldav || t.caldav_url) : (carddav || t.carddav_url);
+      await pimdav.discover(gc, t, kind, base || undefined, auth);
+    }
+  }
+  let icsText = null;
+  if (ics !== undefined && ics) {
+    icsText = (await pimdav.fetchIcs(gc, ics)).text;
+    require('./ics').split(icsText);
+  }
+  if (caldav !== undefined) set('caldav_url', caldav);
+  if (carddav !== undefined) set('carddav_url', carddav);
+  if (b.davUsername !== undefined) set('dav_username', t.dav_username);
+  if (b.davPassword !== undefined) {
+    const next = { ...cred };
+    if (b.davPassword && b.davPassword !== cred.password) next.davPassword = b.davPassword; else delete next.davPassword;
+    await secrets.set(gc, a.id, next);
+  }
+  if (b.calendarSync !== undefined) {
+    set('calendar_sync', b.calendarSync ? 1 : 0);
+    if (!b.calendarSync) for (const c of await store.all(gc, "SELECT * FROM calendars WHERE account_id = ? AND source <> 'ics'", [a.id])) await pimstore.dropCalendar(gc, c);
+  }
+  if (b.contactsSync !== undefined) {
+    set('contacts_sync', b.contactsSync ? 1 : 0);
+    if (!b.contactsSync) for (const x of await store.all(gc, 'SELECT * FROM addressbooks WHERE account_id = ?', [a.id])) await cardstore.dropBook(gc, x);
+  }
+  if (ics !== undefined) {
+    for (const c of await store.all(gc, "SELECT * FROM calendars WHERE account_id = ? AND source = 'ics'", [a.id])) await pimstore.dropCalendar(gc, c);
+    if (ics) await require('./calendars').createSubscription(gc, a.user_id, a.id, ics, { text: icsText });
+  }
+  if (caldav !== undefined || carddav !== undefined || loginChanged) await store.run(gc, 'DELETE FROM pim_state WHERE account_id = ?', [a.id]);
+  pim.soon(a.id);
+  await pimstore.live(gc, a.user_id, 'calendar', { kind: 'calendars' });
 }
 
 /** DELETE accounts/<id> → { ok } — the server's copy of the account goes (not the mail on the provider's server). */
 async function remove(gc, ctx, id) {
   const a = await own(gc, ctx.userId, id);
   await engine.forget(a.id);
+  // its calendars, address books, events, contacts and invitations here (the provider keeps everything) — 1.2.0
+  await pim.dropAccount(gc, a);
   await secrets.remove(gc, a.id);
   await avatars.drop(gc, a);
   const ids = (await store.all(gc, 'SELECT id FROM messages WHERE account_id = ?', [a.id])).map((r) => r.id);

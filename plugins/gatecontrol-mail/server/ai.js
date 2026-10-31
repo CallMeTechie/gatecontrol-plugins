@@ -196,6 +196,23 @@ async function todo(gc, userId, lang, messageId, index, b) {
   return { where: t(lang, 'ai.where_family', { date: when + (item.time ? ` ${item.time}` : '') }) };
 }
 
+/**
+ * POST ai/<messageId>/todo/<index> { action: 'calendar', calendarId? } → { where, eventId } (1.2.0): the to-do into the own
+ * calendar (the default calendar without calendarId). `create(gc, ctx, item, calendarId)` is events.fromTodo.
+ */
+async function todoCalendar(gc, ctx, messageId, index, b, create) {
+  const { m } = await ctxOf(gc, ctx.userId, messageId);
+  const r = await store.one(gc, 'SELECT * FROM ai_results WHERE message_id = ?', [m.id]);
+  const list = r ? parse(r.todos_json, []) : [];
+  const i = Number(index);
+  const item = Number.isInteger(i) && i >= 0 ? list[i] : null;
+  if (!item) throw fail('not_found');
+  if (!item.date) throw fail('invalid', { field: 'date' });
+  const res = await create(gc, ctx, item, b.calendarId);
+  const when = new Date(item.date + 'T12:00:00Z').toLocaleDateString(ctx.lang === 'en' ? 'en-GB' : 'de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  return { where: t(ctx.lang, 'todo.calendar_where', { calendar: res.calendar ? res.calendar.name : '', date: when + (item.time ? ` ${item.time}` : '') }), eventId: res.eventId };
+}
+
 /** Is Familie's calendar reachable (GET me features.familyCalendar)? */
 async function familyCalendar(gc) {
   if (!gc.services || typeof gc.services.available !== 'function') return false;
@@ -223,4 +240,4 @@ async function tick(gc) {
 
 function reset() { running.clear(); recent.clear(); }
 
-module.exports = { reset, get, run, todo, tick, ready, allowedFor, familyCalendar, SHORT };
+module.exports = { reset, get, run, todo, todoCalendar, tick, ready, allowedFor, familyCalendar, SHORT };
