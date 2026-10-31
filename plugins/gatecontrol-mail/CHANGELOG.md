@@ -2,6 +2,24 @@
 
 Alle E-Mail-Konten an einem Ort – im eigenen Tab der GateControl-Apps und im Portal.
 
+## 1.3.5
+- **Tiefer verschachtelte Outlook-Ordner.** Microsoft 365 und outlook.com zeigen jetzt Ordner bis zur 10. Ebene (bisher
+  4). Die Ordner werden Ebene für Ebene geholt statt rekursiv: Unterordner nur dort, wo `childFolderCount` welche
+  meldet, jede Seite über `@odata.nextLink`, nur die nötigen Felder (`$select`). Die Anfragen laufen nacheinander, weil
+  der Abgleich eines Kontos nur eine der vier gleichzeitigen Graph-Anfragen pro Postfach nutzt (die übrigen bleiben für
+  Mails, Anhänge und Markierungen, die gerade jemand öffnet).
+- **Höchstens 1000 Ordner pro Konto** (bisher 300 bei Microsoft, bei IMAP keine Grenze), damit kein Postfach den
+  Abgleich aller Ordner sprengt. Die Rollenordner (Posteingang, Gesendet usw.) sind immer dabei.
+  - **Microsoft:** Die flachen Ebenen zuerst. Ist die Grenze erreicht, wird keine weitere Seite und kein weiterer
+    Unterordner abgefragt. Ordner, die schon da waren, bleiben dann samt ihren Mails stehen, weil sich nicht sagen
+    lässt, ob sie bei Microsoft gelöscht wurden oder nur außerhalb der Grenze liegen.
+  - **IMAP:** Die Liste des Servers ist vollständig. Zuerst kommen die Rollenordner, dann die schon bekannten, dann die
+    flachen. Gelöschte Ordner verschwinden wie bisher. Eine Ebenen-Grenze gibt es bei IMAP nicht, weil `LIST` alle
+    Ebenen in einer Antwort liefert.
+- Was nicht dabei ist, steht als Hinweis im Log (`folders left out`, Stufe info, mit der Zahl der übrigen Ordner und
+  der zu tief liegenden). Das ist kein Fehler: Das Konto gleicht die übrigen Ordner normal ab. Der Hinweis erscheint
+  nur, wenn sich etwas ändert, nicht bei jedem Lauf.
+
 ## 1.3.4
 - **Ordner als Baum im Portal.** Unter einem Konto hängen Unterordner jetzt unter ihrem Elternordner (`parentId`, mit
   1.3.3 richtig geliefert) statt als lange flache Liste. Die Rollenordner (Entwürfe, Gesendet, Archiv, Spam,

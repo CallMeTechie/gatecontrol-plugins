@@ -12,6 +12,8 @@ const classify = require('./classify');
 const { clip, line, snippet, bytesOf, htmlText, parse } = require('./util');
 
 const MSGID_RE = /^<?[^\s<>]{1,250}>?$/;
+const FOLDERS_MAX = 1000;     // folders per account (imap.js, graph.js): more would stretch a sync of all folders too far
+const hinted = new WeakMap(); // gc → Map account id → the last hint that folders stay out
 const normId = (v) => {
   const s = typeof v === 'string' ? v.trim() : '';
   if (!s || !MSGID_RE.test(s)) return null;
@@ -220,4 +222,19 @@ function summary(r, extra = {}) {
   };
 }
 
-module.exports = { upsert, contact, setBody, setAttachments, dropAttachment, remove, usage, evict, summary, normId, addrList, threadOf };
+/**
+ * A hint in the log that folders of an account stay out — `over` beyond FOLDERS_MAX ("n+": pages not asked for), `deep`
+ * below the levels graph.js lists — when it changes, not every run. No error: the account syncs the folders it has.
+ */
+function folderHint(gc, accountId, kept, over, deep) {
+  const parts = [];
+  if (over) parts.push(`${over} beyond ${FOLDERS_MAX}`);
+  if (deep) parts.push(`${deep} too deep`);
+  const note = parts.length ? `${kept} kept, ${parts.join(', ')}` : '';
+  if (!hinted.has(gc)) hinted.set(gc, new Map());
+  const last = hinted.get(gc);
+  if ((last.get(accountId) || '') === note) return;
+  if (note) { last.set(accountId, note); gc.log.info('folders left out', accountId, note); } else last.delete(accountId);
+}
+
+module.exports = { FOLDERS_MAX, folderHint, upsert, contact, setBody, setAttachments, dropAttachment, remove, usage, evict, summary, normId, addrList, threadOf };

@@ -64,7 +64,7 @@ function inboxNamespace(shown) {
 /** LIST → the folders of account `a` (new ones made, gone ones dropped with their mail). → rows */
 async function syncFolders(gc, a, s, now) {
   const listed = (await s.list()) || [];
-  const keep = [];
+  let keep = [];
   for (const x of listed) {
     if (!x || typeof x.path !== 'string') continue;
     if ((x.flags || []).some((fl) => /^\\(Noselect|NonExistent)$/i.test(fl))) continue;
@@ -74,6 +74,19 @@ async function syncFolders(gc, a, s, now) {
     keep.push({ path: x.path, name: line(x.name || x.path.split(x.delimiter || '/').pop()) || x.path, delim: x.delimiter || '/', role, parent: parentPathOf(x) });
   }
   const rows = await store.all(gc, 'SELECT * FROM folders WHERE account_id = ?', [a.id]);
+  // at most FOLDERS_MAX (like Microsoft): the well-known ones first, then the ones known from before (no folder comes
+  // and goes because a new one is listed earlier), then the shallow ones. The rest: a hint in the log, no error.
+  const all = keep.filter((k) => !k.skip);
+  const over = Math.max(0, all.length - mailstore.FOLDERS_MAX);
+  if (over) {
+    const known = new Set(rows.map((r) => r.path));
+    const depthOf = (k) => (k.delim ? k.path.split(k.delim).length : 1);
+    const rank = (k) => [k.role ? 0 : 1, known.has(k.path) ? 0 : 1, depthOf(k)];
+    const ranked = all.map((k, i) => ({ k, i, r: rank(k) })).sort((p, q) => p.r[0] - q.r[0] || p.r[1] - q.r[1] || p.r[2] - q.r[2] || p.i - q.i);
+    const out = new Set(ranked.slice(mailstore.FOLDERS_MAX).map((x) => x.k));
+    keep = keep.filter((k) => !out.has(k));
+  }
+  mailstore.folderHint(gc, a.id, all.length - over, over, 0);
   // one folder per role: the special-use one wins over a name match
   const taken = new Set();
   for (const k of keep) {

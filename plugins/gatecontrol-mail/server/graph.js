@@ -19,7 +19,10 @@ const WELL_KNOWN = { inbox: 'inbox', sentitems: 'sent', drafts: 'drafts', archiv
 const SELECT = 'id,internetMessageId,conversationId,subject,bodyPreview,from,toRecipients,ccRecipients,bccRecipients,replyTo,receivedDateTime,isRead,flag,hasAttachments,inferenceClassification';
 const PAGE = 50;
 const PAGES = 10;
-const FOLDERS_MAX = 300;
+const { FOLDERS_MAX } = mailstore;
+const FOLDER_LEVELS = 10;            // levels of folders (each level costs a request per folder with children)
+const FOLDER_PAGE = 100;
+const FOLDER_SELECT = 'id,displayName,parentFolderId,childFolderCount,totalItemCount,unreadItemCount';
 const SMALL_MAX = 3 * 1024 * 1024;   // below: one POST with contentBytes; from here: an upload session (Graph: 3 MB … 150 MB)
 const PIECE = 9 * 320 * 1024;        // bytes per PUT of an upload session (Graph: keep each under 4 MB)
 const PIECES_MAX = 200;
@@ -59,27 +62,57 @@ async function get(gc, a, path, extra) {
 /** The folders of account `a` (and the roles of the well-known ones). → rows */
 async function syncFolders(gc, a) {
   const roles = new Map();
+  const wellKnown = [];
   for (const [wk, role] of Object.entries(WELL_KNOWN)) {
-    try { const x = await get(gc, a, `/me/mailFolders/${wk}?$select=id`); if (x && x.id) roles.set(x.id, role); } catch (e) { if (e.code === 'auth_failed') throw e; }
+    try {
+      const x = await get(gc, a, `/me/mailFolders/${wk}?$select=${FOLDER_SELECT}`);
+      if (x && x.id) { roles.set(x.id, role); wellKnown.push(x); }
+    } catch (e) { if (e.code === 'auth_failed') throw e; }
   }
   const found = [];
-  // parent: the parent's id at Microsoft (parentFolderId; a display name may hold "/", the path cannot tell)
-  const walk = async (url, parentPath, parentId, depth) => {
-    let next = url;
-    while (next && found.length < FOLDERS_MAX) {
-      const page = await get(gc, a, next);
-      if (!page) break;
-      for (const x of page.value || []) {
-        if (found.length >= FOLDERS_MAX) break;
-        const name = line(x.displayName || '') || x.id;
-        const p = parentPath ? `${parentPath}/${name}` : name;
-        found.push({ id: x.id, name, path: p, parent: x.parentFolderId || parentId, role: roles.get(x.id) || null, total: x.totalItemCount, unread: x.unreadItemCount });
-        if (x.childFolderCount > 0 && depth < 3) await walk(`/me/mailFolders/${encodeURIComponent(x.id)}/childFolders?$top=100`, p, x.id, depth + 1);
+  // level by level (the shallow ones first, should the mailbox hold more than FOLDERS_MAX), a request at a time (the
+  // line has one of Graph's four requests per mailbox — engine.js), children only of folders that have some
+  // (childFolderCount). parent: the parent's id at Microsoft (parentFolderId; a display name may hold "/").
+  let level = [{ url: `/me/mailFolders?$select=${FOLDER_SELECT}&$top=${FOLDER_PAGE}`, path: '', id: null, count: 0 }];
+  let over = 0;          // folders Microsoft counts beyond FOLDERS_MAX (with `unknown`: pages not asked for, more)
+  let unknown = false;
+  let deep = 0;          // folders below FOLDER_LEVELS
+  const full = () => found.length >= FOLDERS_MAX;
+  for (let depth = 1; level.length; depth++) {
+    const below = [];
+    for (const at of level) {
+      if (full()) { over += at.count; continue; }
+      let next = at.url;
+      while (next) {
+        const page = await get(gc, a, next);
+        if (!page) break;
+        for (const x of page.value || []) {
+          const kids = Number(x.childFolderCount) > 0 ? Number(x.childFolderCount) : 0;
+          if (full()) { over += 1 + kids; continue; }
+          const name = line(x.displayName || '') || x.id;
+          const p = at.path ? `${at.path}/${name}` : name;
+          found.push({ id: x.id, name, path: p, parent: x.parentFolderId || at.id, role: roles.get(x.id) || null, total: x.totalItemCount, unread: x.unreadItemCount });
+          if (!kids) continue;
+          if (depth < FOLDER_LEVELS) below.push({ url: `/me/mailFolders/${encodeURIComponent(x.id)}/childFolders?$select=${FOLDER_SELECT}&$top=${FOLDER_PAGE}`, path: p, id: x.id, count: kids });
+          else deep += kids;
+        }
+        next = page['@odata.nextLink'] || null;
+        if (next && full()) { unknown = true; next = null; }
       }
-      next = page['@odata.nextLink'] || null;
     }
-  };
-  await walk('/me/mailFolders?$top=100', '', null, 0);
+    level = below;
+  }
+  // the well-known ones are there even beyond FOLDERS_MAX (IMAP ranks them first, too)
+  const seen = new Set(found.map((x) => x.id));
+  for (const x of wellKnown) {
+    if (seen.has(x.id)) continue;
+    const name = line(x.displayName || '') || x.id;
+    found.push({ id: x.id, name, path: name, parent: x.parentFolderId || null, role: roles.get(x.id), total: x.totalItemCount, unread: x.unreadItemCount });
+  }
+  // more than fits: a hint in the log (once per change, not every run), no error. Beyond FOLDERS_MAX it is not clear
+  // which folders are gone at Microsoft and which only stay out: the ones known from before stay (with their mail).
+  const capped = over > 0 || unknown;
+  mailstore.folderHint(gc, a.id, found.length, capped ? `${over}${unknown ? '+' : ''}` : 0, deep);
   const rows = await store.all(gc, 'SELECT * FROM folders WHERE account_id = ?', [a.id]);
   for (const x of found) {
     const have = rows.find((r) => r.remote_id === x.id);
@@ -92,7 +125,7 @@ async function syncFolders(gc, a) {
   }
   const ids = new Set(found.map((x) => x.id));
   for (const r of rows) {
-    if (ids.has(r.remote_id)) continue;
+    if (ids.has(r.remote_id) || capped) continue;
     const gone = (await store.all(gc, 'SELECT id FROM messages WHERE folder_id = ?', [r.id])).map((x) => x.id);
     await mailstore.remove(gc, gone);
     await store.run(gc, 'DELETE FROM folders WHERE id = ?', [r.id]);
@@ -102,6 +135,7 @@ async function syncFolders(gc, a) {
   const byRemote = new Map(now2.map((r) => [r.remote_id, r.id]));
   const parentOf = new Map(found.map((x) => [x.id, x.parent]));
   for (const r of now2) {
+    if (!parentOf.has(r.remote_id)) continue;   // known from before, beyond FOLDERS_MAX this time: stays as it is
     const parent = byRemote.get(parentOf.get(r.remote_id)) || null;
     const pid = parent !== r.id ? parent : null;
     if ((r.parent_id || null) !== pid) await store.run(gc, 'UPDATE folders SET parent_id = ? WHERE id = ?', [pid, r.id]);
