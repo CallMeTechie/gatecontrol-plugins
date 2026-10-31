@@ -31,6 +31,7 @@ const avatars = require('./avatars');
 const push = require('./push');
 const ui = require('./ui');
 const pim = require('./pim');
+const cardmerge = require('./cardmerge');
 const overlays = require('./overlays');
 const reminders = require('./reminders');
 const { t } = require('./text');
@@ -79,6 +80,7 @@ module.exports = {
     drive.reset();
     ai.reset();
     pim.reset();
+    cardmerge.reset();
     overlays.reset();
     engine.start(gc);
   },
@@ -133,6 +135,8 @@ module.exports = {
     try { await engine.tick(gc, now, 70000, skip); } catch (e) { gc.log.warn('sync run failed', (e && e.code) || 'error'); }
     // calendars and contacts: after the mail, in what is left of the run (1.2.0)
     try { await pim.tick(gc, Date.now(), now, 70000, skip); } catch (e) { gc.log.warn('calendar sync failed', (e && e.code) || 'error'); }
+    // contacts: the one run per person after 1.4.0 (duplicates become one GC contact), one person per run
+    if (Date.now() - now < 70000) { try { await cardmerge.tick(gc, skip); } catch (e) { gc.log.warn('contacts merge failed', (e && e.code) || 'error'); } }
     try { await reminders.tick(gc, Date.now(), skip); } catch (e) { gc.log.warn('reminders failed', (e && e.code) || 'error'); }
     try { for (const a of await avatars.tick(gc, Date.now(), skip)) await push.changed(gc, a.user_id, a.id, null); } catch (e) { gc.log.warn('pictures failed', (e && e.code) || 'error'); }
     try { await compose.due(gc, Date.now(), skip); } catch { /* next run */ }

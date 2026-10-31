@@ -124,6 +124,8 @@ async function dropCard(gc, c) {
   await store.run(gc, 'DELETE FROM card_photos WHERE card_id = ?', [c.id]);
   await store.run(gc, 'DELETE FROM card_dup_ignored WHERE user_id = ? AND (a = ? OR b = ?)', [c.user_id, c.id, c.id]);
   await store.run(gc, 'DELETE FROM card_dismissed WHERE card_id = ? OR source_id = ?', [c.id, c.id]);
+  await store.run(gc, 'DELETE FROM card_conflicts WHERE card_id = ? OR source_id = ?', [c.id, c.id]);
+  await store.run(gc, 'DELETE FROM card_origins WHERE card_id = ? OR source_id = ?', [c.id, c.id]);
   await store.run(gc, 'DELETE FROM cards WHERE id = ?', [c.id]);
   const version = await pimstore.nextCardVersion(gc, c.user_id);
   await store.run(gc, `INSERT INTO card_tombstones (user_id, card_id, version, at) VALUES (?, ?, ?, ?)

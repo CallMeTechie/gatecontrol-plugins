@@ -22,6 +22,7 @@ const calendars = require('./calendars');
 const events = require('./events');
 const invites = require('./invites');
 const cards = require('./cards');
+const cardmerge = require('./cardmerge');
 const { fail } = require('./util');
 
 // since 1.2.0: the paths of calendars and contacts (403 feature_off when the administrator switched them off)
@@ -185,6 +186,7 @@ async function route(gc, ctx, req, seg) {
     case 'events':
       if (n === 1 && m === 'GET') return calendars.events(gc, ctx, q);
       if (n === 1 && m === 'POST') return events.create(gc, ctx, b);
+      if (n === 2 && s1 === 'upcoming' && m === 'GET') return calendars.upcoming(gc, ctx, q);
       if (n === 2 && m === 'GET') return calendars.get(gc, ctx, id(s1), q);
       if (n === 2 && m === 'PATCH') return events.update(gc, ctx, id(s1), b);
       if (n === 2 && m === 'DELETE') return events.remove(gc, ctx, id(s1), q);
@@ -208,14 +210,25 @@ async function route(gc, ctx, req, seg) {
       if (n === 2 && s1 === 'settings' && m === 'PUT') return cards.settings(gc, ctx, b);
       if (n === 2 && s1 === 'lookup' && m === 'GET') return cards.lookup(gc, ctx, q);
       if (n === 2 && s1 === 'draft' && m === 'GET') return cards.draft(gc, ctx, q);
-      if (n === 2 && s1 === 'duplicates' && m === 'GET') return cards.duplicates(gc, ctx);
+      if (n === 2 && s1 === 'duplicates' && m === 'GET') return cards.duplicates(gc, ctx, q);
       if (n === 3 && s1 === 'duplicates' && s2 === 'ignore' && m === 'POST') return cards.ignore(gc, ctx, b);
       if (n === 2 && s1 === 'merge' && m === 'POST') return cards.merge(gc, ctx, b);
+      // 1.4.0: the GC contact as the master — preview, automatic merges and their protocol, undo, conflicts, favourites
+      if (n === 3 && s1 === 'merge' && s2 === 'preview' && m === 'POST') return cardmerge.preview(gc, ctx, b);
+      if (n === 3 && s1 === 'merge' && s2 === 'auto' && m === 'POST') return cardmerge.autoNow(gc, ctx);
+      if (n === 2 && s1 === 'merges' && m === 'GET') return cardmerge.merges(gc, ctx, q);
+      if (n === 4 && s1 === 'merges' && s3 === 'undo' && m === 'POST') return cardmerge.undo(gc, ctx, id(s2), b);
+      if (n === 2 && s1 === 'conflicts' && m === 'GET') return cardmerge.conflicts(gc, ctx);
+      if (n === 2 && s1 === 'favorites' && m === 'GET') return cardmerge.favorites(gc, ctx);
+      if (n === 2 && s1 === 'favorites' && m === 'PUT') return cardmerge.putFavorites(gc, ctx, b);
+      if (n === 3 && s2 === 'unmerge' && m === 'POST') return cardmerge.unmerge(gc, ctx, id(s1), b);
+      if (n === 5 && s2 === 'conflicts' && s4 === 'accept' && m === 'POST') return cardmerge.accept(gc, ctx, id(s1), id(s3), b);
+      if (n === 5 && s2 === 'conflicts' && s4 === 'dismiss' && m === 'POST') return cardmerge.dismiss(gc, ctx, id(s1), id(s3));
       if (n === 2 && s1 === 'import' && m === 'POST') return cards.importVcf(gc, ctx, b);
       if (n === 2 && s1 === 'export' && m === 'GET') return cards.exportVcf(gc, ctx, q);
       if (n === 2 && m === 'GET') return cards.get(gc, ctx, id(s1));
       if (n === 2 && m === 'PATCH') return cards.patch(gc, ctx, id(s1), b);
-      if (n === 2 && m === 'DELETE') return cards.remove(gc, ctx, id(s1));
+      if (n === 2 && m === 'DELETE') return cards.remove(gc, ctx, id(s1), q);
       if (n === 3 && s2 === 'photo' && m === 'GET') return cards.photo(gc, ctx, id(s1));
       if (n === 3 && s2 === 'photo' && m === 'PUT') return cards.putPhoto(gc, ctx, id(s1), b);
       if (n === 3 && s2 === 'photo' && m === 'DELETE') return cards.deletePhoto(gc, ctx, id(s1));

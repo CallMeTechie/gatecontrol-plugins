@@ -16,6 +16,7 @@ const pimgraph = require('./pimgraph');
 const pimdav = require('./pimdav');
 const pim = require('./pim');
 const mailstore = require('./mailstore');
+const cardmerge = require('./cardmerge');
 const { fail, parse, clip, line, posInt, email, COLOR_RE } = require('./util');
 
 const LIMIT = 200;
@@ -109,7 +110,8 @@ async function gcPeople(gc, userId, emails) {
 
 const nameShown = (f, show) => {
   const n = f.name || {};
-  if (!n.given && !n.family) return n.display || f.company || ((f.emails || [])[0] || {}).value || '';
+  // a name with an emoji („Schatzimausi 💞“) is shown as it was written (1.4.0)
+  if ((!n.given && !n.family) || (n.display && cardmerge.hasEmoji({ name: { display: n.display } }))) return n.display || f.company || ((f.emails || [])[0] || {}).value || '';
   return show === 'family_given' ? [n.family, n.given].filter(Boolean).join(', ') : [n.given, n.family].filter(Boolean).join(' ');
 };
 
@@ -118,27 +120,37 @@ async function summaries(gc, userId, rows, prefs) {
   const ids = rows.map((r) => r.id);
   const groups = new Map();
   const linked = new Map();
+  const linkBooks = new Map();
+  const conflictsN = new Map();
   for (const part of store.chunks(ids, 80)) {
     if (!part.length) continue;
     for (const g of await store.all(gc, `SELECT card_id, group_id FROM card_group_members WHERE card_id IN (${store.marks(part.length)})`, part)) {
       if (!groups.has(g.card_id)) groups.set(g.card_id, []);
       groups.get(g.card_id).push(g.group_id);
     }
-    for (const l of await store.all(gc, `SELECT id, link_id FROM cards WHERE link_id IN (${store.marks(part.length)})`, part)) {
-      if (!linked.has(l.link_id)) linked.set(l.link_id, []);
+    for (const l of await store.all(gc, `SELECT id, link_id, addressbook_id FROM cards WHERE link_id IN (${store.marks(part.length)}) ORDER BY id`, part)) {
+      if (!linked.has(l.link_id)) { linked.set(l.link_id, []); linkBooks.set(l.link_id, []); }
       linked.get(l.link_id).push(l.id);
+      linkBooks.get(l.link_id).push(l.addressbook_id);
     }
+    for (const c of await store.all(gc, `SELECT card_id, COUNT(*) AS n FROM card_conflicts WHERE card_id IN (${store.marks(part.length)}) GROUP BY card_id`, part)) conflictsN.set(c.card_id, c.n);
   }
+  const bookRows = new Map((await store.all(gc, 'SELECT id, source, account_id FROM addressbooks WHERE user_id = ?', [userId])).map((b) => [b.id, b]));
+  const srcOf = (bid) => { const b = bookRows.get(bid) || {}; return { addressbookId: bid, source: b.source || 'local', accountId: b.account_id || null }; };
   const emails = rows.flatMap((r) => (parse(r.fields_json, {}).emails || []).map((e) => e.value));
   const people = await gcPeople(gc, userId, emails);
   return rows.map((r) => {
     const f = parse(r.fields_json, {});
     const key = cardstore.sortKeyOf(f, prefs.sort);
     const em = (f.emails || []).map((e) => e.value);
+    const main = cardmerge.mainPhoneOf(f, r.main_phone);
+    const books = [r.addressbook_id, ...(linkBooks.get(r.id) || [])].filter((b, i, a) => a.indexOf(b) === i);
     return {
       id: r.id, addressbookId: r.addressbook_id, name: nameShown(f, prefs.show), sortKey: key, letter: cardstore.letterOf(key), company: f.company || null, title: f.title || null,
-      emails: em.slice(0, 3), phone: ((f.phones || [])[0] || {}).value || null, photo: !!r.photo_etag, photoEtag: r.photo_etag || null, groups: groups.get(r.id) || [],
+      emails: em.slice(0, 3), phone: main ? main.value : null, photo: !!r.photo_etag, photoEtag: r.photo_etag || null, groups: groups.get(r.id) || [],
       linked: linked.get(r.id) || [], gcUserId: em.map((e) => people.get(e)).find(Boolean) || null, updatedAt: r.updated_at,
+      // 1.4.0: the GC contact as the master
+      favorite: (r.favorite || 0) > 0, mainPhone: main ? main.value : null, conflicts: conflictsN.get(r.id) || 0, masterId: r.link_id || null, sources: books.map(srcOf),
     };
   });
 }
@@ -151,11 +163,14 @@ async function full(gc, userId, c) {
   const book = await store.one(gc, 'SELECT * FROM addressbooks WHERE id = ?', [c.addressbook_id]);
   const f = parse(c.fields_json, {});
   const links = await store.all(gc, 'SELECT * FROM cards WHERE link_id = ? AND user_id = ?', [c.id, userId]);
-  // the values of the linked cards joined in — but not the ones the person removed from this contact (1.3.6)
-  const gone = links.length ? await dismissedOf(gc, c.id) : new Set();
+  // a GC master shows its own fields (1.4.0: what its links have more was taken over or is a conflict); an old link with
+  // an account card as the main one — and any link before the person's run after the update — joins them in (1.3.6:
+  // without the values the person removed)
+  const master = !!(book && book.source === 'local') && await cardmerge.migrated(gc, userId);
+  const gone = links.length && !master ? await dismissedOf(gc, c.id) : new Set();
   const merged = { ...f };
   const key = cardstore.valueKey;
-  for (const l of links) {
+  for (const l of master ? [] : links) {
     const lf = parse(l.fields_json, {});
     const keep = (field) => (v) => !gone.has(`${l.id}|${field}|${key(field, v)}`);
     merged.emails = uniq([...(merged.emails || []), ...(lf.emails || []).filter(keep('emails'))], (e) => key('emails', e));
@@ -167,6 +182,8 @@ async function full(gc, userId, c) {
   const people = await gcPeople(gc, userId, (merged.emails || []).map((e) => e.value));
   const bookOf = new Map();
   for (const l of links) { if (!bookOf.has(l.addressbook_id)) bookOf.set(l.addressbook_id, await store.one(gc, 'SELECT source FROM addressbooks WHERE id = ?', [l.addressbook_id])); }
+  const maps = { books: await cardmerge.bookMap(gc, userId), accounts: await cardmerge.accountMap(gc, userId) };
+  const main = cardmerge.mainPhoneOf(merged, c.main_phone);
   return {
     id: c.id, addressbookId: c.addressbook_id, source: book ? book.source : 'local', readOnly: !book || book.writable !== 1, etag: etagOf(c),
     name: { display: f.name ? f.name.display || '' : '', given: (f.name && f.name.given) || '', family: (f.name && f.name.family) || '', middle: (f.name && f.name.middle) || null,
@@ -176,6 +193,8 @@ async function full(gc, userId, c) {
     photo: c.photo_etag ? { etag: c.photo_etag, mime: ((await store.one(gc, 'SELECT mime FROM card_photos WHERE card_id = ?', [c.id])) || {}).mime || 'image/jpeg' } : null,
     groups, linked: links.map((l) => ({ id: l.id, addressbookId: l.addressbook_id, source: (bookOf.get(l.addressbook_id) || {}).source || 'local' })),
     gcUserId: [...people.values()][0] || null, updatedAt: c.updated_at,
+    favorite: (c.favorite || 0) > 0, mainPhone: main ? { value: main.value, type: main.type } : null, mainPhoneChosen: !!(c.main_phone && main && cardstore.valueKey('phones', main) === c.main_phone),
+    masterId: c.link_id || null, conflicts: await cardmerge.conflictsOf(gc, userId, c, maps), sources: [c, ...links].map((x) => cardmerge.sourceView(x, maps.books, maps.accounts)),
   };
 }
 
@@ -273,6 +292,8 @@ async function list(gc, ctx, q) {
     where.push('c.version > ?');
     args.push(since);
     deleted = (await store.all(gc, 'SELECT card_id FROM card_tombstones WHERE user_id = ? AND version > ? ORDER BY version LIMIT 5000', [ctx.userId, since])).map((r) => r.card_id);
+    // 1.4.0: a card linked since then is no longer in the list of all contacts (its GC contact stands for it)
+    if (!q.book || q.book === 'all') deleted.push(...(await store.all(gc, 'SELECT id FROM cards WHERE user_id = ? AND link_id IS NOT NULL AND version > ? LIMIT 5000', [ctx.userId, since])).map((r) => r.id));
   }
   version = await pimstore.cardVersion(gc, ctx.userId);
   const order = prefs.sort === 'given' ? 'COALESCE(c.given, c.display) COLLATE NOCASE, c.id' : 'c.sort_key, c.id';
@@ -376,19 +397,45 @@ async function setGroups(gc, userId, cardId, groups) {
 async function patch(gc, ctx, id, b) {
   const c = await ownCard(gc, ctx.userId, id);
   const book = await store.one(gc, 'SELECT * FROM addressbooks WHERE id = ?', [c.addressbook_id]);
-  if (!book || book.writable !== 1) throw fail('read_only');
+  const ownOnly = Object.keys(b).every((k) => ['favorite', 'mainPhone', 'etag'].includes(k));
+  if (!book || (book.writable !== 1 && !ownOnly)) throw fail('read_only');
   if (b.etag !== undefined && b.etag !== etagOf(c)) throw fail('conflict', { current: await full(gc, ctx.userId, c) });
   const ch = vcard.check(b);
-  const f = mergedFields(parse(c.fields_json, {}), ch);
-  await rememberRemoved(gc, ctx.userId, c, ch);
-  let stored;
-  try { stored = await write(gc, book, c, f, undefined); } catch (e) {
-    if (e && e.code === 'conflict') throw fail('conflict', { current: await full(gc, ctx.userId, await store.one(gc, 'SELECT * FROM cards WHERE id = ?', [c.id]) || c) });
-    throw e;
+  const old = parse(c.fields_json, {});
+  const f = mergedFields(old, ch);
+  // GateControl's own: the favourite and the main number (never to the provider)
+  if (b.favorite !== undefined && typeof b.favorite !== 'boolean') throw fail('invalid', { field: 'favorite' });
+  let mainKey;
+  if (b.mainPhone !== undefined) {
+    if (b.mainPhone === null) mainKey = null;
+    else {
+      const k = typeof b.mainPhone === 'string' ? cardstore.valueKey('phones', { value: b.mainPhone }) : '';
+      if (!k || !(f.phones || []).some((p) => cardstore.valueKey('phones', p) === k)) throw fail('invalid', { field: 'mainPhone' });
+      mainKey = k;
+    }
   }
+  const own = book.source === 'local' && await cardmerge.migrated(gc, ctx.userId);
+  const onlyOwn = !Object.keys(ch).length && b.groups === undefined;
+  let stored = c;
+  let writeBack = [];
+  if (!onlyOwn) {
+    if (!own) await rememberRemoved(gc, ctx.userId, c, ch);
+    try { stored = await write(gc, book, c, f, undefined); } catch (e) {
+      if (e && e.code === 'conflict') throw fail('conflict', { current: await full(gc, ctx.userId, await store.one(gc, 'SELECT * FROM cards WHERE id = ?', [c.id]) || c) });
+      throw e;
+    }
+    // a master: what its links have and the change removed stays away; a value taken over from a link goes back to it
+    if (own) {
+      writeBack = await cardmerge.afterMasterChange(gc, ctx.userId, stored, old, f);
+      await cardmerge.reconcile(gc, ctx.userId, stored.id, { quiet: true });
+    } else if (c.link_id) await cardmerge.reconcile(gc, ctx.userId, c.link_id);
+  }
+  if (b.favorite !== undefined && await cardmerge.setFavorite(gc, ctx.userId, stored, b.favorite)) await pimstore.live(gc, ctx.userId, 'contacts', { kind: 'favorites' });
+  if (mainKey !== undefined) await store.run(gc, 'UPDATE cards SET main_phone = ?, version = ? WHERE id = ?', [mainKey, await pimstore.nextCardVersion(gc, ctx.userId), stored.id]);
+  else if (c.main_phone && !(f.phones || []).some((p) => cardstore.valueKey('phones', p) === c.main_phone)) await store.run(gc, 'UPDATE cards SET main_phone = NULL WHERE id = ?', [stored.id]);
   await setGroups(gc, ctx.userId, stored.id, b.groups);
   await pimstore.live(gc, ctx.userId, 'contacts', { kind: 'changed', addressbookId: book.id, contactIds: [stored.id] });
-  return { card: await full(gc, ctx.userId, await store.one(gc, 'SELECT * FROM cards WHERE id = ?', [stored.id])) };
+  return { card: await full(gc, ctx.userId, await store.one(gc, 'SELECT * FROM cards WHERE id = ?', [stored.id])), writeBack };
 }
 
 /** Delete card `c` at its provider and here. */
@@ -400,10 +447,25 @@ async function destroy(gc, c) {
   await cardstore.dropCard(gc, c);
 }
 
-/** DELETE cards/<id> → { ok } */
-async function remove(gc, ctx, id) {
+/**
+ * DELETE cards/<id>?linked=keep|delete → { ok }. The linked cards of a master: `keep` (the default) loosens them and keeps
+ * them apart, `delete` deletes them at their provider too (the writable ones).
+ */
+async function remove(gc, ctx, id, q = {}) {
   const c = await ownCard(gc, ctx.userId, id);
+  if (q.linked !== undefined && q.linked !== 'keep' && q.linked !== 'delete') throw fail('invalid', { field: 'linked' });
+  const links = await store.all(gc, 'SELECT * FROM cards WHERE link_id = ? AND user_id = ?', [c.id, ctx.userId]);
   await destroy(gc, c);
+  const kept = [];
+  for (const l of links) {
+    const lb = await store.one(gc, 'SELECT writable FROM addressbooks WHERE id = ?', [l.addressbook_id]);
+    if (q.linked === 'delete' && lb && lb.writable === 1) { try { await destroy(gc, l); continue; } catch { /* kept */ } }
+    kept.push(l.id);
+  }
+  for (let i = 0; i < kept.length; i++) for (let j = i + 1; j < kept.length; j++) {
+    const [a, x] = pairKey(kept[i], kept[j]);
+    await store.run(gc, 'INSERT OR IGNORE INTO card_dup_ignored (user_id, a, b) VALUES (?, ?, ?)', [ctx.userId, a, x]);
+  }
   await pimstore.live(gc, ctx.userId, 'contacts', { kind: 'changed', addressbookId: c.addressbook_id, contactIds: [c.id] });
   return { ok: true };
 }
@@ -579,42 +641,9 @@ async function draft(gc, ctx, q) {
 
 const pairKey = (a, b) => (a < b ? [a, b] : [b, a]);
 
-/** GET cards/duplicates → { items: [{ key, reason, cards }] } */
-async function duplicates(gc, ctx) {
-  const cfg = await config.get(gc);
-  const prefs = await pimstore.cardPrefs(gc, ctx.userId);
-  const { rows: bookRows } = await books(gc, cfg, ctx.userId);
-  const visible = bookRows.filter((b) => b.visible === 1).map((b) => b.id);
-  if (!visible.length) return { items: [] };
-  const marks = store.marks(visible.length);
-  const ignored = new Set((await store.all(gc, 'SELECT a, b FROM card_dup_ignored WHERE user_id = ?', [ctx.userId])).map((r) => `${r.a}:${r.b}`));
-  const linked = new Set((await store.all(gc, 'SELECT id, link_id FROM cards WHERE user_id = ? AND link_id IS NOT NULL', [ctx.userId])).map((r) => pairKey(r.id, r.link_id).join(':')));
-  const groups = [];
-  const add = (reason, ids) => {
-    const uniqIds = [...new Set(ids)];
-    const ok = uniqIds.filter((x, i) => uniqIds.some((y, j) => j !== i && !ignored.has(pairKey(x, y).join(':')) && !linked.has(pairKey(x, y).join(':'))));
-    if (ok.length >= 2) groups.push({ reason, ids: ok });
-  };
-  for (const r of await store.all(gc, `SELECT e.email, GROUP_CONCAT(e.card_id) AS ids FROM card_emails e JOIN cards c ON c.id = e.card_id
-    WHERE e.user_id = ? AND c.addressbook_id IN (${marks}) GROUP BY e.email HAVING COUNT(DISTINCT e.card_id) > 1 LIMIT 500`, [ctx.userId, ...visible])) add('email', String(r.ids).split(',').map(Number));
-  for (const r of await store.all(gc, `SELECT p.digits, GROUP_CONCAT(p.card_id) AS ids FROM card_phones p JOIN cards c ON c.id = p.card_id
-    WHERE p.user_id = ? AND c.addressbook_id IN (${marks}) GROUP BY p.digits HAVING COUNT(DISTINCT p.card_id) > 1 LIMIT 500`, [ctx.userId, ...visible])) add('phone', String(r.ids).split(',').map(Number));
-  for (const r of await store.all(gc, `SELECT LOWER(c.display) AS d, GROUP_CONCAT(c.id) AS ids FROM cards c WHERE c.user_id = ? AND c.addressbook_id IN (${marks}) AND c.display <> ''
-    AND NOT EXISTS (SELECT 1 FROM card_emails e WHERE e.card_id = c.id) GROUP BY LOWER(c.display) HAVING COUNT(*) > 1 LIMIT 500`, [ctx.userId, ...visible])) add('name', String(r.ids).split(',').map(Number));
-  // one entry per set of cards (the first reason)
-  const seen = new Set();
-  const items = [];
-  for (const g of groups) {
-    const ids = [...new Set(g.ids)].sort((x, y) => x - y).slice(0, MERGE_MAX);
-    const key = ids.join('-');
-    if (seen.has(key)) continue;
-    seen.add(key);
-    const rows = [];
-    for (const part of store.chunks(ids, 80)) rows.push(...await store.all(gc, `SELECT * FROM cards WHERE id IN (${store.marks(part.length)}) AND user_id = ?`, [...part, ctx.userId]));
-    if (rows.length < 2) continue;
-    items.push({ key, reason: g.reason, cards: await summaries(gc, ctx.userId, rows, prefs) });
-  }
-  return { items: items.slice(0, 200) };
+/** GET cards/duplicates?details=1 → { items: [{ key, reason, certain, cards, details?, preview? }] } (1.4.0: cardmerge) */
+function duplicates(gc, ctx, q) {
+  return cardmerge.duplicates(gc, ctx, q || {});
 }
 
 /** POST cards/duplicates/ignore { ids } → { ok } */
@@ -630,61 +659,18 @@ async function ignore(gc, ctx, b) {
 }
 
 /**
- * POST cards/merge { ids (2…10), primaryId, pick? } → { card }. In one writable address book: one card stays (fields
- * joined, single fields after `pick`, notes joined), the others are deleted at the provider, their groups move. Across
- * address books: linked (nothing deleted at a provider).
+ * POST cards/merge { ids (2…10), primaryId?, pick? } → { card, mergeId } (1.4.0): always one GC contact — account cards
+ * are linked to it (nothing deleted at a provider), other GC cards go up in it; `primaryId` is a hint for the name and
+ * the single fields (the apps before 1.4.0 send it).
  */
 async function merge(gc, ctx, b) {
   const ids = Array.isArray(b.ids) ? [...new Set(b.ids.map(posInt).filter(Boolean))] : [];
   if (ids.length < 2 || ids.length > MERGE_MAX) throw fail('invalid', { field: 'ids' });
-  const primaryId = posInt(b.primaryId);
-  if (!ids.includes(primaryId)) throw fail('invalid', { field: 'primaryId' });
-  const cards = [];
-  for (const id of ids) cards.push(await ownCard(gc, ctx.userId, id));
-  const primary = cards.find((c) => c.id === primaryId);
-  const others = cards.filter((c) => c.id !== primaryId);
-  const sameBook = others.every((c) => c.addressbook_id === primary.addressbook_id);
-  if (!sameBook) {
-    for (const c of others) {
-      await store.run(gc, 'UPDATE cards SET link_id = ?, version = ? WHERE id = ?', [primary.id, await pimstore.nextCardVersion(gc, ctx.userId), c.id]);
-      // cards that were linked to the merged one follow it (with the values the person removed)
-      await store.run(gc, 'UPDATE cards SET link_id = ? WHERE link_id = ?', [primary.id, c.id]);
-      await store.run(gc, 'UPDATE OR IGNORE card_dismissed SET card_id = ? WHERE card_id = ?', [primary.id, c.id]);
-    }
-    await store.run(gc, 'UPDATE cards SET link_id = NULL, version = ? WHERE id = ?', [await pimstore.nextCardVersion(gc, ctx.userId), primary.id]);
-    await pimstore.live(gc, ctx.userId, 'contacts', { kind: 'changed', addressbookId: primary.addressbook_id, contactIds: ids });
-    return { card: await full(gc, ctx.userId, await store.one(gc, 'SELECT * FROM cards WHERE id = ?', [primary.id])) };
-  }
-  const book = await store.one(gc, 'SELECT * FROM addressbooks WHERE id = ?', [primary.addressbook_id]);
-  if (!book || book.writable !== 1) throw fail('read_only');
-  const fs = new Map(cards.map((c) => [c.id, parse(c.fields_json, {})]));
-  const pick = b.pick && typeof b.pick === 'object' ? b.pick : {};
-  const pf = fs.get(primary.id);
-  const f = { ...pf };
-  f.emails = uniq(cards.flatMap((c) => fs.get(c.id).emails || []), (e) => e.value).map((e, i) => ({ ...e, primary: i === 0 }));
-  f.phones = uniq(cards.flatMap((c) => fs.get(c.id).phones || []), (p) => vcard.digits(p.value) || p.value);
-  f.addresses = uniq(cards.flatMap((c) => fs.get(c.id).addresses || []), (a) => `${a.street}|${a.postalCode}|${a.city}`.toLowerCase());
-  f.urls = uniq(cards.flatMap((c) => fs.get(c.id).urls || []), (u) => u);
-  const from = (k) => { const id = posInt(pick[k]); return id && fs.has(id) ? fs.get(id) : null; };
-  if (from('name')) f.name = from('name').name;
-  for (const k of ['company', 'title', 'birthday']) { const src = from(k); if (src) f[k] = src[k] || null; else if (!f[k]) f[k] = (cards.map((c) => fs.get(c.id)[k]).find(Boolean)) || null; }
-  if (from('company')) f.department = from('company').department || null;
-  f.note = pick.note === 'join' ? cards.map((c) => fs.get(c.id).note).filter(Boolean).join('\n\n').slice(0, vcard.NOTE_MAX) : (pf.note || '');
-  let ph;
-  const photoFrom = posInt(pick.photo);
-  if (photoFrom && fs.has(photoFrom) && photoFrom !== primary.id) ph = await cardstore.photoOf(gc, photoFrom);
-  else if (!primary.photo_etag) { const withPhoto = others.find((c) => c.photo_etag); if (withPhoto) ph = await cardstore.photoOf(gc, withPhoto.id); }
-  const stored = await write(gc, book, primary, f, ph || undefined);
-  if (ph) await cardstore.setPhoto(gc, stored.id, ph);
-  for (const c of others) {
-    await store.run(gc, `UPDATE card_group_members SET card_id = ? WHERE card_id = ? AND group_id NOT IN (SELECT group_id FROM card_group_members WHERE card_id = ?)`, [stored.id, c.id, stored.id]);
-    await store.run(gc, 'DELETE FROM card_group_members WHERE card_id = ?', [c.id]);
-    await store.run(gc, 'UPDATE cards SET link_id = ? WHERE link_id = ?', [stored.id, c.id]);
-    await store.run(gc, 'UPDATE OR IGNORE card_dismissed SET card_id = ? WHERE card_id = ?', [stored.id, c.id]);
-    await destroy(gc, c);
-  }
-  await pimstore.live(gc, ctx.userId, 'contacts', { kind: 'changed', addressbookId: book.id, contactIds: ids });
-  return { card: await full(gc, ctx.userId, await store.one(gc, 'SELECT * FROM cards WHERE id = ?', [stored.id])) };
+  const primaryId = b.primaryId != null ? posInt(b.primaryId) : null;
+  if (b.primaryId != null && !ids.includes(primaryId)) throw fail('invalid', { field: 'primaryId' });
+  for (const id of ids) await ownCard(gc, ctx.userId, id);
+  const r = await cardmerge.mergeCards(gc, ctx.userId, ids, { primaryId, pick: b.pick, mode: 'manual', lang: ctx.lang });
+  return { card: await full(gc, ctx.userId, await store.one(gc, 'SELECT * FROM cards WHERE id = ?', [r.masterId])), mergeId: r.mergeId };
 }
 
 // ─── import / export ────────────────────────────
@@ -705,17 +691,20 @@ async function importVcf(gc, ctx, b) {
       const photo = vcard.takePhoto(comp);
       const f = vcard.fieldsOf(comp);
       if (!f.name.display && !f.emails.length && !f.phones.length) { out.skipped++; continue; }
-      // the same contact again: by UID, else by its first address in this address book
+      // the same contact again: by UID, else by one of its addresses in this address book (a linked card: its master)
       let have = f.uid ? await store.one(gc, 'SELECT * FROM cards WHERE addressbook_id = ? AND uid = ?', [book.id, f.uid]) : null;
-      if (!have && f.emails[0]) have = await store.one(gc, 'SELECT c.* FROM card_emails e JOIN cards c ON c.id = e.card_id WHERE c.addressbook_id = ? AND e.email = ? LIMIT 1', [book.id, f.emails[0].value]);
+      for (const e of f.emails) {
+        if (have) break;
+        have = await store.one(gc, 'SELECT c.* FROM card_emails e JOIN cards c ON c.id = e.card_id WHERE c.addressbook_id = ? AND e.email = ? LIMIT 1', [book.id, e.value]);
+      }
       if (have) {
+        // 1.4.0: an import only adds to a contact — lists joined, empty fields filled; what the person has stays
         const cur = parse(have.fields_json, {});
-        const same = JSON.stringify({ ...cur, uid: null, version: null, photo: null }) === JSON.stringify({ ...f, uid: null, version: null, photo: null, categories: cur.categories });
+        const merged = gainFrom(cur, f);
+        const same = JSON.stringify(stripForCheck(cur)) === JSON.stringify(stripForCheck(merged));
         if (same && (!photo || have.photo_etag)) { out.skipped++; continue; }
-        const merged = mergedFields(cur, vcard.check({ name: f.name, emails: f.emails, phones: f.phones, company: f.company, department: f.department, title: f.title,
-          addresses: f.addresses, birthday: f.birthday, note: f.note, urls: f.urls }));
-        const c = await write(gc, book, have, merged, photo || undefined);
-        if (photo) await cardstore.setPhoto(gc, c.id, photo);
+        const c = await write(gc, book, have, merged, photo && !have.photo_etag ? photo : undefined);
+        if (photo && !have.photo_etag) await cardstore.setPhoto(gc, c.id, photo);
         changed.push(c.id);
         out.updated++;
         continue;
@@ -735,6 +724,21 @@ async function importVcf(gc, ctx, b) {
     }
   }
   await pimstore.live(gc, ctx.userId, 'contacts', { kind: 'changed', addressbookId: book.id, ...(changed.length <= 50 ? { contactIds: changed } : {}) });
+  // new certain duplicates (an imported card and an account card) become one contact
+  try { await cardmerge.afterSync(gc, ctx.userId, changed); } catch (e) { gc.log.warn('contacts merge after import failed', (e && e.code) || 'error'); }
+  return out;
+}
+
+/** The fields of card `cur` gaining from imported fields `f`: the lists joined (no doubles), empty fields filled. */
+function gainFrom(cur, f) {
+  const out = { ...stripForCheck(cur) };
+  out.name = { ...(cur.name || {}) };
+  const k = cardstore.valueKey;
+  for (const field of ['emails', 'phones', 'addresses', 'urls']) out[field] = uniq([...(cur[field] || []), ...(f[field] || [])], (v) => k(field, v));
+  for (const field of ['company', 'department', 'title', 'birthday']) if (!out[field] && f[field]) out[field] = f[field];
+  if (!String(out.note || '').trim() && f.note) out.note = f.note;
+  for (const n of ['given', 'family', 'middle', 'prefix', 'suffix', 'nickname']) if (!out.name[n] && f.name && f.name[n]) out.name[n] = f.name[n];
+  if (!out.name.display && f.name) out.name.display = f.name.display;
   return out;
 }
 
@@ -879,6 +883,6 @@ async function suggest(gc, userId, text, max = 10) {
 }
 
 module.exports = {
-  addressbooks, patchBook, settings, list, get, create, patch, remove, photo, putPhoto, deletePhoto, lookup, activity, draft, duplicates, ignore, merge,
+  ownCard, write, destroy, books, addressbooks, patchBook, settings, list, get, create, patch, remove, photo, putPhoto, deletePhoto, lookup, activity, draft, duplicates, ignore, merge,
   importVcf, exportVcf, createGroup, patchGroup, removeGroup, getGroup, groupMembers, suggest, fromSignature, full, cardOf, defaultBook, summaries,
 };

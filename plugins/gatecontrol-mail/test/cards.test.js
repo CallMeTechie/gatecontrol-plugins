@@ -102,7 +102,8 @@ test('duplicates: same address, same number, same name without addresses; ignore
   const n1 = await mk({ name: { given: 'Tinker', family: 'Bell' } });
   const n2 = await mk({ name: { given: 'Tinker', family: 'Bell' } });
   const d = (await anna('GET', 'cards/duplicates')).json.items;
-  assert.deepEqual(d.map((x) => [x.reason, x.cards.map((y) => y.id)]), [['email', [a1.id, a2.id]], ['phone', [b1.id, b2.id]], ['name', [n1.id, n2.id]]]);
+  // 1.4.0: the uncertain ones first (the same name without addresses), `certain` for the others
+  assert.deepEqual(d.map((x) => [x.reason, x.certain, x.cards.map((y) => y.id)]), [['name', false, [n1.id, n2.id]], ['email', true, [a1.id, a2.id]], ['phone', true, [b1.id, b2.id]]]);
   assert.equal((await anna('POST', 'cards/duplicates/ignore', { ids: [n1.id, n2.id] })).status, 200);
   assert.equal((await anna('GET', 'cards/duplicates')).json.items.length, 2);
   const g = (await anna('POST', 'groups', { name: 'Kinder' })).json.group;
@@ -154,8 +155,10 @@ test('vCard import (Gmail export, again: updated / skipped), export as vCard 4.0
   assert.deepEqual(r, { imported: 2, updated: 0, skipped: 1 });
   assert.deepEqual((await anna('POST', 'cards/import', { vcf: google.replace('0151 444', '0151 555') })).json, { imported: 0, updated: 1, skipped: 2 });
   assert.equal((await anna('POST', 'cards/import', { vcf: 'kaputt' })).json.error.code, 'invalid_vcard');
+  // 1.4.0: an import only adds — the new number joins the old one, the main number stays the first mobile one
   const clara = (await anna('GET', 'cards', null, { q: 'clara' })).json.items[0];
-  assert.deepEqual([clara.phone, clara.photo], ['0151 555', true]);
+  assert.deepEqual([clara.phone, clara.photo], ['0151 444', true]);
+  assert.deepEqual((await anna('GET', `cards/${clara.id}`)).json.phones.map((p) => p.value), ['0151 444', '0151 555']);
   const exp = (await anna('GET', 'cards/export')).json;
   assert.deepEqual([exp.name, exp.mime], ['kontakte.vcf', 'text/vcard']);
   const text = Buffer.from(exp.data, 'base64').toString();

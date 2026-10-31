@@ -11,8 +11,12 @@
  *             postal addresses, birthday (year optional), note, groups, address book (new ones); saved with the etag,
  *             409 conflict → „Neu laden“ / „Meine Änderung erneut anwenden“
  *   groups    members, „Mail an alle“, add (contacts or addresses) and remove, rename, delete
- *   doubles   the pairs with their reason, „Zusammenführen“ (a preview with a choice per field; different address books
- *             are linked, both stay at the provider), „Keine Dublette“
+ *   doubles   (1.4.0) the uncertain ones: every card with where it comes from (address book, account) and its numbers,
+ *             addresses, postal address and picture, below „So wird der Kontakt“ (the preview) with „Zusammenführen“
+ *             (always one GC contact, the account cards linked, nothing deleted at a provider) and „Keine Dublette“;
+ *             on top the automatic merges with „Rückgängig“
+ *   master    (1.4.0) a star for favourites, the main number, a band per conflict („Übernehmen“ / „Verwerfen“), the
+ *             sources with „Verknüpfung lösen“
  */
 (function () {
   'use strict';
@@ -216,13 +220,21 @@
     }
 
     function cardRow(c) {
-      var b = bookOf(c.addressbookId);
-      var dot = bookColor(b);
       var sub = [c.title, c.company].filter(Boolean).join(' · ') || c.emails[0] || c.phone || '';
+      // a dot per account the contact comes from (the GC address book has none)
+      var seen = {};
+      var dots = (c.sources || [{ addressbookId: c.addressbookId }]).map(function (s) {
+        var b = bookOf(s.addressbookId);
+        var color = bookColor(b);
+        if (!color || seen[color]) return null;
+        seen[color] = true;
+        return h('span', { class: 'mp-dot', style: 'position:static;background:' + color, attrs: { title: bookName(b) } });
+      }).filter(Boolean);
       return h('button', { type: 'button', class: 'mp-item mk-row' + (K.card && K.card.id === c.id ? ' is-open' : ''), on: { click: function () { openCard(c.id); } } }, [
         avatar(c, false),
-        h('span', { class: 'mp-it' }, [h('span', { class: 'mp-from', style: 'font-weight:600', text: c.name || T('p.k.no_name') }), h('span', { class: 'mp-snip', text: sub })]),
-        dot ? h('span', { class: 'mp-dot', style: 'background:' + dot, attrs: { title: bookName(b) } }) : null,
+        h('span', { class: 'mp-it' }, [h('span', { class: 'mp-from', style: 'font-weight:600' }, [c.favorite ? h('span', { class: 'mk-star is-on', attrs: { title: T('p.k.favorite') } }, icon('star', 13)) : null, c.name || T('p.k.no_name')]),
+          h('span', { class: 'mp-snip', text: sub })]),
+        h('span', { class: 'mk-dots' }, [c.conflicts ? h('span', { class: 'mk-cfdot', attrs: { title: T('p.k.cf_count', { n: c.conflicts }) } }) : null].concat(dots)),
       ]);
     }
 
@@ -324,6 +336,7 @@
       if (S.area !== 'contacts') { K.card = { id: id }; ui.setArea('contacts'); return; }
       K.open = { card: id };
       api('GET', 'cards/' + id).then(function (c) {
+        if (c.masterId) { openCard(c.masterId, quiet); return; }
         K.card = c;
         if (!quiet) renderList();
         ui.renderNav();
@@ -346,7 +359,7 @@
         if (mails.length <= 1) { if (mails[0]) ui.compose({ to: [mails[0]] }); return; }
         ui.dialog(T('p.k.mail_which'), [h('div', { class: 'dp-menu' }, mails.map(function (m) { return h('button', { type: 'button', on: { click: function () { ui.closeDialog(); ui.compose({ to: [m] }); } } }, [icon('mail'), m]); }))]);
       };
-      var tel = c.phones[0] ? c.phones[0].value : null;
+      var tel = c.mainPhone ? c.mainPhone.value : (c.phones[0] ? c.phones[0].value : null);
       var acts = h('div', { class: 'mk-acts' }, [
         h('button', { type: 'button', class: 'mk-act', disabled: !mails.length, on: { click: mailTo } }, [icon('mail', 18), h('span', { text: T('p.k.mail') })]),
         tel ? h('a', { class: 'mk-act', attrs: { href: 'tel:' + tel.replace(/[^\d+]/g, '') } }, [icon('phone', 18), h('span', { text: T('p.k.call') })]) : h('button', { type: 'button', class: 'mk-act', disabled: true }, [icon('phone', 18), h('span', { text: T('p.k.call') })]),
@@ -357,7 +370,11 @@
       c.emails.forEach(function (e) {
         fld(T('p.k.email') + ' · ' + typeLabel('email', e.type), h('button', { type: 'button', class: 'mc-link', style: 'text-align:left', on: { click: function () { ui.compose({ to: [e.value] }); } } }, e.value));
       });
-      c.phones.forEach(function (p) { fld(typeLabel('phone', p.type), h('a', { class: 'mk-val', attrs: { href: 'tel:' + p.value.replace(/[^\d+]/g, '') }, text: p.value })); });
+      c.phones.forEach(function (p) {
+        var main = c.mainPhone && L.digits(c.mainPhone.value) === L.digits(p.value);
+        fld(typeLabel('phone', p.type) + (main && c.phones.length > 1 ? ' · ' + T('p.k.main_phone') : ''), h('a', { class: 'mk-val', attrs: { href: 'tel:' + p.value.replace(/[^\d+]/g, '') }, text: p.value }),
+          !main && !c.masterId ? ibtn('star', T('p.k.make_main'), function () { patchOwn(c, { mainPhone: p.value }); }) : null);
+      });
       c.addresses.forEach(function (a) {
         var text = [a.street, [a.postalCode, a.city].filter(Boolean).join(' '), a.region, a.country].filter(Boolean).join('\n');
         fld(T('p.k.address') + ' · ' + typeLabel('adr', a.type), h('span', { class: 'mk-val', style: 'white-space:pre-line', text: text }),
@@ -375,9 +392,19 @@
         }))));
       }
       if (!fields.firstChild) fields.appendChild(h('p', { class: 'dp-hint', text: T('p.k.no_fields') }));
+      // the sources of a GC contact: each linked account card with „Verknüpfung lösen“
+      var srcs = (c.sources || []).filter(function (x) { return x.id !== c.id; });
+      var sourcesCard = srcs.length ? h('div', { class: 'mp-card mk-fields' }, [h('span', { class: 'mp-sub', text: T('p.k.sources') })].concat(srcs.map(function (x) {
+        var sb = bookOf(x.addressbookId);
+        return h('div', { class: 'mk-fld' }, [bookColor(sb) ? h('span', { class: 'mp-dot', style: 'position:static;background:' + bookColor(sb) }) : null,
+          h('span', { class: 'mp-it' }, [h('span', { class: 'mk-val', text: x.addressbook || bookName(sb) }), x.account ? h('span', { class: 'mp-sub', text: x.account }) : null]),
+          ibtn('unlink', T('p.k.unlink'), function () { unlink(c, x); })]);
+      }))) : null;
       add(el, [
         h('div', { class: 'mp-card mk-headcard' }, [
           h('div', { class: 'mp-tools' }, [ibtn('back', T('p.back'), function () { ui.showPane('list'); }, 'mp-back'), h('span', { style: 'flex:1' }),
+            c.masterId ? null : h('button', { type: 'button', class: 'mp-ib mk-star' + (c.favorite ? ' is-on' : ''), attrs: { 'aria-pressed': c.favorite ? 'true' : 'false', 'aria-label': T(c.favorite ? 'p.k.unfavorite' : 'p.k.favorite'), title: T(c.favorite ? 'p.k.unfavorite' : 'p.k.favorite') },
+              on: { click: function () { patchOwn(c, { favorite: !c.favorite }); } } }, icon('star', 18)),
             c.readOnly ? null : ibtn('trash', T('p.k.delete'), function () { deleteCard(c); })]),
           avatar(c, true),
           h('h2', { class: 'mk-name', text: name }),
@@ -387,8 +414,7 @@
           c.readOnly ? h('p', { class: 'dp-hint', text: T('p.k.read_only', { book: bookName(b) }) }) : null,
           acts,
         ]),
-        fields,
-      ]);
+      ].concat((c.conflicts || []).map(function (x) { return conflictBand(c, x); })).concat([fields, sourcesCard]));
       if (act) {
         if ((act.mails || []).length) {
           el.appendChild(h('div', { class: 'mp-lab', text: T('p.k.last_mails') }));
@@ -415,9 +441,71 @@
       }
     }
 
+    /** The text of one value of a conflict (a number, a postal address, a company …). */
+    function cfValue(field, v) {
+      if (!v) return '';
+      if (field === 'phones') return v.value;
+      if (field === 'addresses') return [v.street, [v.postalCode, v.city].filter(Boolean).join(' ')].filter(Boolean).join(', ');
+      if (field === 'birthday') { var bd = L.birthdayText(v, CTX.lang); return bd ? bd.text : v; }
+      return String(v);
+    }
+    function cfField(x) {
+      if (x.field === 'phones') return typeLabel('phone', x.type);
+      if (x.field === 'addresses') return T('p.k.address') + ' · ' + typeLabel('adr', x.type);
+      return T({ company: 'p.k.company', department: 'p.k.department', title: 'p.k.position', birthday: 'p.k.birthday' }[x.field] || 'p.k.company');
+    }
+
+    /** A conflict at a GC contact: „<Konto> hat eine andere Mobilnummer: … (bisher …)“ — „Übernehmen“ / „Zusätzlich“ / „Verwerfen“. */
+    function conflictBand(c, x) {
+      var src = x.source.account ? x.source.addressbook + ' (' + x.source.account + ')' : x.source.addressbook;
+      var go = function (what, body) {
+        api('POST', 'cards/' + c.id + '/conflicts/' + x.id + '/' + what, body || {}).then(function (r) { K.card = r.card; renderCard(r.card); loadList(); }, fail);
+      };
+      var list = (x.field === 'phones' || x.field === 'addresses');
+      return h('div', { class: 'mp-card mk-conflict', attrs: { role: 'status' } }, [
+        h('div', { class: 'mk-cfhead' }, [icon('warn', 16), h('span', { text: T('p.k.cf_text', { source: src, field: cfField(x), value: cfValue(x.field, x.value) }) })]),
+        x.replaces ? h('span', { class: 'mp-sub', text: T('p.k.cf_before', { value: cfValue(x.field, x.replaces) }) }) : null,
+        h('div', { class: 'dp-actions', style: 'justify-content:flex-start' }, [
+          btn(T('p.k.cf_accept'), function () { go('accept', { mode: x.replaces ? 'replace' : 'add' }); }, { primary: true, small: true }),
+          list && x.replaces ? btn(T('p.k.cf_add'), function () { go('accept', { mode: 'add' }); }, { small: true }) : null,
+          btn(T('p.k.cf_dismiss'), function () { go('dismiss'); }, { small: true }),
+        ]),
+      ]);
+    }
+
+    /** GateControl's own fields of a contact (favourite, main number): never to the provider. */
+    function patchOwn(c, body) {
+      api('PATCH', 'cards/' + c.id, body).then(function (r) { K.card = r.card; renderCard(r.card); loadList(); }, fail);
+    }
+
+    /** „Verknüpfung lösen“: the account card is on its own again (at the provider nothing changes). */
+    function unlink(c, x) {
+      if (!window.confirm(T('p.k.unlink_q', { book: x.addressbook || '' }))) return;
+      api('POST', 'cards/' + c.id + '/unmerge', { ids: [x.id] }).then(function (r) {
+        ui.toast(T('p.k.unlinked'));
+        K.loaded = false;
+        load().then(function () { ui.renderNav(); loadList(); }, function () {});
+        if (r.card) { K.card = r.card; renderCard(r.card); } else { K.card = null; renderReadEmpty(); }
+      }, fail);
+    }
+
     function deleteCard(c) {
-      if (!window.confirm(T('p.k.delete_q', { name: c.name.display || '' }))) return;
-      api('DELETE', 'cards/' + c.id).then(function () {
+      var srcs = (c.sources || []).filter(function (x) { return x.id !== c.id; });
+      if (srcs.length) {
+        // a GC contact with linked account cards: those stay unless the person says so
+        var also = h('input', { type: 'checkbox' });
+        var books = srcs.map(function (x) { return x.addressbook; }).filter(function (v, i, a) { return v && a.indexOf(v) === i; }).join(', ');
+        ui.dialog(T('p.k.delete'), [h('p', { class: 'dp-hint', text: T('p.k.delete_master_q', { name: c.name.display || '' }) }),
+          h('label', { class: 'dp-check' }, [also, h('span', { text: T('p.k.delete_linked_too', { books: books }) })]),
+          h('div', { class: 'dp-actions' }, [btn(T('p.cancel'), ui.closeDialog), btn(T('p.k.delete'), function () { removeCard(c, also.checked ? 'delete' : 'keep'); }, { primary: true })])]);
+        return;
+      }
+      if (!window.confirm(T((bookOf(c.addressbookId) || {}).source === 'local' ? 'p.k.delete_local_q' : 'p.k.delete_q', { name: c.name.display || '' }))) return;
+      removeCard(c, null);
+    }
+
+    function removeCard(c, linked) {
+      api('DELETE', 'cards/' + c.id, null, linked ? { linked: linked } : null).then(function () {
         ui.closeDialog();
         K.card = null; K.open = null;
         ui.toast(T('p.k.deleted'));
@@ -588,7 +676,12 @@
       };
       var send = function (body, etag) {
         var req = c ? api('PATCH', 'cards/' + c.id, Object.assign({}, body, { etag: etag })) : api('POST', 'cards', Object.assign({}, body, book && book.value ? { addressbookId: Number(book.value) } : {}));
-        req.then(function (r) { after(r.card); }, function (e) {
+        req.then(function (r) {
+          // a value taken over from an account card goes back to it; say when that did not work
+          var bad = (r.writeBack || []).filter(function (x) { return !x.ok; });
+          if (bad.length) ui.toast(T('p.k.writeback_fail', { book: bad.map(function (x) { return bookName(bookOf(x.addressbookId)); }).join(', ') }), 'error');
+          after(r.card);
+        }, function (e) {
           if (e && e.code === 'conflict' && e.extra && e.extra.current) {
             var cur = e.extra.current;
             ui.dialog(T('p.k.conflict_title'), [h('p', { class: 'dp-hint', text: T('p.k.conflict_text') }), h('div', { class: 'dp-actions' }, [
@@ -749,73 +842,84 @@
       clear(el);
       el.appendChild(h('div', { class: 'mp-card' }, h('div', { class: 'mp-empty', text: T('p.loading') })));
       ui.showPane('read');
-      api('GET', 'cards/duplicates').then(function (r) {
+      Promise.all([api('GET', 'cards/duplicates', null, { details: '1' }), api('GET', 'cards/merges', null, { limit: '20' }).then(null, function () { return { items: [] }; })]).then(function (res) {
+        var r = res[0];
+        var done = (res[1].items || []).filter(function (m) { return !m.undoneAt && m.mode !== 'manual'; });
         K.dupCount = (r.items || []).length;
         ui.renderNav();
         renderList();
         clear(el);
+        var certain = r.items.filter(function (d) { return d.certain; }).length;
         el.appendChild(h('div', { class: 'mp-card' }, [h('div', { class: 'mp-tools' }, [ibtn('back', T('p.back'), function () { ui.showPane('list'); }, 'mp-back'),
-          h('div', { class: 'mp-head-tx' }, [h('h2', { text: T('p.k.duplicates') }), h('div', { class: 'mp-sub', text: K.dupCount === 1 ? T('p.k.dup_band_one') : T('p.k.dup_sub', { n: K.dupCount }) })])])]));
+          h('div', { class: 'mp-head-tx' }, [h('h2', { text: T('p.k.duplicates') }), h('div', { class: 'mp-sub', text: K.dupCount === 1 ? T('p.k.dup_band_one') : T('p.k.dup_sub', { n: K.dupCount }) })])]),
+          h('p', { class: 'dp-hint', text: T('p.k.dup_intro') }),
+          certain ? h('div', { class: 'dp-actions', style: 'justify-content:flex-start' }, btn(T('p.k.auto_now', { n: certain }), function () {
+            api('POST', 'cards/merge/auto', {}).then(function (x) { ui.toast(T('p.k.auto_done', { n: x.merged })); K.loaded = false; load().then(function () { ui.renderNav(); loadList(); }, function () {}); showDuplicates(); }, fail);
+          }, { small: true, icon: 'merge' })) : null]));
+        if (done.length) {
+          el.appendChild(h('div', { class: 'mp-lab', text: T('p.k.auto_merged', { n: done.length }) }));
+          el.appendChild(h('div', { class: 'mp-items' }, done.map(function (m) {
+            var names = m.cards.map(function (x) { return x.name; }).filter(function (v, i, a) { return v && a.indexOf(v) === i; }).join(', ');
+            return h('div', { class: 'mp-item mk-merge' }, [h('span', { class: 'mp-av' }, icon('merge', 16)),
+              h('span', { class: 'mp-it' }, [h('span', { class: 'mp-from', text: names }), h('span', { class: 'mp-snip', text: [T('p.k.mode_' + m.mode), m.cards.map(function (x) { return x.addressbook; }).filter(function (v, i, a) { return v && a.indexOf(v) === i; }).join(' · '), ui.fmtTime(m.at)].join(' · ') })]),
+              btn(T('p.k.undo'), function () { undoMerge(m); }, { small: true })]);
+          })));
+        }
         if (!r.items.length) { el.appendChild(h('div', { class: 'mp-card' }, h('div', { class: 'mp-empty', text: T('p.k.no_duplicates') }))); return; }
-        r.items.forEach(function (d) {
-          var books = {};
-          d.cards.forEach(function (c) { books[c.addressbookId] = true; });
-          el.appendChild(h('div', { class: 'mp-card mk-dup' }, [
-            h('span', { class: 'mp-sub', text: T('p.k.reason_' + d.reason) }),
-            h('div', { class: 'mp-items' }, d.cards.map(function (c) {
-              return h('button', { type: 'button', class: 'mp-item mk-row', on: { click: function () { openCard(c.id); } } }, [avatar(c, false),
-                h('span', { class: 'mp-it' }, [h('span', { class: 'mp-from', text: c.name }), h('span', { class: 'mp-snip', text: [c.emails[0], c.phone, bookName(bookOf(c.addressbookId))].filter(Boolean).join(' · ') })])]);
-            })),
-            Object.keys(books).length > 1 ? h('p', { class: 'dp-hint', text: T('p.k.link_note') }) : null,
-            h('div', { class: 'dp-actions', style: 'justify-content:flex-start' }, [
-              btn(T('p.k.merge'), function () { mergeDialog(d); }, { primary: true, small: true, icon: 'merge' }),
-              btn(T('p.k.not_dup'), function () { api('POST', 'cards/duplicates/ignore', { ids: d.cards.map(function (c) { return c.id; }) }).then(showDuplicates, fail); }, { small: true }),
-            ]),
-          ]));
-        });
+        r.items.forEach(function (d) { el.appendChild(dupCard(d)); });
       }, function (e) { clear(el); el.appendChild(h('div', { class: 'mp-card' }, h('p', { class: 'dp-err', text: ui.errText(e) }))); });
     }
 
-    /** „Zusammenführen“: the main contact, a choice per field where they differ, the notes joined or not. */
-    function mergeDialog(d) {
-      Promise.all(d.cards.map(function (c) { return api('GET', 'cards/' + c.id); })).then(function (cards) {
-        var ids = cards.map(function (c) { return c.id; });
-        var writable = cards.filter(function (c) { return !c.readOnly; });
-        var primary = h('select', { class: 'dp-input' }, cards.map(function (c, i) {
-          return h('option', { value: String(c.id), selected: c.id === (writable[0] || cards[i]).id, text: (c.name.display || '') + ' · ' + bookName(bookOf(c.addressbookId)) });
-        }));
-        var picks = {};
-        var rows = [];
-        var valueOf = { name: function (c) { return c.name.display; }, company: function (c) { return c.company; }, title: function (c) { return c.title; }, birthday: function (c) { return c.birthday; }, photo: function (c) { return c.photo ? T('p.k.photo_of', { name: c.name.display || '' }) : null; } };
-        Object.keys(valueOf).forEach(function (k) {
-          var have = cards.filter(function (c) { return valueOf[k](c); });
-          var distinct = have.map(valueOf[k]).filter(function (v, i, a) { return a.indexOf(v) === i; });
-          if (distinct.length < 2) return;
-          var s = h('select', { class: 'dp-input' }, have.map(function (c) { return h('option', { value: String(c.id), text: valueOf[k](c) }); }));
-          picks[k] = s;
-          rows.push(ui.field(T('p.k.pick_' + k), s));
-        });
-        var join = h('input', { type: 'checkbox', checked: true });
-        var sameBook = cards.every(function (c) { return c.addressbookId === cards[0].addressbookId; });
-        var err = h('p', { class: 'dp-err', attrs: { role: 'alert' } });
-        var go = function () {
-          var pick = {};
-          Object.keys(picks).forEach(function (k) { pick[k] = Number(picks[k].value); });
-          if (join.checked) pick.note = 'join';
-          api('POST', 'cards/merge', { ids: ids, primaryId: Number(primary.value), pick: pick }).then(function (r) {
-            ui.closeDialog();
-            ui.toast(sameBook ? T('p.k.merged') : T('p.k.linked'));
-            K.loaded = false;
-            load().then(function () { ui.renderNav(); loadList(); openCard(r.card.id); }, function () {});
-          }, function (e) { err.textContent = ui.errText(e); });
-        };
-        ui.dialog(T('p.k.merge'), [
-          h('p', { class: 'dp-hint', text: sameBook ? T('p.k.merge_note') : T('p.k.link_note') }),
-          ui.field(T('p.k.primary'), primary),
-        ].concat(rows).concat([
-          h('label', { class: 'dp-check' }, [join, h('span', { text: T('p.k.join_notes') })]), err,
-          h('div', { class: 'dp-actions' }, [btn(T('p.cancel'), ui.closeDialog), btn(sameBook ? T('p.k.merge') : T('p.k.link'), go, { primary: true })]),
-        ]), { wide: true });
+    /** The lines of one card in the duplicates (numbers, addresses, postal address, picture). */
+    function factLines(c) {
+      return [].concat((c.phones || []).map(function (p) { return typeLabel('phone', p.type) + ': ' + p.value; }), (c.emails || []).map(function (e) { return e.value; }),
+        (c.addresses || []).map(function (a) { return cfValue('addresses', a); }), c.company ? [c.company] : [], c.birthday ? [cfValue('birthday', c.birthday)] : []);
+    }
+
+    /** One uncertain duplicate: every card with its origin and fields, „So wird der Kontakt“, the actions. */
+    function dupCard(d) {
+      var details = d.details || d.cards.map(function (c) { return { card: { id: c.id, name: { display: c.name }, phones: c.phone ? [{ value: c.phone, type: 'other' }] : [], emails: c.emails.map(function (v) { return { value: v }; }), addresses: [], photo: c.photo ? {} : null }, source: { addressbookId: c.addressbookId, addressbook: bookName(bookOf(c.addressbookId)) } }; });
+      var pv = d.preview;
+      return h('div', { class: 'mp-card mk-dup' }, [
+        h('span', { class: 'mp-sub', text: T('p.k.reason_' + d.reason) + (d.certain ? ' · ' + T('p.k.certain') : '') }),
+        h('div', { class: 'mp-items' }, details.map(function (x) {
+          var c = x.card;
+          var sum = { id: c.id, name: c.name.display, photo: !!c.photo, photoEtag: c.photo ? c.photo.etag : null };
+          var sb = bookOf(x.source.addressbookId);
+          return h('button', { type: 'button', class: 'mp-item mk-row mk-dupcard', on: { click: function () { openCard(c.id); } } }, [avatar(sum, false),
+            h('span', { class: 'mp-it' }, [h('span', { class: 'mp-from', style: 'font-weight:600', text: c.name.display || T('p.k.no_name') }),
+              h('span', { class: 'mp-sub mk-origin' }, [bookColor(sb) ? h('span', { class: 'mp-dot', style: 'position:static;background:' + bookColor(sb) }) : null,
+                [x.source.addressbook, x.source.account].filter(Boolean).join(' · ') + (c.photo ? ' · ' + T('p.k.has_photo') : '')]),
+              h('span', { class: 'mp-snip mk-facts', text: factLines(c).join('\n') })])]);
+        })),
+        pv ? h('div', { class: 'mk-preview' }, [h('span', { class: 'mp-sub', text: T('p.k.preview') }),
+          h('b', { text: pv.name.display || T('p.k.no_name') }),
+          h('span', { class: 'mk-facts', text: factLines(pv).join('\n') }),
+          (pv.conflicts || []).length ? h('span', { class: 'mp-sub', text: T('p.k.preview_conflicts', { list: pv.conflicts.map(function (x) { return cfValue(x.field, x.value); }).join(', ') }) }) : null,
+          h('span', { class: 'dp-hint', text: T('p.k.preview_note') })]) : null,
+        h('div', { class: 'dp-actions', style: 'justify-content:flex-start' }, [
+          btn(T('p.k.merge'), function () { mergeNow(d); }, { primary: true, small: true, icon: 'merge' }),
+          btn(T('p.k.not_dup'), function () { api('POST', 'cards/duplicates/ignore', { ids: d.cards.map(function (c) { return c.id; }) }).then(showDuplicates, fail); }, { small: true }),
+        ]),
+      ]);
+    }
+
+    /** „Zusammenführen“: always one GC contact; the account cards are linked, nothing is deleted at a provider. */
+    function mergeNow(d) {
+      api('POST', 'cards/merge', { ids: d.cards.map(function (c) { return c.id; }) }).then(function (r) {
+        ui.toast(T('p.k.merged'));
+        K.loaded = false;
+        load().then(function () { ui.renderNav(); loadList(); openCard(r.card.id); }, function () {});
+      }, fail);
+    }
+
+    function undoMerge(m) {
+      if (!window.confirm(T(m.created ? 'p.k.undo_q_new' : 'p.k.undo_q'))) return;
+      api('POST', 'cards/merges/' + m.id + '/undo', {}).then(function () {
+        ui.toast(T('p.k.undone'));
+        K.loaded = false;
+        load().then(function () { ui.renderNav(); loadList(); }, function () {});
+        showDuplicates();
       }, fail);
     }
 
@@ -824,11 +928,11 @@
     var liveTimer = null;
     function onEvent(d) {
       if (!d) return;
-      if (d.kind === 'addressbooks' || d.kind === 'groups') K.loaded = false;
+      if (d.kind === 'addressbooks' || d.kind === 'groups' || d.kind === 'merged') K.loaded = false;
       if (S.area !== 'contacts') return;
       if (liveTimer) clearTimeout(liveTimer);
       liveTimer = setTimeout(function () {
-        var reloadCard = K.card && K.card.id && (!d.contactIds || d.contactIds.indexOf(K.card.id) >= 0) && d.kind === 'changed';
+        var reloadCard = K.card && K.card.id && (!d.contactIds || d.contactIds.indexOf(K.card.id) >= 0) && (d.kind === 'changed' || d.kind === 'conflicts' || d.kind === 'merged');
         (K.loaded ? Promise.resolve() : load()).then(function () {
           ui.renderNav();
           loadList();

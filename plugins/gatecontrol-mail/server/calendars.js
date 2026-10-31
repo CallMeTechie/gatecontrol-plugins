@@ -307,6 +307,45 @@ async function events(gc, ctx, q) {
   return { items, overlays: ov, pending };
 }
 
+/**
+ * GET events/upcoming?days=1…7 (2)&limit=1…20 (8) → { timeZone, today, items, more } (1.4.0): the compact list for the
+ * calendar widget on the start page — from now (running ones too) to the end of day today + days − 1 in the person's
+ * time zone, the visible calendars and overlays, without cancelled and declined ones; all-day ones of a day first.
+ */
+async function upcoming(gc, ctx, q) {
+  const cfg = await config.get(gc);
+  await pimstore.ensureSetup(gc, ctx.userId, ctx.lang);
+  const days = Math.min(Math.max(posInt(q.days) || 2, 1), 7);
+  const limit = Math.min(Math.max(posInt(q.limit) || 8, 1), 20);
+  const zone = await pimstore.zoneOf(gc, ctx.userId);
+  const now = Date.now();
+  const today = tz.localDate(now, zone);
+  const from = tz.at(today, { hh: 0, mm: 0 }, zone);
+  const to = tz.at(tz.addDays(today, days), { hh: 0, mm: 0 }, zone);
+  const { rows } = await visibleRows(gc, cfg, ctx.userId);
+  const shownRows = rows.filter((c) => c.visible === 1);
+  const color = new Map(shownRows.map((c) => [c.id, c.color]));
+  const dayOf = (x) => (x.allDay ? (x.startDate < today ? today : x.startDate) : tz.localDate(Math.max(x.start, now), zone));
+  const list = [];
+  for (const o of await occurrences(gc, ctx.userId, shownRows.map((c) => c.id), from, to)) {
+    if (o.status === 'cancelled' || o.myResponse === 'declined' || o.end <= now) continue;
+    list.push({ key: o.key, eventId: o.eventId, calendarId: o.calendarId, overlayId: null, color: color.get(o.calendarId) || null, title: o.title, start: o.start, end: o.end, allDay: o.allDay,
+      ...(o.allDay ? { startDate: o.startDate, endDate: o.endDate } : {}), location: o.location, online: o.online ? o.online.url : null, myResponse: o.myResponse || null,
+      tentative: o.myResponse === 'needs_action' || o.myResponse === 'tentative' || o.status === 'tentative' });
+  }
+  try {
+    const ovs = new Map((await overlays.list(gc, cfg, ctx.userId, ctx.lang)).map((x) => [x.id, x]));
+    for (const o of await overlays.items(gc, cfg, ctx.userId, null, from, to, ctx.lang)) {
+      if (o.end <= now) continue;
+      list.push({ key: o.key, eventId: null, calendarId: null, overlayId: o.overlayId, color: (ovs.get(o.overlayId) || {}).color || null, title: o.title, start: o.start, end: o.end, allDay: !!o.allDay,
+        ...(o.allDay ? { startDate: o.startDate, endDate: o.endDate } : {}), location: o.location || null, online: null, myResponse: null, tentative: false });
+    }
+  } catch { /* the overlays are optional */ }
+  for (const x of list) x.day = dayOf(x);
+  list.sort((a, b) => (a.day < b.day ? -1 : a.day > b.day ? 1 : 0) || (b.allDay ? 1 : 0) - (a.allDay ? 1 : 0) || a.start - b.start || String(a.key).localeCompare(String(b.key)));
+  return { timeZone: zone, today, items: list.slice(0, limit), more: Math.max(0, list.length - limit) };
+}
+
 // ─── one event ──────────────────────────────────
 
 /** An event of the person with its calendar (404 for anyone else's). */
@@ -418,5 +457,5 @@ async function get(gc, ctx, id, q) {
 
 module.exports = {
   list, create, patch, remove, subscribe, createSubscription, settings, events, get, full, ownEvent, occurrences, occurrenceView, etagOf, view, visibleRows, accountsOf,
-  rebuildZone, contactIds, OCC_COLS, RANGE_MAX,
+  rebuildZone, contactIds, OCC_COLS, RANGE_MAX, upcoming,
 };
