@@ -249,3 +249,43 @@ test('Microsoft contacts: the default folder by delta with its photo, a change g
     assert.deepEqual(mem.members.map((x) => x.email), ['chef@firma.example', 'extra@example.com']);
   });
 });
+
+test('a number removed from a linked contact stays removed (1.3.6): the linked Graph card keeps it, the view no longer shows it, also after the next sync', async () => {
+  const w = graphWorld();
+  w.contacts = [{ id: 'K1', changeKey: 'k1', displayName: 'Schatzimausi 💞', givenName: 'Schatzimausi 💞', emailAddresses: [], mobilePhone: '+49 171 5550001', businessPhones: ['+49 30 5550002'], companyName: 'Firma' }];
+  await withMail({ gatecontrol: '1.219.0', fetch: w.fetch, settings: CLIENT }, async (host, c) => {
+    const anna = c.as(ANNA);
+    await anna('POST', 'accounts/microsoft', { code: 'X', ...PKCE });
+    await anna('GET', 'addressbooks');
+    await runs(host, 8);
+    const g = (await anna('GET', 'addressbooks')).json.items.find((b) => b.source === 'graph');
+    const remote = (await anna('GET', 'cards', null, { book: String(g.id) })).json.items[0];
+    const own = (await anna('POST', 'cards', { name: { display: 'Schatzimausi 💞', given: 'Sabrina', family: 'Martin' }, phones: [{ value: '0171 5550001', type: 'mobile' }] })).json.card;
+    const m = await anna('POST', 'cards/merge', { ids: [own.id, remote.id], primaryId: own.id });
+    assert.equal(m.status, 200, JSON.stringify(m.json));
+    const shown = m.json.card;
+    assert.deepEqual(shown.phones.map((p) => [p.value, p.type]), [['0171 5550001', 'mobile'], ['+49 30 5550002', 'work']]);
+    assert.equal(shown.company, 'Firma');
+    // the app sends the whole form without the work number (and without the company)
+    const body = { name: shown.name, emails: shown.emails, phones: shown.phones.filter((p) => p.type !== 'work'), company: null, addresses: shown.addresses, birthday: shown.birthday, note: shown.note, etag: shown.etag };
+    const p = await anna('PATCH', `cards/${own.id}`, body);
+    assert.equal(p.status, 200, JSON.stringify(p.json));
+    assert.deepEqual(p.json.card.phones.map((x) => x.value), ['0171 5550001'], 'the answer shows the number no more');
+    assert.equal(p.json.card.company, null);
+    assert.deepEqual((await anna('GET', `cards/${own.id}`)).json.phones.map((x) => x.value), ['0171 5550001']);
+    // the next sync brings the Graph card again (changed elsewhere): the removed number stays away
+    w.contacts[0].changeKey = 'k9';
+    w.contacts[0].jobTitle = 'Chefin';
+    await runs(host, 8);
+    const again = (await anna('GET', `cards/${own.id}`)).json;
+    assert.deepEqual([again.phones.map((x) => x.value), again.company, again.title], [['0171 5550001'], null, 'Chefin']);
+    // nothing was written to Graph, the linked card still has the number
+    assert.equal(w.contactsPatched.length, 0);
+    assert.deepEqual((await anna('GET', `cards/${remote.id}`)).json.phones.map((x) => x.value), ['+49 171 5550001', '+49 30 5550002']);
+    // a new number at the provider shows again
+    w.contacts[0].changeKey = 'k10';
+    w.contacts[0].businessPhones = ['+49 30 5550003'];
+    await runs(host, 8);
+    assert.deepEqual((await anna('GET', `cards/${own.id}`)).json.phones.map((x) => x.value), ['0171 5550001', '+49 30 5550003']);
+  });
+});

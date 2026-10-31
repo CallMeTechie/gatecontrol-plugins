@@ -34,6 +34,19 @@ function letterOf(key) {
   return /^[A-Z]$/.test(c) ? c : '#';
 }
 
+/**
+ * The compared form of one value of a card's field (lists: emails, phones, addresses, urls; single: company,
+ * department, title, birthday): an address in lower case, the digits of a number, street|postal code|city folded.
+ */
+function valueKey(field, v) {
+  if (v == null || v === '') return '';
+  if (field === 'emails') return String(v.value || '').trim().toLowerCase();
+  if (field === 'phones') return vcard.digits(v.value) || String(v.value || '').replace(/\s+/g, '');
+  if (field === 'addresses') return fold(`${v.street || ''}|${v.postalCode || ''}|${v.city || ''}`).replace(/\s+/g, ' ').trim();
+  if (field === 'urls') return String(v).trim();
+  return fold(String(v)).replace(/\s+/g, ' ').trim();
+}
+
 const photoEtag = (p) => crypto.createHash('sha1').update(p.data).digest('hex').slice(0, 16);
 
 /**
@@ -110,6 +123,7 @@ async function dropCard(gc, c) {
   await store.run(gc, 'DELETE FROM card_phones WHERE card_id = ?', [c.id]);
   await store.run(gc, 'DELETE FROM card_photos WHERE card_id = ?', [c.id]);
   await store.run(gc, 'DELETE FROM card_dup_ignored WHERE user_id = ? AND (a = ? OR b = ?)', [c.user_id, c.id, c.id]);
+  await store.run(gc, 'DELETE FROM card_dismissed WHERE card_id = ? OR source_id = ?', [c.id, c.id]);
   await store.run(gc, 'DELETE FROM cards WHERE id = ?', [c.id]);
   const version = await pimstore.nextCardVersion(gc, c.user_id);
   await store.run(gc, `INSERT INTO card_tombstones (user_id, card_id, version, at) VALUES (?, ?, ?, ?)
@@ -122,4 +136,4 @@ async function dropBook(gc, b) {
   await store.run(gc, 'DELETE FROM addressbooks WHERE id = ?', [b.id]);
 }
 
-module.exports = { fold, sortKeyOf, letterOf, storeCard, setPhoto, photoOf, dropCard, dropBook, CARDS_MAX, PHOTO_MAX };
+module.exports = { fold, valueKey, sortKeyOf, letterOf, storeCard, setPhoto, photoOf, dropCard, dropBook, CARDS_MAX, PHOTO_MAX };

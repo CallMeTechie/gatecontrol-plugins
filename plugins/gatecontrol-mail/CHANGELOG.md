@@ -2,6 +2,21 @@
 
 Alle E-Mail-Konten an einem Ort – im eigenen Tab der GateControl-Apps und im Portal.
 
+## 1.3.6
+- **Gelöschte Nummer bleibt gelöscht.** Bei einem verknüpften Kontakt (z. B. ein eigener Kontakt, verknüpft mit dem
+  Outlook-Adressbuch und dem Ordner „OnePlus … (contacts synced by Link to Windows)“) zeigt die Ansicht die Nummern,
+  Adressen, Anschriften, Firma, Abteilung, Position und den Geburtstag aller verknüpften Karten zusammen. Beim Speichern
+  änderte der Server aber nur den Hauptkontakt. Eine Nummer, die auch in einer verknüpften Karte steht, kam deshalb
+  sofort wieder, auch nach mehrmaligem Löschen.
+- Jetzt merkt sich der Server jeden Wert einer verknüpften Karte, den die Person beim Speichern weglässt
+  (Migration `005_card_dismissed.sql`), und die Ansicht lässt ihn weg. Beim Anbieter bleibt die verknüpfte Karte
+  unverändert. Ändert sich der Wert dort (eine andere Nummer), erscheint er wieder. Fügt die Person ihn selbst wieder
+  hinzu, ist er nicht mehr weggelassen.
+- Nicht die Ursache waren der Abgleich (er schreibt nur die Karte des Anbieters) und Microsoft Graph: `businessPhones`
+  geht immer mit, leer als `[]`, und Graph leert die Nummern damit.
+- Die Apps brauchen nichts Neues. Sie schicken beim Speichern das ganze Formular, das Portal nur die geänderten Felder.
+  Beides passt.
+
 ## 1.3.5
 - **Tiefer verschachtelte Outlook-Ordner.** Microsoft 365 und outlook.com zeigen jetzt Ordner bis zur 10. Ebene (bisher
   4). Die Ordner werden Ebene für Ebene geholt statt rekursiv: Unterordner nur dort, wo `childFolderCount` welche
