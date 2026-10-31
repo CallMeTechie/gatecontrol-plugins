@@ -17,6 +17,12 @@
 //                  with its own start date. time: 'HH:MM' local, null all day. The calendar area
 //                  switched off → no events, no subscriptions. Codes: invalid.
 //   calendar_list  {} → { ok: true, subscriptions: [{ id, name }] }   the calendars the person sees
+//
+// 1.4.0 (Mail's calendar shows the Alltag calendars): both services allow 1800 calls an hour (services.provides
+// maxPerHour, GateControl ≥ 1.216.0); calendar_query takes `cursor?` (an opaque string from `next`) and answers
+// `next: cursor | null` — the next page of at most 50 events (and at most ~15 KB of them); every event carries
+// `endMs | null` (its end, null when it has none), `uid` (the occurrence's key in its calendar — the UID and its start —, stable between refreshes) and
+// `location | null` (≤ 80). Callers without a cursor (Familie) get the first page as before.
 
 const store = require('./store');
 const calendar = require('./calendar');
@@ -28,6 +34,8 @@ const MAX_DAYS = 62;
 const MAX_EVENTS = 50;
 const TITLE_MAX = 80;
 const MATCH_MAX = 80;
+const PAGE_BYTES = 15 * 1024;
+const CURSOR_RE = /^\d{1,5}$/;
 
 class Refusal extends Error { constructor(code) { super(code); this.code = code; } }
 const no = (code) => new Refusal(code);
@@ -61,22 +69,37 @@ async function calendarQuery(gc, cfg, payload, user) {
     if (typeof payload.match !== 'string' || payload.match.length > MATCH_MAX) throw no('invalid');
     match = payload.match.trim().toLowerCase();
   }
+  let skip = 0;
+  if (payload.cursor !== undefined && payload.cursor !== null) {
+    if (typeof payload.cursor !== 'string' || !CURSOR_RE.test(payload.cursor)) throw no('invalid');
+    skip = Number(payload.cursor);
+  }
   const subs = await visibleSubs(gc, cfg, user);
   const use = ids ? subs.filter((s) => ids.has(s.id)) : subs;
   const byId = new Map(use.map((s) => [s.id, s]));
   const startMs = tz.toUtc({ ...tz.parseDate(from) }, cfg.tz);
   const endMs = tz.toUtc({ ...tz.parseDate(tz.addDays(to, 1)) }, cfg.tz);
   const events = [];
+  let bytes = 0;
+  let n = 0;
+  let next = null;
   for (const e of await store.eventsBetween(gc, use.map((s) => s.id), startMs, endMs, 2000)) {
     if (match && !String(e.title || '').toLowerCase().includes(match)) continue;
+    if (n++ < skip) continue;
     const s = byId.get(e.sub_id);
-    events.push({
+    const ev = {
       title: String(e.title || '').slice(0, TITLE_MAX), date: e.date, startMs: e.start_ms, allDay: !!e.all_day, subId: s.id, subName: s.name,
       time: e.all_day ? null : format.time(e.start_ms, cfg.tz),
-    });
-    if (events.length >= MAX_EVENTS) break;
+      // 1.4.0: the end, the event's key and its place (Mail's calendar)
+      endMs: Number.isSafeInteger(e.end_ms) && e.end_ms > e.start_ms ? e.end_ms : null, uid: String(e.ikey || '').slice(0, 200),
+      location: e.location ? String(e.location).slice(0, TITLE_MAX) : null,
+    };
+    const size = Buffer.byteLength(JSON.stringify(ev)) + 1;
+    if (events.length >= MAX_EVENTS || (events.length && bytes + size > PAGE_BYTES)) { next = String(n - 1); break; }
+    events.push(ev);
+    bytes += size;
   }
-  return { ok: true, events, subscriptions: subsView(subs) };
+  return { ok: true, events, subscriptions: subsView(subs), next };
 }
 
 async function calendarList(gc, cfg, payload, user) {

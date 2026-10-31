@@ -2,6 +2,17 @@
 
 Müllabfuhr und Kalender des Haushalts als GateControl-Plugin.
 
+## 1.4.0
+- **Kalender in Mail:** Mail 1.2.0 blendet die Alltag-Kalender einer Person in seinen Kalender ein (nur lesend) und
+  ruft die Dienste dafür für jede Person auf.
+  - `calendar_query` und `calendar_list` erlauben je 1800 Aufrufe pro Stunde (`services.provides.<name>.maxPerHour`).
+  - `calendar_query` nimmt zusätzlich `cursor?` und antwortet mit `next: cursor | null`: höchstens 50 Termine (und
+    höchstens etwa 15 KB) je Seite, die nächste mit `cursor: next`. Bisher fielen Termine nach dem 50. stillschweigend weg.
+  - Jeder Termin trägt zusätzlich `endMs | null` (Ende; `null` ohne Ende), `uid` (Schlüssel des Vorkommens im Kalender:
+    UID und Beginn, bleibt beim Neuladen gleich) und `location | null` (≤ 80).
+  - Bestehende Aufrufer (Familie) ohne `cursor` bekommen wie bisher die erste Seite; ein falscher `cursor` → `invalid`.
+- Braucht GateControl 1.216.0 (`maxPerHour`; ältere Versionen lehnen den Schlüssel ab).
+
 ## 1.3.0
 - **Kalender für andere Plugins** (`services.provides`, GateControl ≥ 1.177.0 – ein älteres GateControl ruft
   die Dienste einfach nie auf, die Mindestversion bleibt 1.164.0): Familie 1.9.0 nutzt sie für Regeln und

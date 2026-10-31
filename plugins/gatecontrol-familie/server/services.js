@@ -47,6 +47,15 @@
 //                   (1.13.0, caller gatecontrol-schule only) — a child's school day ends earlier: the pickup
 //                   around the planned end is looked for, its driver and the parents are asked
 //                   (server/schoolend.js). Codes: invalid, forbidden.
+//   calendar_range  { from: 'YYYY-MM-DD', to: 'YYYY-MM-DD' (≤ 62 days), cursor? }
+//                   → { ok: true, tz, events: [{ id: '123' | 'member:5', title, date, time: 'HH:MM' | null, endDate | null,
+//                        endTime | null, allDay, place | null, kind: 'event' | 'birthday', memberIds: [userId],
+//                        origin: 'chat' | null }], next: cursor | null }
+//                   (1.16.0, caller gatecontrol-mail only — the family calendar shown in Mail's calendar) the
+//                   occurrences like GET dates (yearly repetition, member birthdays), sorted; only for the person of
+//                   the call: GateControl's `user` must be there (a userId in the payload must be the same, else
+//                   forbidden), a family member (no wall tablet, else not_member), module dates on (else module_off).
+//                   At most ~16 KB per answer: the rest with `next` as `cursor` (an opaque string). Codes: invalid.
 //   wall_wifi       { shares: [{ id, ssid, security, password, hidden, expiresAt, sharedBy }] (0–4) }
 //                   → { ok: true, walls, wall }   (1.14.0, caller gatecontrol-vault only) — the Wi-Fi shares for the
 //                   wall tablet, always the whole set (server/wifi.js). Codes: invalid, forbidden.
@@ -292,6 +301,43 @@ async function ruleEvent(gc, cfg, payload) {
   return { ok: true, fired: runs.length };
 }
 
+// ─── calendar_range (1.16.0, Mail) ───────────
+
+const RANGE_MAX_DAYS = 62;
+const RANGE_MAX_BYTES = 15 * 1024;  // the events of one answer (the host allows 16 KB in all)
+const CURSOR_RE = /^\d{1,6}$/;
+
+/** The family calendar between two dates for the person of the call (Mail's calendar shows it). */
+async function calendarRange(gc, cfg, payload, user) {
+  const uid = user && posInt(user.id);
+  if (!uid || (payload.userId != null && posInt(payload.userId) !== uid)) throw no('forbidden');
+  if (typeof payload.from !== 'string' || !DATE_RE.test(payload.from) || !validDate(payload.from)) throw no('invalid');
+  if (typeof payload.to !== 'string' || !DATE_RE.test(payload.to) || !validDate(payload.to)) throw no('invalid');
+  if (payload.to < payload.from || tz.diffDays(payload.from, payload.to) > RANGE_MAX_DAYS) throw no('invalid');
+  if (payload.cursor != null && !(typeof payload.cursor === 'string' && CURSOR_RE.test(payload.cursor))) throw no('invalid');
+  const fam = await family(gc, cfg);
+  memberOf(fam, { userId: uid }, user);
+  if (!cfg.modules.dates) throw no('module_off');
+  const all = await dates.between(gc, fam, payload.from, payload.to);
+  const start = payload.cursor ? Number(payload.cursor) : 0;
+  const events = [];
+  let bytes = 0;
+  let i = start;
+  for (; i < all.length; i++) {
+    const v = all[i];
+    const e = {
+      id: String(v.id), title: v.title, date: v.date, time: v.time || null,
+      endDate: v.endDate || null, endTime: v.endTime || null, allDay: !!v.allDay, place: v.place || null, kind: v.kind, memberIds: v.memberIds || [],
+      origin: v.origin || null,
+    };
+    const size = Buffer.byteLength(JSON.stringify(e)) + 1;
+    if (events.length && bytes + size > RANGE_MAX_BYTES) break;
+    events.push(e);
+    bytes += size;
+  }
+  return { ok: true, tz: cfg.tz, events, next: i < all.length ? String(i) : null };
+}
+
 // ─── the hook ───────────────────────────────────
 
 const HANDLERS = {
@@ -304,16 +350,19 @@ const HANDLERS = {
   rule_event: (gc, cfg, payload) => ruleEvent(gc, cfg, payload),
   school_day_end: (gc, cfg, payload) => schoolend.handle(gc, cfg, payload, Date.now()),
   wall_wifi: (gc, cfg, payload) => wifi.receive(gc, cfg, { caller: wifi.VAULT, payload }, Date.now()),
+  calendar_range: (gc, cfg, payload, user) => calendarRange(gc, cfg, payload, user),
 };
 /**
  * Who may call a service: the Messenger, except rule_event and school_day_end (the Schule plugin) and wall_wifi
  * (1.14.0, the Vault plugin); family_roles also GateDrop (1.13.2: links and NAS folders for parents); calendar_add also
- * Drive (1.15.3) and Mail (1.15.4).
+ * Drive (1.15.3) and Mail (1.15.4); calendar_range only Mail (1.16.0).
  */
 const CALLERS = {
   rule_event: [school.SCHULE], school_day_end: [school.SCHULE], family_roles: [CALLER, 'gatecontrol-gatedrop'], wall_wifi: [wifi.VAULT],
   // 1.15.3: Drive's deadlines, 1.15.4: Mail's dates and deadlines (both for the person of the call only)
   calendar_add: [CALLER, DRIVE, MAIL],
+  // 1.16.0: the family calendar in Mail's calendar (read only, the person of the call)
+  calendar_range: [MAIL],
 };
 const NAMES = Object.freeze(Object.keys(HANDLERS));
 
