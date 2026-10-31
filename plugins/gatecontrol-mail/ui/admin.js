@@ -4,7 +4,10 @@
  *   settings  who may use Mail (everybody, or people and groups — GateControl's picker GC.pickPrincipals), accounts per
  *             person, storage (retention, attachments, quota per person, what is used — in all and per person), AI (bar,
  *             sorting, filing on its own, blocked for business accounts), Microsoft (the app registration: GateControl's or
- *             an own client id, the consent link for a company's Microsoft administrator)
+ *             an own client id, the consent link for a company's Microsoft administrator, since 1.3.0 the rights the app
+ *             registration needs for calendars and contacts); since 1.3.0 Kalender (on/off, the accounts' calendars, the
+ *             business calendar, the default reminder, internal invitations, what is shown alongside) and Kontakte (on/off,
+ *             the accounts' address books, the AI for the signature); calendars, events and contacts in numbers
  *
  * The admin API (admin/…) through GC.call; every change is saved at once. Numbers only — never anybody's mail.
  */
@@ -58,6 +61,12 @@
     });
   }
   function errText(e) { var k = 'err.' + ((e && e.code) || 'failed'); return CTX.texts[k] ? T(k) : T('a.err_generic', { code: (e && e.code) || '' }); }
+  function fmtSize(b) {
+    var n = Number(b) || 0;
+    if (n < 1048576) return Math.round(n / 1024) + ' KB';
+    if (n < 1073741824) return (n / 1048576).toFixed(n < 10485760 ? 1 : 0).replace('.', CTX.lang === 'en' ? '.' : ',') + ' MB';
+    return fmtGB(n);
+  }
   function fmtGB(b) {
     var n = (Number(b) || 0) / 1073741824;
     return (n < 10 ? n.toFixed(1) : String(Math.round(n))).replace('.', CTX.lang === 'en' ? '.' : ',') + ' GB';
@@ -122,14 +131,25 @@
       h('span', { class: 'ma-d', text: T('a.used', { used: fmtGB(u.bytes), total: fmtGB(total), n: u.people.length }) }),
       h('div', { class: 'ma-bar' }, h('span', { style: 'width:' + Math.min(100, Math.round(u.bytes / Math.max(1, total) * 100)) + '%' })),
     ]);
-    var table = u.people.length ? h('table', { class: 'ma-table' }, [h('tr', null, [h('th', { text: T('a.person') }), h('th', { class: 'ma-num', text: T('a.accounts') }), h('th', { class: 'ma-num', text: T('a.storage') })])]
-      .concat(u.people.map(function (p) { return h('tr', null, [h('td', { text: p.name }), h('td', { class: 'ma-num', text: String(p.accounts) }), h('td', { class: 'ma-num', text: fmtGB(p.bytes) + ' / ' + fmtGB(u.quotaBytes) })]); }))) : null;
+    // since 1.3.0: calendars, events and contacts per person (numbers only), what of the storage they take
+    var pimCols = u.people.some(function (p) { return p.calendars != null; });
+    var num = function (n) { return h('td', { class: 'ma-num', text: String(n || 0) }); };
+    var table = u.people.length ? h('table', { class: 'ma-table' }, [h('tr', null, [h('th', { text: T('a.person') }), h('th', { class: 'ma-num', text: T('a.accounts') }),
+      pimCols ? h('th', { class: 'ma-num', text: T('a.calendars') }) : null, pimCols ? h('th', { class: 'ma-num', text: T('a.events') }) : null, pimCols ? h('th', { class: 'ma-num', text: T('a.contacts') }) : null,
+      h('th', { class: 'ma-num', text: T('a.storage') })])]
+      .concat(u.people.map(function (p) {
+        return h('tr', null, [h('td', { text: p.name }), num(p.accounts), pimCols ? num(p.calendars) : null, pimCols ? num(p.events) : null, pimCols ? num(p.contacts) : null,
+          h('td', { class: 'ma-num' }, [fmtGB(p.bytes) + ' / ' + fmtGB(u.quotaBytes), p.pimBytes ? h('div', { class: 'ma-d', text: T('a.pim_part', { size: fmtSize(p.pimBytes) }) }) : null])]);
+      }))) : null;
     page.appendChild(h('div', { class: 'ma-card' }, [h('h2', { text: T('a.storage_title') }),
       row(T('a.retention'), T('a.retention_d'), select(s.retentionMonths, [[1, T('a.months', { n: 1 })], [3, T('a.months', { n: 3 })], [6, T('a.months', { n: 6 })], [12, T('a.months', { n: 12 })], [24, T('a.months', { n: 24 })], [0, T('a.all_mail')]], function (v) { put({ retentionMonths: Number(v) }); })),
       row(T('a.attachments'), null, select(s.attachments, [['on_demand', T('a.on_demand')], ['always', T('a.always')]], function (v) { put({ attachments: v }); })),
       row(T('a.quota'), null, select(s.quotaGB, [1, 2, 5, 10, 20, 50, 100].map(function (n) { return [n, T('a.gb', { n: n })]; }), function (v) { put({ quotaGB: Number(v) }); })),
       used, table,
     ]));
+    // since 1.3.0: Kalender and Kontakte (C9)
+    page.appendChild(calendarCard(s.calendar || {}));
+    page.appendChild(contactsCard(s.contacts || {}));
     // AI
     var aiRow = function (k, title, desc) { return row(title, desc, sw(s.ai[k], function (on) { var o = {}; o[k] = on; put({ ai: o }); })); };
     page.appendChild(h('div', { class: 'ma-card' }, [h('h2', { text: T('a.ai_title') }),
@@ -145,7 +165,48 @@
       ms.consentUrl ? row(T('a.ms_consent'), T('a.ms_consent_d'), h('div', { style: 'display:flex;gap:8px;align-items:center;flex-wrap:wrap' }, [h('span', { class: 'ma-mono', text: ms.consentUrl }),
         h('button', { type: 'button', class: 'dp-btn dp-btn-sm', text: T('a.copy'), on: { click: function () { copyText(ms.consentUrl); } } })])) : row(T('a.ms_state'), null, h('span', { class: 'ma-d', text: T('a.ms_off') })),
       row(T('a.ms_connected'), null, h('span', { class: 'ma-d', text: T('a.ms_accounts', { n: ms.accounts }) })),
+      // since 1.3.0: what the app registration needs besides the mail (Calendars.ReadWrite, Contacts.ReadWrite)
+      (ms.registrationNeeds || []).length ? row(T('a.ms_needs'), T('a.ms_needs_d', { list: ms.registrationNeeds.join(T('a.and')) }),
+        h('div', { class: 'ma-chips' }, ms.registrationNeeds.map(function (x) { return h('span', { class: 'ma-chip ma-mono', text: x }); }))) : null,
     ]));
+  }
+
+  var REMINDERS = [null, 0, 5, 10, 15, 30, 60, 1440];
+  function reminderLabel(m) {
+    if (m == null) return T('a.rem_none');
+    if (m === 0) return T('a.rem_at');
+    if (m === 1440) return T('a.rem_day');
+    if (m === 60) return T('a.rem_hour');
+    return T('a.rem_min', { n: m });
+  }
+
+  /** The card „Kalender“ (C9): on/off, the accounts' calendars, the business calendar, the default reminder, internal invitations, overlays. */
+  function calendarCard(c) {
+    var set = function (part) { put({ calendar: part }); };
+    var on = c.enabled !== false;
+    var ov = c.overlays || {};
+    var ovRow = function (k) { return row(T('a.cal_ov_' + k), null, sw(ov[k] !== false, function (x) { var o = {}; o[k] = x; set({ overlays: o }); })); };
+    return h('div', { class: 'ma-card' }, [h('h2', { text: T('a.cal_title') }),
+      row(T('a.cal_enabled'), T('a.cal_enabled_d'), sw(on, function (x) { set({ enabled: x }); })),
+      on ? row(T('a.cal_accounts'), T('a.cal_accounts_d'), sw(c.accounts !== false, function (x) { set({ accounts: x }); })) : null,
+      on ? row(T('a.cal_business'), T('a.cal_business_d'), select(c.business || 'gatecontrol', [['gatecontrol', T('a.cal_business_gatecontrol')], ['exchange', T('a.cal_business_exchange')]], function (v) { set({ business: v }); })) : null,
+      on ? row(T('a.cal_reminder'), T('a.cal_reminder_d'), select(c.defaultReminder == null ? 'none' : c.defaultReminder, REMINDERS.map(function (m) { return [m == null ? 'none' : m, reminderLabel(m)]; }),
+        function (v) { set({ defaultReminder: v === 'none' ? null : Number(v) }); })) : null,
+      on ? row(T('a.cal_internal'), T('a.cal_internal_d'), sw(c.internalInvites !== false, function (x) { set({ internalInvites: x }); })) : null,
+      on ? h('div', { class: 'ma-d', style: 'padding-top:6px', text: T('a.cal_overlays') }) : null,
+      on ? ovRow('familie') : null, on ? ovRow('alltag') : null, on ? ovRow('birthdays') : null,
+    ]);
+  }
+
+  /** The card „Kontakte“ (C9): on/off, the accounts' address books, the AI for the signature. */
+  function contactsCard(c) {
+    var set = function (part) { put({ contacts: part }); };
+    var on = c.enabled !== false;
+    return h('div', { class: 'ma-card' }, [h('h2', { text: T('a.con_title') }),
+      row(T('a.con_enabled'), T('a.con_enabled_d'), sw(on, function (x) { set({ enabled: x }); })),
+      on ? row(T('a.con_accounts'), T('a.con_accounts_d'), sw(c.accounts !== false, function (x) { set({ accounts: x }); })) : null,
+      on ? row(T('a.con_ai'), T('a.con_ai_d'), sw(c.ai !== false, function (x) { set({ ai: x }); })) : null,
+    ]);
   }
 
   /** "x of y people" of a seats summary (null limits: no number). */
@@ -204,6 +265,12 @@
       stat(o.people, T('a.people')), stat(o.accounts, T('a.accounts')), stat(o.byState.ok, T('a.state_ok')), stat(o.byState.auth_failed, T('a.state_auth_failed')),
       stat(o.byState.unreachable, T('a.state_unreachable')), stat(fmtGB(o.bytes), T('a.storage')),
     ])]));
+    // since 1.3.0: calendars and contacts in numbers (never their content)
+    if (o.pim) {
+      page.appendChild(h('div', { class: 'ma-card' }, [h('h2', { text: T('a.pim_title') }), h('div', { class: 'ma-stats' }, [
+        stat(o.pim.calendars, T('a.calendars')), stat(o.pim.events, T('a.events')), stat(o.pim.contacts, T('a.contacts')), stat(fmtSize(o.pim.bytes), T('a.pim_bytes')),
+      ])]));
+    }
     if (o.seats) {
       var x = o.seats; var l = x.licence || {};
       page.appendChild(h('div', { class: 'ma-card' }, [h('h2', { text: T('a.licence') + (l.tier ? ' · ' + T('a.tier_' + l.tier) : '') }),

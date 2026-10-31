@@ -119,7 +119,7 @@ before 503).
 | `POST accounts/discover` | `{ email }` → `{ provider, auth, imap, smtp, hint }` (known domains, else `gc.mail.autoconfig`) |
 | `POST accounts` | `{ provider, email, password, username?, name?, color?, kind?, imap?, smtp? }` → `{ account }` — the IMAP login is tried first, on GateControl ≥ 1.217.0 the SMTP login too (`gc.mail.smtp.verify`; its refusal names `server: 'smtp'`) |
 | `POST accounts/microsoft` | `{ code, codeVerifier, redirectUri, name?, color?, kind? }` → `{ account }` — the server redeems the code (public client, PKCE, no secret). `redirectUri`: `msauth://com.gatecontrol.client/<…>` or `http://localhost[:port][/path]` |
-| `POST accounts/microsoft/device` | `{ kind? }` → `{ deviceId, userCode, verificationUri, expiresIn, interval }` |
+| `POST accounts/microsoft/device` | `{ kind?, accountId? }` → `{ deviceId, userCode, verificationUri, expiresIn, interval }` — since 1.3.0 `accountId`: an own Microsoft account signs in anew (the portal's „Neu anmelden“), not counted against the limit of accounts |
 | `GET accounts/microsoft/device/<deviceId>` | `{ status: 'pending' \| 'done' \| 'expired' \| 'denied', account? }` — asks Microsoft at most every `interval` s |
 | `PATCH accounts/<id>` | `{ name?, color?, kind?, push?, ai?, attachments?, signature?, password? }` → `{ account }` (a new password is tried first: IMAP, and SMTP on ≥ 1.217.0). Since 1.2.0 also `{ calendarSync?, contactsSync?, caldavUrl?, carddavUrl?, davUsername?, davPassword?, icsUrl? }` (`https:`, `webcal:` → `https:`; `icsUrl` for Gmail / IMAP accounts, a secret; `davPassword` only when it differs from the mail password) — tried at once: 409 `auth_failed \| unreachable \| dav_unavailable { reason }`; sync off removes that side here |
 | `POST accounts/<id>/microsoft` | `{ code, codeVerifier, redirectUri }` → `{ account }` (signed in anew; another address → `invalid`) |
@@ -243,9 +243,9 @@ to Drive (`gc.media.handOver`) before Drive sees it.
 | `POST calendars/subscribe` | `{ url, name?, color?, accountId? }` → `{ calendar }` — an iCal subscription (read only) |
 | `PUT calendar/settings` | `{ defaultCalendarId?, view?, weekStart?, workWeek?, timeZone?, reminders?, defaultReminder?, allDayReminder? }` → `{ prefs }` |
 | `GET events?from=&to=&calendars=` | `{ items: [Occurrence], overlays: [OverlayItem], pending: [calendarId] }` — ≤ 62 days (else 400 `invalid { field: 'to' }`), without `calendars` the visible ones |
-| `GET events/<id>?occurrence=` | `Event` |
+| `GET events/<id>?occurrence=` | `Event` — since 1.3.0 with `series: { start, end, allDay, startDate?, endDate? } \| null`: the start and end of the series itself (its master; also when asked for one occurrence), `null` for a single event |
 | `POST events` | `{ calendarId, title, allDay, start?, end?, startDate?, endDate?, timeZone?, location?, description?, online?: { create: 'teams' } \| { url }, reminders?, recurrence?: { freq, interval, byDay, byMonthDay, bySetPos, until, count } \| { rrule }, attendees?, busy?, private?, sendInvites?, fromAccountId? }` → `{ event, sent: { mail, internal } }` |
-| `PATCH events/<id>` | the same fields + `{ scope: 'occurrence' \| 'series', occurrence?, etag?, sendInvites? }` → `{ event, sent }` (an old `etag` → 409 `conflict { current }`) |
+| `PATCH events/<id>` | the same fields + `{ scope: 'occurrence' \| 'series', occurrence?, etag?, sendInvites? }` → `{ event, sent }` (an old `etag` → 409 `conflict { current }`). Since 1.3.0 the times of `scope: 'series'` (without a new `recurrence`) are the series' new start and end, measured from `Event.series`: the shift (wall clock days and minutes in the series' zone) moves the rule's weekdays and days of the month, `UNTIL`, deleted occurrences and the exceptions (one at its original time moves along, one moved by hand keeps its time); earlier occurrences stay. The times of one of its occurrences sent back unchanged change nothing; a shift of a whole period of the rule or more, or one that would lose or add occurrences, → 400 `invalid { field: 'start', reason: 'series_shift' }` (nothing changed). Graph: the rule is moved, Exchange keeps the series |
 | `DELETE events/<id>?scope=&occurrence=&notify=1&comment=` | `{ ok, sent }` |
 | `POST events/<id>/respond` | `{ response: 'accepted' \| 'tentative' \| 'declined', comment?, occurrence?, proposeStart?, proposeEnd?, send? }` → `{ event }` |
 | `GET invitations?state=open` | `{ items: [Invitation] }` |
@@ -317,6 +317,16 @@ freigeschaltet"); without a valid licence `403 not_licensed`, and nothing is syn
 working when the licence gets smaller (the settings page says "überschritten"). A licence without `tier` (lifetime, plan)
 counts nobody. Seats of people no longer allowed or whose GateControl account is gone do not count.
 
+## Portal
+
+The tab „Mail“ of the portal (`ui/portal.js`, since 1.3.0 with `ui/calendar.js`, `ui/contacts.js` and the plain logic
+`ui/pimlogic.js`): the menu with its foot (the settings on the left, Kontakte and Kalender on the right — only with
+`features.contacts` / `features.calendar`; an account is added in the settings), the mail as before, the invitation card
+of a mail; **Kalender** with the calendars grouped (GateControl, each account, shown alongside), Tag / Woche / Monat /
+Liste, looking at, answering, editing (a PATCH sends only what changed; series: this one or all) and deleting events;
+**Kontakte** with search, letters, groups, a contact, editing with the etag, duplicates, vCard import and export. A
+Microsoft account with `missingScopes` gets the band „Kalender und Kontakte freigeben“ — „Neu anmelden“ by device code.
+
 ## Administration
 
 Plugins › Mail › Einstellungen (the page `settings`, `ui.settingsPage`): who may use Mail (everybody, or people and
@@ -334,7 +344,9 @@ Since 1.2.0 the settings `calendar: { enabled, accounts, business: 'gatecontrol'
 10 | 15 | 30 | 60 | 1440 | null), internalInvites, overlays: { familie, alltag, birthdays } }` and `contacts: { enabled,
 accounts, ai }`; `usage.people[]` with `calendars`, `events`, `contacts`, `pimBytes`, `GET admin/overview` with `pim:
 { calendars, events, contacts, bytes }` — numbers only, never an event or a contact. `microsoft.registrationNeeds`: the
-app registration needs `Calendars.ReadWrite` and `Contacts.ReadWrite` besides the mail.
+app registration needs `Calendars.ReadWrite` and `Contacts.ReadWrite` besides the mail. The page shows both (since
+1.3.0): the cards „Kalender“ and „Kontakte“, the numbers per person in the storage table and in the overview, and the
+rights of the Microsoft registration.
 
 **Microsoft app registration**: `DEFAULT_MS_CLIENT_ID` (`server/config.js`) is `null` until the publisher's registration
 exists — until then `features.microsoft` is off unless an administrator enters an own client id (Microsoft Entra:

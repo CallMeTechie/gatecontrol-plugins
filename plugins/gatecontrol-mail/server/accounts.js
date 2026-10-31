@@ -201,10 +201,16 @@ async function reMicrosoft(gc, ctx, id, b) {
   return { account: view(now) };
 }
 
-/** POST accounts/microsoft/device { kind? } → { deviceId, userCode, verificationUri, expiresIn, interval } */
+/**
+ * POST accounts/microsoft/device { kind?, accountId? } → { deviceId, userCode, verificationUri, expiresIn, interval }.
+ * `accountId` (1.3.0): an own Microsoft account signs in anew (the portal's „Neu anmelden“ for calendars and contacts) —
+ * no new account, so the limit of accounts is not asked here (a new address still is, when it arrives).
+ */
 async function deviceStart(gc, ctx, b) {
   const cfg = await config.get(gc);
-  await limitCheck(gc, cfg, ctx.userId);
+  const again = b && b.accountId != null ? await own(gc, ctx.userId, Number(b.accountId)) : null;
+  if (again && !providers.isMicrosoft(again.provider)) throw fail('invalid', { field: 'accountId' });
+  if (!again) await limitCheck(gc, cfg, ctx.userId);
   const d = await ms.deviceStart(gc, cfg);
   const id = crypto.randomBytes(12).toString('hex');
   const now = Date.now();

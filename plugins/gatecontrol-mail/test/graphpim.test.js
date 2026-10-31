@@ -186,6 +186,9 @@ test('Microsoft calendars: the default calendar by delta (a series with an excep
     // the series in full: the master for the rule and the HTML text (sanitized)
     const s = (await anna('GET', `events/${daily[0].eventId}`)).json;
     assert.deepEqual([s.recurrence.freq, s.recurrence.count, s.descriptionHtml], ['daily', 3, '<p>Agenda</p>']);
+    // 1.3.0: the series' own start and end (its master), also seen from one occurrence
+    assert.deepEqual(s.series, { start: at('2026-11-02', 9), end: at('2026-11-02', 9) + 900000, allDay: false });
+    assert.deepEqual((await anna('GET', `events/${daily[1].eventId}`, null, { occurrence: daily[1].occurrence })).json.series, s.series);
     // the second round: an instance removed
     w.removeInSecond = 'S1-3';
     await runs(host, 2);
