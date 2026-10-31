@@ -4,13 +4,13 @@
     "de": "Mail",
     "en": "Mail"
   },
-  "version": "1.1.2",
+  "version": "1.2.0",
   "publisher": "CallMeTechie",
   "description": {
-    "de": "Alle E-Mail-Konten an einem Ort – GMX, Web.de, T-Online, Gmail, Outlook und Microsoft 365 oder jedes IMAP-Konto: ein gemeinsamer Posteingang mit Relevant und Sonstige, Push, Schutz vor Zählpixeln, Anhänge in Drive und eine KI, die zusammenfasst, Aufgaben findet und Antworten vorschlägt.",
-    "en": "Every e-mail account in one place – GMX, Web.de, T-Online, Gmail, Outlook and Microsoft 365 or any IMAP account: one inbox with Relevant and Other, push, protection from tracking pixels, attachments in Drive and an AI that sums up, finds to-dos and suggests replies."
+    "de": "Alle E-Mail-Konten an einem Ort – GMX, Web.de, T-Online, Gmail, Outlook und Microsoft 365 oder jedes IMAP-Konto: ein gemeinsamer Posteingang mit Relevant und Sonstige, Push, Schutz vor Zählpixeln, Anhänge in Drive und eine KI, die zusammenfasst, Aufgaben findet und Antworten vorschlägt. Dazu Kalender und Kontakte: eigene Kalender und die der Konten (Microsoft 365, CalDAV), Einladungen, Erinnerungen, Familie und Alltag eingeblendet, ein Adressbuch mit Gruppen und Dubletten-Abgleich.",
+    "en": "Every e-mail account in one place – GMX, Web.de, T-Online, Gmail, Outlook and Microsoft 365 or any IMAP account: one inbox with Relevant and Other, push, protection from tracking pixels, attachments in Drive and an AI that sums up, finds to-dos and suggests replies. Plus calendars and contacts: own calendars and those of the accounts (Microsoft 365, CalDAV), invitations, reminders, Family and Everyday shown alongside, an address book with groups and duplicate merging."
   },
-  "gatecontrol": ">=1.216.0",
+  "gatecontrol": ">=1.219.0",
   "entry": "server/index.js",
   "permissions": {
     "mail": {
@@ -18,7 +18,13 @@
         "de": "Deine E-Mail-Konten abrufen (IMAP) und in deinem Namen Mails senden (SMTP)",
         "en": "Fetch your e-mail accounts (IMAP) and send mail on your behalf (SMTP)"
       },
-      "maxConnections": 100
+      "maxConnections": 100,
+      "dav": {
+        "purpose": {
+          "de": "Deine Kalender und Adressbücher bei GMX, Web.de oder deinem eigenen Server abgleichen",
+          "en": "Sync your calendars and address books at GMX, Web.de or your own server"
+        }
+      }
     },
     "network": {
       "internet": [
@@ -36,7 +42,7 @@
     "events": true,
     "groups": "read",
     "notify": {
-      "perHour": 120
+      "perHour": 600
     },
     "background": {
       "intervalSeconds": 15
@@ -58,7 +64,10 @@
       "gatecontrol-drive:give_file",
       "gatecontrol-drive:share_link",
       "gatecontrol-drive:browse",
-      "gatecontrol-familie:calendar_add"
+      "gatecontrol-familie:calendar_add",
+      "gatecontrol-familie:calendar_range",
+      "gatecontrol-alltag:calendar_list",
+      "gatecontrol-alltag:calendar_query"
     ]
   },
   "storage": {
@@ -143,6 +152,22 @@
       "label": {
         "de": "Eine Mail konnte nicht gesendet werden",
         "en": "A mail could not be sent"
+      },
+      "default": true
+    },
+    {
+      "id": "calendar_reminder",
+      "label": {
+        "de": "Termin-Erinnerung",
+        "en": "Event reminder"
+      },
+      "default": true
+    },
+    {
+      "id": "calendar_invite",
+      "label": {
+        "de": "Einladung",
+        "en": "Invitation"
       },
       "default": true
     }

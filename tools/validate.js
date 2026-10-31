@@ -23,7 +23,8 @@ const lib = require('./lib');
 const { stagedFiles } = require('./stage');
 const catalogMeta = require('./catalog-meta');
 
-// Keys of newer GateControl versions the pinned validator may not know: version → [{ path, check(value) → error | null }].
+// Keys of newer GateControl versions the pinned validator may not know: version → [{ path, check(value) → error | null,
+// replace?(value) → what the pinned validator checks instead (else the key is left out) }].
 // `path`: keys from the manifest root; '*' = every key of that object.
 const isPurpose = (p) => !!(p && typeof p === 'object' && !Array.isArray(p) && ['de', 'en'].some((l) => typeof p[l] === 'string' && p[l].trim())
   && Object.values(p).every((v) => typeof v === 'string' && v.length <= 200));
@@ -37,6 +38,12 @@ const NEWER_KEYS = {
     { path: ['permissions', 'network', 'images'], check: (v) => (typeof v === 'boolean' ? null : 'permissions.network: invalid images') },
     // services.provides.<name>.maxPerHour: 60 … 3600
     { path: ['services', 'provides', '*', 'maxPerHour'], check: (v) => (Number.isInteger(v) && v >= 60 && v <= 3600 ? null : 'services.provides: invalid maxPerHour') },
+  ],
+  '1.219.0': [
+    // permissions.mail.dav { purpose: { de, en } } (gc.mail.dav — CalDAV/CardDAV)
+    { path: ['permissions', 'mail', 'dav'], check: (v) => (v && typeof v === 'object' && !Array.isArray(v) && Object.keys(v).every((k) => k === 'purpose') && isPurpose(v.purpose) ? null : 'permissions.mail.dav: invalid') },
+    // permissions.notify { perHour: 1 … 1000 } (before: 120) — checked here, the pinned validator sees at most 120
+    { path: ['permissions', 'notify'], replace: (v) => (v && typeof v === 'object' ? { perHour: Math.min(v.perHour, 120) } : v), check: (v) => (v === true || v === false || (v && typeof v === 'object' && !Array.isArray(v) && Object.keys(v).length === 1 && Number.isInteger(v.perHour) && v.perHour >= 1 && v.perHour <= 1000) ? null : 'permissions.notify: invalid') },
   ],
 };
 
@@ -58,7 +65,8 @@ function withoutNewerKeys(raw, pinned) {
           const err = k.check(obj[name]);
           if (err) errors.push(err);
           removed.push([...trail, name].join('.') + ` (${version})`);
-          delete obj[name];
+          // `replace`: a value the pinned validator knows instead of none (a key others depend on)
+          if (k.replace && !err) obj[name] = k.replace(obj[name]); else delete obj[name];
         }
       };
       walk(copy, 0, []);

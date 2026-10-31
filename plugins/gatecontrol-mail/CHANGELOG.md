@@ -2,6 +2,46 @@
 
 Alle E-Mail-Konten an einem Ort – im eigenen Tab der GateControl-Apps und im Portal.
 
+## 1.2.0
+- **Kalender und Kontakte in Mail** (Phase 2, gehört zur bestehenden Mail-Lizenz). Braucht GateControl 1.219.0
+  (`gc.mail.dav` für CalDAV/CardDAV, Einladungen per iMIP, `autoconfig` mit CalDAV/CardDAV, bis 1000 Push je Stunde).
+- **Kalender:** eigene GateControl-Kalender („Privat“ als Standard, „Firma“, weitere, ≤ 20), die Kalender der Konten –
+  Microsoft 365/outlook.com über Graph (Standardkalender per Delta, weitere per `calendarView`), GMX, WEB.DE und eigene
+  Server über CalDAV in beide Richtungen (Discovery, `sync-collection`, sonst `getctag`/ETags, `multiget`), Gmail nur
+  lesend über die geheime iCal-Adresse – und iCal-Abos beliebiger `https`-Adressen. Termine mit Wiederholung
+  (RRULE/EXDATE/RECURRENCE-ID), „nur dieser Termin“ / „alle“, Zeitzonen (auch Windows-Namen aus Outlook), ganztägig,
+  Erinnerungen, Teilnehmer, Ort, Online-Link, Teams in Microsoft-365-Kalendern. Ändern mit `etag` (409 `conflict`);
+  ein 412 des Anbieters wird feldweise abgeglichen. Unbekannte Eigenschaften bleiben beim Ändern erhalten.
+- **Eingeblendet:** Familie (Dienst `calendar_range`, Familie 1.16.0), Alltag-Kalender (`calendar_list` /
+  `calendar_query`, Alltag 1.4.0) und Geburtstage aus den Kontakten mit Alter; je Person aus- und umfärbbar.
+- **Einladungen:** die Kalender-Teile einer Mail (IMAP) und die Einladungs-Mails von Microsoft werden zur Karte
+  (`Summary.invite`, `Message.invite`): Zusagen / Mit Vorbehalt / Absagen mit Kommentar, „Neue Zeit vorschlagen“,
+  Ziel-Kalender, Tagesvorschau mit Konflikten, Zählung der Antworten; neuere `SEQUENCE` macht ältere Karten veraltet,
+  Absagen streichen den Termin durch, Antworten auf eigene Termine tragen sich selbst ein, Gegenvorschläge lassen sich
+  übernehmen oder ablehnen. Eigene Termine mit Teilnehmern verschicken Einladungen, Änderungen und Absagen über das
+  Konto (iMIP); GateControl-Personen mit Mail-Platz bekommen sie direkt (Push „Einladung“), ohne Mail.
+- **Erinnerungen** als Push (Thema „Termin-Erinnerung“), je Kalender abschaltbar, auch für die Kalender der Konten
+  (Standard an); mehrere in derselben Minute als eine Push.
+- **Kontakte:** eigenes Adressbuch „Meine Kontakte“ (vCard), die Adressbücher der Konten (Graph, CardDAV; Gmail über
+  den Import einer vCard-Datei), Suche (auch Nummern), Buchstaben, Gruppen als Verteiler (auch beim Schreiben), Fotos,
+  Dubletten zusammenführen bzw. über Adressbücher hinweg verknüpfen, vCard-Import und -Export (4.0), Absender-Ansicht
+  (`cards/lookup`), „Als Kontakt speichern“ aus einer Mail (Signatur nach Regeln, mit KI wenn erlaubt),
+  `?since=` für den Offline-Speicher der Apps.
+- **Schreiben:** `GET contacts?q=` schlägt zuerst eigene Kontakte und Gruppen vor (Form unverändert, neue Felder
+  `contactId`, `photo`, `groupId`, `members`).
+- **Microsoft:** die Anmeldung fragt zusätzlich `Calendars.ReadWrite` und `Contacts.ReadWrite`; der Server merkt sich
+  die erteilten Scopes (`accounts.ms_scopes`) und erneuert Tokens nur mit diesen – bestehende Konten laufen weiter,
+  `Account.missingScopes` und „Neu anmelden“ holen die neuen Rechte. `GET me` mit `microsoft.adminConsentUrl`.
+- `Account` mit `calendar`, `contacts` und `missingScopes`; `PATCH accounts/<id>` mit `calendarSync`, `contactsSync`,
+  `caldavUrl`, `carddavUrl`, `davUsername`, `davPassword`, `icsUrl` (sofort geprüft). „Zu tun“ der KI auch in den
+  eigenen Kalender (`action: 'calendar'`).
+- **Admin:** Abschnitte Kalender (an/aus, Konto-Kalender, Firmenkalender = Exchange, Standard-Erinnerung, interne
+  Einladungen, Einblendungen) und Kontakte (an/aus, Konto-Adressbücher, KI); abgeschaltet → 403 `feature_off`.
+  Übersicht mit Anzahl Kalender, Termine, Kontakte und Bytes (nie Inhalte). Termine und Kontakte zählen zum Speicher.
+- Migration 004 (Kalender, Termine, Vorkommen, Einladungen, Adressbücher, Kontakte, Gruppen). Bibliotheken unverändert
+  übernommen: ical.js 2.2.1 (MPL-2.0) und timezones-ical-library 2.3.2 (Apache-2.0) in `server/vendor/`.
+- Die Oberfläche im Portal folgt in einem eigenen Schritt (die Admin-Einstellungen sind serverseitig vollständig).
+
 ## 1.1.2
 - **Eine Mail öffnet sich auch während eines langen Abgleichs.** Bisher lief pro Konto alles nacheinander: Der erste
   Abgleich eines frisch hinzugefügten Kontos (12 Monate, bei Microsoft viele Delta-Seiten) hielt das Öffnen einer Mail,

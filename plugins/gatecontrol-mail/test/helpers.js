@@ -63,6 +63,8 @@ class FakeMail {
       headers: m.headers || {},
       bodyStructure: m.attachments && m.attachments.length ? { type: 'multipart/mixed', childNodes: [{ type: 'text/plain' }, ...m.attachments.map((a) => ({ type: a.contentType, disposition: a.inline ? 'inline' : 'attachment', dispositionParameters: { filename: a.filename } }))] } : { type: 'text/plain' },
       html: m.html || null, text: m.text || null, attachments: (m.attachments || []).map((a, i) => ({ partId: String(i + 2), ...a, size: a.data ? Buffer.byteLength(a.data) : (a.size || 0) })),
+      // GateControl ≥ 1.219.0: the text/calendar parts (iMIP) — [{ partId, method, text }]
+      calendar: m.calendar || null,
       modseq: box.modseq,
     };
     box.msgs.set(uid, msg);
@@ -138,7 +140,8 @@ class FakeMail {
           message: async (uid) => {
             const m = box().msgs.get(uid);
             if (!m) throw hostError('ERR_INVALID', 'unknown uid');
-            return { messageId: m.envelope.messageId, html: m.html, text: m.text, attachments: m.attachments.map(({ data, ...a }) => ({ ...a, mediaId: null, checksum: null })) };
+            return { messageId: m.envelope.messageId, html: m.html, text: m.text, attachments: m.attachments.map(({ data, ...a }) => ({ ...a, mediaId: null, checksum: null })),
+              ...(m.calendar ? { calendar: m.calendar } : {}) };
           },
           download: async (uid, partId, o2) => {
             const m = box().msgs.get(uid);
@@ -227,10 +230,13 @@ async function withMail(opts, fn) {
   const o = opts || {};
   const world = o.world || new FakeMail();
   const drive = o.drive === false ? null : (o.drive || fakeDrive(o.driveOpts));
-  const familie = o.familie === false ? null : fakeFamilie();
-  const services = [...(drive ? [drive] : []), ...(familie ? [familie] : [])];
+  // o.overlays (pim-helpers fakeOverlays): Familie with calendar_range and Alltag (1.2.0)
+  const familie = o.familie === false ? null : (o.overlays ? o.overlays.familie : fakeFamilie());
+  const services = [...(drive ? [drive] : []), ...(familie ? [familie] : []), ...(o.overlays && o.overlays.alltag ? [o.overlays.alltag] : [])];
+  // o.dav (pim-helpers FakeDav): CalDAV/CardDAV behind gc.mail.dav (GateControl 1.219.0); o.autoconfig replaces the fake's
+  const mailHandler = { ...world.handler(), ...(o.dav ? { dav: o.dav.handler() } : {}), ...(o.autoconfig ? { autoconfig: o.autoconfig } : {}) };
   const host = await createHost(DIR, {
-    users: USERS, gatecontrol: o.gatecontrol || '1.216.0', mail: world.handler(),
+    users: USERS, gatecontrol: o.gatecontrol || '1.216.0', mail: mailHandler,
     services, ...(o.ai ? { ai: o.ai } : {}), ...(o.fetch ? { fetch: o.fetch } : {}),
     fetchImage: o.fetchImage || (async () => ({ status: 200, mime: 'image/png', body: Buffer.from('PNGDATA') })),
     // o.license { tier, seats: { included, family, business }, licensed } — the licence's people (seats.js); o.groups: person groups

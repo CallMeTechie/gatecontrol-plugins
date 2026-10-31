@@ -462,10 +462,24 @@ function stop() {
 
 // ─── contacts ───────────────────────────────────
 
-/** GET contacts?q= → { items: [{ name, email, source }] } (≤ 10) */
+/**
+ * GET contacts?q= → { items: [{ name, email, source, contactId?, photo?, groupId?, members? }] } (≤ 10). Since 1.2.0 the
+ * person's own contacts come first (source 'contact', every address on its own), then their groups (source 'group',
+ * email null, members ≤ 50 — older apps drop entries without an address), the GateControl people, the recent addresses.
+ * Without q as before: the recent addresses.
+ */
 async function contacts(gc, ctx, q) {
   const text = String(q || '').trim().toLowerCase().slice(0, 100);
   const mine = await ownAddresses(gc, ctx.userId);
+  const own = [];
+  const groups = [];
+  if (text) {
+    try {
+      const r = await require('./cards').suggest(gc, ctx.userId, text, 10);
+      for (const c of r.contacts) if (!mine.has(c.email)) own.push(c);
+      groups.push(...r.groups);
+    } catch { /* the addresses only */ }
+  }
   const out = [];
   // people of this GateControl with a Mail account
   if (text) {
@@ -486,7 +500,9 @@ async function contacts(gc, ctx, q) {
     if (mine.has(r.email) || out.some((x) => x.email === r.email)) continue;
     out.push({ name: r.name || '', email: r.email, source: 'recent' });
   }
-  return { items: out.slice(0, 10) };
+  const seen = new Set(own.map((c) => c.email));
+  const rest = out.filter((x) => !seen.has(x.email));
+  return { items: [...own, ...groups, ...rest].slice(0, 10) };
 }
 
 /** Service new_draft (Drive: "Per Mail senden"): { files: [{ mediaId, name? }], subject? } handed over → { ok, draftId } */

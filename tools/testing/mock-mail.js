@@ -47,14 +47,27 @@ const TRACKER_HOSTS = ['pixel.example', 'track.example', 'open.mailchimp.example
 const purposeOk = (p) => !!(p && typeof p === 'object' && !Array.isArray(p) && p.purpose && typeof p.purpose === 'object'
   && ['de', 'en'].some((l) => typeof p.purpose[l] === 'string' && p.purpose[l].trim()) && Object.values(p.purpose).every((v) => typeof v === 'string' && v.length <= 200));
 
-/** permissions.mail { purpose, maxConnections? (1…200, default 50) } → { maxConnections } | null; throws on a bad one. */
+/**
+ * permissions.mail { purpose, maxConnections? (1…200, default 50), dav? { purpose } } → { maxConnections, dav } | null;
+ * throws on a bad one. `dav` is accepted at every emulated version (like maxPerHour — the real older host refuses it) and
+ * acts from 1.219.0 on (gc.mail.dav), so a plugin built for 1.219.0 can be tested against the older behaviour too.
+ */
 function mailPermission(perm, hostError) {
   if (perm == null) return null;
-  const ok = purposeOk(perm) && Object.keys(perm).every((k) => k === 'purpose' || k === 'maxConnections')
-    && (perm.maxConnections === undefined || (Number.isInteger(perm.maxConnections) && perm.maxConnections >= 1 && perm.maxConnections <= 200));
+  const ok = purposeOk(perm) && Object.keys(perm).every((k) => k === 'purpose' || k === 'maxConnections' || k === 'dav')
+    && (perm.maxConnections === undefined || (Number.isInteger(perm.maxConnections) && perm.maxConnections >= 1 && perm.maxConnections <= 200))
+    && (perm.dav === undefined || (purposeOk(perm.dav) && Object.keys(perm.dav).every((k) => k === 'purpose')));
   if (!ok) throw hostError('ERR_INVALID', 'plugin.json: permissions.mail: invalid');
-  return { maxConnections: perm.maxConnections || 50 };
+  return { maxConnections: perm.maxConnections || 50, dav: !!perm.dav };
 }
+
+// GateControl 1.219.0: gc.mail.dav.request — the host's checks (src/services/plugins/mail/dav.js)
+const DAV_METHODS = ['GET', 'HEAD', 'OPTIONS', 'PROPFIND', 'REPORT', 'PUT', 'DELETE'];
+const DAV_HEADERS = ['depth', 'content-type', 'if-match', 'if-none-match', 'prefer', 'brief', 'accept', 'if-modified-since'];
+const DAV_RESPONSE_HEADERS = ['etag', 'content-type', 'location', 'dav', 'allow', 'retry-after', 'last-modified', 'content-length'];
+const DAV_BODY_MAX = 2 * 1024 * 1024;
+const ICAL_METHODS = ['REQUEST', 'REPLY', 'CANCEL', 'COUNTER', 'DECLINECOUNTER'];
+const ICAL_MAX = 512 * 1024;
 
 /** The default "not public" test of the mock (the real host resolves and checks every address). */
 function notPublic(host) {
@@ -127,7 +140,8 @@ function compose(m, messageId) {
     `Subject: ${String(m.subject || '').replace(/[\r\n]/g, ' ')}`,
     ...(m.inReplyTo ? [`In-Reply-To: ${m.inReplyTo}`] : []), ...(m.references && m.references.length ? [`References: ${m.references.join(' ')}`] : []),
     ...Object.entries(m.headers || {}).map(([k, v]) => `${k}: ${String(v).replace(/[\r\n]/g, ' ')}`),
-    'MIME-Version: 1.0', `X-Mock-Json: ${Buffer.from(JSON.stringify({ html: m.html || null, text: m.text || null, attachments: (m.attachments || []).map((a) => ({ filename: a.filename, contentType: a.contentType, cid: a.cid || null })) })).toString('base64')}`,
+    'MIME-Version: 1.0', `X-Mock-Json: ${Buffer.from(JSON.stringify({ html: m.html || null, text: m.text || null, attachments: (m.attachments || []).map((a) => ({ filename: a.filename, contentType: a.contentType, cid: a.cid || null })),
+      calendar: m.icalEvent ? [{ method: m.icalEvent.method, text: m.icalEvent.content }] : [] })).toString('base64')}`,
     'Content-Type: text/plain; charset=utf-8', '', String(m.text || ''),
   ];
   return lines.join('\r\n');
@@ -152,6 +166,8 @@ function parse(text) {
     date: h.date ? Date.parse(h.date) : null, subject: h.subject || '', from: parseAddrList(h.from)[0] || null, to: parseAddrList(h.to), cc: parseAddrList(h.cc), bcc: [], replyTo: [],
     html: extra.html || null, text: extra.text || null, listUnsubscribe: null, autoSubmitted: null, precedence: null, listId: null,
     attachments: (extra.attachments || []).map((a, i) => ({ partId: String(i + 2), filename: a.filename, contentType: a.contentType, size: 0, contentId: a.cid, inline: !!a.cid, checksum: null, mediaId: null })),
+    // GateControl ≥ 1.219.0: the text/calendar parts (iMIP); the mock carries them in X-Mock-Json
+    calendar: (extra.calendar || []).map((c, i) => ({ partId: c.partId || String(i + 90), method: c.method || null, text: c.text })),
   };
 }
 
@@ -162,10 +178,11 @@ function parse(text) {
  */
 function install(h) {
   const { perms, opts, hostError, wire, mediaStore } = h;
+  const gc219 = !!h.gc219;
   const mailOpt = opts.mail && typeof opts.mail === 'object' ? opts.mail : null;
   const mailOn = !!mailOpt || h.gc216;
   const perm = mailOn ? mailPermission(perms.mail, hostError) : null;
-  const records = { mailSessions: [], mailSent: [], imageFetches: [], mailVerified: [] };
+  const records = { mailSessions: [], mailSent: [], imageFetches: [], mailVerified: [], davRequests: [] };
   const sessions = new Map(); // id → { impl, emitter, open, rec }
 
   const putMedia = ({ data, mime, name }) => {
@@ -177,6 +194,59 @@ function install(h) {
     return id;
   };
   const media = (id) => { const m = mediaStore.get(id); return m ? { data: m.data, mime: m.mime, name: m.name || null } : null; };
+
+  /**
+   * gc.mail.dav.request (≥ 1.219.0) against the test's opts.mail.dav(req) → { status, headers, body } | { status,
+   * multistatus } (the test gives the parsed Multi-Status like the host's saxes reader would). Same-origin redirects are
+   * followed (≤ 5, with auth), another origin comes back as 3xx; HTTP statuses are never thrown.
+   */
+  const davRequest = async (o) => {
+    const x = wire(o) || {};
+    let u;
+    try { u = new URL(String(x.url)); } catch { throw hostError('ERR_INVALID', 'invalid url'); }
+    const method = String(x.method || 'GET').toUpperCase();
+    if (!DAV_METHODS.includes(method)) throw hostError('ERR_INVALID', `method ${method} is not allowed`);
+    const headers = {};
+    for (const [k, v] of Object.entries(x.headers || {})) {
+      if (!DAV_HEADERS.includes(k.toLowerCase())) throw hostError('ERR_INVALID', `header ${k} is not allowed`);
+      headers[k.toLowerCase()] = String(v);
+    }
+    if (x.body != null && (typeof x.body !== 'string')) throw hostError('ERR_INVALID', 'body must be a string');
+    if (x.body != null && Buffer.byteLength(x.body) > DAV_BODY_MAX) throw hostError('ERR_MAIL_LIMIT', 'body larger than 2 MB');
+    const a = x.auth;
+    if (a != null && !(a && typeof a === 'object' && ((typeof a.user === 'string' && typeof a.pass === 'string') || typeof a.bearer === 'string'))) throw hostError('ERR_INVALID', 'invalid auth');
+    if (x.timeoutMs != null && !(Number.isInteger(x.timeoutMs) && x.timeoutMs >= 1000 && x.timeoutMs <= 60000)) throw hostError('ERR_INVALID', 'invalid timeoutMs');
+    if (x.parse != null && x.parse !== 'auto' && x.parse !== 'none') throw hostError('ERR_INVALID', 'invalid parse');
+    const maxBytes = Number.isInteger(x.maxBytes) ? x.maxBytes : 5 * 1024 * 1024;
+    if (maxBytes < 1 || maxBytes > 20 * 1024 * 1024) throw hostError('ERR_INVALID', 'invalid maxBytes');
+    const denied = (mailOpt && mailOpt.denied) || notPublic;
+    let url = u;
+    for (let hop = 0; hop <= 5; hop++) {
+      if (url.protocol !== 'https:') throw hostError('ERR_NETWORK_DENIED', 'https only');
+      const port = Number(url.port || 443);
+      if (port !== 443 && port !== 8443) throw hostError('ERR_NETWORK_DENIED', `port ${port} is not allowed`);
+      if (denied(url.hostname)) throw hostError('ERR_NETWORK_DENIED', `${url.hostname} is not a public address`);
+      const req = { url: url.toString(), method, headers, body: x.body == null ? null : x.body, auth: a ? (a.bearer ? { bearer: true } : { user: a.user, pass: a.pass }) : null };
+      records.davRequests.push({ url: req.url, method, headers, body: req.body, auth: a ? (a.bearer ? { bearer: true } : { user: a.user }) : null });
+      if (!mailOpt || typeof mailOpt.dav !== 'function') throw hostError('ERR_MAIL_NET', 'no CalDAV/CardDAV server in this test');
+      const r = wire(await mailOpt.dav(req)) || {};
+      const status = Number(r.status || 200);
+      const rh = {};
+      for (const [k, v] of Object.entries(r.headers || {})) if (DAV_RESPONSE_HEADERS.includes(k.toLowerCase())) rh[k.toLowerCase()] = String(v);
+      if ([301, 302, 303, 307, 308].includes(status) && rh.location) {
+        const next = new URL(rh.location, url);
+        if (next.origin === url.origin) { url = next; continue; }
+        return { status, url: url.toString(), headers: rh, body: null, multistatus: null };
+      }
+      const body = r.body == null ? null : String(r.body);
+      if (body && Buffer.byteLength(body) > maxBytes) throw hostError('ERR_MAIL_LIMIT', 'answer larger than maxBytes');
+      const ms = status === 207 && x.parse !== 'none' && r.multistatus ? r.multistatus : null;
+      // the host makes every href absolute
+      if (ms) for (const resp of ms.responses || []) { try { resp.href = new URL(resp.href, url).toString(); } catch { /* as is */ } }
+      return { status, url: url.toString(), headers: rh, body: ms ? null : body, multistatus: ms ? { responses: ms.responses || [], syncToken: ms.syncToken || null } : null };
+    }
+    throw hostError('ERR_MAIL_NET', 'too many redirects');
+  };
 
   let gcMail;
   if (perm) {
@@ -233,6 +303,14 @@ function install(h) {
           const m = x.message;
           if (!m || typeof m !== 'object' || !m.from || typeof m.from.address !== 'string') throw hostError('ERR_INVALID', 'invalid message');
           for (const k of Object.keys(m.headers || {})) if (!/^x-/i.test(k) && k.toLowerCase() !== 'list-unsubscribe') throw hostError('ERR_INVALID', `header ${k} is not allowed`);
+          if (m.icalEvent != null) {
+            // GateControl ≥ 1.219.0: an iMIP part (nodemailer icalEvent); older hosts refuse the field
+            const ie = m.icalEvent;
+            if (!gc219) throw hostError('ERR_INVALID', 'icalEvent needs GateControl 1.219.0');
+            if (!ie || typeof ie !== 'object' || !ICAL_METHODS.includes(ie.method) || typeof ie.content !== 'string' || Buffer.byteLength(ie.content) > ICAL_MAX
+              || !/^BEGIN:VCALENDAR/.test(ie.content) || (new RegExp(`^METHOD:${ie.method}\\r?$`, 'm').test(ie.content) === false)
+              || (ie.filename != null && !(typeof ie.filename === 'string' && /\.ics$/i.test(ie.filename)))) throw hostError('ERR_INVALID', 'invalid icalEvent');
+          }
           let total = Buffer.byteLength(String(m.html || '') + String(m.text || ''));
           for (const a of m.attachments || []) {
             const f = mediaStore.get(a && a.mediaId);
@@ -274,6 +352,7 @@ function install(h) {
         return wire(parse(f.data.toString('utf8')));
       },
       sanitize: async (html, o) => wire((mailOpt && typeof mailOpt.sanitize === 'function' ? mailOpt.sanitize : sanitize)(String(html == null ? '' : html), wire(o) || {})),
+      ...(gc219 && perm.dav ? { dav: Object.freeze({ request: davRequest }) } : {}),
       autoconfig: async (email) => {
         if (typeof email !== 'string' || !/^[^@\s]+@[^@\s]+$/.test(email)) throw hostError('ERR_INVALID', 'invalid address');
         const r = mailOpt && typeof mailOpt.autoconfig === 'function' ? await mailOpt.autoconfig(email) : null;

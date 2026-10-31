@@ -5,9 +5,16 @@
 // (POST accounts/microsoft/device). The server redeems the code at the token endpoint and keeps the refresh token as a
 // secret; access tokens live in memory and are renewed before they end. Mail itself goes through Microsoft Graph
 // (graph.microsoft.com, gc.http.fetch).
+//
+// Since 1.2.0 a sign-in asks for the calendar and contact scopes too (config.msScopes: Calendars.ReadWrite,
+// Contacts.ReadWrite when the administrator has them on). The scopes Microsoft granted (the token answer's `scope`) are
+// kept in accounts.ms_scopes, and a token is only ever renewed with those — asking a refresh for a scope that was never
+// granted fails with invalid_grant / consent_required, and the mail of an existing account would stop. NULL (accounts
+// of 1.0 / 1.1): the scopes of Phase 1.
 
 const config = require('./config');
 const secrets = require('./secrets');
+const store = require('./store');
 const { fail } = require('./util');
 
 const LOGIN = 'https://login.microsoftonline.com';
@@ -19,7 +26,43 @@ const tokens = new Map(); // account id → { token, until }
 const renewing = new Map(); // account id → the renewal that runs
 const gens = new Map(); // account id → a counter: forget() makes a renewal that runs stale
 
-function scope() { return config.MS_SCOPES.join(' '); }
+const BASE = ['openid', 'profile', 'email', 'offline_access'];
+
+/** The scopes of a sign-in (the administrator's switches decide about calendars and contacts). */
+function scope(cfg) { return config.msScopes(cfg).join(' '); }
+
+/** A token answer's `scope` → the granted scopes (without the Graph prefix), or null when it names none. */
+function grantedOf(v) {
+  if (typeof v !== 'string' || !v.trim()) return null;
+  const out = [];
+  for (const x of v.trim().split(/\s+/)) {
+    const n = x.replace(/^https:\/\/graph\.microsoft\.com\//i, '');
+    if (/^[A-Za-z][A-Za-z0-9._-]{0,80}$/.test(n) && !out.some((o) => o.toLowerCase() === n.toLowerCase())) out.push(n);
+  }
+  return out.length ? out : null;
+}
+
+/** The scopes account row `a` was granted (ms_scopes; NULL: those of Phase 1). */
+function grantedScopes(a) {
+  if (a && typeof a.ms_scopes === 'string' && a.ms_scopes.trim()) return a.ms_scopes.trim().split(/\s+/);
+  return [...config.MS_SCOPES];
+}
+
+const hasScope = (list, s) => list.some((x) => x.toLowerCase() === s.toLowerCase());
+
+/** The scope of a renewal: only what was granted (plus the sign-in basics). */
+function renewScope(a) {
+  const out = [...BASE];
+  for (const s of grantedScopes(a)) if (!hasScope(out, s)) out.push(s);
+  return out.join(' ');
+}
+
+/** The calendar / contact scopes an account lacks for what the administrator has on (Account.missingScopes). */
+function missingScopes(a, cfg) {
+  const want = config.msScopes(cfg).filter((s) => s === config.MS_CALENDAR_SCOPE || s === config.MS_CONTACTS_SCOPE);
+  const have = grantedScopes(a);
+  return want.filter((s) => !hasScope(have, s));
+}
 
 async function post(gc, tenant, path, form) {
   let r;
@@ -49,6 +92,8 @@ function tokenInfo(body) {
     refreshToken: body.refresh_token || null, accessToken: body.access_token || null, expiresIn: Number(body.expires_in) || 3600,
     email: addr, name: typeof c.name === 'string' ? c.name : '', tenant: typeof c.tid === 'string' ? c.tid : null,
     business: !!(c.tid && c.tid !== CONSUMER_TENANT),
+    // since 1.2.0: what Microsoft granted (null: the answer names nothing — then the scopes asked for are assumed)
+    scopes: grantedOf(body.scope),
   };
 }
 
@@ -68,7 +113,7 @@ async function redeem(gc, cfg, b) {
   if (!/^[A-Za-z0-9._~-]{43,128}$/.test(verifier)) throw fail('invalid', { field: 'codeVerifier' });
   if (!/^(msauth:\/\/com\.gatecontrol\.client\/[A-Za-z0-9%._~+=-]{1,200}|http:\/\/localhost(:\d{1,5})?(\/[A-Za-z0-9._~/-]{0,100})?)$/.test(redirect)) throw fail('invalid', { field: 'redirectUri' });
   const r = await post(gc, 'common', 'token', {
-    client_id: clientId, grant_type: 'authorization_code', code, redirect_uri: redirect, code_verifier: verifier, scope: scope(),
+    client_id: clientId, grant_type: 'authorization_code', code, redirect_uri: redirect, code_verifier: verifier, scope: scope(cfg),
   });
   if (r.status !== 200 || !r.body.refresh_token) throw fail('auth_failed', { reason: String(r.body.error || 'token').slice(0, 60) });
   return tokenInfo(r.body);
@@ -77,7 +122,7 @@ async function redeem(gc, cfg, b) {
 /** POST accounts/microsoft/device → Microsoft's device code. */
 async function deviceStart(gc, cfg) {
   const clientId = clientIdOr(cfg);
-  const r = await post(gc, 'common', 'devicecode', { client_id: clientId, scope: scope() });
+  const r = await post(gc, 'common', 'devicecode', { client_id: clientId, scope: scope(cfg) });
   if (r.status !== 200 || !r.body.device_code) throw fail('unreachable', { reason: String(r.body.error || 'devicecode').slice(0, 60) });
   return {
     deviceCode: r.body.device_code, userCode: String(r.body.user_code || ''), verificationUri: String(r.body.verification_uri || 'https://microsoft.com/devicelogin'),
@@ -119,7 +164,9 @@ async function renew(gc, a, gen) {
   const clientId = config.msClientId(cfg);
   const cred = await secrets.get(gc, a.id);
   if (!clientId || !cred || !cred.refreshToken) throw Object.assign(fail('auth_failed'), { auth: true });
-  const r = await post(gc, a.ms_tenant || 'common', 'token', { client_id: clientId, grant_type: 'refresh_token', refresh_token: cred.refreshToken, scope: scope() });
+  // only the granted scopes (1.2.0): the row as it is now (a sign-in anew may have changed them)
+  const now = await store.one(gc, 'SELECT ms_scopes FROM accounts WHERE id = ?', [a.id]).catch(() => null);
+  const r = await post(gc, a.ms_tenant || 'common', 'token', { client_id: clientId, grant_type: 'refresh_token', refresh_token: cred.refreshToken, scope: renewScope(now || a) });
   if (r.status !== 200 || !r.body.access_token) {
     const e = String(r.body.error || '');
     if (e === 'invalid_grant' || e === 'interaction_required' || e === 'invalid_client' || e === 'unauthorized_client') throw Object.assign(fail('auth_failed'), { auth: true });
@@ -145,7 +192,8 @@ function remember(accountId, info) {
 
 /**
  * A Graph request for account `a` → { status, json, headers }. `path` relative to v1.0 or an absolute graph URL (a nextLink).
- * 401 renews the token once; 429 / 503 → fail('busy', { retryAfter }). extra: { headers, bodyMedia, timeoutMs } — bodyMedia
+ * 401 renews the token once; 429 / 503 → fail('busy', { retryAfter }). extra: { headers, bodyMedia, timeoutMs, soft403 (a 403
+ * comes back as status — calendars, contacts), binary (→ bodyBase64), bodyBase64 } — bodyMedia
  * (GateControl ≥ 1.217.0) sends a media file of the plugin with `body` as the JSON around it (graph.js attachments).
  */
 async function graph(gc, a, method, path, body, extra = {}) {
@@ -158,13 +206,16 @@ async function graph(gc, a, method, path, body, extra = {}) {
     let r;
     try {
       r = await gc.http.fetch(url, { method, headers, ...(body !== undefined ? { json: body } : {}), ...(extra.bodyMedia ? { bodyMedia: extra.bodyMedia } : {}),
-        timeoutMs: extra.timeoutMs || TIMEOUT });
+        ...(extra.bodyBase64 ? { bodyBase64: extra.bodyBase64 } : {}), ...(extra.binary ? { binary: true } : {}), timeoutMs: extra.timeoutMs || TIMEOUT });
     } catch (e) {
       throw fail('unreachable', { reason: (e && e.code) || 'network' });
     }
     if (r.status === 401 && attempt === 0) continue;
+    // calendars and contacts (1.2.0): a 403 there means a scope is missing — the mail of the account is fine
+    if (r.status === 403 && extra.soft403) return { status: 403, json: null, headers: r.headers || {} };
     if (r.status === 401 || r.status === 403) throw Object.assign(fail('auth_failed'), { auth: r.status === 401 });
     if (r.status === 429 || r.status === 503) throw fail('busy', { retryAfter: Number((r.headers || {})['retry-after']) || 30 });
+    if (extra.binary) return { status: r.status, json: null, headers: r.headers || {}, bodyBase64: typeof r.bodyBase64 === 'string' ? r.bodyBase64 : (Buffer.isBuffer(r.body) ? r.body.toString('base64') : null) };
     let json = null;
     if (r.body) { try { json = typeof r.body === 'string' ? JSON.parse(r.body) : r.body; } catch { json = null; } }
     return { status: r.status, json, headers: r.headers || {} };
@@ -175,4 +226,4 @@ async function graph(gc, a, method, path, body, extra = {}) {
 /** Graph's own error code of an answer (for logs; never its text). */
 const graphError = (r) => (r && r.json && r.json.error && typeof r.json.error.code === 'string' ? r.json.error.code.slice(0, 60) : String(r && r.status));
 
-module.exports = { redeem, deviceStart, devicePoll, accessToken, graph, graphError, forget, remember, claims, tokenInfo, GRAPH, CONSUMER_TENANT };
+module.exports = { grantedOf, grantedScopes, missingScopes, hasScope, renewScope, redeem, deviceStart, devicePoll, accessToken, graph, graphError, forget, remember, claims, tokenInfo, GRAPH, CONSUMER_TENANT };

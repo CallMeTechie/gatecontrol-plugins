@@ -261,7 +261,16 @@ async function full(gc, m, { load = true } = {}) {
     cc: parse(m.cc_json, []), bcc: parse(m.bcc_json, []), replyTo: parse(m.reply_to_json, []),
     html, text: b ? b.text || '' : (m.snippet || ''), imagesBlocked: blocked, trackers: b ? b.trackers : 0,
     attachments: await attachmentsOf(gc, m), listUnsubscribe: parse(m.unsub_json, null), bodyMissing: !b,
+    // since 1.2.0: the invitation of the mail (C6), or null
+    invite: await inviteOf(gc, m),
   };
+}
+
+/** The Invitation of mail row `m` (calendars on), else null. */
+async function inviteOf(gc, m) {
+  const cfg = await require('./config').get(gc);
+  if (!cfg.calendar.enabled) return null;
+  try { return await require('./invites').forMessage(gc, m.user_id, m.id); } catch { return null; }
 }
 
 /** GET messages/<id> */
