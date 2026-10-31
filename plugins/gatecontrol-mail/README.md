@@ -276,7 +276,7 @@ the default 360 is 18:00 the day before (before 1.3.1: 1080, that is 06:00 the d
 | `PATCH addressbooks/<id>` | `{ visible?, name? }` → `{ addressbook }` |
 | `PUT cards/settings` | `{ sort?, show?, defaultAddressbookId?, birthdays? }` → `{ prefs }` |
 | `GET cards?q=&book=&group=&cursor=&limit=&since=` | `{ items: [CardSummary], next, version, deleted? }` — linked cards once (`linked`); `q` in names, company, addresses, numbers (digits); `since` (a `version`): changes and `deleted` ids |
-| `GET cards/<id>` · `POST cards` · `PATCH cards/<id>` (`etag`; 409 `conflict { current }` / `read_only`) · `DELETE cards/<id>` | `Card` / `{ card }` / `{ ok }` |
+| `GET cards/<id>` · `POST cards` · `PATCH cards/<id>` (`etag`; 409 `conflict { current }` / `read_only`) · `DELETE cards/<id>` | `Card` / `{ card }` / `{ ok }` — a card with linked ones shows their values joined in; a value of a linked card that a `PATCH` leaves out stays out of the view until it changes at the provider (since 1.3.6, the provider keeps it) |
 | `GET/PUT/DELETE cards/<id>/photo` | `{ mime, size, data }` / `{ mime: 'image/jpeg' \| 'image/png', data }` (≤ 256 KB) → `{ card }` |
 | `GET cards/lookup?email=` | `{ card, person: { userId, name } \| null, recent: { name, sent, received, lastAt } \| null }` |
 | `GET cards/<id>/activity` | `{ mails: [Summary] (≤ 5), events: [Occurrence] (≤ 5) }` |

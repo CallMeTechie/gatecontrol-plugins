@@ -151,13 +151,17 @@ async function full(gc, userId, c) {
   const book = await store.one(gc, 'SELECT * FROM addressbooks WHERE id = ?', [c.addressbook_id]);
   const f = parse(c.fields_json, {});
   const links = await store.all(gc, 'SELECT * FROM cards WHERE link_id = ? AND user_id = ?', [c.id, userId]);
+  // the values of the linked cards joined in — but not the ones the person removed from this contact (1.3.6)
+  const gone = links.length ? await dismissedOf(gc, c.id) : new Set();
   const merged = { ...f };
+  const key = cardstore.valueKey;
   for (const l of links) {
     const lf = parse(l.fields_json, {});
-    merged.emails = uniq([...(merged.emails || []), ...(lf.emails || [])], (e) => e.value);
-    merged.phones = uniq([...(merged.phones || []), ...(lf.phones || [])], (p) => vcard.digits(p.value) || p.value);
-    merged.addresses = uniq([...(merged.addresses || []), ...(lf.addresses || [])], (a) => `${a.street}|${a.city}`.toLowerCase());
-    for (const k of ['company', 'department', 'title', 'birthday']) if (!merged[k] && lf[k]) merged[k] = lf[k];
+    const keep = (field) => (v) => !gone.has(`${l.id}|${field}|${key(field, v)}`);
+    merged.emails = uniq([...(merged.emails || []), ...(lf.emails || []).filter(keep('emails'))], (e) => key('emails', e));
+    merged.phones = uniq([...(merged.phones || []), ...(lf.phones || []).filter(keep('phones'))], (p) => key('phones', p));
+    merged.addresses = uniq([...(merged.addresses || []), ...(lf.addresses || []).filter(keep('addresses'))], (a) => key('addresses', a));
+    for (const k of SINGLE_FIELDS) if (!merged[k] && lf[k] && keep(k)(lf[k])) merged[k] = lf[k];
   }
   const groups = (await store.all(gc, 'SELECT group_id FROM card_group_members WHERE card_id = ?', [c.id])).map((r) => r.group_id);
   const people = await gcPeople(gc, userId, (merged.emails || []).map((e) => e.value));
@@ -173,6 +177,39 @@ async function full(gc, userId, c) {
     groups, linked: links.map((l) => ({ id: l.id, addressbookId: l.addressbook_id, source: (bookOf.get(l.addressbook_id) || {}).source || 'local' })),
     gcUserId: [...people.values()][0] || null, updatedAt: c.updated_at,
   };
+}
+
+const LIST_FIELDS = ['emails', 'phones', 'addresses'];
+const SINGLE_FIELDS = ['company', 'department', 'title', 'birthday'];
+
+/** The values of linked cards the person removed from card `cardId` → Set of 'sourceId|field|valueKey'. */
+async function dismissedOf(gc, cardId) {
+  return new Set((await store.all(gc, 'SELECT source_id, field, value_key FROM card_dismissed WHERE card_id = ?', [cardId])).map((r) => `${r.source_id}|${r.field}|${r.value_key}`));
+}
+
+/**
+ * A change `ch` (vcard.check) of card `c`, whose view joins in its linked cards: every value of a linked card that the
+ * change leaves out is remembered as removed, so the view does not bring it back (the linked card at its provider stays
+ * as it is). A value the person adds again is no longer removed.
+ */
+async function rememberRemoved(gc, userId, c, ch) {
+  const links = await store.all(gc, 'SELECT id, fields_json FROM cards WHERE link_id = ? AND user_id = ?', [c.id, userId]);
+  if (!links.length) return;
+  const key = cardstore.valueKey;
+  const now = Date.now();
+  const mark = (l, field, k, on) => (on
+    ? store.run(gc, 'INSERT OR IGNORE INTO card_dismissed (user_id, card_id, source_id, field, value_key, at) VALUES (?, ?, ?, ?, ?, ?)', [userId, c.id, l.id, field, k, now])
+    : store.run(gc, 'DELETE FROM card_dismissed WHERE card_id = ? AND source_id = ? AND field = ? AND value_key = ?', [c.id, l.id, field, k]));
+  for (const field of LIST_FIELDS) {
+    if (ch[field] === undefined) continue;
+    const want = new Set(ch[field].map((v) => key(field, v)));
+    for (const l of links) for (const v of parse(l.fields_json, {})[field] || []) { const k = key(field, v); if (k) await mark(l, field, k, !want.has(k)); }
+  }
+  for (const field of SINGLE_FIELDS) {
+    if (ch[field] === undefined) continue;
+    const want = key(field, ch[field]);
+    for (const l of links) { const v = parse(l.fields_json, {})[field]; const k = key(field, v); if (k) await mark(l, field, k, k !== want); }
+  }
 }
 
 function uniq(list, key) {
@@ -343,6 +380,7 @@ async function patch(gc, ctx, id, b) {
   if (b.etag !== undefined && b.etag !== etagOf(c)) throw fail('conflict', { current: await full(gc, ctx.userId, c) });
   const ch = vcard.check(b);
   const f = mergedFields(parse(c.fields_json, {}), ch);
+  await rememberRemoved(gc, ctx.userId, c, ch);
   let stored;
   try { stored = await write(gc, book, c, f, undefined); } catch (e) {
     if (e && e.code === 'conflict') throw fail('conflict', { current: await full(gc, ctx.userId, await store.one(gc, 'SELECT * FROM cards WHERE id = ?', [c.id]) || c) });
@@ -609,8 +647,9 @@ async function merge(gc, ctx, b) {
   if (!sameBook) {
     for (const c of others) {
       await store.run(gc, 'UPDATE cards SET link_id = ?, version = ? WHERE id = ?', [primary.id, await pimstore.nextCardVersion(gc, ctx.userId), c.id]);
-      // cards that were linked to the merged one follow it
+      // cards that were linked to the merged one follow it (with the values the person removed)
       await store.run(gc, 'UPDATE cards SET link_id = ? WHERE link_id = ?', [primary.id, c.id]);
+      await store.run(gc, 'UPDATE OR IGNORE card_dismissed SET card_id = ? WHERE card_id = ?', [primary.id, c.id]);
     }
     await store.run(gc, 'UPDATE cards SET link_id = NULL, version = ? WHERE id = ?', [await pimstore.nextCardVersion(gc, ctx.userId), primary.id]);
     await pimstore.live(gc, ctx.userId, 'contacts', { kind: 'changed', addressbookId: primary.addressbook_id, contactIds: ids });
@@ -641,6 +680,7 @@ async function merge(gc, ctx, b) {
     await store.run(gc, `UPDATE card_group_members SET card_id = ? WHERE card_id = ? AND group_id NOT IN (SELECT group_id FROM card_group_members WHERE card_id = ?)`, [stored.id, c.id, stored.id]);
     await store.run(gc, 'DELETE FROM card_group_members WHERE card_id = ?', [c.id]);
     await store.run(gc, 'UPDATE cards SET link_id = ? WHERE link_id = ?', [stored.id, c.id]);
+    await store.run(gc, 'UPDATE OR IGNORE card_dismissed SET card_id = ? WHERE card_id = ?', [stored.id, c.id]);
     await destroy(gc, c);
   }
   await pimstore.live(gc, ctx.userId, 'contacts', { kind: 'changed', addressbookId: book.id, contactIds: ids });
