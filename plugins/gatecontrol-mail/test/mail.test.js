@@ -11,7 +11,7 @@ const { withMail, settle, ANNA, MARC, BOB, ADMIN, DIR } = require('./helpers');
 
 test('plugin.json: GateControl 1.219.0, mail with dav, images, Drive, Familie and Alltag services, the app tab', () => {
   const m = JSON.parse(fs.readFileSync(path.join(DIR, 'plugin.json'), 'utf8'));
-  assert.equal(m.version, '1.3.0');
+  assert.equal(m.version, '1.3.1');
   // 1.2.0: gc.mail.dav (CalDAV/CardDAV), iMIP and up to 1000 pushes an hour need GateControl 1.219.0
   assert.equal(m.gatecontrol, '>=1.219.0');
   assert.ok(m.permissions.mail.dav.purpose.de && m.permissions.mail.dav.purpose.en);

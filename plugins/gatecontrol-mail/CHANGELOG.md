@@ -2,6 +2,19 @@
 
 Alle E-Mail-Konten an einem Ort – im eigenen Tab der GateControl-Apps und im Portal.
 
+## 1.3.1
+- **Erinnerung für ganztägige Termine: Standard 18:00 am Vortag.** `CalPrefs.allDayReminder` zählt Minuten vor Mitternacht
+  des Termintags in der Zone der Person (wie ein VALARM-`TRIGGER` zum `DTSTART` eines Ganztagstermins). Der Standard war
+  1080 – das ist 06:00 am Vortag, gemeint war 18:00. Neu ist er 360. Die Erinnerung selbst rechnet unverändert
+  Mitternacht des Tages minus Minuten; ein Test prüft 18:00 am Vortag in Europe/Berlin, auch an den Tagen der
+  Zeitumstellung.
+- **Gespeicherte Einstellungen bleiben, wie sie sind.** Ein gespeichertes `allDayReminder` von 1080 wird nicht
+  umgeschrieben: Es lässt sich nicht unterscheiden, ob es der alte Standard ist (beim ersten Öffnen des Kalenders
+  speichert der Server die Einstellungen mit; die Apps können 1080 als Standard geschickt haben) oder bewusst gewählt
+  wurde. Wer seit 1.2.0 den Kalender geöffnet hat, behält daher 06:00 am Vortag, bis `allDayReminder` geändert wird
+  (`PUT calendar/settings { allDayReminder: 360 }`; Portal und Apps haben dafür noch keine eigene Einstellung, je Termin
+  lässt sich die Erinnerung wählen). Neue Personen und Einstellungen ohne gespeicherten Wert bekommen 360.
+
 ## 1.3.0
 - **Kalender und Kontakte im Portal** (Phase 2, Oberfläche; der Server kam mit 1.2.0).
 - **Seitenmenü mit neuem Fuß** (Mockup MenueNeu): links die Mail-Einstellungen, rechts Kontakte und Kalender (je nach

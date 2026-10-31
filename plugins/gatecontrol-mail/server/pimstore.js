@@ -35,7 +35,8 @@ async function calPrefs(gc, userId, cfg) {
     view: VIEWS.includes(j.view) ? j.view : '3day', weekStart: j.weekStart === 0 ? 0 : 1, workWeek: j.workWeek === true,
     timeZone: typeof j.timeZone === 'string' && tz.valid(j.timeZone) ? j.timeZone : 'Europe/Berlin', reminders: j.reminders !== false,
     defaultReminder: j.defaultReminder === undefined ? c.calendar.defaultReminder : (j.defaultReminder === null || (Number.isInteger(j.defaultReminder) && j.defaultReminder >= 0 && j.defaultReminder <= 40320) ? j.defaultReminder : 15),
-    allDayReminder: Number.isInteger(j.allDayReminder) && j.allDayReminder >= 0 && j.allDayReminder <= 10080 ? j.allDayReminder : 1080,
+    // minutes before midnight of the event's day, like a VALARM TRIGGER on an all-day DTSTART: 360 = 18:00 the day before
+    allDayReminder: Number.isInteger(j.allDayReminder) && j.allDayReminder >= 0 && j.allDayReminder <= 10080 ? j.allDayReminder : 360,
   };
   return { prefs: out, overlays: j.overlays && typeof j.overlays === 'object' ? j.overlays : {}, setup: j.setup === true };
 }
