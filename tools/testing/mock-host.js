@@ -325,6 +325,11 @@
 //
 // GateControl 1.217.0 (opt-in: opts.gatecontrol: '1.217.0') — gc.mail.smtp.verify (opts.mail.verify; host.mailVerified)
 // and gc.http.fetch with bodyMedia / gc.http.MEDIA_BASE64: opts.fetch gets the body the host would send (see mock-mail.js).
+//
+// GateControl 1.219.0 (opt-in: opts.gatecontrol: '1.219.0') — calendars and contacts of Mail (mock-mail.js):
+// permissions.mail.dav { purpose } and gc.mail.dav.request (the test's opts.mail.dav(request) plays the CalDAV/CardDAV
+// servers; host.davRequests records them), the calendar parts of a parsed mail (`calendar`), smtp.send with icalEvent,
+// permissions.notify perHour up to 1000.
 
 const fs = require('node:fs');
 const os = require('node:os');
@@ -989,6 +994,7 @@ async function createHost(pluginDir, opts = {}) {
   // ─── GateControl 1.216.0: gc.mail (permissions.mail), gc.http.fetchImage (permissions.network.images) — mock-mail.js ───
   const gc216 = atLeast(216);
   const gc217 = atLeast(217); // gc.mail.smtp.verify, gc.http.fetch with bodyMedia (mock-mail.js)
+  const gc219 = atLeast(219); // gc.mail.dav, iMIP (calendar parts, icalEvent), notify perHour ≤ 1000 (mock-mail.js)
   if (gc216 || opts.mail) mockMail.mailPermission(perms.mail, hostError);
   if (gc216 && net.images != null && typeof net.images !== 'boolean') throw hostError('ERR_INVALID', 'plugin.json: permissions.network: invalid images');
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), `gcmock-${manifest.id}-`));
@@ -2727,7 +2733,7 @@ async function createHost(pluginDir, opts = {}) {
   const log = (level) => (...a) => logs.push({ level, message: a.map((x) => (typeof x === 'string' ? x : JSON.stringify(x))).join(' ') });
 
   // GateControl 1.216.0 (mock-mail.js)
-  const mail216 = mockMail.install({ perms, opts, hostError, wire, gc216, gc217, mediaStore, mediaQuota, mediaUsage, media });
+  const mail216 = mockMail.install({ perms, opts, hostError, wire, gc216, gc217, gc219, mediaStore, mediaQuota, mediaUsage, media });
   const gc = Object.freeze({
     plugin: Object.freeze({ id: manifest.id, version: manifest.version, filesDir }),
     // GateControl ≥ 1.216.0: IMAP / SMTP / MIME / sanitizer (permissions.mail; missing without it)
@@ -2953,6 +2959,8 @@ async function createHost(pluginDir, opts = {}) {
     mailSessions: mail216.records.mailSessions, mailSent: mail216.records.mailSent, imageFetches: mail216.records.imageFetches,
     /** GateControl ≥ 1.217.0: every smtp.verify ({ host, port, security, user }) */
     mailVerified: mail216.records.mailVerified,
+    /** GateControl ≥ 1.219.0: every gc.mail.dav.request ({ url, method, headers, body, auth: { user } | { bearer: true } | null }) */
+    davRequests: mail216.records.davRequests,
     /** GateControl ≥ 1.177.0: an upload of an app or a frame (PUT …/plugins/<id>/media) → { status, body } */
     async upload(user, data, mime, o = {}) {
       if (!media) return { status: 404, body: { ok: false, code: 'not_found' } };
