@@ -252,3 +252,51 @@ test('set_place_status: an older GateControl without gc.services, or the module 
   assert.equal(r.status, 200, 'no messenger at all');
   await host.tick();
 }));
+
+test('calendar_range (1.16.0): the family calendar for Mail — occurrences like GET dates, birthdays, pages; only the person of the call', () => withFamily({ settings: { mod_wall: true } }, async (host, { as, admin }) => {
+  const mail = (payload, user) => call(host, 'calendar_range', payload, { caller: 'gatecontrol-mail', user });
+  const anna = { id: ANNA.id, name: 'Anna', role: 'user' };
+  await admin('PATCH', 'members/' + TIM.id, { birthdate: '2016-11-09' });
+  const kino = (await as(ANNA)('POST', '/dates', { title: 'Kino', date: '2026-11-04', time: '15:00', endTime: '16:30', place: 'Cinemaxx', memberIds: [LENA.id] })).json;
+  await as(ANNA)('POST', '/dates', { title: 'Hochzeitstag', date: '2010-11-20', allDay: true, repeat: 'yearly' });
+  await as(ANNA)('POST', '/dates', { title: 'Urlaub', date: '2026-11-27', endDate: '2026-12-02', allDay: true });
+  const r = await mail({ from: '2026-11-01', to: '2026-11-30' }, anna);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(r.tz, 'Europe/Berlin');
+  assert.equal(r.next, null);
+  assert.deepEqual(r.events.map((e) => [e.title, e.date, e.kind]), [['Kino', '2026-11-04', 'event'], ['Tim', '2026-11-09', 'birthday'], ['Hochzeitstag', '2026-11-20', 'event'], ['Urlaub', '2026-11-27', 'event']]);
+  const k = r.events[0];
+  assert.deepEqual(k, { id: String(kino.event ? kino.event.id : kino.id), title: 'Kino', date: '2026-11-04', time: '15:00', endDate: null, endTime: '16:30', allDay: false, place: 'Cinemaxx',
+    kind: 'event', memberIds: [LENA.id], origin: null });
+  assert.equal(r.events[1].id, `member:${TIM.id}`);
+  assert.equal(r.events[3].endDate, '2026-12-02');
+  // pages of at most ~16 KB: many dates come with `next`
+  for (let i = 0; i < 120; i++) await host.gc.db.run(`INSERT INTO events (title, date, time, end_date, all_day, repeat, member_ids_json, kind, remind_days, note, place, end_time, source, source_ref, created_by, created_at, updated_at)
+    VALUES (?, '2026-11-15', '10:00', NULL, 0, 'none', '[]', 'event', NULL, '', ?, NULL, NULL, NULL, ?, 0, 0)`, [`Termin ${i} ${'x'.repeat(60)}`, 'Ort '.repeat(19), ANNA.id]);
+  const seen = [];
+  let cursor;
+  let pages = 0;
+  do {
+    const p = await mail({ from: '2026-11-01', to: '2026-11-30', ...(cursor ? { cursor } : {}) }, anna);
+    assert.equal(p.ok, true);
+    assert.ok(Buffer.byteLength(JSON.stringify(p)) <= 16 * 1024, 'at most 16 KB');
+    seen.push(...p.events);
+    cursor = p.next;
+    pages++;
+  } while (cursor && pages < 20);
+  assert.ok(pages > 1, 'more than one page');
+  assert.equal(seen.length, 124);
+  // refusals: only Mail, only the person of the call, members, the module, the range
+  assert.deepEqual(await call(host, 'calendar_range', { from: '2026-11-01', to: '2026-11-30' }, { caller: MSG, user: anna }), { ok: false, code: 'forbidden' });
+  assert.deepEqual(await mail({ from: '2026-11-01', to: '2026-11-30' }, null), { ok: false, code: 'forbidden' });
+  assert.deepEqual(await mail({ userId: LENA.id, from: '2026-11-01', to: '2026-11-30' }, anna), { ok: false, code: 'forbidden' });
+  assert.deepEqual(await mail({ from: '2026-11-01', to: '2026-11-30' }, { id: OMA.id, name: 'Oma', role: 'user' }), { ok: false, code: 'not_member' });
+  await admin('POST', 'members', { userId: KUECHE.id, role: 'wall' });
+  assert.deepEqual(await mail({ from: '2026-11-01', to: '2026-11-30' }, { id: KUECHE.id, name: 'Küche', role: 'user' }), { ok: false, code: 'not_member' });
+  for (const bad of [{ from: '2026-11-01', to: '2027-01-15' }, { from: '2026-11-30', to: '2026-11-01' }, { from: '2026-11-01' }, { from: '2026-02-30', to: '2026-03-01' },
+    { from: '2026-11-01', to: '2026-11-30', cursor: 'x' }, { from: '2026-11-01', to: '2026-11-30', cursor: 5 }]) {
+    assert.deepEqual(await mail(bad, anna), { ok: false, code: 'invalid' }, JSON.stringify(bad));
+  }
+  await admin('PUT', 'modules', { dates: false });
+  assert.deepEqual(await mail({ from: '2026-11-01', to: '2026-11-30' }, anna), { ok: false, code: 'module_off' });
+}));

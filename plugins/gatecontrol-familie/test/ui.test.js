@@ -141,13 +141,14 @@ test('Leaflet: one constant (server/ui.js), nowhere else', () => {
 
 test('plugin.json: permissions (kiosk, actions), app tab, maps, the eleven topics with SOS allowed critical', () => {
   assert.equal(manifest.id, 'gatecontrol-familie');
-  assert.equal(manifest.version, '1.15.4');
+  assert.equal(manifest.version, '1.16.0');
   // 1.6.0 stays on 1.173.0: the messenger services (GateControl ≥ 1.177.0) are optional — an older host ignores
   // permissions.services and has no gc.services, so the group and the rule action stay hidden there.
   // 1.14.2 too: GC.viewport (GateControl ≥ 1.199.0) is optional — without it the wall keeps its 640 px
   // 1.15.0 too: the GateControl group „Familie“ (gc.groups, GateControl ≥ 1.200.0) is feature-detected — an older host
   // ignores permissions.groups and has no gc.groups
-  assert.equal(manifest.gatecontrol, '>=1.173.0', 'target states of switches (gc.actions.run state, verbs/targets/device in gc.actions.list) need GateControl 1.173.0');
+  // 1.16.0: services.provides.calendar_range.maxPerHour (GateControl ≥ 1.216.0 — older hosts refuse the key)
+  assert.equal(manifest.gatecontrol, '>=1.216.0', 'maxPerHour of calendar_range needs GateControl 1.216.0');
   const p = manifest.permissions;
   assert.deepEqual([p.storage, p.portal, p.users, p.app, p.notify, p.background, p.kiosk, p.actions], [true, true, true, true, { perHour: 120 }, { intervalSeconds: 60 }, true, true]);
   assert.equal(p.groups, 'manage', '1.15.0: the family as a GateControl group of the plugin (gc.groups.ensure)');
@@ -155,8 +156,9 @@ test('plugin.json: permissions (kiosk, actions), app tab, maps, the eleven topic
     'gatecontrol-messenger:set_place_status', 'gatecontrol-alltag:calendar_query', 'gatecontrol-alltag:calendar_list', 'gatecontrol-schule:school_students',
     'gatecontrol-schule:school_day'],
   '1.7.0: release_group (messenger ≥ 1.1.0); 1.8.0: set_place_status (messenger ≥ 1.4.0); 1.9.0: the Alltag calendars for calendar conditions; 1.12.0: the Schule students; 1.13.0: the school day on the wall');
-  assert.deepEqual(Object.keys(manifest.services.provides), ['list_add', 'calendar_add', 'calendar_upsert', 'calendar_remove', 'places', 'family_roles', 'rule_event', 'school_day_end', 'wall_wifi'],
-    '1.8.0: services for the Messenger; 1.9.0: family_roles; 1.12.0: rule_event for the Schule plugin; 1.13.0: school_day_end; 1.14.0: wall_wifi for Vault');
+  assert.deepEqual(Object.keys(manifest.services.provides), ['list_add', 'calendar_add', 'calendar_upsert', 'calendar_remove', 'places', 'family_roles', 'rule_event', 'school_day_end', 'wall_wifi', 'calendar_range'],
+    '1.8.0: services for the Messenger; 1.9.0: family_roles; 1.12.0: rule_event for the Schule plugin; 1.13.0: school_day_end; 1.14.0: wall_wifi for Vault; 1.16.0: calendar_range for Mail');
+  assert.equal(manifest.services.provides.calendar_range.maxPerHour, 1800);
   for (const sv of Object.values(manifest.services.provides)) assert.ok(sv.label.de && sv.label.en && sv.label.de.length <= 60 && sv.label.en.length <= 60);
   // 1.10.0: no page „Regeln & Erinnerungen“ — every rule is on „Anwesenheit & Smart Home“
   assert.deepEqual(manifest.ui.pages.map((x) => x.id), ['members', 'modules', 'presence', 'log']);
@@ -167,8 +169,8 @@ test('plugin.json: permissions (kiosk, actions), app tab, maps, the eleven topic
   assert.deepEqual(manifest.ui.settings.slice(4).map((x) => x.default), [false, 'direct', 'family', true]);
   assert.deepEqual(manifest.ui.settings[5].options.map((o) => o.value), ['direct', 'family', 'push']);
   assert.deepEqual(manifest.ui.settings[6].options.map((o) => o.value), ['family', 'off']);
-  // 1.9.0: device values and buttons need GateControl 1.181.0 — feature-detected, so the requirement stays
-  assert.equal(manifest.gatecontrol, '>=1.173.0');
+  // 1.9.0: device values and buttons need GateControl 1.181.0 — feature-detected (the requirement is 1.216.0 since 1.16.0)
+  assert.equal(manifest.gatecontrol, '>=1.216.0');
   assert.equal(manifest.ui.maps, true);
   const ICON = /^[MmLlHhVvCcSsQqTtAaZz0-9 .,-]{1,600}$/;
   for (const k of ['nav', 'portal', 'app']) {

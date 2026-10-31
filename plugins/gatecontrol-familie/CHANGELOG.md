@@ -3,6 +3,18 @@
 Die Familie in der GateControl-App (eigener Tab), im Portal (eigener Tab „Familie“) und auf
 drei Admin-Seiten. Alles bleibt auf dem eigenen Server.
 
+## 1.16.0
+- **Familienkalender in Mail:** neuer Dienst `calendar_range` (nur für `gatecontrol-mail`, höchstens 1800 Aufrufe je
+  Stunde) – Mail blendet damit die Familientermine in seinen Kalender ein (nur lesend).
+  `{ from: 'YYYY-MM-DD', to: 'YYYY-MM-DD' (≤ 62 Tage), cursor? }` → `{ ok: true, tz, events: [{ id: '123' | 'member:5',
+  title, date, time: 'HH:MM' | null, endDate | null, endTime | null, allDay, place | null, kind: 'event' | 'birthday',
+  memberIds, origin: 'chat' | null }], next }` – die Vorkommen wie `GET dates` (jährliche Wiederholung, Geburtstage der
+  Mitglieder), sortiert, höchstens etwa 16 KB je Antwort, der Rest seitenweise über `next` als `cursor`.
+- Nur für die Person des Aufrufs: GateControls `user` muss da sein (ein `userId` im Auftrag muss derselbe sein, sonst
+  `forbidden`), Mitglied der Familie (kein Wand-Tablet, sonst `not_member`), Modul Termine an (sonst `module_off`);
+  falscher Zeitraum oder Cursor → `invalid`. Andere Plugins bekommen `forbidden`.
+- Braucht GateControl 1.216.0 (`maxPerHour` je Dienst; ältere Versionen lehnen den Schlüssel ab).
+
 ## 1.15.4
 - **Termine aus Mail in den Familienkalender:** Der Dienst `calendar_add` nimmt jetzt auch Aufrufe von
   `gatecontrol-mail` an (Mail ab 1.0.0: „In den Familienkalender“ für einen Termin oder eine Frist aus einer Mail) – mit
