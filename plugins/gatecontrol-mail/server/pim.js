@@ -263,6 +263,12 @@ async function calendarStep(gc, a, cal) {
   }
 }
 
+/** After a contact sync step: the GC contacts of the changed cards up to date, new certain duplicates merged (1.4.0). */
+async function mergeAfter(gc, userId, changed) {
+  if (!changed || !changed.length) return;
+  try { await require('./cardmerge').afterSync(gc, userId, changed); } catch (e) { gc.log.warn('contacts merge after sync failed', (e && e.code) || 'error'); }
+}
+
 async function bookStep(gc, a, book) {
   const x = lineOf(a.id);
   x.last[`book:${book.id}`] = Date.now();
@@ -280,11 +286,13 @@ async function bookStep(gc, a, book) {
       if (r.consent) { await stepError(gc, a, 'contacts', [book], fail('consent_required')); return false; }
       if (r.more) x.last[`book:${book.id}`] = 0;
       if ((r.changed || []).length || r.removed) await pimstore.live(gc, a.user_id, 'contacts', { kind: 'changed', addressbookId: book.id, ...(r.changed.length <= 50 ? { contactIds: r.changed } : {}) });
+      await mergeAfter(gc, a.user_id, r.changed);
       return true;
     }
     if (book.source === 'carddav') {
       const r = await pimdav.syncCollection(gc, a, book, 'carddav', guardOf(gc, 'addressbooks'));
       if (r.changed.length || r.removed) await pimstore.live(gc, a.user_id, 'contacts', { kind: 'changed', addressbookId: book.id, ...(r.changed.length <= 50 ? { contactIds: r.changed } : {}) });
+      await mergeAfter(gc, a.user_id, r.changed);
       return true;
     }
     return false;

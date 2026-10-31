@@ -2,6 +2,44 @@
 
 Alle E-Mail-Konten an einem Ort – im eigenen Tab der GateControl-Apps und im Portal.
 
+## 1.4.0
+- **Ein Kontakt statt Dubletten.** Aus Dubletten wird ein Kontakt in „Meine Kontakte“ (der GC-Kontakt). Die Kontakte der
+  Konten (Outlook/Microsoft 365 über Graph, GMX/Web.de/eigener Server über CardDAV) werden mit ihm verknüpft, bleiben beim
+  Anbieter und stehen nicht mehr einzeln in der Liste. Beim Anbieter wird beim Zusammenführen nie etwas gelöscht.
+- Der GC-Kontakt bekommt die einzigartigen Angaben aller Dubletten:
+  - Nummern, Adressen und Anschriften ohne Doppelte. Gleiche Nummern werden nach den Ziffern erkannt (`+49`/`0`).
+  - Firma, Position, Geburtstag (volles Datum vor `--MM-TT`) und die verbundenen Notizen.
+  - Den Namen: ein Name mit Emoji („Schatzimausi 💞“) gewinnt, ein fehlender Nachname kommt aus einer anderen Dublette,
+    sonst gilt der vollständigste Name.
+  - Das Bild: das aus „Meine Kontakte“ gewinnt, sonst das größte.
+- **Eindeutige Dubletten** (gleiche Nummer oder Adresse und ähnlicher Name) führt der Server selbst zusammen. Das passiert
+  einmal nach dem Update im Hintergrund, eine Person je Lauf, mit Protokoll (`GET cards/merges`, Log `contacts merged`).
+  Danach passiert es nach jedem Abgleich und jedem vCard-Import. Alte Verknüpfungen mit einem Konto-Kontakt als
+  Hauptkontakt werden dabei zu einem GC-Kontakt.
+- **Unsichere Fälle** stehen in den Dubletten (`GET cards/duplicates?details=1`). Jede Dublette zeigt ihre Herkunft
+  (Adressbuch, Konto) und ihre Felder, darunter steht die Vorschau „So wird der Kontakt“ (`POST cards/merge/preview`).
+- **Rückgängig** löst die Verknüpfungen (`POST cards/merges/<id>/undo`, `POST cards/<id>/unmerge`). Ein dabei angelegter
+  GC-Kontakt wird entfernt, aufgegangene eigene Kontakte kommen zurück. Die Paare werden nicht wieder vorgeschlagen.
+- **Abgleich:** Was ein verknüpfter Kontakt mehr hat, kommt automatisch in den GC-Kontakt. Hat er für dieselbe Art einen
+  anderen Wert (eine andere Mobilnummer, eine andere Firma), wird nichts überschrieben. Am Kontakt erscheint dann ein
+  Hinweis mit „Übernehmen“ und „Verwerfen“. Verworfenes kommt nicht wieder, solange der Anbieter den Wert nicht ändert,
+  auch nicht, wenn Link to Windows es zurückschreibt.
+- **Rückschreiben:** Änderungen am GC-Kontakt bleiben in GateControl. Nur einen Wert, der von einem Konto übernommen
+  wurde, schreibt der Server beim Ändern oder Löschen in genau diesen Kontakt beim Anbieter zurück (Antwort `writeBack`).
+- **Favoriten und Hauptnummer:** `PATCH cards/<id> { favorite, mainPhone }`, `GET/PUT cards/favorites`. Ohne Wahl gilt
+  die erste Mobilnummer als Hauptnummer. Beides gibt es nur in GateControl. Die Apps heften Favoriten an Start an, ein
+  Tipp ruft die Hauptnummer an.
+- **Termin-Widget:** `GET events/upcoming?days=2&limit=8` liefert die nächsten Termine von heute und morgen, kompakt und
+  mit Farben, Geburtstagen und Eingeblendetem.
+- **Löschen** eines GC-Kontakts lässt die verknüpften Kontakte beim Anbieter stehen (`?linked=delete` löscht sie mit).
+- **vCard-Import** ergänzt vorhandene Kontakte nur noch (Listen vereint, leere Felder gefüllt) und überschreibt nichts.
+- **Portal:**
+  - In der Liste haben Kontakte einen Stern für Favoriten, einen Punkt bei Hinweisen und Punkte für alle Konten.
+  - Der Kontakt zeigt Hinweise mit „Übernehmen“, „Zusätzlich“ und „Verwerfen“, die Hauptnummer, die Quellen mit
+    „Verknüpfung lösen“ und beim Löschen die Frage, ob auch beim Anbieter gelöscht werden soll.
+  - Die Dubletten zeigen Herkunft und Felder je Karte, die Vorschau und „Automatisch zusammengeführt“ mit „Rückgängig“.
+- Migration `006_card_master.sql`. Die Apps folgen. Bisherige Pfade und Felder bleiben, siehe README.
+
 ## 1.3.6
 - **Gelöschte Nummer bleibt gelöscht.** Bei einem verknüpften Kontakt (z. B. ein eigener Kontakt, verknüpft mit dem
   Outlook-Adressbuch und dem Ordner „OnePlus … (contacts synced by Link to Windows)“) zeigt die Ansicht die Nummern,

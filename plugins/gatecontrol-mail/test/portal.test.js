@@ -12,7 +12,9 @@ process.env.TZ = 'Europe/Berlin';
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { withMail, settle, app, ANNA, ADMIN } = require('./helpers');
-const { vevent, vcf, utc } = require('./pim-helpers');
+const { vevent, vcf, utc, FakeDav } = require('./pim-helpers');
+const pim = require('../server/pim');
+const cardmerge = require('../server/cardmerge');
 const ui = require('../server/ui');
 const { t } = require('../server/text');
 const { createWindow } = require('./fake-dom');
@@ -188,14 +190,14 @@ test('contacts: letters, a contact, editing with the etag, a group with a member
     await until('the member', () => p.text('mp-read').includes('tim@familie.de'));
     // duplicates: merged (same address book)
     click(p.all().find((x) => x.localName === 'button' && x.className === 'mp-row' && textOf(x).includes('Dubletten')));
-    await until('the duplicates', () => p.text('mp-read').includes('Gleiche E-Mail-Adresse'));
+    // 1.4.0: every card with where it comes from and its fields, below „So wird der Kontakt“; merged without a dialog
+    await until('the duplicates', () => p.text('mp-read').includes('Gleiche E-Mail-Adresse') && p.text('mp-read').includes('So wird der Kontakt'));
+    assert.ok(p.text('mp-read').includes('Meine Kontakte') && p.text('mp-read').includes('anna.lang@firma.de') && p.text('mp-read').includes('Keller GmbH'));
+    assert.ok(p.calls.some((x) => x.path === 'cards/duplicates' && x.query && x.query.details === '1'));
     click(p.el('mp-read').all().find((x) => x.localName === 'button' && textOf(x) === 'Zusammenführen'));
-    await until('the preview', () => p.dialogText().includes('Hauptkontakt'));
-    click(p.el('mp-dialog').all().filter((x) => x.localName === 'button' && textOf(x) === 'Zusammenführen').pop());
     await until('merged', () => p.calls.some((x) => x.path === 'cards/merge'));
     const m = p.calls.find((x) => x.path === 'cards/merge').body;
-    assert.equal(m.ids.length, 2);
-    assert.equal(m.pick.note, 'join');
+    assert.deepEqual([m.ids.length, m.primaryId, m.pick], [2, undefined, undefined]);
     await until('one Anna', () => (p.text('mp-list').match(/Anna Lang/g) || []).length === 1);
     // export: GC.saveFile with the vCard
     click(p.byLabel('Weitere Aktionen'));
@@ -363,3 +365,48 @@ test('admin: the cards Kalender and Kontakte, what the Microsoft registration ne
     assert.ok(page().includes('Termine') && page().includes('Kontakte') && page().includes('Speicher für Termine und Kontakte'));
   } finally { o.stop(); }
 }));
+
+test('a GC contact (1.4.0): the account it is linked with, a conflict „Übernehmen“ / „Verwerfen“, the star for a favourite, the main number; „Verknüpfung lösen“', async () => {
+  const dav = new FakeDav({ user: 'anna@gmx.de', pass: 'geheim-123' });
+  const book = dav.book('k', { name: 'GMX-Kontakte' });
+  dav.put(book, 'l.vcf', vcf('l', ['FN:Lena Lang', 'N:Lang;Lena;;;', 'EMAIL:lena@example.com', 'TEL;TYPE=WORK:030 5550001', 'ORG:Firma A']));
+  await withMail({ gatecontrol: '1.219.0', dav }, async (host, c) => {
+    await c.addGmx(ANNA);
+    const anna = c.as(ANNA);
+    await anna('GET', 'addressbooks');
+    const own = (await anna('POST', 'cards', { name: { given: 'Lena', family: 'Lang' }, emails: [{ value: 'lena@example.com' }], phones: [{ value: '0171 5550002', type: 'mobile' }], company: 'Firma B' })).json.card;
+    for (let i = 0; i < 10; i++) {
+      for (let k = 0; k < 5; k++) { const x = pim.lineOf(k); x.retryAt = 0; x.pause = 0; for (const key of Object.keys(x.last)) if (!/List$/.test(key)) x.last[key] = 0; }
+      cardmerge.reset();
+      await host.tick();
+      await settle(20);
+    }
+    const card = (await anna('GET', `cards/${own.id}`)).json;
+    assert.deepEqual([card.linked.length, card.conflicts.map((x) => x.value)], [1, ['Firma A']], JSON.stringify(card).slice(0, 300));
+    const p = portal(host, ANNA);
+    try {
+      await until('the foot', () => p.byLabel('Kontakte'));
+      click(p.byLabel('Kontakte'));
+      await until('the list', () => p.text('mp-list').includes('Lena Lang'));
+      assert.equal((p.text('mp-list').match(/Lena Lang/g) || []).length, 1, 'the linked account card is not on its own');
+      assert.ok(p.all().some((x) => x.className === 'mk-cfdot'), 'a dot for the conflict');
+      click(p.all().find((x) => x.localName === 'button' && x.className.includes('mk-row') && textOf(x).includes('Lena Lang')));
+      await until('the contact', () => p.text('mp-read').includes('GMX-Kontakte (anna@gmx.de) hat eine andere Angabe – Firma: Firma A'));
+      assert.ok(p.text('mp-read').includes('Bisher: Firma B') && p.text('mp-read').includes('Verknüpft mit') && p.text('mp-read').includes('anna@gmx.de'));
+      assert.ok(p.text('mp-read').includes('030 5550001') && p.text('mp-read').includes('Mobil · Hauptnummer'), 'the number taken over, the main number marked');
+      click(p.byText('button', 'Verwerfen'));
+      await until('dismissed', () => !p.text('mp-read').includes('Firma A'));
+      assert.ok(p.calls.some((x) => x.method === 'POST' && x.path === `cards/${own.id}/conflicts/${card.conflicts[0].id}/dismiss`));
+      click(p.byLabel('Als Favorit'));
+      await until('a favourite', () => p.byLabel('Kein Favorit mehr'));
+      assert.deepEqual(p.calls.filter((x) => x.method === 'PATCH').map((x) => x.body), [{ favorite: true }]);
+      click(p.byLabel('Als Hauptnummer'));
+      await until('the main number', () => p.text('mp-read').includes('Arbeit · Hauptnummer'));
+      assert.deepEqual(p.calls.filter((x) => x.method === 'PATCH').map((x) => x.body).pop(), { mainPhone: '030 5550001' });
+      assert.deepEqual((await anna('GET', 'cards/favorites')).json.items.map((x) => [x.name, x.phone.value]), [['Lena Lang', '030 5550001']]);
+      click(p.byLabel('Verknüpfung lösen'));
+      await until('unlinked', () => p.calls.some((x) => x.path === `cards/${own.id}/unmerge`));
+      await until('two in the list', () => (p.text('mp-list').match(/Lena Lang/g) || []).length === 2);
+    } finally { p.stop(); }
+  });
+});

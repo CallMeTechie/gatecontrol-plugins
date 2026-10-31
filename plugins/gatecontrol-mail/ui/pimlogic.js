@@ -335,8 +335,17 @@
     }).filter(Boolean);
   }
 
+  /** The digits of a phone number for comparing (like the server: +49 / 0049 / 0 the same, the last 9). */
+  function digits(v) {
+    var d = String(v || '').replace(/\D/g, '');
+    if (d.indexOf('00') === 0) d = d.slice(2);
+    if (d.indexOf('49') === 0) d = d.slice(2);
+    d = d.replace(/^0+/, '');
+    return d.length >= 5 ? d.slice(-9) : '';
+  }
+
   var api = {
-    DAY: DAY, WEEKDAYS: WEEKDAYS, ymd: ymd, dateOf: dateOf, midnight: midnight, addDays: addDays, addMonths: addMonths, weekday: weekday, weekStartOf: weekStartOf,
+    DAY: DAY, digits: digits, WEEKDAYS: WEEKDAYS, ymd: ymd, dateOf: dateOf, midnight: midnight, addDays: addDays, addMonths: addMonths, weekday: weekday, weekStartOf: weekStartOf,
     hhmm: hhmm, at: at, rangeOf: rangeOf, onDay: onDay, wholeDay: wholeDay, layoutDay: layoutDay, allDayOn: allDayOn, agenda: agenda,
     reminderText: reminderText, recurrenceText: recurrenceText, birthdayText: birthdayText, countOf: countOf,
     repeatOf: repeatOf, nthOf: nthOf, recurrenceOf: recurrenceOf, eventFields: eventFields, shiftSeries: shiftSeries, calendarGroups: calendarGroups, letters: letters, addressesOf: addressesOf,

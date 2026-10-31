@@ -9,7 +9,10 @@ from Drive, and AI ("Kurz gesagt", "Zu tun", reply suggestions) through GateCont
 Graph, GMX / WEB.DE / an own server via CalDAV both ways, Gmail read only via its secret iCal address), Familie, Alltag
 and the contacts' birthdays shown alongside, invitations (a card in the mail, answers, own invitations), reminders as
 push; an own address book with the accounts' contacts (Graph, CardDAV; Gmail: vCard import), groups, duplicates,
-„Als Kontakt speichern“, the sender view and suggestions while writing.
+„Als Kontakt speichern“, the sender view and suggestions while writing. Since 1.4.0 duplicates become **one contact in
+the own address book** (the GC contact): the accounts' cards are linked to it and stay at the provider, what they have
+more is taken over, another value is a note to take over or dismiss; certain duplicates are merged by themselves.
+Favourites with a main number, a compact list of the next events for the start page.
 
 *Deutsch:* Alle E-Mail-Konten an einem Ort – ein Posteingang mit Relevant und Sonstige, Push, Schutz vor Zählpixeln,
 Anhänge in Drive und KI; dazu Kalender und Kontakte. Details im CHANGELOG.
@@ -243,6 +246,7 @@ to Drive (`gc.media.handOver`) before Drive sees it.
 | `PATCH calendars/<id>` | `{ name?, color?, visible?, notify? }` → `{ calendar }` (an account's calendar: name / colour only in GateControl) |
 | `DELETE calendars/<id>` | `{ ok }` — GateControl calendars but the last one, subscriptions; their events go |
 | `PATCH overlays/<id>` | `{ visible?, color? }` → `{ overlay }` |
+| `GET events/upcoming?days=&limit=` | the widget on the start page (1.4.0): `{ timeZone, today, items: [{ key, eventId, calendarId, overlayId, color, title, start, end, allDay, startDate?, endDate?, day, location, online, myResponse, tentative }], more }` — from now to the end of today + days − 1 (2, ≤ 7), ≤ limit (8, ≤ 20), visible calendars and overlays, without cancelled and declined ones |
 | `POST calendars/subscribe` | `{ url, name?, color?, accountId? }` → `{ calendar }` — an iCal subscription (read only) |
 | `PUT calendar/settings` | `{ defaultCalendarId?, view?, weekStart?, workWeek?, timeZone?, reminders?, defaultReminder?, allDayReminder? }` → `{ prefs }` |
 | `GET events?from=&to=&calendars=` | `{ items: [Occurrence], overlays: [OverlayItem], pending: [calendarId] }` — ≤ 62 days (else 400 `invalid { field: 'to' }`), without `calendars` the visible ones |
@@ -275,14 +279,18 @@ the default 360 is 18:00 the day before (before 1.3.1: 1080, that is 06:00 the d
 | `GET addressbooks` | `{ items: [Addressbook], groups: [Group], prefs: CardPrefs }` |
 | `PATCH addressbooks/<id>` | `{ visible?, name? }` → `{ addressbook }` |
 | `PUT cards/settings` | `{ sort?, show?, defaultAddressbookId?, birthdays? }` → `{ prefs }` |
-| `GET cards?q=&book=&group=&cursor=&limit=&since=` | `{ items: [CardSummary], next, version, deleted? }` — linked cards once (`linked`); `q` in names, company, addresses, numbers (digits); `since` (a `version`): changes and `deleted` ids |
-| `GET cards/<id>` · `POST cards` · `PATCH cards/<id>` (`etag`; 409 `conflict { current }` / `read_only`) · `DELETE cards/<id>` | `Card` / `{ card }` / `{ ok }` — a card with linked ones shows their values joined in; a value of a linked card that a `PATCH` leaves out stays out of the view until it changes at the provider (since 1.3.6, the provider keeps it) |
+| `GET cards?q=&book=&group=&cursor=&limit=&since=` | `{ items: [CardSummary], next, version, deleted? }` — linked cards once (`linked`); `q` in names, company, addresses, numbers (digits); `since` (a `version`): changes and `deleted` ids. Since 1.4.0 `CardSummary` + `{ favorite, mainPhone, conflicts (n), masterId, sources: [{ addressbookId, source, accountId }] }`, `phone` = the main number |
+| `GET cards/<id>` · `POST cards` · `PATCH cards/<id>` (`etag`; 409 `conflict { current }` / `read_only`) · `DELETE cards/<id>?linked=keep\|delete` | `Card` / `{ card, writeBack }` / `{ ok }` — since 1.4.0 `Card` + `{ favorite, mainPhone, mainPhoneChosen, masterId, conflicts, sources }`; `PATCH` also `{ favorite?, mainPhone? }` (GateControl only). A GC contact shows its own fields; a value a `PATCH` removes stays away from its linked cards, a value taken over from one goes back to exactly that card (`writeBack`). Before the person's run after the update (and for a link of 1.3 with an account card as the main one) the view joins the linked cards in, without the values a `PATCH` left out (1.3.6) |
 | `GET/PUT/DELETE cards/<id>/photo` | `{ mime, size, data }` / `{ mime: 'image/jpeg' \| 'image/png', data }` (≤ 256 KB) → `{ card }` |
 | `GET cards/lookup?email=` | `{ card, person: { userId, name } \| null, recent: { name, sent, received, lastAt } \| null }` |
 | `GET cards/<id>/activity` | `{ mails: [Summary] (≤ 5), events: [Occurrence] (≤ 5) }` |
 | `GET cards/draft?messageId=&email=` | `{ draft, existing }` — „Als Kontakt speichern“: name and address of the mail, phone, company and position from the signature (rules; with the AI when allowed); nothing is stored |
-| `GET cards/duplicates` | `{ items: [{ key, reason: 'email' \| 'phone' \| 'name', cards }] }` |
-| `POST cards/merge` | `{ ids (2…10), primaryId, pick? }` → `{ card }` — one address book: merged (the others deleted at the provider); several: linked |
+| `GET cards/duplicates?details=1` | `{ items: [{ key, reason: 'email' \| 'phone' \| 'name', certain, cards, details?: [{ card, source }], preview? }] }` — the uncertain ones first |
+| `POST cards/merge` | `{ ids (2…10), primaryId?, pick? }` → `{ card, mergeId }` — since 1.4.0 always one GC contact: account cards linked (nothing deleted at a provider), other GC cards go up in it |
+| `POST cards/merge/preview` · `POST cards/merge/auto` | `{ ids }` → `{ preview }` („So wird der Kontakt“) · the certain ones now → `{ merged, open, items: [Merge] }` (1.4.0) |
+| `GET cards/merges` · `POST cards/merges/<id>/undo` · `POST cards/<id>/unmerge` | the protocol `{ items: [Merge] }`; undo / loosen links `{ ids?, keepMaster? }` → `{ card \| null, unlinked, restored }` (1.4.0) |
+| `GET cards/conflicts` · `POST cards/<id>/conflicts/<cid>/accept` · `…/dismiss` | `{ items: [{ card, conflicts }] }`; take over `{ mode?: 'replace' \| 'add' }` / dismiss → `{ card }` (1.4.0) |
+| `GET cards/favorites` · `PUT cards/favorites` | `{ items: [{ id, name, photo, photoEtag, phone, email }] }`; `{ ids }` sets the order (≤ 50; 1.4.0) |
 | `POST cards/duplicates/ignore` | `{ ids }` → `{ ok }` |
 | `POST cards/import` | `{ addressbookId?, vcf (≤ 5 MB) }` → `{ imported, updated, skipped }` (e.g. Google Kontakte › Exportieren › vCard) |
 | `GET cards/export?book=&group=` | `{ name: 'kontakte.vcf', mime: 'text/vcard', data }` (vCard 4.0) |
@@ -304,6 +312,8 @@ the default 360 is 18:00 the day before (before 1.3.1: 1080, that is 06:00 the d
 * Live event `calendar` `{ kind: 'changed', calendarId, accountId, from?, to? }` | `{ kind: 'calendars' }` |
   `{ kind: 'invitation', invitationId, messageId }` and `contacts` `{ kind: 'changed', addressbookId, contactIds? }` |
   `{ kind: 'addressbooks' }` | `{ kind: 'groups' }`; a mail with a new invitation card: `mail` with its `messageId`.
+  Since 1.4.0 also `contacts` `{ kind: 'merged', masterId, contactIds, auto }` | `{ kind: 'conflicts', contactIds }` |
+  `{ kind: 'favorites' }`.
 
 ### Service for other plugins
 
