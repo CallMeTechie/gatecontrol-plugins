@@ -38,6 +38,9 @@ checked before saving (`gc.mail.smtp.verify`). On 1.216.0 both stay as in 1.0.0.
   `retentionMonths` (newest first, in parts: the newest 50 of the posteingang at once, then Graph delta page by page /
   IMAP 300 at a time); older mail comes from the server when a list is scrolled past it or by the search. Bodies of the
   rest come in the background (10 per account and run), within the quota.
+  Folders: at most 1000 per account (the well-known ones always); Microsoft lists them level by level down to 10 levels
+  (children only where `childFolderCount` says so, every page through `@odata.nextLink`, a request at a time). What
+  stays out is a hint in the log (`folders left out`), no error (since 1.3.5).
   Since 1.1.2 every sync goes in short steps, and what a person waits for never waits behind them: Microsoft bodies,
   attachments, flags and moves go beside the sync (one token renewal for all), IMAP bodies and attachments on a short
   session of their own while a sync step runs (≤ 2 per account, 8 in all), flags and moves first after the running step.
