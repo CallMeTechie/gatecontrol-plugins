@@ -10,6 +10,8 @@
 //   POST admin/license/refresh → { refreshed, seats } — fetch the licence now (after "Personen hinzubuchen")
 // Since 1.2.0 also the numbers of calendars and contacts (calendars, events, contacts and their bytes, in all and per
 // person) and the settings `calendar` / `contacts` (config.js); never an event or a contact of anyone.
+// Since 1.5.0 GET admin/settings also answers `storage`: where the attachments lie (GateControl's media area, storage.js)
+// — the place itself is chosen in GateControl (the plugin's „Speicherorte“), never here.
 // Administrators see numbers only — never mail, subjects or addresses of other people.
 
 const store = require('./store');
@@ -18,6 +20,7 @@ const mailstore = require('./mailstore');
 const ai = require('./ai');
 const seats = require('./seats');
 const pimstore = require('./pimstore');
+const storage = require('./storage');
 const { fail, posInt } = require('./util');
 
 /** Numbers of the calendars and contacts of a person (or of everybody: userId null). */
@@ -60,6 +63,8 @@ async function settingsView(gc, cfg) {
     ai: { ready: await ai.ready(gc) }, version: gc.plugin.version,
     // since 1.1.0: the licence and its people (seats.js)
     seats: await seats.summary(gc, cfg),
+    // since 1.5.0: where the attachments lie (read only — chosen in GateControl's „Speicherorte“)
+    storage: await storage.view(gc),
   };
 }
 

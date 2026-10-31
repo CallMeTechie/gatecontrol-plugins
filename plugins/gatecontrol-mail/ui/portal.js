@@ -942,7 +942,8 @@
       fileInput.value = '';
       if (!files.length || !window.GC.upload) return;
       Promise.all(files.map(function (f) { return window.GC.upload(f).then(function (r) { return { mediaId: r.mediaId, name: f.name }; }); }))
-        .then(addFiles, function (e) { err.textContent = errText({ code: (e && e.code) || 'upload_failed' }); });
+        // GC.upload rejects with GateControl's answer in e.data (since 1.5.0 read: storage_unavailable, server_full, …)
+        .then(addFiles, function (e) { err.textContent = errText({ code: (e && ((e.data && e.data.code) || e.code)) || 'upload_failed' }); });
     };
     fileInput.onchange = onFiles;
     var send = function (sendAt) {

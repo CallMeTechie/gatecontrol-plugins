@@ -2,7 +2,8 @@
  *
  *   overview  accounts by state, people, storage used
  *   settings  who may use Mail (everybody, or people and groups — GateControl's picker GC.pickPrincipals), accounts per
- *             person, storage (retention, attachments, quota per person, what is used — in all and per person), AI (bar,
+ *             person, storage (retention, attachments, quota per person, since 1.5.0 where the attachments lie — a note
+ *             pointing to GateControl's „Speicherorte“ —, what is used — in all and per person), AI (bar,
  *             sorting, filing on its own, blocked for business accounts), Microsoft (the app registration: GateControl's or
  *             an own client id, the consent link for a company's Microsoft administrator, since 1.3.0 the rights the app
  *             registration needs for calendars and contacts); since 1.3.0 Kalender (on/off, the accounts' calendars, the
@@ -100,6 +101,19 @@
     return api('PUT', 'admin/settings', part).then(function (r) { V = r; toast(T('a.saved')); render(); }, function (e) { toast(errText(e), 'error'); render(); });
   }
 
+  /**
+   * Since 1.5.0: where the attachments lie (GateControl's media area) — only a note: the place is chosen in GateControl
+   * (Einstellungen › Plugins › Mail › Übersicht › Speicherorte), storage targets under Einstellungen › Plugins › Speicher.
+   */
+  function placeRow(st) {
+    if (!st) return null;
+    var where = st.target && st.target.kind !== 'server' ? (st.target.label || st.target.kind) : T('a.place_server');
+    var state = st.paused ? T('a.place_full') : st.state === 'unreachable' ? T('a.place_unreachable') : st.state === 'moving' ? T('a.place_moving')
+      : st.state === 'pending' ? T('a.place_pending') : null;
+    return row(T('a.place'), T('a.place_d'), h('div', { class: 'ma-place' }, [h('span', { class: 'ma-chip', text: where }),
+      state ? h('span', { class: 'ma-d' + (st.state === 'unreachable' || st.paused ? ' is-warn' : ''), text: state }) : null]));
+  }
+
   function settingsPage() {
     var s = V.settings;
     var page = $('ma-page');
@@ -145,6 +159,7 @@
       row(T('a.retention'), T('a.retention_d'), select(s.retentionMonths, [[1, T('a.months', { n: 1 })], [3, T('a.months', { n: 3 })], [6, T('a.months', { n: 6 })], [12, T('a.months', { n: 12 })], [24, T('a.months', { n: 24 })], [0, T('a.all_mail')]], function (v) { put({ retentionMonths: Number(v) }); })),
       row(T('a.attachments'), null, select(s.attachments, [['on_demand', T('a.on_demand')], ['always', T('a.always')]], function (v) { put({ attachments: v }); })),
       row(T('a.quota'), null, select(s.quotaGB, [1, 2, 5, 10, 20, 50, 100].map(function (n) { return [n, T('a.gb', { n: n })]; }), function (v) { put({ quotaGB: Number(v) }); })),
+      placeRow(V.storage),
       used, table,
     ]));
     // since 1.3.0: Kalender and Kontakte (C9)

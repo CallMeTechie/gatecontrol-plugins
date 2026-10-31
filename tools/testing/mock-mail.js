@@ -173,7 +173,8 @@ function parse(text) {
 
 /**
  * Install GateControl 1.216.0's mail API into a mock host. `h` = the mock host's internals:
- * { manifest, perms, opts, hostError, wire, gc216, mediaStore, mediaQuota, mediaUsage, media, internetAllowed, typeAllowed }
+ * { manifest, perms, opts, hostError, wire, gc216, mediaStore, mediaQuota, mediaUsage, media, internetAllowed, typeAllowed,
+ *   capacity () → null | 'server_full' | 'storage_unavailable' (host.mediaCapacity) }
  * → { gcMail (or undefined), fetchImage (or undefined), records: { mailSessions, mailSent, imageFetches } }
  */
 function install(h) {
@@ -189,6 +190,9 @@ function install(h) {
     const buf = Buffer.isBuffer(data) ? data : Buffer.from(String(data == null ? '' : data));
     if (!h.media) throw hostError('ERR_MEDIA_DENIED', 'plugin.json declares no media');
     if (h.mediaUsage().bytes + buf.length > h.mediaQuota) throw hostError('ERR_MEDIA_QUOTA', 'quota exceeded');
+    // no room for a new file (media.areas, host.mediaCapacity): gc.mail maps GateControl's refusal to ERR_INVALID
+    const full = typeof h.capacity === 'function' ? h.capacity() : null;
+    if (full) throw hostError('ERR_INVALID', full);
     const id = crypto.randomBytes(16).toString('hex');
     mediaStore.set(id, { mime: String(mime || 'application/octet-stream'), bytes: buf.length, owner: null, data: Buffer.from(buf), claimed: false, createdAt: Date.now(), name: name || null });
     return id;

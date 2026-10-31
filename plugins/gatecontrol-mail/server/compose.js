@@ -17,6 +17,7 @@ const drive = require('./drive');
 const push = require('./push');
 const { t } = require('./text');
 const secrets = require('./secrets');
+const storage = require('./storage');
 const { fail, posInt, people, parse, clip, line, esc, textHtml, htmlText } = require('./util');
 
 const MEDIA_RE = /^[0-9a-f]{32}$/;
@@ -27,6 +28,7 @@ const SEND_AHEAD_MAX = 366 * 86400000;
 const HTML_MAX = 2 * 1024 * 1024;
 const ATTS_MAX = 50;
 const RETRIES = 3;
+const STORAGE_WAIT_MS = 5 * 60000; // since 1.5.0: a file of a storage target that fails, no room at GateControl (storage.js)
 
 const timers = new Map();
 
@@ -381,6 +383,11 @@ async function messageOf(gc, d, a, skip = () => false) {
   };
 }
 
+/** The files of a message (messageOf) may be read now — else 409 storage_unavailable (the outbox tries again, storage.js). */
+async function filesReadable(gc, files) {
+  if (!(await storage.readable(gc, files.map((f) => f.mediaId)))) throw fail('storage_unavailable');
+}
+
 /** Send outbox entry `id` now. */
 async function sendOne(gc, id) {
   const o = await store.one(gc, "SELECT * FROM outbox WHERE id = ? AND state = 'waiting'", [id]);
@@ -398,6 +405,7 @@ async function sendOne(gc, id) {
       const fromOriginal = (x) => own && x.kind === 'message' && x.src_message === d.reply_msg;
       // older hosts: no files at all (send refused them already, links go in the text)
       const msg = await messageOf(gc, d, a, (x) => fromOriginal(x) || !graph.canAttach(gc));
+      await filesReadable(gc, msg.attachments);
       const keep = own ? (await store.all(gc, 'SELECT * FROM draft_atts WHERE draft_id = ?', [d.id])).filter(fromOriginal).map((x) => ({ name: x.name, size: x.size })) : null;
       await engine.withAccount(gc, a, () => graph.send(gc, a, {
         mode: d.mode, subject: d.subject, html: msg.html, to: parse(d.to_json, []), cc: parse(d.cc_json, []), bcc: parse(d.bcc_json, []), files: msg.attachments, keep,
@@ -406,10 +414,18 @@ async function sendOne(gc, id) {
       const cred = await secrets.get(gc, a.id);
       if (!cred || !cred.password) throw Object.assign(fail('auth_failed'), { auth: true });
       const message = await messageOf(gc, d, a);
+      await filesReadable(gc, message.attachments);
       let res;
       try {
         res = await gc.mail.smtp.send({ host: a.smtp_host, port: a.smtp_port, security: a.smtp_security, auth: { user: a.username || a.email, pass: cred.password }, message, appendCopy: a.provider !== 'gmail' });
-      } catch (e) { throw await engine.mailError(gc, a, e); }
+      } catch (e) {
+        // since 1.5.0 (media.areas): GateControl refuses the copy for „Gesendet“ (no room for a new file) only after the
+        // server took the mail — it is out, only that copy is missing; sending again would send it twice
+        const full = storage.refusal(e);
+        if (!full) throw await engine.mailError(gc, a, e);
+        gc.log.warn('copy to sent failed', a.id, full);
+        res = null;
+      }
       if (res && res.raw && res.raw.mediaId) {
         try { await engine.appendSent(gc, a, res.raw.mediaId); } catch (e) { gc.log.warn('copy to sent failed', a.id, (e && e.code) || 'error'); }
         try { await gc.media.delete(res.raw.mediaId); } catch { /* gone */ }
@@ -429,10 +445,12 @@ async function sendOne(gc, id) {
     return true;
   } catch (e) {
     const code = (e && e.code) || 'failed';
-    const retry = (code === 'unreachable' || code === 'busy') && o.attempts + 1 < RETRIES;
+    const later = code === 'storage_unavailable' || code === 'server_full';
+    const retry = (code === 'unreachable' || code === 'busy' || later) && o.attempts + 1 < RETRIES;
     if (retry) {
-      await store.run(gc, "UPDATE outbox SET state = 'waiting', send_at = ?, error = ? WHERE id = ?", [Date.now() + 60000, code, id]);
-      schedule(gc, id, Date.now() + 60000);
+      const at = Date.now() + (later ? STORAGE_WAIT_MS : 60000);
+      await store.run(gc, "UPDATE outbox SET state = 'waiting', send_at = ?, error = ? WHERE id = ?", [at, code, id]);
+      schedule(gc, id, at);
     } else {
       const err = code === 'ERR_MAIL_REJECTED' ? 'rejected' : code;
       await store.run(gc, "UPDATE outbox SET state = 'failed', error = ? WHERE id = ?", [String(err).slice(0, 60), id]);

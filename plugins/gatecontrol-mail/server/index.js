@@ -13,7 +13,8 @@
 // mail's engine.js, reminders.js).
 //
 // Hooks: start/stop (the sync engine), tick (every 15 s: syncing — mail first, then a calendar / contact step per
-// account in what is left of the run —, the outbox, reminders, account pictures, AI sorting, filing, quota and retention), render (the portal tab, the admin pages), appVisible / portalVisible (who may use Mail), mediaAccess
+// account in what is left of the run —, the outbox, reminders, account pictures, AI sorting, filing, quota and retention,
+// since 1.5.0 the attachments of 1.4 into their media area — storage.js), render (the portal tab, the admin pages), appVisible / portalVisible (who may use Mail), mediaAccess
 // (attachments, draft files and account pictures of the person), service (new_draft for Drive), settingsChanged.
 
 const store = require('./store');
@@ -34,6 +35,7 @@ const pim = require('./pim');
 const cardmerge = require('./cardmerge');
 const overlays = require('./overlays');
 const reminders = require('./reminders');
+const storage = require('./storage');
 const { t } = require('./text');
 const { STATUS, fail, isKnown } = require('./util');
 
@@ -82,6 +84,7 @@ module.exports = {
     pim.reset();
     cardmerge.reset();
     overlays.reset();
+    storage.reset();
     engine.start(gc);
   },
 
@@ -142,6 +145,10 @@ module.exports = {
     try { await compose.due(gc, Date.now(), skip); } catch { /* next run */ }
     try { await ai.tick(gc); } catch (e) { gc.log.warn('ai sorting failed', (e && e.code) || 'error'); }
     try { await drive.tick(gc, Date.now()); } catch (e) { gc.log.warn('filing failed', (e && e.code) || 'error'); }
+    // since 1.5.0 (Speicherorte, storage.js): the prefetch that waited for room at GateControl; the attachments of 1.4
+    // and older into the area `attachments`, a batch per run
+    try { await engine.filesLater(gc); } catch (e) { gc.log.warn('attachments later failed', (e && e.code) || 'error'); }
+    try { await storage.adopt(gc, Date.now()); } catch (e) { gc.log.warn('area move failed', (e && e.code) || 'error'); }
     try { await clean(gc, Date.now()); } catch (e) { gc.log.warn('clean failed', (e && e.code) || 'error'); }
   },
 

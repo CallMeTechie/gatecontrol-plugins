@@ -140,6 +140,9 @@ test('smoke: the settings page shows "Personen und Lizenz" (x of y, full), the a
     assert.ok(textOf(page).includes('Lizenz · Familie'));
     assert.ok(textOf(page).includes('2 von 2 Personen'));
     assert.ok(textOf(page).includes('Die Lizenz ist voll'));
+    // since 1.5.0: where the attachments lie — a note pointing to GateControl's „Speicherorte“, nothing to choose here
+    assert.ok(textOf(page).includes('Speicherort der Anhänge') && textOf(page).includes('Auf diesem Server'));
+    assert.ok(textOf(page).includes('Übersicht › Speicherorte') && textOf(page).includes('Einstellungen › Plugins › Speicher'));
     const sel = await until('Marc\'s place', () => doc.querySelectorAll('select').find((x) => x.getAttribute('aria-label') === 'Mail für Marc'));
     sel.value = '';
     sel.dispatchEvent({ type: 'change', target: sel });

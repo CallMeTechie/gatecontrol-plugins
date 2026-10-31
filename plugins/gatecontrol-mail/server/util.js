@@ -44,6 +44,9 @@ const STATUS = {
   invitation_outdated: 409,
   invalid_ics: 400,
   invalid_vcard: 400,
+  // Speicherorte (1.5.0, storage.js): GateControl has no room for a new file right now — 409 like busy (5xx: "offline")
+  storage_unavailable: 409,
+  server_full: 409,
   internal: 500,
 };
 

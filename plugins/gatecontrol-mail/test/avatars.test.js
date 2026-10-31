@@ -74,6 +74,7 @@ test('Microsoft: the 96×96 picture comes with the sign-in — Account.avatar, t
     assert.deepEqual(w.files, ['/me/photos/96x96/$value']);
     const file = host.media.get(a.avatar.mediaId);
     assert.ok(file && file.claimed, 'claimed');
+    assert.equal(file.area, undefined, 'since 1.5.0: on this server, in no media area (Speicherorte)');
     assert.match(file.data.toString(), /^JPEG/);
     // the apps load it as the plugin's media — the person only
     assert.equal((await host.mediaGet({ id: ANNA.id, app: true }, a.avatar.mediaId)).status, 200);

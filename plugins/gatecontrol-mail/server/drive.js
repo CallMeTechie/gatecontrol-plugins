@@ -12,6 +12,7 @@
 const store = require('./store');
 const engine = require('./engine');
 const config = require('./config');
+const storage = require('./storage');
 const { t } = require('./text');
 const { fail, parse } = require('./util');
 
@@ -190,11 +191,13 @@ async function dismiss(gc, userId, id) {
  * mail is opened) or 'auto' (filed on its own when Drive is sure, else "Zum Ablegen") — PER_TICK service calls at most.
  */
 async function tick(gc, now) {
-  if (now < pausedUntil || !(await available(gc))) return 0;
+  // since 1.5.0 also not while GateControl has no room for the copies of attachments (storage.js)
+  if (now < pausedUntil || storage.paused(now) || !(await available(gc))) return 0;
   const cfg = await config.get(gc);
   const rows = await store.all(gc, `SELECT m.*, a.attachments AS mode, a.kind AS acc_kind FROM messages m JOIN accounts a ON a.id = m.account_id JOIN folders f ON f.id = m.folder_id
     WHERE m.filed = 0 AND m.has_att = 1 AND m.body_state = 'stored' AND f.role = 'inbox' AND a.attachments <> 'off' ORDER BY m.date DESC LIMIT 10`);
   let calls = 0;
+  let full = false;
   for (const m of rows) {
     if (calls >= PER_TICK || Date.now() < pausedUntil) break;
     const auto = m.mode === 'auto' && cfg.ai.autoFile;
@@ -213,9 +216,12 @@ async function tick(gc, now) {
       } catch (e) {
         if (e && e.code === 'rate_limited') { done = false; break; }
         if (e && (e.code === 'unreachable' || e.code === 'busy')) { done = false; break; }
+        // since 1.5.0: no room for the attachment's copy at GateControl (storage.js) — this run ends, the mail comes again
+        if (e && (e.code === 'storage_unavailable' || e.code === 'server_full')) { done = false; full = true; break; }
       }
     }
     if (done) await store.run(gc, 'UPDATE messages SET filed = 1 WHERE id = ?', [m.id]);
+    if (full) break;
   }
   return calls;
 }

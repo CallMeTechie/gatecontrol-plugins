@@ -1526,7 +1526,9 @@ async function createHost(pluginDir, opts = {}) {
     if (gc204 && m.area != null) {
       out.area = m.area;
       out.path = m.path == null ? null : m.path;
-      out.stored = 'server';
+      // a test that put the area on a target (host.mediaAreas.get(area).target) has its files there
+      const at = areaStore.get(m.area);
+      out.stored = at && at.target && at.target.kind && at.target.kind !== 'server' ? 'target' : 'server';
       if (m.versionOf != null) { out.versionOf = m.versionOf; out.versionAt = m.versionAt; }
     }
     return out;
@@ -1584,6 +1586,7 @@ async function createHost(pluginDir, opts = {}) {
       owner = o.user;
     }
     if (mediaUsage().bytes + src.bytes > mediaQuota) throw hostError('ERR_MEDIA_QUOTA', 'quota exceeded');
+    if (capacityRefusal()) throw hostError(capacityRefusal() === 'server_full' ? 'ERR_MEDIA_QUOTA' : 'ERR_BUSY', capacityRefusal());
     const id = require('node:crypto').randomBytes(16).toString('hex');
     const claimed = o.claim === true;
     mediaStore.set(id, { mime: src.mime, bytes: src.bytes, owner, data: Buffer.from(src.data), claimed, createdAt: Date.now(), name: src.name || null,
@@ -1654,6 +1657,7 @@ async function createHost(pluginDir, opts = {}) {
     const type = typeof x.mime === 'string' && x.mime ? x.mime.trim().toLowerCase() : ct;
     if (!typeAllowed(media.types, type)) throw hostError('ERR_MEDIA_TYPE', `type not allowed: ${type}`);
     if (mediaUsage().bytes + buf.length > mediaQuota) throw hostError('ERR_MEDIA_QUOTA', 'quota exceeded');
+    if (capacityRefusal()) throw hostError(capacityRefusal(), capacityRefusal());
     const id = require('node:crypto').randomBytes(16).toString('hex');
     const name = mediaName(x.name);
     mediaStore.set(id, { mime: type, bytes: buf.length, owner: null, data: Buffer.from(buf), claimed: false, createdAt: Date.now(), name });
@@ -1665,6 +1669,13 @@ async function createHost(pluginDir, opts = {}) {
   // gc.media.version (keep as a version of its path). host.mediaScan(area, changes) plays a scan of a NAS target:
   // [{ type: 'added', path, data, mime } | { type: 'changed', path, data, mime, keep } | { type: 'removed', path }] →
   // journal (gc.media.areas.changes), then the hook mediaChanged({ area, seq, count }). host.mediaAreas is the store.
+  // Room for new files (mediaAreas.capacityCheck): a plugin with media.areas gets no new file while the test says
+  // host.mediaCapacity('server_full' | 'storage_unavailable') — like GateControl when this server is full (507) or a
+  // storage target fails and the files waiting for it fill the cache (503). An upload answers that status and code,
+  // gc.media.fetch the code itself (GateControl rethrows its MediaError), gc.mail (mock-mail.js: attachments, the copy
+  // of a sent mail, compose) ERR_INVALID with the code as message, gc.media.copy ERR_MEDIA_QUOTA / ERR_BUSY.
+  let capacityCode = null;
+  const capacityRefusal = () => (gc204 && media && media.areas === true && capacityCode) || null;
   const areaStore = new Map(); // area → { area, label, quota }
   const areaJournal = []; // { seq, area, type, mediaId, previous, path, at }
   let areaSeq = 0;
@@ -1686,10 +1697,11 @@ async function createHost(pluginDir, opts = {}) {
     if (!a) return null;
     const u = areaUsage(area);
     // like GateControl: { id: null, kind: 'server' } for this server; a test may set a.target ({ id, kind: 'local'|'smb'|'webdav'|'s3', label })
+    // and a.state ('ok' | 'pending' | 'moving' | 'unreachable', with a.error the storage error code)
     const target = a.target || { id: null, kind: 'server', label: null };
     const form = a.form || 'blocks';
     return { area, label: a.label, target, form, moving: null, bytes: u.bytes, count: u.count, quota: a.quota, quotaDefault: a.quota,
-      pending: { count: 0, bytes: 0 }, state: 'ok', error: null, encrypted: form === 'blocks', free: null, scan: null };
+      pending: { count: 0, bytes: 0 }, state: a.state || 'ok', error: a.error || null, encrypted: form === 'blocks', free: null, scan: null };
   };
   const areaQuotaFull = (area, add) => { const a = areaStore.get(area); return a.quota != null && areaUsage(area).bytes + add > a.quota; };
   if (gc204) {
@@ -2733,7 +2745,7 @@ async function createHost(pluginDir, opts = {}) {
   const log = (level) => (...a) => logs.push({ level, message: a.map((x) => (typeof x === 'string' ? x : JSON.stringify(x))).join(' ') });
 
   // GateControl 1.216.0 (mock-mail.js)
-  const mail216 = mockMail.install({ perms, opts, hostError, wire, gc216, gc217, gc219, mediaStore, mediaQuota, mediaUsage, media });
+  const mail216 = mockMail.install({ perms, opts, hostError, wire, gc216, gc217, gc219, mediaStore, mediaQuota, mediaUsage, media, capacity: capacityRefusal });
   const gc = Object.freeze({
     plugin: Object.freeze({ id: manifest.id, version: manifest.version, filesDir }),
     // GateControl ≥ 1.216.0: IMAP / SMTP / MIME / sanitizer (permissions.mail; missing without it)
@@ -2973,6 +2985,8 @@ async function createHost(pluginDir, opts = {}) {
       if (!bytes) return { status: 411, body: { ok: false, code: 'length_required' } };
       if (bytes > media.maxBytes) return { status: 413, body: { ok: false, code: 'too_large' } };
       if (mediaUsage().bytes + bytes > mediaQuota) return { status: 507, body: { ok: false, code: 'quota_exceeded' } };
+      // GateControl ≥ 1.204.0 (media.areas): no room on this server / for a failing storage target (host.mediaCapacity)
+      if (capacityRefusal()) return { status: capacityRefusal() === 'server_full' ? 507 : 503, body: { ok: false, code: capacityRefusal() } };
       const id = require('node:crypto').randomBytes(16).toString('hex');
       mediaStore.set(id, { mime: type, bytes, owner: user && user.id != null ? user.id : null, data: Buffer.from(buf), claimed: false, createdAt: Date.now() });
       return { status: 200, body: { ok: true, mediaId: id, mime: type, bytes } };
@@ -3162,6 +3176,15 @@ async function createHost(pluginDir, opts = {}) {
     },
     /** GateControl ≥ 1.204.0: the areas (Map area → { area, label, quota }) and the NAS journal */
     mediaAreas: areaStore,
+    /**
+     * GateControl ≥ 1.204.0 (media.areas): 'server_full' | 'storage_unavailable' — new files are refused as GateControl
+     * refuses them without room (upload 507 / 503, gc.media.fetch the code, gc.mail ERR_INVALID with the code); null: room
+     * again. Files already stored stay readable.
+     */
+    mediaCapacity(code) {
+      if (code != null && code !== 'server_full' && code !== 'storage_unavailable') throw new Error(`mock host: unknown capacity code ${code}`);
+      capacityCode = code == null ? null : code;
+    },
     mediaJournal: areaJournal,
     /** GateControl ≥ 1.206.0: the licence the plugin sees (change it: tier, seats, licensed, state) and its refreshes */
     license,
