@@ -2,6 +2,22 @@
 
 Alle E-Mail-Konten an einem Ort – im eigenen Tab der GateControl-Apps und im Portal.
 
+## 1.3.4
+- **Ordner als Baum im Portal.** Unter einem Konto hängen Unterordner jetzt unter ihrem Elternordner (`parentId`, mit
+  1.3.3 richtig geliefert) statt als lange flache Liste. Die Rollenordner (Entwürfe, Gesendet, Archiv, Spam,
+  Papierkorb) stehen wie bisher oben, danach die eigenen Ordner nach Namen. Kinder sind je Ebene eingerückt, ab Ebene 4
+  nicht weiter.
+- **Auf- und zuklappen:** Ein Ordner mit Kindern hat links einen Pfeil („… aufklappen“ / „… zuklappen“, `aria-expanded`).
+  Der Pfeil klappt nur auf oder zu, das Menü bleibt offen. Ein Tipp auf den Namen öffnet den Ordner und schließt das Menü
+  auf dem Handy wie bisher. Standardmäßig sind Unterordner zu. Die Wahl gilt für die Sitzung. Die Elternordner des
+  gezeigten Ordners sind von selbst offen.
+- **Ungelesene darunter:** Ein zugeklappter Elternordner zeigt dezent die Summe der Ungelesenen aller Ordner darunter
+  (Titel „n ungelesen in Unterordnern“), mit „+“, wenn er selbst Ungelesene hat.
+- Die Konto-Zeile steht für den Posteingang. Kinder des Posteingangs stehen deshalb oben. Ein Elternordner, der nicht in
+  der Antwort steht, lässt seine Kinder oben stehen, ebenso eine Schleife.
+- Die reine Logik steckt in `ui/foldertree.js` (`window.MailFolderTree`) und hat eigene Tests
+  (`test/portal-folders.test.js`, auch das Menü im kleinen DOM).
+
 ## 1.3.3
 - **Ordner mit dem richtigen Elternordner** (`GET folders` → `parentId`), damit die Apps und das Portal die Ordner als
   Baum zeigen können. `name` bleibt der eigene Name des Ordners, nicht der ganze Pfad.

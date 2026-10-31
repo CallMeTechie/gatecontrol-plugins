@@ -329,6 +329,12 @@ Liste, looking at, answering, editing (a PATCH sends only what changed; series: 
 **Kontakte** with search, letters, groups, a contact, editing with the etag, duplicates, vCard import and export. A
 Microsoft account with `missingScopes` gets the band „Kalender und Kontakte freigeben“ — „Neu anmelden“ by device code.
 
+Since 1.3.4 the folders of an account are a tree (`ui/foldertree.js`, by `parentId`): the folders with a role on top as
+before, then the others by name, children below their parent (indented up to level 4) and closed by default. The arrow
+opens or closes a folder's children (the menu stays, the choice holds for the session), the name opens the folder; the
+folders above the folder shown open on their own. A closed parent shows the unread mail below it, quietly. The account
+row stands for the inbox, so the inbox's children are on top; a parent the answer does not hold leaves its children on top.
+
 ## Administration
 
 Plugins › Mail › Einstellungen (the page `settings`, `ui.settingsPage`): who may use Mail (everybody, or people and
