@@ -49,7 +49,8 @@ checked before saving (`gc.mail.smtp.verify`). On 1.216.0 both stay as in 1.0.0.
   session of their own while a sync step runs (≤ 2 per account, 8 in all), flags and moves first after the running step.
 * **Storage**: headers, snippet, flags, body (sanitized HTML + text) in the plugin's database; attachments as the
   plugin's media only when needed (administrator: `on_demand`, or `always` up to 10 MB), least used first out when the
-  person is over `quotaGB` (bodies of the oldest mail next — the headers stay; `limits.usedBytes`). Mail older than the
+  person is over `quotaGB` (bodies of the oldest mail next — the headers stay; `limits.usedBytes`). Since 1.5.0 the
+  attachments lie in GateControl's media area `attachments` — on this server or a storage target (see "Storage places"). Mail older than the
   retention nobody opened for a week goes. Credentials are secrets of the plugin (`gc.settings.setSecret`), never in
   the database, an answer or the log.
 * **Relevant / Sonstige** (`server/classify.js`): what the person taught for the sender, then rules (List-Id,
@@ -108,7 +109,8 @@ with `seat: null`, everything else `403 no_seat`; without a valid licence `403 n
 images_blocked`, 404 `not_found`, 409 `auth_failed { hint, server? } | imap_disabled { hint } | unreachable { server? } |
 tls { server? } | exists | ai_off | ai_unavailable | seat_limit | seat_kind
 | familie_unavailable | drive_unavailable | no_folder | not_waiting | microsoft_off | attachments_unsupported |
-images_off | links_disabled | busy { retryAfter?, reason? }`, 413 `too_large { max }`, 429 `rate_limited`. Since 1.2.0:
+images_off | links_disabled | busy { retryAfter?, reason? } | storage_unavailable { retryAfter } | server_full { retryAfter, reason? }`
+(since 1.5.0, see "Storage places"), 413 `too_large { max }`, 429 `rate_limited`. Since 1.2.0:
 403 `feature_off { feature: 'calendar' | 'contacts' }` (switched off by the administrator), 400 `invalid_ics | invalid_vcard`,
 409 `read_only | conflict { current } | consent_required { accountId, missing } | dav_unavailable { reason: 'not_found' |
 'no_calendar' | 'redirect' | 'host_old' } | not_supported { what } | send_failed { reason } | invitation_outdated`. `busy`: the provider
@@ -348,11 +350,51 @@ opens or closes a folder's children (the menu stays, the choice holds for the se
 folders above the folder shown open on their own. A closed parent shows the unread mail below it, quietly. The account
 row stands for the inbox, so the inbox's children are on top; a parent the answer does not hold leaves its children on top.
 
+## Storage places (Speicherorte, since 1.5.0)
+
+Mail uses GateControl's own storage places only (plugin.json `media.areas`, GateControl's docs/plugins.md "Media areas"
+and docs/storage-targets.md) — no storage dialogs or files of its own (`server/storage.js`):
+
+* **The area `attachments`** („Anhänge“, created on first use with `gc.media.areas.ensure`): the copies of received
+  attachments. The administrator chooses its place in GateControl — Einstellungen › Plugins › Mail › Übersicht ›
+  Speicherorte: this server or a storage target (a NAS over SMB or WebDAV, S3, OneDrive, Google Drive — set up under
+  Einstellungen › Plugins › Speicher, `/settings/plugins/storage`), its form and quota; GateControl moves the files in the
+  background and keeps a cache of them here. The install / update dialog shows the row „Speicherorte“. Mail's files have
+  no path: on a NAS in the form „Lesbare Dateien“ they lie below `gatecontrol-mail/attachments/.gcdrive/files/` without their names
+  (GateControl takes no changes from there; a file deleted there is gone and comes from the provider again when opened);
+  „Verschlüsselte Blöcke“ keeps them encrypted on the NAS too — the better choice for other people's mail.
+* **On this server** (no area): mail, calendars, contacts with their photos, the search (the plugin's database,
+  `storage`), account pictures, inline pictures of mails (cid), the files of drafts and the outbox (they go out while a
+  NAS is down), the raw copy of a sent mail for „Gesendet“ (deleted right after).
+* **Attachments of 1.4 and older** were claimed without an area — GateControl gives such files no area of its own, they
+  stay on this server. Mail puts them into `attachments` once (`gc.media.claim(id, { area })`, 200 per background run,
+  progress in the plugin's storage key `area_attachments`); then they move with the area.
+* **Quota**: `quotaGB` / `limits.usedBytes` count the attachments wherever they lie (the person's share as before);
+  the plugin's media quota (`quotaDefault` 500 GB, changed on the plugin's overview) and the area's quota are
+  GateControl's. `maxBytes` stays 50 MB — GateControl loads at most that much of a mail.
+* **No room** for a new file: every file arrives on this server first, so GateControl refuses one when this server is
+  full (`server_full`, 507 on an upload) or a storage target fails and the files waiting for it fill the cache
+  (`storage_unavailable`, 503). The sync goes on; the prefetch of attachments (`always`) pauses (5 minutes, 15 when
+  full), then the mails that waited get theirs (5 per run); filing to Drive tries the mail again later; a person opening an attachment gets 409 `storage_unavailable`
+  / `server_full` with `retryAfter` (409 — the apps take a 5xx of the API for "offline"); the area's own quota full →
+  the copy goes again, 409 `server_full { reason: 'area_full' }`. An upload of a file for a draft gets GateControl's
+  answer (the portal shows its text). Account pictures try again after their pause.
+* **Outbox**: GateControl stores the copy for „Gesendet“ only after the SMTP server took the mail — refused then, the
+  mail counts as sent (log `copy to sent failed`), never sent twice. A forwarded attachment kept only on a storage target
+  that fails (`gc.media.areas.info` `state: 'unreachable'`, `gc.media.info` `stored: 'target'`) waits: 409
+  `storage_unavailable`, again in 5 minutes (at most 3 tries like `busy`), the account's state stays as it is.
+* **Admin page**: `GET admin/settings` answers `storage: { area, label, target: { kind, label }, state, bytes, count,
+  form, paused? }` — the card „Speicher“ shows where the attachments lie and the way to GateControl's „Speicherorte“; it
+  changes nothing.
+* **Backup**: GateControl's backup of the plugin carries the area's metadata, never the bytes of its files; an
+  attachment whose bytes are gone after a restore is loaded from the provider again when opened.
+
 ## Administration
 
 Plugins › Mail › Einstellungen (the page `settings`, `ui.settingsPage`): who may use Mail (everybody, or people and
 groups — `GC.pickPrincipals`), accounts per person (1…20), retention (1/3/6/12/24 months or all), attachments
-(`on_demand` / `always`), quota per person (1…100 GB) with what is used in all and per person, AI (`bar`, `sort`,
+(`on_demand` / `always`), quota per person (1…100 GB) with what is used in all and per person, where the attachments
+lie (since 1.5.0, a note — see "Storage places"), AI (`bar`, `sort`,
 `autoFile`, `blockBusiness`), Microsoft (`registration: 'default'|'custom'`, `customClientId`, the consent link
 `https://login.microsoftonline.com/organizations/v2.0/adminconsent?client_id=<id>&scope=https://graph.microsoft.com/.default`).
 The card **Personen und Lizenz** (since 1.1.0): tier, "x von y Personen", exceeded / full with the hint to add people in
@@ -378,7 +420,7 @@ open the admin consent link again).
 
 ## Development
 
-`node tools/test.js gatecontrol-mail` — the mock host as GateControl 1.216.0 (and 1.217.0: `smtp.verify`, `bodyMedia`; 1.219.0: `gc.mail.dav`, iMIP) with a fake IMAP / SMTP world, a fake
+`node tools/test.js gatecontrol-mail` — the mock host as GateControl 1.216.0 (and 1.217.0: `smtp.verify`, `bodyMedia`; 1.219.0: `gc.mail.dav`, iMIP; media areas, `host.mediaCapacity` for 507 / 503 — `test/storage.test.js`) with a fake IMAP / SMTP world, a fake
 Microsoft (token endpoint and Graph), fake Drive and Familie and the mock host's `gc.ai` (`test/helpers.js`); a fake
 CalDAV/CardDAV server, Graph's calendars and contacts, Familie's and Alltag's calendars (`test/pim-helpers.js`). No network.
 

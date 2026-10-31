@@ -2,6 +2,28 @@
 
 Alle E-Mail-Konten an einem Ort – im eigenen Tab der GateControl-Apps und im Portal.
 
+## 1.5.0
+- **Speicherorte für Anhänge.** Die Kopien empfangener Anhänge liegen jetzt im Bereich „Anhänge“ (`media.areas`). Wo
+  er liegt, legt der Administrator in GateControl fest: unter Einstellungen › Plugins › Mail › Übersicht › Speicherorte,
+  auf diesem Server oder auf einem Speicherziel (NAS über SMB oder WebDAV, S3, OneDrive, Google Drive – eingerichtet unter
+  Einstellungen › Plugins › Speicher). GateControl verschiebt die Dateien im Hintergrund. Mail hat dafür keine eigene
+  Oberfläche und keine eigene Ablage.
+- **Auf dem Server bleiben** Mails, Kalender, Kontakte mit ihren Fotos und die Suche (die Datenbank des Plugins),
+  Kontobilder, eingebettete Bilder von Mails, die Dateien von Entwürfen und dem Postausgang und die Kopie für „Gesendet“.
+- **Anhänge von 1.4** kommen einmal in den Bereich, ein Stapel je Hintergrundlauf (GateControl gibt Dateien ohne Bereich
+  keinen von selbst). Danach wandern sie mit dem Bereich.
+- **Kein Platz für neue Dateien** (GateControl: `507 server_full`, `503 storage_unavailable`): Der Abgleich läuft
+  weiter, das Vorladen von Anhängen pausiert und versucht es später erneut. Wer einen Anhang öffnet, bekommt 409
+  `storage_unavailable` bzw. `server_full` mit `retryAfter`. Ist der Bereich voll (sein Kontingent), geht die Kopie
+  wieder und es kommt 409 `server_full`. Die Ablage in Drive versucht es später erneut.
+- **Postausgang:** Lehnt GateControl die Kopie für „Gesendet“ ab, nachdem der Server die Mail angenommen hat, gilt sie
+  als gesendet und geht nie doppelt hinaus. Ein weitergeleiteter Anhang auf einem Speicherziel, das gerade nicht
+  erreichbar ist, wartet (409 `storage_unavailable`, in fünf Minuten erneut); das Konto bleibt „verbunden“.
+- **Admin-Seite:** In „Speicher“ steht, wo die Anhänge liegen, mit dem Hinweis auf die Speicherorte von GateControl.
+- **Portal:** Eine abgelehnte Datei für einen Entwurf zeigt den Grund (Speicher voll, nicht erreichbar, Kontingent).
+- Das Kontingent je Person (`quotaGB`, `limits.usedBytes`) zählt die Anhänge wie bisher, egal wo sie liegen.
+  `maxBytes` (50 MB, so viel lädt GateControl je Mail) und `quotaDefault` (500 GB) bleiben.
+
 ## 1.4.0
 - **Ein Kontakt statt Dubletten.** Aus Dubletten wird ein Kontakt in „Meine Kontakte“ (der GC-Kontakt). Die Kontakte der
   Konten (Outlook/Microsoft 365 über Graph, GMX/Web.de/eigener Server über CardDAV) werden mit ihm verknüpft, bleiben beim

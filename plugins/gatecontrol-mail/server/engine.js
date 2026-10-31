@@ -28,6 +28,7 @@ const graph = require('./graph');
 const ms = require('./microsoft');
 const mailstore = require('./mailstore');
 const push = require('./push');
+const storage = require('./storage');
 const { fail, MONTH } = require('./util');
 
 const MAX_SESSIONS = 90;
@@ -51,6 +52,9 @@ const BODY_MAX = 50 * 1024 * 1024;
 const st = new Map();
 const bodies = new Map();   // message id → the load of its body that runs
 const files = new Map();    // attachment id → its download that runs
+const waited = new Set();   // since 1.5.0: message ids whose prefetch waited for room at GateControl (storage.js)
+const WAITED_MAX = 1000;
+const WAITED_PER_RUN = 5;
 let sideOpen = 0;
 let stopped = false;
 let gcRef = null;
@@ -473,13 +477,40 @@ async function storeParsed(gc, a, m, p, s, x, person) {
   else await alwaysFiles(gc, a, m, s, x);
 }
 
-/** The attachments of row `m` up to ATT_ALWAYS_MAX into the media (in the line; one that loads already is left to it). */
+/**
+ * The attachments of row `m` up to ATT_ALWAYS_MAX into the media (in the line; one that loads already is left to it).
+ * Since 1.5.0 not while GateControl has no room for new files (storage.js): they come on demand or with a later mail.
+ */
 async function alwaysFiles(gc, a, m, s, x) {
+  const wait = () => { if (waited.size < WAITED_MAX) waited.add(m.id); };
+  if (storage.paused()) { wait(); return; }
   const atts = await store.all(gc, 'SELECT * FROM attachments WHERE message_id = ? AND media_id IS NULL AND inline = 0 AND size <= ?', [m.id, ATT_ALWAYS_MAX]);
   for (const t of atts) {
     if (files.has(t.id)) continue;
-    try { await once(files, t.id, () => downloadNow(gc, a, m, t, s, x)); } catch { /* on demand later */ }
+    try { await once(files, t.id, () => downloadNow(gc, a, m, t, s, x)); } catch (e) {
+      // on demand later; no room for files: not the next one either — the mail waits for filesLater
+      if (e && (e.code === 'storage_unavailable' || e.code === 'server_full')) { wait(); break; }
+    }
   }
+}
+
+/**
+ * Since 1.5.0: the prefetch of mails that waited for room at GateControl (storage.js), a few mails per background run
+ * once there is room again (in the account's line). → mails handled
+ */
+async function filesLater(gc) {
+  if (!waited.size || storage.paused()) return 0;
+  if ((await config.get(gc)).attachments !== 'always') { waited.clear(); return 0; }
+  let n = 0;
+  for (const id of [...waited].slice(0, WAITED_PER_RUN)) {
+    waited.delete(id);
+    const m = await store.one(gc, 'SELECT * FROM messages WHERE id = ?', [id]);
+    const a = m ? await row(gc, m.account_id) : null;
+    if (!a || a.state === 'auth_failed') continue;
+    try { await withAccount(gc, a, (s, x) => alwaysFiles(gc, a, m, s, x)); n++; } catch { /* on demand */ }
+    if (storage.paused()) break;
+  }
+  return n;
 }
 
 /** fn() as the one run of `key` in `map` (removed when it ends). */
@@ -527,18 +558,22 @@ function loadBody(gc, a, m) {
 /** Is the body of message `id` being loaded? */
 const loading = (id) => bodies.has(id);
 
-/** An attachment into the plugin's media (claimed) with session `s` (IMAP) → { mediaId, bytes, mime }. */
+/**
+ * An attachment into the plugin's media (claimed — since 1.5.0 into the area `attachments`, storage.js) with session `s`
+ * (IMAP) → { mediaId, bytes, mime }. No room for a new file at GateControl → 409 storage_unavailable / server_full.
+ */
 async function downloadNow(gc, a, m, t, s, x) {
   let got;
-  if (isGraph(a)) got = await graph.download(gc, a, m, t, ATT_MAX);
-  else {
-    const f = await store.one(gc, 'SELECT * FROM folders WHERE id = ?', [m.folder_id]);
-    if (!f) throw fail('not_found');
-    if (!s) throw fail('unreachable');
-    got = await imap.download(s, f, m, t, ATT_MAX);
-    if (x) x.openPath = null;
-  }
-  await gc.media.claim(got.mediaId);
+  try {
+    if (isGraph(a)) got = await graph.download(gc, a, m, t, ATT_MAX);
+    else {
+      const f = await store.one(gc, 'SELECT * FROM folders WHERE id = ?', [m.folder_id]);
+      if (!f) throw fail('not_found');
+      if (!s) throw fail('unreachable');
+      try { got = await imap.download(s, f, m, t, ATT_MAX); } finally { if (x) x.openPath = null; }
+    }
+  } catch (e) { throw storage.failed(e) || e; }
+  await storage.claim(gc, got.mediaId, t);
   const bytes = Number(got.bytes) || Number(t.size) || 0;
   await store.run(gc, 'UPDATE attachments SET media_id = ?, media_bytes = ?, used_at = ? WHERE id = ?', [got.mediaId, bytes, Date.now(), t.id]);
   return { mediaId: got.mediaId, bytes, mime: got.mime || t.mime };
@@ -751,7 +786,7 @@ async function tick(gc, now, budgetMs = 60000, skipUsers = new Set()) {
 }
 
 /** Start: the sessions come with the first background run. */
-function start(gc) { gcRef = gc; stopped = false; st.clear(); bodies.clear(); files.clear(); sideOpen = 0; }
+function start(gc) { gcRef = gc; stopped = false; st.clear(); bodies.clear(); files.clear(); waited.clear(); sideOpen = 0; }
 
 async function stop() {
   stopped = true;
@@ -788,6 +823,6 @@ function adopt(gc, a, s) {
 }
 
 module.exports = {
-  run, withAccount, direct, syncInbox, syncAll, syncOne, loadOlder, loadBody, loading, attachment, setFlags, move, destroy, appendSent, remoteSearch,
+  run, withAccount, direct, syncInbox, syncAll, syncOne, loadOlder, loadBody, loading, attachment, filesLater, setFlags, move, destroy, appendSent, remoteSearch,
   retention, tick, start, stop, forget, probe, adopt, setState, isGraph, mailError, stateOf, backfill, MONTH,
 };
