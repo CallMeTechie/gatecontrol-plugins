@@ -185,10 +185,12 @@ function microsoftWorld() {
   return st;
 }
 
-test('Microsoft: off without client id; code sign-in (PKCE), Graph delta, body, sorting by Focused/Other, flags, sending; device code', async () => {
+test('Microsoft: off with „Eigene“ and no client id; code sign-in (PKCE), Graph delta, body, sorting by Focused/Other, flags, sending; device code', async () => {
   const w = microsoftWorld();
   await withMail({ fetch: w.fetch }, async (host, c) => {
     const pkce = { codeVerifier: 'v'.repeat(43), redirectUri: 'msauth://com.gatecontrol.client/abc%3D' };
+    // 1.3.2: the publisher's registration is the default; off only with „Eigene“ and no client id
+    await c.admin('PUT', 'admin/settings', { microsoft: { registration: 'custom', customClientId: null } });
     assert.equal((await c.as(ANNA)('POST', 'accounts/microsoft', { code: 'CODE-OK', ...pkce })).json.error.code, 'microsoft_off');
     await c.admin('PUT', 'admin/settings', { microsoft: { registration: 'custom', customClientId: '11111111-2222-3333-4444-555555555555' } });
     assert.equal((await c.as(ANNA)('POST', 'accounts/microsoft', { code: 'BAD', ...pkce })).json.error.code, 'auth_failed');

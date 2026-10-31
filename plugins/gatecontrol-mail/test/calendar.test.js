@@ -247,6 +247,19 @@ test('all-day reminders: midnight of the day in the person\'s zone minus the min
   assert.deepEqual(pushes().slice(n).map((x) => x.title), ['Früh'], 'at 06:00 the day before');
 }));
 
+test('all-day reminder: a 1080 stored before 1.3.2 is the old default and reads as 360; one chosen since stays (1.3.2)', () => withMail({ gatecontrol: '1.219.0' }, async (host, c) => {
+  const anna = c.as(ANNA);
+  await anna('GET', 'calendars');
+  const row = (await host.gc.db.query('SELECT user_id, json FROM cal_prefs')).rows[0];
+  const legacy = { ...JSON.parse(row.json), allDayReminder: 1080 };
+  delete legacy.v;
+  await host.gc.db.run('UPDATE cal_prefs SET json = ? WHERE user_id = ?', [JSON.stringify(legacy), row.user_id]);
+  assert.equal((await anna('GET', 'calendars')).json.prefs.allDayReminder, 360, 'the old default');
+  await anna('PUT', 'calendar/settings', { allDayReminder: 1080 });
+  assert.equal((await anna('GET', 'calendars')).json.prefs.allDayReminder, 1080, 'chosen: stays');
+  assert.equal(JSON.parse((await host.gc.db.query('SELECT json FROM cal_prefs')).rows[0].json).v, 2);
+}));
+
 test('internal invitations: a GateControl person with a Mail place gets it without mail, answers directly; the organizer sees the answer', () => withMail({ gatecontrol: '1.219.0' }, async (host, c) => {
   await c.addGmx(ANNA);
   await c.addGmx(MARC);

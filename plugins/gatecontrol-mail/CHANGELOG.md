@@ -2,6 +2,16 @@
 
 Alle E-Mail-Konten an einem Ort – im eigenen Tab der GateControl-Apps und im Portal.
 
+## 1.3.2
+- **Microsoft ohne eigene App-Registrierung.** `DEFAULT_MS_CLIENT_ID` ist jetzt die Registrierung des Herausgebers
+  (`b2f917a9-e0eb-45b9-9e5f-14c283aa51e9`, öffentlicher Client). „GateControl (Standard)“ in Mail › Einstellungen ›
+  Microsoft 365 und outlook.com funktioniert damit ohne Eintrag; „Eigene“ mit eigener Client-ID bleibt möglich. Der
+  Freigabe-Link für Administratoren nutzt die Client-ID, die gerade gilt.
+- **Erinnerung für ganztägige Termine: alter Standard wird korrigiert.** Ein vor 1.3.2 gespeichertes `allDayReminder`
+  von 1080 (06:00 am Vortag) war der alte Standard und gilt jetzt als 360 (18:00 am Vortag). Gespeicherte Einstellungen
+  tragen ab jetzt die Markierung `v: 2`; ein danach bewusst gewählter Wert bleibt, wie er ist. Termine, die schon mit
+  1080 angelegt wurden, behalten ihre Erinnerung.
+
 ## 1.3.1
 - **Erinnerung für ganztägige Termine: Standard 18:00 am Vortag.** `CalPrefs.allDayReminder` zählt Minuten vor Mitternacht
   des Termintags in der Zone der Person (wie ein VALARM-`TRIGGER` zum `DTSTART` eines Ganztagstermins). Der Standard war
