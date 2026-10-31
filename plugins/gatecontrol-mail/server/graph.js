@@ -63,7 +63,8 @@ async function syncFolders(gc, a) {
     try { const x = await get(gc, a, `/me/mailFolders/${wk}?$select=id`); if (x && x.id) roles.set(x.id, role); } catch (e) { if (e.code === 'auth_failed') throw e; }
   }
   const found = [];
-  const walk = async (url, parentPath, depth) => {
+  // parent: the parent's id at Microsoft (parentFolderId; a display name may hold "/", the path cannot tell)
+  const walk = async (url, parentPath, parentId, depth) => {
     let next = url;
     while (next && found.length < FOLDERS_MAX) {
       const page = await get(gc, a, next);
@@ -72,13 +73,13 @@ async function syncFolders(gc, a) {
         if (found.length >= FOLDERS_MAX) break;
         const name = line(x.displayName || '') || x.id;
         const p = parentPath ? `${parentPath}/${name}` : name;
-        found.push({ id: x.id, name, path: p, parent: parentPath, role: roles.get(x.id) || null, total: x.totalItemCount, unread: x.unreadItemCount });
-        if (x.childFolderCount > 0 && depth < 3) await walk(`/me/mailFolders/${encodeURIComponent(x.id)}/childFolders?$top=100`, p, depth + 1);
+        found.push({ id: x.id, name, path: p, parent: x.parentFolderId || parentId, role: roles.get(x.id) || null, total: x.totalItemCount, unread: x.unreadItemCount });
+        if (x.childFolderCount > 0 && depth < 3) await walk(`/me/mailFolders/${encodeURIComponent(x.id)}/childFolders?$top=100`, p, x.id, depth + 1);
       }
       next = page['@odata.nextLink'] || null;
     }
   };
-  await walk('/me/mailFolders?$top=100', '', 0);
+  await walk('/me/mailFolders?$top=100', '', null, 0);
   const rows = await store.all(gc, 'SELECT * FROM folders WHERE account_id = ?', [a.id]);
   for (const x of found) {
     const have = rows.find((r) => r.remote_id === x.id);
@@ -96,11 +97,14 @@ async function syncFolders(gc, a) {
     await mailstore.remove(gc, gone);
     await store.run(gc, 'DELETE FROM folders WHERE id = ?', [r.id]);
   }
-  const now2 = await store.all(gc, 'SELECT id, path FROM folders WHERE account_id = ?', [a.id]);
+  // parents by Microsoft's ids (the top folders' parent is the mailbox's root, which is no folder here)
+  const now2 = await store.all(gc, 'SELECT id, remote_id, parent_id FROM folders WHERE account_id = ?', [a.id]);
+  const byRemote = new Map(now2.map((r) => [r.remote_id, r.id]));
+  const parentOf = new Map(found.map((x) => [x.id, x.parent]));
   for (const r of now2) {
-    const i = r.path.lastIndexOf('/');
-    const parent = i > 0 ? now2.find((x) => x.path === r.path.slice(0, i)) : null;
-    await store.run(gc, 'UPDATE folders SET parent_id = ? WHERE id = ?', [parent ? parent.id : null, r.id]);
+    const parent = byRemote.get(parentOf.get(r.remote_id)) || null;
+    const pid = parent !== r.id ? parent : null;
+    if ((r.parent_id || null) !== pid) await store.run(gc, 'UPDATE folders SET parent_id = ? WHERE id = ?', [pid, r.id]);
   }
   return store.all(gc, 'SELECT * FROM folders WHERE account_id = ?', [a.id]);
 }

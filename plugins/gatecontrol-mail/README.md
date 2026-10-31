@@ -149,7 +149,7 @@ mail; „Neu anmelden“ (`POST accounts/<id>/microsoft`) adds them.
 
 | | |
 |---|---|
-| `GET folders` | `{ accounts: [{ accountId, folders: [{ id, name, path, role, parentId, unread, total }] }] }` |
+| `GET folders` | `{ accounts: [{ accountId, folders: [{ id, name, path, role, parentId, unread, total }] }] }` — `name` the folder's own name (not its path), `parentId` its parent folder or `null` on top (since 1.3.3: IMAP by the parent path the server lists, INBOX case-insensitive, a namespace `INBOX.` is no parent; Microsoft by `parentFolderId`). A parent the server does not list (`\Noselect`) leaves its children on top |
 | `GET messages` | `?box=all\|<accountId>&folder=&tab=relevant\|other\|all&unread=1&flagged=1&attachments=1&before=<cursor>&limit=50` → `{ items: [Summary], next, counts: { relevant, other } }` — `counts`: unread per tab of the posteingänge. With `settings.threads` one row per conversation (its newest mail; `threadCount`), not with `unread` / `flagged`. A single folder whose copy ends before the server's mail gives a `next` at the end; that page loads older mail from the server |
 | `GET search` | `?q=&box=&from=&after=&before=&attachments=1&unread=1&cursor=` → `{ items, next, remote }` — the copy first; the first page with few hits also asks the servers (`remote: true`) |
 | `GET threads/<threadId>` | `{ items: [Message] }` oldest first — up to 10 missing bodies are loaded at once; what is not there after ~12 s comes with `bodyMissing` (live event with `threadId` when through) |
