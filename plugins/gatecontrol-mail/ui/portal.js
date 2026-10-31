@@ -1,6 +1,7 @@
-/* Mail (gatecontrol-mail) — the portal tab (mockups Main, Menue, Lesen, Schreiben, Ablegen, Konto):
+/* Mail (gatecontrol-mail) — the portal tab (mockups Main, Menue, MenueNeu, Lesen, Schreiben, Ablegen, Konto, Einladung):
  *
- *   menu     Alle Posteingänge, Zum Ablegen, Ausgang, the accounts with their folders, "Konto hinzufügen", settings
+ *   menu     Alle Posteingänge, Zum Ablegen, Ausgang, the accounts with their folders; at its foot (since 1.3.0) the
+ *            settings on the left, Kontakte and Kalender on the right (an account is added in the settings)
  *   list     Relevant / Sonstige in posteingänge, search, more on scrolling; live reload on the event 'mail' (and of the open
  *            mail whose body was still loading: the event names its messageId)
  *   mail     AI bar (Kurz gesagt, Zu tun — into the family calendar —, reply suggestions), attachments (download, "In Drive
@@ -8,7 +9,10 @@
  *            the conversation, answer / forward / archive / delete / move to Sonstige
  *   write    from which account, recipients with suggestions, attachments from the device (GC.upload) or from Drive (a copy
  *            or a link), warnings, send with 10 s to undo, send later
- *   accounts add one (password, app password, IMAP, Microsoft by device code), change it, sign in again, remove it
+ *   accounts add one (password, app password, IMAP, Microsoft by device code), change it, sign in again, remove it;
+ *            calendar and contacts of an account on or off; Microsoft without the calendar / contact rights: „Neu anmelden“
+ *   areas    since 1.3.0 also Kalender (ui/calendar.js) and Kontakte (ui/contacts.js) — the same menu, its content per
+ *            area; the invitation card of a mail comes from ui/calendar.js. Both get this file's helpers (attach(ui)).
  *
  * The plugin API through GC.call (answers JSON, errors { error: { code } }). The mail's HTML (sanitized by GateControl)
  * is shown in a shadow root; its pictures load only when allowed (as data: URLs — the frame has no network of its own).
@@ -58,6 +62,21 @@
     link: 'M10 14a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1|M14 10a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1',
     shield: 'M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z',
     warn: 'M12 3l10 18H2z|M12 10v4M12 17h.01',
+    person: 'M12 12a4 4 0 1 0 0-8a4 4 0 1 0 0 8|M4 21c0-4 4-6 8-6s8 2 8 6',
+    people: 'M9 11a3.5 3.5 0 1 0 0-7a3.5 3.5 0 1 0 0 7|M2 20c0-3.5 3-5.5 7-5.5s7 2 7 5.5|M16 4.5a3.5 3.5 0 0 1 0 6.5|M18 14.5c2.4.6 4 2.4 4 5.5',
+    phone: 'M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2',
+    edit: 'M4 20h4L19 9l-4-4L4 16z|M13 7l4 4',
+    pin: 'M12 21s-7-6.5-7-12a7 7 0 0 1 14 0c0 5.5-7 12-7 12z|M12 11a2 2 0 1 0 0-4a2 2 0 1 0 0 4',
+    video: 'M3 7h12v10H3z|M15 10l6-3v10l-6-3',
+    bell: 'M6 16V11a6 6 0 0 1 12 0v5l2 2H4z|M10 21h4',
+    check: 'M5 12l5 5 9-10',
+    left: 'M15 6l-6 6 6 6',
+    right: 'M9 6l6 6-6 6',
+    more: 'M5 12h.01M12 12h.01M19 12h.01',
+    upload: 'M12 16V4|M7 9l5-5 5 5|M4 20h16',
+    download: 'M12 4v12|M7 11l5 5 5-5|M4 20h16',
+    merge: 'M6 4v5a6 6 0 0 0 6 6h0a6 6 0 0 1 6 6|M18 4v5a6 6 0 0 1-6 6',
+    repeat: 'M17 2l3 3-3 3|M4 11V9a4 4 0 0 1 4-4h12|M7 22l-3-3 3-3|M20 13v2a4 4 0 0 1-4 4H4',
   };
   function icon(name, size) {
     var s = document.createElementNS(NS, 'svg');
@@ -193,7 +212,10 @@
     me: null, features: [], accounts: [], folders: {}, unread: { all: 0, byAccount: {} }, settings: {},
     view: 'box', box: 'all', folderId: null, tab: 'relevant', q: '', items: [], next: null, counts: {}, loading: false,
     openId: null, open: null, filing: [], outbox: [], expanded: {}, avatars: {},
+    area: 'mail', // since 1.3.0: 'mail' | 'calendar' | 'contacts'
   };
+  var CAL = null; // ui/calendar.js (attach below)
+  var CON = null; // ui/contacts.js
   var lastFocus = null;
 
   function message(title, text) {
@@ -215,9 +237,9 @@
       if (lic && !S.me.seat) { message(T('p.no_seat_title'), T('p.no_seat_text')); return; }
       $('mp-msg').hidden = true;
       $('mp-app').hidden = false;
+      live();
       if (!S.accounts.length) { renderNav(); renderEmpty(); return; }
       reloadAll();
-      live();
     }, function (e) { message(T('p.failed_title'), errText(e)); });
   }
 
@@ -258,13 +280,17 @@
   function live() {
     if (!window.GC || typeof window.GC.on !== 'function') return;
     window.GC.on('event', function (ev) {
-      if (!ev || ev.type !== 'mail') return;
+      if (!ev) return;
+      // since 1.3.0: calendars and contacts (their own areas reload what they show)
+      if (ev.type === 'calendar') { if (CAL) CAL.onEvent(ev.data || {}); return; }
+      if (ev.type === 'contacts') { if (CON) CON.onEvent(ev.data || {}); return; }
+      if (ev.type !== 'mail') return;
       var d = ev.data || {};
       // the body of the open mail came after the answer: show it now
       if (S.open && S.open.bodyMissing && d.messageId === S.open.id) reloadOpen();
       if (liveTimer) clearTimeout(liveTimer);
       liveTimer = setTimeout(function () {
-        loadMe().then(function () { renderNav(); if (S.view === 'box') loadList(true); }, function () {});
+        loadMe().then(function () { renderNav(); if (S.area === 'mail' && S.view === 'box') loadList(true); }, function () {});
       }, 600);
     });
   }
@@ -303,7 +329,57 @@
   function renderNav() {
     var nav = $('mp-nav');
     clear(nav);
-    nav.appendChild(h('div', { class: 'mp-nav-title' }, [h('span', { text: T('p.title') }), ibtn('gear', T('p.settings'), settingsDialog)]));
+    nav.appendChild(h('div', { class: 'mp-nav-title' }, h('span', { text: S.area === 'calendar' ? T('p.c.title') : S.area === 'contacts' ? T('p.k.title') : T('p.title') })));
+    var body = h('div', { class: 'mp-nav-body' });
+    nav.appendChild(body);
+    if (S.area === 'calendar' && CAL) CAL.nav(body);
+    else if (S.area === 'contacts' && CON) CON.nav(body);
+    else mailNav(body);
+    nav.appendChild(navFoot());
+  }
+
+  /** The menu's foot (mockup MenueNeu): storage, the settings on the left, Kontakte and Kalender on the right. */
+  function navFoot() {
+    var foot = h('div', { class: 'mp-foot' });
+    if (S.limits && S.limits.quotaBytes) {
+      var pct = Math.min(100, Math.round((S.limits.usedBytes || 0) / S.limits.quotaBytes * 100));
+      add(foot, [h('span', { class: 'mp-sub', text: T('p.storage', { used: fmtSize(S.limits.usedBytes), max: fmtSize(S.limits.quotaBytes) }) }),
+        h('span', { class: 'mp-bar' }, h('span', { style: 'width:' + pct + '%' }))]);
+    }
+    var areaBtn = function (area, ic, label) {
+      var on = S.area === area;
+      return h('button', { type: 'button', class: 'mp-ibx' + (on ? ' is-on' : ''), attrs: { 'aria-label': label, title: label, 'aria-pressed': on ? 'true' : 'false' },
+        on: { click: function () { setArea(on ? 'mail' : area); } } }, icon(ic, 20));
+    };
+    foot.appendChild(h('div', { class: 'mp-foot-row' }, [
+      h('button', { type: 'button', class: 'mp-ibx', attrs: { 'aria-label': T('p.mail_settings'), title: T('p.settings') }, on: { click: settingsDialog } }, icon('gear', 20)),
+      h('span', { style: 'flex:1' }),
+      has('contacts') && CON ? areaBtn('contacts', 'person', T('p.k.title')) : null,
+      has('calendar') && CAL ? areaBtn('calendar', 'cal', T('p.c.title')) : null,
+    ]));
+    return foot;
+  }
+
+  /** The first row of the calendar's and the contacts' menu: back to the mail. */
+  function toMailRow() {
+    return h('button', { type: 'button', class: 'mp-row', on: { click: function () { setArea('mail'); } } },
+      [icon('inbox'), h('span', { class: 'mp-tx', text: T('p.inboxes') }), S.unread.all ? h('span', { class: 'mp-count', text: String(S.unread.all) }) : null]);
+  }
+
+  /** Switch the area: Mail, Kalender, Kontakte. */
+  function setArea(area) {
+    S.area = area === 'calendar' && CAL && has('calendar') ? 'calendar' : area === 'contacts' && CON && has('contacts') ? 'contacts' : 'mail';
+    showPane('list');
+    renderNav();
+    if (S.area === 'calendar') { CAL.show(); return; }
+    if (S.area === 'contacts') { CON.show(); return; }
+    if (!S.accounts.length) { renderEmpty(); return; }
+    renderList();
+    if (S.open) renderRead(S.open); else renderReadEmpty();
+    loadList(true);
+  }
+
+  function mailNav(nav) {
     nav.appendChild(navRow(icon('inbox'), T('p.all_inboxes'), S.view === 'box' && S.box === 'all' && !S.folderId, function () { go({ box: 'all', folderId: null }); }, S.unread.all));
     if (has('drive') && S.filing.length) nav.appendChild(navRow(icon('drive'), T('p.filing'), S.view === 'filing', showFiling, S.filing.length));
     if (S.outbox.length) nav.appendChild(navRow(icon('send'), T('p.outbox'), S.view === 'outbox', showOutbox, S.outbox.length));
@@ -319,18 +395,15 @@
         });
       }
     });
-    nav.appendChild(h('button', { type: 'button', class: 'mp-row', on: { click: addAccount } }, [icon('plus'), h('span', { class: 'mp-tx', text: T('p.add_account') })]));
-    if (S.limits && S.limits.quotaBytes) {
-      nav.appendChild(h('p', { class: 'dp-hint', style: 'padding:12px 10px 0', text: T('p.storage', { used: fmtSize(S.limits.usedBytes), max: fmtSize(S.limits.quotaBytes) }) }));
-    }
   }
 
   function showPane(p) {
     var app = $('mp-app');
-    app.className = 'mp-app' + (p === 'nav' ? ' show-nav' : p === 'read' ? ' show-read' : '');
+    app.className = 'mp-app' + (S.area !== 'mail' ? ' is-' + S.area : '') + (p === 'nav' ? ' show-nav' : p === 'read' ? ' show-read' : '');
   }
 
   function go(o) {
+    S.area = 'mail';
     S.view = 'box';
     S.box = o.box;
     S.folderId = o.folderId;
@@ -345,6 +418,7 @@
   function scopeIsInbox() { return !S.folderId; }
 
   function loadList(keepOpen) {
+    if (S.area !== 'mail') return Promise.resolve();
     S.loading = true;
     var q = S.view === 'search'
       ? api('GET', 'search', null, { q: S.q, box: S.box })
@@ -354,6 +428,7 @@
       S.next = r.next || null;
       S.counts = r.counts || {};
       S.loading = false;
+      if (S.area !== 'mail') return;
       renderList();
       if (!keepOpen && !S.open) renderReadEmpty();
     }, function (e) { S.loading = false; fail(e); });
@@ -419,7 +494,7 @@
         h('span', { class: 'mp-l1' }, [h('span', { class: 'mp-from', text: who }), m.threadCount > 1 ? h('span', { class: 'mp-count-n', text: String(m.threadCount) }) : null,
           h('span', { class: 'mp-marks' }, [m.hasAttachments ? icon('clip', 13) : null, m.flagged ? h('span', { class: 'is-flag' }, icon('flag', 13)) : null]),
           h('span', { class: 'mp-time', text: fmtTime(m.date) })]),
-        h('span', { class: 'mp-subj', text: m.subject || T('p.no_subject') }),
+        h('span', { class: 'mp-subj' }, [m.invite ? h('span', { class: 'mp-tag', text: T('p.c.invitation') }) : null, m.subject || T('p.no_subject')]),
         h('span', { class: 'mp-snip', text: m.ai && m.ai.summary ? m.ai.summary : m.snippet }),
       ]),
     ]);
@@ -484,11 +559,15 @@
       h('div', { class: 'mp-meta' }, [
         h('span', { class: 'mp-av' }, [initials(m.from.name || m.from.email), h('span', { class: 'mp-dot', attrs: { style: 'background:' + (a ? a.color : 'var(--muted)') } })]),
         h('span', null, [h('b', { text: m.from.name || m.from.email }), ' ', m.from.name ? '<' + m.from.email + '>' : '']),
+        // since 1.3.0: the sender as a contact („Kontakt öffnen“ / „Als Kontakt speichern“)
+        has('contacts') && CON && m.from.email ? btn(T('p.k.sender'), function () { CON.fromSender(m); }, { small: true, icon: 'person' }) : null,
       ]),
       h('div', { class: 'mp-meta', text: T('p.to_line', { to: (m.to || []).map(function (p) { return p.name || p.email; }).join(', '), account: a ? (a.name || a.email) : '', date: fmtFull(m.date) }) }),
       m.threadCount > 1 ? btn(T('p.thread', { n: m.threadCount }), function () { showThread(m.threadId); }, { small: true }) : null,
     ]);
     el.appendChild(head);
+    // since 1.3.0: the invitation card (mockup Einladung) above the AI bar and the text
+    if (has('calendar') && CAL) { var inv = CAL.invitationCard(m, S.items.filter(function (x) { return x.id === m.id; })[0] || null); if (inv) el.appendChild(inv); }
     if (has('ai')) el.appendChild(aiBar(m));
     if ((m.attachments || []).some(function (t) { return !t.inline; })) el.appendChild(attachmentsCard(m));
     el.appendChild(bodyCard(m));
@@ -622,6 +701,19 @@
     return row;
   }
 
+  /** Sanitized HTML (GateControl's) in a shadow root of `host` → the wrapping element (links and pictures are the caller's). */
+  function shadowHtml(host, html, text) {
+    var root = host.attachShadow ? host.attachShadow({ mode: 'open' }) : host;
+    var wrap = document.createElement('div');
+    if (html) wrap.innerHTML = html; // sanitized by GateControl (gc.mail.sanitize): no script, no handlers
+    else wrap.appendChild(h('pre', { style: 'white-space:pre-wrap;font:14px/1.5 system-ui,sans-serif;margin:0', text: text || '' }));
+    var style = document.createElement('style');
+    style.textContent = ':host{all:initial;display:block;font:14px/1.5 system-ui,sans-serif;color:#111}img{max-width:100%;height:auto}a{color:#0b6bcb}table{max-width:100%}';
+    root.appendChild(style);
+    root.appendChild(wrap);
+    return wrap;
+  }
+
   // the body: sanitized HTML in a shadow root, pictures only when allowed
   function bodyCard(m) {
     var card = h('div', { class: 'mp-card' });
@@ -639,14 +731,7 @@
     }
     var host = h('div', { class: 'mp-body' });
     card.appendChild(host);
-    var root = host.attachShadow ? host.attachShadow({ mode: 'open' }) : host;
-    var wrap = document.createElement('div');
-    if (m.html) wrap.innerHTML = m.html; // sanitized by GateControl (gc.mail.sanitize): no script, no handlers
-    else wrap.appendChild(h('pre', { style: 'white-space:pre-wrap;font:14px/1.5 system-ui,sans-serif;margin:0', text: m.text || '' }));
-    var style = document.createElement('style');
-    style.textContent = ':host{all:initial;display:block;font:14px/1.5 system-ui,sans-serif;color:#111}img{max-width:100%;height:auto}a{color:#0b6bcb}table{max-width:100%}';
-    root.appendChild(style);
-    root.appendChild(wrap);
+    var wrap = shadowHtml(host, m.html, m.text);
     Array.prototype.forEach.call(wrap.querySelectorAll('img'), function (img) {
       var src = img.getAttribute('src') || '';
       if (/^img\//.test(src)) {
@@ -668,9 +753,14 @@
       var href = a.getAttribute('href') || '';
       if (!/^(https?:|mailto:)/i.test(href)) return;
       if (/^mailto:/i.test(href)) { compose({ to: [href.slice(7).split('?')[0]] }); return; }
-      dialog(T('p.link_title'), [h('div', { class: 'dp-url' }, [h('span', { text: href }), btn(T('p.copy'), function () { copyText(href); }, { small: true })]), h('p', { class: 'dp-hint', text: T('p.link_hint') })]);
+      linkDialog(href);
     });
     return card;
+  }
+
+  /** A link the frame cannot open: the address to copy. */
+  function linkDialog(href, title) {
+    dialog(title || T('p.link_title'), [h('div', { class: 'dp-url' }, [h('span', { text: href }), btn(T('p.copy'), function () { copyText(href); }, { small: true })]), h('p', { class: 'dp-hint', text: T('p.link_hint') })]);
   }
 
   // ── dialogs ──────────────────────────────────────────────
@@ -930,12 +1020,20 @@
     email.focus();
   }
 
-  function microsoftDialog(p) {
+  /**
+   * Microsoft by device code: a new account, or (`again`, an Account) signed in anew — since 1.3.0 for the calendar and
+   * contact rights (the scopes of GET me); afterwards still without them → the company must allow them.
+   */
+  function microsoftDialog(p, again) {
     if (!has('microsoft')) { dialog(p.label, [h('p', { class: 'dp-hint', text: T('p.microsoft_off') })]); return; }
     var box = h('div', { style: 'display:flex;flex-direction:column;gap:12px' }, h('p', { class: 'dp-hint', text: T('p.loading') }));
     var stopped = false;
-    dialog(T('p.setup', { provider: p.label }), [h('p', { class: 'dp-hint', text: p.hint ? (p.hint[CTX.lang] || p.hint.de) : '' }), box], { onClose: function () { stopped = true; } });
-    api('POST', 'accounts/microsoft/device', { kind: p.id === 'm365' ? 'business' : 'personal' }).then(function (d) {
+    var title = again ? T('p.relogin_title', { account: again.email }) : T('p.setup', { provider: p.label });
+    var note = again ? T('p.relogin_text', { account: again.email }) : p.hint ? (p.hint[CTX.lang] || p.hint.de) : '';
+    dialog(title, [h('p', { class: 'dp-hint', text: note }), box], { onClose: function () { stopped = true; } });
+    var start = { kind: p.id === 'm365' ? 'business' : 'personal' };
+    if (again) start.accountId = again.id;
+    api('POST', 'accounts/microsoft/device', start).then(function (d) {
       clear(box);
       add(box, [h('p', { text: T('p.device_step1') }), h('div', { class: 'dp-url' }, [h('span', { text: d.verificationUri }), btn(T('p.copy'), function () { copyText(d.verificationUri); }, { small: true })]),
         h('p', { text: T('p.device_step2') }), h('div', { class: 'mp-code', text: d.userCode }), btn(T('p.copy_code'), function () { copyText(d.userCode); }, { small: true }),
@@ -944,12 +1042,46 @@
         if (stopped || $('mp-dialog').hidden) return;
         api('GET', 'accounts/microsoft/device/' + d.deviceId).then(function (r) {
           if (r.status === 'pending') { setTimeout(poll, d.interval * 1000); return; }
-          if (r.status === 'done') { closeDialog(); toast(T('p.account_added')); loadMe().then(reloadAll); return; }
+          if (r.status === 'done') {
+            closeDialog();
+            toast(again ? T('p.relogged') : T('p.account_added'));
+            loadMe().then(function () { renderNav(); if (again) afterRelogin(again.id); else reloadAll(); });
+            return;
+          }
           clear(box); box.appendChild(h('p', { class: 'dp-err', text: T('p.device_' + r.status) }));
         }, function (e) { clear(box); box.appendChild(h('p', { class: 'dp-err', text: errText(e) })); });
       };
       setTimeout(poll, d.interval * 1000);
     }, function (e) { clear(box); box.appendChild(h('p', { class: 'dp-err', text: errText(e) })); });
+  }
+
+  /** Signed in anew: the rights are there (the area reloads), or the company has to allow them (its consent link). */
+  function afterRelogin(id) {
+    var a = accountOf(id);
+    if (!a || !(a.missingScopes || []).length) { refreshArea(); return; }
+    var url = S.me && S.me.microsoft ? S.me.microsoft.adminConsentUrl : null;
+    dialog(T('p.consent_title'), [h('p', { class: 'dp-hint', text: T('p.consent_company', { account: a.email }) }),
+      url ? h('div', { class: 'dp-url' }, [h('span', { class: 'mp-mono', text: url }), btn(T('p.copy'), function () { copyText(url); }, { small: true })]) : null,
+      h('div', { class: 'dp-actions' }, btn(T('p.close'), closeDialog))]);
+  }
+  function relogin(a) { microsoftDialog({ id: a.provider, label: a.email, hint: null }, a); }
+  function refreshArea() {
+    if (S.area === 'calendar' && CAL) CAL.show();
+    else if (S.area === 'contacts' && CON) CON.show();
+    else reloadAll();
+  }
+
+  /**
+   * The band „Kalender und Kontakte von <Konto> freigeben“ with „Neu anmelden“ for every Microsoft account without
+   * `scope` (Calendars.ReadWrite / Contacts.ReadWrite) — or null.
+   */
+  function consentBand(scope) {
+    var list = S.accounts.filter(function (a) { return (a.missingScopes || []).indexOf(scope) >= 0; });
+    if (!list.length) return null;
+    return h('div', { class: 'mp-bands' }, list.map(function (a) {
+      return h('div', { class: 'dp-note is-warn' }, [icon('warn'), h('span', { style: 'flex:1', text: T('p.consent_band', { account: a.name ? a.name + ' · ' + a.email : a.email }) }),
+        btn(T('p.relogin'), function () { relogin(a); }, { small: true })]);
+    }));
   }
 
   function settingsDialog() {
@@ -977,10 +1109,13 @@
     var pass = h('input', { class: 'dp-input', type: 'password', attrs: { autocomplete: 'new-password', placeholder: T('p.password_keep') } });
     var err = h('p', { class: 'dp-err', attrs: { role: 'alert' } });
     var ms = a.provider === 'outlook' || a.provider === 'm365';
+    // since 1.3.0: the account's calendar and contacts (sync on/off, their state; own servers, the iCal address of Gmail)
+    var pim = pimSection(a, ms);
     var save = function () {
       err.textContent = '';
       var b = { name: name.value.trim(), color: color.value.toUpperCase(), push: push.value, attachments: atts.value, kind: kind.value, ai: aiSw.checked, signature: sig.value };
       if (!ms && pass.value) b.password = pass.value;
+      pim.fill(b);
       api('PATCH', 'accounts/' + a.id, b).then(function () { closeDialog(); toast(T('p.saved')); loadMe().then(renderNav); }, function (e) { err.textContent = errText(e); });
     };
     var remove = function () {
@@ -992,9 +1127,50 @@
       h('div', { class: 'mp-frow' }, [h('span', { text: T('p.name_color') }), h('div', { style: 'display:flex;gap:8px' }, [name, color])]),
       field(T('p.push'), push), has('drive') ? field(T('p.attachments_mode'), atts) : null, field(T('p.kind'), kind),
       has('ai') ? h('label', { class: 'dp-check' }, [aiSw, h('span', { text: T('p.ai_account') })]) : null,
-      field(T('p.signature'), sig), ms ? btn(T('p.relogin'), function () { microsoftDialog({ id: a.provider, label: a.email, hint: null }); }, { small: true }) : field(T('p.new_password'), pass),
+      field(T('p.signature'), sig), ms ? btn(T('p.relogin'), function () { relogin(a); }, { small: true }) : field(T('p.new_password'), pass),
+      pim.el,
       err, h('div', { class: 'dp-actions' }, [btn(T('p.remove_account'), remove, { danger: true }), btn(T('p.cancel'), closeDialog), btn(T('p.save'), save, { primary: true })]),
     ]);
+  }
+
+  /** The calendar and contacts part of the account dialog → { el, fill(body) } (nothing without the features). */
+  function pimSection(a, ms) {
+    var parts = [];
+    var sws = {};
+    var side = function (what, feature, label) {
+      var x = a[what];
+      if (!x || !has(feature)) return;
+      var sw = h('input', { type: 'checkbox', class: 'dp-sw', checked: x.sync !== false, attrs: { 'aria-label': label } });
+      sws[what] = sw;
+      var state = x.state === 'consent_required' || x.state === 'none' || x.state === 'off' || x.state === 'ok' || x.state === 'syncing' || x.state === 'auth_failed' || x.state === 'unreachable' ? x.state : 'syncing';
+      parts.push(h('div', { class: 'mp-swrow' }, [h('span', { class: 'mp-two', style: 'flex:1;min-width:0' }, [h('span', { text: label }),
+        h('span', { class: 'mp-sub', text: T('p.side_' + state) + (x.server && state !== 'off' && state !== 'none' ? ' · ' + x.server : '') + (x.readOnly ? ' · ' + T('p.side_read_only') : '') })]), sw]));
+    };
+    side('calendar', 'calendar', T('p.sync_calendar'));
+    side('contacts', 'contacts', T('p.sync_contacts'));
+    if (ms && (a.missingScopes || []).length) parts.push(h('div', { class: 'dp-note is-warn' }, [icon('warn'), h('span', { text: T('p.consent_band', { account: a.email }) })]));
+    var inputs = {};
+    if (!ms && parts.length) {
+      var inp = function (k, type, ph) { inputs[k] = h('input', { class: 'dp-input', type: type, placeholder: ph || '', attrs: { autocomplete: type === 'password' ? 'new-password' : 'off' } }); return inputs[k]; };
+      var box = h('div', { class: 'mp-col', hidden: true });
+      if (a.provider === 'gmail' || a.provider === 'imap') box.appendChild(field(T('p.ics_url'), inp('icsUrl', 'url', 'https://calendar.google.com/calendar/ical/…/basic.ics')));
+      if (a.provider === 'gmail') box.appendChild(h('p', { class: 'dp-hint', text: T('p.ics_hint') }));
+      if (a.provider !== 'gmail') {
+        box.appendChild(field(T('p.caldav_url'), inp('caldavUrl', 'url', 'https://')));
+        box.appendChild(field(T('p.carddav_url'), inp('carddavUrl', 'url', 'https://')));
+        box.appendChild(field(T('p.dav_password'), inp('davPassword', 'password', T('p.dav_password_ph'))));
+      }
+      parts.push(btn(T('p.dav_servers'), function () { box.hidden = !box.hidden; }, { small: true }));
+      parts.push(box);
+    }
+    return {
+      el: parts.length ? h('div', { class: 'mp-col' }, [h('div', { class: 'mp-lab', style: 'padding-left:0', text: T('p.pim_title') })].concat(parts)) : null,
+      fill: function (b) {
+        if (sws.calendar && sws.calendar.checked !== (a.calendar.sync !== false)) b.calendarSync = sws.calendar.checked;
+        if (sws.contacts && sws.contacts.checked !== (a.contacts.sync !== false)) b.contactsSync = sws.contacts.checked;
+        Object.keys(inputs).forEach(function (k) { var v = inputs[k].value.trim(); if (v) b[k] = v; });
+      },
+    };
   }
 
   // ── Zum Ablegen, Ausgang ─────────────────────────────────
@@ -1045,6 +1221,37 @@
       el.appendChild(list);
     }, fail);
   }
+
+  // ── calendar and contacts (since 1.3.0) ─────────────────
+
+  /** A file to keep: GateControl's GC.saveFile, else a download link. */
+  function saveFile(b64, mime, name) {
+    var bin = atob(b64 || '');
+    var bytes = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    var blob = new Blob([bytes], { type: mime });
+    if (window.GC && typeof window.GC.saveFile === 'function') return window.GC.saveFile(blob, name);
+    var link = h('a', { attrs: { href: 'data:' + mime + ';base64,' + b64, download: name } });
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    return Promise.resolve();
+  }
+  /** Open a mail of the list's kind (from the contacts or the calendar). */
+  function openMail(id) { setArea('mail'); openMessage(id); }
+  /** The mails of an address (the sender view: a search). */
+  function mailsOf(address) { S.area = 'mail'; S.box = 'all'; S.folderId = null; S.q = address; S.view = 'search'; showPane('list'); renderNav(); loadList(); }
+
+  var UI = {
+    CTX: CTX, LOCALE: LOCALE, S: S, L: window.MailPimLogic, T: T, h: h, add: add, clear: clear, icon: icon, btn: btn, ibtn: ibtn, toast: toast, api: api, errText: errText, fail: fail,
+    has: has, dialog: dialog, closeDialog: closeDialog, field: field, accountOf: accountOf, accountLabel: accountLabel, accAvatar: accAvatar, initials: initials,
+    fmtTime: fmtTime, fmtFull: fmtFull, copyText: copyText, linkDialog: linkDialog, compose: compose, openMail: openMail, mailsOf: mailsOf, showPane: showPane,
+    renderNav: renderNav, toMailRow: toMailRow, setArea: setArea, relogin: relogin, consentBand: consentBand, saveFile: saveFile, suggestBox: suggestBox,
+    shadowHtml: shadowHtml, loadMe: loadMe,
+    calendar: function () { return CAL; }, contacts: function () { return CON; },
+  };
+  if (window.MailCalendar) CAL = window.MailCalendar.attach(UI);
+  if (window.MailContacts) CON = window.MailContacts.attach(UI);
 
   boot();
 })();

@@ -2,6 +2,50 @@
 
 Alle E-Mail-Konten an einem Ort – im eigenen Tab der GateControl-Apps und im Portal.
 
+## 1.3.0
+- **Kalender und Kontakte im Portal** (Phase 2, Oberfläche; der Server kam mit 1.2.0).
+- **Seitenmenü mit neuem Fuß** (Mockup MenueNeu): links die Mail-Einstellungen, rechts Kontakte und Kalender (je nach
+  Admin-Schalter), der aktive Bereich hervorgehoben; das „+“ fällt weg – ein Konto kommt über die Einstellungen dazu.
+  Der Speicherbalken steht über dem Fuß. Je Bereich zeigt das Menü seinen Inhalt, „Posteingänge“ führt zurück zur Mail.
+- **Kalender:** links alle Kalender mit Häkchen und Farbe (GateControl, je Konto, „Eingeblendet · nur ansehen“ mit
+  Familie, Alltag und Geburtstagen), Zustand je Kalender, Farbe, Erinnerungen an/aus, Umbenennen und Löschen (eigene),
+  „Kalender hinzufügen“ und „iCal-Abo“. Rechts Tag / Woche (mit Arbeitswoche) / Monat / Liste mit „Heute“ und ‹ ›, die
+  Chips der eingeblendeten Kalender, Ganztägiges oben, Stunden 0–24 ab 7 Uhr, überlappende Termine nebeneinander, offene
+  Einladungen gestrichelt, abgesagte durchgestrichen, Jetzt-Linie; ein Klick in freie Zeit legt dort einen Termin an.
+- **Termin:** ansehen (Zeit mit Zeitzone, Wiederholung als Text, Kalender, Ort mit Karte, „Teilnehmen“, Erinnerungen,
+  Teilnehmer mit Antwort und Zählung, Beschreibung), Zusagen / Mit Vorbehalt / Absagen mit Kommentar, bearbeiten (Titel,
+  Kalender, ganztägig, Beginn/Ende, Zeitzone, Wiederholung täglich / wöchentlich an Tagen / monatlich am Tag oder am n-ten
+  Wochentag / jährlich mit Ende, Ort, Online-Link oder Teams, Erinnerungen bis zum Höchstwert des Kalenders, Teilnehmer mit
+  Vorschlägen und Gruppen, beschäftigt/frei, privat, Beschreibung). Gesendet wird nur, was sich geändert hat; bei Serien
+  „Nur dieser Termin“ / „Alle Termine der Serie“; 409 `conflict` → „Neu laden“ / „Meine Änderung erneut anwenden“.
+  Löschen mit Absage an Teilnehmer bzw. Organisator. Die Zeitzone der Person folgt der des Browsers.
+- **Einladungskarte in der Mail** (Mockup Einladung): Zeit, Ort, der Tag drumherum mit Konflikten, Zusagen / Mit Vorbehalt /
+  Absagen, Kommentar, „Neue Zeit vorschlagen“, „Eintragen in“, Teilnehmer „x von y zugesagt“; Zustände beantwortet
+  („Du hast zugesagt · Ändern“), abgesagt („Aus Kalender entfernen“), Antwort erhalten, Gegenvorschlag (Übernehmen /
+  Ablehnen), veraltet. Microsoft ohne Kalender-Recht: „Kalender freigeben“. In der Liste das Etikett „Einladung“.
+- **Kontakte:** Liste mit Suche (Name, Firma, Adresse, Nummer), Buchstaben mit Schnellleiste, Reiter Kontakte | Gruppen,
+  Punkt des Kontos; Kontakt mit Foto, Position · Firma, Mail / Anrufen / Bearbeiten, allen Feldern, Gruppen, Quelle
+  (auch verknüpfte), „Letzte Mails“ („Alle Mails“ → Suche) und „Gemeinsame Termine“; nur lesende Quellen mit Hinweis.
+  Bearbeiten und neu (Foto als JPEG ≤ 512 px, Namen, Firma, Position, Adressen und Nummern mit Art, Anschriften,
+  Geburtstag mit optionalem Jahr, Notiz, Gruppen, Adressbuch) mit `etag` und Konflikt-Dialog. Gruppen mit Mitgliedern,
+  „Mail an alle“, Hinzufügen und Entfernen. Dubletten mit Grund, „Zusammenführen“ (Hauptkontakt, Auswahl je Feld,
+  Notizen verbinden; verschiedene Adressbücher werden verknüpft) und „Keine Dublette“. vCard-Import und -Export,
+  Sortierung und Anzeige der Namen. „Kontakt“ am Absender einer Mail: der Kontakt oder „Als Kontakt speichern“.
+- **Microsoft neu anmelden** per Gerätecode wie in Phase 1, wenn einem Konto `missingScopes` fehlen: Band „Kalender und
+  Kontakte von <Konto> freigeben“ in Kalender und Kontakten, im Konto-Dialog und an der Einladungskarte; bleiben die
+  Rechte aus, der Hinweis „Deine Firma muss die neuen Rechte freigeben“ mit dem Freigabe-Link.
+  `POST accounts/microsoft/device { accountId }` meldet ein eigenes Microsoft-Konto neu an, ohne gegen die Höchstzahl der
+  Konten zu prüfen (bisher scheiterte das Neu-Anmelden im Portal an der Grenze).
+- **Konto-Dialog:** Kalender und Kontakte abgleichen an/aus mit Zustand, bei Gmail die geheime iCal-Adresse, sonst eigene
+  CalDAV-/CardDAV-Adressen und ein eigenes Passwort.
+- **Admin:** Abschnitte „Kalender“ (an/aus, Konto-Kalender, Firmenkalender GateControl oder Exchange,
+  Standard-Erinnerung, interne Einladungen, Einblenden von Familie, Alltag und Geburtstagen) und „Kontakte“ (an/aus,
+  Konto-Adressbücher, KI für die Signatur) im Stil der übrigen Schalter; in der Speicher-Tabelle je Person Kalender,
+  Termine, Kontakte und deren Anteil am Speicher, in der Übersicht die Zahlen gesamt; bei Microsoft die Rechte, die die
+  App-Registrierung zusätzlich braucht (`Calendars.ReadWrite`, `Contacts.ReadWrite`).
+- Texte Deutsch und Englisch; Tests für die Logik (Ansichten, Spalten, Wiederholung, Formular → API) und das Portal im
+  kleinen DOM (Kalender, Kontakte, Einladung, Neu anmelden, Admin).
+
 ## 1.2.0
 - **Kalender und Kontakte in Mail** (Phase 2, gehört zur bestehenden Mail-Lizenz). Braucht GateControl 1.219.0
   (`gc.mail.dav` für CalDAV/CardDAV, Einladungen per iMIP, `autoconfig` mit CalDAV/CardDAV, bis 1000 Push je Stunde).
