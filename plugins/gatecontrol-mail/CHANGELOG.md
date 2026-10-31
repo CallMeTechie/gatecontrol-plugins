@@ -2,6 +2,21 @@
 
 Alle E-Mail-Konten an einem Ort – im eigenen Tab der GateControl-Apps und im Portal.
 
+## 1.3.3
+- **Ordner mit dem richtigen Elternordner** (`GET folders` → `parentId`), damit die Apps und das Portal die Ordner als
+  Baum zeigen können. `name` bleibt der eigene Name des Ordners, nicht der ganze Pfad.
+- **IMAP:** Der Elternordner kommt aus dem Pfad, den der Server zu einem Ordner nennt (`parent` von gc.mail, d. h.
+  imapflows `parentPath`), sonst aus dem Pfad bis zum letzten Trennzeichen (`delimiter`). `INBOX` gilt ohne Rücksicht
+  auf Groß- und Kleinschreibung, auch als Anfang eines Pfads („Inbox/Kunden“ hängt unter dem Posteingang). Ein Server
+  ohne Hierarchie (kein Trennzeichen) hat keine Unterordner; ein Ordnername mit „/“ macht dort keinen Elternordner mehr.
+  Liegen alle Ordner samt Gesendet, Papierkorb usw. unter `INBOX.` (persönlicher Namensraum wie bei Courier oder älterem
+  Dovecot), stehen sie oben und nicht als Kinder des Posteingangs. Ein Elternordner, den der Server nicht oder als
+  `\Noselect` listet, fehlt wie bisher; seine Kinder stehen oben.
+- **Microsoft 365 und outlook.com:** Der Elternordner kommt aus `parentFolderId`. Bisher wurde er aus dem Pfad der
+  Anzeigenamen abgeleitet; ein Ordner mit „/“ im Namen (etwa „Rechnungen 2024/2025“) landete so unter einem falschen
+  Elternordner oder seine Unterordner auf oberster Ebene.
+- `parent_id` wird nur noch geschrieben, wenn er sich ändert.
+
 ## 1.3.2
 - **Microsoft ohne eigene App-Registrierung.** `DEFAULT_MS_CLIENT_ID` ist jetzt die Registrierung des Herausgebers
   (`b2f917a9-e0eb-45b9-9e5f-14c283aa51e9`, öffentlicher Client). „GateControl (Standard)“ in Mail › Einstellungen ›

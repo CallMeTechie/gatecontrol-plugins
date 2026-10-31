@@ -31,6 +31,36 @@ function roleOf(x) {
   return null;
 }
 
+/**
+ * The parent path of a listed folder: gc.mail's `parent` (imapflow's parentPath), else the path up to its last
+ * delimiter; null on top and on a server without hierarchy (no delimiter).
+ */
+function parentPathOf(x) {
+  if (typeof x.parent === 'string' && x.parent) return x.parent;
+  const d = x.delimiter;
+  if (!d) return null;
+  const i = x.path.lastIndexOf(d);
+  return i > 0 ? x.path.slice(0, i) : null;
+}
+
+/** INBOX is case-insensitive (RFC 3501), also as the first part of a path: "Inbox/Kunden" → "INBOX/Kunden". */
+function inboxCase(p, d) {
+  const s = String(p);
+  if (s.toUpperCase() === 'INBOX') return 'INBOX';
+  return d && s.slice(0, 5 + d.length).toUpperCase() === `INBOX${d}`.toUpperCase() ? `INBOX${s.slice(5)}` : s;
+}
+
+/**
+ * Whether the server keeps every folder below INBOX (a personal namespace "INBOX." as Courier and older Dovecot set
+ * up): all folders but the inbox lie below it and the well-known ones too. Then they count as on top, not as the
+ * inbox's children.
+ */
+function inboxNamespace(shown) {
+  const others = shown.filter((k) => inboxCase(k.path, k.delim) !== 'INBOX');
+  if (!others.length || !shown.some((k) => inboxCase(k.path, k.delim) === 'INBOX')) return false;
+  return others.every((k) => inboxCase(k.path, k.delim).startsWith(`INBOX${k.delim}`)) && others.some((k) => k.role && k.role !== 'inbox');
+}
+
 /** LIST → the folders of account `a` (new ones made, gone ones dropped with their mail). → rows */
 async function syncFolders(gc, a, s, now) {
   const listed = (await s.list()) || [];
@@ -41,7 +71,7 @@ async function syncFolders(gc, a, s, now) {
     const role = roleOf(x);
     // Gmail's "All Mail" is kept (archiving moves there) but never synced or listed; "Flagged" / "Important" are views
     if (x.specialUse && SKIP_USE.has(x.specialUse) && role !== 'inbox' && role !== 'all') { keep.push({ path: x.path, skip: true, role }); continue; }
-    keep.push({ path: x.path, name: line(x.name || x.path.split(x.delimiter || '/').pop()) || x.path, delim: x.delimiter || '/', role, parent: x.parent || null });
+    keep.push({ path: x.path, name: line(x.name || x.path.split(x.delimiter || '/').pop()) || x.path, delim: x.delimiter || '/', role, parent: parentPathOf(x) });
   }
   const rows = await store.all(gc, 'SELECT * FROM folders WHERE account_id = ?', [a.id]);
   // one folder per role: the special-use one wins over a name match
@@ -64,13 +94,17 @@ async function syncFolders(gc, a, s, now) {
     await mailstore.remove(gc, ids);
     await store.run(gc, 'DELETE FROM folders WHERE id = ?', [r.id]);
   }
-  // parents by path
-  const now2 = await store.all(gc, 'SELECT id, path, delim FROM folders WHERE account_id = ?', [a.id]);
+  // parents by the parent path the server lists (a parent it does not list, e.g. \Noselect, leaves the folder on top)
+  const shown = keep.filter((k) => !k.skip);
+  const lifted = inboxNamespace(shown);
+  const parentOf = new Map(shown.map((k) => [inboxCase(k.path, k.delim), lifted && k.parent && inboxCase(k.parent, k.delim) === 'INBOX' ? null : k.parent]));
+  const now2 = await store.all(gc, 'SELECT id, path, delim, parent_id FROM folders WHERE account_id = ?', [a.id]);
+  const byPath = new Map(now2.map((r) => [inboxCase(r.path, r.delim), r]));
   for (const r of now2) {
-    const d = r.delim || '/';
-    const i = r.path.lastIndexOf(d);
-    const parent = i > 0 ? now2.find((x) => x.path === r.path.slice(0, i)) : null;
-    await store.run(gc, 'UPDATE folders SET parent_id = ? WHERE id = ?', [parent ? parent.id : null, r.id]);
+    const pp = parentOf.get(inboxCase(r.path, r.delim));
+    const parent = pp ? byPath.get(inboxCase(pp, r.delim)) : null;
+    const pid = parent && parent.id !== r.id ? parent.id : null;
+    if ((r.parent_id || null) !== pid) await store.run(gc, 'UPDATE folders SET parent_id = ? WHERE id = ?', [pid, r.id]);
   }
   void now;
   return store.all(gc, 'SELECT * FROM folders WHERE account_id = ?', [a.id]);

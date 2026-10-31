@@ -40,11 +40,15 @@ class FakeMail {
 
   login(user, pass, o = {}) {
     const boxes = new Map();
-    const mk = (p, use) => boxes.set(p, { path: p, specialUse: use || null, uidValidity: 7, uidNext: 1, modseq: o.condstore ? 1 : null, msgs: new Map() });
+    // a folder's use '\\Noselect': listed, but no mailbox of its own (a parent only); o.delimiter: '/' unless given (null: none)
+    const mk = (p, use) => boxes.set(p, {
+      path: p, specialUse: use && use !== '\\Noselect' ? use : null, flags: use === '\\Noselect' ? ['\\Noselect'] : [],
+      uidValidity: 7, uidNext: 1, modseq: o.condstore ? 1 : null, msgs: new Map(),
+    });
     mk('INBOX', '\\Inbox');
     for (const [p, use] of Object.entries(o.folders || { Gesendet: '\\Sent', Entwürfe: '\\Drafts', Archiv: '\\Archive', Spam: '\\Junk', Papierkorb: '\\Trash' })) mk(p, use);
     // smtpPass: SMTP wants another password than IMAP (gc.mail.smtp.verify refuses the IMAP one, GateControl ≥ 1.217.0)
-    this.logins.set(user, { pass, token: o.token || null, boxes, imapDisabled: !!o.imapDisabled, smtpPass: o.smtpPass || null });
+    this.logins.set(user, { pass, token: o.token || null, boxes, imapDisabled: !!o.imapDisabled, smtpPass: o.smtpPass || null, delimiter: o.delimiter === undefined ? '/' : o.delimiter });
     return this;
   }
 
@@ -118,7 +122,12 @@ class FakeMail {
         };
         return {
           capabilities: ['IMAP4rev1', 'IDLE', 'MOVE', 'UIDPLUS', ...(l.boxes.get('INBOX').modseq != null ? ['CONDSTORE'] : [])],
-          list: async () => [...l.boxes.values()].map((b) => ({ path: b.path, name: b.path, delimiter: '/', parent: null, specialUse: b.specialUse, flags: [], subscribed: true })),
+          // as gc.mail lists (imapflow): name the last part of the path, parent its parentPath (null on top)
+          list: async () => [...l.boxes.values()].map((b) => {
+            const d = l.delimiter;
+            const i = d ? b.path.lastIndexOf(d) : -1;
+            return { path: b.path, name: i >= 0 ? b.path.slice(i + d.length) : b.path, delimiter: d, parent: i > 0 ? b.path.slice(0, i) : null, specialUse: b.specialUse, flags: b.flags, subscribed: true };
+          }),
           status: async (p) => { const b = l.boxes.get(p); return { messages: b.msgs.size, uidNext: b.uidNext, uidValidity: b.uidValidity }; },
           open: async (p) => {
             const b = l.boxes.get(p);
