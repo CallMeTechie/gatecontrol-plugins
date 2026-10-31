@@ -18,7 +18,7 @@ test('first use: „Privat“ (default) and „Firma“, „Meine Kontakte“; o
   const r = (await anna('GET', 'calendars')).json;
   assert.deepEqual(r.calendars.map((x) => [x.name, x.source, x.kind, x.isDefault, x.color, x.writable, x.maxReminders]),
     [['Privat', 'local', 'private', true, '#46E0A0', true, 3], ['Firma', 'local', 'business', false, '#79B8FF', true, 3]]);
-  assert.deepEqual(r.prefs, { defaultCalendarId: r.calendars[0].id, view: '3day', weekStart: 1, workWeek: false, timeZone: BERLIN, reminders: true, defaultReminder: 15, allDayReminder: 1080 });
+  assert.deepEqual(r.prefs, { defaultCalendarId: r.calendars[0].id, view: '3day', weekStart: 1, workWeek: false, timeZone: BERLIN, reminders: true, defaultReminder: 15, allDayReminder: 360 });
   assert.deepEqual(r.consent, []);
   // again: nothing new
   assert.equal((await anna('GET', 'calendars')).json.calendars.length, 2);
@@ -91,7 +91,7 @@ test('all-day events: inclusive end date, yearly on 29 February, the time zone o
   const anna = c.as(ANNA);
   await anna('GET', 'calendars');
   const r = (await anna('POST', 'events', { title: 'Urlaub', allDay: true, startDate: '2026-11-04', endDate: '2026-11-06' })).json.event;
-  assert.deepEqual([r.allDay, r.startDate, r.endDate, r.start, r.reminders], [true, '2026-11-04', '2026-11-06', at('2026-11-04', 0), [1080]], 'the all-day reminder: 18:00 the day before');
+  assert.deepEqual([r.allDay, r.startDate, r.endDate, r.start, r.reminders], [true, '2026-11-04', '2026-11-06', at('2026-11-04', 0), [360]], 'the all-day reminder: 360 minutes before midnight');
   const leap = (await anna('POST', 'events', { title: 'Schaltjahr', allDay: true, startDate: '2028-02-29', recurrence: { freq: 'yearly' } })).json.event;
   const y0 = (await anna('GET', 'events', null, { from: at('2028-02-01', 0), to: at('2028-03-31', 0) })).json.items.filter((x) => x.eventId === leap.eventId);
   assert.deepEqual(y0.map((x) => [x.startDate, x.occurrence]), [['2028-02-29', '2028-02-29']]);
@@ -209,6 +209,42 @@ test('reminders: once, at the right minute, bundled for one person, not for canc
   await anna('POST', 'events', { calendarId: cals[0].id, title: 'C', allDay: false, start: t3, end: t3 + 60000, timeZone: BERLIN, reminders: [0] });
   await reminders.tick(host.gc, t3);
   assert.equal(pushes().length, 2);
+}));
+
+test('all-day reminders: midnight of the day in the person\'s zone minus the minutes — 360 is 18:00 the day before, across the clock changes (1.3.1)', () => withMail({ gatecontrol: '1.219.0' }, async (host, c) => {
+  const anna = c.as(ANNA);
+  await anna('GET', 'calendars');
+  const reminders = require('../server/reminders');
+  const pushes = () => host.notifications.filter((x) => x.topic === 'calendar_reminder');
+  // the next changes to winter and to summer time in Berlin (last Sunday of October / March) and the Mondays after them
+  const lastSunday = (y, m) => { const d = new Date(Date.UTC(y, m, 0)); d.setUTCDate(d.getUTCDate() - d.getUTCDay()); return d.toISOString().slice(0, 10); };
+  const from = tz.addDays(tz.localDate(Date.now(), BERLIN), 2);
+  const y = Number(from.slice(0, 4));
+  const next = (m) => [lastSunday(y, m), lastSunday(y + 1, m)].find((d) => d > from);
+  const days = [next(10), tz.addDays(next(10), 1), next(3), tz.addDays(next(3), 1)];
+  for (const day of days) {
+    const ev = (await anna('POST', 'events', { title: `Ganztägig ${day}`, allDay: true, startDate: day, endDate: day })).json.event;
+    assert.deepEqual(ev.reminders, [360], day);
+    const due = at(tz.addDays(day, -1), 18);
+    assert.equal(due, at(day, 0) - 360 * 60000, `${day}: midnight − 360 minutes`);
+    const p = tz.parts(due, BERLIN);
+    assert.deepEqual([tz.localDate(due, BERLIN), p.hh, p.mm], [tz.addDays(day, -1), 18, 0], `${day}: 18:00 the day before`);
+    const n = pushes().length;
+    await reminders.tick(host.gc, due - 60000);
+    assert.equal(pushes().length, n, `${day}: not at 17:59`);
+    await reminders.tick(host.gc, due);
+    assert.deepEqual(pushes().slice(n).map((x) => [x.title, x.body]), [[`Ganztägig ${day}`, 'Morgen, ganztägig']], `${day}: at 18:00`);
+  }
+  // a stored value stays as it is (no migration): 1080 is 06:00 the day before
+  await anna('PUT', 'calendar/settings', { allDayReminder: 1080 });
+  const day = days[0];
+  const ev = (await anna('POST', 'events', { title: 'Früh', allDay: true, startDate: day, endDate: day })).json.event;
+  assert.deepEqual(ev.reminders, [1080]);
+  const n = pushes().length;
+  await reminders.tick(host.gc, at(tz.addDays(day, -1), 6) - 60000);
+  assert.equal(pushes().length, n, 'not at 05:59');
+  await reminders.tick(host.gc, at(tz.addDays(day, -1), 6));
+  assert.deepEqual(pushes().slice(n).map((x) => x.title), ['Früh'], 'at 06:00 the day before');
 }));
 
 test('internal invitations: a GateControl person with a Mail place gets it without mail, answers directly; the organizer sees the answer', () => withMail({ gatecontrol: '1.219.0' }, async (host, c) => {

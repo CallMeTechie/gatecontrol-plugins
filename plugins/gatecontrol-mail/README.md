@@ -261,7 +261,9 @@ of the contract of Phase 2: times in ms (UTC), zones as IANA names, all-day with
 "<eventId>:<occurrence>"` (single events `"<eventId>"`). `Summary.invite` (`'request'|'cancel'|'reply'|'counter'|null`)
 and `Message.invite` (`Invitation | null`) mark invitations in mail. Overlays: `familie` (Familie ≥ 1.16.0
 `calendar_range`), `alltag:<subId>` (Alltag ≥ 1.4.0 `calendar_list` / `calendar_query`), `birthdays` (the person's
-contacts) — read per person and month, kept 10 minutes.
+contacts) — read per person and month, kept 10 minutes. `CalPrefs.allDayReminder` (the reminder of new all-day events)
+counts minutes before midnight of the event's day in the person's zone, like a VALARM `TRIGGER` on an all-day `DTSTART`:
+the default 360 is 18:00 the day before (before 1.3.1: 1080, that is 06:00 the day before).
 
 ### Contacts (since 1.2.0)
 
