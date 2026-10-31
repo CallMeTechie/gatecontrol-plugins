@@ -350,8 +350,8 @@ app registration needs `Calendars.ReadWrite` and `Contacts.ReadWrite` besides th
 1.3.0): the cards „Kalender“ and „Kontakte“, the numbers per person in the storage table and in the overview, and the
 rights of the Microsoft registration.
 
-**Microsoft app registration**: `DEFAULT_MS_CLIENT_ID` (`server/config.js`) is `null` until the publisher's registration
-exists — until then `features.microsoft` is off unless an administrator enters an own client id (Microsoft Entra:
+**Microsoft app registration**: `DEFAULT_MS_CLIENT_ID` (`server/config.js`) is the publisher's registration
+(`b2f917a9-e0eb-45b9-9e5f-14c283aa51e9`, since 1.3.2); an administrator may enter an own client id instead (Microsoft Entra:
 public client; redirects `msauth://com.gatecontrol.client/<signature hash>` for Android, `http://localhost` for Windows,
 "Allow public client flows" for the device code; delegated permissions `User.Read`, `Mail.ReadWrite`, `Mail.Send`,
 `offline_access`; since 1.2.0 also `Calendars.ReadWrite` and `Contacts.ReadWrite` — companies that block user consent

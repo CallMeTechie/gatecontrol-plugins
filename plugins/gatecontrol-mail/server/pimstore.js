@@ -36,7 +36,9 @@ async function calPrefs(gc, userId, cfg) {
     timeZone: typeof j.timeZone === 'string' && tz.valid(j.timeZone) ? j.timeZone : 'Europe/Berlin', reminders: j.reminders !== false,
     defaultReminder: j.defaultReminder === undefined ? c.calendar.defaultReminder : (j.defaultReminder === null || (Number.isInteger(j.defaultReminder) && j.defaultReminder >= 0 && j.defaultReminder <= 40320) ? j.defaultReminder : 15),
     // minutes before midnight of the event's day, like a VALARM TRIGGER on an all-day DTSTART: 360 = 18:00 the day before
-    allDayReminder: Number.isInteger(j.allDayReminder) && j.allDayReminder >= 0 && j.allDayReminder <= 10080 ? j.allDayReminder : 360,
+    // before 1.3.2 the default was 1080 (06:00 the day before) and was stored on the first save; without the marker
+    // `v: 2` a stored 1080 is that old default, not a choice
+    allDayReminder: Number.isInteger(j.allDayReminder) && j.allDayReminder >= 0 && j.allDayReminder <= 10080 && !(j.allDayReminder === 1080 && j.v !== 2) ? j.allDayReminder : 360,
   };
   return { prefs: out, overlays: j.overlays && typeof j.overlays === 'object' ? j.overlays : {}, setup: j.setup === true };
 }
@@ -45,7 +47,7 @@ async function saveCalPrefs(gc, userId, prefs, overlays, setup) {
   // `custom`: calendars of accounts renamed / coloured in GateControl (the provider's name stays out) — kept
   const old = await store.one(gc, 'SELECT json FROM cal_prefs WHERE user_id = ?', [userId]);
   const custom = prefs.custom || (old ? parse(old.json, {}).custom : null) || [];
-  const json = JSON.stringify({ ...prefs, custom, overlays: overlays || {}, setup: setup !== false });
+  const json = JSON.stringify({ ...prefs, custom, overlays: overlays || {}, setup: setup !== false, v: 2 });
   await store.run(gc, `INSERT INTO cal_prefs (user_id, json, updated_at) VALUES (?, ?, ?)
     ON CONFLICT(user_id) DO UPDATE SET json = excluded.json, updated_at = excluded.updated_at`, [userId, json, Date.now()]);
 }

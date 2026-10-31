@@ -16,11 +16,11 @@
 //                      signature read with the AI for „Als Kontakt speichern“) }                     since 1.2.0
 //
 // Kept in the plugin's storage (key 'admin'); GET/PUT admin/settings. DEFAULT_MS_CLIENT_ID: the publisher's Microsoft
-// app registration — not there yet (null): without an own client id `features.microsoft` is off.
+// app registration (public client, since 1.3.2) — used unless an administrator enters an own client id.
 
 const { fail } = require('./util');
 
-const DEFAULT_MS_CLIENT_ID = null;
+const DEFAULT_MS_CLIENT_ID = 'b2f917a9-e0eb-45b9-9e5f-14c283aa51e9';
 const MS_AUTHORITY = 'https://login.microsoftonline.com/common';
 const MS_SCOPES = ['openid', 'profile', 'email', 'offline_access', 'User.Read', 'Mail.ReadWrite', 'Mail.Send'];
 // since 1.2.0: calendars and contacts of Microsoft accounts (asked when the administrator has them on)

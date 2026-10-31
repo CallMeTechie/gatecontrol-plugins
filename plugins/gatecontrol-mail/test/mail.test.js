@@ -8,10 +8,11 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { withMail, settle, ANNA, MARC, BOB, ADMIN, DIR } = require('./helpers');
+const PUBLISHER_ID = 'b2f917a9-e0eb-45b9-9e5f-14c283aa51e9';
 
 test('plugin.json: GateControl 1.219.0, mail with dav, images, Drive, Familie and Alltag services, the app tab', () => {
   const m = JSON.parse(fs.readFileSync(path.join(DIR, 'plugin.json'), 'utf8'));
-  assert.equal(m.version, '1.3.1');
+  assert.equal(m.version, '1.3.2');
   // 1.2.0: gc.mail.dav (CalDAV/CardDAV), iMIP and up to 1000 pushes an hour need GateControl 1.219.0
   assert.equal(m.gatecontrol, '>=1.219.0');
   assert.ok(m.permissions.mail.dav.purpose.de && m.permissions.mail.dav.purpose.en);
@@ -38,12 +39,13 @@ test('GET me without accounts; who may use Mail (the administrator), not for a v
   assert.ok(me.json.features.includes('images'));
   assert.ok(me.json.features.includes('drive'));
   assert.ok(me.json.features.includes('familyCalendar'));
-  assert.ok(!me.json.features.includes('microsoft'), 'no client id yet');
+  assert.ok(me.json.features.includes('microsoft'), '1.3.2: the publisher\'s registration');
   assert.ok(!me.json.features.includes('ai'), 'no AI in GateControl');
   assert.deepEqual(me.json.limits, { accountsMax: 5, quotaBytes: 5 * 1024 ** 3, usedBytes: 0, retentionMonths: 12 });
-  // 1.2.0: the calendar and contact scopes (the administrator has both on), the admin consent link (no client id: null)
-  assert.deepEqual(me.json.microsoft, { clientId: null, authority: 'https://login.microsoftonline.com/common',
-    scopes: ['openid', 'profile', 'email', 'offline_access', 'User.Read', 'Mail.ReadWrite', 'Mail.Send', 'Calendars.ReadWrite', 'Contacts.ReadWrite'], adminConsentUrl: null });
+  // 1.2.0: the calendar and contact scopes (the administrator has both on), the admin consent link; 1.3.2: the publisher's client id
+  assert.deepEqual(me.json.microsoft, { clientId: PUBLISHER_ID, authority: 'https://login.microsoftonline.com/common',
+    scopes: ['openid', 'profile', 'email', 'offline_access', 'User.Read', 'Mail.ReadWrite', 'Mail.Send', 'Calendars.ReadWrite', 'Contacts.ReadWrite'],
+    adminConsentUrl: `https://login.microsoftonline.com/organizations/v2.0/adminconsent?client_id=${PUBLISHER_ID}&scope=https%3A%2F%2Fgraph.microsoft.com%2F.default` });
   assert.ok(me.json.features.includes('calendar') && me.json.features.includes('contacts'));
   assert.ok(!me.json.features.includes('dav'), 'GateControl 1.216.0 has no gc.mail.dav');
   assert.deepEqual(me.json.settings, { threads: true, swipeLeft: 'archive', swipeRight: 'read' });
@@ -255,7 +257,8 @@ test('admin settings: checked values, usage per person (numbers only), Microsoft
   assert.equal(r.usage.people[0].name, 'Bob');
   assert.ok(r.usage.people[0].bytes > 0);
   assert.ok(!JSON.stringify(r).includes('Geheimes') && !JSON.stringify(r).includes('bob@gmx.de'), 'never mail or addresses of others');
-  assert.deepEqual([r.microsoft.clientId, r.microsoft.consentUrl], [null, null]);
+  assert.deepEqual([r.microsoft.clientId, r.microsoft.defaultClientId], [PUBLISHER_ID, PUBLISHER_ID]);
+  assert.equal(r.microsoft.consentUrl, `https://login.microsoftonline.com/organizations/v2.0/adminconsent?client_id=${PUBLISHER_ID}&scope=https%3A%2F%2Fgraph.microsoft.com%2F.default`);
   for (const bad of [{ accountsMax: 21 }, { retentionMonths: 5 }, { quotaGB: 0 }, { attachments: 'never' }, { ai: { bar: 'yes' } }, { microsoft: { customClientId: 'abc' } },
     { calendar: { business: 'outlook' } }, { calendar: { defaultReminder: 7 } }, { calendar: { overlays: { schule: true } } }, { contacts: { enabled: 'no' } }, { calendar: { foo: true } }]) {
     assert.equal((await c.admin('PUT', 'admin/settings', bad)).json.error.code, 'invalid', JSON.stringify(bad));
