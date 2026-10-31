@@ -4,8 +4,8 @@
 // a sandboxed frame (opaque origin, inline scripts and styles only, no network of its own): the page talks to the
 // plugin's API through window.GC.call, uploads with GC.upload and gets live events with GC.on. Read once from ui/:
 // common.css · portal.css / portal.html / portal.js · admin.css / admin.html / admin.js. Since 1.3.0 the portal's script
-// is pimlogic.js (the plain logic of calendar and contacts), calendar.js and contacts.js (the areas Kalender and
-// Kontakte) and portal.js, which attaches both.
+// is pimlogic.js (the plain logic of calendar and contacts), foldertree.js (the folders as a tree, since 1.3.4),
+// calendar.js and contacts.js (the areas Kalender and Kontakte) and portal.js, which attaches both.
 // The portal tab is for a signed-in person the administrator allows (portalVisible); anyone else gets a note.
 
 const fs = require('node:fs');
@@ -24,7 +24,7 @@ const FILES = {
   common: read('common.css'),
   portal: {
     css: read('portal.css'), html: read('portal.html'),
-    js: ['pimlogic.js', 'calendar.js', 'contacts.js', 'portal.js'].map((f) => inlineScript(f, read(f))).join('\n'),
+    js: ['pimlogic.js', 'foldertree.js', 'calendar.js', 'contacts.js', 'portal.js'].map((f) => inlineScript(f, read(f))).join('\n'),
   },
   admin: { css: read('admin.css'), html: read('admin.html'), js: inlineScript('admin.js', read('admin.js')) },
 };

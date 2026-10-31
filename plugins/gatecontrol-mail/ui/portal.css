@@ -16,6 +16,13 @@
 .mp-row[aria-current="page"] .mp-count{color:var(--accent)}
 .mp-dot{width:10px;height:10px;border-radius:999px;flex:none;background:var(--muted)}
 .mp-row.is-acc{min-height:46px}
+/* the folder tree (since 1.3.4): the arrow of a parent left of its icon; a closed parent's unread below it, quietly */
+.mp-frow{position:relative}
+.mp-fold{position:absolute;top:50%;transform:translateY(-50%);width:22px;height:22px;padding:0;border:0;border-radius:6px;background:transparent;color:var(--muted);display:inline-flex;align-items:center;justify-content:center;cursor:pointer}
+.mp-fold:hover{background:color-mix(in srgb,var(--text) 8%,transparent);color:var(--text)}
+.mp-fold svg{transition:transform .15s}
+.mp-fold.is-open svg{transform:rotate(90deg)}
+.mp-count.is-below{font-weight:500;opacity:.75}
 .mp-two{display:flex;flex-direction:column;line-height:1.25}
 .mp-two>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .mp-two .mp-sub{font-weight:400}

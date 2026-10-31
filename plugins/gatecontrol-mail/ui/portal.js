@@ -1,7 +1,9 @@
 /* Mail (gatecontrol-mail) — the portal tab (mockups Main, Menue, MenueNeu, Lesen, Schreiben, Ablegen, Konto, Einladung):
  *
  *   menu     Alle Posteingänge, Zum Ablegen, Ausgang, the accounts with their folders; at its foot (since 1.3.0) the
- *            settings on the left, Kontakte and Kalender on the right (an account is added in the settings)
+ *            settings on the left, Kontakte and Kalender on the right (an account is added in the settings). Since 1.3.4
+ *            the folders as a tree (ui/foldertree.js): an arrow opens or closes a folder's children, a closed parent
+ *            counts the unread mail below it; the account row stands for the inbox, so its children are on top
  *   list     Relevant / Sonstige in posteingänge, search, more on scrolling; live reload on the event 'mail' (and of the open
  *            mail whose body was still loading: the event names its messageId)
  *   mail     AI bar (Kurz gesagt, Zu tun — into the family calendar —, reply suggestions), attachments (download, "In Drive
@@ -212,8 +214,10 @@
     me: null, features: [], accounts: [], folders: {}, unread: { all: 0, byAccount: {} }, settings: {},
     view: 'box', box: 'all', folderId: null, tab: 'relevant', q: '', items: [], next: null, counts: {}, loading: false,
     openId: null, open: null, filing: [], outbox: [], expanded: {}, avatars: {},
+    ffolds: {}, // since 1.3.4: folder id → its children shown in the menu (this session; ui/foldertree.js)
     area: 'mail', // since 1.3.0: 'mail' | 'calendar' | 'contacts'
   };
+  var FT = window.MailFolderTree; // ui/foldertree.js
   var CAL = null; // ui/calendar.js (attach below)
   var CON = null; // ui/contacts.js
   var lastFocus = null;
@@ -323,7 +327,31 @@
   function navRow(ic, label, current, onClick, count, extra) {
     return h('button', { type: 'button', class: 'mp-row' + (extra && extra.sub ? ' is-sub' : '') + (extra && extra.account ? ' is-acc' : ''), attrs: { 'aria-current': current ? 'page' : null }, on: { click: function () { showPane('list'); onClick(); } } },
       [ic, extra && extra.account ? accText(extra.account) : h('span', { class: 'mp-tx', text: label }), extra && extra.warn ? h('span', { class: 'mp-warn', text: '!' , attrs: { title: extra.warn } }) : null,
-        count ? h('span', { class: 'mp-count', text: String(count) }) : null]);
+        count ? h('span', { class: 'mp-count', text: String(count) }) : null,
+        // a closed parent: the unread mail below it, quietly
+        extra && extra.below ? h('span', { class: 'mp-count is-below', text: (count ? '+' : '') + extra.below, attrs: { title: T('p.folder_below', { count: extra.below }) } }) : null]);
+  }
+
+  /** The folders of account `a` in the menu as a tree: an arrow on a parent opens or closes it (the menu stays). */
+  function folderRows(nav, a) {
+    var tree = FT.build(S.folders[a.id] || [], { liftInbox: true });
+    var current = S.box === a.id ? S.folderId : null;
+    FT.rows(tree, S.ffolds, current).forEach(function (r) {
+      var f = r.folder;
+      if (f.role === 'inbox') return;
+      var name = roleName(f);
+      var row = navRow(icon(f.role === 'sent' ? 'send' : f.role === 'trash' ? 'trash' : f.role === 'archive' ? 'archive' : 'folder'), name, S.folderId === f.id,
+        function () { go({ box: a.id, folderId: f.id }); }, f.unread, { sub: true, below: r.unreadBelow });
+      if (r.indent) row.style.paddingLeft = (34 + r.indent * 16) + 'px';
+      var wrap = h('div', { class: 'mp-frow' }, row);
+      if (r.hasKids) {
+        var fold = h('button', { type: 'button', class: 'mp-fold' + (r.open ? ' is-open' : ''), attrs: { 'aria-expanded': r.open ? 'true' : 'false', 'aria-label': T(r.open ? 'p.folder_close' : 'p.folder_open', { name: name }), title: T(r.open ? 'p.folder_close' : 'p.folder_open', { name: name }) },
+          on: { click: function () { S.ffolds = FT.toggle(tree, S.ffolds, f.id, current); renderNav(); } } }, icon('right', 14));
+        fold.style.left = (10 + r.indent * 16) + 'px';
+        wrap.appendChild(fold);
+      }
+      nav.appendChild(wrap);
+    });
   }
 
   function renderNav() {
@@ -388,12 +416,7 @@
       var bad = a.state === 'auth_failed' ? T('p.state_auth_failed') : a.state === 'unreachable' ? T('p.state_unreachable') : null;
       nav.appendChild(navRow(accAvatar(a), a.name || a.email, S.view === 'box' && S.box === a.id && !S.folderId, function () { S.expanded[a.id] = true; go({ box: a.id, folderId: null }); },
         (S.unread.byAccount || {})[a.id], { warn: bad, account: a }));
-      if (S.expanded[a.id] || S.box === a.id) {
-        (S.folders[a.id] || []).filter(function (f) { return f.role !== 'inbox'; }).forEach(function (f) {
-          nav.appendChild(navRow(icon(f.role === 'sent' ? 'send' : f.role === 'trash' ? 'trash' : f.role === 'archive' ? 'archive' : 'folder'), roleName(f), S.folderId === f.id,
-            function () { go({ box: a.id, folderId: f.id }); }, f.unread, { sub: true }));
-        });
-      }
+      if (S.expanded[a.id] || S.box === a.id) folderRows(nav, a);
     });
   }
 
@@ -407,6 +430,8 @@
     S.view = 'box';
     S.box = o.box;
     S.folderId = o.folderId;
+    // the folder shown is never hidden in the menu: the folders above it open
+    if (o.folderId && o.box !== 'all') S.ffolds = FT.reveal(FT.build(S.folders[o.box] || [], { liftInbox: true }), S.ffolds, o.folderId);
     S.q = '';
     S.tab = 'relevant';
     renderNav();
