@@ -36,6 +36,17 @@ Alle E-Mail-Konten an einem Ort – im eigenen Tab der GateControl-Apps und im P
   Rechte aus, der Hinweis „Deine Firma muss die neuen Rechte freigeben“ mit dem Freigabe-Link.
   `POST accounts/microsoft/device { accountId }` meldet ein eigenes Microsoft-Konto neu an, ohne gegen die Höchstzahl der
   Konten zu prüfen (bisher scheiterte das Neu-Anmelden im Portal an der Grenze).
+- **Eine Serie verschieben, ohne Termine zu verlieren:** `Event` hat neu `series: { start, end, allDay, startDate?,
+  endDate? } | null` – Beginn und Ende der Serie selbst (ihr Master), auch bei `GET events/<id>?occurrence=`. Bei
+  `PATCH events/<id>` mit `scope: 'series'` und neuer Zeit (ohne neue Wiederholung) gilt die Zeit als neuer Beginn der
+  Serie, gemessen an `series.start`: der Abstand (Tage und Minuten der Wanduhr in der Zone der Serie, also über die
+  Zeitumstellung hinweg dieselbe Uhrzeit) verschiebt die Wochentage und Monatstage der Regel, `UNTIL`, gelöschte Termine
+  (`EXDATE`) und die Ausnahmen (`RECURRENCE-ID`; eine Ausnahme zur ursprünglichen Zeit wandert mit, eine von Hand
+  verschobene behält ihre Zeit). Frühere Termine bleiben. Bisher setzte die Zeit eines Termins den Serienbeginn dorthin,
+  frühere Termine fielen weg. Die unveränderte Zeit eines Vorkommens ändert nichts; ein Abstand von einer ganzen Periode
+  der Regel oder mehr oder einer, nach dem die Termine nicht mehr die alten um den Abstand verschoben wären, gibt 400
+  `invalid { field: 'start', reason: 'series_shift' }` und ändert nichts. Bei Microsoft 365 wird die Regel mitverschoben.
+  Das Portal rechnet „Alle Termine der Serie“ von `series.start` aus.
 - **Konto-Dialog:** Kalender und Kontakte abgleichen an/aus mit Zustand, bei Gmail die geheime iCal-Adresse, sonst eigene
   CalDAV-/CardDAV-Adressen und ein eigenes Passwort.
 - **Admin:** Abschnitte „Kalender“ (an/aus, Konto-Kalender, Firmenkalender GateControl oder Exchange,

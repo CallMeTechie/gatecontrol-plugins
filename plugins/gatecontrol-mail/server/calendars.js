@@ -350,6 +350,8 @@ async function full(gc, userId, ev, cal, occ) {
   let f = null;
   let recurrence = null;
   let descriptionHtml = null;
+  // since 1.3.0: the start and end of the series itself (its master) — what a PATCH scope 'series' moves from
+  let series = null;
   if (ev.ics) {
     const p = ics.parse(ev.ics);
     const o = p.objects.find((x) => x.uid === ev.uid) || p.objects[0];
@@ -358,6 +360,7 @@ async function full(gc, userId, ev, cal, occ) {
     if (occ) { const ovc = o.overrides.find((x) => ics.occKey(ics.timeOf(x.getFirstProperty('recurrence-id'), p.zones, zone)) === occ); if (ovc) v = ovc; }
     f = ics.fieldsOf(v, ctx);
     recurrence = ics.recurrenceOf(o, ctx);
+    series = ics.seriesOf(o, ctx);
   } else {
     f = {
       description: ev.description || '', organizer: parse(ev.organizer_json, null), attendees: parse(ev.attendees_json, []), reminders: parse(ev.reminders_json, []),
@@ -376,6 +379,7 @@ async function full(gc, userId, ev, cal, occ) {
           if (!occ) f.description = gf.description;
           const rule = pimgraph.recurrenceRule(x.recurrence);
           if (rule) {
+            series = { start: gf.start, end: gf.end, allDay: !!gf.allDay, ...(gf.allDay ? { startDate: gf.startDate, endDate: gf.endDate } : {}) };
             const rp = Object.fromEntries(rule.split(';').map((s) => s.split('=')));
             recurrence = {
               rrule: rule, editable: true, freq: String(rp.FREQ).toLowerCase(), interval: Number(rp.INTERVAL) || 1, byDay: rp.BYDAY ? rp.BYDAY.split(',') : null,
@@ -399,7 +403,7 @@ async function full(gc, userId, ev, cal, occ) {
     description: String(f.description || '').slice(0, ics.DESC_MAX), descriptionHtml,
     organizer: f.organizer ? { name: f.organizer.name || '', email: f.organizer.email, self: own.has(f.organizer.email) } : null,
     attendees: (f.attendees || []).map((a) => ({ name: a.name || '', email: a.email, role: a.role || 'required', response: a.response || 'needs_action', self: own.has(a.email), contactId: ids.get(a.email) || null })),
-    reminders: (f.reminders || []).slice(0, 3), recurrence, seriesId: occ ? ev.id : null, readOnly: !writable,
+    reminders: (f.reminders || []).slice(0, 3), recurrence, series, seriesId: occ ? ev.id : null, readOnly: !writable,
     canRespond: writable && attendeeOf, canEdit: writable && !attendeeOf, canDelete: writable,
     categories: f.categories || [], invitationId: invitation ? invitation.id : null, url: f.url || null, createdAt: ev.created_at, updatedAt: ev.updated_at, etag: etagOf(ev),
   };

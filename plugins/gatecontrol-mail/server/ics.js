@@ -622,6 +622,186 @@ function change(text, uid, x, { occ = null, ctx = {}, bump = false } = {}) {
   return cal.toString();
 }
 
+// ─── moving a whole series (1.3.0) ─────────────
+
+const PERIOD_MIN = { minutely: 1, hourly: 60, daily: 1440, weekly: 7 * 1440, monthly: 28 * 1440, yearly: 365 * 1440 };
+const FAR = Date.UTC(2200, 0, 1);
+
+/** The series part of an object (`o` of parse) → { start, end, allDay, startDate?, endDate? } of its master, or null. */
+function seriesOf(o, ctx) {
+  if (!o || !o.master || !(o.master.hasProperty('rrule') || o.master.hasProperty('rdate'))) return null;
+  const f = fieldsOf(o.master, ctx);
+  return { start: f.start, end: f.end, allDay: f.allDay, ...(f.allDay ? { startDate: f.startDate, endDate: f.endDate } : {}) };
+}
+
+/** The original starts of a series (its master alone, as stored: expand) → [{ ms, date }] (at most MAX_OCC). */
+function startsOf(text, uid, ctx) {
+  // without the exceptions (ical.js would take them from the calendar), with the calendar's zones
+  const cal = root(text);
+  for (const v of cal.getAllSubcomponents('vevent')) if (v.hasProperty('recurrence-id') && String(v.getFirstPropertyValue('uid')) === uid) cal.removeSubcomponent(v);
+  const p = parse(cal);
+  const o = p.objects.find((y) => y.uid === uid) || p.objects[0];
+  return expand({ uid: o.uid, master: o.master, overrides: [] }, { ...ctx, zones: p.zones }, -FAR, FAR).map((x) => ({ ms: x.start, date: x.startDate }));
+}
+
+/** `ms` moved by `total` minutes of wall clock in `zone`. */
+function wallShift(ms, total, zone) {
+  const q = tz.parts(ms, zone || 'UTC');
+  const w = new Date(Date.UTC(q.y, q.m - 1, q.d, q.hh, q.mm + total, q.ss));
+  return tz.toUtc({ y: w.getUTCFullYear(), m: w.getUTCMonth() + 1, d: w.getUTCDate(), hh: w.getUTCHours(), mm: w.getUTCMinutes(), ss: w.getUTCSeconds() }, zone || 'UTC');
+}
+
+/**
+ * Move the whole series `uid` of `text` to the new times `x` of its master ({ allDay, start, end | startDate, endDate,
+ * timeZone }; PATCH events scope 'series'). The shift — wall clock days and minutes in the series' zone, so a move over
+ * the change to summer time keeps the hour — goes onto everything that names an occurrence: the weekdays and days of
+ * the month of the rule, UNTIL, EXDATE, RDATE and the RECURRENCE-ID of every exception (an exception at its original
+ * time moves along, one moved by hand keeps its time). Nothing may get lost: a shift of a whole period of the rule or
+ * more, or one after which the occurrences are not the old ones moved by the shift, is refused (400 invalid
+ * { field: 'start', reason: 'series_shift' }). → the new text, or null when `uid` is no series.
+ */
+function shiftSeries(text, uid, x, ctx = {}) {
+  const cal = root(text);
+  const p = parse(cal);
+  const o = p.objects.find((y) => y.uid === uid) || p.objects[0];
+  if (!o || !o.master || !(o.master.hasProperty('rrule') || o.master.hasProperty('rdate'))) return null;
+  const c = { ...ctx, zones: p.zones };
+  const m = o.master;
+  const refuse = () => { throw fail('invalid', { field: 'start', reason: 'series_shift' }); };
+  const old = fieldsOf(m, c);
+  const dt = m.getFirstPropertyValue('dtstart');
+  const tzid = m.getFirstProperty('dtstart').getParameter('tzid') || null;
+  // the zone the series' wall clocks run in
+  const zone = old.allDay ? null : (isUtc(dt) ? 'UTC' : (zoneOf(tzid) || c.userTz || 'Europe/Berlin'));
+  const newZone = x.allDay ? null : (x.timeZone || zone);
+  const { days, total } = sameZoneShift(old, x, zone, newZone);
+  const exceptions = o.overrides.length > 0 || m.hasProperty('exdate') || m.hasProperty('rdate');
+  // a new kind of time (all-day ↔ timed) or a new zone: only without exceptions (they name occurrences in the old form)
+  const sameKind = !!x.allDay === !!old.allDay && (x.allDay || newZone === zone);
+  if (!sameKind && exceptions) refuse();
+  const rule = m.getFirstPropertyValue('rrule');
+  if (rule) {
+    const period = (PERIOD_MIN[String(rule.freq).toLowerCase()] || 0) * (Number(rule.interval) || 1);
+    if (Math.abs(total) >= period) refuse();
+  }
+  const before = sameKind ? startsOf(text, o.uid, c) : null;
+  // the times of the master (DTSTART, DTEND)
+  applyFields(m, x.allDay ? { allDay: true, startDate: x.startDate, endDate: x.endDate } : { allDay: false, start: x.start, end: x.end, timeZone: newZone });
+  // the rule: its weekdays and days of the month follow the days moved, UNTIL the whole shift
+  if (rule && (days || total)) {
+    const r = m.getFirstPropertyValue('rrule');
+    const parts = r.parts || {};
+    if (days && parts.BYDAY) {
+      const list = Array.isArray(parts.BYDAY) ? parts.BYDAY : [parts.BYDAY];
+      parts.BYDAY = list.map((d) => {
+        const mm = /^([+-]?\d{1,2})?(MO|TU|WE|TH|FR|SA|SU)$/.exec(String(d));
+        if (!mm) refuse();
+        return (mm[1] || '') + DAYS[(((DAYS.indexOf(mm[2]) + days) % 7) + 7) % 7];
+      });
+    }
+    if (days && parts.BYMONTHDAY) {
+      const list = (Array.isArray(parts.BYMONTHDAY) ? parts.BYMONTHDAY : [parts.BYMONTHDAY]).map(Number);
+      parts.BYMONTHDAY = list.map((d) => { const n = d + days; if (d < 1 || n < 1 || n > 28) refuse(); return n; });
+    }
+    if (days && (parts.BYYEARDAY || parts.BYWEEKNO)) refuse();
+    if (r.until) {
+      // UNTIL: dates by the days; a time (or a date of a timed series — ical.js compares it in UTC) becomes the moved
+      // last occurrence exactly, so the number of occurrences stays
+      if (old.allDay || !before || !before.length || before.length >= MAX_OCC) r.until = shiftTime(r.until, null, days, total, zone);
+      else r.until = utcTime(wallShift(before[before.length - 1].ms, total, zone));
+    }
+    m.getFirstProperty('rrule').setValue(r);
+  }
+  // everything else that names an occurrence
+  if (sameKind) {
+    for (const name of ['exdate', 'rdate']) {
+      for (const prop of m.getAllProperties(name)) {
+        const pz = prop.getParameter('tzid') || null;
+        prop.setValues(prop.getValues().map((t) => (t && typeof t.year === 'number' ? shiftTime(t, pz, days, total, zone) : t)));
+      }
+    }
+    for (const v of o.overrides) {
+      const ridProp = v.getFirstProperty('recurrence-id');
+      const rid = ridProp.getFirstValue();
+      const ridAt = timeOf(ridProp, p.zones, c.userTz);
+      const own = timeOf(v.getFirstProperty('dtstart'), p.zones, c.userTz);
+      ridProp.setValue(shiftTime(rid, ridProp.getParameter('tzid') || null, days, total, zone));
+      // an exception at its original time moves along; one moved by hand keeps its time
+      if (own && ridAt && own.ms === ridAt.ms && own.date === ridAt.date) {
+        for (const name of ['dtstart', 'dtend']) {
+          const q = v.getFirstProperty(name);
+          if (q) q.setValue(shiftTime(q.getFirstValue(), q.getParameter('tzid') || null, days, total, zone));
+        }
+      }
+    }
+  }
+  setProp(m, 'dtstamp', utcTime(Date.now()));
+  ensureZones(cal);
+  const out = cal.toString();
+  if (before) {
+    // the occurrences after the move must be the old ones moved by the shift — else something would get lost
+    const after = startsOf(out, o.uid, c);
+    if (before.length !== after.length) refuse();
+    for (let i = 0; i < before.length; i++) {
+      if (old.allDay ? tz.addDays(before[i].date, days) !== after[i].date : wallShift(before[i].ms, total, zone) !== after[i].ms) refuse();
+    }
+  }
+  return out;
+}
+
+/** The shift between the series start and the new times (each on the wall clock of its own zone). */
+function sameZoneShift(old, x, zone, newZone) {
+  const wall = (ms, z) => { const q = tz.parts(ms, z || 'UTC'); return { date: tz.dateStr(q.y, q.m, q.d), min: q.hh * 60 + q.mm }; };
+  const a = old.allDay ? { date: old.startDate, min: 0 } : wall(old.start, zone);
+  const b = x.allDay ? { date: x.startDate, min: 0 } : wall(x.start, newZone);
+  const days = tz.diffDays(a.date, b.date);
+  return { days, total: days * 1440 + (b.min - a.min) };
+}
+
+/**
+ * The wall clock shift from the series start `old` ({ allDay, start, startDate }) to the new times `x` in `zone`
+ * → { days, total (minutes) }.
+ */
+function shiftOf(old, x, zone) { return sameZoneShift(old, x, zone, zone); }
+
+/** An RRULE moved by `days` / `total` minutes (weekdays, days of the month, UNTIL); refuses a shift of a period or more. */
+function shiftRule(rrule, days, total) {
+  const refuse = () => { throw fail('invalid', { field: 'start', reason: 'series_shift' }); };
+  let r;
+  try { r = ICAL.Recur.fromString(String(rrule).replace(/^RRULE:/i, '')); } catch { return refuse(); }
+  const period = (PERIOD_MIN[String(r.freq).toLowerCase()] || 0) * (Number(r.interval) || 1);
+  if (Math.abs(total) >= period) refuse();
+  const parts = r.parts || {};
+  if (days && parts.BYDAY) {
+    parts.BYDAY = (Array.isArray(parts.BYDAY) ? parts.BYDAY : [parts.BYDAY]).map((d) => {
+      const mm = /^([+-]?\d{1,2})?(MO|TU|WE|TH|FR|SA|SU)$/.exec(String(d));
+      if (!mm) refuse();
+      return (mm[1] || '') + DAYS[(((DAYS.indexOf(mm[2]) + days) % 7) + 7) % 7];
+    });
+  }
+  if (days && parts.BYMONTHDAY) {
+    parts.BYMONTHDAY = (Array.isArray(parts.BYMONTHDAY) ? parts.BYMONTHDAY : [parts.BYMONTHDAY]).map(Number).map((d) => { const n = d + days; if (d < 1 || n < 1 || n > 28) refuse(); return n; });
+  }
+  if (days && (parts.BYYEARDAY || parts.BYWEEKNO)) refuse();
+  if (r.until) r.until = shiftTime(r.until, null, days, total, 'UTC');
+  return r.toString();
+}
+
+/** An ICAL.Time moved by `days` (dates) or `total` minutes of wall clock (a UTC time: on the wall clock of `zone`). */
+function shiftTime(t, tzid, days, total, zone) {
+  const n = t.clone();
+  if (n.isDate) { n.adjust(days, 0, 0, 0); return n; }
+  if (isUtc(n) && zone && zone !== 'UTC') {
+    const ms = Date.UTC(n.year, n.month - 1, n.day, n.hour, n.minute, n.second);
+    const w = wallTime(ms, zone);
+    w.adjust(0, 0, total, 0);
+    const back = tz.toUtc({ y: w.year, m: w.month, d: w.day, hh: w.hour, mm: w.minute, ss: w.second }, zone);
+    return utcTime(back);
+  }
+  n.adjust(0, 0, total, 0);
+  return n;
+}
+
 /** One occurrence deleted (EXDATE on the master, its override removed) → the new text. */
 function exclude(text, uid, occ, ctx = {}) {
   const cal = root(text);
@@ -840,5 +1020,5 @@ function ruleSummary(rrule) {
 
 module.exports = {
   ICAL, root, parse, fieldsOf, expand, recurrenceOf, exdates, timeOf, occKey, ruleOf, build, change, exclude, partstat, itip, objectOf, merge,
-  ensureZones, ruleSummary, split, mailto, zoneOf, PARTSTAT_OUT, DESC_MAX,
+  ensureZones, ruleSummary, split, mailto, zoneOf, PARTSTAT_OUT, DESC_MAX, seriesOf, shiftSeries, shiftOf, shiftRule,
 };

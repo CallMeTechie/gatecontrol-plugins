@@ -120,6 +120,33 @@ test('the menu\'s foot: settings on the left, Kontakte and Kalender on the right
   } finally { p.stop(); }
 }));
 
+test('„Alle Termine der Serie“ from an occurrence in the week: the series moves from Event.series, earlier occurrences stay', () => withMail({ gatecontrol: '1.219.0' }, async (host, c) => {
+  const anna = c.as(ANNA);
+  const cals = (await anna('GET', 'calendars')).json.calendars;
+  const today = L.ymd(new Date());
+  const first = L.addDays(today, -14);
+  const ev = (await anna('POST', 'events', { calendarId: cals[0].id, title: 'Jour fixe', allDay: false, start: L.at(first, '10:00'), end: L.at(first, '11:00'), timeZone: 'Europe/Berlin',
+    recurrence: { freq: 'weekly', count: 5 } })).json.event;
+  const p = portal(host, ANNA);
+  try {
+    click(await until('the foot', () => p.byLabel('Kalender')));
+    const block = await until('this week\'s one', () => p.all().find((x) => x.localName === 'button' && x.className.includes('mc-ev') && x.getAttribute('title') === 'Jour fixe'));
+    click(block);
+    click(await until('„Bearbeiten“', () => p.byText('button', 'Bearbeiten')));
+    const st = await until('the start time', () => p.el('mp-dialog').all().find((x) => x.localName === 'input' && x.type === 'time' && x.value === '10:00'));
+    st.value = '11:30';
+    st.dispatchEvent({ type: 'change' });
+    click(p.byText('button', 'Speichern'));
+    click(await until('the question', () => p.byText('button', 'Alle Termine der Serie')));
+    await until('saved', () => p.calls.some((x) => x.method === 'PATCH'));
+    const patch = p.calls.find((x) => x.method === 'PATCH').body;
+    assert.deepEqual([patch.scope, patch.start, patch.end - patch.start], ['series', L.at(first, '11:30'), 3600000]);
+    await until('the toast', () => p.text('mp-toast').includes('Gespeichert'));
+  } finally { p.stop(); }
+  const items = (await anna('GET', 'events', null, { from: L.at(first, '00:00'), to: L.at(L.addDays(first, 35), '00:00') })).json.items;
+  assert.deepEqual(items.map((x) => [L.ymd(x.start), L.hhmm(x.start)]), [0, 7, 14, 21, 28].map((d) => [L.addDays(first, d), '11:30']), 'all five, the earlier ones too');
+}));
+
 test('contacts: letters, a contact, editing with the etag, a group with a member, duplicates merged, vCard export and import', () => withMail({ gatecontrol: '1.219.0' }, async (host, c) => {
   const anna = c.as(ANNA);
   await anna('GET', 'addressbooks');

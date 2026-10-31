@@ -818,10 +818,10 @@
           if (scope === 'occurrence') x.occurrence = ev.occurrence;
           x.etag = ev.etag;
           if (people.length && !fromSel.hidden) x.fromAccountId = Number(fromSel.value);
-          // the whole series from one of its events: a new time moves the series by as much as this event moved
+          // the whole series from one of its events: the series' own start (Event.series) moves by as much as this one
           if (scope === 'series' && ev.occurrence && (x.start !== undefined || x.startDate !== undefined)) {
-            api('GET', 'events/' + ev.eventId).then(function (base) { patch(ev, shiftSeries(x, ev, base)); }, function (e) { err.textContent = ui.errText(e); });
-            return;
+            if (!ev.series) { err.textContent = T('p.c.series_unknown'); return; }
+            x = shiftSeries(x, ev, ev.series);
           }
           patch(ev, x);
         };
@@ -845,22 +845,11 @@
       title.focus();
     }
 
-    /** The time fields `x` (set for occurrence `occ`) moved onto the series `base`: by the same shift. */
-    function shiftSeries(x, occ, base) {
-      var out = Object.assign({}, x);
-      if (x.allDay && occ.allDay && base.allDay && base.startDate) {
-        var d1 = Math.round((L.midnight(x.startDate) - L.midnight(occ.startDate)) / L.DAY);
-        var d2 = Math.round((L.midnight(x.endDate) - L.midnight(occ.endDate || occ.startDate)) / L.DAY);
-        out.startDate = L.addDays(base.startDate, d1);
-        out.endDate = L.addDays(base.endDate || base.startDate, d2);
-        if (out.endDate < out.startDate) out.endDate = out.startDate;
-      } else if (!x.allDay && !occ.allDay && !base.allDay) {
-        out.start = base.start + (x.start - occ.start);
-        out.end = base.end + (x.end - occ.end);
-        if (out.end < out.start) out.end = out.start;
-      }
-      return out;
-    }
+    /**
+     * The time fields `x` (set for occurrence `occ`) moved onto the series (Event.series): by the same shift on the
+     * wall clock, so an hour later stays an hour later over the change to summer or winter time (L.shiftSeries).
+     */
+    function shiftSeries(x, occ, series) { return L.shiftSeries(x, occ, series); }
 
     function saved(r) {
       ui.closeDialog();

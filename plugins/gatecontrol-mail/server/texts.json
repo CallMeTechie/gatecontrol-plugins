@@ -748,7 +748,8 @@
   "a.rem_hour": "1 Stunde vorher",
   "a.rem_day": "1 Tag vorher",
   "p.k.member_one": "1 Mitglied",
-  "p.k.dup_band_one": "1 mögliche Dublette"
+  "p.k.dup_band_one": "1 mögliche Dublette",
+  "p.c.series_unknown": "Die Serie lässt sich hier nicht verschieben – bitte nur diesen Termin ändern."
  },
  "en": {
   "error.invalid": "Invalid input.",
@@ -1499,6 +1500,7 @@
   "a.rem_hour": "1 hour before",
   "a.rem_day": "1 day before",
   "p.k.member_one": "1 member",
-  "p.k.dup_band_one": "1 possible duplicate"
+  "p.k.dup_band_one": "1 possible duplicate",
+  "p.c.series_unknown": "The series cannot be moved here – please change this event only."
  }
 }

@@ -117,6 +117,21 @@ const sendsItip = (cal) => cal.source === 'local' || (cal.source === 'caldav' &&
 /** Does a change touch what the attendees must hear about (time, place, rule, title)? */
 const significant = (x) => ['start', 'end', 'startDate', 'endDate', 'allDay', 'location', 'rrule', 'title', 'timeZone'].some((k) => Object.prototype.hasOwnProperty.call(x, k));
 
+const TIME_KEYS = ['allDay', 'start', 'end', 'startDate', 'endDate', 'timeZone'];
+const hasOwn = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
+const dropTimes = (x) => { const out = { ...x }; for (const k of TIME_KEYS) delete out[k]; return out; };
+
+/**
+ * PATCH scope 'series' with times (1.3.0): the times are the new start and end of the series (Event.series). Times that
+ * are exactly those of one of its occurrences — what an app shows and sends back unchanged — change nothing; anything
+ * else moves the series by the shift (ics.shiftSeries), never so that occurrences get lost.
+ */
+async function sameAsOccurrence(gc, ev, x, zone) {
+  const rows = await store.all(gc, "SELECT start, end, all_day FROM occurrences WHERE event_id = ? AND occ <> '' LIMIT 5000", [ev.id]);
+  if (x.allDay) return rows.some((r) => r.all_day === 1 && tz.localDate(r.start, zone) === x.startDate && tz.localDate(Math.max(r.start, r.end - 1), zone) === x.endDate);
+  return rows.some((r) => r.all_day !== 1 && r.start === x.start && r.end === x.end);
+}
+
 /** POST events → { event, sent: { mail, internal } } */
 async function create(gc, ctx, b) {
   const cfg = await config.get(gc);
@@ -184,8 +199,14 @@ async function update(gc, ctx, id, b) {
     if (!o) throw fail('not_found');
     cur = { ...cur, start: o.start, end: o.end, startDate: o.all_day ? tz.localDate(o.start, zone) : null, endDate: o.all_day ? tz.localDate(o.end - 1, zone) : null };
   }
-  const x = check(b, cal, prefs, false, cur);
+  let x = check(b, cal, prefs, false, cur);
   if (occ) delete x.rrule;
+  // the whole series at a new time (1.3.0): a shift from the series' start (Event.series), nothing gets lost
+  let seriesTime = !occ && !!ev.rrule && TIME_KEYS.some((k) => hasOwn(x, k)) && !hasOwn(x, 'rrule');
+  if (seriesTime && await sameAsOccurrence(gc, ev, x, prefs.timeZone)) {
+    x = dropTimes(x);
+    seriesTime = false;
+  }
   const own = await pimstore.ownAddresses(gc, ctx.userId);
   const sent = { mail: 0, internal: 0 };
   if (x.online && x.online.create === 'teams' && !calendars.view(cal, await calendars.accountsOf(gc, ctx.userId)).canOnline) throw fail('not_supported', { what: 'teams' });
@@ -193,6 +214,16 @@ async function update(gc, ctx, id, b) {
     const a = await accountOf(gc, cal);
     const instanceId = occ ? ((await store.one(gc, 'SELECT remote_id FROM occurrences WHERE event_id = ? AND occ = ?', [ev.id, occ])) || {}).remote_id : null;
     if (occ && !instanceId) throw fail('not_found');
+    if (seriesTime && ev.remote_id) {
+      const m = await pim.forPerson(gc, a, () => pimgraph.master(gc, a, ev.remote_id));
+      const rule = m ? pimgraph.recurrenceRule(m.recurrence) : null;
+      if (rule) {
+        const f = pimgraph.fieldsOf(m, { userTz: zone, own });
+        const { days, total } = ics.shiftOf(f, x, x.allDay ? 'UTC' : x.timeZone);
+        const moved = ics.shiftRule(rule, days, total);
+        if (days) x.rrule = moved;
+      }
+    }
     let stored;
     try {
       stored = await pim.forPerson(gc, a, () => pimgraph.updateEvent(gc, a, cal, ev, x, { userTz: zone, own }, instanceId));
@@ -211,7 +242,12 @@ async function update(gc, ctx, id, b) {
   const before = ics.fieldsOf(ics.parse(ev.ics).objects[0].master || ics.parse(ev.ics).objects[0].overrides[0], { userTz: zone, own });
   const organizerSelf = !before.organizer || own.has(before.organizer.email);
   if (!organizerSelf) throw fail('read_only');
-  const fields = { ...x };
+  let source = ev.ics;
+  let fields = { ...x };
+  if (seriesTime) {
+    const moved = ics.shiftSeries(ev.ics, ev.uid, x, { userTz: zone, own });
+    if (moved) { source = moved; fields = dropTimes(fields); }
+  }
   if (fields.online && fields.online.create) delete fields.online;
   const hadAtt = before.attendees.length > 0;
   let removed = [];
@@ -225,7 +261,7 @@ async function update(gc, ctx, id, b) {
   }
   const nowAtt = fields.attendees || before.attendees;
   const bump = nowAtt.length > 0 && significant(x);
-  const text = ics.change(ev.ics, ev.uid, fields, { occ, ctx: { userTz: zone, own }, bump });
+  const text = ics.change(source, ev.uid, fields, { occ, ctx: { userTz: zone, own }, bump });
   let stored;
   try {
     stored = await invites.writeObject(gc, ctx.userId, cal, ev, text, ev.uid);

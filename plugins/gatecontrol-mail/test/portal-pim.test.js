@@ -113,6 +113,20 @@ test('the event form → POST: everything; → PATCH: only what changed (time an
     { kind: 'monthly_nth', interval: 1, byDay: ['WE'], end: 'count', until: '', count: 3, startDate: '2026-11-25' });
 });
 
+test('„Alle Termine der Serie“ from one occurrence: the same shift on the series\' own start (Event.series), wall clock over the change to winter time', () => {
+  const series = { start: at('2026-10-13', '10:00'), end: at('2026-10-13', '11:00'), allDay: false };
+  const occ = { start: at('2026-10-27', '10:00'), end: at('2026-10-27', '11:00'), allDay: false };
+  // an hour later (27 Oct is winter time, 13 Oct summer time: still 11:00 on the wall)
+  assert.deepEqual(L.shiftSeries({ allDay: false, start: at('2026-10-27', '11:00'), end: at('2026-10-27', '12:00'), title: 'x' }, occ, series),
+    { allDay: false, start: at('2026-10-13', '11:00'), end: at('2026-10-13', '12:00'), title: 'x' });
+  // a day later and half an hour longer
+  assert.deepEqual(L.shiftSeries({ allDay: false, start: at('2026-10-28', '10:00'), end: at('2026-10-28', '11:30') }, occ, series),
+    { allDay: false, start: at('2026-10-14', '10:00'), end: at('2026-10-14', '11:30') });
+  // all-day series: dates
+  assert.deepEqual(L.shiftSeries({ allDay: true, startDate: '2027-10-11', endDate: '2027-10-12' }, { allDay: true, startDate: '2027-10-10', endDate: '2027-10-10' },
+    { allDay: true, startDate: '2026-10-10', endDate: '2026-10-10' }), { allDay: true, startDate: '2026-10-11', endDate: '2026-10-12' });
+});
+
 test('the menu groups the calendars: GateControl, each account, Eingeblendet; letters; addresses typed in', () => {
   const g = L.calendarGroups([{ id: 1, accountId: null, name: 'Privat' }, { id: 2, accountId: 7, name: 'Kalender' }, { id: 3, accountId: null, name: 'Feiertage', source: 'ics' }, { id: 4, accountId: 7, name: 'Urlaub' }],
     [{ id: 'familie', name: 'Familie' }], [{ id: 7, email: 'anna@firma.de' }]);

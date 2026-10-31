@@ -265,6 +265,35 @@
     return out;
   }
 
+  /** Minutes of the day of a time (local). */
+  function dayMin(ms) { var d = new Date(ms); return d.getHours() * 60 + d.getMinutes(); }
+  /** `ms` moved by `days` and `min` minutes of wall clock (local). */
+  function wallMove(ms, days, min) { var d = new Date(ms); d.setDate(d.getDate() + days); d.setMinutes(d.getMinutes() + min); return d.getTime(); }
+
+  /**
+   * „Alle Termine der Serie“ from one of its occurrences (`occ`, an Event): the new times `x` of that occurrence (PATCH
+   * fields) → the same shift on the series' own start and end (`series`, Event.series) — days and minutes of wall clock.
+   */
+  function shiftSeries(x, occ, series) {
+    var out = {};
+    Object.keys(x).forEach(function (k) { out[k] = x[k]; });
+    var occDay = occ.allDay && occ.startDate ? occ.startDate : ymd(occ.start);
+    var seriesDay = series.allDay && series.startDate ? series.startDate : ymd(series.start);
+    if (x.allDay) {
+      var len = Math.round((midnight(x.endDate || x.startDate) - midnight(x.startDate)) / DAY);
+      out.startDate = addDays(seriesDay, Math.round((midnight(x.startDate) - midnight(occDay)) / DAY));
+      out.endDate = addDays(out.startDate, Math.max(0, len));
+      return out;
+    }
+    var days = Math.round((midnight(ymd(x.start)) - midnight(occDay)) / DAY);
+    // from a time of the series (timed: its start; all-day: its midnight) by the days and the change of the time of day
+    var base = series.allDay ? midnight(seriesDay) : series.start;
+    var min = dayMin(x.start) - (occ.allDay || series.allDay ? 0 : dayMin(occ.start));
+    out.start = wallMove(base, days, min);
+    out.end = out.start + Math.max(0, x.end - x.start);
+    return out;
+  }
+
   // ── calendars and books ────────────────────────────
 
   /**
@@ -310,7 +339,7 @@
     DAY: DAY, WEEKDAYS: WEEKDAYS, ymd: ymd, dateOf: dateOf, midnight: midnight, addDays: addDays, addMonths: addMonths, weekday: weekday, weekStartOf: weekStartOf,
     hhmm: hhmm, at: at, rangeOf: rangeOf, onDay: onDay, wholeDay: wholeDay, layoutDay: layoutDay, allDayOn: allDayOn, agenda: agenda,
     reminderText: reminderText, recurrenceText: recurrenceText, birthdayText: birthdayText, countOf: countOf,
-    repeatOf: repeatOf, nthOf: nthOf, recurrenceOf: recurrenceOf, eventFields: eventFields, calendarGroups: calendarGroups, letters: letters, addressesOf: addressesOf,
+    repeatOf: repeatOf, nthOf: nthOf, recurrenceOf: recurrenceOf, eventFields: eventFields, shiftSeries: shiftSeries, calendarGroups: calendarGroups, letters: letters, addressesOf: addressesOf,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.MailPimLogic = api;
