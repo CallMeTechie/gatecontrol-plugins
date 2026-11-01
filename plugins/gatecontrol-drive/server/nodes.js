@@ -590,6 +590,8 @@ async function forget(gc, ids) {
     // since 1.15.0: where a file came from (Mail), and the senders whose files went to a folder that is gone
     await store.run(gc, `DELETE FROM node_sources WHERE node_id IN (${m})`, part);
     await store.run(gc, `DELETE FROM filing_rules WHERE folder_id IN (${m})`, part);
+    // since 1.18.0: "Zuletzt geöffnet"
+    await store.run(gc, `DELETE FROM recent_opens WHERE node_id IN (${m})`, part);
   }
 }
 

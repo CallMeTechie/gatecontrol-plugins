@@ -15,7 +15,8 @@ to its path, the NAS journal and the hook `mediaChanged`), `gc.license.info` (ti
 `permissions.groups: 'read'` (family groups and their roles, groups of team folders), `permissions.events`,
 `media.previews` (since 1.1.0: previews of files, `gc.media.previews`), `permissions.devices` (since 1.2.0: the asking
 device of an app request, `user.device` — GateControl passes it only with this permission; see "Delete on all
-devices"; since 1.6.0 also the device the ransomware protection watches and stops). The photo frame on kiosk devices
+devices"; since 1.6.0 also the device the ransomware protection watches and stops; since 1.18.0 the device whose sync
+does not count as opening a file). The photo frame on kiosk devices
 (since 1.7.0) shows pictures only with GateControl ≥ 1.210.0 (preview-only URLs); everything else works with 1.208.0.
 Vault folders in the portal (since 1.9.0: `GC.keys`, `GC.mediaBytes`) and office in the browser
 (`permissions.publicEndpoints`, `GC.openTab`) need GateControl ≥ 1.211.0 — the apps use vaults with 1.208.0.
@@ -69,9 +70,10 @@ reaches `GET frame` (the photo frame, since 1.7.0) and nothing else (`403 forbid
 
 | Route | Body / query | Answer |
 |---|---|---|
-| `GET me` | | `me { id, name, seat, deviceId, admin }`, `licence { valid, tier }`, `areas`, `latest` (change log seq), `settings`, `limits { maxBytes }`, `wipes` (entries this device has yet to handle, since 1.2.0), `devices` (my devices a new wipe reaches), `features` (since 1.5.0: `['previews', 'wipes', 'textSearch', 'devices', 'deleteAfter', 'emptyFiles']`, since 1.6.0 also `'links'`, `'guard'`, since 1.7.0 `'timeTravel'`, `'takenAt'`, `'photos'`, `'albums'`, `'frame'`, `'storage'`, since 1.8.0 `'docAi'` and `'cloudImport'` — only while GateControl offers the AI service / cloud accounts and they are allowed, see "AI for documents" and "Import"; since 1.9.0 `'vault'` and — while set up — `'office'`, since 1.10.0 `'photosFolder'`, since 1.11.0 `'vaultsApart'`, since 1.12.0 `'bulk'`, — while GateControl's public links are allowed — `'zip'` and `'multiLink'`, with GateControl ≥ 1.215.0 also `'copyServer'` (copies on the server) and `'zipMixed'` (a ZIP and one link of any selection); since 1.13.0 `'photoClasses'` (work photos apart); since 1.14.0 `'photoSearch'` (photos by what is on them) and — with `docAi` — `'docAsk'` (questions to the documents), `'scanDocs'` (scans become documents) and, while the Familie plugin's `calendar_add` is reachable, `'deadlineCalendar'` (see "AI in Drive"); since 1.16.0 `'photoPlaces'` and `'photoPeople'` (see "Places and people"); since 1.17.0 — with `docAi`, while Mail's `calendar_add` is reachable and takes Drive — `'deadlineMailCalendar'` (see "Deadlines into a calendar of Mail")), `settings` (since 1.14.0 also `scanKeepOriginal`), `links { node, drive } \| null` (since 1.6.0, see "Direct links"), `guard { on, locked, incident }` and `incidents` (since 1.6.0, see "Ransomware protection") |
+| `GET me` | | `me { id, name, seat, deviceId, admin }`, `licence { valid, tier }`, `areas`, `latest` (change log seq), `settings`, `limits { maxBytes }`, `wipes` (entries this device has yet to handle, since 1.2.0), `devices` (my devices a new wipe reaches), `features` (since 1.5.0: `['previews', 'wipes', 'textSearch', 'devices', 'deleteAfter', 'emptyFiles']`, since 1.6.0 also `'links'`, `'guard'`, since 1.7.0 `'timeTravel'`, `'takenAt'`, `'photos'`, `'albums'`, `'frame'`, `'storage'`, since 1.8.0 `'docAi'` and `'cloudImport'` — only while GateControl offers the AI service / cloud accounts and they are allowed, see "AI for documents" and "Import"; since 1.9.0 `'vault'` and — while set up — `'office'`, since 1.10.0 `'photosFolder'`, since 1.11.0 `'vaultsApart'`, since 1.12.0 `'bulk'`, — while GateControl's public links are allowed — `'zip'` and `'multiLink'`, with GateControl ≥ 1.215.0 also `'copyServer'` (copies on the server) and `'zipMixed'` (a ZIP and one link of any selection); since 1.13.0 `'photoClasses'` (work photos apart); since 1.14.0 `'photoSearch'` (photos by what is on them) and — with `docAi` — `'docAsk'` (questions to the documents), `'scanDocs'` (scans become documents) and, while the Familie plugin's `calendar_add` is reachable, `'deadlineCalendar'` (see "AI in Drive"); since 1.16.0 `'photoPlaces'` and `'photoPeople'` (see "Places and people"); since 1.17.0 — with `docAi`, while Mail's `calendar_add` is reachable and takes Drive — `'deadlineMailCalendar'` (see "Deadlines into a calendar of Mail"); since 1.18.0 `'overview'` (see "Overview")), `settings` (since 1.14.0 also `scanKeepOriginal`), `links { node, drive } \| null` (since 1.6.0, see "Direct links"), `guard { on, locked, incident }` and `incidents` (since 1.6.0, see "Ransomware protection") |
 | `GET areas` | | `areas [{ id, kind, label, role, via, rootId, owner, archived, storage { bytes, quota, form, target, state } }]` (+ `docAi` while the feature is on, since 1.14.0 `deadlinesToCalendar` with `deadlineCalendar`, since 1.17.0 `deadlinesTarget` — the viewer's target — and both while the family calendar or a calendar of Mail is reachable; also in `GET me` `areas`) |
 | `PATCH areas/<id>` | `{ docAi?: boolean, deadlinesToCalendar?: boolean, deadlinesTarget?: target \| null }` (since 1.8.0 / 1.14.0 / 1.17.0, write in the area) | `{ area: { id, docAi, deadlinesToCalendar?, deadlinesTarget? } }` — AI for documents on / off in this area; new deadlines into the family calendar on their own (the area's switch; Familie not reachable: `409 familie_unavailable`); since 1.17.0 my own target in this area (see "Deadlines into a calendar of Mail") |
+| `GET overview` | (since 1.18.0, feature `overview`) | `todo`, `recent`, `memories`, `people`, `places`, `activity`, `storage` — the start of Drive in one request (see "Overview") |
 | `GET nodes/<id>` | | `node` + `path`, `role`, `crumbs [{ id, name }]` |
 | `GET nodes/<id>/children` | `sort=name\|mtime\|size\|updated`, `order`, `offset`, `limit` (≤ 1000); since 1.11.0 `vaults=1`, `dirs=1` | `items` (folders first), `total`, `next`, `role` — since 1.11.0 (feature `vaultsApart`) **without vault folders** (their nodes right below a folder outside a vault; `total` counts the same), `vaults=1` lists them as before; inside a vault everything. `dirs=1`: only the folders (no vaults), by name (`order` applies, `sort` not), each with `hasDirs` (live folders below it, vault folders not counted) — the folder tree of the menus |
 | `GET nodes/by-path` | `area`, `path` | `node` |
@@ -663,6 +665,40 @@ Cloud-Konten). Without `gc.cloud`, with no OAuth app (`gc.cloud.available()`) or
   `too_many` (≥ 50 000 items a job) or `cloud_error` (three tries; `resume` tries them again). The person gets the live
   event `import { job: { id, state, total, done, failed, skipped } }` after each run. Ended jobs go after 30 days.
 
+## Overview (since 1.18.0, feature `overview`)
+
+The start of Drive in the apps and the portal: **Übersicht | Dateien | Fotos**, the overview first. `GET overview`
+answers everything for it in one request (`server/overview.js`); a part is left out when it has nothing, `people` is
+`null` while the person's switch `people` is off. Well under 300 ms with some thousand nodes (`test/overview.test.js`).
+
+- `todo { deadlines, deadlinesTotal, review?, toFile, toFileHint }` — the next three deadlines from today as `GET
+  deadlines` answers them (Drive has no "done": every deadline from today to today + 365 days, the range of `GET
+  deadlines`) and how many there are; `review` the photos to check (the review mark, left out at 0); `toFile` Mail's
+  attachments to file (Mail ≥ 1.7.0, its service `tofile_count` — `permissions.services`
+  `"gatecontrol-mail:tofile_count"`, asked at most once a minute per person), `null` without Mail or when it refuses;
+  `toFileHint` the folder Drive suggested for the newest one („Familie › Versicherungen“) or `null`. Left out when none
+  of them has anything.
+- `recent` — ≤ 10 files like a folder's items (with `preview`, `geo`, `source`, `insight`) plus `areaLabel` and
+  `openedAt` or `changedAt`, newest first: what the person opened, filled up with the files they changed or uploaded last
+  (`changedAt`). No folders, pictures, videos or files of a vault. **Opened** (table `recent_opens`, ≤ 200 a person):
+  `GET nodes/<id>/content` (the apps, the PC, the portal — open, preview, download) and `POST nodes/<id>/office`; not
+  an older version, and not what a PC fetches for a folder it syncs (a folder of mode `sync` in `PUT
+  devices/<id>/folders` of the device of the asking token — those fetches are the sync).
+- `memories [≤ 4 { yearsAgo, date, count, cover }]` — this calendar day (± 1 day) in earlier years like `GET
+  photos/memories`, the nearest first; `count` every photo of that day, `cover` the first as a photo item. The client
+  makes the label („Heute vor 2 Jahren“).
+- `people { people: [≤ 8], unnamed } | null` — the people with a name who are not hidden, most photos first, as `GET
+  people` answers them; `unnamed` how many without a name are not hidden ("Wer ist das?").
+- `places { top: [≤ 3 { key, name, count }], cluster: { lat, lon, count }, total }` — the places with the most photos,
+  one bubble for the small map (at the place with the most photos, the count of every photo with a place), `total`.
+- `activity [≤ 5 { at, user { id, name }, kind, count, area { id, label }, folder { id, path } | null, sample }]` —
+  "Neu in Familie": what others did in the family's and the teams' areas the person reads in the last 14 days (the
+  change log): `added_photos` / `added_files` (new pictures and videos / other files), `changed` (a file's new content);
+  one entry per person, folder and kind while each event is within an hour of the entry's newest; `sample` the newest
+  file as a folder item; `folder` null at the top of the area.
+- `storage { used, total, target, areaId }` — my files: their bytes, the area's quota (`null`: none), the label of its
+  storage target (`null`: this server) — as the portal's menu shows it.
+
 ## Places and people (since 1.16.0, features `photoPlaces` and `photoPeople`)
 
 Where a photo was taken and who is on it — for the search („mama hamburg“), the map and the people. Pictures never go to
@@ -1110,6 +1146,15 @@ hide); "Wer ist das?" (the name with suggestions of the family and my people, "S
 then "Rückgängig" and "Nächste Person"); and "Orte und Personen" in the Drive settings ("Aufnahmeort mitsichern",
 "Orte meiner Fotos löschen", "Personen erkennen", "Kinderordner einbeziehen", "Alle Gesichtsdaten löschen" — each
 deletion after asking). Faces are cut out by the browser: the preview in a round box, scaled and moved by the face's box.
+Since 1.18.0 (`ui/overview.js`, feature `overview`): "Übersicht | Dateien | Fotos" at the top, and Drive opens on the
+**overview** (a direct link still opens its node): tiles in a grid as on Windows (one column at phone width) — "Zu
+erledigen" (the next deadlines with "in N Tagen", the amount and the area; "Alle N Fristen"; "N Fotos prüfen" opens
+"Fotos" with "Prüfen"; "N Mail-Anhänge zum Ablegen" with the suggestion — in Mail), "Zuletzt geöffnet" (a click opens the
+file in its folder), "Neu in Familie" (or "Neu in gemeinsamen Ordnern" with a team; "Marc hat 14 Fotos hinzugefügt")
+with the storage below, "Erinnerungen", "Personen" (the faces, "Wer ist das?"), "Orte" (a small map as a picture with
+the count, the places as chips) — empty tiles are left out; live changes load it again at most every 10 s. "Fotos"
+shows only the photos: no memories and no band "N Fotos zu prüfen" any more (the chip has the count), "Karte" and
+"Personen" up top.
 The section "Fotorahmen" (`ui/frame.*`) is the slide show of a kiosk device.
 
 ## Admin (GateControl's admin UI)

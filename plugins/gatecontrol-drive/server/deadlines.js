@@ -202,9 +202,33 @@ async function list(ctx, q) {
   if (to < from) throw fail('invalid', { field: 'to' });
   const ids = (await ctx.visible()).map((x) => x.area.id);
   if (!ids.length) return { deadlines: [] };
-  const rows = await store.all(ctx.gc, `SELECT d.id AS dl_id, d.kind AS dl_kind, d.date AS dl_date, d.label AS dl_label, d.found_at AS dl_found, n.* FROM doc_deadlines d
-    JOIN nodes n ON n.id = d.node_id WHERE n.area_id IN (${store.marks(ids.length)}) AND n.deleted_at IS NULL AND n.vault_id IS NULL AND d.date >= ? AND d.date <= ?
+  const rows = await store.all(ctx.gc, `SELECT d.id AS dl_id, d.kind AS dl_kind, d.date AS dl_date, d.label AS dl_label, d.found_at AS dl_found, n.* ${FROM(ids.length)}
     ORDER BY d.date, d.id LIMIT ?`, [...ids, from, to, LIST_MAX]);
+  return { deadlines: await views(ctx, rows) };
+}
+
+// the deadlines of live files outside a vault in the areas (n of them), from a day to a day
+const FROM = (n) => `FROM doc_deadlines d JOIN nodes n ON n.id = d.node_id WHERE n.area_id IN (${store.marks(n)}) AND n.deleted_at IS NULL AND n.vault_id IS NULL
+    AND d.date >= ? AND d.date <= ?`;
+
+/**
+ * The overview (since 1.18.0): the next `max` deadlines from today as GET deadlines answers them, and how many there are
+ * (the range of GET deadlines without from / to) → { deadlines, total }.
+ */
+async function upcoming(ctx, max) {
+  const from = day(ctx.now);
+  const to = day(startOf(from) + 365 * DAY);
+  const ids = (await ctx.visible()).map((x) => x.area.id);
+  if (!ids.length) return { deadlines: [], total: 0 };
+  const n = await store.one(ctx.gc, `SELECT COUNT(*) AS n ${FROM(ids.length)}`, [...ids, from, to]);
+  if (!n || !n.n) return { deadlines: [], total: 0 };
+  const rows = await store.all(ctx.gc, `SELECT d.id AS dl_id, d.kind AS dl_kind, d.date AS dl_date, d.label AS dl_label, d.found_at AS dl_found, n.* ${FROM(ids.length)}
+    ORDER BY d.date, d.id LIMIT ?`, [...ids, from, to, max]);
+  return { deadlines: await views(ctx, rows), total: n.n };
+}
+
+/** Deadline rows (with their node) → the deadlines as GET deadlines answers them. */
+async function views(ctx, rows) {
   const rem = await remindersOf(ctx.gc, ctx.viewer, rows.map((r) => r.dl_id));
   const cal = await calendarOf(ctx.gc, ctx.viewer, rows.map((r) => r.dl_id));
   const docs = await docsOf(ctx.gc, rows);
@@ -213,7 +237,7 @@ async function list(ctx, q) {
     const { dl_id: id, dl_kind: kind, dl_date: date, dl_label: label, dl_found: found, ...n } = r;
     out.push({ ...view({ id, kind, date, label, found_at: found }, rem.get(id), cal.get(id), ctx.lang), doc: docs.get(n.id) || null, node: nodes.view(n, { path: await nodes.pathOf(ctx.gc, n) }) });
   }
-  return { deadlines: out };
+  return out;
 }
 
 /** What the AI read in the files of `rows` (a ready insight of their current version) → Map node id → doc. */
@@ -503,6 +527,6 @@ async function due(gc, settings, now, asPerson) {
 }
 
 module.exports = {
-  KINDS, ofNode, replace, remind, unremind, list, due, calendar, calendars, calendarReachable, mailReachable, auto, calendarTitle, docsOf, viewOne, reach,
+  KINDS, ofNode, replace, remind, unremind, list, upcoming, due, calendar, calendars, calendarReachable, mailReachable, auto, calendarTitle, docsOf, viewOne, reach,
   targetArg, resolveTarget, targetsOf, targetOf, setTarget, clearTarget, TARGETS_MAX,
 };

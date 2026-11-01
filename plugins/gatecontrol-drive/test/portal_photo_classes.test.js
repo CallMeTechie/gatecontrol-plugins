@@ -1,7 +1,7 @@
 'use strict';
 
-// The portal (1.13.0, feature photoClasses): "Fotos" with the chips "Alle | Privat | Arbeit | Prüfen (N)", the band of
-// photos to check, the question mark and the bag on the tiles; chosen photos that are all to be checked get "Arbeit" and
+// The portal (1.13.0, feature photoClasses): "Fotos" with the chips "Alle | Privat | Arbeit | Prüfen (N)" (the band of
+// photos to check until 1.17.x), the question mark and the bag on the tiles; chosen photos that are all to be checked get "Arbeit" and
 // "Privat" up front with the AI's guess — Arbeit moves them into the work folder by month, the snackbar undoes it;
 // "Zuordnung" for the others; "Arbeitsfotos nach" in the Drive settings.
 
@@ -66,7 +66,7 @@ async function setup(c) {
   return { a, mine, cam, month, arbeit, r1, r2, priv, job };
 }
 
-test('portal: the chips, the band, the marks; all to check chosen → Arbeit up front, moved by month, undone', async () => {
+test('portal: the chips (since 1.18.0 without the band), the marks; all to check chosen → Arbeit up front, moved by month, undone', async () => {
   await withHost({}, async (host, c) => {
     const s = await setup(c);
     const f = createWindow(portalHtml(), frameGc(host, ANNA));
@@ -78,8 +78,9 @@ test('portal: the chips, the band, the marks; all to check chosen → Arbeit up 
       await until('the chips', () => $('dp-main').querySelector('.dp-wk-chips') && $('dp-main').querySelectorAll('.dp-ph').length === 4);
       const chips = $('dp-main').querySelector('.dp-wk-chips');
       assert.equal(textOf(chips), 'AllePrivatArbeitPrüfen2');
-      assert.ok(textOf($('dp-main')).includes('2 Fotos zu prüfen – aufgenommen außerhalb von Firma und Zuhause'));
-      assert.equal($('dp-main').querySelectorAll('.dp-ph-mk').length, 3, 'two tiles and the band');
+      // since 1.18.0 no band: the chip's count (the overview has "2 Fotos prüfen")
+      assert.ok(!textOf($('dp-main')).includes('zu prüfen –'));
+      assert.equal($('dp-main').querySelectorAll('.dp-ph-mk').length, 2, 'two tiles');
       assert.equal($('dp-main').querySelectorAll('.dp-ph-wk').length, 1, 'the bag on the work photo');
       // "Prüfen": only those
       buttonOf(chips, 'Prüfen').click();
