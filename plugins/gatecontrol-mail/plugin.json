@@ -4,7 +4,7 @@
     "de": "Mail",
     "en": "Mail"
   },
-  "version": "1.6.0",
+  "version": "1.7.0",
   "publisher": "CallMeTechie",
   "description": {
     "de": "Alle E-Mail-Konten an einem Ort – GMX, Web.de, T-Online, Gmail, Outlook und Microsoft 365 oder jedes IMAP-Konto: ein gemeinsamer Posteingang mit Relevant und Sonstige, Push, Schutz vor Zählpixeln, Anhänge in Drive und eine KI, die zusammenfasst, Aufgaben findet und Antworten vorschlägt. Dazu Kalender und Kontakte: eigene Kalender und die der Konten (Microsoft 365, CalDAV), Einladungen, Erinnerungen, Familie und Alltag eingeblendet, ein Adressbuch mit Gruppen und Dubletten-Abgleich.",
@@ -110,6 +110,13 @@
           "en": "Add an event to a calendar in Mail"
         },
         "maxPerHour": 600
+      },
+      "tofile_count": {
+        "label": {
+          "de": "Mail-Anhänge zum Ablegen zählen",
+          "en": "Count the mail attachments to file"
+        },
+        "maxPerHour": 3600
       }
     }
   },
