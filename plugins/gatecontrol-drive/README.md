@@ -74,6 +74,7 @@ reaches `GET frame` (the photo frame, since 1.7.0) and nothing else (`403 forbid
 | `GET areas` | | `areas [{ id, kind, label, role, via, rootId, owner, archived, storage { bytes, quota, form, target, state } }]` (+ `docAi` while the feature is on, since 1.14.0 `deadlinesToCalendar` with `deadlineCalendar`, since 1.17.0 `deadlinesTarget` — the viewer's target — and both while the family calendar or a calendar of Mail is reachable; also in `GET me` `areas`) |
 | `PATCH areas/<id>` | `{ docAi?: boolean, deadlinesToCalendar?: boolean, deadlinesTarget?: target \| null }` (since 1.8.0 / 1.14.0 / 1.17.0, write in the area) | `{ area: { id, docAi, deadlinesToCalendar?, deadlinesTarget? } }` — AI for documents on / off in this area; new deadlines into the family calendar on their own (the area's switch; Familie not reachable: `409 familie_unavailable`); since 1.17.0 my own target in this area (see "Deadlines into a calendar of Mail") |
 | `GET overview` | (since 1.18.0, feature `overview`) | `todo`, `recent`, `memories`, `people`, `places`, `activity`, `storage` — the start of Drive in one request (see "Overview") |
+| `POST nodes/<id>/opened` | (since 1.18.0) | `204`, no body — the device opened its own copy of the file: only "Zuletzt geöffnet" (see "Overview"; a folder `400 invalid`) |
 | `GET nodes/<id>` | | `node` + `path`, `role`, `crumbs [{ id, name }]` |
 | `GET nodes/<id>/children` | `sort=name\|mtime\|size\|updated`, `order`, `offset`, `limit` (≤ 1000); since 1.11.0 `vaults=1`, `dirs=1` | `items` (folders first), `total`, `next`, `role` — since 1.11.0 (feature `vaultsApart`) **without vault folders** (their nodes right below a folder outside a vault; `total` counts the same), `vaults=1` lists them as before; inside a vault everything. `dirs=1`: only the folders (no vaults), by name (`order` applies, `sort` not), each with `hasDirs` (live folders below it, vault folders not counted) — the folder tree of the menus |
 | `GET nodes/by-path` | `area`, `path` | `node` |
@@ -681,7 +682,9 @@ answers everything for it in one request (`server/overview.js`); a part is left 
 - `recent` — ≤ 10 files like a folder's items (with `preview`, `geo`, `source`, `insight`) plus `areaLabel` and
   `openedAt` or `changedAt`, newest first: what the person opened, filled up with the files they changed or uploaded last
   (`changedAt`). No folders, pictures, videos or files of a vault. **Opened** (table `recent_opens`, ≤ 200 a person):
-  `GET nodes/<id>/content` (the apps, the PC, the portal — open, preview, download) and `POST nodes/<id>/office`; not
+  `GET nodes/<id>/content` (the apps, the PC, the portal — open, preview, download), `POST nodes/<id>/office` and `POST
+  nodes/<id>/opened` (`204`: the device opened the copy it has — the apps call it instead of downloading again; read
+  access, a stopped device too; a parent opening a file of a child's folder: the child is told as for content); not
   an older version, and not what a PC fetches for a folder it syncs (a folder of mode `sync` in `PUT
   devices/<id>/folders` of the device of the asking token — those fetches are the sync).
 - `memories [≤ 4 { yearsAgo, date, count, cover }]` — this calendar day (± 1 day) in earlier years like `GET

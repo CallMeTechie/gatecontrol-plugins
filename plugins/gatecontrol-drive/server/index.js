@@ -9,7 +9,8 @@
 //   portal    /api/v1/portal/plugins/gatecontrol-drive/api/…   (the same routes; also under portal/…)
 //     GET me · GET areas · GET changes?since=&limit= · GET search?q=&area= (name, then recognised text: doc_text)
 //     GET overview (the start of Drive: to do, recently opened, memories, people, places, new in the family, storage —
-//     overview.js, 1.18.0; opening a file — content, office — is kept for "Zuletzt geöffnet")
+//     overview.js, 1.18.0; opening a file — content, office — is kept for "Zuletzt geöffnet") · POST nodes/<id>/opened
+//     (204: a device opened its own copy — only "Zuletzt geöffnet")
 //     GET nodes/by-path?area=&path= · GET nodes/<id> · GET nodes/<id>/children?sort=&order=&offset=&limit=
 //     (since 1.11.0 without vault folders — &vaults=1 with them; &dirs=1 only folders with hasDirs: the menu's tree)
 //     POST nodes · PATCH nodes/<id> · DELETE nodes/<id> · GET nodes/<id>/content
@@ -384,6 +385,11 @@ async function route(ctx, req, seg) {
       if (c === 'timetravel') return ok(await timetravel.preview(ctx, idArg(b), q));
     }
     if (seg.length === 3 && c === 'timetravel' && m === 'POST') return ok(await timetravel.run(ctx, idArg(b), body));
+    // a device opened its own copy of the file (1.18.0): only "Zuletzt geöffnet", no body
+    if (seg.length === 3 && c === 'opened' && m === 'POST') {
+      await overview.opened(ctx, idArg(b));
+      return { status: 204, json: null };
+    }
     if (seg.length === 3 && c === 'office' && m === 'POST') {
       const got = await office.open(ctx, idArg(b));
       await overview.recordOpen(ctx, await nodes.row(ctx.gc, idArg(b)));

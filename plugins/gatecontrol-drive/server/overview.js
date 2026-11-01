@@ -20,7 +20,8 @@
 //                its storage target (null: this server)
 //
 // "Zuletzt geöffnet": a file counts as opened on GET nodes/<id>/content (the apps', the PC's and the portal's open,
-// preview and download) and POST nodes/<id>/office — recordOpen(). Not counted: pictures and videos, files of a vault,
+// preview and download), POST nodes/<id>/office and POST nodes/<id>/opened → 204 (a device opened its own copy of the
+// file — nothing is fetched again; read access, a folder 400 invalid) — recordOpen(). Not counted: pictures and videos, files of a vault,
 // and what a PC fetches for a folder it syncs (a folder of mode 'sync' of the device of the asking token —
 // PUT devices/<id>/folders): those fetches are the sync, not the person opening a file.
 
@@ -30,7 +31,7 @@ const photos = require('./photos');
 const places = require('./places');
 const faces = require('./faces');
 const deadlines = require('./deadlines');
-const { iso } = require('./util');
+const { iso, fail } = require('./util');
 
 const RECENT_MAX = 10;
 const OPENS_KEEP = 200;
@@ -94,6 +95,18 @@ async function recordOpen(ctx, n) {
     ctx.gc.log.warn('recent open failed', (e && e.code) || 'error');
     return false;
   }
+}
+
+/**
+ * POST nodes/<id>/opened (since 1.18.0): the device opened its own copy of the file — only "Zuletzt geöffnet", by the
+ * same rules as content (read access; pictures, videos, files of a vault and a PC's sync are not kept). A parent who
+ * opens a file of a child's folder: the child hears of it as for content.
+ */
+async function opened(ctx, id) {
+  const { node, area, via } = await nodes.reach(ctx, id);
+  if (node.is_dir === 1) throw fail('invalid');
+  if (via === 'parent') await ctx.noteChildView(area);
+  await recordOpen(ctx, node);
 }
 
 /** recent: the files opened, filled up with those the person changed or uploaded. */
@@ -277,4 +290,4 @@ async function get(ctx) {
 
 function reset() { tofileCache.clear(); }
 
-module.exports = { get, recordOpen, seqFrom, reset, RECENT_MAX };
+module.exports = { get, recordOpen, opened, seqFrom, reset, RECENT_MAX };

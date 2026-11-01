@@ -2,7 +2,8 @@
 
 // The overview (1.18.0, feature `overview` — server/overview.js): GET overview with "Zu erledigen" (the next deadlines,
 // the photos to check, Mail's attachments to file through its service tofile_count — a fake Mail here, never Mail
-// itself), "Zuletzt geöffnet" (content and office record it; not photos, not a vault, not a PC's sync; filled up with
+// itself), "Zuletzt geöffnet" (content, office and POST nodes/<id>/opened record it; not photos, not a vault, not a PC's
+// sync; filled up with
 // what the person changed), the memories, people and places, "Neu in Familie" (others, the family's and the teams' areas,
 // 14 days, grouped by person, folder and hour), the storage — and the time it takes with some thousand nodes.
 
@@ -149,6 +150,51 @@ test('"Zuletzt geöffnet": what a PC fetches for a folder it syncs is no open; t
     c.clock.add(MIN);
     assert.equal((await pc('GET', `nodes/${deep.id}/content`)).status, 200);
     assert.equal((await overview(c.as(ANNA))).recent[0].name, 'Stundenplan.pdf');
+  });
+});
+
+test('POST nodes/<id>/opened: a copy on the device opened — 204, only "Zuletzt geöffnet", by the rules of content', async () => {
+  await withHost({}, async (host, c) => {
+    const a = c.as(ANNA);
+    const mine = await c.area(ANNA, 'mine');
+    const doc = await put(c, ANNA, mine.rootId, 'Vertrag.pdf');
+    const pic = await put(c, ANNA, mine.rootId, 'Bild.jpg', { mime: 'image/jpeg', takenAt: T0 - DAY });
+    const later = await put(c, ANNA, mine.rootId, 'Später.pdf');
+    c.clock.add(MIN);
+    const r = await a('POST', `nodes/${doc.id}/opened`);
+    assert.equal(r.status, 204, JSON.stringify(r.json));
+    assert.equal(r.json, null, 'no body');
+    let o = await overview(a);
+    assert.deepEqual(o.recent.map((x) => [x.name, !!x.openedAt]), [['Vertrag.pdf', true], ['Später.pdf', false]]);
+    assert.equal(o.recent[0].openedAt, new Date(T0 + MIN).toISOString());
+    // a picture: 204, not kept; a folder: 400; not there: 404
+    assert.equal((await a('POST', `nodes/${pic.id}/opened`)).status, 204);
+    assert.equal((await host.gc.db.get('SELECT COUNT(*) AS n FROM recent_opens WHERE node_id = ?', [pic.id])).row.n, 0);
+    assert.equal((await a('POST', `nodes/${mine.rootId}/opened`)).status, 400);
+    assert.equal((await a('POST', 'nodes/999999/opened')).status, 404);
+    // only with read access: Marc cannot reach Anna's files
+    assert.notEqual((await c.as(MARC)('POST', `nodes/${doc.id}/opened`)).status, 204);
+    // a file of a vault: not kept
+    await host.gc.db.run("UPDATE nodes SET vault_id = 'v1' WHERE id = ?", [later.id]);
+    assert.equal((await a('POST', `nodes/${later.id}/opened`)).status, 204);
+    assert.equal((await host.gc.db.get('SELECT COUNT(*) AS n FROM recent_opens WHERE node_id = ?', [later.id])).row.n, 0);
+    await host.gc.db.run('UPDATE nodes SET vault_id = NULL WHERE id = ?', [later.id]);
+    // a PC's copy in a folder it syncs: not kept
+    const pc = c.as(ANNA, 'pc-anna');
+    assert.equal((await pc('PUT', 'devices/pc-1', { name: 'PC', platform: 'windows' })).status, 200);
+    assert.equal((await pc('PUT', 'devices/pc-1/folders', { folders: [{ localPath: 'C:\\Drive', mode: 'sync', nodeId: mine.rootId }] })).status, 200);
+    assert.equal((await pc('POST', `nodes/${later.id}/opened`)).status, 204);
+    assert.equal((await host.gc.db.get('SELECT COUNT(*) AS n FROM recent_opens WHERE node_id = ?', [later.id])).row.n, 0);
+    // again later: on top again
+    c.clock.add(MIN);
+    assert.equal((await a('POST', `nodes/${later.id}/opened`)).status, 204);
+    o = await overview(a);
+    assert.deepEqual(o.recent.map((x) => [x.name, !!x.openedAt]), [['Später.pdf', true], ['Vertrag.pdf', true]]);
+    // a parent opening a file of the child's folder: the child is told, as for content
+    const lena = await c.area(LENA, 'child');
+    const hw = await put(c, LENA, lena.rootId, 'Hausaufgabe.pdf');
+    assert.equal((await a('POST', `nodes/${hw.id}/opened`)).status, 204);
+    assert.equal(c.pushes().filter((x) => x.topic === 'child_view').length, 1);
   });
 });
 

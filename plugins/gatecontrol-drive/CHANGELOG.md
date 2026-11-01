@@ -11,7 +11,8 @@ Dateien der Familie und des Teams auf dem eigenen Speicher – auf diesem Server
   die Mail-Anhänge „Zum Ablegen“ mit dem Ordner-Vorschlag. Die Anhänge kommen über Mails Dienst `tofile_count`
   (Mail ≥ 1.7.0). Der Administrator bestätigt die neue Berechtigung beim Update. Ohne Mail fehlt die Zahl (`null`).
 - **Zuletzt geöffnet:** Drive merkt sich, welche Dateien eine Person in der App, am PC oder im Portal öffnet,
-  herunterlädt oder im Office öffnet (Migration 016, `recent_opens`). Die Clients rufen dafür nichts Neues auf. Was ein
+  herunterlädt oder im Office öffnet (Migration 016, `recent_opens`). Dafür rufen die Clients nichts Neues auf. Öffnet
+  eine App ihre schon geladene Kopie, meldet sie das mit `POST nodes/<id>/opened` (`204`, ohne erneuten Download). Was ein
   PC für einen abgeglichenen Ordner holt, zählt nicht, ebenso Fotos, Videos und Tresor-Dateien. Bis es genug Öffnungen
   gibt, füllt Drive mit den zuletzt geänderten bzw. hochgeladenen Dateien der Person auf.
 - **Neu in Familie:** was andere in den letzten 14 Tagen in Familie und Team-Ordnern hinzugefügt oder geändert haben,
