@@ -2,6 +2,15 @@
 
 Dateien der Familie und des Teams auf dem eigenen Speicher – auf diesem Server, einer NAS oder in S3.
 
+## 1.18.1
+- Behoben: „Wer ist das?“ im Portal zeigte nach „Nächste Person“ wieder eine Person, die die Runde schon hatte. Es nahm
+  die erste Person ohne Namen außer der gerade benannten aus `GET people`. Jetzt ist es eine Runde wie in der
+  Android-App: Wer gezeigt wurde (benannt, ausgeblendet, zusammengeführt oder übersprungen), kommt in ihr nicht wieder,
+  auch wenn das Neuladen scheitert (dann gilt die zuletzt geladene Liste). Neu sind „Überspringen“ und am Ende „Alle
+  durchgesehen“ mit „Zurück“. Übersprungene bleiben unter „Wer ist das?“ für die nächste Runde.
+- Die Seite einer Person benennt nur sie: danach „Fertig“ statt „Nächste Person“.
+- Nur das Portal; der Server und die Schnittstelle bleiben gleich.
+
 ## 1.18.0
 - **Übersicht als neuer Einstieg** (Feature `overview`, README „Overview“). Drive hat jetzt drei Seiten: Übersicht,
   Dateien und Fotos. `GET overview` liefert alles für die Übersicht in einer Anfrage: Zu erledigen, Zuletzt geöffnet,
