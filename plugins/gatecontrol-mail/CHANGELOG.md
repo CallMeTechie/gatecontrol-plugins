@@ -2,6 +2,21 @@
 
 Alle E-Mail-Konten an einem Ort – im eigenen Tab der GateControl-Apps und im Portal.
 
+## 1.6.0
+- **Kalender für Drive.** Drive kann Fristen aus Dokumenten jetzt auch in einen Kalender von Mail eintragen (Drive ≥ 1.17.0).
+  Möglich sind Outlook/Microsoft 365, GMX, Web.de, ein eigener CalDAV-Server und die eigenen GateControl-Kalender. Dafür
+  bietet Mail zwei Dienste an, die nur Drive aufrufen darf (`services.provides`):
+  - `calendar_list { userId }` liefert die Kalender, in die die Person schreiben kann, mit Konto, Farbe und Namen.
+    Lesende Kalender und iCal-Abos fehlen. Wer Mail nicht nutzen kann (nicht freigegeben, keine Lizenz, kein Platz,
+    Kalender vom Administrator aus), hat keine Kalender. Ein Aufruf von Drive vergibt keinen Platz.
+  - `calendar_add { userId, calendarId, title, startsAt, allDay: true, note?, key? }` legt einen ganztägigen Termin an,
+    genau wie ein Termin, den die Person selbst anlegt: über Microsoft Graph, CalDAV oder in GateControl. Die Antwort kommt
+    erst, wenn der Anbieter den Termin angenommen hat. Es gilt die Erinnerung für ganztägige Termine aus den
+    Kalender-Einstellungen. Mit `key` legt derselbe Aufruf den Termin nur einmal an, solange er besteht.
+  - Nur für die Person des Aufrufs. Fehler: `forbidden`, `invalid`, `not_found` (kein Kalender der Person, in den sie
+    schreiben kann), `unavailable { reason }` (Anmeldung abgelaufen, Zustimmung fehlt, Server nicht erreichbar, kein Platz …).
+- Der Administrator bestätigt die neuen Dienste beim Update von Drive. Mail selbst braucht keine neue Berechtigung.
+
 ## 1.5.0
 - **Speicherorte für Anhänge.** Die Kopien empfangener Anhänge liegen jetzt im Bereich „Anhänge“ (`media.areas`). Wo
   er liegt, legt der Administrator in GateControl fest: unter Einstellungen › Plugins › Mail › Übersicht › Speicherorte,

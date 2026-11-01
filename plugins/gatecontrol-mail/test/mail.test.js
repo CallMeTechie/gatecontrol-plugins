@@ -12,7 +12,9 @@ const PUBLISHER_ID = 'b2f917a9-e0eb-45b9-9e5f-14c283aa51e9';
 
 test('plugin.json: GateControl 1.219.0, mail with dav, images, Drive, Familie and Alltag services, the app tab', () => {
   const m = JSON.parse(fs.readFileSync(path.join(DIR, 'plugin.json'), 'utf8'));
-  assert.equal(m.version, '1.5.0');
+  assert.equal(m.version, '1.6.0');
+  // 1.6.0: calendar_list and calendar_add for Drive (test/services.test.js)
+  for (const s of ['new_draft', 'calendar_list', 'calendar_add']) assert.ok(m.services.provides[s].label.de && m.services.provides[s].label.en, s);
   // 1.5.0: Speicherorte — the attachments in a media area (test/storage.test.js)
   assert.equal(m.media.areas, true);
   // 1.2.0: gc.mail.dav (CalDAV/CardDAV), iMIP and up to 1000 pushes an hour need GateControl 1.219.0
