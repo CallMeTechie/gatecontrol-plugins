@@ -91,8 +91,8 @@ test('a document with text: queued once per version, recognised in the backgroun
     assert.deepEqual([g.kind, g.title, g.date, g.sender, g.amount, g.currency], ['invoice', 'Stromrechnung Oktober', '2026-10-20', 'Stadtwerke Musterstadt', 84.2, 'EUR']);
     assert.deepEqual(g.suggestion, { folderId: bills.id, folderPath: 'Rechnungen', name: '2026-10-20 Stadtwerke Rechnung.pdf' });
     assert.equal(g.deadlines.length, 1, 'a deadline without a real date is dropped');
-    // since 1.14.0 also the family calendar (the viewer's entry) and when it was found
-    assert.deepEqual({ ...g.deadlines[0], id: 0 }, { id: 0, kind: 'payment', date: '2026-11-10', label: 'Rechnung bezahlen', reminder: null, calendar: null, foundAt: new Date(c.clock.now()).toISOString() });
+    // since 1.14.0 also the family calendar (the viewer's entry) and when it was found; since 1.17.0 all entries (calendars)
+    assert.deepEqual({ ...g.deadlines[0], id: 0 }, { id: 0, kind: 'payment', date: '2026-11-10', label: 'Rechnung bezahlen', reminder: null, calendar: null, calendars: [], foundAt: new Date(c.clock.now()).toISOString() });
     // nothing happened on its own
     const n = (await a('GET', `nodes/${id}`)).json.node;
     assert.deepEqual([n.name, n.parentId], ['Scan 2026-10-26.pdf', mine.rootId]);

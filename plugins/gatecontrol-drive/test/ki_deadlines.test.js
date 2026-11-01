@@ -70,7 +70,9 @@ test('new kinds, GET deadlines with the document, the family calendar once per p
     // into the calendar: Familie's calendar_add for Anna, all day
     const r = await a('POST', `deadlines/${renewal.id}/calendar`);
     assert.equal(r.status, 200);
-    assert.deepEqual(r.json.deadline.calendar, { eventId: 100, at: new Date(c.clock.now()).toISOString() });
+    // since 1.17.0 with its target (and every entry in `calendars`)
+    assert.deepEqual(r.json.deadline.calendar, { eventId: 100, at: new Date(c.clock.now()).toISOString(), target: { kind: 'family', label: 'Familienkalender' } });
+    assert.deepEqual(r.json.deadline.calendars, [r.json.deadline.calendar]);
     assert.deepEqual(fam.calls[0], { name: 'calendar_add', caller: 'gatecontrol-drive', user: ANNA.id, payload: { userId: ANNA.id, title: 'Kfz-Versicherung kündigen', startsAt: '2026-11-30', allDay: true } });
     // again: the same entry, no second date
     const again = await a('POST', `deadlines/${renewal.id}/calendar`);
@@ -147,7 +149,7 @@ test('an area with deadlinesToCalendar: new deadlines go in on their own for the
     // a reader may not switch it (Lena reads the family's files? she writes there — Bob does not see it at all)
     assert.equal((await c.as(BOB)('PATCH', `areas/${famArea.id}`, { deadlinesToCalendar: true })).status, 404);
     const on = await a('PATCH', `areas/${famArea.id}`, { deadlinesToCalendar: true });
-    assert.deepEqual(on.json.area, { id: famArea.id, docAi: true, deadlinesToCalendar: true });
+    assert.deepEqual(on.json.area, { id: famArea.id, docAi: true, deadlinesToCalendar: true, deadlinesTarget: { kind: 'family' } });
     assert.equal((await c.area(ANNA, 'family')).deadlinesToCalendar, true);
     await c.put(MARC, famArea.rootId, 'Versicherung.pdf', 'pdf', { mime: 'application/pdf', text: TEXT });
     await host.tick();

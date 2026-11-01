@@ -156,7 +156,7 @@ test('smoke: a question with Enter — the answer card, its source, the deadline
   });
 });
 
-test('smoke: "Fristen" by month — tag, "neu", the family calendar; the area switch in the settings', async () => {
+test('smoke: "Fristen" by month — tag, "neu", the family calendar; the area switch „Fristen aus …“ in the settings', async () => {
   const calls = [];
   await withHost({ ai: ai(), services: [familie(calls)] }, async (host, c) => {
     const mine = await c.area(ANNA, 'mine');
@@ -176,12 +176,65 @@ test('smoke: "Fristen" by month — tag, "neu", the family calendar; the area sw
       assert.equal(calls.length, 1);
       // the area's switch
       navItem($('dp-nav'), 'Drive-Einstellungen').click();
-      const sw = () => $('dp-main').querySelectorAll('input').find((x) => x.getAttribute('aria-label') === 'Neue Fristen in den Familienkalender · Meine Dateien');
+      const sw = () => $('dp-main').querySelectorAll('input').find((x) => x.getAttribute('aria-label') === 'Fristen aus Meine Dateien');
       await until('the switch', () => sw() && !sw().checked);
       sw().checked = true;
       sw().dispatchEvent({ type: 'change', target: sw() });
       await until('on', () => sw() && sw().checked);
       assert.equal((await c.area(ANNA, 'mine')).deadlinesToCalendar, true);
+    } finally {
+      f.stop();
+    }
+  });
+});
+
+/** A stand-in for Mail ≥ 1.6.0 (calendar_list, calendar_add) — never Mail itself. */
+function mailCal(calls) {
+  const cals = [{ id: 7, name: 'Kalender', color: '#0078D4', writable: true, account: { id: 3, label: 'Outlook.com', kind: 'outlook', email: 'anna@outlook.com' } },
+    { id: 8, name: 'Privat', color: '#46E0A0', writable: true, account: { id: null, label: 'GateControl', kind: 'local', email: null } }];
+  return {
+    plugin: 'gatecontrol-mail', provides: ['new_draft', 'calendar_list', 'calendar_add'],
+    service: async ({ name, payload }) => {
+      calls.push({ name, payload });
+      return name === 'calendar_list' ? { ok: true, calendars: cals } : { ok: true, eventId: 900 };
+    },
+  };
+}
+
+test('smoke (1.17.0): „Fristen aus Meine Dateien“ with the choice of the calendar; „In Kalender eintragen“ asks for the target, the area\'s first', async () => {
+  const fam = [];
+  const mail = [];
+  await withHost({ ai: ai(), services: [familie(fam), mailCal(mail)] }, async (host, c) => {
+    const mine = await c.area(ANNA, 'mine');
+    await c.put(ANNA, mine.rootId, 'Versicherungsschein Kfz 2026.pdf', 'pdf', { mime: 'application/pdf', text: POLICY });
+    await host.tick();
+    const f = createWindow(portalHtml(), frameGc(host, ANNA));
+    const $ = (id) => f.document.getElementById(id);
+    try {
+      f.run();
+      await until('the app', () => !$('dp-app').hidden && navItem($('dp-nav'), 'Drive-Einstellungen'));
+      navItem($('dp-nav'), 'Drive-Einstellungen').click();
+      // the row with its value, no switch
+      const row = () => $('dp-main').querySelectorAll('button').find((x) => x.getAttribute('aria-label') === 'Fristen aus Meine Dateien: Nicht eintragen');
+      await until('the row', () => row());
+      assert.ok(!$('dp-main').querySelectorAll('input').some((x) => x.getAttribute('aria-label') === 'Fristen aus Meine Dateien'), 'no switch');
+      row().click();
+      await until('the choice', () => byText($('dp-dialog'), 'span', 'Outlook.com · anna@outlook.com'));
+      for (const s of ['Nicht eintragen', 'Familienkalender', 'Kalender', 'Privat', 'GateControl']) assert.ok(textOf($('dp-dialog')).includes(s), s);
+      buttonOf($('dp-dialog'), 'Kalender').click();
+      await until('set', () => $('dp-main').querySelectorAll('button').find((x) => x.getAttribute('aria-label') === 'Fristen aus Meine Dateien: Outlook.com · Kalender'));
+      assert.deepEqual((await c.area(ANNA, 'mine')).deadlinesTarget, { kind: 'mail', calendarId: 7, label: 'Outlook.com · Kalender' });
+      // a deadline by hand: the choice, the area's target first
+      navItem($('dp-nav'), 'Fristen').click();
+      await until('the list', () => buttonOf($('dp-main'), 'In Kalender eintragen'));
+      buttonOf($('dp-main'), 'In Kalender eintragen').click();
+      await until('the choice', () => byText($('dp-dialog'), 'span', 'Familienkalender'));
+      const first = $('dp-dialog').querySelectorAll('button').find((x) => x.getAttribute('aria-pressed') != null);
+      assert.deepEqual([textOf(first).trim(), first.getAttribute('aria-pressed')], ['Kalender', 'true']);
+      buttonOf($('dp-dialog'), 'Familienkalender').click();
+      await until('in the calendar', () => buttonOf($('dp-main'), 'Im Kalender · Familienkalender'));
+      assert.equal(fam.length, 1);
+      assert.equal(mail.filter((x) => x.name === 'calendar_add').length, 0);
     } finally {
       f.stop();
     }

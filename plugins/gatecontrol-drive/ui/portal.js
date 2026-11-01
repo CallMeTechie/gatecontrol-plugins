@@ -2576,10 +2576,13 @@
         aiRows.push(setRow(a.label, T(a.kind === 'mine' ? 'p.st_ai_mine' : 'p.st_ai_shared'), setSwitch(a.docAi, a.label, function () { toggleAi(a); }), { label: true }));
       });
       if (!aiRows.length) aiRows.push(setRow(T('p.st_ai_none'), null, null, { cls: 'is-note' }));
-      // new deadlines into the family calendar on their own (since 1.14.0, deadlineCalendar)
-      S.areas.filter(function (a) { return !a.archived && (a.role === 'write' || a.role === 'manage') && typeof a.deadlinesToCalendar === 'boolean'; }).forEach(function (a) {
-        aiRows.push(setRow(T('p.k.st_cal', { area: a.label }), T('p.k.st_cal_hint'), setSwitch(a.deadlinesToCalendar, T('p.k.st_cal', { area: a.label }), function (on) {
-          api('PATCH', 'areas/' + encodeURIComponent(a.id), { deadlinesToCalendar: on }).then(function (r) { a.deadlinesToCalendar = !!(r.area && r.area.deadlinesToCalendar); renderSettings(main); }, function (e) { fail(e); renderSettings(main); });
+      // new deadlines into the family calendar on their own (since 1.14.0, deadlineCalendar) — since 1.17.0 „Fristen aus
+      // <Bereich>“ with the choice of the target (the family calendar or one of Mail, deadlineMailCalendar), else the switch
+      S.areas.filter(function (a) { return !a.archived && (a.role === 'write' || a.role === 'manage') && typeof a.deadlinesToCalendar === 'boolean' && a.docAi === true; }).forEach(function (a) {
+        if (K && has('deadlineMailCalendar')) { aiRows.push(K.targetRow(a, setRow, function () { renderSettings(main); })); return; }
+        var title = T('p.k.st_from', { area: a.label });
+        aiRows.push(setRow(title, T('p.k.st_from_hint_family'), setSwitch(a.deadlinesToCalendar, title, function (on) {
+          api('PATCH', 'areas/' + encodeURIComponent(a.id), { deadlinesToCalendar: on }).then(function (r) { a.deadlinesToCalendar = !!(r.area && r.area.deadlinesToCalendar); a.deadlinesTarget = (r.area && r.area.deadlinesTarget) || null; renderSettings(main); }, function (e) { fail(e); renderSettings(main); });
         }), { label: true }));
       });
     } else aiRows.push(setRow(T('p.st_ai_off'), null, null, { cls: 'is-note' }));

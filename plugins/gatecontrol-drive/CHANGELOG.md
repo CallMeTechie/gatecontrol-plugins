@@ -2,6 +2,30 @@
 
 Dateien der Familie und des Teams auf dem eigenen Speicher – auf diesem Server, einer NAS oder in S3.
 
+## 1.17.0
+- **Fristen auch in den Mail-Kalender** (Feature `deadlineMailCalendar`, README „Deadlines into a calendar of Mail“).
+  Fristen aus Dokumenten können jetzt außer in den Familienkalender auch in einen Kalender des Mail-Plugins (ab 1.6.0)
+  eingetragen werden: Outlook/Microsoft 365, GMX/Web.de über CalDAV oder die eigenen GateControl-Kalender. Drive nutzt
+  dafür nur Mails Dienste `calendar_list` und `calendar_add`. Der Administrator bestätigt sie beim Update
+  (`permissions.services`). Ohne Mail läuft Drive wie bisher.
+- **Ziel pro Person und Bereich** (`deadlinesTarget`): `null` (nicht eintragen), `{ kind: 'family' }` oder
+  `{ kind: 'mail', calendarId, label }`. Ein Mail-Kalender gehört immer einer Person, darum wählt jede Person ihr Ziel
+  selbst, auch im Bereich Familie. Gesetzt wird es mit `PATCH areas/<id> { deadlinesTarget }` oder
+  `PUT deadlines/targets`, gelesen mit `GET deadlines/targets`. `GET deadlines/calendars` liefert die Auswahl.
+- **Übergang:** Der Bereichsschalter `deadlinesToCalendar` bleibt die Vorgabe „Familienkalender“ für alle ohne eigene
+  Wahl. So geht nichts verloren und es wird nichts umgeschrieben. Ältere Apps sehen `deadlinesToCalendar` (an, solange ein
+  Ziel gesetzt ist). Schalten sie um, gilt ihr Schalter und die eigene Wahl der Person entfällt.
+- **Automatisch:** Neu erkannte Fristen kommen in das Ziel der Person, deren Upload bzw. „Erkennen“ sie gefunden hat.
+- **Von Hand:** `POST deadlines/<id>/calendar { target }`. Im Mail-Kalender steht als Notiz der Dateiname mit „In Drive
+  öffnen“. Es gilt die Erinnerung für ganztägige Termine des Kalenders, Drives eigene Erinnerung bleibt. Eine Frist trägt
+  `calendar { eventId, at, target { kind, label } }` (der neueste Eintrag) und `calendars` (alle). Fehler:
+  `409 mail_unavailable { reason }`.
+- **Portal:** In den Drive-Einstellungen heißt die Zeile je Bereich „Fristen aus Meine Dateien“ bzw. „Fristen aus
+  Familie“. Mit Mail zeigt sie das Ziel („Nicht eintragen“, „Familienkalender“, „Outlook.com · Kalender“) und öffnet die
+  Auswahl, nach Konto gruppiert. „In Kalender eintragen“ fragt nach dem Ziel, das des Bereichs steht oben; danach steht
+  dort „Im Kalender · …“.
+- Migration 015: `doc_calendar` je Person, Frist und Ziel (bisherige Einträge: Familienkalender), `deadline_targets`.
+
 ## 1.16.0
 - **Orte und Personen in den Fotos** (Features `photoPlaces` und `photoPeople`, README „Places and people“). Bilder gehen
   dafür an niemanden: die Handys lesen den Aufnahmeort (EXIF) und erkennen Gesichter auf dem Gerät; Drive speichert
