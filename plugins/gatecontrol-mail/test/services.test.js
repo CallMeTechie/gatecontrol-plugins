@@ -1,12 +1,13 @@
 'use strict';
 
 // The services for Drive (1.6.0, server/services.js): calendar_list and calendar_add — the calendars a person can write
-// to, an all-day event like POST events with the all-day reminder, idempotent by key, the refusals. The accounts' calendars
+// to, an all-day event like POST events with the all-day reminder, idempotent by key, the refusals. tofile_count (1.7.0):
+// "Zum Ablegen" for Drive's overview. The accounts' calendars
 // (Microsoft Graph, CalDAV): test/graphpim.test.js and test/caldav.test.js.
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { withMail, ANNA, MARC, BOB } = require('./helpers');
+const { withMail, settle, ANNA, MARC, BOB } = require('./helpers');
 
 const DRIVE = 'gatecontrol-drive';
 const as = (u) => ({ id: u.id, name: u.name, role: 'user' });
@@ -81,4 +82,46 @@ test('calendar_list and calendar_add: a person without a place has no calendars;
   await host.gc.db.run("UPDATE accounts SET state = 'auth_failed' WHERE id = ?", [acc.id]);
   assert.deepEqual(await call(host, 'calendar_add', ANNA, { userId: ANNA.id, calendarId: calId, title: 'x', startsAt: '2026-11-30', allDay: true }),
     { ok: false, code: 'unavailable', reason: 'auth_failed' });
+}));
+
+test('tofile_count: the attachments of "Zum Ablegen" and the suggestion of the newest; only Drive, only the person, the refusals', () => withMail({ license: { tier: 'family', seats: { included: 2, family: 0, business: 0 } } }, async (host, c) => {
+  c.mail.login('anna@gmx.de', 'geheim-123');
+  const acc = await c.addGmx(ANNA);
+  await c.tick();
+  // nothing to file yet
+  assert.deepEqual(await call(host, 'tofile_count', ANNA, { userId: ANNA.id }), { ok: true, count: 0, hint: null });
+  // automatic filing with unsure suggestions: the attachments wait in "Zum Ablegen"
+  await c.as(ANNA)('PATCH', `accounts/${acc.id}`, { attachments: 'auto' });
+  const orig = c.drive.service;
+  const where = { 'Vertrag.pdf': 'Meine Dateien › Verträge', 'Police.pdf': 'Familie › Versicherungen', 'Beleg.pdf': null };
+  c.drive.service = async (x) => (x.name === 'suggest_folder'
+    ? { ok: true, suggestion: where[x.payload.name] ? { folderId: 12, areaId: 'mine:2', path: 'x', where: where[x.payload.name], name: x.payload.name, confidence: 0.6, reason: 'ai' } : null, sha256Exists: false }
+    : orig(x));
+  for (const [name, subject] of [['Vertrag.pdf', 'Vertrag'], ['Police.pdf', 'Police']]) {
+    c.mail.deliver('anna@gmx.de', { from: { address: 'post@firma.example' }, subject, text: 'x', attachments: [{ filename: name, contentType: 'application/pdf', data: '%PDF-' + name }] });
+    await settle(1200);
+    await c.tick();
+  }
+  const items = (await c.as(ANNA)('GET', 'filing')).json.items;
+  assert.deepEqual(items.map((x) => x.name), ['Police.pdf', 'Vertrag.pdf']);
+  assert.deepEqual(await call(host, 'tofile_count', ANNA, { userId: ANNA.id }), { ok: true, count: 2, hint: 'Familie › Versicherungen' });
+  // the newest without a suggestion: no hint
+  c.mail.deliver('anna@gmx.de', { from: { address: 'post@firma.example' }, subject: 'Beleg', text: 'x', attachments: [{ filename: 'Beleg.pdf', contentType: 'application/pdf', data: '%PDF-b' }] });
+  await settle(1200);
+  await c.tick();
+  assert.deepEqual(await call(host, 'tofile_count', ANNA, { userId: ANNA.id }), { ok: true, count: 3, hint: null });
+  // filed or dismissed: gone from the count
+  const now = (await c.as(ANNA)('GET', 'filing')).json.items;
+  assert.equal((await c.as(ANNA)('POST', `filing/${now[0].id}/dismiss`)).status, 200);
+  assert.deepEqual(await call(host, 'tofile_count', ANNA, { userId: ANNA.id }), { ok: true, count: 2, hint: 'Familie › Versicherungen' });
+  // only Drive, only for the person of the call
+  assert.deepEqual(await call(host, 'tofile_count', ANNA, { userId: ANNA.id }, 'gatecontrol-familie'), { ok: false, code: 'forbidden' });
+  assert.deepEqual(await call(host, 'tofile_count', MARC, { userId: ANNA.id }), { ok: false, code: 'forbidden' });
+  assert.deepEqual(await call(host, 'tofile_count', null, { userId: ANNA.id }), { ok: false, code: 'forbidden' });
+  // another person has their own (none)
+  await c.as(MARC)('GET', 'me');
+  assert.deepEqual(await call(host, 'tofile_count', MARC, { userId: MARC.id }), { ok: true, count: 0, hint: null });
+  // no place (the licence is full): unavailable — and nobody gets a place from Drive asking
+  assert.deepEqual(await call(host, 'tofile_count', BOB, { userId: BOB.id }), { ok: false, code: 'unavailable', reason: 'no_seat' });
+  assert.equal((await c.db('SELECT COUNT(*) AS n FROM seats WHERE user_id = ?', [BOB.id]))[0].n, 0);
 }));

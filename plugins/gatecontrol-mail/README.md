@@ -322,7 +322,7 @@ the default 360 is 18:00 the day before (before 1.3.1: 1080, that is 06:00 the d
 `new_draft` `{ files: [{ mediaId, name? }], subject? }` → `{ ok, draftId }` — files the caller handed over first
 (Drive: "Per Mail senden"); a draft of the person's first account.
 
-Since 1.6.0 for Drive only (`server/services.js`; another caller → `forbidden`), always for the person of the call
+Since 1.6.0 (`tofile_count` since 1.7.0) for Drive only (`server/services.js`; another caller → `forbidden`), always for the person of the call
 (GateControl's `user` must be `userId`, else `forbidden`):
 
 * `calendar_list` `{ userId, lang? }` → `{ ok: true, calendars: [{ id, name, color, writable: true, account: { id, label,
@@ -338,6 +338,10 @@ Since 1.6.0 for Drive only (`server/services.js`; another caller → `forbidden`
   before while it is there (table `service_keys`). Refusals `{ ok: false, code }`: `invalid`, `not_found` (no such
   calendar of the person, or one they cannot write to), `unavailable` with `reason` (`feature_off`, `not_allowed`,
   `not_licensed`, `no_seat`, `auth_failed`, `consent_required`, `unreachable`, …).
+* `tofile_count` `{ userId }` → `{ ok: true, count, hint }` (since 1.7.0) — the attachments of "Zum Ablegen" (`GET
+  filing`) of the person and the folder Drive suggested for the newest one (`where` of its suggestion, e.g. "Familie ›
+  Versicherungen"; `null` without). Drive's overview (Drive ≥ 1.18.0) shows it under "Zu erledigen". Refusals:
+  `forbidden`, `unavailable` with `reason` (`not_allowed`, `not_licensed`, `no_seat` — nothing is taken from the licence).
 
 ## Licence and people
 

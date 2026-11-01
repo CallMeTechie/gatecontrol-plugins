@@ -18,6 +18,10 @@
 //                  Codes: forbidden (another caller, or userId is not GateControl's `user` of the call), invalid,
 //                  not_found (no such calendar of the person, or one they cannot write to), unavailable { reason }
 //                  (feature_off, not_allowed, not_licensed, no_seat, auth_failed, consent_required, unreachable, …).
+//   tofile_count   { userId } → { ok: true, count, hint }   (1.7.0, caller gatecontrol-drive only) — the attachments of
+//                  "Zum Ablegen" (GET filing) of the person: how many, and the folder Drive suggested for the newest one
+//                  („Familie › Versicherungen“, null without). Drive's overview shows it under "Zu erledigen".
+//                  Codes: forbidden, unavailable { reason } (not_allowed, not_licensed, no_seat).
 
 const store = require('./store');
 const config = require('./config');
@@ -29,7 +33,7 @@ const calendars = require('./calendars');
 const events = require('./events');
 const pimstore = require('./pimstore');
 const { t } = require('./text');
-const { posInt, line, isKnown } = require('./util');
+const { posInt, line, isKnown, parse } = require('./util');
 
 const DRIVE = 'gatecontrol-drive';
 const TITLE_MAX = 80;
@@ -145,13 +149,31 @@ async function calendarAdd(gc, payload, user, caller) {
   return payload.key ? serial(`${caller}|${uid}|${cal.id}|${payload.key}`, make) : make();
 }
 
+/** tofile_count { userId } (since 1.7.0): the attachments to file of the person and the suggestion for the newest. */
+async function tofileCount(gc, payload, user) {
+  const uid = personOf(user, payload);
+  const cfg = await config.get(gc);
+  if (!(await config.allowed(gc, cfg, uid))) throw no('unavailable', { reason: 'not_allowed' });
+  if (!(await people.licence(gc)).valid) throw no('unavailable', { reason: 'not_licensed' });
+  const s = await seats.get(gc, uid);
+  if (!s || s.kind === 'none') throw no('unavailable', { reason: 'no_seat' });
+  // as GET filing lists them: the newest mail first
+  const from = 'FROM filing f JOIN attachments t ON t.id = f.attachment_id JOIN messages m ON m.id = f.message_id WHERE f.user_id = ?';
+  const n = await store.one(gc, `SELECT COUNT(*) AS n ${from}`, [uid]);
+  const top = await store.one(gc, `SELECT t.suggestion_json ${from} ORDER BY m.date DESC, f.id DESC LIMIT 1`, [uid]);
+  const first = top ? parse(top.suggestion_json, null) : null;
+  const hint = first && typeof first.where === 'string' && first.where.trim() ? first.where.trim().slice(0, 200) : null;
+  return { ok: true, count: (n && n.n) || 0, hint };
+}
+
 // ─── the hook ───────────────────────────────────
 
 const HANDLERS = {
   calendar_list: (gc, payload, user) => calendarList(gc, payload, user),
   calendar_add: (gc, payload, user, caller) => calendarAdd(gc, payload, user, caller),
+  tofile_count: (gc, payload, user) => tofileCount(gc, payload, user),
 };
-const CALLERS = { calendar_list: [DRIVE], calendar_add: [DRIVE] };
+const CALLERS = { calendar_list: [DRIVE], calendar_add: [DRIVE], tofile_count: [DRIVE] };
 
 /** service({ name, caller, user, payload }) → the answer (see the head of this file). */
 async function handle(gc, call) {
