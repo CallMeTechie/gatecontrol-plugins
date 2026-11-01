@@ -35,7 +35,6 @@ const fileOf = (m, name) => m.attachments.find((t) => t.name === name);
 
 test('manifest: media.areas — the install dialog shows „Speicherorte“; the limits stay', () => {
   const manifest = require('../plugin.json');
-  assert.equal(manifest.version, '1.5.0');
   assert.equal(manifest.media.areas, true);
   assert.equal(manifest.media.maxBytes, 50 * 1024 * 1024, 'gc.mail loads at most 50 MB a mail');
   assert.equal(manifest.media.quotaDefault, '500GB');

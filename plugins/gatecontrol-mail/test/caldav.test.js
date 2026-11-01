@@ -338,3 +338,32 @@ test('GateControl 1.216.0 without gc.mail.dav: GMX calendars are „none“, not
   assert.equal((await marc('DELETE', `accounts/${acc.id}`)).status, 200);
   assert.deepEqual((await marc('GET', 'calendars')).json.calendars.map((x) => x.source), ['local', 'local']);
 }));
+
+test('1.6.0 calendar_add for Drive into a CalDAV calendar: PUT to the server as an all-day VEVENT with the note; the server down → unavailable', async () => {
+  const dav = new FakeDav({ user: 'anna@gmx.de', pass: 'geheim-123' });
+  const cal = dav.calendar('home', { name: 'Kalender', color: '#FF8800' });
+  await withMail({ gatecontrol: '1.219.0', dav }, async (host, c) => {
+    const acc = await c.addGmx(ANNA);
+    await c.as(ANNA)('GET', 'calendars');
+    await syncAll(c, host);
+    const user = { id: ANNA.id, name: 'Anna', role: 'user' };
+    const list = await host.callService('calendar_list', { caller: 'gatecontrol-drive', user, payload: { userId: ANNA.id } });
+    const gmx = list.calendars.find((x) => x.account.id === acc.id);
+    assert.deepEqual([gmx.name, gmx.color, gmx.account.label, gmx.account.kind], ['Kalender', '#FF8800', 'GMX', 'gmx']);
+    const r = await host.callService('calendar_add', { caller: 'gatecontrol-drive', user,
+      payload: { userId: ANNA.id, calendarId: gmx.id, title: 'Rechnung zahlen', startsAt: '2026-11-25', allDay: true, note: 'Strom.pdf', key: 'drive:deadline:9' } });
+    assert.equal(r.ok, true, JSON.stringify(r));
+    const put = dav.requests.filter((x) => x.method === 'PUT').pop();
+    assert.equal(put.headers['if-none-match'], '*');
+    assert.match(put.body, /DTSTART;VALUE=DATE:20261125/);
+    assert.match(put.body, /SUMMARY:Rechnung zahlen/);
+    assert.match(put.body, /DESCRIPTION:Strom\.pdf/);
+    assert.equal([...dav.cols.get(cal).objects.keys()].length, 1);
+    // the server cannot be reached: nothing kept half-saved, unavailable
+    dav.fail = (req) => (req.method === 'PUT' ? 503 : null);
+    const off = await host.callService('calendar_add', { caller: 'gatecontrol-drive', user,
+      payload: { userId: ANNA.id, calendarId: gmx.id, title: 'Noch eine', startsAt: '2026-11-26', allDay: true } });
+    assert.deepEqual([off.ok, off.code], [false, 'unavailable']);
+    assert.equal((await c.db("SELECT COUNT(*) AS n FROM events WHERE title = 'Noch eine'"))[0].n, 0);
+  });
+});

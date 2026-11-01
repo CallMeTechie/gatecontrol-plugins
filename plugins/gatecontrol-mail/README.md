@@ -24,7 +24,7 @@ reminders of all people go through this plugin). Before: **GateControl ≥ 1.216
 `permissions.mail`, at most 100 IMAP sessions at once), `gc.http.fetchImage` (`permissions.network.images`),
 `maxPerHour` of Drive's services (Drive ≥ 1.15.0). Microsoft accounts go through Microsoft Graph
 (`graph.microsoft.com`, `login.microsoftonline.com`, the upload sessions of large attachments on `outlook.office.com` /
-`outlook.office365.com` — `gc.http.fetch`). Optional: Drive ≥ 1.15.0 (`gatecontrol-drive`), Familie ≥ 1.15.4
+`outlook.office365.com` — `gc.http.fetch`). Optional: Drive ≥ 1.15.0 (`gatecontrol-drive`; ≥ 1.17.0 puts deadlines into Mail's calendars), Familie ≥ 1.15.4
 (`gatecontrol-familie`, `calendar_add`), GateControl's AI service (`gc.ai`). No npm dependencies.
 
 **GateControl ≥ 1.217.0** (found by feature detection, `"gatecontrol"` stays `>=1.216.0`): Microsoft accounts send files
@@ -321,6 +321,23 @@ the default 360 is 18:00 the day before (before 1.3.1: 1080, that is 06:00 the d
 
 `new_draft` `{ files: [{ mediaId, name? }], subject? }` → `{ ok, draftId }` — files the caller handed over first
 (Drive: "Per Mail senden"); a draft of the person's first account.
+
+Since 1.6.0 for Drive only (`server/services.js`; another caller → `forbidden`), always for the person of the call
+(GateControl's `user` must be `userId`, else `forbidden`):
+
+* `calendar_list` `{ userId, lang? }` → `{ ok: true, calendars: [{ id, name, color, writable: true, account: { id, label,
+  kind, email } }] }` — the calendars the person sees and can write to (no read-only calendars, no iCal subscriptions).
+  `account` of an own GateControl calendar: `{ id: null, label: 'GateControl', kind: 'local', email: null }`; of an
+  account's calendar: `label` the provider ("Outlook.com", "Microsoft 365", "GMX", …; another IMAP account: its domain),
+  `kind` the provider id. Someone who cannot use Mail (not allowed, no valid licence, no place — nothing is taken from the
+  licence here —, calendars off) has none.
+* `calendar_add` `{ userId, calendarId, title (1–80), startsAt: 'YYYY-MM-DD', allDay: true, note? (≤ 500), key?, lang? }`
+  → `{ ok: true, eventId }` — an all-day event written like `POST events` (Graph, CalDAV, GateControl), with the
+  all-day reminder of the person's calendar settings (`allDayReminder`); the note is the event's description. `key`
+  (`[A-Za-z0-9:._-]`, ≤ 120) makes it idempotent: the same key of the same person and calendar answers the event made
+  before while it is there (table `service_keys`). Refusals `{ ok: false, code }`: `invalid`, `not_found` (no such
+  calendar of the person, or one they cannot write to), `unavailable` with `reason` (`feature_off`, `not_allowed`,
+  `not_licensed`, `no_seat`, `auth_failed`, `consent_required`, `unreachable`, …).
 
 ## Licence and people
 
