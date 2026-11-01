@@ -429,7 +429,7 @@
           var grid = h('div', { class: 'dp-pp-grid' });
           var draw = function (all) {
             clear(grid);
-            (all ? unnamed : unnamed.slice(0, UNNAMED_SHOWN)).forEach(function (p) { grid.appendChild(personCard(p, function () { nameDialog(p.id); }, P('p.photos_n', p.count))); });
+            (all ? unnamed : unnamed.slice(0, UNNAMED_SHOWN)).forEach(function (p) { grid.appendChild(personCard(p, function () { nameDialog(p.id, { round: true }); }, P('p.photos_n', p.count))); });
           };
           draw(false);
           main.appendChild(grid);
@@ -590,10 +590,24 @@
 
     // ── "Wer ist das?" ────────────────────────────────────
 
-    function nameDialog(id) {
+    /**
+     * "Wer ist das?" for the person `id`. With `o.round` (from "Personen") one after the other: "Überspringen" and "Nächste
+     * Person" go on with the next one without a name that the round has not shown (named, hidden, merged or skipped), also
+     * when GET people fails and the old list stays; at the end "Alle durchgesehen". Without (a person's page): "Fertig".
+     */
+    function nameDialog(id, o) {
+      var R = o && o.round ? (o.round === true ? { seen: {}, list: null } : o.round) : null;
+      if (R) R.seen[String(id)] = true;
       Promise.all([api('GET', 'people/' + id), api('GET', 'people/' + id + '/similar').catch(function () { return { people: [] }; }),
-        api('GET', 'photos', null, { person: id, limit: 3 }).catch(function () { return { items: [] }; }), st.people ? Promise.resolve(st.people) : loadPeople()]).then(function (r) {
+        api('GET', 'photos', null, { person: id, limit: 3 }).catch(function () { return { items: [] }; }),
+        st.people ? Promise.resolve(st.people) : loadPeople().catch(function () { return null; })]).then(function (r) {
         var p = r[0].person;
+        if (R && st.people) R.list = st.people.people || [];
+        var busy = false;
+        var call = function (method, path, body) {
+          busy = true;
+          return api(method, path, body).then(function (x) { busy = false; return x; }, function (e) { busy = false; throw e; });
+        };
         var like = (r[1].people || [])[0] || null;
         var shots = r[2].items || [];
         var sub = [P('p.photos_n', p.count), years(p.years), p.together && p.together[0] && p.together[0].name ? T('p.pp.often_with', { name: p.together[0].name }) : ''].filter(Boolean).join(' · ');
@@ -627,17 +641,19 @@
         var likeBox = like ? h('div', { class: 'dp-pp-like' }, [h('span', { class: 'dp-pp-dot', text: initials(like.name || '?') }),
           h('span', { class: 'dp-pp-sugtx' }, [h('b', { text: T('p.pp.looks_like', { name: like.name || T('p.pp.unnamed') }) }), h('span', { class: 'dp-meta', text: T('p.pp.looks_like_hint') })]),
           btn(T('p.pp.merge'), function () {
-            api('POST', 'people/' + p.id + '/merge', { into: like.id }).then(function (x) { finish('merge', x.person, { name: like.name || T('p.pp.unnamed') }); }, function (e) { err.textContent = U.errText(e); });
+            call('POST', 'people/' + p.id + '/merge', { into: like.id }).then(function (x) { finish('merge', x.person, { name: like.name || T('p.pp.unnamed') }); }, function (e) { err.textContent = U.errText(e); });
           }, { small: true })]) : null;
         var finish = function (kind, person, extra) {
           st.names = null;
           st.people = null;
+          if (R && person) R.seen[String(person.id)] = true;
           var body = h('div', { class: 'dp-pp-done' }, [icon('check', 28),
             h('b', { text: kind === 'merge' ? T('p.pp.done_merge', extra) : kind === 'hide' ? T('p.pp.done_hide') : T('p.pp.done_save', { name: person.name }) }),
             h('span', { class: 'dp-hint', text: kind === 'merge' ? P('p.pp.done_merge_text', person.count, { name: extra.name }) : kind === 'hide' ? P('p.pp.done_hide_text', p.count) : P('p.pp.done_save_text', person.count, { name: person.name }) }),
             h('div', { class: 'dp-actions' }, [
               extra && extra.undo ? btn(T('p.pp.undo'), function () { api('PATCH', 'people/' + p.id, extra.undo).then(function () { U.closeDialog(); showPeople(); }, fail); }) : null,
-              btn(T('p.pp.next'), function () { nextUnnamed(p.id); }, { primary: true })])]);
+              R ? btn(T('p.pp.next'), function () { nextUnnamed(R); }, { primary: true })
+                : btn(T('p.pp.done'), function () { U.closeDialog(); if (U.S.page === 'person') showPerson(person.id); }, { primary: true })])]);
           U.dialog(T('p.pp.who_q'), [body]);
           if (U.S.page === 'people') showPeople();
         };
@@ -646,27 +662,42 @@
           if (!name) return;
           var body = { name: name };
           if (contact) body.contact = contact;
-          api('PATCH', 'people/' + p.id, body).then(function (x) {
+          call('PATCH', 'people/' + p.id, body).then(function (x) {
             finish('save', x.person, x.mergedInto ? { name: x.person.name } : { undo: { name: p.name || '', contact: p.contact || null } });
           }, function (e) { err.textContent = U.errText(e); });
         };
         U.dialog(T('p.pp.who_q'), [h('div', { class: 'dp-pp-who' }, [faces, h('span', { class: 'dp-meta', text: sub })]),
           h('label', { class: 'dp-field' }, [h('span', { class: 'dp-label', text: T('p.name') }), input]), sugBox, likeBox, err,
-          h('div', { class: 'dp-actions' }, [btn(T('p.pp.hide'), function () {
-            api('PATCH', 'people/' + p.id, { hidden: true }).then(function (x) { finish('hide', x.person, { undo: { hidden: false } }); }, function (e) { err.textContent = U.errText(e); });
-          }), save])]);
+          h('div', { class: 'dp-actions' }, [
+            // in a round: on to the next one without naming this one (it stays under "Wer ist das?")
+            R ? h('button', { type: 'button', class: 'dp-linkbtn dp-pp-skip', text: T('p.pp.skip'), on: { click: function () { if (!busy) nextUnnamed(R); } } }) : null,
+            R ? h('span', { class: 'dp-ph-grow' }) : null,
+            btn(T('p.pp.hide'), function () {
+              call('PATCH', 'people/' + p.id, { hidden: true }).then(function (x) { finish('hide', x.person, { undo: { hidden: false } }); }, function (e) { err.textContent = U.errText(e); });
+            }), save])]);
         drawSug();
         input.focus();
       }, fail);
     }
 
-    /** The next person without a name (after naming one), else "Personen". */
-    function nextUnnamed(after) {
-      loadPeople().then(function (r) {
-        var next = (r.people || []).filter(function (p) { return !p.name && !p.hidden && p.id !== after; })[0];
-        U.closeDialog();
-        if (next) nameDialog(next.id); else showPeople();
-      }, fail);
+    /** The round's next person without a name from GET people afresh (the old list when that fails), else "Alle durchgesehen". */
+    function nextUnnamed(R) {
+      if (R.going) return;
+      R.going = true;
+      var go = function (list) {
+        R.going = false;
+        if (list) R.list = list;
+        var next = (R.list || []).filter(function (p) { return !p.name && !p.hidden && !R.seen[String(p.id)]; })[0];
+        if (next) nameDialog(next.id, { round: R }); else allSeen();
+      };
+      loadPeople().then(function (r) { go(r.people || []); }, function () { go(null); });
+    }
+
+    /** The end of a round: nobody without a name is left that it has not shown. */
+    function allSeen() {
+      U.dialog(T('p.pp.who_q'), [h('div', { class: 'dp-pp-done dp-pp-allseen' }, [icon('check', 28), h('b', { text: T('p.pp.all_seen') }),
+        h('span', { class: 'dp-hint', text: T('p.pp.all_seen_text') }),
+        h('div', { class: 'dp-actions' }, btn(T('p.pp.back'), function () { U.closeDialog(); if (U.S.page === 'people') showPeople(); }, { primary: true }))])]);
     }
 
     // ── the settings: "Orte und Personen" ─────────────────

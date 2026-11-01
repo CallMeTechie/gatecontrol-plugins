@@ -1146,7 +1146,9 @@ a cluster of one place shows its photos and "Alle ansehen", the places below; wi
 "Personen" (the progress, "Benannt", "Wer ist das?", "Ausgeblendet"); a person ("Ist das auch …?" with "Ja, alle" and
 "Einzeln prüfen", "Zusammen mit", the places, the photos by year, the menu: rename, link with a family member, merge,
 hide); "Wer ist das?" (the name with suggestions of the family and my people, "Sieht aus wie …" → merge, "Ausblenden",
-then "Rückgängig" and "Nächste Person"); and "Orte und Personen" in the Drive settings ("Aufnahmeort mitsichern",
+then "Rückgängig" and "Nächste Person"; since 1.18.1 from "Personen" a round: "Überspringen", each person at most once —
+named, hidden, merged or skipped, also when `GET people` fails —, at the end "Alle durchgesehen"; a person's page names
+only that one, "Fertig"); and "Orte und Personen" in the Drive settings ("Aufnahmeort mitsichern",
 "Orte meiner Fotos löschen", "Personen erkennen", "Kinderordner einbeziehen", "Alle Gesichtsdaten löschen" — each
 deletion after asking). Faces are cut out by the browser: the preview in a round box, scaled and moved by the face's box.
 Since 1.18.0 (`ui/overview.js`, feature `overview`): "Übersicht | Dateien | Fotos" at the top, and Drive opens on the
