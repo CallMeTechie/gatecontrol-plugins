@@ -240,6 +240,7 @@ async function dropCalendar(gc, cal) {
     await store.run(gc, `UPDATE invitations SET event_id = NULL WHERE event_id IN (${m})`, part);
   }
   await store.run(gc, 'DELETE FROM events WHERE calendar_id = ?', [cal.id]);
+  await store.run(gc, 'DELETE FROM service_keys WHERE calendar_id = ?', [cal.id]);
   await store.run(gc, 'DELETE FROM calendars WHERE id = ?', [cal.id]);
   try { await gc.settings.setSecret(`ics.${cal.id}`, null); } catch { /* none */ }
 }

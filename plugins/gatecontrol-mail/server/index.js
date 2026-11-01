@@ -15,7 +15,8 @@
 // Hooks: start/stop (the sync engine), tick (every 15 s: syncing — mail first, then a calendar / contact step per
 // account in what is left of the run —, the outbox, reminders, account pictures, AI sorting, filing, quota and retention,
 // since 1.5.0 the attachments of 1.4 into their media area — storage.js), render (the portal tab, the admin pages), appVisible / portalVisible (who may use Mail), mediaAccess
-// (attachments, draft files and account pictures of the person), service (new_draft for Drive), settingsChanged.
+// (attachments, draft files and account pictures of the person), service (new_draft, since 1.6.0 calendar_list and
+// calendar_add for Drive — services.js), settingsChanged.
 
 const store = require('./store');
 const config = require('./config');
@@ -36,6 +37,7 @@ const cardmerge = require('./cardmerge');
 const overlays = require('./overlays');
 const reminders = require('./reminders');
 const storage = require('./storage');
+const services = require('./services');
 const { t } = require('./text');
 const { STATUS, fail, isKnown } = require('./util');
 
@@ -171,15 +173,12 @@ module.exports = {
     return !!(await store.one(gc, 'SELECT 1 AS x FROM draft_atts x JOIN drafts d ON d.id = x.draft_id WHERE x.media_id = ? AND d.user_id = ?', [mediaId, user.id]));
   },
 
-  /** For Drive: new_draft { files: [{ mediaId, name? }], subject? } — files handed over first. */
-  async service({ name, user, payload } = {}, gc) {
-    if (name !== 'new_draft') return { ok: false, code: 'not_found' };
-    const cfg = await config.get(gc);
-    if (!user || !(await config.allowed(gc, cfg, user.id))) return { ok: false, code: 'forbidden' };
-    const { licence, seat } = await seats.access(gc, cfg, user.id, Date.now());
-    if (!licence.valid) return { ok: false, code: 'not_licensed' };
-    if (!seat) return { ok: false, code: 'no_seat' };
-    return compose.serviceDraft(gc, user, payload);
+  /**
+   * For Drive (services.js): new_draft { files: [{ mediaId, name? }], subject? } — files handed over first; since 1.6.0
+   * calendar_list and calendar_add (deadlines into a calendar of Mail).
+   */
+  async service(call, gc) {
+    return services.handle(gc, call);
   },
 
   async settingsChanged() {

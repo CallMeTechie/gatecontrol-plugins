@@ -83,6 +83,8 @@ function graphWorld() {
       st.posted.push(o.json);
       const ev = base(id, { subject: o.json.subject, start: Date.parse(o.json.start.dateTime + 'Z') - 3600000, end: Date.parse(o.json.end.dateTime + 'Z') - 3600000 });
       if (o.json.isOnlineMeeting) ev.onlineMeeting = { joinUrl: 'https://teams.microsoft.com/l/meetup-join/abc' };
+      // an all-day event: Graph answers its days at midnight in the time zone it was given
+      if (o.json.isAllDay) Object.assign(ev, { isAllDay: true, start: o.json.start, end: o.json.end, originalStartTimeZone: o.json.start.timeZone });
       st.events.set(id, ev);
       return json(201, ev);
     }
@@ -291,5 +293,29 @@ test('a number removed from a GC contact stays removed (1.3.6, 1.4.0): taken ove
     assert.deepEqual((await anna('GET', `cards/${own.id}`)).json.phones.map((x) => x.value), ['0171 5550001', '+49 30 5550003']);
     // the list shows the GC contact only
     assert.deepEqual((await anna('GET', 'cards')).json.items.map((x) => [x.id, x.name, x.sources.map((y) => y.source)]), [[own.id, 'Schatzimausi 💞', ['local', 'graph']]]);
+  });
+});
+
+test('1.6.0 calendar_add for Drive into a Microsoft calendar: posted to Graph as all-day with the note, once per key; the read-only one is not listed', async () => {
+  const w = graphWorld();
+  await withMail({ gatecontrol: '1.219.0', fetch: w.fetch, settings: CLIENT }, async (host, c) => {
+    const anna = c.as(ANNA);
+    const acc = (await anna('POST', 'accounts/microsoft', { code: 'X', ...PKCE, kind: 'business' })).json.account;
+    await anna('GET', 'calendars');
+    await runs(host, 8);
+    const user = { id: ANNA.id, name: 'Anna', role: 'user' };
+    const list = await host.callService('calendar_list', { caller: 'gatecontrol-drive', user, payload: { userId: ANNA.id } });
+    const graph = list.calendars.filter((x) => x.account.id === acc.id);
+    assert.deepEqual(graph.map((x) => [x.name, x.account.label, x.account.kind]), [['Kalender', 'Microsoft 365', 'm365']], 'Feiertage is read only');
+    const payload = { userId: ANNA.id, calendarId: graph[0].id, title: 'Widerspruch einlegen', startsAt: '2026-11-20', allDay: true, note: 'Bescheid.pdf', key: 'drive:deadline:3' };
+    const r = await host.callService('calendar_add', { caller: 'gatecontrol-drive', user, payload });
+    assert.equal(r.ok, true, JSON.stringify(r));
+    assert.equal(w.posted.length, 1);
+    const p = w.posted[0];
+    assert.deepEqual([p.subject, p.isAllDay, p.start.dateTime.slice(0, 10), p.end.dateTime.slice(0, 10), p.body.content], ['Widerspruch einlegen', true, '2026-11-20', '2026-11-21', 'Bescheid.pdf']);
+    const ev = (await anna('GET', `events/${r.eventId}`)).json;
+    assert.deepEqual([ev.title, ev.allDay, ev.startDate, ev.calendarId], ['Widerspruch einlegen', true, '2026-11-20', graph[0].id]);
+    assert.equal((await host.callService('calendar_add', { caller: 'gatecontrol-drive', user, payload })).eventId, r.eventId);
+    assert.equal(w.posted.length, 1, 'the same key: not posted again');
   });
 });
