@@ -66,9 +66,16 @@ function wordsOf(q) {
   return words;
 }
 
+/** The SQL of one search word for labels → { sql, args, labels } (labels: the labels the word means). */
+function wordClause(w) {
+  const ls = labelsFor(w);
+  const like = fold(w).replace(/[\\%_]/g, (c) => '\\' + c) + '%';
+  return { sql: `id IN (SELECT node_id FROM node_labels WHERE ${ls.length ? `label IN (${store.marks(ls.length)}) OR ` : ''}label LIKE ? ESCAPE '\\')`, args: [...ls, like], labels: ls };
+}
+
 /**
  * GET photos?q=: scope `sc` ({ where, args } over nodes) narrowed to photos with a label for every word → { sc, terms,
- * labels } (labels: every label a word meant).
+ * labels } (labels: every label a word meant). Since 1.16.0 photos.js also lets a word match a person or a place.
  */
 function narrow(sc, q) {
   const words = wordsOf(q);
@@ -76,11 +83,10 @@ function narrow(sc, q) {
   const args = [...sc.args];
   const all = new Set();
   for (const w of words) {
-    const ls = labelsFor(w);
-    ls.forEach((l) => all.add(l));
-    const like = fold(w).replace(/[\\%_]/g, (c) => '\\' + c) + '%';
-    where += ` AND id IN (SELECT node_id FROM node_labels WHERE ${ls.length ? `label IN (${store.marks(ls.length)}) OR ` : ''}label LIKE ? ESCAPE '\\')`;
-    args.push(...ls, like);
+    const c = wordClause(w);
+    c.labels.forEach((l) => all.add(l));
+    where += ` AND ${c.sql}`;
+    args.push(...c.args);
   }
   return { sc: { where, args }, terms: words, labels: [...all] };
 }
@@ -130,4 +136,4 @@ async function put(ctx, id, body) {
   });
 }
 
-module.exports = { put, narrow, summary, labelsFor, textOf, wordsOf, fold };
+module.exports = { put, narrow, wordClause, summary, labelsFor, textOf, wordsOf, fold };

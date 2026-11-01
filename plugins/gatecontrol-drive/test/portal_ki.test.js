@@ -247,7 +247,7 @@ test('smoke: "Fotos" — the search by what is on them, the chips, the count', a
       navItem($('dp-nav'), 'Fotos').click();
       await until('the photos', () => $('dp-main').querySelectorAll('.dp-ph').length === 3);
       const q = $('dp-main').querySelector('.dp-k-phq');
-      assert.equal(q.getAttribute('aria-label'), 'Fotos nach Inhalt suchen');
+      assert.equal(q.getAttribute('aria-label'), 'Fotos durchsuchen');
       q.value = 'Strand';
       q.dispatchEvent({ type: 'keydown', key: 'Enter' });
       await until('the hits', () => $('dp-main').querySelector('.dp-k-phs') && $('dp-main').querySelectorAll('.dp-ph').length === 2);

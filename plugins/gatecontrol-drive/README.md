@@ -29,6 +29,12 @@ Familie plugin's service `calendar_add` (`permissions.services: ["gatecontrol-fa
 the administrator confirms with the update; GateControl ≥ 1.178.0 for `gc.services.available`). Setting
 *scan_keep_original* (default on).
 
+Places and people (since 1.16.0, see "Places and people"): place names offline from **GeoNames**
+(https://www.geonames.org, `cities1000`, licensed under **CC BY 4.0** — © GeoNames, https://creativecommons.org/licenses/by/4.0/),
+shortened to what Drive needs (`server/places.txt.gz`, 2.7 MB); the portal's map is OpenStreetMap through GateControl
+(`ui.maps`, © OpenStreetMap contributors). Faces are found only on the devices (YuNet, MIT; SFace, Apache-2.0 — OpenCV
+Zoo); Drive keeps and groups their feature vectors, never a picture.
+
 ## Areas and rights
 
 | Area | id | Who | Role |
@@ -63,7 +69,7 @@ reaches `GET frame` (the photo frame, since 1.7.0) and nothing else (`403 forbid
 
 | Route | Body / query | Answer |
 |---|---|---|
-| `GET me` | | `me { id, name, seat, deviceId, admin }`, `licence { valid, tier }`, `areas`, `latest` (change log seq), `settings`, `limits { maxBytes }`, `wipes` (entries this device has yet to handle, since 1.2.0), `devices` (my devices a new wipe reaches), `features` (since 1.5.0: `['previews', 'wipes', 'textSearch', 'devices', 'deleteAfter', 'emptyFiles']`, since 1.6.0 also `'links'`, `'guard'`, since 1.7.0 `'timeTravel'`, `'takenAt'`, `'photos'`, `'albums'`, `'frame'`, `'storage'`, since 1.8.0 `'docAi'` and `'cloudImport'` — only while GateControl offers the AI service / cloud accounts and they are allowed, see "AI for documents" and "Import"; since 1.9.0 `'vault'` and — while set up — `'office'`, since 1.10.0 `'photosFolder'`, since 1.11.0 `'vaultsApart'`, since 1.12.0 `'bulk'`, — while GateControl's public links are allowed — `'zip'` and `'multiLink'`, with GateControl ≥ 1.215.0 also `'copyServer'` (copies on the server) and `'zipMixed'` (a ZIP and one link of any selection); since 1.13.0 `'photoClasses'` (work photos apart); since 1.14.0 `'photoSearch'` (photos by what is on them) and — with `docAi` — `'docAsk'` (questions to the documents), `'scanDocs'` (scans become documents) and, while the Familie plugin's `calendar_add` is reachable, `'deadlineCalendar'` (see "AI in Drive")), `settings` (since 1.14.0 also `scanKeepOriginal`), `links { node, drive } \| null` (since 1.6.0, see "Direct links"), `guard { on, locked, incident }` and `incidents` (since 1.6.0, see "Ransomware protection") |
+| `GET me` | | `me { id, name, seat, deviceId, admin }`, `licence { valid, tier }`, `areas`, `latest` (change log seq), `settings`, `limits { maxBytes }`, `wipes` (entries this device has yet to handle, since 1.2.0), `devices` (my devices a new wipe reaches), `features` (since 1.5.0: `['previews', 'wipes', 'textSearch', 'devices', 'deleteAfter', 'emptyFiles']`, since 1.6.0 also `'links'`, `'guard'`, since 1.7.0 `'timeTravel'`, `'takenAt'`, `'photos'`, `'albums'`, `'frame'`, `'storage'`, since 1.8.0 `'docAi'` and `'cloudImport'` — only while GateControl offers the AI service / cloud accounts and they are allowed, see "AI for documents" and "Import"; since 1.9.0 `'vault'` and — while set up — `'office'`, since 1.10.0 `'photosFolder'`, since 1.11.0 `'vaultsApart'`, since 1.12.0 `'bulk'`, — while GateControl's public links are allowed — `'zip'` and `'multiLink'`, with GateControl ≥ 1.215.0 also `'copyServer'` (copies on the server) and `'zipMixed'` (a ZIP and one link of any selection); since 1.13.0 `'photoClasses'` (work photos apart); since 1.14.0 `'photoSearch'` (photos by what is on them) and — with `docAi` — `'docAsk'` (questions to the documents), `'scanDocs'` (scans become documents) and, while the Familie plugin's `calendar_add` is reachable, `'deadlineCalendar'` (see "AI in Drive"); since 1.16.0 `'photoPlaces'` and `'photoPeople'` (see "Places and people")), `settings` (since 1.14.0 also `scanKeepOriginal`), `links { node, drive } \| null` (since 1.6.0, see "Direct links"), `guard { on, locked, incident }` and `incidents` (since 1.6.0, see "Ransomware protection") |
 | `GET areas` | | `areas [{ id, kind, label, role, via, rootId, owner, archived, storage { bytes, quota, form, target, state } }]` (+ `docAi` while the feature is on, since 1.14.0 `deadlinesToCalendar` with `deadlineCalendar`, also in `GET me` `areas`) |
 | `PATCH areas/<id>` | `{ docAi?: boolean, deadlinesToCalendar?: boolean }` (since 1.8.0 / 1.14.0, write in the area) | `{ area: { id, docAi, deadlinesToCalendar? } }` — AI for documents on / off in this area; new deadlines into the family calendar on their own (Familie not reachable: `409 familie_unavailable`) |
 | `GET nodes/<id>` | | `node` + `path`, `role`, `crumbs [{ id, name }]` |
@@ -112,9 +118,17 @@ reaches `GET frame` (the photo frame, since 1.7.0) and nothing else (`403 forbid
 | `POST nodes/<id>/office` | | since 1.9.0: `{ url, mode, expiresAt }` — see "Office in the browser" |
 | `GET\|POST vaults`, `vaults/<id>/…` | | since 1.9.0 — see "Vault folders" |
 | `GET photos` | `area?`, `before?` (ISO), `limit?` (≤ 200, default 100) (since 1.7.0); `folder?` (node id) or `camera?` (`1`) (since 1.10.0); `class?` (`work` \| `private` \| `review`, since 1.13.0); `q?` (words), `unlabeled?` (`1`) (since 1.14.0) | `{ items [photo], next, search? }` (see "Photos and albums", "AI in Drive") |
-| `GET photos/months` | `area?`, `folder?` or `camera?`; `class?` (since 1.13.0); `q?`, `unlabeled?` (since 1.14.0) | `{ months [{ month: 'YYYY-MM', count }] }` |
+| `GET photos/months` | `area?`, `folder?` or `camera?`; `class?` (since 1.13.0); `q?`, `unlabeled?` (since 1.14.0); `place?`, `bbox?`, `unlocated?`, `person?`, `unfaced?` + `model?` (since 1.16.0) | `{ months [{ month: 'YYYY-MM', count }] }` |
+| `GET photos` (since 1.16.0) | also `place?` (`geonames:<id>`), `bbox?` (`w,s,e,n`), `districts?` (`1`, with `place`), `unlocated?` (`1`), `person?` (`<id>[,<id>…]`), `unfaced?` (`1`) + `model?`, `with?` (`people`); `q?` also on names of people and places | `{ items [photo], next, search?, districts? }` — items with `geo`, `located` (and `people` with `with=people`); see "Places and people" |
+| `GET photos/places` | the filters of `GET photos` (since 1.16.0) | `{ places [{ key, name, region, country, count, lat, lon, from, to, cover }] }` |
+| `GET photos/map` | `bbox` (`w,s,e,n`), `zoom` (0 … 19), the filters of `GET photos` | `{ clusters [{ lat, lon, count, key \| null, cover }] }` (≤ 200) |
+| `GET photos/suggest` | `q`, the filters of `GET photos` (since 1.16.0) | `{ people [{ id, name, count }], places [{ key, name, sub, count }], labels [{ label, text, count }] }` (≤ 5 each) |
+| `DELETE photos/geo` | (since 1.16.0) | `{ deleted }` — the places of every photo I uploaded |
+| `PUT nodes/<id>/geo` | `{ lat, lon }` \| `{ none: true }` (since 1.16.0) | `{ node }` — write access |
+| `PUT nodes/<id>/faces` | `{ model, faces [{ box, landmarks?, score, embedding }] }` (since 1.16.0) | `{ id, model, faces [{ id, box, person }] }` |
+| `GET people` · `GET\|PATCH people/<id>` · `POST people/<id>/merge` · `GET people/<id>/similar` · `GET people/<id>/uncertain` · `POST people/<id>/confirm` · `POST faces/<id>/move` | (since 1.16.0) | see "Places and people" |
 | `GET photos/classes` | `area?`, `folder?` or `camera?` (since 1.13.0, feature `photoClasses`) | `{ work, private, review }` — the counts (see "Work photos apart") |
-| `GET photos/settings` · `PUT photos/settings` | PUT: `{ workFolder?: id \| null, workSubfolders?: bool, workInMemories?: bool }` (since 1.13.0) | `{ workFolder, workSubfolders, workInMemories, folder { id, path, areaId } \| null }` — mine, on every device |
+| `GET photos/settings` · `PUT photos/settings` | PUT: `{ workFolder?: id \| null, workSubfolders?: bool, workInMemories?: bool }` (since 1.13.0); `keepGeo?`, `people?`, `peopleKids?` (bool, since 1.16.0) | `{ workFolder, workSubfolders, workInMemories, folder { id, path, areaId } \| null }` — mine, on every device |
 | `POST photos/review` | `{ ids (≤ 500), review: bool, hint?: 0 … 100 \| null }` (since 1.13.0) | `{ changed, items [{ id, review { hint } \| null }] }` — the review mark |
 | `GET photos/memories` | `date?` (YYYY-MM-DD); `area?`, `folder?` or `camera?` (since 1.10.0) | `{ date, groups [{ yearsAgo, date, items [photo] }] }` |
 | `GET photos/camera` | (since 1.10.0) | `{ folder { id, path, areaId } \| null }` — `Bilder/Kamera-Uploads` of my files |
@@ -617,6 +631,90 @@ Cloud-Konten). Without `gc.cloud`, with no OAuth app (`gc.cloud.available()`) or
   `too_many` (≥ 50 000 items a job) or `cloud_error` (three tries; `resume` tries them again). The person gets the live
   event `import { job: { id, state, total, done, failed, skipped } }` after each run. Ended jobs go after 30 days.
 
+## Places and people (since 1.16.0, features `photoPlaces` and `photoPeople`)
+
+Where a photo was taken and who is on it — for the search („mama hamburg“), the map and the people. Pictures never go to
+anybody: the phones read the position (EXIF) and find the faces on the device; Drive keeps coordinates, place names
+and feature vectors (numbers) and groups those. People and their names belong to each person (`user_id`): nobody sees
+another one's people.
+
+**Places** (`server/places.js`, `server/geonames.js`, feature `photoPlaces`):
+
+- `POST uploads/commit { …, geo: { lat, lon } }` (WGS84, rounded to 6 decimals; not a position: `400 invalid { field:
+  'geo' }`; (0, 0) counts as none — cameras without a fix write it). Without `geo` the photo has no place; a new version
+  without one keeps the old place. `PUT nodes/<id>/geo { lat, lon } | { none: true }` → `{ node }` fills one in for a
+  photo backed up before (write access, else `403`; `none`: looked at, no position). `GET photos?unlocated=1`: the
+  photos without a place, not marked none, in areas one writes to (the phones' backfill, like `unlabeled`).
+- Photo items and nodes carry `geo: { lat, lon, place: { key, name, district, region, country } | null } | null` and
+  `located` (a place, or marked none). `key` (`geonames:<id>`) is stable per city (Stadt bzw. Gemeinde); `district` the
+  Ortsteil; `name`, `district` and `region` German where GeoNames has it; `country` ISO-2 (the clients show it in the
+  viewer's language).
+- Place names offline: GeoNames `cities1000` (every populated place with ≥ 1000 inhabitants, ~170 000, CC BY 4.0),
+  shortened to the geonameid, the position (1e-4°), the country, the region (admin1), the name and — where it differs —
+  the German and English one: `server/places.txt.gz` (2.7 MB packed, 6.9 MB unpacked), built by `test/build-places.js`
+  (not packed). Loaded on first use (~0.4 s, ~25 MB), the nearest place through a grid of 0.25° (≈ 10 µs). Districts:
+  where the admin codes name the municipality (DE, FR, BE: admin4; AT, CH, IT, ES, PL: admin3; NL: admin2) every place of
+  a municipality but its largest is a district of it; elsewhere a section of a place (PPLX) belongs to the nearest city
+  within 15 km. The nearest place within 50 km names the city (a district: its city and itself; a city: its nearest
+  district within 3 km); farther out (at sea) the photo has coordinates and no place.
+- `GET photos/places` (the filters of `GET photos`) → `{ places: [{ key, name, region, country, count, lat, lon, from, to,
+  cover }] }` by count (≤ 500; `cover`: the newest photo item). `GET photos/map?bbox=<w,s,e,n>&zoom=<0..19>` →
+  `{ clusters: [{ lat, lon, count, key | null, cover }] }`: a grid per zoom level (cells of 64 px), at most 200 (a
+  coarser grid while there would be more), `key` where a cluster is exactly one place; `w > e` crosses the date line.
+- Filters of `GET photos` and `photos/months`: `place=<key>` (a city — or a district by its own key, as
+  `photos/suggest` names it), `bbox=<w,s,e,n>`; with `place` `districts=1` adds `districts: [{ name, count }]`.
+- `photos/settings` (per person): `keepGeo` (default on; off: the apps send no places, the server drops `geo` of this
+  person's commits and `PUT nodes/<id>/geo`, `unlocated` lists nothing). `DELETE photos/geo` → `{ deleted }`: the places
+  of every photo the person uploaded go (marked none, so the phones do not fill them in again). `stripGeoOnShare` is
+  not offered: GateControl hands out the files of links itself, and a plugin cannot change a media file's bytes.
+
+**People** (`server/faces.js`, feature `photoPeople`):
+
+- Every device uses the same model, else the vectors do not compare: YuNet (detection, 5 points) and SFace (128 values,
+  aligned to 112×112 by the 5 points, L2-normed), both ONNX from OpenCV Zoo — model id `sface-2021dec`. Drive takes only
+  the ids of `MODELS` (`400 invalid { field: 'model' }`), each with its thresholds (cosine): `same` 0.42 (the same
+  person), `maybe` 0.30 (unsure), `merge` 0.45 (centre to centre: "Sieht aus wie …").
+- `photos/settings`: `people` (default off) and `peopleKids` (default off). `PUT { people: false }` deletes every face,
+  person and name of the person → `{ …, deleted }` (the faces). The children's folders (`child:<user>`) only with
+  `peopleKids`; off again, their faces go.
+- `PUT nodes/<id>/faces { model, faces: [{ box: [x, y, w, h], landmarks?: [[x, y] ×5], score, embedding }] }` → `{ id,
+  model, faces: [{ id, box, person | null }] }`: a picture one reads; `box` 0 … 1 of the upright picture; `embedding`
+  base64 of float32 little endian; ≤ 50 faces; `[]` = looked at, none. A second call replaces this picture's faces for
+  this person and model (a face confirmed before keeps its person where the new box covers the old one, and a rejection
+  stays). `403 feature_off` while `people` is off — also `{ reason: 'kids' }` for a child's folder while `peopleKids` is
+  off; `409 encrypted` for a vault. `GET photos?unfaced=1&model=<id>`: the pictures one reads not yet looked at for this
+  person and model (the devices' backfill; `403 feature_off` while off).
+- Grouping (on each `PUT faces`, incremental): a new face goes to the most similar person when ≥ `same`; else it is
+  unsure (between `maybe` and `same` to the nearest person that is not hidden) and joins the most similar open group
+  (≥ `same`) or starts one; a group of 3 faces becomes a person without a name. A person's centre is the normalised sum
+  of its faces' vectors — kept as the sum (`persons.sum`, a BLOB like the faces' vectors), so a face in or out changes
+  it at once. The centres of a person's people and groups stay in memory per person and model: a new face is compared
+  with those, never with every face (3 500 faces on 1 500 photos: a `PUT` ≈ 5–30 ms). Rejected pairs (`confirm … yes:
+  false`, `faces/<id>/move`) are never suggested again.
+- `GET people` → `{ people: [{ id, name | null, count, hidden, cover: { faceId, nodeId, box, item }, contact | null }],
+  progress: { done, total } }` (named first, then by count; `count`: photos; `item` the photo item with `previewUrl` /
+  `largeUrl` — the client cuts the face out; `progress`: pictures looked at / every picture faces are found on).
+  `GET people/<id>` → `{ person: { …, together: [{ id, name, count }], places: [{ key, name, count }], uncertain, years:
+  { from, to } } }`.
+- `PATCH people/<id> { name?, hidden?, contact?: { kind: 'family' | 'contact', id, name } | null }` → `{ person,
+  mergedInto }`: a name another person of mine carries (case and accents aside) merges this one into that one; `''`
+  removes the name. `POST people/<id>/merge { into }` → `{ person }`. `GET people/<id>/similar` → `{ people: [{ id, name,
+  count, score }] }` (≥ `merge`, ≤ 3, not hidden). `GET people/<id>/uncertain?limit=` → `{ faces: [{ faceId, box, item,
+  score }] }`; `POST people/<id>/confirm { faceIds, yes }` → `{ person, changed }`. `POST faces/<id>/move { person: <id> |
+  null }` → `{ face: { id, person } }` ("Zu … verschieben" / "Nicht diese Person").
+- `GET photos?person=<id>[,<id>…]`: the photos with every one of them (with `q`, `place`, `class`); items carry `people:
+  [id]` (named, not hidden) with `with=people`. A hidden person is out of the search, the bar and the suggestions.
+- A photo deleted for good takes its faces and its place along (`nodes.forget`); in the trash they are not counted. When
+  people change (a new one, a name, hidden, merged, faces confirmed or moved, all deleted) the change log gets the op
+  `people` at the root of my files — the other devices reload.
+
+**Search** (both): `q` on `GET photos` and `photos/months` also matches my people's names (not hidden) and place names —
+city, district, region and country, German and English, without accents (also „koeln“), a word or the start of one
+(3 letters and more); every word must match a person, a place or what is on the picture: „mama hamburg“ finds the
+photos with Mama in Hamburg. `search` adds `people: [{ id, name }]` and `places: [{ key, name }]` (the marks found).
+`GET photos/suggest?q=` → `{ people: [{ id, name, count }], places: [{ key, name, sub, count }], labels: [{ label, text,
+count }] }` (≤ 5 each; `sub`: the region and country, a district's city) — the suggestions while typing.
+
 ## Several at once (since 1.12.0, feature `bulk`)
 
 Move, copy, trash, restore and purge of a selection as **one job** (`server/ops.js`, migration `010_ops.sql`) — the
@@ -965,6 +1063,18 @@ with the sum row, the start of the document —, the line on what the format doe
 "Original-Scan behalten" (default *scan_keep_original*), the cost line; saving uploads the bytes the server made with
 `GC.upload` and files them with `scans/save`); on "Fotos" the field "Fotos nach Inhalt suchen" (`photoSearch`, Enter) —
 the count, the chips "+ Meer" (one more word), "Begriffe auf dem Handy erkannt." and the note on photos from the PC.
+Since 1.16.0 (`ui/places.js`, only with the features `photoPlaces` / `photoPeople`): on "Fotos" the search field with
+marks — a person and a place are chips in the field, the suggestions while typing (`photos/suggest`: people, places,
+what is on them) —; with a mark the result by day with its district, "N Fotos mit Mama in Hamburg", "Auch mit … · N",
+"Als Album speichern", and beside it the place's map (`ui.maps`: the host's Leaflet and its tile relay, `GC.tiles`)
+with its districts and the note on GeoNames (CC BY 4.0); below "Fotos" in the menu "Karte" (clusters per zoom level,
+a cluster of one place shows its photos and "Alle ansehen", the places below; without Leaflet the places only) and
+"Personen" (the progress, "Benannt", "Wer ist das?", "Ausgeblendet"); a person ("Ist das auch …?" with "Ja, alle" and
+"Einzeln prüfen", "Zusammen mit", the places, the photos by year, the menu: rename, link with a family member, merge,
+hide); "Wer ist das?" (the name with suggestions of the family and my people, "Sieht aus wie …" → merge, "Ausblenden",
+then "Rückgängig" and "Nächste Person"); and "Orte und Personen" in the Drive settings ("Aufnahmeort mitsichern",
+"Orte meiner Fotos löschen", "Personen erkennen", "Kinderordner einbeziehen", "Alle Gesichtsdaten löschen" — each
+deletion after asking). Faces are cut out by the browser: the preview in a round box, scaled and moved by the face's box.
 The section "Fotorahmen" (`ui/frame.*`) is the slide show of a kiosk device.
 
 ## Admin (GateControl's admin UI)
@@ -1050,5 +1160,6 @@ copies nobody brought bytes for in 24 hours end, jobs ended more than 7 days ago
 
 ## Development
 
-`node tools/test.js gatecontrol-drive` — the mock host as GateControl 1.208.0 with a family group, a team group and a
+`node test/build-places.js <folder> server/places.txt.gz` builds the place names from GeoNames (since 1.16.0; how to
+fetch the files: its header). `node tools/test.js gatecontrol-drive` — the mock host as GateControl 1.208.0 with a family group, a team group and a
 combo licence (`test/helpers.js`); `withHost({ ai, cloud })` adds the mock host's `gc.ai` / `gc.cloud` (since 1.8.0).

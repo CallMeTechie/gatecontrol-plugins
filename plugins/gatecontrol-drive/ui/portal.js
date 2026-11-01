@@ -37,6 +37,9 @@
  * asked with Enter, the answer card with its sources), the page "Fristen" by month with "In den Familienkalender",
  * "In Dokument umwandeln" for pictures and PDF scans ("Scan prüfen": Word, Excel, PDF), and on "Fotos" the search by
  * what is on them (the words the phones recognised, the chips "+ Meer").
+ * Since 1.16.0 (places and people, ui/places.js — only while GET me features say so): on "Fotos" the search with marks
+ * (a person, a place) and suggestions, the result by day with its district and the place's map; "Karte" and "Personen"
+ * below "Fotos" in the menu (a person, "Wer ist das?"), "Orte und Personen" in the Drive settings.
  *
  * The frame is sandboxed (opaque origin, no storage, no network of its own): everything goes through GC.call /
  * GC.upload. Server and user text only ever goes into textContent or attributes — never innerHTML.
@@ -117,6 +120,8 @@
     folderPlus: 'M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z|M12 10v6M9 13h6',
     // AI in Drive (since 1.14.0): the family calendar
     calendar: 'M4 6h16v14H4z|M4 10h16|M8 3v4M16 3v4',
+    // places and people (since 1.16.0)
+    pin: 'M12 21s-7-6.2-7-11.5a7 7 0 0 1 14 0C19 14.8 12 21 12 21z|M12 7a2.5 2.5 0 1 0 0 5a2.5 2.5 0 1 0 0-5',
     gear: 'M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z|M12 9a3 3 0 1 0 0 6a3 3 0 1 0 0-6',
   };
 
@@ -443,7 +448,9 @@
       h('div', { class: 'dp-nav-me' }, [h('span', { class: 'dp-avatar', text: initial(S.me && S.me.name), attrs: { 'aria-hidden': 'true' } }),
         h('span', { class: 'dp-nav-tx' }, [h('span', { class: 'dp-name', text: (S.me && S.me.name) || '' }), seat ? h('span', { class: 'dp-meta', text: seat }) : null])]),
     ]));
-    navRow(nav, 'photos', T('p.photos'), S.page === 'photos', function () { showPhotos(); });
+    navRow(nav, 'photos', T('p.photos'), S.page === 'photos', function () { if (PL) PL.setMarks([], null); showPhotos(); });
+    // "Karte" and "Personen" (since 1.16.0)
+    if (PL) PL.navRows(nav, navGo);
     navRow(nav, 'album', T('p.albums'), S.page === 'albums' || S.page === 'album', showAlbums);
     var mine = S.areas.filter(function (a) { return a.kind === 'mine'; });
     var shared = S.areas.filter(function (a) { return a.kind !== 'mine'; });
@@ -621,7 +628,7 @@
     var c = $('dp-crumbs');
     clear(c);
     if (S.page !== 'files' || !S.folder) {
-      c.appendChild(h('button', { type: 'button', attrs: { 'aria-current': 'page' }, text: S.page === 'settings' ? T('p.settings_title') : S.page === 'import' ? T('p.import') : S.page === 'deadlines' ? T('p.deadlines') : S.page === 'trash' ? T('p.trash') : S.page === 'links' ? T('p.links') : S.page === 'devices' ? T('p.devices')
+      c.appendChild(h('button', { type: 'button', attrs: { 'aria-current': 'page' }, text: PL && PL.crumb(S.page) ? PL.crumb(S.page) : S.page === 'settings' ? T('p.settings_title') : S.page === 'import' ? T('p.import') : S.page === 'deadlines' ? T('p.deadlines') : S.page === 'trash' ? T('p.trash') : S.page === 'links' ? T('p.links') : S.page === 'devices' ? T('p.devices')
         : S.page === 'incidents' ? T('p.guard_incidents') : S.page === 'photos' ? T('p.photos') : S.page === 'albums' ? T('p.albums')
           : S.page === 'album' ? (S.album ? S.album.name : T('p.albums')) : S.page === 'storage' ? T('p.storage') : S.page === 'ask' ? T('p.k.ask_title') : T('p.results', { q: S.q }) }));
       return;
@@ -1727,7 +1734,10 @@
     // of the classes (GET photos/classes) and my photo settings (GET photos/settings — the work folder)
     cls: 'all', counts: null, wk: null,
     // photos by what is on them (since 1.14.0, feature photoSearch): the words searched for, the answer's search
-    q: '', search: null };
+    q: '', search: null,
+    // places and people (since 1.16.0, ui/places.js): the marks — people [{ id, name }] and a place { key, name } —, the
+    // districts of the place's photos
+    people: [], place: null, districts: null };
   var PHOTO_PAGE = 120;
 
   /** A photo item (GET photos, albums) as a node for the viewer (preview, actions). */
@@ -1781,6 +1791,8 @@
     if (PH.cls !== 'all' && has('photoClasses') && !(more && more.noClass)) q['class'] = PH.cls;
     delete q.noClass;
     if (PH.q && has('photoSearch')) q.q = PH.q;
+    // the marks (since 1.16.0): person=, place=
+    if (PL) PL.query(q);
     return q;
   }
 
@@ -1795,14 +1807,17 @@
     Promise.all([
       api('GET', 'photos', null, photoQuery({ limit: PHOTO_PAGE })),
       api('GET', 'photos/months', null, photoQuery()).catch(function () { return { months: [] }; }),
-      (PH.area && !cam) || PH.cls !== 'all' || PH.q ? Promise.resolve({ groups: [] }) : api('GET', 'photos/memories', null, cam ? { camera: 1 } : null).catch(function () { return { groups: [] }; }),
+      (PH.area && !cam) || PH.cls !== 'all' || PH.q || (PL && PL.active()) ? Promise.resolve({ groups: [] }) : api('GET', 'photos/memories', null, cam ? { camera: 1 } : null).catch(function () { return { groups: [] }; }),
       classes ? api('GET', 'photos/classes', null, photoQuery({ noClass: true })).catch(function () { return null; }) : Promise.resolve(null),
       classes ? api('GET', 'photos/settings').catch(function () { return null; }) : Promise.resolve(null),
+      // the names of my people for "Auch mit …" (since 1.16.0)
+      PL && PL.active() ? PL.names() : Promise.resolve(null),
     ]).then(function (r) {
       if (seq !== PH.seq || S.page !== 'photos') return;
       PH.items = r[0].items || [];
       PH.next = r[0].next;
       PH.search = r[0].search || null;
+      PH.districts = r[0].districts || null;
       PH.months = {};
       (r[1].months || []).forEach(function (m) { PH.months[m.month] = m.count; });
       PH.memories = r[2].groups || [];
@@ -1825,7 +1840,9 @@
     var count = chosenIds().length;
     // the search by what is on them (since 1.14.0): Enter searches, empty shows all again
     var find = null;
-    if (!onDone && has('photoSearch')) {
+    // with places or people (since 1.16.0): the field with the marks and the suggestions
+    if (!onDone && PL && (has('photoPlaces') || has('photoPeople'))) find = PL.searchBox();
+    else if (!onDone && has('photoSearch')) {
       find = h('input', { class: 'dp-input dp-btn-sm dp-k-phq', type: 'search', value: PH.q, placeholder: T('p.k.ph_search'), attrs: { 'aria-label': T('p.k.ph_search') },
         on: { keydown: function (ev) { if (ev.key === 'Enter') { PH.q = ev.target.value.trim(); showPhotos(true); } }, search: function (ev) { if (!ev.target.value.trim() && PH.q) { PH.q = ''; showPhotos(true); } } } });
     }
@@ -1860,6 +1877,8 @@
     // the search's summary: how many, the chips of more words (since 1.14.0)
     if (PH.q && PH.search && K) main.appendChild(K.photoSummary(PH.search, function (word) { PH.q = (PH.q + ' ' + word).trim(); showPhotos(true); }));
     if (has('photoClasses')) renderClasses(main);
+    // a person or a place chosen (since 1.16.0): by day, with the place's map
+    if (PL && PL.active()) { PL.renderResult(main, PH.items, PH.months, PH.districts); return; }
     if (PH.memories.length && PH.cls === 'all') {
       var mem = h('section', { class: 'dp-mem' }, [h('h2', { class: 'dp-h2', text: T('p.memories') })]);
       PH.memories.forEach(function (g) {
@@ -1883,13 +1902,16 @@
         PH.select && B ? B.photoMonth(g.items, PH, rerender) : null]));
       main.appendChild(h('div', { class: 'dp-phs' }, g.items.map(function (x) { return photoTile(x, rerenderBar); })));
     });
-    if (PH.next) main.appendChild(h('div', { class: 'dp-more-row' }, btn(T('p.more'), function () {
-      api('GET', 'photos', null, photoQuery({ limit: PHOTO_PAGE, before: PH.next })).then(function (r) {
-        PH.items = PH.items.concat(r.items || []);
-        PH.next = r.next;
-        renderPhotos(main);
-      }, fail);
-    })));
+    if (PH.next) main.appendChild(h('div', { class: 'dp-more-row' }, btn(T('p.more'), morePhotos)));
+  }
+  /** The next page of photos. */
+  function morePhotos() {
+    var main = $('dp-main');
+    api('GET', 'photos', null, photoQuery({ limit: PHOTO_PAGE, before: PH.next })).then(function (r) {
+      PH.items = PH.items.concat(r.items || []);
+      PH.next = r.next;
+      renderPhotos(main);
+    }, fail);
   }
   /** Choosing changed: only the bar (the count, the buttons) is drawn again. */
   function rerenderBar() {
@@ -2545,6 +2567,8 @@
     }
     // Fotos (since 1.13.0): where work photos go
     if (has('photoClasses')) workSettingsSection(main);
+    // Orte und Personen (since 1.16.0)
+    if (PL) PL.settingsSection(main);
     // KI für Dokumente: per area where I write
     var aiRows = [];
     if (has('docAi')) {
@@ -2971,6 +2995,14 @@
     renderNav: renderNav, renderCrumbs: renderCrumbs, renderTools: renderTools, pickFolder: pickFolder, reload: reload, search: search,
     query: function () { return $('dp-q').value.trim(); },
     home: function () { openFolder(S.areaId, S.folder ? S.folder.id : null); },
+  }) : null;
+
+  // places and people (ui/places.js, since 1.16.0): its helpers from here
+  var PL = window.DrivePlaces ? window.DrivePlaces.attach({
+    CTX: CTX, S: S, PH: PH, T: T, P: P, h: h, add: add, icon: icon, btn: btn, ibtn: ibtn, api: api, has: has, clear: clear, dialog: dialog,
+    closeDialog: closeDialog, confirmDialog: confirmDialog, toast: toast, fail: fail, errText: errText, LOCALE: LOCALE, startPage: startPage,
+    photoTile: function (x) { return photoTile(x, rerenderBar); }, showPhotos: showPhotos, morePhotos: morePhotos, addToAlbum: addToAlbum,
+    showSettings: showSettings, renderCrumbs: renderCrumbs, setRow: setRow, setSwitch: setSwitch,
   }) : null;
 
   boot();

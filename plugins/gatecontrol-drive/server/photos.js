@@ -33,6 +33,14 @@
 // phones recognised for every word (German words too); GET photos then adds `search` { terms, labels, total, chips }
 // and at the top `terms` [{ term, label, count }] (the chips: term is the word to add to q) and `total`.
 // `unlabeled=1` — only those without labels in areas one writes to (the phones fill them in). Items carry `labeled`.
+//
+// Since 1.16.0 (features `photoPlaces`, places.js, and `photoPeople`, faces.js): items carry `geo` and `located`;
+// filters place=<key>, bbox=<w,s,e,n>, unlocated=1 (places.js), person=<id>[,<id>…], unfaced=1&model= (faces.js);
+// with=people adds `people` [id] to the items, districts=1 (with place) adds `districts`. q= matches labels, my people's
+// names and place names — every word one of them; `search` adds `people` [{ id, name }] and `places` [{ key, name }]
+// (the marks found).
+//   GET photos/places · GET photos/map (places.js) · GET photos/suggest?q= → { people, places, labels } (≤ 5 each: my
+//   people by name, places, labels by their German or English word — the suggestions while typing)
 
 const store = require('./store');
 const nodes = require('./nodes');
@@ -40,6 +48,8 @@ const areas = require('./areas');
 const previews = require('./previews');
 const work = require('./work');
 const labels = require('./labels');
+const places = require('./places');
+const faces = require('./faces');
 const { fail, iso, msArg, posInt } = require('./util');
 
 const LIMIT_MAX = 200;
@@ -163,6 +173,7 @@ async function noteViews(ctx, rows) {
 async function itemsOf(ctx, rows) {
   const { map } = await previews.urls(ctx, rows.map((r) => r.media_id));
   const tree = rows.length ? await work.tree(ctx) : null;
+  const where = rows.length ? await places.placeRows(ctx.gc, rows) : new Map();
   return rows.map((r) => {
     const p = r.media_id ? map.get(r.media_id) : null;
     const review = work.reviewOf(r);
@@ -173,6 +184,8 @@ async function itemsOf(ctx, rows) {
       review, work: !review && !!tree && tree.has(r.parent_id),
       // since 1.14.0: a phone recognised its labels (also: none found)
       labeled: r.labels_at != null,
+      // since 1.16.0: where it was taken (also: looked at, none)
+      ...places.geoOf(r, where),
     };
   });
 }
@@ -209,28 +222,54 @@ async function page(gc, where, args, before, limit) {
 }
 
 /**
- * The photos of a list query: scope, class, and since 1.14.0 unlabeled=1 / q= (labels.js) → { sc, search } — sc null:
- * none at all; search: { terms, labels } of q, else null.
+ * The photos of a list query: scope, class, and since 1.14.0 unlabeled=1 / q= (labels.js), since 1.16.0 unlocated=1,
+ * place=, bbox= (places.js), unfaced=1, person= (faces.js), q= also on people and places → { sc, search } — sc null: none
+ * at all; search: { terms, labels, people, places } of q, else null.
  */
 async function filtered(ctx, q) {
-  const cls = classArg(q && q.class);
-  let sc = await classed(ctx, await scope(ctx, q), cls);
-  if (sc && switchArg(q && q.unlabeled, 'unlabeled')) {
-    const ids = (await ctx.visible()).filter((v) => areas.can(v.role, 'write') && v.area.archived_at == null).map((v) => v.area.id);
+  const x = q || {};
+  const cls = classArg(x.class);
+  let sc = await classed(ctx, await scope(ctx, x), cls);
+  const writable = async () => (await ctx.visible()).filter((v) => areas.can(v.role, 'write') && v.area.archived_at == null).map((v) => v.area.id);
+  if (sc && switchArg(x.unlabeled, 'unlabeled')) {
+    const ids = await writable();
     sc = ids.length ? { where: `${sc.where} AND labels_at IS NULL AND area_id IN (${store.marks(ids.length)})`, args: [...sc.args, ...ids] } : null;
   }
+  // the phones fill in places (since 1.16.0) — not while my keepGeo is off
+  if (sc && switchArg(x.unlocated, 'unlocated')) {
+    const ids = (await places.keeps(ctx)) ? await writable() : [];
+    sc = ids.length ? places.narrow({ where: `${sc.where} AND area_id IN (${store.marks(ids.length)})`, args: [...sc.args, ...ids] }, {}, { unlocated: true }) : null;
+  }
+  if (sc && switchArg(x.unfaced, 'unfaced')) sc = await faces.unfaced(ctx, sc, x.model);
+  if (sc) sc = places.narrow(sc, x);
+  if (sc && x.person != null && x.person !== '') sc = await faces.narrowPeople(ctx, sc, x.person);
   let search = null;
-  if (q && q.q != null && q.q !== '') {
-    const words = labels.wordsOf(q.q);
-    if (!sc) return { sc: null, search: { terms: words, labels: [] } };
-    const r = labels.narrow(sc, q.q);
-    sc = r.sc;
-    search = { terms: r.terms, labels: r.labels };
+  if (x.q != null && x.q !== '') {
+    const words = labels.wordsOf(x.q);
+    if (!sc) return { sc: null, search: { terms: words, labels: [], people: [], places: [] } };
+    // every word: a label, one of my people or a place
+    let { where } = sc;
+    const args = [...sc.args];
+    const all = new Set();
+    const who = new Map();
+    const patterns = [];
+    for (const w of words) {
+      const l = labels.wordClause(w);
+      l.labels.forEach((v) => all.add(v));
+      const p = await faces.wordClause(ctx, w);
+      if (p) p.people.forEach((v) => who.set(v.id, { id: v.id, name: v.name }));
+      const g = places.wordClause(w);
+      patterns.push(g.pattern);
+      where += ` AND (${l.sql}${p ? ` OR ${p.sql}` : ''} OR ${g.sql})`;
+      args.push(...l.args, ...(p ? p.args : []), ...g.args);
+    }
+    sc = { where, args };
+    search = { terms: words, labels: [...all], people: [...who.values()], places: await places.marks(ctx, sc, patterns) };
   }
   return { sc, search };
 }
 
-/** GET photos → { items, next, search? } */
+/** GET photos → { items, next, search?, districts? } */
 async function list(ctx, q) {
   const limit = limitArg(q && q.limit);
   const before = beforeArg(q && q.before);
@@ -238,10 +277,48 @@ async function list(ctx, q) {
   const found = search ? { ...search, ...(sc ? await labels.summary(ctx, sc, search.labels) : { total: 0, chips: [] }) } : null;
   // the chips also at the top (the Windows app): terms [{ term (to add to q), label, count }] and total
   const flat = found ? { search: found, terms: found.chips.map((x) => ({ term: x.text, label: x.label, count: x.count })), total: found.total } : {};
+  // the districts of a place (since 1.16.0)
+  const wantDistricts = q && q.place != null && q.place !== '' && switchArg(q.districts, 'districts');
+  if (wantDistricts) flat.districts = sc ? await places.districts(ctx, sc) : [];
   if (!sc) return { items: [], next: null, ...flat };
   const r = await page(ctx.gc, sc.where, sc.args, before, limit);
   await noteViews(ctx, r.rows);
-  return { items: await itemsOf(ctx, r.rows), next: r.next, ...flat };
+  const items = await itemsOf(ctx, r.rows);
+  // the named people on each photo (since 1.16.0)
+  if (String((q && q.with) || '').split(',').includes('people')) await faces.attachPeople(ctx, items);
+  return { items, next: r.next, ...flat };
+}
+
+/** GET photos/places → { places } (since 1.16.0) */
+async function placeList(ctx, q) {
+  const { sc } = await filtered(ctx, q);
+  return places.list(ctx, sc);
+}
+
+/** GET photos/map?bbox=&zoom= → { clusters } (since 1.16.0) */
+async function mapOf(ctx, q) {
+  places.bboxArg(q && q.bbox);
+  const { sc } = await filtered(ctx, q);
+  return places.map(ctx, sc, q || {});
+}
+
+/** GET photos/suggest?q= → { people, places, labels } — while typing (since 1.16.0). */
+async function suggest(ctx, q) {
+  const text = typeof (q && q.q) === 'string' ? q.q.replace(/[\0-\x1f\x7f]/g, ' ').trim() : '';
+  if (!text || text.length > 100) throw fail('invalid', { field: 'q' });
+  const rest = { ...q };
+  delete rest.q;
+  const { sc } = await filtered(ctx, rest);
+  const who = await faces.suggest(ctx, text);
+  const where = sc ? await places.suggest(ctx, sc, text) : [];
+  let what = [];
+  const ls = labels.labelsFor(text);
+  if (sc && ls.length) {
+    const rows = await store.all(ctx.gc, `SELECT label, COUNT(*) AS n FROM node_labels WHERE label IN (${store.marks(ls.length)}) AND node_id IN (SELECT id FROM nodes WHERE ${sc.where})
+      GROUP BY label ORDER BY n DESC, label LIMIT 5`, [...ls, ...sc.args]);
+    what = rows.map((r) => ({ label: r.label, text: labels.textOf(r.label, ctx.lang), count: r.n }));
+  }
+  return { people: who, places: where, labels: what };
 }
 
 /** GET photos/months → { months: [{ month, count }] } newest first. */
@@ -342,6 +419,6 @@ async function makeCamera(ctx) {
 const isMedia = (n) => !!n && n.is_dir === 0 && n.deleted_at == null && !n.vault_id && /^(image|video)\//.test(String(n.mime || ''));
 
 module.exports = {
-  list, months, memories, camera, makeCamera, classes, scope, classed, withoutWork, CAMERA, page, itemsOf, isMedia, areaIds, noteViews, limitArg, beforeArg,
+  list, months, memories, camera, makeCamera, classes, scope, placeList, mapOf, suggest, filtered, classed, withoutWork, CAMERA, page, itemsOf, isMedia, areaIds, noteViews, limitArg, beforeArg,
   cameraRow, mineOf, MEDIA, TREE, LIMIT_MAX,
 };

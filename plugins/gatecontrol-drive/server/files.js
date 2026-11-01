@@ -25,11 +25,15 @@
 // its mtime, else when it came. A new version keeps the takenAt of the file unless it sends one. Every content keeps
 // since when it was the file's (nodes.content_at, versions.since) — the time travel (timetravel.js) knows which
 // version was the file's at a time.
+//
+// Where a picture was taken (since 1.16.0, places.js): commit { geo: { lat, lon } } — kept unless the person's keepGeo is
+// off (400 invalid { field: 'geo' } when it is not a position); a new version without one keeps the old place.
 
 const store = require('./store');
 const nodes = require('./nodes');
 const guard = require('./guard');
 const vaults = require('./vault');
+const places = require('./places');
 const { fail, nodeName, MEDIA_RE, SHA_RE, EMPTY_SHA, iso, nonNeg, docText, msArg } = require('./util');
 
 const URL_TTL_S = 3600;
@@ -126,6 +130,9 @@ async function commit(ctx, body, opts = {}) {
   const text = encrypted ? null : docText(b.text);
   const entropy = encrypted ? null : guard.entropyArg(b.entropy);
   const taken = encrypted ? null : takenArg(b.takenAt, ctx.now);
+  // where it was taken (since 1.16.0): dropped while my keepGeo is off
+  const geo = encrypted || b.geo == null ? null : places.geoArg(b.geo);
+  const keepGeo = geo ? await places.keeps(ctx) : false;
   if (encrypted) info.mime = 'application/octet-stream';
   // the office's save (office.js): GateControl stored the body as application/octet-stream — the document's type stays
   else if (opts.mime) info.mime = opts.mime;
@@ -161,6 +168,7 @@ async function commit(ctx, body, opts = {}) {
       // new content: a mark of the file ("deleted on the device") ends, and those of the folders above it
       await nodes.unmarkUp(ctx.gc, existing.id, ctx, existing.id);
       await setText(ctx, existing.id, text);
+      if (geo && keepGeo) await places.setGeo(ctx, existing.id, geo);
       await trimVersions(ctx.gc, existing.id, ctx.settings.versionsMax);
       noteInsight(ctx, existing.id);
       return { node: nodes.view(await nodes.row(ctx.gc, existing.id)), created: false };
@@ -178,6 +186,7 @@ async function commit(ctx, body, opts = {}) {
     await nodes.log(ctx.gc, area.id, r.lastInsertRowid, 'create', ctx);
     await guard.note(ctx, { op: 'create', node: await nodes.row(ctx.gc, r.lastInsertRowid), name, entropy });
     await setText(ctx, r.lastInsertRowid, text);
+    if (geo && keepGeo) await places.setGeo(ctx, Number(r.lastInsertRowid), geo);
     noteInsight(ctx, Number(r.lastInsertRowid));
     return { node: nodes.view(await nodes.row(ctx.gc, r.lastInsertRowid)), created: true };
   });
