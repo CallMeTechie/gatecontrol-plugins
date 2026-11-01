@@ -870,6 +870,11 @@ async function commitCopy(ctx, op, item, src, mediaId) {
       VALUES (?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [area.id, dest.id, name, mediaId, src.size, src.sha256 || null, src.mime || null, src.mtime, ctx.now, ctx.viewer,
       ctx.now, ctx.viewer, src.taken_at, ctx.now, src.vault_id || null, src.vault_id ? src.name_cipher : null, src.vault_id ? src.key_version : null]);
     const id = Number(r.lastInsertRowid);
+    // where it was taken goes with the copy (since 1.16.0)
+    if (src.geo_lat != null || src.geo_none != null) {
+      await store.run(gc, 'UPDATE nodes SET geo_lat = ?, geo_lon = ?, geo_place = ?, geo_district = ?, geo_none = ?, geo_at = ? WHERE id = ?',
+        [src.geo_lat, src.geo_lon, src.geo_place, src.geo_district, src.geo_none, src.geo_at, id]);
+    }
     await nodes.log(gc, area.id, id, 'create', ctx);
     const made = await nodes.row(gc, id);
     await guard.note(ctx, { op: 'create', node: made, name, entropy: null });

@@ -4,7 +4,11 @@
 // styles only — no external script, no network of its own, no storage): the page talks to this plugin's API through
 // window.GC.call, uploads with GC.upload and gets live events with GC.on. Everything is inlined here, read once from
 // ui/: portal.css · portal.html · DP_CTX · vaultcrypto.js · vault.js (vault folders, 1.9.0) · bulk.js (several at once,
-// 1.12.0) · ki.js (AI in Drive, 1.14.0) · portal.js.
+// 1.12.0) · ki.js (AI in Drive, 1.14.0) · places.js (places and people, 1.16.0) · portal.js.
+//
+// Maps (since 1.16.0, plugin.json ui.maps): GateControl serves its bundled Leaflet at a frame-loadable URL and the
+// OpenStreetMap tiles through its relay (window.GC.tiles); DP_CTX carries both URLs (as the Familie plugin does). The
+// pages fall back to a list when Leaflet cannot be loaded.
 //
 // The portal tab is for a signed-in person only (never a kiosk device, never a viewer known only by device trust):
 // the others get the page with loggedIn: false, which shows "Bitte melde dich an" and calls nothing.
@@ -14,6 +18,9 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const texts = require('./texts.json');
+
+const LEAFLET = Object.freeze({ js: '/plugins/_shared/leaflet/leaflet.js', css: '/plugins/_shared/leaflet/leaflet.css' });
+const TILES = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
 
 const UI = path.join(__dirname, '..', 'ui');
 const read = (f) => fs.readFileSync(path.join(UI, f), 'utf8');
@@ -27,7 +34,7 @@ function inlineScript(name, src) {
 const FILES = {
   css: read('portal.css'), html: read('portal.html'),
   js: inlineScript('vaultcrypto.js', read('vaultcrypto.js')) + '\n' + inlineScript('vault.js', read('vault.js')) + '\n' + inlineScript('bulk.js', read('bulk.js')) + '\n'
-    + inlineScript('ki.js', read('ki.js')) + '\n' + inlineScript('portal.js', read('portal.js')),
+    + inlineScript('ki.js', read('ki.js')) + '\n' + inlineScript('places.js', read('places.js')) + '\n' + inlineScript('portal.js', read('portal.js')),
   admin: { css: read('admin.css'), html: read('admin.html'), js: inlineScript('admin.js', read('admin.js')) },
   frame: { css: read('frame.css'), html: read('frame.html'), js: inlineScript('frame.js', read('frame.js')) },
 };
@@ -79,11 +86,11 @@ function render(view, t) {
       + '<script>' + f.js + '</script>';
   }
   const loggedIn = (v.loggedIn === true || u.loggedIn === true) && u.kiosk !== true;
-  const ctx = { lang, view: 'portal', loggedIn, viewer: Number.isSafeInteger(u.id) ? u.id : null, texts: portalTexts(lang) };
+  const ctx = { lang, view: 'portal', loggedIn, viewer: Number.isSafeInteger(u.id) ? u.id : null, texts: portalTexts(lang), leaflet: LEAFLET, tiles: TILES };
   return '<style>' + FILES.css + '</style>'
     + fill(FILES.html, t, lang)
     + '<script>window.DP_CTX=' + island(ctx) + ';</script>'
     + '<script>' + FILES.js + '</script>';
 }
 
-module.exports = { render, esc, island, portalTexts };
+module.exports = { render, esc, island, portalTexts, LEAFLET, TILES };

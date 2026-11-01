@@ -44,6 +44,10 @@
 //     documents — ask.js) · POST scans/classify · POST scans/convert · POST scans/save (scans become Word, Excel or a
 //     searchable PDF — scans.js, ooxml.js) · PUT nodes/<id>/labels, GET photos?q= / ?unlabeled=1 (photos by what is on
 //     them — labels.js) · PATCH areas/<id> { deadlinesToCalendar }
+//     Places and people (1.16.0): PUT nodes/<id>/geo, uploads/commit { geo }, GET photos/places, GET photos/map, DELETE
+//     photos/geo, place= / bbox= / unlocated=1 (places.js, names offline from GeoNames — geonames.js) · PUT nodes/<id>/faces,
+//     GET people, GET|PATCH people/<id>, POST people/<id>/merge, GET people/<id>/similar, GET people/<id>/uncertain, POST
+//     people/<id>/confirm, POST faces/<id>/move, person= / unfaced=1 (faces.js) · GET photos/suggest
 //   admin     admin/… (administrators in the admin UI, admin.js; admin/guard/… the incidents, since 1.6.0)
 // The full contract (bodies, answers, codes, events) is in README.md "API". Every file node of an answer carries
 // `preview` (previews.js, since 1.1.0).
@@ -89,6 +93,8 @@ const ask = require('./ask');
 const scans = require('./scans');
 const labels = require('./labels');
 const mail = require('./mail');
+const places = require('./places');
+const faces = require('./faces');
 const { t } = require('./text');
 const { STATUS, fail, isKnown, posInt, DEVICE_RE, day, iso } = require('./util');
 
@@ -219,6 +225,10 @@ async function me(ctx) {
   };
 }
 
+// photoPlaces: where photos were taken — uploads/commit { geo }, PUT nodes/<id>/geo, geo / located on nodes and items,
+// photos/places, photos/map, place= / bbox= / unlocated=1, DELETE photos/geo, keepGeo in photos/settings (1.16.0) ·
+// photoPeople: people in the photos — PUT nodes/<id>/faces, people/…, faces/<id>/move, person= / unfaced=1 / with=people,
+// people / peopleKids in photos/settings, the op 'people' (1.16.0); both: q= on names, GET photos/suggest ·
 // photoSearch: PUT nodes/<id>/labels, GET photos?q= / ?unlabeled=1, `labeled` on photo items (1.14.0) ·
 // photoClasses: work photos apart — GET|PUT photos/settings (the work folder), POST photos/review (the review mark,
 // `review` on nodes and photo items, op 'review' in the change log), class= on photos and months, GET photos/classes;
@@ -236,7 +246,7 @@ async function me(ctx) {
 // devices: GET/PUT/DELETE devices (1.5.0) · deleteAfter: DELETE nodes/<id>?after=, PATCH { deleteAt } (1.5.0) ·
 // emptyFiles: uploads/commit { size: 0 } without a mediaId (1.5.0) · wipes: DELETE ?everywhere=1 (1.2.0) ·
 // textSearch: uploads/commit { text } (1.3.0) · previews (1.1.0)
-const FEATURES = ['previews', 'wipes', 'textSearch', 'devices', 'deleteAfter', 'emptyFiles', 'links', 'guard', 'timeTravel', 'takenAt', 'photos', 'albums', 'frame', 'storage', 'vault', 'photosFolder', 'vaultsApart', 'bulk', 'photoClasses', 'photoSearch'];
+const FEATURES = ['previews', 'wipes', 'textSearch', 'devices', 'deleteAfter', 'emptyFiles', 'links', 'guard', 'timeTravel', 'takenAt', 'photos', 'albums', 'frame', 'storage', 'vault', 'photosFolder', 'vaultsApart', 'bulk', 'photoClasses', 'photoSearch', 'photoPlaces', 'photoPeople'];
 
 /**
  * What needs GateControl's AI service or cloud accounts (1.8.0) — only while the host has it and it is allowed (the
@@ -362,6 +372,9 @@ async function route(ctx, req, seg) {
     if (seg.length === 3 && c === 'office' && m === 'POST') return ok(await office.open(ctx, idArg(b)));
     // what is on a photo (1.14.0, labels.js)
     if (seg.length === 3 && c === 'labels' && m === 'PUT') return ok(await labels.put(ctx, b, body));
+    // where it was taken, the faces on it (1.16.0 — places.js, faces.js)
+    if (seg.length === 3 && c === 'geo' && m === 'PUT') return ok(await places.put(ctx, b, body));
+    if (seg.length === 3 && c === 'faces' && m === 'PUT') return ok(await faces.put(ctx, b, body));
     if (c === 'versions' && seg.length >= 4) {
       if (seg.length === 4 && m === 'DELETE') return ok(await files.deleteVersion(ctx, idArg(b), idArg(d)));
       if (seg.length === 5 && e === 'content' && m === 'GET') return ok(await files.versionContent(ctx, idArg(b), idArg(d)));
@@ -376,7 +389,14 @@ async function route(ctx, req, seg) {
     if (seg.length === 2 && b === 'camera') return ok(await photos.camera(ctx));
     if (seg.length === 2 && b === 'classes') return ok(await photos.classes(ctx, q));
     if (seg.length === 2 && b === 'settings') return ok(await work.get(ctx));
+    // places and people (1.16.0)
+    if (seg.length === 2 && b === 'places') return ok(await photos.placeList(ctx, q));
+    if (seg.length === 2 && b === 'map') return ok(await photos.mapOf(ctx, q));
+    if (seg.length === 2 && b === 'suggest') return ok(await photos.suggest(ctx, q));
   }
+  if (a === 'photos' && seg.length === 2 && b === 'geo' && m === 'DELETE') return ok(await places.removeMine(ctx));
+  if (a === 'people') return ok(await peopleRoute(ctx, m, seg, q, body));
+  if (a === 'faces' && seg.length === 3 && c === 'move' && m === 'POST') return ok(await faces.move(ctx, b, body));
   if (a === 'photos' && seg.length === 2 && b === 'camera' && m === 'POST') return ok(await photos.makeCamera(ctx));
   if (a === 'photos' && seg.length === 2 && b === 'settings' && (m === 'PUT' || m === 'PATCH')) return ok(await work.put(ctx, body));
   if (a === 'photos' && seg.length === 2 && b === 'review' && m === 'POST') return ok(await work.review(ctx, body));
@@ -438,6 +458,19 @@ async function route(ctx, req, seg) {
 /** What a job needs to go on after the answer: its person, and the live events of what it changed (ops.js). */
 function opsHooks(gc) {
   return { gc, asPerson: (uid, now) => personContext(gc, uid, now), finish: (c) => after(gc, c, true) };
+}
+
+/** people/… (faces.js, since 1.16.0). */
+async function peopleRoute(ctx, m, seg, q, body) {
+  const [, id, c] = seg;
+  if (seg.length === 1 && m === 'GET') return faces.list(ctx);
+  if (seg.length === 2 && m === 'GET') return faces.get(ctx, id);
+  if (seg.length === 2 && (m === 'PATCH' || m === 'PUT')) return faces.patch(ctx, id, body);
+  if (seg.length === 3 && c === 'merge' && m === 'POST') return faces.merge(ctx, id, body);
+  if (seg.length === 3 && c === 'similar' && m === 'GET') return faces.similar(ctx, id);
+  if (seg.length === 3 && c === 'uncertain' && m === 'GET') return faces.uncertain(ctx, id, q);
+  if (seg.length === 3 && c === 'confirm' && m === 'POST') return faces.confirm(ctx, id, body);
+  throw fail('not_found');
 }
 
 /** ops/… (ops.js, since 1.12.0). */
@@ -648,6 +681,10 @@ module.exports = {
         }
         // every file node gets its preview (previews.js; nodes that have one already are left alone)
         if (out && out.json && out.json.ok) await previews.attach(ctx, out.json);
+        // where a picture was taken (since 1.16.0 — places.js)
+        if (out && out.json && out.json.ok) {
+          try { await places.attach(ctx, previews.nodesOf(out.json)); } catch (e) { gc.log.warn('places failed', (e && e.code) || 'error'); }
+        }
         // where a file came from (since 1.15.0: saved from a mail — mail.js)
         if (out && out.json && out.json.ok) {
           try { await mail.attach(ctx, previews.nodesOf(out.json)); } catch (e) { gc.log.warn('sources failed', (e && e.code) || 'error'); }

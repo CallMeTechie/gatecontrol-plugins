@@ -2,8 +2,16 @@
 
 // Work photos apart (since 1.13.0, feature `photoClasses`): a person's work folder and the review mark of a photo.
 //
-//   GET photos/settings  → { workFolder, workSubfolders, workInMemories, folder: { id, path, areaId } | null }
-//   PUT photos/settings  { workFolder?: id | null, workSubfolders?: bool, workInMemories?: bool } → the same
+//   GET photos/settings  → { workFolder, workSubfolders, workInMemories, folder: { id, path, areaId } | null,
+//                          keepGeo, people, peopleKids }
+//   PUT photos/settings  { workFolder?: id | null, workSubfolders?: bool, workInMemories?: bool, keepGeo?: bool,
+//                          people?: bool, peopleKids?: bool } → the same; with people: false also `deleted` (the faces
+//                          removed)
+//
+// Since 1.16.0 (places.js, faces.js): keepGeo (default on) — the apps send where photos were taken; off: they do not,
+// and the server drops a geo of this person's commits. people (default off) — faces are recognised for this person;
+// off: every face, person and name of theirs goes. peopleKids (default off) — the children's folders too; off again:
+// their faces go.
 //   POST photos/review   { ids, review: bool, hint?: 0 … 100 | null } → { changed, items: [{ id, review }] }
 //
 // The settings are the person's (table photo_settings), the same on every device and in the portal. The work folder is
@@ -23,6 +31,9 @@ const nodes = require('./nodes');
 const areas = require('./areas');
 const { fail, posInt } = require('./util');
 
+// faces.js needs this module; loaded when first used
+const faces = () => require('./faces');
+
 // photos.js needs this module; loaded when first used
 const photos = () => require('./photos');
 
@@ -33,13 +44,16 @@ const TREE = `WITH RECURSIVE tree(id) AS (SELECT ?
     UNION ALL SELECT n.id FROM nodes n JOIN tree ON n.parent_id = tree.id WHERE n.is_dir = 1 AND n.deleted_at IS NULL AND n.vault_id IS NULL)
   SELECT id FROM tree`;
 
-const DEFAULTS = { workFolder: null, workSubfolders: true, workInMemories: false };
+const DEFAULTS = { workFolder: null, workSubfolders: true, workInMemories: false, keepGeo: true, people: false, peopleKids: false };
 
-/** Person `uid`'s stored settings → { workFolder (the stored id), workSubfolders, workInMemories }. */
+/** Person `uid`'s stored settings → { workFolder (the stored id), workSubfolders, workInMemories, keepGeo, people, peopleKids }. */
 async function stored(gc, uid) {
   const r = await store.one(gc, 'SELECT * FROM photo_settings WHERE user_id = ?', [uid]);
   if (!r) return { ...DEFAULTS };
-  return { workFolder: r.work_folder == null ? null : r.work_folder, workSubfolders: r.work_subfolders === 1, workInMemories: r.work_in_memories === 1 };
+  return {
+    workFolder: r.work_folder == null ? null : r.work_folder, workSubfolders: r.work_subfolders === 1, workInMemories: r.work_in_memories === 1,
+    keepGeo: r.keep_geo !== 0, people: r.people === 1, peopleKids: r.people_kids === 1,
+  };
 }
 
 /**
@@ -88,6 +102,8 @@ async function answer(ctx) {
   return {
     workFolder: folder ? folder.id : null, workSubfolders: settings.workSubfolders, workInMemories: settings.workInMemories,
     folder: folder ? { id: folder.id, path: await nodes.pathOf(ctx.gc, folder), areaId: folder.area_id } : null,
+    // since 1.16.0: places and people (stripGeoOnShare is not offered: Drive cannot change the bytes a link hands out)
+    keepGeo: settings.keepGeo, people: settings.people, peopleKids: settings.peopleKids,
   };
 }
 
@@ -127,18 +143,26 @@ function boolArg(v, field) {
 /** PUT photos/settings — only the fields sent change. */
 async function put(ctx, body) {
   const b = body && typeof body === 'object' ? body : {};
+  const has = (k) => Object.prototype.hasOwnProperty.call(b, k);
   const now = await stored(ctx.gc, ctx.viewer);
   const next = { ...now };
-  if (Object.prototype.hasOwnProperty.call(b, 'workFolder')) next.workFolder = b.workFolder == null ? null : await folderArg(ctx, b.workFolder);
-  if (Object.prototype.hasOwnProperty.call(b, 'workSubfolders')) next.workSubfolders = boolArg(b.workSubfolders, 'workSubfolders');
-  if (Object.prototype.hasOwnProperty.call(b, 'workInMemories')) next.workInMemories = boolArg(b.workInMemories, 'workInMemories');
-  await store.run(ctx.gc, `INSERT INTO photo_settings (user_id, work_folder, work_subfolders, work_in_memories, updated_at) VALUES (?, ?, ?, ?, ?)
-    ON CONFLICT (user_id) DO UPDATE SET work_folder = excluded.work_folder, work_subfolders = excluded.work_subfolders,
-      work_in_memories = excluded.work_in_memories, updated_at = excluded.updated_at`,
-  [ctx.viewer, next.workFolder, next.workSubfolders ? 1 : 0, next.workInMemories ? 1 : 0, ctx.now]);
+  if (has('workFolder')) next.workFolder = b.workFolder == null ? null : await folderArg(ctx, b.workFolder);
+  for (const k of ['workSubfolders', 'workInMemories', 'keepGeo', 'people', 'peopleKids']) if (has(k)) next[k] = boolArg(b[k], k);
+  let deleted = null;
+  await store.tx(ctx.gc, async () => {
+    await store.run(ctx.gc, `INSERT INTO photo_settings (user_id, work_folder, work_subfolders, work_in_memories, keep_geo, people, people_kids, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT (user_id) DO UPDATE SET work_folder = excluded.work_folder, work_subfolders = excluded.work_subfolders,
+        work_in_memories = excluded.work_in_memories, keep_geo = excluded.keep_geo, people = excluded.people, people_kids = excluded.people_kids,
+        updated_at = excluded.updated_at`,
+    [ctx.viewer, next.workFolder, next.workSubfolders ? 1 : 0, next.workInMemories ? 1 : 0, next.keepGeo ? 1 : 0, next.people ? 1 : 0, next.peopleKids ? 1 : 0, ctx.now]);
+    // people off: every face, person and name of mine goes; the children's folders off: their faces go
+    if (has('people') && !next.people) deleted = await faces().wipe(ctx);
+    else if (now.peopleKids && !next.peopleKids) await faces().dropKids(ctx);
+  }).catch((e) => { faces().forgetCentres(ctx.viewer); throw e; });
   ctx.work = null;
   ctx.workTree = null;
-  return answer(ctx);
+  const out = await answer(ctx);
+  return deleted == null ? out : { ...out, deleted };
 }
 
 /** The review mark of node row `n` as the answers carry it → { hint } | null. */

@@ -570,9 +570,10 @@ async function purgeBatch(gc, trashId, ctx) {
 
 /** Nodes `ids` go for good: their history, their places in albums (since 1.7.0), their insights and deadlines (1.8.0), a
  * vault's keys, office locks (1.9.0), calendar entries of deadlines and image labels (1.14.0), sources and filing rules
- * (1.15.0). */
+ * (1.15.0), faces (1.16.0 — the place goes with the row). */
 async function forget(gc, ids) {
   await vaults().forget(gc, ids);
+  await require('./faces').forget(gc, ids);
   for (const part of store.chunks(ids)) {
     const m = store.marks(part.length);
     await store.run(gc, `DELETE FROM node_log WHERE node_id IN (${m})`, part);

@@ -2,6 +2,37 @@
 
 Dateien der Familie und des Teams auf dem eigenen Speicher – auf diesem Server, einer NAS oder in S3.
 
+## 1.16.0
+- **Orte und Personen in den Fotos** (Features `photoPlaces` und `photoPeople`, README „Places and people“). Bilder gehen
+  dafür an niemanden: die Handys lesen den Aufnahmeort (EXIF) und erkennen Gesichter auf dem Gerät; Drive speichert
+  Koordinaten, Ortsnamen und Gesichtsmerkmale (Zahlen) und gruppiert sie. Personen und Namen gehören jeder Person selbst.
+- **Orte:** `uploads/commit { geo: { lat, lon } }` und `PUT nodes/<id>/geo { lat, lon } | { none: true }` (Orte
+  nachtragen, `GET photos?unlocated=1`). Fotos und Knoten tragen `geo { lat, lon, place { key, name, district, region,
+  country } }` und `located`. `GET photos/places` (Orte nach Anzahl), `GET photos/map?bbox=&zoom=` (Bündel je Zoomstufe,
+  höchstens 200), Filter `place=`, `bbox=`, `districts=1`. Einstellungen `keepGeo` (Standard an) und `DELETE photos/geo`.
+  `stripGeoOnShare` gibt es nicht: Links liefert GateControl selbst aus, Drive kann die Bytes einer Datei nicht ändern.
+- **Ortsnamen offline aus GeoNames** (`cities1000`, © GeoNames, https://www.geonames.org, Lizenz **CC BY 4.0**): auf
+  Name, Position, Land, Region und deutschen bzw. englischen Namen gekürzt (`server/places.txt.gz`, 2,7 MB), geladen beim
+  ersten Bedarf, der nächste Ort über ein Raster – kein Dienst, kein Netz. Stadt bzw. Gemeinde mit Ortsteil, Namen auf
+  Deutsch, wo GeoNames sie hat.
+- **Personen:** `PUT nodes/<id>/faces { model: 'sface-2021dec', faces }` (Vektoren der Geräte, YuNet + SFace),
+  `GET photos?unfaced=1`, `GET people` mit Fortschritt, `GET|PATCH people/<id>` („Zusammen mit“, Orte, Jahre, unsichere
+  Treffer; ein Name, den schon eine andere Person trägt, führt beide zusammen), `POST people/<id>/merge`,
+  `GET people/<id>/similar` („Sieht aus wie …“), `GET people/<id>/uncertain`, `POST people/<id>/confirm`,
+  `POST faces/<id>/move`, Filter `person=` und `with=people`. Der Server gruppiert bei jedem `PUT faces` schrittweise
+  (Mittelpunkte je Person im Speicher, Schwellen `same` 0,42, `maybe` 0,30, `merge` 0,45). Einstellungen `people`
+  (Standard aus; Ausschalten löscht alle Gesichtsdaten → `deleted`) und `peopleKids` (Ordner der Kinder, Standard aus).
+  Änderungen an Personen schreiben die Op `people` ins Änderungsprotokoll.
+- **Suche:** `q` findet auch Personen und Orte (Stadt, Ortsteil, Region, Land – Deutsch und Englisch, ohne Akzente, auch
+  der Wortanfang); jedes Wort muss passen: „mama hamburg“. `search` nennt `people` und `places`.
+  `GET photos/suggest?q=` liefert Vorschläge beim Tippen (Personen, Orte, Bildinhalte).
+- **Portal:** die Suche mit Marken (Person, Ort) und Vorschlägen, Ergebnis nach Tagen mit Ortsteil, rechts Karte und
+  Ortsteile; „Karte“ (OpenStreetMap über GateControl, `ui.maps`, mit Bündeln und dem Hinweis auf GeoNames),
+  „Personen“, eine Person („Ist das auch …?“, „Zusammen mit“, Orte), „Wer ist das?“ mit „Sieht aus wie …“ und in den
+  Einstellungen „Orte und Personen“ mit „Alle Gesichtsdaten löschen“.
+- `plugin.json` `ui.maps: true`. Migration 014 (`geo_places`, `persons`, `faces`, `face_scans`, `face_rejects`, Spalten
+  für den Ort an `nodes`, Schalter in `photo_settings`).
+
 ## 1.15.0
 - **Dienste für GateControl Mail.** Drei neue Dienste und zwei Erweiterungen von `save_file` (README „Services for
   other plugins“):
