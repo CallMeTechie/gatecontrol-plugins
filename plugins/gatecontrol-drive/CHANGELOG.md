@@ -2,6 +2,28 @@
 
 Dateien der Familie und des Teams auf dem eigenen Speicher – auf diesem Server, einer NAS oder in S3.
 
+## 1.18.0
+- **Übersicht als neuer Einstieg** (Feature `overview`, README „Overview“). Drive hat jetzt drei Seiten: Übersicht,
+  Dateien und Fotos. `GET overview` liefert alles für die Übersicht in einer Anfrage: Zu erledigen, Zuletzt geöffnet,
+  Erinnerungen, Personen, Orte, Neu in Familie und den Speicher. Leere Teile fehlen. Mit einigen tausend Dateien
+  antwortet sie in deutlich unter 300 ms.
+- **Zu erledigen:** die nächsten drei Fristen ab heute (wie `GET deadlines`) mit ihrer Anzahl, die Fotos zum Prüfen und
+  die Mail-Anhänge „Zum Ablegen“ mit dem Ordner-Vorschlag. Die Anhänge kommen über Mails Dienst `tofile_count`
+  (Mail ≥ 1.7.0). Der Administrator bestätigt die neue Berechtigung beim Update. Ohne Mail fehlt die Zahl (`null`).
+- **Zuletzt geöffnet:** Drive merkt sich, welche Dateien eine Person in der App, am PC oder im Portal öffnet,
+  herunterlädt oder im Office öffnet (Migration 016, `recent_opens`). Dafür rufen die Clients nichts Neues auf. Öffnet
+  eine App ihre schon geladene Kopie, meldet sie das mit `POST nodes/<id>/opened` (`204`, ohne erneuten Download). Was ein
+  PC für einen abgeglichenen Ordner holt, zählt nicht, ebenso Fotos, Videos und Tresor-Dateien. Bis es genug Öffnungen
+  gibt, füllt Drive mit den zuletzt geänderten bzw. hochgeladenen Dateien der Person auf.
+- **Neu in Familie:** was andere in den letzten 14 Tagen in Familie und Team-Ordnern hinzugefügt oder geändert haben,
+  zusammengefasst je Person, Ordner und Stunde („Marc hat 14 Fotos hinzugefügt“).
+- **Erinnerungen, Personen, Orte:** die Tage vor einem, zwei, … Jahren mit Titelbild und Anzahl, bis zu acht benannte
+  Personen und die Zahl der unbenannten, die drei häufigsten Orte mit einem Bündel für die kleine Karte.
+- **Portal:** Oben steht der Umschalter Übersicht | Dateien | Fotos. Drive öffnet auf der Übersicht, ein Direktlink
+  öffnet weiter seine Datei bzw. seinen Ordner. Die Übersicht ist ein Raster aus Kacheln wie unter Windows, auf dem Handy
+  einspaltig. Fotos zeigt nur noch die Bilder: Erinnerungen und das Band „N Fotos zu prüfen“ sind weg, die Zahl steht am
+  Chip „Prüfen“. Karte und Personen stehen oben.
+
 ## 1.17.0
 - **Fristen auch in den Mail-Kalender** (Feature `deadlineMailCalendar`, README „Deadlines into a calendar of Mail“).
   Fristen aus Dokumenten können jetzt außer in den Familienkalender auch in einen Kalender des Mail-Plugins (ab 1.6.0)

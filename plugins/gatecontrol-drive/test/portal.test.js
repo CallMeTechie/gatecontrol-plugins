@@ -92,6 +92,13 @@ const navItem = (nav, label) => {
   return n || null;
 };
 
+// since 1.18.0 Drive opens on "Übersicht": "Dateien" in the switch at the top shows the files
+async function toFiles($) {
+  const b = await until('the switch', () => byText($('dp-pages'), 'button', 'Dateien'));
+  b.click();
+  await until('the files', () => byText($('dp-pages'), 'button', 'Dateien').getAttribute('aria-pressed') === 'true');
+}
+
 /** window.GC of a portal frame for `user` against the mock host: call, upload, on. */
 function frameGc(host, user, calls) {
   const viewer = { ...user, portal: true, loggedIn: true };
@@ -127,6 +134,7 @@ test('smoke: areas, a new folder, uploads with a name that exists, a file\'s act
     const $ = (id) => doc.getElementById(id);
     try {
       f.run();
+      await toFiles($);
       // the areas: my files, the family, Lena's folder (read)
       await until('the app', () => !$('dp-app').hidden && navItem($('dp-nav'), 'Familie Berg'));
       for (const label of ['Meine Dateien', 'Familie Berg', 'Kinder · Lena', 'Geteilte Links', 'Papierkorb']) assert.ok(navItem($('dp-nav'), label), label);
@@ -217,6 +225,7 @@ test('smoke (1.11.0): the menu — me and my seat, the folder tree (loaded when 
     const row = (name) => $('dp-nav').querySelectorAll('.dp-tree-row').find((r) => textOf(r).trim() === name);
     try {
       f.run();
+      await toFiles($);
       // my files are open with their folders (only folders: dirs=1); the family is closed
       await until('the tree', () => row('Dokumente'));
       const nav = textOf($('dp-nav'));
@@ -224,7 +233,7 @@ test('smoke (1.11.0): the menu — me and my seat, the folder tree (loaded when 
       assert.ok(!row('Brief.pdf'), 'no files in the tree');
       assert.ok(calls.some((x) => x.path === `nodes/${mine.rootId}/children` && x.query.dirs === '1'));
       assert.ok(!row('Urlaub'), 'the family is closed');
-      assert.ok(row('Meine Dateien').className.includes('is-sel'), 'the folder shown is marked');
+      await until('the folder shown is marked', () => row('Meine Dateien').className.includes('is-sel'));
       // the arrow of "Dokumente" (it has folders): loaded when opened
       assert.ok(!calls.some((x) => x.path === `nodes/${docs.id}/children`));
       const arrow = row('Dokumente').querySelector('.dp-chev');
@@ -280,6 +289,7 @@ test('smoke: into the trash and also on all my devices (Drive knows a phone of m
     };
     try {
       f.run();
+      await toFiles($);
       await until('files', () => !$('dp-app').hidden && byText($('dp-main'), 'span', 'Foto.jpg'));
       await trash('Notiz.txt', false);
       assert.deepEqual(calls.filter((x) => x.method === 'DELETE').map((x) => x.query), [{}]);
@@ -322,6 +332,7 @@ test('smoke (1.5.0): a file deleted on a device shows it and can be kept; an emp
     const $ = (id) => w.document.getElementById(id);
     try {
       w.run();
+      await toFiles($);
       await until('files', () => !$('dp-app').hidden && byText($('dp-main'), 'span', 'Alt.txt'));
       const card = $('dp-main').querySelectorAll('.dp-card').find((x) => textOf(x).includes('Alt.txt'));
       assert.match(textOf(card.querySelector('.dp-mark')), /^wird am \d\d\.\d\d\.\d{4} gelöscht$/);
@@ -436,6 +447,7 @@ test('smoke (1.6.0): a stopped device of mine shows the banner — "Rückgängig
     const $ = (id) => w.document.getElementById(id);
     try {
       w.run();
+      await toFiles($);
       await until('banner', () => !$('dp-guard').hidden && textOf($('dp-guard')).includes('Arbeits-PC'));
       assert.ok(textOf($('dp-guard')).includes('Drive hat ungewöhnliche Änderungen von „Arbeits-PC“ gestoppt'));
       assert.ok(textOf($('dp-guard')).includes('Text1.txt.locked'));

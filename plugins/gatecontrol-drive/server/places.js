@@ -267,6 +267,24 @@ async function list(ctx, sc) {
   };
 }
 
+/**
+ * The overview (since 1.18.0): the photos of `sc` with a place → { top: [≤ max { key, name, count }] by count, cluster:
+ * { lat, lon, count } — at the place with the most photos, with the count of every photo with a place (the overview's
+ * small map shows one bubble) —, total }; null: none has a place.
+ */
+async function summary(ctx, sc, max) {
+  if (!sc) return null;
+  const tot = await store.one(ctx.gc, `SELECT COUNT(*) AS n, AVG(geo_lat) AS lat, AVG(geo_lon) AS lon FROM nodes WHERE ${sc.where} AND geo_lat IS NOT NULL`, sc.args);
+  if (!tot || !tot.n) return null;
+  const rows = await store.all(ctx.gc, `SELECT geo_place, COUNT(*) AS n FROM nodes WHERE ${sc.where} AND geo_place IS NOT NULL GROUP BY geo_place ORDER BY n DESC, geo_place LIMIT ?`,
+    [...sc.args, max]);
+  const named = await placeRows(ctx.gc, rows);
+  const top = rows.filter((r) => named.has(r.geo_place)).map((r) => ({ key: keyOf(r.geo_place), name: named.get(r.geo_place).name, count: r.n }));
+  const at = rows.length && named.has(rows[0].geo_place) ? named.get(rows[0].geo_place) : null;
+  const r6 = (v) => Math.round(v * 1e6) / 1e6;
+  return { top, cluster: { lat: r6(at ? at.lat : tot.lat), lon: r6(at ? at.lon : tot.lon), count: tot.n }, total: tot.n };
+}
+
 /** Photo items of node ids → Map id → item. */
 async function coverItems(ctx, ids) {
   const out = new Map();
@@ -349,5 +367,5 @@ async function removeMine(ctx) {
 
 module.exports = {
   geoArg, setGeo, setNone, keeps, put, attach, geoOf, placeRows, placeOf, keyArg, bboxArg, narrow, districts, wordClause, marks, list, map, suggest,
-  removeMine, searchText, fold, keyOf, coverItems,
+  removeMine, searchText, fold, keyOf, coverItems, summary,
 };

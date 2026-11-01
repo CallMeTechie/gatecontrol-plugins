@@ -8,6 +8,9 @@
 //   app API   /api/v1/client/plugins/gatecontrol-drive/api/…   (the device token's owner, user.device)
 //   portal    /api/v1/portal/plugins/gatecontrol-drive/api/…   (the same routes; also under portal/…)
 //     GET me · GET areas · GET changes?since=&limit= · GET search?q=&area= (name, then recognised text: doc_text)
+//     GET overview (the start of Drive: to do, recently opened, memories, people, places, new in the family, storage —
+//     overview.js, 1.18.0; opening a file — content, office — is kept for "Zuletzt geöffnet") · POST nodes/<id>/opened
+//     (204: a device opened its own copy — only "Zuletzt geöffnet")
 //     GET nodes/by-path?area=&path= · GET nodes/<id> · GET nodes/<id>/children?sort=&order=&offset=&limit=
 //     (since 1.11.0 without vault folders — &vaults=1 with them; &dirs=1 only folders with hasDirs: the menu's tree)
 //     POST nodes · PATCH nodes/<id> · DELETE nodes/<id> · GET nodes/<id>/content
@@ -97,6 +100,7 @@ const labels = require('./labels');
 const mail = require('./mail');
 const places = require('./places');
 const faces = require('./faces');
+const overview = require('./overview');
 const { t } = require('./text');
 const { STATUS, fail, isKnown, posInt, DEVICE_RE, day, iso } = require('./util');
 
@@ -227,6 +231,7 @@ async function me(ctx) {
   };
 }
 
+// overview: GET overview — the start of Drive in one request, "Zuletzt geöffnet" from content / office (1.18.0) ·
 // photoPlaces: where photos were taken — uploads/commit { geo }, PUT nodes/<id>/geo, geo / located on nodes and items,
 // photos/places, photos/map, place= / bbox= / unlocated=1, DELETE photos/geo, keepGeo in photos/settings (1.16.0) ·
 // photoPeople: people in the photos — PUT nodes/<id>/faces, people/…, faces/<id>/move, person= / unfaced=1 / with=people,
@@ -248,7 +253,7 @@ async function me(ctx) {
 // devices: GET/PUT/DELETE devices (1.5.0) · deleteAfter: DELETE nodes/<id>?after=, PATCH { deleteAt } (1.5.0) ·
 // emptyFiles: uploads/commit { size: 0 } without a mediaId (1.5.0) · wipes: DELETE ?everywhere=1 (1.2.0) ·
 // textSearch: uploads/commit { text } (1.3.0) · previews (1.1.0)
-const FEATURES = ['previews', 'wipes', 'textSearch', 'devices', 'deleteAfter', 'emptyFiles', 'links', 'guard', 'timeTravel', 'takenAt', 'photos', 'albums', 'frame', 'storage', 'vault', 'photosFolder', 'vaultsApart', 'bulk', 'photoClasses', 'photoSearch', 'photoPlaces', 'photoPeople'];
+const FEATURES = ['previews', 'wipes', 'textSearch', 'devices', 'deleteAfter', 'emptyFiles', 'links', 'guard', 'timeTravel', 'takenAt', 'photos', 'albums', 'frame', 'storage', 'vault', 'photosFolder', 'vaultsApart', 'bulk', 'photoClasses', 'photoSearch', 'photoPlaces', 'photoPeople', 'overview'];
 
 /**
  * What needs GateControl's AI service or cloud accounts (1.8.0) — only while the host has it and it is allowed (the
@@ -343,6 +348,8 @@ async function route(ctx, req, seg) {
   if (a === 'areas' && seg.length === 1 && m === 'GET') return ok(await areaList(ctx));
   if (a === 'changes' && seg.length === 1 && m === 'GET') return ok(await changes.since(ctx, q));
   if (a === 'search' && seg.length === 1 && m === 'GET') return ok(await nodes.search(ctx, q.q, q.area ? String(q.area) : null));
+  // the start of Drive (1.18.0)
+  if (a === 'overview' && seg.length === 1 && m === 'GET') return ok(await overview.get(ctx));
   if (a === 'nodes') {
     if (seg.length === 1 && m === 'POST') return ok({ node: await nodes.mkdir(ctx, body) });
     if (b === 'by-path' && seg.length === 2 && m === 'GET') return ok({ node: await nodes.byPath(ctx, q.area, q.path) });
@@ -368,12 +375,26 @@ async function route(ctx, req, seg) {
         const r = await previews.attach(ctx, await nodes.children(ctx, idArg(b), q));
         return ok(q.thumbs ? await withThumbs(ctx, r) : r);
       }
-      if (c === 'content') return ok(await files.content(ctx, idArg(b)));
+      if (c === 'content') {
+        const got = await files.content(ctx, idArg(b));
+        // "Zuletzt geöffnet" (1.18.0; best effort)
+        await overview.recordOpen(ctx, await nodes.row(ctx.gc, idArg(b)));
+        return ok(got);
+      }
       if (c === 'versions') return ok(await files.versions(ctx, idArg(b)));
       if (c === 'timetravel') return ok(await timetravel.preview(ctx, idArg(b), q));
     }
     if (seg.length === 3 && c === 'timetravel' && m === 'POST') return ok(await timetravel.run(ctx, idArg(b), body));
-    if (seg.length === 3 && c === 'office' && m === 'POST') return ok(await office.open(ctx, idArg(b)));
+    // a device opened its own copy of the file (1.18.0): only "Zuletzt geöffnet", no body
+    if (seg.length === 3 && c === 'opened' && m === 'POST') {
+      await overview.opened(ctx, idArg(b));
+      return { status: 204, json: null };
+    }
+    if (seg.length === 3 && c === 'office' && m === 'POST') {
+      const got = await office.open(ctx, idArg(b));
+      await overview.recordOpen(ctx, await nodes.row(ctx.gc, idArg(b)));
+      return ok(got);
+    }
     // what is on a photo (1.14.0, labels.js)
     if (seg.length === 3 && c === 'labels' && m === 'PUT') return ok(await labels.put(ctx, b, body));
     // where it was taken, the faces on it (1.16.0 — places.js, faces.js)
@@ -639,6 +660,7 @@ async function adminGuard(gc, req, seg, lang, now) {
 
 module.exports = {
   async start(gc) {
+    overview.reset();
     // the history of names and folders (time travel) starts with the first start of 1.7.0
     try { await timetravel.historySince(gc, Date.now()); } catch (e) { gc.log.warn('history start failed', (e && e.code) || 'error'); }
     // vault folders of older versions into the top folder of their area (1.11.0; the background run keeps it so)

@@ -12,7 +12,10 @@
 const URL_TTL_S = 3600;
 const BATCH = 1000;
 
-/** The nodes of an answer body that are files: node, items[], current, changes[].node. */
+/**
+ * The nodes of an answer body that are files: node, items[], current, changes[].node — and of GET overview (1.18.0)
+ * recent[] and activity[].sample.
+ */
 function nodesOf(body) {
   if (!body || typeof body !== 'object') return [];
   const out = [];
@@ -21,6 +24,8 @@ function nodesOf(body) {
   add(body.current);
   if (Array.isArray(body.items)) body.items.forEach(add);
   if (Array.isArray(body.changes)) body.changes.forEach((c) => add(c && c.node));
+  if (Array.isArray(body.recent)) body.recent.forEach(add);
+  if (Array.isArray(body.activity)) body.activity.forEach((x) => add(x && x.sample));
   return out.filter((n) => !n.isDir);
 }
 

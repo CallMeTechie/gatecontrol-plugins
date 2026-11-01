@@ -370,6 +370,32 @@ async function memories(ctx, q) {
   return { date: `${y}-${pad(m + 1)}-${pad(d)}`, groups };
 }
 
+/**
+ * The overview (since 1.18.0): the memories of today like GET photos/memories (every area, without the work folder
+ * unless the person wants it there) — the nearest `max` years with photos → [{ yearsAgo, date, count, cover }]. count:
+ * every photo of that day (± 1 day), cover: the first of them. No note to a child (a look at the overview is no look
+ * into its folder).
+ */
+async function memoryCovers(ctx, max) {
+  const now = new Date(ctx.now);
+  const [y, m, d] = [now.getFullYear(), now.getMonth(), now.getDate()];
+  const sc = await withoutWork(ctx, await scope(ctx, {}));
+  if (!sc) return [];
+  const first = await store.one(ctx.gc, `SELECT MIN(${TAKEN}) AS t FROM nodes WHERE ${sc.where}`, sc.args);
+  const fromYear = first && first.t != null ? new Date(first.t).getFullYear() : y;
+  const found = [];
+  for (let k = 1; k <= YEARS_MAX && y - k >= fromYear && found.length < max; k++) {
+    const start = new Date(y - k, m, d - 1).getTime();
+    const end = new Date(y - k, m, d + 2).getTime();
+    const r = await store.one(ctx.gc, `SELECT COUNT(*) OVER () AS n_all, * FROM nodes WHERE ${sc.where} AND ${TAKEN} >= ? AND ${TAKEN} < ? ORDER BY ${TAKEN}, id LIMIT 1`,
+      [...sc.args, start, end]);
+    if (r) found.push({ yearsAgo: k, date: dayOf(new Date(y - k, m, d)), count: r.n_all, row: r });
+  }
+  if (!found.length) return [];
+  const items = await itemsOf(ctx, found.map((g) => { const { n_all: _n, ...row } = g.row; return row; }));
+  return found.map((g, i) => ({ yearsAgo: g.yearsAgo, date: g.date, count: g.count, cover: items[i] }));
+}
+
 /** GET photos/classes → { work, private, review } — the counts of the classes (since 1.13.0). */
 async function classes(ctx, q) {
   const sc = await scope(ctx, q);
@@ -419,6 +445,6 @@ async function makeCamera(ctx) {
 const isMedia = (n) => !!n && n.is_dir === 0 && n.deleted_at == null && !n.vault_id && /^(image|video)\//.test(String(n.mime || ''));
 
 module.exports = {
-  list, months, memories, camera, makeCamera, classes, scope, placeList, mapOf, suggest, filtered, classed, withoutWork, CAMERA, page, itemsOf, isMedia, areaIds, noteViews, limitArg, beforeArg,
+  list, months, memories, memoryCovers, camera, makeCamera, classes, scope, placeList, mapOf, suggest, filtered, classed, withoutWork, CAMERA, page, itemsOf, isMedia, areaIds, noteViews, limitArg, beforeArg,
   cameraRow, mineOf, MEDIA, TREE, LIMIT_MAX,
 };

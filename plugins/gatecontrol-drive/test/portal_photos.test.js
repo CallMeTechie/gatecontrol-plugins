@@ -35,6 +35,13 @@ const navItem = (nav, label) => {
   return n || null;
 };
 
+// since 1.18.0 Drive opens on "Übersicht": "Dateien" in the switch at the top shows the files
+async function toFiles($) {
+  const b = await until('the switch', () => byText($('dp-pages'), 'button', 'Dateien'));
+  b.click();
+  await until('the files', () => byText($('dp-pages'), 'button', 'Dateien').getAttribute('aria-pressed') === 'true');
+}
+
 function frameGc(host, user, calls) {
   const viewer = { ...user, portal: true, loggedIn: true };
   return {
@@ -100,7 +107,7 @@ test('smoke: "Fotos" by month, choose two, a new album; "Alben": the photo frame
   });
 });
 
-test('smoke: "Nur Kamera-Uploads" (1.10.0) — camera=1 on photos, months and memories, the areas hidden, back to all', async () => {
+test('smoke: "Nur Kamera-Uploads" (1.10.0) — camera=1 on photos and months (no memories since 1.18.0), the areas hidden, back to all', async () => {
   await withHost({}, async (host, c) => {
     const mine = await c.area(ANNA, 'mine');
     await c.put(ANNA, mine.rootId, 'Lose.jpg', 'l', { mime: 'image/jpeg', takenAt: Date.UTC(2026, 5, 3, 12) });
@@ -121,7 +128,9 @@ test('smoke: "Nur Kamera-Uploads" (1.10.0) — camera=1 on photos, months and me
       await until('none', () => textOf($('dp-main')).includes('Noch keine Kamera-Uploads'));
       assert.equal(sw().getAttribute('aria-pressed'), 'true');
       assert.equal($('dp-main').querySelector('select'), null, 'no areas while on');
-      for (const p of ['photos', 'photos/months', 'photos/memories']) {
+      // the memories are in the overview since 1.18.0: "Fotos" does not ask for them
+      assert.ok(!calls.some((x) => x.path === 'photos/memories'));
+      for (const p of ['photos', 'photos/months']) {
         const call = calls.find((x) => x.path === p);
         assert.ok(call, p);
         assert.equal(call.query.camera, '1', p);
@@ -277,6 +286,7 @@ test('upload in the portal: takenAt from a JPEG\'s EXIF (with its offset, else t
     const $ = (id) => f.document.getElementById(id);
     try {
       f.run();
+      await toFiles($);
       await until('the app', () => !$('dp-app').hidden && byText($('dp-tools'), 'span', 'Hochladen'));
       const files = [
         asFile('Exif.jpg', jpegWithExif('2024:07:14 18:30:05', '+02:00'), 'image/jpeg', Date.UTC(2026, 0, 1)),

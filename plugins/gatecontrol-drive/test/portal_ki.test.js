@@ -27,6 +27,13 @@ const byText = (root, tag, text) => root.querySelectorAll(tag).find((e) => textO
 const buttonOf = (root, text) => { let s = byText(root, 'span', text) || byText(root, 'button', text); while (s && s.localName !== 'button') s = s.parentNode; return s; };
 const navItem = (nav, label) => nav.querySelectorAll('[aria-label]').find((e) => e.getAttribute('aria-label') === label) || buttonOf(nav, label);
 
+// since 1.18.0 Drive opens on "Übersicht": "Dateien" in the switch at the top shows the files
+async function toFiles($) {
+  const b = await until('the switch', () => byText($('dp-pages'), 'button', 'Dateien'));
+  b.click();
+  await until('the files', () => byText($('dp-pages'), 'button', 'Dateien').getAttribute('aria-pressed') === 'true');
+}
+
 function frameGc(host, user, uploads) {
   const viewer = { ...user, portal: true, loggedIn: true };
   return {
@@ -86,6 +93,7 @@ test('smoke: without the host\'s AI service there are no "Fragen", no "In Dokume
     const $ = (id) => f.document.getElementById(id);
     try {
       f.run();
+      await toFiles($);
       await until('the file', () => byText($('dp-main'), 'span', 'Scan.jpg'));
       const q = $('dp-q');
       q.value = 'Scan?';

@@ -193,6 +193,8 @@ function writes(method, seg) {
   // several at once (1.12.0): looking at a selection, stopping a job, a ZIP to download
   if (a === 'ops' && (b === 'check' || method === 'DELETE')) return false;
   if (a === 'zip') return false;
+  // a file opened from the device's copy (1.18.0): reading, only "Zuletzt geöffnet"
+  if (a === 'nodes' && seg[2] === 'opened' && seg.length === 3) return false;
   return true;
 }
 

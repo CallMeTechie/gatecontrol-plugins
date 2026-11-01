@@ -33,6 +33,13 @@ const navItem = (nav, label) => {
   while (n && n.localName !== 'button') n = n.parentNode;
   return n || null;
 };
+
+// since 1.18.0 Drive opens on "Übersicht": "Dateien" in the switch at the top shows the files
+async function toFiles($) {
+  const b = await until('the switch', () => byText($('dp-pages'), 'button', 'Dateien'));
+  b.click();
+  await until('the files', () => byText($('dp-pages'), 'button', 'Dateien').getAttribute('aria-pressed') === 'true');
+}
 const click = (root, text) => { let s = byText(root, 'span', text); assert.ok(s, `no button "${text}"`); while (s.localName !== 'button' && s.parentNode) s = s.parentNode; s.click(); };
 
 /** window.GC of a portal frame against the mock host — with GC.keys (a browser's own store) and GC.mediaBytes. */
@@ -178,6 +185,7 @@ test('portal: a vault locks after the minutes without use and when the tab is le
     const $ = (id) => w.document.getElementById(id);
     try {
       w.run();
+      await toFiles($);
       await until('the app', () => !$('dp-app').hidden && byText($('dp-tools'), 'span', 'Neu'));
       click($('dp-tools'), 'Neu');
       click(await until('the menu', () => byText($('dp-dialog'), 'span', 'Neuer Tresor') && $('dp-dialog')), 'Neuer Tresor');

@@ -32,6 +32,13 @@ const navItem = (nav, label) => {
   return n || null;
 };
 
+// since 1.18.0 Drive opens on "Übersicht": "Dateien" in the switch at the top shows the files
+async function toFiles($) {
+  const b = await until('the switch', () => byText($('dp-pages'), 'button', 'Dateien'));
+  b.click();
+  await until('the files', () => byText($('dp-pages'), 'button', 'Dateien').getAttribute('aria-pressed') === 'true');
+}
+
 function frameGc(host, user, calls, extra) {
   const viewer = { ...user, portal: true, loggedIn: true };
   const listeners = [];
@@ -76,6 +83,7 @@ test('smoke: without GateControl\'s AI service and cloud accounts there is no "F
     const $ = (id) => f.document.getElementById(id);
     try {
       f.run();
+      await toFiles($);
       await until('the file', () => byText($('dp-main'), 'span', 'Rechnung.pdf'));
       for (const label of ['Fristen', 'Importieren']) assert.ok(!navItem($('dp-nav'), label), label);
       assert.ok(!textOf($('dp-tools')).includes('KI für Dokumente'));
@@ -100,6 +108,7 @@ test('smoke: "Dokument-Infos" — the suggestion taken, a reminder; the area swi
     const $ = (id) => f.document.getElementById(id);
     try {
       f.run();
+      await toFiles($);
       await until('the file', () => byText($('dp-main'), 'span', 'Scan.pdf'));
       assert.ok(textOf($('dp-main')).includes('Rechnung · '), 'the kind on the tile');
       assert.ok(navItem($('dp-nav'), 'Fristen'));

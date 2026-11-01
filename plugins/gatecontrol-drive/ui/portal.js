@@ -40,6 +40,9 @@
  * Since 1.16.0 (places and people, ui/places.js — only while GET me features say so): on "Fotos" the search with marks
  * (a person, a place) and suggestions, the result by day with its district and the place's map; "Karte" and "Personen"
  * below "Fotos" in the menu (a person, "Wer ist das?"), "Orte und Personen" in the Drive settings.
+ * Since 1.18.0 (feature overview, ui/overview.js): "Übersicht | Dateien | Fotos" at the top; the overview is the start
+ * (a direct link opens its node instead). "Fotos" shows only the photos: the chips (with the count to check) and,
+ * above, "Karte" and "Personen" — no memories and no band any more (they are in the overview).
  *
  * The frame is sandboxed (opaque origin, no storage, no network of its own): everything goes through GC.call /
  * GC.upload. Server and user text only ever goes into textContent or attributes — never innerHTML.
@@ -120,6 +123,8 @@
     folderPlus: 'M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z|M12 10v6M9 13h6',
     // AI in Drive (since 1.14.0): the family calendar
     calendar: 'M4 6h16v14H4z|M4 10h16|M8 3v4M16 3v4',
+    // the overview (since 1.18.0): Mail's attachments to file
+    mail: 'M4 6h16v12H4z|M4 7l8 6 8-6',
     // places and people (since 1.16.0)
     pin: 'M12 21s-7-6.2-7-11.5a7 7 0 0 1 14 0C19 14.8 12 21 12 21z|M12 7a2.5 2.5 0 1 0 0 5a2.5 2.5 0 1 0 0-5',
     gear: 'M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z|M12 9a3 3 0 1 0 0 6a3 3 0 1 0 0-6',
@@ -295,7 +300,7 @@
     areas: [],            // from GET me / GET areas
     storage: new Map(),   // area id → storage
     people: new Map(),    // user id → name
-    page: 'files',        // files · trash · links · search · devices
+    page: 'files',        // overview (since 1.18.0) · files · trash · links · search · devices · photos · …
     areaId: null,
     folder: null,         // the node shown (GET nodes/<id>) with crumbs and role
     items: [],
@@ -367,6 +372,8 @@
       // back from connecting a cloud drive (drive=import, GateControl adds cloud=connected | cloud=error&cloudError=<code>)
       if (want === 'import' && has('cloudImport')) { var back = function () { showImport(cloudReturn()); }; if (first) openFolder(first.id, first.rootId, back); else back(); }
       else if (want && want !== 'import') openTarget(want, first);
+      // the overview is the start (since 1.18.0)
+      else if (O && has('overview')) O.show();
       else if (first) openFolder(first.id, first.rootId);
       loadStorage();
       if (mineArea) loadTree(mineArea.rootId);
@@ -391,7 +398,7 @@
         // a question (since 1.14.0, "Fragen" or a "?" at the end): asked with Enter, not while typing
         if (K && K.isQuestion(v)) K.typed(v);
         else if (v.length >= 2) search(v);
-        else if (S.page === 'search' || S.page === 'ask') openFolder(S.areaId, S.folder ? S.folder.id : null);
+        else if (S.page === 'search' || S.page === 'ask') home();
       }, 300);
     });
     q.addEventListener('keydown', function (ev) {
@@ -627,6 +634,9 @@
   function renderCrumbs() {
     var c = $('dp-crumbs');
     clear(c);
+    renderPages();
+    // the overview has the switch above (since 1.18.0)
+    if (S.page === 'overview') return;
     if (S.page !== 'files' || !S.folder) {
       c.appendChild(h('button', { type: 'button', attrs: { 'aria-current': 'page' }, text: PL && PL.crumb(S.page) ? PL.crumb(S.page) : S.page === 'settings' ? T('p.settings_title') : S.page === 'import' ? T('p.import') : S.page === 'deadlines' ? T('p.deadlines') : S.page === 'trash' ? T('p.trash') : S.page === 'links' ? T('p.links') : S.page === 'devices' ? T('p.devices')
         : S.page === 'incidents' ? T('p.guard_incidents') : S.page === 'photos' ? T('p.photos') : S.page === 'albums' ? T('p.albums')
@@ -644,6 +654,41 @@
     });
   }
 
+  // ── "Übersicht | Dateien | Fotos" (since 1.18.0) ─────────
+
+  var FILE_PAGES = ['files', 'search', 'ask', 'trash'];
+  var PHOTO_PAGES = ['photos', 'albums', 'album', 'map', 'people', 'person'];
+
+  /** The switch at the top: the page shown is pressed (other pages — settings, storage, … — none). */
+  function renderPages() {
+    var box = $('dp-pages');
+    if (!box) return;
+    clear(box);
+    if (!(O && has('overview'))) { box.hidden = true; return; }
+    box.hidden = false;
+    var cur = S.page === 'overview' ? 'overview' : FILE_PAGES.indexOf(S.page) >= 0 ? 'files' : PHOTO_PAGES.indexOf(S.page) >= 0 ? 'photos' : null;
+    [['overview', 'p.ov.title', function () { O.show(); }], ['files', 'p.files', showFiles], ['photos', 'p.photos', function () { if (PL) PL.setMarks([], null); showPhotos(); }]].forEach(function (x) {
+      box.appendChild(h('button', { type: 'button', class: 'dp-page', text: T(x[1]), attrs: { 'aria-pressed': String(cur === x[0]), 'aria-current': cur === x[0] ? 'page' : null },
+        on: { click: function () { $('dp-q').value = ''; navGo(); x[2](); } } }));
+    });
+  }
+
+  /** "Dateien": the folder shown last, else the top of my files. */
+  function showFiles() {
+    if (S.folder && S.areaId) return openFolder(S.areaId, S.folder.id);
+    var first = areaOf('mine:' + (S.me && S.me.id)) || S.areas[0];
+    if (first) return openFolder(first.id, first.rootId);
+    renderAll();
+    return Promise.resolve();
+  }
+
+  /** Back from a search: the folder shown last, else the overview. */
+  function home() {
+    if (S.folder && S.areaId) return openFolder(S.areaId, S.folder.id);
+    if (O && has('overview')) return O.show();
+    return showFiles();
+  }
+
   var SORT_OPTIONS = [['name:asc', 'p.sort_name'], ['updated:desc', 'p.sort_new'], ['size:desc', 'p.sort_size']];
   function sortSelect(onChange, cls) {
     var sel = h('select', { class: 'dp-input' + (cls ? ' ' + cls : ''), attrs: { 'aria-label': T('p.sort') }, on: { change: function (ev) { var v = ev.target.value.split(':'); S.sort = v[0]; S.order = v[1]; onChange(); } } },
@@ -655,6 +700,12 @@
   function renderTools() {
     var t = $('dp-tools');
     clear(t);
+    // "Fotos" (since 1.18.0): "Karte" and "Personen" up here
+    if (S.page === 'photos' && PL && has('overview')) {
+      if (has('photoPlaces')) t.appendChild(ibtn('pin', T('p.pp.map_nav'), function () { PL.showMap(); }));
+      if (has('photoPeople')) t.appendChild(ibtn('people', T('p.pp.people'), function () { PL.showPeople(); }));
+      return;
+    }
     if (S.page !== 'files') return;
     t.appendChild(ibtn('grid', T('p.view_grid'), function () { S.view = 'grid'; renderMain(); renderTools(); }, { pressed: S.view === 'grid' }));
     t.appendChild(ibtn('list', T('p.view_list'), function () { S.view = 'list'; renderMain(); renderTools(); }, { pressed: S.view === 'list' }));
@@ -1807,7 +1858,8 @@
     Promise.all([
       api('GET', 'photos', null, photoQuery({ limit: PHOTO_PAGE })),
       api('GET', 'photos/months', null, photoQuery()).catch(function () { return { months: [] }; }),
-      (PH.area && !cam) || PH.cls !== 'all' || PH.q || (PL && PL.active()) ? Promise.resolve({ groups: [] }) : api('GET', 'photos/memories', null, cam ? { camera: 1 } : null).catch(function () { return { groups: [] }; }),
+      // the memories are in the overview since 1.18.0
+      has('overview') || (PH.area && !cam) || PH.cls !== 'all' || PH.q || (PL && PL.active()) ? Promise.resolve({ groups: [] }) : api('GET', 'photos/memories', null, cam ? { camera: 1 } : null).catch(function () { return { groups: [] }; }),
       classes ? api('GET', 'photos/classes', null, photoQuery({ noClass: true })).catch(function () { return null; }) : Promise.resolve(null),
       classes ? api('GET', 'photos/settings').catch(function () { return null; }) : Promise.resolve(null),
       // the names of my people for "Auch mit …" (since 1.16.0)
@@ -1954,7 +2006,8 @@
           [h('span', { text: T(d[1]) }), d[0] === 'review' && c.review > 0 ? h('span', { class: 'dp-wk-cnt', text: String(c.review) }) : null]);
       }));
     main.appendChild(chips);
-    if (c.review > 0 && !PH.select && PH.cls !== 'review') {
+    // the band (since 1.18.0 only the chip's count — the overview has "N Fotos prüfen")
+    if (c.review > 0 && !PH.select && PH.cls !== 'review' && !has('overview')) {
       main.appendChild(h('button', { type: 'button', class: 'dp-wk-band', on: { click: function () { PH.cls = 'review'; showPhotos(); } } },
         [h('span', { class: 'dp-ph-mk is-static' }, icon('help', 14)), h('span', { text: P('p.wk_band', c.review) })]));
     }
@@ -2968,6 +3021,8 @@
       if (!ev || ev.type !== 'changed' || !d || !Array.isArray(d.areas)) return;
       // the menu: the folders open in its tree, the vaults (one may have come or gone)
       scheduleMenu(d.areas);
+      // the overview (since 1.18.0): again, throttled
+      if (O) O.changed();
       if (S.page === 'files' && d.areas.indexOf(S.areaId) >= 0 && !S.uploading) scheduleReload();
       else if (S.page === 'trash') showTrash();
     });
@@ -2997,7 +3052,7 @@
     toast: toast, fail: fail, errText: errText, LOCALE: LOCALE, fmtAmount: fmtAmount, today: today, areaOf: areaOf, openTarget: openTarget,
     renderNav: renderNav, renderCrumbs: renderCrumbs, renderTools: renderTools, pickFolder: pickFolder, reload: reload, search: search,
     query: function () { return $('dp-q').value.trim(); },
-    home: function () { openFolder(S.areaId, S.folder ? S.folder.id : null); },
+    home: function () { home(); },
   }) : null;
 
   // places and people (ui/places.js, since 1.16.0): its helpers from here
@@ -3006,6 +3061,14 @@
     closeDialog: closeDialog, confirmDialog: confirmDialog, toast: toast, fail: fail, errText: errText, LOCALE: LOCALE, startPage: startPage,
     photoTile: function (x) { return photoTile(x, rerenderBar); }, showPhotos: showPhotos, morePhotos: morePhotos, addToAlbum: addToAlbum,
     showSettings: showSettings, renderCrumbs: renderCrumbs, setRow: setRow, setSwitch: setSwitch,
+  }) : null;
+
+  // the overview (ui/overview.js, since 1.18.0): its helpers from here
+  var O = window.DriveOverview ? window.DriveOverview.attach({
+    S: S, PH: PH, T: T, P: P, h: h, icon: icon, api: api, has: has, clear: clear, $: $, LOCALE: LOCALE, errText: errText, extOf: extOf,
+    fmtSize: fmtSize, fmtAmount: fmtAmount, areaOf: areaOf, startPage: startPage, openTarget: openTarget, openFolder: openFolder,
+    showFiles: showFiles, showPhotos: function () { if (PL) PL.setMarks([], null); showPhotos(); }, showDeadlines: showDeadlines,
+    PL: function () { return PL; },
   }) : null;
 
   boot();

@@ -467,6 +467,23 @@ async function list(ctx) {
   return { people: shown.map((p) => personView(p, n.get(p.id), cv.get(p.id))), progress: s.people ? await progress(ctx, s) : { done: 0, total: 0 } };
 }
 
+/**
+ * The overview (since 1.18.0): the `max` people with a name who are not hidden, most photos first, like GET people,
+ * and how many without a name are not hidden → { people, unnamed }; null while the person's switch `people` is off.
+ */
+async function overview(ctx, max) {
+  const s = await settingsOf(ctx);
+  if (!s.people) return null;
+  const rows = await store.all(ctx.gc, 'SELECT * FROM persons WHERE user_id = ? AND pending = 0 AND hidden = 0', [ctx.viewer]);
+  if (!rows.length) return { people: [], unnamed: 0 };
+  const live = await liveFaces(ctx);
+  const n = await counts(ctx, live, null);
+  const shown = rows.filter((p) => n.get(p.id));
+  const named = shown.filter((p) => p.name).sort((a, b) => (n.get(b.id) - n.get(a.id)) || a.id - b.id).slice(0, max);
+  const cv = await covers(ctx, live, named.map((p) => p.id));
+  return { people: named.map((p) => personView(p, n.get(p.id), cv.get(p.id))), unnamed: shown.filter((p) => !p.name).length };
+}
+
 /** A person of the viewer (not an open group) → row, else 404. */
 async function own(ctx, id) {
   const n = posInt(id);
@@ -803,6 +820,6 @@ async function forget(gc, ids, ctx) {
 }
 
 module.exports = {
-  MODELS, DEFAULT_MODEL, put, list, get, patch, merge, similar, uncertain, confirm, move, unfaced, wordClause, narrowPeople, attachPeople, suggest,
+  MODELS, DEFAULT_MODEL, put, list, overview, get, patch, merge, similar, uncertain, confirm, move, unfaced, wordClause, narrowPeople, attachPeople, suggest,
   wipe, dropKids, forget, faceScope, progress, fold, centres, forgetCentres, modelArg,
 };
