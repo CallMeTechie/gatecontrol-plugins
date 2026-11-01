@@ -8,12 +8,17 @@
 //                                      by date, ≤ 500
 //   POST   deadlines/<id>/remind     { daysBefore: 0…90 } → { deadline } — the viewer's reminder (read is enough)
 //   DELETE deadlines/<id>/remind     → { deadline }
-//   POST   deadlines/<id>/calendar   → { deadline } — into the family calendar (since 1.14.0, feature deadlineCalendar)
+//   POST   deadlines/<id>/calendar   { target? } → { deadline } — into a calendar (since 1.14.0 the family calendar,
+//                                      feature deadlineCalendar; since 1.17.0 also a calendar of Mail, deadlineMailCalendar)
+//   GET    deadlines/calendars       → { family: bool, mail: [{ id, name, account, color }] }   (since 1.17.0)
+//   GET    deadlines/targets         → { targets: [{ areaId, label, target }] }                 (since 1.17.0)
+//   PUT    deadlines/targets         { targets: [{ areaId, target }] } → the same
 //
 // A deadline: { id, kind: 'payment' | 'cancellation' | 'objection' | 'warranty' | 'renewal', date: 'YYYY-MM-DD', label,
-// reminder: { at, daysBefore, sent } | null, calendar: { eventId, at } | null, foundAt } — the reminder and the calendar
-// entry are the viewer's own. Since 1.14.0: warranty — the day a warranty ends; renewal — the last day to cancel before
-// a contract renews (the label says when and how it renews). foundAt: when the AI found it (null: before 1.14.0).
+// reminder: { at, daysBefore, sent } | null, calendar: { eventId, at, target: { kind, label } } | null, calendars: [the
+// same], foundAt } — the reminder and the calendar entries are the viewer's own (`calendar`: the newest of `calendars`).
+// Since 1.14.0: warranty — the day a warranty ends; renewal — the last day to cancel before a contract renews (the label
+// says when and how it renews). foundAt: when the AI found it (null: before 1.14.0).
 // GET deadlines adds `doc` { kind, title, sender, amount, currency } — what the AI read in the file (null without).
 // The reminder goes out at 07:00 UTC of the day minus daysBefore (already past: with the next background run); the
 // person must still read the file then (else it is dropped quietly).
@@ -21,24 +26,44 @@
 // The family calendar (since 1.14.0): GateControl's services (≥ 1.178.0, permissions.services
 // "gatecontrol-familie:calendar_add" — the administrator confirms it with the update) — the Familie plugin enters an
 // all-day date { userId, title (≤ 80, e.g. „Kfz-Versicherung kündigen“), startsAt: the day, allDay: true } for the
-// viewer; Drive keeps { eventId, at } per person and deadline (doc_calendar) — a second call answers the same. Familie not
-// there, not running, or it refuses (not a family member, its dates module off, it does not take Drive as a caller):
-// 409 familie_unavailable { reason }. Per area (PATCH areas/<id> { deadlinesToCalendar }, default off) new deadlines go
-// into the calendar on their own — for the person whose upload or "Erkennen" the recognition came from, else the
-// owner of the area (my files, a child's folder), as long as they read the file (insights.js → auto()).
+// viewer. Familie not there, not running, or it refuses (not a family member, its dates module off, it does not take
+// Drive as a caller): 409 familie_unavailable { reason }.
+// A calendar of Mail (since 1.17.0, "gatecontrol-mail:calendar_list" and ":calendar_add", Mail ≥ 1.6.0): Outlook /
+// Microsoft 365, CalDAV or GateControl's own calendars of the person — calendar_list gives those they can write to,
+// calendar_add enters the all-day event { userId, calendarId, title, startsAt, allDay: true, note: the file name and
+// „In Drive öffnen“ with the link, key: 'drive:deadline:<id>' } with the calendar's own all-day reminder (Drive adds
+// none; its own notification stays). Mail not there or refusing: 409 mail_unavailable { reason }.
+// A target: { kind: 'family' } | { kind: 'mail', calendarId, label } (label „<account> · <calendar>“, from calendar_list).
+// Drive keeps { eventId, at, target } per person, deadline and target (doc_calendar) — a second call with the same
+// target answers the same.
+//
+// New deadlines on their own (insights.js → auto()): for the person whose upload or "Erkennen" the recognition came
+// from, else the owner of the area (my files, a child's folder), as long as they read the file — into that person's
+// target for the area (deadline_targets: PATCH areas/<id> { deadlinesTarget }, PUT deadlines/targets; since 1.17.0).
+// Without an own choice the area's switch holds (PATCH areas/<id> { deadlinesToCalendar }, 1.14.0, default off): on →
+// the family calendar. Older apps keep working: the area views carry deadlinesToCalendar (true while a target is set).
 // Feature `deadlineCalendar` in GET me: while Familie's calendar_add is reachable (gc.services.available) — and not
 // for REFUSED_MS after Familie refused Drive as a caller (`forbidden`: a Familie that takes calendar_add only from the
-// Messenger), so the apps do not offer a button that cannot work; then it is tried again.
+// Messenger), so the apps do not offer a button that cannot work; then it is tried again. `deadlineMailCalendar` (since
+// 1.17.0) the same for Mail's calendar_add.
 
 const store = require('./store');
 const nodes = require('./nodes');
 const address = require('./address');
 const { t } = require('./text');
-const { fail, posInt, nonNeg, iso, day } = require('./util');
+const { fail, posInt, nonNeg, iso, day, line } = require('./util');
 
 const KINDS = ['payment', 'cancellation', 'objection', 'warranty', 'renewal'];
 const FAMILIE = 'gatecontrol-familie';
 const CALENDAR = 'calendar_add';
+// since 1.17.0: the calendars of Mail
+const MAIL = 'gatecontrol-mail';
+const MAIL_LIST = 'calendar_list';
+const MAIL_ADD = 'calendar_add';
+const MAIL_REFUSED_KEY = 'mail_calendar_refused';
+const NOTE_MAX = 500;
+const TARGETS_MAX = 50;
+const CAL_ID_RE = /^[A-Za-z0-9:._-]{1,64}$/;
 const TITLE_MAX = 80;
 // new deadlines into the calendar on their own: at most this many service calls a background run (60 an hour for all)
 const AUTO_MAX = 5;
@@ -54,28 +79,37 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 const startOf = (date) => Date.parse(date + 'T00:00:00Z');
 
-function view(d, rem, cal) {
+/** A doc_calendar row → { eventId, at, target: { kind, label } }. */
+function calView(c, lang) {
+  return { eventId: c.event_id == null ? null : c.event_id, at: iso(c.at), target: { kind: c.kind, label: c.kind === 'mail' ? c.label || '' : t(lang, 'deadline.target.family') } };
+}
+
+function view(d, rem, cals, lang) {
+  const list = (cals || []).map((c) => calView(c, lang));
   return {
     id: d.id, kind: d.kind, date: d.date, label: d.label || null,
     reminder: rem ? { at: iso(rem.at), daysBefore: rem.days_before, sent: rem.sent_at != null } : null,
-    calendar: cal ? { eventId: cal.event_id == null ? null : cal.event_id, at: iso(cal.at) } : null,
+    calendar: list.length ? list[list.length - 1] : null, calendars: list,
     foundAt: iso(d.found_at),
   };
 }
 
-/** The viewer's calendar entries of deadlines `ids` → Map deadline id → row. */
+/** The viewer's calendar entries of deadlines `ids` → Map deadline id → rows (oldest first). */
 async function calendarOf(gc, uid, ids) {
   const out = new Map();
   for (const part of store.chunks(ids)) {
-    const rows = await store.all(gc, `SELECT * FROM doc_calendar WHERE user_id = ? AND deadline_id IN (${store.marks(part.length)})`, [uid, ...part]);
-    for (const r of rows) out.set(r.deadline_id, r);
+    const rows = await store.all(gc, `SELECT * FROM doc_calendar WHERE user_id = ? AND deadline_id IN (${store.marks(part.length)}) ORDER BY at, target`, [uid, ...part]);
+    for (const r of rows) {
+      if (!out.has(r.deadline_id)) out.set(r.deadline_id, []);
+      out.get(r.deadline_id).push(r);
+    }
   }
   return out;
 }
 
 /** One deadline row as the viewer sees it. */
 async function viewOne(ctx, d) {
-  return view(d, (await remindersOf(ctx.gc, ctx.viewer, [d.id])).get(d.id), (await calendarOf(ctx.gc, ctx.viewer, [d.id])).get(d.id));
+  return view(d, (await remindersOf(ctx.gc, ctx.viewer, [d.id])).get(d.id), (await calendarOf(ctx.gc, ctx.viewer, [d.id])).get(d.id), ctx.lang);
 }
 
 /** The viewer's reminders of deadlines `ids` → Map deadline id → row. */
@@ -93,7 +127,7 @@ async function ofNode(ctx, nodeId) {
   const rows = await store.all(ctx.gc, 'SELECT * FROM doc_deadlines WHERE node_id = ? ORDER BY date, id', [nodeId]);
   const rem = await remindersOf(ctx.gc, ctx.viewer, rows.map((r) => r.id));
   const cal = await calendarOf(ctx.gc, ctx.viewer, rows.map((r) => r.id));
-  return rows.map((r) => view(r, rem.get(r.id), cal.get(r.id)));
+  return rows.map((r) => view(r, rem.get(r.id), cal.get(r.id), ctx.lang));
 }
 
 /**
@@ -177,7 +211,7 @@ async function list(ctx, q) {
   const out = [];
   for (const r of rows) {
     const { dl_id: id, dl_kind: kind, dl_date: date, dl_label: label, dl_found: found, ...n } = r;
-    out.push({ ...view({ id, kind, date, label, found_at: found }, rem.get(id), cal.get(id)), doc: docs.get(n.id) || null, node: nodes.view(n, { path: await nodes.pathOf(ctx.gc, n) }) });
+    out.push({ ...view({ id, kind, date, label, found_at: found }, rem.get(id), cal.get(id), ctx.lang), doc: docs.get(n.id) || null, node: nodes.view(n, { path: await nodes.pathOf(ctx.gc, n) }) });
   }
   return { deadlines: out };
 }
@@ -196,18 +230,23 @@ async function docsOf(gc, rows) {
   return out;
 }
 
-// ─── the family calendar (since 1.14.0) ─────────
+// ─── the calendars: Familie (since 1.14.0) and Mail (since 1.17.0) ───
 
-/** Can Drive reach Familie's calendar_add now (asks nobody)? */
-async function calendarReachable(gc) {
+/** Can Drive reach `plugin`'s `service` now (asks nobody) — and has it not refused Drive within REFUSED_MS? */
+async function reachable(gc, plugin, service, refusedKey) {
   if (!gc.services || typeof gc.services.available !== 'function' || typeof gc.services.call !== 'function') return false;
   let on = false;
-  try { on = (await gc.services.available(FAMILIE, CALENDAR)) === true; } catch { on = false; }
+  try { on = (await gc.services.available(plugin, service)) === true; } catch { on = false; }
   if (!on) return false;
   let refused = null;
-  try { refused = await gc.storage.get(REFUSED_KEY); } catch { refused = null; }
+  try { refused = await gc.storage.get(refusedKey); } catch { refused = null; }
   return !(Number.isFinite(refused) && Date.now() - refused < REFUSED_MS);
 }
+
+/** Can Drive reach Familie's calendar_add now? */
+const calendarReachable = (gc) => reachable(gc, FAMILIE, CALENDAR, REFUSED_KEY);
+/** Can Drive reach Mail's calendar_add now (since 1.17.0)? */
+const mailReachable = (gc) => reachable(gc, MAIL, MAIL_ADD, MAIL_REFUSED_KEY);
 
 /** What the calendar entry is called: what to do, about what — ≤ 80 characters ("Kfz-Versicherung kündigen"). */
 function calendarTitle(lang, d, node, doc) {
@@ -227,52 +266,191 @@ function calendarFail(reason) {
   return fail('familie_unavailable', { reason });
 }
 
-/**
- * Deadline row `d` of file `node` into person `uid`'s family calendar (`lang`: the title's language) → the doc_calendar
- * row; already there: that row. Throws familie_unavailable.
- */
-async function addToCalendar(gc, d, node, uid, lang, now, auto = false) {
-  const have = await store.one(gc, 'SELECT * FROM doc_calendar WHERE deadline_id = ? AND user_id = ?', [d.id, uid]);
-  if (have) return have;
-  if (!(await calendarReachable(gc))) throw calendarFail('unavailable');
-  const docs = await docsOf(gc, [node]);
-  let res;
-  try {
-    res = await gc.services.call({
-      plugin: FAMILIE, service: CALENDAR, userId: uid,
-      payload: { userId: uid, title: calendarTitle(lang, d, node, docs.get(node.id)), startsAt: d.date, allDay: true },
-    });
-  } catch (e) {
-    const code = e && e.code;
-    throw calendarFail(code === 'ERR_RATE_LIMIT' ? 'rate_limited' : code === 'ERR_TIMEOUT' ? 'timeout' : 'unavailable');
-  }
-  if (!res || res.ok !== true) {
-    const code = res && typeof res.code === 'string' ? res.code : 'failed';
-    // a Familie that does not take Drive as a caller: the feature goes for a while
-    if (code === 'forbidden') { try { await gc.storage.set(REFUSED_KEY, now); } catch { /* best effort */ } }
-    throw calendarFail(code);
-  }
-  const eventId = Number.isSafeInteger(res.eventId) ? res.eventId : null;
-  await store.run(gc, 'INSERT INTO doc_calendar (deadline_id, user_id, event_id, at, auto) VALUES (?, ?, ?, ?, ?) ON CONFLICT(deadline_id, user_id) DO NOTHING',
-    [d.id, uid, eventId, now, auto ? 1 : 0]);
-  return store.one(gc, 'SELECT * FROM doc_calendar WHERE deadline_id = ? AND user_id = ?', [d.id, uid]);
+const mailFail = (reason) => fail('mail_unavailable', { reason });
+
+/** A host error of gc.services.call → the reason. */
+const hostReason = (e) => {
+  const code = e && e.code;
+  return code === 'ERR_RATE_LIMIT' ? 'rate_limited' : code === 'ERR_TIMEOUT' ? 'timeout' : 'unavailable';
+};
+
+/** A refusal of Drive as a caller: that calendar's feature goes for a while. */
+async function refused(gc, key, now) {
+  try { await gc.storage.set(key, now); } catch { /* best effort */ }
 }
 
-/** POST deadlines/<id>/calendar → { deadline } — the viewer's own entry in the family calendar (read is enough). */
-async function calendar(ctx, id) {
+/** The key of a target in doc_calendar: 'family' | 'mail:<calendarId>'. */
+const targetKey = (x) => (x.kind === 'mail' ? `mail:${x.calendarId}` : 'family');
+
+/**
+ * A target as an app sends it → null | { kind: 'family' } | { kind: 'mail', calendarId } (not yet checked against Mail);
+ * anything else → 400 invalid { field }.
+ */
+function targetArg(v, field) {
+  if (v === null) return null;
+  const bad = () => fail('invalid', { field });
+  if (!v || typeof v !== 'object' || Array.isArray(v)) throw bad();
+  if (v.kind === 'family') return { kind: 'family' };
+  if (v.kind !== 'mail') throw bad();
+  const id = v.calendarId;
+  if (!((Number.isSafeInteger(id) && id > 0) || (typeof id === 'string' && CAL_ID_RE.test(id)))) throw bad();
+  return { kind: 'mail', calendarId: id };
+}
+
+/** The calendars of Mail person `uid` can write to (calendar_list). Throws mail_unavailable. */
+async function mailCalendars(gc, uid, lang, now) {
+  if (!(await mailReachable(gc))) throw mailFail('unavailable');
+  let res;
+  try {
+    res = await gc.services.call({ plugin: MAIL, service: MAIL_LIST, userId: uid, payload: { userId: uid, lang } });
+  } catch (e) { throw mailFail(hostReason(e)); }
+  if (!res || res.ok !== true || !Array.isArray(res.calendars)) {
+    const code = res && typeof res.code === 'string' ? res.code : 'failed';
+    if (code === 'forbidden') await refused(gc, MAIL_REFUSED_KEY, now);
+    throw mailFail((res && typeof res.reason === 'string' && res.reason) || code);
+  }
+  return res.calendars.filter((c) => c && (Number.isSafeInteger(c.id) || typeof c.id === 'string') && typeof c.name === 'string').map((c) => {
+    const a = c.account && typeof c.account === 'object' ? c.account : {};
+    return {
+      id: c.id, name: line(c.name).slice(0, 120), color: typeof c.color === 'string' ? c.color : null,
+      account: { id: a.id == null ? null : a.id, label: line(typeof a.label === 'string' ? a.label : '').slice(0, 80), kind: typeof a.kind === 'string' ? a.kind : null, email: typeof a.email === 'string' ? a.email : null },
+    };
+  });
+}
+
+/** The label of a Mail calendar: „Outlook.com · Kalender“ (≤ 120). */
+const mailLabel = (c) => [c.account.label, c.name].filter(Boolean).join(' · ').slice(0, 120);
+
+/**
+ * A checked target (targetArg) → the target to keep: the family calendar while Familie is reachable, a calendar of Mail
+ * the person can write to (with its label). Throws familie_unavailable / mail_unavailable.
+ */
+async function resolveTarget(gc, uid, lang, x, now) {
+  if (x == null) return null;
+  if (x.kind === 'family') {
+    if (!(await calendarReachable(gc))) throw calendarFail('unavailable');
+    return { kind: 'family' };
+  }
+  const c = (await mailCalendars(gc, uid, lang, now)).find((y) => String(y.id) === String(x.calendarId));
+  if (!c) throw mailFail('not_found');
+  return { kind: 'mail', calendarId: c.id, label: mailLabel(c) };
+}
+
+/** The note of an entry in a calendar of Mail: the file and „In Drive öffnen“ with its link (≤ 500). */
+async function noteOf(gc, settings, node, lang, now) {
+  let link = null;
+  try { link = settings ? await address.linkOf(gc, settings, node.id, now) : null; } catch { link = null; }
+  const name = String(node.name || '').replace(/[\0-\x1f\x7f]/g, ' ').slice(0, 200);
+  const s = link ? `${name}\n${t(lang, 'deadline.cal.open')}: ${link}` : name;
+  return s.slice(0, NOTE_MAX);
+}
+
+const rowOf = (gc, d, uid, key) => store.one(gc, 'SELECT * FROM doc_calendar WHERE deadline_id = ? AND user_id = ? AND target = ?', [d.id, uid, key]);
+
+/**
+ * Deadline row `d` of file `node` into person `uid`'s calendar `target` (default: the family calendar; `lang`: the
+ * title's language; `settings`: the link in the note of a Mail calendar) → the doc_calendar row; already there: that
+ * row. Throws familie_unavailable / mail_unavailable.
+ */
+async function addToCalendar(gc, d, node, uid, lang, now, auto = false, target = null, settings = null) {
+  const x = target || { kind: 'family' };
+  const key = targetKey(x);
+  const have = await rowOf(gc, d, uid, key);
+  if (have) return have;
+  const isMail = x.kind === 'mail';
+  const fails = isMail ? mailFail : calendarFail;
+  if (!(await (isMail ? mailReachable(gc) : calendarReachable(gc)))) throw fails('unavailable');
+  const docs = await docsOf(gc, [node]);
+  const title = calendarTitle(lang, d, node, docs.get(node.id));
+  const payload = isMail
+    ? { userId: uid, calendarId: x.calendarId, title, startsAt: d.date, allDay: true, note: await noteOf(gc, settings, node, lang, now), key: `drive:deadline:${d.id}`, lang }
+    : { userId: uid, title, startsAt: d.date, allDay: true };
+  let res;
+  try {
+    res = await gc.services.call({ plugin: isMail ? MAIL : FAMILIE, service: isMail ? MAIL_ADD : CALENDAR, userId: uid, payload });
+  } catch (e) { throw fails(hostReason(e)); }
+  if (!res || res.ok !== true) {
+    const code = res && typeof res.code === 'string' ? res.code : 'failed';
+    // a calendar plugin that does not take Drive as a caller: the feature goes for a while
+    if (code === 'forbidden') await refused(gc, isMail ? MAIL_REFUSED_KEY : REFUSED_KEY, now);
+    throw fails((isMail && res && typeof res.reason === 'string' && res.reason) || code);
+  }
+  const eventId = Number.isSafeInteger(res.eventId) || (typeof res.eventId === 'string' && res.eventId.length <= 128) ? res.eventId : null;
+  await store.run(gc, `INSERT INTO doc_calendar (deadline_id, user_id, target, kind, label, event_id, at, auto) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(deadline_id, user_id, target) DO NOTHING`, [d.id, uid, key, x.kind, isMail ? x.label || null : null, eventId, now, auto ? 1 : 0]);
+  return rowOf(gc, d, uid, key);
+}
+
+/**
+ * POST deadlines/<id>/calendar { target? } → { deadline } — the viewer's own entry (read is enough): without a target in
+ * the family calendar, with { kind: 'mail', calendarId } in that calendar of Mail.
+ */
+async function calendar(ctx, id, body) {
   const { d, node } = await reach(ctx, id);
-  await addToCalendar(ctx.gc, d, node, ctx.viewer, ctx.lang, ctx.now);
+  const b = body && typeof body === 'object' ? body : {};
+  const x = b.target === undefined || b.target === null ? { kind: 'family' } : targetArg(b.target, 'target');
+  // there already: no call to Mail at all
+  if (!(await rowOf(ctx.gc, d, ctx.viewer, targetKey(x)))) {
+    const target = await resolveTarget(ctx.gc, ctx.viewer, ctx.lang, x, ctx.now);
+    await addToCalendar(ctx.gc, d, node, ctx.viewer, ctx.lang, ctx.now, false, target, ctx.settings);
+  }
   return { deadline: await viewOne(ctx, d) };
 }
 
+/** GET deadlines/calendars → { family, mail } — what the apps offer as targets. */
+async function calendars(ctx) {
+  let mail = [];
+  if (await mailReachable(ctx.gc)) {
+    try { mail = (await mailCalendars(ctx.gc, ctx.viewer, ctx.lang, ctx.now)).map((c) => ({ id: c.id, name: c.name, account: c.account, color: c.color })); } catch { mail = []; }
+  }
+  return { family: await calendarReachable(ctx.gc), mail };
+}
+
+// ─── targets per person and area (since 1.17.0) ───
+
+const parseTarget = (s) => {
+  try {
+    const v = JSON.parse(s);
+    if (v && v.kind === 'family') return { kind: 'family' };
+    if (v && v.kind === 'mail' && v.calendarId != null) return { kind: 'mail', calendarId: v.calendarId, label: typeof v.label === 'string' ? v.label : '' };
+  } catch { /* none */ }
+  return null;
+};
+
+/** The targets of person `uid` in areas `areaIds` → Map area id → target | null (an own choice, else the area's switch). */
+async function targetsOf(gc, uid, areaIds) {
+  const out = new Map(areaIds.map((id) => [id, null]));
+  for (const part of store.chunks(areaIds)) {
+    const m = store.marks(part.length);
+    for (const r of await store.all(gc, `SELECT area_id, deadlines_to_calendar AS c FROM area_prefs WHERE area_id IN (${m})`, part)) {
+      if (r.c === 1) out.set(r.area_id, { kind: 'family' });
+    }
+    for (const r of await store.all(gc, `SELECT area_id, target FROM deadline_targets WHERE user_id = ? AND area_id IN (${m})`, [uid, ...part])) out.set(r.area_id, parseTarget(r.target));
+  }
+  return out;
+}
+
+const targetOf = async (gc, uid, areaId) => (await targetsOf(gc, uid, [areaId])).get(areaId) || null;
+
+/** Person `uid`'s own choice for area `areaId` (a resolved target or null = not at all). */
+async function setTarget(gc, uid, areaId, target, now) {
+  await store.run(gc, `INSERT INTO deadline_targets (user_id, area_id, target, at) VALUES (?, ?, ?, ?)
+    ON CONFLICT(user_id, area_id) DO UPDATE SET target = excluded.target, at = excluded.at`, [uid, areaId, JSON.stringify(target), now]);
+}
+
+/** Person `uid`'s own choice for area `areaId` goes: the area's switch holds again. */
+async function clearTarget(gc, uid, areaId) {
+  await store.run(gc, 'DELETE FROM deadline_targets WHERE user_id = ? AND area_id = ?', [uid, areaId]);
+}
+
 /**
- * New deadlines `ids` of file `nodeId` into the family calendar of person `uid` (insights.js, an area with
- * deadlinesToCalendar on) — best effort, at most AUTO_MAX calls, quietly skipped when Familie is not there.
+ * New deadlines `ids` of file `nodeId` into calendar `target` of person `uid` (insights.js — the target of that person
+ * in the area) — best effort, at most AUTO_MAX calls, quietly skipped when the calendar's plugin is not there.
  * `asPerson(uid)` → their context (they must still read the file) or null. → how many went in.
  */
-async function auto(gc, nodeId, ids, uid, asPerson, now) {
-  if (!ids.length || uid == null || typeof asPerson !== 'function') return 0;
-  if (!(await calendarReachable(gc))) return 0;
+async function auto(gc, nodeId, ids, uid, asPerson, now, target = { kind: 'family' }) {
+  if (!ids.length || uid == null || typeof asPerson !== 'function' || !target) return 0;
+  if (!(await (target.kind === 'mail' ? mailReachable(gc) : calendarReachable(gc)))) return 0;
   const ctx = await asPerson(uid);
   const node = await nodes.row(gc, nodeId);
   if (!ctx || !node || node.deleted_at != null || node.vault_id || !(await ctx.visible()).some((v) => v.area.id === node.area_id)) return 0;
@@ -281,7 +459,7 @@ async function auto(gc, nodeId, ids, uid, asPerson, now) {
     const d = await store.one(gc, 'SELECT * FROM doc_deadlines WHERE id = ?', [id]);
     // a day that has passed is no date for the calendar
     if (!d || startOf(d.date) + DAY <= now) continue;
-    try { await addToCalendar(gc, d, node, uid, ctx.lang, now, true); n++; } catch (e) { gc.log.warn('deadline into the calendar failed', (e && e.extra && e.extra.reason) || (e && e.code) || 'error'); break; }
+    try { await addToCalendar(gc, d, node, uid, ctx.lang, now, true, target, ctx.settings); n++; } catch (e) { gc.log.warn('deadline into the calendar failed', target.kind, (e && e.extra && e.extra.reason) || (e && e.code) || 'error'); break; }
   }
   return n;
 }
@@ -324,4 +502,7 @@ async function due(gc, settings, now, asPerson) {
   return sent;
 }
 
-module.exports = { KINDS, ofNode, replace, remind, unremind, list, due, calendar, calendarReachable, auto, calendarTitle, docsOf, viewOne, reach };
+module.exports = {
+  KINDS, ofNode, replace, remind, unremind, list, due, calendar, calendars, calendarReachable, mailReachable, auto, calendarTitle, docsOf, viewOne, reach,
+  targetArg, resolveTarget, targetsOf, targetOf, setTarget, clearTarget, TARGETS_MAX,
+};

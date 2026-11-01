@@ -69,9 +69,9 @@ reaches `GET frame` (the photo frame, since 1.7.0) and nothing else (`403 forbid
 
 | Route | Body / query | Answer |
 |---|---|---|
-| `GET me` | | `me { id, name, seat, deviceId, admin }`, `licence { valid, tier }`, `areas`, `latest` (change log seq), `settings`, `limits { maxBytes }`, `wipes` (entries this device has yet to handle, since 1.2.0), `devices` (my devices a new wipe reaches), `features` (since 1.5.0: `['previews', 'wipes', 'textSearch', 'devices', 'deleteAfter', 'emptyFiles']`, since 1.6.0 also `'links'`, `'guard'`, since 1.7.0 `'timeTravel'`, `'takenAt'`, `'photos'`, `'albums'`, `'frame'`, `'storage'`, since 1.8.0 `'docAi'` and `'cloudImport'` — only while GateControl offers the AI service / cloud accounts and they are allowed, see "AI for documents" and "Import"; since 1.9.0 `'vault'` and — while set up — `'office'`, since 1.10.0 `'photosFolder'`, since 1.11.0 `'vaultsApart'`, since 1.12.0 `'bulk'`, — while GateControl's public links are allowed — `'zip'` and `'multiLink'`, with GateControl ≥ 1.215.0 also `'copyServer'` (copies on the server) and `'zipMixed'` (a ZIP and one link of any selection); since 1.13.0 `'photoClasses'` (work photos apart); since 1.14.0 `'photoSearch'` (photos by what is on them) and — with `docAi` — `'docAsk'` (questions to the documents), `'scanDocs'` (scans become documents) and, while the Familie plugin's `calendar_add` is reachable, `'deadlineCalendar'` (see "AI in Drive"); since 1.16.0 `'photoPlaces'` and `'photoPeople'` (see "Places and people")), `settings` (since 1.14.0 also `scanKeepOriginal`), `links { node, drive } \| null` (since 1.6.0, see "Direct links"), `guard { on, locked, incident }` and `incidents` (since 1.6.0, see "Ransomware protection") |
-| `GET areas` | | `areas [{ id, kind, label, role, via, rootId, owner, archived, storage { bytes, quota, form, target, state } }]` (+ `docAi` while the feature is on, since 1.14.0 `deadlinesToCalendar` with `deadlineCalendar`, also in `GET me` `areas`) |
-| `PATCH areas/<id>` | `{ docAi?: boolean, deadlinesToCalendar?: boolean }` (since 1.8.0 / 1.14.0, write in the area) | `{ area: { id, docAi, deadlinesToCalendar? } }` — AI for documents on / off in this area; new deadlines into the family calendar on their own (Familie not reachable: `409 familie_unavailable`) |
+| `GET me` | | `me { id, name, seat, deviceId, admin }`, `licence { valid, tier }`, `areas`, `latest` (change log seq), `settings`, `limits { maxBytes }`, `wipes` (entries this device has yet to handle, since 1.2.0), `devices` (my devices a new wipe reaches), `features` (since 1.5.0: `['previews', 'wipes', 'textSearch', 'devices', 'deleteAfter', 'emptyFiles']`, since 1.6.0 also `'links'`, `'guard'`, since 1.7.0 `'timeTravel'`, `'takenAt'`, `'photos'`, `'albums'`, `'frame'`, `'storage'`, since 1.8.0 `'docAi'` and `'cloudImport'` — only while GateControl offers the AI service / cloud accounts and they are allowed, see "AI for documents" and "Import"; since 1.9.0 `'vault'` and — while set up — `'office'`, since 1.10.0 `'photosFolder'`, since 1.11.0 `'vaultsApart'`, since 1.12.0 `'bulk'`, — while GateControl's public links are allowed — `'zip'` and `'multiLink'`, with GateControl ≥ 1.215.0 also `'copyServer'` (copies on the server) and `'zipMixed'` (a ZIP and one link of any selection); since 1.13.0 `'photoClasses'` (work photos apart); since 1.14.0 `'photoSearch'` (photos by what is on them) and — with `docAi` — `'docAsk'` (questions to the documents), `'scanDocs'` (scans become documents) and, while the Familie plugin's `calendar_add` is reachable, `'deadlineCalendar'` (see "AI in Drive"); since 1.16.0 `'photoPlaces'` and `'photoPeople'` (see "Places and people"); since 1.17.0 — with `docAi`, while Mail's `calendar_add` is reachable and takes Drive — `'deadlineMailCalendar'` (see "Deadlines into a calendar of Mail")), `settings` (since 1.14.0 also `scanKeepOriginal`), `links { node, drive } \| null` (since 1.6.0, see "Direct links"), `guard { on, locked, incident }` and `incidents` (since 1.6.0, see "Ransomware protection") |
+| `GET areas` | | `areas [{ id, kind, label, role, via, rootId, owner, archived, storage { bytes, quota, form, target, state } }]` (+ `docAi` while the feature is on, since 1.14.0 `deadlinesToCalendar` with `deadlineCalendar`, since 1.17.0 `deadlinesTarget` — the viewer's target — and both while the family calendar or a calendar of Mail is reachable; also in `GET me` `areas`) |
+| `PATCH areas/<id>` | `{ docAi?: boolean, deadlinesToCalendar?: boolean, deadlinesTarget?: target \| null }` (since 1.8.0 / 1.14.0 / 1.17.0, write in the area) | `{ area: { id, docAi, deadlinesToCalendar?, deadlinesTarget? } }` — AI for documents on / off in this area; new deadlines into the family calendar on their own (the area's switch; Familie not reachable: `409 familie_unavailable`); since 1.17.0 my own target in this area (see "Deadlines into a calendar of Mail") |
 | `GET nodes/<id>` | | `node` + `path`, `role`, `crumbs [{ id, name }]` |
 | `GET nodes/<id>/children` | `sort=name\|mtime\|size\|updated`, `order`, `offset`, `limit` (≤ 1000); since 1.11.0 `vaults=1`, `dirs=1` | `items` (folders first), `total`, `next`, `role` — since 1.11.0 (feature `vaultsApart`) **without vault folders** (their nodes right below a folder outside a vault; `total` counts the same), `vaults=1` lists them as before; inside a vault everything. `dirs=1`: only the folders (no vaults), by name (`order` applies, `sort` not), each with `hasDirs` (live folders below it, vault folders not counted) — the folder tree of the menus |
 | `GET nodes/by-path` | `area`, `path` | `node` |
@@ -146,10 +146,12 @@ reaches `GET frame` (the photo frame, since 1.7.0) and nothing else (`403 forbid
 | `GET nodes/<id>/insight` | (since 1.8.0) | `{ status, kind, title, date, sender, amount, currency, suggestion, deadlines, error, at }` (see "AI for documents") |
 | `POST nodes/<id>/insight` | | the same — recognise (again); write in the area |
 | `POST nodes/<id>/insight/apply` | `{ name?: true, folder?: true }` | `{ node, insight }` — the suggestion taken (renamed / moved) |
-| `GET deadlines` | `from?`, `to?` (YYYY-MM-DD; today, + 365 days) | `{ deadlines [{ id, kind, date, label, reminder, calendar, foundAt, doc, node }] }` (≤ 500, by date; `calendar`, `foundAt`, `doc` since 1.14.0) |
+| `GET deadlines` | `from?`, `to?` (YYYY-MM-DD; today, + 365 days) | `{ deadlines [{ id, kind, date, label, reminder, calendar, calendars, foundAt, doc, node }] }` (≤ 500, by date; `calendar`, `foundAt`, `doc` since 1.14.0; `calendar.target`, `calendars` since 1.17.0) |
 | `POST deadlines/<id>/remind` | `{ daysBefore }` (0 … 90) | `{ deadline }` — my reminder |
 | `DELETE deadlines/<id>/remind` | | `{ deadline }` |
-| `POST deadlines/<id>/calendar` | (since 1.14.0) | `{ deadline }` with `calendar { eventId, at }` — into my family calendar (see "AI in Drive") |
+| `POST deadlines/<id>/calendar` | (since 1.14.0) `{ target? }` (since 1.17.0: `{ kind: 'family' }` \| `{ kind: 'mail', calendarId }`) | `{ deadline }` with `calendar { eventId, at, target { kind, label } }` — into my family calendar (see "AI in Drive"), since 1.17.0 also into a calendar of Mail (`409 mail_unavailable { reason }`) |
+| `GET deadlines/calendars` | (since 1.17.0) | `{ family: bool, mail [{ id, name, account { id, label, kind, email }, color }] }` — the calendars I can choose |
+| `GET deadlines/targets` · `PUT deadlines/targets` | PUT: `{ targets [{ areaId, target }] }` (since 1.17.0) | `{ targets [{ areaId, label, target }] }` — my target per area with AI for documents where I write |
 | `POST ask` | `{ q, area? }` (since 1.14.0) | `{ status: 'answered' \| 'not_found', answer, sources [{ nodeId, name, path, areaId, page, quote }], terms, areas, deadline }` |
 | `POST scans/classify` | `{ mediaIds? \| nodeId?, text? }` (since 1.14.0) | `{ kind, confidence, summary, title, source, usage }` |
 | `POST scans/convert` | `{ mediaIds? \| nodeId?, text?, kind, target: 'docx' \| 'xlsx' \| 'pdf', name?, folderId?, images? }` | `{ kind, target, title, name, folderId, folderPath, text, content, file { name, mime, size, sha256, data } \| null, source, usage }` |
@@ -565,7 +567,37 @@ reads. GateControl's errors: `429 rate_limited` (its requests per hour), `409 ai
   for 6 hours, then tried again. Per area `PATCH
   areas/<id> { deadlinesToCalendar: true }` (default off): new deadlines of a recognition go in on their own — for the
   person whose upload or "Erkennen" it was, else the owner of the area — while they read the file and the day is ahead
-  (≤ 5 a recognition).
+  (≤ 5 a recognition). Since 1.17.0 the switch is the default of the people of the area without an own target (see
+  "Deadlines into a calendar of Mail").
+- **Deadlines into a calendar of Mail** (since 1.17.0, feature `deadlineMailCalendar`; Mail ≥ 1.6.0 with its services
+  `calendar_list` and `calendar_add` — `permissions.services` `gatecontrol-mail:calendar_list`,
+  `gatecontrol-mail:calendar_add`, confirmed by the administrator with the update; Drive works without Mail):
+  - A **target** is `{ kind: 'family' }` or `{ kind: 'mail', calendarId, label }` (`label` „<account> · <calendar>“,
+    e.g. „Outlook.com · Kalender“, set by Drive from `calendar_list`). `GET deadlines/calendars` → `{ family, mail }`:
+    `family` while Familie's `calendar_add` is reachable, `mail` the calendars of Mail the viewer can write to (Outlook /
+    Microsoft 365, CalDAV, GateControl's own — `[]` without Mail).
+  - **Per person and area** (`deadline_targets`): `PATCH areas/<id> { deadlinesTarget }` or `PUT deadlines/targets
+    { targets: [{ areaId, target }] }` (write in the area, not archived; `null`: not at all — also when the area's
+    switch is on); `GET deadlines/targets` → `{ targets: [{ areaId, label, target }] }` for the areas with AI for
+    documents on where the viewer writes. Without an own target the area's switch holds (`deadlinesToCalendar: true` →
+    `{ kind: 'family' }`, as in 1.14.0 – 1.16.x). The area views carry `deadlinesTarget` (the viewer's target) and
+    `deadlinesToCalendar` (true while a target is set) — older apps keep their switch: `PATCH { deadlinesToCalendar }`
+    sets the area's switch and drops the viewer's own target, so they see what they set. A target that cannot be
+    reached: `409 familie_unavailable` / `409 mail_unavailable { reason }` (`not_found`: no such calendar of the
+    person); a wrong shape `400 invalid { field }`.
+  - **New deadlines** of a recognition go into the target of the person whose upload or "Erkennen" it was (else the
+    owner of the area) — the family calendar or that calendar of Mail; Mail not reachable or refusing: logged, nothing
+    else (no fallback).
+  - **By hand:** `POST deadlines/<id>/calendar { target }` (without: the family calendar). Mail's `calendar_add` gets
+    `{ userId, calendarId, title, startsAt, allDay: true, note, key: 'drive:deadline:<id>', lang }` — the title as for
+    the family calendar, the note the file name and „In Drive öffnen“ with the direct link (≤ 500); Mail writes it like an
+    own event of the person (Graph, CalDAV or GateControl) with the calendar's own all-day reminder — Drive adds none, its
+    own notification stays. Drive keeps `{ eventId, at, target }` per person, deadline and target (`doc_calendar`, since
+    1.17.0 with `target`, `kind`, `label`; the entries before are the family calendar's); the same target again answers
+    the same entry. A deadline carries `calendar` (the newest entry) and `calendars` (all of the viewer's).
+  - Mail not installed, not running, or refusing: `409 mail_unavailable { reason }` (`unavailable`, `rate_limited`,
+    `timeout`, or Mail's code / reason — e.g. `not_found`, `auth_failed`, `no_seat`); after Mail's `forbidden`
+    `deadlineMailCalendar` is left out of `GET me` for 6 hours.
 - **Questions to the documents** (feature `docAsk`): `POST ask { q (3 … 300 characters), area? }`. 1. The question alone
   goes to the AI for search terms and filters (kind, sender, year). 2. Drive searches without AI in the recognised text
   and what AI for documents read (title, sender, kind) of the files the person reads in the areas with AI for documents
@@ -1056,8 +1088,11 @@ a source fits, "N Quellen" with path and quote — a click opens the file —, "
 gefunden." with "Gesucht nach: … · in …", and "Antwort nur aus deinen Dateien. Tresore werden nie durchsucht."); the
 page "Fristen" by month (the kind as a tag, the day with "in N Tagen", a renewal "kündigen bis …", "neu", what and from
 whom, the file; "In den Familienkalender" / "Im Familienkalender ✓" with `deadlineCalendar`, "Erinnern" / "Erinnerung N
-Tage vorher ✓"), the same calendar button in "Dokument-Infos", and per area "Neue Fristen in den Familienkalender" in
-the Drive settings; "In Dokument umwandeln" in the actions of a picture or PDF scan (`scanDocs` — "Scan prüfen":
+Tage vorher ✓"), the same calendar button in "Dokument-Infos", and per area "Fristen aus <Bereich>" in the Drive
+settings (since 1.17.0 the switch's new title; with `deadlineMailCalendar` a row with the value — „Nicht eintragen“,
+„Familienkalender“ or „Outlook.com · Kalender“ — that opens the choice: Nicht eintragen, Familienkalender, the calendars of
+Mail by account; and "In Kalender eintragen" asks for the target when there is more than one, the area's first, then
+"Im Kalender · <Ziel>"); "In Dokument umwandeln" in the actions of a picture or PDF scan (`scanDocs` — "Scan prüfen":
 "Erkannt: <Art>", the formats PDF (a JPEG ≤ 600 KB) · Word · Excel (a table), the preview — the first rows as a grid
 with the sum row, the start of the document —, the line on what the format does, name and "Ablegen in" with "Ändern",
 "Original-Scan behalten" (default *scan_keep_original*), the cost line; saving uploads the bytes the server made with

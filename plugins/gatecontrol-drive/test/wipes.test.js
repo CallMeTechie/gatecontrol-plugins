@@ -13,7 +13,9 @@ const sha = (s) => require('node:crypto').createHash('sha256').update(s).digest(
 test('plugin.json: permissions.devices — GateControl passes the asking device only then', () => {
   const m = JSON.parse(fs.readFileSync(path.join(DIR, 'plugin.json'), 'utf8'));
   assert.equal(m.permissions.devices, true);
-  assert.equal(m.version, '1.16.0');
+  assert.equal(m.version, '1.17.0');
+  // 1.17.0: deadlines also into a calendar of Mail (test/ki_mailcal.test.js)
+  for (const s of ['gatecontrol-familie:calendar_add', 'gatecontrol-mail:calendar_list', 'gatecontrol-mail:calendar_add']) assert.ok(m.permissions.services.includes(s), s);
 });
 
 test('a file deleted everywhere: every device of mine removes its copy, then the entry goes', async () => {

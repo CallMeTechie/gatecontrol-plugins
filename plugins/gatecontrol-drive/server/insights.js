@@ -9,12 +9,15 @@
 //                                          error, at } — status none | pending | ready | failed | off
 //   POST nodes/<id>/insight            recognise again (write in the area) → the same
 //   POST nodes/<id>/insight/apply      { name?: true, folder?: true } → { node, insight }
-//   PATCH areas/<id>                   { docAi?: boolean, deadlinesToCalendar?: boolean } (write in the area)
-//                                      → { area: { id, docAi, deadlinesToCalendar } }
+//   PATCH areas/<id>                   { docAi?: boolean, deadlinesToCalendar?: boolean, deadlinesTarget?: target | null }
+//                                      (write in the area) → { area: { id, docAi, deadlinesToCalendar, deadlinesTarget } }
+//   GET|PUT deadlines/targets          the viewer's targets per area (since 1.17.0, deadlines.js)
 //
 // Since 1.14.0: the deadline kinds warranty and renewal (deadlines.js), and per area deadlinesToCalendar (default off):
 // new deadlines go into the family calendar on their own (deadlines.auto — the person who uploaded or asked, else the
-// owner of the area); the area views carry `deadlinesToCalendar` while the feature deadlineCalendar is on.
+// owner of the area); the area views carry `deadlinesToCalendar` while the feature deadlineCalendar is on. Since 1.17.0
+// the target is per person and area (deadlinesTarget: the family calendar or a calendar of Mail; deadlines.js), the
+// switch the default for who has not chosen; the views carry both while a calendar (Familie's or Mail's) is reachable.
 //
 // Sparing with data and money:
 //   * the recognised text first (uploads/commit { text } — textSearch, the apps' scans): the text goes, never the file;
@@ -136,27 +139,46 @@ async function areaOn(gc, a) {
   return (await prefsOf(gc, [a])).get(a.id);
 }
 
+/** Is any calendar for deadlines reachable now (Familie's since 1.14.0, Mail's since 1.17.0)? */
+async function anyCalendar(gc) {
+  return (await deadlines.calendarReachable(gc)) || (await deadlines.mailReachable(gc));
+}
+
 /** The area views of GET me / GET areas get `docAi` while the feature is on (in place). */
 async function decorate(ctx, list) {
   if (!list.length || !(await state(ctx.gc, ctx.settings)).on) return list;
   const on = await prefsOf(ctx.gc, list);
   for (const a of list) a.docAi = on.get(a.id) === true;
-  // since 1.14.0: new deadlines into the family calendar on their own — while Familie's calendar is reachable
-  if (await deadlines.calendarReachable(ctx.gc)) for (const a of list) a.deadlinesToCalendar = await toCalendar(ctx.gc, a.id);
+  // since 1.14.0 new deadlines into the family calendar on their own, since 1.17.0 the viewer's target per area (also a
+  // calendar of Mail) — while a calendar is reachable; deadlinesToCalendar (older apps): a target is set
+  if (await anyCalendar(ctx.gc)) {
+    const targets = await deadlines.targetsOf(ctx.gc, ctx.viewer, list.map((a) => a.id));
+    for (const a of list) {
+      a.deadlinesTarget = targets.get(a.id) || null;
+      a.deadlinesToCalendar = !!a.deadlinesTarget;
+    }
+  }
   return list;
 }
 
-/** PATCH areas/<id> { docAi?, deadlinesToCalendar? } → { area: { id, docAi, deadlinesToCalendar } } */
+/**
+ * PATCH areas/<id> { docAi?, deadlinesToCalendar?, deadlinesTarget? } → { area: { id, docAi, deadlinesToCalendar,
+ * deadlinesTarget } }. deadlinesToCalendar: the area's switch (older apps) — the viewer's own choice goes with it, so they
+ * see what they set; deadlinesTarget (since 1.17.0): the viewer's own target in the area (null: not at all).
+ */
 async function setArea(ctx, areaId, body) {
   if (!(await state(ctx.gc, ctx.settings)).on) throw fail('feature_off');
   const b = body && typeof body === 'object' ? body : {};
   const hasAiArg = Object.prototype.hasOwnProperty.call(b, 'docAi');
   const hasCal = Object.prototype.hasOwnProperty.call(b, 'deadlinesToCalendar');
-  if ((!hasAiArg && !hasCal) || (hasAiArg && typeof b.docAi !== 'boolean')) throw fail('invalid', { field: 'docAi' });
+  const hasTarget = Object.prototype.hasOwnProperty.call(b, 'deadlinesTarget');
+  if ((!hasAiArg && !hasCal && !hasTarget) || (hasAiArg && typeof b.docAi !== 'boolean')) throw fail('invalid', { field: 'docAi' });
   if (hasCal && typeof b.deadlinesToCalendar !== 'boolean') throw fail('invalid', { field: 'deadlinesToCalendar' });
+  const wanted = hasTarget ? deadlines.targetArg(b.deadlinesTarget, 'deadlinesTarget') : undefined;
   if (hasCal && !(await deadlines.calendarReachable(ctx.gc))) throw fail('familie_unavailable', { reason: 'unavailable' });
   const v = await areas.roleIn(ctx, String(areaId || ''), 'write');
   if (v.area.archived_at != null) throw fail('forbidden');
+  const target = hasTarget ? await deadlines.resolveTarget(ctx.gc, ctx.viewer, ctx.lang, wanted, ctx.now) : undefined;
   if (hasAiArg) {
     await store.run(ctx.gc, 'INSERT INTO area_prefs (area_id, doc_ai) VALUES (?, ?) ON CONFLICT(area_id) DO UPDATE SET doc_ai = excluded.doc_ai', [v.area.id, b.docAi ? 1 : 0]);
     // switched off: what waits in the queue there goes
@@ -165,17 +187,49 @@ async function setArea(ctx, areaId, body) {
   if (hasCal) {
     await store.run(ctx.gc, `INSERT INTO area_prefs (area_id, deadlines_to_calendar) VALUES (?, ?)
       ON CONFLICT(area_id) DO UPDATE SET deadlines_to_calendar = excluded.deadlines_to_calendar`, [v.area.id, b.deadlinesToCalendar ? 1 : 0]);
+    await deadlines.clearTarget(ctx.gc, ctx.viewer, v.area.id);
   }
+  if (hasTarget) await deadlines.setTarget(ctx.gc, ctx.viewer, v.area.id, target, ctx.now);
   const out = { id: v.area.id, docAi: (await prefsOf(ctx.gc, [v.area])).get(v.area.id) === true };
-  // since 1.14.0, while Familie's calendar is reachable (as in GET me)
-  if (hasCal || (await deadlines.calendarReachable(ctx.gc))) out.deadlinesToCalendar = await toCalendar(ctx.gc, v.area.id);
+  // since 1.14.0, while a calendar is reachable (as in GET me)
+  if (hasCal || hasTarget || (await anyCalendar(ctx.gc))) {
+    out.deadlinesTarget = await deadlines.targetOf(ctx.gc, ctx.viewer, v.area.id);
+    out.deadlinesToCalendar = !!out.deadlinesTarget;
+  }
   return { area: out };
 }
 
-/** Do new deadlines of area `areaId` go into the family calendar on their own (since 1.14.0; default off)? */
-async function toCalendar(gc, areaId) {
-  const r = await store.one(gc, 'SELECT deadlines_to_calendar AS c FROM area_prefs WHERE area_id = ?', [areaId]);
-  return !!(r && r.c === 1);
+/**
+ * GET deadlines/targets → { targets: [{ areaId, label, target }] } (since 1.17.0) — the viewer's target in every area
+ * where they write with AI for documents on (not archived). `labelOf(v)`: an area's label in the viewer's language.
+ */
+async function targets(ctx, labelOf) {
+  if (!(await state(ctx.gc, ctx.settings)).on) throw fail('feature_off');
+  const list = (await ctx.visible()).filter((v) => v.area.archived_at == null && areas.can(v.role, 'write'));
+  const on = await prefsOf(ctx.gc, list.map((v) => v.area));
+  const mine = list.filter((v) => on.get(v.area.id) === true);
+  const tg = await deadlines.targetsOf(ctx.gc, ctx.viewer, mine.map((v) => v.area.id));
+  return { targets: mine.map((v) => ({ areaId: v.area.id, label: labelOf(v), target: tg.get(v.area.id) || null })) };
+}
+
+/** PUT deadlines/targets { targets: [{ areaId, target }] } → as GET — only the areas named change; all or none. */
+async function setTargets(ctx, body, labelOf) {
+  if (!(await state(ctx.gc, ctx.settings)).on) throw fail('feature_off');
+  const list = body && Array.isArray(body.targets) ? body.targets : null;
+  if (!list || !list.length || list.length > deadlines.TARGETS_MAX) throw fail('invalid', { field: 'targets' });
+  const todo = [];
+  for (const x of list) {
+    if (!x || typeof x !== 'object' || typeof x.areaId !== 'string' || !Object.prototype.hasOwnProperty.call(x, 'target')) throw fail('invalid', { field: 'targets' });
+    todo.push({ areaId: x.areaId, wanted: deadlines.targetArg(x.target, 'target') });
+  }
+  const done = [];
+  for (const x of todo) {
+    const v = await areas.roleIn(ctx, x.areaId, 'write');
+    if (v.area.archived_at != null) throw fail('forbidden');
+    done.push({ areaId: v.area.id, target: await deadlines.resolveTarget(ctx.gc, ctx.viewer, ctx.lang, x.wanted, ctx.now) });
+  }
+  await store.tx(ctx.gc, async () => { for (const x of done) await deadlines.setTarget(ctx.gc, ctx.viewer, x.areaId, x.target, ctx.now); });
+  return targets(ctx, labelOf);
 }
 
 // ─── the queue ──────────────────────────────────
@@ -335,11 +389,15 @@ async function recognise(gc, r, st, settings, now, asPerson) {
       folder, suggestName(d.name, n.name), now, cost, n.id]);
     added = await deadlines.replace(gc, n.id, found.slice(0, 5), now);
   });
-  // since 1.14.0: new deadlines into the family calendar, when the area wants it — for who asked or uploaded, else the
-  // area's owner (best effort; Familie not there: nothing)
-  if (added.length && (await toCalendar(gc, a.id))) {
+  // since 1.14.0: new deadlines into a calendar, when it is wanted — for who asked or uploaded, else the area's owner;
+  // since 1.17.0 into that person's target in the area (the family calendar or one of Mail; without an own choice the
+  // area's switch). Best effort; the calendar's plugin not there: nothing.
+  if (added.length) {
     const uid = (await userOf(gc, r, n)) || a.owner_user || null;
-    try { await deadlines.auto(gc, n.id, added, uid, asPerson, now); } catch (e) { gc.log.warn('deadlines into the calendar failed', (e && e.code) || 'error'); }
+    const target = uid == null ? null : await deadlines.targetOf(gc, uid, a.id);
+    if (target) {
+      try { await deadlines.auto(gc, n.id, added, uid, asPerson, now, target); } catch (e) { gc.log.warn('deadlines into the calendar failed', (e && e.code) || 'error'); }
+    }
   }
   return 'ready';
 }
@@ -483,4 +541,4 @@ async function attach(ctx, body) {
   return body;
 }
 
-module.exports = { KINDS, SCHEMA, AI_ERRORS, state, decorate, setArea, consider, tick, get, restart, apply, attach, suggestName, prefsOf, areaOn, hasAi, clean, dayArg, userOf, IMAGE_RE, IMAGE_MAX };
+module.exports = { KINDS, SCHEMA, AI_ERRORS, state, decorate, setArea, targets, setTargets, consider, tick, get, restart, apply, attach, suggestName, prefsOf, areaOn, hasAi, clean, dayArg, userOf, IMAGE_RE, IMAGE_MAX };

@@ -44,6 +44,8 @@
 //     documents — ask.js) · POST scans/classify · POST scans/convert · POST scans/save (scans become Word, Excel or a
 //     searchable PDF — scans.js, ooxml.js) · PUT nodes/<id>/labels, GET photos?q= / ?unlabeled=1 (photos by what is on
 //     them — labels.js) · PATCH areas/<id> { deadlinesToCalendar }
+//     Deadlines also into a calendar of Mail (1.17.0): POST deadlines/<id>/calendar { target }, GET deadlines/calendars,
+//     GET|PUT deadlines/targets, PATCH areas/<id> { deadlinesTarget } (deadlines.js, insights.js)
 //     Places and people (1.16.0): PUT nodes/<id>/geo, uploads/commit { geo }, GET photos/places, GET photos/map, DELETE
 //     photos/geo, place= / bbox= / unlocated=1 (places.js, names offline from GeoNames — geonames.js) · PUT nodes/<id>/faces,
 //     GET people, GET|PATCH people/<id>, POST people/<id>/merge, GET people/<id>/similar, GET people/<id>/uncertain, POST
@@ -259,6 +261,8 @@ async function optional(ctx) {
     out.push('docAi', 'docAsk', 'scanDocs');
     // deadlines into the family calendar (1.14.0): while the Familie plugin's calendar_add is reachable
     if (await deadlines.calendarReachable(ctx.gc)) out.push('deadlineCalendar');
+    // deadlines into a calendar of Mail (1.17.0): while Mail's calendar_add is reachable and takes Drive
+    if (await deadlines.mailReachable(ctx.gc)) out.push('deadlineMailCalendar');
   }
   if (await imports.sources(ctx.gc, ctx.settings)) out.push('cloudImport');
   // office in the browser (1.9.0): only while an office server is set up and GateControl has public endpoints
@@ -444,7 +448,11 @@ async function route(ctx, req, seg) {
   if (a === 'deadlines' && seg.length === 3 && c === 'remind' && m === 'POST') return ok(await deadlines.remind(ctx, b, body));
   if (a === 'deadlines' && seg.length === 3 && c === 'remind' && m === 'DELETE') return ok(await deadlines.unremind(ctx, b));
   // AI in Drive (1.14.0): the family calendar, questions, scans as documents
-  if (a === 'deadlines' && seg.length === 3 && c === 'calendar' && m === 'POST') return ok(await deadlines.calendar(ctx, b));
+  if (a === 'deadlines' && seg.length === 3 && c === 'calendar' && m === 'POST') return ok(await deadlines.calendar(ctx, b, body));
+  // targets of deadlines per area and the calendars to choose from (1.17.0: Familie and Mail)
+  if (a === 'deadlines' && seg.length === 2 && b === 'calendars' && m === 'GET') return ok(await deadlines.calendars(ctx));
+  if (a === 'deadlines' && seg.length === 2 && b === 'targets' && m === 'GET') return ok(await insights.targets(ctx, (v) => labelOf(ctx, v.area)));
+  if (a === 'deadlines' && seg.length === 2 && b === 'targets' && m === 'PUT') return ok(await insights.setTargets(ctx, body, (v) => labelOf(ctx, v.area)));
   if (a === 'ask' && seg.length === 1 && m === 'POST') return ok(await ask.ask(ctx, body));
   if (a === 'scans' && seg.length === 2 && m === 'POST') {
     if (b === 'classify') return ok(await scans.classify(ctx, body));

@@ -8,14 +8,16 @@
  *                     nie durchsucht."
  *   docAi             the page "Fristen" by month: the kind as a tag, the day with "in N Tagen" (a renewal: "kündigen
  *                     bis …"), "neu", what and from whom, the file; "In den Familienkalender" / "Im Familienkalender ✓"
- *                     (deadlineCalendar) and "Erinnern" / "Erinnerung N Tage vorher ✓"
+ *                     (deadlineCalendar) and "Erinnern" / "Erinnerung N Tage vorher ✓"; since 1.17.0 with the calendars of
+ *                     Mail (deadlineMailCalendar) "In Kalender eintragen" with the choice of the target, "Im Kalender · …"
  *   scanDocs          "In Dokument umwandeln" for a picture or a PDF scan: "Scan prüfen" — "Erkannt: <Art>", the formats
  *                     (PDF for a JPEG, Word, Excel for a table), the preview, name and folder, "Original-Scan behalten",
  *                     the cost line; the server writes the file (POST scans/convert), this tab uploads its bytes
  *                     (GC.upload) and files them (POST scans/save)
  *
  * portal.js calls DriveKi.attach(ui) with its helpers and asks it: isQuestion(q), typed(q), ask(q), chips(main, mode),
- * showDeadlines(main), calendarButton(d, after), canConvert(n), convert(n), photoSummary(search, onWord). Server and
+ * showDeadlines(main), calendarButton(d, after), targetRow(area, setRow, after) (the settings' „Fristen aus …“, 1.17.0),
+ * canConvert(n), convert(n), photoSummary(search, onWord). Server and
  * user text only ever goes into textContent or attributes.
  */
 (function () {
@@ -138,14 +140,113 @@
 
     // ── deadlines (docAi) and the family calendar (deadlineCalendar) ──
 
-    /** "In den Familienkalender" → POST deadlines/<id>/calendar; already there: "Im Familienkalender ✓". */
+    // ── targets: the family calendar and the calendars of Mail (since 1.17.0, deadlineMailCalendar) ──
+
+    var multi = function () { return has('deadlineMailCalendar'); };
+
+    /** A target → its text: „Nicht eintragen“, „Familienkalender“, „Outlook.com · Kalender“. */
+    function targetText(t) {
+      if (!t) return T('p.k.t_none');
+      return t.kind === 'family' ? T('p.k.t_family') : (t.label || T('p.k.t_none'));
+    }
+    function sameTarget(a, b) {
+      if (!a || !b) return !a && !b;
+      return a.kind === b.kind && (a.kind !== 'mail' || String(a.calendarId) === String(b.calendarId));
+    }
+
+    /** GET deadlines/calendars → the choices: [{ target, text, group }] (the family calendar, then Mail's by account). */
+    function choices() {
+      return api('GET', 'deadlines/calendars').then(function (r) {
+        var out = [];
+        if (r.family) out.push({ target: { kind: 'family' }, text: T('p.k.t_family'), group: null });
+        (r.mail || []).forEach(function (c) {
+          var a = c.account || {};
+          out.push({ target: { kind: 'mail', calendarId: c.id, label: [a.label, c.name].filter(Boolean).join(' · ') }, text: c.name, color: c.color || null,
+            group: { key: String(a.id == null ? 'gc' : a.id), label: a.email && a.label !== a.email ? a.label + ' · ' + a.email : (a.label || '') } });
+        });
+        return out;
+      });
+    }
+
+    /**
+     * The choice of a target (a menu in a dialog): o { title, sub, current, none (offer „Nicht eintragen“), list } →
+     * onPick(target | null). The current one is marked and first among its kind.
+     */
+    function chooseTarget(o, onPick) {
+      var items = [];
+      var item = function (target, text, color) {
+        var on = sameTarget(target, o.current);
+        items.push(h('button', { type: 'button', attrs: { 'aria-pressed': String(on) }, on: { click: function () { U.closeDialog(); onPick(target); } } }, [
+          icon(on ? 'check' : 'calendar'), h('span', { class: 'dp-menu-tx' }, [h('span', { text: text })]),
+          color ? h('span', { class: 'dp-k-tdot', attrs: { style: 'background:' + (/^#[0-9A-Fa-f]{6}$/.test(color) ? color : 'transparent') } }) : null,
+        ]));
+      };
+      if (o.none) item(null, T('p.k.t_none'));
+      var group = null;
+      o.list.forEach(function (c) {
+        var key = c.group ? c.group.key : null;
+        if (key !== group) {
+          group = key;
+          if (c.group) items.push(h('span', { class: 'dp-label dp-k-tgroup', text: c.group.label }));
+        }
+        item(c.target, c.text, c.color);
+      });
+      if (!o.list.length) items.push(h('p', { class: 'dp-hint', text: T('p.k.t_none_avail') }));
+      U.dialog(o.title, [h('div', { class: 'dp-menu' }, items)], { sub: o.sub || null });
+    }
+
+    /** The row „Fristen aus <Bereich>“ of the settings: the value, a click opens the choice (PATCH areas/<id>). */
+    function targetRow(a, setRow, after) {
+      var title = T('p.k.st_from', { area: a.label });
+      var value = U.btn(targetText(a.deadlinesTarget), function () {
+        choices().then(function (list) {
+          chooseTarget({ title: title, current: a.deadlinesTarget || null, none: true, list: list }, function (target) {
+            var body = { deadlinesTarget: target ? (target.kind === 'mail' ? { kind: 'mail', calendarId: target.calendarId } : { kind: 'family' }) : null };
+            api('PATCH', 'areas/' + encodeURIComponent(a.id), body).then(function (r) {
+              a.deadlinesTarget = (r.area && r.area.deadlinesTarget) || null;
+              a.deadlinesToCalendar = !!a.deadlinesTarget;
+              if (after) after();
+            }, U.fail);
+          });
+        }, U.fail);
+      }, { small: true, attrs: { 'aria-label': title + ': ' + targetText(a.deadlinesTarget) } });
+      return setRow(title, T('p.k.st_from_hint'), value);
+    }
+
+    function postCalendar(d, target, after, b) {
+      var body = target && target.kind === 'mail' ? { target: { kind: 'mail', calendarId: target.calendarId } } : {};
+      if (b) b.disabled = true;
+      api('POST', 'deadlines/' + d.id + '/calendar', body).then(function (r) {
+        var c = r.deadline && r.deadline.calendar;
+        U.toast(multi() && c && c.target ? T('p.k.cal_done_to', { label: c.target.label }) : T('p.k.cal_done'));
+        if (after) after();
+      }, function (e) { if (b) b.disabled = false; U.fail(e); });
+    }
+
+    /**
+     * "In den Familienkalender" → POST deadlines/<id>/calendar; already there: "Im Familienkalender ✓". Since 1.17.0 with
+     * the calendars of Mail: "In Kalender eintragen" asks for the target when there is more than one (the area's first
+     * and marked); already there: "Im Kalender · Outlook.com · Kalender".
+     */
     function calendarButton(d, after, label) {
-      if (!has('deadlineCalendar')) return null;
-      if (d.calendar) return btn(T('p.k.in_cal'), function () { /* there already */ }, { small: true, icon: 'check', disabled: true, attrs: { 'aria-label': T('p.k.in_cal') } });
-      return btn(label || T('p.k.to_cal'), function (ev) {
+      if (!has('deadlineCalendar') && !multi()) return null;
+      if (d.calendar) {
+        var done = multi() && d.calendar.target ? T('p.k.in_cal_to', { label: d.calendar.target.label }) : T('p.k.in_cal');
+        return btn(done, function () { /* there already */ }, { small: true, icon: 'check', disabled: true, attrs: { 'aria-label': done } });
+      }
+      if (!multi()) return btn(label || T('p.k.to_cal'), function (ev) { postCalendar(d, null, after, ev && ev.currentTarget); }, { small: true, icon: 'calendar' });
+      return btn(T('p.k.to_cal_any'), function (ev) {
         var b = ev && ev.currentTarget;
-        if (b) b.disabled = true;
-        api('POST', 'deadlines/' + d.id + '/calendar').then(function () { U.toast(T('p.k.cal_done')); if (after) after(); }, function (e) { if (b) b.disabled = false; U.fail(e); });
+        choices().then(function (list) {
+          if (list.length === 1) { postCalendar(d, list[0].target, after, b); return; }
+          var areaId = d.node ? d.node.areaId : null;
+          var area = areaId ? U.areaOf(areaId) : null;
+          var current = area && area.deadlinesTarget ? area.deadlinesTarget : null;
+          // the area's target first
+          var first = list.filter(function (c) { return sameTarget(c.target, current); });
+          var rest = list.filter(function (c) { return !sameTarget(c.target, current); });
+          chooseTarget({ title: T('p.k.t_choose'), sub: d.label || null, current: current, none: false, list: first.concat(rest) }, function (target) { postCalendar(d, target, after, b); });
+        }, U.fail);
       }, { small: true, icon: 'calendar' });
     }
 
@@ -401,7 +502,7 @@
 
     return {
       isQuestion: isQuestion, typed: typed, ask: ask, chips: chips, mode: function (m) { if (m) st.mode = m; return st.mode; },
-      showDeadlines: showDeadlines, calendarButton: calendarButton, canConvert: canConvert, convert: convert, photoSummary: photoSummary,
+      showDeadlines: showDeadlines, calendarButton: calendarButton, targetRow: targetRow, canConvert: canConvert, convert: convert, photoSummary: photoSummary,
     };
   }
 
