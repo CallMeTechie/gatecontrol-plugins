@@ -16,7 +16,7 @@
 // account in what is left of the run —, the outbox, reminders, account pictures, AI sorting, filing, quota and retention,
 // since 1.5.0 the attachments of 1.4 into their media area — storage.js), render (the portal tab, the admin pages), appVisible / portalVisible (who may use Mail), mediaAccess
 // (attachments, draft files and account pictures of the person), service (new_draft, since 1.6.0 calendar_list and
-// calendar_add for Drive — services.js), settingsChanged.
+// calendar_add, since 1.7.0 tofile_count for Drive — services.js), settingsChanged.
 
 const store = require('./store');
 const config = require('./config');
@@ -175,7 +175,8 @@ module.exports = {
 
   /**
    * For Drive (services.js): new_draft { files: [{ mediaId, name? }], subject? } — files handed over first; since 1.6.0
-   * calendar_list and calendar_add (deadlines into a calendar of Mail).
+   * calendar_list and calendar_add (deadlines into a calendar of Mail); since 1.7.0 tofile_count ("Zum Ablegen" in
+   * Drive's overview).
    */
   async service(call, gc) {
     return services.handle(gc, call);

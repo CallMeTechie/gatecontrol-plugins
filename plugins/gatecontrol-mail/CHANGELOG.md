@@ -2,6 +2,14 @@
 
 Alle E-Mail-Konten an einem Ort – im eigenen Tab der GateControl-Apps und im Portal.
 
+## 1.7.0
+- **„Zum Ablegen“ in der Drive-Übersicht.** Drive zeigt in seiner neuen Übersicht unter „Zu erledigen“, wie viele
+  Mail-Anhänge auf das Ablegen warten (Drive ≥ 1.18.0). Dafür bietet Mail den Dienst `tofile_count { userId }`, den nur
+  Drive aufrufen darf. Er liefert die Zahl der Anhänge unter „Zum Ablegen“ und den Ordner, den Drive für den neuesten
+  vorgeschlagen hat (z. B. „Familie › Versicherungen“). Nur für die Person des Aufrufs. Wer Mail nicht nutzen kann,
+  bekommt `unavailable { reason }`, ein Aufruf vergibt keinen Platz.
+- Der Administrator bestätigt die neue Berechtigung beim Update von Drive. Mail selbst braucht keine neue Berechtigung.
+
 ## 1.6.0
 - **Kalender für Drive.** Drive kann Fristen aus Dokumenten jetzt auch in einen Kalender von Mail eintragen (Drive ≥ 1.17.0).
   Möglich sind Outlook/Microsoft 365, GMX, Web.de, ein eigener CalDAV-Server und die eigenen GateControl-Kalender. Dafür
