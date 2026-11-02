@@ -725,7 +725,7 @@ async function importVcf(gc, ctx, b) {
   }
   await pimstore.live(gc, ctx.userId, 'contacts', { kind: 'changed', addressbookId: book.id, ...(changed.length <= 50 ? { contactIds: changed } : {}) });
   // new certain duplicates (an imported card and an account card) become one contact
-  try { await cardmerge.afterSync(gc, ctx.userId, changed); } catch (e) { gc.log.warn('contacts merge after import failed', (e && e.code) || 'error'); }
+  try { await cardmerge.afterSync(gc, ctx.userId, changed); } catch (e) { gc.log.warn('contacts merge after import failed', (e && (e.code || e.message)) || 'error'); }
   return out;
 }
 

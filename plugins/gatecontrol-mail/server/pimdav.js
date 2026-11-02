@@ -169,7 +169,7 @@ async function syncCollection(gc, a, col, kind, guard) {
       }
     } catch (e) {
       if (e && e.code === 'limit') break;
-      gc.log.warn('object skipped', kind, (e && e.code) || 'error');
+      gc.log.warn('object skipped', kind, (e && (e.code || e.message)) || 'error');
     }
   }
   let removed = 0;
@@ -339,7 +339,7 @@ async function syncIcs(gc, cal, guard, now = Date.now()) {
   if (!url) return { skipped: true };
   let r;
   try { r = await fetchIcs(gc, url, { etag: cal.ctag, lastModified: cal.sync_token }); } catch (e) {
-    await store.run(gc, "UPDATE calendars SET state = 'unreachable', error_code = ?, error_at = ?, delta = ? WHERE id = ?", [String((e && e.code) || 'error').slice(0, 40), now, String(fails + 1), cal.id]);
+    await store.run(gc, "UPDATE calendars SET state = 'unreachable', error_code = ?, error_at = ?, delta = ? WHERE id = ?", [String((e && (e.code || e.message)) || 'error').slice(0, 40), now, String(fails + 1), cal.id]);
     throw e;
   }
   if (r.status === 304) {

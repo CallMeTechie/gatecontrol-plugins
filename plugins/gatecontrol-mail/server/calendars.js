@@ -195,7 +195,7 @@ async function settings(gc, ctx, b) {
   if (b.defaultReminder !== undefined) { if (!(b.defaultReminder === null || (Number.isInteger(b.defaultReminder) && b.defaultReminder >= 0 && b.defaultReminder <= 40320))) bad('defaultReminder'); p.defaultReminder = b.defaultReminder; }
   if (b.allDayReminder !== undefined) { if (!(Number.isInteger(b.allDayReminder) && b.allDayReminder >= 0 && b.allDayReminder <= 10080)) bad('allDayReminder'); p.allDayReminder = b.allDayReminder; }
   await pimstore.saveCalPrefs(gc, ctx.userId, p, cur.overlays, true);
-  if (zoneChanged) rebuildZone(gc, ctx.userId).catch((e) => gc.log.warn('time zone rebuild failed', (e && e.code) || 'error'));
+  if (zoneChanged) rebuildZone(gc, ctx.userId).catch((e) => gc.log.warn('time zone rebuild failed', (e && (e.code || e.message)) || 'error'));
   return { prefs: (await pimstore.calPrefs(gc, ctx.userId)).prefs };
 }
 

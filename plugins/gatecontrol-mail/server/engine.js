@@ -327,7 +327,7 @@ async function folderSteps(gc, a, pick, o) {
         return await folderStep(gc, a, s, x, f, o);
       } catch (e) {
         if (!o.soft || hardError(e)) throw e;
-        gc.log.warn('folder sync failed', a.id, (e && e.code) || 'error');
+        gc.log.warn('folder sync failed', a.id, (e && (e.code || e.message)) || 'error');
         return null;
       }
     }, { prio: o.prio, stay: o.stay });
@@ -462,7 +462,7 @@ async function storeParsed(gc, a, m, p, s, x, person) {
     } else if (isGraph(a) && m.invite) {
       if (await invites.fromGraph(gc, a, m)) await push.changed(gc, m.user_id, a.id, m.folder_id, { messageId: m.id });
     }
-  } catch (e) { gc.log.warn('invitation failed', (e && e.code) || 'error'); }
+  } catch (e) { gc.log.warn('invitation failed', (e && (e.code || e.message)) || 'error'); }
   // a Microsoft message: List-Id & co. only come with the body — the rules may decide now
   if (p.headers && m.tab_by !== 'user' && m.tab_by !== 'learned') {
     const h = p.headers;
@@ -779,7 +779,7 @@ async function tick(gc, now, budgetMs = 60000, skipUsers = new Set()) {
       x.retryAt = 0;
     } catch (e) {
       if (!x.retryAt || x.retryAt <= now) x.retryAt = Date.now() + backoff(x);
-      if (e && e.code !== 'auth_failed' && e.code !== 'unreachable' && e.code !== 'busy') gc.log.warn('sync failed', a.id, (e && e.code) || 'error');
+      if (e && e.code !== 'auth_failed' && e.code !== 'unreachable' && e.code !== 'busy') gc.log.warn('sync failed', a.id, (e && (e.code || e.message)) || 'error');
     }
   }
   return { accounts: accounts.length };

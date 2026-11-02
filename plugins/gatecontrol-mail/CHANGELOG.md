@@ -2,6 +2,10 @@
 
 Alle E-Mail-Konten an einem Ort – im eigenen Tab der GateControl-Apps und im Portal.
 
+## 1.7.1
+- Das Log nennt bei Warnungen wie „folder sync failed“, „sync failed“ oder „pim step failed“ jetzt den Text eines
+  Fehlers ohne eigenen Code (etwa „storage timeout“ von GateControl) statt nur „error“. Sonst unverändert.
+
 ## 1.7.0
 - **„Zum Ablegen“ in der Drive-Übersicht.** Drive zeigt in seiner neuen Übersicht unter „Zu erledigen“, wie viele
   Mail-Anhänge auf das Ablegen warten (Drive ≥ 1.18.0). Dafür bietet Mail den Dienst `tofile_count { userId }`, den nur

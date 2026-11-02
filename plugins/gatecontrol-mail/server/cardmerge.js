@@ -573,7 +573,7 @@ async function afterMasterChange(gc, userId, m, old, f) {
       await addOrigins(gc, m.id, newOrigins.filter((o) => o.sourceId === id));
       out.push({ id, addressbookId: l.addressbook_id, ok: true });
     } catch (e) {
-      out.push({ id, addressbookId: l.addressbook_id, ok: false, code: (e && e.code) || 'error' });
+      out.push({ id, addressbookId: l.addressbook_id, ok: false, code: (e && (e.code || e.message)) || 'error' });
     }
   }
   return out;
@@ -756,7 +756,7 @@ async function autoMerge(gc, userId, scope, lang) {
       if (r.mergeId) done.push(r.mergeId);
     } catch (e) {
       if (e && e.code === 'limit') break;
-      gc.log.warn('contacts auto merge failed', userId, (e && e.code) || 'error');
+      gc.log.warn('contacts auto merge failed', userId, (e && (e.code || e.message)) || 'error');
     }
   }
   return done;
@@ -827,7 +827,7 @@ async function afterSync(gc, userId, ids) {
   for (const part of store.chunks([...new Set(ids)], 80)) {
     for (const r of await store.all(gc, `SELECT link_id FROM cards WHERE id IN (${store.marks(part.length)}) AND link_id IS NOT NULL`, part)) masters.add(r.link_id);
   }
-  for (const m of masters) { try { await reconcile(gc, userId, m); } catch (e) { gc.log.warn('contacts reconcile failed', userId, (e && e.code) || 'error'); } }
+  for (const m of masters) { try { await reconcile(gc, userId, m); } catch (e) { gc.log.warn('contacts reconcile failed', userId, (e && (e.code || e.message)) || 'error'); } }
   const loose = [];
   for (const part of store.chunks([...new Set(ids)], 80)) {
     for (const r of await store.all(gc, `SELECT id FROM cards WHERE id IN (${store.marks(part.length)}) AND link_id IS NULL`, part)) loose.push(r.id);
@@ -844,7 +844,7 @@ async function migrate(gc, userId) {
   const olds = await store.all(gc, `SELECT DISTINCT p.id FROM cards c JOIN cards p ON p.id = c.link_id JOIN addressbooks b ON b.id = p.addressbook_id
     WHERE c.user_id = ? AND b.source <> 'local' AND p.link_id IS NULL`, [userId]);
   for (const o of olds) {
-    try { await mergeCards(gc, userId, [o.id], { mode: 'migrated', reason: 'link', quiet: true }); stats.migrated++; } catch (e) { gc.log.warn('contacts link migration failed', userId, (e && e.code) || 'error'); }
+    try { await mergeCards(gc, userId, [o.id], { mode: 'migrated', reason: 'link', quiet: true }); stats.migrated++; } catch (e) { gc.log.warn('contacts link migration failed', userId, (e && (e.code || e.message)) || 'error'); }
   }
   const masters = await store.all(gc, `SELECT DISTINCT c.link_id AS id FROM cards c JOIN cards m ON m.id = c.link_id JOIN addressbooks b ON b.id = m.addressbook_id WHERE c.user_id = ? AND b.source = 'local'`, [userId]);
   for (const m of masters) { try { const r = await reconcile(gc, userId, m.id, { quiet: true }); stats.reconciled++; stats.conflicts += r.conflicts; } catch { /* the next sync again */ } }
@@ -867,7 +867,7 @@ async function tick(gc, skipUsers = new Set(), now = Date.now()) {
   const u = rows.find((r) => !skipUsers.has(r.user_id));
   if (!u) { idleUntil = now + 5 * 60000; return 0; }
   try { await migrate(gc, u.user_id); } catch (e) {
-    gc.log.warn('contacts merge run failed', u.user_id, (e && e.code) || 'error');
+    gc.log.warn('contacts merge run failed', u.user_id, (e && (e.code || e.message)) || 'error');
     await store.run(gc, `INSERT INTO card_runs (user_id, master_at, stats_json) VALUES (?, ?, ?) ON CONFLICT(user_id) DO UPDATE SET master_at = excluded.master_at`, [u.user_id, Date.now(), '{"failed":true}']);
   }
   return 1;
