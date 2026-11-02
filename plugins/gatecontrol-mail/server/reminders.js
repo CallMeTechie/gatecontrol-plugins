@@ -99,7 +99,7 @@ async function tick(gc, now = Date.now(), skipUsers = new Set()) {
           data: { calendar: { eventId: x.event_id, occurrence: x.occ || null }, ...(one && x.location ? { facts: [{ label: t(lang, 'push.place'), value: clip(x.location, 120) }] } : {}) },
         });
         sent += group.length;
-      } catch (e) { gc.log.warn('reminder push failed', (e && e.code) || 'error'); }
+      } catch (e) { gc.log.warn('reminder push failed', (e && (e.code || e.message)) || 'error'); }
     }
   }
   if (now - lastClean > 3600000) {

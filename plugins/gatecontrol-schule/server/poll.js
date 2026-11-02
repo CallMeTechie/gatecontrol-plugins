@@ -131,7 +131,8 @@ async function pollAccount(gc, acc, cfg, now, opts = {}) {
         failures += 1;
         firstError = firstError || e;
         await store.updateStudent(gc, s.id, { last_error: code });
-        gc.log.warn('timetable not fetched', acc.id, s.id, code);
+        // an error without a code is not one of WebUntis (e.g. "storage timeout" of the host): its text says what it was
+        gc.log.warn('timetable not fetched', acc.id, s.id, code, ...(e && !e.code && e.message ? [String(e.message).slice(0, 200)] : []));
       }
     }
     if (due.length && failures === due.length) throw firstError;

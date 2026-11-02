@@ -2,6 +2,10 @@
 
 Stundenplan aus WebUntis für Schüler- und Elternkonten als GateControl-Plugin.
 
+## 1.7.1
+- „timetable not fetched“ im Log nennt bei einem Fehler, der nicht von WebUntis kommt (etwa „storage timeout“ von
+  GateControl), zusätzlich dessen Text – bisher stand dort nur „failed“. Sonst unverändert.
+
 ## 1.7.0
 - **Anhänge in Drive speichern.** Ist das Plugin Drive (1.4.0 oder neuer) installiert, steht an jedem Anhang
   einer Nachricht der Schule **„In Drive speichern“** – im Portal, auf der Seite „Schule“ und (mit dem

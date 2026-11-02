@@ -54,7 +54,7 @@ async function ensure(gc, now = Date.now()) {
   } catch (e) {
     // no media.areas in plugin.json: never; anything else: again in a minute
     if (e && e.code === 'ERR_MEDIA_DENIED') areaOk = false;
-    gc.log.warn('area failed', (e && e.code) || 'error');
+    gc.log.warn('area failed', (e && (e.code || e.message)) || 'error');
     return false;
   }
   return true;
@@ -134,7 +134,7 @@ async function adopt(gc, now = Date.now()) {
       await gc.media.claim(r.media_id, { area: AREA });
     } catch (e) {
       if (e && e.code === 'ERR_MEDIA_QUOTA') break;
-      if (!(e && e.code === 'ERR_INVALID')) { gc.log.warn('area move failed', (e && e.code) || 'error'); break; }
+      if (!(e && e.code === 'ERR_INVALID')) { gc.log.warn('area move failed', (e && (e.code || e.message)) || 'error'); break; }
     }
     last = r.id;
     n++;

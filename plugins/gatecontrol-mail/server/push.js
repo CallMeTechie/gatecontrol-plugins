@@ -44,7 +44,7 @@ async function newMail(gc, a) {
     });
     return want.length;
   } catch (e) {
-    gc.log.warn('mail push failed', (e && e.code) || 'error');
+    gc.log.warn('mail push failed', (e && (e.code || e.message)) || 'error');
     return 0;
   }
 }
@@ -54,7 +54,7 @@ async function sendFailed(gc, userId, outboxId, subject) {
   const lang = await langOf(gc, userId);
   try {
     await gc.notify({ topic: 'mail_failed', users: [userId], priority: 'high', title: t(lang, 'push.failed_title'), body: clip(subject || t(lang, 'push.no_subject'), 300), data: { mail: { outboxId } } });
-  } catch (e) { gc.log.warn('failed push failed', (e && e.code) || 'error'); }
+  } catch (e) { gc.log.warn('failed push failed', (e && (e.code || e.message)) || 'error'); }
 }
 
 module.exports = { changed, newMail, sendFailed, langOf };

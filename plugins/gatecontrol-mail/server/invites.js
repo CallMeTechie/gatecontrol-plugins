@@ -58,7 +58,7 @@ async function fromParts(gc, a, m, parts) {
       const r = await receive(gc, m.user_id, { kind: 'mail', text: part.text, method: part.method, accountId: a.id, messageId: m.id });
       if (r) n++;
     } catch (e) {
-      gc.log.warn('invitation skipped', (e && e.code) || 'error');
+      gc.log.warn('invitation skipped', (e && (e.code || e.message)) || 'error');
     }
   }
   return n;
@@ -140,7 +140,7 @@ async function receive(gc, userId, o) {
     return store.one(gc, 'SELECT * FROM invitations WHERE id = ?', [id]);
   }).then(async (inv) => {
     if (!inv || inv.state === 'outdated') return inv;
-    try { await apply0(gc, userId, inv, { graphEventId: o.graphEventId }); } catch (e) { gc.log.warn('invitation not applied', method, (e && e.code) || 'error'); }
+    try { await apply0(gc, userId, inv, { graphEventId: o.graphEventId }); } catch (e) { gc.log.warn('invitation not applied', method, (e && (e.code || e.message)) || 'error'); }
     await pimstore.live(gc, userId, 'calendar', { kind: 'invitation', invitationId: inv.id, messageId: inv.message_id || null });
     return store.one(gc, 'SELECT * FROM invitations WHERE id = ?', [inv.id]);
   });
@@ -342,7 +342,7 @@ async function sendItip(gc, a, method, content, to, { subject, text } = {}) {
     return list.length;
   } catch (e) {
     if (e && e.code === 'send_failed') throw e;
-    throw fail('send_failed', { reason: (e && e.code) || 'error' });
+    throw fail('send_failed', { reason: (e && (e.code || e.message)) || 'error' });
   }
 }
 
@@ -401,7 +401,7 @@ async function invite(gc, userId, lang, ev, cal, a, method, people, o = {}) {
         sent.internal++;
         await pushInvite(gc, uid2, inv, f, zone, userId);
       }
-    } catch (e) { gc.log.warn('internal invitation failed', (e && e.code) || 'error'); }
+    } catch (e) { gc.log.warn('internal invitation failed', (e && (e.code || e.message)) || 'error'); }
   }
   const external = people.filter((p) => !internal.has(p.email));
   if (external.length && a) {
@@ -421,7 +421,7 @@ async function pushInvite(gc, userId, inv, f, zone, fromUser) {
       topic: 'calendar_invite', users: [userId], collapseKey: `inv:${inv.id}`, title: clip(name || (f.organizer && (f.organizer.name || f.organizer.email)) || 'GateControl', 120),
       body: clip(t(lang, 'push.invite', { title: f.title || '', when: whenText(lang, f, zone) }), 300), data: { calendar: { invitationId: inv.id } },
     });
-  } catch (e) { gc.log.warn('invitation push failed', (e && e.code) || 'error'); }
+  } catch (e) { gc.log.warn('invitation push failed', (e && (e.code || e.message)) || 'error'); }
 }
 
 // ─── answering ──────────────────────────────────

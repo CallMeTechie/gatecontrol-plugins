@@ -266,7 +266,7 @@ async function calendarStep(gc, a, cal) {
 /** After a contact sync step: the GC contacts of the changed cards up to date, new certain duplicates merged (1.4.0). */
 async function mergeAfter(gc, userId, changed) {
   if (!changed || !changed.length) return;
-  try { await require('./cardmerge').afterSync(gc, userId, changed); } catch (e) { gc.log.warn('contacts merge after sync failed', (e && e.code) || 'error'); }
+  try { await require('./cardmerge').afterSync(gc, userId, changed); } catch (e) { gc.log.warn('contacts merge after sync failed', (e && (e.code || e.message)) || 'error'); }
 }
 
 async function bookStep(gc, a, book) {
@@ -378,7 +378,7 @@ async function tick(gc, now, started, budgetMs, skipUsers = new Set()) {
       } else {
         x.pause = Math.min(x.pause ? x.pause * 2 : 60000, 30 * MIN);
         x.retryAt = Date.now() + x.pause;
-        if (e && !['auth_failed', 'unreachable', 'dav_unavailable', 'consent_required'].includes(e.code)) gc.log.warn('pim step failed', a.id, (e && e.code) || 'error');
+        if (e && !['auth_failed', 'unreachable', 'dav_unavailable', 'consent_required'].includes(e.code)) gc.log.warn('pim step failed', a.id, (e && (e.code || e.message)) || 'error');
       }
     }
   }

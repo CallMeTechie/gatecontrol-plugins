@@ -67,10 +67,10 @@ async function clean(gc, now) {
   if (now - lastClean < CLEAN_MS) return;
   lastClean = now;
   const cfg = await config.get(gc);
-  try { await engine.retention(gc, cfg, now); } catch (e) { gc.log.warn('retention failed', (e && e.code) || 'error'); }
+  try { await engine.retention(gc, cfg, now); } catch (e) { gc.log.warn('retention failed', (e && (e.code || e.message)) || 'error'); }
   for (const r of await store.all(gc, 'SELECT DISTINCT user_id FROM accounts')) {
     // events and contacts count too (1.2.0) — only mail is cleared up
-    try { await mailstore.evict(gc, r.user_id, Math.max(0, config.quotaBytes(cfg) - await require('./pimstore').usage(gc, r.user_id)), now); } catch (e) { gc.log.warn('quota failed', (e && e.code) || 'error'); }
+    try { await mailstore.evict(gc, r.user_id, Math.max(0, config.quotaBytes(cfg) - await require('./pimstore').usage(gc, r.user_id)), now); } catch (e) { gc.log.warn('quota failed', (e && (e.code || e.message)) || 'error'); }
   }
   // device sign-ins nobody finished, drafts' uploads that never became a draft are GateControl's (24 h unclaimed)
   await store.run(gc, 'DELETE FROM ms_device WHERE expires_at < ?', [now - 86400000]);
@@ -134,24 +134,24 @@ module.exports = {
     // without a valid licence nothing is synced or sent; people an administrator switched off neither (seats.js)
     let off;
     try { off = await seats.idle(gc); } catch { off = null; }
-    if (off && off.all) { try { await clean(gc, Date.now()); } catch (e) { gc.log.warn('clean failed', (e && e.code) || 'error'); } return; }
+    if (off && off.all) { try { await clean(gc, Date.now()); } catch (e) { gc.log.warn('clean failed', (e && (e.code || e.message)) || 'error'); } return; }
     const skip = (off && off.users) || new Set();
-    try { await compose.due(gc, now, skip); } catch (e) { gc.log.warn('outbox failed', (e && e.code) || 'error'); }
-    try { await engine.tick(gc, now, 70000, skip); } catch (e) { gc.log.warn('sync run failed', (e && e.code) || 'error'); }
+    try { await compose.due(gc, now, skip); } catch (e) { gc.log.warn('outbox failed', (e && (e.code || e.message)) || 'error'); }
+    try { await engine.tick(gc, now, 70000, skip); } catch (e) { gc.log.warn('sync run failed', (e && (e.code || e.message)) || 'error'); }
     // calendars and contacts: after the mail, in what is left of the run (1.2.0)
-    try { await pim.tick(gc, Date.now(), now, 70000, skip); } catch (e) { gc.log.warn('calendar sync failed', (e && e.code) || 'error'); }
+    try { await pim.tick(gc, Date.now(), now, 70000, skip); } catch (e) { gc.log.warn('calendar sync failed', (e && (e.code || e.message)) || 'error'); }
     // contacts: the one run per person after 1.4.0 (duplicates become one GC contact), one person per run
-    if (Date.now() - now < 70000) { try { await cardmerge.tick(gc, skip); } catch (e) { gc.log.warn('contacts merge failed', (e && e.code) || 'error'); } }
-    try { await reminders.tick(gc, Date.now(), skip); } catch (e) { gc.log.warn('reminders failed', (e && e.code) || 'error'); }
-    try { for (const a of await avatars.tick(gc, Date.now(), skip)) await push.changed(gc, a.user_id, a.id, null); } catch (e) { gc.log.warn('pictures failed', (e && e.code) || 'error'); }
+    if (Date.now() - now < 70000) { try { await cardmerge.tick(gc, skip); } catch (e) { gc.log.warn('contacts merge failed', (e && (e.code || e.message)) || 'error'); } }
+    try { await reminders.tick(gc, Date.now(), skip); } catch (e) { gc.log.warn('reminders failed', (e && (e.code || e.message)) || 'error'); }
+    try { for (const a of await avatars.tick(gc, Date.now(), skip)) await push.changed(gc, a.user_id, a.id, null); } catch (e) { gc.log.warn('pictures failed', (e && (e.code || e.message)) || 'error'); }
     try { await compose.due(gc, Date.now(), skip); } catch { /* next run */ }
-    try { await ai.tick(gc); } catch (e) { gc.log.warn('ai sorting failed', (e && e.code) || 'error'); }
-    try { await drive.tick(gc, Date.now()); } catch (e) { gc.log.warn('filing failed', (e && e.code) || 'error'); }
+    try { await ai.tick(gc); } catch (e) { gc.log.warn('ai sorting failed', (e && (e.code || e.message)) || 'error'); }
+    try { await drive.tick(gc, Date.now()); } catch (e) { gc.log.warn('filing failed', (e && (e.code || e.message)) || 'error'); }
     // since 1.5.0 (Speicherorte, storage.js): the prefetch that waited for room at GateControl; the attachments of 1.4
     // and older into the area `attachments`, a batch per run
-    try { await engine.filesLater(gc); } catch (e) { gc.log.warn('attachments later failed', (e && e.code) || 'error'); }
-    try { await storage.adopt(gc, Date.now()); } catch (e) { gc.log.warn('area move failed', (e && e.code) || 'error'); }
-    try { await clean(gc, Date.now()); } catch (e) { gc.log.warn('clean failed', (e && e.code) || 'error'); }
+    try { await engine.filesLater(gc); } catch (e) { gc.log.warn('attachments later failed', (e && (e.code || e.message)) || 'error'); }
+    try { await storage.adopt(gc, Date.now()); } catch (e) { gc.log.warn('area move failed', (e && (e.code || e.message)) || 'error'); }
+    try { await clean(gc, Date.now()); } catch (e) { gc.log.warn('clean failed', (e && (e.code || e.message)) || 'error'); }
   },
 
   /** The app tab: only for people the administrator allows. */

@@ -427,7 +427,7 @@ async function sendOne(gc, id) {
         res = null;
       }
       if (res && res.raw && res.raw.mediaId) {
-        try { await engine.appendSent(gc, a, res.raw.mediaId); } catch (e) { gc.log.warn('copy to sent failed', a.id, (e && e.code) || 'error'); }
+        try { await engine.appendSent(gc, a, res.raw.mediaId); } catch (e) { gc.log.warn('copy to sent failed', a.id, (e && (e.code || e.message)) || 'error'); }
         try { await gc.media.delete(res.raw.mediaId); } catch { /* gone */ }
       }
     }
