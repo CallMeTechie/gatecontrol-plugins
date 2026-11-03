@@ -70,7 +70,7 @@ reaches `GET frame` (the photo frame, since 1.7.0) and nothing else (`403 forbid
 
 | Route | Body / query | Answer |
 |---|---|---|
-| `GET me` | | `me { id, name, seat, deviceId, admin }`, `licence { valid, tier }`, `areas`, `latest` (change log seq), `settings`, `limits { maxBytes }`, `wipes` (entries this device has yet to handle, since 1.2.0), `devices` (my devices a new wipe reaches), `features` (since 1.5.0: `['previews', 'wipes', 'textSearch', 'devices', 'deleteAfter', 'emptyFiles']`, since 1.6.0 also `'links'`, `'guard'`, since 1.7.0 `'timeTravel'`, `'takenAt'`, `'photos'`, `'albums'`, `'frame'`, `'storage'`, since 1.8.0 `'docAi'` and `'cloudImport'` — only while GateControl offers the AI service / cloud accounts and they are allowed, see "AI for documents" and "Import"; since 1.9.0 `'vault'` and — while set up — `'office'`, since 1.10.0 `'photosFolder'`, since 1.11.0 `'vaultsApart'`, since 1.12.0 `'bulk'`, — while GateControl's public links are allowed — `'zip'` and `'multiLink'`, with GateControl ≥ 1.215.0 also `'copyServer'` (copies on the server) and `'zipMixed'` (a ZIP and one link of any selection); since 1.13.0 `'photoClasses'` (work photos apart); since 1.14.0 `'photoSearch'` (photos by what is on them) and — with `docAi` — `'docAsk'` (questions to the documents), `'scanDocs'` (scans become documents) and, while the Familie plugin's `calendar_add` is reachable, `'deadlineCalendar'` (see "AI in Drive"); since 1.16.0 `'photoPlaces'` and `'photoPeople'` (see "Places and people"); since 1.17.0 — with `docAi`, while Mail's `calendar_add` is reachable and takes Drive — `'deadlineMailCalendar'` (see "Deadlines into a calendar of Mail"); since 1.18.0 `'overview'` (see "Overview")), `settings` (since 1.14.0 also `scanKeepOriginal`), `links { node, drive } \| null` (since 1.6.0, see "Direct links"), `guard { on, locked, incident }` and `incidents` (since 1.6.0, see "Ransomware protection") |
+| `GET me` | | `me { id, name, seat, deviceId, admin }`, `licence { valid, tier }`, `areas`, `latest` (change log seq), `settings`, `limits { maxBytes }`, `wipes` (entries this device has yet to handle, since 1.2.0), `devices` (my devices a new wipe reaches), `features` (since 1.5.0: `['previews', 'wipes', 'textSearch', 'devices', 'deleteAfter', 'emptyFiles']`, since 1.6.0 also `'links'`, `'guard'`, since 1.7.0 `'timeTravel'`, `'takenAt'`, `'photos'`, `'albums'`, `'frame'`, `'storage'`, since 1.8.0 `'docAi'` and `'cloudImport'` — only while GateControl offers the AI service / cloud accounts and they are allowed, see "AI for documents" and "Import"; since 1.9.0 `'vault'` and — while set up — `'office'`, since 1.10.0 `'photosFolder'`, since 1.11.0 `'vaultsApart'`, since 1.12.0 `'bulk'`, — while GateControl's public links are allowed — `'zip'` and `'multiLink'`, with GateControl ≥ 1.215.0 also `'copyServer'` (copies on the server) and `'zipMixed'` (a ZIP and one link of any selection); since 1.13.0 `'photoClasses'` (work photos apart); since 1.14.0 `'photoSearch'` (photos by what is on them) and — with `docAi` — `'docAsk'` (questions to the documents), `'scanDocs'` (scans become documents) and, while the Familie plugin's `calendar_add` is reachable, `'deadlineCalendar'` (see "AI in Drive"); since 1.16.0 `'photoPlaces'` and `'photoPeople'` (see "Places and people"); since 1.17.0 — with `docAi`, while Mail's `calendar_add` is reachable and takes Drive — `'deadlineMailCalendar'` (see "Deadlines into a calendar of Mail"); since 1.18.0 `'overview'` (see "Overview"); since 1.19.0 `'scan'` (file nodes and photo items carry GateControl's virus scan `scan { state, blocked, finding }`, see "Virus scan")), `settings` (since 1.14.0 also `scanKeepOriginal`), `links { node, drive } \| null` (since 1.6.0, see "Direct links"), `guard { on, locked, incident }` and `incidents` (since 1.6.0, see "Ransomware protection") |
 | `GET areas` | | `areas [{ id, kind, label, role, via, rootId, owner, archived, storage { bytes, quota, form, target, state } }]` (+ `docAi` while the feature is on, since 1.14.0 `deadlinesToCalendar` with `deadlineCalendar`, since 1.17.0 `deadlinesTarget` — the viewer's target — and both while the family calendar or a calendar of Mail is reachable; also in `GET me` `areas`) |
 | `PATCH areas/<id>` | `{ docAi?: boolean, deadlinesToCalendar?: boolean, deadlinesTarget?: target \| null }` (since 1.8.0 / 1.14.0 / 1.17.0, write in the area) | `{ area: { id, docAi, deadlinesToCalendar?, deadlinesTarget? } }` — AI for documents on / off in this area; new deadlines into the family calendar on their own (the area's switch; Familie not reachable: `409 familie_unavailable`); since 1.17.0 my own target in this area (see "Deadlines into a calendar of Mail") |
 | `GET overview` | (since 1.18.0, feature `overview`) | `todo`, `recent`, `memories`, `people`, `places`, `activity`, `storage` — the start of Drive in one request (see "Overview") |
@@ -83,14 +83,14 @@ reaches `GET frame` (the photo frame, since 1.7.0) and nothing else (`403 forbid
 | `PATCH nodes/<id>` | `{ deleteAt: <ISO \| ms> \| null, device? }` (since 1.5.0, alone — not with `name` / `parentId`) | `node` — set the mark exactly / end it (see "Delete later") |
 | `DELETE nodes/<id>` | `everywhere=1` (since 1.2.0) | `{ id, trashed }` — into the trash; with `everywhere=1` also `wipe { id, devices, files }` (see "Delete on all devices") |
 | `DELETE nodes/<id>` | `after=<seconds>` (1 … 31 536 000), `device?` (since 1.5.0) | `{ id, marked: true, deleteAt, node }` — into the trash later (see "Delete later"); `after=0` is the plain delete |
-| `GET nodes/<id>/content` | | `{ url, name, mime, size, mediaId }` — `url` signed for the viewer, 1 h; an empty file (since 1.5.0): `{ url: 'data:<mime>;base64,', size: 0, mediaId: null, empty: true }` |
+| `GET nodes/<id>/content` | | `{ url, name, mime, size, mediaId }` — `url` signed for the viewer, 1 h; an empty file (since 1.5.0): `{ url: 'data:<mime>;base64,', size: 0, mediaId: null, empty: true }`; a file the virus scan holds back (since 1.19.0): `423 scan_pending \| quarantined \| scan_blocked { scan }` |
 | `GET nodes/<id>/versions` | | `{ current, versions [{ id, rev, size, sha256, at, by }] }` |
 | `GET nodes/<id>/versions/<vid>/content` | | `{ url, … }` |
 | `POST nodes/<id>/versions/<vid>/restore` | | `node` — the version is current again, the current bytes become a version |
 | `DELETE nodes/<id>/versions/<vid>` | | `{ id }` |
 | `POST uploads/check` | `{ parentId, name, sha256?, size? }` | `{ exists, same, node }` — `same`: no need to upload (two empty files are the same, also without `sha256`) |
 | `POST uploads/commit` | `{ mediaId, parentId, name, baseRev?, mtime?, onConflict?: 'rename' \| 'version', text?, entropy?, takenAt? }` — `takenAt` (since 1.7.0): when the picture or video was taken, ISO-8601 or ms (else `400 invalid`, `field: 'takenAt'`; more than a day ahead or before 1900: ignored); — `text`: recognised text of a scan (≤ 100 000 characters, searchable); an empty file (since 1.5.0): `{ parentId, name, size: 0, mime?, sha256?, … }` without `mediaId`; `entropy` (since 1.6.0, optional): how random the device found the bytes, 0–8 bits per byte (else `400 invalid`, `field: 'entropy'`); into a vault (since 1.9.0): `{ mediaId, parentId, encrypted: true, nameCipher, keyVersion, name?, … }` — see "Vault folders" | `{ node, created }` |
-| `GET changes` | `since`, `limit` (≤ 1000) | `{ changes [{ seq, op, areaId, nodeId, at, by, device, node }], next, more }` |
+| `GET changes` | `since`, `limit` (≤ 1000) | `{ changes [{ seq, op, areaId, nodeId, at, by, device, node }], next, more }` — since 1.19.0 also `op: 'scan'` (the virus scan's state of the file changed, see "Virus scan") |
 | `GET trash` | `area?` | `items` (the deleted node with `from`, folders with `size`, `files`) |
 | `POST trash/<id>/restore` | | `node` (a free name; the area's top when its folder is gone) |
 | `DELETE trash/<id>` | | `{ id, files }` — gone for good (wipes stay) |
@@ -665,6 +665,53 @@ Cloud-Konten). Without `gc.cloud`, with no OAuth app (`gc.cloud.available()`) or
   target is gone or no longer writable). An item fails with `not_found`, `too_large`, `unsupported`, `invalid`,
   `too_many` (≥ 50 000 items a job) or `cloud_error` (three tries; `resume` tries them again). The person gets the live
   event `import { job: { id, state, total, done, failed, skipped } }` after each run. Ended jobs go after 30 days.
+
+## Virus scan (since 1.19.0, feature `scan`)
+
+GateControl checks every file that comes into Drive's media right after it is stored (the GateControl version after
+1.222.0 — Einstellungen › Sicherheit › Virenscan; contract: GateControl's `docs/feature-malware-scan-contract.md`).
+Drive needs no newer GateControl for it: it reads the result where the host gives one (`scan` in `gc.media.info`) and
+shows nothing with an older host. `GET me` `features` lists `'scan'` since 1.19.0 — a client may then read the field
+below; without it, or while a node has no `scan`, there is nothing to show.
+
+- **Every file node** of an answer (`node`, `items`, `current`, `changes[].node`, `recent`, …) and every photo item
+  (`GET photos`, memories, albums) carries **`scan { state, blocked, finding }`** once Drive knows a result (no field:
+  no result — an older GateControl, a file from before the scan, a file of the NAS journal before it was checked).
+  `state`: `pending` (being checked) · `clean` · `infected` · `unscannable` (could not be checked: `finding` is the reason
+  `encrypted`, `too_large`, `archive_depth`, `error`) · `unchecked` (the source is switched off). `finding`: the name of
+  the find (`Win.Trojan.Agent-…`, `Eicar-Test-Signature`, `GC.Office.Macro`, …) or the reason. **`blocked` decides**,
+  not `state`: a blocked file (quarantine, still being checked, not checkable and blocked by the administrator) has
+  `preview: null` (and no `thumb` / `previewUrl`) and is not opened, downloaded, shared or handed over. `infected` with
+  `blocked: false` is a file the administrator only marks: usable, but the clients warn.
+- **Where it comes from:** `POST uploads/commit` (and every other way into the tree — upload links, the NAS journal,
+  imports, `save_file` of Mail and GateDrop, copies, the office's save) takes the state of `gc.media.info`; the upload's
+  own answer (`PUT …/media`, of a resumable upload the last part) carries the same `scan` for the device. A check that
+  takes longer than the upload waits (15 s, big videos of the photo backup) leaves the file `pending` + `blocked`; the hook
+  **`mediaScanned`** brings the result (also later ones: the nightly re-check with new signatures may block a file, an
+  administrator may release or delete it — a deleted file stays a blocked node until someone deletes it). Each change of
+  a file is **`op: 'scan'`** in the change log (`GET changes`) with the live event `changed`; the housekeeping asks again
+  for files still `pending` (a missed hook).
+- **Refused:** `GET nodes/<id>/content`, `…/versions/<vid>/content`, `POST nodes/<id>/office`, `POST links` of a file,
+  Mail's `give_file` and `share_link` answer **`423 { code: 'scan_pending' | 'quarantined' | 'scan_blocked', error,
+  scan }`** (`scan_pending`: try again in a few seconds). `POST links { nodeIds }` (older GateControl) refuses with the
+  same codes and `ids`; ZIPs and links of a selection with folders leave such files out (`skipped [{ id, reason:
+  'blocked' }]`); GateControl's folder links and their ZIPs leave them out too. A copy (`ops`) keeps the state of its
+  source; a device copy of a blocked file fails with `reason: 'blocked'`. The photo frame skips blocked pictures.
+- **Uploads the scan refuses:** GateControl answers the upload itself — `422 { code: 'infected', finding }` (the
+  administrator's action "Sofort löschen": no file) or `503 { code: 'scan_unavailable' }` (the scanner is away and
+  uploads wait) — before Drive sees anything. Upload links: the visitor gets GateControl's refusal, nothing arrives.
+  Handing a blocked file to Drive (`save_file` after `gc.media.handOver` of Mail or GateDrop) fails in the caller with
+  `ERR_MEDIA_QUARANTINED` / `ERR_MEDIA_SCAN_PENDING` / `ERR_MEDIA_BLOCKED`.
+- **Portal:** chips on tiles and rows — „Wird geprüft …“ (`pending` + blocked), „Gesperrt – Schadsoftware“
+  (`infected` + blocked), „Gesperrt – nicht prüfbar“, „Warnung – Schadsoftware“ (marked), quietly „Nicht prüfbar“; a
+  blocked file opens its menu with the reason instead of the preview (no download, preview, office, sharing, AI); a
+  marked file asks before it downloads; a refused upload says „Datei abgelehnt – Schadsoftware gefunden.“ Photos show a
+  shield on held-back pictures.
+- **Apps:** show the same states (`scan` on nodes and photo items), offer no opening, download, sharing or "send" for
+  `blocked`, treat `423` of a file (`GET …/media/<id>`, the content URL, previews) as the scan — `scan_pending` with
+  `Retry-After` again later, `quarantined` „Datei gesperrt – Schadsoftware gefunden (<finding>)“, `scan_blocked`
+  „Datei gesperrt – konnte nicht geprüft werden“ — and an upload's `422 infected` as „Datei abgelehnt“. The photo backup
+  (resumable) reads `scan` of the last part's answer, or of the committed node.
 
 ## Overview (since 1.18.0, feature `overview`)
 

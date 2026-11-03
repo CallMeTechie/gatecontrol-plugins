@@ -246,6 +246,36 @@
     if (!n.deleteAt) return null;
     return h('span', { class: 'dp-mark', text: T('p.marked', { date: fmtDay(n.deleteAt) }), attrs: { title: markText(n) } });
   }
+  // the virus scan of GateControl (since 1.19.0): `scan { state, blocked, finding }` on a file node — only while the host
+  // checks files. `blocked` decides: no preview, no download, no office, no sharing.
+  function scanBlocked(n) { return !!(n && n.scan && n.scan.blocked); }
+  function scanReason(s) {
+    var k = 'p.scan_reason_' + String((s && s.finding) || '');
+    return CTX.texts && CTX.texts[k] ? T(k) : T('p.scan_reason_error');
+  }
+  /** → { label, note, cls } of a file's state, or null (clean, not checked, nothing to say). */
+  function scanInfo(n) {
+    var s = n && !n.isDir && n.scan;
+    if (!s) return null;
+    var finding = s.finding || T('p.scan_unknown');
+    if (s.blocked && s.state === 'pending') return { label: T('p.scan_pending'), note: T('p.scan_note_pending'), cls: 'is-pending' };
+    if (s.blocked && s.state === 'infected') return { label: T('p.scan_quarantined'), note: T('p.scan_note_quarantined', { finding: finding }), cls: 'is-blocked' };
+    if (s.blocked) return { label: T('p.scan_blocked'), note: T('p.scan_note_blocked', { reason: scanReason(s) }), cls: 'is-blocked' };
+    if (s.state === 'infected') return { label: T('p.scan_marked'), note: T('p.scan_note_marked', { finding: finding }), cls: 'is-warn' };
+    if (s.state === 'unscannable') return { label: T('p.scan_unscannable'), note: T('p.scan_note_unscannable', { reason: scanReason(s) }), cls: 'is-quiet' };
+    return null;
+  }
+  /** The chip on a tile or row. */
+  function scanOf(n) {
+    var x = scanInfo(n);
+    return x ? h('span', { class: 'dp-scan ' + x.cls, text: x.label, attrs: { title: x.note } }) : null;
+  }
+  /** The note in a file's menu and preview. */
+  function scanNote(n) {
+    var x = scanInfo(n);
+    if (!x) return null;
+    return h('div', { class: 'dp-note' + (x.cls === 'is-quiet' || x.cls === 'is-pending' ? '' : ' is-warn') }, [icon('shield'), h('span', { text: x.note })]);
+  }
   function personName(id) {
     if (id == null) return '';
     var p = S.people.get(id);
@@ -855,6 +885,7 @@
             h('span', { class: 'dp-name', text: name, attrs: { title: name } }),
             h('span', { class: 'dp-meta' }, [!n.isDir && ext ? h('span', { class: 'dp-badge', text: ext }) : null, ' ', metaOf(n)]),
             markOf(n),
+            scanOf(n),
             pick ? B.freshBadge(n) : null,
           ]),
         ]),
@@ -881,7 +912,7 @@
       var row = h('div', { class: 'dp-row' + (pick ? ' is-pick' : '') + (pick && B.isCut(n) ? ' is-cut' : ''), attrs: { role: 'row', 'data-node': String(n.id) } }, [
         pick ? h('span', { class: 'dp-cbcell' }, B.check(n)) : null,
         h('button', { type: 'button', class: 'dp-open', on: { click: function (ev) { if (pick && B.chooseClick(ev, n)) return; openNode(n); } } }, [ic, h('span', { class: 'dp-name', text: name, attrs: { title: name } }),
-          n.path && S.page === 'search' ? h('span', { class: 'dp-meta', text: n.path }) : null, markOf(n), pick ? B.freshBadge(n) : null]),
+          n.path && S.page === 'search' ? h('span', { class: 'dp-meta', text: n.path }) : null, markOf(n), scanOf(n), pick ? B.freshBadge(n) : null]),
         h('span', { class: 'dp-num', text: fmtDate(n.mtime || n.updatedAt) }),
         h('span', { class: 'dp-num dp-right', text: n.isDir ? '—' : fmtSize(n.size) }),
         ibtn('more', T('p.actions_for', { name: name }), function () { actions(n); }),
@@ -896,6 +927,8 @@
     if (n.isDir) { $('dp-q').value = ''; openFolder(n.areaId, n.id); return; }
     // a vault's file: decrypted here, then downloaded (no preview — the server has none, the frame shows no blob:)
     if (n.encrypted && V) { V.download(n); return; }
+    // a file the virus scan holds back opens nothing: its menu says why
+    if (scanBlocked(n)) { actions(n); return; }
     preview(n);
   }
 
@@ -957,25 +990,27 @@
     var items = [];
     var item = function (ic, label, fn, danger) { items.push(h('button', { type: 'button', class: danger ? 'is-danger' : '', on: { click: function () { closeDialog(); fn(); } } }, [icon(ic), h('span', { text: label })])); };
     if (n.encrypted) { vaultActions(n, write, item); return; }
+    // held back by the virus scan (since 1.19.0): nothing that opens, downloads or shares it
+    var held = scanBlocked(n);
     if (n.isDir) item('folder', T('p.open'), function () { openNode(n); });
-    else if (k === 'image' || k === 'video' || k === 'audio') item('eye', T('p.preview'), function () { preview(n); });
-    if (!n.isDir) item('download', T('p.download'), function () { download(n); });
+    else if (!held && (k === 'image' || k === 'video' || k === 'audio')) item('eye', T('p.preview'), function () { preview(n); });
+    if (!n.isDir && !held) item('download', T('p.download'), function () { download(n); });
     // office in the browser (since 1.9.0): documents, while an office server is set up
-    if (!n.isDir && has('office') && OFFICE_RE.test(n.name)) item('office', T(write ? 'p.office_edit' : 'p.office_view'), function () { openOffice(n); });
+    if (!n.isDir && !held && has('office') && OFFICE_RE.test(n.name)) item('office', T(write ? 'p.office_edit' : 'p.office_view'), function () { openOffice(n); });
     if (S.page === 'search') item('folder', T('p.show_in_folder'), function () { $('dp-q').value = ''; openFolder(n.areaId, n.parentId); });
     // an empty file has nothing to share (no media object, since 1.5.0)
-    if (write && (n.isDir || n.mediaId)) item('share', T('p.share'), function () { share(n); });
+    if (write && !held && (n.isDir || n.mediaId)) item('share', T('p.share'), function () { share(n); });
     // the direct link into the portal (GET me links, since 1.6.0) — for people with an account
     if (S.links && S.links.node) item('link', T('p.copy_link'), function () { copyText(nodeLink(n.id)); });
     if (write) item('edit', T('p.rename'), function () { rename(n); });
     if (write) item('move', T('p.move'), function () { moveDialog(n); });
     if (!n.isDir) item('history', T('p.versions'), function () { versions(n); });
-    if (!n.isDir && has('docAi')) item('spark', T('p.insight'), function () { insightDialog(n); });
+    if (!n.isDir && !held && has('docAi')) item('spark', T('p.insight'), function () { insightDialog(n); });
     // a picture or a PDF scan becomes a Word, Excel or PDF file (since 1.14.0, scanDocs)
-    if (K && K.canConvert(n)) item('office', T('p.k.convert'), function () { K.convert(n); });
+    if (!held && K && K.canConvert(n)) item('office', T('p.k.convert'), function () { K.convert(n); });
     if (write && n.deleteAt) item('restore', T('p.keep'), function () { keep(n); });
     if (write) item('trash', T('p.to_trash'), function () { toTrash(n); }, true);
-    dialog(n.name, [n.deleteAt ? h('div', { class: 'dp-note' }, [icon('info'), h('span', { text: markText(n) })]) : null, h('div', { class: 'dp-menu' }, items)],
+    dialog(n.name, [scanNote(n), n.deleteAt ? h('div', { class: 'dp-note' }, [icon('info'), h('span', { text: markText(n) })]) : null, h('div', { class: 'dp-menu' }, items)],
       { sub: n.isDir ? T('p.folder') : fmtSize(n.size) + ' · ' + fmtDate(n.mtime || n.updatedAt) });
   }
   /** The menu of a vault's node: open / download (decrypted here), rename, versions, the trash — nothing shared. */
@@ -1037,7 +1072,15 @@
     }, true, extra);
   }
 
-  function download(n) {
+  function download(n, anyway) {
+    // marked as malware but not blocked (the administrator's "Nur markieren"): asked first
+    if (!anyway && n.scan && n.scan.state === 'infected' && !n.scan.blocked) {
+      confirmDialog(T('p.scan_warn_title'), T('p.scan_note_marked', { finding: n.scan.finding || T('p.scan_unknown') }), T('p.scan_download_anyway'), function () {
+        download(n, true);
+        return Promise.resolve();
+      }, true);
+      return;
+    }
     api('GET', 'nodes/' + n.id + '/content').then(function (r) {
       // pictures, videos and sound are shown inline by GateControl: the preview has them; other files download
       if (/^(image|video|audio)\//.test(String(r.mime || ''))) { preview(n, r); return; }
@@ -1059,11 +1102,11 @@
             : h('div', { class: 'dp-empty', text: T('p.no_preview') });
       var acts = [];
       if (k !== 'image' && k !== 'video' && k !== 'audio') acts.push(btn(T('p.download'), function () { download(n); }, { icon: 'download', primary: true }));
-      if (canWriteNode(n) && n.mediaId) acts.push(btn(T('p.share'), function () { share(n); }, { icon: 'share' }));
+      if (canWriteNode(n) && n.mediaId && !scanBlocked(n)) acts.push(btn(T('p.share'), function () { share(n); }, { icon: 'share' }));
       acts.push(btn(T('p.versions'), function () { versions(n); }, { icon: 'history' }));
       // where it came from (since 1.15.0: saved from a mail — "Aus Mail von Stadtwerke, 03.11."; the apps jump there)
       var from = n.source && n.source.label ? h('p', { class: 'dp-hint dp-source', text: n.source.label }) : null;
-      dialog(n.name, [h('div', { class: 'dp-preview' }, media), from, (k === 'image' || k === 'video') ? h('p', { class: 'dp-hint', text: T('p.save_hint') }) : null, h('div', { class: 'dp-actions' }, acts)],
+      dialog(n.name, [scanNote(n), h('div', { class: 'dp-preview' }, media), from, (k === 'image' || k === 'video') ? h('p', { class: 'dp-hint', text: T('p.save_hint') }) : null, h('div', { class: 'dp-actions' }, acts)],
         { wide: true, sub: fmtSize(n.size) + ' · ' + fmtDate(n.mtime || n.updatedAt) + (n.updatedBy ? ' · ' + personName(n.updatedBy) : '') });
     };
     if (got) { show(got); return; }
@@ -1468,7 +1511,9 @@
       done();
     }, function (e) {
       u.state = 'error';
-      var k = 'err.upload_' + ((e && e.code) || 'failed');
+      // GC.upload's refusal carries GateControl's code in data (422 infected: the virus scan refused the file, since 1.19.0)
+      var code = (e && e.code) || (e && e.data && typeof e.data.code === 'string' && e.data.code) || 'failed';
+      var k = 'err.upload_' + code;
       u.error = e && (e.code === 'upload_unsupported' || e.status) ? T(CTX.texts && CTX.texts[k] ? k : 'err.upload_failed') : errText(e);
       done();
     });
@@ -1794,7 +1839,7 @@
   /** A photo item (GET photos, albums) as a node for the viewer (preview, actions). */
   function photoNode(x) {
     return { id: x.id, name: x.name, mime: x.mime, size: x.size, isDir: false, areaId: x.areaId, parentId: x.parentId, mediaId: x.mediaId,
-      mtime: x.takenAt, updatedAt: x.takenAt, preview: x.previewUrl ? { url: x.previewUrl, largeUrl: x.largeUrl } : null };
+      mtime: x.takenAt, updatedAt: x.takenAt, preview: x.previewUrl ? { url: x.previewUrl, largeUrl: x.largeUrl } : null, scan: x.scan || null };
   }
   function monthKey(iso) { var d = new Date(iso); return isNaN(d.getTime()) ? '' : d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2); }
   function monthLabel(key) {
@@ -1815,8 +1860,8 @@
         // Strg / Umschalt with a click choose (since 1.12.0; a range in the order shown)
         if (B && B.photoPick(x, ev, PH.items, PH)) { rerender(); return; }
         if (PH.select) { PH.chosen[x.id] = !PH.chosen[x.id]; PH.anchor = x.id; tile.className = 'dp-ph' + (PH.chosen[x.id] ? ' is-on' : ''); tile.setAttribute('aria-pressed', String(!!PH.chosen[x.id])); if (onPick) onPick(); return; }
-        preview(n);
-      } } }, [picOf(n, 28), /^video\//.test(String(x.mime || '')) ? h('span', { class: 'dp-ph-kind' }, icon('video', 14)) : null, PH.select ? h('span', { class: 'dp-ph-check' }, icon('check', 14)) : null,
+        openNode(n);
+      } } }, [picOf(n, 28), scanBlocked(n) ? h('span', { class: 'dp-ph-scan', attrs: { title: (scanInfo(n) || {}).note || '' } }, icon('shield', 14)) : null, /^video\//.test(String(x.mime || '')) ? h('span', { class: 'dp-ph-kind' }, icon('video', 14)) : null, PH.select ? h('span', { class: 'dp-ph-check' }, icon('check', 14)) : null,
         // since 1.13.0: the yellow question mark (to check), the blue bag of a work photo (in "Alle")
         x.review ? h('span', { class: 'dp-ph-mk', attrs: { title: T('p.wk_marked') } }, icon('help', 14)) : null,
         x.work && PH.cls === 'all' ? h('span', { class: 'dp-ph-wk', attrs: { title: T('p.wk_work_photo') } }, icon('bag', 13)) : null]);

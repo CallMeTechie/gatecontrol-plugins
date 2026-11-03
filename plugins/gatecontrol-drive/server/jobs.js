@@ -21,6 +21,7 @@
 // jobs go (ops.js).
 
 const store = require('./store');
+const scan = require('./scan');
 const nodes = require('./nodes');
 const areas = require('./areas');
 const sync = require('./sync');
@@ -106,6 +107,8 @@ async function housekeeping(gc, settings, now) {
   let incidents = 0;
   try { incidents = await guard.housekeeping(gc, settings, now); } catch (e) { gc.log.warn('guard housekeeping failed', (e && e.code) || 'error'); }
   try { await address.origin(gc, settings, now); } catch (e) { gc.log.warn('address failed', (e && e.code) || 'error'); }
+  // the virus scan (since 1.19.0): files still being checked asked again, rows of files that are gone forgotten
+  try { await scan.housekeeping(gc, ctx); } catch (e) { gc.log.warn('scan housekeeping failed', (e && e.code) || 'error'); }
   await changes.announce(gc, ctx.touched, settings);
   return { purged, versions: old.length, synced, wipesExpired: wiped.expired, wipesDropped: wiped.dropped, markedTrashed: marked.trashed, incidentsRemoved: incidents };
 }

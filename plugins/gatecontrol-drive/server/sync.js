@@ -11,6 +11,7 @@
 
 const store = require('./store');
 const nodes = require('./nodes');
+const scan = require('./scan');
 
 const NAS = { viewer: null, deviceId: 'nas' };
 
@@ -44,6 +45,8 @@ async function added(gc, area, c, ctx) {
   const parent = await folders(gc, area, segs, ctx);
   const info = await gc.media.info(c.mediaId);
   if (!parent || !info) return false;
+  // the virus scan's result (scan.js; a link's upload is checked, a file of the NAS journal 'unchecked')
+  await scan.fromInfo(gc, info);
   const there = await nodes.taken(gc, area.id, parent.id, name);
   // an empty file (no media object, since 1.5.0) is not on the NAS: a file put at its path is its new content
   if (there && there.is_dir === 0 && !there.media_id) { await replace(gc, area, there, c.mediaId, info, ctx, false); return true; }
@@ -69,6 +72,7 @@ async function changed(gc, area, c, ctx) {
   if (!n) return added(gc, area, c, ctx);
   const info = await gc.media.info(c.mediaId);
   if (!info) return;
+  await scan.fromInfo(gc, info);
   await replace(gc, area, n, c.mediaId, info, ctx, !!(c.previous && c.previous === n.media_id));
 }
 

@@ -462,7 +462,9 @@
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
-        U.toast(r.skipped && r.skipped.length ? T('p.b.zip_started_skip', { name: r.name, count: r.skipped.length }) : T('p.b.zip_started', { name: r.name }));
+        // left out: empty files, and files the virus scan holds back (reason 'blocked', since 1.19.0)
+        var held = (r.skipped || []).filter(function (x) { return x && x.reason === 'blocked'; }).length;
+        U.toast(held ? T('p.b.zip_started_blocked', { name: r.name, count: held }) : r.skipped && r.skipped.length ? T('p.b.zip_started_skip', { name: r.name, count: r.skipped.length }) : T('p.b.zip_started', { name: r.name }));
       }, function (e) {
         var why = e && e.extra && e.extra.reason;
         if (why === 'too_many') U.toast(T('p.b.why_zip_many', { max: e.extra.max || ZIP_FILES }), 'error');

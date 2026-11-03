@@ -42,6 +42,11 @@ const STATUS = {
   ai_failed: 502,
   // since 1.15.0: the services for Mail (mail.js) — GateControl refused the hand-over
   unavailable: 409,
+  // since 1.19.0: GateControl's virus scan (scan.js) holds the file back — still being checked, malware, not checkable
+  scan_pending: 423,
+  quarantined: 423,
+  scan_blocked: 423,
+  infected: 422,
   internal: 500,
 };
 

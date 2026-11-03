@@ -101,6 +101,7 @@ const mail = require('./mail');
 const places = require('./places');
 const faces = require('./faces');
 const overview = require('./overview');
+const scan = require('./scan');
 const { t } = require('./text');
 const { STATUS, fail, isKnown, posInt, DEVICE_RE, day, iso } = require('./util');
 
@@ -116,7 +117,9 @@ const SERVICES = {
 };
 
 // GateControl's media errors a request may end in
-const HOST_CODES = { ERR_MEDIA_QUOTA: 'quota', ERR_CONFLICT: 'exists', ERR_NOT_FOUND: 'not_found' };
+const HOST_CODES = { ERR_MEDIA_QUOTA: 'quota', ERR_CONFLICT: 'exists', ERR_NOT_FOUND: 'not_found',
+  // the virus scan holds a file back (since 1.19.0, scan.js)
+  ERR_MEDIA_QUARANTINED: 'quarantined', ERR_MEDIA_SCAN_PENDING: 'scan_pending', ERR_MEDIA_BLOCKED: 'scan_blocked', ERR_MEDIA_INFECTED: 'infected' };
 
 function errorResponse(e, lang) {
   const code = isKnown(e) ? e.code : (e && HOST_CODES[e.code]) || 'internal';
@@ -231,6 +234,8 @@ async function me(ctx) {
   };
 }
 
+// scan: GateControl's virus scan — `scan { state, blocked, finding }` on file nodes and photo items while the host checks
+// files, 423 scan_pending / quarantined / scan_blocked for content, office, links, Mail; op 'scan' in the change log (1.19.0) ·
 // overview: GET overview — the start of Drive in one request, "Zuletzt geöffnet" from content / office (1.18.0) ·
 // photoPlaces: where photos were taken — uploads/commit { geo }, PUT nodes/<id>/geo, geo / located on nodes and items,
 // photos/places, photos/map, place= / bbox= / unlocated=1, DELETE photos/geo, keepGeo in photos/settings (1.16.0) ·
@@ -253,7 +258,7 @@ async function me(ctx) {
 // devices: GET/PUT/DELETE devices (1.5.0) · deleteAfter: DELETE nodes/<id>?after=, PATCH { deleteAt } (1.5.0) ·
 // emptyFiles: uploads/commit { size: 0 } without a mediaId (1.5.0) · wipes: DELETE ?everywhere=1 (1.2.0) ·
 // textSearch: uploads/commit { text } (1.3.0) · previews (1.1.0)
-const FEATURES = ['previews', 'wipes', 'textSearch', 'devices', 'deleteAfter', 'emptyFiles', 'links', 'guard', 'timeTravel', 'takenAt', 'photos', 'albums', 'frame', 'storage', 'vault', 'photosFolder', 'vaultsApart', 'bulk', 'photoClasses', 'photoSearch', 'photoPlaces', 'photoPeople', 'overview'];
+const FEATURES = ['previews', 'wipes', 'textSearch', 'devices', 'deleteAfter', 'emptyFiles', 'links', 'guard', 'timeTravel', 'takenAt', 'photos', 'albums', 'frame', 'storage', 'vault', 'photosFolder', 'vaultsApart', 'bulk', 'photoClasses', 'photoSearch', 'photoPlaces', 'photoPeople', 'overview', 'scan'];
 
 /**
  * What needs GateControl's AI service or cloud accounts (1.8.0) — only while the host has it and it is allowed (the
@@ -715,6 +720,10 @@ module.exports = {
         if (out && out.json && out.json.ok) {
           try { await places.attach(ctx, previews.nodesOf(out.json)); } catch (e) { gc.log.warn('places failed', (e && e.code) || 'error'); }
         }
+        // the virus scan's result (since 1.19.0 — scan.js; after the previews: a held-back file loses its preview)
+        if (out && out.json && out.json.ok) {
+          try { await scan.attach(ctx, previews.nodesOf(out.json)); } catch (e) { gc.log.warn('scan states failed', (e && e.code) || 'error'); }
+        }
         // where a file came from (since 1.15.0: saved from a mail — mail.js)
         if (out && out.json && out.json.ok) {
           try { await mail.attach(ctx, previews.nodesOf(out.json)); } catch (e) { gc.log.warn('sources failed', (e && e.code) || 'error'); }
@@ -816,6 +825,17 @@ module.exports = {
         data: { drive: { node: r.row.node_id, area: r.row.area_id, ...(got ? { file: got.id } : {}) }, ...go },
       });
     } catch (e) { gc.log.warn('link note failed', (e && e.code) || 'error'); }
+  },
+
+  /**
+   * GateControl's virus scan changed a file after its upload answered (the check ended, a re-check, an administrator
+   * released or deleted it): its state, 'scan' in the change log, the live event (scan.js).
+   */
+  async mediaScanned(arg, gc) {
+    try {
+      const r = await scan.scanned(gc, arg, Date.now());
+      if (r.touched.size) await changes.announce(gc, r.touched, await areas.settingsOf(gc));
+    } catch (e) { gc.log.warn('scan state failed', (e && e.code) || 'error'); }
   },
 
   /** GateControl read the NAS (an area in the readable form): its journal becomes the tree. */

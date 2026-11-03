@@ -28,6 +28,7 @@
 const crypto = require('node:crypto');
 const store = require('./store');
 const nodes = require('./nodes');
+const scan = require('./scan');
 const { fail, iso } = require('./util');
 
 const DISCOVERY_KEY = 'office_discovery';
@@ -200,6 +201,8 @@ async function openable(ctx, id) {
   if (node.is_dir === 1) throw fail('invalid');
   if (node.vault_id) throw fail('encrypted');
   if (!EXTS.has(extOf(node.name))) throw fail('office_unavailable', { reason: 'type' });
+  // a file the virus scan holds back never opens (scan.js)
+  await scan.check(ctx, node.media_id);
   const write = ['write', 'manage'].includes(role) && area.archived_at == null;
   return { node, area, write };
 }

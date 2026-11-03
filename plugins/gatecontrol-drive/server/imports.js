@@ -353,6 +353,7 @@ async function stepFile(ctx, j, it) {
     throw e;
   }
   try {
+    // the virus scan checked the import (scan.js; its state comes with the commit's media info)
     const name = cleanName(got.name || it.name, it.cloud_id);
     const mtime = msOf(got.modifiedAt) != null ? msOf(got.modifiedAt) : it.modified_at;
     const parent = await nodes.row(gc, it.parent_node);

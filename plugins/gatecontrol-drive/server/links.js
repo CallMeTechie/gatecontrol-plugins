@@ -28,6 +28,7 @@
 
 const store = require('./store');
 const nodes = require('./nodes');
+const scan = require('./scan');
 const areas = require('./areas');
 const sync = require('./sync');
 const address = require('./address');
@@ -96,6 +97,8 @@ async function create(ctx, body, opts = {}) {
   }
   if (node.is_dir !== 1 && mode === 'upload') throw fail('invalid', { field: 'mode' });
   if (node.is_dir !== 1 && !node.media_id) throw fail('invalid');
+  // a file the virus scan holds back is not shared (scan.js); a folder link leaves such files out (GateControl)
+  if (node.is_dir !== 1) await scan.check(ctx, node.media_id);
   const p = await nodes.pathOf(ctx.gc, node);
   const kind = node.is_dir === 1 ? (mode === 'upload' ? 'upload' : 'folder') : 'files';
   const title = (node.parent_id == null ? ctx.areaLabel(area) : node.name).slice(0, 120);
@@ -161,6 +164,7 @@ async function expand(ctx, ids, need, max) {
   const tops = [];
   const skipped = [];
   const seen = new Set();
+  const held = new Set();
   for (const id of ids) {
     const r = await nodes.reach(ctx, id, need);
     if (r.node.vault_id || (r.node.is_dir === 1 && await holdsVault(gc, r.node))) throw fail('encrypted');
@@ -180,6 +184,13 @@ async function expand(ctx, ids, need, max) {
     const where = nodes.pathsBelow(r.node.id, top, rows);
     for (const x of rows.filter((y) => y.is_dir === 0).sort((a, b) => String(where.get(a.id)).localeCompare(String(where.get(b.id))))) add(x, dirOf(where.get(x.id)));
   }
+  // files the virus scan holds back stay out (scan.js): skipped with reason 'blocked'
+  const states = await scan.rowsOf(gc, entries.map((e) => e.node.media_id));
+  for (let i = entries.length - 1; i >= 0; i--) {
+    const s = states.get(entries[i].node.media_id);
+    if (s && s.blocked) { held.add(entries[i].node.id); entries.splice(i, 1); }
+  }
+  for (const id of held) skipped.push({ id, reason: 'blocked' });
   if (entries.reduce((t, e) => t + (e.node.size || 0), 0) > PATHS_BYTES) throw fail('too_large', { maxBytes: PATHS_BYTES });
   // names once per path
   const byPath = new Map();
@@ -225,6 +236,13 @@ async function holdsVault(gc, n) {
   return !!(await store.one(gc, 'SELECT 1 AS x FROM nodes WHERE vault_id IS NOT NULL AND id IN (WITH RECURSIVE down(id) AS (SELECT id FROM nodes WHERE parent_id = ? UNION ALL SELECT n.id FROM nodes n JOIN down ON n.parent_id = down.id) SELECT id FROM down) LIMIT 1', [n.id]));
 }
 
+/** A link of several files (older GateControl): refused while one of them is held back by the virus scan. */
+async function refuseBlocked(ctx, list) {
+  const states = await scan.rowsOf(ctx.gc, list.map((x) => x.node.media_id));
+  const held = list.filter((x) => (states.get(x.node.media_id) || {}).blocked);
+  if (held.length) throw fail(scan.codeOf(states.get(held[0].node.media_id)), { ids: held.map((x) => x.node.id) });
+}
+
 /** The files of a link for several (each one the viewer may share). */
 async function filesOf(ctx, ids, need) {
   const list = [];
@@ -253,6 +271,7 @@ async function createMany(ctx, pl, b, ids) {
   if (list.some((x) => x.area.archived_at != null)) throw fail('forbidden');
   const empty = list.filter((x) => !x.node.media_id).map((x) => x.node.id);
   if (empty.length) throw fail('invalid', { reason: 'empty', ids: empty });
+  await refuseBlocked(ctx, list);
   const names = distinct(list.map((x) => x.node.name));
   const title = given || t(ctx.lang, 'link.files', { n: list.length });
   const args = {
@@ -352,7 +371,11 @@ async function zip(ctx, body) {
     const list = await filesOf(ctx, ids, 'read');
     for (const x of list) if (x.via === 'parent') await ctx.noteChildView(x.area);
     skipped = list.filter((x) => !x.node.media_id).map((x) => ({ id: x.node.id, reason: 'empty' }));
-    const real = list.filter((x) => x.node.media_id);
+    // files the virus scan holds back stay out (scan.js)
+    const states = await scan.rowsOf(ctx.gc, list.map((x) => x.node.media_id));
+    const held = list.filter((x) => x.node.media_id && (states.get(x.node.media_id) || {}).blocked);
+    skipped.push(...held.map((x) => ({ id: x.node.id, reason: 'blocked' })));
+    const real = list.filter((x) => x.node.media_id && !held.includes(x));
     if (!real.length) throw fail('invalid', { reason: 'empty' });
     const names = distinct(real.map((x) => x.node.name));
     const title = (given || (real.length === 1 ? real[0].node.name.replace(/\.[^.]{1,16}$/, '') : t(ctx.lang, 'zip.files', { n: real.length }))).slice(0, 120);
