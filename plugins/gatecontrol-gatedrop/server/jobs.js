@@ -4,12 +4,15 @@
 //   * direct transfers whose ticket expired (10 min) without a result → the server way (transfers.expire);
 //   * retention: 7 days after a send its files are deleted from GateControl's media (gc.media.delete), waiting
 //     deliveries become expired; the rows (history) stay 30 days, then go;
-//   * presence older than a day.
+//   * presence older than a day;
+//   * since 1.4.1: deliveries waiting for GateControl's virus check (a missed hook mediaScanned) tried again every
+//     5 minutes, failed with scan_pending 24 hours after the send (retry.js).
 
 const store = require('./store');
 const transfers = require('./transfers');
 const presence = require('./presence');
 const people = require('./people');
+const retry = require('./retry');
 
 const ROWS_MS = 30 * 86400000;
 const BATCH = 100;
@@ -55,6 +58,7 @@ async function tick(gc, now = Date.now()) {
       purged: await purgeFiles(gc, now),
       removed: await purgeRows(gc, now),
       presence: await presence.cleanup(gc, now),
+      scanRetried: await retry.due(gc, now),
     };
     return out;
   } finally { state.ticking = false; }

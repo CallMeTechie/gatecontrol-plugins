@@ -16,10 +16,13 @@
 //   link    gc.publicLinks.create — a link for outsiders, optionally with a PIN (4 digits, given to the sender once;
 //           GateControl keeps only a hash), 'once' = maxDownloads 1 (per file; the ZIP counts one of each).
 // Every function answers the delivery's new { status, via, error, ref } — the caller stores it.
+// Since 1.4.1: a hand-over (person with the Messenger, NAS, Drive) that only GateControl's running virus check holds back
+// answers { status: 'pending', error: 'scan_pending' } (nothing handed on) — retry.js delivers it once the result is in.
 
 const crypto = require('node:crypto');
 const store = require('./store');
 const people = require('./people');
+const scan = require('./scan');
 const { t } = require('./text');
 const { iso } = require('./util');
 
@@ -38,6 +41,33 @@ function codeOf(e) {
   };
   return map[c] || (/^[a-z_]{1,40}$/.test(c) ? c : 'failed');
 }
+
+// ─── the virus scan holds a file back (since 1.4.1) ──────────────────────────
+
+/** The error of a delivery that waits for GateControl's virus check (status stays 'pending'). */
+const SCAN_WAIT = 'scan_pending';
+
+/** The answer of a delivery that waits for the check — nothing was handed on, retry.js tries again. */
+const scanWait = (handed = 0) => ({ status: 'pending', via: null, error: SCAN_WAIT, ref: null, handed });
+
+/**
+ * What the virus scan says about the files right now (gc.media.info) → Map idx → 'scan_pending' | 'quarantined' |
+ * 'scan_blocked' for the ones it holds back. A file GateControl no longer knows (an administrator deleted it) keeps the
+ * state GateDrop has (the hook mediaScanned marked it). An older GateControl (no `scan`): empty.
+ */
+async function heldBack(gc, items) {
+  const out = new Map();
+  for (const it of items) {
+    if (!it.media_id) continue;
+    let info = null;
+    try { info = await gc.media.info(it.media_id); } catch { info = null; }
+    const code = scan.held(info ? scan.norm(info.scan) : scan.ofItem(it));
+    if (code) out.set(it.idx, code);
+  }
+  return out;
+}
+
+const waits = (held) => [...held.values()].includes(SCAN_WAIT);
 
 /** "eine Datei" / "3 Dateien" / "einen Text" / "einen Link". */
 function what(lang, send, items) {
@@ -162,6 +192,9 @@ async function person(ctx, send, items, delivery, senderName) {
   const users = fam ? membersOf(delivery) : [Number(delivery.target)];
   let handed = 0;
   let messenger = await people.available(gc, people.MESSENGER, 'send_file');
+  // a file still being checked: nothing goes to the chat yet (no half message) — retried once the result is in
+  const held = messenger ? await heldBack(gc, items) : new Map();
+  if (waits(held)) return scanWait();
   if (messenger) {
     let budget = HANDOVERS_PER_DAY - (await handedToday(gc, ctx.viewer, ctx.now));
     const mediaIds = [];
@@ -170,6 +203,7 @@ async function person(ctx, send, items, delivery, senderName) {
     ctx.chatBytes = ctx.chatBytes || 0;
     for (const it of items) {
       if (!messenger || it.bytes > CHAT_ITEM_MAX || ctx.chatBytes + it.bytes > CHAT_SEND_MAX || budget <= 0) { extra.push(it); continue; }
+      if (held.has(it.idx)) return { status: 'failed', via: null, error: held.get(it.idx), ref: null, handed };
       try {
         mediaIds.push((await gc.media.handOver(it.media_id, { toPlugin: people.MESSENGER, user: ctx.viewer })).mediaId);
         chat.push(it);
@@ -179,6 +213,7 @@ async function person(ctx, send, items, delivery, senderName) {
       } catch (e) {
         if (e && UNAVAILABLE.has(e.code)) messenger = false;
         else if (e && STAYS.has(e.code)) extra.push(it);
+        else if (codeOf(e) === SCAN_WAIT) return scanWait(handed); // the check began in between (the copies are never claimed)
         else return { status: 'failed', via: null, error: codeOf(e), ref: null, handed };
       }
     }
@@ -191,10 +226,12 @@ async function person(ctx, send, items, delivery, senderName) {
           payload: { conversation: fam ? 'family' : `direct:${delivery.target}`, user: ctx.viewer, mediaIds, names: chat.map((i) => i.name), ...(text ? { text } : {}) },
         });
       } catch (e) {
+        if (codeOf(e) === SCAN_WAIT) return scanWait(handed);
         if (!(e && UNAVAILABLE.has(e.code))) return { status: 'failed', via: null, error: codeOf(e), ref: null, handed };
         messenger = false;
       }
       if (messenger) {
+        if (res && res.ok !== true && res.code === SCAN_WAIT) return scanWait(handed);
         if (!res || res.ok !== true) return { status: 'failed', via: null, error: res && typeof res.code === 'string' ? res.code.slice(0, 40) : 'failed', ref: null, handed };
         let error = null;
         if (extra.length && !(await pushReceived(gc, send, extra, { users, senderName, toSelf: false }))) error = 'push_failed';
@@ -215,11 +252,15 @@ async function person(ctx, send, items, delivery, senderName) {
 async function nas(ctx, send, items, delivery, folderId) {
   const { gc } = ctx;
   if (!(await people.available(gc, people.SYNOLOGY, 'save_file'))) return { status: 'failed', via: null, error: 'unavailable', ref: null };
+  // a file still being checked: the whole delivery waits (no file saved twice when it is tried again)
+  const held = await heldBack(gc, items);
+  if (waits(held)) return scanWait();
   const saved = [];
   let err = null;
   let handed = 0;
   let budget = HANDOVERS_PER_DAY - (await handedToday(gc, ctx.viewer, Date.now()));
   for (const it of items) {
+    if (held.has(it.idx)) { err = err || held.get(it.idx); continue; }
     if (budget <= 0) { err = err || 'rate_limited'; continue; }
     try {
       const h = await gc.media.handOver(it.media_id, { toPlugin: people.SYNOLOGY, user: ctx.viewer });
@@ -230,6 +271,7 @@ async function nas(ctx, send, items, delivery, folderId) {
       else err = err || (res && typeof res.code === 'string' ? res.code.slice(0, 40) : 'failed');
     } catch (e) { err = err || codeOf(e); }
   }
+  if (err === SCAN_WAIT && !saved.length) return scanWait(handed); // the check began in between
   const ref = saved.join('\n').slice(0, 2000) || null;
   if (!err) return { status: 'delivered', via: 'server', error: null, ref, handed };
   return { status: 'failed', via: saved.length ? 'server' : null, error: err, ref, handed };
@@ -261,12 +303,16 @@ async function drive(ctx, send, items, delivery) {
   const { gc } = ctx;
   if (!(await people.available(gc, people.DRIVE, 'save_file'))) return { status: 'failed', via: null, error: 'unavailable', ref: null };
   const folderId = driveFolderOf(delivery.target);
+  // a file still being checked: the whole delivery waits (no "Foto (2).jpg" when it is tried again)
+  const held = await heldBack(gc, items);
+  if (waits(held)) return scanWait();
   const saved = [];
   let err = null;
   let handed = 0;
   let budget = HANDOVERS_PER_DAY - (await handedToday(gc, ctx.viewer, Date.now()));
   for (const it of items) {
     if (!it.media_id) { err = err || 'failed'; continue; }
+    if (held.has(it.idx)) { err = err || held.get(it.idx); continue; }
     if (budget <= 0) { err = err || 'rate_limited'; continue; }
     // no seat, no licence, the folder gone or not writable: the same for every other file
     if (err && (DRIVE_NO_ACCESS.has(err) || err === 'not_found' || err === 'forbidden' || err === 'unavailable')) continue;
@@ -286,6 +332,7 @@ async function drive(ctx, send, items, delivery) {
       } else err = err || (res && typeof res.code === 'string' ? res.code.slice(0, 40) : 'failed');
     } catch (e) { err = err || codeOf(e); }
   }
+  if (err === SCAN_WAIT && !saved.length) return scanWait(handed); // the check began in between
   if (DRIVE_NO_ACCESS.has(err)) people.setDrive(ctx.viewer, false);
   else if (saved.length) people.setDrive(ctx.viewer, true);
   const ref = saved.length ? JSON.stringify(saved) : null;
@@ -329,4 +376,4 @@ async function link(ctx, send, items, delivery, opts) {
   }
 }
 
-module.exports = { pushReceived, pushDirect, deviceServer, person, nas, drive, driveTarget, driveFiles, link, familyOthers, membersText, membersOf, handedToday, codeOf, what, body, LINK_EXPIRES, CHAT_ITEM_MAX, CHAT_SEND_MAX, HANDOVERS_PER_DAY };
+module.exports = { SCAN_WAIT, heldBack, pushReceived, pushDirect, deviceServer, person, nas, drive, driveTarget, driveFiles, link, familyOthers, membersText, membersOf, handedToday, codeOf, what, body, LINK_EXPIRES, CHAT_ITEM_MAX, CHAT_SEND_MAX, HANDOVERS_PER_DAY };

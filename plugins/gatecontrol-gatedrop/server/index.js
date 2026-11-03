@@ -35,6 +35,7 @@ const jobs = require('./jobs');
 const bg = require('./bg');
 const net = require('./net');
 const scan = require('./scan');
+const retry = require('./retry');
 const { t } = require('./text');
 const { STATUS, fail, isKnown, iso, DEVICE_RE } = require('./util');
 
@@ -238,7 +239,8 @@ module.exports = {
 
   /**
    * GateControl's virus scan changed a file after its upload answered (a re-check with new signatures, an administrator
-   * released or deleted it — scan.js): the item's state; a deleted file stays held back.
+   * released or deleted it — scan.js): the item's state; a deleted file stays held back. Since 1.4.1 the deliveries
+   * that wait for this result (retry.js) are tried again after the answer.
    */
   async mediaScanned(arg, gc) {
     const id = arg && typeof arg.mediaId === 'string' && /^[0-9a-f]{32}$/.test(arg.mediaId) ? arg.mediaId : null;
@@ -247,6 +249,7 @@ module.exports = {
     if (!sc) return;
     try {
       await store.run(gc, 'UPDATE items SET scan_state = ?, scan_blocked = ?, scan_finding = ? WHERE media_id = ?', [...scan.cols(sc), id]);
+      if (sc.state !== 'pending') await retry.scanned(gc, id);
     } catch (e) { gc.log.warn('scan state failed', (e && e.code) || 'error'); }
   },
 

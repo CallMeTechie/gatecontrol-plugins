@@ -117,6 +117,8 @@
   }
   function statusLabel(d) {
     if (d.status === 'waiting') return T('status.waiting', { device: d.label || d.target });
+    // since 1.4.1: a hand-over waits for the virus check — it goes once the result is in
+    if (d.status === 'pending' && d.error === 'scan_pending') return T('status.scan_wait');
     return T('status.' + d.status) + (d.via && d.status !== 'failed' ? ' · ' + T('via.' + d.via) : '');
   }
   function driveReason(code) {

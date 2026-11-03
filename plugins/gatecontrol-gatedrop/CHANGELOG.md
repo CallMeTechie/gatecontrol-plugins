@@ -2,6 +2,19 @@
 
 Teilen wie Quick Share – über den eigenen GateControl-Server.
 
+## 1.4.1
+- **Zustellung wartet auf die Virenprüfung statt zu scheitern:** Wird eine Datei beim Weitergeben an den Messenger, an
+  einen NAS-Ordner oder an „Mein Drive“ noch von GateControl geprüft (`ERR_MEDIA_SCAN_PENDING` bzw. `scan_pending` des
+  Ziel-Plugins), bleibt die Zustellung **ausstehend** (`status: 'pending'`, `error: 'scan_pending'`) statt als
+  fehlgeschlagen gespeichert zu werden. Weitergegeben wird dann noch nichts (keine halbe Chat-Nachricht, keine doppelten
+  Dateien). Sobald GateControl das Ergebnis meldet (Hook `mediaScanned`), stellt GateDrop sie zu: unauffällig (oder nur
+  markiert) → zugestellt; Quarantäne, gelöscht → fehlgeschlagen mit `quarantined`; nicht prüfbar und blockiert →
+  `scan_blocked` (NAS und Drive speichern die übrigen Dateien).
+- **Sicherheitsnetz in der Hintergrundpflege:** Kam kein Ergebnis an, versucht GateDrop wartende Zustellungen alle
+  5 Minuten erneut; 24 Stunden nach dem Senden gibt es auf (fehlgeschlagen mit `scan_pending`).
+- Die Apps zeigen solche Zustellungen wie bisher als „ausstehend“ (`pending` kennen sie), das Portal als „wartet auf die
+  Virenprüfung“. Keine neue Migration.
+
 ## 1.4.0
 - **Virenscan von GateControl** (README „Virus scan“). GateControl prüft ab der Version nach 1.222.0 jede hochgeladene
   Datei direkt nach dem Speichern. GateDrop übernimmt das Ergebnis je Datei einer Sendung (Migration 003) und zeigt es als

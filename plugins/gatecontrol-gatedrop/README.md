@@ -137,7 +137,8 @@ freshS: 900 } }`. Windows: `listening: true` always (port 47731); Android: `true
 ```
 
 Delivery `status`: `pending|direct|waiting|delivered|opened|failed|expired` — `pending` (NAS upload running, or a failed
-direct transfer waits for the files), `direct` (direct transfer brokered), `waiting` (an own device that was **offline**
+direct transfer waits for the files, or since 1.4.1 with `error: 'scan_pending'` a hand-over waits for GateControl's virus
+check — see "Virus scan"), `direct` (direct transfer brokered), `waiting` (an own device that was **offline**
 when sent: the send is kept on the server, the push is queued by GateControl; the device fetches it with `GET pending` —
 not a failure, retention treats it like `delivered`), `delivered`, `opened`, `failed`, `expired`; `via`: `direct` |
 `server`; `error` (a code,
@@ -284,7 +285,16 @@ minimum stays 1.193.0.
   scan_blocked { scan }`, and GateControl's media route answers `423` itself. `infected` with `blocked: false`: the
   administrator only marks findings — the file is usable, the clients warn before opening it.
 * **Deliveries:** a hand-over (Messenger, NAS, Drive) of a file blocked in between fails with the delivery `error`
-  `quarantined` / `scan_pending` / `scan_blocked`; a public link's ZIP or file answers `423` while a file is held back.
+  `quarantined` / `scan_blocked`; a public link's ZIP or file answers `423` while a file is held back.
+* **Waiting for the check (since 1.4.1):** a hand-over that only a **running** check holds back (`ERR_MEDIA_SCAN_PENDING`,
+  or the target plugin answers `scan_pending`) does not fail: the delivery stays `status: 'pending'` with
+  `error: 'scan_pending'` — not a failure, nothing is handed on yet (no half chat message, no file saved twice), a person
+  sees nothing of it yet. Clients show it like any `pending` delivery („ausstehend“; the portal: „wartet auf die
+  Virenprüfung“) and must not treat a `pending` delivery's `error` as a failure. When GateControl reports the result
+  (hook `mediaScanned`), GateDrop delivers it: clean or only marked → `delivered`; quarantined or deleted → `failed`
+  `quarantined`; not checkable and blocked → `failed` `scan_blocked` (NAS and Drive save the other files). The background
+  tries a waiting delivery again every 5 minutes (a missed result) and gives up 24 hours after the send: `failed`
+  `scan_pending`. Before 1.4.1 such a delivery failed at once with `scan_pending`.
 * **Portal:** an upload the scan refuses says „<name> abgelehnt – Schadsoftware gefunden.“, the history marks received
   files „Gesperrt – Schadsoftware“, „Gesperrt – nicht prüfbar“, „Wird geprüft …“ or „Warnung – Schadsoftware“ (no
   download for held-back files; a marked file asks first).
