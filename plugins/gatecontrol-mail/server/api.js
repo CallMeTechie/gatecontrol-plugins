@@ -62,6 +62,8 @@ async function features(gc, cfg, userId) {
   if (dav.can(gc)) out.push('dav');
   if (cfg.calendar.enabled && cfg.calendar.overlays.familie && await overlays.familyOn(gc)) out.push('familyOverlay');
   if (cfg.calendar.enabled && cfg.calendar.overlays.alltag && await overlays.alltagOn(gc)) out.push('alltagOverlay');
+  // since 1.8.0: attachments and draft files carry GateControl's virus scan (`scan`) while the host checks files
+  out.push('scan');
   return out;
 }
 

@@ -158,7 +158,8 @@ async function tofileCount(gc, payload, user) {
   const s = await seats.get(gc, uid);
   if (!s || s.kind === 'none') throw no('unavailable', { reason: 'no_seat' });
   // as GET filing lists them: the newest mail first
-  const from = 'FROM filing f JOIN attachments t ON t.id = f.attachment_id JOIN messages m ON m.id = f.message_id WHERE f.user_id = ?';
+  // (1.8.0: without attachments GateControl's virus scan holds back)
+  const from = 'FROM filing f JOIN attachments t ON t.id = f.attachment_id JOIN messages m ON m.id = f.message_id WHERE f.user_id = ? AND t.scan_blocked = 0';
   const n = await store.one(gc, `SELECT COUNT(*) AS n ${from}`, [uid]);
   const top = await store.one(gc, `SELECT t.suggestion_json ${from} ORDER BY m.date DESC, f.id DESC LIMIT 1`, [uid]);
   const first = top ? parse(top.suggestion_json, null) : null;

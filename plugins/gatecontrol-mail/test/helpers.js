@@ -251,6 +251,8 @@ async function withMail(opts, fn) {
     // o.license { tier, seats: { included, family, business }, licensed } — the licence's people (seats.js); o.groups: person groups
     license: { required: true, licensed: true, state: 'valid', expiresAt: null, ...(o.license || {}) },
     ...(o.groups ? { groups: o.groups } : {}), ...(o.licenseRefresh ? { licenseRefresh: o.licenseRefresh } : {}),
+    // 1.8.0: GateControl's virus scan (the mock host's opts.scan — true or a scanner function)
+    ...(o.scan ? { scan: o.scan } : {}),
   });
   // a file Drive hands over: straight into this plugin's media (like gc.media.handOver of the real Drive)
   if (drive) {
