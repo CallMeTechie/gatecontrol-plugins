@@ -237,6 +237,23 @@
 //   or answers ≥ 400 unclaimed), the hook publicRequest (url / originalUrl without the token, proofUrl with it only for
 //   a request with X-WOPI-Proof) → { status, headers (x-… only), json | text | body (a media answer's bytes) | form }.
 //
+// Virus scan (the GateControl after 1.222.0 that brings it, expected 1.223.0; opt-in: opts.scan — src/services/scan/,
+// docs/feature-malware-scan-contract.md): opts.scan true (every new file 'clean', a file whose bytes contain the EICAR
+// test string 'EICAR-STANDARD-ANTIVIRUS-TEST-FILE' 'infected' and quarantined) or a function (file { mime, bytes, data,
+// name, owner }, { kind }) → { state, blocked?, finding? } | { deleted: true, finding } | { hold: true } | null (clean);
+// kind 'upload' | 'link' | 'host' (gc.mail) | 'fetch' | 'cloud'; host.setScanner(fn) changes it while a test runs.
+// blocked defaults to true for 'pending' and 'infected'. Every new file (host.upload, host.publicLinkUpload,
+// gc.media.fetch, gc.cloud.import, gc.mail's files) is checked: upload answers carry scan { state, blocked, finding };
+// deleted → 422 { ok: false, code: 'infected', finding } (upload, link) or ERR_MEDIA_INFECTED (fetch, cloud, gc.mail);
+// hold → 503 scan_unavailable or ERR_BUSY. gc.media.info(id).scan { state, blocked, finding, at } (a file from before
+// the scan: 'unchecked'). A blocked file: host.mediaGet / mediaFromUrl / previewGet → 423 { ok: false, code } (scan_pending
+// with retry-after 5, quarantined with finding, scan_blocked; json also as `json`), gc.media.handOver, target.upload
+// (form.file) and gc.http.fetch bodyMedia → ERR_MEDIA_SCAN_PENDING / ERR_MEDIA_QUARANTINED / ERR_MEDIA_BLOCKED,
+// gc.mail.smtp.send of it as an attachment → ERR_INVALID, a public link download → 423. Hand-over and copy keep the
+// state. host.mediaScanned(mediaId, { state, blocked?, finding? }) plays a result after the upload answered (the
+// background check, a later re-check, an administrator's release or delete — 'deleted' removes the file): the file's
+// state, then the hook mediaScanned({ mediaId, state, blocked, finding }). Without opts.scan: none of this (an older host).
+//
 // GateControl 1.200.0 (opt-in: opts.gatecontrol: '1.200.0') — person groups, src/services/plugins/groups.js:
 //   permissions.groups 'read' | 'manage' (anything else → ERR_INVALID); every plugin has gc.groups, without the
 //   permission each call → ERR_GROUPS_DENIED; ensure / remove need 'manage'. Seed: opts.groups [{ id, name, kind,
@@ -1113,7 +1130,7 @@ async function createHost(pluginDir, opts = {}) {
     'http.fetch': async ({ url, opts: o0 }) => {
       if (!internetAllowed(net.internet, url)) throw hostError('ERR_NET_DENIED', `host not allowed: ${url}`);
       // GateControl ≥ 1.217.0: a media file of the plugin as the body (older hosts ignore bodyMedia)
-      const o = gc217 && o0 && o0.bodyMedia != null ? mockMail.resolveBodyMedia(o0, { mediaStore, media, hostError }) : o0;
+      const o = gc217 && o0 && o0.bodyMedia != null ? mockMail.resolveBodyMedia(o0, { mediaStore, media, hostError, needServable }) : o0;
       fetches.push({ url, opts: o });
       if (!opts.fetch) throw hostError('ERR_NET', 'no fetch handler in this test');
       const r = await opts.fetch(url, o);
@@ -1522,6 +1539,8 @@ async function createHost(pluginDir, opts = {}) {
     if (!m) return null;
     const out = { mediaId: id, mime: m.mime, bytes: m.bytes, sha256: require('node:crypto').createHash('sha256').update(m.data).digest('hex'),
       owner: m.owner, createdAt: new Date(m.createdAt).toISOString(), claimed: m.claimed, ...(gc190 ? { name: m.name || null } : {}) };
+    // the virus scan (opts.scan): a file from before it is 'unchecked'
+    if (scanOn) out.scan = m.scan ? { ...m.scan } : { state: 'unchecked', blocked: false, finding: null, at: null };
     // GateControl ≥ 1.204.0: the area, the plugin's path, where the bytes are; a version (path null)
     if (gc204 && m.area != null) {
       out.area = m.area;
@@ -1532,6 +1551,43 @@ async function createHost(pluginDir, opts = {}) {
       if (m.versionOf != null) { out.versionOf = m.versionOf; out.versionAt = m.versionAt; }
     }
     return out;
+  };
+  // ─── the virus scan (opts.scan; see the header) ───
+  const scanOn = !!opts.scan;
+  let scanner = typeof opts.scan === 'function' ? opts.scan : null;
+  const SCAN_STATES = ['pending', 'clean', 'infected', 'unscannable', 'unchecked'];
+  const SCAN_ERR = { scan_pending: 'ERR_MEDIA_SCAN_PENDING', quarantined: 'ERR_MEDIA_QUARANTINED', scan_blocked: 'ERR_MEDIA_BLOCKED' };
+  /** Check the new file `id` → its scan, or { deleted, finding } / { hold } (the file is gone then). */
+  const scanNew = (id, kind) => {
+    const m = mediaStore.get(id);
+    if (!scanOn || !m) return null;
+    const data = Buffer.isBuffer(m.data) ? m.data : Buffer.from(String(m.data || ''));
+    const r = (scanner ? scanner({ mime: m.mime, bytes: m.bytes, data, name: m.name || null, owner: m.owner }, { kind })
+      : (data.includes('EICAR-STANDARD-ANTIVIRUS-TEST-FILE') ? { state: 'infected', finding: 'Eicar-Test-Signature' } : null)) || { state: 'clean' };
+    if (r.deleted || r.hold) { mediaStore.delete(id); return r.deleted ? { deleted: true, finding: r.finding || null } : { hold: true }; }
+    const state = SCAN_STATES.includes(r.state) ? r.state : 'clean';
+    m.scan = { state, blocked: r.blocked != null ? !!r.blocked : (state === 'pending' || state === 'infected'), finding: r.finding || null, at: new Date().toISOString() };
+    return m.scan;
+  };
+  const scanAnswer = (s) => (s ? { scan: { state: s.state, blocked: s.blocked, finding: s.finding } } : {});
+  /** A store refusal of the scan as a host API error (gc.media.fetch, gc.cloud.import, gc.mail). */
+  const scanThrow = (s) => {
+    // like GateControl: the code only (the find is in the administrator's quarantine list, not in the error)
+    if (s && s.deleted) throw hostError('ERR_MEDIA_INFECTED', 'infected');
+    if (s && s.hold) throw hostError('ERR_BUSY', 'scan_unavailable');
+    return s;
+  };
+  const scanGate = (m) => {
+    if (!scanOn || !m || !m.scan || !m.scan.blocked) return null;
+    return m.scan.state === 'pending' ? 'scan_pending' : (m.scan.state === 'infected' ? 'quarantined' : 'scan_blocked');
+  };
+  const needServable = (m) => { const g = scanGate(m); if (g) throw hostError(SCAN_ERR[g], g); };
+  /** 423 for a file the scan holds back (null: servable). */
+  const lockedAnswer = (m) => {
+    const g = scanGate(m);
+    if (!g) return null;
+    const json = { ok: false, code: g, ...(g === 'quarantined' && m.scan.finding ? { finding: m.scan.finding } : {}) };
+    return { status: 423, headers: { 'cache-control': 'no-store', 'content-type': 'application/json', ...(g === 'scan_pending' ? { 'retry-after': '5' } : {}) }, body: Buffer.from(JSON.stringify(json)), json };
   };
   const mediaUsage = () => { let bytes = 0; for (const m of mediaStore.values()) bytes += m.bytes; return { bytes, count: mediaStore.size }; };
   const urlSecret = require('node:crypto').randomBytes(16).toString('hex');
@@ -1590,7 +1646,7 @@ async function createHost(pluginDir, opts = {}) {
     const id = require('node:crypto').randomBytes(16).toString('hex');
     const claimed = o.claim === true;
     mediaStore.set(id, { mime: src.mime, bytes: src.bytes, owner, data: Buffer.from(src.data), claimed, createdAt: Date.now(), name: src.name || null,
-      ...(area != null ? { area, path: p } : {}) });
+      ...(area != null ? { area, path: p } : {}), ...(src.scan ? { scan: { ...src.scan } } : {}) });
     mediaCopies.push({ from: args.id, id, area, path: p, claim: claimed });
     return { id, mediaId: id, size: src.bytes, bytes: src.bytes, sha256: require('node:crypto').createHash('sha256').update(src.data).digest('hex'), mime: src.mime,
       name: src.name || null, area, path: p, claimed, method: 'link' };
@@ -1661,6 +1717,7 @@ async function createHost(pluginDir, opts = {}) {
     const id = require('node:crypto').randomBytes(16).toString('hex');
     const name = mediaName(x.name);
     mediaStore.set(id, { mime: type, bytes: buf.length, owner: null, data: Buffer.from(buf), claimed: false, createdAt: Date.now(), name });
+    scanThrow(scanNew(id, 'fetch'));
     return { mediaId: id, mime: type, bytes: buf.length, name };
   };
   // ─── GateControl ≥ 1.204.0: media areas (src/services/plugins/mediaAreas.js) ───
@@ -1840,13 +1897,14 @@ async function createHost(pluginDir, opts = {}) {
   };
 
   /** This plugin as the target of another plugin's hand-over (its media declaration, types, size and quota). */
-  function receiveHandOver({ mime, bytes, data, owner, name }) {
+  function receiveHandOver({ mime, bytes, data, owner, name, scan }) {
     if (!media) throw hostError('ERR_MEDIA_DENIED', 'the target plugin declares no media');
     if (!typeAllowed(media.types, mime)) throw hostError('ERR_MEDIA_TYPE', `type not allowed by the target: ${mime}`);
     if (bytes > media.handOverMaxBytes) throw hostError('ERR_MEDIA_TOO_LARGE', 'file too large for the target (media.handOverMaxBytes)');
     if (mediaUsage().bytes + bytes > mediaQuota) throw hostError('ERR_MEDIA_QUOTA', 'the target plugin\'s quota is exceeded');
     const id = require('node:crypto').randomBytes(16).toString('hex');
-    mediaStore.set(id, { mime, bytes, owner: owner == null ? null : owner, data: Buffer.from(data), claimed: false, createdAt: Date.now(), name: name || null });
+    mediaStore.set(id, { mime, bytes, owner: owner == null ? null : owner, data: Buffer.from(data), claimed: false, createdAt: Date.now(), name: name || null,
+      ...(scan ? { scan: { ...scan } } : {}) });
     return { mediaId: id, mime, bytes, name: name || null };
   }
   api['media.handOver'] = async (args) => {
@@ -1861,8 +1919,10 @@ async function createHost(pluginDir, opts = {}) {
     if (!u) throw hostError('ERR_INVALID', 'invalid user');
     const m = mediaStore.get(id);
     if (!m) throw hostError('ERR_INVALID', 'unknown media id');
+    // the virus scan: a file it holds back goes nowhere; the copy keeps the state of the source
+    needServable(m);
     let out;
-    if (linkedHost(p)) out = linkedHost(p)._receiveHandOver({ mime: m.mime, bytes: m.bytes, data: m.data, owner: u.id, name: m.name });
+    if (linkedHost(p)) out = linkedHost(p)._receiveHandOver({ mime: m.mime, bytes: m.bytes, data: m.data, owner: u.id, name: m.name, scan: m.scan });
     else {
       // a fake provider: its declared media, the files land in p.received
       const decl = p.media ? mediaDecl(p.media, true, true) : null;
@@ -1872,7 +1932,7 @@ async function createHost(pluginDir, opts = {}) {
       p.received = p.received || [];
       if (p.received.reduce((s, x) => s + x.bytes, 0) + m.bytes > decl.quotaDefault) throw hostError('ERR_MEDIA_QUOTA', 'the target plugin\'s quota is exceeded');
       out = { mediaId: require('node:crypto').randomBytes(16).toString('hex'), mime: m.mime, bytes: m.bytes, name: m.name || null };
-      p.received.push({ mediaId: out.mediaId, mime: m.mime, bytes: m.bytes, owner: u.id, data: Buffer.from(m.data) });
+      p.received.push({ mediaId: out.mediaId, mime: m.mime, bytes: m.bytes, owner: u.id, data: Buffer.from(m.data), ...(m.scan ? { scan: { ...m.scan } } : {}) });
     }
     handOvers.push({ to, from: id, mediaId: out.mediaId, user: u.id, mime: m.mime, bytes: m.bytes });
     return { mediaId: out.mediaId, mime: out.mime, bytes: out.bytes, name: out.name };
@@ -1912,6 +1972,7 @@ async function createHost(pluginDir, opts = {}) {
       m = typeof f.mediaId === 'string' && /^[0-9a-f]{32}$/.test(f.mediaId) ? mediaStore.get(f.mediaId) : null;
     }
     if (!m) throw hostError('ERR_INVALID', 'unknown media id');
+    needServable(m);
     const rec = {
       target, index: Number(index) || 0, method: x.method || 'POST', path: p, query: x.query || null, headers: x.headers || {}, fields,
       file: { field: f.field, name: f.name || m.name || 'file', mime: f.mime ? f.mime.toLowerCase() : m.mime, bytes: m.bytes }, timeoutMs: x.timeoutMs == null ? 600000 : x.timeoutMs,
@@ -2705,6 +2766,7 @@ async function createHost(pluginDir, opts = {}) {
     if (mediaUsage().bytes + bytes > mediaQuota) throw hostError('ERR_MEDIA_QUOTA', 'the media quota is used up');
     const id = require('node:crypto').randomBytes(16).toString('hex');
     mediaStore.set(id, { mime: it.mime || 'application/octet-stream', bytes, owner: user, data, claimed: false, createdAt: Date.now(), name: it.name });
+    scanThrow(scanNew(id, 'cloud'));
     cloudImports.push({ user, connection: c.id, fileId: String(fileId), mediaId: id });
     return { mediaId: id, name: it.name, size: bytes, mime: it.mime || 'application/octet-stream', modifiedAt: it.modifiedAt };
   };
@@ -2745,7 +2807,8 @@ async function createHost(pluginDir, opts = {}) {
   const log = (level) => (...a) => logs.push({ level, message: a.map((x) => (typeof x === 'string' ? x : JSON.stringify(x))).join(' ') });
 
   // GateControl 1.216.0 (mock-mail.js)
-  const mail216 = mockMail.install({ perms, opts, hostError, wire, gc216, gc217, gc219, mediaStore, mediaQuota, mediaUsage, media, capacity: capacityRefusal });
+  const mail216 = mockMail.install({ perms, opts, hostError, wire, gc216, gc217, gc219, mediaStore, mediaQuota, mediaUsage, media, capacity: capacityRefusal,
+    scanNew: (id) => scanThrow(scanNew(id, 'host')), scanGate });
   const gc = Object.freeze({
     plugin: Object.freeze({ id: manifest.id, version: manifest.version, filesDir }),
     // GateControl ≥ 1.216.0: IMAP / SMTP / MIME / sanitizer (permissions.mail; missing without it)
@@ -2989,7 +3052,11 @@ async function createHost(pluginDir, opts = {}) {
       if (capacityRefusal()) return { status: capacityRefusal() === 'server_full' ? 507 : 503, body: { ok: false, code: capacityRefusal() } };
       const id = require('node:crypto').randomBytes(16).toString('hex');
       mediaStore.set(id, { mime: type, bytes, owner: user && user.id != null ? user.id : null, data: Buffer.from(buf), claimed: false, createdAt: Date.now() });
-      return { status: 200, body: { ok: true, mediaId: id, mime: type, bytes } };
+      // the virus scan (opts.scan): deleted at once → 422, the scanner away with "Uploads anhalten" → 503
+      const sc = scanNew(id, 'upload');
+      if (sc && sc.deleted) return { status: 422, body: { ok: false, code: 'infected', finding: sc.finding } };
+      if (sc && sc.hold) return { status: 503, body: { ok: false, code: 'scan_unavailable' } };
+      return { status: 200, body: { ok: true, mediaId: id, mime: type, bytes, ...scanAnswer(sc) } };
     },
     /**
      * GateControl ≥ 1.211.0: a request to /plugin-public/<id>/<path> as routes/pluginPublic.js answers it —
@@ -3076,12 +3143,15 @@ async function createHost(pluginDir, opts = {}) {
       const id = require('node:crypto').randomBytes(16).toString('hex');
       const p2 = at(got);
       mediaStore.set(id, { mime, bytes: data.length, owner: l.ownerUserId, data, claimed: true, createdAt: Date.now(), name: got, area: l.area, path: p2 });
+      const sc = scanNew(id, 'link');
+      if (sc && sc.deleted) return { status: 422, code: 'infected', finding: sc.finding };
+      if (sc && sc.hold) return { status: 503, code: 'scan_unavailable' };
       const by = typeof o.by === 'string' && o.by.trim() ? o.by.trim().slice(0, 80) : null;
       const rec = { mediaId: id, name: got, path: p2, uploader: by, bytes: data.length, at: new Date().toISOString() };
       l.uploads.push(rec);
       l.log.push({ id: l.log.length + 1, at: rec.at, kind: 'upload', ip: '203.0.113.0', visitor: 'v-test', name: got, mediaId: id, bytes: data.length, uploader: by });
       await hook('publicLinkEvent', { token, event: 'upload', mediaId: id, name: got, path: p2, uploader: by, bytes: data.length });
-      return { status: 200, name: got, mediaId: id, bytes: data.length };
+      return { status: 200, name: got, mediaId: id, bytes: data.length, ...scanAnswer(sc) };
     },
     /**
      * GateControl ≥ 1.193.0: a visitor of /s/<token> enters a PIN → { status: 200 | 403 (wrong, `left`) | 404 | 410 (ended) }.
@@ -3116,6 +3186,8 @@ async function createHost(pluginDir, opts = {}) {
       const pick = o.file == null ? l.files : l.files.filter((f) => f.id === String(o.file));
       if (!pick.length) return { status: 404 };
       if (l.maxDownloads != null && pick.some((f) => f.downloads >= l.maxDownloads)) return { status: 410, state: 'used' };
+      // the virus scan: a file it holds back is not served (a ZIP with one of them: 423 too)
+      if (pick.some((f) => scanGate(mediaStore.get(f.mediaId)))) return { status: 423 };
       const at = new Date(o.now || Date.now()).toISOString();
       for (const f of pick) { f.downloads++; f.lastDownloadAt = at; }
       const zip = o.file == null;
@@ -3130,7 +3202,7 @@ async function createHost(pluginDir, opts = {}) {
       let allowed;
       if (typeof plugin.mediaAccess !== 'function') allowed = m.owner != null && m.owner === viewer.id;
       else { try { allowed = (await hook('mediaAccess', { user: viewer, mediaId, owner: m.owner, mime: m.mime })) === true; } catch { allowed = false; } }
-      return allowed ? mediaAnswer(m, o.range) : notFound();
+      return allowed ? (lockedAnswer(m) || mediaAnswer(m, o.range)) : notFound();
     },
     /** GateControl ≥ 1.177.0: GET /plugin-media/<token> (a gc.media.url) → { status, headers, body }; ≥ 1.208.0 also …/preview[?size=] */
     async mediaFromUrl(url, o = {}) {
@@ -3143,6 +3215,7 @@ async function createHost(pluginDir, opts = {}) {
       const previewOnly = gc210 && !!r[5] && urlSig(r[1], exp, Number(r[3]), '-preview') === r[4];
       if (!(s2 < exp && exp <= s2 + 86400 + 300) || !(full || previewOnly)) return notFound();
       const m = mediaStore.get(r[1]);
+      if (m && lockedAnswer(m)) return lockedAnswer(m);
       if (m && r[5]) return previewAnswer(r[1], m, r[6]);
       return m ? mediaAnswer(m, o.range) : notFound();
     },
@@ -3150,6 +3223,28 @@ async function createHost(pluginDir, opts = {}) {
     previewMade(mediaId) { const m = mediaStore.get(mediaId); if (m && previewRenderable(m) && m.preview == null) m.preview = 'server'; },
     /** GateControl ≥ 1.208.0: the server could not read the picture (no preview, a device may send one) */
     previewNone(mediaId) { const m = mediaStore.get(mediaId); if (m) m.preview = 'none'; },
+    /** The virus scan (opts.scan): another scanner for the files from now on — (file, { kind }) → result (see the header) */
+    setScanner(fn) { scanner = typeof fn === 'function' ? fn : null; },
+    /**
+     * The virus scan (opts.scan): a result after the upload answered — { state: 'clean' | 'infected' | 'unscannable' |
+     * 'pending' | 'deleted', blocked?, finding? } → the file's state, then the hook mediaScanned (answer ignored).
+     */
+    async mediaScanned(mediaId, r = {}) {
+      if (!scanOn) throw new Error('mock host: mediaScanned needs opts.scan');
+      const m = mediaStore.get(mediaId);
+      let payload;
+      if (r.state === 'deleted') {
+        mediaStore.delete(mediaId);
+        payload = { mediaId, state: 'deleted', blocked: true, finding: r.finding || null };
+      } else {
+        if (!m) throw new Error(`mock host: unknown media ${mediaId}`);
+        const state = SCAN_STATES.includes(r.state) ? r.state : 'clean';
+        m.scan = { state, blocked: r.blocked != null ? !!r.blocked : (state === 'pending' || state === 'infected'), finding: r.finding || null, at: new Date().toISOString() };
+        payload = { mediaId, state, blocked: m.scan.blocked, finding: m.scan.finding };
+      }
+      try { await hook('mediaScanned', payload); } catch { /* fire and forget, like the host */ }
+      return payload;
+    },
     /** GateControl ≥ 1.208.0: PUT /api/v1/client/plugins/<id>/media/<mediaId>/preview of the uploader's device → { status, body } */
     async previewPut(user, mediaId, data, mime) {
       const m = typeof mediaId === 'string' ? mediaStore.get(mediaId) : null;
@@ -3172,7 +3267,7 @@ async function createHost(pluginDir, opts = {}) {
       let allowed;
       if (typeof plugin.mediaAccess !== 'function') allowed = m.owner != null && m.owner === viewer.id;
       else { try { allowed = (await hook('mediaAccess', { user: viewer, mediaId, owner: m.owner, mime: m.mime })) === true; } catch { allowed = false; } }
-      return allowed ? previewAnswer(mediaId, m, o.size) : notFound();
+      return allowed ? (lockedAnswer(m) || previewAnswer(mediaId, m, o.size)) : notFound();
     },
     /** GateControl ≥ 1.204.0: the areas (Map area → { area, label, quota }) and the NAS journal */
     mediaAreas: areaStore,
