@@ -92,6 +92,9 @@
       G.$('#gd-progress').textContent = T('portal.uploading', { pct: Math.round(x.pct) });
     } }).then(function (r) { return { mediaId: r.mediaId, name: x.file.name }; }, function (e) {
       var code = (e && e.data && e.data.code) || '';
+      // GateControl's virus scan (since 1.4.0): 422 infected — the file is gone; 503 scan_unavailable — later again
+      if (code === 'infected') throw new Error(T('portal.upload_infected', { name: x.file.name }));
+      if (code === 'scan_unavailable') throw new Error(T('portal.scan_unavailable'));
       throw new Error(code === 'quota_exceeded' ? T('portal.quota') : T('portal.upload_failed', { name: x.file.name }));
     });
   }
@@ -185,7 +188,7 @@
     S.files.forEach(function (x) { chain = chain.then(function () { return uploadOne(x).then(function (it) { items.push(it); }); }); });
     chain.then(function () {
       G.$('#gd-progress').textContent = T('portal.sending');
-      return G.api('POST', 'sends', body(items));
+      return post(body(items), 0);
     }).then(function (r) {
       S.files = [];
       G.$('#gd-text').value = '';
@@ -199,6 +202,14 @@
       G.$('#gd-send').disabled = false;
       G.$('#gd-progress').textContent = '';
       renderFiles();
+    });
+  }
+  // a big file may still be checked by the virus scan (423 scan_pending, since 1.4.0): sent again every 5 s, ≤ 10 minutes
+  function post(b, tries) {
+    return G.api('POST', 'sends', b).catch(function (e) {
+      if (!(e && e.data && e.data.code === 'scan_pending') || tries >= 120) throw e;
+      G.$('#gd-progress').textContent = T('portal.scanning');
+      return new Promise(function (r) { setTimeout(r, 5000); }).then(function () { return post(b, tries + 1); });
     });
   }
   G.$('#gd-send').addEventListener('click', send);
@@ -235,9 +246,21 @@
     if (s.items.length > 1) return T('what.files', { n: s.items.length });
     return s.link || (s.text || '').slice(0, 60);
   }
+  // GateControl's virus scan on a received file (since 1.4.0): held back — no download; marked only — asked first
+  function scanLabel(i) {
+    var sc = i && i.scan;
+    if (!sc) return null;
+    if (sc.blocked) return sc.state === 'pending' ? T('portal.scan_pending') : sc.state === 'infected' ? T('portal.scan_quarantined') : T('portal.scan_blocked');
+    return sc.state === 'infected' ? T('portal.scan_marked') : null;
+  }
   function openItem(s) {
     var it = s.items.find(function (i) { return i.available; });
     if (!it) return;
+    var sc = it.scan;
+    var asked = sc && sc.state === 'infected' && !sc.blocked ? G.confirm(T('portal.scan_download_anyway', { name: it.name, finding: sc.finding || '?' }), T('portal.download')) : Promise.resolve(true);
+    asked.then(function (yes) { if (yes) download(s, it); });
+  }
+  function download(s, it) {
     G.api('GET', 'items/' + it.mediaId).then(function (r) {
       var a = el('a', { href: r.url, download: it.name, target: '_blank', rel: 'noopener' });
       document.body.appendChild(a);
@@ -258,10 +281,13 @@
       else sub = T('portal.from', { name: s.from.deviceName || s.from.name || '?' });
       sub += ' · ' + (s.expired ? T('portal.expired') : G.when(s.createdAt));
       var action = null;
+      // the files the virus scan holds back or marks (since 1.4.0): one label of the first such file
+      var held = s.items.filter(function (i) { return scanLabel(i); })[0];
+      var mark = held ? el('span', { class: 'gd-st' + (held.scan.blocked && held.scan.state !== 'pending' ? ' is-crit' : ''), text: scanLabel(held), title: held.scan.finding ? T('portal.scan_hint', { finding: held.scan.finding }) : null }) : null;
       if (!x.out && !s.expired && s.items.some(function (i) { return i.available; })) action = el('button', { type: 'button', class: 'btn btn-sm', text: T('portal.download'), on: { click: function () { openItem(s); } } });
       else if (!x.out && s.link) action = el('a', { href: s.link, target: '_blank', rel: 'noopener noreferrer', text: T('portal.open_link') });
       box.appendChild(el('div', { class: 'gd-row' }, [
-        el('div', { class: 'gd-row-tx' }, [el('b', { text: (x.out ? '↑ ' : '↓ ') + title(s) }), el('small', { text: sub })]), action,
+        el('div', { class: 'gd-row-tx' }, [el('b', { text: (x.out ? '↑ ' : '↓ ') + title(s) }), el('small', { text: sub }), mark]), action,
       ]));
     });
   }

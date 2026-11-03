@@ -142,7 +142,23 @@
     "chat.extra": "+{{n}} Dateien in GateDrop: {{names}}",
     "link.generic_files": "Geteilte Dateien",
     "link.generic_text": "Geteilter Text",
-    "link.generic_link": "Geteilter Link"
+    "link.generic_link": "Geteilter Link",
+    "error.infected": "Eine Datei wurde abgelehnt – der Virenscan hat darin Schadsoftware gefunden. Entferne sie und sende erneut.",
+    "error.scan_pending": "Eine Datei wird noch auf Viren geprüft – gleich noch einmal senden.",
+    "error.quarantined": "Die Datei ist gesperrt – der Virenscan hat Schadsoftware gefunden.",
+    "error.scan_blocked": "Die Datei ist gesperrt – sie konnte nicht auf Viren geprüft werden.",
+    "drive.error.quarantined": "Die Datei ist gesperrt (Schadsoftware).",
+    "drive.error.scan_pending": "Die Datei wird noch auf Viren geprüft.",
+    "drive.error.scan_blocked": "Die Datei ist gesperrt (nicht prüfbar).",
+    "portal.upload_infected": "„{{name}}“ abgelehnt – Schadsoftware gefunden.",
+    "portal.scan_unavailable": "Der Virenscan ist gerade nicht erreichbar – bitte später noch einmal senden.",
+    "portal.scanning": "Wird auf Viren geprüft …",
+    "portal.scan_pending": "Wird geprüft …",
+    "portal.scan_quarantined": "Gesperrt – Schadsoftware",
+    "portal.scan_blocked": "Gesperrt – nicht prüfbar",
+    "portal.scan_marked": "Warnung – Schadsoftware",
+    "portal.scan_hint": "Virenscan: {{finding}}",
+    "portal.scan_download_anyway": "Der Virenscan hat in „{{name}}“ Schadsoftware gefunden ({{finding}}). Trotzdem herunterladen?"
   },
   "en": {
     "error.invalid": "Invalid input.",
@@ -287,6 +303,22 @@
     "chat.extra": "+{{n}} files in GateDrop: {{names}}",
     "link.generic_files": "Shared files",
     "link.generic_text": "Shared text",
-    "link.generic_link": "Shared link"
+    "link.generic_link": "Shared link",
+    "error.infected": "A file was refused – the virus scan found malware in it. Remove it and send again.",
+    "error.scan_pending": "A file is still being checked for viruses – send again in a moment.",
+    "error.quarantined": "The file is blocked – the virus scan found malware.",
+    "error.scan_blocked": "The file is blocked – it could not be checked for viruses.",
+    "drive.error.quarantined": "The file is blocked (malware).",
+    "drive.error.scan_pending": "The file is still being checked for viruses.",
+    "drive.error.scan_blocked": "The file is blocked (not checkable).",
+    "portal.upload_infected": "“{{name}}” refused – malware found.",
+    "portal.scan_unavailable": "The virus scan cannot be reached right now – please send again later.",
+    "portal.scanning": "Checking for viruses …",
+    "portal.scan_pending": "Being checked …",
+    "portal.scan_quarantined": "Blocked – malware",
+    "portal.scan_blocked": "Blocked – not checkable",
+    "portal.scan_marked": "Warning – malware",
+    "portal.scan_hint": "Virus scan: {{finding}}",
+    "portal.scan_download_anyway": "The virus scan found malware in “{{name}}” ({{finding}}). Download anyway?"
   }
 }

@@ -33,6 +33,8 @@ function codeOf(e) {
     ERR_MEDIA_TOO_LARGE: 'file_too_large', ERR_MEDIA_TYPE: 'file_type', ERR_MEDIA_QUOTA: 'quota', ERR_MEDIA_DENIED: 'unavailable',
     ERR_SERVICE_UNAVAILABLE: 'unavailable', ERR_SERVICES_DENIED: 'unavailable', ERR_SERVICE_FAILED: 'failed', ERR_RATE_LIMIT: 'rate_limited',
     ERR_PUBLIC_LINKS_DISABLED: 'links_disabled', ERR_NO_PUBLIC_URL: 'no_public_url', ERR_TIMEOUT: 'timeout',
+    // since 1.4.0: GateControl's virus scan holds the file back (a later check blocked it)
+    ERR_MEDIA_QUARANTINED: 'quarantined', ERR_MEDIA_SCAN_PENDING: 'scan_pending', ERR_MEDIA_BLOCKED: 'scan_blocked',
   };
   return map[c] || (/^[a-z_]{1,40}$/.test(c) ? c : 'failed');
 }
