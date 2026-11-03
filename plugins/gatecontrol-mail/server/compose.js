@@ -18,6 +18,7 @@ const push = require('./push');
 const { t } = require('./text');
 const secrets = require('./secrets');
 const storage = require('./storage');
+const scan = require('./scan');
 const { fail, posInt, people, parse, clip, line, esc, textHtml, htmlText } = require('./util');
 
 const MEDIA_RE = /^[0-9a-f]{32}$/;
@@ -83,9 +84,22 @@ async function ownAddresses(gc, userId) {
 }
 
 /** The draft row's attachments → the API's list. */
+/**
+ * The draft's attachments with the virus scan's state (1.8.0, scan.js): of an attachment of a mail its copy's, of a file of
+ * the device or Drive its own. A held-back one cannot be sent (409 attachment_blocked).
+ */
+async function attRows(gc, draftId) {
+  return store.all(gc, `SELECT x.*, t.scan_state AS src_state, t.scan_blocked AS src_blocked, t.scan_finding AS src_finding FROM draft_atts x
+    LEFT JOIN attachments t ON x.kind = 'message' AND t.id = x.src_att WHERE x.draft_id = ? ORDER BY x.id`, [draftId]);
+}
+const attScan = (x) => (x.as_link ? null : scan.ofRow(x.kind === 'message' ? { scan_state: x.src_state, scan_blocked: x.src_blocked, scan_finding: x.src_finding } : x));
+/** A held-back attachment that cannot go (a check still running may end before the mail goes). */
+const blockedAtt = (x) => { const s = attScan(x); return !!(s && s.blocked && !(s.state === 'pending' && !s.removed)); };
+
 async function attsOf(gc, draftId) {
-  return (await store.all(gc, 'SELECT * FROM draft_atts WHERE draft_id = ? ORDER BY id', [draftId])).map((x) => ({
+  return (await attRows(gc, draftId)).map((x) => ({
     id: x.id, name: x.name, size: x.size, mime: x.mime, as: x.as_link ? 'link' : 'copy', ...(x.as_link ? { url: x.url } : {}),
+    ...(attScan(x) ? { scan: attScan(x) } : {}),
   }));
 }
 
@@ -107,6 +121,8 @@ async function warnings(gc, lang, d, a) {
   else if (/\b(passwor[dt]|kennwort|pin)\s*[:=]\s*\S{3,}/i.test(htmlText(d.html || ''))) out.push({ kind: 'password', text: t(lang, 'warn.password') });
   if (atts.some((x) => x.auto_link)) out.push({ kind: 'too_large', text: t(lang, linksOnly(gc, a) ? 'warn.graph_links' : 'warn.too_large') });
   if (engine.isGraph(a) && atts.some((x) => !graphOk(gc, d, x))) out.push({ kind: 'too_large', text: t(lang, 'warn.graph_files') });
+  // 1.8.0: an attachment GateControl's virus scan holds back — remove it before sending
+  if ((await attRows(gc, d.id)).some(blockedAtt)) out.push({ kind: 'attachment_blocked', text: t(lang, 'warn.attachment_blocked') });
   return out;
 }
 
@@ -126,9 +142,12 @@ async function addAtt(gc, ctx, d, a, x) {
     if (typeof x.mediaId !== 'string' || !MEDIA_RE.test(x.mediaId)) throw fail('invalid', { field: 'attachments' });
     const info = await gc.media.info(x.mediaId);
     if (!info || info.owner !== ctx.userId || info.claimed) throw fail('invalid', { field: 'attachments', reason: 'media' });
+    // 1.8.0: GateControl's virus scan — a file in quarantine is not attached (422 infected), nor one blocked as not checkable
+    const sc = scan.norm(info.scan);
+    if (sc && sc.blocked && sc.state !== 'pending') throw fail(sc.state === 'infected' ? 'infected' : 'scan_blocked', { name: x.name || info.name || null, finding: sc.finding });
     await gc.media.claim(x.mediaId);
-    await store.run(gc, 'INSERT INTO draft_atts (draft_id, kind, media_id, name, mime, size) VALUES (?, ?, ?, ?, ?, ?)',
-      [d.id, 'media', x.mediaId, clip(line(x.name || info.name || '') || 'Datei', 200), info.mime, info.bytes]);
+    await store.run(gc, 'INSERT INTO draft_atts (draft_id, kind, media_id, name, mime, size, scan_state, scan_blocked, scan_finding) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [d.id, 'media', x.mediaId, clip(line(x.name || info.name || '') || 'Datei', 200), info.mime, info.bytes, ...scan.cols(sc)]);
     return;
   }
   if (x.messageId != null) {
@@ -150,8 +169,10 @@ async function addAtt(gc, ctx, d, a, x) {
     }
     const f = await drive.giveFile(gc, ctx.userId, node);
     await gc.media.claim(f.mediaId);
-    await store.run(gc, 'INSERT INTO draft_atts (draft_id, kind, media_id, name, mime, size, drive_node) VALUES (?, ?, ?, ?, ?, ?, ?)',
-      [d.id, 'drive', f.mediaId, f.name, f.mime, f.size, node]);
+    // the hand-over kept the virus scan's state of the Drive file (Drive refuses a held-back one: quarantined, …)
+    const fi = await gc.media.info(f.mediaId).catch(() => null);
+    await store.run(gc, 'INSERT INTO draft_atts (draft_id, kind, media_id, name, mime, size, drive_node, scan_state, scan_blocked, scan_finding) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [d.id, 'drive', f.mediaId, f.name, f.mime, f.size, node, ...scan.cols(scan.norm(fi && fi.scan))]);
     return;
   }
   if (x.id != null) return; // an attachment of this draft that stays (handled by the caller)
@@ -318,6 +339,8 @@ async function send(gc, ctx, id, b) {
   }
   const a = await store.one(gc, 'SELECT * FROM accounts WHERE id = ?', [d.account_id]);
   if (engine.isGraph(a) && (await store.all(gc, 'SELECT * FROM draft_atts WHERE draft_id = ?', [d.id])).some((x) => !graphOk(gc, d, x))) throw fail('attachments_unsupported');
+  // 1.8.0: an attachment GateControl's virus scan holds back does not go — 409 attachment_blocked { attachmentId, name, scan }
+  await refuseBlocked(gc, d);
   await store.run(gc, "DELETE FROM outbox WHERE draft_id = ? AND state = 'failed'", [d.id]);
   if (await store.one(gc, 'SELECT 1 AS x FROM outbox WHERE draft_id = ?', [d.id])) throw fail('not_waiting');
   const r = await store.run(gc, 'INSERT INTO outbox (draft_id, user_id, account_id, subject, send_at, undo_until, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
@@ -325,6 +348,21 @@ async function send(gc, ctx, id, b) {
   const outboxId = Number(r.lastInsertRowid);
   schedule(gc, outboxId, at);
   return { outboxId, undoUntil: now + UNDO_MS, sendAt: at };
+}
+
+/** The draft's own files asked again (a later check may have blocked them); a held-back attachment → 409 attachment_blocked. */
+async function refuseBlocked(gc, d) {
+  for (const x of await attRows(gc, d.id)) {
+    if (x.media_id && x.kind !== 'message' && !x.as_link) {
+      const info = await gc.media.info(x.media_id).catch(() => null);
+      const sc = scan.norm(info && info.scan);
+      if (sc) {
+        await store.run(gc, 'UPDATE draft_atts SET scan_state = ?, scan_blocked = ?, scan_finding = ? WHERE id = ?', [...scan.cols(sc), x.id]);
+        Object.assign(x, { scan_state: sc.state, scan_blocked: sc.blocked ? 1 : 0, scan_finding: sc.finding });
+      }
+    }
+    if (blockedAtt(x)) throw fail('attachment_blocked', { attachmentId: x.id, name: x.name, scan: attScan(x) });
+  }
 }
 
 /** POST outbox/<id>/cancel → { draftId } */
@@ -367,7 +405,16 @@ async function messageOf(gc, d, a, skip = () => false) {
       const att = m ? await store.one(gc, 'SELECT * FROM attachments WHERE id = ?', [x.src_att]) : null;
       if (!m || !att) continue;
       const acc = await store.one(gc, 'SELECT * FROM accounts WHERE id = ?', [m.account_id]);
-      mediaId = (await engine.attachment(gc, acc, m, att)).mediaId;
+      let got;
+      try { got = await engine.attachment(gc, acc, m, att); } catch (e) {
+        if (e && e.code === 'attachment_removed') throw fail('attachment_blocked', { attachmentId: x.id, name: x.name });
+        throw e;
+      }
+      sendable(got.scan, x);
+      mediaId = got.mediaId;
+    } else if (mediaId) {
+      const info = await gc.media.info(mediaId).catch(() => null);
+      sendable(scan.norm(info && info.scan), x);
     }
     if (mediaId) files.push({ mediaId, filename: x.name, contentType: x.mime });
   }
@@ -381,6 +428,16 @@ async function messageOf(gc, d, a, skip = () => false) {
     ...(d.in_reply_to ? { inReplyTo: d.in_reply_to } : {}), ...(d.refs ? { references: d.refs.split(/\s+/).filter(Boolean) } : {}),
     attachments: files,
   };
+}
+
+/**
+ * 1.8.0: a file GateControl's virus scan holds back is never sent (GateControl would refuse it anyway): still being
+ * checked → scan_pending (the outbox tries again), else attachment_blocked (the person removes it).
+ */
+function sendable(s, x) {
+  if (!s || !s.blocked) return;
+  if (s.state === 'pending' && !s.removed) throw fail('scan_pending');
+  throw fail('attachment_blocked', { attachmentId: x.id, name: x.name });
 }
 
 /** The files of a message (messageOf) may be read now — else 409 storage_unavailable (the outbox tries again, storage.js). */
@@ -445,7 +502,8 @@ async function sendOne(gc, id) {
     return true;
   } catch (e) {
     const code = (e && e.code) || 'failed';
-    const later = code === 'storage_unavailable' || code === 'server_full';
+    // 1.8.0: an attachment still being checked by the virus scan waits like a storage target that fails
+    const later = code === 'storage_unavailable' || code === 'server_full' || code === 'scan_pending';
     const retry = (code === 'unreachable' || code === 'busy' || later) && o.attempts + 1 < RETRIES;
     if (retry) {
       const at = Date.now() + (later ? STORAGE_WAIT_MS : 60000);

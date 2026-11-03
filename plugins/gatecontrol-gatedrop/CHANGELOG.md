@@ -2,6 +2,22 @@
 
 Teilen wie Quick Share – über den eigenen GateControl-Server.
 
+## 1.4.0
+- **Virenscan von GateControl** (README „Virus scan“). GateControl prüft ab der Version nach 1.222.0 jede hochgeladene
+  Datei direkt nach dem Speichern. GateDrop übernimmt das Ergebnis je Datei einer Sendung (Migration 003) und zeigt es als
+  `scan { state, blocked, finding }` an den Einträgen. Ältere GateControl-Versionen liefern kein `scan`: Dann ändert sich
+  nichts. Die Mindestversion bleibt 1.193.0.
+- **Gesperrte Dateien werden nicht gesendet:** `POST sends` lehnt eine Datei in Quarantäne mit `422 infected` ab, eine
+  noch laufende Prüfung mit `423 scan_pending` (gleich erneut senden), eine nicht prüfbare, blockierte Datei mit `423
+  scan_blocked` – jeweils mit dem Dateinamen. Es wird dann nichts zugestellt.
+- **Nachträglich gesperrt** (nächtliche Nachprüfung, Admin – neuer Hook `mediaScanned`): Die Datei ist für Empfänger
+  nicht mehr verfügbar, `GET items/<mediaId>` antwortet `423 quarantined | scan_pending | scan_blocked`. Weitergaben an
+  Messenger, NAS oder Drive scheitern mit diesem Code.
+- **Portal:** Ein vom Virenscan abgelehnter Upload zeigt „<Name> abgelehnt – Schadsoftware gefunden.“ Große Dateien,
+  die noch geprüft werden, sendet das Portal automatisch erneut („Wird auf Viren geprüft …“). Empfangene Dateien zeigen
+  „Gesperrt – Schadsoftware“, „Gesperrt – nicht prüfbar“, „Wird geprüft …“ oder „Warnung – Schadsoftware“. Gesperrte
+  Dateien lassen sich nicht herunterladen, bei markierten fragt das Portal vorher nach.
+
 ## 1.3.0
 - **Neues Ziel „Mein Drive“:** Dateien lassen sich jetzt ins eigene Drive schicken (Drive-Plugin ab 1.4.0). Ohne
   weitere Angabe landen sie in **Meine Dateien › GateDrop**, aus einer App auch in einem dort gewählten Ordner; ist ein

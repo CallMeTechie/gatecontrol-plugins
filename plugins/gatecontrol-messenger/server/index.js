@@ -49,6 +49,7 @@ const status = require('./status');
 const homeactions = require('./homeactions');
 const notices = require('./notices');
 const groupchats = require('./groupchats');
+const scan = require('./scan');
 const texts = require('./texts.json');
 const { STATUS, isKnown } = require('./util');
 
@@ -61,7 +62,9 @@ function t(lang, key, params) {
 
 function errorResponse(e, lang) {
   const code = isKnown(e) ? e.code : 'internal';
-  return { status: STATUS[code], json: { ok: false, code, error: t(lang, 'error.' + code) } };
+  // 1.11.0: the virus scan's refusal names its find
+  const finding = isKnown(e) && e.extra && typeof e.extra.finding === 'string' ? e.extra.finding : null;
+  return { status: STATUS[code], json: { ok: false, code, error: t(lang, 'error.' + code), ...(finding ? { finding } : {}) } };
 }
 
 /** The request context of a chat call. */
@@ -261,6 +264,31 @@ module.exports = {
       await ensureKey(gc);
       await groupchats.deleting(gc, arg && arg.groupId);
     } catch (e) { gc.log.warn('groupDeleting failed', (e && (e.code || e.message)) || 'error'); }
+  },
+
+  /**
+   * 1.11.0: GateControl's virus scan changed a file after its upload answered (the check of a big file ended, a re-check
+   * with new signatures, an administrator released or deleted it): the file's state, the message's updated_at and the
+   * live event message.update { conversationId, messageId, editedAt, scan } to the members (scan.js).
+   */
+  async mediaScanned(arg, gc) {
+    const id = arg && typeof arg.mediaId === 'string' && /^[0-9a-f]{32}$/.test(arg.mediaId) ? arg.mediaId : null;
+    const sc = scan.norm(arg && arg.state === 'deleted' ? { state: 'infected', blocked: true, finding: arg.finding || null } : arg);
+    if (!id || !sc) return;
+    try {
+      const m = await store.one(gc, 'SELECT * FROM media WHERE media_id = ?', [id]);
+      if (!m) return;
+      const now = Date.now();
+      await store.run(gc, 'UPDATE media SET scan_state = ?, scan_blocked = ?, scan_finding = ? WHERE media_id = ?', [...scan.cols(sc), id]);
+      const msg = m.msg_id == null ? null : await store.one(gc, 'SELECT id, conv_id FROM messages WHERE id = ? AND deleted_at IS NULL', [m.msg_id]);
+      if (!msg || m.role === 'story' || m.role === 'story_thumb') return;
+      await store.run(gc, 'UPDATE messages SET updated_at = ? WHERE id = ?', [now, msg.id]);
+      const users = (await store.all(gc, 'SELECT user_id FROM members WHERE conv_id = ? AND left_at IS NULL', [msg.conv_id])).map((r) => r.user_id);
+      const box = live.outbox();
+      // editedAt: the time of the change, as clients fetch messages?changedSince= with it (the message's own editedAt stays)
+      live.queue(box, users, 'message.update', { conversationId: msg.conv_id, messageId: msg.id, editedAt: new Date(now).toISOString(), scan: sc });
+      await live.flush(gc, box);
+    } catch (e) { gc.log.warn('scan state failed', (e && e.code) || 'error'); }
   },
 
   async tick(gc) {

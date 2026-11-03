@@ -2,6 +2,27 @@
 
 Dateien der Familie und des Teams auf dem eigenen Speicher – auf diesem Server, einer NAS oder in S3.
 
+## 1.19.0
+- **Virenscan von GateControl** (Feature `scan`, README „Virus scan“). GateControl prüft ab der Version nach 1.222.0
+  jede Datei direkt nach dem Speichern. Drive übernimmt das Ergebnis (`scan` aus `gc.media.info`) bei jedem Weg in den
+  Baum – Upload, Upload-Link, NAS-Journal, Import, Mail und GateDrop, Kopie, Office – und merkt es sich je Datei
+  (Migration 017, `media_scan`). Jede Datei in einer Antwort trägt dann `scan { state, blocked, finding }`, ebenso
+  Foto-Einträge. Ältere GateControl-Versionen liefern kein `scan`: Dann fehlt das Feld und es ändert sich nichts.
+  Die Mindestversion bleibt 1.216.0.
+- **Später fertige Prüfungen** (große Dateien, nächtliche Nachprüfung mit neuen Signaturen, Freigabe oder Löschen durch
+  einen Admin) kommen über den neuen Hook `mediaScanned`. Jede Änderung steht als `op: 'scan'` im Änderungsprotokoll
+  und löst das Live-Ereignis aus. Dateien, die noch „Wird geprüft“ sind, fragt die Hintergrundpflege erneut ab, falls
+  ein Hook verloren ging.
+- **Gesperrte Dateien** (`blocked`: Quarantäne, Prüfung läuft, nicht prüfbar und blockiert) haben keine Vorschau.
+  Inhalt, Versionen, Office, Freigabe-Links und Mails `give_file`/`share_link` antworten `423 scan_pending | quarantined
+  | scan_blocked` mit verständlichem Text. ZIPs und Links einer Auswahl lassen sie weg (`skipped`, Grund `blocked`), der
+  Fotorahmen zeigt sie nicht, Kopien behalten den Zustand.
+- **Portal:** Kennzeichen „Wird geprüft …“, „Gesperrt – Schadsoftware“, „Gesperrt – nicht prüfbar“, „Warnung –
+  Schadsoftware“ und dezent „Nicht prüfbar“. Ein Klick auf eine gesperrte Datei öffnet ihr Menü mit dem Grund, ohne
+  Vorschau, Download, Office oder Teilen. Eine nur markierte Datei fragt vor dem Herunterladen. Ein vom Virenscan
+  abgelehnter Upload zeigt „Datei abgelehnt – Schadsoftware gefunden.“
+- Für die Apps: Felder, Codes und Texte im README „Virus scan“.
+
 ## 1.18.1
 - Behoben: „Wer ist das?“ im Portal zeigte nach „Nächste Person“ wieder eine Person, die die Runde schon hatte. Es nahm
   die erste Person ohne Namen außer der gerade benannten aus `GET people`. Jetzt ist es eine Runde wie in der

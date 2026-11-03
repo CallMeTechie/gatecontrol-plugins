@@ -671,15 +671,43 @@
     return card;
   }
 
+  // 1.8.0: GateControl's virus scan on an attachment (`scan`) → { text, cls } of its chip, or null
+  function scanChip(s) {
+    if (!s) return null;
+    var f = s.finding || '?';
+    if (s.removed) return { text: T('p.scan_removed'), cls: 'is-crit' };
+    if (s.blocked && s.state === 'pending') return { text: T('p.scan_pending'), cls: '' };
+    if (s.blocked && s.state === 'infected') return { text: T('p.scan_quarantined', { finding: f }), cls: 'is-crit' };
+    if (s.blocked) return { text: T('p.scan_blocked'), cls: 'is-crit' };
+    if (s.state === 'infected') return { text: T('p.scan_marked', { finding: f }), cls: 'is-warn' };
+    if (s.state === 'unscannable') return { text: T('p.scan_unscannable'), cls: 'is-quiet' };
+    return null;
+  }
+  function scanEl(s) {
+    var c = scanChip(s);
+    return c ? h('span', { class: 'mp-scan ' + c.cls, text: c.text }) : null;
+  }
+
   function attRow(m, t) {
     var sugg = h('div', { class: 'mp-sugg' });
     var row = h('div', { class: 'mp-att' }, [
       h('span', { class: 'mp-att-ic', text: extOf(t.name) }),
-      h('div', { class: 'mp-att-tx' }, [h('b', { text: t.name, attrs: { title: t.name } }), h('span', { class: 'mp-sub', text: fmtSize(t.size) }), sugg]),
+      h('div', { class: 'mp-att-tx' }, [h('b', { text: t.name, attrs: { title: t.name } }), h('span', { class: 'mp-sub', text: fmtSize(t.size) }), scanEl(t.scan), sugg]),
     ]);
     var acts = h('div', { class: 'mp-tools' });
     row.appendChild(acts);
-    acts.appendChild(btn(T('p.download'), function () { download(0); }, { small: true }));
+    // held back by the virus scan (or removed): nothing that opens, downloads or files it
+    if (t.scan && t.scan.blocked) return row;
+    acts.appendChild(btn(T('p.download'), function () {
+      // marked as malware, not blocked (the administrator's "Nur markieren"): asked first
+      if (t.scan && t.scan.state === 'infected') {
+        var e2 = h('p', { class: 'dp-err', attrs: { role: 'alert' } });
+        dialog(T('p.scan_title'), [h('p', { class: 'dp-hint', text: T('p.scan_download_anyway', { name: t.name, finding: t.scan.finding || '?' }) }), e2,
+          h('div', { class: 'dp-actions' }, [btn(T('p.cancel'), closeDialog), btn(T('p.download_anyway'), function () { closeDialog(); download(0); }, { danger: true })])]);
+        return;
+      }
+      download(0);
+    }, { small: true }));
     // a large attachment still loading at the provider: 409 busy (reason loading) — asked again a few times
     function download(n) {
       api('GET', 'messages/' + m.id + '/attachments/' + t.id).then(function (r) {
@@ -689,6 +717,8 @@
         link.click();
         document.body.removeChild(link);
       }, function (e) {
+        // 1.8.0: held back by the virus scan, or removed — shown on the row from now on
+        if (e && e.extra && e.extra.scan) { t.scan = e.extra.scan; renderRead(m); }
         if (e && e.code === 'busy' && e.extra && e.extra.reason === 'loading' && n < 12) {
           if (n === 0) toast(T('p.att_loading'));
           setTimeout(function () { download(n + 1); }, Math.min(Math.max(Number(e.extra.retryAfter) || 5, 2), 30) * 1000);
@@ -925,7 +955,7 @@
       clear(atts);
       x.attachments.forEach(function (t) {
         atts.appendChild(h('div', { class: 'mp-att' }, [h('span', { class: 'mp-att-ic', text: t.as === 'link' ? 'LINK' : extOf(t.name) }),
-          h('div', { class: 'mp-att-tx' }, [h('b', { text: t.name }), h('span', { class: 'mp-sub', text: t.as === 'link' ? T('p.as_link') : fmtSize(t.size) })]),
+          h('div', { class: 'mp-att-tx' }, [h('b', { text: t.name }), h('span', { class: 'mp-sub', text: t.as === 'link' ? T('p.as_link') : fmtSize(t.size) }), scanEl(t.scan)]),
           ibtn('close', T('p.remove'), function () {
             current.attachments = current.attachments.filter(function (y) { return y.id !== t.id; });
             save().then(show, function (e) { err.textContent = errText(e); });

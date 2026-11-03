@@ -34,6 +34,7 @@ const admin = require('./admin');
 const jobs = require('./jobs');
 const bg = require('./bg');
 const net = require('./net');
+const scan = require('./scan');
 const { t } = require('./text');
 const { STATUS, fail, isKnown, iso, DEVICE_RE } = require('./util');
 
@@ -41,7 +42,9 @@ const ID = 'gatecontrol-gatedrop';
 
 function errorResponse(e, lang) {
   const code = isKnown(e) ? e.code : 'internal';
-  return { status: STATUS[code], json: { ok: false, code, error: t(lang, 'error.' + code) } };
+  // since 1.4.0 the virus scan's refusals name the file (`name`) or carry its state (`scan`)
+  const x = isKnown(e) && e.extra ? e.extra : null;
+  return { status: STATUS[code], json: { ok: false, code, error: t(lang, 'error.' + code), ...(x && x.name ? { name: x.name } : {}), ...(x && x.scan ? { scan: x.scan } : {}) } };
 }
 
 /** A person who may share: a signed-in portal viewer or an app user — never a kiosk device, never the admin UI. */
@@ -231,6 +234,20 @@ module.exports = {
     } else if (ev === 'expired') {
       await store.run(gc, "UPDATE deliveries SET status = 'expired', at = ? WHERE send_id = ? AND kind = 'link' AND target = ? AND status = 'delivered'", [now, l.send_id, token]);
     }
+  },
+
+  /**
+   * GateControl's virus scan changed a file after its upload answered (a re-check with new signatures, an administrator
+   * released or deleted it — scan.js): the item's state; a deleted file stays held back.
+   */
+  async mediaScanned(arg, gc) {
+    const id = arg && typeof arg.mediaId === 'string' && /^[0-9a-f]{32}$/.test(arg.mediaId) ? arg.mediaId : null;
+    if (!id) return;
+    const sc = scan.norm(arg.state === 'deleted' ? { state: 'infected', blocked: true, finding: arg.finding || null } : arg);
+    if (!sc) return;
+    try {
+      await store.run(gc, 'UPDATE items SET scan_state = ?, scan_blocked = ?, scan_finding = ? WHERE media_id = ?', [...scan.cols(sc), id]);
+    } catch (e) { gc.log.warn('scan state failed', (e && e.code) || 'error'); }
   },
 
   async tick(gc) {

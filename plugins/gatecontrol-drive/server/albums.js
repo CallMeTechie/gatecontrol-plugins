@@ -22,6 +22,7 @@ const nodes = require('./nodes');
 const areas = require('./areas');
 const photos = require('./photos');
 const previews = require('./previews');
+const scan = require('./scan');
 const { fail, iso, line, posInt } = require('./util');
 
 const IDS_MAX = 500;
@@ -97,7 +98,9 @@ async function views(ctx, rows) {
     covers.push(cover ? cover.media_id : null);
   }
   const { map } = await previews.urls(ctx, covers.filter(Boolean));
-  out.forEach((v, i) => { const p = covers[i] ? map.get(covers[i]) : null; v.coverUrl = p ? p.url : null; });
+  // a cover the virus scan holds back shows none (scan.js)
+  const states = await scan.rowsOf(ctx.gc, covers.filter(Boolean));
+  out.forEach((v, i) => { const p = covers[i] && !(states.get(covers[i]) || {}).blocked ? map.get(covers[i]) : null; v.coverUrl = p ? p.url : null; });
   return out;
 }
 

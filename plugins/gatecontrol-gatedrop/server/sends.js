@@ -13,6 +13,7 @@ const access = require('./access');
 const deliver = require('./deliver');
 const transfers = require('./transfers');
 const jobs = require('./bg');
+const scan = require('./scan');
 const { t } = require('./text');
 const { fail, posInt, optText, fileName, url, newId, iso, MEDIA_RE, DEVICE_RE } = require('./util');
 
@@ -112,8 +113,24 @@ const itemsOf = (gc, sendId) => store.all(gc, 'SELECT * FROM items WHERE send_id
 const deliveriesOf = (gc, sendId) => store.all(gc, 'SELECT * FROM deliveries WHERE send_id = ? ORDER BY id', [sendId]);
 
 function itemView(i, send) {
-  const available = !send.purged && !!i.media_id;
-  return { index: i.idx, mediaId: available ? i.media_id : null, name: i.name, mime: i.mime || null, bytes: i.bytes, local: i.local === 1 && !i.media_id, available };
+  // since 1.4.0: a file GateControl's virus scan holds back is not available (scan.js); `scan` only with a result
+  const sc = scan.ofItem(i);
+  const available = !send.purged && !!i.media_id && !(sc && sc.blocked);
+  return { index: i.idx, mediaId: available ? i.media_id : null, name: i.name, mime: i.mime || null, bytes: i.bytes, local: i.local === 1 && !i.media_id, available, ...(sc ? { scan: sc } : {}) };
+}
+
+/** Items still 'pending' at the virus scan: asked again (a missed hook mediaScanned). */
+async function freshScans(gc, items) {
+  for (const i of items) {
+    if (i.scan_state !== 'pending' || !i.media_id) continue;
+    let info = null;
+    try { info = await gc.media.info(i.media_id); } catch { continue; }
+    const sc = scan.norm(info && info.scan);
+    if (!sc || sc.state === 'pending') continue;
+    await store.run(gc, 'UPDATE items SET scan_state = ?, scan_blocked = ?, scan_finding = ? WHERE send_id = ? AND idx = ?', [...scan.cols(sc), i.send_id, i.idx]);
+    Object.assign(i, { scan_state: sc.state, scan_blocked: sc.blocked ? 1 : 0, scan_finding: sc.finding });
+  }
+  return items;
 }
 
 function deliveryView(d, send) {
@@ -149,7 +166,7 @@ async function recipientDeliveries(ctx, send, dels) {
 
 /** A send as `role` ('sent' | 'received') sees it. */
 async function view(ctx, send, role, dels) {
-  const items = await itemsOf(ctx.gc, send.id);
+  const items = await freshScans(ctx.gc, await itemsOf(ctx.gc, send.id));
   const all = dels || await deliveriesOf(ctx.gc, send.id);
   const shown = role === 'sent' ? all : await recipientDeliveries(ctx, send, all);
   const u = ctx.users.get(send.user_id);
@@ -171,6 +188,11 @@ async function checkUploads(ctx, items) {
     try { info = await ctx.gc.media.info(it.mediaId); } catch { info = null; }
     if (!info || info.owner !== ctx.viewer) throw fail('media_invalid');
     if (await store.one(ctx.gc, 'SELECT 1 AS x FROM items WHERE media_id = ?', [it.mediaId])) throw fail('media_in_use');
+    // GateControl's virus scan (since 1.4.0): a file it holds back is not sent — malware 422 infected, still being
+    // checked 423 scan_pending (send again in a few seconds), not checkable 423 scan_blocked
+    it.scan = scan.norm(info.scan);
+    const no = scan.refusal(it.scan);
+    if (no) throw fail(no, { name: it.name || fileName(info.name) || null });
     it.mime = info.mime;
     it.bytes = info.bytes;
     if (!it.name) it.name = fileName(info.name) || 'Datei';
@@ -268,8 +290,8 @@ async function create(ctx, body) {
     await store.run(gc, 'INSERT INTO sends (id, user_id, device_id, device_name, created_at, expires_at, text, link, note) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
       [id, ctx.viewer, sendRow.device_id, sendRow.device_name, ctx.now, sendRow.expires_at, text, link, note]);
     for (const it of items) {
-      await store.run(gc, 'INSERT INTO items (send_id, idx, media_id, name, mime, bytes, local) VALUES (?, ?, ?, ?, ?, ?, ?)',
-        [id, it.idx, it.mediaId, it.name, it.mime, it.bytes, it.local ? 1 : 0]);
+      await store.run(gc, 'INSERT INTO items (send_id, idx, media_id, name, mime, bytes, local, scan_state, scan_blocked, scan_finding) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        [id, it.idx, it.mediaId, it.name, it.mime, it.bytes, it.local ? 1 : 0, ...scan.cols(it.scan)]);
     }
     const ins = async (kind, target, userId, status, label) => (await store.run(gc, 'INSERT INTO deliveries (send_id, kind, target, user_id, status, via, at, label) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
       [id, kind, target, userId, status, status === 'direct' ? 'direct' : null, ctx.now, label])).lastInsertRowid;
@@ -370,12 +392,15 @@ async function addItems(ctx, id, body) {
   for (const w of wanted) {
     const probe = { local: false, mediaId: w.mediaId, name: w.it.name };
     await checkUploads(ctx, [probe]);
-    infos.push({ ...w, mime: probe.mime, bytes: probe.bytes });
+    infos.push({ ...w, mime: probe.mime, bytes: probe.bytes, scan: probe.scan });
   }
   for (const w of infos) await claim(ctx, w.mediaId);
   const jobsOut = [];
   await store.tx(ctx.gc, async () => {
-    for (const w of infos) await store.run(ctx.gc, 'UPDATE items SET media_id = ?, mime = ?, bytes = ? WHERE send_id = ? AND idx = ?', [w.mediaId, w.mime, w.bytes, id, w.it.idx]);
+    for (const w of infos) {
+      await store.run(ctx.gc, 'UPDATE items SET media_id = ?, mime = ?, bytes = ?, scan_state = ?, scan_blocked = ?, scan_finding = ? WHERE send_id = ? AND idx = ?',
+        [w.mediaId, w.mime, w.bytes, ...scan.cols(w.scan), id, w.it.idx]);
+    }
     const missing = await store.one(ctx.gc, 'SELECT COUNT(*) AS n FROM items WHERE send_id = ? AND media_id IS NULL', [id]);
     if (missing.n) return;
     // every file is there now: the device deliveries that wait for them (their direct transfer failed or expired)
@@ -440,6 +465,10 @@ async function fileAccess(ctx, mediaId) {
 async function itemInfo(ctx, mediaId, pluginId) {
   const a = await fileAccess(ctx, mediaId);
   if (!a) throw fail('not_found');
+  // a later check of GateControl's virus scan held it back (scan.js): 423 quarantined / scan_pending / scan_blocked
+  const [item] = await freshScans(ctx.gc, [a.item]);
+  const no = scan.held(scan.ofItem(item));
+  if (no) throw fail(no, { scan: scan.ofItem(item) });
   let u = `/api/v1/client/plugins/${pluginId}/media/${mediaId}`;
   if (ctx.portal) {
     try { u = await ctx.gc.media.url(mediaId, { user: ctx.viewer, ttlS: 3600 }); } catch { throw fail('not_found'); }

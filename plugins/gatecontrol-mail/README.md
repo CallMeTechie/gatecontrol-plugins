@@ -115,7 +115,9 @@ images_off | links_disabled | busy { retryAfter?, reason? } | storage_unavailabl
 409 `read_only | conflict { current } | consent_required { accountId, missing } | dav_unavailable { reason: 'not_found' |
 'no_calendar' | 'redirect' | 'host_old' } | not_supported { what } | send_failed { reason } | invitation_outdated`. `busy`: the provider
 throttles, or (`reason: 'loading'`) an attachment is still on its way — ask again after `retryAfter` s (since 1.1.2 409,
-before 503).
+before 503). Since 1.8.0 (GateControl's virus scan, see "Virus scan"): 423 `quarantined | scan_pending | scan_blocked
+{ scan }`, 410 `attachment_removed { scan }`, 409 `attachment_blocked { attachmentId, name, scan }`, 422 `infected { name,
+finding }`.
 
 ### Account, state
 
@@ -165,7 +167,7 @@ mail; „Neu anmelden“ (`POST accounts/<id>/microsoft`) adds them.
 | `POST messages/<id>/images` | `{ allow: 'once' \| 'sender' }` → `Message` |
 | `GET img/<token>` | `{ mime, size, data }` — the picture as base64 (≤ 700 KB, else 413) |
 | `GET cid/<messageId>/<attachmentId>` | `{ mediaId, mime, size, url }` — an embedded picture (the apps load `media/<mediaId>`, the portal `url`); like attachments |
-| `GET messages/<id>/attachments/<aid>` | `{ mediaId, name, mime, size, url }` — not there after ~12 s: 409 `busy { reason: 'loading', retryAfter }`, the download goes on (asking again joins it), the live event `mail` with `messageId` and `attachmentId` tells when it is there |
+| `GET messages/<id>/attachments/<aid>` | `{ mediaId, name, mime, size, url, scan? }` (since 1.8.0: held back by the virus scan 423 `quarantined \| scan_pending \| scan_blocked`, removed 410 `attachment_removed`) — not there after ~12 s: 409 `busy { reason: 'loading', retryAfter }`, the download goes on (asking again joins it), the live event `mail` with `messageId` and `attachmentId` tells when it is there |
 | `POST messages/flags` | `{ ids, unread?, flagged? }` → `{ ok, items }` |
 | `POST messages/move` | `{ ids, folderId }` (one account) |
 | `POST messages/archive` / `delete` / `junk` | `{ ids }` — delete: into the trash, in the trash for good; Gmail archives into "All Mail" |
@@ -173,7 +175,8 @@ mail; „Neu anmelden“ (`POST accounts/<id>/microsoft`) adds them.
 
 `Summary` = `{ id, accountId, folderId, threadId, threadCount, from: { name, email }, to (≤ 3), subject, snippet (≤ 160),
 date, unread, flagged, answered, hasAttachments, tab, savedToDrive, ai: { summary } | null }`. `Attachment` = `{ id, name,
-mime, size, inline, cid, savedTo: { nodeId, where } | null, suggestion }`.
+mime, size, inline, cid, savedTo: { nodeId, where } | null, suggestion, scan? }` — `scan { state, blocked, finding,
+removed? }` since 1.8.0 once the attachment's copy was checked (see "Virus scan").
 
 **HTML**: sanitized by GateControl (no script, no event handlers, no `url()` in CSS); external pictures are
 `img/<token>` (relative to the plugin API), embedded ones stay `cid:<id>` (→ `GET cid/…` by the attachment with that
@@ -193,8 +196,9 @@ mime, size, inline, cid, savedTo: { nodeId, where } | null, suggestion }`.
 
 `Att` = `{ mediaId, name? }` (uploaded by the device, `PUT …/media`; the person's own, unused) | `{ messageId,
 attachmentId }` | `{ driveNodeId, as: 'copy'|'link', expiresDays?, password? }` | `{ id }` (an attachment of this draft).
-`draft` = `{ id, accountId, to, cc, bcc, subject, html, attachments: [{ id, name, size, mime, as, url? }], warnings: [{ kind:
-'password'|'too_large'|'no_subject', text }] }`. With `mode` the server fills in what is missing: recipients (reply:
+`draft` = `{ id, accountId, to, cc, bcc, subject, html, attachments: [{ id, name, size, mime, as, url?, scan? }], warnings: [{ kind:
+'password'|'too_large'|'no_subject'|'attachment_blocked', text }] }` (`scan` and `attachment_blocked` since 1.8.0, see
+"Virus scan"). With `mode` the server fills in what is missing: recipients (reply:
 Reply-To or the sender; reply all: also To and Cc, never the person's own addresses), `Re:` / `Fwd:` and the quote; a
 forward without `attachments` takes the mail's attachments (a client that sends them as `{ messageId, attachmentId }`
 gets exactly those). The account's **signature is the clients'**: they put it on top (`Account.signature`); the server
@@ -316,6 +320,37 @@ the default 360 is 18:00 the day before (before 1.3.1: 1080, that is 06:00 the d
   `{ kind: 'addressbooks' }` | `{ kind: 'groups' }`; a mail with a new invitation card: `mail` with its `messageId`.
   Since 1.4.0 also `contacts` `{ kind: 'merged', masterId, contactIds, auto }` | `{ kind: 'conflicts', contactIds }` |
   `{ kind: 'favorites' }`.
+
+### Virus scan (since 1.8.0)
+
+GateControl checks every attachment it stores for Mail right after storing it (the GateControl version after 1.222.0 —
+Einstellungen › Sicherheit › Virenscan, source "Mail": `gc.mail`'s attachments and downloads, Microsoft's through
+`gc.media.fetch`, the files of drafts; the sender travels along for the quarantine list; contract: GateControl's
+`docs/feature-malware-scan-contract.md`). Mail reads the result where the host gives one and changes nothing with an
+older GateControl; the minimum stays 1.219.0. `GET me` `features` lists `'scan'`.
+
+* **Attachments** carry `scan { state, blocked, finding }` once their copy was checked (`state` `pending` | `clean` |
+  `infected` | `unscannable` | `unchecked`); an attachment GateControl deleted at once (the administrator's action
+  "Sofort löschen" — `mediaError: 'ERR_MEDIA_INFECTED'` of a parsed mail, `ERR_MEDIA_INFECTED` of a download) is `{ state:
+  'infected', blocked: true, finding, removed: true }` — „Anhang entfernt (Schadsoftware)“, never loaded again (410
+  `attachment_removed`). **`blocked` decides:** `GET messages/<id>/attachments/<aid>` and `GET cid/…` answer 423
+  `quarantined` (malware, „Gesperrt – Schadsoftware (<finding>)“), `scan_pending` (still being checked — again later) or
+  `scan_blocked` (not checkable); "In Drive ablegen", "Alle in Drive", the automatic filing and "Zum Ablegen" (also
+  Drive's `tofile_count`) leave such attachments out (423 with the code when asked for one); the AI never gets them.
+  `infected` with `blocked: false` (the administrator only marks): usable, the clients warn before opening.
+* **Writing:** a forward takes the mail's attachments as before — a held-back one is flagged (`attachments[].scan`) and the
+  draft warns (`warnings` kind `attachment_blocked`); `POST drafts/<id>/send` answers 409 `attachment_blocked {
+  attachmentId, name }` until it is removed (`PUT drafts/<id>` without it). The outbox checks again when it sends: a file
+  still being checked waits (like `storage_unavailable`), one blocked meanwhile fails the entry (`error:
+  'attachment_blocked'`, push `mail_failed`). A file of the device GateControl quarantined is refused when it is added
+  (422 `infected`); a Drive file Drive refuses passes Drive's code (`quarantined`, …).
+* **Later results** (the nightly re-check with new signatures, an administrator releases or deletes the copy — the hook
+  `mediaScanned`) change the attachment (a deleted copy: removed) and the draft file; the live event `mail` { kind:
+  'changed', messageId, attachmentId } (a draft: `draftId`) tells the person.
+* **Portal:** chips on the attachments — „Gesperrt – Schadsoftware (<finding>)“, „Anhang entfernt (Schadsoftware)“,
+  „Wird geprüft …“, „Gesperrt – nicht prüfbar“, „Warnung – Schadsoftware (<finding>)“ and quietly „Nicht prüfbar“; a
+  held-back attachment has no download or Drive buttons, a marked one asks before it downloads; the draft shows the chip
+  and the warning, sending says „Ein Anhang ist gesperrt (Schadsoftware) – entferne ihn, um die Mail zu senden.“
 
 ### Service for other plugins
 

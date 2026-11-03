@@ -11,6 +11,7 @@ const seal = require('./seal');
 const live = require('./live');
 const people = require('./people');
 const log = require('./log');
+const scan = require('./scan');
 const { fail, posInt, multiline, optText, numIn, intIn, iso, parseIso } = require('./util');
 
 const TEXT_MAX = 4000;
@@ -28,7 +29,8 @@ const VIDEO_MAX_MS = 24 * 3600 * 1000;
 const VIDEO_MAX_SIDE = 16384;
 const isVideo = (mime) => typeof mime === 'string' && /^video\//i.test(mime);
 /** What the server supports beyond 1.0 (GET me features: clients check before sending these fields). */
-const FEATURES = ['video_meta', 'file_thumbs'];
+// 1.11.0: scan — files of messages carry GateControl's virus scan (`media.scan`, README "Virus scan")
+const FEATURES = ['video_meta', 'file_thumbs', 'scan'];
 const URL_TTL_S = 6 * 3600;
 const CLIENT_ID_RE = /^[A-Za-z0-9_-]{8,64}$/;
 const KINDS = ['text', 'image', 'voice', 'file', 'location', 'poll', 'event', 'arrival', 'action'];
@@ -142,11 +144,16 @@ async function view(ctx, me, r, rc, reacts, replies, hiddenReplies) {
     base.video = { durationMs: v.durationMs != null ? v.durationMs : null, width: v.width != null ? v.width : null, height: v.height != null ? v.height : null };
   }
   if (r.media_id) {
-    const row = await store.one(ctx.gc, 'SELECT mime, bytes FROM media WHERE media_id = ?', [r.media_id]);
+    const row = await store.one(ctx.gc, 'SELECT mime, bytes, scan_state, scan_blocked, scan_finding FROM media WHERE media_id = ?', [r.media_id]);
+    // 1.11.0: GateControl's virus scan — `scan` once a result is known; a held-back file has no URL and no preview
+    const sc = scan.ofRow(row);
+    const held = !!(sc && sc.blocked);
     base.media = {
-      id: r.media_id, mime: row ? row.mime : null, bytes: row ? row.bytes : null, url: await mediaUrl(ctx, r.media_id),
-      thumbId: r.thumb_media_id || null, thumbUrl: await mediaUrl(ctx, r.thumb_media_id),
+      id: r.media_id, mime: row ? row.mime : null, bytes: row ? row.bytes : null, url: held ? null : await mediaUrl(ctx, r.media_id),
+      thumbId: held ? null : r.thumb_media_id || null, thumbUrl: held ? null : await mediaUrl(ctx, r.thumb_media_id),
+      ...(sc ? { scan: sc } : {}),
     };
+    if (held) base.thumbMediaId = null;
   }
   if (r.reply_to) base.replyTo = quote(replies.get(r.reply_to), me, hiddenReplies, r.reply_to);
   if (m.replyStory && typeof m.replyStory === 'object') base.replyStory = m.replyStory;
@@ -288,6 +295,9 @@ async function checkMedia(ctx, id, kind, { thumb = false } = {}) {
   if (thumb && kind === 'file' && !FILE_THUMB_TYPES.includes(String(info.mime).toLowerCase())) throw fail('media_invalid');
   const used = await store.one(ctx.gc, 'SELECT 1 AS x FROM media WHERE media_id = ?', [id]);
   if (used) throw fail('media_in_use');
+  // 1.11.0: GateControl's virus scan — a file in quarantine is not sent (422 infected), nor one blocked as not checkable
+  const no = scan.refusal(scan.norm(info.scan));
+  if (no) throw fail(no, { finding: (info.scan && info.scan.finding) || null });
   return info;
 }
 
@@ -299,8 +309,8 @@ async function bindMedia(ctx, info, { convId, msgId, role, kind }) {
     await log.add(ctx.gc, 'media_claim_failed', (e && e.code) || null, ctx.now);
     throw fail('media_invalid');
   }
-  await store.run(ctx.gc, 'INSERT INTO media (media_id, conv_id, msg_id, role, kind, mime, bytes, owner_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-    [info.mediaId, convId, msgId, role, kind, info.mime, info.bytes, info.owner, ctx.now]);
+  await store.run(ctx.gc, `INSERT INTO media (media_id, conv_id, msg_id, role, kind, mime, bytes, owner_id, created_at, scan_state, scan_blocked, scan_finding)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [info.mediaId, convId, msgId, role, kind, info.mime, info.bytes, info.owner, ctx.now, ...scan.cols(scan.norm(info.scan))]);
 }
 
 /** Insert a message row (inside a transaction) → its id; moves the conversation forward. */

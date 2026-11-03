@@ -19,6 +19,11 @@ const STATUS = {
   no_device: 409,
   closed: 409,
   rate_limited: 429,
+  // since 1.4.0: GateControl's virus scan (scan.js) — malware found, still being checked, held back
+  infected: 422,
+  scan_pending: 423,
+  quarantined: 423,
+  scan_blocked: 423,
   internal: 500,
 };
 

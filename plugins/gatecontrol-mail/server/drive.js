@@ -13,6 +13,7 @@ const store = require('./store');
 const engine = require('./engine');
 const config = require('./config');
 const storage = require('./storage');
+const scan = require('./scan');
 const { t } = require('./text');
 const { fail, parse } = require('./util');
 
@@ -35,7 +36,9 @@ async function available(gc) {
 }
 
 const CODES = { not_found: 'not_found', forbidden: 'forbidden', no_seat: 'forbidden', not_licensed: 'drive_unavailable', links_disabled: 'links_disabled',
-  no_public_url: 'links_disabled', encrypted: 'forbidden', too_large: 'too_large', invalid: 'invalid', quota: 'too_large', upload_invalid: 'invalid', unavailable: 'drive_unavailable', exists: 'invalid' };
+  no_public_url: 'links_disabled', encrypted: 'forbidden', too_large: 'too_large', invalid: 'invalid', quota: 'too_large', upload_invalid: 'invalid', unavailable: 'drive_unavailable', exists: 'invalid',
+  // Drive ≥ 1.19.0: its file is held back by GateControl's virus scan (give_file, share_link)
+  quarantined: 'quarantined', scan_pending: 'scan_pending', scan_blocked: 'scan_blocked' };
 
 /** A Drive service for person `userId` → its answer (ok) or throws the API code. */
 async function call(gc, userId, service, payload) {
@@ -69,10 +72,15 @@ async function handed(gc, userId, m, tt) {
   if (tt.drive_media && tt.drive_media_at && Date.now() - tt.drive_media_at < HAND_TTL) return tt.drive_media;
   const a = await store.one(gc, 'SELECT * FROM accounts WHERE id = ?', [m.account_id]);
   const mine = await engine.attachment(gc, a, m, tt);
+  // 1.8.0: a copy GateControl's virus scan holds back never goes to Drive (scan.js)
+  scan.guard(mine.scan);
   let got;
   try {
     got = await gc.media.handOver(mine.mediaId, { toPlugin: DRIVE, user: userId });
   } catch (e) {
+    if (e && e.code === 'ERR_MEDIA_QUARANTINED') throw fail('quarantined');
+    if (e && e.code === 'ERR_MEDIA_SCAN_PENDING') throw fail('scan_pending');
+    if (e && e.code === 'ERR_MEDIA_BLOCKED') throw fail('scan_blocked');
     if (e && e.code === 'ERR_MEDIA_TOO_LARGE') throw fail('too_large');
     if (e && e.code === 'ERR_RATE_LIMIT') throw fail('rate_limited');
     throw fail('drive_unavailable', { reason: (e && e.code) || 'handover' });
@@ -163,7 +171,7 @@ async function saveAll(gc, userId, lang, messageId) {
 /** GET filing → { items } */
 async function filing(gc, userId) {
   const rows = await store.all(gc, `SELECT f.id, f.message_id, f.attachment_id, t.name, t.suggestion_json, m.from_name, m.from_email, m.date FROM filing f
-    JOIN attachments t ON t.id = f.attachment_id JOIN messages m ON m.id = f.message_id WHERE f.user_id = ? ORDER BY m.date DESC LIMIT 200`, [userId]);
+    JOIN attachments t ON t.id = f.attachment_id JOIN messages m ON m.id = f.message_id WHERE f.user_id = ? AND t.scan_blocked = 0 ORDER BY m.date DESC LIMIT 200`, [userId]);
   return { items: rows.map((r) => ({ id: r.id, messageId: r.message_id, attachmentId: r.attachment_id, name: r.name, from: { name: r.from_name || '', email: r.from_email || '' }, date: r.date, suggestion: parse(r.suggestion_json, null) })) };
 }
 
@@ -205,6 +213,8 @@ async function tick(gc, now) {
     let done = true;
     for (const tt of await store.all(gc, 'SELECT * FROM attachments WHERE message_id = ? AND saved_node IS NULL', [m.id])) {
       if (!worth(tt) || (tt.suggestion_json && !auto)) continue;
+      // 1.8.0: held back by GateControl's virus scan (or removed): never filed
+      if (tt.scan_blocked === 1) continue;
       if (calls >= PER_TICK) { done = false; break; }
       try {
         const s = tt.suggestion_json ? { suggestion: parse(tt.suggestion_json, null), duplicate: tt.duplicate === 1 } : await suggestFor(gc, m.user_id, m, tt);

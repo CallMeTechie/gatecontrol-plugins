@@ -38,10 +38,13 @@ const overlays = require('./overlays');
 const reminders = require('./reminders');
 const storage = require('./storage');
 const services = require('./services');
+const scan = require('./scan');
 const { t } = require('./text');
 const { STATUS, fail, isKnown } = require('./util');
 
-const HOST_CODES = { ERR_MEDIA_QUOTA: 'too_large', ERR_RATE_LIMIT: 'rate_limited' };
+const HOST_CODES = { ERR_MEDIA_QUOTA: 'too_large', ERR_RATE_LIMIT: 'rate_limited',
+  // 1.8.0: GateControl's virus scan holds a file back / deleted it at once
+  ERR_MEDIA_QUARANTINED: 'quarantined', ERR_MEDIA_SCAN_PENDING: 'scan_pending', ERR_MEDIA_BLOCKED: 'scan_blocked', ERR_MEDIA_INFECTED: 'attachment_removed' };
 const CLEAN_MS = 5 * 60000;
 let lastClean = 0;
 
@@ -127,6 +130,30 @@ module.exports = {
     let allowed = false;
     if (v.user && Number.isSafeInteger(v.user.id)) { try { allowed = await config.allowed(gc, await config.get(gc), v.user.id); } catch { allowed = false; } }
     return { html: ui.render({ ...v, allowed }, t) };
+  },
+
+  /**
+   * 1.8.0: GateControl's virus scan changed a file after it was stored (the check of a big attachment ended, the nightly
+   * re-check, an administrator released or deleted it): the attachment's or the draft file's state, the live event 'mail'
+   * { kind: 'changed', messageId, attachmentId } to its person (scan.js). A deleted copy: the attachment stays removed.
+   */
+  async mediaScanned(arg, gc) {
+    const id = arg && typeof arg.mediaId === 'string' && /^[0-9a-f]{32}$/.test(arg.mediaId) ? arg.mediaId : null;
+    if (!id) return;
+    try {
+      const gone = arg.state === 'deleted';
+      const sc = scan.norm(gone ? { state: 'infected', blocked: true, finding: arg.finding || null } : arg);
+      if (!sc) return;
+      for (const t of await store.all(gc, 'SELECT t.id, t.message_id, m.user_id, m.account_id, m.folder_id FROM attachments t JOIN messages m ON m.id = t.message_id WHERE t.media_id = ?', [id])) {
+        if (gone) await scan.removed(gc, t.id, sc.finding);
+        else await scan.keepAttachment(gc, t.id, sc);
+        await push.changed(gc, t.user_id, t.account_id, t.folder_id, { messageId: t.message_id, attachmentId: t.id });
+      }
+      for (const x of await store.all(gc, 'SELECT x.id, x.draft_id, d.user_id, d.account_id FROM draft_atts x JOIN drafts d ON d.id = x.draft_id WHERE x.media_id = ?', [id])) {
+        await store.run(gc, 'UPDATE draft_atts SET scan_state = ?, scan_blocked = ?, scan_finding = ? WHERE id = ?', [...scan.cols(sc), x.id]);
+        await push.changed(gc, x.user_id, x.account_id, null, { draftId: x.draft_id });
+      }
+    } catch (e) { gc.log.warn('scan state failed', (e && e.code) || 'error'); }
   },
 
   async tick(gc) {

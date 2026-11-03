@@ -50,6 +50,7 @@ const work = require('./work');
 const labels = require('./labels');
 const places = require('./places');
 const faces = require('./faces');
+const scan = require('./scan');
 const { fail, iso, msArg, posInt } = require('./util');
 
 const LIMIT_MAX = 200;
@@ -174,8 +175,11 @@ async function itemsOf(ctx, rows) {
   const { map } = await previews.urls(ctx, rows.map((r) => r.media_id));
   const tree = rows.length ? await work.tree(ctx) : null;
   const where = rows.length ? await places.placeRows(ctx.gc, rows) : new Map();
+  // the virus scan (since 1.19.0, scan.js): its result on the item; a held-back photo has no preview
+  const states = rows.length ? await scan.rowsOf(ctx.gc, rows.map((r) => r.media_id)) : new Map();
   return rows.map((r) => {
-    const p = r.media_id ? map.get(r.media_id) : null;
+    const sc = r.media_id ? states.get(r.media_id) : null;
+    const p = r.media_id && !(sc && sc.blocked) ? map.get(r.media_id) : null;
     const review = work.reviewOf(r);
     return {
       id: r.id, name: r.name, mime: r.mime || null, size: r.size, takenAt: iso(nodes.takenOf(r)), areaId: r.area_id, parentId: r.parent_id,
@@ -186,6 +190,7 @@ async function itemsOf(ctx, rows) {
       labeled: r.labels_at != null,
       // since 1.16.0: where it was taken (also: looked at, none)
       ...places.geoOf(r, where),
+      ...(sc ? { scan: sc } : {}),
     };
   });
 }

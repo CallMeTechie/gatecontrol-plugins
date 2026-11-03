@@ -195,6 +195,8 @@ function install(h) {
     if (full) throw hostError('ERR_INVALID', full);
     const id = crypto.randomBytes(16).toString('hex');
     mediaStore.set(id, { mime: String(mime || 'application/octet-stream'), bytes: buf.length, owner: null, data: Buffer.from(buf), claimed: false, createdAt: Date.now(), name: name || null });
+    // the virus scan (opts.scan): deleted at once → ERR_MEDIA_INFECTED, the scanner away with "Uploads anhalten" → ERR_BUSY
+    if (typeof h.scanNew === 'function') h.scanNew(id);
     return id;
   };
   const media = (id) => { const m = mediaStore.get(id); return m ? { data: m.data, mime: m.mime, name: m.name || null } : null; };
@@ -319,6 +321,8 @@ function install(h) {
           for (const a of m.attachments || []) {
             const f = mediaStore.get(a && a.mediaId);
             if (!f) throw hostError('ERR_INVALID', 'unknown attachment media id');
+            // the virus scan: a file it holds back is not read (GateControl: the mail's own error)
+            if (typeof h.scanGate === 'function' && h.scanGate(f)) throw hostError('ERR_INVALID', 'an attachment is held back by the virus scan');
             total += f.bytes;
           }
           if (total > SEND_MAX) throw hostError('ERR_INVALID', 'message larger than 50 MB');
@@ -399,7 +403,7 @@ function install(h) {
  * (Buffer) and the host's headers. The host's checks: own media (plugin.json media), POST/PUT/PATCH, a range raw only
  * (Content-Range), raw ≤ 64 MB, base64 ≤ 4 MB, exactly one json value MEDIA_BASE64.
  */
-function resolveBodyMedia(o, { mediaStore, media, hostError }) {
+function resolveBodyMedia(o, { mediaStore, media, hostError, needServable }) {
   const bm = o.bodyMedia;
   if (!media) throw hostError('ERR_MEDIA_DENIED', 'plugin.json declares no media');
   if (!bm || typeof bm !== 'object' || typeof bm.mediaId !== 'string') throw hostError('ERR_INVALID', 'invalid bodyMedia');
@@ -409,6 +413,7 @@ function resolveBodyMedia(o, { mediaStore, media, hostError }) {
   if (!['POST', 'PUT', 'PATCH'].includes(method)) throw hostError('ERR_INVALID', 'bodyMedia needs POST, PUT or PATCH');
   const f = mediaStore.get(bm.mediaId);
   if (!f) throw hostError('ERR_INVALID', 'unknown media id');
+  if (typeof needServable === 'function') needServable(f);
   const headers = {};
   for (const [k, v] of Object.entries(o.headers || {})) if (!['content-range', 'content-length'].includes(k.toLowerCase())) headers[k.toLowerCase()] = String(v);
   const ranged = bm.start != null || bm.end != null;

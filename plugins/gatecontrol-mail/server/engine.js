@@ -29,6 +29,7 @@ const ms = require('./microsoft');
 const mailstore = require('./mailstore');
 const push = require('./push');
 const storage = require('./storage');
+const scan = require('./scan');
 const { fail, MONTH } = require('./util');
 
 const MAX_SESSIONS = 90;
@@ -572,20 +573,31 @@ async function downloadNow(gc, a, m, t, s, x) {
       if (!s) throw fail('unreachable');
       try { got = await imap.download(s, f, m, t, ATT_MAX); } finally { if (x) x.openPath = null; }
     }
-  } catch (e) { throw storage.failed(e) || e; }
+  } catch (e) {
+    // 1.8.0: GateControl's virus scan deleted it at once ("Sofort löschen"): kept as removed, never loaded again
+    if (scan.isInfected(e)) { await scan.removed(gc, t.id, (e && e.finding) || null); throw fail('attachment_removed', { scan: { state: 'infected', blocked: true, finding: (e && e.finding) || null, removed: true } }); }
+    throw storage.failed(e) || e;
+  }
   await storage.claim(gc, got.mediaId, t);
   const bytes = Number(got.bytes) || Number(t.size) || 0;
   await store.run(gc, 'UPDATE attachments SET media_id = ?, media_bytes = ?, used_at = ? WHERE id = ?', [got.mediaId, bytes, Date.now(), t.id]);
-  return { mediaId: got.mediaId, bytes, mime: got.mime || t.mime };
+  // 1.8.0: the virus scan's result of the new copy (scan.js)
+  const info = await gc.media.info(got.mediaId).catch(() => null);
+  const sc = info ? await scan.keepAttachment(gc, t.id, info.scan) : null;
+  return { mediaId: got.mediaId, bytes, mime: got.mime || t.mime, scan: sc };
 }
 
 /** The cached copy of attachment `t` of row `m` (downloaded when needed — never behind a sync step; a download that runs is joined). */
 async function attachment(gc, a, m, t) {
+  // 1.8.0: removed by GateControl's virus scan — never loaded again
+  if (t.scan_state === 'removed') throw fail('attachment_removed', { scan: scan.ofRow(t) });
   if (t.media_id) {
     const info = await gc.media.info(t.media_id).catch(() => null);
     if (info) {
       await store.run(gc, 'UPDATE attachments SET used_at = ? WHERE id = ?', [Date.now(), t.id]);
-      return { mediaId: t.media_id, bytes: info.bytes, mime: info.mime || t.mime };
+      // the virus scan's state now (a later check may have changed it) — `scan` of the copy, null without one
+      const sc = (await scan.keepAttachment(gc, t.id, info.scan)) || scan.ofRow(t);
+      return { mediaId: t.media_id, bytes: info.bytes, mime: info.mime || t.mime, scan: sc };
     }
   }
   return files.get(t.id) || once(files, t.id, () => forPerson(gc, a, (s, x) => downloadNow(gc, a, m, t, s, x)));

@@ -785,7 +785,23 @@
   "p.k.has_photo": "mit Bild",
   "p.k.preview": "So wird der Kontakt",
   "p.k.preview_conflicts": "Danach als Hinweis zum Übernehmen: {{list}}",
-  "p.k.preview_note": "Kontakt in „Meine Kontakte“, verknüpft mit den Kontakten der Anbieter. Dort wird nichts gelöscht."
+  "p.k.preview_note": "Kontakt in „Meine Kontakte“, verknüpft mit den Kontakten der Anbieter. Dort wird nichts gelöscht.",
+  "error.quarantined": "Der Anhang ist gesperrt – der Virenscan hat Schadsoftware gefunden.",
+  "error.scan_pending": "Der Anhang wird noch auf Viren geprüft – versuche es in ein paar Sekunden noch einmal.",
+  "error.scan_blocked": "Der Anhang ist gesperrt – er konnte nicht auf Viren geprüft werden.",
+  "error.attachment_removed": "Anhang entfernt (Schadsoftware) – GateControl hat ihn beim Abruf gelöscht.",
+  "error.attachment_blocked": "Ein Anhang ist gesperrt (Schadsoftware) – entferne ihn, um die Mail zu senden.",
+  "error.infected": "Datei abgelehnt – Schadsoftware gefunden.",
+  "warn.attachment_blocked": "Ein Anhang ist gesperrt (Schadsoftware) und kann nicht mitgesendet werden – entferne ihn vor dem Senden.",
+  "p.scan_quarantined": "Gesperrt – Schadsoftware ({{finding}})",
+  "p.scan_blocked": "Gesperrt – nicht prüfbar",
+  "p.scan_pending": "Wird geprüft …",
+  "p.scan_removed": "Anhang entfernt (Schadsoftware)",
+  "p.scan_marked": "Warnung – Schadsoftware ({{finding}})",
+  "p.scan_unscannable": "Nicht prüfbar",
+  "p.scan_title": "Warnung: Schadsoftware",
+  "p.scan_download_anyway": "Der Virenscan hat in „{{name}}“ Schadsoftware gefunden ({{finding}}). Öffne die Datei nur, wenn du dem Absender vertraust.",
+  "p.download_anyway": "Trotzdem herunterladen"
  },
  "en": {
   "error.invalid": "Invalid input.",
@@ -1573,6 +1589,22 @@
   "p.k.has_photo": "with picture",
   "p.k.preview": "The contact will be",
   "p.k.preview_conflicts": "Then as a note to take over: {{list}}",
-  "p.k.preview_note": "A contact in “My contacts”, linked with the providers' contacts. Nothing is deleted there."
+  "p.k.preview_note": "A contact in “My contacts”, linked with the providers' contacts. Nothing is deleted there.",
+  "error.quarantined": "The attachment is blocked – the virus scan found malware.",
+  "error.scan_pending": "The attachment is still being checked for viruses – try again in a few seconds.",
+  "error.scan_blocked": "The attachment is blocked – it could not be checked for viruses.",
+  "error.attachment_removed": "Attachment removed (malware) – GateControl deleted it when it was fetched.",
+  "error.attachment_blocked": "An attachment is blocked (malware) – remove it to send the mail.",
+  "error.infected": "File refused – malware found.",
+  "warn.attachment_blocked": "An attachment is blocked (malware) and cannot be sent – remove it before sending.",
+  "p.scan_quarantined": "Blocked – malware ({{finding}})",
+  "p.scan_blocked": "Blocked – not checkable",
+  "p.scan_pending": "Being checked …",
+  "p.scan_removed": "Attachment removed (malware)",
+  "p.scan_marked": "Warning – malware ({{finding}})",
+  "p.scan_unscannable": "Not checkable",
+  "p.scan_title": "Warning: malware",
+  "p.scan_download_anyway": "The virus scan found malware in “{{name}}” ({{finding}}). Only open the file if you trust the sender.",
+  "p.download_anyway": "Download anyway"
  }
 }

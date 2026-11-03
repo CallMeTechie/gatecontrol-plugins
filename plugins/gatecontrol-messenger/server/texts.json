@@ -600,7 +600,21 @@
     "admin.grant_max": "Gerät teilen höchstens",
     "admin.grant_max_hint": "Längste Dauer, für die jemand ein Gerät mit einer anderen Person teilen kann",
     "sys.grant_off": "„{{label}}“ wurde zum Ende der Freigabe ausgeschaltet",
-    "sys.grant_off_failed": "„{{label}}“ konnte zum Ende der Freigabe nicht ausgeschaltet werden"
+    "sys.grant_off_failed": "„{{label}}“ konnte zum Ende der Freigabe nicht ausgeschaltet werden",
+    "error.infected": "Nicht gesendet – der Virenscan hat in der Datei Schadsoftware gefunden.",
+    "error.scan_pending": "Die Datei wird noch auf Viren geprüft – bitte gleich noch einmal versuchen.",
+    "error.quarantined": "Die Datei ist gesperrt – der Virenscan hat Schadsoftware gefunden.",
+    "error.scan_blocked": "Die Datei ist gesperrt – sie konnte nicht auf Viren geprüft werden.",
+    "error.upload_infected": "Nicht gesendet – Schadsoftware gefunden.",
+    "error.upload_scan_blocked": "Nicht gesendet – die Datei konnte nicht auf Viren geprüft werden.",
+    "error.upload_scan_unavailable": "Der Virenscan ist gerade nicht erreichbar – bitte später noch einmal senden.",
+    "scan.pending": "Wird auf Viren geprüft …",
+    "scan.pending_sub": "Die Datei lässt sich öffnen, sobald die Prüfung fertig ist.",
+    "scan.quarantined": "Datei gesperrt",
+    "scan.quarantined_sub": "Schadsoftware gefunden ({{finding}})",
+    "scan.blocked": "Datei gesperrt",
+    "scan.blocked_sub": "Sie konnte nicht auf Viren geprüft werden.",
+    "scan.marked": "Warnung: Schadsoftware gefunden ({{finding}}) – nur öffnen, wenn du dem Absender vertraust."
   },
   "en": {
     "common.back": "Back",
@@ -1203,6 +1217,20 @@
     "admin.grant_max": "Share a device at most",
     "admin.grant_max_hint": "The longest time somebody can share a device with another person",
     "sys.grant_off": "“{{label}}” was switched off as the share ended",
-    "sys.grant_off_failed": "“{{label}}” could not be switched off as the share ended"
+    "sys.grant_off_failed": "“{{label}}” could not be switched off as the share ended",
+    "error.infected": "Not sent – the virus scan found malware in the file.",
+    "error.scan_pending": "The file is still being checked for viruses – please try again in a moment.",
+    "error.quarantined": "The file is blocked – the virus scan found malware.",
+    "error.scan_blocked": "The file is blocked – it could not be checked for viruses.",
+    "error.upload_infected": "Not sent – malware found.",
+    "error.upload_scan_blocked": "Not sent – the file could not be checked for viruses.",
+    "error.upload_scan_unavailable": "The virus scan cannot be reached right now – please send again later.",
+    "scan.pending": "Being checked for viruses …",
+    "scan.pending_sub": "The file opens once the check is done.",
+    "scan.quarantined": "File blocked",
+    "scan.quarantined_sub": "Malware found ({{finding}})",
+    "scan.blocked": "File blocked",
+    "scan.blocked_sub": "It could not be checked for viruses.",
+    "scan.marked": "Warning: malware found ({{finding}}) – only open it if you trust the sender."
   }
 }

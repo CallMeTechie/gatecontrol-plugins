@@ -146,7 +146,11 @@ async function runNow(gc, userId, messageId) {
     try { vision = (await gc.ai.available({ capability: 'vision' })) === true; } catch { vision = false; }
     const pics = vision ? await store.all(gc, "SELECT * FROM attachments WHERE message_id = ? AND mime IN ('image/jpeg', 'image/png', 'image/webp', 'image/gif') AND size <= ? ORDER BY id LIMIT 3", [m.id, 10 * 1024 * 1024]) : [];
     for (const p of pics) {
-      try { input.push({ type: 'media', mediaId: (await engine.attachment(gc, a, m, p)).mediaId }); } catch { /* without it */ }
+      try {
+        const got = await engine.attachment(gc, a, m, p);
+        // 1.8.0: never a picture GateControl's virus scan holds back
+        if (!(got.scan && got.scan.blocked)) input.push({ type: 'media', mediaId: got.mediaId });
+      } catch { /* without it */ }
     }
     if (input.length === 4) throw fail('ai_unavailable', { reason: 'no_text' });
   }

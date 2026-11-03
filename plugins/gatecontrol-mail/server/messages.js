@@ -8,6 +8,7 @@
 
 const crypto = require('node:crypto');
 const store = require('./store');
+const scan = require('./scan');
 const engine = require('./engine');
 const mailstore = require('./mailstore');
 const classify = require('./classify');
@@ -227,6 +228,8 @@ async function attachmentsOf(gc, m) {
   return rows.map((t) => ({
     id: t.id, name: t.name, mime: t.mime, size: t.size, inline: t.inline === 1, cid: t.cid || null,
     savedTo: t.saved_node ? { nodeId: t.saved_node, where: t.saved_where || '' } : null, suggestion: parse(t.suggestion_json, null),
+    // 1.8.0: GateControl's virus scan — only once a result is known (scan.js)
+    ...(scan.ofRow(t) ? { scan: scan.ofRow(t) } : {}),
   }));
 }
 
@@ -378,20 +381,23 @@ async function fileFor(gc, m, t, a) {
   return r.value;
 }
 
-/** GET messages/<id>/attachments/<aid> → { mediaId, name, mime, size } */
+/** GET messages/<id>/attachments/<aid> → { mediaId, name, mime, size, url, scan? } */
 async function attachment(gc, userId, messageId, attId) {
   const { m, t, a } = await attachmentRow(gc, userId, messageId, attId);
   const got = await fileFor(gc, m, t, a);
+  // 1.8.0: a copy GateControl's virus scan holds back: 423 quarantined / scan_pending / scan_blocked { scan }
+  scan.guard(got.scan);
   // url: a signed address the portal's frame can open (the apps load the media with their token)
   let url = null;
   try { url = await gc.media.url(got.mediaId, { user: userId, ttlS: 3600 }); } catch { url = null; }
-  return { mediaId: got.mediaId, name: t.name, mime: got.mime || t.mime, size: got.bytes || t.size, url };
+  return { mediaId: got.mediaId, name: t.name, mime: got.mime || t.mime, size: got.bytes || t.size, url, ...(got.scan ? { scan: got.scan } : {}) };
 }
 
 /** GET cid/<messageId>/<attachmentId> → { mediaId, mime, size, url } (url: a signed address for the portal's frame). */
 async function cid(gc, userId, messageId, attId) {
   const { m, t, a } = await attachmentRow(gc, userId, messageId, attId);
   const got = await fileFor(gc, m, t, a);
+  scan.guard(got.scan);
   let url = null;
   try { url = await gc.media.url(got.mediaId, { user: userId, ttlS: 3600 }); } catch { url = null; }
   return { mediaId: got.mediaId, mime: got.mime || t.mime, size: got.bytes || t.size, url };

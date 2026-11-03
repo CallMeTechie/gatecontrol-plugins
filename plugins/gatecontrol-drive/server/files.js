@@ -34,6 +34,7 @@ const nodes = require('./nodes');
 const guard = require('./guard');
 const vaults = require('./vault');
 const places = require('./places');
+const scan = require('./scan');
 const { fail, nodeName, MEDIA_RE, SHA_RE, EMPTY_SHA, iso, nonNeg, docText, msArg } = require('./util');
 
 const URL_TTL_S = 3600;
@@ -59,6 +60,8 @@ async function freshUpload(ctx, mediaId) {
   if (typeof mediaId !== 'string' || !MEDIA_RE.test(mediaId)) throw fail('invalid', { field: 'mediaId' });
   const info = await ctx.gc.media.info(mediaId);
   if (!info || info.claimed || info.owner !== ctx.viewer || info.area) throw fail('upload_invalid');
+  // the virus scan's result (scan.js): kept with the file, shown on its node
+  await scan.fromInfo(ctx.gc, info);
   return info;
 }
 
@@ -224,6 +227,8 @@ async function content(ctx, id) {
   if (node.is_dir === 1 || (!node.media_id && node.size !== 0)) throw fail('invalid');
   if (via === 'parent') await ctx.noteChildView(area);
   if (!node.media_id) return emptyContent(node.name, node.mime);
+  // a file the virus scan holds back: 423 scan_pending / quarantined / scan_blocked (scan.js)
+  await scan.check(ctx, node.media_id);
   const url = await ctx.gc.media.url(node.media_id, { user: ctx.viewer, ttlS: URL_TTL_S });
   return { url, name: node.name, mime: node.mime, size: node.size, mediaId: node.media_id, ...(node.vault_id ? { encrypted: true, vaultId: node.vault_id, nameCipher: node.name_cipher } : {}) };
 }
@@ -252,6 +257,7 @@ async function versionContent(ctx, id, vid) {
   const v = await versionOf(ctx, node.id, Number(vid));
   if (via === 'parent') await ctx.noteChildView(area);
   if (!v.media_id) return { ...emptyContent(node.name, node.mime), rev: v.rev };
+  await scan.check(ctx, v.media_id);
   const url = await ctx.gc.media.url(v.media_id, { user: ctx.viewer, ttlS: URL_TTL_S });
   return { url, name: node.name, mime: node.mime, size: v.size, mediaId: v.media_id, rev: v.rev };
 }

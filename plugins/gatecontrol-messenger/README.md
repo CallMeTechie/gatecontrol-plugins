@@ -120,6 +120,8 @@ trust only → `403 login_required`, a kiosk device → `403 forbidden`.
 | 409 | `media_invalid` | `mediaId` unknown, not uploaded by the caller, wrong type, preview > 64 KB (a file's preview: not WebP/JPEG/PNG) |
 | 409 | `media_in_use` | the upload is already used by another message |
 | 409 | `too_many` | a group over 256 members |
+| 422 | `infected` | since 1.11.0: the file is in GateControl's quarantine (malware) — not sent; `finding` names the find |
+| 423 | `scan_blocked` / `quarantined` / `scan_pending` | since 1.11.0: GateControl's virus scan holds the file back (not checkable and blocked / malware / still being checked — "In Drive speichern") |
 | 500 | `internal` | |
 
 The host's own answers (404 plugin not usable, 413 body > 64 KB, 429, 502–504)
@@ -177,7 +179,7 @@ account no longer exists (name null → show "Gelöschtes Konto").
   "undecryptable": false,                // stored text could not be decrypted (text null)
   "text": "…" | null,                    // text, or the caption of image/file, or a plugin notice
   "replyTo": { "id", "senderId", "kind", "text" (≤ 200), "deleted", "missing" } | null,
-  "media": { "id", "mime", "bytes", "url", "thumbId", "thumbUrl" } | null, // url/thumbUrl: signed URLs for the portal frame only, null in the apps
+  "media": { "id", "mime", "bytes", "url", "thumbId", "thumbUrl", "scan"? } | null, // url/thumbUrl: signed URLs for the portal frame only, null in the apps; scan since 1.11.0 (see "Virus scan")
   "thumbMediaId": "<32 hex>" | null,     // since 1.3.0: the preview picture (image or file message) — same as media.thumbId
   "video": { "durationMs", "width", "height" } | null, // since 1.3.0: file messages with video meta; each value null when not sent
   "meta": { "durationMs", "waveform": [0…255 ×≤64], "w", "h", "fileName" } | null, // keys present only when set
@@ -205,7 +207,7 @@ counts as unread and is pushed.
 
 | Method & path | Body / query | Answer |
 |---|---|---|
-| `GET me` | | since 1.4.0 also `integrations` (since 1.10.0 `integrations.drive`), more `prefs`, `features` and `limits` (see "Since 1.4.0"); `{ user: { id, name, avatarUrl, initials, colorHex }, prefs: { readReceipts, typing, preview }, license: { licensed, state, expiresAt }, features: { direct, groups, voice, files, location, reactions, edit, search, disappearing, bridges: false, e2e: false, video_meta: true, file_thumbs: true }, limits: { maxBytes, types[], quotaFull, editWindowS, maxVoiceS, textMax: 4000, thumbMaxBytes: 65536, thumbMaxSide: 640, imageMaxSide: 2048, groupMax: 256, titleMax: 80, pageMax: 100, typingS: 6, typingEveryS: 3, activeS: 30, disappearingS: [0, 86400, 604800, 2592000], retentionDays }, serverTime }` — `video_meta`, `file_thumbs`, `thumbMaxSide` since 1.3.0, see "Videos and file previews" |
+| `GET me` | | since 1.4.0 also `integrations` (since 1.10.0 `integrations.drive`), more `prefs`, `features` and `limits` (see "Since 1.4.0"); `{ user: { id, name, avatarUrl, initials, colorHex }, prefs: { readReceipts, typing, preview }, license: { licensed, state, expiresAt }, features: { direct, groups, voice, files, location, reactions, edit, search, disappearing, bridges: false, e2e: false, video_meta: true, file_thumbs: true, scan: true }, limits: { maxBytes, types[], quotaFull, editWindowS, maxVoiceS, textMax: 4000, thumbMaxBytes: 65536, thumbMaxSide: 640, imageMaxSide: 2048, groupMax: 256, titleMax: 80, pageMax: 100, typingS: 6, typingEveryS: 3, activeS: 30, disappearingS: [0, 86400, 604800, 2592000], retentionDays }, serverTime }` — `video_meta`, `file_thumbs`, `thumbMaxSide` since 1.3.0, see "Videos and file previews"; `scan` since 1.11.0 (`media.scan` on messages, see "Virus scan") |
 | `PUT prefs` | `{ readReceipts?, typing?, preview? }` (booleans) | `{ prefs }` |
 | `GET people` | | `{ people: [ { id, name, avatarUrl, initials, colorHex, color } ] }` — enabled accounts but the caller and kiosk accounts, by name |
 | `GET conversations` | `?since=<ISO>` (optional) | `{ conversations: [Conversation] (newest activity first), removed: [ids] (left/removed since), serverTime }` — with `since` only conversations changed after it; use the answer's `serverTime` as the next `since`. A direct chat without messages is listed only for the person who opened it. Marks the newest message of each listed chat as delivered. |
@@ -326,13 +328,39 @@ cached chats).
 | type | data | client action |
 |---|---|---|
 | `message.new` | `{ conversationId, messageId, senderId (null = system), clientId, kind, createdAt }` | fetch `messages?after=` (match `clientId` to replace a pending outbox entry) |
-| `message.update` | `{ conversationId, messageId, editedAt }` | fetch `messages?changedSince=` |
+| `message.update` | `{ conversationId, messageId, editedAt }` — since 1.11.0 also for a new state of the virus scan: `{ …, editedAt (the time of the change; the message's own `editedAt` stays), scan }` | fetch `messages?changedSince=` |
 | `message.delete` | `{ conversationId, messageIds: [..], reason: "deleted" \| "hidden" \| "expired" \| "retention" }` | `deleted`: show tombstone; the others: remove (`hidden` goes to the caller's own devices only) |
 | `reaction` | `{ conversationId, messageId, userId, emoji \| null, reactions: [ { emoji, count, userIds } ] }` | replace the message's reactions |
 | `read` | `{ conversationId, userId, lastReadId (number \| null when not shared), lastDeliveredId, readUpTo, deliveredUpTo }` — to the reader's own devices additionally `{ …, self: true, unread }` | update receipts / ticks; `self`: update unread, remove that chat's notifications. `readUpTo` / `deliveredUpTo` (since 1.1.0): the values `GET conversations/:id` would give **this recipient** right now (see "Read receipts") — set the chat's `readUpTo` / `deliveredUpTo` (and the ticks of own messages) from the event, no GET needed. Sent for read marks and for delivered marks (the same event; a moved delivered mark changes `lastDeliveredId` / `deliveredUpTo`). |
 | `typing` | `{ conversationId, userId, until (ISO) \| null }` | show "schreibt …" until `until` (≈ 6 s; null = stop) |
 | `conversation.update` | `{ conversationId, reason }` — `reason`: `created`, `settings`, `members`, `title`, `avatar`, `disappearing`, `released` (since 1.1.0: no longer managed by a plugin) (comma-separated when several) | `GET conversations/:id` (treat an unknown reason the same) |
 | `conversation.remove` | `{ conversationId }` | drop the chat (removed, left, no longer in a managed group, or — since 1.1.0 — a managed group deleted by its plugin) |
+
+### Virus scan (since 1.11.0)
+
+GateControl checks every file of a chat right after its upload (the GateControl version after 1.222.0 — Einstellungen ›
+Sicherheit › Virenscan, source "Messenger"; pictures, voice messages, files, their previews, stories and group pictures;
+contract: GateControl's `docs/feature-malware-scan-contract.md`). The Messenger reads the result where the host gives one
+(`scan` of `gc.media.info`) and changes nothing with an older GateControl; the minimum stays 1.193.0.
+
+* **Upload:** GateControl may refuse the upload itself — `422 { code: 'infected', finding }` (the administrator's action
+  "Sofort löschen": the file is gone) or `503 scan_unavailable` (try later). The apps show „Nicht gesendet –
+  Schadsoftware gefunden“ for the first.
+* **Sending** (`POST conversations/:id/messages`, stories, the group picture): a file in quarantine is refused with **`422
+  infected { finding }`** („Nicht gesendet – der Virenscan hat in der Datei Schadsoftware gefunden.“), a file blocked as
+  not checkable with `423 scan_blocked`. A file still being checked (a big video) **is sent**: its message carries
+  `media.scan.state: 'pending'` with `blocked: true` until the check ends.
+* **The message:** `media.scan { state, blocked, finding }` once a result is known (`state` `pending` | `clean` |
+  `infected` | `unscannable` | `unchecked`; `finding` the find or the reason). **`blocked` decides:** a held-back file
+  has `url`, `thumbUrl`, `thumbId` and `thumbMediaId` `null`, no push picture, GateControl's media route answers `423`
+  (`scan_pending` with `Retry-After`, `quarantined`, `scan_blocked`), "In Drive speichern" answers `423` with the same
+  code. The clients show „Wird auf Viren geprüft …“ (`pending`) or „Datei gesperrt – Schadsoftware gefunden (<finding>)“ /
+  „Datei gesperrt – konnte nicht geprüft werden“ instead of the picture, the player or the file — for the recipients
+  and the sender alike. `infected` with `blocked: false` (the administrator only marks): usable, with a warning.
+* **Later results** (the check of a big file ends, the nightly re-check with new signatures, an administrator releases
+  or deletes the file — hook `mediaScanned`): the message's `updated_at` moves and the members get `message.update {
+  conversationId, messageId, editedAt, scan }` — fetch `messages?changedSince=` as for an edit.
+* **Hand-overs** (`send_file` of GateDrop) keep the state; GateControl never hands over a held-back file.
 
 ### Push
 

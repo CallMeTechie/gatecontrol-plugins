@@ -96,6 +96,11 @@ body{padding:0}
 .ms-filecard-tx{display:flex;flex-direction:column;min-width:0}
 .ms-filecard-tx b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:14px}
 .ms-filecard-tx small{color:var(--muted);font-size:12px}
+/* 1.11.0: a file held back by GateControl's virus scan; a marked one */
+.ms-held{cursor:default}
+.ms-held .ms-filecard-ic{background:color-mix(in srgb,var(--crit) 14%,transparent);color:var(--crit)}
+.ms-held.is-pending .ms-filecard-ic{background:color-mix(in srgb,var(--text) 8%,transparent);color:var(--muted)}
+.ms-scanwarn{display:flex;align-items:center;gap:6px;margin-top:6px;font-size:12px;font-weight:600;color:var(--warn)}
 /* locations (1.2.0): a static map from the relay's tiles, the map dialogs (host Leaflet) */
 .ms-loc{display:flex;flex-direction:column;align-items:stretch;gap:6px;padding:4px;white-space:normal;border:0;background:transparent;color:inherit;font:inherit;text-align:left;min-height:0;width:100%;border-radius:14px}
 button.ms-loc{cursor:pointer}

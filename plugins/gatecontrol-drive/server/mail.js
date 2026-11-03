@@ -33,6 +33,7 @@
 
 const store = require('./store');
 const nodes = require('./nodes');
+const scan = require('./scan');
 const areas = require('./areas');
 const links = require('./links');
 const insights = require('./insights');
@@ -65,6 +66,8 @@ async function handed(ctx, mediaId) {
   if (typeof mediaId !== 'string' || !MEDIA_RE.test(mediaId)) throw fail('invalid', { field: 'mediaId' });
   const info = await ctx.gc.media.info(mediaId);
   if (!info || info.claimed || info.owner !== ctx.viewer || info.area) throw fail('upload_invalid');
+  // the hand-over kept the virus scan's state of the attachment (scan.js)
+  await scan.fromInfo(ctx.gc, info);
   return info;
 }
 
@@ -304,7 +307,9 @@ async function attach(ctx, list) {
 
 // ─── giving and sharing ─────────────────────────
 
-const HAND_CODES = { ERR_MEDIA_TOO_LARGE: 'too_large', ERR_MEDIA_QUOTA: 'quota', ERR_MEDIA_TYPE: 'unsupported', ERR_SERVICES_DENIED: 'forbidden', ERR_SERVICE_UNAVAILABLE: 'unavailable', ERR_MEDIA_DENIED: 'unavailable' };
+const HAND_CODES = { ERR_MEDIA_TOO_LARGE: 'too_large', ERR_MEDIA_QUOTA: 'quota', ERR_MEDIA_TYPE: 'unsupported', ERR_SERVICES_DENIED: 'forbidden', ERR_SERVICE_UNAVAILABLE: 'unavailable', ERR_MEDIA_DENIED: 'unavailable',
+  // the virus scan holds the file back (since 1.19.0)
+  ERR_MEDIA_QUARANTINED: 'quarantined', ERR_MEDIA_SCAN_PENDING: 'scan_pending', ERR_MEDIA_BLOCKED: 'scan_blocked' };
 
 async function giveFile(ctx, payload, caller) {
   const p = payload && typeof payload === 'object' ? payload : {};
@@ -315,6 +320,7 @@ async function giveFile(ctx, payload, caller) {
   if (node.is_dir === 1 || !node.media_id) throw fail('invalid', { field: 'nodeId' });
   if (node.size > GIVE_MAX) throw fail('too_large', { max: GIVE_MAX });
   if (typeof ctx.gc.media.handOver !== 'function') throw fail('unavailable');
+  await scan.check(ctx, node.media_id);
   let got;
   try {
     got = await ctx.gc.media.handOver(node.media_id, { toPlugin: caller, user: ctx.viewer });

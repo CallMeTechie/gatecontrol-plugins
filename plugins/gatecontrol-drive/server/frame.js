@@ -84,6 +84,7 @@ async function show(gc, user, { settings, users, licensed, asPerson }) {
     const away = w.folder && !w.settings.workInMemories ? w.folder.id : null;
     const list = await store.all(gc, `SELECT id, media_id, taken_at, mtime, created_at FROM nodes WHERE id IN (SELECT node_id FROM album_items WHERE album_id = ?)
       AND area_id IN (${store.marks(ids.length)}) AND ${photos.MEDIA} AND mime LIKE 'image/%' AND media_id IS NOT NULL
+      AND media_id NOT IN (SELECT media_id FROM media_scan WHERE blocked = 1)
       ${away == null ? '' : `AND parent_id NOT IN (${photos.TREE})`}
       ORDER BY ${nodes.TAKEN} DESC, id DESC LIMIT ?`, [a.id, ...ids, ...(away == null ? [] : [away]), ITEMS_MAX]);
     for (const n of list) if (!seen.has(n.id)) { seen.add(n.id); picked.push(n); }

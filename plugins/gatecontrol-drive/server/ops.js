@@ -59,6 +59,7 @@
 const crypto = require('node:crypto');
 const store = require('./store');
 const nodes = require('./nodes');
+const scan = require('./scan');
 const files = require('./files');
 const areas = require('./areas');
 const guard = require('./guard');
@@ -795,6 +796,8 @@ async function copyItem(ctx, op, item) {
     }
     const id = made && (typeof made.id === 'string' ? made.id : made.mediaId);
     if (typeof id !== 'string') return settle(gc, op, cur, 'failed', { reason: 'copy' });
+    // the copy keeps the virus scan's state of its source (scan.js)
+    await scan.copy(gc, src.media_id, id);
     if (made.sha256 && src.sha256 && made.sha256 !== src.sha256) {
       try { await gc.media.delete(id); } catch { /* best effort */ }
       return settle(gc, op, cur, 'failed', { reason: 'changed' });
@@ -913,6 +916,8 @@ async function transfers(ctx, id, body) {
     if (!src || src.deleted_at != null || !src.media_id) { await settle(gc, op, it, 'failed', { reason: 'not_found' }); continue; }
     if (src.sha256 !== it.sha256) { await settle(gc, op, it, 'failed', { reason: 'changed' }); continue; }
     try { await nodes.reach(ctx, src.id, 'read'); } catch { await settle(gc, op, it, 'failed', { reason: 'forbidden' }); continue; }
+    // a file the virus scan holds back is not handed to a device (scan.js)
+    if (await scan.blocked(gc, src.media_id)) { await settle(gc, op, it, 'failed', { reason: 'blocked' }); continue; }
     let url;
     try { url = await gc.media.url(src.media_id, { user: ctx.viewer, ttlS: files.URL_TTL_S }); } catch { await settle(gc, op, it, 'failed', { reason: 'not_found' }); continue; }
     await store.run(gc, 'UPDATE op_items SET lease_until = ? WHERE op_id = ? AND seq = ?', [now + LEASE_MS, op.id, it.seq]);
@@ -957,6 +962,7 @@ async function transferDone(ctx, id, seqArg, body) {
   }
   const info = typeof b.mediaId === 'string' ? await gc.media.info(b.mediaId).catch(() => null) : null;
   if (!info || info.claimed || info.owner !== ctx.viewer || info.area) throw fail('upload_invalid');
+  await scan.fromInfo(gc, info);
   const src = await nodes.row(gc, it.node_id);
   if (info.sha256 !== it.sha256 || !src || src.deleted_at != null) {
     await drop();

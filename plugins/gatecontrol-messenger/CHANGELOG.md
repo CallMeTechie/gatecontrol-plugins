@@ -3,6 +3,22 @@
 Chats zwischen den GateControl-Konten – in der GateControl-App (eigener Tab „Chats“), im
 Windows-Client und im Portal (eigener Tab „Chats“). Alles bleibt auf dem eigenen Server.
 
+## 1.11.0
+- **Virenscan von GateControl** (README „Virus scan“). GateControl prüft ab der Version nach 1.222.0 jede Chat-Datei
+  direkt nach dem Hochladen: Bilder, Sprachnachrichten, Dateien, Vorschaubilder, Storys und Gruppenbilder. Der Messenger
+  übernimmt das Ergebnis je Datei (Migration 005) und zeigt es an der Nachricht als `media.scan { state, blocked,
+  finding }`. Ältere GateControl-Versionen liefern kein `scan`: Dann ändert sich nichts. Die Mindestversion bleibt 1.193.0.
+- **Nicht gesendet – Schadsoftware:** Eine Datei in Quarantäne wird nicht gesendet (`422 infected` mit dem Fund), eine
+  nicht prüfbare, blockierte mit `423 scan_blocked`. Eine Datei, die noch geprüft wird (großes Video), geht raus und
+  zeigt bis zum Ende der Prüfung „Wird auf Viren geprüft …“.
+- **Datei gesperrt:** Eine gesperrte Datei hat keine Adresse, keine Vorschau und kein Push-Bild. Empfänger und Absender
+  sehen „Datei gesperrt – Schadsoftware gefunden“ statt Bild, Player oder Datei. „In Drive speichern“ antwortet `423`.
+  Eine nur markierte Datei bleibt nutzbar und zeigt eine Warnung.
+- **Spätere Ergebnisse** (neuer Hook `mediaScanned`: Ende der Prüfung, nächtliche Nachprüfung, Freigabe oder Löschen durch
+  einen Admin) aktualisieren die Nachricht: `message.update` mit `scan`, abrufbar über `messages?changedSince=`.
+- **Portal:** „Nicht gesendet – Schadsoftware gefunden.“ beim Senden bzw. Hochladen, „Datei gesperrt“ und „Wird auf Viren
+  geprüft …“ im Verlauf, „In Drive speichern“ nur für freie Dateien.
+
 ## 1.10.0
 Braucht weiterhin **GateControl ≥ 1.193.0** und für die neue Funktion das Drive-Plugin (**Drive ≥ 1.4.0**). Neu beim
 Aktualisieren: der Drive-Dienst „Datei in Drive ablegen“ (`gatecontrol-drive:save_file`) in den Berechtigungen – das

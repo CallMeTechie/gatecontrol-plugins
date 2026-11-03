@@ -47,6 +47,14 @@ const STATUS = {
   // Speicherorte (1.5.0, storage.js): GateControl has no room for a new file right now — 409 like busy (5xx: "offline")
   storage_unavailable: 409,
   server_full: 409,
+  // 1.8.0: GateControl's virus scan (scan.js) — a file held back (malware, still being checked, not checkable), an
+  // attachment GateControl removed at once, a draft that carries a held-back attachment, an upload with malware
+  quarantined: 423,
+  scan_pending: 423,
+  scan_blocked: 423,
+  attachment_removed: 410,
+  attachment_blocked: 409,
+  infected: 422,
   internal: 500,
 };
 

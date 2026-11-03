@@ -145,7 +145,8 @@ informational when delivered): `direct_failed`, `push_failed`, `file_type` / `fi
 Messenger did not take it — the person got a push instead), `no_space`, `permission`, `unreachable`, `upload_failed`
 (NAS), `links_disabled`, `no_public_url`, `revoked`; Drive passes its codes through: `no_seat`, `not_licensed`,
 `not_found` (the folder is gone), `forbidden` (no write access to it), `quota`, `upload_invalid`, `invalid`, `exists`,
-`internal`, plus `unavailable`, `rate_limited`, `timeout`. `conversationId` (person via the Messenger), `paths` (NAS),
+`internal`, plus `unavailable`, `rate_limited`, `timeout`; since 1.4.0 `quarantined`, `scan_pending`, `scan_blocked` (the virus
+scan held the file back, see "Virus scan"). `conversationId` (person via the Messenger), `paths` (NAS),
 `files` / `where` (Drive).
 
 **People:** with the Messenger, files ≤ 25 MB (≤ 100 MB per send in all, ≤ 200 hand-overs per sender and day,
@@ -245,12 +246,14 @@ files with `GET items/<mediaId>` as usual.
 * `GET sends/<id>` → `{ send }` — the sender's view (`role: "sent"`, every delivery) or a recipient's (`role:
   "received"`, only its own deliveries).
   `send = { id, role, createdAt, expiresAt, expired, from: { userId, name, avatarUrl, deviceId, deviceName }, text, link,
-  note, items: [{ index, mediaId (null when not on the server), name, mime, bytes, local, available }], deliveries }`.
+  note, items: [{ index, mediaId (null when not on the server), name, mime, bytes, local, available, scan? }], deliveries }`
+  — `scan` since 1.4.0, see "Virus scan".
 * `GET inbox?kind=received|sent|links&before=<ISO>&limit=1…100` (default 50, newest first) → `{ kind, items, hasMore }`.
   `received`: sends to one's devices and to oneself as a person (not those that arrived as a chat message), with the
   family's ones; `sent`: one's own sends; `links`: `[{ token, url, sendId, title, pin, maxDownloads, downloads, locked,
   revoked, state ("active"|"expired"|"revoked"|"locked"|"used"|"gone"), active, createdAt, expiresAt }]`.
-* `GET items/<mediaId>` → `{ item: { sendId, index, mediaId, name, mime, bytes, local, available }, url }` — `url`: the
+* `GET items/<mediaId>` → `{ item: { sendId, index, mediaId, name, mime, bytes, local, available, scan? }, url }` (a file the
+  virus scan holds back: `423 quarantined | scan_pending | scan_blocked { scan }`, since 1.4.0) — `url`: the
   apps' media route `/api/v1/client/plugins/gatecontrol-gatedrop/media/<mediaId>` (Range, the hook `mediaAccess`
   allows the sender and the recipients until the send expires), in the portal a signed `/plugin-media/…` URL.
 * `POST sends/<id>/opened` (recipient) → `{ send }`: the person deliveries, and a device delivery only when that device
@@ -258,6 +261,33 @@ files with `GET items/<mediaId>` as usual.
 * `DELETE links/<token>` (the link's owner) → `{ revoked }`.
 
 A link with a PIN gets a generic title ("Geteilte Dateien" / "Shared files"), so no file name shows before the PIN.
+
+### Virus scan (since 1.4.0)
+
+GateControl checks every uploaded file right after it is stored (the GateControl version after 1.222.0 — Einstellungen ›
+Sicherheit › Virenscan, source "GateDrop"; contract: GateControl's `docs/feature-malware-scan-contract.md`). GateDrop
+reads the result where the host gives one (`scan` of `gc.media.info`) and changes nothing with an older GateControl; the
+minimum stays 1.193.0.
+
+* **Uploading:** the upload itself may already refuse a file — `422 { code: 'infected', finding }` (the administrator's
+  action "Sofort löschen": the file is gone; the apps show „<name> abgelehnt – Schadsoftware gefunden“) or `503
+  scan_unavailable` (the scanner is away and uploads wait: try later). A stored file carries `scan { state, blocked,
+  finding }` in the upload's answer (of a resumable upload the last part).
+* **`POST sends`** / **`POST sends/<id>/items`:** a file the scan holds back is not sent — `422 infected` (malware,
+  quarantined), `423 scan_pending` (a big file is still being checked: send the same body again after a few seconds — the
+  portal does so every 5 s for up to 10 minutes and shows „Wird auf Viren geprüft …“), `423 scan_blocked` (not
+  checkable and blocked); each with the item's `name`. Nothing of the send is stored then.
+* **Items** carry `scan { state, blocked, finding }` once a result is known (`state` `pending` | `clean` | `infected` |
+  `unscannable` | `unchecked`). **`blocked` decides:** a held-back item is `available: false` with `mediaId: null` — no
+  download, no forwarding. A later check (the nightly re-check with new signatures, an administrator's release or
+  delete — the hook `mediaScanned`) changes the item; `GET items/<mediaId>` then answers `423 quarantined | scan_pending |
+  scan_blocked { scan }`, and GateControl's media route answers `423` itself. `infected` with `blocked: false`: the
+  administrator only marks findings — the file is usable, the clients warn before opening it.
+* **Deliveries:** a hand-over (Messenger, NAS, Drive) of a file blocked in between fails with the delivery `error`
+  `quarantined` / `scan_pending` / `scan_blocked`; a public link's ZIP or file answers `423` while a file is held back.
+* **Portal:** an upload the scan refuses says „<name> abgelehnt – Schadsoftware gefunden.“, the history marks received
+  files „Gesperrt – Schadsoftware“, „Gesperrt – nicht prüfbar“, „Wird geprüft …“ or „Warnung – Schadsoftware“ (no
+  download for held-back files; a marked file asks first).
 
 ### Notifications
 

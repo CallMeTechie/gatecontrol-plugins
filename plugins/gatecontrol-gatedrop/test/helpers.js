@@ -93,7 +93,7 @@ const PDF = Buffer.from('%PDF-1.4\n%fake\n');
 
 /**
  * opts: { messenger: true (the real Messenger, linked), nas: true (the real NAS plugin with a fake DSM, a NAS and a drop
- * folder /Familie/Ablage), drive: true | fakeDrive options (the fake Drive plugin, c.drive), roles (Familie's answer; null = Familie refuses, false = no Familie), links (the admin switch,
+ * folder /Familie/Ablage), scan (the mock host's opts.scan, since 1.4.0), drive: true | fakeDrive options (the fake Drive plugin, c.drive), roles (Familie's answer; null = Familie refuses, false = no Familie), links (the admin switch,
  * default on), publicUrl, mediaQuota, devices }
  * fn(host, c): c = { clock, as(user, device?) → (method, path, body, query), portal(user), upload(user, buf, mime, o) → mediaId,
  *   presence(user, device, ip, listening, prefix?), pushes(), messenger (its host), nas: { host, dsm, folderId } }
@@ -126,6 +126,8 @@ async function withHost(opts, fn) {
     const host = await createHost(DIR, {
       users: USERS, gatecontrol: '1.193.0', devices: o.devices || devices(), services, publicLinks: o.links !== false,
       ...(o.publicUrl !== undefined ? { publicUrl: o.publicUrl } : {}), mediaQuota: o.mediaQuota,
+      // GateControl's virus scan (since 1.4.0: the mock host's opts.scan — true or a scanner function)
+      ...(o.scan ? { scan: o.scan } : {}),
     });
     await host.start();
     const call = (user, method, p, body, query) => host.request({ method, path: p, body: body === undefined ? null : body, query: query || {}, user, lang: o.lang || 'de' });

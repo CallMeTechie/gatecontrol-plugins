@@ -172,6 +172,13 @@ textarea.dp-input{padding:9px 12px;line-height:1.45;resize:vertical}
 .dp-table th{font-weight:600;color:var(--muted);font-size:12px;border-top:0}
 /* 1.5.0: a node deleted on a device ("wird am … gelöscht") — quiet; the page "Geräte" */
 .dp-mark{display:block;font-size:11.5px;color:var(--warn);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* 1.19.0: the virus scan — being checked, blocked, a warning, quietly "not checkable" */
+.dp-scan{display:inline-block;align-self:flex-start;max-width:100%;font-size:11px;font-weight:600;padding:2px 7px;border-radius:999px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dp-scan.is-pending{color:var(--muted);background:color-mix(in srgb,var(--text) 8%,transparent)}
+.dp-scan.is-blocked{color:var(--crit);background:color-mix(in srgb,var(--crit) 14%,transparent)}
+.dp-scan.is-warn{color:var(--warn);background:color-mix(in srgb,var(--warn) 14%,transparent)}
+.dp-scan.is-quiet{color:var(--muted);font-weight:500;padding:0;background:none}
+.dp-ph-scan{position:absolute;left:6px;bottom:6px;display:inline-flex;padding:3px;border-radius:999px;background:var(--crit);color:#fff}
 .dp-devices{display:flex;flex-direction:column;gap:10px}
 .dp-device{padding:12px 14px;border:1px solid var(--line);border-radius:12px;background:var(--surface);display:flex;flex-direction:column;gap:10px}
 .dp-dev-head{display:flex;gap:12px;align-items:center;flex-wrap:wrap}

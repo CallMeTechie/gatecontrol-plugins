@@ -8,6 +8,7 @@
 //              autoSubmitted, listUnsub: { url?, mail? } | null, inference ('focused'|'other'|null), snippet? }
 
 const store = require('./store');
+const scan = require('./scan');
 const classify = require('./classify');
 const { clip, line, snippet, bytesOf, htmlText, parse } = require('./util');
 
@@ -129,14 +130,23 @@ async function setAttachments(gc, id, list, now) {
     const name = clip(line(x.filename || x.name || '') || 'Anhang', 200);
     const mime = String(x.contentType || x.mime || 'application/octet-stream').toLowerCase().split(';')[0].trim().slice(0, 120) || 'application/octet-stream';
     const cid = x.contentId ? String(x.contentId).replace(/^<|>$/g, '').slice(0, 250) : null;
+    // 1.8.0: GateControl's virus scan deleted the attachment at once (`mediaError` ERR_MEDIA_INFECTED): "Anhang entfernt"
+    const gone = x.mediaError === 'ERR_MEDIA_INFECTED';
     if (old) {
       await store.run(gc, 'UPDATE attachments SET name = ?, mime = ?, size = ?, inline = ?, cid = ?, checksum = COALESCE(?, checksum) WHERE id = ?',
         [name, mime, Number(x.size) || old.size || 0, x.inline ? 1 : 0, cid, x.checksum || null, old.id]);
+      if (gone && !old.media_id) await scan.removed(gc, old.id);
       continue;
     }
-    await store.run(gc, `INSERT INTO attachments (message_id, part_id, remote_id, name, mime, size, inline, cid, checksum, media_id, media_bytes, used_at)
+    const ins = await store.run(gc, `INSERT INTO attachments (message_id, part_id, remote_id, name, mime, size, inline, cid, checksum, media_id, media_bytes, used_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [id, x.partId != null ? String(x.partId) : null, x.remoteId != null ? String(x.remoteId) : null, name, mime,
       Number(x.size) || 0, x.inline ? 1 : 0, cid, x.checksum || null, x.mediaId || null, x.mediaId ? Number(x.size) || 0 : null, x.mediaId ? now : null]);
+    if (gone) await scan.removed(gc, Number(ins.lastInsertRowid));
+    else if (x.mediaId) {
+      // the copy GateControl made while parsing: its virus scan's result
+      const info = await gc.media.info(x.mediaId).catch(() => null);
+      if (info) await scan.keepAttachment(gc, Number(ins.lastInsertRowid), info.scan);
+    }
   }
   for (const r of have) if (!seen.has(keyOf(r)) && !r.saved_node) await dropAttachment(gc, r);
   const real = (Array.isArray(list) ? list : []).some((x) => !x.inline);

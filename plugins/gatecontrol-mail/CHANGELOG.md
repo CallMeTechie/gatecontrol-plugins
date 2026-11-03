@@ -2,6 +2,25 @@
 
 Alle E-Mail-Konten an einem Ort – im eigenen Tab der GateControl-Apps und im Portal.
 
+## 1.8.0
+- **Virenscan von GateControl** (README „Virus scan“). GateControl prüft ab der Version nach 1.222.0 jeden Anhang, den
+  es für Mail speichert, direkt nach dem Speichern und übernimmt den Absender für die Quarantäne. Mail übernimmt das
+  Ergebnis je Anhang und je Datei eines Entwurfs (Migration 008) und zeigt es als `scan { state, blocked, finding }`.
+  Ältere GateControl-Versionen liefern kein `scan`: Dann ändert sich nichts. Die Mindestversion bleibt 1.219.0.
+- **Gesperrte Anhänge** lassen sich nicht öffnen, herunterladen oder in Drive ablegen (`423 quarantined | scan_pending |
+  scan_blocked`). Automatisches Ablegen, „Zum Ablegen“ und die KI lassen sie aus. Hat GateControl einen Anhang beim
+  Abruf sofort gelöscht (`mediaError` bzw. `ERR_MEDIA_INFECTED`), heißt er „Anhang entfernt (Schadsoftware)“
+  (`410 attachment_removed`) und wird nicht erneut geladen.
+- **Weiterleiten und Antworten:** Ein gesperrter Anhang bleibt im Entwurf markiert, mit Warnung `attachment_blocked`.
+  Senden antwortet `409 attachment_blocked`, bis er entfernt ist. Der Postausgang prüft beim Senden erneut. Eine vom
+  Gerät hochgeladene Datei in Quarantäne wird nicht angehängt (`422 infected`).
+- **Spätere Ergebnisse** (neuer Hook `mediaScanned`) aktualisieren Anhänge und Entwurfsdateien und melden sich mit dem
+  Live-Ereignis `mail`. `GET me` nennt das Feature `scan`.
+- **Portal:** Kennzeichen „Gesperrt – Schadsoftware (<Fund>)“, „Anhang entfernt (Schadsoftware)“, „Wird geprüft …“,
+  „Gesperrt – nicht prüfbar“, „Warnung – Schadsoftware“ und dezent „Nicht prüfbar“. Gesperrte Anhänge haben keine
+  Download- und Drive-Knöpfe, bei markierten fragt das Portal vor dem Herunterladen nach. Im Entwurf erscheinen Kennzeichen
+  und Warnung.
+
 ## 1.7.1
 - Das Log nennt bei Warnungen wie „folder sync failed“, „sync failed“ oder „pim step failed“ jetzt den Text eines
   Fehlers ohne eigenen Code (etwa „storage timeout“ von GateControl) statt nur „error“. Sonst unverändert.
