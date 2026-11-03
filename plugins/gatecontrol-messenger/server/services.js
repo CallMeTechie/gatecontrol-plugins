@@ -270,6 +270,8 @@ async function sendFile(ctx, caller, callUser, p) {
     if (!info || info.owner !== uid) throw fail('media_invalid');
     if (info.bytes > HANDOVER_MAX_BYTES) throw fail('file_too_large');
     if (await store.one(ctx.gc, 'SELECT 1 AS x FROM media WHERE media_id = ?', [ids[i]])) throw fail('media_in_use');
+    // 1.11.0: a hand-over keeps the virus scan's state — GateControl never hands over a held-back file; marked ones come
+    // along with their state (messages.send keeps it)
     const name = typeof names[i] === 'string' ? optText(names[i].slice(0, 200), 200) : null;
     files.push({ id: ids[i], kind: kindOf(info.mime), name: name || info.name || null });
   }

@@ -450,6 +450,23 @@
         on: { click: function () { react(m, isMine ? null : r.emoji); } } }, [r.emoji, r.count > 1 ? el('small', { text: String(r.count) }) : null]);
     }));
   }
+  // 1.11.0: GateControl's virus scan on a file of a message (`media.scan`) — held back: "Datei gesperrt" instead of
+  // the picture, the player or the file; marked only: a warning below it
+  function scanHeld(m) { return !!(m && m.media && m.media.scan && m.media.scan.blocked); }
+  function heldEl(m) {
+    var sc = m.media.scan;
+    var title = sc.state === 'pending' ? T('scan.pending') : T(sc.state === 'infected' ? 'scan.quarantined' : 'scan.blocked');
+    var sub = sc.state === 'pending' ? T('scan.pending_sub') : sc.state === 'infected' ? T('scan.quarantined_sub', { finding: sc.finding || '?' }) : T('scan.blocked_sub');
+    return el('div', { class: 'ms-filecard ms-held' + (sc.state === 'pending' ? ' is-pending' : '') }, [
+      el('span', { class: 'ms-filecard-ic' }, [M.icon('shield', 18)]),
+      el('span', { class: 'ms-filecard-tx' }, [el('b', { text: title }), el('small', { text: sub })]),
+    ]);
+  }
+  function scanWarnEl(m) {
+    var sc = m.media && m.media.scan;
+    if (!sc || sc.blocked || sc.state !== 'infected') return null;
+    return el('div', { class: 'ms-scanwarn' }, [M.icon('shield', 14), el('span', { text: T('scan.marked', { finding: sc.finding || '?' }) })]);
+  }
   function bubble(m, c, cont) {
     var wrap = el('div', { class: 'ms-msg' + (m.mine ? ' is-out' : '') + (cont ? ' is-cont' : ''), 'data-id': String(m.id) });
     if (c.kind === 'group' && !m.mine && !cont) {
@@ -470,7 +487,10 @@
     if (m.replyStory && R) b.appendChild(R.replyStoryEl(m.replyStory, c));
     var rich = R ? R.body(m, c) : null;
     if (m.undecryptable) b.appendChild(el('i', { class: 'ms-muted', text: T('msg.undecryptable') }));
-    if (m.kind === 'image') {
+    if (scanHeld(m) && (m.kind === 'image' || m.kind === 'voice' || m.kind === 'file')) {
+      b.appendChild(heldEl(m));
+      if (m.text) b.appendChild(el('div', { class: 'ms-cap', text: m.text }));
+    } else if (m.kind === 'image') {
       b.classList.add('is-media');
       var src = m.media && (m.media.thumbUrl || m.media.url);
       var w = m.meta && m.meta.w;
@@ -494,6 +514,8 @@
     } else if (m.text) {
       b.appendChild(document.createTextNode(m.text));
     }
+    var warn = scanWarnEl(m);
+    if (warn) b.appendChild(warn);
     b.appendChild(metaEl(m, c));
     wrap.appendChild(b);
     var rx = reactionsEl(m);
@@ -1271,7 +1293,7 @@
       if (m.text && (m.kind === 'text' || m.kind === 'image' || m.kind === 'file')) item('search', T('tools.suggest'), function () { R.suggest(m); });
     }
     // 1.10.0: "In Drive speichern" — pictures, voice messages and files, when Drive takes files (GET me integrations.drive)
-    if (S.drive && !m.deleted && m.media && (m.kind === 'image' || m.kind === 'voice' || m.kind === 'file')) item('drive', T('msg.to_drive'), function () { saveToDrive(m); });
+    if (S.drive && !m.deleted && m.media && !scanHeld(m) && (m.kind === 'image' || m.kind === 'voice' || m.kind === 'file')) item('drive', T('msg.to_drive'), function () { saveToDrive(m); });
     item('trash', T('msg.delete_me'), function () { removeMsg(m, 'me'); }, true);
     if (m.mine && !m.deleted && withinWindow(m)) item('trash', T('msg.delete_all'), function () { removeMsg(m, 'all'); }, true);
     var layer = el('div', { style: 'position:absolute;inset:0;z-index:19', on: { click: function (e) { if (e.target === layer) closeMenu(); } } });

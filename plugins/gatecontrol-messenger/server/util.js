@@ -42,6 +42,11 @@ const STATUS = {
   upload_invalid: 409,
   exists: 409,
   drive_unavailable: 409,
+  // 1.11.0: GateControl's virus scan (scan.js) — malware found, still being checked, held back
+  infected: 422,
+  scan_pending: 423,
+  quarantined: 423,
+  scan_blocked: 423,
   internal: 500,
 };
 

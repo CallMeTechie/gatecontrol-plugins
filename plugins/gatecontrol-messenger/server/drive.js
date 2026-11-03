@@ -11,6 +11,7 @@
 const log = require('./log');
 const messages = require('./messages');
 const store = require('./store');
+const scan = require('./scan');
 const { fail, posInt } = require('./util');
 
 const PLUGIN = 'gatecontrol-drive';
@@ -75,6 +76,10 @@ function nameOf(ctx, row, mime) {
 function hostCode(e) {
   const c = e && e.code;
   if (c === 'ERR_RATE_LIMIT') return 'rate_limited';
+  // 1.11.0: GateControl's virus scan holds the file back
+  if (c === 'ERR_MEDIA_QUARANTINED') return 'quarantined';
+  if (c === 'ERR_MEDIA_SCAN_PENDING') return 'scan_pending';
+  if (c === 'ERR_MEDIA_BLOCKED') return 'scan_blocked';
   if (c === 'ERR_MEDIA_QUOTA') return 'quota';
   if (c === 'ERR_MEDIA_TYPE' || c === 'ERR_MEDIA_TOO_LARGE') return 'upload_invalid';
   return 'drive_unavailable';
@@ -95,8 +100,11 @@ async function save(ctx, x, id, body) {
   // the same rule as downloading the file (mediaAccess): a message the viewer sees, not deleted, with its file
   const row = await messages.visibleMessage(ctx, x.me, id);
   if (row.deleted_at || !row.media_id || !['image', 'voice', 'file'].includes(row.kind)) throw fail('not_found');
-  const m = await store.one(gc, 'SELECT mime, orphan FROM media WHERE media_id = ?', [row.media_id]);
+  const m = await store.one(gc, 'SELECT mime, orphan, scan_state, scan_blocked, scan_finding FROM media WHERE media_id = ?', [row.media_id]);
   if (!m || m.orphan) throw fail('not_found');
+  // 1.11.0: a file the virus scan holds back stays where it is
+  const held = scan.held(scan.ofRow(m));
+  if (held) throw fail(held);
   if (!(await available(gc))) throw fail('drive_unavailable');
   const now = ctx.now;
   const mine = (recent.get(ctx.viewer) || []).filter((t) => t > now - HOUR && t <= now);

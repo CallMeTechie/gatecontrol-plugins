@@ -55,7 +55,8 @@ async function pictureOf(gc, row) {
   } else return null;
   for (const id of ids) {
     if (!id) continue;
-    const m = await store.one(gc, 'SELECT mime, bytes FROM media WHERE media_id = ? AND orphan = 0', [id]);
+    // 1.11.0: never a file the virus scan holds back (still being checked, quarantine)
+    const m = await store.one(gc, 'SELECT mime, bytes FROM media WHERE media_id = ? AND orphan = 0 AND scan_blocked = 0', [id]);
     if (m && IMAGE_TYPES.includes(m.mime) && m.bytes <= IMAGE_MAX) return id;
   }
   return null;
