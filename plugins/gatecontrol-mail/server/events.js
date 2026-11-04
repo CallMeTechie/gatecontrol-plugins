@@ -17,6 +17,7 @@ const pimdav = require('./pimdav');
 const pim = require('./pim');
 const invites = require('./invites');
 const calendars = require('./calendars');
+const resources = require('./resources');
 const { fail, line, clip, parse, posInt, email } = require('./util');
 
 const BUSY = ['busy', 'free', 'tentative', 'oof'];
@@ -132,8 +133,11 @@ async function sameAsOccurrence(gc, ev, x, zone) {
   return rows.some((r) => r.all_day !== 1 && r.start === x.start && r.end === x.end);
 }
 
-/** POST events → { event, sent: { mail, internal } } */
-async function create(gc, ctx, b) {
+/**
+ * POST events → { event, sent: { mail, internal } } — since 1.9.0 with resources among the attendees also `bookings`
+ * ([Booking], resources.js; o.note: the note of „Ressource buchen“).
+ */
+async function create(gc, ctx, b, o = {}) {
   const cfg = await config.get(gc);
   await pimstore.ensureSetup(gc, ctx.userId, ctx.lang);
   const { prefs } = await pimstore.calPrefs(gc, ctx.userId, cfg);
@@ -142,6 +146,8 @@ async function create(gc, ctx, b) {
   writable(cal);
   const x = check(b, cal, prefs, true, null);
   if (x.online && x.online.create === 'teams' && !calendars.view(cal, await calendars.accountsOf(gc, ctx.userId)).canOnline) throw fail('not_supported', { what: 'teams' });
+  // resources among the attendees (1.9.0): free, within the rules, a GateControl calendar — checked before anything is written
+  const rplan = await resources.plan(gc, ctx, cal, x, null);
   const sent = { mail: 0, internal: 0 };
   const zone = prefs.timeZone;
   const own = await pimstore.ownAddresses(gc, ctx.userId);
@@ -173,6 +179,11 @@ async function create(gc, ctx, b) {
       await removeObject(gc, ctx, ev, cal);
       throw e;
     }
+  }
+  if (rplan) {
+    const bookings = await resources.commit(gc, ctx, ev, rplan, { note: o.note });
+    ev = await store.one(gc, 'SELECT * FROM events WHERE id = ?', [ev.id]) || ev;
+    return { event: await calendars.full(gc, ctx.userId, ev, cal, null), sent, bookings };
   }
   return { event: await calendars.full(gc, ctx.userId, ev, cal, null), sent };
 }
@@ -210,6 +221,8 @@ async function update(gc, ctx, id, b) {
   const own = await pimstore.ownAddresses(gc, ctx.userId);
   const sent = { mail: 0, internal: 0 };
   if (x.online && x.online.create === 'teams' && !calendars.view(cal, await calendars.accountsOf(gc, ctx.userId)).canOnline) throw fail('not_supported', { what: 'teams' });
+  // resources (1.9.0): a new time, added or removed ones — checked before anything is written
+  const rplan = await resources.plan(gc, ctx, cal, x, ev);
   if (cal.source === 'graph') {
     const a = await accountOf(gc, cal);
     const instanceId = occ ? ((await store.one(gc, 'SELECT remote_id FROM occurrences WHERE event_id = ? AND occ = ?', [ev.id, occ])) || {}).remote_id : null;
@@ -286,6 +299,11 @@ async function update(gc, ctx, id, b) {
       throw e;
     }
   }
+  if (rplan) {
+    const bookings = await resources.commit(gc, ctx, stored, rplan);
+    const row = await store.one(gc, 'SELECT * FROM events WHERE id = ?', [stored.id]) || stored;
+    return { event: await calendars.full(gc, ctx.userId, row, cal, occ), sent, bookings };
+  }
   return { event: await calendars.full(gc, ctx.userId, stored, cal, occ), sent };
 }
 
@@ -341,7 +359,11 @@ async function removeFor(gc, ctx, ev, cal, o) {
   if (occ && (f.rrule || p.objects[0].overrides.length)) {
     const text = ics.exclude(ev.ics, ev.uid, occ, { userTz: zone });
     await invites.writeObject(gc, ctx.userId, cal, ev, text, ev.uid);
-  } else await removeObject(gc, ctx, ev, cal);
+  } else {
+    // its resources are free again (1.9.0)
+    await resources.cancelForEvent(gc, ctx, ev, { noSync: true });
+    await removeObject(gc, ctx, ev, cal);
+  }
   return sent;
 }
 

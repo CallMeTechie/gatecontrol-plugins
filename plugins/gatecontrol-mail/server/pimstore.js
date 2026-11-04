@@ -39,8 +39,21 @@ async function calPrefs(gc, userId, cfg) {
     // before 1.3.2 the default was 1080 (06:00 the day before) and was stored on the first save; without the marker
     // `v: 2` a stored 1080 is that old default, not a choice
     allDayReminder: Number.isInteger(j.allDayReminder) && j.allDayReminder >= 0 && j.allDayReminder <= 10080 && !(j.allDayReminder === 1080 && j.v !== 2) ? j.allDayReminder : 360,
+    // since 1.9.0: free/busy for everybody in GateControl (on unless the person switched it off) and the working hours
+    // the planner's suggestions keep to (days 1 = Monday … 7 = Sunday, in timeZone)
+    freeBusy: j.freeBusy !== false, workHours: workHoursOf(j.workHours) || { days: [1, 2, 3, 4, 5], from: '08:00', to: '18:00' },
   };
   return { prefs: out, overlays: j.overlays && typeof j.overlays === 'object' ? j.overlays : {}, setup: j.setup === true };
+}
+
+const HHMM_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+/** { days: [1…7], from: 'HH:MM', to: 'HH:MM' } checked (from < to, at least one day) → the same, else null. */
+function workHoursOf(v) {
+  if (!v || typeof v !== 'object' || !Array.isArray(v.days)) return null;
+  const days = [...new Set(v.days)].filter((d) => Number.isInteger(d) && d >= 1 && d <= 7).sort((a, b) => a - b);
+  if (!days.length || days.length !== v.days.length || !HHMM_RE.test(v.from) || !(HHMM_RE.test(v.to) || v.to === '24:00') || v.from >= v.to) return null;
+  return { days, from: v.from, to: v.to };
 }
 
 async function saveCalPrefs(gc, userId, prefs, overlays, setup) {
@@ -227,6 +240,8 @@ async function dropEvent(gc, ev) {
   await store.run(gc, 'DELETE FROM occurrences WHERE event_id = ?', [ev.id]);
   await store.run(gc, 'DELETE FROM reminders_sent WHERE event_id = ?', [ev.id]);
   await store.run(gc, 'UPDATE invitations SET event_id = NULL WHERE event_id = ?', [ev.id]);
+  // 1.9.0: a booking of a resource does not outlive its event
+  await store.run(gc, "UPDATE bookings SET state = 'cancelled', updated_at = ? WHERE event_id = ? AND state IN ('pending', 'confirmed')", [Date.now(), ev.id]);
   await store.run(gc, 'DELETE FROM events WHERE id = ?', [ev.id]);
 }
 
@@ -238,7 +253,11 @@ async function dropCalendar(gc, cal) {
     await store.run(gc, `DELETE FROM occurrences WHERE event_id IN (${m})`, part);
     await store.run(gc, `DELETE FROM reminders_sent WHERE event_id IN (${m})`, part);
     await store.run(gc, `UPDATE invitations SET event_id = NULL WHERE event_id IN (${m})`, part);
+    await store.run(gc, `UPDATE bookings SET state = 'cancelled', updated_at = ? WHERE event_id IN (${m}) AND state IN ('pending', 'confirmed')`, [Date.now(), ...part]);
   }
+  // 1.9.0: its shares and what the recipients chose go with it
+  await store.run(gc, 'DELETE FROM cal_shares WHERE calendar_id = ?', [cal.id]);
+  await store.run(gc, 'DELETE FROM cal_shared WHERE calendar_id = ?', [cal.id]);
   await store.run(gc, 'DELETE FROM events WHERE calendar_id = ?', [cal.id]);
   await store.run(gc, 'DELETE FROM service_keys WHERE calendar_id = ?', [cal.id]);
   await store.run(gc, 'DELETE FROM calendars WHERE id = ?', [cal.id]);
@@ -260,6 +279,13 @@ async function touchCalendar(gc, cal, range, o = {}) {
     liveAt.set(k, now);
   }
   await live(gc, cal.user_id, 'calendar', { kind: 'changed', calendarId: cal.id, accountId: cal.account_id || null, ...(range ? { from: range.from, to: range.to } : {}) });
+  // 1.9.0: the people a GateControl calendar is shared with load it again too
+  if (cal.source === 'local') {
+    try {
+      const to = await require('./shares').recipients(gc, cal.id, cal.user_id);
+      for (const part of store.chunks(to, 500)) if (part.length) await gc.events.emit({ users: part, type: 'calendar', data: { kind: 'changed', calendarId: cal.id, accountId: null, shared: true } });
+    } catch { /* nobody listening */ }
+  }
 }
 
 /** A live event to one person (never fails). */
@@ -306,5 +332,5 @@ const midnight = (date, zone) => tz.toUtc({ ...tz.parseDate(date) }, zone);
 module.exports = {
   calPrefs, saveCalPrefs, zoneOf, cardPrefs, saveCardPrefs, ownAddresses, ensureSetup, calendarsOf, ownCalendar, defaultCalendar, nextColor, colorArg,
   windowOf, rowFields, overrideOf, writeOccurrences, storeObject, dropEvent, dropCalendar, newUid, touchCalendar, live, addressbooksOf, ownBook,
-  nextCardVersion, cardVersion, usage, midnight, VIEWS, CALENDARS_MAX, EVENTS_MAX, ATTENDEES_MAX, PRIVATE_COLOR, BUSINESS_COLOR, DAY,
+  nextCardVersion, cardVersion, usage, midnight, workHoursOf, VIEWS, CALENDARS_MAX, EVENTS_MAX, ATTENDEES_MAX, PRIVATE_COLOR, BUSINESS_COLOR, DAY,
 };

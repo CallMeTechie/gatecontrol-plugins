@@ -18,7 +18,8 @@ test('first use: „Privat“ (default) and „Firma“, „Meine Kontakte“; o
   const r = (await anna('GET', 'calendars')).json;
   assert.deepEqual(r.calendars.map((x) => [x.name, x.source, x.kind, x.isDefault, x.color, x.writable, x.maxReminders]),
     [['Privat', 'local', 'private', true, '#46E0A0', true, 3], ['Firma', 'local', 'business', false, '#79B8FF', true, 3]]);
-  assert.deepEqual(r.prefs, { defaultCalendarId: r.calendars[0].id, view: '3day', weekStart: 1, workWeek: false, timeZone: BERLIN, reminders: true, defaultReminder: 15, allDayReminder: 360 });
+  assert.deepEqual(r.prefs, { defaultCalendarId: r.calendars[0].id, view: '3day', weekStart: 1, workWeek: false, timeZone: BERLIN, reminders: true, defaultReminder: 15, allDayReminder: 360,
+    freeBusy: true, workHours: { days: [1, 2, 3, 4, 5], from: '08:00', to: '18:00' } });
   assert.deepEqual(r.consent, []);
   // again: nothing new
   assert.equal((await anna('GET', 'calendars')).json.calendars.length, 2);

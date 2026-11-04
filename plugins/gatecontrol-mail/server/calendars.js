@@ -40,6 +40,8 @@ function view(c, accounts) {
     visible: c.visible === 1, notify: c.notify === 1, isDefault: c.is_default === 1, canInvite: c.writable === 1 && c.source !== 'ics',
     canOnline: c.source === 'graph' && !!(a && a.provider === 'm365') && c.writable === 1, maxReminders: c.source === 'graph' ? 1 : 3,
     state: local ? 'ok' : c.state, error: c.error_code ? { code: c.error_code, at: c.error_at } : null, syncedAt: c.synced_at || null, version: c.version,
+    // since 1.9.0: a calendar of another mailbox the account sees (Microsoft 365, shared with it there) — „Mit mir geteilt“
+    sharedBy: c.source === 'graph' && c.owner_email && a && c.owner_email !== String(a.email || '').toLowerCase() ? { email: c.owner_email } : null,
   };
 }
 
@@ -67,9 +69,12 @@ async function list(gc, ctx) {
       if (missing.length) consent.push({ accountId: a.id, missing });
     }
   }
+  // since 1.9.0: the GateControl calendars shared with the person („Mit mir geteilt“, SharedCalendar of shares.js)
+  let shared = [];
+  if (cfg.calendar.sharing) { try { shared = (await require('./shares').shared(gc, ctx)).items; } catch { shared = []; } }
   return {
     calendars: rows.map((c) => view(c, accounts)), overlays: await overlays.list(gc, cfg, ctx.userId, ctx.lang),
-    prefs: (await pimstore.calPrefs(gc, ctx.userId, cfg)).prefs, consent,
+    prefs: (await pimstore.calPrefs(gc, ctx.userId, cfg)).prefs, consent, shared,
   };
 }
 
@@ -176,7 +181,10 @@ async function createSubscription(gc, userId, accountId, url, o = {}) {
   return { calendar: view(c, await accountsOf(gc, userId)) };
 }
 
-/** PUT calendar/settings { defaultCalendarId?, view?, weekStart?, workWeek?, timeZone?, reminders?, defaultReminder?, allDayReminder? } → { prefs } */
+/**
+ * PUT calendar/settings { defaultCalendarId?, view?, weekStart?, workWeek?, timeZone?, reminders?, defaultReminder?,
+ * allDayReminder?, freeBusy?, workHours? } → { prefs }
+ */
 async function settings(gc, ctx, b) {
   await pimstore.ensureSetup(gc, ctx.userId, ctx.lang);
   const cur = await pimstore.calPrefs(gc, ctx.userId);
@@ -194,6 +202,9 @@ async function settings(gc, ctx, b) {
   if (b.timeZone !== undefined) { if (typeof b.timeZone !== 'string' || !tz.valid(b.timeZone) || b.timeZone.length > 64) bad('timeZone'); p.timeZone = b.timeZone; }
   if (b.defaultReminder !== undefined) { if (!(b.defaultReminder === null || (Number.isInteger(b.defaultReminder) && b.defaultReminder >= 0 && b.defaultReminder <= 40320))) bad('defaultReminder'); p.defaultReminder = b.defaultReminder; }
   if (b.allDayReminder !== undefined) { if (!(Number.isInteger(b.allDayReminder) && b.allDayReminder >= 0 && b.allDayReminder <= 10080)) bad('allDayReminder'); p.allDayReminder = b.allDayReminder; }
+  // since 1.9.0: the person's free/busy for everybody in GateControl, the working hours of the planner
+  if (b.freeBusy !== undefined) { if (typeof b.freeBusy !== 'boolean') bad('freeBusy'); p.freeBusy = b.freeBusy; }
+  if (b.workHours !== undefined) { const w = pimstore.workHoursOf(b.workHours); if (!w) bad('workHours'); p.workHours = w; }
   await pimstore.saveCalPrefs(gc, ctx.userId, p, cur.overlays, true);
   if (zoneChanged) rebuildZone(gc, ctx.userId).catch((e) => gc.log.warn('time zone rebuild failed', (e && (e.code || e.message)) || 'error'));
   return { prefs: (await pimstore.calPrefs(gc, ctx.userId)).prefs };
@@ -301,6 +312,14 @@ async function events(gc, ctx, q) {
     overlayIds = want.filter((w) => !/^\d+$/.test(w));
   } else calIds = rows.filter((c) => c.visible === 1).map((c) => c.id);
   const items = await occurrences(gc, ctx.userId, calIds, from, to);
+  // since 1.9.0: the calendars shared with the person that they show (or asked for), as their level allows
+  if (cfg.calendar.sharing) {
+    const want = q.calendars != null && q.calendars !== '' ? String(q.calendars).split(',').map((x) => x.trim()).filter((x) => /^\d+$/.test(x)) : null;
+    try {
+      items.push(...await require('./shares').items(gc, ctx, from, to, want));
+      items.sort((a, b) => a.start - b.start || String(a.key).localeCompare(String(b.key)));
+    } catch (e) { gc.log.warn('shared calendars failed', (e && (e.code || e.message)) || 'error'); }
+  }
   const pending = rows.filter((c) => calIds.includes(c.id) && c.source !== 'local' && !c.synced_at).map((c) => c.id);
   let ov = [];
   try { ov = await overlays.items(gc, cfg, ctx.userId, overlayIds, from, to, ctx.lang); } catch { ov = []; }

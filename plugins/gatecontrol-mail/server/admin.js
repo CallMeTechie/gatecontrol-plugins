@@ -12,6 +12,7 @@
 // person) and the settings `calendar` / `contacts` (config.js); never an event or a contact of anyone.
 // Since 1.5.0 GET admin/settings also answers `storage`: where the attachments lie (GateControl's media area, storage.js)
 // — the place itself is chosen in GateControl (the plugin's „Speicherorte“), never here.
+// Since 1.9.0 admin/resources… (resources.js): the resources people book — who may book them, who decides, the rules.
 // Administrators see numbers only — never mail, subjects or addresses of other people.
 
 const store = require('./store');
@@ -91,6 +92,8 @@ async function route(gc, req, seg) {
     if (m === 'PUT') return settingsView(gc, await config.put(gc, req.body));
   }
   if (seg[1] === 'overview' && seg.length === 2 && m === 'GET') return overview(gc);
+  // since 1.9.0: the resources (the page „Ressourcen“, resources.js)
+  if (seg[1] === 'resources') return require('./resources').adminRoute(gc, req, seg);
   if (seg[1] === 'seats' && seg.length === 3 && m === 'PUT') {
     const uid = posInt(seg[2]);
     if (!uid) throw fail('invalid', { field: 'userId' });

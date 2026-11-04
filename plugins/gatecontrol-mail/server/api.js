@@ -23,10 +23,15 @@ const events = require('./events');
 const invites = require('./invites');
 const cards = require('./cards');
 const cardmerge = require('./cardmerge');
+const resources = require('./resources');
+const shares = require('./shares');
+const freebusy = require('./freebusy');
 const { fail } = require('./util');
 
 // since 1.2.0: the paths of calendars and contacts (403 feature_off when the administrator switched them off)
-const CALENDAR_PATHS = new Set(['calendars', 'overlays', 'calendar', 'events', 'invitations']);
+const CALENDAR_PATHS = new Set(['calendars', 'overlays', 'calendar', 'events', 'invitations', 'freebusy', 'resources', 'bookings', 'shared', 'principals']);
+// since 1.9.0: resources and their bookings (403 feature_off { feature: 'resources' } when the administrator has them off)
+const RESOURCE_PATHS = new Set(['resources', 'bookings']);
 const CONTACT_PATHS = new Set(['addressbooks', 'cards', 'groups']);
 
 const SWIPES = ['archive', 'delete', 'read', 'none'];
@@ -64,6 +69,14 @@ async function features(gc, cfg, userId) {
   if (cfg.calendar.enabled && cfg.calendar.overlays.alltag && await overlays.alltagOn(gc)) out.push('alltagOverlay');
   // since 1.8.0: attachments and draft files carry GateControl's virus scan (`scan`) while the host checks files
   out.push('scan');
+  // since 1.9.0: free/busy and the planner, sharing GateControl calendars, resources; bookingRequests: the person decides
+  // on the requests of a resource
+  if (cfg.calendar.enabled && cfg.calendar.freeBusy) out.push('freeBusy');
+  if (cfg.calendar.enabled && cfg.calendar.sharing) out.push('calendarSharing');
+  if (cfg.calendar.enabled && cfg.resources.enabled) {
+    out.push('resources');
+    try { if (await resources.isApprover(gc, userId)) out.push('bookingRequests'); } catch { /* not now */ }
+  }
   return out;
 }
 
@@ -112,6 +125,7 @@ async function route(gc, ctx, req, seg) {
     const cfg = await config.get(gc);
     if (CALENDAR_PATHS.has(s0) && !cfg.calendar.enabled) throw fail('feature_off', { feature: 'calendar' });
     if (CONTACT_PATHS.has(s0) && !cfg.contacts.enabled) throw fail('feature_off', { feature: 'contacts' });
+    if (RESOURCE_PATHS.has(s0) && !cfg.resources.enabled) throw fail('feature_off', { feature: 'resources' });
   }
   switch (s0) {
     case 'me': if (n === 1 && m === 'GET') return me(gc, ctx); break;
@@ -182,16 +196,47 @@ async function route(gc, ctx, req, seg) {
       if (n === 2 && s1 === 'subscribe' && m === 'POST') return calendars.subscribe(gc, ctx, b);
       if (n === 2 && m === 'PATCH') return calendars.patch(gc, ctx, id(s1), b);
       if (n === 2 && m === 'DELETE') return calendars.remove(gc, ctx, id(s1));
+      // since 1.9.0: sharing an own GateControl calendar
+      if (n === 3 && s2 === 'shares' && m === 'GET') return shares.list(gc, ctx, id(s1));
+      if (n === 3 && s2 === 'shares' && m === 'POST') return shares.add(gc, ctx, id(s1), b);
+      if (n === 4 && s2 === 'shares' && m === 'PATCH') return shares.patch(gc, ctx, id(s1), id(s3), b);
+      if (n === 4 && s2 === 'shares' && m === 'DELETE') return shares.remove(gc, ctx, id(s1), id(s3));
+      break;
+    // ─── free/busy, sharing, resources (1.9.0) ─
+    case 'shared':
+      if (n === 1 && m === 'GET') return shares.shared(gc, ctx);
+      if (n === 2 && m === 'PATCH') return shares.patchShared(gc, ctx, id(s1), b);
+      break;
+    case 'principals': if (n === 1 && m === 'GET') return shares.principals(gc, ctx, q.q); break;
+    case 'freebusy':
+      if (n === 1 && m === 'POST') return freebusy.query(gc, ctx, b);
+      if (n === 2 && s1 === 'suggest' && m === 'POST') return freebusy.suggest(gc, ctx, b);
+      break;
+    case 'resources':
+      if (n === 1 && m === 'GET') return resources.list(gc, ctx, q);
+      if (n === 3 && s2 === 'book' && m === 'POST') return resources.book(gc, ctx, id(s1), b);
+      break;
+    case 'bookings':
+      if (n === 1 && m === 'GET') return resources.bookings(gc, ctx, q);
+      if (n === 2 && m === 'GET') return resources.getBooking(gc, ctx, id(s1));
+      if (n === 2 && m === 'DELETE') return resources.cancel(gc, ctx, id(s1));
+      if (n === 3 && s2 === 'decide' && m === 'POST') return resources.decide(gc, ctx, id(s1), b);
       break;
     case 'overlays': if (n === 2 && m === 'PATCH') return overlays.patch(gc, await config.get(gc), ctx.userId, s1, b, ctx.lang); break;
     case 'calendar': if (n === 2 && s1 === 'settings' && m === 'PUT') return calendars.settings(gc, ctx, b); break;
     case 'events':
       if (n === 1 && m === 'GET') return calendars.events(gc, ctx, q);
-      if (n === 1 && m === 'POST') return events.create(gc, ctx, b);
+      // since 1.9.0 also into a calendar shared with the person at `write` (as its owner, without attendees)
+      if (n === 1 && m === 'POST') return events.create(gc, await shares.writeCtx(gc, ctx, b.calendarId, b), b);
       if (n === 2 && s1 === 'upcoming' && m === 'GET') return calendars.upcoming(gc, ctx, q);
-      if (n === 2 && m === 'GET') return calendars.get(gc, ctx, id(s1), q);
-      if (n === 2 && m === 'PATCH') return events.update(gc, ctx, id(s1), b);
-      if (n === 2 && m === 'DELETE') return events.remove(gc, ctx, id(s1), q);
+      if (n === 2 && m === 'GET') {
+        try { return await calendars.get(gc, ctx, id(s1), q); } catch (e) {
+          if (!e || e.code !== 'not_found') throw e;
+          return shares.getEvent(gc, ctx, id(s1), q);
+        }
+      }
+      if (n === 2 && m === 'PATCH') return events.update(gc, await shares.eventCtx(gc, ctx, id(s1), b), id(s1), b);
+      if (n === 2 && m === 'DELETE') return events.remove(gc, await shares.eventCtx(gc, ctx, id(s1), null), id(s1), q);
       if (n === 3 && s2 === 'respond' && m === 'POST') return events.respond(gc, ctx, id(s1), b);
       break;
     case 'invitations':
