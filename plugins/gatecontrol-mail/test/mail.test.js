@@ -32,8 +32,11 @@ test('plugin.json: GateControl 1.219.0, mail with dav, images, Drive, Familie an
   assert.ok(m.permissions.services.includes('gatecontrol-familie:calendar_add'));
   assert.equal(m.storage.maxMB, 4096);
   assert.deepEqual(m.notifyTopics.map((t) => t.id), ['mail', 'mail_failed', 'calendar_reminder', 'calendar_invite', 'calendar_share', 'resource_request', 'resource_booking']);
-  // 1.9.0: the page „Ressourcen“ beside the overview (a tab of the plugin's page), the settings page stays
-  assert.deepEqual([m.ui.pages.map((p) => p.id), m.ui.settingsPage], [['overview', 'resources', 'settings'], 'settings']);
+  // 1.9.0: the page „Ressourcen“ as a tab under Einstellungen › Plugins › Mail (ui.settingsPages, GateControl ≥ 1.225.0;
+  // before: a tab of the plugin's page), the settings page stays
+  assert.deepEqual([m.ui.pages.map((p) => p.id), m.ui.settingsPage, m.ui.settingsPages], [['overview', 'resources', 'settings'], 'settings', ['resources']]);
+  // GateControl ≥ 1.225.0 mails the requests and the answers (an older one ignores the key)
+  assert.deepEqual(m.notifyTopics.filter((t) => t.email === true).map((t) => t.id), ['resource_request', 'resource_booking']);
   assert.ok(m.notifyTopics.every((t) => t.default === true));
   assert.ok(m.ui.app && m.ui.portal);
 });

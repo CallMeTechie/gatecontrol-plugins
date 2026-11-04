@@ -17,16 +17,18 @@ Alle E-Mail-Konten an einem Ort – im eigenen Tab der GateControl-Apps und im P
   Besitzerin sieht „hat angenommen“ oder „Einladung offen“. Kalender eines Microsoft-365-Kontos, die beim Anbieter mit
   der Person geteilt sind, erscheinen dort ebenfalls, soweit der Abgleich sie liefert (`owner` der Graph-Kalender).
 - **Ressourcen** (Mockups Ressource, AdminRessourcen, Anfragen). Räume, Fahrzeuge, Geräte und Sonstiges legt der
-  Administrator auf der Seite von Mail im Server an: neuer Reiter „Ressourcen“ neben „Übersicht“ (die Einstellungen
-  unter Einstellungen › Plugins › Mail haben feste Reiter des Hosts; dort führt die neue Karte „Ressourcen“ hin). Felder:
+  Administrator im Server an: eigener Reiter „Ressourcen“ unter Einstellungen › Plugins › Mail direkt nach
+  „Einstellungen“ (`ui.settingsPages`, GateControl ≥ 1.225.0). Ältere GateControl-Versionen zeigen ihn als Reiter neben
+  „Übersicht“ auf der Seite von Mail. Die Karte „Ressourcen“ in den Einstellungen führt in beiden Fällen hin. Felder:
   Name, Art, Standort, Plätze, Ausstattung, wer buchen darf (Personen und Gruppen), Zusage automatisch oder nach
   Freigabe durch Personen oder Gruppen, Regeln (höchstens eine Dauer, bis zu N Tage im Voraus, buchbare Zeiten). Jede
   Ressource hat ihren eigenen Kalender auf dem Server (ihre Buchungen).
 - **Buchen** über „Ressource buchen“ im Kalender oder als Teilnehmerin einer Einladung („Ressource hinzufügen“ im
   Termin). Konflikte und Regeln prüft der Server: belegt → `409 resource_busy`, bei automatischer Zusage Regelverstoß →
   `409 rule_violation`. Ressourcen gehen nur in GateControl-Kalendern und nicht in Serien.
-- **Buchungsanfragen:** Bei Freigabe gehen Anfragen als Benachrichtigung (`resource_request`) und als Mail vom Konto
-  der buchenden Person an alle, die freigeben dürfen. Die erste Entscheidung erledigt die Anfrage für alle (später:
+- **Buchungsanfragen:** Bei Freigabe gehen Anfragen als Benachrichtigung (`resource_request`) an alle, die freigeben
+  dürfen; ab GateControl 1.225.0 schickt GateControl sie und die Antworten (`resource_booking`) auch per E-Mail an deren
+  Kontoadresse (`notifyTopics[].email`, je Person abschaltbar). Mail versendet nichts im Namen der buchenden Person. Die erste Entscheidung erledigt die Anfrage für alle (später:
   `409 already_decided`). Die buchende Person sieht Zusage oder Absage im Termin (Antwort der Ressource) und bekommt eine
   Benachrichtigung (`resource_booking`). Freigebende dürfen trotz Regelverstoß freigeben („Trotzdem freigeben“), das
   steht im Protokoll der Ressource. Eine neue Zeit fragt erneut, ein gelöschter Termin gibt die Ressource frei.
@@ -38,7 +40,10 @@ Alle E-Mail-Konten an einem Ort – im eigenen Tab der GateControl-Apps und im P
   `resources`, `bookingRequests` in `GET me`; neue Endpunkte `freebusy`, `freebusy/suggest`, `calendars/<id>/shares`,
   `shared`, `principals`, `resources`, `bookings`; Live-Ereignisse `resources` und `calendar { kind: 'shares' }`.
 - Migration 009 (Freigaben, Ressourcen, Buchungen, Protokoll). Neue Push-Themen `calendar_share`, `resource_request`,
-  `resource_booking` – der Administrator bestätigt sie beim Update. Mindestversion bleibt GateControl 1.219.0.
+  `resource_booking` (die beiden letzten auch per E-Mail) – der Administrator bestätigt sie beim Update. Mindestversion
+  bleibt GateControl 1.219.0; Reiter und E-Mail-Kanal kommen mit GateControl 1.225.0, ältere Versionen ignorieren beides.
+- Werkzeuge: `tools/validate.js` prüft `ui.settingsPages` und `notifyTopics[].email` (GateControl 1.225.0) nach den
+  Regeln von `docs/plugins.md`, solange der festgelegte GateControl-Stand sie noch nicht kennt.
 
 ## 1.8.0
 - **Virenscan von GateControl** (README „Virus scan“). GateControl prüft ab der Version nach 1.222.0 jeden Anhang, den

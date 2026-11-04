@@ -152,6 +152,9 @@
       }
     ],
     "settingsPage": "settings",
+    "settingsPages": [
+      "resources"
+    ],
     "portal": {
       "label": {
         "de": "Mail",
@@ -214,7 +217,8 @@
         "de": "Buchungsanfrage für eine Ressource",
         "en": "Booking request for a resource"
       },
-      "default": true
+      "default": true,
+      "email": true
     },
     {
       "id": "resource_booking",
@@ -222,7 +226,8 @@
         "de": "Zusage oder Absage einer Buchung",
         "en": "Booking confirmed or declined"
       },
-      "default": true
+      "default": true,
+      "email": true
     }
   ],
   "license": {

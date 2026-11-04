@@ -818,10 +818,6 @@
   "share.level_freebusy": "Frei/Gebucht",
   "share.level_read": "Lesen",
   "share.level_write": "Bearbeiten",
-  "mail.res_subject": "Buchungsanfrage: {{resource}}, {{when}}",
-  "mail.res_body": "{{name}} möchte {{resource}} buchen: {{title}}\n{{when}}",
-  "mail.res_rules": "Nicht eingehalten: {{list}}",
-  "mail.res_where": "Freigeben oder ablehnen kannst du in Mail unter Kalender › Buchungsanfragen (Portal oder App). Wer zuerst entscheidet, erledigt die Anfrage für alle.",
   "res.rule_max": "höchstens {{limit}}",
   "res.rule_horizon": "bis zu {{n}} Tage im Voraus",
   "res.rule_hours": "buchbar {{from}} bis {{to}} Uhr",
@@ -837,9 +833,9 @@
   "a.res_enabled": "Ressourcen buchen",
   "a.res_enabled_d": "Räume, Fahrzeuge und Geräte lassen sich im Kalender buchen und zu Einladungen hinzufügen",
   "a.res_where": "Ressourcen verwalten",
-  "a.res_where_d": "Anlegen und bearbeiten, wer buchen darf, wer freigibt und die Regeln: im Reiter „Ressourcen“ der Seite von Mail",
-  "a.res_where_tab": "Reiter „Ressourcen“ auf der Seite von Mail",
-  "a.res_manage": "Zu den Ressourcen",
+  "a.res_where_d": "Anlegen und bearbeiten, wer buchen darf, wer freigibt und die Regeln: im Reiter „Ressourcen“ – unter Einstellungen › Plugins › Mail, bei GateControl vor 1.225 auf der Seite von Mail",
+  "a.res_where_tab": "Reiter „Ressourcen“",
+  "a.res_manage": "Zum Reiter Ressourcen",
   "a.res_no_limit": "ohne Grenze",
   "a.res_day": "1 Tag",
   "a.res_week": "1 Woche",
@@ -1020,7 +1016,8 @@
   "p.s.info": "Geteilt von {{owner}} · {{level}}",
   "p.s.via": "über {{group}}",
   "p.s.busy_only": "Nur belegt – mehr zeigt dieser Kalender nicht.",
-  "p.s.no_attendees": "In geteilten Kalendern ohne Teilnehmer"
+  "p.s.no_attendees": "In geteilten Kalendern ohne Teilnehmer",
+  "push.res_rules": "Nicht eingehalten: {{list}}"
  },
  "en": {
   "error.invalid": "Invalid input.",
@@ -1841,10 +1838,6 @@
   "share.level_freebusy": "Free/busy",
   "share.level_read": "Read",
   "share.level_write": "Edit",
-  "mail.res_subject": "Booking request: {{resource}}, {{when}}",
-  "mail.res_body": "{{name}} would like to book {{resource}}: {{title}}\n{{when}}",
-  "mail.res_rules": "Not kept: {{list}}",
-  "mail.res_where": "Approve or decline in Mail under Calendar › Booking requests (portal or app). The first decision settles the request for everybody.",
   "res.rule_max": "at most {{limit}}",
   "res.rule_horizon": "up to {{n}} days ahead",
   "res.rule_hours": "bookable {{from}} to {{to}}",
@@ -1860,9 +1853,9 @@
   "a.res_enabled": "Booking resources",
   "a.res_enabled_d": "Rooms, vehicles and devices can be booked in the calendar and added to invitations",
   "a.res_where": "Manage resources",
-  "a.res_where_d": "Create and edit them, who may book, who approves and the rules: in the tab „Resources“ of Mail's page",
-  "a.res_where_tab": "Tab „Resources“ on Mail's page",
-  "a.res_manage": "Go to the resources",
+  "a.res_where_d": "Create and edit them, who may book, who approves and the rules: in the tab „Resources“ – under Settings › Plugins › Mail, before GateControl 1.225 on Mail's page",
+  "a.res_where_tab": "Tab „Resources“",
+  "a.res_manage": "Go to the Resources tab",
   "a.res_no_limit": "no limit",
   "a.res_day": "1 day",
   "a.res_week": "1 week",
@@ -2043,6 +2036,7 @@
   "p.s.info": "Shared by {{owner}} · {{level}}",
   "p.s.via": "through {{group}}",
   "p.s.busy_only": "Only taken – this calendar shows nothing more.",
-  "p.s.no_attendees": "No attendees in shared calendars"
+  "p.s.no_attendees": "No attendees in shared calendars",
+  "push.res_rules": "Not kept: {{list}}"
  }
 }

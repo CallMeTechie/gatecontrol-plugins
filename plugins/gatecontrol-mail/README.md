@@ -15,7 +15,8 @@ more is taken over, another value is a note to take over or dismiss; certain dup
 Favourites with a main number, a compact list of the next events for the start page. Since 1.9.0 **free/busy** within
 GateControl with a meeting planner (Microsoft 365 colleagues through Graph `getSchedule`), **shared GateControl
 calendars** (free/busy, read, edit — to people and groups) and **resources** (rooms, vehicles, devices) the administrator
-keeps on Mail's page in GateControl, booked in the calendar or as an attendee, automatically or after approval.
+keeps under Einstellungen › Plugins › Mail › Ressourcen, booked in the calendar or as an attendee, automatically or after
+approval.
 
 *Deutsch:* Alle E-Mail-Konten an einem Ort – ein Posteingang mit Relevant und Sonstige, Push, Schutz vor Zählpixeln,
 Anhänge in Drive und KI; dazu Kalender und Kontakte, seit 1.9.0 Frei/Gebucht, geteilte Kalender und Ressourcen. Details
@@ -374,8 +375,10 @@ event the resource is an attendee (`role: 'resource'`) whose `response` follows 
   <Ressource>“, text „<Name> · <Titel>, <Zeit>“, data `{ resources: { bookingId, resourceId } }`, collapse `res:<id>`),
   `resource_booking` (to the booker: „<Ressource> zugesagt“ / „abgesagt“ / „Buchung von <Ressource> entfällt“, data
   `{ resources: { bookingId, resourceId }, calendar: { eventId, occurrence: null } }`) and `calendar_share` (a person a
-  calendar was shared with: data `{ calendar: { sharedCalendarId } }`). The approvers also get a mail from the booker's
-  account (the business one first) to their Mail address. Live event `resources` `{ kind: 'request', bookingId, resourceId,
+  calendar was shared with: data `{ calendar: { sharedCalendarId } }`). `resource_request` and `resource_booking` are
+  declared `"email": true`: GateControl ≥ 1.225.0 also mails them to the people they reach (its SMTP server, their account
+  address, each person can switch it off); Mail itself never sends a mail in the booker's name. A request that breaks
+  rules names them in a second line („Nicht eingehalten: …“). Live event `resources` `{ kind: 'request', bookingId, resourceId,
   state }` (approvers) | `{ kind: 'booking', bookingId, resourceId, state }` (booker) | `{ kind: 'resources' }` (the list
   changed); `calendar` `{ kind: 'shares', calendarId }` (recipients and owner) and `{ kind: 'changed', calendarId, shared:
   true }` to the recipients of a shared calendar.
@@ -534,9 +537,10 @@ app registration needs `Calendars.ReadWrite` and `Contacts.ReadWrite` besides th
 1.3.0): the cards „Kalender“ and „Kontakte“, the numbers per person in the storage table and in the overview, and the
 rights of the Microsoft registration.
 
-**Resources** (since 1.9.0, mockup AdminRessourcen): GateControl's settings area (Einstellungen › Plugins › Mail) has
-fixed tabs, so the resources are a page of the plugin — the tab **Ressourcen** beside „Übersicht“ on Mail's page
-(`ui.pages` `resources`); the settings page has the card „Ressourcen“ (on/off, the way there with `GC.navigate`) and the
+**Resources** (since 1.9.0, mockup AdminRessourcen): the page `resources` is a tab of its own under Einstellungen ›
+Plugins › Mail, right after „Einstellungen“ (`ui.settingsPages`, GateControl ≥ 1.225.0; an older GateControl ignores the
+key and shows it as the tab **Ressourcen** beside „Übersicht“ on Mail's page); the settings page has the card
+„Ressourcen“ (on/off, the way there with `GC.navigate('resources')` — to either place) and the
 calendar card the switches `calendar.freeBusy` and `calendar.sharing`. The page: the list (kind, seats, automatic or
 approval, open requests) and the editor — name, kind, location, seats, equipment, who may book (everybody or people and
 groups — `GC.pickPrincipals`), the answer (automatic or approval by people and groups), the rules (longest booking, days

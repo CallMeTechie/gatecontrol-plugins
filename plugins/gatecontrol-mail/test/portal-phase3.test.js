@@ -202,7 +202,7 @@ test('the tab „Ressourcen“ of the plugin\'s page: the list, a new resource w
   try {
     const page = () => s.text('ma-page');
     await until('the card', () => page().includes('Ressourcen buchen') && page().includes('Frei/Gebucht in GateControl') && page().includes('Kalender teilen'));
-    click(s.byText('button', 'Zu den Ressourcen'));
+    click(s.byText('button', 'Zum Reiter Ressourcen'));
     assert.deepEqual(nav, ['resources']);
   } finally { s.stop(); }
 }));

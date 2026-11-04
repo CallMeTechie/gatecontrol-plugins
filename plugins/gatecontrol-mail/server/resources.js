@@ -8,7 +8,7 @@
 //
 //   who may book   bookers { all, principals: [{ type: 'user'|'group', id }] } — anyone else does not see it
 //   the answer     approval 'auto' (confirmed when free and within the rules) or 'approval': a request to the approvers
-//                  (people and groups) — a push (topic resource_request) and a mail from the booker's account; the first
+//                  (people and groups) — a push (topic resource_request; GateControl ≥ 1.225.0 mails it too); the first
 //                  decision settles it for all (already_decided for the others); the booker gets the answer in their
 //                  calendar (the resource's PARTSTAT in the event) and as a push (resource_booking)
 //   the rules      maxMinutes, horizonDays, hours { days: [1…7], from, to } in the resource's zone — checked here, on the
@@ -480,49 +480,38 @@ function ruleText(lang, v) {
   return t(lang, RULE_KEYS.hours, { from: v.from, to: v.to });
 }
 
-/** A new or moved request of booking `b`: a push and a mail to everyone who may decide (not the booker), the live event. */
+/**
+ * A new or moved request of booking `b`: a push to everyone who may decide (not the booker; topic resource_request) and
+ * the live event. GateControl ≥ 1.225.0 also mails it to them (notifyTopics[].email, its own SMTP server to each
+ * person's account address) — the plugin never mails in the booker's name.
+ */
 async function request(gc, ctx, r, b) {
   const approvers = (await peopleOf(gc, r.approvers)).filter((u) => u !== b.user_id);
   await live(gc, approvers, { kind: 'request', bookingId: b.id, resourceId: r.id, state: 'pending' });
-  if (!approvers.length) return { push: 0, mail: 0 };
+  if (!approvers.length) return { push: 0 };
   let bookerName = '';
   try { const u = await gc.users.get(b.user_id); bookerName = (u && u.name) || ''; } catch { bookerName = ''; }
   const invites = require('./invites');
+  const viol = parse(b.violations_json, []);
   let pushed = 0;
   // one push per language
   const byLang = new Map();
   for (const u of approvers) { const l = await push.langOf(gc, u); if (!byLang.has(l)) byLang.set(l, []); byLang.get(l).push(u); }
   for (const [lang, users] of byLang) {
     const when = invites.whenText(lang, whenOf(b, r.time_zone), r.time_zone);
+    const text = [t(lang, 'push.res_request', { name: bookerName || '?', title: b.title || '', when }),
+      ...(viol.length ? [t(lang, 'push.res_rules', { list: viol.map((v) => ruleText(lang, v)).join(', ') })] : [])].join('\n');
     for (const part of store.chunks(users, 100)) {
       try {
         await gc.notify({
           topic: 'resource_request', users: part, collapseKey: `res:${b.id}`, title: clip(t(lang, 'push.res_request_title', { resource: r.name }), 120),
-          body: clip(t(lang, 'push.res_request', { name: bookerName || '?', title: b.title || '', when }), 300), data: { resources: { bookingId: b.id, resourceId: r.id } },
+          body: clip(text, 300), data: { resources: { bookingId: b.id, resourceId: r.id } },
         });
         pushed += part.length;
       } catch (e) { gc.log.warn('booking request push failed', (e && (e.code || e.message)) || 'error'); }
     }
   }
-  // the mail: from the booker's account (the business one first) to the approvers' Mail addresses
-  let mailed = 0;
-  const from = await store.one(gc, "SELECT * FROM accounts WHERE user_id = ? ORDER BY CASE kind WHEN 'business' THEN 0 ELSE 1 END, id LIMIT 1", [b.user_id]);
-  if (from) {
-    const to = [];
-    for (const u of approvers) {
-      const a = await store.one(gc, "SELECT email FROM accounts WHERE user_id = ? ORDER BY CASE kind WHEN 'business' THEN 0 ELSE 1 END, id LIMIT 1", [u]);
-      if (a && a.email !== from.email && !to.some((x) => x.email === a.email)) to.push({ name: '', email: a.email });
-    }
-    if (to.length) {
-      const lang = ctx.lang === 'en' ? 'en' : 'de';
-      const when = invites.whenText(lang, whenOf(b, r.time_zone), r.time_zone);
-      const viol = parse(b.violations_json, []);
-      const text = [t(lang, 'mail.res_body', { name: bookerName || from.email, resource: r.name, title: b.title || '', when }),
-        ...(viol.length ? ['', t(lang, 'mail.res_rules', { list: viol.map((v) => ruleText(lang, v)).join(', ') })] : []), '', t(lang, 'mail.res_where')].join('\n');
-      try { mailed = await invites.sendNote(gc, from, to, { subject: t(lang, 'mail.res_subject', { resource: r.name, when }), text }); } catch (e) { gc.log.warn('booking request mail failed', (e && (e.code || e.message)) || 'error'); }
-    }
-  }
-  return { push: pushed, mail: mailed };
+  return { push: pushed };
 }
 
 /**

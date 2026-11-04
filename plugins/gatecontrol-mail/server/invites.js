@@ -346,38 +346,6 @@ async function sendItip(gc, a, method, content, to, { subject, text } = {}) {
   }
 }
 
-/**
- * A plain mail (no calendar part) from account `a` to `to` ([{ name, email }]) — since 1.9.0 the booking requests to the
- * approvers of a resource (resources.js). → the number sent; throws send_failed.
- */
-async function sendNote(gc, a, to, { subject, text } = {}) {
-  const list = to.filter((p) => p && p.email && p.email !== a.email);
-  if (!list.length) return 0;
-  try {
-    if (engine.isGraph(a)) {
-      const r = await ms.graph(gc, a, 'POST', '/me/sendMail', { message: { subject, body: { contentType: 'HTML', content: textHtml(text || '') },
-        toRecipients: list.map((p) => ({ emailAddress: { address: p.email, ...(p.name ? { name: p.name } : {}) } })) }, saveToSentItems: true });
-      if (r.status >= 300) throw fail('send_failed', { reason: ms.graphError(r) });
-      return list.length;
-    }
-    const cred = await secrets.get(gc, a.id);
-    if (!cred || !cred.password) throw fail('send_failed', { reason: 'auth' });
-    const res = await gc.mail.smtp.send({
-      host: a.smtp_host, port: a.smtp_port, security: a.smtp_security, auth: { user: a.username || a.email, pass: cred.password },
-      message: { from: { name: a.name || '', address: a.email }, to: list.map((p) => ({ name: p.name || '', address: p.email })), subject, text: text || '', html: textHtml(text || '') },
-      appendCopy: a.provider !== 'gmail',
-    });
-    if (res && res.raw && res.raw.mediaId) {
-      try { await engine.appendSent(gc, a, res.raw.mediaId); } catch { /* the copy only */ }
-      try { await gc.media.delete(res.raw.mediaId); } catch { /* gone */ }
-    }
-    return list.length;
-  } catch (e) {
-    if (e && e.code === 'send_failed') throw e;
-    throw fail('send_failed', { reason: (e && (e.code || e.message)) || 'error' });
-  }
-}
-
 /** A text of the time of an event for subjects and bodies ("Mi 4.11.2026 13:00–14:00"). */
 function whenText(lang, f, zone) {
   const loc = lang === 'en' ? 'en-GB' : 'de-DE';
@@ -601,6 +569,6 @@ async function dismiss(gc, ctx, id, b) {
 }
 
 module.exports = {
-  fromParts, fromGraph, receive, view, list, get, forMessage, respond, apply, dismiss, answer, invite, sendItip, sendNote, senderFor, internalPeople, whenText, bodyOf,
+  fromParts, fromGraph, receive, view, list, get, forMessage, respond, apply, dismiss, answer, invite, sendItip, senderFor, internalPeople, whenText, bodyOf,
   eventOf, targetOf, writeObject, RESPONSES,
 };

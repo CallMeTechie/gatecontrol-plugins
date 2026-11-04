@@ -14,6 +14,8 @@
 // A plugin that needs a newer GateControl than the pinned one (its "gatecontrol" range starts above it — built for a
 // version that is not released yet) is checked by the pinned validator without the keys that version brought
 // (NEWER_KEYS, checked here by the rules of docs/plugins.md instead); bump gatecontrol.ref once it is released.
+// Optional keys of a newer version that an older GateControl ignores (since 1.225.0 ui.settingsPages,
+// notifyTopics[].email) are checked the same way for every plugin, whatever its "gatecontrol" range.
 // Without ids, catalog-meta.json (store metadata of catalog.json) is checked
 // too (tools/catalog-meta.js).
 
@@ -23,8 +25,9 @@ const lib = require('./lib');
 const { stagedFiles } = require('./stage');
 const catalogMeta = require('./catalog-meta');
 
-// Keys of newer GateControl versions the pinned validator may not know: version → [{ path, check(value) → error | null,
-// replace?(value) → what the pinned validator checks instead (else the key is left out) }].
+// Keys of newer GateControl versions the pinned validator may not know: version → [{ path, check(value, raw) → error | null,
+// replace?(value) → what the pinned validator checks instead (else the key is left out), present?(value) → false: not
+// there (nothing to check or leave out) }].
 // `path`: keys from the manifest root; '*' = every key of that object.
 const isPurpose = (p) => !!(p && typeof p === 'object' && !Array.isArray(p) && ['de', 'en'].some((l) => typeof p[l] === 'string' && p[l].trim())
   && Object.values(p).every((v) => typeof v === 'string' && v.length <= 200));
@@ -45,7 +48,36 @@ const NEWER_KEYS = {
     // permissions.notify { perHour: 1 … 1000 } (before: 120) — checked here, the pinned validator sees at most 120
     { path: ['permissions', 'notify'], replace: (v) => (v && typeof v === 'object' ? { perHour: Math.min(v.perHour, 120) } : v), check: (v) => (v === true || v === false || (v && typeof v === 'object' && !Array.isArray(v) && Object.keys(v).length === 1 && Number.isInteger(v.perHour) && v.perHour >= 1 && v.perHour <= 1000) ? null : 'permissions.notify: invalid') },
   ],
+  '1.225.0': [
+    // ui.settingsPages: up to 4 more ids of ui.pages as tabs under Einstellungen › Plugins (never the first page, never
+    // ui.settingsPage, no id twice, none of the area's own tabs) — an older GateControl ignores the key
+    { path: ['ui', 'settingsPages'], check: (v, raw) => settingsPagesError(v, raw) },
+    // notifyTopics[].email: the topic's pushes also by e-mail (a boolean; never on a chat topic) — an older one ignores it
+    { path: ['notifyTopics'], present: (v) => Array.isArray(v) && v.some((t) => t && typeof t === 'object' && t.email !== undefined), check: (v) => notifyEmailError(v), replace: (v) => (Array.isArray(v) ? v.map((t) => { if (!t || typeof t !== 'object') return t; const { email, ...rest } = t; return rest; }) : v) },
+  ],
 };
+
+const RESERVED_TABS = ['overview', 'settings', 'perms', 'license', 'log', 'versions'];
+
+function settingsPagesError(v, raw) {
+  const ui = (raw && raw.ui) || {};
+  const ids = Array.isArray(ui.pages) ? ui.pages.map((p) => p && p.id) : [];
+  if (!Array.isArray(v) || v.length > 4 || new Set(v).size !== v.length) return 'ui.settingsPages: invalid';
+  for (const id of v) {
+    if (typeof id !== 'string' || !ids.includes(id) || ids.indexOf(id) === 0 || id === ui.settingsPage) return 'ui.settingsPages: invalid';
+  }
+  return v.some((id) => RESERVED_TABS.includes(id)) ? 'ui.settingsPages: reserved' : null;
+}
+
+function notifyEmailError(v) {
+  if (!Array.isArray(v)) return null;
+  for (const t of v) {
+    if (!t || typeof t !== 'object' || t.email === undefined) continue;
+    if (typeof t.email !== 'boolean') return 'notifyTopics: invalid';
+    if (t.chat === true && t.email === true) return 'notifyTopics: chat topic cannot be mailed';
+  }
+  return null;
+}
 
 /** A copy of `raw` without the keys of versions newer than the pinned one, the repository's own errors for them, the keys. */
 function withoutNewerKeys(raw, pinned) {
@@ -62,7 +94,8 @@ function withoutNewerKeys(raw, pinned) {
         for (const name of names) {
           if (!Object.prototype.hasOwnProperty.call(obj, name)) continue;
           if (i < k.path.length - 1) { walk(obj[name], i + 1, [...trail, name]); continue; }
-          const err = k.check(obj[name]);
+          if (k.present && !k.present(obj[name])) continue;
+          const err = k.check(obj[name], raw);
           if (err) errors.push(err);
           removed.push([...trail, name].join('.') + ` (${version})`);
           // `replace`: a value the pinned validator knows instead of none (a key others depend on)
@@ -92,13 +125,13 @@ function validatePlugin(id, notes = []) {
     const manifest = lib.gcRequire('src/services/plugins/manifest');
     // built for a GateControl newer than the pinned one: without the keys the pinned validator cannot know
     const newer = lib.needsNewerHost(raw);
-    let checked = raw;
-    if (newer) {
-      const w = withoutNewerKeys(raw, lib.gatecontrolVersion());
-      checked = w.copy;
-      for (const e of w.errors) errors.push('plugin.json: ' + e);
-      notes.push(`needs GateControl ${newer}, pinned is ${lib.gatecontrolVersion()}: checked without ${w.removed.length ? w.removed.join(', ') : 'nothing'}; not packed until gatecontrol.ref is bumped`);
-    }
+    // keys of a newer GateControl are checked here by its rules and left out for the pinned validator — also the
+    // optional ones an older GateControl ignores (ui.settingsPages, notifyTopics[].email of 1.225.0)
+    const w = withoutNewerKeys(raw, lib.gatecontrolVersion());
+    const checked = w.copy;
+    for (const e of w.errors) errors.push('plugin.json: ' + e);
+    if (newer) notes.push(`needs GateControl ${newer}, pinned is ${lib.gatecontrolVersion()}: checked without ${w.removed.length ? w.removed.join(', ') : 'nothing'}; not packed until gatecontrol.ref is bumped`);
+    else if (w.removed.length) notes.push(`keys of a newer GateControl (ignored by the pinned ${lib.gatecontrolVersion()}): ${w.removed.join(', ')}`);
     const res = manifest.validate(checked, { files: new Set(files) });
     for (const e of res.errors) errors.push('plugin.json: ' + e);
     if (res.ok) {

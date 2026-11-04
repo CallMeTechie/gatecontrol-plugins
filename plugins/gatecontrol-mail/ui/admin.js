@@ -1,7 +1,8 @@
 /* Mail (gatecontrol-mail) — the admin pages (mockups AdminEinstellungen, AdminRessourcen):
  *
  *   overview  accounts by state, people, storage used
- *   resources since 1.9.0 (a tab of the plugin's page): the list of resources and one in the editor — name, kind,
+ *   resources since 1.9.0 (ui.settingsPages: a tab under Einstellungen › Plugins › Mail; before GateControl 1.225.0 a tab of
+ *             the plugin's page): the list of resources and one in the editor — name, kind,
  *             place, seats, equipment, who may book (everybody or people and groups — GC.pickPrincipals), the answer
  *             (automatic or after approval by people and groups), the rules (longest booking, days ahead, bookable
  *             times), what happened (the log, overrides included); „Skoda“ and „Microsoft 365“ only as „kommt später“
@@ -222,8 +223,8 @@
   }
 
   /**
-   * Since 1.9.0 the card „Ressourcen“: on/off and the way to the tab „Ressourcen“ of Mail's page (GateControl's
-   * settings area has no room for a plugin's own tabs — the resources live on the plugin's page beside „Übersicht“).
+   * Since 1.9.0 the card „Ressourcen“: on/off and the way to the tab „Ressourcen“ (GC.navigate) — on GateControl ≥ 1.225.0
+   * a tab of its own under Einstellungen › Plugins › Mail (ui.settingsPages), before that on Mail's page beside „Übersicht“.
    */
   function resourcesCard(r) {
     var on = r.enabled !== false;

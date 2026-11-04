@@ -149,10 +149,8 @@ test('booking requests: to every approver by push and mail, the first decision s
   assert.equal(push.length, 1);
   assert.deepEqual([push[0].users.sort(), push[0].title, push[0].data.resources.bookingId], [[MARC.id, BOB.id], 'Buchungsanfrage: Firmenwagen Kombi', bk.id]);
   assert.match(push[0].body, /^Anna · Kunde Müller, /);
-  const mail = c.mail.sent.find((m) => /^Buchungsanfrage: Firmenwagen Kombi/.test(m.message.subject));
-  assert.ok(mail, 'the mail');
-  assert.deepEqual([mail.message.from.address, mail.message.to.map((x) => x.address).sort()], ['anna@gmx.de', ['bob@gmx.de', 'marc@gmx.de']]);
-  assert.ok(!mail.message.icalEvent);
+  // the mail is GateControl's (notifyTopics[].email, ≥ 1.225.0) — never one in Anna's name
+  assert.ok(!c.mail.sent.some((m) => /Buchungsanfrage/.test(m.message.subject || '')), 'no mail from the booker\'s account');
   assert.ok(host.events.slice(ev0).some((e) => e.type === 'resources' && e.data.kind === 'request' && e.data.bookingId === bk.id && e.users.includes(MARC.id)));
   // both see it; Anna may not decide
   const open = (await marc('GET', 'bookings')).json;
@@ -178,6 +176,7 @@ test('booking requests: to every approver by push and mail, the first decision s
   const long = await anna('POST', `resources/${car.id}/book`, { title: 'Messe Köln', allDay: true, startDate: next(5), endDate: tz.addDays(next(5), 1) });
   const lb = long.json.bookings[0];
   assert.deepEqual([lb.state, lb.violations], ['pending', [{ rule: 'max_duration', limit: 1440 }]]);
+  assert.match(host.notifications.filter((n) => n.topic === 'resource_request').pop().body, /\nNicht eingehalten: höchstens 1 Tag$/);
   const refused = await bob('POST', `bookings/${lb.id}/decide`, { decision: 'approve' });
   assert.deepEqual([refused.json.error.code, refused.json.error.violations], ['rule_violation', [{ rule: 'max_duration', limit: 1440 }]]);
   const forced = await bob('POST', `bookings/${lb.id}/decide`, { decision: 'approve', override: true });
