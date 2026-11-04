@@ -19,7 +19,6 @@ const nodes = require('./nodes');
 const { fail } = require('./util');
 
 const STATES = new Set(['pending', 'clean', 'infected', 'unscannable', 'unchecked']);
-const BATCH = 400;
 const PENDING_AGAIN_MS = 60000;
 const FORGET_MS = 86400000;
 
@@ -66,8 +65,8 @@ async function copy(gc, fromId, toId) {
 async function rowsOf(gc, ids) {
   const out = new Map();
   const list = [...new Set(ids.filter((x) => typeof x === 'string' && x))];
-  for (let i = 0; i < list.length; i += BATCH) {
-    const part = list.slice(i, i + BATCH);
+  // GateControl's database worker takes at most 100 parameters a statement (store.CHUNK)
+  for (const part of store.chunks(list)) {
     for (const r of await store.all(gc, `SELECT * FROM media_scan WHERE media_id IN (${store.marks(part.length)})`, part)) out.set(r.media_id, view(r));
   }
   return out;
