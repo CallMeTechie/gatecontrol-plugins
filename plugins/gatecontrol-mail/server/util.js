@@ -55,6 +55,12 @@ const STATUS = {
   attachment_removed: 410,
   attachment_blocked: 409,
   infected: 422,
+  // 1.9.0: resources (resources.js) — the resource is booked then, a rule is broken, another approver decided first,
+  // the person may not book it
+  resource_busy: 409,
+  rule_violation: 409,
+  already_decided: 409,
+  not_bookable: 403,
   internal: 500,
 };
 

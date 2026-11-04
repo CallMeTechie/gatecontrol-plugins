@@ -20,7 +20,7 @@ const ms = require('./microsoft');
 const tz = require('./tz');
 const pimstore = require('./pimstore');
 const vcard = require('./vcard');
-const { fail, line, clip, htmlText, parse, COLOR_RE } = require('./util');
+const { fail, line, clip, htmlText, parse, email, COLOR_RE } = require('./util');
 
 const PAGE = 100;
 const VIEW_PAGES = 30;
@@ -113,7 +113,8 @@ async function customOf(gc, userId) {
 /** GET /me/calendars → the calendar rows of account `a` (new ones made, gone ones removed) → rows | 'consent'. */
 async function syncCalendars(gc, a) {
   const cfg = await config.get(gc);
-  const r = await G(gc, a, 'GET', '/me/calendars?$select=id,name,hexColor,canEdit,isDefaultCalendar&$top=100');
+  // since 1.9.0 with `owner`: a calendar of another mailbox (shared with the account) shows under „Mit mir geteilt“
+  const r = await G(gc, a, 'GET', '/me/calendars?$select=id,name,hexColor,canEdit,isDefaultCalendar,owner&$top=100');
   if (r.status === 403) return 'consent';
   if (r.status >= 400) throw fail('unreachable', { reason: ms.graphError(r) });
   const list = (r.json && r.json.value) || [];
@@ -128,14 +129,15 @@ async function syncCalendars(gc, a) {
     const kind = isDefault ? ((a.kind === 'business' || (cfg.calendar.business === 'exchange' && a.provider === 'm365')) ? 'business' : 'private') : 'other';
     const color = typeof x.hexColor === 'string' && COLOR_RE.test(x.hexColor) ? x.hexColor.toUpperCase() : null;
     const row = have.find((c) => c.remote_id === x.id);
+    const owner = x.owner && typeof x.owner.address === 'string' ? (email(x.owner.address) || null) : null;
     if (row) {
       const keep = custom.has(row.id);
-      await store.run(gc, 'UPDATE calendars SET name = ?, color = ?, writable = ?, is_default = ?, kind = ?, sort = ? WHERE id = ?',
-        [keep ? row.name : clip(line(x.name || ''), 80) || row.name, keep ? row.color : (color || row.color), x.canEdit === false ? 0 : 1, isDefault ? 1 : 0, kind, i, row.id]);
+      await store.run(gc, 'UPDATE calendars SET name = ?, color = ?, writable = ?, is_default = ?, kind = ?, sort = ?, owner_email = ? WHERE id = ?',
+        [keep ? row.name : clip(line(x.name || ''), 80) || row.name, keep ? row.color : (color || row.color), x.canEdit === false ? 0 : 1, isDefault ? 1 : 0, kind, i, owner, row.id]);
     } else {
-      await store.run(gc, `INSERT INTO calendars (user_id, account_id, source, remote_id, name, color, kind, writable, is_default, sort, state, created_at)
-        VALUES (?, ?, 'graph', ?, ?, ?, ?, ?, ?, ?, 'syncing', ?)`,
-      [a.user_id, a.id, x.id, clip(line(x.name || ''), 80) || 'Kalender', color || await pimstore.nextColor(gc, a.user_id), kind, x.canEdit === false ? 0 : 1, isDefault ? 1 : 0, i, now]).catch(() => null);
+      await store.run(gc, `INSERT INTO calendars (user_id, account_id, source, remote_id, name, color, kind, writable, is_default, sort, state, owner_email, created_at)
+        VALUES (?, ?, 'graph', ?, ?, ?, ?, ?, ?, ?, 'syncing', ?, ?)`,
+      [a.user_id, a.id, x.id, clip(line(x.name || ''), 80) || 'Kalender', color || await pimstore.nextColor(gc, a.user_id), kind, x.canEdit === false ? 0 : 1, isDefault ? 1 : 0, i, owner, now]).catch(() => null);
     }
   }
   for (const c of have) if (!seen.has(c.remote_id)) await pimstore.dropCalendar(gc, c);

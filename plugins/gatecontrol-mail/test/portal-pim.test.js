@@ -136,3 +136,18 @@ test('the menu groups the calendars: GateControl, each account, Eingeblendet; le
   assert.deepEqual(L.letters([{ letter: 'A' }, { letter: 'A' }, { letter: 'B' }, { letter: '#' }]), ['A', 'B', '#']);
   assert.deepEqual(L.addressesOf('Tim Brandt <Tim@Firma.de>, anna@gmx.de; kein Name'), [{ email: 'tim@firma.de', name: 'Tim Brandt' }, { email: 'anna@gmx.de', name: '' }]);
 });
+
+test('free/busy bars (1.9.0): blocks clipped to the window, gaps free or unknown, who cannot at a time, the window of a day', () => {
+  const d = '2026-11-05';
+  const a = (t) => L.at(d, t);
+  const bar = L.barOf([{ start: a('07:00'), end: a('09:00'), status: 'busy' }, { start: a('12:00'), end: a('13:00'), status: 'tentative' }], a('08:00'), a('18:00'));
+  assert.deepEqual(bar.map((x) => [x.status, Math.round(x.pct)]), [['busy', 10], ['free', 30], ['tentative', 10], ['free', 50]]);
+  assert.deepEqual(L.barOf([], a('08:00'), a('18:00'), 'unknown').map((x) => [x.status, x.pct]), [['unknown', 100]]);
+  const rows = [{ name: 'Du', state: 'ok', kind: 'self', blocks: [] }, { name: 'Tom', state: 'ok', blocks: [{ start: a('13:00'), end: a('15:00'), status: 'busy' }] },
+    { name: 'Sabine', state: 'ok', blocks: [{ start: a('14:00'), end: a('14:30'), status: 'tentative' }] }, { name: 'Müller', state: 'unknown', blocks: [] }];
+  assert.deepEqual(L.clashes(rows, a('14:00'), a('15:00')).map((x) => [x.name, x.status]), [['Tom', 'busy'], ['Sabine', 'tentative']]);
+  assert.deepEqual(L.clashes(rows, a('15:00'), a('16:00')), []);
+  const w = L.dayWindow(d, { from: '08:00', to: '18:00' }, a('19:30'), a('20:30'));
+  assert.deepEqual([w.from, w.to], [a('08:00'), a('20:30')]);
+  assert.deepEqual(L.dayWindow(d, null), { from: a('08:00'), to: a('18:00') });
+});

@@ -14,6 +14,9 @@
 //                      internalInvites (true), overlays: { familie, alltag, birthdays } (true) }      since 1.2.0
 //   contacts         { enabled (true), accounts (true: the accounts' address books are synced), ai (true: the
 //                      signature read with the AI for „Als Kontakt speichern“) }                     since 1.2.0
+//   calendar.freeBusy (true: free/busy within GateControl — each person may switch theirs off) and
+//   calendar.sharing (true: people share their GateControl calendars)                                since 1.9.0
+//   resources        { enabled (true) } — rooms, vehicles, devices to book (the list: resources.js)  since 1.9.0
 //
 // Kept in the plugin's storage (key 'admin'); GET/PUT admin/settings. DEFAULT_MS_CLIENT_ID: the publisher's Microsoft
 // app registration (public client, since 1.3.2) — used unless an administrator enters an own client id.
@@ -38,9 +41,12 @@ const DEFAULTS = Object.freeze({
   quotaGB: 5,
   ai: { bar: true, sort: true, autoFile: true, blockBusiness: false },
   microsoft: { registration: 'default', customClientId: null },
-  calendar: { enabled: true, accounts: true, business: 'gatecontrol', defaultReminder: 15, internalInvites: true, overlays: { familie: true, alltag: true, birthdays: true } },
+  calendar: { enabled: true, accounts: true, business: 'gatecontrol', defaultReminder: 15, internalInvites: true, overlays: { familie: true, alltag: true, birthdays: true },
+    freeBusy: true, sharing: true },
   contacts: { enabled: true, accounts: true, ai: true },
+  resources: { enabled: true },
 });
+const CAL_FLAGS = ['enabled', 'accounts', 'internalInvites', 'freeBusy', 'sharing'];
 
 const clone = (v) => JSON.parse(JSON.stringify(v));
 
@@ -62,12 +68,13 @@ function normalize(raw) {
     out.microsoft.customClientId = typeof r.microsoft.customClientId === 'string' && GUID_RE.test(r.microsoft.customClientId.trim()) ? r.microsoft.customClientId.trim().toLowerCase() : null;
   }
   if (r.calendar && typeof r.calendar === 'object') {
-    for (const k of ['enabled', 'accounts', 'internalInvites']) if (typeof r.calendar[k] === 'boolean') out.calendar[k] = r.calendar[k];
+    for (const k of CAL_FLAGS) if (typeof r.calendar[k] === 'boolean') out.calendar[k] = r.calendar[k];
     if (r.calendar.business === 'exchange' || r.calendar.business === 'gatecontrol') out.calendar.business = r.calendar.business;
     if (REMINDERS.includes(r.calendar.defaultReminder)) out.calendar.defaultReminder = r.calendar.defaultReminder;
     if (r.calendar.overlays && typeof r.calendar.overlays === 'object') for (const k of Object.keys(d.calendar.overlays)) if (typeof r.calendar.overlays[k] === 'boolean') out.calendar.overlays[k] = r.calendar.overlays[k];
   }
   if (r.contacts && typeof r.contacts === 'object') for (const k of Object.keys(d.contacts)) if (typeof r.contacts[k] === 'boolean') out.contacts[k] = r.contacts[k];
+  if (r.resources && typeof r.resources === 'object' && typeof r.resources.enabled === 'boolean') out.resources.enabled = r.resources.enabled;
   return out;
 }
 
@@ -121,7 +128,7 @@ async function put(gc, body) {
     const c = b.calendar;
     if (!c || typeof c !== 'object') bad('calendar');
     for (const [k, v] of Object.entries(c)) {
-      if (['enabled', 'accounts', 'internalInvites'].includes(k)) { if (typeof v !== 'boolean') bad('calendar.' + k); cur.calendar[k] = v; } else if (k === 'business') {
+      if (CAL_FLAGS.includes(k)) { if (typeof v !== 'boolean') bad('calendar.' + k); cur.calendar[k] = v; } else if (k === 'business') {
         if (v !== 'gatecontrol' && v !== 'exchange') bad('calendar.business');
         cur.calendar.business = v;
       } else if (k === 'defaultReminder') {
@@ -136,6 +143,10 @@ async function put(gc, body) {
   if (b.contacts !== undefined) {
     if (!b.contacts || typeof b.contacts !== 'object') bad('contacts');
     for (const [k, v] of Object.entries(b.contacts)) { if (!(k in cur.contacts) || typeof v !== 'boolean') bad('contacts.' + k); cur.contacts[k] = v; }
+  }
+  if (b.resources !== undefined) {
+    if (!b.resources || typeof b.resources !== 'object') bad('resources');
+    for (const [k, v] of Object.entries(b.resources)) { if (k !== 'enabled' || typeof v !== 'boolean') bad('resources.' + k); cur.resources.enabled = v; }
   }
   await gc.storage.set('admin', cur);
   cache = normalize(cur);
@@ -157,10 +168,15 @@ function adminConsentUrl(clientId) {
 async function allowed(gc, cfg, userId) {
   if (!Number.isSafeInteger(userId) || userId <= 0) return false;
   if (cfg.allowed.all) return true;
-  for (const p of cfg.allowed.principals) {
+  return inPrincipals(gc, cfg.allowed.principals, userId);
+}
+
+/** Is person `userId` one of `principals` ([{ type: 'user'|'group', id }]) — a group with its subgroups (gc.groups)? */
+async function inPrincipals(gc, principals, userId) {
+  for (const p of principals || []) {
     if (p.type === 'user' && p.id === userId) return true;
   }
-  for (const p of cfg.allowed.principals) {
+  for (const p of principals || []) {
     if (p.type !== 'group' || !gc.groups || typeof gc.groups.isMember !== 'function') continue;
     try { if (await gc.groups.isMember(userId, p.id, { nested: true })) return true; } catch { /* a group that went */ }
   }
@@ -189,5 +205,6 @@ function reset() { cache = null; }
 
 module.exports = {
   DEFAULTS, DEFAULT_MS_CLIENT_ID, MS_AUTHORITY, MS_SCOPES, MS_CALENDAR_SCOPE, MS_CONTACTS_SCOPE, REMINDERS, msScopes, RETENTIONS, get, put, normalize, msClientId, adminConsentUrl, allowed,
+  inPrincipals, principalsOf,
   retentionStart, quotaBytes, reset,
 };

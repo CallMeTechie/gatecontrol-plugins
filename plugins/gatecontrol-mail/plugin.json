@@ -4,11 +4,11 @@
     "de": "Mail",
     "en": "Mail"
   },
-  "version": "1.8.0",
+  "version": "1.9.0",
   "publisher": "CallMeTechie",
   "description": {
-    "de": "Alle E-Mail-Konten an einem Ort – GMX, Web.de, T-Online, Gmail, Outlook und Microsoft 365 oder jedes IMAP-Konto: ein gemeinsamer Posteingang mit Relevant und Sonstige, Push, Schutz vor Zählpixeln, Anhänge in Drive und eine KI, die zusammenfasst, Aufgaben findet und Antworten vorschlägt. Dazu Kalender und Kontakte: eigene Kalender und die der Konten (Microsoft 365, CalDAV), Einladungen, Erinnerungen, Familie und Alltag eingeblendet, ein Adressbuch mit Gruppen und Dubletten-Abgleich.",
-    "en": "Every e-mail account in one place – GMX, Web.de, T-Online, Gmail, Outlook and Microsoft 365 or any IMAP account: one inbox with Relevant and Other, push, protection from tracking pixels, attachments in Drive and an AI that sums up, finds to-dos and suggests replies. Plus calendars and contacts: own calendars and those of the accounts (Microsoft 365, CalDAV), invitations, reminders, Family and Everyday shown alongside, an address book with groups and duplicate merging."
+    "de": "Alle E-Mail-Konten an einem Ort – GMX, Web.de, T-Online, Gmail, Outlook und Microsoft 365 oder jedes IMAP-Konto: ein gemeinsamer Posteingang mit Relevant und Sonstige, Push, Schutz vor Zählpixeln, Anhänge in Drive und eine KI, die zusammenfasst, Aufgaben findet und Antworten vorschlägt. Dazu Kalender und Kontakte: eigene Kalender und die der Konten (Microsoft 365, CalDAV), Einladungen, Erinnerungen, Familie und Alltag eingeblendet, ein Adressbuch mit Gruppen und Dubletten-Abgleich. Außerdem Frei/Gebucht, geteilte Kalender und buchbare Räume, Fahrzeuge und Geräte.",
+    "en": "Every e-mail account in one place – GMX, Web.de, T-Online, Gmail, Outlook and Microsoft 365 or any IMAP account: one inbox with Relevant and Other, push, protection from tracking pixels, attachments in Drive and an AI that sums up, finds to-dos and suggests replies. Plus calendars and contacts: own calendars and those of the accounts (Microsoft 365, CalDAV), invitations, reminders, Family and Everyday shown alongside, an address book with groups and duplicate merging. Also free/busy, shared calendars and rooms, vehicles and devices to book."
   },
   "gatecontrol": ">=1.219.0",
   "entry": "server/index.js",
@@ -137,6 +137,13 @@
         }
       },
       {
+        "id": "resources",
+        "title": {
+          "de": "Ressourcen",
+          "en": "Resources"
+        }
+      },
+      {
         "id": "settings",
         "title": {
           "de": "Einstellungen",
@@ -145,6 +152,9 @@
       }
     ],
     "settingsPage": "settings",
+    "settingsPages": [
+      "resources"
+    ],
     "portal": {
       "label": {
         "de": "Mail",
@@ -192,6 +202,32 @@
         "en": "Invitation"
       },
       "default": true
+    },
+    {
+      "id": "calendar_share",
+      "label": {
+        "de": "Geteilter Kalender",
+        "en": "Shared calendar"
+      },
+      "default": true
+    },
+    {
+      "id": "resource_request",
+      "label": {
+        "de": "Buchungsanfrage für eine Ressource",
+        "en": "Booking request for a resource"
+      },
+      "default": true,
+      "email": true
+    },
+    {
+      "id": "resource_booking",
+      "label": {
+        "de": "Zusage oder Absage einer Buchung",
+        "en": "Booking confirmed or declined"
+      },
+      "default": true,
+      "email": true
     }
   ],
   "license": {

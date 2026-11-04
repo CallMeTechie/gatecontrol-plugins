@@ -1,6 +1,11 @@
-/* Mail (gatecontrol-mail) — the admin pages (mockup AdminEinstellungen):
+/* Mail (gatecontrol-mail) — the admin pages (mockups AdminEinstellungen, AdminRessourcen):
  *
  *   overview  accounts by state, people, storage used
+ *   resources since 1.9.0 (ui.settingsPages: a tab under Einstellungen › Plugins › Mail; before GateControl 1.225.0 a tab of
+ *             the plugin's page): the list of resources and one in the editor — name, kind,
+ *             place, seats, equipment, who may book (everybody or people and groups — GC.pickPrincipals), the answer
+ *             (automatic or after approval by people and groups), the rules (longest booking, days ahead, bookable
+ *             times), what happened (the log, overrides included); „Skoda“ and „Microsoft 365“ only as „kommt später“
  *   settings  who may use Mail (everybody, or people and groups — GateControl's picker GC.pickPrincipals), accounts per
  *             person, storage (retention, attachments, quota per person, since 1.5.0 where the attachments lie — a note
  *             pointing to GateControl's „Speicherorte“ —, what is used — in all and per person), AI (bar,
@@ -164,6 +169,7 @@
     ]));
     // since 1.3.0: Kalender and Kontakte (C9)
     page.appendChild(calendarCard(s.calendar || {}));
+    page.appendChild(resourcesCard(s.resources || {}));
     page.appendChild(contactsCard(s.contacts || {}));
     // AI
     var aiRow = function (k, title, desc) { return row(title, desc, sw(s.ai[k], function (on) { var o = {}; o[k] = on; put({ ai: o }); })); };
@@ -208,8 +214,24 @@
       on ? row(T('a.cal_reminder'), T('a.cal_reminder_d'), select(c.defaultReminder == null ? 'none' : c.defaultReminder, REMINDERS.map(function (m) { return [m == null ? 'none' : m, reminderLabel(m)]; }),
         function (v) { set({ defaultReminder: v === 'none' ? null : Number(v) }); })) : null,
       on ? row(T('a.cal_internal'), T('a.cal_internal_d'), sw(c.internalInvites !== false, function (x) { set({ internalInvites: x }); })) : null,
+      // since 1.9.0: free/busy within GateControl (each person may switch theirs off) and sharing own calendars
+      on ? row(T('a.cal_freebusy'), T('a.cal_freebusy_d'), sw(c.freeBusy !== false, function (x) { set({ freeBusy: x }); })) : null,
+      on ? row(T('a.cal_sharing'), T('a.cal_sharing_d'), sw(c.sharing !== false, function (x) { set({ sharing: x }); })) : null,
       on ? h('div', { class: 'ma-d', style: 'padding-top:6px', text: T('a.cal_overlays') }) : null,
       on ? ovRow('familie') : null, on ? ovRow('alltag') : null, on ? ovRow('birthdays') : null,
+    ]);
+  }
+
+  /**
+   * Since 1.9.0 the card „Ressourcen“: on/off and the way to the tab „Ressourcen“ (GC.navigate) — on GateControl ≥ 1.225.0
+   * a tab of its own under Einstellungen › Plugins › Mail (ui.settingsPages), before that on Mail's page beside „Übersicht“.
+   */
+  function resourcesCard(r) {
+    var on = r.enabled !== false;
+    var go = window.GC && typeof window.GC.navigate === 'function' ? h('button', { type: 'button', class: 'dp-btn dp-btn-sm', text: T('a.res_manage'), on: { click: function () { window.GC.navigate('resources'); } } }) : null;
+    return h('div', { class: 'ma-card' }, [h('h2', { text: T('a.res_title') }),
+      row(T('a.res_enabled'), T('a.res_enabled_d'), sw(on, function (x) { put({ resources: { enabled: x } }); })),
+      on ? row(T('a.res_where'), T('a.res_where_d'), go || h('span', { class: 'ma-d', text: T('a.res_where_tab') })) : null,
     ]);
   }
 
@@ -294,6 +316,177 @@
     page.appendChild(h('p', { class: 'ma-d', text: T('a.privacy') }));
   }
 
+  // ── Ressourcen (since 1.9.0, mockup AdminRessourcen) ──────────
+
+  var R = { items: [], kinds: [], sel: null, draft: null, log: null, settings: null };
+  var KIND_ICON = { room: 'M4 4h16v16H4zM9 20v-5h6v5', vehicle: 'M5 17h14l-1.5-6h-11zM8 18.5a1.5 1.5 0 1 0 0 .01M16 18.5a1.5 1.5 0 1 0 0 .01', device: 'M3 6h14v10H3zM17 10l4-2v8l-4-2', other: 'M12 3l9 5v8l-9 5-9-5V8z' };
+  var MAX_CHOICES = [null, 60, 120, 240, 480, 1440, 2880, 10080];
+  var AHEAD_CHOICES = [null, 7, 14, 30, 60, 90, 180, 365];
+  var HOURS_CHOICES = [null, { days: [1, 2, 3, 4, 5], from: '07:00', to: '19:00' }, { days: [1, 2, 3, 4, 5], from: '08:00', to: '18:00' }, { days: [1, 2, 3, 4, 5, 6], from: '07:00', to: '20:00' }, { days: [1, 2, 3, 4, 5, 6, 7], from: '07:00', to: '22:00' }];
+
+  function kindIcon(kind, color) {
+    var s = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    s.setAttribute('width', '18'); s.setAttribute('height', '18'); s.setAttribute('viewBox', '0 0 24 24'); s.setAttribute('fill', 'none'); s.setAttribute('stroke', 'currentColor');
+    s.setAttribute('stroke-width', '2'); s.setAttribute('stroke-linejoin', 'round'); s.setAttribute('aria-hidden', 'true');
+    var p = document.createElementNS('http://www.w3.org/2000/svg', 'path'); p.setAttribute('d', KIND_ICON[kind] || KIND_ICON.other); s.appendChild(p);
+    return h('span', { class: 'ma-ic', style: 'background:color-mix(in srgb,' + color + ' 16%,transparent);color:' + color }, s);
+  }
+  function maxLabel(m) {
+    if (m == null) return T('a.res_no_limit');
+    if (m % 1440 === 0) return m === 1440 ? T('a.res_day') : m === 10080 ? T('a.res_week') : T('a.res_days', { n: m / 1440 });
+    return T('a.res_hours', { n: m / 60 });
+  }
+  var WD = ['', 'mo', 'tu', 'we', 'th', 'fr', 'sa', 'su'];
+  function hoursLabel(x) {
+    if (!x) return T('a.res_always');
+    var d = x.days;
+    var run = d.length > 1 && d[d.length - 1] - d[0] === d.length - 1;
+    var days = run ? T('a.wd_' + WD[d[0]]) + ' ' + T('a.res_to') + ' ' + T('a.wd_' + WD[d[d.length - 1]]) : d.map(function (n) { return T('a.wd_' + WD[n]); }).join(', ');
+    return T('a.res_hours_text', { days: days, from: String(Number(x.from.slice(0, 2))) + (x.from.slice(3) !== '00' ? ':' + x.from.slice(3) : ''), to: String(Number(x.to.slice(0, 2))) + (x.to.slice(3) !== '00' ? ':' + x.to.slice(3) : '') });
+  }
+  function sub(r) {
+    var parts = [T('a.kind_' + r.kind)];
+    if (r.seats) parts.push(T('a.res_seats_n', { n: r.seats }));
+    else if (r.location) parts.push(r.location);
+    return parts.join(' · ');
+  }
+  function blank() { return { name: '', kind: 'room', location: '', seats: null, equipment: '', bookers: { all: true, principals: [] }, approval: 'auto', approvers: [], rules: { maxMinutes: null, horizonDays: null, hours: null } }; }
+  function copy(r) { return JSON.parse(JSON.stringify({ name: r.name, kind: r.kind, location: r.location || '', seats: r.seats, equipment: r.equipment || '', bookers: r.bookers, approval: r.approval, approvers: r.approvers || [], rules: r.rules })); }
+
+  function loadResources(selectId) {
+    return api('GET', 'admin/resources').then(function (x) {
+      R.items = x.items || [];
+      R.kinds = x.kinds || ['room', 'vehicle', 'device', 'other'];
+      var cur = selectId != null ? selectId : (R.sel && R.sel !== 'new' ? R.sel : (R.items[0] ? R.items[0].id : 'new'));
+      pick(cur);
+    }, function (e) { var page = $('ma-page'); clear(page); page.appendChild(h('p', { class: 'dp-err', text: errText(e) })); });
+  }
+  function pick(id) {
+    R.sel = id;
+    var r = R.items.filter(function (x) { return x.id === id; })[0];
+    if (!r && id !== 'new') { R.sel = 'new'; r = null; }
+    R.draft = r ? copy(r) : blank();
+    R.log = null;
+    if (r) api('GET', 'admin/resources/' + r.id + '/log').then(function (x) { if (R.sel === r.id) { R.log = x.items || []; resourcesPage(); } }, function () {});
+    resourcesPage();
+  }
+
+  function principalChips(list, onPick, title, onRemove) {
+    var box = h('div', { class: 'ma-chips' }, list.map(function (p, i) {
+      return h('span', { class: 'ma-chip' }, [p.label || (p.type + ' ' + p.id), h('button', { type: 'button', class: 'ma-x', attrs: { 'aria-label': T('a.remove') + ' ' + (p.label || '') }, on: { click: function () { onRemove(i); } } }, '×')]);
+    }));
+    box.appendChild(h('button', { type: 'button', class: 'dp-btn dp-btn-sm', text: T('a.choose'), on: { click: function () {
+      if (!window.GC || !window.GC.pickPrincipals) { toast(T('a.no_picker'), 'error'); return; }
+      window.GC.pickPrincipals({ groups: true, users: true, multiple: true, title: title }).then(function (got) {
+        if (!got) return;
+        onPick(got.map(function (p) { return { type: p.type, id: p.id, label: p.label }; }));
+      });
+    } } }));
+    return box;
+  }
+  function merged(list, add) {
+    var out = list.slice();
+    add.forEach(function (p) { if (!out.some(function (x) { return x.type === p.type && x.id === p.id; })) out.push(p); });
+    return out;
+  }
+
+  function resourcesPage() {
+    var page = $('ma-page');
+    clear(page);
+    page.className = 'ma-page ma-wide';
+    var listBox = h('div', { class: 'ma-card ma-rlist' }, R.items.length ? R.items.map(function (r) {
+      var on = R.sel === r.id;
+      return h('button', { type: 'button', class: 'ma-ritem' + (on ? ' is-on' : ''), attrs: { 'aria-pressed': on ? 'true' : 'false' }, on: { click: function () { pick(r.id); } } }, [
+        kindIcon(r.kind, r.color), h('span', { class: 'ma-lbl' }, [h('span', { class: 'ma-t', text: r.name }), h('span', { class: 'ma-d', text: sub(r) + (r.active ? '' : ' · ' + T('a.res_inactive')) })]),
+        h('span', { class: 'ma-pill' + (r.approval === 'approval' ? ' is-warn' : ''), text: r.approval === 'approval' ? T('a.res_pill_approval') : T('a.res_pill_auto') }),
+        r.counts && r.counts.pending ? h('span', { class: 'ma-pill is-warn', text: T('a.res_pending_n', { n: r.counts.pending }) }) : null,
+      ]);
+    }) : [h('p', { class: 'ma-d', text: T('a.res_none') })]);
+    var left = h('section', { class: 'ma-rleft' }, [listBox,
+      h('button', { type: 'button', class: 'ma-add' + (R.sel === 'new' ? ' is-on' : ''), text: T('a.res_new'), on: { click: function () { pick('new'); } } }),
+      h('p', { class: 'ma-d', text: T('a.res_note') })]);
+    page.appendChild(h('div', { class: 'ma-rgrid' }, [left, editor()]));
+  }
+
+  function editor() {
+    var d = R.draft;
+    var cur = R.items.filter(function (x) { return x.id === R.sel; })[0] || null;
+    var err = h('p', { class: 'dp-err', attrs: { role: 'alert' } });
+    var inp = function (k, label, type) {
+      var x = h('input', { class: 'dp-input', type: type || 'text', value: d[k] == null ? '' : String(d[k]), attrs: { 'aria-label': label } });
+      x.addEventListener('input', function () { d[k] = type === 'number' ? (x.value === '' ? null : Number(x.value)) : x.value; });
+      return h('label', { class: 'dp-field' }, [h('span', { class: 'ma-d', text: label }), x]);
+    };
+    var kinds = h('div', { class: 'dp-chips', attrs: { role: 'group', 'aria-label': T('a.res_kind') } }, R.kinds.map(function (k) {
+      return h('button', { type: 'button', attrs: { 'aria-pressed': d.kind === k ? 'true' : 'false' }, on: { click: function () { d.kind = k; resourcesPage(); } } }, T('a.kind_' + k));
+    }));
+    var who = h('div', { class: 'ma-col' }, [
+      select(d.bookers.all ? 'all' : 'some', [['all', T('a.everybody')], ['some', T('a.chosen')]], function (v) { d.bookers = { all: v === 'all', principals: d.bookers.principals || [] }; resourcesPage(); }),
+      d.bookers.all ? null : principalChips(d.bookers.principals, function (got) { d.bookers.principals = merged(d.bookers.principals, got); resourcesPage(); }, T('a.res_bookers'),
+        function (i) { d.bookers.principals.splice(i, 1); resourcesPage(); }),
+    ]);
+    var answer = h('div', { class: 'dp-chips', attrs: { role: 'group', 'aria-label': T('a.res_answer') } }, [['auto', T('a.res_auto')], ['approval', T('a.res_approval')]].map(function (o) {
+      return h('button', { type: 'button', attrs: { 'aria-pressed': d.approval === o[0] ? 'true' : 'false' }, on: { click: function () { d.approval = o[0]; resourcesPage(); } } }, o[1]);
+    }));
+    var rules = d.rules || { maxMinutes: null, horizonDays: null, hours: null };
+    var maxSel = select(rules.maxMinutes == null ? '' : rules.maxMinutes, MAX_CHOICES.concat(MAX_CHOICES.indexOf(rules.maxMinutes) < 0 ? [rules.maxMinutes] : []).map(function (m) { return [m == null ? '' : m, maxLabel(m)]; }),
+      function (v) { rules.maxMinutes = v === '' ? null : Number(v); });
+    maxSel.setAttribute('aria-label', T('a.res_max'));
+    var aheadSel = select(rules.horizonDays == null ? '' : rules.horizonDays, AHEAD_CHOICES.concat(AHEAD_CHOICES.indexOf(rules.horizonDays) < 0 ? [rules.horizonDays] : []).map(function (n) { return [n == null ? '' : n, n == null ? T('a.res_no_limit') : T('a.res_days', { n: n })]; }),
+      function (v) { rules.horizonDays = v === '' ? null : Number(v); });
+    aheadSel.setAttribute('aria-label', T('a.res_ahead'));
+    var hoursList = HOURS_CHOICES.slice();
+    var key = function (x) { return x ? x.days.join(',') + ' ' + x.from + '-' + x.to : ''; };
+    if (rules.hours && !hoursList.some(function (x) { return key(x) === key(rules.hours); })) hoursList.push(rules.hours);
+    var hoursSel = select(key(rules.hours), hoursList.map(function (x) { return [key(x), hoursLabel(x)]; }), function (v) { rules.hours = hoursList.filter(function (x) { return key(x) === v; })[0] || null; });
+    hoursSel.setAttribute('aria-label', T('a.res_bookable'));
+    d.rules = rules;
+    var save = function () {
+      err.textContent = '';
+      var b = { name: (d.name || '').trim(), kind: d.kind, location: (d.location || '').trim() || null, seats: d.seats == null || d.seats === '' ? null : Number(d.seats), equipment: (d.equipment || '').trim() || null,
+        bookers: d.bookers, approval: d.approval, approvers: d.approval === 'approval' ? d.approvers : [], rules: rules };
+      if (!b.name) { err.textContent = T('a.res_name_missing'); return; }
+      if (b.approval === 'approval' && !b.approvers.length) { err.textContent = T('a.res_approvers_missing'); return; }
+      var call = cur ? api('PUT', 'admin/resources/' + cur.id, b) : api('POST', 'admin/resources', b);
+      call.then(function (x) { toast(T('a.saved')); loadResources(x.resource.id); }, function (e) { err.textContent = errText(e); });
+    };
+    var remove = function () {
+      if (!cur || !window.confirm(T('a.res_delete_q', { name: cur.name }))) return;
+      api('DELETE', 'admin/resources/' + cur.id).then(function (x) { toast(x.cancelled ? T('a.res_deleted_n', { n: x.cancelled }) : T('a.res_deleted')); R.sel = null; loadResources(); }, function (e) { err.textContent = errText(e); });
+    };
+    var later = function (title, desc) {
+      return h('div', { class: 'ma-row' }, [h('div', { class: 'ma-lbl' }, [h('span', { class: 'ma-t', text: title }), h('span', { class: 'ma-d', text: desc })]), h('span', { class: 'ma-pill', text: T('a.later') })]);
+    };
+    return h('section', { class: 'ma-card ma-redit', attrs: { 'aria-label': cur ? cur.name : T('a.res_new') } }, [
+      h('div', { class: 'ma-rhead' }, [h('h2', { text: cur ? cur.name : T('a.res_new_title') }), h('span', { style: 'flex:1' }),
+        h('button', { type: 'button', class: 'dp-btn dp-btn-sm', text: T('a.discard'), on: { click: function () { pick(R.sel); } } }),
+        h('button', { type: 'button', class: 'dp-btn dp-btn-sm dp-btn-primary', text: T('a.save'), on: { click: save } })]),
+      h('div', { class: 'ma-fgrid' }, [inp('name', T('a.res_name')), h('div', { class: 'dp-field' }, [h('span', { class: 'ma-d', text: T('a.res_kind') }), kinds]),
+        inp('location', T('a.res_location')), inp('seats', T('a.res_seats'), 'number'), h('div', { class: 'ma-span' }, inp('equipment', T('a.res_equipment')))]),
+      row(T('a.res_bookers'), T('a.res_bookers_d'), who),
+      row(T('a.res_answer'), T('a.res_answer_d'), answer),
+      d.approval === 'approval' ? row(T('a.res_approvers'), T('a.res_approvers_d'), principalChips(d.approvers, function (got) { d.approvers = merged(d.approvers, got); resourcesPage(); }, T('a.res_approvers'),
+        function (i) { d.approvers.splice(i, 1); resourcesPage(); })) : null,
+      row(T('a.res_rules'), null, h('div', { class: 'ma-inline' }, [h('span', { class: 'ma-d', text: T('a.res_at_most') }), maxSel, h('span', { class: 'ma-d', text: T('a.res_up_to') }), aheadSel, h('span', { class: 'ma-d', text: T('a.res_ahead_suffix') })])),
+      row(T('a.res_bookable'), T('a.res_bookable_d'), hoursSel),
+      later(T('a.res_skoda'), T('a.res_skoda_d')),
+      later(T('a.res_m365'), T('a.res_m365_d')),
+      err,
+      cur ? h('div', { class: 'dp-actions', style: 'justify-content:flex-start' }, h('button', { type: 'button', class: 'dp-btn dp-btn-sm dp-btn-danger', text: T('a.res_delete'), on: { click: remove } })) : null,
+      cur ? logBox() : null,
+    ]);
+  }
+
+  function logBox() {
+    if (!R.log) return null;
+    var rows = R.log.slice(0, 30).map(function (x) {
+      var text = T('a.log_' + x.action) + (x.detail && x.detail.violations && x.detail.violations.length ? ' · ' + T('a.log_rules', { n: x.detail.violations.length }) : '');
+      return h('tr', null, [h('td', { text: new Date(x.at).toLocaleString(CTX.lang === 'en' ? 'en-GB' : 'de-DE', { dateStyle: 'short', timeStyle: 'short' }) }), h('td', { text: x.user ? x.user.name : '–' }),
+        h('td', { class: x.action === 'confirmed_override' ? 'is-warn' : null, text: text })]);
+    });
+    return h('div', { class: 'ma-col' }, [h('span', { class: 'ma-t', text: T('a.res_log') }), rows.length ? h('table', { class: 'ma-table' }, rows) : h('p', { class: 'ma-d', text: T('a.res_log_none') })]);
+  }
+
   function render() {
     if (CTX.page === 'settings') { if (V) settingsPage(); return; }
   }
@@ -301,6 +494,7 @@
   function boot() {
     var page = $('ma-page');
     page.appendChild(h('p', { class: 'ma-d', text: T('a.loading') }));
+    if (CTX.page === 'resources') { loadResources(); return; }
     if (CTX.page === 'settings') api('GET', 'admin/settings').then(function (r) { V = r; render(); }, function (e) { clear(page); page.appendChild(h('p', { class: 'dp-err', text: errText(e) })); });
     else api('GET', 'admin/overview').then(overviewPage, function (e) { clear(page); page.appendChild(h('p', { class: 'dp-err', text: errText(e) })); });
   }

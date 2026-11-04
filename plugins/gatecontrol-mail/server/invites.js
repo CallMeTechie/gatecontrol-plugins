@@ -385,8 +385,10 @@ async function internalPeople(gc, userId, emails) {
  * Send the invitations of own event `ev` (organizer): method REQUEST (`only`: these attendees) or CANCEL. Attendees who
  * are GateControl people (GateControl calendars) get it internally; the others by iMIP from account `a`. → { mail, internal }.
  */
-async function invite(gc, userId, lang, ev, cal, a, method, people, o = {}) {
+async function invite(gc, userId, lang, ev, cal, a, method, people0, o = {}) {
   const sent = { mail: 0, internal: 0 };
+  // resources (1.9.0) are booked on the server (resources.js), never invited by mail
+  const people = people0.filter((p) => p && !require('./resources').isAddress(p.email));
   if (!people.length || !ev.ics) return sent;
   const zone = await pimstore.zoneOf(gc, userId);
   const f = ics.fieldsOf((ics.parse(ev.ics).objects[0] || {}).master || ics.parse(ev.ics).objects[0].overrides[0], { userTz: zone, own: new Set() });

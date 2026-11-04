@@ -344,8 +344,60 @@
     return d.length >= 5 ? d.slice(-9) : '';
   }
 
+  // ── free/busy (since 1.9.0, mockups Planer, Ressource, Anfragen) ──
+
+  /**
+   * The bar of a row in [from, to): its blocks ([{ start, end, status }]) clipped, the gaps between them `gap`
+   * ('free'; an unknown row: 'unknown' everywhere) → [{ status, start, end, pct }] (pct: the share of the bar, 0…100).
+   */
+  function barOf(blocks, from, to, gap) {
+    var len = to - from;
+    if (len <= 0) return [];
+    var list = (blocks || []).map(function (b) { return { start: Math.max(from, b.start), end: Math.min(to, b.end), status: b.status }; })
+      .filter(function (b) { return b.end > b.start; }).sort(function (a, b) { return a.start - b.start; });
+    var out = [];
+    var t = from;
+    var push = function (st, a, z) { if (z > a) out.push({ status: st, start: a, end: z, pct: (z - a) / len * 100 }); };
+    list.forEach(function (b) {
+      if (b.start > t) push(gap || 'free', t, b.start);
+      var a = Math.max(t, b.start);
+      push(b.status, a, b.end);
+      t = Math.max(t, b.end);
+    });
+    push(gap || 'free', t, to);
+    return out;
+  }
+
+  /** Who of the rows ([{ name, state, blocks }]) cannot at [start, end) → [{ name, status: 'busy'|'tentative' }] (busy first). */
+  function clashes(rows, start, end) {
+    var out = [];
+    (rows || []).forEach(function (r) {
+      if (r.state !== 'ok') return;
+      var st = null;
+      (r.blocks || []).forEach(function (b) { if (b.start < end && b.end > start) st = b.status === 'busy' || st === 'busy' ? 'busy' : 'tentative'; });
+      if (st) out.push({ name: r.name, status: st, kind: r.kind });
+    });
+    return out.sort(function (a, b) { return (a.status === 'busy' ? 0 : 1) - (b.status === 'busy' ? 0 : 1); });
+  }
+
+  /** "HH:MM" of a working-hours limit → minutes of the day ("24:00" → 1440). */
+  function minOf(hm) { var p = String(hm || '0:0').split(':'); return Number(p[0]) * 60 + Number(p[1] || 0); }
+
+  /** The window of a day's bar: the working hours (default 8–18), widened to hold [start, end] when they are that day. */
+  function dayWindow(day, wh, start, end) {
+    var a = minOf((wh && wh.from) || '08:00');
+    var z = minOf((wh && wh.to) || '18:00');
+    var from = midnight(day) + a * 60000;
+    var to = midnight(day) + z * 60000;
+    if (start != null && end != null && end > start && ymd(start) === day) {
+      from = Math.min(from, start - (new Date(start).getMinutes() * 60000));
+      to = Math.max(to, Math.min(midnight(addDays(day, 1)), end));
+    }
+    return { from: from, to: to };
+  }
+
   var api = {
-    DAY: DAY, digits: digits, WEEKDAYS: WEEKDAYS, ymd: ymd, dateOf: dateOf, midnight: midnight, addDays: addDays, addMonths: addMonths, weekday: weekday, weekStartOf: weekStartOf,
+    DAY: DAY, digits: digits, barOf: barOf, clashes: clashes, dayWindow: dayWindow, WEEKDAYS: WEEKDAYS, ymd: ymd, dateOf: dateOf, midnight: midnight, addDays: addDays, addMonths: addMonths, weekday: weekday, weekStartOf: weekStartOf,
     hhmm: hhmm, at: at, rangeOf: rangeOf, onDay: onDay, wholeDay: wholeDay, layoutDay: layoutDay, allDayOn: allDayOn, agenda: agenda,
     reminderText: reminderText, recurrenceText: recurrenceText, birthdayText: birthdayText, countOf: countOf,
     repeatOf: repeatOf, nthOf: nthOf, recurrenceOf: recurrenceOf, eventFields: eventFields, shiftSeries: shiftSeries, calendarGroups: calendarGroups, letters: letters, addressesOf: addressesOf,

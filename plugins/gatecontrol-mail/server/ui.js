@@ -1,11 +1,12 @@
 'use strict';
 
-// The portal tab "Mail" and the admin pages (Übersicht, Einstellungen — the plugin's settings page). Plugin HTML lives in
+// The portal tab "Mail" and the admin pages (Übersicht, since 1.9.0 Ressourcen, Einstellungen — the plugin's settings page). Plugin HTML lives in
 // a sandboxed frame (opaque origin, inline scripts and styles only, no network of its own): the page talks to the
 // plugin's API through window.GC.call, uploads with GC.upload and gets live events with GC.on. Read once from ui/:
 // common.css · portal.css / portal.html / portal.js · admin.css / admin.html / admin.js. Since 1.3.0 the portal's script
 // is pimlogic.js (the plain logic of calendar and contacts), foldertree.js (the folders as a tree, since 1.3.4),
-// calendar.js and contacts.js (the areas Kalender and Kontakte) and portal.js, which attaches both.
+// calendar.js and contacts.js (the areas Kalender and Kontakte) and portal.js, which attaches both; since 1.9.0 planner.js
+// (free/busy, resources, requests, sharing — attached by calendar.js).
 // The portal tab is for a signed-in person the administrator allows (portalVisible); anyone else gets a note.
 
 const fs = require('node:fs');
@@ -24,11 +25,11 @@ const FILES = {
   common: read('common.css'),
   portal: {
     css: read('portal.css'), html: read('portal.html'),
-    js: ['pimlogic.js', 'foldertree.js', 'calendar.js', 'contacts.js', 'portal.js'].map((f) => inlineScript(f, read(f))).join('\n'),
+    js: ['pimlogic.js', 'foldertree.js', 'calendar.js', 'planner.js', 'contacts.js', 'portal.js'].map((f) => inlineScript(f, read(f))).join('\n'),
   },
   admin: { css: read('admin.css'), html: read('admin.html'), js: inlineScript('admin.js', read('admin.js')) },
 };
-const PAGES = ['overview', 'settings'];
+const PAGES = ['overview', 'resources', 'settings'];
 
 function esc(s) {
   return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
