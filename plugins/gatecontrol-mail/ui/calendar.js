@@ -14,6 +14,10 @@
  *             Absagen with a comment, „Neue Zeit vorschlagen“, „Eintragen in“, the attendees; cancelled, answered,
  *             replies, counter proposals, outdated; Microsoft without the calendar right: „Kalender freigeben“
  *
+ * Since 1.9.0 (ui/planner.js, mockups Planer, Teilen, Ressource, Anfragen): „Frei/Gebucht“ and suggestions in the event
+ * form, resources as attendees, „Ressource buchen“, „Buchungsanfragen“, „Kalender teilen“ of own GateControl calendars and
+ * „Mit mir geteilt“ in the menu (the shared calendars' events in the view, as their level allows).
+ *
  * Times are shown in the browser's zone; the person's zone (prefs.timeZone) is set to it on opening, like the apps do.
  */
 (function () {
@@ -29,11 +33,23 @@
     var $ = function (id) { return document.getElementById(id); };
     var C = {
       loaded: false, loading: null, calendars: [], overlays: [], prefs: null, consent: [], view: null, anchor: L.ymd(new Date()),
-      items: [], overlayItems: [], pending: [], listDays: 30, seq: 0,
+      items: [], overlayItems: [], pending: [], listDays: 30, seq: 0, shared: [],
     };
+    // since 1.9.0: free/busy, resources, requests, sharing (ui/planner.js)
+    var PL = window.MailPlanner ? window.MailPlanner.attach(ui, {
+      C: C, fetchRange: function () { if (S.area === 'calendar') fetchRange(); }, renderHead: function () { if (S.area === 'calendar') renderHead(); }, reload: reloadCalendars,
+    }) : null;
 
     function deviceZone() { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || null; } catch (e) { return null; } }
-    function calOf(id) { for (var i = 0; i < C.calendars.length; i++) if (C.calendars[i].id === id) return C.calendars[i]; return null; }
+    function calOf(id) {
+      for (var i = 0; i < C.calendars.length; i++) if (C.calendars[i].id === id) return C.calendars[i];
+      // a calendar shared with the person (1.9.0): looks like an own one, writable at `write`
+      for (var j = 0; j < C.shared.length; j++) {
+        var x = C.shared[j];
+        if (x.id === id) return { id: x.id, source: 'local', accountId: null, name: x.name + ' · ' + x.owner.name, color: x.color, writable: x.level === 'write', visible: x.visible, shared: x, maxReminders: 3, canOnline: false, kind: 'other' };
+      }
+      return null;
+    }
     function overlayOf(id) { for (var i = 0; i < C.overlays.length; i++) if (C.overlays[i].id === id) return C.overlays[i]; return null; }
     function colorOf(it) {
       if (it.overlayId) { var o = overlayOf(it.overlayId); return o ? o.color : '#8C96A5'; }
@@ -56,7 +72,9 @@
         C.overlays = r.overlays || [];
         C.prefs = r.prefs || {};
         C.consent = r.consent || [];
+        C.shared = r.shared || [];
         C.loaded = true;
+        if (PL && ui.has('bookingRequests')) PL.loadRequests().then(function () { if (S.area === 'calendar') renderHead(); }, function () {});
         if (!C.view) C.view = C.prefs.view === 'day' || C.prefs.view === 'month' || C.prefs.view === 'list' ? C.prefs.view : 'week';
         C.workWeek = !!C.prefs.workWeek;
         // the person's zone follows the browser's, like the apps (reminders and all-day events use it)
@@ -116,8 +134,36 @@
           el.appendChild(row);
         });
       });
+      // since 1.9.0: „Mit mir geteilt“ — GateControl calendars of others (a tick shows one)
+      if (ui.has('calendarSharing') && C.shared.length) {
+        el.appendChild(h('div', { class: 'mp-lab', text: T('p.s.with_me') }));
+        C.shared.forEach(function (x) {
+          var row = h('div', { class: 'mc-navrow' }, [
+            h('button', { type: 'button', class: 'mp-row', attrs: { 'aria-pressed': x.visible ? 'true' : 'false' }, on: { click: function () { setShared(x, !x.visible); } } },
+              [tick(x.color, x.visible), h('span', { class: 'mp-tx', text: T('p.s.from', { name: x.name, owner: x.owner.name }) }), x.accepted ? null : h('span', { class: 'mp-sub', text: T('p.s.new') })]),
+            ibtn('more', T('p.c.calendar_menu', { name: x.name }), function () { PL.sharedMenu(x); }, 'mc-more'),
+          ]);
+          el.appendChild(row);
+        });
+      }
       el.appendChild(h('button', { type: 'button', class: 'mp-row is-accent', on: { click: addCalendar } }, [icon('plus'), h('span', { class: 'mp-tx', text: T('p.c.add_calendar') })]));
       el.appendChild(h('button', { type: 'button', class: 'mp-row is-accent', on: { click: subscribe } }, [icon('link'), h('span', { class: 'mp-tx', text: T('p.c.subscribe') })]));
+    }
+
+    function setShared(x, on) {
+      x.visible = on;
+      ui.renderNav();
+      api('PATCH', 'shared/' + x.id, { visible: on }).then(function (r) {
+        Object.assign(x, r.item || {});
+        ui.renderNav();
+        if (S.area === 'calendar') { renderHead(); fetchRange(); }
+      }, function (e) { x.visible = !on; ui.renderNav(); fail(e); });
+    }
+
+    /** The calendars again (a share changed, one was shown or hidden elsewhere). */
+    function reloadCalendars() {
+      C.loaded = false; C.loading = null;
+      load().then(function () { ui.renderNav(); if (S.area === 'calendar') { renderHead(); fetchRange(); } }, function () {});
     }
 
     function setVisible(kind, it, on) {
@@ -173,6 +219,8 @@
         notify ? h('label', { class: 'dp-check' }, [notify, h('span', { text: T('p.c.notify') })]) : null,
         c && !local && c.source !== 'ics' ? h('p', { class: 'dp-hint', text: T('p.c.only_here') }) : null,
         err,
+        // since 1.9.0: sharing an own GateControl calendar (mockup Teilen)
+        local && PL && ui.has('calendarSharing') ? btn(T('p.s.share'), function () { PL.shareDialog(c); }, { small: true, icon: 'people' }) : null,
         h('div', { class: 'dp-actions' }, [
           c && (local || c.source === 'ics') ? btn(T('p.c.delete_calendar'), remove, { danger: true }) : null,
           btn(T('p.cancel'), ui.closeDialog), btn(T('p.save'), save, { primary: true }),
@@ -280,6 +328,9 @@
           ui.ibtn('menu', T('p.menu'), function () { ui.showPane('nav'); }, 'mp-menu-btn'),
           h('div', { class: 'mp-head-tx' }, [h('h2', { text: title() })]),
           ibtn('gear', T('p.c.settings'), settingsDialog),
+          // since 1.9.0: the requests (who approves: with the open ones), „Ressource buchen“
+          PL && ui.has('resources') ? btn(ui.has('bookingRequests') ? T('p.r.requests_n', { n: PL.state.open || 0 }) : T('p.r.mine'), function () { PL.requestsDialog(); }, { small: true }) : null,
+          PL && ui.has('resources') ? btn(T('p.r.book'), function () { PL.bookDialog({ day: C.view === 'day' ? C.anchor : null }); }, { small: true }) : null,
           btn(T('p.c.new_event'), function () { newEvent(null); }, { icon: 'plus', primary: true, small: true }),
         ]),
         h('div', { class: 'mc-bar' }, [seg,
@@ -297,11 +348,12 @@
     /** The chips of the shown calendars (mockup): a click hides one. */
     function chips() {
       var list = C.calendars.filter(function (c) { return c.visible; }).map(function (c) { return { kind: 'calendar', it: c }; })
-        .concat(C.overlays.filter(function (o) { return o.visible; }).map(function (o) { return { kind: 'overlay', it: o }; }));
+        .concat(C.overlays.filter(function (o) { return o.visible; }).map(function (o) { return { kind: 'overlay', it: o }; }))
+        .concat(C.shared.filter(function (x) { return x.visible; }).map(function (x) { return { kind: 'shared', it: x }; }));
       if (!list.length) return h('p', { class: 'dp-hint', text: T('p.c.none_shown') });
       return h('div', { class: 'mc-chips' }, list.map(function (x) {
-        return h('button', { type: 'button', class: 'mc-chip', attrs: { title: T('p.c.hide', { name: x.it.name }) }, on: { click: function () { setVisible(x.kind, x.it, false); } } },
-          [h('span', { class: 'mc-sq', style: 'background:' + x.it.color }), x.kind === 'calendar' ? calName(x.it) : x.it.name]);
+        return h('button', { type: 'button', class: 'mc-chip', attrs: { title: T('p.c.hide', { name: x.it.name }) }, on: { click: function () { if (x.kind === 'shared') setShared(x.it, false); else setVisible(x.kind, x.it, false); } } },
+          [h('span', { class: 'mc-sq', style: x.kind === 'shared' ? 'border:2px solid ' + x.it.color + ';box-sizing:border-box' : 'background:' + x.it.color }), x.kind === 'calendar' ? calName(x.it) : x.kind === 'shared' ? T('p.s.from', { name: x.it.name, owner: x.it.owner.name }) : x.it.name]);
       }));
     }
 
@@ -476,6 +528,7 @@
 
     function openEvent(it) {
       if (it.overlayId) { overlayDialog(it); return; }
+      if (it.shared && !it.eventId) { busyDialog(it); return; }
       api('GET', 'events/' + it.eventId, null, { occurrence: it.occurrence || null }).then(viewDialog, fail);
     }
 
@@ -485,6 +538,14 @@
         line('clock', whenText(it)), it.location ? line('pin', it.location) : null,
         h('div', { class: 'mc-line' }, [h('span', { class: 'mc-sq', style: 'background:' + colorOf(it) }), h('span', { text: (o ? o.name : '') + ' · ' + T('p.c.read_only') })]),
       ]);
+    }
+
+    /** A busy time of a shared calendar (free/busy or a private event): only that it is taken. */
+    function busyDialog(it) {
+      var c = calOf(it.calendarId);
+      ui.dialog(it.title, [line('clock', whenText(it)),
+        c ? h('div', { class: 'mc-line' }, [h('span', { class: 'mc-sq', style: 'background:' + c.color }), h('span', { text: c.name + ' · ' + T('p.s.level_' + it.shared) })]) : null,
+        h('p', { class: 'dp-hint', text: T('p.s.busy_only') })]);
     }
 
     function line(ic, text, extra) { return h('div', { class: 'mc-line' }, [icon(ic), h('span', { class: 'mp-tx', style: 'white-space:normal', text: text }), extra || null]); }
@@ -521,7 +582,7 @@
       var body = [
         line('clock', whenText(ev)),
         ev.recurrence ? line('repeat', L.recurrenceText(ev.recurrence, T, CTX.lang)) : null,
-        cal ? h('div', { class: 'mc-line' }, [h('span', { class: 'mc-sq', style: 'background:' + cal.color }), h('span', { text: calName(cal) + (ev.readOnly ? ' · ' + T('p.c.read_only') : '') })]) : null,
+        cal ? h('div', { class: 'mc-line' }, [h('span', { class: 'mc-sq', style: 'background:' + cal.color }), h('span', { text: calName(cal) + (ev.shared ? ' · ' + T('p.s.level_' + ev.shared) : ev.readOnly ? ' · ' + T('p.c.read_only') : '') })]) : null,
         ev.location ? line('pin', ev.location, btn(T('p.c.map'), function () { ui.linkDialog('https://www.openstreetmap.org/search?query=' + encodeURIComponent(ev.location), T('p.c.map')); }, { small: true })) : null,
         ev.online ? line('video', T('p.c.online_' + (ev.online.provider || 'other')), btn(T('p.c.join'), function () { ui.linkDialog(ev.online.url, T('p.c.join')); }, { small: true, primary: true })) : null,
         ev.reminders && ev.reminders.length ? line('bell', ev.reminders.map(function (m) { return L.reminderText(m, T); }).join(', ')) : null,
@@ -608,7 +669,8 @@
      */
     function editEvent(ev, pre) {
       var p = pre || {};
-      var writable = C.calendars.filter(function (c) { return c.writable; });
+      var writable = C.calendars.filter(function (c) { return c.writable; })
+        .concat(C.shared.filter(function (x) { return x.level === 'write'; }).map(function (x) { return calOf(x.id); }));
       var defCal = ev ? calOf(ev.calendarId) : (calOf(C.prefs && C.prefs.defaultCalendarId) || writable[0]);
       if (!defCal) { ui.toast(T('p.c.no_writable'), 'error'); return; }
       var startMs = ev ? ev.start : L.at(p.startDate, p.startTime);
@@ -725,10 +787,12 @@
       var sugg = h('div', { class: 'mp-sugglist', hidden: true });
       var senderHint = h('p', { class: 'dp-hint' });
       var fromSel = h('select', { class: 'dp-input', hidden: true }, S.accounts.map(function (a) { return h('option', { value: String(a.id), text: ui.accountLabel(a) }); }));
+      var humans = function () { return people.filter(function (a) { return !(PL && PL.isResource(a)); }); };
       var drawSender = function () {
         var c = calOf(Number(calSel.value));
         fromSel.hidden = true;
-        if (!people.length) { senderHint.textContent = ''; return; }
+        if (c && c.shared) { senderHint.textContent = T('p.s.no_attendees'); return; }
+        if (!humans().length) { senderHint.textContent = people.length ? T('p.r.res_hint') : ''; return; }
         if (c && c.source === 'graph') { senderHint.textContent = T('p.c.invites_exchange'); return; }
         if (c && c.accountId) { var a = ui.accountOf(c.accountId); senderHint.textContent = T('p.c.invites_via', { account: a ? a.email : '' }); return; }
         if (ev && ev.organizer) { senderHint.textContent = T('p.c.invites_via', { account: ev.organizer.email }); return; }
@@ -743,15 +807,31 @@
       var drawPeople = function () {
         clear(peopleBox);
         people.forEach(function (a, i) {
-          peopleBox.appendChild(h('span', { class: 'mp-chip mc-pchip', attrs: { title: a.email } }, [a.name || a.email,
+          var res = PL && PL.isResource(a);
+          peopleBox.appendChild(h('span', { class: 'mp-chip mc-pchip' + (res ? ' is-res' : ''), attrs: { title: res ? T('p.r.resource') : a.email } }, [a.name || a.email,
             h('button', { type: 'button', class: 'mc-x', attrs: { 'aria-label': T('p.remove') + ' ' + (a.name || a.email) }, on: { click: function () { people.splice(i, 1); drawPeople(); } } }, icon('close', 12))]));
         });
         drawSender();
+        if (planner) planner.refresh();
       };
       var addPeople = function (list) {
-        list.forEach(function (p2) { if (p2 && p2.email && !people.some(function (x) { return x.email === p2.email; })) people.push({ email: p2.email.toLowerCase(), name: p2.name || '', role: 'required' }); });
+        list.forEach(function (p2) { if (p2 && p2.email && !people.some(function (x) { return x.email === p2.email; })) people.push({ email: p2.email.toLowerCase(), name: p2.name || '', role: p2.role === 'resource' ? 'resource' : 'required' }); });
         drawPeople();
       };
+      // since 1.9.0: resources as attendees, „Frei/Gebucht“ with suggestions (mockup Planer)
+      var planner = null;
+      var resPick = PL ? PL.resourcePicker(function (r) { addPeople([r]); }) : null;
+      if (PL && !(ev && ev.shared)) {
+        planner = PL.section(function () {
+          return { day: sd.value, allDay: allDay.checked, start: L.at(sd.value, st.value || '00:00'), end: L.at(ed.value || sd.value, et.value || st.value || '00:00'), attendees: people.slice() };
+        }, function (a, b) {
+          allDay.checked = false; syncAllDay();
+          sd.value = L.ymd(a); st.value = L.hhmm(a); ed.value = L.ymd(b); et.value = L.hhmm(b);
+          len = b - a;
+          planner.refresh();
+        });
+        [sd, st, ed, et, allDay].forEach(function (x) { x.addEventListener('change', function () { planner.refresh(); }); });
+      }
       var timer = null;
       peopleIn.addEventListener('keydown', function (x) {
         if (x.key !== 'Enter' && x.key !== ',') return;
@@ -836,7 +916,8 @@
         canRepeat ? (fixedRule ? h('p', { class: 'dp-hint', text: T('p.c.rule_fixed', { rule: L.recurrenceText(ev.recurrence, T, CTX.lang) }) }) : ui.field(T('p.c.repeat'), repBox)) : null,
         ui.field(T('p.c.location'), location), ui.field(T('p.c.online'), h('div', { class: 'mc-dt' }, [onlineSel, onlineUrl])),
         ui.field(T('p.c.reminders'), reminderBox),
-        ui.field(T('p.c.attendees'), h('div', { class: 'mp-col' }, [peopleBox, peopleIn, sugg, senderHint, fromSel])),
+        ui.field(T('p.c.attendees'), h('div', { class: 'mp-col' }, [peopleBox, peopleIn, sugg, resPick, senderHint, fromSel])),
+        planner ? planner.el : null,
         h('div', { class: 'mc-dt' }, [ui.field(T('p.c.show_as'), busy), h('label', { class: 'dp-check', style: 'margin-top:20px' }, [priv, h('span', { text: T('p.c.private') })])]),
         ui.field(T('p.c.description'), desc), err,
         h('div', { class: 'dp-actions' }, [btn(T('p.cancel'), ui.closeDialog), btn(T('p.save'), save, { primary: true })]),
@@ -854,7 +935,11 @@
     function saved(r) {
       ui.closeDialog();
       var n = r.sent ? (r.sent.mail || 0) + (r.sent.internal || 0) : 0;
-      ui.toast(n ? T('p.c.saved_sent', { n: n }) : T('p.saved'));
+      // since 1.9.0: the resources' answer (booked at once, or a request to its approvers)
+      var pend = (r.bookings || []).filter(function (b) { return b.state === 'pending'; });
+      if (pend.length) ui.toast(T('p.r.requested', { name: pend.map(function (b) { return b.resource ? b.resource.name : ''; }).join(', ') }));
+      else if ((r.bookings || []).length) ui.toast(T('p.r.booked', { name: r.bookings.map(function (b) { return b.resource ? b.resource.name : ''; }).join(', ') }));
+      else ui.toast(n ? T('p.c.saved_sent', { n: n }) : T('p.saved'));
       if (S.area === 'calendar') fetchRange();
     }
 
@@ -1009,6 +1094,7 @@
     var liveTimer = null;
     function onEvent(d) {
       if (!d) return;
+      if (d.kind === 'shares') { reloadCalendars(); return; }
       if (d.kind === 'calendars') { C.loaded = false; C.loading = null; }
       if (S.area !== 'calendar') { if (d.kind === 'calendars') C.loaded = false; return; }
       if (liveTimer) clearTimeout(liveTimer);
@@ -1018,7 +1104,10 @@
       }, 500);
     }
 
-    return { nav: nav, show: show, onEvent: onEvent, openEvent: openEvent, invitationCard: invitationCard, newEvent: newEvent, load: load, state: C };
+    return {
+      nav: nav, show: show, onEvent: onEvent, openEvent: openEvent, invitationCard: invitationCard, newEvent: newEvent, load: load, state: C,
+      onResources: function (d) { if (PL) PL.onResources(d); }, planner: PL,
+    };
   }
 
   window.MailCalendar = { attach: attach };

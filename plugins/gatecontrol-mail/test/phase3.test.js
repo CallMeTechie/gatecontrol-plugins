@@ -185,6 +185,11 @@ test('booking requests: to every approver by push and mail, the first decision s
   const logs = (await c.admin('GET', `admin/resources/${car.id}/log`)).json.items;
   const ov = logs.find((x) => x.action === 'confirmed_override');
   assert.deepEqual([ov.user.name, ov.bookingId, ov.detail.violations], ['Bob', lb.id, [{ rule: 'max_duration', limit: 1440 }]]);
+  // at the same moment: one decision wins, the other gets already_decided
+  const race = (await anna('POST', `resources/${car.id}/book`, { title: 'Gleichzeitig', start: at(next(3), 8), end: at(next(3), 9) })).json.bookings[0];
+  const both = await Promise.all([marc('POST', `bookings/${race.id}/decide`, { decision: 'approve' }), bob('POST', `bookings/${race.id}/decide`, { decision: 'decline' })]);
+  assert.deepEqual(both.map((x) => x.status).sort(), [200, 409]);
+  assert.equal(both.find((x) => x.status === 409).json.error.code, 'already_decided');
   // two requests for the same time: the second cannot be approved once the first is
   const d2 = next(2);
   const a1 = (await anna('POST', `resources/${car.id}/book`, { title: 'Eins', start: at(d2, 9), end: at(d2, 11) })).json.bookings[0];

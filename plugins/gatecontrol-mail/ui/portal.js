@@ -289,6 +289,8 @@
       if (!ev) return;
       // since 1.3.0: calendars and contacts (their own areas reload what they show)
       if (ev.type === 'calendar') { if (CAL) CAL.onEvent(ev.data || {}); return; }
+      // since 1.9.0: booking requests and answers, the list of resources
+      if (ev.type === 'resources') { if (CAL) CAL.onResources(ev.data || {}); return; }
       if (ev.type === 'contacts') { if (CON) CON.onEvent(ev.data || {}); return; }
       if (ev.type !== 'mail') return;
       var d = ev.data || {};
@@ -1145,7 +1147,18 @@
   function settingsDialog() {
     var threads = h('input', { type: 'checkbox', class: 'dp-sw', checked: S.settings.threads !== false });
     threads.addEventListener('change', function () { api('PUT', 'settings', { threads: threads.checked }).then(function (r) { S.settings = r.settings; loadList(); }, fail); });
-    var rows = [h('label', { class: 'dp-check' }, [threads, h('span', { text: T('p.threads') })]), h('div', { class: 'mp-lab', text: T('p.accounts') })];
+    var rows = [h('label', { class: 'dp-check' }, [threads, h('span', { text: T('p.threads') })])];
+    // since 1.9.0: the person's free/busy for everybody in GateControl (on unless switched off here or in „Kalender teilen“)
+    if (has('freeBusy') && CAL) {
+      var fb = h('input', { type: 'checkbox', class: 'dp-sw', attrs: { 'aria-label': T('p.s.fb_all') } });
+      fb.disabled = true;
+      CAL.load().then(function () { fb.checked = !(CAL.state.prefs && CAL.state.prefs.freeBusy === false); fb.disabled = false; }, function () {});
+      fb.addEventListener('change', function () {
+        api('PUT', 'calendar/settings', { freeBusy: fb.checked }).then(function (r) { CAL.state.prefs = r.prefs; toast(T('p.saved')); }, function (e) { fb.checked = !fb.checked; fail(e); });
+      });
+      rows.push(h('label', { class: 'mp-swrow' }, [h('span', { class: 'mp-two', style: 'flex:1;min-width:0' }, [h('span', { text: T('p.s.fb_all') }), h('span', { class: 'mp-sub', text: T('p.s.fb_all_d') })]), fb]));
+    }
+    rows.push(h('div', { class: 'mp-lab', text: T('p.accounts') }));
     S.accounts.forEach(function (a) {
       rows.push(h('button', { type: 'button', class: 'mp-row is-acc', on: { click: function () { accountDialog(a); } } }, [accAvatar(a, true), accText(a),
         a.state !== 'ok' && a.state !== 'syncing' ? h('span', { class: 'mp-warn', text: T('p.state_' + a.state) }) : null]));
