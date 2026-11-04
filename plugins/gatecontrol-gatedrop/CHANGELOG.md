@@ -2,6 +2,43 @@
 
 Teilen wie Quick Share – über den eigenen GateControl-Server.
 
+## 1.5.0
+- **Übersicht für Admins mit allen Sendungen:** Die Seite „Übersicht“ zeigt jetzt oben vier Kacheln – belegter Speicher
+  (abgeholt / nicht abgeholt, mit Balken), angekommen in 7 Tagen (x von y Sendungen, wartend, fehlgeschlagen), der Weg
+  in 7 Tagen (direkt / Server) und was nicht abgeholt ist (Anzahl, Größe, älteste) – und darunter die **Liste der
+  Sendungen**: Zeit, Von (Person und Gerät bzw. Portal), An (Person, Gerät, Familie, NAS-Ordner, Drive, Link), Umfang
+  (Anzahl Dateien, Größe), Weg (Direkt, Über Server, Direkt → Server, Link), Status (Empfangen, Abgeholt, Geöffnet,
+  Abgelegt, „2 von 3 abgeholt“, Wartet seit …, Fehlgeschlagen mit Grund, Abgelaufen, Vom Admin entfernt) und was davon
+  bis wann auf dem Server liegt. Filter (Alle, Probleme, Wartet, Direkt, Über Server, Links) mit Anzahl, Suche nach
+  Person oder Gerät, Zeitraum (7 Tage, 30 Tage, alles auf dem Server); die Liste lädt seitenweise. **Dateinamen,
+  Dateitypen, Texte, Links, Notizen, Pfade unterhalb des NAS-Ordners und Link-Adressen sind dort nie zu sehen** – nur
+  Namen von Personen und Geräten. Die bisherigen Inhalte (Links an/aus, aktive Links, Speicherplatz, Zusammenspiel)
+  bleiben darunter.
+- **Aufbewahrung einstellbar:** „Nach der Abholung“ sofort / 1 / 3 / 7 Tage und „Nicht abgeholt“ 3 / 7 / 14 / 30 Tage.
+  Standard 7 / 7 – damit ändert sich für bestehende Installationen nichts (die Dateien gehen wie bisher 7 Tage nach dem
+  Senden). Die Einstellung gilt auch für bestehende Sendungen; Abgeholtes bleibt nie länger als nicht Abgeholtes,
+  „sofort“ lässt einem laufenden Download 15 Minuten. Links für Externe behalten die beim Erstellen gewählte Laufzeit,
+  die Dateien bleiben so lange.
+- **Speicher freigeben:** Ein Dialog löscht die Server-Kopien von „nicht abgeholt, älter als 1 / 3 / 7 Tage“ und / oder
+  „schon abgeholt“ (Anzahl und Größe live berechnet), dazu „Löschen“ je Sendung in der Liste. Die Sendung heißt dann
+  beim Absender **„Vom Admin entfernt“** (Portal; Apps: `removed: true`), Empfänger, die noch nicht abgeholt haben,
+  bekommen nichts mehr (offene Zustellungen, Übertragungen und Wiederholungen enden, Links werden gesperrt). Was schon auf
+  Geräten, im NAS, im Drive oder im Messenger liegt, bleibt dort.
+- **„Abgeholt“ nur noch mit echter Bestätigung:** Eine Zustellung an ein Gerät, das gerade online ist, war bisher sofort
+  `delivered` – auch wenn die App sie nie abholte. Jetzt gilt sie erst als abgeholt (`pickedAt`), wenn das Zielgerät
+  `POST sends/<id>/opened` meldet (Android und Windows tun das, sobald alles gespeichert ist), bei Direktübertragungen
+  wenn das empfangende Gerät `ok` mit allen Bytes meldet, bei Personen wenn sie die Sendung öffnen (Familie: jedes
+  Mitglied), bei NAS und Drive mit dem Speichern. Der Status `delivered` bleibt für ältere Apps wie bisher; neu sind
+  `pickedAt` an Zustellungen und Sendungen.
+- **Direktübertragung mit mehreren Dateien:** Meldet das empfangende Gerät `ok`, aber weniger Bytes als die Dateien
+  haben, gilt das als fehlgeschlagen (`incomplete`) und die Zustellung nimmt den Weg über den Server – auch wenn der
+  Absender schon `ok` gemeldet hat. Ein `ok` des Absenders macht einen schon begonnenen Rückfall nicht mehr rückgängig.
+- **Nur Geräte mit GateDrop als Ziel:** `GET targets` bietet als eigene Geräte nur noch App-Installationen an, die
+  GateDrop schon benutzt haben (eine Anfrage an die App-API; was bekannt war, übernimmt die Migration). Apps ohne GateDrop
+  erscheinen nicht mehr; Sendungen an eine schon bekannte Geräte-ID gehen weiter.
+- Migration 004 (Einstellungen, Abholungen, „vom Admin entfernt“, bekannte Geräte) – nur Ergänzungen. Neue
+  Admin-Endpunkte nur für Admins in der Admin-Oberfläche. Keine neue GateControl-Funktion: Mindestversion bleibt 1.193.0.
+
 ## 1.4.1
 - **Zustellung wartet auf die Virenprüfung statt zu scheitern:** Wird eine Datei beim Weitergeben an den Messenger, an
   einen NAS-Ordner oder an „Mein Drive“ noch von GateControl geprüft (`ERR_MEDIA_SCAN_PENDING` bzw. `scan_pending` des

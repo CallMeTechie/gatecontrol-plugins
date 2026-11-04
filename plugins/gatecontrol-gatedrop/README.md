@@ -4,8 +4,8 @@ Sharing like Quick Share through one's own GateControl server: files (1–20 per
 (≤ 20 000 characters) or a link go to **people** (a message of the sender in the Messenger), to one's **own
 devices** (Android, Windows — directly on the same Wi-Fi when possible, otherwise through the server), into **NAS
 folders** (the Synology plugin), into one's **own Drive** (the Drive plugin, since 1.3.0) or out as a **link for
-outsiders** (time-limited, optional PIN). Received files stay
-7 days on the server.
+outsiders** (time-limited, optional PIN). Received files stay on the server until they are picked up — as long as an
+administrator sets (since 1.5.0; default 7 days, see "Retention").
 
 *Deutsch:* Teilen wie Quick Share über den eigenen Server – an Personen (im Messenger), eigene Geräte (im WLAN direkt,
 sonst über den Server), NAS-Ordner, ins eigene Drive oder als Link für Externe. Details im CHANGELOG.
@@ -38,7 +38,7 @@ Answers: `{ ok: true, … }`; errors `{ ok: false, code, error }` (localized tex
 | `invalid` | 400 | bad body / query |
 | `login_required`, `forbidden` | 403 | see above; links / NAS for others than admins and parents |
 | `not_found` | 404 | unknown or not yours |
-| `gone` | 410 | the send expired (files removed) |
+| `gone` | 410 | the send expired or an administrator removed its files |
 | `upload_required` | 409 | `local` items for a target that needs the files on the server |
 | `unavailable` | 409 | the target is gone: a device closed for others, Drive not installed / no seat / no licence |
 | `links_disabled` | 409 | public links are off |
@@ -67,13 +67,16 @@ anything else (HTML, XML, JSON, SVG, …) goes up as `application/octet-stream`.
   "messenger": true,                                                                      // people get a chat message
   "limits": { "maxItems": 20, "maxBytes": 2147483648, "types": ["image/*", …], "textMax": 20000, "noteMax": 500,
               "retentionDays": 7, "linkExpires": ["1h", "1d", "7d", "once"], "directPort": 47731,
-              "presenceEveryS": 300, "ticketS": 600 },
+              "presenceEveryS": 300, "ticketS": 600,
+              "retention": { "afterPickupDays": 7, "unpickedDays": 7 } },                 // since 1.5.0, see "Retention"
   "storage": { "bytes": 1503238553, "quota": 10737418240 },
   "serverTime": "…" }
 ```
 
 `family` is listed for members of Familie's family (parents and children). `devices`: the person's app installations
-(`gc.devices.list`, no web clients, not the asking one); `direct` = both have a presence report younger than 15 minutes
+(`gc.devices.list`, no web clients, not the asking one) — since 1.5.0 only those that used GateDrop's app API at least once
+(any request with `user.device`; the migration took over what was known: presence, sends, receipts, direct transfers,
+`PUT device`), so an app without GateDrop is no longer offered; `POST sends` still takes any own device id; `direct` = both have a presence report younger than 15 minutes
 with addresses in the same private IPv4 network (10/8, 172.16/12, 192.168/16; the shorter prefix of both), the target is
 online, and one side listens (`mode`: `push` = the target listens, `pull` = the asking device listens). Show the link
 target only when `me.canLink && links.enabled`.
@@ -141,8 +144,11 @@ direct transfer waits for the files, or since 1.4.1 with `error: 'scan_pending'`
 check — see "Virus scan"), `direct` (direct transfer brokered), `waiting` (an own device that was **offline**
 when sent: the send is kept on the server, the push is queued by GateControl; the device fetches it with `GET pending` —
 not a failure, retention treats it like `delivered`), `delivered`, `opened`, `failed`, `expired`; `via`: `direct` |
-`server`; `error` (a code,
-informational when delivered): `direct_failed`, `push_failed`, `file_type` / `file_too_large` / `unavailable` (the
+`server`; `pickedAt` (since 1.5.0): when the recipient **confirmed** it has the send (see "Pick-up") — `delivered`
+without it only means provided (pushed, waiting for the app); `error` (a code,
+informational when delivered): `direct_failed`, `incomplete` (1.5.0: the receiving end of a direct transfer reported fewer
+bytes), `removed` (1.5.0: with `status: 'expired'` — an administrator removed the files before this recipient picked them
+up), `push_failed`, `file_type` / `file_too_large` / `unavailable` (the
 Messenger did not take it — the person got a push instead), `no_space`, `permission`, `unreachable`, `upload_failed`
 (NAS), `links_disabled`, `no_public_url`, `revoked`; Drive passes its codes through: `no_seat`, `not_licensed`,
 `not_found` (the folder is gone), `forbidden` (no write access to it), `quota`, `upload_invalid`, `invalid`, `exists`,
@@ -201,7 +207,11 @@ receives `kind: "data"`, `silent: true`) whose `data` is
   few seconds and takes the server way as soon as the other end gave up (`status: "failed"`).
 * `POST transfers/<id>/result` `{ ok, bytes?, error? ([a-z0-9_.-]{1,64}) }` (both ends) → `{ transfer: { id, status, side },
   delivery: { id, kind, target, status, via, error, at }, fallback: null | "server" | "upload", missing?: [indexes] }`.
-  `ok: true` → delivered via direct. A failure: all files on the server → `fallback: "server"` (a push to the device
+  `ok: true` → delivered via direct. Since 1.5.0 the **receiving end** decides: its `ok` with `bytes` below the files'
+  size counts as a failure (`incomplete`, stored as its result) — also after the sender's `ok`; its `ok` with every byte (or
+  without `bytes`, older apps) is the pick-up (`pickedAt`). The sender's `ok` alone makes the delivery `delivered` via
+  direct (as before) but not picked up, and no longer undoes a server way the receiver's failure started. The answer's
+  `delivery` carries `pickedAt`. A failure: all files on the server → `fallback: "server"` (a push to the device
   now); files still local → `fallback: "upload"`, `missing` = the item indexes: the sender uploads them and calls
 * `POST sends/<id>/items` `{ items: [{ index, mediaId }] }` (sender) → `{ send }`; once all files are there the waiting
   device deliveries go through the server.
@@ -209,7 +219,8 @@ receives `kind: "data"`, `silent: true`) whose `data` is
 
 ### Deliveries through the server
 
-An own device that is online (`online` in `gc.devices.list`) gets the delivery as `delivered`; one that is offline as
+An own device that is online (`online` in `gc.devices.list`) gets the delivery as `delivered` (provided — picked up
+only once that device calls `POST sends/<id>/opened`, see "Pick-up"); one that is offline as
 `waiting` — the push below is sent all the same (GateControl queues it), but an app that comes back does not act on
 pushes it missed: it polls `GET pending` (below). Direct transfers stay limited to online devices.
 
@@ -246,9 +257,11 @@ files with `GET items/<mediaId>` as usual.
 
 * `GET sends/<id>` → `{ send }` — the sender's view (`role: "sent"`, every delivery) or a recipient's (`role:
   "received"`, only its own deliveries).
-  `send = { id, role, createdAt, expiresAt, expired, from: { userId, name, avatarUrl, deviceId, deviceName }, text, link,
-  note, items: [{ index, mediaId (null when not on the server), name, mime, bytes, local, available, scan? }], deliveries }`
-  — `scan` since 1.4.0, see "Virus scan".
+  `send = { id, role, createdAt, expiresAt, expired, removed, removedAt, pickedAt, from: { userId, name, avatarUrl,
+  deviceId, deviceName }, text, link, note, items: [{ index, mediaId (null when not on the server), name, mime, bytes, local,
+  available, scan? }], deliveries }` — `scan` since 1.4.0, see "Virus scan"; `removed` / `removedAt` / `pickedAt` since
+  1.5.0: an administrator removed the files ("Vom Admin entfernt" — `expired` is `true` too), every recipient picked it up.
+  `expiresAt` follows the administrator's retention and may change (a pick-up, a new setting).
 * `GET inbox?kind=received|sent|links&before=<ISO>&limit=1…100` (default 50, newest first) → `{ kind, items, hasMore }`.
   `received`: sends to one's devices and to oneself as a person (not those that arrived as a chat message), with the
   family's ones; `sent`: one's own sends; `links`: `[{ token, url, sendId, title, pin, maxDownloads, downloads, locked,
@@ -304,10 +317,61 @@ minimum stays 1.193.0.
 Topics `received` ("Empfangen": deliveries, silent transfer pushes) and `link` ("Link geladen": `Link geladen: <title>`,
 `<n>× heruntergeladen`; `Link gesperrt: <title>` after 5 wrong PINs; data `{ gatedrop: { link: <token>, send } }`).
 
+### Pick-up (since 1.5.0)
+
+`deliveries[].pickedAt` is set only by a real confirmation — `delivered` alone no longer counts as picked up:
+
+| target | confirmed by |
+|---|---|
+| device (server) | that device's `POST sends/<id>/opened` (not another device, not the portal) |
+| device (direct) | the receiving device's `POST transfers/<id>/result { ok: true, bytes }` with every byte (or without `bytes`) |
+| person | the person's `POST sends/<id>/opened`; `family`: every member at sending (the delivery's `status` becomes `opened` at the first, as before) |
+| person via the Messenger | the message carries every file (no "+N Dateien in GateDrop") |
+| NAS, Drive | saved (`delivered`) |
+| link | never — a link keeps its time; a send of links only counts as picked up with its first download |
+
+The send's `pickedAt`: every delivery that needs the server copy (not links, not failed / expired ones) is picked up.
+The retention after the pick-up counts from then.
+
+### Retention (since 1.5.0)
+
+An administrator sets on the page "Übersicht" how long files of sends through the server stay: **after the pick-up**
+0 (at once — 15 minutes so a running download ends), 1, 3 or 7 days, and **not picked up** 3, 7, 14 or 30 days from
+sending. Default 7 / 7: the files go 7 days after sending, as before 1.5.0. A send picked up never stays longer than one
+that is not. The setting applies to existing sends too (their `expiresAt` changes). A link for outsiders keeps the time
+chosen when it was made (no longer cut by the retention); the send's files stay while it is active. The background
+deletes the files at `expiresAt` (`expired: true`), the history 30 days after sending. `GET targets` → `limits.retention
+{ afterPickupDays, unpickedDays }` and `limits.retentionDays` (= `unpickedDays`, the longest a send waits).
+
 ## Admin page
 
-"Übersicht" (`admin/overview`): storage (`gc.media.usage`), retention (7 days), active links, sends of 7 days, whether
-links are on (with the way to the switch), Messenger / NAS / Drive / Familie available. No content.
+"Übersicht" — administrators in the admin UI only (`/api/v1/plugins/gatecontrol-gatedrop/api/admin/…`; the portal, the
+apps, kiosk devices and other people get `403 forbidden`). People and device names are shown — **never** a file name, a
+MIME type, a text, a link, a note, a NAS path below the drop folder, a Drive folder or a link's title / URL.
+
+* `GET admin/overview` → `{ storage (gc.media.usage), held: { picked: { count, bytes }, unpicked: { count, bytes, oldestAt } },
+  week: { sends, arrived, waiting, failed, direct, server }, retention: { afterDays, unpickedDays, after, unpicked },
+  retentionDays, sends7d, activeLinks, linksEnabled, integrations }`.
+* `GET admin/sends?range=7d|30d|server&filter=all|problems|waiting|direct|server|links&q=&cursor=&limit=1…100` (default 50,
+  newest first) → `{ items, hasMore, cursor, counts: { all, problems, waiting, direct, server, links } }` (counts in the
+  range and search). `q`: a person (sender, recipient, family member) or a device name. A row: `{ id, createdAt, from:
+  { userId, name, device, portal }, to: [{ kind: device|person|family|nas|drive|link, name?, platform?, owner?, online?,
+  lastSeen?, members?, messenger?, pin?, maxDownloads? }], files, bytes, way: direct|server|fallback|mixed|link,
+  status: { state: picked|partial|waiting|pending|failed|expired|removed|link, how?, picked?, total?, open?, since?,
+  offline?, lastSeen?, scan?, error?, at?, downloads?, active?, expiresAt? }, problem, server: { state:
+  held|never|none|after|expired|removed, bytes?, until? }, canDelete }`. Problems: a failure, waiting for more than a day,
+  expired without the pick-up.
+* `DELETE admin/sends/<id>` → `{ removed, bytes }` (`410 gone` without files on the server).
+* `PUT admin/retention { afterDays: 0|1|3|7, unpickedDays: 3|7|14|30 }` → `{ retention }`.
+* `GET admin/cleanup?olderDays=1|3|7` → `{ unpicked: { olderDays, count, bytes }, picked: { count, bytes } }`;
+  `POST admin/cleanup { unpicked: 1|3|7|null, picked: true|false }` → `{ removed, bytes }` — "schon abgeholt" leaves sends
+  with an active link alone.
+
+Removing (cleanup or one send): the send is `removed` and expires at once (nobody reads a file any more); deliveries not
+picked up become `expired` with `error: 'removed'` — those recipients no longer see the send (not in `GET pending`,
+`GET inbox`, `GET sends/<id>`); open transfers end, links are revoked; the files are deleted in the background in
+batches. Recipients that picked it up keep it in their history. Only GateDrop's copies go: what is on devices, in the NAS,
+in Drive or in the Messenger stays.
 
 ## Development
 

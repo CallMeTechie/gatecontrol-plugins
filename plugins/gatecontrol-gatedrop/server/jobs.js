@@ -2,8 +2,10 @@
 
 // Background (permissions.background, every 60 s):
 //   * direct transfers whose ticket expired (10 min) without a result → the server way (transfers.expire);
-//   * retention: 7 days after a send its files are deleted from GateControl's media (gc.media.delete), waiting
-//     deliveries become expired; the rows (history) stay 30 days, then go;
+//   * retention: once a send's expires_at passed its files are deleted from GateControl's media (gc.media.delete), waiting
+//     deliveries become expired; the rows (history) stay 30 days, then go. expires_at follows the administrator's
+//     setting since 1.5.0 (retention.js: after the pick-up / not picked up, default 7 days after sending as before);
+//     a send an administrator removed (admin.js) expires at once;
 //   * presence older than a day;
 //   * since 1.4.1: deliveries waiting for GateControl's virus check (a missed hook mediaScanned) tried again every
 //     5 minutes, failed with scan_pending 24 hours after the send (retry.js).
@@ -41,6 +43,7 @@ async function purgeRows(gc, now) {
   if (!old.length) return 0;
   await store.tx(gc, async () => {
     for (const s of old) {
+      await store.run(gc, 'DELETE FROM pickups WHERE delivery_id IN (SELECT id FROM deliveries WHERE send_id = ?)', [s.id]);
       for (const tbl of ['items', 'deliveries', 'transfers', 'links']) await store.run(gc, `DELETE FROM ${tbl} WHERE send_id = ?`, [s.id]);
       await store.run(gc, 'DELETE FROM sends WHERE id = ?', [s.id]);
     }
