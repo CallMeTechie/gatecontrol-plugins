@@ -2,6 +2,11 @@
 
 Dateien der Familie und des Teams auf dem eigenen Speicher – auf diesem Server, einer NAS oder in S3.
 
+## 1.19.1
+- **Fotos laden wieder bei mehr als 100 Einträgen.** Den Virenscan-Zustand fragte Drive in Teilen zu 400 Dateien ab;
+  GateControl erlaubt höchstens 100 Werte je Abfrage. Fotos, Alben-Cover, Freigabe-Links und Ordner mit mehr als 100
+  Dateien scheiterten mit „too many parameters“. Jetzt in Teilen zu `store.CHUNK`.
+
 ## 1.19.0
 - **Virenscan von GateControl** (Feature `scan`, README „Virus scan“). GateControl prüft ab der Version nach 1.222.0
   jede Datei direkt nach dem Speichern. Drive übernimmt das Ergebnis (`scan` aus `gc.media.info`) bei jedem Weg in den

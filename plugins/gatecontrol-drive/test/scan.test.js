@@ -125,3 +125,19 @@ test('save_file from Mail or GateDrop: the hand-over\'s state comes along', asyn
     assert.deepEqual(n.scan, { state: 'unscannable', blocked: false, finding: 'encrypted' });
   });
 });
+
+test('rowsOf: more than 100 media ids go to the host in parts (at most 100 parameters a statement)', async () => {
+  const scan = require('../server/scan');
+  const seen = [];
+  const gc = { db: { query: async (sql, params) => {
+    seen.push(params.length);
+    if (params.length > 100) throw Object.assign(new Error('too many parameters'), { code: 'ERR_INVALID' });
+    return { rows: params.filter((id) => id.endsWith('7')).map((id) => ({ media_id: id, state: 'clean', blocked: 0, finding: null })) };
+  } } };
+  const ids = Array.from({ length: 250 }, (_, i) => `m${i}`);
+  const map = await scan.rowsOf(gc, [...ids, ids[0], null, '']);
+  assert.ok(seen.length >= 3 && seen.every((n) => n <= 100), JSON.stringify(seen));
+  assert.equal(seen.reduce((a, b) => a + b, 0), 250, 'every id once');
+  assert.equal(map.size, 25);
+  assert.deepEqual(map.get('m7'), { state: 'clean', blocked: false, finding: null });
+});
