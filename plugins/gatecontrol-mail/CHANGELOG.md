@@ -2,6 +2,44 @@
 
 Alle E-Mail-Konten an einem Ort – im eigenen Tab der GateControl-Apps und im Portal.
 
+## 1.9.0
+- **Frei/Gebucht innerhalb von GateControl** (Mockup Planer). Beim Planen eines Termins zeigt Mail je Person und
+  Ressource, wann sie frei, gebucht, vorläufig oder unbekannt ist – nie Titel. Termine, die als privat markiert sind,
+  gelten immer als „gebucht“. Standardmäßig für alle an; jede Person schaltet es in den Mail-Einstellungen oder unter
+  „Kalender teilen“ ab (dann „unbekannt“, außer für Personen, mit denen sie einen Kalender teilt). Kolleginnen in
+  Microsoft 365 kommen über Graph `getSchedule` mit dem schon erteilten Recht `Calendars.ReadWrite` dazu; fehlt es,
+  heißt es „unbekannt“ statt eines Fehlers. Externe Teilnehmer sind „unbekannt“.
+- **Vorschläge, bei denen alle können:** die nächsten freien Zeiten in der eigenen Arbeitszeit (neu in den
+  Kalender-Einstellungen, Standard Mo–Fr 8–18 Uhr). Ein Klick übernimmt die Zeit in den Termin.
+- **Geteilte Kalender** (Mockup Teilen). Eigene GateControl-Kalender lassen sich mit Personen oder Gruppen teilen: Frei/
+  Gebucht, Lesen (Titel, Ort, Zeiten) oder Bearbeiten (Termine anlegen und ändern, ohne Teilnehmer). Private Termine
+  bleiben bei jeder Stufe „Gebucht“. Die Empfängerin blendet geteilte Kalender unter „Mit mir geteilt“ ein; die
+  Besitzerin sieht „hat angenommen“ oder „Einladung offen“. Kalender eines Microsoft-365-Kontos, die beim Anbieter mit
+  der Person geteilt sind, erscheinen dort ebenfalls, soweit der Abgleich sie liefert (`owner` der Graph-Kalender).
+- **Ressourcen** (Mockups Ressource, AdminRessourcen, Anfragen). Räume, Fahrzeuge, Geräte und Sonstiges legt der
+  Administrator auf der Seite von Mail im Server an: neuer Reiter „Ressourcen“ neben „Übersicht“ (die Einstellungen
+  unter Einstellungen › Plugins › Mail haben feste Reiter des Hosts; dort führt die neue Karte „Ressourcen“ hin). Felder:
+  Name, Art, Standort, Plätze, Ausstattung, wer buchen darf (Personen und Gruppen), Zusage automatisch oder nach
+  Freigabe durch Personen oder Gruppen, Regeln (höchstens eine Dauer, bis zu N Tage im Voraus, buchbare Zeiten). Jede
+  Ressource hat ihren eigenen Kalender auf dem Server (ihre Buchungen).
+- **Buchen** über „Ressource buchen“ im Kalender oder als Teilnehmerin einer Einladung („Ressource hinzufügen“ im
+  Termin). Konflikte und Regeln prüft der Server: belegt → `409 resource_busy`, bei automatischer Zusage Regelverstoß →
+  `409 rule_violation`. Ressourcen gehen nur in GateControl-Kalendern und nicht in Serien.
+- **Buchungsanfragen:** Bei Freigabe gehen Anfragen als Benachrichtigung (`resource_request`) und als Mail vom Konto
+  der buchenden Person an alle, die freigeben dürfen. Die erste Entscheidung erledigt die Anfrage für alle (später:
+  `409 already_decided`). Die buchende Person sieht Zusage oder Absage im Termin (Antwort der Ressource) und bekommt eine
+  Benachrichtigung (`resource_booking`). Freigebende dürfen trotz Regelverstoß freigeben („Trotzdem freigeben“), das
+  steht im Protokoll der Ressource. Eine neue Zeit fragt erneut, ein gelöschter Termin gibt die Ressource frei.
+- **Neu im Portal:** Frei/Gebucht mit Vorschlägen im Termin, „Ressource buchen“, „Anfragen“ bzw. „Meine Buchungen“,
+  „Teilen“ im Menü eines eigenen Kalenders, „Mit mir geteilt“ im Seitenmenü, der Schalter für Frei/Gebucht in den
+  Mail-Einstellungen. Skoda-Verknüpfung und Raumpostfächer aus Microsoft 365 stehen auf der Plugin-Seite als „kommt
+  später“.
+- **Für die Apps** (README „Free/busy, shared calendars and resources“): Feature-Flags `freeBusy`, `calendarSharing`,
+  `resources`, `bookingRequests` in `GET me`; neue Endpunkte `freebusy`, `freebusy/suggest`, `calendars/<id>/shares`,
+  `shared`, `principals`, `resources`, `bookings`; Live-Ereignisse `resources` und `calendar { kind: 'shares' }`.
+- Migration 009 (Freigaben, Ressourcen, Buchungen, Protokoll). Neue Push-Themen `calendar_share`, `resource_request`,
+  `resource_booking` – der Administrator bestätigt sie beim Update. Mindestversion bleibt GateControl 1.219.0.
+
 ## 1.8.0
 - **Virenscan von GateControl** (README „Virus scan“). GateControl prüft ab der Version nach 1.222.0 jeden Anhang, den
   es für Mail speichert, direkt nach dem Speichern und übernimmt den Absender für die Quarantäne. Mail übernimmt das

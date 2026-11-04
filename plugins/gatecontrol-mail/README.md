@@ -12,10 +12,14 @@ push; an own address book with the accounts' contacts (Graph, CardDAV; Gmail: vC
 „Als Kontakt speichern“, the sender view and suggestions while writing. Since 1.4.0 duplicates become **one contact in
 the own address book** (the GC contact): the accounts' cards are linked to it and stay at the provider, what they have
 more is taken over, another value is a note to take over or dismiss; certain duplicates are merged by themselves.
-Favourites with a main number, a compact list of the next events for the start page.
+Favourites with a main number, a compact list of the next events for the start page. Since 1.9.0 **free/busy** within
+GateControl with a meeting planner (Microsoft 365 colleagues through Graph `getSchedule`), **shared GateControl
+calendars** (free/busy, read, edit — to people and groups) and **resources** (rooms, vehicles, devices) the administrator
+keeps on Mail's page in GateControl, booked in the calendar or as an attendee, automatically or after approval.
 
 *Deutsch:* Alle E-Mail-Konten an einem Ort – ein Posteingang mit Relevant und Sonstige, Push, Schutz vor Zählpixeln,
-Anhänge in Drive und KI; dazu Kalender und Kontakte. Details im CHANGELOG.
+Anhänge in Drive und KI; dazu Kalender und Kontakte, seit 1.9.0 Frei/Gebucht, geteilte Kalender und Ressourcen. Details
+im CHANGELOG.
 
 Needs **GateControl ≥ 1.219.0** (since 1.2.0): `gc.mail.dav.request` (`permissions.mail.dav` — CalDAV/CardDAV to the
 servers people enter, through the host's network checks), the calendar parts of a mail and `icalEvent` when sending
@@ -117,13 +121,16 @@ images_off | links_disabled | busy { retryAfter?, reason? } | storage_unavailabl
 throttles, or (`reason: 'loading'`) an attachment is still on its way — ask again after `retryAfter` s (since 1.1.2 409,
 before 503). Since 1.8.0 (GateControl's virus scan, see "Virus scan"): 423 `quarantined | scan_pending | scan_blocked
 { scan }`, 410 `attachment_removed { scan }`, 409 `attachment_blocked { attachmentId, name, scan }`, 422 `infected { name,
-finding }`.
+finding }`. Since 1.9.0: 403 `feature_off { feature: 'freeBusy' | 'sharing' | 'resources' }`, 403 `not_bookable { resourceId }`,
+409 `resource_busy { resourceId, name, conflicts: [{ start, end }] } | rule_violation { resourceId, name, violations } |
+already_decided { state, decidedBy: { userId, name } | null, decidedAt } | not_supported { what: 'resource' |
+'resource_series' | 'share' | 'shared_attendees' }`, 400 `invalid { field: 'start', reason: 'past' }`.
 
 ### Account, state
 
 | | |
 |---|---|
-| `GET me` | `{ features, limits: { accountsMax, quotaBytes, usedBytes, retentionMonths }, microsoft: { clientId \| null, authority, scopes, adminConsentUrl }, accounts: [Account], unread: { all, byAccount }, settings: { threads, swipeLeft, swipeRight }, seat: 'family' \| 'business' \| null, licence: { valid, tier } }` — features `mail`, `ai`, `microsoft`, `drive`, `familyCalendar`, `images`, since 1.2.0 `calendar`, `contacts` (the administrator), `dav` (the host has `gc.mail.dav`), `familyOverlay`, `alltagOverlay`; `seat` / `licence` since 1.1.0 (answered also without a place). `microsoft.scopes`: mail + `Calendars.ReadWrite` / `Contacts.ReadWrite` while on; `usedBytes` counts events and contacts too |
+| `GET me` | `{ features, limits: { accountsMax, quotaBytes, usedBytes, retentionMonths }, microsoft: { clientId \| null, authority, scopes, adminConsentUrl }, accounts: [Account], unread: { all, byAccount }, settings: { threads, swipeLeft, swipeRight }, seat: 'family' \| 'business' \| null, licence: { valid, tier } }` — features `mail`, `ai`, `microsoft`, `drive`, `familyCalendar`, `images`, since 1.2.0 `calendar`, `contacts` (the administrator), `dav` (the host has `gc.mail.dav`), `familyOverlay`, `alltagOverlay`; since 1.8.0 `scan`; since 1.9.0 `freeBusy`, `calendarSharing`, `resources` (the administrator) and `bookingRequests` (the person decides on the requests of a resource); `seat` / `licence` since 1.1.0 (answered also without a place). `microsoft.scopes`: mail + `Calendars.ReadWrite` / `Contacts.ReadWrite` while on; `usedBytes` counts events and contacts too |
 | `PUT settings` | `{ threads?, swipeLeft?, swipeRight? }` (`archive \| delete \| read \| none`) → `{ settings }` |
 | `GET providers` | `[{ id, label, auth: 'password' \| 'app_password' \| 'microsoft' \| 'imap', hint: { de, en } \| null, help }]` |
 | `POST accounts/discover` | `{ email }` → `{ provider, auth, imap, smtp, hint }` (known domains, else `gc.mail.autoconfig`) |
@@ -303,6 +310,49 @@ the default 360 is 18:00 the day before (before 1.3.1: 1080, that is 06:00 the d
 | `POST groups` · `PATCH groups/<id>` · `DELETE groups/<id>` · `GET groups/<id>` · `POST groups/<id>/members` | GateControl's own distribution lists (≤ 200, ≤ 500 members), across sources: `{ add: [{ contactId } \| { email, name? }], remove: [memberId] }` |
 | `GET contacts?q=` | as before `{ items: [{ name, email, source }] }` (≤ 10), since 1.2.0 own contacts first (`source: 'contact'`, `contactId`, `photo`), then groups (`source: 'group'`, `email: null`, `groupId`, `members` ≤ 50), GateControl people, recent addresses |
 
+### Free/busy, shared calendars and resources (since 1.9.0)
+
+For the apps: feature flags in `GET me` `features` — `freeBusy` (the planner), `calendarSharing` (sharing, „Mit mir
+geteilt“), `resources` („Ressource buchen“, resources as attendees, „Meine Buchungen“), `bookingRequests` (the person
+approves: „Buchungsanfragen“). Without a flag: no button, no area. All paths need Mail's place like the rest
+(`no_seat`, `not_licensed`) and the calendar (`feature_off { feature: 'calendar' }`); rights are checked on the server.
+The compact contract for the app helpers: Phase 3 contract (`mail-phase3-apps-contract.md`).
+
+| | |
+|---|---|
+| `POST freebusy` | `{ from, to (≤ 31 days), attendees: [email] (≤ 50), resources?: [id] }` → `{ from, to, items: [Row] }` — the asker first (`kind: 'self'`) |
+| `POST freebusy/suggest` | `{ duration (5…1440 min), from?, to? (≤ 14 days, default 7), attendees, resources?, limit? (1…10, 4) }` → `{ items: [{ start, end }], unknown: [key], workHours, timeZone }` — slots in the asker's working hours (their zone) where the asker, every known person and resource is free (tentative counts as taken), not overlapping |
+| `PUT calendar/settings` | also `{ freeBusy?: bool, workHours?: { days: [1…7], from: 'HH:MM', to: 'HH:MM' } }` — `CalPrefs` has both (default `true`, Mon–Fri 08:00–18:00) |
+| `GET calendars` | also `shared: [SharedCalendar]`; `Calendar.sharedBy: { email } \| null` (an account calendar of another Microsoft 365 mailbox) |
+| `GET calendars/<id>/shares` | `{ items: [Share], freeBusy }` — own GateControl calendars only (an account's: 409 `not_supported { what: 'share' }`) |
+| `POST calendars/<id>/shares` | `{ type: 'user' \| 'group', id, level: 'freebusy' \| 'read' \| 'write' }` → `{ share }` (again for the same principal: the new level; ≤ 50; not to oneself) |
+| `PATCH calendars/<id>/shares/<shareId>` · `DELETE …` | `{ level }` → `{ share }` · `{ ok }` |
+| `GET shared` | `{ items: [SharedCalendar], accounts: [{ calendarId, accountId, name, color, owner: { email }, writable, visible }] }` |
+| `PATCH shared/<calendarId>` | `{ visible?, color? }` → `{ item }` — „Anzeigen“ (the first time: the owner reads „hat angenommen“) |
+| `GET principals?q=` | `{ items: [{ type: 'user', id, name, initials, color } \| { type: 'group', id, name, sub, members }] }` — people who may use Mail and groups by name (`q` ≥ 2, ≤ 20; never addresses) |
+| `GET events` · `GET events/<id>` · `POST`/`PATCH`/`DELETE events` | shared calendars too: items with `shared: level`; free/busy and private events only „Gebucht“/„Vorläufig“ with `eventId: null`; `read` opens without description and attendees; `write` writes as the owner (no attendees: 409 `not_supported { what: 'shared_attendees' }`; `read` → 409 `read_only`) |
+| `GET resources?from=&to=&kind=` | `{ items: [Resource + busy?: [{ start, end, status: 'busy' \| 'pending', mine }]], kinds }` — only what the person may book; `from`/`to` ≤ 31 days |
+| `POST resources/<id>/book` | `{ title?, allDay?, start?, end?, startDate?, endDate?, timeZone?, calendarId? (a GateControl calendar), note? }` → `{ event, sent, bookings: [Booking] }` — an own event with the resource as attendee |
+| `POST events` / `PATCH events/<id>` | attendees may hold resources (`{ email: Resource.address, role: 'resource' }`, GateControl calendars, no series) → also `bookings: [Booking]`; a new time asks again, a removed resource is called off |
+| `GET bookings?state=open\|done\|mine` | `{ items: [Booking], counts: { open } }` — `open`: requests the person decides on, `done`: decided / called off in 60 days, `mine`: own bookings |
+| `GET bookings/<id>` · `POST bookings/<id>/decide` · `DELETE bookings/<id>` | `Booking` (booker or approver) · `{ decision: 'approve' \| 'decline', comment?, override? }` → `{ booking }` · `{ ok }` (the booker; the resource leaves the event) |
+
+`Row` = `{ key, kind: 'self'|'person'|'microsoft'|'resource'|'external', email | null, resourceId | null, userId | null, name,
+state: 'ok'|'unknown', blocks: [{ start, end, status: 'busy'|'tentative' }] }` — never titles; private events are
+`busy`; a person who switched free/busy off is `unknown` unless they shared a calendar with the asker; `microsoft`:
+colleagues of the asker's Microsoft 365 account (same domain) by Graph `getSchedule` (`Calendars.ReadWrite`, already
+asked since 1.2.0) — without the right or when Graph refuses `unknown`, never an error; anyone else `external`/`unknown`.
+`SharedCalendar` = `{ id, name, color, owner: { userId, name }, level, via: 'user'|'group', group, visible, accepted, writable }`.
+`Share` = `{ id, type, principalId, name, level, state: 'accepted'|'pending'|'group', members, createdAt }`.
+`Resource` = `{ id, name, kind: 'room'|'vehicle'|'device'|'other', location, seats, equipment, color, approval:
+'auto'|'approval', approvers: [label], rules: { maxMinutes, horizonDays, hours: { days, from, to } | null }, timeZone,
+address }`. `Booking` = `{ id, resourceId, resource: { id, name, kind, color, location }, title, start, end, allDay,
+startDate?, endDate?, state: 'pending'|'confirmed'|'declined'|'cancelled', booker: { userId, name }, eventId (own only),
+note, violations: [{ rule: 'max_duration'|'horizon'|'hours', limit?, days?, from?, to? }], conflicts: [{ start, end }],
+decidedBy, decidedAt, override, comment, createdAt, updatedAt, canDecide, day: [{ start, end, status }] }`. In the booker's
+event the resource is an attendee (`role: 'resource'`) whose `response` follows the booking (`accepted` / `needs_action`
+/ `declined`).
+
 ### Push and live events
 
 * Topic `mail`: title = sender, text = subject, data `{ mail: { messageId, accountId } }` — per the account's `push`
@@ -320,6 +370,15 @@ the default 360 is 18:00 the day before (before 1.3.1: 1080, that is 06:00 the d
   `{ kind: 'addressbooks' }` | `{ kind: 'groups' }`; a mail with a new invitation card: `mail` with its `messageId`.
   Since 1.4.0 also `contacts` `{ kind: 'merged', masterId, contactIds, auto }` | `{ kind: 'conflicts', contactIds }` |
   `{ kind: 'favorites' }`.
+* Since 1.9.0 topics `resource_request` (to everybody who may approve, not the booker: title „Buchungsanfrage:
+  <Ressource>“, text „<Name> · <Titel>, <Zeit>“, data `{ resources: { bookingId, resourceId } }`, collapse `res:<id>`),
+  `resource_booking` (to the booker: „<Ressource> zugesagt“ / „abgesagt“ / „Buchung von <Ressource> entfällt“, data
+  `{ resources: { bookingId, resourceId }, calendar: { eventId, occurrence: null } }`) and `calendar_share` (a person a
+  calendar was shared with: data `{ calendar: { sharedCalendarId } }`). The approvers also get a mail from the booker's
+  account (the business one first) to their Mail address. Live event `resources` `{ kind: 'request', bookingId, resourceId,
+  state }` (approvers) | `{ kind: 'booking', bookingId, resourceId, state }` (booker) | `{ kind: 'resources' }` (the list
+  changed); `calendar` `{ kind: 'shares', calendarId }` (recipients and owner) and `{ kind: 'changed', calendarId, shared:
+  true }` to the recipients of a shared calendar.
 
 ### Virus scan (since 1.8.0)
 
@@ -400,6 +459,14 @@ Liste, looking at, answering, editing (a PATCH sends only what changed; series: 
 **Kontakte** with search, letters, groups, a contact, editing with the etag, duplicates, vCard import and export. A
 Microsoft account with `missingScopes` gets the band „Kalender und Kontakte freigeben“ — „Neu anmelden“ by device code.
 
+Since 1.9.0 (`ui/planner.js`, mockups Planer, Ressource, Anfragen, Teilen): the event form shows „Frei/Gebucht“ for
+the day of the event (a bar per person and resource, the chosen time framed, who cannot then) with „Vorschläge, bei denen
+alle können“ and „Ressource hinzufügen“; the calendar's head has „Ressource buchen“ (kinds, the day as a bar per
+resource, „Buchen“ or „Anfrage an … senden“) and „Anfragen · n“ for approvers (open, done, own bookings; Freigeben,
+Ablehnen, „Trotzdem freigeben“ when a rule is broken) or „Meine Buchungen“; an own GateControl calendar's menu has
+„Teilen“ (a person by name, a group with GateControl's picker, the level, the list with its state, „Frei/Gebucht für alle
+in GateControl“, „Mit mir geteilt“); the menu lists „Mit mir geteilt“. The mail settings have the switch for free/busy.
+
 Since 1.3.4 the folders of an account are a tree (`ui/foldertree.js`, by `parentId`): the folders with a role on top as
 before, then the others by name, children below their parent (indented up to level 4) and closed by default. The arrow
 opens or closes a folder's children (the menu stays, the choice holds for the session), the name opens the folder; the
@@ -467,6 +534,18 @@ app registration needs `Calendars.ReadWrite` and `Contacts.ReadWrite` besides th
 1.3.0): the cards „Kalender“ and „Kontakte“, the numbers per person in the storage table and in the overview, and the
 rights of the Microsoft registration.
 
+**Resources** (since 1.9.0, mockup AdminRessourcen): GateControl's settings area (Einstellungen › Plugins › Mail) has
+fixed tabs, so the resources are a page of the plugin — the tab **Ressourcen** beside „Übersicht“ on Mail's page
+(`ui.pages` `resources`); the settings page has the card „Ressourcen“ (on/off, the way there with `GC.navigate`) and the
+calendar card the switches `calendar.freeBusy` and `calendar.sharing`. The page: the list (kind, seats, automatic or
+approval, open requests) and the editor — name, kind, location, seats, equipment, who may book (everybody or people and
+groups — `GC.pickPrincipals`), the answer (automatic or approval by people and groups), the rules (longest booking, days
+ahead, bookable times), the log (overrides marked); „Mit Skoda-Plugin verknüpfen“ and „Raumpostfächer aus Microsoft 365“
+only as „kommt später“. Admin API `GET|POST admin/resources`, `PUT|DELETE admin/resources/<id>` (deleting calls the
+upcoming bookings off — their bookers hear of it), `GET admin/resources/<id>/log`; settings `calendar.freeBusy`,
+`calendar.sharing`, `resources.enabled` (all `true`). Administrators see resources and their bookings' times, titles and
+bookers — never anybody's calendar.
+
 **Microsoft app registration**: `DEFAULT_MS_CLIENT_ID` (`server/config.js`) is the publisher's registration
 (`b2f917a9-e0eb-45b9-9e5f-14c283aa51e9`, since 1.3.2); an administrator may enter an own client id instead (Microsoft Entra:
 public client; redirects `msauth://com.gatecontrol.client/<signature hash>` for Android, `http://localhost` for Windows,
@@ -479,6 +558,8 @@ open the admin consent link again).
 `node tools/test.js gatecontrol-mail` — the mock host as GateControl 1.216.0 (and 1.217.0: `smtp.verify`, `bodyMedia`; 1.219.0: `gc.mail.dav`, iMIP; media areas, `host.mediaCapacity` for 507 / 503 — `test/storage.test.js`) with a fake IMAP / SMTP world, a fake
 Microsoft (token endpoint and Graph), fake Drive and Familie and the mock host's `gc.ai` (`test/helpers.js`); a fake
 CalDAV/CardDAV server, Graph's calendars and contacts, Familie's and Alltag's calendars (`test/pim-helpers.js`). No network.
+Since 1.9.0 `test/phase3.test.js` (resources, requests, free/busy, Microsoft `getSchedule`, sharing) and
+`test/portal-phase3.test.js` (planner, booking, requests, sharing, the admin page).
 
 Vendored, unchanged (`server/vendor/`): ical.js 2.2.1 (`dist/ical.es5.cjs`, MPL-2.0, `LICENSE-ical.js.txt`) and
 timezones-ical-library 2.3.2 (`dist/cjs/index.js`, Apache-2.0, `LICENSE-timezones-ical-library.txt`).
