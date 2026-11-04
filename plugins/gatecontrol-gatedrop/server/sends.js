@@ -14,11 +14,13 @@ const deliver = require('./deliver');
 const transfers = require('./transfers');
 const jobs = require('./bg');
 const scan = require('./scan');
+const retention = require('./retention');
+const picks = require('./picks');
 const { t } = require('./text');
 const { fail, posInt, optText, fileName, url, newId, iso, MEDIA_RE, DEVICE_RE } = require('./util');
 
+// retention: set by an administrator since 1.5.0 (retention.js); retentionDays is the default of what nobody picked up
 const LIMITS = Object.freeze({ items: 20, textMax: 20000, noteMax: 500, maxBytes: 2147483648, people: 20, devices: 10, nas: 5, retentionDays: 7 });
-const RETENTION_MS = LIMITS.retentionDays * 86400000;
 const PAGE_DEFAULT = 50;
 const PAGE_MAX = 100;
 const PENDING_MAX = 50;
@@ -134,7 +136,8 @@ async function freshScans(gc, items) {
 }
 
 function deliveryView(d, send) {
-  const out = { id: d.id, kind: d.kind, target: d.target, label: d.label || null, status: d.status, via: d.via || null, at: iso(d.at), error: d.error || null, openedAt: iso(d.opened_at) };
+  // pickedAt (since 1.5.0): the recipient confirmed it has the send (picks.js) — 'delivered' without it is only provided
+  const out = { id: d.id, kind: d.kind, target: d.target, label: d.label || null, status: d.status, via: d.via || null, at: iso(d.at), error: d.error || null, openedAt: iso(d.opened_at), pickedAt: iso(d.picked_at) };
   if (d.kind === 'person' && d.ref && d.ref.startsWith('chat:')) out.conversationId = Number(d.ref.slice(5)) || null;
   if (d.kind === 'device' && send && d.user_id && d.user_id !== send.user_id) out.ownerId = d.user_id; // another person's device
   if (d.kind === 'nas' && d.ref) out.paths = d.ref.split('\n');
@@ -147,6 +150,8 @@ function deliveryView(d, send) {
 }
 
 const ARRIVED = ['waiting', 'delivered', 'opened', 'expired'];
+/** The error of a delivery whose send an administrator removed before it was picked up (status 'expired'). */
+const REMOVED = 'removed';
 
 /**
  * May the viewer see this send as a recipient? → their deliveries of it ([] = no). Own devices: always. A person
@@ -156,6 +161,8 @@ const ARRIVED = ['waiting', 'delivered', 'opened', 'expired'];
 async function recipientDeliveries(ctx, send, dels) {
   const mine = [];
   for (const d of dels) {
+    // removed by an administrator before this recipient picked it up (since 1.5.0): nothing of it any more
+    if (d.error === REMOVED) continue;
     if (d.kind === 'device') { if (d.user_id === ctx.viewer) mine.push(d); continue; }
     if (d.kind !== 'person' || !ARRIVED.includes(d.status) || !(d.ref == null || d.gd_items > 0)) continue;
     if (d.user_id === ctx.viewer) mine.push(d);
@@ -171,7 +178,9 @@ async function view(ctx, send, role, dels) {
   const shown = role === 'sent' ? all : await recipientDeliveries(ctx, send, all);
   const u = ctx.users.get(send.user_id);
   return {
-    id: send.id, role, createdAt: iso(send.created_at), expiresAt: iso(send.expires_at), expired: send.purged === 1,
+    id: send.id, role, createdAt: iso(send.created_at), expiresAt: iso(send.expires_at), expired: send.purged === 1 || !!send.removed_at,
+    // since 1.5.0: an administrator removed the files from the server ("Vom Admin entfernt"); pickedAt: every recipient has it
+    removed: !!send.removed_at, removedAt: iso(send.removed_at), pickedAt: iso(send.picked_at),
     from: { userId: send.user_id, name: u ? u.name : null, avatarUrl: u ? u.avatarUrl : null, deviceId: send.device_id || null, deviceName: send.device_name || null, own: send.user_id === ctx.viewer },
     text: send.text || null, link: send.link || null, note: send.note || null,
     items: items.map((i) => itemView(i, send)), deliveries: shown.map((d) => deliveryView(d, send)),
@@ -282,7 +291,7 @@ async function create(ctx, body) {
   const id = newId();
   const direct = [];
   const sendRow = {
-    id, user_id: ctx.viewer, device_id: ctx.deviceId || null, device_name: ctx.deviceName || null, created_at: ctx.now, expires_at: ctx.now + RETENTION_MS,
+    id, user_id: ctx.viewer, device_id: ctx.deviceId || null, device_name: ctx.deviceName || null, created_at: ctx.now, expires_at: await retention.initial(gc, ctx.now),
     text, link, note, purged: 0,
   };
   const devDeliveries = [];
@@ -314,8 +323,8 @@ async function create(ctx, body) {
   });
 
   const stored = await itemsOf(gc, id);
-  const save = (dId, st) => store.run(gc, 'UPDATE deliveries SET status = ?, via = ?, error = ?, ref = ?, at = ?, handed = ?, gd_items = ?' + (st.target ? ', target = ?, label = ?' : '') + ' WHERE id = ?',
-    [st.status, st.via || null, st.error || null, st.ref || null, ctx.now, st.handed || 0, st.gd_items || 0, ...(st.target ? [st.target, st.label || null] : []), dId]);
+  const save = (dId, st, kind) => store.run(gc, 'UPDATE deliveries SET status = ?, via = ?, error = ?, ref = ?, at = ?, handed = ?, gd_items = ?, picked_at = ?' + (st.target ? ', target = ?, label = ?' : '') + ' WHERE id = ?',
+    [st.status, st.via || null, st.error || null, st.ref || null, ctx.now, st.handed || 0, st.gd_items || 0, picks.onSave(kind, st) ? ctx.now : null, ...(st.target ? [st.target, st.label || null] : []), dId]);
   // own devices: silent pushes for direct transfers, a push for the others
   const from = { userId: ctx.viewer, name: ctx.user.name, deviceId: ctx.deviceId || null, deviceName: ctx.deviceName || null };
   for (const tr of direct) {
@@ -325,35 +334,41 @@ async function create(ctx, body) {
   // an offline device: 'waiting' (the push is queued by GateControl, the app fetches it with GET pending)
   for (const dd of devDeliveries) {
     const d = await store.one(gc, 'SELECT * FROM deliveries WHERE id = ?', [dd.id]);
-    await save(dd.id, await deliver.deviceServer(gc, sendRow, stored, d, ctx.user.name, dd.online));
+    await save(dd.id, await deliver.deviceServer(gc, sendRow, stored, d, ctx.user.name, dd.online), 'device');
   }
   // links, then people (the Messenger) — before the answer
   let linkOut = null;
   if (to.link) {
     const d = await store.one(gc, 'SELECT * FROM deliveries WHERE id = ?', [to.link.deliveryId]);
     const r = await deliver.link(ctx, sendRow, stored, d, to.link);
-    await save(d.id, r.state);
+    await save(d.id, r.state, 'link');
     if (r.link) await store.run(gc, 'UPDATE links SET url = ? WHERE token = ?', [r.link.url, r.link.token]);
     linkOut = r.link;
   }
   for (const p of persons) {
     const d = await store.one(gc, 'SELECT * FROM deliveries WHERE id = ?', [p.deliveryId]);
-    await save(d.id, await deliver.person(ctx, sendRow, stored, d, ctx.user.name));
+    await save(d.id, await deliver.person(ctx, sendRow, stored, d, ctx.user.name), 'person');
   }
+  // the pick-up so far and the expiry (a link keeps the send's files as long as it runs)
+  await retention.touch(gc, id);
   // NAS folders and Drive: after the answer (an upload may take minutes)
   if (drops.length || to.drive) {
     const bgCtx = { ...ctx };
-    const later = (dId, st) => store.run(gc, 'UPDATE deliveries SET status = ?, via = ?, error = ?, ref = ?, at = ?, handed = ?' + (st.label ? ', label = ?' : '') + ' WHERE id = ?',
-      [st.status, st.via || null, st.error || null, st.ref || null, Date.now(), st.handed || 0, ...(st.label ? [st.label] : []), dId]);
+    const later = async (dId, st, kind) => {
+      const at = Date.now();
+      await store.run(gc, 'UPDATE deliveries SET status = ?, via = ?, error = ?, ref = ?, at = ?, handed = ?, picked_at = ?' + (st.label ? ', label = ?' : '') + ' WHERE id = ?',
+        [st.status, st.via || null, st.error || null, st.ref || null, at, st.handed || 0, picks.onSave(kind, st) ? at : null, ...(st.label ? [st.label] : []), dId]);
+      await retention.touch(gc, id);
+    };
     jobs.queue(async () => {
       for (const dr of drops) {
         const d = await store.one(gc, 'SELECT * FROM deliveries WHERE id = ?', [dr.deliveryId]);
         if (!d || d.status !== 'pending') continue;
-        await later(d.id, await deliver.nas(bgCtx, sendRow, stored, d, dr.folderId));
+        await later(d.id, await deliver.nas(bgCtx, sendRow, stored, d, dr.folderId), 'nas');
       }
       if (to.drive) {
         const d = await store.one(gc, 'SELECT * FROM deliveries WHERE id = ?', [to.drive.deliveryId]);
-        if (d && d.status === 'pending') await later(d.id, await deliver.drive(bgCtx, sendRow, stored, d));
+        if (d && d.status === 'pending') await later(d.id, await deliver.drive(bgCtx, sendRow, stored, d), 'drive');
       }
     }, gc);
   }
@@ -379,7 +394,7 @@ async function addItems(ctx, id, body) {
   const b = body && typeof body === 'object' && !Array.isArray(body) ? body : null;
   if (!b || !Array.isArray(b.items) || !b.items.length || b.items.length > LIMITS.items) throw fail('invalid');
   const send = await ownSend(ctx, id);
-  if (send.purged) throw fail('gone');
+  if (send.purged || send.removed_at) throw fail('gone');
   const items = await itemsOf(ctx.gc, id);
   const wanted = [];
   for (const x of b.items) {
@@ -409,6 +424,7 @@ async function addItems(ctx, id, body) {
     }
   });
   await transfers.runJobs(ctx.gc, jobsOut, ctx.user.name);
+  await retention.touch(ctx.gc, id);
   return { send: await view(ctx, await store.one(ctx.gc, 'SELECT * FROM sends WHERE id = ?', [id]), 'sent') };
 }
 
@@ -444,8 +460,13 @@ async function opened(ctx, id) {
   await store.tx(ctx.gc, async () => {
     for (const d of pick) {
       if (d.status === 'delivered' || d.status === 'waiting') await store.run(ctx.gc, "UPDATE deliveries SET status = 'opened', opened_at = ? WHERE id = ?", [ctx.now, d.id]);
+      // the real pick-up (since 1.5.0): this device / this person has it (a family: once every member did)
+      if (!['delivered', 'waiting', 'opened'].includes(d.status) || send.purged || send.removed_at) continue;
+      if (d.kind === 'device') await picks.device(ctx.gc, d.id, ctx.now);
+      else await picks.person(ctx.gc, d, ctx.viewer, ctx.now);
     }
   });
+  await retention.touch(ctx.gc, id);
   return view(ctx, await store.one(ctx.gc, 'SELECT * FROM sends WHERE id = ?', [id]), 'received');
 }
 
@@ -455,7 +476,7 @@ async function fileAccess(ctx, mediaId) {
   const item = await store.one(ctx.gc, 'SELECT * FROM items WHERE media_id = ?', [mediaId]);
   if (!item) return null;
   const send = await store.one(ctx.gc, 'SELECT * FROM sends WHERE id = ?', [item.send_id]);
-  if (!send || send.purged || send.expires_at <= ctx.now) return null;
+  if (!send || send.purged || send.removed_at || send.expires_at <= ctx.now) return null;
   if (send.user_id === ctx.viewer) return { send, item };
   const mine = await recipientDeliveries(ctx, send, await deliveriesOf(ctx.gc, send.id));
   return mine.some((d) => ['waiting', 'delivered', 'opened'].includes(d.status)) ? { send, item } : null;
@@ -502,7 +523,8 @@ async function inbox(ctx, query) {
     rows = await store.all(gc, 'SELECT * FROM sends WHERE user_id = ? AND created_at < ? ORDER BY created_at DESC LIMIT ?', [ctx.viewer, before, limit + 1]);
   } else {
     // own devices; a person delivery that reached the person through GateDrop; 'family' only for its members at sending
-    rows = await store.all(gc, `SELECT s.* FROM sends s WHERE s.created_at < ? AND EXISTS (SELECT 1 FROM deliveries d WHERE d.send_id = s.id AND d.status IN ('waiting', 'delivered', 'opened', 'expired') AND (
+    rows = await store.all(gc, `SELECT s.* FROM sends s WHERE s.created_at < ? AND EXISTS (SELECT 1 FROM deliveries d WHERE d.send_id = s.id AND d.status IN ('waiting', 'delivered', 'opened', 'expired')
+        AND (d.error IS NULL OR d.error != 'removed') AND (
         (d.user_id = ? AND d.kind = 'device')
         OR (d.kind = 'person' AND (d.ref IS NULL OR d.gd_items > 0) AND (d.user_id = ? OR (d.target = 'family' AND s.user_id != ? AND d.members LIKE ?)))))
       ORDER BY s.created_at DESC LIMIT ?`, [before, ctx.viewer, ctx.viewer, ctx.viewer, `%,${ctx.viewer},%`, limit + 1]);
@@ -575,7 +597,8 @@ async function endLink(ctx, token) {
     if (!l.revoked_at) await store.run(ctx.gc, 'UPDATE links SET revoked_at = ? WHERE token = ?', [ctx.now, token]);
     await store.run(ctx.gc, "UPDATE deliveries SET status = 'expired', error = 'revoked', at = ? WHERE send_id = ? AND kind = 'link' AND target = ?", [ctx.now, l.send_id, token]);
   });
+  await retention.touch(ctx.gc, l.send_id);
   return { revoked: revoked || !l.revoked_at };
 }
 
-module.exports = { create, addItems, get, opened, pending, fileAccess, itemInfo, inbox, endLink, view, parseItems, parseTo, subPath, LIMITS, RETENTION_MS };
+module.exports = { create, addItems, get, opened, pending, fileAccess, itemInfo, inbox, endLink, view, parseItems, parseTo, subPath, LIMITS, REMOVED };

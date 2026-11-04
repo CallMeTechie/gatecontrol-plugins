@@ -12,6 +12,8 @@ const store = require('./store');
 const people = require('./people');
 const deliver = require('./deliver');
 const bg = require('./bg');
+const picks = require('./picks');
+const retention = require('./retention');
 
 const RETRY_MS = 5 * 60000;
 const MAX_MS = 24 * 3600000;
@@ -34,7 +36,7 @@ async function run(gc, id, now = Date.now()) {
   const d = await store.one(gc, "SELECT * FROM deliveries WHERE id = ? AND status = 'pending' AND error = ?", [id, deliver.SCAN_WAIT]);
   if (!d) return null;
   const send = await store.one(gc, 'SELECT * FROM sends WHERE id = ?', [d.send_id]);
-  if (!send || send.purged) return null;
+  if (!send || send.purged || send.removed_at) return null;
   // taken now: the background does not try it again within 5 minutes
   await store.run(gc, 'UPDATE deliveries SET at = ? WHERE id = ?', [now, id]);
   let st;
@@ -52,8 +54,10 @@ async function run(gc, id, now = Date.now()) {
       st = folderId ? await deliver.nas(ctx, send, items, d, folderId) : failed('not_found');
     } else st = failed('failed');
   }
-  await store.run(gc, 'UPDATE deliveries SET status = ?, via = ?, error = ?, ref = ?, at = ?, handed = ?, gd_items = ?' + (st.label ? ', label = ?' : '') + ' WHERE id = ?',
-    [st.status, st.via || null, st.error || null, st.ref || null, Date.now(), st.handed || 0, st.gd_items || 0, ...(st.label ? [st.label] : []), id]);
+  const at = Date.now();
+  await store.run(gc, 'UPDATE deliveries SET status = ?, via = ?, error = ?, ref = ?, at = ?, handed = ?, gd_items = ?, picked_at = ?' + (st.label ? ', label = ?' : '') + ' WHERE id = ?',
+    [st.status, st.via || null, st.error || null, st.ref || null, at, st.handed || 0, st.gd_items || 0, picks.onSave(d.kind, st) ? at : null, ...(st.label ? [st.label] : []), id]);
+  await retention.touch(gc, send.id);
   return st.status;
 }
 
@@ -68,7 +72,7 @@ async function scanned(gc, mediaId) {
 
 /** Background: waiting deliveries not tried for 5 minutes (a missed hook) — the oldest first. → how many were tried */
 async function due(gc, now) {
-  const rows = await store.all(gc, "SELECT d.id FROM deliveries d JOIN sends s ON s.id = d.send_id WHERE d.status = 'pending' AND d.error = ? AND s.purged = 0 AND d.at <= ? ORDER BY d.at LIMIT ?",
+  const rows = await store.all(gc, "SELECT d.id FROM deliveries d JOIN sends s ON s.id = d.send_id WHERE d.status = 'pending' AND d.error = ? AND s.purged = 0 AND s.removed_at IS NULL AND d.at <= ? ORDER BY d.at LIMIT ?",
     [deliver.SCAN_WAIT, now - RETRY_MS, BATCH]);
   if (!rows.length) return 0;
   await bg.queue(async () => { for (const r of rows) await run(gc, r.id, now); }, gc);

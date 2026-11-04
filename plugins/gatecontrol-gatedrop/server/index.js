@@ -9,7 +9,8 @@
 //   NAS folders   through the Synology plugin (services list_drop_folders, save_file),
 //   own Drive     through the Drive plugin (services list_areas, save_file; since 1.3.0),
 //   outsiders     as a public link of GateControl (gc.publicLinks: expiry, optional PIN).
-// Received files stay 7 days on the server (background). Links and NAS: administrators and Familie's
+// Received files stay on the server as long as an administrator set (retention.js, default 7 days; since 1.5.0 shorter
+// once picked up). Links and NAS: administrators and Familie's
 // parents (service family_roles); people and own devices: every account, never a kiosk device.
 //
 //   app API   /api/v1/client/plugins/gatecontrol-gatedrop/api/…   (the device token's owner, user.device)
@@ -17,7 +18,8 @@
 //     GET targets · GET/PUT device · PUT presence · POST sends · GET sends/<id> · POST sends/<id>/items · POST sends/<id>/opened
 //     GET transfers/<id> · POST transfers/<id>/result · GET pending · GET inbox?kind= · GET items/<mediaId>
 //     DELETE links/<token>
-//   admin     admin/overview (administrators in the admin UI)
+//   admin     admin/overview · admin/sends · DELETE admin/sends/<id> · PUT admin/retention · GET/POST admin/cleanup
+//             (administrators in the admin UI only, since 1.5.0 the list of sends and the retention)
 // The full contract (bodies, answers, codes, pushes) is in README.md "App-API".
 //
 // Needs GateControl ≥ 1.193.0 (media up to 2 GB, gc.devices, gc.notify devices/silent, gc.media.handOver,
@@ -36,6 +38,8 @@ const bg = require('./bg');
 const net = require('./net');
 const scan = require('./scan');
 const retry = require('./retry');
+const retention = require('./retention');
+const seen = require('./seen');
 const { t } = require('./text');
 const { STATUS, fail, isKnown, iso, DEVICE_RE } = require('./util');
 
@@ -79,8 +83,10 @@ async function targets(ctx) {
   if (r && [...r.parents, ...r.children].includes(ctx.viewer)) list.unshift({ id: 'family', name: t(ctx.lang, 'family'), avatar: null, initials: null, colorHex: null, kind: 'family' });
   const me = ctx.deviceId ? await presence.get(gc, ctx.deviceId, ctx.viewer, ctx.now) : null;
   const devices = [];
+  // since 1.5.0 only app installations that use GateDrop (seen.js): an app without it would never fetch a send
+  const known = await seen.of(gc, ctx.viewer);
   for (const d of await people.devicesOf(gc, ctx.viewer)) {
-    if (d.id === ctx.deviceId) continue;
+    if (d.id === ctx.deviceId || !known.has(d.id)) continue;
     const p = await presence.plan(gc, me, d, ctx.viewer, ctx.now);
     devices.push({ id: d.id, name: d.name, platform: d.platform, online: d.online, direct: p.direct === true, ...(p.direct ? { mode: p.mode } : {}) });
   }
@@ -94,6 +100,7 @@ async function targets(ctx) {
   const enabled = await people.linksEnabled(gc, ctx.viewer, ctx.now);
   let usage = null;
   try { usage = await gc.media.usage(); } catch { usage = null; }
+  const keep = await retention.get(gc);
   return {
     me: { id: ctx.viewer, name: ctx.user.name, canLink: share, canNas: share, deviceId: ctx.deviceId, receiveFrom: ctx.deviceId ? await access.modeOf(gc, ctx.deviceId, ctx.viewer) : null },
     people: list, devices, peopleDevices, nas, links: { enabled },
@@ -101,7 +108,9 @@ async function targets(ctx) {
     messenger: await people.available(gc, people.MESSENGER, 'send_file'),
     limits: {
       maxItems: sends.LIMITS.items, maxBytes: usage ? usage.maxBytes : sends.LIMITS.maxBytes, types: usage ? usage.types : [], textMax: sends.LIMITS.textMax,
-      noteMax: sends.LIMITS.noteMax, retentionDays: sends.LIMITS.retentionDays, linkExpires: ['1h', '1d', '7d', 'once'],
+      noteMax: sends.LIMITS.noteMax, retentionDays: keep.unpickedDays, linkExpires: ['1h', '1d', '7d', 'once'],
+      // since 1.5.0: the administrator's retention — days after the pick-up (0 = at once) and for what is not picked up
+      retention: { afterPickupDays: keep.afterDays, unpickedDays: keep.unpickedDays },
       directPort: net.DEFAULT_PORT, presenceEveryS: presence.REPORT_EVERY_S, ticketS: transfers.TICKET_MS / 1000,
     },
     storage: usage ? { bytes: usage.bytes, quota: usage.quota } : null,
@@ -110,6 +119,19 @@ async function targets(ctx) {
 }
 
 const ok = (body) => ({ status: 200, json: { ok: true, ...body } });
+
+/** The admin page's routes (admin.js; the caller checked the administrator). */
+async function adminRoute(gc, req, seg, now) {
+  const m = String(req.method || 'GET').toUpperCase();
+  const [, a, b] = seg;
+  if (a === 'overview' && seg.length === 2 && m === 'GET') return ok(await admin.overview(gc, req.user, now));
+  if (a === 'sends' && seg.length === 2 && m === 'GET') return ok(await admin.list(gc, req.query, now));
+  if (a === 'sends' && seg.length === 3 && m === 'DELETE') return ok(await admin.removeOne(gc, b, now));
+  if (a === 'retention' && seg.length === 2 && (m === 'PUT' || m === 'POST')) return ok({ retention: await retention.set(gc, req.body, now) });
+  if (a === 'cleanup' && seg.length === 2 && m === 'GET') return ok(await admin.cleanupInfo(gc, req.query, now));
+  if (a === 'cleanup' && seg.length === 2 && m === 'POST') return ok(await admin.cleanup(gc, req.body, now));
+  throw fail('not_found');
+}
 
 async function route(ctx, req, seg) {
   const m = String(req.method || 'GET').toUpperCase();
@@ -137,7 +159,7 @@ async function route(ctx, req, seg) {
       ctx.senderName = ctx.user.name;
       const r = await transfers.result(ctx, b, req.body);
       const d = r.delivery;
-      return ok({ transfer: r.transfer, delivery: { id: d.id, kind: d.kind, target: d.target, status: d.status, via: d.via || null, error: d.error || null, at: iso(d.at) }, fallback: r.fallback, ...(r.missing ? { missing: r.missing } : {}) });
+      return ok({ transfer: r.transfer, delivery: { id: d.id, kind: d.kind, target: d.target, status: d.status, via: d.via || null, error: d.error || null, at: iso(d.at), pickedAt: iso(d.picked_at) }, fallback: r.fallback, ...(r.missing ? { missing: r.missing } : {}) });
     }
   }
   if (a === 'pending' && seg.length === 1 && m === 'GET') return ok(await sends.pending(ctx));
@@ -150,6 +172,8 @@ async function route(ctx, req, seg) {
 module.exports = {
   async start(gc) {
     people.reset();
+    retention.reset();
+    seen.reset();
     jobs.state.ticking = false;
     gc.log.info('gatedrop started', gc.plugin.version);
   },
@@ -161,9 +185,9 @@ module.exports = {
       if (!seg.length) throw fail('not_found');
       const now = Date.now();
       if (seg[0] === 'admin') {
-        if (!req.user || req.user.portal || req.user.app || req.user.role !== 'admin') throw fail('forbidden');
-        if (seg[1] === 'overview' && seg.length === 2 && String(req.method || 'GET').toUpperCase() === 'GET') return ok(await admin.overview(gc, req.user, now));
-        throw fail('not_found');
+        // administrators in the admin UI only — never the portal, an app, a kiosk device
+        if (!req.user || req.user.portal || req.user.app || req.user.kiosk || req.user.role !== 'admin') throw fail('forbidden');
+        return await adminRoute(gc, req, seg, now);
       }
       if (seg[0] === 'portal' && seg.length > 1) seg = seg.slice(1); // the same routes under portal/…
       const no = refusal(req.user);
@@ -174,6 +198,7 @@ module.exports = {
       const ctx = await context(gc, req.user, lang, now);
       if (!ctx.users.has(ctx.viewer)) throw fail('forbidden');
       await people.touch(gc, req.user, lang, now);
+      if (ctx.deviceId) await seen.mark(gc, ctx.deviceId, ctx.viewer, now);
       return await route(ctx, req, seg);
     } catch (e) {
       if (!isKnown(e)) gc.log.warn('request failed', req && req.method, String((req && req.path) || '').split('/').slice(0, 2).join('/'), (e && (e.code || e.message)) || 'error');
@@ -228,12 +253,14 @@ module.exports = {
       // GateControl passes the count of all files (the ZIP counts one of each)
       const n = Number.isSafeInteger(arg.downloads) && arg.downloads > 0 ? arg.downloads : l.downloads + 1;
       await store.run(gc, 'UPDATE links SET downloads = ? WHERE token = ?', [n, token]);
+      await retention.touch(gc, l.send_id); // a send of links only: its first download is its pick-up
       await push('link.downloaded', t(lang, 'link.downloaded_body', { n }));
     } else if (ev === 'locked') {
       await store.run(gc, 'UPDATE links SET locked = 1 WHERE token = ?', [token]);
       await push('link.locked', t(lang, 'link.locked_body'));
     } else if (ev === 'expired') {
       await store.run(gc, "UPDATE deliveries SET status = 'expired', at = ? WHERE send_id = ? AND kind = 'link' AND target = ? AND status = 'delivered'", [now, l.send_id, token]);
+      await retention.touch(gc, l.send_id);
     }
   },
 

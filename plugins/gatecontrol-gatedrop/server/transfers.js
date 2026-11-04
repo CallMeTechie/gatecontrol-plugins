@@ -7,6 +7,10 @@
 // GET transfers/<id>); both ends report POST transfers/<id>/result { ok, bytes?, error? }.
 //   ok              → the delivery is delivered via direct
 //   (done, failed or expired: key and ticket are removed from the database)
+// Since 1.5.0 the receiving end decides: its ok with `bytes` below the files' size is no success ('incomplete' →
+// the server way, also after the other end's ok), its ok with every byte (or without bytes, older apps) is the
+// pick-up (deliveries.picked_at). The sender's ok alone makes the delivery 'delivered' (as before) but not picked up;
+// a failure reported after it by either end still takes the server way while the receiver has not confirmed.
 //   failed/expired  → the server way: all files on the server → a push to the device (delivered via server);
 //                     files still local → the delivery waits (pending, error direct_failed) and the sender is
 //                     told { fallback: 'upload' }: it uploads them and calls POST sends/<id>/items.
@@ -14,6 +18,7 @@
 const crypto = require('node:crypto');
 const store = require('./store');
 const deliver = require('./deliver');
+const retention = require('./retention');
 const { fail, newId, iso, parseJson, DEVICE_RE } = require('./util');
 
 const TICKET_MS = 10 * 60000;
@@ -86,8 +91,8 @@ async function get(ctx, id) {
  */
 async function fallback(gc, send, delivery, now) {
   const items = await store.all(gc, 'SELECT * FROM items WHERE send_id = ? ORDER BY idx', [send.id]);
-  if (send.purged) {
-    await store.run(gc, "UPDATE deliveries SET status = 'expired', at = ? WHERE id = ?", [now, delivery.id]);
+  if (send.purged || send.removed_at) {
+    await store.run(gc, "UPDATE deliveries SET status = 'expired', error = ?, at = ? WHERE id = ?", [send.removed_at ? 'removed' : delivery.error, now, delivery.id]);
     return { way: null, job: null };
   }
   if (items.some((i) => !i.media_id)) {
@@ -107,6 +112,12 @@ async function runJobs(gc, jobs, senderName) {
   }
 }
 
+/** The size of a send's files (what a receiver's `bytes` must reach). */
+async function sizeOf(gc, sendId) {
+  const r = await store.one(gc, 'SELECT COALESCE(SUM(bytes), 0) AS n FROM items WHERE send_id = ?', [sendId]);
+  return r ? Number(r.n) || 0 : 0;
+}
+
 /** POST transfers/<id>/result { ok, bytes?, error? } → { transfer, delivery, fallback, missing? } */
 async function result(ctx, id, body) {
   const b = body && typeof body === 'object' && !Array.isArray(body) ? body : null;
@@ -114,25 +125,40 @@ async function result(ctx, id, body) {
   if (b.bytes != null && !(Number.isSafeInteger(b.bytes) && b.bytes >= 0)) throw fail('invalid');
   if (b.error != null && !(typeof b.error === 'string' && ERROR_RE.test(b.error))) throw fail('invalid');
   let job = null;
+  let sendId = null;
   const out = await store.tx(ctx.gc, async () => {
     const { tr, side, send, delivery } = await locate(ctx, id);
-    const res = JSON.stringify({ ok: b.ok, bytes: b.bytes == null ? null : b.bytes, error: b.ok ? null : (b.error || 'failed'), at: ctx.now });
+    sendId = send.id;
+    // the receiver's ok with fewer bytes than the files have: not everything arrived (since 1.5.0) — a failure
+    let ok = b.ok;
+    let error = b.ok ? null : (b.error || 'failed');
+    if (ok && side === 'receiver' && b.bytes != null && b.bytes < await sizeOf(ctx.gc, send.id)) { ok = false; error = 'incomplete'; }
+    const res = JSON.stringify({ ok, bytes: b.bytes == null ? null : b.bytes, error, at: ctx.now });
     await store.run(ctx.gc, `UPDATE transfers SET ${side === 'sender' ? 'sender_result' : 'receiver_result'} = ? WHERE id = ?`, [res, tr.id]);
     let way = null;
     let missing;
-    const settled = ['delivered', 'opened'].includes(delivery.status);
-    if (b.ok) {
+    // picked up (the receiving device confirmed), opened, or already on the server way: nothing changes the way any more
+    const confirmed = delivery.picked_at != null || delivery.status === 'opened';
+    const directNow = delivery.status === 'direct' || (delivery.status === 'delivered' && delivery.via === 'direct');
+    if (ok) {
       if (tr.status !== 'done') await store.run(ctx.gc, "UPDATE transfers SET status = 'done', key = NULL, ticket = NULL, done_at = ? WHERE id = ?", [ctx.now, tr.id]);
-      if (!settled) await store.run(ctx.gc, "UPDATE deliveries SET status = 'delivered', via = 'direct', error = NULL, at = ? WHERE id = ?", [ctx.now, delivery.id]);
+      // the sender's ok does not undo the server way the receiver's failure started
+      const recvFailed = side === 'sender' && peerOf(tr, 'sender') && !peerOf(tr, 'sender').ok;
+      if ((delivery.status === 'direct' || delivery.status === 'pending') && !recvFailed) {
+        await store.run(ctx.gc, "UPDATE deliveries SET status = 'delivered', via = 'direct', error = NULL, at = ? WHERE id = ?", [ctx.now, delivery.id]);
+      }
+      // the receiving device has every file: the pick-up
+      if (side === 'receiver' && !confirmed && !send.removed_at) await store.run(ctx.gc, 'UPDATE deliveries SET picked_at = ? WHERE id = ? AND picked_at IS NULL', [ctx.now, delivery.id]);
+    } else if (!confirmed && directNow) {
+      if (tr.status === 'open' || tr.status === 'done') await store.run(ctx.gc, "UPDATE transfers SET status = 'failed', key = NULL, ticket = NULL, done_at = ? WHERE id = ?", [ctx.now, tr.id]);
+      const f = await fallback(ctx.gc, send, delivery, ctx.now);
+      way = f.way;
+      job = f.job;
+      missing = f.missing;
     } else if (tr.status === 'open') {
       await store.run(ctx.gc, "UPDATE transfers SET status = 'failed', key = NULL, ticket = NULL, done_at = ? WHERE id = ?", [ctx.now, tr.id]);
-      if (!settled) {
-        const f = await fallback(ctx.gc, send, delivery, ctx.now);
-        way = f.way;
-        job = f.job;
-        missing = f.missing;
-      }
-    } else if (delivery.status === 'pending' && delivery.error === 'direct_failed') {
+    }
+    if (!ok && delivery.status === 'pending' && delivery.error === 'direct_failed') {
       way = 'upload';
       missing = (await store.all(ctx.gc, 'SELECT idx FROM items WHERE send_id = ? AND media_id IS NULL ORDER BY idx', [send.id])).map((r) => r.idx);
     }
@@ -142,6 +168,7 @@ async function result(ctx, id, body) {
   });
   if (job) await runJobs(ctx.gc, [job], ctx.senderName);
   if (job) out.delivery = await store.one(ctx.gc, 'SELECT * FROM deliveries WHERE id = ?', [out.delivery.id]);
+  await retention.touch(ctx.gc, sendId);
   return out;
 }
 
@@ -160,6 +187,7 @@ async function expire(gc, now, nameOf) {
       if (send && delivery && delivery.status === 'direct') job = (await fallback(gc, send, delivery, now)).job;
     });
     if (job) await runJobs(gc, [job], await nameOf(send.user_id));
+    if (send) await retention.touch(gc, send.id);
   }
   return rows.length;
 }

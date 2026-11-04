@@ -94,7 +94,7 @@ const PDF = Buffer.from('%PDF-1.4\n%fake\n');
 /**
  * opts: { messenger: true (the real Messenger, linked), nas: true (the real NAS plugin with a fake DSM, a NAS and a drop
  * folder /Familie/Ablage), scan (the mock host's opts.scan, since 1.4.0), services (more fake providers), drive: true | fakeDrive options (the fake Drive plugin, c.drive), roles (Familie's answer; null = Familie refuses, false = no Familie), links (the admin switch,
- * default on), publicUrl, mediaQuota, devices }
+ * default on), publicUrl, mediaQuota, devices, seen (false: the devices never used GateDrop's app API) }
  * fn(host, c): c = { clock, as(user, device?) → (method, path, body, query), portal(user), upload(user, buf, mime, o) → mediaId,
  *   presence(user, device, ip, listening, prefix?), pushes(), messenger (its host), nas: { host, dsm, folderId } }
  */
@@ -146,6 +146,13 @@ async function withHost(opts, fn) {
       },
       pushes: () => host.notifications.filter((n) => n.topic),
     };
+    // since 1.5.0 GET targets offers only devices that used GateDrop's app API: the household's apps have (o.seen false: not)
+    if (o.seen !== false) {
+      for (const d of o.devices || devices()) {
+        const u = USERS.find((x) => x.id === d.userId);
+        if (u && d.platform !== 'web') await call(app(u, d.id), 'GET', 'device');
+      }
+    }
     try {
       return await fn(host, c);
     } finally {

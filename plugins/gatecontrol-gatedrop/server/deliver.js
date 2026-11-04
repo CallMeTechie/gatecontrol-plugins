@@ -160,7 +160,7 @@ const membersText = (ids) => (ids && ids.length ? `,${ids.join(',')},` : null);
 const membersOf = (d) => String((d && d.members) || '').split(',').map(Number).filter((x) => Number.isSafeInteger(x) && x > 0);
 
 // The Messenger's quota is shared by everyone: only small files go into a chat, the rest stays in GateDrop
-// (its push, its inbox, 7 days). A sender hands over at most 200 files a day (Messenger, NAS and Drive together).
+// (its push, its inbox, the retention set by an administrator). A sender hands over at most 200 files a day (Messenger, NAS and Drive together).
 const CHAT_ITEM_MAX = 25 * 1024 * 1024;
 const CHAT_SEND_MAX = 100 * 1024 * 1024;
 const HANDOVERS_PER_DAY = 200;
@@ -352,7 +352,8 @@ const newPin = () => String(crypto.randomInt(0, 10000)).padStart(4, '0');
  */
 async function link(ctx, send, items, delivery, opts) {
   const { gc } = ctx;
-  const expiresAt = Math.min(ctx.now + LINK_EXPIRES[opts.expires], send.expires_at);
+  // the time chosen for the link (since 1.5.0 not cut by the retention: the send's files stay while the link is active)
+  const expiresAt = ctx.now + LINK_EXPIRES[opts.expires];
   const maxDownloads = opts.expires === 'once' ? 1 : null;
   const pin = opts.pin ? newPin() : null;
   // a PIN link shows no file name before the PIN is entered: a generic title then

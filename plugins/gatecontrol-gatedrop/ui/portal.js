@@ -116,7 +116,12 @@
     return out;
   }
   function statusLabel(d) {
+    // since 1.5.0: removed by an administrator; 'delivered' to a device or a person is only "provided" until picked up
+    if (d.error === 'removed') return T('status.removed');
     if (d.status === 'waiting') return T('status.waiting', { device: d.label || d.target });
+    if (d.status === 'delivered' && (d.kind === 'device' || (d.kind === 'person' && !d.conversationId)) && 'pickedAt' in d) {
+      return T(d.pickedAt ? 'status.picked' : 'status.provided') + (d.via ? ' · ' + T('via.' + d.via) : '');
+    }
     // since 1.4.1: a hand-over waits for the virus check — it goes once the result is in
     if (d.status === 'pending' && d.error === 'scan_pending') return T('status.scan_wait');
     return T('status.' + d.status) + (d.via && d.status !== 'failed' ? ' · ' + T('via.' + d.via) : '');
@@ -281,7 +286,7 @@
       var sub;
       if (x.out) sub = T('portal.to', { names: s.deliveries.map(function (d) { return d.label || T('kind.' + d.kind); }).join(', ') });
       else sub = T('portal.from', { name: s.from.deviceName || s.from.name || '?' });
-      sub += ' · ' + (s.expired ? T('portal.expired') : G.when(s.createdAt));
+      sub += ' · ' + (s.removed ? T('portal.removed') : (s.expired ? T('portal.expired') : G.when(s.createdAt)));
       var action = null;
       // the files the virus scan holds back or marks (since 1.4.0): one label of the first such file
       var held = s.items.filter(function (i) { return scanLabel(i); })[0];
@@ -305,7 +310,7 @@
     S.targets = tg;
     if (tg.storage) {
       var p = G.$('#gd-storage');
-      p.textContent = T('portal.storage', { used: G.bytes(tg.storage.bytes), quota: G.bytes(tg.storage.quota) });
+      p.textContent = T('portal.storage', { used: G.bytes(tg.storage.bytes), quota: G.bytes(tg.storage.quota), days: (tg.limits && tg.limits.retentionDays) || 7 });
       p.hidden = false;
     }
     renderTargets();
