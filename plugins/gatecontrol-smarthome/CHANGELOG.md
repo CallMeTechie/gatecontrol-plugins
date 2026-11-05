@@ -1,6 +1,41 @@
 # Smart Home (gatecontrol-smarthome)
 
-Phoscon/deCONZ-Integration als GateControl-Plugin – bisher fest in GateControl eingebaut.
+Phoscon/deCONZ-Integration als GateControl-Plugin – bisher fest in GateControl eingebaut; seit 1.7.0 auch Shelly und
+Tasmota über ein GateControl-Gateway.
+
+## 1.7.0
+- **Shelly und Tasmota über ein GateControl-Gateway** (GateControl ≥ 1.228.1, Gateway ≥ 1.19.0): neben
+  Phoscon/deCONZ-Gateways gibt es Quellen vom Typ „GateControl-Gateway“ – je Gateway, auf dem der neue
+  **Edge-Teil** von „Smart Home“ eingeschaltet ist (GateControl: Gateways › Gateway › Edge-Plugins) und der lokale
+  MQTT-Broker läuft. „Quelle hinzufügen“ zeigt je Gateway, ob der Edge-Teil läuft, noch aus ist oder das Gateway zu
+  alt ist; „Phoscon verbinden“ steht im selben Dialog.
+- **Edge-Teil** (`edge/`, 32 MB, Fähigkeiten: mDNS `_shelly._tcp`/`_http._tcp`, HTTP im Heimnetz, MQTT `shellies/#`
+  und `tasmota/#`): findet Shelly- und Tasmota-Geräte im Heimnetz, liest ihre Meldungen am Broker des Gateways und
+  meldet sie gebündelt (alle 2 s, nur Änderungen) an den Server, schaltet, dimmt und fährt Rollläden per MQTT und
+  fragt die Geräte alle 10 Minuten nach ihrem Stand.
+- **Unterstützt:** Shelly Gen2/3/4 (Schalter mit Leistungsmessung, Rollladen/Cover, Licht/Dimmer, Plug S, H&T),
+  Shelly Gen1 (Relais, Roller, Dimmer, H&T), Tasmota (POWER/POWERn, Dimmer, Shutter, ENERGY mit Leistung und
+  „Heute“, Temperatur/Feuchte aus SENSOR); online/offline über LWT bzw. `online`. Unbekannte Meldungen werden
+  ignoriert.
+- **Gerät hinzufügen:** gefundene Geräte automatisch einrichten – eigenes MQTT-Konto je Gerät (nur seine Topics
+  `shellies/<name>/#` bzw. `tasmota/<name>/#`), Gerät erreicht, Gerätepasswort (nur für diesen Vorgang, nie
+  gespeichert oder protokolliert; Shelly Gen2+ mit Digest), MQTT im Gerät eintragen und neu starten, warten bis
+  es sich meldet – als Schrittliste live. Oder **von Hand**: die Daten zum Kopieren (das Passwort nur in diesem
+  Fenster) mit Anleitung je Gerätetyp und „Warte auf das Gerät …“.
+- **Gerät bearbeiten:** Name, Bereich, Art je Ausgang (Licht, Steckdose, Schalter; Paar als Rollladen, Markise oder
+  Tor), wer es bedienen darf, neues MQTT-Passwort (trägt es im Gerät ein, sonst zum Abtippen), Entfernen (löscht
+  auch das MQTT-Konto).
+- **Seite:** Quellenauswahl getrennt nach deCONZ und „über Gateway“, Hinweis „n neue Geräte gefunden“, Kennzahlen
+  Geräte / eingeschaltet / Leistung jetzt / nicht erreichbar, Karten für Rollläden, Strommessung, Dimmer, Sensoren
+  und nicht erreichbare Geräte (LWT offline oder 30 Minuten ohne Meldung, Batteriesensoren 26 Stunden).
+- **Bereich** für alle Geräte – auch deCONZ (im Dialog „Besitzer verwalten“): die Seite und das Portal „Zuhause“
+  gruppieren danach, Geräte ohne Bereich stehen wie bisher.
+- **Portal und Apps** wie bei deCONZ: eigene Shelly-/Tasmota-Geräte schalten und dimmen (Zielzustand an/aus),
+  Rollläden als Tasten Auf / Stopp / Zu mit Position als Widget (Regler), Leistung als Wert im Widget von Steckdosen
+  und Schaltern, „Heute“ als Zusatzwert. An den Apps ist nichts Neues nötig.
+- Logikketten bleiben bei deCONZ-Gateways.
+- Mindestversion GateControl 1.228.1 (`gc.edge`, `gc.mqtt.accounts`). Ohne diese Schnittstellen läuft deCONZ
+  unverändert weiter und die Seite zeigt einen Hinweis statt Shelly/Tasmota.
 
 ## 1.6.1
 - **Batterie-Hinweis ohne Wiederholungen**: Ein Gerät mit mehreren Sensoren (z. B. ein

@@ -360,6 +360,13 @@
 // the gc.edge.on handlers like the host — a handler that throws is logged — and answers { handled }; host.edgeCalls and
 // host.edgeConfigs (gatewayId → last data) record what the plugin did. The edge part itself (edge.entry, runs on the
 // gateway) is not loaded: test it with a `gc` of its own (see plugins/gatecontrol-hello/test/edge.test.js).
+// gc.mqtt.accounts (same opt-in, only with plugin.json edge.capabilities.mqtt topics; src/services/edge/index.js
+// hostMqtt): create(gatewayId, { name?, label?, topics }) → { username: '<plugin id>-<name or random>', password, acl,
+// label } — topics strings or { topic, access }, each below one of the plugin's mqtt topics (else denied), ≤ 16, the
+// name [a-z0-9][a-z0-9_.-]{0,23}, the user name cut to 48, an existing one ERR_INVALID, ≥ 200 per gateway ERR_RATE_LIMIT;
+// list(gatewayId) → [{ username, label, acl, pluginId, locked, createdAt }] (no password); remove(gatewayId, username)
+// → true | false. The gateway must be switched on for the plugin (not_enabled), being online is not needed.
+// host.mqttAccounts: gatewayId → Map username → { username, label, acl, password } (the password only for tests).
 
 const fs = require('node:fs');
 const os = require('node:os');
@@ -396,6 +403,27 @@ const EDGE_METHOD_RE = /^[A-Za-z0-9_.:-]{1,64}$/;
 const EDGE_EVENT_RE = /^(?:\*|\$?[A-Za-z0-9_.:-]{1,64})$/;
 const EDGE_FRAME_MAX = 64 * 1024;
 const EDGE_CONFIGURE_MAX = 48 * 1024;
+const MQTT_ACCOUNT_NAME_RE = /^[a-z0-9][a-z0-9_.-]{0,23}$/;
+const MQTT_ACCOUNTS_PER_PLUGIN = 200;
+
+/** GateControl's src/services/edge/manifest.js topicFilterOk / filterCovers. */
+function mqttTopicOk(t) {
+  if (typeof t !== 'string' || !t || t.length > 128 || /[\0-\x1f\x7f]/.test(t)) return false;
+  if (t.startsWith('$') || t.startsWith('#') || t.startsWith('+')) return false;
+  const levels = t.split('/');
+  return levels.every((l, i) => l && (!l.includes('#') || (l === '#' && i === levels.length - 1)) && (!l.includes('+') || l === '+'));
+}
+function mqttFilterCovers(outer, inner) {
+  const a = String(outer).split('/');
+  const b = String(inner).split('/');
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] === '#') return true;
+    if (i >= b.length || b[i] === '#') return false;
+    if (a[i] === '+') continue;
+    if (b[i] === '+' || a[i] !== b[i]) return false;
+  }
+  return a.length === b.length;
+}
 const NOTIFY_PRIORITIES = ['info', 'normal', 'high', 'critical'];
 const NOTIFY_ACTIONS = new Set(['open_app_route', 'open_portal', 'mute_1h', 'ack', 'done', 'quick_action', 'callback']);
 // GateControl ≥ 1.169.0: a picture on a push (notify_media), checked like services/avatars.js
@@ -2828,6 +2856,50 @@ async function createHost(pluginDir, opts = {}) {
     edgeConfigs.set(id, data === undefined ? null : data);
     return { sent: true };
   };
+  // gc.mqtt.accounts (GateControl ≥ 1.228.0): device accounts of a gateway's broker, below the plugin's mqtt topics
+  const mqttTopics = edgeOn && manifest.edge.capabilities && manifest.edge.capabilities.mqtt && Array.isArray(manifest.edge.capabilities.mqtt.topics)
+    ? manifest.edge.capabilities.mqtt.topics : null;
+  const mqttAccounts = new Map(); // gatewayId → Map username → { username, label, acl, password, createdAt }
+  /** like hostMqtt: a gateway the part is switched on for (online or not) */
+  const mqttGateway = (v) => {
+    if (!mqttTopics) throw hostError('denied', 'this plugin declares no MQTT topics (edge.capabilities.mqtt)');
+    const id = Number(v);
+    if (!Number.isSafeInteger(id) || id <= 0) throw hostError('ERR_INVALID', 'invalid gateway id');
+    const g = edgeGateways().find((x) => x.id === id);
+    if (!g || EDGE_NOT_EFFECTIVE.has(g.state)) throw hostError('not_enabled', `the edge part is not switched on for this gateway (${g ? g.state : 'disabled'})`);
+    if (!mqttAccounts.has(id)) mqttAccounts.set(id, new Map());
+    return mqttAccounts.get(id);
+  };
+  api['mqtt.accounts.create'] = async ({ gatewayId, opts }) => {
+    const accounts = mqttGateway(gatewayId);
+    const o = opts && typeof opts === 'object' ? opts : {};
+    const list = o.topics == null ? [] : o.topics;
+    if (!Array.isArray(list) || list.length > 16) throw hostError('ERR_INVALID', 'topics: up to 16 entries');
+    const acl = [];
+    for (const e of list) {
+      const x = typeof e === 'string' ? { topic: e, access: 'readwrite' } : e;
+      if (!x || typeof x !== 'object' || !mqttTopicOk(x.topic)) throw hostError('ERR_INVALID', 'invalid topic');
+      const access = x.access == null ? 'readwrite' : x.access;
+      if (!['readwrite', 'read', 'write'].includes(access)) throw hostError('ERR_INVALID', 'access must be readwrite, read or write');
+      if (acl.some((y) => y.topic === x.topic)) throw hostError('ERR_INVALID', 'duplicate topic');
+      acl.push({ access, topic: x.topic });
+    }
+    if (!acl.length) throw hostError('ERR_INVALID', 'topics: at least one');
+    if (!acl.every((e) => mqttTopics.some((t) => mqttFilterCovers(t, e.topic)))) throw hostError('denied', 'topics outside the plugin\'s MQTT topics');
+    const name = o.name == null ? require('node:crypto').randomBytes(4).toString('hex') : String(o.name).toLowerCase();
+    if (!MQTT_ACCOUNT_NAME_RE.test(name)) throw hostError('ERR_INVALID', 'invalid name');
+    const username = `${manifest.id}-${name}`.slice(0, 48);
+    if (accounts.size >= MQTT_ACCOUNTS_PER_PLUGIN) throw hostError('ERR_RATE_LIMIT', 'too many accounts of this plugin on this gateway');
+    if (accounts.has(username)) throw hostError('ERR_INVALID', 'user name exists already');
+    const label = o.label == null ? '' : String(o.label).replace(/[\0-\x1f\x7f]/g, ' ').trim().slice(0, 80);
+    const password = require('node:crypto').randomBytes(18).toString('base64url');
+    accounts.set(username, { username, label, acl, password, createdAt: new Date().toISOString() });
+    return { username, password, acl, label };
+  };
+  api['mqtt.accounts.list'] = async ({ gatewayId }) => [...mqttGateway(gatewayId).values()]
+    .map((a) => ({ username: a.username, label: a.label, acl: a.acl, pluginId: manifest.id, locked: false, createdAt: a.createdAt }));
+  api['mqtt.accounts.remove'] = async ({ gatewayId, username }) => mqttGateway(gatewayId).delete(String(username));
+
   /** an event of the edge part (or $online / $offline / $started) to the gc.edge.on handlers, as the child bootstrap delivers it */
   async function edgeEvent(gatewayId, name, data, o = {}) {
     if (!edgeOn) throw new Error('mock host: no gc.edge (plugin.json edge and opts.edge or GateControl ≥ 1.228.0)');
@@ -3057,6 +3129,16 @@ async function createHost(pluginDir, opts = {}) {
           return () => { const l = edgeHandlers.get(name) || []; const i = l.indexOf(handler); if (i >= 0) l.splice(i, 1); };
         },
         configure: (gatewayId, data) => call('edge.configure', { gatewayId, data: data === undefined ? null : data }),
+      }),
+    } : {}),
+    // GateControl ≥ 1.228.0: gc.mqtt.accounts only with plugin.json edge.capabilities.mqtt (like the child bootstrap)
+    ...(edgeOn && mqttTopics ? {
+      mqtt: Object.freeze({
+        accounts: Object.freeze({
+          create: (gatewayId, o) => call('mqtt.accounts.create', { gatewayId, opts: o && typeof o === 'object' ? o : {} }),
+          list: (gatewayId) => call('mqtt.accounts.list', { gatewayId }),
+          remove: (gatewayId, username) => call('mqtt.accounts.remove', { gatewayId, username }),
+        }),
       }),
     } : {}),
     services: Object.freeze({
@@ -3679,6 +3761,8 @@ async function createHost(pluginDir, opts = {}) {
     edgeEvent: (gatewayId, name, data, o) => edgeEvent(gatewayId, name, data, o),
     edgeCalls,
     edgeConfigs,
+    /** gc.mqtt.accounts: gatewayId → Map username → { username, label, acl, password, createdAt } */
+    mqttAccounts,
     /** legacyImport hook: the host hands over the built-in data (first-party plugins only) */
     legacyImport: (snapshot) => hook('legacyImport', snapshot),
     /** keys stored with gc.settings.setSecret */

@@ -81,6 +81,12 @@ async function updateGateway(gc, id, patch) {
   return getGateway(gc, id);
 }
 
+/** The area ("Bereich") of a resource: a short text or null. */
+async function setArea(gc, resourceId, area) {
+  const r = await gc.db.run("UPDATE resources SET area = ?, updated_at = datetime('now') WHERE id = ?", [area || null, Number(resourceId)]);
+  return r.changes > 0;
+}
+
 async function touchGateway(gc, id) {
   await gc.db.run("UPDATE gateways SET last_seen_at = datetime('now') WHERE id = ?", [Number(id)]);
 }
@@ -155,7 +161,8 @@ async function markMissing(gc, gatewayId, seenKeys) {
 
 // ─── Owners (port of smarthomeOwners.js) ────────
 
-const ASSIGNABLE = new Set(['light', 'plug', 'group', 'sensor']);
+// relay (a switched output) and cover (shutter, awning, gate): Shelly / Tasmota devices through a gateway
+const ASSIGNABLE = new Set(['light', 'plug', 'group', 'sensor', 'relay', 'cover']);
 
 async function ownerIdsOf(gc, resourceId) {
   return (await gc.db.query('SELECT user_id FROM resource_owners WHERE resource_id = ? ORDER BY user_id', [Number(resourceId)])).rows.map((r) => r.user_id);
@@ -218,7 +225,7 @@ async function allOwners(gc) {
 }
 
 module.exports = {
-  tx, keyName, parseJson, getGateway, listGateways, apiKeyOf, setApiKey, createGateway, updateGateway, touchGateway, removeGateway,
+  tx, keyName, parseJson, setArea, getGateway, listGateways, apiKeyOf, setApiKey, createGateway, updateGateway, touchGateway, removeGateway,
   listResources, getResource, upsertResource, markMissing,
   ASSIGNABLE, ownerIdsOf, setOwners, resourcesOwnedBy, canAccess, inheritedOwnerIdsOf, allOwners,
 };

@@ -4,14 +4,36 @@
     "de": "Smart Home",
     "en": "Smart Home"
   },
-  "version": "1.6.1",
+  "version": "1.7.0",
   "publisher": "CallMeTechie",
   "description": {
-    "de": "Phoscon/deCONZ-Gateways einbinden: Lichter, Steckdosen, Gruppen, Szenen und Sensoren steuern, Haushaltsmitgliedern zuweisen (Portal „Zuhause“) und Logikketten auf dem Gateway anlegen.",
-    "en": "Connect Phoscon/deCONZ gateways: control lights, plugs, groups, scenes and sensors, assign them to household members (portal “Home”) and create logic chains on the gateway."
+    "de": "Phoscon/deCONZ-Gateways sowie Shelly- und Tasmota-Geräte über ein GateControl-Gateway einbinden: Lichter, Steckdosen, Schalter, Rollläden, Gruppen, Szenen und Sensoren steuern, Haushaltsmitgliedern zuweisen (Portal „Zuhause“) und Logikketten auf dem deCONZ-Gateway anlegen.",
+    "en": "Connect Phoscon/deCONZ gateways and Shelly and Tasmota devices through a GateControl gateway: control lights, plugs, switches, shutters, groups, scenes and sensors, assign them to household members (portal “Home”) and create logic chains on the deCONZ gateway."
   },
-  "gatecontrol": ">=1.154.0",
+  "gatecontrol": ">=1.228.1",
   "entry": "server/index.js",
+  "edge": {
+    "entry": "edge/index.js",
+    "minGateway": "1.19.0",
+    "memoryMb": 32,
+    "capabilities": {
+      "mdns": {
+        "services": [
+          "_shelly._tcp",
+          "_http._tcp"
+        ]
+      },
+      "http": {
+        "lan": true
+      },
+      "mqtt": {
+        "topics": [
+          "shellies/#",
+          "tasmota/#"
+        ]
+      }
+    }
+  },
   "permissions": {
     "network": {
       "homeTargets": [

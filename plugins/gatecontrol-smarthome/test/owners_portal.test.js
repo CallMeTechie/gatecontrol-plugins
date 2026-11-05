@@ -52,7 +52,7 @@ test('portal: only owned, enabled devices and sensors, redacted; switches stay o
   assert.deepEqual(r.json.devices.map((d) => d.name).sort(), ['Stehlampe', 'Wohnzimmer', 'Wohnzimmer · Abend']);
   assert.deepEqual(r.json.sensors.map((d) => d.name).sort(), ['Fensterkontakt', 'Temp']);
   const lamp = r.json.devices.find((d) => d.name === 'Stehlampe');
-  assert.deepEqual(Object.keys(lamp).sort(), ['capabilities', 'id', 'kind', 'name', 'state']);
+  assert.deepEqual(Object.keys(lamp).sort(), ['area', 'capabilities', 'id', 'kind', 'name', 'state']);
   assert.deepEqual(lamp.state, { on: true, reachable: true, bri: 100 });
   assert.deepEqual((await asPortal(host, BOB, 'GET', '/portal')).json.devices.map((d) => d.name), ['Poolpumpe']);
   assert.deepEqual((await asPortal(host, { id: 7, name: 'Eve', role: 'user' }, 'GET', '/portal')).json, { ok: true, devices: [], sensors: [] });

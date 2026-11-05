@@ -10,6 +10,12 @@
 //     PUT  /gateways/:id · /resources/:id/owners        DELETE /gateways/:id
 //     GET  /rules?gateway_id · /rules/gateway-count?gateway_id
 //     POST /rules · /rules/:id/enabled   PUT /rules/:id   DELETE /rules/:id
+//     PUT  /resources/:id { area }      the area ("Bereich") of any resource
+//   Shelly / Tasmota through a GateControl gateway (server/edge.js; GateControl ≥ 1.228.1 gc.edge, gc.mqtt.accounts)
+//     GET  /edge/gateways · /edge/found?gateway_id · /edge/devices[?gateway_id] · /edge/devices/:id · /edge/setup/:job
+//     POST /edge/devices (by hand: account, password once) · /edge/setup (automatic) · /edge/setup/:job/password
+//          /edge/setup/:job/manual · /edge/devices/:id/password · /edge/devices/:id/family · /edge/gateways/:id/refresh
+//     PUT  /edge/devices/:id · /edge/devices/:id/owners      DELETE /edge/devices/:id · /edge/setup/:job
 //   portal API  (the identified portal viewer — owner-scoped)
 //     GET  /portal                     own devices and sensors
 //     POST /portal/resources/:id/state control (the host lets only signed-in viewers change things)
@@ -32,6 +38,7 @@ const rules = require('./rules');
 const legacy = require('./legacy');
 const alerts = require('./alerts');
 const deconzCaps = require('./caps');
+const edge = require('./edge');
 const { validApiKey } = require('./deconz');
 const texts = require('./texts.json');
 
@@ -63,6 +70,10 @@ const ERRORS = {
   SMARTHOME_RULE_NOT_FOUND: [404, 'error.rule_not_found'],
   DECONZ_RULE_LIMIT_REACHED: [409, 'error.rule_limit_reached'],
   DECONZ_UNREACHABLE: [502, 'error.unreachable'],
+  SMARTHOME_EDGE_UNAVAILABLE: [409, 'error.edge_unavailable'],
+  SMARTHOME_EDGE_UNREACHABLE: [502, 'error.edge_unreachable'],
+  SMARTHOME_MQTT_OFF: [409, 'error.mqtt_off'],
+  SMARTHOME_PREFIX_TOO_LONG: [400, 'error.prefix_too_long'],
   FORBIDDEN: [403, 'error.forbidden'],
   NOT_FOUND: [404, 'error.not_found'],
   INVALID: [400, 'error.invalid'],
@@ -96,18 +107,29 @@ async function usersById(gc) {
   return m;
 }
 
-const STATE_KEYS = new Set(['on', 'bri', 'reachable', 'type', 'value']);
+const STATE_KEYS = new Set(['on', 'bri', 'reachable', 'type', 'value', 'pos', 'moving', 'power', 'energy_today', 'humidity', 'battery']);
+const EDGE_CAPS = ['bri', 'power', 'position', 'cover', 'reading'];
 /** Portal: only the controllable surface — never gateway, target or deCONZ internals. */
 function portalResource(r) {
   const st = {};
   for (const [k, v] of Object.entries(r.state || {})) if (STATE_KEYS.has(k)) st[k] = v;
-  return { id: r.id, kind: r.kind, name: r.name, capabilities: r.capabilities || {}, state: st };
+  let caps = r.capabilities || {};
+  if (r.deconz_type === 'edge') caps = Object.fromEntries(EDGE_CAPS.filter((k) => k in caps).map((k) => [k, caps[k]]));
+  return { id: r.id, kind: r.kind, name: r.name, area: r.area || null, capabilities: caps, state: st };
 }
 
-/** Portal patch: on (boolean) and bri (0-100, with the capability); scenes take {}. */
-function portalPatch(raw, caps) {
+/** Portal patch: on (boolean) and bri (0-100, with the capability); a cover open/close/stop or pos; scenes take {}. */
+function portalPatch(raw, caps, kind) {
   if (raw == null || typeof raw !== 'object' || Array.isArray(raw)) return {};
   const patch = {};
+  if (kind === 'cover') {
+    if ('cover' in raw) { if (!['open', 'close', 'stop'].includes(raw.cover)) return null; patch.cover = raw.cover; }
+    if ('pos' in raw) {
+      if (!(caps && caps.position) || typeof raw.pos !== 'number' || !Number.isFinite(raw.pos) || raw.pos < 0 || raw.pos > 100) return null;
+      patch.pos = raw.pos;
+    }
+    return Object.keys(patch).length === 1 ? patch : null;
+  }
   if ('on' in raw) { if (typeof raw.on !== 'boolean') return null; patch.on = raw.on; }
   if ('bri' in raw && caps && caps.bri) {
     if (typeof raw.bri !== 'number' || !Number.isFinite(raw.bri) || raw.bri < 0 || raw.bri > 100) return null;
@@ -132,6 +154,9 @@ async function ownedResources(gc, userId) {
 
 async function portalData(gc, userId) {
   const owned = await ownedResources(gc, userId);
+  // a scene stands in its group's area (when the viewer has that group)
+  const groupArea = new Map(owned.filter((r) => r.kind === 'group' && r.area).map((g) => [`${g.gateway_id}/${g.deconz_id}`, g.area]));
+  for (const r of owned) if (r.kind === 'scene' && !r.area) r.area = groupArea.get(sceneGroupKey(r)) || null;
   return {
     devices: owned.filter((r) => r.kind !== 'sensor' && r.kind !== 'switch').map(portalResource),
     sensors: owned.filter((r) => r.kind === 'sensor').map(portalResource), // switches stay out
@@ -149,6 +174,8 @@ const TILE_ICONS = {
   humidity: 'M12 3s6 6.5 6 11a6 6 0 0 1-12 0c0-4.5 6-11 6-11zM9 14a3 3 0 0 0 3 3',
   open: 'M4 3h16v18H4zM14 3v18',
   sensor: 'M12 2v4M12 18v4M4.9 4.9l2.8 2.8M16.3 16.3l2.8 2.8M2 12h4M18 12h4',
+  relay: 'M12 3v9M6.3 7.3a8 8 0 1 0 11.4 0',
+  cover: 'M4 3h16v18H4zM4 9h16M4 15h16',
 };
 
 function fmtNum(v, lang) {
@@ -158,13 +185,25 @@ function fmtNum(v, lang) {
 
 function kindLabel(r, lang) {
   if (r.kind === 'sensor') return t(lang, 'sensor.' + ((r.state && r.state.type) || (r.capabilities && r.capabilities.reading) || 'unknown'));
+  if (r.kind === 'cover') return t(lang, 'cover.' + ((r.capabilities && r.capabilities.cover) || 'shutter'));
   return t(lang, 'kind.' + r.kind);
+}
+
+/** A cover's position as text: "60 % offen", "fährt auf", or the kind when unknown. */
+function coverText(st, lang) {
+  if (st.moving === 'opening' || st.moving === 'closing') return t(lang, 'cover.' + st.moving);
+  if (st.pos != null && Number.isFinite(Number(st.pos))) return Number(st.pos) <= 0 ? t(lang, 'cover.closed') : t(lang, 'cover.pos_open', { pos: fmtNum(st.pos, lang) });
+  return null;
 }
 
 function deviceTile(d, lang) {
   const st = d.state || {};
+  if (d.kind === 'cover') {
+    return { section: 'smarthome', title: d.name || '', value: coverText(st, lang) || '–', state: st.reachable === false ? 'warn' : null, icon: TILE_ICONS.cover };
+  }
   let value = st.on ? t(lang, 'portal.on') : t(lang, 'portal.off');
   if (st.on && d.capabilities && d.capabilities.bri && st.bri != null) value += ' · ' + fmtNum(st.bri, lang) + ' %';
+  if (st.on && st.power != null && Number.isFinite(Number(st.power))) value += ' · ' + fmtNum(Math.round(st.power), lang) + ' W';
   return { section: 'smarthome', title: d.name || '', value, state: st.on ? 'on' : 'off', icon: TILE_ICONS[d.kind] || TILE_ICONS.light };
 }
 
@@ -187,7 +226,9 @@ function sensorTile(s, lang) {
 // ─── Quick actions of the apps (declarative; the host checks and caps them) ──
 
 const QA_MAX = 16;
-const QA_ID_RE = /^(light|plug|group|scene):([1-9][0-9]{0,9})$/;
+const QA_ID_RE = /^(light|plug|group|scene|relay|cover):([1-9][0-9]{0,9})(?::(open|stop|close))?$/;
+const COVER_OPS = ['open', 'stop', 'close'];
+const COVER_ICONS = { open: 'M12 19V5M5 12l7-7 7 7', stop: 'M7 7h10v10H7z', close: 'M12 5v14M5 12l7 7 7-7' };
 const SCENE_ICON = 'M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8zM19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z';
 
 /** A text as the host takes it unchanged: no control characters, trimmed, at most `max` UTF-16 units. */
@@ -204,10 +245,22 @@ function dimmable(r) {
   return (r.kind === 'light' || r.kind === 'group') && Boolean(r.capabilities && r.capabilities.bri);
 }
 
+/** Readings of a metered device (Shelly / Tasmota): the power now and the energy of today. */
+function powerReadings(r, lang, withPower) {
+  const st = r.state || {};
+  const out = [];
+  if (withPower && st.power != null && Number.isFinite(Number(st.power))) out.push({ id: 'power', label: clip(t(lang, 'card.power'), 20), value: Math.round(Number(st.power)), unit: 'W' });
+  if (st.energy_today != null && Number.isFinite(Number(st.energy_today))) out.push({ id: 'today', label: clip(t(lang, 'card.today'), 20), value: Math.round(Number(st.energy_today) * 100) / 100, unit: 'kWh' });
+  return out;
+}
+
+const metered = (r) => (r.kind === 'plug' || r.kind === 'relay') && Boolean(r.capabilities && r.capabilities.power);
+
 /**
  * The widget of a dimmable light or group (GateControl ≥ 1.171.0; older hosts
  * leave it out): the brightness as the value while on ("Off" otherwise), the
- * kind and reachability as the status, a brightness slider.
+ * kind and reachability as the status, a brightness slider. A metered light
+ * (Shelly / Tasmota) adds its power as a reading.
  */
 function widgetOf(r, lang) {
   const st = r.state || {};
@@ -219,27 +272,69 @@ function widgetOf(r, lang) {
     if (bri != null) { w.value = bri; w.unit = '%'; } else w.value = t(lang, 'portal.on');
   }
   w.controls.push({ id: 'bri', kind: 'slider', label: clip(t(lang, 'portal.brightness'), 20), value: bri == null ? BRI.fallback : bri, min: BRI.min, max: BRI.max, step: BRI.step, unit: '%' });
+  if (r.capabilities && r.capabilities.power) {
+    const readings = powerReadings(r, lang, true);
+    if (readings.length) w.readings = readings;
+  }
+  return w;
+}
+
+/** A metered plug or switch (Shelly / Tasmota): the power now as the value, today's energy as a reading. */
+function powerWidgetOf(r, lang) {
+  const st = r.state || {};
+  let status = kindLabel(r, lang) + ' · ' + t(lang, st.on ? 'portal.on' : 'portal.off');
+  if (st.reachable === false) status = kindLabel(r, lang) + ' · ' + t(lang, 'qa.unreachable');
+  const power = st.power != null && Number.isFinite(Number(st.power)) ? Math.round(Number(st.power)) : null;
+  return {
+    label: clip(t(lang, 'card.power'), 24), value: power, unit: power == null ? null : 'W', status: clip(status, 60), state: st.on ? 'on' : 'off',
+    readings: powerReadings(r, lang, false), controls: [],
+  };
+}
+
+/** A cover (Shelly / Tasmota): the position as the value, a position slider; carried by its "open" button. */
+function coverWidgetOf(r, lang) {
+  const st = r.state || {};
+  const pos = st.pos != null && Number.isFinite(Number(st.pos)) ? Math.round(Number(st.pos)) : null;
+  let status = kindLabel(r, lang);
+  if (st.reachable === false) status += ' · ' + t(lang, 'qa.unreachable');
+  else if (st.moving === 'opening' || st.moving === 'closing') status += ' · ' + t(lang, 'cover.' + st.moving);
+  const w = { label: clip(t(lang, 'cover.position'), 24), value: pos, unit: pos == null ? null : '%', status: clip(status, 60), state: st.reachable === false ? 'warn' : null, power: false, controls: [] };
+  if (r.capabilities && r.capabilities.position) w.controls.push({ id: 'pos', kind: 'slider', label: clip(t(lang, 'cover.position'), 20), value: pos == null ? 0 : pos, min: 0, max: 100, step: 1, unit: '%' });
   return w;
 }
 
 /** A resource as the apps group quick actions (GateControl ≥ 1.172.0): r:<resource id>, its name and icon. */
 function deviceOf(r, lang) {
-  return { id: `r:${r.id}`, title: clip(r.name, 40) || t(lang, 'kind.' + r.kind), icon: r.kind === 'scene' ? SCENE_ICON : (TILE_ICONS[r.kind] || TILE_ICONS.light) };
+  return { id: `r:${r.id}`, title: clip(r.name, 40) || kindLabel(r, lang), icon: r.kind === 'scene' ? SCENE_ICON : (TILE_ICONS[r.kind] || TILE_ICONS.light) };
+}
+
+/** A cover's three buttons (open, stop, close) as one device; the "open" button carries the widget. */
+function coverActions(r, lang) {
+  const device = deviceOf(r, lang);
+  const st = r.state || {};
+  const sub = clip(st.reachable === false ? kindLabel(r, lang) + ' · ' + t(lang, 'qa.unreachable') : (coverText(st, lang) || kindLabel(r, lang)), 60);
+  return COVER_OPS.map((op) => {
+    const a = { id: `cover:${r.id}:${op}`, title: clip(t(lang, 'cover.' + op), 40), subtitle: sub, icon: COVER_ICONS[op], kind: 'button', device };
+    if (op === 'open') a.widget = coverWidgetOf(r, lang);
+    return a;
+  });
 }
 
 /** `device`: the resource's own, for a scene its group's (when the viewer has that group). */
 function quickAction(r, lang, device) {
-  const name = clip(r.name, 40) || t(lang, 'kind.' + r.kind);
+  const name = clip(r.name, 40) || kindLabel(r, lang);
   if (r.kind === 'scene') return { id: `scene:${r.id}`, title: name, subtitle: t(lang, 'kind.scene'), icon: SCENE_ICON, kind: 'button', device: device || deviceOf(r, lang) };
   const st = r.state || {};
-  let subtitle = t(lang, 'kind.' + r.kind);
+  let subtitle = kindLabel(r, lang);
   if (st.reachable === false) subtitle += ' · ' + t(lang, 'qa.unreachable');
   else if (st.on && r.capabilities && r.capabilities.bri && st.bri != null) subtitle += ' · ' + fmtNum(st.bri, lang) + ' %';
+  else if (st.on && st.power != null && Number.isFinite(Number(st.power))) subtitle += ' · ' + fmtNum(Math.round(st.power), lang) + ' W';
   const a = {
     id: `${r.kind}:${r.id}`, title: name, subtitle: clip(subtitle, 60), icon: TILE_ICONS[r.kind] || TILE_ICONS.light, kind: 'toggle', state: st.on ? 'on' : 'off',
     device: device || deviceOf(r, lang), verbs: { on: t(lang, 'qa.verb_on'), off: t(lang, 'qa.verb_off') }, targets: true,
   };
   if (dimmable(r)) a.widget = widgetOf(r, lang);
+  else if (metered(r)) a.widget = powerWidgetOf(r, lang);
   return a;
 }
 
@@ -252,7 +347,8 @@ function sceneGroupKey(r) {
 /**
  * The viewer's own controllable devices (exactly the portal's devices: owned,
  * enabled, scenes of an owned group) as quick actions — cached state only,
- * no gateway round trip. Switches first (groups, lights, plugs), scenes last.
+ * no gateway round trip. Switches first (groups, lights, plugs, switched
+ * outputs), then the buttons of covers (open / stop / close), scenes last.
  * Every resource is its own device (r:<id>); a scene belongs to its group's
  * device when the viewer has that group, else it is a device of its own.
  */
@@ -260,19 +356,24 @@ async function quickActionsFor(gc, user, lang) {
   if (!user || !Number.isInteger(user.id) || user.loggedIn === false) return [];
   const devices = (await ownedResources(gc, user.id)).filter((r) => r.kind !== 'sensor' && r.kind !== 'switch');
   const groups = new Map(devices.filter((r) => r.kind === 'group').map((g) => [`${g.gateway_id}/${g.deconz_id}`, g]));
-  const toggles = devices.filter((d) => d.kind !== 'scene');
+  const toggles = devices.filter((d) => d.kind !== 'scene' && d.kind !== 'cover');
+  const covers = devices.filter((d) => d.kind === 'cover');
   const scenes = devices.filter((d) => d.kind === 'scene');
-  return [...toggles, ...scenes].slice(0, QA_MAX).map((d) => {
-    const group = d.kind === 'scene' ? groups.get(sceneGroupKey(d)) : null;
-    return quickAction(d, lang, group ? deviceOf(group, lang) : null);
-  });
+  const out = toggles.map((d) => quickAction(d, lang, null));
+  for (const c of covers) if (out.length + 3 <= QA_MAX) out.push(...coverActions(c, lang));
+  for (const d of scenes) {
+    const group = groups.get(sceneGroupKey(d));
+    out.push(quickAction(d, lang, group ? deviceOf(group, lang) : null));
+  }
+  return out.slice(0, QA_MAX);
 }
 
-/** The widget of a dimmable resource after a change (the cached state follows what was sent). */
+/** The widget of a resource after a change (the cached state follows what was sent). */
 async function widgetAfter(gc, r, lang) {
-  if (!dimmable(r)) return undefined;
-  const now = await store.getResource(gc, r.id);
-  return widgetOf(now || r, lang);
+  if (!dimmable(r) && !metered(r) && r.kind !== 'cover') return undefined;
+  const now = (await store.getResource(gc, r.id)) || r;
+  if (r.kind === 'cover') return coverWidgetOf(now, lang);
+  return dimmable(r) ? widgetOf(now, lang) : powerWidgetOf(now, lang);
 }
 
 /**
@@ -280,11 +381,13 @@ async function widgetAfter(gc, r, lang) {
  * A toggle switches over; with a target ('on' | 'off', GateControl ≥ 1.173.0)
  * it sets that state, whatever the cached state says. With a control
  * (GateControl ≥ 1.171.0): `bri` sets the brightness of a dimmable light or
- * group and switches it on. A dimmable resource's answer carries its widget.
+ * group and switches it on, `pos` moves a cover. A cover's buttons open, stop
+ * or close it. A resource with a widget answers with it.
  */
 async function runQuickActionFor(gc, user, lang, id, control, value, target) {
   const m = typeof id === 'string' ? QA_ID_RE.exec(id) : null;
   if (!m || !user || !Number.isInteger(user.id) || user.loggedIn === false) return { ok: false, message: t(lang, 'qa.unknown') };
+  if ((m[1] === 'cover') !== (m[3] !== undefined)) return { ok: false, message: t(lang, 'qa.unknown') };
   const rid = Number(m[2]);
   let r = null;
   try {
@@ -293,14 +396,25 @@ async function runQuickActionFor(gc, user, lang, id, control, value, target) {
     if (!r || !r.enabled || r.kind !== m[1]) throw fail('SMARTHOME_RESOURCE_NOT_FOUND');
     const name = clip(r.name, 40);
     if (control !== undefined) {
-      const bri = typeof value === 'number' && Number.isFinite(value) ? Math.round(value) : NaN;
-      if (control !== 'bri' || !dimmable(r) || !(bri >= BRI.min && bri <= BRI.max)) return { ok: false, message: t(lang, 'qa.unknown') };
-      await service.setResourceState(gc, rid, { bri, on: true });
+      const v = typeof value === 'number' && Number.isFinite(value) ? Math.round(value) : NaN;
+      if (r.kind === 'cover') {
+        if (control !== 'pos' || !(r.capabilities && r.capabilities.position) || !(v >= 0 && v <= 100)) return { ok: false, message: t(lang, 'qa.unknown') };
+        await service.setResourceState(gc, rid, { pos: v });
+        return { ok: true, message: null, widget: await widgetAfter(gc, r, lang) };
+      }
+      if (control !== 'bri' || !dimmable(r) || !(v >= BRI.min && v <= BRI.max)) return { ok: false, message: t(lang, 'qa.unknown') };
+      await service.setResourceState(gc, rid, { bri: v, on: true });
       return { ok: true, message: null, state: 'on', widget: await widgetAfter(gc, r, lang) };
     }
     if (r.kind === 'scene') {
       await service.setResourceState(gc, rid, {});
       return { ok: true, message: clip(t(lang, 'portal.scene_done', { name }), 120) };
+    }
+    if (r.kind === 'cover') {
+      await service.setResourceState(gc, rid, { cover: m[3] });
+      const out = { ok: true, message: clip(t(lang, 'cover.done_' + m[3], { name }), 120) };
+      if (m[3] === 'open') out.widget = await widgetAfter(gc, r, lang);
+      return out;
     }
     const on = target === 'on' || target === 'off' ? target === 'on' : !(r.state && r.state.on);
     await service.setResourceState(gc, rid, { on });
@@ -312,6 +426,8 @@ async function runQuickActionFor(gc, user, lang, id, control, value, target) {
     if (!ERRORS[e && e.code]) gc.log.warn('quick action failed', id, (e && (e.code || e.message)) || e);
     const out = { ok: false, message: errorResponse(e, lang).json.error };
     if (r && dimmable(r)) out.widget = widgetOf(r, lang);
+    else if (r && metered(r)) out.widget = powerWidgetOf(r, lang);
+    else if (r && r.kind === 'cover' && m[3] === 'open') out.widget = coverWidgetOf(r, lang);
     return out;
   }
 }
@@ -328,7 +444,7 @@ async function portalRoute(req, gc, seg) {
     const resource = await store.getResource(gc, id);
     if (!resource || !resource.enabled) throw fail('SMARTHOME_RESOURCE_NOT_FOUND');
     if (resource.kind === 'sensor' || resource.kind === 'switch') throw fail('SMARTHOME_NOT_CONTROLLABLE');
-    const patch = portalPatch(req.body && req.body.patch, resource.capabilities);
+    const patch = portalPatch(req.body && req.body.patch, resource.capabilities, resource.kind);
     if (patch === null) throw fail('SMARTHOME_INVALID_PATCH');
     await service.setResourceState(gc, id, patch);
     return { json: { ok: true } };
@@ -409,6 +525,12 @@ async function adminRoute(req, gc, seg) {
     }
     const id = posInt(b);
     if (!id) throw fail('NOT_FOUND');
+    if (seg.length === 2 && m === 'PUT') {
+      if (body.area !== null && typeof body.area !== 'string') throw fail('INVALID');
+      const area = typeof body.area === 'string' ? body.area.replace(/[\0-\x1f\x7f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 40) : null;
+      if (!(await store.setArea(gc, id, area || null))) throw fail('SMARTHOME_RESOURCE_NOT_FOUND');
+      return { json: { ok: true, area: area || null } };
+    }
     if (seg.length === 3 && c === 'owners' && m === 'PUT') {
       if (!Array.isArray(body.userIds) || body.userIds.length > 1000) throw fail('SMARTHOME_USER_IDS_REQUIRED');
       const ids = await store.setOwners(gc, id, body.userIds);
@@ -422,6 +544,8 @@ async function adminRoute(req, gc, seg) {
     }
     throw fail('NOT_FOUND');
   }
+
+  if (a === 'edge') return edge.route(req, gc, seg.slice(1), body, usersById);
 
   if (a === 'rules') {
     if (seg.length === 1 && m === 'GET') {
@@ -456,6 +580,7 @@ module.exports = {
     state.lastSync = 0;
     state.resynced = false;
     alerts.reset();
+    edge.setup(gc);
     gc.log.info('smarthome started', gc.plugin.version);
   },
 
@@ -530,6 +655,7 @@ module.exports = {
       state.resynced = true;
       try { await rules.resyncPending(gc); } catch (e) { gc.log.warn('rule resync failed', e.code || e.message); }
     }
+    await edge.tick(gc).catch((e) => gc.log.warn('edge tick failed', (e && (e.code || e.message)) || e));
     const s = await gc.settings.all();
     const interval = Math.max(30, Math.min(3600, Number(s.interval) || 30));
     if (Date.now() - state.lastSync < interval * 1000 - 2000) return;
