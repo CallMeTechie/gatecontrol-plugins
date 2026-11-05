@@ -121,3 +121,24 @@
 .fa-dev-count:focus-visible,.fa-switch:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 #fa-pres-devhint strong{color:var(--text)}
 @media (max-width:420px){.fa-src,.fa-dev{padding:10px}.fa-devs{padding-left:0}}
+/* 1.18.0: „Internet zu Hause“ (mockup „Familie · Internet für Kinder“) — parents only */
+.fa-net-head{align-items:baseline}
+.fa-net-list{display:flex;flex-direction:column;gap:10px}
+.fa-net-item{display:flex;flex-direction:column;gap:8px}
+.fa-net-kid{display:flex;gap:14px;align-items:center;flex-wrap:wrap;padding:14px;border-radius:14px;background:var(--surface-2);border:1px solid var(--line);min-width:0}
+.fa-net-kid.is-paused{border-color:color-mix(in srgb,var(--warn) 45%,var(--line))}
+.fa-net-kid.is-longer{border-color:color-mix(in srgb,var(--good) 40%,var(--line))}
+.fa-net-kid .fa-avatar{flex:none}
+.fa-net-main{flex:1 1 240px;min-width:0;display:flex;flex-direction:column;gap:3px}
+.fa-net-name{display:flex;align-items:center;flex-wrap:wrap;gap:6px;font-size:15px}
+.fa-net-main .fa-sub{font-size:12.5px;line-height:1.45}
+.fa-net-pill{font-size:11.5px;padding:2px 8px}
+.fa-net-pill.is-paused{background:color-mix(in srgb,var(--warn) 14%,transparent);color:var(--warn)}
+.fa-net-pill.is-longer{background:color-mix(in srgb,var(--good) 14%,transparent);color:var(--good)}
+.fa-net-btns{display:flex;gap:8px;flex-wrap:wrap}
+.fa-net-btns .btn{min-height:40px;border-radius:12px;font-weight:700}
+.fa-net-btns .btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.fa-net-panel{display:flex;flex-direction:column;gap:8px;padding:14px;border-radius:14px;border:1px dashed var(--line-2)}
+.fa-net-panel-title{font-size:13px;font-weight:700}
+.fa-net-panel .fa-sub{font-size:12.5px;line-height:1.45}
+@media (max-width:420px){.fa-net-kid{padding:12px;gap:10px}.fa-net-btns{width:100%}.fa-net-btns .btn{flex:1 1 auto}}

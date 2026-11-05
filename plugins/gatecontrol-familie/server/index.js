@@ -60,6 +60,10 @@
 // 1.17.0: presence over the home network (GateControl ≥ 1.230.0, permissions.homePresence) — the phone in the home Wi-Fi as
 // a second source next to the app: gc.homeNetwork.presence.on at start, list() compared every minute (server/homewifi.js),
 // both sources combined in server/presence.js. Older GateControl: no gc.homeNetwork, the app stays the only source.
+//
+// 1.18.0: „Internet zu Hause“ (GateControl ≥ 1.231.0, permissions.homeInternet → gc.homeNetwork.internet) — parents pause
+// the internet of a child at home or give it more time today; the child is told (server/internet.js). Older GateControl:
+// the portal card stays hidden, the API answers available: false / 409 unavailable.
 
 const ui = require('./ui');
 const api = require('./api');
@@ -92,6 +96,7 @@ const schoolend = require('./schoolend');
 const wifi = require('./wifi');
 const groups = require('./groups');
 const homewifi = require('./homewifi');
+const internet = require('./internet');
 const texts = require('./texts.json');
 const { STATUS, isKnown } = require('./util');
 
@@ -182,6 +187,7 @@ async function background(gc, now) {
       await school.purge(gc, now);
       await schoolend.purge(gc, now);
       await wifi.purge(gc, now);
+      await internet.purge(gc, now);
     });
   }
   await push.flush(gc, pushes);

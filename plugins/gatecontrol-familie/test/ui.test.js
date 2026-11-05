@@ -39,7 +39,7 @@ test('render: members, modules, log and the portal tab in de and en; no unresolv
   const pres = ui.render({ view: 'page', page: 'presence' }, t);
   assert.ok(pres.includes('A.rules = {') && pres.includes('id="fa-pr-rules"'));
   const portalHtml = ui.render({ view: 'portal', loggedIn: true }, t);
-  for (const id of ['fa-board', 'fa-meals', 'fa-wishes', 'fa-allowance', 'fa-expenses', 'fa-presence']) assert.ok(portalHtml.includes(`id="${id}"`), id);
+  for (const id of ['fa-board', 'fa-meals', 'fa-wishes', 'fa-allowance', 'fa-expenses', 'fa-presence', 'fa-internet', 'fa-net-list']) assert.ok(portalHtml.includes(`id="${id}"`), id);
   assert.ok(portalHtml.includes('A.rules = {') && portalHtml.includes('function form(title, fields, opts)'));
   // 1.4.0: one rule editor (ui/rules.js) for the admin page and the portal: the wide three-column dialog
   for (const html of [pres, portalHtml]) assert.ok(html.includes("class: 'fa-rm'") && html.includes('.fa-rm-body{') && html.includes("'aria-pressed'"));
@@ -140,9 +140,9 @@ test('Leaflet: one constant (server/ui.js), nowhere else', () => {
   assert.equal(ui.TILES, 'https://tile.openstreetmap.org/{z}/{x}/{y}.png');
 });
 
-test('plugin.json: permissions (kiosk, actions), app tab, maps, the eleven topics with SOS allowed critical', () => {
+test('plugin.json: permissions (kiosk, actions), app tab, maps, the twelve topics with SOS allowed critical', () => {
   assert.equal(manifest.id, 'gatecontrol-familie');
-  assert.equal(manifest.version, '1.17.0');
+  assert.equal(manifest.version, '1.18.0');
   // 1.6.0 stays on 1.173.0: the messenger services (GateControl ≥ 1.177.0) are optional — an older host ignores
   // permissions.services and has no gc.services, so the group and the rule action stay hidden there.
   // 1.14.2 too: GC.viewport (GateControl ≥ 1.199.0) is optional — without it the wall keeps its 640 px
@@ -151,11 +151,14 @@ test('plugin.json: permissions (kiosk, actions), app tab, maps, the eleven topic
   // 1.16.0: services.provides.calendar_range.maxPerHour (GateControl ≥ 1.216.0 — older hosts refuse the key)
   // 1.17.0 stays too: permissions.homePresence (gc.homeNetwork, GateControl ≥ 1.230.0) — an older host ignores the key and
   // has no gc.homeNetwork, the app stays the only source of presence
+  // 1.18.0 stays too: permissions.homeInternet (gc.homeNetwork.internet, GateControl ≥ 1.231.0) — an older host ignores the
+  // key, the card „Internet zu Hause“ stays hidden
   assert.equal(manifest.gatecontrol, '>=1.216.0', 'maxPerHour of calendar_range needs GateControl 1.216.0');
   const p = manifest.permissions;
   assert.deepEqual([p.storage, p.portal, p.users, p.app, p.notify, p.background, p.kiosk, p.actions], [true, true, true, true, { perHour: 120 }, { intervalSeconds: 60 }, true, true]);
   assert.equal(p.groups, 'manage', '1.15.0: the family as a GateControl group of the plugin (gc.groups.ensure)');
   assert.equal(p.homePresence, true, '1.17.0: presence over the home network (gc.homeNetwork.presence)');
+  assert.equal(p.homeInternet, true, '1.18.0: „Internet zu Hause“ (gc.homeNetwork.internet)');
   assert.deepEqual(p.services, ['gatecontrol-messenger:sync_group', 'gatecontrol-messenger:send_message', 'gatecontrol-messenger:release_group',
     'gatecontrol-messenger:set_place_status', 'gatecontrol-alltag:calendar_query', 'gatecontrol-alltag:calendar_list', 'gatecontrol-schule:school_students',
     'gatecontrol-schule:school_day'],
@@ -181,7 +184,8 @@ test('plugin.json: permissions (kiosk, actions), app tab, maps, the eleven topic
     assert.ok(ICON.test(manifest.ui[k].icon), k);
     assert.deepEqual(manifest.ui[k].label, { de: 'Familie', en: 'Family' });
   }
-  assert.deepEqual(manifest.notifyTopics.map((x) => x.id), ['shopping', 'tasks', 'dates', 'locate', 'arrival', 'sos', 'places', 'rides', 'allowance', 'presence', 'reminders']);
+  assert.deepEqual(manifest.notifyTopics.map((x) => x.id), ['shopping', 'tasks', 'dates', 'locate', 'arrival', 'sos', 'places', 'rides', 'allowance', 'presence', 'reminders', 'internet']);
+  assert.deepEqual(manifest.notifyTopics.find((x) => x.id === 'internet').label, { de: 'Internet zu Hause', en: 'Internet at home' });
   assert.deepEqual(manifest.notifyTopics.find((x) => x.id === 'reminders').label, { de: 'Regeln & Erinnerungen', en: 'Rules & reminders' });
   assert.deepEqual(manifest.notifyTopics.find((x) => x.id === 'allowance').label, { de: 'Taschengeld', en: 'Pocket money' });
   assert.deepEqual(manifest.notifyTopics.find((x) => x.id === 'presence').label, { de: 'Anwesenheit & Smart Home', en: 'Presence & smart home' });
