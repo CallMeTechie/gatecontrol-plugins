@@ -152,6 +152,8 @@ async function presenceRoute(req, gc, seg, cfg, now, m, body) {
       modules: { presence: cfg.modules.presence }, location: cfg.location, members: presence.membersView(fam, map),
       ...(await presence.listRules(gc, ctx)), actions: own.actions, actionsAvailable: own.available,
       ...(await ruleplaces.list(gc, ctx)),
+      // 1.17.0: presence over the home network is there (GateControl ≥ 1.230.0) — the page's note about it
+      wifi: presence.wifiAvailable(gc),
     };
   }
   if (b === 'actions' && seg.length === 3 && m === 'GET') return presence.actions(gc, req.user.id, lang);

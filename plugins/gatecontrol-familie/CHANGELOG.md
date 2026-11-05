@@ -3,6 +3,45 @@
 Die Familie in der GateControl-App (eigener Tab), im Portal (eigener Tab „Familie“) und auf
 drei Admin-Seiten. Alles bleibt auf dem eigenen Server.
 
+## 1.17.0
+- **Anwesenheit über das Heimnetz** (ab GateControl 1.230.0, neue Berechtigung `permissions.homePresence` –
+  „Anwesenheit im Heimnetz“): Neben der App gibt es eine zweite Quelle, das **Handy im WLAN**. Ein GateControl-Gateway
+  mit Netzwerk-Wächter sieht die Handys im Heimnetz; ein Admin ordnet ein Gerät dort einer Person zu, die Person schaltet
+  es selbst ein. Familie bekommt von GateControl nur „zu Hause“ / „unterwegs“ je Person (`gc.homeNetwork.presence`) – nie
+  MAC- oder IP-Adressen, nie welches Gerät.
+- **Zusammenspiel der Quellen:** Eine Person gilt als zu Hause, sobald eine eingeschaltete Quelle „zu Hause“ meldet, und
+  als unterwegs erst, wenn keine mehr „zu Hause“ sagt (das WLAN meldet „weg“ erst nach 10 Minuten ohne Lebenszeichen –
+  das macht das Gateway). Die Regeln („Alle weg“, „Erste Person kommt heim“, „Kind allein zu Hause“, „Person kommt /
+  geht“) lösen wie bisher einmal pro Wechsel aus: Sagt die zweite Quelle dasselbe, passiert nichts; meldet die App
+  „weg“, während das WLAN das Handy noch sieht, bleibt die Person zu Hause. Das Ausschalten einer Quelle und eine
+  Quelle, die verstummt (letztes zählendes Gerät entfernt), lösen keine Personen-Regel aus (die erste Meldung nach dem
+  Einschalten zählt wie bisher die erste Meldung der App). Eine Änderung, die
+  Familie erst mehr als 20 Minuten später erfährt (z. B. nach einem Neustart), ändert nur den Zustand – eine verspätete
+  Ankunft öffnet keine Tür.
+- **Portal (eigene Einstellung, nur für sich selbst):** Karte „Wie erkennt die Familie, dass ich zu Hause bin?“ mit den
+  Schaltern „Über die GateControl-App“ (die bisherige Freigabe) und „Über mein Handy im WLAN“, darunter „Meine Geräte“
+  mit „zählt / zählt nicht“ je Gerät (ein iPad, das zu Hause liegt: zählt nicht), wann es zuletzt im WLAN war und über
+  welches Gateway, und dem Hinweis „Fehlt dein Handy? Ein Admin ordnet es dir im Netzwerk-Wächter zu“ samt fester
+  privater WLAN-Adresse. Schalten kann nur die Person selbst (GateControl prüft das zusätzlich: ein gekoppeltes
+  Kiosk-Gerät bekommt `not_person`).
+- **„Wer ist zu Hause?“** (Portal und Admin-Seite „Anwesenheit & Smart Home“): „zu Hause seit 17:42 · WLAN“ /
+  „unterwegs seit 14:10 · App“ – mit Quelle und seit wann.
+- **API (additiv):** `GET presence/wifi` → `{ wifi: { available, consent, since, devices: [{ id, name, lastSeen, counts,
+  gateway }] | null } }`, `PUT presence/wifi { enabled }`, `PUT presence/wifi/devices/<id> { counts }` – nur für sich
+  selbst, ohne GateControl 1.230.0 `409 unavailable`. Neue Fehlercodes `not_person` (403) und `unavailable` (409).
+  Die Mitglieder in `GET presence`, `overview.presence` und der Admin-Seite tragen `source` (`'app'` | `'wifi'` |
+  `null`), `overview.presence.home[]` ebenfalls; `me.wifi` (`true` | `false` | `null` = gibt es hier nicht);
+  `POST presence` antwortet zusätzlich `presence: { state, home, since, source }` (der Zustand aus allen Quellen) –
+  `state` und `changed` bleiben die Meldung der App. `me.share` bleibt die Freigabe der App; `shared` eines Mitglieds
+  heißt jetzt „mindestens eine Quelle an“.
+- Migration 010: `presence_wifi` (was GateControl je Mitglied sagt) und `presence_now` (der Zustand aus allen Quellen,
+  aus dem bisherigen App-Zustand übernommen).
+- **Ohne GateControl 1.230.0 oder ohne Gateway** bleibt alles wie bisher: Ein älteres GateControl ignoriert die
+  Berechtigung, es gibt kein `gc.homeNetwork`, der WLAN-Bereich im Portal ist ausgeblendet und die App die einzige
+  Quelle. Ohne zugeordnetes Gerät zeigt „Meine Geräte“ den Hinweis auf den Admin. Die Mindestversion bleibt 1.216.0.
+- Die neue Berechtigung muss ein Admin beim Update bestätigen (GateControl installiert ein Update mit neuer Berechtigung
+  nicht automatisch).
+
 ## 1.16.0
 - **Familienkalender in Mail:** neuer Dienst `calendar_range` (nur für `gatecontrol-mail`, höchstens 1800 Aufrufe je
   Stunde) – Mail blendet damit die Familientermine in seinen Kalender ein (nur lesend).

@@ -95,6 +95,7 @@ test('texts: every key used by the pages exists in de and en; both languages hav
     ...require('../server/meals').SLOTS.map((x) => 'meal.' + x),
     ...require('../server/presence').TRIGGERS.map((x) => 'rule.trigger_' + x),
     ...['home', 'away', 'unknown', 'not_shared'].map((x) => 'presence.' + x),
+    ...['app', 'wifi'].map((x) => 'presence.via_' + x),
     ...['home', 'away'].map((x) => 'avatar.' + x),
     ...['not_found', 'plugin_error', 'timeout', 'rate_limit', 'invalid', 'denied', 'unavailable', 'no_recipients', 'failed', 'error', 'needs_target', 'state_unknown', 'invalid_state'].map((x) => 'rule.err.' + x),
     ...require('../server/rules').TRIGGERS.flatMap((x) => ['rule.m_trig_' + x, 'rule.m_trig_' + x + '_hint']),
@@ -141,17 +142,20 @@ test('Leaflet: one constant (server/ui.js), nowhere else', () => {
 
 test('plugin.json: permissions (kiosk, actions), app tab, maps, the eleven topics with SOS allowed critical', () => {
   assert.equal(manifest.id, 'gatecontrol-familie');
-  assert.equal(manifest.version, '1.16.0');
+  assert.equal(manifest.version, '1.17.0');
   // 1.6.0 stays on 1.173.0: the messenger services (GateControl ≥ 1.177.0) are optional — an older host ignores
   // permissions.services and has no gc.services, so the group and the rule action stay hidden there.
   // 1.14.2 too: GC.viewport (GateControl ≥ 1.199.0) is optional — without it the wall keeps its 640 px
   // 1.15.0 too: the GateControl group „Familie“ (gc.groups, GateControl ≥ 1.200.0) is feature-detected — an older host
   // ignores permissions.groups and has no gc.groups
   // 1.16.0: services.provides.calendar_range.maxPerHour (GateControl ≥ 1.216.0 — older hosts refuse the key)
+  // 1.17.0 stays too: permissions.homePresence (gc.homeNetwork, GateControl ≥ 1.230.0) — an older host ignores the key and
+  // has no gc.homeNetwork, the app stays the only source of presence
   assert.equal(manifest.gatecontrol, '>=1.216.0', 'maxPerHour of calendar_range needs GateControl 1.216.0');
   const p = manifest.permissions;
   assert.deepEqual([p.storage, p.portal, p.users, p.app, p.notify, p.background, p.kiosk, p.actions], [true, true, true, true, { perHour: 120 }, { intervalSeconds: 60 }, true, true]);
   assert.equal(p.groups, 'manage', '1.15.0: the family as a GateControl group of the plugin (gc.groups.ensure)');
+  assert.equal(p.homePresence, true, '1.17.0: presence over the home network (gc.homeNetwork.presence)');
   assert.deepEqual(p.services, ['gatecontrol-messenger:sync_group', 'gatecontrol-messenger:send_message', 'gatecontrol-messenger:release_group',
     'gatecontrol-messenger:set_place_status', 'gatecontrol-alltag:calendar_query', 'gatecontrol-alltag:calendar_list', 'gatecontrol-schule:school_students',
     'gatecontrol-schule:school_day'],

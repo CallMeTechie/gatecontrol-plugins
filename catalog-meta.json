@@ -542,8 +542,8 @@
             "en": "Presence with smart home rules"
           },
           "text": {
-            "de": "„Alle sind unterwegs“ → Licht aus: Regeln lösen Aktionen anderer Plugins aus – nur mit Zustimmung",
-            "en": "“Everyone is out” → lights off: rules run other plugins’ actions – only with consent"
+            "de": "„Alle sind unterwegs“ → Licht aus: über die App oder das Handy im WLAN – nur mit Zustimmung",
+            "en": "“Everyone is out” → lights off: through the app or the phone in the Wi-Fi – only with consent"
           }
         },
         {
@@ -603,8 +603,8 @@
             "en": "Presence and place reminders"
           },
           "text": {
-            "de": "Zuhause/unterwegs und Orte nur für Personen, die zugestimmt haben – jede Änderung fragt erneut.",
-            "en": "Home/away and places only for people who agreed – every change asks again."
+            "de": "Zuhause/unterwegs (über die App oder das Handy im Heim-WLAN) und Orte nur für Personen, die selbst zugestimmt haben – nie Geräte- oder Netzwerkadressen.",
+            "en": "Home/away (through the app or the phone in the home Wi-Fi) and places only for people who agreed themselves – never device or network addresses."
           },
           "tag": {
             "de": "Standort",

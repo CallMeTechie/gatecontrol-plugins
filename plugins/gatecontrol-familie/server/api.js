@@ -25,6 +25,7 @@
 //   GET  presence   POST presence   PUT presence/consent   GET presence/actions · presence/log
 //   GET|POST presence/rules      PATCH|DELETE presence/rules/<id>
 //   1.5.0: GET presence/watch    POST presence/places/<id>/event   GET|POST presence/places   PATCH|DELETE presence/places/<id>
+//   1.17.0 (server/homewifi.js, GateControl ≥ 1.230.0): GET presence/wifi   PUT presence/wifi   PUT presence/wifi/devices/<id>
 //   1.9.0 (server/rules.js, server/shopping.js, server/tasks.js):
 //   GET|POST rules               PATCH|DELETE rules/<id>      POST rules/<id>/test · rules/test   GET rules/options
 //   POST shopping/lists/<id>/assign                           POST tasks/quick
@@ -68,6 +69,7 @@ const presence = require('./presence');
 const ruleplaces = require('./ruleplaces');
 const messenger = require('./messenger');
 const rules = require('./rules');
+const homewifi = require('./homewifi');
 const { fail, posInt, iso } = require('./util');
 
 /** A portal viewer recognised only by device trust: no real login and no paired kiosk device. */
@@ -281,6 +283,13 @@ function dispatch(gc, r, seg, method) {
     if (n === 2 && b === 'consent' && PATCH) return () => presence.consent(gc, r);
     if (n === 2 && b === 'actions' && GET) return () => presence.actions(gc, r.me.userId, r.lang);
     if (n === 2 && b === 'log' && GET) { parentsOnly(r); return async () => ({ log: await presence.log(gc) }); }
+    // 1.17.0: presence over the home network — only one's own consent and devices (GateControl checks the person too);
+    // no transaction around the calls to GateControl (homewifi.js writes in its own)
+    if (b === 'wifi') {
+      if (n === 2 && GET) return () => homewifi.view(gc, r);
+      if (n === 2 && PATCH) return readOnly(() => homewifi.setConsent(gc, r));
+      if (n === 4 && c === 'devices' && PATCH) return readOnly(() => homewifi.setCounts(gc, r, d));
+    }
     // 1.5.0: the phone's watch list and its events (any member), the rule places (parents)
     if (n === 2 && b === 'watch' && GET) return () => presence.watch(gc, r.me.userId);
     if (b === 'places') {
@@ -319,7 +328,7 @@ function dispatch(gc, r, seg, method) {
   throw fail('not_found');
 }
 
-/** A POST that changes nothing (the dry run): no transaction around the calls to other plugins. */
+/** A POST that changes nothing (the dry run) or writes in its own transactions: none around the calls to other plugins / GateControl. */
 function readOnly(fn) {
   fn.readOnly = true;
   return fn;

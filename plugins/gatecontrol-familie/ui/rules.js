@@ -1136,11 +1136,21 @@
     ])]));
   }
 
-  /** Who is home: a grid of people (mockup "Gerade zuhause"). */
+  /** „seit 17:42“ today, else like A.when („gestern 17:48“). */
+  function sinceText(isoStr) {
+    var d = isoStr ? new Date(isoStr) : null;
+    if (!d || isNaN(d.getTime())) return A.when(isoStr);
+    if (d.toDateString() !== new Date().toDateString()) return A.when(isoStr);
+    return d.toLocaleTimeString(A.CTX.lang === 'en' ? 'en-GB' : 'de-DE', { hour: '2-digit', minute: '2-digit' });
+  }
+
+  /** Who is home: a grid of people (mockup "Gerade zuhause"); 1.17.0: since when and from which source („· WLAN“ / „· App“). */
   function people(box, members) {
     A.clear(box);
     members.forEach(function (m) {
-      var sub = m.state === 'home' ? T('presence.home_since', { when: A.when(m.since) }) : T('presence.' + m.state);
+      var sub = m.state === 'home' ? T('presence.home_since', { when: sinceText(m.since) })
+        : (m.state === 'away' && m.since ? T('presence.away_since', { when: sinceText(m.since) }) : T('presence.' + m.state));
+      if ((m.state === 'home' || m.state === 'away') && (m.source === 'app' || m.source === 'wifi')) sub += ' · ' + T(m.source === 'wifi' ? 'presence.via_wifi' : 'presence.via_app');
       box.appendChild(el('div', { class: 'fa-pres is-' + m.state }, [A.avatar(m, 34), el('div', { class: 'fa-pres-main' }, [el('b', { text: m.name }), el('span', { class: 'fa-sub', text: sub }),
         // 1.5.0: switched on „Orte für Regeln teilen“ in the app
         m.placesShared ? el('span', { class: 'fa-pres-tag', title: T('presence.places_shared_hint') }, [A.svg(ICON.pin, 12), T('presence.places_shared')]) : null])]));

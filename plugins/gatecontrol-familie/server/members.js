@@ -243,10 +243,13 @@ async function remove(gc, userId) {
   await leftovers(gc, userId);
 }
 
-/** 1.2.0: presence consent and state, the pocket money rule and open requests (bookings stay — bookkeeping). */
+/** 1.2.0: presence consent and state (1.17.0: and the Wi-Fi source), the pocket money rule and open requests (bookings stay — bookkeeping). */
 async function leftovers(gc, userId) {
   await store.run(gc, 'DELETE FROM presence_consent WHERE user_id = ?', [userId]);
   await store.run(gc, 'DELETE FROM presence_state WHERE user_id = ?', [userId]);
+  // 1.17.0: the mirror of the Wi-Fi source and the combined state (GateControl keeps the person's own consent)
+  await store.run(gc, 'DELETE FROM presence_wifi WHERE user_id = ?', [userId]);
+  await store.run(gc, 'DELETE FROM presence_now WHERE user_id = ?', [userId]);
   await store.run(gc, 'DELETE FROM allowance_rules WHERE child_id = ?', [userId]);
   await store.run(gc, "UPDATE allowance_requests SET status = 'declined' WHERE child_id = ? AND status = 'pending'", [userId]);
 }

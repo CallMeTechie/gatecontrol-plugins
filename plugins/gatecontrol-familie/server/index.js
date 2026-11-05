@@ -56,6 +56,10 @@
 // with key 'family', kind 'family' — parents as parent, children as child, never a wall tablet — at start, after
 // every member change and when it differs (server/groups.js); hook groupsChanged. Older GateControl: nothing changes,
 // the service family_roles stays for older callers.
+//
+// 1.17.0: presence over the home network (GateControl ≥ 1.230.0, permissions.homePresence) — the phone in the home Wi-Fi as
+// a second source next to the app: gc.homeNetwork.presence.on at start, list() compared every minute (server/homewifi.js),
+// both sources combined in server/presence.js. Older GateControl: no gc.homeNetwork, the app stays the only source.
 
 const ui = require('./ui');
 const api = require('./api');
@@ -87,6 +91,7 @@ const school = require('./school');
 const schoolend = require('./schoolend');
 const wifi = require('./wifi');
 const groups = require('./groups');
+const homewifi = require('./homewifi');
 const texts = require('./texts.json');
 const { STATUS, isKnown } = require('./util');
 
@@ -145,6 +150,10 @@ async function background(gc, now) {
   if (cfg.modules.locate) await step('age14', () => members.ageHints(gc, fam, cfg, now, pushes));
   if (cfg.modules.allowance) await step('allowance', () => allowance.payout(gc, fam, cfg, now, pushes));
   if (cfg.modules.board) await step('board', () => board.purge(gc, now));
+  // 1.17.0: the Wi-Fi source — what the hook may have missed (GateControl ≥ 1.230.0; own transaction, after it the rules)
+  if (cfg.modules.presence) {
+    try { await homewifi.sync(gc, fam, cfg, now); } catch (e) { gc.log.warn('background step failed', 'home_presence', (e && (e.code || e.message)) || 'error'); }
+  }
   if (cfg.modules.rules) {
     // the grace time of "all away" (module presence) and the trigger 'schedule' (1.9.0); snoozed reminders
     const runs = [];
@@ -189,6 +198,8 @@ module.exports = {
     groups.reset();
     school.reset();
     state.lastPurge = 0;
+    // 1.17.0: GateControl's presence over the home network (≥ 1.230.0 with permissions.homePresence; never fails the start)
+    homewifi.start(gc);
     try {
       const cfg = await config.load(gc);
       const k = await kiosk.reconcile(gc, tz.localDate(Date.now(), cfg.tz));

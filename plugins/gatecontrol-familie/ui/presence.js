@@ -6,7 +6,8 @@
    1.10.0: every rule of the family is here — reminders (schedule) too, the page „Regeln & Erinnerungen“
    is gone: rules, log and the editor's options come from the rules API (admin/rules), who is home,
    places and the sunset location from admin/presence.
-   1.11.0: the holiday mode (admin/rules/vacation) — every active house rule paused until it ends. */
+   1.11.0: the holiday mode (admin/rules/vacation) — every active house rule paused until it ends.
+   1.17.0: who is home with the source („· WLAN“ / „· App“, ui/rules.js people), a note on the Wi-Fi source. */
 (function () {
   'use strict';
   var A = window.FA, T = A.T, $ = A.$;
@@ -27,6 +28,7 @@
     $('#fa-pr-place-add').disabled = (data.places || []).length >= A.rules.MAX_PLACES;
     A.rules.log($('#fa-pr-log'), data);
     vacation();
+    $('#fa-pr-wifi').hidden = !data.wifi;
     $('#fa-pr-sun').textContent = data.location ? T('presence.note_sun', { lat: data.location.lat, lon: data.location.lon }) : T('presence.note_sun_none');
   }
 
@@ -57,7 +59,7 @@
       var pres = x[0], rr = x[1], o = x[2];
       data = {
         modules: { presence: pres.modules.presence, rules: rr.modules ? rr.modules.rules : true },
-        location: pres.location, members: pres.members, places: pres.places, home: pres.home,
+        location: pres.location, members: pres.members, wifi: pres.wifi === true, places: pres.places, home: pres.home,
         rules: rr.rules.map(A.rules.flat), log: rr.log, vacation: rr.vacation,
         options: o, actions: o.actions, actionsAvailable: o.actionsAvailable, messenger: o.messenger,
       };

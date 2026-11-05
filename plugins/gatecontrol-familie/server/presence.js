@@ -86,6 +86,16 @@
 // 1.12.0 — the trigger 'school_change' (server/school.js, runs come from the service rule_event): the
 // child the event is about is told as well (a lesson that falls out concerns the child itself), the
 // event's text goes into {event} and the log (`event`).
+//
+// 1.17.0 — two sources: the app (consent `share`, POST presence) and the phone in the home Wi-Fi
+// (GateControl ≥ 1.230.0, gc.homeNetwork — the person's own consent in GateControl, mirrored in
+// presence_wifi by server/homewifi.js). A person is at home as soon as one switched-on source says so
+// and away once none says „at home“ any more (the gateway keeps „away“ back for 10 minutes). The
+// combined state lives in presence_now { home, since, source } — settle() after every change of a
+// source: a change the source itself saw (not a source that went silent or was switched off) fires
+// the rules once, like before; a second source saying the same changes nothing (no duplicate run).
+// `share` of a person = at least one source on. Member objects carry `source` ('app' | 'wifi' |
+// null) — which source the state comes from.
 
 const crypto = require('node:crypto');
 const store = require('./store');
@@ -119,6 +129,8 @@ const ACTION_ID_RE = /^[A-Za-z0-9:._-]{1,64}$/;
 const DAY = 86400000;
 const SELF = 'gatecontrol-familie';
 const STATES = ['on', 'off'];
+/** 1.17.0: the sources of presence, in the order they are preferred when both say the same. */
+const SOURCES = ['app', 'wifi'];
 
 // ─── state ──────────────────────────────────────
 
@@ -130,18 +142,81 @@ function notePlace(r, userId, place) {
   if (r && Array.isArray(r.placeStatus)) r.placeStatus.push({ userId, place: place || null });
 }
 
-/** Map userId → { share, places, home: bool|null, since } for the family members (places: 1.5.0, the own consent for places). */
+/**
+ * The combined state of the sources { app, wifi } ({ home, since } | null each): home as soon as one says so, away
+ * when every known one says away. `row` (presence_now) keeps since / source of the change while the state is the same;
+ * without it: at home since the first source at home, away since the last one left.
+ */
+function combine(src, row) {
+  const known = SOURCES.filter((k) => src[k]);
+  if (!known.length) return { home: null, since: null, source: null };
+  const home = known.some((k) => src[k].home);
+  const agree = known.filter((k) => src[k].home === home);
+  if (row && !!row.home === home) return { home, since: row.since, source: agree.includes(row.source) ? row.source : agree[0] };
+  const pick = agree.reduce((a, k) => ((home ? src[k].since < src[a].since : src[k].since > src[a].since) ? k : a), agree[0]);
+  return { home, since: src[pick].since, source: pick };
+}
+
+/**
+ * Map userId → { share, places, app, wifi, home: bool|null, since, source, sources } for the family members (places:
+ * 1.5.0, the own consent for places). 1.17.0: app / wifi — which sources the person switched on; share — at least one;
+ * sources { app, wifi } — what each says ({ home, since } | null); home / since / source — the combined state.
+ */
 async function load(gc, fam) {
   const consent = new Map((await store.all(gc, 'SELECT user_id, share, places FROM presence_consent')).map((x) => [x.user_id, x]));
   const state = new Map((await store.all(gc, 'SELECT * FROM presence_state')).map((x) => [x.user_id, x]));
+  const wifi = new Map((await store.all(gc, 'SELECT * FROM presence_wifi')).map((x) => [x.user_id, x]));
+  const now = new Map((await store.all(gc, 'SELECT * FROM presence_now')).map((x) => [x.user_id, x]));
   const out = new Map();
   for (const m of fam.list) {
     const c = consent.get(m.userId);
-    const share = !!(c && c.share);
-    const s = share ? state.get(m.userId) : null;
-    out.set(m.userId, { share, places: !!(c && c.places), home: s ? !!s.home : null, since: s ? s.since : null });
+    const w = wifi.get(m.userId);
+    const app = !!(c && c.share);
+    const wifiOn = !!(w && w.consent);
+    const s = app ? state.get(m.userId) : null;
+    const sources = {
+      app: s ? { home: !!s.home, since: s.since } : null,
+      wifi: wifiOn && w.home != null ? { home: !!w.home, since: w.since } : null,
+    };
+    const comb = combine(sources, now.get(m.userId));
+    out.set(m.userId, { share: app || wifiOn, places: !!(c && c.places), app, wifi: wifiOn, home: comb.home, since: comb.since, source: comb.source, sources });
   }
   return out;
+}
+
+/**
+ * 1.17.0: after a source of `userId` changed (its row is written already) — the combined state into presence_now.
+ * ctx: { fam, cfg, now, runs, placeStatus? }. A change of the combined state that `cause` ('app' | 'wifi') saw itself
+ * runs the matching rules (person_home / person_away / first_home / child_home_alone) when `live` and the module
+ * presence is on; one caused by a source that went silent or was switched off only updates the state. The caller
+ * checks „all away“ (checkAllAway). → { changed, home, since, source }
+ */
+async function settle(gc, ctx, userId, { cause = null, live = true } = {}) {
+  const m = ctx.fam.byId.get(userId);
+  if (!m) return { changed: false, home: null, since: null, source: null };
+  const row = await store.one(gc, 'SELECT * FROM presence_now WHERE user_id = ?', [userId]);
+  const map = await load(gc, ctx.fam);
+  const p = map.get(userId);
+  const before = row ? !!row.home : null;
+  const after = p.share ? p.home : null;
+  if (after === null) {
+    if (!row) return { changed: false, home: null, since: null, source: null };
+    await store.run(gc, 'DELETE FROM presence_now WHERE user_id = ?', [userId]);
+    if (before) notePlace(ctx, userId, null);
+    return { changed: true, home: null, since: null, source: null };
+  }
+  if (before === after) {
+    if (row.source !== p.source) await store.run(gc, 'UPDATE presence_now SET source = ? WHERE user_id = ?', [p.source, userId]);
+    return { changed: false, home: after, since: row.since, source: p.source };
+  }
+  const seen = cause && p.sources[cause] && p.sources[cause].home === after ? cause : null;
+  const since = seen ? p.sources[seen].since : p.since;
+  const source = seen || p.source;
+  await store.run(gc, `INSERT INTO presence_now (user_id, home, since, source) VALUES (?, ?, ?, ?)
+    ON CONFLICT(user_id) DO UPDATE SET home = excluded.home, since = excluded.since, source = excluded.source`, [userId, after ? 1 : 0, since, source]);
+  notePlace(ctx, userId, after ? homeName(ctx.cfg) : null);
+  if (seen && live && ctx.cfg.modules.presence) await fire(gc, ctx.fam, ctx.cfg, ctx.now, transitionEvents(ctx.fam, map, m, after), ctx.runs);
+  return { changed: true, home: after, since, source };
 }
 
 function stateOf(p) {
@@ -173,17 +248,19 @@ function membersView(fam, map) {
     return {
       userId: m.userId, name: m.name, role: m.role, ...members.faceOf(m), presence: ringOf(p),
       shared: !!(p && p.share), placesShared: !!(p && p.places), state: stateOf(p), home: p ? p.home : null, since: iso(p && p.since),
+      // 1.17.0: where the state comes from — 'app' | 'wifi' | null (not shared or nothing known)
+      source: p && p.share && p.home != null ? p.source : null,
     };
   });
 }
 
-/** GET presence */
+/** GET presence — 1.17.0: me.share stays the app's consent; me.wifi the consent „Über mein Handy im WLAN“ (null: not on this server). */
 async function get(gc, r) {
   const map = await load(gc, r.fam);
   const mine = map.get(r.me.userId);
   return {
     members: membersView(r.fam, map),
-    me: { share: !!(mine && mine.share), places: !!(mine && mine.places) },
+    me: { share: !!(mine && mine.app), places: !!(mine && mine.places), wifi: wifiAvailable(gc) ? !!(mine && mine.wifi) : null },
     home: [...map.entries()].filter(([, p]) => p.share && p.home === true).map(([id]) => id),
     watchVersion: (await watch(gc, r.me.userId)).version,
   };
@@ -205,19 +282,26 @@ async function consent(gc, r) {
     ON CONFLICT(user_id) DO UPDATE SET share = excluded.share, places = excluded.places, updated_at = excluded.updated_at`,
   [r.me.userId, next.share ? 1 : 0, next.places ? 1 : 0, r.now]);
   if (!next.share) await store.run(gc, 'DELETE FROM presence_state WHERE user_id = ?', [r.me.userId]);
+  // 1.17.0: the combined state without the app (the Wi-Fi may still say „at home“) — no rule runs for a switch
+  await settle(gc, r, r.me.userId, { cause: 'app', live: false });
   const p = (await load(gc, r.fam)).get(r.me.userId);
   // 1.8.0: a withdrawn consent takes the place out of the messenger status (home stays while shared)
   if ((cur && cur.share && !next.share) || (cur && cur.places && !next.places)) notePlace(r, r.me.userId, p.share && p.home === true ? homeName(r.cfg) : null);
-  return { consent: next, state: { userId: r.me.userId, state: stateOf(p), home: p.home, since: iso(p.since) } };
+  if (!next.share) await checkAllAway(gc, r.fam, r.cfg, r.now, r.runs);
+  return { consent: next, state: { userId: r.me.userId, state: stateOf(p), home: p.home, since: iso(p.since), source: p.home != null ? p.source : null } };
 }
 
-/** POST presence { home, at? } — the app. Transitions collect rule runs into r.runs. */
+/**
+ * POST presence { home, at? } — the app. Transitions collect rule runs into r.runs. state / changed: the app's own report
+ * (as before); 1.17.0: `presence` { state, home, since, source } — the person's state from every source (the Wi-Fi may
+ * keep them „at home“ although the app says „away“: then no rule runs).
+ */
 async function report(gc, r) {
   const b = r.body || {};
   const home = bool(b.home);
-  const map = await load(gc, r.fam);
-  const mine = map.get(r.me.userId);
-  if (!mine || !mine.share) throw fail('no_consent');
+  const mine = (await load(gc, r.fam)).get(r.me.userId);
+  // the app reports only with the app's own consent (the Wi-Fi's does not count here)
+  if (!mine || !mine.app) throw fail('no_consent');
   const row = await store.one(gc, 'SELECT * FROM presence_state WHERE user_id = ?', [r.me.userId]);
   if (row && r.now - row.reported_at < REPORT_GAP_MS) throw fail('too_soon', { retryAfter: Math.ceil((REPORT_GAP_MS - (r.now - row.reported_at)) / 1000) });
   let at = b.at == null ? r.now : parseIso(b.at);
@@ -230,15 +314,19 @@ async function report(gc, r) {
   if (changed) {
     await store.run(gc, `INSERT INTO presence_state (user_id, home, since, reported_at) VALUES (?, ?, ?, ?)
       ON CONFLICT(user_id) DO UPDATE SET home = excluded.home, since = excluded.since, reported_at = excluded.reported_at`, [r.me.userId, home ? 1 : 0, at, r.now]);
-    const events = transitionEvents(r.fam, map, r.me, home);
-    notePlace(r, r.me.userId, home ? homeName(r.cfg) : null);
-    await fire(gc, r.fam, r.cfg, r.now, events, r.runs);
+    // 1.17.0: rules run when the person's state from every source changes (the Wi-Fi may have said it first)
+    await settle(gc, r, r.me.userId, { cause: 'app' });
     await checkAllAway(gc, r.fam, r.cfg, r.now, r.runs);
   } else {
     await store.run(gc, 'UPDATE presence_state SET reported_at = ? WHERE user_id = ?', [r.now, r.me.userId]);
   }
   const since = changed ? at : row.since;
-  return { state: { userId: r.me.userId, home, since: iso(since) }, changed, watchVersion: (await watch(gc, r.me.userId)).version };
+  const p = (await load(gc, r.fam)).get(r.me.userId);
+  return {
+    state: { userId: r.me.userId, home, since: iso(since) }, changed,
+    presence: { state: stateOf(p), home: p.home, since: iso(p.since), source: p.home != null ? p.source : null },
+    watchVersion: (await watch(gc, r.me.userId)).version,
+  };
 }
 
 /** The events of one person's change (`map`: the states before it). */
@@ -738,13 +826,19 @@ async function overview(gc, r) {
   const map = await load(gc, r.fam);
   const mine = map.get(r.me.userId);
   return {
-    home: [...map.entries()].filter(([, p]) => p.share && p.home === true).map(([id, p]) => ({ userId: id, since: iso(p.since) })),
-    share: !!(mine && mine.share),
+    home: [...map.entries()].filter(([, p]) => p.share && p.home === true).map(([id, p]) => ({ userId: id, since: iso(p.since), source: p.source })),
+    share: !!(mine && mine.app),
     members: membersView(r.fam, map),
   };
 }
 
+/** 1.17.0: is presence over the home network there (GateControl ≥ 1.230.0 with permissions.homePresence)? */
+function wifiAvailable(gc) {
+  return !!(gc && gc.homeNetwork && gc.homeNetwork.presence && typeof gc.homeNetwork.presence.list === 'function');
+}
+
 module.exports = {
+  SOURCES, combine, settle, wifiAvailable,
   STATES, MAX_ACTIONS, NAME_MAX, TEXT_MAX, PLUGIN_ID_RE, ACTION_ID_RE, GRACE_DEFAULT, legacy, actionView, availability, ownerActions, checkPlace, checkTargets, parseConditions, logView, hostCode, recipients,
   TRIGGERS, PLACE_TRIGGERS, THROTTLE_MS, REPORT_GAP_MS, EVENT_DEDUPE_MS, EVENT_LATE_MS, load, stateOf, ringOf, rings, membersView, get, consent, report, transitionEvents,
   inWindow, conditionsHold, fire, checkAllAway, tick, execute, listRules, createRule, updateRule, removeRule, actions, log, purge, overview, watch, placeEvent,
