@@ -80,6 +80,11 @@ async function below(gc, n, ids) {
   return up.some((r) => set.has(r.id));
 }
 
+/** Is file row `n` fetched by the sync of the asking device (a folder of mode 'sync')? (1.20.0: the home cache's uses) */
+async function syncFetch(ctx, n) {
+  return below(ctx.gc, n, await syncedFolders(ctx));
+}
+
 /** File row `n` was opened by the viewer now (best effort: never fails the request). */
 async function recordOpen(ctx, n) {
   try {
@@ -290,4 +295,4 @@ async function get(ctx) {
 
 function reset() { tofileCache.clear(); }
 
-module.exports = { get, recordOpen, opened, seqFrom, reset, RECENT_MAX };
+module.exports = { get, recordOpen, opened, syncFetch, seqFrom, reset, RECENT_MAX };

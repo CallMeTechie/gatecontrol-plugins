@@ -195,6 +195,8 @@ function writes(method, seg) {
   if (a === 'zip') return false;
   // a file opened from the device's copy (1.18.0): reading, only "Zuletzt geöffnet"
   if (a === 'nodes' && seg[2] === 'opened' && seg.length === 3) return false;
+  // "offline verfügbar" (1.20.0): a mark of the person, no change of a file
+  if (a === 'nodes' && seg[2] === 'offline' && seg.length === 3) return false;
   return true;
 }
 

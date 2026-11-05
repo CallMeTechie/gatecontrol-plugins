@@ -53,6 +53,8 @@
 //     photos/geo, place= / bbox= / unlocated=1 (places.js, names offline from GeoNames — geonames.js) · PUT nodes/<id>/faces,
 //     GET people, GET|PATCH people/<id>, POST people/<id>/merge, GET people/<id>/similar, GET people/<id>/uncertain, POST
 //     people/<id>/confirm, POST faces/<id>/move, person= / unfaced=1 (faces.js) · GET photos/suggest
+//     "Offline verfügbar" and the home cache (1.20.0, homecache.js): GET offline · PUT|DELETE nodes/<id>/offline; with
+//     GateControl ≥ 1.231.0 (gc.homeCache) GET nodes/<id>/content of an app adds `lan` { url, sha256, tlsSha256, exp }
 //   admin     admin/… (administrators in the admin UI, admin.js; admin/guard/… the incidents, since 1.6.0)
 // The full contract (bodies, answers, codes, events) is in README.md "API". Every file node of an answer carries
 // `preview` (previews.js, since 1.1.0).
@@ -102,6 +104,7 @@ const places = require('./places');
 const faces = require('./faces');
 const overview = require('./overview');
 const scan = require('./scan');
+const homecache = require('./homecache');
 const { t } = require('./text');
 const { STATUS, fail, isKnown, posInt, DEVICE_RE, day, iso } = require('./util');
 
@@ -234,6 +237,7 @@ async function me(ctx) {
   };
 }
 
+// offline: "offline verfügbar" — GET offline, PUT|DELETE nodes/<id>/offline (homecache.js, 1.20.0) ·
 // scan: GateControl's virus scan — `scan { state, blocked, finding }` on file nodes and photo items while the host checks
 // files, 423 scan_pending / quarantined / scan_blocked for content, office, links, Mail; op 'scan' in the change log (1.19.0) ·
 // overview: GET overview — the start of Drive in one request, "Zuletzt geöffnet" from content / office (1.18.0) ·
@@ -258,7 +262,7 @@ async function me(ctx) {
 // devices: GET/PUT/DELETE devices (1.5.0) · deleteAfter: DELETE nodes/<id>?after=, PATCH { deleteAt } (1.5.0) ·
 // emptyFiles: uploads/commit { size: 0 } without a mediaId (1.5.0) · wipes: DELETE ?everywhere=1 (1.2.0) ·
 // textSearch: uploads/commit { text } (1.3.0) · previews (1.1.0)
-const FEATURES = ['previews', 'wipes', 'textSearch', 'devices', 'deleteAfter', 'emptyFiles', 'links', 'guard', 'timeTravel', 'takenAt', 'photos', 'albums', 'frame', 'storage', 'vault', 'photosFolder', 'vaultsApart', 'bulk', 'photoClasses', 'photoSearch', 'photoPlaces', 'photoPeople', 'overview', 'scan'];
+const FEATURES = ['previews', 'wipes', 'textSearch', 'devices', 'deleteAfter', 'emptyFiles', 'links', 'guard', 'timeTravel', 'takenAt', 'photos', 'albums', 'frame', 'storage', 'vault', 'photosFolder', 'vaultsApart', 'bulk', 'photoClasses', 'photoSearch', 'photoPlaces', 'photoPeople', 'overview', 'scan', 'offline'];
 
 /**
  * What needs GateControl's AI service or cloud accounts (1.8.0) — only while the host has it and it is allowed (the
@@ -285,6 +289,9 @@ async function optional(ctx) {
   }
   // GateControl ≥ 1.215.0 copies media files on the server (gc.media.copy): a copy needs no device
   if (ops.hostCopy(ctx.gc)) out.push('copyServer');
+  // GateControl ≥ 1.231.0 with permissions.homeCache (1.20.0): files in the home gateways' caches — content may carry
+  // `lan`; an app sends its LAN addresses (header X-GC-Local or ?local=) with GET nodes/<id>/content
+  if (homecache.available(ctx.gc)) out.push('homeCache');
   return out;
 }
 
@@ -355,6 +362,7 @@ async function route(ctx, req, seg) {
   if (a === 'search' && seg.length === 1 && m === 'GET') return ok(await nodes.search(ctx, q.q, q.area ? String(q.area) : null));
   // the start of Drive (1.18.0)
   if (a === 'overview' && seg.length === 1 && m === 'GET') return ok(await overview.get(ctx));
+  if (a === 'offline' && seg.length === 1 && m === 'GET') return ok(await homecache.pins(ctx));
   if (a === 'nodes') {
     if (seg.length === 1 && m === 'POST') return ok({ node: await nodes.mkdir(ctx, body) });
     if (b === 'by-path' && seg.length === 2 && m === 'GET') return ok({ node: await nodes.byPath(ctx, q.area, q.path) });
@@ -382,9 +390,13 @@ async function route(ctx, req, seg) {
       }
       if (c === 'content') {
         const got = await files.content(ctx, idArg(b));
-        // "Zuletzt geöffnet" (1.18.0; best effort)
-        await overview.recordOpen(ctx, await nodes.row(ctx.gc, idArg(b)));
-        return ok(got);
+        const n = await nodes.row(ctx.gc, idArg(b));
+        // "Zuletzt geöffnet" (1.18.0; best effort), a vault's file for the home cache (1.20.0)
+        await overview.recordOpen(ctx, n);
+        await homecache.noteUse(ctx, n, (x) => overview.syncFetch(ctx, x));
+        // the home cache (1.20.0): an app in the home network may load it from the gateway
+        const lan = got.mediaId ? await homecache.lanOf(ctx, req, n) : null;
+        return ok(lan ? { ...got, lan } : got);
       }
       if (c === 'versions') return ok(await files.versions(ctx, idArg(b)));
       if (c === 'timetravel') return ok(await timetravel.preview(ctx, idArg(b), q));
@@ -400,6 +412,9 @@ async function route(ctx, req, seg) {
       await overview.recordOpen(ctx, await nodes.row(ctx.gc, idArg(b)));
       return ok(got);
     }
+    // "offline verfügbar" (1.20.0, homecache.js)
+    if (seg.length === 3 && c === 'offline' && m === 'PUT') return ok(await homecache.pin(ctx, idArg(b)));
+    if (seg.length === 3 && c === 'offline' && m === 'DELETE') return ok(await homecache.unpin(ctx, idArg(b)));
     // what is on a photo (1.14.0, labels.js)
     if (seg.length === 3 && c === 'labels' && m === 'PUT') return ok(await labels.put(ctx, b, body));
     // where it was taken, the faces on it (1.16.0 — places.js, faces.js)
@@ -872,13 +887,21 @@ module.exports = {
     }
   },
 
-  /** The office server's state below the settings (office_url): the discovery read now. */
+  /**
+   * The status lines below the settings: the office server (office_url, the discovery read now) and, with GateControl's
+   * home cache (1.20.0), how many files Drive offers the home gateways.
+   */
   async settingsStatus({ lang } = {}, gc) {
-    try { return await office.status(gc, await gc.settings.all(), lang === 'en' ? 'en' : 'de', t); } catch { return []; }
+    const l = lang === 'en' ? 'en' : 'de';
+    let out = [];
+    try { out = await office.status(gc, await gc.settings.all(), l, t); } catch { out = []; }
+    try { out = [...out, ...(await homecache.status(gc, l, t))]; } catch { /* nothing */ }
+    return out;
   },
 
-  /** A new office address: read its discovery again. */
+  /** A new office address: read its discovery again. The parents' view may change who sees a child's files (home cache). */
   async settingsChanged(values, gc) {
     try { if (office.officeUrl(await gc.settings.all())) await office.refreshDiscovery(gc); } catch (e) { gc.log.warn('office discovery failed', (e && e.code) || 'error'); }
+    await homecache.touch(gc);
   },
 };

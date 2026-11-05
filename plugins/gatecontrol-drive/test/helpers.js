@@ -46,12 +46,13 @@ const portal = (u, loggedIn = true) => ({ ...u, portal: true, loggedIn });
 /**
  * opts: { license (licence of the plugin), groups, settings, links (the administrator's switch, default on), unlimited,
  *   services (the mock host's opts.services — other plugins' services, since 1.14.0), scan (the mock host's opts.scan —
- *   GateControl's virus scan, since 1.19.0)
+ *   GateControl's virus scan, since 1.19.0), homeCache (the mock host's opts.homeCache — GateControl's home cache, 1.20.0)
  *   ai / cloud (the mock host's opts.ai / opts.cloud — GateControl's AI service and cloud accounts, since 1.8.0),
  *   (links without an end allowed), seats: { userId: kind } (switched on by the admin before fn;
  * default Anna, Marc, Lena family, Bob business), gatecontrol, devices (the mock host's gc.devices.list), targets (the
  * assigned home targets: { office: [{ fetch }] }) }
- * fn(host, c): c = { clock, as(user, device?) → (method, path, body, query), portal(user), admin(method, path, body),
+ * fn(host, c): c = { clock, as(user, device?) → (method, path, body, query), home(user, device?) (as, in the home network),
+ *   portal(user), admin(method, path, body),
  *   upload(user, data, mime) → mediaId, put(user, parentId, name, data, o) → node, root(user, kind) → area, events() }
  */
 async function withHost(opts, fn) {
@@ -71,9 +72,11 @@ async function withHost(opts, fn) {
       ...(o.services ? { services: o.services } : {}),
       // GateControl's virus scan (since 1.19.0: the mock host's opts.scan — true or a scanner function)
       ...(o.scan ? { scan: o.scan } : {}),
+      // GateControl's home cache (since 1.20.0: the mock host's opts.homeCache — { held, foreign, … }; needs gatecontrol ≥ 1.231.0 or this)
+      ...(o.homeCache ? { homeCache: o.homeCache } : {}),
     });
     await host.start();
-    const call = (user, method, p, body, query) => host.request({ method, path: p, body: body === undefined ? null : body, query: query || {}, user, lang: o.lang || 'de' });
+    const call = (user, method, p, body, query, extra) => host.request({ method, path: p, body: body === undefined ? null : body, query: query || {}, user, lang: o.lang || 'de', ...(extra || {}) });
     const as = (u, device) => (method, p, body, query) => call(app(u, device), method, p, body, query);
     const adminCall = (method, p, body) => call(ADMIN, method, p, body);
     const seated = o.seats === undefined ? { [ANNA.id]: 'family', [MARC.id]: 'family', [LENA.id]: 'family', [BOB.id]: 'business' } : o.seats;
@@ -88,6 +91,8 @@ async function withHost(opts, fn) {
     }
     const c = {
       clock, call, as, admin: adminCall,
+      /** an app request from the home network of a gateway (the home cache, since 1.20.0) */
+      home: (u, device) => (method, p, body, query) => call(app(u, device), method, p, body, query, { home: true }),
       portal: (u, loggedIn) => (method, p, body, query) => call(portal(u, loggedIn), method, p, body, query),
       upload,
       /** upload + commit → the answer of POST uploads/commit */

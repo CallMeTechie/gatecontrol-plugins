@@ -512,6 +512,8 @@
     "a.st_dups": "Doppelt belegt",
     "a.st_dups_n": "{{n}} Gruppen gleicher Dateien",
     "a.st_text": "Details, die größten Dateien und doppelte Dateien zum Aufräumen: im Portal unter Drive › Speicher (als Admin mit „Alle“).",
+    "a.home_cache": "Zwischenspeicher im Heimnetz: {{n}} Dateien ({{size}}) den Heim-Gateways angeboten – zuletzt genutzte und „offline verfügbare“ Dateien, Fotos der letzten 90 Tage. Welche Arten ein Gateway hält, steht unter Gateways › Zwischenspeicher.",
+    "a.home_cache_error": "Zwischenspeicher im Heimnetz: Der letzte Abgleich mit GateControl ist gescheitert, Drive versucht es in einer Minute wieder.",
     "f.title": "Fotorahmen",
     "f.failed": "Der Fotorahmen kann die Bilder gerade nicht laden – er versucht es gleich wieder.",
     "f.off": "Der Fotorahmen ist für dieses Gerät ausgeschaltet.",
@@ -1218,7 +1220,9 @@
     "p.scan_unknown": "unbekannt",
     "p.scan_warn_title": "Warnung: Schadsoftware",
     "p.scan_download_anyway": "Trotzdem herunterladen",
-    "p.b.zip_started_blocked": "„{{name}}“ wird heruntergeladen – {{count}} gesperrte Dateien (Virenscan) fehlen darin"
+    "p.b.zip_started_blocked": "„{{name}}“ wird heruntergeladen – {{count}} gesperrte Dateien (Virenscan) fehlen darin",
+    "home_cache.status": "Zwischenspeicher im Heimnetz: {{n}} Dateien ({{size}}) den Heim-Gateways angeboten (Gateways › Zwischenspeicher).",
+    "home_cache.status_error": "Zwischenspeicher im Heimnetz: {{n}} Dateien ({{size}}) angeboten – der letzte Abgleich ist gescheitert, Drive versucht es gleich wieder."
   },
   "en": {
     "error.invalid": "Invalid input.",
@@ -1733,6 +1737,8 @@
     "a.st_dups": "Taken twice",
     "a.st_dups_n": "{{n}} groups of equal files",
     "a.st_text": "Details, the largest files and duplicate files to clean up: in the portal under Drive › Storage (as an administrator with “All”).",
+    "a.home_cache": "Home cache: {{n}} files ({{size}}) offered to the home gateways – recently used files, files made “available offline”, photos of the last 90 days. Which kinds a gateway keeps is set under Gateways › Cache.",
+    "a.home_cache_error": "Home cache: the last sync with GateControl failed, Drive tries again in a minute.",
     "f.title": "Photo frame",
     "f.failed": "The photo frame cannot load the pictures right now – it tries again shortly.",
     "f.off": "The photo frame is switched off for this device.",
@@ -2439,6 +2445,8 @@
     "p.scan_unknown": "unknown",
     "p.scan_warn_title": "Warning: malware",
     "p.scan_download_anyway": "Download anyway",
-    "p.b.zip_started_blocked": "Downloading “{{name}}” – {{count}} blocked files (virus scan) are not in it"
+    "p.b.zip_started_blocked": "Downloading “{{name}}” – {{count}} blocked files (virus scan) are not in it",
+    "home_cache.status": "Home cache: {{n}} files ({{size}}) offered to the home gateways (Gateways › Cache).",
+    "home_cache.status_error": "Home cache: {{n}} files ({{size}}) offered – the last sync failed, Drive tries again shortly."
   }
 }

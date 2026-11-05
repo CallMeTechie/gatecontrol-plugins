@@ -4,7 +4,7 @@
     "de": "Drive",
     "en": "Drive"
   },
-  "version": "1.19.1",
+  "version": "1.20.0",
   "publisher": "CallMeTechie",
   "description": {
     "de": "Dateien der Familie und des Teams auf dem eigenen Speicher – auf diesem Server, einer NAS oder in S3: Meine Dateien, Familie, Ordner der Kinder und Team-Ordner mit Rechten, Versionen, Papierkorb und Abgleich mit allen Geräten.",
@@ -66,7 +66,8 @@
     },
     "publicEndpoints": {
       "maxBodyBytes": 536870912
-    }
+    },
+    "homeCache": true
   },
   "storage": {
     "maxMB": 4096

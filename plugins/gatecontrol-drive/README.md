@@ -30,6 +30,9 @@ Familie plugin's service `calendar_add` (`permissions.services: ["gatecontrol-fa
 the administrator confirms with the update; GateControl ≥ 1.178.0 for `gc.services.available`). Setting
 *scan_keep_original* (default on).
 
+The home cache of the gateways (since 1.20.0, see "Home cache"): `permissions.homeCache` and GateControl ≥ 1.231.0
+(`gc.homeCache`, feature-detected — an older GateControl ignores the key); "offline verfügbar" works with every version.
+
 Places and people (since 1.16.0, see "Places and people"): place names offline from **GeoNames**
 (https://www.geonames.org, `cities1000`, licensed under **CC BY 4.0** — © GeoNames, https://creativecommons.org/licenses/by/4.0/),
 shortened to what Drive needs (`server/places.txt.gz`, 2.7 MB); the portal's map is OpenStreetMap through GateControl
@@ -70,7 +73,7 @@ reaches `GET frame` (the photo frame, since 1.7.0) and nothing else (`403 forbid
 
 | Route | Body / query | Answer |
 |---|---|---|
-| `GET me` | | `me { id, name, seat, deviceId, admin }`, `licence { valid, tier }`, `areas`, `latest` (change log seq), `settings`, `limits { maxBytes }`, `wipes` (entries this device has yet to handle, since 1.2.0), `devices` (my devices a new wipe reaches), `features` (since 1.5.0: `['previews', 'wipes', 'textSearch', 'devices', 'deleteAfter', 'emptyFiles']`, since 1.6.0 also `'links'`, `'guard'`, since 1.7.0 `'timeTravel'`, `'takenAt'`, `'photos'`, `'albums'`, `'frame'`, `'storage'`, since 1.8.0 `'docAi'` and `'cloudImport'` — only while GateControl offers the AI service / cloud accounts and they are allowed, see "AI for documents" and "Import"; since 1.9.0 `'vault'` and — while set up — `'office'`, since 1.10.0 `'photosFolder'`, since 1.11.0 `'vaultsApart'`, since 1.12.0 `'bulk'`, — while GateControl's public links are allowed — `'zip'` and `'multiLink'`, with GateControl ≥ 1.215.0 also `'copyServer'` (copies on the server) and `'zipMixed'` (a ZIP and one link of any selection); since 1.13.0 `'photoClasses'` (work photos apart); since 1.14.0 `'photoSearch'` (photos by what is on them) and — with `docAi` — `'docAsk'` (questions to the documents), `'scanDocs'` (scans become documents) and, while the Familie plugin's `calendar_add` is reachable, `'deadlineCalendar'` (see "AI in Drive"); since 1.16.0 `'photoPlaces'` and `'photoPeople'` (see "Places and people"); since 1.17.0 — with `docAi`, while Mail's `calendar_add` is reachable and takes Drive — `'deadlineMailCalendar'` (see "Deadlines into a calendar of Mail"); since 1.18.0 `'overview'` (see "Overview"); since 1.19.0 `'scan'` (file nodes and photo items carry GateControl's virus scan `scan { state, blocked, finding }`, see "Virus scan")), `settings` (since 1.14.0 also `scanKeepOriginal`), `links { node, drive } \| null` (since 1.6.0, see "Direct links"), `guard { on, locked, incident }` and `incidents` (since 1.6.0, see "Ransomware protection") |
+| `GET me` | | `me { id, name, seat, deviceId, admin }`, `licence { valid, tier }`, `areas`, `latest` (change log seq), `settings`, `limits { maxBytes }`, `wipes` (entries this device has yet to handle, since 1.2.0), `devices` (my devices a new wipe reaches), `features` (since 1.5.0: `['previews', 'wipes', 'textSearch', 'devices', 'deleteAfter', 'emptyFiles']`, since 1.6.0 also `'links'`, `'guard'`, since 1.7.0 `'timeTravel'`, `'takenAt'`, `'photos'`, `'albums'`, `'frame'`, `'storage'`, since 1.8.0 `'docAi'` and `'cloudImport'` — only while GateControl offers the AI service / cloud accounts and they are allowed, see "AI for documents" and "Import"; since 1.9.0 `'vault'` and — while set up — `'office'`, since 1.10.0 `'photosFolder'`, since 1.11.0 `'vaultsApart'`, since 1.12.0 `'bulk'`, — while GateControl's public links are allowed — `'zip'` and `'multiLink'`, with GateControl ≥ 1.215.0 also `'copyServer'` (copies on the server) and `'zipMixed'` (a ZIP and one link of any selection); since 1.13.0 `'photoClasses'` (work photos apart); since 1.14.0 `'photoSearch'` (photos by what is on them) and — with `docAi` — `'docAsk'` (questions to the documents), `'scanDocs'` (scans become documents) and, while the Familie plugin's `calendar_add` is reachable, `'deadlineCalendar'` (see "AI in Drive"); since 1.16.0 `'photoPlaces'` and `'photoPeople'` (see "Places and people"); since 1.17.0 — with `docAi`, while Mail's `calendar_add` is reachable and takes Drive — `'deadlineMailCalendar'` (see "Deadlines into a calendar of Mail"); since 1.18.0 `'overview'` (see "Overview"); since 1.19.0 `'scan'` (file nodes and photo items carry GateControl's virus scan `scan { state, blocked, finding }`, see "Virus scan"); since 1.20.0 `'offline'` and — while GateControl has the home cache (≥ 1.231.0, `permissions.homeCache`) — `'homeCache'` (see "Home cache")), `settings` (since 1.14.0 also `scanKeepOriginal`), `links { node, drive } \| null` (since 1.6.0, see "Direct links"), `guard { on, locked, incident }` and `incidents` (since 1.6.0, see "Ransomware protection") |
 | `GET areas` | | `areas [{ id, kind, label, role, via, rootId, owner, archived, storage { bytes, quota, form, target, state } }]` (+ `docAi` while the feature is on, since 1.14.0 `deadlinesToCalendar` with `deadlineCalendar`, since 1.17.0 `deadlinesTarget` — the viewer's target — and both while the family calendar or a calendar of Mail is reachable; also in `GET me` `areas`) |
 | `PATCH areas/<id>` | `{ docAi?: boolean, deadlinesToCalendar?: boolean, deadlinesTarget?: target \| null }` (since 1.8.0 / 1.14.0 / 1.17.0, write in the area) | `{ area: { id, docAi, deadlinesToCalendar?, deadlinesTarget? } }` — AI for documents on / off in this area; new deadlines into the family calendar on their own (the area's switch; Familie not reachable: `409 familie_unavailable`); since 1.17.0 my own target in this area (see "Deadlines into a calendar of Mail") |
 | `GET overview` | (since 1.18.0, feature `overview`) | `todo`, `recent`, `memories`, `people`, `places`, `activity`, `storage` — the start of Drive in one request (see "Overview") |
@@ -83,7 +86,8 @@ reaches `GET frame` (the photo frame, since 1.7.0) and nothing else (`403 forbid
 | `PATCH nodes/<id>` | `{ deleteAt: <ISO \| ms> \| null, device? }` (since 1.5.0, alone — not with `name` / `parentId`) | `node` — set the mark exactly / end it (see "Delete later") |
 | `DELETE nodes/<id>` | `everywhere=1` (since 1.2.0) | `{ id, trashed }` — into the trash; with `everywhere=1` also `wipe { id, devices, files }` (see "Delete on all devices") |
 | `DELETE nodes/<id>` | `after=<seconds>` (1 … 31 536 000), `device?` (since 1.5.0) | `{ id, marked: true, deleteAt, node }` — into the trash later (see "Delete later"); `after=0` is the plain delete |
-| `GET nodes/<id>/content` | | `{ url, name, mime, size, mediaId }` — `url` signed for the viewer, 1 h; an empty file (since 1.5.0): `{ url: 'data:<mime>;base64,', size: 0, mediaId: null, empty: true }`; a file the virus scan holds back (since 1.19.0): `423 scan_pending \| quarantined \| scan_blocked { scan }` |
+| `GET nodes/<id>/content` | | `{ url, name, mime, size, mediaId }` — `url` signed for the viewer, 1 h; an empty file (since 1.5.0): `{ url: 'data:<mime>;base64,', size: 0, mediaId: null, empty: true }`; a file the virus scan holds back (since 1.19.0): `423 scan_pending \| quarantined \| scan_blocked { scan }`; since 1.20.0 an app in the home network also gets `lan { url, sha256, tlsSha256, exp }` when a home gateway holds the file (send `X-GC-Local` / `?local=`, see "Home cache") |
+| `GET offline` · `PUT nodes/<id>/offline` · `DELETE nodes/<id>/offline` | (since 1.20.0, feature `offline`) | "offline verfügbar": `{ items }` / `{ node }` with `offline`, `offlineAt` / `{ id, offline: false, removed }` (see "Home cache") |
 | `GET nodes/<id>/versions` | | `{ current, versions [{ id, rev, size, sha256, at, by }] }` |
 | `GET nodes/<id>/versions/<vid>/content` | | `{ url, … }` |
 | `POST nodes/<id>/versions/<vid>/restore` | | `node` — the version is current again, the current bytes become a version |
@@ -713,6 +717,70 @@ below; without it, or while a node has no `scan`, there is nothing to show.
   „Datei gesperrt – konnte nicht geprüft werden“ — and an upload's `422 infected` as „Datei abgelehnt“. The photo backup
   (resumable) reads `scan` of the last part's answer, or of the committed node.
 
+## Home cache (since 1.20.0, features `offline` and `homeCache`)
+
+GateControl ≥ 1.231.0 keeps files on the home gateways (Gateways › Zwischenspeicher; GateControl's docs/plugins.md
+"Home cache"): an app in the home network loads them from the gateway at LAN speed, the server still decides who gets
+what (a signed address, ten minutes). Drive offers its own files there (`permissions.homeCache`, new in 1.20.0 — the
+administrator confirms it with the update; an older GateControl ignores the key). Drive checks at run time
+(`typeof gc.homeCache?.offer === 'function'`) and lists `'homeCache'` in `GET me` `features` only then; without it
+nothing of the below happens except "offline verfügbar". The minimum stays GateControl 1.216.0. Code:
+`server/homecache.js`, migration 018.
+
+- **"Offline verfügbar"** (feature `offline`, with every GateControl): `PUT nodes/<id>/offline` → `{ node }` with
+  `offline: true`, `offlineAt` — a file or a folder (everything below it) the person may read; idempotent (the first
+  time stays); at most 500 a person (`400 invalid { field: 'offline', max: 500 }`); a device the ransomware protection
+  stopped may still mark (no file changes). `DELETE nodes/<id>/offline` → `{ id, offline: false, removed }` (also for
+  a node that is gone or no longer readable). `GET offline` → `{ items }` — the marked nodes as a folder's items plus
+  `offline`, `offlineAt`, newest first; only nodes not in the trash in areas the person reads. Gone with the node
+  (purge). The apps keep these files on the device (their own matter); the server uses the marks for the home cache.
+- **What Drive offers** (`gc.homeCache.offer({ mediaId, kind, userIds, priority })`):
+
+  | Kind | Files | Priority |
+  |---|---|---|
+  | `drive` | opened in the last 30 days (the same as "Zuletzt geöffnet": `GET nodes/<id>/content`, `POST nodes/<id>/office`, `POST nodes/<id>/opened` — not a PC's sync, not pictures and videos) · "offline verfügbar" (files, and the files below a marked folder, ≤ 2000 a folder) | offline 90 · opened in 7 days 70 · in 30 days 60 |
+  | `photos` | pictures and videos taken in the last 90 days (`takenAt`), the originals, ≤ 4000 | taken in 30 days 40 · in 90 days 30 |
+  | `vault` | files of a vault fetched in 30 days (`GET nodes/<id>/content`, table `cache_uses`) or "offline verfügbar" — the ciphertext, the only form the server has | as `drive` |
+
+  Never: folders, empty files, files in the trash, files the virus scan holds back (`blocked`), files of an archived
+  team folder, older versions, previews. `userIds` = the people who may see the file now (the readers of its area: the
+  owner, a family's members with a family seat, a child and — while *child_parents_view* is on — its parents, a team
+  folder's people and group members with a business seat), at most 256 (those who opened or marked it first); a
+  person's open or mark counts only while they may still read it. The same content in several files is one offer
+  (GateControl keys its stock by SHA-256): its people united, the highest priority. At most 5000 offers. Whether a
+  gateway keeps a kind is the administrator's switch there (`features.cache.kinds`; vault off by default); a gateway
+  keeps a file only where one of its people has devices.
+- **Kept in line** by the background run (see "Background"): every 15 minutes, the next minute after a change of
+  "offline verfügbar", a seat, a team folder or the settings; what is new or changed (people, priority, kind, the file it
+  comes from) is offered, what is no longer wanted (deleted, in the trash, held back, too old, nobody may see it) is
+  withdrawn (`gc.homeCache.withdraw`), withdrawals first, then by priority; at most 250 host calls a run, the rest the
+  next minute; an unchanged offer is not sent again (table `home_cache`). An error of one file (`ERR_NOT_FOUND`,
+  `ERR_INVALID`) skips it; any other stops the run, which comes again the next minute. Without a valid licence nothing
+  changes. A file GateControl already has from elsewhere (`offered: false`) gets no hint and does not count.
+- **`lan` for the apps — exactly one endpoint:** `GET nodes/<id>/content` (app API
+  `/api/v1/client/plugins/gatecontrol-drive/api/nodes/<id>/content` with the device token) answers, next to `url`, `name`, `mime`, `size`, `mediaId` (and `encrypted`, `vaultId`, `nameCipher` of a
+  vault's file), **`lan: { url, sha256, tlsSha256, exp }`** when all of this holds — else the field is missing:
+  the request is an app's (`user.app`; never the portal in a browser, which cannot pin a certificate), Drive offered this
+  content, and GateControl answers a hint (`gc.homeCache.lanHint({ mediaId }, req)`): the app is at the site of a
+  gateway — **it sends its own LAN IPv4 addresses with the request, header `X-GC-Local: 192.168.1.23[,…]` or
+  `?local=`** (GateControl's home-network check: the same public address and one of them in the gateway's LAN) —, that
+  gateway holds the file (its last report) and the person is one of the offer's people. Drive asks GateControl only for
+  content it offered (no host call otherwise) and never fails the answer over it. Not with `lan`: an older version
+  (`…/versions/<vid>/content`), `GET photos` items and every preview (`preview.url` / `largeUrl`, `previewUrl`) — the
+  apps load a photo's original through `GET nodes/<id>/content` too (Android `DriveApi.download`, Windows
+  `drive-api.js` `content`), so a photo of the last 90 days comes with `lan` there. **The app:** loads `lan.url` over
+  HTTPS from the gateway's LAN address (self-signed certificate without a name: no host name check) **pinning**
+  `tlsSha256` (SHA-256 of the certificate's DER, hex lower case), before `exp` (Unix seconds, ≤ 10 minutes; `Range`
+  works), checks the SHA-256 of the bytes against `lan.sha256` (the node's `sha256`) and on any error — TLS, 403, 404,
+  a timeout, another hash — falls back to the normal download (`url` / `GET …/media/<mediaId>`). The address is never
+  kept beyond `exp`.
+- **Administrators:** `GET admin/overview` carries `homeCache { available, files, bytes, lastRunAt, error }` (the
+  files Drive offers now; `error` the code of a failed last run) — one line on the overview ("Zwischenspeicher im
+  Heimnetz: 123 Dateien (4,2 GB) den Heim-Gateways angeboten …"); the same as a status line below Drive's settings
+  (hook `settingsStatus`, `warn` after a failed run). Nothing while GateControl has no home cache.
+- **Not yet:** previews ("Vorschaubilder immer" in the gateway's tab) — GateControl's `offer` takes only a plugin's own
+  media, the previews are GateControl's files (`gc.media.previews`); that needs GateControl first.
+
 ## Overview (since 1.18.0, feature `overview`)
 
 The start of Drive in the apps and the portal: **Übersicht | Dateien | Fotos**, the overview first. `GET overview`
@@ -1219,6 +1287,8 @@ API `/api/v1/plugins/gatecontrol-drive/api/admin/…`: `GET overview` (`licence`
 `POST license/refresh`, `PUT backup-hint { on }`, since 1.7.0 `overview.storage` (`bytes`, `files`, `versionsBytes`,
 `trashBytes`, `duplicates { groups, wastedBytes }` — shown in short on the overview), since 1.6.0 `GET guard/incidents`, `POST guard/incidents/<id>/release |
 undo` (the ransomware protection; the overview shows stopped devices on top with "Rückgängig machen" / "Freigeben").
+Since 1.20.0 `overview.homeCache { available, files, bytes, lastRunAt, error }` — one line on the overview while
+GateControl has the home cache (see "Home cache").
 
 **Backup hint:** GateControl's backup holds Drive's database, never the files of its media areas. While an area lies
 on this server, a folder or a NAS (one copy), the overview shows a box and the administrators get the notification
@@ -1289,9 +1359,13 @@ for direct links (since 1.6.0). A version a time travel made stays until its hol
 locks go (since 1.9.0). Every minute and on start (since 1.11.0): a vault folder outside the top folder of its area
 moves there (see "Vaults apart"). Every minute (since 1.12.0): jobs of several at once a restart interrupted go on,
 copies nobody brought bytes for in 24 hours end, jobs ended more than 7 days ago go (see "Several at once").
+Every 15 minutes, the next minute after a change (since 1.20.0): the offers to GateControl's home cache — new and changed
+ones offered, gone ones withdrawn, at most 250 host calls a run (see "Home cache").
 
 ## Development
 
 `node test/build-places.js <folder> server/places.txt.gz` builds the place names from GeoNames (since 1.16.0; how to
 fetch the files: its header). `node tools/test.js gatecontrol-drive` — the mock host as GateControl 1.208.0 with a family group, a team group and a
-combo licence (`test/helpers.js`); `withHost({ ai, cloud })` adds the mock host's `gc.ai` / `gc.cloud` (since 1.8.0).
+combo licence (`test/helpers.js`); `withHost({ ai, cloud })` adds the mock host's `gc.ai` / `gc.cloud` (since 1.8.0);
+`withHost({ gatecontrol: '1.231.0', homeCache: { held, foreign, fail } })` its `gc.homeCache`, `c.home(user)` an app
+request from the home network (since 1.20.0).

@@ -10,6 +10,7 @@
 //   DELETE admin/teams/<id>           an empty team folder (one with files: archive it)
 //   POST admin/license/refresh        fetch the licence now (after "Personen hinzubuchen")
 //   PUT  admin/backup-hint            { on } — the hint "Das GateControl-Backup sichert keine Drive-Dateien" (backup.js)
+// GET admin/overview carries `homeCache` { available, files, bytes, lastRunAt, error } since 1.20.0 (homecache.js).
 
 const store = require('./store');
 const people = require('./people');
@@ -17,6 +18,7 @@ const seats = require('./seats');
 const areas = require('./areas');
 const backup = require('./backup');
 const storage = require('./storage');
+const homecache = require('./homecache');
 const { fail, posInt } = require('./util');
 
 async function overview(gc) {
@@ -38,6 +40,8 @@ async function overview(gc) {
     areas: list,
     // the storage in short (since 1.7.0): every area's files, versions, trash, what duplicates waste
     storage: await storage.summary(gc),
+    // the home cache of the gateways (since 1.20.0): { available, files, bytes, lastRunAt, error }
+    homeCache: await homecache.summary(gc),
   };
 }
 
@@ -51,6 +55,7 @@ async function route(gc, req, seg, user, now) {
     const body = req.body || {};
     const seat = await seats.set(gc, uid, body.kind == null ? null : String(body.kind), user.id, now);
     gc.log.info(seat ? `seat on (${seat.kind})` : 'seat off', uid);
+    await homecache.touch(gc);
     return { seat: seat ? { userId: seat.user_id, kind: seat.kind } : null, summary: await seats.summary(gc) };
   }
   if (a === 'teams' && seg.length === 2 && m === 'GET') {
@@ -60,7 +65,12 @@ async function route(gc, req, seg, user, now) {
     return { teams: out };
   }
   if (a === 'teams' && seg.length === 2 && m === 'POST') return { team: await areas.createTeam(gc, req.body || {}, now) };
-  if (a === 'teams' && seg.length === 3 && (m === 'PUT' || m === 'PATCH')) return { team: await areas.updateTeam(gc, String(b), req.body || {}, now) };
+  if (a === 'teams' && seg.length === 3 && (m === 'PUT' || m === 'PATCH')) {
+    const team = await areas.updateTeam(gc, String(b), req.body || {}, now);
+    // members or archived: who may see its files changes (home cache, 1.20.0)
+    await homecache.touch(gc);
+    return { team };
+  }
   if (a === 'teams' && seg.length === 3 && m === 'DELETE') return { removed: await areas.removeTeam(gc, String(b)) };
   if (a === 'backup-hint' && seg.length === 2 && (m === 'PUT' || m === 'POST')) {
     const on = !!(req.body && req.body.on === true);
