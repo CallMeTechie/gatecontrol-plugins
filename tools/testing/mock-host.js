@@ -367,6 +367,23 @@
 // list(gatewayId) → [{ username, label, acl, pluginId, locked, createdAt }] (no password); remove(gatewayId, username)
 // → true | false. The gateway must be switched on for the plugin (not_enabled), being online is not needed.
 // host.mqttAccounts: gatewayId → Map username → { username, label, acl, password } (the password only for tests).
+//
+// GateControl 1.230.0 (opt-in: opts.gatecontrol: '1.230.0' or opts.homeNetwork) — presence over the home network
+// (src/services/homePresence.js, docs/plugins.md "Presence over the home network"): only a plugin with
+// permissions.homePresence: true has gc.homeNetwork.presence (an older GateControl ignores the key — no gc.homeNetwork).
+// The home network is the test's: opts.homeNetwork { consent: { <userId>: true }, devices: [{ id, userId, name, gateway,
+// counts (default true), online (true | false | null = nothing reported yet), lastSeen, at }] }. Like the host: a person's
+// state is known once a counting device reported (consent needed), home = one of them online; list() → [{ userId, home,
+// since, source: 'wifi' }] (enabled people who agreed, state known); consent(userId) → { consent, since }; setConsent /
+// setCounts only inside a changing request (POST/PUT/PATCH/DELETE) of that very person to this plugin, devices only inside a
+// request of that person (host.request of a signed-in viewer: loggedIn not false, no kiosk, no automation) — otherwise
+// ERR_NOT_PERSON; an unknown or disabled user / wrong types ERR_INVALID, another person's device ERR_NOT_FOUND. Every change
+// of a person's state goes to the gc.homeNetwork.presence.on handlers ({ userId, home: true | false | null, since, source:
+// 'wifi' }, null = no longer known) — like the host's hook, after the call that caused it (not awaited by it):
+// await host.homePresenceIdle() waits for them. host.homeDevice(deviceId, online, { at }) is the gateway's report
+// (POST /api/v1/gateway/presence) and resolves after the handlers ran; host.homePresenceEmit(ev) delivers an event as
+// given (e.g. a late or repeated one); host.homeNetwork is the state ({ consent: Map userId → { enabled, at }, devices,
+// states: Map userId → { home, since } }), host.homePresenceEvents what was delivered.
 
 const fs = require('node:fs');
 const os = require('node:os');
@@ -2912,6 +2929,134 @@ async function createHost(pluginDir, opts = {}) {
     return { handled: list.length };
   }
 
+  // ─── presence over the home network (GateControl ≥ 1.230.0, src/services/homePresence.js; see the head) ───
+  const hnOpt = opts.homeNetwork && typeof opts.homeNetwork === 'object' ? opts.homeNetwork : null;
+  const hnHost = !!hnOpt || atLeast(230);
+  if (hnHost && perms.homePresence != null && typeof perms.homePresence !== 'boolean') throw hostError('ERR_INVALID', 'plugin.json: permissions.homePresence: invalid');
+  const hnOn = hnHost && perms.homePresence === true;
+  const personCtx = new Map(); // userId → { read, write } — requests of that person in flight (src/services/plugins/personContext.js)
+  const hn = {
+    consent: new Map(Object.entries((hnOpt && hnOpt.consent) || {}).map(([k, v]) => [Number(k), { enabled: v === true, at: Date.now() }])),
+    devices: ((hnOpt && hnOpt.devices) || []).map((d) => ({
+      id: d.id, userId: d.userId, name: d.name == null ? null : String(d.name), gateway: d.gateway == null ? 'Gateway' : String(d.gateway),
+      counts: d.counts !== false, online: d.online === true ? true : (d.online === false ? false : null), at: d.at == null ? Date.now() : d.at,
+      lastSeen: d.lastSeen == null ? null : d.lastSeen,
+    })),
+    states: new Map(),
+  };
+  const hnHandlers = [];
+  const hnEvents = [];
+  const hnPending = new Set();
+  const hnIso = (ms) => (Number.isFinite(ms) && ms > 0 ? new Date(ms).toISOString() : null);
+  const hnConsent = (uid) => !!(hn.consent.get(uid) && hn.consent.get(uid).enabled);
+  /** like homePresence.js needUser: an enabled user */
+  const hnUser = (uid) => {
+    if (!Number.isSafeInteger(uid) || uid <= 0) throw hostError('ERR_INVALID', 'invalid user id');
+    if (!enabledUser(uid)) throw hostError('ERR_INVALID', 'unknown or disabled user');
+    return uid;
+  };
+  const hnPerson = (uid, write) => {
+    const e = personCtx.get(uid);
+    const ok = !!e && (write ? e.write > 0 : e.read + e.write > 0);
+    if (!ok) throw hostError('ERR_NOT_PERSON', write ? 'only in a changing request (POST/PUT/PATCH/DELETE) of that person' : 'only in a request of that person');
+  };
+  /** deliver one event to the handlers like the child bootstrap (a handler that throws is logged) */
+  async function hnDeliver(ev) {
+    const arg = Object.freeze({ userId: ev.userId, home: ev.home === true ? true : (ev.home === false ? false : null), since: ev.since || null, source: ev.source || 'wifi' });
+    hnEvents.push({ ...arg });
+    for (const fn of hnHandlers.slice()) {
+      try { await fn(wire(arg)); } catch (err) { logs.push({ level: 'error', message: 'gc.homeNetwork.presence.on handler failed: ' + String((err && err.message) || err) }); }
+    }
+    return { handled: hnHandlers.length };
+  }
+  /** the host's emit: the hook goes out after the current call (never awaited by it) */
+  function hnEmit(ev) {
+    if (!hnOn) return null;
+    const p = new Promise((resolve) => setImmediate(resolve)).then(() => hnDeliver(ev));
+    hnPending.add(p);
+    p.finally(() => hnPending.delete(p));
+    return p;
+  }
+  /** homePresence.js recompute: home = one counting device online (needs the consent); a change is emitted */
+  function hnRecompute(uid, at) {
+    const prev = hn.states.get(uid) || null;
+    let next = null;
+    if (hnConsent(uid)) {
+      const known = hn.devices.filter((d) => d.userId === uid && d.counts && d.online !== null);
+      if (known.length) next = known.some((d) => d.online === true);
+    }
+    if (next === null) {
+      if (prev) { hn.states.delete(uid); return hnEmit({ userId: uid, home: null, since: hnIso(at || Date.now()), source: 'wifi' }); }
+      return null;
+    }
+    if (prev && prev.home === next) return null;
+    const since = at || Date.now();
+    hn.states.set(uid, { home: next, since });
+    return hnEmit({ userId: uid, home: next, since: hnIso(since), source: 'wifi' });
+  }
+  for (const uid of new Set(hn.devices.map((d) => d.userId))) {
+    const ds = hn.devices.filter((d) => d.userId === uid && d.counts && d.online !== null);
+    if (hnConsent(uid) && ds.length) hn.states.set(uid, { home: ds.some((d) => d.online === true), since: Math.max(...ds.map((d) => d.at)) });
+  }
+  const needHn = () => { if (perms.homePresence !== true) throw hostError('ERR_HOME_PRESENCE_DENIED', 'this plugin has no homePresence permission'); };
+  api['homeNetwork.presence.list'] = async () => {
+    needHn();
+    return [...hn.states.entries()].filter(([uid]) => hnConsent(uid) && enabledUser(uid)).sort((a, b) => a[0] - b[0])
+      .map(([userId, x]) => ({ userId, home: x.home, since: hnIso(x.since), source: 'wifi' }));
+  };
+  api['homeNetwork.presence.consent'] = async ({ userId }) => {
+    needHn();
+    const c = hn.consent.get(hnUser(userId));
+    return { consent: !!(c && c.enabled), since: c ? hnIso(c.at) : null };
+  };
+  api['homeNetwork.presence.setConsent'] = async ({ userId, enabled }) => {
+    needHn();
+    const uid = hnUser(userId);
+    hnPerson(uid, true);
+    if (typeof enabled !== 'boolean') throw hostError('ERR_INVALID', 'enabled must be true or false');
+    const before = hnConsent(uid);
+    hn.consent.set(uid, { enabled, at: Date.now() });
+    if (before !== enabled) hnRecompute(uid, Date.now());
+    return { consent: enabled };
+  };
+  api['homeNetwork.presence.devices'] = async ({ userId }) => {
+    needHn();
+    const uid = hnUser(userId);
+    hnPerson(uid, false);
+    return hn.devices.filter((d) => d.userId === uid)
+      .sort((a, b) => String(a.name || '').toLowerCase().localeCompare(String(b.name || '').toLowerCase()) || a.id - b.id)
+      .map((d) => ({ id: d.id, name: d.name, lastSeen: hnIso(Math.max(d.lastSeen || 0, d.online === true ? d.at : 0)), counts: d.counts, gateway: d.gateway }));
+  };
+  api['homeNetwork.presence.setCounts'] = async ({ userId, deviceId, counts }) => {
+    needHn();
+    const uid = hnUser(userId);
+    hnPerson(uid, true);
+    if (!Number.isSafeInteger(deviceId) || deviceId <= 0) throw hostError('ERR_INVALID', 'invalid device id');
+    if (typeof counts !== 'boolean') throw hostError('ERR_INVALID', 'counts must be true or false');
+    const d = hn.devices.find((x) => x.id === deviceId && x.userId === uid);
+    if (!d) throw hostError('ERR_NOT_FOUND', 'no such device of this person');
+    if (d.counts !== counts) {
+      d.counts = counts;
+      if (!counts) d.online = null;
+      hnRecompute(uid, Date.now());
+    }
+    return { counts };
+  };
+  /** the gateway's report of one device (homePresence.js ingest) → after the handlers ran */
+  async function homeDevice(deviceId, online, o = {}) {
+    if (!hnOn) throw new Error('mock host: no gc.homeNetwork (permissions.homePresence and opts.homeNetwork or GateControl ≥ 1.230.0)');
+    const d = hn.devices.find((x) => x.id === deviceId);
+    if (!d) throw new Error('mock host: no device ' + deviceId);
+    const at = o.at == null ? Date.now() : (typeof o.at === 'string' ? Date.parse(o.at) : o.at);
+    if (d.at && at < d.at && d.online !== null) return { accepted: 0 };
+    d.online = online === true;
+    d.at = at;
+    if (online) d.lastSeen = at;
+    const p = d.counts && hnConsent(d.userId) ? hnRecompute(d.userId, at) : null;
+    if (p) await p;
+    return { accepted: 1 };
+  }
+
   const call = async (name, args) => wire(await api[name](wire(args)));
 
   /** A WebSocket like the host's (EventEmitter: message, close, error; send, close) wired to opts.websocket. */
@@ -3138,6 +3283,23 @@ async function createHost(pluginDir, opts = {}) {
           create: (gatewayId, o) => call('mqtt.accounts.create', { gatewayId, opts: o && typeof o === 'object' ? o : {} }),
           list: (gatewayId) => call('mqtt.accounts.list', { gatewayId }),
           remove: (gatewayId, username) => call('mqtt.accounts.remove', { gatewayId, username }),
+        }),
+      }),
+    } : {}),
+    // GateControl ≥ 1.230.0: gc.homeNetwork only with permissions.homePresence (like the child bootstrap)
+    ...(hnOn ? {
+      homeNetwork: Object.freeze({
+        presence: Object.freeze({
+          list: () => call('homeNetwork.presence.list', {}),
+          on: (handler) => {
+            if (typeof handler !== 'function') throw new TypeError('gc.homeNetwork.presence.on(handler)');
+            hnHandlers.push(handler);
+            return () => { const i = hnHandlers.indexOf(handler); if (i >= 0) hnHandlers.splice(i, 1); };
+          },
+          consent: (userId) => call('homeNetwork.presence.consent', { userId }),
+          setConsent: (userId, enabled) => call('homeNetwork.presence.setConsent', { userId, enabled }),
+          devices: (userId) => call('homeNetwork.presence.devices', { userId }),
+          setCounts: (userId, deviceId, counts) => call('homeNetwork.presence.setCounts', { userId, deviceId, counts }),
         }),
       }),
     } : {}),
@@ -3763,6 +3925,16 @@ async function createHost(pluginDir, opts = {}) {
     edgeConfigs,
     /** gc.mqtt.accounts: gatewayId → Map username → { username, label, acl, password, createdAt } */
     mqttAccounts,
+    /**
+     * GateControl ≥ 1.230.0 (permissions.homePresence): the home network (see the head). homeDevice(deviceId, online, { at })
+     * is a gateway report → after the gc.homeNetwork.presence.on handlers ran; homePresenceEmit(ev) delivers an event as given;
+     * homePresenceIdle() waits for the events a call caused (setConsent, setCounts).
+     */
+    homeNetwork: hn,
+    homePresenceEvents: hnEvents,
+    homeDevice: (deviceId, online, o) => homeDevice(deviceId, online, o),
+    homePresenceEmit: (ev) => { if (!hnOn) throw new Error('mock host: no gc.homeNetwork'); return hnDeliver(ev); },
+    homePresenceIdle: async () => { while (hnPending.size) await Promise.all([...hnPending]); },
     /** legacyImport hook: the host hands over the built-in data (first-party plugins only) */
     legacyImport: (snapshot) => hook('legacyImport', snapshot),
     /** keys stored with gc.settings.setSecret */
@@ -3775,8 +3947,18 @@ async function createHost(pluginDir, opts = {}) {
         q.user = { ...q.user };
         delete q.user.device;
       }
-      const r = await hook('request', q);
-      return { status: 200, ...r };
+      // GateControl ≥ 1.230.0 (routes/api/plugins.js forwarder): a signed-in person's request runs in the person context
+      // (gc.homeNetwork.presence.setConsent / setCounts / devices of that person only)
+      const u = q.user && typeof q.user === 'object' ? q.user : null;
+      const person = !!u && u.loggedIn !== false && !u.kiosk && !u.automation && Number.isSafeInteger(u.id) && u.id > 0;
+      const kind = String(q.method).toUpperCase() !== 'GET' && String(q.method).toUpperCase() !== 'HEAD' ? 'write' : 'read';
+      if (person) { const e = personCtx.get(u.id) || { read: 0, write: 0 }; e[kind]++; personCtx.set(u.id, e); }
+      try {
+        const r = await hook('request', q);
+        return { status: 200, ...r };
+      } finally {
+        if (person) { const e = personCtx.get(u.id); e[kind]--; if (!e.read && !e.write) personCtx.delete(u.id); }
+      }
     },
     /** view = { view: 'page'|'portal', page, section, user, lang, loggedIn } */
     render: (view) => hook('render', { view: 'page', page: 'main', user: sessionUser(), lang: 'de', ...view }),
