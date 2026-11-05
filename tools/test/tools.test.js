@@ -739,13 +739,15 @@ test('pack → sign → verify round trip with a throwaway key', { skip: !gcDir 
   const kp = signature.generateKeyPair();
   const other = signature.generateKeyPair();
   const out = fs.mkdtempSync(path.join(os.tmpdir(), 'pack-'));
+  const hello = lib.readJson(path.join(lib.pluginDir('gatecontrol-hello'), 'plugin.json'));
+  const V = hello.version;
   const run = (args, env) => spawnSync(process.execPath, args, { encoding: 'utf8', env: { ...process.env, ...env } });
   try {
     // dev builds are unsigned even when a key is in the environment
     let r = run([path.join(TOOLS, 'pack.js'), 'gatecontrol-hello', '--out', out], { GC_PLUGIN_SIGNING_KEY: kp.privateSeed });
     assert.equal(r.status, 0, r.stderr);
     assert.match(r.stdout, /UNSIGNED/);
-    const file = path.join(out, 'gatecontrol-hello-1.0.0.gcplugin');
+    const file = path.join(out, `gatecontrol-hello-${V}.gcplugin`);
     r = run([path.join(TOOLS, 'verify.js'), file], { GC_PLUGIN_PUBLIC_KEY: kp.publicKey });
     assert.equal(r.status, 1);
     assert.match(r.stderr, /UNSIGNED/);
@@ -759,12 +761,12 @@ test('pack → sign → verify round trip with a throwaway key', { skip: !gcDir 
     assert.match(r.stdout, /\(\d+ bytes, signed\)/);
     assert.ok(!r.stdout.includes(kp.privateSeed) && !r.stderr.includes(kp.privateSeed));
 
-    // the package holds no test files
+    // the package holds no test files (but the edge part, for the gateway)
     const files = lib.gcRequire('src/services/plugins/package').decode(fs.readFileSync(file));
-    assert.ok(files.has('signature') && files.has('ui/page.html') && files.has('migrations/001_init.sql'));
+    assert.ok(files.has('signature') && files.has('ui/page.html') && files.has('migrations/001_init.sql') && files.has('edge/index.js'));
     assert.ok(![...files.keys()].some((p) => p.startsWith('test/')));
 
-    r = run([path.join(TOOLS, 'verify.js'), file, '--id', 'gatecontrol-hello', '--version', '1.0.0'], { GC_PLUGIN_PUBLIC_KEY: kp.publicKey, GITHUB_OUTPUT: '' });
+    r = run([path.join(TOOLS, 'verify.js'), file, '--id', 'gatecontrol-hello', '--version', V], { GC_PLUGIN_PUBLIC_KEY: kp.publicKey, GITHUB_OUTPUT: '' });
     assert.equal(r.status, 0, r.stderr);
     assert.match(r.stdout, new RegExp('key id ' + signature.keyId(kp.publicKey)));
 
@@ -777,13 +779,13 @@ test('pack → sign → verify round trip with a throwaway key', { skip: !gcDir 
     assert.equal(r.status, 1);
 
     // index entry + sha256 file
-    r = run([path.join(TOOLS, 'index-entry.js'), file, '--tag', 'gatecontrol-hello-v1.0.0', '--repo', 'o/r', '--key-id', signature.keyId(kp.publicKey), '--public-key', kp.publicKey]);
+    r = run([path.join(TOOLS, 'index-entry.js'), file, '--tag', `gatecontrol-hello-v${V}`, '--repo', 'o/r', '--key-id', signature.keyId(kp.publicKey), '--public-key', kp.publicKey]);
     assert.equal(r.status, 0, r.stderr);
-    const entry = JSON.parse(fs.readFileSync(path.join(out, 'gatecontrol-hello-1.0.0.index.json'), 'utf8'));
+    const entry = JSON.parse(fs.readFileSync(path.join(out, `gatecontrol-hello-${V}.index.json`), 'utf8'));
     assert.equal(entry.size, fs.statSync(file).size);
-    assert.equal(entry.url, 'https://github.com/o/r/releases/download/gatecontrol-hello-v1.0.0/gatecontrol-hello-1.0.0.gcplugin');
-    assert.equal(entry.gatecontrol, '>=1.146.0');
-    assert.equal(fs.readFileSync(file + '.sha256', 'utf8'), `${entry.sha256}  gatecontrol-hello-1.0.0.gcplugin\n`);
+    assert.equal(entry.url, `https://github.com/o/r/releases/download/gatecontrol-hello-v${V}/gatecontrol-hello-${V}.gcplugin`);
+    assert.equal(entry.gatecontrol, hello.gatecontrol);
+    assert.equal(fs.readFileSync(file + '.sha256', 'utf8'), `${entry.sha256}  gatecontrol-hello-${V}.gcplugin\n`);
   } finally {
     fs.rmSync(out, { recursive: true, force: true });
   }

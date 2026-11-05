@@ -1,0 +1,138 @@
+<style>
+  .hx{display:flex;flex-direction:column;gap:14px;padding:2px 2px 16px}
+  .hx [hidden]{display:none!important}
+  .hx h2{font-size:15px;margin:0}
+  .hx-hint{margin:2px 0 0;font-size:12.5px;line-height:1.45}
+  .hx-bar{display:flex;align-items:flex-end;gap:10px;flex-wrap:wrap}
+  .hx-field{display:flex;flex-direction:column;gap:5px;flex:1 1 220px;max-width:340px}
+  .hx-field label{font-size:12px;font-weight:700;color:var(--muted)}
+  .hx-note{margin:0;padding:12px 14px;border-radius:12px;border:1px dashed var(--line-2);color:var(--muted);font-size:13px}
+  .hx-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,320px),1fr));gap:12px}
+  .hx-gw{display:flex;flex-direction:column;gap:10px;min-width:0}
+  .hx-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
+  .hx-name{font-weight:800;font-size:14.5px;overflow-wrap:anywhere}
+  .hx-sub{font-size:12.5px;color:var(--muted)}
+  .hx-chip{flex:none;font-size:12px;font-weight:700;padding:3px 9px;border-radius:999px;background:var(--surface-2);color:var(--muted)}
+  .hx-chip[data-tone="good"]{color:var(--good);background:color-mix(in srgb,var(--good) 12%,transparent)}
+  .hx-chip[data-tone="warn"]{color:var(--warn);background:color-mix(in srgb,var(--warn) 12%,transparent)}
+  .hx-chip[data-tone="crit"]{color:var(--crit);background:color-mix(in srgb,var(--crit) 12%,transparent)}
+  .hx-hb{font-size:12.5px;color:var(--muted)}
+  .hx-hb b{color:var(--text);font-weight:600}
+  .hx-out{margin:0;font-size:13px;padding:8px 10px;border-radius:10px;background:var(--surface-2);overflow-wrap:anywhere}
+  .hx-out[data-tone="crit"]{color:var(--crit);background:color-mix(in srgb,var(--crit) 9%,transparent)}
+  .hx-out small{display:block;color:var(--muted);margin-top:3px}
+</style>
+<main class="hx">
+  <header>
+    <h2>{{t:page.title}}</h2>
+    <p class="hx-hint muted">{{t:page.hint}}</p>
+  </header>
+  <div class="hx-bar">
+    <div class="hx-field">
+      <label for="hx-name">{{t:name.label}}</label>
+      <input id="hx-name" type="text" maxlength="64" autocomplete="off" value="{{user}}">
+    </div>
+    <button id="hx-refresh" type="button">{{t:refresh}}</button>
+  </div>
+  <p class="hx-note" id="hx-note" role="status" hidden></p>
+  <div class="hx-list" id="hx-list"></div>
+</main>
+<script>
+(function () {
+  var H = window.HELLO || { lang: 'de', texts: {} };
+  function t(key, params) {
+    var s = Object.prototype.hasOwnProperty.call(H.texts, key) ? H.texts[key] : key;
+    return s.replace(/\{(\w+)\}/g, function (_, k) { return params && params[k] != null ? String(params[k]) : ''; });
+  }
+  function el(tag, cls, text) {
+    var e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text != null) e.textContent = text;   // data from the API only ever as text
+    return e;
+  }
+  function time(iso) {
+    var d = new Date(iso);
+    return isNaN(d) ? '' : d.toLocaleTimeString(H.lang === 'en' ? 'en-GB' : 'de-DE');
+  }
+  function uptime(s) {
+    if (s < 60) return t('uptime.s', { n: s });
+    if (s < 3600) return t('uptime.min', { n: Math.floor(s / 60) });
+    if (s < 86400) return t('uptime.h', { h: Math.floor(s / 3600), m: Math.floor((s % 3600) / 60) });
+    return t('uptime.d', { d: Math.floor(s / 86400), h: Math.floor((s % 86400) / 3600) });
+  }
+  var TONE = { running: 'good', starting: '', pending: '', crashed: 'crit', denied: 'crit', unsigned: 'warn', update_pending: 'warn', gateway_too_old: 'warn' };
+  var list = document.getElementById('hx-list');
+  var note = document.getElementById('hx-note');
+  var nameInput = document.getElementById('hx-name');
+
+  function showNote(text) { note.textContent = text || ''; note.hidden = !text; }
+
+  async function greet(gw, btn, out) {
+    btn.disabled = true;
+    out.hidden = false;
+    out.removeAttribute('data-tone');
+    out.textContent = t('greeting');
+    var r;
+    try { r = await window.GC.call('POST', 'edge/greet', { gatewayId: gw.id, name: nameInput.value }); }
+    catch (e) { r = (e && e.data) || { ok: false, code: 'error', error: t('error.unknown') }; }
+    out.textContent = '';
+    var res = r && r.ok && r.result && typeof r.result === 'object' ? r.result : null;
+    if (res && typeof res.text === 'string') {
+      out.appendChild(document.createTextNode(t('result.ok', { text: res.text, time: time(res.at) })));
+      out.appendChild(el('small', null, res.greeting == null ? t('result.no_config') : t('result.greeting', { greeting: res.greeting })));
+    } else if (r && r.ok) {
+      out.textContent = JSON.stringify(r.result);   // another answer (e.g. the test edge host's echo)
+    } else {
+      out.setAttribute('data-tone', 'crit');
+      out.appendChild(document.createTextNode(r.error || t('error.unknown')));
+      out.appendChild(el('small', null, [r.code, r.detail].filter(Boolean).join(' · ')));
+    }
+    btn.disabled = false;
+  }
+
+  function card(gw) {
+    var c = el('article', 'card hx-gw');
+    var head = el('div', 'hx-head');
+    var who = el('div');
+    who.appendChild(el('div', 'hx-name', gw.name));
+    if (gw.version) who.appendChild(el('div', 'hx-sub', t('version', { version: gw.version })));
+    var chip = el('span', 'hx-chip', gw.stateText);
+    if (TONE[gw.state]) chip.setAttribute('data-tone', TONE[gw.state]);
+    head.appendChild(who);
+    head.appendChild(chip);
+    c.appendChild(head);
+    var hb = el('div', 'hx-hb');
+    hb.appendChild(el('b', null, t('heartbeat') + ': '));
+    hb.appendChild(document.createTextNode(gw.heartbeat
+      ? t('heartbeat.at', { time: time(gw.heartbeat.at), uptime: gw.heartbeat.uptimeS == null ? '?' : uptime(gw.heartbeat.uptimeS) })
+      : t('heartbeat.none')));
+    c.appendChild(hb);
+    var btn = el('button', 'primary', t('greet'));
+    btn.type = 'button';
+    var out = el('p', 'hx-out');
+    out.setAttribute('role', 'status');
+    out.hidden = true;
+    btn.addEventListener('click', function () { greet(gw, btn, out); });
+    var row = el('div');
+    row.appendChild(btn);
+    c.appendChild(row);
+    c.appendChild(out);
+    return c;
+  }
+
+  async function load() {
+    var r;
+    try { r = await window.GC.call('GET', 'edge/gateways'); }
+    catch (e) { r = null; }
+    list.textContent = '';
+    if (!r || !r.ok) { showNote(t('load_failed')); return; }
+    if (!r.available) { showNote(t('unavailable')); return; }
+    if (!r.gateways.length) { showNote(t('empty')); return; }
+    showNote('');
+    r.gateways.forEach(function (gw) { list.appendChild(card(gw)); });
+  }
+
+  document.getElementById('hx-refresh').addEventListener('click', load);
+  load();
+})();
+</script>
