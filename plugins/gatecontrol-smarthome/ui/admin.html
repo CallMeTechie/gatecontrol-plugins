@@ -1,17 +1,199 @@
 <main class="sh-page">
   <!-- no page title: GateControl shows it in its header -->
   <div class="page-actions page-toolbar">
-    <select id="sh-gateway-select" class="form-select" aria-label="Gateway"></select>
-    <button class="btn" type="button" id="sh-test">{{t:test}}</button>
-    <button class="btn" type="button" id="sh-sync">{{t:sync}}</button>
-    <button class="btn" type="button" id="sh-edit">{{t:gateway.edit}}</button>
+    <select id="sh-gateway-select" class="form-select sh-source-select" aria-label="{{t:source.label}}"></select>
+    <button class="btn" type="button" id="sh-test" data-for="deconz">{{t:test}}</button>
+    <button class="btn" type="button" id="sh-sync" data-for="deconz">{{t:sync}}</button>
+    <button class="btn" type="button" id="sh-edit" data-for="deconz">{{t:gateway.edit}}</button>
+    <button class="btn" type="button" id="sh-refresh" data-for="edge" hidden>{{t:edge.refresh}}</button>
     <button class="btn" type="button" data-nav="rules">{{t:rules.title}}</button>
-    <button class="btn btn-primary" type="button" id="sh-connect-open">{{t:connect}}</button>
+    <span class="sh-spacer"></span>
+    <button class="btn" type="button" id="sh-source-open">{{t:source.add}}</button>
+    <button class="btn btn-primary" type="button" id="sh-add-open" data-for="edge" hidden><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>{{t:device.add}}</button>
   </div>
   <div class="sh-gwinfo" id="sh-gwinfo"></div>
   <div class="sh-test-result" id="sh-test-result" role="status" hidden></div>
+  <div class="sh-notice" id="sh-found" role="status" hidden>
+    <svg class="sh-notice-ico" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg>
+    <span class="sh-notice-text" id="sh-found-text"></span>
+    <button class="btn" type="button" id="sh-found-open">{{t:found.view}}</button>
+  </div>
   <div id="smarthome-kpis" class="sh-kpis"></div>
   <div id="smarthome-devices"></div>
+
+  <!-- Quelle hinzufügen: GateControl gateways with the edge part, or a Phoscon/deCONZ gateway -->
+  <div class="modal-overlay" id="sh-source-modal" role="dialog" aria-modal="true" aria-labelledby="sh-s-title" hidden>
+    <div class="modal modal-wide">
+      <div class="modal-head">
+        <h2 class="modal-title" id="sh-s-title">{{t:source.add}}</h2>
+        <button class="btn modal-close" type="button" data-close="sh-source-modal" aria-label="{{t:common.close}}">×</button>
+      </div>
+      <div class="modal-body sh-stack">
+        <p class="sh-lead" id="sh-s-lead">{{t:source.lead}}</p>
+        <ul class="sh-list" id="sh-s-list"></ul>
+        <div class="sh-s-deconz">
+          <span class="sh-s-deconz-text">{{t:source.deconz_pre}} <strong>{{t:source.deconz_name}}</strong> {{t:source.deconz_post}}</span>
+          <button class="btn" type="button" id="sh-connect-open">{{t:source.deconz_connect}}</button>
+        </div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn" type="button" data-close="sh-source-modal">{{t:common.close}}</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Gerät hinzufügen -->
+  <div class="modal-overlay" id="sh-add-modal" role="dialog" aria-modal="true" aria-labelledby="sh-a-title" hidden>
+    <div class="modal modal-wide">
+      <div class="modal-head">
+        <h2 class="modal-title" id="sh-a-title">{{t:device.add}}</h2>
+        <button class="btn modal-close" type="button" data-close="sh-add-modal" aria-label="{{t:common.close}}">×</button>
+      </div>
+      <div class="modal-body sh-stack">
+        <div class="form-group">
+          <label class="form-label" for="sh-a-gateway">{{t:add.gateway}}</label>
+          <select class="form-select" id="sh-a-gateway"></select>
+        </div>
+        <fieldset class="sh-fieldset">
+          <legend class="form-label">{{t:add.found}}</legend>
+          <div class="sh-opts" id="sh-a-found" aria-live="polite"></div>
+        </fieldset>
+        <div class="sh-two">
+          <div class="form-group">
+            <label class="form-label" for="sh-a-name">{{t:add.name}}</label>
+            <input class="form-input" id="sh-a-name" type="text" maxlength="60" autocomplete="off">
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="sh-a-area">{{t:add.area}}</label>
+            <input class="form-input" id="sh-a-area" type="text" maxlength="40" autocomplete="off" list="sh-areas">
+          </div>
+        </div>
+        <div class="sh-info">
+          <svg class="sh-info-ico" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg>
+          <span>{{t:add.note}}</span>
+        </div>
+        <p class="sh-form-error" id="sh-a-error" role="alert" hidden></p>
+      </div>
+      <div class="modal-foot">
+        <button class="btn" type="button" data-close="sh-add-modal">{{t:common.cancel}}</button>
+        <button class="btn" type="button" id="sh-a-manual">{{t:add.manual}}</button>
+        <button class="btn btn-primary" type="button" id="sh-a-auto">{{t:add.auto_btn}}</button>
+      </div>
+    </div>
+  </div>
+  <datalist id="sh-areas"></datalist>
+
+  <!-- automatisch einrichten: the steps of the set-up, live -->
+  <div class="modal-overlay" id="sh-auto-modal" role="dialog" aria-modal="true" aria-labelledby="sh-j-title" aria-describedby="sh-j-sub" hidden>
+    <div class="modal modal-wide">
+      <div class="modal-head">
+        <div>
+          <h2 class="modal-title" id="sh-j-title"></h2>
+          <div class="sh-sub" id="sh-j-sub"></div>
+        </div>
+        <button class="btn modal-close" type="button" id="sh-j-x" aria-label="{{t:common.close}}">×</button>
+      </div>
+      <div class="modal-body sh-stack">
+        <ol class="sh-steps" id="sh-j-steps" aria-live="polite"></ol>
+        <p class="sh-form-error" id="sh-j-error" role="alert" hidden></p>
+        <details class="sh-details">
+          <summary>{{t:auto.what}}</summary>
+          <p class="sh-sub" id="sh-j-what"></p>
+        </details>
+      </div>
+      <div class="modal-foot">
+        <button class="btn" type="button" id="sh-j-cancel">{{t:common.cancel}}</button>
+        <button class="btn" type="button" id="sh-j-manual">{{t:auto.manual}}</button>
+        <button class="btn btn-primary" type="button" id="sh-j-done" hidden>{{t:auto.done}}</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- von Hand einrichten: the data for the device, once -->
+  <div class="modal-overlay" id="sh-manual-modal" role="dialog" aria-modal="true" aria-labelledby="sh-m-title" hidden>
+    <div class="modal modal-wide">
+      <div class="modal-head">
+        <h2 class="modal-title" id="sh-m-title"></h2>
+        <button class="btn modal-close" type="button" data-close="sh-manual-modal" aria-label="{{t:common.close}}">×</button>
+      </div>
+      <div class="modal-body sh-stack">
+        <div class="form-group">
+          <label class="form-label" for="sh-m-type">{{t:manual.type}}</label>
+          <select class="form-select" id="sh-m-type">
+            <option value="tasmota">{{t:family.tasmota}}</option>
+            <option value="shelly2">{{t:family.shelly2}}</option>
+            <option value="shelly1">{{t:family.shelly1}}</option>
+          </select>
+        </div>
+        <div class="sh-stack-sm">
+          <span class="form-label">{{t:manual.data}}</span>
+          <div class="sh-kvs" id="sh-m-rows"></div>
+          <span class="sh-sub" id="sh-m-once"></span>
+        </div>
+        <div class="sh-stack-sm">
+          <span class="form-label" id="sh-m-howto-title"></span>
+          <ol class="sh-howto" id="sh-m-howto" aria-labelledby="sh-m-howto-title"></ol>
+        </div>
+        <div class="sh-info" id="sh-m-wait" role="status">
+          <svg class="sh-info-ico sh-spin" id="sh-m-wait-ico" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 3a9 9 0 1 0 9 9"/></svg>
+          <span><strong id="sh-m-wait-title">{{t:manual.wait}}</strong> <span id="sh-m-wait-text">{{t:manual.wait_text}}</span></span>
+        </div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn" type="button" id="sh-m-cancel">{{t:common.cancel}}</button>
+        <button class="btn" type="button" id="sh-m-later">{{t:manual.later}}</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Gerät bearbeiten (Shelly / Tasmota) -->
+  <div class="modal-overlay" id="sh-device-modal" role="dialog" aria-modal="true" aria-labelledby="sh-d-title" aria-describedby="sh-d-sub" hidden>
+    <div class="modal modal-wide">
+      <div class="modal-head">
+        <div>
+          <h2 class="modal-title" id="sh-d-title"></h2>
+          <div class="sh-sub" id="sh-d-sub"></div>
+        </div>
+        <button class="btn modal-close" type="button" data-close="sh-device-modal" aria-label="{{t:common.close}}">×</button>
+      </div>
+      <div class="modal-body sh-stack">
+        <div class="sh-two">
+          <div class="form-group">
+            <label class="form-label" for="sh-d-name">{{t:add.name}}</label>
+            <input class="form-input" id="sh-d-name" type="text" maxlength="60" autocomplete="off">
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="sh-d-area">{{t:add.area}}</label>
+            <input class="form-input" id="sh-d-area" type="text" maxlength="40" autocomplete="off" list="sh-areas">
+          </div>
+        </div>
+        <fieldset class="sh-fieldset">
+          <legend class="form-label">{{t:device.what}}</legend>
+          <div class="sh-opts" id="sh-d-channels"></div>
+          <span class="sh-sub" id="sh-d-kinds-hint">{{t:device.kinds_hint}}</span>
+        </fieldset>
+        <div class="sh-stack-sm">
+          <span class="form-label" id="sh-d-owners-label">{{t:device.owners}}</span>
+          <div class="sh-chips" id="sh-d-owners" role="group" aria-labelledby="sh-d-owners-label"></div>
+        </div>
+        <div class="sh-stack-sm sh-sep">
+          <span class="form-label">{{t:device.connection}}</span>
+          <div class="page-actions">
+            <button class="btn" type="button" id="sh-d-password">{{t:device.new_password}}</button>
+            <a class="btn" id="sh-d-page" target="_blank" rel="noopener noreferrer">{{t:device.open_page}}</a>
+          </div>
+          <span class="sh-sub">{{t:device.password_hint}}</span>
+        </div>
+      </div>
+      <div class="modal-foot sh-foot-split">
+        <button class="btn btn-danger" type="button" id="sh-d-remove">{{t:device.remove}}</button>
+        <span class="sh-foot-right">
+          <button class="btn" type="button" data-close="sh-device-modal">{{t:common.cancel}}</button>
+          <button class="btn btn-primary" type="button" id="sh-d-save">{{t:common.save}}</button>
+        </span>
+      </div>
+    </div>
+  </div>
 
   <div class="modal-overlay" id="sh-connect-modal" role="dialog" aria-modal="true" aria-labelledby="sh-c-title" hidden>
     <div class="modal">
@@ -79,6 +261,11 @@
       </div>
       <div class="modal-body">
         <div class="sh-owner-sub" id="sh-owner-sub"></div>
+        <div class="form-group" id="sh-owner-area-row">
+          <label class="form-label" for="sh-owner-area">{{t:owners.area}}</label>
+          <input class="form-input" id="sh-owner-area" type="text" maxlength="40" autocomplete="off" list="sh-areas">
+          <span class="form-hint">{{t:owners.area_hint}}</span>
+        </div>
         <input class="form-input" id="sh-owner-search" type="text" placeholder="{{t:owners.search}}" aria-label="{{t:owners.search}}">
         <div class="sh-owner-list" id="sh-owner-list"></div>
       </div>

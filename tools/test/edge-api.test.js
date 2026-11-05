@@ -113,3 +113,34 @@ test('gc.edge.on: events after the handlers ran, \'*\' not for built-in ones, a 
     assert.deepEqual(got, [['*', 'heartbeat']]);
   } finally { await h.close(); p.done(); }
 });
+
+test('gc.mqtt.accounts: only with edge mqtt topics; topics below them, name rules, list without password, remove', async () => {
+  const p = plugin({ edge: { ...EDGE, capabilities: { mqtt: { topics: ['shellies/#', 'tasmota/#'] } } } });
+  const noTopics = plugin({ edge: EDGE });
+  const h = await createHost(p.dir, { edge: { gateways: [{ id: 1, state: 'running' }, { id: 2, state: 'offline' }, { id: 3, state: 'disabled' }] } });
+  const code = (c) => (e) => e.code === c;
+  try {
+    const n = await createHost(noTopics.dir, { edge: { gateways: [{ id: 1 }] } });
+    assert.equal(n.gc.mqtt, undefined, 'no gc.mqtt without mqtt topics');
+    await n.close();
+    const a = await h.gc.mqtt.accounts.create(1, { name: 'Licht-Flur', label: 'Licht Flur', topics: [{ topic: 'shellies/licht-flur/#', access: 'readwrite' }] });
+    assert.equal(a.username, 'edge-test-licht-flur');
+    assert.match(a.password, /^[A-Za-z0-9_-]{24}$/);
+    assert.deepEqual(a.acl, [{ access: 'readwrite', topic: 'shellies/licht-flur/#' }]);
+    assert.equal(a.label, 'Licht Flur');
+    const b = await h.gc.mqtt.accounts.create(2, { topics: ['tasmota/flur/#'] });
+    assert.match(b.username, /^edge-test-[0-9a-f]{8}$/, 'a random name; an offline gateway is fine');
+    await assert.rejects(h.gc.mqtt.accounts.create(1, { name: 'licht-flur', topics: ['shellies/licht-flur/#'] }), code('ERR_INVALID'));
+    await assert.rejects(h.gc.mqtt.accounts.create(1, { name: 'x', topics: ['devices/x/#'] }), code('denied'));
+    await assert.rejects(h.gc.mqtt.accounts.create(1, { name: 'x', topics: [] }), code('ERR_INVALID'));
+    await assert.rejects(h.gc.mqtt.accounts.create(1, { name: 'x', topics: ['#'] }), code('ERR_INVALID'));
+    await assert.rejects(h.gc.mqtt.accounts.create(1, { name: '-bad', topics: ['shellies/x/#'] }), code('ERR_INVALID'));
+    await assert.rejects(h.gc.mqtt.accounts.create(1, { name: 'x'.repeat(25), topics: ['shellies/x/#'] }), code('ERR_INVALID'));
+    await assert.rejects(h.gc.mqtt.accounts.create(3, { name: 'x', topics: ['shellies/x/#'] }), code('not_enabled'));
+    const list = await h.gc.mqtt.accounts.list(1);
+    assert.deepEqual(list.map((x) => [x.username, x.pluginId, x.locked, 'password' in x]), [['edge-test-licht-flur', 'edge-test', false, false]]);
+    assert.equal(h.mqttAccounts.get(1).get('edge-test-licht-flur').password, a.password);
+    assert.equal(await h.gc.mqtt.accounts.remove(1, 'edge-test-licht-flur'), true);
+    assert.equal(await h.gc.mqtt.accounts.remove(1, 'edge-test-licht-flur'), false);
+  } finally { await h.close(); p.done(); noTopics.done(); }
+});

@@ -1846,11 +1846,11 @@
       "category": "home",
       "icon": "bulb",
       "summary": {
-        "de": "Lichter, Steckdosen, Gruppen, Szenen und Sensoren eines Phoscon/deCONZ-Gateways steuern und Haushaltsmitgliedern zuweisen.",
-        "en": "Control the lights, plugs, groups, scenes and sensors of a Phoscon/deCONZ gateway and assign them to household members."
+        "de": "Phoscon/deCONZ sowie Shelly und Tasmota über ein GateControl-Gateway: Lichter, Steckdosen, Rollläden und Sensoren steuern und zuweisen.",
+        "en": "Phoscon/deCONZ plus Shelly and Tasmota through a GateControl gateway: control and assign lights, plugs, shutters and sensors."
       },
       "audience": "all",
-      "keywords": ["smarthome", "licht", "light", "lampe", "steckdose", "plug", "szene", "scene", "sensor", "phoscon", "deconz", "zigbee"],
+      "keywords": ["smarthome", "licht", "light", "steckdose", "plug", "szene", "sensor", "phoscon", "deconz", "zigbee", "shelly", "tasmota"],
       "related": ["gatecontrol-raumklima", "gatecontrol-door"],
       "adds": [
         {

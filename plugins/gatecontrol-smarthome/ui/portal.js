@@ -7,11 +7,19 @@
   var lang = S.CTX.lang === 'en' ? 'en-GB' : 'de-DE';
   function fmtNum(v) { var n = Number(v); return Number.isFinite(n) ? n.toLocaleString(lang, { maximumFractionDigits: 1 }) : '–'; }
 
+  function coverText(st) {
+    if (st.moving === 'opening' || st.moving === 'closing') return T('cover.' + st.moving);
+    if (st.pos != null) return Number(st.pos) <= 0 ? T('cover.closed') : T('cover.pos_open', { pos: fmtNum(st.pos) });
+    return T('cover.position') + ' –';
+  }
   function shStatus(d) {
     if (d.kind === 'scene') return T('portal.activate');
     var st = d.state || {};
+    if (st.reachable === false && (d.kind === 'cover' || d.kind === 'relay' || (d.capabilities && (d.capabilities.power || d.capabilities.position)))) return T('card.unreachable');
+    if (d.kind === 'cover') return coverText(st);
     var on = st.on ? T('portal.on') : T('portal.off');
     if (st.on && d.capabilities && d.capabilities.bri && st.bri != null) return on + ' · ' + fmtNum(st.bri) + ' %';
+    if (st.on && st.power != null && isFinite(Number(st.power))) return on + ' · ' + fmtNum(Math.round(st.power)) + ' W';
     return on;
   }
   function control(id, patch) {
@@ -27,7 +35,28 @@
     var s = tile.querySelector('.pt-small');
     if (s) s.textContent = shStatus(d);
   }
+  /** A shutter, awning or gate: its position and three buttons (open, stop, close). */
+  function coverTile(d) {
+    var status = el('span', { class: 'pt-small', text: shStatus(d) });
+    var t = el('div', { class: 'pt-shtile pt-shtile-cover', 'data-id': String(d.id) }, [el('div', { class: 'pt-shtile-head' }, [el('b', { text: d.name || '' }), status])]);
+    var row = el('div', { class: 'pt-sh-coverbtns', role: 'group', 'aria-label': T('cover.controls_of', { name: d.name || '' }) });
+    ['open', 'stop', 'close'].forEach(function (op) {
+      var b = el('button', { type: 'button', class: 'pt-sh-coverbtn', text: T('cover.' + op), disabled: !loggedIn });
+      b.addEventListener('click', function () {
+        control(d.id, { cover: op }).then(function (ok) {
+          if (!ok) return;
+          d.state = Object.assign({}, d.state || {}, { moving: op === 'open' ? 'opening' : op === 'close' ? 'closing' : null });
+          status.textContent = shStatus(d);
+          S.toast(T('cover.done_' + op, { name: d.name || '' }));
+        });
+      });
+      row.appendChild(b);
+    });
+    t.appendChild(row);
+    return t;
+  }
   function tile(d) {
+    if (d.kind === 'cover') return coverTile(d);
     var st = d.state || {};
     var scene = d.kind === 'scene';
     var main = el('button', { type: 'button', class: 'pt-shtile-main', 'aria-pressed': scene ? null : (st.on ? 'true' : 'false'), disabled: !loggedIn },
@@ -87,11 +116,32 @@
   function render(data) {
     var devices = data.devices || [];
     var sensors = data.sensors || [];
+    // devices with an area under it (sorted), the rest as before
+    var named = {};
+    var rest = [];
+    devices.forEach(function (d) { if (d.area) (named[d.area] = named[d.area] || []).push(d); else rest.push(d); });
+    var areasHost = S.clear($('#pt-sh-areas'));
+    var names = Object.keys(named).sort(function (a, b) { return a.localeCompare(b); });
+    names.forEach(function (a, i) {
+      var id = 'pt-sh-area-' + i;
+      var grid = el('div', { class: 'pt-sh-tiles', role: 'group', 'aria-labelledby': id });
+      named[a].forEach(function (d) { grid.appendChild(tile(d)); });
+      areasHost.appendChild(el('h3', { class: 'pt-overline pt-area', id: id, text: a }));
+      areasHost.appendChild(grid);
+    });
     var tiles = S.clear($('#pt-sh-tiles'));
-    devices.forEach(function (d) { tiles.appendChild(tile(d)); });
-    tiles.hidden = !devices.length;
+    rest.forEach(function (d) { tiles.appendChild(tile(d)); });
+    tiles.hidden = !rest.length;
+    $('#pt-sh-rest-title').hidden = !(names.length && rest.length);
     var list = S.clear($('#pt-sh-sensor-list'));
-    sensors.forEach(function (s) { var v = sensorValue(s); list.appendChild(el('li', null, [el('span', { text: s.name || '' }), el('b', { 'data-tone': v.tone, text: v.text })])); });
+    sensors.forEach(function (s) {
+      var v = sensorValue(s);
+      var text = v.text;
+      var st = s.state || {};
+      if (st.type === 'temperature' && st.humidity != null) text += ' · ' + fmtNum(st.humidity) + ' %';
+      var label = s.area ? s.area + ' · ' + (s.name || '') : (s.name || '');
+      list.appendChild(el('li', null, [el('span', { text: label }), el('b', { 'data-tone': st.reachable === false ? 'warn' : v.tone, text: st.reachable === false ? T('card.unreachable') : text })]));
+    });
     $('#pt-sh-sensors').hidden = !sensors.length;
     var empty = $('#pt-sh-empty');
     empty.textContent = T('portal.empty');

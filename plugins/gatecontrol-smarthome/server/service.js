@@ -224,6 +224,11 @@ function validatePatch(resource, raw) {
 async function setResourceState(gc, resourceId, raw) {
   const resource = await store.getResource(gc, resourceId);
   if (!resource) throw codeError('SMARTHOME_RESOURCE_NOT_FOUND', `resource ${resourceId} not found`);
+  if (resource.deconz_type === 'edge') {
+    // a Shelly / Tasmota device through a GateControl gateway (server/edge.js)
+    if (resource.kind === 'sensor') throw codeError('SMARTHOME_NOT_CONTROLLABLE', `resource ${resourceId} is not controllable`);
+    return require('./edge').setState(gc, resource, raw);
+  }
   const client = await clientForGateway(gc, await store.getGateway(gc, resource.gateway_id));
   if (resource.kind === 'scene') {
     const [groupId, sceneId] = String(resource.deconz_id).split('/');

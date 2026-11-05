@@ -21,3 +21,12 @@
 .pt-sh-swatches{display:flex;gap:8px;flex-wrap:wrap;padding:0 14px 12px}
 .pt-sh-sw{width:26px;height:26px;min-height:0;padding:0;border-radius:50%;cursor:pointer;border:2px solid var(--line)}
 .pt-sh-sw:hover,.pt-sh-sw:focus-visible{border-color:var(--text)}
+/* 1.7.0: areas, shutters / awnings / gates (Shelly, Tasmota) */
+.pt-area{font-size:11px;margin:4px 0 8px}
+.pt-shtile-head{display:flex;flex-direction:column;gap:4px;padding:12px 14px 0}
+.pt-shtile-head b{color:var(--text);overflow-wrap:anywhere}
+.pt-shtile-cover{color:var(--text)}
+.pt-sh-coverbtns{display:flex;gap:6px;padding:0 10px 12px}
+.pt-sh-coverbtn{flex:1;min-height:38px;padding:0 6px;justify-content:center}
+.pt-sh-coverbtn:disabled{opacity:.55;cursor:default}
+@media (max-width:719px){.pt-shtile-cover{grid-column:1/-1}}
