@@ -385,6 +385,22 @@
 // given (e.g. a late or repeated one); host.homeNetwork is the state ({ consent: Map userId → { enabled, at }, devices,
 // states: Map userId → { home, since } }), host.homePresenceEvents what was delivered.
 //
+// GateControl 1.231.0 (opt-in: opts.gatecontrol: '1.231.0' or opts.homeCache) — the home cache of the gateways
+// (src/services/homeCache.js, docs/plugins.md "Home cache"): only a plugin with permissions.homeCache: true has
+// gc.homeCache (an older GateControl ignores the key — no gc.homeCache; without the permission the host answers
+// ERR_HOME_CACHE_DENIED). offer({ mediaId, kind: 'drive'|'photos'|'vault', userIds? (≤ 256 ids), priority? (0…100, 50),
+// sha256?, size? }) → { sha256, size, offered } — sha256 and size of the stored media file (ERR_NOT_FOUND: no such media,
+// ERR_INVALID: wrong kind, ids, priority or a sha256/size that does not match); the stock is keyed by sha256 (offering
+// the same content again replaces mediaId, kind, userIds, priority); offered: false when the content is in the stock from
+// elsewhere (opts.homeCache.foreign: [sha256], an app update). withdraw(mediaId) → { removed }. lanHint(sha256 |
+// { mediaId }, req) → { url, sha256, tlsSha256, exp } | null — only inside the request that req is (its req.homeRef, which
+// host.request hands only to a plugin with the permission; else ERR_NOT_IN_REQUEST), only for this plugin's own offers,
+// only while the client is at home (host.request({ …, home: true }) — the app sent its LAN addresses at the gateway's
+// site), the gateway holds it (opts.homeCache.held(sha256, offer) → boolean, default every offer) and, with userIds, the
+// person of the request is one of them. opts.homeCache.fail(op, args) → an error code makes that call throw it (e.g.
+// 'ERR_RATE_LIMIT'), null lets it through. host.homeCache is the state ({ offers: Map sha256 → { sha256, size, kind,
+// mediaId, userIds, priority, at }, foreign, calls }); host.homeCacheDropStale() drops offers whose media is gone (the
+// host does it hourly) → how many.
 // GateControl 1.231.0 (opt-in: opts.gatecontrol: '1.231.0' or opts.homeInternet) — gc.homeNetwork.internet, "Internet zu
 // Hause" (status / pause / resume / extend, only with permissions.homeInternet): see tools/testing/mock-home-internet.js.
 
@@ -3061,6 +3077,83 @@ async function createHost(pluginDir, opts = {}) {
     return { accepted: 1 };
   }
 
+  // ─── home cache (GateControl ≥ 1.231.0, src/services/homeCache.js; see the head) ───
+  const hcOpt = opts.homeCache && typeof opts.homeCache === 'object' ? opts.homeCache : null;
+  const hcHost = !!hcOpt || atLeast(231);
+  if (hcHost && perms.homeCache != null && typeof perms.homeCache !== 'boolean') throw hostError('ERR_INVALID', 'plugin.json: permissions.homeCache: invalid');
+  const hcOn = hcHost && perms.homeCache === true;
+  const HC_KINDS = ['drive', 'photos', 'vault'];
+  const HC_SHA_RE = /^[0-9a-f]{64}$/;
+  const hc = {
+    offers: new Map(),
+    foreign: new Set(((hcOpt && hcOpt.foreign) || []).map((x) => String(x).toLowerCase())),
+    calls: [],
+  };
+  const hcHeld = hcOpt && typeof hcOpt.held === 'function' ? hcOpt.held : () => true;
+  /** opts.homeCache.fail(op, args) → an error code to throw (a host that refuses: rate limit, permission taken back …) */
+  const hcFail = (op, args) => { const code = hcOpt && typeof hcOpt.fail === 'function' ? hcOpt.fail(op, args) : null; if (code) throw hostError(code, 'refused (test)'); };
+  const hcUrl = (hcOpt && hcOpt.url) || 'https://192.168.1.23:8443';
+  const hcTls = (hcOpt && hcOpt.tlsSha256) || 'ab'.repeat(32);
+  const hcRefs = new Map(); // req.homeRef → { userId, home } while that request is in flight (plugins/requestRefs.js)
+  const needHc = () => { if (perms.homeCache !== true) throw hostError('ERR_HOME_CACHE_DENIED', 'this plugin has no homeCache permission'); };
+  const hcShaOf = (id) => { const m = typeof id === 'string' ? mediaStore.get(id) : null; return m ? require('node:crypto').createHash('sha256').update(m.data).digest('hex') : null; };
+  api['homeCache.offer'] = async (a0) => {
+    needHc();
+    const a = a0 && typeof a0 === 'object' ? a0 : {};
+    hc.calls.push({ op: 'offer', args: { ...a } });
+    hcFail('offer', a);
+    if (typeof a.mediaId !== 'string') throw hostError('ERR_INVALID', 'mediaId: a media id of this plugin');
+    if (!HC_KINDS.includes(a.kind)) throw hostError('ERR_INVALID', 'kind: drive, photos or vault');
+    const m = mediaStore.get(a.mediaId);
+    if (!m) throw hostError('ERR_NOT_FOUND', 'no such media of this plugin');
+    const sha = hcShaOf(a.mediaId);
+    if (a.sha256 != null && String(a.sha256).toLowerCase() !== sha) throw hostError('ERR_INVALID', 'sha256 does not match the stored file');
+    if (a.size != null && a.size !== m.bytes) throw hostError('ERR_INVALID', 'size does not match the stored file');
+    let users = null;
+    if (a.userIds != null) {
+      if (!Array.isArray(a.userIds) || a.userIds.length > 256 || !a.userIds.every((x) => Number.isSafeInteger(x) && x > 0)) throw hostError('ERR_INVALID', 'userIds: up to 256 user ids');
+      users = [...new Set(a.userIds)].sort((x, y) => x - y);
+    }
+    const prio = a.priority == null ? 50 : a.priority;
+    if (!Number.isInteger(prio) || prio < 0 || prio > 100) throw hostError('ERR_INVALID', 'priority: 0…100');
+    if (hc.foreign.has(sha)) return { sha256: sha, size: m.bytes, offered: false };
+    hc.offers.set(sha, { sha256: sha, size: m.bytes, kind: a.kind, mediaId: a.mediaId, userIds: users, priority: prio, at: Date.now() });
+    return { sha256: sha, size: m.bytes, offered: true };
+  };
+  api['homeCache.withdraw'] = async ({ mediaId }) => {
+    needHc();
+    hc.calls.push({ op: 'withdraw', args: { mediaId } });
+    hcFail('withdraw', { mediaId });
+    if (typeof mediaId !== 'string') throw hostError('ERR_INVALID', 'mediaId expected');
+    let removed = false;
+    for (const [sha, o] of hc.offers) if (o.mediaId === mediaId) { hc.offers.delete(sha); removed = true; }
+    return { removed };
+  };
+  api['homeCache.lanHint'] = async ({ sha256, mediaId, ref }) => {
+    needHc();
+    hc.calls.push({ op: 'lanHint', args: { sha256, mediaId } });
+    hcFail('lanHint', { sha256, mediaId });
+    const ctx = typeof ref === 'string' ? hcRefs.get(ref) : null;
+    if (!ctx) throw hostError('ERR_NOT_IN_REQUEST', 'lanHint(sha256, req) only while answering that request (req.homeRef)');
+    let sha = typeof sha256 === 'string' ? sha256.toLowerCase() : null;
+    if (!sha && typeof mediaId === 'string') {
+      sha = hcShaOf(mediaId);
+      if (!sha) throw hostError('ERR_NOT_FOUND', 'no such media of this plugin');
+    }
+    if (typeof sha !== 'string' || !HC_SHA_RE.test(sha)) throw hostError('ERR_INVALID', 'sha256: 64 hex characters');
+    const o = hc.offers.get(sha);
+    if (!o || !ctx.home || !hcHeld(sha, o)) return null;
+    if (ctx.userId != null && o.userIds && o.userIds.length && !o.userIds.includes(ctx.userId)) return null;
+    const exp = Math.floor(Date.now() / 1000) + 600;
+    const sig = require('node:crypto').createHmac('sha256', 'mock-home-cache-secret').update(`${sha}\n${exp}`).digest('hex');
+    return { url: `${hcUrl}/blob/${sha}?exp=${exp}&sig=${sig}`, sha256: sha, tlsSha256: hcTls, exp };
+  };
+  /** the host's hourly dropStaleOffers: offers whose media is gone */
+  function hcDropStale() {
+    let n = 0;
+    for (const [sha, o] of hc.offers) if (!mediaStore.has(o.mediaId)) { hc.offers.delete(sha); n++; }
+    return n;
+  }
   // ─── internet at home (GateControl ≥ 1.231.0, src/services/homeInternet.js; tools/testing/mock-home-internet.js) ───
   const hi = mockHomeInternet.install({ opts, perms, atLeast, enabledUser, hostError, personCtx });
   Object.assign(api, hi.api);
@@ -3311,6 +3404,17 @@ async function createHost(pluginDir, opts = {}) {
           devices: (userId) => call('homeNetwork.presence.devices', { userId }),
           setCounts: (userId, deviceId, counts) => call('homeNetwork.presence.setCounts', { userId, deviceId, counts }),
         }) } : {}),
+      }),
+    } : {}),
+    // GateControl ≥ 1.231.0: gc.homeCache only with permissions.homeCache (like the child bootstrap)
+    ...(hcOn ? {
+      homeCache: Object.freeze({
+        offer: (o) => call('homeCache.offer', o && typeof o === 'object' ? o : {}),
+        withdraw: (mediaId) => call('homeCache.withdraw', { mediaId }),
+        lanHint: (what, req) => call('homeCache.lanHint', {
+          ...(what && typeof what === 'object' ? { mediaId: what.mediaId } : { sha256: what }),
+          ref: req && typeof req === 'object' && typeof req.homeRef === 'string' ? req.homeRef : null,
+        }),
       }),
     } : {}),
     services: Object.freeze({
@@ -3945,6 +4049,9 @@ async function createHost(pluginDir, opts = {}) {
     homeDevice: (deviceId, online, o) => homeDevice(deviceId, online, o),
     homePresenceEmit: (ev) => { if (!hnOn) throw new Error('mock host: no gc.homeNetwork'); return hnDeliver(ev); },
     homePresenceIdle: async () => { while (hnPending.size) await Promise.all([...hnPending]); },
+    /** GateControl ≥ 1.231.0 (permissions.homeCache): the home cache's stock of this plugin (see the head) */
+    homeCache: hc,
+    homeCacheDropStale: () => hcDropStale(),
     /** GateControl ≥ 1.231.0 (permissions.homeInternet): { state, log, people } — see tools/testing/mock-home-internet.js */
     homeInternet: hi.state,
     homeInternetSet: (userId, x) => hi.hostSet(userId, x),
@@ -3966,10 +4073,22 @@ async function createHost(pluginDir, opts = {}) {
       const person = !!u && u.loggedIn !== false && !u.kiosk && !u.automation && Number.isSafeInteger(u.id) && u.id > 0;
       const kind = String(q.method).toUpperCase() !== 'GET' && String(q.method).toUpperCase() !== 'HEAD' ? 'write' : 'read';
       if (person) { const e = personCtx.get(u.id) || { read: 0, write: 0 }; e[kind]++; personCtx.set(u.id, e); }
+      // GateControl ≥ 1.231.0: req.homeRef (plugins/requestRefs.js) — only for a plugin with permissions.homeCache; the
+      // test's `home: true` = the client is in the home network of a gateway (never part of the plugin's request)
+      const home = q.home === true;
+      delete q.home;
+      delete q.homeRef;
+      let ref = null;
+      if (hcOn) {
+        ref = require('node:crypto').randomBytes(16).toString('hex');
+        hcRefs.set(ref, { userId: u && Number.isSafeInteger(u.id) ? u.id : null, home });
+        q.homeRef = ref;
+      }
       try {
         const r = await hook('request', q);
         return { status: 200, ...r };
       } finally {
+        if (ref) hcRefs.delete(ref);
         if (person) { const e = personCtx.get(u.id); e[kind]--; if (!e.read && !e.write) personCtx.delete(u.id); }
       }
     },

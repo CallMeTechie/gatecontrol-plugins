@@ -2,6 +2,42 @@
 
 Dateien der Familie und des Teams auf dem eigenen Speicher – auf diesem Server, einer NAS oder in S3.
 
+## 1.20.0
+- **Zwischenspeicher im Heimnetz** (GateControl ≥ 1.231.0, neue Berechtigung `homeCache`, Feature `homeCache`,
+  README „Home cache“). Heim-Gateways mit eingeschaltetem Zwischenspeicher halten Drive-Dateien im Heimnetz vor; Apps
+  zu Hause laden sie von dort mit LAN-Geschwindigkeit. Drive bietet über `gc.homeCache.offer` an:
+  - **Drive:** Dateien, die jemand in den letzten 30 Tagen geöffnet hat (wie „Zuletzt geöffnet“), und alles, was
+    jemand „offline verfügbar“ gemacht hat.
+  - **Fotos:** Originale der in den letzten 90 Tagen aufgenommenen Bilder und Videos.
+  - **Tresor:** nur verschlüsselte Dateien (in 30 Tagen geholt oder offline verfügbar). Das Gateway kann sie nicht
+    lesen, am Gateway standardmäßig aus.
+  - Priorität: offline verfügbar 90, in 7 Tagen geöffnet 70, in 30 Tagen 60, Foto aus 30 Tagen 40, aus 90 Tagen 30.
+    Welche Arten ein Gateway hält, schaltet der Admin am Gateway (Gateways › Zwischenspeicher).
+- **Nur wer die Datei sehen darf:** Jedes Angebot nennt die Personen, die die Datei gerade sehen dürfen (`userIds`:
+  Leser des Bereichs, Familienrollen, Kinderordner nur mit „Eltern dürfen ansehen“, Team-Ordner samt Gruppen, nur mit
+  Platz). Ein Gateway hält die Datei nur, wo eine davon Geräte hat; den Hinweis bekommt nur eine davon. Gleicher Inhalt
+  in mehreren Dateien ist ein Angebot.
+- **Zurückgezogen** (`withdraw`) wird, was gelöscht oder im Papierkorb ist, vom Virenscan zurückgehalten wird, älter
+  als seine Frist ist, in einem archivierten Team-Ordner liegt oder niemand mehr sehen darf. Zugriffsänderungen (Platz,
+  Team-Ordner, Einstellung) wirken in der nächsten Minute.
+- **Downloads mit `lan`:** `GET nodes/<id>/content` einer App liefert zusätzlich `lan { url, sha256, tlsSha256, exp }`,
+  wenn die App im Heimnetz eines Gateways ist, das die Datei hält. Dafür schickt die App ihre LAN-Adressen als
+  `X-GC-Local` oder `?local=`. Die App lädt dort mit Zertifikats-Pinning, prüft `sha256` und fällt sonst auf den
+  normalen Download zurück. Nur dieser Endpunkt bekommt `lan`, auch für Foto-Originale. Das Portal im Browser bekommt
+  nie einen Hinweis. Drive fragt GateControl nur bei Dateien, die es angeboten hat.
+- **Offline verfügbar** (Feature `offline`, mit jeder GateControl-Version): `PUT|DELETE nodes/<id>/offline` für eine
+  Datei oder einen Ordner samt Inhalt, `GET offline` listet sie. Höchstens 500 je Person (Migration 018).
+- **Hintergrund:** Alle 15 Minuten (nach einer Änderung in der nächsten Minute) bringt Drive die Angebote in Ordnung.
+  Erst Rückzüge, dann nach Priorität, höchstens 250 Aufrufe je Lauf, der Rest in der nächsten Minute. Unveränderte
+  Angebote werden nicht erneut geschickt. Fehler einer Datei überspringen nur diese, ein anderer Fehler beendet den
+  Lauf und er kommt in einer Minute wieder.
+- **Admin:** Die Übersicht und die Einstellungsseite zeigen eine Zeile „Zwischenspeicher im Heimnetz: n Dateien (x GB)
+  den Heim-Gateways angeboten“, nach einem gescheiterten Lauf als Warnung. `GET admin/overview` hat dafür `homeCache`.
+- **Ohne `gc.homeCache`** (GateControl vor 1.231.0, Berechtigung nicht bestätigt): alles wie bisher, nur „offline
+  verfügbar“ wird schon gespeichert. Die Mindestversion bleibt 1.216.0.
+- Noch nicht: Vorschaubilder im Zwischenspeicher. GateControl nimmt nur eigene Media-Dateien eines Plugins an, die
+  Vorschauen sind Dateien von GateControl.
+
 ## 1.19.1
 - **Fotos laden wieder bei mehr als 100 Einträgen.** Den Virenscan-Zustand fragte Drive in Teilen zu 400 Dateien ab;
   GateControl erlaubt höchstens 100 Werte je Abfrage. Fotos, Alben-Cover, Freigabe-Links und Ordner mit mehr als 100

@@ -592,6 +592,9 @@ async function forget(gc, ids) {
     await store.run(gc, `DELETE FROM filing_rules WHERE folder_id IN (${m})`, part);
     // since 1.18.0: "Zuletzt geöffnet"
     await store.run(gc, `DELETE FROM recent_opens WHERE node_id IN (${m})`, part);
+    // since 1.20.0: "offline verfügbar" and the vault's uses for the home cache (its offers go with the next run)
+    await store.run(gc, `DELETE FROM offline_pins WHERE node_id IN (${m})`, part);
+    await store.run(gc, `DELETE FROM cache_uses WHERE node_id IN (${m})`, part);
   }
 }
 

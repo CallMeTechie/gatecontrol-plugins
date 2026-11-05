@@ -13,7 +13,10 @@ const sha = (s) => require('node:crypto').createHash('sha256').update(s).digest(
 test('plugin.json: permissions.devices — GateControl passes the asking device only then', () => {
   const m = JSON.parse(fs.readFileSync(path.join(DIR, 'plugin.json'), 'utf8'));
   assert.equal(m.permissions.devices, true);
-  assert.equal(m.version, '1.19.1');
+  assert.equal(m.version, '1.20.0');
+  // 1.20.0: the home cache of the gateways (gc.homeCache, test/homecache.test.js) — an older GateControl ignores the key
+  assert.equal(m.permissions.homeCache, true);
+  assert.equal(m.gatecontrol, '>=1.216.0');
   // 1.17.0: deadlines also into a calendar of Mail (test/ki_mailcal.test.js); 1.18.0: "Zum Ablegen" of the overview
   // (test/overview.test.js)
   for (const s of ['gatecontrol-familie:calendar_add', 'gatecontrol-mail:calendar_list', 'gatecontrol-mail:calendar_add', 'gatecontrol-mail:tofile_count']) assert.ok(m.permissions.services.includes(s), s);

@@ -3,7 +3,8 @@
  *   overview  devices the ransomware protection stopped (since 1.6.0: "Rückgängig machen", "Freigeben"), the backup
  *             hint ("Das GateControl-Backup sichert keine Drive-Dateien", hidable), the licence with its
  *             people (tier, x of y, exceeded, "Lizenz jetzt abrufen"), the areas with their storage; since 1.7.0 the
- *             storage in short (files, versions, trash, what duplicates waste — the details: portal › Drive › Speicher)
+ *             storage in short (files, versions, trash, what duplicates waste — the details: portal › Drive › Speicher);
+ *             since 1.20.0 one line on the home cache of the gateways (how many files Drive offers them)
  *   people    every account with its seat: none, family or business (as the licence allows)
  *   teams     team folders: name, members (people and groups — GateControl's own picker GC.pickPrincipals) with
  *             read / write / manage, space, archive, remove (an empty one)
@@ -220,6 +221,9 @@
           h('p', { class: 'da-line', text: T('a.st_text') }),
         ]));
       }
+      // the home cache of the gateways (since 1.20.0): one line while GateControl has it
+      var hc = o.homeCache;
+      if (hc && hc.available) page.appendChild(h('p', { class: 'da-line', text: hc.error ? T('a.home_cache_error') : T('a.home_cache', { n: hc.files, size: fmtSize(hc.bytes) }) }));
       // the areas
       var rows = (o.areas || []).map(function (a) {
         var st = a.storage;
