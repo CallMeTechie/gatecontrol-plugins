@@ -26,7 +26,8 @@ gatecontrol.ref             GateControl commit whose packer/validator is used (4
 ```
 
 `plugins/gatecontrol-hello` is an **example** (port of GateControl's test
-fixture). It is built and tested in CI but never released
+fixture; since 1.1.0 with an **edge part** that runs on home gateways — see its
+[README](plugins/gatecontrol-hello/README.md)). It is built and tested in CI but never released
 (`plugins.config.json`: `"release": false`).
 
 | Plugin | | GateControl |
@@ -184,6 +185,13 @@ changes by default), `host.groupUsage(groupId, successorUserId)` and `host.group
 `ERR_MEDIA_QUARANTINED` / `ERR_MEDIA_SCAN_PENDING` / `ERR_MEDIA_BLOCKED` / `ERR_MEDIA_INFECTED`, hand-overs
 and copies keeping the state, and `host.mediaScanned(mediaId, { state, … })` with the hook `mediaScanned`
 (`tools/test/scan-apis.test.js`). Without it the mock host is an older GateControl.
+`opts.gatecontrol: '1.228.0'` (or `opts.edge`) gives a plugin with an `edge` section `gc.edge`
+(`gateways`, `call`, `on`, `configure`) with the host's checks and codes (`not_enabled`, `gateway_offline`,
+`too_large`, `ERR_INVALID`) over `opts.edge: { gateways: [{ id, name, state, online, version }], call:
+async (gatewayId, method, params, { timeoutMs }) => result }`; `host.edgeEvent(gatewayId, name, data)`
+delivers the edge part's events and `$online` / `$offline` / `$started`, `host.edgeCalls` / `host.edgeConfigs`
+record what the plugin did (`tools/test/edge-api.test.js`). The edge part itself (`edge.entry`, it runs on the
+gateway) is tested with a small `gc` of its own (`plugins/gatecontrol-hello/test/edge.test.js`).
 
 Dev builds are always unsigned (`tools/pack.js` drops `GC_PLUGIN_SIGNING_KEY`
 unless `--sign` is passed). Install them on a test server with
@@ -305,7 +313,7 @@ Erstanbieter-Plugins für GateControl mit Build-, Signatur- und Release-Pipeline
 
 * **Aufbau:** ein Ordner pro Plugin unter `plugins/<id>/` (plugin.json, `server/`,
   `ui/`, `migrations/`, `CHANGELOG.md`, `test/`); gemeinsame Werkzeuge in `tools/`.
-  `gatecontrol-hello` ist nur ein Beispiel und wird nie veröffentlicht.
+  `gatecontrol-hello` ist nur ein Beispiel (seit 1.1.0 mit Edge-Teil für Gateways) und wird nie veröffentlicht.
 * **Plugins:** Smart Home, Klimaanlage, Fahrzeuge (früher eingebaut), **Alltag**
   (Müllabfuhr aus Online-Abfallkalendern, ICS-Datei oder eigenen Regeln; iCal-Kalender;
   Erinnerungen und Portal „Zuhause“; ab 1.3.0 Kalender-Dienste für die Termin-Bedingungen der Familie), NAS, Proxmox VE und **Familie** (Einkaufslisten,

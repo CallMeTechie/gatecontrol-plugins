@@ -4,14 +4,20 @@
     "de": "Hallo Welt",
     "en": "Hello World"
   },
-  "version": "1.0.0",
+  "version": "1.1.0",
   "publisher": "CallMeTechie",
   "description": {
-    "de": "Beispiel-Plugin: zeigt die Host-API (Seiten, Portal-Tab, Einstellungen, Speicher, Netzwerkziele). Wird nicht veröffentlicht.",
-    "en": "Example plugin showing the host API (pages, portal tab, settings, storage, network targets). Not released."
+    "de": "Beispiel-Plugin: zeigt die Host-API (Seiten, Portal-Tab, Einstellungen, Speicher, Netzwerkziele) und einen Edge-Teil, der auf Gateways läuft. Wird nicht veröffentlicht.",
+    "en": "Example plugin showing the host API (pages, portal tab, settings, storage, network targets) and an edge part that runs on gateways. Not released."
   },
-  "gatecontrol": ">=1.146.0",
+  "gatecontrol": ">=1.228.0",
   "entry": "server/index.js",
+  "edge": {
+    "entry": "edge/index.js",
+    "minGateway": "1.19.0",
+    "memoryMb": 32,
+    "capabilities": {}
+  },
   "permissions": {
     "network": {
       "internet": [
@@ -79,8 +85,16 @@
           "de": "Über",
           "en": "About"
         }
+      },
+      {
+        "id": "gateways",
+        "title": {
+          "de": "Gateways",
+          "en": "Gateways"
+        }
       }
     ],
+    "settingsPage": "gateways",
     "settings": [
       {
         "key": "greeting",

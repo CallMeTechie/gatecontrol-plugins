@@ -347,6 +347,19 @@
 // permissions.mail.dav { purpose } and gc.mail.dav.request (the test's opts.mail.dav(request) plays the CalDAV/CardDAV
 // servers; host.davRequests records them), the calendar parts of a parsed mail (`calendar`), smtp.send with icalEvent,
 // permissions.notify perHour up to 1000.
+//
+// GateControl 1.228.0 (opt-in: opts.gatecontrol: '1.228.0' or opts.edge) — the edge part on home gateways
+// (src/services/edge/, docs/plugins.md "Edge part"): only a plugin with an `edge` section has gc.edge. The gateways are the
+// test's: opts.edge { gateways: [{ id, name, state ('running' …), online (default: state ≠ 'offline'), version }] (read
+// on every call), call: async (gatewayId, method, params, { timeoutMs }) → what the edge part's gc.handle(method) returns,
+// or throw hostError(code) (timeout, edge_error with "<code>: <message>", …) }. The host's checks: gateway id a positive
+// integer and method [A-Za-z0-9_.:-]{1,64} (ERR_INVALID), a gateway not listed or in a state where the part may not run
+// (disabled, update_pending, unsigned, plugin_off, gateway_too_old, edge_off) → not_enabled, listed but not online →
+// gateway_offline, a call or result over 64 KB → too_large, configure data over 48 KB → ERR_INVALID, timeoutMs clamped to
+// 100 … 30000. host.edgeEvent(gatewayId, name, data, { at, seq }) delivers an event (or $online / $offline / $started) to
+// the gc.edge.on handlers like the host — a handler that throws is logged — and answers { handled }; host.edgeCalls and
+// host.edgeConfigs (gatewayId → last data) record what the plugin did. The edge part itself (edge.entry, runs on the
+// gateway) is not loaded: test it with a `gc` of its own (see plugins/gatecontrol-hello/test/edge.test.js).
 
 const fs = require('node:fs');
 const os = require('node:os');
@@ -377,6 +390,12 @@ function userFace(u) {
 
 const SQL_DENY = /\b(attach|detach|vacuum|pragma|load_extension|sqlite_dbpage|fts3_tokenizer)\b|_gc_/i;
 const DEFAULT_USER = Object.freeze({ id: 1, name: 'admin', role: 'admin' });
+// gc.edge (GateControl ≥ 1.228.0): states in which the edge part may not be used on a gateway (not_enabled), the limits
+const EDGE_NOT_EFFECTIVE = new Set(['disabled', 'update_pending', 'unsigned', 'plugin_off', 'gateway_too_old', 'edge_off', 'no_edge']);
+const EDGE_METHOD_RE = /^[A-Za-z0-9_.:-]{1,64}$/;
+const EDGE_EVENT_RE = /^(?:\*|\$?[A-Za-z0-9_.:-]{1,64})$/;
+const EDGE_FRAME_MAX = 64 * 1024;
+const EDGE_CONFIGURE_MAX = 48 * 1024;
 const NOTIFY_PRIORITIES = ['info', 'normal', 'high', 'critical'];
 const NOTIFY_ACTIONS = new Set(['open_app_route', 'open_portal', 'mute_1h', 'ack', 'done', 'quick_action', 'callback']);
 // GateControl ≥ 1.169.0: a picture on a push (notify_media), checked like services/avatars.js
@@ -2771,6 +2790,56 @@ async function createHost(pluginDir, opts = {}) {
     return { mediaId: id, name: it.name, size: bytes, mime: it.mime || 'application/octet-stream', modifiedAt: it.modifiedAt };
   };
 
+  // ─── the edge part on home gateways (GateControl ≥ 1.228.0, src/services/edge/; see the head) ───
+  const edgeOpt = opts.edge && typeof opts.edge === 'object' ? opts.edge : null;
+  const edgeOn = !!manifest.edge && (!!edgeOpt || atLeast(228));
+  const edgeHandlers = new Map(); // event name ('*' = every event) → [handler]
+  const edgeCalls = [];
+  const edgeConfigs = new Map(); // gatewayId → the last gc.edge.configure data
+  const edgeGateways = () => (edgeOpt && Array.isArray(edgeOpt.gateways) ? edgeOpt.gateways : []).map((g) => ({
+    id: g.id, name: g.name == null ? `Gateway ${g.id}` : g.name, state: g.state || 'running', online: g.online == null ? g.state !== 'offline' : g.online === true,
+    version: g.version === undefined ? '1.20.0' : g.version,
+  }));
+  /** like src/services/edge/index.js: a positive integer id, switched on for this plugin (not_enabled), connected (gateway_offline) */
+  const edgeGateway = (v) => {
+    const id = Number(v);
+    if (!Number.isSafeInteger(id) || id <= 0) throw hostError('ERR_INVALID', 'invalid gateway id');
+    const g = edgeGateways().find((x) => x.id === id);
+    if (!g || EDGE_NOT_EFFECTIVE.has(g.state)) throw hostError('not_enabled', `the edge part is not switched on for this gateway (${g ? g.state : 'disabled'})`);
+    if (!g.online) throw hostError('gateway_offline', 'the gateway is not connected');
+    return id;
+  };
+  const jsonBytes = (v) => { try { return Buffer.byteLength(JSON.stringify(v === undefined ? null : v)); } catch { throw hostError('ERR_INVALID', 'not JSON'); } };
+  api['edge.gateways'] = async () => edgeGateways();
+  api['edge.call'] = async ({ gatewayId, method, params, timeoutMs }) => {
+    if (typeof method !== 'string' || !EDGE_METHOD_RE.test(method)) throw hostError('ERR_INVALID', 'invalid method name');
+    const t = Math.max(100, Math.min(30000, Number(timeoutMs) || 30000)); // the host clamps it (src/services/edge/hub.js)
+    const id = edgeGateway(gatewayId);
+    if (jsonBytes(params) > EDGE_FRAME_MAX) throw hostError('too_large', 'call larger than 64 KB');
+    edgeCalls.push({ gatewayId: id, method, params: params === undefined ? null : params, timeoutMs: t });
+    if (!edgeOpt || typeof edgeOpt.call !== 'function') throw hostError('edge_error', 'not_running: no edge part in this test (opts.edge.call)');
+    const result = await edgeOpt.call(id, method, wire(params), { timeoutMs: t });
+    if (jsonBytes(result) > EDGE_FRAME_MAX) throw hostError('too_large', 'result larger than 64 KB');
+    return result === undefined ? null : result;
+  };
+  api['edge.configure'] = async ({ gatewayId, data }) => {
+    if (jsonBytes(data) > EDGE_CONFIGURE_MAX) throw hostError('ERR_INVALID', 'configuration larger than 48 KB');
+    const id = edgeGateway(gatewayId);
+    edgeConfigs.set(id, data === undefined ? null : data);
+    return { sent: true };
+  };
+  /** an event of the edge part (or $online / $offline / $started) to the gc.edge.on handlers, as the child bootstrap delivers it */
+  async function edgeEvent(gatewayId, name, data, o = {}) {
+    if (!edgeOn) throw new Error('mock host: no gc.edge (plugin.json edge and opts.edge or GateControl ≥ 1.228.0)');
+    const builtIn = String(name).startsWith('$');
+    const list = [...(edgeHandlers.get(name) || []), ...(builtIn ? [] : (edgeHandlers.get('*') || []))];
+    const arg = Object.freeze({ gatewayId, name, data: data === undefined ? null : wire(data), at: o.at || new Date().toISOString(), seq: builtIn ? null : (o.seq == null ? Date.now() : o.seq) });
+    for (const fn of list) {
+      try { await fn(arg); } catch (err) { logs.push({ level: 'error', message: `gc.edge.on(${name}) handler failed: ` + String((err && err.message) || err) }); }
+    }
+    return { handled: list.length };
+  }
+
   const call = async (name, args) => wire(await api[name](wire(args)));
 
   /** A WebSocket like the host's (EventEmitter: message, close, error; send, close) wired to opts.websocket. */
@@ -2973,6 +3042,21 @@ async function createHost(pluginDir, opts = {}) {
         disconnect: (o) => { const x = o && typeof o === 'object' ? o : {}; return call('cloud.disconnect', { user: x.user, connection: x.connection }); },
         list: (o) => { const x = o && typeof o === 'object' ? o : {}; return call('cloud.list', { user: x.user, connection: x.connection, folderId: x.folderId, cursor: x.cursor }); },
         import: (o) => { const x = o && typeof o === 'object' ? o : {}; return call('cloud.import', { user: x.user, connection: x.connection, fileId: x.fileId }); },
+      }),
+    } : {}),
+    // GateControl ≥ 1.228.0: only a plugin with an `edge` section has gc.edge (like the child bootstrap)
+    ...(edgeOn ? {
+      edge: Object.freeze({
+        gateways: () => call('edge.gateways', {}),
+        call: (gatewayId, method, params, o) => call('edge.call', { gatewayId, method: String(method), params: params === undefined ? null : params, timeoutMs: o && typeof o === 'object' ? o.timeoutMs : undefined }),
+        on: (name, handler) => {
+          if (typeof name !== 'string' || !EDGE_EVENT_RE.test(name) || typeof handler !== 'function') throw new TypeError('gc.edge.on(name, handler)');
+          const list = edgeHandlers.get(name) || [];
+          list.push(handler);
+          edgeHandlers.set(name, list);
+          return () => { const l = edgeHandlers.get(name) || []; const i = l.indexOf(handler); if (i >= 0) l.splice(i, 1); };
+        },
+        configure: (gatewayId, data) => call('edge.configure', { gatewayId, data: data === undefined ? null : data }),
       }),
     } : {}),
     services: Object.freeze({
@@ -3586,6 +3670,15 @@ async function createHost(pluginDir, opts = {}) {
     cloudConnections: cloudConns,
     cloudImports,
     cloudConnectUrls,
+    /**
+     * GateControl ≥ 1.228.0 (plugin.json edge): an event of the edge part on a gateway, or a built-in one ($online,
+     * $offline, $started — no seq), to the gc.edge.on handlers → { handled } after they ran (o: { at, seq }).
+     * edgeCalls: every gc.edge.call that reached a gateway ({ gatewayId, method, params, timeoutMs });
+     * edgeConfigs: gatewayId → the last gc.edge.configure data.
+     */
+    edgeEvent: (gatewayId, name, data, o) => edgeEvent(gatewayId, name, data, o),
+    edgeCalls,
+    edgeConfigs,
     /** legacyImport hook: the host hands over the built-in data (first-party plugins only) */
     legacyImport: (snapshot) => hook('legacyImport', snapshot),
     /** keys stored with gc.settings.setSecret */
