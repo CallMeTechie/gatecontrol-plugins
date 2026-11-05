@@ -57,6 +57,7 @@ const kioskViewer = (u, loggedIn = true) => ({ ...u, portal: true, loggedIn, kio
  * o.actions: other plugins' quick actions for gc.actions; o.services: other plugins' services for gc.services;
  * o.gatecontrol: '1.178.0' for gc.services.available, '1.200.0' for gc.groups; o.groups: GateControl's person groups;
  * o.homeNetwork: the home network of gc.homeNetwork (GateControl ≥ 1.230.0, 1.17.0) —
+ * o.homeInternet: GateControl's „Internet zu Hause“ of gc.homeNetwork.internet (GateControl ≥ 1.231.0, 1.18.0) —
  * see tools/testing/mock-host.js);
  * family: true adds the family through the admin API.
  * fn(host, ctx) with ctx = { clock, call(user, method, path, body, query), admin(method, path, body, query) }
@@ -64,7 +65,7 @@ const kioskViewer = (u, loggedIn = true) => ({ ...u, portal: true, loggedIn, kio
 async function withFamily(opts, fn) {
   const o = opts || {};
   const clock = startClock(o.at || T0);
-  const host = await createHost(DIR, { users: o.users || USERS, settings: { timezone: BERLIN, ...(o.settings || {}) }, notifyFail: o.notifyFail, kiosk: o.kiosk, actions: o.actions, services: o.services, gatecontrol: o.gatecontrol, groups: o.groups, homeNetwork: o.homeNetwork });
+  const host = await createHost(DIR, { users: o.users || USERS, settings: { timezone: BERLIN, ...(o.settings || {}) }, notifyFail: o.notifyFail, kiosk: o.kiosk, actions: o.actions, services: o.services, gatecontrol: o.gatecontrol, groups: o.groups, homeNetwork: o.homeNetwork, homeInternet: o.homeInternet });
   await host.start();
   const call = (user, method, p, body, query) => host.request({ method, path: p, body: body === undefined ? null : body, query: query || {}, user, lang: o.lang || 'de' });
   const admin = (method, p, body, query) => call(ADMIN, method, '/admin/' + p.replace(/^\//, ''), body, query);

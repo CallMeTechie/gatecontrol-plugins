@@ -3,6 +3,47 @@
 Die Familie in der GateControl-App (eigener Tab), im Portal (eigener Tab „Familie“) und auf
 drei Admin-Seiten. Alles bleibt auf dem eigenen Server.
 
+## 1.18.0
+- **Internet zu Hause** (ab GateControl 1.231.0, neue Berechtigung `permissions.homeInternet` – „Internet zu Hause“): Ein
+  GateControl-Gateway mit DNS-Filter filtert die Geräte einer Person im Heimnetz nach deren Profil und Sperrzeiten.
+  Eltern können jetzt im Portal das Internet eines Kindes **pausieren** oder ihm **heute länger** geben
+  (`gc.homeNetwork.internet`). GateControl hält die Pause selbst, sagt den Gateways Bescheid und schreibt sie ins
+  Aktivitätsprotokoll („von Anna, Plugin familie“); Familie sieht nie MAC- oder IP-Adressen.
+- **Portal-Karte „Internet zu Hause“** (nur Eltern, nur angemeldet): je minderjährigem Kind der Zustand – „normal · ab
+  21:00 Soziale Netzwerke, Spiele und Videos gesperrt“, „Pause bis 18:30“ (Internet auf 2 Geräten aus · GateControl und
+  erlaubte Seiten gehen weiter · von Anna um 17:52), „heute länger bis 21:30“ oder „nicht gefiltert · keine Geräte im
+  Heimnetz zugeordnet“. Knöpfe „Pause …“ (30 Min., 1 Std., bis morgen 7 Uhr, bis Uhrzeit …), „Pause beenden“,
+  „Heute länger …“ (+30 / +60 Min.) und „+30 Min.“ (eine laufende Pause bzw. Extra-Zeit 30 Minuten länger),
+  „Extra-Zeit beenden“. Wer es gesetzt hat und wann, kommt aus Families eigenem Protokoll (Migration 011
+  `internet_log`, 90 Tage); eine Pause, die anderswo gesetzt wurde (z. B. vom Admin), steht ohne „von …“ da.
+- **„Heute länger“** hebt die Sperrzeit einmalig auf: Liegt die nächste Sperrzeit heute noch vor uns, zählen die
+  Minuten ab ihrem Beginn („+30 Min.“ um 18:00 bei Sperre ab 21:00 → bis 21:30); läuft schon eine Extra-Zeit, ab
+  deren Ende (GateControl: höchstens 24 Stunden voraus).
+- **Das Kind bekommt Bescheid** – als Mitteilung im neuen Thema „Internet zu Hause“ (abschaltbar wie jedes Thema, wie die
+  Mitteilungen der Regeln an einzelne Personen): „Internet-Pause bis 18:30 – Anna hat das
+  Internet zu Hause pausiert“, „Das Internet ist wieder an“, „Heute länger: bis 21:30“, „Die Extra-Zeit ist vorbei“
+  (de/en nach „Sprache der Benachrichtigungen“). `data.familie = { type: 'internet', kind: 'pause' | 'resume' |
+  'extend' | 'extend_end', userId, until, by }`.
+- **Rechte:** GateControl prüft nur, dass eine angemeldete Person in einer ändernden Anfrage handelt (sonst
+  `not_person`, z. B. ein gekoppeltes Kiosk-Gerät); dass sie ein Elternteil ist und das Ziel ein minderjähriges Kind
+  der Familie, prüft Familie (`parents_only` / `not_found`). Volljährige Kinder werden nicht angeboten.
+- **API (additiv, für die Apps):** `GET internet` → `{ internet: { available, manage, children: [{ userId, name,
+  avatarUrl, color, colorHex, initials, paused, pausedBy, extended, extendedBy, nextSchedule: { from, to, block:
+  'all' | 'categories', categories, active } | null, profile, devices, filtered, error }] } }` – Eltern alle
+  minderjährigen Kinder, ein Kind nur sich selbst (`manage: false`); `pausedBy` / `extendedBy` = `{ userId, name, at }`
+  oder `null`. `POST internet/<childId>/pause` mit `{ minutes: 1…10080 }`, `{ until: 'HH:MM' }` (die nächste solche
+  Uhrzeit in der Zeitzone der Familie), `{ until: ISO }` oder `{ add: 1…1440 }` (ab Ende einer laufenden Pause);
+  `POST internet/<childId>/resume`; `POST internet/<childId>/extend` mit `{ minutes: 0…1440, fromNow? }` (0 beendet) –
+  jeweils → `{ child }`. Ohne GateControl 1.231.0 `available: false` bzw. `409 unavailable`; GateControls
+  `ERR_INVALID` → `400 invalid`.
+- **Keine Regel-Aktion „Internet pausieren“:** GateControl erlaubt Pause und Extra-Zeit nur in der Anfrage einer
+  angemeldeten Person – Regeln (z. B. „Abendessen“ um 18:30) laufen aber im Hintergrund und bekämen `ERR_NOT_PERSON`.
+  Dafür müsste GateControl einen Akteur für Regeln zulassen (z. B. die Person, die die Regel angelegt hat).
+- Unterwegs (Mobilfunk) gilt das nicht – die Karte sagt das auch.
+- **Ohne GateControl 1.231.0** bleibt alles wie bisher: Ein älteres GateControl ignoriert die Berechtigung, es gibt kein
+  `gc.homeNetwork.internet`, die Karte bleibt ausgeblendet. Die Mindestversion bleibt 1.216.0. Die neue Berechtigung
+  muss ein Admin beim Update bestätigen.
+
 ## 1.17.0
 - **Anwesenheit über das Heimnetz** (ab GateControl 1.230.0, neue Berechtigung `permissions.homePresence` –
   „Anwesenheit im Heimnetz“): Neben der App gibt es eine zweite Quelle, das **Handy im WLAN**. Ein GateControl-Gateway
