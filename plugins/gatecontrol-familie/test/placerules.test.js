@@ -108,16 +108,16 @@ test('consent: share and places each optional, at least one; independent of each
   assert.equal((await as(ANNA)('PUT', '/presence/consent', { places: 'ja' })).json.code, 'invalid');
   assert.equal((await as(ANNA)('PUT', '/presence/consent', { share: true, places: null })).json.code, 'invalid');
   const a = (await as(ANNA)('PUT', '/presence/consent', { places: true })).json;
-  assert.deepEqual(a, { ok: true, consent: { share: false, places: true }, state: { userId: ANNA.id, state: 'not_shared', home: null, since: null } });
+  assert.deepEqual(a, { ok: true, consent: { share: false, places: true }, state: { userId: ANNA.id, state: 'not_shared', home: null, since: null, source: null } });
   assert.deepEqual((await as(ANNA)('PUT', '/presence/consent', { share: true })).json.consent, { share: true, places: true }, 'the body { share } as before keeps places');
   await as(ANNA)('POST', '/presence', { home: true });
   assert.deepEqual((await as(ANNA)('PUT', '/presence/consent', { places: false })).json, {
-    ok: true, consent: { share: true, places: false }, state: { userId: ANNA.id, state: 'home', home: true, since: '2026-10-14T08:00:00Z' },
+    ok: true, consent: { share: true, places: false }, state: { userId: ANNA.id, state: 'home', home: true, since: '2026-10-14T08:00:00Z', source: 'app' },
   }, 'places off keeps home / away');
   await as(ANNA)('PUT', '/presence/consent', { share: false, places: true });
   await as(TIM)('PUT', '/presence/consent', { share: true, places: true });
   const g = (await as(ANNA)('GET', '/presence')).json;
-  assert.deepEqual(g.me, { share: false, places: true });
+  assert.deepEqual(g.me, { share: false, places: true, wifi: null }, '1.17.0: wifi null — no presence over the home network on this GateControl');
   assert.deepEqual(g.members.map((m) => [m.name, m.shared, m.placesShared, m.state]), [
     ['Anna', false, true, 'not_shared'], ['Marc', false, false, 'not_shared'], ['Lena', false, false, 'not_shared'], ['Tim', true, true, 'unknown'],
   ]);

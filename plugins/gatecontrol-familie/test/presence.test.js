@@ -40,11 +40,12 @@ async function share(as, ...users) {
 test('consent only for oneself; reports only with consent, ≤ 1 per minute; states; device trust sees nothing', () => withFamily(ON([]), async (host, { as, call, clock }) => {
   assert.equal((await as(ANNA)('POST', '/presence', { home: true })).json.code, 'no_consent');
   const c = (await as(ANNA)('PUT', '/presence/consent', { share: true })).json;
-  assert.deepEqual(c, { ok: true, consent: { share: true, places: false }, state: { userId: ANNA.id, state: 'unknown', home: null, since: null } });
+  assert.deepEqual(c, { ok: true, consent: { share: true, places: false }, state: { userId: ANNA.id, state: 'unknown', home: null, since: null, source: null } });
   assert.equal((await as(ANNA)('PUT', '/presence/consent', { share: 'ja' })).json.code, 'invalid');
   await share(as, MARC, TIM);
   const r = (await as(ANNA)('POST', '/presence', { home: true, at: '2026-10-14T07:58:30Z' })).json;
-  assert.deepEqual(r, { ok: true, state: { userId: ANNA.id, home: true, since: '2026-10-14T07:58:30Z' }, changed: true, watchVersion: EMPTY_WATCH });
+  assert.deepEqual(r, { ok: true, state: { userId: ANNA.id, home: true, since: '2026-10-14T07:58:30Z' }, changed: true,
+    presence: { state: 'home', home: true, since: '2026-10-14T07:58:30Z', source: 'app' }, watchVersion: EMPTY_WATCH });
   const again = await as(ANNA)('POST', '/presence', { home: false });
   assert.deepEqual([again.status, again.json.code, again.json.retryAfter], [429, 'too_soon', 60]);
   assert.equal((await as(MARC)('POST', '/presence', { home: 'no' })).json.code, 'invalid');
@@ -54,10 +55,10 @@ test('consent only for oneself; reports only with consent, ≤ 1 per minute; sta
   assert.deepEqual(g.members.map((m) => [m.userId, m.shared, m.state, m.home, m.since]), [
     [ANNA.id, true, 'home', true, '2026-10-14T07:58:30Z'], [MARC.id, true, 'away', false, '2026-10-14T08:00:00Z'], [LENA.id, false, 'not_shared', null, null], [TIM.id, true, 'unknown', null, null],
   ]);
-  assert.deepEqual([g.me, g.home, g.watchVersion], [{ share: false, places: false }, [ANNA.id], EMPTY_WATCH]);
+  assert.deepEqual([g.me, g.home, g.watchVersion], [{ share: false, places: false, wifi: null }, [ANNA.id], EMPTY_WATCH]);
   assert.ok(g.members.every((m) => m.placesShared === false), '1.5.0: nobody shares places yet');
   const ovp = (await as(TIM)('GET', '/overview')).json.presence;
-  assert.deepEqual({ ...ovp, members: null }, { home: [{ userId: ANNA.id, since: '2026-10-14T07:58:30Z' }], share: true, members: null });
+  assert.deepEqual({ ...ovp, members: null }, { home: [{ userId: ANNA.id, since: '2026-10-14T07:58:30Z', source: 'app' }], share: true, members: null });
   assert.deepEqual(ovp.members.map((m) => [m.userId, m.state, m.presence]), [[ANNA.id, 'home', 'home'], [MARC.id, 'away', 'away'], [LENA.id, 'not_shared', null], [TIM.id, 'unknown', 'unknown']], '1.3.0: every member like GET presence');
   assert.deepEqual(g.members.map((m) => m.presence), ['home', 'away', null, 'unknown'], 'the ring');
   // the same state again: no change, no new "since"

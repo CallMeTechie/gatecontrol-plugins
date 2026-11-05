@@ -2,7 +2,8 @@
    on: pinboard & packing lists, meal plan, wishlists (all members; never the
    reservations on one's own wishes), pocket money (parents: every child, book,
    rule, approve converting stars; a child: its own account and "Umwandeln"),
-   household book (parents), presence (everyone: own consent and who is home;
+   household book (parents), presence (everyone: own consent and who is home — 1.17.0 also „Über mein Handy im WLAN“
+   and „Meine Geräte“ with GateControl ≥ 1.230.0;
    parents: 1.5.0, the places of the place rules — ui/rules.js). Money is bookkeeping only. Same API as
    the app; a viewer recognised only by device trust reads and changes nothing
    (no presence at all). Rules and reminders (1.9.0) for everyone who may make some — 1.10.0 with the
@@ -446,10 +447,17 @@
   function loadPresence() {
     return A.api('GET', 'presence').then(function (r) {
       presData = { members: r.members, me: r.me };
+      // 1.17.0: me.wifi null = no presence over the home network on this GateControl (older than 1.230.0)
+      var wifiOn = r.me.wifi === true || r.me.wifi === false;
+      $('#fa-src-app-hint').textContent = T(wifiOn ? 'presence.src_app_hint' : 'presence.share_hint');
       var share = A.clear($('#fa-pres-share'));
-      share.appendChild(A.switchBtn(r.me.share, T('presence.share'), function (on, b) {
+      share.appendChild(A.switchBtn(r.me.share, T('presence.src_app'), function (on, b) {
         A.api('PUT', 'presence/consent', { share: on }).then(function () { A.toast(on ? T('presence.shared_on') : T('presence.shared_off')); return loadPresence(); }).catch(function (e) { A.setSwitch(b, !on); A.warn(e); });
       }, !writable));
+      $('#fa-src-app').classList.toggle('is-on', !!r.me.share);
+      $('#fa-src-wifi').hidden = !wifiOn;
+      $('#fa-pres-who-hint').hidden = !wifiOn;
+      if (wifiOn) loadWifi(); else $('#fa-pres-devs').hidden = true;
       A.rules.people($('#fa-pres-people'), r.members);
       if (!parent()) return null;
       $('#fa-pres-rules-box').hidden = false;
@@ -462,6 +470,71 @@
     }).catch(A.warn);
   }
   $('#fa-pres-place-add').addEventListener('click', function () { if (presData && presData.places) A.rules.editPlace(null, presData, placeOpts, placeOpts.reload); });
+
+  // 1.17.0: „Über mein Handy im WLAN“ and „Meine Geräte“ — only one's own (GateControl ≥ 1.230.0, presence/wifi)
+  var wifiBusy = false;
+  /** "vor 2 Min." / "vor 3 Std." / else like A.when */
+  function ago(isoStr) {
+    var t = isoStr ? new Date(isoStr).getTime() : NaN;
+    if (isNaN(t)) return null;
+    var min = Math.floor((Date.now() - t) / 60000);
+    if (min < 1) return T('rel.just_now');
+    if (min < 60) return T('rel.min_ago', { n: min });
+    if (min < 24 * 60) return T('rel.hours_ago', { n: Math.floor(min / 60) });
+    return A.when(isoStr);
+  }
+  function renderWifi(w) {
+    var sw = A.clear($('#fa-pres-wifi'));
+    sw.appendChild(A.switchBtn(!!w.consent, T('presence.src_wifi'), function (on, b) {
+      if (wifiBusy) { A.setSwitch(b, !on); return; }
+      wifiBusy = true;
+      A.api('PUT', 'presence/wifi', { enabled: on }).then(function (x) {
+        A.toast(T(on ? 'presence.wifi_on' : 'presence.wifi_off'));
+        renderWifi(x.wifi);
+        return loadPresence();
+      }).catch(function (e) { A.setSwitch(b, !on); A.warn(e); }).then(function () { wifiBusy = false; });
+    }, !writable));
+    $('#fa-src-wifi').classList.toggle('is-on', !!w.consent);
+    var box = $('#fa-pres-devs');
+    box.hidden = false;
+    box.classList.toggle('is-off', !w.consent);
+    var list = A.clear($('#fa-pres-devlist'));
+    if (!w.devices) list.appendChild(el('p', { class: 'fa-empty', text: T('presence.devices_error') }));
+    else if (!w.devices.length) list.appendChild(el('p', { class: 'fa-empty', text: T('presence.devices_none') }));
+    (w.devices || []).forEach(function (d) {
+      var name = d.name || T('presence.device_unnamed');
+      var seen = d.lastSeen ? T('presence.device_seen', { when: ago(d.lastSeen) }) : T('presence.device_never');
+      var sub = d.gateway ? seen + ' · ' + T('presence.device_via', { gateway: d.gateway }) : seen;
+      var btn = el('button', {
+        type: 'button', class: 'fa-dev-count' + (d.counts ? ' is-on' : ''), 'aria-pressed': d.counts ? 'true' : 'false',
+        'aria-label': T('presence.device_counts_label', { name: name }), disabled: !writable,
+      }, [d.counts ? A.svg('M5 12l5 5L20 7', 13) : null, T(d.counts ? 'presence.device_counts' : 'presence.device_not_counts')]);
+      if (writable) btn.addEventListener('click', function () {
+        if (wifiBusy) return;
+        wifiBusy = true;
+        btn.disabled = true;
+        A.api('PUT', 'presence/wifi/devices/' + encodeURIComponent(d.id), { counts: !d.counts }).then(function (x) {
+          A.toast(T(!d.counts ? 'presence.device_counts_on' : 'presence.device_counts_off', { name: name }));
+          renderWifi(x.wifi);
+        }).catch(function (e) { btn.disabled = false; A.warn(e); }).then(function () { wifiBusy = false; });
+      });
+      list.appendChild(el('div', { class: 'fa-dev' }, [
+        el('span', { class: 'fa-src-main' }, [el('b', { text: name }), el('span', { class: 'fa-sub', text: sub })]),
+        btn,
+      ]));
+    });
+    // the hint with „fest“ in bold
+    var hint = A.clear($('#fa-pres-devhint'));
+    var parts = T('presence.devices_hint').split('{{fixed}}');
+    hint.appendChild(document.createTextNode(parts[0]));
+    if (parts.length > 1) { hint.appendChild(el('strong', { text: T('presence.devices_fixed') })); hint.appendChild(document.createTextNode(parts[1])); }
+  }
+  function loadWifi() {
+    return A.api('GET', 'presence/wifi').then(function (x) {
+      if (!x.wifi || !x.wifi.available) { $('#fa-src-wifi').hidden = true; $('#fa-pres-devs').hidden = true; $('#fa-pres-who-hint').hidden = true; return; }
+      if (!wifiBusy) renderWifi(x.wifi);
+    }).catch(function () { /* the next minute */ });
+  }
 
   // ── rules and reminders (1.10.0: one editor, ui/rules.js, through the rules API) ──
   var rulesData = null;
@@ -498,6 +571,7 @@
     show('#fa-allowance', mod.allowance && (r.me.role === 'parent' || r.me.role === 'child'));
     show('#fa-expenses', mod.expenses && r.me.role === 'parent');
     show('#fa-presence', mod.presence && writable);
+    show('#fa-presence-me', mod.presence && writable);
     if (!writable) A.$$('.fa-write').forEach(function (n) { n.hidden = true; });
     if (mod.board) loadBoard();
     if (mod.meals) loadMeals();

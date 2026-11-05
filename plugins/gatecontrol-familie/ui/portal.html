@@ -144,14 +144,32 @@
     </section>
   </div>
 
+  <!-- 1.17.0: the own sources (the app; the phone in the Wi-Fi with GateControl ≥ 1.230.0) and who is at home -->
+  <section class="fa-card" id="fa-presence-me" aria-labelledby="fa-pres-me-h" hidden>
+    <h2 class="fa-card-title" id="fa-pres-me-h">{{t:presence.how_title}}</h2>
+    <div class="fa-src-list">
+      <div class="fa-src" id="fa-src-app">
+        <span class="fa-src-main"><b id="fa-src-app-l">{{t:presence.src_app}}</b><span class="fa-sub" id="fa-src-app-hint">{{t:presence.share_hint}}</span></span>
+        <span id="fa-pres-share"></span>
+      </div>
+      <div class="fa-src" id="fa-src-wifi" hidden>
+        <span class="fa-src-main"><b id="fa-src-wifi-l">{{t:presence.src_wifi}}</b><span class="fa-sub">{{t:presence.src_wifi_hint}}</span></span>
+        <span id="fa-pres-wifi"></span>
+      </div>
+    </div>
+    <div class="fa-devs" id="fa-pres-devs" aria-labelledby="fa-pres-devs-h" role="group" hidden>
+      <div class="fa-opt-title" id="fa-pres-devs-h">{{t:presence.devices_title}}</div>
+      <div class="fa-dev-list" id="fa-pres-devlist"></div>
+      <p class="fa-hint" id="fa-pres-devhint"></p>
+    </div>
+  </section>
+
   <section class="fa-card" id="fa-presence" aria-labelledby="fa-pres-h" hidden>
     <div class="fa-card-head">
-      <h2 class="fa-card-title" id="fa-pres-h">{{t:presence.title}}</h2>
-      <span class="fa-card-sub">{{t:presence.share}}</span>
-      <span id="fa-pres-share"></span>
+      <h2 class="fa-card-title" id="fa-pres-h">{{t:presence.who_title}}</h2>
     </div>
-    <p class="fa-hint">{{t:presence.share_hint}}</p>
     <div class="fa-pres-grid" id="fa-pres-people"></div>
+    <p class="fa-hint" id="fa-pres-who-hint" hidden>{{t:presence.who_hint}}</p>
     <div id="fa-pres-rules-box" hidden>
       <div class="fa-card-head fa-pres-places-head">
         <div class="fa-opt-title" style="flex:1">{{t:places.title}}</div>
