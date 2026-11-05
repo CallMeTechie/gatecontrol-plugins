@@ -29,6 +29,7 @@
 //   1.9.0 (server/rules.js, server/shopping.js, server/tasks.js):
 //   GET|POST rules               PATCH|DELETE rules/<id>      POST rules/<id>/test · rules/test   GET rules/options
 //   POST shopping/lists/<id>/assign                           POST tasks/quick
+//   1.18.0 (server/internet.js, GateControl ≥ 1.231.0): GET internet   POST internet/<childId>/pause · /resume · /extend
 //
 // Every response is { ok: true, … } or { ok: false, code, error }. Callers
 // that are no member get 403 not_member, a switched-off module 403
@@ -70,6 +71,7 @@ const ruleplaces = require('./ruleplaces');
 const messenger = require('./messenger');
 const rules = require('./rules');
 const homewifi = require('./homewifi');
+const internet = require('./internet');
 const { fail, posInt, iso } = require('./util');
 
 /** A portal viewer recognised only by device trust: no real login and no paired kiosk device. */
@@ -307,6 +309,14 @@ function dispatch(gc, r, seg, method) {
       if (n === 3 && PATCH) return () => presence.updateRule(gc, ctx(), c, r.body);
       if (n === 3 && DELETE) return () => presence.removeRule(gc, c);
     }
+  }
+  if (a === 'internet') {
+    // 1.18.0: „Internet zu Hause“ — parents for their minor children (a child reads its own); no module of its own, it is
+    // there when GateControl offers it. No transaction around the calls to GateControl (internet.js writes in its own).
+    sensitive();
+    notWall(r);
+    if (n === 1 && GET) return () => internet.view(gc, r);
+    if (n === 3 && POST && internet.OPS.includes(c)) return readOnly(() => internet.act(gc, r, b, c));
   }
   if (a === 'rules') {
     // 1.9.0: rules and reminders (module rules; presence triggers need the module presence as well)

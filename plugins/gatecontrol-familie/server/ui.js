@@ -33,7 +33,7 @@ const FILES = {
   modules: { html: read('modules.html'), js: read('modules.js'), map: false },
   log: { html: read('log.html'), js: read('log.js'), map: true },
   presence: { html: read('presence.html'), js: read('presence.js'), map: true, ruleEditor: true },
-  portal: { html: read('portal.html'), js: read('portal.js') + '\n' + read('portal-plus.js'), css: read('portal.css'), map: true, ruleEditor: true },
+  portal: { html: read('portal.html'), js: read('portal.js') + '\n' + read('portal-plus.js') + '\n' + read('portal-internet.js'), css: read('portal.css'), map: true, ruleEditor: true },
   wall: { html: read('wall.html'), js: read('wall.js'), css: read('wall.css'), map: false },
 };
 

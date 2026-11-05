@@ -384,12 +384,16 @@
 // (POST /api/v1/gateway/presence) and resolves after the handlers ran; host.homePresenceEmit(ev) delivers an event as
 // given (e.g. a late or repeated one); host.homeNetwork is the state ({ consent: Map userId → { enabled, at }, devices,
 // states: Map userId → { home, since } }), host.homePresenceEvents what was delivered.
+//
+// GateControl 1.231.0 (opt-in: opts.gatecontrol: '1.231.0' or opts.homeInternet) — gc.homeNetwork.internet, "Internet zu
+// Hause" (status / pause / resume / extend, only with permissions.homeInternet): see tools/testing/mock-home-internet.js.
 
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const EventEmitter = require('node:events');
 const mockMail = require('./mock-mail');
+const mockHomeInternet = require('./mock-home-internet');
 
 // GateControl's favourite colour palette (services/avatars.js PALETTE, GateControl ≥ 1.168.0)
 const PALETTE = Object.freeze([
@@ -3057,6 +3061,10 @@ async function createHost(pluginDir, opts = {}) {
     return { accepted: 1 };
   }
 
+  // ─── internet at home (GateControl ≥ 1.231.0, src/services/homeInternet.js; tools/testing/mock-home-internet.js) ───
+  const hi = mockHomeInternet.install({ opts, perms, atLeast, enabledUser, hostError, personCtx });
+  Object.assign(api, hi.api);
+
   const call = async (name, args) => wire(await api[name](wire(args)));
 
   /** A WebSocket like the host's (EventEmitter: message, close, error; send, close) wired to opts.websocket. */
@@ -3286,10 +3294,12 @@ async function createHost(pluginDir, opts = {}) {
         }),
       }),
     } : {}),
-    // GateControl ≥ 1.230.0: gc.homeNetwork only with permissions.homePresence (like the child bootstrap)
-    ...(hnOn ? {
+    // GateControl ≥ 1.230.0: gc.homeNetwork with permissions.homePresence (presence) and, ≥ 1.231.0, permissions.homeInternet
+    // (internet) — like the child bootstrap
+    ...(hnOn || hi.on ? {
       homeNetwork: Object.freeze({
-        presence: Object.freeze({
+        ...(hi.on ? { internet: hi.gcPart(call) } : {}),
+        ...(hnOn ? { presence: Object.freeze({
           list: () => call('homeNetwork.presence.list', {}),
           on: (handler) => {
             if (typeof handler !== 'function') throw new TypeError('gc.homeNetwork.presence.on(handler)');
@@ -3300,7 +3310,7 @@ async function createHost(pluginDir, opts = {}) {
           setConsent: (userId, enabled) => call('homeNetwork.presence.setConsent', { userId, enabled }),
           devices: (userId) => call('homeNetwork.presence.devices', { userId }),
           setCounts: (userId, deviceId, counts) => call('homeNetwork.presence.setCounts', { userId, deviceId, counts }),
-        }),
+        }) } : {}),
       }),
     } : {}),
     services: Object.freeze({
@@ -3935,6 +3945,9 @@ async function createHost(pluginDir, opts = {}) {
     homeDevice: (deviceId, online, o) => homeDevice(deviceId, online, o),
     homePresenceEmit: (ev) => { if (!hnOn) throw new Error('mock host: no gc.homeNetwork'); return hnDeliver(ev); },
     homePresenceIdle: async () => { while (hnPending.size) await Promise.all([...hnPending]); },
+    /** GateControl ≥ 1.231.0 (permissions.homeInternet): { state, log, people } — see tools/testing/mock-home-internet.js */
+    homeInternet: hi.state,
+    homeInternetSet: (userId, x) => hi.hostSet(userId, x),
     /** legacyImport hook: the host hands over the built-in data (first-party plugins only) */
     legacyImport: (snapshot) => hook('legacyImport', snapshot),
     /** keys stored with gc.settings.setSecret */
