@@ -48,6 +48,10 @@ const NEWER_KEYS = {
     // permissions.notify { perHour: 1 … 1000 } (before: 120) — checked here, the pinned validator sees at most 120
     { path: ['permissions', 'notify'], replace: (v) => (v && typeof v === 'object' ? { perHour: Math.min(v.perHour, 120) } : v), check: (v) => (v === true || v === false || (v && typeof v === 'object' && !Array.isArray(v) && Object.keys(v).length === 1 && Number.isInteger(v.perHour) && v.perHour >= 1 && v.perHour <= 1000) ? null : 'permissions.notify: invalid') },
   ],
+  '1.236.0': [
+    // permissions.print: true (gc.print — the printers and scanners the gateways find, GateControl's homePrint.js)
+    { path: ['permissions', 'print'], check: (v) => (typeof v === 'boolean' ? null : 'permissions.print: invalid') },
+  ],
   '1.225.0': [
     // ui.settingsPages: up to 4 more ids of ui.pages as tabs under Einstellungen › Plugins (never the first page, never
     // ui.settingsPage, no id twice, none of the area's own tabs) — an older GateControl ignores the key
