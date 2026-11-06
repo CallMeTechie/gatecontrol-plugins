@@ -4,11 +4,11 @@
     "de": "Smart Home",
     "en": "Smart Home"
   },
-  "version": "1.7.2",
+  "version": "1.8.0",
   "publisher": "CallMeTechie",
   "description": {
-    "de": "Phoscon/deCONZ-Gateways sowie Shelly- und Tasmota-Geräte über ein GateControl-Gateway einbinden: Lichter, Steckdosen, Schalter, Rollläden, Gruppen, Szenen und Sensoren steuern, Haushaltsmitgliedern zuweisen (Portal „Zuhause“) und Logikketten auf dem deCONZ-Gateway anlegen.",
-    "en": "Connect Phoscon/deCONZ gateways and Shelly and Tasmota devices through a GateControl gateway: control lights, plugs, switches, shutters, groups, scenes and sensors, assign them to household members (portal “Home”) and create logic chains on the deCONZ gateway."
+    "de": "Phoscon/deCONZ-Gateways, Shelly- und Tasmota-Geräte sowie Bluetooth-Sensoren über ein GateControl-Gateway einbinden: Lichter, Steckdosen, Schalter, Rollläden, Gruppen, Szenen und Sensoren steuern, Haushaltsmitgliedern zuweisen (Portal „Zuhause“) und Logikketten auf dem deCONZ-Gateway anlegen.",
+    "en": "Connect Phoscon/deCONZ gateways, Shelly and Tasmota devices and Bluetooth sensors through a GateControl gateway: control lights, plugs, switches, shutters, groups, scenes and sensors, assign them to household members (portal “Home”) and create logic chains on the deCONZ gateway."
   },
   "gatecontrol": ">=1.228.1",
   "entry": "server/index.js",
@@ -56,7 +56,8 @@
     "notify": true,
     "background": {
       "intervalSeconds": 30
-    }
+    },
+    "radio": true
   },
   "ui": {
     "nav": {

@@ -244,6 +244,44 @@ async function setResourceState(gc, resourceId, raw) {
   return out;
 }
 
+const MAC_RE = /^([0-9a-f]{2}:){7}[0-9a-f]{2}/i;
+
+/**
+ * "In Smart Home benennen": a name for a light, a sensor (every resource of the same Zigbee device, as Phoscon
+ * does) or a Bluetooth sensor of a GateControl gateway. deCONZ keeps its names; a Bluetooth sensor's name stays here.
+ */
+async function renameResource(gc, resourceId, name) {
+  const resource = await store.getResource(gc, resourceId);
+  if (!resource) throw codeError('SMARTHOME_RESOURCE_NOT_FOUND', `resource ${resourceId} not found`);
+  if (resource.deconz_type === 'ble') { await require('./radio').rename(gc, resource, name); return { renamed: 1 }; }
+  if (resource.deconz_type !== 'lights' && resource.deconz_type !== 'sensors') throw codeError('SMARTHOME_NOT_RENAMABLE', `resource ${resourceId} cannot be renamed here`);
+  const client = await clientForGateway(gc, await store.getGateway(gc, resource.gateway_id));
+  const mac = MAC_RE.exec(String(resource.uniqueid || ''));
+  const all = mac
+    ? (await store.listResources(gc, resource.gateway_id)).filter((r) => (r.deconz_type === 'lights' || r.deconz_type === 'sensors') && String(r.uniqueid || '').toLowerCase().startsWith(mac[0].toLowerCase()))
+    : [resource];
+  for (const r of all) {
+    if (r.deconz_type === 'lights') await client.renameLight(r.deconz_id, name);
+    else await client.renameSensor(r.deconz_id, name);
+    await gc.db.run("UPDATE resources SET name = ?, updated_at = datetime('now') WHERE id = ?", [name, r.id]);
+  }
+  return { renamed: all.length };
+}
+
+/** "?focus=zigbee:<device MAC>" / "ble:<sensor MAC>" of the page (GateControl's deep link) → where it is, or null. */
+async function findFocus(gc, focus) {
+  const m = /^(zigbee|ble):([0-9a-f:]{17,23})$/.exec(String(focus || '').toLowerCase());
+  if (!m) return null;
+  const rows = (await gc.db.query('SELECT id, gateway_id, deconz_type, uniqueid, capabilities_json FROM resources WHERE uniqueid LIKE ? AND enabled = 1 ORDER BY id', [m[2] + '%'])).rows;
+  const hit = rows.find((r) => (m[1] === 'ble' ? r.deconz_type === 'ble' : (r.deconz_type === 'lights' || r.deconz_type === 'sensors')));
+  if (!hit) return null;
+  if (hit.deconz_type === 'ble') {
+    const caps = store.parseJson(hit.capabilities_json) || {};
+    return Number.isInteger(caps.gateway_id) ? { source: 'b:' + caps.gateway_id, resource_id: hit.id } : null;
+  }
+  return { source: 'd:' + hit.gateway_id, resource_id: hit.id };
+}
+
 /** Reachability probe — "unreachable" is a result, not an error. */
 async function testGateway(gc, gatewayId) {
   const gw = await store.getGateway(gc, gatewayId);
@@ -290,6 +328,6 @@ async function syncAll(gc) {
 
 module.exports = {
   xyFromHueSat,
-  connectGateway, syncGateway, syncGatewayFull, setResourceState, testGateway, gatewayTargets, targetLabel, syncAll, clientForGateway,
+  connectGateway, syncGateway, syncGatewayFull, setResourceState, renameResource, findFocus, testGateway, gatewayTargets, targetLabel, syncAll, clientForGateway,
   capsFromLight, sensorReading, sensorObservation, lightKind, sensorKind, validatePatch,
 };

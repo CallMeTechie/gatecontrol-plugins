@@ -261,6 +261,11 @@
       </div>
       <div class="modal-body">
         <div class="sh-owner-sub" id="sh-owner-sub"></div>
+        <div class="form-group" id="sh-owner-name-row" hidden>
+          <label class="form-label" for="sh-owner-name">{{t:owners.name}}</label>
+          <input class="form-input" id="sh-owner-name" type="text" maxlength="32" autocomplete="off">
+          <span class="form-hint">{{t:owners.name_hint}}</span>
+        </div>
         <div class="form-group" id="sh-owner-area-row">
           <label class="form-label" for="sh-owner-area">{{t:owners.area}}</label>
           <input class="form-input" id="sh-owner-area" type="text" maxlength="40" autocomplete="off" list="sh-areas">

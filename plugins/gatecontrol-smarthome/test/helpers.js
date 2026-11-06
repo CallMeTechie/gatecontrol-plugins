@@ -82,6 +82,11 @@ function fakeDeconz(opts = {}) {
       ({ rules: gw.rules, schedules: gw.schedules, sensors: gw.clip })[coll][id] = o.json;
       return json([{ success: { id } }]);
     }
+    // a name for a real sensor (PUT /sensors/<id> { name })
+    if (method === 'PUT' && coll === 'sensors' && seg.length === 2 && gw.sensors[seg[1]]) {
+      if (o.json && typeof o.json.name === 'string') gw.sensors[seg[1]].name = o.json.name;
+      return json([{ success: { [`/sensors/${seg[1]}/name`]: o.json && o.json.name } }]);
+    }
     if (method === 'PUT' && ['rules', 'sensors'].includes(coll)) {
       const store = coll === 'rules' ? gw.rules : gw.clip;
       if (!store[seg[1]]) return json([{ error: { type: 3, description: 'not available' } }], 404);
@@ -106,6 +111,7 @@ async function withHost(o, fn) {
     settings: o.settings,
     license: o.license,
     targets: { gateway: gateways.map((g, i) => ({ label: `phoscon-${i}.example.com`, fetch: g.fetch })) },
+    ...(o.radio ? { radio: o.radio } : {}),
   });
   try {
     await host.start();

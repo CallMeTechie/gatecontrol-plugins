@@ -42,6 +42,7 @@ body{padding:2px 2px 24px}
 .sh-section-title .ln{flex:1;height:1px;background:var(--line)}
 .sh-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px;margin-bottom:26px}
 .sh-card{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:16px}
+.sh-card.is-focus{border-color:var(--teal, #0f766e);box-shadow:0 0 0 2px var(--teal, #0f766e)}
 .sh-name{font-weight:700;font-size:15px;display:flex;align-items:center;gap:8px}
 .sh-ico{flex:none;color:var(--accent);opacity:.92}
 .sh-sub{font-size:12px;color:var(--muted);margin-top:2px}
