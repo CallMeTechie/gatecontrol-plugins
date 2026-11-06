@@ -364,6 +364,15 @@
 
   // ─── Sources ──────────────────────────────────
 
+  // why a gateway's edge channel is down (GateControl after 1.231.0, server/edge.js reasonOf); older servers: none
+  var REASONS = ['gateway_offline', 'edge_missing', 'edge_not_running', 'edge_fence', 'edge_not_connected'];
+  function reasonOf(g) { return g && g.state === 'offline' && REASONS.indexOf(g.reason) >= 0 ? g.reason : null; }
+  /** Text of a failed set-up step or job: the reason when the gateway is offline and GateControl says why. */
+  function jobError(code, reason) {
+    if (code === 'gateway_offline' && REASONS.indexOf(reason) >= 0) return T('source.reason.' + reason);
+    return T('auto.error.' + code) !== 'auto.error.' + code ? T('auto.error.' + code) : T('auto.error');
+  }
+
   function stateText(g) {
     if (g.state === 'running') {
       var parts = [T('source.running')];
@@ -372,11 +381,13 @@
     }
     if (g.tooOld || g.state === 'gateway_too_old') return T('source.state.too_old', { version: g.version || '?', min: edge.minGateway || '1.19.0' });
     if (g.state === 'disabled' || g.state === 'edge_off' || g.state === 'no_edge') return T('source.state.off');
+    if (reasonOf(g)) return T('source.reason.' + reasonOf(g));
     if (['offline', 'crashed', 'update_pending', 'unsigned', 'plugin_off', 'denied', 'stopped'].indexOf(g.state) >= 0) return T('source.state.' + g.state);
     return T('source.state.pending');
   }
   function shortState(g) {
     if (g.state === 'running') return '';
+    if (reasonOf(g)) return T('source.reason_short.' + reasonOf(g));
     if (g.state === 'disabled' || g.state === 'edge_off' || g.state === 'no_edge') return T('gateway.off');
     return stateText(g).replace(/[.…]+$/, '').slice(0, 40);
   }
@@ -742,7 +753,7 @@
     list.appendChild(stepRow(a.state, a.state === 'done' ? T('auto.step.account') : T('auto.step.account_run'), a.state === 'done' ? [d(T('auto.step.account_detail', { user: a.username, topic: a.topic }))] : []));
     var r = s.reach;
     var reachDetail = r.state === 'done' ? [r.model ? prettyModel({ family: job.family, model: r.model }) : null, r.firmware ? T('auto.step.reach_detail_fw', { v: r.firmware }) : null, r.ident ? T('auto.step.reach_detail_id', { v: r.ident }) : null].filter(Boolean).join(' · ') : '';
-    list.appendChild(stepRow(r.state, r.state === 'done' ? T('auto.step.reach') : r.state === 'error' ? T('auto.step.reach_error') : T('auto.step.reach_run'), reachDetail ? [d(reachDetail)] : (r.state === 'error' ? [d(T('auto.error.' + r.code) !== 'auto.error.' + r.code ? T('auto.error.' + r.code) : T('auto.error'))] : [])));
+    list.appendChild(stepRow(r.state, r.state === 'done' ? T('auto.step.reach') : r.state === 'error' ? T('auto.step.reach_error') : T('auto.step.reach_run'), reachDetail ? [d(reachDetail)] : (r.state === 'error' ? [d(jobError(r.code, r.reason))] : [])));
     var au = s.auth;
     if (au.state === 'need' || au.state === 'running') {
       var input = el('input', { class: 'form-input', type: 'password', id: 'sh-j-password', autocomplete: 'off', spellcheck: 'false', maxlength: '128', disabled: au.state === 'running' });
@@ -764,14 +775,14 @@
     } else if (au.state === 'skipped') list.appendChild(stepRow('done', T('auto.step.auth_none')));
     else if (au.state === 'done') list.appendChild(stepRow('done', T('auto.step.auth_done')));
     var c = s.configure;
-    list.appendChild(stepRow(c.state, T('auto.step.configure'), [d(c.state === 'error' ? (T('auto.error.' + c.code) !== 'auto.error.' + c.code ? T('auto.error.' + c.code) : T('auto.error')) : T('auto.step.configure_detail'))]));
+    list.appendChild(stepRow(c.state, T('auto.step.configure'), [d(c.state === 'error' ? jobError(c.code, c.reason) : T('auto.step.configure_detail'))]));
     var o = s.online;
     list.appendChild(stepRow(o.state, T('auto.step.online'), [d(o.state === 'slow' ? T('auto.step.online_slow') : T('auto.step.online_detail'))]));
     var prefix = a.topic ? String(a.topic).replace(/\/#$/, '') : '';
     $('#sh-j-what').textContent = T('auto.what_text', { prefix: prefix || '…' });
     var err = $('#sh-j-error');
     err.hidden = job.state !== 'failed';
-    err.textContent = job.state === 'failed' ? (T('auto.error.' + job.error) !== 'auto.error.' + job.error ? T('auto.error.' + job.error) : T('auto.error')) : '';
+    err.textContent = job.state === 'failed' ? jobError(job.error, job.reason) : '';
     var finished = job.state === 'done' || job.state === 'waiting' || job.state === 'slow';
     $('#sh-j-done').hidden = !finished;
     $('#sh-j-cancel').hidden = finished;

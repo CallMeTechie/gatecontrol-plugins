@@ -3,6 +3,13 @@
 Phoscon/deCONZ-Integration als GateControl-Plugin – bisher fest in GateControl eingebaut; seit 1.7.0 auch Shelly und
 Tasmota über ein GateControl-Gateway.
 
+## 1.7.1
+- **Warum ein Gateway „nicht verbunden“ ist:** Mit einem GateControl, das den Grund kennt (`gc.edge.gateways()` mit
+  `reason`), zeigen „Quelle hinzufügen“, die Quellenauswahl und eine gescheiterte Einrichtung („Gerät erreicht“,
+  „MQTT eintragen“) statt „Das Gateway ist gerade nicht verbunden.“ den Grund: Gateway offline, Edge-Dienst fehlt in
+  der Compose-Datei, Edge-Container läuft nicht, Netzgrenze fehlt (Synology: `xt_owner`) oder der Edge-Container
+  erreicht GateControl nicht – jeweils mit dem Weg zur Gateway-Seite. Ältere GateControl-Versionen: Text wie bisher.
+
 ## 1.7.0
 - **Shelly und Tasmota über ein GateControl-Gateway** (GateControl ≥ 1.228.1, Gateway ≥ 1.19.0): neben
   Phoscon/deCONZ-Gateways gibt es Quellen vom Typ „GateControl-Gateway“ – je Gateway, auf dem der neue

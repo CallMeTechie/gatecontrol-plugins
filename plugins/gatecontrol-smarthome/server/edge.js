@@ -79,6 +79,16 @@ function edgeErr(e) {
 
 // ─── Gateways (sources) ─────────────────────────
 
+// Why a gateway's edge channel is down (GateControl after 1.231.0: gc.edge.gateways() `reason` with state 'offline';
+// older servers send none → the plain "not connected"). The page knows the values it has texts for.
+const REASON_RE = /^[a-z_]{1,32}$/;
+function reasonOf(g) { return g && g.state === 'offline' && typeof g.reason === 'string' && REASON_RE.test(g.reason) ? g.reason : null; }
+
+/** Why `gatewayId` is offline right now, or null (for a failed set-up step: gateway_offline alone says little). */
+async function offlineReason(gc, gatewayId) {
+  try { return reasonOf((await gc.edge.gateways()).find((g) => g.id === Number(gatewayId))); } catch { return null; }
+}
+
 /** What GateControl knows of the gateways the edge part is set up for, plus the edge part's own info. */
 async function gateways(gc, { info = true } = {}) {
   if (!available(gc)) return { available: false, gateways: [] };
@@ -86,7 +96,7 @@ async function gateways(gc, { info = true } = {}) {
   try { list = await gc.edge.gateways(); } catch (e) { gc.log.warn('edge gateways failed', edgeErr(e)); }
   const out = await Promise.all(list.map(async (g) => {
     const v = {
-      id: g.id, name: g.name, state: g.state, online: g.online === true, version: g.version || null,
+      id: g.id, name: g.name, state: g.state, online: g.online === true, version: g.version || null, reason: reasonOf(g),
       tooOld: g.state === 'gateway_too_old' || (g.version ? !semverAtLeast(g.version, MIN_GATEWAY) : false), info: null,
     };
     if (info && g.state === 'running') {
@@ -475,7 +485,7 @@ const STEP_IDS = ['account', 'reach', 'auth', 'configure', 'online'];
 
 function jobView(job) {
   const steps = STEP_IDS.map((id) => ({ id, ...job.steps[id] }));
-  return { id: job.id, state: job.state, deviceId: job.deviceId, gatewayId: job.gatewayId, name: job.name, ip: job.ip, family: job.family, model: job.model, error: job.error || null, steps };
+  return { id: job.id, state: job.state, deviceId: job.deviceId, gatewayId: job.gatewayId, name: job.name, ip: job.ip, family: job.family, model: job.model, error: job.error || null, reason: job.reason || null, steps };
 }
 
 function expireJobs(now = Date.now()) {
@@ -500,9 +510,12 @@ async function runJob(gc, job, password) {
       step('reach', { state: 'running' });
       let info;
       try { info = await gc.edge.call(job.gatewayId, 'probe', { ip: job.ip }, { timeoutMs: SETUP_CALL_MS }); } catch (e) {
-        step('reach', { state: 'error', code: edgeErr(e) });
+        const code = edgeErr(e);
+        const reason = code === 'gateway_offline' ? await offlineReason(gc, job.gatewayId) : null;
+        step('reach', { state: 'error', code, ...(reason ? { reason } : {}) });
         job.state = 'failed';
-        job.error = edgeErr(e);
+        job.error = code;
+        job.reason = reason;
         return;
       }
       const dev = await es.getDevice(gc, job.deviceId);
@@ -543,9 +556,11 @@ async function runJob(gc, job, password) {
         job.state = 'need_password';
         return;
       }
-      step('configure', { state: 'error', code });
+      const reason = code === 'gateway_offline' ? await offlineReason(gc, job.gatewayId) : null;
+      step('configure', { state: 'error', code, ...(reason ? { reason } : {}) });
       job.state = 'failed';
       job.error = code;
+      job.reason = reason;
       return;
     }
     job.secret = null;
@@ -564,7 +579,7 @@ async function runJob(gc, job, password) {
 
 function newJob(o) {
   const job = {
-    id: crypto.randomBytes(9).toString('base64url'), createdAt: Date.now(), configuredAt: 0, state: 'running', error: null, secret: null, auth: false,
+    id: crypto.randomBytes(9).toString('base64url'), createdAt: Date.now(), configuredAt: 0, state: 'running', error: null, reason: null, secret: null, auth: false,
     deviceId: o.deviceId || null, gatewayId: o.gatewayId, name: o.name, area: o.area, ip: o.ip, family: o.family, model: o.model || null, candidate: o.candidate || null,
     steps: { account: { state: 'pending' }, reach: { state: 'pending' }, auth: { state: 'pending' }, configure: { state: 'pending' }, online: { state: 'pending' } },
   };
