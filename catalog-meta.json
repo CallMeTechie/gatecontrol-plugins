@@ -3016,6 +3016,163 @@
         "de",
         "en"
       ]
+    },
+    "gatecontrol-print": {
+      "category": "home",
+      "icon": "puzzle",
+      "summary": {
+        "de": "Von unterwegs zu Hause drucken und vom Handy aus scannen – direkt ins Drive, mit Name und Ordner von der KI. Rechte pro Person.",
+        "en": "Print at home while you are out and scan from your phone – straight into Drive, with name and folder from the AI. Rights per person."
+      },
+      "audience": "all",
+      "keywords": ["drucken", "print", "drucker", "printer", "scannen", "scan", "scanner", "airprint", "airscan", "pdf", "tinte", "ink"],
+      "related": ["gatecontrol-drive", "gatecontrol-familie"],
+      "adds": [
+        {
+          "icon": "portal",
+          "title": {
+            "de": "Portal-Tab „Drucken & Scannen“",
+            "en": "Portal tab “Print & Scan”"
+          },
+          "text": {
+            "de": "Scannen mit Vorschau und „Weitere Seite“, Drucken aus einer Datei – auch am Handy",
+            "en": "Scan with a preview and “Another page”, print a file – on the phone too"
+          }
+        },
+        {
+          "icon": "page",
+          "title": {
+            "de": "Admin-Seiten „Geräte“, „Berechtigungen“, „Verlauf“, „Einstellungen“",
+            "en": "Admin pages “Devices”, “Permissions”, “History”, “Settings”"
+          },
+          "text": {
+            "de": "Gefundene Geräte mit Tinte und Testseite, Rechte pro Person, wo Scans landen",
+            "en": "Found devices with ink and a test page, rights per person, where scans go"
+          }
+        },
+        {
+          "icon": "cloud",
+          "title": {
+            "de": "Scans ins Drive",
+            "en": "Scans into Drive"
+          },
+          "text": {
+            "de": "Ein PDF je Scan, auf Wunsch benannt und einsortiert von Drives KI",
+            "en": "One PDF per scan, named and filed by Drive’s AI if you like"
+          }
+        },
+        {
+          "icon": "clock",
+          "title": {
+            "de": "Wartet, bis der Drucker wach ist",
+            "en": "Waits until the printer is awake"
+          },
+          "text": {
+            "de": "Ist der Drucker aus, druckt der Auftrag, sobald er wieder da ist – bis zu 24 Stunden",
+            "en": "If the printer is off, the job prints as soon as it is back – up to 24 hours"
+          }
+        },
+        {
+          "icon": "bell",
+          "title": {
+            "de": "Druck fertig / fehlgeschlagen",
+            "en": "Print done / failed"
+          },
+          "text": {
+            "de": "Eine Mitteilung an die Person, die gedruckt hat",
+            "en": "A notice to the person who printed"
+          }
+        }
+      ],
+      "permissions": [
+        {
+          "icon": "network",
+          "title": {
+            "de": "Drucker und Scanner im Heimnetz nutzen",
+            "en": "Use printers and scanners in the home network"
+          },
+          "text": {
+            "de": "Über die Gateways – nur Geräte, die ein Gateway selbst gefunden hat; das Plugin sieht keine Adressen.",
+            "en": "Through the gateways – only devices a gateway found itself; the plugin sees no addresses."
+          },
+          "tag": {
+            "de": "Heimnetz",
+            "en": "Home network"
+          }
+        },
+        {
+          "icon": "users",
+          "title": {
+            "de": "Benutzer und Familie lesen",
+            "en": "Read users and the family"
+          },
+          "text": {
+            "de": "Namen der Konten und wer in der Familie ein Kind ist – für die Rechte pro Person.",
+            "en": "Account names and who is a child in the family – for the rights per person."
+          },
+          "tag": {
+            "de": "Benutzer",
+            "en": "Users"
+          }
+        },
+        {
+          "icon": "link",
+          "title": {
+            "de": "Drive nutzen",
+            "en": "Use Drive"
+          },
+          "text": {
+            "de": "Scans als Datei an Drive übergeben, ablegen und einen Ordner vorschlagen lassen – nur für die Person, die scannt.",
+            "en": "Hand scans to Drive, file them and ask for a folder – only for the person who scans."
+          }
+        },
+        {
+          "icon": "data",
+          "title": {
+            "de": "Dateien speichern",
+            "en": "Store files"
+          },
+          "text": {
+            "de": "Hochgeladene Dateien zum Drucken und gescannte Seiten (bis 50 MB je Datei), danach von GateControl gelöscht.",
+            "en": "Uploaded files to print and scanned pages (up to 50 MB each), deleted by GateControl afterwards."
+          }
+        },
+        {
+          "icon": "bell",
+          "title": {
+            "de": "Mitteilungen senden",
+            "en": "Send notifications"
+          },
+          "text": {
+            "de": "Druck fertig / fehlgeschlagen – bis zu 60 pro Stunde.",
+            "en": "Print done / failed – up to 60 an hour."
+          }
+        }
+      ],
+      "shows": [
+        {
+          "kind": "list",
+          "caption": {
+            "de": "Portal · Scannen mit Vorschau und KI-Vorschlag",
+            "en": "Portal · scanning with a preview and the AI's suggestion"
+          }
+        },
+        {
+          "kind": "list",
+          "caption": {
+            "de": "Admin-Seite · Geräte mit Tintenstand",
+            "en": "Admin page · devices with ink levels"
+          }
+        }
+      ],
+      "needs": {
+        "de": "Gateway ab 1.24.0, Drucker/Scanner mit AirPrint/AirScan, für Scans Drive",
+        "en": "Gateway 1.24.0+, AirPrint/AirScan devices, Drive for scans"
+      },
+      "languages": [
+        "de",
+        "en"
+      ]
     }
   }
 }
