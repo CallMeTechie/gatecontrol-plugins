@@ -1,0 +1,243 @@
+'use strict';
+
+// GateControl 1.236.0 for the mock host (tools/testing/mock-host.js): gc.print — "Drucken & Scannen"
+// (src/services/homePrint.js, hostApi.js printCall, the child bootstrap's makePrint; docs/plugins.md "Print & scan").
+// Opt-in: opts.gatecontrol ≥ '1.236.0' or opts.print; only a plugin with permissions.print: true has gc.print (an
+// older GateControl ignores the key — no gc.print; without the permission the host answers ERR_PRINT_DENIED).
+//
+//   createHost(dir, { print: { devices: [<device view as gc.print.devices() answers>], offline: false } })
+//
+// Like the host:
+//   devices()                       the devices given (a copy)
+//   discover({ retrust? })          → { asked: 1 } (state.discovers counts the calls, state.retrusted the ids)
+//   submit({ deviceId, mediaId, user, copies?, color?, duplex?, name? })
+//                                   the plugin's media (ERR_NOT_FOUND), a printer (ERR_NOT_FOUND), the device online
+//                                   (ERR_PRINT_OFFLINE), PDF only when the printer names application/pdf, pictures
+//                                   (image/*) as JPEG or one PDF page, anything else ERR_PRINT_FORMAT; copies 1 … copiesMax,
+//                                   colour / duplex only where the printer can; ≤ 20 open jobs per person (ERR_PRINT_BUSY)
+//   testPage({ deviceId, user })    a job "GateControl Testseite" (1 page)
+//   job(id) / jobs({ since?, limit?, user? }) / cancel(id)
+//   pages({ mediaId })              PDF: the number of "/Type /Page" in the file (≥ 1), a picture: 1
+//   scan({ deviceId, user, source?, mode?, resolution?, duplex? }) → { scanId }  (one running scan per person)
+//   scanStatus(id) / cancelScan(id)
+//   pdf({ pages: [mediaId], user, name, dpi? }) → { mediaId, pages, bytes, name }  (a fake PDF in the plugin's media)
+// The gateway's side for tests: host.printJob(id, { state, error, message }) sets a job's state (as a gateway report
+// would), host.printScanPages(scanId, [{ mime, data }], { state: 'done' | 'scanning' | 'failed', error }) delivers pages
+// (unclaimed media of the person, a `thumb`), host.print = { jobs: Map, scans: Map, discovers, retrusted, calls }.
+
+const crypto = require('node:crypto');
+
+const OPEN = ['queued', 'sending', 'printing', 'waiting'];
+const RESOLUTIONS = [150, 200, 300, 600];
+const MODES = ['document', 'photo', 'bw'];
+
+function install({ opts, perms, atLeast, enabledUser, hostError, mediaStore }) {
+  const o = opts.print && typeof opts.print === 'object' ? opts.print : null;
+  const host = !!o || atLeast(236);
+  if (host && perms.print != null && typeof perms.print !== 'boolean') throw hostError('ERR_INVALID', 'plugin.json: permissions.print: invalid');
+  const on = host && perms.print === true;
+  const state = { devices: ((o && o.devices) || []).map((d) => JSON.parse(JSON.stringify(d))), jobs: new Map(), scans: new Map(), discovers: 0, retrusted: [], calls: [] };
+  const need = () => { if (perms.print !== true) throw hostError('ERR_PRINT_DENIED', 'this plugin has no print permission'); };
+  const iso = (ms) => new Date(ms).toISOString();
+  const user = (v) => {
+    const uid = Number(v);
+    if (!Number.isSafeInteger(uid) || uid <= 0) throw hostError('ERR_INVALID', 'user: a person id');
+    if (!enabledUser(uid)) throw hostError('ERR_NOT_FOUND', 'no such person');
+    return uid;
+  };
+  const device = (id, kind) => {
+    const d = state.devices.find((x) => x.id === id);
+    if (typeof id !== 'string' || !d || !d[kind]) throw hostError('ERR_NOT_FOUND', kind === 'printer' ? 'no such printer' : 'no such scanner');
+    if (d.gatewayOnline === false) throw hostError('ERR_PRINT_OFFLINE', 'the gateway of this device is offline');
+    return d;
+  };
+  const media = (id) => {
+    const m = typeof id === 'string' ? mediaStore.get(id) : null;
+    if (!m) throw hostError('ERR_NOT_FOUND', 'no such media of this plugin');
+    if (m.bytes > 50 * 1024 * 1024) throw hostError('ERR_PRINT_TOO_LARGE', 'at most 50 MB');
+    return m;
+  };
+  const pdfPages = (buf) => Math.max(1, (Buffer.from(buf).toString('latin1').match(/\/Type\s*\/Page(?![a-zA-Z])/g) || []).length);
+  const view = (j) => ({ ...j, createdAt: iso(j.createdAt), updatedAt: iso(j.updatedAt), expiresAt: iso(j.expiresAt), doneAt: j.doneAt ? iso(j.doneAt) : null });
+  const newMedia = (data, mime, name, owner) => {
+    const id = crypto.randomBytes(16).toString('hex');
+    mediaStore.set(id, { mime, bytes: data.length, owner, data: Buffer.from(data), claimed: false, createdAt: Date.now(), name });
+    return id;
+  };
+
+  function enqueue(d, uid, { format, pages, name, copies, color, duplex }) {
+    const open = [...state.jobs.values()].filter((j) => j.user === uid && OPEN.includes(j.state)).length;
+    if (open >= 20) throw hostError('ERR_PRINT_BUSY', 'at most 20 open jobs per person');
+    const now = Date.now();
+    const j = { id: 'pj_' + crypto.randomBytes(9).toString('base64url'), deviceId: d.id, gatewayId: d.gatewayId || 1, user: uid, name, format, bytes: 1000,
+      pages, copies, color, duplex, state: 'queued', error: null, message: null, createdAt: now, updatedAt: now, expiresAt: now + 24 * 3600 * 1000, doneAt: null };
+    state.jobs.set(j.id, j);
+    return view(j);
+  }
+
+  function opt(a, p) {
+    const max = Math.min(99, p.copiesMax || 99);
+    const copies = a.copies == null ? 1 : Number(a.copies);
+    if (!Number.isInteger(copies) || copies < 1 || copies > max) throw hostError('ERR_INVALID', `copies: 1 … ${max}`);
+    if (a.color != null && typeof a.color !== 'boolean') throw hostError('ERR_INVALID', 'color: true or false');
+    if (a.duplex != null && typeof a.duplex !== 'boolean') throw hostError('ERR_INVALID', 'duplex: true or false');
+    return { copies, color: a.color === true && !!p.color, duplex: a.duplex === true && !!p.duplex };
+  }
+
+  function printable(m, p) {
+    const fmts = p.formats || [];
+    const takes = (f) => !fmts.length || fmts.includes(f);
+    if (m.mime === 'application/pdf') {
+      if (!takes('application/pdf')) throw hostError('ERR_PRINT_FORMAT', 'this printer takes no PDF');
+      return { format: 'application/pdf', pages: pdfPages(m.data) };
+    }
+    if (/^image\//.test(m.mime)) {
+      if (takes('image/jpeg')) return { format: 'image/jpeg', pages: 1 };
+      if (takes('application/pdf')) return { format: 'application/pdf', pages: 1 };
+      throw hostError('ERR_PRINT_FORMAT', 'this printer takes neither JPEG nor PDF');
+    }
+    throw hostError('ERR_PRINT_FORMAT', 'only PDF files and pictures can be printed');
+  }
+
+  const ownJob = (id) => {
+    const j = typeof id === 'string' ? state.jobs.get(id) : null;
+    if (!j) throw hostError('ERR_NOT_FOUND', 'no such job');
+    return j;
+  };
+  const ownScan = (id) => {
+    const s = typeof id === 'string' ? state.scans.get(id) : null;
+    if (!s) throw hostError('ERR_NOT_FOUND', 'no such scan');
+    return s;
+  };
+
+  const api = {
+    'print.devices': async () => { need(); state.calls.push({ op: 'devices' }); return state.devices.map((d) => ({ ...d })); },
+    'print.discover': async (a) => { need(); state.discovers++; if (a && typeof a.retrust === 'string') state.retrusted.push(a.retrust); return { asked: 1 }; },
+    'print.submit': async (a0) => {
+      need();
+      const a = a0 && typeof a0 === 'object' ? a0 : {};
+      state.calls.push({ op: 'submit', args: { ...a } });
+      const uid = user(a.user);
+      const d = device(a.deviceId, 'printer');
+      const o2 = opt(a, d.printer);
+      const m = media(a.mediaId);
+      const p = printable(m, d.printer);
+      return enqueue(d, uid, { ...p, ...o2, name: (typeof a.name === 'string' && a.name.trim()) || m.name || 'GateControl' });
+    },
+    'print.testPage': async (a0) => {
+      need();
+      const a = a0 && typeof a0 === 'object' ? a0 : {};
+      const uid = user(a.user);
+      const d = device(a.deviceId, 'printer');
+      return enqueue(d, uid, { format: 'application/pdf', pages: 1, name: 'GateControl Testseite', copies: 1, color: !!d.printer.color, duplex: false });
+    },
+    'print.job': async ({ id }) => { need(); return view(ownJob(id)); },
+    'print.jobs': async (a0) => {
+      need();
+      const a = a0 && typeof a0 === 'object' ? a0 : {};
+      const since = a.since == null ? 0 : (typeof a.since === 'number' ? a.since : Date.parse(a.since));
+      if (!Number.isFinite(since)) throw hostError('ERR_INVALID', 'since: a time');
+      const limit = a.limit == null ? 100 : a.limit;
+      if (!Number.isInteger(limit) || limit < 1 || limit > 500) throw hostError('ERR_INVALID', 'limit: 1 … 500');
+      return [...state.jobs.values()].filter((j) => j.updatedAt > since && (a.user == null || j.user === a.user))
+        .sort((x, y) => y.updatedAt - x.updatedAt).slice(0, limit).map(view);
+    },
+    'print.cancel': async ({ id }) => {
+      need();
+      const j = ownJob(id);
+      if (j.state !== 'queued' && j.state !== 'waiting') return { canceled: false, state: j.state };
+      Object.assign(j, { state: 'canceled', updatedAt: Date.now(), doneAt: Date.now() });
+      return { canceled: true, state: 'canceled' };
+    },
+    'print.pages': async (a0) => {
+      need();
+      const m = media(a0 && a0.mediaId);
+      if (m.mime === 'application/pdf') return { pages: pdfPages(m.data), format: 'application/pdf' };
+      if (/^image\//.test(m.mime)) return { pages: 1, format: m.mime };
+      throw hostError('ERR_PRINT_FORMAT', 'only PDF files and pictures can be printed');
+    },
+    'print.scan': async (a0) => {
+      need();
+      const a = a0 && typeof a0 === 'object' ? a0 : {};
+      state.calls.push({ op: 'scan', args: { ...a } });
+      const uid = user(a.user);
+      const d = device(a.deviceId, 'scanner');
+      const sc = d.scanner;
+      const source = a.source == null ? (sc.feeder && sc.adf === 'loaded' ? 'feeder' : (sc.platen ? 'platen' : 'feeder')) : a.source;
+      if (!['platen', 'feeder'].includes(source) || (source === 'feeder' && !sc.feeder) || (source === 'platen' && !sc.platen)) throw hostError('ERR_INVALID', 'source');
+      const mode = a.mode == null ? 'document' : a.mode;
+      if (!MODES.includes(mode)) throw hostError('ERR_INVALID', 'mode: document, photo or bw');
+      const resolution = a.resolution == null ? 300 : a.resolution;
+      if (!RESOLUTIONS.includes(resolution)) throw hostError('ERR_INVALID', 'resolution');
+      if ([...state.scans.values()].some((s) => s.user === uid && s.state === 'scanning')) throw hostError('ERR_PRINT_BUSY', 'a scan of this person is still running');
+      const now = Date.now();
+      const s = { id: 'ps_' + crypto.randomBytes(9).toString('base64url'), deviceId: d.id, gatewayId: d.gatewayId || 1, user: uid, state: 'scanning', error: null, pages: [], source, mode, resolution, createdAt: iso(now), updatedAt: iso(now) };
+      state.scans.set(s.id, s);
+      return { scanId: s.id };
+    },
+    'print.scanStatus': async ({ id }) => { need(); return JSON.parse(JSON.stringify(ownScan(id))); },
+    'print.cancelScan': async ({ id }) => {
+      need();
+      const s = ownScan(id);
+      if (s.state !== 'scanning') return { canceled: false, state: s.state };
+      s.state = 'canceled';
+      return { canceled: true, state: 'canceled' };
+    },
+    'print.pdf': async (a0) => {
+      need();
+      const a = a0 && typeof a0 === 'object' ? a0 : {};
+      const uid = user(a.user);
+      if (!Array.isArray(a.pages) || !a.pages.length || a.pages.length > 100) throw hostError('ERR_INVALID', 'pages: 1 … 100 media ids');
+      const parts = a.pages.map((id) => media(id));
+      if (parts.some((m) => !/^image\//.test(m.mime))) throw hostError('ERR_PRINT_FORMAT', 'only pictures can become PDF pages');
+      let name = (typeof a.name === 'string' && a.name.trim()) || 'Scan.pdf';
+      if (!/\.pdf$/i.test(name)) name += '.pdf';
+      const body = Buffer.from('%PDF-1.4\n' + parts.map(() => '<< /Type /Page >>').join('\n') + '\n%%EOF');
+      const id = newMedia(body, 'application/pdf', name, uid);
+      return { mediaId: id, pages: parts.length, bytes: body.length, name };
+    },
+  };
+
+  const gcPart = (call) => Object.freeze({
+    devices: () => call('print.devices', {}),
+    discover: (x) => call('print.discover', x && typeof x === 'object' ? x : {}),
+    submit: (x) => call('print.submit', x && typeof x === 'object' ? x : {}),
+    testPage: (x) => call('print.testPage', x && typeof x === 'object' ? x : {}),
+    job: (id) => call('print.job', { id }),
+    jobs: (x) => call('print.jobs', x && typeof x === 'object' ? x : {}),
+    cancel: (id) => call('print.cancel', { id }),
+    pages: (x) => call('print.pages', x && typeof x === 'object' ? x : {}),
+    scan: (x) => call('print.scan', x && typeof x === 'object' ? x : {}),
+    scanStatus: (id) => call('print.scanStatus', { id }),
+    cancelScan: (id) => call('print.cancelScan', { id }),
+    pdf: (x) => call('print.pdf', x && typeof x === 'object' ? x : {}),
+  });
+
+  /** a gateway's report: the job's new state */
+  function setJob(id, x) {
+    const j = state.jobs.get(id);
+    if (!j) throw new Error('mock host: no such print job ' + id);
+    Object.assign(j, { state: x.state || j.state, error: x.error === undefined ? j.error : x.error, message: x.message === undefined ? j.message : x.message, updatedAt: Date.now() });
+    if (['done', 'failed', 'expired', 'canceled'].includes(j.state)) j.doneAt = Date.now();
+    return view(j);
+  }
+  /** the gateway's scanned pages → media of the person, a thumb each; the state afterwards */
+  function scanPages(id, pages, x = {}) {
+    const s = state.scans.get(id);
+    if (!s) throw new Error('mock host: no such scan ' + id);
+    for (const p of pages || []) {
+      const data = Buffer.from(p.data || 'jpeg');
+      const mime = p.mime || 'image/jpeg';
+      const n = s.pages.length + 1;
+      s.pages.push({ n, mediaId: newMedia(data, mime, `Scan ${n}.jpg`, s.user), mime, bytes: data.length, thumb: Buffer.from('thumb').toString('base64') });
+    }
+    s.state = x.state || 'done';
+    s.error = x.error || null;
+    s.updatedAt = iso(Date.now());
+    return JSON.parse(JSON.stringify(s));
+  }
+
+  return { on, api, gcPart, state, setJob, scanPages };
+}
+
+module.exports = { install };

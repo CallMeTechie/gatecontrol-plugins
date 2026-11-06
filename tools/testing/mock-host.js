@@ -406,6 +406,8 @@
 // host does it hourly) → how many.
 // GateControl 1.231.0 (opt-in: opts.gatecontrol: '1.231.0' or opts.homeInternet) — gc.homeNetwork.internet, "Internet zu
 // Hause" (status / pause / resume / extend, only with permissions.homeInternet): see tools/testing/mock-home-internet.js.
+// GateControl 1.236.0 (opt-in: opts.gatecontrol: '1.236.0' or opts.print) — gc.print, "Drucken & Scannen" (printers and
+// scanners the gateways find; only with permissions.print): see tools/testing/mock-print.js.
 
 const fs = require('node:fs');
 const os = require('node:os');
@@ -413,6 +415,7 @@ const path = require('node:path');
 const EventEmitter = require('node:events');
 const mockMail = require('./mock-mail');
 const mockHomeInternet = require('./mock-home-internet');
+const mockPrint = require('./mock-print');
 
 // GateControl's favourite colour palette (services/avatars.js PALETTE, GateControl ≥ 1.168.0)
 const PALETTE = Object.freeze([
@@ -3161,6 +3164,9 @@ async function createHost(pluginDir, opts = {}) {
   // ─── internet at home (GateControl ≥ 1.231.0, src/services/homeInternet.js; tools/testing/mock-home-internet.js) ───
   const hi = mockHomeInternet.install({ opts, perms, atLeast, enabledUser, hostError, personCtx });
   Object.assign(api, hi.api);
+  // ─── Drucken & Scannen (GateControl ≥ 1.236.0, src/services/homePrint.js; tools/testing/mock-print.js) ───
+  const pr = mockPrint.install({ opts, perms, atLeast, enabledUser, hostError, mediaStore });
+  Object.assign(api, pr.api);
 
   // ─── Funk (GateControl with phase 3c step 2, src/services/homeRadio.js): gc.radio.sensors() ───
   // Opt-in: opts.radio { sensors: [sensor] | () => [sensor] } and permissions.radio: true (an older host ignores the
@@ -3420,6 +3426,8 @@ async function createHost(pluginDir, opts = {}) {
         }) } : {}),
       }),
     } : {}),
+    // GateControl ≥ 1.236.0: gc.print only with permissions.print (like the child bootstrap)
+    ...(pr.on ? { print: pr.gcPart(call) } : {}),
     // GateControl ≥ 1.231.0: gc.homeCache only with permissions.homeCache (like the child bootstrap)
     ...(radioOn ? { radio: Object.freeze({ sensors: () => call('radio.sensors', {}) }) } : {}),
     ...(hcOn ? {
@@ -4070,6 +4078,10 @@ async function createHost(pluginDir, opts = {}) {
     /** GateControl ≥ 1.231.0 (permissions.homeInternet): { state, log, people } — see tools/testing/mock-home-internet.js */
     homeInternet: hi.state,
     homeInternetSet: (userId, x) => hi.hostSet(userId, x),
+    /** GateControl ≥ 1.236.0 (permissions.print): { devices, jobs, scans, discovers, retrusted, calls } — see tools/testing/mock-print.js */
+    print: pr.state,
+    printJob: (id, x) => pr.setJob(id, x || {}),
+    printScanPages: (id, pages, x) => pr.scanPages(id, pages, x),
     /** legacyImport hook: the host hands over the built-in data (first-party plugins only) */
     legacyImport: (snapshot) => hook('legacyImport', snapshot),
     /** keys stored with gc.settings.setSecret */

@@ -1,0 +1,113 @@
+{
+  "id": "gatecontrol-print",
+  "name": {
+    "de": "Drucken & Scannen",
+    "en": "Print & Scan"
+  },
+  "version": "1.0.0",
+  "publisher": "CallMeTechie",
+  "description": {
+    "de": "Drucker und Scanner zu Hause – von überall über GateControl nutzbar, ohne sie ins Internet zu stellen: von unterwegs zu Hause drucken (wartet bis zu 24 Stunden, wenn der Drucker aus ist), vom Handy aus scannen – Glas oder Einzug, Vorschau, weitere Seiten – und als PDF ins Drive, auf Wunsch mit Name und Ordner von der KI. Geräte mit Tintenstand und Testseite, Rechte pro Person (drucken, scannen, Seiten am Tag, nur schwarz-weiß), Verlauf. Die Gateways finden die Geräte selbst (AirPrint/AirScan).",
+    "en": "Printers and scanners at home – usable from anywhere through GateControl without exposing them to the internet: print at home while you are out (waits up to 24 hours when the printer is off), scan from your phone – glass or feeder, preview, more pages – into Drive as a PDF, with name and folder from the AI if you like. Devices with ink levels and a test page, rights per person (print, scan, pages a day, black and white only), history. The gateways find the devices themselves (AirPrint/AirScan)."
+  },
+  "gatecontrol": ">=1.236.0",
+  "entry": "server/index.js",
+  "permissions": {
+    "storage": true,
+    "portal": true,
+    "users": true,
+    "groups": "read",
+    "notify": {
+      "perHour": 60
+    },
+    "background": {
+      "intervalSeconds": 30
+    },
+    "services": [
+      "gatecontrol-drive:list_areas",
+      "gatecontrol-drive:save_file",
+      "gatecontrol-drive:suggest_folder"
+    ],
+    "print": true
+  },
+  "media": {
+    "maxBytes": 52428800,
+    "types": [
+      "application/pdf",
+      "image/jpeg",
+      "image/png",
+      "image/webp",
+      "image/heic",
+      "image/heif"
+    ],
+    "quotaDefault": "2GB"
+  },
+  "ui": {
+    "nav": {
+      "label": {
+        "de": "Drucken & Scannen",
+        "en": "Print & Scan"
+      },
+      "icon": "M6 9V3h12v6M6 17H4a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2h-2M6 14h12v7H6z"
+    },
+    "pages": [
+      {
+        "id": "devices",
+        "title": {
+          "de": "Geräte",
+          "en": "Devices"
+        }
+      },
+      {
+        "id": "rights",
+        "title": {
+          "de": "Berechtigungen",
+          "en": "Permissions"
+        }
+      },
+      {
+        "id": "history",
+        "title": {
+          "de": "Verlauf",
+          "en": "History"
+        }
+      },
+      {
+        "id": "settings",
+        "title": {
+          "de": "Einstellungen",
+          "en": "Settings"
+        }
+      }
+    ],
+    "portal": {
+      "label": {
+        "de": "Drucken & Scannen",
+        "en": "Print & Scan"
+      },
+      "icon": "M6 9V3h12v6M6 17H4a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2h-2M6 14h12v7H6z"
+    }
+  },
+  "license": {
+    "required": true
+  },
+  "migrations": "migrations",
+  "notifyTopics": [
+    {
+      "id": "print_done",
+      "label": {
+        "de": "Druck fertig",
+        "en": "Print done"
+      },
+      "default": true
+    },
+    {
+      "id": "print_failed",
+      "label": {
+        "de": "Druck fehlgeschlagen",
+        "en": "Print failed"
+      },
+      "default": true
+    }
+  ]
+}

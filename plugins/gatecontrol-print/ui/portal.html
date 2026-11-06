@@ -1,0 +1,65 @@
+<main class="pr-page pr-portal">
+  <div class="pr-card-head">
+    <h1 class="pr-card-title" style="font-size:20px">{{t:portal.title}}</h1>
+    <span class="pr-badge" id="pr-home" hidden></span>
+  </div>
+  <div class="pr-tabs" role="tablist" id="pr-tabs">
+    <button type="button" role="tab" id="pr-tab-scan" aria-controls="pr-scan" aria-selected="true">{{t:portal.tab_scan}}</button>
+    <button type="button" role="tab" id="pr-tab-print" aria-controls="pr-print" aria-selected="false">{{t:portal.tab_print}}</button>
+  </div>
+  <p class="pr-hint" id="pr-loading" role="status">{{t:common.loading}}</p>
+
+  <section class="pr-card" id="pr-scan" role="tabpanel" aria-labelledby="pr-tab-scan" hidden>
+    <div id="pr-scan-setup">
+      <div class="form-group" id="pr-scanner-row"><label class="form-label" for="pr-scanner">{{t:portal.scanner}}</label><select class="form-select" id="pr-scanner"></select></div>
+      <p class="pr-hint" id="pr-scan-hint">{{t:portal.scan_hint}}</p>
+      <div class="form-group"><span class="form-label" id="pr-src-l">{{t:portal.source}}</span><div class="pr-seg" role="group" aria-labelledby="pr-src-l" id="pr-source"></div></div>
+      <div class="form-group"><span class="form-label" id="pr-mode-l">{{t:portal.mode}}</span><div class="pr-seg" role="group" aria-labelledby="pr-mode-l" id="pr-mode"></div></div>
+      <p class="pr-hint" id="pr-target"></p>
+      <p class="pr-note" id="pr-no-drive" hidden>{{t:portal.no_drive}}</p>
+      <div class="pr-actions"><button class="btn btn-primary" type="button" id="pr-scan-go">{{t:portal.scan}}</button></div>
+    </div>
+    <div id="pr-session" hidden>
+      <div class="pr-card-head"><strong id="pr-sess-count"></strong><span class="pr-badge">PDF</span><span id="pr-sess-spin" hidden><span class="pr-spin" aria-hidden="true"></span> <span>{{t:portal.scanning}}</span></span></div>
+      <div class="pr-pages" id="pr-pages"></div>
+      <p class="pr-note" id="pr-sess-err" hidden></p>
+      <div class="pr-suggest" id="pr-suggest" hidden></div>
+      <div class="form-group"><label class="form-label" for="pr-name">{{t:portal.name}}</label><input class="form-input" id="pr-name" maxlength="200" autocomplete="off"></div>
+      <div class="pr-actions">
+        <button class="btn" type="button" id="pr-more">{{t:portal.more}}</button>
+        <button class="btn btn-primary" type="button" id="pr-save">{{t:portal.save}}</button>
+        <button class="btn" type="button" id="pr-discard">{{t:portal.discard}}</button>
+      </div>
+    </div>
+    <p class="pr-hint" id="pr-no-scanner" hidden>{{t:portal.no_scanner}}</p>
+  </section>
+
+  <section class="pr-card" id="pr-print" role="tabpanel" aria-labelledby="pr-tab-print" hidden>
+    <h2 class="pr-card-title">{{t:portal.print_title}}</h2>
+    <p class="pr-hint">{{t:portal.print_intro}}</p>
+    <div class="form-group">
+      <span class="form-label">{{t:portal.file}}</span>
+      <div class="pr-file">
+        <label class="btn" for="pr-file-in">{{t:portal.pick_file}}</label>
+        <input type="file" id="pr-file-in" accept="application/pdf,image/jpeg,image/png,image/webp,image/heic,image/heif,.pdf,.jpg,.jpeg,.png,.webp,.heic">
+        <span class="pr-file-name" id="pr-file-name">{{t:portal.no_file}}</span>
+      </div>
+    </div>
+    <div class="form-group"><label class="form-label" for="pr-printer">{{t:portal.printer}}</label><select class="form-select" id="pr-printer"></select></div>
+    <div class="form-row">
+      <div class="form-group"><span class="form-label" id="pr-copies-l">{{t:portal.copies}}</span>
+        <div class="pr-num" role="group" aria-labelledby="pr-copies-l"><button class="btn" type="button" id="pr-copies-minus" aria-label="{{t:portal.less}}">−</button><output id="pr-copies" aria-live="polite">1</output><button class="btn" type="button" id="pr-copies-plus" aria-label="{{t:portal.more_copies}}">+</button></div>
+      </div>
+      <div class="form-group"><span class="form-label">{{t:portal.options}}</span>
+        <label class="check"><input type="checkbox" id="pr-color"> <span>{{t:portal.color}}</span></label>
+        <label class="check"><input type="checkbox" id="pr-duplex"> <span>{{t:portal.duplex}}</span></label>
+      </div>
+    </div>
+    <p class="pr-hint" id="pr-limit" hidden></p>
+    <div class="pr-actions"><button class="btn btn-primary" type="button" id="pr-print-go" disabled>{{t:portal.print}}</button></div>
+    <p class="pr-hint">{{t:portal.print_wait}}</p>
+    <p class="pr-hint" id="pr-no-printer" hidden>{{t:portal.no_printer}}</p>
+    <h3 class="form-label" id="pr-jobs-h" hidden>{{t:portal.recent}}</h3>
+    <div id="pr-jobs"></div>
+  </section>
+</main>

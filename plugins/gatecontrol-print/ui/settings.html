@@ -1,0 +1,23 @@
+<main class="pr-page">
+  <section class="pr-card" aria-labelledby="pr-set-h">
+    <div class="pr-card-head"><h2 class="pr-card-title" id="pr-set-h">{{t:set.scans}}</h2></div>
+    <p class="pr-note" id="pr-no-drive" hidden>{{t:set.no_drive}}</p>
+    <fieldset class="form-group" style="border:0;padding:0;margin:0">
+      <legend class="form-label">{{t:set.target}}</legend>
+      <div class="pr-radio">
+        <label><input type="radio" name="pr-area" value="mine"> <span id="pr-area-mine"></span></label>
+        <label><input type="radio" name="pr-area" value="family"> <span id="pr-area-family"></span></label>
+      </div>
+    </fieldset>
+    <div class="form-group"><label class="form-label" for="pr-folder">{{t:set.folder}}</label><input class="form-input" id="pr-folder" maxlength="60" style="max-width:320px"></div>
+    <label class="check"><input type="checkbox" id="pr-ai"> <span>{{t:set.ai}}</span></label>
+    <p class="pr-hint">{{t:set.ai_hint}}</p>
+    <p class="pr-hint">{{t:set.ocr_hint}}</p>
+  </section>
+  <section class="pr-card" aria-labelledby="pr-set2-h">
+    <div class="pr-card-head"><h2 class="pr-card-title" id="pr-set2-h">{{t:set.general}}</h2></div>
+    <label class="check"><input type="checkbox" id="pr-notify"> <span>{{t:set.notify}}</span></label>
+    <div class="form-group"><label class="form-label" for="pr-days">{{t:set.days}}</label><input class="form-input" id="pr-days" type="number" min="7" max="365" style="max-width:120px"></div>
+    <div><button class="btn btn-primary" type="button" id="pr-save">{{t:common.save}}</button></div>
+  </section>
+</main>
