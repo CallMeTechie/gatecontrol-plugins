@@ -18,12 +18,18 @@ function personOf(req) {
 }
 
 /** A device as the portal shows it — no address. */
+/** Document formats the printer accepts (MIME types, as the gateway reports them) – lets the apps pick PDF or JPEG. */
+function formatsOf(p) {
+  const f = Array.isArray(p.formats) ? p.formats : [];
+  return f.filter((x) => typeof x === 'string' && /^[a-z0-9.+-]+\/[a-z0-9.+-]+$/i.test(x)).slice(0, 24).map((x) => x.toLowerCase());
+}
+
 function deviceView(d) {
   const p = d.printer;
   const s = d.scanner;
   return {
     id: d.id, name: d.name, location: d.location || null, online: !!d.online, problem: d.problem || null,
-    printer: p ? { state: p.state, color: !!p.color, duplex: !!p.duplex, copiesMax: Math.min(99, p.copiesMax || 99) } : null,
+    printer: p ? { state: p.state, color: !!p.color, duplex: !!p.duplex, copiesMax: Math.min(99, p.copiesMax || 99), formats: formatsOf(p) } : null,
     scanner: s ? { state: s.state, platen: !!s.platen, feeder: !!s.feeder, adf: s.adf || null } : null,
   };
 }

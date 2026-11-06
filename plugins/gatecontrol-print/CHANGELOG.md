@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.1
+
+- **Drucken aus den Apps:** Das Plugin ist jetzt für die GateControl-Apps freigegeben (`permissions.app`). Damit funktionieren der Android-Druckdienst „GateControl“ im System-Druckdialog und „Teilen › Mit GateControl drucken“ – mit und ohne VPN, der Auftrag läuft über den Server und das Gateway zu Hause. Ohne diese Freigabe antwortete GateControl den Apps mit 404.
+- Die Druckerliste für Personen nennt zusätzlich die Dokumentformate des Druckers (`printer.formats`), damit die Apps PDF oder JPEG passend wählen.
+
 ## 1.0.0
 
 Erste Fassung von „Drucken & Scannen“ (GateControl ≥ 1.236.0, Gateway ≥ 1.24.0 mit „Drucken & Scannen“ unter Gateways › Funktionen).
