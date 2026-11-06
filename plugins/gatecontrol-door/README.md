@@ -192,7 +192,7 @@ Klingel-Diagnose. Gong und Fernseher bekommen das Klingeln direkt von Ring und s
 ### Kameras im Heimnetz (ab 1.6.0)
 
 Kameras mit ONVIF oder RTSP (Reolink, Tapo, Hikvision, …) über ein GateControl-Gateway – ohne Hersteller-Cloud.
-Voraussetzungen: GateControl ≥ 1.240.0, ein Gateway ≥ 1.27.0 mit „Kameras“ an (Gateways › Funktionen › „Geräte im
+Voraussetzungen: GateControl ≥ 1.240.0, ein Gateway ≥ 1.28.0 mit „Kameras“ an (Gateways › Funktionen › „Geräte im
 Heimnetz“), auf Synology/Linux einmal die aktuelle Compose-Datei (Dienst `kameras`; das Pi-Image macht das selbst).
 In der Kamera ONVIF/RTSP einschalten (Reolink: Netzwerk › Erweitert › Server-Einstellungen; Tapo: Erweitert ›
 Kamerakonto anlegen – dieses Konto ist „Benutzer der Kamera“).

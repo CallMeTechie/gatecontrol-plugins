@@ -10,7 +10,7 @@ python-ring-doorbell (Home Assistant) verwenden. Sie kann sich jederzeit ändern
 
 ## 1.6.0
 Braucht weiterhin **GateControl ≥ 1.169.0**; die Kameras im Heimnetz brauchen **GateControl ≥ 1.240.0** und ein
-Gateway ≥ 1.27.0 mit eingeschalteten „Kameras“ (Gateways › Funktionen › „Geräte im Heimnetz“). Ältere GateControl:
+Gateway ≥ 1.28.0 mit eingeschalteten „Kameras“ (Gateways › Funktionen › „Geräte im Heimnetz“). Ältere GateControl:
 auf „Geräte“ steht „braucht GateControl ab 1.240.0“, sonst ändert sich nichts.
 - **Kameras im Heimnetz** (ONVIF/RTSP, z. B. Reolink, Tapo, Hikvision) über die Gateways – ohne Hersteller-Cloud
   (`gc.cameras`, neue Berechtigung „Kameras im Heimnetz“):
