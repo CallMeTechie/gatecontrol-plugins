@@ -101,7 +101,7 @@ async function doSubscribe() {
   } catch (e) {
     for (const s of st.subs.splice(0)) s.unsubscribe().catch(() => null);
     st.mqtt = e && e.code === 'not_enabled' ? 'off' : 'error';
-    warnOnce('mqtt:' + st.mqtt, st.mqtt === 'off' ? 'the MQTT broker of this gateway is off — retrying every minute' : `MQTT subscribe failed (${(e && e.code) || 'error'}) — retrying every minute`);
+    warnOnce('mqtt:' + st.mqtt, st.mqtt === 'off' ? 'MQTT is not switched on for this gateway yet — switch on the MQTT broker in GateControl (Gateways › this gateway › MQTT); Smart Home then connects by itself within a minute' : `MQTT subscribe failed (${(e && e.code) || 'error'}) — retrying every minute`);
   }
 }
 

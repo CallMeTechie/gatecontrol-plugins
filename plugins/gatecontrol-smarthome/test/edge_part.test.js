@@ -203,7 +203,7 @@ test('commands go out over MQTT; info; a broker that is off is retried, not a cr
     assert.equal((await e.call('info')).mqtt, 'off');
     assert.deepEqual((await e.call('info')).lan, ['192.168.1.23'], 'private LAN addresses only (no tunnel, docker, loopback)');
     await assert.rejects(e.call('command', { base: 'shellies/a', family: 'shelly2', ch: 'switch:0', op: 'on' }), (err) => err.code === 'mqtt_off');
-    assert.equal(e.logs.filter((l) => /broker of this gateway is off/.test(l)).length, 1);
+    assert.equal(e.logs.filter((l) => /MQTT is not switched on for this gateway yet/.test(l)).length, 1);
     e.state.mqttOff = false;
     assert.equal((await e.call('refresh')).mqtt, 'ok');
     assert.deepEqual(await e.call('command', { base: 'shellies/a', family: 'shelly2', ch: 'switch:0', op: 'on' }), { sent: 1 });

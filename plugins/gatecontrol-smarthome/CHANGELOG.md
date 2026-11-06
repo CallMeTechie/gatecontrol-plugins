@@ -3,6 +3,12 @@
 Phoscon/deCONZ-Integration als GateControl-Plugin – bisher fest in GateControl eingebaut; seit 1.7.0 auch Shelly und
 Tasmota über ein GateControl-Gateway.
 
+## 1.7.2
+- **Verständlichere Protokollzeile, wenn MQTT aus ist:** Statt „the MQTT broker of this gateway is off – retrying
+  every minute“ sagt der Edge-Teil jetzt, dass MQTT auf dem Gateway noch nicht eingeschaltet ist, wo man es
+  einschaltet (GateControl: Gateways › Gateway › MQTT) und dass er sich danach von selbst verbindet. GateControl
+  zeigt dazu beim Plugin und im Protokoll einen Hinweis mit dem Knopf „MQTT einschalten“ (de/en).
+
 ## 1.7.1
 - **Warum ein Gateway „nicht verbunden“ ist:** Mit einem GateControl, das den Grund kennt (`gc.edge.gateways()` mit
   `reason`), zeigen „Quelle hinzufügen“, die Quellenauswahl und eine gescheiterte Einrichtung („Gerät erreicht“,
