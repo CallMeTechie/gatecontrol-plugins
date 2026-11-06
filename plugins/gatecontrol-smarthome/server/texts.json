@@ -377,7 +377,16 @@
   "owners.area": "Bereich",
   "owners.area_hint": "Geräte mit Bereich stehen hier und im Portal unter ihrem Bereich.",
   "portal.other_devices": "Weitere Geräte",
-  "section.waiting": "Warten auf das Gerät"
+  "section.waiting": "Warten auf das Gerät",
+  "source.group_ble": "Bluetooth-Sensoren (GateControl-Gateway)",
+  "ble.via": "Bluetooth-Sensoren über {{name}} – übernommen in GateControl unter Gateway › Funk",
+  "ble.empty": "Keine Bluetooth-Sensoren übernommen. In GateControl unter Gateway › Funk „Übernehmen“ – dann erscheinen sie hier.",
+  "ble.count": "{{n}} Sensoren",
+  "ble.count_one": "1 Sensor",
+  "owners.name": "Name",
+  "owners.name_hint": "Lampen und Zigbee-Sensoren werden in deCONZ umbenannt (alle Teile eines Geräts), Bluetooth-Sensoren hier.",
+  "error.not_renamable": "Dieses Gerät lässt sich hier nicht umbenennen.",
+  "focus.not_found": "Das Gerät ist noch nicht da – Smart Home liest die Gateways alle 30 Sekunden. Gleich noch einmal versuchen."
  },
  "en": {
   "error.gateway_not_found": "Smart Home gateway not found",
@@ -757,6 +766,15 @@
   "owners.area": "Area",
   "owners.area_hint": "Devices with an area are listed under it here and in the portal.",
   "portal.other_devices": "Other devices",
-  "section.waiting": "Waiting for the device"
+  "section.waiting": "Waiting for the device",
+  "source.group_ble": "Bluetooth sensors (GateControl gateway)",
+  "ble.via": "Bluetooth sensors through {{name}} – taken over in GateControl under Gateway › Radio",
+  "ble.empty": "No Bluetooth sensors taken over. In GateControl under Gateway › Radio “Take over” – then they show up here.",
+  "ble.count": "{{n}} sensors",
+  "ble.count_one": "1 sensor",
+  "owners.name": "Name",
+  "owners.name_hint": "Lights and Zigbee sensors are renamed in deCONZ (every part of a device), Bluetooth sensors here.",
+  "error.not_renamable": "This device cannot be renamed here.",
+  "focus.not_found": "The device is not here yet – Smart Home reads the gateways every 30 seconds. Try again in a moment."
  }
 }

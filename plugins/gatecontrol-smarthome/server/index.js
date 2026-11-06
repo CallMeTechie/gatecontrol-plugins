@@ -11,6 +11,10 @@
 //     GET  /rules?gateway_id · /rules/gateway-count?gateway_id
 //     POST /rules · /rules/:id/enabled   PUT /rules/:id   DELETE /rules/:id
 //     PUT  /resources/:id { area }      the area ("Bereich") of any resource
+//     PUT  /resources/:id { name }      "In Smart Home benennen": lights / sensors (in deCONZ), Bluetooth sensors
+//     GET  /find?focus=zigbee:<mac>|ble:<mac>   where the page's deep link points to
+//   Bluetooth sensors through a GateControl gateway (server/radio.js; GateControl with gc.radio, phase 3c step 2)
+//     GET  /ble/gateways · /ble/resources[?gateway_id]
 //   Shelly / Tasmota through a GateControl gateway (server/edge.js; GateControl ≥ 1.228.1 gc.edge, gc.mqtt.accounts)
 //     GET  /edge/gateways · /edge/found?gateway_id · /edge/devices[?gateway_id] · /edge/devices/:id · /edge/setup/:job
 //     POST /edge/devices (by hand: account, password once) · /edge/setup (automatic) · /edge/setup/:job/password
@@ -39,6 +43,7 @@ const legacy = require('./legacy');
 const alerts = require('./alerts');
 const deconzCaps = require('./caps');
 const edge = require('./edge');
+const radio = require('./radio');
 const { validApiKey } = require('./deconz');
 const texts = require('./texts.json');
 
@@ -64,6 +69,7 @@ const ERRORS = {
   SMARTHOME_OWNER_UNKNOWN_USER: [400, 'error.owner_unknown_user'],
   SMARTHOME_USER_IDS_REQUIRED: [400, 'error.user_ids_required'],
   SMARTHOME_NOT_CONTROLLABLE: [400, 'error.not_controllable'],
+  SMARTHOME_NOT_RENAMABLE: [400, 'error.not_renamable'],
   SMARTHOME_INVALID_PATCH: [400, 'error.invalid_patch'],
   SMARTHOME_NOT_OWNER: [403, 'error.not_owner'],
   SMARTHOME_RULE_INVALID: [400, 'error.rule_invalid'],
@@ -510,6 +516,22 @@ async function adminRoute(req, gc, seg) {
     throw fail('NOT_FOUND');
   }
 
+  if (a === 'find' && seg.length === 1 && m === 'GET') {
+    return { json: { ok: true, found: await service.findFocus(gc, req.query && req.query.focus) } };
+  }
+
+  if (a === 'ble') {
+    if (seg.length === 2 && b === 'gateways' && m === 'GET') return { json: { ok: true, ...(await radio.gateways(gc)) } };
+    if (seg.length === 2 && b === 'resources' && m === 'GET') {
+      const gid = req.query && req.query.gateway_id ? posInt(req.query.gateway_id) : null;
+      const users = await usersById(gc);
+      const owners = await store.allOwners(gc);
+      const resources = (await radio.list(gc, gid)).map((r) => ({ ...r, owners: (owners.get(r.id) || []).filter((uid) => users.has(uid)).map((uid) => users.get(uid)) }));
+      return { json: { ok: true, resources } };
+    }
+    throw fail('NOT_FOUND');
+  }
+
   if (a === 'resources') {
     if (seg.length === 1 && m === 'GET') {
       const gid = req.query && req.query.gateway_id ? posInt(req.query.gateway_id) : null;
@@ -525,6 +547,11 @@ async function adminRoute(req, gc, seg) {
     }
     const id = posInt(b);
     if (!id) throw fail('NOT_FOUND');
+    if (seg.length === 2 && m === 'PUT' && body.name !== undefined) {
+      const name = typeof body.name === 'string' ? body.name.replace(/[\0-\x1f\x7f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 32) : '';
+      if (!name) throw fail('INVALID');
+      return { json: { ok: true, name, ...(await service.renameResource(gc, id, name)) } };
+    }
     if (seg.length === 2 && m === 'PUT') {
       if (body.area !== null && typeof body.area !== 'string') throw fail('INVALID');
       const area = typeof body.area === 'string' ? body.area.replace(/[\0-\x1f\x7f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 40) : null;
@@ -656,6 +683,7 @@ module.exports = {
       try { await rules.resyncPending(gc); } catch (e) { gc.log.warn('rule resync failed', e.code || e.message); }
     }
     await edge.tick(gc).catch((e) => gc.log.warn('edge tick failed', (e && (e.code || e.message)) || e));
+    await radio.sync(gc).catch((e) => gc.log.warn('radio sync failed', (e && (e.code || e.message)) || e));
     const s = await gc.settings.all();
     const interval = Math.max(30, Math.min(3600, Number(s.interval) || 30));
     if (Date.now() - state.lastSync < interval * 1000 - 2000) return;

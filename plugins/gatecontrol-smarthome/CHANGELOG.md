@@ -3,6 +3,19 @@
 Phoscon/deCONZ-Integration als GateControl-Plugin – bisher fest in GateControl eingebaut; seit 1.7.0 auch Shelly und
 Tasmota über ein GateControl-Gateway.
 
+## 1.8.0
+- **Bluetooth-Sensoren über ein GateControl-Gateway:** Mit einem GateControl, das Funk kennt (`gc.radio`, Phase 3c
+  Schritt 2), erscheinen die Bluetooth-Thermometer und -Sensoren, die du in GateControl unter Gateway › Funk
+  „Übernommen“ hast (BTHome, Xiaomi mit ATC/pvvx-Firmware, Shelly BLU), als Sensoren im Plugin – eigene Quelle
+  „Bluetooth-Sensoren (GateControl-Gateway)“ je Gateway, mit Temperatur bzw. Feuchte, Batterie, Bereich und Besitzern
+  wie jeder andere Sensor, auch im Portal „Zuhause“. Gibt man einen Sensor in GateControl zurück, verschwindet er hier.
+  Neue Berechtigung `permissions.radio` (ältere GateControl-Versionen ignorieren sie – dann bleibt alles wie bisher).
+- **„In Smart Home benennen“:** Lampen und Sensoren lassen sich im Dialog „Zuweisen“ umbenennen – deCONZ-Geräte direkt
+  in deCONZ (alle Teile eines Zigbee-Geräts zugleich, wie in Phoscon), Bluetooth-Sensoren im Plugin (der Name bleibt).
+  GateControls Link `/plugins/gatecontrol-smarthome?focus=zigbee:<MAC>` bzw. `ble:<MAC>` (Reiter „Funk“ nach dem
+  Anlernen) öffnet die richtige Quelle, zeigt das Gerät und öffnet den Dialog (`GET /find`). Der Link braucht ein
+  GateControl, das `?focus=` an die Seite weitergibt; ältere zeigen die Seite ohne Sprung.
+
 ## 1.7.2
 - **Verständlichere Protokollzeile, wenn MQTT aus ist:** Statt „the MQTT broker of this gateway is off – retrying
   every minute“ sagt der Edge-Teil jetzt, dass MQTT auf dem Gateway noch nicht eingeschaltet ist, wo man es

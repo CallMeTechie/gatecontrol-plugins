@@ -3162,6 +3162,16 @@ async function createHost(pluginDir, opts = {}) {
   const hi = mockHomeInternet.install({ opts, perms, atLeast, enabledUser, hostError, personCtx });
   Object.assign(api, hi.api);
 
+  // ─── Funk (GateControl with phase 3c step 2, src/services/homeRadio.js): gc.radio.sensors() ───
+  // Opt-in: opts.radio { sensors: [sensor] | () => [sensor] } and permissions.radio: true (an older host ignores the
+  // key — no gc.radio). The sensors are what the administrator took over on the gateways (docs/plugins.md "Radio sensors").
+  const radioOn = perms.radio === true && !!(opts.radio && typeof opts.radio === 'object');
+  api['radio.sensors'] = async () => {
+    if (!radioOn) throw hostError('ERR_RADIO_DENIED', 'this plugin has no radio permission');
+    const list = typeof opts.radio.sensors === 'function' ? await opts.radio.sensors() : opts.radio.sensors;
+    return Array.isArray(list) ? list : [];
+  };
+
   const call = async (name, args) => wire(await api[name](wire(args)));
 
   /** A WebSocket like the host's (EventEmitter: message, close, error; send, close) wired to opts.websocket. */
@@ -3411,6 +3421,7 @@ async function createHost(pluginDir, opts = {}) {
       }),
     } : {}),
     // GateControl ≥ 1.231.0: gc.homeCache only with permissions.homeCache (like the child bootstrap)
+    ...(radioOn ? { radio: Object.freeze({ sensors: () => call('radio.sensors', {}) }) } : {}),
     ...(hcOn ? {
       homeCache: Object.freeze({
         offer: (o) => call('homeCache.offer', o && typeof o === 'object' ? o : {}),

@@ -41,7 +41,10 @@
   var areas = {};
   var allUsers = null;
   var ownerTarget = null;       // { resource } (deCONZ) | { device } (Shelly / Tasmota)
-  var source = null;            // { type: 'd' | 'e', id }
+  var source = null;            // { type: 'd' | 'e' | 'b', id } — b: Bluetooth sensors of a GateControl gateway (server/radio.js)
+  var ble = { available: false, gateways: [] };
+  // GateControl's deep link "In Smart Home benennen": /plugins/gatecontrol-smarthome?focus=zigbee:<mac> | ble:<mac>
+  var focus = (function () { try { var f = new URLSearchParams(location.search).get('focus'); return f && /^(zigbee|ble):[0-9a-f:]{17,23}$/i.test(f) ? f : null; } catch (e) { return null; } }());
 
   function send(id, body) { return S.api('POST', 'resources/' + Number(id) + '/state', body); }
   function warn(err) { S.toast((err && err.message) || T('common.error'), 'error'); }
@@ -53,6 +56,7 @@
   function currentGatewayId() { return source && source.type === 'd' ? source.id : null; }
   function currentGateway() { var id = currentGatewayId(); return gateways.find(function (g) { return g.id === id; }) || null; }
   function currentEdge() { return source && source.type === 'e' ? (edge.gateways.find(function (g) { return g.id === source.id; }) || null) : null; }
+  function currentBle() { return source && source.type === 'b' ? (ble.gateways.find(function (g) { return g.id === source.id; }) || null) : null; }
   function edgeName(id) { var g = edge.gateways.find(function (x) { return x.id === id; }); return g ? g.name : ''; }
   function rememberAreas(list) {
     list.forEach(function (a) { if (a) areas[a] = true; });
@@ -396,7 +400,9 @@
     var info = $('#sh-gwinfo');
     var g = currentGateway();
     var e = currentEdge();
-    if (g) info.textContent = T('connect.target') + ': ' + (g.target_label || T('gateway.no_target')) + ' · ' + T('gateway.last_seen') + ': ' + (g.last_seen_at || T('gateway.never'));
+    var bg = currentBle();
+    if (bg) info.textContent = T('ble.via', { name: bg.name });
+    else if (g) info.textContent = T('connect.target') + ': ' + (g.target_label || T('gateway.no_target')) + ' · ' + T('gateway.last_seen') + ': ' + (g.last_seen_at || T('gateway.never'));
     else if (e) {
       var parts = [T('source.via', { name: e.name })];
       if (e.state === 'running') {
@@ -407,14 +413,30 @@
     } else info.textContent = '';
     var isEdge = !!e;
     $$('[data-for="deconz"]').forEach(function (b) { b.hidden = isEdge || !g; b.disabled = !g; });
+    if (bg) $$('[data-for="deconz"]').forEach(function (b) { b.hidden = true; });
     $$('[data-for="edge"]').forEach(function (b) { b.hidden = !isEdge; b.disabled = !e || e.state !== 'running'; });
     $('#sh-source-open').classList.toggle('btn-primary', !isEdge);
     $('#sh-test-result').hidden = true;
     if (!isEdge) $('#sh-found').hidden = true;
   }
 
+  /** Bluetooth sensors of one GateControl gateway (taken over in GateControl, Gateway › Funk). */
+  function loadBle(gatewayId) {
+    return S.api('GET', 'ble/resources?gateway_id=' + Number(gatewayId)).then(function (data) {
+      var res = (data.resources || []).filter(function (r) { return r.enabled; });
+      deconzRes = res;
+      rememberAreas(res.map(function (r) { return r.area; }));
+      renderKpis(res);
+      var host = S.clear($('#smarthome-devices'));
+      if (!res.length) { emptyMsg(T('ble.empty')); return; }
+      grouped(res, function (r) { return r.area || null; }, renderSensor, function (rest) { return [section(T('section.sensors'), rest, renderSensor)]; })
+        .forEach(function (b) { host.appendChild(b); });
+    }, function () { emptyMsg(T('load_error')); });
+  }
+
   function loadView() {
     renderInfo();
+    if (source && source.type === 'b') return loadBle(source.id);
     if (source && source.type === 'e') {
       found = [];
       renderFound();
@@ -432,7 +454,10 @@
       S.api('GET', 'gateways').catch(function () { return { gateways: [] }; }),
       S.api('GET', 'targets').catch(function () { return { targets: [] }; }),
       S.api('GET', 'edge/gateways').catch(function () { return { available: false, gateways: [] }; }),
+      S.api('GET', 'ble/gateways').catch(function () { return { available: false, gateways: [] }; }),
     ]).then(function (out) {
+      ble = out[3] && typeof out[3] === 'object' ? out[3] : { available: false, gateways: [] };
+      ble.gateways = ble.gateways || [];
       gateways = out[0].gateways || [];
       targets = out[1].targets || [];
       edge = out[2] && typeof out[2] === 'object' ? out[2] : { available: false, gateways: [] };
@@ -448,16 +473,22 @@
         edge.gateways.forEach(function (g) { var s = shortState(g); g2.appendChild(el('option', { value: 'e:' + g.id, text: g.name + (s ? ' (' + s + ')' : '') })); });
         sel.appendChild(g2);
       }
-      sel.hidden = !gateways.length && !edge.gateways.length;
+      if (ble.gateways.length) {
+        var g3 = el('optgroup', { label: T('source.group_ble') });
+        ble.gateways.forEach(function (g) { g3.appendChild(el('option', { value: 'b:' + g.id, text: g.name + ' (' + T(g.sensors === 1 ? 'ble.count_one' : 'ble.count', { n: g.sensors }) + ')' })); });
+        sel.appendChild(g3);
+      }
+      sel.hidden = !gateways.length && !edge.gateways.length && !ble.gateways.length;
       var want = select || (source ? source.type + ':' + source.id : null);
       var values = $$('option', sel).map(function (o) { return o.value; });
       if (!want || values.indexOf(want) < 0) {
         var d = gateways.find(function (g) { return g.enabled; }) || gateways[0];
         var e = edge.gateways.find(function (g) { return g.state === 'running'; }) || edge.gateways[0];
-        want = d ? 'd:' + d.id : (e ? 'e:' + e.id : null);
+        var bg = ble.gateways[0];
+        want = d ? 'd:' + d.id : (e ? 'e:' + e.id : (bg ? 'b:' + bg.id : null));
       }
       if (want) sel.value = want;
-      var m = /^([de]):(\d+)$/.exec(want || '');
+      var m = /^([deb]):(\d+)$/.exec(want || '');
       source = m ? { type: m[1], id: Number(m[2]) } : null;
       return loadView();
     });
@@ -477,11 +508,11 @@
     var ae = document.activeElement;
     if (ae && /^(INPUT|SELECT|TEXTAREA)$/.test(ae.tagName)) return;
     if ($$('.modal-overlay').some(function (m) { return !m.hidden; })) return;
-    if (source && source.type === 'e') { loadEdge(source.id); loadFound(source.id, false); } else if (currentGatewayId()) loadResources(currentGatewayId());
+    if (source && source.type === 'e') { loadEdge(source.id); loadFound(source.id, false); } else if (source && source.type === 'b') loadBle(source.id); else if (currentGatewayId()) loadResources(currentGatewayId());
   }, 30000);
 
   $('#sh-gateway-select').addEventListener('change', function () {
-    var m = /^([de]):(\d+)$/.exec($('#sh-gateway-select').value);
+    var m = /^([deb]):(\d+)$/.exec($('#sh-gateway-select').value);
     source = m ? { type: m[1], id: Number(m[2]) } : null;
     loadView();
   });
@@ -573,6 +604,10 @@
     $('#sh-owner-sub').textContent = r ? (r.name || '') : d.name;
     $('#sh-owner-area-row').hidden = !r;
     $('#sh-owner-area').value = r ? (r.area || '') : '';
+    // a name for lights, sensors (in deCONZ) and Bluetooth sensors — "In Smart Home benennen"
+    var renamable = !!(r && (r.deconz_type === 'lights' || r.deconz_type === 'sensors' || r.deconz_type === 'ble'));
+    $('#sh-owner-name-row').hidden = !renamable;
+    $('#sh-owner-name').value = renamable ? (r.name || '') : '';
     $('#sh-owner-search').value = '';
     var current = r ? (r.owners || []) : deviceOwners(d);
     fetchUsers().then(function (users) {
@@ -603,11 +638,14 @@
     }
     var r = target.resource;
     var area = $('#sh-owner-area').value.trim();
+    var name = $('#sh-owner-name-row').hidden ? '' : $('#sh-owner-name').value.trim();
     S.api('PUT', 'resources/' + r.id + '/owners', { userIds: ids }).then(function () {
       return area === (r.area || '') ? null : S.api('PUT', 'resources/' + r.id, { area: area || null });
     }).then(function () {
+      return !name || name === (r.name || '') ? null : S.api('PUT', 'resources/' + r.id, { name: name });
+    }).then(function () {
       S.closeModal('sh-owner-modal');
-      return loadResources(currentGatewayId());
+      return loadView();
     }, warn);
   });
 
@@ -1027,5 +1065,22 @@
     }, warn).then(function () { btn.disabled = false; });
   });
 
-  loadGateways();
+  // the deep link: open the source, show the card, open its dialog (name, area, owners)
+  function openFocus() {
+    if (!focus) return loadGateways();
+    var f = focus;
+    focus = null;
+    return S.api('GET', 'find?focus=' + encodeURIComponent(f)).then(function (r) {
+      var hit = r && r.found;
+      return loadGateways(hit ? hit.source : undefined).then(function () {
+        if (!hit) { S.toast(T('focus.not_found'), 'error'); return; }
+        var res = deconzRes.find(function (x) { return x.id === hit.resource_id; });
+        var card = document.querySelector('.sh-card[data-id="' + Number(hit.resource_id) + '"]');
+        if (card) { card.classList.add('is-focus'); card.scrollIntoView({ block: 'center' }); }
+        if (res) openOwners({ resource: res });
+      });
+    }, function () { return loadGateways(); });
+  }
+
+  openFocus();
 }());

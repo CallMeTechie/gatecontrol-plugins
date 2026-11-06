@@ -107,6 +107,9 @@ function createClient(gc, { index, apiKey = null, timeoutMs = 10000 } = {}) {
     getLights: () => raw(api('/lights')),
     getGroups: () => raw(api('/groups')),
     getSensors: () => raw(api('/sensors')),
+    // a name for a light / sensor (deCONZ keeps it; the next sync reads it back)
+    renameLight: (id, name) => raw(api(`/lights/${seg(id)}`), { method: 'PUT', body: { name } }).then(assertNoError),
+    renameSensor: (id, name) => raw(api(`/sensors/${seg(id)}`), { method: 'PUT', body: { name } }).then(assertNoError),
     setLightState: (id, patch) => raw(api(`/lights/${seg(id)}/state`), { method: 'PUT', body: toDeconzBody(patch) }).then(assertNoError),
     setGroupState: (id, patch) => raw(api(`/groups/${seg(id)}/action`), { method: 'PUT', body: toDeconzBody(patch) }).then(assertNoError),
     recallScene: (groupId, sceneId) => raw(api(`/groups/${seg(groupId)}/scenes/${seg(sceneId)}/recall`), { method: 'PUT', body: {} }).then(assertNoError),
