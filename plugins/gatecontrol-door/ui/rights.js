@@ -1,5 +1,6 @@
 /* Admin page "Berechtigungen": per person and lock a level, per Ring location "Ring-Modus schalten"; per person time window, auto-unlock opt-in, pushes per camera.
-   1.5.0: per camera without a lock "sieht" — who sees it, gets its pushes and its history. */
+   1.5.0: per camera without a lock "sieht" — who sees it, gets its pushes and its history.
+   1.6.0: per camera in the home network "sieht" — live picture, clips and the push for people. */
 (function () {
   'use strict';
   var D = window.DOOR;
@@ -39,6 +40,16 @@
     return el('label', { class: 'check' }, [box, T('rights.camera_sees')]);
   }
   function freeCameras() { return S.cameras.filter(function (c) { return !c.lockId; }); }
+  /** 1.6.0: a camera in the home network — does this person see it (live picture, clips, pushes)? */
+  function homeCheck(u, c) {
+    var on = (S.homeCameraRights && S.homeCameraRights[u.id] || []).indexOf(c.id) >= 0;
+    var box = el('input', { type: 'checkbox', checked: on, 'aria-label': u.name + ' – ' + T('rights.home_col', { name: c.name }), on: { change: function () {
+      var m = {}; m[c.id] = box.checked;
+      D.api('PUT', 'admin/rights/' + u.id, { homeCameraRights: m }).then(function (r) { S = r; D.toast(T('common.saved')); }).catch(function (e) { D.warn(e); render(); });
+    } } });
+    return el('label', { class: 'check' }, [box, T('rights.camera_sees')]);
+  }
+  function homeCameras() { return S.homeCameras || []; }
 
   function winText(p) {
     if (!p || !p.window) return T('rights.window_none');
@@ -88,6 +99,7 @@
     var free = freeCameras();
     table.appendChild(el('thead', {}, [el('tr', {}, [el('th', { text: T('rights.person') })].concat(S.locks.map(function (l) { return el('th', { text: l.name }); }),
       free.map(function (c) { return el('th', { text: T('rights.camera_col', { name: c.name }) }); }),
+      homeCameras().map(function (c) { return el('th', { text: T('rights.home_col', { name: c.name }) }); }),
       locs.map(function (x) { return el('th', { text: T('rights.mode_col', { name: x.name }) }); }),
       [el('th', { text: T('rights.window') }), el('th', { text: T('rights.auto') }), el('th', {})]))]));
     var body = el('tbody');
@@ -96,6 +108,7 @@
       body.appendChild(el('tr', {}, [el('td', { text: u.name + (u.role === 'admin' ? ' (Admin)' : '') })].concat(
         S.locks.map(function (l) { return el('td', {}, [levelSelect(u, l)]); }),
         free.map(function (c) { return el('td', {}, [cameraCheck(u, c)]); }),
+        homeCameras().map(function (c) { return el('td', {}, [homeCheck(u, c)]); }),
         locs.map(function (x) { return el('td', {}, [modeCheck(u, x)]); }),
         [el('td', { text: winText(p) }), el('td', { text: p && p.autoUnlock ? T('common.yes') : T('common.no') }),
           el('td', {}, [el('button', { type: 'button', class: 'btn btn-sm', text: T('common.edit'), on: { click: function () { edit(u); } } })])])));
@@ -103,7 +116,7 @@
     table.appendChild(body);
     $('#dr-no-users').hidden = S.users.length > 0;
     $('#dr-mode-hint').hidden = !locs.length;
-    $('#dr-cam-hint').hidden = !free.length;
+    $('#dr-cam-hint').hidden = !free.length && !homeCameras().length;
   }
 
   D.api('GET', 'admin/rights').then(function (r) { S = r; render(); }).catch(D.warn);

@@ -8,6 +8,30 @@ bleibt auf dem eigenen Server. Einrichtung, Risiken, Datenschutz und die App-API
 an; das Plugin nutzt die, die auch die Open-Source-Projekte ring-client-api (Homebridge) und
 python-ring-doorbell (Home Assistant) verwenden. Sie kann sich jederzeit ändern oder wegfallen.
 
+## 1.6.0
+Braucht weiterhin **GateControl ≥ 1.169.0**; die Kameras im Heimnetz brauchen **GateControl ≥ 1.240.0** und ein
+Gateway ≥ 1.27.0 mit eingeschalteten „Kameras“ (Gateways › Funktionen › „Geräte im Heimnetz“). Ältere GateControl:
+auf „Geräte“ steht „braucht GateControl ab 1.240.0“, sonst ändert sich nichts.
+- **Kameras im Heimnetz** (ONVIF/RTSP, z. B. Reolink, Tapo, Hikvision) über die Gateways – ohne Hersteller-Cloud
+  (`gc.cameras`, neue Berechtigung „Kameras im Heimnetz“):
+  - **Geräte:** oben die Karte „Kameras“ mit allen Kameras (Heimnetz mit Standbild alle 10 s und „vor n s“, „live“,
+    Modell, Bewegung, Clips-Tage; Ring wie bisher mit „Ring-Cloud“), „Kamera hinzufügen“ (das Gateway sucht
+    Kameras: „Reolink E1 Zoom · 192.168.1.73 · ONVIF – neu gefunden“, oder „Adresse selbst eingeben (rtsp://…)“,
+    Name, Benutzer und Passwort der Kamera, „Verbinden und testen“ mit Testbild), „Aufnahmen“ je Kamera (bei
+    Bewegung / nur wenn niemand zu Hause ist / nie – nur Live-Bild, Speicher des Gateways mit freiem Platz,
+    Aufbewahren 7/14/30 Tage, Push mit Standbild bei Personen, Ton, Datenschutz-Hinweis) und „Heute“ (Clips mit
+    Person/Auto/Tier, „Ansehen“).
+  - **Portal (Tab „Tür“):** Kameras mit Chips, Live-Bild mit „● LIVE · HD · über VPN“ – ohne VPN alle 10 Sekunden ein
+    neues Standbild –, „Standbild“ (speichern), „Vollbild“, „Ton“, „Clips heute“ mit Vorschaubild und „Letzte
+    Meldung“.
+  - **Berechtigungen:** je Heimnetz-Kamera eine Spalte „sieht“ – Live-Bild, Clips und Push nur für diese Personen.
+  - **Push** (neues Thema „Personen an der Kamera“): „Person an der Einfahrt“ mit Standbild, „Niemand ist zu Hause“
+    wenn niemand da ist, höchstens einmal pro Kamera alle 5 Minuten.
+- **API:** `GET|POST|PATCH|DELETE admin/home…` (README „Kameras im Heimnetz“), für Personen und die Apps
+  `GET cameras/home`, `cameras/home/<id>/live`, `…/still`, `…/clips[?day=]`; `PUT admin/rights/<userId>` nimmt
+  `homeCameraRights { <cameraId>: true|false }`.
+- Ring, die Schlösser und alles andere bleiben unverändert.
+
 ## 1.5.0
 Braucht weiterhin **GateControl ≥ 1.169.0**.
 - **Kameras ohne Schloss** (z. B. am Briefkasten oder im Garten): Bisher sah sie niemand – ein Klingeln

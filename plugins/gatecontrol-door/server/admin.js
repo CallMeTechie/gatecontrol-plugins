@@ -13,6 +13,12 @@
 //   GET    admin/rights                      PUT admin/rights/<userId> { locks?, autoUnlock?, window?, cameras?, modes?, cameraRights? }
 //                                            1.5.0: cameraRights { <cameraId>: true|false } — who sees a camera without a lock
 //                                            (GET: cameraRights { <userId>: [cameraId] }, the cameras of a lock follow its rights)
+//   1.6.0 Kameras im Heimnetz (gc.cameras, server/home.js):
+//   GET    admin/home                        { supported, minGatecontrol, available, gateways, cameras, today, day }
+//   POST   admin/home/discover { gatewayId? }   POST admin/home/test { gatewayId, host | rtspUrl, user, password }
+//   POST   admin/home/cameras { gatewayId, name, host | rtspUrl, user, password, settings?, push? }
+//   PATCH  admin/home/cameras/<id> { name?, user?, password?, settings?, push? }   DELETE admin/home/cameras/<id>[?clips=1]
+//   DELETE admin/home/events/<id>            PUT admin/rights/<userId> { homeCameraRights: { <cameraId>: true|false } }
 //   GET    admin/history[?cursor&limit&lockId&kind]          GET admin/events/<id>
 //   GET    admin/settings                    PUT admin/settings { timezone?, notifyLang?, mediaDays?, motionGapMin?, ring?, nukiLogImport?, familyChat? }
 //                                            both answer { config, chat: { api, available, last } } (1.3.0, server/chat.js)
@@ -39,6 +45,7 @@ const config = require('./config');
 const chat = require('./chat');
 const views = require('./views');
 const api = require('./api');
+const home = require('./home');
 const { fail, posInt, text, bool, intIn, iso } = require('./util');
 
 const MAX_LOCKS = 20;
@@ -328,12 +335,17 @@ async function rightsView(gc) {
   for (const [uid, set] of r.modes) modeRights[uid] = [...set].sort();
   const cameraRights = {};
   for (const [uid, set] of r.cams) cameraRights[uid] = [...set].sort((a, b) => a - b);
+  // 1.6.0: the cameras in the home network and who sees them
+  const homeCameraRights = {};
+  for (const [uid, set] of r.homeCams) homeCameraRights[uid] = [...set].sort();
+  let homeCameras = [];
+  if (home.has(gc)) { try { homeCameras = (await gc.cameras.list()).map((c) => ({ id: c.id, name: c.name })); } catch { homeCameras = []; } }
   return {
     users, locks: (await locks.all(gc)).map((l) => ({ id: l.id, name: l.name, type: nuki.isOpener(l.device_type) ? 'opener' : 'smartlock', actions: l.actions })),
     cameras: (await cameras.all(gc)).filter((c) => c.present === 1).map((c) => ({ id: c.id, name: c.name, lockId: c.lock_id || null })),
     // Ring locations a mode right makes sense for (present, cameras there, no Ring Alarm)
     locations: (await modes.all(gc)).filter(modes.readable).map((l) => ({ id: l.location_id, name: l.name, supported: modes.supported(l) })),
-    rights: levels, prefs, cameraPrefs: camPrefs, modeRights, cameraRights,
+    rights: levels, prefs, cameraPrefs: camPrefs, modeRights, cameraRights, homeCameras, homeCameraRights,
   };
 }
 
@@ -370,6 +382,15 @@ async function putRights(gc, userId, body, now) {
       camRights.push([id, on]);
     }
   }
+  const homeRights = [];
+  if (body.homeCameraRights !== undefined) {
+    if (!body.homeCameraRights || typeof body.homeCameraRights !== 'object' || Array.isArray(body.homeCameraRights) || !home.has(gc)) throw fail('invalid', { field: 'homeCameraRights' });
+    const homeIds = new Set((await gc.cameras.list()).map((c) => c.id));
+    for (const [k, on] of Object.entries(body.homeCameraRights)) {
+      if (!homeIds.has(k) || typeof on !== 'boolean') throw fail('invalid', { field: 'homeCameraRights' });
+      homeRights.push([k, on]);
+    }
+  }
   const autoUnlock = body.autoUnlock === undefined ? undefined : bool(body.autoUnlock);
   const win = body.window === undefined ? undefined : rights.parseWindow(body.window);
   const camPrefs = [];
@@ -392,6 +413,10 @@ async function putRights(gc, userId, body, now) {
         ON CONFLICT(user_id) DO UPDATE SET auto_unlock = excluded.auto_unlock, time_window = excluded.time_window, updated_at = excluded.updated_at`, [
         userId, autoUnlock === undefined ? cur.auto_unlock : (autoUnlock ? 1 : 0), win === undefined ? cur.time_window : (win ? JSON.stringify(win) : null), now,
       ]);
+    }
+    for (const [id, on] of homeRights) {
+      if (on) await store.run(gc, 'INSERT OR IGNORE INTO home_camera_rights (user_id, camera_id) VALUES (?, ?)', [userId, id]);
+      else await store.run(gc, 'DELETE FROM home_camera_rights WHERE user_id = ? AND camera_id = ?', [userId, id]);
     }
     for (const [id, on] of camRights) {
       if (on) await store.run(gc, 'INSERT OR IGNORE INTO camera_rights (user_id, camera_id) VALUES (?, ?)', [userId, id]);
@@ -476,6 +501,7 @@ async function route(req, gc, seg, cfg, now, t) {
     if (b === 'sync') return ringSync(gc, now);
   }
   if (a === 'modes' && n === 4 && POST) return switchMode(gc, req, cfg, now, t, b, c);
+  if (a === 'home') return home.adminRoute(gc, method, seg, body, query, cfg, now);
   if (a === 'cameras') {
     needId();
     if (n === 3 && PATCH) return updateCamera(gc, id, body);

@@ -1,6 +1,26 @@
 <main class="dr-page">
   <div class="dr-note" id="dr-ring-broken" hidden>{{t:portal.ring_broken}}</div>
   <p class="dr-intro" id="dr-readonly" hidden>{{t:portal.read_only}}</p>
+  <section class="dr-pc" aria-labelledby="dr-pc-h" id="dr-pc" hidden>
+    <div class="dr-pc-head"><h2 class="dr-card-title" id="dr-pc-h">{{t:home.portal_title}}</h2><span class="dr-pill" data-tone="ok" id="dr-pc-online"></span></div>
+    <div class="dr-chips" id="dr-pc-chips" role="group" aria-labelledby="dr-pc-h"></div>
+    <div id="dr-pc-stage"></div>
+    <div class="dr-pc-btns">
+      <button class="btn" type="button" id="dr-pc-still">{{t:home.still}}</button>
+      <button class="btn" type="button" id="dr-pc-full">{{t:home.fullscreen}}</button>
+      <button class="btn" type="button" id="dr-pc-sound" aria-pressed="false" disabled>{{t:home.sound}}</button>
+    </div>
+    <p class="dr-hint" id="dr-pc-novpn">{{t:home.no_vpn}}</p>
+    <section class="dr-card" aria-labelledby="dr-pc-clips-h" id="dr-pc-clips-card" hidden>
+      <div class="dr-card-head"><h2 class="dr-card-title dr-small" id="dr-pc-clips-h">{{t:home.clips_today}}</h2><span class="dr-hint" id="dr-pc-clips-cam"></span></div>
+      <div id="dr-pc-clips"></div>
+      <p class="dr-hint" id="dr-pc-clips-none" hidden>{{t:home.today_none}}</p>
+    </section>
+    <section class="dr-card dr-pushcard" aria-labelledby="dr-pc-push-h" id="dr-pc-push" hidden>
+      <h2 class="dr-card-title dr-small" id="dr-pc-push-h">{{t:home.last_push}}</h2>
+      <div class="dr-push-row"><img class="dr-clip-th dr-push-th" id="dr-pc-push-th" alt=""><span class="dr-clip-t"><strong id="dr-pc-push-t"></strong><span class="dr-hint" id="dr-pc-push-s"></span></span></div>
+    </section>
+  </section>
   <section class="dr-card" aria-labelledby="dr-modes-h" id="dr-modes-card" hidden>
     <div class="dr-card-head"><h2 class="dr-card-title" id="dr-modes-h">{{t:mode.title}}</h2></div>
     <div class="dr-list" id="dr-modes"></div>

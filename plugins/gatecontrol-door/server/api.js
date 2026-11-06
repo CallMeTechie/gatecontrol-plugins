@@ -10,6 +10,11 @@
 //   PUT  cameras/<id>/prefs { ding?, motion? }   own doorbell / motion pushes for that camera
 //   GET  history[?cursor=&limit=&lockId=]    own events; all events of locks with `open`; rings of viewable cameras
 //   GET  events/<id>                     one ring / motion event with its picture (push "Ansehen")
+//   1.6.0 Kameras im Heimnetz (server/home.js, only cameras the person sees — column "sieht"):
+//   GET  cameras/home                    { supported, minGatecontrol, every, cameras: [{ id, name, online, snapshotUrl, settings, … }] }
+//   GET  cameras/home/<id>/live          { live: { mode: 'live', hls, mp4, … } in the VPN | { mode: 'snapshot', snapshot, every: 10 } }
+//   GET  cameras/home/<id>/still         { still: { data, mime, at } } (base64 JPEG ≤ 700 KB, "Standbild" to save)
+//   GET  cameras/home/<id>/clips[?day=YYYY-MM-DD]   { day, clips: [{ id, kind, startedAt, ms, thumbUrl, clipUrl }] }
 //
 // Every answer is { ok: true, … } or { ok: false, code, error[, retryAfter] }.
 // Who sees what: only locks with a right (view / lock / open) and the cameras
@@ -27,6 +32,7 @@ const control = require('./control');
 const modes = require('./modes');
 const views = require('./views');
 const chat = require('./chat');
+const home = require('./home');
 const { fail, posInt, bool, iso, rateLimiter } = require('./util');
 
 const readLimiter = rateLimiter(60, 60000);
@@ -189,6 +195,7 @@ async function route(req, gc, seg, cfg, now, t) {
     return action(gc, c, id, x);
   }
   if (a === 'modes' && n === 3 && method === 'POST') return switchMode(gc, c, b, x);
+  if (a === 'cameras' && b === 'home') return home.personRoute(gc, c, req, seg, query);
   if (a === 'cameras' && n === 3) {
     const id = posInt(b);
     if (!id) throw fail('not_found');
@@ -221,6 +228,8 @@ async function visibleFor(gc, user, opts = {}) {
   // 1.5.0: a camera without a lock the person sees (present, switched on)
   const own = r.cams && r.cams.get(user.id);
   if (own && own.size && (await cameras.all(gc)).some((cam) => !cam.lock_id && cam.enabled === 1 && cam.present === 1 && own.has(cam.id))) return true;
+  // 1.6.0: a camera in the home network the person sees
+  if (home.has(gc) && r.homeCams && r.homeCams.get(user.id) && (await home.visible(gc, r, user)).length) return true;
   return !!opts.modes && (await modes.forUser(gc, user, r)).length > 0;
 }
 

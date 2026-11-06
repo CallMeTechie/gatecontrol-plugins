@@ -1,4 +1,53 @@
 <main class="dr-page">
+  <div class="dr-home-top"><p class="dr-intro">{{t:home.intro}}</p><button class="btn btn-primary" type="button" id="dr-hc-add-top" hidden>{{t:home.add}}</button></div>
+  <div class="dr-note" id="dr-hc-needs" hidden></div>
+  <div class="dr-note" id="dr-hc-nogw" hidden>{{t:home.no_gateway}}</div>
+  <div class="dr-warns" id="dr-hc-hints"></div>
+  <section class="dr-card" aria-labelledby="dr-hc-h" id="dr-hc-card" hidden>
+    <div class="dr-card-head"><h2 class="dr-card-title" id="dr-hc-h">{{t:home.cameras}}</h2><span class="dr-hint" id="dr-hc-src"></span></div>
+    <div class="dr-camgrid" id="dr-hc-grid"></div>
+    <p class="dr-hint" id="dr-hc-none" hidden>{{t:home.none}}</p>
+  </section>
+  <div class="dr-two" id="dr-hc-two" hidden>
+    <section class="dr-card" aria-labelledby="dr-hc-add-h" id="dr-hc-addcard">
+      <h2 class="dr-card-title" id="dr-hc-add-h">{{t:home.add_title}}</h2>
+      <form id="dr-hc-form" autocomplete="off">
+        <div class="form-group" id="dr-hc-gw-box" hidden><label class="form-label" for="dr-hc-gw">{{t:home.gateway}}</label><select class="form-select" id="dr-hc-gw"></select></div>
+        <p class="dr-hint" id="dr-hc-found-t"></p>
+        <div class="dr-picks" id="dr-hc-found" role="radiogroup" aria-labelledby="dr-hc-found-t"></div>
+        <div class="form-group" id="dr-hc-addr-box" hidden><label class="form-label" for="dr-hc-addr">{{t:home.manual}}</label><input class="form-input" id="dr-hc-addr" maxlength="400" placeholder="{{t:home.manual_ph}}"></div>
+        <div class="dr-fields">
+          <div class="form-group"><label class="form-label" for="dr-hc-name">{{t:home.name}}</label><input class="form-input" id="dr-hc-name" maxlength="60" required></div>
+          <div class="form-group"><label class="form-label" for="dr-hc-user">{{t:home.user}}</label><input class="form-input" id="dr-hc-user" maxlength="64" autocomplete="off"></div>
+          <div class="form-group"><label class="form-label" for="dr-hc-pw">{{t:home.password}}</label><input class="form-input" id="dr-hc-pw" type="password" maxlength="128" autocomplete="new-password"></div>
+        </div>
+        <p class="dr-hint">{{t:home.pw_hint}}</p>
+        <div class="dr-actions dr-end">
+          <button class="btn" type="button" id="dr-hc-again">{{t:home.search_again}}</button>
+          <button class="btn" type="button" id="dr-hc-cancel">{{t:common.cancel}}</button>
+          <button class="btn btn-primary" type="submit" id="dr-hc-connect">{{t:home.connect}}</button>
+        </div>
+      </form>
+    </section>
+    <section class="dr-card" aria-labelledby="dr-hc-rec-h" id="dr-hc-rec" hidden>
+      <h2 class="dr-card-title" id="dr-hc-rec-h">{{t:home.rec}}</h2>
+      <div class="form-group"><label class="form-label" for="dr-hc-rc">{{t:home.rec_camera}}</label><select class="form-select" id="dr-hc-rc"></select></div>
+      <div class="form-group"><label class="form-label" for="dr-hc-mode">{{t:home.rec_mode}}</label>
+        <select class="form-select" id="dr-hc-mode"><option value="motion">{{t:home.rec.motion}}</option><option value="away">{{t:home.rec.away}}</option><option value="never">{{t:home.rec.never}}</option></select>
+        <span class="dr-hint">{{t:home.rec_presence}}</span></div>
+      <div class="form-group"><label class="form-label" for="dr-hc-store">{{t:home.rec_store}}</label><select class="form-select" id="dr-hc-store" disabled></select></div>
+      <div class="form-group"><label class="form-label" for="dr-hc-keep">{{t:home.rec_keep}}</label>
+        <select class="form-select" id="dr-hc-keep"><option value="14">14 {{t:home.days_word}}</option><option value="7">7 {{t:home.days_word}}</option><option value="30">30 {{t:home.days_word}}</option></select></div>
+      <label class="check dr-check-top"><input type="checkbox" id="dr-hc-push"><span><strong>{{t:home.push}}</strong> {{t:home.push_people}} <span class="dr-hint">{{t:home.push_gap}}</span></span></label>
+      <label class="check dr-check-top"><input type="checkbox" id="dr-hc-audio"><span>{{t:home.audio}} <span class="dr-hint">{{t:home.audio_hint}}</span></span></label>
+      <div class="dr-info"><span><strong>{{t:home.privacy}}</strong> {{t:home.privacy_t}}</span></div>
+    </section>
+  </div>
+  <section class="dr-card dr-today" aria-labelledby="dr-hc-today-h" id="dr-hc-today" hidden>
+    <h2 class="dr-card-title" id="dr-hc-today-h">{{t:home.today}}</h2>
+    <div id="dr-hc-today-list"></div>
+    <p class="dr-hint" id="dr-hc-today-none" hidden>{{t:home.today_none}}</p>
+  </section>
   <p class="dr-intro">{{t:dev.intro}}</p>
   <section class="dr-card" aria-labelledby="dr-br-h">
     <div class="dr-card-head"><h2 class="dr-card-title" id="dr-br-h">{{t:dev.bridges}}</h2></div>

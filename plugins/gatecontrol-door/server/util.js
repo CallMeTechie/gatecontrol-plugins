@@ -33,6 +33,16 @@ const STATUS = {
   ring_mode_failed: 502,
   ring_mode_unreachable: 502,
   ring_mode_mismatch: 502,
+  // 1.6.0: Kameras im Heimnetz (server/home.js)
+  cam_needs_gc: 409,
+  cam_auth: 409,
+  cam_unreachable: 502,
+  cam_not_allowed: 400,
+  cam_offline: 502,
+  cam_unsupported: 409,
+  cam_limit: 409,
+  cam_not_ready: 409,
+  cam_service: 409,
   internal: 500,
 };
 

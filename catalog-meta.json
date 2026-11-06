@@ -215,8 +215,8 @@
       "category": "home",
       "icon": "door",
       "summary": {
-        "de": "Nuki-Schlösser in App, Widget und Portal auf- und zusperren, Ring-Klingel mit Bild und „Tür öffnen“ – Rechte pro Person.",
-        "en": "Lock and unlock Nuki locks in the app, widget and portal, Ring doorbell pushes with a picture and “Open door” – rights per person."
+        "de": "Nuki-Schlösser auf- und zusperren, Ring-Klingel mit Bild, Kameras im Heimnetz mit Live-Bild und Clips – Rechte pro Person.",
+        "en": "Lock and unlock Nuki locks, Ring doorbell pushes with a picture, home-network cameras with live picture and clips – rights per person."
       },
       "audience": "all",
       "keywords": ["tür", "door", "schloss", "lock", "nuki", "opener", "klingel", "doorbell", "ring", "kamera", "camera"],

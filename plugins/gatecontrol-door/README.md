@@ -189,6 +189,24 @@ an (Ring führt es oft erst mit Verzögerung in der Liste). Klingeln bis 10 Minu
 landen im Verlauf und im Chat, der Push geht nur bis 5 Minuten danach raus; ältere zeigt nur die
 Klingel-Diagnose. Gong und Fernseher bekommen das Klingeln direkt von Ring und sind deshalb schneller.
 
+### Kameras im Heimnetz (ab 1.6.0)
+
+Kameras mit ONVIF oder RTSP (Reolink, Tapo, Hikvision, …) über ein GateControl-Gateway – ohne Hersteller-Cloud.
+Voraussetzungen: GateControl ≥ 1.240.0, ein Gateway ≥ 1.27.0 mit „Kameras“ an (Gateways › Funktionen › „Geräte im
+Heimnetz“), auf Synology/Linux einmal die aktuelle Compose-Datei (Dienst `kameras`; das Pi-Image macht das selbst).
+In der Kamera ONVIF/RTSP einschalten (Reolink: Netzwerk › Erweitert › Server-Einstellungen; Tapo: Erweitert ›
+Kamerakonto anlegen – dieses Konto ist „Benutzer der Kamera“).
+
+1. **Geräte › Kamera hinzufügen:** das Gateway sucht Kameras (WS-Discovery) oder du gibst `rtsp://…` bzw. die
+   Adresse ein, dazu Name, Benutzer und Passwort. „Verbinden und testen“ speichert erst, wenn ein Testbild kommt;
+   das Passwort liegt verschlüsselt in GateControl und geht nur an das Gateway – das Plugin sieht es nie wieder.
+2. **Aufnahmen** je Kamera: bei Bewegung (Personen, Autos, Tiere – erkennt die Kamera selbst) / nur wenn niemand zu
+   Hause ist (Anwesenheit der Familie; unbekannt = keine Aufnahme) / nie. Aufbewahren 7, 14 oder 30 Tage, Clips auf
+   dem Gateway (NAS). Push mit Standbild bei Personen höchstens einmal pro Kamera alle 5 Minuten.
+3. **Berechtigungen:** Spalte „sieht“ je Heimnetz-Kamera. Nur diese Personen sehen sie im Portal/in der App, bekommen
+   den Push und finden die Clips.
+4. **Live-Bild** nur im VPN (oder im LAN des Servers); sonst alle 10 Sekunden ein neues Standbild.
+
 ## English
 
 Nuki smart locks and openers (local Nuki Bridge or Nuki Web) and Ring doorbells/cameras in
@@ -526,6 +544,27 @@ bridge: `mode`, `state`, `stateName`, `doorsensorState`, `doorsensorStateName`, 
 only numbers, booleans and short strings, never tokens; kept in `lock_state.nuki_raw`, migration
 `003_state_raw.sql`); `cloudAt` / `cloudAgeSec`: Nuki Web's `updateDate` and its age;
 `cloudHint`: a Nuki Web state is stale (the page shows the hint).
+
+### Kameras im Heimnetz (1.6.0, `server/home.js`)
+
+Person (portal tab, apps — only cameras the person sees): `GET cameras/home` → `{ supported, minGatecontrol, every,
+cameras: [{ id, kind: 'home', name, gateway, model, source, state, online, codec, events, settings, push, snapshotUrl,
+snapshotAt, lastEventAt }] }` (`supported: false` on an older GateControl); `GET cameras/home/<id>/live` →
+`{ live: { mode: 'live', via, hls, mp4, snapshot, codec, audio, expiresAt } }` through the VPN / in the server's LAN,
+otherwise `{ live: { mode: 'snapshot', snapshot, every: 10, reason: 'vpn_required' } }` — the URLs are relative
+(`/camera-media/<token>/…` of the GateControl server, no login, token 10 min); `GET cameras/home/<id>/still` →
+`{ still: { data, mime, at } }` (base64 JPEG ≤ 700 KB); `GET cameras/home/<id>/clips[?day=YYYY-MM-DD]` →
+`{ day, clips: [{ id, kind, kinds, startedAt, endedAt, nobodyHome, ms, thumbUrl, clipUrl }] }`. Errors `cam_*`
+(`cam_needs_gc`, `cam_auth`, `cam_unreachable`, `cam_not_allowed`, `cam_offline`, `cam_unsupported`, `cam_limit`,
+`cam_not_ready`, `cam_service`). Push topic `kamera`, `data.door = { type: 'home_camera_event', cameraId, eventId }`.
+
+Admin: `GET admin/home` → `{ supported, minGatecontrol, available, gateways, cameras, today, day }`;
+`POST admin/home/discover { gatewayId? }`; `POST admin/home/test { gatewayId, host | rtspUrl, onvifPort?, user, password }`;
+`POST admin/home/cameras { gatewayId, name, host | rtspUrl, onvifPort?, onvifPath?, user, password, settings?, push? }`;
+`PATCH admin/home/cameras/<id> { name?, user?, password?, settings: { record, events, retentionDays: 7|14|30, stream,
+audio }?, push? }`; `DELETE admin/home/cameras/<id>[?clips=1]`; `DELETE admin/home/events/<id>`;
+`GET admin/rights` → `homeCameras`, `homeCameraRights { <userId>: [cameraId] }`; `PUT admin/rights/<userId>
+{ homeCameraRights: { <cameraId>: true|false } }`.
 
 ## Ring – what is used (unofficial, `server/ring.js`)
 

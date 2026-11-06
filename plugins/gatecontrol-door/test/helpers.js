@@ -225,9 +225,11 @@ async function withDoor(opts, fn) {
     targets: { 'nuki-bridge': [{ label: 'Bridge Flur', fetch: bridge.fetch }] },
     // 1.3.0: other plugins' services (the Messenger) and the GateControl version for gc.services.available
     services: o.services, gatecontrol: o.gatecontrol,
+    // 1.6.0: Kameras im Heimnetz (tools/testing/mock-cameras.js)
+    cameras: o.cameras,
   });
   await host.start();
-  const call = (user, method, p, body, query) => host.request({ method, path: p, body: body === undefined ? null : body, query: query || {}, user, lang: o.lang || 'de' });
+  const call = (user, method, p, body, query, extra) => host.request({ method, path: p, body: body === undefined ? null : body, query: query || {}, user, lang: o.lang || 'de', ...(extra || {}) });
   const admin = (method, p, body, query) => call(ADMIN, method, '/admin/' + p.replace(/^\//, ''), body, query);
   const ctx = { clock, bridge, cloud, call, admin, lockId: null, openerId: null };
   try {

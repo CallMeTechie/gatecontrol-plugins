@@ -32,6 +32,7 @@ const nuki = require('./nuki');
 const ring = require('./ring');
 const modes = require('./modes');
 const push = require('./push');
+const home = require('./home');
 const texts = require('./texts.json');
 const { STATUS, isKnown, clip } = require('./util');
 
@@ -215,6 +216,8 @@ module.exports = {
     control.reset();
     state.lastPurge = 0;
     state.lastLogImport = 0;
+    // 1.6.0: Kameras im Heimnetz — push with a snapshot for people (server/home.js); older GateControl: no gc.cameras
+    if (gc.cameras) gc.cameras.on((ev) => home.onEvent(gc, ev, t).catch((e) => gc.log.warn('camera event failed', (e && e.code) || 'error')));
     gc.log.info('door started', gc.plugin.version);
   },
 
