@@ -245,6 +245,8 @@
     $('#dr-hc-push').addEventListener('change', function (e) { saveRec({ push: e.target.checked }); });
     $('#dr-hc-audio').addEventListener('change', function (e) { saveRec({ settings: { audio: e.target.checked } }); });
     load();
+    // the picture URLs carry a token of 10 minutes: fresh ones before it runs out
+    setInterval(function () { if (!document.hidden) load(); }, 8 * 60000);
   }
 
   // ─── portal: the camera view (KameraHandy) ───────────────────────────
@@ -370,6 +372,8 @@
       if (me && !(me.locks || []).length) $('#dr-locks-card').hidden = true;
       P.sel = P.list[0].id;
       chips(); show();
+      // live and picture tokens hold 10 minutes: a fresh session before they run out
+      setInterval(function () { if (!document.hidden && !document.fullscreenElement) show(); }, 9 * 60000);
     }).catch(function () { /* older GateControl / nothing to see */ });
     $('#dr-pc-still').addEventListener('click', still);
     $('#dr-pc-full').addEventListener('click', function () {
