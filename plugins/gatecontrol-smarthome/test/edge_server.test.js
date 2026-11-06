@@ -101,6 +101,43 @@ test('sources: every gateway of the edge part with its state, the running one wi
   assert.equal((await admin(host, 'GET', '/gateways')).json.gateways.length, 0, 'the deCONZ gateways (rules page) stay deCONZ only');
 }));
 
+test('an offline gateway: the reason from GateControl (sources and a failed set-up); without one (older GateControl) none', () => withEdge({ gateways: [
+  { ...GW }, { id: 8, name: 'NAS Büro', state: 'disabled', version: '1.20.0' }, { id: 9, name: 'NAS Wohnzimmer', state: 'gateway_too_old', version: '1.18.0' },
+] }, async (host, edge, gateways) => {
+  gateways[0].state = 'offline';
+  gateways[0].reason = 'edge_missing';
+  let r = await admin(host, 'GET', '/edge/gateways');
+  assert.deepEqual(r.json.gateways.map((g) => [g.id, g.state, g.reason]), [[7, 'offline', 'edge_missing'], [8, 'disabled', null], [9, 'gateway_too_old', null]]);
+  assert.equal(r.json.gateways[0].info, null, 'no info call to an offline gateway');
+
+  // the set-up fails at "reach" with gateway_offline — and says why
+  const poll = async (id) => {
+    for (let i = 0; i < 50; i++) {
+      const j = (await admin(host, 'GET', `/edge/setup/${id}`)).json.job;
+      if (j.state === 'failed') return j;
+      await new Promise((res) => setTimeout(res, 5));
+    }
+    throw new Error('job stuck');
+  };
+  r = await admin(host, 'POST', '/edge/setup', { gateway_id: 7, name: 'Licht Flur', candidate: { ip: '192.168.1.62', family: 'tasmota' } });
+  let job = await poll(r.json.job.id);
+  assert.deepEqual(job.steps[1], { id: 'reach', state: 'error', code: 'gateway_offline', reason: 'edge_missing' });
+  assert.equal(job.error, 'gateway_offline');
+  assert.equal(job.reason, 'edge_missing');
+
+  // an older GateControl sends no reason: the plain "not connected"
+  delete gateways[0].reason;
+  r = await admin(host, 'GET', '/edge/gateways');
+  assert.equal(r.json.gateways[0].reason, null);
+  r = await admin(host, 'POST', '/edge/setup', { gateway_id: 7, name: 'Licht Keller', candidate: { ip: '192.168.1.62', family: 'tasmota' } });
+  job = await poll(r.json.job.id);
+  assert.deepEqual(job.steps[1], { id: 'reach', state: 'error', code: 'gateway_offline' });
+  assert.equal(job.reason, null);
+  // a value the plugin does not know is passed on only if it looks like one (the page shows its own text or the plain one)
+  gateways[0].reason = '<b>nope</b>';
+  assert.equal((await admin(host, 'GET', '/edge/gateways')).json.gateways[0].reason, null);
+}));
+
 test('by hand: an account per device (own topics only), the password once, never stored; the device reports → resources', () => withEdge({}, async (host, edge) => {
   const r = await admin(host, 'POST', '/edge/devices', { gateway_id: 7, name: 'Gefriertruhe', area: 'Keller', family: 'tasmota' });
   assert.equal(r.status, 200, JSON.stringify(r.json));
@@ -446,4 +483,9 @@ test('every text the pages and the server use exists in German and English', () 
   assert.deepEqual(Object.keys(texts.de).sort(), Object.keys(texts.en).sort());
   for (const c of ['shutter', 'awning', 'gate', 'open', 'stop', 'close', 'opening', 'closing', 'done_open', 'done_stop', 'done_close']) assert.ok(texts.de['cover.' + c] && texts.en['cover.' + c], c);
   for (const s of ['off', 'offline', 'pending', 'crashed', 'update_pending', 'unsigned', 'plugin_off', 'denied', 'stopped', 'too_old']) assert.ok(texts.de['source.state.' + s], s);
+  // the reasons of an offline gateway (GateControl's src/services/edge/reason.js REASONS) — the page knows the same list
+  const reasons = ['gateway_offline', 'edge_missing', 'edge_not_running', 'edge_fence', 'edge_not_connected'];
+  const ui = require('node:fs').readFileSync(require('node:path').join(DIR, 'ui/admin.js'), 'utf8');
+  assert.deepEqual(/var REASONS = \[([^\]]*)\];/.exec(ui)[1].match(/'([a-z_]+)'/g).map((x) => x.slice(1, -1)), reasons);
+  for (const s of reasons) for (const k of ['source.reason.', 'source.reason_short.']) assert.ok(texts.de[k + s] && texts.en[k + s], k + s);
 });

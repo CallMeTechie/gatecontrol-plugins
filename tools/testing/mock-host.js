@@ -350,7 +350,7 @@
 //
 // GateControl 1.228.0 (opt-in: opts.gatecontrol: '1.228.0' or opts.edge) — the edge part on home gateways
 // (src/services/edge/, docs/plugins.md "Edge part"): only a plugin with an `edge` section has gc.edge. The gateways are the
-// test's: opts.edge { gateways: [{ id, name, state ('running' …), online (default: state ≠ 'offline'), version }] (read
+// test's: opts.edge { gateways: [{ id, name, state ('running' …), online (default: state ≠ 'offline'), version, reason }] (read
 // on every call), call: async (gatewayId, method, params, { timeoutMs }) → what the edge part's gc.handle(method) returns,
 // or throw hostError(code) (timeout, edge_error with "<code>: <message>", …) }. The host's checks: gateway id a positive
 // integer and method [A-Za-z0-9_.:-]{1,64} (ERR_INVALID), a gateway not listed or in a state where the part may not run
@@ -358,7 +358,10 @@
 // gateway_offline, a call or result over 64 KB → too_large, configure data over 48 KB → ERR_INVALID, timeoutMs clamped to
 // 100 … 30000. host.edgeEvent(gatewayId, name, data, { at, seq }) delivers an event (or $online / $offline / $started) to
 // the gc.edge.on handlers like the host — a handler that throws is logged — and answers { handled }; host.edgeCalls and
-// host.edgeConfigs (gatewayId → last data) record what the plugin did. The edge part itself (edge.entry, runs on the
+// host.edgeConfigs (gatewayId → last data) record what the plugin did. `reason` (GateControl after 1.231.0, with state
+// 'offline' only: gateway_offline, edge_missing, edge_not_running, edge_fence, edge_not_connected — why the edge channel is
+// down) is passed as given, null when the state is not 'offline'; leave it out to play an older GateControl (no `reason`
+// at all). The edge part itself (edge.entry, runs on the
 // gateway) is not loaded: test it with a `gc` of its own (see plugins/gatecontrol-hello/test/edge.test.js).
 // gc.mqtt.accounts (same opt-in, only with plugin.json edge.capabilities.mqtt topics; src/services/edge/index.js
 // hostMqtt): create(gatewayId, { name?, label?, topics }) → { username: '<plugin id>-<name or random>', password, acl,
@@ -2864,6 +2867,7 @@ async function createHost(pluginDir, opts = {}) {
   const edgeGateways = () => (edgeOpt && Array.isArray(edgeOpt.gateways) ? edgeOpt.gateways : []).map((g) => ({
     id: g.id, name: g.name == null ? `Gateway ${g.id}` : g.name, state: g.state || 'running', online: g.online == null ? g.state !== 'offline' : g.online === true,
     version: g.version === undefined ? '1.20.0' : g.version,
+    ...(g.reason === undefined ? {} : { reason: g.state === 'offline' ? g.reason : null }),
   }));
   /** like src/services/edge/index.js: a positive integer id, switched on for this plugin (not_enabled), connected (gateway_offline) */
   const edgeGateway = (v) => {
