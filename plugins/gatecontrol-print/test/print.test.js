@@ -57,13 +57,60 @@ describe('printing', () => {
     assert.equal(r.ok, true, JSON.stringify(r));
   });
 
-  it('a PDF to a printer without PDF, an Office file: refused with the host\'s reason', async () => {
+  it('a PDF to a printer without PDF: the real reason (gateway too old, converting off, no format), never „only PDF and pictures“', async () => {
     const m = await upload(MARC, pdf(1), 'application/pdf');
-    const r = await h.req(MARC, 'POST', '/print', { deviceId: BRO, mediaId: m });
-    assert.equal(r.code, 'format');
-    assert.equal(r.status, 409);
+    const bro = h.host.print.devices.find((d) => d.id === BRO);
+    const cases = [['old', 'gateway_update', /ab Version 1\.29\.0/], ['off', 'convert_off', /Umwandeln ist am Gateway ausgeschaltet/], [undefined, 'printer_format', /kein Format, in das das Gateway/]];
+    for (const [hook, code, text] of cases) {
+      bro.gatewayConvert = hook;
+      const r = await h.req(MARC, 'POST', '/print', { deviceId: BRO, mediaId: m });
+      assert.deepEqual([r.code, r.status], [code, 409], hook);
+      assert.match(r.error, text);
+      assert.doesNotMatch(r.error, /Es gehen PDF-Dateien und Bilder/);
+    }
+    delete bro.gatewayConvert;
+    const en = await h.req(MARC, 'POST', '/print', { deviceId: BRO, mediaId: m }, { lang: 'en' });
+    assert.match(en.error, /takes no PDF files/);
     const bad = await h.host.upload({ ...MARC, portal: true, loggedIn: true }, Buffer.from('PK'), 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
     assert.equal(bad.status, 415, 'Office files are not among the media types');
+  });
+
+  it('a printer without PDF whose gateway converts (HP OfficeJet Pro 8720): the PDF is printed', async () => {
+    const bro = h.host.print.devices.find((d) => d.id === BRO);
+    bro.printer.convert = 'image/pwg-raster';
+    try {
+      // the school letter from Android's print dialog: "<uuid>-<name>", no ".pdf"
+      const m = await upload(MARC, pdf(1), 'application/pdf');
+      const r = await h.req(MARC, 'POST', '/print', { deviceId: BRO, mediaId: m, name: '306ee607-2bbf-458c-880c-ed82755135bf-Digitaler Elternabend' });
+      assert.equal(r.ok, true, JSON.stringify(r));
+      assert.deepEqual([r.job.state, r.job.pages, r.job.name], ['queued', 1, '306ee607-2bbf-458c-880c-ed82755135bf-Digitaler Elternabend']);
+      // while the gateway converts: "wird für den Drucker umgewandelt" (state sending, message converting)
+      h.host.printJob(r.job.id, { state: 'sending', message: 'converting' });
+      await h.host.tick();
+      const mine = (await h.req(MARC, 'GET', '/overview')).jobs.find((x) => x.id === r.job.id);
+      assert.deepEqual([mine.state, mine.message], ['sending', 'converting']);
+      // the type counts by the content: a PDF the phone called a JPEG
+      const odd = await upload(MARC, pdf(3), 'image/jpeg');
+      assert.equal((await h.req(MARC, 'POST', '/print', { deviceId: BRO, mediaId: odd })).job.pages, 3);
+    } finally { delete bro.printer.convert; }
+  });
+
+  it('ERR_PRINT_FORMAT → the plugin\'s code: by e.reason, from an older GateControl by its message', () => {
+    const { formatCode, fromHost } = require('../server/util');
+    const e = (message, reason) => Object.assign(new Error(message), { code: 'ERR_PRINT_FORMAT' }, reason ? { reason } : {});
+    assert.equal(formatCode(e('x', 'file_type')), 'format');
+    assert.equal(formatCode(e('x', 'damaged')), 'damaged');
+    assert.equal(formatCode(e('x', 'printer')), 'printer_format');
+    assert.equal(formatCode(e('x', 'gateway_update')), 'gateway_update');
+    assert.equal(formatCode(e('x', 'convert_off')), 'convert_off');
+    assert.equal(formatCode(e('this printer takes no PDF')), 'gateway_update', 'GateControl 1.241: the printer takes no PDF – needs the update');
+    assert.equal(formatCode(e('this printer takes neither JPEG nor PDF')), 'gateway_update');
+    assert.equal(formatCode(e('not a PDF file')), 'damaged');
+    assert.equal(formatCode(e('the picture cannot be read')), 'damaged');
+    assert.equal(formatCode(e('only PDF files and pictures can be printed')), 'format');
+    assert.equal(formatCode(e('x', 'bogus')), 'format');
+    assert.equal(fromHost(e('x', 'convert_off')).code, 'convert_off');
+    assert.equal(fromHost(Object.assign(new Error('x'), { code: 'ERR_PRINT_OFFLINE' })).code, 'offline');
   });
 
   it('background: states into the history, "Druck fertig" / "fehlgeschlagen" once to the person', async () => {

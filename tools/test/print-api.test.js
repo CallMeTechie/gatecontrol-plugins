@@ -22,7 +22,7 @@ module.exports = {
   async request(req, gc) {
     const b = req.body || {};
     if (req.path === '/has') return { json: { print: !!gc.print } };
-    try { return { json: { ok: true, result: await gc.print[b.op](...(b.args || [])) } }; } catch (e) { return { json: { ok: false, code: e.code } }; }
+    try { return { json: { ok: true, result: await gc.print[b.op](...(b.args || [])) } }; } catch (e) { return { json: { ok: false, code: e.code, reason: e.reason || null } }; }
   },
 };`;
 
@@ -64,7 +64,7 @@ test('gc.print: submit checks like the host; jobs, cancel; scans and pdf', async
     let r = await call(host, 'submit', { deviceId: DEV[0].id, mediaId: pdf, user: 2, copies: 2, color: true });
     assert.equal(r.ok, true, JSON.stringify(r));
     assert.deepEqual([r.result.state, r.result.pages, r.result.copies, r.result.color], ['queued', 2, 2, true]);
-    assert.equal((await call(host, 'submit', { deviceId: DEV[0].id, mediaId: txt, user: 2 })).code, 'ERR_PRINT_FORMAT');
+    assert.deepEqual(Object.values(await call(host, 'submit', { deviceId: DEV[0].id, mediaId: txt, user: 2 })), [false, 'ERR_PRINT_FORMAT', 'file_type']);
     assert.equal((await call(host, 'submit', { deviceId: DEV[1].id, mediaId: pdf, user: 2 })).code, 'ERR_PRINT_OFFLINE');
     assert.equal((await call(host, 'submit', { deviceId: DEV[0].id, mediaId: pdf, user: 9 })).code, 'ERR_NOT_FOUND');
     assert.equal((await call(host, 'submit', { deviceId: DEV[0].id, mediaId: pdf, user: 2, copies: 0 })).code, 'ERR_INVALID');
@@ -83,5 +83,28 @@ test('gc.print: submit checks like the host; jobs, cancel; scans and pdf', async
     assert.deepEqual([st.state, st.pages.length], ['done', 2]);
     const doc = (await call(host, 'pdf', { pages: st.pages.map((x) => x.mediaId), user: 2, name: 'Scan' })).result;
     assert.deepEqual([doc.pages, doc.name], [2, 'Scan.pdf']);
+  } finally { await host.close(); p.done(); }
+});
+
+test('gc.print (GateControl 1.242.0): the type by the content, a printer whose gateway converts, the reasons', async () => {
+  const p = plugin({ print: true });
+  const noPdf = { id: 'h:' + 'c'.repeat(16), name: 'HP OfficeJet Pro 8720', online: true, gatewayOnline: true, printer: { color: true, duplex: true, formats: ['image/pwg-raster', 'image/urf'], copiesMax: 99 }, scanner: null };
+  const host = await createHost(p.dir, { users: USERS, print: { devices: [noPdf] } });
+  try {
+    await host.start();
+    const up = async (data, mime) => (await host.upload({ id: 2, name: 'Anna', role: 'user', portal: true, loggedIn: true }, Buffer.from(data), mime)).body.mediaId;
+    const asJpeg = await up('%PDF-1.4 << /Type /Page >>', 'image/jpeg');
+    assert.deepEqual((await call(host, 'pages', { mediaId: asJpeg })).result, { pages: 1, format: 'application/pdf' });
+    const dev = host.print.devices[0];
+    for (const [hook, reason] of [['old', 'gateway_update'], ['off', 'convert_off'], [undefined, 'printer']]) {
+      dev.gatewayConvert = hook;
+      const r = await call(host, 'submit', { deviceId: noPdf.id, mediaId: asJpeg, user: 2 });
+      assert.deepEqual([r.code, r.reason], ['ERR_PRINT_FORMAT', reason]);
+    }
+    dev.printer.convert = 'image/pwg-raster';
+    const r = await call(host, 'submit', { deviceId: noPdf.id, mediaId: asJpeg, user: 2 });
+    assert.deepEqual([r.ok, r.result.format], [true, 'application/pdf']);
+    const broken = await up('kein pdf', 'application/pdf');
+    assert.equal((await call(host, 'submit', { deviceId: noPdf.id, mediaId: broken, user: 2 })).reason, 'damaged');
   } finally { await host.close(); p.done(); }
 });

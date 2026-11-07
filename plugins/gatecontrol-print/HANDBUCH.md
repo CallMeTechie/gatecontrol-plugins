@@ -1,4 +1,4 @@
-<!-- version: 1.0.2 -->
+<!-- version: 1.0.3 -->
 # Drucken & Scannen
 
 ## Was das Plugin kann
@@ -15,6 +15,7 @@
 - GateControl **1.236.0** oder neuer.
 - Ein Gateway **1.24.0** oder neuer im Heimnetz der Drucker. An der Compose-Datei des Gateways ändert sich nichts.
 - Drucker und Scanner mit **AirPrint** bzw. **AirScan** (IPP/eSCL). Das können fast alle Geräte seit etwa 2015. Ältere Geräte ohne diese Funktion erscheinen nicht.
+- Für Drucker, die kein PDF annehmen (z. B. HP OfficeJet Pro 8720): GateControl **1.242.0** und ein Gateway **1.29.0** oder neuer – das Gateway wandelt PDF-Dateien dann selbst um.
 - Zum Drucken aus der Android-App: die GateControl-App **1.84.0** oder neuer.
 - Für Scans: das Plugin **Drive**. Ohne Drive kannst du drucken, aber keine Scans ablegen.
 - Für „Mit KI benennen und einsortieren“: ein KI-Anbieter in GateControl.
@@ -80,9 +81,23 @@ Das Plugin „Drive“ fehlt oder läuft nicht.
 **Word- oder Excel-Dateien gehen nicht.**
 Gedruckt werden nur PDFs und Bilder. Speichere die Datei vorher als PDF.
 
-## Neu in 1.0.2
+**Ein PDF wird abgelehnt: „Dieser Drucker nimmt keine PDF-Dateien direkt an …“.**
+Manche Drucker (z. B. HP OfficeJet Pro 8720) nehmen über das Netz kein PDF an. Das Gateway wandelt PDF-Dateien für sie um – der Text sagt, was fehlt:
+- „… ab Version 1.29.0 …“: **Gateways** › dein Gateway › „Update auf …“ (und GateControl aktuell halten).
+- „… Umwandeln ist am Gateway ausgeschaltet“: **Gateways** › dein Gateway › **Funktionen** › „Drucken & Scannen“ › „PDF für Drucker ohne PDF umwandeln“ einschalten.
+- „… nennt kein Format, in das das Gateway sie umwandeln kann“: Der Drucker kann weder PWG-Raster noch URF noch JPEG. Bilder gehen, PDF-Dateien nicht.
 
-- Dieses Handbuch im Reiter „Handbuch“ (GateControl ≥ 1.241.0).
-- Ein Hinweis oben auf der Plugin-Seite, solange ein Gateway mit „Drucken & Scannen“ älter als 1.24.0 ist.
+**Im Verlauf steht „Die PDF-Datei ließ sich für den Drucker nicht umwandeln“.**
+Das PDF ist beschädigt oder mit einem Kennwort geschützt. Öffne es am Handy oder PC und speichere bzw. drucke es dort als neues PDF.
 
-Zuletzt in 1.0.1: Drucken aus den GateControl-Apps (Android-Druckdienst „GateControl“, „Teilen › Mit GateControl drucken“).
+**Ein Auftrag steht lange auf „wird für den Drucker umgewandelt“.**
+Das Gateway rechnet die Seiten für den Drucker um. Auf einem Raspberry Pi 3 oder Zero dauert das bei großen PDF-Dateien ein paar Minuten.
+
+## Neu in 1.0.3
+
+- **PDF an Drucker ohne PDF** (z. B. HP OfficeJet Pro 8720): Mit GateControl 1.242.0 und einem Gateway ab 1.29.0 wandelt das Gateway das PDF beim Drucken passend um – aus dem Portal, dem Android-Druckdienst und „Teilen“.
+- Statt „Es gehen PDF-Dateien und Bilder“ steht jetzt der echte Grund da: Gateway zu alt, Umwandeln aus, Drucker ohne passendes Format, Datei beschädigt – der alte Hinweis nur noch bei Dateien, die wirklich kein PDF und kein Bild sind.
+- Beim Auftrag steht „wird für den Drucker umgewandelt“, solange das Gateway umwandelt.
+- Ein PDF, das das Handy ohne Dateityp oder ohne „.pdf“ im Namen liefert, geht trotzdem als PDF hoch.
+
+Zuletzt in 1.0.2: dieses Handbuch im Reiter „Handbuch“ und ein Hinweis, solange ein Gateway mit „Drucken & Scannen“ älter als 1.24.0 ist.

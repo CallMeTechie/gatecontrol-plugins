@@ -86,6 +86,8 @@
   var JOB_TONE = { done: 'good', queued: '', sending: '', printing: '', waiting: 'warn', failed: 'crit', expired: 'crit', canceled: '' };
   function jobBadge(j) { return el('span', { class: 'pr-badge', 'data-tone': JOB_TONE[j.state] || '', text: T('job.' + j.state) }); }
   function jobReason(j) {
+    // the gateway turns a PDF into the printer's own format first (printer without PDF)
+    if (j.state === 'sending' && j.message === 'converting') return T('job.converting');
     if (j.state === 'waiting') return T('job.waiting_why.' + (j.error || 'printer_offline'));
     if (j.state === 'failed' || j.state === 'expired') return T('jerr.' + (j.error || j.state));
     return null;

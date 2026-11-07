@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.0.3
+
+- **PDF an Drucker ohne PDF:** Viele Tintenstrahler (z. B. HP OfficeJet Pro 8720) nehmen per AirPrint/IPP kein PDF an, nur ihre Rasterformate. Bisher kam beim Drucken – auch aus dem Android-Druckdienst – „Diese Datei kann der Drucker nicht drucken. Es gehen PDF-Dateien und Bilder“, obwohl es ein PDF war. Mit GateControl ≥ 1.242.0 und einem Gateway ≥ 1.29.0 wandelt das Gateway das PDF jetzt beim Drucken passend um (PWG-Raster, URF oder JPEG); das Plugin braucht dafür nichts Neues.
+- **Der echte Grund statt „Es gehen PDF-Dateien und Bilder“:** `ERR_PRINT_FORMAT` wird nach `e.reason` (GateControl ≥ 1.242.0, bei älteren nach der Meldung) zu eigenen Codes mit eigenem Text: `format` (keine PDF-Datei und kein Bild – nur dann der alte Hinweis, jetzt mit „keine Office- oder Textdateien“), `damaged` (Datei beschädigt), `gateway_update` (Drucker ohne PDF, Gateway zu alt zum Umwandeln), `convert_off` (Umwandeln am Gateway ausgeschaltet), `printer_format` (Drucker nennt kein Format zum Umwandeln). Alle mit Status 409.
+- Neue Gründe im Verlauf und in „Druck fehlgeschlagen“: `convert_failed` (PDF ließ sich nicht umwandeln – beschädigt oder mit Kennwort), `convert_too_large`; während das Gateway umwandelt, steht beim Auftrag „wird für den Drucker umgewandelt“.
+- Portal: Die Art einer hochgeladenen Datei zählt nach ihrem Inhalt – ein PDF, das das Handy ohne Typ oder unter einem Namen ohne „.pdf“ liefert, geht als PDF hoch statt abgelehnt zu werden.
+
 ## 1.0.2
 
 - Handbuch im Reiter „Handbuch“ (GateControl ≥ 1.241.0): `HANDBUCH.md` / `HANDBOOK.md` im Paket, in `plugin.json` unter `handbook`. Ältere GateControl-Versionen ignorieren es; die Mindestversion bleibt `>=1.236.0`.
