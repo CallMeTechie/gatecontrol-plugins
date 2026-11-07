@@ -141,3 +141,18 @@ test('rowsOf: more than 100 media ids go to the host in parts (at most 100 param
   assert.equal(map.size, 25);
   assert.deepEqual(map.get('m7'), { state: 'clean', blocked: false, finding: null });
 });
+
+test('save_file { text } (1.23.0): a searchable PDF of „Drucken & Scannen“ is found by its content', async () => {
+  await withHost({}, async (host, c) => {
+    const mediaId = (await host.upload(ANNA, Buffer.from('%PDF-1.4 searchable'), 'application/pdf')).body.mediaId;
+    const r = await host.callService('save_file', { caller: 'gatecontrol-print', user: { id: ANNA.id, name: ANNA.name, role: ANNA.role },
+      payload: { mediaId, area: 'mine', path: 'Scans/Stadtwerke.pdf', text: 'Rechnung Nr. 4711 Betrag 129,00 Euro' } });
+    assert.equal(r.ok, true, JSON.stringify(r));
+    const s = await c.as(ANNA)('GET', 'search', null, { q: '4711' });
+    assert.equal(s.status, 200, JSON.stringify(s.json));
+    assert.ok(s.json.items.some((x) => x.id === r.nodeId), JSON.stringify(s.json.items));
+    const bad = await host.callService('save_file', { caller: 'gatecontrol-print', user: { id: ANNA.id, name: ANNA.name, role: ANNA.role },
+      payload: { mediaId, area: 'mine', path: 'Scans/x.pdf', text: 42 } });
+    assert.deepEqual([bad.ok, bad.code], [false, 'invalid']);
+  });
+});

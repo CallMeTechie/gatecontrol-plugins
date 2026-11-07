@@ -1,4 +1,4 @@
-<!-- version: 1.22.0 -->
+<!-- version: 1.23.0 -->
 # Drive
 
 ## What the plugin does
@@ -97,9 +97,13 @@ Browsers cannot play some videos, often MKV or HEVC (H.265, e.g. from newer iPho
 **“Full screen” is missing in the portal.**
 Full screen in the portal needs GateControl 1.244.0. Older versions show the video in the Drive window.
 
+## New in 1.23.0
+
+- **Find scanned documents by their content:** scans that “Print & Scan” files as a searchable PDF (text recognition on the gateway) bring their text along – the search and “Ask” find them by what is written in them.
+
 ## New in 1.22.0
 
 - **View vault files:** pictures, PDFs, texts and Markdown open in the portal with one click in a viewer of their own – decrypted only in the browser tab's memory. Videos play in the apps.
 - In the viewer: zoom, “Lock vaults now” and “Download” (asks first, because the copy is not encrypted).
 
-Last in 1.21.0: pictures and videos large in “Files”, videos played right in the browser; in 1.20.1 this manual in the tab “Manual”.
+Before that in 1.21.0: pictures and videos large in “Files”, videos played right in the browser; in 1.20.1 this manual in the tab “Manual”.

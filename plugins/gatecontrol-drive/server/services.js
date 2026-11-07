@@ -14,6 +14,8 @@
 //               onConflict 'rename' (default: "Elternbrief (2).pdf") | 'version' (a new version of that file)
 //               source     since 1.15.0: { plugin (the caller), label, ref } — where the file came from (mail.js)
 //               learn      since 1.15.0: { from: address, always? } — the sender's files go there next time (mail.js)
+//               text       since 1.23.0: the file's recognised text (a searchable PDF of „Drucken & Scannen“) — kept like
+//                          the apps' uploads/commit { text }: the search and „Fragen“ find the file by its content
 //               → { ok, nodeId, areaId, path, name, created, where }   where: "Familie › Schule › Elternbrief.pdf"
 //                 in the person's language, for a message like "Gespeichert in …"
 //   Codes: invalid, forbidden, not_found, no_seat, not_licensed, quota, upload_invalid, exists.
@@ -72,6 +74,7 @@ async function saveFile(ctx, payload, caller) {
   // since 1.15.0 (Mail): where it came from, and the sender to remember — checked before anything is stored
   const source = mail.sourceArg(p.source, caller);
   if (p.learn != null && !mail.addressOf(p.learn && p.learn.from)) throw fail('invalid', { field: 'learn' });
+  if (p.text != null && typeof p.text !== 'string') throw fail('invalid', { field: 'text' });
   const onConflict = p.onConflict == null ? 'rename' : String(p.onConflict);
   if (onConflict !== 'rename' && onConflict !== 'version') throw fail('invalid', { field: 'onConflict' });
   let area;
@@ -90,7 +93,7 @@ async function saveFile(ctx, payload, caller) {
     area = await areaFor(ctx, p.area);
     parent = await folders(ctx, area, segs);
   }
-  const r = await files.commit(ctx, { mediaId: p.mediaId, parentId: parent.id, name, onConflict });
+  const r = await files.commit(ctx, { mediaId: p.mediaId, parentId: parent.id, name, onConflict, ...(p.text != null ? { text: p.text } : {}) });
   const node = r.node;
   await mail.setSource(ctx, node.id, source);
   await mail.learn(ctx, p.learn, parent.id);
