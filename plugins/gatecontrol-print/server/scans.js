@@ -6,7 +6,7 @@
 // Drive. The pages are GateControl media of this plugin (unclaimed — they go
 // by themselves after 24 h); the session row keeps only their ids.
 //
-// "Durchsuchbares PDF" (since 1.1.0, GateControl ≥ 1.246.0 with a gateway that
+// "Durchsuchbares PDF" (since 1.1.0, GateControl ≥ 1.247.0 with a gateway that
 // has „Texterkennung“ on): save starts gc.print.ocr — the session waits in
 // state 'ocr' until the gateway made the searchable PDF and its text, then it
 // goes to Drive with the text (Drive's search). Fails the text recognition

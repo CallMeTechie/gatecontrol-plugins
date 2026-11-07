@@ -90,7 +90,7 @@
     if (j.state === 'sending' && j.message === 'converting') return T('job.converting');
     // … or makes a PDF of an office file (its service office)
     if (j.state === 'sending' && j.message === 'converting_office') return T('job.converting_office');
-    // the printer stopped while printing (paper out, cover open …) — GateControl ≥ 1.246.0
+    // the printer stopped while printing (paper out, cover open …) — GateControl ≥ 1.247.0
     if (j.state === 'printing' && j.message && T('job.stop.' + j.message) !== 'job.stop.' + j.message) return T('job.stop.' + j.message);
     if (j.state === 'waiting') return T('job.waiting_why.' + (j.error || 'printer_offline'));
     if (j.state === 'failed' || j.state === 'expired') return T('jerr.' + (j.error || j.state));

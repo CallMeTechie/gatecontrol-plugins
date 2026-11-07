@@ -16,7 +16,7 @@
 - A gateway **1.24.0** or later in the printers' home network. The gateway's compose file does not change.
 - Printers and scanners with **AirPrint** or **AirScan** (IPP/eSCL). Almost every device since about 2015 can do that. Older devices without it do not show up.
 - For printers that take no PDF (e.g. HP OfficeJet Pro 8720): GateControl **1.243.0** and a gateway **1.30.0** or later – the gateway then converts PDF files itself.
-- For **text recognition**, **office files** and **paper/tray**: GateControl **1.246.0** and a gateway **1.32.0** or later, with “Text recognition for scans” or “Print office files” switched on at the gateway (see [Setting up](#einrichten)). Text files work without “Print office files”.
+- For **text recognition**, **office files** and **paper/tray**: GateControl **1.247.0** and a gateway **1.33.0** or later, with “Text recognition for scans” or “Print office files” switched on at the gateway (see [Setting up](#einrichten)). Text files work without “Print office files”.
 - To print from the Android app: the GateControl app **1.84.0** or later.
 - For scans: the **Drive** plugin. Without Drive you can print but not file scans.
 - For “Name and file with AI”: an AI provider in GateControl.
@@ -27,7 +27,7 @@
 2. **Switch it on:** **Gateways** › your gateway › **Functions** › “Devices at home” › **“Print & scan”**.
 3. **Check the devices:** in the plugin on the page **“Devices”**. After about a minute it lists the printers and scanners the gateway found – with location, address, colour, double-sided, feeder, state and ink levels. **“Search again”** searches at once, **“Test page”** prints a sample. Nothing needs to be set up on the printer itself.
 4. **Set the rights** on the page **“Permissions”** (see [Permissions](#permissions)).
-5. **Text recognition and office files** (gateway 1.32.0 or later): **Gateways** › your gateway › **Functions** › “Print & scan” › tick **“Text recognition for scans (searchable PDFs)”** and/or **“Print office files”**. For office files the gateway loads an extra service with LibreOffice once (≈ 200 MB, ≈ 700 MB on disk); the row says what to do. The text recognition is already in the gateway.
+5. **Text recognition and office files** (gateway 1.33.0 or later): **Gateways** › your gateway › **Functions** › “Print & scan” › tick **“Text recognition for scans (searchable PDFs)”** and/or **“Print office files”**. For office files the gateway loads an extra service with LibreOffice once (≈ 200 MB, ≈ 700 MB on disk); the row says what to do. The text recognition is already in the gateway.
 6. **Where scans go** on the page **“Settings”**: the target in Drive – “My Drive › folder” (per person) or “Family › folder” – and whether the AI suggests name and folder. Also the notifications and how long the history is kept.
 
 ## Using it
@@ -82,19 +82,19 @@ The person's daily limit is reached or they may only print in black and white. C
 The Drive plugin is missing or not running.
 
 **Word or Excel files do not print.**
-“Print office files” must be on at the printer's gateway (gateway 1.32.0 or later) – the message says what is missing:
+“Print office files” must be on at the printer's gateway (gateway 1.33.0 or later) – the message says what is missing:
 - “… once an administrator switches on “Print office files” …”: **Gateways** › your gateway › **Functions** › “Print & scan” › “Print office files”.
 - “… the gateway's office service is not running yet”: the first time the gateway loads the service (a few minutes). When the row at the gateway says “… need the current compose file once”, use “Download docker-compose.yml” there.
 - Old Word formats (.doc, .xls, .ppt) do not work – save the file as .docx/.xlsx/.pptx or PDF.
 
 **“Searchable PDF” is missing when scanning.**
-No gateway with text recognition is reachable right now, or it is switched on nowhere (**Gateways** › **Functions** › “Print & scan” › “Text recognition for scans”, gateway 1.32.0 or later).
+No gateway with text recognition is reachable right now, or it is switched on nowhere (**Gateways** › **Functions** › “Print & scan” › “Text recognition for scans”, gateway 1.33.0 or later).
 
 **“Saved … – without text recognition”.**
 The text recognition took too long or the gateway was not reachable. The PDF is in Drive anyway, just without text. On a Raspberry Pi 3 or Zero a page takes about a minute.
 
 **Paper or tray cannot be chosen.**
-Only what the printer itself reports is offered (gateway 1.32.0 or later). If it names nothing, it prints on its default paper.
+Only what the printer itself reports is offered (gateway 1.33.0 or later). If it names nothing, it prints on its default paper.
 
 **A PDF is refused: “This printer takes no PDF files directly …”.**
 Some printers (e.g. HP OfficeJet Pro 8720) take no PDF over the network. The gateway converts PDF files for them – the text says what is missing:
@@ -115,7 +115,7 @@ The gateway is turning the pages into the printer's format. On a Raspberry Pi 3 
 - Choose **paper and tray** – A4, A5, Letter, photo paper – where the printer names them.
 - **The real state while printing:** “out of paper”, “cover open”, “paper jam” … at the job; the Android app shows it in the print dialog.
 - For the apps: `GET jobs/<id>` returns a job with its current state.
-- All of it needs GateControl 1.246.0 and a gateway 1.32.0 or later; with older ones everything stays as in 1.0.3.
+- All of it needs GateControl 1.247.0 and a gateway 1.33.0 or later; with older ones everything stays as in 1.0.3.
 
 ## New in 1.0.3
 

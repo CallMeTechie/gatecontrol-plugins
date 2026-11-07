@@ -24,7 +24,7 @@ function formatsOf(p) {
   return f.filter((x) => typeof x === 'string' && /^[a-z0-9.+-]+\/[a-z0-9.+-]+$/i.test(x)).slice(0, 24).map((x) => x.toLowerCase());
 }
 
-/** Paper and trays the printer names (GateControl ≥ 1.246.0 with a gateway ≥ 1.32.0; else empty). */
+/** Paper and trays the printer names (GateControl ≥ 1.247.0 with a gateway ≥ 1.33.0; else empty). */
 function mediaView(p) {
   const m = p && p.media && typeof p.media === 'object' ? p.media : {};
   const list = (v, re, n) => (Array.isArray(v) ? v.filter((x) => typeof x === 'string' && re.test(x)).slice(0, n) : []);
@@ -38,7 +38,7 @@ function deviceView(d) {
   const s = d.scanner;
   return {
     id: d.id, name: d.name, location: d.location || null, online: !!d.online, problem: d.problem || null,
-    // office: the printer's gateway turns office files into PDF („Office-Dateien drucken“, GateControl ≥ 1.246.0)
+    // office: the printer's gateway turns office files into PDF („Office-Dateien drucken“, GateControl ≥ 1.247.0)
     printer: p ? { state: p.state, color: !!p.color, duplex: !!p.duplex, copiesMax: Math.min(99, p.copiesMax || 99), formats: formatsOf(p), office: p.office === true, media: mediaView(p) } : null,
     scanner: s ? { state: s.state, platen: !!s.platen, feeder: !!s.feeder, adf: s.adf || null } : null,
   };
@@ -55,7 +55,7 @@ async function overview(gc, user, cfg, lang) {
   let list = [];
   try { list = (await gc.print.devices()) || []; } catch (e) { throw fromHost(e); }
   const hasDrive = await drive.available(gc);
-  // a searchable PDF can be made: a gateway with „Texterkennung“ is online (GateControl ≥ 1.246.0)
+  // a searchable PDF can be made: a gateway with „Texterkennung“ is online (GateControl ≥ 1.247.0)
   let ocr = false;
   if (r.scan && hasDrive && typeof gc.print.ocrAvailable === 'function') {
     try { ocr = (await gc.print.ocrAvailable()).available === true; } catch { ocr = false; }

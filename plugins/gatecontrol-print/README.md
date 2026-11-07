@@ -13,7 +13,7 @@ ins Internet zu stellen. *English below.*
 - Für Scans: das Plugin **Drive** (Ablage, „Mit KI benennen und einsortieren“
   über Drives `suggest_folder`).
 - Für durchsuchbare PDFs, Office-Dateien und Papier/Fach (1.1.0): GateControl
-  **1.246.0** und ein Gateway **1.32.0** mit „Texterkennung für Scans“ bzw.
+  **1.247.0** und ein Gateway **1.33.0** mit „Texterkennung für Scans“ bzw.
   „Office-Dateien drucken“ (Gateways › Funktionen › „Drucken & Scannen“).
   Office-Dateien brauchen am Gateway den Zusatzdienst `office` (LibreOffice,
   ≈ 200 MB Download); Text-Dateien gehen ohne.
@@ -114,7 +114,7 @@ also prints on printers without PDF (e.g. HP OfficeJet Pro 8720): with
 GateControl ≥ 1.243.0 and a gateway ≥ 1.30.0 the gateway converts it, and a
 refused file names the real reason (gateway too old, converting off, no
 suitable format, damaged) instead of “PDF files and pictures work”. Since
-1.1.0 (GateControl ≥ 1.246.0, gateway ≥ 1.32.0): searchable PDFs of scans
+1.1.0 (GateControl ≥ 1.247.0, gateway ≥ 1.33.0): searchable PDFs of scans
 (text recognition on a gateway, the text goes to Drive's search), text and
 office files (Word, Excel, PowerPoint, OpenDocument, RTF – when “Print office
 files” is on at the gateway), paper and tray, the printer's stop reasons, and

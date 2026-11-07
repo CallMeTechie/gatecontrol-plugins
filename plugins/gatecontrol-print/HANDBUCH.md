@@ -16,7 +16,7 @@
 - Ein Gateway **1.24.0** oder neuer im Heimnetz der Drucker. An der Compose-Datei des Gateways ändert sich nichts.
 - Drucker und Scanner mit **AirPrint** bzw. **AirScan** (IPP/eSCL). Das können fast alle Geräte seit etwa 2015. Ältere Geräte ohne diese Funktion erscheinen nicht.
 - Für Drucker, die kein PDF annehmen (z. B. HP OfficeJet Pro 8720): GateControl **1.243.0** und ein Gateway **1.30.0** oder neuer – das Gateway wandelt PDF-Dateien dann selbst um.
-- Für **Texterkennung**, **Office-Dateien** und **Papier/Fach**: GateControl **1.246.0** und ein Gateway **1.32.0** oder neuer; am Gateway „Texterkennung für Scans“ bzw. „Office-Dateien drucken“ eingeschaltet (siehe [Einrichten](#einrichten)). Text-Dateien gehen auch ohne „Office-Dateien drucken“.
+- Für **Texterkennung**, **Office-Dateien** und **Papier/Fach**: GateControl **1.247.0** und ein Gateway **1.33.0** oder neuer; am Gateway „Texterkennung für Scans“ bzw. „Office-Dateien drucken“ eingeschaltet (siehe [Einrichten](#einrichten)). Text-Dateien gehen auch ohne „Office-Dateien drucken“.
 - Zum Drucken aus der Android-App: die GateControl-App **1.84.0** oder neuer.
 - Für Scans: das Plugin **Drive**. Ohne Drive kannst du drucken, aber keine Scans ablegen.
 - Für „Mit KI benennen und einsortieren“: ein KI-Anbieter in GateControl.
@@ -27,7 +27,7 @@
 2. **Einschalten:** **Gateways** › dein Gateway › **Funktionen** › „Geräte im Heimnetz“ › **„Drucken & Scannen“**.
 3. **Geräte prüfen:** im Plugin auf der Seite **„Geräte“**. Nach etwa einer Minute stehen dort die Drucker und Scanner, die das Gateway gefunden hat – mit Ort, Adresse, Farbe, beidseitig, Einzug, Zustand und Tintenstand. **„Neu suchen“** sucht sofort noch einmal, **„Testseite“** druckt eine Probe. Am Drucker selbst musst du nichts einrichten.
 4. **Rechte festlegen** auf der Seite **„Berechtigungen“** (siehe [Berechtigungen](#berechtigungen)).
-5. **Texterkennung und Office-Dateien** (Gateway ab 1.32.0): **Gateways** › dein Gateway › **Funktionen** › „Drucken & Scannen“ › **„Texterkennung für Scans (durchsuchbare PDFs)“** und/oder **„Office-Dateien drucken“** anhaken. Für Office-Dateien lädt das Gateway einmal einen Zusatzdienst mit LibreOffice (≈ 200 MB, ≈ 700 MB auf dem Datenträger); was zu tun ist, steht dort in der Zeile. Die Texterkennung ist schon im Gateway.
+5. **Texterkennung und Office-Dateien** (Gateway ab 1.33.0): **Gateways** › dein Gateway › **Funktionen** › „Drucken & Scannen“ › **„Texterkennung für Scans (durchsuchbare PDFs)“** und/oder **„Office-Dateien drucken“** anhaken. Für Office-Dateien lädt das Gateway einmal einen Zusatzdienst mit LibreOffice (≈ 200 MB, ≈ 700 MB auf dem Datenträger); was zu tun ist, steht dort in der Zeile. Die Texterkennung ist schon im Gateway.
 6. **Scans ablegen** auf der Seite **„Einstellungen“**: Ziel im Drive – „Mein Drive › Ordner“ (je Person) oder „Familie › Ordner“ – und ob die KI Name und Ordner vorschlagen soll. Dazu die Mitteilungen und wie lange der Verlauf aufbewahrt wird.
 
 ## Benutzen
@@ -82,19 +82,19 @@ Die Tagesgrenze der Person ist erreicht oder sie darf nur schwarz-weiß drucken.
 Das Plugin „Drive“ fehlt oder läuft nicht.
 
 **Word- oder Excel-Dateien gehen nicht.**
-Dafür muss am Gateway des Druckers „Office-Dateien drucken“ eingeschaltet sein (Gateway ab 1.32.0) – die Meldung sagt, was fehlt:
+Dafür muss am Gateway des Druckers „Office-Dateien drucken“ eingeschaltet sein (Gateway ab 1.33.0) – die Meldung sagt, was fehlt:
 - „… erst, wenn ein Administrator „Office-Dateien drucken“ … einschaltet“: **Gateways** › dein Gateway › **Funktionen** › „Drucken & Scannen“ › „Office-Dateien drucken“.
 - „… der Office-Dienst des Gateways läuft aber noch nicht“: Beim ersten Mal lädt das Gateway den Dienst (ein paar Minuten). Steht in der Zeile am Gateway „… brauchen einmalig die aktuelle Compose-Datei“, dort „docker-compose.yml herunterladen“ und übernehmen.
 - Ältere Word-Formate (.doc, .xls, .ppt) gehen nicht – speichere die Datei als .docx/.xlsx/.pptx oder PDF.
 
 **„Durchsuchbares PDF“ fehlt beim Scannen.**
-Kein Gateway mit Texterkennung ist gerade erreichbar, oder sie ist nirgends eingeschaltet (**Gateways** › **Funktionen** › „Drucken & Scannen“ › „Texterkennung für Scans“, Gateway ab 1.32.0).
+Kein Gateway mit Texterkennung ist gerade erreichbar, oder sie ist nirgends eingeschaltet (**Gateways** › **Funktionen** › „Drucken & Scannen“ › „Texterkennung für Scans“, Gateway ab 1.33.0).
 
 **„Gespeichert … – ohne Texterkennung“.**
 Die Texterkennung hat zu lange gedauert oder das Gateway war nicht erreichbar. Das PDF liegt trotzdem im Drive, nur ohne Text. Auf einem Raspberry Pi 3 oder Zero dauert eine Seite etwa eine Minute.
 
 **Papier oder Fach lässt sich nicht wählen.**
-Angeboten wird nur, was der Drucker selbst meldet (Gateway ab 1.32.0). Nennt er nichts, druckt er auf seinem Standardpapier.
+Angeboten wird nur, was der Drucker selbst meldet (Gateway ab 1.33.0). Nennt er nichts, druckt er auf seinem Standardpapier.
 
 **Ein PDF wird abgelehnt: „Dieser Drucker nimmt keine PDF-Dateien direkt an …“.**
 Manche Drucker (z. B. HP OfficeJet Pro 8720) nehmen über das Netz kein PDF an. Das Gateway wandelt PDF-Dateien für sie um – der Text sagt, was fehlt:
@@ -115,7 +115,7 @@ Das Gateway rechnet die Seiten für den Drucker um. Auf einem Raspberry Pi 3 ode
 - **Papier und Fach** wählen – A4, A5, Letter, Fotopapier – soweit der Drucker sie nennt.
 - **Der echte Zustand beim Drucken:** „Papier fehlt“, „Klappe offen“, „Papierstau“ … beim Auftrag; die Android-App zeigt ihn im Druckdialog.
 - Für die Apps: `GET jobs/<id>` liefert einen Auftrag mit seinem aktuellen Zustand.
-- Alles braucht GateControl 1.246.0 und ein Gateway ab 1.32.0; mit älteren bleibt alles wie in 1.0.3.
+- Alles braucht GateControl 1.247.0 und ein Gateway ab 1.33.0; mit älteren bleibt alles wie in 1.0.3.
 
 ## Neu in 1.0.3
 

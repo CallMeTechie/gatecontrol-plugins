@@ -44,7 +44,7 @@ async function insert(gc, job, d, via, now) {
 const MEDIA_RE = /^[a-z0-9]+_[a-z0-9.-]+_[0-9.]+x[0-9.]+(mm|in)$/;
 const SOURCE_RE = /^[a-z][a-z0-9-]{0,39}$/;
 
-/** Paper and tray of a print call: only what the printer names (GateControl ≥ 1.246.0, printer.media), else nothing. */
+/** Paper and tray of a print call: only what the printer names (GateControl ≥ 1.247.0, printer.media), else nothing. */
 function mediaOf(b, p) {
   const m = (p && p.media) || { sizes: [], sources: [] };
   const out = {};

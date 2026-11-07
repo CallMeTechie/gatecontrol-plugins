@@ -207,7 +207,7 @@
    * is still a PDF (else GateControl would refuse the upload). → a promise of the type or null.
    */
   var PRINTABLE = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif', 'text/plain'];
-  // office files (GateControl ≥ 1.246.0, a gateway with „Office-Dateien drucken“): by the name when the phone names no type
+  // office files (GateControl ≥ 1.247.0, a gateway with „Office-Dateien drucken“): by the name when the phone names no type
   var OFFICE = {
     docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation', odt: 'application/vnd.oasis.opendocument.text',

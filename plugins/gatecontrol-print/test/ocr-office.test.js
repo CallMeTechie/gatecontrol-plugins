@@ -20,7 +20,7 @@ function withP3c() {
 
 describe('1.1.0: office files, text, paper and tray, the job for the apps', () => {
   let h;
-  before(async () => { h = await setup({ host: { gatecontrol: '1.246.0', print: { devices: withP3c(), ocr: { available: true } } } }); });
+  before(async () => { h = await setup({ host: { gatecontrol: '1.247.0', print: { devices: withP3c(), ocr: { available: true } } } }); });
   after(async () => { await h.host.close(); });
 
   const upload = async (user, buf, mime) => {
@@ -87,7 +87,7 @@ describe('1.1.0: office files, text, paper and tray, the job for the apps', () =
 
 describe('1.1.0: searchable PDFs of scans', () => {
   let h;
-  before(async () => { h = await setup({ host: { gatecontrol: '1.246.0', print: { devices: withP3c(), ocr: { available: true } } } }); });
+  before(async () => { h = await setup({ host: { gatecontrol: '1.247.0', print: { devices: withP3c(), ocr: { available: true } } } }); });
   after(async () => { await h.host.close(); });
 
   async function scanned(user, n = 2) {

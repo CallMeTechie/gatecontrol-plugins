@@ -25,7 +25,7 @@
 //   scan({ deviceId, user, source?, mode?, resolution?, duplex? }) → { scanId }  (one running scan per person)
 //   scanStatus(id) / cancelScan(id)
 //   pdf({ pages: [mediaId], user, name, dpi? }) → { mediaId, pages, bytes, name }  (a fake PDF in the plugin's media)
-// GateControl 1.246.0 (Restpunkte phase 3c; opt-in: opts.print.ocr / opts.print.office or opts.gatecontrol ≥ 1.246.0):
+// GateControl 1.247.0 (Restpunkte phase 3c; opt-in: opts.print.ocr / opts.print.office or opts.gatecontrol ≥ 1.247.0):
 //   submit/pages also take plain text (stored as text/plain or named .txt → a PDF, pages = lines / 64) and office files
 //   (by the stored type: docx, xlsx, pptx, odt, ods, odp, rtf) for a printer with printer.office — else ERR_PRINT_FORMAT
 //   with reason office_off | office_missing | gateway_update | printer (test hook: device.gatewayOffice 'off' |
@@ -56,8 +56,8 @@ function install({ opts, perms, atLeast, enabledUser, hostError, mediaStore }) {
   const on = host && perms.print === true;
   const state = { devices: ((o && o.devices) || []).map((d) => JSON.parse(JSON.stringify(d))), jobs: new Map(), scans: new Map(), ocr: new Map(), discovers: 0, retrusted: [], calls: [],
     ocrAvailable: !!(o && o.ocr && o.ocr.available !== false) };
-  // GateControl 1.246.0: office files, text, paper/tray, the text recognition
-  const p3c = !!(o && (o.ocr != null || o.office != null)) || atLeast(246);
+  // GateControl 1.247.0: office files, text, paper/tray, the text recognition
+  const p3c = !!(o && (o.ocr != null || o.office != null)) || atLeast(247);
   const need = () => { if (perms.print !== true) throw hostError('ERR_PRINT_DENIED', 'this plugin has no print permission'); };
   const iso = (ms) => new Date(ms).toISOString();
   const user = (v) => {

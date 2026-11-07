@@ -62,7 +62,7 @@ const HOST = {
  * Why GateControl cannot print a file (ERR_PRINT_FORMAT, `e.reason` since GateControl 1.243.0) → this plugin's code:
  * format (not a PDF or picture), damaged, printer_format (the printer takes no PDF and the gateway cannot convert for
  * it), gateway_update (… the gateway is too old to convert), convert_off (… converting is off on that gateway);
- * since GateControl 1.246.0 for office files: office_off („Office-Dateien drucken“ is off on the printer's gateway),
+ * since GateControl 1.247.0 for office files: office_off („Office-Dateien drucken“ is off on the printer's gateway),
  * office_missing (on, but the gateway's service office does not run yet).
  */
 const FORMAT_REASONS = { file_type: 'format', damaged: 'damaged', printer: 'printer_format', gateway_update: 'gateway_update', convert_off: 'convert_off', office_off: 'office_off', office_missing: 'office_missing' };
