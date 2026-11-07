@@ -1,11 +1,12 @@
-<!-- version: 1.8.1 -->
+<!-- version: 1.9.0 -->
 # Smart Home
 
 ## What the plugin does
 
 - **Phoscon/deCONZ gateways** (e.g. ConBee or RaspBee): lights, plugs, groups, scenes, sensors and switches. On/off, brightness, colour, colour temperature, scenes.
 - **Shelly and Tasmota** through a GateControl gateway in the home network (since 1.7.0): switches with power metering, dimmers, shutters, awnings and gates, temperature and humidity sensors – without a vendor cloud.
-- **Bluetooth sensors** through a GateControl gateway (since 1.8.0): thermometers and sensors you took over in GateControl under radio.
+- **Bluetooth sensors** through a GateControl gateway (since 1.8.0): thermometers and sensors you took over in GateControl under radio – encrypted ones too, once their key is entered there.
+- **Zigbee devices of zigbee2mqtt** through a GateControl gateway (since 1.9.0): lights, plugs, shutters, sensors and buttons you paired in GateControl under radio with zigbee2mqtt.
 - **Owners and areas:** you assign devices to people. They use them in the portal “Home” and in the app.
 - **Logic chains** on the deCONZ gateway: triggers, time windows, delays.
 - **Notifications:** alarm (water, smoke, CO), window open too long, battery low, gateway unreachable.
@@ -17,6 +18,7 @@
 - For deCONZ: a Phoscon/deCONZ gateway GateControl can reach (through a route, a VPN device or an address).
 - For Shelly and Tasmota: a GateControl gateway **1.19.0** or later in the same home network, with the services `edge` and `mqtt` in its compose file.
 - For Bluetooth sensors: a GateControl with radio (tab “Radio” of the gateway) and a gateway with Bluetooth.
+- For zigbee2mqtt: a GateControl that knows zigbee2mqtt and a gateway newer than 1.30.0 with “zigbee2mqtt” in the tab “Radio” (edge and MQTT of the gateway are on for it).
 
 ## Setting up
 
@@ -43,7 +45,15 @@ GateControl only changes the device's MQTT settings. Cloud, Wi-Fi and schedules 
 ### Bluetooth sensors
 
 1. In GateControl, in the gateway's tab **“Radio”**, pair the sensor and **take it over** (BTHome, Xiaomi with ATC/pvvx firmware, Shelly BLU).
-2. The sensor shows in the plugin under the source “Bluetooth sensors (GateControl gateway)” with temperature, humidity and battery. When you give it back in GateControl, it disappears here.
+2. The sensor shows in the plugin under the source “Radio (GateControl gateway)” with temperature, humidity and battery. When you give it back in GateControl, it disappears here.
+3. If it sends encrypted data (BTHome with a key, Xiaomi stock firmware), enter its key in GateControl at the sensor – then its values arrive here too.
+
+### Zigbee devices of zigbee2mqtt {#zigbee2mqtt}
+
+1. In GateControl, in the gateway's tab **“Radio”**, choose **“zigbee2mqtt”** as the Zigbee service and pair the devices with **“Start pairing”**.
+2. The devices show up in the plugin by themselves under the gateway's source “Radio (GateControl gateway)”: lights with brightness, colour and colour temperature, plugs and switches, shutters (up / stop / down), sensors and buttons.
+3. Owners, area and name work as for the other devices. A name you give here stays; otherwise the name from zigbee2mqtt counts.
+4. When you remove a device from the Zigbee network in GateControl, it is hidden here – its owners stay in case it comes back.
 
 ### Assigning and naming devices
 
@@ -88,8 +98,12 @@ The device signed off or has not reported for 30 minutes (battery sensors: 26 ho
 **Automatic set-up fails.**
 Set the device up “By hand …”. The instructions are in the window.
 
-## New in 1.8.1
+**A zigbee2mqtt device cannot be switched (“zigbee2mqtt on the gateway is not answering right now”).**
+Look at the gateway's tab “Radio”: does zigbee2mqtt run, are edge and MQTT on? New devices show up within half a minute.
 
-- This manual in the tab “Manual” (GateControl ≥ 1.241.0).
+## New in 1.9.0
 
-Last in 1.8.0: Bluetooth sensors through a GateControl gateway and renaming while assigning.
+- **Zigbee devices of zigbee2mqtt** through a GateControl gateway – switched and assigned like the other devices ([zigbee2mqtt](#zigbee2mqtt)).
+- Encrypted Bluetooth sensors deliver values once their key is entered in GateControl.
+
+Last in 1.8.1: this manual in the tab “Manual”; in 1.8.0: Bluetooth sensors through a GateControl gateway.

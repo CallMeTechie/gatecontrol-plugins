@@ -3,6 +3,20 @@
 Phoscon/deCONZ-Integration als GateControl-Plugin – bisher fest in GateControl eingebaut; seit 1.7.0 auch Shelly und
 Tasmota über ein GateControl-Gateway.
 
+## 1.9.0
+
+- **Zigbee-Geräte von zigbee2mqtt über ein GateControl-Gateway:** Mit einem GateControl, das zigbee2mqtt kennt
+  (`gc.radio.zigbee` / `gc.radio.command`; ein Gateway nach 1.30.0 mit „zigbee2mqtt“ unter Gateway › Funk),
+  erscheinen die dort angelernten Geräte – Lichter (Helligkeit, Farbe, Farbtemperatur), Steckdosen/Schalter,
+  Rollläden, Sensoren und Taster – unter der Quelle „Funk (GateControl-Gateway)“ des Gateways, zusammen mit den
+  Bluetooth-Sensoren. Schalten, Besitzer, Bereiche, Umbenennen, Portal „Zuhause“ und „In Smart Home benennen“ wie bei
+  den anderen Quellen; geschaltet wird über das Gateway (`zigbee2mqtt/<Name>/set`), der echte Zustand kommt mit dem
+  nächsten Bericht. Ein Gerät, das zigbee2mqtt nicht mehr kennt (oder ein Gateway zurück auf deCONZ), wird hier
+  ausgeschaltet – Besitzer bleiben. Keine neue Berechtigung (`permissions.radio`), keine neue Edge-Fähigkeit; ohne
+  `gc.radio.zigbee` (älteres GateControl) bleibt alles wie bisher.
+- Verschlüsselte Bluetooth-Sensoren (BTHome mit Schlüssel, Xiaomi-Originalfirmware mit Bindkey) liefern Werte, sobald
+  der Schlüssel in GateControl eingetragen ist – im Plugin ändert sich dafür nichts.
+
 ## 1.8.1
 
 - Handbuch im Reiter „Handbuch“ (GateControl ≥ 1.241.0): `HANDBUCH.md` / `HANDBOOK.md` im Paket, in `plugin.json` unter `handbook`. Ältere GateControl-Versionen ignorieren es; die Mindestversion bleibt `>=1.228.1`.

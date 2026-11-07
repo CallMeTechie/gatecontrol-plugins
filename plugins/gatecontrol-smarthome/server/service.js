@@ -224,6 +224,11 @@ function validatePatch(resource, raw) {
 async function setResourceState(gc, resourceId, raw) {
   const resource = await store.getResource(gc, resourceId);
   if (!resource) throw codeError('SMARTHOME_RESOURCE_NOT_FOUND', `resource ${resourceId} not found`);
+  if (resource.deconz_type === 'z2m') {
+    // a zigbee2mqtt device through a GateControl gateway (server/zigbee.js)
+    if (resource.kind === 'sensor' || resource.kind === 'switch') throw codeError('SMARTHOME_NOT_CONTROLLABLE', `resource ${resourceId} is not controllable`);
+    return require('./zigbee').setState(gc, resource, raw);
+  }
   if (resource.deconz_type === 'edge') {
     // a Shelly / Tasmota device through a GateControl gateway (server/edge.js)
     if (resource.kind === 'sensor') throw codeError('SMARTHOME_NOT_CONTROLLABLE', `resource ${resourceId} is not controllable`);
@@ -254,6 +259,7 @@ async function renameResource(gc, resourceId, name) {
   const resource = await store.getResource(gc, resourceId);
   if (!resource) throw codeError('SMARTHOME_RESOURCE_NOT_FOUND', `resource ${resourceId} not found`);
   if (resource.deconz_type === 'ble') { await require('./radio').rename(gc, resource, name); return { renamed: 1 }; }
+  if (resource.deconz_type === 'z2m') { await require('./zigbee').rename(gc, resource, name); return { renamed: 1 }; }
   if (resource.deconz_type !== 'lights' && resource.deconz_type !== 'sensors') throw codeError('SMARTHOME_NOT_RENAMABLE', `resource ${resourceId} cannot be renamed here`);
   const client = await clientForGateway(gc, await store.getGateway(gc, resource.gateway_id));
   const mac = MAC_RE.exec(String(resource.uniqueid || ''));
@@ -273,9 +279,9 @@ async function findFocus(gc, focus) {
   const m = /^(zigbee|ble):([0-9a-f:]{17,23})$/.exec(String(focus || '').toLowerCase());
   if (!m) return null;
   const rows = (await gc.db.query('SELECT id, gateway_id, deconz_type, uniqueid, capabilities_json FROM resources WHERE uniqueid LIKE ? AND enabled = 1 ORDER BY id', [m[2] + '%'])).rows;
-  const hit = rows.find((r) => (m[1] === 'ble' ? r.deconz_type === 'ble' : (r.deconz_type === 'lights' || r.deconz_type === 'sensors')));
+  const hit = rows.find((r) => (m[1] === 'ble' ? r.deconz_type === 'ble' : (r.deconz_type === 'lights' || r.deconz_type === 'sensors' || r.deconz_type === 'z2m')));
   if (!hit) return null;
-  if (hit.deconz_type === 'ble') {
+  if (hit.deconz_type === 'ble' || hit.deconz_type === 'z2m') {
     const caps = store.parseJson(hit.capabilities_json) || {};
     return Number.isInteger(caps.gateway_id) ? { source: 'b:' + caps.gateway_id, resource_id: hit.id } : null;
   }

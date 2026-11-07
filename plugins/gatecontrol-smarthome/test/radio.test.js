@@ -33,7 +33,7 @@ describe('Bluetooth sensors (gc.radio)', () => {
     radio._mem.at = 0;
     await withHost({ gateways: [], radio: { sensors: () => list } }, async (host) => {
       const g = await asAdmin(host, 'GET', '/ble/gateways');
-      assert.deepEqual(g.json.gateways, [{ id: 7, name: 'Pi Keller', sensors: 2 }]);
+      assert.deepEqual(g.json.gateways, [{ id: 7, name: 'Pi Keller', sensors: 2, devices: 0 }]);
       const res = (await host.request({ path: '/ble/resources', query: { gateway_id: '7' }, user: ADMIN })).json.resources;
       assert.equal(res.length, 2);
       const garden = res.find((r) => r.name === 'Gartenhaus');
