@@ -378,15 +378,19 @@
   "owners.area_hint": "Geräte mit Bereich stehen hier und im Portal unter ihrem Bereich.",
   "portal.other_devices": "Weitere Geräte",
   "section.waiting": "Warten auf das Gerät",
-  "source.group_ble": "Bluetooth-Sensoren (GateControl-Gateway)",
-  "ble.via": "Bluetooth-Sensoren über {{name}} – übernommen in GateControl unter Gateway › Funk",
-  "ble.empty": "Keine Bluetooth-Sensoren übernommen. In GateControl unter Gateway › Funk „Übernehmen“ – dann erscheinen sie hier.",
+  "source.group_ble": "Funk (GateControl-Gateway)",
+  "ble.via": "Funk über {{name}} – Bluetooth-Sensoren übernommen und Zigbee-Geräte (zigbee2mqtt) angelernt in GateControl unter Gateway › Funk",
+  "ble.empty": "Noch nichts da. In GateControl unter Gateway › Funk Bluetooth-Sensoren „Übernehmen“ oder mit zigbee2mqtt Zigbee-Geräte anlernen – dann erscheinen sie hier.",
   "ble.count": "{{n}} Sensoren",
   "ble.count_one": "1 Sensor",
   "owners.name": "Name",
-  "owners.name_hint": "Lampen und Zigbee-Sensoren werden in deCONZ umbenannt (alle Teile eines Geräts), Bluetooth-Sensoren hier.",
+  "owners.name_hint": "Lampen und Zigbee-Sensoren von deCONZ werden in deCONZ umbenannt (alle Teile eines Geräts), Bluetooth-Sensoren und Geräte von zigbee2mqtt hier.",
   "error.not_renamable": "Dieses Gerät lässt sich hier nicht umbenennen.",
-  "focus.not_found": "Das Gerät ist noch nicht da – Smart Home liest die Gateways alle 30 Sekunden. Gleich noch einmal versuchen."
+  "focus.not_found": "Das Gerät ist noch nicht da – Smart Home liest die Gateways alle 30 Sekunden. Gleich noch einmal versuchen.",
+  "error.radio_unavailable": "Dieses GateControl kann Zigbee-Geräte von zigbee2mqtt noch nicht schalten – bitte GateControl aktualisieren.",
+  "error.radio_unreachable": "zigbee2mqtt auf dem Gateway antwortet gerade nicht (Gateway aus, zigbee2mqtt startet oder MQTT ist aus).",
+  "ble.devices": "{{n}} Geräte",
+  "ble.devices_one": "1 Gerät"
  },
  "en": {
   "error.gateway_not_found": "Smart Home gateway not found",
@@ -767,14 +771,18 @@
   "owners.area_hint": "Devices with an area are listed under it here and in the portal.",
   "portal.other_devices": "Other devices",
   "section.waiting": "Waiting for the device",
-  "source.group_ble": "Bluetooth sensors (GateControl gateway)",
-  "ble.via": "Bluetooth sensors through {{name}} – taken over in GateControl under Gateway › Radio",
-  "ble.empty": "No Bluetooth sensors taken over. In GateControl under Gateway › Radio “Take over” – then they show up here.",
+  "source.group_ble": "Radio (GateControl gateway)",
+  "ble.via": "Radio through {{name}} – Bluetooth sensors taken over and Zigbee devices (zigbee2mqtt) paired in GateControl under Gateway › Radio",
+  "ble.empty": "Nothing here yet. In GateControl under Gateway › Radio “Take over” Bluetooth sensors or pair Zigbee devices with zigbee2mqtt – then they show up here.",
   "ble.count": "{{n}} sensors",
   "ble.count_one": "1 sensor",
   "owners.name": "Name",
-  "owners.name_hint": "Lights and Zigbee sensors are renamed in deCONZ (every part of a device), Bluetooth sensors here.",
+  "owners.name_hint": "Lights and Zigbee sensors of deCONZ are renamed in deCONZ (all parts of a device), Bluetooth sensors and zigbee2mqtt devices here.",
   "error.not_renamable": "This device cannot be renamed here.",
-  "focus.not_found": "The device is not here yet – Smart Home reads the gateways every 30 seconds. Try again in a moment."
+  "focus.not_found": "The device is not here yet – Smart Home reads the gateways every 30 seconds. Try again in a moment.",
+  "error.radio_unavailable": "This GateControl cannot switch zigbee2mqtt devices yet – please update GateControl.",
+  "error.radio_unreachable": "zigbee2mqtt on the gateway is not answering right now (gateway off, zigbee2mqtt starting or MQTT off).",
+  "ble.devices": "{{n}} devices",
+  "ble.devices_one": "1 device"
  }
 }
