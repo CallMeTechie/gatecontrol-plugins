@@ -38,6 +38,7 @@ Drive is a subscription of its own (Family, Business or Combo, five people inclu
 - **Files:** upload (whole folders too), new folder, rename, move, copy, versions, trash, share, “copy direct link”. Choose several with Ctrl/Shift and download them as a ZIP, move or delete them.
 - **Sharing:** links for people without an account; “Shared links” lists them.
 - **Devices:** your devices with their backed-up folders and the last backup.
+- **Viewing pictures and videos:** a click on a picture or video – in “Files”, in the search and in “Photos” – opens it large, without downloading it first. The arrows, the arrow keys or a swipe go to the next picture or video in the same folder. Zoom pictures with the mouse wheel, “+”/“−”, a double click or two fingers. Videos play right in Drive (play, pause, seek, sound, full screen); Drive remembers where you stopped while the tab is open. At the top: download, share, details and the file's menu.
 - **Photos:** timeline by month, “camera uploads only”, albums, “show in the photo frame”, search by people, places and content, map, “Who is this?”. Faces are recognised on the devices only; Drive keeps no face pictures.
 - **Vault folders:** “New” › “New vault”, who may open it (only me, family, team folder). Keep the recovery key safe. A new device asks with “Request access”, a device already approved grants it. Vaults lock after some minutes without input; the AI never reads them. A tap on a file opens it in the vault viewer (pictures, PDFs, texts, in the apps also videos) – see below.
 - **AI for documents:** “Document info” on a file, “Ask” below the search, the page “Deadlines” with “Into the family calendar” and “Remind me”, “Turn into a document” for scans.
@@ -88,11 +89,17 @@ Request access and grant it on a device already approved – or open it with the
 The portal tab may not play videos from memory, and a decrypted copy on the disk would no longer be protected. Watch the video in the Android or Windows app or download it on purpose.
 
 **Files are “held back by the virus scan”.**
-GateControl's virus scan checks new files; Drive does not open or share blocked files.
+GateControl's virus scan checks new files; Drive does not open or share blocked files. The picture and video view then only shows the reason. A file marked as malware shows only after “Show anyway”.
+
+**A video does not play in the browser.**
+Browsers cannot play some videos, often MKV or HEVC (H.265, e.g. from newer iPhones). Drive says so and offers “Download”. Most of them play in the GateControl apps. If you only hear the sound, the browser cannot decode the picture.
+
+**“Full screen” is missing in the portal.**
+Full screen in the portal needs GateControl 1.244.0. Older versions show the video in the Drive window.
 
 ## New in 1.22.0
 
 - **View vault files:** pictures, PDFs, texts and Markdown open in the portal with one click in a viewer of their own – decrypted only in the browser tab's memory. Videos play in the apps.
 - In the viewer: zoom, “Lock vaults now” and “Download” (asks first, because the copy is not encrypted).
 
-Last in 1.20.1: this manual in the tab “Manual”.
+Last in 1.21.0: pictures and videos large in “Files”, videos played right in the browser; in 1.20.1 this manual in the tab “Manual”.

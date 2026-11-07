@@ -38,6 +38,7 @@ Drive ist ein eigenes Abo (Familie, Business oder Kombi, fünf Personen inklusiv
 - **Dateien:** hochladen (auch ganze Ordner), neuer Ordner, umbenennen, verschieben, kopieren, Versionen, Papierkorb, teilen, „Direktlink kopieren“. Mehrere auswählen mit Strg/Umschalt und als ZIP laden, verschieben oder löschen.
 - **Teilen:** Links für Personen ohne Konto; „Geteilte Links“ listet sie.
 - **Geräte:** deine Geräte mit ihren gesicherten Ordnern und der letzten Sicherung.
+- **Bilder und Videos ansehen:** Ein Klick auf ein Bild oder Video – in „Dateien“, in der Suche und in „Fotos“ – öffnet es groß, ohne es erst herunterzuladen. Mit den Pfeilen, den Pfeiltasten oder einem Wisch geht es zum nächsten Bild oder Video im selben Ordner. Bilder vergrößerst du mit dem Mausrad, „+“/„−“, einem Doppelklick oder zwei Fingern. Videos laufen direkt in Drive (Abspielen, Pause, Spulen, Ton, Vollbild); Drive merkt sich, wo du aufgehört hast, solange der Tab offen ist. Oben: Herunterladen, Teilen, Details und das Menü der Datei.
 - **Fotos:** Zeitleiste nach Monat, „Nur Kamera-Uploads“, Alben, „Im Fotorahmen zeigen“, Suche nach Personen, Orten und Inhalt, Karte, „Wer ist das?“. Gesichter werden nur auf den Geräten erkannt; Drive speichert keine Gesichtsbilder.
 - **Tresor-Ordner:** „Neu“ › „Neuer Tresor“, wer ihn öffnen darf (nur ich, Familie, Team-Ordner). Den Wiederherstellungsschlüssel sicher aufbewahren. Ein neues Gerät fragt mit „Freigabe anfragen“, ein schon freigegebenes gibt frei. Tresore sperren sich nach einigen Minuten ohne Eingabe; die KI liest sie nie. Ein Tipp auf eine Datei öffnet sie in der Tresor-Ansicht (Bilder, PDFs, Texte, in den Apps auch Videos) – siehe unten.
 - **KI für Dokumente:** „Dokument-Infos“ an einer Datei, „Fragen“ unter der Suche, die Seite „Fristen“ mit „In den Familienkalender“ und „Erinnern“, „In Dokument umwandeln“ für Scans.
@@ -88,11 +89,17 @@ Frage mit „Freigabe anfragen“ an und gib auf einem schon freigegebenen Gerä
 Der Portal-Tab darf Videos nicht aus dem Speicher abspielen, und eine entschlüsselte Kopie auf der Festplatte wäre nicht mehr geschützt. Sieh dir das Video in der Android- oder Windows-App an oder lade es bewusst herunter.
 
 **Dateien sind „vom Virenscan zurückgehalten“.**
-Der Virenscan von GateControl prüft neue Dateien; gesperrte Dateien öffnet und teilt Drive nicht.
+Der Virenscan von GateControl prüft neue Dateien; gesperrte Dateien öffnet und teilt Drive nicht. Auch die Bild- und Videoansicht zeigt dann nur den Grund. Eine als Schadsoftware markierte Datei zeigt sie erst nach „Trotzdem ansehen“.
+
+**Ein Video spielt im Browser nicht.**
+Manche Videos kann der Browser nicht abspielen, oft MKV oder HEVC (H.265, z. B. von neueren iPhones). Drive sagt das und bietet „Herunterladen“ an. In den GateControl-Apps laufen die meisten davon. Hörst du nur den Ton, kann der Browser das Bild nicht entschlüsseln.
+
+**„Vollbild“ fehlt im Portal.**
+Vollbild im Portal gibt es ab GateControl 1.244.0. Ältere Versionen zeigen das Video im Drive-Fenster.
 
 ## Neu in 1.22.0
 
 - **Tresor-Dateien ansehen:** Bilder, PDFs, Texte und Markdown öffnen im Portal mit einem Klick in einer eigenen Ansicht – entschlüsselt nur im Speicher des Browser-Tabs. Videos spielen die Apps ab.
 - In der Ansicht: zoomen, „Tresore jetzt sperren“ und „Herunterladen“ (fragt vorher, weil die Kopie nicht verschlüsselt ist).
 
-Zuletzt in 1.20.1: dieses Handbuch im Reiter „Handbuch“.
+Zuletzt in 1.21.0: Bilder und Videos in „Dateien“ groß ansehen, Videos direkt im Browser abspielen; in 1.20.1 dieses Handbuch im Reiter „Handbuch“.

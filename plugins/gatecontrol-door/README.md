@@ -513,6 +513,7 @@ plain run — the Familie rules with target states need 1.173.0 anyway).
 | `door` | `{ type: "open_long" \| "jammed" \| "unreachable" \| "battery", lockId }` | "Ansehen" |
 | `door` | `{ type: "night", lockId }` | `{ type: "quick_action", label: "Zusperren", plugin, id: "<lockId>:lock" }`, "Ansehen" |
 | `door` | `{ type: "ring_broken" }` (administrators, ≤ 1 per day) | – |
+| `kamera` | `{ type: "home_camera_event", cameraId: "c…", eventId: "e…" }` (+ snapshot; everybody who sees the camera, without who switched it off for themselves) | 1.7.0: "Ansehen" — the apps open that camera |
 
 `collapseKey`: `ring:<cameraId>` (doorbell/motion), `auto:<lockId>`, `door:<lockId>:<type>`, `ring:broken`.
 Doorbell pushes have `ttl` 3600 s (the picture expires with it).
@@ -548,21 +549,24 @@ only numbers, booleans and short strings, never tokens; kept in `lock_state.nuki
 ### Kameras im Heimnetz (1.6.0, `server/home.js`)
 
 Person (portal tab, apps — only cameras the person sees): `GET cameras/home` → `{ supported, minGatecontrol, every,
-cameras: [{ id, kind: 'home', name, gateway, model, source, state, online, codec, events, settings, push, snapshotUrl,
-snapshotAt, lastEventAt }] }` (`supported: false` on an older GateControl); `GET cameras/home/<id>/live` →
+cameras: [{ id, kind: 'home', name, gateway, model, source, state, online, codec, width, height, audio, hasAudio, events,
+settings, push, prefs: { push }, snapshotUrl, snapshotAt, lastEventAt }] }` (1.7.0: `width`/`height` the resolution or `null`,
+`hasAudio` the stream's sound track or `null`, `audio` = offer "Ton", `prefs.push` the person's own push; `PUT
+cameras/home/<id>/prefs { push }` → `{ prefs: { push } }`, `read_only` on kiosk devices) (`supported: false` on an older GateControl); `GET cameras/home/<id>/live` →
 `{ live: { mode: 'live', via, hls, mp4, snapshot, codec, audio, expiresAt } }` through the VPN / in the server's LAN,
 otherwise `{ live: { mode: 'snapshot', snapshot, every: 10, reason: 'vpn_required' } }` — the URLs are relative
 (`/camera-media/<token>/…` of the GateControl server, no login, token 10 min); `GET cameras/home/<id>/still` →
 `{ still: { data, mime, at } }` (base64 JPEG ≤ 700 KB); `GET cameras/home/<id>/clips[?day=YYYY-MM-DD]` →
 `{ day, clips: [{ id, kind, kinds, startedAt, endedAt, nobodyHome, ms, thumbUrl, clipUrl }] }`. Errors `cam_*`
 (`cam_needs_gc`, `cam_auth`, `cam_unreachable`, `cam_not_allowed`, `cam_offline`, `cam_unsupported`, `cam_limit`,
-`cam_not_ready`, `cam_service`). Push topic `kamera`, `data.door = { type: 'home_camera_event', cameraId, eventId }`.
+`cam_not_ready`, `cam_service`, 1.7.0 `cam_tls`). Push topic `kamera`, `data.door = { type: 'home_camera_event', cameraId, eventId }`.
 
 Admin: `GET admin/home` → `{ supported, minGatecontrol, available, gateways, cameras, today, day }`;
-`POST admin/home/discover { gatewayId? }`; `POST admin/home/test { gatewayId, host | rtspUrl, onvifPort?, user, password }`;
-`POST admin/home/cameras { gatewayId, name, host | rtspUrl, onvifPort?, onvifPath?, user, password, settings?, push? }`;
-`PATCH admin/home/cameras/<id> { name?, user?, password?, settings: { record, events, retentionDays: 7|14|30, stream,
-audio }?, push? }`; `DELETE admin/home/cameras/<id>[?clips=1]`; `DELETE admin/home/events/<id>`;
+`POST admin/home/discover { gatewayId? }`; `POST admin/home/test { gatewayId, host | rtspUrl, onvifPort?, onvifTls?, tlsInsecure?, user, password }`;
+`POST admin/home/cameras { gatewayId, name, host | rtspUrl, onvifPort?, onvifPath?, onvifTls?, tlsInsecure?, user, password, settings?, push? }`;
+`PATCH admin/home/cameras/<id> { name?, user?, password?, tlsInsecure?, settings: { record, events, retentionDays: 7|14|30, stream,
+audio }?, push? }` (1.7.0: `onvifTls` ONVIF over HTTPS, `tlsInsecure` "Zertifikat nicht prüfen" — never set on its own; admin camera
+views carry `https`, `tlsInsecure`, `width`, `height`, `audio`, `hasAudio`); `DELETE admin/home/cameras/<id>[?clips=1]`; `DELETE admin/home/events/<id>`;
 `GET admin/rights` → `homeCameras`, `homeCameraRights { <userId>: [cameraId] }`; `PUT admin/rights/<userId>
 { homeCameraRights: { <cameraId>: true|false } }`.
 

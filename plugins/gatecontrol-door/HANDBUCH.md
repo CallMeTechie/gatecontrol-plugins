@@ -1,4 +1,4 @@
-<!-- version: 1.6.1 -->
+<!-- version: 1.7.0 -->
 # Tür & Kamera
 
 ## Was das Plugin kann
@@ -94,7 +94,7 @@ Live-Bild und Clips macht der neue Dienst `kameras` neben dem Gateway (ein klein
 3. **Linux/Docker:** im Ordner des Gateways (meist `/opt/gatecontrol-gateway`) die alte Datei sichern, die neue hineinlegen und `sudo docker compose up -d` ausführen.
 4. Prüfen: Im Container Manager bzw. mit `sudo docker compose ps` läuft jetzt auch der Dienst `kameras`.
 
-**Clips auf einem freigegebenen Ordner (optional):** Ohne weitere Angabe landen die Clips im Docker-Volume `cam-recordings`. Auf der Synology kannst du sie in einen Ordner der NAS legen: Ordner anlegen (z. B. `/volume1/kameras` in der File Station), neben der Compose-Datei eine Datei `.env` mit der Zeile `GC_CAMERA_DIR=/volume1/kameras` anlegen und das Projekt neu erstellen.
+**Clips auf einem freigegebenen Ordner (optional):** Ohne weitere Angabe landen die Clips im Docker-Volume `cam-recordings`. Auf der Synology kannst du sie in einen Ordner der NAS legen: Ordner anlegen (z. B. `/volume1/kameras` in der File Station), dann in GateControl **Gateways** › dein Gateway › **Funktionen** › Zeile „Kameras“ › **„Speicherort und Netze“** › „Speicherort für Clips“ eintragen (GateControl ≥ 1.242.0) und danach die Compose-Datei wie oben herunterladen und das Projekt neu erstellen. Die Zeile zeigt „Clips im Ordner /volume1/kameras“; solange das Gateway noch den alten Speicher nutzt, steht dort „gilt erst mit der neuen Compose-Datei“. Ältere GateControl-Versionen: neben der Compose-Datei eine Datei `.env` mit der Zeile `GC_CAMERA_DIR=/volume1/kameras` anlegen.
 
 **Raspberry Pi:** Das Pi-Image pflegt seine Compose-Datei selbst. Den Dienst `kameras` bringt erst das **neue Pi-Image** mit; damit startet er von selbst, sobald du die Kameras einschaltest.
 
@@ -112,7 +112,7 @@ Das Gateway erreicht eine Kamera nur über ONVIF oder RTSP. Beides ist bei viele
 - **Tapo:** in der **Tapo-App** › Kamera › Kamera-Einstellungen › **Erweitert › Kamera-Konto** anlegen. Benutzer und Passwort dieses Kontos trägst du später in GateControl ein – **nicht** dein TP-Link-Konto. Der ONVIF-Port ist **2020**.
 - **Andere Kameras:** im Handbuch der Kamera nach „ONVIF“ oder „RTSP“ suchen.
 
-Die Kamera braucht eine **private IPv4-Adresse** (z. B. 192.168.x.x) im Heimnetz des Gateways. Kameras in einem anderen Netz (etwa einem eigenen Kamera-VLAN) erreicht das Gateway nur, wenn das Netz in den Einstellungen des Gateways eingetragen ist. Am besten gibst du der Kamera im Router eine feste Adresse.
+Die Kamera braucht eine **private IPv4-Adresse** (z. B. 192.168.x.x) im Heimnetz des Gateways. Kameras in einem anderen Netz (etwa einem eigenen Kamera-VLAN) erreicht das Gateway nur, wenn das Netz in GateControl unter **Gateways** › dein Gateway › **Funktionen** › „Kameras“ › **„Speicherort und Netze“** › „Weitere Netze für die Kamera-Suche“ steht (z. B. `192.168.20.0/24`). Am besten gibst du der Kamera im Router eine feste Adresse.
 
 ### Schritt 5: Kamera hinzufügen
 
@@ -120,6 +120,8 @@ Die Kamera braucht eine **private IPv4-Adresse** (z. B. 192.168.x.x) im Heimnetz
 2. Das Gateway sucht Kameras im Heimnetz, z. B. „Reolink E1 Zoom · 192.168.1.73 · ONVIF – neu gefunden“. Wähle eine aus – oder **„Adresse selbst eingeben“** mit `rtsp://…` oder nur der IP-Adresse (z. B. `rtsp://192.168.1.80:554/stream1` oder `192.168.1.80`).
 3. **Gateway**, **Name** (z. B. „Einfahrt“), **Benutzer der Kamera** und **Passwort der Kamera** eintragen.
 4. **„Verbinden und testen“.** Erst wenn ein Testbild kommt, ist die Kamera gespeichert.
+
+**Kameras mit HTTPS** (ab 1.7.0, GateControl ≥ 1.242.0, Gateway ≥ 1.29.0): Bietet die Kamera ONVIF nur verschlüsselt an, setze **„HTTPS“** (ohne Haken probiert das Gateway am Ende auch Port 443). Das Zertifikat der Kamera wird **immer geprüft**. Die meisten Kameras haben ein selbst signiertes Zertifikat – dann kommt „Das Zertifikat der Kamera ist nicht vertrauenswürdig“. Nur wenn du der Kamera in deinem Heimnetz vertraust, setze **„Zertifikat nicht prüfen“** und verbinde noch einmal. Die Verbindung bleibt verschlüsselt; unter „Aufnahmen“ kannst du den Haken später wieder entfernen.
 
 Das Passwort liegt verschlüsselt in GateControl und geht nur an das Gateway. Pro Gateway gehen höchstens 16 Kameras.
 
@@ -132,7 +134,8 @@ Auf **„Geräte“** › **„Aufnahmen“**, je Kamera:
 - **Speichern auf:** das Gateway mit seinem freien Platz.
 - **Aufbewahren:** 7, 14 (Standard) oder 30 Tage.
 - **Push mit Standbild bei Personen** – höchstens einmal pro Kamera alle 5 Minuten.
-- **Ton aufnehmen** (Standard aus). Gespräche aufzuzeichnen ist nur mit Einverständnis aller erlaubt.
+- **Ton aufnehmen** (Standard aus). Gespräche aufzuzeichnen ist nur mit Einverständnis aller erlaubt. „Ton“ im Portal und in der App gibt es nur, wenn der Ton an ist und die Kamera Ton liefert.
+- **Zertifikat nicht prüfen** (nur bei Kameras mit HTTPS).
 
 Ein Clip beginnt 5 Sekunden vor der Bewegung und endet 10 Sekunden danach, höchstens 2 Minuten. Bei weniger als 1 GB freiem Platz nimmt das Gateway nichts Neues auf.
 
@@ -168,8 +171,9 @@ Die App bietet außerdem Schnellaktionen und ein Widget für deine Schlösser un
 
 ### Kameras im Portal
 
-- Jede Heimnetz-Kamera, die du sehen darfst, mit Standbild.
-- **Live-Bild** („● LIVE · HD · über VPN“) nur, wenn das Handy oder der PC im **VPN** ist (oder im selben Netz wie der Server). Ohne VPN zeigt die App alle 10 Sekunden ein neues Standbild.
+- Jede Heimnetz-Kamera, die du sehen darfst, mit Standbild, Auflösung (z. B. 2560×1440) und „mit Ton“.
+- **Live-Bild** („● LIVE · HD · über VPN“) nur, wenn das Handy oder der PC im **VPN** ist (oder im selben Netz wie der Server). Ohne VPN zeigt die App alle 10 Sekunden ein neues Standbild. Ab 1.7.0 (GateControl ≥ 1.242.0) läuft das Live-Bild auch in **Firefox** und in Chrome/Edge am PC (über den Player von GateControl).
+- **„Push bei Personen an mich“** je Kamera: schaltet den Push „Personen an der Kamera“ nur für dich ab oder wieder an (ab 1.7.0, auch in den Apps).
 - **„Standbild“** (speichern), **„Vollbild“**, **„Ton“**.
 - **„Clips heute“** mit Vorschaubild und die **„Letzte Meldung“**.
 - Ring-Kameras zeigen das letzte Bild aus der Ring-Cloud.
@@ -180,7 +184,7 @@ Die App bietet außerdem Schnellaktionen und ein Widget für deine Schlösser un
 |---|---|
 | Klingel | es klingelt – mit Bild, bei Recht „auch öffnen“ mit „Tür öffnen“ |
 | Bewegung an der Kamera (Standard aus) | Ring meldet Bewegung, höchstens alle paar Minuten pro Kamera |
-| Personen an der Kamera (Heimnetz) | eine Heimnetz-Kamera erkennt eine Person – mit Standbild, „Niemand ist zu Hause“, wenn niemand da ist |
+| Personen an der Kamera (Heimnetz) | eine Heimnetz-Kamera erkennt eine Person – mit Standbild, „Niemand ist zu Hause“, wenn niemand da ist, und dem Knopf **„Ansehen“** (öffnet die Kamera in der App). Je Kamera für dich abschaltbar |
 | Tür & Schloss | offen zu lange, blockiert, nicht erreichbar, Batterie kritisch, Nachtkontrolle |
 | Automatisches Aufsperren | aufgesperrt, abgelehnt, wieder zugesperrt, Rückfrage |
 
@@ -224,8 +228,22 @@ Die Compose-Datei des Gateways ist noch die alte – siehe [Schritt 2](#kameras-
 **Ich sehe kein Live-Video, nur alle 10 Sekunden ein Bild.**
 Das Live-Video gibt es nur im VPN oder im Heimnetz des Servers. Schalte in der GateControl-App das VPN ein. Bei Kameras mit H.265 spielen manche Browser das Video nicht ab (Safari und iOS schon) – stell die Kamera dann in ihren eigenen Einstellungen auf H.264.
 
+**„Das Zertifikat der Kamera ist nicht vertrauenswürdig.“**
+Die Kamera spricht HTTPS mit einem selbst signierten Zertifikat. Vertraust du ihr, setze beim Hinzufügen (oder unter „Aufnahmen“) „Zertifikat nicht prüfen“.
+
+**Das Live-Bild bleibt in Firefox schwarz.**
+Firefox spielt das Live-Bild ab GateControl 1.242.0 über den eingebauten Player. Kameras mit H.265 kann Firefox nicht abspielen – stell die Kamera auf H.264 (Unterstrom).
+
 **Es werden keine Clips aufgenommen.**
 Prüfe unter „Aufnahmen“ den Modus. Bei „nur wenn niemand zu Hause ist“ muss die Anwesenheit der Familie bekannt sein. Unter 1 GB freiem Platz nimmt das Gateway nichts auf.
+
+## Neu in 1.7.0
+
+- **Push „Personen an der Kamera“ mit „Ansehen“** – öffnet in der App genau diese Kamera. Jede Person kann den Push je Kamera **für sich** abschalten („Push bei Personen an mich“ im Portal und in den Apps).
+- **Auflösung und Ton** in der Kameraliste (z. B. „2560×1440 · mit Ton“); „Ton“ nur, wenn die Kamera Ton liefert.
+- **Kameras mit HTTPS:** „HTTPS“ und „Zertifikat nicht prüfen“ beim Hinzufügen und unter „Aufnahmen“. Standard: das Zertifikat wird geprüft (GateControl ≥ 1.242.0, Gateway ≥ 1.29.0).
+- **Live-Bild in Firefox** und in Chrome/Edge am PC über den Player von GateControl (≥ 1.242.0).
+- Speicherort der Clips und weitere Netze stellst du jetzt in GateControl ein (Gateway › Funktionen › Kameras › „Speicherort und Netze“).
 
 ## Neu in 1.6.1
 

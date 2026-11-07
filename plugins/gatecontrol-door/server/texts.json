@@ -465,6 +465,17 @@
   "error.cam_limit": "Höchstens 16 Kameras je Gateway.",
   "error.cam_not_ready": "Noch kein Bild – gleich noch einmal versuchen.",
   "error.cam_service": "Dafür braucht das Gateway den Dienst „kameras“ (aktuelle Compose-Datei).",
+  "error.cam_tls": "Das Zertifikat der Kamera ist nicht vertrauenswürdig (meist selbst signiert). Wenn du der Kamera in deinem Heimnetz vertraust, setze „Zertifikat nicht prüfen“.",
+  "home.https": "HTTPS (ONVIF verschlüsselt)",
+  "home.tls_insecure": "Zertifikat nicht prüfen",
+  "home.tls_hint": "– nur für Kameras mit selbst signiertem Zertifikat im eigenen Heimnetz; die Verbindung bleibt verschlüsselt",
+  "home.tls_ask": "Das Zertifikat der Kamera ist nicht vertrauenswürdig. Vertraust du der Kamera, setze „Zertifikat nicht prüfen“ und verbinde noch einmal.",
+  "home.pill_tls": "Zertifikat",
+  "home.res": "{{w}}×{{h}}",
+  "home.with_sound": "mit Ton",
+  "home.my_push": "Push bei Personen an mich",
+  "home.my_push_on": "Push an",
+  "home.my_push_off": "Push für dich aus",
   "home.days_word": "Tage"
  },
  "en": {
@@ -933,6 +944,17 @@
   "error.cam_limit": "At most 16 cameras per gateway.",
   "error.cam_not_ready": "No picture yet – try again in a moment.",
   "error.cam_service": "This needs the service “kameras” on the gateway (current compose file).",
+  "error.cam_tls": "The camera's certificate is not trusted (usually self-signed). If you trust the camera in your home network, tick “Do not check the certificate”.",
+  "home.https": "HTTPS (encrypted ONVIF)",
+  "home.tls_insecure": "Do not check the certificate",
+  "home.tls_hint": "– only for cameras with a self-signed certificate in your own home network; the connection stays encrypted",
+  "home.tls_ask": "The camera's certificate is not trusted. If you trust the camera, tick “Do not check the certificate” and connect again.",
+  "home.pill_tls": "certificate",
+  "home.res": "{{w}}×{{h}}",
+  "home.with_sound": "with sound",
+  "home.my_push": "Push for people to me",
+  "home.my_push_on": "Push on",
+  "home.my_push_off": "Push off for you",
   "home.days_word": "days"
  }
 }

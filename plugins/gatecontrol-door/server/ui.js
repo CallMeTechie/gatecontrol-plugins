@@ -14,6 +14,7 @@ const modes = require('./modes');
 const UI = path.join(__dirname, '..', 'ui');
 const read = (f) => fs.readFileSync(path.join(UI, f), 'utf8');
 const PAGES = ['devices', 'rights', 'history', 'settings'];
+const CAMERA_PLAYER = '/plugins/_shared/camera-player/camera-player.js';
 const FILES = {
   css: read('style.css'),
   common: read('common.js'),
@@ -51,6 +52,9 @@ function render(view, t) {
     + fill(page.html, t, lang)
     + '<script>window.DOOR_CTX=' + island(ctx) + ';</script>'
     + '<script>' + FILES.common + '</script>'
+    // 1.7.0: GateControl's live player (MSE for Firefox and Chrome/Edge on the PC; GateControl ≥ 1.242.0 allows it
+    // in the frame CSP, an older one blocks it and home.js falls back to <video src>)
+    + (pageId === 'portal' ? '<script src="' + CAMERA_PLAYER + '"></script>' : '')
     + (pageId === 'devices' || pageId === 'portal' ? '<script>' + FILES.home + '</script>' : '')
     + '<script>' + page.js + '</script>';
 }

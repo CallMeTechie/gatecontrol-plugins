@@ -139,7 +139,7 @@ test('viewer: not part of the page — GET viewer/vaultview hands over script, s
   const html = portalHtml();
   assert.ok(!html.includes('function jpegOrientation') && !html.includes('.dp-vv-back'), 'the viewer is not inlined');
   assert.ok(!html.includes('p.vv.'), 'nor its texts');
-  assert.ok(Buffer.byteLength(html) < 1024 * 1024 * 0.5);
+  assert.ok(Buffer.byteLength(html) < 1024 * 1024 * 0.6, 'the portal page budget of portal.test.js');
   const r = viewer.vaultview('de');
   assert.equal(r.code, fs.readFileSync(path.join(__dirname, '..', 'ui', 'vaultview.js'), 'utf8'));
   assert.ok(r.css.includes('.dp-vv-back'));
