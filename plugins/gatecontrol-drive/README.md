@@ -1363,6 +1363,7 @@ the path should be). The change log names the calling plugin as the device.
 |---|---|---|
 | `suggest_folder` | `{ mediaId, name, from?: { name, address }, subject?, date? }` — `mediaId` handed over like for `save_file`; it stays unclaimed, `save_file` may take it later | `{ ok, suggestion: { folderId, areaId, path, where, name, confidence (0…1), reason: 'rule' \| 'learned' \| 'ai' \| 'kind' } \| null, kind?, title?, sha256Exists }` |
 | `save_file` | also `source?: { plugin (the caller), label ('Aus Mail von Stadtwerke, 03.11.', ≤ 120), ref ('4711', ≤ 200, `[A-Za-z0-9._:@+=-]`) }` and `learn?: { from: address, always?: true }` | as above |
+| `save_file` | since 1.23.0 also `text?: string` — the file's recognised text (e.g. a searchable PDF of „Drucken & Scannen“), kept like `uploads/commit { text }` for the search and „Fragen“ | as above |
 | `give_file` | `{ nodeId }` | `{ ok, mediaId, name, mime, size }` — the file handed over to the caller (`gc.media.handOver`, unclaimed there) |
 | `share_link` | `{ nodeId, expiresDays?: 1…90 (14), password?: '4711' }` | `{ ok, url, expiresAt (ms) }` |
 | `browse` | `{ area?: 'mine' \| 'family' \| '<area id>', folderId?, dirs?: true }` | `{ ok, folder: { id, name, path, where, areaId, writable }, items: [{ id, name, isDir, size, mime }], next }` |

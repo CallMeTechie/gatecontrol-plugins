@@ -2,6 +2,13 @@
 
 Dateien der Familie und des Teams auf dem eigenen Speicher – auf diesem Server, einer NAS oder in S3.
 
+## 1.23.0
+
+- **Erkannter Text über `save_file`:** Der Dienst `save_file` nimmt `text` (wie `uploads/commit { text }` der Apps) und
+  speichert ihn als erkannten Text der Datei – die Suche und „Fragen“ finden sie über ihren Inhalt. Damit kommen die
+  durchsuchbaren PDFs von „Drucken & Scannen“ (1.1.0, Texterkennung auf dem Gateway) mit ihrem Text ins Drive. Kein Text
+  bei Tresor-Dateien (wie bisher), `text` kein String → `invalid`.
+
 ## 1.22.0
 
 - **Tresor-Dateien ansehen, ohne den Tresor zu verlassen.** Bilder, PDFs, Texte und Markdown öffnen im Portal-Tab in

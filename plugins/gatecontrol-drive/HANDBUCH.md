@@ -1,4 +1,4 @@
-<!-- version: 1.22.0 -->
+<!-- version: 1.23.0 -->
 # Drive
 
 ## Was das Plugin kann
@@ -97,9 +97,13 @@ Manche Videos kann der Browser nicht abspielen, oft MKV oder HEVC (H.265, z. B. 
 **„Vollbild“ fehlt im Portal.**
 Vollbild im Portal gibt es ab GateControl 1.244.0. Ältere Versionen zeigen das Video im Drive-Fenster.
 
+## Neu in 1.23.0
+
+- **Gescannte Dokumente über ihren Inhalt finden:** Scans, die „Drucken & Scannen“ als durchsuchbares PDF ablegt (Texterkennung am Gateway), bringen ihren Text mit – die Suche und „Fragen“ finden sie über das, was darin steht.
+
 ## Neu in 1.22.0
 
 - **Tresor-Dateien ansehen:** Bilder, PDFs, Texte und Markdown öffnen im Portal mit einem Klick in einer eigenen Ansicht – entschlüsselt nur im Speicher des Browser-Tabs. Videos spielen die Apps ab.
 - In der Ansicht: zoomen, „Tresore jetzt sperren“ und „Herunterladen“ (fragt vorher, weil die Kopie nicht verschlüsselt ist).
 
-Zuletzt in 1.21.0: Bilder und Videos in „Dateien“ groß ansehen, Videos direkt im Browser abspielen; in 1.20.1 dieses Handbuch im Reiter „Handbuch“.
+Davor in 1.21.0: Bilder und Videos in „Dateien“ groß ansehen, Videos direkt im Browser abspielen; in 1.20.1 dieses Handbuch im Reiter „Handbuch“.
