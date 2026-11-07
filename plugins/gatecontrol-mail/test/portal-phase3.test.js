@@ -169,6 +169,38 @@ test('„Kalender teilen“: a person found by name at „Lesen“, „Einladung
   } finally { m.stop(); }
 }));
 
+test('Kalender-Einstellungen (1.10.0): „Arbeitszeit“ – days, from, to; nothing invalid goes out', () => withMail({ gatecontrol: '1.219.0', groups: GROUPS }, async (host, c) => {
+  await c.addGmx(ANNA);
+  const anna = c.as(ANNA);
+  const p = portal(host, ANNA);
+  try {
+    await until('the foot', () => p.byLabel('Kalender'));
+    click(p.byLabel('Kalender'));
+    await until('the gear', () => p.byLabel('Kalender-Einstellungen'));
+    click(p.byLabel('Kalender-Einstellungen'));
+    await until('the dialog', () => p.dialogText().includes('Arbeitszeit'));
+    const days = p.byLabel('Arbeitstage');
+    const day = (n) => days.childNodes.find((x) => x.getAttribute('data-day') === String(n));
+    assert.deepEqual([1, 2, 3, 4, 5, 6, 7].map((n) => day(n).getAttribute('aria-pressed')), ['true', 'true', 'true', 'true', 'true', 'false', 'false']);
+    click(day(6));
+    type(p.byLabel('Von'), '07:30');
+    // „Bis“ before „Von“: refused here, nothing sent
+    type(p.byLabel('Bis'), '06:00');
+    click(p.byText('button', 'Speichern'));
+    await until('the reason', () => p.dialogText().includes('„Bis“ muss nach „Von“ liegen.'));
+    assert.equal(p.calls.filter((x) => x.method === 'PUT' && x.path === 'calendar/settings' && x.body.workHours).length, 0);
+    // 00:00 as the end is midnight
+    type(p.byLabel('Bis'), '00:00');
+    click(p.byText('button', 'Speichern'));
+    await until('saved', async () => (await anna('GET', 'calendars')).json.prefs.workHours.from === '07:30');
+    assert.deepEqual((await anna('GET', 'calendars')).json.prefs.workHours, { days: [1, 2, 3, 4, 5, 6], from: '07:30', to: '24:00' });
+  } finally { p.stop(); }
+  assert.deepEqual(L.workHours([5, 1, 1], '08:00', '18:00'), { days: [1, 5], from: '08:00', to: '18:00' });
+  assert.equal(L.workHours([], '08:00', '18:00'), null);
+  assert.equal(L.workHours([1], '18:00', '08:00'), null);
+  assert.equal(L.workHours([1], '', '08:00'), null);
+}));
+
 test('the tab „Ressourcen“ of the plugin\'s page: the list, a new resource with approvers and rules, „kommt später“; the card on the settings page', () => withMail({ gatecontrol: '1.219.0', groups: GROUPS }, async (host, c) => {
   await c.admin('POST', 'admin/resources', { name: 'Beamer', kind: 'device', location: 'Lager EG' });
   const p = portal(host, null, { admin: true, page: 'resources', pick: [{ type: 'group', id: 7, label: 'Fuhrpark' }] });
