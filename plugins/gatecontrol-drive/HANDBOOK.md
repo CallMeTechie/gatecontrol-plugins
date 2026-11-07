@@ -1,4 +1,4 @@
-<!-- version: 1.23.0 -->
+<!-- version: 1.23.1 -->
 # Drive
 
 ## What the plugin does
@@ -39,6 +39,7 @@ Drive is a subscription of its own (Family, Business or Combo, five people inclu
 - **Sharing:** links for people without an account; “Shared links” lists them.
 - **Devices:** your devices with their backed-up folders and the last backup.
 - **Viewing pictures and videos:** a click on a picture or video – in “Files”, in the search and in “Photos” – opens it large, without downloading it first. The arrows, the arrow keys or a swipe go to the next picture or video in the same folder. Zoom pictures with the mouse wheel, “+”/“−”, a double click or two fingers. Videos play right in Drive (play, pause, seek, sound, full screen); Drive remembers where you stopped while the tab is open. At the top: download, share, details and the file's menu.
+- **Viewing PDFs and texts (apps):** in the Android app and the Windows app a tap on a PDF, text or Markdown file opens it right in the app – in the same view as vault files. Texts can be selected and copied there. “Open with another app” (Android) or “Open with another program” (Windows) stays in the view. Very large files (a PDF over 100 MB, a text over 2 MB) and Office files still open in another app. In the portal a click on a PDF still offers “Download”.
 - **Photos:** timeline by month, “camera uploads only”, albums, “show in the photo frame”, search by people, places and content, map, “Who is this?”. Faces are recognised on the devices only; Drive keeps no face pictures.
 - **Vault folders:** “New” › “New vault”, who may open it (only me, family, team folder). Keep the recovery key safe. A new device asks with “Request access”, a device already approved grants it. Vaults lock after some minutes without input; the AI never reads them. A tap on a file opens it in the vault viewer (pictures, PDFs, texts, in the apps also videos) – see below.
 - **AI for documents:** “Document info” on a file, “Ask” below the search, the page “Deadlines” with “Into the family calendar” and “Remind me”, “Turn into a document” for scans.
@@ -96,6 +97,10 @@ Browsers cannot play some videos, often MKV or HEVC (H.265, e.g. from newer iPho
 
 **“Full screen” is missing in the portal.**
 Full screen in the portal needs GateControl 1.244.0. Older versions show the video in the Drive window.
+
+## New in 1.23.1
+
+- **PDFs and texts in the apps:** the Android and the Windows app now show PDFs, texts and Markdown of normal files themselves instead of handing them to another app at once (see “Viewing PDFs and texts”). Nothing changes on the server.
 
 ## New in 1.23.0
 

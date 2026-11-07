@@ -2,6 +2,13 @@
 
 Dateien der Familie und des Teams auf dem eigenen Speicher – auf diesem Server, einer NAS oder in S3.
 
+## 1.23.1
+
+- **Handbuch: PDFs und Texte in den Apps ansehen.** Die Android- und die Windows-App öffnen PDFs, Texte und Markdown
+  normaler Dateien jetzt in ihrer eigenen Ansicht (dieselben Seiten wie die Tresor-Ansicht, der Inhalt wie bei „Öffnen“
+  über `GET nodes/<id>/content`), mit „Mit anderer App öffnen“ / „Mit anderem Programm öffnen“ in der Ansicht. Office und
+  sehr große Dateien wie bisher in einer anderen App. Nur Doku – am Plugin ändert sich sonst nichts.
+
 ## 1.23.0
 
 - **Erkannter Text über `save_file`:** Der Dienst `save_file` nimmt `text` (wie `uploads/commit { text }` der Apps) und
