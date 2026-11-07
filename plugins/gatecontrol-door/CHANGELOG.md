@@ -8,6 +8,12 @@ bleibt auf dem eigenen Server. Einrichtung, Risiken, Datenschutz und die App-API
 an; das Plugin nutzt die, die auch die Open-Source-Projekte ring-client-api (Homebridge) und
 python-ring-doorbell (Home Assistant) verwenden. Sie kann sich jederzeit ändern oder wegfallen.
 
+## 1.6.1
+
+- Handbuch im Reiter „Handbuch“ (GateControl ≥ 1.241.0): `HANDBUCH.md` / `HANDBOOK.md` im Paket, in `plugin.json` unter `handbook`. Ältere GateControl-Versionen ignorieren es; die Mindestversion bleibt `>=1.169.0`.
+- Kapitel „Kameras im Heimnetz einrichten“ im Handbuch: GateControl ≥ 1.240.0, Gateway ≥ 1.28.0 und Plugin ≥ 1.6.0, neue `docker-compose.yml` mit dem Dienst `kameras` (Synology/Linux, optional `GC_CAMERA_DIR`; Raspberry Pi: neues Image), „Kameras“ einschalten, ONVIF/RTSP an Reolink und Tapo, Kamera hinzufügen, Aufnahmen, „sieht“, Live-Bild und Push.
+- Einrichtungshinweise (`setupNotices`, GateControl ≥ 1.241.0): `cameras-compose` – bleibt stehen, solange ein Gateway mit „Kameras“ den Dienst `kameras` nicht hat; `cameras-device-settings` – ONVIF/RTSP an den Kameras einschalten (erledigt durch einen Administrator).
+
 ## 1.6.0
 Braucht weiterhin **GateControl ≥ 1.169.0**; die Kameras im Heimnetz brauchen **GateControl ≥ 1.240.0** und ein
 Gateway ≥ 1.28.0 mit eingeschalteten „Kameras“ (Gateways › Funktionen › „Geräte im Heimnetz“). Ältere GateControl:

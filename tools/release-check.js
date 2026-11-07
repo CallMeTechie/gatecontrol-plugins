@@ -6,11 +6,14 @@
 // * the tag names an existing plugin that is released (plugins.config.json)
 // * the tag version equals plugin.json version
 // * CHANGELOG.md has a section for that version (written to --notes)
+// * the handbook (plugin.json "handbook") is there and names that version in its first line, setupNotices are valid
 // Outputs (GITHUB_OUTPUT): id, version, prerelease.
 
 const fs = require('node:fs');
 const path = require('node:path');
 const lib = require('./lib');
+const handbook = require('./handbook');
+const { stagedFiles } = require('./stage');
 
 const args = process.argv.slice(2);
 const tag = args.find((a) => !a.startsWith('--') && args[args.indexOf(a) - 1] !== '--notes');
@@ -28,6 +31,8 @@ if (raw.version !== t.version) lib.fail(`tag version ${t.version} ≠ plugin.jso
 const notes = lib.changelogSection(t.id, t.version);
 if (notes == null) lib.fail(`plugins/${t.id}/CHANGELOG.md has no "## ${t.version}" section`);
 if (!notes) lib.fail(`plugins/${t.id}/CHANGELOG.md: the "## ${t.version}" section is empty`);
+const hbErrors = handbook.check(dir, raw, stagedFiles(dir));
+if (hbErrors.length) lib.fail(`plugins/${t.id}: ${hbErrors.join('; ')}`);
 if (ni >= 0) fs.writeFileSync(args[ni + 1], notes + '\n');
 const prerelease = lib.parseSemver(t.version).pre.length > 0;
 process.stderr.write(`release ${t.id} ${t.version}${prerelease ? ' (pre-release)' : ''}: OK\n`);

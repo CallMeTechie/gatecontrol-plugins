@@ -764,6 +764,7 @@ test('pack → sign → verify round trip with a throwaway key', { skip: !gcDir 
     // the package holds no test files (but the edge part, for the gateway)
     const files = lib.gcRequire('src/services/plugins/package').decode(fs.readFileSync(file));
     assert.ok(files.has('signature') && files.has('ui/page.html') && files.has('migrations/001_init.sql') && files.has('edge/index.js'));
+    assert.ok(files.has('HANDBUCH.md') && files.has('HANDBOOK.md'), 'the handbook is packed');
     assert.ok(![...files.keys()].some((p) => p.startsWith('test/')));
 
     r = run([path.join(TOOLS, 'verify.js'), file, '--id', 'gatecontrol-hello', '--version', V], { GC_PLUGIN_PUBLIC_KEY: kp.publicKey, GITHUB_OUTPUT: '' });

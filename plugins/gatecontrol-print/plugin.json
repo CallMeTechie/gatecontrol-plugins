@@ -4,7 +4,7 @@
     "de": "Drucken & Scannen",
     "en": "Print & Scan"
   },
-  "version": "1.0.1",
+  "version": "1.0.2",
   "publisher": "CallMeTechie",
   "description": {
     "de": "Drucker und Scanner zu Hause – von überall über GateControl nutzbar, ohne sie ins Internet zu stellen: von unterwegs zu Hause drucken (wartet bis zu 24 Stunden, wenn der Drucker aus ist), vom Handy aus scannen – Glas oder Einzug, Vorschau, weitere Seiten – und als PDF ins Drive, auf Wunsch mit Name und Ordner von der KI. Geräte mit Tintenstand und Testseite, Rechte pro Person (drucken, scannen, Seiten am Tag, nur schwarz-weiß), Verlauf. Die Gateways finden die Geräte selbst (AirPrint/AirScan).",
@@ -109,6 +109,30 @@
         "en": "Print failed"
       },
       "default": true
+    }
+  ],
+  "handbook": {
+    "de": "HANDBUCH.md",
+    "en": "HANDBOOK.md"
+  },
+  "setupNotices": [
+    {
+      "id": "gateway-print",
+      "since": "1.0.0",
+      "title": {
+        "de": "Drucken & Scannen: Gateway ab 1.24.0",
+        "en": "Print & Scan: gateway 1.24.0 or later"
+      },
+      "text": {
+        "de": "Drucker und Scanner findet und bedient ein Gateway ab 1.24.0 mit eingeschaltetem „Drucken & Scannen“ (Gateways › dein Gateway › Funktionen › „Geräte im Heimnetz“). Aktualisiere jedes Gateway mit dieser Funktion unter Gateways › „Update auf …“.",
+        "en": "Printers and scanners are found and used by a gateway 1.24.0 or later with “Print & scan” switched on (Gateways › your gateway › Functions › “Devices at home”). Update every gateway with this function under Gateways › “Update to …”."
+      },
+      "handbook": "einrichten",
+      "check": {
+        "type": "gatewayVersion",
+        "feature": "print",
+        "min": "1.24.0"
+      }
     }
   ]
 }

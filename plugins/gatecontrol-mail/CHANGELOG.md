@@ -2,6 +2,10 @@
 
 Alle E-Mail-Konten an einem Ort – im eigenen Tab der GateControl-Apps und im Portal.
 
+## 1.9.1
+
+- Handbuch im Reiter „Handbuch“ (GateControl ≥ 1.241.0): `HANDBUCH.md` / `HANDBOOK.md` im Paket, in `plugin.json` unter `handbook`. Ältere GateControl-Versionen ignorieren es; die Mindestversion bleibt `>=1.219.0`.
+
 ## 1.9.0
 - **Frei/Gebucht innerhalb von GateControl** (Mockup Planer). Beim Planen eines Termins zeigt Mail je Person und
   Ressource, wann sie frei, gebucht, vorläufig oder unbekannt ist – nie Titel. Termine, die als privat markiert sind,

@@ -2,6 +2,10 @@
 
 Müllabfuhr und Kalender des Haushalts als GateControl-Plugin.
 
+## 1.4.1
+
+- Handbuch im Reiter „Handbuch“ (GateControl ≥ 1.241.0): `HANDBUCH.md` / `HANDBOOK.md` im Paket, in `plugin.json` unter `handbook`. Ältere GateControl-Versionen ignorieren es; die Mindestversion bleibt `>=1.216.0`.
+
 ## 1.4.0
 - **Kalender in Mail:** Mail 1.2.0 blendet die Alltag-Kalender einer Person in seinen Kalender ein (nur lesend) und
   ruft die Dienste dafür für jede Person auf.

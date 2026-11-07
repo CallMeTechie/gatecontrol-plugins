@@ -24,6 +24,7 @@ const fs = require('node:fs');
 const { execFileSync } = require('node:child_process');
 const lib = require('./lib');
 const { stage } = require('./stage');
+const handbook = require('./handbook');
 
 function packPlugin(id, { out, sign, noLicense }) {
   if (sign && noLicense) throw new Error('--no-license is for unsigned dev builds only');
@@ -40,6 +41,10 @@ function packPlugin(id, { out, sign, noLicense }) {
   const file = path.resolve(out, `${raw.id}-${raw.version}${noLicense ? '-dev' : ''}.gcplugin`);
   const st = stage(dir);
   try {
+    // the handbook (plugin.json "handbook", tab „Handbuch“ of GateControl ≥ 1.241.0) is part of every package
+    const hb = handbook.files(raw);
+    if (!hb.length) throw new Error('plugin.json has no "handbook" (tools/handbook.js)');
+    for (const p of hb) if (!st.files.includes(p)) throw new Error(`handbook file ${p} is not in the package`);
     if (noLicense) {
       const pj = path.join(st.dir, 'plugin.json');
       fs.writeFileSync(pj, JSON.stringify({ ...raw, license: { required: false } }, null, 2) + '\n');

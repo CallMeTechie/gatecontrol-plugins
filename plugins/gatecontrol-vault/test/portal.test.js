@@ -102,7 +102,7 @@ test('texts: every key the portal uses exists in de and en (with .one/.other for
 });
 
 test('plugin.json 1.4.1: the portal tab "Vault"; GateControl 1.197.0 (Start tiles with a QR code); portalVisible hides it on a kiosk device', async () => {
-  assert.equal(manifest.version, '1.4.1');
+  assert.equal(manifest.version, '1.4.2');
   assert.equal(manifest.gatecontrol, '>=1.197.0', 'the Wi-Fi share on the portal start page needs tiles with qr / secret / until (1.197.0); GC.scanQr (1.196.0) is feature-detected');
   assert.deepEqual(manifest.permissions.services, ['gatecontrol-familie:wall_wifi'], 'the wall tablet\'s Wi-Fi through the Familie plugin');
   assert.equal(manifest.ui.camera, undefined, 'no camera: a sandboxed frame (opaque origin) gets none in Chromium');

@@ -2,6 +2,10 @@
 
 Passwort-Manager auf dem eigenen GateControl-Server – Ende-zu-Ende verschlüsselt.
 
+## 1.4.2
+
+- Handbuch im Reiter „Handbuch“ (GateControl ≥ 1.241.0): `HANDBUCH.md` / `HANDBOOK.md` im Paket, in `plugin.json` unter `handbook`. Ältere GateControl-Versionen ignorieren es; die Mindestversion bleibt `>=1.197.0`.
+
 ## 1.4.1
 - **„Verstecktes Netz“:** Der WLAN-Editor im Portal-Tab hat eine Checkbox „Verstecktes Netz“ (wie die Apps). Sie
   wird im Eintrag als `hidden` gespeichert; der WLAN-QR-Code und eine Freigabe bekommen dann `H:true`, damit Handys

@@ -230,7 +230,7 @@ test('notification texts (alerts.js) de/en have the same keys and placeholders',
 test('manifest: licence required, admin page only, the home target pve (http, several), five topics', async () => {
   const m = JSON.parse(fs.readFileSync(path.join(DIR, 'plugin.json'), 'utf8'));
   assert.equal(m.id, 'gatecontrol-proxmox');
-  assert.equal(m.version, '1.1.0');
+  assert.equal(m.version, '1.1.1');
   assert.equal(m.license.required, true);
   assert.deepEqual(m.permissions.network.homeTargets.map((t) => [t.id, t.protocols, t.multiple]), [['pve', ['http'], true]]);
   assert.equal(m.permissions.network.internet, undefined, 'no internet access');

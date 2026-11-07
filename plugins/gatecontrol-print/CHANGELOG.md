@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.2
+
+- Handbuch im Reiter „Handbuch“ (GateControl ≥ 1.241.0): `HANDBUCH.md` / `HANDBOOK.md` im Paket, in `plugin.json` unter `handbook`. Ältere GateControl-Versionen ignorieren es; die Mindestversion bleibt `>=1.236.0`.
+- Einrichtungshinweis (`setupNotices`, GateControl ≥ 1.241.0) `gateway-print`: bleibt stehen, solange ein Gateway mit „Drucken & Scannen“ älter als 1.24.0 ist.
+- README: „Teilen › Mit GateControl drucken“ steht nicht mehr unter „Noch nicht“ – das geht seit 1.0.1 (Android-App ab 1.84.0).
+
 ## 1.0.1
 
 - **Drucken aus den Apps:** Das Plugin ist jetzt für die GateControl-Apps freigegeben (`permissions.app`). Damit funktionieren der Android-Druckdienst „GateControl“ im System-Druckdialog und „Teilen › Mit GateControl drucken“ – mit und ohne VPN, der Auftrag läuft über den Server und das Gateway zu Hause. Ohne diese Freigabe antwortete GateControl den Apps mit 404.

@@ -3,6 +3,10 @@
 Die Familie in der GateControl-App (eigener Tab), im Portal (eigener Tab „Familie“) und auf
 drei Admin-Seiten. Alles bleibt auf dem eigenen Server.
 
+## 1.18.1
+
+- Handbuch im Reiter „Handbuch“ (GateControl ≥ 1.241.0): `HANDBUCH.md` / `HANDBOOK.md` im Paket, in `plugin.json` unter `handbook`. Ältere GateControl-Versionen ignorieren es; die Mindestversion bleibt `>=1.216.0`.
+
 ## 1.18.0
 - **Internet zu Hause** (ab GateControl 1.231.0, neue Berechtigung `permissions.homeInternet` – „Internet zu Hause“): Ein
   GateControl-Gateway mit DNS-Filter filtert die Geräte einer Person im Heimnetz nach deren Profil und Sperrzeiten.

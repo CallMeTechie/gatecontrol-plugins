@@ -3,6 +3,10 @@
 Phoscon/deCONZ-Integration als GateControl-Plugin – bisher fest in GateControl eingebaut; seit 1.7.0 auch Shelly und
 Tasmota über ein GateControl-Gateway.
 
+## 1.8.1
+
+- Handbuch im Reiter „Handbuch“ (GateControl ≥ 1.241.0): `HANDBUCH.md` / `HANDBOOK.md` im Paket, in `plugin.json` unter `handbook`. Ältere GateControl-Versionen ignorieren es; die Mindestversion bleibt `>=1.228.1`.
+
 ## 1.8.0
 - **Bluetooth-Sensoren über ein GateControl-Gateway:** Mit einem GateControl, das Funk kennt (`gc.radio`, Phase 3c
   Schritt 2), erscheinen die Bluetooth-Thermometer und -Sensoren, die du in GateControl unter Gateway › Funk

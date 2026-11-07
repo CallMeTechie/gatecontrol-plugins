@@ -16,6 +16,7 @@ plugins/<id>/               one folder per plugin (folder name = plugin.json id)
   ui/                       templates/assets the plugin renders itself
   migrations/NNN_name.sql   SQL migrations of the plugin's own database
   CHANGELOG.md              one "## <version>" section per release
+  HANDBUCH.md, HANDBOOK.md  the manual (de / en) – tab „Handbuch“ of GateControl ≥ 1.241.0, updated with every release
   test/*.test.js            node:test tests against the mock host (not packed)
 tools/                      validate, test, pack, verify, release metadata, catalog
 tools/testing/mock-host.js  mock of the host API (gc.*) for plugin tests
@@ -98,6 +99,59 @@ plugin's `gc.actions.run({ …, state })`) then hands the hook `target: 'on'|'of
 listed state (already there → no hook call, `unchanged: true`; unknown → 409
 `state_unknown`). Fahrzeuge, Klimaanlage and Smart Home honour targets; older
 hosts never send one, so their `gatecontrol` requirement stays.
+
+### Handbook and set-up notices
+
+Every plugin carries a **manual** for the people who set it up and use it: `HANDBUCH.md` (German, du-form, plain,
+no marketing) and `HANDBOOK.md` (English) in the plugin folder, named in `plugin.json`:
+
+```json
+"handbook": { "de": "HANDBUCH.md", "en": "HANDBOOK.md" }
+```
+
+GateControl ≥ 1.241.0 shows it as the tab „Handbuch“ („Manual“) on Einstellungen › Plugins › <Plugin> (deep link
+`/settings/plugins/manage/<id>?tab=handbook#<anchor>`); older versions ignore the key, so the `gatecontrol` minimum
+does not change. `tools/validate.js` (every plugin) and `tools/release-check.js` (the tagged one) refuse a plugin
+without it, and `tools/pack.js` refuses a package without the files (`tools/handbook.js` has the rules):
+
+* **First line** `<!-- version: X.Y.Z -->` = `plugin.json` `version`, and a heading `Neu in X.Y.Z` / `New in X.Y.Z`
+  (what this release brings, from its CHANGELOG section). So **every release touches the handbook**: bump the version
+  line, rewrite „Neu in …“ and change the chapters the release changes.
+* **Structure** (the same for every plugin): „Was das Plugin kann“, „Voraussetzungen“, „Einrichten“ (step by step,
+  with the steps outside GateControl – a compose file, settings on a device, an account at a provider), „Benutzen“
+  (portal / apps), „Berechtigungen“, „Häufige Fragen / Fehlersuche“, „Neu in X.Y.Z“. Write it from the code, the README
+  and the CHANGELOG – the labels the UI really shows, nothing the plugin does not do.
+* **Markdown subset** of the host: headings `#` … `###`, paragraphs, lists, `**bold**`, `*italic*`, `` `code` ``, code
+  blocks, tables, `> **Hinweis:** …`, links only to `https://…` or an anchor `#…` of the same file. No raw HTML (write
+  `<Plugin>` as code or in words), no pictures, at most 256 KB per file.
+* **Anchors**: the slug of a heading (lower case, ä → ae, ö → oe, ü → ue, ß → ss, other accents dropped, everything
+  else → `-`), or an explicit one: `## Kameras im Heimnetz einrichten {#kameras-einrichten}`. Use explicit anchors
+  for every heading a link or a notice points to, and the same ones in both languages.
+
+**Set-up notices** (`setupNotices`, optional) tell administrators when a release needs a step by hand. GateControl
+≥ 1.241.0 shows the open ones as a banner on the plugin's settings pages, a mark in the plugin list and on the
+dashboard, with a link into the handbook and „Erledigt“:
+
+```json
+"setupNotices": [
+  { "id": "cameras-compose", "since": "1.6.0",
+    "title": { "de": "…", "en": "…" }, "text": { "de": "…", "en": "…" },
+    "handbook": "kameras-compose",
+    "check": { "type": "gatewayService", "feature": "cameras", "service": "kameras" } }
+]
+```
+
+* `id` unique per plugin; `since` = the plugin version from which it applies (never newer than `version`); at most
+  20 notices, title ≤ 120 and text ≤ 1000 characters in de and en.
+* `handbook`: an anchor in both handbooks, or `{ "de": "…", "en": "…" }` – every one must exist in its file.
+* `check.type`: `manual` (done when an administrator clicks „Erledigt“), `gatewayService` (`feature`, `service`:
+  done once a gateway with the feature on runs the compose service – the host knows `cameras` → `kameras`, `ai` →
+  `ki`, `radio` / `zigbee` → `deconz`), `gatewayVersion` (`min`, optional `feature`: every gateway with the feature at
+  least `min`), `hostVersion` (`min`).
+* Add a notice only for a step people really have to do by hand, keep it once it is out (people updating from an
+  older version still need it), and write the step into the handbook under the anchor it names.
+
+The mock host ignores both keys like an older GateControl; `tools/test/handbook.test.js` checks every plugin.
 
 ## Tooling
 
@@ -221,8 +275,9 @@ workflow** — the private key never leaves the `plugin-release` environment.
 1. Create `plugins/<id>/` (`id`: `[a-z0-9]+(-[a-z0-9]+)*`, 2–64 chars; for
    first-party plugins it is the licence server's entitlement slug).
 2. Add `plugin.json`, the entry under `server/`, `migrations/`, `ui/`,
-   `CHANGELOG.md` with a `## <version>` section, and `test/*.test.js` using
-   `tools/testing/mock-host.js` (see the example plugin).
+   `CHANGELOG.md` with a `## <version>` section, `HANDBUCH.md` / `HANDBOOK.md`
+   with `"handbook"` in `plugin.json` (see "Handbook and set-up notices"), and
+   `test/*.test.js` using `tools/testing/mock-host.js` (see the example plugin).
 3. `npm run validate && npm test && npm run pack <id>`; open a PR.
 
 ## Versioning
@@ -236,11 +291,13 @@ catalogue `latest` while a stable version exists.
 ## Release
 
 1. On `main`: bump `version` in `plugins/<id>/plugin.json`, add the
-   `## <version>` section to its `CHANGELOG.md`, merge.
+   `## <version>` section to its `CHANGELOG.md`, update `HANDBUCH.md` and
+   `HANDBOOK.md` (version line, „Neu in …“, the changed chapters; a
+   `setupNotices` entry when the release needs a step by hand), merge.
 2. Tag that commit and push the tag:
    `git tag gatecontrol-smarthome-v1.2.0 && git push origin gatecontrol-smarthome-v1.2.0`
    — or run **Actions → Tag release** on `main` with that tag: `tag.yml` runs
-   the same tag check, creates the tag on the current `main` commit and
+   the same tag check (also the handbook's version line), creates the tag on the current `main` commit and
    dispatches `release.yml` on it (a tag created by the workflow token would
    not fire the push trigger on its own).
 3. `release.yml` (environment `plugin-release`, waits for a reviewer if one is
@@ -365,8 +422,16 @@ Erstanbieter-Plugins für GateControl mit Build-, Signatur- und Release-Pipeline
   `npm run gatecontrol`, `npm run validate`, `npm test`, `npm run pack <id>`
   (immer **unsigniert**; `-- --no-license` für einen installierbaren
   Testbau eines lizenzpflichtigen Erstanbieter-Plugins).
-* **Neues Plugin:** Ordner anlegen, plugin.json + Code + CHANGELOG + Tests mit
+* **Neues Plugin:** Ordner anlegen, plugin.json + Code + CHANGELOG + Handbuch + Tests mit
   `tools/testing/mock-host.js`, prüfen, PR öffnen.
+* **Handbuch:** jedes Plugin hat `HANDBUCH.md` (deutsch, du-Form, schlicht) und `HANDBOOK.md` (englisch), in
+  `plugin.json` unter `handbook`; GateControl ab 1.241.0 zeigt es im Reiter „Handbuch“ unter Einstellungen › Plugins ›
+  Plugin. Erste Zeile `<!-- version: X.Y.Z -->` = Plugin-Version und ein Abschnitt „Neu in X.Y.Z“ – jedes Release
+  muss das Handbuch also anfassen (validate.js, release-check.js und pack.js prüfen das). Gliederung: Was das Plugin
+  kann, Voraussetzungen, Einrichten (auch Schritte außerhalb von GateControl), Benutzen, Berechtigungen, Häufige
+  Fragen / Fehlersuche, Neu in X.Y.Z. Braucht ein Release einen Handgriff (Compose-Datei, Einstellung am Gerät,
+  Gateway-Version), kommt ein Eintrag in `setupNotices` dazu – mit Prüfung `manual`, `gatewayService`,
+  `gatewayVersion` oder `hostVersion` und einem Anker ins Handbuch (Details oben unter „Handbook and set-up notices“).
 * **Benachrichtigungen:** Themen in `plugin.json` (`notifyTopics`, braucht
   `permissions.notify`), Versand mit `gc.notify({ topic, … })` (GateControl
   ab 1.154.0). `server/notify.js` ist in jedem Plugin dieselbe Datei
@@ -381,7 +446,7 @@ Erstanbieter-Plugins für GateControl mit Build-, Signatur- und Release-Pipeline
   (`scan` aus `gc.media.info`, Hook `mediaScanned`); mit älteren Versionen ändert sich nichts. Gesperrte
   Dateien werden nicht geöffnet, geteilt oder weitergegeben. Tests: Mock-Host `opts.scan`.
 * **Versionierung:** SemVer pro Plugin; jede Version braucht einen
-  `## <version>`-Abschnitt im CHANGELOG.
+  `## <version>`-Abschnitt im CHANGELOG und die Version in der ersten Zeile beider Handbücher.
 * **Release:** Version und CHANGELOG auf `main` bringen, dann Tag
   `<id>-v<version>` pushen. Die Release-Pipeline prüft, testet, baut,
   **signiert (nur in CI, Umgebung `plugin-release`)**, prüft die Signatur und
