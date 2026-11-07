@@ -3,7 +3,8 @@
 // The mock host's mirror of GateControl 1.231.0 gc.homeCache (src/services/homeCache.js offer / withdraw / lanFor,
 // hostApi.js homeCacheCall, plugins/requestRefs.js, the child bootstrap's makeHomeCache): only with
 // permissions.homeCache, the stock keyed by sha256, req.homeRef only while that request runs, the hint only for own
-// offers, at home, held by the gateway and for the people of the offer.
+// offers, at home, held by the gateway and for the people of the offer — and of GateControl 1.249.0: previews in the
+// home cache (offer / withdraw / lanHint with `preview`, lanHints, gc.homeCache.previews).
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -26,17 +27,16 @@ module.exports = {
     if (req.path === '/ref') return { json: { homeRef: typeof req.homeRef === 'string' } };
     if (req.path === '/later') { try { return { json: { ok: true, result: await gc.homeCache.lanHint(b.what, last) } }; } catch (e) { return { json: { ok: false, code: e.code } }; } }
     last = req;
-    const args = b.op === 'lanHint' ? [b.what, req] : (b.args || []);
+    const args = b.op === 'lanHint' || b.op === 'lanHints' ? [b.what, req] : (b.args || []);
     try { return { json: { ok: true, result: await gc.homeCache[b.op](...args), homeRef: typeof req.homeRef === 'string', home: 'home' in req } }; } catch (e) { return { json: { ok: false, code: e.code } }; }
   },
 };`;
 
-function plugin(perms) {
+function plugin(perms, media = { maxBytes: 1048576, types: ['text/plain'], quotaDefault: '10MB' }) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hc-plugin-'));
   fs.mkdirSync(path.join(dir, 'server'));
   fs.writeFileSync(path.join(dir, 'plugin.json'), JSON.stringify({
-    id: 'hc-test', name: 'H', version: '1.0.0', entry: 'server/index.js', permissions: perms,
-    media: { maxBytes: 1048576, types: ['text/plain'], quotaDefault: '10MB' },
+    id: 'hc-test', name: 'H', version: '1.0.0', entry: 'server/index.js', permissions: perms, media,
   }));
   fs.writeFileSync(path.join(dir, 'server', 'index.js'), CODE);
   return { dir, done: () => fs.rmSync(dir, { recursive: true, force: true }) };
@@ -143,4 +143,48 @@ test('gc.homeCache without the permission on a host that has it: no gc.homeCache
     const r = await h.request({ method: 'GET', path: '/ref', user: { id: 2, portal: true, loggedIn: true, app: true }, home: true });
     assert.equal(r.json.homeRef, false);
   } finally { await h.close(); p.done(); }
+});
+
+test('GateControl 1.249.0: previews in the home cache — offer / withdraw / lanHint with preview, lanHints, the flag', async () => {
+  const p = plugin({ homeCache: true }, { maxBytes: 1048576, types: ['image/jpeg', 'text/plain'], quotaDefault: '10MB', previews: true });
+  try {
+    // an older host: no flag, no lanHints
+    const old = await createHost(p.dir, { users: USERS, gatecontrol: '1.231.0' });
+    assert.equal(old.gc.homeCache.previews, undefined);
+    assert.equal(old.gc.homeCache.lanHints, undefined);
+    await old.close();
+    const h = await createHost(p.dir, { users: USERS, gatecontrol: '1.249.0' });
+    await h.start();
+    assert.equal(h.gc.homeCache.previews, true);
+    const up = async (data, mime) => (await h.upload({ id: 2 }, Buffer.from(data), mime)).body.mediaId;
+    const anna = (body, o = {}) => h.request({ method: 'POST', path: '/x', body, user: { id: 2, portal: true, loggedIn: true, app: true }, ...o });
+    const pic = await up('jpeg', 'image/jpeg');
+    const txt = await up('text', 'text/plain');
+    const psha = sha(`preview:${pic}:small`);
+    for (const [args, code] of [[{ mediaId: pic, preview: 'huge', kind: 'photos' }, 'ERR_INVALID'], [{ mediaId: pic, preview: 'small', kind: 'vault' }, 'ERR_INVALID'],
+      [{ mediaId: pic, preview: 'small', kind: 'photos', sha256: psha }, 'ERR_INVALID'], [{ mediaId: txt, preview: 'small', kind: 'drive' }, 'ERR_NOT_FOUND'],
+      [{ mediaId: 'nope', preview: 'small', kind: 'drive' }, 'ERR_NOT_FOUND']]) {
+      assert.equal((await anna({ op: 'offer', args: [args] })).json.code, code, JSON.stringify(args));
+    }
+    // not made yet: pending, then (made in the background) offered with the preview's own sha256
+    assert.equal((await anna({ op: 'offer', args: [{ mediaId: pic, preview: 'small', kind: 'photos', userIds: [2], priority: 95 }] })).json.code, 'ERR_PREVIEW_PENDING');
+    let r = await anna({ op: 'offer', args: [{ mediaId: pic, preview: 'small', kind: 'photos', userIds: [2], priority: 95 }] });
+    assert.deepEqual(r.json.result, { sha256: psha, size: Buffer.byteLength(`preview:${pic}:small`), offered: true, preview: 'small' });
+    assert.equal(h.homeCache.offers.get(psha).preview, 'small');
+    await anna({ op: 'offer', args: [{ mediaId: pic, kind: 'photos' }] });
+    // hints: one and many, at home only; the file and its preview apart
+    r = await anna({ op: 'lanHint', what: { mediaId: pic, preview: 'small' } }, { home: true });
+    assert.equal(r.json.result.sha256, psha);
+    r = await anna({ op: 'lanHints', what: [{ mediaId: pic, preview: 'small' }, { mediaId: pic, preview: 'large' }, { mediaId: pic }, 'x', { mediaId: txt, preview: 'small' }] }, { home: true });
+    assert.deepEqual(r.json.result.map((x) => (x ? x.sha256 : null)), [psha, null, sha('jpeg'), null, null]);
+    r = await anna({ op: 'lanHints', what: [{ mediaId: pic, preview: 'small' }] });
+    assert.deepEqual(r.json.result, [null]);
+    assert.equal((await anna({ op: 'lanHints', what: new Array(501).fill(psha) }, { home: true })).json.code, 'ERR_INVALID');
+    // withdraw: the file alone, then the preview
+    assert.deepEqual((await anna({ op: 'withdraw', args: [pic] })).json.result, { removed: true });
+    assert.ok(h.homeCache.offers.get(psha));
+    assert.deepEqual((await anna({ op: 'withdraw', args: [pic, { preview: 'small' }] })).json.result, { removed: true });
+    assert.equal(h.homeCache.offers.size, 0);
+    await h.close();
+  } finally { p.done(); }
 });

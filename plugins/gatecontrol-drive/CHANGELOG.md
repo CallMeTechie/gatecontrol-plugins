@@ -2,6 +2,19 @@
 
 Dateien der Familie und des Teams auf dem eigenen Speicher – auf diesem Server, einer NAS oder in S3.
 
+## 1.24.0
+
+- **Vorschaubilder im Zwischenspeicher im Heimnetz** (GateControl 1.249.0+): Drive bietet den Heim-Gateways auch
+  GateControls Vorschaubilder an – die kleinen aller Bilder und Videos, die es dort anbietet, und der neuesten 8000 Fotos
+  (Priorität 95), die großen der neuen, geöffneten und offline gehaltenen Bilder (45). Eine Datei ohne Vorschaubild
+  bleibt draußen; ein Vorschaubild, das GateControl erst macht, kommt beim nächsten Lauf. Höchstens 12 000.
+- Die Antworten der Apps tragen zu jedem angebotenen Vorschaubild den Hinweis fürs Heimnetz: `preview.lan` /
+  `preview.largeLan`, in `GET photos` `previewLan` / `largeLan` – ein Aufruf `gc.homeCache.lanHints` je Antwort. Neues
+  Merkmal `homeCachePreviews` in `GET me`: Die Apps schicken dann ihre LAN-Adressen (`X-GC-Local`) auch mit den Listen.
+- `admin/overview` › `homeCache` zählt die Vorschaubilder getrennt (`previews`, `previewBytes`); `files` und `bytes`
+  sind die Dateien allein. Migration 019 (`home_cache.preview`).
+- Ein älteres GateControl: nichts davon (sein `offer` nähme die Datei statt des Vorschaubilds).
+
 ## 1.23.0
 
 - **Erkannter Text über `save_file`:** Der Dienst `save_file` nimmt `text` (wie `uploads/commit { text }` der Apps) und
