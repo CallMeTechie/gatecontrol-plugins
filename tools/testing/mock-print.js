@@ -13,7 +13,7 @@
 //   submit({ deviceId, mediaId, user, copies?, color?, duplex?, name? })
 //                                   the plugin's media (ERR_NOT_FOUND), a printer (ERR_NOT_FOUND), the device online
 //                                   (ERR_PRINT_OFFLINE); the type by the content (%PDF-, JPEG, PNG … — GateControl
-//                                   1.242.0), else the stored one; PDF when the printer names application/pdf or its
+//                                   1.243.0), else the stored one; PDF when the printer names application/pdf or its
 //                                   gateway converts (printer.convert), pictures (image/*) as JPEG or one PDF page,
 //                                   anything else ERR_PRINT_FORMAT with e.reason: file_type | damaged | printer |
 //                                   gateway_update | convert_off (test hook: device.gatewayConvert 'old' | 'off', else
@@ -62,7 +62,7 @@ function install({ opts, perms, atLeast, enabledUser, hostError, mediaStore }) {
     return m;
   };
   const pdfPages = (buf) => Math.max(1, (Buffer.from(buf).toString('latin1').match(/\/Type\s*\/Page(?![a-zA-Z])/g) || []).length);
-  // the type by the first bytes (GateControl 1.242.0, printPdf.sniff), else the stored type
+  // the type by the first bytes (GateControl 1.243.0, printPdf.sniff), else the stored type
   const typeOf = (m) => {
     const b = Buffer.from(m.data || '');
     if (b.subarray(0, 1024).indexOf('%PDF-') >= 0) return 'application/pdf';

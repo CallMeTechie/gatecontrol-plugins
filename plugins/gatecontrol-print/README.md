@@ -49,13 +49,13 @@ beschädigt), `gateway_update` / `convert_off` / `printer_format` (Drucker ohne
 PDF: Gateway zu alt zum Umwandeln, Umwandeln am Gateway aus, kein Format zum
 Umwandeln), `busy`, `no_drive`, `no_pages`, `scan_running`, `cert_changed`,
 `too_large`, `offline`, `print_failed`, `drive_failed`. Die Format-Codes
-kommen aus `ERR_PRINT_FORMAT` und dessen `e.reason` (GateControl ≥ 1.242.0;
+kommen aus `ERR_PRINT_FORMAT` und dessen `e.reason` (GateControl ≥ 1.243.0;
 bei älteren aus der Meldung).
 
 ## Drucker ohne PDF
 
 Viele Tintenstrahler (z. B. HP OfficeJet Pro 8720) nennen per IPP kein
-`application/pdf`. Mit GateControl ≥ 1.242.0 und einem Gateway ≥ 1.29.0
+`application/pdf`. Mit GateControl ≥ 1.243.0 und einem Gateway ≥ 1.30.0
 wandelt das Gateway PDF-Dateien für sie beim Drucken um (PWG-Raster, URF oder
 JPEG, passend zu Auflösung, Farbe, Papier und beidseitig); `printer.convert`
 in `gc.print.devices()` nennt das Zielformat. Schaltbar je Gateway (Gateways ›
@@ -92,7 +92,7 @@ when the printer is off. Since 1.0.1 the GateControl apps may use it
 (`permissions.app`): the Android app (1.84.0 or later) prints through the print
 service “GateControl” and “Share › Print with GateControl”. Since 1.0.3 a PDF
 also prints on printers without PDF (e.g. HP OfficeJet Pro 8720): with
-GateControl ≥ 1.242.0 and a gateway ≥ 1.29.0 the gateway converts it, and a
+GateControl ≥ 1.243.0 and a gateway ≥ 1.30.0 the gateway converts it, and a
 refused file names the real reason (gateway too old, converting off, no
 suitable format, damaged) instead of “PDF files and pictures work”. Not yet:
 OCR, Office files.

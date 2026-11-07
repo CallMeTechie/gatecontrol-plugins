@@ -55,7 +55,7 @@ const HOST = {
   ERR_NOT_FOUND: 'not_found', ERR_INVALID: 'invalid', ERR_PRINT_CERT_CHANGED: 'cert_changed', ERR_MEDIA_QUOTA: 'too_large',
 };
 /**
- * Why GateControl cannot print a file (ERR_PRINT_FORMAT, `e.reason` since GateControl 1.242.0) → this plugin's code:
+ * Why GateControl cannot print a file (ERR_PRINT_FORMAT, `e.reason` since GateControl 1.243.0) → this plugin's code:
  * format (not a PDF or picture), damaged, printer_format (the printer takes no PDF and the gateway cannot convert for
  * it), gateway_update (… the gateway is too old to convert), convert_off (… converting is off on that gateway).
  */

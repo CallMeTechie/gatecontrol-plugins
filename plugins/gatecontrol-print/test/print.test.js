@@ -60,7 +60,7 @@ describe('printing', () => {
   it('a PDF to a printer without PDF: the real reason (gateway too old, converting off, no format), never „only PDF and pictures“', async () => {
     const m = await upload(MARC, pdf(1), 'application/pdf');
     const bro = h.host.print.devices.find((d) => d.id === BRO);
-    const cases = [['old', 'gateway_update', /ab Version 1\.29\.0/], ['off', 'convert_off', /Umwandeln ist am Gateway ausgeschaltet/], [undefined, 'printer_format', /kein Format, in das das Gateway/]];
+    const cases = [['old', 'gateway_update', /ab Version 1\.30\.0/], ['off', 'convert_off', /Umwandeln ist am Gateway ausgeschaltet/], [undefined, 'printer_format', /kein Format, in das das Gateway/]];
     for (const [hook, code, text] of cases) {
       bro.gatewayConvert = hook;
       const r = await h.req(MARC, 'POST', '/print', { deviceId: BRO, mediaId: m });

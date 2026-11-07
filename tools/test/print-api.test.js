@@ -86,7 +86,7 @@ test('gc.print: submit checks like the host; jobs, cancel; scans and pdf', async
   } finally { await host.close(); p.done(); }
 });
 
-test('gc.print (GateControl 1.242.0): the type by the content, a printer whose gateway converts, the reasons', async () => {
+test('gc.print (GateControl 1.243.0): the type by the content, a printer whose gateway converts, the reasons', async () => {
   const p = plugin({ print: true });
   const noPdf = { id: 'h:' + 'c'.repeat(16), name: 'HP OfficeJet Pro 8720', online: true, gatewayOnline: true, printer: { color: true, duplex: true, formats: ['image/pwg-raster', 'image/urf'], copiesMax: 99 }, scanner: null };
   const host = await createHost(p.dir, { users: USERS, print: { devices: [noPdf] } });
