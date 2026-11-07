@@ -92,6 +92,8 @@ function view(n, extra) {
     ...(n.vault_id ? { encrypted: true, vaultId: n.vault_id, nameCipher: n.name_cipher || null, keyVersion: n.key_version == null ? null : n.key_version } : {}),
     // the review mark of a photo (since 1.13.0, work.js): only while there is one
     ...(n.review_at != null && n.is_dir === 0 ? { review: { hint: n.review_hint == null ? null : n.review_hint } } : {}),
+    // how long a video runs (since 1.25.0): only when the device that sent it said so
+    ...(n.duration_ms != null && n.is_dir === 0 ? { durationMs: n.duration_ms } : {}),
     ...(extra || {}),
   };
 }
@@ -217,24 +219,42 @@ async function byPath(ctx, areaId, p) {
   return get(ctx, cur.id);
 }
 
+const MEDIA_KINDS = { image: "mime LIKE 'image/%'", video: "mime LIKE 'video/%'" };
+
+/**
+ * `media=image|video` (since 1.25.0, feature `mediaFilter`) → the SQL of only the pictures or only the videos (by their
+ * type, over `nodes`), or null (no filter); else invalid { field: 'media' }. GET search and the photos (photos.js).
+ */
+function mediaClause(v) {
+  if (v == null || v === '') return null;
+  const k = String(v).toLowerCase();
+  if (!Object.prototype.hasOwnProperty.call(MEDIA_KINDS, k)) throw fail('invalid', { field: 'media' });
+  return MEDIA_KINDS[k];
+}
+
 /**
  * GET search?q=&area= → files and folders whose name contains q (≥ 2 characters), then files whose recognised text
- * does (a scan: `match: 'text'` with a `snippet` around the first hit), in the areas the viewer reads.
+ * does (a scan: `match: 'text'` with a `snippet` around the first hit), in the areas the viewer reads. Since 1.25.0
+ * `media=image|video` (feature `mediaFilter`): only pictures or only videos (no folders); q may then be empty — the
+ * newest pictures or videos by when they changed.
  */
-async function search(ctx, q, areaId) {
+async function search(ctx, q, areaId, media) {
   const term = typeof q === 'string' ? q.trim() : '';
-  if (term.length < 2 || term.length > 100) throw fail('invalid', { field: 'q' });
+  const kind = mediaClause(media);
+  if ((term.length < 2 && !(kind && term.length === 0)) || term.length > 100) throw fail('invalid', { field: 'q' });
   const ids = (await ctx.visible()).map((x) => x.area.id).filter((id) => !areaId || id === areaId);
   if (!ids.length) return { items: [] };
   const like = '%' + term.replace(/[\\%_]/g, (c) => '\\' + c) + '%';
+  const only = kind ? ` AND is_dir = 0 AND ${kind}` : '';
+  const named = term ? ` AND name LIKE ? ESCAPE '\\'` : '';
   const rows = await store.all(ctx.gc, `SELECT * FROM nodes WHERE area_id IN (${store.marks(ids.length)}) AND parent_id IS NOT NULL
-    AND deleted_at IS NULL AND vault_id IS NULL AND name LIKE ? ESCAPE '\\' ORDER BY is_dir DESC, updated_at DESC LIMIT ?`, [...ids, like, SEARCH_MAX]);
+    AND deleted_at IS NULL AND vault_id IS NULL${named}${only} ORDER BY is_dir DESC, updated_at DESC LIMIT ?`, [...ids, ...(term ? [like] : []), SEARCH_MAX]);
   const items = [];
   for (const r of rows) items.push(view(r, { path: await pathOf(ctx.gc, r), match: 'name' }));
-  if (rows.length < SEARCH_MAX) {
+  if (term && rows.length < SEARCH_MAX) {
     const seen = new Set(rows.map((r) => r.id));
     const hits = await store.all(ctx.gc, `SELECT n.*, t.text AS doc_text FROM doc_text t JOIN nodes n ON n.id = t.node_id
-      WHERE n.area_id IN (${store.marks(ids.length)}) AND n.deleted_at IS NULL AND n.vault_id IS NULL AND t.text LIKE ? ESCAPE '\\'
+      WHERE n.area_id IN (${store.marks(ids.length)}) AND n.deleted_at IS NULL AND n.vault_id IS NULL AND t.text LIKE ? ESCAPE '\\'${kind ? ` AND n.${kind}` : ''}
       ORDER BY n.updated_at DESC LIMIT ?`, [...ids, like, SEARCH_MAX]);
     for (const r of hits) {
       if (seen.has(r.id) || items.length >= SEARCH_MAX) continue;
@@ -607,6 +627,6 @@ async function purge(ctx, id) {
 }
 
 module.exports = {
-  row, pathOf, below, pathsBelow, view, takenOf, TAKEN, forget, log, reach, folderFor, taken, freeName, join, insertFolder, unmarkUp, UNMARKED, get, children, byPath, search,
+  row, pathOf, below, pathsBelow, view, takenOf, TAKEN, forget, log, reach, folderFor, taken, freeName, join, insertFolder, unmarkUp, UNMARKED, get, children, byPath, search, mediaClause,
   mkdir, update, vaultToRoot, trash, trashRows, unlinkLater, trashList, restore, purge, purgeBatch, moveMedia,
 };

@@ -336,6 +336,7 @@
     storage: new Map(),   // area id → storage
     people: new Map(),    // user id → name
     page: 'files',        // overview (since 1.18.0) · files · trash · links · search · devices · photos · …
+    media: 'all',         // the search's "Alle · Fotos · Videos" (since 1.25.0, feature mediaFilter)
     areaId: null,
     folder: null,         // the node shown (GET nodes/<id>) with crumbs and role
     items: [],
@@ -433,6 +434,8 @@
         // a question (since 1.14.0, "Fragen" or a "?" at the end): asked with Enter, not while typing
         if (K && K.isQuestion(v)) K.typed(v);
         else if (v.length >= 2) search(v);
+        // with "Fotos" or "Videos" chosen (since 1.25.0) an empty field lists the newest of them
+        else if (!v && S.page === 'search' && S.media && S.media !== 'all' && has('mediaFilter')) search('');
         else if (S.page === 'search' || S.page === 'ask') home();
       }, 300);
     });
@@ -836,6 +839,8 @@
     if (bulk) B.cards(main);
     // "Dateien | Fragen" (since 1.14.0, docAsk)
     if (S.page === 'search' && K) K.chips(main, 'files');
+    // "Alle · Fotos · Videos" over the hits (since 1.25.0)
+    if (S.page === 'search' && has('mediaFilter')) main.appendChild(h('div', { class: 'dp-search-media' }, mediaSeg(S.media || 'all', function (v) { S.media = v; search(S.q); })));
     if (!S.items.length) {
       main.appendChild(h('div', { class: 'dp-empty', text: S.page === 'search' ? T('p.no_results') : canWrite() ? T('p.empty_write') : T('p.empty') }));
       return;
@@ -1417,7 +1422,10 @@
     if (B) B.reset();
     S.page = 'search';
     S.q = q;
-    api('GET', 'search', null, { q: q }).then(function (r) {
+    // only pictures or only videos (since 1.25.0, feature mediaFilter): kept while searching
+    var query = { q: q };
+    if (S.media && S.media !== 'all' && has('mediaFilter')) query.media = S.media;
+    api('GET', 'search', null, query).then(function (r) {
       if (seq !== S.seq) return;
       S.items = r.items || [];
       S.next = null;
@@ -1863,13 +1871,38 @@
     q: '', search: null,
     // places and people (since 1.16.0, ui/places.js): the marks — people [{ id, name }] and a place { key, name } —, the
     // districts of the place's photos
-    people: [], place: null, districts: null };
+    people: [], place: null, districts: null,
+    // only pictures or only videos (since 1.25.0, feature mediaFilter): 'all' | 'image' | 'video'
+    media: 'all' };
   var PHOTO_PAGE = 120;
+
+  /** "1:23" / "1:02:03" of a video's length (ms); '' when unknown. */
+  function durationText(ms) {
+    if (typeof ms !== 'number' || !(ms > 0)) return '';
+    var t = Math.round(ms / 1000);
+    var hh = Math.floor(t / 3600);
+    var mm = Math.floor((t % 3600) / 60);
+    var ss = t % 60;
+    var two = function (v) { return ('0' + v).slice(-2); };
+    return hh ? hh + ':' + two(mm) + ':' + two(ss) : mm + ':' + two(ss);
+  }
+
+  /**
+   * "Alle · Fotos · Videos" (since 1.25.0, feature mediaFilter): the photos or the search narrowed to pictures or to
+   * videos; [value] the one shown, [onPick] with the one chosen.
+   */
+  function mediaSeg(value, onPick) {
+    return h('div', { class: 'dp-seg dp-seg-sm dp-media-seg', attrs: { role: 'group', 'aria-label': T('p.media_filter') } },
+      [['all', 'p.media_all'], ['image', 'p.media_images'], ['video', 'p.media_videos']].map(function (d) {
+        return h('button', { type: 'button', text: T(d[1]), attrs: { 'aria-pressed': String(value === d[0]) }, on: { click: function () { if (value !== d[0]) onPick(d[0]); } } });
+      }));
+  }
 
   /** A photo item (GET photos, albums) as a node for the viewer (preview, actions). */
   function photoNode(x) {
     return { id: x.id, name: x.name, mime: x.mime, size: x.size, isDir: false, areaId: x.areaId, parentId: x.parentId, mediaId: x.mediaId,
-      mtime: x.takenAt, updatedAt: x.takenAt, preview: x.previewUrl ? { url: x.previewUrl, largeUrl: x.largeUrl } : null, scan: x.scan || null };
+      mtime: x.takenAt, updatedAt: x.takenAt, preview: x.previewUrl ? { url: x.previewUrl, largeUrl: x.largeUrl } : null, scan: x.scan || null,
+      durationMs: typeof x.durationMs === 'number' ? x.durationMs : null };
   }
   function monthKey(iso) { var d = new Date(iso); return isNaN(d.getTime()) ? '' : d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2); }
   function monthLabel(key) {
@@ -1892,7 +1925,7 @@
         if (PH.select) { PH.chosen[x.id] = !PH.chosen[x.id]; PH.anchor = x.id; tile.className = 'dp-ph' + (PH.chosen[x.id] ? ' is-on' : ''); tile.setAttribute('aria-pressed', String(!!PH.chosen[x.id])); if (onPick) onPick(); return; }
         // the viewer goes through the photos shown (since 1.21.0)
         openNode(n, PH.items.indexOf(x) >= 0 ? PH.items.map(photoNode) : null);
-      } } }, [picOf(n, 28), scanBlocked(n) ? h('span', { class: 'dp-ph-scan', attrs: { title: (scanInfo(n) || {}).note || '' } }, icon('shield', 14)) : null, /^video\//.test(String(x.mime || '')) ? h('span', { class: 'dp-ph-kind' }, icon('video', 14)) : null, PH.select ? h('span', { class: 'dp-ph-check' }, icon('check', 14)) : null,
+      } } }, [picOf(n, 28), scanBlocked(n) ? h('span', { class: 'dp-ph-scan', attrs: { title: (scanInfo(n) || {}).note || '' } }, icon('shield', 14)) : null, /^video\//.test(String(x.mime || '')) ? h('span', { class: 'dp-ph-kind' + (durationText(x.durationMs) ? ' has-time' : '') }, [icon('video', 14), durationText(x.durationMs) ? h('span', { text: durationText(x.durationMs) }) : null]) : null, PH.select ? h('span', { class: 'dp-ph-check' }, icon('check', 14)) : null,
         // since 1.13.0: the yellow question mark (to check), the blue bag of a work photo (in "Alle")
         x.review ? h('span', { class: 'dp-ph-mk', attrs: { title: T('p.wk_marked') } }, icon('help', 14)) : null,
         x.work && PH.cls === 'all' ? h('span', { class: 'dp-ph-wk', attrs: { title: T('p.wk_work_photo') } }, icon('bag', 13)) : null]);
@@ -1918,6 +1951,8 @@
     if (PH.cls !== 'all' && has('photoClasses') && !(more && more.noClass)) q['class'] = PH.cls;
     delete q.noClass;
     if (PH.q && has('photoSearch')) q.q = PH.q;
+    // only pictures or only videos (since 1.25.0)
+    if (PH.media !== 'all' && has('mediaFilter')) q.media = PH.media;
     // the marks (since 1.16.0): person=, place=
     if (PL) PL.query(q);
     return q;
@@ -1931,11 +1966,12 @@
     var cam = PH.camera && has('photosFolder');
     var classes = has('photoClasses');
     if (!classes) PH.cls = 'all';
+    if (!has('mediaFilter')) PH.media = 'all';
     Promise.all([
       api('GET', 'photos', null, photoQuery({ limit: PHOTO_PAGE })),
       api('GET', 'photos/months', null, photoQuery()).catch(function () { return { months: [] }; }),
       // the memories are in the overview since 1.18.0
-      has('overview') || (PH.area && !cam) || PH.cls !== 'all' || PH.q || (PL && PL.active()) ? Promise.resolve({ groups: [] }) : api('GET', 'photos/memories', null, cam ? { camera: 1 } : null).catch(function () { return { groups: [] }; }),
+      has('overview') || (PH.area && !cam) || PH.cls !== 'all' || PH.media !== 'all' || PH.q || (PL && PL.active()) ? Promise.resolve({ groups: [] }) : api('GET', 'photos/memories', null, cam ? { camera: 1 } : null).catch(function () { return { groups: [] }; }),
       classes ? api('GET', 'photos/classes', null, photoQuery({ noClass: true })).catch(function () { return null; }) : Promise.resolve(null),
       classes ? api('GET', 'photos/settings').catch(function () { return null; }) : Promise.resolve(null),
       // the names of my people for "Auch mit …" (since 1.16.0)
@@ -1979,7 +2015,9 @@
     var raw = PH.select && !onDone && has('photoClasses') ? chosenItems() : [];
     var allReview = raw.length > 0 && raw.every(function (x) { return !!x.review; });
     var guess = allReview ? guessText(raw) : '';
-    add(bar, [onDone || (cam && PH.camera) ? null : areaSel, cam, find, h('span', { class: 'dp-ph-grow' }),
+    // "Alle · Fotos · Videos" (since 1.25.0)
+    var media = !onDone && has('mediaFilter') ? mediaSeg(PH.media, function (v) { PH.media = v; showPhotos(true); }) : null;
+    add(bar, [onDone || (cam && PH.camera) ? null : areaSel, cam, media, find, h('span', { class: 'dp-ph-grow' }),
       PH.select ? h('span', { class: 'dp-meta', text: P('p.chosen', count) }) : null,
       allReview && guess ? h('span', { class: 'dp-meta dp-wk-guess' }, [icon('spark', 14), h('span', { text: guess })]) : null,
       allReview ? withClass(btn(T('p.wk_work'), function () { assignPhotos('work', chosenItems()); }, { icon: 'bag' }), 'dp-wk-work') : null,
@@ -2018,7 +2056,7 @@
       });
       main.appendChild(mem);
     }
-    if (!PH.items.length) { main.appendChild(h('div', { class: 'dp-empty', text: T(PH.q ? 'p.k.ph_none' : PH.cls !== 'all' ? 'p.wk_none_' + PH.cls : PH.camera && has('photosFolder') ? 'p.photos_camera_none' : 'p.photos_none') })); return; }
+    if (!PH.items.length) { main.appendChild(h('div', { class: 'dp-empty', text: T(PH.q ? 'p.k.ph_none' : PH.cls !== 'all' ? 'p.wk_none_' + PH.cls : PH.media !== 'all' ? 'p.media_none_' + PH.media : PH.camera && has('photosFolder') ? 'p.photos_camera_none' : 'p.photos_none') })); return; }
     var groups = [];
     PH.items.forEach(function (x) {
       var k = monthKey(x.takenAt);

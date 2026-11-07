@@ -703,9 +703,9 @@ async function mergeVersion(ctx, src, ex) {
     // (a media file belongs to one node: the moved node lets go of it first)
     await store.run(gc, 'UPDATE nodes SET media_id = NULL WHERE id = ?', [s.node.id]);
     await store.run(gc, `UPDATE nodes SET media_id = ?, size = ?, sha256 = ?, mime = ?, mtime = ?, rev = rev + 1, updated_at = ?, updated_by = ?, entropy = ?,
-      taken_at = COALESCE(?, taken_at), content_at = ? WHERE id = ?`,
+      taken_at = COALESCE(?, taken_at), content_at = ?, duration_ms = ? WHERE id = ?`,
     [s.node.media_id || null, s.node.size, s.node.sha256 || null, s.node.mime || null, s.node.mtime, ctx.now, ctx.viewer, s.node.entropy == null ? null : s.node.entropy,
-      s.node.taken_at, ctx.now, e.node.id]);
+      s.node.taken_at, ctx.now, s.node.duration_ms == null ? null : s.node.duration_ms, e.node.id]);
     await store.run(gc, 'UPDATE versions SET node_id = ? WHERE node_id = ?', [e.node.id, s.node.id]);
     const text = await store.one(gc, 'SELECT text FROM doc_text WHERE node_id = ?', [s.node.id]);
     await store.run(gc, 'DELETE FROM doc_text WHERE node_id = ?', [e.node.id]);
@@ -869,9 +869,10 @@ async function commitCopy(ctx, op, item, src, mediaId) {
     }
     await nodes.unmarkUp(gc, dest.id, ctx);
     const r = await store.run(gc, `INSERT INTO nodes (area_id, parent_id, name, is_dir, media_id, size, sha256, mime, mtime, created_at, created_by, updated_at, updated_by, taken_at, content_at,
-        vault_id, name_cipher, key_version)
-      VALUES (?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [area.id, dest.id, name, mediaId, src.size, src.sha256 || null, src.mime || null, src.mtime, ctx.now, ctx.viewer,
-      ctx.now, ctx.viewer, src.taken_at, ctx.now, src.vault_id || null, src.vault_id ? src.name_cipher : null, src.vault_id ? src.key_version : null]);
+        vault_id, name_cipher, key_version, duration_ms)
+      VALUES (?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [area.id, dest.id, name, mediaId, src.size, src.sha256 || null, src.mime || null, src.mtime, ctx.now, ctx.viewer,
+      ctx.now, ctx.viewer, src.taken_at, ctx.now, src.vault_id || null, src.vault_id ? src.name_cipher : null, src.vault_id ? src.key_version : null,
+      src.duration_ms == null ? null : src.duration_ms]);
     const id = Number(r.lastInsertRowid);
     // where it was taken goes with the copy (since 1.16.0)
     if (src.geo_lat != null || src.geo_none != null) {

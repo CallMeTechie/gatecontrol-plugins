@@ -49,6 +49,22 @@ function takenArg(v, now) {
   return ms > now + DAY || ms < TAKEN_MIN ? null : ms;
 }
 
+// how long a video may run (7 days) — longer is no video length a device reports
+const DURATION_MAX = 7 * DAY;
+
+/**
+ * uploads/commit { durationMs } (since 1.25.0) → ms of a video, or null (none sent; a picture; 0 or beyond 7 days are
+ * dropped as unknown); not a number → invalid { field: 'durationMs' }.
+ */
+function durationArg(v, mime) {
+  if (v == null || v === '') return null;
+  const n = Number(v);
+  if (typeof v === 'boolean' || !Number.isFinite(n)) throw fail('invalid', { field: 'durationMs' });
+  const ms = Math.round(n);
+  if (ms <= 0 || ms > DURATION_MAX) return null;
+  return /^video\//.test(String(mime || '')) ? ms : null;
+}
+
 function mediaFail(e) {
   if (e && e.code === 'ERR_MEDIA_QUOTA') return fail('quota');
   if (e && e.code === 'ERR_CONFLICT') return fail('conflict');
@@ -139,6 +155,8 @@ async function commit(ctx, body, opts = {}) {
   if (encrypted) info.mime = 'application/octet-stream';
   // the office's save (office.js): GateControl stored the body as application/octet-stream — the document's type stays
   else if (opts.mime) info.mime = opts.mime;
+  // how long a video runs (since 1.25.0), of its type as GateControl stored it
+  const duration = encrypted ? null : durationArg(b.durationMs, info.mime);
   return store.tx(ctx.gc, async () => {
     const { node: parent, area } = await nodes.folderFor(ctx, Number(b.parentId));
     const enc = await vaults.forNewNode(ctx, parent, b, { needName: false });
@@ -163,9 +181,9 @@ async function commit(ctx, body, opts = {}) {
         }
       }
       await store.run(ctx.gc, `UPDATE nodes SET media_id = ?, size = ?, sha256 = ?, mime = ?, mtime = ?, rev = rev + 1, updated_at = ?, updated_by = ?, entropy = ?,
-        taken_at = COALESCE(?, taken_at), content_at = ?, key_version = COALESCE(?, key_version), name_cipher = COALESCE(?, name_cipher) WHERE id = ?`,
+        taken_at = COALESCE(?, taken_at), content_at = ?, key_version = COALESCE(?, key_version), name_cipher = COALESCE(?, name_cipher), duration_ms = ? WHERE id = ?`,
       [info.mediaId, info.bytes, info.sha256 || null, (empty ? info.mime || existing.mime : info.mime) || null, mtime, ctx.now, ctx.viewer, entropy,
-        taken, ctx.now, enc ? enc.keyVersion : null, enc ? enc.nameCipher : null, existing.id]);
+        taken, ctx.now, enc ? enc.keyVersion : null, enc ? enc.nameCipher : null, duration, existing.id]);
       await nodes.log(ctx.gc, area.id, existing.id, 'update', ctx);
       await guard.note(ctx, { op: 'overwrite', node: existing, name, versionId, entropy, entropyBefore: existing.entropy });
       // new content: a mark of the file ("deleted on the device") ends, and those of the folders above it
@@ -183,9 +201,9 @@ async function commit(ctx, body, opts = {}) {
     }
     await nodes.unmarkUp(ctx.gc, parent.id, ctx);
     const r = await store.run(ctx.gc, `INSERT INTO nodes (area_id, parent_id, name, is_dir, media_id, size, sha256, mime, mtime, created_at, created_by, updated_at, updated_by, entropy, taken_at, content_at,
-        vault_id, name_cipher, key_version)
-      VALUES (?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [area.id, parent.id, name, info.mediaId, info.bytes, info.sha256 || null, info.mime || null, mtime, ctx.now, ctx.viewer, ctx.now, ctx.viewer, entropy, taken, ctx.now,
-      enc ? enc.vaultId : null, enc ? enc.nameCipher : null, enc ? enc.keyVersion : null]);
+        vault_id, name_cipher, key_version, duration_ms)
+      VALUES (?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [area.id, parent.id, name, info.mediaId, info.bytes, info.sha256 || null, info.mime || null, mtime, ctx.now, ctx.viewer, ctx.now, ctx.viewer, entropy, taken, ctx.now,
+      enc ? enc.vaultId : null, enc ? enc.nameCipher : null, enc ? enc.keyVersion : null, duration]);
     await nodes.log(ctx.gc, area.id, r.lastInsertRowid, 'create', ctx);
     await guard.note(ctx, { op: 'create', node: await nodes.row(ctx.gc, r.lastInsertRowid), name, entropy });
     await setText(ctx, r.lastInsertRowid, text);
