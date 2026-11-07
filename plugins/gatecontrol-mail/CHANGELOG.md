@@ -2,6 +2,18 @@
 
 Alle E-Mail-Konten an einem Ort – im eigenen Tab der GateControl-Apps und im Portal.
 
+## 1.10.0
+
+- **Arbeitszeit im Portal.** Kalender › Kalender-Einstellungen hat jetzt „Arbeitszeit“: die Arbeitstage (Mo–So) und
+  „Von“/„Bis“ (Standard Mo–Fr 8–18 Uhr). „Frei/Gebucht“ zeigt diese Zeit, und „Vorschläge, bei denen alle können“ kommen
+  nur aus ihr. Gespeichert wird `CalPrefs.workHours` über das bekannte `PUT calendar/settings { workHours }` (seit
+  1.9.0); ohne Tag oder mit „Bis“ vor „Von“ geht nichts hinaus, der Dialog nennt den Grund. 00:00 als „Bis“ heißt
+  Mitternacht (24:00). Nur mit dem Feature `freeBusy`. Bisher ließ sich die Arbeitszeit nur über die Schnittstelle
+  ändern; die Apps (Android, Windows) bekommen dieselbe Einstellung in ihren Mail-Einstellungen.
+- Handbuch: „Arbeitszeit“, Termine in geteilten Kalendern mit „Bearbeiten“ und der Schalter „Auch per E-Mail“ für
+  Buchungsanfragen und -antworten (Portal und Apps).
+- Keine Migration, keine neue Berechtigung. Mindestversion bleibt GateControl 1.219.0.
+
 ## 1.9.1
 
 - Handbuch im Reiter „Handbuch“ (GateControl ≥ 1.241.0): `HANDBUCH.md` / `HANDBOOK.md` im Paket, in `plugin.json` unter `handbook`. Ältere GateControl-Versionen ignorieren es; die Mindestversion bleibt `>=1.219.0`.

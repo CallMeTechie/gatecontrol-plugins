@@ -1,4 +1,4 @@
-<!-- version: 1.9.1 -->
+<!-- version: 1.10.0 -->
 # Mail
 
 ## Was das Plugin kann
@@ -60,13 +60,16 @@ Die Zugangsdaten werden verschlüsselt gespeichert. Die erste Synchronisierung h
 
 - **Kalender:** Tag, Woche, Monat, Liste; Termine anlegen, ändern, löschen; Einladungen beantworten (die Karte in der Mail). Erinnerungen kommen als Push.
 - **Frei/Gebucht:** Im Termin zeigt Mail je Person und Ressource frei oder gebucht – nie Titel – und **„Vorschläge, bei denen alle können“** in deiner Arbeitszeit.
-- **Teilen:** im Menü eines eigenen Kalenders „Teilen“ mit Personen oder Gruppen – Frei/Gebucht, Lesen oder Bearbeiten. Mit dir Geteiltes steht unter „Mit mir geteilt“.
+- **Arbeitszeit:** im Portal unter Kalender › Kalender-Einstellungen, in den Apps unter Mail › Einstellungen › Kalender – die Arbeitstage und „Von“/„Bis“ (Standard Mo–Fr 8–18 Uhr). Vorschläge kommen nur aus dieser Zeit.
+- **Teilen:** im Menü eines eigenen Kalenders „Teilen“ mit Personen oder Gruppen – Frei/Gebucht, Lesen oder Bearbeiten. Mit dir Geteiltes steht unter „Mit mir geteilt“. Ist ein Kalender mit dir auf „Bearbeiten“ geteilt, kannst du dort auch neue Termine anlegen (ohne Teilnehmer).
 - **Ressource buchen** im Kalender oder „Ressource hinzufügen“ im Termin. Mit Freigabe geht eine Anfrage an die Freigebenden; sie sehen sie unter „Anfragen“.
 - **Kontakte:** Suche, Gruppen, Dubletten zusammenführen, vCard-Import und -Export, „Als Kontakt speichern“ aus einer Mail.
 
 ### Mitteilungen
 
 Neue Mail, Mail nicht gesendet, Termin-Erinnerung, Einladung, geteilter Kalender, Buchungsanfrage, Zusage oder Absage einer Buchung. Jede Person schaltet die Themen in den Mitteilungs-Einstellungen von GateControl ab.
+
+Buchungsanfragen sowie Zusagen und Absagen kommen ab GateControl 1.225.0 auch per E-Mail an die Adresse deines GateControl-Kontos. Abschalten kannst du das je Thema mit **„Auch per E-Mail“**: im Portal unter Benachrichtigungen und in den Apps unter Einstellungen › Benachrichtigungen.
 
 ## Berechtigungen
 
@@ -95,8 +98,8 @@ Liegen die Anhänge auf einem Speicherziel, das nicht erreichbar ist, versucht M
 **Frei/Gebucht zeigt „unbekannt“.**
 Die Person hat Frei/Gebucht abgeschaltet oder ist nicht in GateControl. Kolleginnen in Microsoft 365 erscheinen über dein Microsoft-Konto.
 
-## Neu in 1.9.1
+## Neu in 1.10.0
 
-- Dieses Handbuch im Reiter „Handbuch“ (GateControl ≥ 1.241.0).
+- **Arbeitszeit** im Portal einstellen (Kalender-Einstellungen): Tage und „Von“/„Bis“ für Frei/Gebucht und die Terminvorschläge.
 
-Zuletzt in 1.9.0: Frei/Gebucht mit Terminvorschlägen, geteilte GateControl-Kalender und buchbare Ressourcen (Räume, Fahrzeuge, Geräte).
+Zuletzt in 1.9.1: dieses Handbuch im Reiter „Handbuch“ (GateControl ≥ 1.241.0). In 1.9.0: Frei/Gebucht mit Terminvorschlägen, geteilte GateControl-Kalender und buchbare Ressourcen (Räume, Fahrzeuge, Geräte).

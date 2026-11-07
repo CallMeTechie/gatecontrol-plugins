@@ -396,8 +396,23 @@
     return { from: from, to: to };
   }
 
+  /**
+   * The working hours as `PUT calendar/settings { workHours }` takes them (1.9.0): days 1 = Monday … 7 = Sunday, at
+   * least one, sorted without doubles; 'HH:MM' from before to — an end of 00:00 (a time field cannot say 24:00) is the
+   * end of the day → { days, from, to } or null.
+   */
+  function workHours(days, from, to) {
+    var HM = /^([01]\d|2[0-3]):[0-5]\d$/;
+    var d = [];
+    (days || []).forEach(function (x) { if (typeof x === 'number' && x % 1 === 0 && x >= 1 && x <= 7 && d.indexOf(x) < 0) d.push(x); });
+    d.sort(function (a, b) { return a - b; });
+    var end = to === '00:00' ? '24:00' : to;
+    if (!d.length || !HM.test(from || '') || !(HM.test(end || '') || end === '24:00') || from >= end) return null;
+    return { days: d, from: from, to: end };
+  }
+
   var api = {
-    DAY: DAY, digits: digits, barOf: barOf, clashes: clashes, dayWindow: dayWindow, WEEKDAYS: WEEKDAYS, ymd: ymd, dateOf: dateOf, midnight: midnight, addDays: addDays, addMonths: addMonths, weekday: weekday, weekStartOf: weekStartOf,
+    DAY: DAY, digits: digits, barOf: barOf, clashes: clashes, dayWindow: dayWindow, workHours: workHours, WEEKDAYS: WEEKDAYS, ymd: ymd, dateOf: dateOf, midnight: midnight, addDays: addDays, addMonths: addMonths, weekday: weekday, weekStartOf: weekStartOf,
     hhmm: hhmm, at: at, rangeOf: rangeOf, onDay: onDay, wholeDay: wholeDay, layoutDay: layoutDay, allDayOn: allDayOn, agenda: agenda,
     reminderText: reminderText, recurrenceText: recurrenceText, birthdayText: birthdayText, countOf: countOf,
     repeatOf: repeatOf, nthOf: nthOf, recurrenceOf: recurrenceOf, eventFields: eventFields, shiftSeries: shiftSeries, calendarGroups: calendarGroups, letters: letters, addressesOf: addressesOf,

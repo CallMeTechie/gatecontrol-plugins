@@ -1,4 +1,4 @@
-<!-- version: 1.9.1 -->
+<!-- version: 1.10.0 -->
 # Mail
 
 ## What the plugin does
@@ -60,13 +60,16 @@ Credentials are stored encrypted. The first sync fetches the newest mail first.
 
 - **Calendar:** day, week, month, list; create, change, delete events; answer invitations (the card in the mail). Reminders arrive as push.
 - **Free/busy:** in an event Mail shows per person and resource free or busy – never titles – and **suggestions when everyone can** within your working hours.
-- **Sharing:** in an own calendar's menu “Share” with people or groups – free/busy, read or edit. What is shared with you is under “Shared with me”.
+- **Working hours:** in the portal under Calendar › Calendar settings, in the apps under Mail › Settings › Calendar – the working days and “From”/“To” (default Mon–Fri 8–18). Suggestions only come from this time.
+- **Sharing:** in an own calendar's menu “Share” with people or groups – free/busy, read or edit. What is shared with you is under “Shared with me”. When a calendar is shared with you at “Edit”, you can also create new events in it (without attendees).
 - **Book a resource** in the calendar or “Add resource” in an event. With approval a request goes to the approvers; they see it under “Requests”.
 - **Contacts:** search, groups, merging duplicates, vCard import and export, “Save as contact” from a mail.
 
 ### Notifications
 
 New mail, mail not sent, event reminder, invitation, shared calendar, booking request, approval or refusal of a booking. Everyone switches topics off in GateControl's notification settings.
+
+From GateControl 1.225.0, booking requests and the approvals or refusals also come by e-mail to the address of your GateControl account. Switch that off per topic with **“Also by e-mail”**: in the portal under Notifications and in the apps under Settings › Notifications.
 
 ## Permissions
 
@@ -95,8 +98,8 @@ When attachments live on a storage target that is unreachable, Mail tries again 
 **Free/busy shows “unknown”.**
 The person switched free/busy off or is not in GateControl. Colleagues in Microsoft 365 appear through your Microsoft account.
 
-## New in 1.9.1
+## New in 1.10.0
 
-- This manual in the tab “Manual” (GateControl ≥ 1.241.0).
+- Set your **working hours** in the portal (calendar settings): days and “From”/“To” for free/busy and the meeting suggestions.
 
-Last in 1.9.0: free/busy with meeting suggestions, shared GateControl calendars and bookable resources (rooms, vehicles, devices).
+Last in 1.9.1: this manual in the tab “Manual” (GateControl ≥ 1.241.0). In 1.9.0: free/busy with meeting suggestions, shared GateControl calendars and bookable resources (rooms, vehicles, devices).

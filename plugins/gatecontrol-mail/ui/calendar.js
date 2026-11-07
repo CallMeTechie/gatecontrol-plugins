@@ -496,14 +496,40 @@
       var writable = C.calendars.filter(function (c) { return c.writable; });
       var def = sel(p.defaultCalendarId, writable.map(function (c) { return [c.id, calName(c)]; }));
       var err = h('p', { class: 'dp-err', attrs: { role: 'alert' } });
+      // since 1.10.0: the working hours (1.9.0, CalPrefs.workHours) — the window of „Frei/Gebucht“ and of the suggestions
+      var wh0 = p.workHours || { days: [1, 2, 3, 4, 5], from: '08:00', to: '18:00' };
+      var whDays = wh0.days.slice();
+      var whChips = h('div', { class: 'dp-chips', attrs: { role: 'group', 'aria-label': T('p.c.work_days') } });
+      var drawWh = function () {
+        clear(whChips);
+        ['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU'].forEach(function (d, i) {
+          var n = i + 1;
+          whChips.appendChild(h('button', { type: 'button', attrs: { 'aria-pressed': whDays.indexOf(n) >= 0 ? 'true' : 'false', 'data-day': String(n) }, on: { click: function () {
+            var k = whDays.indexOf(n); if (k >= 0) whDays.splice(k, 1); else whDays.push(n); drawWh();
+          } } }, T('p.c.wd_' + d)));
+        });
+      };
+      drawWh();
+      var whFrom = h('input', { class: 'dp-input', type: 'time', value: wh0.from, attrs: { 'aria-label': T('p.c.work_from') } });
+      var whTo = h('input', { class: 'dp-input', type: 'time', value: wh0.to === '24:00' ? '00:00' : wh0.to, attrs: { 'aria-label': T('p.c.work_to') } });
+      var whBox = ui.has('freeBusy') ? h('div', { class: 'mp-col' }, [
+        h('span', { class: 'mp-sub', text: T('p.c.work_hours') }), whChips,
+        h('div', { class: 'mc-dt' }, [h('span', { class: 'mp-sub', text: T('p.c.work_from') }), whFrom, h('span', { class: 'mp-sub', text: T('p.c.work_to') }), whTo]),
+        h('p', { class: 'dp-hint', text: T('p.c.work_hint') }),
+      ]) : null;
       var go = function () {
         var b = { weekStart: Number(weekStart.value), reminders: reminders.checked, defaultReminder: rem.value === '' ? null : Number(rem.value) };
         if (def.value) b.defaultCalendarId = Number(def.value);
+        if (whBox) {
+          var wh = L.workHours(whDays, whFrom.value, whTo.value);
+          if (!wh) { err.textContent = T(whDays.length ? 'p.c.work_bad' : 'p.c.work_no_day'); return; }
+          b.workHours = wh;
+        }
         api('PUT', 'calendar/settings', b).then(function (r) { C.prefs = r.prefs; ui.closeDialog(); ui.toast(T('p.saved')); renderHead(); fetchRange(); }, function (e) { err.textContent = ui.errText(e); });
       };
       ui.dialog(T('p.c.settings'), [
         ui.field(T('p.c.week_start'), weekStart), ui.field(T('p.c.default_calendar'), def),
-        h('label', { class: 'dp-check' }, [reminders, h('span', { text: T('p.c.reminders_on') })]), ui.field(T('p.c.default_reminder'), rem),
+        h('label', { class: 'dp-check' }, [reminders, h('span', { text: T('p.c.reminders_on') })]), ui.field(T('p.c.default_reminder'), rem), whBox,
         h('p', { class: 'dp-hint', text: T('p.c.zone_note', { zone: p.timeZone || '' }) }), err,
         h('div', { class: 'dp-actions' }, [btn(T('p.cancel'), ui.closeDialog), btn(T('p.save'), go, { primary: true })]),
       ]);

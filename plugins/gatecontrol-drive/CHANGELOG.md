@@ -2,12 +2,25 @@
 
 Dateien der Familie und des Teams auf dem eigenen Speicher – auf diesem Server, einer NAS oder in S3.
 
-## 1.23.1
+## 1.24.1
 
 - **Handbuch: PDFs und Texte in den Apps ansehen.** Die Android- und die Windows-App öffnen PDFs, Texte und Markdown
   normaler Dateien jetzt in ihrer eigenen Ansicht (dieselben Seiten wie die Tresor-Ansicht, der Inhalt wie bei „Öffnen“
   über `GET nodes/<id>/content`), mit „Mit anderer App öffnen“ / „Mit anderem Programm öffnen“ in der Ansicht. Office und
   sehr große Dateien wie bisher in einer anderen App. Nur Doku – am Plugin ändert sich sonst nichts.
+
+## 1.24.0
+
+- **Vorschaubilder im Zwischenspeicher im Heimnetz** (GateControl 1.249.0+): Drive bietet den Heim-Gateways auch
+  GateControls Vorschaubilder an – die kleinen aller Bilder und Videos, die es dort anbietet, und der neuesten 8000 Fotos
+  (Priorität 95), die großen der neuen, geöffneten und offline gehaltenen Bilder (45). Eine Datei ohne Vorschaubild
+  bleibt draußen; ein Vorschaubild, das GateControl erst macht, kommt beim nächsten Lauf. Höchstens 12 000.
+- Die Antworten der Apps tragen zu jedem angebotenen Vorschaubild den Hinweis fürs Heimnetz: `preview.lan` /
+  `preview.largeLan`, in `GET photos` `previewLan` / `largeLan` – ein Aufruf `gc.homeCache.lanHints` je Antwort. Neues
+  Merkmal `homeCachePreviews` in `GET me`: Die Apps schicken dann ihre LAN-Adressen (`X-GC-Local`) auch mit den Listen.
+- `admin/overview` › `homeCache` zählt die Vorschaubilder getrennt (`previews`, `previewBytes`); `files` und `bytes`
+  sind die Dateien allein. Migration 019 (`home_cache.preview`).
+- Ein älteres GateControl: nichts davon (sein `offer` nähme die Datei statt des Vorschaubilds).
 
 ## 1.23.0
 

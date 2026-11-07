@@ -379,3 +379,73 @@ test('at most LIMITS.calls host calls a run: withdrawals first, the highest prio
     } finally { homecache.LIMITS.calls = keep; }
   });
 });
+
+test('previews (1.24.0, GateControl ≥ 1.249.0): small ones of what is offered and of the photo grid, large ones of new photos; their hints in the lists', async () => {
+  const held = new Set();
+  await withHost({ gatecontrol: '1.249.0', homeCache: { held: (s) => held.has(s) } }, async (host, c) => {
+    const a = c.as(ANNA);
+    const mine = await c.area(ANNA, 'mine');
+    const now = c.clock.now();
+    const neu = (await c.put(ANNA, mine.rootId, 'neu.jpg', 'neu-jpeg', { mime: 'image/jpeg', takenAt: now - 10 * DAY })).json.node;
+    const alt = (await c.put(ANNA, mine.rootId, 'alt.jpg', 'alt-jpeg', { mime: 'image/jpeg', takenAt: now - 400 * DAY })).json.node;
+    const clip = (await c.put(ANNA, mine.rootId, 'clip.mp4', 'clip-mp4', { mime: 'video/mp4', takenAt: now - 5 * DAY })).json.node;
+    const brief = (await c.put(ANNA, mine.rootId, 'Brief.txt', 'brief')).json.node;
+    await a('GET', `nodes/${brief.id}/content`);
+    assert.ok((await a('GET', 'me')).json.features.includes('homeCachePreviews'));
+    const pv = (n, size) => sha(`preview:${n.mediaId}:${size}`);
+    const offerOfPreview = (n, size) => host.homeCache.offers.get(pv(n, size)) || null;
+
+    // the first run: the files; the previews are being made (GateControl: ERR_PREVIEW_PENDING) — the video has none
+    const r1 = await run(host, c);
+    assert.ok(r1.pending >= 2, JSON.stringify(r1));
+    assert.ok(offerOf(host, 'neu-jpeg') && offerOf(host, 'brief') && offerOf(host, 'clip-mp4'));
+    assert.equal(calls(host, 'offer').filter((x) => x.args.mediaId === clip.mediaId && x.args.preview).length, 0, 'no call for a video without a preview');
+    // the next run: offered
+    const r2 = await run(host, c);
+    assert.equal(r2.pending || 0, 0, JSON.stringify(r2));
+    assert.equal([...host.homeCache.offers.values()].filter((o) => o.preview).length, 3);
+    assert.deepEqual(offerOfPreview(neu, 'small'), { ...offerOfPreview(neu, 'small'), kind: 'photos', priority: 95, preview: 'small', userIds: [ANNA.id], mediaId: neu.mediaId });
+    assert.deepEqual(offerOfPreview(neu, 'large'), { ...offerOfPreview(neu, 'large'), kind: 'photos', priority: 45, preview: 'large' });
+    // an old photo of the grid: its small preview only (its original is too old for the stock)
+    assert.equal(offerOfPreview(alt, 'small').priority, 95);
+    assert.equal(offerOfPreview(alt, 'large'), null);
+    assert.equal(offerOf(host, 'alt-jpeg'), null);
+    // idempotent
+    const r3 = await run(host, c);
+    assert.deepEqual([r3.offered, r3.withdrawn], [0, 0], JSON.stringify(r3));
+    // the admin overview counts the files and the previews apart
+    const ov = (await c.admin('GET', 'admin/overview')).json.overview.homeCache;
+    assert.deepEqual([ov.files, ov.previews], [3, 3]);
+    assert.equal(ov.previewBytes, [pv(neu, 'small'), pv(neu, 'large'), pv(alt, 'small')].reduce((s, h) => s + host.homeCache.offers.get(h).size, 0));
+
+    // the lists of an app at home: the hints of what the gateway holds, in one host call per answer
+    held.add(pv(neu, 'small')).add(pv(neu, 'large'));
+    const before = calls(host, 'lanHints').length;
+    const list = (await c.home(ANNA)('GET', `nodes/${mine.rootId}/children`)).json.items;
+    assert.equal(calls(host, 'lanHints').length, before + 1);
+    const byName = (n) => list.find((x) => x.name === n);
+    assert.equal(byName('neu.jpg').preview.lan.sha256, pv(neu, 'small'));
+    assert.equal(byName('neu.jpg').preview.largeLan.sha256, pv(neu, 'large'));
+    assert.match(byName('neu.jpg').preview.lan.url, new RegExp(`^https://192\\.168\\.1\\.23:8443/blob/${pv(neu, 'small')}\\?exp=\\d+&sig=[0-9a-f]{64}$`));
+    assert.ok(byName('neu.jpg').preview.url, 'the preview URL stays');
+    assert.equal(byName('alt.jpg').preview.lan, undefined, 'not held yet');
+    assert.equal(byName('Brief.txt').preview, null);
+    // the photo list
+    const photos = (await c.home(ANNA)('GET', 'photos')).json.items;
+    const p = photos.find((x) => x.mediaId === neu.mediaId);
+    assert.equal(p.previewLan.sha256, pv(neu, 'small'));
+    assert.equal(p.largeLan.sha256, pv(neu, 'large'));
+    // away from home, in the portal: none
+    assert.equal((await a('GET', `nodes/${mine.rootId}/children`)).json.items.find((x) => x.name === 'neu.jpg').preview.lan, undefined);
+    assert.equal((await host.request({ method: 'GET', path: `nodes/${mine.rootId}/children`, user: { ...ANNA, portal: true, loggedIn: true }, home: true })).json.items.find((x) => x.name === 'neu.jpg').preview.lan, undefined);
+
+    // the photo goes to the trash: its previews leave the stock with it (withdraw with the size)
+    await a('DELETE', `nodes/${neu.id}`);
+    const r4 = await run(host, c);
+    assert.ok(r4.withdrawn >= 3, JSON.stringify(r4));
+    assert.equal(offerOfPreview(neu, 'small'), null);
+    assert.equal(offerOfPreview(neu, 'large'), null);
+    assert.deepEqual(calls(host, 'withdraw').filter((x) => x.args.mediaId === neu.mediaId).map((x) => x.args.preview || 'file').sort(), ['file', 'large', 'small']);
+    assert.ok(offerOfPreview(alt, 'small'));
+  });
+});

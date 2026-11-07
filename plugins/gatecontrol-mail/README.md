@@ -323,7 +323,7 @@ The compact contract for the app helpers: Phase 3 contract (`mail-phase3-apps-co
 |---|---|
 | `POST freebusy` | `{ from, to (≤ 31 days), attendees: [email] (≤ 50), resources?: [id] }` → `{ from, to, items: [Row] }` — the asker first (`kind: 'self'`) |
 | `POST freebusy/suggest` | `{ duration (5…1440 min), from?, to? (≤ 14 days, default 7), attendees, resources?, limit? (1…10, 4) }` → `{ items: [{ start, end }], unknown: [key], workHours, timeZone }` — slots in the asker's working hours (their zone) where the asker, every known person and resource is free (tentative counts as taken), not overlapping |
-| `PUT calendar/settings` | also `{ freeBusy?: bool, workHours?: { days: [1…7], from: 'HH:MM', to: 'HH:MM' } }` — `CalPrefs` has both (default `true`, Mon–Fri 08:00–18:00) |
+| `PUT calendar/settings` | also `{ freeBusy?: bool, workHours?: { days: [1…7], from: 'HH:MM', to: 'HH:MM' } }` — `CalPrefs` has both (default `true`, Mon–Fri 08:00–18:00); `to` may be `24:00`. Set in the portal's calendar settings (since 1.10.0) and in the apps' Mail settings |
 | `GET calendars` | also `shared: [SharedCalendar]`; `Calendar.sharedBy: { email } \| null` (an account calendar of another Microsoft 365 mailbox) |
 | `GET calendars/<id>/shares` | `{ items: [Share], freeBusy }` — own GateControl calendars only (an account's: 409 `not_supported { what: 'share' }`) |
 | `POST calendars/<id>/shares` | `{ type: 'user' \| 'group', id, level: 'freebusy' \| 'read' \| 'write' }` → `{ share }` (again for the same principal: the new level; ≤ 50; not to oneself) |

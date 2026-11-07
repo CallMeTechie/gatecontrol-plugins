@@ -56,7 +56,9 @@
 //     GET people, GET|PATCH people/<id>, POST people/<id>/merge, GET people/<id>/similar, GET people/<id>/uncertain, POST
 //     people/<id>/confirm, POST faces/<id>/move, person= / unfaced=1 (faces.js) · GET photos/suggest
 //     "Offline verfügbar" and the home cache (1.20.0, homecache.js): GET offline · PUT|DELETE nodes/<id>/offline; with
-//     GateControl ≥ 1.231.0 (gc.homeCache) GET nodes/<id>/content of an app adds `lan` { url, sha256, tlsSha256, exp }
+//     GateControl ≥ 1.231.0 (gc.homeCache) GET nodes/<id>/content of an app adds `lan` { url, sha256, tlsSha256, exp };
+//     GateControl ≥ 1.249.0 (1.24.0) the previews of an app's answer `preview.lan` / `preview.largeLan` (photo items
+//     previewLan / largeLan) — feature homeCachePreviews
 //   admin     admin/… (administrators in the admin UI, admin.js; admin/guard/… the incidents, since 1.6.0)
 // The full contract (bodies, answers, codes, events) is in README.md "API". Every file node of an answer carries
 // `preview` (previews.js, since 1.1.0).
@@ -295,6 +297,9 @@ async function optional(ctx) {
   // GateControl ≥ 1.231.0 with permissions.homeCache (1.20.0): files in the home gateways' caches — content may carry
   // `lan`; an app sends its LAN addresses (header X-GC-Local or ?local=) with GET nodes/<id>/content
   if (homecache.available(ctx.gc)) out.push('homeCache');
+  // GateControl ≥ 1.249.0 (1.24.0): previews in the home caches too — a preview may carry `lan` / `largeLan` (photo items
+  // previewLan / largeLan); an app at home sends its LAN addresses (X-GC-Local) with its lists as well
+  if (homecache.previewsAvailable(ctx.gc)) out.push('homeCachePreviews');
   return out;
 }
 
@@ -745,6 +750,8 @@ module.exports = {
         if (out && out.json && out.json.ok) {
           try { await scan.attach(ctx, previews.nodesOf(out.json)); } catch (e) { gc.log.warn('scan states failed', (e && e.code) || 'error'); }
         }
+        // the hints of the previews for an app at home (since 1.24.0 — homecache.js; after the scan: only shown previews)
+        if (out && out.json && out.json.ok) await homecache.attachLan(ctx, req, out.json, previews.nodesOf(out.json));
         // where a file came from (since 1.15.0: saved from a mail — mail.js)
         if (out && out.json && out.json.ok) {
           try { await mail.attach(ctx, previews.nodesOf(out.json)); } catch (e) { gc.log.warn('sources failed', (e && e.code) || 'error'); }

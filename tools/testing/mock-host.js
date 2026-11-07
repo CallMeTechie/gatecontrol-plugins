@@ -408,6 +408,15 @@
 // 'ERR_RATE_LIMIT'), null lets it through. host.homeCache is the state ({ offers: Map sha256 → { sha256, size, kind,
 // mediaId, userIds, priority, at }, foreign, calls }); host.homeCacheDropStale() drops offers whose media is gone (the
 // host does it hourly) → how many.
+// GateControl 1.249.0 (opt-in: opts.gatecontrol: '1.249.0' or opts.homeCache.previews: true) — previews in the home
+// cache: gc.homeCache.previews === true; offer({ mediaId, preview: 'small'|'large', kind: 'drive'|'photos', userIds?,
+// priority? }) → { sha256, size, offered, preview } — the preview's own bytes (as host.previewGet answers them: the
+// device's picture, else 'preview:<id>:<size>'); media.previews missing → ERR_MEDIA_DENIED, no preview possible →
+// ERR_NOT_FOUND, not made yet → ERR_PREVIEW_PENDING (and made at once, as the host's background queue would), vault or
+// sha256/size → ERR_INVALID. The offer in host.homeCache.offers carries `preview`. withdraw(mediaId, { preview }) only
+// that preview (withdraw(mediaId) only the file); lanHint({ mediaId, preview }, req) the hint of that preview;
+// lanHints([sha256 | { mediaId, preview? }], req) (≤ 500, else ERR_INVALID) → [hint | null] in order, one call. An older
+// host has neither the flag nor lanHints and its offer ignores `preview` (it would offer the file).
 // GateControl 1.231.0 (opt-in: opts.gatecontrol: '1.231.0' or opts.homeInternet) — gc.homeNetwork.internet, "Internet zu
 // Hause" (status / pause / resume / extend, only with permissions.homeInternet): see tools/testing/mock-home-internet.js.
 // GateControl 1.236.0 (opt-in: opts.gatecontrol: '1.236.0' or opts.print) — gc.print, "Drucken & Scannen" (printers and
@@ -3109,12 +3118,62 @@ async function createHost(pluginDir, opts = {}) {
   const hcRefs = new Map(); // req.homeRef → { userId, home } while that request is in flight (plugins/requestRefs.js)
   const needHc = () => { if (perms.homeCache !== true) throw hostError('ERR_HOME_CACHE_DENIED', 'this plugin has no homeCache permission'); };
   const hcShaOf = (id) => { const m = typeof id === 'string' ? mediaStore.get(id) : null; return m ? require('node:crypto').createHash('sha256').update(m.data).digest('hex') : null; };
+  // GateControl ≥ 1.249.0: previews in the home cache
+  const hcPreviews = hcOn && (atLeast(249) || !!(hcOpt && hcOpt.previews === true));
+  const HC_PREVIEWS = ['small', 'large'];
+  /** the bytes of a made preview (what host.previewGet answers), else null */
+  const hcPreviewBytes = (id, size) => {
+    const m = typeof id === 'string' ? mediaStore.get(id) : null;
+    const st = m ? previewState(m) : null;
+    if (!st || !st.ready) return null;
+    return m.preview === 'client' && m.previewData ? m.previewData : Buffer.from(`preview:${id}:${size}`);
+  };
+  const hcPreviewSha = (id, size) => { const b = hcPreviewBytes(id, size); return b ? require('node:crypto').createHash('sha256').update(b).digest('hex') : null; };
+  const hcUsers = (v) => {
+    if (v == null) return null;
+    if (!Array.isArray(v) || v.length > 256 || !v.every((x) => Number.isSafeInteger(x) && x > 0)) throw hostError('ERR_INVALID', 'userIds: up to 256 user ids');
+    return [...new Set(v)].sort((x, y) => x - y);
+  };
+  const hcPrio = (v) => {
+    const prio = v == null ? 50 : v;
+    if (!Number.isInteger(prio) || prio < 0 || prio > 100) throw hostError('ERR_INVALID', 'priority: 0…100');
+    return prio;
+  };
+  function hcOfferPreview(a) {
+    if (!HC_PREVIEWS.includes(a.preview)) throw hostError('ERR_INVALID', 'preview: small or large');
+    if (a.kind !== 'drive' && a.kind !== 'photos') throw hostError('ERR_INVALID', 'kind of a preview: drive or photos');
+    if (a.sha256 != null || a.size != null) throw hostError('ERR_INVALID', 'sha256 / size: not for a preview');
+    if (!media || media.previews !== true || !gc208) throw hostError('ERR_MEDIA_DENIED', 'plugin.json declares no media.previews');
+    const users = hcUsers(a.userIds);
+    const prio = hcPrio(a.priority);
+    const m = mediaStore.get(a.mediaId);
+    if (!m) throw hostError('ERR_NOT_FOUND', 'no such media of this plugin');
+    const st = previewState(m);
+    if (!st) throw hostError('ERR_NOT_FOUND', 'this file has no preview and none is possible');
+    if (!st.ready) { m.preview = 'server'; throw hostError('ERR_PREVIEW_PENDING', 'the preview is being made — offer it again later'); }
+    const buf = hcPreviewBytes(a.mediaId, a.preview);
+    const sha = require('node:crypto').createHash('sha256').update(buf).digest('hex');
+    for (const [k, o] of hc.offers) if (o.preview === a.preview && o.mediaId === a.mediaId && k !== sha) hc.offers.delete(k);
+    if (hc.foreign.has(sha) || (hc.offers.has(sha) && !hc.offers.get(sha).preview)) return { sha256: sha, size: buf.length, offered: false, preview: a.preview };
+    hc.offers.set(sha, { sha256: sha, size: buf.length, kind: a.kind, mediaId: a.mediaId, userIds: users, priority: prio, preview: a.preview, at: Date.now() });
+    return { sha256: sha, size: buf.length, offered: true, preview: a.preview };
+  }
+  /** the hint for blob `sha` of this plugin's offers in request ctx, else null */
+  const hcHint = (ctx, sha) => {
+    const o = typeof sha === 'string' ? hc.offers.get(sha) : null;
+    if (!o || !ctx.home || !hcHeld(sha, o)) return null;
+    if (ctx.userId != null && o.userIds && o.userIds.length && !o.userIds.includes(ctx.userId)) return null;
+    const exp = Math.floor(Date.now() / 1000) + 600;
+    const sig = require('node:crypto').createHmac('sha256', 'mock-home-cache-secret').update(`${sha}\n${exp}`).digest('hex');
+    return { url: `${hcUrl}/blob/${sha}?exp=${exp}&sig=${sig}`, sha256: sha, tlsSha256: hcTls, exp };
+  };
   api['homeCache.offer'] = async (a0) => {
     needHc();
     const a = a0 && typeof a0 === 'object' ? a0 : {};
     hc.calls.push({ op: 'offer', args: { ...a } });
     hcFail('offer', a);
     if (typeof a.mediaId !== 'string') throw hostError('ERR_INVALID', 'mediaId: a media id of this plugin');
+    if (hcPreviews && a.preview != null) return hcOfferPreview(a);
     if (!HC_KINDS.includes(a.kind)) throw hostError('ERR_INVALID', 'kind: drive, photos or vault');
     const m = mediaStore.get(a.mediaId);
     if (!m) throw hostError('ERR_NOT_FOUND', 'no such media of this plugin');
@@ -3132,34 +3191,56 @@ async function createHost(pluginDir, opts = {}) {
     hc.offers.set(sha, { sha256: sha, size: m.bytes, kind: a.kind, mediaId: a.mediaId, userIds: users, priority: prio, at: Date.now() });
     return { sha256: sha, size: m.bytes, offered: true };
   };
-  api['homeCache.withdraw'] = async ({ mediaId }) => {
+  api['homeCache.withdraw'] = async ({ mediaId, preview }) => {
     needHc();
-    hc.calls.push({ op: 'withdraw', args: { mediaId } });
-    hcFail('withdraw', { mediaId });
+    const pv = hcPreviews && preview != null ? preview : null;
+    hc.calls.push({ op: 'withdraw', args: { mediaId, ...(pv ? { preview: pv } : {}) } });
+    hcFail('withdraw', { mediaId, ...(pv ? { preview: pv } : {}) });
     if (typeof mediaId !== 'string') throw hostError('ERR_INVALID', 'mediaId expected');
+    if (pv != null && !HC_PREVIEWS.includes(pv)) throw hostError('ERR_INVALID', 'preview: small or large');
     let removed = false;
-    for (const [sha, o] of hc.offers) if (o.mediaId === mediaId) { hc.offers.delete(sha); removed = true; }
+    for (const [sha, o] of hc.offers) if (o.mediaId === mediaId && (o.preview || null) === pv) { hc.offers.delete(sha); removed = true; }
     return { removed };
   };
-  api['homeCache.lanHint'] = async ({ sha256, mediaId, ref }) => {
-    needHc();
-    hc.calls.push({ op: 'lanHint', args: { sha256, mediaId } });
-    hcFail('lanHint', { sha256, mediaId });
-    const ctx = typeof ref === 'string' ? hcRefs.get(ref) : null;
-    if (!ctx) throw hostError('ERR_NOT_IN_REQUEST', 'lanHint(sha256, req) only while answering that request (req.homeRef)');
-    let sha = typeof sha256 === 'string' ? sha256.toLowerCase() : null;
-    if (!sha && typeof mediaId === 'string') {
-      sha = hcShaOf(mediaId);
+  /** the sha256 a hint is asked for — only of this plugin's offers (else null); bad input throws */
+  const hcHintSha = (w) => {
+    let sha = typeof w.sha256 === 'string' ? w.sha256.toLowerCase() : null;
+    if (!sha && typeof w.mediaId === 'string') {
+      if (hcPreviews && w.preview != null) {
+        if (!HC_PREVIEWS.includes(w.preview)) throw hostError('ERR_INVALID', 'preview: small or large');
+        return hcPreviewSha(w.mediaId, w.preview);
+      }
+      sha = hcShaOf(w.mediaId);
       if (!sha) throw hostError('ERR_NOT_FOUND', 'no such media of this plugin');
     }
     if (typeof sha !== 'string' || !HC_SHA_RE.test(sha)) throw hostError('ERR_INVALID', 'sha256: 64 hex characters');
-    const o = hc.offers.get(sha);
-    if (!o || !ctx.home || !hcHeld(sha, o)) return null;
-    if (ctx.userId != null && o.userIds && o.userIds.length && !o.userIds.includes(ctx.userId)) return null;
-    const exp = Math.floor(Date.now() / 1000) + 600;
-    const sig = require('node:crypto').createHmac('sha256', 'mock-home-cache-secret').update(`${sha}\n${exp}`).digest('hex');
-    return { url: `${hcUrl}/blob/${sha}?exp=${exp}&sig=${sig}`, sha256: sha, tlsSha256: hcTls, exp };
+    return sha;
   };
+  api['homeCache.lanHint'] = async ({ sha256, mediaId, preview, ref }) => {
+    needHc();
+    const w = { sha256, mediaId, ...(hcPreviews && preview != null ? { preview } : {}) };
+    hc.calls.push({ op: 'lanHint', args: { sha256, mediaId, ...(w.preview ? { preview: w.preview } : {}) } });
+    hcFail('lanHint', { sha256, mediaId });
+    const ctx = typeof ref === 'string' ? hcRefs.get(ref) : null;
+    if (!ctx) throw hostError('ERR_NOT_IN_REQUEST', 'lanHint(sha256, req) only while answering that request (req.homeRef)');
+    const sha = hcHintSha(w);
+    return sha ? hcHint(ctx, sha) : null;
+  };
+  if (hcPreviews) {
+    api['homeCache.lanHints'] = async ({ items, ref }) => {
+      needHc();
+      hc.calls.push({ op: 'lanHints', args: { items: Array.isArray(items) ? items.map((x) => (x && typeof x === 'object' ? { ...x } : x)) : items } });
+      hcFail('lanHints', { items });
+      const ctx = typeof ref === 'string' ? hcRefs.get(ref) : null;
+      if (!ctx) throw hostError('ERR_NOT_IN_REQUEST', 'lanHints(…, req) only while answering that request (req.homeRef)');
+      if (!Array.isArray(items) || items.length > 500) throw hostError('ERR_INVALID', 'items: up to 500');
+      return items.map((it) => {
+        let sha = null;
+        try { sha = hcHintSha(typeof it === 'string' ? { sha256: it } : (it && typeof it === 'object' ? it : {})); } catch { sha = null; }
+        return sha ? hcHint(ctx, sha) : null;
+      });
+    };
+  }
   /** the host's hourly dropStaleOffers: offers whose media is gone */
   function hcDropStale() {
     let n = 0;
@@ -3459,11 +3540,21 @@ async function createHost(pluginDir, opts = {}) {
     ...(hcOn ? {
       homeCache: Object.freeze({
         offer: (o) => call('homeCache.offer', o && typeof o === 'object' ? o : {}),
-        withdraw: (mediaId) => call('homeCache.withdraw', { mediaId }),
+        withdraw: hcPreviews
+          ? (mediaId, o) => call('homeCache.withdraw', { mediaId, ...(o && typeof o === 'object' && o.preview != null ? { preview: o.preview } : {}) })
+          : (mediaId) => call('homeCache.withdraw', { mediaId }),
         lanHint: (what, req) => call('homeCache.lanHint', {
-          ...(what && typeof what === 'object' ? { mediaId: what.mediaId } : { sha256: what }),
+          ...(what && typeof what === 'object' ? { mediaId: what.mediaId, ...(hcPreviews && what.preview != null ? { preview: what.preview } : {}) } : { sha256: what }),
           ref: req && typeof req === 'object' && typeof req.homeRef === 'string' ? req.homeRef : null,
         }),
+        // GateControl ≥ 1.249.0: previews in the home cache
+        ...(hcPreviews ? {
+          lanHints: (list, req) => call('homeCache.lanHints', {
+            items: Array.isArray(list) ? list.map((w) => (w && typeof w === 'object' ? { mediaId: w.mediaId, ...(w.preview != null ? { preview: w.preview } : {}) } : { sha256: w })) : list,
+            ref: req && typeof req === 'object' && typeof req.homeRef === 'string' ? req.homeRef : null,
+          }),
+          previews: true,
+        } : {}),
       }),
     } : {}),
     services: Object.freeze({
