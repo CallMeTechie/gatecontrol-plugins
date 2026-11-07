@@ -14,7 +14,10 @@
 //   list()                      the cameras (a copy)
 //   discover({ gatewayId? })    { found } (cameraId set for a host that is already a camera)
 //   test(opts) / add(opts)      private IPv4 only (ERR_CAMERA_NOT_ALLOWED), the gateway enabled (ERR_CAMERA_UNSUPPORTED),
-//                               the password `password` (ERR_CAMERA_AUTH); add stores a camera (never the password)
+//                               the password `password` (ERR_CAMERA_AUTH); add stores a camera (never the password).
+//                               GateControl 1.242.0: `onvifTls` to a host in `tlsHosts` (a self-signed certificate)
+//                               without `tlsInsecure: true` → ERR_CAMERA_TLS; the camera keeps https / tlsInsecure;
+//                               list() carries hasAudio (opts.cameras.hasAudio, default true)
 //   update(id, patch) / remove(id)
 //   snapshot(id)                { data: a small JPEG (base64), mime, at }; snapshotUrl(id) → { url: '/camera-media/snap-<id>/snapshot.jpg' }
 //   live(id, req)               req.homeRef of a request with `vpn: true` → mode 'live', otherwise mode 'snapshot'
@@ -40,6 +43,7 @@ function install({ opts, perms, hostError }) {
   const state = {
     gateways: copy((o && o.gateways) || []), cameras: copy((o && o.cameras) || []), found: copy((o && o.found) || []), events: copy((o && o.events) || []),
     password: (o && o.password) || 'geheim', passwords: new Map(), calls: [], handlers: [], refs: new Map(),
+    tlsHosts: (o && o.tlsHosts) || [], hasAudio: o && o.hasAudio !== undefined ? o.hasAudio : true,
   };
   const need = () => { if (perms.cameras !== true) throw hostError('ERR_CAMERAS_DENIED', 'this plugin has no cameras permission'); };
   const cam = (id) => { const c = state.cameras.find((x) => x.id === id); if (!c) throw hostError('ERR_NOT_FOUND', 'no such camera'); return c; };
@@ -55,7 +59,9 @@ function install({ opts, perms, hostError }) {
     const g = gw(a.gatewayId);
     if (!PRIVATE(hostOf(a))) throw hostError('ERR_CAMERA_NOT_ALLOWED', 'not a private address of the home network');
     if (a.password !== state.password) throw hostError('ERR_CAMERA_AUTH', 'the camera refused the user or password');
-    return { g, result: { ok: true, source: a.rtspUrl ? 'rtsp' : 'onvif', info: { manufacturer: 'Reolink', model: 'E1 Zoom', firmware: 'v3' }, profiles: [], events: { supported: true, kinds: ['person', 'vehicle'] }, codec: 'h264', snapshot: { data: JPEG.toString('base64'), mime: 'image/jpeg' } } };
+    const tls = !a.rtspUrl && (a.onvifTls === true || state.tlsHosts.includes(hostOf(a)));
+    if (tls && state.tlsHosts.includes(hostOf(a)) && a.tlsInsecure !== true) throw hostError('ERR_CAMERA_TLS', 'the certificate of the camera is not trusted');
+    return { g, tls, result: { ok: true, source: a.rtspUrl ? 'rtsp' : 'onvif', tlsInsecure: tls && a.tlsInsecure === true, info: { manufacturer: 'Reolink', model: 'E1 Zoom', firmware: 'v3' }, profiles: [], events: { supported: true, kinds: ['person', 'vehicle'] }, codec: 'h264', snapshot: { data: JPEG.toString('base64'), mime: 'image/jpeg' } } };
   };
   const settings = (s) => ({ record: 'motion', events: ['person', 'vehicle', 'animal'], retentionDays: 14, stream: 'main', audio: false, ...(s || {}) });
   const api = {};
@@ -66,8 +72,9 @@ function install({ opts, perms, hostError }) {
   rec('test', ({ opts: a }) => probe(a || {}).result);
   rec('add', ({ opts: a0 }) => {
     const a = a0 || {};
-    const { g, result } = probe(a);
+    const { g, result, tls } = probe(a);
     const c = {
+      https: tls, tlsInsecure: tls && a.tlsInsecure === true, hasAudio: state.hasAudio,
       id: 'c' + crypto.randomBytes(8).toString('hex').slice(0, 15), gatewayId: g.id, gateway: g.name, name: String(a.name || '').slice(0, 60) || 'Kamera',
       host: hostOf(a), source: result.source, manufacturer: 'Reolink', model: 'E1 Zoom', state: 'ok', online: true, codec: 'h264', width: 2560, height: 1440,
       events: { supported: true, state: 'pullpoint', kinds: ['person', 'vehicle'] }, settings: settings(a.settings), snapshotAt: null, lastEventAt: null,
@@ -81,6 +88,7 @@ function install({ opts, perms, hostError }) {
     const p = patch || {};
     if (p.name !== undefined) c.name = String(p.name);
     if (p.password !== undefined) state.passwords.set(c.id, p.password);
+    if (p.tlsInsecure !== undefined) { if (typeof p.tlsInsecure !== 'boolean') throw hostError('ERR_INVALID', 'tlsInsecure'); c.tlsInsecure = p.tlsInsecure; }
     if (p.settings) {
       if (p.settings.record !== undefined && !['motion', 'away', 'never'].includes(p.settings.record)) throw hostError('ERR_INVALID', 'settings.record');
       c.settings = settings({ ...c.settings, ...p.settings });
@@ -93,7 +101,7 @@ function install({ opts, perms, hostError }) {
   rec('live', ({ id, ref }) => {
     cam(id);
     const r = ref ? state.refs.get(ref) : null;
-    if (r && r.vpn) return { mode: 'live', via: 'vpn', ready: true, hls: `/camera-media/live-${id}/index.m3u8`, mp4: `/camera-media/live-${id}/live.mp4`, snapshot: `/camera-media/live-${id}/snapshot.jpg`, codec: 'avc1.64001f', audio: false, expiresAt: new Date(Date.now() + 600000).toISOString() };
+    if (r && r.vpn) return { mode: 'live', via: 'vpn', ready: true, hls: `/camera-media/live-${id}/index.m3u8`, mp4: `/camera-media/live-${id}/live.mp4`, snapshot: `/camera-media/live-${id}/snapshot.jpg`, codec: 'avc1.64001f', audio: !!(cam(id).settings && cam(id).settings.audio) && cam(id).hasAudio !== false, expiresAt: new Date(Date.now() + 600000).toISOString() };
     return { mode: 'snapshot', snapshot: `/camera-media/snap-${id}/snapshot.jpg`, every: 10, reason: 'vpn_required', via: 'internet' };
   });
   rec('events', ({ opts: q0 }) => {

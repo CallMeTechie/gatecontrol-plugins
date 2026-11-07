@@ -15,6 +15,8 @@
 //   GET  cameras/home/<id>/live          { live: { mode: 'live', hls, mp4, … } in the VPN | { mode: 'snapshot', snapshot, every: 10 } }
 //   GET  cameras/home/<id>/still         { still: { data, mime, at } } (base64 JPEG ≤ 700 KB, "Standbild" to save)
 //   GET  cameras/home/<id>/clips[?day=YYYY-MM-DD]   { day, clips: [{ id, kind, startedAt, ms, thumbUrl, clipUrl }] }
+//   1.7.0: cameras carry width, height, audio, hasAudio, prefs: { push };
+//   PUT  cameras/home/<id>/prefs { push }  { prefs: { push } } — the own push "Personen an der Kamera" of that camera
 //
 // Every answer is { ok: true, … } or { ok: false, code, error[, retryAfter] }.
 // Who sees what: only locks with a right (view / lock / open) and the cameras

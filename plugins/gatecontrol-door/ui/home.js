@@ -21,11 +21,13 @@
   function pill(text, tone) { return el('span', { class: 'dr-pill', 'data-tone': tone || 'neu', text: text }); }
   function kindPill(k) { return pill(T('home.k1.' + k), KTONE[k]); }
 
-  /** The line under a card: model · motion · clips. */
+  /** The line under a card: model · 2560×1440 · mit Ton · motion · clips. */
   function camLine(c) {
     var s = c.settings || {};
     var parts = [];
     if (c.model) parts.push(c.model);
+    if (c.width && c.height) parts.push(T('home.res', { w: c.width, h: c.height }));
+    if (c.audio) parts.push(T('home.with_sound'));
     if (s.record === 'never') parts.push(T('home.motion_never'));
     else if (s.record === 'away') parts.push(T('home.motion_away'));
     else parts.push(T('home.motion', { kinds: (s.events || []).map(function (k) { return T('home.kind.' + k); }).join(', ') || '–' }));
@@ -57,7 +59,7 @@
     var grid = D.clear($('#dr-hc-grid'));
     var cams = A.data.cameras || [];
     cams.forEach(function (c) {
-      var state = !c.online ? (c.state === 'auth_failed' ? pill(T('home.pill_auth'), 'crit') : (c.state === 'starting' ? pill(T('home.pill_starting'), 'neu') : pill(T('home.pill_offline'), 'crit'))) : pill(T('home.pill_live'), 'ok');
+      var state = !c.online ? (c.state === 'auth_failed' ? pill(T('home.pill_auth'), 'crit') : (c.state === 'tls_untrusted' ? pill(T('home.pill_tls'), 'crit') : (c.state === 'starting' ? pill(T('home.pill_starting'), 'neu') : pill(T('home.pill_offline'), 'crit')))) : pill(T('home.pill_live'), 'ok');
       grid.appendChild(el('div', { class: 'dr-hcam', 'data-camera': c.id }, [
         liveShot(c.snapshotUrl, c.name, 10000),
         el('div', { class: 'dr-hcam-head' }, [el('strong', { text: c.name }), pill(T('home.pill_home'), 'info'), state]),
@@ -143,6 +145,12 @@
       body.host = f.host; body.onvifPort = f.port; body.onvifPath = f.path; gw = f.gatewayId || gw;
     }
     body.gatewayId = gw;
+    // 1.7.0: HTTPS — the certificate is checked unless the administrator ticks "Zertifikat nicht prüfen"
+    if (!body.rtspUrl) {
+      if ($('#dr-hc-tls').checked) body.onvifTls = true;
+      if ($('#dr-hc-tlsins').checked) body.tlsInsecure = true;
+    }
+    $('#dr-hc-tlsask').hidden = true;
     var btn = $('#dr-hc-connect');
     btn.disabled = true; btn.textContent = T('home.connecting');
     D.api('POST', 'admin/home/cameras', body).then(function (r) {
@@ -151,7 +159,11 @@
       var u = r.snapshot && D.imgUrl(r.snapshot);
       if (u) D.dialog(el('div', {}, [el('p', { class: 'dr-item-title', text: T('home.test_ok', { name: r.camera.name }) }), el('img', { src: u, alt: r.camera.name })]));
       return load();
-    }).catch(D.warn).then(function () { btn.disabled = false; btn.textContent = T('home.connect'); });
+    }).catch(function (e) {
+      // a self-signed certificate: say what to do next to the box that does it
+      if (e && e.code === 'cam_tls') { $('#dr-hc-tlsask').hidden = false; $('#dr-hc-tlsins').focus(); }
+      D.warn(e);
+    }).then(function () { btn.disabled = false; btn.textContent = T('home.connect'); });
   }
 
   function removeCam(c) {
@@ -177,6 +189,9 @@
     $('#dr-hc-keep').value = String(s.retentionDays || 14);
     $('#dr-hc-push').checked = c.push !== false;
     $('#dr-hc-audio').checked = !!s.audio;
+    // 1.7.0: "Zertifikat nicht prüfen" for cameras with HTTPS (also when the certificate is refused right now)
+    $('#dr-hc-rtls-box').hidden = !(c.https || c.state === 'tls_untrusted');
+    $('#dr-hc-rtls').checked = !!c.tlsInsecure;
     var g = (A.data.gateways || []).filter(function (x) { return x.id === c.gatewayId; })[0];
     var st = g && g.storage;
     D.clear($('#dr-hc-store')).appendChild(el('option', { text: st && st.free != null ? T('home.rec_store_v', { gateway: c.gateway, free: bytes(st.free) }) : T('home.rec_store_unknown', { gateway: c.gateway }) }));
@@ -244,6 +259,7 @@
     $('#dr-hc-keep').addEventListener('change', function (e) { saveRec({ settings: { retentionDays: Number(e.target.value) } }); });
     $('#dr-hc-push').addEventListener('change', function (e) { saveRec({ push: e.target.checked }); });
     $('#dr-hc-audio').addEventListener('change', function (e) { saveRec({ settings: { audio: e.target.checked } }); });
+    $('#dr-hc-rtls').addEventListener('change', function (e) { saveRec({ tlsInsecure: e.target.checked }); });
     load();
     // the picture URLs carry a token of 10 minutes: fresh ones before it runs out
     setInterval(function () { if (!document.hidden) load(); }, 8 * 60000);
@@ -275,7 +291,9 @@
     var cam = ring ? null : P.list.filter(function (c) { return c.id === P.sel; })[0];
     $('#dr-pc-sound').disabled = true;
     $('#dr-pc-still').disabled = !cam;
+    stopPlayer();
     P.video = null;
+    if ($('#dr-pc-mypush')) $('#dr-pc-mypush').hidden = true;
     if (ring) {
       var img = el('img', { alt: ring.name });
       var r = ring.image && D.imgUrl(ring.image);
@@ -285,6 +303,7 @@
       return;
     }
     if (!cam) return;
+    myPush(cam);
     var name = el('span', { class: 'dr-stage-name' });
     var top = el('div', { class: 'dr-stage-top' });
     var box = el('div', { class: 'dr-stage', 'aria-label': T('home.cameras') + ' ' + cam.name }, [top, name]);
@@ -296,10 +315,17 @@
       if (l.mode === 'live') {
         var v = el('video', { autoplay: true, muted: true, playsinline: true, class: 'dr-stage-media' });
         v.muted = true;
-        // Safari, iOS and Android play HLS themselves; other browsers get the same picture as one fMP4 stream
-        v.src = v.canPlayType('application/vnd.apple.mpegurl') ? l.hls : l.mp4;
-        v.addEventListener('error', function () { snapshotMode(box, l.snapshot); });
         box.insertBefore(v, box.firstChild);
+        stopPlayer();
+        if (window.GCCameraPlayer) {
+          // 1.7.0: GateControl's player — HLS where the browser has it (Safari, iOS, Android), else live.mp4
+          // through Media Source Extensions (Firefox, Chrome/Edge on the PC)
+          P.player = window.GCCameraPlayer.play(v, l, { onError: function () { stopPlayer(); snapshotMode(box, l.snapshot); }, onEnded: function () { if (!document.hidden) show(); } });
+        } else {
+          // an older GateControl without the player: Safari, iOS and Android play HLS themselves, others the fMP4 stream
+          v.src = v.canPlayType('application/vnd.apple.mpegurl') ? l.hls : l.mp4;
+          v.addEventListener('error', function () { snapshotMode(box, l.snapshot); });
+        }
         P.video = v;
         top.appendChild(el('span', { class: 'dr-pill', 'data-tone': 'live', text: T('home.live') }));
         top.appendChild(el('span', { class: 'dr-pill', 'data-tone': 'dark', text: l.via === 'lan' ? T('home.via_lan') : T('home.via_vpn') }));
@@ -312,6 +338,26 @@
       }
     }).catch(function (e) { snapshotMode(box, cam.snapshotUrl); D.warn(e); });
     clips(cam);
+  }
+
+  function stopPlayer() { if (P.player) { try { P.player.stop(); } catch (e) { /* gone */ } P.player = null; } }
+
+  /** 1.7.0: the own push "Personen an der Kamera" of the camera shown (PUT cameras/home/<id>/prefs). */
+  function myPush(cam) {
+    var box = $('#dr-pc-mypush');
+    if (!box) return;
+    var on = !(cam.prefs && cam.prefs.push === false);
+    box.hidden = cam.push === false;
+    var input = $('#dr-pc-mypush-in');
+    input.checked = on;
+    input.disabled = !!(D.ME && D.ME.me && D.ME.me.canAct === false);
+    input.onchange = function () {
+      var want = input.checked;
+      D.api('PUT', 'cameras/home/' + encodeURIComponent(cam.id) + '/prefs', { push: want }).then(function (r) {
+        cam.prefs = r.prefs || { push: want };
+        D.toast(T(want ? 'home.my_push_on' : 'home.my_push_off'));
+      }).catch(function (e) { input.checked = !want; D.warn(e); });
+    };
   }
 
   function snapshotMode(box, url) {
@@ -363,6 +409,7 @@
 
   function initPortal(me) {
     if (!$('#dr-pc')) return;
+    D.ME = me || null;
     D.api('GET', 'cameras/home').then(function (r) {
       P.list = r.cameras || [];
       // Ring cameras keep their own card below (pictures from the Ring cloud, as before)

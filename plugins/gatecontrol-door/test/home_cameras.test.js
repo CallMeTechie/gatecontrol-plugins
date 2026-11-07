@@ -8,7 +8,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { withDoor, app, portal, ANNA, LENA, GAST, MIN } = require('./helpers');
+const { withDoor, app, portal, kiosk, ANNA, LENA, GAST, MIN } = require('./helpers');
 
 const GW = { id: 7, name: 'DS918 Gateway', online: true, supported: true, enabled: true, service: 'managed', storage: { free: 1.2e12, total: 4e12 }, hint: null };
 const FOUND = [{ gatewayId: 7, gateway: 'DS918 Gateway', host: '192.168.1.73', port: 8000, path: '/onvif/device_service', manufacturer: 'Reolink', model: 'E1 Zoom', name: 'Reolink E1' }];
@@ -122,4 +122,85 @@ test('the pages: devices with the camera section, portal with the camera view, r
   assert.match(p, /alle 10 Sekunden ein neues Standbild/);
   const en = (await host.render({ page: 'devices', lang: 'en' })).html;
   assert.match(en, /Connect and test/);
+}));
+
+// ─── 1.7.0 ──────────────────────────────────────────────────────────────
+
+test('1.7.0 the camera list: resolution and sound for the apps; no address or certificate choice for people', () => withDoor({ cameras: cams() }, async (host, ctx) => {
+  const { admin, call } = ctx;
+  const id = (await admin('POST', 'home/cameras', { gatewayId: 7, name: 'Einfahrt', host: '192.168.1.73', user: 'admin', password: 'geheim' })).json.camera.id;
+  await admin('PUT', `rights/${GAST.id}`, { homeCameraRights: { [id]: true } });
+  let c = (await call(app(GAST), 'GET', '/cameras/home')).json.cameras[0];
+  assert.deepEqual([c.width, c.height, c.hasAudio, c.audio], [2560, 1440, true, false], 'sound off by default');
+  assert.deepEqual([c.host, c.https, c.tlsInsecure], [undefined, undefined, undefined]);
+  assert.deepEqual(c.prefs, { push: true });
+  await admin('PATCH', 'home/cameras/' + id, { settings: { audio: true } });
+  c = (await call(app(GAST), 'GET', '/cameras/home')).json.cameras[0];
+  assert.equal(c.audio, true);
+  host.cameras.cameras.find((x) => x.id === id).hasAudio = false;
+  c = (await call(app(GAST), 'GET', '/cameras/home')).json.cameras[0];
+  assert.deepEqual([c.audio, c.hasAudio], [false, false], 'sound switched on, but the stream has none: no "Ton"');
+  delete host.cameras.cameras.find((x) => x.id === id).hasAudio;
+  host.cameras.cameras.find((x) => x.id === id).width = 'x';
+  c = (await call(app(GAST), 'GET', '/cameras/home')).json.cameras[0];
+  assert.deepEqual([c.width, c.hasAudio, c.audio], [null, null, true], 'an older GateControl: unknown, the switch decides');
+}));
+
+test('1.7.0 HTTPS cameras: the certificate is checked, "Zertifikat nicht prüfen" only on the administrator\'s choice', () => withDoor({ cameras: { ...cams(), tlsHosts: ['192.168.1.80'] } }, async (host, ctx) => {
+  const { admin } = ctx;
+  const base = { gatewayId: 7, name: 'Hof', host: '192.168.1.80', onvifTls: true, user: 'admin', password: 'geheim' };
+  assert.equal((await admin('POST', 'home/test', base)).json.code, 'cam_tls');
+  const add = host.cameras.calls.filter((x) => x.name === 'test').pop();
+  assert.equal(add.args.opts.tlsInsecure, undefined, 'never on its own');
+  assert.equal((await admin('POST', 'home/cameras', base)).json.code, 'cam_tls');
+  const r = await admin('POST', 'home/cameras', { ...base, tlsInsecure: true });
+  assert.equal(r.status, 200, JSON.stringify(r.json));
+  assert.deepEqual([r.json.camera.https, r.json.camera.tlsInsecure], [true, true]);
+  const u = await admin('PATCH', 'home/cameras/' + r.json.camera.id, { tlsInsecure: false });
+  assert.equal(u.json.camera.tlsInsecure, false);
+  const dev = (await host.render({ page: 'devices' })).html;
+  for (const id of ['dr-hc-tls', 'dr-hc-tlsins', 'dr-hc-tlsask', 'dr-hc-rtls']) assert.match(dev, new RegExp('id="' + id + '"'));
+  assert.match(dev, /Zertifikat nicht prüfen/);
+}));
+
+test('1.7.0 each person switches the push off for a camera; the push carries "Ansehen"', () => withDoor({ cameras: cams() }, async (host, ctx) => {
+  const { admin, call, clock } = ctx;
+  const id = (await admin('POST', 'home/cameras', { gatewayId: 7, name: 'Einfahrt', host: '192.168.1.73', user: 'admin', password: 'geheim' })).json.camera.id;
+  await admin('PUT', `rights/${GAST.id}`, { homeCameraRights: { [id]: true } });
+  await admin('PUT', `rights/${LENA.id}`, { homeCameraRights: { [id]: true } });
+  // only cameras one sees; read-only devices may not; push must be given
+  assert.equal((await call(app(ANNA), 'PUT', '/cameras/home/' + id + '/prefs', { push: false })).json.code, 'not_found');
+  assert.equal((await call(app(GAST), 'PUT', '/cameras/home/' + id + '/prefs', {})).json.code, 'invalid');
+  assert.equal((await call(kiosk(GAST), 'PUT', '/cameras/home/' + id + '/prefs', { push: false })).json.code, 'read_only');
+  const r = await call(app(GAST), 'PUT', '/cameras/home/' + id + '/prefs', { push: false });
+  assert.deepEqual(r.json.prefs, { push: false });
+  assert.deepEqual((await call(app(GAST), 'GET', '/cameras/home')).json.cameras[0].prefs, { push: false });
+  assert.deepEqual((await call(app(LENA), 'GET', '/cameras/home')).json.cameras[0].prefs, { push: true }, 'only for that person');
+
+  host.notifications.length = 0;
+  const ev = { id: 'e0000000000000c1', cameraId: id, camera: 'Einfahrt', gatewayId: 7, kind: 'person', kinds: ['person'], phase: 'start', at: new Date().toISOString(), nobodyHome: false, clip: null };
+  await host.cameraEvent(ev);
+  let pushes = host.notifications.filter((n) => n.topic === 'kamera');
+  assert.equal(pushes.length, 1);
+  assert.deepEqual(pushes[0].users, [LENA.id], 'Gast switched it off');
+  assert.deepEqual(pushes[0].data.door, { type: 'home_camera_event', cameraId: id, eventId: 'e0000000000000c1' });
+  assert.deepEqual(pushes[0].data.actions, [{ id: 'open', type: 'open_app_route', label: 'Ansehen', target: 'plg-gatecontrol-door' }]);
+  // everybody off → no push, and the 5-minute slot is not used up
+  await call(app(LENA), 'PUT', '/cameras/home/' + id + '/prefs', { push: false });
+  clock.add(6 * MIN);
+  await host.cameraEvent({ ...ev, id: 'e0000000000000c2' });
+  assert.equal(host.notifications.filter((n) => n.topic === 'kamera').length, 1);
+  await call(app(GAST), 'PUT', '/cameras/home/' + id + '/prefs', { push: true });
+  await host.cameraEvent({ ...ev, id: 'e0000000000000c3' });
+  pushes = host.notifications.filter((n) => n.topic === 'kamera');
+  assert.deepEqual(pushes.map((p) => p.users), [[LENA.id], [GAST.id]]);
+  // the camera goes (its prefs with it)
+  assert.equal((await admin('DELETE', 'home/cameras/' + id)).status, 200);
+  assert.equal((await call(app(GAST), 'PUT', '/cameras/home/' + id + '/prefs', { push: true })).json.code, 'not_found');
+  // the portal: own push switch and GateControl's player
+  const p = (await host.render({ view: 'portal', page: 'portal' })).html;
+  assert.match(p, /id="dr-pc-mypush-in"/);
+  assert.match(p, /Push bei Personen an mich/);
+  assert.match(p, /<script src="\/plugins\/_shared\/camera-player\/camera-player\.js"><\/script>/);
+  assert.doesNotMatch((await host.render({ page: 'rights' })).html, /camera-player/, 'only where the live picture is');
 }));

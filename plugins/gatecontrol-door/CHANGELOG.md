@@ -8,6 +8,23 @@ bleibt auf dem eigenen Server. Einrichtung, Risiken, Datenschutz und die App-API
 an; das Plugin nutzt die, die auch die Open-Source-Projekte ring-client-api (Homebridge) und
 python-ring-doorbell (Home Assistant) verwenden. Sie kann sich jederzeit ändern oder wegfallen.
 
+## 1.7.0
+Braucht weiterhin **GateControl ≥ 1.169.0**; HTTPS-Kameras, `hasAudio` und der Player für Firefox brauchen **GateControl ≥ 1.242.0** und
+Gateway ≥ 1.29.0 – ältere: alles andere wie bisher (`hasAudio`/`width` dann `null`, Live-Bild wie bisher per `<video src>`).
+- **Kameraliste für Personen und Apps** (`GET cameras/home`): `width`, `height` (Auflösung aus dem Bericht des Gateways, sonst `null`),
+  `audio` (die App bietet „Ton“: Ton eingeschaltet und nicht `hasAudio: false`), `hasAudio` (Tonspur im Stream, `null` unbekannt),
+  `prefs: { push }` (der eigene Push). Adresse und Zertifikats-Wahl sehen nur Administratoren.
+- **Push „Personen an der Kamera“ je Person abschaltbar:** `PUT cameras/home/<id>/prefs { push }` → `{ prefs: { push } }` (nur Kameras,
+  die man sieht; Kiosk/nur ansehen: `read_only`), Migration `007_home_camera_user_prefs.sql`; im Portal-Tab „Push bei Personen an mich“.
+  Wer alle Pushes einer Kamera abgeschaltet hat, verbraucht auch den 5-Minuten-Takt nicht.
+- **Push mit „Ansehen“:** `data.actions = [{ id: 'open', type: 'open_app_route', label: 'Ansehen', target: 'plg-gatecontrol-door' }]` –
+  die Apps öffnen mit `data.door.cameraId` die Kamera (Android: Knopf in der Mitteilung, Windows: Knopf im Toast).
+- **Kameras mit HTTPS:** „HTTPS“ und „Zertifikat nicht prüfen“ beim Hinzufügen (`onvifTls`, `tlsInsecure` in `POST admin/home/test|cameras`)
+  und unter „Aufnahmen“ (`PATCH admin/home/cameras/<id> { tlsInsecure }`); Standard: geprüft. Fehler `cam_tls` mit Hinweis am Haken;
+  Kamera-Pill „Zertifikat“ bei `tls_untrusted`.
+- **Portal:** Live-Bild über den Player von GateControl (`/plugins/_shared/camera-player/camera-player.js`, MSE) – damit in Firefox und
+  Chrome/Edge am PC; ohne ihn wie bisher. Karten zeigen „2560×1440 · mit Ton“.
+
 ## 1.6.1
 
 - Handbuch im Reiter „Handbuch“ (GateControl ≥ 1.241.0): `HANDBUCH.md` / `HANDBOOK.md` im Paket, in `plugin.json` unter `handbook`. Ältere GateControl-Versionen ignorieren es; die Mindestversion bleibt `>=1.169.0`.
