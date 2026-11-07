@@ -1,4 +1,4 @@
-<!-- version: 1.6.1 -->
+<!-- version: 1.7.0 -->
 # Door & Camera
 
 ## What the plugin does
@@ -94,7 +94,7 @@ The live picture and clips come from the new service `kameras` next to the gatew
 3. **Linux/Docker:** in the gateway's folder (usually `/opt/gatecontrol-gateway`) keep a copy of the old file, put the new one there and run `sudo docker compose up -d`.
 4. Check: the Container Manager or `sudo docker compose ps` now also shows the service `kameras` running.
 
-**Clips on a shared folder (optional):** by default the clips go to the Docker volume `cam-recordings`. On a Synology you can put them in a folder of the NAS: create the folder (e.g. `/volume1/kameras` in the File Station), create a file `.env` next to the compose file with the line `GC_CAMERA_DIR=/volume1/kameras` and build the project again.
+**Clips on a shared folder (optional):** by default the clips go to the Docker volume `cam-recordings`. On a Synology you can put them in a folder of the NAS: create the folder (e.g. `/volume1/kameras` in the File Station), then enter it in GateControl under **Gateways** › your gateway › **Features** › row “Cameras” › **“Storage and networks”** › “Folder for clips” (GateControl ≥ 1.242.0), download the compose file as above and build the project again. The row says “Clips in the folder /volume1/kameras”; while the gateway still uses the old storage it says “takes effect with the new compose file”. Older GateControl versions: create a file `.env` next to the compose file with the line `GC_CAMERA_DIR=/volume1/kameras`.
 
 **Raspberry Pi:** the Pi image maintains its compose file itself. The service `kameras` comes with the **new Pi image**; it then starts by itself as soon as you switch cameras on.
 
@@ -112,7 +112,7 @@ The gateway reaches a camera only through ONVIF or RTSP. Many cameras ship with 
 - **Tapo:** in the **Tapo app** › camera › camera settings › **Advanced › Camera account** – create one. You enter this account's user and password in GateControl later – **not** your TP-Link account. The ONVIF port is **2020**.
 - **Other cameras:** look for “ONVIF” or “RTSP” in the camera's manual.
 
-The camera needs a **private IPv4 address** (e.g. 192.168.x.x) in the gateway's home network. Cameras in another network (such as a camera VLAN) are only reached when that network is entered in the gateway's settings. Best give the camera a fixed address in your router.
+The camera needs a **private IPv4 address** (e.g. 192.168.x.x) in the gateway's home network. Cameras in another network (such as a camera VLAN) are only reached when that network is listed in GateControl under **Gateways** › your gateway › **Features** › “Cameras” › **“Storage and networks”** › “More networks for the camera search” (e.g. `192.168.20.0/24`). Best give the camera a fixed address in your router.
 
 ### Step 5: add the camera
 
@@ -120,6 +120,8 @@ The camera needs a **private IPv4 address** (e.g. 192.168.x.x) in the gateway's 
 2. The gateway searches the home network, e.g. “Reolink E1 Zoom · 192.168.1.73 · ONVIF – newly found”. Pick one – or **“Enter the address yourself”** with `rtsp://…` or just the IP address (e.g. `rtsp://192.168.1.80:554/stream1` or `192.168.1.80`).
 3. Enter the **gateway**, a **name** (e.g. “Driveway”), the **camera user** and the **camera password**.
 4. **“Connect and test”.** The camera is only saved once a test picture arrives.
+
+**Cameras with HTTPS** (from 1.7.0, GateControl ≥ 1.242.0, gateway ≥ 1.29.0): when the camera offers ONVIF only encrypted, tick **“HTTPS”** (without it the gateway tries port 443 last as well). The camera's certificate is **always checked**. Most cameras have a self-signed certificate – then you get “The camera's certificate is not trusted”. Only if you trust the camera in your home network, tick **“Do not check the certificate”** and connect again. The connection stays encrypted; you can untick it later under “Recordings”.
 
 The password is stored encrypted in GateControl and only goes to the gateway. At most 16 cameras per gateway.
 
@@ -132,7 +134,8 @@ On **“Devices”** › **“Recordings”**, per camera:
 - **Store on:** the gateway with its free space.
 - **Keep:** 7, 14 (default) or 30 days.
 - **Push with a snapshot for people** – at most once per camera every 5 minutes.
-- **Record sound** (default off). Recording conversations is only allowed with everybody's consent.
+- **Record sound** (default off). Recording conversations is only allowed with everybody's consent. “Sound” in the portal and the app only appears when sound is on and the camera delivers it.
+- **Do not check the certificate** (cameras with HTTPS only).
 
 A clip starts 5 seconds before the motion and ends 10 seconds after it, at most 2 minutes. With less than 1 GB free the gateway records nothing new.
 
@@ -169,7 +172,9 @@ The app also offers quick actions and a widget for your locks and the Ring mode.
 ### Cameras in the portal
 
 - Every home camera you may see, with a snapshot.
-- **Live picture** (“● LIVE · HD · over VPN”) only when the phone or PC is in the **VPN** (or in the same network as the server). Without the VPN the app shows a new snapshot every 10 seconds.
+- **Live picture** (“● LIVE · HD · over VPN”) only when the phone or PC is in the **VPN** (or in the same network as the server). Without the VPN the app shows a new snapshot every 10 seconds. From 1.7.0 (GateControl ≥ 1.242.0) the live picture also plays in **Firefox** and in Chrome/Edge on the PC (through GateControl's player).
+- Resolution (e.g. 2560×1440) and “with sound” under each camera.
+- **“Push for people to me”** per camera: switches the push “People at the camera” off or on for you only (from 1.7.0, also in the apps).
 - **“Snapshot”** (save), **“Full screen”**, **“Sound”**.
 - **“Clips today”** with thumbnails and the **“Last notification”**.
 - Ring cameras show the last picture from the Ring cloud.
@@ -180,7 +185,7 @@ The app also offers quick actions and a widget for your locks and the Ring mode.
 |---|---|
 | Doorbell | it rings – with a picture, with “Open door” for people who may also open |
 | Camera motion (default off) | Ring reports motion, at most every few minutes per camera |
-| People at the camera (home network) | a home camera detects a person – with a snapshot, “Nobody is at home” when nobody is |
+| People at the camera (home network) | a home camera detects a person – with a snapshot, “Nobody is at home” when nobody is, and the button **“View”** (opens the camera in the app). Can be switched off for you per camera |
 | Door & lock | open too long, jammed, unreachable, battery critical, night check |
 | Automatic unlock | unlocked, refused, locked again, question |
 
@@ -224,8 +229,22 @@ The gateway still has the old compose file – see [step 2](#kameras-compose).
 **I see no live video, only a picture every 10 seconds.**
 Live video is only available in the VPN or in the server's home network. Switch the VPN on in the GateControl app. Some browsers cannot play H.265 cameras (Safari and iOS can) – then set the camera to H.264 in its own settings.
 
+**“The camera's certificate is not trusted.”**
+The camera speaks HTTPS with a self-signed certificate. If you trust it, tick “Do not check the certificate” when adding it (or under “Recordings”).
+
+**The live picture stays black in Firefox.**
+Firefox plays the live picture from GateControl 1.242.0 through the built-in player. Firefox cannot play H.265 cameras – set the camera to H.264 (sub stream).
+
 **No clips are recorded.**
 Check the mode under “Recordings”. With “only when nobody is at home” the Family presence must be known. With less than 1 GB free the gateway records nothing.
+
+## New in 1.7.0
+
+- **Push “People at the camera” with “View”** – opens exactly this camera in the app. Everybody can switch the push off per camera **for themselves** (“Push for people to me” in the portal and the apps).
+- **Resolution and sound** in the camera list (e.g. “2560×1440 · with sound”); “Sound” only when the camera delivers it.
+- **Cameras with HTTPS:** “HTTPS” and “Do not check the certificate” when adding and under “Recordings”. Default: the certificate is checked (GateControl ≥ 1.242.0, gateway ≥ 1.29.0).
+- **Live picture in Firefox** and in Chrome/Edge on the PC through GateControl's player (≥ 1.242.0).
+- The clip folder and further networks are now set in GateControl (gateway › Features › Cameras › “Storage and networks”).
 
 ## New in 1.6.1
 

@@ -43,6 +43,7 @@ const STATUS = {
   cam_limit: 409,
   cam_not_ready: 409,
   cam_service: 409,
+  cam_tls: 409,
   internal: 500,
 };
 
