@@ -1,4 +1,4 @@
-<!-- version: 1.21.0 -->
+<!-- version: 1.22.0 -->
 # Drive
 
 ## Was das Plugin kann
@@ -40,10 +40,21 @@ Drive ist ein eigenes Abo (Familie, Business oder Kombi, fünf Personen inklusiv
 - **Geräte:** deine Geräte mit ihren gesicherten Ordnern und der letzten Sicherung.
 - **Bilder und Videos ansehen:** Ein Klick auf ein Bild oder Video – in „Dateien“, in der Suche und in „Fotos“ – öffnet es groß, ohne es erst herunterzuladen. Mit den Pfeilen, den Pfeiltasten oder einem Wisch geht es zum nächsten Bild oder Video im selben Ordner. Bilder vergrößerst du mit dem Mausrad, „+“/„−“, einem Doppelklick oder zwei Fingern. Videos laufen direkt in Drive (Abspielen, Pause, Spulen, Ton, Vollbild); Drive merkt sich, wo du aufgehört hast, solange der Tab offen ist. Oben: Herunterladen, Teilen, Details und das Menü der Datei.
 - **Fotos:** Zeitleiste nach Monat, „Nur Kamera-Uploads“, Alben, „Im Fotorahmen zeigen“, Suche nach Personen, Orten und Inhalt, Karte, „Wer ist das?“. Gesichter werden nur auf den Geräten erkannt; Drive speichert keine Gesichtsbilder.
-- **Tresor-Ordner:** „Neu“ › „Neuer Tresor“, wer ihn öffnen darf (nur ich, Familie, Team-Ordner). Den Wiederherstellungsschlüssel sicher aufbewahren. Ein neues Gerät fragt mit „Freigabe anfragen“, ein schon freigegebenes gibt frei. Tresore sperren sich nach einigen Minuten ohne Eingabe; die KI liest sie nie.
+- **Tresor-Ordner:** „Neu“ › „Neuer Tresor“, wer ihn öffnen darf (nur ich, Familie, Team-Ordner). Den Wiederherstellungsschlüssel sicher aufbewahren. Ein neues Gerät fragt mit „Freigabe anfragen“, ein schon freigegebenes gibt frei. Tresore sperren sich nach einigen Minuten ohne Eingabe; die KI liest sie nie. Ein Tipp auf eine Datei öffnet sie in der Tresor-Ansicht (Bilder, PDFs, Texte, in den Apps auch Videos) – siehe unten.
 - **KI für Dokumente:** „Dokument-Infos“ an einer Datei, „Fragen“ unter der Suche, die Seite „Fristen“ mit „In den Familienkalender“ und „Erinnern“, „In Dokument umwandeln“ für Scans.
 - **Importieren** aus Google Drive und OneDrive: verbinden, auswählen, Ziel wählen.
 - **Im Browser bearbeiten** für Office-Dokumente, wenn ein Office-Server eingetragen ist.
+
+### Dateien im Tresor ansehen – warum das sicher bleibt
+
+Ein Tresor-Ordner bleibt Ende-zu-Ende verschlüsselt, auch wenn du dir eine Datei darin ansiehst:
+
+- **Nur im Speicher:** Die Datei wird erst auf deinem Gerät entschlüsselt und nur im Arbeitsspeicher gezeigt – im Portal im Browser-Tab, in den Apps in der App. Es entsteht keine unverschlüsselte Datei auf der Festplatte, im Cache, in der Galerie oder als Vorschaubild. Videos laden die Apps verschlüsselt und entschlüsseln beim Abspielen immer nur das Stück, das gerade läuft.
+- **Kein Umweg über andere Programme:** Die Ansicht gibt nichts an andere Apps oder Programme weiter. Nur „Herunterladen“ (Portal) und „Mit anderer App öffnen“ (Apps) holen die Datei bewusst aus dem Tresor – und fragen vorher, weil die andere App sie unverschlüsselt bekommt.
+- **Sperren schließt die Ansicht:** Sperrt sich der Tresor (nach der eingestellten Zeit ohne Eingabe, beim Verlassen von Tab oder App, von Hand), schließt die Ansicht sofort und das Entschlüsselte wird gelöscht. Beim Ansehen zählt Blättern, Zoomen und ein laufendes Video als Nutzung.
+- **Keine Bildschirmfotos:** In der Android-App und unter Windows lässt sich die Ansicht nicht abfotografieren und erscheint nicht in der Liste der letzten Apps.
+- **Der Server sieht nichts Neues:** Er liefert nur verschlüsselte Daten und das Programm der Ansicht. Administratoren können Tresore weiterhin nicht öffnen.
+- **Grenzen:** Sehr große Dateien, Office-Dateien und im Browser auch Videos zeigt die Ansicht nicht an – du bekommst einen Hinweis und kannst die Datei bewusst herunterladen oder in der App ansehen.
 
 ## Berechtigungen
 
@@ -74,6 +85,9 @@ Unter Einstellungen ist keine Adresse eines Office-Servers eingetragen.
 **Ein Tresor lässt sich auf einem neuen Gerät nicht öffnen.**
 Frage mit „Freigabe anfragen“ an und gib auf einem schon freigegebenen Gerät frei – oder öffne ihn mit dem Wiederherstellungsschlüssel.
 
+**Ein Video aus dem Tresor spielt im Browser nicht.**
+Der Portal-Tab darf Videos nicht aus dem Speicher abspielen, und eine entschlüsselte Kopie auf der Festplatte wäre nicht mehr geschützt. Sieh dir das Video in der Android- oder Windows-App an oder lade es bewusst herunter.
+
 **Dateien sind „vom Virenscan zurückgehalten“.**
 Der Virenscan von GateControl prüft neue Dateien; gesperrte Dateien öffnet und teilt Drive nicht. Auch die Bild- und Videoansicht zeigt dann nur den Grund. Eine als Schadsoftware markierte Datei zeigt sie erst nach „Trotzdem ansehen“.
 
@@ -81,12 +95,11 @@ Der Virenscan von GateControl prüft neue Dateien; gesperrte Dateien öffnet und
 Manche Videos kann der Browser nicht abspielen, oft MKV oder HEVC (H.265, z. B. von neueren iPhones). Drive sagt das und bietet „Herunterladen“ an. In den GateControl-Apps laufen die meisten davon. Hörst du nur den Ton, kann der Browser das Bild nicht entschlüsseln.
 
 **„Vollbild“ fehlt im Portal.**
-Vollbild im Portal gibt es ab der GateControl-Version nach 1.241.1. Ältere Versionen zeigen das Video im Drive-Fenster.
+Vollbild im Portal gibt es ab GateControl 1.244.0. Ältere Versionen zeigen das Video im Drive-Fenster.
 
-## Neu in 1.21.0
+## Neu in 1.22.0
 
-- **Bilder auch in „Dateien“ groß ansehen:** Ein Klick auf ein Bild öffnet die Bildansicht statt eines Downloads – mit Vor und Zurück durch die Bilder und Videos des Ordners, Zoom, Herunterladen, Teilen und Details. Dieselbe Ansicht hat jetzt auch „Fotos“.
-- **Videos direkt in Drive abspielen:** MP4, WebM, MOV und M4V laufen im Browser, ohne sie erst ganz herunterzuladen (GateControl liefert nur die Teile, die gerade laufen). Spulen, Ton und Vollbild; die Stelle bleibt, solange der Tab offen ist. Videos, die der Browser nicht kann (oft MKV oder HEVC), sagen das und bieten „Herunterladen“ an.
-- Der Virenscan gilt auch hier: Gesperrte Dateien zeigt die Ansicht nicht, markierte erst nach Nachfrage.
+- **Tresor-Dateien ansehen:** Bilder, PDFs, Texte und Markdown öffnen im Portal mit einem Klick in einer eigenen Ansicht – entschlüsselt nur im Speicher des Browser-Tabs. Videos spielen die Apps ab.
+- In der Ansicht: zoomen, „Tresore jetzt sperren“ und „Herunterladen“ (fragt vorher, weil die Kopie nicht verschlüsselt ist).
 
-Zuletzt in 1.20.1: dieses Handbuch im Reiter „Handbuch“; in 1.20.0 der Zwischenspeicher im Heimnetz.
+Zuletzt in 1.21.0: Bilder und Videos in „Dateien“ groß ansehen, Videos direkt im Browser abspielen; in 1.20.1 dieses Handbuch im Reiter „Handbuch“.

@@ -1,0 +1,32 @@
+/* Drive — the viewer of vault files in the portal (ui/vaultview.js, 1.22.0): the look of portal.css's dialog, a larger box.
+ * Not part of the page: GET viewer/vaultview hands it over with the script when a vault file is first opened. */
+.dp-vv-back{z-index:40;padding:24px 16px}
+.dp-dialog.dp-vv{max-width:1100px}
+.dp-vv-head{display:flex;align-items:flex-start;gap:12px;flex-wrap:wrap}
+.dp-vv-title{flex:1 1 220px;min-width:0;display:flex;flex-direction:column;gap:12px}
+.dp-vv-title h3{overflow-wrap:anywhere}
+.dp-vv-tools{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.dp-vv-zoom{font-size:12.5px;color:var(--muted);min-width:56px;text-align:center}
+.dp-vv-body{display:flex;flex-direction:column;gap:12px;min-height:120px}
+.dp-vv-stage{min-height:260px}
+.dp-vv-stage.is-zoomed{display:block;overflow:auto;max-height:75vh;text-align:center}
+.dp-vv-canvas{display:block;max-width:100%;max-height:70vh;margin:0 auto;user-select:none;-webkit-user-select:none}
+.dp-vv-pages{display:flex;flex-direction:column;align-items:center;gap:12px;background:var(--surface-2);border-radius:12px;padding:12px;overflow:auto}
+.dp-vv-slot{width:100%;display:flex;justify-content:center}
+.dp-vv-page{display:block;max-width:100%;height:auto;background:#fff;box-shadow:0 2px 12px rgba(0,0,0,.25);border-radius:4px}
+.dp-vv-text,.dp-vv-code{margin:0;padding:14px 16px;background:var(--surface-2);border-radius:12px;font:13px/1.55 var(--mono);white-space:pre-wrap;overflow-wrap:anywhere;max-height:72vh;overflow:auto;user-select:text}
+.dp-vv-md{padding:4px 18px 14px;background:var(--surface-2);border-radius:12px;max-height:72vh;overflow:auto;overflow-wrap:anywhere;line-height:1.6}
+.dp-vv-md h2,.dp-vv-md h3,.dp-vv-md h4,.dp-vv-md h5,.dp-vv-md h6,.dp-vv-md h7{margin:16px 0 6px}
+.dp-vv-md code{font:12.5px var(--mono);background:var(--surface);padding:1px 5px;border-radius:5px}
+.dp-vv-md .dp-vv-code{max-height:none;background:var(--surface)}
+.dp-vv-md blockquote{margin:8px 0;padding:2px 12px;border-left:3px solid var(--line-2);color:var(--muted)}
+.dp-vv-note{display:flex;align-items:flex-start;gap:12px;padding:16px;border-radius:12px;background:var(--surface-2);border:1px solid var(--line)}
+.dp-vv-note p{margin:0}
+.dp-vv-note.is-warn{border-color:var(--warn)}
+.dp-vv-ask{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 12px;border-radius:12px;border:1px solid var(--warn);background:var(--surface-2);font-size:13px}
+.dp-vv-ask span{flex:1 1 220px}
+.dp-vv-wait{display:flex;align-items:center;justify-content:center;gap:10px;min-height:160px;color:var(--muted)}
+.dp-vv-spin{width:18px;height:18px;border-radius:50%;border:2px solid var(--line-2);border-top-color:var(--accent);animation:dp-vv-spin .9s linear infinite}
+@keyframes dp-vv-spin{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.dp-vv-spin{animation:none}}
+@media (max-width:640px){.dp-vv-back{padding:8px}.dp-dialog.dp-vv{padding:14px;border-radius:14px}}

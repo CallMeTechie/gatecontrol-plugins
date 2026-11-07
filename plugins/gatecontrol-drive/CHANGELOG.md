@@ -2,6 +2,29 @@
 
 Dateien der Familie und des Teams auf dem eigenen Speicher – auf diesem Server, einer NAS oder in S3.
 
+## 1.22.0
+
+- **Tresor-Dateien ansehen, ohne den Tresor zu verlassen.** Bilder, PDFs, Texte und Markdown öffnen im Portal-Tab in
+  einer eigenen Ansicht, nur im Speicher des Tabs entschlüsselt (README „Viewing vault files“). Bisher ließ sich eine
+  Tresor-Datei im Portal nur herunterladen.
+  - Bilder: mit `ImageDecoder` direkt aus den Bytes (keine URL), sonst `createImageBitmap`; auf `<canvas>` gezeichnet,
+    Zoom (Einpassen, +/−, Strg+Mausrad, Doppelklick), JPEG-Ausrichtung aus EXIF.
+  - PDF: Mozilla pdf.js 6.4.299 (Apache-2.0, `vendor/pdfjs`) rendert die Seiten im Frame, ohne Netz, ohne eval, ohne
+    Skripte und Formulare des PDFs. pdf.js kommt erst beim ersten PDF, in Stücken unter 1 MiB (`GET viewer/pdfjs?part=`).
+  - Text und Markdown als Text (Überschriften, Listen, Code), nie als HTML der Datei.
+  - Die Ansicht selbst ist nicht Teil der Seite: `GET viewer/vaultview` bringt Skript, Stil und Texte beim ersten Öffnen.
+  - Schließen, Sperren (von Hand, nach Zeit, beim Verlassen des Tabs) und Schließen des Tabs löschen alles: Bytes mit
+    Nullen überschrieben, Bilder und Seiten geleert, pdf.js beendet. Eine Entschlüsselung, die beim Sperren noch läuft,
+    bricht beim nächsten Lesen ab.
+  - „Herunterladen“ bleibt der einzige Weg aus dem Tresor und fragt vorher („nicht verschlüsselt“).
+  - Videos, Office-Dateien, HEIC und zu große Dateien (Bilder 64 MB, PDF 100 MB, Text 8 MB) zeigen einen Hinweis und
+    werden gar nicht erst entschlüsselt. Videos spielen die Apps ab: Der Frame darf Medien nur von GateControls
+    `/plugin-media/` abspielen.
+  - In der Ansicht: „Tresore jetzt sperren“.
+- Neu: `server/viewer.js`, `ui/vaultview.js`, `ui/vaultview.css`, `vendor/pdfjs/` (mit Lizenz). Keine neue Berechtigung,
+  kein neues Feature-Flag; die Apps (Android, Windows) zeigen Tresor-Dateien ab ihren nächsten Versionen ebenfalls im
+  Speicher an.
+
 ## 1.21.0
 
 - **Bild- und Videoansicht im Portal** (`ui/viewer.js`, `window.DriveViewer`): ein Klick auf ein Bild oder Video in
@@ -17,7 +40,7 @@ Dateien der Familie und des Teams auf dem eigenen Speicher – auf diesem Server
   Typen, die Browser selten können (MKV, AVI, WMV …: `canPlayType` leer), zeigen zuerst einen Hinweis mit
   „Herunterladen“ und „Trotzdem abspielen“; ein Abspielfehler oder ein Video ohne Bild (HEVC) sagt es ebenso.
   Vollbild, wo das Frame es darf (`document.fullscreenEnabled`; GateControl gibt Plugins mit Video-Typen
-  `allow="fullscreen"` ab der Version nach 1.241.1).
+  `allow="fullscreen"` ab GateControl 1.244.0).
 - **Herunterladen** von Bildern und Videos (Menü und Ansicht) lädt jetzt wirklich herunter: die Bytes über
   `GC.mediaBytes` (16 MiB je Aufruf), dann als Download des Frames; über 512 MB ein Hinweis auf „Speichern unter“ bzw.
   die Apps.
