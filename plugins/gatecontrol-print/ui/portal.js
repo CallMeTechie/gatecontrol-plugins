@@ -168,6 +168,37 @@
   $('#pr-copies-plus').addEventListener('click', function () { copies += 1; drawPrint(); });
   $('#pr-printer').addEventListener('change', drawPrint);
   $('#pr-scanner').addEventListener('change', drawScanSetup);
+  /**
+   * The type of a file by its first bytes: a PDF the phone hands over without a type or under a name without ".pdf"
+   * is still a PDF (else GateControl would refuse the upload). → a promise of the type or null.
+   */
+  var PRINTABLE = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif'];
+  function sniffType(f) {
+    if (!f || typeof f.slice !== 'function') return Promise.resolve(null);
+    var part = f.slice(0, 1024);
+    var read = typeof part.arrayBuffer === 'function' ? part.arrayBuffer() : new Promise(function (resolve, reject) {
+      var r = new FileReader();
+      r.onload = function () { resolve(r.result); };
+      r.onerror = reject;
+      r.readAsArrayBuffer(part);
+    });
+    return read.then(function (buf) {
+      var u = new Uint8Array(buf);
+      var s = '';
+      for (var i = 0; i < u.length; i++) s += String.fromCharCode(u[i]);
+      if (s.indexOf('%PDF-') >= 0) return 'application/pdf';
+      if (u[0] === 0xff && u[1] === 0xd8 && u[2] === 0xff) return 'image/jpeg';
+      if (s.slice(0, 8) === '\x89PNG\r\n\x1a\n') return 'image/png';
+      if (s.slice(0, 4) === 'RIFF' && s.slice(8, 12) === 'WEBP') return 'image/webp';
+      if (s.slice(4, 8) === 'ftyp') return /^(heic|heix|hevc|hevx)$/.test(s.slice(8, 12)) ? 'image/heic' : (/^(mif1|msf1)$/.test(s.slice(8, 12)) ? 'image/heif' : null);
+      return null;
+    }).catch(function () { return null; });
+  }
+  /** The file to upload: with the type its content shows when the phone's type is missing or not a printable one. */
+  function typed(f) {
+    if (PRINTABLE.indexOf(String(f.type || '').toLowerCase()) >= 0 && f.type !== 'application/pdf') return Promise.resolve(f);
+    return sniffType(f).then(function (t) { return t && t !== f.type ? new Blob([f], { type: t }) : f; });
+  }
   $('#pr-file-in').addEventListener('change', function () {
     var f = $('#pr-file-in').files && $('#pr-file-in').files[0];
     if (!f) return;
@@ -176,7 +207,7 @@
     var name = $('#pr-file-name');
     name.textContent = T('portal.uploading', { name: f.name, pct: 0 });
     if (!window.GC || typeof window.GC.upload !== 'function') { P.toast(T('common.error'), 'error'); return; }
-    window.GC.upload(f, { onProgress: function (p) { if (p && p.total) name.textContent = T('portal.uploading', { name: f.name, pct: Math.round((p.loaded / p.total) * 100) }); } })
+    typed(f).then(function (file) { return window.GC.upload(file, { onProgress: function (p) { if (p && p.total) name.textContent = T('portal.uploading', { name: f.name, pct: Math.round((p.loaded / p.total) * 100) }); } }); })
       .then(function (r) { media = { mediaId: r.mediaId, name: f.name }; name.textContent = f.name; drawPrint(); })
       .catch(function (e) { name.textContent = T('portal.no_file'); P.toast(e && e.code === 'unsupported_type' ? T('error.format') : (e && e.code === 'too_large' ? T('error.too_large') : P.errText(e)), 'error'); });
   });

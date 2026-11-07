@@ -10,6 +10,10 @@ const STATUS = {
   not_found: 404,
   limit: 409,
   format: 409,
+  damaged: 409,
+  printer_format: 409,
+  gateway_update: 409,
+  convert_off: 409,
   busy: 409,
   no_drive: 409,
   no_pages: 409,
@@ -50,9 +54,24 @@ const HOST = {
   ERR_PRINT_FORMAT: 'format', ERR_PRINT_TOO_LARGE: 'too_large', ERR_PRINT_OFFLINE: 'offline', ERR_PRINT_BUSY: 'busy',
   ERR_NOT_FOUND: 'not_found', ERR_INVALID: 'invalid', ERR_PRINT_CERT_CHANGED: 'cert_changed', ERR_MEDIA_QUOTA: 'too_large',
 };
+/**
+ * Why GateControl cannot print a file (ERR_PRINT_FORMAT, `e.reason` since GateControl 1.243.0) → this plugin's code:
+ * format (not a PDF or picture), damaged, printer_format (the printer takes no PDF and the gateway cannot convert for
+ * it), gateway_update (… the gateway is too old to convert), convert_off (… converting is off on that gateway).
+ */
+const FORMAT_REASONS = { file_type: 'format', damaged: 'damaged', printer: 'printer_format', gateway_update: 'gateway_update', convert_off: 'convert_off' };
+function formatCode(e) {
+  if (e && typeof e.reason === 'string' && FORMAT_REASONS[e.reason]) return FORMAT_REASONS[e.reason];
+  // an older GateControl names no reason – its message says which case it is
+  const m = String((e && e.message) || '');
+  if (/takes no PDF|neither JPEG nor PDF/.test(m)) return 'gateway_update';
+  if (/not a (readable )?PDF|cannot be read/.test(m)) return 'damaged';
+  return 'format';
+}
+
 function fromHost(e, dflt = 'print_failed') {
   if (isKnown(e)) return e;
-  const code = e && HOST[e.code];
+  const code = e && e.code === 'ERR_PRINT_FORMAT' ? formatCode(e) : (e && HOST[e.code]);
   return fail(code || dflt, { message: e && e.message ? String(e.message).slice(0, 200) : null });
 }
 
@@ -65,4 +84,4 @@ function day(ms) {
 /** Start of the local day of a time (ms) */
 function dayStart(ms) { const d = new Date(ms); d.setHours(0, 0, 0, 0); return d.getTime(); }
 
-module.exports = { STATUS, fail, isKnown, posInt, clip, iso, bool, fromHost, day, dayStart };
+module.exports = { STATUS, fail, isKnown, posInt, clip, iso, bool, fromHost, formatCode, day, dayStart };

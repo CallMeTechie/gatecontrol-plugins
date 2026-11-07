@@ -1,4 +1,4 @@
-<!-- version: 1.0.2 -->
+<!-- version: 1.0.3 -->
 # Print & Scan
 
 ## What the plugin does
@@ -15,6 +15,7 @@
 - GateControl **1.236.0** or later.
 - A gateway **1.24.0** or later in the printers' home network. The gateway's compose file does not change.
 - Printers and scanners with **AirPrint** or **AirScan** (IPP/eSCL). Almost every device since about 2015 can do that. Older devices without it do not show up.
+- For printers that take no PDF (e.g. HP OfficeJet Pro 8720): GateControl **1.243.0** and a gateway **1.30.0** or later – the gateway then converts PDF files itself.
 - To print from the Android app: the GateControl app **1.84.0** or later.
 - For scans: the **Drive** plugin. Without Drive you can print but not file scans.
 - For “Name and file with AI”: an AI provider in GateControl.
@@ -80,9 +81,23 @@ The Drive plugin is missing or not running.
 **Word or Excel files do not print.**
 Only PDFs and pictures are printed. Save the file as a PDF first.
 
-## New in 1.0.2
+**A PDF is refused: “This printer takes no PDF files directly …”.**
+Some printers (e.g. HP OfficeJet Pro 8720) take no PDF over the network. The gateway converts PDF files for them – the text says what is missing:
+- “… from version 1.30.0 …”: **Gateways** › your gateway › “Update to …” (and keep GateControl up to date).
+- “… converting is switched off on the gateway”: **Gateways** › your gateway › **Features** › “Print & scan” › switch on “Convert PDF for printers without PDF”.
+- “… names no format the gateway can convert them to”: the printer knows neither PWG raster nor URF nor JPEG. Pictures work, PDF files do not.
 
-- This manual in the tab “Manual” (GateControl ≥ 1.241.0).
-- A notice at the top of the plugin page while a gateway with “Print & scan” is older than 1.24.0.
+**The history says “The PDF file could not be converted for the printer”.**
+The PDF is damaged or password-protected. Open it on the phone or PC and save or print it there as a new PDF.
 
-Last in 1.0.1: printing from the GateControl apps (Android print service “GateControl”, “Share › Print with GateControl”).
+**A job stays on “being converted for the printer” for a while.**
+The gateway is turning the pages into the printer's format. On a Raspberry Pi 3 or Zero this takes a few minutes for large PDF files.
+
+## New in 1.0.3
+
+- **PDF to printers without PDF** (e.g. HP OfficeJet Pro 8720): with GateControl 1.243.0 and a gateway 1.30.0 or later, the gateway converts the PDF to suit the printer when printing – from the portal, the Android print service and “Share”.
+- Instead of “PDF files and pictures work” you now get the real reason: gateway too old, converting off, printer without a suitable format, file damaged – the old hint only for files that really are neither a PDF nor a picture.
+- A job says “being converted for the printer” while the gateway converts.
+- A PDF the phone hands over without a file type or without “.pdf” in its name still uploads as a PDF.
+
+Last in 1.0.2: this manual in the tab “Manual” and a notice while a gateway with “Print & scan” is older than 1.24.0.

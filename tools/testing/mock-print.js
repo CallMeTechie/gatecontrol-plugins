@@ -12,9 +12,13 @@
 //   discover({ retrust? })          → { asked: 1 } (state.discovers counts the calls, state.retrusted the ids)
 //   submit({ deviceId, mediaId, user, copies?, color?, duplex?, name? })
 //                                   the plugin's media (ERR_NOT_FOUND), a printer (ERR_NOT_FOUND), the device online
-//                                   (ERR_PRINT_OFFLINE), PDF only when the printer names application/pdf, pictures
-//                                   (image/*) as JPEG or one PDF page, anything else ERR_PRINT_FORMAT; copies 1 … copiesMax,
-//                                   colour / duplex only where the printer can; ≤ 20 open jobs per person (ERR_PRINT_BUSY)
+//                                   (ERR_PRINT_OFFLINE); the type by the content (%PDF-, JPEG, PNG … — GateControl
+//                                   1.243.0), else the stored one; PDF when the printer names application/pdf or its
+//                                   gateway converts (printer.convert), pictures (image/*) as JPEG or one PDF page,
+//                                   anything else ERR_PRINT_FORMAT with e.reason: file_type | damaged | printer |
+//                                   gateway_update | convert_off (test hook: device.gatewayConvert 'old' | 'off', else
+//                                   'printer'); copies 1 … copiesMax, colour / duplex only where the printer can;
+//                                   ≤ 20 open jobs per person (ERR_PRINT_BUSY)
 //   testPage({ deviceId, user })    a job "GateControl Testseite" (1 page)
 //   job(id) / jobs({ since?, limit?, user? }) / cancel(id)
 //   pages({ mediaId })              PDF: the number of "/Type /Page" in the file (≥ 1), a picture: 1
@@ -58,6 +62,16 @@ function install({ opts, perms, atLeast, enabledUser, hostError, mediaStore }) {
     return m;
   };
   const pdfPages = (buf) => Math.max(1, (Buffer.from(buf).toString('latin1').match(/\/Type\s*\/Page(?![a-zA-Z])/g) || []).length);
+  // the type by the first bytes (GateControl 1.243.0, printPdf.sniff), else the stored type
+  const typeOf = (m) => {
+    const b = Buffer.from(m.data || '');
+    if (b.subarray(0, 1024).indexOf('%PDF-') >= 0) return 'application/pdf';
+    if (b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return 'image/jpeg';
+    if (b.subarray(0, 8).equals(Buffer.from('89504e470d0a1a0a', 'hex'))) return 'image/png';
+    return m.mime;
+  };
+  const formatError = (message, reason) => Object.assign(hostError('ERR_PRINT_FORMAT', message), { reason });
+  const noPdf = (d) => (d.gatewayConvert === 'old' ? 'gateway_update' : (d.gatewayConvert === 'off' ? 'convert_off' : 'printer'));
   const view = (j) => ({ ...j, createdAt: iso(j.createdAt), updatedAt: iso(j.updatedAt), expiresAt: iso(j.expiresAt), doneAt: j.doneAt ? iso(j.doneAt) : null });
   const newMedia = (data, mime, name, owner) => {
     const id = crypto.randomBytes(16).toString('hex');
@@ -84,19 +98,23 @@ function install({ opts, perms, atLeast, enabledUser, hostError, mediaStore }) {
     return { copies, color: a.color === true && !!p.color, duplex: a.duplex === true && !!p.duplex };
   }
 
-  function printable(m, p) {
+  function printable(m, d) {
+    const p = d.printer;
     const fmts = p.formats || [];
     const takes = (f) => !fmts.length || fmts.includes(f);
-    if (m.mime === 'application/pdf') {
-      if (!takes('application/pdf')) throw hostError('ERR_PRINT_FORMAT', 'this printer takes no PDF');
+    const converts = ['image/pwg-raster', 'image/urf', 'image/jpeg'].includes(p.convert);
+    const type = typeOf(m);
+    if (type === 'application/pdf') {
+      if (!Buffer.from(m.data || '').subarray(0, 1024).includes('%PDF-')) throw formatError('not a readable PDF file', 'damaged');
+      if (!takes('application/pdf') && !converts) throw formatError('this printer takes no PDF and its gateway does not convert it', noPdf(d));
       return { format: 'application/pdf', pages: pdfPages(m.data) };
     }
-    if (/^image\//.test(m.mime)) {
+    if (/^image\//.test(type)) {
       if (takes('image/jpeg')) return { format: 'image/jpeg', pages: 1 };
-      if (takes('application/pdf')) return { format: 'application/pdf', pages: 1 };
-      throw hostError('ERR_PRINT_FORMAT', 'this printer takes neither JPEG nor PDF');
+      if (takes('application/pdf') || converts) return { format: 'application/pdf', pages: 1 };
+      throw formatError('this printer takes neither JPEG nor PDF', noPdf(d));
     }
-    throw hostError('ERR_PRINT_FORMAT', 'only PDF files and pictures can be printed');
+    throw formatError('only PDF files and pictures can be printed', 'file_type');
   }
 
   const ownJob = (id) => {
@@ -121,7 +139,7 @@ function install({ opts, perms, atLeast, enabledUser, hostError, mediaStore }) {
       const d = device(a.deviceId, 'printer');
       const o2 = opt(a, d.printer);
       const m = media(a.mediaId);
-      const p = printable(m, d.printer);
+      const p = printable(m, d);
       return enqueue(d, uid, { ...p, ...o2, name: (typeof a.name === 'string' && a.name.trim()) || m.name || 'GateControl' });
     },
     'print.testPage': async (a0) => {
@@ -152,9 +170,10 @@ function install({ opts, perms, atLeast, enabledUser, hostError, mediaStore }) {
     'print.pages': async (a0) => {
       need();
       const m = media(a0 && a0.mediaId);
-      if (m.mime === 'application/pdf') return { pages: pdfPages(m.data), format: 'application/pdf' };
-      if (/^image\//.test(m.mime)) return { pages: 1, format: m.mime };
-      throw hostError('ERR_PRINT_FORMAT', 'only PDF files and pictures can be printed');
+      const type = typeOf(m);
+      if (type === 'application/pdf') return { pages: pdfPages(m.data), format: 'application/pdf' };
+      if (/^image\//.test(type)) return { pages: 1, format: type };
+      throw formatError('only PDF files and pictures can be printed', 'file_type');
     },
     'print.scan': async (a0) => {
       need();
