@@ -6,7 +6,8 @@
  *   * open one: the keys wrapped for this device (GET vaults/<id>/keys) — or ask for it (a request with the safety
  *     number; an approved device of someone who reads the area approves), or open it with the recovery key,
  *   * names decrypted in the list, new folders, rename, upload (encrypted here, GC.upload of the ciphertext),
- *     download (the ciphertext through GC.mediaBytes, decrypted here),
+ *     download (the ciphertext through GC.mediaBytes, decrypted here) and, since 1.22.0, view it in memory (view():
+ *     ui/vaultview.js, loaded through GET viewer/vaultview; the lock closes it first),
  *   * approve or decline other devices, a new key after someone left (rotation; a new recovery key when its holder left).
  * Everything with DriveVaultCrypto (ui/vaultcrypto.js); keys of vaults live in memory only. The server never gets a
  * name, a content or a key it could read.
@@ -42,6 +43,7 @@
       loading: null,
       lastUse: Date.now(), // the last thing done in the tab (touch)
       timer: null,
+      epoch: 0,            // +1 on every lock: a decryption of an earlier session stops at its next read
     };
 
     function err(code) { var e = new Error(code); e.code = code; return e; }
@@ -195,6 +197,9 @@
 
     /** Lock every vault: the keys overwritten and forgotten, the decrypted names too, a vault shown closes. */
     function lockAll(why) {
+      // the viewer first (ui/vaultview.js, 1.22.0): its decrypted bytes overwritten, its canvases emptied
+      if (VV) VV.close('lock');
+      st.epoch++;
       var had = st.keys.size > 0;
       st.keys.forEach(function (m) { m.forEach(function (tk) { try { VC.wipe(tk); } catch (e) { /* not a byte array */ } }); m.clear(); });
       st.keys.clear();
@@ -229,6 +234,36 @@
       if (st.timer || !st.keys.size) return;
       st.timer = setTimeout(function () { st.timer = null; idle(); schedule(); }, 15000);
       if (st.timer && st.timer.unref) st.timer.unref();
+    }
+
+    // the viewer of vault files (ui/vaultview.js, 1.22.0) — locked with the vaults. Not part of the page: GET
+    // viewer/vaultview hands over its script, style and texts the first time a vault file is opened (server/viewer.js).
+    var VV = null;
+    var VVload = null;
+    function viewer() {
+      if (VV) return Promise.resolve(VV);
+      if (VVload) return VVload;
+      VVload = U.api('GET', 'viewer/vaultview').then(function (r) {
+        var texts = (r && r.texts) || {};
+        if (U.CTX.texts) Object.keys(texts).forEach(function (k) { U.CTX.texts[k] = texts[k]; });
+        if (r && r.css) { var style = document.createElement('style'); style.textContent = r.css; document.head.appendChild(style); }
+        if (!window.DriveVaultView && r && r.code) {
+          var sc = document.createElement('script');
+          sc.textContent = r.code;
+          document.head.appendChild(sc); // an inline script runs at once
+          document.head.removeChild(sc);
+        }
+        if (!window.DriveVaultView) throw err('viewer_failed');
+        VV = window.DriveVaultView.attach({
+          T: T, h: h, icon: U.icon, btn: U.btn, ibtn: U.ibtn, api: U.api, errText: U.errText, fmtSize: U.fmtSize,
+          touch: function () { touch(); }, decrypt: function (n, c, alive, onProgress) { return decryptParts(n, c, alive, onProgress); },
+          download: function (n, c) { download(n, c); },
+          lock: function () { lockAll('manual'); },
+        });
+        return VV;
+      });
+      VVload.catch(function () { VVload = null; });
+      return VVload;
     }
 
     // the tab left (another tab or window in front): lock when so set; closed: always
@@ -594,25 +629,56 @@
       });
     }
 
-    /** Decrypt file `n` (or one of its versions: `content` of GET …/versions/<vid>/content) → a download. */
-    function download(n, content) {
+    /**
+     * Decrypt file `n` (or one of its versions: `content` of GET …/versions/<vid>/content) in memory → the plaintext
+     * chunks (Uint8Array[]). Stops with `cancelled` at the next read once the vault locked or `alive()` says no.
+     */
+    function decryptParts(n, content, alive, onProgress) {
       var m = keysOf(n.vaultId);
-      if (!m) { U.toast(T('p.v.locked_title'), 'error'); return; }
-      var name = nameOf(n);
+      if (!m) return Promise.reject(err('vault_locked'));
+      var epoch = st.epoch;
+      var live = function () { return st.epoch === epoch && !!keysOf(n.vaultId) && (!alive || alive()); };
       var got = content ? Promise.resolve(content) : U.api('GET', 'nodes/' + n.id + '/content');
+      return got.then(function (c) {
+        if (!live()) throw err('cancelled');
+        var read = function (a, b) {
+          if (!live()) throw err('cancelled');
+          return window.GC.mediaBytes(c.url, { start: a, end: b }).then(function (x) {
+            if (!live()) throw err('cancelled');
+            return new Uint8Array(x.data);
+          });
+        };
+        return VC.decryptContent(m, n.vaultId, read, c.size, { window: READ_WINDOW, onProgress: onProgress });
+      });
+    }
+
+    /** "Herunterladen": file `n` (or a version) decrypted here → a download (the plaintext leaves the tab on purpose). */
+    function download(n, content) {
+      if (!keysOf(n.vaultId)) { U.toast(T('p.v.locked_title'), 'error'); return; }
+      var name = nameOf(n);
       U.toast(T('p.v.decrypting'));
-      got.then(function (c) {
-        var read = function (a, b) { return window.GC.mediaBytes(c.url, { start: a, end: b }).then(function (x) { return new Uint8Array(x.data); }); };
-        return VC.decryptContent(m, n.vaultId, read, c.size, { window: READ_WINDOW });
-      }).then(function (parts) {
+      decryptParts(n, content).then(function (parts) {
         var blob = new Blob(parts, { type: 'application/octet-stream' });
+        parts.forEach(function (p) { p.fill(0); });
         var url = URL.createObjectURL(blob);
         var a = h('a', { attrs: { href: url, download: name, rel: 'noopener' } });
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
         setTimeout(function () { URL.revokeObjectURL(url); }, 60000);
-      }).catch(function (e) { U.toast(e && e.code === 'decrypt' ? T('p.v.unreadable') : U.errText(e), 'error'); });
+      }).catch(function (e) { if (e && e.code === 'cancelled') return; U.toast(e && e.code === 'decrypt' ? T('p.v.unreadable') : U.errText(e), 'error'); });
+    }
+
+    /** "Öffnen": file `n` (or a version) in the viewer — decrypted in memory, never a file (ui/vaultview.js, 1.22.0). */
+    function view(n, content) {
+      if (!keysOf(n.vaultId)) { U.toast(T('p.v.locked_title'), 'error'); return; }
+      var epoch = st.epoch;
+      touch();
+      viewer().then(function (vv) {
+        // locked while the viewer came: nothing opens
+        if (st.epoch !== epoch || !keysOf(n.vaultId)) return;
+        vv.open(n, nameOf(n), content || null);
+      }, function (e) { U.toast(e && e.code === 'viewer_failed' ? T('p.v.viewer_failed') : U.errText(e), 'error'); });
     }
 
     /**
@@ -676,7 +742,7 @@
     return {
       cached: function (id) { return st.names.has(id) ? st.names.get(id) : null; },
       supported: supported, nameOf: nameOf, prepare: prepare, renderLocked: renderLocked, banner: banner, create: create, newFolder: newFolder,
-      rename: rename, download: download, upload: upload, names: names, onEvent: onEvent, folderVault: folderVault, keysOf: keysOf,
+      rename: rename, download: download, view: view, viewer: function () { return VV; }, upload: upload, names: names, onEvent: onEvent, folderVault: folderVault, keysOf: keysOf,
       load: loadVaults, list: list, touch: touch, lockAll: lockAll, anyOpen: anyOpen, deviceInfo: deviceInfo,
     };
   }
