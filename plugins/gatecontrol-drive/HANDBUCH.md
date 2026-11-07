@@ -1,4 +1,4 @@
-<!-- version: 1.20.1 -->
+<!-- version: 1.21.0 -->
 # Drive
 
 ## Was das Plugin kann
@@ -38,6 +38,7 @@ Drive ist ein eigenes Abo (Familie, Business oder Kombi, fünf Personen inklusiv
 - **Dateien:** hochladen (auch ganze Ordner), neuer Ordner, umbenennen, verschieben, kopieren, Versionen, Papierkorb, teilen, „Direktlink kopieren“. Mehrere auswählen mit Strg/Umschalt und als ZIP laden, verschieben oder löschen.
 - **Teilen:** Links für Personen ohne Konto; „Geteilte Links“ listet sie.
 - **Geräte:** deine Geräte mit ihren gesicherten Ordnern und der letzten Sicherung.
+- **Bilder und Videos ansehen:** Ein Klick auf ein Bild oder Video – in „Dateien“, in der Suche und in „Fotos“ – öffnet es groß, ohne es erst herunterzuladen. Mit den Pfeilen, den Pfeiltasten oder einem Wisch geht es zum nächsten Bild oder Video im selben Ordner. Bilder vergrößerst du mit dem Mausrad, „+“/„−“, einem Doppelklick oder zwei Fingern. Videos laufen direkt in Drive (Abspielen, Pause, Spulen, Ton, Vollbild); Drive merkt sich, wo du aufgehört hast, solange der Tab offen ist. Oben: Herunterladen, Teilen, Details und das Menü der Datei.
 - **Fotos:** Zeitleiste nach Monat, „Nur Kamera-Uploads“, Alben, „Im Fotorahmen zeigen“, Suche nach Personen, Orten und Inhalt, Karte, „Wer ist das?“. Gesichter werden nur auf den Geräten erkannt; Drive speichert keine Gesichtsbilder.
 - **Tresor-Ordner:** „Neu“ › „Neuer Tresor“, wer ihn öffnen darf (nur ich, Familie, Team-Ordner). Den Wiederherstellungsschlüssel sicher aufbewahren. Ein neues Gerät fragt mit „Freigabe anfragen“, ein schon freigegebenes gibt frei. Tresore sperren sich nach einigen Minuten ohne Eingabe; die KI liest sie nie.
 - **KI für Dokumente:** „Dokument-Infos“ an einer Datei, „Fragen“ unter der Suche, die Seite „Fristen“ mit „In den Familienkalender“ und „Erinnern“, „In Dokument umwandeln“ für Scans.
@@ -74,10 +75,18 @@ Unter Einstellungen ist keine Adresse eines Office-Servers eingetragen.
 Frage mit „Freigabe anfragen“ an und gib auf einem schon freigegebenen Gerät frei – oder öffne ihn mit dem Wiederherstellungsschlüssel.
 
 **Dateien sind „vom Virenscan zurückgehalten“.**
-Der Virenscan von GateControl prüft neue Dateien; gesperrte Dateien öffnet und teilt Drive nicht.
+Der Virenscan von GateControl prüft neue Dateien; gesperrte Dateien öffnet und teilt Drive nicht. Auch die Bild- und Videoansicht zeigt dann nur den Grund. Eine als Schadsoftware markierte Datei zeigt sie erst nach „Trotzdem ansehen“.
 
-## Neu in 1.20.1
+**Ein Video spielt im Browser nicht.**
+Manche Videos kann der Browser nicht abspielen, oft MKV oder HEVC (H.265, z. B. von neueren iPhones). Drive sagt das und bietet „Herunterladen“ an. In den GateControl-Apps laufen die meisten davon. Hörst du nur den Ton, kann der Browser das Bild nicht entschlüsseln.
 
-- Dieses Handbuch im Reiter „Handbuch“ (GateControl ≥ 1.241.0).
+**„Vollbild“ fehlt im Portal.**
+Vollbild im Portal gibt es ab der GateControl-Version nach 1.241.1. Ältere Versionen zeigen das Video im Drive-Fenster.
 
-Zuletzt in 1.20.0: Zwischenspeicher im Heimnetz – Gateways halten oft genutzte Dateien zu Hause vor; „offline verfügbar“ für Dateien und Ordner.
+## Neu in 1.21.0
+
+- **Bilder auch in „Dateien“ groß ansehen:** Ein Klick auf ein Bild öffnet die Bildansicht statt eines Downloads – mit Vor und Zurück durch die Bilder und Videos des Ordners, Zoom, Herunterladen, Teilen und Details. Dieselbe Ansicht hat jetzt auch „Fotos“.
+- **Videos direkt in Drive abspielen:** MP4, WebM, MOV und M4V laufen im Browser, ohne sie erst ganz herunterzuladen (GateControl liefert nur die Teile, die gerade laufen). Spulen, Ton und Vollbild; die Stelle bleibt, solange der Tab offen ist. Videos, die der Browser nicht kann (oft MKV oder HEVC), sagen das und bieten „Herunterladen“ an.
+- Der Virenscan gilt auch hier: Gesperrte Dateien zeigt die Ansicht nicht, markierte erst nach Nachfrage.
+
+Zuletzt in 1.20.1: dieses Handbuch im Reiter „Handbuch“; in 1.20.0 der Zwischenspeicher im Heimnetz.

@@ -86,7 +86,7 @@ reaches `GET frame` (the photo frame, since 1.7.0) and nothing else (`403 forbid
 | `PATCH nodes/<id>` | `{ deleteAt: <ISO \| ms> \| null, device? }` (since 1.5.0, alone — not with `name` / `parentId`) | `node` — set the mark exactly / end it (see "Delete later") |
 | `DELETE nodes/<id>` | `everywhere=1` (since 1.2.0) | `{ id, trashed }` — into the trash; with `everywhere=1` also `wipe { id, devices, files }` (see "Delete on all devices") |
 | `DELETE nodes/<id>` | `after=<seconds>` (1 … 31 536 000), `device?` (since 1.5.0) | `{ id, marked: true, deleteAt, node }` — into the trash later (see "Delete later"); `after=0` is the plain delete |
-| `GET nodes/<id>/content` | | `{ url, name, mime, size, mediaId }` — `url` signed for the viewer, 1 h; an empty file (since 1.5.0): `{ url: 'data:<mime>;base64,', size: 0, mediaId: null, empty: true }`; a file the virus scan holds back (since 1.19.0): `423 scan_pending \| quarantined \| scan_blocked { scan }`; since 1.20.0 an app in the home network also gets `lan { url, sha256, tlsSha256, exp }` when a home gateway holds the file (send `X-GC-Local` / `?local=`, see "Home cache") |
+| `GET nodes/<id>/content` | | `{ url, name, mime, size, mediaId }` — `url` signed for the viewer, 1 h; an empty file (since 1.5.0): `{ url: 'data:<mime>;base64,', size: 0, mediaId: null, empty: true }`; a file the virus scan holds back (since 1.19.0): `423 scan_pending \| quarantined \| scan_blocked { scan }`; since 1.20.0 an app in the home network also gets `lan { url, sha256, tlsSha256, exp }` when a home gateway holds the file (send `X-GC-Local` / `?local=`, see "Home cache"); the viewers of pictures and videos (since 1.21.0: portal, apps) stream from `url` or the app's media route with `Range` (206 / 416, the stored type) |
 | `GET offline` · `PUT nodes/<id>/offline` · `DELETE nodes/<id>/offline` | (since 1.20.0, feature `offline`) | "offline verfügbar": `{ items }` / `{ node }` with `offline`, `offlineAt` / `{ id, offline: false, removed }` (see "Home cache") |
 | `GET nodes/<id>/versions` | | `{ current, versions [{ id, rev, size, sha256, at, by }] }` |
 | `GET nodes/<id>/versions/<vid>/content` | | `{ url, … }` |
@@ -1168,7 +1168,13 @@ viewer), a preview for pictures, videos and sound, new folder, rename, move, ver
 "Geteilte Links", "Geräte" (since 1.5.0: my devices with their folders, the last backup, "Ordner öffnen" and "Gerät
 vergessen"), and on a marked node the quiet note "wird am … gelöscht" (with the device in its title) and "Behalten" in
 its actions. Live through `GC.on('event')`. Pictures and videos are shown inline by GateControl and cannot be
-downloaded from the frame (right-click › Save as); other files download. Since 1.6.0: a direct link (`drive=<id>` in
+downloaded from the frame by a link (right-click › Save as); other files download. Since 1.21.0 a click on a picture or
+video (files, search, "Fotos") opens the **viewer** (`ui/viewer.js`, `window.DriveViewer.attach` — `viewable(n)`,
+`open(list, index)`, `save(n)`): the pictures and videos of the list shown one after the other (arrows, ← →, a swipe),
+zoom (wheel, + − 0, a double click, two fingers), download (`GC.mediaBytes` into a download of the frame, ≤ 512 MB),
+share, details and the file's menu; videos as `<video controls preload="metadata">` from the signed URL (Range),
+the place kept while the tab is open, a hint with "Herunterladen" for what the browser cannot play; the virus scan:
+blocked → the reason only (no `content` call), marked → "Trotzdem ansehen". Since 1.6.0: a direct link (`drive=<id>` in
 the frame's address) opens its folder or file, "Direktlink kopieren" in a node's actions (with `me.links`), "Ordner
 hochladen" (`<input webkitdirectory>`) besides dropping folders — sub folders are made (empty ones too), with the
 overall progress —, a red banner while a device of the person (an administrator: anyone's) is stopped by the

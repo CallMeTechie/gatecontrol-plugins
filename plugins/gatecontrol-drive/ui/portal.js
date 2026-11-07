@@ -114,6 +114,11 @@
     people: 'M9 4.5a3.5 3.5 0 1 0 0 7a3.5 3.5 0 1 0 0-7|M2.5 20c1-3.5 3.5-5.5 6.5-5.5s5.5 2 6.5 5.5|M17 6.5a2.5 2.5 0 1 0 0 5a2.5 2.5 0 1 0 0-5|M17 14.5c2.2.2 3.8 2 4.5 4.5',
     child: 'M2 9l10-5 10 5-10 5z|M6 11v5c2 2 10 2 12 0v-5',
     chevRight: 'M9 6l6 6-6 6',
+    // the viewer of pictures and videos (since 1.21.0)
+    chevLeft: 'M15 6l-6 6 6 6',
+    zoomIn: 'M11 4a7 7 0 1 0 0 14a7 7 0 1 0 0-14|M20 20l-3.5-3.5|M11 8v6M8 11h6',
+    zoomOut: 'M11 4a7 7 0 1 0 0 14a7 7 0 1 0 0-14|M20 20l-3.5-3.5|M8 11h6',
+    expand: 'M4 9V4h5|M20 9V4h-5|M4 15v5h5|M20 15v5h-5',
     chevDown: 'M6 9l6 6 6-6',
     menu: 'M4 6h16M4 12h16M4 18h16',
     // work photos apart (since 1.13.0): the review mark, the bag of a work photo, home (private)
@@ -879,7 +884,7 @@
       var pick = B && has('bulk');
       var card = h('div', { class: 'dp-card' + (pick && B.isCut(n) ? ' is-cut' : ''), attrs: { role: 'listitem', 'data-node': String(n.id) } }, [
         pick ? B.check(n) : null,
-        h('button', { type: 'button', class: 'dp-open', on: { click: function (ev) { if (pick && B.chooseClick(ev, n)) return; openNode(n); } }, attrs: { 'aria-label': name } }, [
+        h('button', { type: 'button', class: 'dp-open', on: { click: function (ev) { if (pick && B.chooseClick(ev, n)) return; openNode(n, items); } }, attrs: { 'aria-label': name } }, [
           thumb,
           h('div', { class: 'dp-card-tx' }, [
             h('span', { class: 'dp-name', text: name, attrs: { title: name } }),
@@ -911,7 +916,7 @@
       var name = nm(n);
       var row = h('div', { class: 'dp-row' + (pick ? ' is-pick' : '') + (pick && B.isCut(n) ? ' is-cut' : ''), attrs: { role: 'row', 'data-node': String(n.id) } }, [
         pick ? h('span', { class: 'dp-cbcell' }, B.check(n)) : null,
-        h('button', { type: 'button', class: 'dp-open', on: { click: function (ev) { if (pick && B.chooseClick(ev, n)) return; openNode(n); } } }, [ic, h('span', { class: 'dp-name', text: name, attrs: { title: name } }),
+        h('button', { type: 'button', class: 'dp-open', on: { click: function (ev) { if (pick && B.chooseClick(ev, n)) return; openNode(n, items); } } }, [ic, h('span', { class: 'dp-name', text: name, attrs: { title: name } }),
           n.path && S.page === 'search' ? h('span', { class: 'dp-meta', text: n.path }) : null, markOf(n), scanOf(n), pick ? B.freshBadge(n) : null]),
         h('span', { class: 'dp-num', text: fmtDate(n.mtime || n.updatedAt) }),
         h('span', { class: 'dp-num dp-right', text: n.isDir ? '—' : fmtSize(n.size) }),
@@ -923,13 +928,32 @@
     return l;
   }
 
-  function openNode(n) {
+  /**
+   * A click on a node: a folder opens; a picture or a video opens in the viewer (ui/viewer.js, since 1.21.0) with the
+   * others of `list` (the folder, the search, the photos shown) to go through; anything else in the preview.
+   */
+  function openNode(n, list) {
     if (n.isDir) { $('dp-q').value = ''; openFolder(n.areaId, n.id); return; }
     // a vault's file: decrypted here, then downloaded (no preview — the server has none, the frame shows no blob:)
     if (n.encrypted && V) { V.download(n); return; }
     // a file the virus scan holds back opens nothing: its menu says why
     if (scanBlocked(n)) { actions(n); return; }
+    if (VW && VW.viewable(n)) {
+      var at = list ? list.map(function (x) { return x.id; }).indexOf(n.id) : -1;
+      if (at < 0) VW.open([n], 0); else VW.open(list, at);
+      return;
+    }
     preview(n);
+  }
+  /** The pictures and videos the viewer goes through from `n`: the list shown when `n` is in it. */
+  function shownList(n) { return S.items.indexOf(n) >= 0 ? S.items : PH.items.some(function (x) { return x.id === n.id; }) ? PH.items.map(photoNode) : [n]; }
+  /** Where a file is ("Familie › Urlaub"): its path when the answer has one, else the folder shown, else its area. */
+  function whereOf(n) {
+    if (n.path) return String(n.path);
+    var a = areaOf(n.areaId);
+    var f = S.folder;
+    if (f && n.parentId === f.id && f.crumbs) return [a ? a.label : ''].concat(f.crumbs.slice(1).map(function (c) { return c.name; })).concat(f.parentId != null ? [f.name] : []).filter(Boolean).join(' › ');
+    return a ? a.label : '';
   }
 
   // ── dialogs ──────────────────────────────────────────────
@@ -993,6 +1017,7 @@
     // held back by the virus scan (since 1.19.0): nothing that opens, downloads or shares it
     var held = scanBlocked(n);
     if (n.isDir) item('folder', T('p.open'), function () { openNode(n); });
+    else if (!held && VW && VW.viewable(n)) item('eye', T('p.preview'), function () { if (!VW.isOpen()) openNode(n, shownList(n)); });
     else if (!held && (k === 'image' || k === 'video' || k === 'audio')) item('eye', T('p.preview'), function () { preview(n); });
     if (!n.isDir && !held) item('download', T('p.download'), function () { download(n); });
     // office in the browser (since 1.9.0): documents, while an office server is set up
@@ -1081,6 +1106,8 @@
       }, true);
       return;
     }
+    // pictures and videos (since 1.21.0): the viewer's download (GateControl shows them inline — a link would open them)
+    if (VW && VW.viewable(n)) { VW.save(n, null, true); return; }
     api('GET', 'nodes/' + n.id + '/content').then(function (r) {
       // pictures, videos and sound are shown inline by GateControl: the preview has them; other files download
       if (/^(image|video|audio)\//.test(String(r.mime || ''))) { preview(n, r); return; }
@@ -1860,7 +1887,8 @@
         // Strg / Umschalt with a click choose (since 1.12.0; a range in the order shown)
         if (B && B.photoPick(x, ev, PH.items, PH)) { rerender(); return; }
         if (PH.select) { PH.chosen[x.id] = !PH.chosen[x.id]; PH.anchor = x.id; tile.className = 'dp-ph' + (PH.chosen[x.id] ? ' is-on' : ''); tile.setAttribute('aria-pressed', String(!!PH.chosen[x.id])); if (onPick) onPick(); return; }
-        openNode(n);
+        // the viewer goes through the photos shown (since 1.21.0)
+        openNode(n, PH.items.indexOf(x) >= 0 ? PH.items.map(photoNode) : null);
       } } }, [picOf(n, 28), scanBlocked(n) ? h('span', { class: 'dp-ph-scan', attrs: { title: (scanInfo(n) || {}).note || '' } }, icon('shield', 14)) : null, /^video\//.test(String(x.mime || '')) ? h('span', { class: 'dp-ph-kind' }, icon('video', 14)) : null, PH.select ? h('span', { class: 'dp-ph-check' }, icon('check', 14)) : null,
         // since 1.13.0: the yellow question mark (to check), the blue bag of a work photo (in "Alle")
         x.review ? h('span', { class: 'dp-ph-mk', attrs: { title: T('p.wk_marked') } }, icon('help', 14)) : null,
@@ -3072,6 +3100,15 @@
       else if (S.page === 'trash') showTrash();
     });
   }
+
+  // the viewer of pictures and videos (ui/viewer.js, since 1.21.0): its helpers from here — before the others, so that
+  // its keys (← → Esc) come first while it is open
+  var VW = window.DriveViewer ? window.DriveViewer.attach({
+    T: T, h: h, icon: icon, ibtn: ibtn, btn: btn, api: api, toast: toast, errText: errText, fmtSize: fmtSize, fmtDate: fmtDate,
+    personName: personName, scanNote: scanNote, scanInfo: scanInfo, canWriteNode: canWriteNode, share: share, actions: actions,
+    confirmDialog: confirmDialog, nm: nm, whereOf: whereOf,
+    showFolder: function (n) { $('dp-q').value = ''; openFolder(n.areaId, n.parentId); },
+  }) : null;
 
   // vault folders (ui/vault.js, since 1.9.0): its helpers from here
   var V = window.DriveVault ? window.DriveVault.attach({
