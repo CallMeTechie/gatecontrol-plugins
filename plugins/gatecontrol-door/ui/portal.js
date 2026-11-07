@@ -1,4 +1,5 @@
-/* Portal tab "Tür": Ring mode per location, lock cards with buttons per right, latest pictures per camera, history. */
+/* Portal tab "Tür": Ring mode per location, lock cards with buttons per right, latest pictures per camera, history.
+   1.6.0: on top the cameras in the home network (ui/home.js: chips, live picture or a snapshot every 10 s, clips today). */
 (function () {
   'use strict';
   var D = window.DOOR;
@@ -125,8 +126,11 @@
       r.cameras.forEach(function (c) { cams.appendChild(camCard(c)); });
       $('#dr-cams-card').hidden = !r.cameras.length;
       loadHistory(false);
+      // 1.6.0: the cameras in the home network (ui/home.js), once
+      if (!homeStarted && window.DOOR_HOME) { homeStarted = true; window.DOOR_HOME.initPortal(r); }
     }).catch(D.warn);
   }
+  var homeStarted = false;
 
   $('#dr-more').addEventListener('click', function () { loadHistory(true); });
   load();

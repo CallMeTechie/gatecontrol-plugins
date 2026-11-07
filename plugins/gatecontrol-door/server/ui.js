@@ -17,6 +17,8 @@ const PAGES = ['devices', 'rights', 'history', 'settings'];
 const FILES = {
   css: read('style.css'),
   common: read('common.js'),
+  // 1.6.0: Kameras im Heimnetz (page "Geräte" and the portal tab)
+  home: read('home.js'),
   devices: { html: read('devices.html'), js: read('devices.js') },
   rights: { html: read('rights.html'), js: read('rights.js') },
   history: { html: read('history.html'), js: read('history.js') },
@@ -49,6 +51,7 @@ function render(view, t) {
     + fill(page.html, t, lang)
     + '<script>window.DOOR_CTX=' + island(ctx) + ';</script>'
     + '<script>' + FILES.common + '</script>'
+    + (pageId === 'devices' || pageId === 'portal' ? '<script>' + FILES.home + '</script>' : '')
     + '<script>' + page.js + '</script>';
 }
 

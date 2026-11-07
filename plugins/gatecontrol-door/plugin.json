@@ -4,11 +4,11 @@
     "de": "Tür & Kamera",
     "en": "Door & Camera"
   },
-  "version": "1.5.0",
+  "version": "1.6.0",
   "publisher": "CallMeTechie",
   "description": {
-    "de": "Nuki-Schlösser und -Opener (lokale Bridge oder Nuki Web) und Ring-Türklingeln/-Kameras (inoffizielle Schnittstelle, ohne Gewähr) in GateControl: Tür in App, Widget und Portal auf- und zusperren, Klingel-Push mit Bild und „Tür öffnen“, Ring-Modus (Inaktiv / Zuhause / Abwesend) für Schnellaktionen und Regeln, Verlauf mit Bildern, automatisches Aufsperren bei Ankunft (nur mit Zustimmung) und Sicherheits-Hinweise. Rechte pro Person und Schloss. Alles bleibt auf dem eigenen Server.",
-    "en": "Nuki smart locks and openers (local bridge or Nuki Web) and Ring doorbells/cameras (unofficial interface, no warranty) in GateControl: lock and unlock in the app, widget and portal, doorbell push with a picture and “Open door”, Ring mode (Disarmed / Home / Away) for quick actions and rules, history with pictures, automatic unlock on arrival (opt-in only) and safety notices. Rights per person and lock. Everything stays on your own server."
+    "de": "Nuki-Schlösser und -Opener (lokale Bridge oder Nuki Web), Ring-Klingeln/-Kameras (inoffizielle Schnittstelle, ohne Gewähr) und neu Kameras im Heimnetz (ONVIF/RTSP über ein Gateway, ohne Hersteller-Cloud): Tür in App, Widget und Portal auf- und zusperren, Klingel-Push mit Bild, Live-Bild über VPN, Clips bei Bewegung auf der eigenen NAS, Push mit Standbild bei Personen, Ring-Modus, Verlauf, automatisches Aufsperren bei Ankunft (nur mit Zustimmung). Rechte pro Person, Schloss und Kamera.",
+    "en": "Nuki smart locks and openers (local bridge or Nuki Web), Ring doorbells/cameras (unofficial interface, no warranty) and new: cameras in the home network (ONVIF/RTSP through a gateway, no vendor cloud): lock and unlock in the app, widget and portal, doorbell push with a picture, live picture over the VPN, clips on motion on your own NAS, push with a snapshot for people, Ring mode, history, automatic unlock on arrival (opt-in). Rights per person, lock and camera."
   },
   "gatecontrol": ">=1.169.0",
   "entry": "server/index.js",
@@ -39,6 +39,7 @@
     "portal": true,
     "users": true,
     "app": true,
+    "cameras": true,
     "notify": {
       "perHour": 120
     },
@@ -123,6 +124,14 @@
         "en": "Camera motion"
       },
       "default": false
+    },
+    {
+      "id": "kamera",
+      "label": {
+        "de": "Personen an der Kamera (Heimnetz)",
+        "en": "People at the camera (home network)"
+      },
+      "default": true
     },
     {
       "id": "door",

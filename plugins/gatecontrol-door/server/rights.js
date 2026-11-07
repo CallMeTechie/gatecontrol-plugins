@@ -93,7 +93,13 @@ async function load(gc) {
     if (!cams.has(c.user_id)) cams.set(c.user_id, new Set());
     cams.get(c.user_id).add(c.camera_id);
   }
-  return { levels, prefs, modes, cams };
+  // 1.6.0: who sees which camera in the home network (gc.cameras; GateControl's camera ids)
+  const homeCams = new Map();
+  for (const c of await store.all(gc, 'SELECT user_id, camera_id FROM home_camera_rights')) {
+    if (!homeCams.has(c.user_id)) homeCams.set(c.user_id, new Set());
+    homeCams.get(c.user_id).add(c.camera_id);
+  }
+  return { levels, prefs, modes, cams, homeCams };
 }
 
 /** Does this user see the camera (a cameras row)? Linked: a right on its lock; unlinked: its own list (1.5.0). */
@@ -141,7 +147,8 @@ function usersWith(r, lockId, min) {
 function hasAny(r, userId) {
   const m = r.levels.get(userId);
   const c = r.cams && r.cams.get(userId);
-  return (!!m && m.size > 0) || (!!c && c.size > 0);
+  const h = r.homeCams && r.homeCams.get(userId);
+  return (!!m && m.size > 0) || (!!c && c.size > 0) || (!!h && h.size > 0);
 }
 
 module.exports = { LEVELS, ACTIONS, NEEDS, atLeast, canAct, parseWindow, windowAllows, load, levelOf, prefsOf, usersWith, hasAny, mayMode, seesCamera, cameraViewers };

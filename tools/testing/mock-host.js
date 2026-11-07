@@ -416,6 +416,7 @@ const EventEmitter = require('node:events');
 const mockMail = require('./mock-mail');
 const mockHomeInternet = require('./mock-home-internet');
 const mockPrint = require('./mock-print');
+const mockCameras = require('./mock-cameras');
 
 // GateControl's favourite colour palette (services/avatars.js PALETTE, GateControl ≥ 1.168.0)
 const PALETTE = Object.freeze([
@@ -3178,6 +3179,10 @@ async function createHost(pluginDir, opts = {}) {
     return Array.isArray(list) ? list : [];
   };
 
+  // ─── Kameras im Heimnetz (GateControl with phase 3c step 4, src/services/homeCameras.js; tools/testing/mock-cameras.js) ───
+  const cams = mockCameras.install({ opts, perms, hostError });
+  Object.assign(api, cams.api);
+
   const call = async (name, args) => wire(await api[name](wire(args)));
 
   /** A WebSocket like the host's (EventEmitter: message, close, error; send, close) wired to opts.websocket. */
@@ -3430,6 +3435,8 @@ async function createHost(pluginDir, opts = {}) {
     ...(pr.on ? { print: pr.gcPart(call) } : {}),
     // GateControl ≥ 1.231.0: gc.homeCache only with permissions.homeCache (like the child bootstrap)
     ...(radioOn ? { radio: Object.freeze({ sensors: () => call('radio.sensors', {}) }) } : {}),
+    // gc.cameras only with permissions.cameras and opts.cameras (like the child bootstrap)
+    ...(cams.on ? { cameras: cams.gcPart(call) } : {}),
     ...(hcOn ? {
       homeCache: Object.freeze({
         offer: (o) => call('homeCache.offer', o && typeof o === 'object' ? o : {}),
@@ -4082,6 +4089,10 @@ async function createHost(pluginDir, opts = {}) {
     print: pr.state,
     printJob: (id, x) => pr.setJob(id, x || {}),
     printScanPages: (id, pages, x) => pr.scanPages(id, pages, x),
+    /** Kameras: the hook cameraEvent ({ id, cameraId, camera, gatewayId, kind, kinds, phase, at, nobodyHome, clip }) */
+    cameraEvent: (ev) => cams.deliver(ev),
+    /** Kameras: what the host holds (cameras, calls, passwords it was given) */
+    cameras: cams.state,
     /** legacyImport hook: the host hands over the built-in data (first-party plugins only) */
     legacyImport: (snapshot) => hook('legacyImport', snapshot),
     /** keys stored with gc.settings.setSecret */
@@ -4103,19 +4114,23 @@ async function createHost(pluginDir, opts = {}) {
       // GateControl ≥ 1.231.0: req.homeRef (plugins/requestRefs.js) — only for a plugin with permissions.homeCache; the
       // test's `home: true` = the client is in the home network of a gateway (never part of the plugin's request)
       const home = q.home === true;
+      // Kameras: the test's `vpn: true` = the request comes through the VPN (live video for gc.cameras.live)
+      const vpn = q.vpn === true;
       delete q.home;
+      delete q.vpn;
       delete q.homeRef;
       let ref = null;
-      if (hcOn) {
+      if (hcOn || cams.on) {
         ref = require('node:crypto').randomBytes(16).toString('hex');
         hcRefs.set(ref, { userId: u && Number.isSafeInteger(u.id) ? u.id : null, home });
+        cams.state.refs.set(ref, { vpn });
         q.homeRef = ref;
       }
       try {
         const r = await hook('request', q);
         return { status: 200, ...r };
       } finally {
-        if (ref) hcRefs.delete(ref);
+        if (ref) { hcRefs.delete(ref); cams.state.refs.delete(ref); }
         if (person) { const e = personCtx.get(u.id); e[kind]--; if (!e.read && !e.write) personCtx.delete(u.id); }
       }
     },
