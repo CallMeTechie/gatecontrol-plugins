@@ -15,9 +15,18 @@
 // event (hook cameraEvent), to everybody who sees the camera, at most once per
 // camera every 5 minutes (topic "kamera"); "Niemand ist zu Hause" when the
 // gateway says so.
+//
+// 1.7.0: the camera list carries the resolution (width/height) and the sound
+// (audio: the app offers "Ton"; hasAudio: the stream has a sound track); each
+// person may switch the push off for a camera (home_camera_user_prefs,
+// PUT cameras/home/<id>/prefs { push }); the push carries "Ansehen"
+// (open_app_route — the apps open that camera); HTTPS cameras: "HTTPS" and
+// "Zertifikat nicht prüfen" (tlsInsecure, the administrator's choice per
+// camera; default: checked, error cam_tls).
 
 const store = require('./store');
 const rights = require('./rights');
+const push = require('./push');
 const tz = require('./tz');
 const { fail, text, bool } = require('./util');
 
@@ -36,7 +45,7 @@ const has = (gc) => !!(gc && gc.cameras);
 const HOST = {
   ERR_CAMERA_AUTH: 'cam_auth', ERR_CAMERA_UNREACHABLE: 'cam_unreachable', ERR_CAMERA_NOT_ALLOWED: 'cam_not_allowed', ERR_CAMERA_OFFLINE: 'cam_offline',
   ERR_CAMERA_UNSUPPORTED: 'cam_unsupported', ERR_CAMERA_LIMIT: 'cam_limit', ERR_CAMERA_NOT_READY: 'cam_not_ready', ERR_CAMERA_SERVICE_MISSING: 'cam_service',
-  ERR_NOT_FOUND: 'not_found', ERR_INVALID: 'invalid', ERR_CAMERAS_DENIED: 'cam_needs_gc',
+  ERR_NOT_FOUND: 'not_found', ERR_INVALID: 'invalid', ERR_CAMERAS_DENIED: 'cam_needs_gc', ERR_CAMERA_TLS: 'cam_tls',
 };
 
 async function host(fn) {
@@ -69,6 +78,20 @@ async function setPush(gc, id, on) {
     ON CONFLICT(camera_id) DO UPDATE SET push = excluded.push`, [id, on ? 1 : 0]);
 }
 
+/** The cameras this person switched the push off for (Set of camera ids). */
+async function mutedOf(gc, userId) {
+  const out = new Set();
+  for (const p of await store.all(gc, 'SELECT camera_id FROM home_camera_user_prefs WHERE user_id = ? AND push = 0', [userId])) out.add(p.camera_id);
+  return out;
+}
+
+/** Who switched the push of this camera off (Set of user ids). */
+async function mutedFor(gc, cameraId) {
+  const out = new Set();
+  for (const p of await store.all(gc, 'SELECT user_id FROM home_camera_user_prefs WHERE camera_id = ? AND push = 0', [cameraId])) out.add(p.user_id);
+  return out;
+}
+
 /** Does this person see the home camera? (admin page "Berechtigungen", column "sieht") */
 function sees(r, userId, id) {
   const s = r.homeCams && r.homeCams.get(userId);
@@ -92,9 +115,16 @@ async function cameraView(gc, cam, prefs) {
   let snap = null;
   try { snap = (await gc.cameras.snapshotUrl(cam.id)).url; } catch { snap = null; }
   const p = prefs.get(cam.id) || { push: true };
+  const settings = settingsOf(cam);
+  const hasAudio = typeof cam.hasAudio === 'boolean' ? cam.hasAudio : null;
+  const dim = (v) => (Number.isInteger(v) && v > 0 && v < 20000 ? v : null);
   return {
     id: cam.id, kind: 'home', name: cam.name, gatewayId: cam.gatewayId, gateway: cam.gateway, model: [cam.manufacturer, cam.model].filter(Boolean).join(' ') || null,
-    host: cam.host, source: cam.source, state: cam.state, online: !!cam.online, codec: cam.codec, events: cam.events, settings: settingsOf(cam),
+    host: cam.host, source: cam.source, state: cam.state, online: !!cam.online, codec: cam.codec, events: cam.events, settings,
+    // 1.7.0: resolution of the stream (gateway report; null unknown) and sound — "Ton" when switched on and the
+    // stream is not known to have none (hasAudio: GateControl ≥ 1.242.0 / gateway ≥ 1.29.0, else null)
+    width: dim(cam.width), height: dim(cam.height), audio: settings.audio && hasAudio !== false, hasAudio,
+    https: cam.https === true, tlsInsecure: cam.tlsInsecure === true,
     push: p.push !== false, snapshotUrl: snap, snapshotAt: cam.snapshotAt || null, lastEventAt: cam.lastEventAt || null,
   };
 }
@@ -161,6 +191,9 @@ function target(body) {
     out.host = body.host.trim();
     if (body.onvifPort != null) { if (!Number.isInteger(body.onvifPort) || body.onvifPort < 1 || body.onvifPort > 65535) throw fail('invalid', { field: 'onvifPort' }); out.onvifPort = body.onvifPort; }
     if (typeof body.onvifPath === 'string' && body.onvifPath) out.onvifPath = body.onvifPath;
+    // 1.7.0: ONVIF over HTTPS; "Zertifikat nicht prüfen" only when the administrator ticks it
+    if (body.onvifTls !== undefined) out.onvifTls = bool(body.onvifTls);
+    if (body.tlsInsecure !== undefined) out.tlsInsecure = bool(body.tlsInsecure);
   }
   const user = body.user == null ? '' : body.user;
   const password = body.password == null ? '' : body.password;
@@ -191,6 +224,7 @@ async function adminRoute(gc, method, seg, body, query, cfg, now) {
       if (body.name !== undefined) patch.name = text(body.name, 60);
       if (body.user !== undefined) { if (typeof body.user !== 'string' || body.user.length > 64) throw fail('invalid', { field: 'user' }); patch.user = body.user; }
       if (typeof body.password === 'string' && body.password) { if (body.password.length > 128) throw fail('invalid', { field: 'password' }); patch.password = body.password; }
+      if (body.tlsInsecure !== undefined) patch.tlsInsecure = bool(body.tlsInsecure);
       const s = cleanSettings(body.settings);
       if (s && Object.keys(s).length) patch.settings = s;
       let cam = null;
@@ -205,6 +239,7 @@ async function adminRoute(gc, method, seg, body, query, cfg, now) {
       await store.tx(gc, async () => {
         await store.run(gc, 'DELETE FROM home_camera_prefs WHERE camera_id = ?', [id]);
         await store.run(gc, 'DELETE FROM home_camera_rights WHERE camera_id = ?', [id]);
+        await store.run(gc, 'DELETE FROM home_camera_user_prefs WHERE camera_id = ?', [id]);
       });
       return {};
     }
@@ -230,7 +265,12 @@ async function personList(gc, c) {
   if (!has(gc)) return { supported: false, minGatecontrol: MIN_GATECONTROL, cameras: [] };
   const prefs = await prefsMap(gc);
   const cams = await visible(gc, c.r, c.user);
-  return { supported: true, minGatecontrol: MIN_GATECONTROL, every: 10, cameras: await Promise.all(cams.map((x) => cameraView(gc, x, prefs).then((v) => ({ ...v, host: undefined })))) };
+  const muted = await mutedOf(gc, c.user.id);
+  // people never see the address nor the certificate choice; prefs.push = their own push (1.7.0)
+  return {
+    supported: true, minGatecontrol: MIN_GATECONTROL, every: 10,
+    cameras: await Promise.all(cams.map((x) => cameraView(gc, x, prefs).then((v) => ({ ...v, host: undefined, tlsInsecure: undefined, https: undefined, prefs: { push: !muted.has(x.id) } })))),
+  };
 }
 
 async function ownCamera(gc, c, id) {
@@ -251,6 +291,16 @@ async function personRoute(gc, c, req, seg, query) {
     const what = seg[3];
     if (what === 'live' && method === 'GET') return { live: await host(() => gc.cameras.live(cam.id, req)) };
     if (what === 'still' && method === 'GET') return { still: await host(() => gc.cameras.snapshot(cam.id, { maxBytes: SAVE_MAX })) };
+    if (what === 'prefs' && (method === 'PUT' || method === 'PATCH')) {
+      // 1.7.0: the own push "Personen an der Kamera" of this camera (read-only devices: no)
+      if (!rights.canAct(c.user)) throw fail('read_only');
+      const body = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
+      if (body.push === undefined) throw fail('invalid', { field: 'push' });
+      const on = bool(body.push);
+      await store.tx(gc, () => store.run(gc, `INSERT INTO home_camera_user_prefs (user_id, camera_id, push) VALUES (?, ?, ?)
+        ON CONFLICT(user_id, camera_id) DO UPDATE SET push = excluded.push`, [c.user.id, cam.id, on ? 1 : 0]));
+      return { prefs: { push: on } };
+    }
     if (what === 'clips' && method === 'GET') {
       const range = dayRange(query && query.day, c.cfg.timezone, c.now);
       const list = await host(() => gc.cameras.events({ cameraId: cam.id, since: new Date(range.since).toISOString(), until: new Date(range.until).toISOString(), limit: 100 }));
@@ -274,7 +324,9 @@ async function onEvent(gc, ev, t, now = Date.now()) {
   if (p.push === false) return { pushed: false, why: 'off' };
   if (p.lastPushAt && now - p.lastPushAt < PUSH_GAP_MS) return { pushed: false, why: 'gap' };
   const r = await rights.load(gc);
-  const users = viewers(r, ev.cameraId);
+  // 1.7.0: without the people who switched this camera's push off for themselves
+  const muted = await mutedFor(gc, ev.cameraId);
+  const users = viewers(r, ev.cameraId).filter((u) => !muted.has(u));
   if (!users.length) return { pushed: false, why: 'nobody' };
   // reserve the slot first: two events of one camera at the same moment push once
   const claimed = await store.tx(gc, async () => {
@@ -295,7 +347,9 @@ async function onEvent(gc, ev, t, now = Date.now()) {
   try {
     await gc.notify({
       topic: 'kamera', title: t(lang, 'home.push_title', { name: ev.camera || '' }).slice(0, 120), body, priority: 'high', users,
-      collapseKey: 'homecam:' + ev.cameraId, ttl: 6 * 3600, data: { door: { type: 'home_camera_event', cameraId: ev.cameraId, eventId: ev.id } },
+      collapseKey: 'homecam:' + ev.cameraId, ttl: 6 * 3600,
+      // "Ansehen" (1.7.0): the apps open this camera (data.door.cameraId), the portal the plugin's tab
+      data: { door: { type: 'home_camera_event', cameraId: ev.cameraId, eventId: ev.id }, actions: [push.viewAction(lang)] },
       ...(image ? { image } : {}),
     });
   } catch (e) {
@@ -306,5 +360,5 @@ async function onEvent(gc, ev, t, now = Date.now()) {
 }
 
 module.exports = {
-  MIN_GATECONTROL, PUSH_GAP_MS, has, adminView, adminRoute, personList, personRoute, onEvent, sees, viewers, visible, dayRange, cleanSettings,
+  MIN_GATECONTROL, PUSH_GAP_MS, has, mutedOf, mutedFor, adminView, adminRoute, personList, personRoute, onEvent, sees, viewers, visible, dayRange, cleanSettings,
 };

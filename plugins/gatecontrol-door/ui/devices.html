@@ -22,6 +22,9 @@
           <div class="form-group"><label class="form-label" for="dr-hc-pw">{{t:home.password}}</label><input class="form-input" id="dr-hc-pw" type="password" maxlength="128" autocomplete="new-password"></div>
         </div>
         <p class="dr-hint">{{t:home.pw_hint}}</p>
+        <label class="check dr-check-top"><input type="checkbox" id="dr-hc-tls"><span>{{t:home.https}}</span></label>
+        <label class="check dr-check-top"><input type="checkbox" id="dr-hc-tlsins"><span>{{t:home.tls_insecure}} <span class="dr-hint">{{t:home.tls_hint}}</span></span></label>
+        <div class="dr-note" id="dr-hc-tlsask" role="status" hidden>{{t:home.tls_ask}}</div>
         <div class="dr-actions dr-end">
           <button class="btn" type="button" id="dr-hc-again">{{t:home.search_again}}</button>
           <button class="btn" type="button" id="dr-hc-cancel">{{t:common.cancel}}</button>
@@ -40,6 +43,7 @@
         <select class="form-select" id="dr-hc-keep"><option value="14">14 {{t:home.days_word}}</option><option value="7">7 {{t:home.days_word}}</option><option value="30">30 {{t:home.days_word}}</option></select></div>
       <label class="check dr-check-top"><input type="checkbox" id="dr-hc-push"><span><strong>{{t:home.push}}</strong> {{t:home.push_people}} <span class="dr-hint">{{t:home.push_gap}}</span></span></label>
       <label class="check dr-check-top"><input type="checkbox" id="dr-hc-audio"><span>{{t:home.audio}} <span class="dr-hint">{{t:home.audio_hint}}</span></span></label>
+      <label class="check dr-check-top" id="dr-hc-rtls-box" hidden><input type="checkbox" id="dr-hc-rtls"><span>{{t:home.tls_insecure}} <span class="dr-hint">{{t:home.tls_hint}}</span></span></label>
       <div class="dr-info"><span><strong>{{t:home.privacy}}</strong> {{t:home.privacy_t}}</span></div>
     </section>
   </div>
