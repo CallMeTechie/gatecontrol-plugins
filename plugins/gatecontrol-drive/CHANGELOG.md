@@ -2,6 +2,31 @@
 
 Dateien der Familie und des Teams auf dem eigenen Speicher – auf diesem Server, einer NAS oder in S3.
 
+## 1.21.0
+
+- **Bild- und Videoansicht im Portal** (`ui/viewer.js`, `window.DriveViewer`): ein Klick auf ein Bild oder Video in
+  „Dateien“, in der Suche und in „Fotos“ öffnet es groß statt eines Downloads bzw. des kleinen Vorschau-Dialogs. Vor und
+  zurück (Pfeile, Pfeiltasten, Wischen) durch die Bilder und Videos des gezeigten Ordners bzw. der gezeigten Fotos;
+  Zoom für Bilder (Mausrad, +/−/0, Doppelklick, zwei Finger) und Verschieben im Zoom; oben Herunterladen, Teilen (wer
+  darf), Details (Größe, Art, Datum, von wem, Ort in Drive, Herkunft) und das Menü der Datei. Erst die große Vorschau,
+  darüber das Original; HEIC bleibt bei der Vorschau. Die Ansicht steht im Fluss der Seite in der Höhe, die das Frame
+  hat (`--gc-viewport-height`), die Liste ist so lange ausgeblendet.
+- **Videos direkt abspielen:** `<video controls preload="metadata">` mit der signierten URL aus
+  `GET nodes/<id>/content` – GateControl beantwortet Range-Anfragen (`206`, `Content-Range`, `416`) mit dem gespeicherten
+  Typ, der Browser lädt nur, was er spielt. Die Stelle bleibt, solange der Tab offen ist (je Datei und Fassung).
+  Typen, die Browser selten können (MKV, AVI, WMV …: `canPlayType` leer), zeigen zuerst einen Hinweis mit
+  „Herunterladen“ und „Trotzdem abspielen“; ein Abspielfehler oder ein Video ohne Bild (HEVC) sagt es ebenso.
+  Vollbild, wo das Frame es darf (`document.fullscreenEnabled`; GateControl gibt Plugins mit Video-Typen
+  `allow="fullscreen"` ab der Version nach 1.241.1).
+- **Herunterladen** von Bildern und Videos (Menü und Ansicht) lädt jetzt wirklich herunter: die Bytes über
+  `GC.mediaBytes` (16 MiB je Aufruf), dann als Download des Frames; über 512 MB ein Hinweis auf „Speichern unter“ bzw.
+  die Apps.
+- **Virenscan:** eine gesperrte Datei (`scan.blocked`) zeigt in der Ansicht nur ihren Grund und fragt keine URL an; eine
+  markierte erst nach „Trotzdem ansehen“ (das Herunterladen fragt wie bisher).
+- Seitenbudget des Portal-Tabs im Test von 0,5 auf 0,6 MB (die Grenze von GateControl bleibt 1 MB).
+- Tests: `test/viewer_range.test.js` (Range über die signierte URL und die App-Route, 416, Virenscan 423),
+  `test/portal_viewer.test.js` (Ansicht, Tasten, Zoom, Details, Video, Virenscan, nicht abspielbar, „Fotos“).
+
 ## 1.20.1
 
 - Handbuch im Reiter „Handbuch“ (GateControl ≥ 1.241.0): `HANDBUCH.md` / `HANDBOOK.md` im Paket, in `plugin.json` unter `handbook`. Ältere GateControl-Versionen ignorieren es; die Mindestversion bleibt `>=1.216.0`.

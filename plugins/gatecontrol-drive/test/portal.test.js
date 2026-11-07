@@ -30,7 +30,8 @@ test('render: the portal tab inlines its style, the context and the script; no t
     assert.equal(ctx.texts['err.links_disabled'], texts[lang]['error.links_disabled'], 'API error texts as err.*');
     assert.equal((html.match(/<script>/g) || []).length, 2);
     assert.ok(!/<script[^>]*\bsrc=|<link\b|<iframe\b|@import|url\(\s*['"]?https?:/i.test(html), 'nothing loaded from elsewhere');
-    assert.ok(Buffer.byteLength(html) < 1024 * 1024 * 0.5, `well below the host's 1 MB (${Buffer.byteLength(html)} bytes)`);
+    // the budget: 0.5 MB until 1.20, 0.6 MB since the viewer of pictures and videos (1.21.0)
+    assert.ok(Buffer.byteLength(html) < 1024 * 1024 * 0.6, `well below the host's 1 MB (${Buffer.byteLength(html)} bytes)`);
   }
   for (const id of ['dp-app', 'dp-nav', 'dp-main', 'dp-crumbs', 'dp-q', 'dp-tools', 'dp-msg', 'dp-dialog', 'dp-file', 'dp-ups', 'dp-drop']) assert.ok(portalHtml().includes(`id="${id}"`), id);
   assert.equal(ctxOf(portalHtml({ user: { id: 2, loggedIn: false } })).loggedIn, false, 'device trust only: no files');
