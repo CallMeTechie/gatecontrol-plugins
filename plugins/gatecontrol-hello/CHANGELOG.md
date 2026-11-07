@@ -2,6 +2,10 @@
 
 Beispiel-Plugin dieses Repositorys — wird nicht veröffentlicht (`plugins.config.json`: `release: false`).
 
+## 1.1.1
+
+- Handbuch im Reiter „Handbuch“ (GateControl ≥ 1.241.0): `HANDBUCH.md` / `HANDBOOK.md` im Paket, in `plugin.json` unter `handbook`. Ältere GateControl-Versionen ignorieren es; die Mindestversion bleibt `>=1.228.0`.
+
 ## 1.1.0
 - **Edge-Teil** (GateControl ≥ 1.228.0, Gateway ≥ 1.19.0): `edge/index.js` läuft auf Gateways, auf denen ein
   Administrator das Plugin eingeschaltet hat (Gateway-Seite › Reiter „Edge-Plugins“). Keine Fähigkeiten

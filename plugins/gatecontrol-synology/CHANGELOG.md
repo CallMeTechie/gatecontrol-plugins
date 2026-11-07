@@ -2,6 +2,10 @@
 
 Synology-NAS überwachen und steuern (DSM Web API) als GateControl-Plugin – nur für Administratoren.
 
+## 1.2.1
+
+- Handbuch im Reiter „Handbuch“ (GateControl ≥ 1.241.0): `HANDBUCH.md` / `HANDBOOK.md` im Paket, in `plugin.json` unter `handbook`. Ältere GateControl-Versionen ignorieren es; die Mindestversion bleibt `>=1.193.0`.
+
 ## 1.2.0
 Braucht **GateControl ≥ 1.193.0** (Dateien bis 2 GB von anderen Plugins übernehmen, Upload zum NAS). Neu beim
 Aktualisieren: Dateispeicher (nur übergebene Dateien, keine eigenen Uploads) und zwei Dienste für andere Plugins.

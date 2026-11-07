@@ -2,6 +2,10 @@
 
 Stundenplan aus WebUntis für Schüler- und Elternkonten als GateControl-Plugin.
 
+## 1.7.2
+
+- Handbuch im Reiter „Handbuch“ (GateControl ≥ 1.241.0): `HANDBUCH.md` / `HANDBOOK.md` im Paket, in `plugin.json` unter `handbook`. Ältere GateControl-Versionen ignorieren es; die Mindestversion bleibt `>=1.196.0`.
+
 ## 1.7.1
 - „timetable not fetched“ im Log nennt bei einem Fehler, der nicht von WebUntis kommt (etwa „storage timeout“ von
   GateControl), zusätzlich dessen Text – bisher stand dort nur „failed“. Sonst unverändert.

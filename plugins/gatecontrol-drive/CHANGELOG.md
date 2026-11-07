@@ -2,6 +2,10 @@
 
 Dateien der Familie und des Teams auf dem eigenen Speicher – auf diesem Server, einer NAS oder in S3.
 
+## 1.20.1
+
+- Handbuch im Reiter „Handbuch“ (GateControl ≥ 1.241.0): `HANDBUCH.md` / `HANDBOOK.md` im Paket, in `plugin.json` unter `handbook`. Ältere GateControl-Versionen ignorieren es; die Mindestversion bleibt `>=1.216.0`.
+
 ## 1.20.0
 - **Zwischenspeicher im Heimnetz** (GateControl ≥ 1.231.0, neue Berechtigung `homeCache`, Feature `homeCache`,
   README „Home cache“). Heim-Gateways mit eingeschaltetem Zwischenspeicher halten Drive-Dateien im Heimnetz vor; Apps

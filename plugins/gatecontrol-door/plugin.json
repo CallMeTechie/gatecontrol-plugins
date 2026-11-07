@@ -4,7 +4,7 @@
     "de": "Tür & Kamera",
     "en": "Door & Camera"
   },
-  "version": "1.6.0",
+  "version": "1.6.1",
   "publisher": "CallMeTechie",
   "description": {
     "de": "Nuki-Schlösser und -Opener (lokale Bridge oder Nuki Web), Ring-Klingeln/-Kameras (inoffizielle Schnittstelle, ohne Gewähr) und neu Kameras im Heimnetz (ONVIF/RTSP über ein Gateway, ohne Hersteller-Cloud): Tür in App, Widget und Portal auf- und zusperren, Klingel-Push mit Bild, Live-Bild über VPN, Clips bei Bewegung auf der eigenen NAS, Push mit Standbild bei Personen, Ring-Modus, Verlauf, automatisches Aufsperren bei Ankunft (nur mit Zustimmung). Rechte pro Person, Schloss und Kamera.",
@@ -148,6 +148,46 @@
         "en": "Automatic unlock"
       },
       "default": true
+    }
+  ],
+  "handbook": {
+    "de": "HANDBUCH.md",
+    "en": "HANDBOOK.md"
+  },
+  "setupNotices": [
+    {
+      "id": "cameras-compose",
+      "since": "1.6.0",
+      "title": {
+        "de": "Kameras: neue Compose-Datei für das Gateway",
+        "en": "Cameras: new compose file for the gateway"
+      },
+      "text": {
+        "de": "Für Live-Bild und Clips der Kameras im Heimnetz braucht ein Gateway auf Synology oder Linux einmalig die neue docker-compose.yml mit dem Dienst „kameras“ (GateControl ab 1.240.0, Gateway ab 1.28.0). Lade sie unter Gateways › dein Gateway › Funktionen › „Geräte im Heimnetz“ › Kameras herunter und erstelle das Projekt neu. Ein Raspberry Pi braucht dafür das neue Image.",
+        "en": "For the live picture and clips of cameras in the home network, a gateway on Synology or Linux needs the new docker-compose.yml with the service “kameras” once (GateControl 1.240.0 or later, gateway 1.28.0 or later). Download it under Gateways › your gateway › Functions › “Devices at home” › Cameras and build the project again. A Raspberry Pi needs the new image for it."
+      },
+      "handbook": "kameras-compose",
+      "check": {
+        "type": "gatewayService",
+        "feature": "cameras",
+        "service": "kameras"
+      }
+    },
+    {
+      "id": "cameras-device-settings",
+      "since": "1.6.0",
+      "title": {
+        "de": "Kameras: ONVIF und RTSP an den Kameras einschalten",
+        "en": "Cameras: enable ONVIF and RTSP on the cameras"
+      },
+      "text": {
+        "de": "Nur wenn du Kameras im Heimnetz nutzt: GateControl erreicht eine Kamera nur, wenn an ihr ONVIF bzw. RTSP eingeschaltet ist und sie eine private IPv4-Adresse im Heimnetz des Gateways hat. Reolink: Netzwerk › Erweitert › Server-Einstellungen (ONVIF-Port 8000). Tapo: in der Tapo-App ein Kamera-Konto anlegen (ONVIF-Port 2020). Danach „Erledigt“.",
+        "en": "Only if you use cameras in the home network: GateControl reaches a camera only when ONVIF or RTSP is enabled on it and it has a private IPv4 address in the gateway's home network. Reolink: Network › Advanced › Server settings (ONVIF port 8000). Tapo: create a camera account in the Tapo app (ONVIF port 2020). Then “Done”."
+      },
+      "handbook": "kameras-onvif",
+      "check": {
+        "type": "manual"
+      }
     }
   ]
 }

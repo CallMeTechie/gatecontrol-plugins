@@ -3,6 +3,10 @@
 Klimageräte und Heizungen als GateControl-Plugin: Midea-Klimageräte (früher fest in GateControl
 eingebaut, „Klimaanlage“) und seit 1.6.0 Dreo-Heizlüfter und -Klimageräte.
 
+## 2.2.3
+
+- Handbuch im Reiter „Handbuch“ (GateControl ≥ 1.241.0): `HANDBUCH.md` / `HANDBOOK.md` im Paket, in `plugin.json` unter `handbook`. Ältere GateControl-Versionen ignorieren es; die Mindestversion bleibt `>=1.185.0`.
+
 ## 2.2.2
 - **Der Dreo-Heizlüfter wurde verworfen**: Die Dreo-Cloud lieferte das Gerät, aber seine
   Seriennummer enthielt Zeichen, die das Plugin nicht zuließ (bisher nur Buchstaben, Ziffern,

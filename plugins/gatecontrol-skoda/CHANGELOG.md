@@ -2,6 +2,10 @@
 
 Škoda-Fahrzeuge (MySkoda) als GateControl-Plugin – bisher fest in GateControl eingebaut.
 
+## 1.6.1
+
+- Handbuch im Reiter „Handbuch“ (GateControl ≥ 1.241.0): `HANDBUCH.md` / `HANDBOOK.md` im Paket, in `plugin.json` unter `handbook`. Ältere GateControl-Versionen ignorieren es; die Mindestversion bleibt `>=1.186.0`.
+
 ## 1.6.0
 - **Fahrtenbuch mit Karte**: Jede Fahrt wird auf einer OpenStreetMap-Karte eingezeichnet – auf der
   Seite „Fahrtenbuch“ und im Portal neben der Liste (auf schmalen Bildschirmen darüber): alle Fahrten

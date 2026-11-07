@@ -49,9 +49,13 @@ Fehlercodes: `invalid`, `forbidden`, `no_right`, `not_found`, `limit` (mit
 
 ## Noch nicht
 
-Texterkennung (durchsuchbares PDF), „Teilen › GateControl drucken“ in den
-Apps, Office-Dateien (Word, Excel – nur PDF und Bilder), PDF an Drucker ohne
-PDF-Unterstützung (Rasterung).
+Texterkennung (durchsuchbares PDF), Office-Dateien (Word, Excel – nur PDF und
+Bilder), PDF an Drucker ohne PDF-Unterstützung (Rasterung).
+
+Seit 1.0.1 ist das Plugin für die GateControl-Apps freigegeben
+(`permissions.app`): die Android-App (ab 1.84.0) druckt über den Druckdienst
+„GateControl“ im System-Druckdialog und über „Teilen › Mit GateControl
+drucken“ – mit und ohne VPN.
 
 ---
 
@@ -67,5 +71,7 @@ the family 20 pages a day in b/w by default), history, settings. Portal tab
 (phone first): scan from the glass or the feeder with previews, more pages and
 the AI's name and folder into Drive as one PDF; print an uploaded PDF or
 picture with copies, colour and double-sided — the job waits up to 24 hours
-when the printer is off. Not yet: OCR, “Share › Print with GateControl” in the
-apps, Office files.
+when the printer is off. Since 1.0.1 the GateControl apps may use it
+(`permissions.app`): the Android app (1.84.0 or later) prints through the print
+service “GateControl” and “Share › Print with GateControl”. Not yet: OCR,
+Office files.

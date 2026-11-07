@@ -4,6 +4,10 @@ Proxmox-VE-Hosts und -Cluster als GateControl-Plugin: Status, Steuerung von VMs/
 Benachrichtigungen sowie Widgets, Schnellaktionen und eine Startkachel in den Apps – nur für
 Administratoren (keine Portal-Teile).
 
+## 1.1.1
+
+- Handbuch im Reiter „Handbuch“ (GateControl ≥ 1.241.0): `HANDBUCH.md` / `HANDBOOK.md` im Paket, in `plugin.json` unter `handbook`. Ältere GateControl-Versionen ignorieren es; die Mindestversion bleibt `>=1.154.0`.
+
 ## 1.1.0
 - **Widgets und Schnellaktionen in den GateControl-Apps** – nur für GateControl-Administratoren;
   alle anderen sehen weder Aktionen noch Kachel, und jeder Lauf prüft die Rolle erneut.

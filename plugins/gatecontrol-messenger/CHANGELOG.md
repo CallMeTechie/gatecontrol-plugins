@@ -3,6 +3,10 @@
 Chats zwischen den GateControl-Konten – in der GateControl-App (eigener Tab „Chats“), im
 Windows-Client und im Portal (eigener Tab „Chats“). Alles bleibt auf dem eigenen Server.
 
+## 1.11.1
+
+- Handbuch im Reiter „Handbuch“ (GateControl ≥ 1.241.0): `HANDBUCH.md` / `HANDBOOK.md` im Paket, in `plugin.json` unter `handbook`. Ältere GateControl-Versionen ignorieren es; die Mindestversion bleibt `>=1.193.0`.
+
 ## 1.11.0
 - **Virenscan von GateControl** (README „Virus scan“). GateControl prüft ab der Version nach 1.222.0 jede Chat-Datei
   direkt nach dem Hochladen: Bilder, Sprachnachrichten, Dateien, Vorschaubilder, Storys und Gruppenbilder. Der Messenger

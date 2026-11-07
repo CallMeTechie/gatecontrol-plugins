@@ -2,6 +2,10 @@
 
 Teilen wie Quick Share – über den eigenen GateControl-Server.
 
+## 1.5.1
+
+- Handbuch im Reiter „Handbuch“ (GateControl ≥ 1.241.0): `HANDBUCH.md` / `HANDBOOK.md` im Paket, in `plugin.json` unter `handbook`. Ältere GateControl-Versionen ignorieren es; die Mindestversion bleibt `>=1.193.0`.
+
 ## 1.5.0
 - **Übersicht für Admins mit allen Sendungen:** Die Seite „Übersicht“ zeigt jetzt oben vier Kacheln – belegter Speicher
   (abgeholt / nicht abgeholt, mit Balken), angekommen in 7 Tagen (x von y Sendungen, wartend, fehlgeschlagen), der Weg

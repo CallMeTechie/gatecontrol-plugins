@@ -28,6 +28,10 @@
 //   await host.start();
 //   const res = await host.request({ method: 'GET', path: '/ping' });
 //   host.logs, host.notifications, host.fetches; await host.close();
+//
+// plugin.json "handbook" and "setupNotices" (GateControl ≥ 1.241.0: tab „Handbuch“, banner „Handeln nötig“) are only
+// read by the host's settings pages, never by the plugin's code — the mock host ignores them like an older GateControl
+// (tools/handbook.js checks them in tools/validate.js).
 //   notifications: legacy gc.notify(message, { severity }) → { message, severity };
 //   gc.notify({ topic, title, … }) (GateControl ≥ 1.154.0) → { topic, title, body,
 //   priority, users, collapseKey, ttl, data } with the host's checks. Options:

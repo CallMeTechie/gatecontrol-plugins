@@ -11,6 +11,8 @@
 //   * migrations are named <number>_<name>.sql, numbers unique
 //   * CHANGELOG.md has a section for the current version
 //   * the plugin has tests (test/*.test.js)
+//   * the plugin has a handbook (plugin.json "handbook" { de, en }, first line "<!-- version: X.Y.Z -->" = version) and
+//     valid "setupNotices" (tools/handbook.js) — GateControl ≥ 1.241.0 shows them, older versions ignore both keys
 // A plugin that needs a newer GateControl than the pinned one (its "gatecontrol" range starts above it — built for a
 // version that is not released yet) is checked by the pinned validator without the keys that version brought
 // (NEWER_KEYS, checked here by the rules of docs/plugins.md instead); bump gatecontrol.ref once it is released.
@@ -24,6 +26,7 @@ const path = require('node:path');
 const lib = require('./lib');
 const { stagedFiles } = require('./stage');
 const catalogMeta = require('./catalog-meta');
+const handbook = require('./handbook');
 
 // Keys of newer GateControl versions the pinned validator may not know: version → [{ path, check(value, raw) → error | null,
 // replace?(value) → what the pinned validator checks instead (else the key is left out), present?(value) → false: not
@@ -154,6 +157,8 @@ function validatePlugin(id, notes = []) {
   if (typeof raw.version === 'string' && lib.changelogSection(id, raw.version) == null) {
     errors.push(`CHANGELOG.md: no "## ${raw.version}" section`);
   }
+  // handbook + setupNotices: keys an older GateControl ignores (the pinned validator too: unknown top-level keys pass)
+  errors.push(...handbook.check(dir, raw, files || null));
   const testDir = path.join(dir, 'test');
   if (!fs.existsSync(testDir) || !fs.readdirSync(testDir).some((f) => f.endsWith('.test.js'))) {
     errors.push('test: no test/*.test.js');
