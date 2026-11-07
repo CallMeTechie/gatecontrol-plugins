@@ -4,7 +4,8 @@
 // The gateways listen passively to Bluetooth thermometers (BTHome, Xiaomi with ATC/pvvx firmware); the administrator
 // takes the ones of the house over in GateControl (Gateway › Funk › "Übernehmen"). Only those come here:
 // gc.radio.sensors() → [{ id: 'ble:<mac hex>', gatewayId, gateway, mac, name, model, values, battery, online, seenAt }].
-// Without gc.radio (an older GateControl) nothing happens.
+// Without gc.radio (an older GateControl) nothing happens. The zigbee2mqtt devices of the same gateways are in
+// server/zigbee.js; the page shows both under the gateway's source ("Funk über …").
 //
 // Each sensor is one resource like the edge ones: gateway_id 0, deconz_type 'ble', deconz_id '<id>', uniqueid the MAC
 // (lower case), kind 'sensor', capabilities { source: 'ble', gateway_id, gateway, model, reading, named }, state
@@ -87,25 +88,34 @@ async function sync(gc, { force = false } = {}) {
   return { available: true, sensors: seen.size };
 }
 
-/** The GateControl gateways with Bluetooth sensors here: [{ id, name, sensors }] (the page's sources). */
+/** The radio resources of GateControl gateways: the Bluetooth sensors and the zigbee2mqtt devices (server/zigbee.js). */
+async function radioResources(gc) {
+  const z = require('./zigbee');
+  const zr = z.available(gc) ? (await z.list(gc)).filter((r) => r.enabled) : [];
+  return (await resources(gc)).concat(zr);
+}
+
+/** The GateControl gateways with radio resources here: [{ id, name, sensors, devices }] (the page's sources). */
 async function gateways(gc) {
-  if (!available(gc)) return { available: false, gateways: [] };
-  await sync(gc);
+  const z = require('./zigbee');
+  if (!available(gc) && !z.available(gc)) return { available: false, gateways: [] };
+  if (available(gc)) await sync(gc);
   const by = new Map();
-  for (const r of await resources(gc)) {
+  for (const r of await radioResources(gc)) {
     const id = r.capabilities.gateway_id;
     if (!Number.isInteger(id)) continue;
-    const g = by.get(id) || { id, name: r.capabilities.gateway || String(id), sensors: 0 };
-    g.sensors++;
+    const g = by.get(id) || { id, name: r.capabilities.gateway || String(id), sensors: 0, devices: 0 };
+    if (r.deconz_type === BLE_TYPE) g.sensors++;
+    else g.devices++;
     by.set(id, g);
   }
   return { available: true, gateways: [...by.values()].sort((a, b) => a.name.localeCompare(b.name)) };
 }
 
-/** The sensors of one GateControl gateway (with their owners, as /resources). */
+/** The Bluetooth sensors and zigbee2mqtt devices of one GateControl gateway (with their owners, as /resources). */
 async function list(gc, gatewayId) {
-  await sync(gc);
-  return (await resources(gc)).filter((r) => gatewayId == null || r.capabilities.gateway_id === Number(gatewayId));
+  if (available(gc)) await sync(gc);
+  return (await radioResources(gc)).filter((r) => gatewayId == null || r.capabilities.gateway_id === Number(gatewayId));
 }
 
 /** A name given here stays (GateControl's name only until then). */

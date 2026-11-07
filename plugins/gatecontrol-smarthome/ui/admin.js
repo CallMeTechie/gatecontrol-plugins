@@ -146,6 +146,7 @@
   }
   function renderSwitch(r) { return cardShell(r); }
   function renderDeconz(r) {
+    if (r.kind === 'cover' && r.deconz_type === 'z2m') return z2mCover(r);
     if (r.kind === 'scene') return renderScene(r);
     if (r.kind === 'sensor') return renderSensor(r);
     if (r.kind === 'switch') return renderSwitch(r);
@@ -209,6 +210,7 @@
 
   function prettyModel(d) {
     var m = d.model || '';
+    if (d.family === 'z2m') return [d.vendor, m].filter(Boolean).join(' ') || 'Zigbee';
     if (d.family === 'tasmota') return T('family.short.tasmota');
     if (d.family === 'shelly1') return GEN1[m] || (m ? 'Shelly ' + m : T('family.short.shelly1'));
     if (!m) return T('family.short.shelly2');
@@ -298,7 +300,7 @@
     if (body.firstChild) card.appendChild(body);
     card.appendChild(el('div', { class: 'sh-card-foot' }, [
       el('span', { class: 'sh-owner-chips', text: ownersText(r ? r.owners : []) }),
-      el('button', { type: 'button', class: 'sh-owner-btn', text: T('card.edit'), 'aria-label': T('card.edit_of', { name: name || '' }), on: { click: function () { openDevice(d.id); } } }),
+      el('button', { type: 'button', class: 'sh-owner-btn', text: T('card.edit'), 'aria-label': T('card.edit_of', { name: name || '' }), on: { click: function () { if (d.family === 'z2m') openOwners({ resource: r }); else openDevice(d.id); } } }),
     ]));
     return card;
   }
@@ -420,7 +422,15 @@
     if (!isEdge) $('#sh-found').hidden = true;
   }
 
-  /** Bluetooth sensors of one GateControl gateway (taken over in GateControl, Gateway › Funk). */
+  /** A shutter of zigbee2mqtt: the card of the edge devices (position, open/stop/close). */
+  function z2mCover(r) {
+    var st = r.state || {};
+    var caps = r.capabilities || {};
+    return edgeCard({ resource: r, device: { reachable: st.reachable !== false, waiting: false, name: r.name, online: st.reachable !== false, channels: [], last_seen_at: st.lastupdated || null, family: 'z2m', model: caps.model || '', vendor: caps.vendor || '' } });
+  }
+
+  /** Radio of one GateControl gateway: Bluetooth sensors (taken over in GateControl, Gateway › Funk) and the Zigbee
+   *  devices of its zigbee2mqtt (lights, plugs, sensors, buttons) — switched like the deCONZ ones. */
   function loadBle(gatewayId) {
     return S.api('GET', 'ble/resources?gateway_id=' + Number(gatewayId)).then(function (data) {
       var res = (data.resources || []).filter(function (r) { return r.enabled; });
@@ -429,8 +439,15 @@
       renderKpis(res);
       var host = S.clear($('#smarthome-devices'));
       if (!res.length) { emptyMsg(T('ble.empty')); return; }
-      grouped(res, function (r) { return r.area || null; }, renderSensor, function (rest) { return [section(T('section.sensors'), rest, renderSensor)]; })
-        .forEach(function (b) { host.appendChild(b); });
+      grouped(res, function (r) { return r.area || null; }, renderDeconz, function (rest) {
+        return [
+          section(T('section.lights'), rest.filter(function (r) { return r.kind === 'light'; }), renderControllable),
+          section(T('section.plugs'), rest.filter(function (r) { return r.kind === 'plug'; }), renderControllable),
+          section(T('section.covers'), rest.filter(function (r) { return r.kind === 'cover'; }), z2mCover),
+          section(T('section.switches'), rest.filter(function (r) { return r.kind === 'switch'; }), renderSwitch),
+          section(T('section.sensors'), rest.filter(function (r) { return r.kind === 'sensor'; }), renderSensor),
+        ];
+      }).forEach(function (b) { host.appendChild(b); });
     }, function () { emptyMsg(T('load_error')); });
   }
 
@@ -475,7 +492,12 @@
       }
       if (ble.gateways.length) {
         var g3 = el('optgroup', { label: T('source.group_ble') });
-        ble.gateways.forEach(function (g) { g3.appendChild(el('option', { value: 'b:' + g.id, text: g.name + ' (' + T(g.sensors === 1 ? 'ble.count_one' : 'ble.count', { n: g.sensors }) + ')' })); });
+        ble.gateways.forEach(function (g) {
+          var parts = [];
+          if (g.devices) parts.push(T(g.devices === 1 ? 'ble.devices_one' : 'ble.devices', { n: g.devices }));
+          if (g.sensors || !g.devices) parts.push(T(g.sensors === 1 ? 'ble.count_one' : 'ble.count', { n: g.sensors || 0 }));
+          g3.appendChild(el('option', { value: 'b:' + g.id, text: g.name + ' (' + parts.join(', ') + ')' }));
+        });
         sel.appendChild(g3);
       }
       sel.hidden = !gateways.length && !edge.gateways.length && !ble.gateways.length;
