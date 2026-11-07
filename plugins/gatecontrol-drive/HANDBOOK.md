@@ -1,4 +1,4 @@
-<!-- version: 1.24.1 -->
+<!-- version: 1.25.0 -->
 # Drive
 
 ## What the plugin does
@@ -40,8 +40,10 @@ Drive is a subscription of its own (Family, Business or Combo, five people inclu
 - **Devices:** your devices with their backed-up folders and the last backup.
 - **Viewing pictures and videos:** a click on a picture or video – in “Files”, in the search and in “Photos” – opens it large, without downloading it first. The arrows, the arrow keys or a swipe go to the next picture or video in the same folder. Zoom pictures with the mouse wheel, “+”/“−”, a double click or two fingers. Videos play right in Drive (play, pause, seek, sound, full screen); Drive remembers where you stopped while the tab is open. At the top: download, share, details and the file's menu.
 - **Viewing PDFs and texts (apps):** in the Android app and the Windows app a tap on a PDF, text or Markdown file opens it right in the app – in the same view as vault files. Texts can be selected and copied there. “Open with another app” (Android) or “Open with another program” (Windows) stays in the view. Very large files (a PDF over 100 MB, a text over 2 MB) and Office files still open in another app. In the portal a click on a PDF still offers “Download”.
-- **Photos:** timeline by month, “camera uploads only”, albums, “show in the photo frame”, search by people, places and content, map, “Who is this?”. Faces are recognised on the devices only; Drive keeps no face pictures.
+- **Photos:** timeline by month, “camera uploads only”, “All · Photos · Videos” (show only photos or only videos; a video shows its length when the device sent it), albums, “show in the photo frame”, search by people, places and content, map, “Who is this?”. Faces are recognised on the devices only; Drive keeps no face pictures.
 - **Vault folders:** “New” › “New vault”, who may open it (only me, family, team folder). Keep the recovery key safe. A new device asks with “Request access”, a device already approved grants it. Vaults lock after some minutes without input; the AI never reads them. A tap on a file opens it in the vault viewer (pictures, PDFs, texts, in the apps also videos) – see below.
+- **Finding videos:** in the search, “All · Photos · Videos” (portal) or “Videos” (apps) filters the hits. Without a search word “Videos” shows the newest videos.
+- **Backing up photos and videos from the phone (Android):** in the app under **Drive › Photo backup**. “Videos too” is off at first. If you switch it on later, the app asks: **“All videos”** also backs up the videos already on the phone (photos are not uploaded again), **“Only new”** only those from now on. What the backup leaves out is listed under **“Skipped”** with the reason; **“Try again”** tries once more.
 - **AI for documents:** “Document info” on a file, “Ask” below the search, the page “Deadlines” with “Into the family calendar” and “Remind me”, “Turn into a document” for scans.
 - **Import** from Google Drive and OneDrive: connect, choose, pick the target.
 - **Edit in the browser** for office documents when an office server is entered.
@@ -95,11 +97,20 @@ GateControl's virus scan checks new files; Drive does not open or share blocked 
 **A video does not play in the browser.**
 Browsers cannot play some videos, often MKV or HEVC (H.265, e.g. from newer iPhones). Drive says so and offers “Download”. Most of them play in the GateControl apps. If you only hear the sound, the browser cannot decode the picture.
 
+**Videos from the phone are missing in Drive.**
+In the Android app under **Drive › Photo backup**, check that “Videos too” is on. If it says “GateControl may not see your videos yet”, tap **“Allow access”** and choose **“Allow all”** for “Photos and videos”. The app then catches up on the videos that are not in Drive yet. **“Skipped”** lists the files that did not go up, and why.
+
 **“Full screen” is missing in the portal.**
 Full screen in the portal needs GateControl 1.244.0. Older versions show the video in the Drive window.
 
 **At home the photos do not show up faster.**
 The previews reach the gateway bit by bit (a few hundred per run, every 15 minutes). Check at the gateway under **Gateways › Home cache** that it is “on” and that “Photos” or “Drive” are switched on. Previews from the home network need GateControl 1.249.0 and a current app.
+
+## New in 1.25.0
+
+- **Only photos or only videos:** in “Photos” choose “All · Photos · Videos”. Videos show their length.
+- **Searching videos:** the search has the same filter; “Videos” without a search word shows the newest videos.
+- **Backing up older videos (Android):** switching on “Videos too” can now also back up the videos already on the phone. If “Videos too” was on already, the app catches up on its own with the videos not in Drive yet. The app lists skipped files with the reason.
 
 ## New in 1.24.1
 

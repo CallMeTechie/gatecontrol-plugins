@@ -7,7 +7,8 @@
 //
 //   app API   /api/v1/client/plugins/gatecontrol-drive/api/…   (the device token's owner, user.device)
 //   portal    /api/v1/portal/plugins/gatecontrol-drive/api/…   (the same routes; also under portal/…)
-//     GET me · GET areas · GET changes?since=&limit= · GET search?q=&area= (name, then recognised text: doc_text)
+//     GET me · GET areas · GET changes?since=&limit= · GET search?q=&area=&media= (name, then recognised text: doc_text;
+//     media=image|video since 1.25.0)
 //     GET overview (the start of Drive: to do, recently opened, memories, people, places, new in the family, storage —
 //     overview.js, 1.18.0; opening a file — content, office — is kept for "Zuletzt geöffnet") · POST nodes/<id>/opened
 //     (204: a device opened its own copy — only "Zuletzt geöffnet")
@@ -242,6 +243,9 @@ async function me(ctx) {
   };
 }
 
+// mediaFilter: only pictures or only videos — media=image|video on photos, months, memories, classes, places, map,
+// suggest and search (search then also without q), `durationMs` on nodes and photo items from uploads/commit
+// { durationMs } (1.25.0) ·
 // offline: "offline verfügbar" — GET offline, PUT|DELETE nodes/<id>/offline (homecache.js, 1.20.0) ·
 // scan: GateControl's virus scan — `scan { state, blocked, finding }` on file nodes and photo items while the host checks
 // files, 423 scan_pending / quarantined / scan_blocked for content, office, links, Mail; op 'scan' in the change log (1.19.0) ·
@@ -267,7 +271,7 @@ async function me(ctx) {
 // devices: GET/PUT/DELETE devices (1.5.0) · deleteAfter: DELETE nodes/<id>?after=, PATCH { deleteAt } (1.5.0) ·
 // emptyFiles: uploads/commit { size: 0 } without a mediaId (1.5.0) · wipes: DELETE ?everywhere=1 (1.2.0) ·
 // textSearch: uploads/commit { text } (1.3.0) · previews (1.1.0)
-const FEATURES = ['previews', 'wipes', 'textSearch', 'devices', 'deleteAfter', 'emptyFiles', 'links', 'guard', 'timeTravel', 'takenAt', 'photos', 'albums', 'frame', 'storage', 'vault', 'photosFolder', 'vaultsApart', 'bulk', 'photoClasses', 'photoSearch', 'photoPlaces', 'photoPeople', 'overview', 'scan', 'offline'];
+const FEATURES = ['previews', 'wipes', 'textSearch', 'devices', 'deleteAfter', 'emptyFiles', 'links', 'guard', 'timeTravel', 'takenAt', 'photos', 'albums', 'frame', 'storage', 'vault', 'photosFolder', 'vaultsApart', 'bulk', 'photoClasses', 'photoSearch', 'photoPlaces', 'photoPeople', 'overview', 'scan', 'offline', 'mediaFilter'];
 
 /**
  * What needs GateControl's AI service or cloud accounts (1.8.0) — only while the host has it and it is allowed (the
@@ -370,7 +374,7 @@ async function route(ctx, req, seg) {
   if (a === 'viewer' && b === 'pdfjs' && seg.length === 2 && m === 'GET') return ok(viewer.pdfjsPart(q));
   if (a === 'areas' && seg.length === 1 && m === 'GET') return ok(await areaList(ctx));
   if (a === 'changes' && seg.length === 1 && m === 'GET') return ok(await changes.since(ctx, q));
-  if (a === 'search' && seg.length === 1 && m === 'GET') return ok(await nodes.search(ctx, q.q, q.area ? String(q.area) : null));
+  if (a === 'search' && seg.length === 1 && m === 'GET') return ok(await nodes.search(ctx, q.q, q.area ? String(q.area) : null, q.media));
   // the start of Drive (1.18.0)
   if (a === 'overview' && seg.length === 1 && m === 'GET') return ok(await overview.get(ctx));
   if (a === 'offline' && seg.length === 1 && m === 'GET') return ok(await homecache.pins(ctx));

@@ -2,6 +2,19 @@
 
 Dateien der Familie und des Teams auf dem eigenen Speicher – auf diesem Server, einer NAS oder in S3.
 
+## 1.25.0
+
+- **Nur Fotos oder nur Videos:** `GET photos` nimmt `media=image|video` – ebenso `photos/months`, `memories`,
+  `classes`, `places`, `map` und `suggest`; ohne den Parameter wie bisher beides, ein anderer Wert → `400 invalid`
+  (`field: 'media'`). Neues Merkmal `mediaFilter` in `GET me`.
+- **Suche nach Videos:** `GET search` nimmt `media=image|video` – nur Bilder oder nur Videos (keine Ordner), auch in
+  den Treffern im erkannten Text. Mit `media` darf `q` leer sein: die neuesten Bilder bzw. Videos.
+- **Länge eines Videos:** `uploads/commit { durationMs }` (nur bei `video/*`; 0 oder mehr als 7 Tage: unbekannt, keine
+  Zahl → `400 invalid`). Knoten und Foto-Einträge tragen `durationMs`; eine Kopie und ein Verschieben behalten sie, eine
+  neue Version ohne die Angabe nicht. Migration 020 (`nodes.duration_ms`).
+- **Portal:** „Alle · Fotos · Videos“ in „Fotos“ und über den Treffern der Suche; ein Video zeigt seine Länge auf der
+  Kachel. Die Android-App sichert jetzt auch ältere Videos nach (siehe Handbuch).
+
 ## 1.24.1
 
 - **Handbuch: PDFs und Texte in den Apps ansehen.** Die Android- und die Windows-App öffnen PDFs, Texte und Markdown

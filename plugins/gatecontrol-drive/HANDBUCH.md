@@ -1,4 +1,4 @@
-<!-- version: 1.24.1 -->
+<!-- version: 1.25.0 -->
 # Drive
 
 ## Was das Plugin kann
@@ -40,8 +40,10 @@ Drive ist ein eigenes Abo (Familie, Business oder Kombi, fünf Personen inklusiv
 - **Geräte:** deine Geräte mit ihren gesicherten Ordnern und der letzten Sicherung.
 - **Bilder und Videos ansehen:** Ein Klick auf ein Bild oder Video – in „Dateien“, in der Suche und in „Fotos“ – öffnet es groß, ohne es erst herunterzuladen. Mit den Pfeilen, den Pfeiltasten oder einem Wisch geht es zum nächsten Bild oder Video im selben Ordner. Bilder vergrößerst du mit dem Mausrad, „+“/„−“, einem Doppelklick oder zwei Fingern. Videos laufen direkt in Drive (Abspielen, Pause, Spulen, Ton, Vollbild); Drive merkt sich, wo du aufgehört hast, solange der Tab offen ist. Oben: Herunterladen, Teilen, Details und das Menü der Datei.
 - **PDFs und Texte ansehen (Apps):** In der Android-App und der Windows-App öffnet ein Tipp auf eine PDF-, Text- oder Markdown-Datei sie direkt in der App – in derselben Ansicht wie Tresor-Dateien. Texte lassen sich dort markieren und kopieren. „Mit anderer App öffnen“ (Android) bzw. „Mit anderem Programm öffnen“ (Windows) bleibt in der Ansicht. Sehr große Dateien (PDF über 100 MB, Text über 2 MB) und Office-Dateien öffnen weiter in einer anderen App. Im Portal bietet ein Klick auf eine PDF wie bisher „Herunterladen“ an.
-- **Fotos:** Zeitleiste nach Monat, „Nur Kamera-Uploads“, Alben, „Im Fotorahmen zeigen“, Suche nach Personen, Orten und Inhalt, Karte, „Wer ist das?“. Gesichter werden nur auf den Geräten erkannt; Drive speichert keine Gesichtsbilder.
+- **Fotos:** Zeitleiste nach Monat, „Nur Kamera-Uploads“, „Alle · Fotos · Videos“ (nur Fotos oder nur Videos zeigen; ein Video zeigt seine Länge, wenn das Gerät sie mitgeschickt hat), Alben, „Im Fotorahmen zeigen“, Suche nach Personen, Orten und Inhalt, Karte, „Wer ist das?“. Gesichter werden nur auf den Geräten erkannt; Drive speichert keine Gesichtsbilder.
 - **Tresor-Ordner:** „Neu“ › „Neuer Tresor“, wer ihn öffnen darf (nur ich, Familie, Team-Ordner). Den Wiederherstellungsschlüssel sicher aufbewahren. Ein neues Gerät fragt mit „Freigabe anfragen“, ein schon freigegebenes gibt frei. Tresore sperren sich nach einigen Minuten ohne Eingabe; die KI liest sie nie. Ein Tipp auf eine Datei öffnet sie in der Tresor-Ansicht (Bilder, PDFs, Texte, in den Apps auch Videos) – siehe unten.
+- **Videos finden:** In der Suche filtert „Alle · Fotos · Videos“ (Portal) bzw. „Videos“ (Apps) die Treffer. Ohne Suchwort zeigt „Videos“ die neuesten Videos.
+- **Fotos und Videos vom Handy sichern (Android):** In der App unter **Drive › Foto-Sicherung**. „Auch Videos“ ist zuerst aus. Schaltest du es später ein, fragt die App: **„Alle Videos“** sichert auch die Videos, die schon auf dem Handy sind (Fotos werden dabei nicht noch einmal hochgeladen), **„Nur neue“** nur die ab jetzt. Was die Sicherung auslässt, steht unter **„Übersprungen“** mit dem Grund; **„Erneut versuchen“** probiert es noch einmal.
 - **KI für Dokumente:** „Dokument-Infos“ an einer Datei, „Fragen“ unter der Suche, die Seite „Fristen“ mit „In den Familienkalender“ und „Erinnern“, „In Dokument umwandeln“ für Scans.
 - **Importieren** aus Google Drive und OneDrive: verbinden, auswählen, Ziel wählen.
 - **Im Browser bearbeiten** für Office-Dokumente, wenn ein Office-Server eingetragen ist.
@@ -95,11 +97,20 @@ Der Virenscan von GateControl prüft neue Dateien; gesperrte Dateien öffnet und
 **Ein Video spielt im Browser nicht.**
 Manche Videos kann der Browser nicht abspielen, oft MKV oder HEVC (H.265, z. B. von neueren iPhones). Drive sagt das und bietet „Herunterladen“ an. In den GateControl-Apps laufen die meisten davon. Hörst du nur den Ton, kann der Browser das Bild nicht entschlüsseln.
 
+**Im Drive fehlen Videos vom Handy.**
+Prüfe in der Android-App unter **Drive › Foto-Sicherung**, dass „Auch Videos“ an ist. Steht dort „GateControl darf deine Videos noch nicht sehen“, tippe auf **„Zugriff erlauben“** und wähle bei „Fotos und Videos“ **„Alle zulassen“**. Danach holt die App die Videos nach, die noch nicht im Drive sind. Unter **„Übersprungen“** steht, welche Dateien nicht hochgingen und warum.
+
 **„Vollbild“ fehlt im Portal.**
 Vollbild im Portal gibt es ab GateControl 1.244.0. Ältere Versionen zeigen das Video im Drive-Fenster.
 
 **Zu Hause bauen sich die Fotos nicht schneller auf.**
 Die Vorschaubilder kommen erst nach und nach auf das Gateway (je Lauf einige Hundert, alle 15 Minuten). Prüfe am Gateway unter **Gateways › Zwischenspeicher**, dass er „aktiv“ ist und „Fotos“ bzw. „Drive“ eingeschaltet sind. Vorschaubilder aus dem Heimnetz braucht GateControl 1.249.0 und eine aktuelle App.
+
+## Neu in 1.25.0
+
+- **Nur Fotos oder nur Videos:** In „Fotos“ wählst du „Alle · Fotos · Videos“. Videos zeigen ihre Länge.
+- **Videos suchen:** Die Suche hat denselben Filter; „Videos“ ohne Suchwort zeigt die neuesten Videos.
+- **Ältere Videos sichern (Android):** Wer „Auch Videos“ einschaltet, kann jetzt auch die Videos sichern, die schon auf dem Handy sind. War „Auch Videos“ schon an, holt die App die Videos von selbst nach, die noch nicht im Drive sind. Übersprungene Dateien zeigt die App mit dem Grund.
 
 ## Neu in 1.24.1
 

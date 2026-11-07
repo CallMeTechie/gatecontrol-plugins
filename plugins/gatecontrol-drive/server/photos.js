@@ -39,6 +39,10 @@
 // with=people adds `people` [id] to the items, districts=1 (with place) adds `districts`. q= matches labels, my people's
 // names and place names — every word one of them; `search` adds `people` [{ id, name }] and `places` [{ key, name }]
 // (the marks found).
+//
+// Since 1.25.0 (feature `mediaFilter`): `media=image|video` on photos, months, memories, classes, places, map and
+// suggest — only the pictures or only the videos (else both; invalid { field: 'media' }); GET search takes it too
+// (nodes.js). Items carry `durationMs` (how long a video runs) when the device that sent it said so.
 //   GET photos/places · GET photos/map (places.js) · GET photos/suggest?q= → { people, places, labels } (≤ 5 each: my
 //   people by name, places, labels by their German or English word — the suggestions while typing)
 
@@ -89,6 +93,9 @@ function switchArg(v, field) {
   throw fail('invalid', { field });
 }
 
+// `media=image|video` (since 1.25.0, feature `mediaFilter`): nodes.mediaClause — also GET search
+const mediaArg = nodes.mediaClause;
+
 /** The viewer's own area (my files) of the visible ones → { area, role } or null. */
 async function mineOf(ctx) {
   return (await ctx.visible()).find((x) => x.area.id === areas.idOf.mine(ctx.viewer)) || null;
@@ -109,10 +116,17 @@ const folderView = async (gc, n) => ({ id: n.id, path: await nodes.pathOf(gc, n)
 
 /**
  * The photos a query asks for (area, folder, camera) → { where, args } for SQL over `nodes`, or null: none at all.
- * folder / camera (since 1.10.0): the pictures and videos of that folder and every folder below it.
+ * folder / camera (since 1.10.0): the pictures and videos of that folder and every folder below it; media (since
+ * 1.25.0): only the pictures or only the videos.
  */
 async function scope(ctx, q) {
   const x = q || {};
+  const kind = mediaArg(x.media);
+  const sc = await scopeOf(ctx, x);
+  return sc && kind ? { where: `${sc.where} AND ${kind}`, args: sc.args } : sc;
+}
+
+async function scopeOf(ctx, x) {
   const camera = switchArg(x.camera, 'camera');
   const hasFolder = x.folder != null && x.folder !== '';
   if (camera && hasFolder) throw fail('invalid', { field: 'camera' });
@@ -190,6 +204,8 @@ async function itemsOf(ctx, rows) {
       labeled: r.labels_at != null,
       // since 1.16.0: where it was taken (also: looked at, none)
       ...places.geoOf(r, where),
+      // since 1.25.0: how long a video runs (when the device said so)
+      ...(r.duration_ms != null ? { durationMs: r.duration_ms } : {}),
       ...(sc ? { scan: sc } : {}),
     };
   });
@@ -451,5 +467,5 @@ const isMedia = (n) => !!n && n.is_dir === 0 && n.deleted_at == null && !n.vault
 
 module.exports = {
   list, months, memories, memoryCovers, camera, makeCamera, classes, scope, placeList, mapOf, suggest, filtered, classed, withoutWork, CAMERA, page, itemsOf, isMedia, areaIds, noteViews, limitArg, beforeArg,
-  cameraRow, mineOf, MEDIA, TREE, LIMIT_MAX,
+  cameraRow, mineOf, MEDIA, TREE, LIMIT_MAX, mediaArg,
 };
