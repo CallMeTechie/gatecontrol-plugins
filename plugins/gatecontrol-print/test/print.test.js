@@ -71,8 +71,11 @@ describe('printing', () => {
     delete bro.gatewayConvert;
     const en = await h.req(MARC, 'POST', '/print', { deviceId: BRO, mediaId: m }, { lang: 'en' });
     assert.match(en.error, /takes no PDF files/);
-    const bad = await h.host.upload({ ...MARC, portal: true, loggedIn: true }, Buffer.from('PK'), 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
-    assert.equal(bad.status, 415, 'Office files are not among the media types');
+    // since 1.1.0 office files go up; an older GateControl (no office files) names the file type
+    const doc = await upload(MARC, Buffer.from('PK'), 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+    const r = await h.req(MARC, 'POST', '/print', { deviceId: HP, mediaId: doc });
+    assert.equal(r.code, 'format');
+    assert.match(r.error, /Office-Dateien/);
   });
 
   it('a printer without PDF whose gateway converts (HP OfficeJet Pro 8720): the PDF is printed', async () => {

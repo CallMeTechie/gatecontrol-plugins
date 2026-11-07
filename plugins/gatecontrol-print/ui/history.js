@@ -15,7 +15,7 @@
       text = parts.join(' · ');
     } else {
       badge = el('span', { class: 'pr-badge', 'data-tone': it.state === 'saved' ? 'good' : '', text: T('scanstate.' + it.state) });
-      text = [it.name ? it.name + (it.where ? ' → ' + it.where : '') : T('hist.pages', { n: it.pages }), it.userName].filter(Boolean).join(' · ');
+      text = [it.name ? it.name + (it.where ? ' → ' + it.where : '') : T('hist.pages', { n: it.pages }), it.userName, it.searchable ? T('hist.searchable') : null].filter(Boolean).join(' · ');
     }
     return el('div', { class: 'pr-hist', 'data-kind': it.kind }, [
       badge,

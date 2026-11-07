@@ -59,15 +59,18 @@ async function suggest(gc, userId, firstPageMediaId, name) {
 }
 
 /**
- * File the PDF: into the suggested folder (folderId) or `area` + `folder/name`.
+ * File the PDF: into the suggested folder (folderId) or `area` + `folder/name`. `text`: the recognised text of a
+ * searchable PDF — Drive keeps it as the file's text for its search (save_file { text }, Drive 1.23.0; an older Drive
+ * ignores it, the PDF itself stays searchable).
  * → { where, nodeId, name }
  */
-async function save(gc, userId, pdfMediaId, { folderId = null, area, folder, name, lang }) {
+async function save(gc, userId, pdfMediaId, { folderId = null, area, folder, name, lang, text = null }) {
   const mediaId = await handOver(gc, pdfMediaId, userId);
   const source = { plugin: 'gatecontrol-print', label: lang === 'en' ? 'Scanned with Print & Scan' : 'Gescannt mit Drucken & Scannen' };
+  const extra = typeof text === 'string' && text.trim() ? { text: text.slice(0, 200000) } : {};
   const payload = Number.isSafeInteger(folderId)
-    ? { mediaId, folderId, name, onConflict: 'rename', source }
-    : { mediaId, area, path: `${folder}/${name}`, onConflict: 'rename', source };
+    ? { mediaId, folderId, name, onConflict: 'rename', source, ...extra }
+    : { mediaId, area, path: `${folder}/${name}`, onConflict: 'rename', source, ...extra };
   const r = await call(gc, userId, 'save_file', payload);
   return { where: r.where || '', nodeId: r.nodeId || null, name: r.name || name };
 }

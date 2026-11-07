@@ -77,22 +77,45 @@
       sg.append(T('portal.ai'), ' ', el('strong', { text: s.name }), s.where ? ' ' + T('portal.in') + ' ' : '', s.where ? el('strong', { text: s.where }) : '');
       if (!$('#pr-name').dataset.touched) $('#pr-name').value = s.name;
     } else if (!$('#pr-name').value) $('#pr-name').value = S.defaultName;
-    $('#pr-more').disabled = sess.scanning;
-    $('#pr-save').disabled = sess.scanning || !n;
+    // searchable PDF: offered when a gateway with „Texterkennung“ is online
+    $('#pr-ocr-row').hidden = !S.ocr || sess.state === 'ocr';
+    var busy = $('#pr-ocr-busy');
+    busy.hidden = sess.state !== 'ocr';
+    if (sess.state === 'ocr') {
+      P.clear(busy).append(el('span', { class: 'pr-spin', 'aria-hidden': 'true' }), ' ',
+        sess.ocr && sess.ocr.pages ? T('portal.ocr_running', { page: Math.min(sess.ocr.page + 1, sess.ocr.pages), pages: sess.ocr.pages }) : T('portal.ocr_wait'));
+    }
+    $('#pr-more').disabled = sess.scanning || sess.state === 'ocr';
+    $('#pr-save').disabled = sess.scanning || !n || sess.state === 'ocr';
+    $('#pr-discard').disabled = sess.state === 'ocr';
+  }
+
+  /** The session was filed: the toast says where — and whether it is searchable. */
+  function savedToast(sc) {
+    var where = sc.savedWhere || sc.savedName;
+    if (sc.searchable === true) P.toast(T('portal.saved_ocr', { where: where }));
+    else if (sc.searchable === false) P.toast(T('portal.saved_no_ocr', { where: where, why: T('ocrerr.' + (sc.ocrError || 'ocr_failed')) }), 'warn');
+    else P.toast(T('portal.saved', { where: where }));
+    sess = null;
+    $('#pr-name').value = '';
+    delete $('#pr-name').dataset.touched;
+    $('#pr-ocr').checked = false;
+    drawSession(); drawScanSetup();
   }
 
   function watch() {
     clearTimeout(poll);
-    if (!sess || !sess.scanning) return;
+    if (!sess || (!sess.scanning && sess.state !== 'ocr')) return;
     poll = setTimeout(function () {
       P.api('GET', 'scan/' + sess.id).then(function (r) {
         var was = sess.scanning;
         sess = r.scan;
+        if (sess.state === 'saved') { savedToast(sess); return; }
         drawSession();
         if (was && !sess.scanning) suggest();
         watch();
       }).catch(function (e) { P.warn(e); poll = setTimeout(watch, 4000); });
-    }, 2000);
+    }, sess.state === 'ocr' ? 3000 : 2000);
   }
 
   function suggest() {
@@ -116,12 +139,10 @@
     var b = $('#pr-save');
     b.disabled = true;
     var name = $('#pr-name').value.trim();
-    P.api('POST', 'scan/' + sess.id + '/save', { name: name }).then(function (r) {
-      P.toast(T('portal.saved', { where: r.scan.savedWhere || r.scan.savedName }));
-      sess = null;
-      $('#pr-name').value = '';
-      delete $('#pr-name').dataset.touched;
-      drawSession(); drawScanSetup();
+    var searchable = !!S.ocr && $('#pr-ocr').checked;
+    P.api('POST', 'scan/' + sess.id + '/save', { name: name, searchable: searchable }).then(function (r) {
+      if (r.scan.state === 'ocr') { sess = r.scan; drawSession(); watch(); return; }
+      savedToast(r.scan);
     }).catch(function (e) { P.warn(e); b.disabled = false; });
   });
   $('#pr-discard').addEventListener('click', function () {
@@ -143,6 +164,19 @@
     var dup = $('#pr-duplex');
     dup.disabled = !p || !p.duplex;
     if (dup.disabled) dup.checked = false;
+    // paper and tray: only what the printer names (none named: its own default, nothing to choose)
+    var mv = (p && p.media) || { sizes: [], sources: [] };
+    var paperSel = $('#pr-media');
+    var traySel = $('#pr-tray');
+    fillPaper(paperSel, mv.sizes || [], mv.default, P.paperName);
+    fillPaper(traySel, mv.sources || [], mv.sourceDefault, P.trayName, true);
+    $('#pr-media-row').hidden = (mv.sizes || []).length < 2;
+    $('#pr-source-row').hidden = (mv.sources || []).length < 2;
+    $('#pr-paper-row').hidden = $('#pr-media-row').hidden && $('#pr-source-row').hidden;
+    // an office file for a printer whose gateway does not convert them: say so before printing
+    var on = $('#pr-office-note');
+    on.hidden = !(media && media.office && p && !p.office);
+    on.textContent = on.hidden ? '' : T('portal.office_no');
     var max = p ? p.copiesMax : 1;
     copies = Math.max(1, Math.min(copies, max));
     $('#pr-copies').textContent = String(copies);
@@ -151,7 +185,7 @@
     var lim = $('#pr-limit');
     lim.hidden = S.pagesLeft == null && !S.rights.bwOnly;
     lim.textContent = [S.pagesLeft != null ? T('portal.left', { n: S.pagesLeft }) : null, S.rights.bwOnly ? T('portal.bw_only') : null].filter(Boolean).join(' · ');
-    $('#pr-print-go').disabled = !d || !media;
+    $('#pr-print-go').disabled = !d || !media || (media.office && p && !p.office);
     var jobsBox = P.clear($('#pr-jobs'));
     $('#pr-jobs-h').hidden = !(S.jobs || []).length;
     (S.jobs || []).forEach(function (j) {
@@ -172,7 +206,26 @@
    * The type of a file by its first bytes: a PDF the phone hands over without a type or under a name without ".pdf"
    * is still a PDF (else GateControl would refuse the upload). → a promise of the type or null.
    */
-  var PRINTABLE = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif'];
+  var PRINTABLE = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif', 'text/plain'];
+  // office files (GateControl ≥ 1.246.0, a gateway with „Office-Dateien drucken“): by the name when the phone names no type
+  var OFFICE = {
+    docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation', odt: 'application/vnd.oasis.opendocument.text',
+    ods: 'application/vnd.oasis.opendocument.spreadsheet', odp: 'application/vnd.oasis.opendocument.presentation', rtf: 'application/rtf',
+  };
+  function officeType(f) {
+    var m = /\.([a-z]{3,4})$/i.exec(f.name || '');
+    var byName = m ? OFFICE[m[1].toLowerCase()] : null;
+    var t = String(f.type || '').toLowerCase();
+    if (t === 'text/rtf') t = 'application/rtf';
+    return Object.keys(OFFICE).some(function (k) { return OFFICE[k] === t; }) ? t : byName;
+  }
+  function fillPaper(sel, list, dflt, name, tray) {
+    var cur = sel.value;
+    P.clear(sel);
+    if (tray) sel.appendChild(el('option', { value: '', text: T('portal.tray_auto') }));
+    list.forEach(function (v) { sel.appendChild(el('option', { value: v, text: name(v), selected: cur ? v === cur : v === dflt })); });
+  }
   function sniffType(f) {
     if (!f || typeof f.slice !== 'function') return Promise.resolve(null);
     var part = f.slice(0, 1024);
@@ -196,7 +249,10 @@
   }
   /** The file to upload: with the type its content shows when the phone's type is missing or not a printable one. */
   function typed(f) {
+    var off = officeType(f);
+    if (off) return Promise.resolve(off === f.type ? f : new Blob([f], { type: off }));
     if (PRINTABLE.indexOf(String(f.type || '').toLowerCase()) >= 0 && f.type !== 'application/pdf') return Promise.resolve(f);
+    if (/\.txt$/i.test(f.name || '') && !f.type) return Promise.resolve(new Blob([f], { type: 'text/plain' }));
     return sniffType(f).then(function (t) { return t && t !== f.type ? new Blob([f], { type: t }) : f; });
   }
   $('#pr-file-in').addEventListener('change', function () {
@@ -208,13 +264,15 @@
     name.textContent = T('portal.uploading', { name: f.name, pct: 0 });
     if (!window.GC || typeof window.GC.upload !== 'function') { P.toast(T('common.error'), 'error'); return; }
     typed(f).then(function (file) { return window.GC.upload(file, { onProgress: function (p) { if (p && p.total) name.textContent = T('portal.uploading', { name: f.name, pct: Math.round((p.loaded / p.total) * 100) }); } }); })
-      .then(function (r) { media = { mediaId: r.mediaId, name: f.name }; name.textContent = f.name; drawPrint(); })
+      .then(function (r) { media = { mediaId: r.mediaId, name: f.name, office: !!officeType(f) }; name.textContent = f.name; drawPrint(); })
       .catch(function (e) { name.textContent = T('portal.no_file'); P.toast(e && e.code === 'unsupported_type' ? T('error.format') : (e && e.code === 'too_large' ? T('error.too_large') : P.errText(e)), 'error'); });
   });
   $('#pr-print-go').addEventListener('click', function () {
     var b = $('#pr-print-go');
     b.disabled = true;
-    P.api('POST', 'print', { deviceId: printer().id, mediaId: media.mediaId, name: media.name, copies: copies, color: $('#pr-color').checked, duplex: $('#pr-duplex').checked })
+    var paper = $('#pr-media-row').hidden ? null : $('#pr-media').value || null;
+    var tray = $('#pr-source-row').hidden ? null : $('#pr-tray').value || null;
+    P.api('POST', 'print', { deviceId: printer().id, mediaId: media.mediaId, name: media.name, copies: copies, color: $('#pr-color').checked, duplex: $('#pr-duplex').checked, media: paper, source: tray })
       .then(function () { P.toast(T('portal.printed')); media = null; $('#pr-file-in').value = ''; $('#pr-file-name').textContent = T('portal.no_file'); return load(); })
       .catch(function (e) { P.warn(e); b.disabled = false; });
   });
@@ -241,7 +299,7 @@
       fillSelect($('#pr-scanner'), r.scanners || []);
       fillSelect($('#pr-printer'), r.printers || []);
       sess = r.scan || sess;
-      if (sess && sess.state !== 'open') sess = null;
+      if (sess && sess.state !== 'open' && sess.state !== 'ocr') sess = null;
       var shown = $('#pr-tab-print').getAttribute('aria-selected') === 'true' && r.rights.print ? 'print' : (r.rights.scan ? 'scan' : 'print');
       tab(shown);
       drawScanSetup(); drawSession(); drawPrint();

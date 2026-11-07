@@ -8,7 +8,7 @@
 //   admin API  admin/* (admin pages)  — server/admin.js
 //   rights per person                 — server/rights.js (checked before every job and scan)
 //   printing, the history, notices    — server/jobs.js
-//   scanning into Drive (AI name)     — server/scans.js, server/drive.js
+//   scanning into Drive (AI name, searchable PDF) — server/scans.js, server/drive.js
 //
 // Background (every 30 s): the job states into the history, "Druck fertig /
 // fehlgeschlagen" once per job; retention (hourly).
@@ -45,6 +45,8 @@ async function background(gc, now) {
   const cfg = await config.load(gc);
   if (!gc.print) return;
   try { await jobs.sync(gc, cfg, t, now); } catch (e) { gc.log.warn('job sync failed', (e && e.code) || (e && e.message) || 'error'); }
+  // searchable PDFs: file the ones whose text recognition ended (also when nobody looks)
+  try { await scans.advanceAll(gc, cfg, now); } catch (e) { gc.log.warn('searchable scans not carried on', (e && e.code) || 'error'); }
   if (now - state.lastPurge >= PURGE_EVERY_MS) {
     state.lastPurge = now;
     try { await jobs.purge(gc, cfg.historyDays, now); await scans.purge(gc, cfg.historyDays, now); } catch (e) { gc.log.warn('purge failed', (e && e.code) || 'error'); }

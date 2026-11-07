@@ -4,11 +4,11 @@
     "de": "Drucken & Scannen",
     "en": "Print & Scan"
   },
-  "version": "1.0.3",
+  "version": "1.1.0",
   "publisher": "CallMeTechie",
   "description": {
-    "de": "Drucker und Scanner zu Hause – von überall über GateControl nutzbar, ohne sie ins Internet zu stellen: von unterwegs zu Hause drucken (wartet bis zu 24 Stunden, wenn der Drucker aus ist), vom Handy aus scannen – Glas oder Einzug, Vorschau, weitere Seiten – und als PDF ins Drive, auf Wunsch mit Name und Ordner von der KI. Geräte mit Tintenstand und Testseite, Rechte pro Person (drucken, scannen, Seiten am Tag, nur schwarz-weiß), Verlauf. Die Gateways finden die Geräte selbst (AirPrint/AirScan).",
-    "en": "Printers and scanners at home – usable from anywhere through GateControl without exposing them to the internet: print at home while you are out (waits up to 24 hours when the printer is off), scan from your phone – glass or feeder, preview, more pages – into Drive as a PDF, with name and folder from the AI if you like. Devices with ink levels and a test page, rights per person (print, scan, pages a day, black and white only), history. The gateways find the devices themselves (AirPrint/AirScan)."
+    "de": "Drucker und Scanner zu Hause – von überall über GateControl nutzbar, ohne sie ins Internet zu stellen: von unterwegs zu Hause drucken (wartet bis zu 24 Stunden, wenn der Drucker aus ist), vom Handy aus scannen – Glas oder Einzug, Vorschau, weitere Seiten – und als PDF ins Drive, auf Wunsch durchsuchbar und mit Name und Ordner von der KI. Drucken auch Text- und Office-Dateien, Papier und Fach wählbar. Geräte mit Tintenstand und Testseite, Rechte pro Person (drucken, scannen, Seiten am Tag, nur schwarz-weiß), Verlauf. Die Gateways finden die Geräte selbst (AirPrint/AirScan).",
+    "en": "Printers and scanners at home – usable from anywhere through GateControl without exposing them to the internet: print at home while you are out (waits up to 24 hours when the printer is off), scan from your phone – glass or feeder, preview, more pages – into Drive as a PDF, searchable and with name and folder from the AI if you like. Also prints text and office files, paper and tray to choose. Devices with ink levels and a test page, rights per person (print, scan, pages a day, black and white only), history. The gateways find the devices themselves (AirPrint/AirScan)."
   },
   "gatecontrol": ">=1.236.0",
   "entry": "server/index.js",
@@ -39,7 +39,15 @@
       "image/png",
       "image/webp",
       "image/heic",
-      "image/heif"
+      "image/heif",
+      "text/plain",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+      "application/vnd.oasis.opendocument.text",
+      "application/vnd.oasis.opendocument.spreadsheet",
+      "application/vnd.oasis.opendocument.presentation",
+      "application/rtf"
     ],
     "quotaDefault": "2GB"
   },
