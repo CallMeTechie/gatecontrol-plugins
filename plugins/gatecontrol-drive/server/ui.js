@@ -3,7 +3,8 @@
 // The portal tab "Drive" and the admin pages (overview, people, teams — 0.3.0). The host shows plugin HTML only in a sandboxed frame (opaque origin, inline scripts and
 // styles only — no external script, no network of its own, no storage): the page talks to this plugin's API through
 // window.GC.call, uploads with GC.upload and gets live events with GC.on. Everything is inlined here, read once from
-// ui/: portal.css · portal.html · DP_CTX · vaultcrypto.js · vault.js (vault folders, 1.9.0) · bulk.js (several at once,
+// ui/: portal.css · portal.html · DP_CTX · vaultcrypto.js · vault.js (vault folders, 1.9.0; its viewer ui/vaultview.* comes later
+// through GET viewer/vaultview, 1.22.0) · bulk.js (several at once,
 // 1.12.0) · ki.js (AI in Drive, 1.14.0) · places.js (places and people, 1.16.0) · overview.js (the overview, 1.18.0) ·
 // portal.js.
 //
@@ -57,7 +58,8 @@ const fill = (html, t, lang) => html.replace(/\{\{t:([a-z0-9_.-]+)\}\}/g, (_, k)
 function portalTexts(lang, prefix = 'p.') {
   const all = texts[lang];
   const out = {};
-  for (const [k, v] of Object.entries(all)) if (k.startsWith(prefix) || k.startsWith('err.')) out[k] = v;
+  // p.vv.*: the vault viewer's texts come with it (GET viewer/vaultview, server/viewer.js)
+  for (const [k, v] of Object.entries(all)) if ((k.startsWith(prefix) && !k.startsWith('p.vv.')) || k.startsWith('err.')) out[k] = v;
   for (const [k, v] of Object.entries(all)) if (k.startsWith('error.')) out['err.' + k.slice(6)] = out['err.' + k.slice(6)] || v;
   return out;
 }

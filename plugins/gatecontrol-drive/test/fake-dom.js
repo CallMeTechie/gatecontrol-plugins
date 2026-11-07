@@ -21,6 +21,15 @@ class Node {
     this.childNodes.push(n);
     return n;
   }
+  insertBefore(n, ref) {
+    if (!ref) return this.appendChild(n);
+    if (n.parentNode) n.parentNode.removeChild(n);
+    const i = this.childNodes.indexOf(ref);
+    if (i < 0) throw new Error('not a child');
+    n.parentNode = this;
+    this.childNodes.splice(i, 0, n);
+    return n;
+  }
   removeChild(n) {
     const i = this.childNodes.indexOf(n);
     if (i < 0) throw new Error('not a child');
@@ -71,7 +80,20 @@ class Element extends Node {
   set id(v) { this.setAttribute('id', v); }
   get className() { return this.getAttribute('class') || ''; }
   set className(v) { this.setAttribute('class', v); }
-  get classList() { return { contains: (c) => this.className.split(/\s+/).includes(c) }; }
+  get classList() {
+    const list = () => this.className.split(/\s+/).filter(Boolean);
+    return {
+      contains: (c) => list().includes(c),
+      add: (c) => { if (!list().includes(c)) this.className = list().concat([c]).join(' '); },
+      remove: (c) => { this.className = list().filter((x) => x !== c).join(' '); },
+    };
+  }
+  /** A <canvas>: a 2D context that records what was drawn (the vault viewer's tests). */
+  getContext() {
+    if (this.localName !== 'canvas') return null;
+    if (!this._ctx) this._ctx = { drawn: [], transforms: [], drawImage(...a) { this.drawn.push(a); }, setTransform(...a) { this.transforms.push(a); } };
+    return this._ctx;
+  }
   get hidden() { return this.hasAttribute('hidden'); }
   set hidden(v) { if (v) this.setAttribute('hidden', ''); else this.removeAttribute('hidden'); }
   get type() { return this.getAttribute('type') || (this.localName === 'input' ? 'text' : ''); }
@@ -140,8 +162,10 @@ class Document extends Element {
     this.copied = [];
     this.hidden = false;
     this.documentElement = this.createElement('html');
+    this.head = this.createElement('head');
     this.body = this.createElement('body');
     this.appendChild(this.documentElement);
+    this.documentElement.appendChild(this.head);
     this.documentElement.appendChild(this.body);
     this.activeElement = null;
   }
@@ -225,6 +249,13 @@ function createWindow(html, gc) {
   win.window = win;
   win.globalThis = win;
   vm.createContext(win);
+  // an inline classic <script> put into <head> runs at once, as in a browser (module scripts are not run here)
+  const headAppend = document.head.appendChild.bind(document.head);
+  document.head.appendChild = (n) => {
+    headAppend(n);
+    if (n.localName === 'script' && n.getAttribute('type') !== 'module') vm.runInContext(n.textContent, win);
+    return n;
+  };
   return {
     window: win,
     document,

@@ -37,6 +37,8 @@
 //     GET|POST vaults/<id>/devices · POST vaults/<id>/devices/<deviceId>/approve · DELETE vaults/<id>/devices/<deviceId>
 //     POST vaults/<id>/rotate   (vault folders, end-to-end encrypted — vault.js, 1.9.0; nodes and uploads/commit take
 //                               encrypted, nameCipher, keyVersion)
+//     GET viewer/vaultview · GET viewer/pdfjs?part=   (the portal's viewer of vault files and its PDF renderer — code
+//                               only, never a file: viewer.js, 1.22.0)
 //     POST nodes/<id>/office    (office in the browser — office.js, 1.9.0; the office server's WOPI requests come
 //                               without a session through GateControl's public endpoints: hook publicRequest)
 //     POST ops/check · POST ops · GET ops[?state=] · GET|DELETE ops/<id> · POST ops/<id>/undo · POST ops/<id>/transfers
@@ -107,6 +109,7 @@ const scan = require('./scan');
 const homecache = require('./homecache');
 const { t } = require('./text');
 const { STATUS, fail, isKnown, posInt, DEVICE_RE, day, iso } = require('./util');
+const viewer = require('./viewer');
 
 // the services for other plugins (plugin.json services.provides)
 const SERVICES = {
@@ -357,6 +360,9 @@ async function route(ctx, req, seg) {
   }
   if (!ctx.seat) throw fail('no_seat');
   await ctx.visible();
+  // the vault viewer of the portal and its PDF renderer in pieces (viewer.js, 1.22.0) — code only, never a file
+  if (a === 'viewer' && b === 'vaultview' && seg.length === 2 && m === 'GET') return ok(viewer.vaultview(ctx.lang));
+  if (a === 'viewer' && b === 'pdfjs' && seg.length === 2 && m === 'GET') return ok(viewer.pdfjsPart(q));
   if (a === 'areas' && seg.length === 1 && m === 'GET') return ok(await areaList(ctx));
   if (a === 'changes' && seg.length === 1 && m === 'GET') return ok(await changes.since(ctx, q));
   if (a === 'search' && seg.length === 1 && m === 'GET') return ok(await nodes.search(ctx, q.q, q.area ? String(q.area) : null));

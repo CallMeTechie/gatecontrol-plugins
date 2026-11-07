@@ -1,4 +1,4 @@
-<!-- version: 1.20.1 -->
+<!-- version: 1.22.0 -->
 # Drive
 
 ## What the plugin does
@@ -39,10 +39,21 @@ Drive is a subscription of its own (Family, Business or Combo, five people inclu
 - **Sharing:** links for people without an account; “Shared links” lists them.
 - **Devices:** your devices with their backed-up folders and the last backup.
 - **Photos:** timeline by month, “camera uploads only”, albums, “show in the photo frame”, search by people, places and content, map, “Who is this?”. Faces are recognised on the devices only; Drive keeps no face pictures.
-- **Vault folders:** “New” › “New vault”, who may open it (only me, family, team folder). Keep the recovery key safe. A new device asks with “Request access”, a device already approved grants it. Vaults lock after some minutes without input; the AI never reads them.
+- **Vault folders:** “New” › “New vault”, who may open it (only me, family, team folder). Keep the recovery key safe. A new device asks with “Request access”, a device already approved grants it. Vaults lock after some minutes without input; the AI never reads them. A tap on a file opens it in the vault viewer (pictures, PDFs, texts, in the apps also videos) – see below.
 - **AI for documents:** “Document info” on a file, “Ask” below the search, the page “Deadlines” with “Into the family calendar” and “Remind me”, “Turn into a document” for scans.
 - **Import** from Google Drive and OneDrive: connect, choose, pick the target.
 - **Edit in the browser** for office documents when an office server is entered.
+
+### Viewing files in a vault – why it stays safe
+
+A vault folder stays end-to-end encrypted while you look at a file in it:
+
+- **In memory only:** the file is decrypted only on your device and shown from its working memory – in the portal in the browser tab, in the apps in the app. No unencrypted file is written to the disk, the cache, the gallery or a thumbnail. The apps load videos encrypted and decrypt only the piece that is playing.
+- **No detour through other programs:** the viewer hands nothing to other apps or programs. Only “Download” (portal) and “Open with another app” (apps) take the file out of the vault on purpose – and ask first, because the other app gets it unencrypted.
+- **Locking closes the viewer:** when the vault locks (after the time set without input, when you leave the tab or app, by hand), the viewer closes at once and what was decrypted is deleted. Scrolling, zooming and a playing video count as use.
+- **No screenshots:** in the Android app and on Windows the viewer cannot be captured and does not show in the recent apps.
+- **The server sees nothing new:** it serves encrypted data and the viewer's program only. Administrators still cannot open vaults.
+- **Limits:** very large files, office files and, in the browser, videos are not shown – you get a note and can download the file on purpose or view it in the app.
 
 ## Permissions
 
@@ -73,11 +84,15 @@ No office server address is entered in the settings.
 **A vault does not open on a new device.**
 Request access and grant it on a device already approved – or open it with the recovery key.
 
+**A video from a vault does not play in the browser.**
+The portal tab may not play videos from memory, and a decrypted copy on the disk would no longer be protected. Watch the video in the Android or Windows app or download it on purpose.
+
 **Files are “held back by the virus scan”.**
 GateControl's virus scan checks new files; Drive does not open or share blocked files.
 
-## New in 1.20.1
+## New in 1.22.0
 
-- This manual in the tab “Manual” (GateControl ≥ 1.241.0).
+- **View vault files:** pictures, PDFs, texts and Markdown open in the portal with one click in a viewer of their own – decrypted only in the browser tab's memory. Videos play in the apps.
+- In the viewer: zoom, “Lock vaults now” and “Download” (asks first, because the copy is not encrypted).
 
-Last in 1.20.0: home cache – gateways keep often used files at home; “available offline” for files and folders.
+Last in 1.20.1: this manual in the tab “Manual”.

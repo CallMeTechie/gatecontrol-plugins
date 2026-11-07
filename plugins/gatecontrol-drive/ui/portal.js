@@ -925,8 +925,8 @@
 
   function openNode(n) {
     if (n.isDir) { $('dp-q').value = ''; openFolder(n.areaId, n.id); return; }
-    // a vault's file: decrypted here, then downloaded (no preview — the server has none, the frame shows no blob:)
-    if (n.encrypted && V) { V.download(n); return; }
+    // a vault's file: decrypted here, shown in the vault viewer in memory (ui/vaultview.js, 1.22.0 — the server has no preview)
+    if (n.encrypted && V) { V.view(n); return; }
     // a file the virus scan holds back opens nothing: its menu says why
     if (scanBlocked(n)) { actions(n); return; }
     preview(n);
@@ -1017,7 +1017,10 @@
   function vaultActions(n, write, item) {
     var unlocked = !!(V && V.keysOf(n.vaultId));
     if (n.isDir) item('folder', T('p.open'), function () { openNode(n); });
-    else if (unlocked) item('download', T('p.download'), function () { V.download(n); });
+    else if (unlocked) {
+      item('eye', T('p.open'), function () { V.view(n); });
+      item('download', T('p.download'), function () { V.download(n); });
+    }
     if (S.links && S.links.node) item('link', T('p.copy_link'), function () { copyText(nodeLink(n.id)); });
     if (write && unlocked) item('edit', T('p.rename'), function () { V.rename(n); });
     if (!n.isDir && unlocked) item('history', T('p.versions'), function () { versions(n); });
@@ -1155,7 +1158,7 @@
         return h('tr', null, [
           h('td', { text: fmtDate(v.at) }), h('td', { text: v.by != null ? personName(v.by) : T('p.nas') }), h('td', { class: 'dp-num', text: fmtSize(v.size) }),
           h('td', { class: 'dp-right' }, [
-            btn(T('p.open'), function () { api('GET', 'nodes/' + n.id + '/versions/' + v.id + '/content').then(function (c) { if (n.encrypted && V) V.download(n, c); else if (/^(image|video|audio)\//.test(String(c.mime || ''))) preview(n, c); else { var a = h('a', { attrs: { href: c.url, download: n.name } }); document.body.appendChild(a); a.click(); document.body.removeChild(a); } }, fail); }, { small: true }),
+            btn(T('p.open'), function () { api('GET', 'nodes/' + n.id + '/versions/' + v.id + '/content').then(function (c) { if (n.encrypted && V) V.view(n, c); else if (/^(image|video|audio)\//.test(String(c.mime || ''))) preview(n, c); else { var a = h('a', { attrs: { href: c.url, download: n.name } }); document.body.appendChild(a); a.click(); document.body.removeChild(a); } }, fail); }, { small: true }),
             write ? btn(T('p.restore'), function () { api('POST', 'nodes/' + n.id + '/versions/' + v.id + '/restore').then(function () { closeDialog(); reload(); toast(T('p.version_restored')); }, fail); }, { small: true }) : null,
             write ? btn(T('p.delete'), function () { api('DELETE', 'nodes/' + n.id + '/versions/' + v.id).then(function () { versions(n); }, fail); }, { small: true, danger: true }) : null,
           ]),
@@ -3081,6 +3084,8 @@
     // since 1.11.0: the menu, the areas a new vault may go into, the settings of this tab, leaving a vault that locked
     renderNav: renderNav, areaOf: areaOf, prefs: function () { return S.prefs; }, vaultTargets: vaultTargets, vaultScope: vaultScope,
     leaveVault: leaveVault, ibtn: ibtn,
+    // since 1.22.0: the vault viewer (ui/vaultview.js)
+    fmtSize: fmtSize,
   }) : null;
 
   // several at once (ui/bulk.js, since 1.12.0): its helpers from here

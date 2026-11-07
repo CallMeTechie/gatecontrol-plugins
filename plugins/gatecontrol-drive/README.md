@@ -1121,6 +1121,46 @@ times, the folder structure, who changed what, or how many files there are. The 
 GateControl's page (not extractable), but a vault opened in the browser keeps its keys in the tab's memory until it
 is closed.
 
+### Viewing vault files (since 1.22.0)
+
+Pictures, PDFs, texts and Markdown — and in the apps videos — of a vault open in a **viewer of the client itself**,
+decrypted **only in its memory**. Before 1.22.0 the portal could only download a vault file, the Android app decrypted
+it into its cache and handed it to another app, the Windows app into `%TEMP%` and to the program Windows picks. The
+server takes no part in viewing: no new route sees a vault file, and what it serves (`GET viewer/vaultview`,
+`GET viewer/pdfjs?part=`) is code.
+
+**Security model (unchanged):** the vault key (TK) of each key version lives only in the memory of an unlocked client
+(portal tab, app); the device key is not extractable (GateControl's page `GC.keys`, Android Keystore, Windows DPAPI);
+the server holds ciphertext, opaque names, wrapped keys and public keys — never a name, a content or a key it could read.
+Vaults lock after the minutes without use, when the tab or app is left (if so set), by hand and when it is closed;
+locking overwrites the keys in memory and forgets the names.
+
+**Threat analysis — what viewing must not change, and how each client keeps it:**
+
+| Threat | Rule | Portal (sandboxed frame) | Android | Windows |
+|---|---|---|---|---|
+| Plaintext on the disk (cache, temp, swap of files, thumbnails, MediaStore) | decrypt into memory only | bytes in the frame's JS heap; pictures via `ImageDecoder` (no URL; `createImageBitmap` of an in-memory Blob where it is missing), PDF pages and pictures on `<canvas>` | heap byte arrays (pictures, texts), an anonymous `memfd` (no path) for `PdfRenderer`, a video's **ciphertext** in the cache and one 1 MiB chunk of plaintext at a time (`DriveVaultVideoSource`, no Media3 cache) | the core keeps only the **ciphertext** in `%TEMP%\gatecontrol-drive\vault-view`; the page reads `gcvault://v/<token>`, which decrypts the chunks of each request's Range in memory (`no-store`, no HTTP cache for custom schemes): `<img>`/`<video>` directly, PDFs and texts through `fetch()` into the page's memory (pdf.js on `<canvas>`); only the app's own page may `fetch()` it |
+| Browser storage, caches, service workers | none | the frame has no storage, no service worker, `connect-src 'none'` | — | the session's HTTP cache is never used for `gcvault:`; nothing in `localStorage` |
+| Hand-off to other programs | only as an explicit export | "Herunterladen" asks first ("nicht verschlüsselt") | "Mit anderer App öffnen" asks first and serves a memory file through a non-exported provider (`DriveVaultShareProvider`, URI grant per intent) — withdrawn when the person comes back or the vault locks; no plaintext file | "Mit anderem Programm öffnen" asks first and writes the copy to `%TEMP%` (deleted after about a minute, later while the program holds it, when the vaults lock, at the next start); "Speichern unter …" as before |
+| Leftovers after closing | drop everything | bytes overwritten with zeros, `ImageDecoder` frames and bitmaps closed, canvases emptied (width 0), pdf.js document destroyed, DOM removed | bitmaps recycled, `PdfRenderer` closed, memfd truncated and closed, ciphertext deleted, player released | the token revoked (404 afterwards), the file key overwritten, the ciphertext deleted, running streams ended; canvases emptied, buffers zeroed |
+| The vault locks while a file is shown | the viewer closes | `lockAll` closes the viewer first; a decryption still running stops at its next read (`epoch`) | `session.locks` closes the viewer and empties `DriveVaultShares` | the lock closes every token in the core and the viewer on `drive:vault-lock` |
+| Screenshots, recent apps | hide the viewer | — (the browser decides) | `FLAG_SECURE` on the window while the viewer shows, `setRecentsScreenshotEnabled(false)` (Android 13+), the video surface `setSecure(true)` | `setContentProtection(true)` while the viewer shows |
+| A malicious file attacking the viewer | sandbox and no network | runs in GateControl's sandboxed frame (opaque origin, no network, no eval); pdf.js 6.4.299 without eval, no scripts or forms of the PDF, no fonts or images from the network | Android's own decoders (`ImageDecoder`, `PdfRenderer`, Media3) | the renderer is sandboxed with context isolation; pdf.js in a module worker |
+| Viewing too much in memory | a size cap and a clear hint | pictures 64 MB, PDF 100 MB, text 8 MB | pictures 64 MB, PDF 200 MB, text 8 MB, video 4 GB (ciphertext on the storage), "Mit anderer App öffnen" 512 MB | pictures 64 MB, PDF 200 MB, text 8 MB, video unlimited (streamed) |
+
+What is **not** offered: **videos in the portal** — the frame's CSP (GateControl's `frame.js`) lets `<video>` play only
+from `/plugin-media/`, neither `blob:` nor MediaSource; a decrypted copy would have to leave the tab. The tab says so and
+points to the apps or the explicit download. **Office files** have no renderer that works on the bytes in memory in any
+client (Collabora/OnlyOffice need the file on the server, which is exactly what a vault forbids): a note and the explicit
+export. **HEIC** is shown by the apps (Android decodes it), not by browsers without a decoder.
+
+The portal's viewer (`ui/vaultview.js`, `ui/vaultview.css`, the texts `p.vv.*`) is not part of the page: `GET
+viewer/vaultview` → `{ code, css, texts }` the first time a vault file is opened (the frame runs the script as an inline
+script); pdf.js (`vendor/pdfjs`, Apache-2.0, the legacy build of 6.4.299) comes only for a PDF, in pieces below
+GateControl's 1 MiB per answer: `GET viewer/pdfjs?part=<n>` → `{ version, part, parts, file: 'worker'|'lib', index, of,
+code }` (`400 invalid` for another part); the frame joins each file and runs it as an inline module script, the worker
+in the frame itself (pdf.js's "fake worker" — the frame may start no Worker).
+
 ## Office in the browser (since 1.9.0, feature `office`)
 
 Drive is a **WOPI host** for Collabora Online and OnlyOffice (`server/office.js`). Needs GateControl ≥ 1.211.0
@@ -1184,7 +1224,8 @@ tools, the page "Fristen", and "Importieren" (connect — through `GC.openUrl` w
 to open in a new tab —, browse, pick, choose the target; the jobs with progress, "Fortsetzen", "Abbrechen"). Since 1.9.0: **vault folders**
 (`ui/vault.js`, `ui/vaultcrypto.js` — "Tresor-Ordner" in a folder's tools; the recovery key shown, copied or saved as a
 text file and confirmed before the vault is made; names decrypted in the list; uploads encrypted in the browser — files
-only, ≤ 100 MB; downloads decrypted in the browser; "Freigabe anfragen" with the safety number, "Mit
+only, ≤ 100 MB; downloads decrypted in the browser; since 1.22.0 a click opens the viewer — pictures, PDFs, texts in
+memory, see "Viewing vault files"; "Freigabe anfragen" with the safety number, "Mit
 Wiederherstellungsschlüssel öffnen", the requests of other devices with "Freigeben" / "Ablehnen", "Schlüssel erneuern";
 a browser without X25519 or a GateControl without `GC.keys` shows a note) and **"Im Browser bearbeiten"** for documents
 while `features` has `office` (`GC.openTab`; a second click when the browser took the first one's moment). Since

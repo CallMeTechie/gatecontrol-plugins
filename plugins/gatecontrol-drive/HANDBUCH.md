@@ -1,4 +1,4 @@
-<!-- version: 1.20.1 -->
+<!-- version: 1.22.0 -->
 # Drive
 
 ## Was das Plugin kann
@@ -39,10 +39,21 @@ Drive ist ein eigenes Abo (Familie, Business oder Kombi, fünf Personen inklusiv
 - **Teilen:** Links für Personen ohne Konto; „Geteilte Links“ listet sie.
 - **Geräte:** deine Geräte mit ihren gesicherten Ordnern und der letzten Sicherung.
 - **Fotos:** Zeitleiste nach Monat, „Nur Kamera-Uploads“, Alben, „Im Fotorahmen zeigen“, Suche nach Personen, Orten und Inhalt, Karte, „Wer ist das?“. Gesichter werden nur auf den Geräten erkannt; Drive speichert keine Gesichtsbilder.
-- **Tresor-Ordner:** „Neu“ › „Neuer Tresor“, wer ihn öffnen darf (nur ich, Familie, Team-Ordner). Den Wiederherstellungsschlüssel sicher aufbewahren. Ein neues Gerät fragt mit „Freigabe anfragen“, ein schon freigegebenes gibt frei. Tresore sperren sich nach einigen Minuten ohne Eingabe; die KI liest sie nie.
+- **Tresor-Ordner:** „Neu“ › „Neuer Tresor“, wer ihn öffnen darf (nur ich, Familie, Team-Ordner). Den Wiederherstellungsschlüssel sicher aufbewahren. Ein neues Gerät fragt mit „Freigabe anfragen“, ein schon freigegebenes gibt frei. Tresore sperren sich nach einigen Minuten ohne Eingabe; die KI liest sie nie. Ein Tipp auf eine Datei öffnet sie in der Tresor-Ansicht (Bilder, PDFs, Texte, in den Apps auch Videos) – siehe unten.
 - **KI für Dokumente:** „Dokument-Infos“ an einer Datei, „Fragen“ unter der Suche, die Seite „Fristen“ mit „In den Familienkalender“ und „Erinnern“, „In Dokument umwandeln“ für Scans.
 - **Importieren** aus Google Drive und OneDrive: verbinden, auswählen, Ziel wählen.
 - **Im Browser bearbeiten** für Office-Dokumente, wenn ein Office-Server eingetragen ist.
+
+### Dateien im Tresor ansehen – warum das sicher bleibt
+
+Ein Tresor-Ordner bleibt Ende-zu-Ende verschlüsselt, auch wenn du dir eine Datei darin ansiehst:
+
+- **Nur im Speicher:** Die Datei wird erst auf deinem Gerät entschlüsselt und nur im Arbeitsspeicher gezeigt – im Portal im Browser-Tab, in den Apps in der App. Es entsteht keine unverschlüsselte Datei auf der Festplatte, im Cache, in der Galerie oder als Vorschaubild. Videos laden die Apps verschlüsselt und entschlüsseln beim Abspielen immer nur das Stück, das gerade läuft.
+- **Kein Umweg über andere Programme:** Die Ansicht gibt nichts an andere Apps oder Programme weiter. Nur „Herunterladen“ (Portal) und „Mit anderer App öffnen“ (Apps) holen die Datei bewusst aus dem Tresor – und fragen vorher, weil die andere App sie unverschlüsselt bekommt.
+- **Sperren schließt die Ansicht:** Sperrt sich der Tresor (nach der eingestellten Zeit ohne Eingabe, beim Verlassen von Tab oder App, von Hand), schließt die Ansicht sofort und das Entschlüsselte wird gelöscht. Beim Ansehen zählt Blättern, Zoomen und ein laufendes Video als Nutzung.
+- **Keine Bildschirmfotos:** In der Android-App und unter Windows lässt sich die Ansicht nicht abfotografieren und erscheint nicht in der Liste der letzten Apps.
+- **Der Server sieht nichts Neues:** Er liefert nur verschlüsselte Daten und das Programm der Ansicht. Administratoren können Tresore weiterhin nicht öffnen.
+- **Grenzen:** Sehr große Dateien, Office-Dateien und im Browser auch Videos zeigt die Ansicht nicht an – du bekommst einen Hinweis und kannst die Datei bewusst herunterladen oder in der App ansehen.
 
 ## Berechtigungen
 
@@ -73,11 +84,15 @@ Unter Einstellungen ist keine Adresse eines Office-Servers eingetragen.
 **Ein Tresor lässt sich auf einem neuen Gerät nicht öffnen.**
 Frage mit „Freigabe anfragen“ an und gib auf einem schon freigegebenen Gerät frei – oder öffne ihn mit dem Wiederherstellungsschlüssel.
 
+**Ein Video aus dem Tresor spielt im Browser nicht.**
+Der Portal-Tab darf Videos nicht aus dem Speicher abspielen, und eine entschlüsselte Kopie auf der Festplatte wäre nicht mehr geschützt. Sieh dir das Video in der Android- oder Windows-App an oder lade es bewusst herunter.
+
 **Dateien sind „vom Virenscan zurückgehalten“.**
 Der Virenscan von GateControl prüft neue Dateien; gesperrte Dateien öffnet und teilt Drive nicht.
 
-## Neu in 1.20.1
+## Neu in 1.22.0
 
-- Dieses Handbuch im Reiter „Handbuch“ (GateControl ≥ 1.241.0).
+- **Tresor-Dateien ansehen:** Bilder, PDFs, Texte und Markdown öffnen im Portal mit einem Klick in einer eigenen Ansicht – entschlüsselt nur im Speicher des Browser-Tabs. Videos spielen die Apps ab.
+- In der Ansicht: zoomen, „Tresore jetzt sperren“ und „Herunterladen“ (fragt vorher, weil die Kopie nicht verschlüsselt ist).
 
-Zuletzt in 1.20.0: Zwischenspeicher im Heimnetz – Gateways halten oft genutzte Dateien zu Hause vor; „offline verfügbar“ für Dateien und Ordner.
+Zuletzt in 1.20.1: dieses Handbuch im Reiter „Handbuch“.
