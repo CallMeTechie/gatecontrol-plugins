@@ -1236,7 +1236,7 @@ video (files, search, "Fotos") opens the **viewer** (`ui/viewer.js`, `window.Dri
 zoom (wheel, + − 0, a double click, two fingers), download (`GC.mediaBytes` into a download of the frame, ≤ 512 MB),
 share, details and the file's menu; videos as `<video controls preload="metadata">` from the signed URL (Range),
 the place kept while the tab is open, a hint with "Herunterladen" for what the browser cannot play; the virus scan:
-blocked → the reason only (no `content` call), marked → "Trotzdem ansehen". Since 1.6.0: a direct link (`drive=<id>` in
+blocked → the reason only (no `content` call), marked → "Trotzdem ansehen". The apps (Android, Windows) also open PDFs, texts and Markdown of normal files in their own viewer — the pages of their vault viewer, the bytes through the same `GET nodes/<id>/content` download as "Öffnen" (PDF ≤ 100 MB, text ≤ 2 MB; Office and larger files in another app, "Mit anderer App öffnen" / "Mit anderem Programm öffnen" in the viewer); the portal keeps "Herunterladen" for them. Since 1.6.0: a direct link (`drive=<id>` in
 the frame's address) opens its folder or file, "Direktlink kopieren" in a node's actions (with `me.links`), "Ordner
 hochladen" (`<input webkitdirectory>`) besides dropping folders — sub folders are made (empty ones too), with the
 overall progress —, a red banner while a device of the person (an administrator: anyone's) is stopped by the
