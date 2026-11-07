@@ -1,4 +1,4 @@
-<!-- version: 1.23.0 -->
+<!-- version: 1.24.0 -->
 # Drive
 
 ## What the plugin does
@@ -11,13 +11,13 @@
 - **AI for documents:** recognise kind, name and deadlines, ask your files, turn scans into documents, deadlines into the family calendar.
 - **Ransomware protection:** Drive stops a device that changes unusually many files.
 - **Import** from Google Drive and OneDrive, **office in the browser** with an office server of your own.
-- **Home cache:** gateways keep often used files at home; “available offline” for single files and folders.
+- **Home cache:** gateways keep often used files and the previews at home; “available offline” for single files and folders.
 
 Drive is a subscription of its own (Family, Business or Combo, five people included, more on callmetechie.de) and not part of GateControl Lifetime.
 
 ## Requirements
 
-- GateControl **1.216.0** or later (home cache from 1.231.0).
+- GateControl **1.216.0** or later (home cache from 1.231.0, previews in it from 1.249.0).
 - A Drive licence.
 - For the family and the children's folders: a GateControl group of the kind family.
 - For AI and import: the AI provider or cloud accounts in GateControl.
@@ -96,6 +96,13 @@ Browsers cannot play some videos, often MKV or HEVC (H.265, e.g. from newer iPho
 
 **“Full screen” is missing in the portal.**
 Full screen in the portal needs GateControl 1.244.0. Older versions show the video in the Drive window.
+
+**At home the photos do not show up faster.**
+The previews reach the gateway bit by bit (a few hundred per run, every 15 minutes). Check at the gateway under **Gateways › Home cache** that it is “on” and that “Photos” or “Drive” are switched on. Previews from the home network need GateControl 1.249.0 and a current app.
+
+## New in 1.24.0
+
+- **Previews in the home cache:** the home gateways now also keep the small pictures of the photo and file lists. At home the photos show up in the app at once, older ones too. The large previews of new photos are kept there as well. Needs GateControl 1.249.0.
 
 ## New in 1.23.0
 

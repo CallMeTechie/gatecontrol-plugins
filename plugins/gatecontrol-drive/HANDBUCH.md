@@ -1,4 +1,4 @@
-<!-- version: 1.23.0 -->
+<!-- version: 1.24.0 -->
 # Drive
 
 ## Was das Plugin kann
@@ -11,13 +11,13 @@
 - **KI für Dokumente:** Art, Name und Fristen erkennen, Fragen an deine Dateien, Scans in Dokumente umwandeln, Fristen in den Familienkalender.
 - **Schutz vor Erpressungstrojanern:** Drive stoppt ein Gerät, das ungewöhnlich viele Dateien ändert.
 - **Import** aus Google Drive und OneDrive, **Office im Browser** mit einem eigenen Office-Server.
-- **Zwischenspeicher im Heimnetz:** Gateways halten oft genutzte Dateien zu Hause vor; „offline verfügbar“ für einzelne Dateien und Ordner.
+- **Zwischenspeicher im Heimnetz:** Gateways halten oft genutzte Dateien und die Vorschaubilder zu Hause vor; „offline verfügbar“ für einzelne Dateien und Ordner.
 
 Drive ist ein eigenes Abo (Familie, Business oder Kombi, fünf Personen inklusive, mehr buchbar auf callmetechie.de) und nicht in GateControl Lifetime enthalten.
 
 ## Voraussetzungen
 
-- GateControl **1.216.0** oder neuer (Zwischenspeicher im Heimnetz ab 1.231.0).
+- GateControl **1.216.0** oder neuer (Zwischenspeicher im Heimnetz ab 1.231.0, Vorschaubilder darin ab 1.249.0).
 - Eine Drive-Lizenz.
 - Für die Familie und die Kinderordner: eine GateControl-Gruppe der Art Familie.
 - Für KI und Import: der KI-Anbieter bzw. Cloud-Konten in GateControl.
@@ -96,6 +96,13 @@ Manche Videos kann der Browser nicht abspielen, oft MKV oder HEVC (H.265, z. B. 
 
 **„Vollbild“ fehlt im Portal.**
 Vollbild im Portal gibt es ab GateControl 1.244.0. Ältere Versionen zeigen das Video im Drive-Fenster.
+
+**Zu Hause bauen sich die Fotos nicht schneller auf.**
+Die Vorschaubilder kommen erst nach und nach auf das Gateway (je Lauf einige Hundert, alle 15 Minuten). Prüfe am Gateway unter **Gateways › Zwischenspeicher**, dass er „aktiv“ ist und „Fotos“ bzw. „Drive“ eingeschaltet sind. Vorschaubilder aus dem Heimnetz braucht GateControl 1.249.0 und eine aktuelle App.
+
+## Neu in 1.24.0
+
+- **Vorschaubilder im Zwischenspeicher:** Die Heim-Gateways halten jetzt auch die kleinen Bilder der Foto- und Dateilisten bereit. Zu Hause erscheinen die Fotos in der App sofort, auch ältere. Die großen Vorschaubilder neuer Fotos liegen ebenfalls dort. Braucht GateControl 1.249.0.
 
 ## Neu in 1.23.0
 
