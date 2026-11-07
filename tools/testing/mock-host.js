@@ -3182,6 +3182,20 @@ async function createHost(pluginDir, opts = {}) {
     const list = typeof opts.radio.sensors === 'function' ? await opts.radio.sensors() : opts.radio.sensors;
     return Array.isArray(list) ? list : [];
   };
+  // gc.radio.zigbee() / gc.radio.command(id, set) (GateControl with the radio follow-ups: zigbee2mqtt on the gateways).
+  // Opt-in: opts.radio.zigbee { gateways, devices } | () => …, opts.radio.command (id, set) => result (may throw { code })
+  const zigbeeOn = radioOn && opts.radio.zigbee !== undefined;
+  api['radio.zigbee'] = async () => {
+    if (!radioOn) throw hostError('ERR_RADIO_DENIED', 'this plugin has no radio permission');
+    const z = typeof opts.radio.zigbee === 'function' ? await opts.radio.zigbee() : opts.radio.zigbee;
+    return { gateways: (z && Array.isArray(z.gateways)) ? z.gateways : [], devices: (z && Array.isArray(z.devices)) ? z.devices : [] };
+  };
+  api['radio.command'] = async (args) => {
+    if (!radioOn) throw hostError('ERR_RADIO_DENIED', 'this plugin has no radio permission');
+    const a = args && typeof args === 'object' ? args : {};
+    if (typeof opts.radio.command !== 'function') return { accepted: true };
+    try { return await opts.radio.command(a.id, a.set); } catch (e) { throw hostError((e && e.code) || 'ERR_RADIO_FAILED', (e && e.message) || 'failed'); }
+  };
 
   // ─── Kameras im Heimnetz (GateControl with phase 3c step 4, src/services/homeCameras.js; tools/testing/mock-cameras.js) ───
   const cams = mockCameras.install({ opts, perms, hostError });
@@ -3438,7 +3452,8 @@ async function createHost(pluginDir, opts = {}) {
     // GateControl ≥ 1.236.0: gc.print only with permissions.print (like the child bootstrap)
     ...(pr.on ? { print: pr.gcPart(call) } : {}),
     // GateControl ≥ 1.231.0: gc.homeCache only with permissions.homeCache (like the child bootstrap)
-    ...(radioOn ? { radio: Object.freeze({ sensors: () => call('radio.sensors', {}) }) } : {}),
+    ...(radioOn ? { radio: Object.freeze({ sensors: () => call('radio.sensors', {}),
+      ...(zigbeeOn ? { zigbee: () => call('radio.zigbee', {}), command: (id, set) => call('radio.command', { id, set }) } : {}) }) } : {}),
     // gc.cameras only with permissions.cameras and opts.cameras (like the child bootstrap)
     ...(cams.on ? { cameras: cams.gcPart(call) } : {}),
     ...(hcOn ? {

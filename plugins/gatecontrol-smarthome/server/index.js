@@ -14,6 +14,7 @@
 //     PUT  /resources/:id { name }      "In Smart Home benennen": lights / sensors (in deCONZ), Bluetooth sensors
 //     GET  /find?focus=zigbee:<mac>|ble:<mac>   where the page's deep link points to
 //   Bluetooth sensors through a GateControl gateway (server/radio.js; GateControl with gc.radio, phase 3c step 2)
+//   Zigbee devices of zigbee2mqtt through a GateControl gateway (server/zigbee.js; gc.radio.zigbee / gc.radio.command)
 //     GET  /ble/gateways · /ble/resources[?gateway_id]
 //   Shelly / Tasmota through a GateControl gateway (server/edge.js; GateControl ≥ 1.228.1 gc.edge, gc.mqtt.accounts)
 //     GET  /edge/gateways · /edge/found?gateway_id · /edge/devices[?gateway_id] · /edge/devices/:id · /edge/setup/:job
@@ -44,6 +45,7 @@ const alerts = require('./alerts');
 const deconzCaps = require('./caps');
 const edge = require('./edge');
 const radio = require('./radio');
+const zigbee = require('./zigbee');
 const { validApiKey } = require('./deconz');
 const texts = require('./texts.json');
 
@@ -79,6 +81,8 @@ const ERRORS = {
   SMARTHOME_EDGE_UNAVAILABLE: [409, 'error.edge_unavailable'],
   SMARTHOME_EDGE_UNREACHABLE: [502, 'error.edge_unreachable'],
   SMARTHOME_MQTT_OFF: [409, 'error.mqtt_off'],
+  SMARTHOME_RADIO_UNAVAILABLE: [409, 'error.radio_unavailable'],
+  SMARTHOME_RADIO_UNREACHABLE: [502, 'error.radio_unreachable'],
   SMARTHOME_PREFIX_TOO_LONG: [400, 'error.prefix_too_long'],
   FORBIDDEN: [403, 'error.forbidden'],
   NOT_FOUND: [404, 'error.not_found'],
@@ -115,12 +119,14 @@ async function usersById(gc) {
 
 const STATE_KEYS = new Set(['on', 'bri', 'reachable', 'type', 'value', 'pos', 'moving', 'power', 'energy_today', 'humidity', 'battery']);
 const EDGE_CAPS = ['bri', 'power', 'position', 'cover', 'reading'];
+const Z2M_CAPS = ['bri', 'ct', 'color', 'power', 'position', 'cover', 'reading'];
 /** Portal: only the controllable surface — never gateway, target or deCONZ internals. */
 function portalResource(r) {
   const st = {};
   for (const [k, v] of Object.entries(r.state || {})) if (STATE_KEYS.has(k)) st[k] = v;
   let caps = r.capabilities || {};
   if (r.deconz_type === 'edge') caps = Object.fromEntries(EDGE_CAPS.filter((k) => k in caps).map((k) => [k, caps[k]]));
+  if (r.deconz_type === 'z2m') caps = Object.fromEntries(Z2M_CAPS.filter((k) => k in caps).map((k) => [k, caps[k]]));
   return { id: r.id, kind: r.kind, name: r.name, area: r.area || null, capabilities: caps, state: st };
 }
 
@@ -684,6 +690,7 @@ module.exports = {
     }
     await edge.tick(gc).catch((e) => gc.log.warn('edge tick failed', (e && (e.code || e.message)) || e));
     await radio.sync(gc).catch((e) => gc.log.warn('radio sync failed', (e && (e.code || e.message)) || e));
+    await zigbee.sync(gc).catch((e) => gc.log.warn('zigbee sync failed', (e && (e.code || e.message)) || e));
     const s = await gc.settings.all();
     const interval = Math.max(30, Math.min(3600, Number(s.interval) || 30));
     if (Date.now() - state.lastSync < interval * 1000 - 2000) return;

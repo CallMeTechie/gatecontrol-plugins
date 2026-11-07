@@ -1,11 +1,12 @@
-<!-- version: 1.8.1 -->
+<!-- version: 1.9.0 -->
 # Smart Home
 
 ## Was das Plugin kann
 
 - **Phoscon/deCONZ-Gateways** einbinden (z. B. ConBee oder RaspBee): Lichter, Steckdosen, Gruppen, Szenen, Sensoren und Schalter. Ein/Aus, Helligkeit, Farbe, Farbtemperatur, Szenen.
 - **Shelly und Tasmota** über ein GateControl-Gateway im Heimnetz (ab 1.7.0): Schalter mit Leistungsmessung, Dimmer, Rollläden, Markisen und Tore, Temperatur- und Feuchtesensoren – ohne Hersteller-Cloud.
-- **Bluetooth-Sensoren** über ein GateControl-Gateway (ab 1.8.0): Thermometer und Sensoren, die du in GateControl unter Funk übernommen hast.
+- **Bluetooth-Sensoren** über ein GateControl-Gateway (ab 1.8.0): Thermometer und Sensoren, die du in GateControl unter Funk übernommen hast – auch verschlüsselte, wenn ihr Schlüssel dort eingetragen ist.
+- **Zigbee-Geräte von zigbee2mqtt** über ein GateControl-Gateway (ab 1.9.0): Lichter, Steckdosen, Rollläden, Sensoren und Taster, die du in GateControl unter Funk mit zigbee2mqtt angelernt hast.
 - **Besitzer und Bereiche:** Du weist Geräte Personen zu. Diese Personen bedienen sie im Portal „Zuhause“ und in der App.
 - **Logikketten** auf dem deCONZ-Gateway: Auslöser, Zeitfenster, Verzögerung.
 - **Mitteilungen:** Alarm (Wasser, Rauch, CO), Fenster lange offen, Batterie schwach, Gateway nicht erreichbar.
@@ -17,6 +18,7 @@
 - Für deCONZ: ein Phoscon/deCONZ-Gateway, das GateControl erreicht (über eine Route, ein VPN-Gerät oder eine Adresse).
 - Für Shelly und Tasmota: ein GateControl-Gateway **1.19.0** oder neuer im selben Heimnetz, mit den Diensten `edge` und `mqtt` in seiner Compose-Datei.
 - Für Bluetooth-Sensoren: ein GateControl mit Funk (Reiter „Funk“ beim Gateway) und ein Gateway mit Bluetooth.
+- Für zigbee2mqtt: ein GateControl, das zigbee2mqtt kennt, und ein Gateway nach 1.30.0 mit „zigbee2mqtt“ im Reiter „Funk“ (dafür sind Edge und MQTT des Gateways an).
 
 ## Einrichten
 
@@ -43,7 +45,15 @@ GateControl ändert am Gerät nur die MQTT-Einstellungen. Cloud, WLAN und Zeitpl
 ### Bluetooth-Sensoren
 
 1. In GateControl beim Gateway im Reiter **„Funk“** den Sensor anlernen und **übernehmen** (BTHome, Xiaomi mit ATC/pvvx-Firmware, Shelly BLU).
-2. Der Sensor erscheint im Plugin unter der Quelle „Bluetooth-Sensoren (GateControl-Gateway)“ mit Temperatur, Feuchte und Batterie. Gibst du ihn in GateControl zurück, verschwindet er hier.
+2. Der Sensor erscheint im Plugin unter der Quelle „Funk (GateControl-Gateway)“ mit Temperatur, Feuchte und Batterie. Gibst du ihn in GateControl zurück, verschwindet er hier.
+3. Sendet er verschlüsselt (BTHome mit Schlüssel, Xiaomi-Originalfirmware), trägst du seinen Schlüssel in GateControl beim Sensor ein – danach kommen seine Werte auch hier an.
+
+### Zigbee-Geräte von zigbee2mqtt {#zigbee2mqtt}
+
+1. In GateControl beim Gateway im Reiter **„Funk“** als Zigbee-Dienst **„zigbee2mqtt“** wählen und mit **„Anlernen starten“** die Geräte koppeln.
+2. Die Geräte erscheinen von selbst im Plugin unter der Quelle „Funk (GateControl-Gateway)“ des Gateways: Lichter mit Helligkeit, Farbe und Farbtemperatur, Steckdosen und Schalter, Rollläden (Auf / Stopp / Zu), Sensoren und Taster.
+3. Besitzer, Bereich und Name gibst du wie bei den anderen Geräten. Ein Name, den du hier vergibst, bleibt; sonst gilt der Name aus zigbee2mqtt.
+4. Entfernst du ein Gerät in GateControl aus dem Zigbee-Netz, wird es hier ausgeblendet – seine Besitzer bleiben, falls es wiederkommt.
 
 ### Geräte zuweisen und benennen
 
@@ -88,8 +98,12 @@ Das Gerät hat sich abgemeldet oder seit 30 Minuten nichts gemeldet (Batteriesen
 **Das automatische Einrichten scheitert.**
 Richte das Gerät „Von Hand …“ ein. Die Anleitung steht im Fenster.
 
-## Neu in 1.8.1
+**Ein Gerät von zigbee2mqtt lässt sich nicht schalten („zigbee2mqtt auf dem Gateway antwortet gerade nicht“).**
+Im Reiter „Funk“ des Gateways nachsehen: Läuft zigbee2mqtt, sind Edge und MQTT an? Neue Geräte erscheinen spätestens nach einer halben Minute.
 
-- Dieses Handbuch im Reiter „Handbuch“ (GateControl ≥ 1.241.0).
+## Neu in 1.9.0
 
-Zuletzt in 1.8.0: Bluetooth-Sensoren über ein GateControl-Gateway und „In Smart Home benennen“ beim Zuweisen.
+- **Zigbee-Geräte von zigbee2mqtt** über ein GateControl-Gateway – geschaltet und zugewiesen wie die anderen Geräte ([zigbee2mqtt](#zigbee2mqtt)).
+- Verschlüsselte Bluetooth-Sensoren liefern Werte, sobald ihr Schlüssel in GateControl eingetragen ist.
+
+Zuletzt in 1.8.1: dieses Handbuch im Reiter „Handbuch“; in 1.8.0: Bluetooth-Sensoren über ein GateControl-Gateway.
