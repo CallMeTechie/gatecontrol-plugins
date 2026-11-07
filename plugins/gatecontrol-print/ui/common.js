@@ -88,11 +88,25 @@
   function jobReason(j) {
     // the gateway turns a PDF into the printer's own format first (printer without PDF)
     if (j.state === 'sending' && j.message === 'converting') return T('job.converting');
+    // … or makes a PDF of an office file (its service office)
+    if (j.state === 'sending' && j.message === 'converting_office') return T('job.converting_office');
+    // the printer stopped while printing (paper out, cover open …) — GateControl ≥ 1.247.0
+    if (j.state === 'printing' && j.message && T('job.stop.' + j.message) !== 'job.stop.' + j.message) return T('job.stop.' + j.message);
     if (j.state === 'waiting') return T('job.waiting_why.' + (j.error || 'printer_offline'));
     if (j.state === 'failed' || j.state === 'expired') return T('jerr.' + (j.error || j.state));
     return null;
   }
+  /** A paper size's name: "A4", "Foto 10 × 15 cm" … (PWG name → text; unknown: the name itself) */
+  function paperName(m) { var k = 'paper.' + m; var s = T(k); return s === k ? m : s; }
+  /** A tray's name: "Hauptfach", "Fotofach", "Fach 2" … */
+  function trayName(s) {
+    var k = 'tray.' + s;
+    var x = T(k);
+    if (x !== k) return x;
+    var n = /^tray-(\d{1,2})$/.exec(s);
+    return n ? T('tray.n', { n: n[1] }) : s;
+  }
   /** "Drucker + Scanner", "Drucker", "Scanner" */
   function kindText(d) { return T(d.printer && d.scanner ? 'kind.both' : (d.printer ? 'kind.printer' : 'kind.scanner')); }
-  window.PR = { CTX: CTX, T: T, $: $, el: el, clear: clear, api: api, toast: toast, warn: warn, errText: errText, dialog: dialog, confirmDialog: confirmDialog, thumbUrl: thumbUrl, when: when, ago: ago, jobBadge: jobBadge, jobReason: jobReason, kindText: kindText };
+  window.PR = { CTX: CTX, T: T, $: $, el: el, clear: clear, api: api, toast: toast, warn: warn, errText: errText, dialog: dialog, confirmDialog: confirmDialog, thumbUrl: thumbUrl, when: when, ago: ago, jobBadge: jobBadge, jobReason: jobReason, kindText: kindText, paperName: paperName, trayName: trayName };
 })();

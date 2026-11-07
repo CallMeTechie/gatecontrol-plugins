@@ -14,6 +14,9 @@ const STATUS = {
   printer_format: 409,
   gateway_update: 409,
   convert_off: 409,
+  office_off: 409,
+  office_missing: 409,
+  ocr_unavailable: 409,
   busy: 409,
   no_drive: 409,
   no_pages: 409,
@@ -53,13 +56,16 @@ const bool = (v) => v === true || v === 1;
 const HOST = {
   ERR_PRINT_FORMAT: 'format', ERR_PRINT_TOO_LARGE: 'too_large', ERR_PRINT_OFFLINE: 'offline', ERR_PRINT_BUSY: 'busy',
   ERR_NOT_FOUND: 'not_found', ERR_INVALID: 'invalid', ERR_PRINT_CERT_CHANGED: 'cert_changed', ERR_MEDIA_QUOTA: 'too_large',
+  ERR_PRINT_OCR_UNAVAILABLE: 'ocr_unavailable',
 };
 /**
  * Why GateControl cannot print a file (ERR_PRINT_FORMAT, `e.reason` since GateControl 1.243.0) → this plugin's code:
  * format (not a PDF or picture), damaged, printer_format (the printer takes no PDF and the gateway cannot convert for
- * it), gateway_update (… the gateway is too old to convert), convert_off (… converting is off on that gateway).
+ * it), gateway_update (… the gateway is too old to convert), convert_off (… converting is off on that gateway);
+ * since GateControl 1.247.0 for office files: office_off („Office-Dateien drucken“ is off on the printer's gateway),
+ * office_missing (on, but the gateway's service office does not run yet).
  */
-const FORMAT_REASONS = { file_type: 'format', damaged: 'damaged', printer: 'printer_format', gateway_update: 'gateway_update', convert_off: 'convert_off' };
+const FORMAT_REASONS = { file_type: 'format', damaged: 'damaged', printer: 'printer_format', gateway_update: 'gateway_update', convert_off: 'convert_off', office_off: 'office_off', office_missing: 'office_missing' };
 function formatCode(e) {
   if (e && typeof e.reason === 'string' && FORMAT_REASONS[e.reason]) return FORMAT_REASONS[e.reason];
   // an older GateControl names no reason – its message says which case it is

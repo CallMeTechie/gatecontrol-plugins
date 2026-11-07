@@ -25,6 +25,11 @@
       <p class="pr-note" id="pr-sess-err" hidden></p>
       <div class="pr-suggest" id="pr-suggest" hidden></div>
       <div class="form-group"><label class="form-label" for="pr-name">{{t:portal.name}}</label><input class="form-input" id="pr-name" maxlength="200" autocomplete="off"></div>
+      <div class="form-group" id="pr-ocr-row" hidden>
+        <label class="check"><input type="checkbox" id="pr-ocr"> <span>{{t:portal.ocr}}</span></label>
+        <p class="pr-hint" id="pr-ocr-hint">{{t:portal.ocr_hint}}</p>
+      </div>
+      <p class="pr-hint" id="pr-ocr-busy" role="status" hidden></p>
       <div class="pr-actions">
         <button class="btn" type="button" id="pr-more">{{t:portal.more}}</button>
         <button class="btn btn-primary" type="button" id="pr-save">{{t:portal.save}}</button>
@@ -41,11 +46,16 @@
       <span class="form-label">{{t:portal.file}}</span>
       <div class="pr-file">
         <label class="btn" for="pr-file-in">{{t:portal.pick_file}}</label>
-        <input type="file" id="pr-file-in" accept="application/pdf,image/jpeg,image/png,image/webp,image/heic,image/heif,.pdf,.jpg,.jpeg,.png,.webp,.heic">
+        <input type="file" id="pr-file-in" accept="application/pdf,image/jpeg,image/png,image/webp,image/heic,image/heif,text/plain,.pdf,.jpg,.jpeg,.png,.webp,.heic,.txt,.docx,.xlsx,.pptx,.odt,.ods,.odp,.rtf">
         <span class="pr-file-name" id="pr-file-name">{{t:portal.no_file}}</span>
       </div>
     </div>
     <div class="form-group"><label class="form-label" for="pr-printer">{{t:portal.printer}}</label><select class="form-select" id="pr-printer"></select></div>
+    <p class="pr-note" id="pr-office-note" hidden></p>
+    <div class="form-row" id="pr-paper-row" hidden>
+      <div class="form-group" id="pr-media-row" hidden><label class="form-label" for="pr-media">{{t:portal.paper}}</label><select class="form-select" id="pr-media"></select></div>
+      <div class="form-group" id="pr-source-row" hidden><label class="form-label" for="pr-tray">{{t:portal.tray}}</label><select class="form-select" id="pr-tray"></select></div>
+    </div>
     <div class="form-row">
       <div class="form-group"><span class="form-label" id="pr-copies-l">{{t:portal.copies}}</span>
         <div class="pr-num" role="group" aria-labelledby="pr-copies-l"><button class="btn" type="button" id="pr-copies-minus" aria-label="{{t:portal.less}}">−</button><output id="pr-copies" aria-live="polite">1</output><button class="btn" type="button" id="pr-copies-plus" aria-label="{{t:portal.more_copies}}">+</button></div>

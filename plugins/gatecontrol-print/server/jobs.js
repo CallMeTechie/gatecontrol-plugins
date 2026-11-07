@@ -35,14 +35,33 @@ async function deviceOf(gc, deviceId, kind) {
 }
 
 async function insert(gc, job, d, via, now) {
-  await store.run(gc, `INSERT OR REPLACE INTO jobs (id, user_id, device_id, device_name, name, pages, copies, color, duplex, via, state, error, message, notified, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`,
-  [job.id, job.user, d.id, clip(d.name, 120), clip(job.name, 200) || 'GateControl', job.pages || 1, job.copies || 1, job.color ? 1 : 0, job.duplex ? 1 : 0, via,
-    job.state, job.error || null, job.message || null, now, now]);
+  await store.run(gc, `INSERT OR REPLACE INTO jobs (id, user_id, device_id, device_name, name, pages, copies, color, duplex, media, source, via, state, error, message, notified, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`,
+  [job.id, job.user, d.id, clip(d.name, 120), clip(job.name, 200) || 'GateControl', job.pages || 1, job.copies || 1, job.color ? 1 : 0, job.duplex ? 1 : 0,
+    job.media || null, job.source || null, via, job.state, job.error || null, job.message || null, now, now]);
+}
+
+const MEDIA_RE = /^[a-z0-9]+_[a-z0-9.-]+_[0-9.]+x[0-9.]+(mm|in)$/;
+const SOURCE_RE = /^[a-z][a-z0-9-]{0,39}$/;
+
+/** Paper and tray of a print call: only what the printer names (GateControl ≥ 1.247.0, printer.media), else nothing. */
+function mediaOf(b, p) {
+  const m = (p && p.media) || { sizes: [], sources: [] };
+  const out = {};
+  if (b.media != null && b.media !== '') {
+    if (typeof b.media !== 'string' || !MEDIA_RE.test(b.media) || !(m.sizes || []).includes(b.media)) throw fail('invalid', { field: 'media' });
+    out.media = b.media;
+  }
+  if (b.source != null && b.source !== '') {
+    if (typeof b.source !== 'string' || !SOURCE_RE.test(b.source) || !(m.sources || []).includes(b.source)) throw fail('invalid', { field: 'source' });
+    out.source = b.source;
+  }
+  return out;
 }
 
 /**
- * Print a file of the plugin (the person's upload): POST print { deviceId, mediaId, copies, color, duplex, name }.
+ * Print a file of the plugin (the person's upload): POST print { deviceId, mediaId, copies, color, duplex, name,
+ * media?, source? }. PDF files, pictures, plain text and — where the printer's gateway converts them — office files.
  * → { job, pagesLeft }
  */
 async function print(gc, user, b, { via = 'portal', now = Date.now() } = {}) {
@@ -53,7 +72,9 @@ async function print(gc, user, b, { via = 'portal', now = Date.now() } = {}) {
   const copies = b.copies == null ? 1 : Number(b.copies);
   if (!Number.isInteger(copies) || copies < 1 || copies > 99) throw fail('invalid', { field: 'copies' });
   const color = b.color === true && !r.bwOnly;
-  // the page limit: count before sending (PDF pages × copies)
+  const paper = mediaOf(b, d.printer);
+  // the page limit: count before sending (PDF pages × copies; an office file: the pages it names, else 1 — the gateway
+  // reports the real count after converting and the background takes it over)
   const rest = await left(gc, user, r, now);
   if (rest != null) {
     let pages;
@@ -62,7 +83,7 @@ async function print(gc, user, b, { via = 'portal', now = Date.now() } = {}) {
   }
   let job;
   try {
-    job = await gc.print.submit({ deviceId: d.id, mediaId: b.mediaId, user: user.id, copies, color, duplex: b.duplex === true, name: clip(b.name, 200) || undefined });
+    job = await gc.print.submit({ deviceId: d.id, mediaId: b.mediaId, user: user.id, copies, color, duplex: b.duplex === true, name: clip(b.name, 200) || undefined, ...paper });
   } catch (e) { throw fromHost(e); }
   await insert(gc, job, d, via, now);
   return { job: await view(gc, await store.one(gc, 'SELECT * FROM jobs WHERE id = ?', [job.id])), pagesLeft: rest == null ? null : Math.max(0, rest - job.pages * job.copies) };
@@ -99,7 +120,7 @@ async function view(gc, r) {
   if (!r) return null;
   return {
     kind: 'print', id: r.id, user: r.user_id, userName: await nameOf(gc, r.user_id), device: r.device_name, deviceId: r.device_id, name: r.name,
-    pages: r.pages, copies: r.copies, color: r.color === 1, duplex: r.duplex === 1, via: r.via, state: r.state, error: r.error || null,
+    pages: r.pages, copies: r.copies, color: r.color === 1, duplex: r.duplex === 1, media: r.media || null, source: r.source || null, via: r.via, state: r.state, error: r.error || null,
     message: r.message || null, at: iso(r.created_at), updatedAt: iso(r.updated_at), open: OPEN.includes(r.state),
   };
 }
@@ -128,8 +149,9 @@ async function sync(gc, cfg, t, now = Date.now()) {
   for (const j of list) {
     const row = await store.one(gc, 'SELECT * FROM jobs WHERE id = ?', [j.id]);
     if (!row) continue;
-    if (row.state !== j.state || (row.error || null) !== (j.error || null)) {
-      await store.run(gc, 'UPDATE jobs SET state = ?, error = ?, message = ?, updated_at = ? WHERE id = ?', [j.state, j.error || null, j.message || null, now, row.id]);
+    const pages = Number.isInteger(j.pages) && j.pages > 0 ? j.pages : row.pages;
+    if (row.state !== j.state || (row.error || null) !== (j.error || null) || (row.message || null) !== (j.message || null) || row.pages !== pages) {
+      await store.run(gc, 'UPDATE jobs SET state = ?, error = ?, message = ?, pages = ?, updated_at = ? WHERE id = ?', [j.state, j.error || null, j.message || null, pages, now, row.id]);
       changed++;
     }
     const final = j.state === 'done' || j.state === 'failed' || j.state === 'expired';
@@ -161,8 +183,28 @@ async function notify(gc, t, row, j) {
   } catch (e) { gc.log.debug('print notice not sent', (e && e.code) || 'error'); }
 }
 
+/**
+ * GET jobs/<id> — one job of the person (an administrator: any), fresh from GateControl (gc.print.job): the apps follow
+ * a job with it (the print service on the phone shows its real state). → { job }
+ */
+async function one(gc, user, id, now = Date.now()) {
+  const row = await store.one(gc, 'SELECT * FROM jobs WHERE id = ?', [String(id)]);
+  if (!row || (row.user_id !== user.id && user.role !== 'admin')) throw fail('not_found');
+  if (OPEN.includes(row.state) && typeof gc.print.job === 'function') {
+    let j = null;
+    try { j = await gc.print.job(row.id); } catch (e) {
+      if (!(e && e.code === 'ERR_NOT_FOUND')) gc.log.debug('job refresh failed', (e && e.code) || 'error');
+    }
+    if (j) {
+      const pages = Number.isInteger(j.pages) && j.pages > 0 ? j.pages : row.pages;
+      await store.run(gc, 'UPDATE jobs SET state = ?, error = ?, message = ?, pages = ?, updated_at = ? WHERE id = ?', [j.state, j.error || null, j.message || null, pages, now, row.id]);
+    }
+  }
+  return { job: await view(gc, await store.one(gc, 'SELECT * FROM jobs WHERE id = ?', [row.id])) };
+}
+
 async function purge(gc, days, now = Date.now()) {
   await store.run(gc, `DELETE FROM jobs WHERE created_at < ? AND state NOT IN (${store.marks(OPEN.length)})`, [now - days * 86400000, ...OPEN]);
 }
 
-module.exports = { print, testPage, cancel, list, sync, purge, pagesToday, left, reset, view, OPEN };
+module.exports = { print, testPage, cancel, list, one, sync, purge, pagesToday, left, reset, view, mediaOf, OPEN };

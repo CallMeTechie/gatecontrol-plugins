@@ -4108,6 +4108,7 @@ async function createHost(pluginDir, opts = {}) {
     print: pr.state,
     printJob: (id, x) => pr.setJob(id, x || {}),
     printScanPages: (id, pages, x) => pr.scanPages(id, pages, x),
+    printOcr: (id, x) => pr.setOcr(id, x || {}),
     /** Kameras: the hook cameraEvent ({ id, cameraId, camera, gatewayId, kind, kinds, phase, at, nobodyHome, clip }) */
     cameraEvent: (ev) => cams.deliver(ev),
     /** Kameras: what the host holds (cameras, calls, passwords it was given) */
