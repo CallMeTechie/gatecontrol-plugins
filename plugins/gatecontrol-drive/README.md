@@ -158,6 +158,7 @@ reaches `GET frame` (the photo frame, since 1.7.0) and nothing else (`403 forbid
 | `GET deadlines` | `from?`, `to?` (YYYY-MM-DD; today, + 365 days) | `{ deadlines [{ id, kind, date, label, reminder, calendar, calendars, foundAt, doc, node }] }` (≤ 500, by date; `calendar`, `foundAt`, `doc` since 1.14.0; `calendar.target`, `calendars` since 1.17.0) |
 | `POST deadlines/<id>/remind` | `{ daysBefore }` (0 … 90) | `{ deadline }` — my reminder |
 | `DELETE deadlines/<id>/remind` | | `{ deadline }` |
+| `POST deadlines/<id>/done` · `DELETE deadlines/<id>/done` | (since 1.27.0) | `{ deadline }` with `done { at, by } \| null` — ticked off for everyone who reads the file (read is enough); a deadline ticked off sends no reminder |
 | `POST deadlines/<id>/calendar` | (since 1.14.0) `{ target? }` (since 1.17.0: `{ kind: 'family' }` \| `{ kind: 'mail', calendarId }`) | `{ deadline }` with `calendar { eventId, at, target { kind, label } }` — into my family calendar (see "AI in Drive"), since 1.17.0 also into a calendar of Mail (`409 mail_unavailable { reason }`) |
 | `GET deadlines/calendars` | (since 1.17.0) | `{ family: bool, mail [{ id, name, account { id, label, kind, email }, color }] }` — the calendars I can choose |
 | `GET deadlines/targets` · `PUT deadlines/targets` | PUT: `{ targets [{ areaId, target }] }` (since 1.17.0) | `{ targets [{ areaId, label, target }] }` — my target per area with AI for documents where I write |
@@ -1209,14 +1210,15 @@ locking overwrites the keys in memory and forgets the names.
 
 | Threat | Rule | Portal (sandboxed frame) | Android | Windows |
 |---|---|---|---|---|
-| Plaintext on the disk (cache, temp, swap of files, thumbnails, MediaStore) | decrypt into memory only | bytes in the frame's JS heap; pictures via `ImageDecoder` (no URL; `createImageBitmap` of an in-memory Blob where it is missing), PDF pages and pictures on `<canvas>` | heap byte arrays (pictures, texts), an anonymous `memfd` (no path) for `PdfRenderer`, a video's **ciphertext** in the cache and one 1 MiB chunk of plaintext at a time (`DriveVaultVideoSource`, no Media3 cache) | the core keeps only the **ciphertext** in `%TEMP%\gatecontrol-drive\vault-view`; the page reads `gcvault://v/<token>`, which decrypts the chunks of each request's Range in memory (`no-store`, no HTTP cache for custom schemes): `<img>`/`<video>` directly, PDFs and texts through `fetch()` into the page's memory (pdf.js on `<canvas>`); only the app's own page may `fetch()` it |
+| Plaintext on the disk (cache, temp, swap of files, thumbnails, MediaStore) | decrypt into memory only | bytes in the frame's JS heap; pictures via `ImageDecoder` (no URL; `createImageBitmap` of an in-memory Blob where it is missing), PDF pages and pictures on `<canvas>` | heap byte arrays (pictures, texts), an anonymous `memfd` (no path) for `PdfRenderer`, a video's **ciphertext** in the cache and one 1 MiB chunk of plaintext at a time (`DriveVaultVideoSource`, no Media3 cache); a file kept "offline verfügbar" is its **ciphertext** exactly as the server holds it (header and chunks, app-private `filesDir/drive-offline`, opaque name), read from there and decrypted the same way — a video chunk by chunk from it | the core keeps only the **ciphertext** in `%TEMP%\gatecontrol-drive\vault-view`; the page reads `gcvault://v/<token>`, which decrypts the chunks of each request's Range in memory (`no-store`, no HTTP cache for custom schemes): `<img>`/`<video>` directly, PDFs and texts through `fetch()` into the page's memory (pdf.js on `<canvas>`); only the app's own page may `fetch()` it |
 | Browser storage, caches, service workers | none | the frame has no storage, no service worker, `connect-src 'none'` | — | the session's HTTP cache is never used for `gcvault:`; nothing in `localStorage` |
 | Hand-off to other programs | only as an explicit export | "Herunterladen" asks first ("nicht verschlüsselt") | "Mit anderer App öffnen" asks first and serves a memory file through a non-exported provider (`DriveVaultShareProvider`, URI grant per intent) — withdrawn when the person comes back or the vault locks; no plaintext file | "Mit anderem Programm öffnen" asks first and writes the copy to `%TEMP%` (deleted after about a minute, later while the program holds it, when the vaults lock, at the next start); "Speichern unter …" as before |
-| Leftovers after closing | drop everything | bytes overwritten with zeros, `ImageDecoder` frames and bitmaps closed, canvases emptied (width 0), pdf.js document destroyed, DOM removed | bitmaps recycled, `PdfRenderer` closed, memfd truncated and closed, ciphertext deleted, player released | the token revoked (404 afterwards), the file key overwritten, the ciphertext deleted, running streams ended; canvases emptied, buffers zeroed |
+| Leftovers after closing | drop everything | bytes overwritten with zeros, `ImageDecoder` frames and bitmaps closed, canvases emptied (width 0), pdf.js document destroyed, DOM removed | bitmaps recycled, `PdfRenderer` closed, memfd truncated and closed, the viewer's ciphertext deleted (an offline copy stays — ciphertext), player released | the token revoked (404 afterwards), the file key overwritten, the ciphertext deleted, running streams ended; canvases emptied, buffers zeroed |
 | The vault locks while a file is shown | the viewer closes | `lockAll` closes the viewer first; a decryption still running stops at its next read (`epoch`) | `session.locks` closes the viewer and empties `DriveVaultShares` | the lock closes every token in the core and the viewer on `drive:vault-lock` |
 | Screenshots, recent apps | hide the viewer | — (the browser decides) | `FLAG_SECURE` on the window while the viewer shows, `setRecentsScreenshotEnabled(false)` (Android 13+), the video surface `setSecure(true)` | `setContentProtection(true)` while the viewer shows |
 | A malicious file attacking the viewer | sandbox and no network | runs in GateControl's sandboxed frame (opaque origin, no network, no eval); pdf.js 6.4.299 without eval, no scripts or forms of the PDF, no fonts or images from the network | Android's own decoders (`ImageDecoder`, `PdfRenderer`, Media3) | the renderer is sandboxed with context isolation; pdf.js in a module worker |
 | Viewing too much in memory | a size cap and a clear hint | pictures 64 MB, PDF 100 MB, text 8 MB | pictures 64 MB, PDF 200 MB, text 8 MB, video 4 GB (ciphertext on the storage), "Mit anderer App öffnen" 512 MB | pictures 64 MB, PDF 200 MB, text 8 MB, video unlimited (streamed) |
+| Files offline, opening without a connection | only protected material at rest; a device no longer approved keeps nothing | — (needs the server) | the marks of feature `offline` on vault nodes (a file, a folder, the vault's folder); the background run copies ciphertext only and never unlocks; for unlocking offline the device's **wrapped** keys of every key version (`GET keys`), the vault (`nameCipher`, key version) and the listings seen (opaque and encrypted names) in the no-backup files — the device key stays in the Keystore behind the confirmation, no TK on the disk; `keys` not `approved`, 404/403, logout or another login delete the copies and that cache | — (not offered) |
 
 What is **not** offered: **videos in the portal** — the frame's CSP (GateControl's `frame.js`) lets `<video>` play only
 from `/plugin-media/`, neither `blob:` nor MediaSource; a decrypted copy would have to leave the tab. The tab says so and
@@ -1472,6 +1474,24 @@ the path should be). The change log names the calling plugin as the device.
   each, instead of the shared 60.
 
 The other way round (since 1.14.0): Drive calls the Familie plugin's `calendar_add` for a deadline (see "AI in Drive").
+
+**For „Notizen & Aufgaben“ (since 1.27.0, `server/notizen.js`, `server/todohub.js`; contract v1 of
+`gatecontrol-notizen`):** the deadlines as the hub's items. Callers: `gatecontrol-notizen` only (else `forbidden`),
+600 calls per hour each.
+
+| Service | Payload | Answer |
+|---|---|---|
+| `todo_items` | `{ v: 1, cursor?, limit? (1…100) }` | `{ ok, items: [Item], cursor \| null, now }` — the person's deadlines, by id, ≤ 16 KB |
+| `todo_complete` | `{ v: 1, id: 'deadline:<id>', done }` | `{ ok, item }` — like `POST\|DELETE deadlines/<id>/done` as that person; `not_found`, `forbidden`, `read_only`, `invalid` |
+
+An item: `{ id: 'deadline:<id>', kind: 'deadline', title (as in the calendar), subtitle (the file name), due (the day,
+allDay), users (everyone with a seat who reads the area), area ('work' for a team folder), group { id: 'area:<id>',
+label }, meta { type: the kind, amount? ('84,20 €', payments) }, done, canComplete: true, open { plugin:
+'gatecontrol-drive', route: 'node/<fileId>' } }` — deadlines from 7 days ago to 180 days ahead of live files outside a
+vault, at most 1000; one ticked off more than a day ago is left out. Changes go to the hub with
+`gatecontrol-notizen:todo_changed` (only the difference to what it got, table `todo_sent`; at most every 2 minutes in
+the background, 5 s after a change of a deadline). Without the hub (or without `gc.services.available`) nothing is
+called.
 
 ## Background
 

@@ -1,4 +1,4 @@
-<!-- version: 1.26.0 -->
+<!-- version: 1.27.0 -->
 # Drive
 
 ## Was das Plugin kann
@@ -45,7 +45,8 @@ Drive ist ein eigenes Abo (Familie, Business oder Kombi, fünf Personen inklusiv
 - **Erinnerungen:** In der Übersicht öffnet „Alle“ die Seite **„Erinnerungen“** (Portal, Android- und Windows-App mit Drive 1.26.0). Dort stehen: **Heute vor X Jahren** (jedes frühere Jahr, in dem du an diesem Tag – einen Tag davor oder danach mitgerechnet – mehr als 10 Fotos gemacht hast), **Ausflüge und Reisen** (Tage am Stück an einem Ort, der mindestens 40 km von zu Hause weg ist, ab 10 Fotos), **Mit Noah** & Co. (deine benannten Personen ab 10 Fotos), **Diesen Monat vor X Jahren** (ab 20 Fotos), **Jahresrückblick** (jedes vergangene Jahr ab 50 Fotos) und **Orte** (z. B. „Langenlonsheim · 12 Fotos“, ab 10 Fotos). Ein Tipp auf eine Karte zeigt die Fotos; ein Tipp auf ein Foto öffnet es groß. „Zu Hause“ ist der Ort, an dem du an den meisten Tagen fotografiert hast. **Erinnerungen zeigen nur private Fotos:** nichts aus deinem Arbeitsordner, nichts, was noch unter „Prüfen“ wartet, nichts aus Team-Ordnern. Die Karten der Übersicht erscheinen ebenfalls erst ab mehr als 10 Fotos am Tag.
 - **Videos finden:** In der Suche filtert „Alle · Fotos · Videos“ (Portal) bzw. „Videos“ (Apps) die Treffer. Ohne Suchwort zeigt „Videos“ die neuesten Videos.
 - **Fotos und Videos vom Handy sichern (Android):** In der App unter **Drive › Foto-Sicherung**. „Auch Videos“ ist zuerst aus. Schaltest du es später ein, fragt die App: **„Alle Videos“** sichert auch die Videos, die schon auf dem Handy sind (Fotos werden dabei nicht noch einmal hochgeladen), **„Nur neue“** nur die ab jetzt. Was die Sicherung auslässt, steht unter **„Übersprungen“** mit dem Grund; **„Erneut versuchen“** probiert es noch einmal.
-- **KI für Dokumente:** „Dokument-Infos“ an einer Datei, „Fragen“ unter der Suche, die Seite „Fristen“ mit „In den Familienkalender“ und „Erinnern“, „In Dokument umwandeln“ für Scans.
+- **KI für Dokumente:** „Dokument-Infos“ an einer Datei, „Fragen“ unter der Suche, die Seite „Fristen“ mit „In den Familienkalender“, „Erinnern“ und „Erledigt“, „In Dokument umwandeln“ für Scans. Eine erledigte Frist gilt für alle, die die Datei sehen, und erinnert nicht mehr.
+- **„Notizen & Aufgaben“** (wenn installiert): die Fristen deiner Dateien stehen dort mit Datum und Betrag – Fristen aus Team-Ordnern unter „Arbeit“. Dort abhaken ist dasselbe wie „Erledigt“ in Drive; antippen öffnet die Datei.
 - **Importieren** aus Google Drive und OneDrive: verbinden, auswählen, Ziel wählen.
 - **Im Browser bearbeiten** für Office-Dokumente, wenn ein Office-Server eingetragen ist.
 
@@ -59,6 +60,7 @@ Ein Tresor-Ordner bleibt Ende-zu-Ende verschlüsselt, auch wenn du dir eine Date
 - **Keine Bildschirmfotos:** In der Android-App und unter Windows lässt sich die Ansicht nicht abfotografieren und erscheint nicht in der Liste der letzten Apps.
 - **Der Server sieht nichts Neues:** Er liefert nur verschlüsselte Daten und das Programm der Ansicht. Administratoren können Tresore weiterhin nicht öffnen.
 - **Grenzen:** Sehr große Dateien, Office-Dateien und im Browser auch Videos zeigt die Ansicht nicht an – du bekommst einen Hinweis und kannst die Datei bewusst herunterladen oder in der App ansehen.
+- **Offline (Android-App):** Im Tresor schaltest du „Offline verfügbar“ für eine Datei oder einen Ordner ein (Menü ⋮) oder oben „Ganzen Tresor offline halten“. Auf dem Handy liegt dann nur der verschlüsselte Inhalt, genau so wie auf dem Server. Geöffnet wird wie immer erst nach dem Entsperren, nur im Arbeitsspeicher – auch ohne Netz. Dafür merkt sich das Handy den verpackten Tresor-Schlüssel; er bleibt mit dem Geräteschlüssel des Handys geschützt. Wird das Gerät aus dem Tresor entfernt oder meldest du dich ab, löscht die App die Offline-Dateien des Tresors.
 
 ## Berechtigungen
 
@@ -109,6 +111,15 @@ Vollbild im Portal gibt es ab GateControl 1.244.0. Ältere Versionen zeigen das 
 
 **Zu Hause bauen sich die Fotos nicht schneller auf.**
 Die Vorschaubilder kommen erst nach und nach auf das Gateway (je Lauf einige Hundert, alle 15 Minuten). Prüfe am Gateway unter **Gateways › Zwischenspeicher**, dass er „aktiv“ ist und „Fotos“ bzw. „Drive“ eingeschaltet sind. Vorschaubilder aus dem Heimnetz braucht GateControl 1.249.0 und eine aktuelle App.
+
+## Neu in 1.27.0
+
+- **Fristen abhaken:** „Erledigt“ auf der Seite „Fristen“ – für alle, die die Datei sehen; danach kommt keine Erinnerung mehr.
+- **Fristen in „Notizen & Aufgaben“:** Mit dem Plugin „Notizen & Aufgaben“ stehen deine Fristen dort (Team-Ordner unter „Arbeit“) und lassen sich dort abhaken. Ohne das Plugin ändert sich nichts.
+
+## Neu in 1.26.1
+
+- **Tresor-Dateien offline (Android-App):** Dateien, Ordner oder der ganze Tresor lassen sich auf dem Handy offline halten – nur verschlüsselt, geöffnet wird nach dem Entsperren im Arbeitsspeicher, auch ohne Netz (siehe „Dateien im Tresor ansehen“). Am Server ändert sich nichts.
 
 ## Neu in 1.26.0
 

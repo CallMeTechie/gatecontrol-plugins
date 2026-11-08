@@ -228,9 +228,11 @@ from Drive go as links (warning), files from the device or another account's mai
 | `GET ai/<messageId>` | `AiResult` \| `{ status: 'none' }` |
 | `POST ai/<messageId>` | `{ again? }` → `AiResult` — a result that is there is answered as it is (no new request; the apps ask on opening a mail), `again: true` asks anew; runs for the same mail at once share one request; at most 60 runs a person and hour (429) — 409 `ai_off` (administrator, account, business accounts blocked) / `ai_unavailable`, 429 `rate_limited` |
 | `POST ai/<messageId>/todo/<index>` | `{ action: 'family_calendar' }` → `{ where }` (Familie's `calendar_add` for the person; 409 `familie_unavailable`) |
+| `POST ai/<messageId>/todo/<index>` | `{ action: 'done' \| 'open' }` → `{ todo }` (since 1.11.0) — ticked off or open again (table `todo_done`; the same as in „Notizen & Aufgaben“) |
 
 `AiResult` = `{ status: 'done', summary | null (mail < 600 characters), todos: [{ kind:
-'question'|'deadline'|'event'|'amount'|'task', text, date?, time?, amount?, currency? }], replies: [{ label, text }] }`. The
+'question'|'deadline'|'event'|'amount'|'task', text, date?, time?, amount?, currency?, key, done }], replies: [{ label, text }] }`
+(`key`, `done` since 1.11.0: a short hash of kind and text — a new run with the same to-do keeps the tick). The
 text of the mail goes to the AI; its pictures only for a mail without text and only while GateControl lets pictures
 go to the AI.
 
@@ -439,6 +441,25 @@ Since 1.6.0 (`tofile_count` since 1.7.0) for Drive only (`server/services.js`; a
   filing`) of the person and the folder Drive suggested for the newest one (`where` of its suggestion, e.g. "Familie ›
   Versicherungen"; `null` without). Drive's overview (Drive ≥ 1.18.0) shows it under "Zu erledigen". Refusals:
   `forbidden`, `unavailable` with `reason` (`not_allowed`, `not_licensed`, `no_seat` — nothing is taken from the licence).
+
+### „Notizen & Aufgaben“ (since 1.11.0)
+
+Mail is a source of the plugin „Notizen & Aufgaben“ (`gatecontrol-notizen`, contract v1; `server/notizen.js`,
+`server/todohub.js`). Callers: `gatecontrol-notizen` only (else `forbidden`), 600 calls per hour each:
+
+* `todo_items` `{ v: 1, cursor?, limit? (1…100) }` → `{ ok, items: [Item], cursor | null, now }` — the person's items, by
+  id, ≤ 16 KB; nothing for someone who cannot use Mail (not allowed, no licence, no place).
+* `todo_complete` `{ v: 1, id, done }` → `{ ok, item }` — a to-do: like `POST ai/<id>/todo/<i> { action: 'done' | 'open' }`;
+  a flagged mail: like `POST messages/flags { flagged: false }` (on the server too) — undone flags it again (kept a day
+  as done for that). Refusals `not_found`, `forbidden`, `read_only`, `invalid`.
+
+Items: `todo:<messageId>:<key>` (`kind: 'task'`, `title` the to-do, `subtitle` „Zu tun aus „<subject>““, `due` its date —
+with the time in the person's time zone —, `meta.type` its kind, `meta.amount` for an amount) of the AI's results of
+the last 30 days, and `flag:<messageId>` (a flagged mail: the subject, the sender, `important: true`, `meta.flagged:
+true`; the newest 200 per person) — never from the trash or junk. `users` = the account's owner, `area: 'work'` for an
+account of kind business, `group` = `account:<id>` (its name or address), `open.route` = `message/<id>`. Changes go to
+the hub with `gatecontrol-notizen:todo_changed` (only the difference to what it got, table `todo_sent`; at most once a
+minute in the background, 5 s after a change through `messages/…` or `ai/…`). Without the hub nothing is called.
 
 ## Licence and people
 

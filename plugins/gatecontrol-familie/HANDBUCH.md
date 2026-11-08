@@ -1,4 +1,4 @@
-<!-- version: 1.18.1 -->
+<!-- version: 1.19.0 -->
 # Familie
 
 ## Was das Plugin kann
@@ -40,6 +40,7 @@ Die Familie in der GateControl-App (eigener Tab), im Portal (Tab „Familie“) 
 - **Regeln:** z. B. „Alle sind unterwegs“ › Licht aus, „Erste Person kommt heim“ › Szene, „Kind allein zu Hause“ › Mitteilung an die Eltern; mit Zeitfenster und „nach Sonnenuntergang“.
 - **Internet zu Hause** (Eltern, Portal): je minderjährigem Kind „Pause …“ (30 Min., 1 Std., bis morgen 7 Uhr, bis Uhrzeit), „Pause beenden“, „Heute länger …“. Das Kind bekommt Bescheid. Unterwegs im Mobilfunk gilt das nicht.
 - **Wand-Tablet:** Termine, Aufgaben zum Abhaken, Einkauf, Essen, wer zu Hause ist, „Schule heute“ (mit Plugin Schule), WLAN-Karte (mit Plugin Vault).
+- **„Notizen & Aufgaben“** (wenn installiert): deine Aufgaben, die Aufgaben der Kinder (für Eltern), Einkaufslisten mit Offenem und die Erinnerungen von heute stehen dort in „Mein Tag“. Abhaken dort zählt in Familie (mit Sternen). **Pinnwand und Packlisten** ziehen dann in „Notizen & Aufgaben“ um – du siehst und bearbeitest sie in Familie weiter wie bisher, und im Hub stehen sie als Notizbücher „Pinnwand“ und „Packlisten“ für die ganze Familie. Ist das Plugin einmal nicht erreichbar, arbeitet Familie weiter und gleicht später ab; Vorlagen bleiben in Familie.
 
 ## Berechtigungen
 
@@ -63,8 +64,15 @@ Haben alle betroffenen Personen „Anwesenheit teilen“ eingeschaltet? Eine Reg
 **Das Wand-Tablet lässt sich nicht koppeln.**
 Ein Administrator-Konto oder ein deaktiviertes Konto kann kein Wand-Tablet sein. Nimm ein eigenes Konto mit der Rolle Mitglied.
 
+**Eine Änderung an der Pinnwand fehlt in „Notizen & Aufgaben“ (oder umgekehrt).**
+Änderungen in Familie gehen sofort hinüber, Änderungen im Hub kommen nach spätestens 15 Minuten (meist nach einer halben Minute). War „Notizen & Aufgaben“ nicht erreichbar, holt Familie das beim nächsten Lauf nach.
+
 **Die Karte „Internet zu Hause“ fehlt.**
 Sie braucht GateControl 1.231.0 und ein Gateway mit DNS-Filter, und sie erscheint nur für Eltern nach der Anmeldung.
+
+## Neu in 1.19.0
+
+- **„Notizen & Aufgaben“:** Mit dem Plugin „Notizen & Aufgaben“ stehen Aufgaben, Einkaufslisten und Erinnerungen der Familie dort in „Mein Tag“ und lassen sich dort abhaken. Pinnwand und Packlisten ziehen dorthin um und bleiben in Familie sichtbar und bearbeitbar. Ohne das Plugin ändert sich nichts.
 
 ## Neu in 1.18.1
 

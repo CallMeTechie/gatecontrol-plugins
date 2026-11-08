@@ -2,6 +2,19 @@
 
 Müllabfuhr und Kalender des Haushalts als GateControl-Plugin.
 
+## 1.5.0
+
+- **Müllabfuhr in „Notizen & Aufgaben“:** Ist das Plugin „Notizen & Aufgaben“ (`gatecontrol-notizen`) installiert,
+  stehen die Abfuhrtermine der nächsten 14 Tage dort in „Mein Tag“ – am Vorabend („Gelber Sack rausstellen“,
+  `lead: 'evening'`). Eine Zeile je Plan, Tag und Tonne; sehen dürfen sie die Personen des Plans (ein Plan für alle:
+  alle Konten, höchstens 50). Abhaken lässt sich dort nichts (Alltag kennt kein „rausgestellt“).
+  - Alltag schickt nur echte Änderungen (`gatecontrol-notizen:todo_changed`, Vertrag v1): Was der Hub bekommen hat,
+    steht in der neuen Tabelle `todo_sent` (Kennung, Prüfsumme, Zeit); verglichen wird höchstens einmal pro Minute im
+    Hintergrund und wenige Sekunden nach einer Änderung im Plugin. Viele Änderungen gehen in einem Aufruf.
+  - Neue Dienste für den Hub (nur `gatecontrol-notizen` darf sie aufrufen, je 600 Aufrufe pro Stunde): `todo_items`
+    (die Termine einer Person, seitenweise, ≤ 16 KB) und `todo_complete` (antwortet `read_only`).
+  - Ohne den Hub ändert sich nichts: kein Aufruf, keine Einträge.
+
 ## 1.4.1
 
 - Handbuch im Reiter „Handbuch“ (GateControl ≥ 1.241.0): `HANDBUCH.md` / `HANDBOOK.md` im Paket, in `plugin.json` unter `handbook`. Ältere GateControl-Versionen ignorieren es; die Mindestversion bleibt `>=1.216.0`.

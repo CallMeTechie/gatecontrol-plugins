@@ -1,4 +1,4 @@
-<!-- version: 1.18.1 -->
+<!-- version: 1.19.0 -->
 # Family
 
 ## What the plugin does
@@ -40,6 +40,7 @@ The family in the GateControl app (a tab of its own), in the portal (tab “Fami
 - **Rules:** e.g. “Everyone is out” › lights off, “First person comes home” › scene, “Child home alone” › notify the parents; with a time window and “after sunset”.
 - **Internet at home** (parents, portal): per minor child “Pause …” (30 min, 1 h, until 7 tomorrow, until a time), “End pause”, “Longer today …”. The child is told. It does not apply on mobile data.
 - **Wall tablet:** events, tasks to tick off, shopping, meals, who is at home, “School today” (with the School plugin), Wi-Fi card (with the Vault plugin).
+- **“Notes & Tasks”** (when installed): your tasks, the children's tasks (for parents), shopping lists with something open and today's reminders show there in “My day”. Ticking off there counts in Family (with stars). **Pinboard and packing lists** then move into “Notes & Tasks” – you keep seeing and editing them in Family as before, and the hub has them as the notebooks “Pinboard” and “Packing lists” for the whole family. When the plugin cannot be reached for a while, Family works on and catches up later; templates stay in Family.
 
 ## Permissions
 
@@ -63,8 +64,15 @@ Did everyone involved switch on “Share presence”? A rule fires once per chan
 **The wall tablet cannot be paired.**
 An administrator account or a disabled account cannot be a wall tablet. Use an account of its own with the role member.
 
+**A change of the pinboard is missing in “Notes & Tasks” (or the other way round).**
+Changes in Family go over at once, changes in the hub come back within 15 minutes at the latest (mostly within half a minute). If “Notes & Tasks” could not be reached, Family catches up with the next run.
+
 **The card “Internet at home” is missing.**
 It needs GateControl 1.231.0 and a gateway with the DNS filter, and it only shows for parents after signing in.
+
+## New in 1.19.0
+
+- **“Notes & Tasks”:** with the plugin “Notes & Tasks” the family's tasks, shopping lists and reminders show in its “My day” and can be ticked off there. Pinboard and packing lists move there and stay visible and editable in Family. Without that plugin nothing changes.
 
 ## New in 1.18.1
 

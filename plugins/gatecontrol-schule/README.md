@@ -8,7 +8,7 @@ Vorabend, Nachrichten der Schule und Fehlzeiten (1.4.0), der Wochenplan je Kind 
 Startkachel und ein Widget je Kind. Konten kommen per **QR-Code-Scan** in die Einstellungen; jede Person
 kann ihr eigenes Schülerkonto in ihrem **GateControl-Profil** verknüpfen.
 
-Braucht **GateControl ≥ 1.196.0** (1.6.0). „Konten & Kinder“ stehen direkt in den Einstellungen des
+Braucht **GateControl ≥ 1.216.0** (1.8.0; 1.196.0 seit 1.6.0). „Konten & Kinder“ stehen direkt in den Einstellungen des
 Plugins, das Profil hat den Abschnitt „WebUntis“, und den QR-Code liest der Kamera-Dialog von GateControl
 selbst – das Bild bleibt in GateControl, das Plugin bekommt nur den gelesenen Link. Statt der Kamera geht
 auch ein Bild des QR-Codes oder die Eingabe von Hand. Lizenzpflichtiges Plugin.
@@ -423,12 +423,32 @@ school_day_end    { events: [{ userId, date: 'YYYY-MM-DD', plannedEnd: 'HH:MM', 
 Alle Aufrufe zählen zum Limit von 60 Aufrufen pro Stunde und Plugin; Schule ruft höchstens einmal je
 Abruf-Durchlauf und Dienst auf, und nur, wenn es etwas zu melden gibt.
 
+### „Notizen & Aufgaben“ (1.8.0)
+
+Schule ist eine Quelle des Plugins „Notizen & Aufgaben“ (`gatecontrol-notizen`, Vertrag v1 in
+`docs/notes-sources-contract.md`; `server/notizen.js`, `server/todohub.js`). Nur der Hub darf aufrufen (sonst
+`forbidden`), je 600 Aufrufe pro Stunde (`maxPerHour`, GateControl ≥ 1.216.0):
+
+```
+todo_items     { v: 1, cursor?, limit? (1…100) } → { ok, items: [Item], cursor | null, now }   die Einträge der Person
+todo_complete  { v: 1, id, done } → { ok, item } | { ok: false, code: not_found | read_only | forbidden | invalid }
+```
+
+Einträge: `hw:<studentId>:<hwId>` (`kind: 'homework'`, abhakbar, `done` = WebUntis erledigt oder in GateControl
+abgehakt – Tabelle `homework_done`), `exam:<studentId>:<exId>` (`kind: 'exam'`, nur Anzeige, `due` mit Uhrzeit, wenn
+WebUntis eine hat); `users` = das Kind und seine Empfänger, `assignee` = das Kind, `group` = `child:<studentId>`,
+`open.route` = `homework/<studentId>:<hwId>` bzw. `exam/<studentId>:<exId>`.
+
+Push: `gatecontrol-notizen:todo_changed` mit dem Unterschied zu dem, was der Hub bekam (Tabelle `todo_sent`) – im
+Hintergrund höchstens einmal pro Minute, nach einer Änderung in den Einstellungen nach 5 s; ≤ 200 Einträge je Aufruf.
+Ohne den Hub (oder ohne `gc.services.available`) kein Aufruf.
+
 ## English
 
 The timetable of **WebUntis** student and parent accounts in GateControl: cancellations,
 substitutions and extra lessons as push notifications, a week view in the portal (also on wall
 tablets), a Start tile and a widget per child, every child in its own colour. Needs **GateControl ≥
-1.196.0** (1.6.0): “Accounts & children” sit right in the plugin's settings, the portal profile has the
+1.216.0** (1.8.0; 1.196.0 since 1.6.0): “Accounts & children” sit right in the plugin's settings, the portal profile has the
 section “WebUntis”, and GateControl's own camera dialog reads the QR code (`GC.scanQr`: the picture stays
 in GateControl, the plugin only gets the link); a picture of the QR code or typing it in work as well.
 
@@ -540,5 +560,13 @@ automatically" (default off) puts every attachment of a new message once into th
 (`Schule/<child>/<YYYY-MM-DD> <file name>`) as the first of the child's recipients (by user id) with a Drive seat
 and a family; done or failed is kept (`drive_saves`), a failure is logged once and not retried. Needs the new
 permission `gatecontrol-drive:save_file`, confirmed once by an administrator with the update.
+
+**“Notes & Tasks” (1.8.0, GateControl ≥ 1.216.0):** School is a source of the plugin “Notes & Tasks”
+(`gatecontrol-notizen`, contract v1): every child's homework (open ones due from 3 days ago to 30 days ahead) and the
+tests of the next 60 days, for the child and its recipients. Homework ticked off there is kept in `homework_done`
+(WebUntis cannot be written) and shown as done in School too; what WebUntis reports as done is read only, tests are
+only shown. Changes are pushed with `gatecontrol-notizen:todo_changed` (only the difference to what the hub got, table
+`todo_sent`; at most once a minute); the hub pulls with `todo_items` and ticks off with `todo_complete` (callers:
+`gatecontrol-notizen` only, 600 an hour each). Without the hub nothing is called. Details: the German part.
 
 **API:** see [API](#api) above.

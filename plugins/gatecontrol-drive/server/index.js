@@ -53,6 +53,8 @@
 //     them — labels.js) · PATCH areas/<id> { deadlinesToCalendar }
 //     Deadlines also into a calendar of Mail (1.17.0): POST deadlines/<id>/calendar { target }, GET deadlines/calendars,
 //     GET|PUT deadlines/targets, PATCH areas/<id> { deadlinesTarget } (deadlines.js, insights.js)
+//     „Notizen & Aufgaben“ (1.27.0): POST|DELETE deadlines/<id>/done; the deadlines as items of the hub gatecontrol-notizen
+//     (pushed with todo_changed when they change, services todo_items / todo_complete — notizen.js, todohub.js)
 //     Places and people (1.16.0): PUT nodes/<id>/geo, uploads/commit { geo }, GET photos/places, GET photos/map, DELETE
 //     photos/geo, place= / bbox= / unlocated=1 (places.js, names offline from GeoNames — geonames.js) · PUT nodes/<id>/faces,
 //     GET people, GET|PATCH people/<id>, POST people/<id>/merge, GET people/<id>/similar, GET people/<id>/uncertain, POST
@@ -99,6 +101,7 @@ const frame = require('./frame');
 const storage = require('./storage');
 const insights = require('./insights');
 const deadlines = require('./deadlines');
+const notizen = require('./notizen');
 const imports = require('./imports');
 const vault = require('./vault');
 const office = require('./office');
@@ -182,6 +185,9 @@ async function personContext(gc, uid, now) {
   await c.visible();
   return c;
 }
+
+// since 1.27.0: the deadlines as items of „Notizen & Aufgaben“ (notizen.js) — every reader worked out like the apps do
+const hub = notizen.create((gc, uid, now) => personContext(gc, uid, now), (ctx, area) => labelOf(ctx, area));
 
 /** A parent looked into a child's folder: the child is told once a day per parent (after the answer). */
 async function noteChildView(ctx, area) {
@@ -513,6 +519,8 @@ async function route(ctx, req, seg) {
   if (a === 'deadlines' && seg.length === 1 && m === 'GET') return ok(await deadlines.list(ctx, q));
   if (a === 'deadlines' && seg.length === 3 && c === 'remind' && m === 'POST') return ok(await deadlines.remind(ctx, b, body));
   if (a === 'deadlines' && seg.length === 3 && c === 'remind' && m === 'DELETE') return ok(await deadlines.unremind(ctx, b));
+  // since 1.27.0: ticked off (also from „Notizen & Aufgaben“, notizen.js)
+  if (a === 'deadlines' && seg.length === 3 && c === 'done' && (m === 'POST' || m === 'DELETE')) return ok(await deadlines.setDone(ctx, b, m === 'POST'));
   // AI in Drive (1.14.0): the family calendar, questions, scans as documents
   if (a === 'deadlines' && seg.length === 3 && c === 'calendar' && m === 'POST') return ok(await deadlines.calendar(ctx, b, body));
   // targets of deadlines per area and the calendars to choose from (1.17.0: Familie and Mail)
@@ -706,6 +714,9 @@ async function adminGuard(gc, req, seg, lang, now) {
 module.exports = {
   async start(gc) {
     overview.reset();
+    // since 1.27.0: „Notizen & Aufgaben“ — a fresh push state; is the hub there (asks nobody)?
+    hub.reset();
+    await hub.available(gc);
     // the history of names and folders (time travel) starts with the first start of 1.7.0
     try { await timetravel.historySince(gc, Date.now()); } catch (e) { gc.log.warn('history start failed', (e && e.code) || 'error'); }
     // vault folders of older versions into the top folder of their area (1.11.0; the background run keeps it so)
@@ -774,6 +785,8 @@ module.exports = {
         if (out && out.json && out.json.ok) {
           try { await insights.attach(ctx, out.json); } catch (e) { gc.log.warn('insights failed', (e && e.code) || 'error'); }
         }
+        // since 1.27.0: a deadline ticked off or changed — „Notizen & Aufgaben“ gets the difference in a few seconds
+        if (seg[0] === 'deadlines' && String(req.method || 'GET').toUpperCase() !== 'GET') hub.soon(gc);
         return out;
       } finally {
         await after(gc, ctx, done);
@@ -793,6 +806,9 @@ module.exports = {
    * suggest_folder, give_file, share_link, browse — for the person of the call (userId).
    */
   async service({ name, caller, user, payload } = {}, gc) {
+    // since 1.27.0: todo_items / todo_complete for „Notizen & Aufgaben“ (gatecontrol-notizen only) — notizen.js
+    const fromHub = await hub.service(gc, { name, caller, user, payload });
+    if (fromHub !== undefined) return fromHub;
     if (!Object.prototype.hasOwnProperty.call(SERVICES, name)) return { ok: false, code: 'not_found' };
     if (!user || !Number.isSafeInteger(user.id) || user.id <= 0) return { ok: false, code: 'invalid' };
     const lang = payload && payload.lang === 'en' ? 'en' : 'de';
@@ -892,7 +908,14 @@ module.exports = {
     try { await office.sweep(gc, Date.now()); } catch (e) { gc.log.warn('office locks sweep failed', (e && e.code) || 'error'); }
     const now = Date.now();
     // reminders and imports (1.8.0) run as their person, and so do the jobs of several at once (1.12.0)
-    return jobs.tick(gc, now, { asPerson: (uid) => personContext(gc, uid, now), ops: opsHooks(gc) });
+    const out = await jobs.tick(gc, now, { asPerson: (uid) => personContext(gc, uid, now), ops: opsHooks(gc) });
+    // since 1.27.0: the deadlines to „Notizen & Aufgaben“ — only what changed, at most every 2 minutes (never throws)
+    await hub.tick(gc, Date.now());
+    return out;
+  },
+
+  async stop() {
+    hub.stop();
   },
 
   /**

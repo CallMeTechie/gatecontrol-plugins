@@ -227,7 +227,9 @@
   "calerror.URL_HOST_NOT_ALLOWED": "Die gespeicherte Adresse ist nicht erlaubt.",
   "calerror.TARGET_MISSING": "Kein Zugriffsziel oder Pfad.",
   "calerror.PATH_INVALID": "Der Pfad ist ungültig.",
-  "calerror.CAL_FAILED": "Abruf fehlgeschlagen."
+  "calerror.CAL_FAILED": "Abruf fehlgeschlagen.",
+  "notizen.waste_title": "{{name}} rausstellen",
+  "notizen.waste_subtitle": "{{plan}} · Abholung {{day}}"
  },
  "en": {
   "tab.waste": "Waste collection",
@@ -457,6 +459,8 @@
   "calerror.URL_HOST_NOT_ALLOWED": "The stored address is not allowed.",
   "calerror.TARGET_MISSING": "No access target or path.",
   "calerror.PATH_INVALID": "The path is invalid.",
-  "calerror.CAL_FAILED": "Refresh failed."
+  "calerror.CAL_FAILED": "Refresh failed.",
+  "notizen.waste_title": "Put out: {{name}}",
+  "notizen.waste_subtitle": "{{plan}} · collection {{day}}"
  }
 }

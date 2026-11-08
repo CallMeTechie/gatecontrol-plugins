@@ -1286,7 +1286,10 @@
     "p.vw_save_large": "Diese Datei ist zu groß zum Herunterladen im Browser. Nimm „Speichern unter“ im Rechtsklick-Menü oder die GateControl-App.",
     "p.b.zip_started_blocked": "„{{name}}“ wird heruntergeladen – {{count}} gesperrte Dateien (Virenscan) fehlen darin",
     "home_cache.status": "Zwischenspeicher im Heimnetz: {{n}} Dateien ({{size}}) den Heim-Gateways angeboten (Gateways › Zwischenspeicher).",
-    "home_cache.status_error": "Zwischenspeicher im Heimnetz: {{n}} Dateien ({{size}}) angeboten – der letzte Abgleich ist gescheitert, Drive versucht es gleich wieder."
+    "home_cache.status_error": "Zwischenspeicher im Heimnetz: {{n}} Dateien ({{size}}) angeboten – der letzte Abgleich ist gescheitert, Drive versucht es gleich wieder.",
+    "p.dl_done": "Erledigt",
+    "p.dl_mark_done": "Erledigt",
+    "p.dl_undone": "Doch nicht erledigt"
   },
   "en": {
     "error.invalid": "Invalid input.",
@@ -2575,6 +2578,9 @@
     "p.vw_save_large": "This file is too large to download in the browser. Use “Save as” in the right-click menu or the GateControl app.",
     "p.b.zip_started_blocked": "Downloading “{{name}}” – {{count}} blocked files (virus scan) are not in it",
     "home_cache.status": "Home cache: {{n}} files ({{size}}) offered to the home gateways (Gateways › Cache).",
-    "home_cache.status_error": "Home cache: {{n}} files ({{size}}) offered – the last sync failed, Drive tries again shortly."
+    "home_cache.status_error": "Home cache: {{n}} files ({{size}}) offered – the last sync failed, Drive tries again shortly.",
+    "p.dl_done": "Done",
+    "p.dl_mark_done": "Done",
+    "p.dl_undone": "Not done after all"
   }
 }

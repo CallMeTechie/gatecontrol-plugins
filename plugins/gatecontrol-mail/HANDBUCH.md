@@ -1,4 +1,4 @@
-<!-- version: 1.10.1 -->
+<!-- version: 1.11.0 -->
 # Mail
 
 ## Was das Plugin kann
@@ -55,7 +55,8 @@ Die Zugangsdaten werden verschlüsselt gespeichert. Die erste Synchronisierung h
 - **Unterhaltungen und Filter:** Mit „Mit Anhang“ (oder in Relevant/Sonstige) steht eine Unterhaltung mit ihrer neuesten Mail, die zum Filter passt.
 - **Lesen:** Bilder erst nach „Bilder laden“. Anhänge mit **„In Drive speichern“** (mit Vorschlag für den Ordner) oder „Alle in Drive speichern“.
 - **Schreiben:** „Senden“ geht nach 10 Sekunden raus – bis dahin „Rückgängig“. „Später senden“ plant die Mail. Ist der Server nicht erreichbar, versucht Mail es dreimal; danach kommt die Mitteilung „Eine Mail konnte nicht gesendet werden“.
-- **KI:** „Kurz gesagt“ fasst zusammen, „Zu tun“ findet Aufgaben, dazu Antwortvorschläge.
+- **KI:** „Kurz gesagt“ fasst zusammen, „Zu tun“ findet Aufgaben, dazu Antwortvorschläge. Einen Punkt aus „Zu tun“ antippen › **„Erledigt“** hakt ihn ab (durchgestrichen), „Wieder offen“ nimmt das zurück.
+- **„Notizen & Aufgaben“** (wenn installiert): die Punkte aus „Zu tun“ und deine markierten Mails stehen dort in „Mein Tag“ bzw. bei den Aufgaben – Mails geschäftlicher Konten unter „Arbeit“. Dort abhaken erledigt den Punkt in Mail bzw. entfernt die Markierung der Mail; antippen öffnet die Mail.
 
 ### Kalender und Kontakte
 
@@ -98,6 +99,11 @@ Liegen die Anhänge auf einem Speicherziel, das nicht erreichbar ist, versucht M
 
 **Frei/Gebucht zeigt „unbekannt“.**
 Die Person hat Frei/Gebucht abgeschaltet oder ist nicht in GateControl. Kolleginnen in Microsoft 365 erscheinen über dein Microsoft-Konto.
+
+## Neu in 1.11.0
+
+- **„Zu tun“ abhaken:** Punkte aus „Zu tun“ lassen sich als erledigt markieren.
+- **„Notizen & Aufgaben“:** Mit dem Plugin „Notizen & Aufgaben“ stehen „Zu tun“ und markierte Mails dort und lassen sich dort abhaken. Ohne das Plugin ändert sich nichts.
 
 ## Neu in 1.10.1
 

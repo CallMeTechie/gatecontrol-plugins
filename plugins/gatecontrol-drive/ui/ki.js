@@ -292,7 +292,12 @@
       var meta = [doc.sender && doc.sender !== title ? doc.sender : null, doc.amount != null ? U.fmtAmount(doc.amount, doc.currency) : null].filter(Boolean).join(' · ');
       var past = d.date < U.today();
       var acts = [];
-      if (!past) {
+      // since 1.27.0: ticked off (paid, cancelled …) — for everyone who reads the file, also from „Notizen & Aufgaben“
+      if (d.done) {
+        acts.push(h('span', { class: 'dp-k-pill' }, [icon('check', 14), h('span', { text: T('p.dl_done') })]));
+        acts.push(btn(T('p.dl_undone'), function () { api('DELETE', 'deadlines/' + d.id + '/done').then(after, U.fail); }, { small: true }));
+      } else acts.push(btn(T('p.dl_mark_done'), function () { api('POST', 'deadlines/' + d.id + '/done').then(after, U.fail); }, { small: true, icon: 'check' }));
+      if (!past && !d.done) {
         var cal = calendarButton(d, after);
         if (cal) acts.push(cal);
         if (d.reminder) {

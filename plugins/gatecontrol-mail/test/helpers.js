@@ -230,7 +230,7 @@ function fakeFamilie() {
 }
 
 /**
- * opts: { settings (admin settings via PUT admin/settings), ai (the mock host's opts.ai), services, fetch (Microsoft), fetchImage, gatecontrol,
+ * opts: { settings (admin settings via PUT admin/settings), ai (the mock host's opts.ai), services (more plugins), fetch (Microsoft), fetchImage, gatecontrol,
  *   license, groups, licenseRefresh }
  * fn(host, c): c = { as(user) → (method, path, body, query), admin(method, path, body), mail (FakeMail), tick(), addGmx(user, o) → account,
  *   drive, familie }
@@ -241,7 +241,8 @@ async function withMail(opts, fn) {
   const drive = o.drive === false ? null : (o.drive || fakeDrive(o.driveOpts));
   // o.overlays (pim-helpers fakeOverlays): Familie with calendar_range and Alltag (1.2.0)
   const familie = o.familie === false ? null : (o.overlays ? o.overlays.familie : fakeFamilie());
-  const services = [...(drive ? [drive] : []), ...(familie ? [familie] : []), ...(o.overlays && o.overlays.alltag ? [o.overlays.alltag] : [])];
+  // o.services: more plugins (1.11.0: the stand-in of „Notizen & Aufgaben“, tools/testing/notizen-hub.js)
+  const services = [...(drive ? [drive] : []), ...(familie ? [familie] : []), ...(o.overlays && o.overlays.alltag ? [o.overlays.alltag] : []), ...(o.services || [])];
   // o.dav (pim-helpers FakeDav): CalDAV/CardDAV behind gc.mail.dav (GateControl 1.219.0); o.autoconfig replaces the fake's
   const mailHandler = { ...world.handler(), ...(o.dav ? { dav: o.dav.handler() } : {}), ...(o.autoconfig ? { autoconfig: o.autoconfig } : {}) };
   const host = await createHost(DIR, {

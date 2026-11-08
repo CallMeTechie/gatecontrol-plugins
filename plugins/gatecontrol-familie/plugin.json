@@ -4,7 +4,7 @@
     "de": "Familie",
     "en": "Family"
   },
-  "version": "1.18.1",
+  "version": "1.19.0",
   "publisher": "CallMeTechie",
   "description": {
     "de": "Die Familie in der GateControl-App und im Portal: gemeinsame Einkaufslisten (offline nutzbar), Aufgaben mit Erinnerung und Sternen für Kinder, Termine und Geburtstage, Abholen & Fahrten („Wer holt Tim?“), Notfall-Karte, Kinder orten auf Anfrage (das Kind sieht jede Abfrage, endet mit 18), „Bin angekommen“ und SOS, Orts-Erinnerungen, Taschengeld (nur Buchhaltung), Wunschlisten, Haushaltsbuch, Pinnwand & Packlisten, Essensplan, Anwesenheit per App oder Heim-WLAN mit Smart-Home-Regeln (nur mit Zustimmung), Erinnerungen und ein Dashboard für ein Wand-Tablet. Alles bleibt auf dem eigenen Server.",
@@ -36,7 +36,13 @@
       "gatecontrol-alltag:calendar_query",
       "gatecontrol-alltag:calendar_list",
       "gatecontrol-schule:school_students",
-      "gatecontrol-schule:school_day"
+      "gatecontrol-schule:school_day",
+      "gatecontrol-notizen:todo_changed",
+      "gatecontrol-notizen:notes_bind",
+      "gatecontrol-notizen:notes_list",
+      "gatecontrol-notizen:note_save",
+      "gatecontrol-notizen:note_delete",
+      "gatecontrol-notizen:notes_import"
     ]
   },
   "services": {
@@ -101,6 +107,27 @@
           "en": "Read the family calendar for Mail"
         },
         "maxPerHour": 1800
+      },
+      "todo_items": {
+        "label": {
+          "de": "Zu erledigen für Notizen & Aufgaben",
+          "en": "To-dos for Notes & Tasks"
+        },
+        "maxPerHour": 600
+      },
+      "todo_complete": {
+        "label": {
+          "de": "In Notizen & Aufgaben abgehakt",
+          "en": "Ticked off in Notes & Tasks"
+        },
+        "maxPerHour": 600
+      },
+      "notes_changed": {
+        "label": {
+          "de": "Pinnwand und Packlisten aus Notizen & Aufgaben",
+          "en": "Pinboard and packing lists from Notes & Tasks"
+        },
+        "maxPerHour": 600
       }
     }
   },

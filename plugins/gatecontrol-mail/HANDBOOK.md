@@ -1,4 +1,4 @@
-<!-- version: 1.10.1 -->
+<!-- version: 1.11.0 -->
 # Mail
 
 ## What the plugin does
@@ -55,7 +55,8 @@ Credentials are stored encrypted. The first sync fetches the newest mail first.
 - **Conversations and filters:** with “With attachment” (or in Relevant/Other) a conversation shows with its newest mail that matches the filter.
 - **Reading:** pictures only after “Load pictures”. Attachments with **“Save in Drive”** (with a folder suggestion) or “Save all in Drive”.
 - **Writing:** “Send” goes out after 10 seconds – until then “Undo”. “Send later” schedules the mail. When the server is unreachable, Mail tries three times; then the notification “A mail could not be sent” follows.
-- **AI:** “In short” summarises, to-dos lists tasks, plus reply suggestions.
+- **AI:** “In short” summarises, to-dos lists tasks, plus reply suggestions. Tap a to-do › **“Done”** ticks it off (struck through), “Open again” undoes it.
+- **“Notes & Tasks”** (when installed): the to-dos and your flagged mails show there in “My day” and among the tasks – mails of business accounts under “Work”. Ticking one off there marks the to-do done in Mail or removes the mail's flag; tapping it opens the mail.
 
 ### Calendars and contacts
 
@@ -98,6 +99,11 @@ When attachments live on a storage target that is unreachable, Mail tries again 
 
 **Free/busy shows “unknown”.**
 The person switched free/busy off or is not in GateControl. Colleagues in Microsoft 365 appear through your Microsoft account.
+
+## New in 1.11.0
+
+- **Ticking off to-dos:** the AI's to-dos can be marked done.
+- **“Notes & Tasks”:** with the plugin “Notes & Tasks” the to-dos and flagged mails show there and can be ticked off there. Without that plugin nothing changes.
 
 ## New in 1.10.1
 
