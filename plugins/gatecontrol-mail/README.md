@@ -442,6 +442,25 @@ Since 1.6.0 (`tofile_count` since 1.7.0) for Drive only (`server/services.js`; a
   Versicherungen"; `null` without). Drive's overview (Drive ≥ 1.18.0) shows it under "Zu erledigen". Refusals:
   `forbidden`, `unavailable` with `reason` (`not_allowed`, `not_licensed`, `no_seat` — nothing is taken from the licence).
 
+### Microsoft To Do for „Notizen & Aufgaben“ (since 1.12.0)
+
+Callers: `gatecontrol-notizen` only (else `forbidden`), `maxPerHour: 600` each, with the person as `userId`:
+
+* `ms_accounts` `{}` → `{ ok, accounts: [{ id, email, label, kind: 'personal'|'business', tasks }] }` — the person's
+  Microsoft accounts (not signed out); `tasks`: `Tasks.ReadWrite` is granted (`accounts.ms_scopes`).
+* `ms_tasks_consent` `{ accountId }` → `{ ok, deviceId, userCode, verificationUri, expiresIn, interval }` — a device-code
+  sign-in of that account with Mail's scopes **plus** `Tasks.ReadWrite` (incremental consent; mail goes on meanwhile);
+  `{ accountId, deviceId }` → `{ ok, status: 'pending'|'done'|'expired'|'denied', tasks }` (one poll, at most every
+  `interval` seconds like `GET accounts/microsoft/device/<id>`).
+* `ms_tasks_token` `{ accountId }` → `{ ok, token, expiresAt, email }` — an access token asked from the account's refresh
+  token with the single scope `offline_access https://graph.microsoft.com/Tasks.ReadWrite` (`microsoft.tasksToken`),
+  cached until two minutes before it ends; Mail's own mail token never leaves Mail. A refresh token Microsoft rotates is
+  kept; Mail's own renewal and this one never run at once (`locked`). Codes `consent_required`, `not_found`,
+  `unavailable { reason: auth_failed | unreachable | not_allowed | not_licensed | no_seat }`.
+
+A sign-in anew of an account that had `Tasks.ReadWrite` asks for it again (it stays granted). An own app registration
+needs the delegated permission `Tasks.ReadWrite` too (admin page, „Eigene Registrierung braucht“).
+
 ### „Notizen & Aufgaben“ (since 1.11.0)
 
 Mail is a source of the plugin „Notizen & Aufgaben“ (`gatecontrol-notizen`, contract v1; `server/notizen.js`,

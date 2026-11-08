@@ -96,7 +96,7 @@ async function me(gc, ctx) {
     features: await features(gc, cfg, ctx.userId),
     // usedBytes: mail plus the bytes of events, contacts and their photos (1.2.0; only mail is cleared up)
     limits: { accountsMax: cfg.accountsMax, quotaBytes: config.quotaBytes(cfg), usedBytes: await mailstore.usage(gc, ctx.userId) + await pimstore.usage(gc, ctx.userId), retentionMonths: cfg.retentionMonths },
-    microsoft: { clientId, authority: config.MS_AUTHORITY, scopes: config.msScopes(cfg), adminConsentUrl: config.adminConsentUrl(clientId) },
+    microsoft: { clientId, authority: config.MS_AUTHORITY, scopes: config.msScopes(cfg), tasksScope: config.MS_TASKS_SCOPE, adminConsentUrl: config.adminConsentUrl(clientId) },
     accounts: out, unread: await messages.unread(gc, ctx.userId), settings: await prefs(gc, ctx.userId),
     // since 1.1.0 (like Drive): the person's place in the licence — without one (null) every other call answers 403
     // no_seat, without a valid licence not_licensed
