@@ -3207,6 +3207,8 @@
     // (false: an older Drive — the overview opens „Fotos“ as before)
     showMemories: function () { if (!M || !has('memoryCollections')) return false; M.show(); return true; },
     openMemory: function (c) { if (!M || !has('memoryCollections') || !c || !c.id) return false; M.open(c); return true; },
+    // the title of a collection as the page „Erinnerungen“ names it (the overview's memoryPicks, since 1.28.0)
+    memoryTitle: function (c) { return M && c ? M.textOf(c).title : null; },
   }) : null;
 
   boot();

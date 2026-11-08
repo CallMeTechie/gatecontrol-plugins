@@ -2,6 +2,22 @@
 
 Dateien der Familie und des Teams auf dem eigenen Speicher – auf diesem Server, einer NAS oder in S3.
 
+## 1.28.0
+
+- **Erinnerungen in der Übersicht auch ohne „Heute vor X Jahren“:** Seit 1.26.0 zeigt die Übersicht nur Tage mit mehr
+  als 10 privaten Fotos – an den meisten Tagen fehlte damit die ganze Kachel „Erinnerungen“ samt „Alle“. Neu in
+  `GET overview`: **`memoryPicks`** – immer ein Array; `[]`, solange `memories` einen Tag hat, sonst bis zu 4 Sammlungen
+  der Seite „Erinnerungen“ für heute, genau so, wie `GET memories` sie liefert (`id`, `kind`, `count`, `cover`, `from`,
+  `to` und die Felder der Art). Für Abwechslung zuerst je eine Reise, Person, „Diesen Monat vor X Jahren“,
+  Jahresrückblick und Ort, dann aufgefüllt in der Reihenfolge der Seite; nie `day`. Nur private Fotos wie auf der Seite.
+  Neues Merkmal `memoryPicks` in `GET me`.
+- **Günstig:** dieselben Abfragen wie `GET memories` (`server/memories.js` – `picks()`), nur die Titelbilder der
+  gewählten Sammlungen; nur berechnet, wenn `memories` leer ist. `test/memories_speed.test.js` prüft auch die Übersicht
+  mit `memoryPicks` bei 50 000 Fotos (jede Anweisung < 200 ms).
+- **Portal:** Die Kachel „Erinnerungen“ zeigt an solchen Tagen die Sammlungen als Karten mit dem Titel wie auf der Seite
+  „Erinnerungen“ („2024 im Rückblick“, „Hamburg“, „Mit Noah“ …), Anzahl und Titelbild; eine Karte öffnet ihre Fotos,
+  „Alle“ die Seite. Aussehen und Breite (2fr) wie bisher.
+
 ## 1.27.0
 
 - **Fristen abhaken:** `POST deadlines/<id>/done` / `DELETE deadlines/<id>/done` → `{ deadline }` – erledigt (bezahlt,

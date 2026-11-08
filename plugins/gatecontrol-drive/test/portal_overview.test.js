@@ -4,7 +4,8 @@
 // (the switch "Übersicht | Dateien | Fotos" at the top), the tiles in the order of the mockup — "Zu erledigen" (a
 // deadline, the photos to check, Mail's attachments to file through a fake Mail), "Zuletzt geöffnet", "Neu in Familie"
 // with the storage, "Erinnerungen", "Orte" —, a click on a file opens its folder, "Fotos" without memories and band but
-// with "Karte" and "Personen" up top; a direct link still opens its node.
+// with "Karte" and "Personen" up top; a direct link still opens its node. Since 1.28.0 "Erinnerungen" on a day without
+// „Heute vor X Jahren“: the overview's memoryPicks with the titles of the page „Erinnerungen“.
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -208,5 +209,44 @@ test('smoke: „Alle“ of „Erinnerungen“ opens the page „Erinnerungen“ 
       await until('photos', () => $w('dp-main').querySelectorAll('.dp-ph').length > 0);
       assert.equal($w('dp-main').querySelector('.dp-mem-card'), null);
     } finally { w.stop(); }
+  });
+});
+
+test('smoke: a day without „Heute vor X Jahren“ (1.28.0) — „Erinnerungen“ shows memoryPicks with the titles of the page; a card opens its photos, „Alle“ the page', async () => {
+  await withHost({ gatecontrol: '1.216.0' }, async (host, c) => {
+    const mine = await c.area(ANNA, 'mine');
+    const y = new Date(T0).getFullYear() - 2;
+    // 55 private photos in Hamburg in a spring two years ago: „<year> im Rückblick“ and the place „Hamburg“, no day
+    for (let i = 0; i < 55; i++) await c.put(ANNA, mine.rootId, `h${i}.jpg`, `h${i}`, { mime: 'image/jpeg', takenAt: new Date(y, 3, 1 + (i % 20), 12, i).getTime(), geo: { lat: 53.5452, lon: 9.9667 } });
+    const ov = (await c.as(ANNA)('GET', 'overview')).json;
+    assert.equal(ov.memories, undefined);
+    assert.deepEqual(ov.memoryPicks.map((x) => x.kind), ['year', 'place']);
+    const calls = [];
+    const f = createWindow(portalHtml(), frameGc(host, ANNA, calls));
+    const $ = (id) => f.document.getElementById(id);
+    try {
+      f.run();
+      await until('the overview', () => !$('dp-app').hidden && tileOf($('dp-main'), 'Erinnerungen'));
+      const main = $('dp-main');
+      assert.deepEqual(main.querySelectorAll('.dp-ov-tile').map((x) => x.getAttribute('aria-label')), ['Speicher', 'Erinnerungen', 'Orte']);
+      // the tile twice as wide as the others, as with the days
+      assert.equal(main.querySelectorAll('.dp-ov-grid').find((x) => /is-second/.test(x.className)).getAttribute('style'), '--dp-ov-cols:2fr 1fr');
+      const mem = tileOf(main, 'Erinnerungen');
+      const cards = mem.querySelectorAll('.dp-ov-mem');
+      assert.deepEqual(cards.map((x) => textOf(x.querySelector('b'))), [`${y} im Rückblick`, 'Hamburg']);
+      assert.ok(cards.every((x) => textOf(x).includes('55 Fotos') && x.querySelector('img')), 'count and cover');
+      assert.deepEqual(cards.map((x) => x.getAttribute('data-memory')), ov.memoryPicks.map((x) => x.id));
+      // a card: its photos like a card of the page „Erinnerungen“
+      cards[1].click();
+      await until('its photos', () => $('dp-main').querySelectorAll('.dp-ph').length === 55);
+      assert.equal(calls.filter((x) => x.path === 'memories/photos').pop().query.id, ov.memoryPicks[1].id);
+      assert.equal(textOf($('dp-crumbs')).replace(/\s+/g, ''), 'Erinnerungen›Hamburg');
+      // back to the overview; „Alle“: the page
+      pageBtn(f.document, 'Übersicht').click();
+      await until('the overview again', () => tileOf($('dp-main'), 'Erinnerungen'));
+      byText(tileOf($('dp-main'), 'Erinnerungen'), 'button', 'Alle').click();
+      await until('the page', () => $('dp-main').querySelector('.dp-mem-card'));
+      assert.deepEqual($('dp-main').querySelectorAll('.dp-mem-sec').map((x) => x.getAttribute('aria-label')), ['Jahresrückblick', 'Orte']);
+    } finally { f.stop(); }
   });
 });

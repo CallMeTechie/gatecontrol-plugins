@@ -5,8 +5,9 @@
  *   row 1   "Zu erledigen" (the next deadlines, the photos to check, Mail's attachments to file) · "Zuletzt geöffnet" ·
  *           "Neu in Familie" (what others added in the shared areas) with the storage below
  *   row 2   "Erinnerungen" (this day in earlier years — „Alle“ and a card open the page „Erinnerungen“, ui/memories.js,
- *           since 1.26.0) · "Personen" (with "Wer ist das?") · "Orte" (a small map as a picture with the count, the
- *           places with the most photos)
+ *           since 1.26.0; since 1.28.0 on a day without them the overview's memoryPicks: collections of that page with
+ *           its titles, a card opens its photos) · "Personen" (with "Wer ist das?") · "Orte" (a small map as a picture
+ *           with the count, the places with the most photos)
  *
  * A tile without anything is left out (the storage stays). Live: the event 'changed' loads the overview again — at most
  * every LIVE_MIN_MS. portal.js calls DriveOverview.attach(ui) with its helpers. Server and user text only ever goes into
@@ -164,17 +165,26 @@
       ]);
     }
 
-    function memoriesTile(list) {
-      var grid = h('div', { class: 'dp-ov-mems' }, list.slice(0, MEMORIES_SHOWN).map(function (g) {
-        var label = P('p.ov.today_years', g.yearsAgo);
-        var src = g.cover && (g.cover.largeUrl || g.cover.previewUrl);
-        // since 1.26.0 (memoryCollections): the collection „Heute vor X Jahren“; an older Drive: „Fotos“
-        var go = function () { if (!U.openMemory({ id: g.id, kind: 'day', yearsAgo: g.yearsAgo, date: g.date, count: g.count, cover: g.cover })) U.showPhotos(); };
-        return h('button', { type: 'button', class: 'dp-ov-mem', attrs: { 'aria-label': label + ' · ' + P('p.photos_n', g.count) }, on: { click: go } }, [
-          src ? h('img', { attrs: { src: src, alt: '', loading: 'lazy' } }) : null,
-          h('span', { class: 'dp-ov-memtx' }, [h('b', { text: label }), h('span', { text: P('p.photos_n', g.count) })]),
-        ]);
-      }));
+    /** A card of "Erinnerungen": the cover, the title, the count; a click opens collection `c`. */
+    function memoryCard(c, label) {
+      var src = c.cover && (c.cover.largeUrl || c.cover.previewUrl);
+      // since 1.26.0 (memoryCollections): the collection's photos; an older Drive: „Fotos“
+      var go = function () { if (!U.openMemory(c)) U.showPhotos(); };
+      return h('button', { type: 'button', class: 'dp-ov-mem', attrs: { 'aria-label': label + ' · ' + P('p.photos_n', c.count), 'data-memory': c.id || null }, on: { click: go } }, [
+        src ? h('img', { attrs: { src: src, alt: '', loading: 'lazy' } }) : null,
+        h('span', { class: 'dp-ov-memtx' }, [h('b', { text: label }), h('span', { text: P('p.photos_n', c.count) })]),
+      ]);
+    }
+
+    /** `list` the cards „Heute vor X Jahren“ (memories) or, without them, `picks` (memoryPicks, since 1.28.0). */
+    function memoriesTile(list, picks) {
+      var cards = list && list.length
+        ? list.slice(0, MEMORIES_SHOWN).map(function (g) {
+          return memoryCard({ id: g.id, kind: 'day', yearsAgo: g.yearsAgo, date: g.date, count: g.count, cover: g.cover }, P('p.ov.today_years', g.yearsAgo));
+        })
+        // a collection of GET memories: its title as the page „Erinnerungen“ names it (ui/memories.js)
+        : picks.slice(0, MEMORIES_SHOWN).map(function (c) { return memoryCard(c, U.memoryTitle(c) || T('p.ov.memories')); });
+      var grid = h('div', { class: 'dp-ov-mems' }, cards);
       // „Alle“: the page „Erinnerungen“ (since 1.26.0), with an older Drive „Fotos“
       return tile(T('p.ov.memories'), moreLink(T('p.ov.all'), function () { if (!U.showMemories()) U.showPhotos(); }), [grid], 'is-memories');
     }
@@ -224,7 +234,8 @@
       if (d.todo) { var td = todoTile(d.todo); if (td) row1.push(td); }
       if (d.recent && d.recent.length) row1.push(recentTile(d.recent));
       if ((d.activity && d.activity.length) || d.storage) row1.push(activityTile(d.activity, d.storage));
-      if (d.memories && d.memories.length) row2.push(memoriesTile(d.memories));
+      // the days „Heute vor X Jahren“, else the picks of the page „Erinnerungen“ (1.28.0)
+      if ((d.memories && d.memories.length) || (d.memoryPicks && d.memoryPicks.length)) row2.push(memoriesTile(d.memories, d.memoryPicks));
       if (d.people && ((d.people.people || []).length || d.people.unnamed > 0) && has('photoPeople')) row2.push(peopleTile(d.people));
       if (d.places && has('photoPlaces')) row2.push(placesTile(d.places));
       if (!row1.length && !row2.length) { main.appendChild(h('div', { class: 'dp-empty', text: T('p.ov.empty') })); return; }

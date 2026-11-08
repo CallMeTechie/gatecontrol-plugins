@@ -2,7 +2,8 @@
 
 // The page „Erinnerungen“ (1.26.0) with 50 000 photos: every statement of GET memories, GET memories/photos of each
 // kind, GET photos/memories and GET overview < 200 ms (as Mail's test/speed.test.js — the host warns of slow statements);
-// the photos of a collection on their indexes (time taken, place, a person's faces), never every photo.
+// the photos of a collection on their indexes (time taken, place, a person's faces), never every photo. Since 1.28.0 also
+// GET overview on a day without „Heute vor X Jahren“ (its memoryPicks: the collections of GET memories).
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -147,5 +148,28 @@ test(`Erinnerungen with ${N} photos: every statement < ${LIMIT_MS} ms, the photo
     assert.doesNotMatch(`${day} / ${place} / ${person}`, /SCAN nodes(?! USING)/);
     // Marc sees the family's photos only: his own collections, quickly
     assert.equal((await c.as(MARC)('GET', 'memories')).status, 200);
+
+    // 1.28.0: a day without „Heute vor X Jahren“ (this day ± 1 day of every earlier year in the trash) — the overview's
+    // memoryPicks, a second pass over the photos: every statement < LIMIT_MS too
+    const today = new Date(T0);
+    const [y, m, d] = [today.getFullYear(), today.getMonth(), today.getDate()];
+    for (let k = 1; k <= 13; k++) {
+      await db.run(`UPDATE nodes SET deleted_at = ? WHERE is_dir = 0 AND ${T} >= ? AND ${T} < ?`, [T0, new Date(y - k, m, d - 1).getTime(), new Date(y - k, m, d + 2).getTime()]);
+    }
+    let ov = null;
+    const took = [];
+    const worstPicks = await timed(async () => {
+      const t0 = performance.now();
+      const r = await a('GET', 'overview');
+      took.push(performance.now() - t0);
+      assert.equal(r.status, 200, JSON.stringify(r.json));
+      ov = r.json;
+    });
+    assert.equal(ov.memories, undefined, 'no day left');
+    assert.deepEqual(ov.memoryPicks.map((x) => x.kind), ['trip', 'person', 'month', 'year']);
+    assert.ok(ov.memoryPicks.every((x) => x.cover && x.cover.id), 'the covers');
+    const slowPicks = [...worstPicks].filter(([, ms]) => ms >= LIMIT_MS).map(([sql, ms]) => `${Math.round(ms)} ms ${sql}`);
+    assert.deepEqual(slowPicks, [], 'statements of 200 ms or more (overview with memoryPicks)');
+    t.diagnostic(`GET overview with memoryPicks ${took[0].toFixed(0)} ms`);
   });
 });
