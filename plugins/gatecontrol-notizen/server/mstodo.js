@@ -1,7 +1,7 @@
 'use strict';
 
 // Moving over from Microsoft To Do (board „Umzug“) through Microsoft Graph (graph.microsoft.com, /me/todo) with the
-// Microsoft account the person signed in with in GateControl Mail. Mail (≥ 1.11.0) hands out a token that holds only
+// Microsoft account the person signed in with in GateControl Mail. Mail (≥ 1.12.0) hands out a token that holds only
 // Tasks.ReadWrite (gatecontrol-mail:ms_tasks_token) and runs the consent for it (ms_tasks_consent: Microsoft's device
 // code); Mail's own mail token never leaves Mail.
 //

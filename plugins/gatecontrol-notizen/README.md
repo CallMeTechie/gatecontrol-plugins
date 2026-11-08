@@ -13,7 +13,7 @@ HANDBUCH.md und CHANGELOG.
 Needs GateControl ≥ 1.216.0 (`services.provides.<name>.maxPerHour`, `GC.keys`, `GC.mediaBytes`, `gc.events`, media
 previews). Opening an item of another plugin from the portal uses `GC.openPortal` (GateControl ≥ 1.254.0, feature-
 detected — without it the portal says „In <Plugin> öffnen“). The move from Microsoft To Do needs GateControl Mail ≥
-1.11.0 (`gatecontrol-mail:ms_tasks_token`). The sources need their own releases that speak
+1.12.0 (`gatecontrol-mail:ms_tasks_token`). The sources need their own releases that speak
 [`docs/notes-sources-contract.md`](../../docs/notes-sources-contract.md) (of this repository).
 
 Licence: `"license": { "required": true }` like GateControl Drucken & Scannen (price and tiers live in the licence
@@ -238,7 +238,7 @@ out of it. The portal locks the keys after 15 minutes without use and when the p
 
 ## Umzug aus Microsoft To Do
 
-Through the Microsoft account the person signed in with in GateControl Mail. Mail ≥ 1.11.0 provides (caller
+Through the Microsoft account the person signed in with in GateControl Mail. Mail ≥ 1.12.0 provides (caller
 `gatecontrol-notizen` only, `maxPerHour: 600` each): `ms_accounts`, `ms_tasks_consent` (Microsoft's device code with
 the scope `Tasks.ReadWrite` added — incremental consent; the account's mail keeps working meanwhile) and
 `ms_tasks_token` (an access token for **only** `Tasks.ReadWrite`, from Mail's refresh token — Mail's mail token never
