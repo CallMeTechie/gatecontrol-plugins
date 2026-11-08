@@ -1,4 +1,4 @@
-<!-- version: 1.7.2 -->
+<!-- version: 1.8.0 -->
 # Schule
 
 ## Was das Plugin kann
@@ -10,12 +10,13 @@
 - **Anhänge in Drive** speichern – von Hand oder automatisch.
 - **Startkachel und Widget** je Kind.
 - Mit dem Plugin **Familie:** Regeln mit „Stunde fällt aus“, Hinweis bei frühem Schluss zum Abholen, „Schule heute“ am Wand-Tablet.
+- Mit dem Plugin **„Notizen & Aufgaben“:** Hausaufgaben und Arbeiten jedes Kindes in „Mein Tag“ – Hausaufgaben dort abhaken.
 
 > **Hinweis:** Das Plugin nutzt die **inoffizielle Schnittstelle der WebUntis-Web-App** – ohne Gewähr. Untis unterstützt das nicht; es kann sich jederzeit ändern, und die Schule kann Zugriffe einschränken. Das Plugin ist kein Angebot der Untis GmbH.
 
 ## Voraussetzungen
 
-- GateControl **1.196.0** oder neuer.
+- GateControl **1.216.0** oder neuer.
 - Ein **WebUntis-Konto** der Schule: Schülerkonto oder Elternkonto.
 - Für Anhänge in Drive: das Plugin Drive ab 1.4.0.
 - Für Regeln, Abholen und Wand-Tablet: das Plugin Familie (ab 1.12.0 bzw. 1.13.0).
@@ -55,6 +56,7 @@ Jede angemeldete Person kann ihr **eigenes Schülerkonto** selbst verknüpfen: i
 - **Seite und Portal-Tab „Schule“:** je Kind eine Karte (heute von–bis, Ausfälle, nächste Arbeit), darunter die Woche Mo–Fr (auf dem Handy Tag für Tag) und die Listen **Änderungen**, **Klassenarbeiten**, **Hausaufgaben**, **Nachrichten** und **Fehlzeiten**. Ausfälle sind rot durchgestrichen, Vertretungen orange.
 - **Nachrichten:** Antippen öffnet den ganzen Text mit Anhängen. **„In Drive speichern“** legt einen Anhang in Drive ab (ohne gewählten Ordner im Familienbereich unter „Schule › Kind“). Bittet die Schule um eine Lesebestätigung, gibt es **„Lesen bestätigen“** – das geht erst nach einer Rückfrage an die Schule.
 - **App:** Stundenplan, Nachrichten und Fehlzeiten, Startkachel „Schule · Name“ und ein Widget je Kind.
+- **„Notizen & Aufgaben“** (wenn installiert): die Hausaufgaben und Arbeiten jedes Kindes stehen dort für das Kind und die Empfänger. Eine Hausaufgabe abhaken (Kind oder Eltern) gilt auch in Schule – sie ist dann überall erledigt, die Erinnerung am Vorabend fällt weg. Was WebUntis schon als erledigt meldet, lässt sich nicht zurücknehmen. Arbeiten zeigt der Hub nur an.
 - **Mitteilungen:** Stundenplan-Änderungen, Klassenarbeiten, Hausaufgaben, Nachrichten der Schule, Fehlzeiten. Erkanntes in der Ruhezeit kommt an ihrem Ende. Der erste Abruf legt nur den Stand fest und meldet nichts.
 
 ## Berechtigungen
@@ -81,6 +83,11 @@ Ist das Kind einem GateControl-Benutzer zugeordnet oder sind Empfänger eingetra
 
 **Anhänge landen nicht in Drive.**
 Drive muss installiert sein, und die Person braucht einen Drive-Zugang. Für das automatische Ablegen braucht ein Empfänger des Kindes einen Drive-Zugang und eine Familie in Drive.
+
+## Neu in 1.8.0
+
+- **Hausaufgaben und Arbeiten in „Notizen & Aufgaben“:** Mit dem Plugin „Notizen & Aufgaben“ stehen sie dort für das Kind und die Eltern; Hausaufgaben lassen sich dort abhaken und gelten dann auch in Schule als erledigt.
+- Braucht jetzt GateControl 1.216.0.
 
 ## Neu in 1.7.2
 

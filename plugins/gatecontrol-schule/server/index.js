@@ -50,6 +50,9 @@
 //               (the apps load it from GET /api/v1/client/plugins/gatecontrol-schule/media/<mediaId>)
 //   1.5.0       the same three actions under portal/messages/… and messages/… (admin page) — pages get the
 //               attachment as `url` (a /plugin-media/ link); hook mediaAccess: who may read an attachment
+//   1.8.0       „Notizen & Aufgaben“ (server/notizen.js): homework and exams of the children as its items, pushed when
+//               they change (gatecontrol-notizen:todo_changed), services todo_items / todo_complete (the hub only); homework
+//               ticked off there is kept in homework_done and shown as done in Schule too
 //   1.7.0       Drive (server/drive.js): POST …/messages/<id>/attachments/<attId>/drive { folderId? } → { saved:
 //               { nodeId, name, where } } (app, portal, admin page); app/messages and the overviews say `drive`
 //               (Drive's save_file reachable); setting drive_auto_save: new attachments into the family area
@@ -78,6 +81,7 @@ const ruleevents = require('./ruleevents');
 const dayend = require('./dayend');
 const remind = require('./remind');
 const link = require('./link');
+const notizen = require('./notizen');
 const colors = require('./colors');
 const messages = require('./messages');
 const absences = require('./absences');
@@ -562,7 +566,14 @@ module.exports = {
         await store.updateAccount(gc, a.id, { extras: next });
       }
     } catch (e) { gc.log.warn('start housekeeping failed', (e && (e.code || e.message)) || 'error'); }
+    // 1.8.0: „Notizen & Aufgaben“ — a fresh push state; is the hub there (asks nobody)?
+    notizen.source.reset();
+    await notizen.source.available(gc);
     gc.log.info('schule started', gc.plugin.version);
+  },
+
+  async stop() {
+    notizen.source.stop();
   },
 
   async request(req, gc) {
@@ -580,7 +591,10 @@ module.exports = {
         return await portalRoute(req, gc, seg, cfg);
       }
       if (!req.user || req.user.portal || req.user.app || req.user.role !== 'admin') throw fail('FORBIDDEN');
-      return await adminRoute(req, gc, seg, cfg, lang);
+      const out = await adminRoute(req, gc, seg, cfg, lang);
+      // 1.8.0: a child's recipients or switch changed — „Notizen & Aufgaben“ gets the difference in a few seconds
+      if (req.method !== 'GET') notizen.source.soon(gc);
+      return out;
     } catch (e) {
       if (!ERRORS[e && e.code]) gc.log.warn('request failed', req.method, String(req.path || '').split('/').slice(0, 3).join('/'), (e && e.code) || 'error');
       return errorResponse(e, lang);
@@ -705,6 +719,8 @@ module.exports = {
         // 1.5.0: the attachments of pruned messages
         for (const id of media || []) { try { await gc.media.delete(id); } catch { /* gone */ } }
       }
+      // 1.8.0: homework and exams to „Notizen & Aufgaben“ — only what changed, at most once a minute (never throws)
+      await notizen.source.tick(gc, clock.now());
     } catch (e) {
       gc.log.warn('tick failed', (e && e.code) || (e && e.message) || 'error');
     } finally { state.ticking = false; }
@@ -717,6 +733,9 @@ module.exports = {
 
   /** 1.1.0: services.provides — school_students (1.2.0: school_day) for the Familie plugin (server/ruleevents.js). */
   async service(call, gc) {
+    // 1.8.0: todo_items / todo_complete for „Notizen & Aufgaben“ (gatecontrol-notizen only) — server/notizen.js
+    const hub = await notizen.source.service(gc, call);
+    if (hub !== undefined) return hub;
     return ruleevents.handle(gc, call);
   },
 
