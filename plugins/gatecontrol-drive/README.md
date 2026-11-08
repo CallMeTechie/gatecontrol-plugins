@@ -158,6 +158,7 @@ reaches `GET frame` (the photo frame, since 1.7.0) and nothing else (`403 forbid
 | `GET deadlines` | `from?`, `to?` (YYYY-MM-DD; today, + 365 days) | `{ deadlines [{ id, kind, date, label, reminder, calendar, calendars, foundAt, doc, node }] }` (≤ 500, by date; `calendar`, `foundAt`, `doc` since 1.14.0; `calendar.target`, `calendars` since 1.17.0) |
 | `POST deadlines/<id>/remind` | `{ daysBefore }` (0 … 90) | `{ deadline }` — my reminder |
 | `DELETE deadlines/<id>/remind` | | `{ deadline }` |
+| `POST deadlines/<id>/done` · `DELETE deadlines/<id>/done` | (since 1.27.0) | `{ deadline }` with `done { at, by } \| null` — ticked off for everyone who reads the file (read is enough); a deadline ticked off sends no reminder |
 | `POST deadlines/<id>/calendar` | (since 1.14.0) `{ target? }` (since 1.17.0: `{ kind: 'family' }` \| `{ kind: 'mail', calendarId }`) | `{ deadline }` with `calendar { eventId, at, target { kind, label } }` — into my family calendar (see "AI in Drive"), since 1.17.0 also into a calendar of Mail (`409 mail_unavailable { reason }`) |
 | `GET deadlines/calendars` | (since 1.17.0) | `{ family: bool, mail [{ id, name, account { id, label, kind, email }, color }] }` — the calendars I can choose |
 | `GET deadlines/targets` · `PUT deadlines/targets` | PUT: `{ targets [{ areaId, target }] }` (since 1.17.0) | `{ targets [{ areaId, label, target }] }` — my target per area with AI for documents where I write |
@@ -1472,6 +1473,24 @@ the path should be). The change log names the calling plugin as the device.
   each, instead of the shared 60.
 
 The other way round (since 1.14.0): Drive calls the Familie plugin's `calendar_add` for a deadline (see "AI in Drive").
+
+**For „Notizen & Aufgaben“ (since 1.27.0, `server/notizen.js`, `server/todohub.js`; contract v1 of
+`gatecontrol-notizen`):** the deadlines as the hub's items. Callers: `gatecontrol-notizen` only (else `forbidden`),
+600 calls per hour each.
+
+| Service | Payload | Answer |
+|---|---|---|
+| `todo_items` | `{ v: 1, cursor?, limit? (1…100) }` | `{ ok, items: [Item], cursor \| null, now }` — the person's deadlines, by id, ≤ 16 KB |
+| `todo_complete` | `{ v: 1, id: 'deadline:<id>', done }` | `{ ok, item }` — like `POST\|DELETE deadlines/<id>/done` as that person; `not_found`, `forbidden`, `read_only`, `invalid` |
+
+An item: `{ id: 'deadline:<id>', kind: 'deadline', title (as in the calendar), subtitle (the file name), due (the day,
+allDay), users (everyone with a seat who reads the area), area ('work' for a team folder), group { id: 'area:<id>',
+label }, meta { type: the kind, amount? ('84,20 €', payments) }, done, canComplete: true, open { plugin:
+'gatecontrol-drive', route: 'node/<fileId>' } }` — deadlines from 7 days ago to 180 days ahead of live files outside a
+vault, at most 1000; one ticked off more than a day ago is left out. Changes go to the hub with
+`gatecontrol-notizen:todo_changed` (only the difference to what it got, table `todo_sent`; at most every 2 minutes in
+the background, 5 s after a change of a deadline). Without the hub (or without `gc.services.available`) nothing is
+called.
 
 ## Background
 

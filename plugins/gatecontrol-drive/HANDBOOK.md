@@ -1,4 +1,4 @@
-<!-- version: 1.26.0 -->
+<!-- version: 1.27.0 -->
 # Drive
 
 ## What the plugin does
@@ -45,7 +45,8 @@ Drive is a subscription of its own (Family, Business or Combo, five people inclu
 - **Vault folders:** “New” › “New vault”, who may open it (only me, family, team folder). Keep the recovery key safe. A new device asks with “Request access”, a device already approved grants it. Vaults lock after some minutes without input; the AI never reads them. A tap on a file opens it in the vault viewer (pictures, PDFs, texts, in the apps also videos) – see below.
 - **Finding videos:** in the search, “All · Photos · Videos” (portal) or “Videos” (apps) filters the hits. Without a search word “Videos” shows the newest videos.
 - **Backing up photos and videos from the phone (Android):** in the app under **Drive › Photo backup**. “Videos too” is off at first. If you switch it on later, the app asks: **“All videos”** also backs up the videos already on the phone (photos are not uploaded again), **“Only new”** only those from now on. What the backup leaves out is listed under **“Skipped”** with the reason; **“Try again”** tries once more.
-- **AI for documents:** “Document info” on a file, “Ask” below the search, the page “Deadlines” with “Into the family calendar” and “Remind me”, “Turn into a document” for scans.
+- **AI for documents:** “Document info” on a file, “Ask” below the search, the page “Deadlines” with “Into the family calendar”, “Remind me” and “Done”, “Turn into a document” for scans. A deadline marked done counts for everyone who sees the file and sends no more reminders.
+- **“Notes & Tasks”** (when installed): the deadlines of your files show there with date and amount – deadlines from team folders under “Work”. Ticking one off there is the same as “Done” in Drive; tapping it opens the file.
 - **Import** from Google Drive and OneDrive: connect, choose, pick the target.
 - **Edit in the browser** for office documents when an office server is entered.
 
@@ -109,6 +110,11 @@ Full screen in the portal needs GateControl 1.244.0. Older versions show the vid
 
 **At home the photos do not show up faster.**
 The previews reach the gateway bit by bit (a few hundred per run, every 15 minutes). Check at the gateway under **Gateways › Home cache** that it is “on” and that “Photos” or “Drive” are switched on. Previews from the home network need GateControl 1.249.0 and a current app.
+
+## New in 1.27.0
+
+- **Ticking off deadlines:** “Done” on the page “Deadlines” – for everyone who sees the file; no reminder comes after that.
+- **Deadlines in “Notes & Tasks”:** with the plugin “Notes & Tasks” your deadlines show there (team folders under “Work”) and can be ticked off there. Without that plugin nothing changes.
 
 ## New in 1.26.0
 
