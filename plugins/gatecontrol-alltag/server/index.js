@@ -22,6 +22,8 @@
 //   services    (1.3.0, plugin.json services.provides, GateControl ≥ 1.177.0 gc.services)
 //     calendar_query · calendar_list   the calendars a person sees, for other plugins
 //                             (gatecontrol-familie: calendar conditions of rules) — server/services.js
+//     todo_items · todo_complete   (1.5.0) for „Notizen & Aufgaben“ (gatecontrol-notizen): the waste collections of the
+//                             next days as its items, pushed when they change (todo_changed) — server/notizen.js
 //
 // Requests run with the requesting user's rights: the admin API is reached
 // only by administrators (the host's admin routes) and refuses a portal
@@ -42,6 +44,7 @@ const ics = require('./ics');
 const format = require('./format');
 const tz = require('./tz');
 const services = require('./services');
+const notizen = require('./notizen');
 const texts = require('./texts.json');
 
 const crypto = require('node:crypto');
@@ -596,6 +599,9 @@ const TICK_BUDGET_MS = 50000;
 module.exports = {
   async start(gc) {
     alerts.reset();
+    // 1.5.0: „Notizen & Aufgaben“ — a fresh push state; is the hub there (asks nobody)?
+    notizen.source.reset();
+    await notizen.source.available(gc);
     state.started = true;
     gc.log.info('alltag started', gc.plugin.version);
   },
@@ -618,7 +624,10 @@ module.exports = {
       }
       // admin API: administrators only, never a portal or app viewer
       if (!req.user || req.user.portal || req.user.app || req.user.role !== 'admin') throw fail('FORBIDDEN');
-      return await adminRoute(req, gc, seg, cfg);
+      const out = await adminRoute(req, gc, seg, cfg);
+      // 1.5.0: a plan changed — „Notizen & Aufgaben“ gets the difference in a few seconds
+      if (req.method !== 'GET') notizen.source.soon(gc);
+      return out;
     } catch (e) {
       if (!ERRORS[e && e.code]) gc.log.warn('request failed', req.method, String(req.path || '').split('/').slice(0, 3).join('/'), (e && e.code) || 'error');
       return errorResponse(e, lang);
@@ -678,18 +687,28 @@ module.exports = {
       try { await alerts.check(gc); } catch { /* logged in check */ }
       if (cfg.wasteEnabled) await waste.tick(gc, cfg, Date.now(), deadline);
       if (cfg.calendarEnabled) await calendar.tick(gc, cfg, Date.now(), deadline);
+      // 1.5.0: the waste collections of the next days to „Notizen & Aufgaben“ — only what changed, at most once a minute
+      await notizen.source.tick(gc, Date.now());
     } finally { state.ticking = false; }
   },
 
   /** 1.3.0: services for other plugins (services.provides, GateControl ≥ 1.177.0) — server/services.js. */
   async service(call, gc) {
+    // 1.5.0: todo_items / todo_complete for „Notizen & Aufgaben“ (gatecontrol-notizen only) — server/notizen.js
+    const hub = await notizen.source.service(gc, call);
+    if (hub !== undefined) return hub;
     return services.handle(gc, await config.load(gc), call);
+  },
+
+  async stop() {
+    notizen.source.stop();
   },
 
   async settingsChanged(values, gc) {
     // the time zone or reminder times changed: refresh the local sources so dates follow the zone
     for (const p of await store.listPlans(gc)) if (p.source !== 'provider') await store.updatePlan(gc, p.id, { next_refresh_at: 0 });
     for (const s of await store.listSubs(gc)) await store.updateSub(gc, s.id, { last_parsed_at: null, next_refresh_at: 0 });
+    notizen.source.soon(gc);
   },
 
   _state: state,

@@ -4,7 +4,7 @@
     "de": "Alltag",
     "en": "Everyday"
   },
-  "version": "1.4.1",
+  "version": "1.5.0",
   "publisher": "CallMeTechie",
   "description": {
     "de": "Müllabfuhr und Kalender des Haushalts: Abfuhrtermine aus Online-Abfallkalendern (AbfallNavi, abfall.io, AWIDO), einer ICS-Datei oder eigenen Regeln; iCal-Kalender (Google, iCloud, Outlook, Nextcloud im Heimnetz); Erinnerungen in der App und Termine im Portal „Zuhause“.",
@@ -46,7 +46,10 @@
     "notify": true,
     "background": {
       "intervalSeconds": 60
-    }
+    },
+    "services": [
+      "gatecontrol-notizen:todo_changed"
+    ]
   },
   "services": {
     "provides": {
@@ -63,6 +66,20 @@
           "en": "List the calendars"
         },
         "maxPerHour": 1800
+      },
+      "todo_items": {
+        "label": {
+          "de": "Zu erledigen für Notizen & Aufgaben",
+          "en": "To-dos for Notes & Tasks"
+        },
+        "maxPerHour": 600
+      },
+      "todo_complete": {
+        "label": {
+          "de": "In Notizen & Aufgaben abgehakt",
+          "en": "Ticked off in Notes & Tasks"
+        },
+        "maxPerHour": 600
       }
     }
   },

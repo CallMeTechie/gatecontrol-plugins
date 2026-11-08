@@ -34,12 +34,14 @@ async function setup(host) {
 
 const call = (host, name, payload, user) => host.callService(name, { caller: 'gatecontrol-familie', user: user || null, payload });
 
-test('plugin.json: calendar_query and calendar_list in services.provides (1800 an hour); version 1.4.0', () => {
-  assert.equal(manifest.version, '1.4.1');
-  assert.deepEqual(Object.keys(manifest.services.provides), ['calendar_query', 'calendar_list']);
+test('plugin.json: calendar_query and calendar_list in services.provides (1800 an hour); version 1.5.0', () => {
+  assert.equal(manifest.version, '1.5.0');
+  assert.deepEqual(Object.keys(manifest.services.provides), ['calendar_query', 'calendar_list', 'todo_items', 'todo_complete']);
   for (const s of Object.values(manifest.services.provides)) assert.ok(s.label.de && s.label.en && s.label.de.length <= 60 && s.label.en.length <= 60);
   // 1.4.0: Mail shows the calendars of every person — 1800 calls an hour per service (maxPerHour needs GateControl 1.216.0)
-  for (const s of Object.values(manifest.services.provides)) assert.equal(s.maxPerHour, 1800);
+  for (const n of ['calendar_query', 'calendar_list']) assert.equal(manifest.services.provides[n].maxPerHour, 1800);
+  // 1.5.0: the services of „Notizen & Aufgaben“ (test/notizen.test.js) — 600 an hour
+  for (const n of ['todo_items', 'todo_complete']) assert.equal(manifest.services.provides[n].maxPerHour, 600);
   assert.equal(manifest.gatecontrol, '>=1.216.0', 'services.provides maxPerHour: older hosts refuse the key');
 });
 

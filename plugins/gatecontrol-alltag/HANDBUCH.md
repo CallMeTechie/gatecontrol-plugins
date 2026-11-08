@@ -1,4 +1,4 @@
-<!-- version: 1.4.1 -->
+<!-- version: 1.5.0 -->
 # Alltag
 
 ## Was das Plugin kann
@@ -8,6 +8,7 @@
 - **Erinnerungen** in der GateControl-App: „Morgen: Gelber Sack“, Termine zu Beginn oder einige Minuten vorher.
 - **Portal „Zuhause“:** die nächsten Abfuhrtage und die Termine von heute und den nächsten 7 Tagen, Kacheln auf der Startseite.
 - **Für andere Plugins:** Familie nutzt die Kalender für Regeln mit „Termin heute/morgen“, Mail blendet sie in seinen Kalender ein (nur lesend).
+- **„Notizen & Aufgaben“:** mit dem Plugin „Notizen & Aufgaben“ stehen die Abfuhrtermine am Vorabend in „Mein Tag“ („Gelber Sack rausstellen“).
 
 ## Voraussetzungen
 
@@ -50,6 +51,7 @@ Die Adresse und die Anmeldedaten werden verschlüsselt gespeichert und nie wiede
 - **Portal „Zuhause“:** Abschnitt „Müllabfuhr“ mit den nächsten Abfuhrtagen und Abschnitt „Termine“ (heute und die nächsten 7 Tage). Einzelheiten der Termine gibt es nur nach der Anmeldung, sonst nur die Anzahl. Kacheln „Nächste Abfuhr“ und „Heute“ auf der Startseite.
 - **App:** Erinnerungen der Themen „Müllabfuhr“ und „Termine“; die Familie-App zeigt die Termine mit der Kalenderfarbe.
 - **„Test-Erinnerung senden“** je Bereich schickt dir eine Probe.
+- **„Notizen & Aufgaben“** (wenn installiert): die Abfuhrtermine der nächsten 14 Tage, je Tonne eine Zeile, am Abend vor der Abholung in „Mein Tag“. Wer sie sieht, bestimmt der Plan (seine Personen). Abhaken geht dort nicht; die Termine verschwinden nach dem Abholtag von selbst.
 
 ## Berechtigungen
 
@@ -70,6 +72,10 @@ Bei Fehlern fragt das Plugin seltener (Kalender bis alle 6 Stunden, Abfallkalend
 
 **Keine Erinnerung gekommen.**
 Hast du das Thema „Müllabfuhr“ bzw. „Termine“ in den Mitteilungs-Einstellungen abgeschaltet? Bist du beim Plan bzw. Kalender als Person gewählt? „Test-Erinnerung senden“ zeigt, ob Mitteilungen ankommen.
+
+## Neu in 1.5.0
+
+- **Müllabfuhr in „Notizen & Aufgaben“:** Mit dem Plugin „Notizen & Aufgaben“ stehen die Abfuhrtermine am Vorabend in „Mein Tag“ – „Gelber Sack rausstellen“, für die Personen des Plans. Ohne das Plugin ändert sich nichts.
 
 ## Neu in 1.4.1
 
