@@ -5,6 +5,7 @@
  *   „Heute vor X Jahren“ · „Ausflüge und Reisen“ · „Mit <Person>“ · „Diesen Monat vor X Jahren“ · „Jahresrückblick“ ·
  *   „Orte“
  *
+ * textOf() names a collection here and on the overview's cards of memoryPicks (since 1.28.0, portal.js memoryTitle).
  * A card opens its photos (GET memories/photos?id=, page by page) as tiles of „Fotos“ — a click shows them in the viewer
  * and goes through them. portal.js calls DriveMemories.attach(ui) with its helpers. Server and user text only ever goes
  * into textContent or attributes.

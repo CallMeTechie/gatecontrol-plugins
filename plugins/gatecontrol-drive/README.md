@@ -73,10 +73,10 @@ reaches `GET frame` (the photo frame, since 1.7.0) and nothing else (`403 forbid
 
 | Route | Body / query | Answer |
 |---|---|---|
-| `GET me` | | `me { id, name, seat, deviceId, admin }`, `licence { valid, tier }`, `areas`, `latest` (change log seq), `settings`, `limits { maxBytes }`, `wipes` (entries this device has yet to handle, since 1.2.0), `devices` (my devices a new wipe reaches), `features` (since 1.5.0: `['previews', 'wipes', 'textSearch', 'devices', 'deleteAfter', 'emptyFiles']`, since 1.6.0 also `'links'`, `'guard'`, since 1.7.0 `'timeTravel'`, `'takenAt'`, `'photos'`, `'albums'`, `'frame'`, `'storage'`, since 1.8.0 `'docAi'` and `'cloudImport'` — only while GateControl offers the AI service / cloud accounts and they are allowed, see "AI for documents" and "Import"; since 1.9.0 `'vault'` and — while set up — `'office'`, since 1.10.0 `'photosFolder'`, since 1.11.0 `'vaultsApart'`, since 1.12.0 `'bulk'`, — while GateControl's public links are allowed — `'zip'` and `'multiLink'`, with GateControl ≥ 1.215.0 also `'copyServer'` (copies on the server) and `'zipMixed'` (a ZIP and one link of any selection); since 1.13.0 `'photoClasses'` (work photos apart); since 1.14.0 `'photoSearch'` (photos by what is on them) and — with `docAi` — `'docAsk'` (questions to the documents), `'scanDocs'` (scans become documents) and, while the Familie plugin's `calendar_add` is reachable, `'deadlineCalendar'` (see "AI in Drive"); since 1.16.0 `'photoPlaces'` and `'photoPeople'` (see "Places and people"); since 1.17.0 — with `docAi`, while Mail's `calendar_add` is reachable and takes Drive — `'deadlineMailCalendar'` (see "Deadlines into a calendar of Mail"); since 1.18.0 `'overview'` (see "Overview"); since 1.19.0 `'scan'` (file nodes and photo items carry GateControl's virus scan `scan { state, blocked, finding }`, see "Virus scan"); since 1.20.0 `'offline'` and — while GateControl has the home cache (≥ 1.231.0, `permissions.homeCache`) — `'homeCache'` (see "Home cache"); since 1.24.0 — with GateControl ≥ 1.249.0 — `'homeCachePreviews'` (previews in the home cache, see "Home cache"); since 1.25.0 `'mediaFilter'` (`media=image|video` on the photos and the search, `durationMs` on videos); since 1.26.0 `'memoryCollections'` (the page „Erinnerungen“: `GET memories`, `GET memories/photos`, see "Memories")), `settings` (since 1.14.0 also `scanKeepOriginal`), `links { node, drive } \| null` (since 1.6.0, see "Direct links"), `guard { on, locked, incident }` and `incidents` (since 1.6.0, see "Ransomware protection") |
+| `GET me` | | `me { id, name, seat, deviceId, admin }`, `licence { valid, tier }`, `areas`, `latest` (change log seq), `settings`, `limits { maxBytes }`, `wipes` (entries this device has yet to handle, since 1.2.0), `devices` (my devices a new wipe reaches), `features` (since 1.5.0: `['previews', 'wipes', 'textSearch', 'devices', 'deleteAfter', 'emptyFiles']`, since 1.6.0 also `'links'`, `'guard'`, since 1.7.0 `'timeTravel'`, `'takenAt'`, `'photos'`, `'albums'`, `'frame'`, `'storage'`, since 1.8.0 `'docAi'` and `'cloudImport'` — only while GateControl offers the AI service / cloud accounts and they are allowed, see "AI for documents" and "Import"; since 1.9.0 `'vault'` and — while set up — `'office'`, since 1.10.0 `'photosFolder'`, since 1.11.0 `'vaultsApart'`, since 1.12.0 `'bulk'`, — while GateControl's public links are allowed — `'zip'` and `'multiLink'`, with GateControl ≥ 1.215.0 also `'copyServer'` (copies on the server) and `'zipMixed'` (a ZIP and one link of any selection); since 1.13.0 `'photoClasses'` (work photos apart); since 1.14.0 `'photoSearch'` (photos by what is on them) and — with `docAi` — `'docAsk'` (questions to the documents), `'scanDocs'` (scans become documents) and, while the Familie plugin's `calendar_add` is reachable, `'deadlineCalendar'` (see "AI in Drive"); since 1.16.0 `'photoPlaces'` and `'photoPeople'` (see "Places and people"); since 1.17.0 — with `docAi`, while Mail's `calendar_add` is reachable and takes Drive — `'deadlineMailCalendar'` (see "Deadlines into a calendar of Mail"); since 1.18.0 `'overview'` (see "Overview"); since 1.19.0 `'scan'` (file nodes and photo items carry GateControl's virus scan `scan { state, blocked, finding }`, see "Virus scan"); since 1.20.0 `'offline'` and — while GateControl has the home cache (≥ 1.231.0, `permissions.homeCache`) — `'homeCache'` (see "Home cache"); since 1.24.0 — with GateControl ≥ 1.249.0 — `'homeCachePreviews'` (previews in the home cache, see "Home cache"); since 1.25.0 `'mediaFilter'` (`media=image|video` on the photos and the search, `durationMs` on videos); since 1.26.0 `'memoryCollections'` (the page „Erinnerungen“: `GET memories`, `GET memories/photos`, see "Memories"); since 1.28.0 `'memoryPicks'` (`GET overview` `memoryPicks`, see "Overview")), `settings` (since 1.14.0 also `scanKeepOriginal`), `links { node, drive } \| null` (since 1.6.0, see "Direct links"), `guard { on, locked, incident }` and `incidents` (since 1.6.0, see "Ransomware protection") |
 | `GET areas` | | `areas [{ id, kind, label, role, via, rootId, owner, archived, storage { bytes, quota, form, target, state } }]` (+ `docAi` while the feature is on, since 1.14.0 `deadlinesToCalendar` with `deadlineCalendar`, since 1.17.0 `deadlinesTarget` — the viewer's target — and both while the family calendar or a calendar of Mail is reachable; also in `GET me` `areas`) |
 | `PATCH areas/<id>` | `{ docAi?: boolean, deadlinesToCalendar?: boolean, deadlinesTarget?: target \| null }` (since 1.8.0 / 1.14.0 / 1.17.0, write in the area) | `{ area: { id, docAi, deadlinesToCalendar?, deadlinesTarget? } }` — AI for documents on / off in this area; new deadlines into the family calendar on their own (the area's switch; Familie not reachable: `409 familie_unavailable`); since 1.17.0 my own target in this area (see "Deadlines into a calendar of Mail") |
-| `GET overview` | (since 1.18.0, feature `overview`) | `todo`, `recent`, `memories`, `people`, `places`, `activity`, `storage` — the start of Drive in one request (see "Overview") |
+| `GET overview` | (since 1.18.0, feature `overview`) | `todo`, `recent`, `memories`, `memoryPicks` (since 1.28.0), `people`, `places`, `activity`, `storage` — the start of Drive in one request (see "Overview") |
 | `POST nodes/<id>/opened` | (since 1.18.0) | `204`, no body — the device opened its own copy of the file: only "Zuletzt geöffnet" (see "Overview"; a folder `400 invalid`) |
 | `GET nodes/<id>` | | `node` + `path`, `role`, `crumbs [{ id, name }]` |
 | `GET nodes/<id>/children` | `sort=name\|mtime\|size\|updated`, `order`, `offset`, `limit` (≤ 1000); since 1.11.0 `vaults=1`, `dirs=1` | `items` (folders first), `total`, `next`, `role` — since 1.11.0 (feature `vaultsApart`) **without vault folders** (their nodes right below a folder outside a vault; `total` counts the same), `vaults=1` lists them as before; inside a vault everything. `dirs=1`: only the folders (no vaults), by name (`order` applies, `sort` not), each with `hasDirs` (live folders below it, vault folders not counted) — the folder tree of the menus |
@@ -811,8 +811,8 @@ nothing of the below happens except "offline verfügbar". The minimum stays Gate
 ## Overview (since 1.18.0, feature `overview`)
 
 The start of Drive in the apps and the portal: **Übersicht | Dateien | Fotos**, the overview first. `GET overview`
-answers everything for it in one request (`server/overview.js`); a part is left out when it has nothing, `people` is
-`null` while the person's switch `people` is off. Well under 300 ms with some thousand nodes (`test/overview.test.js`).
+answers everything for it in one request (`server/overview.js`); a part is left out when it has nothing (but
+`memoryPicks`, always an array since 1.28.0), `people` is `null` while the person's switch `people` is off. Well under 300 ms with some thousand nodes (`test/overview.test.js`).
 
 - `todo { deadlines, deadlinesTotal, review?, toFile, toFileHint }` — the next three deadlines from today as `GET
   deadlines` answers them (Drive has no "done": every deadline from today to today + 365 days, the range of `GET
@@ -834,6 +834,32 @@ answers everything for it in one request (`server/overview.js`); a part is left 
   makes the label („Heute vor 2 Jahren“). Since 1.26.0 only private photos (see "Memories") and only a day with **more
   than 10** of them; `id` the collection of `GET memories/photos` — „Alle“ opens the page „Erinnerungen“ while `GET me`
   has `memoryCollections`.
+- `memoryPicks [≤ 4 collection]` (since 1.28.0, feature `memoryPicks`) — **always there**, an array: `[]` while
+  `memories` has a day; otherwise collections of `GET memories` for today (see "Memories"), **exactly as it answers
+  them**: `{ id, kind, count, cover, from, to }` plus the kind's own fields (`trip`: `place`, `places`, `days`,
+  `firstDay`, `lastDay`; `person`: `person`; `month`: `yearsAgo`, `month`; `year`: `year`; `place`: `place`). For
+  variety the first `trip`, `person`, `month`, `year` and `place` (in this order, those that exist), then filled up in
+  the page's order; **never `day`**. Only private photos, like the page. So the tile „Erinnerungen“ and its „Alle“ stay
+  on the days without „Heute vor X Jahren“ (Drive < 1.28.0: the tile was left out then). The client titles a card as
+  the page does („2024 im Rückblick“, „Hamburg“, „Mit Noah“) and opens it with `GET memories/photos?id=`. Worked out
+  (`memories.picks`: the same queries as `GET memories`, the covers of the chosen ones only) only when `memories` is
+  empty. Example:
+
+  ```json
+  "memoryPicks": [
+    { "id": "trip:2025-07-10:2025-07-14", "kind": "trip",
+      "place": { "key": "geonames:2911298", "name": "Hamburg", "region": "Hamburg", "country": "DE" },
+      "places": ["Hamburg"], "days": 5, "firstDay": "2025-07-10", "lastDay": "2025-07-14", "count": 16,
+      "cover": { "id": 812, "name": "IMG_2041.jpg", "…": "a photo item as GET photos has it" },
+      "from": "2025-07-10T00:00:00.000Z", "to": "2025-07-15T00:00:00.000Z" },
+    { "id": "person:7", "kind": "person", "person": { "id": 7, "name": "Noah" }, "count": 11,
+      "cover": { "id": 640, "…": "…" }, "from": "2024-01-01T11:00:00.000Z", "to": "2024-01-21T11:00:00.000Z" },
+    { "id": "month:2025-10", "kind": "month", "yearsAgo": 1, "month": "2025-10", "count": 20,
+      "cover": { "id": 901, "…": "…" }, "from": "2025-10-01T00:00:00.000Z", "to": "2025-11-01T00:00:00.000Z" },
+    { "id": "year:2024", "kind": "year", "year": 2024, "count": 71,
+      "cover": { "id": 433, "…": "…" }, "from": "2024-01-01T00:00:00.000Z", "to": "2025-01-01T00:00:00.000Z" }
+  ]
+  ```
 - `people { people: [≤ 8], unnamed } | null` — the people with a name who are not hidden, most photos first, as `GET
   people` answers them; `unnamed` how many without a name are not hidden ("Wer ist das?").
 - `places { top: [≤ 3 { key, name, count }], cluster: { lat, lon, count }, total }` — the places with the most photos,
@@ -886,7 +912,8 @@ covering index `nodes_memories`, migration 021), the people's counts (faces → 
 `GET memories/photos` a page on the index of the time taken (`nodes_taken`, forced with `INDEXED BY`), of the place
 (`nodes_geo_place`) or of the person's faces (`faces_person`). `test/memories_speed.test.js`: 50 000 photos, every
 statement of `GET memories`, `GET memories/photos` (each kind), `photos/memories`, `GET photos`, `photos/months` and
-`GET overview` under 200 ms, with the query plans checked.
+`GET overview` under 200 ms, with the query plans checked — since 1.28.0 also `GET overview` on a day without „Heute vor
+X Jahren“ (with its `memoryPicks`).
 
 ## Places and people (since 1.16.0, features `photoPlaces` and `photoPeople`)
 
@@ -1401,6 +1428,10 @@ the note „Nur private Fotos …“; a card (also one of the overview) opens it
 a click shows them in the viewer and goes through them), the path „Erinnerungen › …“ leads back. Without the feature
 „Alle“ opens „Fotos“ as before. In the Drive settings the switch is now „Arbeitsfotos nie im Fotorahmen“ (memories are
 private anyway).
+Since 1.28.0 (feature `memoryPicks`): on a day without „Heute vor X Jahren“ the tile "Erinnerungen" shows the overview's
+`memoryPicks` as cards (two, as the days) with the title the page „Erinnerungen“ gives them (`ui/memories.js`
+`textOf`, through portal.js `memoryTitle`), the count and the cover; a card opens its photos like a card of the page,
+„Alle“ the page; the tile keeps its look and its double width (2fr).
 The section "Fotorahmen" (`ui/frame.*`) is the slide show of a kiosk device.
 
 ## Admin (GateControl's admin UI)

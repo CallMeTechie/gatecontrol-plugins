@@ -3,8 +3,9 @@
 // The overview (since 1.18.0, feature `overview`): the new start of Drive in the apps and the portal — one request for
 // everything that matters now.
 //
-//   GET overview → { todo, recent, memories, people, places, activity, storage }   (a part is left out when it has
-//                  nothing; people / places are null while the feature or the person's switch is off)
+//   GET overview → { todo, recent, memories, memoryPicks, people, places, activity, storage }   (a part is left out when
+//                  it has nothing — memoryPicks is always there; people / places are null while the feature or the
+//                  person's switch is off)
 //     todo       { deadlines: [≤ 3 like GET deadlines, from today], deadlinesTotal, review? (photos to check, left out at
 //                0), toFile (Mail's attachments to file — its service tofile_count — or null without), toFileHint }
 //     recent     [≤ 10 files like a folder's items + areaLabel + openedAt | changedAt] — no folders, pictures, videos or
@@ -13,6 +14,11 @@
 //                photos/memories; cover a photo item. Since 1.26.0 only private photos (no work folder, nothing to
 //                check, no team folder) and only days with more than 10 photos; id: the collection „Heute vor X
 //                Jahren“ of GET memories/photos (memories.js — „Alle“ opens the page „Erinnerungen“)
+//     memoryPicks [≤ 4 collection] (since 1.28.0, feature `memoryPicks`) — always an array: [] while memories has a
+//                day; else collections of GET memories for today exactly as it answers them ({ id, kind, count, cover,
+//                from, to } and the kind's own fields): the first trip, person, month, year and place, then filled up in
+//                the page's order, never a day (memories.picks — only worked out when memories is empty). So the tile
+//                „Erinnerungen“ and its „Alle“ stay on the days without „Heute vor X Jahren“
 //     people     { people: [≤ 8 named, not hidden, like GET people], unnamed } | null (the person's switch off)
 //     places     { top: [≤ 3 { key, name, count }], cluster: { lat, lon, count } | null, total }
 //     activity   [≤ 5 { at, user: { id, name }, kind: 'added_photos' | 'added_files' | 'changed', count, area: { id,
@@ -249,8 +255,11 @@ async function activity(ctx, vis) {
 
 // ─── photos: memories, people, places ───────────────
 
+/** → { days: the cards „Heute vor X Jahren“, picks: [] while there are days, else memoriesPage.picks (1.28.0) }. */
 async function memories(ctx) {
-  return photos.memoryCovers(ctx, MEMORIES_MAX, memoriesPage.DAY_MORE_THAN);
+  const days = await photos.memoryCovers(ctx, MEMORIES_MAX, memoriesPage.DAY_MORE_THAN);
+  // the picks are a second pass over the photos: only on a day without cards
+  return { days, picks: days.length ? [] : await memoriesPage.picks(ctx, MEMORIES_MAX) };
 }
 
 async function people(ctx) {
@@ -286,7 +295,8 @@ async function get(ctx) {
   const out = {};
   if (td) out.todo = td;
   if (rc && rc.length) out.recent = rc;
-  if (mem && mem.length) out.memories = mem;
+  if (mem && mem.days.length) out.memories = mem.days;
+  out.memoryPicks = (mem && mem.picks) || [];
   // people: null while the switch is off; nobody at all: left out
   if (pp === null) out.people = null;
   else if (pp && (pp.people.length || pp.unnamed)) out.people = pp;

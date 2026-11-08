@@ -69,7 +69,9 @@ test('GET overview: the feature; an empty Drive has only the storage; "Zuletzt g
     assert.ok((await a('GET', 'me')).json.features.includes('overview'));
     // nothing yet: only my storage (my files on this server, no quota of its own); people off by default
     let o = await overview(a);
-    assert.deepEqual(Object.keys(o).sort(), ['ok', 'people', 'storage']);
+    // memoryPicks (1.28.0) is always there: an array
+    assert.deepEqual(Object.keys(o).sort(), ['memoryPicks', 'ok', 'people', 'storage']);
+    assert.deepEqual(o.memoryPicks, []);
     assert.equal(o.people, null);
     const mine = await c.area(ANNA, 'mine');
     // the quota of my files (the administrator's setting) and this server as the place

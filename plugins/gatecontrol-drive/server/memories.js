@@ -28,6 +28,10 @@
 //   place   „Orte“: the cities with ≥ PLACE_MIN photos, the PLACES_MAX with most — place { key, name, region,
 //           country }                                                                     id place:geonames:<id>
 //
+// The overview's picks (since 1.28.0, feature `memoryPicks`): on a day without „Heute vor X Jahren“ the overview's
+// memoryPicks — picks(): ≤ 4 collections of GET memories for today, exactly as it answers them; the first trip, person,
+// month, year and place (PICK_KINDS), then filled up in the page's order; never a day. Only the chosen ones' covers.
+//
 // Home: the city (photoPlaces) with photos on the most days (then the most photos) — the person's own private photos
 // decide it, nothing is stored. Without photos with a place: no home, no trips. A trip's photos are those at its
 // places (at least TRIP_KM from home), from its first to its last day.
@@ -61,6 +65,8 @@ const PLACES_MAX = 20;
 const YEARS_MAX = 100;
 const TRIP_DAYS_MAX = 62;
 const PLACE_NAMES = 3;
+// the overview's picks (1.28.0): one of each kind in this order first — never `day` (the overview's cards are those)
+const PICK_KINDS = ['trip', 'person', 'month', 'year', 'place'];
 // GateControl's database worker takes at most 100 parameters a statement (store.CHUNK): people in parts
 const PEOPLE_CHUNK = 60;
 const DAY_MS = 86400000;
@@ -221,12 +227,15 @@ function dateArg(ctx, q) {
   return [now.getFullYear(), now.getMonth(), now.getDate()];
 }
 
-/** GET memories → { date, home, collections } */
-async function list(ctx, q) {
+/**
+ * The collections of the date asked for, without their covers → { date, home (a geo_places row or null), out: [{ id, kind,
+ * …, count, first: { t, id }, from, to (ms) }] } in the page's order.
+ */
+async function collect(ctx, q) {
   const [y, m, d] = dateArg(ctx, q);
   const date = `${y}-${pad(m + 1)}-${pad(d)}`;
   const sc = await scopeOf(ctx);
-  if (!sc) return { date, home: null, collections: [] };
+  if (!sc) return { date, home: null, out: [] };
   const rows = await grouped(ctx, sc);
   const byDay = new Map();
   for (const r of rows) {
@@ -290,17 +299,48 @@ async function list(ctx, q) {
   [...byPlace].filter(([p, x]) => x.n >= PLACE_MIN && named.has(p)).sort((a, b) => b[1].n - a[1].n || a[0] - b[0]).slice(0, PLACES_MAX).forEach(([p, x]) => {
     out.push({ id: `place:${places.keyOf(p)}`, kind: 'place', place: placeView(named.get(p)), count: x.n, first: x.first, from: x.first ? x.first.t : null, to: x.l ? startOf(x.l, 1) : null });
   });
-  // the covers: one query by id, items as GET photos has them
+  return { date, home: home != null ? named.get(home) || null : null, out };
+}
+
+/** Collections of collect() → as GET memories answers them: the covers (one query by id, items as GET photos has them), ISO times. */
+async function finish(ctx, out) {
   const ids = [...new Set(out.map((c) => c.first && c.first.id).filter((x) => x != null))];
   const coverRows = [];
   for (const part of store.chunks(ids)) coverRows.push(...await store.all(ctx.gc, `SELECT * FROM nodes WHERE id IN (${store.marks(part.length)})`, part));
   const items = new Map((await photos.itemsOf(ctx, coverRows)).map((it) => [it.id, it]));
-  const h = home != null ? named.get(home) : null;
-  return {
-    date,
-    home: h ? { key: places.keyOf(h.id), name: h.name } : null,
-    collections: out.map(({ first, from, to, ...c }) => ({ ...c, cover: (first && items.get(first.id)) || null, from: from == null ? null : iso(from), to: to == null ? null : iso(to) })),
-  };
+  return out.map(({ first, from, to, ...c }) => ({ ...c, cover: (first && items.get(first.id)) || null, from: from == null ? null : iso(from), to: to == null ? null : iso(to) }));
+}
+
+/** GET memories → { date, home, collections } */
+async function list(ctx, q) {
+  const { date, home, out } = await collect(ctx, q);
+  return { date, home: home ? { key: places.keyOf(home.id), name: home.name } : null, collections: await finish(ctx, out) };
+}
+
+/**
+ * Some collections of `list` (in the page's order, no `day`) for variety → [≤ max]: the first of each kind in the order
+ * of PICK_KINDS, then filled up in the page's order.
+ */
+function pickFrom(list, max) {
+  const from = list.filter((c) => PICK_KINDS.includes(c.kind));
+  const chosen = new Set();
+  for (const k of PICK_KINDS) {
+    if (chosen.size >= max) break;
+    const c = from.find((x) => x.kind === k);
+    if (c) chosen.add(c);
+  }
+  for (const c of from) { if (chosen.size >= max) break; chosen.add(c); }
+  return [...chosen];
+}
+
+/**
+ * The overview's picks (since 1.28.0, `memoryPicks`): ≤ max collections of GET memories for today, exactly as that
+ * answers them — pickFrom(); the covers of those only. The same queries as GET memories (no second kind of query).
+ */
+async function picks(ctx, max) {
+  const { out } = await collect(ctx, {});
+  const chosen = pickFrom(out, max);
+  return chosen.length ? finish(ctx, chosen) : [];
 }
 
 /** A collection's id → { kind, … }; else 400 invalid { field: 'id' }. */
@@ -371,6 +411,6 @@ async function photosOf(ctx, q) {
 }
 
 module.exports = {
-  list, photosOf, homeOf, tripsOf,
+  list, photosOf, homeOf, tripsOf, picks, pickFrom, PICK_KINDS,
   DAY_MORE_THAN, TRIP_MIN, TRIP_KM, PERSON_MIN, MONTH_MIN, YEAR_MIN, PLACE_MIN, TRIPS_MAX, PEOPLE_MAX, PLACES_MAX,
 };

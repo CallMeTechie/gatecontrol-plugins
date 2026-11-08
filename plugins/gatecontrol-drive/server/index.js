@@ -251,6 +251,8 @@ async function me(ctx) {
   };
 }
 
+// memoryPicks: GET overview memoryPicks — on a day without „Heute vor X Jahren“ ≤ 4 collections of GET memories (the
+// first trip, person, month, year, place, then the page's order) for the tile „Erinnerungen“; else [] (1.28.0) ·
 // memoryCollections: the page „Erinnerungen“ — GET memories (collections: this day, trips, people, this month, the
 // years, places — only private photos, with their counts and covers) and GET memories/photos?id= (1.26.0); memories and
 // the overview's cards only private photos, the cards only days with more than 10 photos ·
@@ -282,7 +284,7 @@ async function me(ctx) {
 // devices: GET/PUT/DELETE devices (1.5.0) · deleteAfter: DELETE nodes/<id>?after=, PATCH { deleteAt } (1.5.0) ·
 // emptyFiles: uploads/commit { size: 0 } without a mediaId (1.5.0) · wipes: DELETE ?everywhere=1 (1.2.0) ·
 // textSearch: uploads/commit { text } (1.3.0) · previews (1.1.0)
-const FEATURES = ['previews', 'wipes', 'textSearch', 'devices', 'deleteAfter', 'emptyFiles', 'links', 'guard', 'timeTravel', 'takenAt', 'photos', 'albums', 'frame', 'storage', 'vault', 'photosFolder', 'vaultsApart', 'bulk', 'photoClasses', 'photoSearch', 'photoPlaces', 'photoPeople', 'overview', 'scan', 'offline', 'mediaFilter', 'memoryCollections'];
+const FEATURES = ['previews', 'wipes', 'textSearch', 'devices', 'deleteAfter', 'emptyFiles', 'links', 'guard', 'timeTravel', 'takenAt', 'photos', 'albums', 'frame', 'storage', 'vault', 'photosFolder', 'vaultsApart', 'bulk', 'photoClasses', 'photoSearch', 'photoPlaces', 'photoPeople', 'overview', 'scan', 'offline', 'mediaFilter', 'memoryCollections', 'memoryPicks'];
 
 /**
  * What needs GateControl's AI service or cloud accounts (1.8.0) — only while the host has it and it is allowed (the
