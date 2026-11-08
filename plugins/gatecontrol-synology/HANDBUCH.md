@@ -1,4 +1,4 @@
-<!-- version: 1.2.1 -->
+<!-- version: 1.2.2 -->
 # NAS (Synology)
 
 ## Was das Plugin kann
@@ -78,6 +78,10 @@ DSM sperrt Adressen nach wiederholten Fehlanmeldungen. Prüfe Benutzername und P
 
 **GateDrop kann nichts ablegen.**
 Der Ordner ist nicht unter „Ablage für GateDrop“ freigegeben, oder dem DSM-Konto fehlt das Schreibrecht.
+
+## Neu in 1.2.2
+
+- **Weniger Schreibarbeit:** Synology speichert den Stand der NAS nur noch alle 5 Minuten; angezeigt wird trotzdem immer die letzte Abfrage. Auf einem langsamen Datenträger (NAS mit Festplatten) bleibt GateControl dadurch flüssiger.
 
 ## Neu in 1.2.1
 

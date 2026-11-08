@@ -96,8 +96,12 @@ async function sync(gc, { force = false } = {}) {
     seen.add(d.id);
     const name = r.caps.named && prev ? prev.name : (cleanText(d.name, NAME_MAX) || d.ieee);
     if (prev) {
+      // every 15 s the same list: only a device whose values changed is written
+      const caps = JSON.stringify(r.caps);
+      const state = JSON.stringify(r.state);
+      if (prev.kind === r.kind && prev.name === name && JSON.stringify(prev.capabilities) === caps && JSON.stringify(prev.state) === state && prev.enabled) continue;
       await gc.db.run("UPDATE resources SET kind = ?, name = ?, capabilities_json = ?, state_json = ?, enabled = 1, updated_at = datetime('now') WHERE id = ?",
-        [r.kind, name, JSON.stringify(r.caps), JSON.stringify(r.state), prev.id]);
+        [r.kind, name, caps, state, prev.id]);
     } else {
       await gc.db.run(`INSERT INTO resources (gateway_id, deconz_id, deconz_type, uniqueid, kind, name, capabilities_json, state_json)
         VALUES (0, ?, ?, ?, ?, ?, ?, ?)`, [d.id, Z2M_TYPE, d.ieee, r.kind, name, JSON.stringify(r.caps), JSON.stringify(r.state)]);

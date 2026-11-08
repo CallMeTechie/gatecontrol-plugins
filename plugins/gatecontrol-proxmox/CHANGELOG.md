@@ -4,6 +4,11 @@ Proxmox-VE-Hosts und -Cluster als GateControl-Plugin: Status, Steuerung von VMs/
 Benachrichtigungen sowie Widgets, Schnellaktionen und eine Startkachel in den Apps – nur für
 Administratoren (keine Portal-Teile).
 
+## 1.1.2
+
+- **Weniger Schreibvorgänge:** der Stand einer Verbindung (Snapshot) und ihre Abfragezeiten (`last_attempt_at`, `last_success_at`, `next_poll_at`) werden höchstens alle 5 Minuten gespeichert; der neueste Stand liegt im Speicher und wird zuerst gelesen. Ein Fehler, ein neuer Status oder eine neue Version wird sofort gespeichert. Vorher zwei Schreibvorgänge je Abfrage (im Protokoll von GateControl 1.253.5 je ~350 ms auf einem langsamen Datenträger).
+- Test: eine Stunde Abfragen jede Minute speichert Snapshot und Zeiten je höchstens 13 Mal statt 60 (`writes.test.js`).
+
 ## 1.1.1
 
 - Handbuch im Reiter „Handbuch“ (GateControl ≥ 1.241.0): `HANDBUCH.md` / `HANDBOOK.md` im Paket, in `plugin.json` unter `handbook`. Ältere GateControl-Versionen ignorieren es; die Mindestversion bleibt `>=1.154.0`.

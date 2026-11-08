@@ -93,16 +93,16 @@ function pollHost(gc, host, cfg, { now = Date.now(), timeoutMs = 10000 } = {}) {
     try {
       const client = await clientFor(gc, host, { timeoutMs });
       const snap = await fetchSnapshot(gc, client, cfg, prev, now);
-      await store.saveSnapshot(gc, host.id, snap);
+      await store.saveSnapshot(gc, host.id, snap, now);
       const h = await store.updateHost(gc, host.id, {
         status: 'ok', last_error: null, error_count: 0, last_attempt_at: now, last_success_at: now, next_poll_at: now + backoffMs(cfg.pollSec, 0),
         pve_version: snap.version ? snap.version.version : host.pve_version, cluster_name: snap.cluster ? snap.cluster.name : null,
-      });
+      }, now);
       return { host: h || host, ok: true, snapshot: snap, error: null };
     } catch (e) {
       const code = (e && e.code) || 'PVE_UNREACHABLE';
       const errors = (host.error_count || 0) + 1;
-      const h = await store.updateHost(gc, host.id, { status: 'error', last_error: code, error_count: errors, last_attempt_at: now, next_poll_at: now + backoffMs(cfg.pollSec, errors) });
+      const h = await store.updateHost(gc, host.id, { status: 'error', last_error: code, error_count: errors, last_attempt_at: now, next_poll_at: now + backoffMs(cfg.pollSec, errors) }, now);
       if (errors === 1 || errors % 10 === 0) gc.log.warn('proxmox poll failed', `host ${host.id}`, code, `(${errors}x)`);
       return { host: h || host, ok: false, snapshot: prev, error: code };
     }

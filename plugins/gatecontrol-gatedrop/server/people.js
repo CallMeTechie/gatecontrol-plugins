@@ -130,14 +130,33 @@ async function devicesOf(gc, userId) {
     .map((d) => ({ id: d.id, name: typeof d.name === 'string' && d.name ? d.name.slice(0, 80) : d.id, platform: d.platform || null, online: d.online === true, lastSeen: d.lastSeen || null, via: d.via || null }));
 }
 
+// "seen" timestamps are written at most once per TOUCH_EVERY_MS and person (and when the language changes): every request
+// wrote one row (before 1.5.2) — on a slow disk ~300 ms each
+const TOUCH_EVERY_MS = 10 * 60000;
+const touchedBy = new WeakMap(); // gc → { people: Map(user id → { lang, at }), kiosk: Set(user id) }
+function touchedOf(gc) {
+  let t = touchedBy.get(gc);
+  if (!t) { t = { people: new Map(), kiosk: new Set(), accounts: new Map() }; touchedBy.set(gc, t); }
+  return t;
+}
+
 /** Remember the viewer's language (pushes to them) — never a kiosk device. */
 async function touch(gc, user, lang, now) {
+  const l = lang === 'en' ? 'en' : 'de';
+  const seen = touchedOf(gc).people;
+  const prev = seen.get(user.id);
+  if (prev && prev.lang === l && now - prev.at < TOUCH_EVERY_MS && now >= prev.at) return;
+  if (seen.size >= 5000) seen.clear();
+  seen.set(user.id, { lang: l, at: now });
   await store.run(gc, 'INSERT INTO people (user_id, lang, seen_at) VALUES (?, ?, ?) ON CONFLICT(user_id) DO UPDATE SET lang = excluded.lang, seen_at = excluded.seen_at',
     [user.id, lang === 'en' ? 'en' : 'de', now]);
 }
 
 async function markKiosk(gc, userId, now = Date.now()) {
+  const kiosk = touchedOf(gc).kiosk;
+  if (kiosk.has(userId)) return; // marked already (every request of a wall tablet asked again)
   await store.run(gc, 'INSERT INTO people (user_id, kiosk, seen_at) VALUES (?, 1, ?) ON CONFLICT(user_id) DO UPDATE SET kiosk = 1', [userId, now]);
+  kiosk.add(userId);
 }
 
 async function kioskIds(gc) {
@@ -149,4 +168,4 @@ async function langOf(gc, userId) {
   return r && r.lang === 'en' ? 'en' : 'de';
 }
 
-module.exports = { MESSENGER, SYNOLOGY, FAMILIE, DRIVE, users, available, roles, canShare, folders, linksEnabled, forgetLinks, drive, setDrive, devicesOf, touch, markKiosk, kioskIds, langOf, reset };
+module.exports = { MESSENGER, SYNOLOGY, FAMILIE, DRIVE, users, available, roles, canShare, folders, linksEnabled, forgetLinks, drive, setDrive, devicesOf, touch, markKiosk, kioskIds, langOf, reset, TOUCH_EVERY_MS };

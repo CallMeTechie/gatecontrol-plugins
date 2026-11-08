@@ -163,39 +163,58 @@ async function syncGatewayFull(gc, gatewayId) {
     }
   };
 
+  // fetched first, written in one transaction: one commit for a sync instead of one per changed resource
+  // (unchanged resources are not written at all, store.upsertResource)
+  const sections = [];
   try {
+    const items = [];
     for (const [id, l] of entries(await fetchOk(client.getLights))) {
       const kind = lightKind(l);
       if (!kind) continue;
-      await store.upsertResource(gc, { gateway_id: gw.id, deconz_id: id, deconz_type: 'lights', uniqueid: l.uniqueid || null, kind, name: l.name, capabilities: capsFromLight(l), state: lightStateOf(l) });
-      seen.push(`lights:${id}`); counts[kind === 'plug' ? 'plugs' : 'lights']++;
+      items.push({ gateway_id: gw.id, deconz_id: id, deconz_type: 'lights', uniqueid: l.uniqueid || null, kind, name: l.name, capabilities: capsFromLight(l), state: lightStateOf(l), seen: `lights:${id}`, count: kind === 'plug' ? 'plugs' : 'lights' });
     }
+    sections.push(items);
   } catch { /* best effort */ }
 
   try {
+    const items = [];
     for (const [id, g] of entries(await fetchOk(client.getGroups))) {
-      await store.upsertResource(gc, { gateway_id: gw.id, deconz_id: id, deconz_type: 'groups', kind: 'group', name: g.name, capabilities: { on: true, bri: true, color: 'hs' }, state: groupStateOf(g) });
-      seen.push(`groups:${id}`); counts.groups++;
+      items.push({ gateway_id: gw.id, deconz_id: id, deconz_type: 'groups', kind: 'group', name: g.name, capabilities: { on: true, bri: true, color: 'hs' }, state: groupStateOf(g), seen: `groups:${id}`, count: 'groups' });
       for (const sc of (Array.isArray(g.scenes) ? g.scenes : [])) {
         const sceneKey = `${id}/${sc.id}`;
-        await store.upsertResource(gc, { gateway_id: gw.id, deconz_id: sceneKey, deconz_type: 'scenes', kind: 'scene', name: `${g.name} · ${sc.name}`, capabilities: { group_id: id, scene_id: sc.id } });
-        seen.push(`scenes:${sceneKey}`); counts.scenes++;
+        items.push({ gateway_id: gw.id, deconz_id: sceneKey, deconz_type: 'scenes', kind: 'scene', name: `${g.name} · ${sc.name}`, capabilities: { group_id: id, scene_id: sc.id }, seen: `scenes:${sceneKey}`, count: 'scenes' });
       }
     }
+    sections.push(items);
   } catch { /* best effort */ }
 
   try {
+    const items = [];
     for (const [id, s] of entries(await fetchOk(client.getSensors))) {
       const kind = sensorKind(s);
       if (!kind) continue;
       const rd = sensorReading(s);
-      await store.upsertResource(gc, { gateway_id: gw.id, deconz_id: id, deconz_type: 'sensors', uniqueid: s.uniqueid || null, kind, name: s.name, capabilities: { reading: rd.type }, state: rd });
-      seen.push(`sensors:${id}`); counts[kind === 'switch' ? 'switches' : 'sensors']++;
+      items.push({ gateway_id: gw.id, deconz_id: id, deconz_type: 'sensors', uniqueid: s.uniqueid || null, kind, name: s.name, capabilities: { reading: rd.type }, state: rd, seen: `sensors:${id}`, count: kind === 'switch' ? 'switches' : 'sensors' });
       if (kind === 'sensor') observed.push(sensorObservation(id, s));
     }
+    sections.push(items);
   } catch { /* best effort */ }
 
-  if (seen.length) { await store.markMissing(gc, gw.id, seen); await store.touchGateway(gc, gw.id); }
+  if (sections.some((x) => x.length)) {
+    await store.tx(gc, async () => {
+      for (const items of sections) {
+        try {
+          for (const { seen: key, count, ...it } of items) {
+            await store.upsertResource(gc, it);
+            seen.push(key);
+            counts[count]++;
+          }
+        } catch { /* best effort: the rest of this section stays as it was */ }
+      }
+      if (seen.length) await store.markMissing(gc, gw.id, seen);
+    });
+  }
+  if (seen.length) await store.touchGateway(gc, gw.id);
   return { counts, reachable: answered > 0, sensors: observed };
 }
 
