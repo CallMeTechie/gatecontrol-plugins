@@ -1,4 +1,4 @@
-<!-- version: 1.12.0 -->
+<!-- version: 1.12.1 -->
 # Mail
 
 ## What the plugin does
@@ -102,6 +102,10 @@ When attachments live on a storage target that is unreachable, Mail tries again 
 
 **Free/busy shows “unknown”.**
 The person switched free/busy off or is not in GateControl. Colleagues in Microsoft 365 appear through your Microsoft account.
+
+## New in 1.12.1
+
+- **Less writing when syncing Microsoft 365 calendars:** Mail only writes events and folders when something really changed. On a slow disk (a NAS with hard disks) GateControl stays more responsive.
 
 ## New in 1.12.0
 

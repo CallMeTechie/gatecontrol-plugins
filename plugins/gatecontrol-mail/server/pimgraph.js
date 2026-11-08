@@ -163,17 +163,31 @@ async function storeInstance(gc, cal, x, ctx) {
       Buffer.byteLength(JSON.stringify(f)), now, now]);
     ev = await store.one(gc, 'SELECT * FROM events WHERE id = ?', [Number(r.lastInsertRowid)]);
   } else if (!exception) {
-    // a single event, or an instance as the series has it: the row's fields
-    await store.run(gc, `UPDATE events SET title = ?, location = ?, online_url = ?, description = ?, start = MIN(start, ?), end = MAX(end, ?), all_day = ?, tz = ?, status = ?, busy = ?, private = ?,
-      organizer_json = ?, attendees_json = ?, reminders_json = ?, my_response = ?, etag = ?, change_key = ?, updated_at = ? WHERE id = ?`,
-    [...cols.slice(0, 4), f.start, f.end, ...cols.slice(6), x.seriesMasterId ? ev.etag : (x['@odata.etag'] || ev.etag), x.seriesMasterId ? ev.change_key : (x.changeKey || ev.change_key), now, ev.id]);
-    if (!x.seriesMasterId) await store.run(gc, 'UPDATE events SET start = ?, end = ? WHERE id = ?', [f.start, f.end, ev.id]);
+    // a single event, or an instance as the series has it: the row's fields — written only when one of them changed
+    // (1.12.1: every round rewrote every instance of a series, each a write of ~300 ms on a slow disk)
+    const start = x.seriesMasterId ? Math.min(ev.start, f.start) : f.start;
+    const end = x.seriesMasterId ? Math.max(ev.end, f.end) : f.end;
+    const etag = x.seriesMasterId ? ev.etag : (x['@odata.etag'] || ev.etag);
+    const changeKey = x.seriesMasterId ? ev.change_key : (x.changeKey || ev.change_key);
+    const same = (a, b) => (a === undefined ? null : a) === (b === undefined ? null : b);
+    const names = ['title', 'location', 'online_url', 'description', null, null, 'all_day', 'tz', 'status', 'busy', 'private', 'organizer_json', 'attendees_json', 'reminders_json', 'my_response'];
+    const unchanged = names.every((k, i) => k === null || same(ev[k], cols[i])) && same(ev.start, start) && same(ev.end, end) && same(ev.etag, etag) && same(ev.change_key, changeKey);
+    if (!unchanged) {
+      await store.run(gc, `UPDATE events SET title = ?, location = ?, online_url = ?, description = ?, start = MIN(start, ?), end = MAX(end, ?), all_day = ?, tz = ?, status = ?, busy = ?, private = ?,
+        organizer_json = ?, attendees_json = ?, reminders_json = ?, my_response = ?, etag = ?, change_key = ?, updated_at = ? WHERE id = ?`,
+      [...cols.slice(0, 4), f.start, f.end, ...cols.slice(6), etag, changeKey, now, ev.id]);
+      if (!x.seriesMasterId) await store.run(gc, 'UPDATE events SET start = ?, end = ? WHERE id = ?', [f.start, f.end, ev.id]);
+      ev.updated_at = now;
+    }
   }
   const ov = exception ? pimstore.overrideOf({ ...f, attendees: f.attendees }) : null;
   const cur = await store.one(gc, 'SELECT * FROM occurrences WHERE event_id = ? AND occ = ?', [ev.id, occ]);
   const changed = !cur || cur.start !== f.start || cur.end !== f.end || (cur.override_json || null) !== (ov || null) || cur.remote_id !== x.id;
-  await store.run(gc, 'INSERT OR REPLACE INTO occurrences (event_id, occ, user_id, calendar_id, start, end, all_day, remote_id, override_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-    [ev.id, occ, cal.user_id, cal.id, f.start, f.end, f.allDay ? 1 : 0, x.id, ov]);
+  // the occurrence as stored already → no write
+  if (changed || cur.all_day !== (f.allDay ? 1 : 0) || cur.user_id !== cal.user_id || cur.calendar_id !== cal.id) {
+    await store.run(gc, 'INSERT OR REPLACE INTO occurrences (event_id, occ, user_id, calendar_id, start, end, all_day, remote_id, override_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [ev.id, occ, cal.user_id, cal.id, f.start, f.end, f.allDay ? 1 : 0, x.id, ov]);
+  }
   return { changed: changed || ev.updated_at === now, eventId: ev.id };
 }
 
@@ -216,15 +230,19 @@ async function deltaStep(gc, a, cal, ctx) {
   }
   if (r.status >= 400) throw fail('unreachable', { reason: ms.graphError(r) });
   const j = r.json || {};
-  let changed = false;
-  for (const x of j.value || []) {
-    if (x['@removed']) { if (await removeInstance(gc, cal, x.id)) changed = true; continue; }
-    if ((await storeInstance(gc, cal, x, ctx)).changed) changed = true;
-  }
   const next = j['@odata.nextLink'] || null;
   const done = j['@odata.deltaLink'] || null;
-  await store.run(gc, "UPDATE calendars SET delta = ?, synced_at = CASE WHEN ? THEN ? ELSE synced_at END, state = CASE WHEN ? THEN 'ok' ELSE state END, error_code = NULL WHERE id = ?",
-    [next || done, done ? 1 : 0, Date.now(), done ? 1 : 0, cal.id]);
+  // the page in one transaction (one commit instead of one per instance, 1.12.1)
+  const changed = await store.tx(gc, async () => {
+    let any = false;
+    for (const x of j.value || []) {
+      if (x['@removed']) { if (await removeInstance(gc, cal, x.id)) any = true; continue; }
+      if ((await storeInstance(gc, cal, x, ctx)).changed) any = true;
+    }
+    await store.run(gc, "UPDATE calendars SET delta = ?, synced_at = CASE WHEN ? THEN ? ELSE synced_at END, state = CASE WHEN ? THEN 'ok' ELSE state END, error_code = NULL WHERE id = ?",
+      [next || done, done ? 1 : 0, Date.now(), done ? 1 : 0, cal.id]);
+    return any;
+  });
   return { changed, more: !!next };
 }
 
@@ -239,19 +257,26 @@ async function viewRound(gc, a, cal, ctx, guard) {
     if (r.status === 403) return { consent: true };
     if (r.status >= 400) throw fail('unreachable', { reason: ms.graphError(r) });
     const j = r.json || {};
-    for (const x of j.value || []) {
-      seen.add(x.id);
-      const known = await store.one(gc, 'SELECT o.event_id FROM occurrences o JOIN events e ON e.id = o.event_id WHERE o.calendar_id = ? AND o.remote_id = ? AND (e.change_key = ? OR e.rrule IS NOT NULL)', [cal.id, x.id, x.changeKey || '']);
-      if (known && x.type !== 'exception' && !x.seriesMasterId) continue;
-      if ((await storeInstance(gc, cal, x, ctx)).changed) changed = true;
-    }
+    // a page in one transaction (1.12.1)
+    if (await store.tx(gc, async () => {
+      let any = false;
+      for (const x of j.value || []) {
+        seen.add(x.id);
+        const known = await store.one(gc, 'SELECT o.event_id FROM occurrences o JOIN events e ON e.id = o.event_id WHERE o.calendar_id = ? AND o.remote_id = ? AND (e.change_key = ? OR e.rrule IS NOT NULL)', [cal.id, x.id, x.changeKey || '']);
+        if (known && x.type !== 'exception' && !x.seriesMasterId) continue;
+        if ((await storeInstance(gc, cal, x, ctx)).changed) any = true;
+      }
+      return any;
+    })) changed = true;
     url = j['@odata.nextLink'] || null;
   }
   const have = await store.all(gc, 'SELECT remote_id FROM occurrences WHERE calendar_id = ? AND remote_id IS NOT NULL', [cal.id]);
   const gone = have.filter((r) => !seen.has(r.remote_id)).map((r) => r.remote_id);
   if (gone.length && guard && !(await guard(cal, gone.length, have.length))) return { changed, held: true };
-  for (const id of gone) { await removeInstance(gc, cal, id); changed = true; }
-  await store.run(gc, "UPDATE calendars SET synced_at = ?, state = 'ok', error_code = NULL, window_from = ?, window_to = ? WHERE id = ?", [Date.now(), w.from, w.to, cal.id]);
+  await store.tx(gc, async () => {
+    for (const id of gone) { await removeInstance(gc, cal, id); changed = true; }
+    await store.run(gc, "UPDATE calendars SET synced_at = ?, state = 'ok', error_code = NULL, window_from = ?, window_to = ? WHERE id = ?", [Date.now(), w.from, w.to, cal.id]);
+  });
   return { changed };
 }
 

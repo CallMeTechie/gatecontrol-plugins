@@ -230,6 +230,40 @@ test('Microsoft calendars: the default calendar by delta (a series with an excep
   });
 });
 
+test('Microsoft calendars (1.12.1): a round that brings nothing new writes no event and no occurrence — only the calendar row', async () => {
+  const w = graphWorld();
+  await withMail({ gatecontrol: '1.219.0', fetch: w.fetch, settings: CLIENT }, async (host, c) => {
+    const anna = c.as(ANNA);
+    await anna('POST', 'accounts/microsoft', { code: 'X', ...PKCE, kind: 'business' });
+    await anna('GET', 'calendars');
+    await runs(host, 8);
+    const rows = async (sql) => (await host.gc.db.get(sql)).row.n;
+    const before = { events: await rows('SELECT COUNT(*) AS n FROM events'), occ: await rows('SELECT COUNT(*) AS n FROM occurrences') };
+    assert.ok(before.events >= 3 && before.occ >= 5, JSON.stringify(before));
+    // the default calendar from the start again (a new delta round: every instance comes again) and the other one by view
+    await host.gc.db.run("UPDATE calendars SET delta = NULL WHERE source = 'graph'");
+    const updated = await rows('SELECT MAX(updated_at) AS n FROM events');
+    const store = require('../server/store');
+    const run = store.run;
+    const writes = [];
+    store.run = async (gc, sql, params) => { const r = await run(gc, sql, params); if (r && r.changes) writes.push(sql.trim().replace(/\s+/g, ' ').slice(0, 50)); return r; };
+    try { await runs(host, 6); } finally { store.run = run; }
+    const cal = writes.filter((x) => /\b(events|occurrences|calendars)\b/.test(x));
+    // only the calendar rows (delta link, synced_at, window) — before 1.12.1 every instance rewrote its event and its
+    // occurrence (here 4 + 4 + 1 rows a round)
+    assert.ok(cal.every((x) => /^UPDATE calendars\b/.test(x)), JSON.stringify(cal));
+    assert.ok(cal.length <= 6, JSON.stringify(cal));
+    assert.equal(await rows('SELECT MAX(updated_at) AS n FROM events'), updated, 'no event row touched');
+    assert.deepEqual({ events: await rows('SELECT COUNT(*) AS n FROM events'), occ: await rows('SELECT COUNT(*) AS n FROM occurrences') }, before);
+    // a changed instance is written
+    w.events.get('E1').subject = 'Kundentermin (neu)';
+    w.events.get('E1').changeKey = 'ck2';
+    await host.gc.db.run("UPDATE calendars SET delta = NULL WHERE source = 'graph'");
+    await runs(host, 6);
+    assert.equal((await host.gc.db.get("SELECT title FROM events WHERE remote_id = 'E1'")).row.title, 'Kundentermin (neu)');
+  });
+});
+
 test('Microsoft contacts: the default folder by delta with its photo, a change goes to Graph; Graph has no groups — GateControl keeps them', async () => {
   const w = graphWorld();
   await withMail({ gatecontrol: '1.219.0', fetch: w.fetch, settings: CLIENT }, async (host, c) => {
