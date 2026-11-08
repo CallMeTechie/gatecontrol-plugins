@@ -21,6 +21,14 @@ Dateien der Familie und des Teams auf dem eigenen Speicher – auf diesem Server
     ≤ 16 KB) und `todo_complete`.
   - Ohne den Hub ändert sich nichts: kein Aufruf, keine Einträge.
 
+## 1.26.1
+
+- **Doku: Tresor-Dateien offline in der Android-App.** Die App hält Tresor-Dateien, -Ordner oder den ganzen Tresor über
+  die Markierungen von „Offline verfügbar“ (`PUT nodes/<id>/offline` auf Tresor-Knoten) auf dem Handy – nur den
+  Ciphertext, wie ihn der Server hat; zum Entsperren ohne Netz merkt sie sich die verpackten Schlüssel des Geräts
+  (`GET vaults/<id>/keys`). README (Bedrohungstabelle „Viewing vault files“, Spalte Android) und Handbuch ergänzt. Nur
+  Doku – am Plugin ändert sich nichts.
+
 ## 1.26.0
 
 - **Seite „Erinnerungen“:** `GET memories?date=` → `{ date, home, collections }` – die Sammlungen der privaten Fotos mit
