@@ -37,7 +37,9 @@ async function threadOf(gc, userId, accountId, h) {
   const own = normId(h.messageId);
   if (own) {
     // an answer arrived before it (or the same mail in another folder)
-    const r = await store.one(gc, 'SELECT thread_id FROM messages WHERE user_id = ? AND (in_reply_to = ? OR message_id = ?) AND thread_id IS NOT NULL LIMIT 1', [userId, own, own]);
+    // 1.10.1: two statements on their indexes (messages_msgid, messages_reply) — with OR SQLite read all mail of the person
+    const r = await store.one(gc, 'SELECT thread_id FROM messages WHERE user_id = ? AND message_id = ? AND thread_id IS NOT NULL LIMIT 1', [userId, own])
+      || await store.one(gc, 'SELECT thread_id FROM messages INDEXED BY messages_reply WHERE user_id = ? AND in_reply_to = ? AND thread_id IS NOT NULL LIMIT 1', [userId, own]);
     if (r) return r.thread_id;
   }
   return null;
@@ -177,7 +179,9 @@ async function remove(gc, ids) {
 
 /** The person's bytes on the server: bodies + cached attachments. */
 async function usage(gc, userId) {
-  const b = await store.one(gc, 'SELECT COALESCE(SUM(b.bytes), 0) AS n FROM bodies b JOIN messages m ON m.id = b.message_id WHERE m.user_id = ?', [userId]);
+  // 1.10.1: from the index bodies_bytes — the rows of bodies hold the mail itself (html, text) before `bytes`, SQLite read
+  // every body of the person (the whole database) for this sum, at every background run and GET me
+  const b = await store.one(gc, 'SELECT COALESCE(SUM(b.bytes), 0) AS n FROM messages m JOIN bodies b INDEXED BY bodies_bytes ON b.message_id = m.id WHERE m.user_id = ?', [userId]);
   const a = await store.one(gc, 'SELECT COALESCE(SUM(t.media_bytes), 0) AS n FROM attachments t JOIN messages m ON m.id = t.message_id WHERE m.user_id = ? AND t.media_id IS NOT NULL', [userId]);
   return Number(b.n) + Number(a.n);
 }
@@ -201,7 +205,7 @@ async function evict(gc, userId, quota, now) {
     freed += Number(r.media_bytes) || 0;
   }
   if (used - freed > target) {
-    const bodies = await store.all(gc, `SELECT b.message_id, b.bytes FROM bodies b JOIN messages m ON m.id = b.message_id WHERE m.user_id = ?
+    const bodies = await store.all(gc, `SELECT b.message_id, b.bytes FROM messages m JOIN bodies b INDEXED BY bodies_bytes ON b.message_id = m.id WHERE m.user_id = ?
       ORDER BY m.date, b.used_at LIMIT 5000`, [userId]);
     const gone = [];
     for (const r of bodies) {

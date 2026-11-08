@@ -1,4 +1,4 @@
-<!-- version: 1.10.0 -->
+<!-- version: 1.10.1 -->
 # Mail
 
 ## Was das Plugin kann
@@ -52,6 +52,7 @@ Die Zugangsdaten werden verschlüsselt gespeichert. Die erste Synchronisierung h
 ### Mails
 
 - **Relevant / Sonstige:** Newsletter und automatische Mails landen meist in „Sonstige“, Mails von Leuten, denen du schreibst, in „Relevant“. Ordnest du einen Absender um, merkt sich Mail das.
+- **Unterhaltungen und Filter:** Mit „Mit Anhang“ (oder in Relevant/Sonstige) steht eine Unterhaltung mit ihrer neuesten Mail, die zum Filter passt.
 - **Lesen:** Bilder erst nach „Bilder laden“. Anhänge mit **„In Drive speichern“** (mit Vorschlag für den Ordner) oder „Alle in Drive speichern“.
 - **Schreiben:** „Senden“ geht nach 10 Sekunden raus – bis dahin „Rückgängig“. „Später senden“ plant die Mail. Ist der Server nicht erreichbar, versucht Mail es dreimal; danach kommt die Mitteilung „Eine Mail konnte nicht gesendet werden“.
 - **KI:** „Kurz gesagt“ fasst zusammen, „Zu tun“ findet Aufgaben, dazu Antwortvorschläge.
@@ -98,8 +99,9 @@ Liegen die Anhänge auf einem Speicherziel, das nicht erreichbar ist, versucht M
 **Frei/Gebucht zeigt „unbekannt“.**
 Die Person hat Frei/Gebucht abgeschaltet oder ist nicht in GateControl. Kolleginnen in Microsoft 365 erscheinen über dein Microsoft-Konto.
 
-## Neu in 1.10.0
+## Neu in 1.10.1
 
-- **Arbeitszeit** im Portal einstellen (Kalender-Einstellungen): Tage und „Von“/„Bis“ für Frei/Gebucht und die Terminvorschläge.
+- **Schneller bei großen Postfächern:** Mail liest für den belegten Speicher und den Hintergrundabgleich nicht mehr alle gespeicherten Mails. Der erste Start nach dem Update bereitet das einmal vor – bei sehr vielen Mails dauert das bis zu einer Minute.
+- **„Mit Anhang“** in der Unterhaltungsansicht zeigt jetzt jede Unterhaltung mit einem Anhang, auch wenn die letzte Antwort keinen hat.
 
-Zuletzt in 1.9.1: dieses Handbuch im Reiter „Handbuch“ (GateControl ≥ 1.241.0). In 1.9.0: Frei/Gebucht mit Terminvorschlägen, geteilte GateControl-Kalender und buchbare Ressourcen (Räume, Fahrzeuge, Geräte).
+Zuletzt in 1.10.0: die **Arbeitszeit** im Portal einstellen (Kalender-Einstellungen). In 1.9.1: dieses Handbuch im Reiter „Handbuch“ (GateControl ≥ 1.241.0). In 1.9.0: Frei/Gebucht mit Terminvorschlägen, geteilte GateControl-Kalender und buchbare Ressourcen (Räume, Fahrzeuge, Geräte).

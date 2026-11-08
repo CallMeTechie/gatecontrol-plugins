@@ -1,4 +1,4 @@
-<!-- version: 1.10.0 -->
+<!-- version: 1.10.1 -->
 # Mail
 
 ## What the plugin does
@@ -52,6 +52,7 @@ Credentials are stored encrypted. The first sync fetches the newest mail first.
 ### Reading and writing mail
 
 - **Relevant / Other:** newsletters and automatic mail usually go to “Other”, mail from people you write to goes to “Relevant”. When you move a sender, Mail remembers it.
+- **Conversations and filters:** with “With attachment” (or in Relevant/Other) a conversation shows with its newest mail that matches the filter.
 - **Reading:** pictures only after “Load pictures”. Attachments with **“Save in Drive”** (with a folder suggestion) or “Save all in Drive”.
 - **Writing:** “Send” goes out after 10 seconds – until then “Undo”. “Send later” schedules the mail. When the server is unreachable, Mail tries three times; then the notification “A mail could not be sent” follows.
 - **AI:** “In short” summarises, to-dos lists tasks, plus reply suggestions.
@@ -98,8 +99,9 @@ When attachments live on a storage target that is unreachable, Mail tries again 
 **Free/busy shows “unknown”.**
 The person switched free/busy off or is not in GateControl. Colleagues in Microsoft 365 appear through your Microsoft account.
 
-## New in 1.10.0
+## New in 1.10.1
 
-- Set your **working hours** in the portal (calendar settings): days and “From”/“To” for free/busy and the meeting suggestions.
+- **Faster with large mailboxes:** Mail no longer reads every stored mail for the used storage and the background sync. The first start after the update prepares this once – with very many mails it takes up to a minute.
+- **“With attachment”** in the conversation view now shows every conversation with an attachment, even when the last reply has none.
 
-Last in 1.9.1: this manual in the tab “Manual” (GateControl ≥ 1.241.0). In 1.9.0: free/busy with meeting suggestions, shared GateControl calendars and bookable resources (rooms, vehicles, devices).
+Last in 1.10.0: set your **working hours** in the portal (calendar settings). In 1.9.1: this manual in the tab “Manual” (GateControl ≥ 1.241.0). In 1.9.0: free/busy with meeting suggestions, shared GateControl calendars and bookable resources (rooms, vehicles, devices).

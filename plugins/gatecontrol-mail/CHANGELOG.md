@@ -2,6 +2,26 @@
 
 Alle E-Mail-Konten an einem Ort – im eigenen Tab der GateControl-Apps und im Portal.
 
+## 1.10.1
+
+- **Große Postfächer bremsen GateControl nicht mehr.** Der belegte Speicher einer Person (bei jedem Hintergrundlauf
+  je Konto, alle 15 Sekunden, und bei jedem Öffnen der App) wurde aus den gespeicherten Mails selbst summiert: SQLite
+  las dafür jeden Mailtext mit seinen Überlaufseiten – praktisch die ganze Datenbank, bei 50 000 Mails rund 420 MB je
+  Summe (kalt 0,46 s, auf einer Festplatte im NAS Sekunden). Diese Lesungen liefen zwar im Datenbank-Thread des
+  Plugins, legten aber die Platte für den ganzen Server lahm. Jetzt kommt die Summe aus dem neuen Index
+  `bodies_bytes` (16 ms, nichts von der Platte); ebenso Kalender und Kontaktfotos.
+- **Indizes für den Hintergrundlauf und die Listen** (Migration `010_speed.sql`): die Unterhaltung einer neuen Mail
+  (In-Reply-To, Microsoft-Unterhaltung – vorher las jede neue Mail alle Mails der Person), Ungelesene je Posteingang
+  (GET me, Ordner, Zähler), Mails ohne Text (Nachladen), Anhänge zum Ablegen, Aufbewahrung, „Zum Ablegen“ (auch
+  `tofile_count` für Drive). Der erste Start nach dem Update legt die Indizes an; bei einem sehr großen Postfach dauert
+  das einmalig bis zu einer Minute.
+- **„Mit Anhang“ in der Unterhaltungsansicht** verschluckte Unterhaltungen, deren neueste Mail keinen Anhang hatte
+  (ebenso Relevant/Sonstige, wenn die neueste Mail im anderen Reiter lag). Jetzt steht die Unterhaltung mit ihrer
+  neuesten Mail, die zum Filter passt.
+- Tests mit 30 000 Mails in drei Konten: jede Anweisung von GET me, Ordnern, Listen, „Zum Ablegen“ und zwei
+  Hintergrundläufen unter 200 ms; die Pläne nutzen die Indizes.
+- Keine neue Berechtigung. Mindestversion bleibt GateControl 1.219.0.
+
 ## 1.10.0
 
 - **Arbeitszeit im Portal.** Kalender › Kalender-Einstellungen hat jetzt „Arbeitszeit“: die Arbeitstage (Mo–So) und
