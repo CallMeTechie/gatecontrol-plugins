@@ -8,6 +8,12 @@ bleibt auf dem eigenen Server. Einrichtung, Risiken, Datenschutz und die App-API
 an; das Plugin nutzt die, die auch die Open-Source-Projekte ring-client-api (Homebridge) und
 python-ring-doorbell (Home Assistant) verwenden. Sie kann sich jederzeit ändern oder wegfallen.
 
+## 1.7.1
+
+- **Weniger Schreibvorgänge:** findet die Abfrage (alle 30 s) ein Schloss so vor wie zuletzt, rücken nur seine Zeiten (`checked_at`, `updated_at`) im Speicher vor; `lock_state` wird geschrieben, sobald sich etwas anderes ändert, und sonst alle 5 Minuten – vorher bei jeder Abfrage eine Zeile und ein COMMIT je Schloss (im Protokoll von GateControl 1.253.5: COMMIT 190 Mal in der Stunde, je ~300 ms auf einem langsamen Datenträger). Seiten, Apps, die Sicherheitsprüfungen und das automatische Abschließen lesen die neuesten Zeiten. Die Uhrzeit der Antwort der Bridge (`timestamp` in den Rohdaten) zählt nicht als Änderung.
+- Ring: „zuletzt erreicht“ (kv.set) höchstens alle 10 Minuten statt jede Minute; derselbe Fehler noch einmal wird nicht neu gespeichert.
+- Test: eine Stunde Abfragen zweier unveränderter Schlösser schreibt `lock_state` höchstens 26 Mal statt 240, eine Änderung sofort (`writes.test.js`).
+
 ## 1.7.0
 Braucht weiterhin **GateControl ≥ 1.169.0**; HTTPS-Kameras, `hasAudio` und der Player für Firefox brauchen **GateControl ≥ 1.242.0** und
 Gateway ≥ 1.29.0 – ältere: alles andere wie bisher (`hasAudio`/`width` dann `null`, Live-Bild wie bisher per `<video src>`).

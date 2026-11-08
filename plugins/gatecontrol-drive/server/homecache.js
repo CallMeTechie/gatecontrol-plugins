@@ -84,7 +84,9 @@ async function meta(gc, key) {
   return r ? r.value : null;
 }
 
-function setMeta(gc, key, value) {
+/** Only a changed value is written (1.27.1: the dirty mark was written again with every change of a file). */
+async function setMeta(gc, key, value) {
+  if ((await meta(gc, key)) === String(value)) return { changes: 0 };
   return store.run(gc, 'INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value', [key, String(value)]);
 }
 

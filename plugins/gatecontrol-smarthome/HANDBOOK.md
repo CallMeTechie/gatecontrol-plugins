@@ -1,4 +1,4 @@
-<!-- version: 1.9.0 -->
+<!-- version: 1.9.1 -->
 # Smart Home
 
 ## What the plugin does
@@ -100,6 +100,10 @@ Set the device up “By hand …”. The instructions are in the window.
 
 **A zigbee2mqtt device cannot be switched (“zigbee2mqtt on the gateway is not answering right now”).**
 Look at the gateway's tab “Radio”: does zigbee2mqtt run, are edge and MQTT on? New devices show up within half a minute.
+
+## New in 1.9.1
+
+- **Less writing:** Smart Home only stores devices when their state changed. “Last seen” of a gateway is accurate to the minute. On a slow disk (a NAS with hard disks) GateControl stays more responsive.
 
 ## New in 1.9.0
 

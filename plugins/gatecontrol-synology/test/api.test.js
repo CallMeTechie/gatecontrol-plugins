@@ -9,7 +9,8 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { fakeDsm, withHost, asAdmin, addNas, ADMIN, ADA, ACCOUNT, PASSWORD, netError } = require('./helpers');
 
-const due = (host, id) => host.gc.db.run('UPDATE nas SET next_poll_at = 0 WHERE id = ?', [id]);
+// through the store: since 1.2.2 it keeps the poll times in memory between writes (a direct UPDATE would not be seen)
+const due = (host, id) => require('../server/store').updateNas(host.gc, id, { next_poll_at: 0 });
 const nasRow = async (host, id) => (await host.gc.db.get('SELECT * FROM nas WHERE id = ?', [id])).row;
 
 /** Everything that left the plugin (answers, rendered page) and its log, as one string. */

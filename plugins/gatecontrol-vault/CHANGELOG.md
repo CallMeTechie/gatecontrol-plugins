@@ -2,6 +2,11 @@
 
 Passwort-Manager auf dem eigenen GateControl-Server – Ende-zu-Ende verschlüsselt.
 
+## 1.4.3
+
+- **Weniger Schreibvorgänge:** die Person (`people`) und „zuletzt gesehen“ des Tresor-Kontos (`accounts.seen_at`) höchstens alle 10 Minuten (die Sprache sofort, wenn sie sich ändert), ein Wandtablet einmal als Kiosk-Gerät – vorher bei jeder Anfrage und jedem Abgleich der Apps (im Protokoll von GateControl 1.253.5 je ~300 ms auf einem langsamen Datenträger).
+- Test: eine Stunde Abgleich alle 30 s schreibt beides höchstens 6 Mal (`writes.test.js`).
+
 ## 1.4.2
 
 - Handbuch im Reiter „Handbuch“ (GateControl ≥ 1.241.0): `HANDBUCH.md` / `HANDBOOK.md` im Paket, in `plugin.json` unter `handbook`. Ältere GateControl-Versionen ignorieren es; die Mindestversion bleibt `>=1.197.0`.

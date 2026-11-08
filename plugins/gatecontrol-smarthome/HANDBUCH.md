@@ -1,4 +1,4 @@
-<!-- version: 1.9.0 -->
+<!-- version: 1.9.1 -->
 # Smart Home
 
 ## Was das Plugin kann
@@ -100,6 +100,10 @@ Richte das Gerät „Von Hand …“ ein. Die Anleitung steht im Fenster.
 
 **Ein Gerät von zigbee2mqtt lässt sich nicht schalten („zigbee2mqtt auf dem Gateway antwortet gerade nicht“).**
 Im Reiter „Funk“ des Gateways nachsehen: Läuft zigbee2mqtt, sind Edge und MQTT an? Neue Geräte erscheinen spätestens nach einer halben Minute.
+
+## Neu in 1.9.1
+
+- **Weniger Schreibarbeit:** Smart Home speichert Geräte nur noch, wenn sich ihr Zustand geändert hat. „Zuletzt gesehen“ eines Gateways geht auf die Minute genau. Auf einem langsamen Datenträger (NAS mit Festplatten) bleibt GateControl dadurch flüssiger.
 
 ## Neu in 1.9.0
 

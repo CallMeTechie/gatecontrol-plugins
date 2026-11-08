@@ -1,4 +1,4 @@
-<!-- version: 1.4.2 -->
+<!-- version: 1.4.3 -->
 # Vault
 
 ## Was das Plugin kann
@@ -84,6 +84,10 @@ Jemand hat den Eintrag inzwischen geändert. Wähle „Meine Fassung speichern�
 
 **Die WLAN-Karte auf dem Tablet zeigt ein altes Passwort.**
 Eine Freigabe ist eine Kopie. Nach einer Änderung am Eintrag bietet der Eintrag „Aktualisieren“ an.
+
+## Neu in 1.4.3
+
+- **Weniger Schreibarbeit:** „Zuletzt gesehen“ eines Kontos geht jetzt auf 10 Minuten genau. Auf einem langsamen Datenträger (NAS mit Festplatten) bleibt GateControl dadurch flüssiger.
 
 ## Neu in 1.4.2
 

@@ -2,6 +2,11 @@
 
 Škoda-Fahrzeuge (MySkoda) als GateControl-Plugin – bisher fest in GateControl eingebaut.
 
+## 1.6.2
+
+- **Weniger Schreibvorgänge:** ein bekanntes Fahrzeug mit demselben Namen und Modell und derselbe Kontostatus (`ok` nach jedem Abgleich) werden nicht noch einmal geschrieben.
+- Test: zehn Abgleiche ohne Neues schreiben nichts (`writes.test.js`).
+
 ## 1.6.1
 
 - Handbuch im Reiter „Handbuch“ (GateControl ≥ 1.241.0): `HANDBUCH.md` / `HANDBOOK.md` im Paket, in `plugin.json` unter `handbook`. Ältere GateControl-Versionen ignorieren es; die Mindestversion bleibt `>=1.186.0`.

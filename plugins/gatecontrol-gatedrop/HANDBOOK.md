@@ -1,4 +1,4 @@
-<!-- version: 1.5.1 -->
+<!-- version: 1.5.2 -->
 # GateDrop
 
 ## What the plugin does
@@ -74,6 +74,10 @@ Send again later. Blocked files are never passed on.
 
 **A send says “Removed by the admin”.**
 An administrator deleted its files on the server.
+
+## New in 1.5.2
+
+- **Less writing:** GateDrop no longer stores who was there on every request of the apps. On a slow disk (a NAS with hard disks) GateControl stays more responsive.
 
 ## New in 1.5.1
 

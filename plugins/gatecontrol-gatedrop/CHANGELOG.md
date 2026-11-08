@@ -2,6 +2,11 @@
 
 Teilen wie Quick Share – über den eigenen GateControl-Server.
 
+## 1.5.2
+
+- **Weniger Schreibvorgänge:** die Person (`people`: Sprache, zuletzt gesehen) wird höchstens alle 10 Minuten geschrieben (oder sofort, wenn sich die Sprache ändert), ein Wandtablet einmal als Kiosk-Gerät markiert – vorher bei jeder Anfrage jeder App (im Protokoll von GateControl 1.253.5 je ~300 ms auf einem langsamen Datenträger).
+- Test: eine Stunde Abfragen alle 30 s schreibt die Person höchstens 6 Mal (`writes.test.js`).
+
 ## 1.5.1
 
 - Handbuch im Reiter „Handbuch“ (GateControl ≥ 1.241.0): `HANDBUCH.md` / `HANDBOOK.md` im Paket, in `plugin.json` unter `handbook`. Ältere GateControl-Versionen ignorieren es; die Mindestversion bleibt `>=1.193.0`.

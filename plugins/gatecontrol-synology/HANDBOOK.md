@@ -1,4 +1,4 @@
-<!-- version: 1.2.1 -->
+<!-- version: 1.2.2 -->
 # NAS (Synology)
 
 ## What the plugin does
@@ -78,6 +78,10 @@ DSM blocks addresses after repeated failed sign-ins. Check user name and passwor
 
 **GateDrop cannot save anything.**
 The folder is not shared under “Folders for GateDrop”, or the DSM account lacks write access.
+
+## New in 1.2.2
+
+- **Less writing:** Synology only stores the NAS status every 5 minutes; you still see the latest check. On a slow disk (a NAS with hard disks) GateControl stays more responsive.
 
 ## New in 1.2.1
 
