@@ -117,6 +117,8 @@ async function syncFolders(gc, a) {
   for (const x of found) {
     const have = rows.find((r) => r.remote_id === x.id);
     if (have) {
+      // as stored already (the usual folder list) → no write (1.12.1)
+      if (have.path === x.path && have.name === x.name && (have.role ?? null) === (x.role ?? null) && have.remote_total === (x.total || 0) && have.remote_unread === (x.unread || 0)) continue;
       await store.run(gc, 'UPDATE folders SET path = ?, name = ?, role = ?, remote_total = ?, remote_unread = ? WHERE id = ?', [x.path, x.name, x.role, x.total || 0, x.unread || 0, have.id]);
     } else {
       await store.run(gc, 'INSERT INTO folders (account_id, path, name, delim, role, remote_id, remote_total, remote_unread) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',

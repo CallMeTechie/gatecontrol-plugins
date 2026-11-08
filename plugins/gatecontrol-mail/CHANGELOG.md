@@ -2,6 +2,12 @@
 
 Alle E-Mail-Konten an einem Ort – im eigenen Tab der GateControl-Apps und im Portal.
 
+## 1.12.1
+
+- **Weniger Schreibvorgänge beim Kalenderabgleich (Microsoft 365):** ein Termin, eine Serie und ihre Vorkommen werden nur noch geschrieben, wenn sich etwas geändert hat – vorher schrieb jeder Abgleich jedes Vorkommen einer Serie neu (Termin-Zeile und `occurrences`, im Protokoll von GateControl 1.253.5 je ~300 ms auf einem langsamen Datenträger, 500 Mal in der Stunde). Eine Seite des Delta-Abgleichs und eine Seite der Kalenderansicht laufen in **einer** Transaktion; dass ein Abgleich nichts Neues brachte, meldet er jetzt auch so (kein `calendar`-Live-Ereignis, keine neue Kalenderversion).
+- Ordnerliste von Microsoft-Konten: ein Ordner wird nur geschrieben, wenn sich Pfad, Name, Rolle oder die Zähler geändert haben; der Zustand von Kalender und Kontakten eines Kontos (`pim_state`) nur, wenn er sich ändert.
+- Test: eine Runde ohne Neues schreibt weder Termin noch Vorkommen (`graphpim.test.js`).
+
 ## 1.12.0
 
 - **Microsoft To Do für „Notizen & Aufgaben“:** drei neue Dienste, nur für `gatecontrol-notizen`, je `maxPerHour: 600`:

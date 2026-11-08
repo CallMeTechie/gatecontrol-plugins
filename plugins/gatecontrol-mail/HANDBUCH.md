@@ -1,4 +1,4 @@
-<!-- version: 1.12.0 -->
+<!-- version: 1.12.1 -->
 # Mail
 
 ## Was das Plugin kann
@@ -102,6 +102,10 @@ Liegen die Anhänge auf einem Speicherziel, das nicht erreichbar ist, versucht M
 
 **Frei/Gebucht zeigt „unbekannt“.**
 Die Person hat Frei/Gebucht abgeschaltet oder ist nicht in GateControl. Kolleginnen in Microsoft 365 erscheinen über dein Microsoft-Konto.
+
+## Neu in 1.12.1
+
+- **Weniger Schreibarbeit beim Kalenderabgleich mit Microsoft 365:** Mail schreibt Termine und Ordner nur noch, wenn sich wirklich etwas geändert hat. Auf einem langsamen Datenträger (NAS mit Festplatten) bleibt GateControl dadurch flüssiger.
 
 ## Neu in 1.12.0
 
