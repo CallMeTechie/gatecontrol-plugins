@@ -1,4 +1,4 @@
-<!-- version: 1.26.0 -->
+<!-- version: 1.26.1 -->
 # Drive
 
 ## What the plugin does
@@ -59,6 +59,7 @@ A vault folder stays end-to-end encrypted while you look at a file in it:
 - **No screenshots:** in the Android app and on Windows the viewer cannot be captured and does not show in the recent apps.
 - **The server sees nothing new:** it serves encrypted data and the viewer's program only. Administrators still cannot open vaults.
 - **Limits:** very large files, office files and, in the browser, videos are not shown – you get a note and can download the file on purpose or view it in the app.
+- **Offline (Android app):** In a vault, switch on “Available offline” for a file or a folder (menu ⋮) or “Keep the whole vault offline” at the top. The phone then keeps only the encrypted content, exactly as the server has it. As always a file opens only after unlocking, in memory only – also without a connection. For that the phone keeps the wrapped vault key; it stays protected by the phone's device key. If the device is removed from the vault or you sign out, the app deletes the vault's offline files.
 
 ## Permissions
 
@@ -109,6 +110,10 @@ Full screen in the portal needs GateControl 1.244.0. Older versions show the vid
 
 **At home the photos do not show up faster.**
 The previews reach the gateway bit by bit (a few hundred per run, every 15 minutes). Check at the gateway under **Gateways › Home cache** that it is “on” and that “Photos” or “Drive” are switched on. Previews from the home network need GateControl 1.249.0 and a current app.
+
+## New in 1.26.1
+
+- **Vault files offline (Android app):** Files, folders or the whole vault can be kept offline on the phone – encrypted only; a file opens after unlocking, in memory, also without a connection (see “Viewing files in a vault”). Nothing changes on the server.
 
 ## New in 1.26.0
 
