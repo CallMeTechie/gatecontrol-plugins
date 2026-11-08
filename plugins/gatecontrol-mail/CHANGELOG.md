@@ -2,6 +2,25 @@
 
 Alle E-Mail-Konten an einem Ort – im eigenen Tab der GateControl-Apps und im Portal.
 
+## 1.11.0
+
+- **„Zu tun“ abhaken:** Ein Punkt aus „Zu tun“ der KI lässt sich jetzt erledigen – im Portal (antippen › „Erledigt“ /
+  „Wieder offen“, erledigte sind durchgestrichen) und über `POST ai/<id>/todo/<index> { action: 'done' | 'open' }` →
+  `{ todo }`. Jeder Punkt in `GET ai/<id>` trägt dazu `key` (kurze Prüfsumme aus Art und Text) und `done`; eine neue
+  KI-Auswertung mit demselben Punkt behält den Haken. Neue Tabelle `todo_done`.
+- **„Zu tun“ und markierte Mails in „Notizen & Aufgaben“:** Ist das Plugin „Notizen & Aufgaben“ (`gatecontrol-notizen`)
+  installiert, stehen dort die Punkte aus „Zu tun“ (KI-Auswertungen der letzten 30 Tage, mit Datum und Uhrzeit in der
+  Zeitzone der Person, Beträge als Chip) und die markierten Mails (die neuesten 200 je Person, nicht aus Papierkorb oder
+  Spam) – nur für die Person des Kontos, solange sie Mail nutzen darf. Konten der Art „geschäftlich“ zählen als
+  „Arbeit“ (`area: 'work'`), das Konto ist die Gruppe. Abhaken dort ist „Erledigt“ in Mail bzw. entfernt die
+  Markierung (auch auf dem Server); Rückgängig markiert die Mail wieder. Antippen öffnet die Mail (`message/<id>`).
+  - Mail schickt nur echte Änderungen (`gatecontrol-notizen:todo_changed`, Vertrag v1, Tabelle `todo_sent`):
+    höchstens einmal pro Minute im Hintergrund und wenige Sekunden nach einer Änderung (Markierung, „Zu tun“, Mail
+    verschoben); viele in einem Aufruf. Neue Indizes für markierte Mails und KI-Ergebnisse.
+  - Neue Dienste für den Hub (nur `gatecontrol-notizen`, je 600 Aufrufe pro Stunde): `todo_items` (seitenweise,
+    ≤ 16 KB) und `todo_complete`.
+  - Ohne den Hub ändert sich nichts: kein Aufruf, keine Einträge.
+
 ## 1.10.1
 
 - **Große Postfächer bremsen GateControl nicht mehr.** Der belegte Speicher einer Person (bei jedem Hintergrundlauf

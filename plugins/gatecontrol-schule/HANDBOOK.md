@@ -1,4 +1,4 @@
-<!-- version: 1.7.2 -->
+<!-- version: 1.8.0 -->
 # School
 
 ## What the plugin does
@@ -15,7 +15,7 @@
 
 ## Requirements
 
-- GateControl **1.196.0** or later.
+- GateControl **1.216.0** or later.
 - A **WebUntis account** of the school: student account or parent account.
 - For attachments in Drive: the Drive plugin 1.4.0 or later.
 - For rules, pick-up and the wall tablet: the Family plugin (1.12.0 or 1.13.0 or later).
@@ -55,6 +55,7 @@ Every signed-in person can link their **own student account**: in the portal und
 - **Page and portal tab “School”:** a card per child (today from–to, cancellations, next test), below it the week Mon–Fri (day by day on the phone) and the lists **changes**, **tests**, **homework**, **messages** and **absences**. Cancellations are struck through in red, substitutions orange.
 - **Messages:** a tap opens the full text with attachments. **“Save to Drive”** files an attachment in Drive (without a chosen folder in the family area under “Schule › child”). When the school asks for a read confirmation, **“Confirm reading”** sends it – only after a question.
 - **App:** timetable, messages and absences, Start tile “School · name” and a widget per child.
+- **“Notes & Tasks”** (when installed): every child's homework and tests show there for the child and the recipients. Ticking off homework there (child or parents) counts in School too – it is done everywhere and the reminder the evening before goes away. What WebUntis already reports as done cannot be undone. Tests are only shown.
 - **Notifications:** timetable changes, tests, homework, school messages, absences. What is found during the quiet time arrives at its end. The first poll only records the state and reports nothing.
 
 ## Permissions
@@ -81,6 +82,11 @@ Is the child assigned to a GateControl user, or are recipients entered? Is it qu
 
 **Attachments do not end up in Drive.**
 Drive must be installed and the person needs a Drive seat. For automatic saving a recipient of the child needs a Drive seat and a family in Drive.
+
+## New in 1.8.0
+
+- **Homework and tests in “Notes & Tasks”:** with the plugin “Notes & Tasks” they show there for the child and the parents; homework can be ticked off there and then counts as done in School too.
+- Needs GateControl 1.216.0 now.
 
 ## New in 1.7.2
 

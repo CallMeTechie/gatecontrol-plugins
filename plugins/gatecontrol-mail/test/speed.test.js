@@ -130,6 +130,22 @@ test(`großes Postfach (${N} Mails, drei Konten): jede Anweisung < ${LIMIT_MS} m
   const me = (await anna('GET', 'me')).json;
   assert.equal(me.limits.usedBytes, rows);
   assert.deepEqual([me.unread.all, Object.values(me.unread.byAccount).sort()], [200, [100, 100]]);
+
+  // 1.11.0: the items of „Notizen & Aufgaben“ (server/notizen.js) — 600 flagged mails, 2000 AI results — on their indexes
+  await db.run('UPDATE messages SET flagged = 1 WHERE id % 50 = 0');
+  await db.exec('BEGIN');
+  for (const m of (await db.query('SELECT id FROM messages WHERE id % 15 = 0 LIMIT 2000')).rows) {
+    await db.run('INSERT INTO ai_results (message_id, summary, todos_json, replies_json, at) VALUES (?, NULL, ?, \'[]\', ?)', [m.id, JSON.stringify([{ kind: 'task', text: `Aufgabe ${m.id}` }]), Date.now() - (m.id % 40) * 86400000]);
+  }
+  await db.exec('COMMIT');
+  const notizen = require('../server/notizen');
+  let items = null;
+  const w2 = await timed(async () => { items = await notizen.collect(host.gc, Date.now()); });
+  assert.deepEqual([...w2].filter(([, ms]) => ms >= LIMIT_MS).map(([sql, ms]) => `${Math.round(ms)} ms ${sql}`), [], 'statements of the items: 200 ms or more');
+  assert.ok(items.filter((x) => x.id.startsWith('flag:')).length >= 200 && items.some((x) => x.id.startsWith('todo:')));
+  assert.match(await plan(db, `SELECT m.id FROM messages m JOIN folders f ON f.id = m.folder_id WHERE m.user_id = ? AND m.flagged = 1 ORDER BY m.date DESC LIMIT ?`, [ANNA.id, 200]), /messages_flagged/);
+  assert.match(await plan(db, `SELECT r.message_id FROM ai_results r JOIN messages m ON m.id = r.message_id JOIN folders f ON f.id = m.folder_id
+    WHERE r.at >= ? AND r.todos_json <> '[]' ORDER BY r.at DESC LIMIT ?`, [0, 2000]), /ai_results_at/);
 }));
 
 test('„mit Anhang“ und Relevant/Sonstige in der Unterhaltungsansicht: die Unterhaltung bleibt, mit ihrer neuesten passenden Mail', () => withMail({}, async (host, c) => {

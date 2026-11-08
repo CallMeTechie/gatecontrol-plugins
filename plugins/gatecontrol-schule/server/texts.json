@@ -380,7 +380,9 @@
   "error.drive.exists": "In Drive gibt es dort schon einen Ordner mit diesem Namen.",
   "error.drive.rate_limited": "Gerade zu viele Anfragen an Drive – bitte in ein paar Minuten noch einmal.",
   "error.drive.too_large": "Der Anhang ist für Drive zu groß.",
-  "error.drive.failed": "Speichern in Drive hat nicht geklappt. Bitte später noch einmal."
+  "error.drive.failed": "Speichern in Drive hat nicht geklappt. Bitte später noch einmal.",
+  "notizen.homework": "Hausaufgabe",
+  "notizen.exam": "Prüfung"
  },
  "en": {
   "common.ok": "OK",
@@ -763,6 +765,8 @@
   "error.drive.exists": "There is a folder of this name there in Drive already.",
   "error.drive.rate_limited": "Too many requests to Drive right now – please try again in a few minutes.",
   "error.drive.too_large": "The attachment is too large for Drive.",
-  "error.drive.failed": "Saving to Drive did not work. Please try again later."
+  "error.drive.failed": "Saving to Drive did not work. Please try again later.",
+  "notizen.homework": "Homework",
+  "notizen.exam": "Exam"
  }
 }

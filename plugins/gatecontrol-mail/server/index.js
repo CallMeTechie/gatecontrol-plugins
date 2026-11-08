@@ -16,7 +16,9 @@
 // account in what is left of the run —, the outbox, reminders, account pictures, AI sorting, filing, quota and retention,
 // since 1.5.0 the attachments of 1.4 into their media area — storage.js), render (the portal tab, the admin pages), appVisible / portalVisible (who may use Mail), mediaAccess
 // (attachments, draft files and account pictures of the person), service (new_draft, since 1.6.0 calendar_list and
-// calendar_add, since 1.7.0 tofile_count for Drive — services.js), settingsChanged.
+// calendar_add, since 1.7.0 tofile_count for Drive — services.js; since 1.11.0 todo_items / todo_complete for „Notizen &
+// Aufgaben“ — notizen.js), settingsChanged. Since 1.11.0 the AI's „Zu tun“ and flagged mails go to that hub
+// (gatecontrol-notizen:todo_changed, only what changed — notizen.js, todohub.js).
 
 const store = require('./store');
 const config = require('./config');
@@ -38,6 +40,7 @@ const overlays = require('./overlays');
 const reminders = require('./reminders');
 const storage = require('./storage');
 const services = require('./services');
+const notizen = require('./notizen');
 const scan = require('./scan');
 const { t } = require('./text');
 const { STATUS, fail, isKnown } = require('./util');
@@ -77,6 +80,8 @@ async function clean(gc, now) {
   }
   // device sign-ins nobody finished, drafts' uploads that never became a draft are GateControl's (24 h unclaimed)
   await store.run(gc, 'DELETE FROM ms_device WHERE expires_at < ?', [now - 86400000]);
+  // 1.11.0: ticks of mails that are gone („Notizen & Aufgaben“)
+  try { await notizen.purge(gc, now); } catch (e) { gc.log.warn('to-do retention failed', (e && (e.code || e.message)) || 'error'); }
 }
 
 module.exports = {
@@ -90,10 +95,14 @@ module.exports = {
     cardmerge.reset();
     overlays.reset();
     storage.reset();
+    // 1.11.0: „Notizen & Aufgaben“ — a fresh push state; is the hub there (asks nobody)?
+    notizen.source.reset();
+    await notizen.source.available(gc);
     engine.start(gc);
   },
 
   async stop() {
+    notizen.source.stop();
     compose.stop();
     await engine.stop();
   },
@@ -118,7 +127,10 @@ module.exports = {
       if (!isMe && !licence.valid) throw fail('not_licensed');
       if (!isMe && !seat) throw fail('no_seat');
       const ctx = { userId: req.user.id, userName: req.user.name || '', lang, seat, licence };
-      return { status: 200, json: await api.route(gc, ctx, req, s) };
+      const json = await api.route(gc, ctx, req, s);
+      // 1.11.0: a flag, a to-do or a mail changed — „Notizen & Aufgaben“ gets the difference in a few seconds
+      if (String(req.method || 'GET').toUpperCase() !== 'GET' && (s[0] === 'messages' || s[0] === 'ai')) notizen.source.soon(gc);
+      return { status: 200, json };
     } catch (e) {
       if (!isKnown(e) && !(e && HOST_CODES[e.code])) gc.log.warn('request failed', req && req.method, String((req && req.path) || '').split('/').slice(0, 2).join('/'), (e && (e.code || e.message)) || 'error');
       return errorResponse(e, lang);
@@ -179,6 +191,8 @@ module.exports = {
     try { await engine.filesLater(gc); } catch (e) { gc.log.warn('attachments later failed', (e && (e.code || e.message)) || 'error'); }
     try { await storage.adopt(gc, Date.now()); } catch (e) { gc.log.warn('area move failed', (e && (e.code || e.message)) || 'error'); }
     try { await clean(gc, Date.now()); } catch (e) { gc.log.warn('clean failed', (e && (e.code || e.message)) || 'error'); }
+    // 1.11.0: „Zu tun“ and flagged mails to „Notizen & Aufgaben“ — only what changed, at most once a minute (never throws)
+    await notizen.source.tick(gc, Date.now());
   },
 
   /** The app tab: only for people the administrator allows. */
@@ -206,6 +220,9 @@ module.exports = {
    * Drive's overview).
    */
   async service(call, gc) {
+    // 1.11.0: todo_items / todo_complete for „Notizen & Aufgaben“ (gatecontrol-notizen only) — notizen.js
+    const hub = await notizen.source.service(gc, call);
+    if (hub !== undefined) return hub;
     return services.handle(gc, call);
   },
 

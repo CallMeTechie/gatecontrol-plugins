@@ -632,7 +632,8 @@
       if (r.todos && r.todos.length) {
         body.appendChild(h('div', { class: 'mp-chips' }, r.todos.map(function (td, i) {
           var label = td.text + (td.amount != null ? ' · ' + td.amount + ' ' + (td.currency || '') : '');
-          return h('button', { type: 'button', class: 'mp-chip', on: { click: function () { todoDialog(m, td, i); } } }, [icon(td.kind === 'event' || td.kind === 'deadline' ? 'cal' : 'spark', 13), label]);
+          // 1.11.0: a to-do ticked off (here or in „Notizen & Aufgaben“) is struck through
+          return h('button', { type: 'button', class: 'mp-chip', attrs: td.done ? { style: 'text-decoration:line-through;opacity:.65' } : {}, on: { click: function () { todoDialog(m, td, i, function () { api('GET', 'ai/' + m.id).then(show, function () {}); }); } } }, [icon(td.done ? 'check' : (td.kind === 'event' || td.kind === 'deadline' ? 'cal' : 'spark'), 13), label]);
         })));
       }
       if (r.replies && r.replies.length) {
@@ -647,9 +648,13 @@
     return box;
   }
 
-  function todoDialog(m, td, i) {
+  function todoDialog(m, td, i, changed) {
     var err = h('p', { class: 'dp-err' });
     var acts = [btn(T('p.close'), closeDialog)];
+    // 1.11.0: tick it off (or open it again) — the same in „Notizen & Aufgaben“
+    acts.push(btn(td.done ? T('p.todo_reopen') : T('p.todo_done'), function () {
+      api('POST', 'ai/' + m.id + '/todo/' + i, { action: td.done ? 'open' : 'done' }).then(function () { closeDialog(); if (changed) changed(); }, function (e) { err.textContent = errText(e); });
+    }, { icon: td.done ? null : 'check' }));
     if (has('familyCalendar') && td.date) {
       acts.push(btn(T('p.to_family_calendar'), function () {
         api('POST', 'ai/' + m.id + '/todo/' + i, { action: 'family_calendar' }).then(function (r) { closeDialog(); toast(T('p.saved_in', { where: r.where })); }, function (e) { err.textContent = errText(e); });

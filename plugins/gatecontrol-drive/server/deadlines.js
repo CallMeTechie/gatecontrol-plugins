@@ -8,6 +8,9 @@
 //                                      by date, ≤ 500
 //   POST   deadlines/<id>/remind     { daysBefore: 0…90 } → { deadline } — the viewer's reminder (read is enough)
 //   DELETE deadlines/<id>/remind     → { deadline }
+//   POST   deadlines/<id>/done       → { deadline } — ticked off (paid, cancelled …) for everyone who reads the file; its
+//   DELETE deadlines/<id>/done       → { deadline }   reminders no longer go out (since 1.27.0, also from „Notizen &
+//                                      Aufgaben“ — notizen.js)
 //   POST   deadlines/<id>/calendar   { target? } → { deadline } — into a calendar (since 1.14.0 the family calendar,
 //                                      feature deadlineCalendar; since 1.17.0 also a calendar of Mail, deadlineMailCalendar)
 //   GET    deadlines/calendars       → { family: bool, mail: [{ id, name, account, color }] }   (since 1.17.0)
@@ -16,7 +19,8 @@
 //
 // A deadline: { id, kind: 'payment' | 'cancellation' | 'objection' | 'warranty' | 'renewal', date: 'YYYY-MM-DD', label,
 // reminder: { at, daysBefore, sent } | null, calendar: { eventId, at, target: { kind, label } } | null, calendars: [the
-// same], foundAt } — the reminder and the calendar entries are the viewer's own (`calendar`: the newest of `calendars`).
+// same], foundAt, done: { at, by } | null (since 1.27.0) } — the reminder and the calendar entries are the viewer's own
+// (`calendar`: the newest of `calendars`).
 // Since 1.14.0: warranty — the day a warranty ends; renewal — the last day to cancel before a contract renews (the label
 // says when and how it renews). foundAt: when the AI found it (null: before 1.14.0).
 // GET deadlines adds `doc` { kind, title, sender, amount, currency } — what the AI read in the file (null without).
@@ -91,6 +95,8 @@ function view(d, rem, cals, lang) {
     reminder: rem ? { at: iso(rem.at), daysBefore: rem.days_before, sent: rem.sent_at != null } : null,
     calendar: list.length ? list[list.length - 1] : null, calendars: list,
     foundAt: iso(d.found_at),
+    // since 1.27.0: ticked off (for everyone who reads the file)
+    done: d.done_at != null ? { at: iso(d.done_at), by: d.done_by == null ? null : d.done_by } : null,
   };
 }
 
@@ -169,6 +175,14 @@ async function reach(ctx, id) {
   return { d, node };
 }
 
+/** POST|DELETE deadlines/<id>/done (since 1.27.0): ticked off or not — for everyone who reads the file. */
+async function setDone(ctx, id, done) {
+  const { d } = await reach(ctx, id);
+  if (done && d.done_at == null) await store.run(ctx.gc, 'UPDATE doc_deadlines SET done_at = ?, done_by = ? WHERE id = ?', [ctx.now, ctx.viewer, d.id]);
+  if (!done && d.done_at != null) await store.run(ctx.gc, 'UPDATE doc_deadlines SET done_at = NULL, done_by = NULL WHERE id = ?', [d.id]);
+  return { deadline: await viewOne(ctx, await store.one(ctx.gc, 'SELECT * FROM doc_deadlines WHERE id = ?', [d.id])) };
+}
+
 /** POST deadlines/<id>/remind { daysBefore } */
 async function remind(ctx, id, body) {
   const { d } = await reach(ctx, id);
@@ -202,7 +216,7 @@ async function list(ctx, q) {
   if (to < from) throw fail('invalid', { field: 'to' });
   const ids = (await ctx.visible()).map((x) => x.area.id);
   if (!ids.length) return { deadlines: [] };
-  const rows = await store.all(ctx.gc, `SELECT d.id AS dl_id, d.kind AS dl_kind, d.date AS dl_date, d.label AS dl_label, d.found_at AS dl_found, n.* ${FROM(ids.length)}
+  const rows = await store.all(ctx.gc, `SELECT d.id AS dl_id, d.kind AS dl_kind, d.date AS dl_date, d.label AS dl_label, d.found_at AS dl_found, d.done_at AS dl_done_at, d.done_by AS dl_done_by, n.* ${FROM(ids.length)}
     ORDER BY d.date, d.id LIMIT ?`, [...ids, from, to, LIST_MAX]);
   return { deadlines: await views(ctx, rows) };
 }
@@ -222,7 +236,7 @@ async function upcoming(ctx, max) {
   if (!ids.length) return { deadlines: [], total: 0 };
   const n = await store.one(ctx.gc, `SELECT COUNT(*) AS n ${FROM(ids.length)}`, [...ids, from, to]);
   if (!n || !n.n) return { deadlines: [], total: 0 };
-  const rows = await store.all(ctx.gc, `SELECT d.id AS dl_id, d.kind AS dl_kind, d.date AS dl_date, d.label AS dl_label, d.found_at AS dl_found, n.* ${FROM(ids.length)}
+  const rows = await store.all(ctx.gc, `SELECT d.id AS dl_id, d.kind AS dl_kind, d.date AS dl_date, d.label AS dl_label, d.found_at AS dl_found, d.done_at AS dl_done_at, d.done_by AS dl_done_by, n.* ${FROM(ids.length)}
     ORDER BY d.date, d.id LIMIT ?`, [...ids, from, to, max]);
   return { deadlines: await views(ctx, rows), total: n.n };
 }
@@ -234,8 +248,8 @@ async function views(ctx, rows) {
   const docs = await docsOf(ctx.gc, rows);
   const out = [];
   for (const r of rows) {
-    const { dl_id: id, dl_kind: kind, dl_date: date, dl_label: label, dl_found: found, ...n } = r;
-    out.push({ ...view({ id, kind, date, label, found_at: found }, rem.get(id), cal.get(id), ctx.lang), doc: docs.get(n.id) || null, node: nodes.view(n, { path: await nodes.pathOf(ctx.gc, n) }) });
+    const { dl_id: id, dl_kind: kind, dl_date: date, dl_label: label, dl_found: found, dl_done_at: doneAt, dl_done_by: doneBy, ...n } = r;
+    out.push({ ...view({ id, kind, date, label, found_at: found, done_at: doneAt, done_by: doneBy }, rem.get(id), cal.get(id), ctx.lang), doc: docs.get(n.id) || null, node: nodes.view(n, { path: await nodes.pathOf(ctx.gc, n) }) });
   }
   return out;
 }
@@ -499,7 +513,7 @@ const dateText = (date, lang) => (lang === 'en' ? date : date.split('-').reverse
 async function due(gc, settings, now, asPerson) {
   if (typeof asPerson !== 'function') return 0;
   const rows = await store.all(gc, `SELECT r.deadline_id, r.user_id, r.days_before, d.node_id, d.kind, d.date, d.label FROM doc_reminders r
-    JOIN doc_deadlines d ON d.id = r.deadline_id WHERE r.sent_at IS NULL AND r.at <= ? ORDER BY r.at LIMIT ?`, [now, DUE_BATCH]);
+    JOIN doc_deadlines d ON d.id = r.deadline_id WHERE r.sent_at IS NULL AND r.at <= ? AND d.done_at IS NULL ORDER BY r.at LIMIT ?`, [now, DUE_BATCH]);
   let sent = 0;
   for (const r of rows) {
     await store.run(gc, 'UPDATE doc_reminders SET sent_at = ? WHERE deadline_id = ? AND user_id = ?', [now, r.deadline_id, r.user_id]);
@@ -527,6 +541,6 @@ async function due(gc, settings, now, asPerson) {
 }
 
 module.exports = {
-  KINDS, ofNode, replace, remind, unremind, list, upcoming, due, calendar, calendars, calendarReachable, mailReachable, auto, calendarTitle, docsOf, viewOne, reach,
+  KINDS, ofNode, replace, remind, unremind, setDone, list, upcoming, due, calendar, calendars, calendarReachable, mailReachable, auto, calendarTitle, docsOf, viewOne, reach,
   targetArg, resolveTarget, targetsOf, targetOf, setTarget, clearTarget, TARGETS_MAX,
 };

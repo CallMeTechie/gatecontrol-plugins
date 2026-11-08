@@ -4,7 +4,7 @@
     "de": "Drive",
     "en": "Drive"
   },
-  "version": "1.26.1",
+  "version": "1.27.0",
   "publisher": "CallMeTechie",
   "description": {
     "de": "Dateien der Familie und des Teams auf dem eigenen Speicher – auf diesem Server, einer NAS oder in S3: Meine Dateien, Familie, Ordner der Kinder und Team-Ordner mit Rechten, Versionen, Papierkorb und Abgleich mit allen Geräten.",
@@ -56,7 +56,8 @@
       "gatecontrol-mail:new_draft",
       "gatecontrol-mail:calendar_list",
       "gatecontrol-mail:calendar_add",
-      "gatecontrol-mail:tofile_count"
+      "gatecontrol-mail:tofile_count",
+      "gatecontrol-notizen:todo_changed"
     ],
     "cloudImport": {
       "purpose": {
@@ -532,6 +533,20 @@
         "label": {
           "de": "Drive-Ordner ansehen",
           "en": "Look into a Drive folder"
+        },
+        "maxPerHour": 600
+      },
+      "todo_items": {
+        "label": {
+          "de": "Zu erledigen für Notizen & Aufgaben",
+          "en": "To-dos for Notes & Tasks"
+        },
+        "maxPerHour": 600
+      },
+      "todo_complete": {
+        "label": {
+          "de": "In Notizen & Aufgaben abgehakt",
+          "en": "Ticked off in Notes & Tasks"
         },
         "maxPerHour": 600
       }

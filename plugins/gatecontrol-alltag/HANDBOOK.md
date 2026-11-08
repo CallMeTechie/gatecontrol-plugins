@@ -1,4 +1,4 @@
-<!-- version: 1.4.1 -->
+<!-- version: 1.5.0 -->
 # Everyday
 
 ## What the plugin does
@@ -8,6 +8,7 @@
 - **Reminders** in the GateControl app: “Tomorrow: yellow bag”, events at their start or some minutes before.
 - **Portal “Home”:** the next collection days and the events of today and the next 7 days, tiles on the start page.
 - **For other plugins:** Family uses the calendars for rules with “event today/tomorrow”, Mail shows them in its calendar (read only).
+- **“Notes & Tasks”:** with the plugin “Notes & Tasks” the waste collections show in “My day” on the evening before (“Put out: Yellow bag”).
 
 ## Requirements
 
@@ -50,6 +51,7 @@ The address and the credentials are stored encrypted and never shown again. The 
 - **Portal “Home”:** section “Waste collection” with the next collection days and section “Events” (today and the next 7 days). Event details only after signing in, otherwise only the number. Tiles “Next collection” and “Today” on the start page.
 - **App:** reminders of the topics “Waste collection” and “Events”; the Family app shows the events in the calendar's colour.
 - **“Send test reminder”** per area sends you a sample.
+- **“Notes & Tasks”** (when installed): the collections of the next 14 days, one line per bin, in “My day” on the evening before. Who sees them is the plan's choice (its people). They cannot be ticked off there; they go away by themselves after the collection day.
 
 ## Permissions
 
@@ -70,6 +72,10 @@ After errors the plugin asks less often (calendars up to every 6 hours, waste ca
 
 **No reminder arrived.**
 Did you switch off the topic “Waste collection” or “Events” in the notification settings? Are you chosen as a person for the plan or calendar? “Send test reminder” shows whether notifications arrive.
+
+## New in 1.5.0
+
+- **Waste collection in “Notes & Tasks”:** with the plugin “Notes & Tasks” the collections show in “My day” on the evening before – “Put out: Yellow bag”, for the plan's people. Without that plugin nothing changes.
 
 ## New in 1.4.1
 

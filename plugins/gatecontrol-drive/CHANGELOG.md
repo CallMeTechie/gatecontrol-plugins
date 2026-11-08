@@ -2,6 +2,25 @@
 
 Dateien der Familie und des Teams auf dem eigenen Speicher – auf diesem Server, einer NAS oder in S3.
 
+## 1.27.0
+
+- **Fristen abhaken:** `POST deadlines/<id>/done` / `DELETE deadlines/<id>/done` → `{ deadline }` – erledigt (bezahlt,
+  gekündigt …) für alle, die die Datei lesen; jede Frist trägt `done: { at, by } | null`. Eine erledigte Frist schickt
+  keine Erinnerung mehr. Die Seite „Fristen“ im Portal hat dafür „Erledigt“ / „Doch nicht erledigt“. Neue Spalten
+  `doc_deadlines.done_at` / `done_by`; eine neue Erkennung behält eine Frist gleicher Art und gleichen Tags und damit
+  ihren Haken.
+- **Fristen in „Notizen & Aufgaben“:** Ist das Plugin „Notizen & Aufgaben“ (`gatecontrol-notizen`) installiert, stehen
+  die Fristen (von vor 7 Tagen bis in 180 Tagen, höchstens 1000) dort – für alle mit Drive-Zugang, die die Datei lesen;
+  Fristen in Team-Ordnern als „Arbeit“ (`area: 'work'`), sonst „Privat“. Titel wie im Kalender („Kfz-Versicherung
+  kündigen“), darunter der Dateiname, bei einer Zahlung der Betrag. Abhaken dort ist dasselbe wie „Erledigt“ in Drive;
+  Antippen öffnet die Datei (`node/<id>`).
+  - Drive schickt nur echte Änderungen (`gatecontrol-notizen:todo_changed`, Vertrag v1, Tabelle `todo_sent`): höchstens
+    alle 2 Minuten im Hintergrund (wer welche Bereiche liest, wird wie in den Apps für jeden Platz ermittelt) und wenige
+    Sekunden nach einer Änderung an einer Frist; viele in einem Aufruf.
+  - Neue Dienste für den Hub (nur `gatecontrol-notizen`, je 600 Aufrufe pro Stunde): `todo_items` (seitenweise,
+    ≤ 16 KB) und `todo_complete`.
+  - Ohne den Hub ändert sich nichts: kein Aufruf, keine Einträge.
+
 ## 1.26.1
 
 - **Doku: Tresor-Dateien offline in der Android-App.** Die App hält Tresor-Dateien, -Ordner oder den ganzen Tresor über

@@ -134,7 +134,7 @@ async function deleteAccount(gc, id) {
     for (const sid of ids) {
       await gc.db.run('DELETE FROM lessons WHERE student_id = ?', [sid]);
       await gc.db.run('DELETE FROM changes WHERE student_id = ?', [sid]);
-      for (const t of ['homework', 'exams', 'day_ends', 'absences']) await gc.db.run(`DELETE FROM ${t} WHERE student_id = ?`, [sid]);
+      for (const t of ['homework', 'homework_done', 'exams', 'day_ends', 'absences']) await gc.db.run(`DELETE FROM ${t} WHERE student_id = ?`, [sid]);
     }
     await gc.db.run('DELETE FROM messages WHERE account_id = ?', [id]);
     await gc.db.run('DELETE FROM message_reads WHERE account_id = ?', [id]);
@@ -336,6 +336,8 @@ async function prune(gc, beforeDate, beforeMs) {
   await gc.db.run('DELETE FROM lessons WHERE date < ?', [beforeDate]);
   await gc.db.run('DELETE FROM changes WHERE detected_at < ?', [beforeMs]);
   await gc.db.run('DELETE FROM homework WHERE due_date < ?', [beforeDate]);
+  // 1.8.0: ticks of homework that is gone
+  await gc.db.run('DELETE FROM homework_done WHERE NOT EXISTS (SELECT 1 FROM homework h WHERE h.student_id = homework_done.student_id AND h.hw_id = homework_done.hw_id)');
   await gc.db.run('DELETE FROM exams WHERE date < ?', [beforeDate]);
   await gc.db.run('DELETE FROM day_ends WHERE date < ?', [beforeDate]);
   await gc.db.run('DELETE FROM notices WHERE at < ?', [beforeMs]);
@@ -349,7 +351,9 @@ const EX_COLS = ['ex_id', 'date', 't_start', 't_end', 'subject', 'subject_long',
 function homeworkRow(r) {
   return {
     student_id: r.student_id, hw_id: r.hw_id, given_date: r.given_date || null, due_date: r.due_date, subject: r.subject || '',
-    subject_long: r.subject_long || null, text: r.text || '', remark: r.remark || null, completed: !!r.completed,
+    // 1.8.0: ticked off in GateControl („Notizen & Aufgaben“, homework_done) counts as completed as well
+    subject_long: r.subject_long || null, text: r.text || '', remark: r.remark || null, completed: !!r.completed || r.done_at != null,
+    untis_completed: !!r.completed, done_at: r.done_at == null ? null : Number(r.done_at), done_by: r.done_by == null ? null : Number(r.done_by),
   };
 }
 
@@ -389,8 +393,27 @@ async function byStudents(gc, table, col, studentIds, from, to, order, rowFn) {
   return out;
 }
 
-/** Homework due between two dates (inclusive). */
-const homeworkDue = (gc, studentIds, from, to) => byStudents(gc, 'homework', 'due_date', studentIds, from, to, 'due_date, subject, hw_id', homeworkRow);
+/** Homework due between two dates (inclusive) — 1.8.0: with its tick in GateControl (homework_done). */
+async function homeworkDue(gc, studentIds, from, to) {
+  if (!studentIds.length) return [];
+  const out = [];
+  for (let i = 0; i < studentIds.length; i += 90) {
+    const ids = studentIds.slice(i, i + 90);
+    const r = await gc.db.query(`SELECT h.*, d.at AS done_at, d.user_id AS done_by FROM homework h
+      LEFT JOIN homework_done d ON d.student_id = h.student_id AND d.hw_id = h.hw_id
+      WHERE h.student_id IN (${ids.map(() => '?').join(',')}) AND h.due_date >= ? AND h.due_date <= ? ORDER BY h.due_date, h.subject, h.hw_id`, [...ids, from, to]);
+    out.push(...r.rows.map(homeworkRow));
+  }
+  return out;
+}
+
+/** 1.8.0: homework ticked off in GateControl (done) or not (undone). */
+async function setHomeworkDone(gc, studentId, hwId, userId, done, now) {
+  if (done) {
+    await gc.db.run(`INSERT INTO homework_done (student_id, hw_id, user_id, at) VALUES (?, ?, ?, ?)
+      ON CONFLICT(student_id, hw_id) DO UPDATE SET user_id = excluded.user_id, at = excluded.at`, [studentId, hwId, userId, now]);
+  } else await gc.db.run('DELETE FROM homework_done WHERE student_id = ? AND hw_id = ?', [studentId, hwId]);
+}
 /** Exams between two dates (inclusive), by date and time. */
 const examsBetween = (gc, studentIds, from, to) => byStudents(gc, 'exams', 'date', studentIds, from, to, 'date, t_start, ex_id', examRow);
 
@@ -735,6 +758,6 @@ module.exports = {
   listStudents, getStudent, updateStudent, syncStudents, ensureColors, takenColors, studentsOfPerson,
   lessonsBetween, replaceLessons, countLessons, LESSON_COLS,
   addChanges, changesWithStatus, setChangeStatus, setRuleAt, cancellationSent, listChanges, prune,
-  replaceHomework, replaceExams, homeworkDue, examsBetween, countExtras, noticeSeen, noticeMark,
+  replaceHomework, replaceExams, homeworkDue, setHomeworkDone, examsBetween, countExtras, noticeSeen, noticeMark,
   addDayEnd, dayEndsWithStatus, setDayEndStatus,
 };

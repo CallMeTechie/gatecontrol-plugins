@@ -1024,7 +1024,11 @@
   "p.s.via": "über {{group}}",
   "p.s.busy_only": "Nur belegt – mehr zeigt dieser Kalender nicht.",
   "p.s.no_attendees": "In geteilten Kalendern ohne Teilnehmer",
-  "push.res_rules": "Nicht eingehalten: {{list}}"
+  "push.res_rules": "Nicht eingehalten: {{list}}",
+  "p.todo_done": "Erledigt",
+  "p.todo_reopen": "Wieder offen",
+  "notizen.todo_from": "Zu tun aus „{{subject}}“",
+  "notizen.no_subject": "(kein Betreff)"
  },
  "en": {
   "error.invalid": "Invalid input.",
@@ -2051,6 +2055,10 @@
   "p.s.via": "through {{group}}",
   "p.s.busy_only": "Only taken – this calendar shows nothing more.",
   "p.s.no_attendees": "No attendees in shared calendars",
-  "push.res_rules": "Not kept: {{list}}"
+  "push.res_rules": "Not kept: {{list}}",
+  "p.todo_done": "Done",
+  "p.todo_reopen": "Open again",
+  "notizen.todo_from": "To do from “{{subject}}”",
+  "notizen.no_subject": "(no subject)"
  }
 }

@@ -2,6 +2,24 @@
 
 Stundenplan aus WebUntis für Schüler- und Elternkonten als GateControl-Plugin.
 
+## 1.8.0
+
+- **Hausaufgaben und Arbeiten in „Notizen & Aufgaben“:** Ist das Plugin „Notizen & Aufgaben“ (`gatecontrol-notizen`)
+  installiert, stehen dort die Hausaufgaben (offen: fällig ab vor 3 Tagen bis in 30 Tagen) und die Arbeiten der nächsten
+  60 Tage jedes Kindes – für das zugeordnete Kind und die Empfänger (Eltern), mit dem Kind als Gruppe („Kinder“-Filter
+  des Hubs). Elternabende kennt WebUntis' Stundenplan nicht; es gibt sie deshalb nicht.
+  - **Hausaufgabe abhaken:** in „Notizen & Aufgaben“ (das Kind oder ein Empfänger). WebUntis lässt sich nicht
+    beschreiben – der Haken steht in der neuen Tabelle `homework_done` und gilt in Schule überall als erledigt
+    (Portal, App, keine Erinnerung am Vorabend mehr). Ein Abruf ersetzt die Hausaufgaben, der Haken bleibt. Rückgängig
+    machen geht nur für einen Haken aus GateControl (sonst `read_only`). Arbeiten lassen sich nicht abhaken.
+  - Schule schickt nur echte Änderungen (`gatecontrol-notizen:todo_changed`, Vertrag v1, Tabelle `todo_sent`): höchstens
+    einmal pro Minute im Hintergrund und wenige Sekunden nach einer Änderung in den Einstellungen; viele in einem Aufruf.
+  - Neue Dienste für den Hub (nur `gatecontrol-notizen`, je 600 Aufrufe pro Stunde): `todo_items` (seitenweise,
+    ≤ 16 KB) und `todo_complete`.
+  - Ohne den Hub ändert sich nichts: kein Aufruf, keine Einträge.
+- **Braucht GateControl 1.216.0** (bisher 1.196.0): `maxPerHour` der beiden Dienste – ältere Versionen lehnen den
+  Schlüssel ab.
+
 ## 1.7.2
 
 - Handbuch im Reiter „Handbuch“ (GateControl ≥ 1.241.0): `HANDBUCH.md` / `HANDBOOK.md` im Paket, in `plugin.json` unter `handbook`. Ältere GateControl-Versionen ignorieren es; die Mindestversion bleibt `>=1.196.0`.
