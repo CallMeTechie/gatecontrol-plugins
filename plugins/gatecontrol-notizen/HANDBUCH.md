@@ -1,5 +1,9 @@
-<!-- version: 1.0.0 -->
+<!-- version: 1.0.1 -->
 # Notizen & Aufgaben
+
+## Neu in 1.0.1
+
+Korrektur: Für den Umzug von Microsoft To Do braucht es **Mail 1.12.0** oder neuer (bisher stand hier fälschlich 1.11.0).
 
 ## Neu in 1.0.0
 
@@ -19,7 +23,7 @@ Das Plugin ist neu: eigene Aufgaben und Notizen plus alles, was die anderen Plug
 
 - GateControl **1.216.0** oder neuer. Damit ein Antippen eines Elements aus einem anderen Plugin dieses im Portal öffnet: GateControl **1.254.0** (sonst sagt das Portal, wo es zu finden ist).
 - Damit Familie, Mail, Drive, Schule und Alltag hier erscheinen: ihre Versionen mit „Zu tun für Notizen & Aufgaben“. Fehlt eine Quelle, steht das unter „Quellen“.
-- Für den Umzug von Microsoft To Do: das Plugin **Mail 1.11.0** oder neuer mit deinem Microsoft-Konto.
+- Für den Umzug von Microsoft To Do: das Plugin **Mail 1.12.0** oder neuer mit deinem Microsoft-Konto.
 - Für Tresor-Notizbücher im Portal: ein aktueller Browser (Chrome, Edge, Firefox, Safari der letzten Jahre).
 
 ## Einrichten

@@ -1,5 +1,9 @@
-<!-- version: 1.0.0 -->
+<!-- version: 1.0.1 -->
 # Notes & Tasks
+
+## New in 1.0.1
+
+Correction: moving over from Microsoft To Do needs **Mail 1.12.0** or newer (this said 1.11.0 by mistake).
 
 ## New in 1.0.0
 
@@ -19,7 +23,7 @@ The plugin is new: your own tasks and notes plus everything the other plugins ha
 
 - GateControl **1.216.0** or newer. For tapping an item of another plugin to open it in the portal: GateControl **1.254.0** (otherwise the portal says where to find it).
 - For Family, Mail, Drive, School and Everyday to show up here: their versions with "To-dos for Notes & Tasks". A missing source is shown under "Sources".
-- For moving over from Microsoft To Do: the **Mail 1.11.0** plugin or newer with your Microsoft account.
+- For moving over from Microsoft To Do: the **Mail 1.12.0** plugin or newer with your Microsoft account.
 - For vault notebooks in the portal: a current browser (Chrome, Edge, Firefox, Safari of the last years).
 
 ## Setting up
