@@ -1,4 +1,4 @@
-<!-- version: 1.25.0 -->
+<!-- version: 1.26.0 -->
 # Drive
 
 ## Was das Plugin kann
@@ -42,6 +42,7 @@ Drive ist ein eigenes Abo (Familie, Business oder Kombi, fünf Personen inklusiv
 - **PDFs und Texte ansehen (Apps):** In der Android-App und der Windows-App öffnet ein Tipp auf eine PDF-, Text- oder Markdown-Datei sie direkt in der App – in derselben Ansicht wie Tresor-Dateien. Texte lassen sich dort markieren und kopieren. „Mit anderer App öffnen“ (Android) bzw. „Mit anderem Programm öffnen“ (Windows) bleibt in der Ansicht. Sehr große Dateien (PDF über 100 MB, Text über 2 MB) und Office-Dateien öffnen weiter in einer anderen App. Im Portal bietet ein Klick auf eine PDF wie bisher „Herunterladen“ an.
 - **Fotos:** Zeitleiste nach Monat, „Nur Kamera-Uploads“, „Alle · Fotos · Videos“ (nur Fotos oder nur Videos zeigen; ein Video zeigt seine Länge, wenn das Gerät sie mitgeschickt hat), Alben, „Im Fotorahmen zeigen“, Suche nach Personen, Orten und Inhalt, Karte, „Wer ist das?“. Gesichter werden nur auf den Geräten erkannt; Drive speichert keine Gesichtsbilder.
 - **Tresor-Ordner:** „Neu“ › „Neuer Tresor“, wer ihn öffnen darf (nur ich, Familie, Team-Ordner). Den Wiederherstellungsschlüssel sicher aufbewahren. Ein neues Gerät fragt mit „Freigabe anfragen“, ein schon freigegebenes gibt frei. Tresore sperren sich nach einigen Minuten ohne Eingabe; die KI liest sie nie. Ein Tipp auf eine Datei öffnet sie in der Tresor-Ansicht (Bilder, PDFs, Texte, in den Apps auch Videos) – siehe unten.
+- **Erinnerungen:** In der Übersicht öffnet „Alle“ die Seite **„Erinnerungen“** (Portal, Android- und Windows-App mit Drive 1.26.0). Dort stehen: **Heute vor X Jahren** (jedes frühere Jahr, in dem du an diesem Tag – einen Tag davor oder danach mitgerechnet – mehr als 10 Fotos gemacht hast), **Ausflüge und Reisen** (Tage am Stück an einem Ort, der mindestens 40 km von zu Hause weg ist, ab 10 Fotos), **Mit Noah** & Co. (deine benannten Personen ab 10 Fotos), **Diesen Monat vor X Jahren** (ab 20 Fotos), **Jahresrückblick** (jedes vergangene Jahr ab 50 Fotos) und **Orte** (z. B. „Langenlonsheim · 12 Fotos“, ab 10 Fotos). Ein Tipp auf eine Karte zeigt die Fotos; ein Tipp auf ein Foto öffnet es groß. „Zu Hause“ ist der Ort, an dem du an den meisten Tagen fotografiert hast. **Erinnerungen zeigen nur private Fotos:** nichts aus deinem Arbeitsordner, nichts, was noch unter „Prüfen“ wartet, nichts aus Team-Ordnern. Die Karten der Übersicht erscheinen ebenfalls erst ab mehr als 10 Fotos am Tag.
 - **Videos finden:** In der Suche filtert „Alle · Fotos · Videos“ (Portal) bzw. „Videos“ (Apps) die Treffer. Ohne Suchwort zeigt „Videos“ die neuesten Videos.
 - **Fotos und Videos vom Handy sichern (Android):** In der App unter **Drive › Foto-Sicherung**. „Auch Videos“ ist zuerst aus. Schaltest du es später ein, fragt die App: **„Alle Videos“** sichert auch die Videos, die schon auf dem Handy sind (Fotos werden dabei nicht noch einmal hochgeladen), **„Nur neue“** nur die ab jetzt. Was die Sicherung auslässt, steht unter **„Übersprungen“** mit dem Grund; **„Erneut versuchen“** probiert es noch einmal.
 - **KI für Dokumente:** „Dokument-Infos“ an einer Datei, „Fragen“ unter der Suche, die Seite „Fristen“ mit „In den Familienkalender“ und „Erinnern“, „In Dokument umwandeln“ für Scans.
@@ -103,8 +104,18 @@ Prüfe in der Android-App unter **Drive › Foto-Sicherung**, dass „Auch Video
 **„Vollbild“ fehlt im Portal.**
 Vollbild im Portal gibt es ab GateControl 1.244.0. Ältere Versionen zeigen das Video im Drive-Fenster.
 
+**Ein Tag fehlt in den Erinnerungen.**
+„Heute vor X Jahren“ zeigt nur Tage mit mehr als 10 privaten Fotos (der Tag davor und danach zählen mit). Fotos im Arbeitsordner, in Team-Ordnern und solche, die noch unter „Prüfen“ warten, zählen nicht – ordne sie unter **Fotos › Prüfen** als „Privat“ ein, dann zählen sie. Ausflüge und Orte brauchen Fotos mit Ortsangabe.
+
 **Zu Hause bauen sich die Fotos nicht schneller auf.**
 Die Vorschaubilder kommen erst nach und nach auf das Gateway (je Lauf einige Hundert, alle 15 Minuten). Prüfe am Gateway unter **Gateways › Zwischenspeicher**, dass er „aktiv“ ist und „Fotos“ bzw. „Drive“ eingeschaltet sind. Vorschaubilder aus dem Heimnetz braucht GateControl 1.249.0 und eine aktuelle App.
+
+## Neu in 1.26.0
+
+- **Seite „Erinnerungen“:** „Alle“ bei den Erinnerungen der Übersicht öffnet jetzt eine eigene Seite mit „Heute vor X Jahren“ (jedes Jahr, nicht nur vier), „Ausflüge und Reisen“, „Mit Noah“ (deine Personen), „Diesen Monat vor X Jahren“, „Jahresrückblick“ und „Orte“ – jeweils mit Titelbild und Anzahl. Ein Tipp öffnet die Fotos.
+- **Nur private Fotos:** Erinnerungen zeigen keine Fotos aus dem Arbeitsordner, keine, die noch unter „Prüfen“ warten, und keine aus Team-Ordnern – unabhängig von der früheren Einstellung „Arbeitsfotos nie in Erinnerungen und Fotorahmen“. Sie heißt jetzt „Arbeitsfotos nie im Fotorahmen“ und gilt nur noch für den Fotorahmen.
+- **Erst ab mehr als 10 Fotos:** „Heute vor X Jahren“ erscheint – in der Übersicht und auf der Seite – nur, wenn an dem Tag (± 1 Tag) mehr als 10 private Fotos entstanden sind.
+- Ältere Apps öffnen mit „Alle“ wie bisher „Fotos“.
 
 ## Neu in 1.25.0
 

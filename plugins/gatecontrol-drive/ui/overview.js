@@ -4,8 +4,9 @@
  *
  *   row 1   "Zu erledigen" (the next deadlines, the photos to check, Mail's attachments to file) · "Zuletzt geöffnet" ·
  *           "Neu in Familie" (what others added in the shared areas) with the storage below
- *   row 2   "Erinnerungen" (this day in earlier years) · "Personen" (with "Wer ist das?") · "Orte" (a small map as a
- *           picture with the count, the places with the most photos)
+ *   row 2   "Erinnerungen" (this day in earlier years — „Alle“ and a card open the page „Erinnerungen“, ui/memories.js,
+ *           since 1.26.0) · "Personen" (with "Wer ist das?") · "Orte" (a small map as a picture with the count, the
+ *           places with the most photos)
  *
  * A tile without anything is left out (the storage stays). Live: the event 'changed' loads the overview again — at most
  * every LIVE_MIN_MS. portal.js calls DriveOverview.attach(ui) with its helpers. Server and user text only ever goes into
@@ -167,12 +168,15 @@
       var grid = h('div', { class: 'dp-ov-mems' }, list.slice(0, MEMORIES_SHOWN).map(function (g) {
         var label = P('p.ov.today_years', g.yearsAgo);
         var src = g.cover && (g.cover.largeUrl || g.cover.previewUrl);
-        return h('button', { type: 'button', class: 'dp-ov-mem', attrs: { 'aria-label': label + ' · ' + P('p.photos_n', g.count) }, on: { click: function () { U.showPhotos(); } } }, [
+        // since 1.26.0 (memoryCollections): the collection „Heute vor X Jahren“; an older Drive: „Fotos“
+        var go = function () { if (!U.openMemory({ id: g.id, kind: 'day', yearsAgo: g.yearsAgo, date: g.date, count: g.count, cover: g.cover })) U.showPhotos(); };
+        return h('button', { type: 'button', class: 'dp-ov-mem', attrs: { 'aria-label': label + ' · ' + P('p.photos_n', g.count) }, on: { click: go } }, [
           src ? h('img', { attrs: { src: src, alt: '', loading: 'lazy' } }) : null,
           h('span', { class: 'dp-ov-memtx' }, [h('b', { text: label }), h('span', { text: P('p.photos_n', g.count) })]),
         ]);
       }));
-      return tile(T('p.ov.memories'), moreLink(T('p.ov.all'), function () { U.showPhotos(); }), [grid], 'is-memories');
+      // „Alle“: the page „Erinnerungen“ (since 1.26.0), with an older Drive „Fotos“
+      return tile(T('p.ov.memories'), moreLink(T('p.ov.all'), function () { if (!U.showMemories()) U.showPhotos(); }), [grid], 'is-memories');
     }
 
     function peopleTile(pp) {

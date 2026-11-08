@@ -675,6 +675,8 @@
     renderPages();
     // the overview has the switch above (since 1.18.0)
     if (S.page === 'overview') return;
+    // „Erinnerungen“ (› a collection, since 1.26.0)
+    if (M && M.crumbs(c)) return;
     if (S.page !== 'files' || !S.folder) {
       c.appendChild(h('button', { type: 'button', attrs: { 'aria-current': 'page' }, text: PL && PL.crumb(S.page) ? PL.crumb(S.page) : S.page === 'settings' ? T('p.settings_title') : S.page === 'import' ? T('p.import') : S.page === 'deadlines' ? T('p.deadlines') : S.page === 'trash' ? T('p.trash') : S.page === 'links' ? T('p.links') : S.page === 'devices' ? T('p.devices')
         : S.page === 'incidents' ? T('p.guard_incidents') : S.page === 'photos' ? T('p.photos') : S.page === 'albums' ? T('p.albums')
@@ -695,7 +697,7 @@
   // ── "Übersicht | Dateien | Fotos" (since 1.18.0) ─────────
 
   var FILE_PAGES = ['files', 'search', 'ask', 'trash'];
-  var PHOTO_PAGES = ['photos', 'albums', 'album', 'map', 'people', 'person'];
+  var PHOTO_PAGES = ['photos', 'albums', 'album', 'map', 'people', 'person', 'memories', 'memory'];
 
   /** The switch at the top: the page shown is pressed (other pages — settings, storage, … — none). */
   function renderPages() {
@@ -3137,6 +3139,7 @@
       scheduleMenu(d.areas);
       // the overview (since 1.18.0): again, throttled
       if (O) O.changed();
+      if (M) M.changed();
       if (S.page === 'files' && d.areas.indexOf(S.areaId) >= 0 && !S.uploading) scheduleReload();
       else if (S.page === 'trash') showTrash();
     });
@@ -3188,12 +3191,22 @@
     showSettings: showSettings, renderCrumbs: renderCrumbs, setRow: setRow, setSwitch: setSwitch,
   }) : null;
 
+  // the page „Erinnerungen“ (ui/memories.js, since 1.26.0): its helpers from here
+  var M = window.DriveMemories ? window.DriveMemories.attach({
+    S: S, PH: PH, T: T, P: P, h: h, api: api, clear: clear, $: $, btn: btn, fail: fail, errText: errText, LOCALE: LOCALE, startPage: startPage,
+    photoTile: function (x) { return photoTile(x, rerenderBar); },
+  }) : null;
+
   // the overview (ui/overview.js, since 1.18.0): its helpers from here
   var O = window.DriveOverview ? window.DriveOverview.attach({
     S: S, PH: PH, T: T, P: P, h: h, icon: icon, api: api, has: has, clear: clear, $: $, LOCALE: LOCALE, errText: errText, extOf: extOf,
     fmtSize: fmtSize, fmtAmount: fmtAmount, areaOf: areaOf, startPage: startPage, openTarget: openTarget, openFolder: openFolder,
     showFiles: showFiles, showPhotos: function () { if (PL) PL.setMarks([], null); showPhotos(); }, showDeadlines: showDeadlines,
     PL: function () { return PL; },
+    // „Alle“ and the cards of „Erinnerungen“ (since 1.26.0): the page of the memories while this Drive has it
+    // (false: an older Drive — the overview opens „Fotos“ as before)
+    showMemories: function () { if (!M || !has('memoryCollections')) return false; M.show(); return true; },
+    openMemory: function (c) { if (!M || !has('memoryCollections') || !c || !c.id) return false; M.open(c); return true; },
   }) : null;
 
   boot();

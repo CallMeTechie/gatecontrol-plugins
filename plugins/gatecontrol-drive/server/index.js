@@ -25,6 +25,7 @@
 //     GET trash?area= · POST trash/<id>/restore · DELETE trash/<id>
 //     POST links · GET links?nodeId= · GET links/<token>/events · DELETE links/<token>   (links.js, since 0.2.0)
 //     GET nodes/<id>/timetravel?at= · POST nodes/<id>/timetravel { at }  (a folder as it was — timetravel.js, 1.7.0)
+//     GET memories · GET memories/photos?id= (the page „Erinnerungen“ — memories.js, 1.26.0)
 //     GET photos · GET photos/months · GET photos/memories (photos.js; ?folder= / ?camera=1 and GET|POST photos/camera
 //     since 1.10.0; GET photos/classes, GET|PUT photos/settings, POST photos/review and class= since 1.13.0 — work.js)
 //     · GET|POST albums · GET|PATCH|DELETE albums/<id>
@@ -91,6 +92,7 @@ const guard = require('./guard');
 const address = require('./address');
 const timetravel = require('./timetravel');
 const photos = require('./photos');
+const memories = require('./memories');
 const work = require('./work');
 const albums = require('./albums');
 const frame = require('./frame');
@@ -243,6 +245,9 @@ async function me(ctx) {
   };
 }
 
+// memoryCollections: the page „Erinnerungen“ — GET memories (collections: this day, trips, people, this month, the
+// years, places — only private photos, with their counts and covers) and GET memories/photos?id= (1.26.0); memories and
+// the overview's cards only private photos, the cards only days with more than 10 photos ·
 // mediaFilter: only pictures or only videos — media=image|video on photos, months, memories, classes, places, map,
 // suggest and search (search then also without q), `durationMs` on nodes and photo items from uploads/commit
 // { durationMs } (1.25.0) ·
@@ -271,7 +276,7 @@ async function me(ctx) {
 // devices: GET/PUT/DELETE devices (1.5.0) · deleteAfter: DELETE nodes/<id>?after=, PATCH { deleteAt } (1.5.0) ·
 // emptyFiles: uploads/commit { size: 0 } without a mediaId (1.5.0) · wipes: DELETE ?everywhere=1 (1.2.0) ·
 // textSearch: uploads/commit { text } (1.3.0) · previews (1.1.0)
-const FEATURES = ['previews', 'wipes', 'textSearch', 'devices', 'deleteAfter', 'emptyFiles', 'links', 'guard', 'timeTravel', 'takenAt', 'photos', 'albums', 'frame', 'storage', 'vault', 'photosFolder', 'vaultsApart', 'bulk', 'photoClasses', 'photoSearch', 'photoPlaces', 'photoPeople', 'overview', 'scan', 'offline', 'mediaFilter'];
+const FEATURES = ['previews', 'wipes', 'textSearch', 'devices', 'deleteAfter', 'emptyFiles', 'links', 'guard', 'timeTravel', 'takenAt', 'photos', 'albums', 'frame', 'storage', 'vault', 'photosFolder', 'vaultsApart', 'bulk', 'photoClasses', 'photoSearch', 'photoPlaces', 'photoPeople', 'overview', 'scan', 'offline', 'mediaFilter', 'memoryCollections'];
 
 /**
  * What needs GateControl's AI service or cloud accounts (1.8.0) — only while the host has it and it is allowed (the
@@ -453,6 +458,11 @@ async function route(ctx, req, seg) {
     if (seg.length === 2 && b === 'places') return ok(await photos.placeList(ctx, q));
     if (seg.length === 2 && b === 'map') return ok(await photos.mapOf(ctx, q));
     if (seg.length === 2 && b === 'suggest') return ok(await photos.suggest(ctx, q));
+  }
+  // the page „Erinnerungen“ (1.26.0, memories.js)
+  if (a === 'memories' && m === 'GET') {
+    if (seg.length === 1) return ok(await memories.list(ctx, q));
+    if (seg.length === 2 && b === 'photos') return ok(await memories.photosOf(ctx, q));
   }
   if (a === 'photos' && seg.length === 2 && b === 'geo' && m === 'DELETE') return ok(await places.removeMine(ctx));
   if (a === 'people') return ok(await peopleRoute(ctx, m, seg, q, body));

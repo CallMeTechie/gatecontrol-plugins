@@ -73,7 +73,7 @@ reaches `GET frame` (the photo frame, since 1.7.0) and nothing else (`403 forbid
 
 | Route | Body / query | Answer |
 |---|---|---|
-| `GET me` | | `me { id, name, seat, deviceId, admin }`, `licence { valid, tier }`, `areas`, `latest` (change log seq), `settings`, `limits { maxBytes }`, `wipes` (entries this device has yet to handle, since 1.2.0), `devices` (my devices a new wipe reaches), `features` (since 1.5.0: `['previews', 'wipes', 'textSearch', 'devices', 'deleteAfter', 'emptyFiles']`, since 1.6.0 also `'links'`, `'guard'`, since 1.7.0 `'timeTravel'`, `'takenAt'`, `'photos'`, `'albums'`, `'frame'`, `'storage'`, since 1.8.0 `'docAi'` and `'cloudImport'` — only while GateControl offers the AI service / cloud accounts and they are allowed, see "AI for documents" and "Import"; since 1.9.0 `'vault'` and — while set up — `'office'`, since 1.10.0 `'photosFolder'`, since 1.11.0 `'vaultsApart'`, since 1.12.0 `'bulk'`, — while GateControl's public links are allowed — `'zip'` and `'multiLink'`, with GateControl ≥ 1.215.0 also `'copyServer'` (copies on the server) and `'zipMixed'` (a ZIP and one link of any selection); since 1.13.0 `'photoClasses'` (work photos apart); since 1.14.0 `'photoSearch'` (photos by what is on them) and — with `docAi` — `'docAsk'` (questions to the documents), `'scanDocs'` (scans become documents) and, while the Familie plugin's `calendar_add` is reachable, `'deadlineCalendar'` (see "AI in Drive"); since 1.16.0 `'photoPlaces'` and `'photoPeople'` (see "Places and people"); since 1.17.0 — with `docAi`, while Mail's `calendar_add` is reachable and takes Drive — `'deadlineMailCalendar'` (see "Deadlines into a calendar of Mail"); since 1.18.0 `'overview'` (see "Overview"); since 1.19.0 `'scan'` (file nodes and photo items carry GateControl's virus scan `scan { state, blocked, finding }`, see "Virus scan"); since 1.20.0 `'offline'` and — while GateControl has the home cache (≥ 1.231.0, `permissions.homeCache`) — `'homeCache'` (see "Home cache"); since 1.24.0 — with GateControl ≥ 1.249.0 — `'homeCachePreviews'` (previews in the home cache, see "Home cache"); since 1.25.0 `'mediaFilter'` (`media=image|video` on the photos and the search, `durationMs` on videos)), `settings` (since 1.14.0 also `scanKeepOriginal`), `links { node, drive } \| null` (since 1.6.0, see "Direct links"), `guard { on, locked, incident }` and `incidents` (since 1.6.0, see "Ransomware protection") |
+| `GET me` | | `me { id, name, seat, deviceId, admin }`, `licence { valid, tier }`, `areas`, `latest` (change log seq), `settings`, `limits { maxBytes }`, `wipes` (entries this device has yet to handle, since 1.2.0), `devices` (my devices a new wipe reaches), `features` (since 1.5.0: `['previews', 'wipes', 'textSearch', 'devices', 'deleteAfter', 'emptyFiles']`, since 1.6.0 also `'links'`, `'guard'`, since 1.7.0 `'timeTravel'`, `'takenAt'`, `'photos'`, `'albums'`, `'frame'`, `'storage'`, since 1.8.0 `'docAi'` and `'cloudImport'` — only while GateControl offers the AI service / cloud accounts and they are allowed, see "AI for documents" and "Import"; since 1.9.0 `'vault'` and — while set up — `'office'`, since 1.10.0 `'photosFolder'`, since 1.11.0 `'vaultsApart'`, since 1.12.0 `'bulk'`, — while GateControl's public links are allowed — `'zip'` and `'multiLink'`, with GateControl ≥ 1.215.0 also `'copyServer'` (copies on the server) and `'zipMixed'` (a ZIP and one link of any selection); since 1.13.0 `'photoClasses'` (work photos apart); since 1.14.0 `'photoSearch'` (photos by what is on them) and — with `docAi` — `'docAsk'` (questions to the documents), `'scanDocs'` (scans become documents) and, while the Familie plugin's `calendar_add` is reachable, `'deadlineCalendar'` (see "AI in Drive"); since 1.16.0 `'photoPlaces'` and `'photoPeople'` (see "Places and people"); since 1.17.0 — with `docAi`, while Mail's `calendar_add` is reachable and takes Drive — `'deadlineMailCalendar'` (see "Deadlines into a calendar of Mail"); since 1.18.0 `'overview'` (see "Overview"); since 1.19.0 `'scan'` (file nodes and photo items carry GateControl's virus scan `scan { state, blocked, finding }`, see "Virus scan"); since 1.20.0 `'offline'` and — while GateControl has the home cache (≥ 1.231.0, `permissions.homeCache`) — `'homeCache'` (see "Home cache"); since 1.24.0 — with GateControl ≥ 1.249.0 — `'homeCachePreviews'` (previews in the home cache, see "Home cache"); since 1.25.0 `'mediaFilter'` (`media=image|video` on the photos and the search, `durationMs` on videos); since 1.26.0 `'memoryCollections'` (the page „Erinnerungen“: `GET memories`, `GET memories/photos`, see "Memories")), `settings` (since 1.14.0 also `scanKeepOriginal`), `links { node, drive } \| null` (since 1.6.0, see "Direct links"), `guard { on, locked, incident }` and `incidents` (since 1.6.0, see "Ransomware protection") |
 | `GET areas` | | `areas [{ id, kind, label, role, via, rootId, owner, archived, storage { bytes, quota, form, target, state } }]` (+ `docAi` while the feature is on, since 1.14.0 `deadlinesToCalendar` with `deadlineCalendar`, since 1.17.0 `deadlinesTarget` — the viewer's target — and both while the family calendar or a calendar of Mail is reachable; also in `GET me` `areas`) |
 | `PATCH areas/<id>` | `{ docAi?: boolean, deadlinesToCalendar?: boolean, deadlinesTarget?: target \| null }` (since 1.8.0 / 1.14.0 / 1.17.0, write in the area) | `{ area: { id, docAi, deadlinesToCalendar?, deadlinesTarget? } }` — AI for documents on / off in this area; new deadlines into the family calendar on their own (the area's switch; Familie not reachable: `409 familie_unavailable`); since 1.17.0 my own target in this area (see "Deadlines into a calendar of Mail") |
 | `GET overview` | (since 1.18.0, feature `overview`) | `todo`, `recent`, `memories`, `people`, `places`, `activity`, `storage` — the start of Drive in one request (see "Overview") |
@@ -137,7 +137,9 @@ reaches `GET frame` (the photo frame, since 1.7.0) and nothing else (`403 forbid
 | `GET photos/classes` | `area?`, `folder?` or `camera?` (since 1.13.0, feature `photoClasses`) | `{ work, private, review }` — the counts (see "Work photos apart") |
 | `GET photos/settings` · `PUT photos/settings` | PUT: `{ workFolder?: id \| null, workSubfolders?: bool, workInMemories?: bool }` (since 1.13.0); `keepGeo?`, `people?`, `peopleKids?` (bool, since 1.16.0) | `{ workFolder, workSubfolders, workInMemories, folder { id, path, areaId } \| null }` — mine, on every device |
 | `POST photos/review` | `{ ids (≤ 500), review: bool, hint?: 0 … 100 \| null }` (since 1.13.0) | `{ changed, items [{ id, review { hint } \| null }] }` — the review mark |
-| `GET photos/memories` | `date?` (YYYY-MM-DD); `area?`, `folder?` or `camera?` (since 1.10.0) | `{ date, groups [{ yearsAgo, date, items [photo] }] }` |
+| `GET photos/memories` | `date?` (YYYY-MM-DD); `area?`, `folder?` or `camera?` (since 1.10.0) | `{ date, groups [{ yearsAgo, date, items [photo] }] }` — since 1.26.0 only private photos |
+| `GET memories` | `date?` (YYYY-MM-DD; since 1.26.0, feature `memoryCollections`) | `{ date, home { key, name } \| null, collections [collection] }` — the page „Erinnerungen“ (see "Memories") |
+| `GET memories/photos` | `id` (a collection's), `before?`, `limit?` (≤ 200; since 1.26.0) | `{ id, items [photo], next }` — its photos like `GET photos` |
 | `GET photos/camera` | (since 1.10.0) | `{ folder { id, path, areaId } \| null }` — `Bilder/Kamera-Uploads` of my files |
 | `POST photos/camera` | (since 1.10.0) | `{ folder { id, path, areaId }, created }` — made where missing; a file in the way: `409 exists { field: 'path' }` |
 | `GET albums` | | `{ albums [album] }` |
@@ -479,8 +481,10 @@ failed).
     `private`: every other picture and video. `class=` on `GET photos` and `photos/months` (with `area`, `folder`,
     `camera`; another value: `400 invalid { field: 'class' }`), `GET photos/classes` the counts. Without a work folder:
     `work` is empty. A photo item carries `review` (`{ hint }` or `null`) and `work` (below my work folder, not marked).
-  - `photos/memories` and the photo frame leave the work folder out while `workInMemories` is off — the frame that of
-    the person who switched the album on. Albums and the timeline still show work photos. No new permission.
+  - The photo frame leaves the work folder out while `workInMemories` is off — that of the person who switched the
+    album on. **Memories** (`photos/memories`, `GET memories`, the overview's cards) show only private photos since
+    1.26.0, whatever `workInMemories` says (1.13.0 – 1.25.x: without the work folder while it was off); the setting is
+    kept and is the photo frame's alone. Albums and the timeline still show work photos. No new permission.
 - An album: `{ id, name, areaId, count, coverId, frame, updatedAt, canEdit, canFrame, coverUrl, createdBy }` — of an
   area (default `mine:<me>`); whoever reads the area sees it, whoever writes in it (not archived) changes it (name ≤
   100 characters, cover — one of its items, items, delete). Items point at nodes: an item the viewer cannot read or
@@ -824,9 +828,11 @@ answers everything for it in one request (`server/overview.js`); a part is left 
   access, a stopped device too; a parent opening a file of a child's folder: the child is told as for content); not
   an older version, and not what a PC fetches for a folder it syncs (a folder of mode `sync` in `PUT
   devices/<id>/folders` of the device of the asking token — those fetches are the sync).
-- `memories [≤ 4 { yearsAgo, date, count, cover }]` — this calendar day (± 1 day) in earlier years like `GET
+- `memories [≤ 4 { yearsAgo, date, count, cover, id }]` — this calendar day (± 1 day) in earlier years like `GET
   photos/memories`, the nearest first; `count` every photo of that day, `cover` the first as a photo item. The client
-  makes the label („Heute vor 2 Jahren“).
+  makes the label („Heute vor 2 Jahren“). Since 1.26.0 only private photos (see "Memories") and only a day with **more
+  than 10** of them; `id` the collection of `GET memories/photos` — „Alle“ opens the page „Erinnerungen“ while `GET me`
+  has `memoryCollections`.
 - `people { people: [≤ 8], unnamed } | null` — the people with a name who are not hidden, most photos first, as `GET
   people` answers them; `unnamed` how many without a name are not hidden ("Wer ist das?").
 - `places { top: [≤ 3 { key, name, count }], cluster: { lat, lon, count }, total }` — the places with the most photos,
@@ -838,6 +844,48 @@ answers everything for it in one request (`server/overview.js`); a part is left 
   file as a folder item; `folder` null at the top of the area.
 - `storage { used, total, target, areaId }` — my files: their bytes, the area's quota (`null`: none), the label of its
   storage target (`null`: this server) — as the portal's menu shows it.
+
+## Memories (since 1.26.0, feature `memoryCollections`)
+
+The page **„Erinnerungen“** of the apps and the portal (the overview's „Alle“ and its cards open it; an app without
+`memoryCollections` in `GET me` opens „Fotos“ as before). `server/memories.js`.
+
+**Only private photos** — in every collection, in `GET photos/memories` and in the overview's cards: the pictures and
+videos of every area the person reads (never the trash or a vault) but **not** below their work folder, **not** marked
+„Prüfen“ (the review mark: still to be sorted) and **not** in a team folder (a team's photos are work). Whatever
+`workInMemories` says — since 1.26.0 that setting is the photo frame's alone. A photo checked as private (the mark
+ends) counts again; one moved into the work folder no longer does.
+
+`GET memories?date=` (default today, the server's time zone) → `{ date, home, collections }`. Each collection: `{ id,
+kind, count, cover, from, to }` — `cover` a photo item (the first photo; for a person the newest), `from` / `to` the
+time it covers (ISO) — and by kind, in this order:
+
+| kind | Shown as | Rule (constants in `server/memories.js`) | More fields | `id` |
+| --- | --- | --- | --- | --- |
+| `day` | „Heute vor X Jahren“ | this calendar day ± 1 day in each earlier year with **more than 10** photos (`DAY_MORE_THAN`) | `yearsAgo`, `date` | `day:YYYY-MM-DD` |
+| `trip` | „Ausflüge und Reisen“ | days in a row with photos at a city **at least 40 km from home** (`TRIP_KM`); one day without photos near home between two such days does not end it (≤ 62 days); **≥ 10** photos there (`TRIP_MIN`); the newest 30 | `place { key, name, region, country }` (most photos), `places` [≤ 3 names], `days`, `firstDay`, `lastDay` | `trip:YYYY-MM-DD:YYYY-MM-DD` |
+| `person` | „Mit Noah“ | my named people, not hidden, on **≥ 10** private photos (`PERSON_MIN`) while my switch `people` is on; the 20 with most | `person { id, name }` | `person:<id>` |
+| `month` | „Diesen Monat vor X Jahren“ | this calendar month in each earlier year with **≥ 20** photos (`MONTH_MIN`) | `yearsAgo`, `month` (YYYY-MM) | `month:YYYY-MM` |
+| `year` | „Jahresrückblick“ | every year before this one with **≥ 50** photos (`YEAR_MIN`) | `year` | `year:YYYY` |
+| `place` | „Orte“ („Langenlonsheim · 12 Fotos“) | the cities with **≥ 10** photos (`PLACE_MIN`); the 20 with most | `place { key, name, region, country }` | `place:geonames:<id>` |
+
+**Home** (`home { key, name }` or `null`): the city (feature `photoPlaces`, GeoNames offline) with private photos on
+the most days, then the most photos — worked out from the photos each time, nothing stored. Without photos with a
+place: no home and no trips. A trip's photos are those at its cities at least 40 km from home, from its first to its
+last day (photos without a place on those days are not in it).
+
+`GET memories/photos?id=&before=&limit=` → `{ id, items, next }`: the photos of one collection like `GET photos` —
+newest first, ≤ 200 a page (default 100), `next` the `before` of the next page. The collection is worked out again
+from its `id` (a collection that no longer reaches its minimum still answers its photos). A wrong `id`: `400 invalid {
+field: 'id' }`; `person:<id>` not mine: `404 not_found { field: 'id' }`; `date` not a day: `400 invalid { field:
+'date' }`. A parent looking at photos of a child's folder: the child is told as for `GET photos`.
+
+**Cheap** — `GET memories` is one grouped query over the private photos (by the hour taken and the city, on the
+covering index `nodes_memories`, migration 021), the people's counts (faces → nodes by key) and the covers by id;
+`GET memories/photos` a page on the index of the time taken (`nodes_taken`, forced with `INDEXED BY`), of the place
+(`nodes_geo_place`) or of the person's faces (`faces_person`). `test/memories_speed.test.js`: 50 000 photos, every
+statement of `GET memories`, `GET memories/photos` (each kind), `photos/memories`, `GET photos`, `photos/months` and
+`GET overview` under 200 ms, with the query plans checked.
 
 ## Places and people (since 1.16.0, features `photoPlaces` and `photoPeople`)
 
@@ -1344,6 +1392,13 @@ with the storage below, "Erinnerungen", "Personen" (the faces, "Wer ist das?"), 
 the count, the places as chips) — empty tiles are left out; live changes load it again at most every 10 s. "Fotos"
 shows only the photos: no memories and no band "N Fotos zu prüfen" any more (the chip has the count), "Karte" and
 "Personen" up top.
+Since 1.26.0 (`ui/memories.js`, feature `memoryCollections`): „Alle“ of "Erinnerungen" opens the page
+**„Erinnerungen“** — the collections of `GET memories` as cards with their cover by section („Heute in früheren
+Jahren“, „Ausflüge und Reisen“, „Mit deinen Leuten“, „Diesen Monat in früheren Jahren“, „Jahresrückblick“, „Orte“),
+the note „Nur private Fotos …“; a card (also one of the overview) opens its photos as tiles of „Fotos“ (page by page,
+a click shows them in the viewer and goes through them), the path „Erinnerungen › …“ leads back. Without the feature
+„Alle“ opens „Fotos“ as before. In the Drive settings the switch is now „Arbeitsfotos nie im Fotorahmen“ (memories are
+private anyway).
 The section "Fotorahmen" (`ui/frame.*`) is the slide show of a kiosk device.
 
 ## Admin (GateControl's admin UI)

@@ -57,7 +57,7 @@ test('texts: every key the portal uses exists in de and en; the same keys in bot
   assert.deepEqual(Object.keys(texts.de).sort(), Object.keys(texts.en).sort());
   for (const l of ['de', 'en']) for (const [k, v] of Object.entries(texts[l])) assert.ok(typeof v === 'string' && v.trim(), `${l}: ${k} empty`);
   const src = fs.readFileSync(path.join(UI, 'portal.js'), 'utf8') + fs.readFileSync(path.join(UI, 'vault.js'), 'utf8') + fs.readFileSync(path.join(UI, 'bulk.js'), 'utf8')
-    + fs.readFileSync(path.join(UI, 'ki.js'), 'utf8');
+    + fs.readFileSync(path.join(UI, 'ki.js'), 'utf8') + fs.readFileSync(path.join(UI, 'memories.js'), 'utf8');
   const html = fs.readFileSync(path.join(UI, 'portal.html'), 'utf8');
   const keys = new Set();
   for (const m of src.matchAll(/\bT\('([a-z0-9_.]+)'\s*[,)]/gi)) keys.add(m[1]);
@@ -67,6 +67,8 @@ test('texts: every key the portal uses exists in de and en; the same keys in bot
   for (const k of keys) assert.ok(ctx.texts[k] != null || texts.de[k] != null, `missing text ${k}`);
   for (const m of src.matchAll(/\b(?:U\.)?P\('([a-z0-9_.]+)'/g)) for (const l of ['de', 'en']) for (const s of ['.one', '.other']) assert.ok(texts[l][m[1] + s], `${l}: ${m[1]}${s}`);
   for (const s of ['active', 'expired', 'revoked', 'locked', 'used', 'gone', 'ended']) assert.ok(texts.de['p.state_' + s], s);
+  // the page „Erinnerungen“ (1.26.0): a heading per kind
+  for (const k of ['day', 'trip', 'person', 'month', 'year', 'place']) for (const l of ['de', 'en']) assert.ok(texts[l]['p.mem.sec_' + k], `${l}: p.mem.sec_${k}`);
   for (const s of ['open', 'download', 'zip', 'upload', 'unlock', 'pin_failed', 'locked']) assert.ok(texts.de['p.ev_' + s], s);
   for (const s of ['moved', 'trashed', 'revoked']) assert.ok(texts.de['p.ended_' + s], s);
 });
