@@ -102,6 +102,10 @@ async function pimState(gc, accountId, what) {
 
 async function setPim(gc, a, what, state, code, extra = {}) {
   const now = Date.now();
+  // the same state again (every list sync) → no write (1.12.1); checked_at is the time of the last change then
+  const cur = await pimState(gc, a.id, what);
+  if (cur && cur.state === state && (cur.error_code || null) === (code || null)
+    && (!extra.server || cur.server === extra.server) && (!extra.home || cur.home === extra.home)) return;
   await store.run(gc, `INSERT INTO pim_state (account_id, what, state, error_code, error_at, server, home, checked_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(account_id, what) DO UPDATE SET state = excluded.state, error_code = excluded.error_code, error_at = excluded.error_at,
     server = COALESCE(excluded.server, server), home = COALESCE(excluded.home, home), checked_at = excluded.checked_at`,
