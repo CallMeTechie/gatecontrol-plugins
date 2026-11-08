@@ -3,6 +3,33 @@
 Die Familie in der GateControl-App (eigener Tab), im Portal (eigener Tab „Familie“) und auf
 drei Admin-Seiten. Alles bleibt auf dem eigenen Server.
 
+## 1.19.0
+
+- **„Notizen & Aufgaben“ (optional):** Ist das Plugin „Notizen & Aufgaben“ (`gatecontrol-notizen`) installiert, ist
+  Familie eine seiner Quellen. Ohne das Plugin ändert sich nichts – kein Aufruf, keine Einträge, die Pinnwand bleibt in
+  Familie.
+  - **Aufgaben, Einkaufslisten, Erinnerungen in „Mein Tag“:** die aktuelle Fälligkeit jeder Aufgabe (Art `fest`: ein
+    Eintrag je Person, sonst einer; das Kind als `assignee`, Sterne als Chip) für die Zuständigen und die Eltern, jede
+    Einkaufsliste mit Offenem (Fortschritt, `meta.type: 'shopping'`, nur Anzeige) für die Familie und die offenen
+    Erinnerungen von heute für ihre Person. Abhaken dort ist „Erledigt“ in Familie (Sterne wie gewohnt; Eltern haken für
+    ein Kind ab); zurücknehmen geht nicht (`read_only`).
+  - **Pinnwand und Packlisten ziehen um:** Sie liegen dann in zwei Notizbüchern, die der Hub für Familie führt
+    („Pinnwand“, „Packlisten“, Mitglieder: Eltern und Kinder – neu gebunden, wenn sich die Familie ändert). Der Umzug ist
+    ein `notes_import` aller Notizen und Packlisten (Verweise `board:<id>` / `checklist:<id>`, wiederholbar). Danach geht
+    jede Änderung in Familie gleich nach dem Speichern dorthin (`note_save` / `note_delete` als die Person, die sie
+    gemacht hat), Änderungen im Hub kommen zurück, wenn der Hub `notes_changed` meldet (neuer Dienst, 600 pro Stunde),
+    sonst alle 15 Minuten (`notes_list` mit `since`). Familie zeigt sie weiter wie bisher; `GET board` sagt mit
+    `home: { home: 'familie' | 'notizen', since }`, wo sie liegen. Vorlagen bleiben in Familie.
+  - **Nichts geht verloren:** Families Tabellen bleiben der Zwischenspeicher, aus dem Familie anzeigt und mit dem es
+    weiterarbeitet. Ist der Hub eine Weile weg, warten die Änderungen (`hub_notes.dirty`, `hub_gone`) und gehen, wenn er
+    wieder da ist; wird er entfernt, arbeitet Familie einfach weiter. Kennt der Hub das Notizbuch nicht mehr (frisch
+    installiert), geht Familie zurück auf die eigene Pinnwand und zieht beim nächsten Lauf neu um.
+  - Push nur echter Änderungen (`gatecontrol-notizen:todo_changed`, Vertrag v1, Tabelle `todo_sent`): höchstens einmal
+    pro Minute im Hintergrund und wenige Sekunden nach einer Änderung an Aufgaben, Einkauf oder Regeln.
+  - Neue Dienste für den Hub (nur `gatecontrol-notizen`, je 600 Aufrufe pro Stunde): `todo_items`, `todo_complete`,
+    `notes_changed`. Neue Berechtigungen `gatecontrol-notizen:todo_changed`, `:notes_bind`, `:notes_list`,
+    `:note_save`, `:note_delete`, `:notes_import` (der Administrator bestätigt sie mit dem Update).
+
 ## 1.18.1
 
 - Handbuch im Reiter „Handbuch“ (GateControl ≥ 1.241.0): `HANDBUCH.md` / `HANDBOOK.md` im Paket, in `plugin.json` unter `handbook`. Ältere GateControl-Versionen ignorieren es; die Mindestversion bleibt `>=1.216.0`.

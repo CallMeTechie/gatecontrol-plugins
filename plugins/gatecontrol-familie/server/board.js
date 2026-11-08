@@ -20,8 +20,13 @@
 // member). Templates { id, title, items: [text] } — POST { checklistId } (from
 // a checklist) or { title, items }. Checklists and templates: the creator and
 // parents delete.
+//
+// 1.19.0: with „Notizen & Aufgaben“ (gatecontrol-notizen) notes and checklists live in the hub (server/boardsync.js) —
+// these tables are then what Familie shows and works on; every change goes to the hub after its commit (who made it:
+// boardsync.touched / deleting). GET board says where they live: home 'familie' | 'notizen'. Templates stay here.
 
 const store = require('./store');
+const boardsync = require('./boardsync');
 const { fail, posInt, text, multiline, bool, iso, parseIso, parseJson, line } = require('./util');
 
 const COLORS = ['yellow', 'green', 'blue', 'pink', 'grey'];
@@ -97,12 +102,14 @@ async function updateNote(gc, r, raw) {
   await store.run(gc, 'UPDATE board_notes SET text = ?, color = ?, pinned = ?, expires_at = ?, updated_at = ? WHERE id = ?', [
     b.text !== undefined ? noteText(b.text) : n.text, b.color !== undefined ? color(b.color) : n.color,
     b.pinned !== undefined ? (bool(b.pinned) ? 1 : 0) : n.pinned, b.expiresAt !== undefined ? expires(b.expiresAt, r.now) : n.expires_at, r.now, n.id]);
+  await boardsync.touched(gc, 'note', n.id, r.me.userId);
   return { note: noteView(await store.one(gc, 'SELECT * FROM board_notes WHERE id = ?', [n.id])) };
 }
 
 async function removeNote(gc, r, raw) {
   const n = await noteRow(gc, r, raw);
   if (!mayDelete(r, n.author_id)) throw fail('forbidden');
+  await boardsync.deleting(gc, 'note', n.id, r.me.userId);
   await store.run(gc, 'DELETE FROM board_notes WHERE id = ?', [n.id]);
   return {};
 }
@@ -179,23 +186,28 @@ async function updateChecklist(gc, r, raw) {
   const c = await checklistRow(gc, raw);
   const b = r.body || {};
   if (b.title !== undefined) await store.run(gc, 'UPDATE checklists SET title = ?, updated_at = ? WHERE id = ?', [text(b.title, TITLE_MAX), r.now, c.id]);
+  if (b.title !== undefined) await boardsync.touched(gc, 'checklist', c.id, r.me.userId);
   return { checklist: await oneChecklist(gc, c.id) };
 }
 
 async function removeChecklist(gc, r, raw) {
   const c = await checklistRow(gc, raw);
   if (!mayDelete(r, c.created_by)) throw fail('forbidden');
+  await boardsync.deleting(gc, 'checklist', c.id, r.me.userId);
   await store.run(gc, 'DELETE FROM checklist_items WHERE checklist_id = ?', [c.id]);
   await store.run(gc, 'DELETE FROM checklists WHERE id = ?', [c.id]);
   return {};
 }
 
-const touch = (gc, id, now) => store.run(gc, 'UPDATE checklists SET updated_at = ? WHERE id = ?', [now, id]);
+const touch = async (gc, id, now, userId) => {
+  await store.run(gc, 'UPDATE checklists SET updated_at = ? WHERE id = ?', [now, id]);
+  if (userId) await boardsync.touched(gc, 'checklist', id, userId);
+};
 
 async function addItem(gc, r, raw) {
   const c = await checklistRow(gc, raw);
   const [id] = await addItems(gc, c.id, [itemText((r.body || {}).text)], r.now);
-  await touch(gc, c.id, r.now);
+  await touch(gc, c.id, r.now, r.me.userId);
   return { item: itemView(await store.one(gc, 'SELECT * FROM checklist_items WHERE id = ?', [id])), checklist: await oneChecklist(gc, c.id) };
 }
 
@@ -214,7 +226,7 @@ async function updateItem(gc, r, raw, rawItem) {
   const done = b.done !== undefined ? bool(b.done) : !!i.done;
   await store.run(gc, 'UPDATE checklist_items SET text = ?, done = ?, done_by = ? WHERE id = ?',
     [b.text !== undefined ? itemText(b.text) : i.text, done ? 1 : 0, done ? (b.done !== undefined ? r.me.userId : i.done_by) : null, i.id]);
-  await touch(gc, c.id, r.now);
+  await touch(gc, c.id, r.now, r.me.userId);
   return { item: itemView(await store.one(gc, 'SELECT * FROM checklist_items WHERE id = ?', [i.id])), checklist: await oneChecklist(gc, c.id) };
 }
 
@@ -222,14 +234,14 @@ async function removeItem(gc, r, raw, rawItem) {
   const c = await checklistRow(gc, raw);
   const i = await itemRow(gc, c, rawItem);
   await store.run(gc, 'DELETE FROM checklist_items WHERE id = ?', [i.id]);
-  await touch(gc, c.id, r.now);
+  await touch(gc, c.id, r.now, r.me.userId);
   return { checklist: await oneChecklist(gc, c.id) };
 }
 
 async function reset(gc, r, raw) {
   const c = await checklistRow(gc, raw);
   await store.run(gc, 'UPDATE checklist_items SET done = 0, done_by = NULL WHERE checklist_id = ?', [c.id]);
-  await touch(gc, c.id, r.now);
+  await touch(gc, c.id, r.now, r.me.userId);
   return { checklist: await oneChecklist(gc, c.id) };
 }
 
@@ -279,9 +291,9 @@ async function removeTemplate(gc, r, raw) {
   return {};
 }
 
-/** GET board */
+/** GET board — 1.19.0: `home` where notes and checklists live ({ home: 'familie' | 'notizen', since }) */
 async function get(gc, r) {
-  return { notes: await notes(gc, r), checklists: await checklists(gc), templates: await templates(gc) };
+  return { notes: await notes(gc, r), checklists: await checklists(gc), templates: await templates(gc), home: await boardsync.where(gc) };
 }
 
 /** Overview: pinned notes, notes, checklists with something open. */
@@ -304,6 +316,8 @@ function route(gc, r, rest, method) {
   const POST = method === 'POST';
   const PATCH = method === 'PATCH' || method === 'PUT';
   const DELETE = method === 'DELETE';
+  // 1.19.0: a change goes to „Notizen & Aufgaben“ right after its commit (when the board lives there; never fails it)
+  if (!GET && Array.isArray(r.after)) r.after.push(async () => { await boardsync.afterWrite(gc, r.fam, r.cfg); });
   if (n === 0 && GET) return () => get(gc, r);
   if (a === 'notes') {
     if (n === 1 && GET) return async () => ({ notes: await notes(gc, r) });

@@ -64,6 +64,11 @@
 // 1.18.0: „Internet zu Hause“ (GateControl ≥ 1.231.0, permissions.homeInternet → gc.homeNetwork.internet) — parents pause
 // the internet of a child at home or give it more time today; the child is told (server/internet.js). Older GateControl:
 // the portal card stays hidden, the API answers available: false / 409 unavailable.
+//
+// 1.19.0: „Notizen & Aufgaben“ (gatecontrol-notizen, optional): tasks, shopping lists and open reminders as its items
+// (pushed when they change — todo_changed; services todo_items / todo_complete, server/notizen.js) and Pinnwand and
+// Packlisten moved into the hub's notebooks (notes_bind / notes_import / note_save / note_delete / notes_list, the hub
+// calls notes_changed back — server/boardsync.js); Familie keeps showing them. Without the hub nothing changes.
 
 const ui = require('./ui');
 const api = require('./api');
@@ -97,6 +102,8 @@ const wifi = require('./wifi');
 const groups = require('./groups');
 const homewifi = require('./homewifi');
 const internet = require('./internet');
+const notizen = require('./notizen');
+const boardsync = require('./boardsync');
 const texts = require('./texts.json');
 const { STATUS, isKnown } = require('./util');
 
@@ -115,6 +122,8 @@ function errorResponse(e, lang) {
 }
 
 const state = { ticking: false, lastPurge: 0 };
+// 1.19.0: the parts of the API whose changes are items of „Notizen & Aufgaben“ (server/notizen.js)
+const TODO_PARTS = ['tasks', 'shopping', 'rules'];
 const PURGE_EVERY_MS = 3600000;
 
 /** The viewer's member row ({ role }) when the account exists, else null. */
@@ -195,6 +204,9 @@ async function background(gc, now) {
   try { await groups.tick(gc, fam, cfg, now); } catch (e) { gc.log.warn('background step failed', 'group', (e && (e.code || e.message)) || 'error'); }
   // the messenger group, last (outside any transaction: a service call may take a while)
   await messenger.tick(gc, fam, cfg, now);
+  // 1.19.0: „Notizen & Aufgaben“ — Pinnwand and Packlisten in step with the hub, then the to-dos (both never throw)
+  await boardsync.sync(gc, fam, cfg, now);
+  await notizen.source.tick(gc, now);
 }
 
 module.exports = {
@@ -203,7 +215,11 @@ module.exports = {
     messenger.reset();
     groups.reset();
     school.reset();
+    boardsync.reset();
+    notizen.source.reset();
     state.lastPurge = 0;
+    // 1.19.0: is „Notizen & Aufgaben“ there (asks nobody)?
+    await notizen.source.available(gc);
     // 1.17.0: GateControl's presence over the home network (≥ 1.230.0 with permissions.homePresence; never fails the start)
     homewifi.start(gc);
     try {
@@ -233,9 +249,15 @@ module.exports = {
       if (seg[0] === 'admin') {
         // admin pages only: an administrator in GateControl's admin UI, never a portal or app caller
         if (!req.user || req.user.portal || req.user.app || req.user.role !== 'admin') return errorResponse({ code: 'forbidden' }, lang);
-        return { status: 200, json: { ok: true, ...(await admin.route(req, gc, seg, cfg, now)) } };
+        const out = { status: 200, json: { ok: true, ...(await admin.route(req, gc, seg, cfg, now)) } };
+        // 1.19.0: members or modules changed — „Notizen & Aufgaben“ gets the difference in a few seconds
+        if (String(req.method || 'GET').toUpperCase() !== 'GET') notizen.source.soon(gc);
+        return out;
       }
-      return await api.route(req, gc, seg, cfg, now);
+      const out = await api.route(req, gc, seg, cfg, now);
+      // 1.19.0: a task, a shopping list or a reminder changed — „Notizen & Aufgaben“ gets the difference in a few seconds
+      if (String(req.method || 'GET').toUpperCase() !== 'GET' && TODO_PARTS.includes(seg[0])) notizen.source.soon(gc);
+      return out;
     } catch (e) {
       if (!isKnown(e)) gc.log.warn('request failed', req && req.method, String((req && req.path) || '').split('/').slice(0, 3).join('/'), (e && (e.code || e.message)) || 'error');
       return errorResponse(e, lang);
@@ -269,8 +291,22 @@ module.exports = {
 
   /** Services for the Messenger (services.provides, GateControl ≥ 1.177.0) — server/services.js. */
   async service(call, gc) {
+    // 1.19.0: „Notizen & Aufgaben“ (only gatecontrol-notizen): todo_items / todo_complete, notes_changed
+    const hub = await notizen.source.service(gc, call);
+    if (hub !== undefined) return hub;
+    if (call && call.name === 'notes_changed') {
+      return boardsync.changed(gc, call, async () => {
+        const c = await config.load(gc);
+        return { cfg: c, fam: await members.load(gc, tz.localDate(Date.now(), c.tz)) };
+      });
+    }
     const cfg = await config.load(gc);
     return services.handle(gc, cfg, call);
+  },
+
+  async stop() {
+    notizen.source.stop();
+    boardsync.stop();
   },
 
   /**
