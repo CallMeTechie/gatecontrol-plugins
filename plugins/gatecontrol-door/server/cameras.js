@@ -114,11 +114,14 @@ async function status(gc, now = Date.now()) {
   return { connected, state, broken, since: s.since, code: s.code, lastOk: s.lastOk };
 }
 
+const LAST_OK_EVERY_MS = 10 * 60000;
+
 async function onOk(gc, now) {
   mem.failures = 0;
   mem.backoffUntil = 0;
   const s = await loadStatus(gc);
-  if (s.state !== 'ok' || !s.lastOk || now - s.lastOk > 60000) await saveStatus(gc, { ...s, state: 'ok', since: null, code: null, lastOk: now });
+  // "zuletzt erreicht" (lastOk, the admin page) at most every LAST_OK_EVERY_MS: a kv.set every minute before 1.7.1
+  if (s.state !== 'ok' || !s.lastOk || now - s.lastOk > LAST_OK_EVERY_MS) await saveStatus(gc, { ...s, state: 'ok', since: null, code: null, lastOk: now });
 }
 
 async function onError(gc, cfg, e, now) {
@@ -132,6 +135,7 @@ async function onError(gc, cfg, e, now) {
   }
   const next = { ...s, state: login ? 'login' : 'error', since: s.state === 'error' || s.state === 'login' ? s.since || now : now, code };
   if (login) await ring.logout(gc).catch(() => {});
+  const same = JSON.stringify(next) === JSON.stringify(s);
   const broken = login || now - next.since >= BROKEN_AFTER_MS;
   const day = tz.local(now, cfg.timezone).date;
   if (broken && next.pushDay !== day) {
@@ -144,7 +148,8 @@ async function onError(gc, cfg, e, now) {
       title: push.t(cfg.notifyLang, 'ring.broken'), body: push.t(cfg.notifyLang, 'ring.broken_body'), data: { door: { type: 'ring_broken' } },
     });
   }
-  await saveStatus(gc, next);
+  // the same error again (every retry): nothing new to store
+  if (!same || next.pushDay !== s.pushDay) await saveStatus(gc, next);
 }
 
 /** Mark the connection as fresh after a login (the wizard). */

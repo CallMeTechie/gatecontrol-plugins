@@ -223,7 +223,7 @@ async function syncIn(ctx, since, limit, vault) {
   }
   const more = rows.length > limit;
   if (more) rows = rows.slice(0, limit);
-  await store.run(gc, 'UPDATE accounts SET seen_at = ? WHERE user_id = ?', [now, viewer]);
+  await require('./people').seenAccount(gc, viewer, now);
   return {
     seq,
     account: since === 0 || a.seq > since ? account.view(a) : null,

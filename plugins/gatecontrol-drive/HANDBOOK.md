@@ -116,6 +116,10 @@ The previews reach the gateway bit by bit (a few hundred per run, every 15 minut
 
 - **Memories on the overview every day:** when there is no “Heute vor X Jahren” today (that needs more than 10 private photos on this day), the tile “Erinnerungen” now shows other collections of the page “Erinnerungen” – a trip, “Mit Noah”, “Diesen Monat vor X Jahren” or a year in review, for example. A tap opens the photos, “Alle” the page. Before, the tile was missing on those days.
 
+## New in 1.27.1
+
+- **Less writing** for the home cache. On a slow disk (a NAS with hard disks) GateControl stays more responsive.
+
 ## New in 1.27.0
 
 - **Ticking off deadlines:** “Done” on the page “Deadlines” – for everyone who sees the file; no reminder comes after that.

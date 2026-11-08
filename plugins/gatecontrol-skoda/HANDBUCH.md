@@ -1,4 +1,4 @@
-<!-- version: 1.6.1 -->
+<!-- version: 1.6.2 -->
 # Fahrzeuge
 
 ## Was das Plugin kann
@@ -63,6 +63,10 @@ Ohne Parkposition erkennt das Plugin keine Fahrt. Meldet Škoda die Position, ab
 
 **Die Karte zeigt nur eine gestrichelte Linie.**
 Der Kilometerstand passt nicht zum berechneten Weg (Umweg, Zwischenstopps), oder der Routendienst hat keinen Weg gefunden.
+
+## Neu in 1.6.2
+
+- **Weniger Schreibarbeit** beim Abgleich mit Škoda. Auf einem langsamen Datenträger (NAS mit Festplatten) bleibt GateControl dadurch flüssiger.
 
 ## Neu in 1.6.1
 

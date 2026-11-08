@@ -116,6 +116,10 @@ Die Vorschaubilder kommen erst nach und nach auf das Gateway (je Lauf einige Hun
 
 - **Erinnerungen in der Übersicht an jedem Tag:** Gibt es heute kein „Heute vor X Jahren“ (dafür braucht es mehr als 10 private Fotos an diesem Tag), zeigt die Kachel „Erinnerungen“ jetzt andere Sammlungen der Seite „Erinnerungen“ – zum Beispiel eine Reise, „Mit Noah“, „Diesen Monat vor X Jahren“ oder einen Jahresrückblick. Ein Tipp öffnet die Fotos, „Alle“ die Seite. Vorher fehlte die Kachel an solchen Tagen ganz.
 
+## Neu in 1.27.1
+
+- **Weniger Schreibarbeit** für den Zwischenspeicher im Heimnetz. Auf einem langsamen Datenträger (NAS mit Festplatten) bleibt GateControl dadurch flüssiger.
+
 ## Neu in 1.27.0
 
 - **Fristen abhaken:** „Erledigt“ auf der Seite „Fristen“ – für alle, die die Datei sehen; danach kommt keine Erinnerung mehr.

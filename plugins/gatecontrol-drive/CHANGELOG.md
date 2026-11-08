@@ -18,6 +18,11 @@ Dateien der Familie und des Teams auf dem eigenen Speicher – auf diesem Server
   „Erinnerungen“ („2024 im Rückblick“, „Hamburg“, „Mit Noah“ …), Anzahl und Titelbild; eine Karte öffnet ihre Fotos,
   „Alle“ die Seite. Aussehen und Breite (2fr) wie bisher.
 
+## 1.27.1
+
+- **Weniger Schreibvorgänge:** ein Eintrag in `meta` (Zwischenspeicher im Heimnetz: „neu planen“, Zustand) wird nur geschrieben, wenn sich sein Wert ändert – die Markierung „neu planen“ wurde vorher bei jeder Änderung neu geschrieben.
+- Test: zwanzigmal markiert, einmal geschrieben (`writes.test.js`).
+
 ## 1.27.0
 
 - **Fristen abhaken:** `POST deadlines/<id>/done` / `DELETE deadlines/<id>/done` → `{ deadline }` – erledigt (bezahlt,

@@ -2,6 +2,11 @@
 
 Synology-NAS überwachen und steuern (DSM Web API) als GateControl-Plugin – nur für Administratoren.
 
+## 1.2.2
+
+- **Weniger Schreibvorgänge:** der Stand eines NAS (Snapshot) und seine Abfragezeiten (`last_attempt_at`, `last_success_at`, `next_poll_at`) werden höchstens alle 5 Minuten gespeichert; der neueste Stand liegt im Speicher und wird zuerst gelesen. Ein Fehler, ein neuer Status oder ein Neustart wird sofort gespeichert. Vorher zwei Schreibvorgänge je Abfrage (im Protokoll von GateControl 1.253.5 je ~400 ms auf einem langsamen Datenträger).
+- Tests: `due()` setzt `next_poll_at` über den Store (die Zeiten liegen zwischen zwei Schreibvorgängen im Speicher); eine Stunde Abfragen jede Minute speichert Snapshot und Zeiten je höchstens 13 Mal statt 60 (`writes.test.js`).
+
 ## 1.2.1
 
 - Handbuch im Reiter „Handbuch“ (GateControl ≥ 1.241.0): `HANDBUCH.md` / `HANDBOOK.md` im Paket, in `plugin.json` unter `handbook`. Ältere GateControl-Versionen ignorieren es; die Mindestversion bleibt `>=1.193.0`.

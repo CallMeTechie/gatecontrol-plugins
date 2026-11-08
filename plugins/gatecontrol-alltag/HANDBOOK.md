@@ -1,4 +1,4 @@
-<!-- version: 1.5.0 -->
+<!-- version: 1.5.1 -->
 # Everyday
 
 ## What the plugin does
@@ -72,6 +72,10 @@ After errors the plugin asks less often (calendars up to every 6 hours, waste ca
 
 **No reminder arrived.**
 Did you switch off the topic “Waste collection” or “Events” in the notification settings? Are you chosen as a person for the plan or calendar? “Send test reminder” shows whether notifications arrive.
+
+## New in 1.5.1
+
+- **Less writing:** the reminders only store their state when something happened. On a slow disk (a NAS with hard disks) GateControl stays more responsive.
 
 ## New in 1.5.0
 

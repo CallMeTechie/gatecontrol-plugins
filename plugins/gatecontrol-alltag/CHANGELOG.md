@@ -2,6 +2,11 @@
 
 Müllabfuhr und Kalender des Haushalts als GateControl-Plugin.
 
+## 1.5.1
+
+- **Weniger Schreibvorgänge:** findet die Erinnerungsprüfung (jede Minute) nichts Neues, wird ihr Stand höchstens alle 10 Minuten gespeichert (kv.set) – vorher bei jeder Prüfung, weil er die Uhrzeit der Prüfung trug. Was gesendet wurde, wird sofort gespeichert.
+- Test: eine Stunde Prüfungen ohne Fälliges speichert den Stand höchstens 6 Mal (`writes.test.js`).
+
 ## 1.5.0
 
 - **Müllabfuhr in „Notizen & Aufgaben“:** Ist das Plugin „Notizen & Aufgaben“ (`gatecontrol-notizen`) installiert,

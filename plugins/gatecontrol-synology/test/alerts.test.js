@@ -230,7 +230,7 @@ test('background: N failed polls → one "unreachable", then "reachable again"',
   await withHost({ nas: [d], settings: { unreachable_polls: 2 } }, async (host) => {
     const id = await addNas(host);
     d.state.down = true;
-    const due = () => host.gc.db.run('UPDATE nas SET next_poll_at = 0 WHERE id = ?', [id]);
+    const due = () => require('../server/store').updateNas(host.gc, id, { next_poll_at: 0 }); // through the store (poll times in memory)
     for (let i = 0; i < 3; i++) { await due(); await host.tick(); }
     assert.deepEqual(host.notifications.map((n) => [n.topic, n.priority]), [['unreachable', 'high']]);
     assert.match(host.notifications[0].body, /Keller antwortet seit 2 Abfragen nicht/);

@@ -71,6 +71,8 @@ async function sync(gc, { force = false } = {}) {
     const name = named ? prev.name : (cleanText(s.name, NAME_MAX) || s.mac);
     const caps = JSON.stringify({ source: 'ble', reading, gateway_id: Number.isInteger(s.gatewayId) ? s.gatewayId : null, gateway: cleanText(s.gateway, 80) || null, model: cleanText(s.model, 60) || null, named });
     if (prev) {
+      // the same reading as a minute ago → no write
+      if (prev.name === name && JSON.stringify(prev.capabilities) === caps && JSON.stringify(prev.state) === JSON.stringify(state) && prev.enabled) continue;
       await gc.db.run("UPDATE resources SET name = ?, capabilities_json = ?, state_json = ?, enabled = 1, updated_at = datetime('now') WHERE id = ?", [name, caps, JSON.stringify(state), prev.id]);
     } else {
       await gc.db.run(`INSERT INTO resources (gateway_id, deconz_id, deconz_type, uniqueid, kind, name, capabilities_json, state_json)

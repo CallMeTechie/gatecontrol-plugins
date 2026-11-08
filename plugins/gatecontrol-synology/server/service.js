@@ -143,20 +143,20 @@ function poll(gc, nas, cfg, { now = Date.now(), otp = null, manual = false } = {
       const patch = { status: 'ok', last_error: null, error_count: 0, last_attempt_at: now, last_success_at: now, next_poll_at: now + cfg.interval * 1000 };
       if (snap.update_checked) patch.update_checked_at = now;
       if (cur.power_state && now - (cur.power_at || 0) >= POWER_SETTLE_MS) { patch.power_state = null; patch.power_at = null; }
-      await store.updateNas(gc, nas.id, patch);
+      await store.updateNas(gc, nas.id, patch, now);
       return { ok: true, reachable: true, failures: 0, snapshot: snap };
     } catch (e) {
       const code = (e && e.code) || 'INTERNAL';
       sessions.delete(nas.id); // a fresh session (and API list) next time
       if (dsm.AUTH_CODES.has(code)) {
         // the NAS answered, the login did not work: pause (DSM blocks an address after repeated wrong logins)
-        await store.updateNas(gc, nas.id, { status: dsm.OTP_CODES.has(code) || code === 'OTP_ENFORCED' ? 'otp' : 'auth', last_error: code, error_count: 0, last_attempt_at: now, next_poll_at: now + AUTH_PAUSE_MS });
+        await store.updateNas(gc, nas.id, { status: dsm.OTP_CODES.has(code) || code === 'OTP_ENFORCED' ? 'otp' : 'auth', last_error: code, error_count: 0, last_attempt_at: now, next_poll_at: now + AUTH_PAUSE_MS }, now);
         if (!manual) gc.log.warn('NAS login failed', nas.id, code);
         return { ok: false, reachable: true, code, failures: 0 };
       }
       if (!dsm.NET_CODES.has(code) && !(e instanceof dsm.DsmError)) gc.log.warn('NAS poll failed', nas.id, (e && e.message) || code);
       const failures = cur.error_count + 1;
-      await store.updateNas(gc, nas.id, { status: 'error', last_error: code, error_count: failures, last_attempt_at: now, next_poll_at: now + backoffMs(cfg, failures) });
+      await store.updateNas(gc, nas.id, { status: 'error', last_error: code, error_count: failures, last_attempt_at: now, next_poll_at: now + backoffMs(cfg, failures) }, now);
       return { ok: false, reachable: false, code, failures, lastSeen: cur.last_success_at };
     }
   });

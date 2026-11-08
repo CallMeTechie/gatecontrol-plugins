@@ -287,6 +287,7 @@ function reset() { notifier = null; }
 function notifierOf(gc) { if (!notifier) notifier = notify.createNotifier(gc); return notifier; }
 
 const RETRY = new Set(['THROTTLED', 'ERR_RATE_LIMIT']);
+const AT_EVERY_MS = 10 * 60000;
 
 /** Compare what is due with what was sent and send the rest. → number sent */
 function check(gc, { now = Date.now() } = {}) {
@@ -304,7 +305,11 @@ function check(gc, { now = Date.now() } = {}) {
       if (r.sent) sent++;
       else if (RETRY.has(r.error)) { delete memo.sent[ev.key]; memo.retry[ev.key] = ev.expires; } // budget used up: again while still due
     }
-    await notify.saveState(gc, STATE_KEY, memo, prev ? JSON.stringify(prev) : null);
+    // nothing new but the time of this check (every run): stored at most every AT_EVERY_MS (1.5.1; a kv.set a minute
+    // before). The older `at` only means fewer observations count as "late" — what was due meanwhile is in `sent`.
+    const onlyAt = prev && Number.isFinite(prev.at) && now >= prev.at && now - prev.at < AT_EVERY_MS
+      && JSON.stringify({ ...memo, at: prev.at }) === JSON.stringify(prev);
+    if (!onlyAt) await notify.saveState(gc, STATE_KEY, memo, prev ? JSON.stringify(prev) : null);
     return sent;
   };
   const p = chain.then(run, run);

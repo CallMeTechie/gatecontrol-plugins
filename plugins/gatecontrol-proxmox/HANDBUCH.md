@@ -1,4 +1,4 @@
-<!-- version: 1.1.1 -->
+<!-- version: 1.1.2 -->
 # Proxmox VE
 
 ## Was das Plugin kann
@@ -86,6 +86,10 @@ Nur überwachte Gäste melden das, und nicht, wenn der Gast in den letzten 30 Mi
 
 **Die Werte sind alt.**
 Bei Fehlern fragt das Plugin seltener (bis alle 5 Minuten) und zeigt die letzten guten Daten mit „zuletzt aktualisiert“ und dem Fehler.
+
+## Neu in 1.1.2
+
+- **Weniger Schreibarbeit:** Proxmox speichert den Stand der Server nur noch alle 5 Minuten; angezeigt wird trotzdem immer die letzte Abfrage. Auf einem langsamen Datenträger (NAS mit Festplatten) bleibt GateControl dadurch flüssiger.
 
 ## Neu in 1.1.1
 

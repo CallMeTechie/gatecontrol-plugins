@@ -153,6 +153,10 @@ async function updatePassword(gc, id, password) {
 
 async function setStatus(gc, id, status, detail = null, { backoffMin = null, nextRetryAt = null } = {}) {
   if (detail != null) detail = String(detail).slice(0, 300); // keep upstream error blobs out of the UI
+  // the same status again (every sync: 'ok') → no write (1.6.2)
+  const cur = (await gc.db.get('SELECT status, status_detail, backoff_min, next_retry_at FROM accounts WHERE id = ?', [Number(id)])).row;
+  if (cur && cur.status === status && (cur.status_detail ?? null) === detail && (backoffMin == null || Number(cur.backoff_min) === Number(backoffMin))
+    && (cur.next_retry_at ?? null) === (nextRetryAt ?? null)) return;
   await gc.db.run(`UPDATE accounts SET status = ?, status_detail = ?, backoff_min = COALESCE(?, backoff_min), next_retry_at = ?,
     updated_at = datetime('now') WHERE id = ?`, [status, detail, backoffMin, nextRetryAt, Number(id)]);
 }
@@ -200,6 +204,11 @@ async function upsertVehicle(gc, accountId, garageEntry) {
   const model = (garageEntry.specification && garageEntry.specification.model) ? String(garageEntry.specification.model).slice(0, 200) : null;
   // account_id only on insert: with vehicle sharing the same VIN can appear in
   // two account garages — first assignment wins, no flapping between accounts.
+  // known with the same name and model (every sync) → no write (1.6.2)
+  const have = (await gc.db.get(`SELECT id, image_url, name, model, ${HAS_IMAGE} FROM vehicles WHERE vin = ?`, [vin])).row;
+  if (have && have.name === name && (have.model ?? null) === model) {
+    return { id: have.id, image_url: have.image_url, has_image: have.has_image };
+  }
   await gc.db.run(`INSERT INTO vehicles (account_id, vin, name, model) VALUES (?, ?, ?, ?)
     ON CONFLICT(vin) DO UPDATE SET name = excluded.name, model = excluded.model`, [Number(accountId), vin, name, model]);
   return (await gc.db.get(`SELECT id, image_url, ${HAS_IMAGE} FROM vehicles WHERE vin = ?`, [vin])).row;

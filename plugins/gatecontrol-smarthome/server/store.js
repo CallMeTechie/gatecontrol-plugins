@@ -87,8 +87,19 @@ async function setArea(gc, resourceId, area) {
   return r.changes > 0;
 }
 
-async function touchGateway(gc, id) {
-  await gc.db.run("UPDATE gateways SET last_seen_at = datetime('now') WHERE id = ?", [Number(id)]);
+// "zuletzt gesehen" of a gateway: written at most once per TOUCH_MS (every sync answered — every 30 s a write before
+// 1.9.1; the page shows minutes)
+const TOUCH_MS = 60 * 1000;
+const touchedBy = new WeakMap(); // gc → Map(gateway id → Date.now() of the last write)
+
+async function touchGateway(gc, id, now = Date.now()) {
+  const gid = Number(id);
+  let touched = touchedBy.get(gc);
+  if (!touched) { touched = new Map(); touchedBy.set(gc, touched); }
+  if (now - (touched.get(gid) || 0) < TOUCH_MS) return false;
+  touched.set(gid, now);
+  await gc.db.run("UPDATE gateways SET last_seen_at = datetime('now') WHERE id = ?", [gid]);
+  return true;
 }
 
 async function removeGateway(gc, id) {
@@ -125,16 +136,22 @@ async function getResource(gc, id) {
 async function upsertResource(gc, { gateway_id, deconz_id, deconz_type, uniqueid = null, kind, name, capabilities, state }) {
   // Lights/sensors match by stable uniqueid (survives Conbee id reassignment),
   // groups/scenes by deconz_id (no stable identifier).
+  const COLS = 'id, deconz_id, uniqueid, kind, name, capabilities_json, state_json, enabled';
   let existing = null;
   if (uniqueid && (deconz_type === 'lights' || deconz_type === 'sensors')) {
-    existing = (await gc.db.get('SELECT id FROM resources WHERE gateway_id = ? AND uniqueid = ?', [gateway_id, uniqueid])).row;
+    existing = (await gc.db.get(`SELECT ${COLS} FROM resources WHERE gateway_id = ? AND uniqueid = ?`, [gateway_id, uniqueid])).row;
   }
   if (!existing) {
-    existing = (await gc.db.get('SELECT id FROM resources WHERE gateway_id = ? AND deconz_type = ? AND deconz_id = ?', [gateway_id, deconz_type, String(deconz_id)])).row;
+    existing = (await gc.db.get(`SELECT ${COLS} FROM resources WHERE gateway_id = ? AND deconz_type = ? AND deconz_id = ?`, [gateway_id, deconz_type, String(deconz_id)])).row;
   }
   const caps = JSON.stringify(capabilities || {});
   // state omitted → keep the cached state
   const stateJson = state === undefined ? undefined : JSON.stringify(state || {});
+  // nothing changed (the usual sync: every 30 s the same lights and sensors) → no write
+  if (existing && existing.deconz_id === String(deconz_id) && (existing.uniqueid || null) === (uniqueid || null) && existing.kind === kind
+    && existing.name === name && existing.capabilities_json === caps && (stateJson === undefined || existing.state_json === stateJson) && Number(existing.enabled) === 1) {
+    return existing.id;
+  }
   if (existing) {
     if (stateJson === undefined) {
       await gc.db.run("UPDATE resources SET deconz_id = ?, uniqueid = ?, kind = ?, name = ?, capabilities_json = ?, enabled = 1, updated_at = datetime('now') WHERE id = ?",
@@ -153,7 +170,8 @@ async function upsertResource(gc, { gateway_id, deconz_id, deconz_type, uniqueid
 /** seenKeys: `${deconz_type}:${deconz_id}`; resources not seen → enabled = 0. */
 async function markMissing(gc, gatewayId, seenKeys) {
   const seen = new Set(seenKeys);
-  const rows = (await gc.db.query('SELECT id, deconz_type, deconz_id FROM resources WHERE gateway_id = ?', [Number(gatewayId)])).rows;
+  // only the ones still on: an UPDATE of an already missing one would write the same values again
+  const rows = (await gc.db.query('SELECT id, deconz_type, deconz_id FROM resources WHERE gateway_id = ? AND enabled = 1', [Number(gatewayId)])).rows;
   for (const r of rows) {
     if (!seen.has(`${r.deconz_type}:${r.deconz_id}`)) await gc.db.run("UPDATE resources SET enabled = 0, updated_at = datetime('now') WHERE id = ?", [r.id]);
   }
@@ -225,7 +243,7 @@ async function allOwners(gc) {
 }
 
 module.exports = {
-  tx, keyName, parseJson, setArea, getGateway, listGateways, apiKeyOf, setApiKey, createGateway, updateGateway, touchGateway, removeGateway,
+  TOUCH_MS, tx, keyName, parseJson, setArea, getGateway, listGateways, apiKeyOf, setApiKey, createGateway, updateGateway, touchGateway, removeGateway,
   listResources, getResource, upsertResource, markMissing,
   ASSIGNABLE, ownerIdsOf, setOwners, resourcesOwnedBy, canAccess, inheritedOwnerIdsOf, allOwners,
 };

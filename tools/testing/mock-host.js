@@ -3282,7 +3282,35 @@ async function createHost(pluginDir, opts = {}) {
   const cams = mockCameras.install({ opts, perms, hostError });
   Object.assign(api, cams.api);
 
-  const call = async (name, args) => wire(await api[name](wire(args)));
+  // Writes of the plugin (host.dbWrites): what the host's storage worker commits — a statement outside BEGIN … COMMIT
+  // that changed rows, a COMMIT of a transaction that changed rows, a migration-free db.exec, storage.set (kv.set) and
+  // settings.set / setSecret. An UPDATE that sets the values a row already has counts (SQLite writes the row).
+  // host.resetDbWrites() empties the list. Tests check that a run without changes writes nothing.
+  const dbWrites = [];
+  let txOpen = false;
+  let txChanges = 0;
+  const noteWrite = (name, args, out) => {
+    const a = args || {};
+    if (name === 'db.query' && a.mode === 'run') {
+      const n = (out && Number(out.changes)) || 0;
+      if (txOpen) txChanges += n;
+      else if (n) dbWrites.push({ kind: 'statement', sql: String(a.sql), changes: n });
+    } else if (name === 'db.exec') {
+      const sql = String(a.sql || '').trim();
+      if (/^(BEGIN|SAVEPOINT)\b/i.test(sql) && !/\b(COMMIT|END)\s*;?\s*$/i.test(sql)) { txOpen = true; txChanges = 0; } else if (/^(COMMIT|END)\b/i.test(sql)) {
+        if (txChanges) dbWrites.push({ kind: 'commit', changes: txChanges });
+        txOpen = false;
+        txChanges = 0;
+      } else if (/^ROLLBACK\b/i.test(sql)) { txOpen = false; txChanges = 0; } else if (!txOpen) dbWrites.push({ kind: 'exec', sql });
+      else txChanges++;
+    } else if (name === 'storage.set') dbWrites.push({ kind: 'kv.set', key: String(a.key) });
+    else if (name === 'settings.set' || name === 'settings.setSecret') dbWrites.push({ kind: 'settings.set', key: String(a.key) });
+  };
+  const call = async (name, args) => {
+    const out = wire(await api[name](wire(args)));
+    noteWrite(name, args, out);
+    return out;
+  };
 
   /** A WebSocket like the host's (EventEmitter: message, close, error; send, close) wired to opts.websocket. */
   async function openWebSocket(url, o) {
@@ -3611,6 +3639,8 @@ async function createHost(pluginDir, opts = {}) {
 
   return {
     manifest, gc, plugin, logs, notifications, fetches, websockets, kv, settings, filesDir, kiosk, actionRuns,
+    /** the plugin's database writes (see noteWrite above) and a reset */
+    dbWrites, resetDbWrites() { dbWrites.length = 0; },
     media: mediaStore, mediaCopies, events, serviceCalls,
     /** GateControl ≥ 1.216.0 (mock-mail.js): IMAP sessions opened, SMTP sends, pictures fetched */
     mailSessions: mail216.records.mailSessions, mailSent: mail216.records.mailSent, imageFetches: mail216.records.imageFetches,

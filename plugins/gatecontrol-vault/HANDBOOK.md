@@ -1,4 +1,4 @@
-<!-- version: 1.4.2 -->
+<!-- version: 1.4.3 -->
 # Vault
 
 ## What the plugin does
@@ -84,6 +84,10 @@ Someone changed the entry in the meantime. Choose to save your version (the othe
 
 **The Wi-Fi card on the tablet shows an old password.**
 A share is a copy. After changing the entry, the entry offers to update the share.
+
+## New in 1.4.3
+
+- **Less writing:** “Last seen” of an account is now accurate to 10 minutes. On a slow disk (a NAS with hard disks) GateControl stays more responsive.
 
 ## New in 1.4.2
 

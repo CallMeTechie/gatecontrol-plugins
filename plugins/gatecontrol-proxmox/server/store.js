@@ -10,6 +10,25 @@ function codeError(code) { return Object.assign(new Error(code), { code }); }
 const MAX_ACTIONS = 300;
 const MAX_SNAPSHOT_CHARS = 900 * 1024; // the host takes a string parameter of at most 1 MB
 
+// ─── Writes kept in memory (1.1.2) ──────────────
+// Every poll (60 s) stored the whole snapshot (CPU, memory, uptime change every time) and the poll times of the
+// connection: two writes a minute per connection, ~300 ms each on a slow disk. Now the snapshot is stored at most
+// every PERSIST_MS (the newest one is kept here and read first), and a change of the poll times alone
+// (last_attempt_at, last_success_at, next_poll_at) as well; a change of anything else (status, error, version) is
+// written at once. After a restart the stored ones (at most PERSIST_MS old) stand until the next poll.
+const PERSIST_MS = 5 * 60000;
+const VOLATILE = new Set(['last_attempt_at', 'last_success_at', 'next_poll_at']);
+const memBy = new WeakMap(); // gc → { snaps: Map(host id → { snap, savedAt }), hosts: Map(host id → { patch, savedAt }) }
+function memOf(gc) {
+  let m = memBy.get(gc);
+  if (!m) { m = { snaps: new Map(), hosts: new Map() }; memBy.set(gc, m); }
+  return m;
+}
+function overlay(gc, h) {
+  const e = h && memOf(gc).hosts.get(h.id);
+  return e && e.patch ? { ...h, ...e.patch } : h;
+}
+
 // ─── Hosts ──────────────────────────────────────
 
 const HOST_COLS = 'id, name, target_index, token_id, enabled, status, last_error, error_count, last_attempt_at, last_success_at, next_poll_at, pve_version, cluster_name, created_at, updated_at';
@@ -25,11 +44,11 @@ function hostRow(r) {
 }
 
 async function listHosts(gc) {
-  return (await gc.db.query(`SELECT ${HOST_COLS} FROM hosts ORDER BY name COLLATE NOCASE, id`)).rows.map(hostRow);
+  return (await gc.db.query(`SELECT ${HOST_COLS} FROM hosts ORDER BY name COLLATE NOCASE, id`)).rows.map((r) => overlay(gc, hostRow(r)));
 }
 
 async function getHost(gc, id) {
-  return hostRow((await gc.db.get(`SELECT ${HOST_COLS} FROM hosts WHERE id = ?`, [id])).row);
+  return overlay(gc, hostRow((await gc.db.get(`SELECT ${HOST_COLS} FROM hosts WHERE id = ?`, [id])).row));
 }
 
 async function createHost(gc, { name, target_index, token_id, enabled = true }) {
@@ -39,16 +58,31 @@ async function createHost(gc, { name, target_index, token_id, enabled = true }) 
 
 const UPDATABLE = ['name', 'target_index', 'token_id', 'enabled', 'status', 'last_error', 'error_count', 'last_attempt_at', 'last_success_at', 'next_poll_at', 'pve_version', 'cluster_name'];
 
-async function updateHost(gc, id, patch) {
+async function updateHost(gc, id, patch, now = Date.now()) {
   const keys = Object.keys(patch).filter((k) => UPDATABLE.includes(k));
   if (keys.length) {
-    const vals = keys.map((k) => (typeof patch[k] === 'boolean' ? (patch[k] ? 1 : 0) : patch[k]));
-    await gc.db.run(`UPDATE hosts SET ${keys.map((k) => `${k} = ?`).join(', ')}, updated_at = datetime('now') WHERE id = ?`, [...vals, id]);
+    const hosts = memOf(gc).hosts;
+    const e = hosts.get(id);
+    const cur = await getHost(gc, id);
+    const norm = (k, v) => (typeof v === 'boolean' ? v : (v === undefined ? null : v));
+    const changed = cur ? keys.filter((k) => norm(k, cur[k]) !== norm(k, patch[k])) : keys;
+    if (!changed.length) return cur;
+    if (cur && e && changed.every((k) => VOLATILE.has(k)) && now - e.savedAt < PERSIST_MS && now >= e.savedAt) {
+      e.patch = { ...(e.patch || {}), ...Object.fromEntries(changed.map((k) => [k, patch[k]])) };
+      return getHost(gc, id);
+    }
+    const all = { ...((e && e.patch) || {}), ...Object.fromEntries(keys.map((k) => [k, patch[k]])) };
+    const ks = Object.keys(all);
+    const vals = ks.map((k) => (typeof all[k] === 'boolean' ? (all[k] ? 1 : 0) : all[k]));
+    await gc.db.run(`UPDATE hosts SET ${ks.map((k) => `${k} = ?`).join(', ')}, updated_at = datetime('now') WHERE id = ?`, [...vals, id]);
+    hosts.set(id, { patch: null, savedAt: now });
   }
   return getHost(gc, id);
 }
 
 async function removeHost(gc, id) {
+  memOf(gc).hosts.delete(id);
+  memOf(gc).snaps.delete(id);
   await gc.db.run('DELETE FROM watched_guests WHERE host_id = ?', [id]);
   await gc.db.run('DELETE FROM snapshots WHERE host_id = ?', [id]);
   await gc.db.run('DELETE FROM actions WHERE host_id = ?', [id]);
@@ -86,12 +120,18 @@ async function setWatched(gc, hostId, vmid, on) {
 // ─── Snapshot (last good status) ────────────────
 
 async function snapshotOf(gc, hostId) {
+  const kept = memOf(gc).snaps.get(hostId);
+  if (kept) return kept.snap;
   const r = (await gc.db.get('SELECT fetched_at, data FROM snapshots WHERE host_id = ?', [hostId])).row;
   if (!r) return null;
   try { return JSON.parse(r.data); } catch { return null; }
 }
 
-async function saveSnapshot(gc, hostId, snap) {
+async function saveSnapshot(gc, hostId, snap, now = Date.now()) {
+  const snaps = memOf(gc).snaps;
+  const kept = snaps.get(hostId);
+  if (kept && now - kept.savedAt < PERSIST_MS && now >= kept.savedAt) { kept.snap = snap; return false; }
+  snaps.set(hostId, { snap, savedAt: now });
   let json = JSON.stringify(snap);
   if (json.length > MAX_SNAPSHOT_CHARS) {
     // a very large cluster: keep nodes, storages, backups and as many guests as fit
@@ -99,6 +139,7 @@ async function saveSnapshot(gc, hostId, snap) {
     json = JSON.stringify(s);
   }
   await gc.db.run('INSERT INTO snapshots (host_id, fetched_at, data) VALUES (?, ?, ?) ON CONFLICT(host_id) DO UPDATE SET fetched_at = excluded.fetched_at, data = excluded.data', [hostId, snap.at, json]);
+  return true;
 }
 
 // ─── Actions ────────────────────────────────────
@@ -151,5 +192,5 @@ module.exports = {
   listHosts, getHost, createHost, updateHost, removeHost, secretOf, setSecret, secretKey,
   watchedOf, setWatched, snapshotOf, saveSnapshot,
   addAction, getAction, finishAction, recentActions, runningActions, latestActions,
-  codeError, MAX_ACTIONS,
+  codeError, MAX_ACTIONS, PERSIST_MS,
 };

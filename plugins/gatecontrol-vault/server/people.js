@@ -17,15 +17,44 @@ async function users(gc) {
   return out;
 }
 
+// "seen" timestamps are written at most once per TOUCH_EVERY_MS and person (and when the language changes): every request
+// wrote one row (before 1.4.3) — on a slow disk ~300 ms each
+const TOUCH_EVERY_MS = 10 * 60000;
+const touchedBy = new WeakMap(); // gc → { people: Map(user id → { lang, at }), kiosk: Set(user id) }
+function touchedOf(gc) {
+  let t = touchedBy.get(gc);
+  if (!t) { t = { people: new Map(), kiosk: new Set(), accounts: new Map() }; touchedBy.set(gc, t); }
+  return t;
+}
+
 /** Remember the language (pushes) and that the person was here. */
 async function touch(gc, user, lang, now) {
+  const l = lang === 'en' ? 'en' : 'de';
+  const seen = touchedOf(gc).people;
+  const prev = seen.get(user.id);
+  if (prev && prev.lang === l && now - prev.at < TOUCH_EVERY_MS && now >= prev.at) return;
+  if (seen.size >= 5000) seen.clear();
+  seen.set(user.id, { lang: l, at: now });
   await store.run(gc, `INSERT INTO people (user_id, lang, seen_at) VALUES (?, ?, ?)
     ON CONFLICT(user_id) DO UPDATE SET lang = excluded.lang, seen_at = excluded.seen_at`, [user.id, lang === 'en' ? 'en' : 'de', now]);
 }
 
 async function markKiosk(gc, userId, now = Date.now()) {
+  const kiosk = touchedOf(gc).kiosk;
+  if (kiosk.has(userId)) return; // marked already
   await store.run(gc, `INSERT INTO people (user_id, kiosk, seen_at) VALUES (?, 1, ?)
     ON CONFLICT(user_id) DO UPDATE SET kiosk = 1`, [userId, now]);
+  kiosk.add(userId);
+}
+
+/** "zuletzt gesehen" of a vault account (the sync of an app): at most once per TOUCH_EVERY_MS. */
+async function seenAccount(gc, userId, now) {
+  const seen = touchedOf(gc).accounts;
+  const prev = seen.get(userId);
+  if (prev != null && now - prev < TOUCH_EVERY_MS && now >= prev) return;
+  if (seen.size >= 5000) seen.clear();
+  seen.set(userId, now);
+  await store.run(gc, 'UPDATE accounts SET seen_at = ? WHERE user_id = ?', [now, userId]);
 }
 
 async function kioskIds(gc) {
@@ -57,4 +86,4 @@ async function push(gc, userId, topic, key, params, data) {
   }
 }
 
-module.exports = { users, touch, markKiosk, kioskIds, langOf, push };
+module.exports = { users, touch, markKiosk, seenAccount, kioskIds, langOf, push, TOUCH_EVERY_MS };

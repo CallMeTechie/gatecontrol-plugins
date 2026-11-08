@@ -51,6 +51,25 @@ const bridgeSecret = (id) => `bridge.${id}.token`;
 const mem = { lastPoll: new Map(), soon: new Map(), refreshedAt: new Map(), fresh: new Map() };
 function reset() { mem.lastPoll.clear(); mem.soon.clear(); mem.refreshedAt.clear(); mem.fresh.clear(); }
 
+// A poll that finds a lock as it was (the usual case, every 30 s) only moves its times on: they are kept here and
+// lock_state is written when anything else changed, or once the stored checked_at is PERSIST_MS old (1.7.1; every
+// poll wrote a row and a COMMIT before — ~300 ms each on a slow disk). all() / get() show the newer times.
+const PERSIST_MS = 5 * 60000;
+const timesBy = new WeakMap(); // gc → Map(lock id → { updated_at, checked_at, persisted })
+function timesOf(gc) {
+  let m = timesBy.get(gc);
+  if (!m) { m = new Map(); timesBy.set(gc, m); }
+  return m;
+}
+function withTimes(gc, lock) {
+  const t = lock && timesOf(gc).get(lock.id);
+  if (!t) return lock;
+  const s = lock.state;
+  if (t.checked_at != null && (s.checkedAt == null || t.checked_at > s.checkedAt)) s.checkedAt = t.checked_at;
+  if (t.updated_at != null && s.reachable && (s.updatedAt == null || t.updated_at > s.updatedAt)) s.updatedAt = t.updated_at;
+  return lock;
+}
+
 function sourceKey(lock) {
   return lock.source === 'web' ? 'web' : `bridge:${lock.bridge_id}`;
 }
@@ -92,12 +111,12 @@ const SELECT = `SELECT l.*, s.state AS st_state, s.nuki_state, s.door, s.battery
   FROM locks l LEFT JOIN lock_state s ON s.lock_id = l.id`;
 
 async function all(gc) {
-  return (await store.all(gc, `${SELECT} ORDER BY l.sort, l.id`)).map(rowToLock);
+  return (await store.all(gc, `${SELECT} ORDER BY l.sort, l.id`)).map((r) => withTimes(gc, rowToLock(r)));
 }
 
 async function get(gc, id) {
   const r = await store.one(gc, `${SELECT} WHERE l.id = ?`, [id]);
-  return r ? rowToLock(r) : null;
+  return r ? withTimes(gc, rowToLock(r)) : null;
 }
 
 async function bridges(gc) {
@@ -172,9 +191,25 @@ function diagView(lock, now = Date.now()) {
  */
 async function saveState(gc, lock, obs, now, meta = {}) {
   const prev = lock.state;
+  const times = timesOf(gc);
+  const kept = times.get(lock.id);
+  // the times only: kept in memory while the stored ones are younger than PERSIST_MS
+  const onlyTimes = (updated) => {
+    const persisted = kept ? kept.persisted : prev.checkedAt;
+    if (persisted == null || now - persisted >= PERSIST_MS || now < persisted) return false;
+    times.set(lock.id, { checked_at: now, updated_at: updated ? now : (kept ? kept.updated_at : null), persisted });
+    return true;
+  };
+  const written = () => times.set(lock.id, { checked_at: now, updated_at: null, persisted: now });
+  // the raw fields without the time of the answer (the bridge's lastKnownState.timestamp): diagnostics, stored with
+  // the next write
+  const rawOf = (v) => { if (!v) return null; const { timestamp, ...rest } = v; return JSON.stringify(rest); };
+  const rawPrev = rawOf(prev.raw);
   if (!obs) {
     // not reachable: the raw fields of the answer still tell why (e.g. Nuki Web serverState 4 = offline)
     const raw = meta.raw ? JSON.stringify(meta.raw) : null;
+    if (prev.checkedAt != null && !prev.reachable && prev.unreachableSince != null && (raw == null || rawOf(meta.raw) === rawPrev) && onlyTimes(false)) return;
+    written();
     await store.run(gc, `INSERT INTO lock_state (lock_id, reachable, checked_at, unreachable_since, nuki_raw) VALUES (?, 0, ?, ?, ?)
       ON CONFLICT(lock_id) DO UPDATE SET reachable = 0, checked_at = excluded.checked_at,
       unreachable_since = COALESCE(lock_state.unreachable_since, excluded.unreachable_since),
@@ -187,6 +222,14 @@ async function saveState(gc, lock, obs, now, meta = {}) {
   const movingSince = moving ? (nuki.isTransitional(prev.state) && prev.movingSince ? prev.movingSince : now) : null;
   const prevStable = prev.state && prev.state !== 'unknown' && !nuki.isTransitional(prev.state);
   const stableState = moving ? (prevStable ? prev.state : prev.stableState) : obs.state;
+  const listCode = meta.listCode == null ? obs.nukiState : meta.listCode;
+  const same = prev.checkedAt != null && prev.reachable && prev.unreachableSince == null && prev.state === obs.state && prev.nukiState === (obs.nukiState == null ? null : obs.nukiState)
+    && prev.door === (obs.door || null) && prev.batteryCritical === !!obs.batteryCritical && prev.batteryPercent === (obs.batteryPercent == null ? null : obs.batteryPercent)
+    && prev.batteryCharging === !!obs.batteryCharging && prev.doorOpenSince === doorOpenSince && prev.jammedSince === jammedSince && prev.movingSince === movingSince
+    && prev.stableState === (stableState || null) && prev.via === (meta.via || null) && prev.listNukiState === (listCode == null ? null : listCode)
+    && prev.listMovingSince === (meta.listSince || null) && prev.cloudAt === (obs.cloudAt == null ? null : obs.cloudAt) && rawPrev === rawOf(obs.raw);
+  if (same && onlyTimes(true)) return;
+  written();
   await store.run(gc, `INSERT INTO lock_state (lock_id, state, nuki_state, door, battery_critical, battery_percent, battery_charging, reachable,
       updated_at, checked_at, unreachable_since, door_open_since, jammed_since, moving_since, stable_state, nuki_via, list_nuki_state, list_moving_since,
       cloud_at, nuki_raw)
@@ -199,7 +242,7 @@ async function saveState(gc, lock, obs, now, meta = {}) {
       list_moving_since = excluded.list_moving_since, cloud_at = excluded.cloud_at, nuki_raw = excluded.nuki_raw`, [
     lock.id, obs.state, obs.nukiState, obs.door, obs.batteryCritical ? 1 : 0, obs.batteryPercent, obs.batteryCharging ? 1 : 0,
     now, now, doorOpenSince, jammedSince, movingSince, stableState, meta.via || null,
-    meta.listCode == null ? obs.nukiState : meta.listCode, meta.listSince || null,
+    listCode, meta.listSince || null,
     obs.cloudAt == null ? null : obs.cloudAt, obs.raw ? JSON.stringify(obs.raw) : null,
   ]);
 }
@@ -319,11 +362,12 @@ async function assumeAfter(gc, lock, action, now) {
   const state = nuki.isOpener(lock.device_type) ? 'open' : AFTER[action];
   if (!state) return;
   mem.fresh.delete(lock.id);
+  timesOf(gc).delete(lock.id);
   await store.run(gc, `UPDATE lock_state SET state = ?, updated_at = ?, reachable = 1, unreachable_since = NULL, moving_since = NULL,
     stable_state = ?, nuki_state = NULL, nuki_via = 'assumed' WHERE lock_id = ?`, [state, now, state, lock.id]);
 }
 
 module.exports = {
-  POLL_MS, POLL_FAST_MS, STALE_MS, CLOUD_STALE_MS, REFRESH, WEB_TOKEN, bridgeSecret, reset, sourceKey, pollSoon, all, get, bridges, bridgeToken, webToken,
+  PERSIST_MS, POLL_MS, POLL_FAST_MS, STALE_MS, CLOUD_STALE_MS, REFRESH, WEB_TOKEN, bridgeSecret, reset, sourceKey, pollSoon, all, get, bridges, bridgeToken, webToken,
   displayState, stateView, diagView, saveState, poll, execute, assumeAfter, rowToLock, _mem: mem,
 };
