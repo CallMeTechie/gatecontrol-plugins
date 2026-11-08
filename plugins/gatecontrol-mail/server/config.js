@@ -29,6 +29,9 @@ const MS_SCOPES = ['openid', 'profile', 'email', 'offline_access', 'User.Read', 
 // since 1.2.0: calendars and contacts of Microsoft accounts (asked when the administrator has them on)
 const MS_CALENDAR_SCOPE = 'Calendars.ReadWrite';
 const MS_CONTACTS_SCOPE = 'Contacts.ReadWrite';
+// since 1.11.0: Microsoft To Do for GateControl Notizen & Aufgaben — asked only when a person moves over from To Do
+// (incremental consent through ms_tasks_consent), never on a plain sign-in
+const MS_TASKS_SCOPE = 'Tasks.ReadWrite';
 const REMINDERS = [0, 5, 10, 15, 30, 60, 1440, null];
 const RETENTIONS = [1, 3, 6, 12, 24, 0];
 const GUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -204,7 +207,7 @@ function msScopes(cfg) {
 function reset() { cache = null; }
 
 module.exports = {
-  DEFAULTS, DEFAULT_MS_CLIENT_ID, MS_AUTHORITY, MS_SCOPES, MS_CALENDAR_SCOPE, MS_CONTACTS_SCOPE, REMINDERS, msScopes, RETENTIONS, get, put, normalize, msClientId, adminConsentUrl, allowed,
+  DEFAULTS, DEFAULT_MS_CLIENT_ID, MS_AUTHORITY, MS_SCOPES, MS_CALENDAR_SCOPE, MS_CONTACTS_SCOPE, MS_TASKS_SCOPE, REMINDERS, msScopes, RETENTIONS, get, put, normalize, msClientId, adminConsentUrl, allowed,
   inPrincipals, principalsOf,
   retentionStart, quotaBytes, reset,
 };

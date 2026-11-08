@@ -4,7 +4,7 @@
     "de": "Mail",
     "en": "Mail"
   },
-  "version": "1.11.0",
+  "version": "1.12.0",
   "publisher": "CallMeTechie",
   "description": {
     "de": "Alle E-Mail-Konten an einem Ort – GMX, Web.de, T-Online, Gmail, Outlook und Microsoft 365 oder jedes IMAP-Konto: ein gemeinsamer Posteingang mit Relevant und Sonstige, Push, Schutz vor Zählpixeln, Anhänge in Drive und eine KI, die zusammenfasst, Aufgaben findet und Antworten vorschlägt. Dazu Kalender und Kontakte: eigene Kalender und die der Konten (Microsoft 365, CalDAV), Einladungen, Erinnerungen, Familie und Alltag eingeblendet, ein Adressbuch mit Gruppen und Dubletten-Abgleich. Außerdem Frei/Gebucht, geteilte Kalender und buchbare Räume, Fahrzeuge und Geräte.",
@@ -130,6 +130,27 @@
         "label": {
           "de": "In Notizen & Aufgaben abgehakt",
           "en": "Ticked off in Notes & Tasks"
+        },
+        "maxPerHour": 600
+      },
+      "ms_accounts": {
+        "label": {
+          "de": "Microsoft-Konten für den Umzug von To Do",
+          "en": "Microsoft accounts for moving over from To Do"
+        },
+        "maxPerHour": 600
+      },
+      "ms_tasks_consent": {
+        "label": {
+          "de": "Zustimmung zu Microsoft To Do einholen",
+          "en": "Ask for consent to Microsoft To Do"
+        },
+        "maxPerHour": 600
+      },
+      "ms_tasks_token": {
+        "label": {
+          "de": "Zugang nur zu Microsoft To Do",
+          "en": "Access to Microsoft To Do only"
         },
         "maxPerHour": 600
       }

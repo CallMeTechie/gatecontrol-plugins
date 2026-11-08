@@ -32,6 +32,8 @@ function view(a) {
     id: a.id, provider: a.provider, email: a.email, name: a.name || '', color: a.color, kind: a.kind === 'business' ? 'business' : 'personal',
     state: a.state, error: a.error_code ? { code: a.error_code, at: a.error_at } : null, push: a.push, ai: a.ai === 1,
     attachments: a.attachments, signature: a.signature || '', avatar: avatars.view(a),
+    // since 1.11.0: Microsoft To Do granted (for GateControl Notizen & Aufgaben)
+    tasks: providers.isMicrosoft(a.provider) ? ms.hasScope(ms.grantedScopes(a), config.MS_TASKS_SCOPE) : false,
   };
 }
 
@@ -211,7 +213,10 @@ async function deviceStart(gc, ctx, b) {
   const again = b && b.accountId != null ? await own(gc, ctx.userId, Number(b.accountId)) : null;
   if (again && !providers.isMicrosoft(again.provider)) throw fail('invalid', { field: 'accountId' });
   if (!again) await limitCheck(gc, cfg, ctx.userId);
-  const d = await ms.deviceStart(gc, cfg);
+  // 1.11.0: To Do stays granted when the account signs in anew; `tasks: true` (ms_tasks_consent) asks for it
+  const extra = [];
+  if ((b && b.tasks === true) || (again && ms.hasScope(ms.grantedScopes(again), config.MS_TASKS_SCOPE))) extra.push(config.MS_TASKS_SCOPE);
+  const d = await ms.deviceStart(gc, cfg, extra);
   const id = crypto.randomBytes(12).toString('hex');
   const now = Date.now();
   await secrets.setDevice(gc, id, d.deviceCode);

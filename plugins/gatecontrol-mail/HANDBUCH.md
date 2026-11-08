@@ -1,4 +1,4 @@
-<!-- version: 1.11.0 -->
+<!-- version: 1.12.0 -->
 # Mail
 
 ## Was das Plugin kann
@@ -94,11 +94,19 @@ Der Administrator richtet sie unter Einstellungen › Plugins › Mail › Einst
 **Für mein Microsoft-Konto fehlen die Rechte für Kalender und Kontakte.**
 Melde dich noch einmal bei Microsoft an. Erlaubt eure Firma das nur dem Microsoft-Admin, gib ihm den Freigabe-Link weiter.
 
+**„Notizen & Aufgaben“ sagt „Microsoft braucht noch deine Zustimmung“.**
+Dort unter „Umziehen › Microsoft To Do“ auf „Bei Microsoft zustimmen“ tippen und den Code eingeben. Blockiert eure Firma die Zustimmung durch Benutzer, gibt der Microsoft-Admin `Tasks.ReadWrite` über den Freigabe-Link frei.
+
 **Ein Anhang lässt sich gerade nicht öffnen.**
 Liegen die Anhänge auf einem Speicherziel, das nicht erreichbar ist, versucht Mail es später erneut.
 
 **Frei/Gebucht zeigt „unbekannt“.**
 Die Person hat Frei/Gebucht abgeschaltet oder ist nicht in GateControl. Kolleginnen in Microsoft 365 erscheinen über dein Microsoft-Konto.
+
+## Neu in 1.12.0
+
+- **Umzug von Microsoft To Do:** „Notizen & Aufgaben“ kann deine Aufgaben aus Microsoft To Do übernehmen – über dein Microsoft-Konto in Mail. Microsoft fragt dazu einmal nach deiner Zustimmung (Code auf microsoft.com/devicelogin). „Notizen & Aufgaben“ bekommt nur Zugang zu deinen Aufgaben, nie zu deinen Mails. Deine Mails laufen dabei normal weiter.
+- Eigene Microsoft-Registrierung: sie braucht zusätzlich die Berechtigung `Tasks.ReadWrite` (steht auf der Admin-Seite).
 
 ## Neu in 1.11.0
 
