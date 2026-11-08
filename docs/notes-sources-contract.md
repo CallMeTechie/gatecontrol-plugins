@@ -125,14 +125,17 @@ A *bound notebook* is identified by the calling plugin plus a `key` (`[a-z][a-z0
   "color": "yellow",                 // none | yellow | green | blue | pink | grey | orange | purple
   "pinned": true, "expiresAt": null, // ms or null — the hub deletes the note then (Familie's „läuft ab“)
   "due": "2026-11-13",               // checklists: the trip date, or null
-  "checklist": [{ "id": "a1", "text": "Zahnbürste", "done": true, "doneBy": 15 }],   // ≤ 200 items
+  "checklist": [{ "id": "3.9f2c1a", "text": "Zahnbürste", "done": true }],   // ≤ 200 items; id = "<line>.<6 hex of
+                                                                               //   SHA-256(text)>", stable while the line stays
   "progress": { "done": 4, "total": 18 },
   "updatedAt": 1762600000000, "updatedBy": 12, "createdBy": 12,
   "open": { "plugin": "gatecontrol-notizen", "route": "note/812" } }
 ```
 
 Codes: `invalid` (with `field`), `forbidden` (not a member / not the binding plugin), `not_found`, `too_many` (more than 500
-notes in a bound notebook).
+notes in a bound notebook). The `text` of a note is plain text and the checklist is its own field: the hub stores both as
+the note's Markdown (text, a blank line, then `- [ ]` / `- [x]` lines); what Familie writes through these services is not
+echoed back to it with `notes_changed`.
 
 When a bound notebook changes in the hub (someone edited a note in the hub, the portal or an app), the hub tells the
 owner: it calls **`<owner>:notes_changed { v: 1, key, ids: [noteId…], removed: [noteId…], at }`** — at most once per 30 s

@@ -3173,6 +3173,166 @@
         "de",
         "en"
       ]
+    },
+    "gatecontrol-notizen": {
+      "category": "family",
+      "icon": "calendar",
+      "summary": {
+        "de": "Eigene Aufgaben und Notizen plus alles „Zu tun“ aus den anderen Plugins – Mein Tag, Tresor-Notizbücher, Umzug von To Do und DS Note.",
+        "en": "Your own tasks and notes plus everything “to do” from the other plugins – My Day, vault notebooks, moving over from To Do and DS Note."
+      },
+      "audience": "all",
+      "keywords": [
+        "aufgaben",
+        "tasks",
+        "todo",
+        "to do",
+        "notizen",
+        "notes",
+        "checkliste",
+        "checklist",
+        "erinnerung",
+        "reminder",
+        "microsoft to do",
+        "ds note"
+      ],
+      "related": [
+        "gatecontrol-familie",
+        "gatecontrol-mail",
+        "gatecontrol-drive",
+        "gatecontrol-schule"
+      ],
+      "adds": [
+        {
+          "icon": "portal",
+          "title": {
+            "de": "Portal-Seite „Notizen & Aufgaben“",
+            "en": "Portal page “Notes & Tasks”"
+          },
+          "text": {
+            "de": "Mein Tag, Wichtig, Geplant, Mir zugewiesen, Listen und Notizbücher – Privat und Arbeit getrennt",
+            "en": "My Day, Important, Planned, Assigned to me, lists and notebooks – private and work apart"
+          }
+        },
+        {
+          "icon": "tile",
+          "title": {
+            "de": "Kachel „Mein Tag“",
+            "en": "Tile “My Day”"
+          },
+          "text": {
+            "de": "Was heute ansteht, auf der Startseite des Portals",
+            "en": "What is due today, on the portal’s start page"
+          }
+        },
+        {
+          "icon": "bell",
+          "title": {
+            "de": "Erinnerungen",
+            "en": "Reminders"
+          },
+          "text": {
+            "de": "Push zur gewählten Zeit, Mitteilung bei geteilten Listen und Zuweisungen",
+            "en": "A push at the chosen time, a notification for shared lists and assignments"
+          }
+        },
+        {
+          "icon": "link",
+          "title": {
+            "de": "Zu tun aus anderen Plugins",
+            "en": "To-dos from other plugins"
+          },
+          "text": {
+            "de": "Abhaken hier hakt im Original ab – Familie, Mail, Drive, Schule, Alltag",
+            "en": "Ticking off here ticks off the original – Family, Mail, Drive, School, Everyday"
+          }
+        },
+        {
+          "icon": "key",
+          "title": {
+            "de": "Tresor-Notizbücher",
+            "en": "Vault notebooks"
+          },
+          "text": {
+            "de": "Ende-zu-Ende verschlüsselt – nur deine Geräte lesen Titel und Text",
+            "en": "End-to-end encrypted – only your devices read titles and text"
+          }
+        },
+        {
+          "icon": "clock",
+          "title": {
+            "de": "Hintergrunddienst",
+            "en": "Background service"
+          },
+          "text": {
+            "de": "Erinnerungen jede Minute, Abgleich mit den Quellen etwa alle 12 Stunden",
+            "en": "Reminders every minute, reconciliation with the sources about every 12 hours"
+          }
+        }
+      ],
+      "permissions": [
+        {
+          "icon": "network",
+          "title": {
+            "de": "Microsoft Graph",
+            "en": "Microsoft Graph"
+          },
+          "text": {
+            "de": "Nur für den Umzug von Microsoft To Do, mit einem Token, das Mail nur für Aufgaben ausstellt",
+            "en": "Only for moving over from Microsoft To Do, with a token Mail issues for tasks only"
+          },
+          "tag": {
+            "de": "Netzwerk",
+            "en": "Network"
+          }
+        },
+        {
+          "icon": "data",
+          "title": {
+            "de": "Aufgaben und Notizen auf dem Server",
+            "en": "Tasks and notes on the server"
+          },
+          "text": {
+            "de": "In der Datenbank des Plugins, Bilder und Anhänge versiegelt wie in Drive; Tresor-Notizbücher nur verschlüsselt",
+            "en": "In the plugin’s database, pictures and attachments sealed as in Drive; vault notebooks encrypted only"
+          }
+        },
+        {
+          "icon": "link",
+          "title": {
+            "de": "Dienste anderer Plugins",
+            "en": "Services of other plugins"
+          },
+          "text": {
+            "de": "Zu tun lesen und abhaken in Familie, Mail, Drive, Schule und Alltag; Pinnwand und Packlisten für Familie",
+            "en": "Reads and ticks off to-dos in Family, Mail, Drive, School and Everyday; pinboard and packing lists for Family"
+          }
+        }
+      ],
+      "shows": [
+        {
+          "kind": "list",
+          "caption": {
+            "de": "Mein Tag",
+            "en": "My Day"
+          }
+        },
+        {
+          "kind": "list",
+          "caption": {
+            "de": "Eine Notiz mit Checkliste",
+            "en": "A note with a checklist"
+          }
+        }
+      ],
+      "needs": {
+        "de": "für den Umzug von To Do: Mail mit Microsoft-Konto",
+        "en": "for moving over from To Do: Mail with a Microsoft account"
+      },
+      "languages": [
+        "de",
+        "en"
+      ]
     }
   }
 }

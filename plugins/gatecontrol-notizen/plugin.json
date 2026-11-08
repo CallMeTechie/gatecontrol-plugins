@@ -1,0 +1,403 @@
+{
+  "id": "gatecontrol-notizen",
+  "name": {
+    "de": "Notizen & Aufgaben",
+    "en": "Notes & Tasks"
+  },
+  "version": "1.0.0",
+  "publisher": "CallMeTechie",
+  "description": {
+    "de": "Eigene Aufgaben und Notizen plus alles „Zu tun“ aus den anderen Plugins (Familie, Mail, Drive, Schule, Alltag) an einer Stelle: Mein Tag, Wichtig, Geplant, Mir zugewiesen; Listen und Gruppen, Unteraufgaben, Fälligkeit, Erinnerung als Push, Wiederholungen, geteilte Listen. Notizbücher mit Schlagwörtern, Checklisten, Tabellen, Bildern und Volltextsuche, einzelne Notizbücher als Tresor (Ende-zu-Ende verschlüsselt). Schnell-Eingabe in normaler Sprache, Umzug von Microsoft To Do und Synology DS Note. Bereiche Privat und Arbeit getrennt.",
+    "en": "Your own tasks and notes plus everything “to do” from the other plugins (Family, Mail, Drive, School, Everyday) in one place: My Day, Important, Planned, Assigned to me; lists and groups, sub-tasks, due dates, reminders as push notifications, repeats, shared lists. Notebooks with tags, checklists, tables, pictures and full-text search, single notebooks as a vault (end-to-end encrypted). Quick entry in plain language, moving over from Microsoft To Do and Synology DS Note. Private and work kept apart."
+  },
+  "gatecontrol": ">=1.216.0",
+  "entry": "server/index.js",
+  "permissions": {
+    "network": {
+      "internet": [
+        "graph.microsoft.com:443"
+      ]
+    },
+    "storage": true,
+    "users": true,
+    "portal": true,
+    "app": true,
+    "events": true,
+    "groups": "read",
+    "notify": {
+      "perHour": 600
+    },
+    "background": {
+      "intervalSeconds": 60
+    },
+    "services": [
+      "gatecontrol-familie:todo_items",
+      "gatecontrol-familie:todo_complete",
+      "gatecontrol-familie:notes_changed",
+      "gatecontrol-mail:todo_items",
+      "gatecontrol-mail:todo_complete",
+      "gatecontrol-mail:ms_accounts",
+      "gatecontrol-mail:ms_tasks_token",
+      "gatecontrol-mail:ms_tasks_consent",
+      "gatecontrol-drive:todo_items",
+      "gatecontrol-drive:todo_complete",
+      "gatecontrol-schule:todo_items",
+      "gatecontrol-schule:todo_complete",
+      "gatecontrol-alltag:todo_items",
+      "gatecontrol-alltag:todo_complete"
+    ]
+  },
+  "storage": {
+    "maxMB": 2048
+  },
+  "media": {
+    "maxBytes": 104857600,
+    "types": [
+      "image/*",
+      "audio/*",
+      "video/*",
+      "application/*",
+      "text/plain",
+      "text/csv",
+      "text/calendar",
+      "text/vcard"
+    ],
+    "quotaDefault": "200GB",
+    "uploads": true,
+    "resumable": true,
+    "previews": true
+  },
+  "services": {
+    "provides": {
+      "todo_changed": {
+        "label": {
+          "de": "Zu erledigen aus anderen Plugins annehmen",
+          "en": "Take to-dos from other plugins"
+        },
+        "maxPerHour": 3600
+      },
+      "notes_bind": {
+        "label": {
+          "de": "Notizbuch für ein Plugin (Pinnwand, Packlisten)",
+          "en": "Notebook for a plugin (pinboard, packing lists)"
+        },
+        "maxPerHour": 3600
+      },
+      "notes_list": {
+        "label": {
+          "de": "Notizen eines Plugin-Notizbuchs lesen",
+          "en": "Read the notes of a plugin notebook"
+        },
+        "maxPerHour": 3600
+      },
+      "note_save": {
+        "label": {
+          "de": "Notiz in einem Plugin-Notizbuch speichern",
+          "en": "Save a note in a plugin notebook"
+        },
+        "maxPerHour": 3600
+      },
+      "note_check": {
+        "label": {
+          "de": "Punkt einer Checkliste abhaken",
+          "en": "Tick an item of a checklist"
+        },
+        "maxPerHour": 3600
+      },
+      "note_delete": {
+        "label": {
+          "de": "Notiz in einem Plugin-Notizbuch löschen",
+          "en": "Delete a note in a plugin notebook"
+        },
+        "maxPerHour": 3600
+      },
+      "notes_import": {
+        "label": {
+          "de": "Pinnwand und Packlisten übernehmen",
+          "en": "Take over pinboard and packing lists"
+        },
+        "maxPerHour": 3600
+      }
+    }
+  },
+  "ui": {
+    "settingsGroups": [
+      {
+        "id": "general",
+        "label": {
+          "de": "Allgemein",
+          "en": "General"
+        }
+      },
+      {
+        "id": "sources",
+        "label": {
+          "de": "Quellen",
+          "en": "Sources"
+        },
+        "help": {
+          "de": "Was die anderen Plugins zu erledigen haben, erscheint in „Mein Tag“ – das Original bleibt dort, abhaken hier hakt dort ab. Jede Person kann einzelne Quellen für sich in „Quellen“ einschränken.",
+          "en": "What the other plugins have to do shows up in “My Day” – the original stays there, ticking it off here ticks it off there. Everyone can narrow single sources for themselves under “Sources”."
+        }
+      },
+      {
+        "id": "import",
+        "label": {
+          "de": "Umzug",
+          "en": "Moving over"
+        }
+      },
+      {
+        "id": "files",
+        "label": {
+          "de": "Bilder und Anhänge",
+          "en": "Pictures and attachments"
+        }
+      }
+    ],
+    "settings": [
+      {
+        "key": "timezone",
+        "type": "text",
+        "group": "general",
+        "label": {
+          "de": "Zeitzone",
+          "en": "Time zone"
+        },
+        "help": {
+          "de": "IANA-Name, z. B. Europe/Berlin – bestimmt „heute“, Fälligkeiten und Erinnerungen.",
+          "en": "IANA name, e.g. Europe/Berlin – decides “today”, due dates and reminders."
+        },
+        "default": "Europe/Berlin"
+      },
+      {
+        "key": "notify_lang",
+        "type": "select",
+        "group": "general",
+        "label": {
+          "de": "Sprache der Erinnerungen",
+          "en": "Language of reminders"
+        },
+        "options": [
+          {
+            "value": "de",
+            "label": "Deutsch"
+          },
+          {
+            "value": "en",
+            "label": "English"
+          }
+        ],
+        "default": "de"
+      },
+      {
+        "key": "sharing",
+        "type": "select",
+        "group": "general",
+        "label": {
+          "de": "Listen und Notizbücher teilen mit",
+          "en": "Share lists and notebooks with"
+        },
+        "help": {
+          "de": "„Allen“ = jeder Person mit GateControl-Konto; „Familie und Team“ = nur Personen, mit denen man eine Gruppe teilt.",
+          "en": "“Everyone” = every person with a GateControl account; “Family and team” = only people one shares a group with."
+        },
+        "options": [
+          {
+            "value": "all",
+            "label": {
+              "de": "Allen",
+              "en": "Everyone"
+            }
+          },
+          {
+            "value": "groups",
+            "label": {
+              "de": "Familie und Team",
+              "en": "Family and team"
+            }
+          },
+          {
+            "value": "off",
+            "label": {
+              "de": "Niemandem",
+              "en": "Nobody"
+            }
+          }
+        ],
+        "default": "all"
+      },
+      {
+        "key": "vaults",
+        "type": "boolean",
+        "group": "general",
+        "label": {
+          "de": "Tresor-Notizbücher erlauben",
+          "en": "Allow vault notebooks"
+        },
+        "help": {
+          "de": "Ende-zu-Ende verschlüsselt: der Server sieht weder Titel noch Text. Ohne Gerät oder Wiederherstellungsschlüssel sind die Notizen verloren.",
+          "en": "End-to-end encrypted: the server sees neither titles nor text. Without a device or the recovery key the notes are lost."
+        },
+        "default": true
+      },
+      {
+        "key": "source_familie",
+        "type": "boolean",
+        "group": "sources",
+        "label": {
+          "de": "Familie: Aufgaben, Einkaufslisten",
+          "en": "Family: tasks, shopping lists"
+        },
+        "default": true
+      },
+      {
+        "key": "source_mail",
+        "type": "boolean",
+        "group": "sources",
+        "label": {
+          "de": "Mail: „Zu tun“ und markierte Mails",
+          "en": "Mail: “To do” and flagged mails"
+        },
+        "default": true
+      },
+      {
+        "key": "source_drive",
+        "type": "boolean",
+        "group": "sources",
+        "label": {
+          "de": "Drive: Fristen aus Dokumenten",
+          "en": "Drive: deadlines from documents"
+        },
+        "default": true
+      },
+      {
+        "key": "source_schule",
+        "type": "boolean",
+        "group": "sources",
+        "label": {
+          "de": "Schule: Hausaufgaben, Arbeiten, Elternabende",
+          "en": "School: homework, exams, parent evenings"
+        },
+        "default": true
+      },
+      {
+        "key": "source_alltag",
+        "type": "boolean",
+        "group": "sources",
+        "label": {
+          "de": "Alltag: Müllabfuhr am Vorabend",
+          "en": "Everyday: waste collection the evening before"
+        },
+        "default": true
+      },
+      {
+        "key": "import_mstodo",
+        "type": "boolean",
+        "group": "import",
+        "label": {
+          "de": "Umzug von Microsoft To Do",
+          "en": "Moving over from Microsoft To Do"
+        },
+        "help": {
+          "de": "Über das Microsoft-Konto, mit dem die Person in Mail angemeldet ist (braucht Mail 1.11.0). Microsoft fragt einmal nach der Zustimmung für Aufgaben.",
+          "en": "Through the Microsoft account the person signed in with in Mail (needs Mail 1.11.0). Microsoft asks once for consent to tasks."
+        },
+        "default": true
+      },
+      {
+        "key": "mstodo_sync",
+        "type": "boolean",
+        "group": "import",
+        "label": {
+          "de": "Übergangszeit: mit Microsoft To Do in beide Richtungen abgleichen",
+          "en": "Transition period: sync both ways with Microsoft To Do"
+        },
+        "help": {
+          "de": "Wer es beim Umzug einschaltet, sieht Änderungen hier in To Do und umgekehrt (alle 5 Minuten), bis er es ausschaltet.",
+          "en": "Whoever switches it on when moving over sees changes here in To Do and vice versa (every 5 minutes) until switched off."
+        },
+        "default": true
+      },
+      {
+        "key": "import_dsnote",
+        "type": "boolean",
+        "group": "import",
+        "label": {
+          "de": "Umzug von Synology DS Note (.nsx-Export)",
+          "en": "Moving over from Synology DS Note (.nsx export)"
+        },
+        "default": true
+      },
+      {
+        "key": "attach_mb",
+        "type": "number",
+        "group": "files",
+        "label": {
+          "de": "Größte Datei (MB)",
+          "en": "Largest file (MB)"
+        },
+        "default": 25,
+        "min": 1,
+        "max": 100
+      },
+      {
+        "key": "quota_mb",
+        "type": "number",
+        "group": "files",
+        "label": {
+          "de": "Platz für Bilder und Anhänge je Person (MB)",
+          "en": "Space for pictures and attachments per person (MB)"
+        },
+        "help": {
+          "de": "0 = ohne eigene Grenze (es gilt der Platz des Plugins).",
+          "en": "0 = no limit of its own (the plugin's space applies)."
+        },
+        "default": 2048,
+        "min": 0,
+        "max": 1000000
+      }
+    ],
+    "portal": {
+      "label": {
+        "de": "Notizen & Aufgaben",
+        "en": "Notes & Tasks"
+      },
+      "icon": "M9 11l3 3L22 4M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"
+    }
+  },
+  "license": {
+    "required": true
+  },
+  "migrations": "migrations",
+  "notifyTopics": [
+    {
+      "id": "reminders",
+      "label": {
+        "de": "Erinnerungen an Aufgaben",
+        "en": "Task reminders"
+      },
+      "default": true
+    },
+    {
+      "id": "shared",
+      "label": {
+        "de": "Geteilt und zugewiesen",
+        "en": "Shared and assigned"
+      },
+      "default": true
+    },
+    {
+      "id": "vault",
+      "label": {
+        "de": "Tresor: neues Gerät möchte Zugriff",
+        "en": "Vault: a new device asks for access"
+      },
+      "default": true
+    }
+  ],
+  "handbook": {
+    "de": "HANDBUCH.md",
+    "en": "HANDBOOK.md"
+  }
+}
