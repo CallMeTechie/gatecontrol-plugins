@@ -4,7 +4,7 @@
     "de": "Tür & Kamera",
     "en": "Door & Camera"
   },
-  "version": "1.7.0",
+  "version": "1.7.1",
   "publisher": "CallMeTechie",
   "description": {
     "de": "Nuki-Schlösser und -Opener (lokale Bridge oder Nuki Web), Ring-Klingeln/-Kameras (inoffizielle Schnittstelle, ohne Gewähr) und neu Kameras im Heimnetz (ONVIF/RTSP über ein Gateway, ohne Hersteller-Cloud): Tür in App, Widget und Portal auf- und zusperren, Klingel-Push mit Bild, Live-Bild über VPN, Clips bei Bewegung auf der eigenen NAS, Push mit Standbild bei Personen, Ring-Modus, Verlauf, automatisches Aufsperren bei Ankunft (nur mit Zustimmung). Rechte pro Person, Schloss und Kamera.",

@@ -4,7 +4,7 @@
     "de": "Proxmox VE",
     "en": "Proxmox VE"
   },
-  "version": "1.1.1",
+  "version": "1.1.2",
   "publisher": "CallMeTechie",
   "description": {
     "de": "Proxmox-VE-Hosts und -Cluster im Blick: Nodes (CPU, RAM, Speicher, Laufzeit, Version), VMs und Container, Speicher, Backups und HA – mit Start, Herunterfahren, Neustart und Stopp von VMs/CTs für Administratoren und Meldungen bei Ausfall, unerwartet gestoppten Gästen, vollem Speicher und fehlgeschlagenen Backups – dazu Widgets, Schnellaktionen und eine Startkachel in den GateControl-Apps für Administratoren.",

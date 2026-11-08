@@ -13,6 +13,25 @@ function parseJson(s, fallback) {
   try { const v = JSON.parse(s); return v == null ? fallback : v; } catch { return fallback; }
 }
 
+// ─── Writes kept in memory (1.2.2) ──────────────
+// Every poll stored the whole snapshot (CPU, memory, network change every time) and the poll times of the NAS: two
+// writes a poll, ~300 ms each on a slow disk. Now the snapshot is stored at most every PERSIST_MS (the newest one is
+// kept here and read first), and a change of the poll times alone (last_attempt_at, last_success_at, next_poll_at)
+// as well; a change of anything else (status, error, power) is written at once. After a restart the stored ones (at
+// most PERSIST_MS old) stand until the next poll.
+const PERSIST_MS = 5 * 60000;
+const VOLATILE = new Set(['last_attempt_at', 'last_success_at', 'next_poll_at']);
+const memBy = new WeakMap(); // gc → { snaps: Map(nas id → { snap: { data, fetched_at }, savedAt }), nas: Map(nas id → { patch, savedAt }) }
+function memOf(gc) {
+  let m = memBy.get(gc);
+  if (!m) { m = { snaps: new Map(), nas: new Map() }; memBy.set(gc, m); }
+  return m;
+}
+function overlay(gc, n) {
+  const e = n && memOf(gc).nas.get(n.id);
+  return e && e.patch ? { ...n, ...e.patch } : n;
+}
+
 const COLS = `id, name, target_index, target_label, enabled, status, last_error, error_count, last_attempt_at, last_success_at,
   next_poll_at, update_checked_at, power_state, power_at, created_at, updated_at`;
 
@@ -32,12 +51,12 @@ function nasRow(r) {
 
 async function listNas(gc) {
   const { rows } = await gc.db.query(`SELECT ${COLS} FROM nas ORDER BY name COLLATE NOCASE, id`);
-  return rows.map(nasRow);
+  return rows.map((r) => overlay(gc, nasRow(r)));
 }
 
 async function getNas(gc, id) {
   const { row } = await gc.db.get(`SELECT ${COLS} FROM nas WHERE id = ?`, [id]);
-  return nasRow(row);
+  return overlay(gc, nasRow(row));
 }
 
 async function createNas(gc, f) {
@@ -49,15 +68,29 @@ async function createNas(gc, f) {
 const UPDATABLE = ['name', 'target_index', 'target_label', 'enabled', 'status', 'last_error', 'error_count', 'last_attempt_at', 'last_success_at',
   'next_poll_at', 'update_checked_at', 'power_state', 'power_at'];
 
-async function updateNas(gc, id, patch) {
+async function updateNas(gc, id, patch, now = Date.now()) {
+  const keys = UPDATABLE.filter((k) => patch[k] !== undefined);
+  const mem = memOf(gc).nas;
+  const e = mem.get(id);
+  if (keys.length) {
+    const cur = await getNas(gc, id);
+    const changed = cur ? keys.filter((k) => cur[k] !== patch[k]) : keys;
+    if (!changed.length) return cur;
+    if (cur && e && changed.every((k) => VOLATILE.has(k)) && now - e.savedAt < PERSIST_MS && now >= e.savedAt) {
+      e.patch = { ...(e.patch || {}), ...Object.fromEntries(changed.map((k) => [k, patch[k]])) };
+      return getNas(gc, id);
+    }
+  }
+  const all = { ...((e && e.patch) || {}), ...Object.fromEntries(keys.map((k) => [k, patch[k]])) };
   const sets = [];
   const params = [];
   for (const k of UPDATABLE) {
-    if (patch[k] === undefined) continue;
+    if (all[k] === undefined) continue;
     sets.push(`${k} = ?`);
-    params.push(typeof patch[k] === 'boolean' ? (patch[k] ? 1 : 0) : patch[k]);
+    params.push(typeof all[k] === 'boolean' ? (all[k] ? 1 : 0) : all[k]);
   }
-  if (sets.length) {
+  if (keys.length && sets.length) {
+    mem.set(id, { patch: null, savedAt: now });
     sets.push("updated_at = datetime('now')");
     await gc.db.run(`UPDATE nas SET ${sets.join(', ')} WHERE id = ?`, [...params, id]);
   }
@@ -65,6 +98,8 @@ async function updateNas(gc, id, patch) {
 }
 
 async function deleteNas(gc, id) {
+  memOf(gc).nas.delete(id);
+  memOf(gc).snaps.delete(id);
   await gc.db.run('DELETE FROM snapshots WHERE nas_id = ?', [id]);
   await gc.db.run('DELETE FROM drop_folders WHERE nas_id = ?', [id]);
   const r = await gc.db.run('DELETE FROM nas WHERE id = ?', [id]);
@@ -75,18 +110,29 @@ async function deleteNas(gc, id) {
 // ─── Snapshots (last good status) ───────────────
 
 async function getSnapshot(gc, id) {
+  const kept = memOf(gc).snaps.get(id);
+  if (kept) return kept.snap;
   const { row } = await gc.db.get('SELECT data, fetched_at FROM snapshots WHERE nas_id = ?', [id]);
   return row ? { data: parseJson(row.data, null), fetched_at: Number(row.fetched_at) } : null;
 }
 
 async function allSnapshots(gc) {
   const { rows } = await gc.db.query('SELECT nas_id, data, fetched_at FROM snapshots');
-  return new Map(rows.map((r) => [r.nas_id, { data: parseJson(r.data, null), fetched_at: Number(r.fetched_at) }]));
+  const out = new Map(rows.map((r) => [r.nas_id, { data: parseJson(r.data, null), fetched_at: Number(r.fetched_at) }]));
+  for (const [id, kept] of memOf(gc).snaps) out.set(id, kept.snap);
+  return out;
 }
 
 async function saveSnapshot(gc, id, data, at) {
+  const snaps = memOf(gc).snaps;
+  const kept = snaps.get(id);
+  // a copy as read back from the database would be (the caller may change `data` afterwards)
+  const snap = { data: JSON.parse(JSON.stringify(data)), fetched_at: Number(at) };
+  if (kept && at - kept.savedAt < PERSIST_MS && at >= kept.savedAt) { kept.snap = snap; return false; }
+  snaps.set(id, { snap, savedAt: at });
   await gc.db.run('INSERT INTO snapshots (nas_id, data, fetched_at) VALUES (?, ?, ?) ON CONFLICT(nas_id) DO UPDATE SET data = excluded.data, fetched_at = excluded.fetched_at',
     [id, JSON.stringify(data), at]);
+  return true;
 }
 
 // ─── GateDrop drop folders (1.2.0) ───────────────
@@ -138,5 +184,5 @@ async function credentials(gc, id) {
 
 module.exports = {
   listNas, getNas, createNas, updateNas, deleteNas, getSnapshot, allSnapshots, saveSnapshot,
-  secret, setSecret, credentials, secretKey, SECRET_KINDS, listFolders, getFolder, createFolder, updateFolder, deleteFolder,
+  secret, setSecret, credentials, secretKey, SECRET_KINDS, listFolders, getFolder, createFolder, updateFolder, deleteFolder, PERSIST_MS,
 };

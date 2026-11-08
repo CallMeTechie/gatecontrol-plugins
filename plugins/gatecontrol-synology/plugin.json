@@ -4,7 +4,7 @@
     "de": "NAS (Synology)",
     "en": "NAS (Synology)"
   },
-  "version": "1.2.1",
+  "version": "1.2.2",
   "publisher": "CallMeTechie",
   "description": {
     "de": "Synology-NAS im Heimnetz überwachen und steuern (DSM Web API): Modell, DSM-Version, CPU/RAM, Temperatur, Volumes, Speicherpools, Laufwerke mit S.M.A.R.T.-Status, DSM-Updates, Hyper Backup und USV; Neustart und Herunterfahren; Benachrichtigungen bei Ausfall, beeinträchtigtem Speicher, Laufwerksproblemen, vollem Speicher, Updates und fehlgeschlagenen Sicherungen. In den GateControl-Apps Schnellaktionen, Widget und Startkachel je NAS. Nur für Administratoren. Mit GateDrop: Dateien in freigegebene NAS-Ordner ablegen.",

@@ -3,6 +3,13 @@
 Phoscon/deCONZ-Integration als GateControl-Plugin – bisher fest in GateControl eingebaut; seit 1.7.0 auch Shelly und
 Tasmota über ein GateControl-Gateway.
 
+## 1.9.1
+
+- **Weniger Schreibvorgänge:** der Abgleich mit Phoscon/deCONZ (alle 30 s) schreibt eine Leuchte, Gruppe, Szene oder einen Sensor nur noch, wenn sich etwas geändert hat, und alle Änderungen eines Abgleichs in **einer** Transaktion – vorher jede Ressource bei jedem Abgleich (im Protokoll von GateControl 1.253.5: `UPDATE resources …` 935 Mal in der Stunde, je ~300 ms auf einem langsamen Datenträger). Eine fehlende Ressource wird einmal abgeschaltet, nicht bei jedem Abgleich wieder.
+- „Zuletzt gesehen“ eines Gateways (`gateways.last_seen_at`) höchstens einmal je Minute.
+- Bluetooth-Sensoren, zigbee2mqtt-Geräte und Shelly/Tasmota-Kanäle: dieselben Werte noch einmal werden nicht geschrieben.
+- Test: eine Stunde Abgleich ohne Änderung schreibt nichts, zwei geänderte Ressourcen sind ein Commit (`writes.test.js`).
+
 ## 1.9.0
 
 - **Zigbee-Geräte von zigbee2mqtt über ein GateControl-Gateway:** Mit einem GateControl, das zigbee2mqtt kennt

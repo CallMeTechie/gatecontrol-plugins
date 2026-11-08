@@ -4,7 +4,7 @@
     "de": "Alltag",
     "en": "Everyday"
   },
-  "version": "1.5.0",
+  "version": "1.5.1",
   "publisher": "CallMeTechie",
   "description": {
     "de": "Müllabfuhr und Kalender des Haushalts: Abfuhrtermine aus Online-Abfallkalendern (AbfallNavi, abfall.io, AWIDO), einer ICS-Datei oder eigenen Regeln; iCal-Kalender (Google, iCloud, Outlook, Nextcloud im Heimnetz); Erinnerungen in der App und Termine im Portal „Zuhause“.",

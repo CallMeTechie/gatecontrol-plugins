@@ -1,4 +1,4 @@
-<!-- version: 1.1.1 -->
+<!-- version: 1.1.2 -->
 # Proxmox VE
 
 ## What the plugin does
@@ -86,6 +86,10 @@ Only monitored guests do, and not when the guest was controlled through the plug
 
 **The values are old.**
 After errors the plugin polls less often (up to every 5 minutes) and shows the last good data with “last updated” and the error.
+
+## New in 1.1.2
+
+- **Less writing:** Proxmox only stores the servers' status every 5 minutes; you still see the latest check. On a slow disk (a NAS with hard disks) GateControl stays more responsive.
 
 ## New in 1.1.1
 

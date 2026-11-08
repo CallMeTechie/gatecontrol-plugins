@@ -1,4 +1,4 @@
-<!-- version: 1.5.1 -->
+<!-- version: 1.5.2 -->
 # GateDrop
 
 ## Was das Plugin kann
@@ -74,6 +74,10 @@ Sende später noch einmal. Gesperrte Dateien gibt GateDrop nicht weiter.
 
 **Eine Sendung heißt „Vom Admin entfernt“.**
 Ein Administrator hat ihre Dateien auf dem Server gelöscht.
+
+## Neu in 1.5.2
+
+- **Weniger Schreibarbeit:** GateDrop merkt sich bei jeder Anfrage der Apps nicht mehr jedes Mal neu, wer da war. Auf einem langsamen Datenträger (NAS mit Festplatten) bleibt GateControl dadurch flüssiger.
 
 ## Neu in 1.5.1
 

@@ -83,8 +83,13 @@ async function allEdgeResources(gc) {
 /** Insert or update one channel resource of a device → its id. state undefined: keep the cached one. */
 async function upsertChannel(gc, device, key, { kind, name, capabilities, state, area }) {
   const deconzId = `${device.id}/${key}`;
-  const existing = (await gc.db.get("SELECT id FROM resources WHERE gateway_id = 0 AND deconz_type = 'edge' AND deconz_id = ?", [deconzId])).row;
+  const existing = (await gc.db.get("SELECT id, kind, name, capabilities_json, state_json, enabled, area FROM resources WHERE gateway_id = 0 AND deconz_type = 'edge' AND deconz_id = ?", [deconzId])).row;
   const caps = JSON.stringify(capabilities || {});
+  // a report that changes nothing (the same values again) → no write
+  if (existing && existing.kind === kind && existing.name === name && existing.capabilities_json === caps && Number(existing.enabled) === 1
+    && (existing.area == null ? null : existing.area) === (area == null ? null : area) && (state === undefined || existing.state_json === JSON.stringify(state || {}))) {
+    return existing.id;
+  }
   if (existing) {
     const sets = ['kind = ?', 'name = ?', 'capabilities_json = ?', 'enabled = 1', 'area = ?', "updated_at = datetime('now')"];
     const vals = [kind, name, caps, area == null ? null : area];

@@ -1,4 +1,4 @@
-<!-- version: 1.5.0 -->
+<!-- version: 1.5.1 -->
 # Alltag
 
 ## Was das Plugin kann
@@ -72,6 +72,10 @@ Bei Fehlern fragt das Plugin seltener (Kalender bis alle 6 Stunden, Abfallkalend
 
 **Keine Erinnerung gekommen.**
 Hast du das Thema „Müllabfuhr“ bzw. „Termine“ in den Mitteilungs-Einstellungen abgeschaltet? Bist du beim Plan bzw. Kalender als Person gewählt? „Test-Erinnerung senden“ zeigt, ob Mitteilungen ankommen.
+
+## Neu in 1.5.1
+
+- **Weniger Schreibarbeit:** die Erinnerungen speichern ihren Stand nur noch, wenn sich etwas getan hat. Auf einem langsamen Datenträger (NAS mit Festplatten) bleibt GateControl dadurch flüssiger.
 
 ## Neu in 1.5.0
 

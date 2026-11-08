@@ -1,4 +1,4 @@
-<!-- version: 1.6.1 -->
+<!-- version: 1.6.2 -->
 # Vehicles
 
 ## What the plugin does
@@ -63,6 +63,10 @@ Without a parking position the plugin detects no trip. When Škoda reports the p
 
 **The map only shows a dashed line.**
 The mileage does not fit the calculated route (detour, stops), or the routing service found no route.
+
+## New in 1.6.2
+
+- **Less writing** when syncing with Škoda. On a slow disk (a NAS with hard disks) GateControl stays more responsive.
 
 ## New in 1.6.1
 
