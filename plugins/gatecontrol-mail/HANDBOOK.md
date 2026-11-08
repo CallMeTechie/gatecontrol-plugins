@@ -1,4 +1,4 @@
-<!-- version: 1.11.0 -->
+<!-- version: 1.12.0 -->
 # Mail
 
 ## What the plugin does
@@ -94,11 +94,19 @@ The administrator sets it up under Settings › Plugins › Mail › Settings.
 **My Microsoft account lacks the rights for calendars and contacts.**
 Sign in at Microsoft once more. If your company only allows that to the Microsoft admin, pass on the consent link.
 
+**“Notes & Tasks” says “Microsoft still needs your consent”.**
+Tap “Consent at Microsoft” there under “Move over › Microsoft To Do” and enter the code. If your company blocks consent by users, the Microsoft administrator grants `Tasks.ReadWrite` through the consent link.
+
 **An attachment cannot be opened right now.**
 When attachments live on a storage target that is unreachable, Mail tries again later.
 
 **Free/busy shows “unknown”.**
 The person switched free/busy off or is not in GateControl. Colleagues in Microsoft 365 appear through your Microsoft account.
+
+## New in 1.12.0
+
+- **Moving over from Microsoft To Do:** “Notes & Tasks” can take over your tasks from Microsoft To Do – through your Microsoft account in Mail. Microsoft asks once for your consent (a code at microsoft.com/devicelogin). “Notes & Tasks” only gets access to your tasks, never to your mail. Your mail goes on as usual meanwhile.
+- An own Microsoft registration additionally needs the permission `Tasks.ReadWrite` (shown on the admin page).
 
 ## New in 1.11.0
 

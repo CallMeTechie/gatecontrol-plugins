@@ -23,13 +23,19 @@ const CONSUMER_TENANT = '9188040d-6c67-4c5b-b112-36a304b66dad';
 const TIMEOUT = 30000;
 
 const tokens = new Map(); // account id → { token, until }
+const taskTokens = new Map(); // account id → { token, until } — only Tasks.ReadWrite (1.11.0, ms_tasks_token)
+const locks = new Map(); // account id → the refresh that runs: Microsoft rotates the refresh token, so never two at once
 const renewing = new Map(); // account id → the renewal that runs
 const gens = new Map(); // account id → a counter: forget() makes a renewal that runs stale
 
 const BASE = ['openid', 'profile', 'email', 'offline_access'];
 
-/** The scopes of a sign-in (the administrator's switches decide about calendars and contacts). */
-function scope(cfg) { return config.msScopes(cfg).join(' '); }
+/** The scopes of a sign-in (the administrator's switches decide about calendars and contacts); `extra` (1.11.0): more, e.g. Tasks.ReadWrite. */
+function scope(cfg, extra) {
+  const out = config.msScopes(cfg);
+  for (const s of extra || []) if (!hasScope(out, s)) out.push(s);
+  return out.join(' ');
+}
 
 /** A token answer's `scope` → the granted scopes (without the Graph prefix), or null when it names none. */
 function grantedOf(v) {
@@ -119,10 +125,10 @@ async function redeem(gc, cfg, b) {
   return tokenInfo(r.body);
 }
 
-/** POST accounts/microsoft/device → Microsoft's device code. */
-async function deviceStart(gc, cfg) {
+/** POST accounts/microsoft/device → Microsoft's device code. `extra`: scopes beyond the administrator's (1.11.0). */
+async function deviceStart(gc, cfg, extra) {
   const clientId = clientIdOr(cfg);
-  const r = await post(gc, 'common', 'devicecode', { client_id: clientId, scope: scope(cfg) });
+  const r = await post(gc, 'common', 'devicecode', { client_id: clientId, scope: scope(cfg, extra) });
   if (r.status !== 200 || !r.body.device_code) throw fail('unreachable', { reason: String(r.body.error || 'devicecode').slice(0, 60) });
   return {
     deviceCode: r.body.device_code, userCode: String(r.body.user_code || ''), verificationUri: String(r.body.verification_uri || 'https://microsoft.com/devicelogin'),
@@ -153,10 +159,55 @@ async function accessToken(gc, a, force = false, stale = null) {
   if (have && have.until > Date.now() + 60000 && (!force || (stale && have.token !== stale))) return have.token;
   let p = renewing.get(a.id);
   if (!p) {
-    p = renew(gc, a, gens.get(a.id) || 0).finally(() => { if (renewing.get(a.id) === p) renewing.delete(a.id); });
+    p = locked(a.id, () => renew(gc, a, gens.get(a.id) || 0)).finally(() => { if (renewing.get(a.id) === p) renewing.delete(a.id); });
     renewing.set(a.id, p);
   }
   return p;
+}
+
+/** Run `fn` when no other refresh of account `id` runs (the mail token and the tasks token share the refresh token). */
+function locked(id, fn) {
+  const before = locks.get(id) || Promise.resolve();
+  const p = before.then(fn, fn);
+  const tail = p.catch(() => {});
+  locks.set(id, tail);
+  tail.then(() => { if (locks.get(id) === tail) locks.delete(id); });
+  return p;
+}
+
+/**
+ * An access token for Microsoft To Do only (1.11.0, the service ms_tasks_token for GateControl Notizen & Aufgaben):
+ * the refresh token asked for the single scope Tasks.ReadWrite — so the other plugin never holds a token that could
+ * read or send mail. Needs the scope granted (accounts.ms_scopes); consent_required otherwise, auth_failed when the
+ * refresh token is gone. → { token, until }
+ */
+async function tasksToken(gc, a) {
+  const have = taskTokens.get(a.id);
+  if (have && have.until > Date.now() + 120000) return have;
+  return locked(a.id, async () => {
+    const again = taskTokens.get(a.id);
+    if (again && again.until > Date.now() + 120000) return again;
+    const now = await store.one(gc, 'SELECT ms_scopes FROM accounts WHERE id = ?', [a.id]).catch(() => null);
+    if (!hasScope(grantedScopes(now || a), config.MS_TASKS_SCOPE)) throw fail('consent_required');
+    const cfg = await config.get(gc);
+    const clientId = config.msClientId(cfg);
+    const cred = await secrets.get(gc, a.id);
+    if (!clientId || !cred || !cred.refreshToken) throw Object.assign(fail('auth_failed'), { auth: true });
+    const gen = gens.get(a.id) || 0;
+    const r = await post(gc, a.ms_tenant || 'common', 'token', { client_id: clientId, grant_type: 'refresh_token', refresh_token: cred.refreshToken,
+      scope: `offline_access https://graph.microsoft.com/${config.MS_TASKS_SCOPE}` });
+    if (r.status !== 200 || !r.body.access_token) {
+      const e = String(r.body.error || '');
+      if (e === 'invalid_grant' && /AADSTS65001/.test(String(r.body.error_description || ''))) throw fail('consent_required');
+      if (e === 'interaction_required' || e === 'consent_required') throw fail('consent_required');
+      if (e === 'invalid_grant' || e === 'invalid_client' || e === 'unauthorized_client') throw Object.assign(fail('auth_failed'), { auth: true });
+      throw fail('unreachable', { reason: e || String(r.status) });
+    }
+    if ((gens.get(a.id) || 0) === gen && r.body.refresh_token && r.body.refresh_token !== cred.refreshToken) await secrets.set(gc, a.id, { refreshToken: r.body.refresh_token });
+    const t = { token: r.body.access_token, until: Date.now() + (Number(r.body.expires_in) || 3600) * 1000 };
+    taskTokens.set(a.id, t);
+    return t;
+  });
 }
 
 async function renew(gc, a, gen) {
@@ -181,6 +232,7 @@ async function renew(gc, a, gen) {
 
 function forget(accountId) {
   tokens.delete(accountId);
+  taskTokens.delete(accountId);
   renewing.delete(accountId);
   gens.set(accountId, (gens.get(accountId) || 0) + 1);
 }
@@ -226,4 +278,4 @@ async function graph(gc, a, method, path, body, extra = {}) {
 /** Graph's own error code of an answer (for logs; never its text). */
 const graphError = (r) => (r && r.json && r.json.error && typeof r.json.error.code === 'string' ? r.json.error.code.slice(0, 60) : String(r && r.status));
 
-module.exports = { grantedOf, grantedScopes, missingScopes, hasScope, renewScope, redeem, deviceStart, devicePoll, accessToken, graph, graphError, forget, remember, claims, tokenInfo, GRAPH, CONSUMER_TENANT };
+module.exports = { grantedOf, grantedScopes, missingScopes, hasScope, renewScope, redeem, deviceStart, devicePoll, accessToken, tasksToken, graph, graphError, forget, remember, claims, tokenInfo, GRAPH, CONSUMER_TENANT };

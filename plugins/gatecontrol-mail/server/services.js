@@ -18,6 +18,9 @@
 //                  Codes: forbidden (another caller, or userId is not GateControl's `user` of the call), invalid,
 //                  not_found (no such calendar of the person, or one they cannot write to), unavailable { reason }
 //                  (feature_off, not_allowed, not_licensed, no_seat, auth_failed, consent_required, unreachable, …).
+//   ms_accounts, ms_tasks_consent, ms_tasks_token (1.12.0, caller gatecontrol-notizen only, maxPerHour 600 each) — the
+//                  person's Microsoft accounts for the move from Microsoft To Do; see msAccounts / msTasksConsent /
+//                  msTasksToken below.
 //   tofile_count   { userId } → { ok: true, count, hint }   (1.7.0, caller gatecontrol-drive only) — the attachments of
 //                  "Zum Ablegen" (GET filing) of the person: how many, and the folder Drive suggested for the newest one
 //                  („Familie › Versicherungen“, null without). Drive's overview shows it under "Zu erledigen".
@@ -32,10 +35,13 @@ const compose = require('./compose');
 const calendars = require('./calendars');
 const events = require('./events');
 const pimstore = require('./pimstore');
+const accounts = require('./accounts');
+const ms = require('./microsoft');
 const { t } = require('./text');
 const { posInt, line, isKnown, parse } = require('./util');
 
 const DRIVE = 'gatecontrol-drive';
+const NOTIZEN = 'gatecontrol-notizen';
 const TITLE_MAX = 80;
 const NOTE_MAX = 500;
 const LIST_MAX = 100;
@@ -167,14 +173,101 @@ async function tofileCount(gc, payload, user) {
   return { ok: true, count: (n && n.n) || 0, hint };
 }
 
+// ─── Microsoft To Do for Notizen & Aufgaben (1.12.0) ──────────
+
+/** Why the person cannot use Mail now (null: they can). */
+async function mailBlocked(gc, uid) {
+  const cfg = await config.get(gc);
+  if (!(await config.allowed(gc, cfg, uid))) return 'not_allowed';
+  if (!(await people.licence(gc)).valid) return 'not_licensed';
+  const s = await seats.get(gc, uid);
+  return s && s.kind !== 'none' ? null : 'no_seat';
+}
+
+/** The person's own Microsoft account `accountId` (not_found otherwise). */
+async function msAccount(gc, uid, accountId) {
+  const id = posInt(accountId);
+  const a = id ? await store.one(gc, 'SELECT * FROM accounts WHERE id = ? AND user_id = ?', [id, uid]) : null;
+  if (!a || !providers.isMicrosoft(a.provider)) throw no('not_found');
+  return a;
+}
+
+const tasksGranted = (a) => ms.hasScope(ms.grantedScopes(a), config.MS_TASKS_SCOPE);
+
+/** ms_accounts { } (user = the person) → { ok, accounts: [{ id, email, label, kind, tasks }] } — Microsoft accounts only. */
+async function msAccounts(gc, payload, user) {
+  const uid = user && posInt(user.id);
+  if (!uid) throw no('forbidden');
+  const why = await mailBlocked(gc, uid);
+  if (why) throw no('unavailable', { reason: why });
+  const rows = await store.all(gc, 'SELECT * FROM accounts WHERE user_id = ? ORDER BY id', [uid]);
+  return {
+    ok: true,
+    accounts: rows.filter((a) => providers.isMicrosoft(a.provider) && a.state !== 'auth_failed').slice(0, 20)
+      .map((a) => ({ id: a.id, email: a.email, label: (providers.get(a.provider) || {}).label || a.email, kind: a.kind === 'business' ? 'business' : 'personal', tasks: tasksGranted(a) })),
+  };
+}
+
+/**
+ * ms_tasks_consent { accountId, deviceId? } — Microsoft's consent to Tasks.ReadWrite for that account (incremental: the
+ * account signs in anew by device code with the scope added; its mail goes on meanwhile). Without deviceId → { ok,
+ * deviceId, userCode, verificationUri, expiresIn, interval }; with it (one poll, at most every `interval` seconds as Mail's
+ * own device sign-in) → { ok, status: 'pending' | 'done' | 'expired' | 'denied', tasks }.
+ */
+async function msTasksConsent(gc, payload, user) {
+  const uid = user && posInt(user.id);
+  if (!uid) throw no('forbidden');
+  const why = await mailBlocked(gc, uid);
+  if (why) throw no('unavailable', { reason: why });
+  const a = await msAccount(gc, uid, payload.accountId);
+  const ctx = { userId: uid, userName: user.name || '' };
+  if (payload.deviceId == null) {
+    const d = await accounts.deviceStart(gc, ctx, { accountId: a.id, tasks: true }).catch((e) => { throw no(isKnown(e) ? e.code : 'failed'); });
+    return { ok: true, deviceId: d.deviceId, userCode: d.userCode, verificationUri: d.verificationUri, expiresIn: d.expiresIn, interval: d.interval };
+  }
+  if (typeof payload.deviceId !== 'string') throw no('invalid');
+  const r = await accounts.devicePoll(gc, ctx, payload.deviceId).catch((e) => { throw no(isKnown(e) ? e.code : 'failed'); });
+  if (r.status === 'done') {
+    const now = await store.one(gc, 'SELECT * FROM accounts WHERE id = ?', [r.account ? r.account.id : a.id]);
+    const ok = !!now && now.id === a.id && tasksGranted(now);
+    return { ok: true, status: ok ? 'done' : 'denied', tasks: ok };
+  }
+  return { ok: true, status: r.status, tasks: false };
+}
+
+/**
+ * ms_tasks_token { accountId } → { ok, token, expiresAt (ms), email } — an access token for Microsoft Graph that holds
+ * only Tasks.ReadWrite (microsoft.tasksToken). Codes: consent_required (not granted yet: ms_tasks_consent), not_found,
+ * unavailable { reason: auth_failed | unreachable | not_allowed | … }.
+ */
+async function msTasksToken(gc, payload, user) {
+  const uid = user && posInt(user.id);
+  if (!uid) throw no('forbidden');
+  const why = await mailBlocked(gc, uid);
+  if (why) throw no('unavailable', { reason: why });
+  const a = await msAccount(gc, uid, payload.accountId);
+  if (!tasksGranted(a)) throw no('consent_required');
+  try {
+    const t = await ms.tasksToken(gc, a);
+    return { ok: true, token: t.token, expiresAt: t.until, email: a.email };
+  } catch (e) {
+    const code = isKnown(e) ? e.code : 'failed';
+    if (code === 'consent_required') throw no('consent_required');
+    throw no('unavailable', { reason: code });
+  }
+}
+
 // ─── the hook ───────────────────────────────────
 
 const HANDLERS = {
   calendar_list: (gc, payload, user) => calendarList(gc, payload, user),
   calendar_add: (gc, payload, user, caller) => calendarAdd(gc, payload, user, caller),
   tofile_count: (gc, payload, user) => tofileCount(gc, payload, user),
+  ms_accounts: (gc, payload, user) => msAccounts(gc, payload, user),
+  ms_tasks_consent: (gc, payload, user) => msTasksConsent(gc, payload, user),
+  ms_tasks_token: (gc, payload, user) => msTasksToken(gc, payload, user),
 };
-const CALLERS = { calendar_list: [DRIVE], calendar_add: [DRIVE], tofile_count: [DRIVE] };
+const CALLERS = { calendar_list: [DRIVE], calendar_add: [DRIVE], tofile_count: [DRIVE], ms_accounts: [NOTIZEN], ms_tasks_consent: [NOTIZEN], ms_tasks_token: [NOTIZEN] };
 
 /** service({ name, caller, user, payload }) → the answer (see the head of this file). */
 async function handle(gc, call) {
@@ -203,4 +296,4 @@ async function newDraft(gc, user, payload) {
   return compose.serviceDraft(gc, user, payload);
 }
 
-module.exports = { handle, DRIVE };
+module.exports = { handle, DRIVE, NOTIZEN };

@@ -12,7 +12,7 @@ const PUBLISHER_ID = 'b2f917a9-e0eb-45b9-9e5f-14c283aa51e9';
 
 test('plugin.json: GateControl 1.219.0, mail with dav, images, Drive, Familie and Alltag services, the app tab', () => {
   const m = JSON.parse(fs.readFileSync(path.join(DIR, 'plugin.json'), 'utf8'));
-  assert.equal(m.version, '1.11.0');
+  assert.equal(m.version, '1.12.0');
   // 1.6.0: calendar_list and calendar_add for Drive; 1.7.0: tofile_count (test/services.test.js)
   for (const s of ['new_draft', 'calendar_list', 'calendar_add', 'tofile_count']) assert.ok(m.services.provides[s].label.de && m.services.provides[s].label.en, s);
   assert.equal(m.services.provides.tofile_count.maxPerHour, 3600);
@@ -55,6 +55,8 @@ test('GET me without accounts; who may use Mail (the administrator), not for a v
   // 1.2.0: the calendar and contact scopes (the administrator has both on), the admin consent link; 1.3.2: the publisher's client id
   assert.deepEqual(me.json.microsoft, { clientId: PUBLISHER_ID, authority: 'https://login.microsoftonline.com/common',
     scopes: ['openid', 'profile', 'email', 'offline_access', 'User.Read', 'Mail.ReadWrite', 'Mail.Send', 'Calendars.ReadWrite', 'Contacts.ReadWrite'],
+    // 1.12.0: the scope a move from Microsoft To Do asks for in addition (never on a plain sign-in)
+    tasksScope: 'Tasks.ReadWrite',
     adminConsentUrl: `https://login.microsoftonline.com/organizations/v2.0/adminconsent?client_id=${PUBLISHER_ID}&scope=https%3A%2F%2Fgraph.microsoft.com%2F.default` });
   assert.ok(me.json.features.includes('calendar') && me.json.features.includes('contacts'));
   assert.ok(!me.json.features.includes('dav'), 'GateControl 1.216.0 has no gc.mail.dav');

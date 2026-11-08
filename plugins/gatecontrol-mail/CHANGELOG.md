@@ -2,6 +2,19 @@
 
 Alle E-Mail-Konten an einem Ort – im eigenen Tab der GateControl-Apps und im Portal.
 
+## 1.12.0
+
+- **Microsoft To Do für „Notizen & Aufgaben“:** drei neue Dienste, nur für `gatecontrol-notizen`, je `maxPerHour: 600`:
+  `ms_accounts` (die Microsoft-Konten der Person mit `tasks`: ob To Do freigegeben ist), `ms_tasks_consent` (die
+  Zustimmung zu `Tasks.ReadWrite` als Anmeldung per Gerätecode mit dem zusätzlichen Recht – inkrementelle Zustimmung, die
+  Mails des Kontos laufen weiter; ohne `deviceId` der Code, mit ihr eine Abfrage im Takt von Microsofts `interval`) und
+  `ms_tasks_token` (ein Zugriffstoken **nur** für `Tasks.ReadWrite`, aus dem Refresh-Token des Kontos geholt und bis kurz
+  vor Ablauf behalten – Mails eigenes Token verlässt Mail nie; `consent_required` ohne Freigabe). Ein von Microsoft
+  erneuertes Refresh-Token wird gespeichert; Mails eigene Erneuerung und die für To Do laufen nie gleichzeitig
+  (`microsoft.js` `locked`).
+- Wer sich mit einem Konto neu anmeldet, behält To Do (`Tasks.ReadWrite` wird wieder mit angefragt, wenn es freigegeben war).
+- `Account.tasks`; `GET me` → `microsoft.tasksScope`; die Admin-Seite nennt `Tasks.ReadWrite` bei „Eigene Registrierung braucht“.
+
 ## 1.11.0
 
 - **„Zu tun“ abhaken:** Ein Punkt aus „Zu tun“ der KI lässt sich jetzt erledigen – im Portal (antippen › „Erledigt“ /

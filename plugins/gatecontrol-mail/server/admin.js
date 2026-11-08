@@ -60,7 +60,7 @@ async function settingsView(gc, cfg) {
     settings: cfg, usage: await usage(gc, cfg),
     microsoft: { clientId, defaultClientId: config.DEFAULT_MS_CLIENT_ID, consentUrl: config.adminConsentUrl(clientId), accounts: ms.n, lastSignIn: ms.last || null,
       // since 1.2.0: what a sign-in asks for, and what the app registration needs besides the mail (the note of the page)
-      scopes: config.msScopes(cfg), registrationNeeds: [config.MS_CALENDAR_SCOPE, config.MS_CONTACTS_SCOPE] },
+      scopes: config.msScopes(cfg), registrationNeeds: [config.MS_CALENDAR_SCOPE, config.MS_CONTACTS_SCOPE, config.MS_TASKS_SCOPE] },
     ai: { ready: await ai.ready(gc) }, version: gc.plugin.version,
     // since 1.1.0: the licence and its people (seats.js)
     seats: await seats.summary(gc, cfg),
