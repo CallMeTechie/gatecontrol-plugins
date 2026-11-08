@@ -152,3 +152,35 @@ test('todo_items paging (≤ 16 KB, cursor), visibility; todo_complete read_only
   // the old services still answer
   assert.equal((await host.callService('calendar_list', { caller: 'gatecontrol-familie', user: ADA, payload: {} })).ok, true);
 }));
+
+test('server/todohub.js (the same in every source): 200 items of long titles — pages ≤ 16 KB, cursor, a push in one call', () => withHub({}, async (host, hub) => {
+  const todohub = require('../server/todohub');
+  const long = 'Ä'.repeat(200);
+  let v = 'a';
+  const src = todohub.create({
+    plugin: 'gatecontrol-alltag',
+    collect: async () => Array.from({ length: 200 }, (_, i) => ({ id: `x:${String(i).padStart(3, '0')}`, kind: 'task', title: `${i} ${v} ${long}`, subtitle: long, users: [ADA.id], meta: { type: 'test', note: long } })),
+    complete: async () => ({ ok: true }),
+  });
+  const all = [];
+  let cursor = null;
+  let pages = 0;
+  do {
+    const res = await src.service(host.gc, { name: 'todo_items', caller: HUB, user: ADA, payload: { v: 1, limit: 100, cursor } });
+    assert.ok(Buffer.byteLength(JSON.stringify(res)) <= 16 * 1024, 'an answer ≤ 16 KB');
+    all.push(...res.items);
+    cursor = res.cursor;
+    pages++;
+  } while (cursor && pages < 100);
+  assert.equal(all.length, 200);
+  assert.ok(pages > 2);
+  assert.deepEqual(all.map((x) => x.id), Array.from({ length: 200 }, (_, i) => `x:${String(i).padStart(3, '0')}`));
+  assert.equal(all[0].title.length, 200, 'titles cut to 200');
+  // what was pulled is what the hub has: nothing to push
+  assert.equal((await src.flush(host.gc, Date.now(), { force: true })).sent, 0);
+  assert.equal(hub.pushes().length, 0);
+  // all 200 changed: one call
+  v = 'b';
+  const r = await src.flush(host.gc, Date.now(), { force: true });
+  assert.deepEqual([r.sent, r.upserted, hub.pushes().length, hub.rejected.length], [1, 200, 1, 0]);
+}));
