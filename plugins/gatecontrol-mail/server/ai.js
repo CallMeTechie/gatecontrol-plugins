@@ -83,11 +83,23 @@ async function ctxOf(gc, userId, messageId) {
   return { m, a };
 }
 
+/**
+ * 1.11.0: every to-do with its `key` (a short hash of kind and text — the same in „Notizen & Aufgaben“) and `done`
+ * (ticked off here or there, table todo_done — notizen.js).
+ */
+async function withDone(gc, messageId, v) {
+  if (!v || !Array.isArray(v.todos) || !v.todos.length) return v;
+  const notizen = require('./notizen');
+  const keys = await notizen.doneKeys(gc, messageId);
+  v.todos = v.todos.map((td) => { const key = notizen.keyOf(td); return { ...td, key, done: keys.has(key) }; });
+  return v;
+}
+
 /** GET ai/<messageId> → AiResult | { status: 'none' } */
 async function get(gc, userId, messageId) {
   const { m } = await ctxOf(gc, userId, messageId);
   const r = await store.one(gc, 'SELECT * FROM ai_results WHERE message_id = ?', [m.id]);
-  return r ? view(r) : { status: 'none' };
+  return r ? withDone(gc, m.id, view(r)) : { status: 'none' };
 }
 
 /** ai_off (the administrator, the account, business accounts blocked) / ai_unavailable (GateControl's AI) — or nothing. */
@@ -109,7 +121,7 @@ async function run(gc, userId, messageId, b) {
   await mayRun(gc, a);
   if (!(b && b.again === true)) {
     const have = await store.one(gc, 'SELECT * FROM ai_results WHERE message_id = ?', [m.id]);
-    if (have) return view(have);
+    if (have) return withDone(gc, m.id, view(have));
   }
   if (running.has(m.id)) return running.get(m.id);
   const now = Date.now();
@@ -173,12 +185,26 @@ async function runNow(gc, userId, messageId) {
   await store.run(gc, `INSERT INTO ai_results (message_id, summary, todos_json, replies_json, at) VALUES (?, ?, ?, ?, ?)
     ON CONFLICT(message_id) DO UPDATE SET summary = excluded.summary, todos_json = excluded.todos_json, replies_json = excluded.replies_json, at = excluded.at`,
   [m.id, summary, JSON.stringify(todos), JSON.stringify(replies), now]);
-  return view(await store.one(gc, 'SELECT * FROM ai_results WHERE message_id = ?', [m.id]));
+  return withDone(gc, m.id, view(await store.one(gc, 'SELECT * FROM ai_results WHERE message_id = ?', [m.id])));
 }
 
-/** POST ai/<messageId>/todo/<index> { action: 'family_calendar' } → { where } */
+/**
+ * POST ai/<messageId>/todo/<index> { action: 'family_calendar' } → { where }
+ * 1.11.0: { action: 'done' | 'open' } → { todo } — ticked off (or open again), the same as in „Notizen & Aufgaben“.
+ */
 async function todo(gc, userId, lang, messageId, index, b) {
   const { m } = await ctxOf(gc, userId, messageId);
+  if (b && (b.action === 'done' || b.action === 'open')) {
+    const r = await store.one(gc, 'SELECT * FROM ai_results WHERE message_id = ?', [m.id]);
+    const list = r ? parse(r.todos_json, []) : [];
+    const i = Number(index);
+    const item = Number.isInteger(i) && i >= 0 ? list[i] : null;
+    if (!item) throw fail('not_found');
+    const notizen = require('./notizen');
+    await notizen.setTodo(gc, userId, m.id, notizen.keyOf(item), b.action === 'done', Date.now());
+    notizen.source.soon(gc);
+    return { todo: (await withDone(gc, m.id, { todos: [item] })).todos[0] };
+  }
   if (!b || b.action !== 'family_calendar') throw fail('invalid', { field: 'action' });
   const r = await store.one(gc, 'SELECT * FROM ai_results WHERE message_id = ?', [m.id]);
   const list = r ? parse(r.todos_json, []) : [];

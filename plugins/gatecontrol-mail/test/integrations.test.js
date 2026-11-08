@@ -101,7 +101,8 @@ test('AI: Kurz gesagt, Zu tun, replies; short mail without summary; into the fam
   const r = (await c.as(ANNA)('POST', `ai/${lang.id}`)).json;
   assert.equal(r.status, 'done');
   assert.match(r.summary, /84,20/);
-  assert.deepEqual(r.todos[0], { kind: 'deadline', text: 'Abbuchung prüfen', date: '2026-11-28', amount: 84.2, currency: 'EUR' });
+  // 1.11.0: with its key and whether it is ticked off (the same in „Notizen & Aufgaben“, test/notizen.test.js)
+  assert.deepEqual(r.todos[0], { kind: 'deadline', text: 'Abbuchung prüfen', date: '2026-11-28', amount: 84.2, currency: 'EUR', key: require('../server/notizen').keyOf(r.todos[0]), done: false });
   assert.deepEqual(r.replies, [{ label: 'Danke', text: 'Danke, ist angekommen.' }]);
   assert.deepEqual((await c.as(ANNA)('GET', `ai/${lang.id}`)).json, r);
   assert.equal((await c.list(ANNA, { tab: 'all' })).items.find((x) => x.id === lang.id).ai.summary, r.summary);
