@@ -320,9 +320,10 @@ async function cardVersion(gc, userId) {
 
 /** The person's bytes of calendars and contacts (they count to limits.usedBytes). */
 async function usage(gc, userId) {
-  const e = await store.one(gc, 'SELECT COALESCE(SUM(bytes), 0) AS n FROM events WHERE user_id = ?', [userId]);
+  // 1.10.1: from the indexes with `bytes` (migrations/010_speed.sql), never the rows with the ICS and the pictures
+  const e = await store.one(gc, 'SELECT COALESCE(SUM(bytes), 0) AS n FROM events INDEXED BY events_bytes WHERE user_id = ?', [userId]);
   const c = await store.one(gc, 'SELECT COALESCE(SUM(bytes), 0) AS n FROM cards WHERE user_id = ?', [userId]);
-  const p = await store.one(gc, 'SELECT COALESCE(SUM(p.bytes), 0) AS n FROM card_photos p JOIN cards c ON c.id = p.card_id WHERE c.user_id = ?', [userId]);
+  const p = await store.one(gc, 'SELECT COALESCE(SUM(p.bytes), 0) AS n FROM cards c JOIN card_photos p INDEXED BY card_photos_bytes ON p.card_id = c.id WHERE c.user_id = ?', [userId]);
   return Number(e.n) + Number(c.n) + Number(p.n);
 }
 

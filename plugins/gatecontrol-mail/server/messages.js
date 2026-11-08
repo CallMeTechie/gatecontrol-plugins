@@ -115,17 +115,23 @@ async function page(gc, userId, sc, q, limit) {
   const where = [`m.folder_id IN (${store.marks(ids.length)})`];
   const args = [...ids];
   const tab = q.tab === 'relevant' || q.tab === 'other' ? q.tab : 'all';
-  if (sc.inbox && tab !== 'all') { where.push('m.tab = ?'); args.push(tab); }
+  const tabbed = sc.inbox && tab !== 'all';
+  if (tabbed) { where.push('m.tab = ?'); args.push(tab); }
   if (on(q.unread)) where.push('m.unread = 1');
   if (on(q.flagged)) where.push('m.flagged = 1');
   if (on(q.attachments)) where.push('m.has_att = 1');
   const c = cursorArg(q.before);
   if (c) { where.push('(m.date < ? OR (m.date = ? AND m.id < ?))'); args.push(c.date, c.date, c.id); }
-  // one row per conversation (its newest mail in these folders) while the person wants conversations
+  // one row per conversation (its newest mail in these folders that passes the filter) while the person wants
+  // conversations — 1.10.1: a newer mail counts only when it passes „mit Anhang“ and the tab too; before, a
+  // conversation whose newest mail had no attachment (or was in the other tab) vanished from the filtered list
   if (await threadsOn(gc, userId) && !on(q.unread) && !on(q.flagged)) {
+    const same = [];
+    if (tabbed) same.push('AND n.tab = ?');
+    if (on(q.attachments)) same.push('AND n.has_att = 1');
     where.push(`NOT EXISTS (SELECT 1 FROM messages n WHERE n.thread_id = m.thread_id AND n.folder_id IN (${store.marks(ids.length)}) AND n.id <> m.id
-      AND (n.date > m.date OR (n.date = m.date AND n.id > m.id)))`);
-    args.push(...ids);
+      ${same.join(' ')} AND (n.date > m.date OR (n.date = m.date AND n.id > m.id)))`);
+    args.push(...ids, ...(tabbed ? [tab] : []));
   }
   const rows = await store.all(gc, `SELECT ${SUMMARY_COLS} FROM messages m WHERE ${where.join(' AND ')} ORDER BY m.date DESC, m.id DESC LIMIT ?`, [...args, limit + 1]);
   const more = rows.length > limit;
@@ -526,7 +532,9 @@ async function tab(gc, userId, b) {
 
 /** Unread mail of the posteingänge: { all, byAccount: { id: n } } */
 async function unread(gc, userId) {
-  const rows = await store.all(gc, `SELECT m.account_id, COUNT(*) AS n FROM messages m JOIN folders f ON f.id = m.folder_id WHERE m.user_id = ? AND f.role = 'inbox' AND m.unread = 1 GROUP BY m.account_id`, [userId]);
+  // 1.10.1: per posteingang from the index messages_unread — before, every mail of the person was read (each GET me)
+  const rows = await store.all(gc, `SELECT f.account_id, COUNT(*) AS n FROM folders f JOIN accounts a ON a.id = f.account_id
+    JOIN messages m INDEXED BY messages_unread ON m.folder_id = f.id AND m.unread = 1 WHERE a.user_id = ? AND f.role = 'inbox' GROUP BY f.account_id`, [userId]);
   const by = {};
   let all = 0;
   for (const r of rows) { by[String(r.account_id)] = r.n; all += r.n; }
