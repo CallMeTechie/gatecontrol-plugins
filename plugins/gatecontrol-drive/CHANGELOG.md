@@ -2,6 +2,27 @@
 
 Dateien der Familie und des Teams auf dem eigenen Speicher – auf diesem Server, einer NAS oder in S3.
 
+## 1.26.0
+
+- **Seite „Erinnerungen“:** `GET memories?date=` → `{ date, home, collections }` – die Sammlungen der privaten Fotos mit
+  Anzahl, Titelbild (`cover`) und Zeitraum, in dieser Reihenfolge: **Heute vor X Jahren** (`day`, jedes frühere Jahr mit
+  mehr als 10 Fotos an diesem Tag ± 1 Tag), **Ausflüge und Reisen** (`trip`, Tage am Stück an einem Ort mindestens 40 km
+  von zu Hause, ab 10 Fotos, die neuesten 30), **Mit Noah & Co.** (`person`, benannte Personen ab 10 Fotos, höchstens 20),
+  **Diesen Monat vor X Jahren** (`month`, ab 20), **Jahresrückblick** (`year`, vergangene Jahre ab 50) und **Orte**
+  (`place`, ab 10, höchstens 20). Die Mindestzahlen sind Konstanten in `server/memories.js`. Zuhause ist der Ort mit
+  Fotos an den meisten Tagen. `GET memories/photos?id=&before=&limit=` → `{ id, items, next }` – die Fotos einer
+  Sammlung seitenweise wie `GET photos`. Neues Merkmal `memoryCollections` in `GET me`.
+- **Nur private Fotos in Erinnerungen:** `GET memories`, `GET photos/memories` und die Karten der Übersicht lassen den
+  Arbeitsordner, mit „Prüfen“ markierte Fotos und Team-Ordner weg – unabhängig von `workInMemories`. Die Einstellung
+  bleibt und gilt nur noch für den Fotorahmen (Portal: „Arbeitsfotos nie im Fotorahmen“).
+- **Übersicht:** `memories` zeigt nur Tage mit mehr als 10 privaten Fotos und trägt `id` (die Sammlung für
+  `GET memories/photos`).
+- **Schnell auch bei 50 000 Fotos:** eine gruppierte Abfrage auf dem neuen abdeckenden Index `nodes_memories`
+  (Migration 021), die Seiten auf `nodes_taken`, `nodes_geo_place` bzw. `faces_person`. `test/memories_speed.test.js`
+  prüft jede Anweisung (< 200 ms) und die Abfragepläne.
+- **Portal:** „Alle“ und die Karten bei „Erinnerungen“ öffnen die neue Seite (`ui/memories.js`); eine Karte zeigt ihre
+  Fotos als Kacheln, ein Klick öffnet sie in der Ansicht.
+
 ## 1.25.0
 
 - **Nur Fotos oder nur Videos:** `GET photos` nimmt `media=image|video` – ebenso `photos/months`, `memories`,

@@ -9,7 +9,9 @@
 //   GET photos/months?area=&folder=&camera=          → { months: [{ month: '2026-10', count }] } (the server's time zone)
 //   GET photos/memories?date=YYYY-MM-DD&area=&folder=&camera=
 //                                                  → { groups: [{ yearsAgo, date, items }] } — this calendar day (± 1 day)
-//                                                    in earlier years, ≤ 30 a year; without date: today (server's zone)
+//                                                    in earlier years, ≤ 30 a year; without date: today (server's zone);
+//                                                    since 1.26.0 only private photos (privateOnly). The page
+//                                                    „Erinnerungen“: GET memories (memories.js)
 //   GET photos/camera                              → { folder: { id, path, areaId } | null }  (since 1.10.0)
 //   POST photos/camera                             → { folder, created }  the folder made where missing (since 1.10.0)
 // An item: { id, name, mime, size, takenAt, areaId, parentId, preview (boolean: there is a preview), mediaId,
@@ -26,8 +28,9 @@
 // Since 1.13.0 (feature `photoClasses`, work.js): `class=work|private|review` on photos and months — review: the
 // marked ones (POST photos/review); work: below the viewer's work folder (GET|PUT photos/settings), not marked; private:
 // the rest. GET photos/classes?area=&folder=&camera= → { work, private, review } (the counts). An item carries
-// `review` ({ hint } | null) and `work` (below my work folder, not marked). Memories leave the work folder out while
-// the setting workInMemories is off (the default), and so does the photo frame (frame.js).
+// `review` ({ hint } | null) and `work` (below my work folder, not marked). The photo frame (frame.js) leaves the work
+// folder out while the setting workInMemories is off (the default). Memories: since 1.26.0 only private photos (class
+// private, no team folder — privateOnly), whatever workInMemories says; before, the work folder only while it was off.
 //
 // Since 1.14.0 (feature `photoSearch`, labels.js): `q=<words>` on photos and months — the photos with a label the
 // phones recognised for every word (German words too); GET photos then adds `search` { terms, labels, total, chips }
@@ -170,12 +173,17 @@ async function classed(ctx, sc, cls) {
     : { where: `${sc.where} AND review_at IS NULL`, args: sc.args };
 }
 
-/** Scope `sc` without the work folder (memories while workInMemories is off). */
-async function withoutWork(ctx, sc) {
+/**
+ * Scope `sc` with only the private photos (memories, since 1.26.0 — whatever workInMemories says): nothing below my work
+ * folder, nothing marked to be checked („Prüfen“), nothing of a team folder (a team's photos are work) → { where, args },
+ * or null: none at all.
+ */
+async function privateOnly(ctx, sc) {
   if (!sc) return sc;
-  const { settings, folder } = await work.of(ctx);
-  if (!folder || settings.workInMemories) return sc;
-  return { where: `${sc.where} AND parent_id NOT IN (${TREE})`, args: [...sc.args, folder.id] };
+  const p = await classed(ctx, sc, 'private');
+  const teams = (await ctx.visible()).filter((v) => v.area.kind === 'team').map((v) => v.area.id);
+  if (!p || !teams.length) return p;
+  return { where: `${p.where} AND area_id NOT IN (${store.marks(teams.length)})`, args: [...p.args, ...teams] };
 }
 
 /** A parent who sees photos of a child's folder: the child hears of it as for the folder (once a day). */
@@ -227,18 +235,19 @@ function beforeArg(v) {
 
 /**
  * One page of photos below the filter `where` (with `args`) → { rows, next }: newest first, the page extended by the
- * photos of its last moment.
+ * photos of its last moment. `from`: the table as the statements name it — 'nodes INDEXED BY nodes_taken' for a span of
+ * time (memories.js, since 1.26.0), else 'nodes'.
  */
-async function page(gc, where, args, before, limit) {
+async function page(gc, where, args, before, limit, from = 'nodes') {
   const cond = before == null ? '' : ` AND ${TAKEN} < ?`;
-  const rows = await store.all(gc, `SELECT * FROM nodes WHERE ${where}${cond} ORDER BY ${TAKEN} DESC, id DESC LIMIT ?`,
+  const rows = await store.all(gc, `SELECT * FROM ${from} WHERE ${where}${cond} ORDER BY ${TAKEN} DESC, id DESC LIMIT ?`,
     [...args, ...(before == null ? [] : [before]), limit + 1]);
   if (rows.length <= limit) return { rows, next: null };
   const out = rows.slice(0, limit);
   const last = out[out.length - 1];
   const t = nodes.takenOf(last);
-  out.push(...await store.all(gc, `SELECT * FROM nodes WHERE ${where} AND ${TAKEN} = ? AND id < ? ORDER BY id DESC LIMIT ?`, [...args, t, last.id, TIES_MAX]));
-  const more = await store.one(gc, `SELECT 1 AS x FROM nodes WHERE ${where} AND ${TAKEN} < ? LIMIT 1`, [...args, t]);
+  out.push(...await store.all(gc, `SELECT * FROM ${from} WHERE ${where} AND ${TAKEN} = ? AND id < ? ORDER BY id DESC LIMIT ?`, [...args, t, last.id, TIES_MAX]));
+  const more = await store.one(gc, `SELECT 1 AS x FROM ${from} WHERE ${where} AND ${TAKEN} < ? LIMIT 1`, [...args, t]);
   return { rows: out, next: more ? iso(t) : null };
 }
 
@@ -368,8 +377,8 @@ async function memories(ctx, q) {
     const now = new Date(ctx.now);
     [y, m, d] = [now.getFullYear(), now.getMonth(), now.getDate()];
   }
-  // without the work folder unless the person wants it there (since 1.13.0)
-  const sc = await withoutWork(ctx, await scope(ctx, q));
+  // only private photos (since 1.26.0; 1.13.0 – 1.25.x: without the work folder unless workInMemories)
+  const sc = await privateOnly(ctx, await scope(ctx, q));
   const groups = [];
   if (sc) {
     const { where, args } = sc;
@@ -392,15 +401,16 @@ async function memories(ctx, q) {
 }
 
 /**
- * The overview (since 1.18.0): the memories of today like GET photos/memories (every area, without the work folder
- * unless the person wants it there) — the nearest `max` years with photos → [{ yearsAgo, date, count, cover }]. count:
- * every photo of that day (± 1 day), cover: the first of them. No note to a child (a look at the overview is no look
- * into its folder).
+ * The overview (since 1.18.0): the memories of today like GET photos/memories (every area but the team folders, only
+ * private photos — since 1.26.0) — the nearest `max` years with more than `moreThan` photos that day (± 1 day; since
+ * 1.26.0, memories.js DAY_MORE_THAN) → [{ yearsAgo, date, count, cover, id }]. count: every photo of that day (± 1 day),
+ * cover: the first of them, id: the collection of GET memories/photos (since 1.26.0). No note to a child (a look at the
+ * overview is no look into its folder).
  */
-async function memoryCovers(ctx, max) {
+async function memoryCovers(ctx, max, moreThan = 0) {
   const now = new Date(ctx.now);
   const [y, m, d] = [now.getFullYear(), now.getMonth(), now.getDate()];
-  const sc = await withoutWork(ctx, await scope(ctx, {}));
+  const sc = await privateOnly(ctx, await scope(ctx, {}));
   if (!sc) return [];
   const first = await store.one(ctx.gc, `SELECT MIN(${TAKEN}) AS t FROM nodes WHERE ${sc.where}`, sc.args);
   const fromYear = first && first.t != null ? new Date(first.t).getFullYear() : y;
@@ -410,11 +420,11 @@ async function memoryCovers(ctx, max) {
     const end = new Date(y - k, m, d + 2).getTime();
     const r = await store.one(ctx.gc, `SELECT COUNT(*) OVER () AS n_all, * FROM nodes WHERE ${sc.where} AND ${TAKEN} >= ? AND ${TAKEN} < ? ORDER BY ${TAKEN}, id LIMIT 1`,
       [...sc.args, start, end]);
-    if (r) found.push({ yearsAgo: k, date: dayOf(new Date(y - k, m, d)), count: r.n_all, row: r });
+    if (r && r.n_all > moreThan) found.push({ yearsAgo: k, date: dayOf(new Date(y - k, m, d)), count: r.n_all, row: r });
   }
   if (!found.length) return [];
   const items = await itemsOf(ctx, found.map((g) => { const { n_all: _n, ...row } = g.row; return row; }));
-  return found.map((g, i) => ({ yearsAgo: g.yearsAgo, date: g.date, count: g.count, cover: items[i] }));
+  return found.map((g, i) => ({ yearsAgo: g.yearsAgo, date: g.date, count: g.count, cover: items[i], id: `day:${g.date}` }));
 }
 
 /** GET photos/classes → { work, private, review } — the counts of the classes (since 1.13.0). */
@@ -466,6 +476,6 @@ async function makeCamera(ctx) {
 const isMedia = (n) => !!n && n.is_dir === 0 && n.deleted_at == null && !n.vault_id && /^(image|video)\//.test(String(n.mime || ''));
 
 module.exports = {
-  list, months, memories, memoryCovers, camera, makeCamera, classes, scope, placeList, mapOf, suggest, filtered, classed, withoutWork, CAMERA, page, itemsOf, isMedia, areaIds, noteViews, limitArg, beforeArg,
+  list, months, memories, memoryCovers, camera, makeCamera, classes, scope, placeList, mapOf, suggest, filtered, classed, privateOnly, CAMERA, page, itemsOf, isMedia, areaIds, noteViews, limitArg, beforeArg,
   cameraRow, mineOf, MEDIA, TREE, LIMIT_MAX, mediaArg,
 };

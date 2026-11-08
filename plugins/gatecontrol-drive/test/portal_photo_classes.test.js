@@ -144,7 +144,7 @@ test('portal: "Zuordnung" for a private photo marks it; "Arbeitsfotos nach" in t
       // the Drive settings: "Arbeitsfotos nach" with the path, a new folder chosen
       navItem($('dp-nav'), 'Drive-Einstellungen').click();
       await until('the section', () => textOf($('dp-main')).includes('Arbeitsfotos nach') && textOf($('dp-main')).includes('Meine Dateien › Arbeit'));
-      assert.ok(textOf($('dp-main')).includes('Arbeitsfotos nie in Erinnerungen und Fotorahmen'));
+      assert.ok(textOf($('dp-main')).includes('Arbeitsfotos nie im Fotorahmen'));
       buttonOf($('dp-main'), 'Ändern').click();
       await until('the picker', () => textOf($('dp-dialog')).includes('Ziel: Meine Dateien › Arbeit'));
       buttonOf($('dp-dialog'), 'Eine Ebene höher').click();

@@ -341,10 +341,12 @@ test('memories, people and places of the overview; people null while the switch 
     await put(c, ANNA, mine.rootId, 'b2.jpg', { mime: 'image/jpeg', takenAt: at(2, 1), geo: KOELN });
     await put(c, ANNA, mine.rootId, 'b3.jpg', { mime: 'image/jpeg', takenAt: at(2, 2), geo: KOELN });
     await put(c, ANNA, mine.rootId, 'c1.jpg', { mime: 'video/mp4', takenAt: at(5) });
+    // since 1.26.0 a memory needs more than 10 photos that day: 10 more videos a year ago (12)
+    for (let i = 0; i < 10; i++) await put(c, ANNA, mine.rootId, `v${i}.mp4`, { mime: 'video/mp4', takenAt: at(1, 2) + i * MIN });
     // another day: no memory
     await put(c, ANNA, mine.rootId, 'x.jpg', { mime: 'image/jpeg', takenAt: at(3) - 10 * DAY, geo: HH });
     let o = await overview(a);
-    assert.deepEqual(o.memories.map((g) => [g.yearsAgo, g.count, g.cover.name]), [[1, 2, 'a1.jpg'], [2, 3, 'b1.jpg'], [5, 1, 'c1.jpg']]);
+    assert.deepEqual(o.memories.map((g) => [g.yearsAgo, g.count, g.cover.name, g.id]), [[1, 12, 'a1.jpg', `day:${day(at(1))}`]]);
     assert.equal(o.memories[0].date, day(at(1)));
     assert.ok(Object.prototype.hasOwnProperty.call(o.memories[0].cover, 'previewUrl'));
     assert.deepEqual(o.places.top.map((p) => [p.name, p.count]).sort(), [['Hamburg', 3], ['Köln', 3]]);
@@ -411,6 +413,12 @@ test('GET overview with some thousand nodes answers in well under 300 ms', async
       if (i < 3000) await db.run('INSERT INTO changes (area_id, node_id, op, at, by) VALUES (?, ?, ?, ?, ?)', [f.area, id, 'create', now - (3000 - i) * 15 * MIN, i % 2 ? MARC.id : ANNA.id]);
       if (!photo && i < 600) await db.run('INSERT INTO recent_opens (user_id, node_id, at) VALUES (?, ?, ?) ON CONFLICT DO NOTHING', [ANNA.id, id, now - i * MIN]);
       if (!photo && i % 30 === 0) await db.run('INSERT INTO doc_deadlines (node_id, kind, date, label, found_at) VALUES (?, ?, ?, ?, ?)', [id, 'payment', day(now + (i % 300) * DAY), null, now]);
+    }
+    // this day a year ago: 12 photos (a memory needs more than 10)
+    const ago = new Date(new Date(now).getFullYear() - 1, new Date(now).getMonth(), new Date(now).getDate(), 12).getTime();
+    for (let i = 0; i < 12; i++) {
+      await db.run(`INSERT INTO nodes (area_id, parent_id, name, is_dir, media_id, size, mime, rev, created_at, created_by, updated_at, updated_by, taken_at)
+        VALUES (?, ?, ?, 0, ?, 1, 'image/jpeg', 1, ?, ?, ?, ?, ?)`, [mine.id, mine.rootId, `Vor einem Jahr ${i}.jpg`, `m${String(++k).padStart(31, '0')}`, now, ANNA.id, now, ANNA.id, ago + i * MIN]);
     }
     await db.exec('COMMIT');
     await a('PUT', 'photos/settings', { people: true });

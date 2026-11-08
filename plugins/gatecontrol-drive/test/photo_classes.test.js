@@ -228,7 +228,7 @@ test('a move into or out of the work folder ends the mark — PATCH, a folder wi
   });
 });
 
-test('memories and the photo frame leave the work folder out unless workInMemories', async () => {
+test('memories never show the work folder (1.26.0); the photo frame leaves it out unless workInMemories', async () => {
   await withHost({ gatecontrol: '1.210.0' }, async (host, c) => {
     const a = c.as(ANNA);
     const mine = await c.area(ANNA, 'mine');
@@ -251,8 +251,9 @@ test('memories and the photo frame leave the work folder out unless workInMemori
     assert.equal(await frame(), 1);
     // the album itself still shows both
     assert.equal((await a('GET', `albums/${al.id}`)).json.items.length, 2);
+    // since 1.26.0 workInMemories is only the photo frame's: memories stay private
     await a('PUT', 'photos/settings', { workInMemories: true });
-    assert.deepEqual(await mem(), ['baustelle.jpg', 'zuhause.jpg']);
+    assert.deepEqual(await mem(), ['zuhause.jpg']);
     assert.equal(await frame(), 2);
   });
 });

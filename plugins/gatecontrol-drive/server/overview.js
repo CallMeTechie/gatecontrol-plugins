@@ -9,8 +9,10 @@
 //                0), toFile (Mail's attachments to file — its service tofile_count — or null without), toFileHint }
 //     recent     [≤ 10 files like a folder's items + areaLabel + openedAt | changedAt] — no folders, pictures, videos or
 //                files of a vault; what the person opened (recent_opens), filled up with what they changed or uploaded
-//     memories   [≤ 4 { yearsAgo, date, count, cover }] — this calendar day (± 1 day) in earlier years like GET
-//                photos/memories; cover a photo item
+//     memories   [≤ 4 { yearsAgo, date, count, cover, id }] — this calendar day (± 1 day) in earlier years like GET
+//                photos/memories; cover a photo item. Since 1.26.0 only private photos (no work folder, nothing to
+//                check, no team folder) and only days with more than 10 photos; id: the collection „Heute vor X
+//                Jahren“ of GET memories/photos (memories.js — „Alle“ opens the page „Erinnerungen“)
 //     people     { people: [≤ 8 named, not hidden, like GET people], unnamed } | null (the person's switch off)
 //     places     { top: [≤ 3 { key, name, count }], cluster: { lat, lon, count } | null, total }
 //     activity   [≤ 5 { at, user: { id, name }, kind: 'added_photos' | 'added_files' | 'changed', count, area: { id,
@@ -31,6 +33,7 @@ const photos = require('./photos');
 const places = require('./places');
 const faces = require('./faces');
 const deadlines = require('./deadlines');
+const memoriesPage = require('./memories');
 const { iso, fail } = require('./util');
 
 const RECENT_MAX = 10;
@@ -247,7 +250,7 @@ async function activity(ctx, vis) {
 // ─── photos: memories, people, places ───────────────
 
 async function memories(ctx) {
-  return photos.memoryCovers(ctx, MEMORIES_MAX);
+  return photos.memoryCovers(ctx, MEMORIES_MAX, memoriesPage.DAY_MORE_THAN);
 }
 
 async function people(ctx) {

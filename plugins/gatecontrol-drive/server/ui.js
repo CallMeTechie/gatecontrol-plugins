@@ -5,7 +5,7 @@
 // window.GC.call, uploads with GC.upload and gets live events with GC.on. Everything is inlined here, read once from
 // ui/: portal.css · portal.html · DP_CTX · viewer.js (pictures and videos, 1.21.0) · vaultcrypto.js · vault.js (vault folders, 1.9.0;
 // its viewer ui/vaultview.* comes later through GET viewer/vaultview, 1.22.0) · bulk.js (several at once,
-// 1.12.0) · ki.js (AI in Drive, 1.14.0) · places.js (places and people, 1.16.0) · overview.js (the overview, 1.18.0) ·
+// 1.12.0) · ki.js (AI in Drive, 1.14.0) · places.js (places and people, 1.16.0) · overview.js (the overview, 1.18.0) · memories.js (the page „Erinnerungen“, 1.26.0) ·
 // portal.js.
 //
 // Maps (since 1.16.0, plugin.json ui.maps): GateControl serves its bundled Leaflet at a frame-loadable URL and the
@@ -36,7 +36,7 @@ function inlineScript(name, src) {
 const FILES = {
   css: read('portal.css'), html: read('portal.html'),
   js: inlineScript('viewer.js', read('viewer.js')) + '\n' + inlineScript('vaultcrypto.js', read('vaultcrypto.js')) + '\n' + inlineScript('vault.js', read('vault.js')) + '\n' + inlineScript('bulk.js', read('bulk.js')) + '\n'
-    + inlineScript('ki.js', read('ki.js')) + '\n' + inlineScript('places.js', read('places.js')) + '\n' + inlineScript('overview.js', read('overview.js')) + '\n'
+    + inlineScript('ki.js', read('ki.js')) + '\n' + inlineScript('places.js', read('places.js')) + '\n' + inlineScript('overview.js', read('overview.js')) + '\n' + inlineScript('memories.js', read('memories.js')) + '\n'
     + inlineScript('portal.js', read('portal.js')),
   admin: { css: read('admin.css'), html: read('admin.html'), js: inlineScript('admin.js', read('admin.js')) },
   frame: { css: read('frame.css'), html: read('frame.html'), js: inlineScript('frame.js', read('frame.js')) },

@@ -62,6 +62,8 @@ async function setup(host, c) {
   const ago = new Date(y.getFullYear() - 1, y.getMonth(), y.getDate(), 12).getTime();
   const p1 = (await c.put(ANNA, mine.rootId, 'Strand.jpg', 's', { mime: 'image/jpeg', takenAt: ago, geo: { lat: 53.5452, lon: 9.9667 } })).json.node;
   await c.put(ANNA, mine.rootId, 'Hafen.jpg', 'h', { mime: 'image/jpeg', takenAt: ago + 60000, geo: { lat: 53.5452, lon: 9.9667 } });
+  // more than 10 private photos that day (1.26.0: a memory only then; the one to check does not count)
+  for (let i = 0; i < 11; i++) await c.put(ANNA, mine.rootId, `Tag ${i}.jpg`, `t${i}`, { mime: 'image/jpeg', takenAt: ago + (2 + i) * 60000 });
   assert.equal((await a('POST', 'photos/review', { ids: [p1.id], review: true })).status, 200);
   const urlaub = (await c.as(MARC)('POST', 'nodes', { parentId: fam.rootId, name: 'Urlaub 2026' })).json.node;
   c.clock.add(MIN);
@@ -101,7 +103,7 @@ test('smoke: Drive opens on "Übersicht" — the tiles of the mockup; a file ope
       assert.ok(/Speicher · \d+ B von 50 GB/.test(fam), fam);
       const mem = tileOf(main, 'Erinnerungen');
       assert.ok(textOf(mem).includes('Heute vor einem Jahr'));
-      assert.ok(textOf(mem).includes('2 Fotos'));
+      assert.ok(textOf(mem).includes('12 Fotos'));
       assert.ok(mem.querySelector('img'), 'the cover');
       const pl = tileOf(main, 'Orte');
       assert.equal(textOf(pl.querySelector('.dp-ov-bubble')), '2');
@@ -115,7 +117,7 @@ test('smoke: Drive opens on "Übersicht" — the tiles of the mockup; a file ope
       // "Fotos": only the photos — no memories, no band; "Karte" and "Personen" up top
       calls.length = 0;
       pageBtn(f.document, 'Fotos').click();
-      await until('photos', () => $('dp-main').querySelectorAll('.dp-ph').length === 4);
+      await until('photos', () => $('dp-main').querySelectorAll('.dp-ph').length === 15);
       assert.equal(pageBtn(f.document, 'Fotos').getAttribute('aria-pressed'), 'true');
       assert.equal($('dp-main').querySelector('.dp-mem'), null);
       assert.equal($('dp-main').querySelector('.dp-wk-band'), null);
@@ -158,6 +160,53 @@ test('smoke: nothing yet — only the storage; a direct link opens its node, not
       await until('the preview', () => !$w('dp-dialog').hidden && byText($w('dp-dialog'), 'h3', 'Strom.pdf'));
       assert.equal(byText($w('dp-pages'), 'button', 'Dateien').getAttribute('aria-pressed'), 'true');
       assert.equal($w('dp-main').querySelector('.dp-ov-tile'), null);
+    } finally { w.stop(); }
+  });
+});
+
+test('smoke: „Alle“ of „Erinnerungen“ opens the page „Erinnerungen“ (1.26.0) — a card its photos in the viewer; an older Drive: „Fotos“', async () => {
+  await withHost({ services: [mail], gatecontrol: '1.216.0' }, async (host, c) => {
+    await setup(host, c);
+    const calls = [];
+    const f = createWindow(portalHtml(), frameGc(host, ANNA, calls));
+    const $ = (id) => f.document.getElementById(id);
+    try {
+      f.run();
+      await until('the overview', () => !$('dp-app').hidden && tileOf($('dp-main'), 'Erinnerungen'));
+      byText(tileOf($('dp-main'), 'Erinnerungen'), 'button', 'Alle').click();
+      await until('the page', () => $('dp-main').querySelector('.dp-mem-card'));
+      assert.ok(calls.some((x) => x.path === 'memories'));
+      const main = $('dp-main');
+      assert.deepEqual(main.querySelectorAll('.dp-mem-sec').map((x) => x.getAttribute('aria-label')), ['Heute in früheren Jahren'], 'Hamburg has one private photo only: no place');
+      assert.ok(textOf(main).includes('Nur private Fotos'));
+      const card = main.querySelector('.dp-mem-card');
+      assert.ok(textOf(card).includes('Heute vor einem Jahr'));
+      assert.ok(textOf(card).includes('12 Fotos'));
+      assert.ok(card.querySelector('img'), 'the cover');
+      assert.equal(textOf($('dp-crumbs')).trim(), 'Erinnerungen');
+      assert.equal(pageBtn(f.document, 'Fotos').getAttribute('aria-pressed'), 'true');
+      // a card: its photos (12 — the one to check not), the path back
+      card.click();
+      await until('its photos', () => $('dp-main').querySelectorAll('.dp-ph').length === 12);
+      const q = calls.filter((x) => x.path === 'memories/photos').pop();
+      assert.equal(q.query.id, card.getAttribute('data-memory'));
+      assert.equal(textOf($('dp-crumbs')).replace(/\s+/g, ''), 'Erinnerungen›Heutevoreinem Jahr'.replace(/\s+/g, ''));
+      // a tile opens the viewer
+      $('dp-main').querySelector('.dp-ph').click();
+      await until('the viewer', () => f.document.querySelector('.dp-vw') || !$('dp-dialog').hidden);
+    } finally { f.stop(); }
+    // an older Drive (no memoryCollections): „Alle“ opens „Fotos“ as before
+    const old = frameGc(host, ANNA, []);
+    const call = old.call;
+    old.call = async (m, p, b) => { const r = await call(m, p, b); if (p === 'me') r.features = r.features.filter((x) => x !== 'memoryCollections'); return r; };
+    const w = createWindow(portalHtml(), old);
+    const $w = (id) => w.document.getElementById(id);
+    try {
+      w.run();
+      await until('the overview', () => !$w('dp-app').hidden && tileOf($w('dp-main'), 'Erinnerungen'));
+      byText(tileOf($w('dp-main'), 'Erinnerungen'), 'button', 'Alle').click();
+      await until('photos', () => $w('dp-main').querySelectorAll('.dp-ph').length > 0);
+      assert.equal($w('dp-main').querySelector('.dp-mem-card'), null);
     } finally { w.stop(); }
   });
 });

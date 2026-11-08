@@ -1,4 +1,4 @@
-<!-- version: 1.25.0 -->
+<!-- version: 1.26.0 -->
 # Drive
 
 ## What the plugin does
@@ -41,6 +41,7 @@ Drive is a subscription of its own (Family, Business or Combo, five people inclu
 - **Viewing pictures and videos:** a click on a picture or video – in “Files”, in the search and in “Photos” – opens it large, without downloading it first. The arrows, the arrow keys or a swipe go to the next picture or video in the same folder. Zoom pictures with the mouse wheel, “+”/“−”, a double click or two fingers. Videos play right in Drive (play, pause, seek, sound, full screen); Drive remembers where you stopped while the tab is open. At the top: download, share, details and the file's menu.
 - **Viewing PDFs and texts (apps):** in the Android app and the Windows app a tap on a PDF, text or Markdown file opens it right in the app – in the same view as vault files. Texts can be selected and copied there. “Open with another app” (Android) or “Open with another program” (Windows) stays in the view. Very large files (a PDF over 100 MB, a text over 2 MB) and Office files still open in another app. In the portal a click on a PDF still offers “Download”.
 - **Photos:** timeline by month, “camera uploads only”, “All · Photos · Videos” (show only photos or only videos; a video shows its length when the device sent it), albums, “show in the photo frame”, search by people, places and content, map, “Who is this?”. Faces are recognised on the devices only; Drive keeps no face pictures.
+- **Memories:** in the overview “All” opens the page **“Memories”** (portal, Android and Windows app with Drive 1.26.0). It has: **Today X years ago** (every earlier year in which you took more than 10 photos on this day – counting the day before and after), **Trips** (days in a row at a place at least 40 km from home, from 10 photos), **With Noah** and so on (your named people, from 10 photos), **This month X years ago** (from 20 photos), **Year in review** (every past year from 50 photos) and **Places** (e.g. “Langenlonsheim · 12 photos”, from 10 photos). Tap a card to see its photos; tap a photo to open it large. “Home” is the place where you took photos on the most days. **Memories show private photos only:** nothing from your work folder, nothing still waiting under “Check”, nothing from team folders. The cards of the overview also need more than 10 photos on that day.
 - **Vault folders:** “New” › “New vault”, who may open it (only me, family, team folder). Keep the recovery key safe. A new device asks with “Request access”, a device already approved grants it. Vaults lock after some minutes without input; the AI never reads them. A tap on a file opens it in the vault viewer (pictures, PDFs, texts, in the apps also videos) – see below.
 - **Finding videos:** in the search, “All · Photos · Videos” (portal) or “Videos” (apps) filters the hits. Without a search word “Videos” shows the newest videos.
 - **Backing up photos and videos from the phone (Android):** in the app under **Drive › Photo backup**. “Videos too” is off at first. If you switch it on later, the app asks: **“All videos”** also backs up the videos already on the phone (photos are not uploaded again), **“Only new”** only those from now on. What the backup leaves out is listed under **“Skipped”** with the reason; **“Try again”** tries once more.
@@ -103,8 +104,18 @@ In the Android app under **Drive › Photo backup**, check that “Videos too”
 **“Full screen” is missing in the portal.**
 Full screen in the portal needs GateControl 1.244.0. Older versions show the video in the Drive window.
 
+**A day is missing from the memories.**
+“Today X years ago” only shows days with more than 10 private photos (the day before and after count too). Photos in the work folder, in team folders and those still waiting under “Check” do not count – sort them as “Private” under **Photos › Check** and they do. Trips and places need photos with a location.
+
 **At home the photos do not show up faster.**
 The previews reach the gateway bit by bit (a few hundred per run, every 15 minutes). Check at the gateway under **Gateways › Home cache** that it is “on” and that “Photos” or “Drive” are switched on. Previews from the home network need GateControl 1.249.0 and a current app.
+
+## New in 1.26.0
+
+- **Page “Memories”:** “All” at the memories of the overview now opens a page of its own with “Today X years ago” (every year, not only four), “Trips”, “With Noah” (your people), “This month X years ago”, “Year in review” and “Places” – each with a cover and a count. Tap one to see its photos.
+- **Private photos only:** memories show no photos from the work folder, none still waiting under “Check” and none from team folders – whatever the old setting “Never show work photos in memories and on the photo frame” said. It is now called “Never show work photos on the photo frame” and is only for the photo frame.
+- **Only from more than 10 photos:** “Today X years ago” shows – in the overview and on the page – only when more than 10 private photos were taken that day (± 1 day).
+- Older apps open “Photos” with “All” as before.
 
 ## New in 1.25.0
 
