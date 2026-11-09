@@ -44,8 +44,30 @@ function section(ctx, id, items, extra) {
 
 function startOfToday(ctx) { return tz.at(ctx.today, { hh: 0, mm: 0 }, ctx.tz); }
 
-/** „Mein Tag“: Termine heute, Überfällig, Heute, Demnächst, Erledigt heute. */
-async function myDay(gc, ctx, area) {
+/**
+ * 1.2.0: the lists whose day is today (Einkaufstag) for the card at the top of „Mein Tag“ — every member's, unless they
+ * switched it off for the list (mydayOff) → [{ list, title, open, assignedToMe, items (the first 3 open), more }].
+ */
+async function listDays(gc, ctx, area) {
+  const rows = await store.all(gc, `SELECT ${lists.LIST_COLS} FROM list_members m JOIN lists l ON l.id = m.list_id AND l.deleted_at IS NULL AND l.area = ?
+    WHERE m.user_id = ? AND m.myday_off = 0 AND (l.days & ?) != 0 ORDER BY m.position, l.id LIMIT 20`, [area, ctx.userId, lists.bitOf(ctx.today)]);
+  const counts = await lists.openCounts(gc, rows.map((r) => r.id));
+  const out = [];
+  for (const l of rows) {
+    const first = await store.all(gc, `SELECT * FROM tasks INDEXED BY idx_tasks_list WHERE list_id = ? AND done_at IS NULL AND deleted_at IS NULL AND parent_id IS NULL
+      ORDER BY position, id LIMIT 3`, [l.id]);
+    const mine = await store.one(gc, `SELECT COUNT(*) AS n FROM tasks INDEXED BY idx_tasks_assignee WHERE assignee_id = ? AND list_id = ? AND done_at IS NULL AND deleted_at IS NULL AND parent_id IS NULL`, [ctx.userId, l.id]);
+    const open = counts.get(l.id) || 0;
+    out.push({
+      list: await lists.view(gc, ctx, l, counts), title: t(ctx.lang, l.icon === 'cart' ? 'v.listday_cart' : 'v.listday'), open, assignedToMe: mine ? mine.n : 0,
+      items: await tasks.views(gc, ctx, first), more: Math.max(0, open - first.length),
+    });
+  }
+  return out;
+}
+
+/** „Mein Tag“: Termine heute, Überfällig, Heute, Demnächst, Erledigt heute (+ 1.2.0: listdays, the card of the list days). */
+async function myDay(gc, ctx, area, opts = {}) {
   const prefs = await prefsMod.get(gc, ctx.userId);
   const soon = tz.addDays(ctx.today, UPCOMING_DAYS);
   const due = await dueUntil(gc, ctx, area, soon);
@@ -80,8 +102,10 @@ async function myDay(gc, ctx, area) {
   for (const k of Object.keys(out)) if (k !== 'today') out[k].sort(byTime);
   out.today.sort((a, b) => (a.due && a.due.time ? 0 : 1) - (b.due && b.due.time ? 0 : 1) || byTime(a, b) || (a.position || 0) - (b.position || 0));
   out.upcoming = out.upcoming.slice(0, 20);
+  if (prefs.myday.showDone === false) out.done = [];
   return {
     view: 'myday', title: t(ctx.lang, 'v.myday'), date: ctx.today,
+    listdays: opts.listdays === false || prefs.myday.listdays === false ? [] : await listDays(gc, ctx, area),
     sections: [section(ctx, 'events', out.events), section(ctx, 'overdue', out.overdue), section(ctx, 'today', out.today),
       section(ctx, 'upcoming', out.upcoming), section(ctx, 'done', out.done, { collapsed: true })],
   };
@@ -130,7 +154,7 @@ async function list(gc, ctx, id) {
     ORDER BY done_at DESC LIMIT 100`, [l.id]);
   const n = await store.one(gc, 'SELECT COUNT(*) AS n FROM tasks INDEXED BY idx_tasks_done WHERE list_id = ? AND done_at IS NOT NULL AND deleted_at IS NULL AND parent_id IS NULL', [l.id]);
   return {
-    view: 'list', title: l.name, list: await lists.view(gc, l),
+    view: 'list', title: l.name, list: await lists.view(gc, ctx, l),
     sections: [section(ctx, 'open', await tasks.views(gc, ctx, open)), section(ctx, 'done', await tasks.views(gc, ctx, done), { collapsed: true, count: n.n })],
   };
 }
@@ -167,7 +191,7 @@ async function get(gc, ctx, name, q) {
 async function nav(gc, ctx, q, notesNav) {
   const area = areaOf(q.area);
   const prefs = await prefsMod.get(gc, ctx.userId);
-  const md = await myDay(gc, ctx, area);
+  const md = await myDay(gc, ctx, area, { listdays: false });
   const count = (v, ids) => v.sections.filter((s) => ids.includes(s.id)).reduce((n, s) => n + s.items.filter((x) => !x.done).length, 0);
   const imp = await store.one(gc, `SELECT COUNT(*) AS n ${JOIN_LISTS} JOIN tasks t INDEXED BY idx_tasks_important ON t.list_id = m.list_id AND t.important = 1 AND ${OPEN} WHERE m.user_id = ?`, [area, ctx.userId]);
   const pl = await store.one(gc, `SELECT COUNT(*) AS n ${JOIN_LISTS} JOIN tasks t INDEXED BY idx_tasks_due ON t.list_id = m.list_id AND ${OPEN} AND t.due_date IS NOT NULL WHERE m.user_id = ?`, [area, ctx.userId]);
@@ -195,4 +219,4 @@ async function nav(gc, ctx, q, notesNav) {
   };
 }
 
-module.exports = { get, nav, myDay };
+module.exports = { get, nav, myDay, listDays };

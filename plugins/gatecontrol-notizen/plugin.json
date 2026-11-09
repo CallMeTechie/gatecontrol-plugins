@@ -4,7 +4,7 @@
     "de": "Notizen & Aufgaben",
     "en": "Notes & Tasks"
   },
-  "version": "1.1.0",
+  "version": "1.2.0",
   "publisher": "CallMeTechie",
   "description": {
     "de": "Eigene Aufgaben und Notizen plus alles „Zu tun“ aus den anderen Plugins (Familie, Mail, Drive, Schule, Alltag) an einer Stelle: Mein Tag, Wichtig, Geplant, Mir zugewiesen; Listen und Gruppen, Unteraufgaben, Fälligkeit, Erinnerung als Push, Wiederholungen, geteilte Listen. Notizbücher mit Schlagwörtern, Checklisten, Tabellen, Bildern und Volltextsuche, einzelne Notizbücher als Tresor (Ende-zu-Ende verschlüsselt). Schnell-Eingabe in normaler Sprache, Umzug von Microsoft To Do und Synology DS Note. Bereiche Privat und Arbeit getrennt.",
@@ -132,12 +132,12 @@
       {
         "id": "sources",
         "label": {
-          "de": "Quellen",
-          "en": "Sources"
+          "de": "Aus anderen Plugins",
+          "en": "From other plugins"
         },
         "help": {
-          "de": "Was die anderen Plugins zu erledigen haben, erscheint in „Mein Tag“ – das Original bleibt dort, abhaken hier hakt dort ab. Jede Person kann einzelne Quellen für sich in „Quellen“ einschränken.",
-          "en": "What the other plugins have to do shows up in “My Day” – the original stays there, ticking it off here ticks it off there. Everyone can narrow single sources for themselves under “Sources”."
+          "de": "Was die anderen Plugins zu erledigen haben, erscheint in „Mein Tag“ – das Original bleibt dort, abhaken hier hakt dort ab. Jede Person kann einzelne Plugins für sich unter „Einstellungen“ (Zahnrad unten links) einschränken.",
+          "en": "What the other plugins have to do shows up in “My Day” – the original stays there, ticking it off here ticks it off there. Everyone can narrow single plugins for themselves under “Settings” (gear at the bottom left)."
         }
       },
       {
@@ -392,6 +392,14 @@
       "label": {
         "de": "Tresor: neues Gerät möchte Zugriff",
         "en": "Vault: a new device asks for access"
+      },
+      "default": true
+    },
+    {
+      "id": "listday",
+      "label": {
+        "de": "Einkaufstag am Morgen",
+        "en": "Shopping day in the morning"
       },
       "default": true
     }

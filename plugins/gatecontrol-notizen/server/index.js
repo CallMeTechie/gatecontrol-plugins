@@ -15,6 +15,8 @@ const sources = require('./sources');
 const ui = require('./ui');
 const { t } = require('./text');
 
+const CART = 'M6 6h15l-1.5 9h-12zM6 6L5 3H2M9 20a1 1 0 1 0 0-2 1 1 0 0 0 0 2zM18 20a1 1 0 1 0 0-2 1 1 0 0 0 0 2z';
+
 /** The context of a call: who, which language, now and today in the hub's zone. */
 async function context(gc, user, lang) {
   const cfg = await config.get(gc);
@@ -73,7 +75,12 @@ module.exports = {
     const md = await views.myDay(gc, ctx, 'private');
     const open = md.sections.filter((s) => ['events', 'overdue', 'today'].includes(s.id)).reduce((n, s) => n + s.items.length, 0);
     const over = md.sections.find((s) => s.id === 'overdue').items.length;
-    return [{ title: t(ctx.lang, 'v.myday'), value: open, state: over ? 'warn' : open ? 'on' : 'good', icon: 'M9 11l3 3L22 4M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11' }];
+    const out = [{ title: t(ctx.lang, 'v.myday'), value: open, state: over ? 'warn' : open ? 'on' : 'good', icon: 'M9 11l3 3L22 4M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11' }];
+    // 1.2.0: the list day card of „Mein Tag“ (Einkaufstag) as a tile of its own
+    for (const d of (md.listdays || []).slice(0, 2)) {
+      out.push({ title: d.title, value: d.list.name.slice(0, 40), unit: t(ctx.lang, 'v.listday_open', { n: d.open }).slice(0, 12), state: d.open ? 'on' : 'good', icon: CART });
+    }
+    return out;
   },
 
   async portalSearch({ user, lang, q }, gc) {

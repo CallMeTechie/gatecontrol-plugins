@@ -12,6 +12,7 @@ const events = require('./events');
 const fts = require('./fts');
 const clientIds = require('./clientids');
 const push = require('./push');
+const pushprefs = require('./pushprefs');
 const R = require('../ui/repeat');
 const Q = require('../ui/quickparse');
 const { t } = require('./text');
@@ -82,7 +83,10 @@ function view(ctx, r, extra = {}) {
     progress: extra.progress && extra.progress.get(r.id) ? extra.progress.get(r.id) : null,
     attachments: extra.attachments ? extra.attachments.get(r.id) || 0 : undefined,
     source: r.src_plugin ? { plugin: r.src_plugin, id: r.src_id } : null,
-    noteId: r.note_id || null, position: r.position, canComplete: true,
+    noteId: r.note_id || null, position: r.position,
+    // 1.2.0: a member who may only look completes only what is assigned to them (README "Roles")
+    canEdit: !extra.roles || extra.roles.get(r.list_id) !== 'read',
+    canComplete: !extra.roles || extra.roles.get(r.list_id) !== 'read' || r.assignee_id === ctx.userId || (!!r.parent_id && !!extra.parentMine && extra.parentMine.has(r.parent_id)),
     updatedAt: r.updated_at,
   };
 }
@@ -103,7 +107,19 @@ async function extras(gc, ctx, rows) {
   }
   const names = new Map();
   for (const r of rows) if (r.assignee_id && !names.has(r.assignee_id)) names.set(r.assignee_id, await people.name(gc, r.assignee_id));
-  return { progress, myDay, attachments, names };
+  // my role per list (read: canEdit false) and, for sub tasks of read lists, whether their task is mine
+  const roles = new Map();
+  for (const part of store.chunks([...new Set(rows.map((r) => r.list_id))])) {
+    if (!part.length) continue;
+    for (const m of await store.all(gc, `SELECT list_id, role FROM list_members WHERE user_id = ? AND list_id IN (${store.marks(part.length)})`, [ctx.userId, ...part])) roles.set(m.list_id, m.role);
+  }
+  const parentMine = new Set();
+  const subs = [...new Set(rows.filter((r) => r.parent_id && roles.get(r.list_id) === 'read').map((r) => r.parent_id))];
+  for (const part of store.chunks(subs)) {
+    if (!part.length) continue;
+    for (const p of await store.all(gc, `SELECT id FROM tasks WHERE id IN (${store.marks(part.length)}) AND assignee_id = ?`, [...part, ctx.userId])) parentMine.add(p.id);
+  }
+  return { progress, myDay, attachments, names, roles, parentMine };
 }
 
 async function views(gc, ctx, rows) {
@@ -121,6 +137,16 @@ async function access(gc, ctx, id) {
   return r;
 }
 
+/** May the person complete this task (row of access)? A read member: only what is assigned to them (or its sub tasks). */
+async function mayComplete(gc, ctx, r) {
+  if (r.my_role !== 'read') return true;
+  if (r.assignee_id === ctx.userId) return true;
+  if (!r.parent_id) return false;
+  const p = await store.one(gc, 'SELECT assignee_id FROM tasks WHERE id = ?', [r.parent_id]);
+  return !!(p && p.assignee_id === ctx.userId);
+}
+const readOnly = () => fail('forbidden', { reason: 'read_only' });
+
 async function linkedTwoWay(gc, listId) {
   const l = await store.one(gc, 'SELECT id FROM ext_links WHERE list_id = ? AND two_way = 1', [listId]);
   return !!l;
@@ -137,7 +163,7 @@ async function assigneeArg(gc, listId, v) {
 
 /** A line in plain language → the fields of a new task (ui/quickparse.js with the person's lists and people). */
 async function fromText(gc, ctx, s, area) {
-  const ls = (await lists.all(gc, ctx, area)).lists;
+  const ls = (await lists.all(gc, ctx, area)).lists.filter((l) => l.canEdit);
   const ps = await people.pickable(gc, ctx.userId);
   const p = Q.parse(s, { today: ctx.today, now: ctx.time, lists: ls.map((l) => ({ id: l.id, name: l.name })), people: ps.map((u) => ({ id: u.id, name: u.name })) });
   return p;
@@ -184,12 +210,13 @@ async function create(gc, ctx, b0, opts = {}) {
   let listId;
   if (fields.parentId != null) {
     parent = await access(gc, ctx, fields.parentId);
+    if (parent.my_role === 'read') throw readOnly();
     if (parent.parent_id) throw fail('invalid', { field: 'parentId' });
     const n = await store.one(gc, 'SELECT COUNT(*) AS n FROM tasks WHERE parent_id = ? AND deleted_at IS NULL', [parent.id]);
     if (n.n >= SUBTASKS_MAX) throw fail('too_many');
     listId = parent.list_id;
   } else if (fields.listId != null) {
-    listId = (await lists.access(gc, ctx.userId, fields.listId)).id;
+    listId = lists.writable(await lists.access(gc, ctx.userId, fields.listId)).id;
   } else {
     listId = await lists.ensureDefault(gc, ctx, fields.area);
   }
@@ -238,8 +265,8 @@ async function create(gc, ctx, b0, opts = {}) {
 
 async function notifyAssigned(gc, ctx, userId, title, id) {
   const l = await store.one(gc, 'SELECT l.id, l.area FROM tasks t JOIN lists l ON l.id = t.list_id WHERE t.id = ?', [id]);
-  await gc.notify({ topic: 'shared', title: t(ctx.notifyLang, 'n.assigned_title', { name: ctx.userName || '' }), body: title, users: [userId],
-    collapseKey: 'task:' + id, data: { notizen: push.assigned(id, l ? l.id : null, l ? l.area : null) } }).catch(() => {});
+  await pushprefs.send(gc, [userId], 'shared', { topic: 'shared', title: t(ctx.notifyLang, 'n.assigned_title', { name: ctx.userName || '' }), body: title,
+    collapseKey: 'task:' + id, data: { notizen: push.assigned(id, l ? l.id : null, l ? l.area : null) } });
 }
 
 /** GET tasks/<id> → { task (with note, subtasks, attachments, list) } */
@@ -297,6 +324,8 @@ async function update(gc, ctx, id, b) {
   // only what changes is written
   for (const f of Object.keys(next)) if (same(next[f], now[f])) delete next[f];
   if (!Object.keys(next).length) return get(gc, ctx, r.id);
+  // a member who may only look: only their own „Mein Tag“ mark
+  if (r.my_role === 'read' && Object.keys(next).some((f) => f !== 'myDay')) throw readOnly();
 
   const set = [];
   const args = [];
@@ -309,7 +338,7 @@ async function update(gc, ctx, id, b) {
   let listId = r.list_id;
   if (next.listId !== undefined) {
     const l = await lists.access(gc, ctx.userId, next.listId);
-    if (l.id !== r.list_id) { listId = l.id; put('list_id', l.id); }
+    if (l.id !== r.list_id) { lists.writable(l); listId = l.id; put('list_id', l.id); }
   }
   if (next.due !== undefined) { put('due_date', next.due.date); put('due_time', next.due.time); put('due_at', dueAt(ctx, next.due.date, next.due.time)); }
   if (next.remindAt !== undefined) { put('remind_at', next.remindAt); put('reminded_at', null); }
@@ -343,6 +372,7 @@ async function update(gc, ctx, id, b) {
 async function complete(gc, ctx, id, b, opts = {}) {
   const r = await access(gc, ctx, id);
   const done = b && b.done !== undefined ? bool(b.done) : true;
+  if (!(await mayComplete(gc, ctx, r))) throw readOnly();
   if (!!r.done_at === done) return get(gc, ctx, r.id, opts);
   if (r.src_plugin && !r.parent_id && opts.completeSource) await opts.completeSource(gc, ctx, r.src_plugin, r.src_id, done);
   const twoWay = await linkedTwoWay(gc, r.list_id);
@@ -388,6 +418,7 @@ async function remove(gc, ctx, id) {
     if (was) return { ok: true, gone: true };
     throw e;
   }
+  if (r.my_role === 'read') throw readOnly();
   const twoWay = await linkedTwoWay(gc, r.list_id);
   await store.tx(gc, async () => {
     await store.run(gc, 'UPDATE tasks SET deleted_at = ?, updated_at = ?, ext_dirty = ? WHERE id = ? OR parent_id = ?', [ctx.now, ctx.now, twoWay && r.ext_id && !r.parent_id ? 1 : 0, r.id, r.id]);
@@ -405,4 +436,4 @@ async function carrying(gc, ctx, plugin, srcId) {
     WHERE t.src_plugin = ? AND t.src_id = ? AND t.deleted_at IS NULL AND t.parent_id IS NULL LIMIT 1`, [ctx.userId, plugin, srcId]);
 }
 
-module.exports = { TITLE_MAX, NOTE_MAX, view, views, extras, access, create, get, update, complete, remove, dueAt, iso, carrying, fromText };
+module.exports = { TITLE_MAX, NOTE_MAX, view, views, extras, access, mayComplete, create, get, update, complete, remove, dueAt, iso, carrying, fromText };

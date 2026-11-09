@@ -14,8 +14,11 @@ const sources = require('./sources');
 const bound = require('./bound');
 const mstodo = require('./mstodo');
 const clientIds = require('./clientids');
+const prefs = require('./prefs');
 const { t } = require('./text');
 const push = require('./push');
+const pushprefs = require('./pushprefs');
+const lists = require('./lists');
 
 const TRASH_MS = 30 * 86400000;
 const REMIND_LATE = 6 * 3600000; // a reminder missed by more than this (server off) is not sent any more
@@ -33,13 +36,41 @@ async function reminders(gc, ctx) {
     if (!m) { const o = await store.one(gc, "SELECT user_id FROM list_members WHERE list_id = ? AND role = 'owner'", [r.list_id]); if (!o) continue; who = o.user_id; }
     const lang = cfg.notify_lang;
     const when = r.due_date ? (r.due_time ? `${r.due_date === ctx.today ? t(lang, 'w.today') : r.due_date} ${r.due_time}` : (r.due_date === ctx.today ? t(lang, 'w.today') : r.due_date)) : null;
-    try {
-      await gc.notify({
-        topic: 'reminders', users: [who], title: r.title.slice(0, 120), body: [when ? t(lang, 'n.due', { when }) : null, r.list_name].filter(Boolean).join(' · ').slice(0, 1000),
-        priority: r.important ? 'high' : 'normal', collapseKey: 'task:' + r.id, data: { notizen: push.reminder(r, r.list_area) },
-      });
-      sent++;
-    } catch (e) { gc.log.warn('reminder push failed', (e && e.code) || 'error'); }
+    if (await pushprefs.send(gc, [who], 'reminders', {
+      topic: 'reminders', title: r.title.slice(0, 120), body: [when ? t(lang, 'n.due', { when }) : null, r.list_name].filter(Boolean).join(' · ').slice(0, 1000),
+      priority: r.important ? 'high' : 'normal', collapseKey: 'task:' + r.id, data: { notizen: push.reminder(r, r.list_area) },
+    })) sent++;
+  }
+  return sent;
+}
+
+/**
+ * 1.2.0: the push in the morning of a list day (topic listday, „Heute ist Einkaufstag“) — once per list and day at its
+ * time `remind`, to every member who has the card (not mydayOff, prefs.myday.listdays) and wants the push
+ * (prefs.notify.listday); only when something is open. Missed by more than REMIND_LATE (server off): not sent.
+ */
+async function listDays(gc, ctx) {
+  const cfg = await config.get(gc);
+  const bit = lists.bitOf(ctx.today);
+  const rows = await store.all(gc, `SELECT * FROM lists INDEXED BY idx_lists_remind WHERE remind IS NOT NULL AND days != 0 AND deleted_at IS NULL AND remind <= ?
+    AND (days & ?) != 0 AND (reminded_day IS NULL OR reminded_day != ?) LIMIT 100`, [ctx.time, bit, ctx.today]);
+  let sent = 0;
+  for (const l of rows) {
+    await store.run(gc, 'UPDATE lists SET reminded_day = ? WHERE id = ?', [ctx.today, l.id]);
+    const at = tz.at(ctx.today, tz.parseTime(l.remind), ctx.tz);
+    if (ctx.now - at > REMIND_LATE) continue;
+    const open = (await lists.openCounts(gc, [l.id])).get(l.id) || 0;
+    if (!open) continue;
+    const members = (await store.all(gc, 'SELECT user_id FROM list_members WHERE list_id = ? AND myday_off = 0', [l.id])).map((m) => m.user_id);
+    const users = [];
+    for (const u of members) if ((await prefs.get(gc, u)).myday.listdays !== false) users.push(u);
+    if (!users.length) continue;
+    const lang = cfg.notify_lang;
+    if (await pushprefs.send(gc, users, 'listday', {
+      topic: 'listday', title: l.icon === 'cart' ? t(lang, 'v.listday_cart') : t(lang, 'n.listday_title', { name: l.name }).slice(0, 120),
+      body: t(lang, open === 1 ? 'n.listday_body_one' : 'n.listday_body', { name: l.name, n: open }).slice(0, 1000),
+      collapseKey: 'listday:' + l.id, data: { notizen: push.listDay(l, ctx.today) },
+    })) sent++;
   }
   return sent;
 }
@@ -78,6 +109,7 @@ async function tick(gc, ctx) {
   const out = {};
   const run = async (name, fn) => { try { out[name] = await fn(); } catch (e) { gc.log.warn('background part failed', name, (e && (e.code || e.message)) || 'error'); } };
   await run('reminders', () => reminders(gc, ctx));
+  await run('listdays', () => listDays(gc, ctx));
   await run('expire', () => expire(gc, ctx));
   await run('bound', () => bound.flush(gc, ctx.now));
   await run('sources', () => sources.tick(gc, ctx));
@@ -87,4 +119,4 @@ async function tick(gc, ctx) {
   return out;
 }
 
-module.exports = { tick, reminders, expire, purge };
+module.exports = { tick, reminders, listDays, expire, purge };

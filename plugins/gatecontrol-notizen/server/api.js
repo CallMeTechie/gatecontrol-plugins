@@ -23,7 +23,11 @@ const { fail, isKnown, statusOf, posInt } = require('./util');
 // 1.1.0: `offlineEdits` — creates take a clientId (sent again: the same object), PATCH tasks/lists/notebooks take `base`,
 // a change sent twice is harmless, a delete sent twice is ok (README "Offline on a device"); `pushTargets` — every push
 // carries data.notizen.kind and the ids to open (README "Pushes").
-const FEATURES = ['tasks', 'notes', 'sources', 'vault', 'mstodo', 'dsnote', 'search', 'quickparse', 'attachments', 'ocrText', 'offlineEdits', 'pushTargets'];
+// 1.2.0 (README "1.2.0"): `listDays` — lists have days/remind/mydayOff, „Mein Tag“ has `listdays`, push kind listday;
+// `shareRoles` — members read | write; `groupEdit` — POST groups { lists }, groups with `open`; `deleteKeep` — DELETE
+// lists|notebooks ?tasks|notes=move|delete, …/usage, …/restore; `listIcons` — lists have an icon of me.listIcons.
+const FEATURES = ['tasks', 'notes', 'sources', 'vault', 'mstodo', 'dsnote', 'search', 'quickparse', 'attachments', 'ocrText', 'offlineEdits', 'pushTargets',
+  'listDays', 'shareRoles', 'groupEdit', 'deleteKeep', 'listIcons'];
 
 const ok = (json) => ({ status: 200, json: { ok: true, ...json } });
 
@@ -53,7 +57,7 @@ async function me(gc, ctx) {
   return {
     user: { id: ctx.userId, name: ctx.userName }, lang: ctx.lang, today: ctx.today, time: ctx.time, timezone: ctx.tz, features: FEATURES,
     prefs: p, sharing: cfg.sharing, vaults: cfg.vaults, imports: { mstodo: cfg.import_mstodo, mstodoSync: cfg.mstodo_sync, dsnote: cfg.import_dsnote },
-    attachMB: cfg.attach_mb, readOnly: !!ctx.readOnly,
+    attachMB: cfg.attach_mb, readOnly: !!ctx.readOnly, listIcons: lists.ICONS,
   };
 }
 
@@ -127,7 +131,9 @@ async function handle(gc, ctx, req) {
   if (is('GET', 1, 'lists')) return ok(await lists.all(gc, ctx, q.area));
   if (is('POST', 1, 'lists')) return ok(await lists.create(gc, ctx, b));
   if (m === 'PATCH' && n === 2 && a === 'lists') return ok(await lists.update(gc, ctx, x, b));
-  if (m === 'DELETE' && n === 2 && a === 'lists') return ok(await lists.remove(gc, ctx, x));
+  if (m === 'DELETE' && n === 2 && a === 'lists') return ok(await lists.remove(gc, ctx, x, q));
+  if (m === 'GET' && n === 3 && a === 'lists' && y === 'usage') return ok(await lists.usage(gc, ctx, x));
+  if (m === 'POST' && n === 3 && a === 'lists' && y === 'restore') return ok(await lists.restore(gc, ctx, x));
   if (m === 'PUT' && n === 3 && a === 'lists' && y === 'members') return ok(await lists.setMembers(gc, ctx, x, b));
   if (is('POST', 1, 'groups')) return ok(await lists.createGroup(gc, ctx, b));
   if (m === 'PATCH' && n === 2 && a === 'groups') return ok(await lists.updateGroup(gc, ctx, x, b));
@@ -149,7 +155,9 @@ async function handle(gc, ctx, req) {
   if (is('GET', 1, 'notebooks')) return ok(await notes.notebooks(gc, ctx, q.area));
   if (is('POST', 1, 'notebooks')) return ok(await notes.createNotebook(gc, ctx, b));
   if (m === 'PATCH' && n === 2 && a === 'notebooks') return ok(await notes.updateNotebook(gc, ctx, x, b));
-  if (m === 'DELETE' && n === 2 && a === 'notebooks') return ok(await notes.removeNotebook(gc, ctx, x));
+  if (m === 'DELETE' && n === 2 && a === 'notebooks') return ok(await notes.removeNotebook(gc, ctx, x, q));
+  if (m === 'GET' && n === 3 && a === 'notebooks' && y === 'usage') return ok(await notes.usage(gc, ctx, x));
+  if (m === 'POST' && n === 3 && a === 'notebooks' && y === 'restore') return ok(await notes.restoreNotebook(gc, ctx, x));
   if (m === 'PUT' && n === 3 && a === 'notebooks' && y === 'members') return ok(await notes.setMembers(gc, ctx, x, b));
   if (is('GET', 1, 'notes')) return ok(await notes.list(gc, ctx, q));
   if (is('POST', 1, 'notes')) {

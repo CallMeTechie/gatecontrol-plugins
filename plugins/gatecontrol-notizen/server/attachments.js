@@ -19,6 +19,8 @@ async function owner(gc, ctx, kind, refId) {
   if (kind === 'task') { const tk = await tasks.access(gc, ctx, refId); return { encrypted: false, row: tk, members: (await store.all(gc, 'SELECT user_id FROM list_members WHERE list_id = ?', [tk.list_id])).map((m) => m.user_id) }; }
   throw fail('invalid', { field: 'kind' });
 }
+/** 1.2.0: a member who may only look (role read) adds, removes and changes nothing. */
+function writable(o) { if (o.row.my_role === 'read') throw fail('forbidden', { reason: 'read_only' }); return o; }
 
 async function url(gc, ctx, a) {
   try { return await gc.media.url(a.media_id, { user: ctx.userId, ttlS: 3600 }); } catch { return null; }
@@ -47,7 +49,7 @@ async function counts(gc, noteId) {
 /** POST attachments { kind: 'note'|'task', refId, mediaId, name | nameCipher } → { attachment } */
 async function add(gc, ctx, b, opts = {}) {
   const kind = b.kind;
-  const o = await owner(gc, ctx, kind, b.refId);
+  const o = writable(await owner(gc, ctx, kind, b.refId));
   if (typeof b.mediaId !== 'string' || !/^[0-9a-f]{32}$/.test(b.mediaId)) throw fail('invalid', { field: 'mediaId' });
   const n = await store.one(gc, 'SELECT COUNT(*) AS n FROM attachments WHERE kind = ? AND ref_id = ?', [kind, o.row.id]);
   if (n.n >= MAX_PER_REF) throw fail('too_many');
@@ -84,6 +86,7 @@ async function get(gc, ctx, id) { const { a } = await accessOne(gc, ctx, id); re
 /** DELETE attachments/<id> */
 async function remove(gc, ctx, id) {
   const { a, o } = await accessOne(gc, ctx, id);
+  writable(o);
   await store.run(gc, 'DELETE FROM attachments WHERE id = ?', [a.id]);
   await gc.media.delete(a.media_id).catch(() => {});
   if (a.kind === 'note') { await counts(gc, a.ref_id); await reindexNote(gc, a.ref_id); }
@@ -94,6 +97,7 @@ async function remove(gc, ctx, id) {
 /** PUT attachments/<id>/text { text } — recognised text of a picture a device made (on-device OCR) → searchable. */
 async function setText(gc, ctx, id, b) {
   const { a, o } = await accessOne(gc, ctx, id);
+  writable(o);
   if (a.encrypted) throw fail('encrypted');
   const s = b && b.text === null ? null : text(b && b.text, 100000);
   await store.run(gc, 'UPDATE attachments SET ocr = ? WHERE id = ?', [s || null, a.id]);

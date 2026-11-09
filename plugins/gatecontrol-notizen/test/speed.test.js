@@ -40,6 +40,9 @@ async function fill(h) {
   const lists = [];
   for (let i = 0; i < 20; i++) lists.push((await h.ok(ANNA, 'POST', 'lists', { name: 'Liste ' + i, area: i % 4 === 0 ? 'work' : 'private' })).list.id);
   await h.ok(ANNA, 'PUT', `lists/${lists[1]}/members`, { members: [MARC.id] });
+  // 1.2.0: two lists with today (Sunday) as their day, one with the morning push
+  await h.ok(ANNA, 'PATCH', `lists/${lists[1]}`, { days: [6, 7], remind: '09:00' });
+  await h.ok(ANNA, 'PATCH', `lists/${lists[2]}`, { days: [7] });
   for (let i = 0; i < 5; i++) await h.ok(MARC, 'POST', 'lists', { name: 'Marc ' + i });
   // the rows are made by SQLite itself (a recursive CTE), not one statement each: the fill stays short and keeps
   // the CPU free for the other test files running at the same time
@@ -101,6 +104,8 @@ test(`speed: ${N} tasks and ${N} notes — every statement < ${LIMIT_MS} ms`, { 
         await h.ok(ANNA, 'GET', 'notebooks', null, { area });
       }
       await h.ok(ANNA, 'GET', 'views/list:' + lists[1]);
+      await h.ok(ANNA, 'GET', `lists/${lists[1]}/usage`);
+      await h.ok(ANNA, 'GET', `notebooks/${nbs[3]}/usage`);
       await h.ok(ANNA, 'GET', 'views/source:gatecontrol-mail', null, { area: 'private' });
       const page = await h.ok(ANNA, 'GET', 'notes', null, { notebook: nbs[3] });
       await h.ok(ANNA, 'GET', 'notes', null, { notebook: nbs[3], before: page.next });

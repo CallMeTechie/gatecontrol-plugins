@@ -1,11 +1,17 @@
 <div class="dp na" id="na-root">
   <div class="dp-msg" id="na-msg" hidden></div>
+  <div class="na-topbar" id="na-topbar" hidden>
+    <button type="button" class="dp-ib na-navtoggle" id="na-navtoggle" aria-label="{{t:p.menu}}" title="{{t:p.menu}}" aria-expanded="false" aria-controls="na-nav"></button>
+    <b class="na-topbar-title" id="na-topbar-title"></b>
+  </div>
   <div class="na-app" id="na-app" hidden>
     <aside class="na-nav" id="na-nav" aria-label="{{t:p.nav}}"></aside>
     <section class="na-main" id="na-main" aria-label="{{t:p.main}}"></section>
     <aside class="na-side" id="na-side" aria-label="{{t:p.detail}}"></aside>
   </div>
   <div class="dp-toast" id="na-toast" role="status" aria-live="polite" hidden></div>
+  <div class="dp-snack" id="na-snack" role="status" aria-live="polite" hidden></div>
+  <div class="na-pop" id="na-pop" hidden></div>
   <div class="dp-dialog-back" id="na-dialog" hidden></div>
   <input type="file" id="na-file" multiple hidden>
   <input type="file" id="na-nsx" accept=".nsx,application/zip" hidden>
