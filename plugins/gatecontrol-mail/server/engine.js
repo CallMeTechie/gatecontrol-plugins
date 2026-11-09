@@ -646,7 +646,31 @@ function byFolder(list) {
   return out;
 }
 
-/** Move rows `list` (one account) to folder row `to`; on the server, then here (new uid / id where known). */
+/**
+ * IMAP: what the target folder gives the next mail (UIDNEXT, UIDVALIDITY) before a move or copy — with the Message-ID it
+ * finds the mail there again when the server answers without new UIDs (no UIDPLUS / COPYUID). null when unknown.
+ */
+async function nextUid(s, to) {
+  try {
+    const st = await s.status(to.path, { uidNext: true, uidValidity: true });
+    return st && Number.isSafeInteger(Number(st.uidNext)) ? { uidNext: Number(st.uidNext), uidValidity: st.uidValidity == null ? null : Number(st.uidValidity) } : null;
+  } catch { return null; }
+}
+
+/** IMAP: the UIDs in the open folder of mail with Message-ID `mid` from `from` on (what a move or copy without new UIDs made). */
+async function findAgain(s, mid, from) {
+  if (!mid || !from) return [];
+  try {
+    const r = await s.search({ uid: `${from}:*`, header: { 'Message-ID': String(mid).slice(0, 900) } });
+    return (r || []).filter((u) => Number.isSafeInteger(u) && u >= from);
+  } catch { return []; }
+}
+
+/**
+ * Move rows `list` (one account) to folder row `to`; on the server, then here (new uid / id where known).
+ * → [{ id, fromFolderId, kept (the row went along), uid (IMAP: the new uid), remoteId (Graph: the new id), hint (IMAP
+ * without a new uid: { uidNext, uidValidity, messageId } of the target before) }] — 1.13.0: what an undo needs.
+ */
 async function move(gc, a, list, to) {
   const moved = [];
   await change(gc, a, async (s, x) => {
@@ -657,25 +681,166 @@ async function move(gc, a, list, to) {
       if (isGraph(a)) {
         for (const m of rows) {
           const nid = await graph.move(gc, a, m, to);
-          await store.run(gc, 'UPDATE messages SET folder_id = ?, remote_id = ? WHERE id = ?', [to.id, nid || m.remote_id, m.id]).catch(async () => { await mailstore.remove(gc, [m.id]); });
-          moved.push(m.id);
+          let kept = true;
+          await store.run(gc, 'UPDATE messages SET folder_id = ?, remote_id = ? WHERE id = ?', [to.id, nid || m.remote_id, m.id]).catch(async () => { kept = false; await mailstore.remove(gc, [m.id]); });
+          moved.push({ id: m.id, fromFolderId: folderId, kept, uid: null, remoteId: nid || m.remote_id, hint: null });
         }
         continue;
       }
       await openFolder(s, x, f);
-      const uids = rows.map((r) => r.uid).filter(Number.isSafeInteger);
-      if (!uids.length) continue;
-      const res = await s.move(uids, to.path);
+      const valid = rows.filter((r) => Number.isSafeInteger(r.uid));
+      if (!valid.length) continue;
+      const before = await nextUid(s, to);
+      const res = await s.move(valid.map((r) => r.uid), to.path);
       const map = (res && res.uidMap) || {};
-      for (const m of rows) {
+      for (const m of valid) {
         const nu = map[m.uid] != null ? Number(map[m.uid]) : null;
-        if (nu) await store.run(gc, 'UPDATE messages SET folder_id = ?, uid = ? WHERE id = ?', [to.id, nu, m.id]).catch(async () => { await mailstore.remove(gc, [m.id]); });
+        let kept = !!nu;
+        if (nu) await store.run(gc, 'UPDATE messages SET folder_id = ?, uid = ? WHERE id = ?', [to.id, nu, m.id]).catch(async () => { kept = false; await mailstore.remove(gc, [m.id]); });
         else await mailstore.remove(gc, [m.id]); // it comes back with the next sync of the target
-        moved.push(m.id);
+        moved.push({ id: m.id, fromFolderId: folderId, kept, uid: nu, remoteId: null, hint: nu ? null : { ...(before || {}), messageId: m.message_id || null } });
       }
     }
   });
   return moved;
+}
+
+/**
+ * 1.13.0: copy rows `list` (one account) into folder row `to` on the server (the copies come here with the next sync of
+ * `to`). → [{ id, uid (IMAP: the copy's uid), remoteId (Graph: the copy's id), hint (IMAP without COPYUID) }]
+ */
+async function copy(gc, a, list, to) {
+  const out = [];
+  await change(gc, a, async (s, x) => {
+    for (const [folderId, rows] of byFolder(list)) {
+      const f = await store.one(gc, 'SELECT * FROM folders WHERE id = ?', [folderId]);
+      if (!f) continue;
+      if (isGraph(a)) {
+        for (const m of rows) out.push({ id: m.id, uid: null, remoteId: await graph.copy(gc, a, m, to), hint: null });
+        continue;
+      }
+      await openFolder(s, x, f);
+      const valid = rows.filter((r) => Number.isSafeInteger(r.uid));
+      if (!valid.length) continue;
+      const before = await nextUid(s, to);
+      const res = await s.copy(valid.map((r) => r.uid), to.path);
+      const map = (res && res.uidMap) || {};
+      for (const m of valid) {
+        const nu = map[m.uid] != null ? Number(map[m.uid]) : null;
+        out.push({ id: m.id, uid: nu, remoteId: null, hint: nu ? null : { ...(before || {}), messageId: m.message_id || null } });
+      }
+    }
+  });
+  return out;
+}
+
+/**
+ * 1.13.0 (undo): where the mails of `entries` lie now in folder row `at` — [{ e, row (the local row or null), uid |
+ * remoteId }]. A row that is still here tells; else what the move or copy gave (the new uid / Graph id), else (IMAP)
+ * the Message-ID from the target's UIDNEXT before on (only while UIDVALIDITY is the same).
+ */
+async function locate(gc, a, s, x, at, entries) {
+  const out = [];
+  for (const e of entries) {
+    const row = e.newId ? await store.one(gc, 'SELECT * FROM messages WHERE id = ? AND folder_id = ?', [e.newId, at.id]) : null;
+    if (isGraph(a)) {
+      const rid = (row && row.remote_id) || e.remoteId;
+      if (rid) out.push({ e, row, remoteId: rid });
+      continue;
+    }
+    if (row && Number.isSafeInteger(row.uid)) { out.push({ e, row, uid: row.uid }); continue; }
+    if (Number.isSafeInteger(e.uid)) { out.push({ e, row: null, uid: e.uid }); continue; }
+    const h = e.hint;
+    if (!h || !h.uidNext || !h.messageId) continue;
+    if (h.uidValidity != null && at.uid_validity != null && Number(at.uid_validity) !== Number(h.uidValidity)) continue;
+    await openFolder(s, x, at);
+    for (const u of await findAgain(s, h.messageId, h.uidNext)) out.push({ e, row: null, uid: u });
+  }
+  return out;
+}
+
+/**
+ * 1.13.0 (undo of a move, an archive, a delete or junk): the mails of `entries` ({ id, newId, fromFolderId, toFolderId,
+ * uid, remoteId, hint }, one account) back from where they went to where they came from. → { restored: [local ids],
+ * failed: n }. Rows here follow (new uid / id); mail that comes back without a new uid comes with the next sync.
+ */
+async function moveBack(gc, a, entries) {
+  const restored = [];
+  let done = 0;
+  await change(gc, a, async (s, x) => {
+    const groups = new Map();
+    for (const e of entries) {
+      const k = `${e.toFolderId}>${e.fromFolderId}`;
+      if (!groups.has(k)) groups.set(k, []);
+      groups.get(k).push(e);
+    }
+    for (const list of groups.values()) {
+      const at = await store.one(gc, 'SELECT * FROM folders WHERE id = ? AND account_id = ?', [list[0].toFolderId, a.id]);
+      const back = await store.one(gc, 'SELECT * FROM folders WHERE id = ? AND account_id = ?', [list[0].fromFolderId, a.id]);
+      if (!at || !back) continue;
+      const found = await locate(gc, a, s, x, at, list);
+      if (isGraph(a)) {
+        for (const w of found) {
+          const nid = await graph.move(gc, a, { remote_id: w.remoteId }, back);
+          done++;
+          if (w.row) {
+            await store.run(gc, 'UPDATE messages SET folder_id = ?, remote_id = ? WHERE id = ?', [back.id, nid || w.remoteId, w.row.id]).catch(async () => { await mailstore.remove(gc, [w.row.id]); });
+            restored.push(w.row.id);
+          }
+        }
+        continue;
+      }
+      if (!found.length) continue;
+      await openFolder(s, x, at);
+      const res = await s.move(found.map((w) => w.uid), back.path);
+      const map = (res && res.uidMap) || {};
+      for (const w of found) {
+        done++;
+        if (!w.row) continue;
+        const nu = map[w.uid] != null ? Number(map[w.uid]) : null;
+        if (nu) {
+          await store.run(gc, 'UPDATE messages SET folder_id = ?, uid = ? WHERE id = ?', [back.id, nu, w.row.id]).catch(async () => { await mailstore.remove(gc, [w.row.id]); });
+          restored.push(w.row.id);
+        } else await mailstore.remove(gc, [w.row.id]); // back with the next sync of the folder
+      }
+    }
+  });
+  return { restored, done, failed: Math.max(0, entries.length - done) };
+}
+
+/** 1.13.0 (undo of a copy): the copies of `entries` ({ id, newId, toFolderId, uid, remoteId, hint }) deleted for good. */
+async function dropCopies(gc, a, entries) {
+  let done = 0;
+  const gone = [];
+  await change(gc, a, async (s, x) => {
+    const groups = new Map();
+    for (const e of entries) { if (!groups.has(e.toFolderId)) groups.set(e.toFolderId, []); groups.get(e.toFolderId).push(e); }
+    for (const [folderId, list] of groups) {
+      const at = await store.one(gc, 'SELECT * FROM folders WHERE id = ? AND account_id = ?', [folderId, a.id]);
+      if (!at) continue;
+      const found = await locate(gc, a, s, x, at, list);
+      if (isGraph(a)) {
+        for (const w of found) { await graph.destroy(gc, a, { remote_id: w.remoteId }); done++; if (w.row) gone.push(w.row.id); }
+        const rids = found.filter((w) => !w.row).map((w) => w.remoteId);
+        for (const part of store.chunks(rids)) {
+          for (const r of await store.all(gc, `SELECT id FROM messages WHERE folder_id = ? AND remote_id IN (${store.marks(part.length)})`, [at.id, ...part])) gone.push(r.id);
+        }
+        continue;
+      }
+      if (!found.length) continue;
+      await openFolder(s, x, at);
+      const uids = found.map((w) => w.uid);
+      await s.flags(uids, { add: ['\\Deleted'] });
+      await s.expunge(uids);
+      done += found.length;
+      for (const w of found) if (w.row) gone.push(w.row.id);
+      for (const part of store.chunks(uids)) {
+        for (const r of await store.all(gc, `SELECT id FROM messages WHERE folder_id = ? AND uid IN (${store.marks(part.length)})`, [at.id, ...part])) gone.push(r.id);
+      }
+    }
+  });
+  await mailstore.remove(gc, [...new Set(gone)]);
+  return { done, failed: Math.max(0, entries.length - done) };
 }
 
 /** Delete rows `list` for good (they are in the trash). */
@@ -836,5 +1001,5 @@ function adopt(gc, a, s) {
 
 module.exports = {
   run, withAccount, direct, syncInbox, syncAll, syncOne, loadOlder, loadBody, loading, attachment, filesLater, setFlags, move, destroy, appendSent, remoteSearch,
-  retention, tick, start, stop, forget, probe, adopt, setState, isGraph, mailError, stateOf, backfill, MONTH,
+  retention, tick, start, stop, forget, probe, adopt, setState, isGraph, mailError, stateOf, backfill, MONTH, copy, moveBack, dropCopies,
 };

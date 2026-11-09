@@ -34,23 +34,58 @@ const CALENDAR_PATHS = new Set(['calendars', 'overlays', 'calendar', 'events', '
 const RESOURCE_PATHS = new Set(['resources', 'bookings']);
 const CONTACT_PATHS = new Set(['addressbooks', 'cards', 'groups']);
 
+// the swipe actions of before (the old fields swipeLeft / swipeRight: older apps take any other value for „archive“)
 const SWIPES = ['archive', 'delete', 'read', 'none'];
+// 1.13.0: the seven actions (settings.swipe { left, right }): flag toggles the flag, move lets the app pick a folder
+const SWIPES_V2 = ['archive', 'delete', 'read', 'flag', 'move', 'junk', 'none'];
+const legacy = (v) => (SWIPES.includes(v) ? v : 'none');
+const swipeOf = (v, def) => (SWIPES_V2.includes(v) ? v : def);
 
 async function prefs(gc, userId) {
   const p = await store.one(gc, 'SELECT * FROM prefs WHERE user_id = ?', [userId]);
-  return { threads: p ? p.threads === 1 : true, swipeLeft: p ? p.swipe_left : 'archive', swipeRight: p ? p.swipe_right : 'read' };
+  const left = swipeOf(p && p.swipe_left, 'archive');
+  const right = swipeOf(p && p.swipe_right, 'read');
+  return {
+    threads: p ? p.threads === 1 : true,
+    // never a new value in the old fields (1.13.0): flag, move and junk show as none there
+    swipeLeft: legacy(left), swipeRight: legacy(right),
+    swipe: { left, right },
+    confirmDelete: !!(p && p.confirm_delete === 1),
+  };
 }
 
-/** PUT settings { threads?, swipeLeft?, swipeRight? } → { settings } */
+/**
+ * PUT settings { threads?, swipe?: { left?, right? }, swipeLeft?, swipeRight?, confirmDelete? } → { settings }.
+ * 1.13.0: the old fields take the seven actions too; an old app that sends "none" back for a side whose action it
+ * cannot show (flag, move, junk) leaves that action as it is. swipe.left / swipe.right win over the old fields.
+ */
 async function putPrefs(gc, userId, b) {
   const cur = await prefs(gc, userId);
   const x = b && typeof b === 'object' ? b : {};
-  if (x.threads !== undefined) { if (typeof x.threads !== 'boolean') throw fail('invalid', { field: 'threads' }); cur.threads = x.threads; }
-  for (const k of ['swipeLeft', 'swipeRight']) if (x[k] !== undefined) { if (!SWIPES.includes(x[k])) throw fail('invalid', { field: k }); cur[k] = x[k]; }
-  await store.run(gc, `INSERT INTO prefs (user_id, threads, swipe_left, swipe_right, updated_at) VALUES (?, ?, ?, ?, ?)
-    ON CONFLICT(user_id) DO UPDATE SET threads = excluded.threads, swipe_left = excluded.swipe_left, swipe_right = excluded.swipe_right, updated_at = excluded.updated_at`,
-  [userId, cur.threads ? 1 : 0, cur.swipeLeft, cur.swipeRight, Date.now()]);
-  return { settings: cur };
+  // only the columns named change (two quick changes of the settings page never undo each other)
+  const set = {};
+  if (x.threads !== undefined) { if (typeof x.threads !== 'boolean') throw fail('invalid', { field: 'threads' }); set.threads = x.threads ? 1 : 0; }
+  if (x.confirmDelete !== undefined) { if (typeof x.confirmDelete !== 'boolean') throw fail('invalid', { field: 'confirmDelete' }); set.confirm_delete = x.confirmDelete ? 1 : 0; }
+  const col = { left: 'swipe_left', right: 'swipe_right' };
+  for (const [k, side] of [['swipeLeft', 'left'], ['swipeRight', 'right']]) {
+    if (x[k] === undefined) continue;
+    if (!SWIPES_V2.includes(x[k])) throw fail('invalid', { field: k });
+    if (x[k] === 'none' && legacy(cur.swipe[side]) === 'none') continue;
+    set[col[side]] = x[k];
+  }
+  if (x.swipe !== undefined) {
+    if (!x.swipe || typeof x.swipe !== 'object' || Array.isArray(x.swipe)) throw fail('invalid', { field: 'swipe' });
+    for (const side of ['left', 'right']) {
+      if (x.swipe[side] === undefined) continue;
+      if (!SWIPES_V2.includes(x.swipe[side])) throw fail('invalid', { field: `swipe.${side}` });
+      set[col[side]] = x.swipe[side];
+    }
+  }
+  const now = Date.now();
+  await store.run(gc, 'INSERT INTO prefs (user_id, updated_at) VALUES (?, ?) ON CONFLICT(user_id) DO NOTHING', [userId, now]);
+  const cols = Object.keys(set);
+  await store.run(gc, `UPDATE prefs SET ${[...cols.map((k) => `${k} = ?`), 'updated_at = ?'].join(', ')} WHERE user_id = ?`, [...cols.map((k) => set[k]), now, userId]);
+  return { settings: await prefs(gc, userId) };
 }
 
 /** The features of GET me for this person. */
@@ -69,6 +104,9 @@ async function features(gc, cfg, userId) {
   if (cfg.calendar.enabled && cfg.calendar.overlays.alltag && await overlays.alltagOn(gc)) out.push('alltagOverlay');
   // since 1.8.0: attachments and draft files carry GateControl's virus scan (`scan`) while the host checks files
   out.push('scan');
+  // since 1.13.0: copying, the seven swipe actions with confirmDelete, undo of bulk changes, `all: true` with
+  // GET messages/ids, `threads: true` (a conversation's mails in its folder)
+  out.push('copy', 'swipeV2', 'undo', 'bulkAll', 'threadScope');
   // since 1.9.0: free/busy and the planner, sharing GateControl calendars, resources; bookingRequests: the person decides
   // on the requests of a resource
   if (cfg.calendar.enabled && cfg.calendar.freeBusy) out.push('freeBusy');
@@ -145,9 +183,12 @@ async function route(gc, ctx, req, seg) {
     case 'folders': if (n === 1 && m === 'GET') return messages.folders(gc, ctx.userId); break;
     case 'messages':
       if (n === 1 && m === 'GET') return messages.list(gc, ctx.userId, q);
+      if (n === 2 && s1 === 'ids' && m === 'GET') return messages.idsOf(gc, ctx.userId, q);
       if (n === 2 && m === 'POST') {
         if (s1 === 'flags') return messages.flags(gc, ctx.userId, b);
         if (s1 === 'move') return messages.move(gc, ctx.userId, b);
+        if (s1 === 'copy') return messages.copy(gc, ctx.userId, b);
+        if (s1 === 'undo') return messages.undoChange(gc, ctx.userId, b);
         if (s1 === 'archive') return messages.archive(gc, ctx.userId, b);
         if (s1 === 'delete') return messages.remove(gc, ctx.userId, b);
         if (s1 === 'junk') return messages.junk(gc, ctx.userId, b);

@@ -1,4 +1,4 @@
-<!-- version: 1.12.1 -->
+<!-- version: 1.13.0 -->
 # Mail
 
 ## Was das Plugin kann
@@ -51,6 +51,10 @@ Die Zugangsdaten werden verschlüsselt gespeichert. Die erste Synchronisierung h
 
 ### Mails
 
+- **Mehrere Mails auf einmal:** In der App lange auf eine Mail drücken, im Portal das Kästchen vor der Mail anklicken (Umschalt-Klick wählt einen Bereich). Dann gelten Archivieren, Löschen, Verschieben, Kopieren, Gelesen/Ungelesen, Markieren und Spam für alle ausgewählten. **„Alle N auswählen“** nimmt jede Mail des Ordners, auch die noch nicht geladenen (bis 2000). Danach holt **„Rückgängig“** im Hinweis unten alles zurück – zwei Minuten lang.
+- **Verschieben und Kopieren** in einen Ordner desselben Kontos; zuletzt benutzte Ordner stehen oben. In Ordner anderer Konten kopieren kommt später.
+- **Löschen:** Die Mails kommen in den Papierkorb. Mit **„Vor dem Löschen fragen“** (Einstellungen) fragt Mail vorher, sonst gibt es „Rückgängig“. Im Papierkorb wird endgültig gelöscht – das fragt Mail immer.
+- **Wischen / Schnellaktionen:** In den Einstellungen für jede Richtung eine von sieben Aktionen: Archivieren, Löschen, Gelesen/Ungelesen, Markieren, Verschieben, In Spam oder Nichts. Das gilt für alle deine Geräte; ältere Apps zeigen die drei neuen Aktionen als „Nichts“.
 - **Relevant / Sonstige:** Newsletter und automatische Mails landen meist in „Sonstige“, Mails von Leuten, denen du schreibst, in „Relevant“. Ordnest du einen Absender um, merkt sich Mail das.
 - **Unterhaltungen und Filter:** Mit „Mit Anhang“ (oder in Relevant/Sonstige) steht eine Unterhaltung mit ihrer neuesten Mail, die zum Filter passt.
 - **Lesen:** Bilder erst nach „Bilder laden“. Anhänge mit **„In Drive speichern“** (mit Vorschlag für den Ordner) oder „Alle in Drive speichern“.
@@ -102,6 +106,14 @@ Liegen die Anhänge auf einem Speicherziel, das nicht erreichbar ist, versucht M
 
 **Frei/Gebucht zeigt „unbekannt“.**
 Die Person hat Frei/Gebucht abgeschaltet oder ist nicht in GateControl. Kolleginnen in Microsoft 365 erscheinen über dein Microsoft-Konto.
+
+## Neu in 1.13.0
+
+- **Mehrere Mails auf einmal:** auswählen (App: lange drücken, Portal: Kästchen und Umschalt-Klick), „Alle N auswählen“ für den ganzen Ordner, dann Archivieren, Löschen, Verschieben, Kopieren, Gelesen/Ungelesen, Markieren oder Spam für alle.
+- **Kopieren** in einen anderen Ordner desselben Kontos und **Verschieben** jetzt auch im Portal.
+- **„Rückgängig“** nach Verschieben, Kopieren, Archivieren, Löschen und Spam – zwei Minuten lang; gelöschte Mails kommen aus dem Papierkorb zurück in ihren Ordner.
+- **Unterhaltungen:** Eine Aktion auf eine Unterhaltung gilt für alle ihre Mails in diesem Ordner – die Zeile verschwindet wirklich.
+- **Wischen mit sieben Aktionen** (neu: Markieren, Verschieben, In Spam) und **„Vor dem Löschen fragen“** in den Einstellungen.
 
 ## Neu in 1.12.1
 

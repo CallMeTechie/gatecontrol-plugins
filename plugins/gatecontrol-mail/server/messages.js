@@ -13,6 +13,7 @@ const engine = require('./engine');
 const mailstore = require('./mailstore');
 const classify = require('./classify');
 const push = require('./push');
+const undo = require('./undo');
 const { fail, posInt, parse, clip } = require('./util');
 
 const LIMIT = 50;
@@ -411,6 +412,9 @@ async function cid(gc, userId, messageId, attId) {
 
 // ─── changes ────────────────────────────────────
 
+// 1.13.0: what `all: true` (and `threads: true`) may take in one call (tests lower it)
+const bulk = { allMax: 2000 };
+
 async function rowsOf(gc, userId, ids) {
   if (!Array.isArray(ids) || !ids.length || ids.length > 500) throw fail('invalid', { field: 'ids' });
   const list = [...new Set(ids.map(posInt))];
@@ -421,17 +425,111 @@ async function rowsOf(gc, userId, ids) {
   return rows;
 }
 
+/** The filter of a list (box / folder, tab, unread, flagged, attachments) → { where, args } over messages m. */
+function filterOf(sc, q) {
+  const ids = sc.folders.map((f) => f.id);
+  const where = [`m.folder_id IN (${store.marks(ids.length)})`];
+  const args = [...ids];
+  const tab = q.tab === 'relevant' || q.tab === 'other' ? q.tab : 'all';
+  if (sc.inbox && tab !== 'all') { where.push('m.tab = ?'); args.push(tab); }
+  if (on(q.unread)) where.push('m.unread = 1');
+  if (on(q.flagged)) where.push('m.flagged = 1');
+  if (on(q.attachments)) where.push('m.has_att = 1');
+  return { where, args };
+}
+
+/** 1.13.0: the ids of a list's whole range (every mail, no conversations) → { ids (newest first, ≤ max), total }. */
+async function rangeIds(gc, userId, q, max) {
+  const sc = await scope(gc, userId, q);
+  if (!sc.folders.length) return { ids: [], total: 0 };
+  const { where, args } = filterOf(sc, q);
+  const total = (await store.one(gc, `SELECT COUNT(*) AS n FROM messages m WHERE ${where.join(' AND ')}`, args)).n;
+  const rows = await store.all(gc, `SELECT m.id FROM messages m WHERE ${where.join(' AND ')} ORDER BY m.date DESC, m.id DESC LIMIT ?`, [...args, max]);
+  return { ids: rows.map((r) => r.id), total };
+}
+
+/** GET messages/ids?box=&folder=&tab=&unread=&flagged=&attachments= → { ids, total, max, truncated } (1.13.0) */
+async function idsOf(gc, userId, q) {
+  const r = await rangeIds(gc, userId, q || {}, bulk.allMax);
+  return { ids: r.ids, total: r.total, max: bulk.allMax, truncated: r.total > r.ids.length };
+}
+
+async function rowsById(gc, userId, ids) {
+  const rows = [];
+  for (const part of store.chunks(ids)) rows.push(...await store.all(gc, `SELECT * FROM messages WHERE user_id = ? AND id IN (${store.marks(part.length)})`, [userId, ...part]));
+  return rows;
+}
+
+/**
+ * The mails a change is for (1.13.0): `ids` (≤ 500), or `all: true` with the range of a list (box | folder, tab,
+ * filter { unread, flagged, attachments }; `except` ids left out; ≤ bulk.allMax); `threads: true` adds the other mails of each one's
+ * conversation in the same folder. → rows (may be empty with `all`).
+ */
+async function selection(gc, userId, b) {
+  const x = b && typeof b === 'object' ? b : {};
+  if (x.threads !== undefined && typeof x.threads !== 'boolean') throw fail('invalid', { field: 'threads' });
+  let rows;
+  if (x.all !== undefined && x.all !== false) {
+    if (x.all !== true || x.ids !== undefined) throw fail('invalid', { field: 'all' });
+    let except = new Set();
+    if (x.except !== undefined) {
+      if (!Array.isArray(x.except) || x.except.length > 500 || x.except.some((v) => !posInt(v))) throw fail('invalid', { field: 'except' });
+      except = new Set(x.except.map(posInt));
+    }
+    // the list's filters go in `filter` (unread / flagged at the top are what messages/flags sets)
+    let filter = {};
+    if (x.filter !== undefined) {
+      if (!x.filter || typeof x.filter !== 'object' || Array.isArray(x.filter)) throw fail('invalid', { field: 'filter' });
+      filter = x.filter;
+    }
+    const q = { box: x.box, folder: x.folder, tab: x.tab, unread: filter.unread, flagged: filter.flagged, attachments: filter.attachments };
+    const r = await rangeIds(gc, userId, q, bulk.allMax + except.size + 1);
+    const ids = r.ids.filter((id) => !except.has(id));
+    const count = r.total - [...except].filter((id) => r.ids.includes(id)).length;
+    if (count > bulk.allMax || ids.length > bulk.allMax) throw fail('too_large', { max: bulk.allMax, count });
+    rows = await rowsById(gc, userId, ids);
+  } else rows = await rowsOf(gc, userId, x.ids);
+  if (x.threads === true && rows.length) rows = await withThreads(gc, userId, rows);
+  return rows;
+}
+
+/** The rows and the other mails of their conversations, each in its own folder (1.13.0, `threads: true`). */
+async function withThreads(gc, userId, rows) {
+  const out = new Map(rows.map((m) => [m.id, m]));
+  const byFolder = new Map();
+  for (const m of rows) {
+    if (m.thread_id == null) continue;
+    if (!byFolder.has(m.folder_id)) byFolder.set(m.folder_id, new Set());
+    byFolder.get(m.folder_id).add(m.thread_id);
+  }
+  for (const [folderId, threads] of byFolder) {
+    for (const part of store.chunks([...threads], 80)) {
+      for (const m of await store.all(gc, `SELECT * FROM messages WHERE user_id = ? AND folder_id = ? AND thread_id IN (${store.marks(part.length)})`, [userId, folderId, ...part])) out.set(m.id, m);
+      if (out.size > bulk.allMax) throw fail('too_large', { max: bulk.allMax, count: out.size });
+    }
+  }
+  return [...out.values()];
+}
+
 function byAccount(rows) {
   const out = new Map();
   for (const m of rows) { if (!out.has(m.account_id)) out.set(m.account_id, []); out.get(m.account_id).push(m); }
   return out;
 }
 
-async function answer(gc, userId, ids, touched) {
-  for (const [accountId, folderIds] of touched) for (const f of folderIds) await push.changed(gc, userId, accountId, f);
+/** The Summaries of local ids (those still here). */
+async function summaries(gc, userId, ids) {
   const rows = [];
   for (const part of store.chunks(ids)) rows.push(...await store.all(gc, `SELECT ${SUMMARY_COLS} FROM messages m WHERE m.user_id = ? AND m.id IN (${store.marks(part.length)})`, [userId, ...part]));
-  return { ok: true, items: rows.map((r) => mailstore.summary(r)) };
+  const order = new Map(ids.map((id, i) => [id, i]));
+  rows.sort((x, y) => order.get(x.id) - order.get(y.id));
+  return rows.map((r) => mailstore.summary(r));
+}
+
+/** The answer of a change: the live events, { ok, items, count, ids } and what `extra` adds (undo, purged). */
+async function answer(gc, userId, ids, touched, rows, extra) {
+  for (const [accountId, folderIds] of touched) for (const f of folderIds) await push.changed(gc, userId, accountId, f);
+  return { ok: true, items: await summaries(gc, userId, ids), count: rows.length, ids: rows.map((m) => m.id), ...(extra || {}) };
 }
 
 const touch = (rows) => {
@@ -440,18 +538,18 @@ const touch = (rows) => {
   return t;
 };
 
-/** POST messages/flags { ids, unread?, flagged? } */
+/** POST messages/flags { ids | all…, unread?, flagged?, threads? } */
 async function flags(gc, userId, b) {
-  const rows = await rowsOf(gc, userId, b && b.ids);
   const want = {};
   if (b.unread !== undefined) { if (typeof b.unread !== 'boolean') throw fail('invalid', { field: 'unread' }); want.unread = b.unread; }
   if (b.flagged !== undefined) { if (typeof b.flagged !== 'boolean') throw fail('invalid', { field: 'flagged' }); want.flagged = b.flagged; }
   if (!Object.keys(want).length) throw fail('invalid', { field: 'unread' });
+  const rows = await selection(gc, userId, b);
   for (const [accountId, list] of byAccount(rows)) {
     const a = await store.one(gc, 'SELECT * FROM accounts WHERE id = ?', [accountId]);
     await engine.setFlags(gc, a, list, want);
   }
-  return answer(gc, userId, rows.map((m) => m.id), touch(rows));
+  return answer(gc, userId, rows.map((m) => m.id), touch(rows), rows);
 }
 
 async function folderOfRole(gc, accountId, roles) {
@@ -462,63 +560,122 @@ async function folderOfRole(gc, accountId, roles) {
   return null;
 }
 
-/** Move rows (several accounts) — target(a) → folder row; none → no_folder. */
-async function moveTo(gc, userId, rows, target) {
+/** What engine.move told about the rows of `list` → the entries of an undo (1.13.0). */
+function undoEntries(a, list, to, done) {
+  const rows = new Map(list.map((m) => [m.id, m]));
+  return done.map((d) => ({
+    id: d.id, newId: d.kept ? d.id : null, accountId: a.id, fromFolderId: d.fromFolderId, toFolderId: to.id,
+    uid: d.uid || null, remoteId: d.remoteId || null, hint: d.hint || null, messageId: (rows.get(d.id) && rows.get(d.id).message_id) || null,
+  }));
+}
+
+/** Move rows (several accounts) — target(a) → folder row; none → no_folder. kind: the undo's (1.13.0). */
+async function moveTo(gc, userId, rows, target, kind) {
   const moved = [];
+  const entries = [];
   const t = touch(rows);
   for (const [accountId, list] of byAccount(rows)) {
     const a = await store.one(gc, 'SELECT * FROM accounts WHERE id = ?', [accountId]);
     const to = await target(a, list);
     if (!to) throw fail('no_folder');
-    if (to === 'destroy') { await engine.destroy(gc, a, list); continue; }
-    moved.push(...await engine.move(gc, a, list, to));
+    const done = await engine.move(gc, a, list, to);
+    moved.push(...done.filter((d) => d.kept).map((d) => d.id));
+    entries.push(...undoEntries(a, list, to, done));
     t.get(accountId).add(to.id);
   }
-  return answer(gc, userId, moved, t);
+  return answer(gc, userId, moved, t, rows, { undo: await undo.keep(gc, userId, kind, entries) });
 }
 
-/** POST messages/move { ids, folderId } */
-async function move(gc, userId, b) {
-  const rows = await rowsOf(gc, userId, b && b.ids);
+/** The target folder of a move or copy: the person's, of the mails' one account (else invalid reason 'account'). */
+async function targetOf(gc, userId, b, rows) {
   const f = posInt(b.folderId) ? await store.one(gc, 'SELECT f.* FROM folders f JOIN accounts a ON a.id = f.account_id WHERE f.id = ? AND a.user_id = ?', [posInt(b.folderId), userId]) : null;
   if (!f) throw fail('not_found', { field: 'folderId' });
   if (rows.some((m) => m.account_id !== f.account_id)) throw fail('invalid', { field: 'folderId', reason: 'account' });
-  return moveTo(gc, userId, rows, async () => f);
+  return f;
 }
 
-/** POST messages/archive { ids } — Gmail: out of the posteingang into "All Mail". */
+/** POST messages/move { ids | all…, folderId, threads? } */
+async function move(gc, userId, b) {
+  if (!posInt(b && b.folderId)) throw fail('not_found', { field: 'folderId' });
+  const rows = await selection(gc, userId, b);
+  const f = await targetOf(gc, userId, b, rows);
+  return moveTo(gc, userId, rows, async () => f, 'move');
+}
+
+/**
+ * POST messages/copy { ids | all…, folderId, threads? } (1.13.0) — into a folder of the same account (IMAP UID COPY,
+ * Graph copy); the target syncs a little so the copies are mostly here in the answer.
+ */
+async function copy(gc, userId, b) {
+  if (!posInt(b && b.folderId)) throw fail('not_found', { field: 'folderId' });
+  const rows = await selection(gc, userId, b);
+  const f = await targetOf(gc, userId, b, rows);
+  const entries = [];
+  const created = [];
+  if (rows.length) {
+    const a = await store.one(gc, 'SELECT * FROM accounts WHERE id = ?', [f.account_id]);
+    const done = await engine.copy(gc, a, rows, f);
+    await within(engine.syncOne(gc, a, f), WAIT_MS);
+    const byId = new Map(rows.map((m) => [m.id, m]));
+    for (const d of done) {
+      let copyRow = null;
+      if (d.uid) copyRow = await store.one(gc, 'SELECT id FROM messages WHERE folder_id = ? AND uid = ?', [f.id, d.uid]);
+      else if (d.remoteId) copyRow = await store.one(gc, 'SELECT id FROM messages WHERE folder_id = ? AND remote_id = ?', [f.id, d.remoteId]);
+      if (copyRow) created.push(copyRow.id);
+      const m = byId.get(d.id);
+      entries.push({ id: d.id, newId: copyRow ? copyRow.id : null, accountId: a.id, fromFolderId: m.folder_id, toFolderId: f.id, uid: d.uid || null, remoteId: d.remoteId || null, hint: d.hint || null, messageId: m.message_id || null });
+    }
+  }
+  const t = touch(rows);
+  if (rows.length) t.get(f.account_id).add(f.id);
+  return answer(gc, userId, created, t, rows, { undo: await undo.keep(gc, userId, 'copy', entries) });
+}
+
+/** POST messages/archive { ids | all…, threads? } — Gmail: out of the posteingang into "All Mail". */
 async function archive(gc, userId, b) {
-  const rows = await rowsOf(gc, userId, b && b.ids);
-  return moveTo(gc, userId, rows, (a) => folderOfRole(gc, a.id, ['archive', 'all']));
+  const rows = await selection(gc, userId, b);
+  return moveTo(gc, userId, rows, (a) => folderOfRole(gc, a.id, ['archive', 'all']), 'archive');
 }
 
-/** POST messages/delete { ids } — into the trash; what is in the trash (or without one) goes for good. */
+/** POST messages/delete { ids | all…, threads? } — into the trash; what is in the trash (or without one) goes for good. */
 async function remove(gc, userId, b) {
-  const rows = await rowsOf(gc, userId, b && b.ids);
+  const rows = await selection(gc, userId, b);
   const t = touch(rows);
   const moved = [];
+  const purged = [];
+  const entries = [];
   for (const [accountId, list] of byAccount(rows)) {
     const a = await store.one(gc, 'SELECT * FROM accounts WHERE id = ?', [accountId]);
     const trash = await folderOfRole(gc, a.id, ['trash']);
     const inTrash = trash ? list.filter((m) => m.folder_id === trash.id) : list;
     const rest = trash ? list.filter((m) => m.folder_id !== trash.id) : [];
-    if (inTrash.length) await engine.destroy(gc, a, inTrash);
-    if (rest.length) { moved.push(...await engine.move(gc, a, rest, trash)); t.get(accountId).add(trash.id); }
+    if (inTrash.length) { await engine.destroy(gc, a, inTrash); purged.push(...inTrash.map((m) => m.id)); }
+    if (rest.length) {
+      const done = await engine.move(gc, a, rest, trash);
+      moved.push(...done.filter((d) => d.kept).map((d) => d.id));
+      entries.push(...undoEntries(a, rest, trash, done));
+      t.get(accountId).add(trash.id);
+    }
   }
-  return answer(gc, userId, moved, t);
+  return answer(gc, userId, moved, t, rows, { undo: await undo.keep(gc, userId, 'delete', entries), purged });
 }
 
-/** POST messages/junk { ids } */
+/** POST messages/junk { ids | all…, threads? } */
 async function junk(gc, userId, b) {
-  const rows = await rowsOf(gc, userId, b && b.ids);
-  return moveTo(gc, userId, rows, (a) => folderOfRole(gc, a.id, ['junk']));
+  const rows = await selection(gc, userId, b);
+  return moveTo(gc, userId, rows, (a) => folderOfRole(gc, a.id, ['junk']), 'junk');
 }
 
-/** POST messages/tab { ids, tab } — the person sorts: learned per sender. */
+/** POST messages/undo { token } (1.13.0) */
+async function undoChange(gc, userId, b) {
+  return undo.run(gc, userId, b, summaries);
+}
+
+/** POST messages/tab { ids | all…, tab, threads? } — the person sorts: learned per sender. */
 async function tab(gc, userId, b) {
-  const rows = await rowsOf(gc, userId, b && b.ids);
   const tb = b && b.tab;
   if (tb !== 'relevant' && tb !== 'other') throw fail('invalid', { field: 'tab' });
+  const rows = await selection(gc, userId, b);
   const now = Date.now();
   for (const part of store.chunks(rows.map((m) => m.id))) await store.run(gc, `UPDATE messages SET tab = ?, tab_by = 'user', ai_pending = 0 WHERE id IN (${store.marks(part.length)})`, [tb, ...part]);
   for (const from of new Set(rows.map((m) => m.from_email).filter(Boolean))) {
@@ -527,7 +684,7 @@ async function tab(gc, userId, b) {
     await store.run(gc, `UPDATE messages SET tab = ?, tab_by = 'learned', ai_pending = 0 WHERE user_id = ? AND from_email = ? AND (tab_by IS NULL OR tab_by <> 'user')
       AND folder_id IN (SELECT f.id FROM folders f JOIN accounts a ON a.id = f.account_id WHERE a.user_id = ? AND f.role = 'inbox')`, [tb, userId, from, userId]);
   }
-  return answer(gc, userId, rows.map((m) => m.id), touch(rows));
+  return answer(gc, userId, rows.map((m) => m.id), touch(rows), rows);
 }
 
 /** Unread mail of the posteingänge: { all, byAccount: { id: n } } */
@@ -544,6 +701,7 @@ async function unread(gc, userId) {
 function reset() { secret = null; imgCache.clear(); }
 
 module.exports = {
-  reset, folders, list, search, get, thread, allowImages, image, attachment, cid, flags, move, archive, remove, junk, tab, unread, own, full, attachmentRow,
+  reset, folders, list, search, get, thread, allowImages, image, attachment, cid, flags, move, copy, archive, remove, junk, tab, unread, own, full, attachmentRow,
+  idsOf, undoChange, bulk,
   folderOfRole, within, settled, timing,
 };

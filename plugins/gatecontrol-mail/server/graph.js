@@ -277,6 +277,13 @@ async function move(gc, a, m, to) {
   return r.json && r.json.id ? r.json.id : null;
 }
 
+/** 1.13.0: copy message row `m` into folder row `to` → the copy's Graph id. */
+async function copy(gc, a, m, to) {
+  const r = await ms.graph(gc, a, 'POST', `/me/messages/${encodeURIComponent(m.remote_id)}/copy`, { destinationId: to.remote_id });
+  if (r.status >= 400) throw fail('unreachable', { reason: ms.graphError(r) });
+  return r.json && r.json.id ? r.json.id : null;
+}
+
 async function destroy(gc, a, m) {
   const r = await ms.graph(gc, a, 'DELETE', `/me/messages/${encodeURIComponent(m.remote_id)}`);
   if (r.status >= 400 && r.status !== 404) throw fail('unreachable', { reason: ms.graphError(r) });
@@ -427,4 +434,4 @@ async function me(gc, a) {
   return { email: String((x && (x.mail || x.userPrincipalName)) || '').toLowerCase(), name: (x && x.displayName) || '' };
 }
 
-module.exports = { eventKind, syncFolders, syncFolder, latest, older, message, download, mediaFetch, photo, patch, move, destroy, search, send, me, headerOf, canAttach, ownReply, WELL_KNOWN, SMALL_MAX, PIECE };
+module.exports = { eventKind, syncFolders, syncFolder, latest, older, message, download, mediaFetch, photo, patch, move, copy, destroy, search, send, me, headerOf, canAttach, ownReply, WELL_KNOWN, SMALL_MAX, PIECE };

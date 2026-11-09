@@ -115,7 +115,7 @@ images_blocked`, 404 `not_found`, 409 `auth_failed { hint, server? } | imap_disa
 tls { server? } | exists | ai_off | ai_unavailable | seat_limit | seat_kind
 | familie_unavailable | drive_unavailable | no_folder | not_waiting | microsoft_off | attachments_unsupported |
 images_off | links_disabled | busy { retryAfter?, reason? } | storage_unavailable { retryAfter } | server_full { retryAfter, reason? }`
-(since 1.5.0, see "Storage places"), 413 `too_large { max }`, 429 `rate_limited`. Since 1.2.0:
+(since 1.5.0, see "Storage places"), 413 `too_large { max }`, 429 `rate_limited`; since 1.13.0 410 `undo_expired`. Since 1.2.0:
 403 `feature_off { feature: 'calendar' | 'contacts' }` (switched off by the administrator), 400 `invalid_ics | invalid_vcard`,
 409 `read_only | conflict { current } | consent_required { accountId, missing } | dav_unavailable { reason: 'not_found' |
 'no_calendar' | 'redirect' | 'host_old' } | not_supported { what } | send_failed { reason } | invitation_outdated`. `busy`: the provider
@@ -131,8 +131,8 @@ already_decided { state, decidedBy: { userId, name } | null, decidedAt } | not_s
 
 | | |
 |---|---|
-| `GET me` | `{ features, limits: { accountsMax, quotaBytes, usedBytes, retentionMonths }, microsoft: { clientId \| null, authority, scopes, adminConsentUrl }, accounts: [Account], unread: { all, byAccount }, settings: { threads, swipeLeft, swipeRight }, seat: 'family' \| 'business' \| null, licence: { valid, tier } }` — features `mail`, `ai`, `microsoft`, `drive`, `familyCalendar`, `images`, since 1.2.0 `calendar`, `contacts` (the administrator), `dav` (the host has `gc.mail.dav`), `familyOverlay`, `alltagOverlay`; since 1.8.0 `scan`; since 1.9.0 `freeBusy`, `calendarSharing`, `resources` (the administrator) and `bookingRequests` (the person decides on the requests of a resource); `seat` / `licence` since 1.1.0 (answered also without a place). `microsoft.scopes`: mail + `Calendars.ReadWrite` / `Contacts.ReadWrite` while on; `usedBytes` counts events and contacts too |
-| `PUT settings` | `{ threads?, swipeLeft?, swipeRight? }` (`archive \| delete \| read \| none`) → `{ settings }` |
+| `GET me` | `{ features, limits: { accountsMax, quotaBytes, usedBytes, retentionMonths }, microsoft: { clientId \| null, authority, scopes, adminConsentUrl }, accounts: [Account], unread: { all, byAccount }, settings: { threads, swipeLeft, swipeRight, swipe: { left, right }, confirmDelete }, seat: 'family' \| 'business' \| null, licence: { valid, tier } }` — features `mail`, `ai`, `microsoft`, `drive`, `familyCalendar`, `images`, since 1.2.0 `calendar`, `contacts` (the administrator), `dav` (the host has `gc.mail.dav`), `familyOverlay`, `alltagOverlay`; since 1.8.0 `scan`; since 1.9.0 `freeBusy`, `calendarSharing`, `resources` (the administrator) and `bookingRequests` (the person decides on the requests of a resource); since 1.13.0 `copy`, `swipeV2`, `undo`, `bulkAll`, `threadScope` (see "Several mails at once"); `seat` / `licence` since 1.1.0 (answered also without a place). `microsoft.scopes`: mail + `Calendars.ReadWrite` / `Contacts.ReadWrite` while on; `usedBytes` counts events and contacts too |
+| `PUT settings` | `{ threads?, swipe?: { left?, right? }, swipeLeft?, swipeRight?, confirmDelete? }` → `{ settings }` — only the fields named change (see "Swipe settings") |
 | `GET providers` | `[{ id, label, auth: 'password' \| 'app_password' \| 'microsoft' \| 'imap', hint: { de, en } \| null, help }]` |
 | `POST accounts/discover` | `{ email }` → `{ provider, auth, imap, smtp, hint }` (known domains, else `gc.mail.autoconfig`) |
 | `POST accounts` | `{ provider, email, password, username?, name?, color?, kind?, imap?, smtp? }` → `{ account }` — the IMAP login is tried first, on GateControl ≥ 1.217.0 the SMTP login too (`gc.mail.smtp.verify`; its refusal names `server: 'smtp'`) |
@@ -176,10 +176,48 @@ mail; „Neu anmelden“ (`POST accounts/<id>/microsoft`) adds them.
 | `GET img/<token>` | `{ mime, size, data }` — the picture as base64 (≤ 700 KB, else 413) |
 | `GET cid/<messageId>/<attachmentId>` | `{ mediaId, mime, size, url }` — an embedded picture (the apps load `media/<mediaId>`, the portal `url`); like attachments |
 | `GET messages/<id>/attachments/<aid>` | `{ mediaId, name, mime, size, url, scan? }` (since 1.8.0: held back by the virus scan 423 `quarantined \| scan_pending \| scan_blocked`, removed 410 `attachment_removed`) — not there after ~12 s: 409 `busy { reason: 'loading', retryAfter }`, the download goes on (asking again joins it), the live event `mail` with `messageId` and `attachmentId` tells when it is there |
-| `POST messages/flags` | `{ ids, unread?, flagged? }` → `{ ok, items }` |
-| `POST messages/move` | `{ ids, folderId }` (one account) |
-| `POST messages/archive` / `delete` / `junk` | `{ ids }` — delete: into the trash, in the trash for good; Gmail archives into "All Mail" |
-| `POST messages/tab` | `{ ids, tab }` — learned for the senders (their other mail in the posteingänge follows) |
+| `POST messages/flags` | `{ ids \| all…, unread?, flagged?, threads? }` → `{ ok, items, count, ids }` |
+| `POST messages/move` | `{ ids \| all…, folderId, threads? }` (one account) → `{ ok, items, count, ids, undo }` |
+| `POST messages/copy` | since 1.13.0: `{ ids \| all…, folderId, threads? }` (one account) → `{ ok, items (the copies here so far), count, ids, undo }` |
+| `POST messages/archive` / `delete` / `junk` | `{ ids \| all…, threads? }` → `{ ok, items, count, ids, undo, purged? }` — delete: into the trash, in the trash for good (`purged`, no undo); Gmail archives into "All Mail" |
+| `POST messages/tab` | `{ ids \| all…, tab, threads? }` — learned for the senders (their other mail in the posteingänge follows) |
+| `POST messages/undo` | since 1.13.0: `{ token }` → `{ ok, kind, restored, failed, items }` — 400 `invalid { field: 'token' }`, 404 `not_found { field: 'token' }` (unknown, someone else's, used), 410 `undo_expired` |
+| `GET messages/ids` | since 1.13.0: `?box=&folder=&tab=&unread=&flagged=&attachments=` → `{ ids (newest first, ≤ 2000), total, max, truncated }` — every mail of the range (no conversations) |
+
+#### Several mails at once (since 1.13.0)
+
+* **Which mails:** `ids` (1–500, duplicates merged, unknown ones ignored; none known → 404) **or** `all: true` with the
+  range of a list — `box` (`'all'` | account id) or `folder`, `tab` (posteingänge only; missing = all), `filter: { unread?,
+  flagged?, attachments? }` (not at the top: there `unread` / `flagged` are what `messages/flags` sets), `except: [ids]`
+  (≤ 500). `all` takes every mail of the range in the server's copy (also pages not loaded; not mail beyond the
+  retention), at most 2000 — more: 413 `too_large { max: 2000, count }`. An empty range answers `{ ok, count: 0 }`.
+  `ids` with `all` → 400 `invalid { field: 'all' }`.
+* `threads: true` adds the other mails of each one's conversation **in the same folder** (the conversation view shows its
+  newest mail; without it the next older one takes the row). Also at most 2000.
+* **Move and copy** within one account only: mail of several accounts or a folder of another account → 400 `invalid
+  { field: 'folderId', reason: 'account' }`. Copying across accounts may come later.
+* **Undo** (`undo` in the answers of move, copy, archive, delete, junk; `null` when there is nothing to take back):
+  `{ token, kind: 'move'|'copy'|'archive'|'delete'|'junk', count, expiresAt (2 minutes), items: [{ id, newId,
+  accountId, fromFolderId, toFolderId }] }` — `newId`: the row's id now (the same when it went along; a copy's new id;
+  `null` until a sync brings it). `POST messages/undo` moves every mail back to the folder it came from (delete: out of
+  the trash) or deletes the copies — once, by the person who did it. The server keeps where each mail went
+  (table `undo_log`): IMAP the new UID from MOVE / COPYUID; a server without UIDPLUS: the target's UIDNEXT before and the
+  Message-ID (only mail from that UID on is taken back — a mail with the same Message-ID that was there before stays);
+  Microsoft the new Graph id from `move` / `copy`. `flags` and `tab` have no undo: the client sends the opposite.
+* IMAP without new UIDs: a moved row goes here and comes back with the next sync of the target under a new id, so
+  `items` may hold fewer than `count`.
+
+#### Swipe settings (since 1.13.0)
+
+`settings.swipe = { left, right }` with `archive | delete | read (toggle) | flag (toggle) | move (the app picks a
+folder) | junk | none`; `settings.confirmDelete` (default `false`): the apps and the portal ask before deleting (else
+„Rückgängig“); deleting in the trash is always asked. **The old fields `swipeLeft` / `swipeRight` keep the four values of
+before** — `flag`, `move`, `junk` show there as `none`, because older Android apps read an unknown value as `archive`
+(Windows Pro shows the values as quick buttons and leaves unknown ones out). `PUT settings` takes the seven values in
+`swipe.left` / `swipe.right` and in the old fields; an old field set to `none` while the stored action shows as `none`
+already (flag, move, junk) changes nothing — an older app that sends both of its fields back keeps the new action.
+`swipe` wins over the old field of the same side. 400 `invalid { field: 'swipe' | 'swipe.left' | 'swipe.right' |
+'swipeLeft' | 'swipeRight' | 'confirmDelete' | 'threads' }`.
 
 `Summary` = `{ id, accountId, folderId, threadId, threadCount, from: { name, email }, to (≤ 3), subject, snippet (≤ 160),
 date, unread, flagged, answered, hasAttachments, tab, savedToDrive, ai: { summary } | null }`. `Attachment` = `{ id, name,
@@ -509,6 +547,18 @@ resource, „Buchen“ or „Anfrage an … senden“) and „Anfragen · n“ f
 Ablehnen, „Trotzdem freigeben“ when a rule is broken) or „Meine Buchungen“; an own GateControl calendar's menu has
 „Teilen“ (a person by name, a group with GateControl's picker, the level, the list with its state, „Frei/Gebucht für alle
 in GateControl“, „Mit mir geteilt“); the menu lists „Mit mir geteilt“. The mail settings have the switch for free/busy.
+
+Since 1.13.0 (mockup „Mehrfachauswahl“, frame 6) every row of the list has a box (`role="checkbox"`); Shift-click
+selects a range, Ctrl / Cmd-click on a row adds it while a selection is open, Escape clears it. The bar above the list
+shows „n ausgewählt“, „Alle N auswählen“ (`GET messages/ids` for N; then `all: true` with the list's range and `except`)
+and Archivieren, Löschen, Verschieben, Kopieren (`features.copy`), Gelesen / Ungelesen, Markieren, Spam, „Auswahl
+aufheben“; with conversations on the calls carry `threads: true`. Verschieben / Kopieren open the folder picker (a
+switch between both, a search, „Zuletzt“ — the last four folders, kept in this browser —, the account's folders as a
+tree, „hier“ for the folder the mails are in; mails of several accounts: a note instead). A change shows the snackbar
+with „Rückgängig“ (`messages/undo`, 8 s). Löschen asks while `settings.confirmDelete` is on („Nicht mehr fragen“ turns
+it off) and always in the trash („Endgültig löschen“). The reading pane's archive and delete use the same, and it has
+„Verschieben“. The mail settings have „Wischen / Schnellaktionen“ (left, right: the seven actions) and „Vor dem Löschen
+fragen“. Only the answer of the newest list request is shown.
 
 Since 1.3.4 the folders of an account are a tree (`ui/foldertree.js`, by `parentId`): the folders with a role on top as
 before, then the others by name, children below their parent (indented up to level 4) and closed by default. The arrow

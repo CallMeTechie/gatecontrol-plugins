@@ -31,6 +31,8 @@ const STATUS = {
   images_blocked: 403,
   links_disabled: 409,
   too_large: 413,
+  // 1.13.0: an undo token older than two minutes (undo.js)
+  undo_expired: 410,
   rate_limited: 429,
   busy: 409,
   // calendars and contacts (1.2.0)
