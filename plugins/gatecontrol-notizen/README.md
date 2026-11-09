@@ -41,7 +41,8 @@ kiosk devices get nothing.
 The same routes for the portal (`/api/v1/portal/plugins/gatecontrol-notizen/api/…`) and the apps
 (`/api/v1/client/plugins/gatecontrol-notizen/api/…`). Answers `{ ok: true, … }`; refusals `{ ok: false, code, … }` with
 `400 invalid { field }`, `403 forbidden`, `404 not_found`, `409 conflict | not_member | encrypted | stale_key |
-consent_required`, `413 too_large`, `429 busy`, `503 unavailable { reason }`, `507 quota`.
+consent_required | unknown_client_id`, `410 gone`, `413 too_large`, `429 busy`, `503 unavailable { reason }`, `507 quota`.
+`clientId`, `base`, `gone` and `unknown_client_id`: see [Offline on a device](#offline-on-a-device-110).
 
 ```
 GET    me                       → { user, lang, today, time, timezone, features, prefs, sharing, vaults, imports, attachMB, readOnly }
@@ -58,19 +59,21 @@ GET    sources                  → { sources: [{ plugin, label, hint, enabled, 
 POST   sources/<plugin>/sync    → { scheduled, reason? } — a reconciliation soon (at most every 10 minutes)
 
 GET    lists?area=              → { lists: [List], groups }
-POST   lists { name, area, color?, groupId? }                → { list }
-PATCH  lists/<id> { name?, color?, area?, groupId?, position? } → { list }
-DELETE lists/<id>               → { ok, left? } — the owner deletes (tasks into the trash), a member leaves
+POST   lists { name, area, color?, groupId?, clientId? }     → { list, clientId?, replayed? }
+PATCH  lists/<id> { name?, color?, area?, groupId?, position?, base? } → { list }
+DELETE lists/<id>               → { ok, left?, gone? } — the owner deletes (tasks into the trash), a member leaves
 PUT    lists/<id>/members { members: [userId…] }           → { list } — the owner; new members get the push topic `shared`
-POST   groups { name, area } · PATCH groups/<id> { name?, position? } · DELETE groups/<id>
+POST   groups { name, area, clientId? } · PATCH groups/<id> { name?, position? } · DELETE groups/<id>
 
 POST   tasks { title | text, listId?, area?, note?, important?, due?: { date, time? } | null, remindAt?: ISO | { date, time } | null,
-               repeat?: Rule | null, assigneeId?, myDay?, parentId? (a sub task), createList? (text names a new list) }
-                                → { task, parsed? }
+               repeat?: Rule | null, assigneeId?, myDay?, parentId? (a sub task), createList? (text names a new list),
+               clientId?, listClientId?, parentClientId? }
+                                → { task, parsed?, clientId?, replayed? }
 GET    tasks/<id>               → { task: Task + { note, subtasks: [{ id, title, done }], list, attachmentList, sourceItem? } }
-PATCH  tasks/<id> { title?, note?, important?, due?, remindAt?, repeat?, assigneeId?, listId?, position?, myDay? } → { task }
+PATCH  tasks/<id> { title?, note?, important?, due?, remindAt?, repeat?, assigneeId?, listId?, position?, myDay?, base? } → { task }
+                                  — 409 conflict { fields, task } when `base` is stale for a field
 POST   tasks/<id>/complete { done } → { task, next? } — a repeating task gets its next one (`next`)
-DELETE tasks/<id>               → { ok } (the trash: purged after 30 days)
+DELETE tasks/<id>               → { ok, gone? } (the trash: purged after 30 days)
 
 GET    items/<id>               → { item, taskId } — an item of another plugin
 POST   items/<id>/complete { done } → { item } — ticked off in its plugin (todo_complete); 403 read_only, 503 unavailable
@@ -78,16 +81,17 @@ POST   items/<id>/carry         → { task } — the item gets a hub task of its
                                   ticks the item off; the source ticking it off ticks the task) — once per person
 
 GET    notebooks?area=          → { notebooks: [Notebook], tags, total }
-POST   notebooks { name, area, color? } · PATCH notebooks/<id> { name?, color?, area?, position?, nameCipher? (Tresor) }
-DELETE notebooks/<id> · PUT notebooks/<id>/members { members }
+POST   notebooks { name, area, color?, clientId? } · PATCH notebooks/<id> { name?, color?, area?, position?, nameCipher? (Tresor), base? }
+DELETE notebooks/<id> (→ { ok, left?, gone? }) · PUT notebooks/<id>/members { members }
 GET    notes?area=&notebook=&tag=&pinned=1&before=<updatedAt>:<id>&limit=  → { notes: [NoteSummary], next }  (newest first)
-POST   notes { notebookId?, area?, title?, body?, pinned?, color?, due?, expiresAt? }       → { note }
-       (Tresor: { notebookId, titleCipher, cipher, keyVersion })
+POST   notes { notebookId?, area?, title?, body?, pinned?, color?, due?, expiresAt?, clientId?, notebookClientId? } → { note, clientId?, replayed? }
+       (Tresor: { notebookId, titleCipher, cipher, keyVersion, clientId? })
 GET    notes/<id>               → { note: NoteSummary + { body | cipher, notebook, attachments: [Attachment], tasks: [{ id, title, due, done }] } }
-PATCH  notes/<id> { title?, body?, pinned?, color?, due?, expiresAt?, notebookId?, rev? } → { note } — `rev` given and stale → 409
+PATCH  notes/<id> { title?, body?, pinned?, color?, due?, expiresAt?, notebookId?, rev? } → { note } — `rev` given and stale → 409 conflict { rev }
+                                  (unless the note is already exactly as sent: 200)
 POST   notes/<id>/check { line, done } → { note } — a check box of the text (a line that became a task ticks it too)
 POST   notes/<id>/task { line, listId?, due?, myDay? } → { task, note } — the line becomes a task, the line gets „[Aufgabe](task:<id>)“
-DELETE notes/<id>
+DELETE notes/<id>               → { ok, gone? }
 
 POST   attachments { kind: 'note' | 'task', refId, mediaId, name | nameCipher } → { attachment } — the upload first
        (GC.upload / PUT …/media); setting attach_mb per file, quota_mb per person
@@ -130,11 +134,65 @@ Rule  = ui/repeat.js
 ```
 
 Live updates: `gc.events` type `changed` `{ what: ['tasks' | 'notes' | 'items' | 'lists' | 'notebooks'] }` (merged per
-second) and `vault` `{ vault, event: 'request' | 'approved', device }` — clients fetch again. Pushes: topics
-`reminders`, `shared`, `vault`, `data.notizen = { task | list | notebook | vault }`.
+second) and `vault` `{ vault, event: 'request' | 'approved', device }` — clients fetch again. Pushes: see [Pushes](#pushes).
 
 Opening: an item's `source.open` → apps `gatecontrol://plugin/<plugin>/<route>`, portal `GC.openPortal({ plugin,
 query: { open: route } })`; a note of Familie's notebooks is `{ plugin: 'gatecontrol-notizen', route: 'note/<id>' }`.
+
+## Offline on a device (1.1.0)
+
+`GET me` lists the feature **`offlineEdits`**: an app may then queue creates, changes and deletes made without a
+connection and send them later, in the order they were made. Without it (1.0.x) an app keeps to ticks only — 1.0 made a
+second object for a create sent twice.
+
+- **`clientId`** (8–64 of `A–Z a–z 0–9 _ -`, a UUID made on the device) on `POST tasks` (also sub tasks and the quick
+  entry), `lists`, `groups`, `notebooks`, `notes` (also in a Tresor). The first create makes the object and keeps
+  (person, clientId) → its id (`client_ids`, migration `002_client_ids.sql`, in the same transaction; kept 180 days).
+  The same create again — the answer was lost, the outbox sent it twice, both at once — answers **200 with that
+  object as it is now** and `replayed: true`; nothing is made twice. Every answer of a create with a clientId carries
+  `clientId` beside the object's `id`: that is the device's map from its own id to the server's.
+  Per person: another person's clientId never finds someone else's object (it makes their own). A clientId of another
+  kind (a note's clientId on `POST tasks`) → `400 invalid { field: 'clientId' }`. The object was deleted meanwhile or the
+  person left its list → **`410 gone { clientId, id }`** (the device drops its copy).
+- **Parents made offline too:** `listClientId` / `parentClientId` on `POST tasks`, `notebookClientId` on `POST notes`
+  name the list, task or notebook by the clientId it was created with (by this person). Not made yet — a sub task sent
+  before its task — → **`409 unknown_client_id { field, clientId }`**, nothing made, the clientId still free: send the
+  parent first (the Android app does) or again later. A device may as well replace the ids itself from the answers.
+- **Changes:** `PATCH tasks/<id>`, `PATCH lists/<id>` (name, colour) and `PATCH notebooks/<id>` (name, colour) take
+  **`base`**: `{ <field>: the value the device saw before it changed it }`. A field whose value now differs from `base`
+  and from the new value — someone else changed it meanwhile — → **`409 conflict { fields: [...], task | list |
+  notebook }`** with the object as it is now; nothing of the change is written. Fields left out of `base` are not checked;
+  other fields changed elsewhere do not matter (field by field: a tick on one phone and a new title on another never
+  clash, which a revision of the whole task would make them). Without `base` the change wins (the dialog's „Meine
+  behalten“). Notes keep their whole-text **`rev`** (`409 conflict { rev }`); „Meine behalten“ sends without `rev`.
+- **Sent twice:** a field set to the value it has already is not written — no new `updatedAt`, no event, and above all
+  no second reminder (a `remindAt` sent again does not arm it again) and no second „zugewiesen“ push. `PATCH notes`
+  that changes nothing answers 200 even with a stale `rev`. `POST tasks/<id>/complete { done }` sets a state (as in 1.0).
+- **Deletes:** something in the trash already answers `{ ok: true, gone: true }` to whoever may see it (a member of its
+  list or notebook; a list or notebook its owner deleted); what never was or is purged answers `404` as before. A device
+  takes both as done.
+- **Tresor notes offline (decision):** safe on the server's side — a device sends ciphertext only (`titleCipher`,
+  `cipher`, `keyVersion`), with `clientId` and `rev` like any note; the same ciphertext sent twice is harmless; a stale
+  `rev` → `409 conflict`, a key rotated meanwhile → `409 stale_key { keyVersion }` (the device decrypts its own
+  version with the old key it still has and encrypts it again with the new one). Nothing about a Tresor's keys or
+  members can be changed offline. The server never sees more than before.
+
+## Pushes
+
+Topics `reminders` (a task's reminder), `shared` (a list or notebook shared with the person, a task assigned to them)
+and `vault` (a new device asks for a Tresor). Since 1.1.0 (feature `pushTargets`) `data.notizen` says what to open:
+
+| `kind` | Topic | `data.notizen` | Opens |
+|---|---|---|---|
+| `reminder` | reminders | `{ kind, taskId, listId, area, task }` | the task |
+| `assigned` | shared | `{ kind, taskId, listId, area, task }` | the task |
+| `shared_list` | shared | `{ kind, listId, area, list }` | the list |
+| `shared_notebook` | shared | `{ kind, notebookId, area, vaultId?, notebook }` | the notebook (a Tresor: unlock first) |
+| `vault_request` | vault | `{ kind, vaultId, notebookId, deviceId, area, vault, notebook, event: 'request' }` | the Tresor's approvals |
+
+`area` is `private` | `work` (the area to switch to). The keys of 1.0 (`task`, `list`, `notebook`, `vault`, `event`)
+stay for older apps. Ids are numbers except `vaultId` / `deviceId` (base64url). The item may be gone by the time the
+push is tapped (`404` on `GET tasks/<id>`): the app says so and shows the list.
 
 ## A person's choices (`prefs`)
 
@@ -294,4 +352,4 @@ in the mock host's SQLite).
 
 `node tools/test.js gatecontrol-notizen` — the mock host as GateControl 1.216.0 with fake sources (`test/helpers.js`), a
 fake Microsoft Graph and Mail (`test/mstodo.test.js`), the .nsx fixture (`node test/fixtures/build-nsx.js` writes
-`test/fixtures/sample.nsx`), the portal in a small DOM (`test/fake-dom.js`).
+`test/fixtures/sample.nsx`), the portal in a small DOM (`test/fake-dom.js`). Offline creates, changes and deletes sent twice or out of order, and the pushes' targets: `test/offline.test.js`.

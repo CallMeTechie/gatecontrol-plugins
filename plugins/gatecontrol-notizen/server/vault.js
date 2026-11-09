@@ -10,6 +10,7 @@ const store = require('./store');
 const config = require('./config');
 const notes = require('./notes');
 const events = require('./events');
+const push = require('./push');
 const { t } = require('./text');
 const { fail, line, area: areaOf } = require('./util');
 
@@ -181,7 +182,7 @@ async function ask(gc, ctx, id, b) {
     await gc.events.emit({ users, type: 'vault', data: { vault: nb.vault_id, event: 'request', device: dev.id } }).catch(() => {});
     await gc.notify({ topic: 'vault', users, collapseKey: `notes-vault:${nb.vault_id}:${dev.id}`, title: t(ctx.notifyLang, 'n.vault_request_title'),
       body: t(ctx.notifyLang, 'n.vault_request_body', { who: ctx.userName || '', device: dev.name || t(ctx.notifyLang, 'n.vault_device') }),
-      data: { notizen: { vault: nb.vault_id, notebook: nb.id, event: 'request' } } }).catch(() => {});
+      data: { notizen: push.vaultRequest(nb, dev.id) } }).catch(() => {});
   }
   return { device: deviceView(await store.one(gc, 'SELECT * FROM vault_devices WHERE notebook_id = ? AND device_id = ?', [nb.id, dev.id])) };
 }

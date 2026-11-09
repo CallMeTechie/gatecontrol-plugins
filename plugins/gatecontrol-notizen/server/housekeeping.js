@@ -13,14 +13,16 @@ const attachments = require('./attachments');
 const sources = require('./sources');
 const bound = require('./bound');
 const mstodo = require('./mstodo');
+const clientIds = require('./clientids');
 const { t } = require('./text');
+const push = require('./push');
 
 const TRASH_MS = 30 * 86400000;
 const REMIND_LATE = 6 * 3600000; // a reminder missed by more than this (server off) is not sent any more
 
 async function reminders(gc, ctx) {
   const cfg = await config.get(gc);
-  const rows = await store.all(gc, `SELECT t.*, l.name AS list_name FROM tasks t INDEXED BY idx_tasks_remind JOIN lists l ON l.id = t.list_id AND l.deleted_at IS NULL
+  const rows = await store.all(gc, `SELECT t.*, l.name AS list_name, l.area AS list_area FROM tasks t INDEXED BY idx_tasks_remind JOIN lists l ON l.id = t.list_id AND l.deleted_at IS NULL
     WHERE t.remind_at IS NOT NULL AND t.reminded_at IS NULL AND t.done_at IS NULL AND t.deleted_at IS NULL AND t.remind_at <= ? ORDER BY t.remind_at LIMIT 100`, [ctx.now]);
   let sent = 0;
   for (const r of rows) {
@@ -34,7 +36,7 @@ async function reminders(gc, ctx) {
     try {
       await gc.notify({
         topic: 'reminders', users: [who], title: r.title.slice(0, 120), body: [when ? t(lang, 'n.due', { when }) : null, r.list_name].filter(Boolean).join(' · ').slice(0, 1000),
-        priority: r.important ? 'high' : 'normal', collapseKey: 'task:' + r.id, data: { notizen: { task: r.id } },
+        priority: r.important ? 'high' : 'normal', collapseKey: 'task:' + r.id, data: { notizen: push.reminder(r, r.list_area) },
       });
       sent++;
     } catch (e) { gc.log.warn('reminder push failed', (e && e.code) || 'error'); }
@@ -68,6 +70,7 @@ async function purge(gc, ctx) {
   await store.run(gc, 'DELETE FROM notebooks WHERE deleted_at IS NOT NULL AND deleted_at < ? AND NOT EXISTS (SELECT 1 FROM notes WHERE notes.notebook_id = notebooks.id)', [before]);
   await store.run(gc, 'DELETE FROM lists WHERE deleted_at IS NOT NULL AND deleted_at < ? AND NOT EXISTS (SELECT 1 FROM tasks WHERE tasks.list_id = lists.id)', [before]);
   await store.run(gc, 'DELETE FROM my_day WHERE user_id IN (SELECT DISTINCT user_id FROM my_day) AND day < ?', [tz.addDays(ctx.today, -7)]);
+  await clientIds.purge(gc, ctx.now);
   return ts.length + ns.length;
 }
 

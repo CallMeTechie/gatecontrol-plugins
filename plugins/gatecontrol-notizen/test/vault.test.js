@@ -214,3 +214,29 @@ test('DS Note into a Tresor: the device sends ciphertext only (notes and attachm
     assert.deepEqual([plain.imported, plain.skipped], [0, 1], 'plain text never goes into a Tresor');
   } finally { await h.close(); }
 });
+
+test('Tresor offline (1.1.0): a note made with a clientId once, ciphertext sent twice is harmless, a stale rev or key is refused', async () => {
+  const h = await withHost();
+  try {
+    const v = await makeVault(h, ANNA, 'Privat');
+    const enc = async (s) => VC.b64u(join(await VC.encryptContent(v.tk, v.id, 1, new TextEncoder().encode(s))));
+    const body = { notebookId: v.nb.id, titleCipher: await VC.encryptName(v.tk, v.id, 1, 'PIN'), cipher: await enc('1234'), keyVersion: 1, clientId: 'f00dbabe-0000-4000-8000-000000000001' };
+    const a = await h.ok(ANNA, 'POST', 'notes', body);
+    const b = await h.ok(ANNA, 'POST', 'notes', body);
+    assert.equal(b.note.id, a.note.id);
+    assert.equal(b.replayed, true);
+    const rev = a.note.rev;
+    const edit = { cipher: await enc('5678'), keyVersion: 1, rev };
+    await h.ok(ANNA, 'PATCH', 'notes/' + a.note.id, edit);
+    assert.equal((await h.ok(ANNA, 'PATCH', 'notes/' + a.note.id, edit)).note.rev, rev + 1, 'the same ciphertext again: nothing written');
+    const c = await h.call(ANNA, 'PATCH', 'notes/' + a.note.id, { cipher: await enc('0000'), keyVersion: 1, rev });
+    assert.deepEqual([c.status, c.json.code], [409, 'conflict']);
+    const k = await h.call(ANNA, 'PATCH', 'notes/' + a.note.id, { cipher: await enc('0000'), keyVersion: 2 });
+    assert.deepEqual([k.status, k.json.code, k.json.keyVersion], [409, 'stale_key', 1]);
+    // a device asks: the push names the Tresor and the notebook
+    const d = await device();
+    await h.ok(ANNA, 'POST', `vaults/${v.id}/devices`, { publicKey: d.pub, name: 'Neues Handy', platform: 'android' });
+    const p = h.host.notifications.filter((x) => x.topic === 'vault').map((x) => x.data.notizen);
+    assert.deepEqual(p, [{ kind: 'vault_request', vaultId: v.id, notebookId: v.nb.id, deviceId: d.id, area: 'private', vault: v.id, notebook: v.nb.id, event: 'request' }]);
+  } finally { await h.close(); }
+});

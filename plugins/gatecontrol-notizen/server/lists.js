@@ -6,8 +6,10 @@
 const store = require('./store');
 const people = require('./people');
 const events = require('./events');
+const clientIds = require('./clientids');
+const push = require('./push');
 const { t } = require('./text');
-const { fail, posInt, line, area: areaOf, color: colorOf } = require('./util');
+const { fail, posInt, line, area: areaOf, color: colorOf, same, stale } = require('./util');
 
 const MAX_LISTS = 500;
 const MAX_MEMBERS = 50;
@@ -96,8 +98,17 @@ async function groupArg(gc, ctx, v, area) {
   return g.id;
 }
 
-/** POST lists { name, area, color?, groupId? } */
+/** A create sent again with the same clientId: the list as it is now, or 410 when it is gone (deleted, left). */
+async function replay(gc, ctx, id, clientId) {
+  let l;
+  try { l = await access(gc, ctx.userId, id); } catch (e) { if (e && e.code === 'not_found') throw clientIds.gone(clientId, id); throw e; }
+  return { list: await view(gc, l), clientId, replayed: true };
+}
+
+/** POST lists { name, area, color?, groupId?, clientId? } → { list, clientId? } */
 async function create(gc, ctx, b) {
+  const cid = clientIds.arg(b.clientId);
+  if (cid) { const have = await clientIds.find(gc, ctx.userId, cid, 'list'); if (have) return replay(gc, ctx, have, cid); }
   const a = areaOf(b.area);
   const name = nameArg(b.name);
   const c = colorOf(b.color);
@@ -105,22 +116,36 @@ async function create(gc, ctx, b) {
   const n = await store.one(gc, 'SELECT COUNT(*) AS n FROM lists WHERE owner_id = ? AND deleted_at IS NULL', [ctx.userId]);
   if (n.n >= MAX_LISTS) throw fail('too_many');
   const group = await groupArg(gc, ctx, b.groupId, a);
-  const id = await store.tx(gc, async () => {
+  const made = await store.tx(gc, async () => {
+    if (cid) { const again = await clientIds.find(gc, ctx.userId, cid, 'list'); if (again) return { dup: again }; }
     const r = await store.run(gc, 'INSERT INTO lists (owner_id, area, name, color, created_at, updated_at, ext_kind, ext_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
       [ctx.userId, a, name, c, ctx.now, ctx.now, b.extKind || null, b.extId || null]);
     const lid = Number(r.lastInsertRowid);
     const pos = await store.one(gc, 'SELECT COALESCE(MAX(position), 0) + 1 AS p FROM list_members WHERE user_id = ?', [ctx.userId]);
     await store.run(gc, 'INSERT INTO list_members (user_id, list_id, role, group_id, position) VALUES (?, ?, ?, ?, ?)', [ctx.userId, lid, 'owner', group, pos.p]);
-    return lid;
+    await clientIds.claim(gc, ctx, cid, 'list', lid);
+    return { id: lid };
   });
+  if (made.dup) return replay(gc, ctx, made.dup, cid);
   events.changed(gc, [ctx.userId], 'lists');
-  return { list: await view(gc, await access(gc, ctx.userId, id)) };
+  return { list: await view(gc, await access(gc, ctx.userId, made.id)), ...(cid ? { clientId: cid } : {}) };
 }
 
-/** PATCH lists/<id> { name?, color?, area? (owner), groupId?, position? (own) } */
-async function update(gc, ctx, id, b) {
+/**
+ * PATCH lists/<id> { name?, color?, area? (owner), groupId?, position? (own), base? } — `base` as in PATCH tasks: name or
+ * colour changed meanwhile by someone else → 409 conflict { fields, list }; a name or colour as it is already is not written.
+ */
+async function update(gc, ctx, id, b0) {
   const l = await access(gc, ctx.userId, id);
   const owner = l.my_role === 'owner';
+  const norm = (f, v) => (f === 'name' ? nameArg(v) : (() => { const c = colorOf(v); if (c === undefined) throw fail('invalid', { field: 'color' }); return c; })());
+  const now = { name: l.name, color: l.color || null };
+  const next = {};
+  for (const f of ['name', 'color']) if (b0[f] !== undefined) next[f] = norm(f, b0[f]);
+  const late = stale(b0.base, now, next, norm);
+  if (late.length) throw fail('conflict', { fields: late, list: await view(gc, l) });
+  const b = { ...b0 };
+  for (const f of Object.keys(next)) if (same(next[f], now[f])) delete b[f];
   const set = [];
   const args = [];
   if (b.name !== undefined) { if (!owner) throw fail('forbidden'); set.push('name = ?'); args.push(nameArg(b.name)); }
@@ -138,9 +163,13 @@ async function update(gc, ctx, id, b) {
   return { list: await view(gc, await access(gc, ctx.userId, l.id)) };
 }
 
-/** DELETE lists/<id> — the owner deletes it (with its tasks); a member leaves it. */
+/** DELETE lists/<id> — the owner deletes it (with its tasks); a member leaves it. Deleted already by its owner: { ok, gone }. */
 async function remove(gc, ctx, id) {
-  const l = await access(gc, ctx.userId, id);
+  let l;
+  try { l = await access(gc, ctx.userId, id); } catch (e) {
+    if (posInt(id) && await store.one(gc, 'SELECT id FROM lists WHERE id = ? AND owner_id = ? AND deleted_at IS NOT NULL', [posInt(id), ctx.userId])) return { ok: true, gone: true };
+    throw e;
+  }
   const members = await memberIds(gc, l.id);
   if (l.my_role !== 'owner') {
     await store.run(gc, 'DELETE FROM list_members WHERE user_id = ? AND list_id = ?', [ctx.userId, l.id]);
@@ -179,7 +208,7 @@ async function setMembers(gc, ctx, id, b) {
   });
   if (added.length) {
     await gc.notify({ topic: 'shared', title: t(ctx.notifyLang, 'n.shared_title', { name: ctx.userName || '' }), body: l.name, users: added,
-      collapseKey: 'list:' + l.id, data: { notizen: { list: l.id } } }).catch(() => {});
+      collapseKey: 'list:' + l.id, data: { notizen: push.sharedList(l) } }).catch(() => {});
   }
   events.changed(gc, [...new Set([...before, ...added])], 'lists');
   return { list: await view(gc, await access(gc, ctx.userId, l.id)) };
@@ -187,9 +216,24 @@ async function setMembers(gc, ctx, id, b) {
 
 /** POST groups { name, area }, PATCH groups/<id> { name?, position? }, DELETE groups/<id> */
 async function createGroup(gc, ctx, b) {
-  const r = await store.run(gc, 'INSERT INTO list_groups (user_id, area, name, position, created_at) VALUES (?, ?, ?, ?, ?)', [ctx.userId, areaOf(b.area), nameArg(b.name), Number(b.position) || 0, ctx.now]);
+  const cid = clientIds.arg(b.clientId);
+  const groupOf = async (gid) => {
+    const g = await store.one(gc, 'SELECT * FROM list_groups WHERE id = ? AND user_id = ?', [gid, ctx.userId]);
+    if (!g) throw clientIds.gone(cid, gid);
+    return { group: { id: g.id, name: g.name, area: g.area }, clientId: cid, replayed: true };
+  };
+  if (cid) { const have = await clientIds.find(gc, ctx.userId, cid, 'group'); if (have) return groupOf(have); }
+  const name = nameArg(b.name);
+  const made = await store.tx(gc, async () => {
+    if (cid) { const again = await clientIds.find(gc, ctx.userId, cid, 'group'); if (again) return { dup: again }; }
+    const r = await store.run(gc, 'INSERT INTO list_groups (user_id, area, name, position, created_at) VALUES (?, ?, ?, ?, ?)', [ctx.userId, areaOf(b.area), name, Number(b.position) || 0, ctx.now]);
+    const gid = Number(r.lastInsertRowid);
+    await clientIds.claim(gc, ctx, cid, 'group', gid);
+    return { id: gid };
+  });
+  if (made.dup) return groupOf(made.dup);
   events.changed(gc, [ctx.userId], 'lists');
-  return { group: { id: Number(r.lastInsertRowid), name: nameArg(b.name), area: areaOf(b.area) } };
+  return { group: { id: made.id, name, area: areaOf(b.area) }, ...(cid ? { clientId: cid } : {}) };
 }
 async function updateGroup(gc, ctx, id, b) {
   const g = await store.one(gc, 'SELECT * FROM list_groups WHERE id = ? AND user_id = ?', [posInt(id), ctx.userId]);

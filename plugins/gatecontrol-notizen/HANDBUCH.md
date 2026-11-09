@@ -1,5 +1,11 @@
-<!-- version: 1.0.1 -->
+<!-- version: 1.1.0 -->
 # Notizen & Aufgaben
+
+## Neu in 1.1.0
+
+- **Ohne Verbindung weiterarbeiten:** In der Android-App lassen sich Aufgaben, Unteraufgaben, Listen, Notizbücher und Notizen jetzt auch offline anlegen, ändern und löschen. Sie erscheinen sofort (mit dem Hinweis „Noch nicht gesendet“) und gehen raus, sobald der Server erreichbar ist – auch wenn die App ein Anlegen zweimal schickt, entsteht nur eines.
+- **Gleichzeitig anderswo geändert?** Hat jemand dasselbe Feld inzwischen auf einem anderen Gerät geändert, fragt die App beim Öffnen: „Meine behalten“ oder „Die andere laden“. Änderungen an verschiedenen Feldern (z. B. du den Titel, der Partner das Datum) bleiben beide.
+- **Antippen einer Mitteilung öffnet die Seite:** eine Erinnerung oder Zuweisung die Aufgabe, eine geteilte Liste die Liste, ein geteiltes Notizbuch das Notizbuch, „Neues Gerät möchte Zugriff“ die Freigabe im Tresor.
 
 ## Neu in 1.0.1
 
@@ -119,6 +125,14 @@ Direkt von der NAS holen geht noch nicht.
 | Quellen | Familie, Mail, Drive, Schule, Alltag einzeln |
 | Umzug | Microsoft To Do, Abgleich in beide Richtungen, DS Note |
 | Größte Datei, Platz je Person | für Bilder und Anhänge |
+
+## Ohne Verbindung (Apps)
+
+- Die App zeigt den letzten Stand, auch ohne Verbindung. Ab Version 1.1.0 dieses Plugins kannst du dabei auch **anlegen, ändern und löschen** – Aufgaben, Unteraufgaben, Listen, Notizbücher und Notizen. Was noch nicht beim Server ist, ist mit „Noch nicht gesendet“ markiert.
+- Sobald der Server erreichbar ist, sendet die App alles in der Reihenfolge, in der du es gemacht hast. Eine Unteraufgabe einer offline angelegten Aufgabe kommt nach ihrer Aufgabe.
+- **Anderswo geändert:** Hat jemand dasselbe Feld inzwischen geändert, bekommt der Eintrag den Hinweis „Anderswo geändert“. Beim Öffnen wählst du „Meine behalten“ (deine Fassung überschreibt) oder „Die andere laden“ (deine Änderung wird verworfen).
+- **Tresor-Notizen** lassen sich offline nur ändern, solange der Tresor auf dem Handy geöffnet ist. Gespeichert und gesendet wird nur der verschlüsselte Text – nie lesbar auf dem Handy oder dem Server.
+- Bilder und Anhänge hinzufügen, teilen und der Umzug brauchen weiter eine Verbindung.
 
 ## Fragen
 
