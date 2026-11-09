@@ -700,6 +700,11 @@ below; without it, or while a node has no `scan`, there is nothing to show.
   administrator may release or delete it — a deleted file stays a blocked node until someone deletes it). Each change of
   a file is **`op: 'scan'`** in the change log (`GET changes`) with the live event `changed`; the housekeeping asks again
   for files still `pending` (a missed hook).
+- **Writes (since 1.28.1):** a kept state is only written when `state`, `blocked` or `finding` change (the nightly
+  re-check finds almost every file clean again: no write). The hooks are queued and written together, one transaction
+  per batch (what comes within 100 ms, at most 200; one batch at a time). A busy database (`ERR_BUSY`, `SQLITE_BUSY`):
+  the batch again after 0.25 s, 1 s and 3 s, then its files wait 30 s for the next run (at most ten times) — one log
+  line per run („scan states deferred (database busy)“ with `deferred`, `dropped`, `written`), none per file.
 - **Refused:** `GET nodes/<id>/content`, `…/versions/<vid>/content`, `POST nodes/<id>/office`, `POST links` of a file,
   Mail's `give_file` and `share_link` answer **`423 { code: 'scan_pending' | 'quarantined' | 'scan_blocked', error,
   scan }`** (`scan_pending`: try again in a few seconds). `POST links { nodeIds }` (older GateControl) refuses with the

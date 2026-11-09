@@ -892,10 +892,8 @@ module.exports = {
    * released or deleted it): its state, 'scan' in the change log, the live event (scan.js).
    */
   async mediaScanned(arg, gc) {
-    try {
-      const r = await scan.scanned(gc, arg, Date.now());
-      if (r.touched.size) await changes.announce(gc, r.touched, await areas.settingsOf(gc));
-    } catch (e) { gc.log.warn('scan state failed', (e && e.code) || 'error'); }
+    // since 1.28.1 queued and written in batches, one transaction each; the apps hear once per batch (scan.js)
+    await scan.scanned(gc, arg, { announce: async (touched) => changes.announce(gc, touched, await areas.settingsOf(gc)) });
   },
 
   /** GateControl read the NAS (an area in the readable form): its journal becomes the tree. */
@@ -918,6 +916,8 @@ module.exports = {
 
   async stop() {
     hub.stop();
+    // results of the virus scan still queued: one more try (scan.js)
+    try { await scan.flush({ once: true }); } catch { /* best effort */ }
   },
 
   /**

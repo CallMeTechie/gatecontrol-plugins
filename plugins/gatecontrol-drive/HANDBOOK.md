@@ -1,4 +1,4 @@
-<!-- version: 1.28.0 -->
+<!-- version: 1.28.1 -->
 # Drive
 
 ## What the plugin does
@@ -111,6 +111,10 @@ Full screen in the portal needs GateControl 1.244.0. Older versions show the vid
 
 **At home the photos do not show up faster.**
 The previews reach the gateway bit by bit (a few hundred per run, every 15 minutes). Check at the gateway under **Gateways › Home cache** that it is “on” and that “Photos” or “Drive” are switched on. Previews from the home network need GateControl 1.249.0 and a current app.
+
+## New in 1.28.1
+
+- **Less writing during the nightly virus scan:** Drive saves the results of the re-check together and only when something changed. On a slow disk there are no more warnings “scan state failed ERR_BUSY”; when the database is busy for a moment, Drive saves them later by itself.
 
 ## New in 1.28.0
 
