@@ -2,6 +2,25 @@
 
 Dateien der Familie und des Teams auf dem eigenen Speicher – auf diesem Server, einer NAS oder in S3.
 
+## 1.28.1
+
+- **Virenscan-Zustände in einem Rutsch:** Die nächtliche Nachprüfung von GateControl meldet jede Datei einzeln
+  (Hook `mediaScanned`). Drive schrieb jede Meldung als eigenen Schreibvorgang – auf einem Datenträger mit kurzen
+  Hängern dauerte ein `INSERT INTO media_scan … ON CONFLICT … DO UPDATE` bis zu 8 s, die Meldungen stauten sich, und
+  GateControl wies weitere Aufrufe mit `ERR_BUSY` ab („scan state failed ERR_BUSY“, eine Warnung je Datei). Jetzt
+  sammelt Drive die Meldungen (100 ms, höchstens 200) und schreibt sie in **einer Transaktion**; was während eines
+  Schreibvorgangs ankommt, ist der nächste Stapel. Es schreibt immer nur ein Stapel, die Meldungen stauen keine
+  Host-Aufrufe mehr.
+- **Kein Schreiben ohne Änderung:** Ein Ergebnis mit demselben Zustand, `blocked` und Fund (fast jede Datei ist nachts
+  wieder „sauber“) schreibt nichts – auch nicht beim Öffnen einer Datei (`check`) oder bei `gc.media.info`.
+- **Datenbank beschäftigt:** `ERR_BUSY` / `SQLITE_BUSY` → derselbe Stapel nach 0,25 s, 1 s und 3 s noch einmal; danach
+  warten die Dateien 30 s auf den nächsten Lauf (höchstens zehnmal, dann fragen die Aufräumrunde bzw. das nächste
+  Öffnen GateControl erneut). Statt einer Warnung je Datei eine Zeile je Lauf: „scan states deferred (database busy)“
+  mit `deferred`, `dropped` und `written`. Ein anderer Fehler: eine Warnung „scan state failed“ je Stapel mit `files`.
+- Tests: `test/scan_writes.test.js` (ein Stapel = ein Commit, dieselben Ergebnisse noch einmal = kein Schreiben,
+  `ERR_BUSY` wiederholt, `SQLITE_BUSY` auf den nächsten Lauf verschoben, aufgegeben nach zehn Läufen, ≤ 100 Parameter
+  je Anweisung).
+
 ## 1.28.0
 
 - **Erinnerungen in der Übersicht auch ohne „Heute vor X Jahren“:** Seit 1.26.0 zeigt die Übersicht nur Tage mit mehr

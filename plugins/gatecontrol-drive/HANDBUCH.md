@@ -1,4 +1,4 @@
-<!-- version: 1.28.0 -->
+<!-- version: 1.28.1 -->
 # Drive
 
 ## Was das Plugin kann
@@ -111,6 +111,10 @@ Vollbild im Portal gibt es ab GateControl 1.244.0. Ältere Versionen zeigen das 
 
 **Zu Hause bauen sich die Fotos nicht schneller auf.**
 Die Vorschaubilder kommen erst nach und nach auf das Gateway (je Lauf einige Hundert, alle 15 Minuten). Prüfe am Gateway unter **Gateways › Zwischenspeicher**, dass er „aktiv“ ist und „Fotos“ bzw. „Drive“ eingeschaltet sind. Vorschaubilder aus dem Heimnetz braucht GateControl 1.249.0 und eine aktuelle App.
+
+## Neu in 1.28.1
+
+- **Weniger Schreibarbeit beim nächtlichen Virenscan:** Drive speichert die Ergebnisse der Nachprüfung gesammelt und nur, wenn sich etwas geändert hat. Auf einem langsamen Datenträger gibt es dadurch keine Warnungen „scan state failed ERR_BUSY“ mehr; ist die Datenbank kurz beschäftigt, holt Drive das Speichern von selbst nach.
 
 ## Neu in 1.28.0
 
