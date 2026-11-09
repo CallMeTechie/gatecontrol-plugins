@@ -1,5 +1,15 @@
-<!-- version: 1.1.0 -->
+<!-- version: 1.2.0 -->
 # Notizen & Aufgaben
+
+## Neu in 1.2.0
+
+- **Neues Menü wie in Drive:** links immer sichtbar, am Handy hinter dem Knopf ☰. Oben Mein Tag, Wichtig, Geplant, Mir zugewiesen und „Aufgaben“, darunter **„Meine Listen“** mit **Gruppen als aufklappbare Ordner**, „Aus anderen Plugins“ und die **Notizbücher**. Neue Listen, Gruppen und Notizbücher legst du mit dem **„+“** an der Überschrift an.
+- **⋯ an jeder Liste, Gruppe und jedem Notizbuch:** Bearbeiten (Name, Farbe, Symbol, Gruppe), Teilen, In Gruppe verschieben, Einkaufstag, Löschen.
+- **Einkaufstag:** Eine Liste kann an bestimmten Wochentagen oben in „Mein Tag“ stehen – „Heute ist Einkaufstag“ mit den ersten Einträgen zum Abhaken. Das gilt für alle, mit denen die Liste geteilt ist. Auf Wunsch kommt morgens eine Nachricht aufs Handy.
+- **Teilen mit Rechten:** Jede Person bekommt **Bearbeiten** oder **Ansehen**. Wer nur ansehen darf, kann nichts hinzufügen oder ändern – nur abhaken, was ihm zugewiesen ist.
+- **Zuweisen sichtbar:** In geteilten Listen steht das kleine Bild der Person an der Aufgabe; oben filterst du nach „Alle“, „Mir zugewiesen“, einer Person oder „Niemandem“. In der Schnell-Eingabe geht auch „@Name“.
+- **Löschen mit Rückfrage:** Beim Löschen einer Liste oder eines Notizbuchs steht da, wie viel betroffen ist und wer es danach nicht mehr sieht. Offene Aufgaben können nach „Aufgaben“, Notizen nach „Notizen“ wandern. Danach gibt es ein paar Sekunden **„Rückgängig“**.
+- **Einstellungen** (Zahnrad unten links) statt „Quellen“: Aufgaben aus anderen Plugins, Mein Tag, Uhrzeiten der Schnell-Eingabe, Benachrichtigungen und Umziehen an einer Stelle.
 
 ## Neu in 1.1.0
 
@@ -28,7 +38,7 @@ Das Plugin ist neu: eigene Aufgaben und Notizen plus alles, was die anderen Plug
 ## Voraussetzungen
 
 - GateControl **1.216.0** oder neuer. Damit ein Antippen eines Elements aus einem anderen Plugin dieses im Portal öffnet: GateControl **1.254.0** (sonst sagt das Portal, wo es zu finden ist).
-- Damit Familie, Mail, Drive, Schule und Alltag hier erscheinen: ihre Versionen mit „Zu tun für Notizen & Aufgaben“. Fehlt eine Quelle, steht das unter „Quellen“.
+- Damit Familie, Mail, Drive, Schule und Alltag hier erscheinen: ihre Versionen mit „Zu tun für Notizen & Aufgaben“. Fehlt eine Quelle, steht das unter „Einstellungen“ (Zahnrad unten links).
 - Für den Umzug von Microsoft To Do: das Plugin **Mail 1.12.0** oder neuer mit deinem Microsoft-Konto.
 - Für Tresor-Notizbücher im Portal: ein aktueller Browser (Chrome, Edge, Firefox, Safari der letzten Jahre).
 
@@ -36,7 +46,7 @@ Das Plugin ist neu: eigene Aufgaben und Notizen plus alles, was die anderen Plug
 
 1. Installieren und lizenzieren. Unter **Einstellungen › Plugins › Notizen & Aufgaben › Einstellungen** die **Zeitzone** prüfen (bestimmt „heute“ und die Erinnerungen).
 2. Festlegen, mit wem man **teilen** darf: mit allen, nur in der Familie und im Team, oder mit niemandem.
-3. Unter **Quellen** die Plugins abwählen, die hier nicht erscheinen sollen. Die Statuszeile oben sagt, welche Quellen verbunden sind.
+3. Unter **Einstellungen › Aufgaben aus anderen Plugins** (Zahnrad unten links im Tab) die Plugins abwählen, die hier nicht erscheinen sollen. Die Statuszeile oben sagt, welche Quellen verbunden sind.
 4. Fertig: Im Portal gibt es den Tab **„Notizen & Aufgaben“**, auf der Startseite die Kachel **„Mein Tag“**.
 
 ## Aufgaben
@@ -44,8 +54,11 @@ Das Plugin ist neu: eigene Aufgaben und Notizen plus alles, was die anderen Plug
 - **Schnell hinzufügen:** oben ins Feld tippen und Enter – oder **Strg N**. Das Plugin versteht z. B. „morgen 9 Uhr Zahnarzt anrufen, wichtig, #gesundheit“: morgen 9:00, Erinnerung 9:00, wichtig, Liste „Gesundheit“. Unter dem Feld steht, was erkannt wurde. Siehe [Schnell-Eingabe](#schnell-eingabe).
 - **Abhaken:** der Kreis vorne. Eine wiederholte Aufgabe bekommt gleich die nächste (mit denselben Unteraufgaben, wieder offen).
 - **Details:** eine Aufgabe antippen – rechts erscheinen Unteraufgaben, „In Mein Tag“, Fällig, Erinnerung, Wiederholen, Zugewiesen, Liste, Anhänge und Notiz.
-- **Listen und Gruppen:** im Menü „Neue Liste oder Gruppe“. Über das Zahnrad einer Liste: Name, Farbe, Gruppe, **Teilen mit** und Löschen. Wer eine geteilte Liste bekommt, sieht sie sofort und erhält eine Mitteilung.
-- **Gelöschtes** liegt 30 Tage im Papierkorb und ist danach weg.
+- **Listen und Gruppen:** das **„+“** an „Meine Listen“ öffnet „Neue Liste oder Gruppe“. Eine Gruppe ist ein Ordner für mehrere Listen; „Gruppe auflösen“ lässt die Listen stehen. Gruppen gelten nur für dich.
+- **⋯ an einer Liste:** Bearbeiten (Name, Farbe, Symbol, Gruppe, Einkaufstag, Erinnerung am Morgen), **Teilen …**, In Gruppe verschieben, Löschen. Die Standardliste „Aufgaben“ lässt sich umbenennen, aber nicht löschen.
+- **Teilen:** Namen eintippen, Person hinzufügen und **Bearbeiten** oder **Ansehen** wählen. Wer eine geteilte Liste bekommt, sieht sie sofort und erhält eine Mitteilung. Wer nur mitmacht, findet am ⋯ „In ‚Mein Tag‘ zeigen“ und „Liste verlassen“.
+- **Einkaufstag:** An den gewählten Wochentagen steht die Liste oben in „Mein Tag“ – bei allen Mitgliedern. Wer das nicht möchte, schaltet es am ⋯ der Liste nur für sich aus.
+- **Löschen** fragt nach und sagt, was mit den Aufgaben passiert; danach gibt es „Rückgängig“. **Gelöschtes** liegt 30 Tage im Papierkorb und ist danach weg.
 
 ## Aus anderen Plugins
 
@@ -53,7 +66,7 @@ Was Familie (Aufgaben, Einkaufslisten), Mail („Zu tun“, markierte Mails), Dr
 
 - **Das Original bleibt im Plugin.** Abhaken hier hakt dort ab; antippen zeigt „Aus Mail … öffnen“.
 - Brauchst du eigene **Unteraufgaben, eine Notiz oder eine Erinnerung** dazu: „Unteraufgaben, Notiz, Erinnerung …“ – dann wird daraus eine Aufgabe hier. Erledigt hier = dort erledigt.
-- **Quellen** (im Menü unten): je Quelle an/aus, „Aufgaben der Kinder zeigen“ (alle / nur mir zugewiesene / keine), „Einkaufslisten in Mein Tag“, „Markierte Mails als Aufgabe“, „Erinnern um“ für die Müllabfuhr am Vorabend. Mail-Konten und Kinder lassen sich einem Bereich zuordnen („Arbeit (Microsoft 365) → Arbeit“) oder ausblenden. „Jetzt abgleichen“ holt den Stand sofort.
+- **Einstellungen › Aufgaben aus anderen Plugins** (Zahnrad unten links): je Quelle an/aus, „Aufgaben der Kinder zeigen“ (alle / nur mir zugewiesene / keine), „Einkaufslisten in Mein Tag“, „Markierte Mails als Aufgabe“, „Erinnern um“ für die Müllabfuhr am Vorabend. Mail-Konten und Kinder lassen sich einem Bereich zuordnen („Arbeit (Microsoft 365) → Arbeit“) oder ausblenden. „Jetzt abgleichen“ holt den Stand sofort.
 - Fahrzeuge, NAS und Proxmox kommen in Schritt 2.
 
 > **Hinweis:** Die Plugins schicken ihre Änderungen selbst; einen ganzen Abgleich macht Notizen & Aufgaben etwa alle 12 Stunden. Eine Änderung in einer Quelle erscheint daher meist in Sekunden, spätestens nach dem nächsten Abgleich.
@@ -98,17 +111,17 @@ Englisch geht auch: „tomorrow 5 pm“, „every monday“, „in 2 weeks“.
 
 ### Von Microsoft To Do
 
-1. **Umziehen › Microsoft To Do:** dein Microsoft-Konto aus Mail wählen.
+1. **Einstellungen › Umziehen › Microsoft To Do:** dein Microsoft-Konto aus Mail wählen.
 2. Beim ersten Mal **„Bei Microsoft zustimmen“**: auf microsoft.com/devicelogin den angezeigten Code eingeben. Microsoft fragt, ob GateControl deine Aufgaben lesen und ändern darf.
 3. Die Listen erscheinen mit der Zahl der offenen Aufgaben; Listen der Arbeit stehen schon auf „Arbeit“. Wählen, ob **erledigte Aufgaben** mitkommen (z. B. letzte 90 Tage) und ob in einer **Übergangszeit in beide Richtungen** abgeglichen wird.
 4. **„… Aufgaben übernehmen“.** Der Umzug läuft im Hintergrund weiter, auch wenn du die Seite schließt.
 
-Nichts wird in To Do gelöscht. Den Abgleich beendest du unter **Umziehen › Im Abgleich mit To Do › Abgleich beenden** – die Liste bleibt hier.
+Nichts wird in To Do gelöscht. Den Abgleich beendest du unter **Einstellungen › Umziehen › Im Abgleich mit To Do › Abgleich beenden** – die Liste bleibt hier.
 
 ### Von Synology DS Note
 
 1. In DS Note: **Einstellungen › Importieren/Exportieren › Exportieren** – du bekommst eine .nsx-Datei.
-2. **Umziehen › Synology DS Note › Export-Datei (.nsx) wählen.** Der Browser liest die Datei selbst; nur Bilder und Anhänge werden einzeln hochgeladen.
+2. **Einstellungen › Umziehen › Synology DS Note › Export-Datei (.nsx) wählen.** Der Browser liest die Datei selbst; nur Bilder und Anhänge werden einzeln hochgeladen.
 3. **Geschützte Notizen:** Mit dem Passwort werden sie ein **Tresor-Notizbuch** (der Wiederherstellungsschlüssel erscheint vorher). Lässt sich eine Notiz nicht öffnen, wird sie übersprungen – dann in DS Note den Schutz aufheben und neu exportieren.
 4. **„… Notizen übernehmen“.** Ein zweiter Umzug derselben Datei legt nichts doppelt an.
 
@@ -122,7 +135,7 @@ Direkt von der NAS holen geht noch nicht.
 | Sprache der Erinnerungen | Deutsch oder Englisch |
 | Listen und Notizbücher teilen mit | Allen, Familie und Team, Niemandem |
 | Tresor-Notizbücher erlauben | an/aus |
-| Quellen | Familie, Mail, Drive, Schule, Alltag einzeln |
+| Aus anderen Plugins | Familie, Mail, Drive, Schule, Alltag einzeln |
 | Umzug | Microsoft To Do, Abgleich in beide Richtungen, DS Note |
 | Größte Datei, Platz je Person | für Bilder und Anhänge |
 
@@ -136,7 +149,7 @@ Direkt von der NAS holen geht noch nicht.
 
 ## Fragen
 
-**Warum steht eine Aufgabe aus Mail nicht da?** Unter „Quellen“ prüfen, ob Mail verbunden und eingeschaltet ist und ob das Konto ausgeblendet ist. „Jetzt abgleichen“ holt den Stand.
+**Warum steht eine Aufgabe aus Mail nicht da?** Unter „Einstellungen › Aufgaben aus anderen Plugins“ prüfen, ob Mail verbunden und eingeschaltet ist und ob das Konto ausgeblendet ist. „Jetzt abgleichen“ holt den Stand.
 
 **Wer sieht meine Notizen?** Nur du – außer in geteilten Notizbüchern. Tresor-Notizbücher kann auch der Server nicht lesen.
 

@@ -12,7 +12,7 @@ const events = require('./events');
 const fts = require('./fts');
 const clientIds = require('./clientids');
 const push = require('./push');
-const notify = require('./notify');
+const pushprefs = require('./pushprefs');
 const R = require('../ui/repeat');
 const Q = require('../ui/quickparse');
 const { t } = require('./text');
@@ -265,7 +265,7 @@ async function create(gc, ctx, b0, opts = {}) {
 
 async function notifyAssigned(gc, ctx, userId, title, id) {
   const l = await store.one(gc, 'SELECT l.id, l.area FROM tasks t JOIN lists l ON l.id = t.list_id WHERE t.id = ?', [id]);
-  await notify.send(gc, [userId], 'shared', { topic: 'shared', title: t(ctx.notifyLang, 'n.assigned_title', { name: ctx.userName || '' }), body: title,
+  await pushprefs.send(gc, [userId], 'shared', { topic: 'shared', title: t(ctx.notifyLang, 'n.assigned_title', { name: ctx.userName || '' }), body: title,
     collapseKey: 'task:' + id, data: { notizen: push.assigned(id, l ? l.id : null, l ? l.area : null) } });
 }
 

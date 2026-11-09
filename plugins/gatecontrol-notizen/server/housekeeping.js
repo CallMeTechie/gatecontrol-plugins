@@ -17,7 +17,7 @@ const clientIds = require('./clientids');
 const prefs = require('./prefs');
 const { t } = require('./text');
 const push = require('./push');
-const notify = require('./notify');
+const pushprefs = require('./pushprefs');
 const lists = require('./lists');
 
 const TRASH_MS = 30 * 86400000;
@@ -36,7 +36,7 @@ async function reminders(gc, ctx) {
     if (!m) { const o = await store.one(gc, "SELECT user_id FROM list_members WHERE list_id = ? AND role = 'owner'", [r.list_id]); if (!o) continue; who = o.user_id; }
     const lang = cfg.notify_lang;
     const when = r.due_date ? (r.due_time ? `${r.due_date === ctx.today ? t(lang, 'w.today') : r.due_date} ${r.due_time}` : (r.due_date === ctx.today ? t(lang, 'w.today') : r.due_date)) : null;
-    if (await notify.send(gc, [who], 'reminders', {
+    if (await pushprefs.send(gc, [who], 'reminders', {
       topic: 'reminders', title: r.title.slice(0, 120), body: [when ? t(lang, 'n.due', { when }) : null, r.list_name].filter(Boolean).join(' · ').slice(0, 1000),
       priority: r.important ? 'high' : 'normal', collapseKey: 'task:' + r.id, data: { notizen: push.reminder(r, r.list_area) },
     })) sent++;
@@ -66,7 +66,7 @@ async function listDays(gc, ctx) {
     for (const u of members) if ((await prefs.get(gc, u)).myday.listdays !== false) users.push(u);
     if (!users.length) continue;
     const lang = cfg.notify_lang;
-    if (await notify.send(gc, users, 'listday', {
+    if (await pushprefs.send(gc, users, 'listday', {
       topic: 'listday', title: l.icon === 'cart' ? t(lang, 'v.listday_cart') : t(lang, 'n.listday_title', { name: l.name }).slice(0, 120),
       body: t(lang, open === 1 ? 'n.listday_body_one' : 'n.listday_body', { name: l.name, n: open }).slice(0, 1000),
       collapseKey: 'listday:' + l.id, data: { notizen: push.listDay(l, ctx.today) },

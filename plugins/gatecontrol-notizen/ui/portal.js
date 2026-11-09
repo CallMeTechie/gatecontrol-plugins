@@ -20,6 +20,7 @@
   var SOURCES = ['gatecontrol-familie', 'gatecontrol-mail', 'gatecontrol-drive', 'gatecontrol-schule', 'gatecontrol-alltag'];
   var COLORS = ['none', 'yellow', 'green', 'blue', 'pink', 'grey', 'orange', 'purple'];
   var COLOR_HEX = { none: 'transparent', yellow: '#fde68a', green: '#bbf7d0', blue: '#bfdbfe', pink: '#fbcfe8', grey: '#e5e7eb', orange: '#fed7aa', purple: '#ddd6fe' };
+  var COLOR_HEX_STRONG = { yellow: '#ca8a04', green: '#16a34a', blue: '#2563eb', pink: '#db2777', grey: '#6b7280', orange: '#ea580c', purple: '#7c3aed' };
 
   // ── helpers ──────────────────────────────────────────────
 
@@ -49,7 +50,22 @@
     clip: 'M21 12l-8.5 8.5a5 5 0 0 1-7-7L14 5a3.5 3.5 0 0 1 5 5l-8.5 8.5a2 2 0 0 1-3-3L15 8',
     edit: 'M4 20h4L20 8l-4-4L4 16zM14 6l4 4',
     x: 'M6 6l12 12M18 6L6 18',
+    menu: 'M4 6h16M4 12h16M4 18h16',
+    more: 'M5 12h.01M12 12h.01M19 12h.01',
+    users: 'M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75',
+    chevr: 'M9 6l6 6-6 6',
+    chevd: 'M6 9l6 6 6-6',
+    folder: 'M3 6a1 1 0 0 1 1-1h5l2 2h9a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z',
+    cart: 'M6 6h15l-1.5 9h-12zM6 6L5 3H2M9 20a1 1 0 1 0 0-2 1 1 0 0 0 0 2zM18 20a1 1 0 1 0 0-2 1 1 0 0 0 0 2z',
+    home: 'M3 11l9-8 9 8M5 10v10h14V10M10 20v-6h4v6',
+    tool: 'M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.6 2.6-2.4-.6-.6-2.4z',
+    gift: 'M4 11h16v10H4zM3 7h18v4H3zM12 7v14M12 7S10.5 3 8 3a2 2 0 0 0 0 4M12 7s1.5-4 4-4a2 2 0 0 1 0 4',
+    plane: 'M17.8 19.2L16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z',
+    heart: 'M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 0 0-7.8 7.8L12 21l8.8-8.6a5.5 5.5 0 0 0 0-7.8z',
+    work: 'M3 7h18v13H3zM8 7V4h8v3M3 13h18',
+    leave: 'M9 21H5V3h4M16 17l5-5-5-5M21 12H9',
   };
+  var WIDE = { more: '3' };
   function icon(name, size) {
     var s = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
     s.setAttribute('viewBox', '0 0 24 24');
@@ -57,7 +73,7 @@
     s.setAttribute('height', String(size || 18));
     s.setAttribute('fill', 'none');
     s.setAttribute('stroke', 'currentColor');
-    s.setAttribute('stroke-width', '2');
+    s.setAttribute('stroke-width', WIDE[name] || '2');
     s.setAttribute('stroke-linecap', 'round');
     s.setAttribute('stroke-linejoin', 'round');
     s.setAttribute('aria-hidden', 'true');
@@ -88,7 +104,7 @@
   function clear(n) { while (n && n.firstChild) n.removeChild(n.firstChild); return n; }
   function btn(label, fn, o) {
     o = o || {};
-    return h('button', { type: 'button', class: 'dp-btn' + (o.primary ? ' dp-btn-primary' : '') + (o.danger ? ' dp-btn-danger' : '') + (o.small ? ' dp-btn-sm' : ''), disabled: o.disabled, on: { click: fn } },
+    return h('button', { type: 'button', class: 'dp-btn' + (o.primary ? ' dp-btn-primary' : '') + (o.danger ? ' dp-btn-danger' : '') + (o.solid ? ' is-solid' : '') + (o.small ? ' dp-btn-sm' : ''), disabled: o.disabled, on: { click: fn } },
       [o.icon ? icon(o.icon, 16) : null, h('span', { text: label })]);
   }
   function ib(name, label, fn, on) { return h('button', { type: 'button', class: 'dp-ib' + (on ? ' is-on' : ''), title: label, attrs: { 'aria-label': label }, on: { click: fn } }, icon(name)); }
@@ -163,15 +179,19 @@
   var S = {
     me: null, area: 'private', nav: null, view: { kind: 'smart', id: 'myday' }, data: null, detail: null, detailData: null,
     pane: 'list', people: [], vault: { device: null, keys: {}, state: {}, names: {}, vaults: {} }, editing: false, notesFilter: {},
+    navOpen: false, folded: {}, listFilter: {}, popAnchor: null,
   };
   var app = function () { return document.getElementById('na-app'); };
 
   function load() {
     return api('GET', 'me').then(function (me) {
       S.me = me;
-      S.area = (me.prefs && me.prefs.area) || 'private';
+      var p = me.prefs || {};
+      // 1.2.0: „Beim Öffnen“ — a fixed area or the one open last
+      S.area = p.startArea === 'private' || p.startArea === 'work' ? p.startArea : p.area || 'private';
       document.getElementById('na-msg').hidden = true;
       app().hidden = false;
+      document.getElementById('na-topbar').hidden = false;
       api('GET', 'people').then(function (r) { S.people = r.people || []; }).catch(function () {});
       return Promise.all([reloadNav(), reloadView()]);
     }).catch(function (e) {
@@ -194,14 +214,16 @@
     else if (v.kind === 'source') p = api('GET', 'views/source:' + v.plugin, null, { area: S.area });
     else if (v.kind === 'notes') p = loadNotes();
     else if (v.kind === 'search') p = api('GET', 'search', null, { q: v.q, area: S.area });
-    else if (v.kind === 'sources') p = api('GET', 'sources');
-    else if (v.kind === 'import') p = Promise.resolve({});
+    else if (v.kind === 'settings') p = api('GET', 'sources');
     return p.then(function (d) { S.data = d; renderMain(); if (S.detail) reloadDetail(); }).catch(function (e) {
       if (e && e.code === 'not_found' && v.kind !== 'smart') { go({ kind: 'smart', id: 'myday' }); return; }
       fail(e);
     });
   }
   function go(view) {
+    // 1.1 pages of the menu's foot are part of „Einstellungen“ now
+    if (view.kind === 'sources' || view.kind === 'import') view = { kind: 'settings' };
+    closePop();
     S.view = view;
     S.detail = null;
     S.editing = false;
@@ -218,25 +240,65 @@
     refreshTimer = setTimeout(function () { if (!S.editing) { reloadNav(); reloadView(); } }, 400);
   }
 
-  // ── the menu ─────────────────────────────────────────────
+  // ── the menu (1.2.0: as in Drive — the fixed views, „Meine Listen“ with groups as folders, the other plugins, the
+  // notebooks, ⋯ at every list, group and notebook, the gear of „Einstellungen“ at the bottom left; at phone width
+  // behind the menu button) ─────────────────────────────────
+
+  var PALETTE = ['#c2410c', '#2563eb', '#0b7d70', '#7c3aed', '#be185d', '#0f766e', '#b45309', '#4d7c0f'];
+  function personOf(p) { return p ? (S.people.filter(function (x) { return x.id === p.id; })[0] || p) : null; }
+  function initials(name) {
+    var w = String(name || '').trim().split(/\s+/).filter(Boolean);
+    return w.length ? w[0].charAt(0).toUpperCase() : '?';
+  }
+  /** A person's small round picture: their initial on their colour. */
+  function avatar(p, size) {
+    var q = personOf(p) || {};
+    var color = q.colorHex || PALETTE[Math.abs(Number(q.id) || 0) % PALETTE.length];
+    return h('span', { class: 'na-av' + (size ? ' ' + size : ''), style: 'background:' + color, title: q.name || '', attrs: { 'aria-hidden': 'true' }, text: q.initials || initials(q.name) });
+  }
+  function firstName(p) { var q = personOf(p) || {}; return String(q.name || '').split(/\s+/)[0] || ''; }
+  function names(list) {
+    var n = (list || []).map(firstName).filter(Boolean);
+    return n.length > 1 ? n.slice(0, -1).join(', ') + ' ' + T('p.and') + ' ' + n[n.length - 1] : n.join('');
+  }
+  function listIcon(l) { return l && l.icon && ICONS[l.icon] ? l.icon : 'list'; }
+  /** „jeden Samstag“ / „Sa. und So.“ in „Mein Tag“. */
+  function daysText(days) {
+    if (!days || !days.length) return '';
+    if (days.length === 1) return T('p.days_one', { day: T('wdl.' + days[0]) });
+    return T('p.days_many', { days: days.map(function (d) { return T('wd.' + d); }).join(', ') });
+  }
+  function shortDays(days) { return (days || []).map(function (d) { return T('wd.' + d); }).join(' '); }
 
   function navRow(label, count, current, fn, o) {
     o = o || {};
-    return h('button', { type: 'button', class: 'na-row' + (o.sub ? ' is-sub' : '') + (o.quiet ? ' is-quiet' : ''), attrs: { 'aria-current': current ? 'page' : null }, on: { click: function () { fn(); setPane('list'); } } }, [
+    return h('button', { type: 'button', class: 'na-row' + (o.sub ? ' is-sub' : '') + (o.quiet ? ' is-quiet' : ''), attrs: { 'aria-current': current ? 'page' : null }, on: { click: function () { navGo(); fn(); setPane('list'); } } }, [
       o.icon ? h('span', { class: 'na-ic' }, icon(o.icon, 17)) : null, o.dot ? h('span', { class: 'na-dot', style: 'background:' + o.dot }) : null,
-      h('span', { class: 'na-tx', text: label }), count != null && count !== 0 ? h('span', { class: 'na-count', text: String(count) }) : null,
+      h('span', { class: 'na-tx', text: label }), o.badge || null, count != null && count !== 0 ? h('span', { class: 'na-count', text: String(count) }) : null,
     ]);
+  }
+  /** A row with ⋯ at its end (lists, groups, notebooks). */
+  function moreRow(row, label, items) {
+    var more = h('button', { type: 'button', class: 'dp-ib na-more', title: label, attrs: { 'aria-label': label, 'aria-haspopup': 'menu' }, on: { click: function (ev) { ev.stopPropagation(); popMenu(more, items()); } } }, icon('more', 18));
+    return h('div', { class: 'na-rowwrap' + (row.getAttribute('aria-current') ? ' is-current' : '') }, [row, more]);
   }
   function isView(kind, id) {
     var v = S.view;
     return v.kind === kind && (id == null || v.id === id || v.plugin === id || (kind === 'notes' && v.notebook === id));
+  }
+  function labRow(text, plusLabel, plusFn) {
+    return h('div', { class: 'na-lab' }, [h('span', { text: text }), plusFn ? h('button', { type: 'button', class: 'dp-ib', title: plusLabel, attrs: { 'aria-label': plusLabel }, on: { click: plusFn } }, icon('plus', 16)) : null]);
   }
 
   function renderNav() {
     var nav = document.getElementById('na-nav');
     clear(nav);
     var n = S.nav;
-    nav.appendChild(h('div', { class: 'na-nav-title', text: T('p.title') }));
+    var me = (S.me && S.me.user) || {};
+    nav.appendChild(h('div', { class: 'na-nav-head' }, [
+      h('b', { class: 'na-nav-title', text: T('p.title') }),
+      h('div', { class: 'na-me' }, [avatar(me), h('span', { class: 'na-me-tx' }, [h('b', { text: me.name || '' }), h('span', { text: T('area.' + S.area) })])]),
+    ]));
     var seg = h('div', { class: 'na-seg', role: 'group', attrs: { 'aria-label': T('p.area') } });
     ['private', 'work'].forEach(function (a) {
       seg.appendChild(h('button', { type: 'button', text: T('area.' + a), attrs: { 'aria-pressed': S.area === a ? 'true' : 'false' }, on: { click: function () {
@@ -251,56 +313,183 @@
       } } }));
     });
     nav.appendChild(seg);
-    if (!n) return;
-    var sm = n.smart || {};
-    nav.appendChild(navRow(T('v.myday'), sm.myday, isView('smart', 'myday'), function () { go({ kind: 'smart', id: 'myday' }); }, { icon: 'sun' }));
-    nav.appendChild(navRow(T('v.important'), sm.important, isView('smart', 'important'), function () { go({ kind: 'smart', id: 'important' }); }, { icon: 'star' }));
-    nav.appendChild(navRow(T('v.planned'), sm.planned, isView('smart', 'planned'), function () { go({ kind: 'smart', id: 'planned' }); }, { icon: 'cal' }));
-    nav.appendChild(navRow(T('v.assigned'), sm.assigned, isView('smart', 'assigned'), function () { go({ kind: 'smart', id: 'assigned' }); }, { icon: 'user' }));
-    if ((n.sources || []).length) {
-      nav.appendChild(h('div', { class: 'na-lab' }, h('span', { text: T('p.from_plugins') })));
-      n.sources.forEach(function (s) {
-        nav.appendChild(navRow(s.label, s.open, isView('source', s.plugin), function () { go({ kind: 'source', plugin: s.plugin }); }, { icon: 'open' }));
+    if (n) {
+      var sm = n.smart || {};
+      var lists = n.lists || [];
+      var def = lists.filter(function (l) { return l.isDefault && l.role === 'owner'; })[0];
+      nav.appendChild(navRow(T('v.myday'), sm.myday, isView('smart', 'myday'), function () { go({ kind: 'smart', id: 'myday' }); }, { icon: 'sun' }));
+      nav.appendChild(navRow(T('v.important'), sm.important, isView('smart', 'important'), function () { go({ kind: 'smart', id: 'important' }); }, { icon: 'star' }));
+      nav.appendChild(navRow(T('v.planned'), sm.planned, isView('smart', 'planned'), function () { go({ kind: 'smart', id: 'planned' }); }, { icon: 'cal' }));
+      nav.appendChild(navRow(T('v.assigned'), sm.assigned, isView('smart', 'assigned'), function () { go({ kind: 'smart', id: 'assigned' }); }, { icon: 'user' }));
+      if (def) nav.appendChild(moreRow(navRow(def.name, def.open, isView('list', def.id), function () { go({ kind: 'list', id: def.id }); }, { icon: listIcon(def) }), T('p.more_of', { name: def.name }), function () { return listMenu(def); }));
+      // „Meine Listen“: lists without a group, then the groups as folders
+      nav.appendChild(labRow(T('p.my_lists'), T('p.new_list'), function () { newListOrGroup({}); }));
+      var groups = {};
+      (n.groups || []).forEach(function (g) { groups[g.id] = g; });
+      var byGroup = {};
+      lists.forEach(function (l) { if (l === def) return; var k = l.groupId && groups[l.groupId] ? l.groupId : 0; (byGroup[k] = byGroup[k] || []).push(l); });
+      (byGroup[0] || []).forEach(function (l) { nav.appendChild(listRow(l)); });
+      (n.groups || []).forEach(function (g) {
+        var closed = !!S.folded['g' + g.id];
+        var row = h('button', { type: 'button', class: 'na-row is-folder', attrs: { 'aria-expanded': closed ? 'false' : 'true' }, on: { click: function () { S.folded['g' + g.id] = !closed; renderNav(); } } }, [
+          h('span', { class: 'na-chev' }, icon(closed ? 'chevr' : 'chevd', 15)), h('span', { class: 'na-ic' }, icon('folder', 17)), h('span', { class: 'na-tx', text: g.name }),
+          g.open ? h('span', { class: 'na-count', text: String(g.open) }) : null,
+        ]);
+        nav.appendChild(moreRow(row, T('p.more_of', { name: g.name }), function () { return groupMenu(g); }));
+        if (!closed) (byGroup[g.id] || []).forEach(function (l) { nav.appendChild(listRow(l, true)); });
       });
-    }
-    nav.appendChild(h('div', { class: 'na-lab' }, h('span', { text: T('p.my_lists') })));
-    var groups = {};
-    (n.groups || []).forEach(function (g) { groups[g.id] = g; });
-    var byGroup = {};
-    (n.lists || []).forEach(function (l) { var k = l.groupId && groups[l.groupId] ? l.groupId : 0; (byGroup[k] = byGroup[k] || []).push(l); });
-    (byGroup[0] || []).forEach(function (l) { nav.appendChild(listRow(l)); });
-    (n.groups || []).forEach(function (g) {
-      nav.appendChild(h('div', { class: 'na-row is-quiet', text: g.name }));
-      (byGroup[g.id] || []).forEach(function (l) { nav.appendChild(listRow(l, true)); });
-    });
-    nav.appendChild(navRow(T('p.new_list'), null, false, newList, { icon: 'plus', quiet: true }));
-    var notes = n.notes || { notebooks: [], total: 0 };
-    nav.appendChild(h('div', { class: 'na-lab' }, h('span', { text: T('p.notes') })));
-    nav.appendChild(navRow(T('p.all_notes'), notes.total, S.view.kind === 'notes' && !S.view.notebook && !S.view.tag, function () { go({ kind: 'notes' }); }, { icon: 'note' }));
-    (notes.notebooks || []).forEach(function (b) {
-      var label = b.vault ? (S.vault.names[b.vault.id] || T('p.vault_locked_name')) : b.bound ? b.name + ' (' + b.bound.label + ')' : b.name;
-      nav.appendChild(navRow(label, b.count, isView('notes', b.id), function () { go({ kind: 'notes', notebook: b.id }); }, { sub: true, icon: b.vault ? 'lock' : null }));
-    });
-    nav.appendChild(navRow(T('p.new_notebook'), null, false, newNotebook, { icon: 'plus', quiet: true }));
-    if ((notes.tags || []).length) {
-      nav.appendChild(h('div', { class: 'na-lab' }, h('span', { text: T('p.tags') })));
-      notes.tags.slice(0, 12).forEach(function (t) {
-        nav.appendChild(navRow('#' + t.tag, t.count, S.view.kind === 'notes' && S.view.tag === t.tag, function () { go({ kind: 'notes', tag: t.tag }); }, { sub: true }));
+      if ((n.sources || []).length) {
+        nav.appendChild(labRow(T('p.from_plugins')));
+        n.sources.forEach(function (s) {
+          nav.appendChild(navRow(s.label, s.open, isView('source', s.plugin), function () { go({ kind: 'source', plugin: s.plugin }); }, { icon: 'open' }));
+        });
+      }
+      var notes = n.notes || { notebooks: [], total: 0 };
+      nav.appendChild(labRow(T('p.notebooks'), T('p.new_notebook'), newNotebook));
+      nav.appendChild(navRow(T('p.all_notes'), notes.total, S.view.kind === 'notes' && !S.view.notebook && !S.view.tag, function () { go({ kind: 'notes' }); }, { icon: 'note' }));
+      (notes.notebooks || []).forEach(function (b) {
+        var label = b.vault ? (S.vault.names[b.vault.id] || T('p.vault_locked_name')) : b.bound ? b.name + ' (' + b.bound.label + ')' : b.name;
+        var row = navRow(label, b.count, isView('notes', b.id), function () { go({ kind: 'notes', notebook: b.id }); }, { sub: true, icon: b.vault ? 'lock' : null, dot: b.color ? COLOR_HEX[b.color] : null, badge: sharedBadge(b) });
+        nav.appendChild(b.bound ? row : moreRow(row, T('p.more_of', { name: label }), function () { return notebookMenu(b); }));
       });
+      if ((notes.tags || []).length) {
+        nav.appendChild(labRow(T('p.tags')));
+        notes.tags.slice(0, 12).forEach(function (t) {
+          nav.appendChild(navRow('#' + t.tag, t.count, S.view.kind === 'notes' && S.view.tag === t.tag, function () { go({ kind: 'notes', tag: t.tag }); }, { sub: true }));
+        });
+      }
     }
-    nav.appendChild(h('div', { class: 'na-lab' }, h('span', { text: T('p.more') })));
-    nav.appendChild(navRow(T('p.sources'), null, isView('sources'), function () { go({ kind: 'sources' }); }, { icon: 'gear' }));
-    if (S.me.imports && (S.me.imports.mstodo || S.me.imports.dsnote)) nav.appendChild(navRow(T('p.import'), null, isView('import'), function () { go({ kind: 'import' }); }, { icon: 'move' }));
+    // the gear of „Einstellungen“ first, at the bottom left
+    var on = isView('settings');
+    nav.appendChild(h('div', { class: 'na-foot' }, [
+      h('button', { type: 'button', class: 'dp-ib' + (on ? ' is-on' : ''), title: T('p.settings'), attrs: { 'aria-label': T('p.settings'), 'aria-current': on ? 'page' : null }, on: { click: function () { navGo(); go({ kind: 'settings' }); } } }, icon('gear', 18)),
+      h('span', { class: 'na-tip', text: T('p.settings') }),
+    ]));
+    var tg = document.getElementById('na-navtoggle');
+    if (tg) tg.setAttribute('aria-expanded', String(!!S.navOpen));
+    nav.className = 'na-nav' + (S.navOpen ? ' is-open' : '');
+  }
+  /** Users icon: I shared it; the owner's small picture: someone shared it with me. */
+  function sharedBadge(x) {
+    if (!x.shared) return null;
+    if (x.role === 'owner') return h('span', { class: 'na-shared', title: T('p.shared_by_me'), attrs: { 'aria-label': T('p.shared_by_me') } }, icon('users', 15));
+    return h('span', { class: 'na-shared', title: T('p.shared_by', { name: (x.owner && x.owner.name) || '' }) }, avatar(x.owner, 'xs'));
   }
   function listRow(l, sub) {
-    return navRow(l.name + (l.shared ? ' · ' + T('p.shared') : ''), l.open, isView('list', l.id), function () { go({ kind: 'list', id: l.id }); }, { sub: !!sub, icon: 'list', dot: l.color ? COLOR_HEX[l.color] : null });
+    var row = navRow(l.name, l.open, isView('list', l.id), function () { go({ kind: 'list', id: l.id }); }, { sub: !!sub, icon: listIcon(l), badge: sharedBadge(l) });
+    if (l.color) row.firstChild.style.color = COLOR_HEX_STRONG[l.color] || '';
+    return moreRow(row, T('p.more_of', { name: l.name }), function () { return listMenu(l); });
+  }
+  /** At phone width the menu closes once something was chosen. */
+  function navGo() { if (S.navOpen) { S.navOpen = false; var nv = document.getElementById('na-nav'); if (nv) nv.className = 'na-nav'; var t = document.getElementById('na-navtoggle'); if (t) t.setAttribute('aria-expanded', 'false'); } }
+  function toggleNav() { S.navOpen = !S.navOpen; renderNav(); }
+
+  // ── small menus (⋯) ──────────────────────────────────────
+
+  function inside(node, root) { for (var x = node; x; x = x.parentNode) if (x === root) return true; return false; }
+  function popMenu(anchor, items) {
+    var pop = document.getElementById('na-pop');
+    clear(pop);
+    var box = h('div', { class: 'dp-menu na-menu', role: 'menu' });
+    items.forEach(function (it) {
+      if (!it) return;
+      if (it === '-') { box.appendChild(h('hr')); return; }
+      box.appendChild(h('button', { type: 'button', role: 'menuitem', class: it.danger ? 'is-danger' : null, on: { click: function () { closePop(); it.fn(); } } },
+        [icon(it.icon || 'list', 17), h('span', { class: 'na-tx', text: it.label }), it.end ? h('span', { class: 'end', text: it.end }) : null]));
+    });
+    pop.appendChild(box);
+    pop.hidden = false;
+    S.popAnchor = anchor;
+    if (anchor && anchor.getBoundingClientRect) {
+      var r = anchor.getBoundingClientRect();
+      var w = window.innerWidth || 800;
+      var hh = window.innerHeight || 600;
+      var bw = 260;
+      var bh = box.offsetHeight || 200;
+      var left = Math.max(8, Math.min(r.right - bw, w - bw - 8));
+      if (r.left + bw < w - 8 && r.right - bw < 8) left = r.left;
+      var top = r.bottom + 4;
+      if (top + bh > hh - 8) top = Math.max(8, r.top - bh - 4);
+      pop.style.left = left + 'px';
+      pop.style.top = top + 'px';
+    }
+    var first = box.querySelector('button');
+    if (first && first.focus) first.focus();
+  }
+  function closePop() { var p = document.getElementById('na-pop'); if (p && !p.hidden) { p.hidden = true; clear(p); } S.popAnchor = null; }
+
+  function listMenu(l) {
+    var owner = l.role === 'owner';
+    var nMembers = (l.members || []).length;
+    if (owner) {
+      return [
+        { icon: 'edit', label: T('p.edit_dots'), fn: function () { editList(l); } },
+        { icon: 'users', label: T('p.share_dots'), end: nMembers ? T('p.persons', { n: nMembers }) : null, fn: function () { shareDialog('list', l); } },
+        { icon: 'folder', label: T('p.to_group'), fn: function () { moveToGroup(l); } },
+        { icon: 'cart', label: T('p.listday'), end: shortDays(l.days) || T('p.off'), fn: function () { editList(l, true); } },
+        l.isDefault ? null : '-',
+        l.isDefault ? null : { icon: 'trash', label: T('p.delete_list_dots'), danger: true, fn: function () { deleteList(l); } },
+      ];
+    }
+    return [
+      { icon: 'folder', label: T('p.to_group'), fn: function () { moveToGroup(l); } },
+      { icon: 'sun', label: T('p.show_in_myday'), end: l.mydayOff ? T('p.off') : T('p.on'), fn: function () {
+        api('PATCH', 'lists/' + l.id, { mydayOff: !l.mydayOff }).then(function () { toast(l.mydayOff ? T('p.myday_on_toast') : T('p.myday_off_toast')); reloadNav(); reloadView(); }, fail);
+      } },
+      '-',
+      { icon: 'leave', label: T('p.leave_list'), danger: true, fn: function () { leave('list', l); } },
+    ];
+  }
+  function groupMenu(g) {
+    return [
+      { icon: 'plus', label: T('p.new_list_in_group'), fn: function () { newListOrGroup({ group: g.id }); } },
+      { icon: 'edit', label: T('p.rename'), fn: function () { nameDialog(T('p.rename_group'), g.name, [], function (name) { return api('PATCH', 'groups/' + g.id, { name: name }).then(reloadNav); }); } },
+      '-',
+      { icon: 'trash', label: T('p.dissolve_dots'), danger: true, fn: function () { dissolveGroup(g); } },
+    ];
+  }
+  function notebookMenu(b) {
+    if (b.role !== 'owner') return [{ icon: 'leave', label: T('p.leave_notebook'), danger: true, fn: function () { leave('notebook', b); } }];
+    var nMembers = (b.members || []).length;
+    return [
+      { icon: 'edit', label: T('p.edit_dots'), fn: function () { editNotebook(b); } },
+      { icon: 'users', label: T('p.share_dots'), end: nMembers ? T('p.persons', { n: nMembers }) : null, fn: function () { shareDialog('notebook', b); } },
+      b.isDefault ? null : '-',
+      b.isDefault ? null : { icon: 'trash', label: T('p.delete_notebook_dots'), danger: true, fn: function () { deleteNotebook(b); } },
+    ];
   }
 
   // ── the main column ──────────────────────────────────────
 
-  function header(title, sub, extra) {
-    var back = h('button', { type: 'button', class: 'dp-ib na-back', attrs: { 'aria-label': T('p.menu') }, on: { click: function () { setPane('nav'); } } }, icon('back'));
-    return h('div', { class: 'na-head' }, [back, h('div', { class: 'na-head-tx' }, [h('h2', { text: title }), sub ? h('span', { class: 'na-sub', text: sub }) : null])].concat(extra || []));
+  function header(title, sub, extra, o) {
+    o = o || {};
+    var t = document.getElementById('na-topbar-title');
+    if (t) t.textContent = title;
+    return h('div', { class: 'na-head' }, [h('div', { class: 'na-head-tx' }, [h('h2', null, [o.icon ? icon(o.icon, 22) : null, h('span', { text: title })]), sub ? (typeof sub === 'string' ? h('span', { class: 'na-sub', text: sub }) : sub) : null])].concat(extra || []));
+  }
+
+  function viewTitle() {
+    var v = S.view;
+    var d = S.data || {};
+    if (v.kind === 'smart') return T('v.' + v.id);
+    return d.title || '';
+  }
+
+  /** Under the name of a list: who it is shared with (or by), and its day in „Mein Tag“. */
+  function listSub(l) {
+    var bits = [];
+    var who = [];
+    if (l.shared && l.role === 'owner') {
+      who = l.members || [];
+      bits.push(T('p.shared_with', { names: names(who) }));
+    } else if (l.shared) {
+      who = [l.owner];
+      bits.push(T('p.shared_by', { name: firstName(l.owner) }) + (l.role === 'read' ? ' · ' + T('p.read_only') : ''));
+    }
+    if (l.days && l.days.length) bits.push(daysText(l.days));
+    if (!bits.length) return null;
+    var avs = h('span', { class: 'na-avs' }, who.slice(0, 4).map(function (p) { return avatar(p, 'sm'); }));
+    return h('span', { class: 'na-sub' }, [who.length ? avs : null, h('span', { text: bits.join(' · ') })]);
   }
 
   function renderMain() {
@@ -308,21 +497,80 @@
     clear(main);
     var v = S.view;
     if (v.kind === 'notes') return renderNotes(main);
-    if (v.kind === 'sources') return renderSources(main);
-    if (v.kind === 'import') return renderImport(main);
+    if (v.kind === 'settings') return renderSettings(main);
     if (v.kind === 'search') return renderSearch(main);
     var d = S.data || { sections: [] };
-    var sub = v.kind === 'smart' && v.id === 'myday' ? longDate(S.me.today) : v.kind === 'list' && d.list && d.list.shared ? T('p.shared_with', { names: d.list.members.map(function (m) { return m.name; }).join(', ') }) : null;
-    var extra = [quickBox()];
-    if (v.kind === 'list' && d.list) extra.unshift(h('div', { class: 'dp-actions' }, [ib('gear', T('p.list_settings'), function () { listSettings(d.list); })]));
-    main.appendChild(header(v.kind === 'smart' ? T('v.' + v.id) : d.title || '', sub, extra));
+    var l = v.kind === 'list' ? d.list : null;
+    var sub = v.kind === 'smart' && v.id === 'myday' ? longDate(S.me.today) : l ? listSub(l) : null;
+    var extra = [];
+    if (!l || l.canEdit !== false) extra.push(quickBox(l));
+    if (l && l.role !== 'owner') extra.unshift(btn(T('p.leave'), function () { leave('list', l); }, { small: true, icon: 'leave' }));
+    if (l) {
+      var mb = h('button', { type: 'button', class: 'dp-ib', title: T('p.more_of', { name: l.name }), attrs: { 'aria-label': T('p.more_of', { name: l.name }), 'aria-haspopup': 'menu' }, on: { click: function () { popMenu(mb, listMenu(l)); } } }, icon('more', 18));
+      extra.unshift(mb);
+    }
+    main.appendChild(header(viewTitle(), sub, extra, { icon: l ? listIcon(l) : null }));
+    if (v.kind === 'smart' && v.id === 'myday') (d.listdays || []).forEach(function (c) { main.appendChild(listDayCard(c)); });
+    var sections = d.sections || [];
+    if (l && l.shared) {
+      var open = (sections.filter(function (s) { return s.id === 'open'; })[0] || { items: [] }).items;
+      main.appendChild(assignFilter(l, open));
+    }
     var any = false;
-    (d.sections || []).forEach(function (s) {
-      if (!s.items.length && !(v.kind === 'list' && s.id === 'open')) return;
+    sections.forEach(function (s) {
+      var items = l && s.id === 'open' ? s.items.filter(filterFn(l)) : s.items;
+      if (!items.length && !(v.kind === 'list' && s.id === 'open')) return;
       any = true;
-      main.appendChild(sectionCard(s));
+      main.appendChild(sectionCard(Object.assign({}, s, { items: items })));
     });
-    if (!any) main.appendChild(h('div', { class: 'na-card' }, h('div', { class: 'na-empty', text: T(v.kind === 'source' ? 'p.empty_source' : 'p.empty') })));
+    if (!any && !(d.listdays || []).length) main.appendChild(h('div', { class: 'na-card' }, h('div', { class: 'na-empty', text: T(v.kind === 'source' ? 'p.empty_source' : 'p.empty') })));
+  }
+
+  /** „Heute ist Einkaufstag“: a list whose day is today, at the top of „Mein Tag“. */
+  function listDayCard(c) {
+    var l = c.list;
+    var others = l.role === 'owner' ? (l.members || []) : [l.owner].concat((l.members || []).filter(function (m) { return m.id !== S.me.user.id; }));
+    var line2 = [];
+    if (l.shared) line2.push(T('p.ld_shared', { names: names(others) }));
+    if (c.assignedToMe) line2.push(T('p.ld_mine', { n: c.assignedToMe }));
+    var peek = h('div', { class: 'na-peek' });
+    (c.items || []).forEach(function (x) {
+      var can = x.canComplete !== false;
+      peek.appendChild(h('button', { type: 'button', class: 'na-peek-it', disabled: !can, attrs: { 'aria-label': T('p.complete') + ': ' + x.title }, on: { click: function () { complete(x, true); } } }, [h('i'), h('span', { text: x.title }), x.assignee ? avatar(x.assignee, 'xs') : null]));
+    });
+    if (c.more) peek.appendChild(h('span', { class: 'na-peek-more', text: T('p.ld_more', { n: c.more }) }));
+    return h('div', { class: 'na-today' }, [
+      h('span', { class: 'na-today-ic' }, icon(listIcon(l), 22)),
+      h('div', { class: 'na-today-tx' }, [h('small', { text: c.title }), h('b', { text: T('p.ld_open', { name: l.name, n: c.open }) }), line2.length ? h('span', { text: line2.join(' · ') }) : null]),
+      btn(T('p.open_list'), function () { go({ kind: 'list', id: l.id }); }, { small: true, primary: true }),
+      (c.items || []).length ? peek : null,
+    ]);
+  }
+
+  /** The filter above a shared list: Alle / Mir zugewiesen / each person / Niemandem. */
+  function assignFilter(l, open) {
+    var f = S.listFilter[l.id] || 'all';
+    var people = [l.owner].concat(l.members || []);
+    var count = function (k) { return open.filter(filterFn(l, k)).length; };
+    var chips = h('div', { class: 'dp-chips na-filter', role: 'group', attrs: { 'aria-label': T('p.filter') } });
+    var chip = function (k, label, av) {
+      chips.appendChild(h('button', { type: 'button', attrs: { 'aria-pressed': f === k ? 'true' : 'false' }, on: { click: function () { S.listFilter[l.id] = k; renderMain(); } } }, [av || null, h('span', { text: label + ' ' + count(k) })]));
+    };
+    chip('all', T('p.f_all'));
+    chip('me', T('v.assigned'), avatar(S.me.user, 'xs'));
+    people.forEach(function (p) { if (p && p.id !== S.me.user.id) chip('u' + p.id, firstName(p), avatar(p, 'xs')); });
+    chip('none', T('p.f_none'));
+    return chips;
+  }
+  function filterFn(l, key) {
+    var f = key || (l && S.listFilter[l.id]) || 'all';
+    return function (x) {
+      if (f === 'all') return true;
+      var a = x.assignee ? x.assignee.id : null;
+      if (f === 'me') return a === S.me.user.id;
+      if (f === 'none') return a == null;
+      return 'u' + a === f;
+    };
   }
 
   var folded = {};
@@ -345,11 +593,17 @@
       click: function () { openDetail(x); },
       keydown: function (ev) { if (ev.key === 'Enter') openDetail(x); },
     } });
-    if (x.canComplete !== false && (x.type === 'task' || x.canComplete)) {
+    if (x.type === 'task') {
+      // a member who may only look: the box is greyed out unless the task is theirs
+      var can = x.canComplete !== false;
+      row.appendChild(h('button', { type: 'button', class: 'na-ck' + (x.done ? ' is-on' : '') + (can ? '' : ' is-off'), disabled: !can, attrs: { 'aria-label': x.done ? T('p.undo') : T('p.complete'), 'aria-pressed': x.done ? 'true' : 'false' },
+        on: { click: function (ev) { ev.stopPropagation(); complete(x, !x.done); } } }, icon('check', 14)));
+    } else if (x.canComplete) {
       row.appendChild(h('button', { type: 'button', class: 'na-ck' + (x.done ? ' is-on' : ''), attrs: { 'aria-label': x.done ? T('p.undo') : T('p.complete'), 'aria-pressed': x.done ? 'true' : 'false' },
         on: { click: function (ev) { ev.stopPropagation(); complete(x, !x.done); } } }, icon('check', 14)));
     } else row.appendChild(h('span', { class: 'na-ck-none' }));
     var meta = h('div', { class: 'na-meta' });
+    var l = x.type === 'task' ? listOf(x.listId) : null;
     if (x.type === 'source') {
       meta.appendChild(h('span', { class: 'na-src', 'data-src': x.source.plugin, text: x.source.label + (x.kind === 'deadline' ? ' · ' + T('k.deadline') : x.kind === 'homework' ? ' · ' + T('k.homework') : x.kind === 'exam' ? ' · ' + T('k.exam') : '') }));
       if (x.subtitle) meta.appendChild(h('span', { text: x.subtitle }));
@@ -358,9 +612,8 @@
       if (x.meta && x.meta.stars) meta.appendChild(h('span', { text: T('p.stars', { n: x.meta.stars }) }));
     } else {
       if (x.source) meta.appendChild(h('span', { class: 'na-src', 'data-src': x.source.plugin, text: T('src.' + x.source.plugin) }));
-      var l = listOf(x.listId);
       if (l && !(S.view.kind === 'list')) meta.appendChild(h('span', { text: T('area.' + l.area) + ' › ' + l.name }));
-      if (x.assignee && x.assignee.id !== S.me.user.id) meta.appendChild(h('span', { text: x.assignee.name || '' }));
+      if (x.assignee && x.assignee.id !== S.me.user.id && !(l && l.shared)) meta.appendChild(h('span', { text: x.assignee.name || '' }));
       if (x.repeatText) meta.appendChild(h('span', { text: '↻ ' + x.repeatText }));
       if (x.hasNote) meta.appendChild(h('span', { text: T('p.has_note') }));
       if (x.attachments) meta.appendChild(h('span', { text: '📎 ' + x.attachments }));
@@ -370,11 +623,32 @@
     if (x.important) row.appendChild(h('span', { class: 'na-src', 'data-src': 'important', text: T('p.important') }));
     var w = whenText(x);
     if (w) row.appendChild(h('span', { class: 'na-when' + (x.overdue ? ' is-over' : ''), text: w }));
-    if (x.type === 'task') {
+    // in a shared list: the person's picture at the task; a click picks someone of the list
+    if (x.type === 'task' && l && l.shared && !x.done) {
+      var mine = x.assignee && x.assignee.id === S.me.user.id;
+      var who = x.assignee
+        ? h('button', { type: 'button', class: 'na-who', disabled: x.canEdit === false, attrs: { 'aria-label': T('p.assigned') + ': ' + (x.assignee.name || '') } }, [avatar(x.assignee, 'xs'), h('span', { text: mine ? T('p.me_short') : firstName(x.assignee) })])
+        : x.canEdit !== false ? h('button', { type: 'button', class: 'na-who is-add', attrs: { 'aria-label': T('p.assign') } }, [h('span', { text: '+ ' + T('p.person') })]) : null;
+      if (who) {
+        who.addEventListener('click', function (ev) { ev.stopPropagation(); if (x.canEdit !== false) popMenu(who, assignItems(x, l)); });
+        row.appendChild(who);
+      }
+    }
+    if (x.type === 'task' && x.canEdit !== false) {
       row.appendChild(h('button', { type: 'button', class: 'na-star' + (x.important ? ' is-on' : ''), attrs: { 'aria-label': T('p.important'), 'aria-pressed': x.important ? 'true' : 'false' },
         on: { click: function (ev) { ev.stopPropagation(); api('PATCH', 'tasks/' + x.id, { important: !x.important }).then(soon, fail); } } }, icon('star', 17)));
     }
     return row;
+  }
+  /** The people a task of list `l` can go to: nobody, me, the others of the list (those who may only look marked). */
+  function assignItems(x, l) {
+    var set = function (id) { return function () { api('PATCH', 'tasks/' + x.id, { assigneeId: id }).then(function () { if (id && id !== S.me.user.id) toast(T('p.assigned_toast', { name: firstName({ id: id }) })); soon(); }, fail); }; };
+    var out = [{ icon: 'x', label: T('p.nobody'), fn: set(null) }];
+    [l.owner].concat(l.members || []).forEach(function (p) {
+      if (!p) return;
+      out.push({ icon: 'user', label: p.id === S.me.user.id ? T('p.me_named', { name: firstName(p) }) : p.name || '', end: p.role === 'read' ? T('p.read_short') : null, fn: set(p.id) });
+    });
+    return out;
   }
   function listOf(id) { return ((S.nav && S.nav.lists) || []).filter(function (l) { return l.id === id; })[0] || null; }
 
@@ -391,12 +665,12 @@
 
   // ── quick entry ──────────────────────────────────────────
 
-  function quickBox() {
-    var input = h('input', { id: 'na-quick', type: 'text', autocomplete: 'off', attrs: { placeholder: T('p.quick_ph'), 'aria-label': T('p.quick'), maxlength: '500' } });
+  function quickBox(l) {
+    var input = h('input', { id: 'na-quick', type: 'text', autocomplete: 'off', attrs: { placeholder: T(l && l.shared ? 'p.quick_ph_shared' : 'p.quick_ph'), 'aria-label': T('p.quick'), maxlength: '500' } });
     var chips = h('div', { class: 'na-chips', attrs: { 'aria-live': 'polite' } });
     var parsed = null;
     function ctxParse() {
-      return { today: S.me.today, now: S.me.time, lists: ((S.nav && S.nav.lists) || []).map(function (l) { return { id: l.id, name: l.name }; }), people: S.people, times: S.me.prefs && S.me.prefs.times };
+      return { today: S.me.today, now: S.me.time, lists: ((S.nav && S.nav.lists) || []).filter(function (x) { return x.canEdit !== false; }).map(function (x) { return { id: x.id, name: x.name }; }), people: S.people, times: S.me.prefs && S.me.prefs.times };
     }
     function show() {
       clear(chips);
@@ -445,7 +719,7 @@
   function renderSide() {
     var side = document.getElementById('na-side');
     clear(side);
-    var wide = S.view.kind === 'sources' || S.view.kind === 'import';
+    var wide = S.view.kind === 'settings';
     app().classList.toggle('no-side', wide);
     if (!S.detail || !S.detailData) {
       if (!wide) side.appendChild(h('div', { class: 'na-card' }, h('div', { class: 'na-empty', text: S.view.kind === 'notes' ? T('p.pick_note') : T('p.pick') })));
@@ -456,7 +730,9 @@
     else side.appendChild(noteDetail(S.detailData.note));
   }
   function closeRow() {
-    return h('div', { class: 'na-d-foot', style: 'margin:0' }, [h('button', { type: 'button', class: 'dp-ib na-back', attrs: { 'aria-label': T('p.back') }, on: { click: closeDetail } }, icon('back')), h('span'), ib('x', T('p.close'), closeDetail)]);
+    var x = ib('x', T('p.close'), closeDetail);
+    x.setAttribute('data-keep', '');
+    return h('div', { class: 'na-d-foot', style: 'margin:0' }, [h('button', { type: 'button', class: 'dp-ib na-back', attrs: { 'aria-label': T('p.back'), 'data-keep': '' }, on: { click: closeDetail } }, icon('back')), h('span'), x]);
   }
   function openOriginal(open) {
     if (!open) return;
@@ -511,7 +787,7 @@
     var title = h('textarea', { class: 'na-d-title', rows: '2', attrs: { 'aria-label': T('p.title_field'), maxlength: '300' } });
     title.value = t.title;
     title.addEventListener('change', function () { if (title.value.trim() && title.value.trim() !== t.title) patchTask(t, { title: title.value }); });
-    card.appendChild(h('div', { class: 'na-set-h' }, [h('button', { type: 'button', class: 'na-ck' + (t.done ? ' is-on' : ''), attrs: { 'aria-label': T('p.complete') }, on: { click: function () { complete(t, !t.done); setTimeout(reloadDetail, 600); } } }, icon('check', 14)), title,
+    card.appendChild(h('div', { class: 'na-set-h' }, [h('button', { type: 'button', class: 'na-ck' + (t.done ? ' is-on' : ''), attrs: { 'aria-label': T('p.complete'), 'data-keep': t.canComplete !== false ? '' : null }, on: { click: function () { complete(t, !t.done); setTimeout(reloadDetail, 600); } } }, icon('check', 14)), title,
       h('button', { type: 'button', class: 'na-star' + (t.important ? ' is-on' : ''), attrs: { 'aria-label': T('p.important') }, on: { click: function () { patchTask(t, { important: !t.important }); } } }, icon('star', 20))]));
     if (t.sourceItem) {
       var si = t.sourceItem;
@@ -530,7 +806,7 @@
     card.appendChild(h('div', { class: 'na-add' }, [sub]));
     // details
     card.appendChild(h('div', { class: 'na-lb', text: T('p.details') }));
-    var myday = h('input', { type: 'checkbox', class: 'dp-sw', checked: t.myDay, attrs: { 'aria-label': T('p.in_myday') } });
+    var myday = h('input', { type: 'checkbox', class: 'dp-sw', checked: t.myDay, attrs: { 'aria-label': T('p.in_myday'), 'data-keep': '' } });
     myday.addEventListener('change', function () { patchTask(t, { myDay: myday.checked }); });
     card.appendChild(field(T('p.in_myday'), myday));
     var dd = h('input', { type: 'date', class: 'dp-input', value: t.due ? t.due.date : '', attrs: { 'aria-label': T('p.due') } });
@@ -550,7 +826,7 @@
     var l = listOf(t.listId);
     if (l) members = [l.owner].concat(l.members || []);
     var as = h('select', { class: 'dp-input', attrs: { 'aria-label': T('p.assigned') } }, [h('option', { value: '', text: T('p.nobody') })]);
-    members.forEach(function (m) { if (m) as.appendChild(h('option', { value: String(m.id), text: m.id === S.me.user.id ? T('p.me') : m.name || '' })); });
+    members.forEach(function (m) { if (m) as.appendChild(h('option', { value: String(m.id), text: (m.id === S.me.user.id ? T('p.me') : m.name || '') + (m.role === 'read' ? ' (' + T('p.read_short') + ')' : '') })); });
     as.value = t.assignee ? String(t.assignee.id) : '';
     as.addEventListener('change', function () { patchTask(t, { assigneeId: as.value ? Number(as.value) : null }); });
     card.appendChild(field(T('p.assigned'), as));
@@ -572,6 +848,11 @@
     if (t.sourceItem) card.appendChild(h('p', { class: 'dp-hint', text: T('p.done_here_there', { source: t.sourceItem.source.label }) }));
     card.appendChild(h('div', { class: 'na-d-foot' }, [h('span', { text: T('p.made', { when: new Date(t.updatedAt).toLocaleString(S.me.lang) }) }),
       btn(T('p.delete'), function () { api('DELETE', 'tasks/' + t.id).then(function () { closeDetail(); soon(); toast(T('p.deleted')); }, fail); }, { small: true, danger: true, icon: 'trash' })]));
+    // 1.2.0: a member who may only look changes nothing here (only their „Mein Tag“ and, if it is theirs, done)
+    if (t.canEdit === false) {
+      card.querySelectorAll('input,select,textarea,button').forEach(function (el) { if (!el.hasAttribute('data-keep')) el.disabled = true; });
+      card.insertBefore(h('div', { class: 'dp-note' }, [icon('users', 16), h('span', { text: T('p.read_only_hint') })]), card.childNodes[1] || null);
+    }
     return card;
   }
 
@@ -631,63 +912,258 @@
     return box;
   }
 
-  // ── lists and notebooks ──────────────────────────────────
+  // ── lists, groups and notebooks: new, edit, share, delete (1.2.0) ──
 
-  function nameDialog(title, value, extra, onSave) {
-    var input = h('input', { class: 'dp-input', type: 'text', value: value || '', attrs: { maxlength: '80', 'aria-label': T('p.name') } });
+  function nameDialog(title, value, extra, onSave, o) {
+    o = o || {};
+    var input = h('input', { class: 'dp-input', type: 'text', value: value || '', attrs: { maxlength: '80', 'aria-label': o.label || T('p.name') } });
     var errBox = h('p', { class: 'dp-err', attrs: { role: 'alert' } });
-    var go = function () { if (!input.value.trim()) return; Promise.resolve(onSave(input.value.trim())).then(closeDialog, function (e) { errBox.textContent = errText(e); }); };
+    var go = function () { if (!input.value.trim()) return; Promise.resolve(onSave(input.value.trim())).then(function (keep) { if (keep !== false) closeDialog(); }, function (e) { errBox.textContent = errText(e); }); };
     input.addEventListener('keydown', function (ev) { if (ev.key === 'Enter') go(); });
-    dialog(title, [h('label', { class: 'dp-field' }, [h('span', { class: 'dp-label', text: T('p.name') }), input])].concat(extra || []).concat([errBox, h('div', { class: 'dp-actions' }, [btn(T('p.cancel'), closeDialog), btn(T('p.save'), go, { primary: true })])]));
+    dialog(title, [h('label', { class: 'dp-field' }, [h('span', { class: 'dp-label', text: o.label || T('p.name') }), input])].concat(extra || []).concat([errBox, h('div', { class: 'dp-actions' }, [btn(T('p.cancel'), closeDialog), btn(o.ok || T('p.save'), go, { primary: true })])]));
     input.focus();
   }
-  function newList() {
-    var kind = 'list';
-    var seg = h('div', { class: 'dp-seg' });
-    ['list', 'group'].forEach(function (k) {
-      var b = h('button', { type: 'button', text: T('p.kind_' + k), attrs: { 'aria-pressed': k === kind ? 'true' : 'false' }, on: { click: function () { kind = k; Array.prototype.forEach.call(seg.children, function (c) { c.setAttribute('aria-pressed', c === b ? 'true' : 'false'); }); } } });
+  function groupSelect(cur, area) {
+    var sel = h('select', { class: 'dp-input', attrs: { 'aria-label': T('p.group') } }, [h('option', { value: '', text: T('p.no_group') })]);
+    ((S.nav && S.nav.groups) || []).forEach(function (g) { if (!area || g.area === area) sel.appendChild(h('option', { value: String(g.id), text: g.name })); });
+    sel.value = cur ? String(cur) : '';
+    return sel;
+  }
+  function segOf(values, cur, onPick) {
+    var seg = h('div', { class: 'dp-seg', role: 'group' });
+    values.forEach(function (v) {
+      var b = h('button', { type: 'button', attrs: { 'aria-pressed': v[0] === cur ? 'true' : 'false' }, on: { click: function () {
+        Array.prototype.forEach.call(seg.children, function (c) { c.setAttribute('aria-pressed', c === b ? 'true' : 'false'); });
+        onPick(v[0]);
+      } } }, [v[2] ? icon(v[2], 16) : null, h('span', { text: v[1] })]);
       seg.appendChild(b);
     });
-    nameDialog(T('p.new_list'), '', [seg], function (name) {
-      if (kind === 'group') return api('POST', 'groups', { name: name, area: S.area }).then(reloadNav);
-      return api('POST', 'lists', { name: name, area: S.area }).then(function (r) { reloadNav(); go({ kind: 'list', id: r.list.id }); });
-    });
+    return seg;
   }
-  function sharePicker(current, onSave) {
-    var chosen = {};
-    (current || []).forEach(function (m) { chosen[m.id] = true; });
-    var box = h('div', { class: 'na-tl' });
-    S.people.filter(function (p) { return !p.me; }).forEach(function (p) {
-      var cb = h('input', { type: 'checkbox', checked: !!chosen[p.id] });
-      cb.addEventListener('change', function () { chosen[p.id] = cb.checked; });
-      box.appendChild(h('label', null, [cb, h('span', { text: p.name })]));
-    });
-    if (!box.childNodes.length) box.appendChild(h('p', { class: 'dp-hint', text: S.me.sharing === 'off' ? T('p.sharing_off') : T('p.nobody_to_share') }));
-    return { box: box, value: function () { return Object.keys(chosen).filter(function (k) { return chosen[k]; }).map(Number); } };
-  }
-  function listSettings(l) {
-    var owner = l.role === 'owner';
-    var share = sharePicker(l.members);
-    var groups = h('select', { class: 'dp-input', attrs: { 'aria-label': T('p.group') } }, [h('option', { value: '', text: T('p.no_group') })]);
-    ((S.nav && S.nav.groups) || []).forEach(function (g) { groups.appendChild(h('option', { value: String(g.id), text: g.name })); });
-    groups.value = l.groupId ? String(l.groupId) : '';
+  function colorPicker(cur, onPick) {
     var colors = h('div', { class: 'na-colors', role: 'group', attrs: { 'aria-label': T('p.color') } });
-    var color = l.color || 'none';
     COLORS.forEach(function (c) {
-      colors.appendChild(h('button', { type: 'button', style: 'background:' + COLOR_HEX[c], attrs: { 'aria-label': T('c.' + c), 'aria-pressed': color === c ? 'true' : 'false' }, on: { click: function (ev) { color = c; Array.prototype.forEach.call(colors.children, function (b) { b.setAttribute('aria-pressed', b === ev.currentTarget ? 'true' : 'false'); }); } } }));
+      colors.appendChild(h('button', { type: 'button', style: 'background:' + COLOR_HEX[c], attrs: { 'aria-label': T('c.' + c), 'aria-pressed': (cur || 'none') === c ? 'true' : 'false' }, on: { click: function (ev) {
+        onPick(c);
+        Array.prototype.forEach.call(colors.children, function (b) { b.setAttribute('aria-pressed', b === ev.currentTarget ? 'true' : 'false'); });
+      } } }));
     });
-    var extra = [h('label', { class: 'dp-field' }, [h('span', { class: 'dp-label', text: T('p.group') }), groups])];
-    if (owner) extra.push(h('div', { class: 'dp-field' }, [h('span', { class: 'dp-label', text: T('p.color') }), colors]), h('div', { class: 'dp-field' }, [h('span', { class: 'dp-label', text: T('p.share_with') }), share.box]));
-    extra.push(h('div', { class: 'dp-actions' }, [btn(owner ? T('p.delete_list') : T('p.leave_list'), function () {
-      if (l.isDefault) { toast(T('err.default'), 'error'); return; }
-      api('DELETE', 'lists/' + l.id).then(function () { closeDialog(); go({ kind: 'smart', id: 'myday' }); reloadNav(); }, fail);
-    }, { small: true, danger: true, icon: 'trash' })]));
-    nameDialog(T('p.list_settings'), l.name, extra, function (name) {
-      var body = { groupId: groups.value ? Number(groups.value) : null };
-      if (owner) { if (!l.isDefault || name !== l.name) body.name = name; body.color = color; }
-      return api('PATCH', 'lists/' + l.id, body).then(function () { return owner ? api('PUT', 'lists/' + l.id + '/members', { members: share.value() }) : null; }).then(function () { reloadNav(); reloadView(); });
-    });
+    return colors;
   }
+  function labeled(label, ctl, hint) { return h('div', { class: 'dp-field' }, [h('span', { class: 'dp-label', text: label }), ctl, hint ? h('p', { class: 'dp-hint', text: hint }) : null]); }
+
+  /** „Neue Liste oder Gruppe“: one window, Liste | Gruppe at the top. o: { group (a list in it), kind } */
+  function newListOrGroup(o) {
+    var kind = o.kind || 'list';
+    var body = h('div', { class: 'na-dlg-body' });
+    var errBox = h('p', { class: 'dp-err', attrs: { role: 'alert' } });
+    var name = h('input', { class: 'dp-input', type: 'text', attrs: { maxlength: '80' } });
+    var groups = groupSelect(o.group, S.area);
+    var pick = {};
+    var okBtn = btn('', function () { save(); }, { primary: true });
+    function draw() {
+      clear(body);
+      name.setAttribute('aria-label', T(kind === 'list' ? 'p.list_name' : 'p.group_name'));
+      body.appendChild(labeled(T(kind === 'list' ? 'p.list_name' : 'p.group_name'), name));
+      if (kind === 'list') {
+        if (((S.nav && S.nav.groups) || []).length) body.appendChild(labeled(T('p.in_group'), groups));
+        body.appendChild(h('p', { class: 'dp-hint', text: T('p.new_list_hint') }));
+      } else {
+        var lists = ((S.nav && S.nav.lists) || []).filter(function (l) { return !l.isDefault && l.area === S.area; });
+        if (lists.length) {
+          var box = h('div', { class: 'na-tl' });
+          lists.forEach(function (l) {
+            var cb = h('input', { type: 'checkbox', checked: !!pick[l.id] });
+            cb.addEventListener('change', function () { pick[l.id] = cb.checked; });
+            box.appendChild(h('label', null, [cb, icon(listIcon(l), 16), h('span', { text: l.name })]));
+          });
+          body.appendChild(labeled(T('p.put_lists'), box));
+        }
+      }
+      okBtn.lastChild.textContent = T(kind === 'list' ? 'p.make_list' : 'p.make_group');
+    }
+    function save() {
+      var n = name.value.trim();
+      if (!n) { name.focus(); return; }
+      var p = kind === 'list'
+        ? api('POST', 'lists', { name: n, area: S.area, groupId: groups.value ? Number(groups.value) : null }).then(function (r) { closeDialog(); reloadNav(); go({ kind: 'list', id: r.list.id }); })
+        : api('POST', 'groups', { name: n, area: S.area, lists: Object.keys(pick).filter(function (k) { return pick[k]; }).map(Number) }).then(function () { closeDialog(); reloadNav(); toast(T('p.group_made', { name: n })); });
+      p.catch(function (e) { errBox.textContent = errText(e); });
+    }
+    name.addEventListener('keydown', function (ev) { if (ev.key === 'Enter') save(); });
+    var seg = segOf([['list', T('p.kind_list'), 'list'], ['group', T('p.kind_group'), 'folder']], kind, function (k) { kind = k; draw(); });
+    dialog(T('p.new_list'), [seg, body, errBox, h('div', { class: 'dp-actions' }, [btn(T('p.cancel'), closeDialog), okBtn])]);
+    draw();
+    name.focus();
+  }
+
+  /** „Liste bearbeiten“ (the owner): name, colour, symbol, group, days in „Mein Tag“, the push in the morning. */
+  function editList(l, daysFirst) {
+    var st = { color: l.color || 'none', icon: l.icon || 'list', days: (l.days || []).slice(), remind: l.remind || null };
+    var name = h('input', { class: 'dp-input', type: 'text', value: l.name, attrs: { maxlength: '80', 'aria-label': T('p.name') } });
+    var icons = h('div', { class: 'na-icons', role: 'group', attrs: { 'aria-label': T('p.symbol') } });
+    (S.me.listIcons || ['list', 'cart', 'home', 'tool', 'gift', 'plane', 'heart', 'work']).forEach(function (ic) {
+      icons.appendChild(h('button', { type: 'button', title: T('i.' + ic), attrs: { 'aria-label': T('i.' + ic), 'aria-pressed': st.icon === ic ? 'true' : 'false' }, on: { click: function (ev) {
+        st.icon = ic;
+        Array.prototype.forEach.call(icons.children, function (b) { b.setAttribute('aria-pressed', b === ev.currentTarget ? 'true' : 'false'); });
+      } } }, icon(ic, 18)));
+    });
+    var groups = groupSelect(l.groupId, l.area);
+    var days = h('div', { class: 'dp-chips na-days', role: 'group', attrs: { 'aria-label': T('p.days_label') } });
+    var hint = h('p', { class: 'dp-hint' });
+    var showHint = function () {
+      var ds = st.days.slice().sort();
+      var when = ds.length === 1 ? T('p.days_when_one', { day: T('wdl.' + ds[0]) }) : T('p.days_when_many', { days: ds.map(function (d) { return T('wd.' + d); }).join(', ') });
+      hint.textContent = ds.length ? T(l.shared ? 'p.days_hint_shared' : 'p.days_hint', { when: when }) : T('p.days_none');
+    };
+    [1, 2, 3, 4, 5, 6, 7].forEach(function (d) {
+      var b = h('button', { type: 'button', text: T('wd.' + d).replace('.', ''), attrs: { 'aria-label': T('wdl.' + d), 'aria-pressed': st.days.indexOf(d) >= 0 ? 'true' : 'false' }, on: { click: function () {
+        var i = st.days.indexOf(d);
+        if (i >= 0) st.days.splice(i, 1); else st.days.push(d);
+        b.setAttribute('aria-pressed', i >= 0 ? 'false' : 'true');
+        showHint();
+      } } });
+      days.appendChild(b);
+    });
+    showHint();
+    var sw = h('input', { type: 'checkbox', class: 'dp-sw', checked: !!st.remind, attrs: { 'aria-label': T('p.remind_morning') } });
+    var tm = h('input', { type: 'time', class: 'dp-input na-time', value: st.remind || '09:00', disabled: !st.remind, attrs: { 'aria-label': T('p.time') } });
+    sw.addEventListener('change', function () { tm.disabled = !sw.checked; });
+    var remind = h('div', { class: 'na-set-h' }, [h('div', null, [h('b', { text: T('p.remind_morning') }), h('span', { class: 's', text: T('p.remind_hint') })]), tm, sw]);
+    var errBox = h('p', { class: 'dp-err', attrs: { role: 'alert' } });
+    var save = function () {
+      var n = name.value.trim();
+      if (!n) { name.focus(); return; }
+      var body = { name: n, color: st.color, icon: st.icon === 'list' && !l.icon ? null : st.icon, days: st.days.slice().sort(), remind: sw.checked ? (tm.value || '09:00') : null, groupId: groups.value ? Number(groups.value) : null };
+      api('PATCH', 'lists/' + l.id, body).then(function () { closeDialog(); reloadNav(); reloadView(); }, function (e) { errBox.textContent = errText(e); });
+    };
+    var kids = [
+      labeled(T('p.name'), name),
+      labeled(T('p.color'), colorPicker(st.color, function (c) { st.color = c; })),
+      labeled(T('p.symbol'), icons),
+      labeled(T('p.group'), groups, T('p.group_own')),
+      labeled(T('p.days_label'), days), hint, remind, errBox,
+      h('div', { class: 'dp-actions is-split' }, [l.isDefault ? h('span') : btn(T('p.delete_list'), function () { closeDialog(); deleteList(l); }, { small: true, danger: true, icon: 'trash' }),
+        h('div', { class: 'dp-actions' }, [btn(T('p.cancel'), closeDialog), btn(T('p.save'), save, { primary: true })])]),
+    ];
+    dialog(T('p.list_settings'), kids);
+    if (daysFirst && days.firstChild) days.firstChild.focus(); else name.focus();
+  }
+
+  /** The question before deleting a list: what happens to its tasks (and who no longer sees it); then „Rückgängig“. */
+  function deleteList(l) {
+    api('GET', 'lists/' + l.id + '/usage').then(function (u) {
+      var mode = 'move';
+      var text = T('p.del_list_text', { open: u.open, done: u.done }) + (u.members.length ? ' ' + T(u.members.length === 1 ? 'p.del_members_one' : 'p.del_members', { names: names(u.members) }) : '');
+      var kids = [h('p', { class: 'dp-dialog-sub', style: 'margin:0', text: text })];
+      if (u.open) {
+        kids.push(h('b', { text: T('p.del_what') }));
+        kids.push(radios([['move', T('p.del_move', { name: (u.target && u.target.name) || T('s.default_list') }), T('p.del_move_hint', { n: u.open })], ['delete', T('p.del_all'), null]], mode, function (m) { mode = m; }));
+      }
+      var errBox = h('p', { class: 'dp-err', attrs: { role: 'alert' } });
+      kids.push(errBox, h('div', { class: 'dp-actions' }, [btn(T('p.cancel'), closeDialog), btn(T('p.delete_list'), function () {
+        api('DELETE', 'lists/' + l.id, null, { tasks: u.open ? mode : 'delete' }).then(function () {
+          closeDialog();
+          if (S.view.kind === 'list' && S.view.id === l.id) go({ kind: 'smart', id: 'myday' });
+          reloadNav();
+          snack(T('p.deleted_named', { name: l.name }), function () {
+            api('POST', 'lists/' + l.id + '/restore').then(function () { reloadNav(); go({ kind: 'list', id: l.id }); toast(T('p.restored')); }, fail);
+          });
+        }, function (e) { errBox.textContent = errText(e); });
+      }, { danger: true, solid: true })]));
+      dialog(T('p.del_list_title', { name: l.name }), kids);
+    }, fail);
+  }
+  function radios(opts, cur, onPick) {
+    var box = h('div', { class: 'na-radios', role: 'radiogroup' });
+    var nm = 'r' + Math.random().toString(36).slice(2);
+    opts.forEach(function (o) {
+      var r = h('input', { type: 'radio', name: nm, value: o[0], checked: o[0] === cur });
+      r.addEventListener('change', function () { if (r.checked) onPick(o[0]); });
+      box.appendChild(h('label', { class: 'dp-check na-radio' }, [r, h('span', null, [h('b', { text: o[1] }), o[2] ? h('small', { text: o[2] }) : null])]));
+    });
+    return box;
+  }
+
+  function moveToGroup(l) {
+    var groups = groupSelect(l.groupId, l.area);
+    dialog(T('p.to_group'), [labeled(T('p.group'), groups, T('p.group_own')), h('div', { class: 'dp-actions' }, [btn(T('p.cancel'), closeDialog), btn(T('p.save'), function () {
+      api('PATCH', 'lists/' + l.id, { groupId: groups.value ? Number(groups.value) : null }).then(function () { closeDialog(); reloadNav(); }, fail);
+    }, { primary: true })])]);
+  }
+  function dissolveGroup(g) {
+    var inGroup = ((S.nav && S.nav.lists) || []).filter(function (l) { return l.groupId === g.id; }).map(function (l) { return l.name; });
+    dialog(T('p.dissolve_title', { name: g.name }), [h('p', { class: 'dp-dialog-sub', style: 'margin:0', text: inGroup.length ? T('p.dissolve_text', { lists: inGroup.join(', ') }) : T('p.dissolve_empty') }),
+      h('div', { class: 'dp-actions' }, [btn(T('p.cancel'), closeDialog), btn(T('p.dissolve'), function () {
+        api('DELETE', 'groups/' + g.id).then(function () { closeDialog(); reloadNav(); }, fail);
+      }, { danger: true, solid: true })])]);
+  }
+  function leave(kind, x) {
+    var title = kind === 'list' ? T('p.leave_list_title', { name: x.name }) : T('p.leave_nb_title', { name: x.name || T('p.vault') });
+    dialog(title, [h('p', { class: 'dp-dialog-sub', style: 'margin:0', text: T('p.leave_text', { name: (x.owner && x.owner.name) || '' }) }),
+      h('div', { class: 'dp-actions' }, [btn(T('p.cancel'), closeDialog), btn(T('p.leave'), function () {
+        api('DELETE', (kind === 'list' ? 'lists/' : 'notebooks/') + x.id).then(function () {
+          closeDialog();
+          go(kind === 'list' ? { kind: 'smart', id: 'myday' } : { kind: 'notes' });
+          reloadNav();
+        }, fail);
+      }, { danger: true, solid: true })])]);
+  }
+
+  /** „… teilen“: people with a GateControl account, Ansehen or Bearbeiten each, removed at any time (saved at once). */
+  function shareDialog(kind, x) {
+    var path = (kind === 'list' ? 'lists/' : 'notebooks/') + x.id + '/members';
+    var members = (x.members || []).map(function (m) { return { id: m.id, name: m.name, role: m.role || 'write', since: m.since || null }; });
+    var q = h('input', { class: 'dp-input', type: 'search', attrs: { placeholder: T('p.share_search'), 'aria-label': T('p.share_search'), autocomplete: 'off' } });
+    var found = h('div', { class: 'na-pick' });
+    var who = h('div', { class: 'na-pick' });
+    var errBox = h('p', { class: 'dp-err', attrs: { role: 'alert' } });
+    function put() {
+      return api('PUT', path, { members: members.map(function (m) { return { id: m.id, role: m.role }; }) }).then(function (r) {
+        var y = r.list || r.notebook;
+        members = (y.members || []).map(function (m) { return { id: m.id, name: m.name, role: m.role, since: m.since }; });
+        x.members = y.members;
+        x.shared = y.shared;
+        errBox.textContent = '';
+        draw();
+        reloadNav();
+      }, function (e) { errBox.textContent = e.code === 'forbidden' && e.extra && e.extra.userId ? T('p.share_not_allowed') : errText(e); });
+    }
+    function draw() {
+      clear(found);
+      var s = q.value.trim().toLowerCase();
+      var have = {};
+      members.forEach(function (m) { have[m.id] = true; });
+      var cand = S.people.filter(function (p) { return !p.me && !have[p.id] && (!s || String(p.name || '').toLowerCase().indexOf(s) >= 0); });
+      if (s || cand.length <= 6) {
+        cand.slice(0, 6).forEach(function (p) {
+          found.appendChild(h('div', { class: 'p' }, [avatar(p), h('span', { class: 'n' }, [h('b', { text: p.name || '' })]), btn(T('p.add'), function () { members.push({ id: p.id, name: p.name, role: 'write' }); q.value = ''; put(); }, { small: true })]));
+        });
+      }
+      found.hidden = !found.childNodes.length;
+      clear(who);
+      var me = S.me.user;
+      who.appendChild(h('div', { class: 'p' }, [avatar(me), h('span', { class: 'n' }, [h('b', { text: me.name + ' ' + T('p.you') }), h('small', { text: T('p.owner_hint') })]), h('span', { class: 'na-role is-static', text: T('p.owner') })]));
+      members.forEach(function (m) {
+        var role = h('select', { class: 'dp-input na-role', attrs: { 'aria-label': T('p.role_of', { name: m.name || '' }) } }, [h('option', { value: 'write', text: T('p.role_write') }), h('option', { value: 'read', text: T('p.role_read') })]);
+        role.value = m.role;
+        role.addEventListener('change', function () { m.role = role.value; put(); });
+        who.appendChild(h('div', { class: 'p' }, [avatar(m), h('span', { class: 'n' }, [h('b', { text: m.name || '' }), m.since ? h('small', { text: T('p.since', { when: dayText(isoDay(m.since)) }) }) : null]), role,
+          ib('x', T('p.remove_person', { name: m.name || '' }), function () { members = members.filter(function (y) { return y.id !== m.id; }); put(); })]));
+      });
+    }
+    q.addEventListener('input', draw);
+    var title = T(kind === 'list' ? 'p.share_list_title' : 'p.share_nb_title', { name: x.name || T('p.vault') });
+    var kids = [h('p', { class: 'dp-dialog-sub', text: S.me.sharing === 'off' ? T('p.sharing_off') : T('p.share_sub') })];
+    if (S.me.sharing !== 'off') kids.push(q, found);
+    kids.push(h('b', { class: 'dp-label', text: T('p.who_access') }), who, h('div', { class: 'dp-note' }, [icon('users', 16), h('span', { text: T('p.roles_hint') })]));
+    if (kind === 'notebook' && x.vault) kids.push(h('p', { class: 'dp-hint', text: T('p.vault_share_hint') }));
+    kids.push(errBox, h('div', { class: 'dp-actions' }, [btn(T('p.done'), function () { closeDialog(); reloadView(); }, { primary: true })]));
+    dialog(title, kids);
+    draw();
+    if (S.me.sharing !== 'off') q.focus();
+  }
+
   function newNotebook() {
     var vault = false;
     var seg = h('div', { class: 'dp-seg' });
@@ -704,6 +1180,77 @@
       if (vault) { closeDialog(); setTimeout(function () { makeVault(name); }, 0); return null; }
       return api('POST', 'notebooks', { name: name, area: S.area }).then(function (r) { reloadNav(); go({ kind: 'notes', notebook: r.notebook.id }); });
     });
+  }
+
+  /** „Notizbuch bearbeiten“: name, colour, who has it (sharing in its own window). */
+  function editNotebook(nb) {
+    var st = { color: nb.color || 'none' };
+    var cur = nb.vault ? (S.vault.names[nb.vault.id] || '') : nb.name;
+    var name = h('input', { class: 'dp-input', type: 'text', value: cur, disabled: !!(nb.vault && !S.vault.keys[nb.vault.id]), attrs: { maxlength: '80', 'aria-label': T('p.name') } });
+    var who = h('div', { class: 'na-pick' });
+    (nb.members || []).forEach(function (m) {
+      who.appendChild(h('div', { class: 'p' }, [avatar(m), h('span', { class: 'n' }, [h('b', { text: m.name || '' })]), h('span', { class: 'na-role is-static', text: T(m.role === 'read' ? 'p.role_read' : 'p.role_write') })]));
+    });
+    who.appendChild(h('button', { type: 'button', class: 'p na-pick-add', on: { click: function () { closeDialog(); shareDialog('notebook', nb); } } }, [icon('plus', 16), h('span', { text: T('p.add_person') })]));
+    var errBox = h('p', { class: 'dp-err', attrs: { role: 'alert' } });
+    var save = function () {
+      var n = name.value.trim();
+      var p;
+      if (nb.vault) {
+        var keys = S.vault.keys[nb.vault.id];
+        p = keys && n && n !== cur ? VC.encryptName(keys.get(nb.vault.keyVersion), nb.vault.id, nb.vault.keyVersion, n).then(function (c) { S.vault.names[nb.vault.id] = n; return api('PATCH', 'notebooks/' + nb.id, { nameCipher: c, color: st.color }); })
+          : api('PATCH', 'notebooks/' + nb.id, { color: st.color });
+      } else {
+        if (!n) { name.focus(); return; }
+        p = api('PATCH', 'notebooks/' + nb.id, { name: n, color: st.color });
+      }
+      p.then(function () { closeDialog(); reloadNav(); reloadView(); }, function (e) { errBox.textContent = errText(e); });
+    };
+    dialog(T('p.nb_settings'), [labeled(T('p.name'), name), labeled(T('p.color'), colorPicker(st.color, function (c) { st.color = c; })), labeled(T('p.shared_with_label'), who), errBox,
+      h('div', { class: 'dp-actions is-split' }, [nb.isDefault ? h('span') : btn(T('p.delete_notebook'), function () { closeDialog(); deleteNotebook(nb); }, { small: true, danger: true, icon: 'trash' }),
+        h('div', { class: 'dp-actions' }, [btn(T('p.cancel'), closeDialog), btn(T('p.save'), save, { primary: true })])])]);
+    name.focus();
+  }
+
+  /** The question before deleting a notebook: how many notes, where they can go; a Tresor asks for its name. */
+  function deleteNotebook(nb) {
+    api('GET', 'notebooks/' + nb.id + '/usage').then(function (u) {
+      var mode = u.vault ? 'delete' : 'move';
+      var label = nb.vault ? (S.vault.names[nb.vault.id] || T('p.vault')) : nb.name;
+      var text = T(u.withImages ? 'p.del_nb_text_img' : 'p.del_nb_text', { n: u.notes, img: u.withImages }) + (u.members.length ? ' ' + T(u.members.length === 1 ? 'p.del_nb_members_one' : 'p.del_nb_members', { names: names(u.members) }) : '');
+      var kids = [h('p', { class: 'dp-dialog-sub', style: 'margin:0', text: text })];
+      if (u.notes && !u.vault) kids.push(radios([['move', T('p.del_nb_move', { name: (u.target && u.target.name) || T('s.default_notebook') }), null], ['delete', T('p.del_nb_all'), null]], mode, function (m) { mode = m; }));
+      var typed = null;
+      if (u.vault) {
+        typed = h('input', { class: 'dp-input', type: 'text', attrs: { autocomplete: 'off', 'aria-label': T('p.type_name', { name: label }) } });
+        kids.push(h('div', { class: 'dp-note is-crit' }, [icon('lock', 16), h('span', { text: T('p.del_vault_hint') })]), labeled(T('p.type_name', { name: label }), typed));
+      }
+      var errBox = h('p', { class: 'dp-err', attrs: { role: 'alert' } });
+      kids.push(errBox, h('div', { class: 'dp-actions' }, [btn(T('p.cancel'), closeDialog), btn(T('p.delete'), function () {
+        if (typed && typed.value.trim() !== label) { errBox.textContent = T('p.type_name_wrong'); typed.focus(); return; }
+        api('DELETE', 'notebooks/' + nb.id, null, { notes: mode }).then(function () {
+          closeDialog();
+          go({ kind: 'notes' });
+          reloadNav();
+          snack(T('p.deleted_named', { name: label }), function () {
+            api('POST', 'notebooks/' + nb.id + '/restore').then(function () { reloadNav(); go({ kind: 'notes', notebook: nb.id }); toast(T('p.restored')); }, fail);
+          });
+        }, function (e) { errBox.textContent = errText(e); });
+      }, { danger: true, solid: true })]));
+      dialog(T('p.del_nb_title', { name: label }), kids);
+    }, fail);
+  }
+
+  var snackTimer = null;
+  /** A message with „Rückgängig“ for a few seconds. */
+  function snack(msg, undo) {
+    var s = document.getElementById('na-snack');
+    clear(s);
+    s.appendChild(h('span', { text: msg }));
+    if (undo) s.appendChild(h('button', { type: 'button', class: 'dp-snack-undo', text: T('p.undo_action'), on: { click: function () { s.hidden = true; clearTimeout(snackTimer); undo(); } } }));
+    s.hidden = false;
+    clearTimeout(snackTimer);
+    snackTimer = setTimeout(function () { s.hidden = true; }, 8000);
   }
 
   // ── notes ────────────────────────────────────────────────
@@ -752,10 +1299,17 @@
       h('label', { class: 'na-quick-box', style: 'min-height:38px' }, [icon('search', 16), h('input', { type: 'search', attrs: { placeholder: T('p.search_ph'), 'aria-label': T('p.search') }, on: { keydown: function (ev) {
         if (ev.key === 'Enter' && ev.target.value.trim().length >= 2) go({ kind: 'search', q: ev.target.value.trim() });
       } } })]),
-      btn(T('p.new_note'), function () { newNote(nb); }, { primary: true, icon: 'plus', disabled: !!(nb && nb.vault && !S.vault.keys[nb.vault.id]) }),
+      nb && nb.canEdit === false ? null : btn(T('p.new_note'), function () { newNote(nb); }, { primary: true, icon: 'plus', disabled: !!(nb && nb.vault && !S.vault.keys[nb.vault.id]) }),
     ]);
-    if (nb && !nb.isDefault && !nb.bound) actions.appendChild(ib('gear', T('p.nb_settings'), function () { notebookSettings(nb); }));
-    main.appendChild(header(title, nb && nb.bound ? T('p.bound_hint', { plugin: nb.bound.label }) : nb && nb.shared ? T('p.shared_with', { names: nb.members.map(function (m) { return m.name; }).join(', ') }) : null, [actions]));
+    if (nb && !nb.bound) {
+      var mb = h('button', { type: 'button', class: 'dp-ib', title: T('p.more_of', { name: title }), attrs: { 'aria-label': T('p.more_of', { name: title }), 'aria-haspopup': 'menu' }, on: { click: function () { popMenu(mb, notebookMenu(nb)); } } }, icon('more', 18));
+      actions.appendChild(mb);
+    }
+    var nbSub = null;
+    if (nb && nb.bound) nbSub = T('p.bound_hint', { plugin: nb.bound.label });
+    else if (nb && nb.shared) nbSub = h('span', { class: 'na-sub' }, [h('span', { class: 'na-avs' }, (nb.role === 'owner' ? nb.members : [nb.owner]).slice(0, 4).map(function (p) { return avatar(p, 'sm'); })),
+      h('span', { text: nb.role === 'owner' ? T('p.shared_with', { names: names(nb.members) }) : T('p.shared_by', { name: firstName(nb.owner) }) + (nb.role === 'read' ? ' · ' + T('p.read_only') : '') })]);
+    main.appendChild(header(title, nbSub, [actions]));
     if (d.locked) { main.appendChild(lockedCard(nb, d.locked)); return; }
     if (nb && nb.vault) vaultBanner(main, nb);
     // notebooks as chips (mockup Notizen)
@@ -794,27 +1348,6 @@
     setPane('detail');
     reloadDetail();
   }
-  function notebookSettings(nb) {
-    var owner = nb.role === 'owner';
-    var share = sharePicker(nb.members);
-    var extra = [];
-    if (owner) extra.push(h('div', { class: 'dp-field' }, [h('span', { class: 'dp-label', text: T('p.share_with') }), share.box]));
-    if (nb.vault) extra.push(h('p', { class: 'dp-hint', text: T('p.vault_share_hint') }));
-    extra.push(h('div', { class: 'dp-actions' }, [btn(owner ? T('p.delete_notebook') : T('p.leave_notebook'), function () {
-      api('DELETE', 'notebooks/' + nb.id).then(function () { closeDialog(); go({ kind: 'notes' }); reloadNav(); }, fail);
-    }, { small: true, danger: true, icon: 'trash' })]));
-    var name = nb.vault ? (S.vault.names[nb.vault.id] || '') : nb.name;
-    nameDialog(T('p.nb_settings'), name, extra, function (n) {
-      var p;
-      if (!owner) p = Promise.resolve();
-      else if (nb.vault) {
-        var keys = S.vault.keys[nb.vault.id];
-        p = keys ? VC.encryptName(keys.get(nb.vault.keyVersion), nb.vault.id, nb.vault.keyVersion, n).then(function (c) { S.vault.names[nb.vault.id] = n; return api('PATCH', 'notebooks/' + nb.id, { nameCipher: c }); }) : Promise.resolve();
-      } else p = api('PATCH', 'notebooks/' + nb.id, { name: n });
-      return p.then(function () { return owner ? api('PUT', 'notebooks/' + nb.id + '/members', { members: share.value() }) : null; }).then(function () { reloadNav(); reloadView(); });
-    });
-  }
-
   /** The text of a note, its toolbar, its check boxes (a line → a task), attachments, pin, colour, move. */
   function noteDetail(n) {
     var card = h('div', { class: 'na-card' });
@@ -845,6 +1378,7 @@
       setHtml(body, html);
       // check boxes, „→ Aufgabe“ and task chips
       Array.prototype.forEach.call(body.querySelectorAll('.nm-box'), function (box) {
+        if (nb && nb.canEdit === false) { box.disabled = true; return; }
         box.addEventListener('change', function () {
           var ln = Number(box.getAttribute('data-line'));
           if (vaultNb) {
@@ -889,13 +1423,15 @@
         api('PATCH', 'notes/' + n.id, { color: c }).then(function (r) { S.detailData = r; renderSide(); soon(); }, fail);
       } } }));
     });
-    if (!S.editing) { card.appendChild(tools); card.appendChild(colors); }
+    var ro = !!(nb && nb.canEdit === false);
+    if (ro) card.appendChild(h('div', { class: 'dp-note' }, [icon('users', 16), h('span', { text: T('p.read_only_nb_hint') })]));
+    if (!S.editing && !ro) { card.appendChild(tools); card.appendChild(colors); }
     var move = h('select', { class: 'dp-input', attrs: { 'aria-label': T('p.move_to') } });
     (((S.nav && S.nav.notes) || {}).notebooks || []).forEach(function (b) { if (!!b.vault === !!vaultNb && (!vaultNb || b.id === vaultNb.id)) move.appendChild(h('option', { value: String(b.id), text: b.vault ? T('p.vault') : b.name })); });
     move.value = String(n.notebookId);
     move.addEventListener('change', function () { api('PATCH', 'notes/' + n.id, { notebookId: Number(move.value) }).then(function () { soon(); reloadDetail(); }, fail); });
-    if (!S.editing && !vaultNb) card.appendChild(field(T('p.move_to'), move));
-    if (!S.editing) card.appendChild(h('div', { class: 'na-d-foot' }, [h('span', { text: T('p.changed', { when: new Date(n.updatedAt).toLocaleString(S.me.lang) }) }),
+    if (!S.editing && !vaultNb && !ro) card.appendChild(field(T('p.move_to'), move));
+    if (!S.editing && !ro) card.appendChild(h('div', { class: 'na-d-foot' }, [h('span', { text: T('p.changed', { when: new Date(n.updatedAt).toLocaleString(S.me.lang) }) }),
       btn(T('p.delete'), function () { api('DELETE', 'notes/' + n.id).then(function () { closeDetail(); soon(); toast(T('p.deleted')); }, fail); }, { small: true, danger: true, icon: 'trash' })]));
     return card;
   }
@@ -1243,19 +1779,71 @@
     });
   }
 
-  // ── „Quellen“ (mockup Quellen) ───────────────────────────
+  // ── „Einstellungen“ (1.2.0, instead of „Quellen“ and „Umziehen“): the gear at the bottom left ──
 
-  function renderSources(main) {
-    main.appendChild(header(T('p.sources'), null, []));
+  function savePrefs(body) { return api('PUT', 'prefs', body).then(function (r) { S.me.prefs = r.prefs; reloadNav(); return r; }, fail); }
+  function swRow(label, hint, on, onChange) {
+    var sw = h('input', { type: 'checkbox', class: 'dp-sw', checked: !!on, attrs: { 'aria-label': label } });
+    sw.addEventListener('change', function () { onChange(sw.checked); });
+    return h('div', { class: 'na-set-row' }, [h('span', { class: 't' }, [h('span', { text: label }), hint ? h('small', { text: hint }) : null]), sw]);
+  }
+  function setRow(label, hint, ctl) { return h('div', { class: 'na-set-row' }, [h('span', { class: 't' }, [h('span', { text: label }), hint ? h('small', { text: hint }) : null]), ctl]); }
+
+  function renderSettings(main) {
+    main.appendChild(header(T('p.settings'), T('p.settings_sub'), []));
     var wrap = h('div', { class: 'na-set' });
+    var prefs = S.me.prefs || { sources: {}, groups: {}, times: {}, myday: {}, notify: {} };
+    // Aufgaben aus anderen Plugins (until 1.1: „Quellen“)
+    wrap.appendChild(h('h3', { text: T('p.sources_title') }));
     wrap.appendChild(h('p', { class: 'dp-hint', text: T('p.sources_intro') }));
-    var prefs = S.me.prefs || { sources: {}, groups: {} };
-    var save = function (body) { return api('PUT', 'prefs', body).then(function (r) { S.me.prefs = r.prefs; reloadNav(); }, fail); };
+    sourceCards(wrap, prefs);
+    // Mein Tag
+    wrap.appendChild(h('h3', { text: T('v.myday') }));
+    var md = prefs.myday || {};
+    var start = h('select', { class: 'dp-input na-sel', attrs: { 'aria-label': T('p.start_area') } }, [h('option', { value: 'last', text: T('p.start_last') }), h('option', { value: 'private', text: T('area.private') }), h('option', { value: 'work', text: T('area.work') })]);
+    start.value = prefs.startArea || 'last';
+    start.addEventListener('change', function () { savePrefs({ startArea: start.value }); });
+    wrap.appendChild(h('div', { class: 'na-card' }, h('div', { class: 'na-tl' }, [
+      swRow(T('p.set_listdays'), T('p.set_listdays_hint'), md.listdays !== false, function (v) { savePrefs({ myday: { listdays: v } }); }),
+      swRow(T('p.set_show_done'), null, md.showDone !== false, function (v) { savePrefs({ myday: { showDone: v } }); }),
+      setRow(T('p.start_area'), null, start),
+    ])));
+    // Uhrzeiten der Schnell-Eingabe
+    wrap.appendChild(h('h3', { text: T('p.times_title') }));
+    var times = h('div', { class: 'na-tl' });
+    var DEF = { morning: '09:00', noon: '12:00', afternoon: '15:00', evening: '19:00', night: '21:00' };
+    ['morning', 'noon', 'afternoon', 'evening', 'night'].forEach(function (k) {
+      var tm = h('input', { type: 'time', class: 'dp-input na-time', value: (prefs.times || {})[k] || DEF[k], attrs: { 'aria-label': T('p.time_' + k) } });
+      tm.addEventListener('change', function () { if (tm.value) { var o = {}; o[k] = tm.value; savePrefs({ times: o }).then(function (r) { if (r) S.me.prefs = r.prefs; }); } });
+      times.appendChild(setRow(T('p.time_' + k), null, tm));
+    });
+    wrap.appendChild(h('div', { class: 'na-card' }, [h('p', { class: 'dp-hint', text: T('p.times_hint') }), times]));
+    // Benachrichtigungen
+    wrap.appendChild(h('h3', { text: T('p.notify_title') }));
+    var nt = prefs.notify || {};
+    wrap.appendChild(h('div', { class: 'na-card' }, [h('div', { class: 'na-tl' }, [
+      swRow(T('p.notify_reminders'), null, nt.reminders !== false, function (v) { savePrefs({ notify: { reminders: v } }); }),
+      swRow(T('p.notify_shared'), null, nt.shared !== false, function (v) { savePrefs({ notify: { shared: v } }); }),
+      swRow(T('p.notify_listday'), T('p.notify_listday_hint'), nt.listday !== false, function (v) { savePrefs({ notify: { listday: v } }); }),
+    ]), h('p', { class: 'dp-hint', text: T('p.notify_hint') })]));
+    // Umziehen
+    if (S.me.imports && (S.me.imports.mstodo || S.me.imports.dsnote)) {
+      wrap.appendChild(h('h3', { text: T('p.import') }));
+      wrap.appendChild(h('p', { class: 'dp-hint', text: T('p.import_intro') }));
+      if (S.me.imports.mstodo) wrap.appendChild(mstodoCard());
+      if (S.me.imports.dsnote) wrap.appendChild(dsnoteCard());
+    }
+    wrap.appendChild(h('p', { class: 'dp-hint', text: T('p.settings_admin') }));
+    main.appendChild(wrap);
+  }
+
+  function sourceCards(wrap, prefs) {
+    var save = function (body) { return savePrefs(body); };
     (S.data && S.data.sources || []).forEach(function (s) {
       var sp = prefs.sources[s.plugin] || {};
       var on = h('input', { type: 'checkbox', class: 'dp-sw', checked: sp.on !== false && s.enabled, disabled: !s.enabled || !s.available, attrs: { 'aria-label': s.label } });
       on.addEventListener('change', function () { var o = {}; o[s.plugin] = { on: on.checked }; save({ sources: o }); });
-      var card = h('div', { class: 'na-card' }, [h('div', { class: 'na-set-h' }, [h('span', { class: 'na-badge', text: s.label.slice(0, 2) }), h('div', null, [h('b', { text: s.label }),
+      var card = h('div', { class: 'na-card' }, [h('div', { class: 'na-set-h' }, [h('span', { class: 'na-badge', 'data-src': s.plugin, text: s.label.slice(0, 2) }), h('div', null, [h('b', { text: s.label }),
         h('span', { text: !s.enabled ? T('p.src_off_admin') : !s.available ? T('p.src_missing') : s.hint })]), on])]);
       var opt = function (label, ctl) { card.appendChild(field(label, ctl)); };
       var sel = function (key, values, cur) {
@@ -1286,19 +1874,6 @@
         btn(T('p.sync_now'), function () { api('POST', 'sources/' + s.plugin + '/sync').then(function (r) { toast(r.scheduled ? T('p.sync_soon') : T('p.sync_recent')); }, fail); }, { small: true })]));
       wrap.appendChild(card);
     });
-    wrap.appendChild(h('div', { class: 'na-card' }, h('div', { class: 'na-set-h' }, [h('span', { class: 'na-badge', text: '…' }), h('div', null, [h('b', { text: T('p.src_later') }), h('span', { text: T('p.src_later_hint') })])])));
-    main.appendChild(wrap);
-  }
-
-  // ── „Umziehen“ (mockup Import) ───────────────────────────
-
-  function renderImport(main) {
-    main.appendChild(header(T('p.import'), null, []));
-    var wrap = h('div', { class: 'na-set' });
-    wrap.appendChild(h('p', { class: 'dp-hint', text: T('p.import_intro') }));
-    if (S.me.imports.mstodo) wrap.appendChild(mstodoCard());
-    if (S.me.imports.dsnote) wrap.appendChild(dsnoteCard());
-    main.appendChild(wrap);
   }
 
   function mstodoCard() {
@@ -1331,7 +1906,7 @@
         if (!(l.links || []).some(function (x) { return x.twoWay; })) return;
         card.appendChild(h('div', { class: 'na-lb', text: T('p.mstodo_links') }));
         l.links.filter(function (x) { return x.twoWay; }).forEach(function (x) {
-          card.appendChild(field(x.listName + (x.error ? ' · ' + T('p.sync_error') : ''), btn(T('p.mstodo_unlink'), function () { api('DELETE', 'import/mstodo/links/' + x.id).then(function () { toast(T('p.mstodo_unlinked')); go({ kind: 'import' }); }, fail); }, { small: true })));
+          card.appendChild(field(x.listName + (x.error ? ' · ' + T('p.sync_error') : ''), btn(T('p.mstodo_unlink'), function () { api('DELETE', 'import/mstodo/links/' + x.id).then(function () { toast(T('p.mstodo_unlinked')); go({ kind: 'settings' }); }, fail); }, { small: true })));
         });
       }).catch(function () {});
     }, function (e) { clear(body); body.appendChild(h('p', { class: 'dp-err', text: errText(e) })); });
@@ -1554,8 +2129,20 @@
       var q = document.getElementById('na-quick');
       if (q) { ev.preventDefault(); q.focus(); }
     }
+    if (ev.key === 'Escape' && !document.getElementById('na-pop').hidden) { closePop(); return; }
     if (ev.key === 'Escape' && !document.getElementById('na-dialog').hidden) closeDialog();
   });
+  // a click outside the small menu closes it
+  document.addEventListener('click', function (ev) {
+    var pop = document.getElementById('na-pop');
+    if (pop.hidden || inside(ev.target, pop) || (S.popAnchor && inside(ev.target, S.popAnchor))) return;
+    closePop();
+  });
+  (function () {
+    var tg = document.getElementById('na-navtoggle');
+    tg.appendChild(icon('menu', 20));
+    tg.addEventListener('click', toggleNav);
+  }());
   if (window.GC && typeof window.GC.on === 'function') {
     window.GC.on('event', function (ev) {
       if (!ev || ev.plugin !== 'gatecontrol-notizen') return;

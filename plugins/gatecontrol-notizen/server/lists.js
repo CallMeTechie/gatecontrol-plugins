@@ -8,7 +8,7 @@ const people = require('./people');
 const events = require('./events');
 const clientIds = require('./clientids');
 const push = require('./push');
-const notify = require('./notify');
+const pushprefs = require('./pushprefs');
 const { t } = require('./text');
 const tz = require('./tz');
 const { fail, posInt, line, area: areaOf, color: colorOf, isTime, same, stale } = require('./util');
@@ -352,7 +352,7 @@ async function setMembers(gc, ctx, id, b) {
     }
   });
   if (added.length) {
-    await notify.send(gc, added, 'shared', { topic: 'shared', title: t(ctx.notifyLang, 'n.shared_title', { name: ctx.userName || '' }), body: l.name,
+    await pushprefs.send(gc, added, 'shared', { topic: 'shared', title: t(ctx.notifyLang, 'n.shared_title', { name: ctx.userName || '' }), body: l.name,
       collapseKey: 'list:' + l.id, data: { notizen: push.sharedList(l) } });
   }
   events.changed(gc, [...new Set([...before.keys(), ...added])], 'lists');

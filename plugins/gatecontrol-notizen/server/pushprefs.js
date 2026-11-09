@@ -1,6 +1,6 @@
 'use strict';
 
-// Pushes through gc.notify, without the people who switched that kind off in the plugin's „Einstellungen“
+// Pushes through gc.notify (named pushprefs.js: notify.js is the repository's shared helper of other plugins), without the people who switched that kind off in the plugin's „Einstellungen“
 // (prefs.notify: reminders | shared | listday — on top of GateControl's own switches per topic). A push that fails is
 // logged, never thrown: the change it reports is done already.
 

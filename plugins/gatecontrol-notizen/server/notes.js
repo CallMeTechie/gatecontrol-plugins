@@ -10,7 +10,7 @@ const events = require('./events');
 const fts = require('./fts');
 const clientIds = require('./clientids');
 const push = require('./push');
-const notify = require('./notify');
+const pushprefs = require('./pushprefs');
 const lists = require('./lists');
 const M = require('../ui/notemd');
 const { t } = require('./text');
@@ -308,7 +308,7 @@ async function setMembers(gc, ctx, id, b) {
     }
   });
   if (added.length) {
-    await notify.send(gc, added, 'shared', { topic: 'shared', title: t(ctx.notifyLang, 'n.shared_nb_title', { name: ctx.userName || '' }), body: nb.vault_id ? t(ctx.notifyLang, 'n.vault') : nb.name,
+    await pushprefs.send(gc, added, 'shared', { topic: 'shared', title: t(ctx.notifyLang, 'n.shared_nb_title', { name: ctx.userName || '' }), body: nb.vault_id ? t(ctx.notifyLang, 'n.vault') : nb.name,
       collapseKey: 'notebook:' + nb.id, data: { notizen: push.sharedNotebook(nb) } });
   }
   events.changed(gc, [...new Set([...before.keys(), ...added])], 'notebooks');

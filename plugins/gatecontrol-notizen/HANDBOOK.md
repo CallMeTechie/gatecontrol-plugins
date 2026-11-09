@@ -1,5 +1,15 @@
-<!-- version: 1.1.0 -->
+<!-- version: 1.2.0 -->
 # Notes & Tasks
+
+## New in 1.2.0
+
+- **A new menu as in Drive:** always on the left, on a phone behind the ☰ button. On top My Day, Important, Planned, Assigned to me and "Tasks", below **"My lists"** with **groups as folders that open and close**, "From other plugins" and the **notebooks**. New lists, groups and notebooks come from the **"+"** at the heading.
+- **⋯ at every list, group and notebook:** edit (name, colour, symbol, group), share, move to a group, shopping day, delete.
+- **Shopping day:** a list can be at the top of "My Day" on chosen weekdays – "Shopping day today" with its first items to tick off. This is for everyone the list is shared with. If you like, a notification comes in the morning.
+- **Sharing with rights:** each person gets **Edit** or **View**. Whoever may only view cannot add or change anything – only tick off what is assigned to them.
+- **Assigning you can see:** in shared lists the person's small picture is at the task; on top you filter by "All", "Assigned to me", a person or "Nobody". In the quick entry "@name" works too.
+- **Deleting asks first:** deleting a list or a notebook says how much is affected and who will no longer see it. Open tasks can move to "Tasks", notes to "Notes". Afterwards there is **"Undo"** for a few seconds.
+- **Settings** (gear at the bottom left) instead of "Sources": tasks from other plugins, My Day, times of the quick entry, notifications and "Move over" in one place.
 
 ## New in 1.1.0
 
@@ -28,7 +38,7 @@ The plugin is new: your own tasks and notes plus everything the other plugins ha
 ## Requirements
 
 - GateControl **1.216.0** or newer. For tapping an item of another plugin to open it in the portal: GateControl **1.254.0** (otherwise the portal says where to find it).
-- For Family, Mail, Drive, School and Everyday to show up here: their versions with "To-dos for Notes & Tasks". A missing source is shown under "Sources".
+- For Family, Mail, Drive, School and Everyday to show up here: their versions with "To-dos for Notes & Tasks". A missing source is shown under "Settings" (gear at the bottom left).
 - For moving over from Microsoft To Do: the **Mail 1.12.0** plugin or newer with your Microsoft account.
 - For vault notebooks in the portal: a current browser (Chrome, Edge, Firefox, Safari of the last years).
 
@@ -36,7 +46,7 @@ The plugin is new: your own tasks and notes plus everything the other plugins ha
 
 1. Install and license it. Under **Settings › Plugins › Notes & Tasks › Settings** check the **time zone** (decides "today" and the reminders).
 2. Decide whom people may **share** with: everyone, only family and team, or nobody.
-3. Under **Sources** untick the plugins that should not show up here. The status line on top says which sources are connected.
+3. Under **Settings › Tasks from other plugins** (gear at the bottom left of the tab) untick the plugins that should not show up here. The status line on top says which sources are connected.
 4. Done: the portal has the tab **"Notes & Tasks"**, the start page the tile **"My Day"**.
 
 ## Tasks
@@ -44,8 +54,11 @@ The plugin is new: your own tasks and notes plus everything the other plugins ha
 - **Quick add:** type into the field on top and press Enter – or **Ctrl N**. The plugin understands e.g. "tomorrow 9 am call the dentist, important, #health": tomorrow 9:00, a reminder at 9:00, important, list "Health". Below the field it shows what it found. See [Quick entry](#quick-entry).
 - **Ticking off:** the circle in front. A repeating task gets its next one right away (with the same sub-tasks, open again).
 - **Details:** tap a task – the right side shows sub-tasks, "In My Day", Due, Reminder, Repeat, Assigned, List, Attachments and Note.
-- **Lists and groups:** "New list or group" in the menu. The cog of a list: name, colour, group, **share with** and delete. Whoever gets a shared list sees it at once and gets a notification.
-- **Deleted things** stay 30 days in the trash, then they are gone.
+- **Lists and groups:** the **"+"** at "My lists" opens "New list or group". A group is a folder for several lists; "Ungroup" keeps the lists. Groups are just for you.
+- **⋯ at a list:** edit (name, colour, symbol, group, shopping day, morning reminder), **share …**, move to a group, delete. The default list "Tasks" can be renamed, not deleted.
+- **Sharing:** type a name, add the person and choose **Edit** or **View**. Whoever gets a shared list sees it at once and gets a notification. Members find "Show in My Day" and "Leave list" at the ⋯.
+- **Shopping day:** on the chosen weekdays the list is at the top of "My Day" – for all members. Whoever does not want it switches it off for themselves at the ⋯ of the list.
+- **Deleting** asks first and says what happens to the tasks; afterwards there is "Undo". **Deleted things** stay 30 days in the trash, then they are gone.
 
 ## From other plugins
 
@@ -53,7 +66,7 @@ What Family (tasks, shopping lists), Mail ("To do", flagged mails), Drive (deadl
 
 - **The original stays in its plugin.** Ticking it off here ticks it off there; tapping it shows "From Mail … open".
 - Want your own **sub-tasks, a note or a reminder** for it: "Sub-tasks, note, reminder …" – then it becomes a task here. Done here = done there.
-- **Sources** (at the foot of the menu): each source on/off, "Show the children's tasks" (all / only mine / none), "Shopping lists in My Day", "Flagged mails as tasks", "Remind at" for the waste collection the evening before. Mail accounts and children can be mapped to an area ("Work (Microsoft 365) → Work") or hidden. "Sync now" fetches the state right away.
+- **Settings › Tasks from other plugins** (gear at the bottom left): each source on/off, "Show the children's tasks" (all / only mine / none), "Shopping lists in My Day", "Flagged mails as tasks", "Remind at" for the waste collection the evening before. Mail accounts and children can be mapped to an area ("Work (Microsoft 365) → Work") or hidden. "Sync now" fetches the state right away.
 - Vehicles, NAS and Proxmox come in step 2.
 
 > **Note:** The plugins send their changes themselves; a full reconciliation runs about every 12 hours. A change in a source therefore shows up within seconds, at the latest after the next reconciliation.
@@ -98,17 +111,17 @@ German works too: "morgen 9 Uhr", "jeden Montag", "in 2 Wochen".
 
 ### From Microsoft To Do
 
-1. **Move over › Microsoft To Do:** pick your Microsoft account from Mail.
+1. **Settings › Move over › Microsoft To Do:** pick your Microsoft account from Mail.
 2. The first time **"Consent at Microsoft"**: enter the shown code at microsoft.com/devicelogin. Microsoft asks whether GateControl may read and change your tasks.
 3. The lists appear with the number of open tasks; work lists are set to "Work" already. Choose whether **done tasks** come along (e.g. the last 90 days) and whether a **transition period syncs both ways**.
 4. **"Take over … tasks".** It goes on in the background, also when you close the page.
 
-Nothing is deleted in To Do. End the sync under **Move over › In step with To Do › End sync** – the list stays here.
+Nothing is deleted in To Do. End the sync under **Settings › Move over › In step with To Do › End sync** – the list stays here.
 
 ### From Synology DS Note
 
 1. In DS Note: **Settings › Import/Export › Export** – you get an .nsx file.
-2. **Move over › Synology DS Note › Choose the export file (.nsx).** The browser reads the file itself; only pictures and attachments are uploaded one by one.
+2. **Settings › Move over › Synology DS Note › Choose the export file (.nsx).** The browser reads the file itself; only pictures and attachments are uploaded one by one.
 3. **Protected notes:** with the password they become a **vault notebook** (the recovery key is shown first). A note that does not open is skipped – then remove the protection in DS Note and export again.
 4. **"Take over … notes".** Moving the same file over again creates nothing twice.
 
@@ -122,7 +135,7 @@ Fetching straight from the NAS is not possible yet.
 | Language of reminders | German or English |
 | Share lists and notebooks with | Everyone, Family and team, Nobody |
 | Allow vault notebooks | on/off |
-| Sources | Family, Mail, Drive, School, Everyday one by one |
+| From other plugins | Family, Mail, Drive, School, Everyday one by one |
 | Moving over | Microsoft To Do, syncing both ways, DS Note |
 | Largest file, space per person | for pictures and attachments |
 
@@ -136,7 +149,7 @@ Fetching straight from the NAS is not possible yet.
 
 ## Questions
 
-**Why is a task from Mail missing?** Check under "Sources" whether Mail is connected and on and whether the account is hidden. "Sync now" fetches the state.
+**Why is a task from Mail missing?** Check under "Settings › Tasks from other plugins" whether Mail is connected and on and whether the account is hidden. "Sync now" fetches the state.
 
 **Who sees my notes?** Only you – except in shared notebooks. Not even the server can read vault notebooks.
 

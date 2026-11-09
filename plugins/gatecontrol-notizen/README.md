@@ -23,15 +23,20 @@ server, not here).
 
 | Thing | Who | Notes |
 |---|---|---|
-| List | its owner and its members (shared lists) | every member reads and writes its tasks; only the owner renames, colours, shares or deletes it; a member leaves it |
+| List | its owner and its members (shared lists) | members with role `write` read and change its tasks, `read` members only read (and complete what is assigned to them); only the owner renames, colours, sets days, shares or deletes it; a member leaves it |
 | List group | one person | each member files a shared list into a group of their own |
-| Notebook | its owner and its members | like lists; a Tresor notebook as below |
+| Notebook | its owner and its members | like lists (roles `write` / `read`); a Tresor notebook as below |
 | Notebook kept for a plugin | the members the plugin names (`notes_bind`) | Familie's Pinnwand and Packlisten — nobody deletes or shares it here |
 | Item of another plugin | the people its source lists in `users` | never more than they see in the source |
 
 Every list and notebook has an area (`private` | `work`); every screen asks for one area. Each person gets a default
 list „Aufgaben“ and a default notebook „Notizen“ per area on first use. Sharing (setting *sharing*): `all` (everyone with
 an account), `groups` (people one shares a GateControl group with), `off`.
+
+Roles (1.2.0, feature `shareRoles`): `owner` | `write` | `read`. Everything a `read` member may not do is refused with
+`403 forbidden { reason: 'read_only' }`: creating, changing (except their own `myDay`), deleting tasks, completing tasks not
+assigned to them (or whose parent is not), attachments; in a notebook creating, changing, ticking, deleting notes. The
+quick entry does not offer read lists. An owner-only change by a member: `403 forbidden { reason: 'owner' }`.
 
 Portal viewers recognised only by device trust (`loggedIn: false`) may read, not change (`403 { reason: 'login' }`);
 kiosk devices get nothing.
@@ -40,15 +45,18 @@ kiosk devices get nothing.
 
 The same routes for the portal (`/api/v1/portal/plugins/gatecontrol-notizen/api/…`) and the apps
 (`/api/v1/client/plugins/gatecontrol-notizen/api/…`). Answers `{ ok: true, … }`; refusals `{ ok: false, code, … }` with
-`400 invalid { field }`, `403 forbidden`, `404 not_found`, `409 conflict | not_member | encrypted | stale_key |
+`400 invalid { field }`, `403 forbidden { reason?: read_only | owner | default | bound, userId? }`, `404 not_found`, `409 conflict | not_member | encrypted | stale_key |
 consent_required | unknown_client_id`, `410 gone`, `413 too_large`, `429 busy`, `503 unavailable { reason }`, `507 quota`.
 `clientId`, `base`, `gone` and `unknown_client_id`: see [Offline on a device](#offline-on-a-device-110).
 
 ```
-GET    me                       → { user, lang, today, time, timezone, features, prefs, sharing, vaults, imports, attachMB, readOnly }
+GET    me                       → { user, lang, today, time, timezone, features, prefs, sharing, vaults, imports, attachMB, readOnly, listIcons }
+                                    features 1.2.0: listDays, shareRoles, groupEdit, deleteKeep, listIcons
 GET    nav?area=                → { area, smart: { myday, important, planned, assigned }, sources: [{ plugin, label, hint, open }],
-                                    lists: [List], groups: [{ id, name, area }], notes: { total, notebooks: [Notebook], tags: [{ tag, count }] } }
-GET    views/<name>?area=       → { view, title, sections: [{ id, title, count, items: [Task | Item], collapsed? }] }
+                                    lists: [List], groups: [{ id, name, area, position, open }], notes: { total, notebooks: [Notebook], tags: [{ tag, count }] } }
+GET    views/<name>?area=       → { view, title, sections: [{ id, title, count, items: [Task | Item], collapsed? }], listdays? }
+                                    myday also has listdays (1.2.0): [{ list: List, title, open, assignedToMe, items: [Task] (first 3), more }]
+                                    — the lists whose day is today, for every member (not mydayOff, prefs.myday.listdays); done empty when prefs.myday.showDone is false
                                     name: myday (events, overdue, today, upcoming = next 14 days, done = done today) | important |
                                     planned (overdue, today, tomorrow, week, later) | assigned | list:<id> (open, done) | source:<plugin> (by group)
 POST   parse { text, area? }    → { parsed } — the quick entry as the server reads it (ui/quickparse.js)
@@ -59,11 +67,17 @@ GET    sources                  → { sources: [{ plugin, label, hint, enabled, 
 POST   sources/<plugin>/sync    → { scheduled, reason? } — a reconciliation soon (at most every 10 minutes)
 
 GET    lists?area=              → { lists: [List], groups }
-POST   lists { name, area, color?, groupId?, clientId? }     → { list, clientId?, replayed? }
-PATCH  lists/<id> { name?, color?, area?, groupId?, position?, base? } → { list }
-DELETE lists/<id>               → { ok, left?, gone? } — the owner deletes (tasks into the trash), a member leaves
-PUT    lists/<id>/members { members: [userId…] }           → { list } — the owner; new members get the push topic `shared`
-POST   groups { name, area, clientId? } · PATCH groups/<id> { name?, position? } · DELETE groups/<id>
+POST   lists { name, area, color?, icon?, groupId?, clientId? }     → { list, clientId?, replayed? }
+PATCH  lists/<id> { name?, color?, icon?, days?, remind?, area? (owner), groupId?, position?, mydayOff? (own), base? } → { list }
+GET    lists/<id>/usage         → { open, done, members: [{ id, name, role }], isDefault, canDelete, target: { id, name } | null } (1.2.0)
+DELETE lists/<id>?tasks=move|delete → { ok, deleted, moved, removed, target, restoreUntil } | { ok, left } | { ok, gone }
+                                  — the owner deletes: move = open tasks into the default list „Aufgaben“ (done ones into the
+                                  trash), delete (and no parameter, as in 1.1) = all into the trash; a member leaves; 403 default
+POST   lists/<id>/restore       → { list } — „Rückgängig“: the owner, while in the trash (30 days): members, roles, tasks back (1.2.0)
+PUT    lists/<id>/members { members: [userId | { id, role: 'read'|'write' }…] } → { list } — the owner; plain ids: new ones
+                                  write, the others keep their role; new members get the push topic `shared`
+POST   groups { name, area, lists?: [listId…], clientId? } → { group } · PATCH groups/<id> { name?, position? } → { ok, group }
+DELETE groups/<id>              — „Gruppe auflösen“: the lists stay, without a group
 
 POST   tasks { title | text, listId?, area?, note?, important?, due?: { date, time? } | null, remindAt?: ISO | { date, time } | null,
                repeat?: Rule | null, assigneeId?, myDay?, parentId? (a sub task), createList? (text names a new list),
@@ -82,7 +96,10 @@ POST   items/<id>/carry         → { task } — the item gets a hub task of its
 
 GET    notebooks?area=          → { notebooks: [Notebook], tags, total }
 POST   notebooks { name, area, color?, clientId? } · PATCH notebooks/<id> { name?, color?, area?, position?, nameCipher? (Tresor), base? }
-DELETE notebooks/<id> (→ { ok, left?, gone? }) · PUT notebooks/<id>/members { members }
+GET    notebooks/<id>/usage     → { notes, withImages, withFiles, members, isDefault, canDelete, vault, target } (1.2.0)
+DELETE notebooks/<id>?notes=move|delete → { ok, deleted, moved, removed, target, restoreUntil } | { ok, left } | { ok, gone }
+                                  — move into the default notebook „Notizen“ (not a Tresor: 409 encrypted); no parameter = delete
+POST   notebooks/<id>/restore   → { notebook } (1.2.0) · PUT notebooks/<id>/members { members: [userId | { id, role }…] }
 GET    notes?area=&notebook=&tag=&pinned=1&before=<updatedAt>:<id>&limit=  → { notes: [NoteSummary], next }  (newest first)
 POST   notes { notebookId?, area?, title?, body?, pinned?, color?, due?, expiresAt?, clientId?, notebookClientId? } → { note, clientId?, replayed? }
        (Tresor: { notebookId, titleCipher, cipher, keyVersion, clientId? })
@@ -120,12 +137,15 @@ POST   import/dsnote/<job>/finish { skipped?, protectedSkipped? } → { job }
 ```
 Task  = { uid: 't:<id>', type: 'task', id, listId, parentId, title, hasNote, important, done, doneAt, due: { date, time } | null, overdue,
           remindAt (ISO with offset), repeat: Rule | null, repeatText, assignee: { id, name } | null, myDay, progress: { done, total } | null,
-          attachments, source: { plugin, id } | null, noteId, position, canComplete: true, updatedAt }
+          attachments, source: { plugin, id } | null, noteId, position, canEdit, canComplete, updatedAt }
+          (1.2.0: canEdit false in a list where the person only reads; canComplete then only for what is assigned to them)
 Item  = { uid: 's:<id>', type: 'source', id, kind, title, subtitle, source: { plugin, label, open: { plugin, route } }, due, show (the date and time
           it shows on — the evening before for lead 'evening'), allDay, lead, overdue, area, important, done, doneAt, canComplete,
           assignee: { id, name } | null, progress, group: { id, label } | null, meta, updatedAt }
-List  = { id, name, area, color, icon, isDefault, owner: { id, name }, role, groupId, position, shared, members: [{ id, name }], open, ext }
-Notebook = { id, name (null in a Tresor), area, color, isDefault, role, owner, members, shared, vault: { id, nameCipher, keyVersion, needsRotation } | null,
+List  = { id, name, area, color, icon (list|cart|home|tool|gift|plane|heart|work, me.listIcons), isDefault, owner: { id, name },
+          role (owner|write|read), canEdit, groupId, position, shared, members: [{ id, name, role, since }] (without the owner), open, ext,
+          days: [1…7] (ISO weekdays in „Mein Tag“), remind: 'HH:MM' | null, mydayOff, dayToday }
+Notebook = { id, name (null in a Tresor), area, color, isDefault, role, canEdit, owner, members: [{ id, name, role, since }], shared, vault: { id, nameCipher, keyVersion, needsRotation } | null,
           bound: { plugin, key, kind, label } | null, count, position }
 NoteSummary = { id, notebookId, title (null in a Tresor), snippet, titleCipher, keyVersion, encrypted, pinned, color, due, expiresAt,
           check: { done, total } | null, images, files, tags, ext, createdAt, updatedAt, updatedBy, rev }
@@ -179,8 +199,9 @@ second object for a create sent twice.
 
 ## Pushes
 
-Topics `reminders` (a task's reminder), `shared` (a list or notebook shared with the person, a task assigned to them)
-and `vault` (a new device asks for a Tresor). Since 1.1.0 (feature `pushTargets`) `data.notizen` says what to open:
+Topics `reminders` (a task's reminder), `shared` (a list or notebook shared with the person, a task assigned to them),
+`vault` (a new device asks for a Tresor) and `listday` (1.2.0: the morning of a list day). A person's
+`prefs.notify.reminders | shared | listday = false` keeps that kind from them. Since 1.1.0 (feature `pushTargets`) `data.notizen` says what to open:
 
 | `kind` | Topic | `data.notizen` | Opens |
 |---|---|---|---|
@@ -188,6 +209,7 @@ and `vault` (a new device asks for a Tresor). Since 1.1.0 (feature `pushTargets`
 | `assigned` | shared | `{ kind, taskId, listId, area, task }` | the task |
 | `shared_list` | shared | `{ kind, listId, area, list }` | the list |
 | `shared_notebook` | shared | `{ kind, notebookId, area, vaultId?, notebook }` | the notebook (a Tresor: unlock first) |
+| `listday` | listday | `{ kind, listId, area, day, list }` | the list (1.2.0: once per list and day at `remind`, to the members with the card, only with open tasks) |
 | `vault_request` | vault | `{ kind, vaultId, notebookId, deviceId, area, vault, notebook, event: 'request' }` | the Tresor's approvals |
 
 `area` is `private` | `work` (the area to switch to). The keys of 1.0 (`task`, `list`, `notebook`, `vault`, `event`)
@@ -200,7 +222,10 @@ push is tapped (`404` on `GET tasks/<id>`): the app says so and shows the list.
 { area: 'private'|'work', evening: 'HH:MM' (18:00),
   sources: { <plugin>: { on, kids: 'all'|'mine'|'none' (Familie), shoppingInMyDay (Familie), flagged (Mail), evening (Alltag) } },
   groups: { '<plugin>|<group id>': 'private'|'work'|'hide' },   // Mail accounts, Schule children …
-  times: { morning, noon, afternoon, evening, night } }       // the quick entry's words „früh“, „abends“ …
+  times: { morning, noon, afternoon, evening, night },        // the quick entry's words „früh“, „abends“ …
+  myday: { listdays: true, showDone: true },                 // 1.2.0: the list day card; the done ones of today
+  startArea: 'last'|'private'|'work',                         // 1.2.0: the area on opening
+  notify: { reminders: true, shared: true, listday: true } }  // 1.2.0: false = no push of that kind
 ```
 
 ## The other plugins (sources)
@@ -336,7 +361,7 @@ Synology plugin — left out; the mockup's „Direkt von der NAS“ is a hint ho
 ## Background (every minute)
 
 Reminders as pushes (topic `reminders`, to the assignee or else the creator, once; a reminder missed by more than 6 hours
-is dropped), notes whose `expiresAt` came, `notes_changed` to Familie, the sources (availability, due reconciliations
+is dropped), the morning pushes of list days (topic `listday`), notes whose `expiresAt` came, `notes_changed` to Familie, the sources (availability, due reconciliations
 within the budgets, done items without news after 36 h), the To Do import and the transition period; hourly the trash
 (tasks and notes after 30 days, with their attachments) and old „Mein Tag“ marks.
 
