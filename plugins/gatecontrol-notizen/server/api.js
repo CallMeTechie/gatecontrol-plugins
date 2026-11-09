@@ -20,7 +20,10 @@ const Q = require('../ui/quickparse');
 const { t } = require('./text');
 const { fail, isKnown, statusOf, posInt } = require('./util');
 
-const FEATURES = ['tasks', 'notes', 'sources', 'vault', 'mstodo', 'dsnote', 'search', 'quickparse', 'attachments', 'ocrText'];
+// 1.1.0: `offlineEdits` — creates take a clientId (sent again: the same object), PATCH tasks/lists/notebooks take `base`,
+// a change sent twice is harmless, a delete sent twice is ok (README "Offline on a device"); `pushTargets` — every push
+// carries data.notizen.kind and the ids to open (README "Pushes").
+const FEATURES = ['tasks', 'notes', 'sources', 'vault', 'mstodo', 'dsnote', 'search', 'quickparse', 'attachments', 'ocrText', 'offlineEdits', 'pushTargets'];
 
 const ok = (json) => ({ status: 200, json: { ok: true, ...json } });
 
@@ -149,7 +152,10 @@ async function handle(gc, ctx, req) {
   if (m === 'DELETE' && n === 2 && a === 'notebooks') return ok(await notes.removeNotebook(gc, ctx, x));
   if (m === 'PUT' && n === 3 && a === 'notebooks' && y === 'members') return ok(await notes.setMembers(gc, ctx, x, b));
   if (is('GET', 1, 'notes')) return ok(await notes.list(gc, ctx, q));
-  if (is('POST', 1, 'notes')) { const r = await notes.create(gc, ctx, b); return ok(await notes.get(gc, ctx, r.id, taskOpts)); }
+  if (is('POST', 1, 'notes')) {
+    const r = await notes.create(gc, ctx, b);
+    return ok({ ...(await notes.get(gc, ctx, r.id, taskOpts)), ...(r.clientId ? { clientId: r.clientId } : {}), ...(r.replayed ? { replayed: true } : {}) });
+  }
   if (m === 'GET' && n === 2 && a === 'notes') return ok(await notes.get(gc, ctx, x, taskOpts));
   if (m === 'PATCH' && n === 2 && a === 'notes') { await notes.update(gc, ctx, x, b); return ok(await notes.get(gc, ctx, x, taskOpts)); }
   if (m === 'DELETE' && n === 2 && a === 'notes') return ok(await notes.remove(gc, ctx, x));

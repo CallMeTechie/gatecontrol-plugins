@@ -1,5 +1,11 @@
-<!-- version: 1.0.1 -->
+<!-- version: 1.1.0 -->
 # Notes & Tasks
+
+## New in 1.1.0
+
+- **Keep working without a connection:** in the Android app, tasks, sub-tasks, lists, notebooks and notes can now be created, changed and deleted offline too. They show at once (marked “Not sent yet”) and go out once the server can be reached – even if the app sends a create twice, only one is made.
+- **Changed elsewhere at the same time?** If someone changed the same field on another device meanwhile, the app asks when you open it: “Keep mine” or “Load the other one”. Changes to different fields (e.g. you the title, your partner the date) both stay.
+- **Tapping a notification opens the page:** a reminder or an assignment the task, a shared list the list, a shared notebook the notebook, “A new device asks for access” the approval in the vault.
 
 ## New in 1.0.1
 
@@ -119,6 +125,14 @@ Fetching straight from the NAS is not possible yet.
 | Sources | Family, Mail, Drive, School, Everyday one by one |
 | Moving over | Microsoft To Do, syncing both ways, DS Note |
 | Largest file, space per person | for pictures and attachments |
+
+## Without a connection (apps)
+
+- The app shows the last state, also without a connection. From version 1.1.0 of this plugin you can also **create, change and delete** there – tasks, sub-tasks, lists, notebooks and notes. What has not reached the server yet is marked “Not sent yet”.
+- Once the server can be reached, the app sends everything in the order you did it. A sub-task of a task created offline comes after its task.
+- **Changed elsewhere:** if someone changed the same field meanwhile, the entry is marked “Changed elsewhere”. When you open it you choose “Keep mine” (your version overwrites) or “Load the other one” (your change is dropped).
+- **Vault notes** can be changed offline only while the vault is open on the phone. Only the encrypted text is kept and sent – never readable on the phone or the server.
+- Adding pictures and attachments, sharing and moving over still need a connection.
 
 ## Questions
 

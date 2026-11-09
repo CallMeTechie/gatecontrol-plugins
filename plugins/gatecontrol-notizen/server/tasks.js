@@ -10,10 +10,12 @@ const lists = require('./lists');
 const people = require('./people');
 const events = require('./events');
 const fts = require('./fts');
+const clientIds = require('./clientids');
+const push = require('./push');
 const R = require('../ui/repeat');
 const Q = require('../ui/quickparse');
 const { t } = require('./text');
-const { fail, posInt, line, text, isDate, isTime, parse, bool } = require('./util');
+const { fail, posInt, line, text, isDate, isTime, parse, bool, same, stale } = require('./util');
 
 const TITLE_MAX = 300;
 const NOTE_MAX = 20000;
@@ -141,11 +143,24 @@ async function fromText(gc, ctx, s, area) {
   return p;
 }
 
+/** A create sent again with the same clientId (clientids.js): the task as it is now, or 410 when it is gone. */
+async function replay(gc, ctx, id, clientId) {
+  let r;
+  try { r = await access(gc, ctx, id); } catch (e) { if (e && e.code === 'not_found') throw clientIds.gone(clientId, id); throw e; }
+  return { task: (await views(gc, ctx, [r]))[0], clientId, replayed: true };
+}
+
 /**
  * POST tasks { title | text, listId?, area?, note?, important?, due?: { date, time? } | null, remindAt?, repeat?,
- * assigneeId?, myDay?, parentId?, source?: { plugin, id } } → { task, parsed? }
+ * assigneeId?, myDay?, parentId?, source?: { plugin, id }, clientId?, listClientId?, parentClientId? } → { task, parsed?, clientId? }
  */
-async function create(gc, ctx, b, opts = {}) {
+async function create(gc, ctx, b0, opts = {}) {
+  const cid = clientIds.arg(b0.clientId);
+  if (cid) { const have = await clientIds.find(gc, ctx.userId, cid, 'task'); if (have) return replay(gc, ctx, have, cid); }
+  const b = { ...b0 };
+  // a list or a parent made offline as well, named by its clientId
+  if (b.listId == null && b.listClientId != null) b.listId = await clientIds.resolve(gc, ctx, b.listClientId, 'list', 'listClientId');
+  if (b.parentId == null && b.parentClientId != null) b.parentId = await clientIds.resolve(gc, ctx, b.parentClientId, 'task', 'parentClientId');
   let fields = { ...b };
   let parsed = null;
   if (typeof b.text === 'string' && !b.title) {
@@ -192,7 +207,9 @@ async function create(gc, ctx, b, opts = {}) {
   let src = null;
   if (fields.source && !parent) src = await opts.sourceOf(gc, ctx, fields.source);
   const twoWay = await linkedTwoWay(gc, listId);
-  const id = await store.tx(gc, async () => {
+  const made = await store.tx(gc, async () => {
+    // the same create raced in meanwhile (two sends of an outbox): it made the task already
+    if (cid) { const again = await clientIds.find(gc, ctx.userId, cid, 'task'); if (again) return { dup: again }; }
     const pos = parent
       ? await store.one(gc, 'SELECT COALESCE(MAX(position), 0) + 1 AS p FROM tasks WHERE parent_id = ? AND deleted_at IS NULL', [parent.id])
       : await store.one(gc, 'SELECT COALESCE(MIN(position), 0) - 1 AS p FROM tasks INDEXED BY idx_tasks_list WHERE list_id = ? AND done_at IS NULL AND deleted_at IS NULL AND parent_id IS NULL', [listId]);
@@ -206,19 +223,23 @@ async function create(gc, ctx, b, opts = {}) {
     const tid = Number(r.lastInsertRowid);
     if (bool(fields.myDay) && !parent) await store.run(gc, 'INSERT OR IGNORE INTO my_day (user_id, day, task_id) VALUES (?, ?, ?)', [ctx.userId, ctx.today, tid]);
     await fts.setTask(gc, tid, title, note);
-    return tid;
+    await clientIds.claim(gc, ctx, cid, 'task', tid);
+    return { id: tid };
   });
+  if (made.dup) return replay(gc, ctx, made.dup, cid);
+  const id = made.id;
   if (parent && twoWay) await store.run(gc, 'UPDATE tasks SET ext_dirty = 1 WHERE id = ? AND ext_id IS NOT NULL', [parent.id]);
   const members = await lists.memberIds(gc, listId);
   events.changed(gc, members, 'tasks');
   if (assignee && assignee !== ctx.userId) await notifyAssigned(gc, ctx, assignee, title, id);
   const row = await store.one(gc, 'SELECT * FROM tasks WHERE id = ?', [id]);
-  return { task: (await views(gc, ctx, [row]))[0], ...(parsed ? { parsed } : {}) };
+  return { task: (await views(gc, ctx, [row]))[0], ...(parsed ? { parsed } : {}), ...(cid ? { clientId: cid } : {}) };
 }
 
 async function notifyAssigned(gc, ctx, userId, title, id) {
+  const l = await store.one(gc, 'SELECT l.id, l.area FROM tasks t JOIN lists l ON l.id = t.list_id WHERE t.id = ?', [id]);
   await gc.notify({ topic: 'shared', title: t(ctx.notifyLang, 'n.assigned_title', { name: ctx.userName || '' }), body: title, users: [userId],
-    collapseKey: 'task:' + id, data: { notizen: { task: id } } }).catch(() => {});
+    collapseKey: 'task:' + id, data: { notizen: push.assigned(id, l ? l.id : null, l ? l.area : null) } }).catch(() => {});
 }
 
 /** GET tasks/<id> → { task (with note, subtasks, attachments, list) } */
@@ -235,45 +256,82 @@ async function get(gc, ctx, id, opts = {}) {
   return { task };
 }
 
-/** PATCH tasks/<id> { title?, note?, important?, due?, remindAt?, repeat?, assigneeId?, listId?, position?, myDay? } */
+/** The fields PATCH tasks takes, each in one form to compare (norm) — a sub task has no date, reminder, repeat, person or list of its own. */
+const FIELDS = ['title', 'note', 'important', 'due', 'remindAt', 'repeat', 'assigneeId', 'listId', 'position', 'myDay'];
+const OWN = ['due', 'remindAt', 'repeat', 'assigneeId', 'listId', 'myDay'];
+
+/**
+ * PATCH tasks/<id> { title?, note?, important?, due?, remindAt?, repeat?, assigneeId?, listId?, position?, myDay?, base? }
+ * — `base` (1.1.0): the values the device saw before it changed them; a field someone changed meanwhile to something
+ * else → 409 conflict { fields, task }. Without `base` the change wins (as in 1.0). A field set to what it is already
+ * is not written (a change sent twice does nothing the second time: no new reminder, no push, no event).
+ */
 async function update(gc, ctx, id, b) {
   const r = await access(gc, ctx, id);
+  const sub = !!r.parent_id;
+  const myDayNow = !!(await store.one(gc, 'SELECT 1 AS x FROM my_day WHERE user_id = ? AND day = ? AND task_id = ?', [ctx.userId, ctx.today, r.id]));
+  const dueDate = (b.due && typeof b.due === 'object' && b.due.date) || r.due_date || ctx.today;
+  const norm = (f, v) => {
+    switch (f) {
+      case 'title': { const x = line(v, TITLE_MAX); if (!x) throw fail('invalid', { field: 'title' }); return x; }
+      case 'note': return text(v, NOTE_MAX);
+      case 'important': return !!v;
+      case 'due': return dueArg(v);
+      case 'remindAt': return remindArg(ctx, v);
+      case 'repeat': return v === null ? null : anchor(repeatArg(v), dueDate);
+      case 'assigneeId': if (v === null) return null; if (!posInt(v)) throw fail('invalid', { field: 'assigneeId' }); return posInt(v);
+      case 'listId': if (!posInt(v)) throw fail('not_found'); return posInt(v);
+      case 'position': if (typeof v !== 'number' || !Number.isFinite(v)) throw fail('invalid', { field: 'position' }); return v;
+      case 'myDay': return bool(v);
+      default: return v;
+    }
+  };
+  const now = {
+    title: r.title, note: r.note, important: !!r.important, due: { date: r.due_date || null, time: r.due_time || null }, remindAt: r.remind_at || null,
+    repeat: parse(r.repeat_json, null), assigneeId: r.assignee_id || null, listId: r.list_id, position: r.position, myDay: myDayNow,
+  };
+  const next = {};
+  for (const f of FIELDS) if (b[f] !== undefined && !(sub && OWN.includes(f))) next[f] = norm(f, b[f]);
+  const late = stale(b.base, now, next, norm);
+  if (late.length) throw fail('conflict', { fields: late, task: (await views(gc, ctx, [r]))[0] });
+  // only what changes is written
+  for (const f of Object.keys(next)) if (same(next[f], now[f])) delete next[f];
+  if (!Object.keys(next).length) return get(gc, ctx, r.id);
+
   const set = [];
   const args = [];
   const put = (col, v) => { set.push(col + ' = ?'); args.push(v); };
-  let title = r.title;
-  let note = r.note;
-  if (b.title !== undefined) { title = line(b.title, TITLE_MAX); if (!title) throw fail('invalid', { field: 'title' }); put('title', title); }
-  if (b.note !== undefined) { note = text(b.note, NOTE_MAX); put('note', note); }
-  if (b.important !== undefined) put('important', b.important ? 1 : 0);
+  const title = next.title !== undefined ? next.title : r.title;
+  const note = next.note !== undefined ? next.note : r.note;
+  if (next.title !== undefined) put('title', title);
+  if (next.note !== undefined) put('note', note);
+  if (next.important !== undefined) put('important', next.important ? 1 : 0);
   let listId = r.list_id;
-  if (b.listId !== undefined && !r.parent_id) {
-    const l = await lists.access(gc, ctx.userId, b.listId);
+  if (next.listId !== undefined) {
+    const l = await lists.access(gc, ctx.userId, next.listId);
     if (l.id !== r.list_id) { listId = l.id; put('list_id', l.id); }
   }
-  if (!r.parent_id) {
-    if (b.due !== undefined) { const d = dueArg(b.due); put('due_date', d.date); put('due_time', d.time); put('due_at', dueAt(ctx, d.date, d.time)); }
-    if (b.remindAt !== undefined) { put('remind_at', remindArg(ctx, b.remindAt)); put('reminded_at', null); }
-    if (b.repeat !== undefined) put('repeat_json', b.repeat === null ? null : JSON.stringify(anchor(repeatArg(b.repeat), (b.due && b.due.date) || r.due_date || ctx.today)));
-    if (b.assigneeId !== undefined) put('assignee_id', b.assigneeId === null ? null : await assigneeArg(gc, listId, b.assigneeId));
-    else if (listId !== r.list_id && r.assignee_id && !(await store.one(gc, 'SELECT 1 AS x FROM list_members WHERE list_id = ? AND user_id = ?', [listId, r.assignee_id]))) put('assignee_id', null);
-  }
-  if (b.position !== undefined) { if (typeof b.position !== 'number' || !Number.isFinite(b.position)) throw fail('invalid', { field: 'position' }); put('position', b.position); }
+  if (next.due !== undefined) { put('due_date', next.due.date); put('due_time', next.due.time); put('due_at', dueAt(ctx, next.due.date, next.due.time)); }
+  if (next.remindAt !== undefined) { put('remind_at', next.remindAt); put('reminded_at', null); }
+  if (next.repeat !== undefined) put('repeat_json', next.repeat === null ? null : JSON.stringify(next.repeat));
+  if (next.assigneeId !== undefined) put('assignee_id', next.assigneeId === null ? null : await assigneeArg(gc, listId, next.assigneeId));
+  else if (!sub && listId !== r.list_id && r.assignee_id && !(await store.one(gc, 'SELECT 1 AS x FROM list_members WHERE list_id = ? AND user_id = ?', [listId, r.assignee_id]))) put('assignee_id', null);
+  if (next.position !== undefined) put('position', next.position);
   const twoWay = await linkedTwoWay(gc, listId);
   const before = await lists.memberIds(gc, r.list_id);
   await store.tx(gc, async () => {
     if (set.length) await store.run(gc, `UPDATE tasks SET ${set.join(', ')}, updated_at = ?, ext_dirty = ? WHERE id = ?`, [...args, ctx.now, twoWay && set.length ? 1 : r.ext_dirty, r.id]);
     if (listId !== r.list_id) await store.run(gc, 'UPDATE tasks SET list_id = ?, updated_at = ? WHERE parent_id = ?', [listId, ctx.now, r.id]);
-    if (r.parent_id && set.length && twoWay) await store.run(gc, 'UPDATE tasks SET ext_dirty = 1 WHERE id = ? AND ext_id IS NOT NULL', [r.parent_id]);
-    if (b.myDay !== undefined && !r.parent_id) {
-      if (bool(b.myDay)) await store.run(gc, 'INSERT OR IGNORE INTO my_day (user_id, day, task_id) VALUES (?, ?, ?)', [ctx.userId, ctx.today, r.id]);
+    if (sub && set.length && twoWay) await store.run(gc, 'UPDATE tasks SET ext_dirty = 1 WHERE id = ? AND ext_id IS NOT NULL', [r.parent_id]);
+    if (next.myDay !== undefined) {
+      if (next.myDay) await store.run(gc, 'INSERT OR IGNORE INTO my_day (user_id, day, task_id) VALUES (?, ?, ?)', [ctx.userId, ctx.today, r.id]);
       else await store.run(gc, 'DELETE FROM my_day WHERE user_id = ? AND task_id = ?', [ctx.userId, r.id]);
     }
-    if (b.title !== undefined || b.note !== undefined) await fts.setTask(gc, r.id, title, note);
+    if (next.title !== undefined || next.note !== undefined) await fts.setTask(gc, r.id, title, note);
   });
   const after = listId !== r.list_id ? await lists.memberIds(gc, listId) : before;
   events.changed(gc, [...new Set([...before, ...after])], 'tasks');
-  if (b.assigneeId && posInt(b.assigneeId) !== r.assignee_id && posInt(b.assigneeId) !== ctx.userId) await notifyAssigned(gc, ctx, posInt(b.assigneeId), title, r.id);
+  if (next.assigneeId && next.assigneeId !== ctx.userId) await notifyAssigned(gc, ctx, next.assigneeId, title, r.id);
   return get(gc, ctx, r.id);
 }
 
@@ -317,9 +375,19 @@ async function complete(gc, ctx, id, b, opts = {}) {
   return out;
 }
 
-/** DELETE tasks/<id> — into the trash (with its sub tasks); purged after 30 days (reminders.js). */
+/**
+ * DELETE tasks/<id> — into the trash (with its sub tasks); purged after 30 days (housekeeping.js). Already in the trash
+ * (a delete sent twice, or its task deleted first): { ok, gone: true } for a member of its list.
+ */
 async function remove(gc, ctx, id) {
-  const r = await access(gc, ctx, id);
+  let r;
+  try { r = await access(gc, ctx, id); } catch (e) {
+    const tid = posInt(id);
+    const was = tid && await store.one(gc, `SELECT t.id FROM tasks t JOIN list_members m ON m.list_id = t.list_id AND m.user_id = ?
+      LEFT JOIN tasks p ON p.id = t.parent_id WHERE t.id = ? AND (t.deleted_at IS NOT NULL OR p.deleted_at IS NOT NULL)`, [ctx.userId, tid]);
+    if (was) return { ok: true, gone: true };
+    throw e;
+  }
   const twoWay = await linkedTwoWay(gc, r.list_id);
   await store.tx(gc, async () => {
     await store.run(gc, 'UPDATE tasks SET deleted_at = ?, updated_at = ?, ext_dirty = ? WHERE id = ? OR parent_id = ?', [ctx.now, ctx.now, twoWay && r.ext_id && !r.parent_id ? 1 : 0, r.id, r.id]);

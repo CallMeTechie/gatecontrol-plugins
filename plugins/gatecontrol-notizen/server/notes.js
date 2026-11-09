@@ -8,9 +8,11 @@ const store = require('./store');
 const people = require('./people');
 const events = require('./events');
 const fts = require('./fts');
+const clientIds = require('./clientids');
+const push = require('./push');
 const M = require('../ui/notemd');
 const { t } = require('./text');
-const { fail, posInt, line, text, area: areaOf, color: colorOf, isDate, b64u } = require('./util');
+const { fail, posInt, line, text, area: areaOf, color: colorOf, isDate, b64u, same, stale } = require('./util');
 
 const TITLE_MAX = 300;
 const BODY_MAX = 200000;
@@ -95,15 +97,25 @@ async function tags(gc, ids) {
   return [...sum.entries()].filter(([, n]) => n > 0).sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1)).slice(0, 200).map(([tag, n]) => ({ tag, count: n }));
 }
 
-/** POST notebooks { name, area, color? } */
+/** A notebook create sent again with the same clientId: the notebook as it is now, or 410 when it is gone. */
+async function replayNotebook(gc, ctx, id, clientId) {
+  let nb;
+  try { nb = await notebookAccess(gc, ctx.userId, id); } catch (e) { if (e && e.code === 'not_found') throw clientIds.gone(clientId, id); throw e; }
+  return { notebook: await notebookView(gc, ctx, nb), clientId, replayed: true };
+}
+
+/** POST notebooks { name, area, color?, clientId? } → { notebook, clientId? } */
 async function createNotebook(gc, ctx, b, extra = {}) {
+  const cid = extra.vault ? null : clientIds.arg(b.clientId);
+  if (cid) { const have = await clientIds.find(gc, ctx.userId, cid, 'notebook'); if (have) return replayNotebook(gc, ctx, have, cid); }
   const name = line(b.name, 80);
   if (!name && !extra.vault) throw fail('invalid', { field: 'name' });
   const c = colorOf(b.color);
   if (c === undefined) throw fail('invalid', { field: 'color' });
   const n = await store.one(gc, 'SELECT COUNT(*) AS n FROM notebooks WHERE owner_id = ? AND deleted_at IS NULL', [ctx.userId]);
   if (n.n >= MAX_NOTEBOOKS) throw fail('too_many');
-  const id = await store.tx(gc, async () => {
+  const made = await store.tx(gc, async () => {
+    if (cid) { const again = await clientIds.find(gc, ctx.userId, cid, 'notebook'); if (again) return { dup: again }; }
     const r = await store.run(gc, `INSERT INTO notebooks (owner_id, area, name, color, vault_id, name_cipher, key_version, recovery_pub, recovery_auth, recovery_holder, ext_kind, ext_id, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [ctx.userId, areaOf(b.area), extra.vault ? '' : name, c, extra.vault ? extra.vault.id : null, extra.vault ? extra.vault.nameCipher : null,
       extra.vault ? 1 : null, extra.vault ? extra.vault.recoveryPub : null, extra.vault ? extra.vault.recoveryAuth : null, extra.vault ? ctx.userId : null,
@@ -112,16 +124,32 @@ async function createNotebook(gc, ctx, b, extra = {}) {
     const pos = await store.one(gc, 'SELECT COALESCE(MAX(position), 0) + 1 AS p FROM notebook_members WHERE user_id = ?', [ctx.userId]);
     await store.run(gc, 'INSERT INTO notebook_members (user_id, notebook_id, role, position) VALUES (?, ?, ?, ?)', [ctx.userId, nid, 'owner', pos.p]);
     if (extra.inTx) await extra.inTx(nid);
-    return nid;
+    await clientIds.claim(gc, ctx, cid, 'notebook', nid);
+    return { id: nid };
   });
+  if (made.dup) return replayNotebook(gc, ctx, made.dup, cid);
   events.changed(gc, [ctx.userId], 'notebooks');
-  return { notebook: await notebookView(gc, ctx, await notebookAccess(gc, ctx.userId, id)) };
+  return { notebook: await notebookView(gc, ctx, await notebookAccess(gc, ctx.userId, made.id)), ...(cid ? { clientId: cid } : {}) };
 }
 
-/** PATCH notebooks/<id> { name?, color?, position?, nameCipher? (Tresor), area? } */
-async function updateNotebook(gc, ctx, id, b) {
+/**
+ * PATCH notebooks/<id> { name?, color?, position?, nameCipher? (Tresor), area?, base? } — `base` as in PATCH tasks for
+ * name and colour (409 conflict { fields, notebook }); a name or colour as it is already is not written.
+ */
+async function updateNotebook(gc, ctx, id, b0) {
   const nb = await notebookAccess(gc, ctx.userId, id);
   const owner = nb.my_role === 'owner';
+  const norm = (f, v) => {
+    if (f === 'name') { const n = line(v, 80); if (!n) throw fail('invalid', { field: 'name' }); return n; }
+    const c = colorOf(v); if (c === undefined) throw fail('invalid', { field: 'color' }); return c;
+  };
+  const now = { name: nb.vault_id ? null : nb.name, color: nb.color || null };
+  const next = {};
+  for (const f of ['name', 'color']) if (b0[f] !== undefined && !(f === 'name' && nb.vault_id)) next[f] = norm(f, b0[f]);
+  const late = stale(b0.base, now, next, norm);
+  if (late.length) throw fail('conflict', { fields: late, notebook: await notebookView(gc, ctx, nb) });
+  const b = { ...b0 };
+  for (const f of Object.keys(next)) if (same(next[f], now[f])) delete b[f];
   const set = [];
   const args = [];
   if (b.name !== undefined) {
@@ -142,9 +170,13 @@ async function updateNotebook(gc, ctx, id, b) {
   return { notebook: await notebookView(gc, ctx, await notebookAccess(gc, ctx.userId, nb.id)) };
 }
 
-/** DELETE notebooks/<id> — the owner deletes it with its notes (into the trash); a member leaves it. */
+/** DELETE notebooks/<id> — the owner deletes it with its notes (into the trash); a member leaves it. Deleted already by its owner: { ok, gone }. */
 async function removeNotebook(gc, ctx, id) {
-  const nb = await notebookAccess(gc, ctx.userId, id);
+  let nb;
+  try { nb = await notebookAccess(gc, ctx.userId, id); } catch (e) {
+    if (posInt(id) && await store.one(gc, 'SELECT id FROM notebooks WHERE id = ? AND owner_id = ? AND deleted_at IS NOT NULL', [posInt(id), ctx.userId])) return { ok: true, gone: true };
+    throw e;
+  }
   const members = await memberIds(gc, nb.id);
   if (nb.bound_plugin) throw fail('forbidden', { reason: 'bound' });
   if (nb.my_role !== 'owner') {
@@ -190,7 +222,7 @@ async function setMembers(gc, ctx, id, b) {
   });
   if (added.length) {
     await gc.notify({ topic: 'shared', title: t(ctx.notifyLang, 'n.shared_nb_title', { name: ctx.userName || '' }), body: nb.vault_id ? t(ctx.notifyLang, 'n.vault') : nb.name,
-      users: added, collapseKey: 'notebook:' + nb.id, data: { notizen: { notebook: nb.id } } }).catch(() => {});
+      users: added, collapseKey: 'notebook:' + nb.id, data: { notizen: push.sharedNotebook(nb) } }).catch(() => {});
   }
   events.changed(gc, [...new Set([...before, ...added])], 'notebooks');
   return { notebook: await notebookView(gc, ctx, await notebookAccess(gc, ctx.userId, nb.id)) };
@@ -321,11 +353,21 @@ async function markBound(gc, nbId, noteId, removed, now) {
     ON CONFLICT(notebook_id, note_id) DO UPDATE SET removed = excluded.removed, at = excluded.at`, [nbId, noteId, removed ? 1 : 0, now]);
 }
 
+/** A note create sent again with the same clientId → { id } of the note made first; 410 when it is gone. */
+async function replayNote(gc, ctx, id, clientId) {
+  try { await access(gc, ctx, id); } catch (e) { if (e && e.code === 'not_found') throw clientIds.gone(clientId, id); throw e; }
+  return { id, clientId, replayed: true };
+}
+
 /**
- * POST notes { notebookId?, area?, title?, body?, pinned?, color?, due?, expiresAt? } — or in a Tresor
- * { notebookId, titleCipher, cipher, keyVersion } → { note }
+ * POST notes { notebookId?, area?, title?, body?, pinned?, color?, due?, expiresAt?, clientId?, notebookClientId? } — or
+ * in a Tresor { notebookId, titleCipher, cipher, keyVersion, clientId? } → { note } (the API answers with GET notes/<id>)
  */
-async function create(gc, ctx, b, opts = {}) {
+async function create(gc, ctx, b0, opts = {}) {
+  const cid = opts.inTx ? null : clientIds.arg(b0.clientId);
+  if (cid) { const have = await clientIds.find(gc, ctx.userId, cid, 'note'); if (have) return replayNote(gc, ctx, have, cid); }
+  const b = { ...b0 };
+  if (b.notebookId == null && b.notebookClientId != null) b.notebookId = await clientIds.resolve(gc, ctx, b.notebookClientId, 'notebook', 'notebookClientId');
   const nbId = b.notebookId != null ? b.notebookId : await ensureDefault(gc, ctx, b.area);
   const nb = opts.notebook || await notebookAccess(gc, ctx.userId, nbId);
   const c = colorOf(b.color);
@@ -337,7 +379,8 @@ async function create(gc, ctx, b, opts = {}) {
   if (nb.vault_id) cipherArgs(nb, b);
   else { title = line(b.title, TITLE_MAX); body = text(b.body, BODY_MAX); }
   const by = opts.by === undefined ? ctx.userId : opts.by;
-  const id = await (opts.inTx ? (fn) => fn() : (fn) => store.tx(gc, fn))(async () => {
+  const made = await (opts.inTx ? (fn) => fn() : (fn) => store.tx(gc, fn))(async () => {
+    if (cid) { const again = await clientIds.find(gc, ctx.userId, cid, 'note'); if (again) return { dup: again }; }
     const r = await store.run(gc, `INSERT INTO notes (notebook_id, title, body, pinned, color, due_date, expires_at, title_cipher, cipher, key_version, ext_kind, ext_id,
       created_by, updated_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [nb.id, title, body, b.pinned ? 1 : 0, c, b.due || null, b.expiresAt || null, nb.vault_id ? b.titleCipher : null, nb.vault_id ? b.cipher || null : null,
@@ -345,10 +388,13 @@ async function create(gc, ctx, b, opts = {}) {
     const nid = Number(r.lastInsertRowid);
     if (!nb.vault_id) await derive(gc, nid, nb.id, title, body, []);
     if (nb.bound_plugin) await markBound(gc, nb.id, nid, false, ctx.now);
-    return nid;
+    await clientIds.claim(gc, ctx, cid, 'note', nid);
+    return { id: nid };
   });
+  if (made.dup) return replayNote(gc, ctx, made.dup, cid);
+  const id = made.id;
   if (!opts.quiet) events.changed(gc, await memberIds(gc, nb.id), 'notes');
-  return { note: summary(await store.one(gc, 'SELECT * FROM notes WHERE id = ?', [id]), new Map([[id, nb.vault_id ? [] : M.tags(body)]])), id };
+  return { note: summary(await store.one(gc, 'SELECT * FROM notes WHERE id = ?', [id]), new Map([[id, nb.vault_id ? [] : M.tags(body)]])), id, ...(cid ? { clientId: cid } : {}) };
 }
 
 /** GET notes/<id> → { note: { …summary, body | cipher, attachments, tasks } } */
@@ -371,9 +417,28 @@ async function get(gc, ctx, id, opts = {}) {
   return { note };
 }
 
-/** PATCH notes/<id> { title?, body?, pinned?, color?, due?, expiresAt?, notebookId?, rev? } (Tresor: titleCipher, cipher, keyVersion) */
+/** Whether PATCH notes would change nothing: every field given is as it is already (a change sent twice). */
+function unchanged(r, b) {
+  const eq = (k, v) => b[k] === undefined || same(v, b[k]);
+  if (b.title !== undefined && (r.nb_vault || line(b.title, TITLE_MAX) !== r.title)) return false;
+  if (b.body !== undefined && (r.nb_vault || text(b.body, BODY_MAX) !== r.body)) return false;
+  if (b.titleCipher !== undefined && b.titleCipher !== r.title_cipher) return false;
+  if (b.cipher !== undefined && (b.cipher || null) !== (r.cipher || null)) return false;
+  if ((b.titleCipher !== undefined || b.cipher !== undefined) && b.keyVersion !== r.key_version) return false;
+  if (b.pinned !== undefined && !!b.pinned !== !!r.pinned) return false;
+  if (b.color !== undefined && colorOf(b.color) !== (r.color || null)) return false;
+  if (b.notebookId !== undefined && posInt(b.notebookId) !== r.notebook_id) return false;
+  return eq('due', r.due_date || null) && eq('expiresAt', r.expires_at || null);
+}
+
+/**
+ * PATCH notes/<id> { title?, body?, pinned?, color?, due?, expiresAt?, notebookId?, rev? } (Tresor: titleCipher, cipher,
+ * keyVersion) — `rev` given and stale → 409 conflict { rev }; a change that sets only what the note has already answers
+ * 200 whatever its rev (1.1.0: an edit queued offline and sent twice).
+ */
 async function update(gc, ctx, id, b) {
   const r = await access(gc, ctx, id);
+  if (unchanged(r, b)) return get(gc, ctx, r.id);
   if (b.rev != null && b.rev !== r.rev) throw fail('conflict', { rev: r.rev });
   const set = [];
   const args = [];
@@ -419,9 +484,16 @@ async function update(gc, ctx, id, b) {
   return get(gc, ctx, r.id);
 }
 
-/** DELETE notes/<id> — into the trash (30 days, then purged with its attachments). */
+/** DELETE notes/<id> — into the trash (30 days, then purged with its attachments). In the trash already: { ok, gone } for a member. */
 async function remove(gc, ctx, id, opts = {}) {
-  const r = opts.row || await access(gc, ctx, id);
+  let r = opts.row;
+  if (!r) {
+    try { r = await access(gc, ctx, id); } catch (e) {
+      if (posInt(id) && await store.one(gc, `SELECT n.id FROM notes n JOIN notebook_members m ON m.notebook_id = n.notebook_id AND m.user_id = ?
+        WHERE n.id = ? AND n.deleted_at IS NOT NULL`, [ctx.userId, posInt(id)])) return { ok: true, gone: true };
+      throw e;
+    }
+  }
   await (opts.inTx ? (fn) => fn() : (fn) => store.tx(gc, fn))(async () => {
     await store.run(gc, 'UPDATE notes SET deleted_at = ?, updated_at = ? WHERE id = ?', [ctx.now, ctx.now, r.id]);
     await dropDerived(gc, r.id, r.notebook_id);
