@@ -1,4 +1,4 @@
-<!-- version: 1.12.1 -->
+<!-- version: 1.13.0 -->
 # Mail
 
 ## What the plugin does
@@ -51,6 +51,10 @@ Credentials are stored encrypted. The first sync fetches the newest mail first.
 
 ### Reading and writing mail
 
+- **Several mails at once:** in the app press and hold a mail, in the portal click the box in front of it (Shift-click picks a range). Archive, delete, move, copy, read/unread, flag and spam then apply to all selected ones. **“Select all N”** takes every mail of the folder, including the ones not loaded yet (up to 2000). Afterwards **“Undo”** in the note at the bottom brings everything back – for two minutes.
+- **Move and copy** into a folder of the same account; folders used last are on top. Copying into folders of other accounts comes later.
+- **Delete:** the mails go to the trash. With **“Ask before deleting”** (settings) Mail asks first, otherwise there is “Undo”. In the trash they are deleted for good – Mail always asks then.
+- **Swipe / quick actions:** in the settings one of seven actions per direction: archive, delete, read/unread, flag, move, to spam or nothing. It applies to all your devices; older apps show the three new actions as “nothing”.
 - **Relevant / Other:** newsletters and automatic mail usually go to “Other”, mail from people you write to goes to “Relevant”. When you move a sender, Mail remembers it.
 - **Conversations and filters:** with “With attachment” (or in Relevant/Other) a conversation shows with its newest mail that matches the filter.
 - **Reading:** pictures only after “Load pictures”. Attachments with **“Save in Drive”** (with a folder suggestion) or “Save all in Drive”.
@@ -102,6 +106,14 @@ When attachments live on a storage target that is unreachable, Mail tries again 
 
 **Free/busy shows “unknown”.**
 The person switched free/busy off or is not in GateControl. Colleagues in Microsoft 365 appear through your Microsoft account.
+
+## New in 1.13.0
+
+- **Several mails at once:** select them (app: long press, portal: the box and Shift-click), “Select all N” for the whole folder, then archive, delete, move, copy, read/unread, flag or spam for all of them.
+- **Copy** into another folder of the same account, and **move** now in the portal too.
+- **“Undo”** after moving, copying, archiving, deleting and spam – for two minutes; deleted mail comes back from the trash into its folder.
+- **Conversations:** an action on a conversation applies to all its mails in that folder – the row really goes.
+- **Swiping with seven actions** (new: flag, move, to spam) and **“Ask before deleting”** in the settings.
 
 ## New in 1.12.1
 

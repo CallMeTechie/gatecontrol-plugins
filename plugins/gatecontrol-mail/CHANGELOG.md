@@ -2,6 +2,39 @@
 
 Alle E-Mail-Konten an einem Ort – im eigenen Tab der GateControl-Apps und im Portal.
 
+## 1.13.0
+
+- **Mehrere Mails auf einmal (API für Apps und Portal):**
+  - `POST messages/copy { ids, folderId }` (neu): kopiert in einen Ordner **desselben** Kontos (IMAP `UID COPY`, Microsoft
+    Graph `copy`). Mails aus mehreren Konten oder ein Ordner eines anderen Kontos → 400 `invalid { field: 'folderId',
+    reason: 'account' }`. Der Zielordner wird kurz abgeglichen, die Kopien stehen meist schon in der Antwort.
+  - **Rückgängig:** `move`, `copy`, `archive`, `delete` (in den Papierkorb) und `junk` antworten mit `undo { token, kind,
+    count, expiresAt, items: [{ id, newId, accountId, fromFolderId, toFolderId }] }`; `POST messages/undo { token }`
+    nimmt die Aktion zwei Minuten lang einmal zurück (jede Mail zurück in ihren Ursprungsordner, Kopien werden gelöscht)
+    → `{ ok, kind, restored, failed, items }`; zu spät 410 `undo_expired`. Gemerkt wird, wo der Server die Mail hingelegt
+    hat: IMAP die neue UID aus MOVE/COPYUID, ohne UIDPLUS UIDNEXT des Ziels vorher und die Message-ID (nur Mails ab dieser
+    UID, eine schon vorhandene gleiche Mail bleibt); Microsoft die neue Graph-ID. Neue Tabelle `undo_log`.
+  - `threads: true` auf allen Bulk-Aufrufen: die übrigen Mails der Unterhaltung im selben Ordner gehen mit – in der
+    Unterhaltungsansicht rückt so nicht die nächstältere Mail nach.
+  - `all: true` mit dem Bereich einer Liste (`box` | `folder`, `tab`, `filter { unread, flagged, attachments }`,
+    `except: [ids]`): alle Mails des Bereichs in der Server-Kopie, auch nicht geladene, höchstens 2000 (sonst 413
+    `too_large { max, count }`). `GET messages/ids` → `{ ids, total, max, truncated }` für „Alle N auswählen“.
+  - Antworten der Bulk-Aufrufe zusätzlich mit `count`, `ids` und bei `delete` `purged` (endgültig Gelöschtes, ohne Undo).
+- **Wischen mit sieben Aktionen:** `settings.swipe { left, right }` mit `archive | delete | read | flag | move | junk |
+  none` und `settings.confirmDelete` (Standard aus). Die alten Felder `swipeLeft` / `swipeRight` zeigen weiter nur die
+  vier bisherigen Werte – `flag`, `move`, `junk` erscheinen dort als `none` (ältere Apps lesen unbekannte Werte als
+  „Archivieren“); schickt eine ältere App für so eine Seite `none` zurück, bleibt die neue Aktion. `PUT settings` ändert
+  nur die genannten Felder. Neue Spalte `prefs.confirm_delete`.
+- `features`: `copy`, `swipeV2`, `undo`, `bulkAll`, `threadScope`.
+- **Portal:** Kästchen pro Zeile, Umschalt-Klick für einen Bereich, „Alle N auswählen“ und eine Leiste für die
+  ausgewählten Mails (Archivieren, Löschen, Verschieben, Kopieren, Gelesen/Ungelesen, Markieren, Spam, Auswahl
+  aufheben); Ordnerauswahl mit Suche und „Zuletzt“ für Verschieben und Kopieren (auch für eine geöffnete Mail);
+  „Rückgängig“ im Hinweis unten; Löschen fragt bei „Vor dem Löschen fragen“ (mit „Nicht mehr fragen“), im Papierkorb
+  immer. Einstellungen: „Wischen / Schnellaktionen“ (links/rechts) und „Vor dem Löschen fragen“. Eine langsame
+  Neuladung der Liste ersetzt nicht mehr die Liste eines inzwischen geöffneten Ordners.
+- Tests: `bulk.test.js` (Kopieren, Undo bei IMAP mit/ohne neue UIDs und Microsoft, Unterhaltungen, „Alle“, Grenzen,
+  Einstellungen mit alten Feldern), `portal-bulk.test.js` (Auswahl, Leiste, Ordnerauswahl, Nachfragen, Einstellungen).
+
 ## 1.12.1
 
 - **Weniger Schreibvorgänge beim Kalenderabgleich (Microsoft 365):** ein Termin, eine Serie und ihre Vorkommen werden nur noch geschrieben, wenn sich etwas geändert hat – vorher schrieb jeder Abgleich jedes Vorkommen einer Serie neu (Termin-Zeile und `occurrences`, im Protokoll von GateControl 1.253.5 je ~300 ms auf einem langsamen Datenträger, 500 Mal in der Stunde). Eine Seite des Delta-Abgleichs und eine Seite der Kalenderansicht laufen in **einer** Transaktion; dass ein Abgleich nichts Neues brachte, meldet er jetzt auch so (kein `calendar`-Live-Ereignis, keine neue Kalenderversion).

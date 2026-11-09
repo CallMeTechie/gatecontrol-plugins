@@ -5,7 +5,11 @@
  *            the folders as a tree (ui/foldertree.js): an arrow opens or closes a folder's children, a closed parent
  *            counts the unread mail below it; the account row stands for the inbox, so its children are on top
  *   list     Relevant / Sonstige in posteingänge, search, more on scrolling; live reload on the event 'mail' (and of the open
- *            mail whose body was still loading: the event names its messageId)
+ *            mail whose body was still loading: the event names its messageId). Since 1.13.0 (mockup Mehrfachauswahl,
+ *            frame 6) a box per row, Shift-click for a range, „Alle N auswählen“ (the whole folder / tab, also not loaded)
+ *            and a bar for the selected mails: archive, delete (asked when „Vor dem Löschen fragen“ is on, always for
+ *            good in the trash), move and copy (a folder of the account), read / unread, flag, spam; „Rückgängig“ in
+ *            the snackbar
  *   mail     AI bar (Kurz gesagt, Zu tun — into the family calendar —, reply suggestions), attachments (download, "In Drive
  *            speichern" with Drive's suggestion, another folder, "Immer für diesen Absender"), pictures only on request,
  *            the conversation, answer / forward / archive / delete / move to Sonstige
@@ -81,6 +85,12 @@
     star: 'M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z',
     unlink: 'M10 14a5 5 0 0 0 7 0l3-3a5 5 0 0 0-3.5-8.5|M14 10a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 3.5 8.5|M4 4l16 16',
     repeat: 'M17 2l3 3-3 3|M4 11V9a4 4 0 0 1 4-4h12|M7 22l-3-3 3-3|M20 13v2a4 4 0 0 1-4 4H4',
+    // since 1.13.0 (mockup Mehrfachauswahl)
+    minus: 'M6 12h12',
+    move: 'M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z|M10 13h6M13 10l3 3-3 3',
+    copy: 'M10 8h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-8a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2z|M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2',
+    spam: 'M12 3L4 6v6c0 4.5 3.4 8 8 9 4.6-1 8-4.5 8-9V6z|M9.5 9.5l5 5M14.5 9.5l-5 5',
+    read: 'M3 10.5L12 4l9 6.5V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z|M3 10.5l9 6 9-6',
   };
   function icon(name, size) {
     var s = document.createElementNS(NS, 'svg');
@@ -218,6 +228,8 @@
     openId: null, open: null, filing: [], outbox: [], expanded: {}, avatars: {},
     ffolds: {}, // since 1.3.4: folder id → its children shown in the menu (this session; ui/foldertree.js)
     area: 'mail', // since 1.3.0: 'mail' | 'calendar' | 'contacts'
+    sel: null, // since 1.13.0: the selection of the list (freshSel)
+    recent: [], // since 1.13.0: the folders moved or copied to last (this browser)
   };
   var FT = window.MailFolderTree; // ui/foldertree.js
   var CAL = null; // ui/calendar.js (attach below)
@@ -452,7 +464,12 @@
     var q = S.view === 'search'
       ? api('GET', 'search', null, { q: S.q, box: S.box })
       : api('GET', 'messages', null, { box: S.box, folder: S.folderId, tab: scopeIsInbox() ? S.tab : null, limit: 50 });
+    if (!keepOpen) S.sel = freshSel();
+    // since 1.13.0: only the answer of the newest request counts (a slow reload after a change never replaces the
+    // list the person went to since)
+    var seq = S.listSeq = (S.listSeq || 0) + 1;
     return q.then(function (r) {
+      if (seq !== S.listSeq) return;
       S.items = r.items || [];
       S.next = r.next || null;
       S.counts = r.counts || {};
@@ -460,7 +477,7 @@
       if (S.area !== 'mail') return;
       renderList();
       if (!keepOpen && !S.open) renderReadEmpty();
-    }, function (e) { S.loading = false; fail(e); });
+    }, function (e) { if (seq !== S.listSeq) return; S.loading = false; fail(e); });
   }
 
   function loadMore() {
@@ -507,17 +524,35 @@
         tabBtn('other', T('p.other') + (S.counts.other ? ' · ' + S.counts.other : '')),
       ]));
     }
+    if (selCount() > 0) el.appendChild(bulkBar());
     if (!S.items.length) { el.appendChild(h('div', { class: 'mp-items' }, h('div', { class: 'mp-empty', text: S.loading ? T('p.loading') : T('p.empty') }))); return; }
     var list = h('div', { class: 'mp-items', attrs: { role: 'list' } });
-    S.items.forEach(function (m) { list.appendChild(itemRow(m)); });
+    var focusEl = null;
+    S.items.forEach(function (m, i) {
+      var row = itemRow(m, i);
+      list.appendChild(row);
+      if (S.sel.focus === m.id) focusEl = row.firstChild;
+    });
     el.appendChild(list);
+    if (focusEl) { try { focusEl.focus(); } catch (e) { /* gone */ } }
     if (S.next) el.appendChild(h('div', { style: 'display:flex;justify-content:center' }, btn(T('p.more'), loadMore, { small: true })));
   }
 
-  function itemRow(m) {
+  /** A row of the list (since 1.13.0: its box to select it, the rest opens the mail). */
+  function itemRow(m, i) {
     var a = accountOf(m.accountId);
     var who = m.from.name || m.from.email;
-    return h('button', { type: 'button', class: 'mp-item' + (m.unread ? ' is-unread' : '') + (S.openId === m.id ? ' is-open' : ''), attrs: { role: 'listitem' }, on: { click: function () { openMessage(m.id); } } }, [
+    var on = isSel(m.id);
+    var cb = h('button', { type: 'button', class: 'mp-cb' + (on ? ' is-on' : ''), attrs: { role: 'checkbox', 'aria-checked': on ? 'true' : 'false', 'aria-label': T('p.b.select_row', { subject: m.subject || T('p.no_subject') }), title: T('p.b.select_row', { subject: m.subject || T('p.no_subject') }) },
+      on: { click: function (ev) { toggleSel(i, !!(ev && ev.shiftKey)); } } }, on ? icon('check', 13) : null);
+    return h('div', { class: 'mp-item has-cb' + (m.unread ? ' is-unread' : '') + (S.openId === m.id ? ' is-open' : '') + (on ? ' is-sel' : ''), attrs: { role: 'listitem' } }, [cb, rowOpen(m, i, a, who)]);
+  }
+  function rowOpen(m, i, a, who) {
+    return h('button', { type: 'button', class: 'mp-item-open', on: { click: function (ev) {
+      // with a selection: Shift-click adds the range, Ctrl / Cmd-click one more
+      if (ev && (ev.shiftKey || ev.ctrlKey || ev.metaKey) && selCount() > 0) { toggleSel(i, !!ev.shiftKey); return; }
+      openMessage(m.id);
+    } } }, [
       h('span', { class: 'mp-av' }, [initials(who), h('span', { class: 'mp-dot', attrs: { style: 'background:' + (a ? a.color : 'var(--muted)') } })]),
       h('span', { class: 'mp-it' }, [
         h('span', { class: 'mp-l1' }, [h('span', { class: 'mp-from', text: who }), m.threadCount > 1 ? h('span', { class: 'mp-count-n', text: String(m.threadCount) }) : null,
@@ -576,8 +611,10 @@
       btn(T('p.reply'), function () { compose({ mode: 'reply', replyTo: m.id }); }, { icon: 'reply', small: true }),
       btn(T('p.reply_all'), function () { compose({ mode: 'replyAll', replyTo: m.id }); }, { icon: 'replyAll', small: true }),
       btn(T('p.forward'), function () { compose({ mode: 'forward', replyTo: m.id }); }, { icon: 'forward', small: true }),
-      ibtn('archive', T('p.archive'), function () { act('messages/archive', { ids: [m.id] }, T('p.archived'), closeRead); }),
-      ibtn('trash', T('p.delete'), function () { act('messages/delete', { ids: [m.id] }, T('p.deleted'), closeRead); }),
+      ibtn('archive', T('p.archive'), function () { singleDo('archive', m); }),
+      ibtn('trash', T('p.delete'), function () { singleDo('delete', m); }),
+      // since 1.13.0: move (and copy) one mail
+      ibtn('move', T('p.b.move'), function () { singleDo('move', m); }),
       ibtn('unread', T('p.mark_unread'), function () { act('messages/flags', { ids: [m.id], unread: true }, T('p.marked_unread')); }),
       ibtn('flag', m.flagged ? T('p.unflag') : T('p.flag'), function () { act('messages/flags', { ids: [m.id], flagged: !m.flagged }, null, function () { m.flagged = !m.flagged; renderRead(m); }); }, m.flagged ? 'is-on' : ''),
       ibtn('other', m.tab === 'other' ? T('p.to_relevant') : T('p.to_other'), function () { act('messages/tab', { ids: [m.id], tab: m.tab === 'other' ? 'relevant' : 'other' }, T('p.sorted')); }),
@@ -603,6 +640,284 @@
   }
 
   function closeRead() { S.open = null; S.openId = null; renderReadEmpty(); showPane('list'); }
+
+  // ── several mails at once (since 1.13.0, mockup Mehrfachauswahl frame 6) ──
+
+  /** The selection: ids (picked rows) or all (the whole range of the list but except); total: GET messages/ids. */
+  function freshSel() { return { ids: {}, all: false, except: {}, total: null, anchor: null, focus: null }; }
+  S.sel = freshSel();
+  function keysOf(o) { return Object.keys(o).map(Number); }
+  function isSel(id) { return S.sel.all ? !S.sel.except[id] : !!S.sel.ids[id]; }
+  function selCount() {
+    if (S.sel.all) return Math.max(0, (S.sel.total || 0) - keysOf(S.sel.except).length);
+    return keysOf(S.sel.ids).length;
+  }
+  function setSel(id, on) {
+    if (S.sel.all) { if (on) delete S.sel.except[id]; else S.sel.except[id] = true; } else if (on) S.sel.ids[id] = true; else delete S.sel.ids[id];
+  }
+  /** Row i on or off; Shift: the rows from the last one clicked to i take its new state. */
+  function toggleSel(i, shift) {
+    var m = S.items[i];
+    if (!m) return;
+    var was = selCount();
+    if (shift && S.sel.anchor != null && S.items[S.sel.anchor]) {
+      var on = isSel(S.items[S.sel.anchor].id);
+      var from = Math.min(S.sel.anchor, i);
+      var to = Math.max(S.sel.anchor, i);
+      for (var k = from; k <= to; k++) setSel(S.items[k].id, on);
+    } else setSel(m.id, !isSel(m.id));
+    S.sel.anchor = i;
+    S.sel.focus = m.id;
+    if (S.sel.all && selCount() === 0) S.sel = freshSel();
+    if (!was && selCount() > 0) countRange();
+    renderList();
+  }
+  function clearSel() { S.sel = freshSel(); renderList(); }
+  /** How many mails the list's range has (for „Alle N auswählen“). */
+  function countRange() {
+    if (!has('bulkAll') || S.view !== 'box') return;
+    var sel = S.sel;
+    api('GET', 'messages/ids', null, rangeQuery()).then(function (r) { if (S.sel !== sel) return; sel.total = r.total; renderList(); }, function () {});
+  }
+  function rangeQuery() {
+    var q = {};
+    if (S.folderId) q.folder = S.folderId; else q.box = S.box;
+    if (scopeIsInbox()) q.tab = S.tab;
+    return q;
+  }
+  function selectAllRange() {
+    var total = S.sel.total;
+    S.sel = freshSel();
+    S.sel.all = true;
+    S.sel.total = total;
+    renderList();
+  }
+  function selectShown() {
+    var allShown = S.items.length > 0 && S.items.every(function (m) { return isSel(m.id); });
+    if (allShown) { clearSel(); return; }
+    var was = selCount();
+    S.items.forEach(function (m) { setSel(m.id, true); });
+    if (!was) countRange();
+    renderList();
+  }
+  /** The selected rows that are loaded. */
+  function selItems() { return S.items.filter(function (m) { return isSel(m.id); }); }
+  /** The body of a bulk call for the selection (ids, or all with the range; conversations with threads). */
+  function selBody() {
+    if (S.sel.all) {
+      var b = rangeQuery();
+      b.all = true;
+      var ex = keysOf(S.sel.except);
+      if (ex.length) b.except = ex;
+      return b;
+    }
+    var body = { ids: keysOf(S.sel.ids) };
+    // the list shows a conversation as its newest mail: the action takes the whole conversation in that folder
+    if (has('threadScope') && S.view === 'box' && S.settings.threads !== false) body.threads = true;
+    return body;
+  }
+  /** One bulk call (ids in parts of 500) → { count, undo: [tokens], purged }. */
+  function runBulk(path, base, extra) {
+    var bodies = [];
+    var mk = function (b) { var o = {}; Object.keys(b).forEach(function (k) { o[k] = b[k]; }); Object.keys(extra || {}).forEach(function (k) { o[k] = extra[k]; }); return o; };
+    if (base.ids && base.ids.length > 500) { for (var i = 0; i < base.ids.length; i += 500) { var part = mk(base); part.ids = base.ids.slice(i, i + 500); bodies.push(part); } } else bodies.push(mk(base));
+    var out = { count: 0, undo: [], purged: 0 };
+    return bodies.reduce(function (p, body) {
+      return p.then(function () {
+        return api('POST', path, body).then(function (r) {
+          out.count += r.count != null ? r.count : (r.items || []).length;
+          if (r.undo && r.undo.token) out.undo.push(r.undo.token);
+          out.purged += (r.purged || []).length;
+        });
+      });
+    }, Promise.resolve()).then(function () { return out; });
+  }
+  function nText(key, n, p) { var x = p || {}; x.n = n; return T(n === 1 ? key + '_1' : key, x); }
+  /** After a change: the menu's numbers, the list, the open mail; the snackbar with „Rückgängig“ when there is an undo. */
+  function afterBulk(key, out, o) {
+    var x = o || {};
+    if (x.fromSelection) S.sel = freshSel();
+    if (x.closeOpen && S.openId && (x.ids ? x.ids.indexOf(S.openId) >= 0 : true)) closeRead();
+    loadMe().then(renderNav, function () {});
+    loadList(true);
+    var text = out.purged && !out.undo.length ? nText('p.b.purged', out.purged) : nText(key, out.count, { where: x.where || '' });
+    if (out.undo.length && has('undo')) snack(text, T('p.b.undo'), function () { undoAll(out.undo); }, 8000);
+    else toast(text);
+  }
+  function undoAll(tokens) {
+    tokens.reduce(function (p, t) { return p.then(function () { return api('POST', 'messages/undo', { token: t }); }); }, Promise.resolve())
+      .then(function () { toast(T('p.b.undone')); loadMe().then(renderNav, function () {}); loadList(true); }, fail);
+  }
+  function inTrashView() { var f = S.folderId ? folderOf(S.folderId) : null; return !!(f && f.role === 'trash'); }
+  /** Delete: the trash asks always (for good), else when the person wants to be asked. */
+  function confirmDelete(n, purge, go) {
+    if (purge) {
+      dialog(nText('p.b.confirm_purge', n), [h('p', { class: 'dp-hint', text: T('p.b.confirm_purge_text') }),
+        h('div', { class: 'dp-actions' }, [btn(T('p.cancel'), closeDialog), btn(T('p.b.purge'), function () { closeDialog(); go(); }, { danger: true, icon: 'trash' })])]);
+      return;
+    }
+    if (!S.settings.confirmDelete) { go(); return; }
+    var dont = h('input', { type: 'checkbox' });
+    dialog(nText('p.b.confirm_delete', n), [h('p', { class: 'dp-hint', text: T('p.b.confirm_delete_text') }), h('label', { class: 'dp-check' }, [dont, h('span', { text: T('p.b.dont_ask') })]),
+      h('div', { class: 'dp-actions' }, [btn(T('p.cancel'), closeDialog), btn(T('p.delete'), function () {
+        closeDialog();
+        if (dont.checked) api('PUT', 'settings', { confirmDelete: false }).then(function (r) { S.settings = r.settings; }, function () {});
+        go();
+      }, { danger: true, icon: 'trash' })])]);
+  }
+  /** The account all selected mails come from, else null (several, or not known). */
+  function selAccount() {
+    if (S.sel.all) {
+      if (S.folderId) { var f = null; Object.keys(S.folders).forEach(function (k) { (S.folders[k] || []).forEach(function (x) { if (x.id === S.folderId) f = Number(k); }); }); return f; }
+      if (S.box !== 'all') return S.box;
+      return S.accounts.length === 1 ? S.accounts[0].id : null;
+    }
+    var ids = keysOf(S.sel.ids);
+    var accs = {};
+    S.items.forEach(function (m) { if (S.sel.ids[m.id]) accs[m.accountId] = true; });
+    var list = keysOf(accs);
+    return list.length === 1 && ids.length === selItems().length ? list[0] : null;
+  }
+  function bulkDo(kind) {
+    var n = selCount();
+    if (!n) return;
+    var base = selBody();
+    var go = function (path, extra, key, where) {
+      runBulk(path, base, extra).then(function (out) { afterBulk(key, out, { fromSelection: true, closeOpen: kind !== 'read' && kind !== 'flag', ids: base.ids, where: where }); }, fail);
+    };
+    var items = selItems();
+    if (kind === 'archive') go('messages/archive', null, 'p.b.archived');
+    else if (kind === 'junk') go('messages/junk', null, 'p.b.junked');
+    else if (kind === 'read') go('messages/flags', { unread: !items.some(function (m) { return m.unread; }) }, 'p.b.marked');
+    else if (kind === 'flag') go('messages/flags', { flagged: items.some(function (m) { return !m.flagged; }) || !items.length }, 'p.b.marked');
+    else if (kind === 'delete') confirmDelete(n, inTrashView(), function () { go('messages/delete', null, 'p.b.deleted'); });
+    else if (kind === 'move' || kind === 'copy') {
+      var accId = selAccount();
+      folderPicker({ mode: kind, accountId: accId, n: n, current: S.folderId || (S.view === 'box' ? inboxOf(accId) : null), onPick: function (mode, f) {
+        go(mode === 'copy' ? 'messages/copy' : 'messages/move', { folderId: f.id }, mode === 'copy' ? 'p.b.copied' : 'p.b.moved', roleName(f));
+      } });
+    }
+  }
+  /** One mail of the reading pane (archive, delete, move, copy) — with „Rückgängig“ like the selection. */
+  function singleDo(kind, m) {
+    var base = { ids: [m.id] };
+    var go = function (path, extra, key, where) {
+      runBulk(path, base, extra).then(function (out) { afterBulk(key, out, { closeOpen: kind !== 'copy', ids: [m.id], where: where }); }, fail);
+    };
+    var f = folderOf(m.folderId);
+    if (kind === 'archive') go('messages/archive', null, 'p.b.archived');
+    else if (kind === 'delete') confirmDelete(1, !!(f && f.role === 'trash'), function () { go('messages/delete', null, 'p.b.deleted'); });
+    else folderPicker({ mode: kind, accountId: m.accountId, n: 1, current: m.folderId, onPick: function (mode, to) {
+      go(mode === 'copy' ? 'messages/copy' : 'messages/move', { folderId: to.id }, mode === 'copy' ? 'p.b.copied' : 'p.b.moved', roleName(to));
+    } });
+  }
+  function inboxOf(accountId) {
+    var out = null;
+    (S.folders[accountId] || []).forEach(function (f) { if (f.role === 'inbox') out = f.id; });
+    return out;
+  }
+  function remember(id) {
+    S.recent = [id].concat(S.recent.filter(function (x) { return x !== id; })).slice(0, 4);
+    try { window.localStorage.setItem('gc-mail.recentFolders', JSON.stringify(S.recent)); } catch (e) { /* this browser keeps nothing */ }
+  }
+  try { var rec = JSON.parse(window.localStorage.getItem('gc-mail.recentFolders') || '[]'); if (Array.isArray(rec)) S.recent = rec.filter(function (x) { return typeof x === 'number'; }).slice(0, 4); } catch (e) { S.recent = []; }
+  /**
+   * The folder for a move or a copy (mockup frame 2): Verschieben / Kopieren, a search, the folders used last, the
+   * account's folders as a tree; one account only (copying into another account comes later).
+   */
+  function folderPicker(o) {
+    var mode = o.mode === 'copy' && has('copy') ? 'copy' : 'move';
+    var q = '';
+    var picked = null;
+    var listEl = h('div', { class: 'mp-pick mp-fpick', attrs: { role: 'listbox', 'aria-label': T('p.b.pick_folder') } });
+    var goBtn = btn(T('p.b.pick_folder'), function () { if (!picked) return; var f = picked; closeDialog(); remember(f.id); o.onPick(mode, f); }, { primary: true, disabled: true });
+    var all = o.accountId != null ? (S.folders[o.accountId] || []).filter(function (f) { return f.role !== 'drafts'; }) : [];
+    var byId = {};
+    all.forEach(function (f) { byId[f.id] = f; });
+    var depth = function (f) { var d = 0; var x = f; while (x && x.parentId && byId[x.parentId] && d < 8) { d++; x = byId[x.parentId]; } return d; };
+    var seg = null;
+    var title = null;
+    var label = function () {
+      if (title) title.textContent = nText(mode === 'copy' ? 'p.b.pick_copy' : 'p.b.pick_move', o.n);
+      var t = picked ? T(mode === 'copy' ? 'p.b.copy_to' : 'p.b.move_to', { where: roleName(picked) }) : T('p.b.pick_folder');
+      clear(goBtn);
+      goBtn.appendChild(h('span', { text: t }));
+      goBtn.disabled = !picked;
+    };
+    var row = function (f, sub) {
+      var here = f.id === o.current;
+      var b = h('button', { type: 'button', class: 'mp-frow' + (picked && picked.id === f.id ? ' is-on' : '') + (sub ? ' is-sub' : ''), disabled: here && mode === 'move',
+        attrs: { role: 'option', 'aria-selected': picked && picked.id === f.id ? 'true' : 'false', style: sub ? null : 'padding-left:' + (12 + depth(f) * 18) + 'px' },
+        on: { click: function () { picked = f; draw(); } } }, [icon(f.role === 'inbox' ? 'inbox' : f.role === 'archive' ? 'archive' : f.role === 'trash' ? 'trash' : f.role === 'junk' ? 'spam' : 'folder'),
+        h('span', { class: 'mp-frow-n', text: roleName(f) }), here ? h('em', { text: T('p.b.here') }) : null]);
+      return b;
+    };
+    var draw = function () {
+      clear(listEl);
+      var shown = all.filter(function (f) { return !q || String(f.name + ' ' + f.path + ' ' + roleName(f)).toLowerCase().indexOf(q) >= 0; });
+      if (!q) {
+        var rec = S.recent.map(function (id) { return byId[id]; }).filter(function (f) { return f && !(f.id === o.current && mode === 'move'); });
+        if (rec.length) {
+          listEl.appendChild(h('div', { class: 'mp-lab', text: T('p.b.recent') }));
+          rec.forEach(function (f) { listEl.appendChild(row(f, true)); });
+          var acc = accountOf(o.accountId);
+          listEl.appendChild(h('div', { class: 'mp-lab', text: acc ? accountLabel(acc) : '' }));
+        }
+      }
+      shown.forEach(function (f) { listEl.appendChild(row(f, !!q)); });
+      if (!shown.length) listEl.appendChild(h('div', { class: 'mp-empty', text: T('p.b.no_folders') }));
+      if (seg) seg.forEach(function (b) { b.setAttribute('aria-pressed', b.getAttribute('data-mode') === mode ? 'true' : 'false'); });
+      label();
+    };
+    var body = [];
+    if (has('copy')) {
+      seg = ['move', 'copy'].map(function (md) {
+        return h('button', { type: 'button', class: 'mp-seg-b', attrs: { 'data-mode': md, 'aria-pressed': md === mode ? 'true' : 'false' }, on: { click: function () { mode = md; if (picked && picked.id === o.current && mode === 'move') picked = null; draw(); } } }, T(md === 'copy' ? 'p.b.copy' : 'p.b.move'));
+      });
+      body.push(h('div', { class: 'mp-seg', attrs: { role: 'group' } }, seg));
+    }
+    if (o.accountId == null) {
+      body.push(h('p', { class: 'mp-fnote' }, [icon('warn', 15), h('span', { text: T('p.b.many_accounts') })]));
+      body.push(h('div', { class: 'dp-actions' }, [btn(T('p.cancel'), closeDialog)]));
+      title = dialog(nText(mode === 'copy' ? 'p.b.pick_copy' : 'p.b.pick_move', o.n), body).querySelector('h3');
+      return;
+    }
+    var search = h('input', { class: 'dp-input', type: 'search', placeholder: T('p.b.find_folder'), attrs: { 'aria-label': T('p.b.find_folder') } });
+    search.addEventListener('input', function () { q = search.value.trim().toLowerCase(); draw(); });
+    body.push(h('label', { class: 'mp-search' }, [icon('search'), search]), listEl);
+    if (S.accounts.length > 1) body.push(h('p', { class: 'mp-fnote' }, [icon('warn', 15), h('span', { text: T('p.b.one_account') })]));
+    body.push(h('div', { class: 'dp-actions' }, [btn(T('p.cancel'), closeDialog), goBtn]));
+    title = dialog(nText(mode === 'copy' ? 'p.b.pick_copy' : 'p.b.pick_move', o.n), body).querySelector('h3');
+    draw();
+  }
+  /** The bar above the list while mails are selected (mockup frame 6). */
+  function bulkBar() {
+    var n = selCount();
+    var allShown = S.items.length > 0 && S.items.every(function (m) { return isSel(m.id); });
+    var bib = function (ic, label, kind, o) {
+      var x = o || {};
+      return h('button', { type: 'button', class: 'mp-bib' + (x.danger ? ' is-danger' : ''), attrs: { 'aria-label': label, title: label }, on: { click: function () { bulkDo(kind); } } }, [icon(ic), x.text ? h('em', { text: label }) : null]);
+    };
+    var items = selItems();
+    var unreadAny = items.some(function (m) { return m.unread; });
+    var unflagged = items.some(function (m) { return !m.flagged; }) || !items.length;
+    var where = listTitle();
+    return h('div', { class: 'mp-bulk', attrs: { role: 'toolbar', 'aria-label': T('p.b.bar') } }, [
+      h('button', { type: 'button', class: 'mp-cb' + (allShown ? ' is-on' : ' is-part'), attrs: { role: 'checkbox', 'aria-checked': allShown ? 'true' : 'mixed', 'aria-label': T('p.b.select_page'), title: T('p.b.select_page') }, on: { click: selectShown } }, icon(allShown ? 'check' : 'minus', 13)),
+      h('b', { class: 'mp-bulk-n', text: S.sel.all ? T('p.b.all_in', { n: n, where: where }) : T('p.b.selected', { n: n }) }),
+      !S.sel.all && has('bulkAll') && S.view === 'box' && S.sel.total != null && S.sel.total > n
+        ? h('button', { type: 'button', class: 'mp-link', on: { click: selectAllRange } }, T('p.b.select_all', { n: S.sel.total })) : null,
+      h('span', { class: 'mp-sp' }),
+      bib('archive', T('p.archive'), 'archive', { text: true }),
+      bib('trash', T('p.delete'), 'delete', { text: true, danger: true }),
+      bib('move', T('p.b.move'), 'move', { text: true }),
+      has('copy') ? bib('copy', T('p.b.copy'), 'copy', { text: true }) : null,
+      bib(unreadAny ? 'read' : 'mail', unreadAny ? T('p.b.read') : T('p.b.unread'), 'read'),
+      bib('flag', unflagged ? T('p.b.flag') : T('p.b.unflag'), 'flag'),
+      bib('spam', T('p.b.junk'), 'junk'),
+      h('button', { type: 'button', class: 'mp-bib', attrs: { 'aria-label': T('p.b.clear'), title: T('p.b.clear') }, on: { click: clearSel } }, icon('close')),
+    ]);
+  }
 
   function showThread(threadId) {
     api('GET', 'threads/' + threadId).then(function (r) {
@@ -850,7 +1165,11 @@
     clear(back);
     if (lastFocus && lastFocus.focus) { try { lastFocus.focus(); } catch (e) { /* gone */ } }
   }
-  document.addEventListener('keydown', function (ev) { if (ev.key === 'Escape' && !$('mp-dialog').hidden) closeDialog(); });
+  document.addEventListener('keydown', function (ev) {
+    if (ev.key !== 'Escape') return;
+    if (!$('mp-dialog').hidden) closeDialog();
+    else if (S.area === 'mail' && selCount() > 0) clearSel();
+  });
 
   function field(label, input) { return h('label', { class: 'dp-field' }, [h('span', { class: 'dp-label', text: label }), input]); }
 
@@ -1153,6 +1472,8 @@
     var threads = h('input', { type: 'checkbox', class: 'dp-sw', checked: S.settings.threads !== false });
     threads.addEventListener('change', function () { api('PUT', 'settings', { threads: threads.checked }).then(function (r) { S.settings = r.settings; loadList(); }, fail); });
     var rows = [h('label', { class: 'dp-check' }, [threads, h('span', { text: T('p.threads') })])];
+    // since 1.13.0: what swiping does in the apps (and the quick buttons on the PC), asking before deleting
+    if (has('swipeV2')) rows.push.apply(rows, swipeRows());
     // since 1.9.0: the person's free/busy for everybody in GateControl (on unless switched off here or in „Kalender teilen“)
     if (has('freeBusy') && CAL) {
       var fb = h('input', { type: 'checkbox', class: 'dp-sw', attrs: { 'aria-label': T('p.s.fb_all') } });
@@ -1170,6 +1491,31 @@
     });
     rows.push(h('div', { class: 'dp-actions', style: 'justify-content:flex-start' }, btn(T('p.add_account'), addAccount, { icon: 'plus', small: true })));
     dialog(T('p.settings'), rows);
+  }
+
+  function swipeRows() {
+    var sw = S.settings.swipe || { left: S.settings.swipeLeft || 'archive', right: S.settings.swipeRight || 'read' };
+    var put = function (body, undoFn) { api('PUT', 'settings', body).then(function (r) { S.settings = r.settings; toast(T('p.saved')); }, function (e) { undoFn(); fail(e); }); };
+    var sel = function (side) {
+      var cur = sw[side];
+      var s = h('select', { class: 'dp-input', attrs: { 'aria-label': T(side === 'left' ? 'p.s.swipe_left' : 'p.s.swipe_right') } },
+        ['archive', 'delete', 'read', 'flag', 'move', 'junk', 'none'].map(function (v) { return h('option', { value: v, selected: v === cur, text: T('p.s.sw_' + v) }); }));
+      s.addEventListener('change', function () {
+        var body = { swipe: {} };
+        body.swipe[side] = s.value;
+        put(body, function () { s.value = cur; });
+        cur = s.value;
+      });
+      return field(T(side === 'left' ? 'p.s.swipe_left' : 'p.s.swipe_right'), s);
+    };
+    var ask = h('input', { type: 'checkbox', class: 'dp-sw', checked: !!S.settings.confirmDelete, attrs: { 'aria-label': T('p.s.confirm_delete') } });
+    ask.addEventListener('change', function () { put({ confirmDelete: ask.checked }, function () { ask.checked = !ask.checked; }); });
+    return [
+      h('div', { class: 'mp-lab', text: T('p.s.swipe') }),
+      h('div', { class: 'mp-swipe' }, [sel('left'), sel('right')]),
+      h('p', { class: 'dp-hint', text: T('p.s.swipe_hint') }),
+      h('label', { class: 'mp-swrow' }, [h('span', { class: 'mp-two', style: 'flex:1;min-width:0' }, [h('span', { text: T('p.s.confirm_delete') }), h('span', { class: 'mp-sub', text: T('p.s.confirm_delete_d') })]), ask]),
+    ];
   }
 
   function accountDialog(a) {

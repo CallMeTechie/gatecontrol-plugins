@@ -118,6 +118,8 @@ class FakeMail {
           if (q.from && !has(JSON.stringify(m.envelope.from), q.from)) return false;
           if (q.body && !has((m.text || '') + (m.html || ''), q.body)) return false;
           if (q.or && !q.or.some((x) => match(m, x))) return false;
+          // 1.13.0 (undo without new UIDs): HEADER Message-ID
+          if (q.header && q.header['Message-ID'] && m.envelope.messageId !== q.header['Message-ID']) return false;
           return true;
         };
         return {
@@ -181,7 +183,24 @@ class FakeMail {
               d.msgs.set(nu, { ...m, uid: nu });
               uidMap[m.uid] = nu;
             }
-            return { uidMap };
+            // world.noUidPlus: a server without UIDPLUS answers without the new UIDs (1.13.0)
+            return { uidMap: world.noUidPlus ? null : uidMap };
+          },
+          // 1.13.0: UID COPY (COPYUID unless world.noUidPlus)
+          copy: async (range, to) => {
+            const b = box();
+            const d = l.boxes.get(to);
+            if (!d) throw hostError('ERR_MAIL_PROTOCOL', 'no such mailbox');
+            const test = inRange(range, b.uidNext - 1);
+            const uidMap = {};
+            for (const m of [...b.msgs.values()]) {
+              if (!test(m.uid)) continue;
+              const nu = d.uidNext++;
+              d.msgs.set(nu, { ...m, flags: [...m.flags], uid: nu });
+              uidMap[m.uid] = nu;
+            }
+            world.copies = (world.copies || 0) + 1;
+            return { uidMap: world.noUidPlus ? null : uidMap };
           },
           expunge: async (range) => { const b = box(); const test = inRange(range, b.uidNext - 1); for (const m of [...b.msgs.values()]) if (test(m.uid) && m.flags.includes('\\Deleted')) b.msgs.delete(m.uid); return null; },
           append: async (p, mediaId, o2) => { world.appended.push({ path: p, mediaId, flags: o2 && o2.flags, data: ctx.media(mediaId) && ctx.media(mediaId).data.toString() }); return { uid: null }; },

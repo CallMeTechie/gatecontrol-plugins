@@ -12,7 +12,7 @@ const PUBLISHER_ID = 'b2f917a9-e0eb-45b9-9e5f-14c283aa51e9';
 
 test('plugin.json: GateControl 1.219.0, mail with dav, images, Drive, Familie and Alltag services, the app tab', () => {
   const m = JSON.parse(fs.readFileSync(path.join(DIR, 'plugin.json'), 'utf8'));
-  assert.equal(m.version, '1.12.1');
+  assert.equal(m.version, '1.13.0');
   // 1.6.0: calendar_list and calendar_add for Drive; 1.7.0: tofile_count (test/services.test.js)
   for (const s of ['new_draft', 'calendar_list', 'calendar_add', 'tofile_count']) assert.ok(m.services.provides[s].label.de && m.services.provides[s].label.en, s);
   assert.equal(m.services.provides.tofile_count.maxPerHour, 3600);
@@ -60,8 +60,10 @@ test('GET me without accounts; who may use Mail (the administrator), not for a v
     adminConsentUrl: `https://login.microsoftonline.com/organizations/v2.0/adminconsent?client_id=${PUBLISHER_ID}&scope=https%3A%2F%2Fgraph.microsoft.com%2F.default` });
   assert.ok(me.json.features.includes('calendar') && me.json.features.includes('contacts'));
   assert.ok(!me.json.features.includes('dav'), 'GateControl 1.216.0 has no gc.mail.dav');
-  assert.deepEqual(me.json.settings, { threads: true, swipeLeft: 'archive', swipeRight: 'read' });
-  assert.deepEqual((await c.as(ANNA)('PUT', 'settings', { swipeLeft: 'delete', threads: false })).json.settings, { threads: false, swipeLeft: 'delete', swipeRight: 'read' });
+  // 1.13.0: swipe { left, right } with seven actions and confirmDelete beside the old fields
+  assert.deepEqual(me.json.settings, { threads: true, swipeLeft: 'archive', swipeRight: 'read', swipe: { left: 'archive', right: 'read' }, confirmDelete: false });
+  assert.deepEqual((await c.as(ANNA)('PUT', 'settings', { swipeLeft: 'delete', threads: false })).json.settings,
+    { threads: false, swipeLeft: 'delete', swipeRight: 'read', swipe: { left: 'delete', right: 'read' }, confirmDelete: false });
   assert.equal((await c.as(ANNA)('PUT', 'settings', { swipeLeft: 'fly' })).json.error.code, 'invalid');
   // only Anna
   assert.equal((await c.admin('PUT', 'admin/settings', { allowed: { all: false, principals: [{ type: 'user', id: ANNA.id }] } })).status, 200);
