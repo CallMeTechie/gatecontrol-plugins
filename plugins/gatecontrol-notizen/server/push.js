@@ -7,6 +7,7 @@
 //   shared_list       (topic shared)    { kind, listId, area }
 //   shared_notebook   (topic shared)    { kind, notebookId, area, vaultId? }
 //   vault_request     (topic vault)     { kind, vaultId, notebookId, deviceId, area }
+//   listday           (topic listday)   { kind, listId, area, day } (1.2.0: the morning of a list day, „Heute ist Einkaufstag“)
 
 const reminder = (task, area) => ({ kind: 'reminder', taskId: task.id, listId: task.list_id, area: area || null, task: task.id });
 const assigned = (taskId, listId, area) => ({ kind: 'assigned', taskId, listId, area: area || null, task: taskId });
@@ -16,4 +17,6 @@ const vaultRequest = (nb, deviceId) => ({
   kind: 'vault_request', vaultId: nb.vault_id, notebookId: nb.id, deviceId, area: nb.area || null, vault: nb.vault_id, notebook: nb.id, event: 'request',
 });
 
-module.exports = { reminder, assigned, sharedList, sharedNotebook, vaultRequest };
+const listDay = (list, day) => ({ kind: 'listday', listId: list.id, area: list.area || null, day, list: list.id });
+
+module.exports = { reminder, assigned, sharedList, sharedNotebook, vaultRequest, listDay };

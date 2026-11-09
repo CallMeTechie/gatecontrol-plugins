@@ -10,6 +10,8 @@ const events = require('./events');
 const fts = require('./fts');
 const clientIds = require('./clientids');
 const push = require('./push');
+const notify = require('./notify');
+const lists = require('./lists');
 const M = require('../ui/notemd');
 const { t } = require('./text');
 const { fail, posInt, line, text, area: areaOf, color: colorOf, isDate, b64u, same, stale } = require('./util');
@@ -19,6 +21,10 @@ const BODY_MAX = 200000;
 const CIPHER_MAX = 1000000;
 const PAGE = 50;
 const MAX_NOTEBOOKS = 300;
+const TRASH_MS = 30 * 86400000;
+
+/** A member who may only look (role read) cannot change the notebook's notes. */
+function writable(row) { if (row.my_role === 'read') throw fail('forbidden', { reason: 'read_only' }); return row; }
 
 /** The notebook `id` as `userId` sees it (not_found otherwise). */
 async function notebookAccess(gc, userId, id) {
@@ -50,11 +56,12 @@ async function ensureDefault(gc, ctx, area) {
 }
 
 async function notebookView(gc, ctx, b, counts) {
-  const ms = await store.all(gc, 'SELECT user_id, role FROM notebook_members WHERE notebook_id = ?', [b.id]);
+  const ms = await store.all(gc, 'SELECT user_id, role, since FROM notebook_members WHERE notebook_id = ?', [b.id]);
   const others = [];
-  for (const m of ms) if (m.user_id !== b.owner_id) others.push({ id: m.user_id, name: await people.name(gc, m.user_id) });
+  for (const m of ms) if (m.user_id !== b.owner_id) others.push({ id: m.user_id, name: await people.name(gc, m.user_id), role: m.role === 'read' ? 'read' : 'write', since: m.since || null });
   return {
     id: b.id, name: b.vault_id ? null : b.name, area: b.area, color: b.color || null, isDefault: !!b.is_default, role: b.my_role || null,
+    canEdit: !!b.my_role && b.my_role !== 'read',
     owner: b.owner_id ? { id: b.owner_id, name: await people.name(gc, b.owner_id) } : null, members: others, shared: ms.length > 1,
     vault: b.vault_id ? { id: b.vault_id, nameCipher: b.name_cipher, keyVersion: b.key_version, needsRotation: !!b.needs_rotation } : null,
     bound: b.bound_plugin ? { plugin: b.bound_plugin, key: b.bound_key, kind: b.bound_kind, label: t(ctx.lang, 'src.' + b.bound_plugin) } : null,
@@ -122,7 +129,7 @@ async function createNotebook(gc, ctx, b, extra = {}) {
       extra.extKind || null, extra.extId || null, ctx.now, ctx.now]);
     const nid = Number(r.lastInsertRowid);
     const pos = await store.one(gc, 'SELECT COALESCE(MAX(position), 0) + 1 AS p FROM notebook_members WHERE user_id = ?', [ctx.userId]);
-    await store.run(gc, 'INSERT INTO notebook_members (user_id, notebook_id, role, position) VALUES (?, ?, ?, ?)', [ctx.userId, nid, 'owner', pos.p]);
+    await store.run(gc, 'INSERT INTO notebook_members (user_id, notebook_id, role, position, since) VALUES (?, ?, ?, ?, ?)', [ctx.userId, nid, 'owner', pos.p, ctx.now]);
     if (extra.inTx) await extra.inTx(nid);
     await clientIds.claim(gc, ctx, cid, 'notebook', nid);
     return { id: nid };
@@ -162,16 +169,42 @@ async function updateNotebook(gc, ctx, id, b0) {
     if (!b64u(b.nameCipher, 80, 1500)) throw fail('invalid', { field: 'nameCipher' });
     set.push('name_cipher = ?'); args.push(b.nameCipher);
   }
-  if (b.color !== undefined) { const c = colorOf(b.color); if (c === undefined) throw fail('invalid', { field: 'color' }); set.push('color = ?'); args.push(c); }
-  if (b.area !== undefined) { if (!owner || nb.is_default || nb.bound_plugin) throw fail('forbidden'); set.push('area = ?'); args.push(areaOf(b.area)); }
+  if (b.color !== undefined) {
+    const c = colorOf(b.color); if (c === undefined) throw fail('invalid', { field: 'color' });
+    if (!owner && !nb.bound_plugin) throw fail('forbidden', { reason: 'owner' });
+    set.push('color = ?'); args.push(c);
+  }
+  if (b.area !== undefined && areaOf(b.area) !== nb.area) { if (!owner || nb.is_default || nb.bound_plugin) throw fail('forbidden'); set.push('area = ?'); args.push(areaOf(b.area)); }
   if (set.length) await store.run(gc, `UPDATE notebooks SET ${set.join(', ')}, updated_at = ? WHERE id = ?`, [...args, ctx.now, nb.id]);
   if (typeof b.position === 'number' && Number.isFinite(b.position)) await store.run(gc, 'UPDATE notebook_members SET position = ? WHERE user_id = ? AND notebook_id = ?', [b.position, ctx.userId, nb.id]);
   events.changed(gc, await memberIds(gc, nb.id), 'notebooks');
   return { notebook: await notebookView(gc, ctx, await notebookAccess(gc, ctx.userId, nb.id)) };
 }
 
-/** DELETE notebooks/<id> — the owner deletes it with its notes (into the trash); a member leaves it. Deleted already by its owner: { ok, gone }. */
-async function removeNotebook(gc, ctx, id) {
+/** GET notebooks/<id>/usage — what a delete would touch (the question before it). */
+async function usage(gc, ctx, id) {
+  const nb = await notebookAccess(gc, ctx.userId, id);
+  const n = await store.one(gc, `SELECT COUNT(*) AS n, SUM(CASE WHEN images > 0 THEN 1 ELSE 0 END) AS img, SUM(CASE WHEN files > 0 THEN 1 ELSE 0 END) AS fil
+    FROM notes INDEXED BY idx_notes_nb WHERE notebook_id = ? AND deleted_at IS NULL`, [nb.id]);
+  const members = [];
+  for (const m of await store.all(gc, 'SELECT user_id, role FROM notebook_members WHERE notebook_id = ?', [nb.id])) {
+    if (m.user_id !== nb.owner_id) members.push({ id: m.user_id, name: await people.name(gc, m.user_id), role: m.role });
+  }
+  const canDelete = nb.my_role === 'owner' && !nb.is_default && !nb.bound_plugin;
+  let target = null;
+  if (canDelete && !nb.vault_id) {
+    const d = await store.one(gc, 'SELECT id, name FROM notebooks WHERE owner_id = ? AND area = ? AND is_default = 1 AND deleted_at IS NULL', [ctx.userId, nb.area]);
+    target = d ? { id: d.id, name: d.name } : { id: null, name: t(ctx.lang, 's.default_notebook') };
+  }
+  return { notes: (n && n.n) || 0, withImages: (n && n.img) || 0, withFiles: (n && n.fil) || 0, members, isDefault: !!nb.is_default, canDelete, vault: !!nb.vault_id, target };
+}
+
+/**
+ * DELETE notebooks/<id>?notes=move|delete — the owner deletes it: `move` puts its notes into the default notebook
+ * „Notizen“ of the area (not for a Tresor: 409 encrypted), `delete` (and no parameter, as in 1.1) puts them into the
+ * trash. A member leaves it. Deleted already by its owner: { ok, gone }. POST notebooks/<id>/restore undoes it.
+ */
+async function removeNotebook(gc, ctx, id, q = {}) {
   let nb;
   try { nb = await notebookAccess(gc, ctx.userId, id); } catch (e) {
     if (posInt(id) && await store.one(gc, 'SELECT id FROM notebooks WHERE id = ? AND owner_id = ? AND deleted_at IS NOT NULL', [posInt(id), ctx.userId])) return { ok: true, gone: true };
@@ -186,30 +219,84 @@ async function removeNotebook(gc, ctx, id) {
     return { ok: true, left: true };
   }
   if (nb.is_default) throw fail('forbidden', { reason: 'default' });
+  const mode = q.notes == null || q.notes === '' ? 'delete' : q.notes;
+  if (!['move', 'delete'].includes(mode)) throw fail('invalid', { field: 'notes' });
+  if (mode === 'move' && nb.vault_id) throw fail('encrypted');
+  const target = mode === 'move' ? await ensureDefault(gc, ctx, nb.area) : null;
+  const rows = await store.all(gc, 'SELECT user_id, role, position, since FROM notebook_members WHERE notebook_id = ?', [nb.id]);
+  const ids = await store.all(gc, 'SELECT id, title, body FROM notes INDEXED BY idx_notes_nb WHERE notebook_id = ? AND deleted_at IS NULL', [nb.id]);
   await store.tx(gc, async () => {
-    await store.run(gc, 'UPDATE notebooks SET deleted_at = ? WHERE id = ?', [ctx.now, nb.id]);
-    const ids = await store.all(gc, 'SELECT id FROM notes INDEXED BY idx_notes_nb WHERE notebook_id = ? AND deleted_at IS NULL', [nb.id]);
-    await store.run(gc, 'UPDATE notes SET deleted_at = ? WHERE notebook_id = ? AND deleted_at IS NULL', [ctx.now, nb.id]);
-    for (const n of ids) await fts.dropNote(gc, n.id);
-    await store.run(gc, 'DELETE FROM notebook_tags WHERE notebook_id = ?', [nb.id]);
+    if (target) {
+      for (const n of ids) {
+        await dropDerived(gc, n.id, nb.id);
+        await store.run(gc, 'UPDATE notes SET notebook_id = ?, updated_at = ? WHERE id = ?', [target, ctx.now, n.id]);
+        await derive(gc, n.id, target, n.title, n.body, []);
+      }
+    } else {
+      await store.run(gc, 'UPDATE notes SET deleted_at = ? WHERE notebook_id = ? AND deleted_at IS NULL', [ctx.now, nb.id]);
+      for (const n of ids) await fts.dropNote(gc, n.id);
+      await store.run(gc, 'DELETE FROM notebook_tags WHERE notebook_id = ?', [nb.id]);
+    }
+    const trash = { mode, target, moved: target ? ids.map((n) => n.id) : [], members: rows.map((r) => [r.user_id, r.role, r.position, r.since || null]) };
+    await store.run(gc, 'UPDATE notebooks SET deleted_at = ?, trash_json = ? WHERE id = ?', [ctx.now, JSON.stringify(trash), nb.id]);
     await store.run(gc, 'DELETE FROM notebook_members WHERE notebook_id = ?', [nb.id]);
   });
   events.changed(gc, members, 'notebooks');
-  return { ok: true };
+  if (target) events.changed(gc, await memberIds(gc, target), 'notes');
+  const td = target ? await store.one(gc, 'SELECT id, name FROM notebooks WHERE id = ?', [target]) : null;
+  return { ok: true, deleted: true, moved: target ? ids.length : 0, removed: target ? 0 : ids.length, target: td ? { id: td.id, name: td.name } : null, restoreUntil: ctx.now + TRASH_MS };
 }
 
-/** PUT notebooks/<id>/members { members: [userId…] } */
+/** POST notebooks/<id>/restore — „Rückgängig“: the owner gets a deleted notebook back (members, roles, notes) while it is in the trash. */
+async function restoreNotebook(gc, ctx, id) {
+  const nid = posInt(id);
+  const nb = nid && await store.one(gc, 'SELECT * FROM notebooks WHERE id = ? AND owner_id = ? AND deleted_at IS NOT NULL AND bound_plugin IS NULL', [nid, ctx.userId]);
+  if (!nb || ctx.now - nb.deleted_at > TRASH_MS) throw fail('not_found');
+  let trash = null;
+  try { trash = nb.trash_json ? JSON.parse(nb.trash_json) : null; } catch { trash = null; }
+  const members = trash && Array.isArray(trash.members) && trash.members.length ? trash.members : [[ctx.userId, 'owner', 1000, null]];
+  if (!members.some((m) => m[0] === ctx.userId)) members.push([ctx.userId, 'owner', 1000, null]);
+  const target = trash && posInt(trash.target);
+  await store.tx(gc, async () => {
+    await store.run(gc, 'UPDATE notebooks SET deleted_at = NULL, trash_json = NULL, updated_at = ? WHERE id = ?', [ctx.now, nb.id]);
+    const back = await store.all(gc, 'SELECT id, title, body FROM notes WHERE notebook_id = ? AND deleted_at = ?', [nb.id, nb.deleted_at]);
+    await store.run(gc, 'UPDATE notes SET deleted_at = NULL WHERE notebook_id = ? AND deleted_at = ?', [nb.id, nb.deleted_at]);
+    if (!nb.vault_id) for (const n of back) await derive(gc, n.id, nb.id, n.title, n.body, []);
+    if (target && Array.isArray(trash.moved)) {
+      for (const x of trash.moved) {
+        const r = posInt(x) && await store.one(gc, 'SELECT id, title, body FROM notes WHERE id = ? AND notebook_id = ? AND deleted_at IS NULL', [x, target]);
+        if (!r) continue;
+        await dropDerived(gc, r.id, target);
+        await store.run(gc, 'UPDATE notes SET notebook_id = ?, updated_at = ? WHERE id = ?', [nb.id, ctx.now, r.id]);
+        await derive(gc, r.id, nb.id, r.title, r.body, []);
+      }
+    }
+    for (const [uid, role, position, since] of members) {
+      if (!posInt(uid)) continue;
+      await store.run(gc, 'INSERT OR IGNORE INTO notebook_members (user_id, notebook_id, role, position, since) VALUES (?, ?, ?, ?, ?)',
+        [uid, nb.id, uid === ctx.userId ? 'owner' : role === 'read' ? 'read' : 'write', typeof position === 'number' ? position : 1000, since || null]);
+    }
+  });
+  const ms = await memberIds(gc, nb.id);
+  events.changed(gc, ms, 'notebooks');
+  events.changed(gc, ms, 'notes');
+  return { notebook: await notebookView(gc, ctx, await notebookAccess(gc, ctx.userId, nb.id)) };
+}
+
+/** PUT notebooks/<id>/members { members: [userId | { id, role }…] } — roles read | write as for lists. */
 async function setMembers(gc, ctx, id, b) {
   const nb = await notebookAccess(gc, ctx.userId, id);
-  if (nb.my_role !== 'owner' || nb.bound_plugin) throw fail('forbidden');
-  if (!Array.isArray(b.members) || b.members.length > 50) throw fail('invalid', { field: 'members' });
-  const want = [...new Set(b.members.map(posInt))].filter((x) => x && x !== ctx.userId);
-  const before = await memberIds(gc, nb.id);
-  for (const u of want) if (!before.includes(u) && !(await people.mayShare(gc, ctx.userId, u))) throw fail('forbidden', { userId: u });
-  const added = want.filter((u) => !before.includes(u));
-  const gone = before.filter((u) => u !== ctx.userId && !want.includes(u));
+  if (nb.bound_plugin) throw fail('forbidden');
+  if (nb.my_role !== 'owner') throw fail('forbidden', { reason: 'owner' });
+  const want = lists.wantedMembers(b.members, ctx.userId);
+  const before = new Map((await store.all(gc, 'SELECT user_id, role FROM notebook_members WHERE notebook_id = ?', [nb.id])).map((m) => [m.user_id, m.role]));
+  for (const u of want.keys()) if (!before.has(u) && !(await people.mayShare(gc, ctx.userId, u))) throw fail('forbidden', { userId: u });
+  const added = [...want.keys()].filter((u) => !before.has(u));
+  const gone = [...before.keys()].filter((u) => u !== ctx.userId && !want.has(u));
+  const changedRole = [...want.entries()].filter(([u, r]) => before.has(u) && r && before.get(u) !== r && before.get(u) !== 'owner');
   await store.tx(gc, async () => {
-    for (const u of added) await store.run(gc, 'INSERT OR IGNORE INTO notebook_members (user_id, notebook_id, role, position) VALUES (?, ?, ?, ?)', [u, nb.id, 'write', 1000]);
+    for (const u of added) await store.run(gc, 'INSERT OR IGNORE INTO notebook_members (user_id, notebook_id, role, position, since) VALUES (?, ?, ?, ?, ?)', [u, nb.id, want.get(u) || 'write', 1000, ctx.now]);
+    for (const [u, r] of changedRole) await store.run(gc, 'UPDATE notebook_members SET role = ? WHERE user_id = ? AND notebook_id = ?', [r, u, nb.id]);
     for (const u of gone) {
       await store.run(gc, 'DELETE FROM notebook_members WHERE user_id = ? AND notebook_id = ?', [u, nb.id]);
       // a Tresor: the person's devices lose their keys, the next writer rotates (vault.js)
@@ -221,10 +308,10 @@ async function setMembers(gc, ctx, id, b) {
     }
   });
   if (added.length) {
-    await gc.notify({ topic: 'shared', title: t(ctx.notifyLang, 'n.shared_nb_title', { name: ctx.userName || '' }), body: nb.vault_id ? t(ctx.notifyLang, 'n.vault') : nb.name,
-      users: added, collapseKey: 'notebook:' + nb.id, data: { notizen: push.sharedNotebook(nb) } }).catch(() => {});
+    await notify.send(gc, added, 'shared', { topic: 'shared', title: t(ctx.notifyLang, 'n.shared_nb_title', { name: ctx.userName || '' }), body: nb.vault_id ? t(ctx.notifyLang, 'n.vault') : nb.name,
+      collapseKey: 'notebook:' + nb.id, data: { notizen: push.sharedNotebook(nb) } });
   }
-  events.changed(gc, [...new Set([...before, ...added])], 'notebooks');
+  events.changed(gc, [...new Set([...before.keys(), ...added])], 'notebooks');
   return { notebook: await notebookView(gc, ctx, await notebookAccess(gc, ctx.userId, nb.id)) };
 }
 
@@ -370,6 +457,7 @@ async function create(gc, ctx, b0, opts = {}) {
   if (b.notebookId == null && b.notebookClientId != null) b.notebookId = await clientIds.resolve(gc, ctx, b.notebookClientId, 'notebook', 'notebookClientId');
   const nbId = b.notebookId != null ? b.notebookId : await ensureDefault(gc, ctx, b.area);
   const nb = opts.notebook || await notebookAccess(gc, ctx.userId, nbId);
+  if (!opts.notebook) writable(nb);
   const c = colorOf(b.color);
   if (c === undefined) throw fail('invalid', { field: 'color' });
   if (b.due != null && !isDate(b.due)) throw fail('invalid', { field: 'due' });
@@ -439,6 +527,7 @@ function unchanged(r, b) {
 async function update(gc, ctx, id, b) {
   const r = await access(gc, ctx, id);
   if (unchanged(r, b)) return get(gc, ctx, r.id);
+  writable(r);
   if (b.rev != null && b.rev !== r.rev) throw fail('conflict', { rev: r.rev });
   const set = [];
   const args = [];
@@ -463,7 +552,7 @@ async function update(gc, ctx, id, b) {
   if (b.expiresAt !== undefined) { if (b.expiresAt !== null && !(Number.isSafeInteger(b.expiresAt) && b.expiresAt > 0)) throw fail('invalid', { field: 'expiresAt' }); put('expires_at', b.expiresAt); }
   let target = null;
   if (b.notebookId !== undefined && posInt(b.notebookId) !== r.notebook_id) {
-    target = await notebookAccess(gc, ctx.userId, b.notebookId);
+    target = writable(await notebookAccess(gc, ctx.userId, b.notebookId));
     if (!!target.vault_id !== !!r.nb_vault || (target.vault_id && target.vault_id !== r.nb_vault)) throw fail('encrypted');
     put('notebook_id', target.id);
   }
@@ -493,6 +582,7 @@ async function remove(gc, ctx, id, opts = {}) {
         WHERE n.id = ? AND n.deleted_at IS NOT NULL`, [ctx.userId, posInt(id)])) return { ok: true, gone: true };
       throw e;
     }
+    writable(r);
   }
   await (opts.inTx ? (fn) => fn() : (fn) => store.tx(gc, fn))(async () => {
     await store.run(gc, 'UPDATE notes SET deleted_at = ?, updated_at = ? WHERE id = ?', [ctx.now, ctx.now, r.id]);
@@ -505,7 +595,7 @@ async function remove(gc, ctx, id, opts = {}) {
 
 /** POST notes/<id>/check { line, done } — tick a check box of the text. */
 async function check(gc, ctx, id, b) {
-  const r = await access(gc, ctx, id);
+  const r = writable(await access(gc, ctx, id));
   if (r.nb_vault) throw fail('encrypted');
   const ln = Number.isSafeInteger(b.line) && b.line >= 0 ? b.line : null;
   const body = ln == null ? null : M.toggle(r.body, ln, !!b.done);
@@ -520,7 +610,7 @@ const opts = {};
 
 /** POST notes/<id>/task { line, listId?, due? } — a line of the note becomes a task (the line gets a link to it). */
 async function lineToTask(gc, ctx, id, b, tasksMod) {
-  const r = await access(gc, ctx, id);
+  const r = writable(await access(gc, ctx, id));
   if (r.nb_vault) throw fail('encrypted');
   const ln = Number.isSafeInteger(b.line) && b.line >= 0 ? b.line : null;
   const title = ln == null ? null : M.lineText(r.body, ln);
@@ -538,6 +628,6 @@ async function nav(gc, ctx, area) {
 }
 
 module.exports = {
-  notebookAccess, memberIds, ensureDefault, notebookView, notebooks, createNotebook, updateNotebook, removeNotebook, setMembers,
+  notebookAccess, memberIds, ensureDefault, notebookView, notebooks, createNotebook, updateNotebook, removeNotebook, restoreNotebook, usage, setMembers, writable,
   access, list, get, create, update, remove, check, lineToTask, nav, summary, derive, dropDerived, markBound, opts, TITLE_MAX, BODY_MAX,
 };

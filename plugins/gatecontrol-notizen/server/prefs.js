@@ -8,18 +8,30 @@
 //               flagged?: bool (Mail), evening?: 'HH:MM' (Alltag) } }
 //   groups    { '<plugin>|<group id>': 'private' | 'work' | 'hide' } — Mail accounts, Schule children, Familie lists
 //   times     { morning, noon, afternoon, evening, night } of the quick entry (ui/quickparse.js)
+//   myday     { listdays: bool, showDone: bool } (1.2.0) — the list day card at the top of „Mein Tag“, the done ones of today
+//   startArea 'last' | 'private' | 'work' (1.2.0) — the area on opening („last“: `area`)
+//   notify    { reminders, shared, listday: bool } (1.2.0) — false: the plugin sends no push of that kind to the person
 
 const store = require('./store');
 const config = require('./config');
 const { fail, parse, isTime } = require('./util');
 
-const DEFAULTS = { area: 'private', evening: '18:00', sources: {}, groups: {}, times: {} };
+const MYDAY = { listdays: true, showDone: true };
+const NOTIFY = { reminders: true, shared: true, listday: true };
+const DEFAULTS = { area: 'private', evening: '18:00', sources: {}, groups: {}, times: {}, myday: { ...MYDAY }, startArea: 'last', notify: { ...NOTIFY } };
 const SRC_KEYS = { on: 'bool', kids: ['all', 'mine', 'none'], shoppingInMyDay: 'bool', flagged: 'bool', evening: 'time' };
 const TIME_KEYS = ['morning', 'noon', 'afternoon', 'evening', 'night'];
 
 function normalize(raw) {
   const r = raw && typeof raw === 'object' ? raw : {};
-  const out = { area: r.area === 'work' ? 'work' : 'private', evening: isTime(r.evening) ? r.evening : DEFAULTS.evening, sources: {}, groups: {}, times: {} };
+  const out = {
+    area: r.area === 'work' ? 'work' : 'private', evening: isTime(r.evening) ? r.evening : DEFAULTS.evening, sources: {}, groups: {}, times: {},
+    myday: { ...MYDAY }, startArea: ['private', 'work'].includes(r.startArea) ? r.startArea : 'last', notify: { ...NOTIFY },
+  };
+  for (const [key, def] of [['myday', MYDAY], ['notify', NOTIFY]]) {
+    const v = r[key];
+    if (v && typeof v === 'object') for (const k of Object.keys(def)) if (typeof v[k] === 'boolean') out[key][k] = v[k];
+  }
   for (const p of config.SOURCES) {
     const s = r.sources && r.sources[p];
     if (!s || typeof s !== 'object') continue;
@@ -58,7 +70,8 @@ async function touch(gc, userId, now) {
 async function put(gc, ctx, b) {
   if (!b || typeof b !== 'object' || Array.isArray(b)) throw fail('invalid');
   const cur = await get(gc, ctx.userId);
-  const merged = { ...cur, ...b, sources: { ...cur.sources }, groups: { ...cur.groups, ...(b.groups && typeof b.groups === 'object' ? b.groups : {}) }, times: { ...cur.times, ...(b.times || {}) } };
+  const merged = { ...cur, ...b, sources: { ...cur.sources }, groups: { ...cur.groups, ...(b.groups && typeof b.groups === 'object' ? b.groups : {}) }, times: { ...cur.times, ...(b.times || {}) },
+    myday: { ...cur.myday, ...(b.myday && typeof b.myday === 'object' ? b.myday : {}) }, notify: { ...cur.notify, ...(b.notify && typeof b.notify === 'object' ? b.notify : {}) } };
   if (b.sources && typeof b.sources === 'object') for (const [p, s] of Object.entries(b.sources)) merged.sources[p] = { ...(cur.sources[p] || {}), ...(s || {}) };
   for (const [k, v] of Object.entries(merged.groups)) if (v === null) delete merged.groups[k];
   const n = normalize(merged);

@@ -363,7 +363,13 @@
   "p.dsnote_bad": "Das ist keine DS-Note-Exportdatei (.nsx).",
   "p.unavailable": "Notizen & Aufgaben ist gerade nicht erreichbar",
   "p.task": "Aufgabe",
-  "p.note_word": "Notiz"
+  "p.note_word": "Notiz",
+  "v.listday_cart": "Heute ist Einkaufstag",
+  "v.listday": "Heute ist Listen-Tag",
+  "v.listday_open": "{{n}} offen",
+  "n.listday_title": "Heute: {{name}}",
+  "n.listday_body": "{{name}} – {{n}} Dinge auf der Liste",
+  "n.listday_body_one": "{{name}} – 1 Ding auf der Liste"
  },
  "en": {
   "s.default_list": "Tasks",
@@ -729,6 +735,12 @@
   "p.dsnote_bad": "This is not a DS Note export file (.nsx).",
   "p.unavailable": "Notes & Tasks is not reachable right now",
   "p.task": "Task",
-  "p.note_word": "Note"
+  "p.note_word": "Note",
+  "v.listday_cart": "Shopping day today",
+  "v.listday": "List day today",
+  "v.listday_open": "{{n}} open",
+  "n.listday_title": "Today: {{name}}",
+  "n.listday_body": "{{name}} – {{n}} things on the list",
+  "n.listday_body_one": "{{name}} – 1 thing on the list"
  }
 }
