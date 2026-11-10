@@ -1,4 +1,4 @@
-<!-- version: 1.28.1 -->
+<!-- version: 1.28.2 -->
 # Drive
 
 ## What the plugin does
@@ -62,6 +62,14 @@ A vault folder stays end-to-end encrypted while you look at a file in it:
 - **Limits:** very large files, office files and, in the browser, videos are not shown – you get a note and can download the file on purpose or view it in the app.
 - **Offline (Android app):** In a vault, switch on “Available offline” for a file or a folder (menu ⋮) or “Keep the whole vault offline” at the top. The phone then keeps only the encrypted content, exactly as the server has it. As always a file opens only after unlocking, in memory only – also without a connection. For that the phone keeps the wrapped vault key; it stays protected by the phone's device key. If the device is removed from the vault or you sign out, the app deletes the vault's offline files.
 
+### Putting files into a vault – what happens to the original
+
+A file you put into a vault is encrypted on your device and uploaded that way. What happens afterwards to the unencrypted file on your device depends on what you upload it with:
+
+- **Android app (from 1.103.1):** the app **moves** the file into the vault – after the upload it deletes the original on the phone.
+- **Windows app:** moves it too and deletes the original on the PC (with the next update of the Windows app).
+- **Portal in the browser:** a browser may not delete files on your computer. So the original stays. **Delete it yourself after the upload** so no unencrypted copy is left. The portal says so in the vault above the file list, while you drag files in and after the upload (“3 files are now in the vault. Please delete the originals on your device now.”). Think of copies in the downloads folder too – the browser does not delete those either.
+
 ## Permissions
 
 | Area | Who | Right |
@@ -111,6 +119,10 @@ Full screen in the portal needs GateControl 1.244.0. Older versions show the vid
 
 **At home the photos do not show up faster.**
 The previews reach the gateway bit by bit (a few hundred per run, every 15 minutes). Check at the gateway under **Gateways › Home cache** that it is “on” and that “Photos” or “Drive” are switched on. Previews from the home network need GateControl 1.249.0 and a current app.
+
+## New in 1.28.2
+
+- **Vault: a note about the original (portal):** when you upload files into a vault in the portal, the original stays on your computer – a browser cannot delete it (the Android app moves files into the vault and deletes the original). The portal now says so clearly: in the vault above the file list, under “New” › “Upload files”, while you drag files in and after the upload with “… files are now in the vault. Please delete the originals on your device now.” See “Putting files into a vault”.
 
 ## New in 1.28.1
 

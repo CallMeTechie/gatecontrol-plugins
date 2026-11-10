@@ -2,6 +2,27 @@
 
 Dateien der Familie und des Teams auf dem eigenen Speicher – auf diesem Server, einer NAS oder in S3.
 
+## 1.28.2
+
+- **Tresor im Portal: Hinweis auf das Original.** Ein Browser kann keine Datei auf dem Computer löschen – lädt man im
+  Portal Dateien in einen Tresor (`ui/vault.js`, im Browser verschlüsselt), bleibt das unverschlüsselte Original liegen.
+  Die Android-App (ab 1.103.1) und bald die Windows-App **verschieben** dagegen in den Tresor. Das Portal sagt es jetzt
+  deutlich (Texte `p.v.upload_note`, `p.v.upload_hint`, `p.v.drop`, `p.v.drop_note`, `p.v.uploaded_n` auf Deutsch und
+  Englisch):
+  - **vorher** im geöffneten Tresor über der Dateiliste (nur mit Schreibrecht): „Die Dateien werden verschlüsselt in den
+    Tresor hochgeladen. Das Original auf deinem Gerät bleibt erhalten – lösche es danach selbst, damit keine
+    unverschlüsselte Kopie übrig bleibt.“; unter „Neu“ › „Dateien hochladen“: „Verschlüsselt – das Original bleibt auf
+    deinem Gerät“; beim Hineinziehen: „Zum Verschlüsseln in den Tresor loslassen“ mit „Das Original auf deinem Gerät
+    bleibt erhalten – lösche es danach selbst.“,
+  - **währenddessen** derselbe Hinweis im Hochlade-Fenster,
+  - **danach** im Hochlade-Fenster: „3 Dateien sind jetzt im Tresor. Bitte lösche jetzt die Originale auf deinem Gerät.
+    Der Browser kann sie nicht löschen – auch nicht im Download-Ordner.“ (bis „Schließen“).
+  Andere Wege vom Computer in einen Tresor gibt es im Portal nicht: eine neue Version entsteht über dasselbe Hochladen
+  („Neue Version“ bei gleichem Namen), Verschieben und Kopieren bleiben innerhalb von Drive.
+- Handbuch: neuer Abschnitt „Dateien in den Tresor legen – was mit dem Original passiert“ (Android, Windows, Browser).
+- Tests: `test/portal_vault.test.js` prüft die Hinweise (Tresor, Menü, Ablegen, nach dem Hochladen von zwei Dateien) und
+  dass außerhalb eines Tresors keiner erscheint.
+
 ## 1.28.1
 
 - **Virenscan-Zustände in einem Rutsch:** Die nächtliche Nachprüfung von GateControl meldet jede Datei einzeln
