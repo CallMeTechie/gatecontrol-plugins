@@ -2,6 +2,15 @@
 
 Dateien der Familie und des Teams auf dem eigenen Speicher – auf diesem Server, einer NAS oder in S3.
 
+## 1.28.3
+
+- **Nur Dokumentation: Windows-App und Tresor.** HANDBUCH und HANDBOOK, Abschnitt „Dateien in den Tresor legen – was
+  mit dem Original passiert“: Statt „mit dem nächsten Update der Windows-App“ steht jetzt die echte Version. Die
+  Windows-App (GateControl Pro) **verschiebt** Dateien ab **1.81.3** in einen Tresor und löscht das Original auf dem PC
+  endgültig (nicht über den Papierkorb); ist das Original geöffnet, schreibgeschützt oder hat es sich während des
+  Hochladens geändert, bleibt es erhalten und die App sagt es. README entsprechend ergänzt. Kein Code geändert, keine
+  Migration.
+
 ## 1.28.2
 
 - **Tresor im Portal: Hinweis auf das Original.** Ein Browser kann keine Datei auf dem Computer löschen – lädt man im
