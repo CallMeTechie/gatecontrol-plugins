@@ -1,4 +1,4 @@
-<!-- version: 1.28.2 -->
+<!-- version: 1.28.3 -->
 # Drive
 
 ## What the plugin does
@@ -67,7 +67,7 @@ A vault folder stays end-to-end encrypted while you look at a file in it:
 A file you put into a vault is encrypted on your device and uploaded that way. What happens afterwards to the unencrypted file on your device depends on what you upload it with:
 
 - **Android app (from 1.103.1):** the app **moves** the file into the vault – after the upload it deletes the original on the phone.
-- **Windows app:** moves it too and deletes the original on the PC (with the next update of the Windows app).
+- **Windows app (GateControl Pro, from 1.81.3):** the app **moves** the file into the vault as well – after the upload it deletes the original on the PC for good (it does not go to the recycle bin). If the original is open in another program, is read-only or changed during the upload, it stays – the app then tells you so.
 - **Portal in the browser:** a browser may not delete files on your computer. So the original stays. **Delete it yourself after the upload** so no unencrypted copy is left. The portal says so in the vault above the file list, while you drag files in and after the upload (“3 files are now in the vault. Please delete the originals on your device now.”). Think of copies in the downloads folder too – the browser does not delete those either.
 
 ## Permissions
@@ -119,6 +119,10 @@ Full screen in the portal needs GateControl 1.244.0. Older versions show the vid
 
 **At home the photos do not show up faster.**
 The previews reach the gateway bit by bit (a few hundred per run, every 15 minutes). Check at the gateway under **Gateways › Home cache** that it is “on” and that “Photos” or “Drive” are switched on. Previews from the home network need GateControl 1.249.0 and a current app.
+
+## New in 1.28.3
+
+- **Handbook: Windows app and vault:** the section “Putting files into a vault” now says from which version the Windows app (GateControl Pro) moves files into a vault: from 1.81.3. It then deletes the original on the PC for good (not via the recycle bin). If the original is open, read-only or changed during the upload, it stays and the app tells you so. Nothing changes on the server.
 
 ## New in 1.28.2
 

@@ -1,4 +1,4 @@
-<!-- version: 1.28.2 -->
+<!-- version: 1.28.3 -->
 # Drive
 
 ## Was das Plugin kann
@@ -67,7 +67,7 @@ Ein Tresor-Ordner bleibt Ende-zu-Ende verschlüsselt, auch wenn du dir eine Date
 Eine Datei, die du in einen Tresor legst, wird auf deinem Gerät verschlüsselt und so hochgeladen. Was danach mit der unverschlüsselten Datei auf deinem Gerät passiert, hängt davon ab, womit du sie hochlädst:
 
 - **Android-App (ab 1.103.1):** Die App **verschiebt** die Datei in den Tresor – nach dem Hochladen löscht sie das Original auf dem Handy.
-- **Windows-App:** Verschiebt ebenso und löscht das Original auf dem PC (mit dem nächsten Update der Windows-App).
+- **Windows-App (GateControl Pro, ab 1.81.3):** Die App **verschiebt** die Datei ebenfalls in den Tresor – nach dem Hochladen löscht sie das Original auf dem PC endgültig (es landet nicht im Papierkorb). Ist das Original gerade in einem anderen Programm geöffnet, schreibgeschützt oder hat es sich während des Hochladens geändert, bleibt es erhalten – die App sagt dir das dann.
 - **Portal im Browser:** Ein Browser darf keine Dateien auf deinem Computer löschen. Das Original bleibt also erhalten. **Lösche es nach dem Hochladen selbst**, damit keine unverschlüsselte Kopie übrig bleibt. Das Portal sagt das im Tresor über der Dateiliste, beim Hineinziehen von Dateien und nach dem Hochladen („3 Dateien sind jetzt im Tresor. Bitte lösche jetzt die Originale auf deinem Gerät.“). Denk auch an Kopien im Download-Ordner – auch die löscht der Browser nicht.
 
 ## Berechtigungen
@@ -119,6 +119,10 @@ Vollbild im Portal gibt es ab GateControl 1.244.0. Ältere Versionen zeigen das 
 
 **Zu Hause bauen sich die Fotos nicht schneller auf.**
 Die Vorschaubilder kommen erst nach und nach auf das Gateway (je Lauf einige Hundert, alle 15 Minuten). Prüfe am Gateway unter **Gateways › Zwischenspeicher**, dass er „aktiv“ ist und „Fotos“ bzw. „Drive“ eingeschaltet sind. Vorschaubilder aus dem Heimnetz braucht GateControl 1.249.0 und eine aktuelle App.
+
+## Neu in 1.28.3
+
+- **Handbuch: Windows-App und Tresor:** Im Abschnitt „Dateien in den Tresor legen“ steht jetzt, ab welcher Version die Windows-App (GateControl Pro) Dateien in den Tresor verschiebt: ab 1.81.3. Sie löscht das Original auf dem PC dann endgültig (nicht über den Papierkorb). Ist das Original geöffnet, schreibgeschützt oder hat es sich beim Hochladen geändert, bleibt es erhalten und die App sagt es dir. Am Server ändert sich nichts.
 
 ## Neu in 1.28.2
 

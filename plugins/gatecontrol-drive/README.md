@@ -1336,7 +1336,7 @@ to open in a new tab —, browse, pick, choose the target; the jobs with progres
 text file and confirmed before the vault is made; names decrypted in the list; uploads encrypted in the browser — files
 only, ≤ 100 MB; the original stays on the computer, a browser cannot delete it — since 1.28.2 the vault's banner,
 "Neu" › "Dateien hochladen", the drop zone and the upload panel say so, after the upload "<n> Dateien sind jetzt im
-Tresor. Bitte lösche jetzt die Originale …" (the apps move files into a vault: Android ≥ 1.103.1); downloads decrypted in the browser; since 1.22.0 a click opens the viewer — pictures, PDFs, texts in
+Tresor. Bitte lösche jetzt die Originale …" (the apps move files into a vault: Android ≥ 1.103.1, Windows / GateControl Pro ≥ 1.81.3); downloads decrypted in the browser; since 1.22.0 a click opens the viewer — pictures, PDFs, texts in
 memory, see "Viewing vault files"; "Freigabe anfragen" with the safety number, "Mit
 Wiederherstellungsschlüssel öffnen", the requests of other devices with "Freigeben" / "Ablehnen", "Schlüssel erneuern";
 a browser without X25519 or a GateControl without `GC.keys` shows a note) and **"Im Browser bearbeiten"** for documents
