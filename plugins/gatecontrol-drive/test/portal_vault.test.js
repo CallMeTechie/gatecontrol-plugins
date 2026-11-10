@@ -3,7 +3,8 @@
 // The portal's vault folders (1.9.0, ui/vault.js) in the fake DOM against the mock host: making a vault (the recovery
 // key shown, the vault made once it is kept), a file encrypted in the browser (the server sees an opaque name and
 // ciphertext only), a second browser that asks, the first approves after the safety number, the second reads the
-// names — and a browser without GC.keys (an older GateControl) gets the note instead.
+// names — and a browser without GC.keys (an older GateControl) gets the note instead. Since 1.28.2 the notes that the
+// original stays on the computer (before, in the drop zone, after the upload: delete it yourself).
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -99,6 +100,10 @@ test('portal: a vault from „Neu“ (who may open it), only in the menu, a file
       navItem($('dp-nav'), 'Belege').click();
       await until('in Belege', () => textOf($('dp-crumbs')).includes('Belege') && byText($('dp-tools'), 'span', 'Neu'));
       assert.ok($('dp-nav').querySelectorAll('.dp-tree-row').find((r) => r.className.includes('is-sel') && textOf(r).includes('Belege')), 'the folder shown is marked');
+      assert.equal(textOf($('dp-main')).includes('Das Original auf deinem Gerät'), false, 'no vault note outside a vault');
+      $('dp-root').dispatchEvent({ type: 'dragenter', dataTransfer: { types: ['Files'] } });
+      assert.equal(textOf($('dp-drop')), 'Zum Hochladen loslassen');
+      $('dp-root').dispatchEvent({ type: 'dragleave' });
       click($('dp-tools'), 'Neu');
       click(await until('the menu', () => byText($('dp-dialog'), 'span', 'Neuer Tresor') && $('dp-dialog')), 'Neuer Tresor');
       const input = await until('name field', () => $('dp-dialog').querySelector('input'));
@@ -133,14 +138,33 @@ test('portal: a vault from „Neu“ (who may open it), only in the menu, a file
       // into it from the menu, a file
       navItem($('dp-nav'), 'Steuer').click();
       await until('inside', () => textOf($('dp-crumbs')).includes('Steuer') && byText($('dp-tools'), 'span', 'Hochladen'));
+      // since 1.28.2: the browser cannot delete the original on the computer (the apps move it) — the note says so
+      const upNote = 'Die Dateien werden verschlüsselt in den Tresor hochgeladen. Das Original auf deinem Gerät bleibt erhalten – lösche es danach selbst, damit keine unverschlüsselte Kopie übrig bleibt.';
+      assert.ok(textOf($('dp-main')).includes(upNote), 'the note before an upload into the vault');
+      click($('dp-tools'), 'Neu');
+      await until('the menu in the vault', () => textOf($('dp-dialog')).includes('Verschlüsselt – das Original bleibt auf deinem Gerät'));
+      navItem($('dp-dialog'), 'Schließen').click();
+      const drag = { types: ['Files'] };
+      $('dp-root').dispatchEvent({ type: 'dragenter', dataTransfer: drag });
+      assert.equal($('dp-drop').hidden, false);
+      assert.equal(textOf($('dp-drop')), 'Zum Verschlüsseln in den Tresor loslassen' + 'Das Original auf deinem Gerät bleibt erhalten – lösche es danach selbst.');
+      $('dp-root').dispatchEvent({ type: 'dragleave', dataTransfer: drag });
+      assert.equal($('dp-drop').hidden, true);
       const fi = $('dp-file');
-      fi.files = [file('Beleg Oktober.pdf', 'geheimer Inhalt %PDF', 'application/pdf')];
+      fi.files = [file('Beleg Oktober.pdf', 'geheimer Inhalt %PDF', 'application/pdf'), file('Beleg November.pdf', 'noch geheimer %PDF', 'application/pdf')];
       fi.dispatchEvent({ type: 'change', target: fi });
-      await until('the file', () => byText($('dp-main'), 'span', 'Beleg Oktober.pdf'));
+      await until('the file', () => byText($('dp-main'), 'span', 'Beleg Oktober.pdf') && byText($('dp-main'), 'span', 'Beleg November.pdf'));
+      // after the upload: delete the originals yourself (the downloads folder too)
+      await until('the result', () => textOf($('dp-ups')).includes('2 Dateien sind jetzt im Tresor. Bitte lösche jetzt die Originale auf deinem Gerät. Der Browser kann sie nicht löschen – auch nicht im Download-Ordner.'));
+      assert.ok($('dp-ups').querySelectorAll('div').find((d) => d.className === 'dp-note dp-ups-note is-warn'));
+      navItem($('dp-ups'), 'Schließen').click();
+      assert.equal($('dp-ups').hidden, true);
       const items = (await a('GET', `nodes/${vaults[0].nodeId}/children`)).json.items;
-      assert.equal(items.length, 1);
-      assert.match(items[0].name, /^[0-9a-f]{32}$/);
-      assert.equal(host.media.get(items[0].mediaId).data.includes(Buffer.from('geheimer')), false, 'ciphertext only');
+      assert.equal(items.length, 2);
+      for (const it of items) {
+        assert.match(it.name, /^[0-9a-f]{32}$/);
+        assert.equal(host.media.get(it.mediaId).data.includes(Buffer.from('geheimer')), false, 'ciphertext only');
+      }
       // the recovery key opens it (the format of README)
       const rk = await VC.recoveryKeyPair(VC.parseRecoveryKey(recovery));
       assert.equal(VC.b64u(rk.publicRaw), vaults[0].recoveryPub);

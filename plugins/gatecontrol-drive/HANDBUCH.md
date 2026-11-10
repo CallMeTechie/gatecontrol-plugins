@@ -1,4 +1,4 @@
-<!-- version: 1.28.1 -->
+<!-- version: 1.28.2 -->
 # Drive
 
 ## Was das Plugin kann
@@ -62,6 +62,14 @@ Ein Tresor-Ordner bleibt Ende-zu-Ende verschlüsselt, auch wenn du dir eine Date
 - **Grenzen:** Sehr große Dateien, Office-Dateien und im Browser auch Videos zeigt die Ansicht nicht an – du bekommst einen Hinweis und kannst die Datei bewusst herunterladen oder in der App ansehen.
 - **Offline (Android-App):** Im Tresor schaltest du „Offline verfügbar“ für eine Datei oder einen Ordner ein (Menü ⋮) oder oben „Ganzen Tresor offline halten“. Auf dem Handy liegt dann nur der verschlüsselte Inhalt, genau so wie auf dem Server. Geöffnet wird wie immer erst nach dem Entsperren, nur im Arbeitsspeicher – auch ohne Netz. Dafür merkt sich das Handy den verpackten Tresor-Schlüssel; er bleibt mit dem Geräteschlüssel des Handys geschützt. Wird das Gerät aus dem Tresor entfernt oder meldest du dich ab, löscht die App die Offline-Dateien des Tresors.
 
+### Dateien in den Tresor legen – was mit dem Original passiert
+
+Eine Datei, die du in einen Tresor legst, wird auf deinem Gerät verschlüsselt und so hochgeladen. Was danach mit der unverschlüsselten Datei auf deinem Gerät passiert, hängt davon ab, womit du sie hochlädst:
+
+- **Android-App (ab 1.103.1):** Die App **verschiebt** die Datei in den Tresor – nach dem Hochladen löscht sie das Original auf dem Handy.
+- **Windows-App:** Verschiebt ebenso und löscht das Original auf dem PC (mit dem nächsten Update der Windows-App).
+- **Portal im Browser:** Ein Browser darf keine Dateien auf deinem Computer löschen. Das Original bleibt also erhalten. **Lösche es nach dem Hochladen selbst**, damit keine unverschlüsselte Kopie übrig bleibt. Das Portal sagt das im Tresor über der Dateiliste, beim Hineinziehen von Dateien und nach dem Hochladen („3 Dateien sind jetzt im Tresor. Bitte lösche jetzt die Originale auf deinem Gerät.“). Denk auch an Kopien im Download-Ordner – auch die löscht der Browser nicht.
+
 ## Berechtigungen
 
 | Bereich | Wer | Recht |
@@ -111,6 +119,10 @@ Vollbild im Portal gibt es ab GateControl 1.244.0. Ältere Versionen zeigen das 
 
 **Zu Hause bauen sich die Fotos nicht schneller auf.**
 Die Vorschaubilder kommen erst nach und nach auf das Gateway (je Lauf einige Hundert, alle 15 Minuten). Prüfe am Gateway unter **Gateways › Zwischenspeicher**, dass er „aktiv“ ist und „Fotos“ bzw. „Drive“ eingeschaltet sind. Vorschaubilder aus dem Heimnetz braucht GateControl 1.249.0 und eine aktuelle App.
+
+## Neu in 1.28.2
+
+- **Tresor: Hinweis auf das Original (Portal):** Lädst du im Portal Dateien in einen Tresor, bleibt das Original auf deinem Computer – ein Browser kann es nicht löschen (die Android-App verschiebt Dateien in den Tresor und löscht das Original). Das Portal sagt das jetzt deutlich: im Tresor über der Dateiliste, unter „Neu“ › „Dateien hochladen“, beim Hineinziehen von Dateien und nach dem Hochladen mit „… Dateien sind jetzt im Tresor. Bitte lösche jetzt die Originale auf deinem Gerät.“ Siehe „Dateien in den Tresor legen“.
 
 ## Neu in 1.28.1
 

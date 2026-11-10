@@ -420,6 +420,8 @@
       if (!f || !f.encrypted || !keysOf(f.vaultId)) return;
       var v = st.vaults.get(f.vaultId);
       if (!v) return;
+      // since 1.28.2: a browser cannot delete a file on the computer (the apps move it into the vault) — say so before
+      if (U.canWrite()) main.appendChild(h('div', { class: 'dp-note dp-vault-note dp-vault-upnote' }, [U.icon('upload'), h('span', { text: T('p.v.upload_note') })]));
       if (v.pending > 0) {
         main.appendChild(h('div', { class: 'dp-note dp-vault-note' }, [U.icon('lock'), h('span', { text: U.P('p.v.pending_n', v.pending) }),
           U.btn(T('p.v.review'), function () { review(v); }, { small: true })]));

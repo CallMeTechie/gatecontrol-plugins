@@ -771,7 +771,7 @@
         hint ? h('span', { class: 'dp-menu-tx' }, [h('span', { text: label }), h('span', { class: 'dp-meta', text: hint })]) : h('span', { text: label })]));
     };
     item('folderPlus', T('p.new_folder'), null, vault ? function () { V.newFolder(S.folder); } : newFolder);
-    item('upload', T('p.upload_files'), null, function () { $('dp-file').click(); });
+    item('upload', T('p.upload_files'), vault ? T('p.v.upload_hint') : null, function () { $('dp-file').click(); });
     if (!vault) item('folderUp', T('p.upload_folder'), null, function () { $('dp-dir').click(); });
     if (V) {
       items.push(h('hr', { class: 'dp-menu-sep' }));
@@ -1442,7 +1442,14 @@
     var zone = $('dp-drop');
     var depth = 0;
     var hasFiles = function (ev) { var t = ev.dataTransfer && ev.dataTransfer.types; return !!t && [].indexOf.call(t, 'Files') >= 0; };
-    root.addEventListener('dragenter', function (ev) { if (!hasFiles(ev) || !canWrite() || S.page !== 'files') return; ev.preventDefault(); depth++; zone.hidden = false; });
+    // into a vault (since 1.28.2): encrypted, and the original stays on the computer — the browser cannot delete it
+    var label = function () {
+      clear(zone);
+      var vault = S.folder && S.folder.encrypted;
+      zone.appendChild(h('span', { text: T(vault ? 'p.v.drop' : 'p.drop') }));
+      if (vault) zone.appendChild(h('small', { text: T('p.v.drop_note') }));
+    };
+    root.addEventListener('dragenter', function (ev) { if (!hasFiles(ev) || !canWrite() || S.page !== 'files') return; ev.preventDefault(); if (!depth) label(); depth++; zone.hidden = false; });
     root.addEventListener('dragover', function (ev) { if (!hasFiles(ev) || !canWrite() || S.page !== 'files') return; ev.preventDefault(); if (ev.dataTransfer) ev.dataTransfer.dropEffect = 'copy'; });
     root.addEventListener('dragleave', function () { depth = Math.max(0, depth - 1); if (!depth) zone.hidden = true; });
     root.addEventListener('drop', function (ev) {
@@ -1611,6 +1618,12 @@
       h('span', { text: open ? P('p.uploading', open) : failed ? P('p.upload_failed_n', failed) : T('p.uploads_done') }),
       open ? null : ibtn('close', T('p.close'), function () { S.uploads = []; renderUploads(); }),
     ]));
+    // into a vault (since 1.28.2): the original stays on the computer — while it runs a note, then delete it yourself
+    var vaultUps = list.filter(function (u) { return u.target && u.target.vaultId; });
+    var inVault = vaultUps.filter(function (u) { return u.state === 'done'; }).length;
+    if (vaultUps.length && (open || inVault)) {
+      box.appendChild(h('div', { class: 'dp-note dp-ups-note' + (open ? '' : ' is-warn') }, [icon(open ? 'lock' : 'trash'), h('span', { text: open ? T('p.v.upload_note') : P('p.v.uploaded_n', inVault) })]));
+    }
     // the overall progress (bytes) while a batch runs — a folder of many files
     if (open && list.length > 1) {
       var total = 0;
