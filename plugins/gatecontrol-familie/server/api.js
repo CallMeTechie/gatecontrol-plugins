@@ -30,6 +30,8 @@
 //   GET|POST rules               PATCH|DELETE rules/<id>      POST rules/<id>/test · rules/test   GET rules/options
 //   POST shopping/lists/<id>/assign                           POST tasks/quick
 //   1.18.0 (server/internet.js, GateControl ≥ 1.231.0): GET internet   POST internet/<childId>/pause · /resume · /extend
+//   1.20.0: rules take the action { type: 'internet', op: 'pause' | 'resume', userId, minutes | until } (GateControl ≥
+//   1.259.0; rules/options → internet); GET internet: presence and pausedBy.rule per child, serverTime, timezone
 //
 // Every response is { ok: true, … } or { ok: false, code, error }. Callers
 // that are no member get 403 not_member, a switched-off module 403

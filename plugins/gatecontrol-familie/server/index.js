@@ -65,6 +65,10 @@
 // the internet of a child at home or give it more time today; the child is told (server/internet.js). Older GateControl:
 // the portal card stays hidden, the API answers available: false / 409 unavailable.
 //
+// 1.20.0: „Internet zu Hause“ in rules — the action „Internet pausieren“ / „fortsetzen“ as the rule's owner (GateControl ≥
+// 1.259.0: gc.homeNetwork.internet takes { actor }), a pause / extra time that ran out is told to the child (the tick),
+// where the child is and who / which rule set a pause in GET internet.
+//
 // 1.19.0: „Notizen & Aufgaben“ (gatecontrol-notizen, optional): tasks, shopping lists and open reminders as its items
 // (pushed when they change — todo_changed; services todo_items / todo_complete, server/notizen.js) and Pinnwand and
 // Packlisten moved into the hub's notebooks (notes_bind / notes_import / note_save / note_delete / notes_list, the hub
@@ -179,6 +183,8 @@ async function background(gc, now) {
     }
     try { await reminders.tick(gc, fam, cfg, now, pushes); } catch (e) { gc.log.warn('background step failed', 'reminders', (e && e.code) || (e && e.message) || 'error'); }
   }
+  // 1.20.0: a pause / extra time of „Internet zu Hause“ that ran out by itself — the child is told (own transaction)
+  try { await internet.tick(gc, fam, cfg, now, pushes); } catch (e) { gc.log.warn('background step failed', 'internet', (e && (e.code || e.message)) || 'error'); }
   if (now - state.lastPurge >= PURGE_EVERY_MS) {
     state.lastPurge = now;
     await step('purge', async () => {

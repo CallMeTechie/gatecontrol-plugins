@@ -18,8 +18,14 @@
 // false, no kiosk, no automation) — those people are the actors — else ERR_NOT_PERSON; an unknown or disabled user /
 // wrong times ERR_INVALID; without the permission ERR_HOME_INTERNET_DENIED. GateControl does not check who may decide
 // for whom (the plugin does). host.homeInternet = { state: Map userId → { pause, extend } (ms), log: [{ op, userId,
-// until (ISO | null), minutes?, actors: [userId] }] } — the activity log; host.homeInternetSet(userId, { pause, extend,
+// until (ISO | null), minutes?, actors: [userId], automated? }] } — the activity log; host.homeInternetSet(userId, { pause, extend,
 // devices, profile, nextSchedule }) changes what GateControl knows (e.g. a pause set elsewhere).
+//
+// GateControl 1.259.0 (opt-in: opts.gatecontrol ≥ '1.259.0' or opts.homeInternet.actors: true) — an automation names the
+// person it acts for: pause(userId, until, { actor }) / resume(userId, { actor }) / extend(userId, minutes, { actor }).
+// The actor is an enabled account (else ERR_INVALID) and wins over the people of a request in flight; the log entry
+// carries `automated: true`; gc.homeNetwork.internet.actors === true says the host knows it. An older host ignores the
+// argument (ERR_NOT_PERSON outside a request — and inside somebody's request that person stays the actor).
 
 const MINUTE = 60000;
 const MAX_PAUSE_MS = 7 * 24 * 60 * MINUTE;
@@ -30,6 +36,7 @@ function install({ opts, perms, atLeast, enabledUser, hostError, personCtx }) {
   const host = !!o || atLeast(231);
   if (host && perms.homeInternet != null && typeof perms.homeInternet !== 'boolean') throw hostError('ERR_INVALID', 'plugin.json: permissions.homeInternet: invalid');
   const on = host && perms.homeInternet === true;
+  const named = !!(o && o.actors === true) || atLeast(259);
   const people = new Map(Object.entries((o && o.people) || {}).map(([k, v]) => [Number(k), { ...v }]));
   const state = new Map();
   const log = [];
@@ -41,12 +48,18 @@ function install({ opts, perms, atLeast, enabledUser, hostError, personCtx }) {
     if (!enabledUser(uid)) throw hostError('ERR_INVALID', 'unknown or disabled person');
     return uid;
   };
-  /** personContext.writers: the people with a changing request to this plugin in flight */
-  const actors = () => {
+  /** personContext.writers: the people with a changing request to this plugin in flight — or (≥ 1.259.0) the named actor */
+  const actors = (actor) => {
+    if (named && actor != null) {
+      if (!Number.isSafeInteger(actor) || actor <= 0) throw hostError('ERR_INVALID', 'actor: a user id');
+      if (!enabledUser(actor)) throw hostError('ERR_INVALID', 'actor: unknown or disabled person');
+      return { who: [actor], automated: true };
+    }
     const out = [...personCtx.entries()].filter(([, e]) => e.write > 0).map(([uid]) => uid).sort((a, b) => a - b);
     if (!out.length) throw hostError('ERR_NOT_PERSON', 'only inside a changing request (POST/PUT/PATCH/DELETE) of a signed-in person');
-    return out;
+    return { who: out, automated: false };
   };
+  const entry = (e, a) => (a.automated ? { ...e, actors: a.who, automated: true } : { ...e, actors: a.who });
   const current = (uid, now) => {
     const s = state.get(uid) || {};
     return { pause: s.pause > now ? s.pause : null, extend: s.extend > now ? s.extend : null };
@@ -78,52 +91,54 @@ function install({ opts, perms, atLeast, enabledUser, hostError, personCtx }) {
 
   const api = {
     'homeNetwork.internet.status': async ({ userId }) => { need(); return status(user(userId)); },
-    'homeNetwork.internet.pause': async ({ userId, until }) => {
+    'homeNetwork.internet.pause': async ({ userId, until, actor }) => {
       need();
       const uid = user(userId);
-      const who = actors();
+      const who = actors(actor);
       const now = Date.now();
       const at = untilFrom(until, now, MAX_PAUSE_MS);
       set(uid, 'pause', at);
-      log.push({ op: 'pause', userId: uid, until: iso(at), actors: who });
+      log.push(entry({ op: 'pause', userId: uid, until: iso(at) }, who));
       return status(uid, now);
     },
-    'homeNetwork.internet.resume': async ({ userId }) => {
+    'homeNetwork.internet.resume': async ({ userId, actor }) => {
       need();
       const uid = user(userId);
-      const who = actors();
+      const who = actors(actor);
       const now = Date.now();
       const had = current(uid, now).pause;
       set(uid, 'pause', null);
-      if (had) log.push({ op: 'resume', userId: uid, until: null, actors: who });
+      if (had) log.push(entry({ op: 'resume', userId: uid, until: null }, who));
       return status(uid, now);
     },
-    'homeNetwork.internet.extend': async ({ userId, minutes }) => {
+    'homeNetwork.internet.extend': async ({ userId, minutes, actor }) => {
       need();
       const uid = user(userId);
-      const who = actors();
+      const who = actors(actor);
       if (!Number.isInteger(minutes) || minutes < 0) throw hostError('ERR_INVALID', 'minutes: a whole number ≥ 0');
       const now = Date.now();
       const cur = current(uid, now).extend;
       if (minutes === 0) {
         set(uid, 'extend', null);
-        if (cur) log.push({ op: 'extend', userId: uid, until: null, minutes: 0, actors: who });
+        if (cur) log.push(entry({ op: 'extend', userId: uid, until: null, minutes: 0 }, who));
         return status(uid, now);
       }
       const at = Math.max(now, cur || 0) + minutes * MINUTE;
       if (at - now > MAX_EXTEND_MS) throw hostError('ERR_INVALID', 'at most 24 hours ahead');
       set(uid, 'extend', at);
-      log.push({ op: 'extend', userId: uid, until: iso(at), minutes, actors: who });
+      log.push(entry({ op: 'extend', userId: uid, until: iso(at), minutes }, who));
       return status(uid, now);
     },
   };
 
-  /** gc.homeNetwork.internet (the child bootstrap's shape) */
+  /** gc.homeNetwork.internet (the child bootstrap's shape; ≥ 1.259.0 with { actor } and `actors: true`) */
+  const by = (opts) => (named && opts && typeof opts === 'object' && opts.actor != null ? { actor: opts.actor } : {});
   const gcPart = (call) => Object.freeze({
     status: (userId) => call('homeNetwork.internet.status', { userId }),
-    pause: (userId, until) => call('homeNetwork.internet.pause', { userId, until }),
-    resume: (userId) => call('homeNetwork.internet.resume', { userId }),
-    extend: (userId, minutes) => call('homeNetwork.internet.extend', { userId, minutes }),
+    pause: (userId, until, opts) => call('homeNetwork.internet.pause', { userId, until, ...by(opts) }),
+    resume: (userId, opts) => call('homeNetwork.internet.resume', { userId, ...by(opts) }),
+    extend: (userId, minutes, opts) => call('homeNetwork.internet.extend', { userId, minutes, ...by(opts) }),
+    ...(named ? { actors: true } : {}),
   });
 
   /** host.homeInternetSet(userId, { pause, extend (ms | ISO | null), devices, profile, nextSchedule }) */

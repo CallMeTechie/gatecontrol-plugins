@@ -1,4 +1,4 @@
-<!-- version: 1.19.0 -->
+<!-- version: 1.20.0 -->
 # Familie
 
 ## Was das Plugin kann
@@ -14,7 +14,7 @@ Die Familie in der GateControl-App (eigener Tab), im Portal (Tab „Familie“) 
 
 ## Voraussetzungen
 
-- GateControl **1.216.0** oder neuer (Anwesenheit über das Heimnetz ab 1.230.0, Internet zu Hause ab 1.231.0).
+- GateControl **1.216.0** oder neuer (Anwesenheit über das Heimnetz ab 1.230.0, Internet zu Hause ab 1.231.0, „Internet pausieren“ in Regeln ab 1.259.0).
 - GateControl-Konten für alle Familienmitglieder.
 - Für die Anwesenheit über das Heimnetz und Internet zu Hause: ein GateControl-Gateway mit Netzwerk-Wächter bzw. DNS-Filter, auf dem die Handys den Personen zugeordnet sind.
 - Für den Familien-Chat: das Plugin Messenger. Für Schalten im Smart Home: das Plugin des Geräts (z. B. Smart Home, Tür & Kamera).
@@ -37,8 +37,8 @@ Die Familie in der GateControl-App (eigener Tab), im Portal (Tab „Familie“) 
 - **App-Tab „Familie“ und Portal-Tab „Familie“:** Übersicht des Tages, Einkaufslisten, Aufgaben, Termine, Pinnwand, Essensplan, Wunschlisten, Taschengeld, Fahrten und die eingeschalteten Funktionen.
 - **Kinder orten** (Eltern): Anfrage mit Countdown und Karte. Das Kind sieht jede Abfrage; bei *Kind bestätigt* sendet oder lehnt es ab. Höchstens 30 Anfragen pro Kind und Tag.
 - **„Bin angekommen“ und SOS** (App): „Bin angekommen“ an die Eltern, SOS als dringende Mitteilung mit Position – auch in der Ruhezeit.
-- **Regeln:** z. B. „Alle sind unterwegs“ › Licht aus, „Erste Person kommt heim“ › Szene, „Kind allein zu Hause“ › Mitteilung an die Eltern; mit Zeitfenster und „nach Sonnenuntergang“.
-- **Internet zu Hause** (Eltern, Portal): je minderjährigem Kind „Pause …“ (30 Min., 1 Std., bis morgen 7 Uhr, bis Uhrzeit), „Pause beenden“, „Heute länger …“. Das Kind bekommt Bescheid. Unterwegs im Mobilfunk gilt das nicht.
+- **Regeln:** z. B. „Alle sind unterwegs“ › Licht aus, „Erste Person kommt heim“ › Szene, „Kind allein zu Hause“ › Mitteilung an die Eltern; mit Zeitfenster und „nach Sonnenuntergang“. Eltern können im Reiter **„Internet zu Hause“** des Regel-Editors das Internet eines Kindes pausieren oder fortsetzen lassen, z. B. „täglich 18:30 › Internet von Tim 30 Min. pausieren“.
+- **Internet zu Hause** (Eltern, Portal): je minderjährigem Kind „Pause …“ (30 Min., 1 Std., bis morgen 7 Uhr, bis Uhrzeit), „Pause beenden“, „Heute länger …“. Das Kind bekommt Bescheid – auch wenn eine Pause oder Extra-Zeit von selbst abläuft. Die Karte zeigt, ob das Kind zu Hause ist (wenn es seine Anwesenheit teilt) und wer oder welche Regel pausiert hat. Unterwegs im Mobilfunk gilt das nicht. Die Mitteilungen laufen im Thema „Internet zu Hause“, das jede Person in den Benachrichtigungs-Einstellungen für sich abschalten kann.
 - **Wand-Tablet:** Termine, Aufgaben zum Abhaken, Einkauf, Essen, wer zu Hause ist, „Schule heute“ (mit Plugin Schule), WLAN-Karte (mit Plugin Vault).
 - **„Notizen & Aufgaben“** (wenn installiert): deine Aufgaben, die Aufgaben der Kinder (für Eltern), Einkaufslisten mit Offenem und die Erinnerungen von heute stehen dort in „Mein Tag“. Abhaken dort zählt in Familie (mit Sternen). **Pinnwand und Packlisten** ziehen dann in „Notizen & Aufgaben“ um – du siehst und bearbeitest sie in Familie weiter wie bisher, und im Hub stehen sie als Notizbücher „Pinnwand“ und „Packlisten“ für die ganze Familie. Ist das Plugin einmal nicht erreichbar, arbeitet Familie weiter und gleicht später ab; Vorlagen bleiben in Familie.
 
@@ -49,6 +49,7 @@ Die Familie in der GateControl-App (eigener Tab), im Portal (Tab „Familie“) 
 - **Wand-Tablet** hakt Aufgaben ab und fügt Einkäufe hinzu, sieht aber keine Positionen.
 - Portal-Besuche, die nur über Geräte-Vertrauen erkannt sind, lesen nur – keine Positionen, kein SOS, keine Anwesenheit.
 - Anwesenheit und Orte zählen in Regeln nur für Personen, die selbst zugestimmt haben.
+- „Internet pausieren“ in einer Regel läuft im Namen des Elternteils, der die Regel zuletzt gespeichert hat. Ist diese Person kein Elternteil der Familie mehr, läuft der Schritt nicht; das Protokoll der Regel sagt es.
 
 ## Häufige Fragen / Fehlersuche
 
@@ -69,6 +70,15 @@ Ein Administrator-Konto oder ein deaktiviertes Konto kann kein Wand-Tablet sein.
 
 **Die Karte „Internet zu Hause“ fehlt.**
 Sie braucht GateControl 1.231.0 und ein Gateway mit DNS-Filter, und sie erscheint nur für Eltern nach der Anmeldung.
+
+**Eine Regel pausiert das Internet nicht („nicht ausgeführt“).**
+Der Schritt braucht GateControl 1.259.0 oder neuer und ein Gateway mit DNS-Filter. „Nicht mehr erlaubt“ heißt: Wer die Regel zuletzt gespeichert hat, ist kein Elternteil der Familie mehr – ein Elternteil öffnet die Regel und speichert sie neu. „Kein minderjähriges Kind der Familie mehr“: den Schritt entfernen.
+
+## Neu in 1.20.0
+
+- **Regeln können das Internet pausieren:** Im Regel-Editor gibt es den Reiter „Internet zu Hause“ – je Kind „Pausieren“ (30 Min., 1 Std., 2 Std., bis Uhrzeit) oder „Fortsetzen“. Die Regel handelt im Namen des Elternteils, der sie gespeichert hat (GateControl ≥ 1.259.0).
+- **„Zeit abgelaufen“:** Läuft eine Pause oder Extra-Zeit von selbst aus, bekommt das Kind Bescheid.
+- **Karte „Internet zu Hause“:** zeigt „zu Hause · WLAN“, „zu Hause · App“ oder „unterwegs“ und nennt die Regel, die pausiert hat.
 
 ## Neu in 1.19.0
 

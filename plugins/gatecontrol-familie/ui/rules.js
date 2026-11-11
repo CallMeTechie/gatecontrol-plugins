@@ -32,7 +32,11 @@
    1.12.0: the trigger „Stunde fällt aus“ (school_change, group „Schule“) — which child (or every child),
    which changes, the lesson's day — offered only while the server lists it in options.triggers (the
    Schule plugin is there; its students in options.school.students); the list filter „Schule“ shows
-   when there is such a rule; a log row of it shows the event's text. */
+   when there is such a rule; a log row of it shows the event's text.
+   1.20.0: „Internet zu Hause“ as its own tab — per minor child „Pausieren“ (30 Min., 1 Std., 2 Std., bis Uhrzeit)
+   or „Fortsetzen“ (action type 'internet', server/internet.js) — offered to parents while the server says
+   options.internet.available (GateControl ≥ 1.259.0); a rule that already has one keeps it and shows why it
+   cannot run („nicht mehr erlaubt“). The log names the child and the end of the pause. */
 (function () {
   'use strict';
   var A = window.FA, T = A.T, el = A.el;
@@ -51,6 +55,9 @@
   var ICON_ARROW = 'M5 12h14M13 6l6 6-6 6';
   var MAX_STEPS = 10;
   var MSG_ERRORS = ['unavailable', 'group_off', 'not_found', 'forbidden', 'invalid', 'rate_limit', 'timeout', 'failed', 'no_recipients'];
+  // 1.20.0: „Internet pausieren“ — the durations the editor offers (minutes) and why an action did not run
+  var NET_MINUTES = [30, 60, 120];
+  var NET_ERRORS = ['unavailable', 'not_allowed', 'not_found', 'failed'];
   var ICON_RE = /^[MmLlHhVvCcSsQqTtAaZz0-9 .,-]{1,2000}$/;
   var ICON = {
     away: 'M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9',
@@ -72,6 +79,7 @@
     pinIn: 'M10 21s-6-5.2-6-10a6 6 0 0 1 12 0c0 1-.3 2.1-.8 3.1M10 13a2 2 0 1 0 0-4a2 2 0 0 0 0 4M14 19h7M18 16l3 3-3 3',
     pinOut: 'M10 21s-6-5.2-6-10a6 6 0 0 1 12 0c0 1-.3 2.1-.8 3.1M10 13a2 2 0 1 0 0-4a2 2 0 0 0 0 4M21 19h-7M17 16l-3 3 3 3',
     chat: 'M4 5h16v11H9l-5 4z',
+    wifi: 'M2 9a15 15 0 0 1 20 0M5.5 12.5a10 10 0 0 1 13 0M9 16a5 5 0 0 1 6 0M12 19.5h.01',
     group: 'M9 11a3.5 3.5 0 1 0 0-7a3.5 3.5 0 0 0 0 7M2.5 20a6.5 6.5 0 0 1 13 0M16 4.2a3.5 3.5 0 0 1 0 6.6M18 14a6.5 6.5 0 0 1 3.5 6',
     alarm: 'M12 21a8 8 0 1 0 0-16a8 8 0 0 0 0 16M12 9v4l2.5 1.5M5 3L2 6M22 6l-3-3',
     gauge: 'M4 18a9 9 0 1 1 16 0M12 14l4-5M12 15a1 1 0 1 0 0-2a1 1 0 0 0 0 2',
@@ -167,8 +175,26 @@
     return a.to === 'family' ? T('rule.msg_to_family') : (a.to || []).map(function (id) { return nameOf(data, id); }).join(', ');
   }
 
+  /** „30 Min.“ / „2 Std.“ / „bis 07:00“ — how long a rule pauses the internet. */
+  function netHow(a) {
+    if (a.until) return T('rule.net_until', { time: a.until });
+    var m = a.minutes || 0;
+    return m && m % 60 === 0 ? T('rule.net_hours', { n: m / 60 }) : T('rule.net_minutes', { n: m });
+  }
+  /** „Internet von Tim pausieren (30 Min.)“ / „Internet von Tim fortsetzen“ */
+  function netText(a, data) {
+    var name = a.name || nameOf(data, a.userId);
+    return a.op === 'resume' ? T('rule.net_resume_chip', { name: name }) : T('rule.net_pause_chip', { name: name, how: netHow(a) });
+  }
+  /** Why an „Internet …“ action cannot run now (the server's `problem`), or null. */
+  function netProblem(a) {
+    if (a.type !== 'internet' || a.available !== false) return null;
+    return NET_ERRORS.indexOf(a.problem) >= 0 ? a.problem : 'failed';
+  }
+
   function actionText(a, data) {
     if (a.type === 'quick_action') return quickText(a);
+    if (a.type === 'internet') return netText(a, data);
     if (a.type === 'messenger') return T('rule.messenger_chip', { to: msgTo(a, data), text: a.text || T('rule.text_default') });
     return T('rule.notify_chip', { to: notifyTo(a, data), text: a.text || T('rule.text_default') });
   }
@@ -229,6 +255,8 @@
       var chips = rule.actions.map(function (a) {
         var gone = a.type === 'quick_action' && a.available === false;
         var needs = a.type === 'quick_action' && !gone && a.needsTarget === true;
+        var np = netProblem(a);
+        if (np) return el('span', { class: 'fa-rule-act is-gone', text: actionText(a, data) + ' – ' + T('rule.net_err.' + np), title: T('rule.net_err_hint.' + np) });
         var mp = msgProblem(a, data);
         if (mp) {
           return el('span', { class: 'fa-rule-act is-gone', text: actionText(a, data) + ' – ' + T(mp === 'gone' ? 'rule.msg_gone' : 'rule.msg_group_off'),
@@ -240,7 +268,7 @@
       var meta = [];
       if (!rule.active) meta.push(T('rule.paused'));
       if (rule.scope === 'personal') meta.push(T('rr.personal_of', { name: rule.ownerName || '–' }));
-      else if (rule.actions.some(function (a) { return a.type === 'quick_action'; }) && rule.ownerName) meta.push(T('rule.as', { name: rule.ownerName }));
+      else if (rule.actions.some(function (a) { return a.type === 'quick_action' || a.type === 'internet'; }) && rule.ownerName) meta.push(T('rule.as', { name: rule.ownerName }));
       meta.push(rule.lastRunAt ? T('rule.last', { when: A.when(rule.lastRunAt) }) : T('rule.never'));
       var failed = rule.lastResult && !rule.lastResult.ok && !rule.lastResult.skipped;
       if (failed) meta.push(T('rule.failed'));
@@ -302,6 +330,9 @@
     var oldMsg = r.actions.filter(function (a) { return a.type === 'messenger'; })[0] || null;
     var msgOn = msgAvailable(data);
     var msgGroup = !!(data.messenger && data.messenger.group);
+    // 1.20.0: „Internet zu Hause“ — what the server offers this viewer (parents, GateControl ≥ 1.259.0)
+    var net = opt.internet || { available: false, reason: 'unavailable', children: [] };
+    var oldNet = r.actions.filter(function (a) { return a.type === 'internet'; });
     var cond = r.conditions || {};
     var clone = function (v) { return v == null ? v : JSON.parse(JSON.stringify(v)); };
     var st = {
@@ -323,6 +354,8 @@
       notify: !!oldNotify, notifyTo: oldNotify ? oldNotify.to : 'parents', text: oldNotify && oldNotify.text ? oldNotify.text : '',
       // 1.6.0: the messenger message (one per rule): 'family' or [userId]
       msg: !!oldMsg, msgTo: oldMsg ? oldMsg.to : (msgGroup ? 'family' : []), msgText: oldMsg && oldMsg.text ? oldMsg.text : '',
+      // 1.20.0: „Internet pausieren“ / „fortsetzen“ — one step per child
+      net: oldNet.map(function (a) { return { userId: a.userId, op: a.op === 'resume' ? 'resume' : 'pause', minutes: a.minutes || null, until: a.until || null, name: a.name || null, problem: netProblem(a) }; }),
       query: '', tab: null,
       // 1.12.0: „Stunde fällt aus“ — the child (null = every child), the kinds, the lesson's day
       schoolUser: r.trigger === SCHOOL && r.userId != null ? r.userId : null,
@@ -334,6 +367,8 @@
     tabs.push({ id: '@notify', label: T('rule.m_notify_tab') });
     // only with the Messenger plugin — or to keep / remove the message of a rule that already has one
     if (msgOn || oldMsg) tabs.push({ id: '@messenger', label: T('rule.m_msg_tab') });
+    // only for parents with „Internet zu Hause“ — or to keep / remove the step of a rule that already has one
+    if (net.available || oldNet.length) tabs.push({ id: '@internet', label: T('rule.m_net_tab') });
     var firstNeeds = st.steps.filter(function (s) { return needsTarget(s); })[0];
     st.tab = firstNeeds ? firstNeeds.plugin : (st.steps[0] && byKey[st.steps[0].key] ? st.steps[0].plugin : tabs[0].id);
 
@@ -343,7 +378,7 @@
     var place = function () { return isPlace(st.trigger); };
     var personal = function () { return st.scope === 'personal'; };
     function needsTarget(s) { var a = byKey[s.key]; return !s.state && !!a && a.kind === 'toggle'; }
-    function stepCount() { return st.steps.length + (st.notify ? 1 : 0) + (st.msg ? 1 : 0); }
+    function stepCount() { return st.steps.length + (st.notify ? 1 : 0) + (st.msg ? 1 : 0) + st.net.length; }
 
     // ── header ──
     var nameInput = el('input', { class: 'fa-rm-name-input', type: 'text', maxlength: '60', value: st.name, 'aria-label': T('rule.m_name_aria'), placeholder: T('rule.m_name_ph'), autocomplete: 'off', 'data-k': 'name' });
@@ -683,6 +718,7 @@
     function countOf(tabId) {
       if (tabId === '@notify') return st.notify ? 1 : 0;
       if (tabId === '@messenger') return st.msg ? 1 : 0;
+      if (tabId === '@internet') return st.net.length;
       return st.steps.filter(function (s) { return s.plugin === tabId; }).length;
     }
     function renderWhat() {
@@ -696,12 +732,13 @@
         tabBar.appendChild(el('button', {
           type: 'button', role: 'tab', class: 'fa-rm-tab', 'aria-selected': on ? 'true' : 'false', 'aria-controls': uid + '-panel', tabindex: on || (q && i === 0) ? '0' : '-1', 'data-k': 'tab-' + t.id,
           on: { click: function () { selectTab(t.id); } },
-        }, [t.id === '@notify' ? A.svg(ICON.bell, 16) : (t.id === '@messenger' ? A.svg(ICON.chat, 16) : null), el('span', { text: t.label }), n ? el('span', { class: 'fa-rm-count', text: String(n) }) : null,
+        }, [t.id === '@notify' ? A.svg(ICON.bell, 16) : (t.id === '@messenger' ? A.svg(ICON.chat, 16) : (t.id === '@internet' ? A.svg(ICON.wifi, 16) : null)), el('span', { text: t.label }), n ? el('span', { class: 'fa-rm-count', text: String(n) }) : null,
           n ? el('span', { class: 'fa-sr', text: ' – ' + T('rule.m_tab_count', { n: n }) }) : null]));
       });
       A.clear(cards);
       if (!q && st.tab === '@notify') { cards.appendChild(notifyPanel()); restore(focus); return; }
       if (!q && st.tab === '@messenger') { cards.appendChild(messengerPanel()); restore(focus); return; }
+      if (!q && st.tab === '@internet') { cards.appendChild(internetPanel()); restore(focus); return; }
       var visible = listed.filter(function (a) {
         if (!q) return a.plugin === st.tab;
         var hay = [a.title, a.subtitle, a.pluginName, a.device && a.device.title, a.device && a.device.subtitle, a.verbs && a.verbs.on, a.verbs && a.verbs.off].join(' ').toLowerCase();
@@ -894,6 +931,67 @@
       ]));
     }
 
+    /**
+     * 1.20.0: „Internet zu Hause“ — per minor child a card with the two targets „Pausieren“ / „Fortsetzen“ (picked
+     * again: the step goes) and, for a pause, how long (30 Min., 1 Std., 2 Std., until a time).
+     */
+    function internetPanel() {
+      function stepOf(id) { return st.net.filter(function (x) { return x.userId === id; })[0] || null; }
+      function pickNet(c, op) {
+        var s = stepOf(c.userId);
+        msg.textContent = '';
+        if (s && s.op === op) st.net.splice(st.net.indexOf(s), 1);
+        else if (s) { s.op = op; s.problem = null; if (op === 'pause' && !s.minutes && !s.until) s.minutes = NET_MINUTES[0]; }
+        else {
+          if (stepCount() >= MAX_STEPS) { msg.textContent = T('rule.m_max', { n: MAX_STEPS }); return; }
+          st.net.push({ userId: c.userId, op: op, minutes: op === 'pause' ? NET_MINUTES[0] : null, until: null, name: c.name, problem: null });
+        }
+        renderWhat(); renderFlow();
+      }
+      function kid(c) {
+        var s = stepOf(c.userId);
+        var target = function (op) {
+          return el('button', { type: 'button', class: 'fa-rm-target', 'aria-pressed': s && s.op === op ? 'true' : 'false', disabled: !net.available && !(s && s.op === op), 'data-k': 'net-' + c.userId + '-' + op,
+            on: { click: function () { pickNet(c, op); } } }, [el('span', { text: T(op === 'pause' ? 'rule.m_net_pause' : 'rule.m_net_resume') })]);
+        };
+        var how = null;
+        if (s && s.op === 'pause') {
+          var custom = !s.until && s.minutes && NET_MINUTES.indexOf(s.minutes) < 0;
+          var sel = el('select', { class: 'form-select', id: uid + '-net-how-' + c.userId, 'data-k': 'net-how-' + c.userId }, NET_MINUTES.concat(custom ? [s.minutes] : []).map(function (m) {
+            return el('option', { value: String(m), text: netHow({ minutes: m }) });
+          }).concat([el('option', { value: 'until', text: T('rule.m_net_until') })]));
+          sel.value = s.until ? 'until' : String(s.minutes);
+          sel.addEventListener('change', function () {
+            if (sel.value === 'until') { s.until = s.until || '07:00'; s.minutes = null; } else { s.minutes = Number(sel.value); s.until = null; }
+            renderWhat(); renderFlow();
+          });
+          var time = s.until ? el('input', { type: 'time', class: 'form-input', value: s.until, 'aria-label': T('rule.m_net_until_label', { name: c.name }), 'data-k': 'net-time-' + c.userId }) : null;
+          if (time) time.addEventListener('change', function () { if (/^\d{2}:\d{2}$/.test(time.value)) { s.until = time.value; renderFlow(); } });
+          how = el('div', { class: 'fa-rm-net-how' }, [el('label', { class: 'fa-rm-label', for: uid + '-net-how-' + c.userId, text: T('rule.m_net_how') }), sel, time]);
+        }
+        return el('div', { class: 'fa-rm-card fa-rm-net-card' + (s ? ' is-on' : '') }, [
+          el('div', { class: 'fa-rm-card-top' }, [
+            A.avatar({ name: c.name, initials: c.initials, colorHex: c.colorHex, avatarUrl: c.avatarUrl }, 32),
+            el('span', { class: 'fa-rm-card-text' }, [el('b', { text: c.name }), s && s.problem ? el('span', { class: 'fa-bad', text: T('rule.net_err.' + s.problem) }) : null]),
+          ]),
+          el('div', { class: 'fa-rm-seg', role: 'group', 'aria-label': T('rule.m_net_group', { name: c.name }) }, [target('pause'), target('resume')]),
+          how,
+        ]);
+      }
+      // the children the server offers, then those a stored step still names (no minor child of the family any more)
+      var kids = (net.children || []).slice();
+      st.net.forEach(function (x) { if (!kids.some(function (c) { return c.userId === x.userId; })) kids.push({ userId: x.userId, name: x.name || nameOf(data, x.userId) }); });
+      return el('div', { class: 'fa-rm-notify fa-rm-net' + (st.net.length ? ' is-on' : '') }, [
+        el('div', { class: 'fa-rm-card-top' }, [
+          el('span', { class: 'fa-rm-card-ico' }, [A.svg(ICON.wifi, 20)]),
+          el('span', { class: 'fa-rm-card-text' }, [el('b', { text: T('rule.m_net_title') }), el('span', { text: T('rule.m_net_hint') })]),
+        ]),
+        net.available ? null : el('div', { class: 'fa-rm-info is-warn' }, [A.svg(ICON.info, 18), el('span', { text: T(net.reason === 'parents_only' ? 'rule.m_net_parents_only' : 'rule.m_net_unavailable') })]),
+        kids.length ? el('div', { class: 'fa-rm-grid' }, kids.map(kid)) : el('p', { class: 'fa-rm-empty', text: T('rule.m_net_none') }),
+        el('p', { class: 'fa-hint', text: T('rule.m_net_note') }),
+      ]);
+    }
+
     // ── column 3: Ablauf ──
     var flowCount = el('span', { class: 'fa-rm-mono fa-rm-muted' });
     var flowList = el('div', { class: 'fa-rm-scroll fa-rm-flow-list' });
@@ -937,6 +1035,13 @@
         var mto = personal() ? T('rr.to_me') : st.msgTo === 'family' ? T('rule.m_msg_to_family') : T('rule.m_to_people', { names: (st.msgTo || []).map(function (id) { return nameOf(data, id); }).join(', ') });
         flowList.appendChild(stepRow(++n, T('rule.messenger'), msgOn ? mto : T('rule.msg_gone'), T('rule.m_msg_chip'), msgOn ? 'neutral' : 'gone', function () { st.msg = false; renderWhat(); renderFlow(); }, 'step-msg'));
       }
+      st.net.slice().forEach(function (x) {
+        var who = x.name || nameOf(data, x.userId);
+        flowList.appendChild(stepRow(++n, T(x.op === 'resume' ? 'rule.net_resume' : 'rule.net_pause'), x.problem ? T('rule.net_err.' + x.problem) : who,
+          x.op === 'resume' ? T('rule.m_net_resume_chip') : netHow(x), x.problem ? 'gone' : (x.op === 'resume' ? 'on' : 'off'), function () {
+            st.net.splice(st.net.indexOf(x), 1); renderWhat(); renderFlow();
+          }, 'step-net-' + x.userId + '-' + x.op));
+      });
       if (!n) flowList.appendChild(el('div', { class: 'fa-rm-flow-empty', text: T('rule.m_empty') }));
       if (st.probe) flowList.appendChild(probeBox(st.probe));
       flowList.appendChild(el('div', { class: 'fa-rm-info' }, [A.svg(ICON.info, 18), el('span', { text: T('rule.m_hint_fixed') })]));
@@ -1054,6 +1159,9 @@
       });
       if (st.notify) actions.push({ type: 'notify', to: personal() ? 'me' : st.notifyTo, text: st.text.trim() || null, facts: st.facts, buttons: st.buttons.slice(0, MAX_BUTTONS) });
       if (st.msg) actions.push({ type: 'messenger', to: personal() ? 'me' : st.msgTo, text: st.msgText.trim() || null });
+      st.net.forEach(function (x) {
+        actions.push(x.op === 'resume' ? { type: 'internet', op: 'resume', userId: x.userId } : (x.until ? { type: 'internet', op: 'pause', userId: x.userId, until: x.until } : { type: 'internet', op: 'pause', userId: x.userId, minutes: x.minutes }));
+      });
       var trig = { type: st.trigger };
       if (st.trigger === 'schedule') { trig.weekdays = st.days.slice().sort(); trig.time = st.at; }
       if (st.trigger === 'all_away') trig.graceMinutes = st.grace;
@@ -1116,6 +1224,12 @@
         // 1.9.0: not run — a device or calendar condition (the text comes from the server)
         if (y.type === 'condition') return y.text || '–';
         if (y.type === 'messenger') return T('rule.messenger') + ' → ' + (y.ok ? T('rule.ok') : T('rule.msg_err.' + (MSG_ERRORS.indexOf(y.error) >= 0 ? y.error : 'failed')));
+        // 1.20.0: „Internet von Tim pausieren → bis 18:30“ / „→ nicht ausgeführt: …“
+        if (y.type === 'internet') {
+          var net = T(y.op === 'resume' ? 'rule.net_resume_log' : 'rule.net_pause_log', { name: y.name || (y.userId ? nameOf(data, y.userId) : '–') });
+          if (!y.ok) return net + ' → ' + T('rule.net_err.' + (NET_ERRORS.indexOf(y.error) >= 0 ? y.error : 'failed'));
+          return net + ' → ' + (y.unchanged ? T('rule.unchanged') : (y.until ? T('rule.net_until', { time: A.when(y.until) }) : T('rule.ok')));
+        }
         var what = y.type === 'quick_action' ? quickText({ title: y.title || y.id, verb: y.verb }) : T('rule.notify');
         return what + ' → ' + (y.ok ? (y.unchanged ? T('rule.unchanged') : (y.message || T('rule.ok'))) : T('rule.err.' + (y.error || 'failed')));
       }).join(' · ');
