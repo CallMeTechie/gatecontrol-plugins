@@ -49,6 +49,8 @@
 //            person's GateControl inbox (1.15.2; before a messenger channel of its own) (not to the person who sets the rule off). Without the
 //            messenger the action is not offered (listRules: `messenger.available`); a rule that still has
 //            one logs { ok: false, error: 'unavailable' } and the rest of the rule runs.
+//            1.20.0: { type: 'internet', op: 'pause' | 'resume', userId, minutes | until } — „Internet pausieren“ /
+//            „fortsetzen“ for a minor child, as the rule's owner (server/internet.js; only through the API `rules`).
 // A rule fires once per transition and at most once per 10 minutes; a
 // throttled "all away" is retried while everyone stays away, a throttled
 // arrival or departure is dropped. Each run is logged with the result of every
@@ -489,6 +491,10 @@ async function execute(gc, fam, cfg, now, runs, pushes) {
         const out = await reminders.notifyPushes(gc, fam, cfg, now, { rule, run, action: n, person, ev, to, key, cache });
         pushes.push(...out.pushes);
         results.push({ type: 'messenger', to: Array.isArray(n.to) ? n.to.slice() : [], via: 'inbox', ok: to.length > 0, sent: to.length, error: to.length ? null : 'no_recipients' });
+      } else if (a.type === 'internet') {
+        // 1.20.0: „Internet pausieren“ / „fortsetzen“ as the rule's owner — who must still be a parent, the target still
+        // a minor child (checked now; else nothing runs, the log says why). Required here: internet.js requires this file.
+        results.push(await require('./internet').runAction(gc, fam, cfg, now, rule, a, pushes));
       } else if (a.type === 'messenger') {
         // 1.6.0: never throws; without the messenger { ok: false, error: 'unavailable' } and the rest runs
         const target = a;

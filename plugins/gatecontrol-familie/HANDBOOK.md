@@ -1,4 +1,4 @@
-<!-- version: 1.19.0 -->
+<!-- version: 1.20.0 -->
 # Family
 
 ## What the plugin does
@@ -14,7 +14,7 @@ The family in the GateControl app (a tab of its own), in the portal (tab “Fami
 
 ## Requirements
 
-- GateControl **1.216.0** or later (presence through the home network from 1.230.0, internet at home from 1.231.0).
+- GateControl **1.216.0** or later (presence through the home network from 1.230.0, internet at home from 1.231.0, “pause the internet” in rules from 1.259.0).
 - GateControl accounts for every family member.
 - For presence through the home network and internet at home: a GateControl gateway with the network watch or DNS filter on which the phones are assigned to the people.
 - For the family chat: the Messenger plugin. For switching in the smart home: the device's plugin (e.g. Smart Home, Door & Camera).
@@ -37,8 +37,8 @@ The family in the GateControl app (a tab of its own), in the portal (tab “Fami
 - **App tab and portal tab “Family”:** the day's overview, shopping lists, tasks, events, pinboard, meal plan, wish lists, pocket money, rides and the functions switched on.
 - **Locating children** (parents): a request with countdown and map. The child sees every request; with *child confirms* it sends or declines. At most 30 requests per child and day.
 - **“I've arrived” and SOS** (app): “I've arrived” to the parents, SOS as an urgent notification with position – even during quiet hours.
-- **Rules:** e.g. “Everyone is out” › lights off, “First person comes home” › scene, “Child home alone” › notify the parents; with a time window and “after sunset”.
-- **Internet at home** (parents, portal): per minor child “Pause …” (30 min, 1 h, until 7 tomorrow, until a time), “End pause”, “Longer today …”. The child is told. It does not apply on mobile data.
+- **Rules:** e.g. “Everyone is out” › lights off, “First person comes home” › scene, “Child home alone” › notify the parents; with a time window and “after sunset”. In the rule editor's tab **“Internet at home”** parents can have a rule pause or resume a child's internet, e.g. “daily 18:30 › pause Tim's internet for 30 min”.
+- **Internet at home** (parents, portal): per minor child “Pause …” (30 min, 1 h, until 7 tomorrow, until a time), “End pause”, “Longer today …”. The child is told – also when a pause or extra time runs out by itself. The card shows whether the child is at home (if it shares its presence) and who or which rule paused. It does not apply on mobile data. The notifications run in the topic “Internet at home”, which everyone can switch off for themselves in the notification settings.
 - **Wall tablet:** events, tasks to tick off, shopping, meals, who is at home, “School today” (with the School plugin), Wi-Fi card (with the Vault plugin).
 - **“Notes & Tasks”** (when installed): your tasks, the children's tasks (for parents), shopping lists with something open and today's reminders show there in “My day”. Ticking off there counts in Family (with stars). **Pinboard and packing lists** then move into “Notes & Tasks” – you keep seeing and editing them in Family as before, and the hub has them as the notebooks “Pinboard” and “Packing lists” for the whole family. When the plugin cannot be reached for a while, Family works on and catches up later; templates stay in Family.
 
@@ -49,6 +49,7 @@ The family in the GateControl app (a tab of its own), in the portal (tab “Fami
 - The **wall tablet** ticks off tasks and adds shopping, but sees no positions.
 - Portal visits recognised only by device trust can only read – no positions, no SOS, no presence.
 - Presence and places only count in rules for people who consented themselves.
+- “Pause the internet” in a rule runs in the name of the parent who saved the rule last. If that person is no longer a parent of the family, the step does not run; the rule's log says so.
 
 ## FAQ / troubleshooting
 
@@ -69,6 +70,15 @@ Changes in Family go over at once, changes in the hub come back within 15 minute
 
 **The card “Internet at home” is missing.**
 It needs GateControl 1.231.0 and a gateway with the DNS filter, and it only shows for parents after signing in.
+
+**A rule does not pause the internet (“not run”).**
+The step needs GateControl 1.259.0 or later and a gateway with the DNS filter. “No longer allowed” means: whoever saved the rule last is no longer a parent of the family – a parent opens the rule and saves it again. “No longer a minor child of the family”: remove the step.
+
+## New in 1.20.0
+
+- **Rules can pause the internet:** the rule editor has the tab “Internet at home” – per child “Pause” (30 min, 1 h, 2 h, until a time) or “Resume”. The rule acts in the name of the parent who saved it (GateControl ≥ 1.259.0).
+- **“Time is up”:** when a pause or extra time runs out by itself, the child is told.
+- **Card “Internet at home”:** shows “at home · Wi-Fi”, “at home · app” or “away” and names the rule that paused.
 
 ## New in 1.19.0
 

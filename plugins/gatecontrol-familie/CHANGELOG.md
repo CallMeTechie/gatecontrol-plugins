@@ -3,6 +3,53 @@
 Die Familie in der GateControl-App (eigener Tab), im Portal (eigener Tab „Familie“) und auf
 drei Admin-Seiten. Alles bleibt auf dem eigenen Server.
 
+## 1.20.0
+
+- **Regel-Aktion „Internet pausieren“ / „Internet fortsetzen“** (ab GateControl 1.259.0): Im Regel-Editor (Portal und
+  Admin-Seite) gibt es den Reiter „Internet zu Hause“ – je minderjährigem Kind „Pausieren“ (30 Min., 1 Std., 2 Std. oder
+  bis zu einer Uhrzeit) oder „Fortsetzen“. Beispiele: „täglich 18:30 › Internet von Tim 30 Min. pausieren“, „Tim kommt
+  heim (13–16 Uhr) › Internet bis 16:00 pausieren“.
+  - **Wer handelt:** die Person, die die Aktionen der Regel zuletzt gespeichert hat (bei einer neuen Regel: wer sie
+    angelegt hat) – wie bei den Schnellaktionen. GateControl bekommt sie als Akteur (`gc.homeNetwork.internet.pause(id,
+    …, { actor })`, im Aktivitätsprotokoll „automatically for Anna, plugin gatecontrol-familie“). Die Regel läuft im
+    Hintergrund oder in der Anfrage von jemand anderem (das Handy des Kindes meldet „zu Hause“) – der Akteur bleibt.
+  - **Rechte:** Nur ein Elternteil der Familie kann den Schritt in eine Regel setzen (`403 forbidden { field:
+    'actions.<i>' }` – auch für Kinder mit eigenen Erinnerungen und für einen Administrator, der kein Elternteil ist),
+    nur für ein minderjähriges Kind der Familie (`400 invalid { field: 'actions.<i>.userId' }`). **Bei jedem Lauf** prüft
+    Familie neu: Ist die Person kein Elternteil der Familie mehr, läuft der Schritt nicht (`not_allowed`), ist das Kind
+    volljährig oder kein Mitglied mehr, ebenfalls nicht (`not_found`) – GateControl wird nicht gefragt, das Protokoll
+    der Regel sagt es („nicht ausgeführt: nicht mehr erlaubt“), der Rest der Regel läuft. Die Regel-Liste zeigt den
+    Schritt dann als nicht verfügbar; ein Elternteil speichert die Regel neu.
+  - **API (additiv):** Aktion `{ type: 'internet', op: 'pause', userId, minutes: 1…1440 }`, `{ …, until: 'HH:MM' }` (die
+    nächste solche Uhrzeit in der Zeitzone der Familie) oder `{ type: 'internet', op: 'resume', userId }`; in der Antwort
+    zusätzlich `name`, `available`, `problem: null | 'unavailable' | 'not_allowed' | 'not_found'`. `GET rules/options` →
+    `internet: { available, reason: null | 'unavailable' | 'parents_only', children: [{ userId, name, avatarUrl, color,
+    colorHex, initials }] }`. Ergebnis im Regel-Protokoll: `{ type: 'internet', op, userId, name, until, ok, unchanged,
+    error }`. Schickt eine App, die die Aktion noch nicht kennt, nur `{ type: 'internet' }` zurück, bleibt der
+    gespeicherte Schritt an dieser Stelle erhalten.
+  - **Ohne GateControl 1.259.0** wird der Schritt nicht angeboten; eine Regel, die ihn hat, läuft ihn nicht
+    (`unavailable`) – nie mit der Person der gerade laufenden Anfrage als Akteur.
+- **Mitteilungen im Thema „Internet zu Hause“ (`internet`):** Alles, was „Internet zu Hause“ meldet, läuft in diesem einen
+  Thema, das jede Person in den Benachrichtigungs-Einstellungen für sich ein- und ausschaltet (das Thema gibt es seit
+  1.18.0). Neu dazu: **„Zeit abgelaufen“** – läuft eine Pause oder Extra-Zeit von selbst aus, bekommt das Kind „Das
+  Internet ist wieder an“ bzw. „Die Extra-Zeit ist vorbei“ (`kind: 'pause_over' | 'extend_over'`, `by: null`; einmal,
+  höchstens 15 Minuten nach dem Ende, nicht wenn ein Elternteil sie beendet oder verlängert hat und nicht, solange
+  GateControl noch eine Pause kennt). Pausiert eine Regel, steht sie in der Mitteilung („Die Regel „Abendessen“ (Anna)
+  hat das Internet zu Hause pausiert“, `data.familie.ruleId`). Ein neues, unbekanntes Gerät im Heimnetz meldet
+  GateControl selbst (Netzwerk-Wächter) – Familie erfährt davon nichts und meldet es nicht.
+- **`GET internet` für eine Eltern-Ansicht in den Apps (additiv):** je Kind `presence: { state: 'home' | 'away' |
+  'unknown' | 'not_shared', since, source: 'app' | 'wifi' | null } | null` (woher die Anwesenheit kommt – App oder
+  Heim-WLAN; `null`, wenn die Funktion Anwesenheit aus ist), `pausedBy.rule` / `extendedBy.rule: { id, title } | null`
+  (von einer Regel gesetzt), dazu `serverTime` und `timezone`. Die Karte im Portal zeigt „zu Hause · WLAN“ / „zu
+  Hause · App“ / „unterwegs“ (nur bei Kindern, die ihre Anwesenheit teilen) und „von der Regel „Abendessen“ (Anna) um
+  18:30“.
+- **Schon vorhanden, jetzt für die Apps zusammengeschrieben** (kein neuer Code): die Quelle je Mitglied in `GET presence`
+  (`members[].source: 'app' | 'wifi' | null`, seit 1.17.0 – der Wert heißt `wifi`, nicht `wlan`) und der Schalter „Über
+  mein Handy im WLAN“ je Person (`PUT presence/wifi { enabled }`) bzw. je Gerät (`PUT presence/wifi/devices/<id>
+  { counts }`), beide nur für sich selbst.
+- Migration 013 (`internet_log`: `rule_id`, `rule_title`, `done_at`). Die Mindestversion bleibt 1.216.0; keine neue
+  Berechtigung.
+
 ## 1.19.0
 
 - **„Notizen & Aufgaben“ (optional):** Ist das Plugin „Notizen & Aufgaben“ (`gatecontrol-notizen`) installiert, ist

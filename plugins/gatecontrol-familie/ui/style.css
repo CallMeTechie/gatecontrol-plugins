@@ -256,6 +256,11 @@ button.fa-rm-box:hover{border-color:var(--line-2)}
 .fa-rm-card-warn{font-size:12px;font-weight:700;color:var(--warn)}
 .fa-rm-notify{max-width:640px;padding:18px}
 .fa-rm-notify-add{flex:none}
+.fa-rm-net{max-width:none}
+.fa-rm-net-card .fa-avatar{flex:none}
+.fa-rm-net-how{display:flex;flex-direction:column;gap:6px}
+.fa-rm-net-how .form-select,.fa-rm-net-how .form-input{min-height:40px}
+.fa-rm-target:disabled{opacity:.5;cursor:default}
 .fa-rm-chips{display:flex;gap:8px;flex-wrap:wrap}
 .fa-rm-chip{min-height:36px;padding:0 14px;border-radius:18px;border:1px solid var(--line-2);background:var(--surface-2);color:var(--text);font-size:13px;font-weight:700;cursor:pointer}
 .fa-rm-chip[aria-pressed="true"]{background:var(--text);color:var(--surface);border-color:var(--text)}

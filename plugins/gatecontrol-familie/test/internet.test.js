@@ -24,7 +24,7 @@ test('without GateControl 1.231.0: available false, nothing to change, nothing b
   for (const extra of [{}, { gatecontrol: '1.230.0' }, { gatecontrol: '1.230.0', homeNetwork: {} }]) {
     await withFamily(extra, async (host, { as }) => {
       assert.ok(!(host.gc.homeNetwork && host.gc.homeNetwork.internet));
-      assert.deepEqual((await as(ANNA)('GET', '/internet')).json, { ok: true, internet: { available: false, manage: true, children: [] } });
+      assert.deepEqual((await as(ANNA)('GET', '/internet')).json, { ok: true, internet: { available: false, manage: true, children: [], serverTime: Z(T0), timezone: 'Europe/Berlin' } });
       for (const op of ['pause', 'resume', 'extend']) {
         const r = await as(ANNA)('POST', `/internet/${TIM.id}/${op}`, { minutes: 30 });
         assert.deepEqual([r.status, r.json.code], [409, 'unavailable'], op);
@@ -43,7 +43,7 @@ test('GET internet: parents see every minor child, a child only itself, read onl
   assert.deepEqual(g.children.map((c) => c.userId), [LENA.id, TIM.id]);
   const tim = g.children.find((c) => c.userId === TIM.id);
   assert.deepEqual({ ...tim, avatarUrl: undefined, color: undefined, colorHex: undefined, initials: undefined }, {
-    userId: TIM.id, name: 'Tim', avatarUrl: undefined, color: undefined, colorHex: undefined, initials: undefined,
+    userId: TIM.id, name: 'Tim', avatarUrl: undefined, color: undefined, colorHex: undefined, initials: undefined, presence: null,
     paused: null, pausedBy: null, extended: null, extendedBy: null,
     nextSchedule: { from: '2026-10-14T19:00:00Z', to: '2026-10-15T05:00:00Z', block: 'categories', categories: ['social', 'games', 'video'], active: false },
     profile: 'Kinder', devices: 2, filtered: true, error: null,
@@ -77,7 +77,7 @@ test('pause: only a parent, only a minor child; GateControl gets the parent as a
 
   const r = await as(ANNA)('POST', `/internet/${TIM.id}/pause`, { minutes: 30, userId: LENA.id });
   assert.equal(r.status, 200);
-  assert.deepEqual([r.json.child.userId, r.json.child.paused, r.json.child.pausedBy], [TIM.id, Z(T0 + 30 * MIN), { userId: ANNA.id, name: 'Anna', at: Z(T0) }]);
+  assert.deepEqual([r.json.child.userId, r.json.child.paused, r.json.child.pausedBy], [TIM.id, Z(T0 + 30 * MIN), { userId: ANNA.id, name: 'Anna', at: Z(T0), rule: null }]);
   assert.deepEqual(host.homeInternet.log, [{ op: 'pause', userId: TIM.id, until: new Date(T0 + 30 * MIN).toISOString(), actors: [ANNA.id] }]);
   const [n] = pushes(host, 'internet');
   assert.deepEqual([n.topic, n.users, n.title, n.body], [

@@ -2,7 +2,9 @@
    Parents only, signed in: per minor child the state (normal with the next blocked time / paused until … / longer today
    until … / not filtered), who did it and when (Familie's own log), the buttons „Pause …“ (30 Min., 1 Std., bis morgen
    7 Uhr, bis Uhrzeit …), „Pause beenden“, „Heute länger …“ (+30 / +60 Min.) and „+30 Min.“ (a running pause or extra
-   time 30 minutes longer). Hidden without the API (an older GateControl), for children and without children. */
+   time 30 minutes longer). Hidden without the API (an older GateControl), for children and without children.
+   1.20.0: a pause a rule set says so („von der Regel „Abendessen“ (Anna) um 18:30“, pausedBy.rule); where the child is
+   („zu Hause · WLAN“ / „unterwegs“, c.presence — only for children who share it), because a pause only works at home. */
 (function () {
   'use strict';
   var A = window.FA, T = A.T, $ = A.$, el = A.el, CTX = A.CTX;
@@ -45,9 +47,17 @@
   /** "von Anna um 17:52" (today) / "von Anna, gestern 17:52" */
   function byText(by) {
     if (!by || !by.name) return null;
+    // 1.20.0: a rule did it in that parent's name
+    var who = by.rule ? (by.rule.title ? T('internet.by_rule', { rule: by.rule.title, name: by.name }) : T('internet.by_rule_untitled', { name: by.name })) : by.name;
     var d = new Date(by.at);
-    if (!isNaN(d.getTime()) && dayStart(d) === dayStart(new Date())) return T('internet.by_today', { name: by.name, time: pad(d.getHours()) + ':' + pad(d.getMinutes()) });
-    return T('internet.by_other', { name: by.name, when: A.when(by.at) });
+    if (!isNaN(d.getTime()) && dayStart(d) === dayStart(new Date())) return T('internet.by_today', { name: who, time: pad(d.getHours()) + ':' + pad(d.getMinutes()) });
+    return T('internet.by_other', { name: who, when: A.when(by.at) });
+  }
+  /** 1.20.0: „zu Hause · WLAN“ / „zu Hause · App“ / „unterwegs“ — null when the child does not share it or nothing is known. */
+  function whereText(p) {
+    if (!p || (p.state !== 'home' && p.state !== 'away')) return null;
+    if (p.state === 'away') return T('internet.away');
+    return T(p.source === 'wifi' ? 'internet.at_home_wifi' : (p.source === 'app' ? 'internet.at_home_app' : 'internet.at_home'));
   }
   function running(isoStr) { var t = isoStr ? new Date(isoStr).getTime() : NaN; return !isNaN(t) && t > Date.now(); }
 
@@ -136,6 +146,8 @@
       buttons.push(btn(T('internet.btn_pause'), function () { toggle(c, 'pause'); }, { expanded: isOpen('pause') }));
       buttons.push(btn(T('internet.btn_longer'), function () { toggle(c, 'longer'); }, { expanded: isOpen('longer') }));
     }
+    var where = whereText(c.presence);
+    if (where) pills.push(el('span', { class: 'fa-pill fa-net-pill is-where' + (c.presence.state === 'home' ? ' is-home' : ''), text: where }));
     var name = el('strong', { class: 'fa-net-name' }, [el('span', { text: c.name })].concat(pills));
     var kid = el('div', { class: 'fa-net-kid is-' + state }, [
       A.avatar(c, 40),

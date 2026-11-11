@@ -112,6 +112,42 @@ test('gc.homeNetwork.internet: status any time; pause, resume, extend only in a 
   } finally { await h.close(); p.done(); mock.timers.reset(); }
 });
 
+test('gc.homeNetwork.internet { actor } (GateControl 1.259.0): an automation acts for the person it names', async () => {
+  mock.timers.enable({ apis: ['Date'], now: T0 });
+  const p = plugin({ homeInternet: true });
+  const anna = { ...USERS[1], portal: true, loggedIn: true };
+  try {
+    // an older host: no flag, the argument is ignored
+    const old = await createHost(p.dir, { users: USERS, gatecontrol: '1.258.0' });
+    await old.start();
+    assert.equal(old.gc.homeNetwork.internet.actors, undefined);
+    await assert.rejects(old.gc.homeNetwork.internet.pause(3, 30, { actor: 2 }), (e) => e.code === 'ERR_NOT_PERSON');
+    await old.close();
+    for (const o of [{ gatecontrol: '1.259.0' }, { homeInternet: { actors: true } }]) {
+      const h = await createHost(p.dir, { users: USERS, ...o });
+      await h.start();
+      const I = h.gc.homeNetwork.internet;
+      assert.equal(I.actors, true);
+      // outside a request: only with an actor, an enabled account
+      await assert.rejects(I.pause(3, 30), (e) => e.code === 'ERR_NOT_PERSON');
+      await assert.rejects(I.pause(3, 30, {}), (e) => e.code === 'ERR_NOT_PERSON');
+      for (const actor of [4, 99, 0, '2', 1.5]) await assert.rejects(I.pause(3, 30, { actor }), (e) => e.code === 'ERR_INVALID', String(actor));
+      assert.equal((await I.pause(3, 30, { actor: 2 })).paused, new Date(T0 + 30 * MIN).toISOString());
+      assert.equal((await I.resume(3, { actor: 2 })).paused, null);
+      assert.equal((await I.extend(3, 45, { actor: 2 })).extended, new Date(T0 + 45 * MIN).toISOString());
+      assert.equal((await I.extend(3, 0, { actor: 2 })).extended, null);
+      assert.deepEqual(h.homeInternet.log.map((x) => [x.op, x.actors, x.automated]), [['pause', [2], true], ['resume', [2], true], ['extend', [2], true], ['extend', [2], true]]);
+      // inside somebody's request the named person is the actor; a person's own change is not marked
+      const CODE2 = { method: 'POST', path: '/x', user: { ...USERS[2], portal: true, loggedIn: true } };
+      assert.equal((await h.request({ ...CODE2, body: { op: 'pause', args: [3, 10, { actor: 2 }] } })).json.ok, true);
+      assert.deepEqual([h.homeInternet.log.at(-1).actors, h.homeInternet.log.at(-1).automated], [[2], true]);
+      assert.equal((await h.request({ method: 'POST', path: '/x', user: anna, body: { op: 'pause', args: [3, 10] } })).json.ok, true);
+      assert.deepEqual([h.homeInternet.log.at(-1).actors, 'automated' in h.homeInternet.log.at(-1)], [[2], false]);
+      await h.close();
+    }
+  } finally { p.done(); mock.timers.reset(); }
+});
+
 test('gc.homeNetwork.internet: without the permission no gc.homeNetwork at all', async () => {
   const p = plugin({});
   const h = await createHost(p.dir, { users: USERS, gatecontrol: '1.231.0', homeInternet: { people: { 3: { devices: 1 } } } });

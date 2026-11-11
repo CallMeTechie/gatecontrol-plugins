@@ -16,7 +16,7 @@
 //   POST   rules/<id>/test       the dry run („Probelauf“, nothing runs) → { wouldFire, details: [{ kind, ok, text }] }
 //   POST   rules/test            the same for an unsaved rule body
 //   GET    rules/options         what the editor offers → { triggers, devices, actions, calendars, places, people,
-//                                messenger, can, features, location }
+//                                messenger, internet (1.20.0), can, features, location }
 //   1.11.0:
 //   POST   rules/open/<ruleId>/done | snooze   { key } — one's own open reminder („Erledigt“, „In 1 Std.“)
 //   PUT    rules/vacation        { on, until?: 'YYYY-MM-DD' } (parents) — the holiday mode: every active
@@ -45,9 +45,16 @@
 //                   calendar: { dayOffset, sources, match, memberIds } | null },
 //     actions: [{ type: 'quick_action', actionId, plugin, id, title, state, kind, verb, available, needsTarget }
 //              | { type: 'notify', to: 'parents' | 'all' | [userId], text, facts, buttons }
-//              | { type: 'messenger', to: 'family' | [userId], text }],
+//              | { type: 'messenger', to: 'family' | [userId], text }
+//              | { type: 'internet', op: 'pause' | 'resume', userId, name, minutes, until, available, problem }],   (1.20.0)
 //     lastRunAt, lastResult: { at, ok, skipped } | null, ownerId, ownerName, editable, pausable, createdAt, updatedAt }
 //   On input `to: 'me'` is the caller; a quick action is { actionId } or { plugin, id } (+ state for a switch).
+//   1.20.0 — „Internet pausieren“ / „Internet fortsetzen“ (server/internet.js, GateControl ≥ 1.259.0): on input
+//   { type: 'internet', op: 'pause', userId, minutes: 1…1440 } | { …, until: 'HH:MM' } | { type: 'internet', op: 'resume',
+//   userId } — only a parent sets it (403 forbidden { field: 'actions.<i>' }), only for a minor child of the family (400
+//   invalid). It runs as the rule's owner; an owner who is no parent any more: not run, logged ('not_allowed').
+//   rules/options carries `internet: { available, reason, children }`. A body that says only { type: 'internet' } keeps
+//   the stored action at that place (an app that does not know it yet).
 
 const store = require('./store');
 const tz = require('./tz');
@@ -60,6 +67,7 @@ const messenger = require('./messenger');
 const rulerow = require('./rulerow');
 const format = require('./format');
 const school = require('./school');
+const internet = require('./internet');
 const { fail, posInt, optText, bool, iso, parseJson, userIds } = require('./util');
 
 const SCHEDULE = 'schedule';
@@ -166,12 +174,16 @@ function people(v, at, fam, ownerId, max) {
   return ids;
 }
 
-function parseActions(v, fam, scope, ownerId) {
+function parseActions(v, fam, scope, ownerId, cur) {
   if (!Array.isArray(v) || !v.length || v.length > presence.MAX_ACTIONS) throw bad('actions');
   const own = (at, to) => { if (scope === 'personal' && !(Array.isArray(to) && to.length === 1 && to[0] === ownerId)) throw fail('forbidden', { field: `${at}.to` }); };
+  // 1.20.0: the stored „Internet …“ actions, in their order — for a body that only names the type
+  const kept = cur ? cur.actions.filter((a) => a.type === 'internet') : [];
+  let nth = 0;
   return v.map((a, i) => {
     const at = `actions.${i}`;
     if (!a || typeof a !== 'object' || Array.isArray(a)) throw bad(at);
+    if (a.type === 'internet') return internet.parseAction(a, at, fam, fam.byId.get(ownerId) || null, kept[nth++] || null);
     if (a.type === 'quick_action') {
       let plugin = a.plugin;
       let id = a.id;
@@ -222,7 +234,7 @@ function fields(body, cur, ctx, scope, ownerId) {
     if (owner && owner.role === 'child') throw fail('forbidden', { field: 'trigger.userId' });
   }
   f.conditions = b.conditions !== undefined ? parseConds(b.conditions, ctx.fam) : (cur ? cur.conditions : { time: null, afterSunset: false, device: [], calendar: null });
-  f.actions = b.actions !== undefined || !cur ? parseActions(b.actions, ctx.fam, scope, ownerId) : cur.actions;
+  f.actions = b.actions !== undefined || !cur ? parseActions(b.actions, ctx.fam, scope, ownerId, cur) : cur.actions;
   f.active = b.active !== undefined ? bool(b.active) : (cur ? cur.active : true);
   return f;
 }
@@ -262,7 +274,7 @@ function triggerView(rule, places) {
   return { type: rule.trigger };
 }
 
-function view(rule, ctx, avail, last, places) {
+function view(rule, ctx, avail, last, places, gc) {
   const listed = avail.get(rule.ownerId);
   const owner = ctx.fam.byId.get(rule.ownerId) || ctx.fam.users.get(rule.ownerId);
   const r = rights(rule, ctx);
@@ -274,6 +286,8 @@ function view(rule, ctx, avail, last, places) {
     actions: rule.actions.map((a) => {
       if (a.type === 'quick_action') return { ...presence.actionView(a, listed), actionId: `${a.plugin}/${a.id}` };
       if (a.type === 'notify') return { ...a, facts: a.facts === true, buttons: Array.isArray(a.buttons) ? a.buttons : [] };
+      // 1.20.0: the child's name, and whether it could run now as the owner
+      if (a.type === 'internet') return internet.actionView(gc, a, ctx.fam, rule.ownerId);
       return a;
     }),
     lastRunAt: iso(rule.lastRunAt),
@@ -292,7 +306,7 @@ async function views(gc, ctx, rules) {
   const lastRows = await store.all(gc, 'SELECT l.* FROM presence_log l WHERE l.id = (SELECT m.id FROM presence_log m WHERE m.rule_id = l.rule_id ORDER BY m.at DESC, m.id DESC LIMIT 1)');
   const last = new Map(lastRows.map((x) => [x.rule_id, x]));
   const places = await ruleplaces.all(gc);
-  return rules.map((x) => view(x, ctx, avail, last.get(x.id), places));
+  return rules.map((x) => view(x, ctx, avail, last.get(x.id), places, gc));
 }
 
 async function one(gc, ctx, id) {
@@ -538,6 +552,11 @@ async function dryRun(gc, ctx, rule) {
       const info = await messenger.info(gc, cfg);
       const there = info.available === true;
       details.push({ kind: 'action', ok: there, text: say(lang, there ? 'test.msg' : 'test.msg_gone') });
+    } else if (a.type === 'internet') {
+      // 1.20.0: would it run as the owner right now?
+      const v = internet.actionView(gc, a, ctx.fam, rule.ownerId);
+      const what = say(lang, v.op === 'resume' ? 'test.net_resume' : (v.until ? 'test.net_pause_until' : 'test.net_pause'), { name: v.name || '–', n: v.minutes, time: v.until });
+      details.push({ kind: 'action', ok: v.available, text: v.available ? what : `${what} – ${say(lang, `test.net_${v.problem}`)}` });
     }
   }
   return { wouldFire: ok, details };
@@ -618,6 +637,8 @@ async function options(gc, ctx) {
     places: pres ? [...(await ruleplaces.all(gc)).values()].map((p) => ({ id: p.id, name: p.name, radius: p.radius })) : [],
     people: ctx.fam.list.map((m) => ({ userId: m.userId, name: m.name, role: m.role, ...members.faceOf(m), placesShared: !!(consent.get(m.userId) && consent.get(m.userId).places) })),
     messenger: { available: info.available === true, group: !!info.group },
+    // 1.20.0: „Internet pausieren“ — parents, with „Internet zu Hause“ and GateControl ≥ 1.259.0
+    internet: internet.ruleOptions(gc, ctx),
     can: can(ctx),
     features: { deviceValues: conditions.hasGet(gc), buttons: reminders.callbacks(gc), alltag },
     location: !!cfg.location,
