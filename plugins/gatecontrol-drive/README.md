@@ -1254,9 +1254,42 @@ locking overwrites the keys in memory and forgets the names.
 
 What is **not** offered: **videos in the portal** — the frame's CSP (GateControl's `frame.js`) lets `<video>` play only
 from `/plugin-media/`, neither `blob:` nor MediaSource; a decrypted copy would have to leave the tab. The tab says so and
-points to the apps or the explicit download. **Office files** have no renderer that works on the bytes in memory in any
-client (Collabora/OnlyOffice need the file on the server, which is exactly what a vault forbids): a note and the explicit
-export. **HEIC** is shown by the apps (Android decodes it), not by browsers without a decoder.
+points to the apps or the explicit download. **Office files in the apps**: Collabora/OnlyOffice need the file on the
+server, which is exactly what a vault forbids; the portal reads them itself since 1.29.0 (below), the apps still show a
+note and the explicit export. **HEIC** is shown by the apps (Android decodes it), not by browsers without a decoder.
+
+**Office files in the portal (since 1.29.0, `ui/vaultoffice.js`)** — docx/docm/dotx, xlsx/xlsm/xltx, pptx/pptm/ppsx,
+odt, ods, odp and their templates open as a reading view; doc, xls, ppt, RTF and iWork get a note that names the format
+and are not decrypted at all. No library: the reader is the plugin's own code (~56 KB, handed over in front of the
+viewer by `GET viewer/vaultview`) and returns a **model, never HTML**:
+
+```
+{ kind: 'doc',    blocks, images, truncated }
+{ kind: 'sheets', sheets: [{ name, rows: [{ r, cells: { <col>: { v, n } } }], cols, truncated, other }], truncated }
+{ kind: 'slides', slides: [{ blocks, images }], images, truncated }
+block: { t: 'p'|'h'|'table'|'break', level, runs: [{ text, b, i, u, s, v: 'sup'|'sub', img }], list: { level, label }, align, rows: [[{ blocks, span }]] }
+```
+
+`ui/vaultview.js` builds elements and text nodes from it (`h()`/`textContent`; classes from a fixed list, `colspan` as
+a number). Nothing of the file can become markup, an attribute, a style or an address — which matters because the
+frame's CSP allows inline scripts. What the reader does with an untrusted file:
+
+| Attack | What happens |
+|---|---|
+| HTML / script as text, `onerror=`, `javascript:` links | text is text; hyperlink targets, tooltips and every attribute of the file are never read |
+| Macros (`vbaProject.bin`), OLE objects, `altChunk` HTML, external relationships, field codes (`INCLUDEPICTURE`, DDE), formulas | the parts are never unpacked; `TargetMode="External"` is dropped; `w:instrText` and `<f>` are skipped — a cell shows its stored value |
+| `<!DOCTYPE>`, entities ("billion laughs"), external entities | own XML reader without DTD: any `<!…>` that is no comment or CDATA → `office_unsafe`, nothing shown; only the five predefined entities and character references are decoded |
+| Deeply nested XML | more than 256 levels → `office_unsafe` |
+| ZIP bomb, lying sizes | own ZIP reader, inflate through the browser's `DecompressionStream` with a running limit: 48 MB a part, 128 MB a file, 5,000 entries → `office_too_large`; ZIP64, encrypted entries, other methods refused |
+| Huge sheets, repeats in ods (`number-rows-repeated="1048576"`) | 2,000 rows × 100 columns, 60,000 cells a sheet, 40 sheets, 400 slides, 20,000 blocks / 4 million characters a document — beyond them `truncated` and a note |
+| Password-protected / old binary file under a new name (OLE container) | `office_password`: a note |
+
+Not shown (a reading view, said above the document): layout, fonts, colours, pictures (a mark "[Bild]"), charts,
+headers and footers, footnotes, comments, tracked deletions. **What the apps would need** to show the same: the reader
+has no DOM and no browser API except `DecompressionStream`, `TextDecoder` and typed arrays — Windows (Electron) can run
+`ui/vaultoffice.js` as it is on the bytes its `gcvault:` scheme hands the page and build the view like its Markdown
+view; Android would port the model reader to Kotlin (`java.util.zip.Inflater` with the same limits, an
+`XmlPullParser` with DOCTYPE disabled) and render the model in Compose.
 
 The portal's viewer (`ui/vaultview.js`, `ui/vaultview.css`, the texts `p.vv.*`) is not part of the page: `GET
 viewer/vaultview` → `{ code, css, texts }` the first time a vault file is opened (the frame runs the script as an inline

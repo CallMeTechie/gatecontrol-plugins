@@ -1,4 +1,4 @@
-<!-- version: 1.28.3 -->
+<!-- version: 1.29.0 -->
 # Drive
 
 ## What the plugin does
@@ -59,7 +59,8 @@ A vault folder stays end-to-end encrypted while you look at a file in it:
 - **Locking closes the viewer:** when the vault locks (after the time set without input, when you leave the tab or app, by hand), the viewer closes at once and what was decrypted is deleted. Scrolling, zooming and a playing video count as use.
 - **No screenshots:** in the Android app and on Windows the viewer cannot be captured and does not show in the recent apps.
 - **The server sees nothing new:** it serves encrypted data and the viewer's program only. Administrators still cannot open vaults.
-- **Limits:** very large files, office files and, in the browser, videos are not shown – you get a note and can download the file on purpose or view it in the app.
+- **Office files (portal):** Word, Excel, PowerPoint and OpenDocument files (docx, xlsx, pptx, odt, ods, odp) open in the portal as a **reading view**: the text with headings, lists and tables, each sheet of a workbook as a tab, a presentation slide by slide. The layout, pictures and charts are missing; formulas show the value saved last. Macros, embedded objects and links are not run and nothing is loaded from the network. Older formats (doc, xls, ppt), RTF and password-protected files get a note with “Download”. The apps (Android, Windows) do not have this view yet.
+- **Limits:** very large files and, in the browser, videos are not shown – you get a note and can download the file on purpose or view it in the app.
 - **Offline (Android app):** In a vault, switch on “Available offline” for a file or a folder (menu ⋮) or “Keep the whole vault offline” at the top. The phone then keeps only the encrypted content, exactly as the server has it. As always a file opens only after unlocking, in memory only – also without a connection. For that the phone keeps the wrapped vault key; it stays protected by the phone's device key. If the device is removed from the vault or you sign out, the app deletes the vault's offline files.
 
 ### Putting files into a vault – what happens to the original
@@ -119,6 +120,13 @@ Full screen in the portal needs GateControl 1.244.0. Older versions show the vid
 
 **At home the photos do not show up faster.**
 The previews reach the gateway bit by bit (a few hundred per run, every 15 minutes). Check at the gateway under **Gateways › Home cache** that it is “on” and that “Photos” or “Drive” are switched on. Previews from the home network need GateControl 1.249.0 and a current app.
+
+## New in 1.29.0
+
+- **Viewing office files in a vault:** in the portal a click on a Word, Excel, PowerPoint or OpenDocument file (docx, xlsx, pptx, odt, ods, odp) in a vault now opens a reading view – text, headings, lists and tables; the sheets of a workbook as tabs, presentations slide by slide. The file is decrypted and read in the browser tab only; the server still sees nothing of it.
+- **Read only, without the layout:** fonts, colours, pictures and charts are not shown; formulas appear with the value saved last. To edit a file, download it on purpose.
+- **Safe with files from others too:** macros, embedded objects and links are not run, nothing is loaded. A file that is not built like an office file is not shown.
+- **Not included:** the old formats doc, xls and ppt, RTF, Pages / Numbers / Keynote and password-protected files – they get a clear note with “Download”. The Android and the Windows app do not show office files of a vault yet.
 
 ## New in 1.28.3
 

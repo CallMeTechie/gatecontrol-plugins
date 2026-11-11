@@ -3,7 +3,9 @@
 // The vault viewer of the portal (ui/vaultview.js, since 1.22.0) is not part of the page (GateControl answers at most
 // 1 MiB per page; the portal page stays well below): GET viewer/vaultview hands the frame its script, its style and its
 // texts (p.vv.*, the viewer's language) when a vault file is opened for the first time; the frame runs the script as an
-// inline script (its CSP allows inline scripts only).
+// inline script (its CSP allows inline scripts only). Since 1.29.0 the script starts with ui/vaultoffice.js: the reader
+// of office files of a vault (docx, xlsx, pptx, odt, ods, odp) — own code, no library; it reads the decrypted bytes in
+// the tab and hands the viewer a model of text and tables, never HTML.
 //
 // Its PDF renderer: Mozilla's pdf.js (vendor/pdfjs,
 // Apache-2.0, the legacy build) — handed to the portal frame only when a vault's PDF is opened, never inlined into the
@@ -55,7 +57,13 @@ let viewerFiles = null;
 
 /** GET viewer/vaultview → { code, css, texts } */
 function vaultview(lang) {
-  if (!viewerFiles) viewerFiles = { code: fs.readFileSync(path.join(UI, 'vaultview.js'), 'utf8'), css: fs.readFileSync(path.join(UI, 'vaultview.css'), 'utf8') };
+  // since 1.29.0 the reader of office files (ui/vaultoffice.js) comes with the viewer, in front of it
+  if (!viewerFiles) {
+    viewerFiles = {
+      code: fs.readFileSync(path.join(UI, 'vaultoffice.js'), 'utf8') + '\n' + fs.readFileSync(path.join(UI, 'vaultview.js'), 'utf8'),
+      css: fs.readFileSync(path.join(UI, 'vaultview.css'), 'utf8'),
+    };
+  }
   const all = texts[lang === 'en' ? 'en' : 'de'];
   const out = {};
   for (const [k, v] of Object.entries(all)) if (k.startsWith(TEXT_PREFIX)) out[k] = v;

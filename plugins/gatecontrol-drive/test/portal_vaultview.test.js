@@ -5,6 +5,9 @@
 // never a URL, never a download, nothing handed to the page — and drops everything when it closes, when the vault
 // locks (by hand, by time, the tab left) and when a decryption is still running. Videos, office files and files too
 // large get a note and are not decrypted at all. pdf.js comes in pieces (GET viewer/pdfjs) that fit GateControl's answers.
+// Since 1.29.0 office files (docx, xlsx, pptx, odt, ods, odp) are read in the tab too (ui/vaultoffice.js, its own
+// tests in vault_office.test.js): shown as text and tables built from text nodes — nothing of a prepared file becomes
+// an element, an attribute or an address; older formats, files with a password and files that are not safe get a note.
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -18,6 +21,7 @@ const VC = require('../ui/vaultcrypto');
 const VV = require('../ui/vaultview');
 const { withHost, ANNA, MIN } = require('./helpers');
 const { createWindow } = require('./fake-dom');
+const F = require('./office-files');
 
 const portalHtml = () => ui.render({ view: 'portal', lang: 'de', user: { id: ANNA.id, loggedIn: true } }, t);
 const tick = () => new Promise((r) => setTimeout(r, 2));
@@ -114,6 +118,12 @@ async function openVault(host, c, files, o = {}) {
     };
   }
   if (o.pdfjs) w.window.pdfjsLib = o.pdfjs;
+  // the browser's inflate (office files, 1.29.0)
+  if (o.inflate !== false) w.window.DecompressionStream = DecompressionStream;
+  // what the reader of office files was handed (the decrypted bytes): seen.office
+  seen.office = [];
+  let office = null;
+  Object.defineProperty(w.window, 'DriveVaultOffice', { configurable: true, get: () => office, set: (v) => { office = { ...v, read: (b, n, x) => { seen.office.push(b); return v.read(b, n, x); } }; } });
   w.run();
   // the viewer as the server hands it over — run as an inline script by the fake DOM
   await until('the app', () => !$('dp-app').hidden && navItem($('dp-nav'), 'Verschlüsselt'));
@@ -141,7 +151,10 @@ test('viewer: not part of the page — GET viewer/vaultview hands over script, s
   assert.ok(!html.includes('p.vv.'), 'nor its texts');
   assert.ok(Buffer.byteLength(html) < 1024 * 1024 * 0.6, 'the portal page budget of portal.test.js');
   const r = viewer.vaultview('de');
-  assert.equal(r.code, fs.readFileSync(path.join(__dirname, '..', 'ui', 'vaultview.js'), 'utf8'));
+  // since 1.29.0: the reader of office files in front of the viewer, in one answer below GateControl's 1 MiB
+  assert.equal(r.code, fs.readFileSync(path.join(__dirname, '..', 'ui', 'vaultoffice.js'), 'utf8') + '\n' + fs.readFileSync(path.join(__dirname, '..', 'ui', 'vaultview.js'), 'utf8'));
+  assert.ok(Buffer.byteLength(JSON.stringify({ ok: true, ...r })) < 1024 * 1024 * 0.5, 'the viewer fits one answer');
+  assert.ok(!/\bnew Function\b|\beval\(|innerHTML|outerHTML|insertAdjacentHTML|document\.write|DOMParser|createContextualFragment|\.href\b|\.src\b/.test(r.code), 'the viewer builds no HTML and sets no address');
   assert.ok(r.css.includes('.dp-vv-back'));
   assert.equal(r.texts['p.vv.download'], 'Herunterladen');
   assert.equal(viewer.vaultview('en').texts['p.vv.download'], 'Download');
@@ -308,7 +321,7 @@ test('viewer: a decryption still running when the vault locks stops at its next 
   });
 });
 
-test('viewer: a PDF through pdf.js (the document destroyed and the pages emptied on close); videos and office files get a note and are never decrypted', async () => {
+test('viewer: a PDF through pdf.js (the document destroyed and the pages emptied on close); videos and old office formats get a note and are never decrypted', async () => {
   await withHost({}, async (host, c) => {
     const rec = { got: null, destroyed: 0, rendered: 0 };
     const pdfjs = {
@@ -323,7 +336,7 @@ test('viewer: a PDF through pdf.js (the document destroyed and the pages emptied
         return { promise: Promise.resolve(doc), destroy() {} };
       },
     };
-    const ctx = await openVault(host, c, { 'Vertrag.pdf': '%PDF-1.7 geheim', 'Urlaub.mp4': 'not really a video', 'Tabelle.xlsx': 'PK..' }, { pdfjs });
+    const ctx = await openVault(host, c, { 'Vertrag.pdf': '%PDF-1.7 geheim', 'Urlaub.mp4': 'not really a video', 'Tabelle.xls': 'an old workbook' }, { pdfjs });
     try {
       const v = await show(ctx, 'Vertrag.pdf', (x) => x.querySelectorAll('canvas').length === 2);
       assert.equal(Buffer.from(rec.got.data).toString(), '%PDF-1.7 geheim', 'pdf.js gets the bytes, no URL');
@@ -343,8 +356,11 @@ test('viewer: a PDF through pdf.js (the document destroyed and the pages emptied
       assert.equal(ctx.seen.reads, reads, 'a video is not decrypted in the tab');
       assert.ok(textOf(n).includes('App'));
       n.querySelectorAll('button').find((b) => b.getAttribute('aria-label') === 'Schließen').click();
-      n = await show(ctx, 'Tabelle.xlsx', (x) => textOf(x).includes('Office-Dateien'));
+      // an office format that is not read in the tab (Excel 97–2003): a note that names it, nothing decrypted
+      n = await show(ctx, 'Tabelle.xls', (x) => textOf(x).includes('Dieses Office-Format (.xls)'));
+      assert.ok(textOf(n).includes('docx') && textOf(n).includes('xlsx'));
       assert.equal(ctx.seen.reads, reads);
+      assert.equal(ctx.seen.office.length, 0);
       // the explicit way out: asks, then downloads (the one object URL, for the download)
       click(n, 'Herunterladen');
       click(await until('question', () => byText(n, 'span', 'Trotzdem herunterladen') && n), 'Trotzdem herunterladen');
@@ -368,6 +384,150 @@ test('viewer: a file larger than the viewer decrypts in memory gets a note — n
       const v = await show(ctx, 'Klein.txt', (x) => textOf(x).includes('Zu groß für die Ansicht'));
       assert.equal(ctx.seen.reads, reads);
       assert.ok(textOf(v).includes('höchstens 0 MB'));
+    } finally { ctx.w.stop(); }
+  });
+});
+
+// ── office files (1.29.0) ──────────────────────────────────
+
+const OFFICE_TAGS = new Set(['div', 'p', 'span', 'h2', 'h3', 'h4', 'h5', 'h6', 'table', 'thead', 'tbody', 'tr', 'td', 'th', 'hr', 'sup', 'sub', 'section', 'button', 'svg', 'path', 'use', 'circle', 'rect', 'line', 'polyline', 'g']);
+const OFFICE_ATTRS = new Set(['class', 'colspan', 'scope', 'role', 'aria-selected', 'aria-label', 'aria-hidden', 'type']);
+/** Everything below the office view is one of a few elements with a few attributes — none of them can load or run anything. */
+function assertInert(view) {
+  for (const e of view.all()) {
+    const svg = !!e.namespaceURI && /svg/.test(e.namespaceURI);
+    if (!svg) assert.ok(OFFICE_TAGS.has(e.localName), 'element <' + e.localName + '>');
+    for (const [k, v] of e.attributes) {
+      if (!svg) assert.ok(OFFICE_ATTRS.has(k), `attribute ${k} on <${e.localName}>`);
+      assert.ok(!/^on/i.test(k) && !/javascript:|https?:|file:|data:/i.test(v), `${k}="${v}"`);
+    }
+  }
+  for (const bad of ['script', 'img', 'a', 'iframe', 'object', 'embed', 'link', 'style', 'form', 'input', 'video', 'audio', 'base', 'meta']) assert.equal(view.querySelectorAll(bad).length, 0, '<' + bad + '>');
+}
+const tabsOf = (root) => root.querySelectorAll('button').filter((b) => b.getAttribute('role') === 'tab');
+const headOf = (root) => root.querySelectorAll('thead')[0].querySelectorAll('th').map(textOf);
+const rowsOf = (root) => root.querySelectorAll('tbody')[0].querySelectorAll('tr');
+const closeViewer = (v) => v.querySelectorAll('button').find((b) => b.getAttribute('aria-label') === 'Schließen').click();
+
+test('office: a Word file of a vault is read in the tab — headings, a list, a table as elements with text; a prepared file stays text; closing drops everything', async () => {
+  await withHost({}, async (host, c) => {
+    const evil = '&lt;script&gt;window.PWNED=1&lt;/script&gt;&lt;img src=x onerror="window.PWNED=2"&gt;';
+    const body = F.wp('Mietvertrag', { style: 'berschrift1' }) + F.wp('Zwischen Anna und Jonas', { bold: true }) + F.wp('Kaltmiete', { num: [2, 0] }) + F.wp('Kaution', { num: [2, 0] })
+      + '<w:tbl><w:tr><w:tc><w:tcPr><w:gridSpan w:val="2"/></w:tcPr>' + F.wp('Summe') + '</w:tc></w:tr><w:tr><w:tc>' + F.wp('950 €') + '</w:tc><w:tc>' + F.wp('210 €') + '</w:tc></w:tr></w:tbl>'
+      + F.wp(evil)
+      + '<w:p onclick="window.PWNED=3"><w:hyperlink r:id="rIdJs"><w:r><w:t>Klick mich</w:t></w:r></w:hyperlink><w:r><w:drawing/></w:r></w:p>';
+    const file = F.docx(body, { rels: [{ id: 'rIdJs', type: F.REL + '/hyperlink', target: 'javascript:window.PWNED=4', external: true }], extra: { 'word/vbaProject.bin': { raw: Buffer.from('no deflate'), usize: 99 } } });
+    const ctx = await openVault(host, c, { 'Vertrag.docm': file });
+    try {
+      const v = await show(ctx, 'Vertrag.docm', (x) => x.querySelectorAll('.dp-vo')[0] && textOf(x).includes('Kaution'));
+      const view = v.querySelectorAll('.dp-vo')[0];
+      assert.ok(textOf(v).includes('Leseansicht'), 'says what kind of view this is');
+      assert.equal(textOf(view.querySelectorAll('h2')[0]), 'Mietvertrag');
+      assert.equal(view.querySelectorAll('.is-b').map(textOf).join(), 'Zwischen Anna und Jonas');
+      assert.deepEqual(view.querySelectorAll('.dp-vo-li').map(textOf), ['1.Kaltmiete', '2.Kaution']);
+      assert.deepEqual(view.querySelectorAll('td').map((td) => [td.getAttribute('colspan'), textOf(td)]), [['2', 'Summe'], [null, '950 €'], [null, '210 €']]);
+      // the prepared parts: text, a mark for the picture — never an element, a handler or an address
+      assert.ok(textOf(view).includes('<script>window.PWNED=1</script><img src=x onerror="window.PWNED=2">'));
+      assert.ok(textOf(view).includes('Klick mich') && textOf(view).includes('[Bild]'));
+      assertInert(view);
+      assert.equal(ctx.w.window.PWNED, undefined);
+      assert.deepEqual(ctx.seen.urls, [], 'no URL of the plaintext');
+      assert.deepEqual(ctx.seen.out, []);
+      assert.ok(byText(v, 'span', 'Herunterladen'), 'the one way out stays');
+      assert.equal(ctx.seen.office.length, 1);
+      assert.ok(Buffer.from(ctx.seen.office[0]).every((b) => b === 0), 'the decrypted bytes are overwritten once they are read');
+      closeViewer(v);
+      assert.equal(viewerOf(ctx.w), null);
+      assert.equal(view.childNodes.length, 0, 'the view is emptied');
+    } finally { ctx.w.stop(); }
+  });
+});
+
+test('office: an Excel file with its sheets as tabs, a presentation as slides, the real files written by LibreOffice', async () => {
+  await withHost({}, async (host, c) => {
+    const fx = (n) => fs.readFileSync(path.join(__dirname, 'fixtures', 'office', n));
+    const book = F.xlsx([
+      { name: 'Ausgaben', data: '<row r="1"><c r="A1" t="s"><v>0</v></c><c r="B1" s="4"><f>SUM(B2:B9)</f><v>1234.5</v></c></row><row r="5"><c r="A5" t="inlineStr"><is><t>&lt;b onmouseover=alert(1)&gt;fett&lt;/b&gt;</t></is></c></row>' },
+      { name: '<img src=x>', data: '<row r="1"><c r="C1" s="1"><v>46027</v></c></row>' },
+      { name: 'Leer', data: '' },
+    ], { shared: ['Miete'] });
+    const deck = F.pptx([F.sp('Urlaub', { title: true }) + F.sp(['Ostsee', 'Alpen']), '']);
+    const ctx = await openVault(host, c, { 'Haushalt.xlsx': book, 'Urlaub.pptx': deck, 'Mietvertrag.docx': fx('Mietvertrag.docx'), 'Haushalt.ods': fx('Haushalt.ods'), 'Urlaub.odp': fx('Urlaub.odp') });
+    try {
+      let v = await show(ctx, 'Haushalt.xlsx', (x) => x.querySelectorAll('.dp-vo-grid')[0]);
+      let view = v.querySelectorAll('.dp-vo')[0];
+      assert.ok(textOf(v).includes('3 Blätter'));
+      const tabs = tabsOf(view);
+      assert.deepEqual(tabs.map(textOf), ['Ausgaben', '<img src=x>', 'Leer']);
+      assert.deepEqual(tabs.map((b) => b.getAttribute('aria-selected')), ['true', 'false', 'false']);
+      assert.deepEqual(headOf(view), ['', 'A', 'B']);
+      assert.deepEqual(rowsOf(view).map((tr) => tr.childNodes.map(textOf)), [['1', 'Miete', '1.234,50 €'], ['5', '<b onmouseover=alert(1)>fett</b>', '']]);
+      assert.equal(view.querySelectorAll('td').filter((td) => td.className === 'is-num').length, 1);
+      assert.ok(rowsOf(view)[1].className.includes('is-gap'), 'rows left out are marked');
+      assert.ok(!textOf(view).includes('SUM('), 'no formula');
+      assertInert(view);
+      tabs[1].click();
+      assert.deepEqual(rowsOf(view).map((tr) => tr.childNodes.map(textOf)), [['1', '', '', '05.01.2026']]);
+      assert.deepEqual(tabs.map((b) => b.getAttribute('aria-selected')), ['false', 'true', 'false']);
+      tabs[2].click();
+      assert.ok(textOf(view).includes('Dieses Blatt ist leer.'));
+      assertInert(view);
+      closeViewer(v);
+
+      v = await show(ctx, 'Urlaub.pptx', (x) => x.querySelectorAll('.dp-vo-slide').length === 2);
+      view = v.querySelectorAll('.dp-vo')[0];
+      assert.ok(textOf(v).includes('2 Folien'));
+      assert.deepEqual(view.querySelectorAll('.dp-vo-slide').map(textOf), ['Folie 1UrlaubOstseeAlpen', 'Folie 2Kein Text auf dieser Folie.']);
+      assertInert(view);
+      closeViewer(v);
+
+      v = await show(ctx, 'Mietvertrag.docx', (x) => x.querySelectorAll('.dp-vo')[0] && textOf(x).includes('Unterschrift'));
+      view = v.querySelectorAll('.dp-vo')[0];
+      assert.deepEqual(view.querySelectorAll('h2,h3').map(textOf), ['Mietvertrag Wohnung Lindenstraße 12', '§ 1 Mietsache', '§ 2 Miete']);
+      assert.equal(view.querySelectorAll('td').length, 7);
+      assert.deepEqual(view.querySelectorAll('sup,sub').map((e) => e.localName + textOf(e)), ['sup2', 'sub2']);
+      assertInert(view);
+      closeViewer(v);
+
+      v = await show(ctx, 'Haushalt.ods', (x) => x.querySelectorAll('.dp-vo-grid')[0]);
+      assert.equal(rowsOf(v).length, 6);
+      assert.equal(tabsOf(v).length, 0, 'one sheet needs no tabs');
+      closeViewer(v);
+      v = await show(ctx, 'Urlaub.odp', (x) => x.querySelectorAll('.dp-vo-slide').length === 3);
+      assert.ok(textOf(v).includes('Katzensitter fragen'));
+      assert.deepEqual(ctx.seen.urls, []);
+      assert.ok(ctx.seen.office.every((b) => Buffer.from(b).every((x) => x === 0)));
+    } finally { ctx.w.stop(); }
+  });
+});
+
+test('office: a file that is not safe, has a password, is broken or too large inside gets a note and "Herunterladen" — never a view; the lock closes the view', async () => {
+  await withHost({}, async (host, c) => {
+    const doctype = F.docx('', { document: `<!DOCTYPE d [<!ENTITY a "aaaaaaaaaa"><!ENTITY b "&a;&a;&a;&a;&a;&a;&a;&a;">]><w:document ${F.W}><w:body>${F.wp('&b;')}</w:body></w:document>` });
+    const ole = Buffer.concat([Buffer.from('d0cf11e0a1b11ae1', 'hex'), Buffer.alloc(700)]);
+    const good = F.docx(F.wp('Lesbar'));
+    const ctx = await openVault(host, c, { 'Bombe.docx': doctype, 'Geschuetzt.xlsx': ole, 'Kaputt.pptx': Buffer.from('PK\u0003\u0004 this is no archive'), 'Gut.docx': good });
+    try {
+      for (const [name, text] of [['Bombe.docx', 'nicht vorkommen darf'], ['Geschuetzt.xlsx', 'Kennwort geschützt'], ['Kaputt.pptx', 'lässt sich hier nicht lesen']]) {
+        const v = await show(ctx, name, (x) => textOf(x).includes(text));
+        assert.equal(v.querySelectorAll('.dp-vo').length, 0, name + ': no view');
+        assert.ok(byText(v, 'span', 'Herunterladen'), name);
+        closeViewer(v);
+      }
+      // a browser without DecompressionStream says so
+      const DS = ctx.w.window.DecompressionStream;
+      ctx.w.window.DecompressionStream = undefined;
+      let v = await show(ctx, 'Gut.docx', (x) => textOf(x).includes('kann Office-Dateien nicht entpacken'));
+      closeViewer(v);
+      ctx.w.window.DecompressionStream = DS;
+      // the lock of the vaults closes an office view like any other
+      v = await show(ctx, 'Gut.docx', (x) => textOf(x).includes('Lesbar'));
+      const view = v.querySelectorAll('.dp-vo')[0];
+      ib(v, 'Tresore jetzt sperren').click();
+      await until('locked', () => !viewerOf(ctx.w));
+      assert.equal(view.childNodes.length, 0);
+      assert.ok(ctx.seen.office.every((b) => Buffer.from(b).every((x) => x === 0)));
+      assert.deepEqual(ctx.seen.urls, []);
     } finally { ctx.w.stop(); }
   });
 });

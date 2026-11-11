@@ -1,4 +1,4 @@
-<!-- version: 1.28.3 -->
+<!-- version: 1.29.0 -->
 # Drive
 
 ## Was das Plugin kann
@@ -59,7 +59,8 @@ Ein Tresor-Ordner bleibt Ende-zu-Ende verschlüsselt, auch wenn du dir eine Date
 - **Sperren schließt die Ansicht:** Sperrt sich der Tresor (nach der eingestellten Zeit ohne Eingabe, beim Verlassen von Tab oder App, von Hand), schließt die Ansicht sofort und das Entschlüsselte wird gelöscht. Beim Ansehen zählt Blättern, Zoomen und ein laufendes Video als Nutzung.
 - **Keine Bildschirmfotos:** In der Android-App und unter Windows lässt sich die Ansicht nicht abfotografieren und erscheint nicht in der Liste der letzten Apps.
 - **Der Server sieht nichts Neues:** Er liefert nur verschlüsselte Daten und das Programm der Ansicht. Administratoren können Tresore weiterhin nicht öffnen.
-- **Grenzen:** Sehr große Dateien, Office-Dateien und im Browser auch Videos zeigt die Ansicht nicht an – du bekommst einen Hinweis und kannst die Datei bewusst herunterladen oder in der App ansehen.
+- **Office-Dateien (Portal):** Word, Excel, PowerPoint und OpenDocument (docx, xlsx, pptx, odt, ods, odp) öffnen im Portal als **Leseansicht**: der Text mit Überschriften, Listen und Tabellen, bei Excel jedes Blatt als Reiter, bei PowerPoint Folie für Folie. Das Layout, Bilder und Diagramme fehlen; Formeln zeigen den zuletzt gespeicherten Wert. Makros, eingebettete Objekte und Verknüpfungen werden nicht ausgeführt und nichts wird aus dem Netz geladen. Ältere Formate (doc, xls, ppt), RTF und kennwortgeschützte Dateien bekommen einen Hinweis mit „Herunterladen“. In den Apps (Android, Windows) gibt es diese Ansicht noch nicht.
+- **Grenzen:** Sehr große Dateien und im Browser auch Videos zeigt die Ansicht nicht an – du bekommst einen Hinweis und kannst die Datei bewusst herunterladen oder in der App ansehen.
 - **Offline (Android-App):** Im Tresor schaltest du „Offline verfügbar“ für eine Datei oder einen Ordner ein (Menü ⋮) oder oben „Ganzen Tresor offline halten“. Auf dem Handy liegt dann nur der verschlüsselte Inhalt, genau so wie auf dem Server. Geöffnet wird wie immer erst nach dem Entsperren, nur im Arbeitsspeicher – auch ohne Netz. Dafür merkt sich das Handy den verpackten Tresor-Schlüssel; er bleibt mit dem Geräteschlüssel des Handys geschützt. Wird das Gerät aus dem Tresor entfernt oder meldest du dich ab, löscht die App die Offline-Dateien des Tresors.
 
 ### Dateien in den Tresor legen – was mit dem Original passiert
@@ -119,6 +120,13 @@ Vollbild im Portal gibt es ab GateControl 1.244.0. Ältere Versionen zeigen das 
 
 **Zu Hause bauen sich die Fotos nicht schneller auf.**
 Die Vorschaubilder kommen erst nach und nach auf das Gateway (je Lauf einige Hundert, alle 15 Minuten). Prüfe am Gateway unter **Gateways › Zwischenspeicher**, dass er „aktiv“ ist und „Fotos“ bzw. „Drive“ eingeschaltet sind. Vorschaubilder aus dem Heimnetz braucht GateControl 1.249.0 und eine aktuelle App.
+
+## Neu in 1.29.0
+
+- **Office-Dateien im Tresor ansehen:** Im Portal öffnet ein Klick auf eine Word-, Excel-, PowerPoint- oder OpenDocument-Datei (docx, xlsx, pptx, odt, ods, odp) im Tresor jetzt eine Leseansicht – Text, Überschriften, Listen und Tabellen; Excel-Blätter als Reiter, Präsentationen Folie für Folie. Die Datei wird dafür nur im Browser-Tab entschlüsselt und gelesen, der Server sieht weiterhin nichts davon.
+- **Nur lesen, ohne Layout:** Schriften, Farben, Bilder und Diagramme zeigt die Ansicht nicht; Formeln stehen mit ihrem zuletzt gespeicherten Wert da. Zum Bearbeiten lädst du die Datei bewusst herunter.
+- **Sicher auch bei fremden Dateien:** Makros, eingebettete Objekte und Verknüpfungen werden nicht ausgeführt, nichts wird nachgeladen. Eine Datei, die nicht wie eine Office-Datei aufgebaut ist, wird nicht angezeigt.
+- **Nicht dabei:** die alten Formate doc, xls und ppt, RTF, Pages / Numbers / Keynote und kennwortgeschützte Dateien – dafür steht ein klarer Hinweis mit „Herunterladen“ da. Die Android- und die Windows-App zeigen Office-Dateien im Tresor noch nicht an.
 
 ## Neu in 1.28.3
 
