@@ -200,9 +200,17 @@ test('sanitizing: the ZIP — a part that unpacks far beyond its claim, encrypte
   const big = Buffer.concat([Buffer.from(`<w:document ${F.W}><w:body><w:p><w:r><w:t>`), Buffer.alloc(60 * 1024 * 1024, 0x20)]);
   const packed = zlib.deflateRawSync(big);
   assert.ok(packed.length < 200 * 1024, 'a small file');
-  const started = Date.now();
-  await assert.rejects(read(F.docx('', { extra: { 'word/document.xml': { raw: packed, usize: 100 } } }), 'a.docx'), code('office_too_large'));
-  assert.ok(Date.now() - started < 20000);
+  // counted, not timed (a limit in milliseconds depends on how busy the machine is): the bytes that leave the inflater
+  const DS = globalThis.DecompressionStream;
+  let unpacked = 0;
+  globalThis.DecompressionStream = function Counting(format) {
+    const ds = new DS(format);
+    return { writable: ds.writable, readable: ds.readable.pipeThrough(new TransformStream({ transform(chunk, to) { unpacked += chunk.length; to.enqueue(chunk); } })) };
+  };
+  try {
+    await assert.rejects(read(F.docx('', { extra: { 'word/document.xml': { raw: packed, usize: 100 } } }), 'a.docx'), code('office_too_large'));
+  } finally { globalThis.DecompressionStream = DS; }
+  assert.ok(unpacked > 0 && unpacked <= VO.CAPS.part + 4 * 1024 * 1024, `${unpacked} of ${big.length} bytes unpacked`);
   // a part that says itself that it is too large is not unpacked at all
   await assert.rejects(read(F.docx('', { extra: { 'word/document.xml': { data: '<x/>', usize: VO.CAPS.part + 1 } } }), 'a.docx'), code('office_too_large'));
   // the limit on everything unpacked together: many sheets of 40 MB each
@@ -349,9 +357,10 @@ test('OpenDocument: text with styles and lists, a table; a sheet with repeated c
     + '<table:table-row table:number-rows-repeated="1048569"><table:table-cell table:number-columns-repeated="16384"/></table:table-row></table:table>'
     + '<table:table table:name="Voll"><table:table-row table:number-rows-repeated="1048576"><table:table-cell table:number-columns-repeated="16384"><text:p>x</text:p></table:table-cell></table:table-row>'
     + '<table:table-row><table:table-cell><text:p>NACH DER GRENZE</text:p></table:table-cell></table:table-row></table:table>';
-  const started = Date.now();
   const s = await read(F.odf('spreadsheet', sheet), 'a.ods');
-  assert.ok(Date.now() - started < 5000, 'repeats are counted, not copied without end');
+  // repeats are counted, not copied without end: 17 billion cells in the file, 200 rows of CAPS.cols cells in the model
+  // (its size, not the time the reading took — that depends on how busy the machine is)
+  assert.ok(JSON.stringify(s).length < 1024 * 1024, 'the model of the repeated rows stays small');
   assert.deepEqual(s.sheets.map((x) => x.name), ['Blatt <1>', 'Voll']);
   assert.deepEqual(cellsOf(s.sheets[0]), [['A', '7', '7', '7'], ['C\nzweite Zeile'], ['C\nzweite Zeile']]);
   assert.deepEqual(s.sheets[0].rows.map((r) => r.r), [1, 7, 8]);

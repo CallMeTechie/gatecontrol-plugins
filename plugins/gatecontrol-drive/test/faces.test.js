@@ -11,6 +11,7 @@ const { performance } = require('node:perf_hooks');
 const assert = require('node:assert/strict');
 const faces = require('../server/faces');
 const { withHost, ANNA, MARC, LENA } = require('./helpers');
+const cost = require('../../../tools/testing/sql-cost');
 
 const DIM = 128;
 const MODEL = 'sface-2021dec';
@@ -326,7 +327,7 @@ test('a few thousand faces: groups stay right and each PUT stays quick (centres 
     const truth = new Map();
     const PHOTOS = 1500;
     let faceCount = 0;
-    let slowest = 0;
+    const late = [];
     const started = performance.now();
     for (let i = 0; i < PHOTOS; i++) {
       const n = await photo(c, ANNA, mine.rootId, `b${i}.jpg`);
@@ -334,9 +335,10 @@ test('a few thousand faces: groups stay right and each PUT stays quick (centres 
       const who = [Math.floor(r.next() * IDS), Math.floor(r.next() * IDS)];
       const list = who.map((w, k) => face(faceOf(r, bases[w], 0.72), [0.05 + k * 0.4, 0.2, 0.2, 0.25]));
       if (i % 3 === 0) list.push(face(randomUnit(r), [0.8, 0.7, 0.1, 0.1]));
-      const t0 = performance.now();
-      const x = await a('PUT', `nodes/${n.id}/faces`, { model: MODEL, faces: list });
-      slowest = Math.max(slowest, i > PHOTOS - 100 ? performance.now() - t0 : 0);
+      const put = () => a('PUT', `nodes/${n.id}/faces`, { model: MODEL, faces: list });
+      let x = null;
+      if (i < PHOTOS - 100) x = await put();
+      else late.push(await cost.record(async () => { x = await put(); }));
       assert.equal(x.status, 200, JSON.stringify(x.json));
       x.json.faces.forEach((f, k) => { if (k < 2) truth.set(f.id, who[k]); });
       faceCount += list.length;
@@ -361,12 +363,18 @@ test('a few thousand faces: groups stay right and each PUT stays quick (centres 
     }
     assert.ok(placed / truth.size > 0.95, `${placed}/${truth.size} faces in their person`);
     assert.ok(people.length >= IDS && people.length <= IDS + 5, String(people.length));
-    assert.ok(slowest < 250, `slowest PUT ${slowest} ms`);
+    // each of the last 100 PUTs, with 3 400 faces and 40 people around: the statements and rows of one photo (26 and
+    // 15 with three faces) — reading the people would give back 40 rows more, reading the faces thousands; no limit in
+    // milliseconds, which fails on a busy machine
+    const most = { runs: Math.max(...late.map((x) => x.runs)), rows: Math.max(...late.map((x) => x.rows)) };
+    assert.equal(late.length, 100);
+    assert.ok(most.runs <= 30 && most.rows <= 20, `a PUT runs ${most.runs} statements that give back ${most.rows} rows`);
+    assert.deepEqual([...new Set(late.flatMap((x) => cost.fullReads(x)))], [], 'faces or nodes read as a whole');
     // the centres in memory are the database's
     faces.forgetCentres();
     const n = await photo(c, ANNA, mine.rootId, 'last.jpg');
     const x = await a('PUT', `nodes/${n.id}/faces`, { model: MODEL, faces: [face(faceOf(r, bases[0], 0.72))] });
     assert.ok(real.has(x.json.faces[0].person));
-    tc.diagnostic(`${faceCount} faces on ${PHOTOS} photos, ${people.length} people, ${Math.round(performance.now() - started)} ms, slowest of the last 100 PUTs ${Math.round(slowest)} ms`);
+    tc.diagnostic(`${faceCount} faces on ${PHOTOS} photos, ${people.length} people, ${Math.round(performance.now() - started)} ms, the last 100 PUTs at most ${most.runs} statements and ${most.rows} rows each`);
   });
 });

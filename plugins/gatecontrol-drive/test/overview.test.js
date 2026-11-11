@@ -5,11 +5,12 @@
 // itself), "Zuletzt geöffnet" (content, office and POST nodes/<id>/opened record it; not photos, not a vault, not a PC's
 // sync; filled up with
 // what the person changed), the memories, people and places, "Neu in Familie" (others, the family's and the teams' areas,
-// 14 days, grouped by person, folder and hour), the storage — and the time it takes with some thousand nodes.
+// 14 days, grouped by person, folder and hour), the storage — and what it costs with some thousand nodes.
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { withHost, ANNA, MARC, LENA, BOB, T0, MIN, DAY } = require('./helpers');
+const cost = require('../../../tools/testing/sql-cost');
 
 const PDF = 'application/pdf';
 const DOCX = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
@@ -386,7 +387,14 @@ test('memories, people and places of the overview; people null while the switch 
   });
 });
 
-test('GET overview with some thousand nodes answers in well under 300 ms', async (t) => {
+// GET overview costs about half of what reading every node (4 000) costs; three times that is a request gone wrong
+const UNITS_MAX = 3;
+// read as a whole on purpose
+const WHOLE = [
+  /^SCAN changes USING COVERING INDEX changes_area ← SELECT MIN\(seq\) AS lo, MAX\(seq\) AS hi FROM changes$/, // the ends of the change log: one pass over its index
+];
+
+test('GET overview with some thousand nodes stays cheap: no table read as a whole, a fixed number of statements', async (t) => {
   await withHost({}, async (host, c) => {
     const a = c.as(ANNA);
     const mine = await c.area(ANNA, 'mine');
@@ -425,22 +433,24 @@ test('GET overview with some thousand nodes answers in well under 300 ms', async
     await db.exec('COMMIT');
     await a('PUT', 'photos/settings', { people: true });
     await overview(a);
-    const times = [];
     let o = null;
-    for (let i = 0; i < 5; i++) {
-      const t0 = process.hrtime.bigint();
-      o = await overview(a);
-      times.push(Number(process.hrtime.bigint() - t0) / 1e6);
-    }
-    times.sort((x, y) => x - y);
-    const median = times[2];
-    assert.ok(median < 300, `GET overview takes ${median.toFixed(1)} ms (median of 5)`);
+    const rec = await cost.record(async () => { o = await overview(a); });
+    // no limit in milliseconds, which fails on a busy machine (tools/testing/sql-cost.js): no table read as a whole
+    // (the query plan of every statement) and its indexes taken, 60 statements that give back 750 rows — never one per
+    // node — and the
+    // request against reading every node once in the same run (the median of five each)
+    assert.deepEqual(cost.fullReads(rec, { allow: WHOLE }), [], 'a large table read as a whole');
+    const used = cost.indexes(rec);
+    assert.deepEqual(['nodes_memories', 'changes_area', 'recent_opens_at', 'persons_user'].filter((i) => !used.includes(i)), [], 'indexes no statement goes by any more');
+    assert.ok(rec.runs <= 80 && rec.rows <= 1000, `GET overview runs ${rec.runs} statements that give back ${rec.rows} rows`);
+    const units = await cost.ratio(() => overview(a), () => db.query('SELECT * FROM nodes'));
+    assert.ok(units < UNITS_MAX, `GET overview costs ${units.toFixed(1)} times reading every node`);
     // and everything is there
     assert.equal(o.recent.length, 10);
     assert.equal(o.todo.deadlines.length, 3);
     assert.ok(o.memories.length >= 1);
     assert.ok(o.places.total > 1000);
     assert.equal(o.activity.length, 5);
-    t.diagnostic(`GET overview: ${median.toFixed(1)} ms (median of 5, ${times.map((x) => x.toFixed(0)).join(' / ')})`);
+    t.diagnostic(`GET overview: ${rec.runs} statements, ${rec.rows} rows; ${units.toFixed(2)} times reading every node`);
   });
 });

@@ -20,6 +20,7 @@ plugins/<id>/               one folder per plugin (folder name = plugin.json id)
   test/*.test.js            node:test tests against the mock host (not packed)
 tools/                      validate, test, pack, verify, release metadata, catalog
 tools/testing/mock-host.js  mock of the host API (gc.*) for plugin tests
+tools/testing/sql-cost.js   speed tests without a time limit: query plans, statement counts, time against a unit of the same run
 plugins.config.json         repo-level flags per plugin (release: false = never released)
 catalog-meta.json           store metadata per plugin for catalog.json (category, icon, summary, …)
 gatecontrol.ref             GateControl commit whose packer/validator is used (40-char SHA)

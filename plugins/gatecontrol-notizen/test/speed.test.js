@@ -1,35 +1,40 @@
 'use strict';
 
-// Every statement of the screens and the background run stays well under 200 ms with 50 000 tasks and 50 000 notes of
-// one person (plus other people's data around them): GateControl logs a "slow plugin database statement" from 200 ms
-// on and a long statement blocks the plugin's database worker. Measured per statement in node:sqlite (the mock host).
+// Every statement of the screens and the background run stays cheap with 50 000 tasks and 50 000 notes of one person
+// (plus other people's data around them): GateControl logs a "slow plugin database statement" from 200 ms on and a long
+// statement blocks the plugin's database worker. Checked per statement in node:sqlite (the mock host) without a limit
+// in milliseconds, which failed on a busy machine (tools/testing/sql-cost.js): the query plan of every statement that
+// runs (no table of the tasks or notes read as a whole), the number of statements and rows of the screens, and each
+// statement's time against reading every note once in the same run.
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const sqlite = require('node:sqlite');
-const { performance } = require('node:perf_hooks');
 const { withHost, item, ANNA, MARC } = require('./helpers');
+const cost = require('../../../tools/testing/sql-cost');
 
-const LIMIT_MS = 200;
+// the unit of a statement's cost: every note read once. The costliest statement (a list of 1 667 open tasks) is less
+// than half of it.
+const UNIT = 'SELECT COUNT(*), MAX(LENGTH(body)) FROM notes NOT INDEXED';
+const FACTOR = 1;
+// read as a whole on purpose
+const WHOLE = [
+  // the newest notes of the notebooks: along the index of the change time, down to the page (LIMIT)
+  /^SCAN notes USING INDEX idx_notes_updated ← .* ORDER BY n\.updated_at DESC, n\.id DESC LIMIT \?$/,
+  // housekeeping, once for a notebook or list that left the trash: is it empty? The indexes of notebook_id and list_id
+  // leave out deleted rows, so this reads the table — only for such a notebook or list, never on a screen
+  /^SCAN notes ← DELETE FROM notebooks WHERE deleted_at IS NOT NULL AND deleted_at < \? AND NOT EXISTS/,
+  /^SCAN tasks ← DELETE FROM lists WHERE deleted_at IS NOT NULL AND deleted_at < \? AND NOT EXISTS/,
+];
+// the indexes the statements stand on: one that is gone or no longer taken shows here, also where SQLite then finds
+// its way by another index and sorts
+const INDEXES = {
+  screens: ['idx_tasks_list', 'idx_tasks_due', 'idx_tasks_important', 'idx_tasks_assignee', 'idx_tasks_done', 'idx_tasks_parent', 'idx_my_day_task', 'idx_notes_nb', 'idx_notes_pinned',
+    'idx_notes_updated', 'idx_note_tags_tag', 'idx_list_members_list', 'idx_notebook_members_nb'],
+  background: ['idx_tasks_remind', 'idx_tasks_trash', 'idx_notes_trash', 'idx_notes_expires', 'idx_src_item_users_item', 'idx_src_items_done'],
+};
+// the requests of the screens run 766 statements; one per row of a list (1 667 tasks, 50 notes a page) would be far more
+const SCREENS_MAX = 900;
 const N = 50000;
-
-async function timed(fn) {
-  const SP = sqlite.StatementSync.prototype;
-  const orig = { all: SP.all, get: SP.get, run: SP.run, iterate: SP.iterate };
-  const worst = new Map();
-  for (const name of Object.keys(orig)) {
-    SP[name] = function measured(...a) {
-      const t = performance.now();
-      try { return orig[name].apply(this, a); } finally {
-        const ms = performance.now() - t;
-        const k = String(this.sourceSQL).replace(/\s+/g, ' ').slice(0, 200);
-        worst.set(k, Math.max(worst.get(k) || 0, ms));
-      }
-    };
-  }
-  try { await fn(); } finally { Object.assign(SP, orig); }
-  return worst;
-}
 
 async function fill(h) {
   const db = h.host.gc.db;
@@ -90,11 +95,11 @@ async function fill(h) {
   return { lists, nbs };
 }
 
-test(`speed: ${N} tasks and ${N} notes — every statement < ${LIMIT_MS} ms`, { timeout: 600000 }, async () => {
+test(`speed: ${N} tasks and ${N} notes — no statement reads them as a whole`, { timeout: 600000 }, async (t) => {
   const h = await withHost();
   try {
     const { lists, nbs } = await fill(h);
-    const worst = await timed(async () => {
+    const rec = await cost.record(async () => {
       for (const area of ['private', 'work']) {
         await h.ok(ANNA, 'GET', 'nav', null, { area });
         for (const v of ['myday', 'important', 'planned', 'assigned']) await h.ok(ANNA, 'GET', 'views/' + v, null, { area });
@@ -115,14 +120,21 @@ test(`speed: ${N} tasks and ${N} notes — every statement < ${LIMIT_MS} ms`, { 
       await h.ok(ANNA, 'POST', 'notes', { notebookId: nbs[1], title: 'Neu', body: '#tag1 Text' });
       await h.ok(MARC, 'GET', 'views/myday', null, { area: 'private' });
       await h.ok(MARC, 'GET', 'nav', null, { area: 'private' });
+    });
+    const background = await cost.record(async () => {
       await h.host.tick();
       const up = [];
       for (let i = 0; i < 200; i++) up.push(item('gatecontrol-mail', `m:0:${i}`, { title: 'Mail neu ' + i, users: [ANNA.id], updatedAt: Date.now() + 1000 }));
       await h.push('gatecontrol-mail', { upsert: up });
     });
-    const slow = [...worst.entries()].filter(([, ms]) => ms >= LIMIT_MS).sort((a, b) => b[1] - a[1]);
-    const top = [...worst.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5).map(([k, ms]) => `${ms.toFixed(1)} ms ${k}`);
-    console.log('slowest statements:\n  ' + top.join('\n  '));
-    assert.deepEqual(slow, [], 'statements at or above ' + LIMIT_MS + ' ms');
+    for (const [what, r, needed] of [['the screens', rec, INDEXES.screens], ['the background run and a push', background, INDEXES.background]]) {
+      const used = cost.indexes(r);
+      assert.deepEqual(needed.filter((i) => !used.includes(i)), [], `${what}: indexes no statement goes by any more`);
+      assert.deepEqual(cost.fullReads(r, { allow: WHOLE }), [], `${what}: a large table read as a whole`);
+      assert.deepEqual(cost.tooSlow(r, { unit: UNIT, factor: FACTOR }), [], `${what}: statements of ${FACTOR} units or more`);
+    }
+    assert.ok(rec.runs <= SCREENS_MAX, `${rec.runs} statements for the screens`);
+    assert.ok(rec.rows < N, `${rec.rows} rows given back`);
+    t.diagnostic(`screens: ${rec.runs} statements, ${rec.rows} rows; background and push: ${background.runs} statements; slowest: ${cost.slowest(rec, UNIT).concat(cost.slowest(background, UNIT, 1)).join(' | ')}`);
   } finally { await h.close(); }
 });

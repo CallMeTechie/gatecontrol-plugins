@@ -362,9 +362,9 @@ test('runQuickAction: a command queued past the time budget answers "on its way"
   assert.deepEqual(await direct(host, ADA, `lock:${v}`), { ok: false, message: 'Dafür wird die S-PIN des Kontos gebraucht.' });
   await asAdmin(host, 'PUT', `/accounts/${accountId}/spin`, { spin: '4711' });
   const n = cloud.commands.length;
-  const started = Date.now();
+  // the answer comes while the account is still held (release() is called below): from the time budget, not from the
+  // command — no limit in milliseconds, which depends on how busy the machine is
   let r = await host.runQuickAction(ADA, `lock:${v}`);
-  assert.ok(Date.now() - started < 1000);
   assert.deepEqual(r.body, { ok: true, unchanged: false, message: 'Elroq: Befehl unterwegs – der Status folgt', state: null, widget: null });
   assert.equal(cloud.commands.length, n, 'still waiting for the account');
   assert.equal((await host.quickActions(ADA)).find((a) => a.id === `lock:${v}`).state, 'on', 'the stored state until the command went through');

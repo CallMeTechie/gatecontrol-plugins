@@ -8,6 +8,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const geonames = require('../server/geonames');
 const { withHost, ANNA, MARC, LENA } = require('./helpers');
+const cost = require('../../../tools/testing/sql-cost');
 
 const HH_LANDUNGSBRUECKEN = { lat: 53.5452, lon: 9.9667 };
 const HH_HAFENCITY = { lat: 53.5413, lon: 9.9984 };
@@ -15,7 +16,7 @@ const HH_ALTONA = { lat: 53.5520, lon: 9.9354 };
 const KOELN_DOM = { lat: 50.9413, lon: 6.9583 };
 const PALMA = { lat: 39.5696, lon: 2.6502 };
 
-test('GeoNames offline: the nearest city and its district, German names, the region, the country; nothing far out at sea', () => {
+test('GeoNames offline: the nearest city and its district, German names, the region, the country; nothing far out at sea', async () => {
   assert.ok(geonames.loaded());
   let r = geonames.lookup(HH_LANDUNGSBRUECKEN.lat, HH_LANDUNGSBRUECKEN.lon);
   assert.equal(r.city.name, 'Hamburg');
@@ -31,10 +32,13 @@ test('GeoNames offline: the nearest city and its district, German names, the reg
   assert.equal(r.city.regionDe, 'Balearen');
   r = geonames.lookup(0, -30);
   assert.deepEqual(r, { city: null, district: null });
-  // fast: a grid, not every place
-  const t = Date.now();
-  for (let i = 0; i < 5000; i++) geonames.lookup(47 + (i % 70) / 10, 6 + (i % 90) / 10);
-  assert.ok(Date.now() - t < 2000, 'lookups take ' + (Date.now() - t) + ' ms');
+  // fast: a grid, not every place — 5 000 lookups against the distance to as many places as there are (~170 000) once,
+  // in the same run (no limit in milliseconds, which depends on how busy the machine is): about 12 of these passes;
+  // without the grid every lookup is a pass (5 000)
+  const lookups = () => { for (let i = 0; i < 5000; i++) geonames.lookup(47 + (i % 70) / 10, 6 + (i % 90) / 10); };
+  const pass = () => { let s = 0; for (let i = 0; i < 170000; i++) s += geonames.km(50, 7, 40 + (i % 400) / 10, (i % 300) / 10); return s; };
+  const passes = await cost.ratio(lookups, pass);
+  assert.ok(passes < 500, `5000 lookups cost ${passes.toFixed(0)} passes over every place`);
 });
 
 /** Anna's photos: two at the Landungsbrücken, one in the HafenCity, one in Altona, two in Köln, one in Palma, one without. */
