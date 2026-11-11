@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.1.1
+
+- **`GET jobs/<id>` mit den Zeiten des Auftrags:** Die Antwort (und jeder Auftrag in `GET overview` und im Verlauf) nennt zusätzlich `expiresAt` (bis wann GateControl es versucht – 24 Stunden nach dem Auftrag) und `doneAt` (wann er endete: gedruckt, fehlgeschlagen, verfallen, abgebrochen; sonst `null`). Damit können die Apps „wartet bis morgen 14:32“ und „gedruckt um 9:41“ zeigen, ohne die Liste zu laden. Neue Spalten `jobs.expires_at`/`done_at` (Migration 003); Aufträge, die vor 1.1.1 schon beendet waren und die GateControl nicht mehr kennt, haben `doneAt: null`.
+- **`updatedAt` ist die letzte Änderung:** Bisher setzte jede Abfrage von `GET jobs/<id>` bei einem offenen Auftrag `updatedAt` auf „jetzt“ – eine App, die alle paar Sekunden fragt, sah nie, seit wann der Auftrag wartet. Jetzt ändert sich `updatedAt` nur noch, wenn sich Zustand, Grund, Meldung oder Seitenzahl geändert haben (Abfrage und Hintergrund nutzen dieselbe Übernahme).
+- Tests: Administrator liest jeden Auftrag, eine andere Person keinen (404 `not_found`), unbekannte Nummer, Zeiten bei offen, fehlgeschlagen und abgebrochen.
+- Abwärtskompatibel: nur neue Felder; ältere Apps (Android-Druckdienst ab 1.84.0) übergehen sie. Mindestversion von GateControl unverändert.
+
 ## 1.1.0
 
 - **Durchsuchbares PDF (Texterkennung):** Beim Speichern eines Scans „Durchsuchbares PDF (Texterkennung)“ – angeboten, wenn ein Gateway mit „Texterkennung für Scans“ erreichbar ist (`gc.print.ocrAvailable`). Das Plugin startet `gc.print.ocr` (GateControl ≥ 1.247.0, Gateway ≥ 1.33.0 mit tesseract, Deutsch + Englisch), die Sitzung wartet im Zustand `ocr` (Fortschritt „Seite 1 von 3“); fertig, legt sie das durchsuchbare PDF ins Drive und gibt den erkannten Text an `save_file` (`text` – Drive nimmt ihn in seine Suche, ab Drive 1.23.0; ein älteres Drive übergeht ihn). Scheitert die Texterkennung (zu lange, Gateway aus, keins erreichbar), wird das normale PDF abgelegt und die Sitzung sagt warum (`searchable: false`, `ocrError`). Der Hintergrund führt das weiter, auch wenn niemand die Seite offen hat; „Verwerfen“ bricht die Texterkennung ab. Verlauf: „durchsuchbar“.

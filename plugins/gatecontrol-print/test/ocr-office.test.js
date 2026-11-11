@@ -5,7 +5,7 @@
 
 const { describe, it, before, after } = require('node:test');
 const assert = require('node:assert/strict');
-const { setup, devices, MARC, SABINE, LEA, HP, BRO, pdf } = require('./helpers');
+const { setup, devices, ADMIN, MARC, SABINE, LEA, HP, BRO, pdf } = require('./helpers');
 
 const DOCX = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 
@@ -82,6 +82,42 @@ describe('1.1.0: office files, text, paper and tray, the job for the apps', () =
     h.host.printJob(j2.id, { state: 'printing', pages: 3 });
     await h.host.tick();
     assert.equal((await h.req(LEA, 'GET', '/overview')).jobs.find((x) => x.id === j2.id).pages, 3);
+  });
+
+  it('GET jobs/<id> (1.1.1): the times of a job, an administrator any job, an unknown id; looking does not move updatedAt', async () => {
+    const m = await upload(MARC, pdf(2), 'application/pdf');
+    const job = (await h.req(MARC, 'POST', '/print', { deviceId: HP, mediaId: m })).job;
+    // waits up to 24 hours: expiresAt from GateControl, no end yet
+    assert.equal(Date.parse(job.expiresAt) - Date.parse(job.at) > 23 * 3600000, true, JSON.stringify(job));
+    assert.equal(job.doneAt, null);
+    const first = (await h.req(MARC, 'GET', '/jobs/' + job.id)).job;
+    assert.deepEqual([first.state, first.pages, first.open, first.expiresAt], ['queued', 2, true, job.expiresAt]);
+    // asked again with nothing new: the time of the last change stays
+    await new Promise((r) => setTimeout(r, 15));
+    assert.equal((await h.req(MARC, 'GET', '/jobs/' + job.id)).job.updatedAt, first.updatedAt);
+    // an administrator (portal or app) may read any job, another person none; an unknown id: not found
+    const adm = await h.req(ADMIN, 'GET', '/jobs/' + job.id);
+    assert.deepEqual([adm.ok, adm.job.id, adm.job.user], [true, job.id, MARC.id]);
+    assert.deepEqual([(await h.req(LEA, 'GET', '/jobs/' + job.id)).status, (await h.req(LEA, 'GET', '/jobs/' + job.id)).code], [404, 'not_found']);
+    assert.equal((await h.req(MARC, 'GET', '/jobs/pj_unknown')).code, 'not_found');
+    // failed at the printer: reason, end and a new updatedAt
+    await new Promise((r) => setTimeout(r, 15));
+    h.host.printJob(job.id, { state: 'failed', error: 'printer_rejected' });
+    const end = (await h.req(MARC, 'GET', '/jobs/' + job.id)).job;
+    assert.deepEqual([end.state, end.error, end.open], ['failed', 'printer_rejected', false]);
+    assert.equal(Date.parse(end.doneAt) >= Date.parse(end.at), true, JSON.stringify(end));
+    assert.equal(Date.parse(end.updatedAt) > Date.parse(first.updatedAt), true);
+    // over: read from the history, the same answer again
+    assert.deepEqual((await h.req(MARC, 'GET', '/jobs/' + job.id)).job, end);
+    // canceled by the person: an end too
+    const m2 = await upload(MARC, pdf(1), 'application/pdf');
+    const j2 = (await h.req(MARC, 'POST', '/print', { deviceId: HP, mediaId: m2 })).job;
+    assert.equal((await h.req(MARC, 'POST', `/jobs/${j2.id}/cancel`)).canceled, true);
+    const c = (await h.req(MARC, 'GET', '/jobs/' + j2.id)).job;
+    assert.deepEqual([c.state, c.open, typeof c.doneAt], ['canceled', false, 'string']);
+    // the history carries the times too (background)
+    await h.host.tick();
+    assert.equal((await h.req(MARC, 'GET', '/overview')).jobs.find((x) => x.id === job.id).doneAt, end.doneAt);
   });
 });
 

@@ -35,10 +35,31 @@ async function deviceOf(gc, deviceId, kind) {
 }
 
 async function insert(gc, job, d, via, now) {
-  await store.run(gc, `INSERT OR REPLACE INTO jobs (id, user_id, device_id, device_name, name, pages, copies, color, duplex, media, source, via, state, error, message, notified, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`,
+  await store.run(gc, `INSERT OR REPLACE INTO jobs (id, user_id, device_id, device_name, name, pages, copies, color, duplex, media, source, via, state, error, message, notified, created_at, updated_at, expires_at, done_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)`,
   [job.id, job.user, d.id, clip(d.name, 120), clip(job.name, 200) || 'GateControl', job.pages || 1, job.copies || 1, job.color ? 1 : 0, job.duplex ? 1 : 0,
-    job.media || null, job.source || null, via, job.state, job.error || null, job.message || null, now, now]);
+    job.media || null, job.source || null, via, job.state, job.error || null, job.message || null, now, now, timeOf(job.expiresAt), timeOf(job.doneAt)]);
+}
+
+/** A time GateControl names (ISO) → ms, null when it names none. */
+function timeOf(v) {
+  const t = typeof v === 'string' ? Date.parse(v) : NaN;
+  return Number.isFinite(t) && t > 0 ? t : null;
+}
+
+/**
+ * GateControl's job into the history row: state, reason, pages and the times (until when it is tried, when it ended).
+ * `updated_at` moves only when something changed — the apps read it as "last change". → whether it changed
+ */
+async function takeOver(gc, row, j, now) {
+  const pages = Number.isInteger(j.pages) && j.pages > 0 ? j.pages : row.pages;
+  const expires = timeOf(j.expiresAt) || row.expires_at || null;
+  const done = timeOf(j.doneAt) || row.done_at || null;
+  const moved = row.state !== j.state || (row.error || null) !== (j.error || null) || (row.message || null) !== (j.message || null) || row.pages !== pages;
+  if (!moved && (row.expires_at || null) === expires && (row.done_at || null) === done) return false;
+  await store.run(gc, 'UPDATE jobs SET state = ?, error = ?, message = ?, pages = ?, expires_at = ?, done_at = ?, updated_at = ? WHERE id = ?',
+    [j.state, j.error || null, j.message || null, pages, expires, done, moved ? now : row.updated_at, row.id]);
+  return moved;
 }
 
 const MEDIA_RE = /^[a-z0-9]+_[a-z0-9.-]+_[0-9.]+x[0-9.]+(mm|in)$/;
@@ -103,7 +124,7 @@ async function cancel(gc, user, id) {
   if (!row || (row.user_id !== user.id && user.role !== 'admin')) throw fail('not_found');
   let r;
   try { r = await gc.print.cancel(row.id); } catch (e) { throw fromHost(e); }
-  if (r.canceled) await store.run(gc, "UPDATE jobs SET state = 'canceled', updated_at = ? WHERE id = ?", [Date.now(), row.id]);
+  if (r.canceled) { const now = Date.now(); await store.run(gc, "UPDATE jobs SET state = 'canceled', updated_at = ?, done_at = ? WHERE id = ?", [now, now, row.id]); }
   return { canceled: !!r.canceled };
 }
 
@@ -121,7 +142,7 @@ async function view(gc, r) {
   return {
     kind: 'print', id: r.id, user: r.user_id, userName: await nameOf(gc, r.user_id), device: r.device_name, deviceId: r.device_id, name: r.name,
     pages: r.pages, copies: r.copies, color: r.color === 1, duplex: r.duplex === 1, media: r.media || null, source: r.source || null, via: r.via, state: r.state, error: r.error || null,
-    message: r.message || null, at: iso(r.created_at), updatedAt: iso(r.updated_at), open: OPEN.includes(r.state),
+    message: r.message || null, at: iso(r.created_at), updatedAt: iso(r.updated_at), expiresAt: iso(r.expires_at), doneAt: iso(r.done_at), open: OPEN.includes(r.state),
   };
 }
 
@@ -149,11 +170,7 @@ async function sync(gc, cfg, t, now = Date.now()) {
   for (const j of list) {
     const row = await store.one(gc, 'SELECT * FROM jobs WHERE id = ?', [j.id]);
     if (!row) continue;
-    const pages = Number.isInteger(j.pages) && j.pages > 0 ? j.pages : row.pages;
-    if (row.state !== j.state || (row.error || null) !== (j.error || null) || (row.message || null) !== (j.message || null) || row.pages !== pages) {
-      await store.run(gc, 'UPDATE jobs SET state = ?, error = ?, message = ?, pages = ?, updated_at = ? WHERE id = ?', [j.state, j.error || null, j.message || null, pages, now, row.id]);
-      changed++;
-    }
+    if (await takeOver(gc, row, j, now)) changed++;
     const final = j.state === 'done' || j.state === 'failed' || j.state === 'expired';
     if (final && !row.notified && cfg.notify && row.via !== 'admin') {
       await store.run(gc, 'UPDATE jobs SET notified = 1 WHERE id = ?', [row.id]);
@@ -185,7 +202,8 @@ async function notify(gc, t, row, j) {
 
 /**
  * GET jobs/<id> — one job of the person (an administrator: any), fresh from GateControl (gc.print.job): the apps follow
- * a job with it (the print service on the phone shows its real state). → { job }
+ * a job with it (the print service on the phone shows its real state) — state, pages, reason and the times `at`,
+ * `updatedAt` (the last change, not the last look), `expiresAt` and `doneAt`. → { job }
  */
 async function one(gc, user, id, now = Date.now()) {
   const row = await store.one(gc, 'SELECT * FROM jobs WHERE id = ?', [String(id)]);
@@ -195,10 +213,7 @@ async function one(gc, user, id, now = Date.now()) {
     try { j = await gc.print.job(row.id); } catch (e) {
       if (!(e && e.code === 'ERR_NOT_FOUND')) gc.log.debug('job refresh failed', (e && e.code) || 'error');
     }
-    if (j) {
-      const pages = Number.isInteger(j.pages) && j.pages > 0 ? j.pages : row.pages;
-      await store.run(gc, 'UPDATE jobs SET state = ?, error = ?, message = ?, pages = ?, updated_at = ? WHERE id = ?', [j.state, j.error || null, j.message || null, pages, now, row.id]);
-    }
+    if (j) await takeOver(gc, row, j, now);
   }
   return { job: await view(gc, await store.one(gc, 'SELECT * FROM jobs WHERE id = ?', [row.id])) };
 }

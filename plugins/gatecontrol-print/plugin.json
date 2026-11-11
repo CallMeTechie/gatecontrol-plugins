@@ -4,7 +4,7 @@
     "de": "Drucken & Scannen",
     "en": "Print & Scan"
   },
-  "version": "1.1.0",
+  "version": "1.1.1",
   "publisher": "CallMeTechie",
   "description": {
     "de": "Drucker und Scanner zu Hause – von überall über GateControl nutzbar, ohne sie ins Internet zu stellen: von unterwegs zu Hause drucken (wartet bis zu 24 Stunden, wenn der Drucker aus ist), vom Handy aus scannen – Glas oder Einzug, Vorschau, weitere Seiten – und als PDF ins Drive, auf Wunsch durchsuchbar und mit Name und Ordner von der KI. Drucken auch Text- und Office-Dateien, Papier und Fach wählbar. Geräte mit Tintenstand und Testseite, Rechte pro Person (drucken, scannen, Seiten am Tag, nur schwarz-weiß), Verlauf. Die Gateways finden die Geräte selbst (AirPrint/AirScan).",

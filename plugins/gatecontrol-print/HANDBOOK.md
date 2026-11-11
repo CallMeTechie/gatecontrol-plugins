@@ -1,4 +1,4 @@
-<!-- version: 1.1.0 -->
+<!-- version: 1.1.1 -->
 # Print & Scan
 
 ## What the plugin does
@@ -107,6 +107,12 @@ The PDF is damaged or password-protected. Open it on the phone or PC and save or
 
 **A job stays on “being converted for the printer” for a while.**
 The gateway is turning the pages into the printer's format. On a Raspberry Pi 3 or Zero this takes a few minutes for large PDF files.
+
+## New in 1.1.1
+
+- **Times of a job:** every job now names until when GateControl keeps trying (24 hours after the order) and when it ended. The apps can use it for “waits until tomorrow 14:32” or “printed at 9:41”.
+- For the apps: `GET jobs/<id>` also returns `expiresAt` and `doneAt`; `updatedAt` is the job's last change and no longer moves just because somebody asked. Own jobs, administrators all.
+- Nothing changes in the portal or the rights; older apps keep working as before.
 
 ## New in 1.1.0
 

@@ -1,4 +1,4 @@
-<!-- version: 1.1.0 -->
+<!-- version: 1.1.1 -->
 # Drucken & Scannen
 
 ## Was das Plugin kann
@@ -107,6 +107,12 @@ Das PDF ist beschädigt oder mit einem Kennwort geschützt. Öffne es am Handy o
 
 **Ein Auftrag steht lange auf „wird für den Drucker umgewandelt“.**
 Das Gateway rechnet die Seiten für den Drucker um. Auf einem Raspberry Pi 3 oder Zero dauert das bei großen PDF-Dateien ein paar Minuten.
+
+## Neu in 1.1.1
+
+- **Zeiten beim Auftrag:** Jeder Auftrag nennt jetzt, bis wann GateControl es versucht (24 Stunden nach dem Auftrag) und wann er endete. Die Apps können damit „wartet bis morgen 14:32“ oder „gedruckt um 9:41“ zeigen.
+- Für die Apps: `GET jobs/<id>` liefert zusätzlich `expiresAt` und `doneAt`; `updatedAt` ist die letzte Änderung des Auftrags und ändert sich nicht mehr durch bloßes Nachfragen. Eigene Aufträge, Administratoren alle.
+- Am Portal und an den Rechten ändert sich nichts; ältere Apps arbeiten unverändert weiter.
 
 ## Neu in 1.1.0
 
