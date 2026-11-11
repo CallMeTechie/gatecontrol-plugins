@@ -6,12 +6,16 @@
  *   * PDF: pdf.js (vendor/pdfjs, loaded only now through GET viewer/pdfjs, server/viewer.js) renders the pages on
  *     <canvas> elements in this frame — no browser PDF plugin, no URL, no network (the frame has connect-src 'none');
  *   * text and Markdown: decoded and shown as text (Markdown as headings, lists, code — built with text nodes only,
- *     never HTML of the file).
+ *     never HTML of the file);
+ *   * office files (since 1.29.0 — docx, xlsx, pptx, odt, ods, odp and their templates / macro variants): read here by
+ *     ui/vaultoffice.js (it comes with this script) into a plain model of text, tables and sheets, and built from it
+ *     with elements and text nodes only — a reading view without the file's layout, pictures, formulas (the stored
+ *     values) or macros (never read). The server sees nothing of it (its Collabora / OnlyOffice and its PDF
+ *     conversion would need the plaintext). Older binary formats (doc, xls, ppt), RTF and iWork files: a note.
  * Never a blob:/data: URL of the plaintext (the frame's CSP allows none for media anyway), nothing in a storage, a cache
  * or a service worker (the frame has none), nothing handed to another program — "Herunterladen" stays the one explicit
- * way out, with a note that the downloaded copy is not encrypted. Videos and office files: a note instead (the frame may
- * play media only from GateControl's /plugin-media/ — no blob:, no MediaSource; office files have no safe renderer in
- * the browser). Closing the viewer, locking the vault (lockAll → close('lock')) or the tab hiding while vaults lock then
+ * way out, with a note that the downloaded copy is not encrypted. Videos: a note instead (the frame may
+ * play media only from GateControl's /plugin-media/ — no blob:, no MediaSource). Closing the viewer, locking the vault (lockAll → close('lock')) or the tab hiding while vaults lock then
  * drops everything: the decrypted bytes overwritten with zeros, bitmaps closed, canvases emptied (width 0), pdf.js's
  * document destroyed, the DOM removed. A decryption still running when the viewer closed or the vault locked is
  * stopped at its next read and its result dropped (the session's `alive()`).
@@ -24,7 +28,7 @@
 
   var MB = 1048576;
   // what is decrypted into memory at most (the size of the ciphertext counts: a little larger than the file)
-  var LIMITS = { image: 64 * MB, pdf: 100 * MB, text: 8 * MB };
+  var LIMITS = { image: 64 * MB, pdf: 100 * MB, text: 8 * MB, office: 32 * MB };
   var MAX_SIDE = 8192; // a picture is drawn at most this large (a canvas of more would need too much memory)
   var MAX_PAGES_AHEAD = 2; // pages rendered beyond the ones on screen
 
@@ -32,7 +36,11 @@
   var TEXT = ['txt', 'text', 'log', 'csv', 'tsv', 'json', 'xml', 'yml', 'yaml', 'ini', 'conf', 'cfg', 'toml', 'env', 'sh', 'ps1', 'bat', 'js', 'ts', 'py', 'java', 'kt', 'c', 'h', 'cpp', 'cs', 'go', 'rs', 'sql', 'html', 'htm', 'css', 'vcf', 'ics'];
   var MARKDOWN = ['md', 'markdown', 'mdown', 'mkd'];
   var VIDEO = ['mp4', 'm4v', 'mov', 'webm', 'mkv', 'avi', '3gp', 'mpg', 'mpeg', 'wmv'];
-  var OFFICE = ['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'odt', 'ods', 'odp', 'rtf', 'pages', 'numbers', 'key'];
+  // office files: those ui/vaultoffice.js reads (its formatOf) and those that only get a note
+  var OFFICE = ['docx', 'docm', 'dotx', 'dotm', 'xlsx', 'xlsm', 'xltx', 'xltm', 'pptx', 'pptm', 'ppsx', 'ppsm', 'potx', 'odt', 'ott', 'ods', 'ots', 'odp', 'otp',
+    'doc', 'dot', 'xls', 'xlt', 'xlsb', 'ppt', 'pps', 'rtf', 'pages', 'numbers', 'key'];
+  /** ui/vaultoffice.js (handed over with this script; absent only where this file is loaded alone) */
+  function officeReader() { return typeof window !== 'undefined' && window.DriveVaultOffice ? window.DriveVaultOffice : null; }
   var HEIC = ['heic', 'heif'];
 
   function extOf(name) { var m = /\.([a-z0-9]{1,8})$/i.exec(String(name || '')); return m ? m[1].toLowerCase() : ''; }
@@ -277,7 +285,12 @@
 
       var limit = limitOf(kind);
       if (kind === 'video') { body.appendChild(note(T('p.vv.video_note'))); tools.appendChild(downloadAct(s)); return s; }
-      if (kind === 'office') { body.appendChild(note(T('p.vv.office_note'))); tools.appendChild(downloadAct(s)); return s; }
+      // an office file in a format that is not read here (doc, xls, ppt, rtf, iWork): a note, nothing is decrypted
+      if (kind === 'office' && !(officeReader() && officeReader().formatOf(name))) {
+        body.appendChild(note(T('p.vv.office_format', { ext: extOf(name) })));
+        tools.appendChild(downloadAct(s));
+        return s;
+      }
       if (kind === 'heic') { body.appendChild(note(T('p.vv.heic_note'))); tools.appendChild(downloadAct(s)); return s; }
       if (kind === 'other') { body.appendChild(note(T('p.vv.other_note'))); tools.appendChild(downloadAct(s)); return s; }
       if ((content && content.size ? content.size : node.size) > limit) {
@@ -294,6 +307,7 @@
           if (wait.parentNode) wait.parentNode.removeChild(wait);
           if (kind === 'image') return showImage(s, parts);
           if (kind === 'pdf') return showPdf(s, parts);
+          if (kind === 'office') return showOffice(s, parts);
           return showText(s, parts, kind === 'markdown');
         })
         .catch(function (e) {
@@ -487,6 +501,121 @@
       s.body.appendChild(box);
       s.tools.appendChild(downloadAct(s));
       s.cleanups.push(function () { while (box.firstChild) box.removeChild(box.firstChild); box.textContent = ''; });
+    }
+
+    // ── office files (ui/vaultoffice.js reads them, this builds the view) ──
+
+    /** The runs of a paragraph: text nodes, or elements with a class for bold, italic, underlined, struck through. */
+    function runsOf(runs) {
+      return (runs || []).map(function (r) {
+        if (r.img) return h('span', { class: 'dp-vo-img', text: T('p.vv.office_image') });
+        var cls = ((r.b ? ' is-b' : '') + (r.i ? ' is-i' : '') + (r.u ? ' is-u' : '') + (r.s ? ' is-s' : '')).trim();
+        var text = String(r.text == null ? '' : r.text);
+        if (r.v === 'sup' || r.v === 'sub') return h(r.v, { class: cls || null, text: text });
+        return cls ? h('span', { class: cls, text: text }) : text;
+      });
+    }
+
+    /** Paragraphs, headings and tables of the model as elements (a table's cells hold blocks again). */
+    function blocksOf(blocks) {
+      return (blocks || []).map(function (b) {
+        if (b.t === 'break') return h('hr', { class: 'dp-vo-break' });
+        if (b.t === 'table') {
+          return h('div', { class: 'dp-vo-tw' }, h('table', { class: 'dp-vo-table' }, h('tbody', null, (b.rows || []).map(function (row) {
+            return h('tr', null, row.map(function (c) { return h('td', { attrs: { colspan: c.span > 1 && c.span < 64 ? Math.floor(c.span) : null } }, blocksOf(c.blocks)); }));
+          }))));
+        }
+        var align = b.align === 'center' ? ' is-center' : b.align === 'right' ? ' is-right' : '';
+        if (b.t === 'h') return h('h' + Math.min(6, Math.max(2, (Number(b.level) || 1) + 1)), { class: 'dp-vo-h' + align }, runsOf(b.runs));
+        if (b.list) {
+          var lv = Math.min(8, Math.max(0, Math.floor(Number(b.list.level) || 0)));
+          return h('p', { class: 'dp-vo-li dp-vo-l' + lv + align }, [b.list.label ? h('span', { class: 'dp-vo-lb', text: String(b.list.label) }) : null, h('span', null, runsOf(b.runs))]);
+        }
+        return h('p', { class: 'dp-vo-p' + align }, runsOf(b.runs));
+      });
+    }
+
+    /** One sheet as a table with its column letters and row numbers; rows without content are left out. */
+    function sheetOf(VO, sheet) {
+      if (!sheet.rows.length) return h('p', { class: 'dp-vo-empty', text: T(sheet.other ? 'p.vv.office_sheet_other' : 'p.vv.office_sheet_empty') });
+      var cols = Math.min(VO.CAPS.cols, Math.max(1, sheet.cols));
+      var head = [h('th', { class: 'dp-vo-corner' })];
+      for (var c = 1; c <= cols; c++) head.push(h('th', { text: VO.colName(c), attrs: { scope: 'col' } }));
+      var prev = 0;
+      var rows = sheet.rows.map(function (row) {
+        var tds = [h('th', { text: String(row.r), attrs: { scope: 'row' } })];
+        for (var k = 1; k <= cols; k++) {
+          var cell = row.cells[k];
+          tds.push(h('td', { class: cell && cell.n ? 'is-num' : null, text: cell ? String(cell.v) : '' }));
+        }
+        var tr = h('tr', { class: prev && row.r !== prev + 1 ? 'is-gap' : null }, tds);
+        prev = row.r;
+        return tr;
+      });
+      return h('div', { class: 'dp-vo-tw dp-vo-sheet' }, h('table', { class: 'dp-vo-table dp-vo-grid' }, [h('thead', null, h('tr', null, head)), h('tbody', null, rows)]));
+    }
+
+    function officeError(s, e) {
+      var code = e && e.code;
+      var key = { office_password: 'p.vv.office_password', office_unsafe: 'p.vv.office_unsafe', office_browser: 'p.vv.office_browser', office_too_large: 'p.vv.office_big' }[code] || 'p.vv.office_failed';
+      s.body.appendChild(note(T(key), 'warn'));
+      s.tools.appendChild(downloadAct(s));
+    }
+
+    function showOffice(s, parts) {
+      var VO = officeReader();
+      var bytes = join(parts);
+      wipeAll(parts);
+      s.cleanups.push(function () { bytes.fill(0); });
+      var wait = h('div', { class: 'dp-vv-wait' }, [h('span', { class: 'dp-vv-spin', attrs: { 'aria-hidden': 'true' } }), h('span', { text: T('p.vv.office_reading') })]);
+      s.body.appendChild(wait);
+      return VO.read(bytes, s.name, { lang: D.lang }).then(function (model) {
+        bytes.fill(0);
+        if (!s.alive()) return;
+        if (wait.parentNode) wait.parentNode.removeChild(wait);
+        var view = h('div', { class: 'dp-vo' });
+        s.cleanups.push(function () { while (view.firstChild) view.removeChild(view.firstChild); view.textContent = ''; model = null; });
+        s.body.appendChild(h('p', { class: 'dp-vo-hint', text: T('p.vv.office_simple') }));
+        if (model.truncated) s.body.appendChild(note(T('p.vv.office_truncated'), 'warn'));
+        s.body.appendChild(view);
+        if (model.kind === 'sheets') {
+          view.classList.add('is-sheets');
+          var holder = h('div', { class: 'dp-vo-holder' });
+          var tabs = model.sheets.map(function (sheet, i) {
+            return D.btn(sheet.name, function () { pick(i); }, { small: true, attrs: { role: 'tab', 'aria-selected': 'false' } });
+          });
+          var pick = function (i) {
+            tabs.forEach(function (b, k) { if (k === i) b.classList.add('dp-btn-primary'); else b.classList.remove('dp-btn-primary'); b.setAttribute('aria-selected', k === i ? 'true' : 'false'); });
+            while (holder.firstChild) holder.removeChild(holder.firstChild);
+            holder.appendChild(sheetOf(VO, model.sheets[i]));
+          };
+          if (tabs.length > 1) {
+            view.appendChild(h('div', { class: 'dp-vo-tabs', attrs: { role: 'tablist' } }, tabs));
+            s.tools.appendChild(h('span', { class: 'dp-vv-zoom', text: T('p.vv.office_sheets', { n: tabs.length }) }));
+          }
+          view.appendChild(holder);
+          if (model.sheets.length) pick(0); else holder.appendChild(h('p', { class: 'dp-vo-empty', text: T('p.vv.office_empty') }));
+        } else if (model.kind === 'slides') {
+          model.slides.forEach(function (slide, i) {
+            view.appendChild(h('section', { class: 'dp-vo-slide', attrs: { 'aria-label': T('p.vv.office_slide', { n: i + 1 }) } }, [
+              h('div', { class: 'dp-vo-slide-n', text: T('p.vv.office_slide', { n: i + 1 }) }),
+              slide.blocks.length ? blocksOf(slide.blocks) : h('p', { class: 'dp-vo-empty', text: T('p.vv.office_slide_empty') }),
+            ]));
+          });
+          if (!model.slides.length) view.appendChild(h('p', { class: 'dp-vo-empty', text: T('p.vv.office_empty') }));
+          else s.tools.appendChild(h('span', { class: 'dp-vv-zoom', text: T('p.vv.office_slides', { n: model.slides.length }) }));
+        } else {
+          view.classList.add('is-doc');
+          if (model.blocks.length) blocksOf(model.blocks).forEach(function (el) { view.appendChild(el); });
+          else view.appendChild(h('p', { class: 'dp-vo-empty', text: T('p.vv.office_empty') }));
+        }
+        s.tools.appendChild(downloadAct(s));
+      }, function (e) {
+        bytes.fill(0);
+        if (!s.alive()) return;
+        if (wait.parentNode) wait.parentNode.removeChild(wait);
+        officeError(s, e);
+      });
     }
 
     return { open: open, close: close, isOpen: isOpen, kindOf: kindOf, LIMITS: LIMITS, _cur: function () { return cur; } };

@@ -2,6 +2,56 @@
 
 Dateien der Familie und des Teams auf dem eigenen Speicher – auf diesem Server, einer NAS oder in S3.
 
+## 1.29.0
+
+- **Office-Dateien im Tresor ansehen (Portal):** Ein Klick auf eine Word-, Excel-, PowerPoint- oder OpenDocument-Datei
+  in einem Tresor zeigt jetzt ihren Inhalt statt nur des Hinweises „lässt sich nicht sicher anzeigen“. Die normale
+  Office-Vorschau läuft auf dem Server (Collabora / OnlyOffice, Umwandlung in PDF) und scheidet im Tresor aus – der
+  Server bekäme den Klartext. Stattdessen liest der Browser-Tab die entschlüsselten Bytes selbst, nur im
+  Arbeitsspeicher (`ui/vaultoffice.js`, eigener Code, **keine neue Bibliothek**, ~56 KB, kommt mit
+  `GET viewer/vaultview`):
+  - **Formate:** docx, docm, dotx, dotm · xlsx, xlsm, xltx, xltm · pptx, pptm, ppsx, ppsm, potx · odt, ott, ods, ots,
+    odp, otp.
+  - **Word / Writer:** Überschriften, Absätze, fett / kursiv / unterstrichen / durchgestrichen, hoch- und tiefgestellt,
+    Aufzählungen und nummerierte Listen (mit Zählung), Tabellen (auch verbundene Zellen in einer Zeile), Ausrichtung,
+    Seitenumbrüche als Linie. Bilder erscheinen als „[Bild]“.
+  - **Excel / Calc:** jedes Blatt als Reiter, Tabelle mit Spaltenbuchstaben und Zeilennummern, Zahlen wie ihr Format
+    sie zeigt (Datum, Uhrzeit, Prozent, feste Nachkommastellen, Tausenderpunkt, Währung), Wahrheitswerte, Fehlerwerte.
+    **Formeln werden nie gerechnet oder gelesen** – gezeigt wird der zuletzt gespeicherte Wert.
+  - **PowerPoint / Impress:** die Folien in ihrer Reihenfolge als Text (Titel, Absätze mit Ebene, Tabellen).
+  - **Leseansicht, kein Layout:** Schriften, Farben, Spalten, Kopf- und Fußzeilen, Fußnoten, Kommentare, Diagramme und
+    Bilder fehlen; die Ansicht sagt es über dem Dokument. Bearbeiten geht nicht.
+  - **Nicht gelesen** werden die alten Binärformate (doc, xls, ppt …), RTF und iWork: ein Hinweis, der das Format
+    nennt, mit „Herunterladen“ – entschlüsselt wird dann gar nichts. Kennwortgeschützte Dateien: eigener Hinweis.
+  - Grenze: 32 MB je Datei; sehr große Inhalte werden gekürzt (2.000 Zeilen × 100 Spalten je Blatt, 40 Blätter,
+    400 Folien, 4 Mio. Zeichen Text) und die Ansicht sagt es.
+- **Office-Dateien sind nicht vertrauenswürdig – so bleibt die Ansicht sicher:**
+  - **Kein HTML aus der Datei:** Der Leser liefert nur ein Modell aus Text, Ja/Nein-Marken (fett, kursiv …) und
+    Zählern; die Ansicht baut daraus Elemente und Textknoten (`textContent`). Es gibt kein `innerHTML`, keinen
+    HTML-Sanitizer, der etwas übersehen könnte, keine Adresse, keinen Stil und keine Farbe aus der Datei. Was eine
+    Datei als `<script>…` oder `onerror=…` schreibt, steht als Text da. (Der Frame erlaubt Inline-Skripte – HTML einer
+    Datei dürfte ihn nie erreichen.)
+  - **Makros, eingebettete Objekte, Verknüpfungen:** `vbaProject.bin`, OLE-Objekte, `altChunk`-HTML, externe
+    Beziehungen (`TargetMode="External"`), Feldfunktionen (`INCLUDEPICTURE`, DDE) und Formeln werden nie gelesen,
+    geschweige denn ausgeführt oder geladen. Der Frame hat ohnehin kein Netz (`connect-src 'none'`).
+  - **XML:** eigener kleiner Leser ohne DTD – eine `<!DOCTYPE>`-/`<!ENTITY>`-Deklaration beendet das Lesen („enthält
+    etwas, das in einer Office-Datei nicht vorkommen darf“). Keine Entity der Datei wird je definiert oder aufgelöst
+    (keine „Billion Laughs“, keine externen Entities); höchstens 256 Ebenen.
+  - **ZIP:** eigener Leser (Entpacken über `DecompressionStream` des Browsers) mit Grenzen: 5.000 Einträge, 48 MB je
+    entpacktem Teil, 128 MB zusammen – auch wenn die Datei kleinere Größen behauptet. ZIP64, verschlüsselte Einträge
+    und andere Verfahren werden abgelehnt.
+  - Wie bei jeder Tresor-Ansicht: nur im Speicher, keine URL, kein Download ohne Nachfrage; Schließen und Sperren
+    überschreiben die Bytes und leeren die Ansicht.
+- Texte `p.vv.office_*` (Deutsch und Englisch); `p.vv.office_note` entfällt. Keine neue Berechtigung, keine Migration,
+  kein neuer Endpunkt (`GET viewer/vaultview` liefert Leser und Ansicht zusammen, weiter weit unter 1 MiB).
+- **Apps:** Android und Windows zeigen Office-Dateien im Tresor weiterhin nur mit Hinweis; siehe README „Viewing vault
+  files“.
+- Tests: `test/vault_office.test.js` (echte Dateien aus LibreOffice in `test/fixtures/office`, präparierte Dateien:
+  Skript-Text, `javascript:`-Verknüpfungen, `altChunk`, OLE, Makros, Feldfunktionen, DDE-Formeln, DOCTYPE / Entities /
+  XXE, zu tiefe Verschachtelung, ZIP-Bombe, falsche Größen, ZIP64, verschlüsselte Einträge, OLE-Container,
+  abgeschnittene Archive, Wiederholungen in ods) und `test/portal_vaultview.test.js` (Ansicht im Portal: nur harmlose
+  Elemente und Attribute, Reiter, Folien, Hinweise, Sperren).
+
 ## 1.28.3
 
 - **Nur Dokumentation: Windows-App und Tresor.** HANDBUCH und HANDBOOK, Abschnitt „Dateien in den Tresor legen – was

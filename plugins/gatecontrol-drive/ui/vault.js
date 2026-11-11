@@ -256,6 +256,7 @@
         if (!window.DriveVaultView) throw err('viewer_failed');
         VV = window.DriveVaultView.attach({
           T: T, h: h, icon: U.icon, btn: U.btn, ibtn: U.ibtn, api: U.api, errText: U.errText, fmtSize: U.fmtSize,
+          lang: U.CTX.lang === 'en' ? 'en' : 'de', // how the office view writes numbers and dates (ui/vaultoffice.js, 1.29.0)
           touch: function () { touch(); }, decrypt: function (n, c, alive, onProgress) { return decryptParts(n, c, alive, onProgress); },
           download: function (n, c) { download(n, c); },
           lock: function () { lockAll('manual'); },
