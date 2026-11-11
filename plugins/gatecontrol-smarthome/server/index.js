@@ -8,14 +8,16 @@
 //     GET  /gateways · /targets · /resources[?gateway_id] · /users
 //     POST /gateways · /gateways/:id/sync · /gateways/:id/test · /resources/:id/state
 //     PUT  /gateways/:id · /resources/:id/owners        DELETE /gateways/:id
-//     GET  /rules?gateway_id · /rules/gateway-count?gateway_id
-//     POST /rules · /rules/:id/enabled   PUT /rules/:id   DELETE /rules/:id
+//     GET  /rules?gateway_id[&source=edge] · /rules/gateway-count?gateway_id
+//     POST /rules { …, source? } · /rules/:id/enabled   PUT /rules/:id   DELETE /rules/:id
+//          source 'edge': logic chains of the Shelly / Tasmota devices of a GateControl gateway (server/edgerules.js)
 //     PUT  /resources/:id { area }      the area ("Bereich") of any resource
 //     PUT  /resources/:id { name }      "In Smart Home benennen": lights / sensors (in deCONZ), Bluetooth sensors
 //     GET  /find?focus=zigbee:<mac>|ble:<mac>   where the page's deep link points to
 //   Bluetooth sensors through a GateControl gateway (server/radio.js; GateControl with gc.radio, phase 3c step 2)
 //   Zigbee devices of zigbee2mqtt through a GateControl gateway (server/zigbee.js; gc.radio.zigbee / gc.radio.command)
 //     GET  /ble/gateways · /ble/resources[?gateway_id]
+//     POST /resources/:id/ota { action: 'check' | 'update' }   a firmware update of a zigbee2mqtt device
 //   Shelly / Tasmota through a GateControl gateway (server/edge.js; GateControl ≥ 1.228.1 gc.edge, gc.mqtt.accounts)
 //     GET  /edge/gateways · /edge/found?gateway_id · /edge/devices[?gateway_id] · /edge/devices/:id · /edge/setup/:job
 //     POST /edge/devices (by hand: account, password once) · /edge/setup (automatic) · /edge/setup/:job/password
@@ -77,6 +79,7 @@ const ERRORS = {
   SMARTHOME_RULE_INVALID: [400, 'error.rule_invalid'],
   SMARTHOME_RULE_NOT_FOUND: [404, 'error.rule_not_found'],
   DECONZ_RULE_LIMIT_REACHED: [409, 'error.rule_limit_reached'],
+  SMARTHOME_EDGE_RULE_LIMIT: [409, 'error.edge_rule_limit'],
   DECONZ_UNREACHABLE: [502, 'error.unreachable'],
   SMARTHOME_EDGE_UNAVAILABLE: [409, 'error.edge_unavailable'],
   SMARTHOME_EDGE_UNREACHABLE: [502, 'error.edge_unreachable'],
@@ -117,9 +120,10 @@ async function usersById(gc) {
   return m;
 }
 
-const STATE_KEYS = new Set(['on', 'bri', 'reachable', 'type', 'value', 'pos', 'moving', 'power', 'energy_today', 'humidity', 'battery']);
+const STATE_KEYS = new Set(['on', 'bri', 'reachable', 'type', 'value', 'pos', 'moving', 'power', 'energy_today', 'humidity', 'battery',
+  'sleeping', 'lastupdated', 'setpoint', 'mode', 'heating']);
 const EDGE_CAPS = ['bri', 'power', 'position', 'cover', 'reading'];
-const Z2M_CAPS = ['bri', 'ct', 'color', 'power', 'position', 'cover', 'reading'];
+const Z2M_CAPS = ['bri', 'ct', 'color', 'power', 'position', 'cover', 'reading', 'setpoint', 'modes'];
 /** Portal: only the controllable surface — never gateway, target or deCONZ internals. */
 function portalResource(r) {
   const st = {};
@@ -134,6 +138,19 @@ function portalResource(r) {
 function portalPatch(raw, caps, kind) {
   if (raw == null || typeof raw !== 'object' || Array.isArray(raw)) return {};
   const patch = {};
+  if (kind === 'thermostat') {
+    // a thermostat (zigbee2mqtt): the target temperature within its limits and / or one of its modes
+    const sp = caps && caps.setpoint;
+    if ('setpoint' in raw) {
+      if (!sp || typeof raw.setpoint !== 'number' || !Number.isFinite(raw.setpoint) || raw.setpoint < sp.min || raw.setpoint > sp.max) return null;
+      patch.setpoint = raw.setpoint;
+    }
+    if ('mode' in raw) {
+      if (!(caps && Array.isArray(caps.modes) && caps.modes.includes(raw.mode))) return null;
+      patch.mode = raw.mode;
+    }
+    return Object.keys(patch).length ? patch : null;
+  }
   if (kind === 'cover') {
     if ('cover' in raw) { if (!['open', 'close', 'stop'].includes(raw.cover)) return null; patch.cover = raw.cover; }
     if ('pos' in raw) {
@@ -169,9 +186,15 @@ async function portalData(gc, userId) {
   // a scene stands in its group's area (when the viewer has that group)
   const groupArea = new Map(owned.filter((r) => r.kind === 'group' && r.area).map((g) => [`${g.gateway_id}/${g.deconz_id}`, g.area]));
   for (const r of owned) if (r.kind === 'scene' && !r.area) r.area = groupArea.get(sceneGroupKey(r)) || null;
+  const sensors = owned.filter((r) => r.kind === 'sensor').map(portalResource); // switches stay out
+  // "Batterie schwach" below the threshold of the notification (settings, default 15 %)
+  if (sensors.some((s) => s.state.battery != null)) {
+    const lowAt = alerts.configOf(await gc.settings.all().catch(() => ({}))).batteryLow;
+    for (const s of sensors) if (Number.isFinite(Number(s.state.battery)) && Number(s.state.battery) <= lowAt) s.state.battery_low = true;
+  }
   return {
     devices: owned.filter((r) => r.kind !== 'sensor' && r.kind !== 'switch').map(portalResource),
-    sensors: owned.filter((r) => r.kind === 'sensor').map(portalResource), // switches stay out
+    sensors,
   };
 }
 
@@ -210,6 +233,10 @@ function coverText(st, lang) {
 
 function deviceTile(d, lang) {
   const st = d.state || {};
+  if (d.kind === 'thermostat') {
+    const v = fmtNum(st.value, lang);
+    return { section: 'smarthome', title: d.name || '', value: v == null || st.value == null ? '–' : v, unit: v == null || st.value == null ? null : '°C', state: st.heating ? 'on' : null, icon: TILE_ICONS.temperature };
+  }
   if (d.kind === 'cover') {
     return { section: 'smarthome', title: d.name || '', value: coverText(st, lang) || '–', state: st.reachable === false ? 'warn' : null, icon: TILE_ICONS.cover };
   }
@@ -366,7 +393,8 @@ function sceneGroupKey(r) {
  */
 async function quickActionsFor(gc, user, lang) {
   if (!user || !Number.isInteger(user.id) || user.loggedIn === false) return [];
-  const devices = (await ownedResources(gc, user.id)).filter((r) => r.kind !== 'sensor' && r.kind !== 'switch');
+  // thermostats are set in the portal (a target temperature is no switch)
+  const devices = (await ownedResources(gc, user.id)).filter((r) => r.kind !== 'sensor' && r.kind !== 'switch' && r.kind !== 'thermostat');
   const groups = new Map(devices.filter((r) => r.kind === 'group').map((g) => [`${g.gateway_id}/${g.deconz_id}`, g]));
   const toggles = devices.filter((d) => d.kind !== 'scene' && d.kind !== 'cover');
   const covers = devices.filter((d) => d.kind === 'cover');
@@ -575,6 +603,11 @@ async function adminRoute(req, gc, seg) {
       await service.setResourceState(gc, id, patch);
       return { json: { ok: true } };
     }
+    if (seg.length === 3 && c === 'ota' && m === 'POST') {
+      const resource = await store.getResource(gc, id);
+      if (!resource || !resource.enabled) throw fail('SMARTHOME_RESOURCE_NOT_FOUND');
+      return { json: await zigbee.ota(gc, resource, body.action) };
+    }
     throw fail('NOT_FOUND');
   }
 
@@ -582,6 +615,10 @@ async function adminRoute(req, gc, seg) {
 
   if (a === 'rules') {
     if (seg.length === 1 && m === 'GET') {
+      if (req.query && req.query.source === 'edge') {
+        const list = await rules.list(gc, gatewayIdQuery(req), 'edge');
+        return { json: { ok: true, rules: list, gc_rule_count: list.length, limit_warn: false, cancelSupported: true } };
+      }
       const list = await rules.list(gc, gatewayIdQuery(req));
       return { json: { ok: true, rules: list, gc_rule_count: list.length, limit_warn: rules.limitWarn(list.length), cancelSupported: deconzCaps.cancelSupported } };
     }
@@ -589,7 +626,8 @@ async function adminRoute(req, gc, seg) {
     if (seg.length === 1 && m === 'POST') {
       const gid = posInt(body.gateway_id);
       if (!gid || typeof body.name !== 'string' || !body.name || !body.definition || typeof body.definition !== 'object') throw fail('SMARTHOME_RULE_INVALID', 'missing_fields');
-      return { json: { ok: true, rule: await rules.create(gc, gid, body.name, body.definition) } };
+      if (body.source !== undefined && body.source !== 'deconz' && body.source !== 'edge') throw fail('SMARTHOME_RULE_INVALID', 'bad_source');
+      return { json: { ok: true, rule: await rules.create(gc, gid, body.name, body.definition, body.source === 'edge' ? 'edge' : 'deconz') } };
     }
     const id = posInt(b);
     if (!id) throw fail('NOT_FOUND');

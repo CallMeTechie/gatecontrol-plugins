@@ -20,6 +20,7 @@
     'sensor.lightlevel': '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.5 1.5M17.5 17.5L19 19M5 19l1.5-1.5M17.5 6.5L19 5"/>',
     'sensor.button': '<rect x="6" y="3" width="12" height="18" rx="2"/><circle cx="12" cy="8" r="1.6"/>',
     'sensor.unknown': '<circle cx="12" cy="12" r="8"/><path d="M12 8v4M12 16h.01"/>',
+    thermostat: '<path d="M10 13V5a2 2 0 1 1 4 0v8a4 4 0 1 1-4 0z"/><path d="M12 9v6"/>',
   };
   var STEP_ICONS = {
     done: '<path d="m5 12 5 5 9-10"/>',
@@ -67,7 +68,12 @@
   // ─── deCONZ cards (as before) ─────────────────
 
   function catKey(r) { return r.kind === 'sensor' ? 'sensor.' + ((r.capabilities && r.capabilities.reading) || 'unknown') : r.kind; }
-  function subLabel(r) { return r.kind === 'sensor' ? T('sensor.' + ((r.capabilities && r.capabilities.reading) || 'unknown')) : T('kind.' + r.kind); }
+  function subLabel(r) {
+    if (r.kind === 'sensor') return T('sensor.' + ((r.capabilities && r.capabilities.reading) || 'unknown'));
+    // one output of a zigbee2mqtt device with several (a 2-gang switch): which one
+    if (r.capabilities && r.capabilities.channel_no) return T('kind.' + r.kind) + ' · ' + T('z2m.channel', { n: r.capabilities.channel_no });
+    return T('kind.' + r.kind);
+  }
   function iconSvg(r) { return svg(ICONS[catKey(r)] || ICONS['sensor.unknown']); }
   function cardShell(r) {
     return el('div', { class: 'sh-card', 'data-id': String(r.id) }, [
@@ -145,12 +151,100 @@
     return card;
   }
   function renderSwitch(r) { return cardShell(r); }
-  function renderDeconz(r) {
+  function renderKind(r) {
     if (r.kind === 'cover' && r.deconz_type === 'z2m') return z2mCover(r);
+    if (r.kind === 'thermostat') return renderThermostat(r);
     if (r.kind === 'scene') return renderScene(r);
     if (r.kind === 'sensor') return renderSensor(r);
     if (r.kind === 'switch') return renderSwitch(r);
     return renderControllable(r);
+  }
+  function renderDeconz(r) {
+    var card = renderKind(r);
+    // a zigbee2mqtt device that takes firmware over the air: update available / running / search
+    if (r.deconz_type === 'z2m' && r.capabilities && r.capabilities.ota) card.appendChild(otaBlock(r));
+    return card;
+  }
+
+  /** Firmware of a zigbee2mqtt device (server/zigbee.js state.ota): available → "Aktualisieren", running → progress. */
+  function otaBlock(r) {
+    var o = (r.state && r.state.ota) || { state: 'idle' };
+    var name = r.name || '';
+    var box = el('div', { class: 'sh-ota', 'data-ota': o.state });
+    var ask = function (action, btn) {
+      btn.disabled = true;
+      S.api('POST', 'resources/' + Number(r.id) + '/ota', { action: action }).then(function () {
+        S.toast(T(action === 'update' ? 'ota.started' : 'ota.checking', { name: name }));
+        setTimeout(loadView, action === 'update' ? 2500 : 6000);
+      }, function (e) { btn.disabled = false; warn(e); });
+    };
+    var versions = o.installed && o.latest && o.installed !== o.latest ? ' (' + o.installed + ' → ' + o.latest + ')' : '';
+    if (o.state === 'updating') {
+      var pct = o.progress == null ? null : Math.max(0, Math.min(100, Number(o.progress)));
+      box.appendChild(el('div', { class: 'sh-ctl-lbl' }, [el('span', { text: T('ota.updating') }), el('span', { text: pct == null ? '…' : fmt(pct, 0) + ' %' })]));
+      box.appendChild(el('div', { class: 'sh-bar', role: 'progressbar', 'aria-label': T('ota.updating_of', { name: name }), 'aria-valuemin': '0', 'aria-valuemax': '100', 'aria-valuenow': pct == null ? null : String(pct) }, [el('i', { style: 'width:' + (pct == null ? 0 : pct) + '%' })]));
+      box.appendChild(el('span', { class: 'sh-sub', text: T('ota.updating_hint') }));
+      return box;
+    }
+    if (o.state === 'available') {
+      var up = el('button', { type: 'button', class: 'btn btn-sm btn-primary', text: T('ota.update'), 'aria-label': T('ota.update_of', { name: name }) });
+      up.addEventListener('click', function () {
+        S.confirm(T('ota.confirm', { name: name }), T('ota.update'), false).then(function (ok) { if (ok) ask('update', up); });
+      });
+      box.appendChild(el('div', { class: 'sh-ota-row' }, [el('span', { class: 'sh-ota-text' }, [pill(T('ota.available'), 'info'), versions ? el('span', { class: 'sh-sub', text: versions.trim() }) : null]), up]));
+      if (o.error === 'update_failed') box.appendChild(el('span', { class: 'sh-sub is-warn', text: T('ota.update_failed') }));
+      return box;
+    }
+    var text = o.state === 'scheduled' ? T('ota.scheduled') : (o.error === 'check_failed' ? T('ota.check_failed') : (o.checked ? T('ota.current_checked', { ago: S.since(o.checked) }) : T('ota.unknown')));
+    var check = el('button', { type: 'button', class: 'sh-owner-btn', text: T('ota.check'), 'aria-label': T('ota.check_of', { name: name }) });
+    check.addEventListener('click', function () { ask('check', check); });
+    box.appendChild(el('div', { class: 'sh-ota-row' }, [el('span', { class: 'sh-sub' + (o.error ? ' is-warn' : ''), text: T('ota.firmware') + ': ' + text }), o.state === 'scheduled' ? null : check]));
+    return box;
+  }
+
+  /** A thermostat of zigbee2mqtt: measured and target temperature, the target as a slider, its modes as buttons. */
+  function renderThermostat(r) {
+    var st = r.state || {};
+    var caps = r.capabilities || {};
+    var sp = caps.setpoint || { min: 5, max: 30, step: 0.5 };
+    var name = r.name || '';
+    var off = st.reachable === false;
+    var subParts = [prettyModel({ family: 'z2m', model: caps.model || '', vendor: caps.vendor || '' }), T('kind.thermostat')];
+    if (st.battery != null) subParts.push(T('card.battery', { pct: fmt(st.battery, 0) }));
+    var head = el('div', null, [el('div', { class: 'sh-name' }, [svg(ICONS.thermostat), el('span', { text: name })]), el('div', { class: 'sh-sub', text: subParts.join(' · ') })]);
+    var right = off ? pill(T('card.unreachable'), 'warn') : (st.heating ? pill(T('thermo.heating'), 'info') : (st.mode === 'off' ? pill(T('thermo.mode.off')) : null));
+    var card = el('div', { class: 'sh-card sh-ecard' + (off ? ' is-off' : ''), 'data-id': String(r.id) }, [el('div', { class: 'sh-row' }, [head, right])]);
+    var body = el('div', { class: 'sh-ebody' });
+    var target = st.setpoint == null ? null : Number(st.setpoint);
+    var targetVal = bigValue(T('thermo.target'), target == null ? '–' : fmt(target, 1) + ' °C');
+    body.appendChild(el('div', { class: 'sh-vals sh-vals-2' }, [bigValue(T('thermo.actual'), st.value == null ? '–' : fmt(st.value, 1) + ' °C'), targetVal]));
+    var lbl = el('span', { text: target == null ? '–' : fmt(target, 1) + ' °C' });
+    var range = el('input', { class: 'sh-bri', type: 'range', min: String(sp.min), max: String(sp.max), step: String(sp.step), value: String(target == null ? sp.min : target), disabled: off, 'aria-label': T('thermo.target_of', { name: name }) });
+    range.addEventListener('input', function () { lbl.textContent = fmt(range.value, 1) + ' °C'; });
+    range.addEventListener('change', function () {
+      var v = Number(range.value);
+      send(r.id, { setpoint: v }).then(function () { targetVal.querySelector('.sh-val-v').textContent = fmt(v, 1) + ' °C'; S.toast(T('thermo.set_done', { name: name, value: fmt(v, 1) })); }, warn);
+    });
+    body.appendChild(el('div', null, [el('div', { class: 'sh-ctl-lbl' }, [el('span', { text: T('thermo.target_set') }), lbl]), range]));
+    if (caps.modes && caps.modes.length > 1) {
+      var seg = el('div', { class: 'sh-seg', role: 'group', 'aria-label': T('thermo.mode_of', { name: name }) });
+      caps.modes.forEach(function (m) {
+        var b = el('button', { type: 'button', class: 'btn sh-seg-btn' + (st.mode === m ? ' btn-primary' : ''), text: T('thermo.mode.' + m), 'aria-pressed': st.mode === m ? 'true' : 'false', disabled: off });
+        b.addEventListener('click', function () {
+          send(r.id, { mode: m }).then(function () {
+            $$('.sh-seg-btn', seg).forEach(function (x) { x.classList.toggle('btn-primary', x === b); x.setAttribute('aria-pressed', x === b ? 'true' : 'false'); });
+          }, warn);
+        });
+        seg.appendChild(b);
+      });
+      body.appendChild(seg);
+    }
+    card.appendChild(body);
+    card.appendChild(el('div', { class: 'sh-card-foot' }, [
+      el('span', { class: 'sh-owner-chips', text: ownersText(r.owners) }),
+      el('button', { type: 'button', class: 'sh-owner-btn', text: T('card.edit'), 'aria-label': T('card.edit_of', { name: name }), on: { click: function () { openOwners({ resource: r }); } } }),
+    ]));
+    return card;
   }
 
   function kpis(list) {
@@ -242,7 +336,9 @@
     var name = r ? r.name : d.name;
     var st = (r && r.state) || {};
     var reachable = d.reachable && st.reachable !== false;
-    var off = !reachable && !d.waiting;
+    // a battery device (Shelly H&T …) sleeps between its reports: "schläft", never "nicht erreichbar"
+    var sleeper = !!d.sleeper;
+    var off = !reachable && !d.waiting && !sleeper;
     var icon = r ? (ICONS[r.kind === 'sensor' ? 'sensor.temperature' : r.kind] || ICONS.light) : ICONS['sensor.unknown'];
     var subParts = [prettyModel(d)];
     if (r) subParts.push(kindText(r));
@@ -252,6 +348,7 @@
     var switchable = r && (r.kind === 'light' || r.kind === 'plug' || r.kind === 'relay');
     if (d.waiting) right = pill(T('card.waiting'), 'info');
     else if (off) right = pill(T('card.unreachable'), 'warn');
+    else if (sleeper) right = pill(T('card.sleeping'), d.overdue ? 'warn' : 'info');
     else if (switchable) {
       var on = !!st.on;
       var sw = el('button', { type: 'button', class: 'sh-switch' + (on ? ' on' : ''), 'aria-pressed': on ? 'true' : 'false', 'aria-label': name || T('power') }, [el('i')]);
@@ -281,7 +378,9 @@
       if (st.type === 'temperature' && st.value != null) vals.appendChild(bigValue(T('card.temperature'), fmt(st.value) + ' °C'));
       if (st.humidity != null) vals.appendChild(bigValue(T('card.humidity'), fmt(st.humidity, 0) + ' %'));
       body.appendChild(vals);
-      if (d.last_seen_at) body.appendChild(el('span', { class: 'sh-sub', text: T('card.last_seen', { ago: S.since(d.last_seen_at) }) }));
+      if (sleeper) body.appendChild(el('span', { class: 'sh-sub' + (d.overdue ? ' is-warn' : ''), text: T(d.overdue ? 'card.sleeping_overdue' : 'card.sleeping_text', { ago: S.since(d.last_seen_at) }) }));
+      else if (d.last_seen_at) body.appendChild(el('span', { class: 'sh-sub', text: T('card.last_seen', { ago: S.since(d.last_seen_at) }) }));
+      if (d.battery_low) body.appendChild(el('span', { class: 'sh-sub is-warn', role: 'status', text: T('card.battery_low', { pct: fmt(d.battery, 0) }) }));
     } else {
       if (r.kind === 'light' && r.capabilities && r.capabilities.bri) {
         var bri = st.bri != null ? Number(st.bri) : 100;
@@ -317,7 +416,7 @@
     var power = 0;
     var metered = false;
     items.forEach(function (it) { var p = it.resource && it.resource.state && it.resource.state.power; if (it.device.reachable && p != null && isFinite(p)) { power += Number(p); metered = true; } });
-    var unreachable = edgeDevices.filter(function (d) { return !d.reachable && !d.waiting; }).length;
+    var unreachable = edgeDevices.filter(function (d) { return !d.reachable && !d.waiting && !d.sleeper; }).length;
     kpis([[T('kpi.devices'), edgeDevices.length], [T('kpi.on'), on], [T('kpi.power'), metered ? fmt(power, 0) + ' W' : '–'], [T('kpi.unreachable'), unreachable, unreachable > 0]]);
     var kindOf = function (it) { return it.resource ? it.resource.kind : 'waiting'; };
     var blocks = grouped(items, function (it) { return it.device.area || null; }, edgeCard, function (rest) {
@@ -441,11 +540,12 @@
       if (!res.length) { emptyMsg(T('ble.empty')); return; }
       grouped(res, function (r) { return r.area || null; }, renderDeconz, function (rest) {
         return [
-          section(T('section.lights'), rest.filter(function (r) { return r.kind === 'light'; }), renderControllable),
-          section(T('section.plugs'), rest.filter(function (r) { return r.kind === 'plug'; }), renderControllable),
-          section(T('section.covers'), rest.filter(function (r) { return r.kind === 'cover'; }), z2mCover),
-          section(T('section.switches'), rest.filter(function (r) { return r.kind === 'switch'; }), renderSwitch),
-          section(T('section.sensors'), rest.filter(function (r) { return r.kind === 'sensor'; }), renderSensor),
+          section(T('section.lights'), rest.filter(function (r) { return r.kind === 'light'; }), renderDeconz),
+          section(T('section.plugs'), rest.filter(function (r) { return r.kind === 'plug'; }), renderDeconz),
+          section(T('section.covers'), rest.filter(function (r) { return r.kind === 'cover'; }), renderDeconz),
+          section(T('section.thermostats'), rest.filter(function (r) { return r.kind === 'thermostat'; }), renderDeconz),
+          section(T('section.switches'), rest.filter(function (r) { return r.kind === 'switch'; }), renderDeconz),
+          section(T('section.sensors'), rest.filter(function (r) { return r.kind === 'sensor'; }), renderDeconz),
         ];
       }).forEach(function (b) { host.appendChild(b); });
     }, function () { emptyMsg(T('load_error')); });
@@ -627,7 +727,7 @@
     $('#sh-owner-area-row').hidden = !r;
     $('#sh-owner-area').value = r ? (r.area || '') : '';
     // a name for lights, sensors (in deCONZ) and Bluetooth sensors — "In Smart Home benennen"
-    var renamable = !!(r && (r.deconz_type === 'lights' || r.deconz_type === 'sensors' || r.deconz_type === 'ble'));
+    var renamable = !!(r && (r.deconz_type === 'lights' || r.deconz_type === 'sensors' || r.deconz_type === 'ble' || r.deconz_type === 'z2m'));
     $('#sh-owner-name-row').hidden = !renamable;
     $('#sh-owner-name').value = renamable ? (r.name || '') : '';
     $('#sh-owner-search').value = '';
@@ -817,19 +917,28 @@
     var au = s.auth;
     if (au.state === 'need' || au.state === 'running') {
       var input = el('input', { class: 'form-input', type: 'password', id: 'sh-j-password', autocomplete: 'off', spellcheck: 'false', maxlength: '128', disabled: au.state === 'running' });
+      // Shelly Gen1 and Tasmota: the user name of the device's web access (Gen2+ only knows "admin")
+      var asksUser = job.family !== 'shelly2';
+      var userInput = asksUser ? el('input', { class: 'form-input', type: 'text', id: 'sh-j-user', autocomplete: 'off', spellcheck: 'false', autocapitalize: 'none', maxlength: '64', value: jobCtx.user || job.httpUser || 'admin', disabled: au.state === 'running' }) : null;
       var go = el('button', { type: 'button', class: 'btn btn-primary', text: T('auto.continue'), disabled: au.state === 'running' });
       var submit = function () {
         var pw = input.value;
         input.value = '';
         if (!pw) { input.focus(); return; }
         go.disabled = true;
-        S.api('POST', 'edge/setup/' + encodeURIComponent(job.id) + '/password', { password: pw }).then(function (res) { job = res.job; renderJob(); pollJob(); }, function (e) { go.disabled = false; warn(e); });
+        var body = { password: pw };
+        if (userInput) { jobCtx.user = userInput.value.trim() || 'admin'; body.user = jobCtx.user; }
+        S.api('POST', 'edge/setup/' + encodeURIComponent(job.id) + '/password', body).then(function (res) { job = res.job; renderJob(); pollJob(); }, function (e) { go.disabled = false; warn(e); });
       };
       go.addEventListener('click', submit);
       input.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); submit(); } });
       var details = [d(T('auto.step.auth_detail'))];
       if (au.code === 'auth_failed') details.push(el('span', { class: 'sh-form-error', role: 'alert', text: T('auto.step.auth_failed') }));
-      details.push(el('div', { class: 'sh-pw-row' }, [el('label', { class: 'sr-only', for: 'sh-j-password', text: T('auto.password') }), input, go]));
+      if (userInput) {
+        userInput.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); input.focus(); } });
+        details.push(el('div', { class: 'sh-pw-row' }, [el('label', { class: 'sh-pw-lbl', for: 'sh-j-user', text: T('auto.user') }), userInput]));
+      }
+      details.push(el('div', { class: 'sh-pw-row' }, [el('label', { class: userInput ? 'sh-pw-lbl' : 'sr-only', for: 'sh-j-password', text: T('auto.password') }), input, go]));
       list.appendChild(stepRow(au.state === 'running' ? 'running' : 'need', T('auto.step.auth'), details));
       if (au.state === 'need') setTimeout(function () { if (document.activeElement === document.body || !$('#sh-auto-modal').contains(document.activeElement) || document.activeElement.id === 'sh-j-cancel') input.focus(); }, 30);
     } else if (au.state === 'skipped') list.appendChild(stepRow('done', T('auto.step.auth_none')));
@@ -1025,6 +1134,10 @@
     deviceOwners(d).forEach(function (o) { chips.appendChild(el('span', { class: 'sh-chip', text: o.username })); });
     if (!deviceOwners(d).length) chips.appendChild(el('span', { class: 'sh-sub', text: T('owners.none') }));
     chips.appendChild(el('button', { type: 'button', class: 'btn btn-sm', text: T('device.owners_change'), on: { click: function () { openOwners({ device: d }); } } }));
+    // the device's own web access (Shelly Gen1, Tasmota): its user name; Gen2+ only knows "admin"
+    $('#sh-d-http').hidden = d.family === 'shelly2';
+    $('#sh-d-http-user').value = d.http_user || 'admin';
+    $('#sh-d-http-pass').value = '';
     var page = $('#sh-d-page');
     page.hidden = !d.page;
     if (d.page) page.setAttribute('href', d.page); else page.removeAttribute('href');
@@ -1053,7 +1166,9 @@
       if (f === 'name') { if (n.value.trim()) channels[k].name = n.value.trim(); } else channels[k][f] = n.value;
     });
     var d = editing;
-    S.api('PUT', 'edge/devices/' + d.id, { name: name, area: $('#sh-d-area').value.trim() || null, channels: channels }).then(function () {
+    var put = { name: name, area: $('#sh-d-area').value.trim() || null, channels: channels };
+    if (d.family !== 'shelly2') put.http_user = $('#sh-d-http-user').value.trim() || 'admin';
+    S.api('PUT', 'edge/devices/' + d.id, put).then(function () {
       S.closeModal('sh-device-modal');
       S.toast(T('gateway.saved'));
       return loadView();
@@ -1071,7 +1186,12 @@
     if (!editing) return;
     var d = editing;
     var btn = $('#sh-d-password'); btn.disabled = true;
-    S.api('POST', 'edge/devices/' + d.id + '/password').then(function (r) {
+    // the device's own password (only when it has one) for this one request; the user name is saved with the device
+    var devicePw = $('#sh-d-http-pass').value;
+    $('#sh-d-http-pass').value = '';
+    var user = d.family !== 'shelly2' ? ($('#sh-d-http-user').value.trim() || 'admin') : null;
+    var first = user && user !== (d.http_user || 'admin') ? S.api('PUT', 'edge/devices/' + d.id, { http_user: user }).then(function () { d.http_user = user; }) : Promise.resolve();
+    first.then(function () { return S.api('POST', 'edge/devices/' + d.id + '/password', devicePw ? { device_password: devicePw } : undefined); }).then(function (r) {
       if (r.applied) { S.toast(T('device.password_applied')); return; }
       S.closeModal('sh-device-modal');
       openManual(d.id, d.name, r.credentials);

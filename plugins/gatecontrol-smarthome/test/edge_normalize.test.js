@@ -57,8 +57,9 @@ test('Shelly Gen2: events/rpc NotifyStatus / NotifyFullStatus (cover, light, H&T
     ['shellies/klima-keller/status/humidity:0', { id: 0, rh: 63.4 }],
     ['shellies/klima-keller/status/devicepower:0', { id: 0, battery: { V: 5.6, percent: 82 }, external: { present: false } }],
   ]);
-  assert.deepEqual(ht.sensor, { temperature: 14.8, humidity: 63, battery: 82 });
+  assert.deepEqual(ht.sensor, { temperature: 14.8, humidity: 63, battery: 82, external: false }, 'on battery (external.present false): it sleeps');
   assert.deepEqual(ht.ch, {});
+  assert.equal(feed([['shellies/klima-keller/status/devicepower:0', { id: 0, battery: { V: 5.6, percent: 100 }, external: { present: true } }]]).sensor.external, true, 'on USB power it stays awake');
 });
 
 test('Shelly Gen1: relay/0, relay/0/power, relay/0/energy, roller, dimmer, H&T, announce', () => {

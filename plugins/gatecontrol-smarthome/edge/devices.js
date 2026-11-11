@@ -6,8 +6,9 @@
 //                                   → { ok: true } — writes the MQTT settings into the device and restarts it
 //
 // family: 'shelly2' (Gen2/3/4: GET /shelly has "gen"), 'shelly1' (GET /shelly has "type"), 'tasmota'
-// (cm?cmnd=Status 0). Device passwords: Gen2+ HTTP Digest (SHA-256, user "admin"), Gen1 HTTP Basic (user
-// "admin"), Tasmota user=admin&password=… as form fields. The device password and the MQTT password travel in
+// (cm?cmnd=Status 0). Device passwords: Gen2+ HTTP Digest (SHA-256, user "admin" — the firmware knows no other),
+// Gen1 HTTP Basic and Tasmota user=…&password=… as form fields with the device's user name (`httpUser`, "admin"
+// unless the administrator gave another one). The device password and the MQTT password travel in
 // request bodies only (never in a URL), are used for this one request and never stored or logged — every error
 // thrown here has a fixed text without them.
 
@@ -128,10 +129,15 @@ async function probe(http, ip) {
 
 // ─── Setup: MQTT settings into the device, then restart ───
 
+// no control characters, no ":" (HTTP Basic splits there), no quote or backslash
+const HTTP_USER_RE = /^[^\0-\x1f\x7f:"\\]{1,64}$/;
+
 async function setup(http, o) {
   const { ip, family, host, user, pass, prefix } = o;
   const port = o.port || 1883;
   const password = typeof o.password === 'string' && o.password ? o.password : null;
+  if (o.httpUser != null && o.httpUser !== '' && (typeof o.httpUser !== 'string' || !HTTP_USER_RE.test(o.httpUser))) throw fail('bad_request', 'invalid device user name');
+  const httpUser = o.httpUser || 'admin';
   if (!validIp(ip) || !validIp(host)) throw fail('bad_request', 'invalid address');
   if (typeof user !== 'string' || !user || typeof pass !== 'string' || !pass || typeof prefix !== 'string' || !/^[a-z0-9][a-z0-9_.-]{0,23}$/.test(prefix)) {
     throw fail('bad_request', 'invalid MQTT settings');
@@ -144,7 +150,7 @@ async function setup(http, o) {
     return { ok: true };
   }
   if (family === 'shelly1') {
-    const auth = password ? { Authorization: 'Basic ' + Buffer.from(`admin:${password}`).toString('base64') } : {};
+    const auth = password ? { Authorization: 'Basic ' + Buffer.from(`${httpUser}:${password}`).toString('base64') } : {};
     const body = form({ mqtt_enable: 'true', mqtt_server: `${host}:${port}`, mqtt_user: user, mqtt_pass: pass, mqtt_id: prefix, mqtt_clean_session: 'true', mqtt_retain: 'false' });
     const res = await request(http, { method: 'POST', url: `http://${ip}/settings`, headers: { 'Content-Type': 'application/x-www-form-urlencoded', ...auth }, body });
     if (res.status === 401) throw fail(password ? 'auth_failed' : 'auth_required', password ? 'the device did not accept the password' : 'the device has a password');
@@ -155,7 +161,7 @@ async function setup(http, o) {
   if (family === 'tasmota') {
     if (/[;\s]/.test(pass) || /[;\s]/.test(user)) throw fail('bad_request', 'invalid MQTT settings');
     const cmnd = `Backlog SetOption3 1; MqttHost ${host}; MqttPort ${port}; MqttUser ${user}; MqttPassword ${pass}; Topic ${prefix}; FullTopic tasmota/%topic%/%prefix%/`;
-    const body = form(password ? { user: 'admin', password, cmnd } : { cmnd });
+    const body = form(password ? { user: httpUser, password, cmnd } : { cmnd });
     const res = await request(http, { method: 'POST', url: `http://${ip}/cm`, headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body });
     const j = jsonOf(res);
     if (res.status === 401 || (j && typeof j.WARNING === 'string' && /password/i.test(j.WARNING))) {

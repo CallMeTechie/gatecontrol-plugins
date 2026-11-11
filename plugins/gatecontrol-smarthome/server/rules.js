@@ -4,11 +4,17 @@
 // a rule definition is translated into deCONZ objects (rules, schedules,
 // CLIP flags) that run ON the gateway; this database keeps the definition and
 // the ids of the objects created. Labels "GC:<rule id>:<name>" mark them.
+//
+// Since 1.10.0 a rule has a source: 'deconz' (as before, gateway_id = a deCONZ gateway of this plugin) or 'edge' —
+// Shelly and Tasmota devices behind a GateControl gateway (gateway_id = that gateway). An edge rule has no deCONZ
+// objects: server/edgerules.js compiles it and the plugin's edge part on the gateway runs it (edge/rules.js).
 
 const store = require('./store');
 const service = require('./service');
 const translate = require('./translate');
 const caps = require('./caps');
+const edge = require('./edge');
+const edgerules = require('./edgerules');
 const { codeError } = require('./deconz');
 
 const LIMIT_CODES = new Set(caps.ruleLimit.errorCodes); // HTTP status AND 200-body error codes
@@ -35,8 +41,9 @@ function parseRow(row) {
   return {
     id: row.id, gateway_id: row.gateway_id, name: row.name, enabled: !!row.enabled,
     definition: store.parseJson(row.definition_json),
+    source: row.source === 'edge' ? 'edge' : 'deconz', last_fired_at: row.last_fired_at || null,
     deconz_rule_id: row.deconz_rule_id, deconz_schedule_id: row.deconz_schedule_id, deconz_clip_sensor_id: row.deconz_clip_sensor_id,
-    synced: row.deconz_rule_id != null,
+    synced: row.source === 'edge' || row.deconz_rule_id != null,
   };
 }
 
@@ -45,9 +52,18 @@ function idsOf(def) {
     ...((def && Array.isArray(def.actions)) ? def.actions : []).map((a) => a && a.resourceId)].filter((x) => x != null);
 }
 
-async function list(gc, gatewayId) {
+async function list(gc, gatewayId, source = 'deconz') {
+  if (source === 'edge') {
+    const byId = await edgerules.resourcesOf(gc, gatewayId);
+    const rows = (await gc.db.query("SELECT * FROM rules WHERE source = 'edge' AND gateway_id = ? ORDER BY id", [gatewayId])).rows;
+    return rows.map((row) => {
+      const r = parseRow(row);
+      r.orphaned = !idsOf(r.definition).every((id) => byId.has(Number(id)));
+      return r;
+    });
+  }
   const resources = new Map((await store.listResources(gc, gatewayId)).map((r) => [r.id, r]));
-  const rows = (await gc.db.query('SELECT * FROM rules WHERE gateway_id = ? ORDER BY id', [gatewayId])).rows;
+  const rows = (await gc.db.query("SELECT * FROM rules WHERE source = 'deconz' AND gateway_id = ? ORDER BY id", [gatewayId])).rows;
   return rows.map((row) => {
     const r = parseRow(row);
     // a missing referenced device → read-only in the UI with a warning
@@ -119,9 +135,19 @@ async function deleteObjects(gc, client, row) {
   }
 }
 
-async function create(gc, gatewayId, name, definition) {
+/** An edge rule: stored, then the gateway's list goes to its edge part (now, or when the gateway is back). */
+async function createEdge(gc, gatewayId, name, definition) {
+  if (!edge.available(gc)) throw codeError('SMARTHOME_EDGE_UNAVAILABLE', 'no edge part');
+  await edgerules.check(gc, gatewayId, null, definition);
+  const id = Number((await gc.db.run("INSERT INTO rules (gateway_id, name, enabled, definition_json, source) VALUES (?, ?, 1, ?, 'edge')", [gatewayId, name, JSON.stringify(definition)])).lastInsertRowid);
+  await edge.configureGateway(gc, gatewayId);
+  return get(gc, id);
+}
+
+async function create(gc, gatewayId, name, definition, source = 'deconz') {
   checkName(name);
   checkDefinition(definition);
+  if (source === 'edge') return createEdge(gc, gatewayId, name, definition);
   const gw = await store.getGateway(gc, gatewayId);
   if (!gw) throw codeError('SMARTHOME_GATEWAY_NOT_FOUND', 'gateway not found');
   const resolve = await resolverFor(gc, gatewayId);
@@ -142,6 +168,12 @@ async function update(gc, id, name, definition) {
   checkDefinition(definition);
   const row = await get(gc, id);
   if (!row) throw codeError('SMARTHOME_RULE_NOT_FOUND', 'rule not found');
+  if (row.source === 'edge') {
+    await edgerules.check(gc, row.gateway_id, row.id, definition);
+    await gc.db.run("UPDATE rules SET name = ?, definition_json = ?, updated_at = datetime('now') WHERE id = ?", [name, JSON.stringify(definition), row.id]);
+    await edge.configureGateway(gc, row.gateway_id);
+    return get(gc, row.id);
+  }
   const client = await clientFactory(gc, row.gateway_id);
   const resolve = await resolverFor(gc, row.gateway_id);
   // NULL before delete: unlink ids, then remove the old objects (best effort)
@@ -163,6 +195,11 @@ async function update(gc, id, name, definition) {
 async function remove(gc, id) {
   const row = await get(gc, id);
   if (!row) return;
+  if (row.source === 'edge') {
+    await gc.db.run('DELETE FROM rules WHERE id = ?', [row.id]);
+    await edge.configureGateway(gc, row.gateway_id);
+    return;
+  }
   try { await deleteObjects(gc, await clientFactory(gc, row.gateway_id), row); } catch (e) { gc.log.warn('rule objects not removed from the gateway', e.code || e.message); }
   await gc.db.run('DELETE FROM rules WHERE id = ?', [row.id]);
 }
@@ -170,6 +207,11 @@ async function remove(gc, id) {
 async function setEnabled(gc, id, on) {
   const row = await get(gc, id);
   if (!row) throw codeError('SMARTHOME_RULE_NOT_FOUND', 'rule not found');
+  if (row.source === 'edge') {
+    await gc.db.run('UPDATE rules SET enabled = ? WHERE id = ?', [on ? 1 : 0, row.id]);
+    await edge.configureGateway(gc, row.gateway_id);
+    return get(gc, row.id);
+  }
   if (row.deconz_rule_id) {
     try { await (await clientFactory(gc, row.gateway_id)).updateRule(row.deconz_rule_id, { status: on ? 'enabled' : 'disabled' }); } catch { /* best effort */ }
   }
@@ -187,7 +229,7 @@ async function gatewayRuleCount(gc, gatewayId) {
 
 /** Re-push rules that lost their deCONZ objects (e.g. the gateway was reset). */
 async function resyncPending(gc) {
-  const rows = (await gc.db.query('SELECT id FROM rules WHERE enabled = 1 AND deconz_rule_id IS NULL')).rows;
+  const rows = (await gc.db.query("SELECT id FROM rules WHERE enabled = 1 AND deconz_rule_id IS NULL AND source = 'deconz'")).rows;
   for (const { id } of rows) {
     const row = await get(gc, id);
     try { await update(gc, id, row.name, row.definition); } catch { /* log-and-continue */ }

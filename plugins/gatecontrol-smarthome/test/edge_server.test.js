@@ -147,7 +147,8 @@ test('by hand: an account per device (own topics only), the password once, never
   const acc = host.mqttAccounts.get(7).get(cred.username);
   assert.deepEqual(acc.acl, [{ access: 'readwrite', topic: 'tasmota/gefriertru/#' }]);
   assert.equal(acc.password, cred.password);
-  assert.deepEqual(host.edgeConfigs.get(7), { devices: [{ base: 'tasmota/gefriertru', family: 'tasmota' }] }, 'the edge part learns the device at once');
+  assert.deepEqual(host.edgeConfigs.get(7).devices, [{ base: 'tasmota/gefriertru', family: 'tasmota' }], 'the edge part learns the device at once');
+  assert.deepEqual(host.edgeConfigs.get(7).rules, [], 'no logic chains yet');
 
   let list = (await admin(host, 'GET', '/edge/devices', undefined)).json.devices;
   assert.deepEqual(list.map((d) => [d.name, d.area, d.waiting, d.reachable, d.resources.length]), [['Gefriertruhe', 'Keller', true, false, 0]]);
@@ -172,17 +173,18 @@ test('the edge part\'s reports: covers, dimmers, sensors; LWT offline and silenc
   assert.equal(rollo.base, 'shellies/rollladen-terrasse');
   const dimmer = await mk('Deckenlicht', 'shelly1');
   const ht = await mk('Klima Keller', 'shelly2');
+  const HT_SEEN = new Date(Date.now() - 9 * 60000).toISOString();
   await host.edgeEvent(7, 'states', { devices: [
     SNAP_2PM(),
     { base: dimmer.base, family: 'shelly1', online: true, seenAt: new Date().toISOString(), ch: { 'light:0': { on: true, bri: 70, power: 38 } }, sensor: {}, info: {}, drop: [] },
-    { base: ht.base, family: 'shelly2', online: null, seenAt: new Date(Date.now() - 9 * 60000).toISOString(), ch: {}, sensor: { temperature: 14.8, humidity: 63, battery: 82 }, info: {}, drop: [] },
+    { base: ht.base, family: 'shelly2', online: null, seenAt: HT_SEEN, ch: {}, sensor: { temperature: 14.8, humidity: 63, battery: 82 }, info: {}, drop: [] },
   ] });
   const res = (await host.gc.db.query("SELECT kind, name, area, capabilities_json, state_json FROM resources WHERE deconz_type = 'edge' ORDER BY id")).rows
     .map((r) => [r.kind, r.name, r.area, JSON.parse(r.capabilities_json), JSON.parse(r.state_json)]);
   assert.deepEqual(res, [
     ['cover', 'Rollladen Terrasse', 'Wohnzimmer', { source: 'edge', ch: 'cover:0', bri: false, power: true, position: true, cover: 'shutter' }, { reachable: true, pos: 60, moving: null, on: true, power: 0 }],
     ['light', 'Deckenlicht', 'Wohnzimmer', { source: 'edge', ch: 'light:0', bri: true, power: true, position: false }, { reachable: true, on: true, bri: 70, power: 38 }],
-    ['sensor', 'Klima Keller', 'Wohnzimmer', { source: 'edge', ch: 'sensor', reading: 'temperature' }, { reachable: true, type: 'temperature', value: 14.8, humidity: 63, battery: 82 }],
+    ['sensor', 'Klima Keller', 'Wohnzimmer', { source: 'edge', ch: 'sensor', reading: 'temperature' }, { reachable: true, type: 'temperature', value: 14.8, humidity: 63, battery: 82, sleeping: true, lastupdated: HT_SEEN }],
   ]);
   // LWT offline → unreachable at once (the sensor sleeps: "offline" says nothing there)
   await host.edgeEvent(7, 'states', { devices: [SNAP_2PM({ online: false })] });
@@ -432,7 +434,7 @@ test('a new MQTT password: written into the device when it can, else shown; remo
 
   assert.equal((await admin(host, 'DELETE', `/edge/devices/${d.device.id}`)).status, 200);
   assert.equal(host.mqttAccounts.get(7).size, 0);
-  assert.deepEqual(host.edgeConfigs.get(7), { devices: [] });
+  assert.deepEqual(host.edgeConfigs.get(7).devices, []);
   assert.equal((await host.gc.db.query('SELECT * FROM edge_devices')).rows.length, 0);
 }));
 
@@ -454,7 +456,7 @@ test('$started and $online hand the device list to the edge part again', () => w
   await admin(host, 'POST', '/edge/devices', { gateway_id: 7, name: 'Licht', family: 'shelly2' });
   host.edgeConfigs.clear();
   await host.edgeEvent(7, '$started', null);
-  assert.deepEqual(host.edgeConfigs.get(7), { devices: [{ base: 'shellies/licht', family: 'shelly2' }] });
+  assert.deepEqual(host.edgeConfigs.get(7).devices, [{ base: 'shellies/licht', family: 'shelly2' }]);
   host.edgeConfigs.clear();
   await host.edgeEvent(7, '$online', null);
   assert.ok(host.edgeConfigs.get(7));

@@ -178,6 +178,17 @@
         </div>
         <div class="sh-stack-sm sh-sep">
           <span class="form-label">{{t:device.connection}}</span>
+          <div class="sh-two" id="sh-d-http">
+            <div class="form-group">
+              <label class="form-label" for="sh-d-http-user">{{t:device.http_user}}</label>
+              <input class="form-input" id="sh-d-http-user" type="text" maxlength="64" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="admin" aria-describedby="sh-d-http-hint">
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="sh-d-http-pass">{{t:device.http_pass}}</label>
+              <input class="form-input" id="sh-d-http-pass" type="password" maxlength="128" autocomplete="off" spellcheck="false" aria-describedby="sh-d-http-hint">
+            </div>
+            <span class="sh-sub sh-two-all" id="sh-d-http-hint">{{t:device.http_hint}}</span>
+          </div>
           <div class="page-actions">
             <button class="btn" type="button" id="sh-d-password">{{t:device.new_password}}</button>
             <a class="btn" id="sh-d-page" target="_blank" rel="noopener noreferrer">{{t:device.open_page}}</a>
