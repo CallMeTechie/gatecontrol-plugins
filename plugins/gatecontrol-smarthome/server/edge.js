@@ -13,11 +13,14 @@
 //
 // Events of the edge part: `states` { devices: [snapshot] } (bundled every 2 s) → resources and their cached
 // state; `found` { devices: [candidate] } → the "new devices" hint. $started / $online → the device list again
-// (gc.edge.configure { devices: [{ base, family }] }).
+// (gc.edge.configure { devices: [{ base, family }], rules, tz }); `fired` { rules: [{ id, at }] } → a logic chain ran
+// (server/edgerules.js).
 
 const crypto = require('node:crypto');
 const store = require('./store');
 const es = require('./edgestore');
+const alerts = require('./alerts');
+const edgerules = require('./edgerules');
 const { codeError } = require('./deconz');
 
 const MIN_GATEWAY = '1.19.0';
@@ -110,8 +113,10 @@ async function gateways(gc, { info = true } = {}) {
 async function configureGateway(gc, gatewayId) {
   if (!available(gc)) return false;
   const devices = (await es.listDevices(gc, gatewayId)).map((d) => ({ base: d.base, family: d.family }));
+  // the gateway's logic chains run in its edge part (edge/rules.js); an older edge part ignores them
+  const { rules, tz } = await edgerules.configFor(gc, gatewayId);
   try {
-    await gc.edge.configure(Number(gatewayId), { devices });
+    await gc.edge.configure(Number(gatewayId), { devices, rules, tz });
     return true;
   } catch (e) {
     gc.log.debug('edge configure failed', gatewayId, edgeErr(e));
@@ -129,6 +134,23 @@ function localDay(ms) {
 function sensorOnly(dev) {
   const ch = dev.state && dev.state.ch;
   return !ch || !Object.keys(ch).length;
+}
+
+/**
+ * A battery device (Shelly H&T and the like): it sleeps, wakes for a report every few hours and is gone again —
+ * no output, no "online" that would mean anything. Not one: a sensor on USB power (Gen2+ reports it), a device
+ * that has not reported yet.
+ */
+function sleeperOf(dev) {
+  if (!dev.last_seen_at || !sensorOnly(dev)) return false;
+  const s = (dev.state && dev.state.sensor) || {};
+  return s.external !== true;
+}
+
+/** "Batterie schwach" below the plugin setting (5–50 %, default 15) — the threshold of the notification. */
+const BATTERY_LOW_DEFAULT = alerts.configOf(null).batteryLow;
+async function batteryLowAt(gc) {
+  try { return alerts.configOf(await gc.settings.all()).batteryLow; } catch { return BATTERY_LOW_DEFAULT; }
 }
 
 /** Reachable: reported within the window and — on mains — not announced offline (LWT / "online"). */
@@ -171,11 +193,13 @@ function channelState(type, c, reachable, prev, now) {
   return st;
 }
 
-function sensorState(s, reachable) {
+function sensorState(s, reachable, dev) {
   const st = { reachable, type: finite(s.temperature) != null ? 'temperature' : 'humidity' };
   st.value = st.type === 'temperature' ? s.temperature : finite(s.humidity);
   if (finite(s.humidity) != null) st.humidity = s.humidity;
   if (finite(s.battery) != null) st.battery = s.battery;
+  // a battery device sleeps between its reports: the portal shows the last value and since when, not "unreachable"
+  if (dev && sleeperOf(dev)) { st.sleeping = true; st.lastupdated = dev.last_seen_at; }
   return st;
 }
 
@@ -213,7 +237,7 @@ async function syncResources(gc, dev, { drop = [], now = Date.now() } = {}) {
   if (finite(s.temperature) != null || finite(s.humidity) != null) {
     await es.upsertChannel(gc, dev, 'sensor', {
       kind: 'sensor', name: cleanText(chCfg.sensor && chCfg.sensor.name, NAME_MAX) || dev.name,
-      capabilities: { source: 'edge', ch: 'sensor', reading: finite(s.temperature) != null ? 'temperature' : 'humidity' }, area: dev.area, state: sensorState(s, reachable),
+      capabilities: { source: 'edge', ch: 'sensor', reading: finite(s.temperature) != null ? 'temperature' : 'humidity' }, area: dev.area, state: sensorState(s, reachable, dev),
     });
   }
   for (const key of drop) if (CH_RE.test(key)) await es.removeChannel(gc, dev, key);
@@ -233,6 +257,7 @@ function cleanSnapshot(snap) {
   const sensor = {};
   const s = (snap && snap.sensor) || {};
   for (const f of ['temperature', 'humidity', 'battery']) if (finite(s[f]) != null) sensor[f] = s[f];
+  if (typeof s.external === 'boolean') sensor.external = s.external;
   return { ch, sensor };
 }
 
@@ -312,6 +337,7 @@ function setup(gc) {
   gc.edge.on('$online', ({ gatewayId }) => configureGateway(gc, gatewayId));
   gc.edge.on('states', (ev) => onStates(gc, ev));
   gc.edge.on('found', ({ gatewayId, data }) => rememberFound(gatewayId, data && data.devices));
+  gc.edge.on('fired', ({ gatewayId, data }) => edgerules.markFired(gc, gatewayId, data).catch((e) => gc.log.warn('edge rule mark failed', (e && (e.code || e.message)) || e)));
   return true;
 }
 
@@ -424,14 +450,40 @@ async function removeDevice(gc, dev) {
 
 function validFamily(f) { return es.FAMILIES.has(f) ? f : null; }
 
+// The user name of a device's own web access (Shelly Gen1: HTTP Basic, Tasmota: WebPassword with another user is
+// rare, but firmware builds and proxies in front of a device have one). Default "admin"; Shelly Gen2+ knows no other.
+// Kept per device (config.httpUser) — the password never is: it is asked for the one request that needs it.
+const HTTP_USER_RE = /^[^\0-\x1f\x7f:"\\]{1,64}$/;
+const HTTP_USER_DEFAULT = 'admin';
+function cleanHttpUser(v) {
+  if (v == null || v === '') return HTTP_USER_DEFAULT;
+  if (typeof v !== 'string' || !HTTP_USER_RE.test(v.trim())) throw codeError('INVALID');
+  return v.trim();
+}
+function httpUserOf(dev) {
+  const u = dev && dev.config && dev.config.httpUser;
+  return dev && dev.family !== 'shelly2' && typeof u === 'string' && HTTP_USER_RE.test(u) ? u : HTTP_USER_DEFAULT;
+}
+/** config with the user name set (or dropped again for "admin"). */
+function withHttpUser(config, user) {
+  const { httpUser: _old, ...rest } = config || {}; // eslint-disable-line no-unused-vars
+  return user && user !== HTTP_USER_DEFAULT ? { ...rest, httpUser: user } : rest;
+}
+
 /** The admin's view of a device (and its resources with owners). */
-async function deviceView(gc, dev, users, owners) {
+async function deviceView(gc, dev, users, owners, lowAt = BATTERY_LOW_DEFAULT) {
   const resources = await es.deviceResources(gc, dev.id);
   const reachable = reachableOf(dev);
+  const sleeper = sleeperOf(dev);
+  const battery = dev.state && dev.state.sensor ? finite(dev.state.sensor.battery) : null;
   return {
     id: dev.id, gateway_id: dev.gateway_id, name: dev.name, area: dev.area || null, family: dev.family, model: dev.model || null, firmware: dev.firmware || null,
     ip: dev.ip || null, page: dev.ip ? `http://${dev.ip}/` : null, username: dev.mqtt_user || null, prefix: dev.prefix, base: dev.base, configured: dev.configured, online: dev.online,
-    reachable, waiting: !dev.last_seen_at, last_seen_at: dev.last_seen_at || null, battery: dev.state && dev.state.sensor ? (finite(dev.state.sensor.battery)) : null,
+    reachable, waiting: !dev.last_seen_at, last_seen_at: dev.last_seen_at || null, battery,
+    // a battery device between two reports: "schläft – letzte Meldung vor …", never "nicht erreichbar"; overdue =
+    // silent for longer than such a device sleeps (26 h) — the battery may be empty
+    sleeper, overdue: sleeper && !reachable, battery_low: battery != null && battery <= lowAt,
+    http_user: httpUserOf(dev),
     config: dev.config || {},
     channels: channelKeys(dev.state).map((k) => ({ key: k, type: k.split(':')[0] })),
     resources: resources.map((r) => ({
@@ -485,7 +537,8 @@ const STEP_IDS = ['account', 'reach', 'auth', 'configure', 'online'];
 
 function jobView(job) {
   const steps = STEP_IDS.map((id) => ({ id, ...job.steps[id] }));
-  return { id: job.id, state: job.state, deviceId: job.deviceId, gatewayId: job.gatewayId, name: job.name, ip: job.ip, family: job.family, model: job.model, error: job.error || null, reason: job.reason || null, steps };
+  return { id: job.id, state: job.state, deviceId: job.deviceId, gatewayId: job.gatewayId, name: job.name, ip: job.ip, family: job.family, model: job.model, error: job.error || null, reason: job.reason || null, steps,
+    httpUser: job.httpUser || HTTP_USER_DEFAULT };
 }
 
 function expireJobs(now = Date.now()) {
@@ -545,8 +598,9 @@ async function runJob(gc, job, password) {
     if (!job.secret) { step('configure', { state: 'error', code: 'password_gone' }); job.state = 'failed'; job.error = 'password_gone'; return; }
     step('configure', { state: 'running' });
     const dev = await es.getDevice(gc, job.deviceId);
+    const httpUser = dev.family === 'shelly2' ? HTTP_USER_DEFAULT : (job.httpUser || httpUserOf(dev));
     try {
-      await gc.edge.call(job.gatewayId, 'setup', { ip: job.ip, family: dev.family, user: dev.mqtt_user, pass: job.secret, prefix: dev.prefix, ...(password ? { password } : {}) }, { timeoutMs: SETUP_CALL_MS });
+      await gc.edge.call(job.gatewayId, 'setup', { ip: job.ip, family: dev.family, user: dev.mqtt_user, pass: job.secret, prefix: dev.prefix, ...(password ? { password, ...(httpUser !== HTTP_USER_DEFAULT ? { httpUser } : {}) } : {}) }, { timeoutMs: SETUP_CALL_MS });
     } catch (e) {
       const code = edgeErr(e);
       if (code === 'auth_required' || code === 'auth_failed') {
@@ -564,7 +618,8 @@ async function runJob(gc, job, password) {
       return;
     }
     job.secret = null;
-    await es.updateDevice(gc, job.deviceId, { configured: true });
+    // the user name that worked stays with the device (for "Neues MQTT-Passwort" later)
+    await es.updateDevice(gc, job.deviceId, { configured: true, ...(password && httpUser !== httpUserOf(dev) ? { config: withHttpUser(dev.config, httpUser) } : {}) });
     step('configure', { state: 'done' });
     job.configuredAt = Date.now();
     const now = await es.getDevice(gc, job.deviceId);
@@ -579,7 +634,7 @@ async function runJob(gc, job, password) {
 
 function newJob(o) {
   const job = {
-    id: crypto.randomBytes(9).toString('base64url'), createdAt: Date.now(), configuredAt: 0, state: 'running', error: null, reason: null, secret: null, auth: false,
+    id: crypto.randomBytes(9).toString('base64url'), createdAt: Date.now(), configuredAt: 0, state: 'running', error: null, reason: null, secret: null, auth: false, httpUser: null,
     deviceId: o.deviceId || null, gatewayId: o.gatewayId, name: o.name, area: o.area, ip: o.ip, family: o.family, model: o.model || null, candidate: o.candidate || null,
     steps: { account: { state: 'pending' }, reach: { state: 'pending' }, auth: { state: 'pending' }, configure: { state: 'pending' }, online: { state: 'pending' } },
   };
@@ -634,8 +689,9 @@ async function route(req, gc, seg, body, usersById) {
     const gw = posInt(req.query && req.query.gateway_id);
     const { users, owners } = await usersAndOwners(gc, usersById);
     const list = await es.listDevices(gc, gw || undefined);
+    const lowAt = await batteryLowAt(gc);
     const devices = [];
-    for (const d of list) devices.push(await deviceView(gc, d, users, owners));
+    for (const d of list) devices.push(await deviceView(gc, d, users, owners, lowAt));
     return { json: { ok: true, devices } };
   }
 
@@ -654,7 +710,7 @@ async function route(req, gc, seg, body, usersById) {
     if (!dev) throw codeError('SMARTHOME_RESOURCE_NOT_FOUND');
     if (seg.length === 2 && m === 'GET') {
       const { users, owners } = await usersAndOwners(gc, usersById);
-      return { json: { ok: true, device: await deviceView(gc, dev, users, owners) } };
+      return { json: { ok: true, device: await deviceView(gc, dev, users, owners, await batteryLowAt(gc)) } };
     }
     if (seg.length === 2 && m === 'PUT') {
       const patch = {};
@@ -673,6 +729,7 @@ async function route(req, gc, seg, body, usersById) {
         }
         patch.config = { ...(dev.config || {}), channels };
       }
+      if (body.http_user !== undefined) patch.config = withHttpUser(patch.config || dev.config, cleanHttpUser(body.http_user));
       const next = await es.updateDevice(gc, dev.id, patch);
       await syncResources(gc, next);
       return { json: { ok: true } };
@@ -702,14 +759,17 @@ async function route(req, gc, seg, body, usersById) {
       return { json: { ok: true, credentials: credentials(next, account.password, await hostOf(gc, dev.gateway_id)) } };
     }
     // a new account password: written into the device by the edge part when it can, else shown
+    // body.device_password: the device's own password, for this one request (a device with a password could not
+    // take the new account otherwise); never stored
     if (seg.length === 3 && c === 'password' && m === 'POST') {
+      const devicePw = typeof body.device_password === 'string' && body.device_password && body.device_password.length <= 128 ? body.device_password : null;
       await removeAccount(gc, dev.gateway_id, dev.mqtt_user);
       const account = await createAccount(gc, dev.gateway_id, dev.prefix, dev.base, dev.name);
       const next = await es.updateDevice(gc, dev.id, { mqtt_user: account.username });
       let reason = 'no_address';
       if (dev.ip) {
         try {
-          await gc.edge.call(dev.gateway_id, 'setup', { ip: dev.ip, family: dev.family, user: account.username, pass: account.password, prefix: dev.prefix }, { timeoutMs: SETUP_CALL_MS });
+          await gc.edge.call(dev.gateway_id, 'setup', { ip: dev.ip, family: dev.family, user: account.username, pass: account.password, prefix: dev.prefix, ...(devicePw ? { password: devicePw, ...(httpUserOf(dev) !== HTTP_USER_DEFAULT ? { httpUser: httpUserOf(dev) } : {}) } : {}) }, { timeoutMs: SETUP_CALL_MS });
           return { json: { ok: true, applied: true } };
         } catch (e) { reason = edgeErr(e); }
       }
@@ -733,6 +793,7 @@ async function route(req, gc, seg, body, usersById) {
     if (seg.length === 3 && c === 'password' && m === 'POST') {
       const pw = typeof body.password === 'string' ? body.password : '';
       if (!pw || pw.length > 128 || job.state !== 'need_password') throw codeError('INVALID');
+      job.httpUser = body.user === undefined ? job.httpUser : cleanHttpUser(body.user);
       job.state = 'running';
       job.steps.auth = { state: 'running' };
       runJob(gc, job, pw);
@@ -780,6 +841,6 @@ async function tick(gc, now = Date.now()) {
 }
 
 module.exports = {
-  available, setup, gateways, configureGateway, route, tick, setState, applySnapshot, syncResources, reachableOf, slugify, semverAtLeast,
+  available, setup, gateways, configureGateway, route, tick, setState, applySnapshot, syncResources, reachableOf, sleeperOf, httpUserOf, slugify, semverAtLeast,
   jobView, MIN_GATEWAY, STALE_MS, SENSOR_STALE_MS, _mem: mem,
 };

@@ -51,13 +51,25 @@
       return !n.disabled && !n.hidden && n.offsetParent !== null && n.getAttribute('tabindex') !== '-1';
     });
   }
+  /**
+   * Dialogs sit fixed at the top of the frame, and the host makes the frame as tall as the page — opened from a card
+   * far down, a dialog would be above what the person sees. Bring the frame's top into view: through an element that
+   * is not fixed (for a fixed one Chromium does not scroll the page around the frame).
+   */
+  function showTop() {
+    var a = document.getElementById('sh-top');
+    if (!a) {
+      a = el('div', { id: 'sh-top', 'aria-hidden': 'true', style: 'position:absolute;top:0;left:0;width:1px;height:1px;pointer-events:none' });
+      document.body.appendChild(a);
+    }
+    try { a.scrollIntoView({ block: 'start', behavior: 'smooth' }); } catch (_) { /* old browser */ }
+  }
   function openModal(id, focusSel) {
     var m = document.getElementById(id);
     if (!m) return;
     if (m.hidden && document.activeElement && document.activeElement !== document.body) openers[id] = document.activeElement;
     m.hidden = false;
-    var d = m.querySelector('.modal');
-    if (d && d.scrollIntoView) { try { d.scrollIntoView({ block: 'start', behavior: 'smooth' }); } catch (_) { /* old browser */ } }
+    showTop();
     var f = (focusSel && m.querySelector(focusSel)) || m.querySelector('input:not([type=radio]):not([disabled]),select:not([disabled]),button.btn-primary:not([disabled])') || focusables(m)[0];
     if (f) setTimeout(function () { f.focus(); }, 30);
   }
@@ -142,6 +154,7 @@
       ]);
       ov.addEventListener('sh:close', function () { done(false); });
       document.body.appendChild(ov);
+      showTop(); // asked from a card far down the page (a firmware update, a rule): bring the question into view
       setTimeout(function () { ok.focus(); }, 30);
     });
   }

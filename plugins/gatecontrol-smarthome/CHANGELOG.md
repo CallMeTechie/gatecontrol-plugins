@@ -3,6 +3,42 @@
 Phoscon/deCONZ-Integration als GateControl-Plugin – bisher fest in GateControl eingebaut; seit 1.7.0 auch Shelly und
 Tasmota über ein GateControl-Gateway.
 
+## 1.10.0
+
+- **Logikketten für Shelly und Tasmota:** Die Seite „Logikketten“ kennt neben den deCONZ-Gateways die
+  GateControl-Gateways als Quelle. Auslöser: Ausgang an/aus, Rollladen offen/geschlossen, Leistung, Temperatur und
+  Feuchte über/unter einem Wert; Aktionen: schalten, dimmen, Rollladen Auf/Zu/Stopp/Position; Zeitfenster, Verzögerung
+  und „bei erneuter Auslösung“ wie bisher. Die Regeln laufen im **Edge-Teil auf dem Gateway** (`edge/rules.js`): eine
+  MQTT-Meldung des Geräts → Regel → MQTT-Befehl, ohne Umweg über den Server und auch, wenn er nicht erreichbar ist
+  (die Liste liegt in `gc.store` des Edge-Teils). Sie feuern, wenn die Bedingungen eintreten (steigende Flanke der
+  UND-Verknüpfung); was beim Anlegen, beim Start oder bei der ersten Meldung eines Geräts schon gilt, zählt nicht.
+  Der Server-Teil prüft und übersetzt die Definition (`server/edgerules.js`) und schickt sie mit der Geräteliste
+  (`gc.edge.configure { devices, rules, tz }`); das Ereignis `fired` trägt „Zuletzt ausgelöst“ ein. Tabelle `rules`:
+  neue Spalten `source` (`deconz` | `edge`) und `last_fired_at` (Migration 003). Höchstens 40 Regeln je Gateway.
+  deCONZ-Regeln bleiben unverändert.
+- **Batteriegeräte (Shelly H&T):** „schläft – letzte Meldung vor …“ statt „nicht erreichbar“, nach mehr als 26 Stunden
+  mit der Frage „Batterie leer?“; Hinweis „Batterie schwach“ ab dem Wert der Einstellung (Standard 15 %), auch im
+  Portal. Die Kennzahl „Nicht erreichbar“ zählt schlafende Geräte nicht. Ein Shelly ab Gen2 an USB-Strom
+  (`devicepower:0.external.present`) gilt als wach.
+- **Benutzername am Gerät:** Für Shelly Gen1 (HTTP Basic) und Tasmota ist der Benutzername der Geräte-Weboberfläche je
+  Gerät einstellbar (Standard `admin`) – im Schritt „Das Gerät hat ein Passwort“ und unter „Bearbeiten“ › Verbindung.
+  Gespeichert wird nur der Name; das Gerätepasswort wird wie bisher für den einen Vorgang benutzt und nie gespeichert.
+  „Neues MQTT-Passwort setzen“ nimmt jetzt wahlweise das Gerätepasswort an und trägt das Konto dann auch in ein
+  geschütztes Gerät ein. Shelly ab Gen2 kennen nur `admin`.
+- **zigbee2mqtt** (mit GateControl nach 1.258.4 und einem Gateway nach 1.34.2; ältere liefern die Felder nicht, dann
+  bleibt alles wie bisher): **Mehrkanal-Geräte** – eine Ressource je Kanal (`caps.channels`, `values.ch`), geschaltet
+  mit `{ on, channel }`; die bisherige Ressource des Geräts wird Kanal 1 und behält Name, Bereich und Besitzer.
+  **Thermostate** – neue Art `thermostat` mit Ist-/Soll-Temperatur und Modus, Karte auf der Seite, Kachel im Portal
+  (− / +, Modus), Soll innerhalb der Grenzen des Geräts. **OTA-Updates** – „Update verfügbar“, „Aktualisieren“,
+  Fortschritt und „Nach Update suchen“ auf der Karte (`POST /resources/:id/ota`, `gc.radio.command(id, { ota })`).
+- Geräte von zigbee2mqtt lassen sich im Dialog „Besitzer verwalten“ umbenennen (der Server konnte es schon, das Feld
+  fehlte).
+- Dialoge und Rückfragen holen den Anfang des Rahmens in den sichtbaren Bereich – über ein nicht fixiertes Element;
+  für die fixierte Dialogfläche scrollt Chromium die umgebende Seite nicht.
+- Regel-Editor: Gerät, Felder und × stehen in einer Zeile, solange Platz ist.
+- Tests: Regel-Engine und Edge-Teil gegen simulierte MQTT-Meldungen (Shelly Gen1/Gen2, Tasmota), Server-Teil der
+  Edge-Regeln, schlafende Geräte, Benutzername, zigbee2mqtt-Kanäle/Thermostate/OTA.
+
 ## 1.9.1
 
 - **Weniger Schreibvorgänge:** der Abgleich mit Phoscon/deCONZ (alle 30 s) schreibt eine Leuchte, Gruppe, Szene oder einen Sensor nur noch, wenn sich etwas geändert hat, und alle Änderungen eines Abgleichs in **einer** Transaktion – vorher jede Ressource bei jedem Abgleich (im Protokoll von GateControl 1.253.5: `UPDATE resources …` 935 Mal in der Stunde, je ~300 ms auf einem langsamen Datenträger). Eine fehlende Ressource wird einmal abgeschaltet, nicht bei jedem Abgleich wieder.

@@ -106,7 +106,7 @@ async function removeGateway(gc, id) {
   const gid = Number(id);
   await tx(gc, async () => {
     await gc.db.run('DELETE FROM resource_owners WHERE resource_id IN (SELECT id FROM resources WHERE gateway_id = ?)', [gid]);
-    await gc.db.run('DELETE FROM rules WHERE gateway_id = ?', [gid]);
+    await gc.db.run("DELETE FROM rules WHERE gateway_id = ? AND source = 'deconz'", [gid]);
     await gc.db.run('DELETE FROM resources WHERE gateway_id = ?', [gid]);
     await gc.db.run('DELETE FROM gateways WHERE id = ?', [gid]);
   });
@@ -179,8 +179,9 @@ async function markMissing(gc, gatewayId, seenKeys) {
 
 // ─── Owners (port of smarthomeOwners.js) ────────
 
-// relay (a switched output) and cover (shutter, awning, gate): Shelly / Tasmota devices through a gateway
-const ASSIGNABLE = new Set(['light', 'plug', 'group', 'sensor', 'relay', 'cover']);
+// relay (a switched output) and cover (shutter, awning, gate): Shelly / Tasmota devices through a gateway;
+// thermostat: a zigbee2mqtt thermostat
+const ASSIGNABLE = new Set(['light', 'plug', 'group', 'sensor', 'relay', 'cover', 'thermostat']);
 
 async function ownerIdsOf(gc, resourceId) {
   return (await gc.db.query('SELECT user_id FROM resource_owners WHERE resource_id = ? ORDER BY user_id', [Number(resourceId)])).rows.map((r) => r.user_id);

@@ -15,7 +15,8 @@
 //   switch  { on, power (W), energy (Wh, lifetime counter) | today (kWh, Tasmota) }
 //   light   { on, bri (0–100), power, energy | today }
 //   cover   { pos (0–100 % open, null = not calibrated), moving ('opening' | 'closing' | null), power }
-// sensor { temperature (°C), humidity (%), battery (%) }, online true | false | null (LWT / "online").
+// sensor { temperature (°C), humidity (%), battery (%), external (on USB power, Gen2+) }, online true | false | null
+// (LWT / "online").
 
 const NAME_RE = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/;
 const COMP_RE = /^(switch|light|cover|temperature|humidity|devicepower):(\d{1,2})$/;
@@ -80,6 +81,8 @@ function gen2Component(patch, key, o) {
   if (type === 'temperature' && o.tC != null) s.temperature = round(o.tC, 1);
   if (type === 'humidity' && o.rh != null) s.humidity = round(o.rh, 0);
   if (type === 'devicepower' && isObj(o.battery) && o.battery.percent != null) s.battery = pct(o.battery.percent);
+  // on USB power the device stays awake (the page then shows no "schläft")
+  if (type === 'devicepower' && isObj(o.external) && typeof o.external.present === 'boolean') s.external = o.external.present;
   if (Object.keys(s).length) patch.sensor = { ...(patch.sensor || {}), ...s };
 }
 

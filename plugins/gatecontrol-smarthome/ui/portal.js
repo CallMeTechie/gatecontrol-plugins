@@ -55,8 +55,60 @@
     t.appendChild(row);
     return t;
   }
+  /** A thermostat (zigbee2mqtt): measured and target temperature, − / + for the target, its modes. */
+  function thermoText(d) {
+    var st = d.state || {};
+    if (st.reachable === false) return T('card.unreachable');
+    var parts = [st.value == null ? '–' : fmtNum(st.value) + ' °C'];
+    if (st.setpoint != null) parts.push(T('thermo.target') + ' ' + fmtNum(st.setpoint) + ' °C');
+    if (st.heating) parts.push(T('thermo.heating'));
+    else if (st.mode === 'off') parts.push(T('thermo.mode.off'));
+    return parts.join(' · ');
+  }
+  function thermoTile(d) {
+    var caps = d.capabilities || {};
+    var sp = caps.setpoint || { min: 5, max: 30, step: 0.5 };
+    var status = el('span', { class: 'pt-small', text: thermoText(d) });
+    var t = el('div', { class: 'pt-shtile pt-shtile-cover', 'data-id': String(d.id) }, [el('div', { class: 'pt-shtile-head' }, [el('b', { text: d.name || '' }), status])]);
+    var row = el('div', { class: 'pt-sh-coverbtns', role: 'group', 'aria-label': T('thermo.target_of', { name: d.name || '' }) });
+    var busy = false;
+    var step = function (dir) {
+      var cur = d.state && d.state.setpoint != null ? Number(d.state.setpoint) : (d.state && d.state.value != null ? Math.round(Number(d.state.value)) : 20);
+      var next = Math.max(sp.min, Math.min(sp.max, Math.round((cur + dir * sp.step) * 10) / 10));
+      if (busy || next === cur) return;
+      busy = true;
+      control(d.id, { setpoint: next }).then(function (ok) {
+        busy = false;
+        if (!ok) return;
+        d.state = Object.assign({}, d.state || {}, { setpoint: next });
+        status.textContent = thermoText(d);
+      });
+    };
+    [['−', -1, 'thermo.colder'], ['+', 1, 'thermo.warmer']].forEach(function (x) {
+      row.appendChild(el('button', { type: 'button', class: 'pt-sh-coverbtn', text: x[0], 'aria-label': T(x[2]), disabled: !loggedIn || (d.state && d.state.reachable === false), on: { click: function () { step(x[1]); } } }));
+    });
+    t.appendChild(row);
+    if (caps.modes && caps.modes.length > 1) {
+      var modes = el('div', { class: 'pt-sh-coverbtns', role: 'group', 'aria-label': T('thermo.mode_of', { name: d.name || '' }) });
+      caps.modes.forEach(function (m) {
+        var b = el('button', { type: 'button', class: 'pt-sh-coverbtn', text: T('thermo.mode.' + m), 'aria-pressed': d.state && d.state.mode === m ? 'true' : 'false', disabled: !loggedIn });
+        b.addEventListener('click', function () {
+          control(d.id, { mode: m }).then(function (ok) {
+            if (!ok) return;
+            d.state = Object.assign({}, d.state || {}, { mode: m });
+            Array.prototype.forEach.call(modes.children, function (x) { x.setAttribute('aria-pressed', x === b ? 'true' : 'false'); });
+            status.textContent = thermoText(d);
+          });
+        });
+        modes.appendChild(b);
+      });
+      t.appendChild(modes);
+    }
+    return t;
+  }
   function tile(d) {
     if (d.kind === 'cover') return coverTile(d);
+    if (d.kind === 'thermostat') return thermoTile(d);
     var st = d.state || {};
     var scene = d.kind === 'scene';
     var main = el('button', { type: 'button', class: 'pt-shtile-main', 'aria-pressed': scene ? null : (st.on ? 'true' : 'false'), disabled: !loggedIn },
@@ -140,7 +192,15 @@
       var st = s.state || {};
       if (st.type === 'temperature' && st.humidity != null) text += ' · ' + fmtNum(st.humidity) + ' %';
       var label = s.area ? s.area + ' · ' + (s.name || '') : (s.name || '');
-      list.appendChild(el('li', null, [el('span', { text: label }), el('b', { 'data-tone': st.reachable === false ? 'warn' : v.tone, text: st.reachable === false ? T('card.unreachable') : text })]));
+      // a battery sensor (Shelly H&T) sleeps between its reports: its last value, and since when once it is overdue
+      var asleep = st.sleeping === true;
+      var gone = st.reachable === false && !asleep;
+      var notes = [];
+      if (asleep && st.reachable === false && st.lastupdated) notes.push(T('portal.last_report', { ago: S.since(st.lastupdated) }));
+      if (st.battery_low) notes.push(T('portal.battery_low'));
+      var item = el('li', null, [el('span', { text: label }), el('b', { 'data-tone': gone ? 'warn' : v.tone, text: gone ? T('card.unreachable') : text })]);
+      if (notes.length && !gone) { item.classList.add('has-note'); item.appendChild(el('small', { class: 'pt-sensor-note', text: notes.join(' · ') })); }
+      list.appendChild(item);
     });
     $('#pt-sh-sensors').hidden = !sensors.length;
     var empty = $('#pt-sh-empty');

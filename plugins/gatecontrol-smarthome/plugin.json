@@ -4,11 +4,11 @@
     "de": "Smart Home",
     "en": "Smart Home"
   },
-  "version": "1.9.1",
+  "version": "1.10.0",
   "publisher": "CallMeTechie",
   "description": {
-    "de": "Phoscon/deCONZ-Gateways, Shelly- und Tasmota-Geräte, Zigbee-Geräte von zigbee2mqtt und Bluetooth-Sensoren über ein GateControl-Gateway einbinden: Lichter, Steckdosen, Schalter, Rollläden, Gruppen, Szenen und Sensoren steuern, Haushaltsmitgliedern zuweisen (Portal „Zuhause“) und Logikketten auf dem deCONZ-Gateway anlegen.",
-    "en": "Connect Phoscon/deCONZ gateways, Shelly and Tasmota devices, Zigbee devices of zigbee2mqtt and Bluetooth sensors through a GateControl gateway: control lights, plugs, switches, shutters, groups, scenes and sensors, assign them to household members (portal “Home”) and create logic chains on the deCONZ gateway."
+    "de": "Phoscon/deCONZ-Gateways, Shelly- und Tasmota-Geräte, Zigbee-Geräte von zigbee2mqtt und Bluetooth-Sensoren über ein GateControl-Gateway einbinden: Lichter, Steckdosen, Schalter, Rollläden, Gruppen, Szenen und Sensoren steuern, Haushaltsmitgliedern zuweisen (Portal „Zuhause“) und Logikketten anlegen – für deCONZ auf dem deCONZ-Gateway, für Shelly und Tasmota auf dem GateControl-Gateway.",
+    "en": "Connect Phoscon/deCONZ gateways, Shelly and Tasmota devices, Zigbee devices of zigbee2mqtt and Bluetooth sensors through a GateControl gateway: control lights, plugs, switches, shutters, groups, scenes and sensors, assign them to household members (portal “Home”) and create logic chains – for deCONZ on the deCONZ gateway, for Shelly and Tasmota on the GateControl gateway."
   },
   "gatecontrol": ">=1.228.1",
   "entry": "server/index.js",
