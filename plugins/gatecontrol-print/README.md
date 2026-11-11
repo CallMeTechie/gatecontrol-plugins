@@ -40,7 +40,7 @@ oder abgebrochen sind.
 |---|---|
 | `GET overview` | `{ rights, pagesLeft, printers, scanners, drive, ai, ocr, target, jobs, scan, defaultName }` – Geräte ohne Adresse; `printers[].printer`: `{ state, color, duplex, copiesMax, formats, office, media: { sizes, default, sources, sourceDefault } }`; `ocr`: ein durchsuchbares PDF geht gerade |
 | `POST print { deviceId, mediaId, copies, color, duplex, name, media?, source? }` | `{ job, pagesLeft }` – `mediaId` aus `GC.upload`; `media`/`source` nur aus `printer.media` |
-| `GET jobs/<id>` | `{ job }` – frisch von GateControl: `state`, `error`, `message` (Halt-Grund beim Drucken, `converting`, `converting_office`), `pages`, `media`, `source` (eigene Aufträge; Administratoren alle) |
+| `GET jobs/<id>` | `{ job }` – frisch von GateControl: `state`, `open`, `error`, `message` (Halt-Grund beim Drucken, `converting`, `converting_office`), `pages`, `copies`, `media`, `source`, die Zeiten `at` (Auftrag), `updatedAt` (letzte Änderung), `expiresAt` (bis wann es versucht wird), `doneAt` (Ende, sonst `null`; beide ab 1.1.1). Eigene Aufträge; Administratoren alle; sonst 404 `not_found` |
 | `POST jobs/<id>/cancel` | `{ canceled }` |
 | `POST scan { deviceId, source, mode }` | `{ scan }` – eine Scan-Sitzung |
 | `GET scan/<id>` | `{ scan: { pages: [{ n, thumb }], scanning, error, suggestion } }` |
@@ -118,4 +118,5 @@ suitable format, damaged) instead of “PDF files and pictures work”. Since
 (text recognition on a gateway, the text goes to Drive's search), text and
 office files (Word, Excel, PowerPoint, OpenDocument, RTF – when “Print office
 files” is on at the gateway), paper and tray, the printer's stop reasons, and
-`GET jobs/<id>` for the apps.
+`GET jobs/<id>` for the apps. Since 1.1.1 a job also names `expiresAt` and
+`doneAt`, and `updatedAt` is the time of its last change.
