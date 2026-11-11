@@ -6,37 +6,44 @@
 //     Überlaufseiten, also die ganze Datenbank). Jetzt aus dem Index bodies_bytes (migrations/010_speed.sql).
 //   * Ungelesene je Posteingang, die Unterhaltung einer neuen Mail (In-Reply-To), Mails ohne Text, Anhänge zum
 //     Ablegen, die Aufbewahrung: auf ihren Indizes.
-//   * 30 000 Mails in drei Konten (zwei Personen): jede Anweisung von GET me, folders, messages, Zum Ablegen und
-//     zwei Hintergrundläufen < 200 ms.
+//   * 30 000 Mails in drei Konten (zwei Personen): keine Anweisung von GET me, folders, messages, Zum Ablegen und
+//     zwei Hintergrundläufen liest eine große Tabelle ganz (der Abfrageplan jeder Anweisung), die Ansichten bleiben bei
+//     einer festen Zahl von Anweisungen, und keine kostet ein Viertel dessen, was das Lesen jeder Mail kostet (im selben
+//     Lauf gemessen).
+//     Keine feste Grenze in Millisekunden: die hing an der Auslastung des Rechners (tools/testing/sql-cost.js).
 //   * „mit Anhang“ (und Relevant/Sonstige) in der Unterhaltungsansicht: eine Unterhaltung, deren neueste Mail keinen
 //     Anhang hat, verschwindet nicht mehr.
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const sqlite = require('node:sqlite');
-const { performance } = require('node:perf_hooks');
 const { withMail, ANNA, MARC } = require('./helpers');
+const cost = require('../../../tools/testing/sql-cost');
 
-const LIMIT_MS = 200;
 const N = 30000;
+// the unit of a statement's cost: every mail itself read once — what GET me cost before 1.10.1
+const UNIT = 'SELECT SUM(LENGTH(html)) FROM bodies NOT INDEXED';
+// read as a whole on purpose
+const WHOLE = [
+  /USING INDEX messages_unfiled /, // a partial index: only the mails with an attachment that is not filed yet
+];
+// the eight requests run 50 statements; one more per mail of a page (50 mails) would be 50 more
+const SCREENS_MAX = 75;
 
-/** Every statement's longest time while `fn` runs → Map sql → ms. */
-async function timed(fn) {
-  const SP = sqlite.StatementSync.prototype;
-  const orig = { all: SP.all, get: SP.get, run: SP.run };
-  const worst = new Map();
-  for (const name of Object.keys(orig)) {
-    SP[name] = function measured(...a) {
-      const t = performance.now();
-      try { return orig[name].apply(this, a); } finally {
-        const ms = performance.now() - t;
-        const k = String(this.sourceSQL).replace(/\s+/g, ' ').slice(0, 200);
-        worst.set(k, Math.max(worst.get(k) || 0, ms));
-      }
-    };
-  }
-  try { await fn(); } finally { Object.assign(SP, orig); }
-  return worst;
+// the indexes the statements stand on: one that is gone or no longer taken shows here, also where SQLite then finds
+// its way by another index and sorts
+const INDEXES = {
+  screens: ['messages_list', 'messages_thread', 'messages_unread', 'messages_user', 'bodies_bytes', 'attachments_message', 'filing_user'],
+  background: ['messages_body_state', 'messages_unfiled', 'messages_user', 'bodies_bytes', 'attachments_message'],
+  items: ['ai_results_at', 'messages_flagged', 'todo_done_message'],
+};
+
+/** Nothing in the recording reads a large table as a whole or costs a quarter of the unit (the slowest: a twentieth);
+ *  the statements go by the indexes `needed`. */
+function cheap(rec, what, needed) {
+  const used = cost.indexes(rec);
+  assert.deepEqual(needed.filter((i) => !used.includes(i)), [], `${what}: indexes no statement goes by any more`);
+  assert.deepEqual(cost.fullReads(rec, { allow: WHOLE }), [], `${what}: a large table read as a whole`);
+  assert.deepEqual(cost.tooSlow(rec, { unit: UNIT, factor: 0.25 }), [], `${what}: a quarter of reading every mail, or more`);
 }
 
 /** N mails in the inbox, archive and sent folders of three accounts; 60 % with a body of 2–14 KB, 10 % with a PDF. */
@@ -90,24 +97,30 @@ async function bigMailbox(host, c) {
 
 const plan = async (db, sql, params) => (await db.query(`EXPLAIN QUERY PLAN ${sql}`, params || [])).rows.map((r) => r.detail).join(' / ');
 
-test(`großes Postfach (${N} Mails, drei Konten): jede Anweisung < ${LIMIT_MS} ms, keine liest die Mails selbst`, { timeout: 180000 }, () => withMail({}, async (host, c) => {
+test(`großes Postfach (${N} Mails, drei Konten): keine Anweisung liest eine große Tabelle ganz, keine die Mails selbst`, { timeout: 180000 }, (t) => withMail({}, async (host, c) => {
   const { folders, accs } = await bigMailbox(host, c);
   const anna = c.as(ANNA);
   const services = require('../server/services');
   const archive = folders.find((f) => f.account_id === accs[0] && f.role === 'archive');
-  const worst = await timed(async () => {
+  const rec = await cost.record(async () => {
     for (const r of [await anna('GET', 'me'), await anna('GET', 'folders'), await anna('GET', 'messages'), await anna('GET', 'messages', null, { tab: 'relevant' }),
       await anna('GET', 'messages', null, { attachments: '1' }), await anna('GET', 'messages', null, { folder: String(archive.id) }), await anna('GET', 'filing')]) {
       assert.equal(r.status, 200, JSON.stringify(r.json));
     }
     await services.handle(host.gc, { name: 'tofile_count', caller: 'gatecontrol-drive', user: { id: ANNA.id }, payload: { userId: ANNA.id } }).catch(() => null);
+  });
+  const ticks = await cost.record(async () => {
     await c.tick();
     await c.tick();
   });
-  const slow = [...worst].filter(([, ms]) => ms >= LIMIT_MS).map(([sql, ms]) => `${Math.round(ms)} ms ${sql}`);
-  assert.deepEqual(slow, [], 'statements of 200 ms or more');
-  const usage = [...worst.keys()].find((k) => k.includes('SUM(b.bytes)'));
+  cheap(rec, 'the screens', INDEXES.screens);
+  cheap(ticks, 'the background runs', INDEXES.background);
+  // the screens: a fixed number of statements, none per mail of a page (four lists of 50 mails)
+  assert.ok(rec.runs <= SCREENS_MAX, `${rec.runs} statements for the screens`);
+  t.diagnostic(`screens: ${rec.runs} statements, ${rec.rows} rows; background: ${ticks.runs} statements; slowest: ${cost.slowest(rec, UNIT).concat(cost.slowest(ticks, UNIT, 1)).join(' | ')}`);
+  const usage = [...rec.statements.keys()].find((k) => k.includes('SUM(b.bytes)'));
   assert.ok(usage, 'the usage ran');
+  assert.match(cost.plan(rec.statements.get(usage).db, usage), /COVERING INDEX bodies_bytes/, 'the usage as the plugin runs it');
 
   // the plans: the indexes of migrations/010_speed.sql, never the rows of bodies
   const db = host.gc.db;
@@ -140,8 +153,8 @@ test(`großes Postfach (${N} Mails, drei Konten): jede Anweisung < ${LIMIT_MS} m
   await db.exec('COMMIT');
   const notizen = require('../server/notizen');
   let items = null;
-  const w2 = await timed(async () => { items = await notizen.collect(host.gc, Date.now()); });
-  assert.deepEqual([...w2].filter(([, ms]) => ms >= LIMIT_MS).map(([sql, ms]) => `${Math.round(ms)} ms ${sql}`), [], 'statements of the items: 200 ms or more');
+  const rec2 = await cost.record(async () => { items = await notizen.collect(host.gc, Date.now()); });
+  cheap(rec2, 'the items', INDEXES.items);
   assert.ok(items.filter((x) => x.id.startsWith('flag:')).length >= 200 && items.some((x) => x.id.startsWith('todo:')));
   assert.match(await plan(db, `SELECT m.id FROM messages m JOIN folders f ON f.id = m.folder_id WHERE m.user_id = ? AND m.flagged = 1 ORDER BY m.date DESC LIMIT ?`, [ANNA.id, 200]), /messages_flagged/);
   assert.match(await plan(db, `SELECT r.message_id FROM ai_results r JOIN messages m ON m.id = r.message_id JOIN folders f ON f.id = m.folder_id

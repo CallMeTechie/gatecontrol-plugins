@@ -15,11 +15,11 @@ const CLIENT = { microsoft: { registration: 'custom', customClientId: '11111111-
 const PKCE = { code: 'CODE-OK', codeVerifier: 'v'.repeat(43), redirectUri: 'msauth://com.gatecontrol.client/abc%3D' };
 const DAY = 86400000;
 
-/** A gate: { wait (a promise), open() }. */
+/** A gate: { wait (a promise), open(), opened }. */
 function gate() {
-  let open;
-  const wait = new Promise((r) => { open = r; });
-  return { wait, open };
+  let done;
+  const g = { wait: new Promise((r) => { done = r; }), opened: false, open: () => { g.opened = true; done(); } };
+  return g;
 }
 
 /** Ask `fn` until it is true (≤ ms). */
@@ -105,10 +105,12 @@ async function microsoft(c) {
 
 const bySubject = async (c, subject) => (await c.list(ANNA)).items.find((m) => m.subject === subject);
 
-async function timed(fn) {
-  const t0 = Date.now();
+/** `fn`'s answer while the gate `g` is still shut: it did not wait behind what the gate holds (it would never come:
+ *  the test opens the gate later). No limit in milliseconds — that depends on how busy the machine is. */
+async function ahead(g, fn) {
   const out = await fn();
-  return { out, ms: Date.now() - t0 };
+  assert.equal(g.opened, false, 'answered while the gate is shut');
+  return { out };
 }
 
 test('Microsoft: the first sync hangs in its delta round — the newest mail is listed, opening it, its attachment and flags answer at once', () => {
@@ -120,17 +122,15 @@ test('Microsoft: the first sync hangs in its delta round — the newest mail is 
     await until(async () => (await c.list(ANNA)).items.length === 3);
     await until(() => w.deltaHeld >= 1);
     const m1 = await bySubject(c, 'Vertrag');
-    const open = await timed(() => c.as(ANNA)('GET', `messages/${m1.id}`));
+    const open = await ahead(w.deltaGate, () => c.as(ANNA)('GET', `messages/${m1.id}`));
     assert.equal(open.out.status, 200, JSON.stringify(open.out.json));
-    assert.ok(open.ms < 1000, `opened in ${open.ms} ms`);
     assert.equal(open.out.json.bodyMissing, false);
     assert.match(open.out.json.html, /Hallo – Vertrag/);
-    const file = await timed(() => c.as(ANNA)('GET', `messages/${m1.id}/attachments/${open.out.json.attachments[0].id}`));
+    const file = await ahead(w.deltaGate, () => c.as(ANNA)('GET', `messages/${m1.id}/attachments/${open.out.json.attachments[0].id}`));
     assert.equal(file.out.status, 200, JSON.stringify(file.out.json));
-    assert.ok(file.ms < 1000 && file.out.json.mediaId);
-    const flags = await timed(() => c.as(ANNA)('POST', 'messages/flags', { ids: [m1.id], unread: false }));
+    assert.ok(file.out.json.mediaId);
+    const flags = await ahead(w.deltaGate, () => c.as(ANNA)('POST', 'messages/flags', { ids: [m1.id], unread: false }));
     assert.equal(flags.out.status, 200);
-    assert.ok(flags.ms < 1000);
     assert.deepEqual(w.patched, [{ id: 'g1', body: { isRead: true } }]);
     assert.equal(w.deltaHeld, 1, 'the delta round still hangs');
     w.deltaGate.open();
@@ -156,20 +156,18 @@ test('IMAP: a sync step hangs — a body and an attachment come on a short sessi
   assert.equal((await c.as(ANNA)('GET', `messages/${third.id}`)).json.text, 'Text drei');
   assert.equal(host.mailSessions.length, before, 'no session more');
   // new mail arrives, its sync step hangs at the server
-  let release;
-  c.mail.hold = new Promise((r) => { release = r; });
+  const hold = gate();
+  c.mail.hold = hold.wait;
   c.mail.deliver('anna@gmx.de', { subject: 'Neu', text: 'neu' });
   await until(() => c.mail.held >= 1);
   const second = await bySubject(c, 'Zweite');
-  const open = await timed(() => c.as(ANNA)('GET', `messages/${second.id}`));
-  assert.ok(open.ms < 1000, `opened in ${open.ms} ms`);
+  const open = await ahead(hold, () => c.as(ANNA)('GET', `messages/${second.id}`));
   assert.equal(open.out.json.bodyMissing, false);
   assert.equal(open.out.json.text, 'Text zwei');
   const withFile = await bySubject(c, 'Mit Anhang');
   const full = (await c.as(ANNA)('GET', `messages/${withFile.id}`)).json;
-  const file = await timed(() => c.as(ANNA)('GET', `messages/${withFile.id}/attachments/${full.attachments[0].id}`));
+  const file = await ahead(hold, () => c.as(ANNA)('GET', `messages/${withFile.id}/attachments/${full.attachments[0].id}`));
   assert.equal(file.out.status, 200, JSON.stringify(file.out.json));
-  assert.ok(file.ms < 1000);
   assert.equal(host.media.get(file.out.json.mediaId).data.toString(), '%PDF-beleg');
   const side = host.mailSessions.slice(before);
   assert.equal(side.length, 3, 'a short session for each');
@@ -178,7 +176,7 @@ test('IMAP: a sync step hangs — a body and an attachment come on a short sessi
   // flags go first in the line: right after the step
   const flags = c.as(ANNA)('POST', 'messages/flags', { ids: [second.id], flagged: true });
   await settle(100);
-  release();
+  hold.open();
   assert.equal((await flags).status, 200);
   c.mail.hold = null;
   await settle(200);
@@ -202,9 +200,8 @@ test('a body that takes long: bodyMissing at once, the live event with the messa
     w.bodyCalls = {};
     const m2 = await bySubject(c, 'Termin');
     w.bodyGate = gate();
-    const first = await timed(() => c.as(ANNA)('GET', `messages/${m2.id}`));
+    const first = await ahead(w.bodyGate, () => c.as(ANNA)('GET', `messages/${m2.id}`));
     assert.equal(first.out.status, 200);
-    assert.ok(first.ms < 1000, `answered in ${first.ms} ms`);
     assert.equal(first.out.json.bodyMissing, true);
     assert.equal(first.out.json.html, null);
     assert.equal(first.out.json.text, 'Vorschau Termin', 'the snippet meanwhile');
@@ -234,8 +231,7 @@ test('a body that takes long: bodyMissing at once, the live event with the messa
     const downloads = w.downloads;
     w.fileGate = gate();
     const path = `messages/${m1.id}/attachments/${full.attachments[0].id}`;
-    const busy = await timed(() => c.as(ANNA)('GET', path));
-    assert.ok(busy.ms < 1000);
+    const busy = await ahead(w.fileGate, () => c.as(ANNA)('GET', path));
     assert.equal(busy.out.status, 409);
     assert.equal(busy.out.json.error.code, 'busy');
     assert.equal(busy.out.json.error.reason, 'loading');

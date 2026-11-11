@@ -1,39 +1,50 @@
 'use strict';
 
-// The page „Erinnerungen“ (1.26.0) with 50 000 photos: every statement of GET memories, GET memories/photos of each
-// kind, GET photos/memories and GET overview < 200 ms (as Mail's test/speed.test.js — the host warns of slow statements);
-// the photos of a collection on their indexes (time taken, place, a person's faces), never every photo. Since 1.28.0 also
-// GET overview on a day without „Heute vor X Jahren“ (its memoryPicks: the collections of GET memories).
+// The page „Erinnerungen“ (1.26.0) with 50 000 photos: the statements of GET memories, GET memories/photos of each
+// kind, GET photos/memories and GET overview stay cheap (the host warns of statements of 200 ms; as Mail's
+// test/speed.test.js) — the photos of a collection on their indexes (time taken, place, a person's faces), never every
+// photo. Since 1.28.0 also GET overview on a day without „Heute vor X Jahren“ (its memoryPicks: the collections of GET
+// memories). No limit in milliseconds, which failed on a busy machine (tools/testing/sql-cost.js): the query plan of
+// every statement that runs (no table of the photos read as a whole), the number of statements and of rows they give
+// back, and each statement's time against a statement of the same run that groups every node without an index.
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const sqlite = require('node:sqlite');
-const { performance } = require('node:perf_hooks');
 const { withHost, ANNA, MARC, T0, DAY } = require('./helpers');
+const cost = require('../../../tools/testing/sql-cost');
 
-const LIMIT_MS = 200;
+// the unit of a statement's cost: every node grouped by its month from the table itself. The costliest statement of
+// the page (the photos per month) is about one unit; three units is a statement gone wrong.
+const UNIT = "SELECT strftime('%Y-%m', COALESCE(taken_at, mtime, created_at) / 1000, 'unixepoch', 'localtime') AS month, COUNT(*) AS n, MAX(name) AS x FROM nodes NOT INDEXED GROUP BY month";
+const FACTOR = 3;
+// read as a whole on purpose
+const WHOLE = [
+  // the folders below the work folder (photos.js: the recursive `tree`): SQLite makes itself an index of the folders
+  // (is_dir = 1) for the run instead of taking nodes_parent — one pass over nodes, a fraction of the statement
+  /^SEARCH nodes USING AUTOMATIC PARTIAL COVERING INDEX \(is_dir=\?\) ← .*WITH RECURSIVE tree\(id\)/,
+];
+// GET memories, twelve pages of collections and four more pages run 270 statements, GET overview 47: one statement per
+// photo of a page (60) or per collection would be far more. The rows: the hours with photos (17 000), never the photos.
+const STATEMENTS_MAX = 330;
+const OVERVIEW_MAX = 60;
+
+// the indexes the statements stand on: one that is gone or no longer taken shows here, also where SQLite then finds
+// its way by another index and sorts
+const INDEXES = {
+  memories: ['nodes_memories', 'nodes_taken', 'nodes_geo_place', 'nodes_parent', 'faces_person', 'faces_user', 'persons_user'],
+  overview: ['nodes_memories', 'nodes_parent', 'faces_user', 'persons_user', 'changes_area', 'recent_opens_at'],
+};
+
+/** Nothing in the recording reads a large table as a whole or costs FACTOR units; the statements go by the indexes `needed`. */
+function cheap(rec, what, needed) {
+  const used = cost.indexes(rec);
+  assert.deepEqual(needed.filter((i) => !used.includes(i)), [], `${what}: indexes no statement goes by any more`);
+  assert.deepEqual(cost.fullReads(rec, { allow: WHOLE }), [], `${what}: a large table read as a whole`);
+  assert.deepEqual(cost.tooSlow(rec, { unit: UNIT, factor: FACTOR }), [], `${what}: statements of ${FACTOR} units or more`);
+}
 const N = 50000;
 const PLACES = 120;
 const PEOPLE = 30;
-
-/** Every statement's longest time while `fn` runs → Map sql → ms. */
-async function timed(fn) {
-  const SP = sqlite.StatementSync.prototype;
-  const orig = { all: SP.all, get: SP.get, run: SP.run };
-  const worst = new Map();
-  for (const name of Object.keys(orig)) {
-    SP[name] = function measured(...a) {
-      const t = performance.now();
-      try { return orig[name].apply(this, a); } finally {
-        const ms = performance.now() - t;
-        const k = String(this.sourceSQL).replace(/\s+/g, ' ').slice(0, 240);
-        worst.set(k, Math.max(worst.get(k) || 0, ms));
-      }
-    };
-  }
-  try { await fn(); } finally { Object.assign(SP, orig); }
-  return worst;
-}
 
 const plan = async (db, sql, params) => (await db.query(`EXPLAIN QUERY PLAN ${sql}`, params || [])).rows.map((r) => r.detail).join(' / ');
 
@@ -94,15 +105,12 @@ async function manyPhotos(host, c) {
   return { a, persons, folders };
 }
 
-test(`Erinnerungen with ${N} photos: every statement < ${LIMIT_MS} ms, the photos of a collection on their indexes`, { timeout: 240000 }, async (t) => {
+test(`Erinnerungen with ${N} photos: no statement reads the photos as a whole, the photos of a collection on their indexes`, { timeout: 240000 }, async (t) => {
   await withHost({}, async (host, c) => {
     const { a, persons } = await manyPhotos(host, c);
     let list = null;
-    const total = [];
-    const worst = await timed(async () => {
-      const t0 = performance.now();
+    const rec = await cost.record(async () => {
       const r = await a('GET', 'memories');
-      total.push(performance.now() - t0);
       assert.equal(r.status, 200, JSON.stringify(r.json));
       list = r.json;
       const kinds = new Set(list.collections.map((x) => x.kind));
@@ -121,10 +129,10 @@ test(`Erinnerungen with ${N} photos: every statement < ${LIMIT_MS} ms, the photo
       assert.equal((await a('GET', 'photos/months')).status, 200);
       assert.equal((await a('GET', 'overview')).status, 200);
     });
-    const slow = [...worst].filter(([, ms]) => ms >= LIMIT_MS).map(([sql, ms]) => `${Math.round(ms)} ms ${sql}`);
-    assert.deepEqual(slow, [], 'statements of 200 ms or more');
-    const top = [...worst].sort((x, y) => y[1] - x[1]).slice(0, 3).map(([sql, ms]) => `${ms.toFixed(1)} ms ${sql.slice(0, 90)}`);
-    t.diagnostic(`GET memories ${total[0].toFixed(0)} ms, ${list.collections.length} collections; slowest: ${top.join(' | ')}`);
+    cheap(rec, 'Erinnerungen', INDEXES.memories);
+    assert.ok(rec.runs <= STATEMENTS_MAX, `${rec.runs} statements`);
+    assert.ok(rec.rows < N, `${rec.rows} rows given back`);
+    t.diagnostic(`${rec.runs} statements, ${rec.rows} rows, ${list.collections.length} collections; slowest: ${cost.slowest(rec, UNIT).join(' | ')}`);
     // limits: at most 30 trips, 20 people, 20 places
     assert.ok(list.collections.filter((x) => x.kind === 'trip').length <= 30);
     assert.ok(list.collections.filter((x) => x.kind === 'person').length <= 20);
@@ -150,26 +158,24 @@ test(`Erinnerungen with ${N} photos: every statement < ${LIMIT_MS} ms, the photo
     assert.equal((await c.as(MARC)('GET', 'memories')).status, 200);
 
     // 1.28.0: a day without „Heute vor X Jahren“ (this day ± 1 day of every earlier year in the trash) — the overview's
-    // memoryPicks, a second pass over the photos: every statement < LIMIT_MS too
+    // memoryPicks, a second pass over the photos: as cheap
     const today = new Date(T0);
     const [y, m, d] = [today.getFullYear(), today.getMonth(), today.getDate()];
     for (let k = 1; k <= 13; k++) {
       await db.run(`UPDATE nodes SET deleted_at = ? WHERE is_dir = 0 AND ${T} >= ? AND ${T} < ?`, [T0, new Date(y - k, m, d - 1).getTime(), new Date(y - k, m, d + 2).getTime()]);
     }
     let ov = null;
-    const took = [];
-    const worstPicks = await timed(async () => {
-      const t0 = performance.now();
+    const picks = await cost.record(async () => {
       const r = await a('GET', 'overview');
-      took.push(performance.now() - t0);
       assert.equal(r.status, 200, JSON.stringify(r.json));
       ov = r.json;
     });
     assert.equal(ov.memories, undefined, 'no day left');
     assert.deepEqual(ov.memoryPicks.map((x) => x.kind), ['trip', 'person', 'month', 'year']);
     assert.ok(ov.memoryPicks.every((x) => x.cover && x.cover.id), 'the covers');
-    const slowPicks = [...worstPicks].filter(([, ms]) => ms >= LIMIT_MS).map(([sql, ms]) => `${Math.round(ms)} ms ${sql}`);
-    assert.deepEqual(slowPicks, [], 'statements of 200 ms or more (overview with memoryPicks)');
-    t.diagnostic(`GET overview with memoryPicks ${took[0].toFixed(0)} ms`);
+    cheap(picks, 'overview with memoryPicks', INDEXES.overview);
+    assert.ok(picks.runs <= OVERVIEW_MAX, `${picks.runs} statements (overview with memoryPicks)`);
+    assert.ok(picks.rows < N, `${picks.rows} rows given back`);
+    t.diagnostic(`GET overview with memoryPicks: ${picks.runs} statements, ${picks.rows} rows; slowest: ${cost.slowest(picks, UNIT, 1)[0]}`);
   });
 });

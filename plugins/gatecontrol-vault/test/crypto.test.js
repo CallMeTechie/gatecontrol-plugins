@@ -198,10 +198,16 @@ test('Argon2id yields to the page with a macrotask (the bundle\'s patch); more t
   done = true;
   assert.ok(ticks >= 3, `timers ran meanwhile (${ticks})`);
   assert.equal(VC.MAX_M_BROWSER, 262144);
-  const t0 = Date.now();
-  await assert.rejects(VC.masterKey('pw', { ...KDF(), m: 262145 }), code('kdf_too_large'));
-  await assert.rejects(VC.unlock({ ...V.account.body, kdf: { ...V.account.body.kdf, m: 1048576 } }, 'x'), code('kdf_too_large'), 'a server cannot make the tab allocate 1 GiB');
-  assert.ok(Date.now() - t0 < 500, 'refused before any work');
+  // refused before any work: Argon2id never reports progress (counted, not timed — a limit in milliseconds depends on
+  // how busy the machine is)
+  let progress = 0;
+  const onProgress = () => { progress++; };
+  await VC.masterKey('pw', KDF(), { onProgress });
+  assert.ok(progress > 0, 'a run reports progress');
+  progress = 0;
+  await assert.rejects(VC.masterKey('pw', { ...KDF(), m: 262145 }, { onProgress }), code('kdf_too_large'));
+  await assert.rejects(VC.unlock({ ...V.account.body, kdf: { ...V.account.body.kdf, m: 1048576 } }, 'x', { onProgress }), code('kdf_too_large'), 'a server cannot make the tab allocate 1 GiB');
+  assert.equal(progress, 0, 'refused before any work');
   const noble = require('node:fs').readFileSync(require('node:path').join(__dirname, '..', 'ui', 'vendor', 'noble.js'), 'utf8');
   assert.match(noble, /MessageChannel/);
   assert.match(noble, /Patched: argon2idAsync yields with a macrotask/);
