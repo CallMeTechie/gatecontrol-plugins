@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.1.1
+
+Braucht GateControl **1.268.0** – dort ist die Pi-hole-Anbindung entfernt (`status().pihole` meldet immer „nicht
+eingerichtet“, `releasePihole()` tut nichts). Auf älteren Servern bleibt 1.1.0 mit dem Umzugsdialog.
+
+* **Umzug von Pi-hole entfernt**: Der Dialog „DNS-Schutz einrichten“ kennt nur noch den Weg „neu einrichten“
+  (Willkommen, Listen, Einschalten, Fertig). Entfallen sind der Hinweis „Pi-hole-DNS-Kette aktiv“ mit Adresse und
+  Gateway, die Liste „Standardliste von Pi-hole“ als Vorauswahl, das Feld „Ausnahmen aus Pi-hole einfügen“ und die
+  Pi-hole-Texte beim Umschalten und am Ende.
+* `POST admin/setup/start` nimmt nur noch `lists` (`allow` wird ignoriert); `POST admin/setup/finish` ruft
+  `releasePihole()` nicht mehr auf und antwortet ohne `pihole`.
+* „Schutz ausschalten“ (Einstellungen): Der Hinweis nennt nur noch die normalen DNS-Server.
+* Handbuch: Abschnitt „Umzug von Pi-hole“ durch einen Hinweis ersetzt.
+* Mock-Host: `gc.vpnDns` wie Server 1.268.0 – kein Pi-hole mehr, `releasePihole()` als Leerfunktion.
+
 ## 1.1.0
 
 Braucht GateControl **1.267.0** (`gc.vpnDns.version` 4).

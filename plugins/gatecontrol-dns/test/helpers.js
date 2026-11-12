@@ -1,6 +1,6 @@
 'use strict';
 
-// Test helpers: the mock host (tools/testing/mock-host.js, GateControl 1.267.0 with gc.vpnDns —
+// Test helpers: the mock host (tools/testing/mock-host.js, GateControl 1.268.0 with gc.vpnDns —
 // tools/testing/mock-vpn-dns.js) with people, the family as GateControl's group (Marc and Sabine are parents, Lea
 // and Tim children), their VPN devices and a gateway.
 //
@@ -57,7 +57,7 @@ function settings(extra = {}) {
 
 async function setup(o = {}) {
   const host = await createHost(DIR, {
-    gatecontrol: '1.267.0',
+    gatecontrol: '1.268.0',
     users: USERS,
     groups: o.groups || [FAMILY, BUERO],
     vpnDns: { peers: peers(), settings: o.settings === undefined ? settings() : o.settings, today: { queries: 18432, blocked: 3127, cached: 5210, top: [{ domain: 'doubleclick.net', count: 412 }, { domain: 'googlesyndication.com', count: 388 }] }, ...(o.vpnDns || {}) },

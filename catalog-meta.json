@@ -3348,8 +3348,6 @@
         "ads",
         "adblock",
         "tracker",
-        "pihole",
-        "pi-hole",
         "filter",
         "jugendschutz",
         "malware",
@@ -3424,17 +3422,6 @@
           "text": {
             "de": "Profile gelten zu Hause und unterwegs, „Internet pausieren“ wirkt auch im VPN, Option „Fremden DNS und DoT sperren“",
             "en": "Profiles hold at home and on the road, “Pause internet” also works through the VPN, option “Block foreign DNS and DoT”"
-          }
-        },
-        {
-          "icon": "link",
-          "title": {
-            "de": "Umzug von Pi-hole",
-            "en": "Moving from Pi-hole"
-          },
-          "text": {
-            "de": "Ein Dialog in vier Schritten; Pi-hole filtert weiter, bis der DNS-Schutz wirklich antwortet",
-            "en": "A dialog in four steps; Pi-hole keeps filtering until the DNS protection really answers"
           }
         },
         {

@@ -1,7 +1,7 @@
 'use strict';
 
 // What 1.1.0 adds (GateControl ≥ 1.267.0, gc.vpnDns.version 4): "Fremden DNS und DoT sperren", the entry that hit and
-// for whom an own entry holds ("Domain prüfen", the query log), where Pi-hole is reached (the move), profiles shared
+// for whom an own entry holds ("Domain prüfen", the query log), profiles shared
 // with a home network, "Internet pausieren" of the family plugin on the VPN devices, the picked duration of a
 // suspension, the suspension per person, the notice "Filter ausgefallen" for users.
 
@@ -86,20 +86,6 @@ describe('"Domain prüfen" and the query log: the entry that hit, for whom it ho
     const all = await s.admin('GET', 'all');
     assert.deepEqual(all.status.today.blockedBy, { list: 20, denyAll: 4, denyProfile: 3, schedule: 2, pause: 1, other: 0 });
     assert.deepEqual((await s.admin('GET', 'live')).today.blockedBy, all.status.today.blockedBy);
-  });
-});
-
-describe('the move from Pi-hole: where Pi-hole is reached', () => {
-  let s;
-  afterEach(async () => { if (s) await s.host.close(); s = null; });
-
-  it('status().pihole.targets is passed on, also after Pi-hole gave up the chain', async () => {
-    const targets = [{ name: 'pi', ip: '192.168.178.5', port: 53, gateway: { peerId: P.gateway, name: 'Pi Keller', via: 'lan' } }, { name: null, ip: '10.8.0.2', port: 5353, gateway: { peerId: P.gateway, name: 'Pi Keller', via: 'tunnel' } }];
-    s = await setup({ settings: null, vpnDns: { pihole: { configured: true, wantsChain: true, targets } } });
-    assert.deepEqual((await s.admin('GET', 'all')).status.pihole.targets, targets);
-    await s.admin('POST', 'setup/start', { lists: ['ads'] });
-    const r = await s.admin('POST', 'setup/finish');
-    assert.deepEqual([r.pihole.wantsChain, r.pihole.targets], [false, targets]);
   });
 });
 

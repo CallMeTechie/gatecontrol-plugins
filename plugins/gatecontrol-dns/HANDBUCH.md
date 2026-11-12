@@ -1,4 +1,4 @@
-<!-- version: 1.1.0 -->
+<!-- version: 1.1.1 -->
 # DNS-Schutz
 
 ## Was das Plugin kann
@@ -15,7 +15,7 @@
 
 ## Voraussetzungen
 
-- GateControl **1.267.0** oder neuer.
+- GateControl **1.268.0** oder neuer.
 - Das interne DNS von GateControl ist eingeschaltet (das ist die Voreinstellung).
 - Eine Lizenz für das Plugin. Ohne Lizenz oder wenn das Plugin ausgeschaltet wird, filtert der Server nicht; die Einstellungen bleiben erhalten.
 - Für „Eltern unterbrechen für ihre Kinder“ und „Internet pausieren“: das Plugin **Familie** (ab 1.15.0). Es legt die Familie als Gruppe in GateControl an.
@@ -33,18 +33,7 @@
 
 Mit **„Später“** schließt du den Dialog. Du findest ihn wieder über „Einrichten“ in der Übersicht.
 
-### Umzug von Pi-hole {#umzug-von-pi-hole}
-
-Nutzt du bisher die Pi-hole-Anbindung von GateControl mit „DNS-Kette verwalten“, erkennt der Dialog das. Es kann nur einer filtern: Pi-hole oder der DNS-Schutz.
-
-1. **Erkannt:** Der Dialog nennt, was sich ändert und wo Pi-hole eingetragen ist (Adresse, Gateway). Bis zum Schritt „Umschalten“ filtert Pi-hole weiter.
-2. **Listen:** Die Listen von Pi-hole lassen sich nicht auslesen. Vorgeschlagen ist, was Pi-hole ab Werk sperrt. Deine Ausnahmen kopierst du in Pi-hole unter „Domains“ → „Allowlist“ und fügst sie ein (eine Domain je Zeile).
-3. **Umschalten:** Erst wenn der Filter wirklich antwortet, gibt Pi-hole die DNS-Kette ab. Schlägt ein Schritt fehl, bleibt Pi-hole aktiv und der Dialog nennt den Grund.
-4. **Fertig:** Pi-hole wird für die VPN-Geräte nicht mehr gebraucht. Du kannst es ausschalten oder für das Heimnetz weiterlaufen lassen.
-
-Zurück zu Pi-hole: Reiter „Einstellungen“ › **„Schutz ausschalten“**, danach in den Pi-hole-Einstellungen von GateControl „DNS-Kette verwalten“ wieder einschalten.
-
-> **Hinweis:** Die Pi-hole-Anbindung in GateControl ist abgekündigt und entfällt in einer späteren Version.
+> **Hinweis:** Die Pi-hole-Anbindung von GateControl gibt es seit Server 1.268.0 nicht mehr. Wer weiter ein eigenes Pi-hole betreibt, tut das unabhängig von GateControl.
 
 ## Benutzen
 
@@ -187,6 +176,11 @@ Auf dem Gerät ist ein fester Anbieter als „Privates DNS“ eingetragen. Stell
 
 **„Im Heimnetz gibt es schon ein Profil mit diesem Namen“.**
 Verbinde mit dem vorhandenen Heimnetz-Profil, statt es neu anzulegen – oder gib dem Profil erst einen anderen Namen.
+
+## Neu in 1.1.1
+
+- **Der Umzug von Pi-hole ist entfernt.** Die Pi-hole-Anbindung von GateControl gibt es seit Server 1.268.0 nicht mehr; der Dialog „DNS-Schutz einrichten“ kennt nur noch den Weg „neu einrichten“.
+- Braucht GateControl 1.268.0.
 
 ## Neu in 1.1.0
 

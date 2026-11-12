@@ -1,7 +1,7 @@
 # gatecontrol-dns — DNS-Schutz
 
 Die Verwaltung des DNS-Schutzes von GateControl für die VPN-Geräte (`permissions.vpnDns`, `gc.vpnDns`; GateControl
-≥ 1.267.0 – `gc.vpnDns.version` 4, docs/plugins.md „DNS protection“). GateControl filtert selbst (ein Filter-Dienst hinter dem DNS des VPN);
+≥ 1.268.0 – `gc.vpnDns.version` 4, docs/plugins.md „DNS protection“). GateControl filtert selbst (ein Filter-Dienst hinter dem DNS des VPN);
 das Plugin legt fest, was für wen gesperrt wird, unterbricht den Schutz und liest Zähler.
 
 ```
@@ -138,11 +138,11 @@ next }` – `next` als `before` der nächsten Seite. `scope` (seit 1.1.0): bei e
 | 409 | `not_filtering` | der Filter ist ausgefallen (Rückfall) – es gibt nichts zu unterbrechen |
 | 409 | `no_device` | die Person hat kein VPN-Gerät |
 | 409 | `log_off` | das Abfrageprotokoll ist aus |
-| 501 | `unsupported` | der Server hat `gc.vpnDns` nicht (GateControl < 1.264.0; das Plugin 1.1.0 braucht 1.267.0) |
+| 501 | `unsupported` | der Server hat `gc.vpnDns` nicht (GateControl < 1.264.0; das Plugin 1.1.1 braucht 1.268.0, 1.1.0 braucht 1.267.0) |
 | 503 | `unavailable` | der Filter-Dienst antwortet nicht |
 
 ## Tests
 
 `npm test -- gatecontrol-dns` – gegen den Mock-Host (`tools/testing/mock-vpn-dns.js` bildet `gc.vpnDns` nach, mit
 den festen Regeln und Prüfungen des Kerns): die Berechtigungsmatrix des Unterbrechens, die App- und Portal-API, die
-Einstellungsseite, der Umzug von Pi-hole, die Mitteilungen, Texte und Seiten.
+Einstellungsseite, der Einrichtungsdialog, die Mitteilungen, Texte und Seiten.

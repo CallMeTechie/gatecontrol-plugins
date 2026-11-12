@@ -1,5 +1,5 @@
 /* The settings page "DNS-Schutz": the tabs Übersicht, Listen & Ausnahmen, Profile, Geräte, Protokoll, Einstellungen
-   and the set-up dialog (also the move from Pi-hole). Everything comes from admin/all, what changes by itself from
+   and the set-up dialog. Everything comes from admin/all, what changes by itself from
    admin/live every 10 s. */
 (function () {
   'use strict';
@@ -736,53 +736,37 @@
     p.appendChild(el('div', { class: 'dn-savebar' }, [btn(T('common.discard'), 'btn-ghost', function () { ui.form = null; renderSettings(); }), save]));
   }
 
-  // ─── Einrichten / Umzug von Pi-hole ───
+  // ─── Einrichten ───
 
-  /** Where the VPN devices reach Pi-hole today (status().pihole.targets): one sentence per instance. */
-  function piholeWhere() {
-    return ((S.status.pihole && S.status.pihole.targets) || []).map(function (x) {
-      var addr = x.ip + (x.port && x.port !== 53 ? ':' + x.port : '');
-      var name = x.name ? ' ' + quoted(x.name) : '';
-      if (x.gateway && x.gateway.via === 'tunnel') return T('wz.pihole_on_gateway', { name: name, gateway: x.gateway.name, addr: addr });
-      if (x.gateway) return T('wz.pihole_via_gateway', { name: name, gateway: x.gateway.name, addr: addr });
-      return T('wz.pihole_at', { name: name, addr: addr });
-    });
-  }
   function openWizard(resume) {
     if (ui.wizard) return;
     ui.wizard = true;
-    var pihole = !!(S.status.pihole && S.status.pihole.wantsChain);
     var step = resume ? 3 : 1;
-    var lists = S.settings.enabled || S.config.setupDone ? S.settings.profiles[0].lists.slice() : S.catalog.lists.filter(function (l) { return l.defaultOn || (pihole && l.id === 'ads_stevenblack'); }).map(function (l) { return l.id; });
-    var allowText = '';
+    var lists = S.settings.enabled || S.config.setupDone ? S.settings.profiles[0].lists.slice() : S.catalog.lists.filter(function (l) { return l.defaultOn; }).map(function (l) { return l.id; });
     var timer = null;
     var started = Date.now();
     var failed = null;
     var failedText = null;
     var done = null;
     var m = D.modal({ title: T('wz.title'), body: [], foot: [], onClose: function () { ui.wizard = false; clearTimeout(timer); if (step < 3 && !S.config.setupDone) D.api('POST', 'admin/setup/later').then(merge).catch(function () {}); reload().catch(function () {}); } });
-    var names = [T(pihole ? 'wz.s1' : 'wz.s1_new'), T('wz.s2'), T(pihole ? 'wz.s3' : 'wz.s3_new'), T('wz.s4')];
+    var names = [T('wz.s1_new'), T('wz.s2'), T('wz.s3_new'), T('wz.s4')];
     function steps() { return el('div', { class: 'steps' }, names.map(function (n, i) { return el('span', { class: i + 1 === step ? 'on' : (i + 1 < step ? 'done' : ''), text: (i + 1) + ' ' + n }); })); }
     function check(cls, title, sub) { return el('li', { class: cls }, [el('span', { class: 'ic' }, [icon(cls === 'fail' ? 'x' : 'check', 's12')]), el('div', {}, [title, sub ? el('small', { text: sub }) : null])]); }
     function set(body, foot) { D.clear(m.body); body.forEach(function (x) { if (x) m.body.appendChild(x); }); D.clear(m.foot); foot.forEach(function (x) { if (x) m.foot.appendChild(x); }); }
     function draw() {
       if (step === 1) {
         set([steps(),
-          pihole ? D.banner('warn', 'info', T('wz.pihole_title'), [T('wz.pihole_text')].concat(piholeWhere()).join(' ')) : D.banner('info', 'shield', T('wz.welcome_title'), T('wz.welcome_text')),
-          el('ul', { class: 'checks' }, [check('', T('wz.c1'), T('wz.c1_sub')), check('', T('wz.c2'), T('wz.c2_sub')), check('', T(pihole ? 'wz.c3' : 'wz.c3_new'), T(pihole ? 'wz.c3_sub' : 'wz.c3_new_sub'))]),
-        ], [btn(T('wz.later'), 'btn-ghost', function () { m.close(); }), btn(T(pihole ? 'wz.replace' : 'wz.next'), 'btn-primary', function () { step = 2; draw(); })]);
+          D.banner('info', 'shield', T('wz.welcome_title'), T('wz.welcome_text')),
+          el('ul', { class: 'checks' }, [check('', T('wz.c1'), T('wz.c1_sub')), check('', T('wz.c2'), T('wz.c2_sub')), check('', T('wz.c3_new'), T('wz.c3_new_sub'))]),
+        ], [btn(T('wz.later'), 'btn-ghost', function () { m.close(); }), btn(T('wz.next'), 'btn-primary', function () { step = 2; draw(); })]);
       } else if (step === 2) {
-        var area = el('textarea', { class: 'inp mono', id: 'dn-wz-allow', rows: '4', spellcheck: 'false', on: { input: function () { allowText = area.value; count.textContent = T('wz.allow_count', { n: splitDomains(allowText).length }); } } });
-        area.value = allowText;
-        var count = el('span', { class: 's-hint', text: T('wz.allow_count', { n: splitDomains(allowText).length }) });
-        set([steps(), hint(T(pihole ? 'wz.lists_hint' : 'wz.lists_hint_new')),
+        set([steps(), hint(T('wz.lists_hint_new')),
           el('div', { class: 'fg' }, S.catalog.lists.map(function (l) {
             return el('label', { class: 'chk' }, [el('input', { type: 'checkbox', checked: lists.indexOf(l.id) >= 0, on: { change: function (ev) { lists = lists.filter(function (x) { return x !== l.id; }); if (ev.target.checked) lists.push(l.id); } } }),
-              el('span', { text: D.listName(l.id) }), el('small', { text: T('li.about') + ' ' + D.num(l.entries) + (pihole && l.id === 'ads_stevenblack' ? ' · ' + T('wz.pihole_default') : '') })]);
+              el('span', { text: D.listName(l.id) }), el('small', { text: T('li.about') + ' ' + D.num(l.entries) })]);
           })),
-          pihole ? el('div', { class: 'fg' }, [el('label', { for: 'dn-wz-allow', text: T('wz.allow_label') }), area, el('span', { class: 's-hint', text: T('wz.allow_hint') }), count]) : null,
         ], [btn(T('wz.back'), 'btn-ghost', function () { step = 1; draw(); }), el('span', { class: 'g' }), btn(T('wz.next'), 'btn-primary', function (ev) {
-          busy(ev.currentTarget, D.api('POST', 'admin/setup/start', { lists: lists, allow: splitDomains(allowText) }).then(function (r) { merge(r); step = 3; started = Date.now(); failed = null; failedText = null; done = null; draw(); poll(); return refresh(); }));
+          busy(ev.currentTarget, D.api('POST', 'admin/setup/start', { lists: lists }).then(function (r) { merge(r); step = 3; started = Date.now(); failed = null; failedText = null; done = null; draw(); poll(); return refresh(); }));
         })]);
       } else if (step === 3) {
         var st = (done && done.status) || S.status;
@@ -794,10 +778,10 @@
         var word = function (x) { return T(x.action === 'block' ? 'wz.word_blocked' : 'wz.word_allowed'); };
         var c1 = check(ready ? '' : (failed ? 'fail' : 'wait'), T('wz.k_lists'), ready ? T('wz.k_lists_sub', { n: D.num(loaded.reduce(function (n, l) { return n + l.entries; }, 0)), lists: loaded.length, size: D.bytes(ls.memoryBytes) }) : null);
         var c2 = check(probe ? '' : (ready && !failed ? 'wait' : (failed ? 'fail' : 'todo')), T('wz.k_answers'), probe ? T('wz.k_answers_sub', { a: probe.block.domain, aw: word(probe.block), b: probe.allow.domain, bw: word(probe.allow), ms: probe.ms }) : null);
-        var c3 = check(filtering ? '' : (failed ? 'fail' : (ready ? 'wait' : 'todo')), T(pihole ? 'wz.k_switch' : 'wz.k_switch_new'), T(pihole ? 'wz.k_switch_sub' : 'wz.k_switch_new_sub'));
+        var c3 = check(filtering ? '' : (failed ? 'fail' : (ready ? 'wait' : 'todo')), T('wz.k_switch_new'), T('wz.k_switch_new_sub'));
         var c4 = check(filtering && probe ? 'wait' : 'todo', T('wz.k_verify'));
         set([steps(), el('ul', { class: 'checks' }, [c1, c2, c3, c4]),
-          failed ? D.banner('crit', 'warn', T('wz.failed_title'), failedText || T(pihole ? 'wz.failed_' + failed + '_pihole' : 'wz.failed_' + failed), null, 'alert') : hint(T(pihole ? 'wz.switch_hint' : 'wz.switch_hint_new'))],
+          failed ? D.banner('crit', 'warn', T('wz.failed_title'), failedText || T('wz.failed_' + failed), null, 'alert') : hint(T('wz.switch_hint_new'))],
         [failed ? btn(T('wz.back'), 'btn-ghost', function (ev) { busy(ev.currentTarget, D.api('POST', 'admin/setup/cancel').then(function (r) { merge(r); step = 2; draw(); })); }) : el('button', { type: 'button', class: 'btn btn-ghost', disabled: true, text: T('wz.back') }),
           el('span', { class: 'g' }),
           failed ? btn(T('wz.retry'), 'btn-primary', function () { failed = null; failedText = null; started = Date.now(); draw(); poll(); }) : el('button', { type: 'button', class: 'btn btn-primary', disabled: true, text: T('wz.switching') })]);
@@ -805,8 +789,7 @@
         var s4 = S.status;
         set([steps(),
           el('div', { class: 'bigok' }, [el('span', { class: 'ring' }, [icon('shield', 's22')]), el('div', {}, [el('b', { text: T('wz.done_title') }), el('span', { text: T('wz.done_sub', { devices: s4.peers.filtered, lists: s4.lists.length, time: D.clock(s4.since) }) })])]),
-          pihole ? D.banner('', 'info', T('wz.done_pihole_title'), T('wz.done_pihole_text')) : null,
-          hint(T(pihole ? 'wz.done_back_pihole' : 'wz.done_back')),
+          hint(T('wz.done_back')),
         ], [btn(T('wz.profiles'), '', function () { m.close(); show('profiles'); }), el('span', { class: 'g' }), btn(T('wz.overview'), 'btn-primary', function () { m.close(); show('overview'); })]);
       }
     }
@@ -859,7 +842,7 @@
   D.api('GET', 'admin/all').then(function (r) {
     S = r;
     render();
-    // the first visit: the set-up dialog (also the move from Pi-hole)
+    // the first visit: the set-up dialog
     // (switched on but never finished — the page was closed while switching over: carry on with the checks)
     if (!S.config.setupDone && !S.status.blockedBy) openWizard(S.settings.enabled);
   }).catch(function (e) {

@@ -1,4 +1,4 @@
-<!-- version: 1.1.0 -->
+<!-- version: 1.1.1 -->
 # DNS Protection
 
 ## What the plugin does
@@ -15,7 +15,7 @@
 
 ## Requirements
 
-- GateControl **1.267.0** or later.
+- GateControl **1.268.0** or later.
 - GateControl’s internal DNS is switched on (that is the default).
 - A licence for the plugin. Without a licence, or when the plugin is switched off, the server does not filter; the settings are kept.
 - For “parents suspend for their children” and “Pause internet”: the plugin **Familie** (1.15.0 or later). It creates the family as a group in GateControl.
@@ -33,18 +33,7 @@
 
 **“Later”** closes the dialog. You find it again with “Set up” in the overview.
 
-### Moving from Pi-hole {#umzug-von-pi-hole}
-
-If you have used GateControl’s Pi-hole integration with “Manage the DNS chain”, the dialog notices it. Only one can filter: Pi-hole or the DNS protection.
-
-1. **Found:** the dialog says what changes and where Pi-hole is set up (address, gateway). Pi-hole keeps filtering until the step “Switch over”.
-2. **Lists:** Pi-hole’s lists cannot be read. What Pi-hole blocks out of the box is suggested. Copy your exceptions in Pi-hole under “Domains” → “Allowlist” and paste them (one domain per line).
-3. **Switch over:** Pi-hole gives up the DNS chain only once the filter really answers. If a step fails, Pi-hole stays active and the dialog names the reason.
-4. **Done:** Pi-hole is no longer needed for the VPN devices. Switch it off or keep it running for the home network.
-
-Back to Pi-hole: tab “Settings” › **“Switch the protection off”**, then switch “Manage the DNS chain” back on in GateControl’s Pi-hole settings.
-
-> **Note:** GateControl’s Pi-hole integration is deprecated and will be removed in a later version.
+> **Note:** GateControl’s Pi-hole integration no longer exists since server 1.268.0. If you keep running a Pi-hole of your own, you do so independently of GateControl.
 
 ## Using it
 
@@ -187,6 +176,11 @@ The device has a fixed provider as “Private DNS”. Set “Private DNS” to �
 
 **“The home network already has a profile with this name”.**
 Link to the existing home profile instead of creating it – or give the profile another name first.
+
+## New in 1.1.1
+
+- **Moving from Pi-hole is removed.** GateControl’s Pi-hole integration no longer exists since server 1.268.0; the dialog “Set up the DNS protection” only knows the way “set up anew”.
+- Needs GateControl 1.268.0.
 
 ## New in 1.1.0
 

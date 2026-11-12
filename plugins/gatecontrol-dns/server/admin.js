@@ -1,7 +1,7 @@
 'use strict';
 
 // The settings page (admin/*): overview, lists and own entries, profiles, devices, the query log, the settings and
-// the set-up dialog (also the move from Pi-hole). Only an administrator in GateControl's admin UI gets here
+// the set-up dialog. Only an administrator in GateControl's admin UI gets here
 // (server/index.js); GateControl checks the administrator again for every change (the actor of gc.vpnDns).
 //
 //   GET  admin/all                       everything the page shows
@@ -17,7 +17,7 @@
 //   POST admin/test   { domain, peerId? | profileId? }                        "Domain prüfen"
 //   POST admin/entries { list: 'allow' | 'deny', domains: [], profileId?, remove? }
 //   POST admin/lists/refresh · POST admin/restart · GET admin/log · POST admin/log/clear
-//   POST admin/setup/start { lists, allow } · GET admin/setup/state · POST admin/setup/finish | later | cancel
+//   POST admin/setup/start { lists } · GET admin/setup/state · POST admin/setup/finish | later | cancel
 
 const config = require('./config');
 const rights = require('./rights');
@@ -189,17 +189,15 @@ async function adminLog(gc, query) {
   return { entries: ((r && r.entries) || []).map((e) => api.logEntry(e, devices, nm)), next: (r && r.next) || null };
 }
 
-// ─── Set-up and the move from Pi-hole ───
+// ─── Set-up ───
 
 async function setupStart(gc, user, body) {
   const b = body && typeof body === 'object' ? body : {};
   if (!Array.isArray(b.lists)) throw fail('invalid', { detail: 'lists' });
   const before = await host(() => v(gc).get());
-  const allow = Array.isArray(b.allow) ? b.allow.map((x) => clip(String(x), 260).toLowerCase()).filter(Boolean) : [];
   const patch = {
     profiles: before.profiles.map((p, i) => (i === 0 ? { id: 'default', lists: b.lists } : { id: p.id })),
     enabled: true,
-    ...(allow.length ? { allow: [...new Set([...before.allow, ...allow])] } : {}),
   };
   return { settings: await host(() => v(gc).set(patch, actor(user))) };
 }
@@ -225,11 +223,8 @@ async function setupState(gc) {
   return { status, lists, probe };
 }
 
-async function setupFinish(gc, user) {
-  const st = await host(() => v(gc).status());
-  let pihole = st.pihole;
-  if (st.pihole && st.pihole.wantsChain) pihole = await host(() => v(gc).releasePihole(actor(user)));
-  return { pihole, config: await config.save(gc, { setupDone: true }), status: await host(() => v(gc).status()) };
+async function setupFinish(gc) {
+  return { config: await config.save(gc, { setupDone: true }), status: await host(() => v(gc).status()) };
 }
 
 async function route(req, gc, seg) {
@@ -268,7 +263,7 @@ async function route(req, gc, seg) {
   if (what === 'setup') {
     if (m === 'POST' && n === 3 && seg[2] === 'start') return setupStart(gc, user, b);
     if (m === 'GET' && n === 3 && seg[2] === 'state') return setupState(gc);
-    if (m === 'POST' && n === 3 && seg[2] === 'finish') return setupFinish(gc, user);
+    if (m === 'POST' && n === 3 && seg[2] === 'finish') return setupFinish(gc);
     if (m === 'POST' && n === 3 && seg[2] === 'later') return { config: await config.save(gc, { setupDone: true }) };
     if (m === 'POST' && n === 3 && seg[2] === 'cancel') return { settings: await host(() => v(gc).set({ enabled: false }, actor(user))) };
   }
