@@ -3333,6 +3333,208 @@
         "de",
         "en"
       ]
+    },
+    "gatecontrol-dns": {
+      "category": "infrastructure",
+      "icon": "server",
+      "summary": {
+        "de": "Werbung, Tracker und Schadseiten für alle VPN-Geräte sperren – direkt auf dem Server, mit Profilen je Person und Unterbrechen in der App.",
+        "en": "Block ads, trackers and malicious sites for all VPN devices – on the server itself, with profiles per person and suspending in the app."
+      },
+      "audience": "all",
+      "keywords": [
+        "dns",
+        "werbung",
+        "ads",
+        "adblock",
+        "tracker",
+        "pihole",
+        "pi-hole",
+        "filter",
+        "jugendschutz",
+        "malware",
+        "vpn",
+        "blocklist"
+      ],
+      "related": [
+        "gatecontrol-familie"
+      ],
+      "adds": [
+        {
+          "icon": "page",
+          "title": {
+            "de": "Einstellungsseite mit sechs Reitern",
+            "en": "Settings page with six tabs"
+          },
+          "text": {
+            "de": "Übersicht, Listen & Ausnahmen, Profile, Geräte, Protokoll, Einstellungen",
+            "en": "Overview, lists & exceptions, profiles, devices, log, settings"
+          }
+        },
+        {
+          "icon": "shield",
+          "title": {
+            "de": "Listen und eigene Einträge",
+            "en": "Lists and own entries"
+          },
+          "text": {
+            "de": "Werbung, Schadsoftware, Inhalte für Erwachsene, Glücksspiel – dazu „Immer erlaubt“ und „Immer gesperrt“",
+            "en": "Ads, malware, adult content, gambling – plus “Always allowed” and “Always blocked”"
+          }
+        },
+        {
+          "icon": "users",
+          "title": {
+            "de": "Profile für Gruppen, Personen und Geräte",
+            "en": "Profiles for groups, people and devices"
+          },
+          "text": {
+            "de": "Eigene Listen, Sichere Suche und Zeiten – Gerät schlägt Person schlägt Gruppe",
+            "en": "Own lists, safe search and times – device beats person beats group"
+          }
+        },
+        {
+          "icon": "app",
+          "title": {
+            "de": "Unterbrechen in App und Portal",
+            "en": "Suspending in the app and the portal"
+          },
+          "text": {
+            "de": "5 Min., 30 Min., 1 Std. – jeder für die eigenen Geräte, Admins und Eltern auch für andere",
+            "en": "5 min, 30 min, 1 h – everybody for their own devices, administrators and parents also for others"
+          }
+        },
+        {
+          "icon": "portal",
+          "title": {
+            "de": "Portal-Tab „DNS-Schutz“",
+            "en": "Portal tab “DNS Protection”"
+          },
+          "text": {
+            "de": "Eigener Zustand, eigene Geräte und – wenn freigegeben – das eigene Abfrageprotokoll",
+            "en": "Your own state, your devices and – when released – your own query log"
+          }
+        },
+        {
+          "icon": "link",
+          "title": {
+            "de": "Umzug von Pi-hole",
+            "en": "Moving from Pi-hole"
+          },
+          "text": {
+            "de": "Ein Dialog in vier Schritten; Pi-hole filtert weiter, bis der DNS-Schutz wirklich antwortet",
+            "en": "A dialog in four steps; Pi-hole keeps filtering until the DNS protection really answers"
+          }
+        },
+        {
+          "icon": "bell",
+          "title": {
+            "de": "Mitteilungen",
+            "en": "Notifications"
+          },
+          "text": {
+            "de": "Filter ausgefallen und wieder da, Unterbrechung beendet, Wochenbericht",
+            "en": "Filter down and back, suspension ended, weekly report"
+          }
+        }
+      ],
+      "permissions": [
+        {
+          "icon": "shield",
+          "title": {
+            "de": "DNS der VPN-Geräte filtern",
+            "en": "Filter the DNS of the VPN devices"
+          },
+          "text": {
+            "de": "Legt fest, welche Internetadressen für VPN-Geräte gesperrt sind, kann den Filter unterbrechen und sieht Zähler – mit eingeschaltetem Abfrageprotokoll auch, welches Gerät welche Adresse aufgerufen hat.",
+            "en": "Sets which internet addresses are blocked for VPN devices, can suspend the filter and sees counters – with the query log on also which device asked for which address."
+          },
+          "tag": {
+            "de": "DNS",
+            "en": "DNS"
+          }
+        },
+        {
+          "icon": "users",
+          "title": {
+            "de": "Benutzer und Gruppen lesen",
+            "en": "Read users and groups"
+          },
+          "text": {
+            "de": "Namen für die Zuordnung der Profile und wer in der Familie ein Elternteil ist.",
+            "en": "Names for assigning the profiles, and who is a parent in the family."
+          },
+          "tag": {
+            "de": "Benutzer",
+            "en": "Users"
+          }
+        },
+        {
+          "icon": "bell",
+          "title": {
+            "de": "Mitteilungen senden",
+            "en": "Send notifications"
+          },
+          "text": {
+            "de": "An Admins, z. B. „Filter ausgefallen“, und an die Person, deren Unterbrechung endet.",
+            "en": "To administrators, e.g. “Filter down”, and to the person whose suspension ends."
+          }
+        },
+        {
+          "icon": "app",
+          "title": {
+            "de": "In App und Portal erscheinen",
+            "en": "Appear in the app and the portal"
+          },
+          "text": {
+            "de": "Ansicht „DNS-Schutz“ für angemeldete Benutzer.",
+            "en": "The view “DNS Protection” for signed-in users."
+          }
+        },
+        {
+          "icon": "clock",
+          "title": {
+            "de": "Im Hintergrund laufen",
+            "en": "Run in the background"
+          },
+          "text": {
+            "de": "Alle 15 Minuten – für den Wochenbericht.",
+            "en": "Every 15 minutes – for the weekly report."
+          }
+        }
+      ],
+      "shows": [
+        {
+          "kind": "list",
+          "caption": {
+            "de": "Übersicht · Zähler und Top gesperrte Domains",
+            "en": "Overview · counters and top blocked domains"
+          }
+        },
+        {
+          "kind": "list",
+          "caption": {
+            "de": "Profile · je Gruppe, Person und Gerät",
+            "en": "Profiles · per group, person and device"
+          }
+        },
+        {
+          "kind": "tile",
+          "caption": {
+            "de": "App · Schutz unterbrechen",
+            "en": "App · suspend the protection"
+          },
+          "value": "30 Min."
+        }
+      ],
+      "needs": {
+        "de": "GateControl ab 1.264.0; für Eltern-Rechte das Plugin Familie",
+        "en": "GateControl 1.264.0+; the plugin Familie for parents’ rights"
+      },
+      "languages": [
+        "de",
+        "en"
+      ]
     }
   }
 }

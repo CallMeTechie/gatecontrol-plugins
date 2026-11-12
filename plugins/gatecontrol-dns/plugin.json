@@ -1,0 +1,85 @@
+{
+  "id": "gatecontrol-dns",
+  "name": {
+    "de": "DNS-Schutz",
+    "en": "DNS Protection"
+  },
+  "version": "1.0.0",
+  "publisher": "CallMeTechie",
+  "description": {
+    "de": "Werbung, Tracker und Schadseiten für alle VPN-Geräte sperren – direkt auf dem Server, ohne zweites Gerät: Listen aus dem Katalog, eigene Einträge „Immer erlaubt“ und „Immer gesperrt“, Profile für Gruppen, Personen und Geräte mit Sicherer Suche und Zeiten, „Domain prüfen“, Abfrageprotokoll (abschaltbar). Den Schutz unterbrechen – jeder für die eigenen Geräte, Admins und Eltern auch für andere – in der Android- und der Windows-App und im Portal. Löst die Pi-hole-Anbindung ab (Umzugsdialog). Fällt der Filter aus, läuft das Internet der Geräte ungefiltert weiter.",
+    "en": "Block ads, trackers and malicious sites for all VPN devices – on the server itself, without a second device: lists from the catalogue, own entries “Always allowed” and “Always blocked”, profiles for groups, people and devices with safe search and times, “Check a domain”, a query log (can be switched off). Suspend the protection – everybody for their own devices, administrators and parents also for others – in the Android and the Windows app and in the portal. Replaces the Pi-hole integration (a dialog moves you over). If the filter fails, the devices’ internet goes on unfiltered."
+  },
+  "gatecontrol": ">=1.264.0",
+  "entry": "server/index.js",
+  "permissions": {
+    "vpnDns": true,
+    "users": true,
+    "groups": "read",
+    "notify": true,
+    "portal": true,
+    "app": true,
+    "background": {
+      "intervalSeconds": 900
+    }
+  },
+  "ui": {
+    "pages": [
+      {
+        "id": "main",
+        "title": {
+          "de": "DNS-Schutz",
+          "en": "DNS Protection"
+        }
+      },
+      {
+        "id": "protection",
+        "title": {
+          "de": "DNS-Schutz",
+          "en": "DNS Protection"
+        }
+      }
+    ],
+    "settingsPage": "protection",
+    "portal": {
+      "label": {
+        "de": "DNS-Schutz",
+        "en": "DNS Protection"
+      },
+      "icon": "M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10zM9 12l2 2 4-4"
+    }
+  },
+  "license": {
+    "required": true
+  },
+  "notifyTopics": [
+    {
+      "id": "outage",
+      "label": {
+        "de": "Filter ausgefallen / läuft wieder",
+        "en": "Filter down / working again"
+      },
+      "default": true
+    },
+    {
+      "id": "pause_end",
+      "label": {
+        "de": "Unterbrechung beendet",
+        "en": "Suspension ended"
+      },
+      "default": true
+    },
+    {
+      "id": "weekly",
+      "label": {
+        "de": "Wochenbericht",
+        "en": "Weekly report"
+      },
+      "default": true
+    }
+  ],
+  "handbook": {
+    "de": "HANDBUCH.md",
+    "en": "HANDBOOK.md"
+  }
+}
