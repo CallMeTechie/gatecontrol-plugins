@@ -6,9 +6,12 @@
 //
 //   GET  admin/all                       everything the page shows
 //   GET  admin/live                      what changes by itself (state, devices, suspensions, today)
-//   PUT  admin/settings                  enabled, upstream, blockResponse, allow, deny, log, excluded (gc.vpnDns.set)
+//   PUT  admin/settings                  enabled, upstream, blockResponse, allow, deny, log, excluded, blockForeignDns,
+//                                        homeInternet (gc.vpnDns.set)
 //   PUT  admin/config                    the plugin's own settings (server/config.js)
 //   POST admin/profiles                  a new profile            PUT | DELETE admin/profiles/<id>
+//                                        profile.home: { gateway, profile } | { gateway, create: true } | null — shared
+//                                        with a profile of a home network (gc.vpnDns.homes)
 //   PUT  admin/devices/<peerId>          { profileId | null, excluded }      POST admin/devices/<peerId>/resume
 //   POST admin/pause  { minutes | forever | extend }   POST admin/resume     — for all VPN devices
 //   POST admin/test   { domain, peerId? | profileId? }                        "Domain prüfen"
@@ -21,8 +24,8 @@ const rights = require('./rights');
 const api = require('./api');
 const { fail, host, posInt, clip } = require('./util');
 
-const SETTINGS_KEYS = ['enabled', 'upstream', 'blockResponse', 'allow', 'deny', 'log', 'excluded'];
-const PROFILE_KEYS = ['name', 'lists', 'safeSearch', 'allow', 'deny', 'schedules', 'groups', 'peerGroups', 'users', 'peers'];
+const SETTINGS_KEYS = ['enabled', 'upstream', 'blockResponse', 'allow', 'deny', 'log', 'excluded', 'blockForeignDns', 'homeInternet'];
+const PROFILE_KEYS = ['name', 'lists', 'safeSearch', 'allow', 'deny', 'schedules', 'groups', 'peerGroups', 'users', 'peers', 'home'];
 // names the ad lists of the catalogue block (which ones depends on the list — the first that is blocked is shown)
 const PROBE_BLOCK = ['googlesyndication.com', 'doubleclick.net', 'google-analytics.com', 'app-measurement.com'];
 const PROBE_ALLOW = 'example.org';
@@ -44,11 +47,11 @@ function peerGroupsOf(devices) {
 }
 
 async function all(gc) {
-  const [status, settings, catalog, devices, lists, stats, pauses, cfg, nm] = await Promise.all([
+  const [status, settings, catalog, devices, lists, stats, pauses, homes, cfg, nm] = await Promise.all([
     host(() => v(gc).status()), host(() => v(gc).get()), host(() => v(gc).catalog()), host(() => v(gc).devices()), host(() => v(gc).lists()),
-    host(() => v(gc).stats({ days: 7 })), host(() => v(gc).pauses()), config.load(gc), names(gc),
+    host(() => v(gc).stats({ days: 7 })), host(() => v(gc).pauses()), host(() => v(gc).homes()), config.load(gc), names(gc),
   ]);
-  return { status, settings, catalog, devices, lists, stats, pauses, config: cfg, users: nm.users, groups: nm.groups, peerGroups: peerGroupsOf(devices), durations: rights.DURATIONS, maxMinutes: config.MAX_MINUTES };
+  return { status, settings, catalog, devices, lists, stats, pauses, homes, config: cfg, users: nm.users, groups: nm.groups, peerGroups: peerGroupsOf(devices), durations: rights.DURATIONS, maxMinutes: config.MAX_MINUTES };
 }
 
 async function live(gc) {
@@ -58,6 +61,15 @@ async function live(gc) {
 
 const actor = (user) => ({ actor: user.id });
 
+/** `home` of a profile: null (no longer shared), { gateway, profile } (the home's profile) or { gateway, create: true }. */
+function homeField(h) {
+  if (h === null) return null;
+  if (!h || typeof h !== 'object' || Array.isArray(h) || !posInt(h.gateway)) throw fail('invalid', { detail: 'profile.home' });
+  if (h.create === true) return { gateway: posInt(h.gateway), create: true };
+  if (typeof h.profile !== 'string' || !h.profile) throw fail('invalid', { detail: 'profile.home' });
+  return { gateway: posInt(h.gateway), profile: h.profile };
+}
+
 function profileFields(b, isDefault) {
   const src = b && typeof b === 'object' && !Array.isArray(b) ? b : null;
   if (!src) throw fail('invalid', { detail: 'profile' });
@@ -65,6 +77,7 @@ function profileFields(b, isDefault) {
   for (const k of PROFILE_KEYS) {
     if (src[k] === undefined) continue;
     if (isDefault && ['groups', 'peerGroups', 'users', 'peers'].includes(k)) continue; // the default profile has no members
+    if (k === 'home') { out.home = homeField(src.home); continue; }
     out[k] = src[k];
   }
   return out;
@@ -166,6 +179,7 @@ async function adminLog(gc, query) {
   if (posInt(q.before)) ask.before = posInt(q.before);
   if (posInt(q.peerId)) ask.peerId = posInt(q.peerId);
   if (q.blockedOnly === true || q.blockedOnly === '1' || q.blockedOnly === 'true') ask.blockedOnly = true;
+  if (q.scope === 'all' || q.scope === 'profile') ask.scope = q.scope;   // own entries: for everybody / of a profile
   const search = clip(q.search, 100);
   if (search) ask.search = search;
   const days = posInt(q.days);

@@ -19,7 +19,8 @@ const DEFAULTS = Object.freeze({
     profiles: Object.freeze({}), // profile id → false: members of this profile may not suspend (only with who 'profile')
   }),
   logView: 'admins',         // who sees the query log: 'admins' | 'own' (users see their own devices in the portal)
-  notify: Object.freeze({ outage: true, weekly: false }),
+  // outage: administrators; outageUsers: also the people whose VPN devices are filtered ("Filter ausgefallen")
+  notify: Object.freeze({ outage: true, outageUsers: false, weekly: false }),
 });
 const ID_RE = /^[a-z0-9_-]{1,32}$/;
 
@@ -38,7 +39,7 @@ function normalise(v) {
       profiles,
     },
     logView: r.logView === 'own' ? 'own' : 'admins',
-    notify: { outage: n.outage !== false, weekly: n.weekly === true },
+    notify: { outage: n.outage !== false, outageUsers: n.outageUsers === true, weekly: n.weekly === true },
   };
 }
 
@@ -76,7 +77,7 @@ async function save(gc, patch) {
     } else if (k === 'notify') {
       if (!v || typeof v !== 'object' || Array.isArray(v)) throw fail('invalid', { detail: k });
       for (const [f, x] of Object.entries(v)) {
-        if ((f !== 'outage' && f !== 'weekly') || typeof x !== 'boolean') throw fail('invalid', { detail: 'notify.' + f });
+        if (!['outage', 'outageUsers', 'weekly'].includes(f) || typeof x !== 'boolean') throw fail('invalid', { detail: 'notify.' + f });
         next.notify[f] = x;
       }
     } else throw fail('invalid', { detail: k });

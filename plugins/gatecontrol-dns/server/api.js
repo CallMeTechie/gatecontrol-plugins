@@ -5,7 +5,7 @@
 // device, suspending it and switching it back on, for administrators and parents also the people they may decide
 // for, the own query log. Every call is checked here (server/rights.js) — the apps only draw what `may` says.
 //
-//   GET  status                      → state, device, profile, pause, counters, top, may, today, devices, manage
+//   GET  status                      → state, device, profile, pause, internet, counters, top, may, today, devices, manage
 //   POST pause  { minutes | forever: true | extend: minutes, peerId? | userId? | all? }
 //   POST resume { peerId? | userId? | all? }
 //   GET  people                      → the people (with their devices) the viewer may suspend for (admin, parent)
@@ -53,7 +53,22 @@ function pauseView(p, user, now = Date.now()) {
     scope: p.scope, until: p.until || null, openEnd: !!p.openEnd, since: p.since || null,
     by: p.by ? { userId: p.by.userId, name: p.by.name } : null, byMe: !!(p.by && p.by.userId === user.id),
     remainingSeconds: until ? Math.max(0, Math.round((until - now) / 1000)) : null,
+    // the duration that was picked (with "+30 Min." the whole of it), in minutes — null without an end
+    minutes: until && p.since && Number.isFinite(Date.parse(p.since)) ? Math.max(1, Math.round((until - Date.parse(p.since)) / 60000)) : null,
   };
+}
+
+/**
+ * "Internet pausieren" of the family plugin holds for these devices (GateControl ≥ 1.267.0, the setting homeInternet):
+ * { paused: true, until, remainingSeconds } — the latest end when all filtered devices are paused, else null.
+ * Paused is not suspended: only "Immer erlaubt" answers, and suspending the protection does not lift it.
+ */
+function internetOf(devices, now = Date.now()) {
+  const filtered = devices.filter((d) => d.state === 'filtered');
+  if (!filtered.length || !filtered.every((d) => d.internetPaused)) return null;
+  const until = Math.max(...filtered.map((d) => Date.parse(d.internetPaused)));
+  if (!Number.isFinite(until) || until <= now) return null;
+  return { paused: true, until: new Date(until).toISOString(), remainingSeconds: Math.max(0, Math.round((until - now) / 1000)) };
 }
 
 function deviceView(c, d, user) {
@@ -61,6 +76,7 @@ function deviceView(c, d, user) {
     peerId: d.peerId, name: d.name, platform: d.platform || null, state: d.state, ownDns: d.ownDns || null,
     profile: d.profile ? { id: d.profile.id, name: d.profile.name } : null,
     suspended: !!d.suspended, pause: pauseView(pauseOf(c, d), user),
+    internetPaused: d.internetPaused || null, timesSuspended: d.timesSuspended || null,
     today: d.today ? { queries: d.today.queries, blocked: d.today.blocked, percent: percent(d.today.blocked, d.today.queries) } : null,
   };
 }
@@ -106,6 +122,8 @@ function mayView(c, target) {
   else if (!target.devices.length) reason = 'no_device';
   else if (!filtered.length) reason = 'not_filtered';
   else if (!dec.ok) reason = dec.reason;
+  // "Internet pausieren" (Familie): suspending the protection would not bring the internet back — no way out is offered
+  else if (target.scope !== 'all' && !suspended && internetOf(target.devices)) reason = 'internet_paused';
   const own = !!target.owner && target.owner.id === c.actor.id;
   const active = c.st.state === 'filtering';
   return {
@@ -165,6 +183,7 @@ async function status(gc, user) {
     device: d ? { peerId: d.peerId, name: d.name, platform: d.platform || null, state: d.state, ownDns: d.ownDns || null } : null,
     profile: profile ? { id: profile.id, name: profile.name, safeSearch: !!(prof && prof.safeSearch) } : null,
     pause: state === 'paused' ? pauseView(pauseOf(c, first), user) : null,
+    internet: c.st.state === 'filtering' ? internetOf(target.devices) : null,
     outage: c.st.state === 'fallback' ? { since: c.st.since || null } : null,
     counters,
     top: await topOf(gc, c, user, d ? d.peerId : null),
@@ -190,6 +209,7 @@ async function pause(gc, user, body) {
   const dec = rights.may(c.actor, target, c.cfg, c.fam);
   if (!dec.ok) throw fail('not_allowed', { reason: dec.reason });
   if (target.scope !== 'all' && !target.devices.some((d) => d.state === 'filtered')) throw fail('not_allowed', { reason: 'not_filtered' });
+  if (target.scope !== 'all' && internetOf(target.devices) && !target.devices.some((d) => d.state === 'filtered' && d.suspended)) throw fail('not_allowed', { reason: 'internet_paused' });
   const running = c.pauses.find((p) => p.scope === target.scope && (target.scope === 'all' || p.id === target.id)) || null;
   const end = rights.endOf(body, dec.limits, running, fail);
   const r = await host(() => gc.vpnDns.pause({ scope: target.scope, ...(target.scope === 'all' ? {} : { id: target.id }), ...end }, { actor: user.id }));
@@ -225,6 +245,15 @@ async function resume(gc, user, body) {
   return { resumed, status: await status(gc, user) };
 }
 
+/** The suspension that holds for a person: the one for the person, else the one of the devices when all filtered ones are suspended. */
+function personPause(c, p, user) {
+  const own = c.pauses.find((x) => x.scope === 'user' && x.id === p.userId);
+  if (own) return pauseView(own, user);
+  const filtered = p.devices.filter((d) => d.state === 'filtered');
+  if (!filtered.length || !filtered.every((d) => d.suspended)) return null;
+  return pauseView(pauseOf(c, filtered[0]), user);
+}
+
 /** The people the viewer may suspend for — an administrator: everybody with a VPN device; a parent: the family. */
 async function people(gc, user) {
   const c = await load(gc, user);
@@ -243,6 +272,7 @@ async function people(gc, user) {
     all: admin ? { may: mayView(c, { scope: 'all', id: null, owner: null, profileIds: [], devices: c.devices.filter((d) => d.state === 'filtered') }), pause: pauseView(c.st.pause, user) } : null,
     people: list.map((p) => ({
       userId: p.userId, name: p.name, role: p.role, self: p.self,
+      pause: personPause(c, p, user), internet: c.st.state === 'filtering' ? internetOf(p.devices) : null,
       may: mayView(c, { scope: 'user', id: p.userId, owner: { id: p.userId, role: p.role }, profileIds: [...new Set(p.devices.map((d) => d.profileId).filter(Boolean))], devices: p.devices }),
       devices: p.devices.map((d) => ({
         ...deviceView(c, d, user),
@@ -260,6 +290,8 @@ function logEntry(e, devices, names) {
   return {
     id: e.id, at: e.at, peerId: e.peerId, device: d ? d.name : null, person: d && d.user ? d.user.name : null, domain: e.name, type: e.type || null,
     result: RESULT(e), action: e.action, reason: e.reason || null, list: e.list || null,
+    // own entries: 'all' = holds for everybody, 'profile' = an entry of the profile (null for anything else)
+    scope: e.scope === 'all' || e.scope === 'profile' ? e.scope : null,
     profile: e.profileId ? { id: e.profileId, name: names.get(e.profileId) || e.profileId } : null,
   };
 }

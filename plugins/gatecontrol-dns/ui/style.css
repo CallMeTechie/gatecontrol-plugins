@@ -113,6 +113,9 @@ textarea.inp{padding:9px 11px;min-height:74px;resize:vertical;width:100%}
 button.pl.add{border-style:dashed;color:var(--accent);font-family:var(--font);font-weight:600;background:none;cursor:pointer}
 button.pl.add svg{color:inherit}
 .pl.on{background:var(--accent-soft);border-color:var(--d-teal-bd);color:var(--accent)}
+.pl.on svg{color:inherit}
+.res.home{background:var(--accent-soft);border:1px solid var(--d-teal-bd)}.res.home>svg{color:var(--accent)}
+.dn-by{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
 .res{display:flex;gap:10px;align-items:flex-start;padding:11px 13px;border-radius:12px;font-size:13.5px}
 .res>div{flex:1;min-width:0}
 .res.blk{background:var(--d-crit-bg);border:1px solid var(--d-crit-bd)}.res.blk>svg{color:var(--crit)}

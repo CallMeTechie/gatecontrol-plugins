@@ -1,7 +1,8 @@
 'use strict';
 
 // Notices through GateControl's notification center (plugin.json notifyTopics):
-//   outage     the filter fell back / answers again → every administrator (switch "Bei Ausfall des Filters")
+//   outage     the filter fell back / answers again → every administrator (switch "Bei Ausfall des Filters"); with the
+//              switch "Auch Benutzer benachrichtigen" also everybody else whose VPN device is filtered
 //   pause_end  a suspension for a device or a person ran out → that person
 //   weekly     Mondays: queries, blocked and the top domains of the last seven days → every administrator (switch
 //              "Wochenbericht")
@@ -21,6 +22,17 @@ async function admins(gc) {
 async function adminsByLang(gc) {
   const by = new Map();
   for (const u of await admins(gc)) { const l = langOf(u); if (!by.has(l)) by.set(l, []); by.get(l).push(u.id); }
+  return [...by.entries()];
+}
+
+/** Everybody but the administrators whose VPN device is filtered, by language (the notice "Filter ausgefallen" for users). */
+async function filteredUsersByLang(gc) {
+  const by = new Map();
+  let devices = [];
+  let users = [];
+  try { devices = (await gc.vpnDns.devices()) || []; users = (await gc.users.list()) || []; } catch { return []; }
+  const ids = new Set(devices.filter((d) => d.type === 'peer' && d.state === 'filtered' && d.user && d.user.role !== 'admin').map((d) => d.user.id));
+  for (const u of users) { if (!ids.has(u.id) || u.role === 'admin' || u.disabled === true || u.enabled === false) continue; const l = langOf(u); if (!by.has(l)) by.set(l, []); by.get(l).push(u.id); }
   return [...by.entries()];
 }
 
@@ -45,6 +57,15 @@ async function onEvent(gc, t, ev) {
         title: t(lang, down ? 'notify.outage_title' : 'notify.restored_title'),
         body: t(lang, down ? 'notify.outage_body' : 'notify.restored_body', { time: clock(ev.at, lang) }),
       });
+    }
+    if (cfg.notify.outageUsers) {
+      for (const [lang, users] of await filteredUsersByLang(gc)) {
+        await send(gc, {
+          topic: 'outage', users, collapseKey: 'dns-outage', priority: 'normal',
+          title: t(lang, down ? 'notify.outage_title' : 'notify.restored_title'),
+          body: t(lang, down ? 'notify.outage_user_body' : 'notify.restored_user_body', { time: clock(ev.at, lang) }),
+        });
+      }
     }
     return;
   }

@@ -32,8 +32,23 @@
 //   * test(): the default answers from the profile's own entries and from the lists by a few fixed names
 //     (doubleclick.net / app-measurement.com / ads.tiktok.com → 'ads', paket-zustellung-dhl.top → 'malware',
 //     pornhub.com → 'adult', bet365.com → 'gambling'), opts.vpnDns.test overrides it.
+//
+// Later hosts (the level is gc.vpnDns.version; opts.gatecontrol picks it, opts.vpnDns.version overrides it):
+//   1.265.0 (version 2): status().pihole.targets (opts.vpnDns.pihole.targets), test() answers `match { entry, kind }` and
+//     `scope` ('all' | 'profile' for own entries), `blockedBy { list, denyAll, denyProfile, schedule, other }` in status()
+//     and stats() (opts.vpnDns.today.blockedBy, days[].blockedBy — zeros when not given), log entries carry `scope`
+//     and log({ scope }) filters by it;
+//   1.266.0 (version 3): the setting blockForeignDns, status().foreignDns { enabled, active, devices, since, error }
+//     (opts.vpnDns.foreignDnsError / host.vpnDnsSet({ foreignDnsError }) is iptables' last error), devices()[].foreignDnsBlocked;
+//   1.267.0 (version 4): profiles shared with a home network — profiles[].home, homes() (opts.vpnDns.homes: [{ gateway:
+//     { peerId, name }, gateways, configured, enabled, profiles: [{ id, name, lists, safeSearch, allow, deny, schedules,
+//     users, devices }] }]; without it every gateway peer is a home that was never set up), the setting homeInternet,
+//     devices()[].internetPaused / timesSuspended (opts.vpnDns.internet: { pause: { <userId>: ms | ISO }, extend: {…} },
+//     host.vpnDnsSet({ internet }), and what the mock of gc.homeNetwork.internet holds), test() reason 'paused',
+//     blockedBy.pause. host.vpnDns.homes is what the homes hold.
 // For tests: host.vpnDns = { settings, pauses: Map, log, activity: [{ type, actor, automated, … }], calls, state },
-// host.vpnDnsSet({ service, pihole, today, perPeer, peers, lists, internalDns }) changes what GateControl knows,
+// host.vpnDnsSet({ service, pihole, today, perPeer, peers, lists, internalDns, homes, internet, foreignDnsError }) changes what
+// GateControl knows,
 // host.vpnDnsEvent({ type: 'fallback' | 'restored' }) delivers an event to gc.vpnDns.on handlers (it also sets the
 // service state), host.vpnDnsExpire(now?) ends the suspensions that ran out (events `resumed` with reason 'expired'),
 // host.vpnDnsLog(entry) appends a log entry.
@@ -108,12 +123,24 @@ const clone = (v) => JSON.parse(JSON.stringify(v));
 const dayKey = (ms) => { const d = new Date(ms); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 const matches = (name, pattern) => { const p = pattern.replace(/^\*\./, ''); return name === p || name.endsWith('.' + p); };
 
-function install({ opts, perms, atLeast, enabledUser, hostError, personCtx, groupUsers, groupExists, logs, wire }) {
+function install({ opts, perms, atLeast, enabledUser, hostError, personCtx, groupUsers, groupExists, logs, wire, homeInternet }) {
   const o = opts.vpnDns && typeof opts.vpnDns === 'object' ? opts.vpnDns : null;
   const host = !!o || atLeast(264);
   if (host && perms.vpnDns != null && typeof perms.vpnDns !== 'boolean') throw hostError('ERR_INVALID', 'plugin.json: permissions.vpnDns: invalid');
   const on = host && perms.vpnDns === true;
   const cfg = o || {};
+  // gc.vpnDns.version: 1 = 1.264.0, 2 = 1.265.0, 3 = 1.266.0, 4 = 1.267.0 (a host started with opts.vpnDns alone is 1.264.0)
+  const level = [1, 2, 3, 4].includes(cfg.version) ? cfg.version : (atLeast(267) ? 4 : (atLeast(266) ? 3 : (atLeast(265) ? 2 : 1)));
+  const BLOCK_KINDS = level >= 4 ? ['list', 'denyAll', 'denyProfile', 'schedule', 'pause', 'other'] : ['list', 'denyAll', 'denyProfile', 'schedule', 'other'];
+  const blockedByOf = (raw) => Object.fromEntries(BLOCK_KINDS.map((k) => [k, Math.max(0, Number(raw && raw[k]) || 0)]));
+  const SHARED = ['lists', 'safeSearch', 'allow', 'deny', 'schedules', 'users'];
+  const sharedOf = (p, isDefault) => { const out = {}; for (const k of SHARED) if (!(isDefault && k === 'users')) out[k] = clone(p[k]); return out; };
+  function normHome(h) {
+    if (level < 4 || !h || typeof h !== 'object') return null;
+    const gateway = Number(h.gateway);
+    if (!Number.isSafeInteger(gateway) || gateway <= 0 || typeof h.profile !== 'string' || !ID_RE.test(h.profile)) return null;
+    return { gateway, profile: h.profile };
+  }
   const invalid = (message) => hostError('ERR_INVALID', message);
 
   const defaultProfile = () => ({ id: DEFAULT_ID, name: 'Standard', lists: LISTS.filter((l) => l.defaultOn).map((l) => l.id), safeSearch: false, allow: [], deny: [], schedules: [], groups: [], peerGroups: [], users: [], peers: [] });
@@ -127,6 +154,7 @@ function install({ opts, perms, atLeast, enabledUser, hostError, personCtx, grou
       safeSearch: r.safeSearch === true, allow: patternsSoft(r.allow), deny: patternsSoft(r.deny),
       schedules: Array.isArray(r.schedules) ? r.schedules.slice(0, LIMITS.schedules).map(normSchedule).filter(Boolean) : [],
       groups: members(r.groups), peerGroups: members(r.peerGroups), users: members(r.users), peers: members(r.peers),
+      ...(level >= 4 ? { home: normHome(r.home) } : {}),
     };
   }
   function normalize(raw) {
@@ -150,7 +178,10 @@ function install({ opts, perms, atLeast, enabledUser, hostError, personCtx, grou
       blockResponse: r.blockResponse === 'nxdomain' ? 'nxdomain' : 'zero',
       allow: patternsSoft(r.allow), deny: patternsSoft(r.deny),
       log: { enabled: log.enabled === true, retentionDays: Number.isInteger(days) && days >= 1 && days <= LIMITS.retentionDays ? days : 7 },
-      excluded: ints(r.excluded, LIMITS.excluded), profiles,
+      excluded: ints(r.excluded, LIMITS.excluded),
+      ...(level >= 3 ? { blockForeignDns: r.blockForeignDns === true } : {}),
+      ...(level >= 4 ? { homeInternet: r.homeInternet !== false } : {}),
+      profiles,
     };
   }
 
@@ -159,7 +190,11 @@ function install({ opts, perms, atLeast, enabledUser, hostError, personCtx, grou
     peers: (cfg.peers || []).map((p) => ({ ...p })),
     service: cfg.service || 'filtering',
     internalDns: cfg.internalDns !== false,
-    pihole: { configured: !!(cfg.pihole && cfg.pihole.configured), wantsChain: !!(cfg.pihole && cfg.pihole.wantsChain) },
+    pihole: { configured: !!(cfg.pihole && cfg.pihole.configured), wantsChain: !!(cfg.pihole && cfg.pihole.wantsChain), targets: cfg.pihole && Array.isArray(cfg.pihole.targets) ? clone(cfg.pihole.targets) : [] },
+    homes: [],             // what the home networks hold (level 4): [{ gateway, gateways, configured, enabled, profiles }]
+    internet: { pause: new Map(), extend: new Map() },   // "Internet pausieren" / "Zeit verlängern": userId → until (ms)
+    foreignDnsError: cfg.foreignDnsError || null,
+    foreignSince: Date.now(),
     today: cfg.today ? clone(cfg.today) : { queries: 0, blocked: 0, cached: 0, top: [] },
     days: cfg.days ? clone(cfg.days) : [],
     perPeer: new Map(Object.entries(cfg.perPeer || {}).map(([k, v]) => [Number(k), { ...v }])),
@@ -172,8 +207,52 @@ function install({ opts, perms, atLeast, enabledUser, hostError, personCtx, grou
     restarts: 0,
     refreshes: 0,
   };
+  const homeProfile = (p) => ({ id: p.id, name: p.name || p.id, lists: LIST_IDS.filter((l) => (p.lists || []).includes(l)), safeSearch: p.safeSearch === true, allow: patternsSoft(p.allow), deny: patternsSoft(p.deny),
+    schedules: (p.schedules || []).map(normSchedule).filter(Boolean), users: ints(p.users, LIMITS.members), devices: Number.isInteger(p.devices) ? p.devices : 0 });
+  const homesOf = (list) => list.map((h) => ({ gateway: { ...h.gateway }, gateways: (h.gateways || [h.gateway]).map((g) => ({ ...g })), configured: h.configured !== false, enabled: h.enabled !== false, profiles: (h.profiles || []).map(homeProfile) }));
+  // without opts.vpnDns.homes: every gateway peer is a home whose DNS filter was never set up (only the default profile)
+  state.homes = Array.isArray(cfg.homes) ? homesOf(cfg.homes) : state.peers.filter((p) => p.type === 'gateway').map((p) => ({
+    gateway: { peerId: p.id, name: p.name }, gateways: [{ peerId: p.id, name: p.name }], configured: false, enabled: false, profiles: [homeProfile({ id: DEFAULT_ID, name: 'Standard', lists: LISTS.filter((l) => l.defaultOn).map((l) => l.id) })] }));
+  const untilMs = (v) => (typeof v === 'string' ? Date.parse(v) : Number(v));
+  function setInternet(x) {
+    for (const kind of ['pause', 'extend']) {
+      if (!x || !x[kind]) continue;
+      state.internet[kind].clear();
+      for (const [uid, until] of Object.entries(x[kind])) if (until) state.internet[kind].set(Number(uid), untilMs(until));
+    }
+  }
+  setInternet(cfg.internet);
+  /** vpnDns.homeInternetOf: what "Internet pausieren" / "Zeit verlängern" of the family plugin means for the VPN devices */
+  function internetOf(now) {
+    const out = { pause: new Map(), extend: new Map() };
+    if (level < 4 || !state.settings.homeInternet) return out;
+    if (homeInternet) for (const [uid, v] of homeInternet) for (const kind of ['pause', 'extend']) if (v && v[kind] > now) out[kind].set(uid, v[kind]);
+    for (const kind of ['pause', 'extend']) for (const [uid, until] of state.internet[kind]) if (until > now) out[kind].set(uid, until);
+    return out;
+  }
+  const homeOfGateway = (id) => state.homes.find((h) => h.gateway.peerId === id || h.gateways.some((g) => g.peerId === id)) || null;
+  /** the home's profile a link names → { home, profile } or null (gateway or profile gone) */
+  function homeProfileOf(link, homes = state.homes) {
+    const h = link ? homes.find((x) => x.gateway.peerId === link.gateway || x.gateways.some((g) => g.peerId === link.gateway)) : null;
+    const profile = h ? h.profiles.find((p) => p.id === link.profile) : null;
+    return profile ? { home: h, profile } : null;
+  }
+  /** vpnDns.withHome: a shared profile carries what the home says; a link whose profile is gone is dropped */
+  function withHome(s) {
+    if (level < 4) return s;
+    s.profiles.forEach((p, i) => {
+      if (!p.home) return;
+      const h = homeProfileOf(p.home);
+      if (!h) { p.home = null; return; }
+      Object.assign(p, sharedOf(h.profile, i === 0));
+      const g = h.home.gateways.find((x) => x.peerId === p.home.gateway) || h.home.gateway;
+      p.home = { gateway: g.peerId, profile: h.profile.id, gatewayName: g.name, name: h.profile.name };
+    });
+    return s;
+  }
+  const getSettings = () => withHome(clone(state.settings));
   let logSeq = 0;
-  const addLog = (e) => { state.log.push({ id: ++logSeq, at: typeof e.at === 'string' ? Date.parse(e.at) : (e.at || Date.now()), peerId: e.peerId, name: String(e.name), type: e.type || 'A', action: e.action === 'block' ? 'block' : 'allow', reason: e.reason || null, profileId: e.profileId || null, list: e.list || null }); };
+  const addLog = (e) => { state.log.push({ id: ++logSeq, at: typeof e.at === 'string' ? Date.parse(e.at) : (e.at || Date.now()), peerId: e.peerId, name: String(e.name), type: e.type || 'A', action: e.action === 'block' ? 'block' : 'allow', reason: e.reason || null, profileId: e.profileId || null, list: e.list || null, scope: e.scope === 'all' || e.scope === 'profile' ? e.scope : null }); };
   for (const e of cfg.log || []) addLog(e);
 
   const handlers = [];
@@ -229,9 +308,10 @@ function install({ opts, perms, atLeast, enabledUser, hostError, personCtx, grou
     const what = `profiles[${i}]`;
     if (!b || typeof b !== 'object' || Array.isArray(b)) throw invalid(`${what}: object`);
     const out = cur ? clone(cur) : { ...defaultProfile(), id: null, name: null, lists: [] };
+    if (level >= 4 && b.home !== undefined) validateHome(b.home, `${what}.home`, out, i === 0);
     for (const [k, v] of Object.entries(b)) {
       const f = `${what}.${k}`;
-      if (k === 'id') continue;
+      if (k === 'id' || (level >= 4 && k === 'home')) continue;
       if (k === 'name') {
         const n = cleanText(v, LIMITS.name);
         if (!n) throw invalid(`${f}: 1…${LIMITS.name} characters`);
@@ -265,6 +345,47 @@ function install({ opts, perms, atLeast, enabledUser, hostError, personCtx, grou
     taken.add(out.name.toLowerCase());
     return out;
   }
+  /** vpnDns.validateHome: null | { gateway, profile } | { gateway, create: true } */
+  function validateHome(v, f, out, isDefault) {
+    if (v === null) { out.home = null; return; }
+    if (!v || typeof v !== 'object' || Array.isArray(v)) throw invalid(`${f}: null or { gateway, profile }`);
+    const h = Number.isSafeInteger(v.gateway) && v.gateway > 0 ? homeOfGateway(v.gateway) : null;
+    if (!h) throw invalid(`${f}.gateway: unknown gateway`);
+    if (v.create === true && v.profile === undefined) {
+      if (isDefault) throw invalid(`${f}: the default profile goes with the home's default profile`);
+      out.home = { gateway: v.gateway, create: true };
+      return;
+    }
+    const hp = typeof v.profile === 'string' ? h.profiles.find((p) => p.id === v.profile) : null;
+    if (!hp) throw invalid(`${f}.profile: unknown profile of this home network`);
+    if (isDefault !== (hp.id === DEFAULT_ID)) throw invalid(`${f}: the default profile only goes with the home's default profile`);
+    const same = out.home && out.home.gateway === v.gateway && out.home.profile === hp.id;
+    out.home = { gateway: v.gateway, profile: hp.id };
+    if (!same) Object.assign(out, sharedOf(hp, isDefault));
+  }
+  /** vpnDns.writeHomes: what changed in shared profiles goes to their homes, new home profiles are made — all or nothing */
+  function writeHomes(after) {
+    const homes = clone(state.homes);
+    after.profiles.forEach((p, i) => {
+      if (!p.home) return;
+      const f = `profiles[${i}].home`;
+      if (p.home.create) {
+        const h = homes.find((x) => x.gateway.peerId === p.home.gateway || x.gateways.some((g) => g.peerId === p.home.gateway));
+        if (h.profiles.some((q) => q.name.toLowerCase() === p.name.toLowerCase())) throw invalid(`${f}: a profile with this name exists`);
+        if (p.users.length > 64) throw invalid(`${f}: up to 64 people`);
+        const made = homeProfile({ id: 'p' + crypto.randomBytes(4).toString('hex'), name: p.name, ...sharedOf(p, false) });
+        h.profiles.push(made);
+        h.configured = true;
+        p.home = { gateway: p.home.gateway, profile: made.id };
+        return;
+      }
+      const h = homeProfileOf(p.home, homes);
+      if (!h) throw invalid(`${f}.profile: unknown profile of this home network`);
+      if (i > 0 && p.users.length > 64) throw invalid(`${f}: up to 64 people`);
+      Object.assign(h.profile, sharedOf(p, i === 0));
+    });
+    state.homes = homes;
+  }
   /** vpnDns.validate */
   function validate(patch, before) {
     const b = patch && typeof patch === 'object' && !Array.isArray(patch) ? patch : null;
@@ -273,9 +394,9 @@ function install({ opts, perms, atLeast, enabledUser, hostError, personCtx, grou
     let any = false;
     for (const [k, v] of Object.entries(b)) {
       any = true;
-      if (k === 'enabled') {
-        if (typeof v !== 'boolean') throw invalid('enabled must be true or false');
-        out.enabled = v;
+      if (k === 'enabled' || (level >= 3 && k === 'blockForeignDns') || (level >= 4 && k === 'homeInternet')) {
+        if (typeof v !== 'boolean') throw invalid(`${k} must be true or false`);
+        out[k] = v;
       } else if (k === 'blockResponse') {
         if (v !== 'zero' && v !== 'nxdomain') throw invalid('blockResponse: zero or nxdomain');
         out.blockResponse = v;
@@ -318,14 +439,25 @@ function install({ opts, perms, atLeast, enabledUser, hostError, personCtx, grou
           seen.add(n.id);
           return n;
         });
+        const linked = new Set();
+        out.profiles.forEach((p, i) => {
+          if (!p.home || p.home.create) return;
+          const key = `${homeOfGateway(p.home.gateway).gateway.peerId}/${p.home.profile}`;
+          if (linked.has(key)) throw invalid(`profiles[${i}].home: this profile of the home network is shared already`);
+          linked.add(key);
+        });
       } else throw invalid(`${k}: unknown`);
     }
     if (!any) throw invalid('nothing to change');
-    return normalize(out);
+    // normalize() would drop a link that is still to be made ({ gateway, create }): keep those for set()
+    const creating = new Map(out.profiles.filter((p) => p.home && p.home.create).map((p) => [p.id, p.home]));
+    const done = normalize(out);
+    for (const p of done.profiles) if (creating.has(p.id)) p.home = creating.get(p.id);
+    return done;
   }
 
   /** vpnDns.resolve */
-  function resolve(s = state.settings) {
+  function resolve(s = getSettings()) {
     const byPeer = new Map();
     const byUser = new Map();
     const byPeerGroup = new Map();
@@ -414,7 +546,7 @@ function install({ opts, perms, atLeast, enabledUser, hostError, personCtx, grou
   }
 
   function listsView() {
-    const s = state.settings;
+    const s = getSettings();
     const used = new Set(s.profiles.flatMap((p) => p.lists));
     const up = wanted() && state.service !== 'starting';
     return LISTS.map((l) => {
@@ -431,12 +563,22 @@ function install({ opts, perms, atLeast, enabledUser, hostError, personCtx, grou
       };
     });
   }
+  /** vpnDnsFirewall.status + firewallWant: the rules hold only while filtering, not while suspended for all, never with an error */
+  function foreignNow(now = Date.now()) {
+    const on = level >= 3 && state.settings.blockForeignDns === true;
+    const error = on ? state.foreignDnsError : null;
+    const active = on && !error && stateNow() === 'filtering' && !running(now).some((r) => r.scope === 'all');
+    return { on, active, error };
+  }
   function devicesView(now = Date.now()) {
-    const s = state.settings;
+    const s = getSettings();
     const list = resolve(s);
     const sus = suspended(list, now);
     const names = new Map(s.profiles.map((p) => [p.id, p.name]));
     const direct = new Set(running(now).filter((r) => r.scope === 'peer').map((r) => r.target));
+    const net = internetOf(now);
+    const homeUntil = (map, d) => (d.profileId && d.user && map.has(d.user.id) ? iso(map.get(d.user.id)) : null);
+    const fw = foreignNow(now);
     return list.map((d) => {
       const own = sus.keys.get(d.peerId);
       const until = d.profileId ? (sus.all !== null ? sus.all : (own === undefined ? null : own)) : null;
@@ -446,6 +588,8 @@ function install({ opts, perms, atLeast, enabledUser, hostError, personCtx, grou
         suspended: until !== null, suspendedUntil: until ? iso(until) : null,
         suspendedBy: until === null ? null : (sus.all !== null ? 'all' : (direct.has(d.peerId) ? 'peer' : 'user')),
         today: s.log.enabled ? (state.perPeer.get(d.peerId) ? { ...state.perPeer.get(d.peerId) } : { queries: 0, blocked: 0 }) : null,
+        ...(level >= 3 ? { foreignDnsBlocked: fw.active && d.state === 'filtered' && until === null && !(d.user && net.pause.has(d.user.id)) } : {}),
+        ...(level >= 4 ? { internetPaused: homeUntil(net.pause, d), timesSuspended: homeUntil(net.extend, d) } : {}),
       };
     });
   }
@@ -456,11 +600,12 @@ function install({ opts, perms, atLeast, enabledUser, hostError, personCtx, grou
   }
   /** what the filter service answers for a name in a profile */
   function decide(domain, profile, s) {
-    const allow = [...profile.allow, ...s.allow];
-    const deny = [...profile.deny, ...s.deny];
-    if (allow.some((p) => matches(domain, p))) return { action: 'allow', reason: 'profile_allow' };
-    if (deny.some((p) => matches(domain, p))) return { action: 'block', reason: 'profile_deny' };
-    for (const [name, list] of Object.entries(SAMPLE)) if (matches(domain, name) && profile.lists.includes(list)) return { action: 'block', reason: 'list', list };
+    const own = (list, all) => { const e = list.find((p) => matches(domain, p)); return e ? { scope: all.includes(e) ? 'all' : 'profile', match: { entry: e, kind: e.startsWith('*.') ? 'subdomains' : 'domain' } } : null; };
+    const a = own([...s.allow, ...profile.allow], s.allow);
+    if (a) return { action: 'allow', reason: 'profile_allow', ...a };
+    const dn = own([...s.deny, ...profile.deny], s.deny);
+    if (dn) return { action: 'block', reason: 'profile_deny', ...dn };
+    for (const [name, list] of Object.entries(SAMPLE)) if (matches(domain, name) && profile.lists.includes(list)) return { action: 'block', reason: 'list', list, match: { entry: name, kind: list === 'ads_stevenblack' ? 'exact' : 'domain' } };
     if (profile.safeSearch && /^(www\.)?google\.[a-z.]+$/.test(domain)) return { action: 'allow', reason: 'default', safeSearch: 'forcesafesearch.google.com' };
     return { action: 'allow', reason: 'default' };
   }
@@ -477,7 +622,7 @@ function install({ opts, perms, atLeast, enabledUser, hostError, personCtx, grou
   const api = {
     'vpnDns.status': read('status', () => {
       const now = Date.now();
-      const s = state.settings;
+      const s = getSettings();
       const st = stateNow();
       const devices = resolve(s);
       const sus = suspended(devices, now);
@@ -491,7 +636,7 @@ function install({ opts, perms, atLeast, enabledUser, hostError, personCtx, grou
         available: true, enabled: s.enabled, blockedBy: s.enabled && !state.internalDns ? 'internal_dns_off' : null,
         state: st, since: st === 'off' ? null : iso(state.since),
         chain: st === 'filtering' ? 'filter' : (wantsChain && st !== 'fallback' ? 'pihole' : 'default'),
-        pihole: { configured: state.pihole.configured, wantsChain, chain: !wantsChain ? 'off' : (st === 'filtering' ? 'displaced' : (st === 'fallback' ? 'fallback' : 'active')) },
+        pihole: { configured: state.pihole.configured, wantsChain, chain: !wantsChain ? 'off' : (st === 'filtering' ? 'displaced' : (st === 'fallback' ? 'fallback' : 'active')), ...(level >= 2 ? { targets: state.pihole.configured ? clone(state.pihole.targets) : [] } : {}) },
         pause: all ? pauseView(all) : null,
         pauses: running(now).filter((r) => r.scope !== 'all').length,
         service: st === 'off' || st === 'fallback' ? { running: false } : {
@@ -504,7 +649,12 @@ function install({ opts, perms, atLeast, enabledUser, hostError, personCtx, grou
           suspended: sus.all !== null ? count('filtered') : devices.filter((d) => d.state === 'filtered' && sus.keys.has(d.peerId)).length,
         },
         lists: lv.filter((l) => l.used),
-        today: { queries: state.today.queries || 0, blocked: state.today.blocked || 0, cached: state.today.cached || 0 },
+        today: { queries: state.today.queries || 0, blocked: state.today.blocked || 0, cached: state.today.cached || 0, ...(level >= 2 ? { blockedBy: blockedByOf(state.today.blockedBy) } : {}) },
+        ...(level >= 3 ? { foreignDns: (() => {
+          const fw = foreignNow(now);
+          const n = fw.active ? devicesView(now).filter((d) => d.foreignDnsBlocked).length : 0;
+          return { enabled: fw.on, active: fw.active, devices: n, since: fw.active ? iso(state.foreignSince) : null, error: fw.error };
+        })() } : {}),
         log: { ...s.log },
       };
     }),
@@ -514,18 +664,29 @@ function install({ opts, perms, atLeast, enabledUser, hostError, personCtx, grou
       providers: [{ id: 'quad9', label: 'Quad9', home: 'https://quad9.net' }, { id: 'cloudflare', label: 'Cloudflare', home: 'https://1.1.1.1' }, { id: 'custom', label: null, home: null }, { id: 'system', label: null, home: null }],
       limits: { ...LIMITS },
     })),
-    'vpnDns.get': read('get', () => clone(state.settings)),
+    'vpnDns.get': read('get', () => getSettings()),
+    'vpnDns.homes': read('homes', () => {
+      if (level < 4) throw hostError('ERR_UNKNOWN_API', 'unknown host API: vpnDns.homes');
+      const linked = new Map(getSettings().profiles.filter((p) => p.home).map((p) => [`${homeOfGateway(p.home.gateway).gateway.peerId}/${p.home.profile}`, p.id]));
+      return state.homes.map((h) => ({
+        gateway: { ...h.gateway }, gateways: h.gateways.map((g) => ({ ...g })), configured: h.configured, enabled: h.enabled,
+        profiles: h.profiles.map((p) => ({ ...clone(p), linkedTo: linked.get(`${h.gateway.peerId}/${p.id}`) || null })),
+      }));
+    }),
     'vpnDns.set': change('set', true, ({ patch }, ctx) => {
-      const before = state.settings;
+      const before = getSettings();
       const after = validate(patch, before);
-      const keys = Object.keys(after).filter((k) => JSON.stringify(before[k]) !== JSON.stringify(after[k]));
-      if (!keys.length) return clone(after);
+      const base = normalize(before); // without the names a shared profile carries for display
+      const keys = Object.keys(after).filter((k) => JSON.stringify(base[k]) !== JSON.stringify(after[k]));
+      if (!keys.length) return withHome(clone(after));
+      if (level >= 4 && after.profiles.some((p) => p.home)) writeHomes(after);
       state.settings = after;
+      if (level >= 3 && !before.blockForeignDns && after.blockForeignDns) state.foreignSince = Date.now();
       if (before.log.enabled && !after.log.enabled) { state.log.length = 0; state.perPeer.clear(); }
       if (before.enabled && !after.enabled) state.pauses.clear();
       if (!before.enabled && after.enabled) state.since = Date.now();
       audit('vpn_dns_changed', { changed: keys, enabled: after.enabled }, ctx);
-      return clone(after);
+      return getSettings();
     }),
     'vpnDns.devices': read('devices', () => devicesView()),
     'vpnDns.lists': read('lists', () => {
@@ -544,14 +705,15 @@ function install({ opts, perms, atLeast, enabledUser, hostError, personCtx, grou
       const days = Number.isInteger(so && so.days) ? Math.max(1, Math.min(90, so.days)) : 7;
       const from = dayKey(now - (days - 1) * DAY);
       const today = dayKey(now);
-      const rows = [...state.days.filter((d) => d.day >= from && d.day < today), ...(state.today.queries ? [{ day: today, queries: state.today.queries, blocked: state.today.blocked, cached: state.today.cached || 0, top: state.today.top }] : [])];
+      const rows = [...state.days.filter((d) => d.day >= from && d.day < today), ...(state.today.queries ? [{ day: today, queries: state.today.queries, blocked: state.today.blocked, cached: state.today.cached || 0, top: state.today.top, blockedBy: state.today.blockedBy }] : [])];
       const all = new Map();
       for (const r of rows) for (const e of r.top || []) all.set(e.domain, (all.get(e.domain) || 0) + e.count);
       const sorted = (list) => list.slice().sort((a, b) => b.count - a.count || (a.domain < b.domain ? -1 : 1)).slice(0, LIMITS.top);
       const per = () => [...state.perPeer.entries()].map(([peerId, v]) => ({ peerId, queries: v.queries, blocked: v.blocked })).sort((a, b) => a.peerId - b.peerId);
       return {
-        today: { day: today, queries: state.today.queries || 0, blocked: state.today.blocked || 0, cached: state.today.cached || 0, top: sorted(state.today.top || []) },
-        days: rows.map((r) => ({ day: r.day, queries: r.queries, blocked: r.blocked, cached: r.cached || 0 })),
+        today: { day: today, queries: state.today.queries || 0, blocked: state.today.blocked || 0, cached: state.today.cached || 0, ...(level >= 2 ? { blockedBy: blockedByOf(state.today.blockedBy) } : {}), top: sorted(state.today.top || []) },
+        days: rows.map((r) => ({ day: r.day, queries: r.queries, blocked: r.blocked, cached: r.cached || 0, ...(level >= 2 ? { blockedBy: blockedByOf(r.blockedBy) } : {}) })),
+        ...(level >= 2 ? { blockedBy: (() => { const sum = blockedByOf(null); for (const r of rows) { const b = blockedByOf(r.blockedBy); for (const k of BLOCK_KINDS) sum[k] += b[k]; } return sum; })() } : {}),
         top: sorted([...all.entries()].map(([domain, count]) => ({ domain, count }))),
         perPeer: state.settings.log.enabled ? per() : null,
         perPeerToday: state.settings.log.enabled ? per() : null,
@@ -560,7 +722,7 @@ function install({ opts, perms, atLeast, enabledUser, hostError, personCtx, grou
     'vpnDns.test': read('test', ({ domain, who }) => {
       const d = normPattern(String(domain || '').trim().replace(/^\*\./, ''));
       if (!d) throw invalid('no domain');
-      const s = state.settings;
+      const s = getSettings();
       const w = who && typeof who === 'object' ? who : {};
       let dev = null;
       let profileId = DEFAULT_ID;
@@ -579,10 +741,13 @@ function install({ opts, perms, atLeast, enabledUser, hostError, personCtx, grou
       const profile = profileId ? s.profiles.find((p) => p.id === profileId) : null;
       let r;
       if (!profile) r = { action: 'allow', reason: 'no_profile' };
+      // "Internet pausieren" of the person: only "Immer erlaubt" answers — suspending does not lift it
+      else if (dev && dev.internetPaused && decide(d, profile, s).reason !== 'profile_allow') r = { action: 'block', reason: 'paused' };
       else if (dev && dev.suspended) r = { action: 'allow', reason: 'suspended' };
       else r = (typeof cfg.test === 'function' && cfg.test({ domain: d, profile: clone(profile), device: dev })) || decide(d, profile, s);
       return {
         domain: d, action: r.action, reason: r.reason, list: r.list || null, category: r.category || null, safeSearch: r.safeSearch || null,
+        ...(level >= 2 ? { scope: r.scope || null, match: r.match && typeof r.match.entry === 'string' ? { entry: r.match.entry, kind: r.match.kind } : null } : {}),
         profile: profile ? { id: profile.id, name: profile.name } : null,
         device: dev ? { peerId: dev.peerId, name: dev.name, state: dev.state } : null,
         filtered: !dev || dev.state === 'filtered',
@@ -622,7 +787,7 @@ function install({ opts, perms, atLeast, enabledUser, hostError, personCtx, grou
     'vpnDns.releasePihole': change('releasePihole', true, (a, ctx) => {
       if (stateNow() !== 'filtering') throw hostError('ERR_NOT_FILTERING', 'the DNS protection does not filter yet — Pi-hole keeps the chain');
       if (state.pihole.wantsChain) { state.pihole.wantsChain = false; audit('vpn_dns_pihole_released', {}, ctx); }
-      return { configured: state.pihole.configured, wantsChain: false, chain: 'off' };
+      return { configured: state.pihole.configured, wantsChain: false, chain: 'off', ...(level >= 2 ? { targets: state.pihole.configured ? clone(state.pihole.targets) : [] } : {}) };
     }),
     'vpnDns.log': read('log', ({ query }) => {
       if (!state.settings.log.enabled) throw hostError('ERR_LOG_OFF', 'the query log is switched off');
@@ -635,8 +800,9 @@ function install({ opts, perms, atLeast, enabledUser, hostError, personCtx, grou
       if (q.blockedOnly === true) rows = rows.filter((r) => r.action === 'block');
       if (typeof q.search === 'string' && q.search.trim()) { const needle = q.search.trim().toLowerCase().slice(0, 100); rows = rows.filter((r) => r.name.includes(needle)); }
       if (typeof q.since === 'string' && Number.isFinite(Date.parse(q.since))) rows = rows.filter((r) => r.at >= Date.parse(q.since));
+      if (level >= 2 && (q.scope === 'all' || q.scope === 'profile')) rows = rows.filter((r) => r.scope === q.scope);
       const page = rows.slice(0, limit);
-      return { entries: page.map((r) => ({ ...r, at: iso(r.at) })), next: rows.length > limit ? page[page.length - 1].id : null };
+      return { entries: page.map(({ scope, ...r }) => ({ ...r, at: iso(r.at), ...(level >= 2 ? { scope: scope || null } : {}) })), next: rows.length > limit ? page[page.length - 1].id : null };
     }),
     'vpnDns.clearLog': change('clearLog', true, (a, ctx) => {
       const n = state.log.length;
@@ -652,7 +818,8 @@ function install({ opts, perms, atLeast, enabledUser, hostError, personCtx, grou
     const obj = (x) => (x && typeof x === 'object' ? x : {});
     const actor = (x) => (obj(x).actor != null ? { actor: obj(x).actor } : {});
     return Object.freeze({
-      version: 1,
+      version: level,
+      ...(level >= 4 ? { homes: () => call('vpnDns.homes', {}) } : {}),
       status: () => call('vpnDns.status', {}),
       catalog: () => call('vpnDns.catalog', {}),
       get: () => call('vpnDns.get', {}),
@@ -677,10 +844,13 @@ function install({ opts, perms, atLeast, enabledUser, hostError, personCtx, grou
     });
   };
 
-  /** host.vpnDnsSet({ service, pihole, today, days, perPeer, peers, lists, internalDns, settings }) */
+  /** host.vpnDnsSet({ service, pihole, today, days, perPeer, peers, lists, internalDns, settings, homes, internet, foreignDnsError }) */
   function hostSet(x = {}) {
     if (x.service) { if (x.service !== state.service) state.since = Date.now(); state.service = x.service; }
     if (x.pihole) Object.assign(state.pihole, x.pihole);
+    if (x.homes) state.homes = homesOf(x.homes);
+    if (x.internet) setInternet(x.internet);
+    if ('foreignDnsError' in x) state.foreignDnsError = x.foreignDnsError || null;
     if (x.today) state.today = clone(x.today);
     if (x.days) state.days = clone(x.days);
     if (x.perPeer) { state.perPeer.clear(); for (const [k, v] of Object.entries(x.perPeer)) state.perPeer.set(Number(k), { ...v }); }
@@ -710,7 +880,10 @@ function install({ opts, perms, atLeast, enabledUser, hostError, personCtx, grou
   /** what GET /api/v1/client/permissions carries as `vpnDns` (vpnDns.clientInfo) */
   const clientInfo = (pluginId, usable) => (wanted() && usable ? { plugin: pluginId, state: stateNow() } : null);
 
-  return { on, api, gcPart, state, hostSet, hostEvent, hostExpire, hostLog: addLog, clientInfo };
+  /** `dnsProtection` of GET /api/v1/client/permissions (vpnDns.clientPlugin, GateControl ≥ 1.265.0): also while the protection is off */
+  const clientPlugin = (pluginId, usable) => (level >= 2 && usable ? { plugin: pluginId, enabled: state.settings.enabled, state: stateNow() } : null);
+
+  return { on, api, gcPart, state, hostSet, hostEvent, hostExpire, hostLog: addLog, clientInfo, clientPlugin };
 }
 
 module.exports = { install, LIMITS, LISTS, CATEGORIES };

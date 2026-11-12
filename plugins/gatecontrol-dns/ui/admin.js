@@ -8,7 +8,7 @@
   var TABS = ['overview', 'lists', 'profiles', 'devices', 'log', 'settings'];
   var S = null;                 // the answer of admin/all, kept current
   var tab = 'overview';
-  var ui = { test: null, testDomain: '', testWho: '', devQ: '', devProfile: '', devState: '', logQ: '', logPeer: '', logBlocked: '', logDays: '1', log: null, form: null, wizard: false };
+  var ui = { test: null, testDomain: '', testWho: '', devQ: '', devProfile: '', devState: '', logQ: '', logPeer: '', logBlocked: '', logScope: '', logDays: '1', log: null, form: null, wizard: false };
 
   function panel(id) { return $('#dn-p-' + id); }
   function profile(id) { return S.settings.profiles.filter(function (p) { return p.id === id; })[0] || null; }
@@ -26,7 +26,7 @@
   /** Take over what an answer brings (settings, config, status, devices …). */
   function merge(r) {
     if (!r || !S) return;
-    ['settings', 'config', 'devices', 'pauses', 'lists', 'catalog'].forEach(function (k) { if (r[k] && k !== 'lists') S[k] = r[k]; });
+    ['settings', 'config', 'devices', 'pauses', 'lists', 'catalog', 'homes'].forEach(function (k) { if (r[k] && k !== 'lists') S[k] = r[k]; });
     if (r.lists && r.lists.lists) S.lists = r.lists;
     if (r.status && r.status.peers) S.status = r.status;
     if (r.today && S.stats) S.stats.today = r.today;
@@ -36,6 +36,12 @@
 
   // ─── Übersicht ───
 
+  /** The people whose internet is paused (Familie) and who have a filtered VPN device: [{ name, until }] */
+  function internetPaused() {
+    var by = {};
+    S.devices.forEach(function (d) { if (d.internetPaused && d.state === 'filtered' && d.user && !by[d.user.id]) by[d.user.id] = { name: d.user.name, until: d.internetPaused }; });
+    return Object.keys(by).map(function (k) { return by[k]; });
+  }
   function pauseAll(b, body) { return act(b, 'POST', 'admin/pause', body).then(refresh); }
   function renderOverview() {
     var p = D.clear(panel('overview'));
@@ -64,6 +70,10 @@
         btn(T('ov.restart'), 'btn-sm', function (ev) { busy(ev.currentTarget, D.api('POST', 'admin/restart').then(function () { D.toast(T('ov.restarted')); return refresh(); })); }),
       ], 'alert'));
     }
+    var fd = st.foreignDns;
+    if (fd && fd.enabled && fd.error && state === 'filtering') p.appendChild(D.banner('warn', 'lock', T('se.fd_error_title'), T('se.fd_error_text', { error: fd.error }), [btn(T('tab.settings'), 'btn-sm', function () { show('settings'); })]));
+    var paused = internetPaused();
+    if (paused.length && state === 'filtering') p.appendChild(D.banner('warn', 'pause', T(paused.length === 1 ? 'ov.internet_title_one' : 'ov.internet_title', { n: paused.length }), T('ov.internet_text', { names: paused.map(function (x) { return T('ov.internet_who', { name: x.name, time: D.clock(x.until) }); }).join(', ') })));
     var tone = state === 'filtering' ? (st.pause ? 'warn' : 'good') : (state === 'fallback' ? 'crit' : 'grey');
     var label = state === 'filtering' ? (st.pause ? T('st.paused') : T('st.active')) : T('st.' + state);
     var t = st.today;
@@ -87,6 +97,14 @@
       el('div', { class: 's' }, [el('span', { class: 'n blk', text: D.num(t.blocked) }), el('span', { class: 't', text: T('ov.blocked') })]),
       el('div', { class: 's' }, [el('span', { class: 'n ok', text: D.num(Math.max(0, t.queries - t.blocked)) }), el('span', { class: 't', text: T('ov.allowed') })]),
     ])]));
+    // what blocked today's queries (counted since GateControl 1.265.0; days before that have no split)
+    var by = t.blockedBy || {};
+    var kinds = Object.keys(by).filter(function (k) { return by[k] > 0; });
+    if (kinds.length) {
+      c.appendChild(el('div', { class: 'dn-by', role: 'group', 'aria-label': T('ov.by_label') }, [el('span', { class: 's-hint', text: T('ov.by_label') })].concat(kinds.map(function (k) {
+        return el('span', { class: 'pl txt', text: D.TO('by.' + k, k) + ' ' + D.num(by[k]) });
+      }))));
+    }
     var loaded = st.lists.filter(function (l) { return l.loaded; });
     var entries = loaded.reduce(function (n, l) { return n + l.entries; }, 0);
     var kpi = function (lab, val, sub) { return el('div', { class: 'kpi' }, [el('div', { class: 'lab', text: lab }), el('div', { class: 'val', text: val }), el('small', { text: sub })]); };
@@ -166,11 +184,12 @@
     var target = r.device ? r.device.name : (r.profile ? T('test.profile', { name: r.profile.name }) : T('test.default'));
     var parts = [];
     if (r.profile) parts.push(T('test.profile', { name: r.profile.name }));
-    parts.push(D.reasonText(r, null));
+    parts.push(D.reasonText(r, true));
+    if (D.matchText(r.match)) parts.push(D.matchText(r.match));
     if (r.safeSearch) parts.push(T('test.safe', { host: r.safeSearch }));
     var prof = r.profile && r.profile.id !== 'default' ? r.profile : null;
     var buttons = [];
-    if (r.reason !== 'no_profile' && r.reason !== 'suspended' && r.reason !== 'internal' && r.reason !== 'local' && r.reason !== 'canary') {
+    if (r.reason !== 'no_profile' && r.reason !== 'suspended' && r.reason !== 'paused' && r.reason !== 'internal' && r.reason !== 'local' && r.reason !== 'canary') {
       if (blocked) { buttons.push(entryAction(T('test.allow_all'), 'allow', r.domain)); if (prof) buttons.push(entryAction(T('test.allow_profile', { name: prof.name }), 'allow', r.domain, prof.id)); } else {
         buttons.push(entryAction(T('test.deny_all'), 'deny', r.domain));
         if (prof) buttons.push(entryAction(T('test.deny_profile', { name: prof.name }), 'deny', r.domain, prof.id));
@@ -242,6 +261,7 @@
       var pills = pr.lists.length > 2 ? [el('span', { class: 'pl txt', text: T('pf.n_lists', { n: pr.lists.length }) })] : pr.lists.map(function (id) { return el('span', { class: 'pl txt', text: D.listName(id) }); });
       if (!pr.lists.length) pills.push(el('span', { class: 'pl txt', text: T('pf.no_lists') }));
       if (pr.safeSearch) pills.push(el('span', { class: 'pl txt', text: T('pf.safe') }));
+      if (pr.home) pills.push(el('span', { class: 'pl txt on', title: T('pf.home_pill_title', { home: pr.home.gatewayName }) }, [icon('home', 's12'), T('pf.home_pill')]));
       if (pr.allow.length) pills.push(el('span', { class: 'pl txt', text: T('pf.n_allow', { n: pr.allow.length }) }));
       if (pr.deny.length) pills.push(el('span', { class: 'pl txt', text: T('pf.n_deny', { n: pr.deny.length }) }));
       var allowed = S.config.pause.profiles[pr.id] !== false;
@@ -321,32 +341,44 @@
   }
   function openProfile(id) {
     var isNew = id === null;
-    var src = isNew ? { id: null, name: '', lists: S.catalog.lists.filter(function (l) { return l.defaultOn; }).map(function (l) { return l.id; }), safeSearch: false, allow: [], deny: [], schedules: [], groups: [], peerGroups: [], users: [], peers: [] } : profile(id);
+    var src = isNew ? { id: null, name: '', lists: S.catalog.lists.filter(function (l) { return l.defaultOn; }).map(function (l) { return l.id; }), safeSearch: false, allow: [], deny: [], schedules: [], groups: [], peerGroups: [], users: [], peers: [], home: null } : profile(id);
     if (!src) return;
     var f = JSON.parse(JSON.stringify(src));
     var isDefault = id === 'default';
     var pauseAllowed = isNew ? true : S.config.pause.profiles[id] !== false;
+    // shared with a home network: `pick` = '' | 'g:<gateway>:<home profile>' (take that profile over) | 'c:<gateway>' (the
+    // home gets this profile); `unlink` ends a link that exists
+    var link = { pick: '', unlink: false };
+    var homes = S.homes || [];
+    function linked() { return !!(src.home && !link.unlink); }
+    function adopting() { return /^g:/.test(link.pick); }
+    function shares() { return linked() || !!link.pick; }
+    /** A label; what a shared profile has in common with the home's profile carries the mark "Heimnetz". */
+    function lbl(text, cls) {
+      return el(cls ? 'div' : 'span', { class: cls || 'lbl' }, [text, shares() ? el('span', { class: 'pl txt on', style: 'margin-left:8px;min-height:20px;text-transform:none;letter-spacing:0', title: T('pf.home_field') }, [icon('home', 's12'), T('pf.home_field_short')]) : null]);
+    }
     var name = el('input', { class: 'inp', id: 'dn-pf-name', maxlength: '40', value: f.name, autocomplete: 'off' });
-    var listBox = el('div', { class: 'fg' }, [el('span', { class: 'lbl', text: T('pf.lists') })].concat(S.lists.lists.map(function (l) {
-      return el('label', { class: 'chk' }, [el('input', { type: 'checkbox', checked: f.lists.indexOf(l.id) >= 0, on: { change: function (ev) { f.lists = f.lists.filter(function (x) { return x !== l.id; }); if (ev.target.checked) f.lists.push(l.id); } } }),
-        el('span', { text: D.listName(l.id) }), el('small', { text: (l.estimated ? T('li.about') + ' ' : '') + D.num(l.entries) })]);
-    })));
+    function listBox() {
+      return el('div', { class: 'fg' }, [lbl(T('pf.lists'))].concat(S.lists.lists.map(function (l) {
+        return el('label', { class: 'chk' }, [el('input', { type: 'checkbox', checked: f.lists.indexOf(l.id) >= 0, on: { change: function (ev) { f.lists = f.lists.filter(function (x) { return x !== l.id; }); if (ev.target.checked) f.lists.push(l.id); } } }),
+          el('span', { text: D.listName(l.id) }), el('small', { text: (l.estimated ? T('li.about') + ' ' : '') + D.num(l.entries) })]);
+      })));
+    }
     var times = el('div', { class: 'fg' });
     function drawTimes() {
       D.clear(times);
-      times.appendChild(el('span', { class: 'lbl', text: T('pf.times_label') }));
+      times.appendChild(lbl(T('pf.times_label')));
       f.schedules.forEach(function (s, i) {
         times.appendChild(el('div', { class: 'rw box' }, [el('div', { class: 't' }, [el('b', { text: scheduleTitle(s) }), el('small', { text: scheduleSub(s) })]),
           el('button', { type: 'button', class: 'btn btn-ghost btn-sm', 'aria-label': T('common.remove_x', { name: scheduleTitle(s) }), on: { click: function () { f.schedules.splice(i, 1); drawTimes(); } } }, [icon('x', 's16')])]));
       });
       times.appendChild(el('div', {}, [btn(T('pf.add_time'), 'btn-sm', function () { openSchedule(function (s) { f.schedules.push(s); drawTimes(); }); }, 'plus')]));
     }
-    drawTimes();
     function entryBox(kind) {
       var box = el('div', { class: 'fg' });
       function draw() {
         D.clear(box);
-        box.appendChild(el('span', { class: 'lbl', text: T('pf.' + kind + '_label') }));
+        box.appendChild(lbl(T('pf.' + kind + '_label')));
         var input = el('input', { class: 'inp mono', placeholder: T('li.placeholder'), 'aria-label': T('pf.' + kind + '_label'), autocomplete: 'off', spellcheck: 'false', hidden: true, style: 'min-height:28px' });
         var add = el('button', { type: 'button', class: 'pl add', on: { click: function () { input.hidden = false; add.hidden = true; input.focus(); } } }, [icon('plus', 's12'), T('pf.entry')]);
         function commit() { splitDomains(input.value).forEach(function (d) { d = d.toLowerCase(); if (f[kind].indexOf(d) < 0) f[kind].push(d); }); draw(); }
@@ -377,10 +409,13 @@
           pick(T('pf.pick_peergroup'), S.peerGroups.map(function (g) { return { id: g.id, label: g.name }; }), f.peerGroups).then(function (ids) { if (ids) { f.peerGroups = ids; drawMembers(); } });
         }));
       }
-      members.appendChild(el('div', { class: 's-sub', text: T('pf.persons') }));
-      members.appendChild(memberPills('users', f.users, function (x) { return nameOf(S.users, x); }, 'user', T('pf.pick_user'), function () {
-        pickPrincipals('user', T('pf.pick_user'), S.users.map(function (u) { return { id: u.id, label: u.name }; }), f.users).then(function (ids) { if (ids) { f.users = ids; drawMembers(); } });
-      }));
+      // the people of a profile that is taken over from the home come from there
+      if (!adopting()) {
+        members.appendChild(lbl(T('pf.persons'), 's-sub'));
+        members.appendChild(memberPills('users', f.users, function (x) { return nameOf(S.users, x); }, 'user', T('pf.pick_user'), function () {
+          pickPrincipals('user', T('pf.pick_user'), S.users.map(function (u) { return { id: u.id, label: u.name }; }), f.users).then(function (ids) { if (ids) { f.users = ids; drawMembers(); } });
+        }));
+      }
       members.appendChild(el('div', { class: 's-sub', text: T('pf.devices') }));
       members.appendChild(memberPills('peers', f.peers, deviceName, 'phone', T('pf.pick_peer'), function () {
         pick(T('pf.pick_peer'), S.devices.filter(function (d) { return d.type === 'peer'; }).map(function (d) { return { id: d.peerId, label: d.name, sub: d.user ? d.user.name : '' }; }), f.peers).then(function (ids) { if (ids) { f.peers = ids; drawMembers(); } });
@@ -388,31 +423,73 @@
       var names = S.devices.filter(function (d) { return d.type === 'peer' && (f.peers.indexOf(d.peerId) >= 0 || (d.user && f.users.indexOf(d.user.id) >= 0)); }).map(function (d) { return d.name; });
       members.appendChild(hint((names.length ? T('pf.applies', { devices: names.join(', ') }) + ' ' : '') + T('pf.applies_rule')));
     }
-    if (!isDefault) drawMembers();
-    var body = [
-      el('div', { class: 'fg' }, [el('label', { for: 'dn-pf-name', text: T('pf.name') }), name]),
-      isDefault ? hint(T('pf.default_hint')) : null,
-      listBox,
-      D.row(T('pf.safe'), T('pf.safe_hint'), D.sw(f.safeSearch, function (on) { f.safeSearch = on; }, T('pf.safe')), 'flat'),
-      times, entryBox('allow'), entryBox('deny'),
-      isDefault ? null : members,
-      S.config.pause.who === 'profile' ? D.row(T('pf.pause_switch'), T('pf.pause_switch_hint'), D.sw(pauseAllowed, function (on) { pauseAllowed = on; }, T('pf.pause_switch')), 'flat') : null,
-    ];
+    /** "Gilt zu Hause und unterwegs" (a link that exists) or the choice "Mit Heimnetz-Profil verbinden". */
+    function homeBox() {
+      if (src.home && !link.unlink) {
+        return el('div', { class: 'res home' }, [icon('home', 's18'), el('div', {}, [
+          el('b', { text: T('pf.home_title') }), ' ' + T('pf.home_text', { home: src.home.gatewayName, name: src.home.name }), el('br'),
+          el('small', { text: T(isDefault ? 'pf.home_fields_default' : 'pf.home_fields') }),
+          el('div', { class: 'btns', style: 'margin-top:8px' }, [btn(T('pf.home_unlink'), 'btn-sm', function () { link.unlink = true; fill(); })]),
+        ])]);
+      }
+      if (src.home) {
+        return el('div', { class: 'fg' }, [el('span', { class: 'lbl', text: T('pf.home_label') }), hint(T('pf.home_unlink_note', { home: src.home.gatewayName })),
+          el('div', {}, [btn(T('pf.home_keep'), 'btn-sm', function () { link.unlink = false; fill(); })])]);
+      }
+      var opts = [el('option', { value: '', text: T('pf.home_none') })];
+      homes.forEach(function (h) {
+        h.profiles.forEach(function (hp) {
+          if (hp.linkedTo || (hp.id === 'default') !== isDefault) return;
+          var v = 'g:' + h.gateway.peerId + ':' + hp.id;
+          opts.push(el('option', { value: v, text: T('pf.home_opt', { home: h.gateway.name, name: hp.name }), selected: link.pick === v }));
+        });
+        if (!isDefault) opts.push(el('option', { value: 'c:' + h.gateway.peerId, text: T('pf.home_create', { home: h.gateway.name }), selected: link.pick === 'c:' + h.gateway.peerId }));
+      });
+      if (opts.length < 2) return null;
+      var sel = el('select', { class: 'inp', id: 'dn-pf-home', on: { change: function () { link.pick = sel.value; fill(); } } }, opts);
+      return el('div', { class: 'fg' }, [el('label', { for: 'dn-pf-home', text: T('pf.home_label') }), sel,
+        hint(T(adopting() ? (isDefault ? 'pf.home_adopt_hint_default' : 'pf.home_adopt_hint') : (link.pick ? 'pf.home_create_hint' : 'pf.home_hint')))]);
+    }
+    var m;
+    /** (Re)build the dialog: what a profile takes over from the home's profile is not asked here. */
+    function fill() {
+      drawTimes();
+      if (!isDefault) drawMembers();
+      var own = !adopting();
+      var body = [
+        el('div', { class: 'fg' }, [el('label', { for: 'dn-pf-name', text: T('pf.name') }), name, shares() ? hint(T('pf.home_name_hint')) : null]),
+        isDefault ? hint(T('pf.default_hint')) : null,
+        homeBox(),
+        own ? listBox() : null,
+        own ? D.row(T('pf.safe'), T('pf.safe_hint') + (shares() ? ' ' + T('pf.home_field') : ''), D.sw(f.safeSearch, function (on) { f.safeSearch = on; }, T('pf.safe')), 'flat') : null,
+        own ? times : null, own ? entryBox('allow') : null, own ? entryBox('deny') : null,
+        isDefault ? null : members,
+        S.config.pause.who === 'profile' ? D.row(T('pf.pause_switch'), T('pf.pause_switch_hint'), D.sw(pauseAllowed, function (on) { pauseAllowed = on; }, T('pf.pause_switch')), 'flat') : null,
+      ];
+      D.clear(m.body);
+      body.forEach(function (x) { if (x) m.body.appendChild(x); });
+    }
     var save = btn(T('common.save'), 'btn-primary', function () {
-      var prof = { name: name.value.trim(), lists: f.lists, safeSearch: f.safeSearch, allow: f.allow, deny: f.deny, schedules: f.schedules };
-      if (!isDefault) { prof.groups = f.groups; prof.peerGroups = f.peerGroups; prof.users = f.users; prof.peers = f.peers; }
+      var prof = { name: name.value.trim() };
+      // a profile taken over from the home: its lists, safe search, times, own entries and people come from there
+      if (!adopting()) { prof.lists = f.lists; prof.safeSearch = f.safeSearch; prof.allow = f.allow; prof.deny = f.deny; prof.schedules = f.schedules; }
+      if (!isDefault) { prof.groups = f.groups; prof.peerGroups = f.peerGroups; prof.peers = f.peers; if (!adopting()) prof.users = f.users; }
+      if (src.home && link.unlink) prof.home = null;
+      else if (adopting()) { var g = link.pick.split(':'); prof.home = { gateway: Number(g[1]), profile: g.slice(2).join(':') }; } else if (link.pick) prof.home = { gateway: Number(link.pick.slice(2)), create: true };
       if (!prof.name) { D.toast(T('pf.name_needed'), 'error'); name.focus(); return; }
       var body2 = { profile: prof };
       if (S.config.pause.who === 'profile') body2.pauseAllowed = pauseAllowed;
       busy(save, D.api(isNew ? 'POST' : 'PUT', 'admin/profiles' + (isNew ? '' : '/' + encodeURIComponent(id)), body2).then(function () { m.close(); D.toast(T('common.saved')); return reload(); }));
     });
     var del = isNew || isDefault ? null : btn(T('pf.delete'), 'btn-danger', function () {
-      D.confirmDialog(T('pf.delete_title', { name: src.name }), T('pf.delete_text'), T('pf.delete'), true).then(function (ok) {
+      D.confirmDialog(T('pf.delete_title', { name: src.name }), T(src.home ? 'pf.delete_text_home' : 'pf.delete_text'), T('pf.delete'), true).then(function (ok) {
         if (!ok) return;
         busy(del, D.api('DELETE', 'admin/profiles/' + encodeURIComponent(id)).then(function () { m.close(); return reload(); }));
       });
     });
-    var m = D.modal({ title: isNew ? T('pf.new_title') : T('pf.edit_title', { name: src.name }), body: body, foot: [del, el('span', { class: 'g' }), btn(T('common.cancel'), 'btn-ghost', function () { m.close(); }), save] });
+    m = D.modal({ title: isNew ? T('pf.new_title') : T('pf.edit_title', { name: src.name }), body: [], foot: [del, el('span', { class: 'g' }), btn(T('common.cancel'), 'btn-ghost', function () { m.close(); }), save] });
+    fill();
+    name.focus();
   }
 
   // ─── Geräte ───
@@ -434,6 +511,7 @@
     if (d.state === 'disabled') return tag(T('dv.s_disabled'), 'grey');
     if (S.status.state === 'fallback') return tag(T('dv.s_unfiltered'), 'crit');
     if (S.status.state !== 'filtering') return tag(T('dv.s_off'), 'grey');
+    if (d.internetPaused) return tag(T('dv.s_internet_until', { time: D.clock(d.internetPaused) }), 'crit');
     if (d.suspended) return tag(d.suspendedUntil ? T('dv.s_paused_until', { time: D.clock(d.suspendedUntil) }) : T('dv.s_paused'), 'warn');
     return tag(T('dv.s_filtered'), 'good');
   }
@@ -473,7 +551,8 @@
         el('td', {}, [d.profile && d.state !== 'ownDns' ? d.profile.name : '–', el('small', { text: viaText(d) })]),
         el('td', { class: 'r mono', text: filtered && t ? D.num(t.queries) : '–' }),
         el('td', { class: 'r mono', text: filtered && t ? D.num(t.blocked) + ' · ' + D.pct(t.blocked, t.queries) : '–' }),
-        el('td', {}, [stateTag(d)]),
+        el('td', {}, [stateTag(d), filtered && d.timesSuspended && S.status.state === 'filtering' ? el('small', { text: T('dv.times_suspended', { time: D.clock(d.timesSuspended) }) }) : null,
+          filtered && d.internetPaused && d.suspended && S.status.state === 'filtering' ? el('small', { text: T('dv.also_paused') }) : null]),
         el('td', {}, [el('div', { class: 'btns' }, [on, action])]),
       ]);
     });
@@ -495,6 +574,7 @@
     p.appendChild(el('div', { class: 'tw', tabindex: '0', role: 'region', 'aria-label': T('dv.table') }, [el('table', { class: 'tb' }, [
       el('thead', {}, [el('tr', {}, head.map(function (h, i) { return el('th', { class: i === 3 || i === 4 ? 'r' : '', text: h }); }))]), body])]));
     if (S.status.state === 'filtering' && S.status.pause) p.appendChild(hint(S.status.pause.openEnd ? T('dv.paused_open') : T('dv.paused_until', { time: D.clock(S.status.pause.until) })));
+    if (S.devices.some(function (d) { return d.internetPaused && d.state === 'filtered'; })) p.appendChild(hint(T('dv.internet_hint')));
     p.appendChild(hint(T(S.status.log.enabled ? 'dv.hint' : 'dv.hint_nolog')));
   }
 
@@ -506,6 +586,7 @@
     if (ui.logQ.trim()) q.push('search=' + encodeURIComponent(ui.logQ.trim()));
     if (ui.logPeer) q.push('peerId=' + encodeURIComponent(ui.logPeer));
     if (ui.logBlocked) q.push('blockedOnly=1');
+    if (ui.logScope) q.push('scope=' + encodeURIComponent(ui.logScope));
     if (ui.logDays) q.push('days=' + encodeURIComponent(ui.logDays));
     if (more && ui.log && ui.log.next) q.push('before=' + ui.log.next);
     return D.api('GET', 'admin/log' + (q.length ? '?' + q.join('&') : '')).then(function (r) {
@@ -524,12 +605,6 @@
     });
   }
   var RESULT_TONE = { blocked: 'crit', allowed: 'good', allowed_paused: 'warn', safe_search: 'blue' };
-  /** "Immer gesperrt" of the profile itself (not one of the entries that hold for everybody)? */
-  function ownProfileEntry(e) {
-    if (e.reason !== 'profile_deny' || !e.profile) return false;
-    var matches = function (p) { p = p.replace(/^\*\./, ''); return e.domain === p || e.domain.slice(-p.length - 1) === '.' + p; };
-    return !S.settings.deny.some(matches);
-  }
   function drawLog() {
     var box = $('#dn-log-box');
     if (!box) return;
@@ -542,7 +617,7 @@
         el('td', {}, [e.device || '#' + e.peerId, el('small', { text: [e.person, e.profile && e.profile.name].filter(Boolean).join(' · ') })]),
         el('td', { class: 'mono', text: e.domain }),
         el('td', {}, [tag(T('lg.r_' + e.result), RESULT_TONE[e.result] || 'grey', e.result === 'safe_search')]),
-        el('td', { text: D.reasonText(e, ownProfileEntry(e) ? e.profile.name : null) }),
+        el('td', { text: D.reasonText(e) }),
         el('td', {}, [canAct ? btn(T(e.result === 'blocked' ? 'lg.allow' : 'lg.deny'), 'btn-ghost btn-sm', function () { entryDialog(e, e.result === 'blocked' ? 'allow' : 'deny'); }) : null]),
       ]);
     })));
@@ -578,8 +653,9 @@
     var selD = el('select', { class: 'inp', 'aria-label': T('lg.f_device'), on: { change: function () { ui.logPeer = selD.value; loadLog(); } } }, [el('option', { value: '', text: T('lg.all_devices') })].concat(
       S.devices.filter(function (d) { return d.type === 'peer'; }).map(function (d) { return el('option', { value: d.peerId, text: d.name, selected: String(d.peerId) === ui.logPeer }); })));
     var selB = el('select', { class: 'inp', 'aria-label': T('lg.f_result'), on: { change: function () { ui.logBlocked = selB.value; loadLog(); } } }, [el('option', { value: '', text: T('lg.all_results') }), el('option', { value: '1', text: T('lg.only_blocked'), selected: ui.logBlocked === '1' })]);
+    var selS = el('select', { class: 'inp', 'aria-label': T('lg.f_scope'), on: { change: function () { ui.logScope = selS.value; loadLog(); } } }, [['', T('lg.all_reasons')], ['all', T('lg.scope_all')], ['profile', T('lg.scope_profile')]].map(function (x) { return el('option', { value: x[0], text: x[1], selected: ui.logScope === x[0] }); }));
     var selT = el('select', { class: 'inp', 'aria-label': T('lg.f_time'), on: { change: function () { ui.logDays = selT.value; loadLog(); } } }, [['1', T('lg.today')], ['7', T('lg.days7')], ['', T('lg.all_time')]].map(function (x) { return el('option', { value: x[0], text: x[1], selected: ui.logDays === x[0] }); }));
-    p.appendChild(el('div', { class: 'btns' }, [el('div', { class: 'inp-ic' }, [icon('search', 's14'), search]), selD, selB, selT, btn(T('lg.clear'), 'btn-ghost btn-sm', function (ev) {
+    p.appendChild(el('div', { class: 'btns' }, [el('div', { class: 'inp-ic' }, [icon('search', 's14'), search]), selD, selB, selS, selT, btn(T('lg.clear'), 'btn-ghost btn-sm', function (ev) {
       var b = ev.currentTarget;
       D.confirmDialog(T('lg.clear_title'), T('lg.clear_text'), T('lg.clear'), true).then(function (ok) { if (ok) busy(b, D.api('POST', 'admin/log/clear').then(function () { ui.log = null; return loadLog(); })); });
     })]));
@@ -597,7 +673,7 @@
   function renderSettings() {
     var p = D.clear(panel('settings'));
     var s = S.settings;
-    var f = ui.form || (ui.form = { provider: s.upstream.provider, url: s.upstream.url || '', fallbackRouter: s.upstream.fallbackRouter, who: S.config.pause.who, maxMinutes: S.config.pause.maxMinutes, forever: S.config.pause.forever, outage: S.config.notify.outage, weekly: S.config.notify.weekly });
+    var f = ui.form || (ui.form = { provider: s.upstream.provider, url: s.upstream.url || '', fallbackRouter: s.upstream.fallbackRouter, who: S.config.pause.who, maxMinutes: S.config.pause.maxMinutes, forever: S.config.pause.forever, outage: S.config.notify.outage, weekly: S.config.notify.weekly, outageUsers: S.config.notify.outageUsers, blockForeignDns: s.blockForeignDns === true, homeInternet: s.homeInternet !== false });
     var on = s.enabled;
     p.appendChild(el('div', { class: 'card' }, [D.row(T(on ? 'se.on_title' : 'se.off_title'), T(on ? 'se.on_hint' : 'se.off_hint'), on
       ? btn(T('se.switch_off'), 'btn-danger btn-sm', function (ev) {
@@ -613,6 +689,7 @@
       D.row(T('se.fallback'), T('se.fallback_hint'), D.sw(f.fallbackRouter, function (v) { f.fallbackRouter = v; }, T('se.fallback')), 'flat')]));
     var c4 = card('s6', T('se.notify'), 'bell', null, [el('div', { class: 'rows' }, [
       D.row(T('se.n_outage'), T('se.n_outage_hint'), D.sw(f.outage, function (v) { f.outage = v; }, T('se.n_outage'))),
+      D.row(T('se.n_outage_users'), T('se.n_outage_users_hint'), D.sw(f.outageUsers, function (v) { f.outageUsers = v; }, T('se.n_outage_users'))),
       D.row(T('se.n_weekly'), T('se.n_weekly_hint'), D.sw(f.weekly, function (v) { f.weekly = v; }, T('se.n_weekly'))),
     ])]);
     var perProfile = S.settings.profiles.map(function (x) { return x.name + ': ' + T(S.config.pause.profiles[x.id] !== false ? 'se.allowed' : 'se.locked'); }).join(' · ');
@@ -626,20 +703,51 @@
         el('div', { class: 'fg s8' }, [el('span', { class: 'lbl', text: T('se.forever') }), D.row(T('se.forever_switch'), T('se.forever_hint'), D.sw(f.forever, function (v) { f.forever = v; }, T('se.forever_switch')), 'flat')])]),
       hint(T('se.pause_hint')),
     ]);
-    p.appendChild(grid([c1, c4, c3]));
+    // "Umgehung erschweren": foreign DNS servers and DNS over TLS — the state comes from GateControl's firewall rules
+    var fd = S.status.foreignDns || { enabled: false, active: false, devices: 0, error: null };
+    var fdTag = null;
+    var fdNote = null;
+    if (fd.enabled && fd.error) { fdTag = tag(T('se.fd_failed'), 'crit'); fdNote = D.banner('warn', 'warn', T('se.fd_error_title'), T('se.fd_error_text', { error: fd.error })); } else if (fd.enabled && fd.active) fdTag = tag(T(fd.devices === 1 ? 'se.fd_active_one' : 'se.fd_active', { n: fd.devices }), 'good');
+    else if (fd.enabled) { fdTag = tag(T('se.fd_idle'), 'grey'); fdNote = hint(T(S.status.state !== 'filtering' ? 'se.fd_idle_filter' : (S.status.pause ? 'se.fd_idle_pause' : 'se.fd_idle_wait'))); }
+    if (fdTag) fdTag.className += ' sp';
+    var c5 = card('s6', T('se.fd_title'), 'lock', fdTag, [
+      D.row(T('se.fd_switch'), T('se.fd_switch_hint'), D.sw(f.blockForeignDns, function (v) { f.blockForeignDns = v; }, T('se.fd_switch')), 'flat'),
+      fdNote, hint(T('se.fd_scope')), hint(T('se.fd_doh')),
+    ]);
+    // "Heimnetz und Familie": the family plugin's "Internet pausieren" reaches the VPN devices; profiles shared with a home
+    var shared = S.settings.profiles.filter(function (x) { return x.home; });
+    var c6 = card('s6', T('se.home_title'), 'home', null, [
+      D.row(T('se.hi_switch'), T('se.hi_switch_hint'), D.sw(f.homeInternet, function (v) { f.homeInternet = v; }, T('se.hi_switch')), 'flat'),
+      el('div', { class: 's-sub', text: T('se.home_profiles') }),
+      hint(!(S.homes || []).length ? T('se.home_none') : (shared.length
+        ? T('se.home_shared', { list: shared.map(function (x) { return T('se.home_shared_item', { name: x.name, home: x.home.gatewayName }); }).join(', ') })
+        : T('se.home_not_shared'))),
+      (S.homes || []).length ? el('div', {}, [btn(T('se.home_open'), 'btn-sm', function () { show('profiles'); }, 'home')]) : null,
+    ]);
+    p.appendChild(grid([c1, c4, c5, c6, c3]));
     var save = btn(T('common.save'), 'btn-primary', function () {
       var up = { provider: f.provider, fallbackRouter: f.fallbackRouter };
       if (f.provider === 'custom') up.url = f.url.trim();
-      busy(save, D.api('PUT', 'admin/settings', { upstream: up }).then(function (r) {
+      busy(save, D.api('PUT', 'admin/settings', { upstream: up, blockForeignDns: f.blockForeignDns, homeInternet: f.homeInternet }).then(function (r) {
         merge(r);
-        return D.api('PUT', 'admin/config', { pause: { who: f.who, maxMinutes: f.maxMinutes, forever: f.forever }, notify: { outage: f.outage, weekly: f.weekly } });
-      }).then(function (r) { merge(r); ui.form = null; D.toast(T('common.saved')); render(); }));
+        return D.api('PUT', 'admin/config', { pause: { who: f.who, maxMinutes: f.maxMinutes, forever: f.forever }, notify: { outage: f.outage, outageUsers: f.outageUsers, weekly: f.weekly } });
+      }).then(function (r) { merge(r); ui.form = null; D.toast(T('common.saved')); render(); return refresh(); }));
     });
     p.appendChild(el('div', { class: 'dn-savebar' }, [btn(T('common.discard'), 'btn-ghost', function () { ui.form = null; renderSettings(); }), save]));
   }
 
   // ─── Einrichten / Umzug von Pi-hole ───
 
+  /** Where the VPN devices reach Pi-hole today (status().pihole.targets): one sentence per instance. */
+  function piholeWhere() {
+    return ((S.status.pihole && S.status.pihole.targets) || []).map(function (x) {
+      var addr = x.ip + (x.port && x.port !== 53 ? ':' + x.port : '');
+      var name = x.name ? ' ' + quoted(x.name) : '';
+      if (x.gateway && x.gateway.via === 'tunnel') return T('wz.pihole_on_gateway', { name: name, gateway: x.gateway.name, addr: addr });
+      if (x.gateway) return T('wz.pihole_via_gateway', { name: name, gateway: x.gateway.name, addr: addr });
+      return T('wz.pihole_at', { name: name, addr: addr });
+    });
+  }
   function openWizard(resume) {
     if (ui.wizard) return;
     ui.wizard = true;
@@ -660,7 +768,7 @@
     function draw() {
       if (step === 1) {
         set([steps(),
-          pihole ? D.banner('warn', 'info', T('wz.pihole_title'), T('wz.pihole_text')) : D.banner('info', 'shield', T('wz.welcome_title'), T('wz.welcome_text')),
+          pihole ? D.banner('warn', 'info', T('wz.pihole_title'), [T('wz.pihole_text')].concat(piholeWhere()).join(' ')) : D.banner('info', 'shield', T('wz.welcome_title'), T('wz.welcome_text')),
           el('ul', { class: 'checks' }, [check('', T('wz.c1'), T('wz.c1_sub')), check('', T('wz.c2'), T('wz.c2_sub')), check('', T(pihole ? 'wz.c3' : 'wz.c3_new'), T(pihole ? 'wz.c3_sub' : 'wz.c3_new_sub'))]),
         ], [btn(T('wz.later'), 'btn-ghost', function () { m.close(); }), btn(T(pihole ? 'wz.replace' : 'wz.next'), 'btn-primary', function () { step = 2; draw(); })]);
       } else if (step === 2) {

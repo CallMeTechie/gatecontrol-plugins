@@ -1,7 +1,7 @@
 'use strict';
 
 // gatecontrol-dns — "DNS-Schutz": the administration of GateControl's DNS protection for the VPN devices
-// (gc.vpnDns, permissions.vpnDns; GateControl ≥ 1.264.0). GateControl filters — its own filter service behind the
+// (gc.vpnDns, permissions.vpnDns; GateControl ≥ 1.267.0 — gc.vpnDns.version 4). GateControl filters — its own filter service behind the
 // VPN's DNS; this plugin says what is blocked for whom, suspends the protection and reads the counters.
 //
 //   settings page admin/*  (administrators)       — server/admin.js
@@ -43,7 +43,7 @@ const state = { ticking: false, off: null };
 module.exports = {
   async start(gc) {
     rights.reset();
-    if (!gc.vpnDns) { gc.log.warn('gc.vpnDns is missing — GateControl 1.264.0 or newer is needed'); return; }
+    if (!gc.vpnDns) { gc.log.warn('gc.vpnDns is missing — GateControl 1.267.0 or newer is needed'); return; }
     if (state.off) { try { state.off(); } catch { /* gone */ } }
     state.off = gc.vpnDns.on((ev) => notices.onEvent(gc, t, ev).catch((e) => gc.log.warn('event not handled', ev && ev.type, (e && (e.code || e.message)) || 'error')));
     gc.log.info('dns protection started', gc.plugin.version);

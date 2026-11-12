@@ -231,3 +231,69 @@ test('peerId of an app viewer reaches only a plugin with permissions.vpnDns', as
     await h.close();
   } finally { p.done(); }
 });
+
+test('later hosts: gc.vpnDns.version 2 (1.265.0), 3 (1.266.0), 4 (1.267.0) — each adds fields, an older one has none of them', async () => {
+  const targets = [{ name: 'pi', ip: '192.168.178.5', port: 53, gateway: null }];
+  const shape = async (gatecontrol) => {
+    const s = await setup({ host: { gatecontrol }, vpnDns: { pihole: { configured: true, targets }, settings: { enabled: true, deny: ['temu.com'], log: { enabled: true } }, log: [{ peerId: 10, name: 'temu.com', action: 'block', reason: 'profile_deny', scope: 'all' }] } });
+    try {
+      const st = (await s.read('status')).result;
+      const t = (await s.read('test', 'shop.temu.com')).result;
+      const dev = (await s.read('devices')).result[0];
+      const get = (await s.read('get')).result;
+      return [s.h.gc.vpnDns.version, 'targets' in st.pihole, 'blockedBy' in st.today, 'match' in t, 'scope' in (await s.read('log')).result.entries[0], 'foreignDns' in st, 'blockForeignDns' in get, 'foreignDnsBlocked' in dev,
+        'homeInternet' in get, 'home' in get.profiles[0], 'internetPaused' in dev, typeof s.h.gc.vpnDns.homes, st.today.blockedBy ? Object.keys(st.today.blockedBy).length : 0, !!s.h.vpnDnsProtectionInfo()];
+    } finally { await s.done(); }
+  };
+  assert.deepEqual(await shape('1.264.0'), [1, false, false, false, false, false, false, false, false, false, false, 'undefined', 0, false]);
+  assert.deepEqual(await shape('1.265.0'), [2, true, true, true, true, false, false, false, false, false, false, 'undefined', 5, true]);
+  assert.deepEqual(await shape('1.266.0'), [3, true, true, true, true, true, true, true, false, false, false, 'undefined', 5, true]);
+  assert.deepEqual(await shape('1.267.0'), [4, true, true, true, true, true, true, true, true, true, true, 'function', 6, true]);
+  // an older host does not know the newer settings
+  const old = await setup({ host: { gatecontrol: '1.265.0' } });
+  try {
+    assert.match((await old.as(USERS[0], 'set', { blockForeignDns: true })).message, /^blockForeignDns: unknown$/);
+    assert.match((await old.as(USERS[0], 'set', { homeInternet: false })).message, /^homeInternet: unknown$/);
+  } finally { await old.done(); }
+});
+
+test('1.267.0: homes(), a shared profile (take over, create, unlink), "Internet pausieren" and the foreign-DNS rules', async () => {
+  const homes = [{ gateway: { peerId: 14, name: 'Gateway' }, profiles: [{ id: 'default', name: 'Standard', lists: ['ads'] }, { id: 'phome0001', name: 'Zuhause', lists: ['adult'], deny: ['tiktok.com'], users: [3], devices: 2 }] }];
+  const s = await setup({ host: { gatecontrol: '1.267.0' }, vpnDns: { homes, settings: { enabled: true, profiles: [{ id: 'default' }, { id: 'pkids0001', name: 'Kinder', lists: ['ads'], peers: [11] }] } } });
+  const admin = USERS[0];
+  try {
+    assert.deepEqual((await s.read('homes')).result.map((h) => [h.gateway.peerId, h.configured, h.enabled, h.profiles.map((p) => [p.id, p.devices, p.linkedTo])]), [[14, true, true, [['default', 0, null], ['phome0001', 2, null]]]]);
+    let r = await s.as(admin, 'set', { profiles: [{ id: 'default' }, { id: 'pkids0001', home: { gateway: 14, profile: 'phome0001' } }] });
+    assert.deepEqual([r.result.profiles[1].home, r.result.profiles[1].lists, r.result.profiles[1].users, r.result.profiles[1].peers], [{ gateway: 14, profile: 'phome0001', gatewayName: 'Gateway', name: 'Zuhause' }, ['adult'], [3], [11]]);
+    assert.equal((await s.read('homes')).result[0].profiles[1].linkedTo, 'pkids0001');
+    r = await s.as(admin, 'set', { profiles: [{ id: 'default' }, { id: 'pkids0001', safeSearch: true }] });
+    assert.equal(s.h.vpnDns.homes[0].profiles[1].safeSearch, true, 'a change goes to the home');
+    for (const [home, msg] of [[{ gateway: 99, profile: 'x' }, /^profiles\[1\]\.home\.gateway: unknown gateway$/], [{ gateway: 14, profile: 'nope' }, /^profiles\[1\]\.home\.profile: unknown profile of this home network$/], [{ gateway: 14, profile: 'default' }, /^profiles\[1\]\.home: the default profile only goes with the home's default profile$/], ['x', /^profiles\[1\]\.home: null or \{ gateway, profile \}$/]]) {
+      r = await s.as(admin, 'set', { profiles: [{ id: 'default' }, { id: 'pkids0001', home }] });
+      assert.equal(r.code, 'ERR_INVALID');
+      assert.match(r.message, msg);
+    }
+    r = await s.as(admin, 'set', { profiles: [{ id: 'default' }, { id: 'pkids0001' }, { name: 'Zuhause', home: { gateway: 14, create: true } }] });
+    assert.match(r.message, /^profiles\[2\]\.home: a profile with this name exists$/);
+    r = await s.as(admin, 'set', { profiles: [{ id: 'default' }, { id: 'pkids0001', home: null }, { name: 'Gäste', lists: ['malware'], home: { gateway: 14, create: true } }] });
+    assert.deepEqual([r.result.profiles[1].home, r.result.profiles[1].lists, r.result.profiles[2].home.name, s.h.vpnDns.homes[0].profiles.map((p) => p.name)], [null, ['adult'], 'Gäste', ['Standard', 'Zuhause', 'Gäste']]);
+    // "Internet pausieren" of a person: paused devices, only "Immer erlaubt" answers, suspending does not lift it
+    const until = Date.now() + 600000;
+    s.h.vpnDnsSet({ internet: { pause: { 2: until }, extend: { 3: until } } });
+    const dev = (id) => s.read('devices').then((x) => x.result.find((d) => d.peerId === id));
+    assert.deepEqual([(await dev(10)).internetPaused, (await dev(10)).timesSuspended, (await dev(11)).internetPaused, (await dev(11)).timesSuspended, (await dev(15)).internetPaused], [new Date(until).toISOString(), null, null, new Date(until).toISOString(), null]);
+    await s.as(admin, 'pause', { scope: 'peer', id: 10, minutes: 5 });
+    assert.deepEqual([(await s.read('test', 'example.org', { peerId: 10 })).result.reason, (await s.read('test', 'example.org', { peerId: 11 })).result.reason], ['paused', 'default']);
+    await s.as(admin, 'resume', { scope: 'peer', id: 10 });
+    // the rules against foreign DNS: for filtered devices that are neither suspended nor paused
+    r = await s.as(admin, 'set', { blockForeignDns: true });
+    let fd = (await s.read('status')).result.foreignDns;
+    assert.deepEqual([fd.enabled, fd.active, fd.devices, fd.error, typeof fd.since], [true, true, 3, null, 'string']);
+    assert.deepEqual([(await dev(10)).foreignDnsBlocked, (await dev(11)).foreignDnsBlocked, (await dev(13)).foreignDnsBlocked, (await dev(14)).foreignDnsBlocked], [false, true, false, false]);
+    await s.h.vpnDnsEvent({ type: 'fallback' });
+    fd = (await s.read('status')).result.foreignDns;
+    assert.deepEqual([fd.enabled, fd.active, fd.devices, fd.since], [true, false, 0, null]);
+    await s.as(admin, 'set', { homeInternet: false });
+    assert.equal((await dev(10)).internetPaused, null);
+  } finally { await s.done(); }
+});

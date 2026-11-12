@@ -190,7 +190,7 @@ describe('GET log (the own devices only)', () => {
     assert.equal(r.http, 200);
     assert.ok(r.entries.length === 5 && r.entries.every((e) => e.peerId === P.leaPhone && e.device === 'Leas Handy'));
     assert.deepEqual(r.entries.map((e) => e.result), ['allowed_paused', 'blocked', 'safe_search', 'blocked', 'blocked']);
-    assert.deepEqual(r.entries[1], { id: r.entries[1].id, at: r.entries[1].at, peerId: P.leaPhone, device: 'Leas Handy', person: 'Lea', domain: 'roblox.com', type: 'A', result: 'blocked', action: 'block', reason: 'profile_deny', list: null, profile: { id: 'pkinder01', name: 'Kinder' } });
+    assert.deepEqual(r.entries[1], { id: r.entries[1].id, at: r.entries[1].at, peerId: P.leaPhone, device: 'Leas Handy', person: 'Lea', domain: 'roblox.com', type: 'A', result: 'blocked', action: 'block', reason: 'profile_deny', list: null, scope: null, profile: { id: 'pkinder01', name: 'Kinder' } });
     r = await s.portal(LEA, 'GET', 'log', null, { blockedOnly: '1', search: 'tiktok', limit: '1' });
     assert.deepEqual([r.entries.length, r.entries[0].domain, typeof r.next], [1, 'ads.tiktok.com', 'number']);
     r = await s.portal(LEA, 'GET', 'log', null, { blockedOnly: '1', search: 'tiktok', limit: '1', before: String(r.next) });
