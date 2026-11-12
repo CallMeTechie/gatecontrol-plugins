@@ -2,7 +2,7 @@
 
 // The settings page (admin/*): only an administrator in the admin UI; lists and own entries, profiles (with the
 // switch "Mitglieder dürfen unterbrechen"), devices, suspending for all VPN devices, "Domain prüfen", the query log,
-// the plugin's own settings, the set-up dialog and the move from Pi-hole.
+// the plugin's own settings, the set-up dialog.
 
 const { describe, it, afterEach } = require('node:test');
 const assert = require('node:assert/strict');
@@ -219,21 +219,23 @@ describe('query log and the plugin\'s own settings', () => {
   });
 });
 
-describe('set-up and the move from Pi-hole', () => {
+describe('set-up', () => {
   let s;
   afterEach(async () => { if (s) await s.host.close(); s = null; });
 
   it('a new server: lists, switch on, probe, done', async () => {
     s = await setup({ settings: null });
     let all = await s.admin('GET', 'all');
-    assert.deepEqual([all.status.state, all.settings.enabled, all.config.setupDone, all.status.pihole.wantsChain], ['off', false, false, false]);
-    let r = await s.admin('POST', 'setup/start', { lists: ['ads', 'malware', 'gambling'], allow: [] });
+    assert.deepEqual([all.status.state, all.settings.enabled, all.config.setupDone], ['off', false, false]);
+    let r = await s.admin('POST', 'setup/start', { lists: ['ads', 'malware', 'gambling'] });
     assert.deepEqual([r.http, r.settings.enabled, r.settings.profiles[0].lists], [200, true, ['ads', 'malware', 'gambling']]);
     r = await s.admin('GET', 'setup/state');
     assert.deepEqual([r.status.state, r.probe.block, r.probe.allow], ['filtering', { domain: 'googlesyndication.com', action: 'block' }, { domain: 'example.org', action: 'allow' }]);
     assert.ok(r.lists.lists.filter((l) => l.used).every((l) => l.loaded));
     r = await s.admin('POST', 'setup/finish');
     assert.deepEqual([r.config.setupDone, r.status.state], [true, 'filtering']);
+    // GateControl ≥ 1.268.0 has no Pi-hole integration: nothing of it is answered or called
+    assert.deepEqual(['pihole' in r, s.host.vpnDns.calls.includes('releasePihole')], [false, false]);
     // without an ad list nothing of the probe names is blocked: the probe says so instead of failing
     await s.admin('PUT', 'profiles/default', { profile: { lists: ['malware'] } });
     r = await s.admin('GET', 'setup/state');
@@ -252,36 +254,28 @@ describe('set-up and the move from Pi-hole', () => {
     assert.equal(s.host.vpnDns.settings.enabled, false);
   });
 
-  it('from Pi-hole: exceptions taken over, Pi-hole gives up the chain only once the filter answers', async () => {
-    s = await setup({ settings: null, vpnDns: { pihole: { configured: true, wantsChain: true }, service: 'starting' } });
-    let all = await s.admin('GET', 'all');
-    assert.deepEqual(all.status.pihole, { configured: true, wantsChain: true, chain: 'active', targets: [] });
-    let r = await s.admin('POST', 'setup/start', { lists: ['ads', 'malware', 'ads_stevenblack'], allow: ['PayPal.com', 'sparkasse.de', 'paypal.com'] });
-    assert.deepEqual(r.settings.allow, ['paypal.com', 'sparkasse.de']);
-    // the filter still loads its lists: Pi-hole keeps filtering, nothing is released
+  it('the filter still loads its lists: no probe yet, then it answers', async () => {
+    s = await setup({ settings: null, vpnDns: { service: 'starting' } });
+    let r = await s.admin('POST', 'setup/start', { lists: ['ads', 'malware'], allow: ['paypal.com'] });
+    // exceptions were only taken over from Pi-hole: the field is ignored now
+    assert.deepEqual([r.http, r.settings.allow], [200, []]);
     r = await s.admin('GET', 'setup/state');
-    assert.deepEqual([r.status.state, r.status.chain, r.status.pihole.chain, r.probe], ['starting', 'pihole', 'active', null]);
-    r = await s.admin('POST', 'setup/finish');
-    assert.deepEqual([r.http, r.code], [409, 'not_filtering']);
-    assert.equal(s.host.vpnDns.pihole.wantsChain, true);
-    assert.equal((await s.admin('GET', 'all')).config.setupDone, false);
-    // it answers: the chain goes to the filter, then Pi-hole is released
+    assert.deepEqual([r.status.state, r.status.chain, r.probe], ['starting', 'default', null]);
     s.host.vpnDnsSet({ service: 'filtering' });
     r = await s.admin('GET', 'setup/state');
-    assert.deepEqual([r.status.state, r.status.chain, r.status.pihole.chain, r.probe.block.action], ['filtering', 'filter', 'displaced', 'block']);
+    assert.deepEqual([r.status.state, r.status.chain, r.probe.block.action], ['filtering', 'filter', 'block']);
     r = await s.admin('POST', 'setup/finish');
-    assert.deepEqual([r.http, r.pihole, r.config.setupDone], [200, { configured: true, wantsChain: false, chain: 'off', targets: [] }, true]);
-    assert.ok(s.host.vpnDns.activity.some((a) => a.type === 'vpn_dns_pihole_released' && a.actor === ADMIN.id));
+    assert.deepEqual([r.http, r.config.setupDone], [200, true]);
   });
 
-  it('the switch-over fails: "Zurück" switches the protection off again, Pi-hole was never released', async () => {
-    s = await setup({ settings: null, vpnDns: { pihole: { configured: true, wantsChain: true }, service: 'fallback' } });
+  it('the switch-over fails: "Zurück" switches the protection off again', async () => {
+    s = await setup({ settings: null, vpnDns: { service: 'fallback' } });
     await s.admin('POST', 'setup/start', { lists: ['ads'] });
     let r = await s.admin('GET', 'setup/state');
     assert.deepEqual([r.status.state, r.probe], ['fallback', null]);
     r = await s.admin('POST', 'setup/cancel');
     assert.deepEqual([r.http, r.settings.enabled], [200, false]);
     const all = await s.admin('GET', 'all');
-    assert.deepEqual([all.status.state, all.status.pihole.chain, s.host.vpnDns.pihole.wantsChain], ['off', 'active', true]);
+    assert.deepEqual([all.status.state, all.status.chain, all.config.setupDone], ['off', 'default', false]);
   });
 });

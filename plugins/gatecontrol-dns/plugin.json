@@ -4,13 +4,13 @@
     "de": "DNS-Schutz",
     "en": "DNS Protection"
   },
-  "version": "1.1.0",
+  "version": "1.1.1",
   "publisher": "CallMeTechie",
   "description": {
-    "de": "Werbung, Tracker und Schadseiten für alle VPN-Geräte sperren – direkt auf dem Server: Listen aus dem Katalog, „Immer erlaubt“ und „Immer gesperrt“, Profile für Gruppen, Personen und Geräte mit Sicherer Suche und Zeiten – auf Wunsch gemeinsam mit dem DNS-Filter des Heimnetzes –, „Domain prüfen“, Abfrageprotokoll, Option „Fremden DNS und DoT sperren“. Den Schutz unterbrechen – jeder für die eigenen Geräte, Admins und Eltern auch für andere – in der Android- und der Windows-App und im Portal. Löst die Pi-hole-Anbindung ab. Fällt der Filter aus, läuft das Internet ungefiltert weiter.",
-    "en": "Block ads, trackers and malicious sites for all VPN devices – on the server itself: lists from the catalogue, “Always allowed” and “Always blocked”, profiles for groups, people and devices with safe search and times – shared with the home network’s DNS filter if you like –, “Check a domain”, a query log, the option “Block foreign DNS and DoT”. Suspend the protection – everybody for their own devices, administrators and parents also for others – in the Android and the Windows app and in the portal. Replaces the Pi-hole integration. If the filter fails, the internet goes on unfiltered."
+    "de": "Werbung, Tracker und Schadseiten für alle VPN-Geräte sperren – direkt auf dem Server: Listen aus dem Katalog, „Immer erlaubt“ und „Immer gesperrt“, Profile für Gruppen, Personen und Geräte mit Sicherer Suche und Zeiten – auf Wunsch gemeinsam mit dem DNS-Filter des Heimnetzes –, „Domain prüfen“, Abfrageprotokoll, Option „Fremden DNS und DoT sperren“. Den Schutz unterbrechen – jeder für die eigenen Geräte, Admins und Eltern auch für andere – in der Android- und der Windows-App und im Portal. Fällt der Filter aus, läuft das Internet ungefiltert weiter.",
+    "en": "Block ads, trackers and malicious sites for all VPN devices – on the server itself: lists from the catalogue, “Always allowed” and “Always blocked”, profiles for groups, people and devices with safe search and times – shared with the home network’s DNS filter if you like –, “Check a domain”, a query log, the option “Block foreign DNS and DoT”. Suspend the protection – everybody for their own devices, administrators and parents also for others – in the Android and the Windows app and in the portal. If the filter fails, the internet goes on unfiltered."
   },
-  "gatecontrol": ">=1.267.0",
+  "gatecontrol": ">=1.268.0",
   "entry": "server/index.js",
   "permissions": {
     "vpnDns": true,

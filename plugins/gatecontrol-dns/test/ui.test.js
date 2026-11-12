@@ -52,7 +52,7 @@ describe('texts', () => {
       ...['filtered', 'ownDns', 'excluded', 'gateway', 'disabled'].map((x) => 'dv.f_' + x),
       ...['blocked', 'allowed', 'allowed_paused', 'safe_search'].map((x) => 'lg.r_' + x),
       ...['device', 'person', 'server'].map((x) => 'po.scope_' + x),
-      ...['timeout', 'fallback', 'nodns'].flatMap((x) => ['wz.failed_' + x, 'wz.failed_' + x + '_pihole']),
+      ...['timeout', 'fallback', 'nodns'].map((x) => 'wz.failed_' + x),
       ...['list', 'denyAll', 'denyProfile', 'schedule', 'pause', 'other'].map((x) => 'by.' + x),
       ...['profile_deny', 'profile_allow'].flatMap((x) => ['reason.' + x, 'reason.' + x + '_all', 'reason.' + x + '_in', 'reason.' + x + '_profile']),
       'li.allow_title', 'li.deny_title', 'li.allow_hint', 'li.deny_hint', 'pf.allow_label', 'pf.deny_label',
@@ -114,7 +114,7 @@ describe('render', () => {
     assert.equal(manifest.ui.nav, undefined, 'administration lives on the settings page, not in the sidebar');
     assert.deepEqual(Object.keys(manifest.permissions).sort(), ['app', 'background', 'groups', 'notify', 'portal', 'users', 'vpnDns']);
     assert.equal(manifest.permissions.groups, 'read');
-    assert.equal(manifest.gatecontrol, '>=1.267.0');
+    assert.equal(manifest.gatecontrol, '>=1.268.0');
     assert.deepEqual(manifest.license, { required: true });
   });
 });

@@ -89,7 +89,7 @@ test('reading works anywhere; a change needs an acting person; settings need an 
     // a named actor who is unknown or disabled
     assert.equal((await s.as(USERS[1], 'pause', { scope: 'peer', id: 10, minutes: 5 }, { actor: 4 })).code, 'ERR_NOT_PERSON');
     // administrators only
-    for (const [op, ...args] of [['set', { enabled: false }], ['refreshLists'], ['restart'], ['releasePihole'], ['clearLog']]) {
+    for (const [op, ...args] of [['set', { enabled: false }], ['refreshLists'], ['restart'], ['clearLog']]) {
       assert.equal((await s.as(USERS[1], op, ...args)).code, 'ERR_NOT_ADMIN', op);
     }
     assert.equal((await s.as(USERS[0], 'refreshLists')).result.started, true);
@@ -192,23 +192,25 @@ test('set(): validation with the field in the message, profiles by id, which pro
   } finally { await s.done(); }
 });
 
-test('test(), the outage, Pi-hole, what the apps learn', async () => {
-  const s = await setup({ vpnDns: { pihole: { configured: true, wantsChain: true }, settings: { enabled: true, deny: ['temu.com'], allow: ['paypal.com'] } } });
+test('test(), the outage, no Pi-hole any more, what the apps learn', async () => {
+  const s = await setup({ vpnDns: { settings: { enabled: true, deny: ['temu.com'], allow: ['paypal.com'] } } });
   try {
     assert.deepEqual((await s.read('test', 'ADS.TikTok.com')).result, { domain: 'ads.tiktok.com', action: 'block', reason: 'list', list: 'ads', category: null, safeSearch: null, profile: { id: 'default', name: 'Standard' }, device: null, filtered: true });
     assert.deepEqual([(await s.read('test', 'shop.temu.com')).result.reason, (await s.read('test', 'paypal.com')).result.reason, (await s.read('test', 'example.org')).result.reason], ['profile_deny', 'profile_allow', 'default']);
     assert.equal((await s.read('test', 'x.de', { peerId: 14 })).result.reason, 'no_profile');
     assert.equal((await s.read('test', 'x.de', { peerId: 99 })).code, 'ERR_NOT_FOUND');
     assert.equal((await s.read('test', 'kein domain')).code, 'ERR_INVALID');
-    assert.deepEqual((await s.read('status')).result.pihole, { configured: true, wantsChain: true, chain: 'displaced' });
+    assert.deepEqual([(await s.read('status')).result.chain, (await s.read('status')).result.pihole], ['filter', { configured: false, wantsChain: false, chain: 'off' }]);
     assert.deepEqual(s.h.vpnDnsClientInfo(), { plugin: 'vd-test', state: 'filtering' });
     await s.h.vpnDnsEvent({ type: 'fallback' });
     assert.deepEqual([(await s.read('status')).result.state, (await s.read('status')).result.service], ['fallback', { running: false }]);
     assert.equal((await s.read('test', 'x.de')).code, 'ERR_UNAVAILABLE');
-    assert.equal((await s.as(USERS[0], 'releasePihole')).code, 'ERR_NOT_FILTERING');
+    // releasePihole() is an empty function since GateControl 1.268.0: no error in the outage, no administrator needed
+    assert.deepEqual([(await s.read('status')).result.chain, (await s.as(USERS[1], 'releasePihole')).result], ['default', { configured: false, wantsChain: false, chain: 'off' }]);
     assert.deepEqual(s.h.vpnDnsClientInfo(), { plugin: 'vd-test', state: 'fallback' });
     await s.h.vpnDnsEvent({ type: 'restored' });
-    assert.deepEqual((await s.as(USERS[0], 'releasePihole')).result, { configured: true, wantsChain: false, chain: 'off' });
+    assert.deepEqual((await s.read('releasePihole')).result, { configured: false, wantsChain: false, chain: 'off' });
+    assert.ok(!s.h.vpnDns.activity.some((a) => /pihole/.test(a.type)));
     assert.deepEqual((await s.read('events')).result.map((e) => e.type), ['fallback', 'restored']);
     // the internal DNS of the server is off: switched on, but nothing runs
     s.h.vpnDnsSet({ internalDns: false });
@@ -233,9 +235,8 @@ test('peerId of an app viewer reaches only a plugin with permissions.vpnDns', as
 });
 
 test('later hosts: gc.vpnDns.version 2 (1.265.0), 3 (1.266.0), 4 (1.267.0) — each adds fields, an older one has none of them', async () => {
-  const targets = [{ name: 'pi', ip: '192.168.178.5', port: 53, gateway: null }];
   const shape = async (gatecontrol) => {
-    const s = await setup({ host: { gatecontrol }, vpnDns: { pihole: { configured: true, targets }, settings: { enabled: true, deny: ['temu.com'], log: { enabled: true } }, log: [{ peerId: 10, name: 'temu.com', action: 'block', reason: 'profile_deny', scope: 'all' }] } });
+    const s = await setup({ host: { gatecontrol }, vpnDns: { settings: { enabled: true, deny: ['temu.com'], log: { enabled: true } }, log: [{ peerId: 10, name: 'temu.com', action: 'block', reason: 'profile_deny', scope: 'all' }] } });
     try {
       const st = (await s.read('status')).result;
       const t = (await s.read('test', 'shop.temu.com')).result;

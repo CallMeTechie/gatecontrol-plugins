@@ -12,7 +12,6 @@
 //     settings: { … },                                  // what gc.vpnDns.get() answers at the start (normalised)
 //     service: 'filtering' | 'starting' | 'fallback',   // what the filter service does once the protection is on
 //     internalDns: true,                                // false: GC_DNS_ENABLED off → blockedBy 'internal_dns_off'
-//     pihole: { configured: true, wantsChain: true },   // a Pi-hole that manages the DNS chain
 //     today: { queries, blocked, cached, top: [{ domain, count }] }, days: [{ day, queries, blocked, cached }],
 //     perPeer: { <peerId>: { queries, blocked } },      // counters per device (only answered with the query log on)
 //     log: [{ at (ms | ISO), peerId, name, type, action, reason, profileId, list }],   // oldest first
@@ -23,7 +22,7 @@
 // Like the host:
 //   * reading works anywhere; a change needs an acting person — the one person with a changing host.request in flight,
 //     or { actor: userId } (automated when that person has no changing request in flight); ERR_NOT_PERSON otherwise;
-//   * set / refreshLists / restart / releasePihole / clearLog need an administrator as the actor (ERR_NOT_ADMIN);
+//   * set / refreshLists / restart / clearLog need an administrator as the actor (ERR_NOT_ADMIN);
 //   * pause / resume: for all devices only an administrator, for an administrator's devices only an administrator or
 //     that person (ERR_FORBIDDEN) — everything else is the plugin's decision;
 //   * set(patch) validates like vpnDns.validate (ERR_INVALID, the message starts with the field), profiles are matched
@@ -34,7 +33,7 @@
 //     pornhub.com → 'adult', bet365.com → 'gambling'), opts.vpnDns.test overrides it.
 //
 // Later hosts (the level is gc.vpnDns.version; opts.gatecontrol picks it, opts.vpnDns.version overrides it):
-//   1.265.0 (version 2): status().pihole.targets (opts.vpnDns.pihole.targets), test() answers `match { entry, kind }` and
+//   1.265.0 (version 2): status().pihole.targets, test() answers `match { entry, kind }` and
 //     `scope` ('all' | 'profile' for own entries), `blockedBy { list, denyAll, denyProfile, schedule, other }` in status()
 //     and stats() (opts.vpnDns.today.blockedBy, days[].blockedBy — zeros when not given), log entries carry `scope`
 //     and log({ scope }) filters by it;
@@ -47,7 +46,7 @@
 //     host.vpnDnsSet({ internet }), and what the mock of gc.homeNetwork.internet holds), test() reason 'paused',
 //     blockedBy.pause. host.vpnDns.homes is what the homes hold.
 // For tests: host.vpnDns = { settings, pauses: Map, log, activity: [{ type, actor, automated, … }], calls, state },
-// host.vpnDnsSet({ service, pihole, today, perPeer, peers, lists, internalDns, homes, internet, foreignDnsError }) changes what
+// host.vpnDnsSet({ service, today, perPeer, peers, lists, internalDns, homes, internet, foreignDnsError }) changes what
 // GateControl knows,
 // host.vpnDnsEvent({ type: 'fallback' | 'restored' }) delivers an event to gc.vpnDns.on handlers (it also sets the
 // service state), host.vpnDnsExpire(now?) ends the suspensions that ran out (events `resumed` with reason 'expired'),
@@ -190,7 +189,6 @@ function install({ opts, perms, atLeast, enabledUser, hostError, personCtx, grou
     peers: (cfg.peers || []).map((p) => ({ ...p })),
     service: cfg.service || 'filtering',
     internalDns: cfg.internalDns !== false,
-    pihole: { configured: !!(cfg.pihole && cfg.pihole.configured), wantsChain: !!(cfg.pihole && cfg.pihole.wantsChain), targets: cfg.pihole && Array.isArray(cfg.pihole.targets) ? clone(cfg.pihole.targets) : [] },
     homes: [],             // what the home networks hold (level 4): [{ gateway, gateways, configured, enabled, profiles }]
     internet: { pause: new Map(), extend: new Map() },   // "Internet pausieren" / "Zeit verlängern": userId → until (ms)
     foreignDnsError: cfg.foreignDnsError || null,
@@ -610,6 +608,9 @@ function install({ opts, perms, atLeast, enabledUser, hostError, personCtx, grou
     return { action: 'allow', reason: 'default' };
   }
 
+  // GateControl 1.268.0 removed the Pi-hole integration: status().pihole always says "not set up" and releasePihole()
+  // does nothing (no actor, no error) — both are only kept for plugins written against older servers.
+  const noPihole = () => ({ configured: false, wantsChain: false, chain: 'off', ...(level >= 2 ? { targets: [] } : {}) });
   const read = (name, fn) => async (args) => { need(); state.calls.push(name); return fn(args || {}); };
   const change = (name, admin, fn) => async (args) => {
     need();
@@ -628,15 +629,14 @@ function install({ opts, perms, atLeast, enabledUser, hostError, personCtx, grou
       const sus = suspended(devices, now);
       const count = (x) => devices.filter((d) => d.state === x).length;
       const all = running(now).find((r) => r.scope === 'all');
-      const wantsChain = state.pihole.configured && state.pihole.wantsChain;
       const up = st === 'filtering' || st === 'fallback';
       const lv = listsView();
       const loaded = lv.filter((l) => l.loaded);
       return {
         available: true, enabled: s.enabled, blockedBy: s.enabled && !state.internalDns ? 'internal_dns_off' : null,
         state: st, since: st === 'off' ? null : iso(state.since),
-        chain: st === 'filtering' ? 'filter' : (wantsChain && st !== 'fallback' ? 'pihole' : 'default'),
-        pihole: { configured: state.pihole.configured, wantsChain, chain: !wantsChain ? 'off' : (st === 'filtering' ? 'displaced' : (st === 'fallback' ? 'fallback' : 'active')), ...(level >= 2 ? { targets: state.pihole.configured ? clone(state.pihole.targets) : [] } : {}) },
+        chain: st === 'filtering' ? 'filter' : 'default',
+        pihole: noPihole(),
         pause: all ? pauseView(all) : null,
         pauses: running(now).filter((r) => r.scope !== 'all').length,
         service: st === 'off' || st === 'fallback' ? { running: false } : {
@@ -784,11 +784,7 @@ function install({ opts, perms, atLeast, enabledUser, hostError, personCtx, grou
       audit('vpn_dns_service_restart', { how }, ctx);
       return { restarting: true, how };
     }),
-    'vpnDns.releasePihole': change('releasePihole', true, (a, ctx) => {
-      if (stateNow() !== 'filtering') throw hostError('ERR_NOT_FILTERING', 'the DNS protection does not filter yet — Pi-hole keeps the chain');
-      if (state.pihole.wantsChain) { state.pihole.wantsChain = false; audit('vpn_dns_pihole_released', {}, ctx); }
-      return { configured: state.pihole.configured, wantsChain: false, chain: 'off', ...(level >= 2 ? { targets: state.pihole.configured ? clone(state.pihole.targets) : [] } : {}) };
-    }),
+    'vpnDns.releasePihole': read('releasePihole', () => noPihole()),
     'vpnDns.log': read('log', ({ query }) => {
       if (!state.settings.log.enabled) throw hostError('ERR_LOG_OFF', 'the query log is switched off');
       const q = query && typeof query === 'object' ? query : {};
@@ -844,10 +840,9 @@ function install({ opts, perms, atLeast, enabledUser, hostError, personCtx, grou
     });
   };
 
-  /** host.vpnDnsSet({ service, pihole, today, days, perPeer, peers, lists, internalDns, settings, homes, internet, foreignDnsError }) */
+  /** host.vpnDnsSet({ service, today, days, perPeer, peers, lists, internalDns, settings, homes, internet, foreignDnsError }) */
   function hostSet(x = {}) {
     if (x.service) { if (x.service !== state.service) state.since = Date.now(); state.service = x.service; }
-    if (x.pihole) Object.assign(state.pihole, x.pihole);
     if (x.homes) state.homes = homesOf(x.homes);
     if (x.internet) setInternet(x.internet);
     if ('foreignDnsError' in x) state.foreignDnsError = x.foreignDnsError || null;
