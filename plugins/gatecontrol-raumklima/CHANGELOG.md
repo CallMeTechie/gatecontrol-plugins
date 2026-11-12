@@ -29,7 +29,7 @@ eingebaut, „Klimaanlage“) und seit 1.6.0 Dreo-Heizlüfter und -Klimageräte.
 - Dreo: gleichzeitige Abfragen der Open-API melden sich nur noch einmal an; ein Konto ohne Geräte
   wird alle 6 Stunden statt stündlich neu durchsucht (jede Suche meldet sich in der zweiten Region an).
 - Protokoll: je Entscheidung eine Zeile mit Midea-Code, Aufruf und dem, was daraufhin geschah – ohne
-  Zugangsdaten.
+  Zugangsdaten. Auch die Zeile „getState (cloud) failed“ nennt jetzt den Midea-Code und den Text der Cloud.
 
 ## 2.2.3
 

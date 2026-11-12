@@ -88,6 +88,7 @@ test('a cloud that keeps refusing a device: no login per call — the account is
     assert.equal(cloud.logins, 1);
     const log = host.logs.map((l) => l.message).join('\n');
     assert.match(log, /Midea-Code 3004 \(state\).*no login/);
+    assert.match(log, /getState \(cloud\) failed \(offline\) \d+ MIDEA_CLOUD_ERROR: value is illegal \(Midea-Code 3004\)/, 'the device line names Midea\'s code');
     assert.ok(!log.includes(cloud.password) && !log.includes('BEARER-'), 'no password or session in the log');
     // the cloud answers again: the same session works
     cloud.sendError = null;

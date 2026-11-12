@@ -244,6 +244,9 @@ async function discoverLan(gc) {
 
 // ── Device state operations ───────────────────────────────────────────────────
 
+/** What went wrong, for the log: the code and — for a refusal of the cloud — Midea's code and text (never secrets). */
+const failureOf = (err) => (err && err.code ? `${err.code}${err.mideaCode ? ': ' + String(err.message || '').replace(/[\0-\x1f\x7f]/g, ' ').slice(0, 160) : ''}` : String((err && err.message) || err));
+
 const setCache = (id, state, online) => cache.set(id, { state, online, lastAt: Date.now() });
 
 // Fetch live cloud state, update the cache, and return the parsed state (or
@@ -256,7 +259,7 @@ function fetchCloudState(gc, id, d) {
       setCache(id, state, true);
       return state;
     } catch (err) {
-      gc.log.debug('getState (cloud) failed (offline)', id, err.code || err.message);
+      gc.log.debug('getState (cloud) failed (offline)', id, failureOf(err));
       setCache(id, null, false);
       return { offline: true };
     }
@@ -359,7 +362,7 @@ async function setState(gc, id, patch) {
         setCache(d.id, state, true);
         return state;
       } catch (err) {
-        gc.log.debug('setState (cloud) failed (offline)', d.id, err.code || err.message);
+        gc.log.debug('setState (cloud) failed (offline)', d.id, failureOf(err));
         setCache(d.id, null, false);
         return { offline: true };
       }
