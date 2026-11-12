@@ -83,6 +83,7 @@ Notifications only come from devices in the home network that the plugin polls (
 
 - The plugin no longer signs in again on every error of the cloud. It signs in only when the session really has expired – at most 3 times an hour and 6 times a day, with a growing wait (1, 5, 15, 60 minutes).
 - When the limit is reached, the password is wrong or a confirmation is needed, “connect again” appears and you get a notification (topic “Connect account again”). Saving the settings again connects anew.
+- A Midea cloud device that is unplugged or unreachable no longer causes a sign-in. It is shown as “not reachable” and asked less and less often (30 seconds up to 5 minutes); after plugging it in it can therefore take up to 5 minutes until it shows again – a command asks at once.
 - On “too many requests” the cloud calls pause (5, 15, 60 minutes).
 
 Last in 2.2.3: this manual in the tab “Manual” (GateControl ≥ 1.241.0).

@@ -20,10 +20,11 @@ const { codeError } = store;
 // no cloud round-trip, no re-login); beyond it the cached state is still served
 // but a background refresh is kicked off. LAN devices are local/fast and unaffected.
 const CLOUD_STATE_TTL_MS = 90000;
-// 2.2.4: a cloud device that did not answer is asked again by the tiles, the search and the apps'
-// quick actions at most this often (before: with every look — the more devices were offline, the
-// more cloud calls). Opening the device's page still asks at once.
-const CLOUD_OFFLINE_RETRY_MS = 30000;
+// 2.2.4: a cloud device that did not answer (switched off, unplugged, refused by the cloud) is asked
+// again after 30 s, then 1, 2 and 5 minutes — the wait grows with every failure in a row (before: with
+// every look, each with its own cloud call). Until then it is shown as not reachable from the cache.
+// A command (setState) always asks; an answer of the device ends the wait.
+const CLOUD_OFFLINE_RETRY_MS = [30000, 60000, 120000, 300000];
 const LAN_TIMEOUT_MS = 8000;
 
 const cache = new Map();          // deviceId -> { state, online, lastAt }
@@ -188,7 +189,8 @@ async function connectCloud(gc, email, password, app = 'msmarthome') {
   if (prev && typeof prev.deviceId === 'string' && /^[0-9a-f]{16}$/.test(prev.deviceId)) c.deviceId = prev.deviceId; // the same device as before
   const res = await c.login(email, password);     // throws typed MideaCloudError (e.g. 2FA)
   await store.saveConfig(gc, { app, email, password, session: c.getSession() });
-  // a person signed in: the brake starts over
+  // a person signed in: the brake starts over, unreachable devices are asked at once
+  for (const [id, c] of cache) if (!c.online) cache.delete(id);
   dead = null;
   sessionChecked = { id: null, at: 0 };
   await guard.manual(gc);
@@ -247,7 +249,7 @@ async function discoverLan(gc) {
 /** What went wrong, for the log: the code and — for a refusal of the cloud — Midea's code and text (never secrets). */
 const failureOf = (err) => (err && err.code ? `${err.code}${err.mideaCode ? ': ' + String(err.message || '').replace(/[\0-\x1f\x7f]/g, ' ').slice(0, 160) : ''}` : String((err && err.message) || err));
 
-const setCache = (id, state, online) => cache.set(id, { state, online, lastAt: Date.now() });
+const setCache = (id, state, online) => cache.set(id, { state, online, lastAt: guardClock.now(), fails: online ? 0 : ((cache.get(id) || {}).fails || 0) + 1 });
 
 // Fetch live cloud state, update the cache, and return the parsed state (or
 // {offline:true} on failure). This is the ONLY place that hits the cloud for state.
@@ -293,10 +295,12 @@ async function getState(gc, id) {
     // Serve a known-online cached state instantly — no cloud round-trip, no
     // re-login. Beyond the TTL still serve it, but refresh in the background.
     if (cached && cached.online && cached.state) {
-      if (Date.now() - cached.lastAt >= CLOUD_STATE_TTL_MS) refreshCloudState(gc, d.id, d);
+      if (guardClock.now() - cached.lastAt >= CLOUD_STATE_TTL_MS) refreshCloudState(gc, d.id, d);
       return cached.state;
     }
-    // No usable cache (first load / last known offline) → fetch synchronously.
+    // 2.2.4: it did not answer a moment ago → not asked again before its wait is over
+    if (cached && cloudFresh(cached)) return { offline: true };
+    // No usable cache (first load / the wait of an unreachable device is over) → fetch synchronously.
     return fetchCloudState(gc, d.id, d);
   }
 
@@ -314,8 +318,12 @@ async function getState(gc, id) {
   });
 }
 
-/** A cloud cache entry that needs no refresh yet (online: 90 s, offline: 30 s). */
-const cloudFresh = (c) => Boolean(c && Date.now() - c.lastAt < (c.online && c.state ? CLOUD_STATE_TTL_MS : CLOUD_OFFLINE_RETRY_MS));
+/** How long a cloud device that failed `fails` times in a row is left alone. */
+const offlineWait = (fails) => CLOUD_OFFLINE_RETRY_MS[Math.min(Math.max(fails, 1), CLOUD_OFFLINE_RETRY_MS.length) - 1];
+/** A cloud cache entry that needs no refresh yet (online: 90 s, not reachable: 30 s … 5 min). */
+function cloudFresh(c) {
+  return Boolean(c && guardClock.now() - c.lastAt < (c.online && c.state ? CLOUD_STATE_TTL_MS : offlineWait(c.fails)));
+}
 
 /**
  * The cached state of a device without any network (portal Start tiles and
@@ -542,7 +550,7 @@ function reset() {
 }
 
 module.exports = {
-  CLOUD_STATE_TTL_MS,
+  CLOUD_STATE_TTL_MS, CLOUD_OFFLINE_RETRY_MS,
   withDeviceLock, connectCloud, getCloudStatus, listCloudDevices, discoverLan, acTargets,
   getState, cachedState, recentState, setState, testConnection, addDevice, removeDevice, getStatus, pollTick, reset,
   // seams for the tests

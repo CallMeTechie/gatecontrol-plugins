@@ -83,6 +83,7 @@ Mitteilungen kommen nur von Geräten im Heimnetz, die das Plugin laufend abfragt
 
 - Das Plugin meldet sich nicht mehr bei jedem Fehler der Cloud neu an. Neu angemeldet wird nur, wenn die Sitzung wirklich abgelaufen ist – höchstens 3-mal je Stunde und 6-mal je Tag, mit wachsender Wartezeit (1, 5, 15, 60 Minuten).
 - Ist die Grenze erreicht, das Passwort falsch oder eine Bestätigung nötig, erscheint „neu verbinden“ und du bekommst eine Mitteilung (Thema „Konto neu verbinden“). Einstellungen erneut speichern verbindet neu.
+- Ein Midea-Cloud-Gerät, das vom Strom getrennt oder nicht erreichbar ist, löst keine Anmeldung mehr aus. Es steht als „nicht erreichbar“ da und wird immer seltener gefragt (30 Sekunden bis 5 Minuten); nach dem Einstecken kann es deshalb bis zu 5 Minuten dauern, bis es wieder erscheint – ein Befehl fragt sofort.
 - Bei „zu viele Anfragen“ pausieren die Cloud-Abfragen (5, 15, 60 Minuten).
 
 Zuletzt in 2.2.3: dieses Handbuch im Reiter „Handbuch“ (GateControl ≥ 1.241.0).

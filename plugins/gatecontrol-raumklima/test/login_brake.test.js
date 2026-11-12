@@ -73,26 +73,55 @@ test('the guard: wait 1 → 5 → 15 → 60 min, 3 per hour, 6 per day, then blo
   assert.deepEqual(await Promise.all([slow(), slow(), slow()]), ['T1', 'T1', 'T1']);
 }));
 
-test('a cloud that keeps refusing a device: no login per call — the account is asked, the session kept', () => {
-  const cloud = fakeCloud({ devices: { [APPLIANCE]: fakeAc() } });
+// The case of the report: an air conditioner was unplugged. The Midea cloud answers its state query with
+// an error code of its own (not 3176) — before 2.2.4 a general cloud error, so every look logged in again.
+test('a device that is offline in the cloud: never a login, shown as not reachable, asked less and less often', () => {
+  const cloud = fakeCloud({ devices: { [APPLIANCE]: fakeAc({ power: true }) } });
   return withHost({ cloud }, async (host) => withClock(async (advance) => {
     const id = await cloudDevice(host, cloud);
-    cloud.sendError = ['3004', 'value is illegal'];
-    for (let i = 0; i < 20; i += 1) assert.deepEqual(await stateOf(host, id), { offline: true });
-    assert.equal(cloud.logins, 1, 'only the login of the settings');
-    assert.equal(cloud.calls.filter((c) => c === '/v1/appliance/user/list/get').length, 1, 'the account was asked once');
-    // … and again only after ten minutes
-    advance(11 * MIN);
-    await stateOf(host, id);
-    assert.equal(cloud.calls.filter((c) => c === '/v1/appliance/user/list/get').length, 2);
-    assert.equal(cloud.logins, 1);
+    assert.equal((await stateOf(host, id)).power, true);
+    advance(2 * MIN);                                  // the cached state is old
+    cloud.sendError = ['3123', 'the appliance is off line'];
+    const sends = () => cloud.calls.filter((c) => c === '/v1/appliance/transparent/send').length;
+    const lists = () => cloud.calls.filter((c) => c === '/v1/appliance/user/list/get').length;
+    const d = (await asAdmin(host, 'GET', '/devices')).json.devices.find((x) => x.id === id);
+    const asked = [];                                  // seconds at which the cloud was asked for the device
+    let last = sends();
+    // 30 minutes, a look every 5 seconds: the device's page, the tiles and the apps' quick actions
+    for (let sec = 0; sec < 30 * 60; sec += 5) {
+      service.cachedState(host.gc, d);
+      await service.recentState(host.gc, d, 20);
+      const st = await stateOf(host, id);
+      if (sec > 0) assert.deepEqual(st, { offline: true });
+      if (sends() !== last) { asked.push(sec); last = sends(); }
+      advance(5000);
+    }
+    assert.equal(cloud.logins, 1, 'only the login of the settings — none for the unreachable device');
+    assert.deepEqual(asked.slice(0, 6), [0, 30, 90, 210, 510, 810], 'after 30 s, then 1, 2, 5, 5 … minutes');
+    assert.equal(asked.length, 9, 'nine questions in 30 minutes instead of one per look');
+    assert.equal(lists(), 3, 'the account is asked whether the session works at most every ten minutes');
+    assert.deepEqual((await asAdmin(host, 'GET', '/status')).json.devices.map((x) => [x.online, x.checked]), [[false, true]]);
+    assert.equal((await asAdmin(host, 'GET', '/status')).json.cloud_needs_reauth, false);
+    assert.deepEqual(host.notifications, []);
     const log = host.logs.map((l) => l.message).join('\n');
-    assert.match(log, /Midea-Code 3004 \(state\).*no login/);
-    assert.match(log, /getState \(cloud\) failed \(offline\) \d+ MIDEA_CLOUD_ERROR: value is illegal \(Midea-Code 3004\)/, 'the device line names Midea\'s code');
+    assert.match(log, /Midea-Code 3123 \(state\).*no login/);
+    assert.match(log, /getState \(cloud\) failed \(offline\) \d+ MIDEA_CLOUD_ERROR: the appliance is off line \(Midea-Code 3123\)/, 'the device line names Midea\'s code');
     assert.ok(!log.includes(cloud.password) && !log.includes('BEARER-'), 'no password or session in the log');
-    // the cloud answers again: the same session works
+    // plugged in again: seen when its wait is over, with the same session
     cloud.sendError = null;
-    assert.equal((await stateOf(host, id)).power, false);
+    advance(5 * MIN);
+    assert.equal((await stateOf(host, id)).power, true);
+    assert.equal(cloud.logins, 1);
+    // … and the wait starts small again; a command always asks at once
+    cloud.sendError = ['3123', 'the appliance is off line'];
+    advance(2 * MIN);
+    await service.recentState(host.gc, d, 20);
+    const n = sends();
+    advance(31000);
+    assert.deepEqual(await stateOf(host, id), { offline: true });
+    assert.equal(sends(), n + 1, 'asked again after 30 seconds');
+    cloud.sendError = null;
+    assert.equal((await asAdmin(host, 'POST', `/devices/${id}/state`, { patch: { power: false } })).json.state.power, false);
     assert.equal(cloud.logins, 1);
   }));
 });
@@ -203,18 +232,22 @@ test('device offline, no reply and rate limit never log in; a rate limit pauses 
   return withHost({ cloud }, async (host) => withClock(async (advance) => {
     const id = await cloudDevice(host, cloud);
     dev.down = true;                                  // 3176: the device does not answer
-    for (let i = 0; i < 10; i += 1) assert.deepEqual(await stateOf(host, id), { offline: true });
+    for (let i = 0; i < 10; i += 1) { assert.deepEqual(await stateOf(host, id), { offline: true }); advance(6 * MIN); }
     assert.equal(cloud.logins, 1);
+    assert.equal(cloud.calls.filter((c) => c === '/v1/appliance/transparent/send').length, 30, 'asked each time (three tries)');
     assert.ok(!cloud.calls.slice(3).includes('/v1/appliance/user/list/get'), 'not even the account is asked');
     dev.down = false;
     cloud.rateLimited = true;
     assert.deepEqual(await stateOf(host, id), { offline: true });
     const calls = cloud.calls.length;
     cloud.rateLimited = false;
-    for (let i = 0; i < 10; i += 1) assert.deepEqual(await stateOf(host, id), { offline: true });
+    for (let i = 0; i < 10; i += 1) { assert.deepEqual(await stateOf(host, id), { offline: true }); advance(29000); }
+    service._cache.clear();
+    assert.deepEqual(await stateOf(host, id), { offline: true });
     assert.equal(cloud.calls.length, calls, 'paused: no request for five minutes');
     assert.equal((await asAdmin(host, 'GET', '/cloud/devices')).json.code, 'MIDEA_CLOUD_RATE_LIMITED');
     advance(5 * MIN);
+    service._cache.clear();
     assert.equal((await stateOf(host, id)).power, false);
     assert.equal(cloud.logins, 1);
     assert.equal((await asAdmin(host, 'GET', '/status')).json.cloud_needs_reauth, false);
@@ -338,7 +371,7 @@ test('a phone app that keeps ending the session: no ping-pong — at most 3 logi
   }));
 });
 
-test('tiles, search and quick actions ask an offline cloud device at most every 30 seconds', () => {
+test('tiles, search and quick actions do not ask an offline cloud device with every look', () => {
   const dev = fakeAc();
   const cloud = fakeCloud({ devices: { [APPLIANCE]: dev } });
   return withHost({ cloud }, async (host) => {

@@ -24,6 +24,11 @@ eingebaut, „Klimaanlage“) und seit 1.6.0 Dreo-Heizlüfter und -Klimageräte.
     das Plugin nicht mehr von selbst an: Hinweis „neu verbinden“ auf der Raumklima-Seite und in den
     Einstellungen, dazu eine Mitteilung (neues Thema „Konto neu verbinden“). Einstellungen erneut
     speichern verbindet neu.
+- **Gerät vom Strom getrennt / in der Midea-Cloud nicht erreichbar**: Das war der Auslöser der
+  Anmelde-Hinweise – die Cloud antwortet dann mit einem eigenen Fehlercode, und jeder Blick auf das
+  Gerät meldete neu an. Jetzt: keine Anmeldung, das Gerät steht als „nicht erreichbar“ da, und es wird
+  immer seltener gefragt (nach 30 Sekunden, dann 1, 2 und 5 Minuten). Ein Befehl fragt immer sofort;
+  antwortet das Gerät wieder, gilt wieder der normale Takt.
 - Midea sieht GateControl jetzt als ein gleichbleibendes Gerät (bisher mit jeder Abfrage unter einer
   neuen Gerätekennung).
 - Dreo: gleichzeitige Abfragen der Open-API melden sich nur noch einmal an; ein Konto ohne Geräte
