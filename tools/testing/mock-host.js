@@ -3258,7 +3258,7 @@ async function createHost(pluginDir, opts = {}) {
   const pr = mockPrint.install({ opts, perms, atLeast, enabledUser, hostError, mediaStore });
   Object.assign(api, pr.api);
   // ─── DNS-Schutz (GateControl ≥ 1.264.0, src/services/vpnDns.js; tools/testing/mock-vpn-dns.js) ───
-  const vd = mockVpnDns.install({ opts, perms, atLeast, enabledUser, hostError, personCtx, logs, wire,
+  const vd = mockVpnDns.install({ opts, perms, atLeast, enabledUser, hostError, personCtx, logs, wire, homeInternet: hi.state.state,
     groupExists: (id) => groupStore.has(id),
     groupUsers: (ids) => { const out = new Set(); for (const id of ids) if (groupStore.has(id) && !groupStore.get(id).archived) for (const u of totalIds(id)) if (enabledUser(u)) out.add(u); return out; } });
   Object.assign(api, vd.api);
@@ -4247,6 +4247,8 @@ async function createHost(pluginDir, opts = {}) {
     vpnDnsLog: (entry) => vd.hostLog(entry),
     /** `vpnDns` of GET /api/v1/client/permissions: { plugin, state } | null */
     vpnDnsClientInfo: () => vd.clientInfo(manifest.id, vd.on && perms.app === true),
+    /** `dnsProtection` of GET /api/v1/client/permissions (GateControl ≥ 1.265.0): { plugin, enabled, state } | null */
+    vpnDnsProtectionInfo: () => vd.clientPlugin(manifest.id, vd.on && perms.app === true),
     printScanPages: (id, pages, x) => pr.scanPages(id, pages, x),
     printOcr: (id, x) => pr.setOcr(id, x || {}),
     /** Kameras: the hook cameraEvent ({ id, cameraId, camera, gatewayId, kind, kinds, phase, at, nobodyHome, clip }) */

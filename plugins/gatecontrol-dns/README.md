@@ -1,7 +1,7 @@
 # gatecontrol-dns — DNS-Schutz
 
 Die Verwaltung des DNS-Schutzes von GateControl für die VPN-Geräte (`permissions.vpnDns`, `gc.vpnDns`; GateControl
-≥ 1.264.0, docs/plugins.md „DNS protection“). GateControl filtert selbst (ein Filter-Dienst hinter dem DNS des VPN);
+≥ 1.267.0 – `gc.vpnDns.version` 4, docs/plugins.md „DNS protection“). GateControl filtert selbst (ein Filter-Dienst hinter dem DNS des VPN);
 das Plugin legt fest, was für wen gesperrt wird, unterbricht den Schutz und liest Zähler.
 
 ```
@@ -65,13 +65,20 @@ keinen Peer (und im Portal), für **alle VPN-Geräte der Person**.
 }
 ```
 
+* `internet` (seit 1.1.0): `{ paused: true, until (ISO), remainingSeconds }` | `null` – „Internet pausieren“ aus dem
+  Plugin Familie gilt für das Gerät (bzw. alle gefilterten Geräte der Person). `state` bleibt `active` (oder
+  `paused`): es wird gefiltert, aber nur „Immer erlaubt“ antwortet. `may.pause` ist dann `false` mit
+  `may.reason: "internet_paused"` – Unterbrechen hebt die Pause nicht auf.
 * `state`: `active` (wird gefiltert) · `paused` (unterbrochen, siehe `pause`) · `fallback` (Filter ausgefallen,
   ungefiltert, siehe `outage.since`) · `unfiltered` (das Gerät hat einen eigenen DNS-Server, ist ausgenommen oder die
   Person hat kein VPN-Gerät) · `starting` · `off`.
 * `device`: das fragende Gerät oder `null` (Token ohne Peer, Portal). `device.state`: `filtered` | `ownDns` |
   `excluded` | `disabled`.
 * `pause`: `{ scope: "all" | "peer" | "user", until (ISO | null), openEnd, since, by: { userId, name } | null, byMe,
-  remainingSeconds (null bei offenem Ende) }`.
+  remainingSeconds (null bei offenem Ende), minutes }` – `minutes` (seit 1.1.0): die gewählte Dauer in Minuten, mit
+  „+30 Min.“ die ganze; `null` bei offenem Ende.
+* `devices[]` (seit 1.1.0) zusätzlich `internetPaused` (ISO | null) und `timesSuspended` (ISO | null – „Zeit
+  verlängern“ aus Familie: die Zeiten des Profils sind bis dahin ausgesetzt).
 * `counters.scope`: `device` (dieses Gerät – nur bei eingeschaltetem Abfrageprotokoll), `person` (alle eigenen
   Geräte, ohne fragendes Gerät), sonst `server` (Zähler des ganzen Servers). `percent` mit einer Nachkommastelle.
 * `top`: Top gesperrte Domains von heute für das Gerät bzw. die Person (höchstens 5) – `null`, wenn das Protokoll
@@ -79,7 +86,8 @@ keinen Peer (und im Portal), für **alle VPN-Geräte der Person**.
 * `may`: was diese Person jetzt darf. `pause` – die Dauer-Knöpfe zeigen; `durations` – die erlaubten Minuten
   (Teilmenge von 5, 30, 60, 240; andere Stufen ausgrauen), `forever` – „Bis ich wieder einschalte“ anbieten;
   `resume` – „Wieder einschalten“ zeigen; `extend` – „+30 Min.“ zeigen. `reason` (sonst `null`): `admins_only`,
-  `profile` („Unterbrechen nicht erlaubt“), `not_filtered`, `no_device`, `fallback`, `off`, `paused_for_all`.
+  `profile` („Unterbrechen nicht erlaubt“), `not_filtered`, `no_device`, `fallback`, `off`, `paused_for_all`,
+  `internet_paused` (seit 1.1.0).
 * `today`: die Zeiten des Profils, die heute gelten („Zeiten heute“); `categories`: `social`, `games`, `video`.
 * `manage`: Administrator oder Elternteil – `GET people` liefert etwas.
 
@@ -105,13 +113,16 @@ Für Administratoren (alle Personen mit VPN-Gerät) und Eltern (sie selbst und i
                "devices": [{ "peerId": 21, "name": "Leas Handy", "platform": "android", "state": "filtered", "profile": { "id": "p1a2b3c4d", "name": "Kinder" }, "suspended": false, "pause": null, "today": null, "may": { "…": "…" } }] }] }
 ```
 
-`all` nur für Administratoren, sonst `null`.
+`all` nur für Administratoren, sonst `null`. Seit 1.1.0 je Person zusätzlich `pause` (die Unterbrechung der Person,
+sonst die gemeinsame aller ihrer gefilterten Geräte, sonst `null` – Form wie `status.pause`) und `internet` (wie
+`status.internet`); je Gerät `internetPaused` / `timesSuspended`.
 
 ### `GET log?limit&before&peerId&blockedOnly=1&search`
 
 Das eigene Abfrageprotokoll (immer nur die eigenen Geräte): `{ ok, entries: [{ id, at, peerId, device, domain, type,
-result: "blocked" | "allowed" | "allowed_paused" | "safe_search", action, reason, list, profile: { id, name } }],
-next }` – `next` als `before` der nächsten Seite. 409 `log_off`, 403 `not_allowed` (`reason: "log_admins_only"`).
+result: "blocked" | "allowed" | "allowed_paused" | "safe_search", action, reason, list, scope, profile: { id, name } }],
+next }` – `next` als `before` der nächsten Seite. `scope` (seit 1.1.0): bei eigenen Einträgen (`profile_deny`,
+`profile_allow`) `"all"` (gilt für alle) oder `"profile"`, sonst `null`; neuer Grund `paused` (Internet pausiert). 409 `log_off`, 403 `not_allowed` (`reason: "log_admins_only"`).
 
 ### Fehlercodes
 
@@ -119,7 +130,7 @@ next }` – `next` als `before` der nächsten Seite. 409 `log_off`, 403 `not_all
 |---|---|---|
 | 400 | `invalid` | Body falsch (`detail` nennt das Feld) |
 | 403 | `forbidden` | nicht angemeldet / fremdes Gerät im Protokoll / `people` ohne Recht |
-| 403 | `not_allowed` | Unterbrechen hier nicht erlaubt – `reason`: `admins_only`, `profile`, `admin_target`, `not_yours`, `not_filtered`, `paused_for_all`, `log_admins_only` |
+| 403 | `not_allowed` | Unterbrechen hier nicht erlaubt – `reason`: `admins_only`, `profile`, `admin_target`, `not_yours`, `not_filtered`, `paused_for_all`, `log_admins_only`, `internet_paused` (seit 1.1.0) |
 | 403 | `forever_not_allowed` | „Bis ich wieder einschalte“ ist für Benutzer nicht freigegeben |
 | 403 | `too_long` | länger als die längste Dauer (`maxMinutes`) |
 | 404 | `not_found` | Gerät oder Person unbekannt |
@@ -127,7 +138,7 @@ next }` – `next` als `before` der nächsten Seite. 409 `log_off`, 403 `not_all
 | 409 | `not_filtering` | der Filter ist ausgefallen (Rückfall) – es gibt nichts zu unterbrechen |
 | 409 | `no_device` | die Person hat kein VPN-Gerät |
 | 409 | `log_off` | das Abfrageprotokoll ist aus |
-| 501 | `unsupported` | der Server hat `gc.vpnDns` nicht (GateControl < 1.264.0) |
+| 501 | `unsupported` | der Server hat `gc.vpnDns` nicht (GateControl < 1.264.0; das Plugin 1.1.0 braucht 1.267.0) |
 | 503 | `unavailable` | der Filter-Dienst antwortet nicht |
 
 ## Tests

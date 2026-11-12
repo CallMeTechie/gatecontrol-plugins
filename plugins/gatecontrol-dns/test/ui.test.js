@@ -43,7 +43,7 @@ describe('texts', () => {
   it('the keys built at run time exist: errors, reasons, lists, categories, states, days, providers', () => {
     const need = [
       ...Object.keys(STATUS).map((c) => 'error.' + c),
-      ...['admins_only', 'profile', 'admin_target', 'not_yours', 'not_filtered', 'no_device', 'fallback', 'off', 'paused_for_all', 'log_admins_only'].map((r) => 'reason.' + r),
+      ...['admins_only', 'profile', 'admin_target', 'not_yours', 'not_filtered', 'no_device', 'fallback', 'off', 'paused_for_all', 'log_admins_only', 'internet_paused', 'paused'].map((r) => 'reason.' + r),
       ...['ads', 'malware', 'adult', 'gambling', 'ads_stevenblack'].flatMap((l) => ['list.' + l, 'listd.' + l]),
       ...['social', 'games', 'video'].map((c) => 'cat.' + c),
       ...['off', 'starting', 'fallback', 'active', 'paused'].map((x) => 'st.' + x),
@@ -53,6 +53,8 @@ describe('texts', () => {
       ...['blocked', 'allowed', 'allowed_paused', 'safe_search'].map((x) => 'lg.r_' + x),
       ...['device', 'person', 'server'].map((x) => 'po.scope_' + x),
       ...['timeout', 'fallback', 'nodns'].flatMap((x) => ['wz.failed_' + x, 'wz.failed_' + x + '_pihole']),
+      ...['list', 'denyAll', 'denyProfile', 'schedule', 'pause', 'other'].map((x) => 'by.' + x),
+      ...['profile_deny', 'profile_allow'].flatMap((x) => ['reason.' + x, 'reason.' + x + '_all', 'reason.' + x + '_in', 'reason.' + x + '_profile']),
       'li.allow_title', 'li.deny_title', 'li.allow_hint', 'li.deny_hint', 'pf.allow_label', 'pf.deny_label',
     ];
     assert.deepEqual(need.filter((k) => !(k in texts.de)), []);
@@ -112,7 +114,7 @@ describe('render', () => {
     assert.equal(manifest.ui.nav, undefined, 'administration lives on the settings page, not in the sidebar');
     assert.deepEqual(Object.keys(manifest.permissions).sort(), ['app', 'background', 'groups', 'notify', 'portal', 'users', 'vpnDns']);
     assert.equal(manifest.permissions.groups, 'read');
-    assert.equal(manifest.gatecontrol, '>=1.264.0');
+    assert.equal(manifest.gatecontrol, '>=1.267.0');
     assert.deepEqual(manifest.license, { required: true });
   });
 });

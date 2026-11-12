@@ -3416,6 +3416,17 @@
           }
         },
         {
+          "icon": "network",
+          "title": {
+            "de": "Heimnetz, Familie, Umgehungsschutz",
+            "en": "Home network, family, bypass block"
+          },
+          "text": {
+            "de": "Profile gelten zu Hause und unterwegs, „Internet pausieren“ wirkt auch im VPN, Option „Fremden DNS und DoT sperren“",
+            "en": "Profiles hold at home and on the road, “Pause internet” also works through the VPN, option “Block foreign DNS and DoT”"
+          }
+        },
+        {
           "icon": "link",
           "title": {
             "de": "Umzug von Pi-hole",

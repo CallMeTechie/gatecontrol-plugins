@@ -1,5 +1,33 @@
 # Changelog
 
+## 1.1.0
+
+Braucht GateControl **1.267.0** (`gc.vpnDns.version` 4).
+
+* **Umgehung erschweren** (Einstellungen): Schalter **„Fremden DNS und DoT sperren“** (Standard aus,
+  `blockForeignDns`). Die Karte zeigt, ob die Regeln gelten („aktiv für N Geräte“, „ruht“, Fehler von iptables). Gilt
+  nur für Geräte, die gerade gefiltert werden – Geräte mit eigenem DNS-Server, ausgenommene Geräte und Gateways
+  bleiben unberührt; im Rückfall, bei ausgeschaltetem Schutz und während einer Unterbrechung entfallen die Regeln.
+  DNS über HTTPS (DoH) wird nicht gesperrt.
+* **Profile gemeinsam mit dem Heimnetz**: Im Profil-Dialog **„Mit Heimnetz-Profil verbinden“** – ein Profil des
+  DNS-Filters eines Gateways übernehmen, „im Heimnetz neu anlegen“ oder „Verbindung lösen“. Ein verbundenes Profil
+  „gilt zu Hause und unterwegs“: Listen, Sichere Suche, Zeiten, eigene Einträge und Personen stehen im Heimnetz-Profil
+  und sind im Dialog mit „Heimnetz“ markiert; Name, Gruppen und Geräte bleiben je Seite eigen.
+* **„Internet pausieren“ aus Familie wirkt auch unterwegs** (Schalter in den Einstellungen, Standard an,
+  `homeInternet`): Übersicht, Geräte, Protokoll, „Domain prüfen“ und das Portal zeigen „Internet pausiert“; solange
+  wird kein „Unterbrechen“ angeboten (es würde die Pause nicht aufheben). Zähler „Gesperrt durch … Internet pausiert“.
+* **Domain prüfen** nennt den treffenden Eintrag („Treffer tiktok.com mit allen Unterseiten“) und bei eigenen
+  Einträgen, ob sie für alle oder im Profil gelten. **Übersicht**: „Gesperrt durch“ Listen / für alle gesperrt / im
+  Profil gesperrt / Zeiten. **Protokoll**: „Immer gesperrt (für alle)“ bzw. „Profil „…“ · Immer gesperrt“ kommt vom
+  Server (`scope`) statt aus einer Ableitung; Filter „Eigene Einträge: für alle / im Profil“.
+* **Umzug von Pi-hole**, Schritt 1: nennt, wo Pi-hole eingetragen ist (Adresse, Gateway).
+* **Mitteilungen**: „Auch Benutzer benachrichtigen“ (Standard aus) – „Filter ausgefallen / läuft wieder“ geht dann
+  auch an alle, deren VPN-Geräte gefiltert werden.
+* **App-API** (nur Ergänzungen, ältere Apps laufen unverändert): `status.internet`, `may.reason: "internet_paused"`,
+  `devices[].internetPaused` / `timesSuspended`, `pause.minutes` (gewählte Dauer), `people[].pause` und
+  `people[].internet`, `scope` in den Protokoll-Einträgen; `POST pause` antwortet während einer Internet-Pause mit
+  403 `not_allowed` (`reason: "internet_paused"`).
+
 ## 1.0.0
 
 Erste Version: die Verwaltung des DNS-Schutzes von GateControl für die VPN-Geräte. GateControl (ab 1.264.0) filtert

@@ -33,14 +33,14 @@ describe('admin/all, lists and own entries', () => {
   it('everything the page shows', async () => {
     s = await setup();
     const r = await s.admin('GET', 'all');
-    assert.deepEqual(Object.keys(r).sort(), ['catalog', 'config', 'devices', 'durations', 'groups', 'http', 'lists', 'maxMinutes', 'ok', 'pauses', 'peerGroups', 'settings', 'stats', 'status', 'users'].sort());
+    assert.deepEqual(Object.keys(r).sort(), ['catalog', 'config', 'devices', 'durations', 'groups', 'homes', 'http', 'lists', 'maxMinutes', 'ok', 'pauses', 'peerGroups', 'settings', 'stats', 'status', 'users'].sort());
     assert.deepEqual([r.status.state, r.status.peers.filtered, r.status.peers.ownDns, r.status.peers.gateways], ['filtering', 8, 1, 1]);
     assert.deepEqual(r.settings.profiles.map((p) => p.name), ['Standard', 'Kinder', 'Büro']);
     assert.deepEqual(r.groups.map((g) => [g.name, g.kind]), [['Büro', 'team'], ['Familie', 'family']]);
     assert.deepEqual(r.peerGroups, [{ id: 3, name: 'Büro-Geräte' }]);
     assert.ok(r.users.some((u) => u.name === 'Lea' && u.role === 'user') && r.users.some((u) => u.name === 'Anna' && u.role === 'admin'));
     assert.deepEqual(r.config.pause, { who: 'all', maxMinutes: 60, forever: false, profiles: {} });
-    assert.deepEqual([r.config.logView, r.config.notify, r.config.setupDone], ['admins', { outage: true, weekly: false }, false]);
+    assert.deepEqual([r.config.logView, r.config.notify, r.config.setupDone], ['admins', { outage: true, outageUsers: false, weekly: false }, false]);
     assert.deepEqual(r.devices.find((d) => d.peerId === P.leaPhone).profile, { id: 'pkinder01', name: 'Kinder' });
     assert.equal(r.stats.today.top[0].domain, 'doubleclick.net');
     const live = await s.admin('GET', 'live');
@@ -210,7 +210,7 @@ describe('query log and the plugin\'s own settings', () => {
   it('config: only known keys and values', async () => {
     s = await setup();
     let r = await s.config({ pause: { who: 'profile', maxMinutes: 240, forever: true, profiles: { pkinder01: false, pbuero001: true } }, logView: 'own', notify: { outage: false, weekly: true } });
-    assert.deepEqual(r.config, { setupDone: false, pause: { who: 'profile', maxMinutes: 240, forever: true, profiles: { pkinder01: false } }, logView: 'own', notify: { outage: false, weekly: true } });
+    assert.deepEqual(r.config, { setupDone: false, pause: { who: 'profile', maxMinutes: 240, forever: true, profiles: { pkinder01: false } }, logView: 'own', notify: { outage: false, outageUsers: false, weekly: true } });
     for (const bad of [{ pause: { who: 'everybody' } }, { pause: { maxMinutes: 45 } }, { pause: { forever: 'yes' } }, { pause: { profiles: { 'Bad Id': false } } }, { logView: 'all' }, { notify: { sms: true } }, { other: 1 }, []]) {
       r = await s.config(bad);
       assert.deepEqual([r.http, r.code], [400, 'invalid'], JSON.stringify(bad));
@@ -255,7 +255,7 @@ describe('set-up and the move from Pi-hole', () => {
   it('from Pi-hole: exceptions taken over, Pi-hole gives up the chain only once the filter answers', async () => {
     s = await setup({ settings: null, vpnDns: { pihole: { configured: true, wantsChain: true }, service: 'starting' } });
     let all = await s.admin('GET', 'all');
-    assert.deepEqual(all.status.pihole, { configured: true, wantsChain: true, chain: 'active' });
+    assert.deepEqual(all.status.pihole, { configured: true, wantsChain: true, chain: 'active', targets: [] });
     let r = await s.admin('POST', 'setup/start', { lists: ['ads', 'malware', 'ads_stevenblack'], allow: ['PayPal.com', 'sparkasse.de', 'paypal.com'] });
     assert.deepEqual(r.settings.allow, ['paypal.com', 'sparkasse.de']);
     // the filter still loads its lists: Pi-hole keeps filtering, nothing is released
@@ -270,7 +270,7 @@ describe('set-up and the move from Pi-hole', () => {
     r = await s.admin('GET', 'setup/state');
     assert.deepEqual([r.status.state, r.status.chain, r.status.pihole.chain, r.probe.block.action], ['filtering', 'filter', 'displaced', 'block']);
     r = await s.admin('POST', 'setup/finish');
-    assert.deepEqual([r.http, r.pihole, r.config.setupDone], [200, { configured: true, wantsChain: false, chain: 'off' }, true]);
+    assert.deepEqual([r.http, r.pihole, r.config.setupDone], [200, { configured: true, wantsChain: false, chain: 'off', targets: [] }, true]);
     assert.ok(s.host.vpnDns.activity.some((a) => a.type === 'vpn_dns_pihole_released' && a.actor === ADMIN.id));
   });
 

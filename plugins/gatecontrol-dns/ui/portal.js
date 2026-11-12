@@ -43,6 +43,8 @@
     var kpi = function (lab, val, sub2) { return el('div', { class: 'kpi' }, [el('div', { class: 'lab', text: lab }), el('div', { class: 'val', text: val }), el('small', { text: sub2 })]); };
     c.appendChild(el('div', { class: 'kpis' }, [kpi(T('po.queries'), D.num(k.queries), T('po.scope_' + k.scope)), kpi(T('po.blocked'), D.num(k.blocked), D.pct(k.blocked, k.queries))]));
     var m = st.may;
+    // "Internet pausieren" (Familie) reaches the VPN devices: the protection runs, but only allowed sites answer
+    if (st.internet) c.appendChild(D.banner('warn', 'pause', T('po.internet_title', { time: D.clock(st.internet.until) }), T('po.internet_text'), null, 'status'));
     if (s === 'fallback') c.appendChild(el('p', { class: 's-hint', text: T('po.fallback_text') }));
     else if (m.pause) {
       c.appendChild(el('div', { class: 'fg' }, [el('span', { class: 'lbl', text: T('po.pause_title') }), el('div', { class: 'btns', role: 'group', 'aria-label': T('po.pause_title') }, durationButtons(m, {}))]));
@@ -54,7 +56,7 @@
         m.extend && p && !p.openEnd && p.scope !== 'all' ? btn(T('ov.plus30'), '', function (ev) { change(ev.currentTarget, 'pause', { extend: 30 }); }) : null,
       ]));
       if (p) c.appendChild(el('p', { class: 's-hint', text: (p.byMe ? T('po.by_me', { time: D.clock(p.since) }) : T('po.by_other', { name: p.by ? p.by.name : '–', time: D.clock(p.since) })) + ' ' + T(p.scope === 'all' ? 'po.paused_all' : 'po.paused_hint') }));
-    } else if (m.reason && s !== 'off' && s !== 'starting') {
+    } else if (m.reason && !st.internet && s !== 'off' && s !== 'starting') {
       c.appendChild(D.banner('', 'lock', T('po.not_allowed'), D.TO('reason.' + m.reason, T('po.not_allowed_text'))));
     }
     if (st.today && st.today.length) {
@@ -75,6 +77,7 @@
     if (d.state === 'disabled') return tag(T('dv.s_disabled'), 'grey');
     if (d.state !== 'filtered') return tag(T('dv.s_excluded'), 'grey');
     if (st.state === 'fallback') return tag(T('dv.s_unfiltered'), 'crit');
+    if (d.internetPaused && st.state === 'active') return tag(T('dv.s_internet_until', { time: D.clock(d.internetPaused) }), 'crit');
     if (d.suspended) return tag(d.pause && d.pause.until ? T('dv.s_paused_until', { time: D.clock(d.pause.until) }) : T('dv.s_paused'), 'warn');
     return tag(T('dv.s_filtered'), 'good');
   }
@@ -100,7 +103,7 @@
     c.appendChild(el('div', { class: 'rows' }, list.map(function (p) {
       var paused = p.devices.filter(function (d) { return d.suspended; });
       var first = paused[0] && paused[0].pause;
-      var sub = p.devices.map(function (d) { return d.name; }).join(', ') + (first ? ' · ' + T('po.paused') + ' ' + untilText(first) : '');
+      var sub = p.devices.map(function (d) { return d.name; }).join(', ') + (first ? ' · ' + T('po.paused') + ' ' + untilText(first) : '') + (p.internet ? ' · ' + T('dv.s_internet_until', { time: D.clock(p.internet.until) }) : '');
       var buttons = [];
       if (p.may.pause) buttons = durationButtons({ durations: p.may.durations.filter(function (m) { return m <= 60; }), forever: false }, { userId: p.userId }, 'btn-sm');
       else if (p.may.resume) buttons = [btn(T('po.resume'), 'btn-primary btn-sm', function (ev) { change(ev.currentTarget, 'resume', { userId: p.userId }); })];
@@ -126,7 +129,7 @@
     var rows = log ? log.entries : [];
     var body = el('tbody', {}, rows.length ? rows.map(function (e) {
       return el('tr', {}, [el('td', { class: 'mono nw', text: D.clock(e.at, true), title: D.when(e.at) }), el('td', { text: e.device || '–' }), el('td', { class: 'mono', text: e.domain }),
-        el('td', {}, [tag(T('lg.r_' + e.result), RESULT_TONE[e.result] || 'grey', e.result === 'safe_search')]), el('td', { text: D.reasonText(e, null) })]);
+        el('td', {}, [tag(T('lg.r_' + e.result), RESULT_TONE[e.result] || 'grey', e.result === 'safe_search')]), el('td', { text: D.reasonText(e) })]);
     }) : [el('tr', {}, [el('td', { class: 'empty', colspan: '5', text: T(log ? 'lg.none' : 'common.loading') })])]);
     c.appendChild(el('div', { class: 'tw', tabindex: '0', role: 'region', 'aria-label': T('lg.table') }, [el('table', { class: 'tb', style: 'min-width:560px' }, [
       el('thead', {}, [el('tr', {}, [T('lg.h_time'), T('dv.h_device'), T('lg.h_domain'), T('lg.h_result'), T('lg.h_reason')].map(function (h) { return el('th', { text: h }); }))]), body])]));

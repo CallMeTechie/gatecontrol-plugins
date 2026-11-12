@@ -12,6 +12,8 @@ const STATUS = {
   too_long: 403,
   not_found: 404,
   name_taken: 409,
+  home_name_taken: 409,
+  home_invalid: 400,
   limit: 409,
   log_off: 409,
   not_filtering: 409,
@@ -56,7 +58,10 @@ function fromHost(e) {
   const msg = clip(String((e && e.message) || ''), 200);
   if (code === 'invalid') {
     if (/is no domain|no domain/.test(msg)) return fail('invalid_domain', { detail: msg });
+    // a profile the home network is to get, but the name is taken there (profiles[i].home: …)
+    if (/^profiles\[\d+\]\.home: a profile with this name exists/.test(msg)) return fail('home_name_taken', { detail: msg });
     if (/a profile with this name exists/.test(msg)) return fail('name_taken', { detail: msg });
+    if (/^profiles\[\d+\]\.home\b/.test(msg)) return fail('home_invalid', { detail: msg });
     return fail('invalid', { detail: msg });
   }
   return fail(code);

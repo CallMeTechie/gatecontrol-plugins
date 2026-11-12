@@ -130,14 +130,28 @@
     return (n / 1048576).toLocaleString(LOCALE, { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + ' MB';
   }
   function listName(id) { return TO('list.' + id, id); }
+  /** The entry that hit ("Domain prüfen"): "Treffer tiktok.com mit allen Unterseiten" — null without one. */
+  function matchText(m) {
+    if (!m || !m.entry) return null;
+    return T(m.kind === 'exact' ? 'test.match_exact' : (m.kind === 'subdomains' ? 'test.match_subdomains' : 'test.match_domain'), { entry: m.entry });
+  }
   function categoryName(id) { return TO('cat.' + id, id); }
-  /** Why a query was allowed or blocked, in words. */
-  function reasonText(e, profileName) {
+  /**
+   * Why a query was allowed or blocked, in words. Own entries say for whom they hold (`scope`: 'all' = for everybody,
+   * 'profile' = an entry of the profile; null = an entry written by an older server). `short`: without the profile's name.
+   */
+  function reasonText(e, short) {
     var list = e.list;
+    var own = function (key) {
+      if (e.scope === 'all') return T('reason.' + key + '_all');
+      if (e.scope === 'profile') return !short && e.profile && e.profile.name ? T('reason.' + key + '_in', { profile: e.profile.name }) : T('reason.' + key + '_profile');
+      return T('reason.' + key);
+    };
     switch (e.reason) {
       case 'list': return T('reason.list', { list: listName(list) });
-      case 'profile_deny': return profileName ? T('reason.profile_deny_in', { profile: profileName }) : T('reason.profile_deny');
-      case 'profile_allow': return T('reason.profile_allow');
+      case 'profile_deny': return own('profile_deny');
+      case 'profile_allow': return own('profile_allow');
+      case 'paused': return T('reason.paused');
       case 'schedule': return T('reason.schedule');
       case 'schedule_category': return T('reason.schedule_category', { category: categoryName(e.category || list) });
       case 'safe_search': return T('reason.safe_search');
@@ -174,6 +188,6 @@
     return el('button', { type: 'button', class: 'btn ' + (cls || ''), on: { click: onClick } }, [ic ? icon(ic, 's14') : null, label]);
   }
   window.DN = { CTX: CTX, T: T, TO: TO, $: $, el: el, icon: icon, clear: clear, api: api, toast: toast, warn: warn, errText: errText, modal: modal, confirmDialog: confirmDialog,
-    num: num, pct: pct, clock: clock, when: when, countdown: countdown, duration: duration, bytes: bytes, listName: listName, categoryName: categoryName, reasonText: reasonText,
+    num: num, pct: pct, clock: clock, when: when, countdown: countdown, duration: duration, bytes: bytes, listName: listName, categoryName: categoryName, reasonText: reasonText, matchText: matchText,
     sw: sw, row: row, tag: tag, banner: banner, btn: btn, LOCALE: LOCALE };
 })();
