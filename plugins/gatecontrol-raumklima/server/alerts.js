@@ -37,6 +37,10 @@ const TEXTS = {
     'fact.indoor': 'Innen',
     'fact.mode': 'Modus',
     'fact.code': 'Fehlercode',
+    'account.title': '{{vendor}}-Konto neu verbinden',
+    'account.limit': 'GateControl meldet sich nicht mehr von selbst beim {{vendor}}-Konto an: Die Cloud hat die Sitzung wiederholt abgelehnt. Bitte in den Einstellungen des Plugins „Raumklima“ erneut speichern, um das Konto neu zu verbinden.',
+    'account.twofa': 'Das {{vendor}}-Konto verlangt eine Bestätigung. In der App des Herstellers bestätigen, dann die Einstellungen des Plugins „Raumklima“ erneut speichern.',
+    'account.credentials': 'Die Anmeldung beim {{vendor}}-Konto wurde abgelehnt. Bitte E-Mail und Passwort in den Einstellungen des Plugins „Raumklima“ prüfen.',
   },
   en: {
     'down.title': 'Device unreachable',
@@ -53,6 +57,10 @@ const TEXTS = {
     'fact.indoor': 'Indoor',
     'fact.mode': 'Mode',
     'fact.code': 'Error code',
+    'account.title': 'Connect the {{vendor}} account again',
+    'account.limit': 'GateControl no longer signs in to the {{vendor}} account by itself: the cloud refused the session repeatedly. Please save the settings of the plugin “Indoor climate” again to connect the account anew.',
+    'account.twofa': 'The {{vendor}} account asks for a confirmation. Confirm it in the maker\'s app, then save the settings of the plugin “Indoor climate” again.',
+    'account.credentials': 'Signing in to the {{vendor}} account was refused. Please check e-mail and password in the settings of the plugin “Indoor climate”.',
   },
 };
 
@@ -170,4 +178,18 @@ function check(gc, observations, { now = Date.now() } = {}) {
   return p;
 }
 
-module.exports = { evaluate, toNotification, configOf, check, reset, STATE_KEY, TEXTS, OFFLINE_MIN };
+/**
+ * 2.2.4: the login brake stopped the automatic logins of an account (loginguard.js calls this once per
+ * block) — one notification to whoever the topic's rule names.
+ */
+async function account(gc, vendor, reason) {
+  if (!notifier) notifier = notify.createNotifier(gc);
+  const lang = notify.langOf(await gc.settings.all());
+  const key = TEXTS.de['account.' + reason] ? 'account.' + reason : 'account.limit';
+  await notifier.send({
+    topic: 'account_reauth', title: notify.fmt(TEXTS, lang, 'account.title', { vendor }), body: notify.fmt(TEXTS, lang, key, { vendor }),
+    priority: 'high', collapseKey: `account:${vendor.toLowerCase()}`, ttl: 24 * 3600, data: notify.openAction(gc, lang),
+  }, { minGapMs: 3600000 });
+}
+
+module.exports = { account, evaluate, toNotification, configOf, check, reset, STATE_KEY, TEXTS, OFFLINE_MIN };

@@ -1,4 +1,4 @@
-<!-- version: 2.2.3 -->
+<!-- version: 2.2.4 -->
 # Raumklima
 
 ## Was das Plugin kann
@@ -6,7 +6,7 @@
 - **Midea-Klimageräte** steuern – über die Midea-Cloud (Konto der App MSmartHome oder NetHome Plus) oder direkt im Heimnetz (Protokoll V2 und V3): Ein/Aus, Zieltemperatur, Modus, Lüfterstufe, Turbo, Eco; Innen- und Außentemperatur.
 - **Dreo-Heizlüfter und -Klimageräte** über die Dreo-Cloud, mit Live-Verbindung: Befehle kommen sofort an, Änderungen am Gerät erscheinen sofort.
 - **Besitzer:** Du weist Geräte Personen zu. Diese Personen steuern sie im Portal „Zuhause“ und in der App.
-- **Mitteilungen:** Gerät nicht erreichbar, Filter reinigen, Störung am Klimagerät.
+- **Mitteilungen:** Gerät nicht erreichbar, Filter reinigen, Störung am Klimagerät, Konto neu verbinden.
 - **GateControl-Apps:** Schnellaktionen und ein Widget je Gerät (Innentemperatur, Zieltemperatur, Modus).
 
 Bis 1.6.0 hieß das Plugin `gatecontrol-midea` („Klimaanlage“). Version 2.0.0 hat es ersetzt und alles übernommen.
@@ -31,7 +31,7 @@ Beim Speichern meldet sich das Plugin gleich an. Je Konto zeigt eine Statuszeile
 
 ### Schritt 2: Geräte hinzufügen
 
-- **Dreo:** Die Heizlüfter und Klimageräte des Kontos erscheinen von selbst auf der Raumklima-Seite – gleich nach dem Speichern und danach stündlich. Von Hand geht es über „Gerät hinzufügen“ › „Dreo“.
+- **Dreo:** Die Heizlüfter und Klimageräte des Kontos erscheinen von selbst auf der Raumklima-Seite – gleich nach dem Speichern und danach stündlich (solange das Konto kein Gerät zeigt: alle 6 Stunden). Von Hand geht es über „Gerät hinzufügen“ › „Dreo“.
 - **Midea-Cloud:** **„Gerät hinzufügen“** › „Midea-Cloud“ › die Klimageräte des Kontos wählen.
 - **Midea im Heimnetz:**
   1. **„Geräte entdecken“** sucht Klimageräte im Heimnetz.
@@ -67,14 +67,23 @@ Dreo-Heizungen sperren die Fernsteuerung nach 24 Stunden ohne Bedienung. Drück 
 **„Das Midea-Konto braucht eine erneute Bestätigung“.**
 In der Midea-App bestätigen und die Einstellungen des Plugins erneut speichern.
 
+**„GateControl meldet sich nicht mehr von selbst beim Konto an“ / Mitteilung „Konto neu verbinden“.**
+Die Cloud des Herstellers hat die Sitzung wiederholt abgelehnt. Damit der Hersteller dich nicht mit Anmelde-Hinweisen überhäuft oder das Konto sperrt, meldet sich das Plugin höchstens 3-mal je Stunde und 6-mal je Tag selbst an und hört dann auf. Öffne die Einstellungen des Plugins und speichere sie erneut – das verbindet das Konto neu. Hilft das nicht, zeigt das Protokoll des Plugins den Code der Cloud.
+
+**Midea meldet ständig „neue Anmeldung“.**
+Ab 2.2.4 meldet sich das Plugin nur noch an, wenn die Sitzung wirklich abgelaufen ist. Die Midea-App und GateControl können sich aber gegenseitig abmelden, wenn beide dasselbe Konto nutzen – dann hilft ein eigenes Midea-Konto für GateControl, mit dem du die Geräte in der Midea-App teilst.
+
 **Ein gefundenes Midea-Gerät ist nicht erreichbar.**
 Seine Adresse muss unter Zugriffsziele als „Klimagerät (Heimnetz)“ zugewiesen sein.
 
 **Cloud-Geräte melden keine Störung.**
 Mitteilungen kommen nur von Geräten im Heimnetz, die das Plugin laufend abfragt (und von Dreo-Geräten bei „nicht erreichbar“).
 
-## Neu in 2.2.3
+## Neu in 2.2.4
 
-- Dieses Handbuch im Reiter „Handbuch“ (GateControl ≥ 1.241.0).
+- Das Plugin meldet sich nicht mehr bei jedem Fehler der Cloud neu an. Neu angemeldet wird nur, wenn die Sitzung wirklich abgelaufen ist – höchstens 3-mal je Stunde und 6-mal je Tag, mit wachsender Wartezeit (1, 5, 15, 60 Minuten).
+- Ist die Grenze erreicht, das Passwort falsch oder eine Bestätigung nötig, erscheint „neu verbinden“ und du bekommst eine Mitteilung (Thema „Konto neu verbinden“). Einstellungen erneut speichern verbindet neu.
+- Ein Midea-Cloud-Gerät, das vom Strom getrennt oder nicht erreichbar ist, löst keine Anmeldung mehr aus. Es steht als „nicht erreichbar“ da und wird immer seltener gefragt (30 Sekunden bis 5 Minuten); nach dem Einstecken kann es deshalb bis zu 5 Minuten dauern, bis es wieder erscheint – ein Befehl fragt sofort.
+- Bei „zu viele Anfragen“ pausieren die Cloud-Abfragen (5, 15, 60 Minuten).
 
-Zuletzt in 2.2.2: Dreo-Geräte mit Sonderzeichen in der Seriennummer werden nicht mehr verworfen.
+Zuletzt in 2.2.3: dieses Handbuch im Reiter „Handbuch“ (GateControl ≥ 1.241.0).

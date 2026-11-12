@@ -141,6 +141,11 @@ function fakeCloud(opts = {}) {
     tokens: opts.tokens || {},            // device id → { token, key }
     require2fa: false,
     rateLimited: false,
+    sendError: null,                      // [code, msg]: what every transparent send answers (2.2.4)
+    listError: null,                      // [code, msg]: what the appliance list answers
+    expired: new Set(),                   // bearer tokens the cloud no longer takes (cloud.expire())
+    singleSession: opts.singleSession === true, // a new login ends every earlier session (as a phone app does)
+    expiredCode: '3106',                  // … and the Midea code it answers them with
     logins: 0,
     calls: [],
     aesKey: crypto.randomBytes(16),
@@ -158,6 +163,7 @@ function fakeCloud(opts = {}) {
     if (alias === '/mj/user/login') {
       if (cloud.require2fa) return err('1', 'need verification code');
       if (body.iotData.loginAccount !== cloud.email) return err('3101', 'account or password error');
+      if (cloud.singleSession) cloud.expire();     // one session per account: a login ends the one before
       cloud.logins += 1;
       const tmp = mcrypto.sha256(Buffer.from(cfg.loginKey, 'ascii')).toString('hex');
       const k = Buffer.from(tmp.slice(0, 16), 'ascii');
@@ -169,7 +175,8 @@ function fakeCloud(opts = {}) {
       });
     }
     if (!String(o.headers.accessToken || '').startsWith('BEARER-')) return err('40001', 'not logged in');
-    if (alias === '/v1/appliance/user/list/get') return ok({ list: cloud.appliances });
+    if (cloud.expired.has(o.headers.accessToken)) return err(cloud.expiredCode, 'invalidSession');
+    if (alias === '/v1/appliance/user/list/get') return cloud.listError ? err(...cloud.listError) : ok({ list: cloud.appliances });
     if (alias === '/v1/iot/secure/getToken') {
       for (const [devId, tk] of Object.entries(cloud.tokens)) {
         const n = Number(BigInt(devId));
@@ -182,6 +189,7 @@ function fakeCloud(opts = {}) {
       return ok({ tokenlist: [] });
     }
     if (alias === '/v1/appliance/transparent/send') {
+      if (cloud.sendError) return err(...cloud.sendError);
       const dev = cloud.devices[body.applianceCode];
       if (!dev || dev.down) return err('3176', 'asyn reply does not exist');
       const plain = sessionCbcDecrypt(cloud.aesKey, cloud.aesIv, Buffer.from(body.order, 'hex')).toString('ascii');
@@ -190,6 +198,8 @@ function fakeCloud(opts = {}) {
     }
     return err('404', 'unknown');
   };
+  /** Every session handed out so far stops working. */
+  cloud.expire = () => { for (let i = 1; i <= cloud.logins; i += 1) cloud.expired.add('BEARER-' + i); };
   return cloud;
 }
 
@@ -222,6 +232,7 @@ function fakeDreo(opts = {}) {
     openDevices: opts.openDevices || [], openTokens: new Set(), openCommands: [],
     logins: 0, tokens: new Set(), stateReads: 0, commands: [], sockets: [],
     silent: false, reject: null, rateLimited: false,
+    refuseAll: false,                     // 2.2.4: every token is refused (401), also right after a login
   };
   const ok = (data) => ({ status: 200, body: JSON.stringify({ code: 0, msg: 'OK', data }) });
   dreo.fetch = async (url, o) => {
@@ -239,7 +250,7 @@ function fakeDreo(opts = {}) {
         return ok({ access_token: `${token}:${dreo.region}` });
       }
       const tk = String((o.headers && o.headers.authorization) || '').replace(/^Bearer /, '');
-      if (openRegion !== dreo.region || !dreo.openTokens.has(tk)) return { status: 401, body: '' };
+      if (dreo.refuseAll || openRegion !== dreo.region || !dreo.openTokens.has(tk)) return { status: 401, body: '' };
       if (u.pathname === '/api/device/list') return ok(dreo.openDevices.map((x) => ({ deviceSn: x.sn, model: x.model, deviceName: x.deviceName, deviceType: 'heater' })));
       if (u.pathname === '/api/device/state') {
         const st = dreo.states[u.searchParams.get('deviceSn')];
@@ -277,7 +288,7 @@ function fakeDreo(opts = {}) {
       if (u.pathname === '/api/v2/user-device/device/list' || u.pathname === '/api/app/index/family/room/devices') return ok({ list: [], totalNum: 0 });
       return { status: 401, body: '' };
     }
-    if (region !== dreo.region || !dreo.tokens.has(auth)) return { status: 401, body: '' };
+    if (dreo.refuseAll || region !== dreo.region || !dreo.tokens.has(auth)) return { status: 401, body: '' };
     if (u.pathname === '/api/v2/user-device/device/list') return ok({ list: dreo.devices, totalNum: dreo.devices.length });
     // the home's rooms with their devices (the newer app) — opts.rooms, else the same devices in one room
     if (u.pathname === '/api/app/index/family/room/devices') return ok({ list: dreo.rooms || [{ roomName: 'Default', devices: dreo.devices }] });

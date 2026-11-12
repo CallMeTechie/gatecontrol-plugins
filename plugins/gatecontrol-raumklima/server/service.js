@@ -11,7 +11,8 @@ const ac = require('./ac');
 const alerts = require('./alerts');
 const dreo = require('./dreoservice');
 const dreoImport = require('./dreoimport');
-const { MideaCloud } = require('./cloud');
+const { MideaCloud, SESSION_GONE_CODES, LOGIN_REFUSED_CODES } = require('./cloud');
+const { createGuard, clock: guardClock } = require('./loginguard');
 
 const { codeError } = store;
 
@@ -19,13 +20,18 @@ const { codeError } = store;
 // no cloud round-trip, no re-login); beyond it the cached state is still served
 // but a background refresh is kicked off. LAN devices are local/fast and unaffected.
 const CLOUD_STATE_TTL_MS = 90000;
+// 2.2.4: a cloud device that did not answer (switched off, unplugged, refused by the cloud) is asked
+// again after 30 s, then 1, 2 and 5 minutes — the wait grows with every failure in a row (before: with
+// every look, each with its own cloud call). Until then it is shown as not reachable from the cache.
+// A command (setState) always asks; an answer of the device ends the wait.
+const CLOUD_OFFLINE_RETRY_MS = [30000, 60000, 120000, 300000];
 const LAN_TIMEOUT_MS = 8000;
 
 const cache = new Map();          // deviceId -> { state, online, lastAt }
 const locks = new Map();          // deviceId -> Promise chain tail
 const lockDepth = new Map();      // deviceId -> active operation count
 const cloudRefreshInFlight = new Map(); // device id → its running background cloud refresh (dedupe)
-const status = { lastPollAt: null, cloudNeedsReauth: false }; // reauth: set on a 2FA error, cleared on a successful cloud command
+const status = { lastPollAt: null };
 let pollRunning = false;
 
 // ── Per-device mutex ──────────────────────────────────────────────────────────
@@ -58,42 +64,147 @@ async function cloudFromConfig(gc) {
   return { c, cfg };
 }
 
-async function ensureLogin(gc, c, cfg) {
-  if (c.getSession()) return;
-  await c.login(cfg.email, cfg.password);
-  await store.saveSession(gc, c.getSession());
+// ── Logins (2.2.4): never on a mere error, never more than one at a time, never without a limit ──
+//
+// Before 2.2.4 every general cloud error threw the session away and logged in again, per call and
+// without a limit: one device the cloud kept refusing meant a new login with every look at it — the
+// account's owner got Midea's "someone signed in" notice every few seconds. Now (loginguard.js):
+//  * a new login only when the session really is gone: Midea code 3106, or — for any other code — when
+//    the account itself (the appliance list) refuses the session too (asked at most every 10 minutes);
+//  * device offline, no reply (3176), cloud unreachable, 429: never a login; 429 pauses the cloud calls;
+//  * parallel calls share one login; a failed or useless login is followed by a growing wait, and at
+//    most 3 per hour / 6 per day happen — then "connect again" with one notification.
+
+const guard = createGuard('cloud_guard', {
+  code: 'MIDEA_CLOUD_LOGIN_PAUSED',
+  onBlock: (gc, reason) => alerts.account(gc, 'Midea', reason),
+});
+const SESSION_CHECK_MS = 10 * 60000;
+let sessionChecked = { id: null, at: 0 };   // the session the account accepted last (and when)
+let dead = null;                            // id of a session the cloud refused: not used again
+
+const sessionId = (s) => (s && (s.accessToken || s.sessionId)) || null;
+const isCloudCode = (e) => Boolean(e && e.code === 'MIDEA_CLOUD_ERROR' && e.mideaCode);
+const minutes = (ms) => Math.max(1, Math.ceil(ms / 60000));
+
+function loginFatal(e) {
+  if (e && e.code === 'MIDEA_CLOUD_2FA_REQUIRED') return 'twofa';
+  if (isCloudCode(e) && LOGIN_REFUSED_CODES.has(e.mideaCode)) return 'credentials';
+  return null;
 }
 
-async function withCloud(gc, fn) {
-  const { c, cfg } = await cloudFromConfig(gc);
-  await ensureLogin(gc, c, cfg);
-  try {
-    return await fn(c, cfg);
-  } catch (e) {
-    if (e.code === 'MIDEA_CLOUD_ERROR') {
-      c.setSession(null);
-      await ensureLogin(gc, c, cfg);
-      return fn(c, cfg);
+/** A session for `c`: the stored one when it is newer than `refused`, else ONE guarded login. */
+async function login(gc, c, refused, why) {
+  const cur = await store.loadConfig(gc);
+  const have = sessionId(cur.session);
+  if (have && have !== sessionId(refused) && have !== dead) { c.setSession(cur.session); return; } // someone else logged in meanwhile
+  const session = await guard.login(gc, async () => {
+    c.setSession(null);
+    await c.login(cur.email, cur.password);
+    await store.saveSession(gc, c.getSession());
+    return c.getSession();
+  }, why, { fatal: loginFatal, unsent: (e) => e && e.code === 'MIDEA_CLOUD_UNREACHABLE' });
+  c.setSession(session);
+}
+
+/**
+ * A call failed: is the session gone (→ true: log in again)? Everything else is noted (429 pauses
+ * the calls, a 2FA demand asks for a person) and stays what it is — an error of this one call.
+ */
+async function sessionGone(gc, c, e, what) {
+  if (e.code === 'MIDEA_CLOUD_RATE_LIMITED') {
+    const ms = await guard.rateLimited(gc);
+    gc.log.warn(`midea cloud: rate limit (${what}) — no login, cloud calls paused for ${minutes(ms)} min`);
+    return false;
+  }
+  if (e.code === 'MIDEA_CLOUD_2FA_REQUIRED') { await guard.block(gc, 'twofa'); return false; }
+  if (e.code === 'MIDEA_CLOUD_NO_REPLY') { await guard.ok(gc); return false; }   // the cloud took the call: the session works
+  if (!isCloudCode(e)) return false;                                               // unreachable, no answer, no session key …
+  if (SESSION_GONE_CODES.has(e.mideaCode)) {
+    gc.log.info(`midea cloud: Midea-Code ${e.mideaCode} (${what}) — session gone, new login`);
+    return true;
+  }
+  const sid = sessionId(c.getSession());
+  if (what !== 'list') {
+    if (sessionChecked.id === sid && guardClock.now() - sessionChecked.at < SESSION_CHECK_MS) {
+      gc.log.debug(`midea cloud: Midea-Code ${e.mideaCode} (${what}) — session checked recently, no login`);
+      return false;
     }
+    try {
+      await c.listDevices();
+      sessionChecked = { id: sid, at: guardClock.now() };
+      gc.log.info(`midea cloud: Midea-Code ${e.mideaCode} (${what}) — the account still answers: not a session problem, no login`);
+      return false;
+    } catch (pe) {
+      if (!isCloudCode(pe)) {
+        if (pe.code === 'MIDEA_CLOUD_RATE_LIMITED') await guard.rateLimited(gc);
+        gc.log.debug(`midea cloud: Midea-Code ${e.mideaCode} (${what}) — session check failed (${pe.code || 'ERROR'}), no login`);
+        return false;
+      }
+      gc.log.info(`midea cloud: Midea-Code ${e.mideaCode} (${what}) — the account refuses the session too (Midea-Code ${pe.mideaCode}), new login`);
+      return true;
+    }
+  }
+  gc.log.info(`midea cloud: Midea-Code ${e.mideaCode} (${what}) — the account refuses the session, new login`);
+  return true;
+}
+
+/** One cloud call (`what` names it in the log) with the account's session; at most one guarded new login. */
+async function withCloud(gc, fn, what = 'call') {
+  const { c } = await cloudFromConfig(gc);
+  const wait = await guard.paused(gc);
+  if (wait) throw codeError('MIDEA_CLOUD_RATE_LIMITED', `cloud calls paused for ${minutes(wait)} min after a rate limit`);
+  const sid = sessionId(c.getSession());
+  if (!sid || sid === dead) await login(gc, c, c.getSession(), sid ? `${what}: the session was refused` : `${what}: no session`);
+  let first;
+  try {
+    const out = await fn(c);
+    await guard.ok(gc);
+    return out;
+  } catch (e) {
+    if (!(await sessionGone(gc, c, e, what))) throw e;
+    first = e;
+  }
+  const refused = c.getSession();
+  dead = sessionId(refused);
+  await login(gc, c, refused, `${what}: Midea-Code ${first.mideaCode}`);
+  try {
+    const out = await fn(c);
+    await guard.ok(gc);
+    return out;
+  } catch (e) {
+    if (isCloudCode(e)) {
+      // the new login did not help: this is no session problem after all — wait before the next one
+      sessionChecked = { id: sessionId(c.getSession()), at: guardClock.now() };
+      const until = await guard.failed(gc);
+      gc.log.warn(`midea cloud: Midea-Code ${e.mideaCode} (${what}) also after a new login — next login in ${minutes(until - guardClock.now())} min at the earliest`);
+    } else await sessionGone(gc, c, e, what);
     throw e;
   }
 }
 
 async function connectCloud(gc, email, password, app = 'msmarthome') {
   const c = module.exports.newCloud(gc, app);
+  const prev = (await store.loadConfig(gc)).session;
+  if (prev && typeof prev.deviceId === 'string' && /^[0-9a-f]{16}$/.test(prev.deviceId)) c.deviceId = prev.deviceId; // the same device as before
   const res = await c.login(email, password);     // throws typed MideaCloudError (e.g. 2FA)
   await store.saveConfig(gc, { app, email, password, session: c.getSession() });
-  status.cloudNeedsReauth = false;
+  // a person signed in: the brake starts over, unreachable devices are asked at once
+  for (const [id, c] of cache) if (!c.online) cache.delete(id);
+  dead = null;
+  sessionChecked = { id: null, at: 0 };
+  await guard.manual(gc);
   return res;
 }
 
-/** What the settings page shows about the Midea account. */
-function getCloudStatus() {
-  return { needsReauth: status.cloudNeedsReauth };
+/** What the settings page and the banner show about the Midea account: { needsReauth, reason, wait, until }. */
+async function getCloudStatus(gc) {
+  const v = await guard.view(gc);
+  return { needsReauth: Boolean(v.blocked), reason: v.blocked, wait: v.wait, until: v.until };
 }
 
 async function listCloudDevices(gc) {
-  return withCloud(gc, (c) => c.listDevices());
+  return withCloud(gc, (c) => c.listDevices(), 'list');
 }
 
 // ── LAN ───────────────────────────────────────────────────────────────────────
@@ -135,21 +246,22 @@ async function discoverLan(gc) {
 
 // ── Device state operations ───────────────────────────────────────────────────
 
-const setCache = (id, state, online) => cache.set(id, { state, online, lastAt: Date.now() });
+/** What went wrong, for the log: the code and — for a refusal of the cloud — Midea's code and text (never secrets). */
+const failureOf = (err) => (err && err.code ? `${err.code}${err.mideaCode ? ': ' + String(err.message || '').replace(/[\0-\x1f\x7f]/g, ' ').slice(0, 160) : ''}` : String((err && err.message) || err));
+
+const setCache = (id, state, online) => cache.set(id, { state, online, lastAt: guardClock.now(), fails: online ? 0 : ((cache.get(id) || {}).fails || 0) + 1 });
 
 // Fetch live cloud state, update the cache, and return the parsed state (or
 // {offline:true} on failure). This is the ONLY place that hits the cloud for state.
 function fetchCloudState(gc, id, d) {
   return withDeviceLock(id, async () => {
     try {
-      const resp = await withCloud(gc, (c) => c.sendCommand(d.cloud_appliance_id, ac.buildQuery()));
+      const resp = await withCloud(gc, (c) => c.sendCommand(d.cloud_appliance_id, ac.buildQuery()), 'state');
       const state = ac.parseState(resp);
-      status.cloudNeedsReauth = false;
       setCache(id, state, true);
       return state;
     } catch (err) {
-      if (err.code === 'MIDEA_CLOUD_2FA_REQUIRED') status.cloudNeedsReauth = true;
-      gc.log.debug('getState (cloud) failed (offline)', id, err.code || err.message);
+      gc.log.debug('getState (cloud) failed (offline)', id, failureOf(err));
       setCache(id, null, false);
       return { offline: true };
     }
@@ -183,10 +295,12 @@ async function getState(gc, id) {
     // Serve a known-online cached state instantly — no cloud round-trip, no
     // re-login. Beyond the TTL still serve it, but refresh in the background.
     if (cached && cached.online && cached.state) {
-      if (Date.now() - cached.lastAt >= CLOUD_STATE_TTL_MS) refreshCloudState(gc, d.id, d);
+      if (guardClock.now() - cached.lastAt >= CLOUD_STATE_TTL_MS) refreshCloudState(gc, d.id, d);
       return cached.state;
     }
-    // No usable cache (first load / last known offline) → fetch synchronously.
+    // 2.2.4: it did not answer a moment ago → not asked again before its wait is over
+    if (cached && cloudFresh(cached)) return { offline: true };
+    // No usable cache (first load / the wait of an unreachable device is over) → fetch synchronously.
     return fetchCloudState(gc, d.id, d);
   }
 
@@ -204,6 +318,13 @@ async function getState(gc, id) {
   });
 }
 
+/** How long a cloud device that failed `fails` times in a row is left alone. */
+const offlineWait = (fails) => CLOUD_OFFLINE_RETRY_MS[Math.min(Math.max(fails, 1), CLOUD_OFFLINE_RETRY_MS.length) - 1];
+/** A cloud cache entry that needs no refresh yet (online: 90 s, not reachable: 30 s … 5 min). */
+function cloudFresh(c) {
+  return Boolean(c && guardClock.now() - c.lastAt < (c.online && c.state ? CLOUD_STATE_TTL_MS : offlineWait(c.fails)));
+}
+
 /**
  * The cached state of a device without any network (portal Start tiles and
  * search answer within 1.5 s). A cloud device without a usable cache gets a
@@ -212,7 +333,7 @@ async function getState(gc, id) {
 function cachedState(gc, d) {
   if (d.vendor === 'dreo') return dreo.cachedState(gc, d);
   const c = cache.get(d.id);
-  if (d.transport === 'cloud' && (!c || !c.online || Date.now() - c.lastAt >= CLOUD_STATE_TTL_MS)) refreshCloudState(gc, d.id, d);
+  if (d.transport === 'cloud' && !cloudFresh(c)) refreshCloudState(gc, d.id, d);
   if (!c) return null;
   return c.online && c.state ? c.state : { offline: true };
 }
@@ -225,7 +346,7 @@ function cachedState(gc, d) {
  */
 async function recentState(gc, d, waitMs) {
   const c = cache.get(d.id);
-  if (d.vendor === 'dreo' || d.transport !== 'cloud' || (c && c.online && Date.now() - c.lastAt < CLOUD_STATE_TTL_MS)) return cachedState(gc, d);
+  if (d.vendor === 'dreo' || d.transport !== 'cloud' || cloudFresh(c)) return cachedState(gc, d);
   let timer;
   const wait = new Promise((resolve) => { timer = setTimeout(resolve, waitMs); if (timer.unref) timer.unref(); });
   await Promise.race([refreshCloudState(gc, d.id, d), wait]);
@@ -242,16 +363,14 @@ async function setState(gc, id, patch) {
       try {
         // Inline read-modify-write inside the single lock (withDeviceLock is NOT
         // reentrant — never call the public getState() here).
-        const cur = ac.parseState(await withCloud(gc, (c) => c.sendCommand(d.cloud_appliance_id, ac.buildQuery())));
+        const cur = ac.parseState(await withCloud(gc, (c) => c.sendCommand(d.cloud_appliance_id, ac.buildQuery()), 'state'));
         const merged = { ...cur, ...patch };
-        const resp = await withCloud(gc, (c) => c.sendCommand(d.cloud_appliance_id, ac.buildSet(merged)));
+        const resp = await withCloud(gc, (c) => c.sendCommand(d.cloud_appliance_id, ac.buildSet(merged)), 'control');
         const state = ac.parseState(resp);
-        status.cloudNeedsReauth = false;
         setCache(d.id, state, true);
         return state;
       } catch (err) {
-        if (err.code === 'MIDEA_CLOUD_2FA_REQUIRED') status.cloudNeedsReauth = true;
-        gc.log.debug('setState (cloud) failed (offline)', d.id, err.code || err.message);
+        gc.log.debug('setState (cloud) failed (offline)', d.id, failureOf(err));
         setCache(d.id, null, false);
         return { offline: true };
       }
@@ -322,12 +441,11 @@ async function addDevice(gc, { sn, name, transport, cloud_appliance_id, target_i
 
   // Cloud resolution (only when sn provided and cloud configured)
   let c = null;
-  let cfg = null;
-  try { ({ c, cfg } = await cloudFromConfig(gc)); } catch { c = null; }
+  try { ({ c } = await cloudFromConfig(gc)); } catch { c = null; }
 
   let match = null;
   if (c && sn) {
-    await ensureLogin(gc, c, cfg);
+    if (!c.getSession()) await login(gc, c, null, 'add device: no session');
     const cloudList = await c.listDevices();
     match = cloudList.find((x) => x.sn === sn);
     if (!match) throw codeError('MIDEA_NOT_IN_CLOUD', 'device not found in cloud account');
@@ -346,7 +464,7 @@ async function addDevice(gc, { sn, name, transport, cloud_appliance_id, target_i
     if (!c) throw codeError('MIDEA_CLOUD_NOT_CONFIGURED', 'cloud not configured — required for V3 token');
     const deviceId = match ? match.id : (info && info.deviceId);
     if (!deviceId) throw codeError('MIDEA_NOT_IN_CLOUD', 'device id unknown — choose the cloud device');
-    await ensureLogin(gc, c, cfg);
+    if (!c.getSession()) await login(gc, c, null, 'add device: no session');
     const tk = await c.getToken(deviceId);  // throws → nothing persisted
     token = tk.token;
     key = tk.key;
@@ -380,6 +498,7 @@ async function removeDevice(gc, id) {
 
 async function getStatus(gc) {
   const devices = await store.listDevices(gc);
+  const cloud = await getCloudStatus(gc);
   return {
     devices: devices.map((d) => {
       if (d.vendor === 'dreo') {
@@ -390,7 +509,8 @@ async function getStatus(gc) {
       return { id: d.id, name: d.name, enabled: d.enabled, online: Boolean(c.online), state: c.state || null, checked: Boolean(c.lastAt), transport: d.transport, vendor: d.vendor };
     }),
     lastPollAt: status.lastPollAt,
-    cloud_needs_reauth: status.cloudNeedsReauth,
+    cloud_needs_reauth: cloud.needsReauth,
+    cloud_reauth_reason: cloud.reason,
     dreo: { ...dreo.getStatus(), supported: dreo.supported(gc) },
   };
 }
@@ -424,13 +544,15 @@ function reset() {
   cache.clear();
   alerts.reset();
   dreo.reset();
-  status.cloudNeedsReauth = false;
+  guard.forget();
+  dead = null;
+  sessionChecked = { id: null, at: 0 };
 }
 
 module.exports = {
-  CLOUD_STATE_TTL_MS,
+  CLOUD_STATE_TTL_MS, CLOUD_OFFLINE_RETRY_MS,
   withDeviceLock, connectCloud, getCloudStatus, listCloudDevices, discoverLan, acTargets,
   getState, cachedState, recentState, setState, testConnection, addDevice, removeDevice, getStatus, pollTick, reset,
   // seams for the tests
-  newCloud, connectTarget, _cache: cache,
+  newCloud, connectTarget, _cache: cache, _guard: guard,
 };

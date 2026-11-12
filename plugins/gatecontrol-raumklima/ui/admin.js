@@ -302,8 +302,11 @@
   }, 30000);
 
   function showBanners(st) {
+    // 2.2.4: why the account wants to be connected again (the login brake, a refused login, a confirmation)
+    $('#md-reauth span').textContent = T(st.cloud_reauth_reason === 'limit' ? 'cloud.reauth_limit' : st.cloud_reauth_reason === 'credentials' ? 'cloud.reauth_login' : 'cloud.reauth');
     $('#md-reauth').hidden = !st.cloud_needs_reauth;
     if (st.dreo) dreo = st.dreo;
+    $('#md-dreo-reauth span').textContent = T(dreo.reauth_reason === 'limit' ? 'dreo.reauth_limit' : 'dreo.reauth');
     $('#md-dreo-reauth').hidden = !(dreo.configured && dreo.needs_login);
     $('#md-dreo-update').hidden = dreo.supported !== false || !devices.some(isDreo);
     // nothing set up yet: the accounts are entered in the settings

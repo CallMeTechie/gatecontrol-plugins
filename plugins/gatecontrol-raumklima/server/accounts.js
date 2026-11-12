@@ -35,7 +35,8 @@ async function syncMidea(gc, prev) {
     return null;
   }
   const fp = fingerprint(cfg.app, cfg.email, cfg.password);
-  if (prev && prev.fp === fp && prev.ok && cfg.session) return prev;
+  // 2.2.4: "connect again" (the login brake) is lifted by saving the settings: that logs in
+  if (prev && prev.fp === fp && prev.ok && cfg.session && !(await service.getCloudStatus(gc)).needsReauth) return prev;
   try {
     await service.connectCloud(gc, cfg.email, cfg.password, cfg.app);
     return outcome(fp, null);
@@ -54,7 +55,7 @@ async function syncDreo(gc, prev) {
   }
   if (!dreo.supported(gc)) return null;
   const fp = fingerprint(cfg.email, cfg.passwordMd5);
-  let out = prev && prev.fp === fp && prev.ok && cfg.token ? prev : null;
+  let out = prev && prev.fp === fp && prev.ok && cfg.token && !(await dreo.reauthReason(gc)) ? prev : null;
   if (!out) {
     if (prev && prev.fp !== fp) await dreoImport.clear(gc);
     try {
@@ -68,6 +69,9 @@ async function syncDreo(gc, prev) {
   try { await dreoImport.run(gc); } catch (e) { gc.log.debug('dreo import failed', e.code || e.message); }
   return out;
 }
+
+/** The text of "connect again": the login brake stopped (limit), else what the account asks for. */
+const reauthKey = (vendor, reason) => (reason === 'limit' ? `${vendor}.reauth_limit` : reason === 'credentials' && vendor === 'cloud' ? 'cloud.reauth_login' : `${vendor}.reauth`);
 
 /** Settings saved: log in with changed accounts (both at once), remember the outcome. */
 async function settingsChanged(gc) {
@@ -110,9 +114,10 @@ async function settingsStatus(gc, lang, t, errorText) {
   const out = [];
 
   const m = await store.loadConfig(gc);
+  const cloudSt = await service.getCloudStatus(gc);
   if (!m.email) out.push({ group: 'midea', tone: 'info', text: t(lang, 'settings.midea_none') });
   else if (!m.password) out.push({ group: 'midea', tone: 'warn', text: t(lang, 'settings.password_missing') });
-  else if (service.getCloudStatus().needsReauth) out.push({ group: 'midea', tone: 'warn', text: t(lang, 'cloud.reauth') });
+  else if (cloudSt.needsReauth) out.push({ group: 'midea', tone: 'warn', text: t(lang, reauthKey('cloud', cloudSt.reason)) });
   else if (acc.midea && !acc.midea.ok) out.push({ group: 'midea', tone: 'error', text: t(lang, 'settings.login_failed', { error: errorText(acc.midea, lang) }) });
   else if (m.session || (acc.midea && acc.midea.ok)) out.push({ group: 'midea', tone: 'ok', text: t(lang, 'settings.midea_ok', { email: m.email, app: APP_LABEL[m.app] || m.app }) });
   else out.push({ group: 'midea', tone: 'info', text: t(lang, 'settings.not_checked') });
@@ -124,7 +129,7 @@ async function settingsStatus(gc, lang, t, errorText) {
   else if (!d.passwordMd5) out.push({ group: 'dreo', tone: 'warn', text: t(lang, 'settings.password_missing') });
   else if (!dreo.supported(gc)) out.push({ group: 'dreo', tone: 'warn', text: t(lang, 'dreo.needs_update') });
   else if (acc.dreo && !acc.dreo.ok) out.push({ group: 'dreo', tone: 'error', text: t(lang, 'settings.login_failed', { error: errorText(acc.dreo, lang) }) });
-  else if (st.needs_login) out.push({ group: 'dreo', tone: 'error', text: t(lang, 'dreo.reauth') });
+  else if (st.needs_login) out.push({ group: 'dreo', tone: 'error', text: t(lang, reauthKey('dreo', st.reauth_reason)) });
   else if (d.token) {
     out.push({ group: 'dreo', tone: 'ok', text: t(lang, 'settings.dreo_ok', { email: d.email, region })
       + (st.connected ? ' · ' + t(lang, 'dreo.live') : '') });
