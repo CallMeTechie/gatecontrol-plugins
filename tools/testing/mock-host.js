@@ -421,6 +421,9 @@
 // Hause" (status / pause / resume / extend, only with permissions.homeInternet): see tools/testing/mock-home-internet.js.
 // GateControl 1.236.0 (opt-in: opts.gatecontrol: '1.236.0' or opts.print) — gc.print, "Drucken & Scannen" (printers and
 // scanners the gateways find; only with permissions.print): see tools/testing/mock-print.js.
+// GateControl 1.264.0 (opt-in: opts.gatecontrol: '1.264.0' or opts.vpnDns) — gc.vpnDns, the DNS protection of the VPN
+// devices (settings, profiles, suspensions, counters, the query log; only with permissions.vpnDns), and `peerId` on the
+// viewer of an app request: see tools/testing/mock-vpn-dns.js.
 
 const fs = require('node:fs');
 const os = require('node:os');
@@ -429,6 +432,7 @@ const EventEmitter = require('node:events');
 const mockMail = require('./mock-mail');
 const mockHomeInternet = require('./mock-home-internet');
 const mockPrint = require('./mock-print');
+const mockVpnDns = require('./mock-vpn-dns');
 const mockCameras = require('./mock-cameras');
 
 // GateControl's favourite colour palette (services/avatars.js PALETTE, GateControl ≥ 1.168.0)
@@ -3253,6 +3257,11 @@ async function createHost(pluginDir, opts = {}) {
   // ─── Drucken & Scannen (GateControl ≥ 1.236.0, src/services/homePrint.js; tools/testing/mock-print.js) ───
   const pr = mockPrint.install({ opts, perms, atLeast, enabledUser, hostError, mediaStore });
   Object.assign(api, pr.api);
+  // ─── DNS-Schutz (GateControl ≥ 1.264.0, src/services/vpnDns.js; tools/testing/mock-vpn-dns.js) ───
+  const vd = mockVpnDns.install({ opts, perms, atLeast, enabledUser, hostError, personCtx, logs, wire,
+    groupExists: (id) => groupStore.has(id),
+    groupUsers: (ids) => { const out = new Set(); for (const id of ids) if (groupStore.has(id) && !groupStore.get(id).archived) for (const u of totalIds(id)) if (enabledUser(u)) out.add(u); return out; } });
+  Object.assign(api, vd.api);
 
   // ─── Funk (GateControl with phase 3c step 2, src/services/homeRadio.js): gc.radio.sensors() ───
   // Opt-in: opts.radio { sensors: [sensor] | () => [sensor] } and permissions.radio: true (an older host ignores the
@@ -3560,6 +3569,8 @@ async function createHost(pluginDir, opts = {}) {
     } : {}),
     // GateControl ≥ 1.236.0: gc.print only with permissions.print (like the child bootstrap)
     ...(pr.on ? { print: pr.gcPart(call) } : {}),
+    // GateControl ≥ 1.264.0: gc.vpnDns only with permissions.vpnDns (like the child bootstrap)
+    ...(vd.on ? { vpnDns: vd.gcPart(call) } : {}),
     // GateControl ≥ 1.231.0: gc.homeCache only with permissions.homeCache (like the child bootstrap)
     ...(radioOn ? { radio: Object.freeze({ sensors: () => call('radio.sensors', {}),
       ...(zigbeeOn ? { zigbee: () => call('radio.zigbee', {}), command: (id, set) => call('radio.command', { id, set }) } : {}) }) } : {}),
@@ -4228,6 +4239,14 @@ async function createHost(pluginDir, opts = {}) {
     /** GateControl ≥ 1.236.0 (permissions.print): { devices, jobs, scans, discovers, retrusted, calls } — see tools/testing/mock-print.js */
     print: pr.state,
     printJob: (id, x) => pr.setJob(id, x || {}),
+    /** GateControl ≥ 1.264.0 (permissions.vpnDns): the DNS protection as GateControl knows it — see tools/testing/mock-vpn-dns.js */
+    vpnDns: vd.state,
+    vpnDnsSet: (x) => vd.hostSet(x || {}),
+    vpnDnsEvent: (ev) => vd.hostEvent(ev),
+    vpnDnsExpire: (now) => vd.hostExpire(now),
+    vpnDnsLog: (entry) => vd.hostLog(entry),
+    /** `vpnDns` of GET /api/v1/client/permissions: { plugin, state } | null */
+    vpnDnsClientInfo: () => vd.clientInfo(manifest.id, vd.on && perms.app === true),
     printScanPages: (id, pages, x) => pr.scanPages(id, pages, x),
     printOcr: (id, x) => pr.setOcr(id, x || {}),
     /** Kameras: the hook cameraEvent ({ id, cameraId, camera, gatewayId, kind, kinds, phase, at, nobodyHome, clip }) */
@@ -4245,6 +4264,11 @@ async function createHost(pluginDir, opts = {}) {
       if (q.user && typeof q.user === 'object' && 'device' in q.user && perms.devices !== true) {
         q.user = { ...q.user };
         delete q.user.device;
+      }
+      // GateControl ≥ 1.264.0: the asking device's VPN peer (user.peerId) only for plugins with permissions.vpnDns
+      if (q.user && typeof q.user === 'object' && 'peerId' in q.user && !vd.on) {
+        q.user = { ...q.user };
+        delete q.user.peerId;
       }
       // GateControl ≥ 1.230.0 (routes/api/plugins.js forwarder): a signed-in person's request runs in the person context
       // (gc.homeNetwork.presence.setConsent / setCounts / devices of that person only)
