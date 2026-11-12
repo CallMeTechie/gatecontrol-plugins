@@ -3,6 +3,34 @@
 Klimageräte und Heizungen als GateControl-Plugin: Midea-Klimageräte (früher fest in GateControl
 eingebaut, „Klimaanlage“) und seit 1.6.0 Dreo-Heizlüfter und -Klimageräte.
 
+## 2.2.4
+
+- **Keine Anmeldungen im Sekundentakt mehr**: Bisher verwarf das Plugin bei *jedem* allgemeinen
+  Fehler der Midea-Cloud die Sitzung und meldete sich sofort neu an – je Abfrage, ohne Wartezeit und
+  ohne Obergrenze. Lehnte die Cloud ein Gerät dauerhaft ab, entstand so mit jedem Blick auf das Gerät
+  (Portal, Apps, Raumklima-Seite) eine neue Anmeldung, und Midea meldete dem Kontoinhaber jedes Mal
+  „jemand hat sich angemeldet“. Jetzt gilt für Midea und Dreo:
+  - Neu angemeldet wird nur, wenn die Sitzung wirklich weg ist: beim Midea-Code 3106
+    (invalidSession) sofort; bei jedem anderen Midea-Code fragt das Plugin erst das Konto
+    (Geräteliste, höchstens alle 10 Minuten) – antwortet es, bleibt die Sitzung und es wird nicht
+    angemeldet. Dreo: nur bei HTTP 401 (wie bisher).
+  - Gerät nicht erreichbar, keine Antwort (3176), Cloud nicht erreichbar und „zu viele Anfragen“
+    (429) führen nie zu einer Anmeldung. Nach 429 pausieren die Cloud-Abfragen 5, dann 15, dann
+    60 Minuten.
+  - Gleichzeitige Abfragen teilen sich eine Anmeldung.
+  - Nach einer Anmeldung, die fehlschlug oder nichts half, wartet das Plugin 1, dann 5, 15 und
+    60 Minuten. Höchstens 3 selbsttätige Anmeldungen je Stunde und 6 je Tag – auch über Neustarts
+    hinweg. Danach, und sofort bei falschem Passwort oder verlangter Bestätigung (2FA), meldet sich
+    das Plugin nicht mehr von selbst an: Hinweis „neu verbinden“ auf der Raumklima-Seite und in den
+    Einstellungen, dazu eine Mitteilung (neues Thema „Konto neu verbinden“). Einstellungen erneut
+    speichern verbindet neu.
+- Midea sieht GateControl jetzt als ein gleichbleibendes Gerät (bisher mit jeder Abfrage unter einer
+  neuen Gerätekennung).
+- Dreo: gleichzeitige Abfragen der Open-API melden sich nur noch einmal an; ein Konto ohne Geräte
+  wird alle 6 Stunden statt stündlich neu durchsucht (jede Suche meldet sich in der zweiten Region an).
+- Protokoll: je Entscheidung eine Zeile mit Midea-Code, Aufruf und dem, was daraufhin geschah – ohne
+  Zugangsdaten.
+
 ## 2.2.3
 
 - Handbuch im Reiter „Handbuch“ (GateControl ≥ 1.241.0): `HANDBUCH.md` / `HANDBOOK.md` im Paket, in `plugin.json` unter `handbook`. Ältere GateControl-Versionen ignorieren es; die Mindestversion bleibt `>=1.185.0`.

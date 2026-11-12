@@ -11,6 +11,8 @@
 const store = require('./store');
 const model = require('./dreomodel');
 const { DreoApi, DreoOpenApi, DreoLink } = require('./dreo');
+const alerts = require('./alerts');
+const { createGuard, clock: guardClock } = require('./loginguard');
 
 const { codeError } = store;
 
@@ -22,8 +24,16 @@ const raw = new Map();        // serial number → the device's raw values (REST
 const online = new Map();     // serial number → connected to the Dreo cloud
 const readAt = new Map();     // serial number → ms of the last REST state
 const refreshing = new Set(); // serial numbers with a REST read in flight
-const status = { connected: false, needsLogin: false, lastError: null, failures: 0, retryAt: 0 };
+const status = { connected: false, needsLogin: false, reason: null, lastError: null, failures: 0, retryAt: 0 };
 let link = null;
+// 2.2.4: every automatic login goes through the brake (loginguard.js): one at a time, a growing wait
+// after a login that failed or did not help, at most 3 per hour / 6 per day, then "connect again".
+// The Open API has its own count (its token lives in memory: one login per start) and only waits.
+const PAUSED = 'DREO_LOGIN_PAUSED';
+const guard = createGuard('dreo_guard', { code: PAUSED, onBlock: (gc, reason) => alerts.account(gc, 'Dreo', reason) });
+const openGuard = createGuard('dreo_open_guard', { code: PAUSED, sticky: false });
+const unsent = (e) => Boolean(e && (e.code === 'DREO_UNREACHABLE' || e.code === 'ERR_NET_DENIED'));
+const minutes = (ms) => Math.max(1, Math.ceil(ms / 60000));
 // 2.2.0: devices only Dreo's Open API lists (storage 'dreo_via': { sn: 'open' }) are read and controlled
 // over it (REST, no socket); its token lives in memory only (a login is one request).
 const VIA = 'dreo_via';
@@ -71,6 +81,13 @@ async function account(gc) {
 
 let loggingIn = null;   // one login at a time: parallel callers whose token was refused share it
 
+/** "Connect again" of the account: the brake's reason ('credentials' | 'limit'), or null. */
+async function reauthReason(gc) {
+  const v = await guard.view(gc);
+  Object.assign(status, { needsLogin: Boolean(v.blocked), reason: v.blocked });
+  return v.blocked;
+}
+
 /** The stored access token, or a new login (refused = the token that was just refused). */
 async function tokenOf(gc, cfg, refused) {
   if (cfg.token && cfg.token !== refused) return cfg.token;
@@ -78,15 +95,14 @@ async function tokenOf(gc, cfg, refused) {
     loggingIn = (async () => {
       const cur = await store.loadDreo(gc);
       if (cur.token && cur.token !== refused) return cur;   // someone else logged in meanwhile
-      let r;
       try {
-        r = await module.exports.newApi(gc).login(cur.email, cur.passwordMd5, cur.region);
-      } catch (e) {
-        if (e.code === 'DREO_LOGIN_FAILED') status.needsLogin = true;
-        throw e;
+        const r = await guard.login(gc, () => module.exports.newApi(gc).login(cur.email, cur.passwordMd5, cur.region),
+          refused ? 'the access token was refused' : 'no access token',
+          { fatal: (e) => (e && e.code === 'DREO_LOGIN_FAILED' ? 'credentials' : null), unsent });
+        Object.assign(cur, { token: r.token, region: r.region });
+      } finally {
+        await reauthReason(gc);
       }
-      status.needsLogin = false;
-      Object.assign(cur, { token: r.token, region: r.region });
       await store.saveDreo(gc, cur);
       return cur;
     })().finally(() => { loggingIn = null; });
@@ -96,18 +112,46 @@ async function tokenOf(gc, cfg, refused) {
   return fresh.token;
 }
 
-/** A REST call with the account's token; one new login when the token was refused. */
+/** 429 → the REST calls pause (growing); nothing logs in. */
+async function noteRateLimit(gc, g, e) {
+  if (!e || e.code !== 'DREO_RATE_LIMITED') return;
+  const ms = await g.rateLimited(gc);
+  gc.log.warn(`dreo cloud: rate limit — no login, calls paused for ${minutes(ms)} min`);
+}
+
+async function notPaused(gc, g) {
+  const wait = await g.paused(gc);
+  if (wait) throw codeError('DREO_RATE_LIMITED', `cloud calls paused for ${minutes(wait)} min after a rate limit`);
+}
+
+/** A REST call with the account's token; one new login when the token was refused (401). */
 async function withApi(gc, fn) {
   const cfg = await account(gc);
+  await notPaused(gc, guard);
   const api = module.exports.newApi(gc);
   const tk = await tokenOf(gc, cfg);
+  let out;
   try {
-    return await fn(api, cfg.region, tk);
+    out = await fn(api, cfg.region, tk);
   } catch (e) {
+    await noteRateLimit(gc, guard, e);
     if (e.code !== 'DREO_AUTH') throw e;
+    gc.log.info('dreo cloud: the access token was refused (HTTP 401) — new login');
     const next = await tokenOf(gc, cfg, tk);
-    return fn(api, cfg.region, next);
+    try {
+      out = await fn(api, cfg.region, next);
+    } catch (e2) {
+      await noteRateLimit(gc, guard, e2);
+      if (e2.code === 'DREO_AUTH') {
+        const until = await guard.failed(gc);
+        gc.log.warn(`dreo cloud: HTTP 401 also after a new login — next login in ${minutes(until - guardClock.now())} min at the earliest`);
+      }
+      throw e2;
+    }
   }
+  await guard.ok(gc);
+  if (status.needsLogin) await reauthReason(gc);
+  return out;
 }
 
 /** { sn: 'open' } — the devices reached through the Open API. */
@@ -117,18 +161,39 @@ async function viaMap(gc) {
 }
 const isOpen = async (gc, sn) => (await viaMap(gc))[sn] === 'open';
 
+/** The Open API's token: the one in memory, or ONE guarded login (refused = the token just refused). */
+async function openToken(gc, cfg, refused) {
+  if (open && open.token !== refused) return open;
+  const got = await openGuard.login(gc, () => module.exports.newOpenApi(gc).login(cfg.email, cfg.passwordMd5),
+    refused ? 'open api: the access token was refused' : 'open api: no access token', { unsent });
+  open = got;
+  return got;
+}
+
 /** The Open API with a token (one new login when it is refused). */
 async function withOpen(gc, fn) {
   const cfg = await account(gc);
+  await notPaused(gc, openGuard);
   const api = module.exports.newOpenApi(gc);
-  if (!open) open = await api.login(cfg.email, cfg.passwordMd5);
+  const first = await openToken(gc, cfg, null);
+  let out;
   try {
-    return await fn(api, open.region, open.token);
+    out = await fn(api, first.region, first.token);
   } catch (e) {
+    await noteRateLimit(gc, openGuard, e);
     if (e.code !== 'DREO_AUTH') throw e;
-    open = await api.login(cfg.email, cfg.passwordMd5);
-    return fn(api, open.region, open.token);
+    gc.log.info('dreo open api: the access token was refused (HTTP 401) — new login');
+    const next = await openToken(gc, cfg, first.token);
+    try {
+      out = await fn(api, next.region, next.token);
+    } catch (e2) {
+      await noteRateLimit(gc, openGuard, e2);
+      if (e2.code === 'DREO_AUTH') await openGuard.failed(gc);
+      throw e2;
+    }
   }
+  await openGuard.ok(gc);
+  return out;
 }
 
 // ─── Account and devices ────────────────────────
@@ -139,7 +204,10 @@ async function connect(gc) {
   const cfg = await account(gc);
   const r = await module.exports.newApi(gc).login(cfg.email, cfg.passwordMd5, 'EU');
   await store.saveDreo(gc, { ...cfg, region: r.region, token: r.token });
-  Object.assign(status, { needsLogin: false, lastError: null, failures: 0, retryAt: 0 });
+  Object.assign(status, { needsLogin: false, reason: null, lastError: null, failures: 0, retryAt: 0 });
+  // a person signed in: the brake starts over
+  await guard.manual(gc);
+  await openGuard.manual(gc);
   if (link) link.close();
   return { region: r.region };
 }
@@ -147,6 +215,8 @@ async function connect(gc) {
 /** The account was removed from the settings: forget the token, close the socket. */
 async function disconnect(gc) {
   await store.saveDreoToken(gc, null);
+  await guard.manual(gc);
+  await openGuard.manual(gc);
   reset();
 }
 
@@ -209,7 +279,14 @@ async function ensureLink(gc) {
     await l.ensure(cfg.region, tk);
   } catch (e) {
     if (!/\b40[13]\b/.test(String(e.message))) throw e;
-    await l.ensure(cfg.region, await tokenOf(gc, cfg, tk));
+    const next = await tokenOf(gc, cfg, tk);
+    try {
+      await l.ensure(cfg.region, next);
+    } catch (e2) {
+      // refused with the new token too: no session problem — wait before the next login
+      if (/\b40[13]\b/.test(String(e2.message))) await guard.failed(gc);
+      throw e2;
+    }
   }
   status.connected = true;
 }
@@ -311,7 +388,7 @@ async function tick(gc, devices) {
     return [];
   }
   const cfg = await store.loadDreo(gc);
-  if (!cfg.email || !cfg.passwordMd5 || status.needsLogin) return [];
+  if (!cfg.email || !cfg.passwordMd5 || await reauthReason(gc)) return [];
   const via = await viaMap(gc);
   const viaOpen = (d) => via[snOf(d)] === 'open';
   // the socket only for devices of the app API
@@ -346,7 +423,7 @@ function forget(d) {
 }
 
 function getStatus() {
-  return { connected: Boolean(link && link.connected), needs_login: status.needsLogin, last_error: status.lastError };
+  return { connected: Boolean(link && link.connected), needs_login: status.needsLogin, reauth_reason: status.reason, last_error: status.lastError };
 }
 
 function reset() {
@@ -354,11 +431,13 @@ function reset() {
   link = null;
   open = null;
   raw.clear(); online.clear(); readAt.clear(); refreshing.clear();
-  Object.assign(status, { connected: false, needsLogin: false, lastError: null, failures: 0, retryAt: 0 });
+  Object.assign(status, { connected: false, needsLogin: false, reason: null, lastError: null, failures: 0, retryAt: 0 });
   loggingIn = null;
+  guard.forget();
+  openGuard.forget();
 }
 
 module.exports = {
-  supported, connect, disconnect, listCloudDevices, ensureLink, getState, cachedState, setState, capsOf, tick, forget, getStatus, reset,
-  newApi, newOpenApi, newLink, _raw: raw,
+  supported, connect, disconnect, listCloudDevices, ensureLink, getState, cachedState, setState, capsOf, tick, forget, getStatus, reauthReason, reset,
+  newApi, newOpenApi, newLink, _raw: raw, _guard: guard, _openGuard: openGuard,
 };

@@ -80,12 +80,18 @@ test('2FA and rate limit are reported like before; the reauth banner flag follow
     await host.saveSettings({ 'cloud.password': cloud.password + 'x' });
     await connectCloud(host, cloud);
     const id = (await asAdmin(host, 'POST', '/devices', { transport: 'cloud', cloud_appliance_id: APPLIANCE })).json.device.id;
-    // the session expires and the new login needs 2FA → offline + reauth flag
+    // the session is gone and the new login needs 2FA → offline + reauth flag; 2.2.4: and no login is
+    // tried again until the account is saved in the settings (each try would ask for a code again)
     await host.gc.settings.setSecret('cloud.session', null);
     cloud.require2fa = true;
     assert.deepEqual((await asAdmin(host, 'GET', `/devices/${id}/state`)).json.state, { offline: true });
-    assert.equal((await asAdmin(host, 'GET', '/status')).json.cloud_needs_reauth, true);
+    const st = (await asAdmin(host, 'GET', '/status')).json;
+    assert.deepEqual([st.cloud_needs_reauth, st.cloud_reauth_reason], [true, 'twofa']);
     cloud.require2fa = false;
+    const calls = cloud.calls.length;
+    assert.deepEqual((await asAdmin(host, 'GET', `/devices/${id}/state`)).json.state, { offline: true });
+    assert.equal(cloud.calls.length, calls, 'no request, no login while a person has to confirm');
+    assert.equal(lineOf(await host.saveSettings({ notify_lang: 'de' }), 'midea').tone, 'ok', 'saving the settings connects again');
     assert.equal((await asAdmin(host, 'GET', `/devices/${id}/state`)).json.state.power, false);
     assert.equal((await asAdmin(host, 'GET', '/status')).json.cloud_needs_reauth, false);
     cloud.rateLimited = true;

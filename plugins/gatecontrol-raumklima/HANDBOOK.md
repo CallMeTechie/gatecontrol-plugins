@@ -1,4 +1,4 @@
-<!-- version: 2.2.3 -->
+<!-- version: 2.2.4 -->
 # Indoor climate
 
 ## What the plugin does
@@ -67,14 +67,22 @@ Dreo heaters lock remote control after 24 hours without use. Press the Wi-Fi but
 **“The Midea account needs to be confirmed again”.**
 Confirm it in the Midea app and save the plugin settings again.
 
+**“GateControl no longer signs in to the account by itself” / notification “Connect account again”.**
+The maker's cloud refused the session repeatedly. So that the maker does not flood you with sign-in notices or lock the account, the plugin signs in by itself at most 3 times an hour and 6 times a day and then stops. Open the plugin settings and save them again – that connects the account anew. If that does not help, the plugin log shows the cloud's code.
+
+**Midea keeps reporting a “new sign-in”.**
+From 2.2.4 the plugin only signs in when the session really has expired. The Midea app and GateControl can still sign each other out when both use the same account – a Midea account of its own for GateControl, with which you share the devices in the Midea app, helps then.
+
 **A discovered Midea device is unreachable.**
 Its address must be assigned under access targets as “Air conditioner (home network)”.
 
 **Cloud devices report no malfunction.**
 Notifications only come from devices in the home network that the plugin polls (and from Dreo devices for “unreachable”).
 
-## New in 2.2.3
+## New in 2.2.4
 
-- This manual in the tab “Manual” (GateControl ≥ 1.241.0).
+- The plugin no longer signs in again on every error of the cloud. It signs in only when the session really has expired – at most 3 times an hour and 6 times a day, with a growing wait (1, 5, 15, 60 minutes).
+- When the limit is reached, the password is wrong or a confirmation is needed, “connect again” appears and you get a notification (topic “Connect account again”). Saving the settings again connects anew.
+- On “too many requests” the cloud calls pause (5, 15, 60 minutes).
 
-Last in 2.2.2: Dreo devices with special characters in the serial number are no longer discarded.
+Last in 2.2.3: this manual in the tab “Manual” (GateControl ≥ 1.241.0).

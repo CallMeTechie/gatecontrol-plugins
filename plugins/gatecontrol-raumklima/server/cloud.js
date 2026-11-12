@@ -27,6 +27,14 @@ const APP_VARIANTS = {
   },
 };
 
+// 2.2.4: the Midea codes that say "this session is gone" — the only ones a new login answers at once.
+// 3106 = invalidSession (the NetHome API family; the msmart library restarts its session on it). Every
+// other code is NOT taken for a session problem: service.js first asks the account (the appliance list)
+// whether the session still works, and logs in again only when that fails too.
+const SESSION_GONE_CODES = new Set(['3106']);
+// The login itself was refused for something only a person can change: 3101 = account or password wrong.
+const LOGIN_REFUSED_CODES = new Set(['3101']);
+
 class MideaCloudError extends Error {
   constructor(message, code) {
     super(message);
@@ -123,7 +131,11 @@ class MideaCloud {
   }
 
   getSession() { return this.session; }
-  setSession(s) { this.session = s; }
+  /** 2.2.4: a session carries the device id it was made with — the cloud sees one device, not a new one per request. */
+  setSession(s) {
+    this.session = s;
+    if (s && typeof s.deviceId === 'string' && /^[0-9a-f]{16}$/.test(s.deviceId)) this.deviceId = s.deviceId;
+  }
 
   // ---- low-level request: returns parsed result object or throws MideaCloudError ----
   async _request(endpoint, body, opts = {}) {
@@ -267,7 +279,7 @@ class MideaCloud {
         loginAccount: email,
         password: this._hashPassword(loginId, password),
       });
-      this.session = { sessionId: r.sessionId, loginId, email };
+      this.session = { sessionId: r.sessionId, loginId, email, deviceId: this.deviceId };
     } else {
       // MSmartHome: nested data/iotData per cloud.py:281-306, sent raw (the one
       // request cloud.py does NOT pass through _build_request_body).
@@ -291,7 +303,7 @@ class MideaCloud {
       }, { raw: true });
       // accessToken lives in mdata per cloud.py:306
       const accessToken = r.mdata ? r.mdata.accessToken : r.accessToken;
-      const session = { accessToken, loginId, email };
+      const session = { accessToken, loginId, email, deviceId: this.deviceId };
       // Capture the per-session AES key/IV for transparent-send (live-validated path).
       // The top-level response carries encrypted accessToken/randomData; the bearer
       // header still comes from mdata.accessToken (above) — these are different values.
@@ -406,4 +418,4 @@ class MideaCloud {
   }
 }
 
-module.exports = { APP_VARIANTS, MideaCloud, MideaCloudError, computeUdpid, deriveSessionKeys, sessionCbcEncrypt, sessionCbcDecrypt };
+module.exports = { APP_VARIANTS, SESSION_GONE_CODES, LOGIN_REFUSED_CODES, MideaCloud, MideaCloudError, computeUdpid, deriveSessionKeys, sessionCbcEncrypt, sessionCbcDecrypt };

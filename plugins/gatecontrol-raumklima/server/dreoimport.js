@@ -15,6 +15,9 @@ const store = require('./store');
 const dreo = require('./dreoservice');
 
 const EVERY_MS = 3600000;
+// 2.2.4: an account without devices is asked in both regions and at the Open API — each a login. So it
+// is looked at every 6 hours only (saving the settings looks at once).
+const EMPTY_EVERY_MS = 6 * EVERY_MS;
 const DISMISSED = 'dreo_dismissed';
 const FOUND = 'dreo_found';
 const DISMISSED_MAX = 200;
@@ -116,7 +119,8 @@ async function maybe(gc, now = Date.now()) {
   if (!cfg.email || !cfg.passwordMd5 || !dreo.supported(gc)) return;
   const last = await found(gc);
   // a look of an older version is redone at once (REV: 2.2.1 searches every key and logs shapes)
-  if (last && last.rev === REV && now - last.at < EVERY_MS) return;
+  const every = last && Array.isArray(last.devices) && !last.devices.length ? EMPTY_EVERY_MS : EVERY_MS;
+  if (last && last.rev === REV && now - last.at < every) return;
   try {
     await run(gc, now);
   } catch (e) {
@@ -129,4 +133,4 @@ async function clear(gc) {
   await gc.storage.delete(FOUND);
 }
 
-module.exports = { run, maybe, dismiss, undismiss, found, record, clear, EVERY_MS };
+module.exports = { run, maybe, dismiss, undismiss, found, record, clear, EVERY_MS, EMPTY_EVERY_MS };
