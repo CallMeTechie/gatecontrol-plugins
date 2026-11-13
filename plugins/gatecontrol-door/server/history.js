@@ -12,6 +12,14 @@ const { iso } = require('./util');
 const { HISTORY_DAYS } = require('./config');
 
 const DAY = 86400000;
+// 1.7.2: media keeps the picture (data) in the row and expires_at BEHIND it — a statement that takes expires_at from
+// the row reads through the whole picture (its overflow pages) to get there. So no list reads it there: the expired
+// pictures come from the index media_expires alone (a few, the clean-up runs every hour), and a picture is "kept"
+// when its id is not among them. Only media() reads a row with expires_at — it wants the picture anyway.
+const EXPIRED = 'SELECT id FROM media INDEXED BY media_expires WHERE expires_at <= ?';
+// pictures deleted per clean-up statement: deleting one reads and frees its pages (a statement may take 15 s in
+// GateControl, also on a slow disk); more of them (the retention was shortened) follow with the next background runs
+const PURGE_BATCH = 100;
 const KINDS = ['action', 'ding', 'motion', 'alert', 'nuki', 'mode'];
 
 /** Insert a row; a row with an ext_id that exists already is skipped (→ null). → id */
@@ -46,15 +54,22 @@ async function media(gc, id, now) {
 
 /** The newest picture of a camera (not expired) or null. */
 async function latestMedia(gc, cameraId, now) {
-  const m = await store.one(gc, 'SELECT id FROM media WHERE camera_id = ? AND expires_at > ? ORDER BY at DESC, id DESC LIMIT 1', [cameraId, now]);
+  const m = await store.one(gc, `SELECT id FROM media WHERE camera_id = ? AND id NOT IN (${EXPIRED}) ORDER BY at DESC, id DESC LIMIT 1`, [cameraId, now]);
   return m ? media(gc, m.id, now) : null;
+}
+
+/** When the newest kept picture of each camera was taken → Map(camera id → at); from the indexes, no picture is read. */
+async function lastMediaAt(gc, now) {
+  const rows = await store.all(gc, `SELECT c.id AS camera_id,
+    (SELECT m.at FROM media m WHERE m.camera_id = c.id AND m.id NOT IN (${EXPIRED}) ORDER BY m.at DESC LIMIT 1) AS at FROM cameras c`, [now]);
+  return new Map(rows.filter((r) => r.at != null).map((r) => [r.camera_id, r.at]));
 }
 
 /** Media ids that exist (not expired) among `ids` → Set */
 async function existingMedia(gc, ids, now) {
   const list = [...new Set(ids.filter(Boolean))];
   if (!list.length) return new Set();
-  const rows = await store.all(gc, `SELECT id FROM media WHERE expires_at > ? AND id IN (${store.marks(list.length)})`, [now, ...list]);
+  const rows = await store.all(gc, `SELECT id FROM media WHERE id IN (${store.marks(list.length)}) AND id NOT IN (${EXPIRED})`, [...list, now]);
   return new Set(rows.map((r) => r.id));
 }
 
@@ -110,11 +125,17 @@ function view(row, { locks, cameras, locations, t, lang, mediaOk }) {
   };
 }
 
-/** Retention: pictures after `mediaDays`, history after 90 days. */
+/**
+ * Retention: pictures after `mediaDays`, history after 90 days. → { more }: pictures are left for the next run.
+ * The pictures to delete are found in the indexes media_expires and media_at (migration 008) — one statement with
+ * "expires_at <= ? OR at < ?" went through the table and read every picture, every hour (1.7.2).
+ */
 async function purge(gc, now, mediaDays) {
-  await store.run(gc, 'DELETE FROM media WHERE expires_at <= ? OR at < ?', [now, now - mediaDays * DAY]);
+  const a = await store.run(gc, `DELETE FROM media WHERE id IN (${EXPIRED} ORDER BY expires_at LIMIT ?)`, [now, PURGE_BATCH]);
+  const b = await store.run(gc, 'DELETE FROM media WHERE id IN (SELECT id FROM media INDEXED BY media_at WHERE at < ? ORDER BY at LIMIT ?)', [now - mediaDays * DAY, PURGE_BATCH]);
   await store.run(gc, 'DELETE FROM history WHERE at < ?', [now - HISTORY_DAYS * DAY]);
   await store.run(gc, "DELETE FROM auto_runs WHERE at < ? AND status <> 'pending'", [now - 7 * DAY]);
+  return { more: [a, b].some((r) => r && r.changes >= PURGE_BATCH) };
 }
 
-module.exports = { add, setMedia, addMedia, media, latestMedia, existingMedia, list, one, view, purge, KINDS };
+module.exports = { add, setMedia, addMedia, media, latestMedia, lastMediaAt, existingMedia, list, one, view, purge, KINDS, PURGE_BATCH };

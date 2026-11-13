@@ -8,6 +8,16 @@ bleibt auf dem eigenen Server. Einrichtung, Risiken, Datenschutz und die App-API
 an; das Plugin nutzt die, die auch die Open-Source-Projekte ring-client-api (Homebridge) und
 python-ring-doorbell (Home Assistant) verwenden. Sie kann sich jederzeit ändern oder wegfallen.
 
+## 1.7.2
+
+- **Aufräumen der Bilder liest keine Bilder mehr:** `media` hält das Bild (`data`) in der Zeile und `expires_at` dahinter – eine Anweisung, die `expires_at` aus der Zeile nimmt, liest das ganze Bild (seine Überlaufseiten) mit. Das stündliche `DELETE FROM media WHERE expires_at <= ? OR at < ?` hatte für `at` keinen Index, ging durch die Tabelle und las so jede Stunde alle Bilder (Protokoll von GateControl vom 12./13. 11.: unter den langsamen Anweisungen). Gemessen mit 3000 Bildern von 100–300 kB (Datenbank 600 MB): 147 000 Seiten (574 MB) je Lauf, auch wenn nichts zu löschen war – jetzt 4 Seiten, mit 18 abgelaufenen Bildern 818 Seiten (3 MB: die gelöschten Bilder selbst).
+  Migration `008_media_at.sql`: Index `media_at`. Abgelaufene Bilder kommen aus dem Index `media_expires`, zu alte aus `media_at`; gelöscht wird dasselbe wie vorher.
+- **`GET me`, Verlauf und Standbild ebenso:** das neueste Bild je Kamera (`lastImageAt`, bei jedem Öffnen von App und Portal) las ebenfalls alle Bilder (147 000 Seiten → 7), `hasImage` im Verlauf die Bilder der Seite (1363 → 31 Seiten bei 30 Einträgen), das neueste Bild einer Kamera eines mehr als nötig. Sie fragen jetzt nur die Indizes; ein Bild wird gelesen, wenn es ausgeliefert oder gelöscht wird.
+- **Aufräumen in Häppchen:** höchstens 100 Bilder je Anweisung; bleibt etwas übrig (die Aufbewahrung wurde verkürzt), geht es mit dem nächsten Hintergrundlauf weiter statt in einer Stunde.
+- Die Migration liest kein Bild (`at` steht vor dem Bild in der Zeile): bei 3000 Bildern / 600 MB 8 MB und 0,15 s. Sie läuft wie jede Migration in einer Transaktion – wird sie unterbrochen, bleibt die Datenbank bei 1.7.1.
+- Tests (`media.test.js`): keine Anweisung von Aufräumen, `GET me`, Verlauf und Standbild nimmt etwas aus einer Zeile von `media`, außer der, die ein Bild ausliefert, und dem Löschen (Abfragepläne); das Ergebnis des Aufräumens; Häppchen; Migration 008 auf einer Datenbank von 1.7.1.
+- Braucht weiterhin **GateControl ≥ 1.169.0**.
+
 ## 1.7.1
 
 - **Weniger Schreibvorgänge:** findet die Abfrage (alle 30 s) ein Schloss so vor wie zuletzt, rücken nur seine Zeiten (`checked_at`, `updated_at`) im Speicher vor; `lock_state` wird geschrieben, sobald sich etwas anderes ändert, und sonst alle 5 Minuten – vorher bei jeder Abfrage eine Zeile und ein COMMIT je Schloss (im Protokoll von GateControl 1.253.5: COMMIT 190 Mal in der Stunde, je ~300 ms auf einem langsamen Datenträger). Seiten, Apps, die Sicherheitsprüfungen und das automatische Abschließen lesen die neuesten Zeiten. Die Uhrzeit der Antwort der Bridge (`timestamp` in den Rohdaten) zählt nicht als Änderung.
