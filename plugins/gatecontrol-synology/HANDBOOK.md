@@ -1,4 +1,4 @@
-<!-- version: 1.2.2 -->
+<!-- version: 1.2.3 -->
 # NAS (Synology)
 
 ## What the plugin does
@@ -78,6 +78,13 @@ DSM blocks addresses after repeated failed sign-ins. Check user name and passwor
 
 **GateDrop cannot save anything.**
 The folder is not shared under “Folders for GateDrop”, or the DSM account lacks write access.
+
+## New in 1.2.3
+
+- The plugin writes to the server's disk far less often (about 30 instead of roughly 500 writes per day and NAS). That relieves slow disks – and the other plugins with them.
+- Nothing changes on the page, in the apps or for notifications: you still see the values of every poll, and notifications arrive at the same moment as before.
+- The status is stored at once when something that matters changes (state of a volume, storage pool or drive, a threshold crossed, backup, DSM update, UPS), otherwise once an hour and when the plugin stops.
+- After a server restart the last stored status is shown with its real time until the first new poll is through – one polling interval at most.
 
 ## New in 1.2.2
 
