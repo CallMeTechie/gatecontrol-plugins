@@ -147,7 +147,7 @@ async function list(gc, userId, q) {
   // a folder other than the posteingang: synced when its copy is older than a few minutes (waits a little)
   if (sc.folders.length === 1 && sc.folders[0].role !== 'inbox' && !q.before) {
     const f = sc.folders[0];
-    if (!f.synced_at || Date.now() - f.synced_at > OPEN_SYNC_MS) await within(engine.syncOne(gc, sc.accounts[0], f), WAIT_MS);
+    if (Date.now() - engine.folderSynced(f) > OPEN_SYNC_MS) await within(engine.syncOne(gc, sc.accounts[0], f), WAIT_MS);
   }
   let res = await page(gc, userId, sc, q, limit);
   // past the retention (one folder): the end of the copy here gives a cursor; asking for that page loads older mail

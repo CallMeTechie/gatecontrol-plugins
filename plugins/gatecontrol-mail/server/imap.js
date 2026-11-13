@@ -15,6 +15,8 @@ const HEAD_FIELDS = ['list-id', 'list-unsubscribe', 'precedence', 'auto-submitte
 const FETCH_MAX = 500;
 const FIRST_BATCH = 300;
 const FLAGS_RECENT = 500;
+const SYNCED_WRITE_MS = 60 * 60000;  // 1.13.1: „synced“ of a folder with nothing new is written at most this often
+const synced = new Map();            // folder id → its last sync that was not written (this process)
 const SKIP_USE = new Set(['\\All', '\\Flagged', '\\Important']);
 const ROLE = { '\\Inbox': 'inbox', '\\Sent': 'sent', '\\Drafts': 'drafts', '\\Archive': 'archive', '\\Junk': 'junk', '\\Trash': 'trash', '\\All': 'all' };
 const NAME_ROLE = [
@@ -252,9 +254,19 @@ async function syncFolder(gc, a, s, f, o) {
     const gone = rows.filter((r) => !present.has(r.uid) && (!lowUid || r.uid >= lowUid)).map((r) => r.id);
     if (gone.length) { await mailstore.remove(gc, gone); out.changed = true; }
   }
-  await store.run(gc, 'UPDATE folders SET uid_validity = ?, uid_next = ?, low_uid = ?, modseq = ?, remote_total = ?, synced_at = ?, complete = ? WHERE id = ?',
-    [st.uidValidity == null ? null : Number(st.uidValidity), uidNext, lowUid || 0, st.highestModseq == null ? null : String(st.highestModseq),
-      Number(st.exists) || 0, now, lowUid ? 0 : (since ? 0 : 1), f.id]);
+  // 1.13.1: a folder as it was (the usual sync — every folder every 15 minutes, the posteingang every 5) writes nothing:
+  // only „synced“ would change, and that is kept in memory (syncedAt) and written once it is older than SYNCED_WRITE_MS.
+  // On a slow disk each of these writes took 0.2 … 0.9 s.
+  const row = [st.uidValidity == null ? null : Number(st.uidValidity), uidNext, lowUid || 0, st.highestModseq == null ? null : String(st.highestModseq),
+    Number(st.exists) || 0, lowUid ? 0 : (since ? 0 : 1)];
+  const same = f.synced_at && now - f.synced_at < SYNCED_WRITE_MS && (f.uid_validity == null ? null : Number(f.uid_validity)) === row[0] && f.uid_next === row[1]
+    && (f.low_uid || 0) === row[2] && (f.modseq == null ? null : String(f.modseq)) === row[3] && (f.remote_total || 0) === row[4] && (f.complete || 0) === row[5];
+  if (same) synced.set(f.id, now);
+  else {
+    await store.run(gc, 'UPDATE folders SET uid_validity = ?, uid_next = ?, low_uid = ?, modseq = ?, remote_total = ?, synced_at = ?, complete = ? WHERE id = ?',
+      [row[0], row[1], row[2], row[3], row[4], now, row[5], f.id]);
+    synced.delete(f.id);
+  }
   if (out.created.length) out.changed = true;
   return out;
 }
@@ -291,4 +303,7 @@ async function search(s, f, q) {
   return ((await s.search(q)) || []).filter(Number.isSafeInteger).sort((x, y) => y - x).slice(0, 50);
 }
 
-module.exports = { syncFolders, syncFolder, older, message, download, search, headerOf, roleOf, hasAttachment, unsubOf, fetchUids, FETCH_OPTS, HEAD_FIELDS };
+/** 1.13.1: the last sync of folder `id` this process did not write (0: none). */
+const syncedAt = (id) => synced.get(id) || 0;
+
+module.exports = { syncedAt, forgetSynced: () => synced.clear(), syncFolders, syncFolder, older, message, download, search, headerOf, roleOf, hasAttachment, unsubOf, fetchUids, FETCH_OPTS, HEAD_FIELDS };

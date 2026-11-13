@@ -249,15 +249,18 @@ async function familyCalendar(gc) {
   try { return (await gc.services.available('gatecontrol-familie', 'calendar_add')) === true; } catch { return false; }
 }
 
-/** The background run: unclear mail sorted by the AI (PER_TICK at most). */
-async function tick(gc) {
+/**
+ * The background run: unclear mail sorted by the AI (PER_TICK at most). left() (1.13.1): what is left of the run in ms —
+ * a question to the AI waits up to 20 s, so the next mail is only asked while that still fits.
+ */
+async function tick(gc, left) {
   const cfg = await config.get(gc);
   if (!cfg.ai.sort || !(await ready(gc))) return 0;
   const rows = await store.all(gc, `SELECT m.*, a.ai AS acc_ai, a.kind AS acc_kind FROM messages m JOIN accounts a ON a.id = m.account_id
     WHERE m.ai_pending = 1 AND m.tab_by = 'rule' ORDER BY m.date DESC LIMIT ?`, [PER_TICK * 4]);
   let n = 0;
   for (const m of rows) {
-    if (n >= PER_TICK) break;
+    if (n >= PER_TICK || (left && n > 0 && left() < 20000)) break;
     if (m.acc_ai !== 1 || (cfg.ai.blockBusiness && m.acc_kind === 'business')) { await store.run(gc, 'UPDATE messages SET ai_pending = 0 WHERE id = ?', [m.id]); continue; }
     let tab;
     try { tab = await classify.byAi(gc, m); } catch { break; }

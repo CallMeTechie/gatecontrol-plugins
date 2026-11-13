@@ -1,4 +1,4 @@
-<!-- version: 1.13.0 -->
+<!-- version: 1.13.1 -->
 # Mail
 
 ## What the plugin does
@@ -106,6 +106,12 @@ When attachments live on a storage target that is unreachable, Mail tries again 
 
 **Free/busy shows “unknown”.**
 The person switched free/busy off or is not in GateControl. Colleagues in Microsoft 365 appear through your Microsoft account.
+
+## New in 1.13.1
+
+- **The background sync keeps its pace:** when a mail provider does not answer or is slow, the other accounts no longer wait for it. Every account gets its turn; large mailboxes are synced in portions and continued in the next run.
+- **Clearer messages in the log:** when an account cannot be reached, the log says once which account it is and why – and when it is back.
+- **Easier on slow disks:** when a folder has nothing new, Mail no longer writes to the disk.
 
 ## New in 1.13.0
 

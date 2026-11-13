@@ -1,4 +1,4 @@
-<!-- version: 1.13.0 -->
+<!-- version: 1.13.1 -->
 # Mail
 
 ## Was das Plugin kann
@@ -106,6 +106,12 @@ Liegen die Anhänge auf einem Speicherziel, das nicht erreichbar ist, versucht M
 
 **Frei/Gebucht zeigt „unbekannt“.**
 Die Person hat Frei/Gebucht abgeschaltet oder ist nicht in GateControl. Kolleginnen in Microsoft 365 erscheinen über dein Microsoft-Konto.
+
+## Neu in 1.13.1
+
+- **Der Abgleich im Hintergrund bleibt im Takt:** Antwortet ein Mail-Anbieter nicht oder nur langsam, hält das die anderen Konten nicht mehr auf. Jedes Konto bekommt reihum seine Zeit; große Postfächer werden in Häppchen abgeglichen und beim nächsten Lauf fortgesetzt.
+- **Klarere Meldungen im Protokoll:** Ist ein Konto nicht erreichbar, steht dort einmal, welches Konto es ist und warum – und wenn es wieder da ist.
+- **Schonender für langsame Datenträger:** Gibt es in einem Ordner nichts Neues, schreibt Mail nichts mehr auf die Platte.
 
 ## Neu in 1.13.0
 

@@ -198,7 +198,7 @@ async function dismiss(gc, userId, id) {
  * The background run: new mail with attachments of accounts with attachments 'suggest' (a suggestion is ready when the
  * mail is opened) or 'auto' (filed on its own when Drive is sure, else "Zum Ablegen") — PER_TICK service calls at most.
  */
-async function tick(gc, now) {
+async function tick(gc, now, left) {
   // since 1.5.0 also not while GateControl has no room for the copies of attachments (storage.js)
   if (now < pausedUntil || storage.paused(now) || !(await available(gc))) return 0;
   const cfg = await config.get(gc);
@@ -207,7 +207,8 @@ async function tick(gc, now) {
   let calls = 0;
   let full = false;
   for (const m of rows) {
-    if (calls >= PER_TICK || Date.now() < pausedUntil) break;
+    // left() (1.13.1): what is left of the background run in ms — the next mail's attachments in the next run
+    if (calls >= PER_TICK || Date.now() < pausedUntil || (left && calls > 0 && left() <= 0)) break;
     const auto = m.mode === 'auto' && cfg.ai.autoFile;
     if (!(await hasSeat(gc, m.user_id))) { await store.run(gc, 'UPDATE messages SET filed = 1 WHERE id = ?', [m.id]); continue; }
     let done = true;

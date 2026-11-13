@@ -2,6 +2,43 @@
 
 Alle E-Mail-Konten an einem Ort – im eigenen Tab der GateControl-Apps und im Portal.
 
+## 1.13.1
+
+- **Der Hintergrundlauf hält sein Zeitbudget.** GateControl beendet einen Lauf nach 120 s („background run failed: plugin
+  did not answer in time“ – im Protokoll vom 12./13. 11. 56 Mal in 15 Stunden). Ursachen im Code, nachgestellt in
+  `test/budget.test.js`:
+  - Ein Microsoft-Konto, dessen Anfragen ohne Antwort blieben, wartete in der Runde durch die Ordner für **jeden**
+    Ordner sein eigenes Zeitlimit ab (30 s, je eine Meldung „folder sync failed <Konto> unreachable“) – 12 Ordner
+    = 330 s in einem Lauf. Jetzt endet der Zug des Kontos beim ersten Fehlschlag ohne Antwort (ebenso bei 429/503 mit
+    `Retry-After`, das eingehalten wird); nur ein Fehler, der einen einzelnen Ordner betrifft, überspringt diesen.
+  - Ein Lauf arbeitete ohne Blick auf die Uhr alle Ordner eines Kontos ab (das Budget wurde nur zwischen zwei Konten
+    geprüft) und danach Kalender, KI-Sortierung (bis 5 × 20 s), Ablage usw. Jetzt: Die Konten haben ihre Züge
+    nebeneinander (vier zugleich, wer am längsten gewartet hat zuerst), ein Zug dauert höchstens 20 s und setzt im
+    nächsten Lauf fort – die Runde durch die Ordner merkt sich ihren Platz (kein Ordner zweimal je Runde), eine
+    Delta-Runde von Microsoft ihren `nextLink`, Mails ohne Text bleiben in der Warteschlange. Der Mail-Teil hat 40 s,
+    der ganze Lauf 60 s; was nicht mehr passt (Kalender, Bilder, KI-Sortierung, Ablage, Aufräumen), kommt 15 s später.
+    Erinnerungen und der Postausgang laufen immer.
+  - IMAP-Befehle haben ein eigenes Zeitlimit (60 s, Texte und Anhänge 180 s; GateControl wartet 2 … 10 Minuten): Danach
+    wird die Sitzung geschlossen, das Konto pausiert. Das Verbinden im Hintergrund wartet 10 s statt 30 s, eine
+    Graph-Anfrage des Abgleichs 15 s statt 30 s.
+  - Ein Zug, der trotzdem an seinem Server hängt, hält den Lauf nicht auf: Der Lauf antwortet nach seinem Budget, das
+    Konto bekommt bis zum Ende seines Zugs keinen neuen. Der ganze Lauf antwortet spätestens nach 100 s; hängt ein Teil,
+    steht er einmal im Protokoll („background run takes long part <Teil> <n> s“), daneben startet kein zweiter Lauf.
+- **Meldungen mit Konto und Grund:** „account unreachable account 3 (Microsoft) unreachable: ERR_TIMEOUT“ bzw.
+  „… (IMAP gmx) ERR_MAIL_NET: <Antwort des Servers>“ – einmal, wenn ein Konto nicht mehr antwortet, und „account
+  reachable again“; „folder sync failed account 3 (Microsoft) folder 17 (archive) unreachable:
+  ErrorInternalServerError“ für einen einzelnen Ordner (Nummer und Rolle, nie der Name). Vorher: „folder sync failed 1
+  unreachable“ – die 1 war die Kontonummer, der Grund fehlte.
+- **Weniger Schreibzugriffe:** Ein Ordner ohne Neues schreibt nichts mehr (vorher ein `UPDATE folders … synced_at` je
+  Ordner und Runde und je Abgleich des Posteingangs, auf dem langsamen Datenträger je 0,2 … 0,9 s; eine Runde über 40
+  Ordner: 39 Schreibzugriffe → 0). „Zuletzt abgeglichen“ steht im Speicher und wird geschrieben, sobald sich sonst
+  etwas ändert oder der gespeicherte Wert älter als eine Stunde ist. Eine Delta-Runde von Microsoft ohne Änderung
+  behält ihren `deltaLink`. `accounts.synced_at` (nur die Reihenfolge nach einem Neustart) ebenso.
+- **KI-Sortierung:** Die Abfrage der unklaren Mails las bei jedem Lauf alle Mails (Protokoll: 1138 ms bei 0 Treffern);
+  jetzt über den Teilindex `messages_ai_pending` (Migration 013; 50 000 Mails: 21,8 ms → 0,16 ms, Plan `SCAN m USING
+  INDEX messages_date` → `… messages_ai_pending`). Die nächste Mail wird nur gefragt, solange die Antwort noch in den
+  Lauf passt.
+
 ## 1.13.0
 
 - **Mehrere Mails auf einmal (API für Apps und Portal):**
