@@ -59,9 +59,10 @@ function create(asPerson, areaLabel) {
     const from = day(now - WINDOW_BACK * DAY);
     const to = day(now + WINDOW_AHEAD * DAY);
     const rows = [];
+    // from the deadlines of these days to their files (CROSS JOIN, 1.29.1 — as deadlines.js FROM), not every node of the areas
     for (const part of store.chunks(ids)) {
       rows.push(...await store.all(gc, `SELECT d.id AS dl_id, d.kind AS dl_kind, d.date AS dl_date, d.label AS dl_label, d.found_at AS dl_found,
-        d.done_at AS dl_done_at, n.id, n.name, n.area_id, n.rev FROM doc_deadlines d JOIN nodes n ON n.id = d.node_id
+        d.done_at AS dl_done_at, n.id, n.name, n.area_id, n.rev FROM doc_deadlines d CROSS JOIN nodes n ON n.id = d.node_id
         WHERE n.area_id IN (${store.marks(part.length)}) AND n.deleted_at IS NULL AND n.vault_id IS NULL AND d.date >= ? AND d.date <= ?
           AND (d.done_at IS NULL OR d.done_at > ?) ORDER BY d.date, d.id LIMIT ?`, [...part, from, to, now - DAY, MAX_ITEMS]));
     }

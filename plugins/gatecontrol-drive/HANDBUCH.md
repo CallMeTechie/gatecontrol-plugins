@@ -1,4 +1,4 @@
-<!-- version: 1.29.0 -->
+<!-- version: 1.29.1 -->
 # Drive
 
 ## Was das Plugin kann
@@ -120,6 +120,12 @@ Vollbild im Portal gibt es ab GateControl 1.244.0. Ältere Versionen zeigen das 
 
 **Zu Hause bauen sich die Fotos nicht schneller auf.**
 Die Vorschaubilder kommen erst nach und nach auf das Gateway (je Lauf einige Hundert, alle 15 Minuten). Prüfe am Gateway unter **Gateways › Zwischenspeicher**, dass er „aktiv“ ist und „Fotos“ bzw. „Drive“ eingeschaltet sind. Vorschaubilder aus dem Heimnetz braucht GateControl 1.249.0 und eine aktuelle App.
+
+## Neu in 1.29.1
+
+- **Schneller auf langsamen Datenträgern:** Die Fotoseiten, die Übersicht und die Fristen lesen deutlich weniger von der Platte – vor allem bei sehr vielen Fotos und wenn du einen Arbeitsordner oder den Kamera-Ordner nutzt.
+- **Weniger Schreibzugriffe im Hintergrund:** Drive schreibt seine internen Merker nur noch, wenn sich etwas geändert hat, und fasst die Einträge für den Zwischenspeicher im Heimnetz zusammen. Das entlastet Server, deren Datenträger beim Schreiben langsam ist (weniger Warnungen „slow plugin database statements“ im Protokoll).
+- **Für dich ändert sich nichts:** Aussehen und Bedienung bleiben gleich. Das Update richtet sich beim Installieren selbst ein; auch bei einer großen Fotosammlung dauert das nur einen Moment.
 
 ## Neu in 1.29.0
 

@@ -221,8 +221,9 @@ async function list(ctx, q) {
   return { deadlines: await views(ctx, rows) };
 }
 
-// the deadlines of live files outside a vault in the areas (n of them), from a day to a day
-const FROM = (n) => `FROM doc_deadlines d JOIN nodes n ON n.id = d.node_id WHERE n.area_id IN (${store.marks(n)}) AND n.deleted_at IS NULL AND n.vault_id IS NULL
+// the deadlines of live files outside a vault in the areas (n of them), from a day to a day — from the deadlines of
+// these days to their files (CROSS JOIN keeps that order, 1.29.1): SQLite went through every node of the areas instead
+const FROM = (n) => `FROM doc_deadlines d CROSS JOIN nodes n ON n.id = d.node_id WHERE n.area_id IN (${store.marks(n)}) AND n.deleted_at IS NULL AND n.vault_id IS NULL
     AND d.date >= ? AND d.date <= ?`;
 
 /**

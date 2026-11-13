@@ -112,7 +112,7 @@ function nasView(n, snap, cfg, targets, all, lang) {
     target_index: n.target_index, target_label: tg ? tg.label : null, target_saved_label: n.target_label, target_missing: !tg,
     account: { user_hint: maskUser(user), has_user: !!user, has_password: !!all[store.secretKey(n.id, 'password')], has_device: !!all[store.secretKey(n.id, 'device')] },
     status: n.status, error: n.last_error ? { code: n.last_error, text: t(lang, errorKey(n.last_error)) } : null, error_count: n.error_count,
-    last_attempt_at: n.last_attempt_at, last_success_at: n.last_success_at, next_poll_at: n.next_poll_at,
+    last_attempt_at: n.last_attempt_at, last_success_at: store.lastSuccess(n, snap), next_poll_at: n.next_poll_at,
     power: n.power_state ? { state: n.power_state, at: n.power_at } : null,
     fetched_at: snap ? snap.fetched_at : null, data, issues: alerts.issuesOf(data, cfg),
   };
@@ -492,6 +492,8 @@ module.exports = {
   },
 
   async stop(gc) {
+    // 1.2.3: the newest status and poll times are only stored now and then — store them before the plugin ends
+    await store.flush(gc).catch(() => {});
     await service.logoutAll(gc).catch(() => {});
   },
 

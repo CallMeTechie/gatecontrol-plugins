@@ -18,11 +18,9 @@ const cost = require('../../../tools/testing/sql-cost');
 const UNIT = "SELECT strftime('%Y-%m', COALESCE(taken_at, mtime, created_at) / 1000, 'unixepoch', 'localtime') AS month, COUNT(*) AS n, MAX(name) AS x FROM nodes NOT INDEXED GROUP BY month";
 const FACTOR = 3;
 // read as a whole on purpose
-const WHOLE = [
-  // the folders below the work folder (photos.js: the recursive `tree`): SQLite makes itself an index of the folders
-  // (is_dir = 1) for the run instead of taking nodes_parent — one pass over nodes, a fraction of the statement
-  /^SEARCH nodes USING AUTOMATIC PARTIAL COVERING INDEX \(is_dir=\?\) ← .*WITH RECURSIVE tree\(id\)/,
-];
+// (until 1.29.0: the folders below the work folder — SQLite made itself an index of every folder for each statement;
+// since 1.29.1 they are walked along nodes_dirs, test/big_speed.test.js)
+const WHOLE = [];
 // GET memories, twelve pages of collections and four more pages run 270 statements, GET overview 47: one statement per
 // photo of a page (60) or per collection would be far more. The rows: the hours with photos (17 000), never the photos.
 const STATEMENTS_MAX = 330;
@@ -31,8 +29,10 @@ const OVERVIEW_MAX = 60;
 // the indexes the statements stand on: one that is gone or no longer taken shows here, also where SQLite then finds
 // its way by another index and sorts
 const INDEXES = {
-  memories: ['nodes_memories', 'nodes_taken', 'nodes_geo_place', 'nodes_parent', 'faces_person', 'faces_user', 'persons_user'],
-  overview: ['nodes_memories', 'nodes_parent', 'faces_user', 'persons_user', 'changes_area', 'recent_opens_at'],
+  memories: ['nodes_memories', 'nodes_taken', 'nodes_geo_place', 'nodes_dirs', 'faces_person', 'faces_user', 'persons_user'],
+  // (changes_area stood here until 1.29.0 for the pass over the whole change log that looked for its ends; these photos
+  // have no change log — the index under „Neu in Familie“ is named in test/overview.test.js)
+  overview: ['nodes_memories', 'nodes_dirs', 'faces_user', 'persons_user', 'recent_opens_at'],
 };
 
 /** Nothing in the recording reads a large table as a whole or costs FACTOR units; the statements go by the indexes `needed`. */

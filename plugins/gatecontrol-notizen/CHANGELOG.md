@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.2.1
+
+Weniger Lese- und Schreibarbeit auf einem langsamen Datenträger (Anlass: „slow plugin database statements“ im Protokoll
+von GateControl). An der Oberfläche und an der API ändert sich nichts.
+
+- **Aufräumen des Papierkorbs:** Die Frage „ist dieses gelöschte Notizbuch / diese gelöschte Liste leer?“ läuft jetzt über Indizes. Vorher las sie dafür jede Notiz samt Text bzw. jede Aufgabe (Test mit 50 000 Notizen und 50 000 Aufgaben, 91 MB: 43 MB gelesen → 0,04 MB). Migration `004_trash_indexes.sql`: `idx_notes_gone` (Notizen im Papierkorb) und `idx_tasks_rest` (Aufgaben im Papierkorb und Unteraufgaben) – beide enthalten nur diese Zeilen; eine Notiz oder Aufgabe, die geschrieben oder abgehakt wird, berührt sie nicht. Das Anlegen liest beide Tabellen einmal (Test: 30 ms).
+- **„Hat das Plugin benutzt“** (`prefs.updated_at`, für den Abgleich der Quellen der letzten 30 Tage) wird höchstens alle 12 Stunden geschrieben statt jede Stunde.
+- **`PUT prefs` mit denselben Angaben** (das Portal schickt den Bereich bei jedem Wechsel) schreibt nichts mehr.
+- Tests: `test/writes.test.js` (Abfrageplan, dasselbe Ergebnis wie 1.2.0 auf denselben Daten, Schreibzugriffe, Migration mit Altdaten); `test/speed.test.js` lässt das Lesen ganzer Tabellen beim Aufräumen nicht mehr zu.
+
 ## 1.2.0
 
 - **Neues Menü im Portal wie in Drive:** links immer sichtbar, unter 760 px hinter dem Knopf ☰. Mein Tag, Wichtig, Geplant, Mir zugewiesen, „Aufgaben“ (Standardliste); „Meine Listen“ mit „+“ und Gruppen als aufklappbare Ordner (Zahl = offene Aufgaben darin); „Aus anderen Plugins“; „Notizbücher“ mit „+“; ⋯ an jeder Liste, Gruppe und jedem Notizbuch; das Zahnrad „Einstellungen“ unten links. Kennzeichen: Personen-Symbol = ich habe geteilt, kleines Bild = mit mir geteilt.

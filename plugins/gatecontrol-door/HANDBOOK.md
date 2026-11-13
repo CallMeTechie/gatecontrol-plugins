@@ -1,4 +1,4 @@
-<!-- version: 1.7.1 -->
+<!-- version: 1.7.2 -->
 # Door & Camera
 
 ## What the plugin does
@@ -237,6 +237,10 @@ Firefox plays the live picture from GateControl 1.242.0 through the built-in pla
 
 **No clips are recorded.**
 Check the mode under “Recordings”. With “only when nobody is at home” the Family presence must be known. With less than 1 GB free the gateway records nothing.
+
+## New in 1.7.2
+
+- **Faster clean-up of pictures:** Door deletes expired camera pictures every hour. Until now this read every stored picture – also when the app or the portal was opened. Now only what is really deleted or shown is read. On a slow disk (a NAS with hard disks) GateControl stays more responsive. Your pictures and the history stay as they are.
 
 ## New in 1.7.1
 

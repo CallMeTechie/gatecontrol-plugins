@@ -2,6 +2,17 @@
 
 Synology-NAS überwachen und steuern (DSM Web API) als GateControl-Plugin – nur für Administratoren.
 
+## 1.2.3
+
+- **Noch weniger Schreibvorgänge:** Im Protokoll vom 12./13.11. war das Speichern des Standes (`INSERT INTO snapshots … ON CONFLICT … DO UPDATE`) weiterhin der langsame Schreibvorgang des Plugins (32 Warnungen in 24 Stunden, bis 5,2 s). 1.2.2 speicherte den Stand und die Abfragezeiten alle 5 Minuten – je 240 bis 288 Mal am Tag und NAS –, obwohl sich fast nur die Live-Werte änderten (CPU, RAM, Temperaturen, Laufzeit, belegte Bytes). Der Stand selbst ist klein (rund 2 kB); teuer ist jeder einzelne Schreibvorgang, nicht seine Größe.
+  - Der neueste Stand und die Abfragezeiten liegen im Arbeitsspeicher und werden zuerst gelesen: Seite, Apps (Widget, Kacheln, Schnellaktionen) und Benachrichtigungen sehen wie bisher jede Abfrage.
+  - Gespeichert wird der Stand **sofort**, wenn sich mehr als die Live-Werte ändert – Modell/DSM-Version, Zustand von Volume, Speicherpool oder Laufwerk, Hyper-Backup-Aufgaben, DSM-Update, USV-Zustand, alles, was die Seite als Problem markiert (Schwellen aus den Einstellungen: Speicher fast voll, Laufwerk zu heiß), oder ein Volume/Pool um einen ganzen Prozentpunkt voller oder leerer –, sonst **einmal je Stunde** und **beim Beenden** des Plugins.
+  - Die Abfragezeiten allein (`last_attempt_at`, `last_success_at`, `next_poll_at`) lösen keinen Schreibvorgang mehr aus; sie werden mit dem nächsten Schreiben der Zeile (Status, Fehler, Neustart, Update-Prüfung alle 6 Stunden) und beim Beenden gespeichert.
+  - Nach einem Neustart steht der gespeicherte Stand mit seiner eigenen Abrufzeit da (nie neuer, als er ist; Live-Werte höchstens eine Stunde alt, Zustand und markierte Probleme aktuell), die nächste Abfrage ist sofort fällig. „Aktualisiert“ und „Zuletzt erreichbar“ nehmen die neuere Zeit aus Zeile und gespeichertem Stand. Der erste Abruf nach dem Start schreibt nur, wenn sich etwas geändert hat.
+  - Benachrichtigungen unverändert: sie werden aus der Abfrage selbst ausgewertet, ihr Zustand (`notify.state`) wird wie bisher nur bei Änderung gespeichert. Einen Verlauf speichert das Plugin nicht.
+- Keine Migration, keine neue Mindestversion (`>=1.193.0`).
+- Tests (`writes.test.js`): ein simulierter Tag (720 Abfragen alle 2 Minuten, wechselnde Live-Werte, ein Backup-Lauf, wachsendes Volume) – 24 Schreibvorgänge für den Stand und 3 für die NAS-Zeile statt 240 + 240; Live-Werte allein schreiben nichts, jede wesentliche Änderung sofort; Neustart (Absturz und reguläres Beenden); Benachrichtigungen bei der Abfrage, die es sieht.
+
 ## 1.2.2
 
 - **Weniger Schreibvorgänge:** der Stand eines NAS (Snapshot) und seine Abfragezeiten (`last_attempt_at`, `last_success_at`, `next_poll_at`) werden höchstens alle 5 Minuten gespeichert; der neueste Stand liegt im Speicher und wird zuerst gelesen. Ein Fehler, ein neuer Status oder ein Neustart wird sofort gespeichert. Vorher zwei Schreibvorgänge je Abfrage (im Protokoll von GateControl 1.253.5 je ~400 ms auf einem langsamen Datenträger).

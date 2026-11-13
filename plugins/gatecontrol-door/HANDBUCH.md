@@ -1,4 +1,4 @@
-<!-- version: 1.7.1 -->
+<!-- version: 1.7.2 -->
 # Tür & Kamera
 
 ## Was das Plugin kann
@@ -236,6 +236,10 @@ Firefox spielt das Live-Bild ab GateControl 1.242.0 über den eingebauten Player
 
 **Es werden keine Clips aufgenommen.**
 Prüfe unter „Aufnahmen“ den Modus. Bei „nur wenn niemand zu Hause ist“ muss die Anwesenheit der Familie bekannt sein. Unter 1 GB freiem Platz nimmt das Gateway nichts auf.
+
+## Neu in 1.7.2
+
+- **Schnelleres Aufräumen der Bilder:** Tür löscht abgelaufene Kamerabilder jede Stunde. Bisher wurden dabei alle gespeicherten Bilder gelesen – auch beim Öffnen von App und Portal. Jetzt wird nur noch gelesen, was wirklich gelöscht oder angezeigt wird. Auf einem langsamen Datenträger (NAS mit Festplatten) bleibt GateControl dadurch flüssiger. Deine Bilder und der Verlauf bleiben unverändert.
 
 ## Neu in 1.7.1
 
