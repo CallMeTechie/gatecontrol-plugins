@@ -1,5 +1,10 @@
-<!-- version: 1.2.0 -->
+<!-- version: 1.2.1 -->
 # Notes & Tasks
+
+## New in 1.2.1
+
+- **Faster on slow disks:** the hourly clean-up of the trash no longer reads through all notes and tasks, and the plugin writes to its database less often. This eases servers whose disk is slow.
+- **Nothing changes for you:** looks and handling stay the same; the trash still empties itself after 30 days.
 
 ## New in 1.2.0
 

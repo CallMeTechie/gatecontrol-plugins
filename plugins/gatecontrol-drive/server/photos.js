@@ -72,9 +72,11 @@ const MEDIA = "is_dir = 0 AND deleted_at IS NULL AND vault_id IS NULL AND (mime 
 const TAKEN = nodes.TAKEN;
 // the folder of the phones' photo backup below the root of my files (since 1.10.0) — the same in every language
 const CAMERA = ['Bilder', 'Kamera-Uploads'];
-// the live folders of a tree (`?` its top), never into a vault — `parent_id IN (…)` of the photos below a folder
+// the live folders of a tree (`?` its top), never into a vault — `parent_id IN (…)` of the photos below a folder. Along
+// the index of the folders (1.29.1, migrations/023_dirs.sql): inside a statement over the photos SQLite made itself an
+// index of every folder for the run instead — one pass over all nodes per statement
 const TREE = `WITH RECURSIVE tree(id) AS (SELECT ?
-    UNION ALL SELECT n.id FROM nodes n JOIN tree ON n.parent_id = tree.id WHERE n.is_dir = 1 AND n.deleted_at IS NULL AND n.vault_id IS NULL)
+    UNION ALL SELECT n.id FROM nodes n INDEXED BY nodes_dirs JOIN tree ON n.parent_id = tree.id WHERE n.is_dir = 1 AND n.deleted_at IS NULL AND n.vault_id IS NULL)
   SELECT id FROM tree`;
 
 /** The areas of `area` (or every one the person reads) → [area ids]; an area not readable: not_found. */
@@ -237,11 +239,13 @@ function beforeArg(v) {
  * One page of photos below the filter `where` (with `args`) → { rows, next }: newest first, the page extended by the
  * photos of its last moment. `from`: the table as the statements name it — 'nodes INDEXED BY nodes_taken' for a span of
  * time (memories.js, since 1.26.0), else 'nodes'.
+ * Since 1.29.1 the page is found in the index alone (its ids: nodes_memories holds what the filters ask) and only its
+ * rows are read — before, the row of every photo of the areas was read to sort them (50 000 photos: 50 000 rows a page).
  */
 async function page(gc, where, args, before, limit, from = 'nodes') {
   const cond = before == null ? '' : ` AND ${TAKEN} < ?`;
-  const rows = await store.all(gc, `SELECT * FROM ${from} WHERE ${where}${cond} ORDER BY ${TAKEN} DESC, id DESC LIMIT ?`,
-    [...args, ...(before == null ? [] : [before]), limit + 1]);
+  const rows = await store.all(gc, `SELECT * FROM nodes WHERE id IN (SELECT id FROM ${from} WHERE ${where}${cond} ORDER BY ${TAKEN} DESC, id DESC LIMIT ?)
+    ORDER BY ${TAKEN} DESC, id DESC`, [...args, ...(before == null ? [] : [before]), limit + 1]);
   if (rows.length <= limit) return { rows, next: null };
   const out = rows.slice(0, limit);
   const last = out[out.length - 1];
@@ -390,7 +394,8 @@ async function memories(ctx, q) {
       const day = new Date(y - k, m, d);
       const start = new Date(y - k, m, d - 1).getTime();
       const end = new Date(y - k, m, d + 2).getTime();
-      const rows = await store.all(ctx.gc, `SELECT * FROM nodes WHERE ${where} AND ${TAKEN} >= ? AND ${TAKEN} < ? ORDER BY ${TAKEN}, id LIMIT ?`,
+      // a span of three days: along the index of the time taken (1.29.1, as memories.js) — not every photo of the areas
+      const rows = await store.all(ctx.gc, `SELECT * FROM nodes INDEXED BY nodes_taken WHERE ${where} AND ${TAKEN} >= ? AND ${TAKEN} < ? ORDER BY ${TAKEN}, id LIMIT ?`,
         [...args, start, end, MEMORIES_PER_YEAR]);
       if (rows.length) { groups.push({ yearsAgo: k, date: dayOf(day), rows }); all.push(...rows); }
     }
@@ -418,7 +423,7 @@ async function memoryCovers(ctx, max, moreThan = 0) {
   for (let k = 1; k <= YEARS_MAX && y - k >= fromYear && found.length < max; k++) {
     const start = new Date(y - k, m, d - 1).getTime();
     const end = new Date(y - k, m, d + 2).getTime();
-    const r = await store.one(ctx.gc, `SELECT COUNT(*) OVER () AS n_all, * FROM nodes WHERE ${sc.where} AND ${TAKEN} >= ? AND ${TAKEN} < ? ORDER BY ${TAKEN}, id LIMIT 1`,
+    const r = await store.one(ctx.gc, `SELECT COUNT(*) OVER () AS n_all, * FROM nodes INDEXED BY nodes_taken WHERE ${sc.where} AND ${TAKEN} >= ? AND ${TAKEN} < ? ORDER BY ${TAKEN}, id LIMIT 1`,
       [...sc.args, start, end]);
     if (r && r.n_all > moreThan) found.push({ yearsAgo: k, date: dayOf(new Date(y - k, m, d)), count: r.n_all, row: r });
   }

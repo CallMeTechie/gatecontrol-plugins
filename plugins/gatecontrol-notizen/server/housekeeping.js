@@ -97,9 +97,15 @@ async function purge(gc, ctx) {
     await fts.dropNote(gc, r.id);
     await store.run(gc, 'DELETE FROM notes WHERE id = ?', [r.id]);
   }
-  // notebooks and lists deleted for good: their member rows went with the delete; their own rows go when empty
-  await store.run(gc, 'DELETE FROM notebooks WHERE deleted_at IS NOT NULL AND deleted_at < ? AND NOT EXISTS (SELECT 1 FROM notes WHERE notes.notebook_id = notebooks.id)', [before]);
-  await store.run(gc, 'DELETE FROM lists WHERE deleted_at IS NOT NULL AND deleted_at < ? AND NOT EXISTS (SELECT 1 FROM tasks WHERE tasks.list_id = lists.id)', [before]);
+  // notebooks and lists deleted for good: their member rows went with the delete; their own rows go when empty.
+  // "Empty" is asked of two indexes each (1.2.1, migrations/004_trash_indexes.sql): the rows still there, and the rest
+  // (in the trash; sub-tasks) — one question without them read every note or task, once per notebook or list
+  await store.run(gc, `DELETE FROM notebooks WHERE deleted_at IS NOT NULL AND deleted_at < ?
+    AND NOT EXISTS (SELECT 1 FROM notes INDEXED BY idx_notes_nb WHERE notes.notebook_id = notebooks.id AND notes.deleted_at IS NULL)
+    AND NOT EXISTS (SELECT 1 FROM notes INDEXED BY idx_notes_gone WHERE notes.notebook_id = notebooks.id AND notes.deleted_at IS NOT NULL)`, [before]);
+  await store.run(gc, `DELETE FROM lists WHERE deleted_at IS NOT NULL AND deleted_at < ?
+    AND NOT EXISTS (SELECT 1 FROM tasks INDEXED BY idx_tasks_list WHERE tasks.list_id = lists.id AND tasks.deleted_at IS NULL AND tasks.parent_id IS NULL)
+    AND NOT EXISTS (SELECT 1 FROM tasks INDEXED BY idx_tasks_rest WHERE tasks.list_id = lists.id AND (tasks.deleted_at IS NOT NULL OR tasks.parent_id IS NOT NULL))`, [before]);
   await store.run(gc, 'DELETE FROM my_day WHERE user_id IN (SELECT DISTINCT user_id FROM my_day) AND day < ?', [tz.addDays(ctx.today, -7)]);
   await clientIds.purge(gc, ctx.now);
   return ts.length + ns.length;

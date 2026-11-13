@@ -1,7 +1,7 @@
 'use strict';
 
-// The background run (permissions.background, every minute since 1.8.0 — the housekeeping below every 5 minutes, meta
-// housekeeping_at):
+// The background run (permissions.background, every minute since 1.8.0 — the housekeeping below every 5 minutes; meta
+// housekeeping_at keeps its time over a restart, written at most once an hour since 1.29.1):
 //   * the trash: what was deleted more than trash_days ago goes for good (files and their versions);
 //   * versions older than versions_days go;
 //   * the NAS journals are read (in case a call of the hook mediaChanged was missed);
@@ -43,14 +43,33 @@ const homecache = require('./homecache');
 const DAY = 86400000;
 const BATCH = 200;
 const HOUSEKEEPING_MS = 290000;
+// how often the time of the housekeeping is written down for the next start of the plugin (1.29.1)
+const HOUSEKEEPING_NOTE_MS = 3600000;
 let running = false;
+// per GateControl handle { last: the last housekeeping, noted: what meta housekeeping_at says }
+const kept = new WeakMap();
 
-/** Is the housekeeping due (5 minutes after the last one; a clock set back counts as due)? Notes this run. */
+const within = (at, now, ms) => Number.isFinite(at) && now >= at && now - at < ms;
+
+/**
+ * Is the housekeeping due (5 minutes after the last one; a clock set back counts as due)? Notes this run — in this
+ * process; in the database (meta housekeeping_at, read at the start of the plugin) at most once an hour since 1.29.1:
+ * the note was a write every 5 minutes, day and night, and on a slow disk the plugin's most frequent slow statement.
+ * A restart of the plugin within that hour runs the housekeeping once more at once — it never runs less often.
+ */
 async function housekeepingDue(gc, now) {
-  const r = await store.one(gc, "SELECT value FROM meta WHERE key = 'housekeeping_at'");
-  const last = r ? Number(r.value) : NaN;
-  if (Number.isFinite(last) && now >= last && now - last < HOUSEKEEPING_MS) return false;
-  await store.run(gc, "INSERT INTO meta (key, value) VALUES ('housekeeping_at', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value", [String(now)]);
+  let k = kept.get(gc);
+  if (!k) {
+    const r = await store.one(gc, "SELECT value FROM meta WHERE key = 'housekeeping_at'");
+    const last = r ? Number(r.value) : NaN;
+    kept.set(gc, k = { last, noted: last });
+  }
+  if (within(k.last, now, HOUSEKEEPING_MS)) return false;
+  k.last = now;
+  if (!within(k.noted, now, HOUSEKEEPING_NOTE_MS)) {
+    await store.run(gc, "INSERT INTO meta (key, value) VALUES ('housekeeping_at', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value", [String(now)]);
+    k.noted = now;
+  }
   return true;
 }
 
@@ -117,4 +136,4 @@ async function housekeeping(gc, settings, now) {
   return { purged, versions: old.length, synced, wipesExpired: wiped.expired, wipesDropped: wiped.dropped, markedTrashed: marked.trashed, incidentsRemoved: incidents };
 }
 
-module.exports = { tick };
+module.exports = { tick, HOUSEKEEPING_NOTE_MS };

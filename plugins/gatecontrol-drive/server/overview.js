@@ -196,7 +196,8 @@ async function todo(ctx) {
 
 /** The first seq of the change log at or after `at` (the log is in time order: a binary search on seq). */
 async function seqFrom(gc, at) {
-  const b = await store.one(gc, 'SELECT MIN(seq) AS lo, MAX(seq) AS hi FROM changes');
+  // each end by itself (1.29.1): SQLite finds one MIN or MAX at the end of the table, both in one statement read the log
+  const b = await store.one(gc, 'SELECT (SELECT MIN(seq) FROM changes) AS lo, (SELECT MAX(seq) FROM changes) AS hi');
   if (!b || b.hi == null) return null;
   let lo = b.lo;
   let hi = b.hi + 1;

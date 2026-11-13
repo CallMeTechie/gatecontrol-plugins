@@ -133,4 +133,28 @@ function docText(v) {
   return t ? t.slice(0, TEXT_MAX) : null;
 }
 
-module.exports = { STATUS, fail, isKnown, posInt, nonNeg, line, nodeName, numbered, MEDIA_RE, SHA_RE, DEVICE_RE, EMPTY_SHA, msArg, iso, day, docText, TEXT_MAX };
+// "last seen" and the like (1.29.1): per GateControl handle, key → { from, until } — the span in which the write is
+// known not to be due. Only in this process: after a restart of the plugin the statement runs once and its own WHERE
+// decides as before.
+const seldomOf = new WeakMap();
+const SELDOM_MAX = 5000;
+const SELDOM_RETRY_MS = 60000;
+
+/**
+ * Runs the write `fn` (→ { changes }) for `key` at most every `everyMs`: after a write that changed a row not again
+ * for `everyMs`; after one that changed nothing (not due yet by what the database says, or no such row) again after a
+ * minute. → the answer of fn, null when it did not run. A statement that changes nothing still waits for the
+ * database's write lock — with every request of an app that adds up on a slow disk.
+ */
+async function seldom(gc, key, now, everyMs, fn) {
+  let m = seldomOf.get(gc);
+  if (!m) seldomOf.set(gc, m = new Map());
+  const span = m.get(key);
+  if (span && now >= span.from && now < span.until) return null;
+  const r = await fn();
+  if (m.size >= SELDOM_MAX) m.clear();
+  m.set(key, { from: now, until: now + (r && r.changes ? everyMs : Math.min(everyMs, SELDOM_RETRY_MS)) });
+  return r;
+}
+
+module.exports = { STATUS, fail, isKnown, posInt, nonNeg, line, nodeName, numbered, MEDIA_RE, SHA_RE, DEVICE_RE, EMPTY_SHA, msArg, iso, day, docText, TEXT_MAX, seldom, SELDOM_RETRY_MS };

@@ -1,4 +1,4 @@
-<!-- version: 1.29.0 -->
+<!-- version: 1.29.1 -->
 # Drive
 
 ## What the plugin does
@@ -120,6 +120,12 @@ Full screen in the portal needs GateControl 1.244.0. Older versions show the vid
 
 **At home the photos do not show up faster.**
 The previews reach the gateway bit by bit (a few hundred per run, every 15 minutes). Check at the gateway under **Gateways › Home cache** that it is “on” and that “Photos” or “Drive” are switched on. Previews from the home network need GateControl 1.249.0 and a current app.
+
+## New in 1.29.1
+
+- **Faster on slow disks:** the photo pages, the overview and the deadlines read far less from the disk – above all with a great many photos and when you use a work folder or the camera folder.
+- **Fewer writes in the background:** Drive writes its internal notes only when something changed and puts the entries for the home cache together. This eases servers whose disk is slow to write (fewer warnings “slow plugin database statements” in the log).
+- **Nothing changes for you:** looks and handling stay the same. The update sets itself up when installed; even with a large photo collection this takes only a moment.
 
 ## New in 1.29.0
 

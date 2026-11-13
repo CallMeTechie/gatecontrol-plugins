@@ -390,9 +390,8 @@ test('memories, people and places of the overview; people null while the switch 
 // GET overview costs about half of what reading every node (4 000) costs; three times that is a request gone wrong
 const UNITS_MAX = 3;
 // read as a whole on purpose
-const WHOLE = [
-  /^SCAN changes USING COVERING INDEX changes_area ← SELECT MIN\(seq\) AS lo, MAX\(seq\) AS hi FROM changes$/, // the ends of the change log: one pass over its index
-];
+// (until 1.29.0: the ends of the change log, one pass over its index — since 1.29.1 each end is found by itself)
+const WHOLE = [];
 
 test('GET overview with some thousand nodes stays cheap: no table read as a whole, a fixed number of statements', async (t) => {
   await withHost({}, async (host, c) => {
