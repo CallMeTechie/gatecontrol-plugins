@@ -39,9 +39,9 @@ const photos = () => require('./photos');
 
 const HINT_MAX = 100;
 
-// the live folders of a tree (`?` its top), never into a vault (as photos.js TREE)
+// the live folders of a tree (`?` its top), never into a vault (as photos.js TREE: along the index of the folders)
 const TREE = `WITH RECURSIVE tree(id) AS (SELECT ?
-    UNION ALL SELECT n.id FROM nodes n JOIN tree ON n.parent_id = tree.id WHERE n.is_dir = 1 AND n.deleted_at IS NULL AND n.vault_id IS NULL)
+    UNION ALL SELECT n.id FROM nodes n INDEXED BY nodes_dirs JOIN tree ON n.parent_id = tree.id WHERE n.is_dir = 1 AND n.deleted_at IS NULL AND n.vault_id IS NULL)
   SELECT id FROM tree`;
 
 const DEFAULTS = { workFolder: null, workSubfolders: true, workInMemories: false, keepGeo: true, people: false, peopleKids: false };

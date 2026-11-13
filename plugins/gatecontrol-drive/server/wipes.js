@@ -17,7 +17,7 @@
 // lists (their token was removed) once Drive has not seen them for GONE_DAYS.
 
 const store = require('./store');
-const { fail, posInt, iso } = require('./util');
+const { fail, posInt, iso, seldom } = require('./util');
 
 const DAY = 86400000;
 const DEVICE_DAYS = 180;
@@ -29,13 +29,17 @@ const DONE_MAX = 1000;
 const SEEN_EVERY_MS = 10 * 60000;
 const CHUNK = 100;
 
-/** An app request from `device` of `userId`: remember the device (a write at most every 10 minutes per device). */
+/**
+ * An app request from `device` of `userId`: remember the device (a write at most every 10 minutes per device). Since
+ * 1.29.1 the statement itself runs only when it may be due (util.seldom): it was sent with every request of an app, and
+ * although it changed nothing it waited for the database's write lock — up to a second on a slow disk.
+ */
 async function seen(gc, userId, device, platform, now) {
   if (!device) return;
   const pf = typeof platform === 'string' && /^[a-z0-9]{1,16}$/.test(platform) ? platform : null;
-  await store.run(gc, `INSERT INTO devices (user_id, device_id, platform, first_seen, last_seen) VALUES (?, ?, ?, ?, ?)
+  await seldom(gc, `wipes:${userId}:${device}:${pf || ''}`, now, SEEN_EVERY_MS, () => store.run(gc, `INSERT INTO devices (user_id, device_id, platform, first_seen, last_seen) VALUES (?, ?, ?, ?, ?)
     ON CONFLICT (user_id, device_id) DO UPDATE SET last_seen = excluded.last_seen, platform = COALESCE(excluded.platform, devices.platform)
-    WHERE devices.last_seen <= excluded.last_seen - ?`, [userId, device, pf, now, now, SEEN_EVERY_MS]);
+    WHERE devices.last_seen <= excluded.last_seen - ?`, [userId, device, pf, now, now, SEEN_EVERY_MS]));
 }
 
 /** The person's devices that are targets of a new wipe (seen in the last DEVICE_DAYS days). */

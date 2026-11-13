@@ -472,7 +472,8 @@ async function forNewNode(ctx, parent, b, { needName = true } = {}) {
  */
 async function toRoots(gc, now = Date.now()) {
   const touched = new Set();
-  const rows = await store.all(gc, `SELECT n.* FROM vaults v JOIN nodes n ON n.id = v.node_id JOIN areas a ON a.id = n.area_id
+  // from the vaults to their folders (CROSS JOIN keeps that order, 1.29.1): SQLite read every node to find them — every minute
+  const rows = await store.all(gc, `SELECT n.* FROM vaults v CROSS JOIN nodes n ON n.id = v.node_id CROSS JOIN areas a ON a.id = n.area_id
     WHERE n.deleted_at IS NULL AND a.root_id IS NOT NULL AND n.parent_id <> a.root_id ORDER BY n.id LIMIT 100`);
   for (const n of rows) {
     const ctx = { gc, viewer: null, deviceId: null, now, touched: new Set() };
