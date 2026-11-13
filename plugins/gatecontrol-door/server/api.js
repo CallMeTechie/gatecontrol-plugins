@@ -74,8 +74,7 @@ async function me(gc, c) {
   const cams = await visibleCameras(gc, c);
   const camPrefs = new Map();
   for (const p of await store.all(gc, 'SELECT camera_id, ding, motion FROM camera_prefs WHERE user_id = ?', [c.user.id])) camPrefs.set(p.camera_id, { ding: p.ding === 1, motion: p.motion === 1 });
-  const lastAt = new Map();
-  for (const m of await store.all(gc, 'SELECT camera_id, MAX(at) AS at FROM media WHERE expires_at > ? GROUP BY camera_id', [c.now])) lastAt.set(m.camera_id, m.at);
+  const lastAt = await history.lastMediaAt(gc, c.now);
   const st = await cameras.status(gc, c.now);
   return {
     me: {

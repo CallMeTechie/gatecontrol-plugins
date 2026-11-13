@@ -2,6 +2,46 @@
 
 Dateien der Familie und des Teams auf dem eigenen Speicher – auf diesem Server, einer NAS oder in S3.
 
+## 1.29.1
+
+Weniger Lese- und Schreibarbeit auf einem langsamen Datenträger. Anlass: das Protokoll von GateControl („slow plugin
+database statements“) auf einem Server mit langsamer Platte. Gemessen an einem Test-Drive mit 50 000 Fotos, 5 000
+Dokumenten, 3 Tresoren und 200 000 Einträgen im Änderungsprotokoll (41 MB Datenbank; „gelesen“ = was SQLite mit leerem
+Zwischenspeicher von der Platte holt). An der Oberfläche und an den Antworten der API ändert sich nichts.
+
+- **Eine Seite Fotos** (`GET photos`, Alben, Erinnerungen): Die Seite wird jetzt im Index gesucht und nur ihre Zeilen
+  werden gelesen. Vorher las SQLite zum Sortieren die Zeile **jedes** Fotos der Bereiche (12 MB → 4 MB je Seite; im
+  Protokoll 1,1 s für 121 Zeilen).
+- **Fotos unter einem Ordner und mit Arbeitsordner** (Kamera-Ordner, „Privat“ / „Arbeit“): Die Ordner eines Baums
+  laufen über den neuen Index `nodes_dirs` (nur Ordner, Migration `023_dirs.sql`). Vorher baute SQLite sich in jeder
+  solchen Anweisung einen Index aller Ordner selbst und las dafür alle Dateien und Ordner (25 MB → 4 MB).
+- **„Heute vor X Jahren“:** die Fotos eines Tages über den Index der Aufnahmezeit (3,7 MB → 0,15 MB je Jahr).
+- **Fristen** (Übersicht, `GET deadlines`, Abgleich mit „Notizen & Aufgaben“ alle 2 Minuten): von den Fristen zu ihren
+  Dateien statt über jede Datei der Bereiche (56 MB → 0,7 MB; 47 ms → 0,7 ms).
+- **Änderungsprotokoll der Übersicht:** Anfang und Ende einzeln (`MIN` und `MAX` je für sich) statt eines Laufs über
+  das ganze Protokoll (4,2 MB → 0,02 MB).
+- **Tresore außerhalb des obersten Ordners** (Hintergrundlauf, jede Minute): von den Tresoren aus statt über alle
+  Dateien und Ordner (13 MB → 0,03 MB; im Protokoll einmal 5,8 s).
+- **Bestand für den Zwischenspeicher im Heimnetz:** eine Abfrage der neuesten Fotos statt zwei, und nur die 13 Spalten,
+  die der Bestand braucht, statt aller 39 (Antwort an das Plugin 9 MB → 2,6 MB je Lauf).
+- **Schreiben nur bei Änderung:**
+  - Die Zeit der Aufräumrunde (`meta housekeeping_at`) steht höchstens einmal je Stunde in der Datenbank statt alle
+    5 Minuten – das war der häufigste langsame Schreibzugriff im Protokoll. Die Aufräumrunde läuft wie bisher alle
+    5 Minuten; nach einem Neustart des Plugins innerhalb der Stunde läuft sie einmal sofort.
+  - Zwischenspeicher: Was ein Lauf anbietet und zurückzieht, wird in **einer Transaktion** geschrieben (vorher ein
+    Schreibzugriff je Datei, bis zu 250 je Lauf). „Es gibt noch mehr zu tun“ und „fehlgeschlagen, gleich noch einmal“
+    merkt sich das Plugin im Arbeitsspeicher statt in `meta`; die Zeit des Laufs steht nur noch im Zustand
+    (`home_cache_state`, der Schlüssel `home_cache_at` entfällt). Ein Lauf, der wie der vorige scheitert, schreibt den
+    Zustand erst nach 15 Minuten wieder.
+  - „Zuletzt gesehen“ der Geräte: Innerhalb von 10 Minuten nach dem Schreiben wird gar keine Anweisung mehr geschickt.
+    Vorher ging sie mit jeder Anfrage einer App an die Datenbank und wartete dort auf die Schreibsperre, obwohl sie
+    nichts änderte (im Protokoll bis 0,9 s). Geschrieben wird weiterhin höchstens alle 10 Minuten.
+- **Migration `023_dirs.sql`:** ein Index nur über die Ordner. Das Anlegen liest die Tabelle der Dateien einmal und
+  schreibt eine Handvoll Seiten (Test-Drive: 10 ms, 4 KB); eine Datei, die hochgeladen oder geändert wird, schreibt
+  ihn nie.
+- Tests: `test/big_speed.test.js` (Abfragepläne und dieselben Zeilen wie 1.29.0 auf denselben Daten, Migration mit
+  Altdaten), `test/writes.test.js` (Schreibzugriffe).
+
 ## 1.29.0
 
 - **Office-Dateien im Tresor ansehen (Portal):** Ein Klick auf eine Word-, Excel-, PowerPoint- oder OpenDocument-Datei

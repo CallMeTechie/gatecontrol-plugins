@@ -21,7 +21,7 @@
 const store = require('./store');
 const areas = require('./areas');
 const nodes = require('./nodes');
-const { fail, posInt, msArg, line, numbered, DEVICE_RE, iso } = require('./util');
+const { fail, posInt, msArg, line, numbered, DEVICE_RE, iso, seldom } = require('./util');
 
 const FOLDER = 'Geräte';
 const MAX_DEVICES = 50;
@@ -193,7 +193,9 @@ async function remove(ctx, rawId) {
 /** A request of device token `device`: the registered device it belongs to was seen (at most every 10 minutes). */
 async function seen(gc, userId, device, now) {
   if (!device) return;
-  await store.run(gc, 'UPDATE user_devices SET last_seen = ? WHERE user_id = ? AND token_device = ? AND last_seen <= ?', [now, userId, device, now - SEEN_EVERY_MS]);
+  // only when it may be due (1.29.1, util.seldom): not a statement that waits for the write lock with every request
+  await seldom(gc, `devices:${userId}:${device}`, now, SEEN_EVERY_MS,
+    () => store.run(gc, 'UPDATE user_devices SET last_seen = ? WHERE user_id = ? AND token_device = ? AND last_seen <= ?', [now, userId, device, now - SEEN_EVERY_MS]));
 }
 
 module.exports = { put, list, setFolders, remove, seen, FOLDER, MAX_DEVICES, MAX_FOLDERS };

@@ -58,10 +58,14 @@ async function get(gc, userId) {
   return normalize(parse(r && r.json, {}));
 }
 
+// how often "used the hub" is written down: it is asked for 30 days back (sources.js), so once in 12 hours is as good
+// as once an hour (before 1.2.1) — a write less with every hour someone has the hub open
+const TOUCH_MS = 12 * 3600000;
+
 /** The person used the hub now (reconciliations only for people who did within 30 days). */
 async function touch(gc, userId, now) {
   const r = await store.one(gc, 'SELECT updated_at FROM prefs WHERE user_id = ?', [userId]);
-  if (r && now - r.updated_at < 3600000) return false;
+  if (r && now >= r.updated_at && now - r.updated_at < TOUCH_MS) return false;
   await store.run(gc, 'INSERT INTO prefs (user_id, json, updated_at) VALUES (?, ?, ?) ON CONFLICT(user_id) DO UPDATE SET updated_at = excluded.updated_at', [userId, '{}', now]);
   return !r;
 }
@@ -75,8 +79,12 @@ async function put(gc, ctx, b) {
   if (b.sources && typeof b.sources === 'object') for (const [p, s] of Object.entries(b.sources)) merged.sources[p] = { ...(cur.sources[p] || {}), ...(s || {}) };
   for (const [k, v] of Object.entries(merged.groups)) if (v === null) delete merged.groups[k];
   const n = normalize(merged);
-  await store.run(gc, 'INSERT INTO prefs (user_id, json, updated_at) VALUES (?, ?, ?) ON CONFLICT(user_id) DO UPDATE SET json = excluded.json, updated_at = excluded.updated_at', [ctx.userId, JSON.stringify(n), ctx.now]);
+  const json = JSON.stringify(n);
+  // the same choices again (an app sends the area with every start): nothing to write (1.2.1) — but "used the hub"
+  const have = await store.one(gc, 'SELECT json FROM prefs WHERE user_id = ?', [ctx.userId]);
+  if (have && have.json === json) { await touch(gc, ctx.userId, ctx.now); return { prefs: n }; }
+  await store.run(gc, 'INSERT INTO prefs (user_id, json, updated_at) VALUES (?, ?, ?) ON CONFLICT(user_id) DO UPDATE SET json = excluded.json, updated_at = excluded.updated_at', [ctx.userId, json, ctx.now]);
   return { prefs: n };
 }
 
-module.exports = { get, put, touch, normalize, DEFAULTS };
+module.exports = { get, put, touch, normalize, DEFAULTS, TOUCH_MS };

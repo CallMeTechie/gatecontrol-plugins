@@ -1,5 +1,10 @@
-<!-- version: 1.2.0 -->
+<!-- version: 1.2.1 -->
 # Notizen & Aufgaben
+
+## Neu in 1.2.1
+
+- **Schneller auf langsamen Datenträgern:** Das stündliche Aufräumen des Papierkorbs liest nicht mehr alle Notizen und Aufgaben durch, und das Plugin schreibt seltener in seine Datenbank. Das entlastet Server, deren Datenträger langsam ist.
+- **Für dich ändert sich nichts:** Aussehen und Bedienung bleiben gleich; der Papierkorb leert sich wie bisher nach 30 Tagen.
 
 ## Neu in 1.2.0
 

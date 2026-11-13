@@ -69,9 +69,21 @@ const HINTS_BATCH = 500;
 const PREVIEW_KEY = { small: 'ps:', large: 'pl:' };
 const KINDS = new Set(['drive', 'photos', 'vault']);
 const SHA_RE = /^[0-9a-f]{64}$/;
-const MEDIA_SQL = "(COALESCE(mime, '') LIKE 'image/%' OR COALESCE(mime, '') LIKE 'video/%')";
+const MEDIA_SQL = "(mime LIKE 'image/%' OR mime LIKE 'video/%')";
 // a file that can be offered: current content with media, not in the trash
 const FILE_SQL = 'is_dir = 0 AND deleted_at IS NULL AND media_id IS NOT NULL AND size > 0';
+// what the stock asks of a node (1.29.1; before: every column of up to 12 000 rows every run, which GateControl copies
+// out of its database worker in one go)
+const COLS = ['id', 'area_id', 'is_dir', 'media_id', 'size', 'sha256', 'mime', 'vault_id', 'taken_at', 'mtime', 'created_at', 'content_at', 'updated_at'];
+const cols = (alias) => COLS.map((c) => (alias ? `${alias}.${c}` : c)).join(', ');
+// rows of home_cache one INSERT writes (10 values each; GateControl takes 100 parameters a statement)
+const WRITE_ROWS = 9;
+
+// What only this process knows (1.29.1 — the fewer writes the better on a slow disk): per GateControl handle
+// { again: the next run comes in a minute (the last one had more to do or failed), at: the last run }. After a restart
+// of the plugin the stored state counts (home_cache_state.at): the run then comes within RUN_MS at the latest.
+const memory = new WeakMap();
+const mem = (gc) => { let m = memory.get(gc); if (!m) memory.set(gc, m = { again: false, at: null }); return m; };
 
 /** Is GateControl's home cache there for Drive (GateControl ≥ 1.231.0, permissions.homeCache confirmed)? */
 function available(gc) {
@@ -238,7 +250,7 @@ const takenOf = (n) => (n.taken_at != null ? n.taken_at : (n.mtime != null ? n.m
 async function rowsByIds(gc, ids) {
   const out = [];
   for (const part of store.chunks([...new Set(ids)])) {
-    out.push(...await store.all(gc, `SELECT * FROM nodes WHERE id IN (${store.marks(part.length)}) AND ${FILE_SQL}`, part));
+    out.push(...await store.all(gc, `SELECT ${cols()} FROM nodes WHERE id IN (${store.marks(part.length)}) AND ${FILE_SQL}`, part));
   }
   return out;
 }
@@ -248,7 +260,7 @@ function filesBelow(gc, id, max) {
   return store.all(gc, `WITH RECURSIVE d(id) AS (
       SELECT id FROM nodes WHERE parent_id = ? AND deleted_at IS NULL
       UNION ALL SELECT n.id FROM nodes n JOIN d ON n.parent_id = d.id WHERE n.deleted_at IS NULL)
-    SELECT n.* FROM nodes n JOIN d ON n.id = d.id WHERE n.${FILE_SQL.replace(/ AND /g, ' AND n.')} LIMIT ?`, [id, max]);
+    SELECT ${cols('n')} FROM nodes n JOIN d ON n.id = d.id WHERE n.${FILE_SQL.replace(/ AND /g, ' AND n.')} LIMIT ?`, [id, max]);
 }
 
 /**
@@ -282,7 +294,7 @@ async function wanted(gc, now, settings, { previews = false } = {}) {
     cand.set(n.id, c);
   };
   // offline: files and what is below folders
-  const pinRows = await store.all(gc, 'SELECT p.user_id, n.* FROM offline_pins p JOIN nodes n ON n.id = p.node_id WHERE n.deleted_at IS NULL ORDER BY p.at DESC');
+  const pinRows = await store.all(gc, `SELECT p.user_id, ${cols('n')} FROM offline_pins p JOIN nodes n ON n.id = p.node_id WHERE n.deleted_at IS NULL ORDER BY p.at DESC`);
   for (const p of pinRows) {
     if (cand.size >= CAND_MAX) break;
     const list = p.is_dir === 1 ? await filesBelow(gc, p.id, PIN_FILES_MAX) : (p.media_id && p.size > 0 ? [p] : []);
@@ -298,10 +310,12 @@ async function wanted(gc, now, settings, { previews = false } = {}) {
     const n = byId.get(r.node_id);
     if (n) await add(n, now - r.at <= 7 * DAY ? PRIO.recent7 : PRIO.recent, 'drive', r.user_id);
   }
-  // photos of the last 90 days (not a vault's), newest first
-  const photos = await store.all(gc, `SELECT * FROM nodes WHERE is_dir = 0 AND deleted_at IS NULL AND vault_id IS NULL AND ${MEDIA_SQL}
-    AND media_id IS NOT NULL AND size > 0 AND COALESCE(taken_at, mtime, created_at) >= ? ORDER BY COALESCE(taken_at, mtime, created_at) DESC LIMIT ?`,
-  [now - PHOTO_DAYS * DAY, PHOTOS_MAX]);
+  // photos of the last 90 days (not a vault's), newest first. With previews the newest PREVIEW_PHOTOS photos are read
+  // for the grid anyway (below): the photos of 90 days are the first of them (1.29.1: one statement, not two)
+  const PHOTO_SQL = `SELECT ${cols()} FROM nodes WHERE is_dir = 0 AND deleted_at IS NULL AND vault_id IS NULL AND ${MEDIA_SQL} AND media_id IS NOT NULL AND size > 0`;
+  const grid = previews ? await store.all(gc, `${PHOTO_SQL} ORDER BY COALESCE(taken_at, mtime, created_at) DESC LIMIT ?`, [PREVIEW_PHOTOS]) : null;
+  const photos = grid && PREVIEW_PHOTOS >= PHOTOS_MAX ? grid.filter((n) => takenOf(n) >= now - PHOTO_DAYS * DAY).slice(0, PHOTOS_MAX)
+    : await store.all(gc, `${PHOTO_SQL} AND COALESCE(taken_at, mtime, created_at) >= ? ORDER BY COALESCE(taken_at, mtime, created_at) DESC LIMIT ?`, [now - PHOTO_DAYS * DAY, PHOTOS_MAX]);
   for (const n of photos) await add(n, now - takenOf(n) <= 30 * DAY ? PRIO.photo30 : PRIO.photo, 'photos', null);
 
   // one offer per content: its people united, the highest priority (and its kind)
@@ -350,8 +364,6 @@ async function wanted(gc, now, settings, { previews = false } = {}) {
     if (!out.has(key) || !isMedia(c.n)) continue;
     addPreview(key, c.n, c.kind, c.involved, c.prio >= PRIO.photo30, takenOf(c.n));
   }
-  const grid = await store.all(gc, `SELECT * FROM nodes WHERE is_dir = 0 AND deleted_at IS NULL AND vault_id IS NULL AND ${MEDIA_SQL}
-    AND media_id IS NOT NULL AND size > 0 ORDER BY COALESCE(taken_at, mtime, created_at) DESC LIMIT ?`, [PREVIEW_PHOTOS]);
   for (const n of grid) {
     if (blocked.has(n.media_id)) continue;
     const rs = await readers(n.area_id);
@@ -378,16 +390,59 @@ const pause = () => new Promise((resolve) => setImmediate(resolve));
 // errors of one file: the next file goes on (GateControl's media is gone, the file has no sha256 …)
 const ONE_FILE = new Set(['ERR_NOT_FOUND', 'ERR_INVALID']);
 
-/** Is a run due (every RUN_MS; at once when marked dirty or the last run had more to do)? */
-async function due(gc, now) {
-  if ((await meta(gc, 'home_cache_dirty')) === '1') return true;
-  const last = Number(await meta(gc, 'home_cache_at'));
-  return !(Number.isFinite(last) && now >= last && now - last < RUN_MS);
+async function state(gc) {
+  try { const st = JSON.parse((await meta(gc, 'home_cache_state')) || 'null'); return st && typeof st === 'object' ? st : null; } catch { return null; }
 }
 
+/**
+ * Is a run due (every RUN_MS; at once when marked dirty or the last run had more to do or failed)? The last run: what
+ * this process knows, after a restart home_cache_state.at (1.29.1; the key home_cache_at of older versions is no
+ * longer written — one write a run less).
+ */
+async function due(gc, now) {
+  const m = mem(gc);
+  if (m.again || (await meta(gc, 'home_cache_dirty')) === '1') return true;
+  if (m.at == null) { const st = await state(gc); m.at = st && Number.isFinite(st.at) ? st.at : NaN; }
+  return !(Number.isFinite(m.at) && now >= m.at && now - m.at < RUN_MS);
+}
+
+/**
+ * The state of the last run for the administrator (summary). A run that failed like the one before it writes it again
+ * only after RUN_MS — not every minute while GateControl cannot be reached.
+ */
 async function saveState(gc, now, extra) {
   const n = await store.one(gc, 'SELECT COUNT(*) AS n, COALESCE(SUM(size), 0) AS bytes FROM home_cache WHERE offered = 1 AND preview IS NULL');
-  await setMeta(gc, 'home_cache_state', JSON.stringify({ at: now, files: n.n, bytes: n.bytes, ...extra }));
+  const next = { at: now, files: n.n, bytes: n.bytes, ...extra };
+  if (next.error) {
+    const st = await state(gc);
+    if (st && st.error === next.error && st.files === next.files && st.bytes === next.bytes && Number.isFinite(st.at) && now >= st.at && now - st.at < RUN_MS) return;
+  }
+  await setMeta(gc, 'home_cache_state', JSON.stringify(next));
+}
+
+const HC_SQL = `INSERT INTO home_cache (key, media_id, sha256, size, kind, priority, users, offered, at, preview) VALUES %s
+  ON CONFLICT(key) DO UPDATE SET media_id = excluded.media_id, sha256 = excluded.sha256, size = excluded.size, kind = excluded.kind,
+    priority = excluded.priority, users = excluded.users, offered = excluded.offered, at = excluded.at, preview = excluded.preview`;
+
+/**
+ * What a run changed in home_cache — rows gone (`gone`: keys) and rows offered (`rows`: their ten values each) — in one
+ * transaction, several rows a statement (1.29.1; before: one write per file, up to 250 a run). In the order they
+ * happened: a key that went and came back in the same run is there.
+ */
+async function writeStock(gc, pending) {
+  const list = pending.splice(0);
+  if (!list.length) return;
+  await store.tx(gc, async () => {
+    let i = 0;
+    while (i < list.length) {
+      const kind = list[i].gone ? 'gone' : 'row';
+      const part = [];
+      const max = kind === 'gone' ? store.CHUNK : WRITE_ROWS;
+      while (i < list.length && part.length < max && (list[i].gone ? 'gone' : 'row') === kind) part.push(list[i++]);
+      if (kind === 'gone') await store.run(gc, `DELETE FROM home_cache WHERE key IN (${store.marks(part.length)})`, part.map((x) => x.gone));
+      else await store.run(gc, HC_SQL.replace('%s', part.map(() => '(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').join(', ')), part.flatMap((x) => x.row));
+    }
+  });
 }
 
 /**
@@ -396,6 +451,9 @@ async function saveState(gc, now, extra) {
  */
 async function tick(gc, now = Date.now(), settings = null) {
   if (!available(gc)) return { skipped: 'unavailable' };
+  const m = mem(gc);
+  // what the run changed in home_cache, written together (writeStock) — also what a run that fails had done by then
+  const pending = [];
   try {
     if (!(await due(gc, now))) return { skipped: 'not_due' };
     if (!(await people.licence(gc)).valid) return { skipped: 'not_licensed' };
@@ -403,6 +461,7 @@ async function tick(gc, now = Date.now(), settings = null) {
     await store.run(gc, 'DELETE FROM cache_uses WHERE at < ?', [now - RECENT_DAYS * DAY]);
     // dirty off before the work: a change during the run marks it again
     await setMeta(gc, 'home_cache_dirty', '0');
+    m.again = false;
     const withPreviews = previewsAvailable(gc);
     const want = await wanted(gc, now, settings || await areas.settingsOf(gc), { previews: withPreviews });
     const have = new Map((await store.all(gc, 'SELECT * FROM home_cache')).map((r) => [r.key, r]));
@@ -411,7 +470,7 @@ async function tick(gc, now = Date.now(), settings = null) {
     if (!withPreviews) {
       for (const [key, r] of have) {
         if (!r.preview) continue;
-        await store.run(gc, 'DELETE FROM home_cache WHERE key = ?', [key]);
+        pending.push({ gone: key });
         have.delete(key);
       }
     }
@@ -443,7 +502,7 @@ async function tick(gc, now = Date.now(), settings = null) {
       try { await (r.preview ? H.withdraw(r.media_id, { preview: r.preview }) : H.withdraw(r.media_id)); } catch (e) {
         if (!ONE_FILE.has(e && e.code)) throw e;
       }
-      await store.run(gc, 'DELETE FROM home_cache WHERE key = ?', [key]);
+      pending.push({ gone: key });
       out.withdrawn++;
     }
     // then what is new or changed, the highest priority first
@@ -470,26 +529,26 @@ async function tick(gc, now = Date.now(), settings = null) {
         // a stale row of this content goes; GateControl drops the offer of a deleted file itself
         if (r) {
           try { await (r.preview ? H.withdraw(r.media_id, { preview: r.preview }) : H.withdraw(r.media_id)); } catch { /* best effort */ }
-          await store.run(gc, 'DELETE FROM home_cache WHERE key = ?', [w.key]);
+          pending.push({ gone: w.key });
         }
         continue;
       }
       const sha = got && typeof got.sha256 === 'string' && SHA_RE.test(got.sha256.toLowerCase()) ? got.sha256.toLowerCase() : null;
       const size = got && Number.isSafeInteger(got.size) ? got.size : 0;
-      await store.run(gc, `INSERT INTO home_cache (key, media_id, sha256, size, kind, priority, users, offered, at, preview) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(key) DO UPDATE SET media_id = excluded.media_id, sha256 = excluded.sha256, size = excluded.size, kind = excluded.kind,
-          priority = excluded.priority, users = excluded.users, offered = excluded.offered, at = excluded.at, preview = excluded.preview`,
-      [w.key, mediaId, sha, size, w.kind, w.priority, users, got && got.offered === false ? 0 : 1, now, w.preview || null]);
+      pending.push({ row: [w.key, mediaId, sha, size, w.kind, w.priority, users, got && got.offered === false ? 0 : 1, now, w.preview || null] });
       out.offered++;
     }
-    if (more) await setMeta(gc, 'home_cache_dirty', '1');
-    await setMeta(gc, 'home_cache_at', String(now));
+    await writeStock(gc, pending);
+    // more to do: again in a minute (this process remembers it — no write)
+    m.again = more;
+    m.at = now;
     await saveState(gc, now, { error: null });
     return { ...out, more };
   } catch (e) {
     gc.log.warn('home cache run failed', (e && e.code) || 'error');
     // again in a minute
-    try { await setMeta(gc, 'home_cache_dirty', '1'); await saveState(gc, now, { error: (e && e.code) || 'error' }); } catch { /* nothing */ }
+    m.again = true;
+    try { await writeStock(gc, pending); await saveState(gc, now, { error: (e && e.code) || 'error' }); } catch { /* nothing */ }
     return { error: (e && e.code) || 'error' };
   }
 }
@@ -502,8 +561,7 @@ async function tick(gc, now = Date.now(), settings = null) {
  */
 async function summary(gc) {
   if (!available(gc)) return { available: false, files: 0, bytes: 0, previews: 0, previewBytes: 0, lastRunAt: null, error: null };
-  let st = null;
-  try { st = JSON.parse((await meta(gc, 'home_cache_state')) || 'null'); } catch { st = null; }
+  const st = await state(gc);
   const n = await store.one(gc, 'SELECT COUNT(*) AS n, COALESCE(SUM(size), 0) AS bytes FROM home_cache WHERE offered = 1 AND preview IS NULL');
   const p = await store.one(gc, 'SELECT COUNT(*) AS n, COALESCE(SUM(size), 0) AS bytes FROM home_cache WHERE offered = 1 AND preview IS NOT NULL');
   return { available: true, files: n.n, bytes: n.bytes, previews: p.n, previewBytes: p.bytes, lastRunAt: st && st.at ? iso(st.at) : null, error: (st && st.error) || null };
