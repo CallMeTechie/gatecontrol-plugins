@@ -1,4 +1,4 @@
-<!-- version: 1.2.2 -->
+<!-- version: 1.2.3 -->
 # NAS (Synology)
 
 ## Was das Plugin kann
@@ -78,6 +78,13 @@ DSM sperrt Adressen nach wiederholten Fehlanmeldungen. Prüfe Benutzername und P
 
 **GateDrop kann nichts ablegen.**
 Der Ordner ist nicht unter „Ablage für GateDrop“ freigegeben, oder dem DSM-Konto fehlt das Schreibrecht.
+
+## Neu in 1.2.3
+
+- Das Plugin schreibt deutlich seltener auf den Datenträger des Servers (etwa 30 statt rund 500 Schreibvorgänge je Tag und NAS). Das entlastet langsame Datenträger und damit auch die anderen Plugins.
+- Auf der Seite, in den Apps und bei den Mitteilungen ändert sich nichts: Du siehst weiter die Werte jeder Abfrage, und Mitteilungen kommen zum selben Zeitpunkt wie bisher.
+- Gespeichert wird sofort, wenn sich etwas Wesentliches ändert (Zustand von Volume, Speicherpool oder Laufwerk, eine überschrittene Schwelle, Datensicherung, DSM-Update, USV), sonst einmal je Stunde und beim Beenden des Plugins.
+- Nach einem Neustart des Servers steht der zuletzt gespeicherte Stand mit seiner echten Uhrzeit da, bis – nach höchstens einem Abfrageintervall – die erste neue Abfrage durch ist.
 
 ## Neu in 1.2.2
 
