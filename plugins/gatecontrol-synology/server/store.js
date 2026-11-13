@@ -13,15 +13,27 @@ function parseJson(s, fallback) {
   try { const v = JSON.parse(s); return v == null ? fallback : v; } catch { return fallback; }
 }
 
-// ─── Writes kept in memory (1.2.2) ──────────────
-// Every poll stored the whole snapshot (CPU, memory, network change every time) and the poll times of the NAS: two
-// writes a poll, ~300 ms each on a slow disk. Now the snapshot is stored at most every PERSIST_MS (the newest one is
-// kept here and read first), and a change of the poll times alone (last_attempt_at, last_success_at, next_poll_at)
-// as well; a change of anything else (status, error, power) is written at once. After a restart the stored ones (at
-// most PERSIST_MS old) stand until the next poll.
-const PERSIST_MS = 5 * 60000;
+// ─── Writes kept in memory (1.2.2, 1.2.3) ───────
+// 1.2.2 stored the whole snapshot and the poll times of the NAS every 5 minutes: 240–288 of each a day and NAS, the
+// snapshot upsert up to 5 s on a slow disk (GateControl's protocol of 12./13. 11.). Almost all of it was the live
+// values (CPU, memory, temperatures, uptime, bytes used) — the rest of a status changes a few times a day at most.
+// 1.2.3: the newest snapshot and poll times are kept here and read first (the page, the apps and the notifications
+// see every poll as before). The snapshot is stored
+//   * at once when anything but the live values changed (see steadyOf: model, DSM, status of volumes / pools /
+//     drives, backups, update, UPS state, what the page flags — `marks`, the issues by the thresholds of the
+//     settings — or a volume / pool filling by a whole point), and
+//   * otherwise every PERSIST_MS (the live values of the stored one are at most that old), and
+//   * when the plugin stops (flush).
+// The poll times alone (last_attempt_at, last_success_at, next_poll_at) are never a reason to write: they go along
+// with the next write of the row (status, error, power, update check — the check alone is every 6 h) and with flush.
+// After a restart the stored snapshot stands with its own time (fetched_at, never newer than it is) until the next
+// poll — which is due at once, the stored next_poll_at being in the past; lastSuccess() reads the time of the last
+// good poll from both.
+const PERSIST_MS = 60 * 60000;
+const PCT_STEP = 1;
 const VOLATILE = new Set(['last_attempt_at', 'last_success_at', 'next_poll_at']);
-const memBy = new WeakMap(); // gc → { snaps: Map(nas id → { snap: { data, fetched_at }, savedAt }), nas: Map(nas id → { patch, savedAt }) }
+// gc → { snaps: Map(nas id → { snap: { data, fetched_at }, saved: data as stored, key, savedAt, dirty }), nas: Map(nas id → { patch }) }
+const memBy = new WeakMap();
 function memOf(gc) {
   let m = memBy.get(gc);
   if (!m) { m = { snaps: new Map(), nas: new Map() }; memBy.set(gc, m); }
@@ -68,7 +80,7 @@ async function createNas(gc, f) {
 const UPDATABLE = ['name', 'target_index', 'target_label', 'enabled', 'status', 'last_error', 'error_count', 'last_attempt_at', 'last_success_at',
   'next_poll_at', 'update_checked_at', 'power_state', 'power_at'];
 
-async function updateNas(gc, id, patch, now = Date.now()) {
+async function updateNas(gc, id, patch) {
   const keys = UPDATABLE.filter((k) => patch[k] !== undefined);
   const mem = memOf(gc).nas;
   const e = mem.get(id);
@@ -76,12 +88,17 @@ async function updateNas(gc, id, patch, now = Date.now()) {
     const cur = await getNas(gc, id);
     const changed = cur ? keys.filter((k) => cur[k] !== patch[k]) : keys;
     if (!changed.length) return cur;
-    if (cur && e && changed.every((k) => VOLATILE.has(k)) && now - e.savedAt < PERSIST_MS && now >= e.savedAt) {
-      e.patch = { ...(e.patch || {}), ...Object.fromEntries(changed.map((k) => [k, patch[k]])) };
+    if (cur && changed.every((k) => VOLATILE.has(k))) {
+      mem.set(id, { patch: { ...((e && e.patch) || {}), ...Object.fromEntries(changed.map((k) => [k, patch[k]])) } });
       return getNas(gc, id);
     }
   }
   const all = { ...((e && e.patch) || {}), ...Object.fromEntries(keys.map((k) => [k, patch[k]])) };
+  if (keys.length) await writeNas(gc, id, all);
+  return getNas(gc, id);
+}
+
+async function writeNas(gc, id, all) {
   const sets = [];
   const params = [];
   for (const k of UPDATABLE) {
@@ -89,12 +106,10 @@ async function updateNas(gc, id, patch, now = Date.now()) {
     sets.push(`${k} = ?`);
     params.push(typeof all[k] === 'boolean' ? (all[k] ? 1 : 0) : all[k]);
   }
-  if (keys.length && sets.length) {
-    mem.set(id, { patch: null, savedAt: now });
-    sets.push("updated_at = datetime('now')");
-    await gc.db.run(`UPDATE nas SET ${sets.join(', ')} WHERE id = ?`, [...params, id]);
-  }
-  return getNas(gc, id);
+  if (!sets.length) return;
+  memOf(gc).nas.delete(id);
+  sets.push("updated_at = datetime('now')");
+  await gc.db.run(`UPDATE nas SET ${sets.join(', ')} WHERE id = ?`, [...params, id]);
 }
 
 async function deleteNas(gc, id) {
@@ -109,30 +124,114 @@ async function deleteNas(gc, id) {
 
 // ─── Snapshots (last good status) ───────────────
 
+const rowSnap = (row) => (row ? { data: parseJson(row.data, null), fetched_at: Number(row.fetched_at) } : null);
+
 async function getSnapshot(gc, id) {
   const kept = memOf(gc).snaps.get(id);
   if (kept) return kept.snap;
   const { row } = await gc.db.get('SELECT data, fetched_at FROM snapshots WHERE nas_id = ?', [id]);
-  return row ? { data: parseJson(row.data, null), fetched_at: Number(row.fetched_at) } : null;
+  return rowSnap(row);
 }
 
 async function allSnapshots(gc) {
   const { rows } = await gc.db.query('SELECT nas_id, data, fetched_at FROM snapshots');
-  const out = new Map(rows.map((r) => [r.nas_id, { data: parseJson(r.data, null), fetched_at: Number(r.fetched_at) }]));
+  const out = new Map(rows.map((r) => [r.nas_id, rowSnap(r)]));
   for (const [id, kept] of memOf(gc).snaps) out.set(id, kept.snap);
   return out;
 }
 
-async function saveSnapshot(gc, id, data, at) {
+/**
+ * A status without its live values, as text: what is left changes rarely (a few times a day at most). Left out:
+ * uptime and system temperature, CPU / RAM, bytes used and the fill level of volumes and pools (see moved), drive
+ * temperatures, charge and runtime of the UPS, and whether this poll looked for a DSM update. `marks`: what the
+ * caller derives from the live values and wants stored with them (the issues by the thresholds of the settings).
+ */
+function steadyOf(data, marks) {
+  const d = data && typeof data === 'object' ? data : {};
+  const sized = (x) => ({ ...x, used: undefined, pct: undefined });
+  const arr = (v) => (Array.isArray(v) ? v : []);
+  return JSON.stringify({
+    ...d, update_checked: undefined, util: undefined,
+    info: d.info ? { ...d.info, uptime_s: undefined, temp: undefined } : null,
+    volumes: arr(d.volumes).map(sized), pools: arr(d.pools).map(sized),
+    disks: arr(d.disks).map((x) => ({ ...x, temp: undefined })),
+    ups: d.ups ? { ...d.ups, charge: undefined, runtime_s: undefined } : null,
+    marks: marks == null ? null : marks,
+  });
+}
+
+/** Did a volume or pool fill (or empty) by PCT_STEP points since the stored status? (same lists: steadyOf was equal) */
+function moved(saved, data) {
+  for (const k of ['volumes', 'pools']) {
+    const a = (saved && saved[k]) || [];
+    const b = (data && data[k]) || [];
+    for (let i = 0; i < b.length; i++) {
+      const x = a[i] ? a[i].pct : null;
+      const y = b[i].pct;
+      if ((x == null) !== (y == null) || (x != null && Math.abs(x - y) >= PCT_STEP)) return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Keep the status of a poll (read first from now on) and store it when it is due (see the top of this file).
+ * marksOf(data): see steadyOf. → true when it was written
+ */
+async function saveSnapshot(gc, id, data, at, { marksOf = null } = {}) {
   const snaps = memOf(gc).snaps;
-  const kept = snaps.get(id);
+  const keyOf = (d) => steadyOf(d, marksOf ? marksOf(d) : null);
+  let kept = snaps.get(id);
+  if (!kept) {
+    // the first poll after a start: compare with what is stored
+    const { row } = await gc.db.get('SELECT data, fetched_at FROM snapshots WHERE nas_id = ?', [id]);
+    const stored = rowSnap(row);
+    if (stored && stored.data) kept = { snap: stored, saved: stored.data, key: keyOf(stored.data), savedAt: stored.fetched_at, dirty: false };
+  }
   // a copy as read back from the database would be (the caller may change `data` afterwards)
   const snap = { data: JSON.parse(JSON.stringify(data)), fetched_at: Number(at) };
-  if (kept && at - kept.savedAt < PERSIST_MS && at >= kept.savedAt) { kept.snap = snap; return false; }
-  snaps.set(id, { snap, savedAt: at });
-  await gc.db.run('INSERT INTO snapshots (nas_id, data, fetched_at) VALUES (?, ?, ?) ON CONFLICT(nas_id) DO UPDATE SET data = excluded.data, fetched_at = excluded.fetched_at',
-    [id, JSON.stringify(data), at]);
+  const key = keyOf(snap.data);
+  if (kept && kept.key === key && !moved(kept.saved, snap.data) && at - kept.savedAt < PERSIST_MS && at >= kept.savedAt) {
+    snaps.set(id, { ...kept, snap, dirty: true });
+    return false;
+  }
+  snaps.set(id, { snap, saved: snap.data, key, savedAt: snap.fetched_at, dirty: false });
+  try { await writeSnapshot(gc, id, snap); } catch (e) {
+    // not stored: the next poll tries again (the newest stays readable from memory)
+    snaps.set(id, { snap, saved: kept ? kept.saved : null, key: null, savedAt: kept ? kept.savedAt : 0, dirty: true });
+    throw e;
+  }
   return true;
+}
+
+function writeSnapshot(gc, id, snap) {
+  return gc.db.run('INSERT INTO snapshots (nas_id, data, fetched_at) VALUES (?, ?, ?) ON CONFLICT(nas_id) DO UPDATE SET data = excluded.data, fetched_at = excluded.fetched_at',
+    [id, JSON.stringify(snap.data), snap.fetched_at]);
+}
+
+/** Store what is only kept in memory (the plugin stops): the newest snapshots and poll times. → number of writes */
+async function flush(gc) {
+  const m = memOf(gc);
+  let n = 0;
+  for (const [id, kept] of m.snaps) {
+    if (!kept.dirty) continue;
+    m.snaps.set(id, { ...kept, saved: kept.snap.data, savedAt: kept.snap.fetched_at, dirty: false });
+    await writeSnapshot(gc, id, kept.snap);
+    n++;
+  }
+  for (const [id, e] of [...m.nas]) {
+    if (!e.patch) continue;
+    await writeNas(gc, id, e.patch);
+    n++;
+  }
+  return n;
+}
+
+/** When a NAS last answered a poll: its row or the time of its snapshot, whichever is newer (the row is written less often). */
+function lastSuccess(nas, snap) {
+  const a = nas && nas.last_success_at != null ? nas.last_success_at : null;
+  const b = snap && snap.fetched_at ? snap.fetched_at : null;
+  return a == null ? b : (b == null ? a : Math.max(a, b));
 }
 
 // ─── GateDrop drop folders (1.2.0) ───────────────
@@ -185,4 +284,7 @@ async function credentials(gc, id) {
 module.exports = {
   listNas, getNas, createNas, updateNas, deleteNas, getSnapshot, allSnapshots, saveSnapshot,
   secret, setSecret, credentials, secretKey, SECRET_KINDS, listFolders, getFolder, createFolder, updateFolder, deleteFolder, PERSIST_MS,
+  flush, lastSuccess, steadyOf,
+  /** Tests: forget what is kept in memory, as a restart of the plugin does (without flush: as after a crash). */
+  _forget(gc) { memBy.delete(gc); },
 };
