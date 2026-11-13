@@ -100,7 +100,8 @@ async function background(gc, now) {
   }
   if (now - state.lastPurge >= PURGE_EVERY_MS) {
     state.lastPurge = now;
-    await step('purge', () => store.tx(gc, () => history.purge(gc, now, cfg.mediaDays)));
+    // 1.7.2: at most a batch of pictures per run; more of them with the next background run, not in an hour
+    await step('purge', async () => { if ((await store.tx(gc, () => history.purge(gc, now, cfg.mediaDays))).more) state.lastPurge = 0; });
   }
 }
 
