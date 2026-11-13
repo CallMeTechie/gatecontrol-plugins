@@ -41,7 +41,7 @@ async function setup(host, c, o = {}) {
 }
 
 test('plugin.json: todo_items and todo_complete (600 an hour), todo_changed of the hub', () => {
-  assert.ok(['1.11.0', '1.12.0', '1.12.1', '1.13.0', '1.13.1'].includes(manifest.version));
+  assert.ok(['1.11.0', '1.12.0', '1.12.1', '1.13.0', '1.13.1', '1.14.0'].includes(manifest.version));
   for (const n of ['todo_items', 'todo_complete']) assert.equal(manifest.services.provides[n].maxPerHour, 600);
   assert.ok(manifest.permissions.services.includes('gatecontrol-notizen:todo_changed'));
 });

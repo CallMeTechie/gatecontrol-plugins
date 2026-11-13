@@ -1,4 +1,4 @@
-<!-- version: 1.13.1 -->
+<!-- version: 1.14.0 -->
 # Mail
 
 ## What the plugin does
@@ -106,6 +106,13 @@ When attachments live on a storage target that is unreachable, Mail tries again 
 
 **Free/busy shows “unknown”.**
 The person switched free/busy off or is not in GateControl. Colleagues in Microsoft 365 appear through your Microsoft account.
+
+## New in 1.14.0
+
+- **Faster search:** Mail now keeps a search index of the subject, sender, recipients and text of your mails and no longer reads every mail for each search. It finds what it found before, also in the middle of a word (“bill” finds “phonebill”).
+- **Upper and lower case** no longer matter for umlauts either (“ÜBERWEISUNG” finds “Überweisung”).
+- **After the update** Mail builds the index for the mails you already have in the background, newest first. With large mailboxes and slow disks this can take a while. The search still finds everything meanwhile – it is just not faster yet. The index needs about as much room as the texts of the mails.
+- **One or two characters** are looked for in subject, sender, recipients and snippet only, no longer in the whole text. From three characters on the text is searched too.
 
 ## New in 1.13.1
 

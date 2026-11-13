@@ -2,6 +2,39 @@
 
 Alle E-Mail-Konten an einem Ort – im eigenen Tab der GateControl-Apps und im Portal.
 
+## 1.14.0
+
+- **Suche über einen Volltextindex** statt `LIKE '%…%'` über alle Mails und alle Mailtexte (das las bei jeder Suche die
+  ganze Datenbank). Neu: `server/search.js`, Migration 014 (`messages.fts`, Teilindex `messages_fts_todo`).
+  - SQLite FTS5 mit dem Tokenizer `trigram`, ohne Kopie der Texte (`content=''`, `contentless_delete=1`). Geprüft gegen
+    die Plugin-Datenbank des Servers (better-sqlite3, SQLite 3.53, `trusted_schema = OFF`, `sqlGuard`): virtuelle
+    Tabelle, Trigger und `MATCH` sind erlaubt und funktionieren.
+  - **Gefunden wird wie bisher** – die Eingabe als ein Stück Text, an jeder Stelle von Betreff, Absender, Empfängern,
+    Anriss oder Text, auch mitten im Wort („rechnung“ findet „Stromrechnung“). **Besser:** Groß/Klein ist jetzt auch
+    bei Umlauten egal („ÜBERWEISUNG“ findet „Überweisung“; LIKE konnte das nur für a–z).
+  - Kein Zeichen der Eingabe ist Suchsyntax (`"`, `*`, `(`, `AND`, `OR`, `NOT`, `:`, `^`, `%`, `_`, `\`): Die Eingabe
+    geht als ein Ausdruck in Anführungszeichen an den Index.
+  - **Weniger als drei Zeichen** (ein Trigramm braucht drei): Betreff, Absender, Empfänger und Anriss per LIKE – die
+    Mailtexte nicht mehr. Zwei Buchstaben stehen in fast jedem Text; dafür alle Texte zu lesen war der teuerste Fall.
+  - Trigger halten den Index: neue Mail, ihr Text, geänderter Betreff/Anriss, gelöschte Mail, verdrängter Text – ohne
+    zusätzliche Anweisung des Plugins je Mail.
+  - **Mails von vor 1.14.0** kommen im Hintergrund hinein: neueste zuerst, in Häppchen (5 … 90 Mails, eine kurze
+    Transaktion je Häppchen; ein langsames Häppchen halbiert das nächste), höchstens 3 s je Hintergrundlauf.
+    `messages.fts` ist der Fortschritt – Abbruch oder Neustart jederzeit. Bis eine Mail im Index ist, sucht `GET search`
+    dort wie bisher; das Ergebnis ist **immer vollständig**, nur noch nicht schneller. Texte über 100 000 Zeichen: der
+    Rest per LIKE. Ist die Datenbank größer als 3 GB, ruht der Aufbau (Meldung im Protokoll).
+  - `GET search` antwortet zusätzlich mit `index { state: 'ready' | 'building' | 'off', pending }`.
+  - Kann die Datenbank das nicht (kein FTS5 / kein `trigram`), wird nichts angelegt und die Suche arbeitet wie in
+    1.13 – einmal als Info im Protokoll. Die Mindestversion von GateControl bleibt 1.219.0.
+  - Die Liste liest ihre Spalten (mit Unterabfragen) nur noch für die Mails der Seite, nicht für jeden Treffer.
+- Gemessen mit 50 000 Mails (30 000 mit Text, 139 Mio. Zeichen, Datenbank 329 MB, alles im Arbeitsspeicher): ohne
+  Treffer 314 ms → 47 ms, seltener Begriff im Text 194 ms → 50 ms, im Betreff 201 ms → 24 ms, häufiger Begriff
+  167 ms → 105 ms; Plan `… SEARCH b … LEFT-JOIN` (jeder Text) → `SCAN x VIRTUAL TABLE INDEX`. Der Index belegt hier
+  322 MB – etwa so viel wie die Texte selbst; der Aufbau brauchte 26 s Arbeitszeit in 8 Läufen.
+- Tests: `test/search.test.js` (Felder, Wortmitte, Umlaute, Sonderzeichen gegen LIKE, Trigger, Aufbau mit Abbruch und
+  Neustart, voller Datenträger, sehr lange Texte, kurze Eingaben, Filter und Blättern, Datenbank ohne FTS5, Migration
+  auf Altdaten, Abfragepläne mit 20 000 Mails).
+
 ## 1.13.1
 
 - **Der Hintergrundlauf hält sein Zeitbudget.** GateControl beendet einen Lauf nach 120 s („background run failed: plugin

@@ -1,4 +1,4 @@
-<!-- version: 1.13.1 -->
+<!-- version: 1.14.0 -->
 # Mail
 
 ## Was das Plugin kann
@@ -106,6 +106,13 @@ Liegen die Anhänge auf einem Speicherziel, das nicht erreichbar ist, versucht M
 
 **Frei/Gebucht zeigt „unbekannt“.**
 Die Person hat Frei/Gebucht abgeschaltet oder ist nicht in GateControl. Kolleginnen in Microsoft 365 erscheinen über dein Microsoft-Konto.
+
+## Neu in 1.14.0
+
+- **Schnellere Suche:** Mail führt jetzt ein Suchverzeichnis über Betreff, Absender, Empfänger und Text deiner Mails und muss nicht mehr bei jeder Suche alle Mails lesen. Gefunden wird wie gewohnt, auch mitten im Wort („rechnung“ findet „Stromrechnung“).
+- **Groß- und Kleinschreibung** spielt jetzt auch bei Umlauten keine Rolle („ÜBERWEISUNG“ findet „Überweisung“).
+- **Nach dem Update** baut Mail das Verzeichnis für die vorhandenen Mails im Hintergrund auf, die neuesten zuerst. Das kann bei großen Postfächern und langsamen Datenträgern eine Weile dauern. Die Suche findet in dieser Zeit trotzdem alles – sie ist nur noch nicht schneller. Das Verzeichnis braucht etwa so viel Platz wie die Texte der Mails.
+- **Ein oder zwei Zeichen** sucht Mail nur noch in Betreff, Absender, Empfänger und Anriss, nicht mehr im ganzen Text. Ab drei Zeichen wird auch der Text durchsucht.
 
 ## Neu in 1.13.1
 
