@@ -1,13 +1,14 @@
 'use strict';
 
-// Mail 1.14.0: die Suche über einen Volltextindex (server/search.js) statt `LIKE '%…%'` über alle Mails und alle Texte.
+// Mail 1.14.0: die Suche über einen Volltextindex (server/search.js) statt `LIKE '%…%'` über alle Mails und alle Texte —
+// eine Option, die der Administrator einschaltet (hier: eingeschaltet; aus, ein/aus im Betrieb: search-switch.test.js).
 //   * FTS5 mit dem Tokenizer `trigram`: gefunden wird wie bisher an jeder Stelle eines Felds, auch mitten im Wort;
 //     Groß/Klein jetzt auch bei Umlauten egal. Die Eingabe ist EIN Stück Text — kein Zeichen davon ist Suchsyntax.
 //   * Trigger halten den Index: neue Mail, ihr Text, geänderter Anriss, gelöschte Mail, verdrängter Text.
-//   * Mails von vor 1.14.0 kommen im Hintergrund in Häppchen hinein (neueste zuerst, eine Transaktion je Häppchen,
+//   * Mails, die beim Einschalten schon da sind, kommen im Hintergrund in Häppchen hinein (neueste zuerst, eine Transaktion je Häppchen,
 //     messages.fts ist der Fortschritt). Bis dahin — und für den Rest sehr langer Texte — sucht GET search dort wie
 //     bisher: das Ergebnis ist jederzeit vollständig. Ein Abbruch mitten im Häppchen lässt nichts halb zurück.
-//   * Kann die Datenbank keinen solchen Index, bleibt alles wie vor 1.14.0.
+//   * Kann die Datenbank keinen solchen Index, bleibt alles wie in 1.13.
 //   * Weniger als drei Zeichen: Betreff, Absender, Empfänger, Anriss — nicht mehr die Texte.
 
 const test = require('node:test');
@@ -18,7 +19,12 @@ const { withMail, ANNA, MARC } = require('./helpers');
 const cost = require('../../../tools/testing/sql-cost');
 const search = require('../server/search');
 
-const DROP = ['mail_fts_new', 'mail_fts_head', 'mail_fts_gone', 'mail_fts_body', 'mail_fts_body_new', 'mail_fts_body_gone'].map((t) => `DROP TRIGGER IF EXISTS ${t};`).join(' ') + ' DROP TABLE IF EXISTS mail_fts;';
+/** The administrator switches the full-text search on (Einstellungen › „Volltextsuche“; it is off unless chosen). */
+async function switchOn(c) {
+  const r = await c.admin('PUT', 'admin/settings', { search: { fulltext: true } });
+  assert.equal(r.status, 200, JSON.stringify(r.json));
+  return r.json.search;
+}
 
 /** What the search of 1.13 found for `term` (LIKE over the fields and the text), newest first → ids. */
 async function likeIds(db, accountIds, term) {
@@ -44,7 +50,7 @@ put.uid = 5000;
 const folderOf = async (c, role = 'inbox', email = 'anna@gmx.de') => (await c.db('SELECT f.id, f.account_id, a.user_id FROM folders f JOIN accounts a ON a.id = f.account_id WHERE f.role = ? AND a.email = ?', [role, email]))[0];
 const find = async (c, q, extra, user = ANNA) => { const r = await c.as(user)('GET', 'search', null, { q, ...(extra || {}) }); assert.equal(r.status, 200, `${q}: ${JSON.stringify(r.json)}`); return r.json; };
 const ids = (res) => res.items.map((m) => m.id);
-const ftsCount = async (c, phrase) => (await c.db('SELECT COUNT(*) AS n FROM mail_fts WHERE mail_fts MATCH ?', [`"${phrase}"`]))[0].n;
+const ftsCount = async (c, phrase) => (await c.db(`SELECT COUNT(*) AS n FROM ${search.MATCH_ALL}`, search.matchArgs(`"${phrase}"`)))[0].n;
 
 test('Suche über den Index: Betreff, Absender, Empfänger, Anriss und Text; mitten im Wort; Groß/Klein auch bei Umlauten; nur die eigenen Mails, nicht Papierkorb und Spam', () => withMail({}, async (host, c) => {
   c.mail.login('anna@gmx.de', 'geheim-123');
@@ -52,6 +58,7 @@ test('Suche über den Index: Betreff, Absender, Empfänger, Anriss und Text; mit
   c.mail.mail('anna@gmx.de', 'INBOX', { from: { name: 'Oma Erna', address: 'erna@example.com' }, subject: 'Kaffee am Sonntag?', text: 'Kommt ihr zum Apfelkuchen in die Gartenstraße?', to: [{ name: 'Anna', address: 'anna@gmx.de' }, { name: 'Jörg', address: 'joerg.schmidt@example.org' }] });
   c.mail.mail('anna@gmx.de', 'Papierkorb', { subject: 'Stromrechnung alt', text: 'gelöscht' });
   c.mail.mail('anna@gmx.de', 'Spam', { subject: 'Stromrechnung gewinnen', text: 'Werbung' });
+  await switchOn(c);
   await c.addGmx(ANNA);
   await c.addGmx(MARC);
   for (let i = 0; i < 3; i++) await c.tick();
@@ -80,6 +87,7 @@ test('Suche über den Index: Betreff, Absender, Empfänger, Anriss und Text; mit
 }));
 
 test('Sonderzeichen in der Eingabe sind Text, nie Suchsyntax: Anführungszeichen, Sterne, Klammern, AND/OR/NOT, %, _, \\ — kein Fehler, dasselbe Ergebnis wie mit LIKE', () => withMail({}, async (host, c) => {
+  await switchOn(c);
   const acc = await c.addGmx(ANNA);
   await c.tick();
   const db = host.gc.db;
@@ -112,6 +120,7 @@ test('der Index folgt den Mails: Text kommt später, Anriss ändert sich, Text w
   c.mail.login('anna@gmx.de', 'geheim-123');
   // the word far behind what the snippet of the list keeps
   for (let i = 0; i < 3; i++) c.mail.mail('anna@gmx.de', 'INBOX', { subject: `Rundbrief ${i}`, text: `${'Inhalt ohne Belang. '.repeat(30)} Kennwort Zebrafink${i} am Ende` });
+  await switchOn(c);
   await c.addGmx(ANNA);
   await c.tick();
   const mailstore = require('../server/mailstore');
@@ -144,13 +153,12 @@ test('der Index folgt den Mails: Text kommt später, Anriss ändert sich, Text w
   assert.deepEqual(ids(await find(c, 'kolibri')), [rows[1].id]);
 }));
 
-test('Update von 1.13: der Index entsteht im Hintergrund in Häppchen — die Suche ist währenddessen vollständig, ein Abbruch mitten im Häppchen lässt nichts halb zurück, nach einem Neustart geht es weiter', () => withMail({}, async (host, c) => {
+test('Einschalten bei vorhandenen Mails: der Index entsteht im Hintergrund in Häppchen — die Suche ist währenddessen vollständig, ein Abbruch mitten im Häppchen lässt nichts halb zurück, nach einem Neustart geht es weiter', () => withMail({}, async (host, c) => {
   const acc = await c.addGmx(ANNA);
   await c.tick();
   const db = host.gc.db;
   const f = await folderOf(c);
-  // as 1.13 left it: no index, no triggers, the mails with fts = 0 (the default of migration 014)
-  await db.exec(DROP);
+  // the option is off: the mails come without an entry (fts = 0, the default of migration 014)
   const N = 240;
   await db.exec('BEGIN');
   for (let i = 0; i < N; i++) await put(db, f, { subject: i % 40 === 0 ? `Sammelbestellung ${i}` : `Betreff ${i}`, text: i % 3 === 0 ? null : `Text ${i} ${i % 60 === 7 ? 'mit Lieferschein-K' + i : 'ohne Besonderes'}`, date: 1700000000000 + i * 1000 });
@@ -162,9 +170,10 @@ test('Update von 1.13: der Index entsteht im Hintergrund in Häppchen — die Su
   assert.equal(want.Sammelbestellung.length, 6);
   assert.equal(want['Lieferschein-K'].length, 4);
   const same = async (what) => { for (const t of TERMS) assert.deepEqual(ids(await find(c, t)), want[t], `${what}: „${t}“`); };
-  // 1.14.0 starts
-  search.reset();
-  assert.equal(await search.ensure(host.gc), true);
+  await same('off');
+  assert.equal((await find(c, 'Sammelbestellung')).index.state, 'off');
+  // the administrator switches it on
+  assert.deepEqual(await switchOn(c).then((v) => [v.state, v.pending]), ['building', N]);
   assert.equal(await search.pending(host.gc), N);
   const first = await find(c, 'Sammelbestellung');
   assert.deepEqual(first.index, { state: 'building', pending: N });
@@ -173,7 +182,7 @@ test('Update von 1.13: der Index entsteht im Hintergrund in Häppchen — die Su
   const keep = { ...search.limits };
   search.limits.tickMs = 0;
   try {
-    const n1 = await search.tick(host.gc, () => 60000);
+    const n1 = await search.tick(host.gc, true, () => 60000);
     assert.ok(n1 > 0 && n1 < N, `a batch of ${n1}`);
     assert.equal(await search.pending(host.gc), N - n1, 'the progress is in the database');
     const done = await c.db('SELECT MIN(date) AS lo FROM messages WHERE fts = 1');
@@ -184,28 +193,28 @@ test('Update von 1.13: der Index entsteht im Hintergrund in Häppchen — die Su
     const before = await search.pending(host.gc);
     const inIndex = await ftsCount(c, 'Betreff');
     const broken = { ...host.gc, db: { ...host.gc.db, run: async (sql, p) => { if (/^UPDATE messages SET fts/.test(sql)) throw new Error('disk I/O error'); return host.gc.db.run(sql, p); } } };
-    await assert.rejects(search.tick(broken, () => 60000), /disk I\/O error/);
+    await assert.rejects(search.tick(broken, true, () => 60000), /disk I\/O error/);
     assert.equal(await search.pending(host.gc), before, 'no mail marked');
     assert.equal(await ftsCount(c, 'Betreff'), inIndex, 'none put into the index');
     await same('after the broken batch');
     // a run with no time left: one batch at most, however long the build may take per run
     search.limits.tickMs = keep.tickMs;
-    const n2 = await search.tick(host.gc, () => 0);
+    const n2 = await search.tick(host.gc, true, () => 0);
     assert.ok(n2 > 0 && n2 <= 90, `one batch of ${n2}`);
     assert.equal(await search.pending(host.gc), before - n2);
     search.limits.tickMs = 0;
     // the database is nearly full: the build rests (said once), the search goes on the old way for the rest
     const full = host.logs.length;
     search.limits.maxBytes = 1;
-    assert.equal(await search.tick(host.gc, () => 60000), 0);
-    assert.equal(await search.tick(host.gc, () => 60000), 0);
+    assert.equal(await search.tick(host.gc, true, () => 60000), 0);
+    assert.equal(await search.tick(host.gc, true, () => 60000), 0);
     assert.deepEqual(host.logs.slice(full).map((l) => [l.level, l.message]), [['warn', 'search index: the build rests — the database is nearly full; mails outside the index are searched the old way']]);
     await same('while the build rests');
     search.limits.maxBytes = keep.maxBytes;
     // a restart in the middle: table and triggers are there, the build goes on where it was
     const mid = await search.pending(host.gc);
     search.reset();
-    assert.equal(await search.ensure(host.gc), true);
+    assert.equal(await search.apply(host.gc, true), 'on');
     assert.equal(await search.pending(host.gc), mid);
     // a new mail meanwhile goes straight into the index (the trigger), whatever the build's state
     const fresh = await put(db, f, { subject: 'Sammelbestellung neu', text: 'frisch', date: Date.now() });
@@ -226,12 +235,13 @@ test('Update von 1.13: der Index entsteht im Hintergrund in Häppchen — die Su
     assert.deepEqual((await find(c, 'Sammelbestellung')).index, { state: 'ready', pending: 0 });
     await same('after the build');
     // and no further work: a run with the build done asks the database nothing
-    const rec = await cost.record(async () => { await search.tick(host.gc, () => 60000); });
+    const rec = await cost.record(async () => { await search.tick(host.gc, true, () => 60000); });
     assert.equal(rec.runs, 0);
   } finally { Object.assign(search.limits, keep); }
 }));
 
 test('sehr langer Text: bis 100 000 Zeichen im Index, der Rest wie bisher — gefunden wird beides, keine Mail doppelt', () => withMail({}, async (host, c) => {
+  await switchOn(c);
   await c.addGmx(ANNA);
   await c.tick();
   const f = await folderOf(c);
@@ -253,6 +263,7 @@ test('sehr langer Text: bis 100 000 Zeichen im Index, der Rest wie bisher — ge
 }));
 
 test('weniger als drei Zeichen: Betreff, Absender, Empfänger und Anriss — nicht die Texte', () => withMail({}, async (host, c) => {
+  await switchOn(c);
   await c.addGmx(ANNA);
   await c.tick();
   const f = await folderOf(c);
@@ -266,6 +277,7 @@ test('weniger als drei Zeichen: Betreff, Absender, Empfänger und Anriss — nic
 }));
 
 test('Filter und Blättern mit dem Index: box, from, attachments, unread, after/before, der Cursor über mehrere Seiten', () => withMail({}, async (host, c) => {
+  await switchOn(c);
   const acc = await c.addGmx(ANNA);
   const work = await c.addGmx(ANNA, { email: 'anna.work@gmx.de', name: 'Arbeit' });
   await c.tick();
@@ -298,70 +310,72 @@ test('Filter und Blättern mit dem Index: box, from, attachments, unread, after/
   void acc;
 }));
 
-test('die Datenbank kann keinen Volltextindex: nichts wird erzwungen — die Suche arbeitet wie vor 1.14.0, der Hintergrundlauf lässt die Mails in Ruhe', () => withMail({}, async (host, c) => {
+test('die Datenbank kann keinen Volltextindex: Einschalten legt nichts an — die Suche arbeitet wie in 1.13, die Einstellungsseite sagt es', () => withMail({}, async (host, c) => {
   const acc = await c.addGmx(ANNA);
   await c.tick();
   const db = host.gc.db;
-  await db.exec(DROP);
-  // a database without FTS5 / the trigram tokenizer refuses the table
-  const refused = [];
-  const old = { ...host.gc, db: { ...host.gc.db, exec: async (sql) => { refused.push(sql); throw new Error('no such tokenizer: trigram'); } }, log: host.gc.log };
-  search.reset();
+  // a database without FTS5 / the trigram tokenizer refuses the tables
+  const old = { ...host.gc, db: { ...host.gc.db, exec: async (sql) => { if (/VIRTUAL TABLE/.test(sql)) throw new Error('no such tokenizer: trigram'); return host.gc.db.exec(sql); } } };
   const logs = host.logs.length;
-  assert.equal(await search.ensure(old), false);
-  assert.equal(await search.ensure(old), false);
-  assert.equal(refused.length, 1, 'asked once');
-  assert.deepEqual(host.logs.slice(logs).map((l) => [l.level, l.message]), [['info', 'search index not available — the search works as before no such tokenizer: trigram']]);
-  try {
-    const f = await folderOf(c);
-    const a = await put(db, f, { subject: 'Angebot Dachdecker', text: 'Die Überweisung bitte bis Freitag' });
-    const b = await put(db, f, { subject: 'Zweite', text: 'ab hier nur zwei Zeichen: qz' });
-    assert.equal((await c.db('SELECT COUNT(*) AS n FROM messages WHERE fts <> 0'))[0].n, 0, 'no mail marked as indexed');
-    for (const q of ['dachdecker', 'berweis', 'bis Freitag', 'qz', '50%', '"']) {
-      const res = await find(c, q);
-      assert.deepEqual(ids(res), await likeIds(db, [acc.id], q), `„${q}“ as LIKE`);
-      assert.deepEqual(res.index, { state: 'off', pending: 0 });
-    }
-    assert.deepEqual(ids(await find(c, 'qz')), [b], 'two characters: the texts too, as before');
-    assert.deepEqual(ids(await find(c, 'dachdecker')), [a]);
-    assert.equal(await search.tick(old, () => 60000), 0);
-    await host.tick();
-    assert.equal((await c.db('SELECT COUNT(*) AS n FROM messages WHERE fts <> 0'))[0].n, 0);
-    assert.equal((await c.db("SELECT COUNT(*) AS n FROM sqlite_master WHERE name LIKE 'mail_fts%'"))[0].n, 0, 'no table, no trigger');
-  } finally { search.reset(); }
+  await c.db('SELECT 1');
+  // (the setting is stored as on; what the plugin does with it is search.apply — here with the refusing database)
+  await require('../server/config').put(host.gc, { search: { fulltext: true } });
+  assert.equal(await search.apply(old, true), 'off');
+  assert.equal(await search.apply(old, true), 'off');
+  assert.deepEqual(host.logs.slice(logs).map((l) => [l.level, l.message]), [['warn', 'search index not available — the search works as before no such tokenizer: trigram']], 'said once');
+  assert.equal((await c.db("SELECT COUNT(*) AS n FROM sqlite_master WHERE name LIKE 'mail_fts%' OR name = 'messages_fts_todo'"))[0].n, 0, 'nothing half made');
+  assert.deepEqual(await host.gc.storage.get('search'), { phase: 'off' });
+  const f = await folderOf(c);
+  const a = await put(db, f, { subject: 'Angebot Dachdecker', text: 'Die Überweisung bitte bis Freitag' });
+  const b = await put(db, f, { subject: 'Zweite', text: 'ab hier nur zwei Zeichen: qz' });
+  for (const q of ['dachdecker', 'berweis', 'bis Freitag', 'qz', '50%', '"']) {
+    const res = await find(c, q);
+    assert.deepEqual(ids(res), await likeIds(db, [acc.id], q), `„${q}“ as LIKE`);
+    assert.deepEqual(res.index, { state: 'unavailable', pending: 0 });
+  }
+  assert.deepEqual(ids(await find(c, 'qz')), [b], 'two characters: the texts too, as before');
+  assert.deepEqual(ids(await find(c, 'dachdecker')), [a]);
+  assert.equal(await search.tick(old, true, () => 60000), 0);
+  assert.equal((await c.db('SELECT COUNT(*) AS n FROM messages WHERE fts <> 0'))[0].n, 0, 'no mail marked');
+  const view = (await c.admin('GET', 'admin/settings')).json.search;
+  assert.deepEqual([view.state, view.reason], ['unavailable', 'no such tokenizer: trigram']);
 }));
 
-test('Migration 014 auf Altdaten: die Spalte fts mit 0 für jede Mail, der Teilindex messages_fts_todo; Index und Trigger macht erst der Start', () => withMail({}, async (host, c) => {
+test('Migration 014 auf Altdaten: nur die Spalte fts (0 für jede Mail) — keine Tabelle, kein Trigger, kein Index', () => withMail({}, async (host, c) => {
   await c.addGmx(ANNA);
   await c.tick();
   const db = host.gc.db;
   const f = await folderOf(c);
-  // back to 1.13: no index, no column
-  await db.exec(`${DROP} DROP INDEX messages_fts_todo; ALTER TABLE messages DROP COLUMN fts;`);
+  // back to 1.13: no column
+  await db.exec('ALTER TABLE messages DROP COLUMN fts');
   await db.exec('BEGIN');
   for (let i = 0; i < 50; i++) {
     const r = await db.run(`INSERT INTO messages (user_id, account_id, folder_id, uid, date, subject, tab, created_at) VALUES (?, ?, ?, ?, ?, ?, 'relevant', ?)`, [f.user_id, f.account_id, f.id, 9000 + i, 1700000000000 + i, `Alt ${i}`, 1]);
     if (i % 2) await db.run('INSERT INTO bodies (message_id, html, text, bytes, at, used_at) VALUES (?, ?, ?, ?, ?, ?)', [r.lastInsertRowid, '<p>x</p>', `Altbestand-Text ${i}`, 10, 1, 1]);
   }
   await db.exec('COMMIT');
+  const before = (await c.db('SELECT name FROM sqlite_master ORDER BY name')).map((r) => r.name);
   const sql = fs.readFileSync(path.join(__dirname, '..', 'migrations', '014_search.sql'), 'utf8');
-  assert.doesNotMatch(sql, /VIRTUAL TABLE.*\(|CREATE TRIGGER/i, 'the migration itself needs no FTS5');
+  const statements = sql.split('\n').filter((l) => l.trim() && !l.startsWith('--')).join(' ');
+  assert.equal(statements, 'ALTER TABLE messages ADD COLUMN fts INTEGER NOT NULL DEFAULT 0;', 'the whole migration');
   await db.exec(sql);
+  assert.deepEqual((await c.db('SELECT name FROM sqlite_master ORDER BY name')).map((r) => r.name), before, 'no table, no index, no trigger more');
   assert.equal((await c.db('SELECT COUNT(*) AS n FROM messages WHERE fts = 0'))[0].n, (await c.db('SELECT COUNT(*) AS n FROM messages'))[0].n);
+  // switched on later: the partial index of the build, and the old mails are found
+  await switchOn(c);
   const plan = async (q, p) => (await db.query(`EXPLAIN QUERY PLAN ${q}`, p || [])).rows.map((r) => r.detail).join(' / ');
   const todo = await plan('SELECT id FROM messages WHERE fts <> 1 AND fts = 0 ORDER BY date DESC LIMIT ?', [40]);
   assert.match(todo, /USING COVERING INDEX messages_fts_todo \(fts=\?\)/);
   assert.doesNotMatch(todo, /TEMP B-TREE/, 'newest first straight from the index');
   assert.match(await plan('SELECT COUNT(*) AS n FROM messages WHERE fts <> 1 AND fts = 0'), /COVERING INDEX messages_fts_todo \(fts=\?\)/);
-  search.reset();
-  assert.equal(await search.ensure(host.gc), true);
-  while (await search.tick(host.gc, () => 60000)) { /* the build */ }
+  while (await search.tick(host.gc, true, () => 60000)) { /* the build */ }
   assert.equal(await search.pending(host.gc), 0);
   assert.equal((await find(c, 'Altbestand-Text 7')).items[0].subject, 'Alt 7');
   assert.equal((await find(c, 'Alt 8')).items[0].subject, 'Alt 8');
 }));
 
 test('viele Mails (20 000): eine Suche über den fertigen Index liest keine große Tabelle ganz und keinen Text; der Rest des Aufbaus über seinen Teilindex', { timeout: 180000 }, (t) => withMail({}, async (host, c) => {
+  await switchOn(c);
   const acc = await c.addGmx(ANNA);
   await c.tick();
   const db = host.gc.db;

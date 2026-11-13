@@ -48,6 +48,8 @@ const DEFAULTS = Object.freeze({
     freeBusy: true, sharing: true },
   contacts: { enabled: true, accounts: true, ai: true },
   resources: { enabled: true },
+  // 1.14.0: the full-text index of the search (search.js) — off unless the administrator switches it on
+  search: { fulltext: false },
 });
 const CAL_FLAGS = ['enabled', 'accounts', 'internalInvites', 'freeBusy', 'sharing'];
 
@@ -78,6 +80,7 @@ function normalize(raw) {
   }
   if (r.contacts && typeof r.contacts === 'object') for (const k of Object.keys(d.contacts)) if (typeof r.contacts[k] === 'boolean') out.contacts[k] = r.contacts[k];
   if (r.resources && typeof r.resources === 'object' && typeof r.resources.enabled === 'boolean') out.resources.enabled = r.resources.enabled;
+  if (r.search && typeof r.search === 'object' && typeof r.search.fulltext === 'boolean') out.search.fulltext = r.search.fulltext;
   return out;
 }
 
@@ -150,6 +153,10 @@ async function put(gc, body) {
   if (b.resources !== undefined) {
     if (!b.resources || typeof b.resources !== 'object') bad('resources');
     for (const [k, v] of Object.entries(b.resources)) { if (k !== 'enabled' || typeof v !== 'boolean') bad('resources.' + k); cur.resources.enabled = v; }
+  }
+  if (b.search !== undefined) {
+    if (!b.search || typeof b.search !== 'object') bad('search');
+    for (const [k, v] of Object.entries(b.search)) { if (k !== 'fulltext' || typeof v !== 'boolean') bad('search.' + k); cur.search.fulltext = v; }
   }
   await gc.storage.set('admin', cur);
   cache = normalize(cur);

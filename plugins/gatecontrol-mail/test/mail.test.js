@@ -269,7 +269,9 @@ test('admin settings: checked values, usage per person (numbers only), Microsoft
     calendar: { enabled: true, accounts: true, business: 'gatecontrol', defaultReminder: 15, internalInvites: true, overlays: { familie: true, alltag: true, birthdays: true },
       // 1.9.0: free/busy and sharing
       freeBusy: true, sharing: true },
-    contacts: { enabled: true, accounts: true, ai: true }, resources: { enabled: true } });
+    contacts: { enabled: true, accounts: true, ai: true }, resources: { enabled: true },
+    // 1.14.0: the full-text search is an option, off unless switched on
+    search: { fulltext: false } });
   assert.equal(r.usage.people[0].name, 'Bob');
   assert.ok(r.usage.people[0].bytes > 0);
   assert.ok(!JSON.stringify(r).includes('Geheimes') && !JSON.stringify(r).includes('bob@gmx.de'), 'never mail or addresses of others');

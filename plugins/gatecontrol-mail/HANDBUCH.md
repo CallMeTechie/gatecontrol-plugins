@@ -109,10 +109,11 @@ Die Person hat Frei/Gebucht abgeschaltet oder ist nicht in GateControl. Kollegin
 
 ## Neu in 1.14.0
 
-- **Schnellere Suche:** Mail führt jetzt ein Suchverzeichnis über Betreff, Absender, Empfänger und Text deiner Mails und muss nicht mehr bei jeder Suche alle Mails lesen. Gefunden wird wie gewohnt, auch mitten im Wort („rechnung“ findet „Stromrechnung“).
-- **Groß- und Kleinschreibung** spielt jetzt auch bei Umlauten keine Rolle („ÜBERWEISUNG“ findet „Überweisung“).
-- **Nach dem Update** baut Mail das Verzeichnis für die vorhandenen Mails im Hintergrund auf, die neuesten zuerst. Das kann bei großen Postfächern und langsamen Datenträgern eine Weile dauern. Die Suche findet in dieser Zeit trotzdem alles – sie ist nur noch nicht schneller. Das Verzeichnis braucht etwa so viel Platz wie die Texte der Mails.
-- **Ein oder zwei Zeichen** sucht Mail nur noch in Betreff, Absender, Empfänger und Anriss, nicht mehr im ganzen Text. Ab drei Zeichen wird auch der Text durchsucht.
+- **Volltextsuche als Option:** Unter Einstellungen › Plugins › Mail gibt es die neue Karte „Suche“ mit dem Schalter **„Volltextsuche“**. Sie ist ausgeschaltet, bis ein Administrator sie einschaltet – nach dem Update ändert sich also erst einmal nichts.
+- **Eingeschaltet** führt Mail ein Suchverzeichnis über Betreff, Absender, Empfänger und Text aller Mails. Die Suche muss dann nicht mehr bei jeder Anfrage alle Mails lesen und wird deutlich schneller. Gefunden wird wie gewohnt, auch mitten im Wort („rechnung“ findet „Stromrechnung“), und Groß- und Kleinschreibung spielt auch bei Umlauten keine Rolle mehr.
+- **Speicherbedarf:** Das Verzeichnis belegt etwa so viel Speicher wie die Texte der Mails selbst. Nach dem Einschalten baut Mail es im Hintergrund auf, die neuesten Mails zuerst – bei großen Postfächern und langsamen Datenträgern dauert das eine Weile. Die Suche findet in dieser Zeit trotzdem alles. Neben dem Schalter steht der Zustand: aus, wird aufgebaut (noch N Mails), fertig oder wird entfernt.
+- **Ein oder zwei Zeichen:** Nur bei eingeschalteter Volltextsuche sucht Mail mit ein oder zwei Zeichen in Betreff, Absender, Empfänger und Anriss, nicht im ganzen Text. Ab drei Zeichen wird auch der Text durchsucht. Ist die Volltextsuche aus, bleibt alles wie bisher.
+- **Ausschalten** entfernt das Verzeichnis wieder, Stück für Stück im Hintergrund. Sein Platz wird in der Datenbank frei und von neuen Mails wieder genutzt; die Datenbankdatei selbst wird dabei nicht kleiner.
 
 ## Neu in 1.13.1
 

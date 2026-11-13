@@ -185,11 +185,12 @@ async function search(gc, userId, q) {
   const after = ms(q.after);
   const before = ms(q.before);
   // 1.14.0: the full-text index (search.js) for the mails it holds, the old way (LIKE over the fields and the text)
-  // for the rest — the mails of before whose turn in the build has not come, the long rest of a very long text, every
-  // mail where the database has no such index. Fewer than three characters: no trigram — the fields of the list
+  // for the rest — the mails whose turn in the build has not come, the long rest of a very long text. While the option
+  // is off (the usual case) or the index is being removed: every mail the old way, as in 1.13. Fewer than three characters: no trigram — the fields of the list
   // (subject, sender, recipients, snippet) by LIKE, not the texts (two letters are in nearly every text; reading all
   // of them for that is what made the search slow).
-  const indexed = await searchIndex.ensure(gc);
+  const index = await searchIndex.view(gc);
+  const indexed = searchIndex.isOn();
   const match = indexed ? searchIndex.matchOf(text) : null;
   const like = text ? `%${text.replace(/[%_\\]/g, (c) => '\\' + c)}%` : null;
   const HEAD = "m.subject LIKE ? ESCAPE '\\' OR m.from_name LIKE ? ESCAPE '\\' OR m.from_email LIKE ? ESCAPE '\\' OR m.snippet LIKE ? ESCAPE '\\' OR m.to_json LIKE ? ESCAPE '\\'";
@@ -222,8 +223,9 @@ async function search(gc, userId, q) {
   /** The mails the index finds. */
   const byIndex = async () => {
     const { where, args } = scope();
-    return store.all(gc, `SELECT m.id, m.date FROM mail_fts x JOIN messages m ON m.id = x.rowid JOIN folders f ON f.id = m.folder_id
-      WHERE x.mail_fts MATCH ? AND ${where.join(' AND ')} ${TAIL}`, [match, ...args, LIMIT + 1]);
+    // the phrase for every table of the index (search.js MATCH_ALL)
+    return store.all(gc, `SELECT m.id, m.date FROM ${searchIndex.MATCH_ALL} x JOIN messages m ON m.id = x.rowid JOIN folders f ON f.id = m.folder_id
+      WHERE ${where.join(' AND ')} ${TAIL}`, [...searchIndex.matchArgs(match), ...args, LIMIT + 1]);
   };
   /** The rows of the list for `found` ([{ id, date }], in their order). */
   const rowsOf = async (found) => {
@@ -256,10 +258,9 @@ async function search(gc, userId, q) {
     await within(Promise.all(acc.map((a) => engine.remoteSearch(gc, a, { text, after, before }).catch(() => []))), WAIT_MS * 1.5);
     res = await run();
   }
-  // index (1.14.0): 'ready' | 'building' (pending: mails still searched the old way — the results are complete either
-  // way, only slower) | 'off' (the database has no full-text index)
-  const pending = indexed ? await searchIndex.pending(gc) : 0;
-  return { items: res.rows.map((r) => mailstore.summary(r)), next: res.next, remote, index: { state: !indexed ? 'off' : pending ? 'building' : 'ready', pending } };
+  // index (1.14.0): 'off' (the usual: the search of 1.13) | 'building' (pending: mails still searched the old way — the
+  // results are complete either way) | 'ready' | 'removing' | 'unavailable'
+  return { items: res.rows.map((r) => mailstore.summary(r)), next: res.next, remote, index: { state: index.state, pending: index.pending } };
 }
 
 // ─── one message ────────────────────────────────
