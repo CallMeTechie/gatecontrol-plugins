@@ -84,9 +84,52 @@ async function clean(gc, now) {
   try { await notizen.purge(gc, now); } catch (e) { gc.log.warn('to-do retention failed', (e && (e.code || e.message)) || 'error'); }
 }
 
+// the background run's own budget (1.13.1) — GateControl's limit is 120 s (engine.limits.totalMs / hardMs)
+const budget = engine.limits;
+const LATE = Symbol('late');
+let pending = null; // the background run that still works (tick)
+
+/** The parts of a background run in order — each only while the run's budget lasts (`run.part`: the one at work). */
+async function parts(gc, run) {
+  const now = run.since;
+  const left = () => budget.totalMs - (Date.now() - now);
+  const part = async (name, fn, warn) => {
+    run.part = name;
+    try { await fn(); } catch (e) { if (warn) gc.log.warn(warn, (e && (e.code || e.message)) || 'error'); }
+  };
+  // without a valid licence nothing is synced or sent; people an administrator switched off neither (seats.js)
+  let off;
+  run.part = 'seats';
+  try { off = await seats.idle(gc); } catch { off = null; }
+  if (off && off.all) { await part('clean', () => clean(gc, Date.now()), 'clean failed'); return; }
+  const skip = (off && off.users) || new Set();
+  await part('outbox', () => compose.due(gc, now, skip), 'outbox failed');
+  // the mail: two thirds of the run at most
+  await part('mail', () => engine.tick(gc, now, Math.min(engine.limits.runMs, Math.max(0, left())), skip), 'sync run failed');
+  // calendars and contacts: after the mail, in what is left of the run (1.2.0)
+  if (left() > 0) await part('calendar', () => pim.tick(gc, Date.now(), now, budget.totalMs, skip), 'calendar sync failed');
+  // contacts: the one run per person after 1.4.0 (duplicates become one GC contact), one person per run
+  if (left() > 0) await part('contacts', () => cardmerge.tick(gc, skip), 'contacts merge failed');
+  // reminders and the outbox are due at their time: always
+  await part('reminders', () => reminders.tick(gc, Date.now(), skip), 'reminders failed');
+  if (left() > 0) await part('pictures', async () => { for (const a of await avatars.tick(gc, Date.now(), skip)) await push.changed(gc, a.user_id, a.id, null); }, 'pictures failed');
+  await part('outbox', () => compose.due(gc, Date.now(), skip), null);
+  if (left() > 0) await part('ai', () => ai.tick(gc, left), 'ai sorting failed');
+  if (left() > 0) await part('filing', () => drive.tick(gc, Date.now(), left), 'filing failed');
+  // since 1.5.0 (Speicherorte, storage.js): the prefetch that waited for room at GateControl; the attachments of 1.4
+  // and older into the area `attachments`, a batch per run
+  if (left() > 0) await part('attachments', () => engine.filesLater(gc), 'attachments later failed');
+  if (left() > 0) await part('areas', () => storage.adopt(gc, Date.now()), 'area move failed');
+  if (left() > 0) await part('clean', () => clean(gc, Date.now()), 'clean failed');
+  // 1.11.0: „Zu tun“ and flagged mails to „Notizen & Aufgaben“ — only what changed, at most once a minute (never throws)
+  if (left() > 0) { run.part = 'notes'; await notizen.source.tick(gc, Date.now()); }
+  run.part = 'done';
+}
+
 module.exports = {
   async start(gc) {
     // a fresh process state (one plugin process — and in tests one per mock host)
+    pending = null;
     config.reset();
     messages.reset();
     drive.reset();
@@ -168,31 +211,22 @@ module.exports = {
     } catch (e) { gc.log.warn('scan state failed', (e && e.code) || 'error'); }
   },
 
+  /**
+   * The background run. GateControl gives it 120 s („background run failed: plugin did not answer in time“ after that)
+   * — since 1.13.1 it keeps to a budget of its own: the parts run in order while RUN_MS are not used up (what does not
+   * fit comes in the next run, 15 s later), and after HARD_MS the run answers even when a part still hangs (it goes on
+   * alone; no new run starts beside it, and the log names the part once).
+   */
   async tick(gc) {
-    const now = Date.now();
-    // without a valid licence nothing is synced or sent; people an administrator switched off neither (seats.js)
-    let off;
-    try { off = await seats.idle(gc); } catch { off = null; }
-    if (off && off.all) { try { await clean(gc, Date.now()); } catch (e) { gc.log.warn('clean failed', (e && (e.code || e.message)) || 'error'); } return; }
-    const skip = (off && off.users) || new Set();
-    try { await compose.due(gc, now, skip); } catch (e) { gc.log.warn('outbox failed', (e && (e.code || e.message)) || 'error'); }
-    try { await engine.tick(gc, now, 70000, skip); } catch (e) { gc.log.warn('sync run failed', (e && (e.code || e.message)) || 'error'); }
-    // calendars and contacts: after the mail, in what is left of the run (1.2.0)
-    try { await pim.tick(gc, Date.now(), now, 70000, skip); } catch (e) { gc.log.warn('calendar sync failed', (e && (e.code || e.message)) || 'error'); }
-    // contacts: the one run per person after 1.4.0 (duplicates become one GC contact), one person per run
-    if (Date.now() - now < 70000) { try { await cardmerge.tick(gc, skip); } catch (e) { gc.log.warn('contacts merge failed', (e && (e.code || e.message)) || 'error'); } }
-    try { await reminders.tick(gc, Date.now(), skip); } catch (e) { gc.log.warn('reminders failed', (e && (e.code || e.message)) || 'error'); }
-    try { for (const a of await avatars.tick(gc, Date.now(), skip)) await push.changed(gc, a.user_id, a.id, null); } catch (e) { gc.log.warn('pictures failed', (e && (e.code || e.message)) || 'error'); }
-    try { await compose.due(gc, Date.now(), skip); } catch { /* next run */ }
-    try { await ai.tick(gc); } catch (e) { gc.log.warn('ai sorting failed', (e && (e.code || e.message)) || 'error'); }
-    try { await drive.tick(gc, Date.now()); } catch (e) { gc.log.warn('filing failed', (e && (e.code || e.message)) || 'error'); }
-    // since 1.5.0 (Speicherorte, storage.js): the prefetch that waited for room at GateControl; the attachments of 1.4
-    // and older into the area `attachments`, a batch per run
-    try { await engine.filesLater(gc); } catch (e) { gc.log.warn('attachments later failed', (e && (e.code || e.message)) || 'error'); }
-    try { await storage.adopt(gc, Date.now()); } catch (e) { gc.log.warn('area move failed', (e && (e.code || e.message)) || 'error'); }
-    try { await clean(gc, Date.now()); } catch (e) { gc.log.warn('clean failed', (e && (e.code || e.message)) || 'error'); }
-    // 1.11.0: „Zu tun“ and flagged mails to „Notizen & Aufgaben“ — only what changed, at most once a minute (never throws)
-    await notizen.source.tick(gc, Date.now());
+    if (pending) return;
+    const run = { part: 'start', since: Date.now() };
+    const work = parts(gc, run).catch((e) => { gc.log.warn('background run failed', run.part, (e && (e.code || e.message)) || 'error'); }).finally(() => { if (pending === work) pending = null; });
+    pending = work;
+    let t;
+    const late = new Promise((resolve) => { t = setTimeout(resolve, budget.hardMs, LATE); });
+    const out = await Promise.race([work, late]);
+    clearTimeout(t);
+    if (out === LATE) gc.log.warn('background run takes long', `part ${run.part}`, `${Math.round((Date.now() - run.since) / 1000)} s`, '— the next run waits for it');
   },
 
   /** The app tab: only for people the administrator allows. */

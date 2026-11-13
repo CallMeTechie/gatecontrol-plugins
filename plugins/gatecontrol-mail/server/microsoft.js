@@ -75,7 +75,8 @@ async function post(gc, tenant, path, form) {
   try {
     r = await gc.http.fetch(`${LOGIN}/${tenant || 'common'}/oauth2/v2.0/${path}`, { method: 'POST', form, timeoutMs: TIMEOUT });
   } catch (e) {
-    throw fail('unreachable', { reason: (e && e.code) || 'network' });
+    // net (1.13.1): no answer at all — the sync ends the account's turn instead of asking folder after folder (engine.js)
+    throw fail('unreachable', { reason: (e && e.code) || 'network', net: true });
   }
   let body = {};
   try { body = typeof r.body === 'string' ? JSON.parse(r.body || '{}') : (r.body || {}); } catch { body = {}; }
@@ -260,7 +261,7 @@ async function graph(gc, a, method, path, body, extra = {}) {
       r = await gc.http.fetch(url, { method, headers, ...(body !== undefined ? { json: body } : {}), ...(extra.bodyMedia ? { bodyMedia: extra.bodyMedia } : {}),
         ...(extra.bodyBase64 ? { bodyBase64: extra.bodyBase64 } : {}), ...(extra.binary ? { binary: true } : {}), timeoutMs: extra.timeoutMs || TIMEOUT });
     } catch (e) {
-      throw fail('unreachable', { reason: (e && e.code) || 'network' });
+      throw fail('unreachable', { reason: (e && e.code) || 'network', net: true });
     }
     if (r.status === 401 && attempt === 0) continue;
     // calendars and contacts (1.2.0): a 403 there means a scope is missing — the mail of the account is fine

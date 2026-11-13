@@ -28,6 +28,8 @@ const PIECE = 9 * 320 * 1024;        // bytes per PUT of an upload session (Grap
 const PIECES_MAX = 200;
 const UPLOAD_TIMEOUT = 120000;
 const UPLOAD_URL_RE = /^https:\/\/outlook\.office(365)?\.com\//;
+const SYNCED_WRITE_MS = 60 * 60000;  // 1.13.1: „synced“ of a folder whose round brought nothing is written at most this often
+const synced = new Map();            // folder id → its last sync that was not written (this process)
 
 const person = (r) => (r && r.emailAddress ? { name: r.emailAddress.name || '', email: r.emailAddress.address || '' } : null);
 const people = (l) => (Array.isArray(l) ? l.map(person).filter(Boolean) : []);
@@ -59,15 +61,19 @@ async function get(gc, a, path, extra) {
   return r.json || {};
 }
 
-/** The folders of account `a` (and the roles of the well-known ones). → rows */
-async function syncFolders(gc, a) {
+/**
+ * The folders of account `a` (and the roles of the well-known ones). → rows. timeoutMs (1.13.1): per request of a sync;
+ * a request without any answer ends the listing (before, each of the six well-known folders waited for its own limit).
+ */
+async function syncFolders(gc, a, timeoutMs) {
   const roles = new Map();
   const wellKnown = [];
+  const extra = timeoutMs ? { timeoutMs } : undefined;
   for (const [wk, role] of Object.entries(WELL_KNOWN)) {
     try {
-      const x = await get(gc, a, `/me/mailFolders/${wk}?$select=${FOLDER_SELECT}`);
+      const x = await get(gc, a, `/me/mailFolders/${wk}?$select=${FOLDER_SELECT}`, extra);
       if (x && x.id) { roles.set(x.id, role); wellKnown.push(x); }
-    } catch (e) { if (e.code === 'auth_failed') throw e; }
+    } catch (e) { if (e.code === 'auth_failed' || e.code === 'busy' || (e.extra && e.extra.net)) throw e; }
   }
   const found = [];
   // level by level (the shallow ones first, should the mailbox hold more than FOLDERS_MAX), a request at a time (the
@@ -84,7 +90,7 @@ async function syncFolders(gc, a) {
       if (full()) { over += at.count; continue; }
       let next = at.url;
       while (next) {
-        const page = await get(gc, a, next);
+        const page = await get(gc, a, next, extra);
         if (!page) break;
         for (const x of page.value || []) {
           const kids = Number(x.childFolderCount) > 0 ? Number(x.childFolderCount) : 0;
@@ -160,9 +166,10 @@ async function syncFolder(gc, a, f, o) {
   const first = !f.synced_at;
   let pages = 0;
   let done = false;
+  let touched = false;
   const most = o.pages || PAGES;
   while (url && pages < most) {
-    const r = await ms.graph(gc, a, 'GET', url, undefined, { headers: { prefer: `odata.maxpagesize=${PAGE}` } });
+    const r = await ms.graph(gc, a, 'GET', url, undefined, { headers: { prefer: `odata.maxpagesize=${PAGE}` }, ...(o.timeoutMs ? { timeoutMs: o.timeoutMs } : {}) });
     if (r.status === 410 || (r.status === 400 && /sync/i.test(ms.graphError(r)))) {
       // the delta token ran out: start over
       await store.run(gc, 'UPDATE folders SET delta = NULL WHERE id = ?', [f.id]);
@@ -172,6 +179,7 @@ async function syncFolder(gc, a, f, o) {
     if (r.status === 404) throw fail('not_found');
     if (r.status >= 400) throw fail('unreachable', { reason: ms.graphError(r) });
     const j = r.json || {};
+    if ((j.value || []).length) touched = true;
     for (const x of j.value || []) {
       if (x['@removed']) {
         const gone = await store.one(gc, 'SELECT id FROM messages WHERE folder_id = ? AND remote_id = ?', [f.id, x.id]);
@@ -189,7 +197,16 @@ async function syncFolder(gc, a, f, o) {
     if (j['@odata.deltaLink']) { url = j['@odata.deltaLink']; done = true; break; }
     url = j['@odata.nextLink'] || null;
   }
-  await store.run(gc, 'UPDATE folders SET delta = ?, synced_at = ?, complete = ? WHERE id = ?', [url, done || f.synced_at ? now : null, done && !o.since ? 1 : 0, f.id]);
+  // 1.13.1: a round that brought nothing (the usual one, per folder every 15 minutes) writes nothing — the deltaLink of
+  // before asks for the same changes as the new one, `complete` is as stored; „synced“ is kept in memory (syncedAt)
+  // and written once it is older than SYNCED_WRITE_MS. Anything that came or went, a first round, pages left: written.
+  const complete = done && !o.since ? 1 : 0;
+  const idle = done && pages === 1 && !touched && /deltatoken/i.test(f.delta || '') && !!f.synced_at && f.complete === complete && now - f.synced_at < SYNCED_WRITE_MS;
+  if (idle) synced.set(f.id, now);
+  else {
+    await store.run(gc, 'UPDATE folders SET delta = ?, synced_at = ?, complete = ? WHERE id = ?', [url, done || f.synced_at ? now : null, complete, f.id]);
+    synced.delete(f.id);
+  }
   if (out.created.length) out.changed = true;
   out.more = !done && !!url;
   return out;
@@ -199,9 +216,9 @@ async function syncFolder(gc, a, f, o) {
  * The newest `count` messages of folder `f` (the first sync of a posteingang: the list is there at once, the delta round
  * follows in steps — Graph's delta has no order) → { created, changed }.
  */
-async function latest(gc, a, f, count, since) {
+async function latest(gc, a, f, count, since, timeoutMs) {
   const filter = since ? `&$filter=${encodeURIComponent(`receivedDateTime ge ${new Date(since).toISOString()}`)}` : '';
-  const j = await get(gc, a, `/me/mailFolders/${encodeURIComponent(f.remote_id)}/messages?$select=${SELECT}${filter}&$orderby=receivedDateTime desc&$top=${count}`);
+  const j = await get(gc, a, `/me/mailFolders/${encodeURIComponent(f.remote_id)}/messages?$select=${SELECT}${filter}&$orderby=receivedDateTime desc&$top=${count}`, timeoutMs ? { timeoutMs } : undefined);
   const now = Date.now();
   const created = [];
   for (const x of (j && j.value) || []) {
@@ -434,4 +451,7 @@ async function me(gc, a) {
   return { email: String((x && (x.mail || x.userPrincipalName)) || '').toLowerCase(), name: (x && x.displayName) || '' };
 }
 
-module.exports = { eventKind, syncFolders, syncFolder, latest, older, message, download, mediaFetch, photo, patch, move, copy, destroy, search, send, me, headerOf, canAttach, ownReply, WELL_KNOWN, SMALL_MAX, PIECE };
+/** 1.13.1: the last sync of folder `id` this process did not write (0: none). */
+const syncedAt = (id) => synced.get(id) || 0;
+
+module.exports = { syncedAt, forgetSynced: () => synced.clear(), eventKind, syncFolders, syncFolder, latest, older, message, download, mediaFetch, photo, patch, move, copy, destroy, search, send, me, headerOf, canAttach, ownReply, WELL_KNOWN, SMALL_MAX, PIECE };
