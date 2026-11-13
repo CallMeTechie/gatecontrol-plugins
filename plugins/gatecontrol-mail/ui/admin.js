@@ -171,6 +171,8 @@
     page.appendChild(calendarCard(s.calendar || {}));
     page.appendChild(resourcesCard(s.resources || {}));
     page.appendChild(contactsCard(s.contacts || {}));
+    // since 1.14.0: the full-text search (an option, off unless switched on)
+    page.appendChild(searchCard(s.search || {}, V.search || {}));
     // AI
     var aiRow = function (k, title, desc) { return row(title, desc, sw(s.ai[k], function (on) { var o = {}; o[k] = on; put({ ai: o }); })); };
     page.appendChild(h('div', { class: 'ma-card' }, [h('h2', { text: T('a.ai_title') }),
@@ -232,6 +234,21 @@
     return h('div', { class: 'ma-card' }, [h('h2', { text: T('a.res_title') }),
       row(T('a.res_enabled'), T('a.res_enabled_d'), sw(on, function (x) { put({ resources: { enabled: x } }); })),
       on ? row(T('a.res_where'), T('a.res_where_d'), go || h('span', { class: 'ma-d', text: T('a.res_where_tab') })) : null,
+    ]);
+  }
+
+  /**
+   * Since 1.14.0 the card „Suche“: the full-text search on/off, what it costs, and its state — off, being built (how
+   * many mails are left), ready, being removed — with the size of the database file and its free room.
+   */
+  function searchCard(c, v) {
+    var on = c.fulltext === true;
+    var state = v.state === 'building' ? T('a.fts_building', { n: v.pending || 0 }) : v.state === 'ready' ? T('a.fts_ready') : v.state === 'removing' ? T('a.fts_removing')
+      : v.state === 'unavailable' ? T('a.fts_unavailable') : T('a.fts_off');
+    var db = v.db ? T('a.fts_db', { size: fmtSize(v.db.bytes), free: fmtSize(v.db.freeBytes) }) : null;
+    return h('div', { class: 'ma-card' }, [h('h2', { text: T('a.fts_title') }),
+      row(T('a.fts_enabled'), T('a.fts_enabled_d'), sw(on, function (x) { put({ search: { fulltext: x } }); })),
+      row(T('a.fts_state'), db, h('span', { class: 'ma-d', text: state })),
     ]);
   }
 

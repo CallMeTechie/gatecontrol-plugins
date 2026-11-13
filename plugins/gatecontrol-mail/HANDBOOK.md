@@ -1,4 +1,4 @@
-<!-- version: 1.13.1 -->
+<!-- version: 1.14.0 -->
 # Mail
 
 ## What the plugin does
@@ -106,6 +106,14 @@ When attachments live on a storage target that is unreachable, Mail tries again 
 
 **Free/busy shows “unknown”.**
 The person switched free/busy off or is not in GateControl. Colleagues in Microsoft 365 appear through your Microsoft account.
+
+## New in 1.14.0
+
+- **Full-text search as an option:** under Settings › Plugins › Mail there is a new card “Search” with the switch **“Full-text search”**. It is off until an administrator switches it on – so nothing changes right after the update.
+- **Switched on**, Mail keeps a search index of the subject, sender, recipients and text of every mail. The search then no longer reads every mail for each request and gets much faster. It finds what it found before, also in the middle of a word (“bill” finds “phonebill”), and upper and lower case no longer matter for umlauts either.
+- **Storage:** the index takes about as much storage as the texts of the mails themselves. Once switched on, Mail builds it in the background, newest mails first – with large mailboxes and slow disks this takes a while. The search still finds everything meanwhile. Beside the switch you see the state: off, being built (N mails to go), ready or being removed.
+- **One or two characters:** only with the full-text search on, one or two characters are looked for in subject, sender, recipients and snippet, not in the whole text. From three characters on the text is searched too. With the full-text search off everything stays as before.
+- **Switching it off** removes the index again, piece by piece in the background. Its room becomes free in the database and is used by new mail; the database file itself does not get smaller.
 
 ## New in 1.13.1
 

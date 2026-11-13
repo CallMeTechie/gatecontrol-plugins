@@ -14,6 +14,7 @@ const mailstore = require('./mailstore');
 const classify = require('./classify');
 const push = require('./push');
 const undo = require('./undo');
+const searchIndex = require('./search');
 const { fail, posInt, parse, clip } = require('./util');
 
 const LIMIT = 50;
@@ -168,7 +169,11 @@ async function list(gc, userId, q) {
   return { items: res.rows.map((r) => mailstore.summary(r)), next: res.next, counts };
 }
 
-/** GET search?q=&box=&from=&after=&before=&attachments=&unread=&cursor= */
+/**
+ * GET search?q=&box=&from=&after=&before=&attachments=&unread=&cursor= → { items, next, remote, index }. `q` is looked
+ * for as it is typed (one piece of text, anywhere in the subject, the sender, the recipients, the snippet or the mail's
+ * text; upper and lower case alike).
+ */
 async function search(gc, userId, q) {
   const text = clip(String(q.q || '').trim(), 200);
   const accounts = await accountsOf(gc, userId);
@@ -179,14 +184,19 @@ async function search(gc, userId, q) {
   const ms = (v) => { if (v == null || v === '') return null; const n = /^\d{1,15}$/.test(String(v)) ? Number(v) : Date.parse(v); if (!Number.isFinite(n)) throw fail('invalid', { field: 'date' }); return n; };
   const after = ms(q.after);
   const before = ms(q.before);
-  const run = async () => {
+  // 1.14.0: the full-text index (search.js) for the mails it holds, the old way (LIKE over the fields and the text)
+  // for the rest — the mails whose turn in the build has not come, the long rest of a very long text. While the option
+  // is off (the usual case) or the index is being removed: every mail the old way, as in 1.13. Fewer than three characters: no trigram — the fields of the list
+  // (subject, sender, recipients, snippet) by LIKE, not the texts (two letters are in nearly every text; reading all
+  // of them for that is what made the search slow).
+  const index = await searchIndex.view(gc);
+  const indexed = searchIndex.isOn();
+  const match = indexed ? searchIndex.matchOf(text) : null;
+  const like = text ? `%${text.replace(/[%_\\]/g, (c) => '\\' + c)}%` : null;
+  const HEAD = "m.subject LIKE ? ESCAPE '\\' OR m.from_name LIKE ? ESCAPE '\\' OR m.from_email LIKE ? ESCAPE '\\' OR m.snippet LIKE ? ESCAPE '\\' OR m.to_json LIKE ? ESCAPE '\\'";
+  const scope = () => {
     const where = [`m.account_id IN (${store.marks(acc.length)})`, "f.role IS NOT 'trash'", "f.role IS NOT 'junk'"];
     const args = acc.map((a) => a.id);
-    if (text) {
-      const like = `%${text.replace(/[%_\\]/g, (c) => '\\' + c)}%`;
-      where.push("(m.subject LIKE ? ESCAPE '\\' OR m.from_name LIKE ? ESCAPE '\\' OR m.from_email LIKE ? ESCAPE '\\' OR m.snippet LIKE ? ESCAPE '\\' OR b.text LIKE ? ESCAPE '\\' OR m.to_json LIKE ? ESCAPE '\\')");
-      args.push(like, like, like, like, like, like);
-    }
     if (q.from) { where.push('m.from_email LIKE ?'); args.push(`%${String(q.from).toLowerCase().slice(0, 200)}%`); }
     if (after) { where.push('m.date >= ?'); args.push(after); }
     if (before) { where.push('m.date < ?'); args.push(before); }
@@ -194,9 +204,51 @@ async function search(gc, userId, q) {
     if (on(q.unread)) where.push('m.unread = 1');
     const c = cursorArg(q.cursor);
     if (c) { where.push('(m.date < ? OR (m.date = ? AND m.id < ?))'); args.push(c.date, c.date, c.id); }
-    const rows = await store.all(gc, `SELECT ${SUMMARY_COLS} FROM messages m JOIN folders f ON f.id = m.folder_id LEFT JOIN bodies b ON b.message_id = m.id
-      WHERE ${where.join(' AND ')} ORDER BY m.date DESC, m.id DESC LIMIT ?`, [...args, LIMIT + 1]);
-    return { rows: rows.slice(0, LIMIT), next: rows.length > LIMIT ? cursorOf(rows[LIMIT - 1]) : null };
+    return { where, args };
+  };
+  // the newest LIMIT + 1 of a statement as { id, date } — the columns of the list (with their subqueries) are read
+  // for the mails of the page only (rowsOf), not for every mail that matches
+  const TAIL = 'ORDER BY m.date DESC, m.id DESC LIMIT ?';
+  /** The mails that match by LIKE — `rest`: only the ones the index does not hold completely; `texts`: the texts too. */
+  const byLike = async (rest, texts) => {
+    const { where, args } = scope();
+    if (rest) where.unshift('m.fts <> 1');
+    if (text) {
+      where.push(`(${HEAD}${texts ? " OR b.text LIKE ? ESCAPE '\\'" : ''})`);
+      args.push(like, like, like, like, like, ...(texts ? [like] : []));
+    }
+    return store.all(gc, `SELECT m.id, m.date FROM messages m JOIN folders f ON f.id = m.folder_id${texts ? ' LEFT JOIN bodies b ON b.message_id = m.id' : ''}
+      WHERE ${where.join(' AND ')} ${TAIL}`, [...args, LIMIT + 1]);
+  };
+  /** The mails the index finds. */
+  const byIndex = async () => {
+    const { where, args } = scope();
+    // the phrase for every table of the index (search.js MATCH_ALL)
+    return store.all(gc, `SELECT m.id, m.date FROM ${searchIndex.MATCH_ALL} x JOIN messages m ON m.id = x.rowid JOIN folders f ON f.id = m.folder_id
+      WHERE ${where.join(' AND ')} ${TAIL}`, [...searchIndex.matchArgs(match), ...args, LIMIT + 1]);
+  };
+  /** The rows of the list for `found` ([{ id, date }], in their order). */
+  const rowsOf = async (found) => {
+    const byId = new Map();
+    for (const part of store.chunks(found.map((r) => r.id))) {
+      for (const r of await store.all(gc, `SELECT ${SUMMARY_COLS} FROM messages m WHERE m.id IN (${store.marks(part.length)})`, part)) byId.set(r.id, r);
+    }
+    return found.map((r) => byId.get(r.id)).filter(Boolean);
+  };
+  const run = async () => {
+    let found;
+    if (!text) found = await byLike(false, false);
+    else if (!indexed) found = await byLike(false, true);
+    else if (!match) found = await byLike(false, false);
+    else {
+      // both, newest first, a mail once (one with a long text may be found by its fields in the index and by LIKE)
+      const seen = new Set();
+      found = [...await byIndex(), ...await byLike(true, true)].filter((r) => !seen.has(r.id) && seen.add(r.id))
+        .sort((x, y) => y.date - x.date || y.id - x.id);
+    }
+    const more = found.length > LIMIT;
+    const rows = await rowsOf(found.slice(0, LIMIT));
+    return { rows, next: more && rows.length ? cursorOf(rows[rows.length - 1]) : null };
   };
   let res = await run();
   let remote = false;
@@ -206,7 +258,9 @@ async function search(gc, userId, q) {
     await within(Promise.all(acc.map((a) => engine.remoteSearch(gc, a, { text, after, before }).catch(() => []))), WAIT_MS * 1.5);
     res = await run();
   }
-  return { items: res.rows.map((r) => mailstore.summary(r)), next: res.next, remote };
+  // index (1.14.0): 'off' (the usual: the search of 1.13) | 'building' (pending: mails still searched the old way — the
+  // results are complete either way) | 'ready' | 'removing' | 'unavailable'
+  return { items: res.rows.map((r) => mailstore.summary(r)), next: res.next, remote, index: { state: index.state, pending: index.pending } };
 }
 
 // ─── one message ────────────────────────────────

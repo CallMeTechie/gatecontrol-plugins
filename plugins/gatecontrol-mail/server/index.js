@@ -42,6 +42,7 @@ const storage = require('./storage');
 const services = require('./services');
 const notizen = require('./notizen');
 const scan = require('./scan');
+const searchIndex = require('./search');
 const { t } = require('./text');
 const { STATUS, fail, isKnown } = require('./util');
 
@@ -114,6 +115,9 @@ async function parts(gc, run) {
   await part('reminders', () => reminders.tick(gc, Date.now(), skip), 'reminders failed');
   if (left() > 0) await part('pictures', async () => { for (const a of await avatars.tick(gc, Date.now(), skip)) await push.changed(gc, a.user_id, a.id, null); }, 'pictures failed');
   await part('outbox', () => compose.due(gc, Date.now(), skip), null);
+  // 1.14.0: the full-text search when it is on — its build, or its removal after it was switched off, a few seconds
+  // per run (search.js); off and nothing there: no statement
+  if (left() > 0) await part('search index', async () => searchIndex.tick(gc, (await config.get(gc)).search.fulltext, left), 'search index failed');
   if (left() > 0) await part('ai', () => ai.tick(gc, left), 'ai sorting failed');
   if (left() > 0) await part('filing', () => drive.tick(gc, Date.now(), left), 'filing failed');
   // since 1.5.0 (Speicherorte, storage.js): the prefetch that waited for room at GateControl; the attachments of 1.4
@@ -142,6 +146,9 @@ module.exports = {
     notizen.source.reset();
     await notizen.source.available(gc);
     engine.start(gc);
+    // 1.14.0: the search index — its table and triggers before the first mail comes (never fails the start)
+    searchIndex.reset();
+    try { await searchIndex.apply(gc, (await config.get(gc)).search.fulltext); } catch (e) { gc.log.warn('search index failed', (e && (e.code || e.message)) || 'error'); }
   },
 
   async stop() {

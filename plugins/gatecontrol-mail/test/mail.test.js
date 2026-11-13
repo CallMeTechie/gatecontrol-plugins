@@ -12,7 +12,7 @@ const PUBLISHER_ID = 'b2f917a9-e0eb-45b9-9e5f-14c283aa51e9';
 
 test('plugin.json: GateControl 1.219.0, mail with dav, images, Drive, Familie and Alltag services, the app tab', () => {
   const m = JSON.parse(fs.readFileSync(path.join(DIR, 'plugin.json'), 'utf8'));
-  assert.equal(m.version, '1.13.1');
+  assert.equal(m.version, '1.14.0');
   // 1.6.0: calendar_list and calendar_add for Drive; 1.7.0: tofile_count (test/services.test.js)
   for (const s of ['new_draft', 'calendar_list', 'calendar_add', 'tofile_count']) assert.ok(m.services.provides[s].label.de && m.services.provides[s].label.en, s);
   assert.equal(m.services.provides.tofile_count.maxPerHour, 3600);
@@ -269,7 +269,9 @@ test('admin settings: checked values, usage per person (numbers only), Microsoft
     calendar: { enabled: true, accounts: true, business: 'gatecontrol', defaultReminder: 15, internalInvites: true, overlays: { familie: true, alltag: true, birthdays: true },
       // 1.9.0: free/busy and sharing
       freeBusy: true, sharing: true },
-    contacts: { enabled: true, accounts: true, ai: true }, resources: { enabled: true } });
+    contacts: { enabled: true, accounts: true, ai: true }, resources: { enabled: true },
+    // 1.14.0: the full-text search is an option, off unless switched on
+    search: { fulltext: false } });
   assert.equal(r.usage.people[0].name, 'Bob');
   assert.ok(r.usage.people[0].bytes > 0);
   assert.ok(!JSON.stringify(r).includes('Geheimes') && !JSON.stringify(r).includes('bob@gmx.de'), 'never mail or addresses of others');

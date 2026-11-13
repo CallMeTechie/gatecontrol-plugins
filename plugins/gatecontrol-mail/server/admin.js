@@ -22,6 +22,7 @@ const ai = require('./ai');
 const seats = require('./seats');
 const pimstore = require('./pimstore');
 const storage = require('./storage');
+const searchIndex = require('./search');
 const { fail, posInt } = require('./util');
 
 /** Numbers of the calendars and contacts of a person (or of everybody: userId null). */
@@ -66,6 +67,9 @@ async function settingsView(gc, cfg) {
     seats: await seats.summary(gc, cfg),
     // since 1.5.0: where the attachments lie (read only — chosen in GateControl's „Speicherorte“)
     storage: await storage.view(gc),
+    // since 1.14.0: the full-text index of the search (search.js) — its state and the database file's size and free
+    // room (numbers of the file's header; nothing here reads through the database)
+    search: { ...(await searchIndex.view(gc)), db: await searchIndex.dbSize(gc) },
   };
 }
 
@@ -89,7 +93,12 @@ async function route(gc, req, seg) {
   const m = req.method;
   if (seg[1] === 'settings' && seg.length === 2) {
     if (m === 'GET') return settingsView(gc, await config.get(gc));
-    if (m === 'PUT') return settingsView(gc, await config.put(gc, req.body));
+    if (m === 'PUT') {
+      const cfg = await config.put(gc, req.body);
+      // the full-text search switched on or off: at once (tables and triggers made / the triggers gone)
+      await searchIndex.apply(gc, cfg.search.fulltext);
+      return settingsView(gc, cfg);
+    }
   }
   if (seg[1] === 'overview' && seg.length === 2 && m === 'GET') return overview(gc);
   // since 1.9.0: the resources (the page „Ressourcen“, resources.js)

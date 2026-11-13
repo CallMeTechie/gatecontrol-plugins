@@ -2,6 +2,57 @@
 
 Alle E-Mail-Konten an einem Ort – im eigenen Tab der GateControl-Apps und im Portal.
 
+## 1.14.0
+
+- **Volltextsuche als Option** (Einstellungen › Karte „Suche“ › Schalter „Volltextsuche“, `settings.search.fulltext`) –
+  **aus, bis ein Administrator sie einschaltet.** Neu: `server/search.js`, Migration 014.
+  - **Aus (auch nach dem Update):** nichts ändert sich. Keine Tabelle, kein Trigger, kein Index, keine Anweisung im
+    Hintergrundlauf, kein Eintrag im Speicher des Plugins; die Suche ist die von 1.13 (LIKE über Felder und Texte, auch
+    mit ein oder zwei Zeichen). Die Migration 014 fügt nur die Spalte `messages.fts` hinzu (Standard 0) – SQLite
+    schreibt dabei keine Zeile.
+  - **Ein:** ein Suchverzeichnis über Betreff, Absender, Empfänger, Anriss und Text statt `LIKE '%…%'` über alle Mails
+    und alle Mailtexte. SQLite FTS5 mit dem Tokenizer `trigram`, ohne Kopie der Texte (`content=''`,
+    `contentless_delete=1`), in 32 Tabellen (`mail_fts_0` … `_31`, eine Mail in der Tabelle ihrer Nummer modulo 32).
+    Geprüft gegen die Plugin-Datenbank des Servers (better-sqlite3, SQLite 3.53, `trusted_schema = OFF`, `sqlGuard`).
+    - Gefunden wird wie bisher – die Eingabe als ein Stück Text, an jeder Stelle eines Felds, auch mitten im Wort
+      („rechnung“ findet „Stromrechnung“). Besser: Groß/Klein ist auch bei Umlauten egal („ÜBERWEISUNG“ findet
+      „Überweisung“; LIKE konnte das nur für a–z).
+    - Kein Zeichen der Eingabe ist Suchsyntax (`"`, `*`, `(`, `AND`, `OR`, `NOT`, `:`, `^`, `%`, `_`, `\`).
+    - **Verhaltensänderung nur bei eingeschalteter Volltextsuche:** Mit weniger als drei Zeichen (ein Trigramm braucht
+      drei) wird in Betreff, Absender, Empfängern und Anriss gesucht, nicht in den Mailtexten.
+    - Trigger halten das Verzeichnis (neue Mail, ihr Text, geänderter Betreff/Anriss, gelöschte Mail, verdrängter Text).
+    - Die vorhandenen Mails kommen im Hintergrund hinein: neueste zuerst, in Häppchen (5 … 90 Mails, eine kurze
+      Transaktion je Häppchen; ein langsames Häppchen halbiert das nächste), höchstens 3 s je Hintergrundlauf.
+      `messages.fts` ist der Fortschritt – Abbruch oder Neustart jederzeit. Bis eine Mail im Verzeichnis ist, sucht
+      `GET search` dort wie bisher; das Ergebnis ist immer vollständig. Texte über 100 000 Zeichen: der Rest per LIKE.
+      Belegt die Datenbank mehr als 3 GB, ruht der Aufbau (Meldung im Protokoll).
+    - **Speicher:** Das Verzeichnis belegt etwa so viel wie die Mailtexte selbst (gemessen: 191 Mio. Zeichen Text →
+      440 MB).
+  - **Wieder aus:** Die Trigger gehen sofort (die Suche ist ab da wieder die von 1.13). Der Hintergrundlauf entfernt
+    dann das Verzeichnis Tabelle für Tabelle – jede eine eigene Anweisung, weil GateControl eine Anweisung nach 15 s
+    beendet und das Löschen einer Tabelle alle ihre Seiten liest –, danach den Teilindex `messages_fts_todo`, und setzt
+    `messages.fts` in Bereichen von 500 Mails auf 0 zurück. Der Platz wird **in der Datenbank** frei (neue Mails
+    nutzen ihn); die Datei selbst wird nicht kleiner – das ginge nur mit `VACUUM`, das der Kern Plugins nicht erlaubt.
+  - Umschalten mitten im Aufbau oder Abbau und Neustarts in jedem Zustand sind abgedeckt: Der Abbau läuft immer erst
+    zu Ende, dann beginnt gegebenenfalls ein neuer Aufbau. Der Zustand (`off` | `on` | `removing`) steht im Speicher
+    des Plugins (Schlüssel `search`) und wird nur beim Wechsel geschrieben.
+  - Kann die Datenbank kein FTS5 mit `trigram`, legt das Einschalten nichts an; die Einstellungsseite sagt es. Die
+    Mindestversion von GateControl bleibt 1.219.0.
+  - `GET admin/settings` → `search { state: 'off' | 'building' | 'ready' | 'removing' | 'unavailable', pending, db {
+    bytes, freeBytes } }` (Größe der Datenbankdatei und ihr freier Platz aus dem Dateikopf – keine Abfrage, die die
+    Datenbank durchläuft; die Größe des Verzeichnisses allein lässt sich so billig nicht bestimmen). `GET search` →
+    zusätzlich `index { state, pending }`.
+  - Die Suche liest die Spalten der Liste (mit Unterabfragen) nur noch für die Mails der Seite, nicht für jeden Treffer.
+- Gemessen mit 50 000 Mails (30 000 mit Text, Datenbank 329 MB, im Arbeitsspeicher), Volltextsuche ein und fertig
+  aufgebaut gegen 1.13: ohne Treffer 378 ms → 40 ms, seltener Begriff im Text 181 ms → 58 ms, im Betreff
+  173 ms → 25 ms, häufiger Begriff 145 ms → 134 ms. Aufbau: 39 s Arbeitszeit in 12 Läufen. Abbau gegen die echte
+  Datenbank-Bibliothek des Servers (440 MB Verzeichnis, schneller Datenträger): 597 Anweisungen, längste 39 ms.
+- Tests: `test/search.test.js` (eingeschaltet: Felder, Wortmitte, Umlaute, Sonderzeichen gegen LIKE, Trigger, Aufbau
+  mit Abbruch und Neustart, volle Datenbank, sehr lange Texte, kurze Eingaben, Filter und Blättern, Datenbank ohne
+  FTS5, Migration, Abfragepläne mit 20 000 Mails) und `test/search-switch.test.js` (Standard aus ohne jede Spur,
+  ein → aus mit Abbau Schritt für Schritt, Umschalten mitten im Aufbau und Abbau, Neustarts, die Karte der
+  Einstellungsseite DE/EN).
+
 ## 1.13.1
 
 - **Der Hintergrundlauf hält sein Zeitbudget.** GateControl beendet einen Lauf nach 120 s („background run failed: plugin
