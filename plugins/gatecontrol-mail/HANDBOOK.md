@@ -1,4 +1,4 @@
-<!-- version: 1.15.0 -->
+<!-- version: 1.15.1 -->
 # Mail
 
 ## What the plugin does
@@ -107,6 +107,11 @@ When attachments live on a storage target that is unreachable, Mail tries again 
 
 **Free/busy shows “unknown”.**
 The person switched free/busy off or is not in GateControl. Colleagues in Microsoft 365 appear through your Microsoft account.
+
+## New in 1.15.1
+
+- **Faster search with full-text search switched on:** the search no longer also looks at each mail that is already in the search index. That saves many disk reads with every search – most with large mailboxes and slow disks. The results are the same.
+- With full-text search switched off, nothing changes.
 
 ## New in 1.15.0
 

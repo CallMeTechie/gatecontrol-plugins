@@ -389,7 +389,14 @@ test('viele Mails (20 000): eine Suche über den fertigen Index liest keine gro�
   for (let i = 0; i < N; i++) await put(db, f, { subject: i % 2000 === 0 ? `Schornsteinfeger ${i}` : words(4), text: i % 5 < 3 ? words(120) + (i === 12345 ? ' Zaunkönig' : '') : null, date: 1700000000000 + i * 1000 });
   await db.exec('COMMIT');
   assert.equal(await search.pending(host.gc), 0, 'the triggers kept the index');
-  const UNIT = 'SELECT SUM(LENGTH(text)) FROM bodies NOT INDEXED';
+  // the unit of the time check: what this search replaces — the one pass of 1.13 over every mail and every text
+  // (likeIds without the page: a term nothing has, so every field of every mail is looked at). Until 1.15.1 the unit
+  // was the texts read once (SUM(LENGTH(text))), a third of that pass: against it the 32 lookups in the index stand
+  // at 0.3 to 0.5 by their make (the trigrams of „Schornsteinfeger“ are in most of these texts) — a limit of 0.5 there
+  // was a matter of the machine's day, not of the code. Against the pass they stand at 0.1 to 0.2.
+  const NONE = "LIKE '%gibtesnicht%'";
+  const UNIT = `SELECT COUNT(*) FROM messages m JOIN folders f ON f.id = m.folder_id LEFT JOIN bodies b ON b.message_id = m.id
+    WHERE f.role IS NOT 'trash' AND f.role IS NOT 'junk' AND (m.subject ${NONE} OR m.from_name ${NONE} OR m.from_email ${NONE} OR m.snippet ${NONE} OR b.text ${NONE} OR m.to_json ${NONE})`;
   const rec = await cost.record(async () => {
     assert.equal((await find(c, 'Schornsteinfeger')).items.length, 10);
     assert.equal((await find(c, 'zaunkönig')).items.length, 1);
@@ -398,8 +405,16 @@ test('viele Mails (20 000): eine Suche über den fertigen Index liest keine gro�
   // the index is asked (a virtual table: its plan line is a SCAN of it — that is the index lookup)
   assert.deepEqual(cost.fullReads(rec, { allow: [/VIRTUAL TABLE INDEX/, /USING INDEX messages_fts_todo /] }), []);
   assert.ok(cost.indexes(rec).includes('messages_fts_todo'), 'the rest by its partial index');
-  assert.equal([...rec.statements.keys()].filter((s) => /b\.text LIKE/.test(s)).every((s) => /m\.fts <> 1/.test(s)), true, 'LIKE over texts only for mails outside the index');
-  assert.deepEqual(cost.tooSlow(rec, { unit: UNIT, factor: 0.5 }), [], 'no statement costs half of reading every text');
+  const rest = [...rec.statements.values()].filter((s) => /b\.text LIKE/.test(s.sql));
+  assert.equal(rest.length, 1, 'one statement with LIKE over texts');
+  assert.match(rest[0].sql, /m\.fts <> 1/, 'LIKE over texts only for mails outside the index');
+  // … and it gets at them by that index alone (1.15.1): no mail the index holds is as much as looked at. Until then
+  // SQLite went by the account (SEARCH m USING INDEX messages_body_state (account_id=?)) and read every mail of it for
+  // its `fts` — no SCAN, so fullReads saw nothing, and the partial index was in the list above through the COUNT of
+  // the view; only the clock showed it (0.4 to 0.5 × the texts read once, for a rest of no mail)
+  assert.match(cost.plan(rest[0].db, rest[0].sql), /^SCAN m USING INDEX messages_fts_todo \/ SEARCH f USING INTEGER PRIMARY KEY \(rowid=\?\) \/ SEARCH b USING INTEGER PRIMARY KEY \(rowid=\?\) LEFT-JOIN \//);
+  assert.equal(rest[0].rows, 0, 'and the rest is empty here');
+  assert.deepEqual(cost.tooSlow(rec, { unit: UNIT, factor: 0.5 }), [], 'no statement costs half of the search of 1.13');
   // against the search of 1.13 (the same terms by LIKE), measured side by side
   const like = async (term) => likeIds(db, [acc.id], term);
   const ratio = await cost.ratio(async () => { await c.as(ANNA)('GET', 'search', null, { q: 'gibtesnicht', box: String(acc.id) }); }, async () => { await like('gibtesnicht'); }, 5);

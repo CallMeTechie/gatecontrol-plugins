@@ -2,6 +2,24 @@
 
 Alle E-Mail-Konten an einem Ort – im eigenen Tab der GateControl-Apps und im Portal.
 
+## 1.15.1
+
+- **Volltextsuche: Die Suche liest die Mails im Index nicht mehr einzeln an.** Bei eingeschalteter Volltextsuche sucht
+  `GET search` zusätzlich per `LIKE` in den Mails, die der Index (noch) nicht ganz hält (`m.fts <> 1`: Rest des Aufbaus,
+  Ende sehr langer Texte). SQLite nahm für diese Anweisung nicht den Teilindex `messages_fts_todo`, sondern den Weg über
+  das Konto (`SEARCH m USING INDEX messages_body_state (account_id=?)`) und las damit bei **jeder** Suche **jede** Mail
+  des Kontos aus der Tabelle, nur um `fts` anzusehen – auch wenn der Rest leer ist. Mit 20 000 Mails kostete das so viel
+  wie die Suche im Index selbst (gemessen 0,4–0,5 × alle Texte einmal lesen), auf einer langsamen Platte mit kaltem
+  Cache entsprechend viele Seitenzugriffe. Jetzt geht die Anweisung fest über den Teilindex (`INDEXED BY`,
+  `server/messages.js`): bei fertigem Index 0,01–0,02 × statt 0,4–0,5 ×; die ganze Anfrage ohne Treffer 0,20 × statt
+  0,45 × der Suche von 1.13. Ergebnisse unverändert; bei ausgeschalteter Volltextsuche ändert sich nichts.
+- Tests: `test/search.test.js` „viele Mails (20 000)“ prüft den Abfrageplan dieser Anweisung (nur über
+  `messages_fts_todo`) – die bisherige Prüfung „Teilindex wird benutzt“ war schon durch die Zählung des Aufbau-Rests
+  erfüllt und hat das Problem nicht gesehen; nur die Zeitmessung fiel auf (in der CI 0,51 × bei Grenze 0,5). Die
+  Zeitmessung misst jetzt gegen das, was die Volltextsuche ersetzt (ein `LIKE`-Durchgang von 1.13 über alle Mails und
+  Texte) statt gegen „alle Texte einmal lesen“: Die 32 Nachschläge im Index liegen gegen die alte Einheit
+  konstruktionsbedingt bei 0,3–0,5 (unter Last gemessen bis 0,48), gegen die neue bei 0,1–0,2 – Grenze weiter 0,5.
+
 ## 1.15.0
 
 - **Kalender „Aufgaben“ für Notizen & Aufgaben** (ab Notizen & Aufgaben 1.3.0): Aufgaben mit Uhrzeit stehen als Termin

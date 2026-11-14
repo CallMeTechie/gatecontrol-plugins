@@ -1,4 +1,4 @@
-<!-- version: 1.15.0 -->
+<!-- version: 1.15.1 -->
 # Mail
 
 ## Was das Plugin kann
@@ -107,6 +107,11 @@ Liegen die Anhänge auf einem Speicherziel, das nicht erreichbar ist, versucht M
 
 **Frei/Gebucht zeigt „unbekannt“.**
 Die Person hat Frei/Gebucht abgeschaltet oder ist nicht in GateControl. Kolleginnen in Microsoft 365 erscheinen über dein Microsoft-Konto.
+
+## Neu in 1.15.1
+
+- **Schnellere Suche bei eingeschalteter Volltextsuche:** Die Suche sieht die Mails, die schon im Suchverzeichnis stehen, nicht mehr zusätzlich einzeln an. Das spart bei jeder Suche viele Zugriffe auf den Datenträger – am meisten bei großen Postfächern und langsamen Platten. Die Ergebnisse sind dieselben.
+- Ist die Volltextsuche ausgeschaltet, ändert sich nichts.
 
 ## Neu in 1.15.0
 
