@@ -1,5 +1,67 @@
 # Changelog
 
+## 1.5.0
+
+„Aufgaben und Erinnerungen“, Stufe 3 – eine Aufgabe am Ort.
+
+- **Ort an der Aufgabe** (`server/places.js`, `migrations/007_places.sql`): Feld `place` an jeder Aufgabe – ein Ort
+  (`mode: 'place'`: einer von „Meine Orte“, ein Ort der Familie, ein Treffer der Ortssuche, ein Punkt auf der Karte)
+  oder jeder Ort einer Art (`mode: 'any'`, „Jeder Lidl“), dazu `trigger` (`enter` beim Ankommen, `exit` beim
+  Verlassen) und `key` (die Art oder der Name, für den der Ort gewählt wurde). Gesetzt mit `place` in `POST tasks` /
+  `PATCH tasks/<id>`. Erinnert wird **auf dem Handy** (Geofence); der Server hält die Orte, sagt jedem Handy, welche
+  es überwachen soll, und erfährt nie, wo jemand ist. Portal und Windows zeigen den Ort.
+- **Ort aus dem getippten Text – ohne Änderung am Parser:** `POST parse` liefert neben `parsed` und `attach` neu
+  `place { via, word, query, key, label, title, certain, trigger, place, uses, options, search }` (`server/placewords.js`):
+  einen eigenen Ort oder einen der Familie am Namen („bei Oma“, „zu Hause“), eine Adresse („Ringstraße 21“), eine Art
+  von Ort über eine feste Worttabelle (39 Arten, Deutsch und Englisch: Baumarkt, Bäcker, Apotheke, Tankstelle,
+  Supermarkt …), sonst das Wort nach bei / beim / im / in der / an der / am / zu als Name („bei Lidl“). `POST tasks
+  { text, place: 'auto' }` nimmt den Ort, wenn er feststeht (eigener Ort, gemerkter Ort der Art); der Titel verliert
+  die Worte des Orts („beim Baumarkt Schrauben kaufen“ → „Schrauben kaufen“). **`ui/quickparse.js` und
+  `test/vectors/quickparse.json` sind unverändert** (ein Test hält ihre Prüfsummen fest).
+- **Meine Orte und gemerkte Orte:** `GET | POST places`, `PATCH | DELETE places/<id>`, `PUT places/favs`. Jede Wahl
+  eines Orts für eine Art oder einen Namen wird gezählt; der gemerkte („mein Baumarkt“) steht beim nächsten Mal ohne
+  Suche da, früher gewählte stehen in der Auswahl zuerst. „Zuhause“ und die Regel-Orte kommen aus dem Familien-Plugin
+  (ab 1.22.0).
+- **Ortssuche über den eigenen Server** (`server/placesearch.js`, `POST places/search`): **ausgeschaltet, bis der
+  Administrator einen Dienst wählt** (Einstellungen › Plugins › Notizen & Aufgaben › Orte: Aus / Öffentlicher Dienst von
+  OpenStreetMap / Eigener Dienst); jede Person kann sie für sich abschalten. Das Handy fragt nie selbst einen
+  Kartendienst. Hinaus gehen das Suchwort und ein Kasten um die **vom Server auf zwei Nachkommastellen gerundete**
+  Position (etwa 1 km) – kein Name, kein Gerät, keine Kennung; in Datenbank und Protokoll steht davon nichts, der
+  Zwischenspeicher liegt im Arbeitsspeicher. Treffer: die nächsten zuerst, mit Entfernung und einer aus der Entfernung
+  geschätzten Fahrzeit (Luftlinie × 1,3 bei 30 km/h – kein Routing-Dienst).
+  - Öffentlicher Dienst: `nominatim.openstreetmap.org`. Es gelten dessen
+    [Nutzungsbedingungen](https://operations.osmfoundation.org/policies/nominatim/) – höchstens eine Anfrage pro
+    Sekunde für die ganze Installation, Kennung im User-Agent, Zwischenspeicher, nur von Personen ausgelöste Suchen,
+    kein Vervollständigen beim Tippen, kein Massenabruf, keine Zusage. Das Plugin hält sich daran: eine Anfrage nach
+    der anderen mit 1,1 s Abstand, Zwischenspeicher (7 Tage), höchstens 30 echte Suchen je Person und Stunde, 60 s Ruhe
+    nach einem Fehler, Suche nur auf Knopfdruck.
+  - Eigener Dienst: ein selbst betriebenes Nominatim hinter dem Zugriffsziel „Ortssuche“.
+- **Was ein Handy überwacht** (`POST places/watch`): die Orte der eigenen offenen Aufgaben, die dringendste zuerst, je
+  Ort ein Geofence, begrenzt auf das, was das Handy frei hat. Android erlaubt einer App 100 überwachte Orte; die
+  Orts-Erinnerungen und Regel-Orte des Familien-Plugins zählen mit (dessen neuer Dienst `geofences` nennt die Zahl):
+  100 − 10 Reserve − Familie, höchstens 60, ohne Auskunft 30, und nie mehr als das `budget` des Handys. Mit Position
+  und Ortssuche kommen je Aufgabe bis zu fünf weitere Orte derselben Art dazu.
+- **„In der Nähe“:** Kommt das Handy an einem anderen passenden Ort vorbei, meldet sich die Aufgabe dort („Baumarkt am
+  Ring ist gleich hier · geplant war Baumarkt Nord“) mit „Erledigt“, „Nicht hier“ (`POST tasks/<id>/place/skip`),
+  „Später“ (`POST tasks/<id>/place/later`). `POST places/fired` sorgt dafür, dass zwei Geräte nicht beide melden:
+  einmal je Ort in drei Stunden, unterwegs einmal je Aufgabe in drei Stunden und nicht in der Ruhezeit
+  (21:00–07:00, einstellbar). Bei eigenen Orten gibt es den Hinweis nicht.
+- **Ort für jemand anderen nur mit Zustimmung:** Das Handy der Person, der die Aufgabe gehört, überwacht einen von
+  jemand anderem gesetzten Ort erst nach „Annehmen“ (Meldung mit Knöpfen, `POST tasks/<id>/place/consent`); ein neuer
+  Ort fragt neu.
+- **Aufgabe mit Ort und Liste:** Die Erinnerung am Ort nennt die Liste und trägt „Liste öffnen“. **„Gestern offen
+  geblieben“** nennt bei Aufgaben mit Ort den Ort statt der Liste.
+- **Portal:** Zeile „Ort“ in der Aufgabe mit dem Dialog „Welcher Baumarkt?“ (Treffer mit Minuten und Entfernung,
+  „Jeder …“, Meine Orte, Punkt auf der Karte, Beim Ankommen / Beim Verlassen, „Als meinen Ort merken“), Baustein in
+  der Schnell-Eingabe, „Einstellungen“ › Orte (Ortssuche, Hinweis „in der Nähe“, Ruhezeit, Meine Orte). Das Portal hat
+  keinen eigenen Standort: gesucht wird in der Nähe eines eigenen Orts.
+- `GET me` → `features` mit `places`, `placeSearch`; `places { search { state, enabled, mine, service, … }, nearby,
+  quiet, perTask, radius, family }`; `prefs.places { search, nearby, quiet }`; Ereignis `changed { what: ['places'] }`.
+- Neue Rechte: Internet `nominatim.openstreetmap.org:443` (nur mit eingeschalteter Ortssuche genutzt), Zugriffsziel
+  „Ortssuche“, Karten (`ui.maps`), Dienste `gatecontrol-familie:places` und `gatecontrol-familie:geofences`.
+- Tests: `test/places.test.js` (Erkennung, Suche mit gefälschtem Nominatim, Grenzen, Schalter, Budget, Meldungen,
+  Zustimmung), `test/portal.test.js` (Dialog, Baustein, Einstellungen).
+
 ## 1.4.0
 
 „Aufgaben und Erinnerungen“, Stufe 2 – Einkaufslisten im Hub, eine Liste an der Aufgabe.

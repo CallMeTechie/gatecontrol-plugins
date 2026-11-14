@@ -1,5 +1,11 @@
-<!-- version: 1.21.0 -->
+<!-- version: 1.22.0 -->
 # Familie
+
+## Neu in 1.22.0
+
+- **Orte für „Notizen & Aufgaben“:** Mit „Notizen & Aufgaben“ ab 1.5.0 kann eine Aufgabe an einem Ort hängen. „Zuhause“ (der Standort aus den Einstellungen) und die Regel-Orte der Familie stehen dort zur Wahl – nur für Mitglieder der Familie.
+- **Überwachte Orte teilen:** Android erlaubt einer App 100 überwachte Orte. Das Familien-Plugin nennt „Notizen & Aufgaben“, wie viele Orte dein Handy für Orts-Erinnerungen und Regel-Orte schon überwacht – nur die Zahl, keinen Ort. Die Orts-Erinnerungen der Familie haben Vorrang.
+- Die Orts-Erinnerungen bleiben, wo sie sind; für dich ändert sich hier nichts.
 
 ## Was das Plugin kann
 

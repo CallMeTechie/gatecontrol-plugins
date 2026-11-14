@@ -1,5 +1,11 @@
-<!-- version: 1.21.0 -->
+<!-- version: 1.22.0 -->
 # Family
+
+## New in 1.22.0
+
+- **Places for “Notes & Tasks”:** With “Notes & Tasks” 1.5.0 or later a task can hang on a place. “Home” (the location from the settings) and the family's rule places can be chosen there – for members of the family only.
+- **Sharing the watched places:** Android allows an app 100 watched places. The Family plugin tells “Notes & Tasks” how many places your phone already watches for place reminders and rule places – only the number, no place. The family's place reminders come first.
+- The place reminders stay where they are; nothing changes for you here.
 
 ## What the plugin does
 

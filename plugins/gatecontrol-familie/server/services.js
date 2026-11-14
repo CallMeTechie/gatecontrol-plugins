@@ -32,6 +32,13 @@
 //                   the family's places for that member: 'home' („Zuhause“, the settings lat / lon,
 //                   150 m) and, with the module presence on, the rule places ('place:<id>').
 //                   Not a member (or a wall tablet) → [].
+//                   1.22.0: also for gatecontrol-notizen („zu Hause“ and the rule places as places of a task).
+//   geofences       { userId } → { ok: true, reminders, rulePlaces, total, max: 100 }   (1.22.0, caller
+//                   gatecontrol-notizen only) — how many places that member's phone watches for Familie: the
+//                   active, accepted place reminders they are the target of and the rule places of
+//                   presence/watch. No place, no coordinate — only the numbers: Android allows an app 100
+//                   watched places, and „Notizen & Aufgaben“ hands its phone only what is left.
+//                   Codes: invalid, not_member, forbidden.
 //   family_roles    {} → { ok: true, parents: [userId], children: [userId] }   (1.9.0) who the parents and
 //                   the children of the family are (never a wall tablet) — the Messenger's door requests
 //                   („Eltern fragen“); 1.13.2: also for GateDrop (callers gatecontrol-messenger, gatecontrol-gatedrop).
@@ -83,6 +90,9 @@ const CALLER = 'gatecontrol-messenger';
 const DRIVE = 'gatecontrol-drive';
 // 1.15.4: Mail puts dates and deadlines of a mail into the family calendar (calendar_add) — like Drive
 const MAIL = 'gatecontrol-mail';
+// 1.22.0: „Notizen & Aufgaben“ reads the family's places (places) and how many places a phone watches (geofences)
+const NOTIZEN = 'gatecontrol-notizen';
+const GEOFENCES_MAX = 100;
 // callers of calendar_add that enter dates for the person of the call only (no chat origin)
 const PERSONAL = [DRIVE, MAIL];
 const ITEMS_MAX = 50;
@@ -275,6 +285,17 @@ async function places(gc, cfg, payload, user) {
   return out;
 }
 
+// ─── geofences (1.22.0) ─────────────────────────
+
+async function geofences(gc, cfg, payload, user) {
+  const fam = await family(gc, cfg);
+  const m = memberOf(fam, payload, user);
+  const reminders = cfg.modules.places
+    ? (await store.one(gc, "SELECT COUNT(*) AS n FROM places WHERE target_user_id = ? AND active = 1 AND consent = 'accepted'", [m.userId])).n : 0;
+  const rulePlaces = cfg.modules.presence ? (await presence.watch(gc, m.userId)).places.length : 0;
+  return { ok: true, reminders, rulePlaces, total: reminders + rulePlaces, max: GEOFENCES_MAX };
+}
+
 // ─── family_roles (1.9.0; transitional since 1.15.0 — see the head of this file) ───
 
 async function familyRoles(gc, cfg) {
@@ -346,6 +367,7 @@ const HANDLERS = {
   calendar_upsert: (gc, cfg, payload) => calendarUpsert(gc, cfg, payload),
   calendar_remove: (gc, cfg, payload) => calendarRemove(gc, payload),
   places,
+  geofences,
   family_roles: (gc, cfg) => familyRoles(gc, cfg),
   rule_event: (gc, cfg, payload) => ruleEvent(gc, cfg, payload),
   school_day_end: (gc, cfg, payload) => schoolend.handle(gc, cfg, payload, Date.now()),
@@ -363,6 +385,8 @@ const CALLERS = {
   calendar_add: [CALLER, DRIVE, MAIL],
   // 1.16.0: the family calendar in Mail's calendar (read only, the person of the call)
   calendar_range: [MAIL],
+  // 1.22.0: the family's places and the number of watched places for „Notizen & Aufgaben“ (tasks at a place)
+  places: [CALLER, NOTIZEN], geofences: [NOTIZEN],
 };
 const NAMES = Object.freeze(Object.keys(HANDLERS));
 

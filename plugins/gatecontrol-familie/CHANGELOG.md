@@ -3,6 +3,20 @@
 Die Familie in der GateControl-App (eigener Tab), im Portal (eigener Tab „Familie“) und auf
 drei Admin-Seiten. Alles bleibt auf dem eigenen Server.
 
+## 1.22.0
+
+- **Orte für „Notizen & Aufgaben“** (dort ab 1.5.0: Aufgaben am Ort). Zwei Dienste, beide nur für Mitglieder der
+  Familie:
+  - `places` darf jetzt auch „Notizen & Aufgaben“ rufen: „Zuhause“ (der Standort aus den Einstellungen) und die
+    Regel-Orte stehen dort als Orte einer Aufgabe zur Wahl („zu Hause Blumen gießen“, „an der Schule Zettel abgeben“).
+  - Neu `geofences { userId }` → `{ ok, reminders, rulePlaces, total, max: 100 }`: wie viele Orte das Handy dieser
+    Person für das Familien-Plugin überwacht – die aktiven, angenommenen Orts-Erinnerungen, deren Ziel sie ist, und
+    die Regel-Orte aus `presence/watch`. **Nur Zahlen, kein Ort, keine Koordinate.** Android erlaubt einer App 100
+    überwachte Orte; „Notizen & Aufgaben“ gibt seinem Handy nur, was übrig ist (100 − 10 Reserve − `total`,
+    höchstens 60). Die Orts-Erinnerungen der Familie haben damit Vorrang.
+- Die Orts-Erinnerungen selbst bleiben unverändert im Familien-Plugin; ihr Umzug ist nicht Teil dieser Version.
+- Tests: `test/services.test.js` (beide Dienste, Rufer, Mitglieder, Zustimmung).
+
 ## 1.21.0
 
 - **Einkaufslisten ziehen nach „Notizen & Aufgaben“ um – per Knopf** (`server/shopsync.js`,

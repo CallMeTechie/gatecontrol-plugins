@@ -1,5 +1,14 @@
-<!-- version: 1.4.0 -->
+<!-- version: 1.5.0 -->
 # Notes & Tasks
+
+## New in 1.5.0
+
+- **A task at a place:** A task can hang on a place – “screws at the DIY store”, “return the deposit bottles at Lidl”, “return the ladder at grandma’s”. Your phone reminds when you **arrive** there or **leave** the place. Every task has the row **“Place”** for it; the quick entry finds the place in the text and shows it as a chip.
+- **My places:** Places you name (“Grandma”, “Office”) are found without a search. “Home” and the rule places come from the Family plugin (1.22.0 or later). With **“Remember as my place”** a place becomes your usual DIY store, bakery or Lidl and is there at once next time.
+- **Place search – can be switched off, and off at first:** “Which DIY store is near?” is answered by your own server. The administrator switches the search on under **Settings › Plugins › Notes & Tasks › Places**; everyone can switch it off again for themselves. See [Places](#places).
+- **“Nearby”:** When you pass another fitting place, the task speaks up there as well – with “Done”, “Not here” and “Later”.
+- **Left open yesterday** names the place of a task that has one (“Buy screws · DIY store North”).
+- **Apps:** Only a phone reminds at a place. The Android app gets places with one of the next versions; until then you can set places in the portal, but they do not speak up yet. The place reminders of the Family plugin keep working unchanged.
 
 ## New in 1.4.0
 
@@ -52,7 +61,7 @@ The plugin is new: your own tasks and notes plus everything the other plugins ha
 
 - **My Day:** today's events (e.g. "put out the yellow bin" the evening before, a parent evening), what is overdue, what is due today, what is coming up (two weeks) and what was done today – from your lists and from Family, Mail, Drive, School and Everyday.
 - **Important, Planned, Assigned to me** and your **lists** (also in **groups** and **shared**, e.g. "House & garden" with your partner).
-- **Tasks** with sub-tasks, a due date and time, a **reminder as a push notification**, **repeats** (daily, weekdays, every Monday, every 2 weeks, monthly, yearly or "3 days after completion"), a note, attachments and a person it is assigned to.
+- **Tasks** with sub-tasks, a due date and time, a **reminder as a push notification** or **at a place** (“at the DIY store”, “at grandma’s”), **repeats** (daily, weekdays, every Monday, every 2 weeks, monthly, yearly or "3 days after completion"), a note, attachments and a person it is assigned to.
 - **Notes** in notebooks with tags, pinning, colours, headings, bold and italic, lists, **checklists**, tables, links, pictures and attachments. A checklist line becomes a task with "→ Task".
 - **Full-text search** over tasks and notes – also across umlauts ("zahnarzt" finds "Zahnärztin").
 - **Vault notebooks:** end-to-end encrypted. Only your devices can read titles and text, the server cannot.
@@ -64,6 +73,7 @@ The plugin is new: your own tasks and notes plus everything the other plugins ha
 - For Family, Mail, Drive, School and Everyday to show up here: their versions with "To-dos for Notes & Tasks". A missing source is shown under "Settings" (gear at the bottom left).
 - For moving over from Microsoft To Do: the **Mail 1.12.0** plugin or newer with your Microsoft account.
 - For vault notebooks in the portal: a current browser (Chrome, Edge, Firefox, Safari of the last years).
+- For reminders at a place: a phone with a GateControl app that knows places, and the location permission “Allow all the time”. For “Home” and the rule places: the plugin **Family 1.22.0** or newer. The place search is optional.
 
 ## Setting up
 
@@ -85,6 +95,32 @@ The plugin is new: your own tasks and notes plus everything the other plugins ha
 - **Sharing:** type a name, add the person and choose **Edit** or **View**. Whoever gets a shared list sees it at once and gets a notification. Members find "Show in My Day" and "Leave list" at the ⋯.
 - **Shopping day:** on the chosen weekdays the list is at the top of "My Day" – for all members. Whoever does not want it switches it off for themselves at the ⋯ of the list.
 - **Deleting** asks first and says what happens to the tasks; afterwards there is "Undo". **Deleted things** stay 30 days in the trash, then they are gone.
+
+## Places
+
+- **Setting a place:** Open the row **“Place”** in the task. You choose one of your places, a hit of the search, **“Any Lidl”** (reminds at the first branch you arrive at) or set a **point on the map** and give it a name. Below you decide: **On arriving** or **On leaving**. “No place” takes it away again.
+- **From the text:** The quick entry finds a kind of place (“at the DIY store”, “at the pharmacy”, “petrol station”), a name (“at Lidl”), an address (“21 Ring Street”) and your own places (“at grandma’s”, “at home”). An own or remembered place is taken directly; otherwise a tap on the chip “Place: DIY store …” opens the choice. The chip can be taken away.
+- **My places** are kept under **Settings** (gear at the bottom left) **› Places**: save a new place (name, a point on the map or an address, radius 50–2000 m), change, delete, “no longer remember”. A task keeps its place even when you delete it from the list.
+- **Place search:** In the portal the search looks near one of your places (“near Home”), on the phone near where you are. The hits are sorted by distance, the ones chosen before first; the minutes are estimated from the distance. A search only runs when you press “Search” or open the choice – never while typing.
+- **What leaves your server for it:** only the search word and your position **rounded to about one kilometre** – to a map service of OpenStreetMap. Your name, your device and your exact location are not sent. The position is not stored or logged.
+- **Without the place search** (the default) your remembered places and the map work. No search leaves your server then.
+- **Nearby:** When a task hangs on a DIY store, your phone also watches up to five more DIY stores in your area. When you pass one: “DIY store Ring is right here · you planned DIY store North”. **Not here** switches this one place off for the task, **Later** gives three hours of rest. Per task the hint comes at most once in three hours and not in your quiet hours (9 pm–7 am, to change under Settings › Places). Own places (“at grandma’s”) have no such hint.
+- **For someone else:** When you set a place for a task that is someone else’s, that person is asked (“… would like to remind you”). Their phone only watches the place after **Accept**. When you change the place, they are asked again.
+- **With a shopping list:** When the task also carries a list, the reminder at the place has the button “Open list”.
+- **Never arrived?** The task is under “Left open yesterday” the next morning when it was planned or due yesterday. Give a task with a place a date when it should speak up then at the latest.
+- **How many places?** Android allows an app 100 watched places. The place reminders of the Family plugin come first; “Notes & Tasks” takes what is left (at most 60), the most urgent tasks first.
+
+### Switching the place search on (administrator)
+
+Under **Settings › Plugins › Notes & Tasks › Settings › Places** there is **“Place search on the internet”**:
+
+| Choice | Meaning |
+|---|---|
+| Off (default) | No search. Remembered places and the map work. |
+| Public service of OpenStreetMap (Nominatim) | Your server asks `nominatim.openstreetmap.org`. Its [usage policy](https://operations.osmfoundation.org/policies/nominatim/) applies: at most one request a second for the whole installation, only searches a person triggered, no bulk queries. The service runs on donated servers, without any guarantee, and may withdraw access. Meant for a household. |
+| Own service | A Nominatim you run yourself. You enter its address under **Access targets › Place search**. |
+
+The plugin keeps the rules of the public service by itself: one request after the other with a good second in between, a cache, at most 30 new searches per person and hour. The status line on the settings page says what applies right now.
 
 ## From other plugins
 
@@ -130,6 +166,7 @@ A vault has no search, no tags and no "→ Task" – the server does not know th
 | @Jenny | assigned to Jenny (if she is in the list) |
 | #health | into the list "Health" (if there is none: "New list …") |
 | important, urgent, ! | important |
+| at the DIY store, at the pharmacy, at Lidl, at grandma’s, at home, 21 Ring Street | a place (see [Places](#places)) |
 
 German works too: "morgen 9 Uhr", "jeden Montag", "in 2 Wochen".
 
@@ -163,6 +200,7 @@ Fetching straight from the NAS is not possible yet.
 | Allow vault notebooks | on/off |
 | Add tasks with a time to the calendar | on (default) / off. Needs the Mail plugin 1.15.0 or newer; without Mail nothing happens, once it is added later the open tasks are added. Off: the tasks' events are removed. |
 | From other plugins | Family, Mail, Drive, School, Everyday one by one |
+| Place search on the internet | Off (default), Public service of OpenStreetMap, Own service – see [Places](#places) |
 | Moving over | Microsoft To Do, syncing both ways, DS Note |
 | Largest file, space per person | for pictures and attachments |
 
@@ -179,6 +217,10 @@ Everyone also has their own **“Settings”** (gear at the bottom left): under 
 ## Questions
 
 **Why is a task from Mail missing?** Check under "Settings › Tasks from other plugins" whether Mail is connected and on and whether the account is hidden. "Sync now" fetches the state.
+
+**Does the server learn where I am?** No. Your phone watches the places itself and at most tells the server “this place fired”, so that two devices do not both ring. For the place search the server gets a position rounded to about one kilometre, which it does not store.
+
+**Why does a task not speak up at its place?** Only a phone reminds: it needs the location permission “Allow all the time” and an app version that knows places. When someone else set the place, you have to agree first. With very many places open, the phone watches the most urgent ones.
 
 **Who sees my notes?** Only you – except in shared notebooks. Not even the server can read vault notebooks.
 

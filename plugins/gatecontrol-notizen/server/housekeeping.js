@@ -24,6 +24,7 @@ const remind = require('./remind');
 const yesterday = require('./yesterday');
 const calsync = require('./calsync');
 const shopping = require('./shopping');
+const places = require('./places');
 
 const TRASH_MS = 30 * 86400000;
 const REMIND_LATE = 6 * 3600000; // the push of a list day missed by more than this (server off) is not sent any more
@@ -97,6 +98,8 @@ async function purge(gc, ctx) {
     AND NOT EXISTS (SELECT 1 FROM tasks INDEXED BY idx_tasks_rest WHERE tasks.list_id = lists.id AND (tasks.deleted_at IS NOT NULL OR tasks.parent_id IS NOT NULL))`, [before]);
   await store.run(gc, 'DELETE FROM my_day WHERE user_id IN (SELECT DISTINCT user_id FROM my_day) AND day < ?', [tz.addDays(ctx.today, -7)]);
   await clientIds.purge(gc, ctx.now);
+  // 1.5.0: places no task and no choice needs any more
+  await places.purge(gc, ctx.now);
   return ts.length + ns.length;
 }
 

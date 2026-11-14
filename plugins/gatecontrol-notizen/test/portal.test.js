@@ -49,9 +49,9 @@ function portal(host, user) {
 test('the page: scripts compile, every text key exists in de and en', () => {
   const html = ui.render({ view: 'portal', lang: 'en' });
   const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1]);
-  assert.equal(scripts.length, 7);
+  assert.equal(scripts.length, 8);
   for (const s of scripts) new vm.Script(s);
-  const js = fs.readFileSync(path.join(__dirname, '..', 'ui', 'portal.js'), 'utf8');
+  const js = fs.readFileSync(path.join(__dirname, '..', 'ui', 'portal.js'), 'utf8') + fs.readFileSync(path.join(__dirname, '..', 'ui', 'places.js'), 'utf8');
   const keys = new Set([...js.matchAll(/T\('([a-z0-9_.-]*[a-z0-9])'/g)].map((m) => m[1]));
   for (const k of keys) { assert.ok(texts.de[k] != null, 'de ' + k); assert.ok(texts.en[k] != null, 'en ' + k); }
   assert.deepEqual(Object.keys(texts.de).sort(), Object.keys(texts.en).sort());
@@ -260,7 +260,8 @@ test('portal 1.4.0: the shopping lists in the menu, the list at the task, the ch
     const chips = () => textOf(q.parentNode.parentNode.childNodes[1]);
     q.value = 'morgen bei Lidl einkaufen';
     q.dispatchEvent({ type: 'input' });
-    await until('the chip', () => chips() === 'morgenListe: Einkauf · 2 offen');
+    // 1.5.0: „bei Lidl“ is offered as a place as well (a chip to choose from; nothing is taken without a choice)
+    await until('the chip', () => chips() === 'morgenListe: Einkauf · 2 offenOrt: Lidl …');
     assert.deepEqual(p.calls.filter((c) => c.path === 'parse').map((c) => c.body), [{ text: 'morgen bei Lidl einkaufen', area: 'private' }]);
     q.dispatchEvent({ type: 'keydown', key: 'Enter' });
     const made = await until('made with the list', () => p.calls.find((c) => c.method === 'POST' && c.path === 'tasks'));
@@ -287,4 +288,93 @@ test('portal 1.4.0: the shopping lists in the menu, the list at the task, the ch
     await until('undone', () => p.calls.some((c) => c.method === 'POST' && /^tasks\/\d+\/complete$/.test(c.path) && c.body.done === false));
     assert.deepEqual((await h.ok(ANNA, 'GET', 'shopping')).items.map((i) => i.checked), [true, true], 'the items stay ticked');
   } finally { if (p) p.stop(); await h.close(); clock.set(T0); }
+});
+
+test('portal 1.5.0: the place of a task — the chip of the quick entry, the dialog „Ort“ with the places near, the row in the details, „Einstellungen“ › Orte', async () => {
+  const { clock, T0 } = require('./helpers');
+  const fakes = require('./placefakes');
+  const search = require('../server/placesearch');
+  const h = await fakes.host();
+  let p;
+  try {
+    p = portal(h.host, ANNA);
+    await until('the page', () => p.doc.getElementById('na-quick'));
+    const q = p.doc.getElementById('na-quick');
+    const chipBox = () => q.parentNode.parentNode.childNodes[1];
+    const dlg = () => p.doc.getElementById('na-dialog');
+    const rows = () => dlg().all().filter((x) => x.localName === 'button' && /(^| )na-pl( |$)/.test(x.className));
+    const button = (root, text) => root.all().filter((x) => x.localName === 'button' && textOf(x).trim() === text).pop();
+    // a kind of place: a chip to choose from — nothing is searched while typing
+    q.value = 'beim Baumarkt Schrauben kaufen';
+    q.dispatchEvent({ type: 'input' });
+    await until('the chip', () => textOf(chipBox()) === 'Ort: Baumarkt …');
+    assert.equal(h.net.calls.length, 0);
+    chipBox().all().find((x) => x.localName === 'button').click();
+    // the dialog: „Welcher Baumarkt?“ — searched near „Zuhause“ (the family's home), the nearest first, minutes and distance
+    await until('the hits', () => rows().length >= 4);
+    assert.equal(dlg().hidden, false);
+    assert.match(textOf(dlg()), /^Welcher Baumarkt\?/);
+    assert.deepEqual(rows().map((r) => textOf(r)).slice(0, 4), [
+      'Baumarkt NordIndustriestraße 4, Berlin' + '6 Min.2,3 km', 'Baumarkt am RingRingstraße 21, Berlin' + '10 Min.3,9 km', 'Baumarkt SüdAm Hafen 2, Berlin' + '22 Min.8,6 km', 'Jeder BaumarktErinnert an der ersten Filiale, an der du ankommst']);
+    assert.equal(rows()[0].getAttribute('aria-pressed'), 'true', 'the nearest is chosen');
+    assert.match(textOf(dlg()), /Meine OrteZuhauseOrt der FamilieSchuleOrt der Familie/);
+    assert.match(textOf(dlg()), /Fahrzeit geschätzt aus der Entfernung\. Kartendaten: © OpenStreetMap/);
+    assert.deepEqual(p.calls.filter((c) => c.path === 'places/search').map((c) => c.body), [{ key: 'kind:diy', label: 'Baumarkt', nearFamilyId: 'home' }]);
+    // the second one, on leaving, remembered
+    rows()[1].click();
+    button(dlg(), 'Beim Verlassen').click();
+    const rem = dlg().all().find((x) => x.localName === 'input' && x.getAttribute('id') === 'na-pl-rem');
+    assert.equal(textOf(rem.parentNode), 'Als meinen Ort für „Baumarkt“ merken');
+    rem.checked = true;
+    rem.dispatchEvent({ type: 'change' });
+    button(dlg(), 'Speichern').click();
+    await until('the chip of the chosen place', () => textOf(chipBox()) === 'Baumarkt am Ring · beim Verlassen');
+    q.dispatchEvent({ type: 'keydown', key: 'Enter' });
+    const made = await until('made', () => p.calls.find((c) => c.method === 'POST' && c.path === 'tasks'));
+    assert.deepEqual(made.body.place, { trigger: 'exit', key: 'kind:diy', label: 'Baumarkt', remember: true, ref: 'osm:W102', name: 'Baumarkt am Ring', address: 'Ringstraße 21, Berlin', lat: 52.501, lon: 13.362 });
+    await until('in the list', () => /Schrauben kaufen/.test(p.text('na-main')) && /Baumarkt am Ring/.test(p.text('na-main')));
+    // next time the remembered one is there without asking; the chip can be taken away
+    q.value = 'beim Baumarkt Dübel holen';
+    q.dispatchEvent({ type: 'input' });
+    await until('the remembered place', () => textOf(chipBox()) === 'Baumarkt am Ring · beim Ankommen');
+    chipBox().all().find((x) => x.localName === 'button' && x.getAttribute('aria-label') === 'Ohne Ort').click();
+    assert.equal(textOf(chipBox()), '');
+    q.dispatchEvent({ type: 'keydown', key: 'Enter' });
+    const plain = await until('made without a place', () => p.calls.filter((c) => c.method === 'POST' && c.path === 'tasks')[1]);
+    assert.equal(plain.body.place, undefined);
+    // the details: the row „Ort“, the dialog again with the place chosen, taken away with „Ohne Ort“
+    await until('the row', () => /Schrauben kaufen/.test(p.text('na-main')));
+    p.doc.getElementById('na-main').all().find((x) => x.localName === 'span' && textOf(x) === 'Schrauben kaufen').parentNode.parentNode.dispatchEvent({ type: 'click' });
+    const open = await until('the row in the details', () => p.doc.getElementById('na-side').all().find((x) => x.localName === 'button' && x.getAttribute('aria-label') === 'Ort ändern: Baumarkt am Ring'));
+    assert.equal(textOf(open), 'Baumarkt am Ring · beim Verlassen');
+    open.click();
+    await until('the dialog', () => rows().some((r) => textOf(r).startsWith('Baumarkt am Ring') && r.getAttribute('aria-pressed') === 'true'));
+    assert.match(textOf(dlg()), /Baumarkt am RingRingstraße 21, Berlin · gemerkt für „Baumarkt“/);
+    button(dlg(), 'Ohne Ort').click();
+    await until('taken away', () => p.calls.some((c) => c.method === 'PATCH' && c.body && c.body.place === null));
+    await until('the row again', () => p.doc.getElementById('na-side').all().some((x) => x.localName === 'button' && textOf(x) === 'Ort wählen'));
+    // „Einstellungen“ › Orte: the switches and „Meine Orte“
+    p.doc.body.all().find((x) => x.localName === 'button' && x.getAttribute('aria-label') === 'Einstellungen').click();
+    await until('the card', () => /Meine OrteNeuen Ort merken/.test(p.text('na-main')) && /Baumarkt am Ring/.test(p.text('na-main')));
+    const main = p.doc.getElementById('na-main');
+    assert.match(textOf(main), /OrteOrtssuche im InternetFür „Welcher Baumarkt ist in der Nähe\?“/);
+    assert.match(textOf(main), /Hinweis „in der Nähe“/);
+    assert.match(textOf(main), /ZuhauseOrt der Familie/);
+    assert.match(textOf(main), /Baumarkt am RingRingstraße 21, Berlin · gemerkt für „Baumarkt“/);
+    const sw = main.all().find((x) => x.localName === 'input' && x.getAttribute('aria-label') === 'Ortssuche im Internet');
+    assert.equal(sw.checked, true);
+    sw.checked = false;
+    sw.dispatchEvent({ type: 'change' });
+    await until('saved', async () => (await h.ok(ANNA, 'GET', 'me')).places.search.state === 'off');
+    // a new place of one's own: without the map (no Leaflet here) the coordinates by hand
+    button(main, 'Neuen Ort merken').click();
+    await until('the dialog', () => /^Neuen Ort merken/.test(textOf(dlg())) && /Karte lässt sich gerade nicht laden/.test(textOf(dlg())));
+    const inp = (label) => dlg().all().find((x) => x.localName === 'input' && x.getAttribute('aria-label') === label);
+    inp('Name').value = 'Oma';
+    inp('Breite').value = '52.4';
+    inp('Länge').value = '13.2';
+    button(dlg(), 'Speichern').click();
+    await until('saved', async () => (await h.ok(ANNA, 'GET', 'places')).places.some((x) => x.name === 'Oma' && x.named && x.lat === 52.4));
+    await until('listed', () => /Oma/.test(p.text('na-places')));
+  } finally { if (p) p.stop(); search.state.pauseMs = search.PAUSE_MS; await h.close(); clock.set(T0); }
 });
