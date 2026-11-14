@@ -17,11 +17,16 @@
 //                           (what the administrator sees under Benutzer › Gruppen anyway), never a chat's content
 //   PUT admin/group-chats   { groupIds: [id] (≤ 50) } → the same + skipped [{ id, path, reason: 'family' | 'archived' }]
 //                           and result { synced, released, dropped, errors }; unknown id → invalid, no gc.groups → unavailable
+//   1.12.0 (a GateControl that offers gc.bridges — a preview): bridges to other messengers (bridges.js)
+//   GET admin/bridges       { bridges: { available, reason, enabled, location, locations, networks: [{ id, enabled, state, version,
+//                           memMb, limitMb, linked }], host, history } } — states, versions, memory, how many people linked
+//   PUT admin/bridges       { enabled?, networks?: { whatsapp?: boolean } } → the same; without gc.bridges → bridge_off
 
 const store = require('./store');
 const config = require('./config');
 const people = require('./people');
 const groupchats = require('./groupchats');
+const bridges = require('./bridges');
 const { fail, posInt, iso } = require('./util');
 
 const DAY = 86400000;
@@ -111,6 +116,9 @@ async function route(req, gc, seg, now) {
   // 1.9.0: group chats for GateControl groups (GateControl ≥ 1.200.0) — server/groupchats.js
   if (seg.length === 2 && a === 'group-chats' && m === 'GET') return { groupChats: await groupchats.view(gc) };
   if (seg.length === 2 && a === 'group-chats' && (m === 'PUT' || m === 'PATCH')) return { groupChats: await groupchats.select(gc, req.body, now) };
+  // 1.12.0: bridges to other messengers (a GateControl with gc.bridges) — server/bridges.js
+  if (seg.length === 2 && a === 'bridges' && m === 'GET') return { bridges: await bridges.adminView(gc, now) };
+  if (seg.length === 2 && a === 'bridges' && (m === 'PUT' || m === 'PATCH')) return { bridges: await bridges.adminSet(gc, req.body, now) };
   throw fail('not_found');
 }
 

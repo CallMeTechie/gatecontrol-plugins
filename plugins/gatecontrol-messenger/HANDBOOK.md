@@ -1,4 +1,4 @@
-<!-- version: 1.11.1 -->
+<!-- version: 1.12.0 -->
 # Messenger
 
 ## What the plugin does
@@ -49,6 +49,7 @@ In the portal, files other than pictures, audio and video open in the apps.
 - In group chats for GateControl groups members change neither members nor title and cannot leave; chat admins are the group's leads.
 - Only administrators and parents from the Family plugin may set the family chat as the household's place for notifications.
 - On “Overview” and “Log” administrators only see numbers and errors – never texts, titles, file names, members or who writes to whom.
+- Bridges to other messengers (only when the server offers them): administrators switch them and see state, memory and the number of people linked – no numbers, contacts or contents. Every person can link only their own account; children only after a parent allowed the service.
 
 ## FAQ / troubleshooting
 
@@ -67,8 +68,10 @@ The Family plugin keeps it (page “Features” › messenger group).
 **Old messages are gone.**
 The administrator set a retention, or the chat is a disappearing chat.
 
-## New in 1.11.1
+## New in 1.12.0
 
-- This manual in the tab “Manual” (GateControl ≥ 1.241.0).
+- **Bridges to other messengers, first stage** (WhatsApp first): when the GateControl server offers bridges (still a preview there), “Overview” shows the card “Bridges to other messengers” – with the switch (off by default), the place (server), the state of each bridge, the memory in use and the number of people linked. On every other server nothing changes.
+- Later every person links their own account themselves; child accounts of the Family plugin stay locked until a parent allows the service. The screens for it in the apps and the portal and the chats themselves follow in later versions.
+- When updating, GateControl asks once for the new permission “Bridges to other messengers”.
 
-Last in 1.11.0: the messenger takes over GateControl's virus scan – quarantined files are not sent, blocked files cannot be fetched.
+Last in 1.11.1: this manual in the tab “Manual” (GateControl ≥ 1.241.0).

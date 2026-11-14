@@ -175,10 +175,75 @@
     });
   }
 
+  // ── 1.12.0: bridges to other messengers (a GateControl that offers gc.bridges; hidden otherwise) ──
+  var brBusy = false;
+  function brState(n) {
+    if (n.state === 'running') return { text: T('admin.br_state_running'), cls: '' };
+    if (n.state === 'starting') return { text: T('admin.br_state_starting'), cls: ' is-limit' };
+    if (n.state === 'failed') return { text: T('admin.br_state_failed'), cls: ' is-error' };
+    return { text: T('admin.br_state_off'), cls: ' is-off' };
+  }
+  function brNote(b) {
+    var h = b.host || {};
+    if (!b.enabled) return null;
+    if (h.error === 'compose_missing') return T('admin.br_err_compose');
+    if (h.error === 'start_failed') return T('admin.br_err_start');
+    if (h.script && h.script.host != null && h.script.host < h.script.needed) return T('admin.br_err_script', { have: h.script.host, need: h.script.needed });
+    if (h.state !== 'running') return T('admin.br_starting_hint');
+    return null;
+  }
+  function gb(mb) { return (Math.round(mb / 102.4) / 10).toLocaleString(M.LOCALE) + ' GB'; }
+  function setBr(patch) {
+    if (brBusy) return;
+    brBusy = true;
+    M.api('PUT', 'admin/bridges', patch).then(function (r) { brBusy = false; renderBr(r.bridges); M.toast(T('common.saved')); })
+      .catch(function (e) { brBusy = false; M.warn(e); M.api('GET', 'admin/bridges').then(function (r) { renderBr(r.bridges); }).catch(function () {}); });
+  }
+  function renderBr(b) {
+    var card = $('#ms-br');
+    card.hidden = !(b && b.available);
+    if (card.hidden) return;
+    var sw = M.clear($('#ms-br-on'));
+    sw.appendChild(M.switchBtn(b.enabled, T('admin.br_on'), function (v) { setBr({ enabled: v }); }));
+    var places = M.clear($('#ms-br-places'));
+    (b.locations || []).forEach(function (p) {
+      places.appendChild(el('li', null, [
+        el('span', { class: 'ms-radio' + (p.id === b.location ? ' is-on' : ''), 'aria-hidden': 'true' }),
+        el('span', { class: 'ms-gc-path' }, [el('span', { text: T('admin.br_place_' + p.kind) }), el('small', { text: T('admin.br_place_sub', { cores: p.cores, mem: gb(p.memMb), free: gb(p.freeMb) }) })]),
+        p.id === b.location ? el('span', { class: 'ms-pill', text: T('admin.br_place_here') }) : null,
+      ]));
+    });
+    $('#ms-br-data').textContent = T('admin.br_place_' + (b.location === 'server' ? 'server' : 'gateway'));
+    var list = M.clear($('#ms-br-list'));
+    (b.networks || []).forEach(function (n) {
+      var st = brState(n);
+      var sub = [];
+      if (n.version) sub.push(n.version);
+      if (n.memMb != null) sub.push(n.limitMb ? T('admin.br_mem_of', { mem: n.memMb, limit: n.limitMb }) : T('admin.br_mem', { mem: n.memMb }));
+      sub.push(T(n.linked === 1 ? 'admin.br_linked_one' : 'admin.br_linked', { n: n.linked || 0 }));
+      list.appendChild(el('li', null, [
+        el('span', { class: 'ms-br-mark', 'aria-hidden': 'true', text: T('admin.br_mark_' + n.id) }),
+        el('span', { class: 'ms-gc-path' }, [el('span', { text: T('admin.br_net_' + n.id) }), el('small', { text: sub.join(' · ') })]),
+        el('span', { class: 'ms-pill' + st.cls, text: st.text }),
+        M.switchBtn(n.enabled, T('admin.br_net_' + n.id), function (v) { var nets = {}; nets[n.id] = v; setBr({ networks: nets }); }, !b.enabled),
+      ]));
+    });
+    var hs = b.host && b.host.homeserver;
+    if (b.enabled && hs && hs.running && hs.memMb != null) {
+      list.appendChild(el('li', null, [el('span', { class: 'ms-gc-path' }, [el('span', { text: T('admin.br_hs') }),
+        el('small', { text: [hs.version, hs.limitMb ? T('admin.br_mem_of', { mem: hs.memMb, limit: hs.limitMb }) : T('admin.br_mem', { mem: hs.memMb })].filter(Boolean).join(' · ') })])]));
+    }
+    var note = brNote(b);
+    var n = $('#ms-br-note');
+    n.hidden = !note;
+    n.textContent = note || '';
+  }
+
   function load() {
     M.api('GET', 'admin/overview').then(renderOverview).catch(M.warn);
     M.api('GET', 'admin/settings').then(renderSettings).catch(M.warn);
     M.api('GET', 'admin/group-chats').then(function (r) { renderGc(r.groupChats); }).catch(M.warn);
+    M.api('GET', 'admin/bridges').then(function (r) { renderBr(r.bridges); }).catch(function () { $('#ms-br').hidden = true; });
   }
 
   $('#ms-save').addEventListener('click', save);

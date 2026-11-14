@@ -72,7 +72,9 @@ async function withHost(opts, fn) {
   const clock = startClock(o.at || T0);
   const host = await createHost(DIR, { users: o.users || USERS, settings: o.settings || {}, services: o.services, mediaQuota: o.mediaQuota, connected: o.connected, gatecontrol: o.gatecontrol || '1.180.0', actions: o.actions, actionsApi: o.actionsApi, routeTopics: o.routeTopics, sinkActive: o.sinkActive, groups: o.groups,
     // 1.11.0: GateControl's virus scan (the mock host's opts.scan — true or a scanner function)
-    ...(o.scan ? { scan: o.scan } : {}) });
+    ...(o.scan ? { scan: o.scan } : {}),
+    // 1.12.0: GateControl's messenger bridges (a preview; the mock host's opts.bridges — tools/testing/mock-bridges.js)
+    ...(o.bridges ? { bridges: o.bridges } : {}) });
   await host.start();
   const call = (user, method, p, body, query) => host.request({ method, path: p, body: body === undefined ? null : body, query: query || {}, user, lang: o.lang || 'de' });
   const as = (u, viewer = app) => (method, p, body, query) => call(viewer(u), method, p, body, query);

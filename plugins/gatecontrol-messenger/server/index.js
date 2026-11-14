@@ -64,7 +64,9 @@ function errorResponse(e, lang) {
   const code = isKnown(e) ? e.code : 'internal';
   // 1.11.0: the virus scan's refusal names its find
   const finding = isKnown(e) && e.extra && typeof e.extra.finding === 'string' ? e.extra.finding : null;
-  return { status: STATUS[code], json: { ok: false, code, error: t(lang, 'error.' + code), ...(finding ? { finding } : {}) } };
+  // 1.12.0: why a bridge refused (a word of GateControl, e.g. not_running, fi_mau_whatsapp_login_timeout)
+  const reason = isKnown(e) && e.extra && typeof e.extra.reason === 'string' && /^[a-z][a-z0-9_]{0,39}$/.test(e.extra.reason) ? e.extra.reason : null;
+  return { status: STATUS[code], json: { ok: false, code, error: t(lang, 'error.' + code), ...(finding ? { finding } : {}), ...(reason ? { reason } : {}) } };
 }
 
 /** The request context of a chat call. */

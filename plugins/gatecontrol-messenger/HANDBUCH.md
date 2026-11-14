@@ -1,4 +1,4 @@
-<!-- version: 1.11.1 -->
+<!-- version: 1.12.0 -->
 # Messenger
 
 ## Was das Plugin kann
@@ -49,6 +49,7 @@ Im Portal öffnen sich Dateien außer Bildern, Ton und Video in den Apps.
 - In Gruppenchats für GateControl-Gruppen ändern Mitglieder weder Mitglieder noch Titel und können nicht austreten; Chat-Admins sind die Leitungen der Gruppe.
 - Den Familien-Chat als Ziel für Mitteilungen dürfen nur Administratoren und Eltern aus dem Plugin Familie für den Haushalt einstellen.
 - Administratoren sehen auf „Übersicht“ und „Protokoll“ nur Zahlen und Fehler – nie Texte, Titel, Dateinamen, Mitglieder oder wer wem schreibt.
+- Brücken zu anderen Messengern (nur wenn der Server sie anbietet): Administratoren schalten sie und sehen Zustand, Arbeitsspeicher und die Zahl der verknüpften Personen – keine Nummern, Kontakte oder Inhalte. Verknüpfen kann jede Person nur ihr eigenes Konto; Kinder erst, wenn ein Elternteil den Dienst freigeschaltet hat.
 
 ## Häufige Fragen / Fehlersuche
 
@@ -67,8 +68,10 @@ Den führt das Plugin Familie (Seite „Funktionen“ › Messenger-Gruppe).
 **Alte Nachrichten sind weg.**
 Der Administrator hat eine Aufbewahrung eingestellt, oder der Chat ist selbstlöschend.
 
-## Neu in 1.11.1
+## Neu in 1.12.0
 
-- Dieses Handbuch im Reiter „Handbuch“ (GateControl ≥ 1.241.0).
+- **Brücken zu anderen Messengern, erste Stufe** (zuerst WhatsApp): Bietet der GateControl-Server Brücken an (dort noch eine Vorschau), erscheint auf „Übersicht“ die Karte „Brücken zu anderen Messengern“ – mit dem Schalter (standardmäßig aus), dem Ort (Server), dem Zustand je Brücke, dem belegten Arbeitsspeicher und der Zahl der verknüpften Personen. Auf allen anderen Servern ändert sich nichts.
+- Jede Person verknüpft später ihr eigenes Konto selbst; Kinder-Konten aus dem Plugin Familie bleiben gesperrt, bis ein Elternteil den Dienst freischaltet. Die Seiten dafür in den Apps und im Portal sowie die Chats selbst folgen mit späteren Versionen.
+- Beim Aktualisieren fragt GateControl einmal nach dem neuen Recht „Brücken zu anderen Messengern“.
 
-Zuletzt in 1.11.0: Der Messenger übernimmt den Virenscan von GateControl – Dateien in Quarantäne werden nicht gesendet, gesperrte Dateien sind nicht abrufbar.
+Zuletzt in 1.11.1: Dieses Handbuch im Reiter „Handbuch“ (GateControl ≥ 1.241.0).

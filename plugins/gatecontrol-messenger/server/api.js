@@ -245,6 +245,9 @@ async function route(ctx, req, seg) {
       }));
     }
   }
+  // 1.12.0: the viewer's own links to other messengers, the parents' switch for children (bridges.js)
+  const rb = await require('./bridges').route(ctx, req, seg);
+  if (rb) return json(200, rb);
   const r14 = await route14(ctx, req, seg);
   if (r14) return r14;
   throw fail('not_found');
