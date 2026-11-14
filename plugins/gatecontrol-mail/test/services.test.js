@@ -125,3 +125,90 @@ test('tofile_count: the attachments of "Zum Ablegen" and the suggestion of the n
   assert.deepEqual(await call(host, 'tofile_count', BOB, { userId: BOB.id }), { ok: false, code: 'unavailable', reason: 'no_seat' });
   assert.equal((await c.db('SELECT COUNT(*) AS n FROM seats WHERE user_id = ?', [BOB.id]))[0].n, 0);
 }));
+
+// ─── 1.15.0: the calendar „Aufgaben“ for Notizen & Aufgaben ──────────
+
+const NOTIZEN = 'gatecontrol-notizen';
+const START = Date.parse('2026-11-15T08:00:00Z'); // 09:00 in Berlin
+
+test('1.15.0 calendar_tasks: the person\'s calendar „Aufgaben“ is a GateControl calendar of its own, made once', () => withMail({ gatecontrol: '1.219.0' }, async (host, c) => {
+  await c.as(ANNA)('GET', 'me');
+  const [a, b] = await Promise.all([call(host, 'calendar_tasks', ANNA, { userId: ANNA.id }, NOTIZEN), call(host, 'calendar_tasks', ANNA, { userId: ANNA.id }, NOTIZEN)]);
+  assert.equal(a.ok, true, JSON.stringify(a));
+  assert.equal(a.calendar.id, b.calendar.id);
+  assert.deepEqual([a.calendar.created, b.calendar.created].sort(), [false, true]);
+  assert.equal(a.calendar.name, 'Aufgaben');
+  const list = (await c.as(ANNA)('GET', 'calendars')).json.calendars;
+  assert.deepEqual(list.map((x) => [x.name, x.source, x.role, x.isDefault, x.writable]),
+    [['Privat', 'local', null, true, true], ['Firma', 'local', null, false, true], ['Aufgaben', 'local', 'tasks', false, true]]);
+  // another person gets their own, in their language
+  await c.as(MARC)('GET', 'me');
+  const m = await call(host, 'calendar_tasks', MARC, { userId: MARC.id, lang: 'en' }, NOTIZEN);
+  assert.equal(m.calendar.name, 'Tasks');
+  assert.notEqual(m.calendar.id, a.calendar.id);
+  // only Notizen & Aufgaben, only for the person of the call
+  assert.deepEqual(await call(host, 'calendar_tasks', ANNA, { userId: ANNA.id }), { ok: false, code: 'forbidden' });
+  assert.deepEqual(await call(host, 'calendar_tasks', MARC, { userId: ANNA.id }, NOTIZEN), { ok: false, code: 'forbidden' });
+  // deleted by the person: the next call makes a new one
+  assert.equal((await c.as(ANNA)('DELETE', `calendars/${a.calendar.id}`)).status, 200);
+  const anew = await call(host, 'calendar_tasks', ANNA, { userId: ANNA.id }, NOTIZEN);
+  assert.ok(anew.ok && anew.calendar.created && anew.calendar.id !== a.calendar.id);
+  // calendars switched off
+  await c.admin('PUT', 'admin/settings', { calendar: { enabled: false } });
+  assert.deepEqual(await call(host, 'calendar_tasks', ANNA, { userId: ANNA.id }, NOTIZEN), { ok: false, code: 'unavailable', reason: 'feature_off' });
+}));
+
+test('1.15.0 calendar_add with a time and without a reminder, calendar_update, calendar_delete — only events the caller made', () => withMail({ gatecontrol: '1.219.0' }, async (host, c) => {
+  await c.as(ANNA)('GET', 'me');
+  const cal = (await call(host, 'calendar_tasks', ANNA, { userId: ANNA.id }, NOTIZEN)).calendar;
+  const payload = { userId: ANNA.id, calendarId: cal.id, title: 'Mülltonne rausstellen', allDay: false, start: START, end: START + 30 * 60000, reminder: false, note: 'Aufgabe · Aufgaben', key: 'task:41' };
+  const r = await call(host, 'calendar_add', ANNA, payload, NOTIZEN);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  let ev = (await c.as(ANNA)('GET', `events/${r.eventId}`)).json;
+  assert.deepEqual([ev.title, ev.allDay, ev.start, ev.end, ev.reminders, ev.calendarId, ev.description, ev.busy],
+    ['Mülltonne rausstellen', false, START, START + 30 * 60000, [], cal.id, 'Aufgabe · Aufgaben', 'busy']);
+  // the same key again: the same event
+  assert.equal((await call(host, 'calendar_add', ANNA, payload, NOTIZEN)).eventId, r.eventId);
+  // a title of 255 characters for Notizen, not for Drive
+  assert.equal((await call(host, 'calendar_add', ANNA, { ...payload, title: 'x'.repeat(255), key: 'task:42' }, NOTIZEN)).ok, true);
+  assert.deepEqual(await call(host, 'calendar_add', ANNA, { ...payload, title: 'x'.repeat(256), key: 'task:43' }, NOTIZEN), { ok: false, code: 'invalid' });
+  assert.deepEqual(await call(host, 'calendar_add', ANNA, { ...payload, title: 'x'.repeat(81), key: 'drive:1' }), { ok: false, code: 'invalid' });
+  for (const bad of [{ end: START - 1 }, { start: 'morgen' }, { end: START + 8 * 86400000 }, { reminder: true }, { busy: 'oof' }]) {
+    assert.deepEqual(await call(host, 'calendar_add', ANNA, { ...payload, key: 'task:44', ...bad }, NOTIZEN), { ok: false, code: 'invalid' }, JSON.stringify(bad));
+  }
+  // moved by a day, done („✓“, the time is free again)
+  const later = START + 86400000;
+  assert.deepEqual(await call(host, 'calendar_update', ANNA, { userId: ANNA.id, eventId: r.eventId, start: later, end: later + 30 * 60000 }, NOTIZEN), { ok: true, eventId: r.eventId });
+  assert.deepEqual(await call(host, 'calendar_update', ANNA, { userId: ANNA.id, eventId: r.eventId, title: '✓ Mülltonne rausstellen', busy: 'free' }, NOTIZEN), { ok: true, eventId: r.eventId });
+  ev = (await c.as(ANNA)('GET', `events/${r.eventId}`)).json;
+  assert.deepEqual([ev.title, ev.start, ev.end, ev.busy, ev.reminders, ev.description], ['✓ Mülltonne rausstellen', later, later + 30 * 60000, 'free', [], 'Aufgabe · Aufgaben']);
+  // nothing given: nothing changes
+  assert.deepEqual(await call(host, 'calendar_update', ANNA, { userId: ANNA.id, eventId: r.eventId }, NOTIZEN), { ok: true, eventId: r.eventId });
+  // an event the person wrote themselves, another person's, another caller: never
+  const own = (await c.as(ANNA)('POST', 'events', { title: 'Eigener Termin', allDay: false, start: START, end: START + 3600000 })).json.event;
+  assert.deepEqual(await call(host, 'calendar_update', ANNA, { userId: ANNA.id, eventId: own.eventId, title: 'x' }, NOTIZEN), { ok: false, code: 'not_found' });
+  assert.deepEqual(await call(host, 'calendar_delete', ANNA, { userId: ANNA.id, eventId: own.eventId }, NOTIZEN), { ok: true, removed: false });
+  assert.equal((await c.as(ANNA)('GET', `events/${own.eventId}`)).status, 200);
+  await c.as(MARC)('GET', 'me');
+  assert.deepEqual(await call(host, 'calendar_update', MARC, { userId: MARC.id, eventId: r.eventId, title: 'x' }, NOTIZEN), { ok: false, code: 'not_found' });
+  assert.deepEqual(await call(host, 'calendar_update', ANNA, { userId: ANNA.id, eventId: r.eventId, title: 'x' }), { ok: false, code: 'forbidden' });
+  assert.deepEqual(await call(host, 'calendar_delete', ANNA, { userId: ANNA.id, eventId: r.eventId }), { ok: false, code: 'forbidden' });
+  // delete: once
+  assert.deepEqual(await call(host, 'calendar_delete', ANNA, { userId: ANNA.id, eventId: r.eventId }, NOTIZEN), { ok: true, removed: true });
+  assert.equal((await c.as(ANNA)('GET', `events/${r.eventId}`)).status, 404);
+  assert.deepEqual(await call(host, 'calendar_delete', ANNA, { userId: ANNA.id, eventId: r.eventId }, NOTIZEN), { ok: true, removed: false });
+  assert.deepEqual(await call(host, 'calendar_update', ANNA, { userId: ANNA.id, eventId: r.eventId, title: 'x' }, NOTIZEN), { ok: false, code: 'not_found' });
+  // deleted in the calendar by the person: update says not_found, the key makes a new event
+  const again = await call(host, 'calendar_add', ANNA, payload, NOTIZEN);
+  assert.equal((await c.as(ANNA)('DELETE', `events/${again.eventId}`)).status, 200);
+  assert.deepEqual(await call(host, 'calendar_update', ANNA, { userId: ANNA.id, eventId: again.eventId, title: 'x' }, NOTIZEN), { ok: false, code: 'not_found' });
+  // an event of the person's own that gets the number of the deleted one (SQLite gives it out again) is not the caller's
+  const reused = (await c.as(ANNA)('POST', 'events', { calendarId: cal.id, title: 'Selbst eingetragen', allDay: false, start: START, end: START + 3600000 })).json.event;
+  assert.deepEqual(await call(host, 'calendar_update', ANNA, { userId: ANNA.id, eventId: reused.eventId, title: 'x' }, NOTIZEN), { ok: false, code: 'not_found' });
+  assert.deepEqual(await call(host, 'calendar_delete', ANNA, { userId: ANNA.id, eventId: reused.eventId }, NOTIZEN), { ok: true, removed: false });
+  const anew = await call(host, 'calendar_add', ANNA, payload, NOTIZEN);
+  assert.ok(anew.ok && anew.eventId !== reused.eventId, JSON.stringify(anew));
+  assert.equal((await c.as(ANNA)('GET', `events/${reused.eventId}`)).json.title, 'Selbst eingetragen');
+  // no reminder is ever due for such an event
+  assert.equal((await c.db('SELECT COUNT(*) AS n FROM reminders_sent'))[0].n, 0);
+}));

@@ -2,6 +2,27 @@
 
 Alle E-Mail-Konten an einem Ort – im eigenen Tab der GateControl-Apps und im Portal.
 
+## 1.15.0
+
+- **Kalender „Aufgaben“ für Notizen & Aufgaben** (ab Notizen & Aufgaben 1.3.0): Aufgaben mit Uhrzeit stehen als Termin
+  im Kalender der Person. Dafür neue und erweiterte Dienste (`server/services.js`, Migration 015):
+  - `calendar_tasks { userId, lang? }` → `{ ok, calendar: { id, name, color, created } }` – findet oder legt je Person
+    **einen** Kalender „Aufgaben“ an (`calendars.role = 'tasks'`, in der API als `role` am Kalender). Immer ein
+    GateControl-eigener Kalender von Mail, nie einer eines Kontos: Es gibt ihn für jede Person auch ohne Konto, er hängt
+    nicht an der Erreichbarkeit, den Grenzen oder der Zustimmung eines Anbieters, und kein Anbieter hängt dem Termin eine
+    eigene Erinnerung an (Outlook täte das auf anderen Geräten – dann kämen wieder zwei Meldungen).
+  - `calendar_add` jetzt auch für Notizen & Aufgaben und **mit Uhrzeit**: `{ …, allDay: false, start, end }` (Millisekunden,
+    höchstens 7 Tage), `reminder: false` (Termin ohne jede Erinnerung), `busy: 'busy' | 'free'`; Titel für Notizen bis 255
+    Zeichen. Für Drive ändert sich nichts.
+  - `calendar_update { userId, eventId, title?, start?, end?, note?, busy? }` und `calendar_delete { userId, eventId }` –
+    nur für Termine, die der Aufrufer selbst mit einem `key` angelegt hat, und nur für die Person des Aufrufs.
+  - Budget der vier Dienste: 3600 Aufrufe je Stunde (`maxPerHour`).
+- **Behoben:** Wird ein Termin gelöscht, geht sein Dienst-Schlüssel (`service_keys`) mit. SQLite vergibt die Nummer eines
+  gelöschten Termins neu – ein liegen gebliebener Schlüssel hätte dann auf einen fremden Termin gezeigt (betraf auch die
+  Fristen aus Drive).
+- Tests: `test/services.test.js` (Kalender je Person einmal, Termin mit Uhrzeit ohne Erinnerung, Ändern, Löschen, fremde
+  und selbst angelegte Termine bleiben unberührt, wiederverwendete Nummer).
+
 ## 1.14.0
 
 - **Volltextsuche als Option** (Einstellungen › Karte „Suche“ › Schalter „Volltextsuche“, `settings.search.fulltext`) –

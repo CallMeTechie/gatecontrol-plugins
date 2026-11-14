@@ -18,6 +18,20 @@
 //                  Codes: forbidden (another caller, or userId is not GateControl's `user` of the call), invalid,
 //                  not_found (no such calendar of the person, or one they cannot write to), unavailable { reason }
 //                  (feature_off, not_allowed, not_licensed, no_seat, auth_failed, consent_required, unreachable, …).
+//   1.15.0 — for Notizen & Aufgaben (a task with a time as an event in the person's calendar „Aufgaben“):
+//   calendar_tasks { userId, lang? } → { ok: true, calendar: { id, name, color, created } }   (caller gatecontrol-notizen
+//                  only) — the person's calendar „Aufgaben“ (calendars.role = 'tasks'), made on the first call: always a
+//                  GateControl calendar of Mail, never one of an account (see HANDBUCH „Kalender Aufgaben“).
+//   calendar_add   also for gatecontrol-notizen, and with a time: { …, allDay: false, start, end (ms, end ≥ start,
+//                  ≤ 7 days), reminder?: false, busy?: 'busy' | 'free' } — `reminder: false` writes the event without
+//                  any reminder (the task reminds itself; otherwise the calendar's default as before). For Notizen the
+//                  title may have 255 characters.
+//   calendar_update { userId, eventId, title?, start?, end?, note?, busy? } → { ok: true, eventId }   (caller
+//                  gatecontrol-notizen only) — changes an event the caller made with calendar_add { key } (service_keys);
+//                  only what is given, nothing when it is that already. not_found: no such event of the caller and
+//                  person (deleted in the calendar meanwhile — the caller adds it anew).
+//   calendar_delete { userId, eventId } → { ok: true, removed }   (caller gatecontrol-notizen only) — removes such an
+//                  event; one that is gone already: removed false.
 //   ms_accounts, ms_tasks_consent, ms_tasks_token (1.12.0, caller gatecontrol-notizen only, maxPerHour 600 each) — the
 //                  person's Microsoft accounts for the move from Microsoft To Do; see msAccounts / msTasksConsent /
 //                  msTasksToken below.
@@ -47,6 +61,10 @@ const NOTE_MAX = 500;
 const LIST_MAX = 100;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const KEY_RE = /^[A-Za-z0-9:._-]{1,120}$/;
+const TITLE_MAX_TASK = 255; // Notizen & Aufgaben: a task's title (events take 255)
+const SPAN_MAX = 7 * 86400000;
+const BUSY = ['busy', 'free'];
+const TASKS_ROLE = 'tasks';
 
 class Refusal extends Error { constructor(code, extra) { super(code); this.code = code; this.extra = extra || null; } }
 const no = (code, extra) => new Refusal(code, extra);
@@ -105,15 +123,46 @@ async function serial(k, fn) {
   try { return await p; } finally { if (running.get(k) === tail) running.delete(k); }
 }
 
-/** calendar_add { userId, calendarId, title, startsAt, allDay: true, note?, key? } */
+/** The title of a service call: one line, 1 … max characters (Notizen: 255, anyone else: 80). */
+function titleArg(v, caller) {
+  const title = line(v);
+  if (typeof v !== 'string' || !title || title.length > (caller === NOTIZEN ? TITLE_MAX_TASK : TITLE_MAX)) throw no('invalid');
+  return title;
+}
+
+/** start / end of an event with a time (ms). */
+function spanArg(start, end) {
+  if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start <= 0 || end < start || end - start > SPAN_MAX) throw no('invalid');
+  return { start, end };
+}
+
+/** The refusal of the service for an error of events.js. */
+function refusalOf(e) {
+  const code = isKnown(e) ? e.code : null;
+  if (code === 'invalid') return no('invalid');
+  if (code === 'not_found' || code === 'read_only') return no('not_found');
+  return no('unavailable', { reason: code || 'failed' });
+}
+
+/** calendar_add { userId, calendarId, title, startsAt, allDay: true, note?, key? } | { …, allDay: false, start, end, reminder?, busy? } */
 async function calendarAdd(gc, payload, user, caller) {
   const uid = personOf(user, payload);
   const calId = posInt(payload.calendarId);
-  const title = line(payload.title);
-  if (!calId || !title || typeof payload.title !== 'string' || title.length > TITLE_MAX) throw no('invalid');
-  const date = payload.startsAt;
-  if (typeof date !== 'string' || !DATE_RE.test(date) || !Number.isFinite(Date.parse(date + 'T00:00:00Z'))) throw no('invalid');
-  if (payload.allDay !== undefined && payload.allDay !== true) throw no('invalid');
+  if (!calId) throw no('invalid');
+  const title = titleArg(payload.title, caller);
+  const timed = payload.allDay === false && payload.start !== undefined;
+  let when;
+  if (timed) {
+    const span = spanArg(payload.start, payload.end);
+    when = { allDay: false, start: span.start, end: span.end };
+  } else {
+    const date = payload.startsAt;
+    if (typeof date !== 'string' || !DATE_RE.test(date) || !Number.isFinite(Date.parse(date + 'T00:00:00Z'))) throw no('invalid');
+    if (payload.allDay !== undefined && payload.allDay !== true) throw no('invalid');
+    when = { allDay: true, startDate: date, endDate: date };
+  }
+  if (payload.reminder !== undefined && payload.reminder !== false) throw no('invalid');
+  if (payload.busy !== undefined && !BUSY.includes(payload.busy)) throw no('invalid');
   if (payload.note != null && (typeof payload.note !== 'string' || payload.note.length > NOTE_MAX)) throw no('invalid');
   if (payload.key != null && (typeof payload.key !== 'string' || !KEY_RE.test(payload.key))) throw no('invalid');
   const cfg = await config.get(gc);
@@ -137,13 +186,11 @@ async function calendarAdd(gc, payload, user, caller) {
     let r;
     try {
       r = await events.create(gc, { userId: uid, lang, userName: (user && user.name) || '' }, {
-        calendarId: cal.id, title, allDay: true, startDate: date, endDate: date, ...(payload.note ? { description: payload.note } : {}),
+        calendarId: cal.id, title, ...when, ...(payload.note ? { description: payload.note } : {}),
+        ...(payload.reminder === false ? { reminders: [] } : {}), ...(payload.busy ? { busy: payload.busy } : {}),
       });
     } catch (e) {
-      const code = isKnown(e) ? e.code : null;
-      if (code === 'invalid') throw no('invalid');
-      if (code === 'not_found' || code === 'read_only') throw no('not_found');
-      throw no('unavailable', { reason: code || 'failed' });
+      throw refusalOf(e);
     }
     const eventId = r.event.eventId;
     if (payload.key) {
@@ -153,6 +200,89 @@ async function calendarAdd(gc, payload, user, caller) {
     return { ok: true, eventId };
   };
   return payload.key ? serial(`${caller}|${uid}|${cal.id}|${payload.key}`, make) : make();
+}
+
+// ─── the calendar „Aufgaben“ for Notizen & Aufgaben (1.15.0) ──
+
+/** calendar_tasks { userId, lang? } → the person's calendar „Aufgaben“ (made on the first call). */
+async function calendarTasks(gc, payload, user) {
+  const uid = personOf(user, payload);
+  const lang = payload.lang === 'en' ? 'en' : 'de';
+  const cfg = await config.get(gc);
+  const why = await blocked(gc, cfg, uid);
+  if (why) throw no('unavailable', { reason: why });
+  await pimstore.ensureSetup(gc, uid, lang);
+  return serial(`tasks|${uid}`, async () => {
+    const have = await store.one(gc, 'SELECT * FROM calendars WHERE user_id = ? AND role = ?', [uid, TASKS_ROLE]);
+    if (have) return { ok: true, calendar: { id: have.id, name: have.name, color: have.color, created: false } };
+    const now = Date.now();
+    const color = await pimstore.nextColor(gc, uid);
+    // a GateControl calendar of its own: not the default, after the person's own ones, with no reminders of its own
+    const r = await store.run(gc, `INSERT INTO calendars (user_id, account_id, source, name, color, kind, writable, is_default, sort, state, synced_at, created_at, role)
+      VALUES (?, NULL, 'local', ?, ?, 'other', 1, 0, 20, 'ok', ?, ?, ?)`, [uid, t(lang, 'cal.tasks'), color, now, now, TASKS_ROLE]);
+    await pimstore.live(gc, uid, 'calendar', { kind: 'calendars' });
+    return { ok: true, calendar: { id: Number(r.lastInsertRowid), name: t(lang, 'cal.tasks'), color, created: true } };
+  });
+}
+
+/** The event `eventId` the caller made for the person with a key (service_keys), with its calendar — or null. */
+async function keyedEvent(gc, caller, uid, eventId) {
+  const id = posInt(eventId);
+  if (!id) throw no('invalid');
+  const k = await store.one(gc, `SELECT k.key, k.calendar_id FROM service_keys k JOIN events e ON e.id = k.event_id AND e.calendar_id = k.calendar_id AND e.user_id = k.user_id
+    WHERE k.caller = ? AND k.user_id = ? AND k.event_id = ?`, [caller, uid, id]);
+  return k ? { id, key: k.key, calendarId: k.calendar_id } : null;
+}
+
+/** calendar_update { userId, eventId, title?, start?, end?, note?, busy? } */
+async function calendarUpdate(gc, payload, user, caller) {
+  const uid = personOf(user, payload);
+  const b = {};
+  if (payload.title !== undefined) b.title = titleArg(payload.title, caller);
+  if (payload.start !== undefined || payload.end !== undefined) Object.assign(b, { allDay: false }, spanArg(payload.start, payload.end));
+  if (payload.note !== undefined) {
+    if (payload.note !== null && (typeof payload.note !== 'string' || payload.note.length > NOTE_MAX)) throw no('invalid');
+    b.description = payload.note || null;
+  }
+  if (payload.busy !== undefined) { if (!BUSY.includes(payload.busy)) throw no('invalid'); b.busy = payload.busy; }
+  const cfg = await config.get(gc);
+  const why = await blocked(gc, cfg, uid);
+  if (why) throw no('unavailable', { reason: why });
+  const ev = await keyedEvent(gc, caller, uid, payload.eventId);
+  if (!ev) throw no('not_found');
+  if (!Object.keys(b).length) return { ok: true, eventId: ev.id };
+  return serial(`${caller}|${uid}|${ev.calendarId}|${ev.key}`, async () => {
+    try {
+      await events.update(gc, { userId: uid, lang: payload.lang === 'en' ? 'en' : 'de', userName: (user && user.name) || '' }, ev.id, { ...b, scope: 'series', sendInvites: false });
+    } catch (e) {
+      throw refusalOf(e);
+    }
+    return { ok: true, eventId: ev.id };
+  });
+}
+
+/** calendar_delete { userId, eventId } */
+async function calendarDelete(gc, payload, user, caller) {
+  const uid = personOf(user, payload);
+  const id = posInt(payload.eventId);
+  if (!id) throw no('invalid');
+  // the key goes even when the event went before (deleted in the calendar)
+  const k = await store.one(gc, 'SELECT key, calendar_id FROM service_keys WHERE caller = ? AND user_id = ? AND event_id = ?', [caller, uid, id]);
+  if (!k) return { ok: true, removed: false };
+  return serial(`${caller}|${uid}|${k.calendar_id}|${k.key}`, async () => {
+    const ev = await keyedEvent(gc, caller, uid, id);
+    let removed = false;
+    if (ev) {
+      try {
+        await events.remove(gc, { userId: uid, lang: 'de', userName: (user && user.name) || '' }, ev.id, {});
+        removed = true;
+      } catch (e) {
+        if (!(isKnown(e) && e.code === 'not_found')) throw refusalOf(e);
+      }
+    }
+    await store.run(gc, 'DELETE FROM service_keys WHERE caller = ? AND user_id = ? AND event_id = ?', [caller, uid, id]);
+    return { ok: true, removed };
+  });
 }
 
 /** tofile_count { userId } (since 1.7.0): the attachments to file of the person and the suggestion for the newest. */
@@ -262,12 +392,15 @@ async function msTasksToken(gc, payload, user) {
 const HANDLERS = {
   calendar_list: (gc, payload, user) => calendarList(gc, payload, user),
   calendar_add: (gc, payload, user, caller) => calendarAdd(gc, payload, user, caller),
+  calendar_tasks: (gc, payload, user) => calendarTasks(gc, payload, user),
+  calendar_update: (gc, payload, user, caller) => calendarUpdate(gc, payload, user, caller),
+  calendar_delete: (gc, payload, user, caller) => calendarDelete(gc, payload, user, caller),
   tofile_count: (gc, payload, user) => tofileCount(gc, payload, user),
   ms_accounts: (gc, payload, user) => msAccounts(gc, payload, user),
   ms_tasks_consent: (gc, payload, user) => msTasksConsent(gc, payload, user),
   ms_tasks_token: (gc, payload, user) => msTasksToken(gc, payload, user),
 };
-const CALLERS = { calendar_list: [DRIVE], calendar_add: [DRIVE], tofile_count: [DRIVE], ms_accounts: [NOTIZEN], ms_tasks_consent: [NOTIZEN], ms_tasks_token: [NOTIZEN] };
+const CALLERS = { calendar_list: [DRIVE], calendar_add: [DRIVE, NOTIZEN], calendar_tasks: [NOTIZEN], calendar_update: [NOTIZEN], calendar_delete: [NOTIZEN], tofile_count: [DRIVE], ms_accounts: [NOTIZEN], ms_tasks_consent: [NOTIZEN], ms_tasks_token: [NOTIZEN] };
 
 /** service({ name, caller, user, payload }) → the answer (see the head of this file). */
 async function handle(gc, call) {

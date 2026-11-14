@@ -475,6 +475,21 @@ Since 1.6.0 (`tofile_count` since 1.7.0) for Drive only (`server/services.js`; a
   before while it is there (table `service_keys`). Refusals `{ ok: false, code }`: `invalid`, `not_found` (no such
   calendar of the person, or one they cannot write to), `unavailable` with `reason` (`feature_off`, `not_allowed`,
   `not_licensed`, `no_seat`, `auth_failed`, `consent_required`, `unreachable`, …).
+* Since 1.15.0, for Notizen & Aufgaben (a task with a time as an event; callers `gatecontrol-notizen`, `calendar_add` also
+  Drive as before; 3600 calls an hour each):
+  * `calendar_tasks` `{ userId, lang? }` → `{ ok: true, calendar: { id, name, color, created } }` — the person's calendar
+    „Aufgaben“ (`calendars.role = 'tasks'`, `role` of the Calendar in the API), made on the first call. Always a
+    GateControl calendar of Mail, never one of an account: every person has one without an account, it does not depend
+    on a provider's reach, limits or consent, and no provider adds a reminder of its own to the event. Deleted by the
+    person, the next call makes a new one. Refusals: `forbidden`, `unavailable { reason }`.
+  * `calendar_add` with a time: `{ userId, calendarId, title (1–255 for Notizen), allDay: false, start, end (ms, end ≥
+    start, ≤ 7 days), reminder?: false, busy?: 'busy' | 'free', note?, key?, lang? }` — `reminder: false` writes the event
+    without any reminder (else the calendar's default as before).
+  * `calendar_update` `{ userId, eventId, title?, start?, end?, note?, busy?, lang? }` → `{ ok: true, eventId }` — only an
+    event the caller made with a `key` for that person (`service_keys`); `not_found` otherwise, also when the person
+    deleted it in the calendar meanwhile (the caller adds it anew).
+  * `calendar_delete` `{ userId, eventId }` → `{ ok: true, removed }` — the same rule; an event that is gone: `removed: false`.
+  A key goes with its event (SQLite gives the number of a deleted event to the next one).
 * `tofile_count` `{ userId }` → `{ ok: true, count, hint }` (since 1.7.0) — the attachments of "Zum Ablegen" (`GET
   filing`) of the person and the folder Drive suggested for the newest one (`where` of its suggestion, e.g. "Familie ›
   Versicherungen"; `null` without). Drive's overview (Drive ≥ 1.18.0) shows it under "Zu erledigen". Refusals:
