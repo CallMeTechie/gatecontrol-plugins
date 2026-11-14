@@ -167,6 +167,80 @@ second) and `vault` `{ vault, event: 'request' | 'approved', device }` — clien
 Opening: an item's `source.open` → apps `gatecontrol://plugin/<plugin>/<route>`, portal `GC.openPortal({ plugin,
 query: { open: route } })`; a note of Familie's notebooks is `{ plugin: 'gatecontrol-notizen', route: 'note/<id>' }`.
 
+## 1.4.0 — shopping lists, a list at a task
+
+Features `shoppingLists`, `taskList`, `familyShopping` (check these words in `GET me`, never the version).
+`ui/quickparse.js` and `test/vectors/quickparse.json` are **unchanged** — the suggestion below comes from the server.
+
+**The model.** A shopping list is a list (owner, members with roles, icon, list days, trash) of the kind `shopping`. Its
+items are no tasks but rows of their own (`shop_items`: text, quantity, ticked) with ids the device makes — the
+offline protocol Familie had. It has two ids: `id` (text, made by the device; the same in Familie) and `listId` (the
+list's number for `PATCH lists/<n>`, `PUT lists/<n>/members`, `DELETE lists/<n>`, `POST lists/<n>/restore` and for
+attaching). Shopping lists are not part of `GET lists` / `nav.lists` (older apps would show empty task lists); a task
+cannot be put into one (`400 invalid { field: 'listId', reason: 'shopping' }`).
+
+```
+GET  shopping[?since=<serverTime>]
+  → { lists: [ShopList], items: [ShopItem], serverTime }
+  ShopList { id, listId, name, icon, area, sort, updatedAt, deleted, role, canEdit, canManage, owner { id, name },
+             shared, members [{ id, name, role }], family, open, total, assignee, dueAt, going [{ userId, at }],
+             tasks [{ id, title }] (the person's open tasks carrying it, ≤ 5), days, remind, mydayOff, dayToday }
+  ShopItem { id, listId (the list's text id), text, qty, checked, checkedBy, updatedAt, deleted }
+  `lists` is always complete (every list the person sees now); with `since` also the lists deleted since
+  ({ id, listId, name, deleted: true, … }) and only the items changed since, tombstones included (kept 30 days). A list
+  the device knows that is missing: gone (left, no longer shared). A list it does not know: fetch once without `since`.
+
+POST shopping/ops { ops: [...] }   ≤ 200, in order, idempotent, last write wins by arrival
+  → { applied, rejected: [{ index, code: 'invalid' | 'not_found' | 'forbidden' | 'too_many' }], serverTime,
+      completed: [{ taskId, title, listId }] }
+  list_add { id, name ≤ 40, icon?, area?, family? }   list_rename { id, name, icon? }   list_delete { id }
+  item_add { id, listId, text ≤ 120, qty? ≤ 40 }      item_edit { id, text?, qty? }     item_check { id, checked }
+  item_delete { id }                                  clear_checked { listId }
+  ids: 8–64 of [A-Za-z0-9_-], starting with a letter or digit. Items: canEdit (owner, write). Rename / delete:
+  canManage (the owner; of a family list every parent). An id of a list the person does not see → forbidden.
+
+PUT  shopping/lists/<id>/family { on }             share with the whole family (canManage; on: parents only)
+POST shopping/lists/<id>/going                     „Ich gehe einkaufen“ and
+POST shopping/lists/<id>/assign { userId | null, dueAt?, notify? }   „Kannst du einkaufen gehen?“ of a family list —
+  handed to Familie (its cards, pushes, quick actions) → { list, notified, chat? }; 409 unavailable without Familie,
+  400 invalid { field: 'family' } for a list that is no family list, Familie's own codes (429 too_soon { retryAfter })
+```
+
+`GET me` → `shopping: { family: { available, bound, parent } }`; `GET nav` → `shopping: [{ id, listId, name, icon, open,
+total, family, shared, role }]`; the event `changed { what: ['shopping'] }` (the numbers of `attachedList` may have
+changed too). `listdays[]` of „Mein Tag“ carries `shopping { id }` and `points [{ id, text, qty }]` for a shopping list.
+
+**A list at a task.** `Task.attachedList { id (the list's number), uid (its text id), name, icon, open, total, done,
+family } | null` (null also when the person is no member of that list). Written with `attachedListId: n | null` or
+`attachedListUid: '<text id>'` in `POST tasks` / `PATCH tasks/<id>` (`base` knows `attachedListId`). 404 `not_found
+{ field: 'attachedListId' }` for a list the person is no member of, 400 `invalid { …, reason: 'kind' }` for a task
+list. Sub tasks carry none; a repeating task hands it to its next.
+
+**The suggestion.** `POST parse { text, area? }` → `{ parsed, attach }`, `attach: { via: 'tag' | 'name' | 'word', word?,
+list: AttachedList | null, lists: [AttachedList] } | null` — `tag`: `#name` names a shopping list (then
+`parsed.listName` is no task list to be made); `name`: the name of a shopping list is a word of the line; `word`: one of
+einkaufen, einkauf, einkäufe, besorgen, besorgung, besorgungen, shopping, groceries, grocery — it fits the lists whose
+name starts with Einkauf / Lebensmittel / Shopping / Grocer… or that have the icon `cart`, else every shopping list.
+`list` when exactly one fits. `POST tasks { text, attach: 'auto' }` attaches it then (→ `attach` in the answer);
+without `attach: 'auto'` the server never attaches anything by itself.
+
+**All ticked.** When an `item_check { checked: true }` ticks the last open item of a list (with at least one item),
+every open task carrying the list is completed — whoever ticks, wherever (also through Familie). `completed` of the
+answer names those the person may see; „Rückgängig“ is `POST tasks/<id>/complete { done: false }`. No push. The list
+stays. Nothing happens the other way round, nor by deleting the last open item, `clear_checked`, or attaching a list
+that is ticked off already.
+
+**The reminder.** A task with a list: body `"Fällig heute 10:00 · Aufgaben\nEinkauf · 8 Punkte: Milch, Brot, Äpfel,
+Butter …"`, `data.notizen.attachedList { id, uid, name, open, total }`, `data.actions`: `open_list` („Liste öffnen“,
+type `open_app_route`, target `plg-gatecontrol-notizen`), `done`, `snooze_1h`. `GET reminders` rows carry
+`attachedList` and the same three buttons.
+
+**Familie** (≥ 1.21.0, after its move): the services `shopping_bind { members, parents } | { release: true }`,
+`shopping_put { lists, items }` (rows of Familie's copy, written when they differ → `{ lists, items, rejected,
+completed }`), `shopping_list { since?, cursor? }` (every family list, the items changed since); the hub calls
+`gatecontrol-familie:shopping_changed` (a second after a change here, else by the background run) and
+`gatecontrol-familie:shopping_action` (going / assign as the person).
+
 ## 1.3.0 — reminders with buttons, „Gestern offen geblieben“, the calendar
 
 Features `reminderActions`, `yesterdayOpen`, `taskCalendar` (check these words in `GET me`, never the version).
@@ -320,6 +394,7 @@ Reconciliations only for people who opened the hub within 30 days. A source the 
 | `notes_list` | Familie (with the person) | `{ key, cursor?, since? }` → `{ ok, notes, cursor, removed? }` (≤ 16 KB) |
 | `note_save` · `note_check` · `note_delete` | Familie | see the contract § 3 |
 | `notes_import` | Familie | the one-time move of the Pinnwand and the packing lists (idempotent per `ref`) |
+| `shopping_bind` · `shopping_put` · `shopping_list` | Familie | 1.4.0: the family's shopping lists live here (see „1.4.0“) |
 
 A bound notebook's check list item id is `<line>.<first 6 hex of SHA-256 of its text>` (found again by its text when
 lines move). Changes made in the hub reach Familie through `gatecontrol-familie:notes_changed` (at most once a minute

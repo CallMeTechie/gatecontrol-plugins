@@ -10,7 +10,7 @@ const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
 const STATUS = {
   invalid: 400, forbidden: 403, not_found: 404, conflict: 409, too_many: 409, encrypted: 409, quota: 507, not_member: 409,
   unavailable: 503, consent_required: 409, not_allowed: 403, busy: 429, too_large: 413, stale_key: 409,
-  unknown_client_id: 409, gone: 410,
+  unknown_client_id: 409, gone: 410, too_soon: 429, module_off: 403, failed: 502,
 };
 
 /** An Error the API turns into an answer: fail('invalid', { field: 'title' }). */

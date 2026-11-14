@@ -1,5 +1,14 @@
-<!-- version: 1.3.0 -->
+<!-- version: 1.4.0 -->
 # Notes & Tasks
+
+## New in 1.4.0
+
+- **Shopping lists:** The menu has a section **“Shopping lists”**. A shopping list has items with a quantity to tick off, can be shared (edit or view) and can have a shopping day. Ticked items stay at the bottom until you press “Remove ticked items”.
+- **A list at a task:** Every task has the row **“Attached list”**. The task then shows e.g. “Shopping 0/8”; a click on it opens the list. When you write “shopping at Lidl”, the quick entry suggests the fitting list as a chip – you can take it away.
+- **Everything ticked:** Once every item of the attached list is ticked, the task is done. **“Undo”** appears at the bottom for a moment. The list stays. The other way round, open items stay when you tick the task by hand.
+- **Reminder with a list:** The message of a task with a list names the first items and has the button **“Open list”**.
+- **Family:** With the Family plugin (1.21.0 or later) its shopping lists can move here – the button is in the settings of the Family plugin. After that the lists are shared with the whole family here, and “I’m going shopping” and “Ask someone …” are above the list.
+- **Apps:** The Android and Windows apps show the shopping lists under “Tasks” with one of the next versions. Until then they keep using the shopping list through the Family plugin; both stay in step.
 
 ## New in 1.3.0
 

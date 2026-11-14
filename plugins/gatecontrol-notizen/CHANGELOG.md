@@ -1,5 +1,53 @@
 # Changelog
 
+## 1.4.0
+
+„Aufgaben und Erinnerungen“, Stufe 2 – Einkaufslisten im Hub, eine Liste an der Aufgabe.
+
+- **Einkaufslisten** (`server/shopping.js`, `migrations/006_shopping_lists.sql`): Listen zum Abhaken mit Punkten (Text,
+  Menge). Eine Einkaufsliste ist eine gewöhnliche Liste (Besitzer, Mitglieder mit den Rollen Bearbeiten / Ansehen,
+  Symbol, Einkaufstag, Papierkorb mit „Rückgängig“) von der Art `shopping`; ihre Punkte sind **keine Aufgaben**, sondern
+  eigene, leichte Zeilen mit Kennungen, die das Gerät vergibt. Begründung: Das Offline-Protokoll des Familien-Plugins
+  (Operationen in Reihenfolge, gefahrlos wiederholbar, Grabsteine 30 Tage) lebt von Kennungen, die für alle gelten –
+  die `clientId` der Aufgaben gilt je Person; und Punkte wie „Milch“ sollen nicht in „Geplant“, in der Suche, im
+  Kalender oder bei Microsoft To Do landen. Alles, was Listen können, gilt trotzdem. Orte (Stufe 3) hängen an der
+  Aufgabe, Familien-Aufgaben (Stufe 4) sind Aufgaben in geteilten Listen – beides setzt darauf auf.
+  - `GET shopping[?since=]`, `POST shopping/ops` (≤ 200 Operationen: `list_add`, `list_rename`, `list_delete`,
+    `item_add`, `item_edit`, `item_check`, `item_delete`, `clear_checked`; abgewiesene mit `index` und `code`).
+  - Eine Einkaufsliste hat zwei Kennungen: `id` (Text, vom Gerät – dieselbe wie im Familien-Plugin) und `listId`
+    (Zahl – für `PATCH lists/<n>`, `PUT lists/<n>/members`, `DELETE lists/<n>`, das Anhängen).
+  - Einkaufslisten stehen **nicht** in `GET lists` / `nav.lists` (ältere Apps sähen leere Aufgabenlisten), sondern in
+    `GET shopping` und `nav.shopping`. Eine Aufgabe lässt sich nicht in eine Einkaufsliste legen.
+- **Liste an der Aufgabe:** Feld `attachedList { id, uid, name, icon, open, total, done, family }` an jeder Aufgabe,
+  gesetzt mit `attachedListId` (oder `attachedListUid`) in `POST tasks` / `PATCH tasks/<id>` (auch in `base`). Anzeige
+  „Einkauf 0/8“. Anhängen lassen sich Einkaufslisten, in denen die Person Mitglied ist. Eine Wiederholung gibt die
+  Liste an die nächste Aufgabe weiter.
+- **Vorschlag aus dem Text – ohne Änderung am Parser:** `POST parse` liefert neben `parsed` neu `attach { via, word?,
+  list, lists }`: ein festes Wort (einkaufen, Einkauf, Einkäufe, besorgen, Besorgung(en), shopping, groceries, grocery),
+  der Name einer Einkaufsliste als Wort im Text, oder `#liste`. `POST tasks { text, attach: 'auto' }` hängt die Liste
+  an, wenn genau eine passt – ohne `attach: 'auto'` hängt der Server nie von selbst etwas an. **`ui/quickparse.js` und
+  `test/vectors/quickparse.json` sind unverändert** (ein Test hält ihre Prüfsummen fest).
+- **„Alles abgehakt“:** Hakt jemand den letzten offenen Punkt ab, werden die offenen Aufgaben erledigt, an denen die
+  Liste hängt – gleich, wer abhakt und wo (App, Portal, Familien-Plugin, Wandtablet). `POST shopping/ops` nennt sie in
+  `completed`; „Rückgängig“ ist `POST tasks/<id>/complete { done: false }`. Die Liste bleibt. Umgekehrt bleiben offene
+  Punkte stehen, wenn die Aufgabe von Hand erledigt wird.
+- **Erinnerung mit Liste:** Die Fälligkeits-Meldung einer Aufgabe mit Liste nennt die ersten Punkte („Einkauf ·
+  8 Punkte: Milch, Brot, Äpfel, Butter …“), trägt `data.notizen.attachedList` und die Knöpfe „Liste öffnen“
+  (`open_app_route`), „Erledigt“, „In 1 Std.“; `GET reminders` genauso. Vorbereitet für „beim Ankommen“ (Stufe 3).
+- **Familie** (Familien-Plugin ab 1.21.0, nach dem Umzug dort): Dienste `shopping_bind`, `shopping_put`,
+  `shopping_list` für das Familien-Plugin; Familien-Listen (`family: true`) sind mit Eltern und Kindern geteilt, Eltern
+  dürfen sie verwalten. `PUT shopping/lists/<id>/family`, `POST shopping/lists/<id>/going` und `…/assign` („Ich gehe
+  einkaufen“, „Kannst du einkaufen gehen?“ – das Familien-Plugin führt sie aus, mit seinen Karten und Meldungen).
+  Änderungen im Hub erfährt das Familien-Plugin über `shopping_changed`.
+- **Portal:** Abschnitt „Einkaufslisten“ im Menü, die Liste mit Punkten zum Abhaken (Menge, Ändern, Löschen,
+  „Abgehakte entfernen“), Kopfzeile „gehört zu ‚…‘ · 3 von 8“, Hinweis „Alles abgehakt. ‚…‘ ist erledigt.“ mit
+  „Rückgängig“, die Zeile „Angehängte Liste“ an der Aufgabe, der Baustein „Liste: Einkauf · 8 offen“ in der
+  Schnell-Eingabe (zum Wegnehmen), „Einkauf 0/8“ an der Aufgabe, der Einkaufstag mit den ersten Punkten.
+- **API** (Merkmale `shoppingLists`, `taskList`, `familyShopping` in `GET me`; README „1.4.0“): `me.shopping`,
+  `nav.shopping`, Ereignis `changed { what: ['shopping'] }`; `listdays[]` einer Einkaufsliste mit `shopping { id }` und
+  `points`. `GET reminders` trägt je Zeile `attachedList` (sonst `null`).
+- Tests: `test/shopping.test.js`, `test/tasklist.test.js`, Portal 1.4.0 in `test/portal.test.js`.
+
 ## 1.3.0
 
 „Aufgaben und Erinnerungen“, Stufe 1 – Erinnerungen mit Knöpfen, nichts geht mehr still verloren, Termin im Kalender von Mail.

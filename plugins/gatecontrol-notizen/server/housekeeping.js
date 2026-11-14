@@ -23,6 +23,7 @@ const lists = require('./lists');
 const remind = require('./remind');
 const yesterday = require('./yesterday');
 const calsync = require('./calsync');
+const shopping = require('./shopping');
 
 const TRASH_MS = 30 * 86400000;
 const REMIND_LATE = 6 * 3600000; // the push of a list day missed by more than this (server off) is not sent any more
@@ -89,6 +90,8 @@ async function purge(gc, ctx) {
   await store.run(gc, `DELETE FROM notebooks WHERE deleted_at IS NOT NULL AND deleted_at < ?
     AND NOT EXISTS (SELECT 1 FROM notes INDEXED BY idx_notes_nb WHERE notes.notebook_id = notebooks.id AND notes.deleted_at IS NULL)
     AND NOT EXISTS (SELECT 1 FROM notes INDEXED BY idx_notes_gone WHERE notes.notebook_id = notebooks.id AND notes.deleted_at IS NOT NULL)`, [before]);
+  // 1.4.0: the items of shopping lists that leave the trash
+  await shopping.purgeLists(gc, before);
   await store.run(gc, `DELETE FROM lists WHERE deleted_at IS NOT NULL AND deleted_at < ?
     AND NOT EXISTS (SELECT 1 FROM tasks INDEXED BY idx_tasks_list WHERE tasks.list_id = lists.id AND tasks.deleted_at IS NULL AND tasks.parent_id IS NULL)
     AND NOT EXISTS (SELECT 1 FROM tasks INDEXED BY idx_tasks_rest WHERE tasks.list_id = lists.id AND (tasks.deleted_at IS NOT NULL OR tasks.parent_id IS NOT NULL))`, [before]);
@@ -106,6 +109,7 @@ async function tick(gc, ctx) {
   await run('calendar', () => calsync.tick(gc, ctx));
   await run('expire', () => expire(gc, ctx));
   await run('bound', () => bound.flush(gc, ctx.now));
+  await run('shopping', () => shopping.tick(gc, ctx));
   await run('sources', () => sources.tick(gc, ctx));
   await run('mstodo', () => mstodo.tick(gc, ctx));
   if (!tick.lastPurge || ctx.now - tick.lastPurge > 3600000) { tick.lastPurge = ctx.now; await run('purge', () => purge(gc, ctx)); }

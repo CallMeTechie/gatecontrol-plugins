@@ -298,3 +298,18 @@
 .na-yest-it{flex-wrap:wrap}
 .na-yest-b{display:flex;flex-wrap:wrap;gap:6px;margin-left:auto}
 @media (max-width:560px){.na-yest-b{flex-basis:100%;margin-left:0}}
+/* 1.4.0: shopping lists, the list at a task */
+.na-shop-add{padding:10px 14px}
+.na-shop-qty{flex:0 0 96px!important;min-width:0}
+.na-shop-it{cursor:default}
+.na-shop-tx{flex:1;min-width:0;border:0;background:none;padding:0;text-align:left;font:inherit;color:inherit;cursor:pointer;min-height:0}
+.na-shop-tx:disabled{cursor:default}
+.na-shop-fam{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:0 0 12px}
+.na-shop-fam .na-sub{flex:1 1 200px}
+.na-shop-of{margin:0 0 12px}
+.na-shop-clear{margin-left:auto}
+.na-att{border:0;background:none;padding:0;font:inherit;color:var(--accent);cursor:pointer;min-height:0}
+.na-att:hover{text-decoration:underline}
+.na-chip-x{border:0;background:none;padding:0;margin-left:2px;color:inherit;cursor:pointer;display:inline-flex;align-items:center;min-height:0;opacity:.7}
+.na-chip-x:hover{opacity:1}
+button.na-chip{cursor:pointer}

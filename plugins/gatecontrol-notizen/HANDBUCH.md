@@ -1,5 +1,14 @@
-<!-- version: 1.3.0 -->
+<!-- version: 1.4.0 -->
 # Notizen & Aufgaben
+
+## Neu in 1.4.0
+
+- **Einkaufslisten:** Im Menü gibt es den Abschnitt **„Einkaufslisten“**. Eine Einkaufsliste hat Punkte mit Menge zum Abhaken, lässt sich teilen (Bearbeiten oder Ansehen) und kann einen Einkaufstag haben. Abgehaktes bleibt unten stehen, bis du „Abgehakte entfernen“ drückst.
+- **Liste an der Aufgabe:** In jeder Aufgabe gibt es die Zeile **„Angehängte Liste“**. Die Aufgabe zeigt dann z. B. „Einkauf 0/8“; ein Klick darauf öffnet die Liste. Schreibst du „bei Lidl einkaufen“, schlägt die Schnell-Eingabe die passende Liste als Baustein vor – er lässt sich wegnehmen.
+- **Alles abgehakt:** Sind alle Punkte der angehängten Liste abgehakt, ist die Aufgabe erledigt. Unten erscheint kurz **„Rückgängig“**. Die Liste bleibt bestehen. Umgekehrt bleiben offene Punkte stehen, wenn du die Aufgabe von Hand abhakst.
+- **Erinnerung mit Liste:** Die Meldung einer Aufgabe mit Liste nennt die ersten Punkte und hat den Knopf **„Liste öffnen“**.
+- **Familie:** Mit dem Familien-Plugin (ab 1.21.0) können dessen Einkaufslisten hierher umziehen – der Knopf dafür steht in den Einstellungen des Familien-Plugins. Danach sind die Listen hier mit der ganzen Familie geteilt, und „Ich gehe einkaufen“ sowie „Jemanden bitten …“ stehen über der Liste.
+- **Apps:** Die Android- und Windows-App zeigen die Einkaufslisten unter „Aufgaben“ mit einer der nächsten Versionen. Bis dahin nutzen sie die Einkaufsliste weiter über das Familien-Plugin; beides bleibt abgeglichen.
 
 ## Neu in 1.3.0
 

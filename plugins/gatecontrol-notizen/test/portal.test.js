@@ -237,3 +237,54 @@ test('portal 1.3.0: the card „Gestern offen geblieben“ with its three button
     assert.equal((await h.ok(ANNA, 'GET', 'prefs')).prefs.calendar.tasks, false);
   } finally { if (p) p.stop(); await h.close(); clock.set(T0); }
 });
+
+test('portal 1.4.0: the shopping lists in the menu, the list at the task, the chip of the quick entry, ticking the last item with „Rückgängig“', async () => {
+  const { MARC, clock, T0 } = require('./helpers');
+  const shopping = require('../server/shopping');
+  const h = await withHost({ now: Date.parse('2026-11-14T09:00:00Z') });
+  shopping.state.noTimer = true;
+  const L1 = '6f1c2a90-1111-4c1d-9a00-000000000001';
+  const I = (n) => `0a0b0c0d-0000-4000-8000-${String(n).padStart(12, '0')}`;
+  let p;
+  try {
+    await h.ok(ANNA, 'POST', 'shopping/ops', { ops: [{ op: 'list_add', id: L1, name: 'Einkauf', icon: 'cart' }, { op: 'item_add', id: I(1), listId: L1, text: 'Milch', qty: '2 l' }, { op: 'item_add', id: I(2), listId: L1, text: 'Brot' }] });
+    const lid = (await h.ok(ANNA, 'GET', 'shopping')).lists[0].listId;
+    await h.ok(ANNA, 'PUT', `lists/${lid}/members`, { members: [MARC.id] });
+    const t = await h.ok(ANNA, 'POST', 'tasks', { title: 'Bei Lidl einkaufen', attachedListId: lid, myDay: true });
+    p = portal(h.host, ANNA);
+    const main = () => p.doc.getElementById('na-main');
+    await until('the menu', () => p.text('na-nav').includes('EinkaufslistenEinkauf2'));
+    await until('the task with its list', () => p.text('na-main').includes('Bei Lidl einkaufenPrivat › AufgabenEinkauf 0/2'));
+    // the quick entry asks the server: „einkaufen“ fits the list „Einkauf“; the chip can be taken away
+    const q = p.doc.getElementById('na-quick');
+    const chips = () => textOf(q.parentNode.parentNode.childNodes[1]);
+    q.value = 'morgen bei Lidl einkaufen';
+    q.dispatchEvent({ type: 'input' });
+    await until('the chip', () => chips() === 'morgenListe: Einkauf · 2 offen');
+    assert.deepEqual(p.calls.filter((c) => c.path === 'parse').map((c) => c.body), [{ text: 'morgen bei Lidl einkaufen', area: 'private' }]);
+    q.dispatchEvent({ type: 'keydown', key: 'Enter' });
+    const made = await until('made with the list', () => p.calls.find((c) => c.method === 'POST' && c.path === 'tasks'));
+    assert.deepEqual(made.body, { text: 'morgen bei Lidl einkaufen', area: 'private', createList: false, attachedListId: lid, myDay: true });
+    // the details: „Angehängte Liste“ with the person's shopping lists
+    main().all().find((x) => x.localName === 'span' && textOf(x) === 'Bei Lidl einkaufen').parentNode.parentNode.dispatchEvent({ type: 'click' });
+    const sel = await until('the row in the details', () => p.doc.getElementById('na-side').all().find((x) => x.localName === 'select' && x.getAttribute('aria-label') === 'Angehängte Liste'));
+    assert.deepEqual(sel.childNodes.map((o) => textOf(o)), ['Keine', 'Einkauf · geteilt · 2 offen', 'Neue Liste …']);
+    assert.equal(sel.value, String(lid));
+    // the list: its task and how far it is, the items; the last one ticked completes the task — with „Rückgängig“
+    p.doc.getElementById('na-nav').all().find((x) => x.localName === 'button' && textOf(x).startsWith('Einkauf') && !textOf(x).startsWith('Einkaufsl')).click();
+    await until('the list', () => p.text('na-main').includes('gehört zu „Bei Lidl einkaufen“ · 0 von 2'));
+    assert.ok(p.text('na-main').startsWith('EinkaufMBgeteilt mit Marcgehört zu'), p.text('na-main').slice(0, 60));
+    const boxes = () => main().all().filter((x) => x.localName === 'button' && /^Abhaken: /.test(x.getAttribute('aria-label') || ''));
+    assert.deepEqual(boxes().map((b) => b.getAttribute('aria-label')), ['Abhaken: Milch', 'Abhaken: Brot']);
+    boxes()[0].click();
+    await until('one ticked', async () => (await h.ok(ANNA, 'GET', 'shopping')).lists[0].open === 1);
+    await until('drawn again', () => boxes().length === 1 && p.text('na-main').includes('Abgehakt1'));
+    boxes()[0].click();
+    await until('the task is done', async () => (await h.ok(ANNA, 'GET', 'tasks/' + t.task.id)).task.done === true);
+    const snack = await until('the message', () => (p.text('na-snack').startsWith('Alles abgehakt. „') ? p.doc.getElementById('na-snack') : null));
+    assert.match(textOf(snack), /^Alles abgehakt\. „(?:Bei Lidl einkaufen|morgen bei Lidl einkaufen|bei Lidl einkaufen)“ ist erledigt\.Rückgängig$/);
+    snack.all().find((x) => x.localName === 'button').click();
+    await until('undone', () => p.calls.some((c) => c.method === 'POST' && /^tasks\/\d+\/complete$/.test(c.path) && c.body.done === false));
+    assert.deepEqual((await h.ok(ANNA, 'GET', 'shopping')).items.map((i) => i.checked), [true, true], 'the items stay ticked');
+  } finally { if (p) p.stop(); await h.close(); clock.set(T0); }
+});

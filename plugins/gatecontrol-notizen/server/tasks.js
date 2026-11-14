@@ -15,6 +15,7 @@ const push = require('./push');
 const pushprefs = require('./pushprefs');
 const duty = require('./duty');
 const calsync = require('./calsync');
+const shopping = require('./shopping');
 const R = require('../ui/repeat');
 const Q = require('../ui/quickparse');
 const { t } = require('./text');
@@ -85,6 +86,9 @@ function view(ctx, r, extra = {}) {
     reminder: duty.pending(r) ? { tag: duty.tagOf(r), at: iso(ctx, r.remind_at), atMs: r.remind_at, mine: (extra.duty ? extra.duty.get(r.id) : duty.candidate(r)) === ctx.userId, snoozed: !!r.snoozed_at } : null,
     snoozed: !!r.snoozed_at && duty.pending(r), missedReminder: !!r.missed_at && !r.done_at,
     calendar: calsync.view(ctx, r),
+    // 1.4.0: the shopping list the task carries ({ id, uid, name, icon, open, total, done, family }; null: none, or the
+    // person is no member of that list)
+    attachedList: (r.attached_list && extra.attached && extra.attached.get(r.attached_list)) || null,
     assignee: r.assignee_id ? { id: r.assignee_id, name: extra.names ? extra.names.get(r.assignee_id) || null : null } : null,
     myDay: extra.myDay ? extra.myDay.has(r.id) : false,
     progress: extra.progress && extra.progress.get(r.id) ? extra.progress.get(r.id) : null,
@@ -128,7 +132,8 @@ async function extras(gc, ctx, rows) {
   }
   // whose reminder: only asked for the tasks that have one to come
   const due = rows.filter(duty.pending);
-  return { progress, myDay, attachments, names, roles, parentMine, duty: due.length ? await duty.of(gc, due) : new Map() };
+  return { progress, myDay, attachments, names, roles, parentMine, duty: due.length ? await duty.of(gc, due) : new Map(),
+    attached: await shopping.attachInfo(gc, ctx.userId, rows.map((r) => r.attached_list)) };
 }
 
 async function views(gc, ctx, rows) {
@@ -188,6 +193,8 @@ async function replay(gc, ctx, id, clientId) {
 /**
  * POST tasks { title | text, listId?, area?, note?, important?, due?: { date, time? } | null, remindAt?, repeat?,
  * assigneeId?, myDay?, parentId?, source?: { plugin, id }, clientId?, listClientId?, parentClientId? } → { task, parsed?, clientId? }
+ * 1.4.0: attachedListId | attachedListUid — the shopping list the task carries; with `text` and attach: 'auto' the list
+ * the line names is attached when exactly one fits (→ `attach` as in POST parse).
  */
 async function create(gc, ctx, b0, opts = {}) {
   const cid = clientIds.arg(b0.clientId);
@@ -198,6 +205,7 @@ async function create(gc, ctx, b0, opts = {}) {
   if (b.parentId == null && b.parentClientId != null) b.parentId = await clientIds.resolve(gc, ctx, b.parentClientId, 'task', 'parentClientId');
   let fields = { ...b };
   let parsed = null;
+  let attach = null;
   if (typeof b.text === 'string' && !b.title) {
     parsed = await fromText(gc, ctx, b.text, b.area);
     fields = {
@@ -208,7 +216,10 @@ async function create(gc, ctx, b0, opts = {}) {
       listId: b.listId || (parsed.list ? parsed.list.id : undefined),
       assigneeId: b.assigneeId !== undefined ? b.assigneeId : parsed.assignee ? parsed.assignee.id : undefined,
     };
-    if (!fields.listId && parsed.listName && b.createList === true) {
+    // 1.4.0: „#einkauf“ may name a shopping list — then it is no task list to be made
+    const hint = b.attach === 'auto' || (!fields.listId && parsed.listName) ? await shopping.suggest(gc, ctx, b.text, parsed, b.area) : null;
+    if (hint && b.attach === 'auto') attach = hint;
+    if (!fields.listId && parsed.listName && b.createList === true && !(hint && hint.via === 'tag')) {
       const made = await lists.create(gc, ctx, { name: parsed.listName, area: b.area });
       fields.listId = made.list.id;
     }
@@ -225,7 +236,7 @@ async function create(gc, ctx, b0, opts = {}) {
     if (n.n >= SUBTASKS_MAX) throw fail('too_many');
     listId = parent.list_id;
   } else if (fields.listId != null) {
-    listId = lists.writable(await lists.access(gc, ctx.userId, fields.listId)).id;
+    listId = lists.writable(lists.taskList(await lists.access(gc, ctx.userId, fields.listId))).id;
   } else {
     listId = await lists.ensureDefault(gc, ctx, fields.area);
   }
@@ -240,6 +251,11 @@ async function create(gc, ctx, b0, opts = {}) {
     try { assignee = await assigneeArg(gc, listId, fields.assigneeId); } catch (e) { if (!parsed || b.assigneeId !== undefined) throw e; }
   }
   const note = fields.note !== undefined ? text(fields.note, NOTE_MAX) : '';
+  let attached = null;
+  if (!parent) {
+    if (b.attachedListId !== undefined || b.attachedListUid !== undefined) attached = await shopping.attachArg(gc, ctx.userId, b.attachedListId, b.attachedListUid);
+    else if (attach && attach.list) attached = attach.list.id;
+  }
   let src = null;
   if (fields.source && !parent) src = await opts.sourceOf(gc, ctx, fields.source);
   const twoWay = await linkedTwoWay(gc, listId);
@@ -250,12 +266,12 @@ async function create(gc, ctx, b0, opts = {}) {
       ? await store.one(gc, 'SELECT COALESCE(MAX(position), 0) + 1 AS p FROM tasks WHERE parent_id = ? AND deleted_at IS NULL', [parent.id])
       : await store.one(gc, 'SELECT COALESCE(MIN(position), 0) - 1 AS p FROM tasks INDEXED BY idx_tasks_list WHERE list_id = ? AND done_at IS NULL AND deleted_at IS NULL AND parent_id IS NULL', [listId]);
     const r = await store.run(gc, `INSERT INTO tasks (list_id, parent_id, title, note, important, due_date, due_time, due_at, remind_at, repeat_json, assignee_id,
-      position, src_plugin, src_id, note_id, ext_id, ext_at, ext_dirty, created_by, created_at, updated_at, done_at, done_by)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      position, src_plugin, src_id, note_id, ext_id, ext_at, ext_dirty, created_by, created_at, updated_at, done_at, done_by, attached_list)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [listId, parent ? parent.id : null, title, note, fields.important ? 1 : 0, due.date, due.time, dueAt(ctx, due.date, due.time),
       remindAt, repeat ? JSON.stringify(repeat) : null, assignee, pos.p, src ? src.plugin : null, src ? src.id : null,
       posInt(fields.noteId) || null, opts.extId || null, opts.extAt || null, twoWay && !opts.extId ? 1 : 0, ctx.userId, opts.createdAt || ctx.now, ctx.now,
-      opts.doneAt || null, opts.doneAt ? ctx.userId : null]);
+      opts.doneAt || null, opts.doneAt ? ctx.userId : null, attached]);
     const tid = Number(r.lastInsertRowid);
     if (bool(fields.myDay) && !parent) await store.run(gc, 'INSERT OR IGNORE INTO my_day (user_id, day, task_id) VALUES (?, ?, ?)', [ctx.userId, ctx.today, tid]);
     await fts.setTask(gc, tid, title, note);
@@ -271,7 +287,7 @@ async function create(gc, ctx, b0, opts = {}) {
   // 1.3.0: its event in Mail's calendar — at once; a task that comes in by an import waits for the background run
   if (due.time && !opts.doneAt) await (opts.extId ? calsync.touch(gc, id) : calsync.now(gc, ctx, id));
   const row = await store.one(gc, 'SELECT * FROM tasks WHERE id = ?', [id]);
-  return { task: (await views(gc, ctx, [row]))[0], ...(parsed ? { parsed } : {}), ...(cid ? { clientId: cid } : {}) };
+  return { task: (await views(gc, ctx, [row]))[0], ...(parsed ? { parsed } : {}), ...(attach ? { attach } : {}), ...(cid ? { clientId: cid } : {}) };
 }
 
 async function notifyAssigned(gc, ctx, userId, title, id) {
@@ -295,17 +311,21 @@ async function get(gc, ctx, id, opts = {}) {
 }
 
 /** The fields PATCH tasks takes, each in one form to compare (norm) — a sub task has no date, reminder, repeat, person or list of its own. */
-const FIELDS = ['title', 'note', 'important', 'due', 'remindAt', 'repeat', 'assigneeId', 'listId', 'position', 'myDay'];
-const OWN = ['due', 'remindAt', 'repeat', 'assigneeId', 'listId', 'myDay'];
+const FIELDS = ['title', 'note', 'important', 'due', 'remindAt', 'repeat', 'assigneeId', 'listId', 'position', 'myDay', 'attachedListId'];
+const OWN = ['due', 'remindAt', 'repeat', 'assigneeId', 'listId', 'myDay', 'attachedListId'];
 
 /**
- * PATCH tasks/<id> { title?, note?, important?, due?, remindAt?, repeat?, assigneeId?, listId?, position?, myDay?, base? }
+ * PATCH tasks/<id> { title?, note?, important?, due?, remindAt?, repeat?, assigneeId?, listId?, position?, myDay?,
+ * attachedListId? (1.4.0; or attachedListUid), base? }
  * — `base` (1.1.0): the values the device saw before it changed them; a field someone changed meanwhile to something
  * else → 409 conflict { fields, task }. Without `base` the change wins (as in 1.0). A field set to what it is already
  * is not written (a change sent twice does nothing the second time: no new reminder, no push, no event).
  */
-async function update(gc, ctx, id, b) {
+async function update(gc, ctx, id, b0) {
   const r = await access(gc, ctx, id);
+  let b = b0;
+  // 1.4.0: the list named by the id its device gave it
+  if (b0.attachedListId === undefined && b0.attachedListUid !== undefined) b = { ...b0, attachedListId: await shopping.attachArg(gc, ctx.userId, undefined, b0.attachedListUid) };
   const sub = !!r.parent_id;
   const myDayNow = !!(await store.one(gc, 'SELECT 1 AS x FROM my_day WHERE user_id = ? AND day = ? AND task_id = ?', [ctx.userId, ctx.today, r.id]));
   const dueDate = (b.due && typeof b.due === 'object' && b.due.date) || r.due_date || ctx.today;
@@ -321,12 +341,14 @@ async function update(gc, ctx, id, b) {
       case 'listId': if (!posInt(v)) throw fail('not_found'); return posInt(v);
       case 'position': if (typeof v !== 'number' || !Number.isFinite(v)) throw fail('invalid', { field: 'position' }); return v;
       case 'myDay': return bool(v);
+      case 'attachedListId': if (v === null) return null; if (!posInt(v)) throw fail('invalid', { field: 'attachedListId' }); return posInt(v);
       default: return v;
     }
   };
   const now = {
     title: r.title, note: r.note, important: !!r.important, due: { date: r.due_date || null, time: r.due_time || null }, remindAt: r.remind_at || null,
     repeat: parse(r.repeat_json, null), assigneeId: r.assignee_id || null, listId: r.list_id, position: r.position, myDay: myDayNow,
+    attachedListId: r.attached_list || null,
   };
   const next = {};
   for (const f of FIELDS) if (b[f] !== undefined && !(sub && OWN.includes(f))) next[f] = norm(f, b[f]);
@@ -349,7 +371,7 @@ async function update(gc, ctx, id, b) {
   let listId = r.list_id;
   if (next.listId !== undefined) {
     const l = await lists.access(gc, ctx.userId, next.listId);
-    if (l.id !== r.list_id) { lists.writable(l); listId = l.id; put('list_id', l.id); }
+    if (l.id !== r.list_id) { lists.writable(lists.taskList(l)); listId = l.id; put('list_id', l.id); }
   }
   if (next.due !== undefined) { put('due_date', next.due.date); put('due_time', next.due.time); put('due_at', dueAt(ctx, next.due.date, next.due.time)); }
   if (next.remindAt !== undefined) { put('remind_at', next.remindAt); put('reminded_at', null); if (r.snoozed_at) put('snoozed_at', null); }
@@ -359,6 +381,7 @@ async function update(gc, ctx, id, b) {
   if (next.assigneeId !== undefined) put('assignee_id', next.assigneeId === null ? null : await assigneeArg(gc, listId, next.assigneeId));
   else if (!sub && listId !== r.list_id && r.assignee_id && !(await store.one(gc, 'SELECT 1 AS x FROM list_members WHERE list_id = ? AND user_id = ?', [listId, r.assignee_id]))) put('assignee_id', null);
   if (next.position !== undefined) put('position', next.position);
+  if (next.attachedListId !== undefined) put('attached_list', next.attachedListId === null ? null : await shopping.attachArg(gc, ctx.userId, next.attachedListId));
   const twoWay = await linkedTwoWay(gc, listId);
   const before = await lists.memberIds(gc, r.list_id);
   await store.tx(gc, async () => {
@@ -404,9 +427,9 @@ async function complete(gc, ctx, id, b, opts = {}) {
         const base = r.remind_at && r.snoozed_at && r.due_at && r.due_time ? r.due_at : r.remind_at;
         const remind = base ? duty.shiftDays(base, shift, ctx.tz) : null;
         const ins = await store.run(gc, `INSERT INTO tasks (list_id, title, note, important, due_date, due_time, due_at, remind_at, repeat_json, assignee_id, position,
-          ext_dirty, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          ext_dirty, created_by, created_at, updated_at, attached_list) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [r.list_id, r.title, r.note, r.important, nextDate, r.due_time, dueAt(ctx, nextDate, r.due_time), remind, r.repeat_json, r.assignee_id, r.position,
-          twoWay ? 1 : 0, ctx.userId, ctx.now, ctx.now]);
+          twoWay ? 1 : 0, ctx.userId, ctx.now, ctx.now, r.attached_list || null]);
         nextId = Number(ins.lastInsertRowid);
         await store.run(gc, `INSERT INTO tasks (list_id, parent_id, title, position, created_by, created_at, updated_at)
           SELECT list_id, ?, title, position, ?, ?, ? FROM tasks WHERE parent_id = ? AND deleted_at IS NULL`, [nextId, ctx.userId, ctx.now, ctx.now, r.id]);

@@ -10,6 +10,7 @@ const tasks = require('./tasks');
 const lists = require('./lists');
 const sources = require('./sources');
 const prefsMod = require('./prefs');
+const shopping = require('./shopping');
 const { t } = require('./text');
 const { fail, area: areaOf } = require('./util');
 
@@ -58,9 +59,13 @@ async function listDays(gc, ctx, area) {
       ORDER BY position, id LIMIT 3`, [l.id]);
     const mine = await store.one(gc, `SELECT COUNT(*) AS n FROM tasks INDEXED BY idx_tasks_assignee WHERE assignee_id = ? AND list_id = ? AND done_at IS NULL AND deleted_at IS NULL AND parent_id IS NULL`, [ctx.userId, l.id]);
     const open = counts.get(l.id) || 0;
+    // 1.4.0: the day of a shopping list — its first open items (`points`), `shopping` its id for GET shopping
+    const points = l.kind === 'shopping' ? (await store.all(gc, `SELECT id, text, qty FROM shop_items INDEXED BY idx_shop_items_list WHERE list_id = ? AND deleted = 0 AND checked = 0
+      ORDER BY created_at, id LIMIT 3`, [l.id])).map((i) => ({ id: i.id, text: i.text, qty: i.qty || null })) : null;
     out.push({
-      list: await lists.view(gc, ctx, l, counts), title: t(ctx.lang, l.icon === 'cart' ? 'v.listday_cart' : 'v.listday'), open, assignedToMe: mine ? mine.n : 0,
-      items: await tasks.views(gc, ctx, first), more: Math.max(0, open - first.length),
+      list: await lists.view(gc, ctx, l, counts), title: t(ctx.lang, l.icon === 'cart' || l.kind === 'shopping' ? 'v.listday_cart' : 'v.listday'), open, assignedToMe: mine ? mine.n : 0,
+      items: await tasks.views(gc, ctx, first), more: Math.max(0, open - (points ? points.length : first.length)),
+      ...(points ? { shopping: { id: l.uid }, points } : {}),
     });
   }
   return out;
@@ -150,6 +155,8 @@ async function assigned(gc, ctx, area) {
 /** A list: its open tasks in their order, the done ones folded (the last 100). */
 async function list(gc, ctx, id) {
   const l = await lists.access(gc, ctx.userId, id);
+  // 1.4.0: a shopping list has no tasks to show (GET shopping)
+  if (l.kind === 'shopping') throw fail('not_found');
   const open = await store.all(gc, `SELECT * FROM tasks INDEXED BY idx_tasks_list WHERE list_id = ? AND done_at IS NULL AND deleted_at IS NULL AND parent_id IS NULL
     ORDER BY position, id LIMIT 2000`, [l.id]);
   const done = await store.all(gc, `SELECT * FROM tasks INDEXED BY idx_tasks_done WHERE list_id = ? AND done_at IS NOT NULL AND deleted_at IS NULL AND parent_id IS NULL
@@ -217,6 +224,8 @@ async function nav(gc, ctx, q, notesNav) {
     sources: status.filter((s) => s.enabled && s.available && !(prefs.sources[s.plugin] && prefs.sources[s.plugin].on === false))
       .map((s) => ({ plugin: s.plugin, label: t(ctx.lang, 'src.' + s.plugin), hint: t(ctx.lang, 'srch.' + s.plugin), open: bySource[s.plugin] })),
     lists: ls.lists, groups: ls.groups,
+    // 1.4.0: the shopping lists (not part of `lists`: they hold items, no tasks)
+    shopping: await shopping.nav(gc, ctx, area),
     notes: notesNav ? await notesNav(gc, ctx, area) : null,
   };
 }
