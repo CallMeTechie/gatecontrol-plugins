@@ -142,7 +142,7 @@ test('Leaflet: one constant (server/ui.js), nowhere else', () => {
 
 test('plugin.json: permissions (kiosk, actions), app tab, maps, the twelve topics with SOS allowed critical', () => {
   assert.equal(manifest.id, 'gatecontrol-familie');
-  assert.equal(manifest.version, '1.20.0');
+  assert.equal(manifest.version, '1.21.0');
   // 1.6.0 stays on 1.173.0: the messenger services (GateControl ≥ 1.177.0) are optional — an older host ignores
   // permissions.services and has no gc.services, so the group and the rule action stay hidden there.
   // 1.14.2 too: GC.viewport (GateControl ≥ 1.199.0) is optional — without it the wall keeps its 640 px
@@ -162,11 +162,12 @@ test('plugin.json: permissions (kiosk, actions), app tab, maps, the twelve topic
   assert.deepEqual(p.services, ['gatecontrol-messenger:sync_group', 'gatecontrol-messenger:send_message', 'gatecontrol-messenger:release_group',
     'gatecontrol-messenger:set_place_status', 'gatecontrol-alltag:calendar_query', 'gatecontrol-alltag:calendar_list', 'gatecontrol-schule:school_students',
     'gatecontrol-schule:school_day', 'gatecontrol-notizen:todo_changed', 'gatecontrol-notizen:notes_bind', 'gatecontrol-notizen:notes_list',
-    'gatecontrol-notizen:note_save', 'gatecontrol-notizen:note_delete', 'gatecontrol-notizen:notes_import'],
-  '1.7.0: release_group (messenger ≥ 1.1.0); 1.8.0: set_place_status (messenger ≥ 1.4.0); 1.9.0: the Alltag calendars for calendar conditions; 1.12.0: the Schule students; 1.13.0: the school day on the wall; 1.19.0: „Notizen & Aufgaben“');
+    'gatecontrol-notizen:note_save', 'gatecontrol-notizen:note_delete', 'gatecontrol-notizen:notes_import',
+    'gatecontrol-notizen:shopping_bind', 'gatecontrol-notizen:shopping_put', 'gatecontrol-notizen:shopping_list'],
+  '1.7.0: release_group (messenger ≥ 1.1.0); 1.8.0: set_place_status (messenger ≥ 1.4.0); 1.9.0: the Alltag calendars for calendar conditions; 1.12.0: the Schule students; 1.13.0: the school day on the wall; 1.19.0: „Notizen & Aufgaben“; 1.21.0: the shopping lists there');
   assert.deepEqual(Object.keys(manifest.services.provides), ['list_add', 'calendar_add', 'calendar_upsert', 'calendar_remove', 'places', 'family_roles', 'rule_event', 'school_day_end', 'wall_wifi', 'calendar_range',
-    'todo_items', 'todo_complete', 'notes_changed'],
-    '1.8.0: services for the Messenger; 1.9.0: family_roles; 1.12.0: rule_event for the Schule plugin; 1.13.0: school_day_end; 1.14.0: wall_wifi for Vault; 1.16.0: calendar_range for Mail; 1.19.0: „Notizen & Aufgaben“');
+    'todo_items', 'todo_complete', 'notes_changed', 'shopping_changed', 'shopping_action'],
+    '1.8.0: services for the Messenger; 1.9.0: family_roles; 1.12.0: rule_event for the Schule plugin; 1.13.0: school_day_end; 1.14.0: wall_wifi for Vault; 1.16.0: calendar_range for Mail; 1.19.0: „Notizen & Aufgaben“; 1.21.0: its shopping lists');
   assert.equal(manifest.services.provides.calendar_range.maxPerHour, 1800);
   for (const n of ['todo_items', 'todo_complete', 'notes_changed']) assert.equal(manifest.services.provides[n].maxPerHour, 600);
   for (const sv of Object.values(manifest.services.provides)) assert.ok(sv.label.de && sv.label.en && sv.label.de.length <= 60 && sv.label.en.length <= 60);

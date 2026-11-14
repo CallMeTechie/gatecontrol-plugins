@@ -19,6 +19,8 @@ const dsnote = require('./dsnote');
 const remind = require('./remind');
 const yesterday = require('./yesterday');
 const calsync = require('./calsync');
+const shopping = require('./shopping');
+const duty = require('./duty');
 const Q = require('../ui/quickparse');
 const { t } = require('./text');
 const { fail, isKnown, statusOf, posInt } = require('./util');
@@ -34,7 +36,11 @@ const FEATURES = ['tasks', 'notes', 'sources', 'vault', 'mstodo', 'dsnote', 'sea
   // 1.3.0 (README "1.3.0"): `reminderActions` — the reminder push has buttons and a tag, POST tasks/<id>/snooze, Task.reminder,
   // GET reminders; `yesterdayOpen` — „Gestern offen geblieben“: GET/POST yesterday, POST tasks/<id>/move, `yesterday` of
   // „Mein Tag“, the push kind yesterday; `taskCalendar` — Task.calendar, me.calendar, prefs.calendar.
-  'reminderActions', 'yesterdayOpen', 'taskCalendar'];
+  'reminderActions', 'yesterdayOpen', 'taskCalendar',
+  // 1.4.0 (README "1.4.0"): `shoppingLists` — GET shopping, POST shopping/ops, me.shopping, nav.shopping, the event
+  // `shopping`; `taskList` — Task.attachedList, attachedListId, `attach` of POST parse / POST tasks, „all ticked“ completes
+  // the task, „Liste öffnen“ on the reminder; `familyShopping` — family lists, PUT …/family, POST …/going, …/assign.
+  'shoppingLists', 'taskList', 'familyShopping'];
 
 const ok = (json) => ({ status: 200, json: { ok: true, ...json } });
 
@@ -56,6 +62,25 @@ const taskOpts = {
   },
 };
 notes.opts.completeTask = (gc, ctx, id, done) => tasks.complete(gc, ctx, id, { done }, taskOpts);
+// 1.4.0: every item of a list ticked — the open tasks carrying it are completed: as the person who ticked when the task
+// is theirs to complete, else as the person whose task it is (server/duty.js), else as the owner of its list
+shopping.hooks.completeTask = async (gc, ctx, row) => {
+  const who = [ctx.userId, await duty.one(gc, row)];
+  const own = await require('./store').one(gc, "SELECT user_id FROM list_members WHERE list_id = ? AND role = 'owner'", [row.list_id]);
+  if (own) who.push(own.user_id);
+  for (const u of [...new Set(who.filter(Boolean))]) {
+    const c = { ...ctx, userId: u };
+    let r;
+    try { r = await tasks.access(gc, c, row.id); } catch { continue; }
+    if (r.done_at) return false;
+    if (!(await tasks.mayComplete(gc, c, r))) continue;
+    await tasks.complete(gc, c, r.id, { done: true }, taskOpts);
+    return true;
+  }
+  return false;
+};
+// a shopping list changed through the list routes: its people and Familie hear of it
+lists.hooks.changed = (gc, l, users) => shopping.listChanged(gc, l, users);
 // 1.3.0: a person's choice changed — their events in the calendar follow, the plan of the morning hint is made anew
 prefs.hooks.changed = async (gc, ctx, before, after) => {
   if (before.calendar.tasks !== after.calendar.tasks) await calsync.touchAll(gc, ctx.today, ctx.userId);
@@ -83,6 +108,8 @@ async function me(gc, ctx) {
     // switch; mine: the person's own), and the morning hint
     calendar: { available: await calsync.available(gc, ctx.now), enabled: cfg.calendar_tasks !== false, mine: p.calendar.tasks !== false, name: t(ctx.lang, 'cal.name') },
     yesterday: { push: p.notify.yesterday !== false, at: p.yesterdayAt },
+    // 1.4.0: family lists (available: Familie offers its part; bound: it told the hub who the family is; parent)
+    shopping: await shopping.meInfo(gc, ctx),
   };
 }
 
@@ -115,7 +142,9 @@ async function itemComplete(gc, ctx, id, b) {
 
 async function parseText(gc, ctx, b) {
   if (!b || typeof b.text !== 'string' || b.text.length > 1000) throw fail('invalid', { field: 'text' });
-  return { parsed: await tasks.fromText(gc, ctx, b.text, b.area) };
+  const parsed = await tasks.fromText(gc, ctx, b.text, b.area);
+  // 1.4.0: the shopping list the line names („bei Lidl einkaufen“ → „Einkauf“) — beside what the parser made of it
+  return { parsed, attach: await shopping.suggest(gc, ctx, b.text, parsed, b.area) };
 }
 
 async function sync(gc, ctx, plugin) {
@@ -176,6 +205,12 @@ async function handle(gc, ctx, req) {
   if (is('GET', 1, 'yesterday')) return ok(await yesterday.get(gc, ctx, q));
   if (is('POST', 1, 'yesterday')) return ok(await yesterday.post(gc, ctx, b, taskOpts));
   if (is('GET', 1, 'reminders')) return ok(await remind.feed(gc, ctx));
+
+  // 1.4.0: shopping lists (server/shopping.js)
+  if (is('GET', 1, 'shopping')) return ok(await shopping.get(gc, ctx, q));
+  if (m === 'POST' && n === 2 && a === 'shopping' && x === 'ops') return ok(await shopping.applyOps(gc, ctx, b));
+  if (m === 'PUT' && n === 4 && a === 'shopping' && x === 'lists' && z === 'family') return ok(await shopping.setFamily(gc, ctx, y, b));
+  if (m === 'POST' && n === 4 && a === 'shopping' && x === 'lists' && (z === 'going' || z === 'assign')) return ok(await shopping.forward(gc, ctx, y, z, b));
 
   // items of the other plugins
   if (m === 'GET' && n === 2 && a === 'items') return ok(await itemGet(gc, ctx, x));

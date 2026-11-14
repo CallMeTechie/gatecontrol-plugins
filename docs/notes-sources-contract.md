@@ -142,6 +142,26 @@ owner: it calls **`<owner>:notes_changed { v: 1, key, ids: [noteId…], removed:
 and key (changes in between are merged). Familie declares `notes_changed` with `maxPerHour: 600` and then fetches with
 `notes_list { since }`. A missing `notes_changed` is fine: Familie may also refresh every 15 minutes.
 
+### Shopping lists for Familie (hub ≥ 1.4.0, Familie ≥ 1.21.0) — maxPerHour 3600 each
+
+After Familie's **move** (a button on its settings page, never by itself) the family's shopping lists live in the hub as
+lists of the kind `shopping` (README of the hub, „1.4.0“). Familie keeps its tables as the copy it shows (app, portal,
+wall tablet, cards in the chat) and keeps the two in step through these services. Lists and items keep **their own ids**
+(text, made by a device) on both sides — the reference that makes a move done twice harmless.
+
+| Service | `userId` | Payload | Answer |
+|---|---|---|---|
+| `shopping_bind` | none | `{ members: [userId…] (1…50), parents: [userId…] (≥ 1, of members) }` · `{ release: true }` | `{ ok, lists }` — who the family is: every family list follows its members (who left leaves; a list of theirs goes on with the first parent). `release`: the hub lets go, the lists stay as ordinary shared lists → `{ ok, released }` |
+| `shopping_put` | none | `{ lists: [{ id, name (≤ 40), icon?, sort?, deleted?, by?, assignee?, dueAt?, going? }] (≤ 100), items: [{ id, listId, text (≤ 120), qty?, checked, checkedBy?, deleted?, createdBy?, createdAt?, by? }] (≤ 200) }` | `{ ok, lists, items (rows written), rejected: [{ kind, id, code }], completed: [{ taskId, listId }] }` — a row is written only when it differs from the hub's (sent again, or sent back: nothing happens). A new list belongs to `by` when a parent, else to the first parent; `deleted: true` puts a list into the trash. `assignee`, `dueAt`, `going` are Familie's own (who is asked, until when, who is on the way) and only shown by the hub. |
+| `shopping_list` | none | `{ since? (ms), cursor? }` | `{ ok, lists: [{ id, name, icon, position, ownerId, createdAt, updatedAt }], items: [{ …, deleted, updatedAt }], cursor \| null, now }` — **every** family list (in pages; one Familie has that is missing is gone in the hub) and the items changed since, tombstones too; ≤ 16 KB per page. |
+
+Codes: `forbidden` (not Familie), `not_found` (the hub does not know the family — Familie's lists are its own again),
+`invalid`. What Familie writes is not told back. When a family list changes in the hub, it calls
+**`gatecontrol-familie:shopping_changed { v: 1, at }`** (a second later, else with its background run); Familie then
+pulls with `shopping_list`. „Ich gehe einkaufen“ / „Kannst du einkaufen gehen?“ pressed in the hub are handed over with
+**`gatecontrol-familie:shopping_action { v: 1, action: 'going' | 'assign', listId, body }`** as the person
+→ `{ ok, notified, chat?, family: { assignee, dueAt, going } }` or Familie's refusal (`too_soon { retryAfter }`, …).
+
 ## 4. Services each source provides
 
 Each source declares in `plugin.json`:

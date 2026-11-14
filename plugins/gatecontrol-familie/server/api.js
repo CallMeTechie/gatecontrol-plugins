@@ -55,6 +55,7 @@ const tz = require('./tz');
 const push = require('./push');
 const members = require('./members');
 const shopping = require('./shopping');
+const shopsync = require('./shopsync');
 const tasks = require('./tasks');
 const dates = require('./dates');
 const locate = require('./locate');
@@ -87,6 +88,8 @@ async function me(gc, r) {
   return {
     me: members.meView(r.me, rings),
     modules: { ...r.cfg.modules },
+    // 1.21.0: `shoppingHome` — GET shopping and the overview say where the shopping lists live (home), GET|POST shopping/move
+    features: ['shoppingHome'],
     members: r.fam.list.map((m) => members.memberView(r.me, m, r.cfg, rings)),
     serverTime: iso(r.now),
   };
@@ -96,7 +99,8 @@ async function me(gc, r) {
 async function overview(gc, r) {
   const mod = r.cfg.modules;
   const out = { shopping: null, tasks: null, stars: null, dates: null, locate: null, rides: null };
-  if (mod.shopping) out.shopping = { lists: await shopping.summary(gc), going: await shopping.goingNow(gc, r.now) };
+  // 1.21.0: home — where the lists live ('notizen' after the move, with the hub there; the numbers here stay right)
+  if (mod.shopping) out.shopping = { lists: await shopping.summary(gc), going: await shopping.goingNow(gc, r.now), home: await shopsync.where(gc) };
   if (mod.tasks) out.tasks = await tasks.mine(gc, r);
   if (mod.tasks && mod.stars && r.me.role === 'child') {
     const s = await tasks.starsOf(gc, r.fam, r.cfg, r.today);
@@ -140,7 +144,14 @@ function dispatch(gc, r, seg, method) {
 
   if (a === 'shopping') {
     need('shopping');
-    if (n === 1 && GET) return () => shopping.get(gc, r.query, r.now);
+    if (n === 1 && GET) return async () => ({ ...(await shopping.get(gc, r.query, r.now)), home: await shopsync.where(gc) });
+    // 1.21.0: the move to „Notizen & Aufgaben“ (parents): what would move, the move, the way back (server/shopsync.js) —
+    // no transaction around the calls to the hub
+    if (n === 2 && b === 'move' && GET) { parentsOnly(r); return () => shopsync.preview(gc, r.now); }
+    if (n === 2 && b === 'move' && POST) {
+      parentsOnly(r);
+      return readOnly(async () => (r.body.back === true ? shopsync.back(gc, r.fam, r.cfg, r.now) : shopsync.move(gc, r.fam, r.cfg, r.now, r.me.userId)));
+    }
     if (n === 2 && b === 'ops' && POST) return () => shopping.applyOps(gc, r.body, { id: r.me.userId }, r.now, r.me.role === 'wall' ? { only: WALL_OPS } : null);
     if (n === 4 && b === 'lists' && d === 'going' && POST) return () => shopping.going(gc, r, c);
     // 1.9.0: ask a person to do the shopping (the card / push goes out after the commit)

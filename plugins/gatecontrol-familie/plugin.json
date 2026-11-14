@@ -4,7 +4,7 @@
     "de": "Familie",
     "en": "Family"
   },
-  "version": "1.20.0",
+  "version": "1.21.0",
   "publisher": "CallMeTechie",
   "description": {
     "de": "Die Familie in der GateControl-App und im Portal: gemeinsame Einkaufslisten (offline nutzbar), Aufgaben mit Erinnerung und Sternen für Kinder, Termine und Geburtstage, Abholen & Fahrten („Wer holt Tim?“), Notfall-Karte, Kinder orten auf Anfrage (das Kind sieht jede Abfrage, endet mit 18), „Bin angekommen“ und SOS, Orts-Erinnerungen, Taschengeld (nur Buchhaltung), Wunschlisten, Haushaltsbuch, Pinnwand & Packlisten, Essensplan, Anwesenheit per App oder Heim-WLAN mit Smart-Home-Regeln (nur mit Zustimmung), Erinnerungen und ein Dashboard für ein Wand-Tablet. Alles bleibt auf dem eigenen Server.",
@@ -42,7 +42,10 @@
       "gatecontrol-notizen:notes_list",
       "gatecontrol-notizen:note_save",
       "gatecontrol-notizen:note_delete",
-      "gatecontrol-notizen:notes_import"
+      "gatecontrol-notizen:notes_import",
+      "gatecontrol-notizen:shopping_bind",
+      "gatecontrol-notizen:shopping_put",
+      "gatecontrol-notizen:shopping_list"
     ]
   },
   "services": {
@@ -126,6 +129,20 @@
         "label": {
           "de": "Pinnwand und Packlisten aus Notizen & Aufgaben",
           "en": "Pinboard and packing lists from Notes & Tasks"
+        },
+        "maxPerHour": 600
+      },
+      "shopping_changed": {
+        "label": {
+          "de": "Einkaufslisten aus Notizen & Aufgaben",
+          "en": "Shopping lists from Notes & Tasks"
+        },
+        "maxPerHour": 3600
+      },
+      "shopping_action": {
+        "label": {
+          "de": "Einkaufen gehen und darum bitten, aus Notizen & Aufgaben",
+          "en": "Going shopping and asking for it, from Notes & Tasks"
         },
         "maxPerHour": 600
       }

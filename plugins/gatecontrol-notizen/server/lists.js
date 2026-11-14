@@ -38,6 +38,12 @@ function remindArg(v) { if (v == null || v === '') return null; if (!isTime(v)) 
 /** A member who may only look (role read) cannot change the list's tasks. */
 function writable(l) { if (l.my_role === 'read') throw fail('forbidden', { reason: 'read_only' }); return l; }
 function ownerOnly(l) { if (l.my_role !== 'owner') throw fail('forbidden', { reason: 'owner' }); return l; }
+/** 1.4.0: a shopping list holds items (server/shopping.js), no tasks. */
+function taskList(l) { if (l.kind === 'shopping') throw fail('invalid', { field: 'listId', reason: 'shopping' }); return l; }
+
+/** 1.4.0: hooks.changed(gc, listRow, users?) — a list changed through these routes (server/shopping.js tells the people and Familie). */
+const hooks = { changed: null };
+const changedHook = async (gc, l, users) => { if (hooks.changed) await hooks.changed(gc, l, users); };
 
 /** The list `id` as `userId` sees it → { list, role } (not_found when not a member). */
 async function access(gc, userId, id) {
@@ -84,7 +90,7 @@ async function view(gc, ctx, l, counts, members) {
   for (const m of ms) if (m.user_id !== l.owner_id) others.push({ id: m.user_id, name: await people.name(gc, m.user_id), role: m.role === 'read' ? 'read' : 'write', since: m.since || null });
   const mask = l.days || 0;
   return {
-    id: l.id, name: l.name, area: l.area, color: l.color || null, icon: l.icon || null, isDefault: !!l.is_default,
+    id: l.id, name: l.name, area: l.area, color: l.color || null, icon: l.icon || null, isDefault: !!l.is_default, kind: l.kind === 'shopping' ? 'shopping' : 'tasks',
     owner: { id: l.owner_id, name: await people.name(gc, l.owner_id) }, role: l.my_role || null, canEdit: !!l.my_role && l.my_role !== 'read',
     groupId: l.my_group || null, position: l.my_position == null ? 0 : l.my_position, shared: ms.length > 1, members: others,
     open: counts ? counts.get(l.id) || 0 : undefined, ext: l.ext_kind ? { kind: l.ext_kind } : null,
@@ -94,12 +100,12 @@ async function view(gc, ctx, l, counts, members) {
 
 const LIST_COLS = 'l.*, m.role AS my_role, m.group_id AS my_group, m.position AS my_position, m.myday_off AS my_day_off';
 
-/** GET lists?area= → { lists, groups } */
+/** GET lists?area= → { lists, groups } — the task lists (1.4.0: shopping lists are GET shopping; older apps would show them as empty task lists). */
 async function all(gc, ctx, area) {
   const a = area ? areaOf(area) : null;
   await ensureDefault(gc, ctx, a || 'private');
   const rows = await store.all(gc, `SELECT ${LIST_COLS} FROM list_members m
-    JOIN lists l ON l.id = m.list_id AND l.deleted_at IS NULL WHERE m.user_id = ?${a ? ' AND l.area = ?' : ''} ORDER BY l.is_default DESC, m.position, l.id LIMIT ${MAX_LISTS}`, a ? [ctx.userId, a] : [ctx.userId]);
+    JOIN lists l ON l.id = m.list_id AND l.deleted_at IS NULL AND l.kind = 'tasks' WHERE m.user_id = ?${a ? ' AND l.area = ?' : ''} ORDER BY l.is_default DESC, m.position, l.id LIMIT ${MAX_LISTS}`, a ? [ctx.userId, a] : [ctx.userId]);
   const counts = await openCounts(gc, rows.map((r) => r.id));
   const groups = await store.all(gc, `SELECT id, name, area, position FROM list_groups WHERE user_id = ?${a ? ' AND area = ?' : ''} ORDER BY position, id`, a ? [ctx.userId, a] : [ctx.userId]);
   const out = [];
@@ -109,7 +115,7 @@ async function all(gc, ctx, area) {
   return { lists: out, groups: groups.map((g) => ({ id: g.id, name: g.name, area: g.area, position: g.position, open: inGroup.get(g.id) || 0 })) };
 }
 
-/** Open top-level tasks per list (idx_tasks_list). */
+/** Open top-level tasks per list (idx_tasks_list); 1.4.0: of a shopping list its open items (idx_shop_items_open). */
 async function openCounts(gc, listIds) {
   const m = new Map();
   for (const part of store.chunks(listIds)) {
@@ -117,6 +123,9 @@ async function openCounts(gc, listIds) {
     const rows = await store.all(gc, `SELECT list_id, COUNT(*) AS n FROM tasks INDEXED BY idx_tasks_list WHERE list_id IN (${store.marks(part.length)})
       AND done_at IS NULL AND deleted_at IS NULL AND parent_id IS NULL GROUP BY list_id`, part);
     for (const r of rows) m.set(r.list_id, r.n);
+    const items = await store.all(gc, `SELECT list_id, COUNT(*) AS n FROM shop_items INDEXED BY idx_shop_items_open WHERE list_id IN (${store.marks(part.length)})
+      AND deleted = 0 AND checked = 0 GROUP BY list_id`, part);
+    for (const r of items) m.set(r.list_id, (m.get(r.list_id) || 0) + r.n);
   }
   return m;
 }
@@ -188,6 +197,8 @@ async function update(gc, ctx, id, b0) {
   const now = { name: l.name, color: l.color || null, icon: l.icon || null, days: daysOf(l.days || 0), remind: l.remind || null };
   const next = {};
   for (const f of OWNER_FIELDS) if (b0[f] !== undefined) next[f] = normField(f, b0[f]);
+  // 1.4.0: the name of a shopping list is as long as Familie's (its copy keeps the same name)
+  if (l.kind === 'shopping' && next.name) next.name = next.name.slice(0, 40).trim();
   const late = stale(b0.base, now, next, normField);
   if (late.length) throw fail('conflict', { fields: late, list: await view(gc, ctx, l) });
   for (const f of Object.keys(next)) if (same(next[f], now[f])) delete next[f];
@@ -214,6 +225,7 @@ async function update(gc, ctx, id, b0) {
     if (b0.mydayOff !== undefined) await store.run(gc, 'UPDATE list_members SET myday_off = ? WHERE user_id = ? AND list_id = ?', [b0.mydayOff ? 1 : 0, ctx.userId, l.id]);
   });
   events.changed(gc, set.length ? await memberIds(gc, l.id) : [ctx.userId], 'lists');
+  if (set.length) await changedHook(gc, l);
   return { list: await view(gc, ctx, await access(gc, ctx.userId, l.id)) };
 }
 
@@ -249,6 +261,7 @@ async function remove(gc, ctx, id, q = {}) {
     await store.run(gc, 'UPDATE tasks SET assignee_id = NULL WHERE list_id = ? AND assignee_id = ?', [l.id, ctx.userId]);
     await calsync.touchList(gc, l.id);
     events.changed(gc, members, 'lists');
+    await changedHook(gc, l, members);
     return { ok: true, left: true };
   }
   if (l.is_default) throw fail('forbidden', { reason: 'default' });
@@ -280,6 +293,7 @@ async function remove(gc, ctx, id, q = {}) {
   // 1.3.0: their events in Mail's calendar follow (server/calsync.js, the next background run)
   await calsync.touchList(gc, [l.id, target]);
   events.changed(gc, members, 'lists');
+  await changedHook(gc, l, members);
   if (target) events.changed(gc, [...targetMembers], 'tasks');
   const td = target ? await store.one(gc, 'SELECT id, name FROM lists WHERE id = ?', [target]) : null;
   return { ok: true, deleted: true, moved: moved.length, removed: removed ? removed.n : out.removed, target: td ? { id: td.id, name: td.name } : null, restoreUntil: ctx.now + TRASH_MS };
@@ -317,6 +331,7 @@ async function restore(gc, ctx, id) {
   await calsync.touchList(gc, [l.id, target]);
   events.changed(gc, ms, 'lists');
   events.changed(gc, ms, 'tasks');
+  await changedHook(gc, l, ms);
   return { list: await view(gc, ctx, await access(gc, ctx.userId, l.id)) };
 }
 
@@ -355,6 +370,8 @@ async function setMembers(gc, ctx, id, b) {
       await store.run(gc, 'DELETE FROM list_members WHERE user_id = ? AND list_id = ?', [u, l.id]);
       await store.run(gc, 'UPDATE tasks SET assignee_id = NULL WHERE list_id = ? AND assignee_id = ?', [l.id, u]);
     }
+    // 1.4.0: who sees a shopping list is part of what GET shopping?since= tells
+    if (l.kind === 'shopping' && (added.length || gone.length || changedRole.length)) await store.run(gc, 'UPDATE lists SET updated_at = ? WHERE id = ?', [ctx.now, l.id]);
   });
   if (gone.length) await calsync.touchList(gc, l.id);
   if (added.length) {
@@ -362,6 +379,7 @@ async function setMembers(gc, ctx, id, b) {
       collapseKey: 'list:' + l.id, data: { notizen: push.sharedList(l) } });
   }
   events.changed(gc, [...new Set([...before.keys(), ...added])], 'lists');
+  await changedHook(gc, l, [...new Set([...before.keys(), ...added])]);
   return { list: await view(gc, ctx, await access(gc, ctx.userId, l.id)) };
 }
 
@@ -419,5 +437,5 @@ async function removeGroup(gc, ctx, id) {
 
 module.exports = {
   ICONS, ROLES, TRASH_MS, isoDay, bitOf, daysOf, access, ids, ensureDefault, membersOf, memberIds, view, all, openCounts, create, update, usage, remove, restore,
-  setMembers, wantedMembers, writable, ownerOnly, createGroup, updateGroup, removeGroup, LIST_COLS,
+  setMembers, wantedMembers, writable, ownerOnly, taskList, hooks, createGroup, updateGroup, removeGroup, LIST_COLS,
 };

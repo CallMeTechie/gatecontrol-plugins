@@ -4,7 +4,7 @@
     "de": "Notizen & Aufgaben",
     "en": "Notes & Tasks"
   },
-  "version": "1.3.0",
+  "version": "1.4.0",
   "publisher": "CallMeTechie",
   "description": {
     "de": "Eigene Aufgaben und Notizen plus alles „Zu tun“ aus den anderen Plugins (Familie, Mail, Drive, Schule, Alltag) an einer Stelle: Mein Tag, Wichtig, Geplant, Mir zugewiesen; Listen und Gruppen, Unteraufgaben, Fälligkeit, Erinnerung als Push mit „Erledigt“ und „Später“, Termin im Kalender von Mail, Wiederholungen, geteilte Listen. Notizbücher mit Schlagwörtern, Checklisten, Tabellen, Bildern und Volltextsuche, einzelne Notizbücher als Tresor (Ende-zu-Ende verschlüsselt). Schnell-Eingabe in normaler Sprache, Umzug von Microsoft To Do und Synology DS Note. Bereiche Privat und Arbeit getrennt.",
@@ -48,7 +48,9 @@
       "gatecontrol-schule:todo_items",
       "gatecontrol-schule:todo_complete",
       "gatecontrol-alltag:todo_items",
-      "gatecontrol-alltag:todo_complete"
+      "gatecontrol-alltag:todo_complete",
+      "gatecontrol-familie:shopping_changed",
+      "gatecontrol-familie:shopping_action"
     ]
   },
   "storage": {
@@ -119,6 +121,27 @@
         "label": {
           "de": "Pinnwand und Packlisten übernehmen",
           "en": "Take over pinboard and packing lists"
+        },
+        "maxPerHour": 3600
+      },
+      "shopping_bind": {
+        "label": {
+          "de": "Familie für geteilte Einkaufslisten",
+          "en": "The family for shared shopping lists"
+        },
+        "maxPerHour": 3600
+      },
+      "shopping_put": {
+        "label": {
+          "de": "Einkaufslisten der Familie übernehmen und abgleichen",
+          "en": "Take over the family’s shopping lists, keep them in step"
+        },
+        "maxPerHour": 3600
+      },
+      "shopping_list": {
+        "label": {
+          "de": "Einkaufslisten der Familie lesen",
+          "en": "Read the family’s shopping lists"
         },
         "maxPerHour": 3600
       }

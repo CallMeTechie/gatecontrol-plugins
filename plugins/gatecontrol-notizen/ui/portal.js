@@ -232,7 +232,16 @@
     else if (v.kind === 'notes') p = loadNotes();
     else if (v.kind === 'search') p = api('GET', 'search', null, { q: v.q, area: S.area });
     else if (v.kind === 'settings') p = api('GET', 'sources');
-    return p.then(function (d) { S.data = d; renderMain(); if (S.detail) reloadDetail(); }).catch(function (e) {
+    else if (v.kind === 'shop') p = api('GET', 'shopping');
+    return p.then(function (d) {
+      // a view chosen meanwhile gets its own answer
+      if (S.view !== v) return;
+      S.data = d;
+      // 1.4.0: a shopping list that is gone (deleted, left)
+      if (v.kind === 'shop' && !shopList()) { go({ kind: 'smart', id: 'myday' }); return; }
+      renderMain();
+      if (S.detail) reloadDetail();
+    }).catch(function (e) {
       if (e && e.code === 'not_found' && v.kind !== 'smart') { go({ kind: 'smart', id: 'myday' }); return; }
       fail(e);
     });
@@ -322,7 +331,7 @@
         if (S.area === a) return;
         S.area = a;
         api('PUT', 'prefs', { area: a }).catch(function () {});
-        if (S.view.kind === 'list' || (S.view.kind === 'notes' && S.view.notebook)) S.view = { kind: 'smart', id: 'myday' };
+        if (S.view.kind === 'list' || S.view.kind === 'shop' || (S.view.kind === 'notes' && S.view.notebook)) S.view = { kind: 'smart', id: 'myday' };
         S.detail = null;
         renderSide();
         reloadNav();
@@ -354,6 +363,13 @@
         ]);
         nav.appendChild(moreRow(row, T('p.more_of', { name: g.name }), function () { return groupMenu(g); }));
         if (!closed) (byGroup[g.id] || []).forEach(function (l) { nav.appendChild(listRow(l, true)); });
+      });
+      // 1.4.0: the shopping lists — lists of items to tick, not of tasks
+      nav.appendChild(labRow(T('p.shop_lists'), T('p.shop_new'), newShopList));
+      (n.shopping || []).forEach(function (l) {
+        var badge = l.family ? h('span', { class: 'na-shared', title: T('p.shop_family'), attrs: { 'aria-label': T('p.shop_family') } }, icon('home', 15))
+          : l.shared ? h('span', { class: 'na-shared', title: T('p.shop_shared'), attrs: { 'aria-label': T('p.shop_shared') } }, icon('users', 15)) : null;
+        nav.appendChild(navRow(l.name, l.open, isView('shop', l.id), function () { goShop(l.id); }, { icon: l.icon && ICONS[l.icon] ? l.icon : 'cart', badge: badge }));
       });
       if ((n.sources || []).length) {
         nav.appendChild(labRow(T('p.from_plugins')));
@@ -516,6 +532,7 @@
     if (v.kind === 'notes') return renderNotes(main);
     if (v.kind === 'settings') return renderSettings(main);
     if (v.kind === 'search') return renderSearch(main);
+    if (v.kind === 'shop') return renderShop(main);
     var d = S.data || { sections: [] };
     var l = v.kind === 'list' ? d.list : null;
     var sub = v.kind === 'smart' && v.id === 'myday' ? longDate(S.me.today) : l ? listSub(l) : null;
@@ -607,12 +624,17 @@
       var can = x.canComplete !== false;
       peek.appendChild(h('button', { type: 'button', class: 'na-peek-it', disabled: !can, attrs: { 'aria-label': T('p.complete') + ': ' + x.title }, on: { click: function () { complete(x, true); } } }, [h('i'), h('span', { text: x.title }), x.assignee ? avatar(x.assignee, 'xs') : null]));
     });
+    // 1.4.0: the day of a shopping list — its first items, ticked right here
+    (c.points || []).forEach(function (i) {
+      peek.appendChild(h('button', { type: 'button', class: 'na-peek-it', disabled: l.canEdit === false, attrs: { 'aria-label': T('p.shop_tick') + ': ' + i.text }, on: { click: function () { shopOps([{ op: 'item_check', id: i.id, checked: true }]); } } },
+        [h('i'), h('span', { text: i.text + (i.qty ? ' · ' + i.qty : '') })]));
+    });
     if (c.more) peek.appendChild(h('span', { class: 'na-peek-more', text: T('p.ld_more', { n: c.more }) }));
     return h('div', { class: 'na-today' }, [
       h('span', { class: 'na-today-ic' }, icon(listIcon(l), 22)),
       h('div', { class: 'na-today-tx' }, [h('small', { text: c.title }), h('b', { text: T('p.ld_open', { name: l.name, n: c.open }) }), line2.length ? h('span', { text: line2.join(' · ') }) : null]),
-      btn(T('p.open_list'), function () { go({ kind: 'list', id: l.id }); }, { small: true, primary: true }),
-      (c.items || []).length ? peek : null,
+      btn(T('p.open_list'), function () { if (c.shopping) goShop(c.shopping.id); else go({ kind: 'list', id: l.id }); }, { small: true, primary: true }),
+      (c.items || []).length || (c.points || []).length ? peek : null,
     ]);
   }
 
@@ -687,6 +709,8 @@
       // 1.3.0: a reminder is to come (or was put off with „Später“), the task is in the person's calendar in Mail
       if (x.reminder && !x.done) meta.appendChild(h('span', { class: 'na-mi' }, [icon('bell', 13), h('span', { text: x.snoozed ? T('p.snoozed_until', { when: isoWhen(x.reminder.at) }) : T('p.reminder') })]));
       if (x.calendar && x.calendar.mine) meta.appendChild(h('span', { class: 'na-mi', title: T(x.calendar.state === 'pending' ? 'p.cal_pending' : 'p.cal_hint') }, [icon('cal', 13), h('span', { text: T('p.in_calendar') })]));
+      // 1.4.0: the shopping list the task carries, and how far it is ticked
+      if (x.attachedList) meta.appendChild(attachedChip(x.attachedList));
       if (x.hasNote) meta.appendChild(h('span', { text: T('p.has_note') }));
       if (x.attachments) meta.appendChild(h('span', { text: '📎 ' + x.attachments }));
     }
@@ -735,12 +759,255 @@
     }, function (e) { x.done = !done; renderMain(); fail(e); });
   }
 
+  // ── shopping lists (1.4.0: lists of items to tick; a task can carry one) ─────────────────
+
+  /** An id for a list or an item, made here (the server takes it as it is; sent again it never makes a second one). */
+  function uuid() {
+    var c = window.crypto;
+    if (c && typeof c.randomUUID === 'function') return c.randomUUID();
+    var b = new Uint8Array(16);
+    c.getRandomValues(b);
+    b[6] = (b[6] & 15) | 64;
+    b[8] = (b[8] & 63) | 128;
+    var s = Array.prototype.map.call(b, function (x) { return (x < 16 ? '0' : '') + x.toString(16); }).join('');
+    return s.slice(0, 8) + '-' + s.slice(8, 12) + '-' + s.slice(12, 16) + '-' + s.slice(16, 20) + '-' + s.slice(20);
+  }
+  function shopNav() { return (S.nav && S.nav.shopping) || []; }
+  function famInfo() { return (S.me && S.me.shopping && S.me.shopping.family) || {}; }
+  function shopList() { var d = S.data || {}; return (d.lists || []).filter(function (l) { return l.id === S.view.id; })[0] || null; }
+  function goShop(uid) { go({ kind: 'shop', id: uid }); }
+
+  /** POST shopping/ops; „Alles abgehakt“ → the message with „Rückgängig“ for every task it completed. */
+  function shopOps(ops) {
+    return api('POST', 'shopping/ops', { ops: ops }).then(function (r) {
+      if (r.rejected && r.rejected.length) toast(errText({ code: r.rejected[0].code }), 'error');
+      (r.completed || []).slice(0, 1).forEach(function (c) {
+        snack(T('p.shop_all_done', { title: c.title }), function () { api('POST', 'tasks/' + c.taskId + '/complete', { done: false }).then(soon, fail); });
+      });
+      soon();
+      return r;
+    }, fail);
+  }
+
+  /** Under the name: who it is shared with, its day. */
+  function shopSub(l) {
+    var bits = [];
+    var who = [];
+    if (l.family) bits.push(T('p.shop_family'));
+    else if (l.shared && l.role === 'owner') { who = l.members || []; bits.push(T('p.shared_with', { names: names(who) })); }
+    else if (l.shared) { who = [l.owner]; bits.push(T('p.shared_by', { name: firstName(l.owner) }) + (l.role === 'read' ? ' · ' + T('p.read_only') : '')); }
+    else bits.push(T('p.shop_only_me'));
+    if (l.days && l.days.length) bits.push(daysText(l.days));
+    var avs = h('span', { class: 'na-avs' }, who.slice(0, 4).map(function (p) { return avatar(p, 'sm'); }));
+    return h('span', { class: 'na-sub' }, [who.length ? avs : null, h('span', { text: bits.join(' · ') })]);
+  }
+
+  /** The list as the list dialogs know it (PATCH lists/<n>, members). */
+  function asList(l) {
+    return { id: l.listId, name: l.name, area: l.area, color: null, icon: l.icon, days: l.days, remind: l.remind, role: l.role, shared: l.shared, members: l.members, owner: l.owner, isDefault: false, groupId: null };
+  }
+
+  function shopMenu(l) {
+    var fam = famInfo();
+    var out = [];
+    if (l.canManage) {
+      out.push({ icon: 'edit', label: T('p.rename_dots'), fn: function () {
+        nameDialog(T('p.shop_rename'), l.name, null, function (name) { return shopOps([{ op: 'list_rename', id: l.id, name: name.slice(0, 40) }]); }, { label: T('p.list_name') });
+      } });
+    }
+    if (l.role === 'owner') {
+      out.push({ icon: 'cart', label: T('p.listday'), end: shortDays(l.days) || T('p.off'), fn: function () { editList(asList(l), true); } });
+      if (!l.family) out.push({ icon: 'users', label: T('p.share_dots'), end: (l.members || []).length ? T('p.persons', { n: l.members.length }) : null, fn: function () { shareDialog('list', asList(l)); } });
+    }
+    if (fam.bound && l.canManage && (l.family || fam.parent)) {
+      out.push({ icon: 'home', label: T('p.shop_fam_share'), end: l.family ? T('p.on') : T('p.off'), fn: function () {
+        api('PUT', 'shopping/lists/' + l.id + '/family', { on: !l.family }).then(function () { toast(T(l.family ? 'p.shop_fam_off' : 'p.shop_fam_on')); soon(); }, fail);
+      } });
+    }
+    var anyDone = ((S.data && S.data.items) || []).some(function (i) { return i.listId === l.id && i.checked; });
+    if (l.canEdit && anyDone) out.push({ icon: 'x', label: T('p.shop_clear'), fn: function () { shopOps([{ op: 'clear_checked', listId: l.id }]); } });
+    if (l.canManage) {
+      out.push('-');
+      out.push({ icon: 'trash', label: T('p.delete_list_dots'), danger: true, fn: function () {
+        dialog(T('p.shop_delete_title', { name: l.name }), [h('p', { class: 'dp-dialog-sub', style: 'margin:0', text: T(l.shared ? 'p.shop_delete_shared' : 'p.shop_delete_text') }),
+          h('div', { class: 'dp-actions' }, [btn(T('p.cancel'), closeDialog), btn(T('p.delete'), function () {
+            shopOps([{ op: 'list_delete', id: l.id }]).then(function () {
+              closeDialog();
+              go({ kind: 'smart', id: 'myday' });
+              if (l.role === 'owner') snack(T('p.shop_deleted', { name: l.name }), function () { api('POST', 'lists/' + l.listId + '/restore').then(function () { goShop(l.id); reloadNav(); }, fail); });
+            });
+          }, { danger: true, solid: true })])]);
+      } });
+    } else {
+      out.push('-');
+      out.push({ icon: 'leave', label: T('p.leave_list'), danger: true, fn: function () { leave('list', asList(l)); } });
+    }
+    return out;
+  }
+
+  function newShopList() {
+    var fam = famInfo();
+    var sw = h('input', { type: 'checkbox', class: 'dp-sw', attrs: { 'aria-label': T('p.shop_fam_share') } });
+    var extra = fam.bound && fam.parent ? [h('div', { class: 'na-set-h' }, [h('div', null, [h('b', { text: T('p.shop_fam_share') }), h('span', { class: 's', text: T('p.shop_fam_hint') })]), sw])] : [];
+    nameDialog(T('p.shop_new'), '', extra, function (name) {
+      var id = uuid();
+      return api('POST', 'shopping/ops', { ops: [{ op: 'list_add', id: id, name: name.slice(0, 40), icon: 'cart', area: S.area, family: sw.checked || undefined }] }).then(function (r) {
+        if (r.rejected && r.rejected.length) throw codeErr(r.rejected[0].code);
+        reloadNav();
+        goShop(id);
+      });
+    }, { label: T('p.list_name'), ok: T('p.create') });
+  }
+
+  /** „Ich gehe einkaufen“ and „Kannst du einkaufen gehen?“ of a family list (done by the Familie plugin). */
+  function shopFamily(l) {
+    var fam = famInfo();
+    var bits = [];
+    (l.going || []).forEach(function (g) { bits.push(T('p.shop_going_now', { name: firstName({ id: g.userId }) || T('p.someone') })); });
+    if (l.assignee) {
+      var who = firstName({ id: l.assignee.userId }) || T('p.someone');
+      bits.push(T(l.assignee.state === 'taken' ? 'p.shop_asked_taken' : l.assignee.state === 'declined' ? 'p.shop_asked_declined' : 'p.shop_asked_open', { name: who }));
+    }
+    var box = h('div', { class: 'na-shop-fam' });
+    if (bits.length) box.appendChild(h('span', { class: 'na-sub', text: bits.join(' · ') }));
+    if (fam.available && l.canEdit) {
+      box.appendChild(btn(T('p.shop_going'), function () {
+        api('POST', 'shopping/lists/' + l.id + '/going').then(function () { toast(T('p.shop_going_sent')); soon(); }, fail);
+      }, { small: true, icon: 'cart' }));
+      box.appendChild(btn(T('p.shop_ask'), function () { askDialog(l); }, { small: true, icon: 'user' }));
+    }
+    return box.childNodes.length ? box : null;
+  }
+  function askDialog(l) {
+    var sel = h('select', { class: 'dp-input', attrs: { 'aria-label': T('p.person') } });
+    [l.owner].concat(l.members || []).forEach(function (p) { if (p && p.id !== S.me.user.id) sel.appendChild(h('option', { value: String(p.id), text: p.name || '' })); });
+    var until = h('input', { type: 'time', class: 'dp-input na-time', attrs: { 'aria-label': T('p.shop_until') } });
+    var errBox = h('p', { class: 'dp-err', attrs: { role: 'alert' } });
+    var send = function (userId) {
+      var dueAt = null;
+      if (userId && until.value) { var d = new Date(S.me.today + 'T' + until.value + ':00'); if (!isNaN(d.getTime())) dueAt = d.toISOString(); }
+      api('POST', 'shopping/lists/' + l.id + '/assign', { userId: userId, dueAt: dueAt }).then(function () { closeDialog(); toast(T(userId ? 'p.shop_asked' : 'p.shop_ask_ended')); soon(); }, function (e) { errBox.textContent = errText(e); });
+    };
+    dialog(T('p.shop_ask_title'), [labeled(T('p.person'), sel), labeled(T('p.shop_until'), until, T('p.shop_until_hint')), errBox,
+      h('div', { class: 'dp-actions is-split' }, [l.assignee ? btn(T('p.shop_ask_end'), function () { send(null); }, { small: true }) : h('span'),
+        h('div', { class: 'dp-actions' }, [btn(T('p.cancel'), closeDialog), btn(T('p.shop_ask_send'), function () { if (sel.value) send(Number(sel.value)); }, { primary: true })])])]);
+  }
+
+  function shopAdd(l) {
+    var text = h('input', { class: 'dp-input', type: 'text', attrs: { placeholder: T('p.shop_add'), 'aria-label': T('p.shop_add'), maxlength: '120', autocomplete: 'off' } });
+    var qty = h('input', { class: 'dp-input na-shop-qty', type: 'text', attrs: { placeholder: T('p.shop_qty'), 'aria-label': T('p.shop_qty'), maxlength: '40', autocomplete: 'off' } });
+    var add = function () {
+      var s = text.value.trim();
+      if (!s) return;
+      var op = { op: 'item_add', id: uuid(), listId: l.id, text: s };
+      if (qty.value.trim()) op.qty = qty.value.trim();
+      text.value = '';
+      qty.value = '';
+      shopOps([op]).then(function () { var again = document.getElementById('na-shop-text'); if (again) again.focus(); });
+    };
+    text.id = 'na-shop-text';
+    [text, qty].forEach(function (el) { el.addEventListener('keydown', function (ev) { if (ev.key === 'Enter') add(); }); });
+    return h('div', { class: 'na-add na-shop-add' }, [text, qty, ib('plus', T('p.shop_add'), add)]);
+  }
+
+  function shopRow(l, i) {
+    var can = l.canEdit;
+    var row = h('div', { class: 'na-item na-shop-it' + (i.checked ? ' is-done' : '') });
+    row.appendChild(h('button', { type: 'button', class: 'na-ck' + (i.checked ? ' is-on' : '') + (can ? '' : ' is-off'), disabled: !can, attrs: { 'aria-label': (i.checked ? T('p.undo') : T('p.shop_tick')) + ': ' + i.text, 'aria-pressed': i.checked ? 'true' : 'false' },
+      on: { click: function () { i.checked = !i.checked; renderMain(); shopOps([{ op: 'item_check', id: i.id, checked: i.checked }]); } } }, icon('check', 14)));
+    var edit = function () {
+      if (!can) return;
+      var q = h('input', { class: 'dp-input', type: 'text', value: i.qty || '', attrs: { maxlength: '40', 'aria-label': T('p.shop_qty') } });
+      nameDialog(T('p.shop_edit'), i.text, [labeled(T('p.shop_qty'), q)], function (name) { return shopOps([{ op: 'item_edit', id: i.id, text: name.slice(0, 120), qty: q.value.trim() || null }]); }, { label: T('p.shop_item') });
+    };
+    row.appendChild(h('button', { type: 'button', class: 'na-it na-shop-tx', disabled: !can, on: { click: edit } }, [h('span', { class: 'na-it-title', text: i.text })]));
+    if (i.qty) row.appendChild(h('span', { class: 'na-when', text: i.qty }));
+    if (i.checked && i.checkedBy && i.checkedBy !== S.me.user.id) row.appendChild(avatar({ id: i.checkedBy }, 'xs'));
+    if (can) row.appendChild(ib('trash', T('p.delete') + ': ' + i.text, function () { shopOps([{ op: 'item_delete', id: i.id }]); }));
+    return row;
+  }
+
+  function renderShop(main) {
+    var d = S.data || {};
+    var l = shopList();
+    if (!l) return;
+    var items = (d.items || []).filter(function (i) { return i.listId === l.id; });
+    var open = items.filter(function (i) { return !i.checked; });
+    var done = items.filter(function (i) { return i.checked; });
+    var mb = h('button', { type: 'button', class: 'dp-ib', title: T('p.more_of', { name: l.name }), attrs: { 'aria-label': T('p.more_of', { name: l.name }), 'aria-haspopup': 'menu' }, on: { click: function () { popMenu(mb, shopMenu(l)); } } }, icon('more', 18));
+    main.appendChild(header(l.name, shopSub(l), [mb], { icon: listIcon(l) }));
+    // the task it belongs to right now, and how far it is
+    if (l.tasks && l.tasks.length) {
+      main.appendChild(h('div', { class: 'dp-note na-shop-of' }, [icon('check', 16), h('span', { text: T('p.shop_of', { title: l.tasks[0].title, done: done.length, total: items.length }) })]));
+    }
+    var fam = l.family ? shopFamily(l) : null;
+    if (fam) main.appendChild(fam);
+    var card = h('div', { class: 'na-card na-shop' });
+    if (l.canEdit) card.appendChild(shopAdd(l));
+    else card.appendChild(h('div', { class: 'dp-note' }, [icon('users', 16), h('span', { text: T('p.read_only_hint') })]));
+    open.forEach(function (i) { card.appendChild(shopRow(l, i)); });
+    if (!items.length) card.appendChild(h('div', { class: 'na-empty', text: T('p.shop_empty') }));
+    else if (!open.length) card.appendChild(h('div', { class: 'na-empty', text: T('p.shop_all_ticked') }));
+    main.appendChild(card);
+    if (done.length) {
+      var dc = h('div', { class: 'na-card na-shop' });
+      dc.appendChild(h('div', { class: 'na-sec' }, [h('span', { text: T('p.shop_ticked') }), h('span', { class: 'na-count', text: String(done.length) }),
+        l.canEdit ? h('span', { class: 'na-shop-clear' }, btn(T('p.shop_clear'), function () { shopOps([{ op: 'clear_checked', listId: l.id }]); }, { small: true })) : null]));
+      done.forEach(function (i) { dc.appendChild(shopRow(l, i)); });
+      main.appendChild(dc);
+    }
+  }
+
+  /** At a task: „Einkauf 0/8“ — a click opens the list. */
+  function attachedChip(a) {
+    return h('button', { type: 'button', class: 'na-mi na-att', title: T('p.open_list'), attrs: { 'aria-label': T('p.att_open', { name: a.name }) }, on: { click: function (ev) { ev.stopPropagation(); goShop(a.uid); } } },
+      [icon(a.icon && ICONS[a.icon] ? a.icon : 'cart', 13), h('span', { text: a.name + ' ' + a.done + '/' + a.total })]);
+  }
+
+  /** In a task's details: the row „Angehängte Liste“ — choose one of the person's shopping lists, or none. */
+  function attachedField(t) {
+    var sel = h('select', { class: 'dp-input', attrs: { 'aria-label': T('p.att_label') } }, [h('option', { value: '', text: T('p.att_none') })]);
+    var lists = shopNav();
+    lists.forEach(function (l) {
+      sel.appendChild(h('option', { value: String(l.listId), text: l.name + ' · ' + (l.family ? T('p.shop_family') : l.shared ? T('p.shop_shared') : T('p.shop_only_me')) + ' · ' + T('v.listday_open', { n: l.open }) }));
+    });
+    var cur = t.attachedList;
+    if (cur && !lists.some(function (l) { return l.listId === cur.id; })) sel.appendChild(h('option', { value: String(cur.id), text: cur.name }));
+    sel.appendChild(h('option', { value: 'new', text: T('p.att_new') }));
+    sel.value = cur ? String(cur.id) : '';
+    sel.addEventListener('change', function () {
+      if (sel.value === 'new') { sel.value = cur ? String(cur.id) : ''; newShopList(); return; }
+      patchTask(t, { attachedListId: sel.value ? Number(sel.value) : null });
+    });
+    var open = cur ? ib('open', T('p.open_list'), function () { goShop(cur.uid); }) : null;
+    if (open) open.setAttribute('data-keep', '');
+    return field(T('p.att_label'), h('span', { class: 'na-add' }, [sel, open]));
+  }
+
   // ── quick entry ──────────────────────────────────────────
 
   function quickBox(l) {
     var input = h('input', { id: 'na-quick', type: 'text', autocomplete: 'off', attrs: { placeholder: T(l && l.shared ? 'p.quick_ph_shared' : 'p.quick_ph'), 'aria-label': T('p.quick'), maxlength: '500' } });
     var chips = h('div', { class: 'na-chips', attrs: { 'aria-live': 'polite' } });
     var parsed = null;
+    // 1.4.0: the shopping list the line names („bei Lidl einkaufen“ → „Einkauf“) — asked of the server, the parser does not know it
+    var att = { hint: null, forText: null, off: false, pick: null, timer: null };
+    function attList() { return att.off ? null : att.pick || (att.hint && att.hint.list) || null; }
+    function ask() {
+      clearTimeout(att.timer);
+      var s = input.value.trim();
+      if (!s) { att.hint = null; att.forText = null; att.off = false; att.pick = null; return; }
+      if (!shopNav().length) return;
+      att.timer = setTimeout(function () {
+        api('POST', 'parse', { text: s, area: S.area }).then(function (r) {
+          if (input.value.trim() !== s) return;
+          att.hint = r.attach || null;
+          att.forText = s;
+          if (att.pick && !(att.hint && att.hint.lists.some(function (x) { return x.id === att.pick.id; }))) att.pick = null;
+          show();
+        }, function () {});
+      }, 350);
+    }
     function ctxParse() {
       return { today: S.me.today, now: S.me.time, lists: ((S.nav && S.nav.lists) || []).filter(function (x) { return x.canEdit !== false; }).map(function (x) { return { id: x.id, name: x.name }; }), people: S.people, times: S.me.prefs && S.me.prefs.times };
     }
@@ -756,20 +1023,36 @@
       if (parsed.repeat) chips.appendChild(h('span', { class: 'na-chip', text: '↻ ' + RP.describe(parsed.repeat, S.me.lang) }));
       if (parsed.important) chips.appendChild(h('span', { class: 'na-chip', text: T('p.important') }));
       if (parsed.list) chips.appendChild(h('span', { class: 'na-chip', text: T('p.list') + ': ' + parsed.list.name }));
-      else if (parsed.listName) chips.appendChild(h('span', { class: 'na-chip is-plain', text: T('p.new_list_named', { name: parsed.listName }) }));
+      else if (parsed.listName && !(att.hint && att.hint.via === 'tag')) chips.appendChild(h('span', { class: 'na-chip is-plain', text: T('p.new_list_named', { name: parsed.listName }) }));
+      var al = attList();
+      if (al) {
+        chips.appendChild(h('span', { class: 'na-chip' }, [icon('cart', 13), h('span', { text: T('p.att_chip', { name: al.name, n: al.open }) }),
+          h('button', { type: 'button', class: 'na-chip-x', title: T('p.att_remove'), attrs: { 'aria-label': T('p.att_remove') }, on: { click: function () { att.off = true; show(); input.focus(); } } }, icon('x', 12))]));
+      } else if (!att.off && att.hint && att.hint.lists.length > 1) {
+        var choose = h('button', { type: 'button', class: 'na-chip is-plain', attrs: { 'aria-haspopup': 'menu' } }, [icon('cart', 13), h('span', { text: T('p.att_choose') })]);
+        choose.addEventListener('click', function () {
+          popMenu(choose, att.hint.lists.map(function (x) { return { icon: 'cart', label: x.name, end: T('v.listday_open', { n: x.open }), fn: function () { att.pick = x; show(); input.focus(); } }; }));
+        });
+        chips.appendChild(choose);
+      }
       if (parsed.assignee) chips.appendChild(h('span', { class: 'na-chip', text: '@' + parsed.assignee.name }));
       else if (parsed.assigneeName) chips.appendChild(h('span', { class: 'na-chip is-plain', text: T('p.unknown_person', { name: parsed.assigneeName }) }));
     }
-    input.addEventListener('input', show);
+    input.addEventListener('input', function () { show(); ask(); });
     input.addEventListener('keydown', function (ev) {
       if (ev.key !== 'Enter' || !input.value.trim()) return;
       var text = input.value.trim();
-      var body = { text: text, area: S.area, createList: !!(parsed && parsed.listName) };
+      var body = { text: text, area: S.area, createList: !!(parsed && parsed.listName) && !(att.hint && att.hint.via === 'tag') };
+      clearTimeout(att.timer);
+      var al = attList();
+      if (al) body.attachedListId = al.id;
+      // Enter before the server answered: it attaches the list itself when exactly one fits
+      else if (!att.off && att.forText !== text && shopNav().length) body.attach = 'auto';
       if (S.view.kind === 'list' && !(parsed && (parsed.list || parsed.listName))) body.listId = S.view.id;
       if (S.view.kind === 'smart' && S.view.id === 'myday') body.myDay = true;
       if (S.view.kind === 'smart' && S.view.id === 'important') body.important = true;
       input.disabled = true;
-      api('POST', 'tasks', body).then(function () { input.value = ''; show(); input.disabled = false; input.focus(); soon(); }, function (e) { input.disabled = false; fail(e); });
+      api('POST', 'tasks', body).then(function () { input.value = ''; att.hint = null; att.forText = null; att.off = false; att.pick = null; show(); input.disabled = false; input.focus(); soon(); }, function (e) { input.disabled = false; fail(e); });
     });
     return h('div', { class: 'na-quick' }, [h('label', { class: 'na-quick-box' }, [icon('plus'), input, h('span', { class: 'na-kbd', text: T('p.kbd_new') })]), chips]);
   }
@@ -912,6 +1195,8 @@
     ls.value = String(t.listId);
     ls.addEventListener('change', function () { patchTask(t, { listId: Number(ls.value) }); });
     card.appendChild(field(T('p.list'), ls));
+    // 1.4.0: the shopping list the task carries („Einkauf 0/8“; all of it ticked completes the task)
+    if (!t.parentId) card.appendChild(attachedField(t));
     // attachments
     card.appendChild(h('div', { class: 'na-lb', text: T('p.attachments') }));
     card.appendChild(attachmentList('task', t.id, t.attachmentList || []));

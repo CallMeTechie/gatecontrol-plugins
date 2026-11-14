@@ -30,6 +30,7 @@ const duty = require('./duty');
 const events = require('./events');
 const push = require('./push');
 const pushprefs = require('./pushprefs');
+const shopping = require('./shopping');
 const Q = require('../ui/quickparse');
 const { t } = require('./text');
 const { fail, posInt } = require('./util');
@@ -54,8 +55,12 @@ function snoozeTime(until, now, zone, p) {
   return null;
 }
 
-/** The buttons of a reminder shown at `at`: [{ id, label }] — done, in an hour, this evening (or tomorrow morning). */
-function buttons(lang, at, zone, p) {
+/**
+ * The buttons of a reminder shown at `at`: [{ id, label }] — done, in an hour, this evening (or tomorrow morning).
+ * 1.4.0: a task that carries a shopping list — „Liste öffnen“ (no callback: it opens the app), done, in an hour.
+ */
+function buttons(lang, at, zone, p, attached) {
+  if (attached) return [{ id: 'open_list', label: t(lang, 'n.b_list'), open: true }, { id: 'done', label: t(lang, 'n.b_done') }, { id: 'snooze_1h', label: t(lang, 'n.b_1h') }];
   const eve = snoozeTime('evening', at, zone, p);
   return [
     { id: 'done', label: t(lang, 'n.b_done') },
@@ -78,6 +83,18 @@ function bodyOf(lang, r, at, zone, late) {
   }
   return [first, r.list_name].filter(Boolean).join(' · ').slice(0, 1000);
 }
+
+/** 1.4.0: the shopping list a task carries, as its person sees it → { info: Task.attachedList | null, line: „Einkauf · 8 Punkte: Milch, Brot …“ | null }. */
+async function attachedOf(gc, lang, r, userId) {
+  const info = r.attached_list ? (await shopping.attachInfo(gc, userId, [r.attached_list])).get(r.attached_list) || null : null;
+  if (!info) return { info: null, line: null };
+  const first = info.open ? await shopping.firstOpen(gc, info.id) : '';
+  const n = t(lang, info.open === 1 ? 'n.list_one' : 'n.list_n', { n: info.open });
+  return { info: { id: info.id, uid: info.uid, name: info.name, open: info.open, total: info.total }, line: `${info.name} · ${n}${first ? ': ' + first : ''}`.slice(0, 300) };
+}
+const withLine = (body, line) => (line ? [body, line].filter(Boolean).join('\n') : body);
+const ROUTE = 'plg-gatecontrol-notizen';
+const pushActions = (list) => list.map((b) => (b.open ? { type: 'open_app_route', id: b.id, label: b.label, target: ROUTE } : { type: 'callback', id: b.id, label: b.label }));
 
 /** The open reminders that are due (idx_tasks_remind) as pushes → how many went out. */
 async function tick(gc, ctx) {
@@ -102,12 +119,14 @@ async function tick(gc, ctx) {
     if (!user) continue;
     const late = behind > LATE_HINT;
     const p = await prefs.get(gc, user);
+    const att = await attachedOf(gc, lang, r, user);
     if (await pushprefs.send(gc, [user], 'reminders', {
-      topic: 'reminders', title: r.title.slice(0, 120), body: bodyOf(lang, r, ctx.now, ctx.tz, late),
+      topic: 'reminders', title: r.title.slice(0, 120), body: withLine(bodyOf(lang, r, ctx.now, ctx.tz, late), att.line),
       priority: r.important ? 'high' : 'normal', collapseKey: 'task:' + r.id,
       data: {
-        notizen: { ...push.reminder(r, r.list_area), tag: duty.tagOf(r), remindAtMs: r.remind_at, dueAt: r.due_at && r.due_time ? tasks.iso(ctx, r.due_at) : null, late, snoozed: !!r.snoozed_at },
-        actions: buttons(lang, ctx.now, ctx.tz, p).map((b) => ({ type: 'callback', id: b.id, label: b.label })),
+        notizen: { ...push.reminder(r, r.list_area), tag: duty.tagOf(r), remindAtMs: r.remind_at, dueAt: r.due_at && r.due_time ? tasks.iso(ctx, r.due_at) : null, late, snoozed: !!r.snoozed_at,
+          ...(att.info ? { attachedList: att.info } : {}) },
+        actions: pushActions(buttons(lang, ctx.now, ctx.tz, p, att.info)),
       },
     })) sent++;
   }
@@ -176,9 +195,11 @@ async function feed(gc, ctx) {
   for (const r of rows) {
     if (who.get(r.id) !== ctx.userId) continue;
     const at = Math.max(r.remind_at, 0);
+    const att = await attachedOf(gc, ctx.lang, r, ctx.userId);
     out.reminders.push({
-      tag: duty.tagOf(r), taskId: r.id, listId: r.list_id, area: r.list_area || null, title: r.title.slice(0, 120), body: bodyOf(ctx.lang, r, at, ctx.tz, false),
-      at: tasks.iso(ctx, at), atMs: at, important: !!r.important, snoozed: !!r.snoozed_at, collapseKey: 'task:' + r.id, actions: buttons(ctx.lang, at, ctx.tz, p),
+      tag: duty.tagOf(r), taskId: r.id, listId: r.list_id, area: r.list_area || null, title: r.title.slice(0, 120), body: withLine(bodyOf(ctx.lang, r, at, ctx.tz, false), att.line),
+      at: tasks.iso(ctx, at), atMs: at, important: !!r.important, snoozed: !!r.snoozed_at, collapseKey: 'task:' + r.id,
+      actions: buttons(ctx.lang, at, ctx.tz, p, att.info).map((b) => ({ id: b.id, label: b.label })), attachedList: att.info,
     });
     if (out.reminders.length >= FEED_MAX) break;
   }

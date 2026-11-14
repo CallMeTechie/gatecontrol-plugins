@@ -5,6 +5,7 @@
 
 const sources = require('./sources');
 const bound = require('./bound');
+const shopping = require('./shopping');
 const { isKnown } = require('./util');
 
 async function handle(gc, base, call) {
@@ -19,6 +20,10 @@ async function handle(gc, base, call) {
       case 'note_check': return await bound.checkItem(gc, base, c.caller, c.user, p);
       case 'note_delete': return await bound.del(gc, base, c.caller, c.user, p);
       case 'notes_import': return await bound.importNotes(gc, base, c.caller, p);
+      // 1.4.0: Familie's shopping lists live here (server/shopping.js)
+      case 'shopping_bind': return await shopping.bind(gc, base, c.caller, p);
+      case 'shopping_put': return await shopping.put(gc, base, c.caller, p);
+      case 'shopping_list': return await shopping.listFor(gc, base, c.caller, p);
       default: return { ok: false, code: 'not_found' };
     }
   } catch (e) {

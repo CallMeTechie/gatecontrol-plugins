@@ -25,6 +25,7 @@ const tasks = require('./tasks');
 const push = require('./push');
 const reminders = require('./reminders');
 const todohub = require('./todohub');
+const shopsync = require('./shopsync');
 const { posInt } = require('./util');
 
 const PLUGIN = 'gatecontrol-familie';
@@ -122,7 +123,8 @@ async function collect(gc, now) {
   if (!fam.list.length) return [];
   const out = [];
   if (cfg.modules.tasks) out.push(...await taskItems(gc, fam, cfg, now, today));
-  if (cfg.modules.shopping) out.push(...await listItems(gc, fam, cfg));
+  // 1.21.0: lists that moved to the hub are its own lists there — not shown a second time as items of Familie
+  if (cfg.modules.shopping && (await shopsync.where(gc)).home !== 'notizen') out.push(...await listItems(gc, fam, cfg));
   if (cfg.modules.rules) out.push(...await reminderItems(gc, fam, cfg, now, today));
   return out;
 }

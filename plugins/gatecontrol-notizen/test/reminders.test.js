@@ -203,7 +203,7 @@ test('GET reminders: what the person will be reminded of — with tag, text and 
     assert.deepEqual(f.reminders, [{
       tag: `task:${mine.task.id}:${at('2026-11-09T08:00:00Z')}`, taskId: mine.task.id, listId: mine.task.listId, area: 'private', title: 'Mülltonne rausstellen',
       body: 'Fällig heute 09:00 · Aufgaben', at: '2026-11-09T09:00:00+01:00', atMs: at('2026-11-09T08:00:00Z'), important: false, snoozed: false, collapseKey: 'task:' + mine.task.id,
-      actions: [{ id: 'done', label: 'Erledigt' }, { id: 'snooze_1h', label: 'In 1 Std.' }, { id: 'snooze_eve', label: 'Heute Abend' }],
+      actions: [{ id: 'done', label: 'Erledigt' }, { id: 'snooze_1h', label: 'In 1 Std.' }, { id: 'snooze_eve', label: 'Heute Abend' }], attachedList: null,
     }]);
     // the task in a list view says whose reminder it is
     const rows = (await h.ok(ANNA, 'GET', 'views/list:' + l.list.id)).sections.find((s) => s.id === 'open').items;

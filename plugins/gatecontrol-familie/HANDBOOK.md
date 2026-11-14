@@ -1,4 +1,4 @@
-<!-- version: 1.20.0 -->
+<!-- version: 1.21.0 -->
 # Family
 
 ## What the plugin does
@@ -73,6 +73,14 @@ It needs GateControl 1.231.0 and a gateway with the DNS filter, and it only show
 
 **A rule does not pause the internet (“not run”).**
 The step needs GateControl 1.259.0 or later and a gateway with the DNS filter. “No longer allowed” means: whoever saved the rule last is no longer a parent of the family – a parent opens the rule and saves it again. “No longer a minor child of the family”: remove the step.
+
+## New in 1.21.0
+
+- **Shopping lists in “Notes & Tasks”:** With the plugin “Notes & Tasks” (1.4.0 or later) installed, the shopping lists can move there. Under **Settings › Plugins › Family › Functions** the card “Shopping lists in ‘Notes & Tasks’” shows what moves (e.g. “2 shopping lists with 14 items”); **Move** starts it. Nothing moves by itself.
+- **What changes:** Afterwards the lists are under “Tasks”, stay shared with the whole family and a task can carry one (“shopping at Lidl”). Once every item is ticked, the task is done.
+- **What stays:** The card “Shopping list” in the Family tab, the wall tablet and the cards in the chat stay and show the lists “from Notes & Tasks”. “I'm going shopping” and “Can you do the shopping?” work as before.
+- **Safe:** The Family plugin keeps a copy. If “Notes & Tasks” is switched off or removed, it works on with it. **Bring back** gives the lists back to the Family plugin. Moving again never makes anything twice.
+- **Without “Notes & Tasks”** nothing changes.
 
 ## New in 1.20.0
 

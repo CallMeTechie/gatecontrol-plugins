@@ -13,6 +13,8 @@
         <select class="form-select fa-p-listsel" id="fa-shop-list" aria-label="{{t:portal.list_choose}}"></select>
         <button class="btn btn-sm btn-ghost fa-write" type="button" id="fa-shop-list-edit" aria-label="{{t:portal.list_edit}}" title="{{t:portal.list_edit}}">…</button>
       </div>
+      <!-- 1.21.0: after the move the lists live in „Notizen & Aufgaben“ (this card shows them from there) -->
+      <p class="fa-hint" id="fa-shop-home" hidden>{{t:portal.shop_home}}</p>
       <form class="fa-p-add fa-write" id="fa-shop-add" autocomplete="off">
         <input class="form-input" id="fa-shop-text" type="text" maxlength="120" placeholder="{{t:portal.item_add}}" aria-label="{{t:portal.item_add}}">
         <input class="form-input fa-p-qty" id="fa-shop-qty" type="text" maxlength="40" placeholder="{{t:portal.qty}}" aria-label="{{t:portal.qty}}">

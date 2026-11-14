@@ -35,6 +35,9 @@
 //   POST   admin/rules                         PATCH|DELETE admin/rules/<id>   POST admin/rules/<id>/test · admin/rules/test
 //   GET    admin/rules/options
 //   GET    admin/status also: settings.childrenOwnRules / shoppingNotify / shoppingChat
+//   1.21.0 — the shopping lists in „Notizen & Aufgaben“ (server/shopsync.js):
+//   GET    admin/shopping                      { shopping: { lists, items, open, home, hub: { available }, moved, canMove, canBack } }
+//   POST   admin/shopping/move                 {} — move them (again: nothing twice) · { back: true } — Familie owns them again
 
 const store = require('./store');
 const tz = require('./tz');
@@ -42,6 +45,7 @@ const members = require('./members');
 const config = require('./config');
 const locate = require('./locate');
 const shopping = require('./shopping');
+const shopsync = require('./shopsync');
 const kiosk = require('./kiosk');
 const presence = require('./presence');
 const ruleplaces = require('./ruleplaces');
@@ -244,6 +248,13 @@ async function route(req, gc, seg, cfg, now) {
       await store.tx(gc, () => store.run(gc, "UPDATE locate_requests SET status = 'expired' WHERE status = 'pending'"));
     }
     return { modules: (await config.load(gc)).modules };
+  }
+  // 1.21.0: the shopping lists in „Notizen & Aufgaben“ — what would move, „Umziehen“, „Zurückholen“ (server/shopsync.js)
+  if (a === 'shopping' && seg.length === 2 && m === 'GET') return { shopping: await shopsync.preview(gc, now) };
+  if (a === 'shopping' && seg.length === 3 && b === 'move' && m === 'POST') {
+    const fam = await members.load(gc, tz.localDate(now, cfg.tz));
+    const out = body.back === true ? await shopsync.back(gc, fam, cfg, now) : await shopsync.move(gc, fam, cfg, now, null);
+    return { ...out, shopping: await shopsync.preview(gc, now) };
   }
   if (a === 'wall' && seg.length === 2 && (m === 'PUT' || m === 'PATCH')) {
     const id = body.listId == null || body.listId === '' ? '' : body.listId;
