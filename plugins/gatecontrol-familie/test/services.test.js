@@ -174,6 +174,35 @@ test('places: home from the settings and the rule places (module presence) for m
   assert.deepEqual(await call(host, 'unknown_service', {}).catch((e) => e.code), 'ERR_SERVICE_UNAVAILABLE', 'only the declared services');
 }));
 
+test('1.22.0 — places and geofences for „Notizen & Aufgaben“: the family\'s places, and how many places a phone watches (numbers only)', () => withFamily({ settings: { lat: '52.52', lon: '13.405' } }, async (host, { as, admin }) => {
+  const NZ = { caller: 'gatecontrol-notizen' };
+  assert.deepEqual(await call(host, 'places', { userId: ANNA.id }, NZ), [{ id: 'home', name: 'Zuhause', lat: 52.52, lon: 13.405, radiusM: 150 }]);
+  assert.deepEqual(await call(host, 'places', { userId: OMA.id }, NZ), [], 'not of the family');
+  assert.deepEqual(await call(host, 'geofences', { userId: LENA.id }, NZ), { ok: true, reminders: 0, rulePlaces: 0, total: 0, max: 100 });
+  // two reminders for Lena: her own counts at once, Marc's only after she agreed; an inactive one never
+  await as(LENA)('POST', '/places', { title: 'Bücherei', lat: 52.53, lon: 13.41 });
+  const m = (await as(MARC)('POST', '/places', { title: 'Apotheke', lat: 52.54, lon: 13.42, targetUserId: LENA.id })).json.place;
+  await as(LENA)('POST', '/places', { title: 'Aus', lat: 52.55, lon: 13.43, active: false });
+  assert.equal((await call(host, 'geofences', { userId: LENA.id }, NZ)).reminders, 1);
+  await as(LENA)('POST', `/places/${m.id}/consent`, { accept: true });
+  assert.deepEqual(await call(host, 'geofences', { userId: LENA.id }, NZ), { ok: true, reminders: 2, rulePlaces: 0, total: 2, max: 100 });
+  assert.equal((await call(host, 'geofences', { userId: MARC.id }, NZ)).total, 0, 'they are Lena\'s phone\'s');
+  // the rule places her phone watches (presence/watch): with her consent and an active place rule
+  await admin('PUT', 'modules', { presence: true });
+  const s = (await as(ANNA)('POST', '/presence/places', { name: 'Schule', lat: 52.5301, lon: 13.4101, radius: 300 })).json.place;
+  await as(ANNA)('POST', '/presence/rules', { name: 'Lena an der Schule', trigger: 'place_enter', placeId: s.id, userId: LENA.id, actions: [{ type: 'notify', to: 'parents' }] });
+  assert.equal((await call(host, 'geofences', { userId: LENA.id }, NZ)).rulePlaces, 0, 'no consent, nothing watched');
+  await as(LENA)('PUT', '/presence/consent', { share: true, places: true });
+  const g = await call(host, 'geofences', { userId: LENA.id }, NZ);
+  assert.deepEqual(g, { ok: true, reminders: 2, rulePlaces: (await as(LENA)('GET', '/presence/watch')).json.places.length, total: 2 + g.rulePlaces, max: 100 });
+  assert.equal(g.rulePlaces, 1);
+  assert.ok(!/52\.|13\.|Schule|Apotheke/.test(JSON.stringify(g)), 'no place, no coordinate');
+  // only „Notizen & Aufgaben“, only members
+  assert.deepEqual(await call(host, 'geofences', { userId: LENA.id }), { ok: false, code: 'forbidden' });
+  assert.deepEqual(await call(host, 'geofences', { userId: OMA.id }, NZ), { ok: false, code: 'not_member' });
+  assert.deepEqual(await call(host, 'geofences', {}, NZ), { ok: false, code: 'invalid' });
+}));
+
 test('set_place_status: home / away, place events, consent withdrawn — names only, only changes, after the commit', () => {
   const m = stand();
   return withFamily({ settings: { mod_presence: true }, services: [m] }, async (host, { as, clock }) => {

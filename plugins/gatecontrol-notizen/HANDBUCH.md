@@ -1,5 +1,14 @@
-<!-- version: 1.4.0 -->
+<!-- version: 1.5.0 -->
 # Notizen & Aufgaben
+
+## Neu in 1.5.0
+
+- **Aufgabe am Ort:** Eine Aufgabe kann an einem Ort hängen – „beim Baumarkt Schrauben kaufen“, „bei Lidl Pfand wegbringen“, „bei Oma Leiter zurückgeben“. Dein Handy erinnert, wenn du dort **ankommst** oder den Ort **verlässt**. In jeder Aufgabe gibt es dafür die Zeile **„Ort“**; die Schnell-Eingabe erkennt den Ort im Text und zeigt ihn als Baustein.
+- **Meine Orte:** Orte, die du benennst („Oma“, „Büro“), werden ohne Suche erkannt. „Zuhause“ und die Regel-Orte kommen aus dem Familien-Plugin (ab 1.22.0). Mit **„Als meinen Ort merken“** wird ein Ort dein üblicher Baumarkt, Bäcker oder Lidl und steht beim nächsten Mal sofort da.
+- **Ortssuche – abschaltbar und zunächst aus:** „Welcher Baumarkt ist in der Nähe?“ beantwortet dein eigener Server. Der Administrator schaltet die Suche unter **Einstellungen › Plugins › Notizen & Aufgaben › Orte** ein; jede Person kann sie für sich wieder ausschalten. Siehe [Orte](#orte).
+- **„In der Nähe“:** Kommst du an einem anderen passenden Ort vorbei, meldet sich die Aufgabe auch dort – mit „Erledigt“, „Nicht hier“ und „Später“.
+- **Gestern offen geblieben** nennt bei Aufgaben mit Ort den Ort („Schrauben kaufen · Baumarkt Nord“).
+- **Apps:** Erinnert wird am Ort nur vom Handy. Die Android-App bekommt die Orte mit einer der nächsten Versionen; bis dahin kannst du Orte im Portal setzen, sie melden sich aber noch nicht. Die Orts-Erinnerungen des Familien-Plugins arbeiten unverändert weiter.
 
 ## Neu in 1.4.0
 
@@ -52,7 +61,7 @@ Das Plugin ist neu: eigene Aufgaben und Notizen plus alles, was die anderen Plug
 
 - **Mein Tag:** Termine heute (z. B. „Gelbe Tonne rausstellen“ am Vorabend, Elternabend), Überfälliges, was heute ansteht, was demnächst kommt (zwei Wochen) und was heute erledigt wurde – aus deinen Listen und aus Familie, Mail, Drive, Schule und Alltag.
 - **Wichtig, Geplant, Mir zugewiesen** und deine **Listen** (auch in **Gruppen** und **geteilt**, z. B. „Haus & Garten“ mit dem Partner).
-- **Aufgaben** mit Unteraufgaben, Fälligkeit und Uhrzeit, **Erinnerung als Push**, **Wiederholen** (täglich, werktags, jeden Montag, alle 2 Wochen, monatlich, jährlich oder „3 Tage nach Erledigung“), Notiz, Anhängen und einer Person, der die Aufgabe zugewiesen ist.
+- **Aufgaben** mit Unteraufgaben, Fälligkeit und Uhrzeit, **Erinnerung als Push** oder **am Ort** („beim Baumarkt“, „bei Oma“), **Wiederholen** (täglich, werktags, jeden Montag, alle 2 Wochen, monatlich, jährlich oder „3 Tage nach Erledigung“), Notiz, Anhängen und einer Person, der die Aufgabe zugewiesen ist.
 - **Notizen** in Notizbüchern mit Schlagwörtern, Anheften, Farben, Überschriften, fett und kursiv, Listen, **Checklisten**, Tabellen, Links, Bildern und Anhängen. Eine Zeile einer Checkliste wird mit „→ Aufgabe“ zur Aufgabe.
 - **Volltextsuche** über Aufgaben und Notizen – auch in Notizen mit Umlauten („zahnarzt“ findet „Zahnärztin“).
 - **Tresor-Notizbücher:** Ende-zu-Ende verschlüsselt. Nur deine Geräte können Titel und Text lesen, der Server nicht.
@@ -64,6 +73,7 @@ Das Plugin ist neu: eigene Aufgaben und Notizen plus alles, was die anderen Plug
 - Damit Familie, Mail, Drive, Schule und Alltag hier erscheinen: ihre Versionen mit „Zu tun für Notizen & Aufgaben“. Fehlt eine Quelle, steht das unter „Einstellungen“ (Zahnrad unten links).
 - Für den Umzug von Microsoft To Do: das Plugin **Mail 1.12.0** oder neuer mit deinem Microsoft-Konto.
 - Für Tresor-Notizbücher im Portal: ein aktueller Browser (Chrome, Edge, Firefox, Safari der letzten Jahre).
+- Für Erinnerungen am Ort: ein Handy mit der GateControl-App, die Orte kennt, und der Standort-Erlaubnis „Immer erlauben“. Für „Zuhause“ und die Regel-Orte: das Plugin **Familie 1.22.0** oder neuer. Die Ortssuche ist freiwillig.
 
 ## Einrichten
 
@@ -85,6 +95,32 @@ Das Plugin ist neu: eigene Aufgaben und Notizen plus alles, was die anderen Plug
 - **Teilen:** Namen eintippen, Person hinzufügen und **Bearbeiten** oder **Ansehen** wählen. Wer eine geteilte Liste bekommt, sieht sie sofort und erhält eine Mitteilung. Wer nur mitmacht, findet am ⋯ „In ‚Mein Tag‘ zeigen“ und „Liste verlassen“.
 - **Einkaufstag:** An den gewählten Wochentagen steht die Liste oben in „Mein Tag“ – bei allen Mitgliedern. Wer das nicht möchte, schaltet es am ⋯ der Liste nur für sich aus.
 - **Löschen** fragt nach und sagt, was mit den Aufgaben passiert; danach gibt es „Rückgängig“. **Gelöschtes** liegt 30 Tage im Papierkorb und ist danach weg.
+
+## Orte
+
+- **Ort setzen:** In der Aufgabe die Zeile **„Ort“** öffnen. Du wählst einen deiner Orte, einen Treffer der Suche, **„Jeder Lidl“** (erinnert an der ersten Filiale, an der du ankommst) oder setzt einen **Punkt auf der Karte** und gibst ihm einen Namen. Darunter legst du fest: **Beim Ankommen** oder **Beim Verlassen**. „Ohne Ort“ nimmt ihn wieder weg.
+- **Aus dem Text:** Die Schnell-Eingabe erkennt eine Art von Ort („beim Baumarkt“, „an der Apotheke“, „Tankstelle“), einen Namen („bei Lidl“), eine Adresse („Ringstraße 21“) und deine eigenen Orte („bei Oma“, „zu Hause“). Ein eigener oder gemerkter Ort wird direkt eingesetzt; sonst öffnet ein Tipp auf den Baustein „Ort: Baumarkt …“ die Auswahl. Der Baustein lässt sich wegnehmen.
+- **Meine Orte** verwaltest du unter **Einstellungen** (Zahnrad unten links) **› Orte**: neuen Ort merken (Name, Punkt auf der Karte oder Adresse, Umkreis 50–2000 m), ändern, löschen, „nicht mehr merken“. Eine Aufgabe behält ihren Ort, auch wenn du ihn aus der Liste löschst.
+- **Ortssuche:** Im Portal wird in der Nähe eines deiner Orte gesucht („in der Nähe von Zuhause“), auf dem Handy in der Nähe deines Standorts. Die Treffer stehen nach Entfernung, früher gewählte zuerst; die Minuten sind aus der Entfernung geschätzt. Gesucht wird erst, wenn du „Suchen“ drückst oder die Auswahl öffnest – nie beim Tippen.
+- **Was dabei deinen Server verlässt:** nur das Suchwort und deine **auf etwa einen Kilometer gerundete** Position – an einen Kartendienst von OpenStreetMap. Dein Name, dein Gerät und dein genauer Standort gehen nicht mit. Gespeichert oder protokolliert wird die Position nicht.
+- **Ohne Ortssuche** (Voreinstellung) funktionieren deine gemerkten Orte und die Karte. Es verlässt dann keine Suchanfrage deinen Server.
+- **In der Nähe:** Hängt eine Aufgabe an einem Baumarkt, achtet dein Handy zusätzlich auf bis zu fünf weitere Baumärkte in deiner Gegend. Kommst du an einem vorbei: „Baumarkt am Ring ist gleich hier · geplant war Baumarkt Nord“. **Nicht hier** schaltet diesen einen Ort für die Aufgabe ab, **Später** gibt drei Stunden Ruhe. Je Aufgabe kommt der Hinweis höchstens einmal in drei Stunden und nicht in deiner Ruhezeit (21–7 Uhr, unter Einstellungen › Orte änderbar). Bei eigenen Orten („bei Oma“) gibt es ihn nicht.
+- **Für jemand anderen:** Setzt du einer Aufgabe, die jemand anderem gehört, einen Ort, wird diese Person gefragt („… möchte dich erinnern“). Ihr Handy achtet erst nach **Annehmen** auf den Ort. Änderst du den Ort, wird neu gefragt.
+- **Mit Einkaufsliste:** Hängt an der Aufgabe auch eine Liste, hat die Erinnerung am Ort den Knopf „Liste öffnen“.
+- **Nie angekommen?** Die Aufgabe steht am nächsten Morgen unter „Gestern offen geblieben“, wenn sie für gestern geplant oder fällig war. Gib einer Aufgabe mit Ort ein Datum, wenn sie sich spätestens dann melden soll.
+- **Wie viele Orte?** Android erlaubt einer App 100 überwachte Orte. Die Orts-Erinnerungen des Familien-Plugins haben Vorrang; „Notizen & Aufgaben“ nimmt, was übrig ist (höchstens 60), die dringendsten Aufgaben zuerst.
+
+### Ortssuche einschalten (Administrator)
+
+Unter **Einstellungen › Plugins › Notizen & Aufgaben › Einstellungen › Orte** steht **„Ortssuche im Internet“**:
+
+| Wahl | Bedeutung |
+|---|---|
+| Aus (Voreinstellung) | Keine Suche. Gemerkte Orte und die Karte funktionieren. |
+| Öffentlicher Dienst von OpenStreetMap (Nominatim) | Dein Server fragt `nominatim.openstreetmap.org`. Dafür gelten dessen [Nutzungsbedingungen](https://operations.osmfoundation.org/policies/nominatim/): höchstens eine Anfrage pro Sekunde für die ganze Installation, nur Suchen, die eine Person ausgelöst hat, kein Massenabruf. Der Dienst läuft auf gespendeten Servern, ohne Zusage, und kann den Zugang entziehen. Für einen Haushalt gedacht. |
+| Eigener Dienst | Ein selbst betriebenes Nominatim. Die Adresse trägst du unter **Zugriffsziele › Ortssuche** ein. |
+
+Das Plugin hält die Regeln des öffentlichen Dienstes von sich aus ein: eine Anfrage nach der anderen mit gut einer Sekunde Abstand, ein Zwischenspeicher, höchstens 30 neue Suchen je Person und Stunde. Die Statuszeile auf der Einstellungsseite sagt, was gerade gilt.
 
 ## Aus anderen Plugins
 
@@ -130,6 +166,7 @@ Im Tresor gibt es keine Suche, keine Schlagwörter und kein „→ Aufgabe“ �
 | @Jenny | Jenny zuweisen (wenn sie in der Liste ist) |
 | #gesundheit | in die Liste „Gesundheit“ (gibt es sie nicht: „Neue Liste …“) |
 | wichtig, dringend, ! | wichtig |
+| beim Baumarkt, an der Apotheke, bei Lidl, bei Oma, zu Hause, Ringstraße 21 | ein Ort (siehe [Orte](#orte)) |
 
 Englisch geht auch: „tomorrow 5 pm“, „every monday“, „in 2 weeks“.
 
@@ -163,6 +200,7 @@ Direkt von der NAS holen geht noch nicht.
 | Tresor-Notizbücher erlauben | an/aus |
 | Aufgaben mit Uhrzeit in den Kalender eintragen | an (Standard) / aus. Braucht das Plugin Mail ab 1.15.0; ohne Mail geschieht nichts, kommt es später dazu, werden die offenen Aufgaben nachgetragen. Aus: die Termine der Aufgaben werden entfernt. |
 | Aus anderen Plugins | Familie, Mail, Drive, Schule, Alltag einzeln |
+| Ortssuche im Internet | Aus (Standard), Öffentlicher Dienst von OpenStreetMap, Eigener Dienst – siehe [Orte](#orte) |
 | Umzug | Microsoft To Do, Abgleich in beide Richtungen, DS Note |
 | Größte Datei, Platz je Person | für Bilder und Anhänge |
 
@@ -179,6 +217,10 @@ Jede Person hat zusätzlich eigene **„Einstellungen“** (Zahnrad unten links)
 ## Fragen
 
 **Warum steht eine Aufgabe aus Mail nicht da?** Unter „Einstellungen › Aufgaben aus anderen Plugins“ prüfen, ob Mail verbunden und eingeschaltet ist und ob das Konto ausgeblendet ist. „Jetzt abgleichen“ holt den Stand.
+
+**Erfährt der Server, wo ich bin?** Nein. Dein Handy überwacht die Orte selbst und meldet dem Server höchstens „dieser Ort hat ausgelöst“, damit zwei Geräte nicht beide klingeln. Für die Ortssuche bekommt der Server eine auf etwa einen Kilometer gerundete Position, die er nicht speichert.
+
+**Warum meldet sich eine Aufgabe am Ort nicht?** Erinnert wird nur vom Handy: Es braucht die Standort-Erlaubnis „Immer erlauben“ und eine App-Version, die Orte kennt. Hat jemand anderes den Ort gesetzt, musst du erst zustimmen. Sind sehr viele Orte offen, überwacht das Handy die dringendsten.
 
 **Wer sieht meine Notizen?** Nur du – außer in geteilten Notizbüchern. Tresor-Notizbücher kann auch der Server nicht lesen.
 

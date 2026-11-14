@@ -14,6 +14,9 @@
 //             + yesterday (1.3.0): the morning hint „Gestern offen geblieben“
 //   yesterdayAt 'HH:MM' (1.3.0) — when that hint comes (default 07:30)
 //   calendar  { tasks: bool } (1.3.0) — false: the person's tasks with a time are not written into their calendar in Mail
+//   places    { search: bool, nearby: bool, quiet: { from, to } | null } (1.5.0) — search false: no place search for this
+//             person (nothing leaves the server for them); nearby false: no hint at other places of a kind on the way;
+//             quiet: no such hint between these times (default 21:00–07:00; null: always)
 
 const store = require('./store');
 const config = require('./config');
@@ -23,8 +26,10 @@ const MYDAY = { listdays: true, showDone: true };
 const NOTIFY = { reminders: true, shared: true, listday: true, yesterday: true };
 const CALENDAR = { tasks: true };
 const YESTERDAY_AT = '07:30';
+const PLACES = { search: true, nearby: true };
+const QUIET = { from: '21:00', to: '07:00' };
 const DEFAULTS = { area: 'private', evening: '18:00', sources: {}, groups: {}, times: {}, myday: { ...MYDAY }, startArea: 'last', notify: { ...NOTIFY },
-  yesterdayAt: YESTERDAY_AT, calendar: { ...CALENDAR } };
+  yesterdayAt: YESTERDAY_AT, calendar: { ...CALENDAR }, places: { ...PLACES, quiet: { ...QUIET } } };
 const SRC_KEYS = { on: 'bool', kids: ['all', 'mine', 'none'], shoppingInMyDay: 'bool', flagged: 'bool', evening: 'time' };
 const TIME_KEYS = ['morning', 'noon', 'afternoon', 'evening', 'night'];
 
@@ -33,9 +38,9 @@ function normalize(raw) {
   const out = {
     area: r.area === 'work' ? 'work' : 'private', evening: isTime(r.evening) ? r.evening : DEFAULTS.evening, sources: {}, groups: {}, times: {},
     myday: { ...MYDAY }, startArea: ['private', 'work'].includes(r.startArea) ? r.startArea : 'last', notify: { ...NOTIFY },
-    yesterdayAt: isTime(r.yesterdayAt) ? r.yesterdayAt : YESTERDAY_AT, calendar: { ...CALENDAR },
+    yesterdayAt: isTime(r.yesterdayAt) ? r.yesterdayAt : YESTERDAY_AT, calendar: { ...CALENDAR }, places: { ...PLACES },
   };
-  for (const [key, def] of [['myday', MYDAY], ['notify', NOTIFY], ['calendar', CALENDAR]]) {
+  for (const [key, def] of [['myday', MYDAY], ['notify', NOTIFY], ['calendar', CALENDAR], ['places', PLACES]]) {
     const v = r[key];
     if (v && typeof v === 'object') for (const k of Object.keys(def)) if (typeof v[k] === 'boolean') out[key][k] = v[k];
   }
@@ -57,6 +62,9 @@ function normalize(raw) {
     }
   }
   if (r.times && typeof r.times === 'object') for (const k of TIME_KEYS) if (isTime(r.times[k])) out.times[k] = r.times[k];
+  // quiet hours of the hints „in der Nähe“: none given → the default; null (or the same time twice) → none
+  const q = r.places && typeof r.places === 'object' ? r.places.quiet : undefined;
+  out.places.quiet = q === undefined ? { ...QUIET } : q && typeof q === 'object' && isTime(q.from) && isTime(q.to) && q.from !== q.to ? { from: q.from, to: q.to } : null;
   return out;
 }
 
@@ -96,7 +104,8 @@ async function put(gc, ctx, b) {
     const cur = await get(gc, ctx.userId);
     const merged = { ...cur, ...b, sources: { ...cur.sources }, groups: { ...cur.groups, ...(b.groups && typeof b.groups === 'object' ? b.groups : {}) }, times: { ...cur.times, ...(b.times || {}) },
       myday: { ...cur.myday, ...(b.myday && typeof b.myday === 'object' ? b.myday : {}) }, notify: { ...cur.notify, ...(b.notify && typeof b.notify === 'object' ? b.notify : {}) },
-      calendar: { ...cur.calendar, ...(b.calendar && typeof b.calendar === 'object' ? b.calendar : {}) } };
+      calendar: { ...cur.calendar, ...(b.calendar && typeof b.calendar === 'object' ? b.calendar : {}) },
+      places: { ...cur.places, ...(b.places && typeof b.places === 'object' ? b.places : {}) } };
     if (b.sources && typeof b.sources === 'object') for (const [p, s] of Object.entries(b.sources)) merged.sources[p] = { ...(cur.sources[p] || {}), ...(s || {}) };
     if (!isTime(merged.yesterdayAt)) merged.yesterdayAt = cur.yesterdayAt;
     for (const [k, v] of Object.entries(merged.groups)) if (v === null) delete merged.groups[k];

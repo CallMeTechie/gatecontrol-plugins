@@ -16,6 +16,8 @@ const ui = require('./ui');
 const calsync = require('./calsync');
 const yesterday = require('./yesterday');
 const shopping = require('./shopping');
+const places = require('./places');
+const placesearch = require('./placesearch');
 const { t } = require('./text');
 
 const CART = 'M6 6h15l-1.5 9h-12zM6 6L5 3H2M9 20a1 1 0 1 0 0-2 1 1 0 0 0 0 2zM18 20a1 1 0 1 0 0-2 1 1 0 0 0 0 2z';
@@ -40,6 +42,8 @@ module.exports = {
     calsync.reset();
     yesterday.reset();
     shopping.reset();
+    places.reset();
+    placesearch.state.version = require('../plugin.json').version;
     gc.log.info('Notizen & Aufgaben started');
   },
 
@@ -48,6 +52,8 @@ module.exports = {
   async settingsChanged(values, gc) {
     config.reset();
     people.reset();
+    // 1.5.0: another search service (or none): what was found through the old one is forgotten
+    places.reset();
     // 1.3.0: „Aufgaben mit Uhrzeit in den Kalender eintragen“ switched: the events come or go with the next runs
     try { calsync.reset(); const ctx = await context(gc, null, 'de'); await calsync.touchAll(gc, ctx.today); } catch (e) { gc.log.warn('calendar marks failed', (e && (e.code || e.message)) || 'error'); }
   },
@@ -63,6 +69,10 @@ module.exports = {
     const cfg = await config.get(gc);
     const mail = await calsync.available(gc, clock.now());
     out.push({ group: 'calendar', tone: cfg.calendar_tasks !== false && mail ? 'ok' : 'info', text: t(l, cfg.calendar_tasks === false ? 'st.cal_off' : mail ? 'st.cal_ok' : 'st.cal_missing') });
+    // 1.5.0: the place search — off, the public service (with its rules), or a service of one's own (assigned or not)
+    const mode = placesearch.modeOf(cfg);
+    const target = mode === 'own' && await placesearch.targetAssigned(gc);
+    out.push({ group: 'places', tone: mode === 'off' ? 'info' : mode === 'own' && !target ? 'warn' : 'ok', text: t(l, mode === 'off' ? 'st.place_off' : mode === 'osm' ? 'st.place_osm' : target ? 'st.place_own' : 'st.place_own_missing') });
     return out;
   },
 

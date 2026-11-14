@@ -20,6 +20,7 @@ const remind = require('./remind');
 const yesterday = require('./yesterday');
 const calsync = require('./calsync');
 const shopping = require('./shopping');
+const places = require('./places');
 const duty = require('./duty');
 const Q = require('../ui/quickparse');
 const { t } = require('./text');
@@ -40,7 +41,11 @@ const FEATURES = ['tasks', 'notes', 'sources', 'vault', 'mstodo', 'dsnote', 'sea
   // 1.4.0 (README "1.4.0"): `shoppingLists` — GET shopping, POST shopping/ops, me.shopping, nav.shopping, the event
   // `shopping`; `taskList` — Task.attachedList, attachedListId, `attach` of POST parse / POST tasks, „all ticked“ completes
   // the task, „Liste öffnen“ on the reminder; `familyShopping` — family lists, PUT …/family, POST …/going, …/assign.
-  'shoppingLists', 'taskList', 'familyShopping'];
+  'shoppingLists', 'taskList', 'familyShopping',
+  // 1.5.0 (README "1.5.0"): `places` — Task.place, `place` of POST / PATCH tasks and of POST parse, GET / POST / PATCH /
+  // DELETE places, PUT places/favs, POST places/watch, POST places/fired, POST tasks/<id>/place/skip | later | consent,
+  // me.places, prefs.places, the event `places`; `placeSearch` — POST places/search (whether it is switched on: me.places.search)
+  'places', 'placeSearch'];
 
 const ok = (json) => ({ status: 200, json: { ok: true, ...json } });
 
@@ -85,6 +90,8 @@ lists.hooks.changed = (gc, l, users) => shopping.listChanged(gc, l, users);
 prefs.hooks.changed = async (gc, ctx, before, after) => {
   if (before.calendar.tasks !== after.calendar.tasks) await calsync.touchAll(gc, ctx.today, ctx.userId);
   if (before.yesterdayAt !== after.yesterdayAt || before.notify.yesterday !== after.notify.yesterday) yesterday.reset();
+  // 1.5.0: the person's switches of places changed — their other devices fetch what to watch again
+  if (JSON.stringify(before.places) !== JSON.stringify(after.places)) require('./events').changed(gc, [ctx.userId], 'places');
 };
 
 /** A button of one of the plugin's pushes (hook notifyAction): the reminder of a task, the morning hint. */
@@ -93,6 +100,7 @@ async function notifyAction(gc, ctx, action, data) {
   if (!d || typeof d !== 'object') return { ok: false, code: 'invalid' };
   if (d.kind === 'reminder') return remind.onAction(gc, ctx, action, d, taskOpts);
   if (d.kind === 'yesterday') return yesterday.onAction(gc, ctx, action, d, taskOpts);
+  if (d.kind === 'place_consent') return places.onAction(gc, ctx, action, d);
   return { ok: false, code: 'invalid' };
 }
 
@@ -110,6 +118,8 @@ async function me(gc, ctx) {
     yesterday: { push: p.notify.yesterday !== false, at: p.yesterdayAt },
     // 1.4.0: family lists (available: Familie offers its part; bound: it told the hub who the family is; parent)
     shopping: await shopping.meInfo(gc, ctx),
+    // 1.5.0: places — is the search on (administrator, the person), the hints on the way, how many places per task
+    places: await places.meInfo(gc, ctx, cfg, p),
   };
 }
 
@@ -144,7 +154,8 @@ async function parseText(gc, ctx, b) {
   if (!b || typeof b.text !== 'string' || b.text.length > 1000) throw fail('invalid', { field: 'text' });
   const parsed = await tasks.fromText(gc, ctx, b.text, b.area);
   // 1.4.0: the shopping list the line names („bei Lidl einkaufen“ → „Einkauf“) — beside what the parser made of it
-  return { parsed, attach: await shopping.suggest(gc, ctx, b.text, parsed, b.area) };
+  // 1.5.0: the place the line names („beim Baumarkt“, „bei Lidl“, „bei Oma“) — found by the server, not by the parser
+  return { parsed, attach: await shopping.suggest(gc, ctx, b.text, parsed, b.area), place: await places.suggest(gc, ctx, parsed) };
 }
 
 async function sync(gc, ctx, plugin) {
@@ -205,6 +216,19 @@ async function handle(gc, ctx, req) {
   if (is('GET', 1, 'yesterday')) return ok(await yesterday.get(gc, ctx, q));
   if (is('POST', 1, 'yesterday')) return ok(await yesterday.post(gc, ctx, b, taskOpts));
   if (is('GET', 1, 'reminders')) return ok(await remind.feed(gc, ctx));
+
+  // 1.5.0: places (server/places.js) — own places, the search, what a phone watches, what a reminder at a place did
+  if (is('GET', 1, 'places')) return ok(await places.all(gc, ctx));
+  if (is('POST', 1, 'places')) return ok(await places.create(gc, ctx, b));
+  if (m === 'PUT' && n === 2 && a === 'places' && x === 'favs') return ok(await places.setFav(gc, ctx, b));
+  if (m === 'POST' && n === 2 && a === 'places' && x === 'search') return ok(await places.find(gc, ctx, b));
+  if (m === 'POST' && n === 2 && a === 'places' && x === 'watch') return ok(await places.watch(gc, ctx, b));
+  if (m === 'POST' && n === 2 && a === 'places' && x === 'fired') return ok(await places.fired(gc, ctx, b));
+  if (m === 'PATCH' && n === 2 && a === 'places') return ok(await places.update(gc, ctx, x, b));
+  if (m === 'DELETE' && n === 2 && a === 'places') return ok(await places.remove(gc, ctx, x));
+  if (m === 'POST' && n === 4 && a === 'tasks' && y === 'place' && z === 'skip') return ok(await places.skip(gc, ctx, x, b));
+  if (m === 'POST' && n === 4 && a === 'tasks' && y === 'place' && z === 'later') return ok(await places.later(gc, ctx, x, b));
+  if (m === 'POST' && n === 4 && a === 'tasks' && y === 'place' && z === 'consent') return ok(await places.consent(gc, ctx, x, b));
 
   // 1.4.0: shopping lists (server/shopping.js)
   if (is('GET', 1, 'shopping')) return ok(await shopping.get(gc, ctx, q));

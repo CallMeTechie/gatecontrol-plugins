@@ -26,6 +26,7 @@ const duty = require('./duty');
 const events = require('./events');
 const calsync = require('./calsync');
 const pushprefs = require('./pushprefs');
+const places = require('./places');
 const { t } = require('./text');
 const { fail, posInt, isDate, area: areaOf } = require('./util');
 
@@ -203,9 +204,10 @@ async function build(gc, ctx) {
 }
 
 /** The message of the push for these rows. */
-function message(lang, list, day) {
+function message(lang, list, day, placeNames) {
   const n = list.length;
-  const lines = list.slice(0, LINES).map((r) => `${r.title.slice(0, 80)} · ${r.list_name}`);
+  // 1.5.0: a task with a place says where („Schrauben kaufen · Baumarkt Nord“), the others their list
+  const lines = list.slice(0, LINES).map((r) => `${r.title.slice(0, 80)} · ${(placeNames && placeNames.get(r.id)) || r.list_name}`);
   if (n > LINES) lines.push(t(lang, 'n.y_more', { n: n - LINES }));
   const open = (id, label) => ({ type: 'open_app_route', id, label, target: ROUTE });
   const cb = (id, label) => ({ type: 'callback', id, label });
@@ -230,7 +232,7 @@ async function tick(gc, ctx) {
     if (!p.push || ctx.now - tz.at(ctx.today, tz.parseTime(p.time), ctx.tz) > LATE_MAX) continue;
     const list = await rows(gc, u, ctx.today, null);
     if (!list.length) continue;
-    if (await pushprefs.send(gc, [u], 'yesterday', message(cfg.notify_lang, list, tz.addDays(ctx.today, -1)))) sent++;
+    if (await pushprefs.send(gc, [u], 'yesterday', message(cfg.notify_lang, list, tz.addDays(ctx.today, -1), await places.namesOf(gc, cfg.notify_lang, list)))) sent++;
   }
   return sent;
 }

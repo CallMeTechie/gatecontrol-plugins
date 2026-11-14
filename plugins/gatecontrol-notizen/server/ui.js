@@ -13,8 +13,13 @@ const read = (f) => fs.readFileSync(path.join(UI, f), 'utf8');
 const FILES = {
   css: read('common.css') + read('portal.css'),
   html: read('portal.html'),
-  js: ['repeat.js', 'quickparse.js', 'notemd.js', 'vaultcrypto.js', 'nsx.js', 'portal.js'].map(read),
+  js: ['repeat.js', 'quickparse.js', 'notemd.js', 'vaultcrypto.js', 'nsx.js', 'places.js', 'portal.js'].map(read),
 };
+
+// 1.5.0: the map of the dialog „Ort“ (plugin.json ui.maps) — GateControl's bundled Leaflet at a URL the frame may load,
+// the tiles through GateControl (window.GC.tiles), else directly (an older GateControl)
+const LEAFLET = Object.freeze({ js: '/plugins/_shared/leaflet/leaflet.js', css: '/plugins/_shared/leaflet/leaflet.css' });
+const TILES = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
 
 function esc(s) {
   return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -29,7 +34,7 @@ function render(view) {
   const T = { ...texts.de, ...(lang === 'en' ? texts.en : {}) };
   const html = FILES.html.replace(/\{\{t:([a-z0-9_.-]+)\}\}/g, (_, k) => esc(T[k] != null ? T[k] : k));
   return '<style>' + FILES.css + '</style>' + html
-    + '<script>window.NA_CTX=' + island({ lang, texts: T }) + ';</script>'
+    + '<script>window.NA_CTX=' + island({ lang, texts: T, leaflet: LEAFLET, tiles: TILES }) + ';</script>'
     + FILES.js.map((js) => '<script>' + js + '</script>').join('');
 }
 

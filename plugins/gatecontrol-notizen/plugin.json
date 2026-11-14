@@ -4,18 +4,31 @@
     "de": "Notizen & Aufgaben",
     "en": "Notes & Tasks"
   },
-  "version": "1.4.0",
+  "version": "1.5.0",
   "publisher": "CallMeTechie",
   "description": {
-    "de": "Eigene Aufgaben und Notizen plus alles „Zu tun“ aus den anderen Plugins (Familie, Mail, Drive, Schule, Alltag) an einer Stelle: Mein Tag, Wichtig, Geplant, Mir zugewiesen; Listen und Gruppen, Unteraufgaben, Fälligkeit, Erinnerung als Push mit „Erledigt“ und „Später“, Termin im Kalender von Mail, Wiederholungen, geteilte Listen. Notizbücher mit Schlagwörtern, Checklisten, Tabellen, Bildern und Volltextsuche, einzelne Notizbücher als Tresor (Ende-zu-Ende verschlüsselt). Schnell-Eingabe in normaler Sprache, Umzug von Microsoft To Do und Synology DS Note. Bereiche Privat und Arbeit getrennt.",
-    "en": "Your own tasks and notes plus everything “to do” from the other plugins (Family, Mail, Drive, School, Everyday) in one place: My Day, Important, Planned, Assigned to me; lists and groups, sub-tasks, due dates, reminders as push notifications with “Done” and “Later”, an event in Mail’s calendar, repeats, shared lists. Notebooks with tags, checklists, tables, pictures and full-text search, single notebooks as a vault (end-to-end encrypted). Quick entry in plain language, moving over from Microsoft To Do and Synology DS Note. Private and work kept apart."
+    "de": "Eigene Aufgaben und Notizen plus alles „Zu tun“ aus den anderen Plugins (Familie, Mail, Drive, Schule, Alltag) an einer Stelle: Mein Tag, Wichtig, Geplant, Mir zugewiesen; Listen und Gruppen, Unteraufgaben, Fälligkeit, Erinnerung zur Uhrzeit oder am Ort mit „Erledigt“ und „Später“, Termin im Kalender von Mail, Wiederholungen, geteilte Listen. Notizbücher mit Schlagwörtern, Checklisten, Tabellen, Bildern und Volltextsuche, Notizbücher als Tresor (Ende-zu-Ende verschlüsselt). Schnell-Eingabe in normaler Sprache, Umzug von Microsoft To Do und Synology DS Note. Bereiche Privat und Arbeit getrennt.",
+    "en": "Your own tasks and notes plus everything “to do” from the other plugins (Family, Mail, Drive, School, Everyday) in one place: My Day, Important, Planned, Assigned to me; lists and groups, sub-tasks, due dates, reminders as push notifications with “Done” and “Later” or at a place (“at the DIY store”), an event in Mail’s calendar, repeats, shared lists. Notebooks with tags, checklists, tables, pictures and full-text search, single notebooks as a vault (end-to-end encrypted). Quick entry in plain language, moving over from Microsoft To Do and Synology DS Note. Private and work kept apart."
   },
   "gatecontrol": ">=1.216.0",
   "entry": "server/index.js",
   "permissions": {
     "network": {
       "internet": [
-        "graph.microsoft.com:443"
+        "graph.microsoft.com:443",
+        "nominatim.openstreetmap.org:443"
+      ],
+      "homeTargets": [
+        {
+          "id": "places",
+          "label": {
+            "de": "Ortssuche (eigener Nominatim-Dienst)",
+            "en": "Place search (your own Nominatim service)"
+          },
+          "protocols": [
+            "http"
+          ]
+        }
       ]
     },
     "storage": true,
@@ -50,7 +63,9 @@
       "gatecontrol-alltag:todo_items",
       "gatecontrol-alltag:todo_complete",
       "gatecontrol-familie:shopping_changed",
-      "gatecontrol-familie:shopping_action"
+      "gatecontrol-familie:shopping_action",
+      "gatecontrol-familie:places",
+      "gatecontrol-familie:geofences"
     ]
   },
   "storage": {
@@ -165,6 +180,17 @@
         "help": {
           "de": "Aufgaben mit Datum und Uhrzeit stehen als Termin von 30 Minuten im Kalender „Aufgaben“ des Plugins Mail (ab Mail 1.15.0) – in dem der Person, der die Aufgabe gehört. Der Termin hat keine eigene Erinnerung: erinnert wird über die Aufgabe. Jede Person kann es für sich unter „Einstellungen“ (Zahnrad unten links) abschalten.",
           "en": "Tasks with a date and a time are a 30-minute event in the “Tasks” calendar of the Mail plugin (Mail 1.15.0 or newer) – in the one of the person the task belongs to. The event has no reminder of its own: the task reminds. Everyone can switch it off for themselves under “Settings” (gear at the bottom left)."
+        }
+      },
+      {
+        "id": "places",
+        "label": {
+          "de": "Orte",
+          "en": "Places"
+        },
+        "help": {
+          "de": "Aufgaben können an einem Ort hängen („beim Baumarkt“, „bei Lidl“, „bei Oma“): Das Handy erinnert beim Ankommen oder Verlassen. Gemerkte Orte und die Karte funktionieren immer. Die Ortssuche („Welcher Baumarkt ist in der Nähe?“) ist ausgeschaltet, bis du hier einen Dienst wählst. Dann fragt das Handy nur deinen Server – mit dem Suchwort und der auf etwa einen Kilometer gerundeten Position; dein Server fragt den Kartendienst. Name, Gerät und genauer Standort gehen nicht mit, gespeichert wird davon nichts. Jede Person kann die Suche für sich unter „Einstellungen“ (Zahnrad unten links) abschalten.",
+          "en": "Tasks can hang on a place (“at the DIY store”, “at Lidl”, “at grandma’s”): the phone reminds on arriving or leaving. Remembered places and the map always work. The place search (“which DIY store is near?”) is off until you choose a service here. Then the phone only asks your server – with the search word and the position rounded to about one kilometre; your server asks the map service. Name, device and exact location are not sent, and nothing of it is stored. Everyone can switch the search off for themselves under “Settings” (gear at the bottom left)."
         }
       },
       {
@@ -294,6 +320,43 @@
         "default": true
       },
       {
+        "key": "place_search",
+        "type": "select",
+        "group": "places",
+        "label": {
+          "de": "Ortssuche im Internet",
+          "en": "Place search on the internet"
+        },
+        "help": {
+          "de": "„Öffentlicher Dienst von OpenStreetMap“ nutzt nominatim.openstreetmap.org. Dafür gelten dessen Nutzungsbedingungen (operations.osmfoundation.org/policies/nominatim): höchstens eine Anfrage pro Sekunde für die ganze Installation, nur Suchen, die eine Person ausgelöst hat, kein Massenabruf; der Dienst läuft auf gespendeten Servern, ohne Zusage, und kann den Zugang entziehen. Das Plugin hält sich daran (eine Anfrage nach der anderen, Zwischenspeicher, Grenze je Person). Für mehr als einen Haushalt: „Eigener Dienst“ – ein selbst betriebenes Nominatim, eingetragen unter Zugriffsziele › Ortssuche.",
+          "en": "“Public service of OpenStreetMap” uses nominatim.openstreetmap.org. Its usage policy applies (operations.osmfoundation.org/policies/nominatim): at most one request a second for the whole installation, only searches a person triggered, no bulk queries; the service runs on donated servers, without any guarantee, and may withdraw access. The plugin keeps to it (one request after the other, a cache, a limit per person). For more than a household: “Own service” – a Nominatim you run yourself, entered under Access targets › Place search."
+        },
+        "options": [
+          {
+            "value": "off",
+            "label": {
+              "de": "Aus",
+              "en": "Off"
+            }
+          },
+          {
+            "value": "osm",
+            "label": {
+              "de": "Öffentlicher Dienst von OpenStreetMap (Nominatim)",
+              "en": "Public service of OpenStreetMap (Nominatim)"
+            }
+          },
+          {
+            "value": "own",
+            "label": {
+              "de": "Eigener Dienst (Zugriffsziel „Ortssuche“)",
+              "en": "Own service (access target “Place search”)"
+            }
+          }
+        ],
+        "default": "off"
+      },
+      {
         "key": "source_familie",
         "type": "boolean",
         "group": "sources",
@@ -416,7 +479,8 @@
         "en": "Notes & Tasks"
       },
       "icon": "M9 11l3 3L22 4M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"
-    }
+    },
+    "maps": true
   },
   "license": {
     "required": true

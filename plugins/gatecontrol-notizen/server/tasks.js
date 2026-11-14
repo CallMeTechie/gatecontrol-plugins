@@ -16,6 +16,7 @@ const pushprefs = require('./pushprefs');
 const duty = require('./duty');
 const calsync = require('./calsync');
 const shopping = require('./shopping');
+const places = require('./places');
 const R = require('../ui/repeat');
 const Q = require('../ui/quickparse');
 const { t } = require('./text');
@@ -89,6 +90,9 @@ function view(ctx, r, extra = {}) {
     // 1.4.0: the shopping list the task carries ({ id, uid, name, icon, open, total, done, family }; null: none, or the
     // person is no member of that list)
     attachedList: (r.attached_list && extra.attached && extra.attached.get(r.attached_list)) || null,
+    // 1.5.0: the place the task hangs on (server/places.js: { mode, id, name, address, lat, lon, radius, trigger, key,
+    // label, consent, watch, … }; null: none)
+    place: r.place_json ? places.taskView(ctx, r, extra.places) : null,
     assignee: r.assignee_id ? { id: r.assignee_id, name: extra.names ? extra.names.get(r.assignee_id) || null : null } : null,
     myDay: extra.myDay ? extra.myDay.has(r.id) : false,
     progress: extra.progress && extra.progress.get(r.id) ? extra.progress.get(r.id) : null,
@@ -133,7 +137,7 @@ async function extras(gc, ctx, rows) {
   // whose reminder: only asked for the tasks that have one to come
   const due = rows.filter(duty.pending);
   return { progress, myDay, attachments, names, roles, parentMine, duty: due.length ? await duty.of(gc, due) : new Map(),
-    attached: await shopping.attachInfo(gc, ctx.userId, rows.map((r) => r.attached_list)) };
+    attached: await shopping.attachInfo(gc, ctx.userId, rows.map((r) => r.attached_list)), places: await places.ofTasks(gc, rows) };
 }
 
 async function views(gc, ctx, rows) {
@@ -195,6 +199,10 @@ async function replay(gc, ctx, id, clientId) {
  * assigneeId?, myDay?, parentId?, source?: { plugin, id }, clientId?, listClientId?, parentClientId? } → { task, parsed?, clientId? }
  * 1.4.0: attachedListId | attachedListUid — the shopping list the task carries; with `text` and attach: 'auto' the list
  * the line names is attached when exactly one fits (→ `attach` as in POST parse).
+ * 1.5.0: place — the place the task hangs on (server/places.js); with `text` and place: 'auto' the place the line names
+ * is taken when it is decided (one of „Meine Orte“, the remembered one of a kind) → `place` as in POST parse. A task
+ * made from `text` with a place gets the title without the place's words („beim Baumarkt Schrauben kaufen“ →
+ * „Schrauben kaufen“).
  */
 async function create(gc, ctx, b0, opts = {}) {
   const cid = clientIds.arg(b0.clientId);
@@ -206,6 +214,9 @@ async function create(gc, ctx, b0, opts = {}) {
   let fields = { ...b };
   let parsed = null;
   let attach = null;
+  let placeHint = null;
+  let placeArg = b.place !== undefined && b.place !== 'auto' ? b.place : undefined;
+  if (b.place !== undefined && b.place !== null && b.place !== 'auto' && (typeof b.place !== 'object' || Array.isArray(b.place))) throw fail('invalid', { field: 'place' });
   if (typeof b.text === 'string' && !b.title) {
     parsed = await fromText(gc, ctx, b.text, b.area);
     fields = {
@@ -222,6 +233,12 @@ async function create(gc, ctx, b0, opts = {}) {
     if (!fields.listId && parsed.listName && b.createList === true && !(hint && hint.via === 'tag')) {
       const made = await lists.create(gc, ctx, { name: parsed.listName, area: b.area });
       fields.listId = made.list.id;
+    }
+    // 1.5.0: the place the line names — taken when asked for ('auto', and decided) or given; its words leave the title
+    if (b.place !== undefined && b.place !== null && !b.parentId) {
+      const hint = await places.suggest(gc, ctx, parsed);
+      if (b.place === 'auto') { placeHint = hint; placeArg = places.argOf(hint) || undefined; }
+      if (hint && placeArg && hint.title) fields.title = hint.title;
     }
   }
   const title = line(fields.title, TITLE_MAX);
@@ -256,6 +273,7 @@ async function create(gc, ctx, b0, opts = {}) {
     if (b.attachedListId !== undefined || b.attachedListUid !== undefined) attached = await shopping.attachArg(gc, ctx.userId, b.attachedListId, b.attachedListUid);
     else if (attach && attach.list) attached = attach.list.id;
   }
+  const place = !parent && placeArg ? await places.argFor(gc, ctx, null, placeArg) : null;
   let src = null;
   if (fields.source && !parent) src = await opts.sourceOf(gc, ctx, fields.source);
   const twoWay = await linkedTwoWay(gc, listId);
@@ -266,12 +284,12 @@ async function create(gc, ctx, b0, opts = {}) {
       ? await store.one(gc, 'SELECT COALESCE(MAX(position), 0) + 1 AS p FROM tasks WHERE parent_id = ? AND deleted_at IS NULL', [parent.id])
       : await store.one(gc, 'SELECT COALESCE(MIN(position), 0) - 1 AS p FROM tasks INDEXED BY idx_tasks_list WHERE list_id = ? AND done_at IS NULL AND deleted_at IS NULL AND parent_id IS NULL', [listId]);
     const r = await store.run(gc, `INSERT INTO tasks (list_id, parent_id, title, note, important, due_date, due_time, due_at, remind_at, repeat_json, assignee_id,
-      position, src_plugin, src_id, note_id, ext_id, ext_at, ext_dirty, created_by, created_at, updated_at, done_at, done_by, attached_list)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      position, src_plugin, src_id, note_id, ext_id, ext_at, ext_dirty, created_by, created_at, updated_at, done_at, done_by, attached_list, place_id, place_json)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [listId, parent ? parent.id : null, title, note, fields.important ? 1 : 0, due.date, due.time, dueAt(ctx, due.date, due.time),
       remindAt, repeat ? JSON.stringify(repeat) : null, assignee, pos.p, src ? src.plugin : null, src ? src.id : null,
       posInt(fields.noteId) || null, opts.extId || null, opts.extAt || null, twoWay && !opts.extId ? 1 : 0, ctx.userId, opts.createdAt || ctx.now, ctx.now,
-      opts.doneAt || null, opts.doneAt ? ctx.userId : null, attached]);
+      opts.doneAt || null, opts.doneAt ? ctx.userId : null, attached, place && place.change ? place.change.placeId : null, place && place.change ? JSON.stringify(place.change.json) : null]);
     const tid = Number(r.lastInsertRowid);
     if (bool(fields.myDay) && !parent) await store.run(gc, 'INSERT OR IGNORE INTO my_day (user_id, day, task_id) VALUES (?, ?, ?)', [ctx.userId, ctx.today, tid]);
     await fts.setTask(gc, tid, title, note);
@@ -283,11 +301,12 @@ async function create(gc, ctx, b0, opts = {}) {
   if (parent && twoWay) await store.run(gc, 'UPDATE tasks SET ext_dirty = 1 WHERE id = ? AND ext_id IS NOT NULL', [parent.id]);
   const members = await lists.memberIds(gc, listId);
   events.changed(gc, members, 'tasks');
+  if (place && place.change) { await places.picked(gc, ctx, place.pick); await places.sync(gc, ctx, id); events.changed(gc, members, 'places'); }
   if (assignee && assignee !== ctx.userId) await notifyAssigned(gc, ctx, assignee, title, id);
   // 1.3.0: its event in Mail's calendar — at once; a task that comes in by an import waits for the background run
   if (due.time && !opts.doneAt) await (opts.extId ? calsync.touch(gc, id) : calsync.now(gc, ctx, id));
   const row = await store.one(gc, 'SELECT * FROM tasks WHERE id = ?', [id]);
-  return { task: (await views(gc, ctx, [row]))[0], ...(parsed ? { parsed } : {}), ...(attach ? { attach } : {}), ...(cid ? { clientId: cid } : {}) };
+  return { task: (await views(gc, ctx, [row]))[0], ...(parsed ? { parsed } : {}), ...(attach ? { attach } : {}), ...(placeHint ? { place: placeHint } : {}), ...(cid ? { clientId: cid } : {}) };
 }
 
 async function notifyAssigned(gc, ctx, userId, title, id) {
@@ -316,7 +335,8 @@ const OWN = ['due', 'remindAt', 'repeat', 'assigneeId', 'listId', 'myDay', 'atta
 
 /**
  * PATCH tasks/<id> { title?, note?, important?, due?, remindAt?, repeat?, assigneeId?, listId?, position?, myDay?,
- * attachedListId? (1.4.0; or attachedListUid), base? }
+ * attachedListId? (1.4.0; or attachedListUid), place? (1.5.0, server/places.js — not part of `base`: the last change
+ * of the place wins), base? }
  * — `base` (1.1.0): the values the device saw before it changed them; a field someone changed meanwhile to something
  * else → 409 conflict { fields, task }. Without `base` the change wins (as in 1.0). A field set to what it is already
  * is not written (a change sent twice does nothing the second time: no new reminder, no push, no event).
@@ -327,6 +347,8 @@ async function update(gc, ctx, id, b0) {
   // 1.4.0: the list named by the id its device gave it
   if (b0.attachedListId === undefined && b0.attachedListUid !== undefined) b = { ...b0, attachedListId: await shopping.attachArg(gc, ctx.userId, undefined, b0.attachedListUid) };
   const sub = !!r.parent_id;
+  // 1.5.0: the place (looked up before anything is written: an unknown place refuses the whole change)
+  const place = b0.place !== undefined && !sub ? await places.argFor(gc, ctx, r, b0.place) : null;
   const myDayNow = !!(await store.one(gc, 'SELECT 1 AS x FROM my_day WHERE user_id = ? AND day = ? AND task_id = ?', [ctx.userId, ctx.today, r.id]));
   const dueDate = (b.due && typeof b.due === 'object' && b.due.date) || r.due_date || ctx.today;
   const norm = (f, v) => {
@@ -356,9 +378,10 @@ async function update(gc, ctx, id, b0) {
   if (late.length) throw fail('conflict', { fields: late, task: (await views(gc, ctx, [r]))[0] });
   // only what changes is written
   for (const f of Object.keys(next)) if (same(next[f], now[f])) delete next[f];
-  if (!Object.keys(next).length) return get(gc, ctx, r.id);
+  const placed = !!(place && place.change);
+  if (!Object.keys(next).length && !placed) { if (place && place.pick && place.pick.fav) await places.picked(gc, ctx, place.pick); return get(gc, ctx, r.id); }
   // a member who may only look: only their own „Mein Tag“ mark
-  if (r.my_role === 'read' && Object.keys(next).some((f) => f !== 'myDay')) throw readOnly();
+  if (r.my_role === 'read' && (placed || Object.keys(next).some((f) => f !== 'myDay'))) throw readOnly();
 
   const set = [];
   const args = [];
@@ -382,6 +405,7 @@ async function update(gc, ctx, id, b0) {
   else if (!sub && listId !== r.list_id && r.assignee_id && !(await store.one(gc, 'SELECT 1 AS x FROM list_members WHERE list_id = ? AND user_id = ?', [listId, r.assignee_id]))) put('assignee_id', null);
   if (next.position !== undefined) put('position', next.position);
   if (next.attachedListId !== undefined) put('attached_list', next.attachedListId === null ? null : await shopping.attachArg(gc, ctx.userId, next.attachedListId));
+  if (placed) { put('place_id', place.change.placeId); put('place_json', place.change.json ? JSON.stringify(place.change.json) : null); if (place.change.fresh) put('place_state', null); }
   const twoWay = await linkedTwoWay(gc, listId);
   const before = await lists.memberIds(gc, r.list_id);
   await store.tx(gc, async () => {
@@ -397,6 +421,9 @@ async function update(gc, ctx, id, b0) {
   const after = listId !== r.list_id ? await lists.memberIds(gc, listId) : before;
   events.changed(gc, [...new Set([...before, ...after])], 'tasks');
   if (next.assigneeId && next.assigneeId !== ctx.userId) await notifyAssigned(gc, ctx, next.assigneeId, title, r.id);
+  // 1.5.0: whose phone watches the place follows the task (another person, another list); the phones fetch their places again
+  if (placed) await places.picked(gc, ctx, place.pick);
+  if (placed || (r.place_json && set.length)) { await places.sync(gc, ctx, r.id); events.changed(gc, [...new Set([...before, ...after])], 'places'); }
   if (!sub && (next.title !== undefined || next.due !== undefined || set.some((c) => c.startsWith('assignee_id') || c.startsWith('list_id')))) await calsync.now(gc, ctx, r.id);
   return get(gc, ctx, r.id);
 }
@@ -427,9 +454,9 @@ async function complete(gc, ctx, id, b, opts = {}) {
         const base = r.remind_at && r.snoozed_at && r.due_at && r.due_time ? r.due_at : r.remind_at;
         const remind = base ? duty.shiftDays(base, shift, ctx.tz) : null;
         const ins = await store.run(gc, `INSERT INTO tasks (list_id, title, note, important, due_date, due_time, due_at, remind_at, repeat_json, assignee_id, position,
-          ext_dirty, created_by, created_at, updated_at, attached_list) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          ext_dirty, created_by, created_at, updated_at, attached_list, place_id, place_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [r.list_id, r.title, r.note, r.important, nextDate, r.due_time, dueAt(ctx, nextDate, r.due_time), remind, r.repeat_json, r.assignee_id, r.position,
-          twoWay ? 1 : 0, ctx.userId, ctx.now, ctx.now, r.attached_list || null]);
+          twoWay ? 1 : 0, ctx.userId, ctx.now, ctx.now, r.attached_list || null, r.place_id || null, r.place_json || null]);
         nextId = Number(ins.lastInsertRowid);
         await store.run(gc, `INSERT INTO tasks (list_id, parent_id, title, position, created_by, created_at, updated_at)
           SELECT list_id, ?, title, position, ?, ?, ? FROM tasks WHERE parent_id = ? AND deleted_at IS NULL`, [nextId, ctx.userId, ctx.now, ctx.now, r.id]);
@@ -440,6 +467,8 @@ async function complete(gc, ctx, id, b, opts = {}) {
     }
   });
   events.changed(gc, await lists.memberIds(gc, r.list_id), 'tasks');
+  // 1.5.0: a task with a place done (or open again): the phones drop (or take up) its places
+  if (r.place_json) events.changed(gc, await lists.memberIds(gc, r.list_id), 'places');
   if (!r.parent_id) await calsync.now(gc, ctx, [r.id, nextId]);
   const out = await get(gc, ctx, r.id, opts);
   if (nextId) out.next = (await get(gc, ctx, nextId, opts)).task;
@@ -471,6 +500,7 @@ async function remove(gc, ctx, id) {
     await fts.dropTask(gc, r.id);
   });
   events.changed(gc, await lists.memberIds(gc, r.list_id), 'tasks');
+  if (r.place_json) events.changed(gc, await lists.memberIds(gc, r.list_id), 'places');
   if (!r.parent_id && r.cal_event_id) await calsync.now(gc, ctx, r.id);
   return { ok: true };
 }

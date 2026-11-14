@@ -54,6 +54,8 @@ GET    me                       → { user, lang, today, time, timezone, feature
                                     features 1.2.0: listDays, shareRoles, groupEdit, deleteKeep, listIcons
                                     features 1.3.0: reminderActions, yesterdayOpen, taskCalendar; with
                                     calendar: { available, enabled, mine, name }, yesterday: { push, at } (see "1.3.0")
+                                    features 1.4.0: shoppingLists, taskList, familyShopping; 1.5.0: places, placeSearch with
+                                    places: { search, nearby, quiet, perTask, radius, family } (see "1.5.0")
 GET    nav?area=                → { area, smart: { myday, important, planned, assigned }, sources: [{ plugin, label, hint, open }],
                                     lists: [List], groups: [{ id, name, area, position, open }], notes: { total, notebooks: [Notebook], tags: [{ tag, count }] } }
 GET    views/<name>?area=       → { view, title, sections: [{ id, title, count, items: [Task | Item], collapsed? }], listdays? }
@@ -161,11 +163,123 @@ Attachment = { id, kind, refId, name | null, nameCipher, mime, bytes, encrypted,
 Rule  = ui/repeat.js
 ```
 
-Live updates: `gc.events` type `changed` `{ what: ['tasks' | 'notes' | 'items' | 'lists' | 'notebooks'] }` (merged per
+Live updates: `gc.events` type `changed` `{ what: ['tasks' | 'notes' | 'items' | 'lists' | 'notebooks' | 'shopping' (1.4.0) | 'places' (1.5.0)] }` (merged per
 second) and `vault` `{ vault, event: 'request' | 'approved', device }` — clients fetch again. Pushes: see [Pushes](#pushes).
 
 Opening: an item's `source.open` → apps `gatecontrol://plugin/<plugin>/<route>`, portal `GC.openPortal({ plugin,
 query: { open: route } })`; a note of Familie's notebooks is `{ plugin: 'gatecontrol-notizen', route: 'note/<id>' }`.
+
+## 1.5.0 — a task at a place
+
+Features `places`, `placeSearch` (check these words in `GET me`, never the version). `server/places.js`,
+`server/placesearch.js`, `server/placewords.js`, `migrations/007_places.sql`, `ui/places.js`.
+
+**The model.** A task can hang on a place: one place (`mode: 'place'` — one of „Meine Orte“, a place of the family, a
+hit of the place search, a pin on the map) or any place of a kind or name (`mode: 'any'` — „Jeder Lidl“). The **phone**
+watches the places (geofences) and shows the reminder itself; the server keeps the places, tells every phone which
+places to watch and what the reminder says, and never learns where a person is. The portal and Windows show the place;
+only a phone reminds.
+
+```
+Task.place = null | { mode: 'place' | 'any', id, name, address, lat, lon, radius, ref, own, trigger: 'enter' | 'exit', key, label,
+                      by, consent: 'accepted' | 'pending' | 'declined', watch, nearby, skipped, later }
+  key      'kind:<id>' (placewords.KINDS: diy, bakery, pharmacy, fuel, supermarket …) | 'name:<lower case name>' | null
+  watch    this person's phone watches it (the task is theirs and they agreed)
+  nearby   the task also speaks up at other places of its kind on the way (a key, on arriving, not „any“)
+POST | PATCH tasks { place: null | { placeId | placeClientId | familyId | lat, lon, name, address?, ref?, radius? | any: true,
+                                     key?, label?, trigger?, remember? } }
+  only { trigger } changes the trigger; remember: true makes the place the remembered one of its key; `base` does not know `place`
+POST tasks { text, place: 'auto' }    the place the line names is taken when it is decided and surely meant → `place` (as POST parse)
+POST tasks { text, place: {…} }       the title loses the place's words („beim Baumarkt Schrauben kaufen“ → „Schrauben kaufen“)
+POST parse → { parsed, attach, place: null | { via: 'own' | 'family' | 'kind' | 'address' | 'name', word, query, key, label, title,
+               certain, trigger, place: Place | { familyId, name, lat, lon, radius, family: true } | null, uses, options: [Place], search } }
+GET    places                  → { places: [Place], family: [{ familyId, name, lat, lon, radius }], favs: [{ key, label, placeId, uses }] }
+POST   places { name, lat, lon, address?, radius?, ref?, clientId? } → { place }     409 too_many (100)
+PATCH  places/<id> { name?, address?, lat?, lon?, radius?, named? } → { place }      DELETE places/<id> → { ok, gone? }
+PUT    places/favs { key, placeId | null } → { favs }
+POST   places/search { key | q, address?, near: { lat, lon } | nearPlaceId | nearFamilyId } → { key, label, kind, radiusKm, cell,
+               results: [{ ref, name, address, lat, lon, distanceM, minutes, placeId, fav, uses }] (≤ 10), any, approx, attribution }
+POST   places/watch { near?, budget? } → { enabled, max, perTask, refreshM, cell, nearby, quiet, search, dropped, fences: [{ id, ref, lat, lon,
+               radius, name, address, transitions, tasks: [{ taskId, listId, area, title, kind: 'place' | 'nearby', trigger, planned, tag,
+               important, due, notification: { title, body, collapseKey, actions: [{ id, label }] }, attachedList }] }] }
+POST   places/fired { taskId, fence, transition } → { notify, kind? | reason? }
+POST   tasks/<id>/place/skip { fence }      POST tasks/<id>/place/later { until? }      POST tasks/<id>/place/consent { accept }
+Place = { id, name, address, lat, lon, radius (50…2000 m, 150), named, ref ('osm:N|W|R<id>' | 'familie:<id>' | null), family, favFor?, uses?, updatedAt }
+me.places = { search: { state: 'on' | 'off' | 'unavailable', enabled, mine, service, radiusKm, decimals, attribution }, nearby, quiet, perTask, radius, family }
+```
+
+**The place a line names** is found by the server in what the parser left as the title (`placewords.detect`) — the
+parser `ui/quickparse.js` and `test/vectors/quickparse.json` are untouched (a test holds their checksums). In order:
+a place of „Meine Orte“ or of the family by its name („bei Oma“, „an der Schule“; „zu Hause“ is the place called so,
+else the family's home), an address („Ringstraße 21“), a kind of place by a fixed table of words (`KINDS`, German and
+English — with or without a preposition; without one `certain` is false), else the word after bei / beim / im /
+in der / an der / am / zu … as a name (after the weaker ones only a capitalised word; a stop list keeps „bei mir“,
+„am besten“, „im Garten“ out). The title loses the phrase when at least two words stay.
+
+**Remembered places.** Every choice of a place for a key is counted (`place_picks`); the remembered one (`fav`) is in
+`place.place` of POST parse without a search and first in the results, the other ones chosen before follow, then the
+rest by distance.
+
+### Place search
+
+Off unless the administrator chooses a service (setting `place_search`: `off` | `osm` | `own`); a person can switch it
+off for themselves (`prefs.places.search`). The phone never asks a map service itself.
+
+* **What goes out:** the search word (a kind as its Nominatim „special phrase“ in brackets, a name or an address as
+  written) and a box around the position **rounded to two decimals by the server** (about 1.1 km north–south, 0.7 km
+  east–west at 50° north) — whatever the device sent. No name, no device, no user id. The position is not written to
+  the database or the log; the cache is in memory, keyed by word and cell, not by person.
+* **`osm`:** `https://nominatim.openstreetmap.org/search` (plugin.json `permissions.network.internet`). Its
+  [usage policy](https://operations.osmfoundation.org/policies/nominatim/) applies: an absolute maximum of one request
+  a second for the whole application, a User-Agent that names the application, results cached, only searches a person
+  triggered, no auto-complete, no systematic queries; the service has no guarantee and may withdraw access. The plugin
+  keeps to it: one request at a time with 1.1 s between two starts, a cache (7 days, empty answers 6 hours, 500
+  entries), a limit of 30 searches an hour per person that really go out, 60 s of rest after a failure, a search only
+  on „Suchen“ / Enter or when a dialog is opened — never per keystroke. `POST places/watch` sends at most two searches
+  per call, for a coarser cell (0.05°) so that a phone moving through a town asks once.
+* **`own`:** a Nominatim of one's own behind the access target `places` (`permissions.network.homeTargets`,
+  `gc.net.fetchTarget('places', '/search?…')`, assigned under Zugriffsziele). The same limits; the public service's
+  policy does not apply there.
+* **How:** `q=[<phrase>]` (a kind) or the name, `viewbox` of ±4 km and, with fewer than three hits, ±15 km,
+  `bounded=1`, `limit=30`, `format=jsonv2`, `addressdetails=1`. Hits of a kind are filtered by its map tags
+  (`shop=doityourself` …), so „Restaurant Zum Baumarkt“ is no Baumarkt. An address: one request with the box as a
+  preference only. The phrases of `KINDS` were each tried against the public service once (November 2026).
+* **Distance and minutes** are from the rounded position; minutes are an estimate — straight line × 1.3 at 30 km/h, at
+  least one — no routing service is asked (`approx: true`). A device knows its own position and may sort again.
+* Codes: `403 module_off { reason: 'admin' | 'self' }`, `503 unavailable { reason: 'service' }` (the service failed,
+  or `own` without a target), `429 busy { retryAfter, reason?: 'limit' }`, `400 invalid { field: 'near' | 'key' | 'q' }`.
+
+### What a phone watches (`POST places/watch`)
+
+Android allows an app 100 watched places per device; Familie's place reminders and rule places share them. `max` is
+what the hub may use for this person: `100 − 10 (reserve) − what Familie's phones watch` (Familie's service
+`geofences`, 1.22.0), at most 60; 30 when Familie is there but older; and never more than `budget`, the room the phone
+itself reports. One fence per place however many tasks hang on it. Order: the tasks' own places first — the task due
+soonest first, then the important ones, then the newest — then, with `near` and the search, the nearest other places of
+each task's key (at most `perTask` = 5 a task; for `mode: 'any'` they are the places themselves, kind `place`). What
+does not fit is counted in `dropped`. A phone asks again when it moved more than `refreshM` (3 km) and on the event
+`places`. The fence id is the place's `ref` (`osm:…`) or `p:<place id>`; `ref` is the place's own (`familie:home`, `familie:place:<id>`:
+the same circle as Familie's home or rule place — an app that watches that one for Familie already may use it for both).
+
+`notification` is what the phone shows when the fence fires (the texts in the request's language): the task's own
+place — title the task, body „Angekommen: Baumarkt Nord · <list or shopping list with its open items>“, buttons
+[`open_list`,] `done`, `later`; another place of the kind — title „Baumarkt am Ring ist gleich hier“, body „Schrauben
+kaufen · geplant war Baumarkt Nord“, buttons `done`, `not_here`, `later`. The buttons are the phone's:
+`done` → `POST tasks/<id>/complete`, `not_here` → `POST tasks/<id>/place/skip { fence }`, `later` →
+`POST tasks/<id>/place/later`, `open_list` → the list `attachedList.uid`.
+
+`POST places/fired` before showing (when online): `{ notify: true, kind }` once per fence and three hours; another
+place of the kind at most once per task and three hours and not in the person's quiet hours (`prefs.places.quiet`,
+21:00–07:00) — else `{ notify: false, reason: 'recent' | 'quiet' | 'later' | 'skipped' | 'off' | 'done' | 'gone' |
+'transition' }`. Kept of it: which fence fired when (`tasks.place_state`) — no position.
+
+**Someone else's task.** The phone that watches is the one of the person whose task it is (assigned to, else who made
+it). A place set by another person is `consent: 'pending'` until that person agrees (push topic `shared`,
+`data.notizen { kind: 'place_consent', taskId, listId, area }`, buttons `place_accept` / `place_decline`, or
+`POST tasks/<id>/place/consent`); another place or another person asks again.
+
+The morning hint „Gestern offen geblieben“ names the place of a task instead of its list („Schrauben kaufen ·
+Baumarkt Nord“). Event `changed { what: ['places'] }`: fetch `places/watch` (and `places`) again.
 
 ## 1.4.0 — shopping lists, a list at a task
 
@@ -349,6 +463,7 @@ Topics `reminders` (a task's reminder), `shared` (a list or notebook shared with
 | `shared_list` | shared | `{ kind, listId, area, list }` | the list |
 | `shared_notebook` | shared | `{ kind, notebookId, area, vaultId?, notebook }` | the notebook (a Tresor: unlock first) |
 | `listday` | listday | `{ kind, listId, area, day, list }` | the list (1.2.0: once per list and day at `remind`, to the members with the card, only with open tasks) |
+| `place_consent` | shared | `{ kind, taskId, listId, area, task }` | the task (1.5.0: someone set a place for the person's task; buttons `place_accept` / `place_decline`) |
 | `vault_request` | vault | `{ kind, vaultId, notebookId, deviceId, area, vault, notebook, event: 'request' }` | the Tresor's approvals |
 
 1.3.0: `reminder` also carries `tag`, `remindAtMs`, `dueAt`, `late`, `snoozed` and the buttons `data.actions`; the new
@@ -370,7 +485,9 @@ push is tapped (`404` on `GET tasks/<id>`): the app says so and shows the list.
   notify: { reminders: true, shared: true, listday: true,   // 1.2.0: false = no push of that kind
             yesterday: true },                                // 1.3.0: the morning hint „Gestern offen geblieben“
   yesterdayAt: 'HH:MM' (07:30),                               // 1.3.0: when that hint comes
-  calendar: { tasks: true } }                                 // 1.3.0: false = my tasks are not written into my calendar in Mail
+  calendar: { tasks: true },                                  // 1.3.0: false = my tasks are not written into my calendar in Mail
+  places: { search: true, nearby: true,                       // 1.5.0: false = no place search for me / no hint at other places of a kind
+            quiet: { from: '21:00', to: '07:00' } | null } }  //        no such hint between these times (null: always)
 ```
 
 ## The other plugins (sources)
@@ -511,7 +628,8 @@ the server missed is sent late for up to 24 hours and then kept for „Gestern o
 morning hint „Gestern offen geblieben“ (who has something open is asked every 15 minutes, never per minute), the tasks
 whose event in Mail's calendar has to be looked at (a batch of 25), the morning pushes of list days (topic `listday`), notes whose `expiresAt` came, `notes_changed` to Familie, the sources (availability, due reconciliations
 within the budgets, done items without news after 36 h), the To Do import and the transition period; hourly the trash
-(tasks and notes after 30 days, with their attachments) and old „Mein Tag“ marks.
+(tasks and notes after 30 days, with their attachments), old „Mein Tag“ marks and (1.5.0) places no task and no choice
+needs any more (deleted ones at once, ones taken once after 30 days). A place search is never part of the background run.
 
 ## Speed
 

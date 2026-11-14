@@ -9,6 +9,8 @@ const DEFAULTS = {
   timezone: 'Europe/Berlin', notify_lang: 'de', sharing: 'all', vaults: true,
   source_familie: true, source_mail: true, source_drive: true, source_schule: true, source_alltag: true,
   import_mstodo: true, mstodo_sync: true, import_dsnote: true, attach_mb: 25, quota_mb: 2048, calendar_tasks: true,
+  // 1.5.0: the place search — off until the administrator chooses a service (server/placesearch.js)
+  place_search: 'off',
 };
 
 let cache = null;
@@ -21,6 +23,7 @@ async function get(gc) {
   for (const k of Object.keys(DEFAULTS)) if (raw[k] !== undefined && raw[k] !== null && typeof raw[k] === typeof DEFAULTS[k]) c[k] = raw[k];
   if (!tz.valid(c.timezone)) c.timezone = 'Europe/Berlin';
   if (!['all', 'groups', 'off'].includes(c.sharing)) c.sharing = 'all';
+  if (!['off', 'osm', 'own'].includes(c.place_search)) c.place_search = 'off';
   c.attach_mb = Math.min(100, Math.max(1, Math.round(c.attach_mb) || 25));
   c.quota_mb = Math.max(0, Math.round(c.quota_mb) || 0);
   cache = c;

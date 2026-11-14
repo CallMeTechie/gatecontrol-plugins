@@ -3287,6 +3287,21 @@
           }
         },
         {
+          "icon": "location",
+          "title": {
+            "de": "Ortssuche über OpenStreetMap",
+            "en": "Place search through OpenStreetMap"
+          },
+          "text": {
+            "de": "Aus, bis du sie einschaltest. Dann fragt dein Server mit Suchwort und einer auf etwa 1 km gerundeten Position; gespeichert wird davon nichts. Karten bei der Wahl des Orts",
+            "en": "Off until you switch it on. Then your server asks with the search word and a position rounded to about 1 km; nothing of it is stored. Maps when choosing a place"
+          },
+          "tag": {
+            "de": "Netzwerk",
+            "en": "Network"
+          }
+        },
+        {
           "icon": "data",
           "title": {
             "de": "Aufgaben und Notizen auf dem Server",

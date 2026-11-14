@@ -17,6 +17,7 @@
   var RP = window.GCRepeat;
   var VC = window.NotesVaultCrypto;
   var NSX = window.NotesNsx;
+  var PL = window.NAPlaces;
   var SOURCES = ['gatecontrol-familie', 'gatecontrol-mail', 'gatecontrol-drive', 'gatecontrol-schule', 'gatecontrol-alltag'];
   var COLORS = ['none', 'yellow', 'green', 'blue', 'pink', 'grey', 'orange', 'purple'];
   var COLOR_HEX = { none: 'transparent', yellow: '#fde68a', green: '#bbf7d0', blue: '#bfdbfe', pink: '#fbcfe8', grey: '#e5e7eb', orange: '#fed7aa', purple: '#ddd6fe' };
@@ -42,6 +43,7 @@
     lock: 'M6 11h12v10H6zM8 11V8a4 4 0 0 1 8 0v3',
     tag: 'M3 12V4h8l10 10-8 8zM7.5 8.5h.01',
     pin: 'M9 3h6l-1 6 4 4H6l4-4zM12 13v8',
+    place: 'M12 21s7-6 7-11a7 7 0 0 0-14 0c0 5 7 11 7 11zM12 12a2 2 0 1 0 0-4 2 2 0 0 0 0 4',
     trash: 'M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3',
     back: 'M15 18l-6-6 6-6',
     open: 'M14 4h6v6M20 4l-9 9M18 14v6H4V6h6',
@@ -711,6 +713,8 @@
       if (x.calendar && x.calendar.mine) meta.appendChild(h('span', { class: 'na-mi', title: T(x.calendar.state === 'pending' ? 'p.cal_pending' : 'p.cal_hint') }, [icon('cal', 13), h('span', { text: T('p.in_calendar') })]));
       // 1.4.0: the shopping list the task carries, and how far it is ticked
       if (x.attachedList) meta.appendChild(attachedChip(x.attachedList));
+      // 1.5.0: the place the task hangs on
+      if (x.place) meta.appendChild(h('span', { class: 'na-mi', title: PL.summary(x.place) }, [icon('place', 13), h('span', { text: x.place.name })]));
       if (x.hasNote) meta.appendChild(h('span', { text: T('p.has_note') }));
       if (x.attachments) meta.appendChild(h('span', { text: '📎 ' + x.attachments }));
     }
@@ -984,6 +988,26 @@
     return field(T('p.att_label'), h('span', { class: 'na-add' }, [sel, open]));
   }
 
+  /** 1.5.0 — in a task's details: the row „Ort“ („Baumarkt Nord · beim Ankommen“); a click opens the dialog (ui/places.js). */
+  function placeField(t) {
+    var p = t.place;
+    var open = h('button', { type: 'button', class: 'dp-btn dp-btn-sm na-place-btn', attrs: { 'aria-label': p ? T('pl.change', { name: p.name }) : T('pl.choose') }, on: { click: function () {
+      PL.choose({ place: p, onSave: function (arg) { patchTask(t, { place: arg }); } });
+    } } }, [icon('place', 15), h('span', { text: p ? PL.summary(p) : T('pl.choose') })]);
+    var box = h('div', null, [field(T('pl.field'), open)]);
+    if (p && p.consent === 'pending') {
+      // someone else's choice: the phone of the person whose task it is watches the place only after they agreed
+      var mine = t.assignee ? t.assignee.id === S.me.user.id : p.by !== S.me.user.id;
+      var answer = function (accept) { api('POST', 'tasks/' + t.id + '/place/consent', { accept: accept }).then(function () { reloadDetail(); soon(); }, fail); };
+      var yes = btn(T('n.b_accept'), function () { answer(true); }, { small: true, primary: true });
+      var no = btn(T('n.b_decline'), function () { answer(false); }, { small: true });
+      yes.setAttribute('data-keep', ''); no.setAttribute('data-keep', '');
+      box.appendChild(h('div', { class: 'dp-note' }, [icon('place', 16), h('span', { text: T(mine && p.by !== S.me.user.id ? 'pl.consent_me' : 'pl.consent_wait') }), mine && p.by !== S.me.user.id ? h('span', { class: 'na-add' }, [yes, no]) : null]));
+    } else if (p && p.consent === 'declined') box.appendChild(h('p', { class: 'dp-hint', text: T('pl.consent_no') }));
+    else if (p && p.nearby && S.me.places && S.me.places.nearby && S.me.places.search.state === 'on') box.appendChild(h('p', { class: 'dp-hint', text: T('pl.nearby_hint', { label: p.label || '' }) }));
+    return box;
+  }
+
   // ── quick entry ──────────────────────────────────────────
 
   function quickBox(l) {
@@ -993,17 +1017,33 @@
     // 1.4.0: the shopping list the line names („bei Lidl einkaufen“ → „Einkauf“) — asked of the server, the parser does not know it
     var att = { hint: null, forText: null, off: false, pick: null, timer: null };
     function attList() { return att.off ? null : att.pick || (att.hint && att.hint.list) || null; }
+    // 1.5.0: the place the line names („beim Baumarkt“, „bei Oma“) — from the same answer; decided ones (an own place,
+    // the remembered one of a kind) are taken, the others are a chip to choose from
+    var pl = { hint: null, off: false, pick: null };
+    function plArg() {
+      if (pl.off) return null;
+      if (pl.pick) return pl.pick.arg;
+      var x = pl.hint;
+      if (!x || !x.place || !x.certain) return null;
+      return x.place.familyId ? { familyId: x.place.familyId, trigger: 'enter' } : { placeId: x.place.id, key: x.key || undefined, trigger: 'enter' };
+    }
+    function plChoose() {
+      var x = pl.hint || {};
+      PL.choose({ place: null, none: false, hint: x.key || x.query ? { key: x.key || null, label: x.key ? x.label : null, query: x.query || '' } : null,
+        onSave: function (arg, name) { pl.pick = arg && (arg.placeId || arg.familyId || arg.any || arg.lat != null) ? { arg: arg, name: name } : null; pl.off = false; show(); input.focus(); } });
+    }
     function ask() {
       clearTimeout(att.timer);
       var s = input.value.trim();
-      if (!s) { att.hint = null; att.forText = null; att.off = false; att.pick = null; return; }
-      if (!shopNav().length) return;
+      if (!s) { att.hint = null; att.forText = null; att.off = false; att.pick = null; pl.hint = null; pl.off = false; pl.pick = null; return; }
       att.timer = setTimeout(function () {
         api('POST', 'parse', { text: s, area: S.area }).then(function (r) {
           if (input.value.trim() !== s) return;
           att.hint = r.attach || null;
           att.forText = s;
+          pl.hint = r.place || null;
           if (att.pick && !(att.hint && att.hint.lists.some(function (x) { return x.id === att.pick.id; }))) att.pick = null;
+          if (!pl.hint) { pl.pick = null; pl.off = false; }
           show();
         }, function () {});
       }, 350);
@@ -1035,6 +1075,17 @@
         });
         chips.appendChild(choose);
       }
+      // 1.5.0: the place
+      var px = pl.off ? null : pl.hint;
+      var xBtn = function () { return h('button', { type: 'button', class: 'na-chip-x', title: T('pl.chip_remove'), attrs: { 'aria-label': T('pl.chip_remove') }, on: { click: function (ev) { ev.stopPropagation(); pl.off = true; pl.pick = null; show(); input.focus(); } } }, icon('x', 12)); };
+      if (!pl.off && pl.pick) {
+        chips.appendChild(h('span', { class: 'na-chip', title: T('pl.chip_title') }, [icon('place', 13), h('button', { type: 'button', class: 'na-chip-t', text: pl.pick.name + ' · ' + T(pl.pick.arg.trigger === 'exit' ? 'pl.on_exit' : 'pl.on_enter'), on: { click: plChoose } }), xBtn()]));
+      } else if (px && px.place && px.certain) {
+        chips.appendChild(h('span', { class: 'na-chip', title: px.uses > 1 ? T('pl.usual', { label: px.label, n: px.uses }) : T('pl.chip_title') }, [icon(px.place.familyId === 'home' ? 'home' : 'place', 13),
+          h('button', { type: 'button', class: 'na-chip-t', text: px.place.name + ' · ' + T('pl.on_enter'), on: { click: plChoose } }), xBtn()]));
+      } else if (px) {
+        chips.appendChild(h('button', { type: 'button', class: 'na-chip is-plain', attrs: { 'aria-haspopup': 'dialog' }, on: { click: plChoose } }, [icon('place', 13), h('span', { text: T('pl.chip', { label: px.label }) })]));
+      }
       if (parsed.assignee) chips.appendChild(h('span', { class: 'na-chip', text: '@' + parsed.assignee.name }));
       else if (parsed.assigneeName) chips.appendChild(h('span', { class: 'na-chip is-plain', text: T('p.unknown_person', { name: parsed.assigneeName }) }));
     }
@@ -1048,11 +1099,15 @@
       if (al) body.attachedListId = al.id;
       // Enter before the server answered: it attaches the list itself when exactly one fits
       else if (!att.off && att.forText !== text && shopNav().length) body.attach = 'auto';
+      // 1.5.0: the place — what is chosen or decided; before the server answered it takes a decided one itself
+      var pa = plArg();
+      if (pa) body.place = pa;
+      else if (!pl.off && att.forText !== text) body.place = 'auto';
       if (S.view.kind === 'list' && !(parsed && (parsed.list || parsed.listName))) body.listId = S.view.id;
       if (S.view.kind === 'smart' && S.view.id === 'myday') body.myDay = true;
       if (S.view.kind === 'smart' && S.view.id === 'important') body.important = true;
       input.disabled = true;
-      api('POST', 'tasks', body).then(function () { input.value = ''; att.hint = null; att.forText = null; att.off = false; att.pick = null; show(); input.disabled = false; input.focus(); soon(); }, function (e) { input.disabled = false; fail(e); });
+      api('POST', 'tasks', body).then(function () { input.value = ''; att.hint = null; att.forText = null; att.off = false; att.pick = null; pl.hint = null; pl.off = false; pl.pick = null; show(); input.disabled = false; input.focus(); soon(); }, function (e) { input.disabled = false; fail(e); });
     });
     return h('div', { class: 'na-quick' }, [h('label', { class: 'na-quick-box' }, [icon('plus'), input, h('span', { class: 'na-kbd', text: T('p.kbd_new') })]), chips]);
   }
@@ -1197,6 +1252,8 @@
     card.appendChild(field(T('p.list'), ls));
     // 1.4.0: the shopping list the task carries („Einkauf 0/8“; all of it ticked completes the task)
     if (!t.parentId) card.appendChild(attachedField(t));
+    // 1.5.0: the place the task hangs on (the phone reminds on arriving or leaving)
+    if (!t.parentId) card.appendChild(placeField(t));
     // attachments
     card.appendChild(h('div', { class: 'na-lb', text: T('p.attachments') }));
     card.appendChild(attachmentList('task', t.id, t.attachmentList || []));
@@ -2198,6 +2255,8 @@
       swRow(T('p.notify_yesterday'), T('p.notify_yesterday_hint'), nt.yesterday !== false, function (v) { savePrefs({ notify: { yesterday: v } }); }),
       setRow(T('p.yesterday_at'), null, yAt),
     ]), h('p', { class: 'dp-hint', text: T('p.notify_hint') })]));
+    // 1.5.0: Orte — the person's switches of the place search and of the hints on the way, „Meine Orte“
+    if (S.me.places) PL.settings(wrap, savePrefs);
     // 1.3.0: Kalender — only while Mail offers it and the administrator has it on
     var cal = S.me.calendar;
     if (cal && cal.available && cal.enabled) {
@@ -2532,6 +2591,7 @@
   }
   document.addEventListener('visibilitychange', function () { if (document.hidden) { /* keep */ } });
   window.addEventListener('pagehide', lockAll);
+  PL.init({ h: h, T: T, icon: icon, btn: btn, ib: ib, clear: clear, api: api, fail: fail, toast: toast, dialog: dialog, closeDialog: closeDialog, state: function () { return S; }, rerender: function () { renderMain(); } });
   app().setAttribute('data-pane', 'list');
   load();
 }());
