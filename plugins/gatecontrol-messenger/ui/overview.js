@@ -188,6 +188,8 @@
   function brNote(b) {
     var h = b.host || {};
     if (!b.enabled) return null;
+    // 1.14.0: the main switch alone starts no bridge — say so instead of "starting …"
+    if (!(b.networks || []).some(function (n) { return n.enabled; })) return T('admin.br_need_network');
     if (h.error === 'compose_missing') return T('admin.br_err_compose');
     if (h.error === 'config_missing') return T('admin.br_err_config');
     if (h.error === 'start_failed') return T('admin.br_err_start');
@@ -195,7 +197,18 @@
     if (h.state !== 'running') return T('admin.br_starting_hint');
     var old = (b.networks || []).filter(function (n) { return n.state === 'running' && n.outdated; })[0] || (h.homeserver && h.homeserver.running && h.homeserver.outdated ? h.homeserver : null);
     if (old) return T('admin.br_outdated', { have: old.version || '?', want: old.wantVersion || '?' });
+    // 1.14.0: the way of the messages (GateControl with gc.bridges version 3: status().messages)
+    if (!b.messages) return T('admin.br_need_server');
+    if (b.messages.relay === 'missing') return T('admin.br_err_relay');
+    if (b.messages.relay === 'stopped') return T('admin.br_relay_stopped');
     return null;
+  }
+  /** 1.14.0: when the bridges last delivered something and what waits to be filed — numbers only. */
+  function brFlow(b) {
+    var m = b.messages;
+    if (!b.enabled || !m || !(b.networks || []).some(function (n) { return n.state === 'running'; })) return null;
+    if (!m.lastEventAt) return T('admin.br_flow_none');
+    return T('admin.br_flow', { time: new Date(m.lastEventAt).toLocaleString(M.LOCALE, { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }), pending: m.pending || 0 });
   }
   // 1.13.0: what `update.sh bridges-probe` measured on the server (numbers only), or how to measure — the limits in
   // docker-compose.yml are upper bounds nobody measured yet, so no need is claimed here
@@ -259,6 +272,10 @@
     var n = $('#ms-br-note');
     n.hidden = !note;
     n.textContent = note || '';
+    var flow = brFlow(b);
+    var f = $('#ms-br-flow');
+    f.hidden = !flow;
+    f.textContent = flow || '';
     var probe = brProbe(b);
     var pr = $('#ms-br-probe');
     pr.hidden = !probe;

@@ -18,12 +18,16 @@
 //   action_failed       a home action run from a chat did not succeed (1.4.0; the target's code in detail)
 //   notice_failed       a notification of GateControl could not be put into a chat (1.6.0; it went to the inbox)
 //   group_chat_failed   the chat of a GateControl group could not be kept in step (1.9.0; group id and code in detail)
+//   bridge_refused      GateControl or a bridge refused a step of linking (1.12.0; the code in detail)
+//   bridge_send_failed  a message of a bridged chat did not go out (1.14.0; the bridge's reason as a word in detail)
+//   bridge_event_failed something a bridge delivered could not be filed (1.14.0; the code in detail)
+//   bridge_event_locked something arrived for a child whose parents have not allowed the service — dropped (1.14.0; a count)
 
 const store = require('./store');
 
 const MERGE_MS = 10 * 60000;
 const KEEP_MS = 30 * 86400000;
-const CODES = ['push_rate_limit', 'push_failed', 'events_rate_limit', 'events_failed', 'media_claim_failed', 'media_delete_failed', 'decrypt_failed', 'service_refused', 'job_failed', 'action_failed', 'notice_failed', 'group_chat_failed'];
+const CODES = ['push_rate_limit', 'push_failed', 'events_rate_limit', 'events_failed', 'media_claim_failed', 'media_delete_failed', 'decrypt_failed', 'service_refused', 'job_failed', 'action_failed', 'notice_failed', 'group_chat_failed', 'bridge_refused', 'bridge_send_failed', 'bridge_event_failed', 'bridge_event_locked'];
 const LEVEL = { push_rate_limit: 'limit', events_rate_limit: 'limit' };
 
 /** Record one entry; never throws. `detail` must not carry content (a code, a count, a plugin id). */

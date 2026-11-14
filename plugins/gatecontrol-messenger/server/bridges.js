@@ -257,6 +257,13 @@ async function remember(gc, userId, net, logins, now) {
   });
 }
 
+/** 1.14.0: ask the bridge for the viewer's logins on one network and keep what it says (their own request must be in flight). */
+async function refresh(ctx, net) {
+  const b = api(ctx.gc);
+  if (!b || !NETWORKS.includes(net)) return;
+  await remember(ctx.gc, ctx.viewer, net, await b.logins(ctx.viewer, net), ctx.now);
+}
+
 /** GET bridges — the viewer's own state. Asks the bridge only for networks that run. */
 async function mine(ctx) {
   const s = await hostStatus(ctx.gc);
@@ -400,4 +407,4 @@ async function route(ctx, req, seg) {
   throw fail('not_found');
 }
 
-module.exports = { route, service, offered, adminView, adminSet, mine, allowed, api, NETWORKS, FLOWS };
+module.exports = { route, service, offered, adminView, adminSet, mine, allowed, refresh, api, NETWORKS, FLOWS };

@@ -19,6 +19,7 @@ const people = require('./people');
 const messages = require('./messages');
 const config = require('./config');
 const social = require('./social');
+const bridgechats = require('./bridgechats');
 const { fail, posInt, text, userIds, iso, parseIso } = require('./util');
 
 const GROUP_MAX = 256;
@@ -39,6 +40,9 @@ async function access(ctx, idRaw) {
   if (!id) throw fail('not_found');
   const conv = await getConv(ctx.gc, id);
   if (!conv) throw fail('not_found');
+  // 1.14.0: a bridged chat exists only for a client that says it knows them (?bridged=1) — an older app would show
+  // it as a chat with a deleted account
+  if (conv.bridge_net && !ctx.bridged) throw fail('not_found');
   const me = await store.one(ctx.gc, 'SELECT * FROM members WHERE conv_id = ? AND user_id = ? AND left_at IS NULL', [id, ctx.viewer]);
   if (!me) throw fail('not_found');
   return { conv, me, members: await membersOf(ctx.gc, id) };
@@ -77,12 +81,16 @@ async function receipts(ctx, conv, members) {
 /** The conversation as the viewer sees it. */
 async function view(ctx, conv, me, members) {
   const isGroup = conv.kind === 'group';
+  // 1.14.0: a chat over a bridge — one member (the viewer), the other side are contacts, not accounts
+  const bridged = !!conv.bridge_net;
+  const bridge = bridged ? await bridgechats.convInfo(ctx, conv) : null;
   const peerRow = isGroup ? null : members.find((m) => m.user_id !== ctx.viewer) || null;
   const peerId = peerRow ? peerRow.user_id : null;
   const peer = peerId ? people.face(peerId, ctx.users) : null;
   const rc = await receipts(ctx, conv, members);
   const last = await messages.lastVisible(ctx.gc, me);
   const prefs = await people.prefsOf(ctx.gc, [ctx.viewer]);
+  if (bridged) Object.assign(rc, await bridgechats.marksFor(ctx.gc, conv.id, prefs.get(ctx.viewer)));
   const viewerTyping = (prefs.get(ctx.viewer) || {}).typing !== false;
   const isAdmin = me.role === 'admin';
   const managed = conv.managed_by || null;
@@ -97,7 +105,7 @@ async function view(ctx, conv, me, members) {
   return {
     id: conv.id,
     kind: conv.kind,
-    title: isGroup ? titleOf(conv) : (peer && peer.name),
+    title: isGroup || bridged ? titleOf(conv) : (peer && peer.name),
     peer: peer ? { ...withPresence(peer), blocked: iBlocked } : null,
     avatarUrl,
     avatarMediaId: isGroup ? conv.avatar_media_id || null : null,
@@ -106,6 +114,8 @@ async function view(ctx, conv, me, members) {
     // 1.6.0: Familie's group is pinned in the list (under "GateControl"); a notice channel of the chat sink names its source
     listPinned: managed === FAMILIE && conv.managed_key === 'family',
     notice: noticeOf(conv),
+    // 1.14.0: { network, label, state: ok | off | unreachable | logged_out | unlinked | locked, closed, supports: [...] } — null for a chat inside GateControl
+    bridge,
     // 1.9.0: the chat of a GateControl group (server/groupchats.js) → that group's id, else null
     coreGroupId: managed === 'gatecontrol-messenger' && /^group:\d{1,15}$/.test(conv.managed_key || '') ? Number(conv.managed_key.slice(6)) : null,
     disappearingS: conv.disappearing_s,
@@ -125,7 +135,10 @@ async function view(ctx, conv, me, members) {
     archived: !!me.archived,
     pinned: await require('./tools').pinnedFor(ctx, conv, me),
     nextEvent: await require('./eventmsg').nextEvent(ctx, me),
-    can: {
+    can: bridged ? {
+      // only text crosses the bridge, and only while the account is linked and the bridge runs
+      send: bridge.state === 'ok' && !bridge.closed, pin: true, editInfo: false, manageMembers: false, leave: false, setDisappearing: false,
+    } : {
       send: !conv.readonly && (isGroup || !!(peer && !peer.gone && !iBlocked)),
       pin: !conv.readonly && (!managed || isAdmin),
       editInfo: isGroup && !managed && !conv.readonly,
@@ -146,6 +159,8 @@ async function list(ctx, query) {
   for (const me of mine) {
     const conv = await getConv(ctx.gc, me.conv_id);
     if (!conv) continue;
+    // 1.14.0: bridged chats only for clients that know them, and only once something was said in them
+    if (conv.bridge_net && (!ctx.bridged || !conv.last_msg_id)) continue;
     // a direct chat without a message is shown to the person who opened it only
     if (conv.kind === 'direct' && !conv.last_msg_id && conv.created_by !== ctx.viewer) continue;
     if (since != null && conv.updated_at <= since && (me.updated_at || 0) <= since && me.joined_at <= since) continue;
@@ -276,6 +291,8 @@ async function patch(ctx, conv, me, members, body) {
   }
   const shared = ['title', 'avatarMediaId', 'disappearingS', 'add', 'remove', 'role'].filter((k) => b[k] !== undefined);
   if (!shared.length) return getConv(ctx.gc, conv.id);
+  // 1.14.0: title, picture and members of a bridged chat belong to the other messenger; nothing disappears by itself there
+  if (conv.bridge_net) throw fail('bridge_text_only');
   if (conv.readonly) throw fail('readonly');
   // ── disappearing messages (every member, direct chats too) ──
   if (b.disappearingS !== undefined) {

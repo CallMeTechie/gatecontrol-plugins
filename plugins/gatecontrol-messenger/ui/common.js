@@ -30,7 +30,10 @@
   /** API of this plugin through the parent page (session + CSRF are added there). */
   function api(method, path, body) {
     if (!window.GC) return Promise.reject(new Error('no bridge'));
-    return window.GC.call(method, String(path).replace(/^\/+/, ''), body);
+    // 1.14.0: this page knows chats over a bridge — without the mark the API leaves them out (README "App-API")
+    var p = String(path).replace(/^\/+/, '');
+    if (p.indexOf('admin/') !== 0 && p.indexOf('bridged=') < 0) p += (p.indexOf('?') < 0 ? '?' : '&') + 'bridged=1';
+    return window.GC.call(method, p, body);
   }
   function errCode(e) { return (e && e.data && e.data.code) || null; }
   function errText(e) {

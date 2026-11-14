@@ -55,6 +55,10 @@ const STATUS = {
   bridge_failed: 502,
   bridge_locked: 403,
   consent_required: 409,
+  // 1.14.0: a bridged chat whose account is not linked (any more) — the history stays, sending needs a new link
+  bridge_unlinked: 409,
+  // 1.14.0: only text crosses a bridge for now (no files, no rich kinds, no changes to title or members)
+  bridge_text_only: 409,
   internal: 500,
 };
 

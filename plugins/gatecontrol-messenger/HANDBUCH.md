@@ -1,4 +1,4 @@
-<!-- version: 1.13.0 -->
+<!-- version: 1.14.0 -->
 # Messenger
 
 ## Was das Plugin kann
@@ -67,6 +67,16 @@ Den führt das Plugin Familie (Seite „Funktionen“ › Messenger-Gruppe).
 
 **Alte Nachrichten sind weg.**
 Der Administrator hat eine Aufbewahrung eingestellt, oder der Chat ist selbstlöschend.
+
+## Neu in 1.14.0
+
+- **Chats über WhatsApp:** Hast du unter „Verknüpfte Dienste“ dein WhatsApp-Konto verknüpft, erscheint ein Chat mit einem Kontakt oder einer Gruppe in deiner Chatliste, sobald dort eine neue Nachricht eintrifft. Am Profilbild steht das Kennzeichen „WA“; über der Liste kannst du nach Dienst filtern.
+- **Nur du** siehst diese Chats – kein anderes Familienmitglied und kein Administrator.
+- **Was geht:** Text, Antworten, Reaktionen, Bearbeiten, Löschen für alle, Lesebestätigung und „schreibt …“. Unter deiner Nachricht steht, ob sie gesendet, zugestellt oder gelesen wurde – oder nicht gesendet, mit Grund und „Erneut senden“.
+- **Was noch nicht geht:** Bilder, Videos, Sprachnachrichten und Dateien. Kommt so etwas an, steht im Chat eine Zeile wie „Bild – folgt; in WhatsApp ansehen“. Abstimmungen, Termine, Haus-Aktionen, Karten und Standort gibt es in diesen Chats nicht.
+- **Wichtig:** Diese Chats laufen über WhatsApp und nicht nur über deinen Server. Die Verschlüsselung von WhatsApp endet an der Brücke neben deinem GateControl-Server.
+- **Trennen** unter „Verknüpfte Dienste“ beendet die Zustellung; die Chats bleiben lesbar. Kinder brauchen weiter die Freigabe der Eltern.
+- **Für Administratoren:** Auf „Übersicht“ erst den Hauptschalter der Brücken einschalten, dann unter „3 · Welche Dienste?“ jeden Dienst einzeln.
 
 ## Neu in 1.13.0
 

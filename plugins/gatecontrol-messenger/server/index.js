@@ -70,8 +70,10 @@ function errorResponse(e, lang) {
 }
 
 /** The request context of a chat call. */
-async function context(gc, user, now, lang) {
+async function context(gc, user, now, lang, query, body) {
   const ctx = { gc, viewer: user ? user.id : null, now, lang: lang === 'en' ? 'en' : 'de', users: await people.users(gc, now), cfg: await config.load(gc), portal: !(user && user.app === true), box: live.outbox() };
+  // 1.14.0: the client knows chats over a bridge (?bridged=1 on its calls) — without it such a chat does not exist
+  ctx.bridged = !!(query && typeof query === 'object' && String(query.bridged) === '1') || !!(body && typeof body === 'object' && !Array.isArray(body) && body.bridged === true);
   // 1.4.0: pictures of people whose avatar privacy leaves the viewer out are not handed out
   if (ctx.viewer != null) ctx.users = social.maskUsers(await social.load(ctx), ctx.users, ctx.viewer);
   return ctx;
@@ -88,6 +90,13 @@ function chatViewer(user) {
   if (user.kiosk === true) return 'forbidden';
   if (user.loggedIn !== true) return 'login_required';
   return null;
+}
+
+/** Fetch and file what the bridges delivered (and their live signals); events and pushes go out per batch. */
+function pumpBridges(gc, ephemeral) {
+  const bridgechats = require('./bridgechats');
+  if (!bridgechats.api(gc)) return Promise.resolve({ filed: 0 });
+  return bridgechats.pump(gc, async () => { const c = await context(gc, null, Date.now(), 'de'); c.portal = false; return c; }, (c) => api.flush(c), ephemeral);
 }
 
 module.exports = {
@@ -108,7 +117,21 @@ module.exports = {
       const ctx = await context(gc, null, Date.now(), 'de');
       if (await require('./familie').removeNoticeChannels(gc, ctx)) await api.flush(ctx);
     } catch (e) { gc.log.warn('removing familie notice channels failed', (e && (e.code || e.message)) || 'error'); }
+    // 1.14.0: what the bridges delivered while the plugin was not running
+    require('./bridgechats')._reset();
+    pumpBridges(gc).catch(() => {});
     gc.log.info('messenger started', gc.plugin.version);
+  },
+
+  /**
+   * 1.14.0 (GateControl with gc.bridges version ≥ 3): the bridges delivered something — { pending, ephemeral: [typing,
+   * read receipts] }. Fetched, filed into the chats of the people it belongs to, acknowledged (bridgechats.js). Never throws.
+   */
+  async bridgeEvents(payload, gc) {
+    try {
+      await ensureKey(gc);
+      await pumpBridges(gc, payload && Array.isArray(payload.ephemeral) ? payload.ephemeral : []);
+    } catch (e) { gc.log.warn('bridgeEvents failed', (e && (e.code || e.message)) || 'error'); }
   },
 
   async request(req, gc) {
@@ -128,7 +151,7 @@ module.exports = {
         if (req.user && req.user.kiosk === true && Number.isSafeInteger(req.user.id)) await store.tx(gc, () => people.markKiosk(gc, req.user.id, now));
         return errorResponse({ code: refusal }, lang);
       }
-      const ctx = await context(gc, req.user, now, lang);
+      const ctx = await context(gc, req.user, now, lang, req.query, req.body);
       if (!ctx.users.has(ctx.viewer)) return errorResponse({ code: 'forbidden' }, lang);
       await store.tx(gc, () => people.touch(gc, req.user, lang, now));
       let res;
@@ -296,6 +319,8 @@ module.exports = {
   async tick(gc) {
     await ensureKey(gc);
     const out = await jobs.tick(gc, Date.now());
+    // 1.14.0: the net under the hook bridgeEvents — whatever the bridges delivered and nobody fetched yet
+    try { await pumpBridges(gc); await require('./bridgechats').sweep(gc, Date.now()); } catch (e) { gc.log.warn('bridge events tick failed', (e && (e.code || e.message)) || 'error'); }
     // 1.9.0: the group chats of GateControl groups — after a start and every 6 hours
     try { await groupchats.tick(gc, Date.now()); } catch (e) { gc.log.warn('group chats tick failed', (e && (e.code || e.message)) || 'error'); }
     return out;

@@ -352,3 +352,27 @@ button.ms-loc:hover .ms-locmap{filter:brightness(1.05)}
 @keyframes ms-brp-pulse{0%,100%{opacity:.25}50%{opacity:1}}
 @media (prefers-reduced-motion:reduce){.ms-brp-dot{animation:none}}
 @media (max-width:420px){.ms-brp-digit{width:28px;height:40px;font-size:18px}.ms-brp-code{gap:4px}}
+.ms-av-wrap{position:relative;display:inline-flex;flex:none}
+.ms-net{position:absolute;right:-3px;bottom:-3px;min-width:18px;height:18px;padding:0 3px;border-radius:9px;border:2px solid var(--surface);background:var(--muted);color:var(--surface);font-size:9px;font-weight:800;line-height:14px;text-align:center;letter-spacing:.02em}
+.ms-net-whatsapp{background:#1f8f5a;color:#fff}
+.ms-bridgebar{display:flex;flex-direction:column;border-bottom:1px solid var(--line);background:var(--surface-2)}
+.ms-bridgebar[hidden]{display:none}
+.ms-bridge-strip,.ms-bridge-state{display:flex;align-items:flex-start;gap:8px;padding:7px 14px;font-size:12.5px;line-height:1.4;color:var(--muted)}
+.ms-bridge-strip svg,.ms-bridge-state svg{flex:none;margin-top:2px}
+.ms-bridge-strip span,.ms-bridge-state span{flex:1;min-width:0}
+.ms-bridge-state{color:var(--text);border-bottom:1px solid var(--line)}
+.ms-bridge-state.is-warn{background:color-mix(in srgb,var(--warn) 14%,transparent)}
+.ms-bridge-state.is-warn svg{color:var(--warn)}
+.ms-bridge-state .btn{flex:none}
+.ms-bridge-first{padding:12px 14px;font-size:13px;line-height:1.45;display:flex;flex-direction:column;gap:6px;align-items:flex-start}
+.ms-bridge-first p{margin:0;color:var(--muted)}
+.ms-bridge-first ul{margin:0;padding-left:18px;color:var(--muted)}
+.ms-linkbtn{flex:none;border:0;background:none;padding:0;color:var(--accent);font:inherit;font-weight:600;cursor:pointer;text-decoration:underline}
+.ms-ph{display:flex;align-items:flex-start;gap:6px;font-size:13px;font-style:italic;color:var(--muted)}
+.ms-ph svg{flex:none;margin-top:2px}
+.ms-msg.is-out .ms-ph{color:inherit;opacity:.85}
+.ms-failed{display:flex;flex-wrap:wrap;gap:4px 10px;margin-top:6px;font-size:12px;font-weight:600;color:var(--crit)}
+.ms-msg.is-out .ms-failed{color:inherit}
+.ms-msg.is-out .ms-failed .ms-linkbtn{color:inherit}
+.ms-meta .is-failed{color:var(--crit)}
+.ms-msg.is-out .ms-meta .is-failed{color:inherit}

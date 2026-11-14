@@ -991,6 +991,67 @@ Testing: `tools/testing/mock-bridges.js` stands in for GateControl and for the
 bridge (`createHost(dir, { bridges: … })`, `host.bridges.confirm(processId)` …);
 `test/bridges.test.js`.
 
+## Chats over a bridge (since 1.14.0)
+
+GateControl with `gc.bridges` version ≥ 3 (a preview) delivers what a linked
+account receives at the outside messenger; `server/bridgechats.js` files it
+into chats (migration 007) and sends the person's answers out. Without such a
+server nothing of this exists.
+
+* A bridged chat is a conversation with **one** member — the linked person —
+  and `bridge` set. Nobody else has a member row, so no other member of the
+  household and no administrator can read it, gets an event or a push.
+* It is listed once it has a message (no history at linking).
+* **Clients must say that they know such chats:** every call carries
+  `?bridged=1` (or `"bridged": true` in the body — the buttons of a push).
+  Without it bridged chats are missing from `GET conversations` and every
+  route on one answers `404 not_found` — an app that does not know them would
+  show a chat with a deleted account.
+* `GET me` `features.bridge_chats: true` only for people who have such a chat
+  (an older app shows its "newer version" hint to exactly these people).
+
+`conversation.bridge`: `null`, or `{ network: "whatsapp", label, state: "ok" |
+"unreachable" | "logged_out" | "unlinked" | "locked" | "off", closed, supports:
+["text", "reply", "reaction", "edit", "delete", "read", "typing"] }`; `peer`
+null, `title` the contact's or group's name, `can.send` only with `state: "ok"`
+and not `closed`.
+
+`message.bridge`: `null`, or `{ sender: { contactId, name } | null, remote,
+state: "pending" | "sent" | "delivered" | "read" | "failed" | null, reason,
+placeholder: { kind, name } | null }`. A contact's message has `senderId:
+null` and `via: "bridge:<network>"`; `remote` marks what the person wrote in
+the messenger's own app; `placeholder` stands for a file or a kind that does
+not cross yet (`image`, `video`, `audio`, `voice`, `file`, `sticker`,
+`location`, `unsupported`). `status` of an own message: `sending`, `sent`,
+`delivered`, `read`, `failed`. `reactions[].contactIds` lists contacts.
+
+| Route | In a bridged chat |
+|---|---|
+| `POST conversations/:id/messages` | `kind: "text"` only (with `replyTo`); anything else `409 bridge_text_only`, nothing stored. The message goes to the bridge after the commit; the answer carries what became of it |
+| `POST messages/:id/resend` | an own message that failed, again → `{ message }` |
+| `PATCH messages/:id`, `DELETE messages/:id?for=all`, `PUT messages/:id/reaction` | go to the other messenger first; refused there, nothing changes here |
+| `POST conversations/:id/read`, `…/typing` | also told to the other side, for people who share read receipts / typing |
+| `PATCH conversations/:id` | `mutedUntil`, `notify` only |
+
+Codes: `bridge_text_only` 409, `bridge_unlinked` 409 (`reason`), `bridge_off`
+409, `bridge_unreachable` 503, `bridge_failed` 502 (`reason`), `bridge_locked`
+403. There is no queue: with the bridge away nothing is taken.
+
+Events: `message.new` with `bridge`, `message.update` with `status` or
+`reactions: true`, `typing` `{ conversationId, userId: null, contacts: [{
+contactId, name }], until }`, `read` with `userId: null`,
+`conversation.update` reasons `bridge` and `title`. Push: like a normal chat's,
+to the one person; `data.bridge`, `data.sender.id` `"ext-<contactId>"`; the
+actions carry `bridged: true` in their body.
+
+In: `gc.bridges.events.pull` → filed in one transaction per batch →
+`events.ack`; woken by the hook `bridgeEvents`, and pulled again in every
+background run. The bridge's id of a message is unique per chat (`ext_event`),
+so an event that arrives twice changes nothing; what arrives before its
+message waits in `bridge_pending` (a day). Events for a child without the
+parents' permission are dropped. Tests: `test/bridgechats.test.js` against the
+mock host's `gc.bridges` version 3 (`tools/testing/mock-bridges.js`).
+
 ## Services (for other plugins)
 
 `gc.services.call({ plugin: 'gatecontrol-messenger', service, userId?, payload })`
