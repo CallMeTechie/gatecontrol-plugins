@@ -178,6 +178,8 @@
   // ── 1.12.0: bridges to other messengers (a GateControl that offers gc.bridges; hidden otherwise) ──
   var brBusy = false;
   function brState(n) {
+    // 1.13.0: runs, but with another image than GateControl pins
+    if (n.state === 'running' && n.outdated) return { text: T('admin.br_state_outdated'), cls: ' is-limit' };
     if (n.state === 'running') return { text: T('admin.br_state_running'), cls: '' };
     if (n.state === 'starting') return { text: T('admin.br_state_starting'), cls: ' is-limit' };
     if (n.state === 'failed') return { text: T('admin.br_state_failed'), cls: ' is-error' };
@@ -187,10 +189,30 @@
     var h = b.host || {};
     if (!b.enabled) return null;
     if (h.error === 'compose_missing') return T('admin.br_err_compose');
+    if (h.error === 'config_missing') return T('admin.br_err_config');
     if (h.error === 'start_failed') return T('admin.br_err_start');
     if (h.script && h.script.host != null && h.script.host < h.script.needed) return T('admin.br_err_script', { have: h.script.host, need: h.script.needed });
     if (h.state !== 'running') return T('admin.br_starting_hint');
+    var old = (b.networks || []).filter(function (n) { return n.state === 'running' && n.outdated; })[0] || (h.homeserver && h.homeserver.running && h.homeserver.outdated ? h.homeserver : null);
+    if (old) return T('admin.br_outdated', { have: old.version || '?', want: old.wantVersion || '?' });
     return null;
+  }
+  // 1.13.0: what `update.sh bridges-probe` measured on the server (numbers only), or how to measure — the limits in
+  // docker-compose.yml are upper bounds nobody measured yet, so no need is claimed here
+  function brProbe(b) {
+    var h = b.host || {};
+    if (!b.enabled || !h.limitsProvisional) return null;
+    var p = h.probe;
+    if (!p) return T('admin.br_limits');
+    var date = new Date(p.at).toLocaleString(M.LOCALE, { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+    if (p.result !== 'ok') return T('admin.br_probe_failed', { date: date, result: p.result || '?' });
+    var label = function (k) { return k === 'hs' ? T('admin.br_probe_hs') : (/-relay$/.test(k) ? T('admin.br_probe_relay') : T('admin.br_net_' + k)); };
+    var rows = Object.keys(p.services || {}).map(function (k) {
+      var x = p.services[k];
+      if (!x.running || x.memMb == null) return T('admin.br_probe_row_down', { name: label(k) });
+      return T('admin.br_probe_row', { name: label(k), mem: x.memMb, peak: x.memPeakMb != null ? x.memPeakMb : x.memMb, written: x.writtenKb != null ? M.bytes(x.writtenKb * 1024) : '?' });
+    });
+    return T('admin.br_probe', { date: date, seconds: p.windowSeconds || '?', rows: rows.join(' · ') });
   }
   function gb(mb) { return (Math.round(mb / 102.4) / 10).toLocaleString(M.LOCALE) + ' GB'; }
   function setBr(patch) {
@@ -237,6 +259,10 @@
     var n = $('#ms-br-note');
     n.hidden = !note;
     n.textContent = note || '';
+    var probe = brProbe(b);
+    var pr = $('#ms-br-probe');
+    pr.hidden = !probe;
+    pr.textContent = probe || '';
   }
 
   function load() {

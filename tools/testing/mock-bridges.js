@@ -17,6 +17,11 @@
 //   host.bridges.setHost({ state, error, running, memMb })   what update.sh reported
 //   host.bridges.setHost({ bridgeDown: true })   reported as running, but the bridge itself does not answer
 //   host.bridges.oddStep = 'webauthn'        the next login starts with a step GateControl does not offer
+//   host.bridges.setHost({ outdated: true })     the bridge runs an older image than GateControl pins (networks[].outdated)
+//   host.bridges.setHost({ probe: {…} })         what `update.sh bridges-probe` measured (status().host.probe)
+//   host.bridges.acting(userId, fn)          run fn while that person has a changing request to ANOTHER plugin in
+//                                            flight (the Familie page calling this plugin's service) — unlinkFor
+//   createHost(dir, { bridges: { …, version: 1 } })   a GateControl whose gc.bridges has no unlinkFor yet (1.273.x)
 //   host.bridges.state                       { enabled, networks, logins: Map userId → [...], processes: Map, log: [{ op, … }] }
 //
 // Like the host: status() anywhere; configure() only inside a changing request of an administrator (ERR_NOT_PERSON /
@@ -24,6 +29,9 @@
 // request, the rest a changing one) — else ERR_NOT_PERSON. A bridge that is off → ERR_BRIDGES_UNAVAILABLE (reason
 // 'off' / 'preview_off'), one that does not run → ERR_BRIDGE_UNREACHABLE ('not_running'); a refusal of the bridge →
 // ERR_BRIDGE with a reason ('not_found', 'm_bad_json', 'fi_mau_whatsapp_login_timeout', 'unsupported_step').
+// unlinkFor(userId, network, actor) (version 2): the one call for somebody else — it only ends links; `actor` must be
+// another person with a changing request in flight right now (here or, with acting(), elsewhere), the target is
+// never an administrator (ERR_BRIDGES_DENIED); logged as { op: 'unlink_for', userId, by, network, logins }.
 
 const NETWORKS = ['whatsapp'];
 const ID_RE = /^[A-Za-z0-9._:=+-]{1,128}$/;
@@ -41,9 +49,10 @@ function install({ opts, perms, enabledUser, hostError, personCtx }) {
     preview: !(o && o.preview === false),
     enabled: !!(o && o.enabled),
     networks: { whatsapp: !!(o && o.networks && o.networks.whatsapp) },
-    host: { state: o && o.running ? 'running' : null, error: null, running: !!(o && o.running), memMb: o && o.running ? 88 : null },
-    logins: new Map(), processes: new Map(), log: [], seq: 0, oddStep: null,
+    host: { state: o && o.running ? 'running' : null, error: null, running: !!(o && o.running), memMb: o && o.running ? 88 : null, outdated: false, probe: null },
+    logins: new Map(), processes: new Map(), log: [], seq: 0, oddStep: null, elsewhere: new Map(),
   };
+  const version = o && o.version === 1 ? 1 : 2;
 
   const err = (code, message, reason) => { const e = hostError(code, message); if (reason) e.reason = reason; return e; };
   const need = () => { if (perms.bridges !== true) throw hostError('ERR_BRIDGES_DENIED', 'this plugin has no bridges permission'); };
@@ -58,11 +67,16 @@ function install({ opts, perms, enabledUser, hostError, personCtx }) {
       networks: NETWORKS.map((id) => {
         let state = 'off';
         if (st.enabled && st.networks[id]) state = up ? 'running' : (st.host.state === 'failed' ? 'failed' : 'starting');
-        return { id, enabled: st.networks[id], state, version: up ? 'v26.10' : null, memMb: up ? st.host.memMb : null, limitMb: up ? 512 : null };
+        return {
+          id, enabled: st.networks[id], state, version: up ? (st.host.outdated ? '0.2609.0' : '0.2610.0') : null, memMb: up ? st.host.memMb : null, limitMb: up ? 512 : null,
+          ...(version >= 2 ? { outdated: up && st.host.outdated === true, wantVersion: '0.2610.0' } : {}),
+        };
       }),
       host: {
         state: st.enabled ? st.host.state : 'stopped', error: st.enabled ? st.host.error : null, checkedAt: st.host.state ? new Date().toISOString() : null,
-        cron: 'ok', script: { host: 5, needed: 5 }, homeserver: { running: up, memMb: up ? 61 : null, limitMb: up ? 384 : null, version: up ? '1.2.0' : null },
+        cron: 'ok', script: { host: version >= 2 ? 6 : 5, needed: version >= 2 ? 6 : 5 },
+        homeserver: { running: up, memMb: up ? 61 : null, limitMb: up ? 384 : null, version: up ? '1.9.4' : null, ...(version >= 2 ? { outdated: false, wantVersion: '1.9.4' } : {}) },
+        ...(version >= 2 ? { limitsProvisional: true, probe: st.host.probe || null } : {}),
       },
       history: { enabled: false },
     };
@@ -177,11 +191,28 @@ function install({ opts, perms, enabledUser, hostError, personCtx }) {
       st.log.push({ op: 'logout', userId, network, loginId });
       return { ok: true };
     },
+    ...(version >= 2 ? {
+      'bridges.unlinkFor': async ({ userId, network, actor }) => {
+        need();
+        if (!Number.isSafeInteger(userId) || userId <= 0) throw hostError('ERR_INVALID', 'invalid user id');
+        if (!Number.isSafeInteger(actor) || actor <= 0 || actor === userId) throw hostError('ERR_INVALID', 'actor: another person');
+        const e = personCtx.get(actor);
+        if (!((e && e.write > 0) || (st.elsewhere.get(actor) || 0) > 0)) throw hostError('ERR_NOT_PERSON', 'only while the acting person has a changing request (POST/PUT/PATCH/DELETE) in flight');
+        if (!enabledUser(actor)) throw hostError('ERR_NOT_PERSON', 'unknown or disabled person');
+        const target = enabledUser(userId);
+        if (target && target.role === 'admin') throw hostError('ERR_BRIDGES_DENIED', "an administrator's link is never ended by somebody else");
+        bridge(network);
+        const n = (st.logins.get(userId) || []).length;
+        st.logins.set(userId, []);
+        st.log.push({ op: 'unlink_for', userId, by: actor, network, logins: n });
+        return { unlinked: n };
+      },
+    } : {}),
   };
 
   /** gc.bridges (the child bootstrap's shape) */
   const gcPart = (call) => Object.freeze({
-    version: 1,
+    version,
     status: () => call('bridges.status', {}),
     configure: (patch) => call('bridges.configure', { patch }),
     login: Object.freeze({
@@ -192,6 +223,7 @@ function install({ opts, perms, enabledUser, hostError, personCtx }) {
     }),
     logins: (userId, network) => call('bridges.logins', { userId, network }),
     logout: (userId, network, loginId) => call('bridges.logout', { userId, network, loginId }),
+    ...(version >= 2 ? { unlinkFor: (userId, network, actor) => call('bridges.unlinkFor', { userId, network, actor }) } : {}),
   });
 
   const settle = (processId, how) => {
@@ -209,6 +241,10 @@ function install({ opts, perms, enabledUser, hostError, personCtx }) {
       l.state = 'logged_out'; l.error = 'wa-logged-out'; l.since = new Date().toISOString();
     },
     setHost(x = {}) { Object.assign(st.host, x); },
+    async acting(userId, fn) {
+      st.elsewhere.set(userId, (st.elsewhere.get(userId) || 0) + 1);
+      try { return await fn(); } finally { st.elsewhere.set(userId, st.elsewhere.get(userId) - 1); }
+    },
     set oddStep(v) { st.oddStep = v; },
   };
 

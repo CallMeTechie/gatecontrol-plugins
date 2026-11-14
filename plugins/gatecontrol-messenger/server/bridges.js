@@ -19,8 +19,15 @@
 //     DELETE bridges/:network/login/:process      cancel
 //     DELETE bridges/:network/logins/:id          unlink
 //   parents (Familie's family_roles) for their children — off until a parent allows it, per child and network
-//     GET bridges/children                        { children: [{ userId, networks: { whatsapp: boolean } }] }
-//     PUT bridges/children/:userId                { networks: { whatsapp: boolean } }
+//     GET bridges/children                        { children: [{ userId, networks: { whatsapp: boolean }, linked: { whatsapp: boolean } }] }
+//     PUT bridges/children/:userId                { networks: { whatsapp: boolean } } → { child, unlinked: { whatsapp?: boolean } }
+//   1.13.0 — the same two for the Familie plugin, whose page carries the switches (services bridge_children /
+//   bridge_child_set, from gatecontrol-familie only, `user` = the parent). Taking a permission back also UNLINKS
+//   the child's account on that network (gc.bridges.unlinkFor, GateControl with gc.bridges.version ≥ 2 — it checks
+//   that the parent is acting right now and writes it to its activity log); on an older GateControl the link stays
+//   until the child or the service ends it, and the answer says so (unlinked false).
+//   1.13.0 — the portal page „Verknüpfte Dienste“ (ui/bridges.js): a QR step also carries `display.matrix`
+//   { size, rows } — the code's modules, drawn by the page (the apps draw from `display.data` themselves).
 //
 // Kept here (migration 006): the consent, the parents' grants and WHICH account is linked on which network (the
 // bridge's login id and state — for the count on the admin card and the state without asking the bridge). Never the
@@ -30,6 +37,7 @@ const store = require('./store');
 const log = require('./log');
 const familie = require('./familie');
 const { fail, posInt, iso } = require('./util');
+const { encode } = require('./vendor/uqr');
 
 const NETWORKS = ['whatsapp'];
 const FLOWS = ['phone', 'qr'];
@@ -77,6 +85,13 @@ function network(v) {
 function ident(v) {
   if (typeof v !== 'string' || !ID_RE.test(v)) throw fail('invalid');
   return v;
+}
+
+/** The networks a person can link right now (the bridges are offered, switched on, the network too) — [] otherwise. */
+async function offered(gc) {
+  const s = await hostStatus(gc);
+  if (!s.available || !s.enabled) return [];
+  return (s.networks || []).filter((n) => NETWORKS.includes(n.id) && n.enabled).map((n) => n.id);
 }
 
 // ─── Administrators ────────────────────────────────────
@@ -134,34 +149,95 @@ async function allowed(gc, userId, net, now, fam) {
   return (await grantsOf(gc, userId)).has(net) ? { allowed: true, lock: null } : { allowed: false, lock: 'child' };
 }
 
-async function childrenView(ctx) {
-  const f = await family(ctx.gc, ctx.now);
-  if (!f.parents.has(ctx.viewer)) throw fail('forbidden');
+/** Which networks an account is linked on right now (as last seen; never a number or a name). */
+async function linkedOf(gc, userId) {
+  const rows = await store.all(gc, "SELECT DISTINCT network FROM bridge_links WHERE user_id = ? AND state != 'logged_out'", [userId]);
+  return new Set(rows.map((r) => r.network));
+}
+
+/** The children of `parentId` with the parents' switches. who: { gc, now, users, parentId } */
+async function childrenOf(who) {
+  const f = await family(who.gc, who.now);
+  if (!f.parents.has(who.parentId)) throw fail('forbidden');
   const out = [];
   for (const id of [...f.children].sort((a, b) => a - b)) {
-    if (!ctx.users.has(id)) continue;
-    const g = await grantsOf(ctx.gc, id);
-    out.push({ userId: id, networks: Object.fromEntries(NETWORKS.map((n) => [n, g.has(n)])) });
+    if (!who.users.has(id)) continue;
+    const g = await grantsOf(who.gc, id);
+    const l = await linkedOf(who.gc, id);
+    out.push({ userId: id, networks: Object.fromEntries(NETWORKS.map((n) => [n, g.has(n)])), linked: Object.fromEntries(NETWORKS.map((n) => [n, l.has(n)])) });
   }
   return out;
 }
 
-async function childSet(ctx, childId, body) {
-  const f = await family(ctx.gc, ctx.now);
-  if (!f.parents.has(ctx.viewer)) throw fail('forbidden');
-  if (!f.children.has(childId) || !ctx.users.has(childId)) throw fail('not_found');
+/**
+ * A parent's switch. Taking a permission back ends the child's link on that network as well.
+ * → { child, unlinked: { <network>: true (ended) | false (could not be ended — it stays until the child or the service ends it) } }
+ */
+async function childGrant(who, childId, body) {
+  const f = await family(who.gc, who.now);
+  if (!f.parents.has(who.parentId)) throw fail('forbidden');
+  if (!f.children.has(childId) || !who.users.has(childId)) throw fail('not_found');
   const nets = body && typeof body === 'object' && body.networks && typeof body.networks === 'object' && !Array.isArray(body.networks) ? body.networks : null;
   if (!nets || !Object.keys(nets).length) throw fail('invalid');
   for (const [k, v] of Object.entries(nets)) if (!NETWORKS.includes(k) || typeof v !== 'boolean') throw fail('invalid');
-  await store.tx(ctx.gc, async () => {
+  const had = await grantsOf(who.gc, childId);
+  await store.tx(who.gc, async () => {
     for (const [k, v] of Object.entries(nets)) {
-      if (v) await store.run(ctx.gc, 'INSERT INTO bridge_grants (child_id, network, granted_by, at) VALUES (?, ?, ?, ?) ON CONFLICT(child_id, network) DO NOTHING', [childId, k, ctx.viewer, ctx.now]);
-      else await store.run(ctx.gc, 'DELETE FROM bridge_grants WHERE child_id = ? AND network = ?', [childId, k]);
+      if (v) await store.run(who.gc, 'INSERT INTO bridge_grants (child_id, network, granted_by, at) VALUES (?, ?, ?, ?) ON CONFLICT(child_id, network) DO NOTHING', [childId, k, who.parentId, who.now]);
+      else await store.run(who.gc, 'DELETE FROM bridge_grants WHERE child_id = ? AND network = ?', [childId, k]);
     }
   });
-  // taking the permission back does not unlink the child's account: only the child's own request can (GateControl's
-  // rule) — the child sees „gesperrt“ and cannot link again; the link itself ends in the app of the service
-  return (await childrenView(ctx)).find((c) => c.userId === childId);
+  const unlinked = {};
+  for (const [k, v] of Object.entries(nets)) {
+    if (v) continue;
+    const linked = (await linkedOf(who.gc, childId)).has(k);
+    if (!had.has(k) && !linked) continue;
+    const r = await unlinkChild(who, childId, k);
+    if (r !== null) unlinked[k] = r;
+  }
+  return { child: (await childrenOf(who)).find((c) => c.userId === childId), unlinked };
+}
+
+/** End a child's link → true (ended, or the bridge knows none), false (it could not be ended), null (the bridges are off: nothing can be linked). */
+async function unlinkChild(who, childId, net) {
+  const b = api(who.gc);
+  const s = await hostStatus(who.gc);
+  const n = (s.networks || []).find((x) => x.id === net);
+  if (!b || !s.available || !s.enabled || !n || !n.enabled) return null;
+  if (typeof b.unlinkFor !== 'function') return false;
+  try {
+    await b.unlinkFor(childId, net, who.parentId);
+    await store.tx(who.gc, () => store.run(who.gc, 'DELETE FROM bridge_links WHERE user_id = ? AND network = ?', [childId, net]));
+    return true;
+  } catch (e) {
+    await log.add(who.gc, 'bridge_refused', `unlinkFor: ${String((e && e.code) || 'error').slice(0, 40)}${e && e.reason ? ' ' + String(e.reason).slice(0, 40) : ''}`, who.now);
+    return false;
+  }
+}
+
+const whoOf = (ctx) => ({ gc: ctx.gc, now: ctx.now, users: ctx.users, parentId: ctx.viewer });
+const childrenView = (ctx) => childrenOf(whoOf(ctx));
+const childSet = (ctx, childId, body) => childGrant(whoOf(ctx), childId, body);
+
+/**
+ * The services for the Familie plugin (its page „Mitglieder“ carries the parents' switches) — `user` is the parent.
+ *   bridge_children  {} → { available, networks: ['whatsapp'], children: [{ userId, networks, linked }] }
+ *   bridge_child_set { childId, networks: { whatsapp: boolean } } → { child, unlinked }
+ */
+async function service(ctx, name, caller, user, payload) {
+  if (caller !== 'gatecontrol-familie') throw fail('forbidden');
+  const parentId = user && posInt(user.id);
+  if (!parentId || !ctx.users.has(parentId)) throw fail('forbidden');
+  const who = { gc: ctx.gc, now: ctx.now, users: ctx.users, parentId };
+  if (name === 'bridge_children') {
+    const nets = await offered(ctx.gc);
+    // nothing to switch while no bridge is offered: the Familie page shows nothing then
+    if (!nets.length) return { available: false, networks: [], children: [] };
+    return { available: true, networks: nets, children: await childrenOf(who) };
+  }
+  const childId = posInt(payload.childId);
+  if (!childId) throw fail('invalid');
+  return childGrant(who, childId, payload);
 }
 
 // ─── A person's own link ───────────────────────────────
@@ -207,11 +283,24 @@ async function mine(ctx) {
     }
     out.push({
       id: n.id, state, allowed: a.allowed, lock: a.lock, consent: consents.has(n.id) ? iso(consents.get(n.id)) : null,
+      // 1.13.0: the bridge runs an older program than GateControl expects — sending and receiving may fail until the
+      // administrator updated it; nothing has to be linked again
+      outdated: n.outdated === true, version: typeof n.version === 'string' ? n.version : null, wantVersion: typeof n.wantVersion === 'string' ? n.wantVersion : null,
       // the name is the person's own account at the service (WhatsApp: their number) — theirs to see, nobody else's
       logins: logins.map((l) => ({ id: l.id, name: typeof l.name === 'string' ? l.name.slice(0, 80) : '', state: STATES.includes(l.state) ? l.state : 'unknown', since: l.since || null })),
     });
   }
-  return { available: true, networks: out };
+  // where the bridges run (today always the server) — the page says so
+  return { available: true, location: s.location === 'server' ? 'server' : 'gateway', networks: out };
+}
+
+/** The modules of a QR code → { size, rows: ['0101…'] } (error correction M, no quiet zone), or null. */
+function qrMatrix(text) {
+  if (typeof text !== 'string' || !text || text.length > 2048) return null;
+  try {
+    const q = encode(text, { ecc: 'M', border: 0 });
+    return { size: q.size, rows: q.data.map((row) => row.map((x) => (x ? '1' : '0')).join('')) };
+  } catch { return null; }
 }
 
 /** Everything before a login step: the bridge is offered, the person may, and has read the notes. */
@@ -245,7 +334,10 @@ async function stepOut(ctx, net, r) {
     step: {
       id: s.id, type: s.type,
       ...(s.type === 'user_input' ? { fields: (s.fields || []).map((f) => ({ id: f.id, type: f.type, optional: f.optional === true })) } : {}),
-      ...(s.type === 'display_and_wait' ? { display: { type: s.display && s.display.type, data: s.display && s.display.data } } : {}),
+      ...(s.type === 'display_and_wait' ? { display: {
+        type: s.display && s.display.type, data: s.display && s.display.data,
+        ...(s.display && s.display.type === 'qr' ? { matrix: qrMatrix(s.display.data) } : {}),
+      } } : {}),
     },
   };
 }
@@ -295,7 +387,7 @@ async function route(ctx, req, seg) {
   if (seg[1] === 'children') {
     if (seg.length === 2 && m === 'GET') return { children: await childrenView(ctx) };
     const id = seg.length === 3 ? posInt(seg[2]) : null;
-    if (id && (m === 'PUT' || m === 'PATCH')) return { child: await childSet(ctx, id, req.body) };
+    if (id && (m === 'PUT' || m === 'PATCH')) return childSet(ctx, id, req.body);
     throw fail('not_found');
   }
   if (seg.length < 3) throw fail('not_found');
@@ -308,4 +400,4 @@ async function route(ctx, req, seg) {
   throw fail('not_found');
 }
 
-module.exports = { route, adminView, adminSet, mine, allowed, api, NETWORKS, FLOWS };
+module.exports = { route, service, offered, adminView, adminSet, mine, allowed, api, NETWORKS, FLOWS };

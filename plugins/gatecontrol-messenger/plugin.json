@@ -4,7 +4,7 @@
     "de": "Messenger",
     "en": "Messenger"
   },
-  "version": "1.12.0",
+  "version": "1.13.0",
   "publisher": "CallMeTechie",
   "description": {
     "de": "Chats zwischen den GateControl-Konten – in der GateControl-App (eigener Tab „Chats“), im Windows-Client und im Portal: Einzel- und Gruppenchats mit Text, Bildern, Videos, Sprachnachrichten, Dateien und Standort, Antworten mit Zitat, Reaktionen, Bearbeiten und Löschen, Lesebestätigungen, „schreibt …“, selbstlöschende Chats und Push mit Antwortfeld. Neu: Status und Storys, Abstimmungen, Termine mit Zusagen, Live-Ankunft und Haus-Aktionen im Chat. Alles bleibt auf dem eigenen Server, Texte verschlüsselt gespeichert; Administratoren können private Chats nicht lesen.",
@@ -99,6 +99,18 @@
         "label": {
           "de": "Datei als Nachricht senden",
           "en": "Send a file as a message"
+        }
+      },
+      "bridge_children": {
+        "label": {
+          "de": "Brücken: Freigaben der Kinder lesen",
+          "en": "Bridges: read the children’s permissions"
+        }
+      },
+      "bridge_child_set": {
+        "label": {
+          "de": "Brücken: Dienst für ein Kind freischalten oder sperren",
+          "en": "Bridges: allow or lock a service for a child"
         }
       }
     }

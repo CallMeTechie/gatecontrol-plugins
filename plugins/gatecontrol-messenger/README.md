@@ -932,7 +932,7 @@ days) are handled by the background run (every 60 s); messages that go
 their polls, votes, events, RSVPs, arrivals, actions, card pictures,
 reminders, pins and Familie calendar entries along.
 
-## Bridges to other messengers (since 1.12.0, first stage)
+## Bridges to other messengers (since 1.12.0; 1.13.0: second stage)
 
 Writing from GateControl to people in **WhatsApp** (also accounts of the WhatsApp
 Business app — the same way in, "linked devices"); Signal and Telegram later.
@@ -943,9 +943,11 @@ a person; it never sees an address, a token or a session key, and keeps no
 phone number (migration 006: who confirmed the notes, the parents' grants, which
 account is linked with which bridge login id and state).
 
-**This stage** switches the bridges and links accounts. Nothing reads or writes
-an outside chat yet — `GET me` keeps `features.bridges: false` until it does,
-and the apps and the portal have no screen for it yet.
+**These stages** switch the bridges and link accounts. Nothing reads or writes
+an outside chat yet — `GET me` keeps `features.bridges: false` until it does.
+Since 1.13.0 the portal has the page "Verknüpfte Dienste" (chat settings;
+`ui/bridges.js`), offered while `GET me` says `features.linked_services: true`
+(a bridge is offered and switched on); the apps have no screen for it yet.
 
 Rules:
 
@@ -955,25 +957,32 @@ Rules:
   official client, the service may block accounts, the phone must be online at
   least every 14 days, the end-to-end encryption ends at the bridge).
 * **Children** (Familie's `family_roles`) are locked until a parent allows it,
-  per child and network. Taking it back stops new links; the child can still
-  unlink. Without Familie nobody is a child.
+  per child and network. Since 1.13.0 the switches are shown by the Familie
+  plugin (≥ 1.23.0, services `bridge_children` / `bridge_child_set`), and
+  taking a permission back also **ends the child's link** on that network
+  (`gc.bridges.unlinkFor`, a GateControl whose `gc.bridges.version` is ≥ 2 — it
+  requires the parent to be acting right now and logs the call; on an older one
+  the link stays and the answer says `unlinked: { <network>: false }`). The
+  child can always unlink itself. Without Familie nobody is a child.
 * Administrators switch the bridges and see states and counts — nothing else.
 
 | Method & path | Body | Answer |
 |---|---|---|
-| `GET bridges` | | `{ bridges: { available, networks: [{ id: "whatsapp", state: "running" \| "starting" \| "failed" \| "unreachable", allowed, lock: null \| "child", consent: ISO \| null, logins: [{ id, name, state: "connected" \| "connecting" \| "logged_out" \| "error" \| "unknown", since }] }] } }` — `available: false` (and no networks) while the bridges are off or not offered. `name` is the caller's own account at the service (WhatsApp: their number); with `state: "unreachable"` the last known logins without a name |
+| `GET bridges` | | `{ bridges: { available, location: "server", networks: [{ id: "whatsapp", state: "running" \| "starting" \| "failed" \| "unreachable", allowed, lock: null \| "child", consent: ISO \| null, outdated, version, wantVersion (1.13.0: the bridge runs another program version than GateControl pins), logins: [{ id, name, state: "connected" \| "connecting" \| "logged_out" \| "error" \| "unknown", since }] }] } }` — `available: false` (and no networks) while the bridges are off or not offered. `name` is the caller's own account at the service (WhatsApp: their number); with `state: "unreachable"` the last known logins without a name |
 | `POST bridges/:network/consent` | `{ accept: true }` | `{ consent: ISO }` |
 | `POST bridges/:network/login` | `{ flow: "phone" \| "qr" }` | `{ login: { processId, step } }` |
 | `POST bridges/:network/login/:processId/:stepId` | `{ input: { <field id>: text } }` for a `user_input` step, `{}` for `display_and_wait` | `{ login: { processId, step } }`, or `{ login: { processId, waiting: true } }` — the person has not confirmed on the phone yet: call again (the call takes up to 15 s) |
 | `DELETE bridges/:network/login/:processId` | | `{ cancelled: true }` |
 | `DELETE bridges/:network/logins/:id` | | `{ unlinked: true }` |
-| `GET bridges/children` | | parents only: `{ children: [{ userId, networks: { whatsapp: boolean } }] }` |
-| `PUT bridges/children/:userId` | `{ networks: { whatsapp: boolean } }` | parents only: `{ child }` |
+| `GET bridges/children` | | parents only: `{ children: [{ userId, networks: { whatsapp: boolean }, linked: { whatsapp: boolean } }] }` — `linked` (1.13.0): the child has an account linked, never which |
+| `PUT bridges/children/:userId` | `{ networks: { whatsapp: boolean } }` | parents only: `{ child, unlinked }` — `unlinked` (1.13.0): per network taken back `true` (the child's link was ended) or `false` (it could not be ended); absent when nothing was linked or allowed |
 | `GET admin/bridges` · `PUT admin/bridges` | `{ enabled?, networks?: { whatsapp?: boolean } }` | administrators in the admin UI: `{ bridges }` — GateControl's `gc.bridges.status()` plus `linked` per network |
 
 `step`: `{ id, type: "user_input", fields: [{ id, type: "phone_number", optional }] }`,
 `{ id, type: "display_and_wait", display: { type: "code" | "qr", data } }` (draw
-the pairing code or the QR code from `data`) or `{ id, type: "complete", loginId }`.
+the pairing code or the QR code from `data`; since 1.13.0 a `qr` display also
+carries `matrix: { size, rows: ["0101…"] }`, the code's modules without a quiet
+zone) or `{ id, type: "complete", loginId }`.
 WhatsApp: `phone` → number → 8-character code to enter under *Linked devices ›
 Link with phone number instead*; `qr` → a QR code that must be shown on a second
 screen. The texts for the steps are the client's own.

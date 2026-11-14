@@ -1640,6 +1640,11 @@
           }),
         ]));
       });
+      if (feature('linked_services') && window.MSBridges) {
+        body.appendChild(el('button', { type: 'button', class: 'ms-pref ms-pref-btn', on: { click: function () { closeTop(); window.MSBridges.open(); } } }, [
+          el('span', { class: 'ms-pref-tx' }, [T('br.title'), el('small', { text: T('br.open_hint') })]), M.icon('group', 16),
+        ]));
+      }
       body.appendChild(el('p', { class: 'ms-note', style: 'margin-top:10px' }, [M.icon('lock', 14), T('info.encrypted')]));
       M.dialog(T('prefs.title'), body, [{ label: T('common.close'), value: null }]);
     }).catch(M.warn);

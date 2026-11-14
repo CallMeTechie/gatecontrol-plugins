@@ -30,6 +30,7 @@
 //   GET|POST rules               PATCH|DELETE rules/<id>      POST rules/<id>/test · rules/test   GET rules/options
 //   POST shopping/lists/<id>/assign                           POST tasks/quick
 //   1.18.0 (server/internet.js, GateControl ≥ 1.231.0): GET internet   POST internet/<childId>/pause · /resume · /extend
+//   1.23.0 (server/linked.js, Messenger ≥ 1.13.0 with bridges): GET messengers   PUT messengers/<childId>
 //   1.20.0: rules take the action { type: 'internet', op: 'pause' | 'resume', userId, minutes | until } (GateControl ≥
 //   1.259.0; rules/options → internet); GET internet: presence and pausedBy.rule per child, serverTime, timezone
 //
@@ -75,6 +76,7 @@ const messenger = require('./messenger');
 const rules = require('./rules');
 const homewifi = require('./homewifi');
 const internet = require('./internet');
+const linked = require('./linked');
 const { fail, posInt, iso } = require('./util');
 
 /** A portal viewer recognised only by device trust: no real login and no paired kiosk device. */
@@ -330,6 +332,15 @@ function dispatch(gc, r, seg, method) {
     notWall(r);
     if (n === 1 && GET) return () => internet.view(gc, r);
     if (n === 3 && POST && internet.OPS.includes(c)) return readOnly(() => internet.act(gc, r, b, c));
+  }
+  if (a === 'messengers') {
+    // 1.23.0: „Andere Messenger“ — parents allow a child to link its own account at another messenger (the bridges
+    // of the Messenger plugin, server/linked.js); no module of its own, there when the Messenger offers it. Nothing
+    // is written here: the switches live in the Messenger.
+    sensitive();
+    notWall(r);
+    if (n === 1 && GET) return () => linked.view(gc, r);
+    if (n === 2 && PATCH) return readOnly(() => linked.set(gc, r, b, r.body));
   }
   if (a === 'rules') {
     // 1.9.0: rules and reminders (module rules; presence triggers need the module presence as well)

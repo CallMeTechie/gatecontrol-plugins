@@ -442,6 +442,8 @@ async function handle(ctx, { name, caller, user, payload }, flush) {
     else if (name === 'release_group') out = await store.tx(ctx.gc, () => releaseGroup(ctx, who, p));
     else if (name === 'set_place_status') out = await store.tx(ctx.gc, () => setPlaceStatus(ctx, who, p));
     else if (name === 'send_file') out = await store.tx(ctx.gc, () => sendFile(ctx, who, u, p));
+    // 1.13.0: the parents' switches for the bridges, shown on Familie's page (bridges.js)
+    else if (name === 'bridge_children' || name === 'bridge_child_set') out = await require('./bridges').service(ctx, name, who, u, p);
     else throw new Error('unknown service');
     await flush();
     return { ok: true, ...out };

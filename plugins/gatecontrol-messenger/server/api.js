@@ -29,6 +29,8 @@ async function me(ctx) {
   try { lic = await ctx.gc.license.status(); } catch { lic = null; }
   const cfg = ctx.cfg;
   const u = ctx.users.get(ctx.viewer);
+  let linked = false;
+  try { linked = (await require('./bridges').offered(ctx.gc)).length > 0; } catch { linked = false; }
   return {
     user: u ? { id: u.id, name: u.name, avatarUrl: u.avatarUrl || null, initials: u.initials || null, colorHex: u.colorHex || null } : { id: ctx.viewer, name: null, avatarUrl: null, initials: null, colorHex: null },
     prefs,
@@ -41,6 +43,8 @@ async function me(ctx) {
       ...Object.fromEntries(messages.FEATURES.map((f) => [f, true])),
       // 1.4.0 (README "App-API", since 1.4.0): only true keys are present
       ...Object.fromEntries(features14(ctx).map((f) => [f, true])),
+      // 1.13.0: „Verknüpfte Dienste“ (GET bridges …) — only while this server offers a bridge and it is switched on
+      ...(linked ? { linked_services: true } : {}),
     },
     // 1.4.0: what the Familie plugin offers here (gc.services.available) — "Zur Liste", "In Kalender", places;
     // 1.10.0: drive — Drive takes files (save_file): "In Drive speichern" (POST messages/:id/to-drive)
