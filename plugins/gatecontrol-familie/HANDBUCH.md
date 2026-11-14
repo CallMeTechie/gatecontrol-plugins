@@ -1,5 +1,16 @@
-<!-- version: 1.23.0 -->
+<!-- version: 1.24.0 -->
 # Familie
+
+## Neu in 1.24.0
+
+- **Aufgaben und Orts-Erinnerungen ziehen um – per Knopf:** Mit „Notizen & Aufgaben“ (ab 1.6.0) können die Aufgaben der Familie und die Orts-Erinnerungen dorthin umziehen. Der Knopf steht unter **Einstellungen › Plugins › Familie › Funktionen**, in der Karte „Aufgaben und Orts-Erinnerungen in „Notizen & Aufgaben““. Die Karte zeigt vorher, was umzieht und wie viel. **Von selbst zieht nichts um**, auch nicht beim Update.
+- **Was mitkommt:** Wiederholungen, Zuweisungen, „reihum“ samt dem Stand, wer gerade dran ist, „wer zuerst“ und die Zahl der Sterne. Eine Aufgabe für mehrere, die jede Person für sich abhakt, wird zu einer Aufgabe je Person.
+- **Sterne bleiben hier:** Gezählt und abgerechnet wird weiter im Familien-Plugin – auch wenn in „Notizen & Aufgaben“ abgehakt wird. Wochenziel, Taschengeld und Wünsche sind unverändert.
+- **Wandtablet, Karten im Chat und ältere Apps** arbeiten weiter wie bisher und zeigen die Aufgaben aus „Notizen & Aufgaben“.
+- **Erinnert** wird nach dem Umzug von „Notizen & Aufgaben“ – nichts meldet sich doppelt.
+- **Orts-Erinnerungen** werden dort Aufgaben mit Ort. Erinnerungen, die anderen Bescheid sagen („… ist angekommen“), und ausgeschaltete bleiben hier.
+- **Rückweg:** „Zurückholen“ in derselben Karte gibt dem Familien-Plugin alles zurück – auf dem Stand des letzten Abgleichs. Was es nur in „Notizen & Aufgaben“ gibt (Unteraufgaben, Notizen, Anhänge), kommt nicht mit.
+- Beim Update fragt GateControl einmal nach den neuen Diensten von „Notizen & Aufgaben“, die das Familien-Plugin dafür aufruft.
 
 ## Neu in 1.23.0
 

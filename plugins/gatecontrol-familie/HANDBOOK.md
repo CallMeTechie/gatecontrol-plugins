@@ -1,5 +1,16 @@
-<!-- version: 1.23.0 -->
+<!-- version: 1.24.0 -->
 # Family
+
+## New in 1.24.0
+
+- **Tasks and place reminders move – by a button:** With “Notes & Tasks” (1.6.0 or later) the family’s tasks and the place reminders can move there. The button is under **Settings › Plugins › Family › Functions**, in the card “Tasks and place reminders in “Notes & Tasks””. The card shows beforehand what moves and how much. **Nothing moves by itself**, not with an update either.
+- **What comes along:** repeats, assignments, “in turns” with whose turn it is, “whoever is first” and the number of stars. A task for several people that each one ticks off for themselves becomes one task per person.
+- **Stars stay here:** they are still counted and settled in the Family plugin – also when a task is ticked off in “Notes & Tasks”. The weekly goal, pocket money and wishes are unchanged.
+- **The wall tablet, the cards in the chat and older apps** keep working as before and show the tasks from “Notes & Tasks”.
+- **Reminders** come from “Notes & Tasks” after the move – nothing rings twice.
+- **Place reminders** become tasks with a place there. Reminders that tell others (“… has arrived”) and those that are switched off stay here.
+- **The way back:** “Bring back” in the same card gives everything back to the Family plugin – as of the last sync. What only exists in “Notes & Tasks” (sub tasks, notes, attachments) does not come along.
+- When updating, GateControl asks once for the new services of “Notes & Tasks” that the Family plugin calls for this.
 
 ## New in 1.23.0
 

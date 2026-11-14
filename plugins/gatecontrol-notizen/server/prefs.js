@@ -17,6 +17,8 @@
 //   places    { search: bool, nearby: bool, quiet: { from, to } | null } (1.5.0) — search false: no place search for this
 //             person (nothing leaves the server for them); nearby false: no hint at other places of a kind on the way;
 //             quiet: no such hint between these times (default 21:00–07:00; null: always)
+//   feedback  'all' | 'stars' | 'off' (1.6.0) — a parent's push „… hat … erledigt“ of the family list: for every task, only
+//             for tasks with stars, never
 
 const store = require('./store');
 const config = require('./config');
@@ -28,8 +30,9 @@ const CALENDAR = { tasks: true };
 const YESTERDAY_AT = '07:30';
 const PLACES = { search: true, nearby: true };
 const QUIET = { from: '21:00', to: '07:00' };
+const FEEDBACK = ['all', 'stars', 'off'];
 const DEFAULTS = { area: 'private', evening: '18:00', sources: {}, groups: {}, times: {}, myday: { ...MYDAY }, startArea: 'last', notify: { ...NOTIFY },
-  yesterdayAt: YESTERDAY_AT, calendar: { ...CALENDAR }, places: { ...PLACES, quiet: { ...QUIET } } };
+  yesterdayAt: YESTERDAY_AT, calendar: { ...CALENDAR }, places: { ...PLACES, quiet: { ...QUIET } }, feedback: 'all' };
 const SRC_KEYS = { on: 'bool', kids: ['all', 'mine', 'none'], shoppingInMyDay: 'bool', flagged: 'bool', evening: 'time' };
 const TIME_KEYS = ['morning', 'noon', 'afternoon', 'evening', 'night'];
 
@@ -39,6 +42,7 @@ function normalize(raw) {
     area: r.area === 'work' ? 'work' : 'private', evening: isTime(r.evening) ? r.evening : DEFAULTS.evening, sources: {}, groups: {}, times: {},
     myday: { ...MYDAY }, startArea: ['private', 'work'].includes(r.startArea) ? r.startArea : 'last', notify: { ...NOTIFY },
     yesterdayAt: isTime(r.yesterdayAt) ? r.yesterdayAt : YESTERDAY_AT, calendar: { ...CALENDAR }, places: { ...PLACES },
+    feedback: FEEDBACK.includes(r.feedback) ? r.feedback : 'all',
   };
   for (const [key, def] of [['myday', MYDAY], ['notify', NOTIFY], ['calendar', CALENDAR], ['places', PLACES]]) {
     const v = r[key];

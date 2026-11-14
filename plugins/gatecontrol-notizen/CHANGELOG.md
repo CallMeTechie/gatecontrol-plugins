@@ -1,5 +1,51 @@
 # Changelog
 
+## 1.6.0
+
+„Aufgaben und Erinnerungen“, Stufe 4 – wer ist dran, Sterne, die Aufgaben der Familie.
+
+- **Wer ist dran** (`server/tasks.js`, `migrations/008_family_tasks.sql`): `turn` an jeder Aufgabe – `'rotate'`
+  („reihum“: immer eine Person ist dran, `assignee`; nach dem Abhaken bekommt die nächste Aufgabe einer Wiederholung
+  die nächste Person) oder `'first'` („wer zuerst“: die Aufgabe geht an alle in `people`, alle werden erinnert, der
+  Erste erledigt sie für alle – die anderen bekommen statt ihrer Erinnerung „Erledigt von …“). Gesetzt mit `turn` und
+  `people` in `POST tasks` / `PATCH tasks/<id>`; in jeder geteilten Liste, nicht nur in der Familie. Wer die Liste
+  verlässt, wird übergangen; bleibt nur eine Person, ist es wieder eine gewöhnliche Aufgabe.
+- **Mehrere Personen in der Schnell-Eingabe – ohne Änderung am Parser:** `ui/turnwords.js` liest nach
+  `ui/quickparse.js` weitere „@Namen“, „reihum“ / „abwechselnd“ / „in turns“ / „taking turns“, „wer zuerst“ /
+  „whoever is first“ und „2 Sterne“ / „1 Stern“ / „3 stars“ aus dem Titel (`test/vectors/turnwords.json`: 16 Fälle
+  für die Apps). `POST parse` liefert sie als `parsed.people`, `parsed.turn`, `parsed.stars`; `POST tasks { text }`
+  übernimmt sie. **`ui/quickparse.js` und `test/vectors/quickparse.json` sind weiter unverändert.**
+- **Die Liste der Familie** (`server/famtasks.js`): Nach dem Umzug (ein Knopf in den Einstellungen des
+  Familien-Plugins ab 1.24.0, nie von selbst) gibt es **eine** Liste „Familie“, deren Mitglieder die Familie sind
+  (`List.family`, `Task.family`, `me.familyTasks { available, bound, listId, parent, stars, starsMax, moved }`). Eltern
+  ändern alles und haken auch für ein Kind ab (`POST tasks/<id>/complete { userId }`); ein Kind hakt ab, was seins
+  ist, legt eigene Aufgaben an und ändert oder löscht keine Aufgabe der Eltern (`403 forbidden`, `reason:
+  'parents_only'`). Die Liste lässt sich hier weder löschen noch mit anderen teilen (`reason: 'family'`).
+- **Sterne:** `stars` (0–10) an einer Aufgabe der Familienliste, nur von Eltern zu setzen. **Gezählt und abgerechnet
+  wird weiter im Familien-Plugin:** Was hier abgehakt (oder zurückgenommen) wird, steht für das Familien-Plugin bereit
+  (`fam_done`), es holt die Zeilen ab und bucht die Sterne – jede genau einmal.
+- **Rückmeldung an die Eltern:** Hakt ein Kind ab, bekommen die Eltern „Lena hat „Zimmer aufräumen“ erledigt“ mit
+  **„Ansehen“** und **„Noch nicht fertig“** (Push-Art `done_feedback`). „Noch nicht fertig“ öffnet die Aufgabe wieder,
+  die Sterne werden zurückgenommen, das Kind bekommt Bescheid. Je Person abschaltbar oder nur für Aufgaben mit Sternen
+  (`prefs.feedback`: `all | stars | off`).
+- **Dienste für das Familien-Plugin** (`services.provides`): `tasks_bind` (wer die Familie ist, ihre Liste),
+  `tasks_put` (Aufgaben und Orts-Erinnerungen der Familie, nach ihrer Kennung – eine zweimal gesendete Zeile ändert
+  nichts, nichts entsteht doppelt), `tasks_list` (alle Aufgaben, von denen Familie eine Kopie hält, und was hier
+  abgehakt wurde). Änderungen hier meldet der Hub mit `tasks_changed` (neuer Eintrag in `permissions.services`: einmal
+  vom Administrator zu bestätigen). Eine Orts-Erinnerung der Familie wird eine Aufgabe mit Ort – die eigene in der
+  Liste „Aufgaben“ ihrer Person, eine für jemand anderen in einer Liste, die nur die beiden sehen; eine gegebene
+  Zustimmung bleibt, niemand wird neu gefragt.
+- **Zustimmung am Ort – Korrektur zu 1.5.0:** `Task.place` trägt `mine` (das Handy dieser Person soll den Ort
+  überwachen) und `canConsent` (sie darf „Annehmen“ / „Ablehnen“ – alle anderen Mitglieder der Liste bekämen 403). Apps
+  zeigen die Knöpfe nur bei `canConsent`. Abwärtskompatibel: die bisherigen Felder sind unverändert.
+- **Portal:** Baustein „Wer ist dran?“ (Eine Person · Reihum · Wer zuerst) in der Schnell-Eingabe, sobald mehrere
+  Personen genannt sind, und in den Details; „Reihum · Lena ist dran“, „Wer zuerst“ und die Sterne an der Aufgabe;
+  Sterne in den Details (Eltern); „Meldung, wenn ein Kind abhakt“ in den Einstellungen; einmal je Person der Hinweis
+  „Umzug abgeschlossen“.
+- `me.features`: `taskTurns`, `taskStars`, `familyTasks`, `doneFeedback`, `placeMine`.
+- Ohne Familien-Plugin (oder ohne den Umzug) ändert sich nichts: keine Familienliste, keine Sterne; „reihum“ und „wer
+  zuerst“ gibt es in jeder geteilten Liste.
+
 ## 1.5.0
 
 „Aufgaben und Erinnerungen“, Stufe 3 – eine Aufgabe am Ort.

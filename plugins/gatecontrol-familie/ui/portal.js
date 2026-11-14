@@ -172,7 +172,8 @@
     }).catch(A.warn);
   }
   function loadTasks() {
-    return A.api('GET', 'tasks').then(function (r) { tasksData = r; renderTasks(); renderSub(); }).catch(A.warn);
+    // 1.24.0: after the move the tasks live in „Notizen & Aufgaben“ — the card shows them from there and says so
+    return A.api('GET', 'tasks').then(function (r) { tasksData = r; $('#fa-tasks-home').hidden = !(r.home && r.home.home === 'notizen'); renderTasks(); renderSub(); }).catch(A.warn);
   }
   function renderTasks() {
     var box = A.clear($('#fa-task-cols'));

@@ -26,6 +26,7 @@ const push = require('./push');
 const reminders = require('./reminders');
 const todohub = require('./todohub');
 const shopsync = require('./shopsync');
+const tasksync = require('./tasksync');
 const { posInt } = require('./util');
 
 const PLUGIN = 'gatecontrol-familie';
@@ -43,7 +44,7 @@ function dueOf(occ, time, cfg) {
 }
 
 async function taskItems(gc, fam, cfg, now, today) {
-  const rows = await store.all(gc, 'SELECT * FROM tasks ORDER BY id');
+  const rows = await store.all(gc, 'SELECT * FROM tasks WHERE gone_at IS NULL ORDER BY id');
   if (!rows.length) return [];
   const done = await store.all(gc, `SELECT task_id, occurrence, user_id, at FROM task_done WHERE task_id IN (${store.marks(rows.length)}) ORDER BY at`, rows.map((r) => r.id));
   const parents = members.parents(fam).map((m) => m.userId);
@@ -122,7 +123,8 @@ async function collect(gc, now) {
   const fam = await members.load(gc, today);
   if (!fam.list.length) return [];
   const out = [];
-  if (cfg.modules.tasks) out.push(...await taskItems(gc, fam, cfg, now, today));
+  // 1.24.0: tasks that moved to the hub are its own tasks there — not shown a second time as items of Familie
+  if (cfg.modules.tasks && (await tasksync.where(gc)).home !== 'notizen') out.push(...await taskItems(gc, fam, cfg, now, today));
   // 1.21.0: lists that moved to the hub are its own lists there — not shown a second time as items of Familie
   if (cfg.modules.shopping && (await shopsync.where(gc)).home !== 'notizen') out.push(...await listItems(gc, fam, cfg));
   if (cfg.modules.rules) out.push(...await reminderItems(gc, fam, cfg, now, today));

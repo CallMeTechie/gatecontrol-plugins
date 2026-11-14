@@ -20,6 +20,9 @@ const MAX_MEMBERS = 50;
 const ICONS = ['list', 'cart', 'home', 'tool', 'gift', 'plane', 'heart', 'work'];
 const ROLES = ['read', 'write'];
 const TRASH_MS = 30 * 86400000;
+const FAMILIE = 'gatecontrol-familie';
+/** 1.6.0: the family's list is neither deleted, left nor shared with others here — the family is Familie's. */
+function notFamily(l) { if (l.fam_tasks === FAMILIE) throw fail('forbidden', { reason: 'family' }); return l; }
 
 /** ISO weekday (1 = Monday … 7 = Sunday) of "YYYY-MM-DD". */
 const isoDay = (date) => tz.weekday(date) || 7;
@@ -83,6 +86,22 @@ async function membersOf(gc, listId) {
 }
 async function memberIds(gc, listId) { return (await membersOf(gc, listId)).map((m) => m.user_id); }
 
+/**
+ * 1.6.0: somebody left list `listId` — an open task „reihum“ that was theirs (nobody is on now) goes on with the first of
+ * its people who is still there.
+ */
+async function passTurns(gc, listId) {
+  const rows = await store.all(gc, "SELECT id, people_json FROM tasks INDEXED BY idx_tasks_list WHERE list_id = ? AND done_at IS NULL AND deleted_at IS NULL AND parent_id IS NULL AND turn = 'rotate' AND assignee_id IS NULL", [listId]);
+  if (!rows.length) return;
+  const ms = new Set(await memberIds(gc, listId));
+  for (const r of rows) {
+    let ppl = [];
+    try { ppl = JSON.parse(r.people_json || '[]'); } catch { ppl = []; }
+    const next = (Array.isArray(ppl) ? ppl : []).find((u) => ms.has(u));
+    if (next) await store.run(gc, 'UPDATE tasks SET assignee_id = ? WHERE id = ?', [next, r.id]);
+  }
+}
+
 /** A list row (with the my_* columns of access) → the API's List. */
 async function view(gc, ctx, l, counts, members) {
   const ms = members || await membersOf(gc, l.id);
@@ -95,6 +114,8 @@ async function view(gc, ctx, l, counts, members) {
     groupId: l.my_group || null, position: l.my_position == null ? 0 : l.my_position, shared: ms.length > 1, members: others,
     open: counts ? counts.get(l.id) || 0 : undefined, ext: l.ext_kind ? { kind: l.ext_kind } : null,
     days: daysOf(mask), remind: l.remind || null, mydayOff: !!l.my_day_off, dayToday: !!(ctx && ctx.today && (mask & bitOf(ctx.today))),
+    // 1.6.0: THE list of the family's tasks — its members are the family (Familie keeps them in step)
+    family: l.fam_tasks === FAMILIE,
   };
 }
 
@@ -255,10 +276,12 @@ async function remove(gc, ctx, id, q = {}) {
     if (posInt(id) && await store.one(gc, 'SELECT id FROM lists WHERE id = ? AND owner_id = ? AND deleted_at IS NOT NULL', [posInt(id), ctx.userId])) return { ok: true, gone: true };
     throw e;
   }
+  notFamily(l);
   const members = await memberIds(gc, l.id);
   if (l.my_role !== 'owner') {
     await store.run(gc, 'DELETE FROM list_members WHERE user_id = ? AND list_id = ?', [ctx.userId, l.id]);
     await store.run(gc, 'UPDATE tasks SET assignee_id = NULL WHERE list_id = ? AND assignee_id = ?', [l.id, ctx.userId]);
+    await passTurns(gc, l.id);
     await calsync.touchList(gc, l.id);
     events.changed(gc, members, 'lists');
     await changedHook(gc, l, members);
@@ -356,7 +379,7 @@ function wantedMembers(v, ownerId) {
 
 /** PUT lists/<id>/members { members: [userId | { id, role }…] } — the owner shares the list (roles read | write). */
 async function setMembers(gc, ctx, id, b) {
-  const l = ownerOnly(await access(gc, ctx.userId, id));
+  const l = notFamily(ownerOnly(await access(gc, ctx.userId, id)));
   const want = wantedMembers(b.members, ctx.userId);
   const before = new Map((await membersOf(gc, l.id)).map((m) => [m.user_id, m.role]));
   for (const u of want.keys()) if (!before.has(u) && !(await people.mayShare(gc, ctx.userId, u))) throw fail('forbidden', { userId: u });
@@ -373,7 +396,7 @@ async function setMembers(gc, ctx, id, b) {
     // 1.4.0: who sees a shopping list is part of what GET shopping?since= tells
     if (l.kind === 'shopping' && (added.length || gone.length || changedRole.length)) await store.run(gc, 'UPDATE lists SET updated_at = ? WHERE id = ?', [ctx.now, l.id]);
   });
-  if (gone.length) await calsync.touchList(gc, l.id);
+  if (gone.length) { await passTurns(gc, l.id); await calsync.touchList(gc, l.id); }
   if (added.length) {
     await pushprefs.send(gc, added, 'shared', { topic: 'shared', title: t(ctx.notifyLang, 'n.shared_title', { name: ctx.userName || '' }), body: l.name,
       collapseKey: 'list:' + l.id, data: { notizen: push.sharedList(l) } });
@@ -436,6 +459,7 @@ async function removeGroup(gc, ctx, id) {
 }
 
 module.exports = {
+  passTurns,
   ICONS, ROLES, TRASH_MS, isoDay, bitOf, daysOf, access, ids, ensureDefault, membersOf, memberIds, view, all, openCounts, create, update, usage, remove, restore,
   setMembers, wantedMembers, writable, ownerOnly, taskList, hooks, createGroup, updateGroup, removeGroup, LIST_COLS,
 };

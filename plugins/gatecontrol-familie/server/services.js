@@ -78,6 +78,7 @@ const shopping = require('./shopping');
 const dates = require('./dates');
 const ruleplaces = require('./ruleplaces');
 const school = require('./school');
+const hubmark = require('./hubmark');
 const schoolend = require('./schoolend');
 const presence = require('./presence');
 const wifi = require('./wifi');
@@ -287,11 +288,21 @@ async function places(gc, cfg, payload, user) {
 
 // ─── geofences (1.22.0) ─────────────────────────
 
+/** The place reminders Familie itself hands that person's phone (1.24.0: not those the hub hands it as tasks at a place). */
+async function ownReminders(gc, userId) {
+  const rows = await store.all(gc, "SELECT id, in_hub, synced_at, target_user_id FROM places WHERE target_user_id = ? AND active = 1 AND consent = 'accepted' AND gone_at IS NULL", [userId]);
+  let n = 0;
+  for (const r of rows) if (!(await hubmark.hubServes(gc, r, Date.now()))) n++;
+  return n;
+}
+
 async function geofences(gc, cfg, payload, user) {
   const fam = await family(gc, cfg);
   const m = memberOf(fam, payload, user);
+  // 1.24.0: the hub asks for the phone that asks IT which places to watch — that phone gets a moved reminder from the hub
+  await hubmark.watching(gc, m.userId, Date.now());
   const reminders = cfg.modules.places
-    ? (await store.one(gc, "SELECT COUNT(*) AS n FROM places WHERE target_user_id = ? AND active = 1 AND consent = 'accepted'", [m.userId])).n : 0;
+    ? await ownReminders(gc, m.userId) : 0;
   const rulePlaces = cfg.modules.presence ? (await presence.watch(gc, m.userId)).places.length : 0;
   return { ok: true, reminders, rulePlaces, total: reminders + rulePlaces, max: GEOFENCES_MAX };
 }

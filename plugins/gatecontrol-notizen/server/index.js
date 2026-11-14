@@ -18,6 +18,7 @@ const yesterday = require('./yesterday');
 const shopping = require('./shopping');
 const places = require('./places');
 const placesearch = require('./placesearch');
+const famtasks = require('./famtasks');
 const { t } = require('./text');
 
 const CART = 'M6 6h15l-1.5 9h-12zM6 6L5 3H2M9 20a1 1 0 1 0 0-2 1 1 0 0 0 0 2zM18 20a1 1 0 1 0 0-2 1 1 0 0 0 0 2z';
@@ -43,11 +44,12 @@ module.exports = {
     yesterday.reset();
     shopping.reset();
     places.reset();
+    famtasks.reset();
     placesearch.state.version = require('../plugin.json').version;
     gc.log.info('Notizen & Aufgaben started');
   },
 
-  async stop() { shopping.stop(); },
+  async stop() { shopping.stop(); famtasks.reset(); },
 
   async settingsChanged(values, gc) {
     config.reset();

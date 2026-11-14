@@ -39,6 +39,24 @@
         </div>
       </section>
 
+      <!-- 1.24.0: the tasks and place reminders move to „Notizen & Aufgaben“ by this button, never by themselves -->
+      <section class="fa-card" aria-labelledby="fa-tmove-h" id="fa-tmove">
+        <h2 class="fa-card-title" id="fa-tmove-h">{{t:taskmove.title}}</h2>
+        <p class="fa-hint">{{t:taskmove.intro}}</p>
+        <p class="fa-hint" id="fa-tmove-status" role="status"></p>
+        <ul class="fa-hint fa-modes" id="fa-tmove-count" hidden></ul>
+        <ul class="fa-hint fa-modes" id="fa-tmove-what" hidden>
+          <li>{{t:taskmove.what_1}}</li>
+          <li>{{t:taskmove.what_2}}</li>
+          <li>{{t:taskmove.what_3}}</li>
+          <li>{{t:taskmove.what_4}}</li>
+        </ul>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button type="button" class="btn btn-sm btn-primary" id="fa-tmove-go" hidden>{{t:taskmove.go}}</button>
+          <button type="button" class="btn btn-sm" id="fa-tmove-back" hidden>{{t:taskmove.back}}</button>
+        </div>
+      </section>
+
       <section class="fa-card" aria-labelledby="fa-msg-h" id="fa-msg">
         <h2 class="fa-card-title" id="fa-msg-h">{{t:msgcfg.title}}</h2>
         <p class="fa-hint">{{t:msgcfg.intro}}</p>

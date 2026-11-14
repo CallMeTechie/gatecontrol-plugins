@@ -38,6 +38,10 @@
 //   1.21.0 — the shopping lists in „Notizen & Aufgaben“ (server/shopsync.js):
 //   GET    admin/shopping                      { shopping: { lists, items, open, home, hub: { available }, moved, canMove, canBack } }
 //   POST   admin/shopping/move                 {} — move them (again: nothing twice) · { back: true } — Familie owns them again
+//   1.24.0 — the tasks and place reminders in „Notizen & Aufgaben“ (server/tasksync.js):
+//   GET    admin/tasks                         { tasks: { tasks, repeating, rotate, first, split, stars, places, placesOthers, placesTell,
+//                                              placesOff, pending, home, hub: { available }, moved, canMove, canBack, modules } }
+//   POST   admin/tasks/move                    {} — move them (again, or cut short before: it goes on, nothing twice) · { back: true }
 
 const store = require('./store');
 const tz = require('./tz');
@@ -46,6 +50,7 @@ const config = require('./config');
 const locate = require('./locate');
 const shopping = require('./shopping');
 const shopsync = require('./shopsync');
+const tasksync = require('./tasksync');
 const kiosk = require('./kiosk');
 const presence = require('./presence');
 const ruleplaces = require('./ruleplaces');
@@ -255,6 +260,13 @@ async function route(req, gc, seg, cfg, now) {
     const fam = await members.load(gc, tz.localDate(now, cfg.tz));
     const out = body.back === true ? await shopsync.back(gc, fam, cfg, now) : await shopsync.move(gc, fam, cfg, now, null);
     return { ...out, shopping: await shopsync.preview(gc, now) };
+  }
+  // 1.24.0: the tasks and place reminders in „Notizen & Aufgaben“ — what would move, „Umziehen“, „Zurückholen“ (server/tasksync.js)
+  if (a === 'tasks' && seg.length === 2 && m === 'GET') return { tasks: await tasksync.preview(gc, await members.load(gc, tz.localDate(now, cfg.tz)), cfg, now) };
+  if (a === 'tasks' && seg.length === 3 && b === 'move' && m === 'POST') {
+    const fam = await members.load(gc, tz.localDate(now, cfg.tz));
+    const out = body.back === true ? await tasksync.back(gc, fam, cfg, now) : await tasksync.move(gc, fam, cfg, now, null);
+    return { ...out, tasks: await tasksync.preview(gc, fam, cfg, now) };
   }
   if (a === 'wall' && seg.length === 2 && (m === 'PUT' || m === 'PATCH')) {
     const id = body.listId == null || body.listId === '' ? '' : body.listId;

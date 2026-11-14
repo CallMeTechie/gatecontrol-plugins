@@ -113,6 +113,7 @@ async function tick(gc, ctx) {
   await run('expire', () => expire(gc, ctx));
   await run('bound', () => bound.flush(gc, ctx.now));
   await run('shopping', () => shopping.tick(gc, ctx));
+  await run('family', () => require('./famtasks').tick(gc, ctx));
   await run('sources', () => sources.tick(gc, ctx));
   await run('mstodo', () => mstodo.tick(gc, ctx));
   if (!tick.lastPurge || ctx.now - tick.lastPurge > 3600000) { tick.lastPurge = ctx.now; await run('purge', () => purge(gc, ctx)); }

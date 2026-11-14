@@ -120,7 +120,9 @@ async function tick(gc, ctx) {
     const late = behind > LATE_HINT;
     const p = await prefs.get(gc, user);
     const att = await attachedOf(gc, lang, r, user);
-    if (await pushprefs.send(gc, [user], 'reminders', {
+    // 1.6.0: „wer zuerst“ reminds everybody of the turn
+    const first = r.turn === 'first' ? tasks.peopleOf(r, { members: new Map([[r.list_id, new Set(await lists.memberIds(gc, r.list_id))]]) }) : [];
+    if (await pushprefs.send(gc, first.length > 1 ? first : [user], 'reminders', {
       topic: 'reminders', title: r.title.slice(0, 120), body: withLine(bodyOf(lang, r, ctx.now, ctx.tz, late), att.line),
       priority: r.important ? 'high' : 'normal', collapseKey: 'task:' + r.id,
       data: {
@@ -193,7 +195,8 @@ async function feed(gc, ctx) {
     WHERE t.remind_at IS NOT NULL AND t.reminded_at IS NULL AND t.done_at IS NULL AND t.deleted_at IS NULL AND t.remind_at <= ? ORDER BY t.remind_at LIMIT 1000`, [ctx.userId, until]);
   const who = await duty.of(gc, rows);
   for (const r of rows) {
-    if (who.get(r.id) !== ctx.userId) continue;
+    const everybody = r.turn === 'first' ? tasks.peopleOf(r, { members: new Map([[r.list_id, new Set(await lists.memberIds(gc, r.list_id))]]) }) : [];
+    if (everybody.length > 1 ? !everybody.includes(ctx.userId) : who.get(r.id) !== ctx.userId) continue;
     const at = Math.max(r.remind_at, 0);
     const att = await attachedOf(gc, ctx.lang, r, ctx.userId);
     out.reminders.push({

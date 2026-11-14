@@ -87,7 +87,7 @@ const BOTH = [[L1, 'Einkauf', [['Milch', '2 l', false], ['Brot', null, false], [
 test('only Familie installed: everything as before — no hub, no move, nothing sent', () => linked({ hub: false }, async (x) => {
   const anna = x.fam(ANNA);
   assert.deepEqual((await anna('POST', '/shopping/ops', { ops: SEED })).json.rejected, []);
-  assert.deepEqual((await anna('GET', '/me')).json.features, ['shoppingHome']);
+  assert.deepEqual((await anna('GET', '/me')).json.features, ['shoppingHome', 'tasksHome']);
   const pv = await anna('GET', '/shopping/move');
   assert.deepEqual(pv.json, { ok: true, lists: 2, items: 4, open: 3, home: { home: 'familie', since: null }, hub: { available: false }, moved: false, canMove: false, canBack: false });
   const mv = await anna('POST', '/shopping/move', {});

@@ -3,6 +3,47 @@
 Die Familie in der GateControl-App (eigener Tab), im Portal (eigener Tab „Familie“) und auf
 drei Admin-Seiten. Alles bleibt auf dem eigenen Server.
 
+## 1.24.0
+
+„Aufgaben und Erinnerungen“, Stufe 4 – die Aufgaben und Orts-Erinnerungen ziehen nach „Notizen & Aufgaben“ um.
+
+- **Umzug per Knopf, mit Vorschau** (`server/tasksync.js`, `migrations/015_tasks_hub.sql`; „Notizen & Aufgaben“ ab
+  1.6.0): Auf der Seite **Funktionen** steht die Karte „Aufgaben und Orts-Erinnerungen in „Notizen & Aufgaben““. Sie
+  zeigt, was umzieht und wie viel – Aufgaben, wie viele sich wiederholen, „reihum“ und „wer zuerst“, Aufgaben mit
+  Sternen, Orts-Erinnerungen (davon für andere) – und was bleibt. **Nichts zieht von selbst um**, auch nicht beim
+  Update. Für Eltern dieselbe Funktion als API: `GET tasks/move`, `POST tasks/move {}` bzw. `{ back: true }`.
+- **In Häppchen, wiederaufnehmbar, nichts doppelt:** Der Knopf merkt alles vor (eine Transaktion) und sendet dann in
+  Teilen von höchstens 25 Einträgen; jede Zeile zieht unter ihrer eigenen Kennung um. Bricht der Umzug ab, steht er
+  und geht mit dem Hintergrundlauf oder dem Knopf „Umzug fortsetzen“ weiter. Noch nicht Umgezogenes erinnert so lange
+  weiter aus dem Familien-Plugin.
+- **Danach** lebt alles in „Notizen & Aufgaben“ (Liste „Familie“); das Familien-Plugin hält eine abgeglichene Kopie
+  und zeigt sie wie bisher: Portal, Wandtablet, Karten im Chat, `GET tasks` – mit `home: { home: 'notizen', since }`.
+  **Ältere Apps arbeiten unverändert weiter:** Anlegen, Ändern, Löschen, Abhaken, „Später“ und „Aufgabe“ im Chat über
+  die Familien-API gehen gleich darauf an „Notizen & Aufgaben“; was dort geschieht, kommt hierher zurück.
+- **Sterne bleiben hier:** Wird in „Notizen & Aufgaben“ abgehakt, bucht das Familien-Plugin die Sterne (Dienst
+  `tasks_changed`, dann Abholen – jede Erledigung genau einmal). „Noch nicht fertig“ dort nimmt sie zurück.
+  Wochenziel, Taschengeld und Wunschlisten sind unverändert.
+- **Keine Erinnerung doppelt:** An umgezogene Aufgaben erinnert „Notizen & Aufgaben“, das Familien-Plugin nicht. Ist
+  „Notizen & Aufgaben“ nicht erreichbar, erinnert das Familien-Plugin wieder selbst und gleicht später ab.
+- **„Jeder für sich“:** Eine Aufgabe für mehrere Personen, die jede für sich abhakt, wird beim Umzug zu einer Aufgabe
+  je Person (mit ihren Erledigungen und Sternen).
+- **Orts-Erinnerungen** ziehen als Aufgaben mit Ort um – die eigene in die Liste „Aufgaben“ ihrer Person, eine für
+  jemand anderen in eine Liste, die nur die beiden sehen; die Zustimmung bleibt, wie sie ist. **Es bleiben hier:**
+  Erinnerungen, die anderen Bescheid sagen („… ist angekommen“), und ausgeschaltete. Welches Handy überwacht: Fragt das
+  Handy einer Person „Notizen & Aufgaben“ nach seinen Orten, bekommt es die umgezogenen von dort – `GET places` meldet
+  sie dann mit `active: false`, `home: 'notizen'`, und der Dienst `geofences` zählt sie nicht mehr mit. Ein Handy mit
+  einer älteren App bekommt sie weiter von hier. So meldet sich nichts doppelt und nichts geht verloren.
+- **Rückweg:** „Zurückholen“ gleicht ein letztes Mal ab und gibt alles dem Familien-Plugin zurück; in „Notizen &
+  Aufgaben“ wandern die offenen Aufgaben aus der Familie in den Papierkorb (30 Tage). Nicht zurück kommt, was es nur
+  dort gibt: Unteraufgaben, Notizen, Anhänge, ein Ort an einer Familien-Aufgabe, Wiederholungen, die das
+  Familien-Plugin nicht kennt (sie stehen hier als einmalige Aufgabe). Wird „Notizen & Aufgaben“ neu aufgesetzt, fällt
+  das Familien-Plugin von selbst auf seine Kopie zurück.
+- `GET me`: `features` enthält `tasksHome`. `GET tasks`, `GET places` und `GET overview` (`tasks.home`) sagen, wo
+  die Aufgaben leben; ein Ort trägt `home` und `moved`.
+- Neue Einträge in `permissions.services` (`gatecontrol-notizen:tasks_bind`, `tasks_put`, `tasks_list`) und der neue
+  Dienst `tasks_changed`: **einmal vom Administrator zu bestätigen.**
+- Ohne „Notizen & Aufgaben“ (oder ohne den Knopf) bleibt alles wie bisher.
+
 ## 1.23.0
 
 - **„Andere Messenger“ – Eltern schalten frei** (`server/linked.js`, `ui/portal-linked.js`; Messenger ab 1.13.0 auf

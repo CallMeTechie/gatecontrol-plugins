@@ -267,6 +267,9 @@ function taskView(ctx, r, placeRows) {
     lat: p ? p.lat : null, lon: p ? p.lon : null, radius: p ? p.radius : null, ref: p ? p.ref || null : null, own: named,
     trigger: j.trigger === 'exit' ? 'exit' : 'enter', key: j.key || null, label, by: j.by || null,
     consent: j.consent || 'accepted', watch: j.who === ctx.userId && (j.consent || 'accepted') === 'accepted',
+    // 1.6.0: mine — it is this person's phone that is to watch the place; canConsent — they may answer (POST
+    // tasks/<id>/place/consent; everybody else of the list gets 403)
+    mine: j.who === ctx.userId, canConsent: j.who === ctx.userId && !!j.by && j.by !== ctx.userId,
     nearby: !!j.key && j.trigger !== 'exit' && !j.any, skipped: st.skip.length, later: st.later > ctx.now ? iso(ctx, st.later) : null,
   };
 }

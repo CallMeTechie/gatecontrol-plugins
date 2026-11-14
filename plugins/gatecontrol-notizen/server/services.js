@@ -6,6 +6,7 @@
 const sources = require('./sources');
 const bound = require('./bound');
 const shopping = require('./shopping');
+const famtasks = require('./famtasks');
 const { isKnown } = require('./util');
 
 async function handle(gc, base, call) {
@@ -24,6 +25,10 @@ async function handle(gc, base, call) {
       case 'shopping_bind': return await shopping.bind(gc, base, c.caller, p);
       case 'shopping_put': return await shopping.put(gc, base, c.caller, p);
       case 'shopping_list': return await shopping.listFor(gc, base, c.caller, p);
+      // 1.6.0: Familie's tasks and place reminders live here (server/famtasks.js)
+      case 'tasks_bind': return await famtasks.bind(gc, base, c.caller, p);
+      case 'tasks_put': return await famtasks.put(gc, base, c.caller, p);
+      case 'tasks_list': return await famtasks.listFor(gc, base, c.caller, p);
       default: return { ok: false, code: 'not_found' };
     }
   } catch (e) {

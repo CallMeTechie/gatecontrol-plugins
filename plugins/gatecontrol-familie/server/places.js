@@ -18,6 +18,7 @@
 const store = require('./store');
 const push = require('./push');
 const shoppingIds = require('./shopping').ID_RE;
+const hubmark = require('./hubmark');
 const { fail, posInt, text, multiline, bool, intIn, numIn, iso, parseIso, userIds, parseJson } = require('./util');
 
 const TITLE_MAX = 60;
@@ -30,6 +31,7 @@ const CONSENTS = ['accepted', 'pending', 'declined'];
 const DEDUPE_MS = 60000;
 const EVENT_DAYS = 90;
 const DAY = 86400000;
+const GONE_KEEP_DAYS = 30;
 
 function rowToPlace(r) {
   return {
@@ -40,20 +42,32 @@ function rowToPlace(r) {
   };
 }
 
+/**
+ * 1.24.0: where the reminder lives for the phone of its target — 'notizen': the hub hands it to that phone as a task at a
+ * place (Familie says active false, so no phone watches it twice); 'familie': as ever (also for a moved reminder whose
+ * person's phone does not ask the hub: an older app).
+ */
+async function homed(gc, x, p, now) {
+  const served = await hubmark.hubServes(gc, x, now);
+  return { ...p, active: served ? false : p.active, home: served ? 'notizen' : 'familie', moved: x.in_hub === 1 };
+}
+
 function view(p, fam) {
   const name = (id) => { const m = fam.byId.get(id); return m ? m.name : null; };
   return { ...p, tellUserIds: p.tellUserIds.filter((id) => fam.byId.has(id)), ownerName: name(p.ownerId), targetName: name(p.targetUserId) };
 }
 
 async function getPlace(gc, id) {
-  const r = await store.one(gc, 'SELECT * FROM places WHERE id = ?', [id]);
+  const r = await store.one(gc, 'SELECT * FROM places WHERE id = ? AND gone_at IS NULL', [id]);
   return r ? rowToPlace(r) : null;
 }
 
 /** GET places */
 async function list(gc, r) {
-  const rows = await store.all(gc, 'SELECT * FROM places WHERE owner_id = ? OR target_user_id = ? ORDER BY id', [r.me.userId, r.me.userId]);
-  return { places: rows.map((x) => view(rowToPlace(x), r.fam)) };
+  const rows = await store.all(gc, 'SELECT * FROM places WHERE (owner_id = ? OR target_user_id = ?) AND gone_at IS NULL ORDER BY id', [r.me.userId, r.me.userId]);
+  const out = [];
+  for (const x of rows) out.push(await homed(gc, x, view(rowToPlace(x), r.fam), r.now));
+  return { places: out };
 }
 
 async function fields(gc, body, existing, r) {
@@ -100,8 +114,17 @@ async function fields(gc, body, existing, r) {
   return out;
 }
 
+/**
+ * 1.24.0: after a reminder was made or changed while the hub owns them — one that can live there (it tells nobody: those
+ * stay Familie's) goes there, one that is there already follows.
+ */
+async function toHub(gc, id) {
+  if (!hubmark.state.on) return;
+  await store.run(gc, "UPDATE places SET in_hub = 1, dirty = dirty + 1 WHERE id = ? AND (in_hub = 1 OR (action_kind != 'tell' AND active = 1))", [id]);
+}
+
 async function activeCount(gc, target, exceptId) {
-  return (await store.one(gc, "SELECT COUNT(*) AS n FROM places WHERE target_user_id = ? AND active = 1 AND consent != 'declined' AND id != ?", [target, exceptId || 0])).n;
+  return (await store.one(gc, "SELECT COUNT(*) AS n FROM places WHERE target_user_id = ? AND active = 1 AND consent != 'declined' AND gone_at IS NULL AND id != ?", [target, exceptId || 0])).n;
 }
 
 function consentPush(r, id, target, title) {
@@ -121,6 +144,8 @@ async function create(gc, r) {
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   [r.me.userId, f.targetUserId, f.title, f.note, f.lat, f.lon, f.radius, f.trigger, f.action, f.listId, JSON.stringify(f.tellUserIds), f.repeat, f.active ? 1 : 0, consent, r.now, r.now]);
   const id = res.lastInsertRowid;
+  await toHub(gc, id);
+  // 1.24.0: a reminder that lives in the hub is asked about there — unless that person's phone still listens to Familie
   if (consent === 'pending') consentPush(r, id, f.targetUserId, f.title);
   return { place: view(await getPlace(gc, id), r.fam) };
 }
@@ -140,6 +165,7 @@ async function update(gc, r, rawId) {
   else if (changed) consent = 'pending';
   await store.run(gc, `UPDATE places SET target_user_id = ?, title = ?, note = ?, lat = ?, lon = ?, radius = ?, trigger_on = ?, action_kind = ?, list_id = ?, tell_json = ?, repeat = ?, active = ?, consent = ?, updated_at = ? WHERE id = ?`,
     [f.targetUserId, f.title, f.note, f.lat, f.lon, f.radius, f.trigger, f.action, f.listId, JSON.stringify(f.tellUserIds), f.repeat, f.active ? 1 : 0, consent, r.now, id]);
+  await toHub(gc, id);
   if (consent === 'pending' && changed) consentPush(r, id, f.targetUserId, f.title);
   return { place: view(await getPlace(gc, id), r.fam) };
 }
@@ -149,7 +175,10 @@ async function remove(gc, r, rawId) {
   const id = posInt(rawId);
   const p = id ? await getPlace(gc, id) : null;
   if (!p || (p.ownerId !== r.me.userId && p.targetUserId !== r.me.userId)) throw fail('not_found');
-  await store.run(gc, 'DELETE FROM places WHERE id = ?', [id]);
+  // 1.24.0: a reminder the hub has stays hidden until the hub was told (then it goes with the retention)
+  const x = await store.one(gc, 'SELECT in_hub FROM places WHERE id = ?', [id]);
+  if (hubmark.state.on && x && x.in_hub === 1) await store.run(gc, 'UPDATE places SET gone_at = ?, dirty = dirty + 1 WHERE id = ?', [r.now, id]);
+  else await store.run(gc, 'DELETE FROM places WHERE id = ?', [id]);
   return {};
 }
 
@@ -162,6 +191,7 @@ async function consent(gc, r, rawId) {
   const accept = bool(r.body && r.body.accept);
   if (accept && p.active && p.consent === 'declined' && await activeCount(gc, p.targetUserId, id) >= MAX_ACTIVE) throw fail('too_many_places');
   await store.run(gc, 'UPDATE places SET consent = ?, updated_at = ? WHERE id = ?', [accept ? 'accepted' : 'declined', r.now, id]);
+  await hubmark.place(gc, id);
   return { place: view(await getPlace(gc, id), r.fam) };
 }
 
@@ -195,11 +225,13 @@ async function triggered(gc, r, rawId) {
   await store.run(gc, 'INSERT INTO place_events (place_id, user_id, title, transition, at, told) VALUES (?, ?, ?, ?, ?, ?)', [id, r.me.userId, p.title, b.transition, at, told]);
   const deactivate = live && !repeat && p.repeat === 'once';
   await store.run(gc, `UPDATE places SET last_triggered_at = ?${deactivate ? ', active = 0' : ''} WHERE id = ?`, [at, id]);
+  if (deactivate) await hubmark.place(gc, id);
   return { place: view(await getPlace(gc, id), r.fam), told, repeated: repeat };
 }
 
 async function purge(gc, now) {
   await store.run(gc, 'DELETE FROM place_events WHERE at < ?', [now - EVENT_DAYS * DAY]);
+  await store.run(gc, 'DELETE FROM places WHERE gone_at IS NOT NULL AND gone_at < ? AND dirty = 0', [now - GONE_KEEP_DAYS * DAY]);
 }
 
 module.exports = { MAX_ACTIVE, list, create, update, remove, consent, triggered, purge, view, rowToPlace };

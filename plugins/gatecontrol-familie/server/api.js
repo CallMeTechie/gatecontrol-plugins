@@ -57,6 +57,7 @@ const push = require('./push');
 const members = require('./members');
 const shopping = require('./shopping');
 const shopsync = require('./shopsync');
+const tasksync = require('./tasksync');
 const tasks = require('./tasks');
 const dates = require('./dates');
 const locate = require('./locate');
@@ -91,7 +92,9 @@ async function me(gc, r) {
     me: members.meView(r.me, rings),
     modules: { ...r.cfg.modules },
     // 1.21.0: `shoppingHome` — GET shopping and the overview say where the shopping lists live (home), GET|POST shopping/move
-    features: ['shoppingHome'],
+    // 1.24.0: `tasksHome` — GET tasks, GET places and the overview say where the tasks and place reminders live (home),
+    // GET|POST tasks/move; a place has `home` and `moved`
+    features: ['shoppingHome', 'tasksHome'],
     members: r.fam.list.map((m) => members.memberView(r.me, m, r.cfg, rings)),
     serverTime: iso(r.now),
   };
@@ -103,7 +106,8 @@ async function overview(gc, r) {
   const out = { shopping: null, tasks: null, stars: null, dates: null, locate: null, rides: null };
   // 1.21.0: home — where the lists live ('notizen' after the move, with the hub there; the numbers here stay right)
   if (mod.shopping) out.shopping = { lists: await shopping.summary(gc), going: await shopping.goingNow(gc, r.now), home: await shopsync.where(gc) };
-  if (mod.tasks) out.tasks = await tasks.mine(gc, r);
+  // 1.24.0: home — where the tasks live ('notizen' after the move, with the hub there; the list here stays right)
+  if (mod.tasks) out.tasks = { ...(await tasks.mine(gc, r)), home: await tasksync.where(gc) };
   if (mod.tasks && mod.stars && r.me.role === 'child') {
     const s = await tasks.starsOf(gc, r.fam, r.cfg, r.today);
     out.stars = { week: s.week[r.me.userId] || 0, goal: s.goal[r.me.userId] || r.me.starGoal };
@@ -162,7 +166,14 @@ function dispatch(gc, r, seg, method) {
 
   if (a === 'tasks') {
     need('tasks');
-    if (n === 1 && GET) return () => tasks.get(gc, r);
+    if (n === 1 && GET) return async () => ({ ...(await tasks.get(gc, r)), home: await tasksync.where(gc) });
+    // 1.24.0: the move to „Notizen & Aufgaben“ (parents): what would move, the move, the way back (server/tasksync.js) —
+    // no transaction around the calls to the hub
+    if (n === 2 && b === 'move' && GET) { parentsOnly(r); return readOnly(() => tasksync.preview(gc, r.fam, r.cfg, r.now)); }
+    if (n === 2 && b === 'move' && POST) {
+      parentsOnly(r);
+      return readOnly(async () => (r.body.back === true ? tasksync.back(gc, r.fam, r.cfg, r.now) : tasksync.move(gc, r.fam, r.cfg, r.now, r.me.userId)));
+    }
     if (n === 1 && POST) { parentsOnly(r); return async () => ({ task: await tasks.create(gc, r) }); }
     // 1.9.0: a task from a chat (any member; the card goes into the chat after the commit)
     if (n === 2 && b === 'quick' && POST) { notWall(r); return () => tasks.quick(gc, r); }
@@ -170,7 +181,7 @@ function dispatch(gc, r, seg, method) {
     if (n >= 2 && !id) throw fail('not_found');
     if (n === 2 && GET) return async () => ({ task: await tasks.one(gc, r, id) });
     if (n === 2 && PATCH) { parentsOnly(r); return async () => ({ task: await tasks.update(gc, r, id) }); }
-    if (n === 2 && DELETE) { parentsOnly(r); return async () => { await tasks.remove(gc, id); return {}; }; }
+    if (n === 2 && DELETE) { parentsOnly(r); return async () => { await tasks.remove(gc, id, r.now); return {}; }; }
     if (n === 3 && c === 'done' && POST) return () => tasks.done(gc, r, id);
     if (n === 3 && c === 'snooze' && POST) return () => tasks.snooze(gc, r, id);
   }
@@ -209,7 +220,7 @@ function dispatch(gc, r, seg, method) {
   if (a === 'places') {
     need('places');
     sensitive();
-    if (n === 1 && GET) return () => places.list(gc, r);
+    if (n === 1 && GET) return async () => ({ ...(await places.list(gc, r)), home: await tasksync.where(gc) });
     if (n === 1 && POST) return () => places.create(gc, r);
     if (n === 2 && PATCH) return () => places.update(gc, r, b);
     if (n === 2 && DELETE) return () => places.remove(gc, r, b);
