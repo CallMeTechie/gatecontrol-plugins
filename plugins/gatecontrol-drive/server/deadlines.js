@@ -54,6 +54,7 @@
 const store = require('./store');
 const nodes = require('./nodes');
 const address = require('./address');
+const duehub = require('./duehub');
 const { t } = require('./text');
 const { fail, posInt, nonNeg, iso, day, line } = require('./util');
 
@@ -88,11 +89,12 @@ function calView(c, lang) {
   return { eventId: c.event_id == null ? null : c.event_id, at: iso(c.at), target: { kind: c.kind, label: c.kind === 'mail' ? c.label || '' : t(lang, 'deadline.target.family') } };
 }
 
-function view(d, rem, cals, lang) {
+function view(d, rem, cals, lang, hub = false) {
   const list = (cals || []).map((c) => calView(c, lang));
   return {
     id: d.id, kind: d.kind, date: d.date, label: d.label || null,
-    reminder: rem ? { at: iso(rem.at), daysBefore: rem.days_before, sent: rem.sent_at != null } : null,
+    // since 1.30.0 `by`: who rings it — 'notizen' while „Notizen & Aufgaben“ has taken it (duehub.js), else 'drive'
+    reminder: rem ? { at: iso(rem.at), daysBefore: rem.days_before, sent: rem.sent_at != null, by: hub && rem.handed_at != null ? 'notizen' : 'drive' } : null,
     calendar: list.length ? list[list.length - 1] : null, calendars: list,
     foundAt: iso(d.found_at),
     // since 1.27.0: ticked off (for everyone who reads the file)
@@ -113,9 +115,15 @@ async function calendarOf(gc, uid, ids) {
   return out;
 }
 
+/** Does „Notizen & Aufgaben“ ring the reminders it took (asked once per request)? */
+async function hubOn(ctx) {
+  if (ctx.dueHub === undefined) ctx.dueHub = await duehub.active(ctx.gc);
+  return ctx.dueHub;
+}
+
 /** One deadline row as the viewer sees it. */
 async function viewOne(ctx, d) {
-  return view(d, (await remindersOf(ctx.gc, ctx.viewer, [d.id])).get(d.id), (await calendarOf(ctx.gc, ctx.viewer, [d.id])).get(d.id), ctx.lang);
+  return view(d, (await remindersOf(ctx.gc, ctx.viewer, [d.id])).get(d.id), (await calendarOf(ctx.gc, ctx.viewer, [d.id])).get(d.id), ctx.lang, await hubOn(ctx));
 }
 
 /** The viewer's reminders of deadlines `ids` → Map deadline id → row. */
@@ -133,7 +141,8 @@ async function ofNode(ctx, nodeId) {
   const rows = await store.all(ctx.gc, 'SELECT * FROM doc_deadlines WHERE node_id = ? ORDER BY date, id', [nodeId]);
   const rem = await remindersOf(ctx.gc, ctx.viewer, rows.map((r) => r.id));
   const cal = await calendarOf(ctx.gc, ctx.viewer, rows.map((r) => r.id));
-  return rows.map((r) => view(r, rem.get(r.id), cal.get(r.id), ctx.lang));
+  const hub = rows.length ? await hubOn(ctx) : false;
+  return rows.map((r) => view(r, rem.get(r.id), cal.get(r.id), ctx.lang, hub));
 }
 
 /**
@@ -247,10 +256,11 @@ async function views(ctx, rows) {
   const rem = await remindersOf(ctx.gc, ctx.viewer, rows.map((r) => r.dl_id));
   const cal = await calendarOf(ctx.gc, ctx.viewer, rows.map((r) => r.dl_id));
   const docs = await docsOf(ctx.gc, rows);
+  const hub = rows.length ? await hubOn(ctx) : false;
   const out = [];
   for (const r of rows) {
     const { dl_id: id, dl_kind: kind, dl_date: date, dl_label: label, dl_found: found, dl_done_at: doneAt, dl_done_by: doneBy, ...n } = r;
-    out.push({ ...view({ id, kind, date, label, found_at: found, done_at: doneAt, done_by: doneBy }, rem.get(id), cal.get(id), ctx.lang), doc: docs.get(n.id) || null, node: nodes.view(n, { path: await nodes.pathOf(ctx.gc, n) }) });
+    out.push({ ...view({ id, kind, date, label, found_at: found, done_at: doneAt, done_by: doneBy }, rem.get(id), cal.get(id), ctx.lang, hub), doc: docs.get(n.id) || null, node: nodes.view(n, { path: await nodes.pathOf(ctx.gc, n) }) });
   }
   return out;
 }
@@ -510,16 +520,21 @@ const dateText = (date, lang) => (lang === 'en' ? date : date.split('-').reverse
  * The background run: reminders whose time came go out (topic deadline), at most DUE_BATCH a run. `asPerson(uid)` → the
  * person's context (index.js) or null (no seat, no licence, gone) — then, and when they no longer read the file, nothing
  * is sent. Each reminder goes once.
+ * Since 1.30.0 (duehub.js): what „Notizen & Aufgaben“ took (handed_at) is not Drive's to send while the hub rings
+ * (`hub`: the administrator's choice is 'notizen' and its service is there — the hub marks it sent when it rings). Without
+ * the hub such a reminder is Drive's again when it comes due — unless that was more than a day ago.
  */
-async function due(gc, settings, now, asPerson) {
+async function due(gc, settings, now, asPerson, hub = false) {
   if (typeof asPerson !== 'function') return 0;
-  const rows = await store.all(gc, `SELECT r.deadline_id, r.user_id, r.days_before, d.node_id, d.kind, d.date, d.label FROM doc_reminders r
-    JOIN doc_deadlines d ON d.id = r.deadline_id WHERE r.sent_at IS NULL AND r.at <= ? AND d.done_at IS NULL ORDER BY r.at LIMIT ?`, [now, DUE_BATCH]);
+  const rows = await store.all(gc, `SELECT r.deadline_id, r.user_id, r.days_before, r.at, r.handed_at, d.node_id, d.kind, d.date, d.label FROM doc_reminders r
+    JOIN doc_deadlines d ON d.id = r.deadline_id WHERE r.sent_at IS NULL AND r.at <= ? AND d.done_at IS NULL${hub ? ' AND r.handed_at IS NULL' : ''} ORDER BY r.at LIMIT ?`, [now, DUE_BATCH]);
   let sent = 0;
   for (const r of rows) {
-    await store.run(gc, 'UPDATE doc_reminders SET sent_at = ? WHERE deadline_id = ? AND user_id = ?', [now, r.deadline_id, r.user_id]);
+    await store.run(gc, 'UPDATE doc_reminders SET sent_at = ?, handed_at = NULL WHERE deadline_id = ? AND user_id = ?', [now, r.deadline_id, r.user_id]);
+    if (r.handed_at != null && now - r.at > duehub.LATE_MAX) continue;
     const n = await nodes.row(gc, r.node_id);
-    if (!n || n.deleted_at != null) continue;
+    // a vault's file has no deadline (reach); should a reminder be left, its name goes into no notification
+    if (!n || n.deleted_at != null || n.vault_id) continue;
     const ctx = await asPerson(r.user_id);
     if (!ctx || !(await ctx.visible()).some((v) => v.area.id === n.area_id)) continue;
     const lang = ctx.lang;

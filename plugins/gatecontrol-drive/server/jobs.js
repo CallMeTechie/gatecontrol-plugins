@@ -84,7 +84,7 @@ async function tick(gc, now = Date.now(), o = {}) {
       if (touched.size) await changes.announce(gc, touched, settings);
     } catch (e) { gc.log.warn('vaults to the top folder failed', (e && e.code) || 'error'); }
     try { out.insights = await insights.tick(gc, settings, now, o.asPerson); } catch (e) { gc.log.warn('document recognition failed', (e && e.code) || 'error'); }
-    try { out.reminders = await deadlines.due(gc, settings, now, o.asPerson); } catch (e) { gc.log.warn('deadline reminders failed', (e && e.code) || 'error'); }
+    try { out.reminders = await deadlines.due(gc, settings, now, o.asPerson, typeof o.dueHub === 'function' ? await o.dueHub() : false); } catch (e) { gc.log.warn('deadline reminders failed', (e && e.code) || 'error'); }
     try { out.imports = await imports.tick(gc, settings, now, o.asPerson); } catch (e) { gc.log.warn('imports failed', (e && e.code) || 'error'); }
     try { out.ops = await ops.tick(gc, now, o.ops); } catch (e) { gc.log.warn('jobs failed', (e && e.code) || 'error'); }
     // the home cache of the gateways (1.20.0, homecache.js — every 15 minutes or after a change; never throws)

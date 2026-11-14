@@ -2,6 +2,37 @@
 
 Dateien der Familie und des Teams auf dem eigenen Speicher – auf diesem Server, einer NAS oder in S3.
 
+## 1.30.0
+
+„Aufgaben und Erinnerungen“, Stufe 5 – an Fristen kann „Notizen & Aufgaben“ erinnern.
+
+- **Neue Einstellung „Fristen erinnert“** (Einstellungen › Plugins › Drive, `deadline_reminders`): **Drive**
+  (Voreinstellung – nichts ändert sich) oder **Notizen & Aufgaben** (ab dessen Version 1.7.0). Neu: `server/duehub.js`,
+  Migration 024 (`doc_reminders.handed_at`).
+  - Nichts zieht um: Die Frist bleibt an der Datei, die Erinnerung der Person (`POST deadlines/<id>/remind`) bleibt hier
+    und wird hier gesetzt und entfernt. Mit „Notizen & Aufgaben“ übergibt Drive seine offenen Erinnerungen an den Hub
+    (`gatecontrol-notizen:deadline_reminders`, immer die ganze Liste, ≤ 500), der sie als Aufgaben mit „Erledigt“ und
+    „Später“ klingeln lässt, auch als Alarm auf dem Gerät und in „Gestern offen geblieben“.
+  - **Keine doppelte Meldung:** Was der Hub übernommen hat (`handed_at`), sendet Drive nicht selbst. Der Hub fragt vor
+    dem ersten Klingeln zurück (neuer Dienst `deadline_claim { v, id, userId }` → `{ ok, send }`), Drive vermerkt dabei
+    „gesendet“ – eine Erinnerung kommt so von genau einer Seite.
+  - **Rückfälle:** Einstellung wieder auf „Drive“ – alles ist wieder Drives (der Hub bekommt eine leere Liste und räumt
+    auf). Hub nicht installiert, älter, angehalten oder er lehnt ab (Quelle Drive dort aus, Berechtigung fehlt): Drive
+    sendet selbst, was fällig wird; die Statuszeile der Einstellungsseite sagt, warum. Eine Erinnerung, die beim Hub
+    fällig war und älter als ein Tag ist, wird nicht nachträglich gesendet.
+  - Übergeben werden nur Erinnerungen an Fristen, die nicht abgehakt sind, von Dateien außerhalb eines Tresors, die die
+    Person noch liest, in den Tagen, die Drive dem Hub als Einträge meldet. Eine Erinnerung, die in weniger als 5
+    Minuten fällig ist und noch nicht beim Hub liegt, bleibt Drives.
+- **Tresor:** Fristen an Tresor-Dateien gibt es nicht. Zur Sicherheit prüft jetzt auch der Hintergrundlauf selbst: Liegt
+  doch eine Erinnerung an einer Tresor-Datei, geht ihr Name in keine Mitteilung – weder aus Drive noch über den Hub.
+- API: `Deadline.reminder.by` `'drive' | 'notizen'` (wer klingelt); Feature-Wort `deadlineHub` in `GET me`, solange der
+  Hub erinnert. Die Routen `deadlines/<id>/remind` und `…/done` sind unverändert.
+- Portal: „· über Notizen & Aufgaben“ an der Erinnerung („Fristen“, „Dokument-Infos“).
+- Neue Berechtigung `gatecontrol-notizen:deadline_reminders` – GateControl fragt beim Update einmal danach.
+- Tests: `test/duehub.test.js` (beide Plugins echt, jedes in seinem Mock-Host: Voreinstellung, Übergabe, einmal
+  klingeln, Ändern / Entfernen / Erledigen in beide Richtungen, gelöschte Aufgabe, Weg zurück, Hub fehlt / älter /
+  lehnt ab / gerade weg, Drive gerade weg, `deadline_claim`, Tresor, zwei Personen), `test/portal_ai_import.test.js`.
+
 ## 1.29.1
 
 Weniger Lese- und Schreibarbeit auf einem langsamen Datenträger. Anlass: das Protokoll von GateControl („slow plugin

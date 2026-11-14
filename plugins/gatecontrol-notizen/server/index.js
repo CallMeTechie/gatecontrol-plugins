@@ -19,6 +19,7 @@ const shopping = require('./shopping');
 const places = require('./places');
 const placesearch = require('./placesearch');
 const famtasks = require('./famtasks');
+const drivedue = require('./drivedue');
 const { t } = require('./text');
 
 const CART = 'M6 6h15l-1.5 9h-12zM6 6L5 3H2M9 20a1 1 0 1 0 0-2 1 1 0 0 0 0 2zM18 20a1 1 0 1 0 0-2 1 1 0 0 0 0 2z';
@@ -45,6 +46,7 @@ module.exports = {
     shopping.reset();
     places.reset();
     famtasks.reset();
+    drivedue.reset();
     placesearch.state.version = require('../plugin.json').version;
     gc.log.info('Notizen & Aufgaben started');
   },
@@ -67,6 +69,10 @@ module.exports = {
     const off = st.filter((s) => s.enabled && !s.available).map((s) => t(l, 'src.' + s.plugin));
     const out = [{ group: 'sources', tone: there.length ? 'ok' : 'info', text: there.length ? t(l, 'st.sources', { list: there.join(', ') }) : t(l, 'st.no_sources') }];
     if (off.length) out.push({ group: 'sources', tone: 'info', text: t(l, 'st.sources_missing', { list: off.join(', ') }) });
+    // 1.7.0: the reminders of Drive's deadlines — from here (how many), ready, or not possible with this Drive
+    const dl = (await require('./store').one(gc, 'SELECT COUNT(*) AS n FROM drive_due WHERE task_id IS NOT NULL')).n;
+    const dlCan = await drivedue.claimable(gc);
+    if (st.some((s) => s.plugin === drivedue.DRIVE && s.enabled && s.available)) out.push({ group: 'sources', tone: dl ? 'ok' : 'info', text: dl ? t(l, 'st.dl_on', { n: dl }) : t(l, dlCan ? 'st.dl_ready' : 'st.dl_missing') });
     // 1.3.0: the calendar „Aufgaben“ of Mail
     const cfg = await config.get(gc);
     const mail = await calsync.available(gc, clock.now());

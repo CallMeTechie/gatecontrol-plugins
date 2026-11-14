@@ -1,5 +1,47 @@
 # Changelog
 
+## 1.7.0
+
+„Aufgaben und Erinnerungen“, Stufe 5 – an die Fristen aus Drive erinnert „Notizen & Aufgaben“.
+
+- **Fristen aus Drive erinnern von hier** (`server/drivedue.js`, `migrations/009_drive_deadlines.sql`; Drive ab 1.30.0).
+  Die Frist bleibt an der Datei in Drive, ebenso die Erinnerung der Person („3 Tage vorher“) – Drive ist für beides die
+  Quelle der Wahrheit. Umgestellt wird nur, **wer erinnert**, und zwar auf der Einstellungsseite von **Drive**
+  („Fristen erinnert: Drive / Notizen & Aufgaben“, Voreinstellung Drive). Hier gibt es dafür keinen Schalter und keinen
+  Umzug: nichts wird kopiert, der Weg zurück ist dieselbe Einstellung.
+  - Neuer Dienst `deadline_reminders` (nur Drive): `{ v: 1, reminders: [{ id: 'deadline:<id>', userId, at, daysBefore,
+    sent }] }` → `{ ok, taken, rejected: ['<Frist>:<Person>'] }`. Immer die **ganze** Liste (≤ 500). Je Erinnerung
+    bekommt die Person eine Aufgabe, die Drives Eintrag der Frist trägt (`Task.source`, wie `POST items/<id>/carry`):
+    fällig am Tag der Frist, Erinnerung zu Drives Zeitpunkt. Was die Liste nicht mehr nennt, geht (eine erledigte
+    Aufgabe bleibt). Eine Aufgabe, die die Person selbst aus dem Eintrag gemacht hatte, bekommt nur die Erinnerung und
+    verliert nur sie.
+  - Damit gilt für Fristen alles, was für Aufgaben gilt: Mitteilung mit **„Erledigt“** und **„Später“**, `GET
+    reminders` für den Alarm des Geräts, **„Gestern offen geblieben“**. Die Mitteilung heißt „Frist in 3 Tagen: Kfz-
+    Versicherung kündigen“ / „Kündigung bis 30.11.2026 · Versicherungsschein.pdf“ und hat zusätzlich **„Datei öffnen“**
+    (`open_portal` auf die Datei in Drive).
+  - **Keine doppelte Meldung:** Vor dem ersten Klingeln einer Erinnerung fragt der Hub Drive
+    (`gatecontrol-drive:deadline_claim` → `{ ok, send }`); Drives eigener Vermerk „gesendet“ entscheidet. Antwortet
+    Drive nicht, klingelt nichts ungefragt – nach 5 Minuten wird wieder gefragt. „Später“ fragt nicht noch einmal.
+  - „Erledigt“ hakt die Frist in Drive ab (wie bisher `todo_complete`); in Drive abgehakt ist die Aufgabe erledigt.
+    Erinnerung in Drive geändert: Die Aufgabe erinnert zur neuen Zeit. Erinnerung, Frist oder Datei in Drive entfernt,
+    Datei nicht mehr lesbar: Die Aufgabe geht. Aufgabe hier gelöscht: keine Erinnerung an diese Frist, bis in Drive
+    eine andere gesetzt wird.
+  - Ohne Drives `deadline_claim` (älteres Drive, Berechtigung nicht bestätigt) oder bei abgeschalteter Quelle Drive wird
+    die Liste als Ganzes abgelehnt (`unavailable` / `source_off`) – Drive erinnert dann weiter selbst.
+  - **Tresor:** Drive kennt an Tresor-Dateien keine Fristen und übergibt nie eine; hier kommt deshalb kein Name einer
+    Tresor-Datei an (geprüft in Drives `test/duehub.test.js`).
+- API: `Task.deadline` `{ date, kind, file, daysBefore, open: { plugin, route } } | null`; dasselbe als `deadline` an der
+  Erinnerung in `GET reminders` und in `data.notizen` der Mitteilung; `me.driveDeadlines` `{ available, active }`;
+  Feature-Wort `driveDeadlines`. Die Knöpfe in `GET reminders` bleiben die jeder Erinnerung – eine App fügt „Datei
+  öffnen“ aus `deadline.open` hinzu.
+- Portal: an der Aufgabe „Frist <Tag>“, Dateiname und „3 Tage vorher“; in den Details der Hinweis, wo beides eingestellt
+  wird; unter „Einstellungen“ die Zeile „Fristen aus Drive“. Statuszeile auf der Einstellungsseite des Plugins.
+- Neue Berechtigung `gatecontrol-drive:deadline_claim` – GateControl fragt beim Update einmal danach. Bis sie bestätigt
+  ist, bleibt alles wie bisher.
+- Tests: `test/drivedue.test.js` (Liste, Ablehnungen, Klingeln nach Rückfrage, „nein“, keine Antwort, verpasst,
+  eigene Aufgabe, umbenannt, entfernt), `test/portal.test.js` (1.7.0); beide Plugins zusammen:
+  `plugins/gatecontrol-drive/test/duehub.test.js`.
+
 ## 1.6.0
 
 „Aufgaben und Erinnerungen“, Stufe 4 – wer ist dran, Sterne, die Aufgaben der Familie.

@@ -1,4 +1,4 @@
-<!-- version: 1.29.1 -->
+<!-- version: 1.30.0 -->
 # Drive
 
 ## What the plugin does
@@ -120,6 +120,16 @@ Full screen in the portal needs GateControl 1.244.0. Older versions show the vid
 
 **At home the photos do not show up faster.**
 The previews reach the gateway bit by bit (a few hundred per run, every 15 minutes). Check at the gateway under **Gateways › Home cache** that it is “on” and that “Photos” or “Drive” are switched on. Previews from the home network need GateControl 1.249.0 and a current app.
+
+## New in 1.30.0
+
+- **Who reminds of deadlines?** New in the plugin’s settings (Settings › Plugins › Drive): **“Deadlines are reminded by”** with “Drive” or “Notes & Tasks”. The default is “Drive” – nothing changes unless you choose.
+- **With “Notes & Tasks”** (version 1.7.0 or later) the reminder comes from there: as a task with **“Done”**, **“Later”** and **“Open file”**, also as an alarm on the phone and in “Left open yesterday” in the morning. Drive sends no notification of its own for it – you get every reminder only once.
+- **The deadline stays with the file:** it is still found, shown and set here. You choose “Remind” and “Remove reminder” at the deadline as before; the reminder then says “through Notes & Tasks”.
+- **Done counts everywhere:** tick the deadline off here or there, and it is done on both sides.
+- **Back at any time:** set “Drive” again and Drive reminds itself as before. When “Notes & Tasks” is missing, older or not reachable just then, Drive reminds itself as well; the reason is shown below the settings.
+- **Vault:** files in a vault have no deadlines and no reminders; their name appears in no notification.
+- With the update GateControl asks once for a new service of “Notes & Tasks” that Drive calls for it.
 
 ## New in 1.29.1
 

@@ -2876,7 +2876,9 @@
     }));
     sel.style.width = 'auto';
     var what = d.label || T('p.dl_' + d.kind);
-    var meta = [T('p.dl_' + d.kind), fmtDay(d.date), d.reminder ? T(d.reminder.sent ? 'p.dl_sent' : 'p.dl_reminder', { date: fmtDate(d.reminder.at) }) : null];
+    var meta = [T('p.dl_' + d.kind), fmtDay(d.date), d.reminder ? T(d.reminder.sent ? 'p.dl_sent' : 'p.dl_reminder', { date: fmtDate(d.reminder.at) }) : null,
+      // since 1.30.0: „Notizen & Aufgaben“ rings this reminder (the administrator's choice „Fristen erinnert“)
+      d.reminder && d.reminder.by === 'notizen' ? T('p.dl_by_hub') : null];
     var acts = d.date < today() ? [] : d.reminder
       ? [btn(T('p.dl_remove'), function () { api('DELETE', 'deadlines/' + d.id + '/remind').then(after, fail); }, { small: true })]
       : [sel, btn(T('p.dl_remind'), function () {

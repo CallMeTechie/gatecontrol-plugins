@@ -169,6 +169,43 @@ second) and `vault` `{ vault, event: 'request' | 'approved', device }` — clien
 Opening: an item's `source.open` → apps `gatecontrol://plugin/<plugin>/<route>`, portal `GC.openPortal({ plugin,
 query: { open: route } })`; a note of Familie's notebooks is `{ plugin: 'gatecontrol-notizen', route: 'note/<id>' }`.
 
+## 1.7.0 — the reminders of Drive's deadlines ring from here
+
+„Aufgaben und Erinnerungen“, Stufe 5 (`server/drivedue.js`, `migrations/009_drive_deadlines.sql`; Drive ≥ 1.30.0
+`server/duehub.js`). Features word: `driveDeadlines`.
+
+**Nothing moves.** The deadline stays at its file in Drive and so does the person's reminder (`POST deadlines/<id>/remind
+{ daysBefore }` there). What changes is who rings — chosen by the administrator on **Drive's** settings page („Fristen
+erinnert“: `drive`, the default, or `notizen`). This plugin has no switch for it.
+
+| | |
+|---|---|
+| Service `deadline_reminders` (caller `gatecontrol-drive` only) | `{ v: 1, reminders: [{ id: 'deadline:<id>', userId, at (ms), daysBefore 0…90, sent }] }` — **all** of them each time, ≤ 500 → `{ ok: true, taken, rejected: ['<deadline id>:<user id>'] }`; `{ ok: false, code: 'forbidden' \| 'invalid' \| 'source_off' \| 'unavailable' }` |
+| Calls `gatecontrol-drive:deadline_claim` | `{ v: 1, id, userId }` (with that person) → `{ ok, send }` — before the first ring of a reminder |
+
+* Per reminder the person gets **a task that carries Drive's item** of the deadline (`Task.source = { plugin:
+  'gatecontrol-drive', id: 'deadline:<id>' }`, as `POST items/<id>/carry` makes one) in their default list of the item's
+  area: `due` the day of the deadline, `remindAt` Drive's `at`. A task the person had made of the item themselves is
+  taken instead (it gets the reminder, and only loses that). `sent: true` (Drive rang it already) makes no task.
+* `Task.deadline`: `{ date, kind: 'payment' | 'cancellation' | 'objection' | 'warranty' | 'renewal' | null, file,
+  daysBefore, open: { plugin, route: 'node/<fileId>' } }` — `null` on every other task.
+* The reminder is the task's: push kind `reminder` with the tag `task:<id>:<remindAtMs>`, the buttons `done`,
+  `snooze_1h`, `snooze_eve` / `snooze_tom` (callbacks) and a fourth one `open_file` (`open_portal`,
+  `/portal?drive=<fileId>#plg-gatecontrol-drive`); title „Frist in 3 Tagen: <title>“ (`morgen`, `heute`, `abgelaufen`
+  — counted when it rings), body „Kündigung bis 30.11.2026 · <file>“; `data.notizen.deadline` = `Task.deadline`.
+  `GET reminders` lists it with the same title and body and `deadline`; its `actions` stay the three of every reminder.
+* **Once:** before the first ring the hub asks Drive; `send: false` (Drive reminded itself, the reminder is gone, the
+  file is no longer the person's to read): the reminder is marked sent without a push. No answer: nothing is marked,
+  asked again after 5 minutes. A reminder missed by more than 24 hours is not asked for — it is „Gestern offen
+  geblieben“ like any other. „Später“ rings without a second question.
+* What a list no longer names goes: the task the hub made is deleted (a done one stays), the link is forgotten. The
+  item removed by `todo_changed` does the same at once. The person deleted the task: the link stays —
+  the reminder counts as taken (Drive stays silent) and nothing rings, until Drive names another `at` / `daysBefore`.
+* Refused as a whole (Drive then reminds itself): `unavailable` — Drive's `deadline_claim` is not there (an older
+  Drive, the permission not confirmed); `source_off` — the administrator switched the source Drive off here. An empty
+  list is always taken.
+* `GET me` → `driveDeadlines: { available (Drive can be asked), active (reminders are handed over right now) }`.
+
 ## 1.6.0 — whose turn, stars, the family's tasks
 
 `me.features`: `taskTurns`, `taskStars`, `familyTasks`, `doneFeedback`, `placeMine`. The parser `ui/quickparse.js` and
@@ -567,6 +604,7 @@ Reconciliations only for people who opened the hub within 30 days. A source the 
 | `note_save` · `note_check` · `note_delete` | Familie | see the contract § 3 |
 | `notes_import` | Familie | the one-time move of the Pinnwand and the packing lists (idempotent per `ref`) |
 | `shopping_bind` · `shopping_put` · `shopping_list` | Familie | 1.4.0: the family's shopping lists live here (see „1.4.0“) |
+| `deadline_reminders` | Drive | 1.7.0: the reminders of its deadlines ring from here (see „1.7.0“) |
 
 A bound notebook's check list item id is `<line>.<first 6 hex of SHA-256 of its text>` (found again by its text when
 lines move). Changes made in the hub reach Familie through `gatecontrol-familie:notes_changed` (at most once a minute

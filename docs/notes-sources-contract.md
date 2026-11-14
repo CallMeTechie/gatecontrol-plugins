@@ -242,6 +242,21 @@ and answers only calls whose `caller` is `gatecontrol-notizen` (others: `{ ok: f
 The hub's per-person source settings (board „Quellen“) work only on these fields — a source needs no settings of its own
 for them.
 
+## 6a. Reminders of Drive's deadlines (hub ≥ 1.7.0, Drive ≥ 1.30.0)
+
+Beside the items: when Drive's administrator chose „Fristen erinnert: Notizen & Aufgaben“, the hub rings the reminders a
+person set on a deadline in Drive. Drive stays the truth of the deadline and of the reminder; only who rings changes.
+
+* `gatecontrol-notizen:deadline_reminders { v: 1, reminders: [{ id (the item's id, 'deadline:<n>'), userId, at (ms),
+  daysBefore, sent }] }` — Drive's whole list each time (≤ 500) → `{ ok, taken, rejected: ['<n>:<userId>'] }`. The hub
+  makes a task per reminder that carries the item; what a list no longer names goes. `rejected`: the person does not
+  see that item in the hub — Drive keeps reminding of it itself. `{ ok: false, code: 'unavailable' | 'source_off' }`:
+  nothing is taken.
+* `gatecontrol-drive:deadline_claim { v: 1, id, userId }` (with that person) → `{ ok, send }` — the hub asks before the
+  first ring of a reminder; Drive's record of „sent“ decides, so a reminder comes from exactly one side.
+* Details: `plugins/gatecontrol-notizen/README.md` „1.7.0“, `plugins/gatecontrol-drive/README.md` „Services“. Tests with
+  both real plugins: `plugins/gatecontrol-drive/test/duehub.test.js`.
+
 ## 7. Versions and testing
 
 * Contract version `v: 1` in every payload; a hub that sees a higher `v` takes what it understands.

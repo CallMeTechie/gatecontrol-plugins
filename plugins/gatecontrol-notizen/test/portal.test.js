@@ -422,3 +422,38 @@ test('portal 1.6.0: the family list — several people in the quick entry („We
     await until('shown', () => p.text('na-main').includes('SpülmaschineReihum · Lena ist dran1'));
   } finally { if (p) p.stop(); await h.close(); clock.set(T0); }
 });
+
+test('portal 1.7.0: a reminder of a deadline in Drive — „Frist …“, the file and „3 Tage vorher“ in the row, the hint in the details, the note in „Einstellungen“', async () => {
+  const { fakeSource, PLUGINS, clock, T0 } = require('./helpers');
+  const DRIVE = 'gatecontrol-drive';
+  const drive = fakeSource(DRIVE, { provides: { deadline_claim: { label: { de: 'x', en: 'x' }, maxPerHour: 600 } }, service: async () => ({ ok: true, send: true }) });
+  const h = await withHost({ sources: [drive, ...PLUGINS.filter((x) => x !== DRIVE).map((x) => fakeSource(x))] });
+  let p;
+  try {
+    const it = item(DRIVE, 'deadline:1', { kind: 'deadline', title: 'Kfz-Versicherung kündigen', subtitle: 'Versicherungsschein.pdf', due: '2026-11-30', meta: { type: 'cancellation' }, open: { plugin: DRIVE, route: 'node/41' } });
+    drive.state.items.set(it.id, it);
+    await h.push(DRIVE, { upsert: [it] });
+    p = portal(h.host, ANNA);
+    await until('the menu', () => /Geplant/.test(p.text('na-nav')));
+    // Drive reminds itself: „Einstellungen“ says so
+    p.doc.body.all().find((x) => x.localName === 'button' && x.getAttribute('aria-label') === 'Einstellungen').click();
+    await until('the settings', () => /Fristen aus Drive/.test(p.text('na-main')));
+    assert.match(p.text('na-main'), /An Fristen erinnert Drive selbst\./);
+    p.stop();
+    // Drive hands the reminder over
+    const r = await h.host.callService('deadline_reminders', { caller: DRIVE, user: null, payload: { v: 1, reminders: [{ id: 'deadline:1', userId: ANNA.id, at: Date.parse('2026-11-27T07:00:00Z'), daysBefore: 3, sent: false }] } });
+    assert.deepEqual(r, { ok: true, taken: 1, rejected: [] });
+    p = portal(h.host, ANNA);
+    await until('the menu', () => /Geplant/.test(p.text('na-nav')));
+    p.byText('button', 'Geplant').click();
+    await until('the task', () => /Kfz-Versicherung kündigen/.test(p.text('na-main')));
+    assert.match(p.text('na-main'), /Kfz-Versicherung kündigenDriveFrist Mo\. 30\. Nov\.Versicherungsschein\.pdf3 Tage vorher/);
+    p.doc.getElementById('na-main').all().find((x) => x.getAttribute('role') === 'button' && /Kfz-Versicherung/.test(textOf(x))).click();
+    const all = () => textOf(p.doc.body);
+    await until('the details', () => /Die Frist steht an der Datei in Drive/.test(all()));
+    assert.match(all(), /Aus Drive/);
+    assert.match(all(), /Frist Mo\. 30\. Nov\. · 3 Tage vorher/);
+    p.doc.body.all().find((x) => x.localName === 'button' && x.getAttribute('aria-label') === 'Einstellungen').click();
+    await until('the settings', () => /Drive lässt an seine Fristen von hier erinnern/.test(p.text('na-main')));
+  } finally { if (p) p.stop(); await h.close(); clock.set(T0); }
+});

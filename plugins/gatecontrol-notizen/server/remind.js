@@ -31,6 +31,7 @@ const events = require('./events');
 const push = require('./push');
 const pushprefs = require('./pushprefs');
 const shopping = require('./shopping');
+const drivedue = require('./drivedue');
 const Q = require('../ui/quickparse');
 const { t } = require('./text');
 const { fail, posInt } = require('./util');
@@ -103,6 +104,8 @@ async function tick(gc, ctx) {
     WHERE t.remind_at IS NOT NULL AND t.reminded_at IS NULL AND t.done_at IS NULL AND t.deleted_at IS NULL AND t.remind_at <= ? ORDER BY t.remind_at LIMIT 100`, [ctx.now]);
   if (!rows.length) return 0;
   const who = await duty.of(gc, rows);
+  // 1.7.0: the tasks among them that remind of a deadline in Drive
+  const deadlines = await drivedue.ofTasks(gc, rows);
   const lang = cfg.notify_lang;
   let sent = 0;
   for (const r of rows) {
@@ -114,21 +117,30 @@ async function tick(gc, ctx) {
       if (u) events.changed(gc, [u], 'tasks');
       continue;
     }
+    // 1.7.0: a deadline of Drive rings once — Drive's record decides (the first ring of a reminder is asked for there).
+    // No answer: nothing is marked, the next run asks again; „no“: Drive reminded of it itself, or the reminder is gone
+    const dl = deadlines.get(r.id) || null;
+    const go = dl ? await drivedue.claim(gc, dl, ctx.now) : 'send';
+    if (go === 'wait') continue;
     await store.run(gc, 'UPDATE tasks SET reminded_at = ? WHERE id = ?', [ctx.now, r.id]);
     const user = who.get(r.id);
+    if (go === 'no') { if (user) events.changed(gc, [user], 'tasks'); continue; }
     if (!user) continue;
     const late = behind > LATE_HINT;
     const p = await prefs.get(gc, user);
     const att = await attachedOf(gc, lang, r, user);
     // 1.6.0: „wer zuerst“ reminds everybody of the turn
     const first = r.turn === 'first' ? tasks.peopleOf(r, { members: new Map([[r.list_id, new Set(await lists.memberIds(gc, r.list_id))]]) }) : [];
+    // 1.7.0: „Frist in 3 Tagen: …“ / „Kündigung bis 30.11.2026 · Versicherungsschein.pdf“ and the button „Datei öffnen“
+    const msg = dl ? drivedue.message(lang, dl, r.title, ctx.now, ctx.tz) : null;
+    const file = dl ? drivedue.portalPath(dl) : null;
     if (await pushprefs.send(gc, first.length > 1 ? first : [user], 'reminders', {
-      topic: 'reminders', title: r.title.slice(0, 120), body: withLine(bodyOf(lang, r, ctx.now, ctx.tz, late), att.line),
+      topic: 'reminders', title: msg ? msg.title : r.title.slice(0, 120), body: msg ? msg.body : withLine(bodyOf(lang, r, ctx.now, ctx.tz, late), att.line),
       priority: r.important ? 'high' : 'normal', collapseKey: 'task:' + r.id,
       data: {
         notizen: { ...push.reminder(r, r.list_area), tag: duty.tagOf(r), remindAtMs: r.remind_at, dueAt: r.due_at && r.due_time ? tasks.iso(ctx, r.due_at) : null, late, snoozed: !!r.snoozed_at,
-          ...(att.info ? { attachedList: att.info } : {}) },
-        actions: pushActions(buttons(lang, ctx.now, ctx.tz, p, att.info)),
+          ...(att.info ? { attachedList: att.info } : {}), ...(dl ? { deadline: drivedue.view(dl) } : {}) },
+        actions: [...pushActions(buttons(lang, ctx.now, ctx.tz, p, att.info)), ...(file ? [{ type: 'open_portal', id: 'open_file', label: t(lang, 'n.b_file'), target: file }] : [])],
       },
     })) sent++;
   }
@@ -194,15 +206,20 @@ async function feed(gc, ctx) {
     JOIN list_members m ON m.list_id = t.list_id AND m.user_id = ? JOIN lists l ON l.id = t.list_id AND l.deleted_at IS NULL
     WHERE t.remind_at IS NOT NULL AND t.reminded_at IS NULL AND t.done_at IS NULL AND t.deleted_at IS NULL AND t.remind_at <= ? ORDER BY t.remind_at LIMIT 1000`, [ctx.userId, until]);
   const who = await duty.of(gc, rows);
+  const deadlines = await drivedue.ofTasks(gc, rows);
   for (const r of rows) {
     const everybody = r.turn === 'first' ? tasks.peopleOf(r, { members: new Map([[r.list_id, new Set(await lists.memberIds(gc, r.list_id))]]) }) : [];
     if (everybody.length > 1 ? !everybody.includes(ctx.userId) : who.get(r.id) !== ctx.userId) continue;
     const at = Math.max(r.remind_at, 0);
     const att = await attachedOf(gc, ctx.lang, r, ctx.userId);
+    // 1.7.0: a deadline of Drive — the texts of its push; `deadline` (Task.deadline) for the button „Datei öffnen“
+    const dl = deadlines.get(r.id) || null;
+    const msg = dl ? drivedue.message(ctx.lang, dl, r.title, at, ctx.tz) : null;
     out.reminders.push({
-      tag: duty.tagOf(r), taskId: r.id, listId: r.list_id, area: r.list_area || null, title: r.title.slice(0, 120), body: withLine(bodyOf(ctx.lang, r, at, ctx.tz, false), att.line),
+      tag: duty.tagOf(r), taskId: r.id, listId: r.list_id, area: r.list_area || null, title: msg ? msg.title : r.title.slice(0, 120), body: msg ? msg.body : withLine(bodyOf(ctx.lang, r, at, ctx.tz, false), att.line),
       at: tasks.iso(ctx, at), atMs: at, important: !!r.important, snoozed: !!r.snoozed_at, collapseKey: 'task:' + r.id,
       actions: buttons(ctx.lang, at, ctx.tz, p, att.info).map((b) => ({ id: b.id, label: b.label })), attachedList: att.info,
+      ...(dl ? { deadline: drivedue.view(dl) } : {}),
     });
     if (out.reminders.length >= FEED_MAX) break;
   }

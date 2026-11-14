@@ -18,6 +18,7 @@ const calsync = require('./calsync');
 const shopping = require('./shopping');
 const places = require('./places');
 const famtasks = require('./famtasks');
+const drivedue = require('./drivedue');
 const prefs = require('./prefs');
 const R = require('../ui/repeat');
 const Q = require('../ui/quickparse');
@@ -110,6 +111,8 @@ function view(ctx, r, extra = {}) {
     progress: extra.progress && extra.progress.get(r.id) ? extra.progress.get(r.id) : null,
     attachments: extra.attachments ? extra.attachments.get(r.id) || 0 : undefined,
     source: r.src_plugin ? { plugin: r.src_plugin, id: r.src_id } : null,
+    // 1.7.0: the deadline of a file in Drive this task reminds of ({ date, kind, file, daysBefore, open }; null: none)
+    deadline: extra.deadlines && extra.deadlines.get(r.id) ? drivedue.view(extra.deadlines.get(r.id)) : null,
     noteId: r.note_id || null, position: r.position,
     // 1.2.0: a member who may only look completes only what is assigned to them (README "Roles")
     // 1.6.0: in the family list a child does not change a task a parent made and ticks off what is its own to do
@@ -189,7 +192,8 @@ async function extras(gc, ctx, rows) {
   // whose reminder: only asked for the tasks that have one to come
   const due = rows.filter(duty.pending);
   return { progress, myDay, attachments, names, roles, parentMine, fam, members, parents, duty: due.length ? await duty.of(gc, due) : new Map(),
-    attached: await shopping.attachInfo(gc, ctx.userId, rows.map((r) => r.attached_list)), places: await places.ofTasks(gc, rows) };
+    attached: await shopping.attachInfo(gc, ctx.userId, rows.map((r) => r.attached_list)), places: await places.ofTasks(gc, rows),
+    deadlines: await drivedue.ofTasks(gc, rows) };
 }
 
 async function views(gc, ctx, rows) {
