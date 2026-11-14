@@ -3,6 +3,29 @@
 Chats zwischen den GateControl-Konten – in der GateControl-App (eigener Tab „Chats“), im
 Windows-Client und im Portal (eigener Tab „Chats“). Alles bleibt auf dem eigenen Server.
 
+## 1.12.0
+Erste Baustufe der **Brücken zu anderen Messengern** (zuerst WhatsApp, auch Konten der WhatsApp-Business-App). Braucht
+weiterhin **GateControl ≥ 1.193.0**; die Brücken selbst gibt es nur auf einem GateControl, das sie anbietet (dort eine
+Vorschau, `gc.bridges`) – überall sonst ändert sich nichts und die neue Karte bleibt verborgen. Neu beim Aktualisieren:
+das Recht „Brücken zu anderen Messengern“ – das Update installiert sich deshalb nicht von selbst, ein Admin muss es
+bestätigen.
+- **Admin-Seite „Übersicht“, Karte „Brücken zu anderen Messengern“:** Schalter für die Brücken (standardmäßig aus), der
+  Ort (Server), wo Datenbank und Sitzungsschlüssel liegen, je Brücke Zustand (Aus / Startet / Läuft / Fehler), Version,
+  tatsächlich belegter Arbeitsspeicher und wie viele Personen verknüpft sind; ein Hinweis, wenn die
+  `docker-compose.yml` des Servers den Dienst noch nicht kennt oder das Update-Skript zu alt ist. Keine Nummern, keine
+  Kontakte, keine Inhalte.
+- **Eigenes Konto verknüpfen** (App-API, README „Bridges to other messengers“): `GET bridges`, Hinweise bestätigen
+  (`POST bridges/:network/consent`), Anmelden mit Kopplungscode oder QR-Code (`POST bridges/:network/login`, Schritte,
+  Abbrechen), Trennen. Zustände je Verknüpfung: verbunden, verbindet, **abgemeldet** (der Dienst hat das Gerät
+  entfernt), Fehler. Jede Person nur für sich – GateControl lehnt alles andere ab.
+- **Kinder-Konten** (Plugin Familie) sind gesperrt, bis ein Elternteil den Dienst für dieses Kind freischaltet
+  (`GET bridges/children`, `PUT bridges/children/:userId`). Zurücknehmen verhindert neues Verknüpfen; trennen darf das
+  Kind immer.
+- Noch **nicht** enthalten: die fremden Chats selbst (Nachrichten, Medien), die Seiten dafür in den Apps und im Portal.
+  `GET me` meldet deshalb weiter `features.bridges: false`.
+- Migration 006 (`bridge_consent`, `bridge_grants`, `bridge_links`) – ohne Telefonnummern.
+- Mock-Host: `tools/testing/mock-bridges.js` (GateControls `gc.bridges` samt Attrappe der Brücke, `opts.bridges`).
+
 ## 1.11.1
 
 - Handbuch im Reiter „Handbuch“ (GateControl ≥ 1.241.0): `HANDBUCH.md` / `HANDBOOK.md` im Paket, in `plugin.json` unter `handbook`. Ältere GateControl-Versionen ignorieren es; die Mindestversion bleibt `>=1.193.0`.

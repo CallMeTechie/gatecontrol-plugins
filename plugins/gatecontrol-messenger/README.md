@@ -86,6 +86,15 @@ GateControl's notifications — see "Notifications in chats (since 1.6.0)".
   clean-up, decryption, refused service calls, failed background steps, since
   1.4.0 failed home actions, since 1.9.0 group chats that could not be kept
   in step).
+* **Brücken zu anderen Messengern** (since 1.12.0, card on „Übersicht“) — only on
+  a GateControl that offers `gc.bridges` (a preview there, see "Bridges to other
+  messengers" below); on every other server the card stays hidden. The switch
+  for the bridges (off by default), where they run (the server), where their
+  database and session keys are kept (always where they run), per bridge the
+  state (Aus / Startet / Läuft / Fehler), version, the memory the container
+  really uses and how many people linked an account; a note when the server's
+  compose file does not know the service yet or its update script is too old.
+  No number, no contact, no content.
 
 ## App-API
 
@@ -122,6 +131,12 @@ trust only → `403 login_required`, a kiosk device → `403 forbidden`.
 | 409 | `too_many` | a group over 256 members |
 | 422 | `infected` | since 1.11.0: the file is in GateControl's quarantine (malware) — not sent; `finding` names the find |
 | 423 | `scan_blocked` / `quarantined` / `scan_pending` | since 1.11.0: GateControl's virus scan holds the file back (not checkable and blocked / malware / still being checked — "In Drive speichern") |
+| 409 | `bridge_off` | since 1.12.0: the bridges are switched off or not offered by this GateControl (`reason`: `off`, `preview_off`, `no_host`) |
+| 409 | `consent_required` | since 1.12.0: the notes before linking were not confirmed (`POST bridges/:network/consent`) |
+| 403 | `bridge_locked` | since 1.12.0: a child whose parents did not allow this network |
+| 409 | `bridge_unsupported` | since 1.12.0: the service asks for a step GateControl cannot show (a passkey) — offer the other way |
+| 502 | `bridge_failed` | since 1.12.0: the bridge refused (`reason`, e.g. `m_bad_json` — a wrong number, `fi_mau_whatsapp_login_timeout` — the code ran out): start again |
+| 503 | `bridge_unreachable` | since 1.12.0: the bridge does not answer (`reason`: `not_running`, `timeout`) |
 | 500 | `internal` | |
 
 The host's own answers (404 plugin not usable, 413 body > 64 KB, 429, 502–504)
@@ -916,6 +931,56 @@ days) are handled by the background run (every 60 s); messages that go
 (deleted for everyone, disappearing, retention, a deleted plugin group) take
 their polls, votes, events, RSVPs, arrivals, actions, card pictures,
 reminders, pins and Familie calendar entries along.
+
+## Bridges to other messengers (since 1.12.0, first stage)
+
+Writing from GateControl to people in **WhatsApp** (also accounts of the WhatsApp
+Business app — the same way in, "linked devices"); Signal and Telegram later.
+GateControl runs the bridges next to the server and talks to them (`gc.bridges`,
+`permissions.bridges` — a **preview** in GateControl, feature-detected: an older
+server ignores the key and nothing is offered). This plugin names a network and
+a person; it never sees an address, a token or a session key, and keeps no
+phone number (migration 006: who confirmed the notes, the parents' grants, which
+account is linked with which bridge login id and state).
+
+**This stage** switches the bridges and links accounts. Nothing reads or writes
+an outside chat yet — `GET me` keeps `features.bridges: false` until it does,
+and the apps and the portal have no screen for it yet.
+
+Rules:
+
+* Every person links **their own** account. GateControl refuses a call for
+  somebody else (not the plugin in the background, not an administrator).
+* Before the first link per network the person confirms the notes (not an
+  official client, the service may block accounts, the phone must be online at
+  least every 14 days, the end-to-end encryption ends at the bridge).
+* **Children** (Familie's `family_roles`) are locked until a parent allows it,
+  per child and network. Taking it back stops new links; the child can still
+  unlink. Without Familie nobody is a child.
+* Administrators switch the bridges and see states and counts — nothing else.
+
+| Method & path | Body | Answer |
+|---|---|---|
+| `GET bridges` | | `{ bridges: { available, networks: [{ id: "whatsapp", state: "running" \| "starting" \| "failed" \| "unreachable", allowed, lock: null \| "child", consent: ISO \| null, logins: [{ id, name, state: "connected" \| "connecting" \| "logged_out" \| "error" \| "unknown", since }] }] } }` — `available: false` (and no networks) while the bridges are off or not offered. `name` is the caller's own account at the service (WhatsApp: their number); with `state: "unreachable"` the last known logins without a name |
+| `POST bridges/:network/consent` | `{ accept: true }` | `{ consent: ISO }` |
+| `POST bridges/:network/login` | `{ flow: "phone" \| "qr" }` | `{ login: { processId, step } }` |
+| `POST bridges/:network/login/:processId/:stepId` | `{ input: { <field id>: text } }` for a `user_input` step, `{}` for `display_and_wait` | `{ login: { processId, step } }`, or `{ login: { processId, waiting: true } }` — the person has not confirmed on the phone yet: call again (the call takes up to 15 s) |
+| `DELETE bridges/:network/login/:processId` | | `{ cancelled: true }` |
+| `DELETE bridges/:network/logins/:id` | | `{ unlinked: true }` |
+| `GET bridges/children` | | parents only: `{ children: [{ userId, networks: { whatsapp: boolean } }] }` |
+| `PUT bridges/children/:userId` | `{ networks: { whatsapp: boolean } }` | parents only: `{ child }` |
+| `GET admin/bridges` · `PUT admin/bridges` | `{ enabled?, networks?: { whatsapp?: boolean } }` | administrators in the admin UI: `{ bridges }` — GateControl's `gc.bridges.status()` plus `linked` per network |
+
+`step`: `{ id, type: "user_input", fields: [{ id, type: "phone_number", optional }] }`,
+`{ id, type: "display_and_wait", display: { type: "code" | "qr", data } }` (draw
+the pairing code or the QR code from `data`) or `{ id, type: "complete", loginId }`.
+WhatsApp: `phone` → number → 8-character code to enter under *Linked devices ›
+Link with phone number instead*; `qr` → a QR code that must be shown on a second
+screen. The texts for the steps are the client's own.
+
+Testing: `tools/testing/mock-bridges.js` stands in for GateControl and for the
+bridge (`createHost(dir, { bridges: … })`, `host.bridges.confirm(processId)` …);
+`test/bridges.test.js`.
 
 ## Services (for other plugins)
 

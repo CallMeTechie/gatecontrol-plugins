@@ -47,6 +47,14 @@ const STATUS = {
   scan_pending: 423,
   quarantined: 423,
   scan_blocked: 423,
+  // 1.12.0: bridges to other messengers (bridges.js) — switched off / not offered, the bridge does not answer,
+  // a step GateControl cannot offer, the bridge refused; a child without the parents' yes; the notes not confirmed
+  bridge_off: 409,
+  bridge_unreachable: 503,
+  bridge_unsupported: 409,
+  bridge_failed: 502,
+  bridge_locked: 403,
+  consent_required: 409,
   internal: 500,
 };
 

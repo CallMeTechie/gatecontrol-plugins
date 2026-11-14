@@ -104,3 +104,11 @@ input,select,textarea{font-family:var(--font)}
 .ms-gc-note{padding:8px 12px;border-radius:12px;background:var(--accent-soft);color:var(--text)!important}
 .ms-gc-add{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
 .ms-gc-add select{min-width:200px;max-width:100%}
+/* 1.12.0: bridges to other messengers (admin page „Übersicht“, shown only when GateControl offers them) */
+#ms-br{margin:16px 0}
+#ms-br h2{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+#ms-br h3{margin:8px 0 0}
+.ms-radio{flex:none;width:18px;height:18px;border-radius:50%;border:2px solid var(--line-2);box-sizing:border-box}
+.ms-radio.is-on{border-color:var(--accent);box-shadow:inset 0 0 0 3px var(--surface);background:var(--accent)}
+.ms-br-mark{flex:none;min-width:34px;padding:3px 6px;border-radius:8px;background:var(--surface-2);border:1px solid var(--line);font:700 11px var(--mono);letter-spacing:.06em;text-align:center;color:var(--muted)}
+.ms-pill.is-off{background:var(--surface-2);color:var(--muted)}

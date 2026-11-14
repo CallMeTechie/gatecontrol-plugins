@@ -424,6 +424,10 @@
 // GateControl 1.264.0 (opt-in: opts.gatecontrol: '1.264.0' or opts.vpnDns) — gc.vpnDns, the DNS protection of the VPN
 // devices (settings, profiles, suspensions, counters, the query log; only with permissions.vpnDns), and `peerId` on the
 // viewer of an app request: see tools/testing/mock-vpn-dns.js.
+//
+// GateControl's messenger bridges (a preview, in no released version yet — opt-in only: opts.bridges) — gc.bridges, the
+// bridges to outside messengers (state, the administrator's switch, a person's own link; only with
+// permissions.bridges), with a stand-in for the bridge itself: see tools/testing/mock-bridges.js.
 
 const fs = require('node:fs');
 const os = require('node:os');
@@ -434,6 +438,7 @@ const mockHomeInternet = require('./mock-home-internet');
 const mockPrint = require('./mock-print');
 const mockVpnDns = require('./mock-vpn-dns');
 const mockCameras = require('./mock-cameras');
+const mockBridges = require('./mock-bridges');
 
 // GateControl's favourite colour palette (services/avatars.js PALETTE, GateControl ≥ 1.168.0)
 const PALETTE = Object.freeze([
@@ -3262,6 +3267,9 @@ async function createHost(pluginDir, opts = {}) {
     groupExists: (id) => groupStore.has(id),
     groupUsers: (ids) => { const out = new Set(); for (const id of ids) if (groupStore.has(id) && !groupStore.get(id).archived) for (const u of totalIds(id)) if (enabledUser(u)) out.add(u); return out; } });
   Object.assign(api, vd.api);
+  // ─── Messenger-Brücken (GateControl preview, src/services/bridges; tools/testing/mock-bridges.js) ───
+  const br = mockBridges.install({ opts, perms, enabledUser, hostError, personCtx });
+  Object.assign(api, br.api);
 
   // ─── Funk (GateControl with phase 3c step 2, src/services/homeRadio.js): gc.radio.sensors() ───
   // Opt-in: opts.radio { sensors: [sensor] | () => [sensor] } and permissions.radio: true (an older host ignores the
@@ -3571,6 +3579,7 @@ async function createHost(pluginDir, opts = {}) {
     ...(pr.on ? { print: pr.gcPart(call) } : {}),
     // GateControl ≥ 1.264.0: gc.vpnDns only with permissions.vpnDns (like the child bootstrap)
     ...(vd.on ? { vpnDns: vd.gcPart(call) } : {}),
+    ...(br.on ? { bridges: br.gcPart(call) } : {}),
     // GateControl ≥ 1.231.0: gc.homeCache only with permissions.homeCache (like the child bootstrap)
     ...(radioOn ? { radio: Object.freeze({ sensors: () => call('radio.sensors', {}),
       ...(zigbeeOn ? { zigbee: () => call('radio.zigbee', {}), command: (id, set) => call('radio.command', { id, set }) } : {}) }) } : {}),
@@ -4241,6 +4250,8 @@ async function createHost(pluginDir, opts = {}) {
     printJob: (id, x) => pr.setJob(id, x || {}),
     /** GateControl ≥ 1.264.0 (permissions.vpnDns): the DNS protection as GateControl knows it — see tools/testing/mock-vpn-dns.js */
     vpnDns: vd.state,
+    /** GateControl's messenger bridges (permissions.bridges, opts.bridges): { state, confirm, expire, logOut, setHost, oddStep } — see tools/testing/mock-bridges.js */
+    bridges: br.control,
     vpnDnsSet: (x) => vd.hostSet(x || {}),
     vpnDnsEvent: (ev) => vd.hostEvent(ev),
     vpnDnsExpire: (now) => vd.hostExpire(now),
