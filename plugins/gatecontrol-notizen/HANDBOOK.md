@@ -1,5 +1,15 @@
-<!-- version: 1.5.0 -->
+<!-- version: 1.6.0 -->
 # Notes & Tasks
+
+## New in 1.6.0
+
+- **Whose turn?** A task can go to several people. **In turns:** one person is on at a time; after it is ticked off, the next one is on with the next repeat. **Whoever is first:** everybody is reminded, the first person does the task for all – the others get “Done by …”. This works in every shared list: in the task’s details under **“Whose turn?”**, or while typing: “@Lena @Marc dishwasher daily 6 pm in turns”.
+- **The family’s tasks:** With the Family plugin (1.24.0 or later) its tasks and place reminders can move here – the button is in the Family plugin’s settings, nothing moves by itself. Afterwards there is the list **“Family”** that every family member sees; nobody has to be invited. See [Family](#family).
+- **Stars:** Parents give a task of the family list stars (“@Lena tidy your room 2 stars”). They are still counted and settled in the Family plugin.
+- **Feedback:** When a child ticks a task off, the parents get a message with **“View”** and **“Not done yet”**. “Not done yet” hands the task back, the stars are taken off again. Under “Settings” › Notifications you set the message to “Only for tasks with stars” or “Never”.
+- **A place reminder for someone else:** “Accept” and “Decline” are only shown to the person whose phone is to watch the place.
+- **Apps:** The Android and Windows apps show “Whose turn?”, stars and the family list with one of the next versions. Until then they keep working with the tasks through the Family plugin; both stay in step.
+- When updating, GateControl asks once for a new service of the Family plugin that this plugin calls for this.
 
 ## New in 1.5.0
 
@@ -95,6 +105,18 @@ The plugin is new: your own tasks and notes plus everything the other plugins ha
 - **Sharing:** type a name, add the person and choose **Edit** or **View**. Whoever gets a shared list sees it at once and gets a notification. Members find "Show in My Day" and "Leave list" at the ⋯.
 - **Shopping day:** on the chosen weekdays the list is at the top of "My Day" – for all members. Whoever does not want it switches it off for themselves at the ⋯ of the list.
 - **Deleting** asks first and says what happens to the tasks; afterwards there is "Undo". **Deleted things** stay 30 days in the trash, then they are gone.
+
+## Family
+
+After the move (Settings › Plugins › Family › Functions › “Tasks and place reminders in “Notes & Tasks””) the list **“Family”** is under “My lists”.
+
+- **Parents** see and change everything, give stars and tick off for a child as well – the child gets the stars.
+- **Children** tick off what is assigned to them or goes to everybody, and make tasks of their own. They do not change or delete the parents’ tasks and give no stars.
+- **Who belongs to the family** and who is a parent is still decided by the Family plugin. That is why the list cannot be deleted, left or shared with others here.
+- **Stars, the weekly goal, pocket money and wishes** stay in the Family plugin. The wall tablet and the cards in the chat stay there too and show the tasks from here.
+- **Reminders** come from here. An open task that repeats stays overdue until it is ticked off – it does not remind anew every day.
+- **The family’s place reminders** are tasks with a place afterwards: your own in your list “Tasks”, those for someone else in a list “Reminders …” only the two of you see. Reminders that tell others (“… has arrived”) stay in the Family plugin.
+- **Back:** “Bring back” in the Family plugin gives everything back to it. The open tasks from the family go to the trash here (30 days) so that nothing reminds twice. Sub tasks, notes and attachments added here do not come back.
 
 ## Places
 

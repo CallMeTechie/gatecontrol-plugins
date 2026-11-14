@@ -13,7 +13,7 @@ const read = (f) => fs.readFileSync(path.join(UI, f), 'utf8');
 const FILES = {
   css: read('common.css') + read('portal.css'),
   html: read('portal.html'),
-  js: ['repeat.js', 'quickparse.js', 'notemd.js', 'vaultcrypto.js', 'nsx.js', 'places.js', 'portal.js'].map(read),
+  js: ['repeat.js', 'quickparse.js', 'turnwords.js', 'notemd.js', 'vaultcrypto.js', 'nsx.js', 'places.js', 'portal.js'].map(read),
 };
 
 // 1.5.0: the map of the dialog „Ort“ (plugin.json ui.maps) — GateControl's bundled Leaflet at a URL the frame may load,

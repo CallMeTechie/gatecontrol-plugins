@@ -22,6 +22,7 @@ const calsync = require('./calsync');
 const shopping = require('./shopping');
 const places = require('./places');
 const duty = require('./duty');
+const famtasks = require('./famtasks');
 const Q = require('../ui/quickparse');
 const { t } = require('./text');
 const { fail, isKnown, statusOf, posInt } = require('./util');
@@ -45,7 +46,13 @@ const FEATURES = ['tasks', 'notes', 'sources', 'vault', 'mstodo', 'dsnote', 'sea
   // 1.5.0 (README "1.5.0"): `places` — Task.place, `place` of POST / PATCH tasks and of POST parse, GET / POST / PATCH /
   // DELETE places, PUT places/favs, POST places/watch, POST places/fired, POST tasks/<id>/place/skip | later | consent,
   // me.places, prefs.places, the event `places`; `placeSearch` — POST places/search (whether it is switched on: me.places.search)
-  'places', 'placeSearch'];
+  'places', 'placeSearch',
+  // 1.6.0 (README "1.6.0"): `taskTurns` — Task.turn / people, `turn` and `people` of POST / PATCH tasks, turn / people of
+  // POST parse; `taskStars` — Task.stars, `stars` of POST / PATCH tasks (the family list, parents); `familyTasks` — the
+  // family list (List.family, Task.family, me.familyTasks, POST tasks/<id>/complete { userId }, POST family/seen);
+  // `doneFeedback` — the push kind done_feedback with „Noch nicht fertig“, prefs.feedback; `placeMine` — Task.place.mine
+  // and canConsent
+  'taskTurns', 'taskStars', 'familyTasks', 'doneFeedback', 'placeMine'];
 
 const ok = (json) => ({ status: 200, json: { ok: true, ...json } });
 
@@ -67,6 +74,8 @@ const taskOpts = {
   },
 };
 notes.opts.completeTask = (gc, ctx, id, done) => tasks.complete(gc, ctx, id, { done }, taskOpts);
+// 1.6.0: a task ticked off in Familie (service tasks_put) is ticked off here like any other
+famtasks.hooks.complete = (gc, ctx, id, b, o) => tasks.complete(gc, ctx, id, b, { ...taskOpts, ...o });
 // 1.4.0: every item of a list ticked — the open tasks carrying it are completed: as the person who ticked when the task
 // is theirs to complete, else as the person whose task it is (server/duty.js), else as the owner of its list
 shopping.hooks.completeTask = async (gc, ctx, row) => {
@@ -101,6 +110,7 @@ async function notifyAction(gc, ctx, action, data) {
   if (d.kind === 'reminder') return remind.onAction(gc, ctx, action, d, taskOpts);
   if (d.kind === 'yesterday') return yesterday.onAction(gc, ctx, action, d, taskOpts);
   if (d.kind === 'place_consent') return places.onAction(gc, ctx, action, d);
+  if (d.kind === 'done_feedback') return tasks.feedbackAction(gc, ctx, action, d, taskOpts);
   return { ok: false, code: 'invalid' };
 }
 
@@ -120,6 +130,9 @@ async function me(gc, ctx) {
     shopping: await shopping.meInfo(gc, ctx),
     // 1.5.0: places — is the search on (administrator, the person), the hints on the way, how many places per task
     places: await places.meInfo(gc, ctx, cfg, p),
+    // 1.6.0: the family's tasks (bound: the move was made and the person belongs to the family; parent; stars: Familie
+    // counts them; moved: what the move brought, until the person has seen it)
+    familyTasks: await famtasks.meInfo(gc, ctx),
   };
 }
 
@@ -152,7 +165,7 @@ async function itemComplete(gc, ctx, id, b) {
 
 async function parseText(gc, ctx, b) {
   if (!b || typeof b.text !== 'string' || b.text.length > 1000) throw fail('invalid', { field: 'text' });
-  const parsed = await tasks.fromText(gc, ctx, b.text, b.area);
+  const parsed = await tasks.fromText(gc, ctx, b.text, b.area, b.listId);
   // 1.4.0: the shopping list the line names („bei Lidl einkaufen“ → „Einkauf“) — beside what the parser made of it
   // 1.5.0: the place the line names („beim Baumarkt“, „bei Lidl“, „bei Oma“) — found by the server, not by the parser
   return { parsed, attach: await shopping.suggest(gc, ctx, b.text, parsed, b.area), place: await places.suggest(gc, ctx, parsed) };
@@ -229,6 +242,8 @@ async function handle(gc, ctx, req) {
   if (m === 'POST' && n === 4 && a === 'tasks' && y === 'place' && z === 'skip') return ok(await places.skip(gc, ctx, x, b));
   if (m === 'POST' && n === 4 && a === 'tasks' && y === 'place' && z === 'later') return ok(await places.later(gc, ctx, x, b));
   if (m === 'POST' && n === 4 && a === 'tasks' && y === 'place' && z === 'consent') return ok(await places.consent(gc, ctx, x, b));
+  // 1.6.0: „Umzug abgeschlossen“ was read
+  if (m === 'POST' && n === 2 && a === 'family' && x === 'seen') return ok(await famtasks.seen(gc, ctx));
 
   // 1.4.0: shopping lists (server/shopping.js)
   if (is('GET', 1, 'shopping')) return ok(await shopping.get(gc, ctx, q));

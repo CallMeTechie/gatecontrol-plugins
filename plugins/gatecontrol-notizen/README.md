@@ -169,6 +169,61 @@ second) and `vault` `{ vault, event: 'request' | 'approved', device }` — clien
 Opening: an item's `source.open` → apps `gatecontrol://plugin/<plugin>/<route>`, portal `GC.openPortal({ plugin,
 query: { open: route } })`; a note of Familie's notebooks is `{ plugin: 'gatecontrol-notizen', route: 'note/<id>' }`.
 
+## 1.6.0 — whose turn, stars, the family's tasks
+
+`me.features`: `taskTurns`, `taskStars`, `familyTasks`, `doneFeedback`, `placeMine`. The parser `ui/quickparse.js` and
+`test/vectors/quickparse.json` are untouched (a test holds their checksums); what a line says about several people is
+read afterwards by `ui/turnwords.js` (`test/vectors/turnwords.json`).
+
+**Task** gains `turn: 'rotate' | 'first' | null`, `people: [{ id, name }]` (the people of the turn who are members of
+the list, in their order), `stars: 0…10`, `doneBy: { id, name } | null` (for whom it was ticked off), `family: bool` (a
+task of the family list). `canEdit` / `canComplete` follow the family list's rules. `Task.place` gains `mine` (this
+person's phone is to watch the place) and `canConsent` (they may answer `POST tasks/<id>/place/consent` — everybody else
+gets 403): show „Annehmen“ / „Ablehnen“ only with `canConsent`.
+
+```
+POST | PATCH tasks { …, turn?: 'rotate' | 'first' | null, people?: [userId], stars?: 0…10 }
+     turn needs ≥ 2 people, all members of the list (not_member / invalid, field 'people'). rotate: assigneeId is who
+     is on (one of the people; default the first). first: nobody is assigned. stars: only in the family list
+     (invalid, field 'stars', reason 'family') and only from a parent (forbidden, reason 'parents_only').
+POST tasks/<id>/complete { done, userId? }   userId: a parent of the family ticks it off for that member
+POST parse → parsed { …, people: [{ id, name }], turn, stars }      (POST tasks { text } takes them)
+POST family/seen                              the note „Umzug abgeschlossen“ was read
+GET  me → familyTasks { available, bound, listId, parent, stars, starsMax, moved: { at, tasks, places, seen } | null }
+GET  lists → List.family                      THE list of the family's tasks (not deleted, left or shared here: forbidden, reason 'family')
+PUT  prefs { feedback: 'all' | 'stars' | 'off' }
+```
+
+- **rotate:** ticking it off gives the NEXT task of a repeat to the next person of `people` (who left the list is passed
+  over; one person left: an ordinary task). **first:** every person of `people` gets the reminder (`Task.reminder.mine`,
+  `GET reminders`); the first one ticks it off for all, the others get a push `reminder_done` („Erledigt von …“) with
+  the reminder's collapse key.
+- **The family list** exists once Familie (≥ 1.24.0) told the hub who the family is (its move, a button in Familie's
+  settings — never by itself). Parents change everything; a child ticks off what is its own (assigned to it, nobody's,
+  or „wer zuerst“ with it), makes tasks of its own and does not change or delete a task a parent made.
+- **Stars** are counted and settled by Familie: what is ticked off (or opened again) in the family list is written to
+  `fam_done` and fetched by Familie (`tasks_list`), each row once.
+- **Feedback:** a child's task ticked off → the parents (not the one who ticked) get the push kind `done_feedback`
+  `{ taskId, listId, area, userId, stars }` with the buttons `open` (opens the app) and `not_done` (a callback: the task
+  is open again, the stars are taken back, the child gets a push). `prefs.feedback` per parent.
+
+### Services for Familie (1.6.0)
+
+```
+tasks_bind { members, parents, stars, moved? } | { release: true }   → { ok, listId } | { ok, released, trashed }
+tasks_put  { tasks: [FT] (≤ 50) }                                    → { ok, written, rejected: [{ uid, code }], tasks: [{ uid, id }] }
+tasks_list { rev?, cursor? }                                         → { ok, tasks: [FT], done: [{ seq, rev, uid, userId, by, dueDate, stars, at, undone }], cursor, rev, more?, now }
+FT { uid: 'f<n>' | 'p<n>' | 'h<n>', kind: 'task' | 'place', title, note?, turn, people, assignee, due: { date, time } | null,
+     repeat, stars, remind, remindAt?, done, doneBy, doneFor, doneAt, deleted, createdBy, createdAt,
+     place?: { owner, target, lat, lon, radius, trigger, consent, listUid? } }
+```
+
+Only `gatecontrol-familie` may call them. A row is written when it differs; a task in the trash here comes back when
+Familie sends it again; `release` puts the open tasks Familie keeps a copy of into the trash (Familie reminds of them
+itself again) and leaves the list an ordinary shared one. What changes here is told with `tasks_changed` (Familie).
+A place reminder of Familie is a task at a place in its owner's default list, or — set for someone else — in a list
+only the two share (`uid` `fam-pair-<a>-<b>`); its consent is taken as given, nobody is asked again.
+
 ## 1.5.0 — a task at a place
 
 Features `places`, `placeSearch` (check these words in `GET me`, never the version). `server/places.js`,

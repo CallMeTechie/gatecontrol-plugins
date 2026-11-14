@@ -49,7 +49,7 @@ function portal(host, user) {
 test('the page: scripts compile, every text key exists in de and en', () => {
   const html = ui.render({ view: 'portal', lang: 'en' });
   const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1]);
-  assert.equal(scripts.length, 8);
+  assert.equal(scripts.length, 9);
   for (const s of scripts) new vm.Script(s);
   const js = fs.readFileSync(path.join(__dirname, '..', 'ui', 'portal.js'), 'utf8') + fs.readFileSync(path.join(__dirname, '..', 'ui', 'places.js'), 'utf8');
   const keys = new Set([...js.matchAll(/T\('([a-z0-9_.-]*[a-z0-9])'/g)].map((m) => m[1]));
@@ -377,4 +377,48 @@ test('portal 1.5.0: the place of a task — the chip of the quick entry, the dia
     await until('saved', async () => (await h.ok(ANNA, 'GET', 'places')).places.some((x) => x.name === 'Oma' && x.named && x.lat === 52.4));
     await until('listed', () => /Oma/.test(p.text('na-places')));
   } finally { if (p) p.stop(); search.state.pauseMs = search.PAUSE_MS; await h.close(); clock.set(T0); }
+});
+
+test('portal 1.6.0: the family list — several people in the quick entry („Wer ist dran?“), whose turn and stars in the row and the details, the note about the move', async () => {
+  const { fakeSource, MARC, LENA, PLUGINS, clock, T0 } = require('./helpers');
+  const famtasks = require('../server/famtasks');
+  const fam = fakeSource('gatecontrol-familie', { provides: { tasks_changed: { label: { de: 'x', en: 'x' }, maxPerHour: 3600 } }, service: async () => ({ ok: true }) });
+  const h = await withHost({ sources: [fam, ...PLUGINS.filter((x) => x !== 'gatecontrol-familie').map((x) => fakeSource(x))] });
+  famtasks.state.noTimer = true;
+  let p;
+  try {
+    const b = await h.host.callService('tasks_bind', { caller: 'gatecontrol-familie', user: null, payload: { v: 1, members: [ANNA.id, MARC.id, LENA.id], parents: [ANNA.id, MARC.id], stars: true, moved: { at: clock.now(), by: ANNA.id, tasks: 12, places: 3 } } });
+    await h.ok(ANNA, 'POST', 'tasks', { title: 'Zimmer aufräumen', listId: b.listId, assigneeId: LENA.id, stars: 2 });
+    p = portal(h.host, ANNA);
+    // once per person: what came from Familie
+    const dlg = await until('the note', () => (p.doc.getElementById('na-dialog').hidden ? null : p.doc.getElementById('na-dialog')));
+    assert.match(textOf(dlg), /^Umzug abgeschlossenAus Familie übernommen: 12 Aufgaben und 3 Orts-Erinnerungen\..*Die Sterne zählt weiter das Familien-Plugin\..*Der Weg zurück bleibt offen\.AnsehenOK$/);
+    dlg.all().find((x) => x.localName === 'button' && textOf(x) === 'Ansehen').click();
+    await until('seen', () => p.calls.find((c) => c.path === 'family/seen'));
+    // „Ansehen“ opens the family list: the star of the task, the quick entry
+    await until('the list', () => p.text('na-main').includes('Zimmer aufräumen2'));
+    const q = p.doc.getElementById('na-quick');
+    const chips = () => textOf(q.parentNode.parentNode.childNodes[1]);
+    q.value = '@Lena @Marc Spülmaschine täglich 18 Uhr reihum 1 Stern';
+    q.dispatchEvent({ type: 'input' });
+    await until('the chips', () => chips().includes('Lena, MarcReihum · zuerst Lena1 SternWer ist dran?Eine PersonReihumWer zuerst'));
+    // „Wer zuerst“ picked instead of what the line says
+    const seg = () => q.parentNode.parentNode.all().filter((x) => x.localName === 'button' && ['Eine Person', 'Reihum', 'Wer zuerst'].includes(textOf(x)));
+    assert.deepEqual(seg().map((x) => x.getAttribute('aria-pressed')), ['false', 'true', 'false']);
+    seg()[2].click();
+    await until('picked', () => chips().includes('Lena, MarcWer zuerst1 Stern'));
+    q.dispatchEvent({ type: 'keydown', key: 'Enter' });
+    const made = await until('made', () => p.calls.find((c) => c.method === 'POST' && c.path === 'tasks'));
+    assert.deepEqual(made.body, { text: '@Lena @Marc Spülmaschine täglich 18 Uhr reihum 1 Stern', area: 'private', createList: false, place: 'auto', listId: b.listId, turn: 'first', people: [LENA.id, MARC.id] });
+    await until('the row', () => p.text('na-main').includes('SpülmaschineWer zuerst1'));
+    // the details: whose turn, who takes part, the stars (a parent)
+    p.doc.getElementById('na-main').all().find((x) => x.localName === 'span' && textOf(x) === 'Spülmaschine').parentNode.parentNode.dispatchEvent({ type: 'click' });
+    const side = () => p.doc.getElementById('na-side');
+    const stars = await until('the stars', () => side().all().find((x) => x.localName === 'select' && x.getAttribute('aria-label') === 'Sterne'));
+    assert.equal(stars.value, '1');
+    assert.deepEqual(side().all().filter((x) => x.localName === 'button' && x.parentNode.getAttribute('aria-label') === 'Wer macht mit').map((x) => [textOf(x), x.getAttribute('aria-pressed')]), [['Mir', 'false'], ['Marc', 'true'], ['Lena', 'true']]);
+    side().all().find((x) => x.localName === 'button' && textOf(x) === 'Reihum').click();
+    await until('in turns', async () => (await h.ok(ANNA, 'GET', 'views/list:' + b.listId)).sections.flatMap((s) => s.items).some((t) => t.title === 'Spülmaschine' && t.turn === 'rotate' && t.assignee.id === LENA.id));
+    await until('shown', () => p.text('na-main').includes('SpülmaschineReihum · Lena ist dran1'));
+  } finally { if (p) p.stop(); await h.close(); clock.set(T0); }
 });

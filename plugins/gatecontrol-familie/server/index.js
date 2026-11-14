@@ -109,6 +109,7 @@ const internet = require('./internet');
 const notizen = require('./notizen');
 const boardsync = require('./boardsync');
 const shopsync = require('./shopsync');
+const tasksync = require('./tasksync');
 const texts = require('./texts.json');
 const { STATUS, isKnown } = require('./util');
 
@@ -167,6 +168,8 @@ async function background(gc, now) {
     try { await store.tx(gc, fn); } catch (e) { gc.log.warn('background step failed', name, (e && e.code) || (e && e.message) || 'error'); }
   };
   // a request left pending while the module was switched off ends as well
+  // 1.24.0: do the tasks live in the hub, and is it there? (asks nobody) — then the hub reminds of them, not Familie
+  await tasksync.where(gc);
   await step('locate', () => locate.expire(gc, fam, cfg, now, cfg.modules.locate ? pushes : []));
   if (cfg.modules.tasks) await step('tasks', () => tasks.remind(gc, fam, cfg, now, pushes));
   if (cfg.modules.dates) await step('dates', () => dates.remind(gc, fam, cfg, now, pushes));
@@ -220,6 +223,8 @@ async function background(gc, now) {
   await boardsync.sync(gc, fam, cfg, now);
   // 1.21.0: the shopping lists, once they moved there (never throws; without the move nothing runs)
   await shopsync.sync(gc, fam, cfg, now);
+  // 1.24.0: the tasks and place reminders, once they moved there (never throws; without the move nothing runs)
+  await tasksync.sync(gc, fam, cfg, now);
   await notizen.source.tick(gc, now);
 }
 
@@ -231,10 +236,13 @@ module.exports = {
     school.reset();
     boardsync.reset();
     shopsync.reset();
+    tasksync.reset();
     notizen.source.reset();
     state.lastPurge = 0;
     // 1.21.0: have the shopping lists moved (read once; asks nobody)?
     await shopsync.load(gc);
+    // 1.24.0: have the tasks moved (read once; asks nobody)?
+    await tasksync.load(gc);
     // 1.19.0: is „Notizen & Aufgaben“ there (asks nobody)?
     await notizen.source.available(gc);
     // 1.17.0: GateControl's presence over the home network (≥ 1.230.0 with permissions.homePresence; never fails the start)
@@ -268,7 +276,7 @@ module.exports = {
         if (!req.user || req.user.portal || req.user.app || req.user.role !== 'admin') return errorResponse({ code: 'forbidden' }, lang);
         const out = { status: 200, json: { ok: true, ...(await admin.route(req, gc, seg, cfg, now)) } };
         // 1.19.0: members or modules changed — „Notizen & Aufgaben“ gets the difference in a few seconds
-        if (String(req.method || 'GET').toUpperCase() !== 'GET') { notizen.source.soon(gc); shopsync.soon(gc, famNow(gc)); }
+        if (String(req.method || 'GET').toUpperCase() !== 'GET') { notizen.source.soon(gc); shopsync.soon(gc, famNow(gc)); tasksync.soon(gc, famNow(gc)); }
         return out;
       }
       const out = await api.route(req, gc, seg, cfg, now);
@@ -276,6 +284,8 @@ module.exports = {
       if (String(req.method || 'GET').toUpperCase() !== 'GET' && TODO_PARTS.includes(seg[0])) notizen.source.soon(gc);
       // 1.21.0: a shopping list changed (also from the meal plan) — to „Notizen & Aufgaben“ in a second, once the lists live there
       if (String(req.method || 'GET').toUpperCase() !== 'GET') shopsync.soon(gc, famNow(gc));
+      // 1.24.0: a task or a place reminder changed — to „Notizen & Aufgaben“ in a second, once they live there
+      if (String(req.method || 'GET').toUpperCase() !== 'GET' && ['tasks', 'places'].includes(seg[0])) tasksync.soon(gc, famNow(gc));
       return out;
     } catch (e) {
       if (!isKnown(e)) gc.log.warn('request failed', req && req.method, String((req && req.path) || '').split('/').slice(0, 3).join('/'), (e && (e.code || e.message)) || 'error');
@@ -322,6 +332,8 @@ module.exports = {
     // 1.21.0: the shopping lists in the hub — it changed something, or „Ich gehe einkaufen“ / „Kannst du …?“ pressed there
     if (call && call.name === 'shopping_changed') return shopsync.changed(gc, call, famNow(gc));
     if (call && call.name === 'shopping_action') return shopsync.action(gc, call, famNow(gc), Date.now());
+    // 1.24.0: the tasks in the hub — something changed there (a task, something ticked off: the stars)
+    if (call && call.name === 'tasks_changed') return tasksync.changed(gc, call, famNow(gc));
     const cfg = await config.load(gc);
     const out = await services.handle(gc, cfg, call);
     shopsync.soon(gc, famNow(gc));
@@ -332,6 +344,7 @@ module.exports = {
     notizen.source.stop();
     boardsync.stop();
     shopsync.stop();
+    tasksync.stop();
   },
 
   /**
@@ -359,6 +372,7 @@ module.exports = {
   async runQuickAction(args, gc) {
     const out = await quick.run(gc, await config.load(gc), args, Date.now());
     shopsync.soon(gc, famNow(gc));
+    tasksync.soon(gc, famNow(gc));
     return out;
   },
 

@@ -1,5 +1,15 @@
-<!-- version: 1.5.0 -->
+<!-- version: 1.6.0 -->
 # Notizen & Aufgaben
+
+## Neu in 1.6.0
+
+- **Wer ist dran?** Eine Aufgabe kann an mehrere Personen gehen. **Reihum:** Immer eine Person ist dran; nach dem Abhaken ist bei der nächsten Wiederholung die nächste dran. **Wer zuerst:** Alle werden erinnert, die erste Person erledigt die Aufgabe für alle – die anderen bekommen „Erledigt von …“. Das geht in jeder geteilten Liste: in den Details der Aufgabe unter **„Wer ist dran?“**, oder gleich beim Tippen: „@Lena @Marc Spülmaschine täglich 18 Uhr reihum“.
+- **Die Aufgaben der Familie:** Mit dem Familien-Plugin (ab 1.24.0) können dessen Aufgaben und Orts-Erinnerungen hierher umziehen – der Knopf dafür steht in den Einstellungen des Familien-Plugins, von selbst zieht nichts um. Danach gibt es die Liste **„Familie“**, die alle Familienmitglieder sehen; niemand muss eingeladen werden. Siehe [Familie](#familie).
+- **Sterne:** Eltern geben einer Aufgabe der Familienliste Sterne („@Lena Zimmer aufräumen 2 Sterne“). Gezählt und abgerechnet werden sie weiter im Familien-Plugin.
+- **Rückmeldung:** Hakt ein Kind ab, bekommen die Eltern eine Meldung mit **„Ansehen“** und **„Noch nicht fertig“**. „Noch nicht fertig“ gibt die Aufgabe zurück, die Sterne werden wieder abgezogen. Unter „Einstellungen“ › Benachrichtigungen stellst du die Meldung auf „Nur bei Aufgaben mit Sternen“ oder „Nie“.
+- **Orts-Erinnerung für andere:** „Annehmen“ und „Ablehnen“ sieht nur noch die Person, deren Handy den Ort überwachen soll.
+- **Apps:** Die Android- und Windows-App zeigen „Wer ist dran?“, Sterne und die Familienliste mit einer der nächsten Versionen. Bis dahin arbeiten sie mit den Aufgaben über das Familien-Plugin weiter; beides bleibt abgeglichen.
+- Beim Update fragt GateControl einmal nach einem neuen Dienst des Familien-Plugins, den dieses Plugin dafür aufruft.
 
 ## Neu in 1.5.0
 
@@ -95,6 +105,18 @@ Das Plugin ist neu: eigene Aufgaben und Notizen plus alles, was die anderen Plug
 - **Teilen:** Namen eintippen, Person hinzufügen und **Bearbeiten** oder **Ansehen** wählen. Wer eine geteilte Liste bekommt, sieht sie sofort und erhält eine Mitteilung. Wer nur mitmacht, findet am ⋯ „In ‚Mein Tag‘ zeigen“ und „Liste verlassen“.
 - **Einkaufstag:** An den gewählten Wochentagen steht die Liste oben in „Mein Tag“ – bei allen Mitgliedern. Wer das nicht möchte, schaltet es am ⋯ der Liste nur für sich aus.
 - **Löschen** fragt nach und sagt, was mit den Aufgaben passiert; danach gibt es „Rückgängig“. **Gelöschtes** liegt 30 Tage im Papierkorb und ist danach weg.
+
+## Familie
+
+Nach dem Umzug (Einstellungen › Plugins › Familie › Funktionen › „Aufgaben und Orts-Erinnerungen in „Notizen & Aufgaben““) steht unter „Meine Listen“ die Liste **„Familie“**.
+
+- **Eltern** sehen und ändern alles, vergeben Sterne und haken auch für ein Kind ab – die Sterne bekommt das Kind.
+- **Kinder** haken ab, was ihnen zugewiesen ist oder an alle geht, und legen eigene Aufgaben an. Aufgaben der Eltern ändern oder löschen sie nicht, Sterne vergeben sie nicht.
+- **Wer zur Familie gehört** und wer Elternteil ist, legt weiter das Familien-Plugin fest. Die Liste lässt sich hier deshalb nicht löschen, verlassen oder mit anderen teilen.
+- **Sterne, Wochenziel, Taschengeld und Wünsche** bleiben im Familien-Plugin. Auch das Wandtablet und die Karten im Chat bleiben dort und zeigen die Aufgaben von hier.
+- **Erinnert** wird von hier. Eine offene Aufgabe, die sich wiederholt, bleibt als überfällig stehen, bis sie abgehakt ist – sie erinnert nicht jeden Tag neu.
+- **Orts-Erinnerungen der Familie** sind danach Aufgaben mit Ort: die eigenen in deiner Liste „Aufgaben“, solche für jemand anderen in einer Liste „Erinnerungen …“, die nur ihr beide seht. Erinnerungen, die anderen Bescheid sagen („… ist angekommen“), bleiben im Familien-Plugin.
+- **Zurück:** „Zurückholen“ im Familien-Plugin gibt ihm alles zurück. Die offenen Aufgaben aus der Familie wandern hier in den Papierkorb (30 Tage), damit nichts doppelt erinnert. Unteraufgaben, Notizen und Anhänge, die hier dazugekommen sind, kommen nicht mit zurück.
 
 ## Orte
 

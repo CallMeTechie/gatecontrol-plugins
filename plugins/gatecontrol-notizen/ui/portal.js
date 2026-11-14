@@ -13,6 +13,7 @@
 
   var CTX = window.NA_CTX || { texts: {}, lang: 'de' };
   var Q = window.GCQuickParse;
+  var TW = window.GCTurnWords;
   var MD = window.GCNoteMd;
   var RP = window.GCRepeat;
   var VC = window.NotesVaultCrypto;
@@ -55,6 +56,7 @@
     x: 'M6 6l12 12M18 6L6 18',
     menu: 'M4 6h16M4 12h16M4 18h16',
     more: 'M5 12h.01M12 12h.01M19 12h.01',
+    turn: 'M17 1l4 4-4 4M3 11V9a4 4 0 0 1 4-4h14M7 23l-4-4 4-4M21 13v2a4 4 0 0 1-4 4H3',
     users: 'M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75',
     chevr: 'M9 6l6 6-6 6',
     chevd: 'M6 9l6 6 6-6',
@@ -127,6 +129,10 @@
   }
   function errText(e) {
     var code = (e && e.code) || 'failed';
+    // 1.6.0: the family list — what only the parents change, what Familie manages
+    var why = e && e.extra && e.extra.reason;
+    if (code === 'forbidden' && why === 'parents_only') return T('p.err_parents_only');
+    if (code === 'forbidden' && why === 'family') return T('p.err_family_list');
     return CTX.texts['err.' + code] ? T('err.' + code) : T('err.failed', { code: code });
   }
   var toastTimer = null;
@@ -196,6 +202,19 @@
   };
   var app = function () { return document.getElementById('na-app'); };
 
+  // 1.6.0: „Umzug abgeschlossen“ — once per person: what came from Familie, where it is now, what stays there
+  function movedNote() {
+    var f = S.me && S.me.familyTasks;
+    if (!f || !f.moved || f.moved.seen || S.me.readOnly) return;
+    var seen = function () { f.moved.seen = true; api('POST', 'family/seen', {}).catch(function () {}); closeDialog(); };
+    var items = [T('p.moved_keep'), T('p.moved_places'), f.stars ? T('p.moved_stars') : null, T('p.moved_copy')].filter(Boolean);
+    dialog(T('p.moved_title'), [
+      h('p', { text: T('p.moved_what', { tasks: f.moved.tasks, places: f.moved.places }) }),
+      h('ul', { class: 'na-moved' }, items.map(function (x) { return h('li', { text: x }); })),
+      h('div', { class: 'dp-actions' }, [btn(T('p.moved_look'), function () { seen(); if (f.listId) go({ kind: 'list', id: f.listId }); }, { small: true }), btn(T('p.moved_ok'), seen, { primary: true, small: true })]),
+    ]);
+  }
+
   function load() {
     return api('GET', 'me').then(function (me) {
       S.me = me;
@@ -206,7 +225,7 @@
       app().hidden = false;
       document.getElementById('na-topbar').hidden = false;
       api('GET', 'people').then(function (r) { S.people = r.people || []; }).catch(function () {});
-      return Promise.all([reloadNav(), reloadView()]);
+      return Promise.all([reloadNav(), reloadView()]).then(function (r) { movedNote(); return r; });
     }).catch(function (e) {
       var m = document.getElementById('na-msg');
       clear(m);
@@ -707,6 +726,9 @@
       if (x.source) meta.appendChild(h('span', { class: 'na-src', 'data-src': x.source.plugin, text: T('src.' + x.source.plugin) }));
       if (l && !(S.view.kind === 'list')) meta.appendChild(h('span', { text: T('area.' + l.area) + ' › ' + l.name }));
       if (x.assignee && x.assignee.id !== S.me.user.id && !(l && l.shared)) meta.appendChild(h('span', { text: x.assignee.name || '' }));
+      // 1.6.0: whose turn, the stars
+      if (x.turn && !x.done) meta.appendChild(h('span', { class: 'na-mi' }, [icon(x.turn === 'first' ? 'users' : 'turn', 13), h('span', { text: turnText(x) })]));
+      if (x.stars) meta.appendChild(h('span', { class: 'na-mi na-stars', attrs: { 'aria-label': starsText(x.stars) } }, [icon('star', 13), h('span', { text: String(x.stars) })]));
       if (x.repeatText) meta.appendChild(h('span', { text: '↻ ' + x.repeatText }));
       // 1.3.0: a reminder is to come (or was put off with „Später“), the task is in the person's calendar in Mail
       if (x.reminder && !x.done) meta.appendChild(h('span', { class: 'na-mi' }, [icon('bell', 13), h('span', { text: x.snoozed ? T('p.snoozed_until', { when: isoWhen(x.reminder.at) }) : T('p.reminder') })]));
@@ -1020,6 +1042,9 @@
     // 1.5.0: the place the line names („beim Baumarkt“, „bei Oma“) — from the same answer; decided ones (an own place,
     // the remembered one of a kind) are taken, the others are a chip to choose from
     var pl = { hint: null, off: false, pick: null };
+    // 1.6.0: several people — whose turn (what the line says, or what was picked: undefined = as written)
+    var tw = { pick: undefined, words: null };
+    function twTurn() { return tw.words && tw.words.people.length > 1 ? (tw.pick !== undefined ? tw.pick : tw.words.turn) : null; }
     function plArg() {
       if (pl.off) return null;
       if (pl.pick) return pl.pick.arg;
@@ -1037,7 +1062,7 @@
       var s = input.value.trim();
       if (!s) { att.hint = null; att.forText = null; att.off = false; att.pick = null; pl.hint = null; pl.off = false; pl.pick = null; return; }
       att.timer = setTimeout(function () {
-        api('POST', 'parse', { text: s, area: S.area }).then(function (r) {
+        api('POST', 'parse', { text: s, area: S.area, listId: S.view.kind === 'list' ? S.view.id : undefined }).then(function (r) {
           if (input.value.trim() !== s) return;
           att.hint = r.attach || null;
           att.forText = s;
@@ -1086,8 +1111,21 @@
       } else if (px) {
         chips.appendChild(h('button', { type: 'button', class: 'na-chip is-plain', attrs: { 'aria-haspopup': 'dialog' }, on: { click: plChoose } }, [icon('place', 13), h('span', { text: T('pl.chip', { label: px.label }) })]));
       }
-      if (parsed.assignee) chips.appendChild(h('span', { class: 'na-chip', text: '@' + parsed.assignee.name }));
+      var target = parsed.list ? parsed.list.id : (S.view.kind === 'list' ? S.view.id : null);
+      tw.words = TW.apply(parsed, { people: S.people, stars: target != null && mayStars(target) });
+      var ppl = tw.words.people;
+      if (ppl.length > 1) chips.appendChild(h('span', { class: 'na-chip', text: ppl.map(function (u) { return firstName(u) || u.name; }).join(', ') }));
+      else if (parsed.assignee) chips.appendChild(h('span', { class: 'na-chip', text: '@' + parsed.assignee.name }));
       else if (parsed.assigneeName) chips.appendChild(h('span', { class: 'na-chip is-plain', text: T('p.unknown_person', { name: parsed.assigneeName }) }));
+      if (ppl.length > 1) {
+        var turn = twTurn();
+        if (turn === 'rotate') chips.appendChild(h('span', { class: 'na-chip' }, [icon('turn', 13), h('span', { text: T('p.turn_rotate_first', { name: firstName(ppl[0]) || ppl[0].name }) })]));
+        else if (turn === 'first') chips.appendChild(h('span', { class: 'na-chip' }, [icon('users', 13), h('span', { text: T('p.turn_first') })]));
+      }
+      if (tw.words.stars) chips.appendChild(h('span', { class: 'na-chip' }, [icon('star', 13), h('span', { text: starsText(tw.words.stars) })]));
+      if (ppl.length > 1) {
+        chips.appendChild(h('div', { class: 'na-turn-q' }, [h('div', { class: 'na-lb', text: T('p.turn_label') }), turnSeg(twTurn(), function (v) { tw.pick = v; show(); input.focus(); })]));
+      } else tw.pick = undefined;
     }
     input.addEventListener('input', function () { show(); ask(); });
     input.addEventListener('keydown', function (ev) {
@@ -1104,10 +1142,12 @@
       if (pa) body.place = pa;
       else if (!pl.off && att.forText !== text) body.place = 'auto';
       if (S.view.kind === 'list' && !(parsed && (parsed.list || parsed.listName))) body.listId = S.view.id;
+      // 1.6.0: whose turn, when it was picked (else the server reads it from the line)
+      if (tw.words && tw.words.people.length > 1 && tw.pick !== undefined) { body.turn = tw.pick; if (tw.pick) body.people = tw.words.people.map(function (u) { return u.id; }); }
       if (S.view.kind === 'smart' && S.view.id === 'myday') body.myDay = true;
       if (S.view.kind === 'smart' && S.view.id === 'important') body.important = true;
       input.disabled = true;
-      api('POST', 'tasks', body).then(function () { input.value = ''; att.hint = null; att.forText = null; att.off = false; att.pick = null; pl.hint = null; pl.off = false; pl.pick = null; show(); input.disabled = false; input.focus(); soon(); }, function (e) { input.disabled = false; fail(e); });
+      api('POST', 'tasks', body).then(function () { input.value = ''; tw.pick = undefined; tw.words = null; att.hint = null; att.forText = null; att.off = false; att.pick = null; pl.hint = null; pl.off = false; pl.pick = null; show(); input.disabled = false; input.focus(); soon(); }, function (e) { input.disabled = false; fail(e); });
     });
     return h('div', { class: 'na-quick' }, [h('label', { class: 'na-quick-box' }, [icon('plus'), input, h('span', { class: 'na-kbd', text: T('p.kbd_new') })]), chips]);
   }
@@ -1151,6 +1191,20 @@
     if (window.GC && typeof window.GC.openPortal === 'function') {
       window.GC.openPortal({ plugin: open.plugin, query: { open: open.route } }).then(function (r) { if (r && r.ok === false) toast(T('p.open_there', { plugin: T('src.' + open.plugin) })); }, function () { toast(T('p.open_there', { plugin: T('src.' + open.plugin) })); });
     } else toast(T('p.open_there', { plugin: T('src.' + open.plugin) }));
+  }
+
+  // 1.6.0: whose turn — „Reihum · heute bist du dran“, „Reihum · Mia“, „Wer zuerst“; stars only from a parent of the family
+  function turnText(x) {
+    if (x.turn === 'first') return T('p.turn_first');
+    if (x.turn !== 'rotate') return null;
+    if (x.assignee && x.assignee.id === S.me.user.id) return T('p.turn_rotate_me');
+    return T('p.turn_rotate_who', { name: x.assignee ? firstName(x.assignee) || x.assignee.name || '' : '' });
+  }
+  function famInfo() { return (S.me && S.me.familyTasks) || {}; }
+  function mayStars(listId) { var f = famInfo(); return !!(f.bound && f.parent && f.stars && (listId == null || f.listId === listId)); }
+  function starsText(n) { return T(n === 1 ? 'p.stars_one' : 'p.stars', { n: n }); }
+  function turnSeg(cur, onPick) {
+    return h('div', { class: 'na-turn' }, [segOf([[null, T('p.turn_one')], ['rotate', T('p.turn_rotate')], ['first', T('p.turn_first')]], cur, onPick), h('p', { class: 'dp-hint', text: T('p.turn_hint') })]);
   }
 
   function field(label, control) { return h('div', { class: 'na-f' }, [h('span', { text: label }), control]); }
@@ -1244,6 +1298,38 @@
     as.value = t.assignee ? String(t.assignee.id) : '';
     as.addEventListener('change', function () { patchTask(t, { assigneeId: as.value ? Number(as.value) : null }); });
     card.appendChild(field(T('p.assigned'), as));
+    // 1.6.0: whose turn — one person, in turns or whoever is first (needs a list with at least two people); stars
+    if (!t.parentId && members.length > 1 && t.canEdit !== false) {
+      var ppl = (t.people || []).map(function (u) { return u.id; });
+      var boxes = h('div', { class: 'dp-chips na-people', role: 'group', attrs: { 'aria-label': T('p.turn_people') } });
+      var sendTurn = function (turn) {
+        if (!turn) return patchTask(t, { turn: null });
+        if (ppl.length < 2) ppl = members.filter(Boolean).map(function (m) { return m.id; });
+        patchTask(t, { turn: turn, people: ppl });
+      };
+      members.forEach(function (m) {
+        if (!m) return;
+        boxes.appendChild(h('button', { type: 'button', text: m.id === S.me.user.id ? T('p.me') : firstName(m) || m.name || '', attrs: { 'aria-pressed': ppl.indexOf(m.id) >= 0 ? 'true' : 'false' }, on: { click: function () {
+          var next = ppl.indexOf(m.id) >= 0 ? ppl.filter(function (u) { return u !== m.id; }) : ppl.concat([m.id]);
+          if (next.length < 2) return toast(T('p.turn_two'), 'warn');
+          patchTask(t, { turn: t.turn, people: next });
+        } } }));
+      });
+      card.appendChild(h('div', { class: 'na-lb', text: T('p.turn_label') }));
+      card.appendChild(turnSeg(t.turn || null, sendTurn));
+      if (t.turn) card.appendChild(field(T('p.turn_people'), boxes));
+    } else if (t.turn) card.appendChild(field(T('p.turn_label'), h('span', { text: turnText(t) })));
+    if (!t.parentId && (t.stars || (t.family && mayStars(t.listId)))) {
+      if (t.family && mayStars(t.listId)) {
+        var st = h('select', { class: 'dp-input', attrs: { 'aria-label': T('p.stars_label') } });
+        for (var sn = 0; sn <= (famInfo().starsMax || 10); sn++) st.appendChild(h('option', { value: String(sn), text: sn ? starsText(sn) : T('p.stars_none') }));
+        st.value = String(t.stars || 0);
+        st.addEventListener('change', function () { patchTask(t, { stars: Number(st.value) }); });
+        card.appendChild(field(T('p.stars_label'), st));
+        card.appendChild(h('p', { class: 'dp-hint', text: T('p.stars_hint') }));
+      } else card.appendChild(field(T('p.stars_label'), h('span', { class: 'na-mi na-stars' }, [icon('star', 15), h('span', { text: starsText(t.stars) })])));
+    }
+    if (t.done && t.doneBy && t.doneBy.id !== S.me.user.id) card.appendChild(field(T('p.done_by'), h('span', { text: t.doneBy.name || '' })));
     var ls = h('select', { class: 'dp-input', attrs: { 'aria-label': T('p.list') } });
     ((S.nav && S.nav.lists) || []).forEach(function (x) { ls.appendChild(h('option', { value: String(x.id), text: T('area.' + x.area) + ' › ' + x.name })); });
     if (!listOf(t.listId)) ls.appendChild(h('option', { value: String(t.listId), text: t.list ? t.list.name : '' }));
@@ -2254,6 +2340,12 @@
       swRow(T('p.notify_listday'), T('p.notify_listday_hint'), nt.listday !== false, function (v) { savePrefs({ notify: { listday: v } }); }),
       swRow(T('p.notify_yesterday'), T('p.notify_yesterday_hint'), nt.yesterday !== false, function (v) { savePrefs({ notify: { yesterday: v } }); }),
       setRow(T('p.yesterday_at'), null, yAt),
+      famInfo().bound && famInfo().parent ? setRow(T('p.feedback'), T('p.feedback_hint'), (function () {
+        var fb = h('select', { class: 'dp-input', attrs: { 'aria-label': T('p.feedback') } }, [['all', 'p.feedback_all'], ['stars', 'p.feedback_stars'], ['off', 'p.feedback_off']].map(function (o) { return h('option', { value: o[0], text: T(o[1]) }); }));
+        fb.value = prefs.feedback || 'all';
+        fb.addEventListener('change', function () { savePrefs({ feedback: fb.value }); });
+        return fb;
+      }())) : null,
     ]), h('p', { class: 'dp-hint', text: T('p.notify_hint') })]));
     // 1.5.0: Orte — the person's switches of the place search and of the hints on the way, „Meine Orte“
     if (S.me.places) PL.settings(wrap, savePrefs);

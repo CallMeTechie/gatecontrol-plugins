@@ -104,7 +104,7 @@ test('the search: a rounded position, the nearest first, a filter by map tags, a
       assert.equal(c.q, '[Baumarkt]');
       assert.equal(c.bounded, '1');
       assert.ok(!/52\.5203|13\.4051|Anna|Berg/.test(c.url), c.url);
-      assert.match(c.agent, /^GateControl-Notizen\/1\.5\.0 \(.+github\.com\/CallMeTechie\/gatecontrol\)$/);
+      assert.match(c.agent, new RegExp('^GateControl-Notizen/' + require('../plugin.json').version.replace(/\./g, '\\.') + ' \\(.+github\\.com/CallMeTechie/gatecontrol\\)$'));
     }
     assert.equal(h.net.calls[0].viewbox, search.boxOf(CELL, 4));
     assert.equal(h.net.calls[1].viewbox, search.boxOf(CELL, 15));

@@ -4,7 +4,7 @@
     "de": "Notizen & Aufgaben",
     "en": "Notes & Tasks"
   },
-  "version": "1.5.0",
+  "version": "1.6.0",
   "publisher": "CallMeTechie",
   "description": {
     "de": "Eigene Aufgaben und Notizen plus alles „Zu tun“ aus den anderen Plugins (Familie, Mail, Drive, Schule, Alltag) an einer Stelle: Mein Tag, Wichtig, Geplant, Mir zugewiesen; Listen und Gruppen, Unteraufgaben, Fälligkeit, Erinnerung zur Uhrzeit oder am Ort mit „Erledigt“ und „Später“, Termin im Kalender von Mail, Wiederholungen, geteilte Listen. Notizbücher mit Schlagwörtern, Checklisten, Tabellen, Bildern und Volltextsuche, Notizbücher als Tresor (Ende-zu-Ende verschlüsselt). Schnell-Eingabe in normaler Sprache, Umzug von Microsoft To Do und Synology DS Note. Bereiche Privat und Arbeit getrennt.",
@@ -65,7 +65,8 @@
       "gatecontrol-familie:shopping_changed",
       "gatecontrol-familie:shopping_action",
       "gatecontrol-familie:places",
-      "gatecontrol-familie:geofences"
+      "gatecontrol-familie:geofences",
+      "gatecontrol-familie:tasks_changed"
     ]
   },
   "storage": {
@@ -157,6 +158,27 @@
         "label": {
           "de": "Einkaufslisten der Familie lesen",
           "en": "Read the family’s shopping lists"
+        },
+        "maxPerHour": 3600
+      },
+      "tasks_bind": {
+        "label": {
+          "de": "Familie für die Liste der Familien-Aufgaben",
+          "en": "The family for the list of family tasks"
+        },
+        "maxPerHour": 3600
+      },
+      "tasks_put": {
+        "label": {
+          "de": "Aufgaben und Orts-Erinnerungen der Familie abgleichen",
+          "en": "Keep the family’s tasks and place reminders in step"
+        },
+        "maxPerHour": 3600
+      },
+      "tasks_list": {
+        "label": {
+          "de": "Aufgaben der Familie und ihre Erledigungen lesen",
+          "en": "Read the family’s tasks and what was ticked off"
         },
         "maxPerHour": 3600
       }

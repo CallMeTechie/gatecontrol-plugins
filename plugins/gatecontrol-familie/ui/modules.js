@@ -227,8 +227,77 @@
     });
   });
 
+  // ── the tasks and place reminders in „Notizen & Aufgaben“ (1.24.0) ─────────────────────────
+  var tmove = null;
+  function n1(key, n) { return T(n === 1 ? key + '_1' : key + '_n', { n: n }); }
+  function tCount(s) { return n1('taskmove.tasks', s.tasks) + ' ' + T('taskmove.and') + ' ' + n1('taskmove.places', s.places); }
+  function renderTaskMove() {
+    var s = tmove;
+    var st = $('#fa-tmove-status');
+    var go = $('#fa-tmove-go');
+    var back = $('#fa-tmove-back');
+    var count = $('#fa-tmove-count');
+    go.hidden = true; back.hidden = true; count.hidden = true; $('#fa-tmove-what').hidden = true;
+    count.textContent = '';
+    if (!s) { st.textContent = ''; return; }
+    var on = s.modules.tasks || s.modules.places;
+    var here = s.moved && s.home.home === 'notizen';
+    var text;
+    if (!on) text = T('taskmove.module_off');
+    else if (here && s.pending) text = T('taskmove.pending', { n: s.pending });
+    else if (here) text = T('taskmove.moved', { when: A.when(s.home.since), count: tCount(s) });
+    else if (s.moved) text = T('taskmove.moved_away');
+    else if (!s.hub.available) text = T('taskmove.no_hub');
+    else text = T('taskmove.preview', { count: tCount(s) });
+    st.textContent = text;
+    st.className = 'fa-hint' + (here && !s.pending ? ' fa-ok' : '');
+    go.hidden = !(s.canMove && on);
+    go.textContent = T(s.moved ? 'taskmove.go_on' : 'taskmove.go');
+    back.hidden = !s.canBack;
+    // the preview in numbers: what moves how, and what stays
+    var lines = [];
+    if (!s.moved && s.hub.available && on) {
+      if (s.repeating) lines.push(n1('taskmove.c_repeat', s.repeating));
+      if (s.rotate || s.first) lines.push(T('taskmove.c_turns', { rotate: s.rotate, first: s.first }));
+      if (s.split) lines.push(n1('taskmove.c_split', s.split));
+      if (s.stars) lines.push(n1('taskmove.c_stars', s.stars));
+      if (s.placesOthers) lines.push(n1('taskmove.c_others', s.placesOthers));
+      if (s.placesTell) lines.push(n1('taskmove.c_tell', s.placesTell));
+      if (s.placesOff) lines.push(n1('taskmove.c_off', s.placesOff));
+    }
+    lines.forEach(function (x) { count.appendChild(el('li', { text: x })); });
+    count.hidden = !lines.length;
+    $('#fa-tmove-what').hidden = !(s.canMove && on && !s.moved);
+  }
+  function loadTaskMove() {
+    return A.api('GET', 'admin/tasks').then(function (r) { tmove = r.tasks; renderTaskMove(); }).catch(function () { tmove = null; renderTaskMove(); });
+  }
+  $('#fa-tmove-go').addEventListener('click', function () {
+    var run = function () {
+      $('#fa-tmove-go').disabled = true;
+      A.api('POST', 'admin/tasks/move', {}).then(function (r) {
+        tmove = r.tasks;
+        A.toast(T('taskmove.done', { count: tCount({ tasks: r.moved.tasks, places: r.moved.places }) }));
+      }).catch(function (e) {
+        // the hub did not answer (any more): said in the move's own words — a move cut short goes on by itself
+        var d = (e && e.data) || {};
+        if (A.errCode(e) === 'unavailable') A.toast(d.moved ? T('taskmove.err_cut', { n: d.pending || 0 }) : T('taskmove.err_hub'), 'error'); else A.warn(e);
+        return loadTaskMove();
+      }).then(function () { $('#fa-tmove-go').disabled = false; renderTaskMove(); });
+    };
+    if (tmove && tmove.moved) return run();
+    A.confirm(T('taskmove.confirm', { count: tCount(tmove) }), T('taskmove.go')).then(function (yes) { if (yes) run(); });
+  });
+  $('#fa-tmove-back').addEventListener('click', function () {
+    A.confirm(T('taskmove.back_confirm'), T('taskmove.back')).then(function (yes) {
+      if (!yes) return;
+      A.api('POST', 'admin/tasks/move', { back: true }).then(function (r) { tmove = r.tasks; A.toast(T('taskmove.back_done')); }).catch(A.warn).then(renderTaskMove);
+    });
+  });
+
   function render() {
     renderMove();
+    renderTaskMove();
     renderGroups();
     renderWall();
     renderMessenger();
@@ -241,5 +310,6 @@
     renderPreviewSelect();
     render();
     loadMove();
+    loadTaskMove();
   }).catch(A.warn);
 }());

@@ -41,6 +41,7 @@ const push = require('./push');
 const members = require('./members');
 const format = require('./format');
 const messenger = require('./messenger');
+const hubmark = require('./hubmark');
 const { fail, posInt, text, bool, intIn, time, date, iso, userIds, parseJson, validDate, parseIso } = require('./util');
 
 const MODES = ['fixed', 'rotate', 'first'];
@@ -48,6 +49,7 @@ const REPEATS = ['none', 'daily', 'weekly', 'monthly'];
 const TITLE_MAX = 80;
 const DEFAULT_REMIND_TIME = '08:00';
 const DONE_KEEP_DAYS = 7;
+const GONE_KEEP_DAYS = 30;
 const DAY = 86400000;
 
 const isoWd = (d) => ((tz.weekday(d) + 6) % 7) + 1; // 1 = Monday … 7 = Sunday
@@ -60,6 +62,8 @@ function rowToTask(r) {
     repeat: r.repeat, weekdays: parseJson(r.weekdays_json, null), dueTime: r.due_time || null, anchor: r.due_date,
     stars: r.stars, reminder: !!r.reminder, createdBy: r.created_by, createdAt: r.created_at, updatedAt: r.updated_at,
     source: r.source || null, conversationId: r.conversation_id == null ? null : r.conversation_id,
+    // 1.24.0: the task in „Notizen & Aufgaben“ (server/tasksync.js)
+    hubUid: r.hub_uid || null, syncedAt: r.synced_at || 0, goneAt: r.gone_at || null,
   };
 }
 
@@ -155,11 +159,11 @@ function view(t, fam, rows, today, viewerId) {
 }
 
 async function listTasks(gc) {
-  return (await store.all(gc, 'SELECT * FROM tasks ORDER BY id')).map(rowToTask);
+  return (await store.all(gc, 'SELECT * FROM tasks WHERE gone_at IS NULL ORDER BY id')).map(rowToTask);
 }
 
 async function getTask(gc, id) {
-  const r = await store.one(gc, 'SELECT * FROM tasks WHERE id = ?', [id]);
+  const r = await store.one(gc, 'SELECT * FROM tasks WHERE id = ? AND gone_at IS NULL', [id]);
   return r ? rowToTask(r) : null;
 }
 
@@ -281,6 +285,7 @@ async function create(gc, r) {
   const res = await store.run(gc, `INSERT INTO tasks (title, mode, assignees_json, turn_user, repeat, weekdays_json, due_time, due_date, stars, reminder, created_by, created_at, updated_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   [f.title, f.mode, JSON.stringify(f.assignees), f.turnUser, f.repeat, f.weekdays ? JSON.stringify(f.weekdays) : null, f.dueTime, f.anchor, f.stars, f.reminder ? 1 : 0, r.me.userId, r.now, r.now]);
+  await hubmark.task(gc, Number(res.lastInsertRowid));
   return one(gc, r, res.lastInsertRowid);
 }
 
@@ -290,11 +295,15 @@ async function update(gc, r, id) {
   const f = fields(r.body, t, r.fam, r.today);
   await store.run(gc, `UPDATE tasks SET title = ?, mode = ?, assignees_json = ?, turn_user = ?, repeat = ?, weekdays_json = ?, due_time = ?, due_date = ?, stars = ?, reminder = ?, updated_at = ? WHERE id = ?`,
     [f.title, f.mode, JSON.stringify(f.assignees), f.turnUser, f.repeat, f.weekdays ? JSON.stringify(f.weekdays) : null, f.dueTime, f.anchor, f.stars, f.reminder ? 1 : 0, r.now, id]);
+  await hubmark.task(gc, id);
   return one(gc, r, id);
 }
 
-async function remove(gc, id) {
-  const res = await store.run(gc, 'DELETE FROM tasks WHERE id = ?', [id]);
+async function remove(gc, id, now = Date.now()) {
+  // 1.24.0: while the hub owns the tasks the row stays hidden until the hub was told (then it goes with the retention)
+  const res = hubmark.state.on
+    ? await store.run(gc, 'UPDATE tasks SET gone_at = ?, dirty = dirty + 1 WHERE id = ? AND gone_at IS NULL', [now, id])
+    : await store.run(gc, 'DELETE FROM tasks WHERE id = ? AND gone_at IS NULL', [id]);
   if (!res.changes) throw fail('not_found');
   await store.run(gc, 'DELETE FROM task_reminders WHERE task_id = ?', [id]);
   // done rows stay for the week's stars; they go with the retention
@@ -346,6 +355,7 @@ async function done(gc, r, id) {
       const next = assignees[(assignees.indexOf(cur) + 1) % assignees.length];
       await store.run(gc, 'UPDATE tasks SET turn_user = ?, updated_at = ? WHERE id = ?', [next, r.now, id]);
     }
+    await hubmark.task(gc, id);
     if (t.mode === 'first') {
       // the others' reminders of this occurrence are replaced (same collapse key)
       const sent = await store.all(gc, 'SELECT user_id FROM task_reminders WHERE task_id = ? AND occurrence = ? AND sent_at IS NOT NULL', [id, occ]);
@@ -378,13 +388,15 @@ async function snooze(gc, r, id) {
   const until = r.now + minutes * 60000;
   await store.run(gc, `INSERT INTO task_reminders (task_id, occurrence, user_id, sent_at, snooze_until) VALUES (?, ?, ?, NULL, ?)
     ON CONFLICT(task_id, occurrence, user_id) DO UPDATE SET snooze_until = excluded.snooze_until`, [id, occ, r.me.userId, until]);
+  await hubmark.task(gc, id);
   return { snoozedUntil: iso(until), occurrence: occ };
 }
 
 /** Background: reminders of due occurrences. Collects pushes into `pushes`. */
 async function remind(gc, fam, cfg, now, pushes) {
   const today = tz.localDate(now, cfg.tz);
-  const tasks = (await listTasks(gc)).filter((t) => t.reminder);
+  // 1.24.0: a task the hub has is reminded of by the hub (while it is there) — never twice
+  const tasks = (await listTasks(gc)).filter((t) => t.reminder && !hubmark.hubReminds({ synced_at: t.syncedAt }));
   if (!tasks.length) return;
   const rows = await doneRows(gc, tasks.map((t) => t.id));
   for (const t of tasks) {
@@ -469,6 +481,7 @@ async function quick(gc, r) {
     source, conversation_id) VALUES (?, ?, ?, NULL, ?, ?, ?, ?, 0, 1, ?, ?, ?, 'chat', ?)`,
   [title, mode, JSON.stringify(assignees), repeat, weekdays ? JSON.stringify(weekdays) : null, dueTime, day, r.me.userId, r.now, r.now, conversationId]);
   const id = Number(res.lastInsertRowid);
+  await hubmark.task(gc, id);
   const task = await one(gc, r, id);
   if (conversationId && Array.isArray(r.after)) {
     const lang = r.cfg.lang;
@@ -497,7 +510,7 @@ async function quick(gc, r) {
 
 /** The open chat tasks of `userId` (quick actions „Erledigt“): [{ id, title }] — the person's turn / task, not done yet. */
 async function openChatTasks(gc, fam, today, userId) {
-  const list = (await store.all(gc, "SELECT * FROM tasks WHERE source = 'chat' ORDER BY id DESC LIMIT 100")).map(rowToTask);
+  const list = (await store.all(gc, "SELECT * FROM tasks WHERE source = 'chat' AND gone_at IS NULL ORDER BY id DESC LIMIT 100")).map(rowToTask);
   const rows = await doneRows(gc, list.map((t) => t.id));
   const out = [];
   for (const t of list) {
@@ -511,7 +524,13 @@ async function openChatTasks(gc, fam, today, userId) {
 /** Retention: finished one-off tasks after 7 days, old reminder state, done rows after 400 days. */
 async function purge(gc, cfg, now) {
   const today = tz.localDate(now, cfg.tz);
-  const oneOff = (await store.all(gc, "SELECT * FROM tasks WHERE repeat = 'none'")).map(rowToTask);
+  // 1.24.0: what was deleted while the hub owns the tasks, once the hub knows it
+  const gone = await store.all(gc, 'SELECT id FROM tasks WHERE gone_at IS NOT NULL AND gone_at < ? AND dirty = 0', [now - GONE_KEEP_DAYS * DAY]);
+  for (const g of gone) {
+    await store.run(gc, 'DELETE FROM tasks WHERE id = ?', [g.id]);
+    await store.run(gc, 'DELETE FROM task_reminders WHERE task_id = ?', [g.id]);
+  }
+  const oneOff = (await store.all(gc, "SELECT * FROM tasks WHERE repeat = 'none' AND gone_at IS NULL")).map(rowToTask);
   const rows = await doneRows(gc, oneOff.map((t) => t.id));
   for (const t of oneOff) {
     const own = rows.filter((x) => x.task_id === t.id && x.occurrence === t.anchor);
@@ -529,6 +548,7 @@ async function purge(gc, cfg, now) {
 }
 
 module.exports = {
+  rowToTask, listTasks, getTask, doneRows, liveAssignees, currentTurn, daysInMonth, DEFAULT_REMIND_TIME,
   MODES, REPEATS, isoWd, isOccurrence, nextOccurrence, currentOccurrence, weekStart, starsOf, get, mine, forWall, create, update, remove, done, snooze, remind, purge, one,
   quick, openChatTasks,
 };
