@@ -1,5 +1,19 @@
-<!-- version: 1.6.0 -->
+<!-- version: 1.7.0 -->
 # Notizen & Aufgaben
+
+## Neu in 1.7.0
+
+- **An Fristen aus Drive erinnert jetzt „Notizen & Aufgaben“** – wenn ein Administrator das in den Einstellungen des Drive-Plugins so wählt („Fristen erinnert: Notizen & Aufgaben“, Drive ab 1.30.0). Ohne diese Wahl bleibt alles wie bisher: Drive erinnert selbst.
+- **Eine Aufgabe je Erinnerung:** Hast du in Drive an einer Frist „Erinnern“ gewählt, steht hier eine Aufgabe dazu – mit „Frist“ und Tag, dem Namen der Datei und „3 Tage vorher“. Fällig ist sie am Tag der Frist.
+- **Dieselbe Meldung wie bei jeder Aufgabe:** „Frist in 3 Tagen: Kfz-Versicherung kündigen“ mit **„Erledigt“**, **„Später“** und **„Datei öffnen“**. Sie klingelt auch als Alarm auf dem Handy und steht morgens in „Gestern offen geblieben“, wenn du sie übergangen hast.
+- **Nur eine Meldung:** Drive schickt für diese Fristen keine eigene Mitteilung mehr.
+- **Die Frist bleibt in Drive:** Wie viele Tage vorher erinnert wird, stellst du weiter an der Datei in Drive ein. Änderst oder entfernst du die Erinnerung dort, ändert sich die Aufgabe hier oder verschwindet.
+- **Erledigt gilt auf beiden Seiten:** „Erledigt“ hier hakt die Frist in Drive ab – für alle, die die Datei sehen. In Drive abgehakt ist auch die Aufgabe erledigt.
+- **Aufgabe löschen heißt: keine Erinnerung.** Löschst du die Aufgabe hier, erinnert dich an diese Frist niemand mehr, bis du in Drive eine neue Erinnerung setzt.
+- **Tresor:** Dateien im Tresor haben keine Fristen; ihr Name erscheint in keiner Mitteilung.
+- **Zurück:** Stellt der Administrator in Drive wieder „Drive“ ein, verschwinden die Aufgaben hier und Drive erinnert wieder selbst.
+- **Apps:** Die Android- und die Windows-App zeigen die Erinnerung als Aufgabe an, mit „Erledigt“ und „Später“. Die Zeile „Frist“ und der Knopf „Datei öffnen“ in der App folgen mit einer der nächsten Versionen.
+- Beim Update fragt GateControl einmal nach einem neuen Dienst von Drive, den dieses Plugin dafür aufruft.
 
 ## Neu in 1.6.0
 

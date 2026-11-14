@@ -1,5 +1,19 @@
-<!-- version: 1.6.0 -->
+<!-- version: 1.7.0 -->
 # Notes & Tasks
+
+## New in 1.7.0
+
+- **“Notes & Tasks” now reminds of deadlines from Drive** – when an administrator chooses that in the Drive plugin’s settings (“Deadlines are reminded by: Notes & Tasks”, Drive 1.30.0 or later). Without that choice everything stays as it was: Drive reminds itself.
+- **One task per reminder:** when you chose “Remind” on a deadline in Drive, there is a task for it here – with “Deadline” and the day, the file’s name and “3 days before”. It is due on the day of the deadline.
+- **The same notification as for any task:** “Deadline in 3 days: Cancel car insurance” with **“Done”**, **“Later”** and **“Open file”**. It also rings as an alarm on the phone and is listed in “Left open yesterday” in the morning when you passed it over.
+- **Only one notification:** Drive sends no notification of its own for these deadlines any more.
+- **The deadline stays in Drive:** how many days before you are reminded is still set at the file in Drive. When you change or remove the reminder there, the task here changes or goes.
+- **Done counts on both sides:** “Done” here ticks the deadline off in Drive – for everyone who sees the file. Ticked off in Drive, the task is done too.
+- **Deleting the task means: no reminder.** When you delete the task here, nobody reminds you of this deadline until you set a new reminder in Drive.
+- **Vault:** files in a vault have no deadlines; their name appears in no notification.
+- **Back:** when the administrator sets “Drive” again in Drive, the tasks here go and Drive reminds itself again.
+- **Apps:** the Android and the Windows app show the reminder as a task, with “Done” and “Later”. The line “Deadline” and the button “Open file” in the app follow with one of the next versions.
+- With the update GateControl asks once for a new service of Drive that this plugin calls for it.
 
 ## New in 1.6.0
 

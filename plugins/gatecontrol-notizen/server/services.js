@@ -7,6 +7,7 @@ const sources = require('./sources');
 const bound = require('./bound');
 const shopping = require('./shopping');
 const famtasks = require('./famtasks');
+const drivedue = require('./drivedue');
 const { isKnown } = require('./util');
 
 async function handle(gc, base, call) {
@@ -29,6 +30,8 @@ async function handle(gc, base, call) {
       case 'tasks_bind': return await famtasks.bind(gc, base, c.caller, p);
       case 'tasks_put': return await famtasks.put(gc, base, c.caller, p);
       case 'tasks_list': return await famtasks.listFor(gc, base, c.caller, p);
+      // 1.7.0: the reminders of Drive's deadlines ring from here (server/drivedue.js)
+      case 'deadline_reminders': return await drivedue.put(gc, base, c.caller, p);
       default: return { ok: false, code: 'not_found' };
     }
   } catch (e) {

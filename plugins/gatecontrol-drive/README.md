@@ -156,7 +156,7 @@ reaches `GET frame` (the photo frame, since 1.7.0) and nothing else (`403 forbid
 | `POST nodes/<id>/insight` | | the same — recognise (again); write in the area |
 | `POST nodes/<id>/insight/apply` | `{ name?: true, folder?: true }` | `{ node, insight }` — the suggestion taken (renamed / moved) |
 | `GET deadlines` | `from?`, `to?` (YYYY-MM-DD; today, + 365 days) | `{ deadlines [{ id, kind, date, label, reminder, calendar, calendars, foundAt, doc, node }] }` (≤ 500, by date; `calendar`, `foundAt`, `doc` since 1.14.0; `calendar.target`, `calendars` since 1.17.0) |
-| `POST deadlines/<id>/remind` | `{ daysBefore }` (0 … 90) | `{ deadline }` — my reminder |
+| `POST deadlines/<id>/remind` | `{ daysBefore }` (0 … 90) | `{ deadline }` — my reminder; `reminder { at, daysBefore, sent, by }` — since 1.30.0 `by`: `'notizen'` while „Notizen & Aufgaben“ rings it (feature `deadlineHub`, see "Services"), else `'drive'` |
 | `DELETE deadlines/<id>/remind` | | `{ deadline }` |
 | `POST deadlines/<id>/done` · `DELETE deadlines/<id>/done` | (since 1.27.0) | `{ deadline }` with `done { at, by } \| null` — ticked off for everyone who reads the file (read is enough); a deadline ticked off sends no reminder |
 | `POST deadlines/<id>/calendar` | (since 1.14.0) `{ target? }` (since 1.17.0: `{ kind: 'family' }` \| `{ kind: 'mail', calendarId }`) | `{ deadline }` with `calendar { eventId, at, target { kind, label } }` — into my family calendar (see "AI in Drive"), since 1.17.0 also into a calendar of Mail (`409 mail_unavailable { reason }`) |
@@ -1554,6 +1554,27 @@ The other way round (since 1.14.0): Drive calls the Familie plugin's `calendar_a
 |---|---|---|
 | `todo_items` | `{ v: 1, cursor?, limit? (1…100) }` | `{ ok, items: [Item], cursor \| null, now }` — the person's deadlines, by id, ≤ 16 KB |
 | `todo_complete` | `{ v: 1, id: 'deadline:<id>', done }` | `{ ok, item }` — like `POST\|DELETE deadlines/<id>/done` as that person; `not_found`, `forbidden`, `read_only`, `invalid` |
+
+**Who reminds of a deadline (since 1.30.0, `server/duehub.js`):** the administrator's setting `deadline_reminders`
+(„Fristen erinnert“) — `drive` (the default: Drive's own notification, topic `deadline`, as ever) or `notizen`. With
+`notizen`, while the hub offers `deadline_reminders` (gatecontrol-notizen ≥ 1.7.0, the permission confirmed), GET me has
+the feature `deadlineHub` and Drive hands its open reminders over. Nothing moves: the deadline and the person's
+reminder stay here and are set here.
+
+| | Payload | Answer |
+|---|---|---|
+| Drive calls `gatecontrol-notizen:deadline_reminders` | `{ v: 1, reminders: [{ id: 'deadline:<id>', userId, at (ms), daysBefore, sent }] }` — all of them, each time, ≤ 500, the next ones first | `{ ok, taken, rejected: ['<deadline id>:<user id>'] }` — what is not rejected is the hub's (`doc_reminders.handed_at`, `reminder.by: 'notizen'`) |
+| Service `deadline_claim` (caller `gatecontrol-notizen` only) | `{ v: 1, id: 'deadline:<id>', userId }` with that person | `{ ok: true, send }` — `send: true` marks the reminder sent (asked twice: the same); `false`: not the hub's, ticked off, the file gone, in a vault or no longer theirs to read. `forbidden`, `invalid` |
+
+In the list: reminders of deadlines not ticked off (one the hub has stays named for a day after), of live files outside a vault the person still reads, from 7 days
+back to 180 days ahead (what Drive reports as items) — those the hub has, and those not yet sent that are due in more
+than 5 minutes. Sent when the list changed (at most every 2 minutes; 6 s after a person changed a reminder), every 6
+hours anyway, after 10 minutes again while the hub rejected something or refused the list (`unavailable`,
+`source_off`: everything is Drive's again). Drive's background run sends no notification for a reminder the hub has
+while the hub's service is there; without it (stopped, removed, older) Drive sends what comes due itself — the hub's
+later question gets `send: false`. The setting back on `drive`: everything is Drive's again and the hub gets an empty
+list. A reminder that came due while it was the hub's and is more than 24 hours old is not sent after the fact.
+A vault's file has no deadline; a reminder row left on one is never handed over, never claimed and never sent.
 
 An item: `{ id: 'deadline:<id>', kind: 'deadline', title (as in the calendar), subtitle (the file name), due (the day,
 allDay), users (everyone with a seat who reads the area), area ('work' for a team folder), group { id: 'area:<id>',

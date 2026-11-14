@@ -23,6 +23,7 @@ const shopping = require('./shopping');
 const places = require('./places');
 const duty = require('./duty');
 const famtasks = require('./famtasks');
+const drivedue = require('./drivedue');
 const Q = require('../ui/quickparse');
 const { t } = require('./text');
 const { fail, isKnown, statusOf, posInt } = require('./util');
@@ -52,7 +53,10 @@ const FEATURES = ['tasks', 'notes', 'sources', 'vault', 'mstodo', 'dsnote', 'sea
   // family list (List.family, Task.family, me.familyTasks, POST tasks/<id>/complete { userId }, POST family/seen);
   // `doneFeedback` — the push kind done_feedback with „Noch nicht fertig“, prefs.feedback; `placeMine` — Task.place.mine
   // and canConsent
-  'taskTurns', 'taskStars', 'familyTasks', 'doneFeedback', 'placeMine'];
+  'taskTurns', 'taskStars', 'familyTasks', 'doneFeedback', 'placeMine',
+  // 1.7.0 (README "1.7.0"): `driveDeadlines` — the reminders of Drive's deadlines ring from here: Task.deadline, the
+  // reminder of such a task (`deadline`, the button open_file) in the push and in GET reminders, me.driveDeadlines
+  'driveDeadlines'];
 
 const ok = (json) => ({ status: 200, json: { ok: true, ...json } });
 
@@ -76,6 +80,10 @@ const taskOpts = {
 notes.opts.completeTask = (gc, ctx, id, done) => tasks.complete(gc, ctx, id, { done }, taskOpts);
 // 1.6.0: a task ticked off in Familie (service tasks_put) is ticked off here like any other
 famtasks.hooks.complete = (gc, ctx, id, b, o) => tasks.complete(gc, ctx, id, b, { ...taskOpts, ...o });
+// 1.7.0: a reminder of a deadline in Drive is a task that carries Drive's item (server/drivedue.js)
+drivedue.hooks.create = async (gc, ctx, fields) => (await tasks.create(gc, ctx, fields, taskOpts)).task.id;
+drivedue.hooks.carrying = (gc, ctx, extId) => tasks.carrying(gc, ctx, drivedue.DRIVE, extId);
+drivedue.hooks.remove = (gc, ctx, id) => tasks.remove(gc, ctx, id);
 // 1.4.0: every item of a list ticked — the open tasks carrying it are completed: as the person who ticked when the task
 // is theirs to complete, else as the person whose task it is (server/duty.js), else as the owner of its list
 shopping.hooks.completeTask = async (gc, ctx, row) => {
@@ -133,6 +141,9 @@ async function me(gc, ctx) {
     // 1.6.0: the family's tasks (bound: the move was made and the person belongs to the family; parent; stars: Familie
     // counts them; moved: what the move brought, until the person has seen it)
     familyTasks: await famtasks.meInfo(gc, ctx),
+    // 1.7.0: the reminders of Drive's deadlines — available: Drive offers its part (≥ 1.30.0, the permission confirmed);
+    // active: Drive has handed reminders over (its administrator chose „Notizen & Aufgaben“ there)
+    driveDeadlines: { available: await drivedue.claimable(gc), active: await drivedue.active(gc) },
   };
 }
 

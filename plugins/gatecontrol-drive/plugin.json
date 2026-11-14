@@ -4,7 +4,7 @@
     "de": "Drive",
     "en": "Drive"
   },
-  "version": "1.29.1",
+  "version": "1.30.0",
   "publisher": "CallMeTechie",
   "description": {
     "de": "Dateien der Familie und des Teams auf dem eigenen Speicher – auf diesem Server, einer NAS oder in S3: Meine Dateien, Familie, Ordner der Kinder und Team-Ordner mit Rechten, Versionen, Papierkorb und Abgleich mit allen Geräten.",
@@ -57,7 +57,8 @@
       "gatecontrol-mail:calendar_list",
       "gatecontrol-mail:calendar_add",
       "gatecontrol-mail:tofile_count",
-      "gatecontrol-notizen:todo_changed"
+      "gatecontrol-notizen:todo_changed",
+      "gatecontrol-notizen:deadline_reminders"
     ],
     "cloudImport": {
       "purpose": {
@@ -354,6 +355,35 @@
         "default": true
       },
       {
+        "key": "deadline_reminders",
+        "type": "select",
+        "label": {
+          "de": "Fristen erinnert",
+          "en": "Deadlines are reminded by"
+        },
+        "help": {
+          "de": "Wer an die Fristen von Dokumenten erinnert. „Drive“: wie bisher, mit Drives eigener Mitteilung. „Notizen & Aufgaben“: Die Erinnerung kommt von dort – als Aufgabe mit „Erledigt“ und „Später“, auch als Alarm auf dem Handy und in „Gestern offen geblieben“; Drive schickt dann keine eigene Mitteilung. Die Frist und wie viele Tage vorher bleiben an der Datei in Drive. Braucht Notizen & Aufgaben ab 1.7.0 und in beiden Plugins die bestätigte Berechtigung; fehlt etwas davon, erinnert Drive weiter selbst. Jederzeit zurückstellbar.",
+          "en": "Who reminds of the deadlines of documents. “Drive”: as before, with Drive’s own notification. “Notes & Tasks”: the reminder comes from there – as a task with “Done” and “Later”, also as an alarm on the phone and in “Left open yesterday”; Drive then sends no notification of its own. The deadline and how many days before stay with the file in Drive. Needs Notes & Tasks 1.7.0 or later and the permission confirmed in both plugins; while anything of that is missing, Drive goes on reminding itself. Can be set back at any time."
+        },
+        "options": [
+          {
+            "value": "drive",
+            "label": {
+              "de": "Drive",
+              "en": "Drive"
+            }
+          },
+          {
+            "value": "notizen",
+            "label": {
+              "de": "Notizen & Aufgaben",
+              "en": "Notes & Tasks"
+            }
+          }
+        ],
+        "default": "drive"
+      },
+      {
         "key": "doc_ai_images",
         "type": "boolean",
         "label": {
@@ -547,6 +577,13 @@
         "label": {
           "de": "In Notizen & Aufgaben abgehakt",
           "en": "Ticked off in Notes & Tasks"
+        },
+        "maxPerHour": 600
+      },
+      "deadline_claim": {
+        "label": {
+          "de": "Notizen & Aufgaben fragt vor einer Fristen-Erinnerung",
+          "en": "Notes & Tasks asks before a deadline reminder"
         },
         "maxPerHour": 600
       }

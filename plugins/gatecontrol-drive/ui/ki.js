@@ -301,7 +301,9 @@
         var cal = calendarButton(d, after);
         if (cal) acts.push(cal);
         if (d.reminder) {
-          acts.push(h('span', { class: 'dp-k-pill' }, [icon('check', 14), h('span', { text: d.reminder.daysBefore ? U.P('p.k.reminder_days', d.reminder.daysBefore) : T('p.k.reminder_day') })]));
+          // since 1.30.0: „· über Notizen & Aufgaben“ while the hub rings this reminder
+          var byHub = d.reminder.by === 'notizen';
+          acts.push(h('span', { class: 'dp-k-pill', attrs: byHub ? { title: T('p.dl_by_hub_hint') } : {} }, [icon('check', 14), h('span', { text: (d.reminder.daysBefore ? U.P('p.k.reminder_days', d.reminder.daysBefore) : T('p.k.reminder_day')) + (byHub ? ' · ' + T('p.dl_by_hub') : '') })]));
           acts.push(U.ibtn('close', T('p.dl_remove'), function () { api('DELETE', 'deadlines/' + d.id + '/remind').then(after, U.fail); }, { size: 16 }));
         } else {
           var sel = h('select', { class: 'dp-input dp-btn-sm', attrs: { 'aria-label': T('p.dl_when') } }, [0, 1, 3, 7, 14].map(function (x) {

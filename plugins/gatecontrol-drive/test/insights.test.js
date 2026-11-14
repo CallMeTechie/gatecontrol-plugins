@@ -283,7 +283,7 @@ test('deadlines: a reminder of my own N days before, once; the list; replaced by
     const dl = (await a('GET', `nodes/${f.id}/insight`)).json.deadlines[0];
     assert.equal((await a('POST', `deadlines/${dl.id}/remind`, { daysBefore: 91 })).status, 400);
     const r = await a('POST', `deadlines/${dl.id}/remind`, { daysBefore: 3 });
-    assert.deepEqual(r.json.deadline.reminder, { at: '2026-11-07T07:00:00.000Z', daysBefore: 3, sent: false });
+    assert.deepEqual(r.json.deadline.reminder, { at: '2026-11-07T07:00:00.000Z', daysBefore: 3, sent: false, by: 'drive' });
     // Marc sees the deadline without a reminder of his; Bob not at all
     assert.equal((await c.as(MARC)('GET', `nodes/${f.id}/insight`)).json.deadlines[0].reminder, null);
     assert.equal((await c.as(BOB)('POST', `deadlines/${dl.id}/remind`, { daysBefore: 1 })).status, 404);

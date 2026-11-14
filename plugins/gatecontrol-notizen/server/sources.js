@@ -9,6 +9,7 @@ const tz = require('./tz');
 const config = require('./config');
 const events = require('./events');
 const calsync = require('./calsync');
+const drivedue = require('./drivedue');
 const { fail, posInt, line, area: areaOf, parse } = require('./util');
 
 const SOURCES = config.SOURCES;
@@ -105,7 +106,7 @@ async function write(gc, ctx, plugin, items, opts = {}) {
     // a date-time with offset → the date and time in the hub's zone
     if (it.dueAt != null) { const p = tz.parts(it.dueAt, ctx.tz); it.dueDate = tz.dateStr(p.y, p.m, p.d); it.dueTime = `${tz.pad(p.hh)}:${tz.pad(p.mm)}`; }
     else if (it.dueDate) it.dueAt = tz.at(it.dueDate, { hh: 23, mm: 59 }, ctx.tz);
-    const have = await store.one(gc, 'SELECT id, updated_at, done FROM src_items WHERE plugin = ? AND ext_id = ?', [plugin, it.extId]);
+    const have = await store.one(gc, 'SELECT id, updated_at, done, title FROM src_items WHERE plugin = ? AND ext_id = ?', [plugin, it.extId]);
     let id = have ? have.id : null;
     const fresh = !have || it.updatedAt >= have.updated_at;
     const vals = [it.kind, it.title, it.subtitle, it.dueDate, it.dueTime, it.dueAt, it.allDay ? 1 : 0, it.lead, it.area, it.assignee, it.assigneeName,
@@ -123,6 +124,8 @@ async function write(gc, ctx, plugin, items, opts = {}) {
         assignee_name = ?, important = ?, done = ?, can_complete = ?, prog_done = ?, prog_total = ?, group_id = ?, group_label = ?, meta_json = ?, open_route = ?, updated_at = ?,
         received_at = ?${doneAt === undefined ? '' : ', done_at = ?'} WHERE id = ?`, [...vals, ...(doneAt === undefined ? [] : [doneAt]), id]);
       if (!!have.done !== it.done) await carried(gc, ctx, plugin, it.extId, it.done);
+      // 1.7.0: a deadline of Drive read anew — the tasks made for its reminders keep its name
+      if (plugin === drivedue.DRIVE && have.title !== it.title) await drivedue.itemRenamed(gc, it.extId, it.title, now);
     }
     const before = (await store.all(gc, 'SELECT user_id FROM src_item_users WHERE item_id = ?', [id])).map((r) => r.user_id);
     before.forEach((u) => touched.add(u));
@@ -189,6 +192,13 @@ async function push(gc, ctx, caller, payload) {
     return { accepted: w.accepted, removed: r.removed, touched: new Set([...w.touched, ...r.touched]) };
   });
   events.changed(gc, [...res.touched], 'items');
+  // 1.7.0: a deadline of Drive that is gone takes the tasks the hub made for its reminders with it (after the
+  // transaction: removing a task is one of its own)
+  if (caller === drivedue.DRIVE) {
+    const users = new Set();
+    for (const extId of ids) for (const u of await drivedue.itemGone(gc, ctx, extId)) users.add(u);
+    if (users.size) events.changed(gc, [...users], 'tasks');
+  }
   return { ok: true, accepted: res.accepted, removed: res.removed, rejected: rejected.slice(0, 50) };
 }
 

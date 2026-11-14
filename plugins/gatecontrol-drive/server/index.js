@@ -102,6 +102,7 @@ const storage = require('./storage');
 const insights = require('./insights');
 const deadlines = require('./deadlines');
 const notizen = require('./notizen');
+const duehub = require('./duehub');
 const imports = require('./imports');
 const vault = require('./vault');
 const office = require('./office');
@@ -188,6 +189,8 @@ async function personContext(gc, uid, now) {
 
 // since 1.27.0: the deadlines as items of „Notizen & Aufgaben“ (notizen.js) — every reader worked out like the apps do
 const hub = notizen.create((gc, uid, now) => personContext(gc, uid, now), (ctx, area) => labelOf(ctx, area));
+// since 1.30.0: who reminds of a deadline — Drive or „Notizen & Aufgaben“ (duehub.js)
+const dueHub = duehub.create((gc, uid, now) => personContext(gc, uid, now));
 
 /** A parent looked into a child's folder: the child is told once a day per parent (after the answer). */
 async function noteChildView(ctx, area) {
@@ -299,6 +302,9 @@ async function optional(ctx) {
     if (await deadlines.calendarReachable(ctx.gc)) out.push('deadlineCalendar');
     // deadlines into a calendar of Mail (1.17.0): while Mail's calendar_add is reachable and takes Drive
     if (await deadlines.mailReachable(ctx.gc)) out.push('deadlineMailCalendar');
+    // reminders of deadlines ring from „Notizen & Aufgaben“ (1.30.0): the administrator chose it and the hub takes them —
+    // Deadline.reminder.by says per reminder who rings; an app sets no alarm of its own for by 'notizen'
+    if (await duehub.active(ctx.gc)) out.push('deadlineHub');
   }
   if (await imports.sources(ctx.gc, ctx.settings)) out.push('cloudImport');
   // office in the browser (1.9.0): only while an office server is set up and GateControl has public endpoints
@@ -788,7 +794,7 @@ module.exports = {
           try { await insights.attach(ctx, out.json); } catch (e) { gc.log.warn('insights failed', (e && e.code) || 'error'); }
         }
         // since 1.27.0: a deadline ticked off or changed — „Notizen & Aufgaben“ gets the difference in a few seconds
-        if (seg[0] === 'deadlines' && String(req.method || 'GET').toUpperCase() !== 'GET') hub.soon(gc);
+        if (seg[0] === 'deadlines' && String(req.method || 'GET').toUpperCase() !== 'GET') { hub.soon(gc); dueHub.soon(gc); }
         return out;
       } finally {
         await after(gc, ctx, done);
@@ -811,6 +817,9 @@ module.exports = {
     // since 1.27.0: todo_items / todo_complete for „Notizen & Aufgaben“ (gatecontrol-notizen only) — notizen.js
     const fromHub = await hub.service(gc, { name, caller, user, payload });
     if (fromHub !== undefined) return fromHub;
+    // since 1.30.0: deadline_claim — the hub asks before it rings a reminder of a deadline (duehub.js)
+    const claim = await dueHub.service(gc, { name, caller, user, payload });
+    if (claim !== undefined) return claim;
     if (!Object.prototype.hasOwnProperty.call(SERVICES, name)) return { ok: false, code: 'not_found' };
     if (!user || !Number.isSafeInteger(user.id) || user.id <= 0) return { ok: false, code: 'invalid' };
     const lang = payload && payload.lang === 'en' ? 'en' : 'de';
@@ -908,14 +917,17 @@ module.exports = {
     try { await office.sweep(gc, Date.now()); } catch (e) { gc.log.warn('office locks sweep failed', (e && e.code) || 'error'); }
     const now = Date.now();
     // reminders and imports (1.8.0) run as their person, and so do the jobs of several at once (1.12.0)
-    const out = await jobs.tick(gc, now, { asPerson: (uid) => personContext(gc, uid, now), ops: opsHooks(gc) });
+    const out = await jobs.tick(gc, now, { asPerson: (uid) => personContext(gc, uid, now), ops: opsHooks(gc), dueHub: () => duehub.active(gc) });
     // since 1.27.0: the deadlines to „Notizen & Aufgaben“ — only what changed, at most every 2 minutes (never throws)
     await hub.tick(gc, Date.now());
+    // since 1.30.0: the reminders of deadlines to the hub, when the administrator chose that (never throws)
+    await dueHub.sync(gc, Date.now());
     return out;
   },
 
   async stop() {
     hub.stop();
+    dueHub.stop();
     // results of the virus scan still queued: one more try (scan.js)
     try { await scan.flush({ once: true }); } catch { /* best effort */ }
   },
@@ -948,6 +960,15 @@ module.exports = {
     let out = [];
     try { out = await office.status(gc, await gc.settings.all(), l, t); } catch { out = []; }
     try { out = [...out, ...(await homecache.status(gc, l, t))]; } catch { /* nothing */ }
+    // since 1.30.0: who reminds of deadlines, when the administrator chose „Notizen & Aufgaben“ (duehub.js)
+    try {
+      if ((await duehub.mode(gc)) === 'notizen') {
+        const mem = await gc.storage.get(duehub.KEY).catch(() => null);
+        const n = (await store.one(gc, 'SELECT COUNT(*) AS n FROM doc_reminders WHERE handed_at IS NOT NULL')).n;
+        const there = await duehub.available(gc);
+        out.push({ group: null, tone: !there || (mem && mem.refused) ? 'warn' : 'ok', text: t(l, !there ? 'deadline.hub.missing' : mem && mem.refused ? 'deadline.hub.refused' : 'deadline.hub.on', { n }) });
+      }
+    } catch { /* nothing */ }
     return out;
   },
 
@@ -955,5 +976,7 @@ module.exports = {
   async settingsChanged(values, gc) {
     try { if (office.officeUrl(await gc.settings.all())) await office.refreshDiscovery(gc); } catch (e) { gc.log.warn('office discovery failed', (e && e.code) || 'error'); }
     await homecache.touch(gc);
+    // since 1.30.0: „Fristen erinnert“ switched — the reminders go to the hub or come back at once (never throws)
+    await dueHub.sync(gc, Date.now(), true);
   },
 };

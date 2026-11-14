@@ -724,6 +724,12 @@
       if (x.meta && x.meta.stars) meta.appendChild(h('span', { text: T('p.stars', { n: x.meta.stars }) }));
     } else {
       if (x.source) meta.appendChild(h('span', { class: 'na-src', 'data-src': x.source.plugin, text: T('src.' + x.source.plugin) }));
+      // 1.7.0: the deadline of a file in Drive this task reminds of — the day, the file, how many days before
+      if (x.deadline) {
+        if (x.deadline.date) meta.appendChild(h('span', { class: 'na-dl', text: T('p.dl_line', { date: dayText(x.deadline.date) }) }));
+        if (x.deadline.file) meta.appendChild(h('span', { text: x.deadline.file }));
+        if (!x.done) meta.appendChild(h('span', { text: deadlineBefore(x.deadline.daysBefore) }));
+      }
       if (l && !(S.view.kind === 'list')) meta.appendChild(h('span', { text: T('area.' + l.area) + ' › ' + l.name }));
       if (x.assignee && x.assignee.id !== S.me.user.id && !(l && l.shared)) meta.appendChild(h('span', { text: x.assignee.name || '' }));
       // 1.6.0: whose turn, the stars
@@ -1258,6 +1264,14 @@
     if (t.sourceItem) {
       var si = t.sourceItem;
       card.appendChild(h('button', { type: 'button', class: 'na-from', on: { click: function () { openOriginal(si.source.open); } } }, [h('b', { text: T('p.from', { source: si.source.label }) }), h('span', { text: (si.subtitle || si.title) + ' · ' + T('p.open') })]));
+    }
+    // 1.7.0: a reminder of a deadline in Drive — the day, how many days before, and where both are set
+    if (t.deadline) {
+      card.appendChild(h('div', { class: 'na-dl-box' }, [
+        h('span', { class: 'na-mi' }, [icon('bell', 13), h('span', { text: [t.deadline.date ? T('p.dl_line', { date: dayText(t.deadline.date) }) : null, deadlineBefore(t.deadline.daysBefore)].filter(Boolean).join(' · ') })]),
+        !t.sourceItem ? btn(T('p.dl_open'), function () { openOriginal(t.deadline.open); }) : null,
+        h('p', { class: 'dp-hint', text: T('p.dl_hint') }),
+      ]));
     }
     // sub tasks
     card.appendChild(h('div', { class: 'na-lb', text: T('p.subtasks') }));
@@ -2300,6 +2314,9 @@
   }
   function setRow(label, hint, ctl) { return h('div', { class: 'na-set-row' }, [h('span', { class: 't' }, [h('span', { text: label }), hint ? h('small', { text: hint }) : null]), ctl]); }
 
+  /** 1.7.0: „3 Tage vorher“ — when Drive has the reminder of a deadline ring. */
+  function deadlineBefore(n) { return n === 0 ? T('p.dl_before_0') : n === 1 ? T('p.dl_before_1') : T('p.dl_before_n', { n: n }); }
+
   function renderSettings(main) {
     main.appendChild(header(T('p.settings'), T('p.settings_sub'), []));
     var wrap = h('div', { class: 'na-set' });
@@ -2308,6 +2325,11 @@
     wrap.appendChild(h('h3', { text: T('p.sources_title') }));
     wrap.appendChild(h('p', { class: 'dp-hint', text: T('p.sources_intro') }));
     sourceCards(wrap, prefs);
+    // 1.7.0: who reminds of Drive's deadlines (the administrator's choice in Drive's settings) — only while Drive can do it
+    var dd = S.me.driveDeadlines;
+    if (dd && (dd.available || dd.active)) {
+      wrap.appendChild(h('div', { class: 'na-card na-dl-note' }, [h('b', { text: T('p.st_dl') }), h('p', { class: 'dp-hint', text: T(dd.active ? 'p.st_dl_on' : 'p.st_dl_off') })]));
+    }
     // Mein Tag
     wrap.appendChild(h('h3', { text: T('v.myday') }));
     var md = prefs.myday || {};

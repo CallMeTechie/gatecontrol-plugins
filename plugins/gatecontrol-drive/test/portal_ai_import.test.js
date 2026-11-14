@@ -274,3 +274,36 @@ test('smoke: back from GateControl\'s OAuth dialog — connected (waiting jobs g
     }
   });
 });
+
+// since 1.30.0: „Notizen & Aufgaben“ rings the reminder (the administrator's choice „Fristen erinnert“, server/duehub.js)
+test('1.30.0: a reminder the hub rings says so — „Fristen“ and „Dokument-Infos“', async () => {
+  const { fakeHub } = require('../../../tools/testing/notizen-hub');
+  const hub = fakeHub({ answer: (call) => (call.name === 'deadline_reminders' ? { ok: true, taken: call.payload.reminders.length, rejected: [] } : undefined) });
+  hub.provides.deadline_reminders = { label: { de: 'x', en: 'x' }, maxPerHour: 600 };
+  await withHost({ ai: AI, gatecontrol: '1.216.0', settings: { deadline_reminders: 'notizen' }, services: [hub] }, async (host, c) => {
+    const a = c.as(ANNA);
+    const mine = await c.area(ANNA, 'mine');
+    const file = (await c.put(ANNA, mine.rootId, 'Scan.pdf', 'pdf', { mime: 'application/pdf', text: TEXT })).json.node;
+    await host.tick();
+    const dl = (await a('GET', `nodes/${file.id}/insight`)).json.deadlines[0];
+    assert.equal((await a('POST', `deadlines/${dl.id}/remind`, { daysBefore: 3 })).json.deadline.reminder.by, 'drive', 'until the hub took it');
+    c.clock.add(3 * 60000);
+    await host.tick();
+    assert.equal((await a('GET', `nodes/${file.id}/insight`)).json.deadlines[0].reminder.by, 'notizen');
+    const f = createWindow(portalHtml(), frameGc(host, ANNA, []));
+    const $ = (id) => f.document.getElementById(id);
+    try {
+      f.run();
+      navItem(await until('the menu', () => navItem($('dp-nav'), 'Fristen') && $('dp-nav')), 'Fristen').click();
+      await until('the list', () => textOf($('dp-main')).includes('Erinnerung 3 Tage vorher'));
+      assert.ok(textOf($('dp-main')).includes('Erinnerung 3 Tage vorher · über Notizen & Aufgaben'), textOf($('dp-main')));
+      await toFiles($);
+      const card = await until('the file', () => $('dp-main').querySelectorAll('[data-node]').find((x) => x.getAttribute('data-node') === String(file.id)));
+      card.querySelector('.dp-more').click();
+      byText(await until('actions', () => byText($('dp-dialog'), 'span', 'Dokument-Infos') && $('dp-dialog')), 'span', 'Dokument-Infos').parentNode.click();
+      await until('the reminder', () => textOf($('dp-dialog')).includes('über Notizen & Aufgaben'));
+    } finally {
+      f.stop();
+    }
+  });
+});

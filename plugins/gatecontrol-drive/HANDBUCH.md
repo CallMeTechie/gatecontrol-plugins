@@ -1,4 +1,4 @@
-<!-- version: 1.29.1 -->
+<!-- version: 1.30.0 -->
 # Drive
 
 ## Was das Plugin kann
@@ -120,6 +120,16 @@ Vollbild im Portal gibt es ab GateControl 1.244.0. Ältere Versionen zeigen das 
 
 **Zu Hause bauen sich die Fotos nicht schneller auf.**
 Die Vorschaubilder kommen erst nach und nach auf das Gateway (je Lauf einige Hundert, alle 15 Minuten). Prüfe am Gateway unter **Gateways › Zwischenspeicher**, dass er „aktiv“ ist und „Fotos“ bzw. „Drive“ eingeschaltet sind. Vorschaubilder aus dem Heimnetz braucht GateControl 1.249.0 und eine aktuelle App.
+
+## Neu in 1.30.0
+
+- **Wer erinnert an Fristen?** Neu in den Einstellungen des Plugins (Einstellungen › Plugins › Drive): **„Fristen erinnert“** mit „Drive“ oder „Notizen & Aufgaben“. Voreingestellt ist „Drive“ – ohne dein Zutun ändert sich nichts.
+- **Mit „Notizen & Aufgaben“** (ab dessen Version 1.7.0) kommt die Erinnerung von dort: als Aufgabe mit **„Erledigt“**, **„Später“** und **„Datei öffnen“**, auch als Alarm auf dem Handy und morgens in „Gestern offen geblieben“. Drive schickt dafür keine eigene Mitteilung – du bekommst jede Erinnerung nur einmal.
+- **Die Frist bleibt an der Datei:** Erkannt, angezeigt und eingestellt wird sie weiter hier. „Erinnern“ und „Erinnerung entfernen“ wählst du wie bisher an der Frist; an der Erinnerung steht dann „über Notizen & Aufgaben“.
+- **Erledigt gilt überall:** Hakst du die Frist hier oder dort ab, ist sie auf beiden Seiten erledigt.
+- **Jederzeit zurück:** Stellst du wieder „Drive“ ein, erinnert Drive selbst wie bisher. Fehlt „Notizen & Aufgaben“, ist es älter oder gerade nicht erreichbar, erinnert Drive ebenfalls selbst; unter den Einstellungen steht dann der Grund.
+- **Tresor:** Dateien im Tresor haben keine Fristen und keine Erinnerungen; ihr Name erscheint in keiner Mitteilung.
+- Beim Update fragt GateControl einmal nach einem neuen Dienst von „Notizen & Aufgaben“, den Drive dafür aufruft.
 
 ## Neu in 1.29.1
 

@@ -4,7 +4,7 @@
     "de": "Notizen & Aufgaben",
     "en": "Notes & Tasks"
   },
-  "version": "1.6.0",
+  "version": "1.7.0",
   "publisher": "CallMeTechie",
   "description": {
     "de": "Eigene Aufgaben und Notizen plus alles „Zu tun“ aus den anderen Plugins (Familie, Mail, Drive, Schule, Alltag) an einer Stelle: Mein Tag, Wichtig, Geplant, Mir zugewiesen; Listen und Gruppen, Unteraufgaben, Fälligkeit, Erinnerung zur Uhrzeit oder am Ort mit „Erledigt“ und „Später“, Termin im Kalender von Mail, Wiederholungen, geteilte Listen. Notizbücher mit Schlagwörtern, Checklisten, Tabellen, Bildern und Volltextsuche, Notizbücher als Tresor (Ende-zu-Ende verschlüsselt). Schnell-Eingabe in normaler Sprache, Umzug von Microsoft To Do und Synology DS Note. Bereiche Privat und Arbeit getrennt.",
@@ -58,6 +58,7 @@
       "gatecontrol-mail:calendar_delete",
       "gatecontrol-drive:todo_items",
       "gatecontrol-drive:todo_complete",
+      "gatecontrol-drive:deadline_claim",
       "gatecontrol-schule:todo_items",
       "gatecontrol-schule:todo_complete",
       "gatecontrol-alltag:todo_items",
@@ -97,6 +98,13 @@
           "en": "Take to-dos from other plugins"
         },
         "maxPerHour": 3600
+      },
+      "deadline_reminders": {
+        "label": {
+          "de": "Erinnerungen an Fristen aus Drive übernehmen",
+          "en": "Take over the reminders of deadlines from Drive"
+        },
+        "maxPerHour": 600
       },
       "notes_bind": {
         "label": {

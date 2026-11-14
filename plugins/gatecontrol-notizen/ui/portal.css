@@ -355,3 +355,9 @@ button.na-chip{cursor:pointer}
 .na-stars{color:var(--warn,#9a5b00)}
 .na-people button[aria-pressed="true"]{background:var(--accent-soft);color:var(--accent);border-color:transparent}
 .na-moved{margin:0 0 12px;padding-left:18px;display:grid;gap:6px;color:var(--muted)}
+/* 1.7.0: a task that reminds of a deadline in Drive */
+.na-dl{font-weight:600;color:color-mix(in srgb,#14603d 85%,var(--text))}
+.na-dl-box{display:flex;flex-direction:column;gap:6px;align-items:flex-start;padding:10px;border-radius:12px;background:var(--surface-2)}
+.na-dl-box .dp-hint{margin:0}
+.na-dl-note{padding:12px;display:flex;flex-direction:column;gap:4px}
+.na-dl-note .dp-hint{margin:0}
