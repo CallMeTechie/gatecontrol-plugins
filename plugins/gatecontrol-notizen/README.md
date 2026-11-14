@@ -52,6 +52,8 @@ consent_required | unknown_client_id`, `410 gone`, `413 too_large`, `429 busy`, 
 ```
 GET    me                       → { user, lang, today, time, timezone, features, prefs, sharing, vaults, imports, attachMB, readOnly, listIcons }
                                     features 1.2.0: listDays, shareRoles, groupEdit, deleteKeep, listIcons
+                                    features 1.3.0: reminderActions, yesterdayOpen, taskCalendar; with
+                                    calendar: { available, enabled, mine, name }, yesterday: { push, at } (see "1.3.0")
 GET    nav?area=                → { area, smart: { myday, important, planned, assigned }, sources: [{ plugin, label, hint, open }],
                                     lists: [List], groups: [{ id, name, area, position, open }], notes: { total, notebooks: [Notebook], tags: [{ tag, count }] } }
 GET    views/<name>?area=       → { view, title, sections: [{ id, title, count, items: [Task | Item], collapsed? }], listdays? }
@@ -87,6 +89,12 @@ GET    tasks/<id>               → { task: Task + { note, subtasks: [{ id, titl
 PATCH  tasks/<id> { title?, note?, important?, due?, remindAt?, repeat?, assigneeId?, listId?, position?, myDay?, base? } → { task }
                                   — 409 conflict { fields, task } when `base` is stale for a field
 POST   tasks/<id>/complete { done } → { task, next? } — a repeating task gets its next one (`next`)
+POST   tasks/<id>/snooze { until: '1h'|'evening'|'tomorrow'|ISO, tag? } → { snoozed, task }   (1.3.0, see "1.3.0")
+POST   tasks/<id>/move { to: 'today'|'tomorrow'|'weekend'|'YYYY-MM-DD' } → { task }              (1.3.0)
+GET    yesterday?area=          → { day, title, count, items: [Task], moveOptions: [{ to, date, label }] }   (1.3.0)
+POST   yesterday { action: 'done'|'today'|'move', to?, ids?, area? } → { changed, failed: [{ id, code }], yesterday }
+GET    reminders                → { now, nowMs, enabled, reminders: [{ tag, taskId, listId, area, title, body, at, atMs,
+                                    important, snoozed, collapseKey, actions: [{ id, label }] }], yesterday: { push, at } }
 DELETE tasks/<id>               → { ok, gone? } (the trash: purged after 30 days)
 
 GET    items/<id>               → { item, taskId } — an item of another plugin
@@ -159,6 +167,63 @@ second) and `vault` `{ vault, event: 'request' | 'approved', device }` — clien
 Opening: an item's `source.open` → apps `gatecontrol://plugin/<plugin>/<route>`, portal `GC.openPortal({ plugin,
 query: { open: route } })`; a note of Familie's notebooks is `{ plugin: 'gatecontrol-notizen', route: 'note/<id>' }`.
 
+## 1.3.0 — reminders with buttons, „Gestern offen geblieben“, the calendar
+
+Features `reminderActions`, `yesterdayOpen`, `taskCalendar` (check these words in `GET me`, never the version).
+
+**Task** — new fields wherever a Task is given:
+
+```
+reminder: null | { tag: 'task:<id>:<ms>', at: ISO, atMs, mine, snoozed }   the reminder still to come; mine: this person
+                                                                          gets its push (assignee, else the creator; when
+                                                                          that one left the list: the owner)
+snoozed: bool            „Später“ moved it (a reminder or due date set anew clears it)
+missedReminder: bool     it could not be sent any more (server off for over 24 h) — part of „Gestern offen geblieben“
+calendar: null | { state: 'synced' | 'pending', eventId?, calendarId?, mine }   its event in Mail's calendar „Aufgaben“
+```
+
+**The reminder push** (`server/remind.js`): title the task, body „Fällig heute 09:00 · Liste“ (sent late: „War fällig um
+09:00 · Liste“, `late: true`), `collapseKey` `task:<id>`, `data.notizen = { kind: 'reminder', taskId, listId, area, task,
+tag, remindAtMs, dueAt, late, snoozed }`, `data.actions` three callbacks: `done` „Erledigt“, `snooze_1h` „In 1 Std.“,
+`snooze_eve` „Heute Abend“ (the person's `prefs.times.evening`, 19:00) — or, from an hour before that, `snooze_tom`
+„Morgen früh“ (`prefs.times.morning`, 09:00). GateControl (≥ 1.181.0) hands a press to the hook `notifyAction` once per
+push and button; the plugin checks again what the person may do. `done` ticks the task off; `snooze_*` moves the
+reminder only while the task still has the reminder of that push (`tag`).
+
+`POST tasks/<id>/snooze { until, tag? }` — the same for a device's own alarm: `1h`, `evening` (400 `invalid { field:
+'until' }` once it is over), `tomorrow`, or an ISO time with offset (in the future, ≤ 1 year). With `tag`: nothing
+happens (`snoozed: false`) when the task no longer has that reminder. Who may complete the task may snooze it.
+
+`GET reminders` — the person's own reminders of the next 30 days (≤ 200) with tag, text and buttons as the push will
+have them, for an alarm the device sets itself as a backup; `enabled: false` when the person switched the reminders off
+(`prefs.notify.reminders`). A device shows alarm and push as ONE notification (tag = `collapseKey`), keeps the tags it
+has shown and the person decided, and drops a push or alarm with such a tag.
+
+**„Gestern offen geblieben“** (`server/yesterday.js`) — own open tasks (no sub tasks) that were due yesterday and are
+the person's, that the person put into „Mein Tag“ yesterday (unless due today or in „Mein Tag“ again), or whose reminder
+got lost. `GET yesterday`, and `yesterday` of `GET views/myday` (its tasks are in `overdue` as well — a client that shows
+the card leaves them out there). `POST tasks/<id>/move { to }`: the due date goes to that day (the time stays), the
+reminder moves by as many days and does not ring again when that is over; a task without a due date (or with one still
+to come) and `today`: into „Mein Tag“ of today; `weekend`: the coming Saturday (on a Saturday: the Sunday); a date
+before today: 400. `POST yesterday` does one action for all (or `ids`) of the card.
+
+The push in the morning: once a day at `prefs.yesterdayAt` (07:30), only with something open and unless
+`prefs.notify.yesterday` is off; more than 6 hours late it is not sent that day. Title „Gestern offen geblieben: 2“ (one
+task: „Gestern offen geblieben“), body up to 5 lines „Titel · Liste“ and „… und N weitere“, `collapseKey` `yesterday`,
+`data.notizen = { kind: 'yesterday', day, count, taskIds (≤ 20), area: null }`. Buttons: one task — `done` and `today`
+as callbacks, `move` as `open_app_route`; several — `done_ask` (`open_app_route`: the app asks once, then `POST
+yesterday { action: 'done', ids }`), `today` (callback: all of them), `move`. The plugin has no app tab of its own in the
+manifest, so GateControl sends those `open_app_route` buttons as `open_portal` to `/portal#plg-gatecontrol-notizen`: an
+app with a screen of its own takes them itself, anything else lands in the portal where the card has the same buttons.
+
+**The calendar** (`server/calsync.js`, services `calendar_tasks`, `calendar_add`, `calendar_update`, `calendar_delete` of
+gatecontrol-mail ≥ 1.15.0): a task with date and time is a 30-minute event in the calendar „Aufgaben“ of the person whose
+task it is, without a reminder. `tasks.cal_dirty` marks what has to be looked at; a write tries at once, the background
+run does the rest (25 a minute). No Mail: the marks wait. Mail refuses for the person: parked, asked again once a day.
+The administrator's setting `calendar_tasks` and `prefs.calendar.tasks` take the events out again. Done: „✓ Titel“,
+time free; deleted (also with its list): gone. Always Mail's own GateControl calendar, never an account's (Microsoft
+365, CalDAV) — see Mail's README. Moving the event in the calendar does not move the task (not part of 1.3.0).
+
 ## Offline on a device (1.1.0)
 
 `GET me` lists the feature **`offlineEdits`**: an app may then queue creates, changes and deletes made without a
@@ -212,6 +277,9 @@ Topics `reminders` (a task's reminder), `shared` (a list or notebook shared with
 | `listday` | listday | `{ kind, listId, area, day, list }` | the list (1.2.0: once per list and day at `remind`, to the members with the card, only with open tasks) |
 | `vault_request` | vault | `{ kind, vaultId, notebookId, deviceId, area, vault, notebook, event: 'request' }` | the Tresor's approvals |
 
+1.3.0: `reminder` also carries `tag`, `remindAtMs`, `dueAt`, `late`, `snoozed` and the buttons `data.actions`; the new
+kind `yesterday` (topic reminders) is `{ kind, day, count, taskIds, area: null }` — see ["1.3.0"](#130--reminders-with-buttons-gestern-offen-geblieben-the-calendar).
+
 `area` is `private` | `work` (the area to switch to). The keys of 1.0 (`task`, `list`, `notebook`, `vault`, `event`)
 stay for older apps. Ids are numbers except `vaultId` / `deviceId` (base64url). The item may be gone by the time the
 push is tapped (`404` on `GET tasks/<id>`): the app says so and shows the list.
@@ -225,7 +293,10 @@ push is tapped (`404` on `GET tasks/<id>`): the app says so and shows the list.
   times: { morning, noon, afternoon, evening, night },        // the quick entry's words „früh“, „abends“ …
   myday: { listdays: true, showDone: true },                 // 1.2.0: the list day card; the done ones of today
   startArea: 'last'|'private'|'work',                         // 1.2.0: the area on opening
-  notify: { reminders: true, shared: true, listday: true } }  // 1.2.0: false = no push of that kind
+  notify: { reminders: true, shared: true, listday: true,   // 1.2.0: false = no push of that kind
+            yesterday: true },                                // 1.3.0: the morning hint „Gestern offen geblieben“
+  yesterdayAt: 'HH:MM' (07:30),                               // 1.3.0: when that hint comes
+  calendar: { tasks: true } }                                 // 1.3.0: false = my tasks are not written into my calendar in Mail
 ```
 
 ## The other plugins (sources)
@@ -360,8 +431,10 @@ Synology plugin — left out; the mockup's „Direkt von der NAS“ is a hint ho
 
 ## Background (every minute)
 
-Reminders as pushes (topic `reminders`, to the assignee or else the creator, once; a reminder missed by more than 6 hours
-is dropped), the morning pushes of list days (topic `listday`), notes whose `expiresAt` came, `notes_changed` to Familie, the sources (availability, due reconciliations
+Reminders as pushes with buttons (topic `reminders`, to the assignee or else the creator, once; since 1.3.0 a reminder
+the server missed is sent late for up to 24 hours and then kept for „Gestern offen geblieben“ instead of dropped), the
+morning hint „Gestern offen geblieben“ (who has something open is asked every 15 minutes, never per minute), the tasks
+whose event in Mail's calendar has to be looked at (a batch of 25), the morning pushes of list days (topic `listday`), notes whose `expiresAt` came, `notes_changed` to Familie, the sources (availability, due reconciliations
 within the budgets, done items without news after 36 h), the To Do import and the transition period; hourly the trash
 (tasks and notes after 30 days, with their attachments) and old „Mein Tag“ marks.
 

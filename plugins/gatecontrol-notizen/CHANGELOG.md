@@ -1,5 +1,46 @@
 # Changelog
 
+## 1.3.0
+
+„Aufgaben und Erinnerungen“, Stufe 1 – Erinnerungen mit Knöpfen, nichts geht mehr still verloren, Termin im Kalender von Mail.
+
+- **Knöpfe an der Fälligkeits-Meldung:** „Erledigt“, „In 1 Std.“ und „Heute Abend“ (ab einer Stunde vor der eigenen
+  Abend-Zeit „Morgen früh“) als Callback-Knöpfe (`data.actions`, Hook `notifyAction`, `server/remind.js`). Der Server
+  prüft die Rechte der Person erneut; ein zweiter Druck (zweites Gerät, Meldung und lokaler Alarm) ändert nichts – jede
+  Erinnerung hat eine Kennung `tag` = `task:<id>:<Zeitpunkt>`, „Später“ wirkt nur, solange die Aufgabe genau diese
+  Erinnerung noch hat. Text der Meldung: „Fällig heute 09:00 · Liste“.
+- **Erinnerungen gehen nicht mehr still verloren:** War der Server zur Zeit aus, wird die Meldung bis **24 Stunden**
+  nachgeholt („War fällig um 09:00“, `late: true`) – vorher wurde sie nach 6 Stunden wortlos verworfen. Noch älter:
+  keine Meldung, die Aufgabe trägt `missedReminder` und steht unter „Gestern offen geblieben“, bis sie entschieden ist.
+- **„Gestern offen geblieben“** (`server/yesterday.js`): Karte über „Heute“ in „Mein Tag“ (Portal, `yesterday` in
+  `GET views/myday`, `GET yesterday`) und **eine** Meldung am Morgen (Vorgabe 07:30, je Person einstellbar, eigener
+  Schalter; nur wenn etwas offen ist; Thema `reminders`). Je Aufgabe „Erledigt“, „Heute“, „Verschieben“ (Morgen, Am
+  Wochenende, anderes Datum: `POST tasks/<id>/move`), für alle `POST yesterday` („Alle heute“). An der Meldung: bei einer
+  Aufgabe „Erledigt“ und „Heute“ als Callback, bei mehreren öffnet „Erledigt“ die App (sie fragt einmal nach);
+  „Verschieben“ öffnet die App. Dabei sind: gestern fällige eigene Aufgaben (zugewiesen, sonst selbst angelegt),
+  gestern in „Mein Tag“ gelegte, und Aufgaben mit verlorener Erinnerung. Eine Aufgabe nur mit Datum bekommt weiterhin
+  keine Einzel-Erinnerung, erscheint aber hier.
+- **Termin im Kalender von Mail** (`server/calsync.js`, Mail ab 1.15.0): Aufgaben mit Datum und Uhrzeit stehen als Termin
+  von 30 Minuten im Kalender „Aufgaben“ der Person, der die Aufgabe gehört – **ohne** Termin-Erinnerung. Titel, Zeit,
+  Person, Verschieben, Erledigen („✓ …“, Zeit frei), Löschen, die nächste einer Wiederholung und gelöschte Listen ziehen
+  nach. Fehlt Mail, antwortet es nicht oder wird es später installiert, warten die Aufgaben und werden nachgetragen; hat
+  eine Person keinen Platz in Mail, wird einmal am Tag wieder gefragt. Schalter: Plugin-Einstellungen › Kalender
+  „Aufgaben mit Uhrzeit in den Kalender eintragen“ (Standard an) und je Person unter „Einstellungen“.
+- **API** (Merkmale `reminderActions`, `yesterdayOpen`, `taskCalendar` in `GET me`; README „1.3.0“): Aufgabe mit
+  `reminder { tag, at, atMs, mine, snoozed }`, `snoozed`, `missedReminder`, `calendar { state, eventId, calendarId, mine }`;
+  `POST tasks/<id>/snooze`, `POST tasks/<id>/move`, `GET/POST yesterday`, `GET reminders` (die eigenen Erinnerungen der
+  nächsten 30 Tage mit Kennung, Text und Knöpfen – für einen lokalen Alarm der Apps als Sicherung); `me.calendar`,
+  `me.yesterday`; `prefs.notify.yesterday`, `prefs.yesterdayAt`, `prefs.calendar.tasks`.
+- **Portal:** Karte „Gestern offen geblieben“, Zeichen „Erinnerung“ / „Später: …“ und „im Kalender“ an der Aufgabe,
+  Baustein „Kalender: Aufgaben“ in der Schnell-Eingabe, neue Schalter unter „Einstellungen“.
+- **Behoben:** Die nächste Aufgabe einer Wiederholung behält ihre Erinnerungs-Uhrzeit auch über die Zeitumstellung.
+  Zwei Schalter unter „Einstellungen“ kurz nacheinander: der zweite überschrieb den ersten nicht mehr (`PUT prefs` je
+  Person nacheinander). Löschen einer Aufgabe las alle Aufgaben (`id = ? OR parent_id = ?`) – jetzt zwei Anweisungen über
+  Indizes. Im Portal fehlte beim ersten Laden der Listenname an den Zeilen, wenn die Ansicht vor dem Menü ankam.
+- Der Parser der Schnell-Eingabe und `test/vectors/quickparse.json` sind unverändert.
+- Migration `005_reminders_calendar.sql`; Tests `test/reminders.test.js`, `test/yesterday.test.js`,
+  `test/calendar.test.js` (auch gegen das echte Mail-Plugin), `test/portal.test.js`, `test/speed.test.js`.
+
 ## 1.2.1
 
 Weniger Lese- und Schreibarbeit auf einem langsamen Datenträger (Anlass: „slow plugin database statements“ im Protokoll

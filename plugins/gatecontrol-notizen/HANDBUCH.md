@@ -1,5 +1,14 @@
-<!-- version: 1.2.1 -->
+<!-- version: 1.3.0 -->
 # Notizen & Aufgaben
+
+## Neu in 1.3.0
+
+- **Knöpfe an der Erinnerung:** Die Meldung zur Fälligkeit hat jetzt **„Erledigt“**, **„In 1 Std.“** und **„Heute Abend“** (abends stattdessen „Morgen früh“). „Erledigt“ hakt ab, ohne die App zu öffnen; die beiden anderen verschieben die Erinnerung.
+- **Keine Erinnerung geht mehr still verloren:** War der Server zur Uhrzeit aus, kommt die Meldung bis zu 24 Stunden später nach – mit dem Hinweis „War fällig um …“. Ist es noch länger her, steht die Aufgabe am nächsten Morgen unter „Gestern offen geblieben“.
+- **„Gestern offen geblieben“:** Was gestern fällig war oder in „Mein Tag“ lag und nicht abgehakt wurde, steht als Karte oben in „Mein Tag“ und kommt morgens in **einer** Nachricht (Vorgabe 07:30). Je Aufgabe: **Erledigt**, **Heute** oder **Verschieben** (Morgen, Am Wochenende, anderes Datum); bei mehreren auch „Alle heute“.
+- **Im Kalender:** Mit dem Plugin Mail (ab 1.15.0) steht jede Aufgabe mit Datum und Uhrzeit als Termin von 30 Minuten im Kalender „Aufgaben“ – ohne eigene Termin-Erinnerung, damit nicht zwei Meldungen kommen. An der Aufgabe zeigt das Zeichen „im Kalender“ das an.
+- **Schalter:** Administratoren finden „Aufgaben mit Uhrzeit in den Kalender eintragen“ in den Plugin-Einstellungen; jede Person schaltet Kalender und Morgen-Hinweis unter „Einstellungen“ (Zahnrad unten links) für sich.
+- **Apps:** Die neuen Knöpfe an der Meldung funktionieren mit den aktuellen GateControl-Apps sofort. Die Karte „Gestern offen geblieben“ und die zusätzliche Sicherung auf dem Handy kommen mit einer der nächsten App-Versionen; bis dahin öffnet „Verschieben“ das Portal.
 
 ## Neu in 1.2.1
 
@@ -58,6 +67,9 @@ Das Plugin ist neu: eigene Aufgaben und Notizen plus alles, was die anderen Plug
 
 - **Schnell hinzufügen:** oben ins Feld tippen und Enter – oder **Strg N**. Das Plugin versteht z. B. „morgen 9 Uhr Zahnarzt anrufen, wichtig, #gesundheit“: morgen 9:00, Erinnerung 9:00, wichtig, Liste „Gesundheit“. Unter dem Feld steht, was erkannt wurde. Siehe [Schnell-Eingabe](#schnell-eingabe).
 - **Abhaken:** der Kreis vorne. Eine wiederholte Aufgabe bekommt gleich die nächste (mit denselben Unteraufgaben, wieder offen).
+- **Erinnerung:** Zur gesetzten Zeit kommt eine Meldung mit **Erledigt**, **In 1 Std.** und **Heute Abend** (abends „Morgen früh“). Die Abend- und die Morgen-Zeit sind deine Uhrzeiten aus „Einstellungen“. Eine Aufgabe nur mit Datum bekommt keine eigene Meldung – bleibt sie offen, steht sie am nächsten Morgen unter „Gestern offen geblieben“.
+- **Gestern offen geblieben:** die Karte oben in „Mein Tag“. **Erledigt** hakt ab, **Heute** legt die Aufgabe auf heute (die Uhrzeit bleibt), **Verschieben** bietet Morgen, Am Wochenende und ein anderes Datum. Die Karte bleibt, bis jede Zeile entschieden ist.
+- **Im Kalender:** Aufgaben mit Datum und Uhrzeit stehen als Termin von 30 Minuten im Kalender „Aufgaben“ des Plugins Mail, bei der Person, der sie zugewiesen sind (sonst bei der, die sie angelegt hat). Erledigte bleiben als „✓ …“ stehen, gelöschte verschwinden. Der Kalender „Aufgaben“ ist immer ein GateControl-eigener Kalender in Mail.
 - **Details:** eine Aufgabe antippen – rechts erscheinen Unteraufgaben, „In Mein Tag“, Fällig, Erinnerung, Wiederholen, Zugewiesen, Liste, Anhänge und Notiz.
 - **Listen und Gruppen:** das **„+“** an „Meine Listen“ öffnet „Neue Liste oder Gruppe“. Eine Gruppe ist ein Ordner für mehrere Listen; „Gruppe auflösen“ lässt die Listen stehen. Gruppen gelten nur für dich.
 - **⋯ an einer Liste:** Bearbeiten (Name, Farbe, Symbol, Gruppe, Einkaufstag, Erinnerung am Morgen), **Teilen …**, In Gruppe verschieben, Löschen. Die Standardliste „Aufgaben“ lässt sich umbenennen, aber nicht löschen.
@@ -140,9 +152,12 @@ Direkt von der NAS holen geht noch nicht.
 | Sprache der Erinnerungen | Deutsch oder Englisch |
 | Listen und Notizbücher teilen mit | Allen, Familie und Team, Niemandem |
 | Tresor-Notizbücher erlauben | an/aus |
+| Aufgaben mit Uhrzeit in den Kalender eintragen | an (Standard) / aus. Braucht das Plugin Mail ab 1.15.0; ohne Mail geschieht nichts, kommt es später dazu, werden die offenen Aufgaben nachgetragen. Aus: die Termine der Aufgaben werden entfernt. |
 | Aus anderen Plugins | Familie, Mail, Drive, Schule, Alltag einzeln |
 | Umzug | Microsoft To Do, Abgleich in beide Richtungen, DS Note |
 | Größte Datei, Platz je Person | für Bilder und Anhänge |
+
+Jede Person hat zusätzlich eigene **„Einstellungen“** (Zahnrad unten links): unter „Benachrichtigungen“ den Schalter **Morgens: „Gestern offen geblieben“** mit der **Uhrzeit des Morgen-Hinweises**, unter „Kalender“ den Schalter **Aufgaben mit Uhrzeit in meinen Kalender „Aufgaben“ eintragen** (sichtbar, wenn Mail installiert und die Einstellung des Administrators an ist).
 
 ## Ohne Verbindung (Apps)
 

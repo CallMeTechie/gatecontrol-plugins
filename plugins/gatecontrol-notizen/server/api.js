@@ -16,6 +16,9 @@ const search = require('./search');
 const vault = require('./vault');
 const mstodo = require('./mstodo');
 const dsnote = require('./dsnote');
+const remind = require('./remind');
+const yesterday = require('./yesterday');
+const calsync = require('./calsync');
 const Q = require('../ui/quickparse');
 const { t } = require('./text');
 const { fail, isKnown, statusOf, posInt } = require('./util');
@@ -27,7 +30,11 @@ const { fail, isKnown, statusOf, posInt } = require('./util');
 // `shareRoles` — members read | write; `groupEdit` — POST groups { lists }, groups with `open`; `deleteKeep` — DELETE
 // lists|notebooks ?tasks|notes=move|delete, …/usage, …/restore; `listIcons` — lists have an icon of me.listIcons.
 const FEATURES = ['tasks', 'notes', 'sources', 'vault', 'mstodo', 'dsnote', 'search', 'quickparse', 'attachments', 'ocrText', 'offlineEdits', 'pushTargets',
-  'listDays', 'shareRoles', 'groupEdit', 'deleteKeep', 'listIcons'];
+  'listDays', 'shareRoles', 'groupEdit', 'deleteKeep', 'listIcons',
+  // 1.3.0 (README "1.3.0"): `reminderActions` — the reminder push has buttons and a tag, POST tasks/<id>/snooze, Task.reminder,
+  // GET reminders; `yesterdayOpen` — „Gestern offen geblieben“: GET/POST yesterday, POST tasks/<id>/move, `yesterday` of
+  // „Mein Tag“, the push kind yesterday; `taskCalendar` — Task.calendar, me.calendar, prefs.calendar.
+  'reminderActions', 'yesterdayOpen', 'taskCalendar'];
 
 const ok = (json) => ({ status: 200, json: { ok: true, ...json } });
 
@@ -49,6 +56,20 @@ const taskOpts = {
   },
 };
 notes.opts.completeTask = (gc, ctx, id, done) => tasks.complete(gc, ctx, id, { done }, taskOpts);
+// 1.3.0: a person's choice changed — their events in the calendar follow, the plan of the morning hint is made anew
+prefs.hooks.changed = async (gc, ctx, before, after) => {
+  if (before.calendar.tasks !== after.calendar.tasks) await calsync.touchAll(gc, ctx.today, ctx.userId);
+  if (before.yesterdayAt !== after.yesterdayAt || before.notify.yesterday !== after.notify.yesterday) yesterday.reset();
+};
+
+/** A button of one of the plugin's pushes (hook notifyAction): the reminder of a task, the morning hint. */
+async function notifyAction(gc, ctx, action, data) {
+  const d = data && data.notizen;
+  if (!d || typeof d !== 'object') return { ok: false, code: 'invalid' };
+  if (d.kind === 'reminder') return remind.onAction(gc, ctx, action, d, taskOpts);
+  if (d.kind === 'yesterday') return yesterday.onAction(gc, ctx, action, d, taskOpts);
+  return { ok: false, code: 'invalid' };
+}
 
 async function me(gc, ctx) {
   const cfg = await config.get(gc);
@@ -58,6 +79,10 @@ async function me(gc, ctx) {
     user: { id: ctx.userId, name: ctx.userName }, lang: ctx.lang, today: ctx.today, time: ctx.time, timezone: ctx.tz, features: FEATURES,
     prefs: p, sharing: cfg.sharing, vaults: cfg.vaults, imports: { mstodo: cfg.import_mstodo, mstodoSync: cfg.mstodo_sync, dsnote: cfg.import_dsnote },
     attachMB: cfg.attach_mb, readOnly: !!ctx.readOnly, listIcons: lists.ICONS,
+    // 1.3.0: tasks with a time in Mail's calendar „Aufgaben“ (available: Mail offers it; enabled: the administrator's
+    // switch; mine: the person's own), and the morning hint
+    calendar: { available: await calsync.available(gc, ctx.now), enabled: cfg.calendar_tasks !== false, mine: p.calendar.tasks !== false, name: t(ctx.lang, 'cal.name') },
+    yesterday: { push: p.notify.yesterday !== false, at: p.yesterdayAt },
   };
 }
 
@@ -145,6 +170,12 @@ async function handle(gc, ctx, req) {
   if (m === 'PATCH' && n === 2 && a === 'tasks') { await tasks.update(gc, ctx, x, b); return ok(await tasks.get(gc, ctx, x, taskOpts)); }
   if (m === 'DELETE' && n === 2 && a === 'tasks') return ok(await tasks.remove(gc, ctx, x));
   if (m === 'POST' && n === 3 && a === 'tasks' && y === 'complete') return ok(await tasks.complete(gc, ctx, x, b, taskOpts));
+  // 1.3.0: „Später“, „Heute“ / „Verschieben“, „Gestern offen geblieben“, the reminders to come (for a device's own alarms)
+  if (m === 'POST' && n === 3 && a === 'tasks' && y === 'snooze') return ok(await remind.snooze(gc, ctx, x, b, taskOpts));
+  if (m === 'POST' && n === 3 && a === 'tasks' && y === 'move') return ok(await yesterday.move(gc, ctx, x, b, taskOpts));
+  if (is('GET', 1, 'yesterday')) return ok(await yesterday.get(gc, ctx, q));
+  if (is('POST', 1, 'yesterday')) return ok(await yesterday.post(gc, ctx, b, taskOpts));
+  if (is('GET', 1, 'reminders')) return ok(await remind.feed(gc, ctx));
 
   // items of the other plugins
   if (m === 'GET' && n === 2 && a === 'items') return ok(await itemGet(gc, ctx, x));
@@ -219,4 +250,4 @@ async function request(gc, ctx, req) {
   }
 }
 
-module.exports = { request, taskOpts, FEATURES, Q };
+module.exports = { request, notifyAction, taskOpts, FEATURES, Q };
