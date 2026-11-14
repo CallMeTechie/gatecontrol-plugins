@@ -3,6 +3,40 @@
 Chats zwischen den GateControl-Konten – in der GateControl-App (eigener Tab „Chats“), im
 Windows-Client und im Portal (eigener Tab „Chats“). Alles bleibt auf dem eigenen Server.
 
+## 1.13.0
+Zweite Baustufe der **Brücken zu anderen Messengern** (WhatsApp): die Seite zum Verknüpfen im Portal, die Schalter der
+Eltern im Familien-Plugin, und Zurücknehmen trennt. Weiterhin **GateControl ≥ 1.193.0**; alles davon erscheint nur auf
+einem GateControl, das Brücken anbietet (dort eine Vorschau) und sie eingeschaltet hat. Kein neues Recht.
+- **Portal › Chats › Einstellungen › „Verknüpfte Dienste“** (`ui/bridges.js`): je Dienst der Zustand – noch nicht
+  verknüpft, **verknüpft** seit …, **abgemeldet** (der Dienst hat das Gerät entfernt; „neu verknüpfen“ mit einem neuen
+  Code), **Fehler**, für ein Kind **gesperrt**, Brücke startet / antwortet nicht – und **Trennen**. Vor dem ersten
+  Verknüpfen stehen die Hinweise auf einer Seite und werden bestätigt (kein offizielles Programm, Sperr-Risiko, Handy
+  alle 14 Tage online, die Verschlüsselung endet an der Brücke am Server). Verknüpfen **mit Code** (Nummer eingeben,
+  achtstelligen Code in WhatsApp eintippen – der Weg für „nur ein Handy“) oder **mit QR-Code** (zweiter Bildschirm);
+  die Seite wartet auf die Bestätigung am Handy. Schließen bricht eine laufende Anmeldung ab. Der Eintrag erscheint
+  nur, wenn `GET me` `features.linked_services: true` meldet (Brücken angeboten, eingeschaltet, ein Dienst an).
+- Ein QR-Schritt trägt zusätzlich `display.matrix { size, rows }` – die Module des Codes, vom Server berechnet
+  (`server/vendor/uqr.js`, uqr 0.1.2, MIT); die Seite zeichnet daraus, nie aus einer Bild-Adresse. Die Apps zeichnen
+  weiter aus `display.data`.
+- **Kinder: Zurücknehmen trennt.** Nimmt ein Elternteil die Freigabe zurück, wird die Verknüpfung des Kindes bei
+  diesem Dienst beendet (`gc.bridges.unlinkFor`, GateControl mit `gc.bridges.version` ≥ 2: prüft, dass der Elternteil
+  gerade handelt, lehnt Administratoren als Ziel ab und schreibt es ins Aktivitätsprotokoll). Auf einem älteren
+  GateControl bleibt die Verknüpfung bestehen, bis das Kind oder der Dienst sie beendet – die Antwort sagt es
+  (`unlinked: { whatsapp: false }`). `GET bridges/children` nennt je Kind zusätzlich `linked` (ob ein Konto verknüpft
+  ist – nie welches), `PUT bridges/children/:userId` antwortet `{ child, unlinked }`.
+- **Dienste für das Familien-Plugin** (dort ab 1.23.0 die Karte „Andere Messenger“): `bridge_children` und
+  `bridge_child_set`, nur vom Familien-Plugin, `user` = der Elternteil; der Messenger prüft Elternteil und Kind selbst
+  gegen `family_roles`. Ohne eingeschaltete Brücke `available: false`.
+- **Admin-Karte „Brücken“:** Zustand **Veraltet** (die Brücke läuft mit einem anderen Abbild, als GateControl
+  vorsieht – mit dem Hinweis, die `docker-compose.yml` des Servers zu ersetzen), der Hinweis „Konfiguration fehlt“,
+  und statt einer geschätzten Zahl zum Speicherbedarf: der Hinweis, dass die Obergrenzen vorläufig sind und wie am
+  Server gemessen wird (`./update.sh bridges-probe`) bzw. das Ergebnis der letzten Messung (Speicher je Container,
+  geschriebene Daten).
+- `GET bridges` nennt `location` und je Dienst `outdated`, `version`, `wantVersion`.
+- Noch **nicht** enthalten: die fremden Chats selbst und die Seiten in den Apps. `features.bridges` bleibt `false`.
+- Mock-Host: `tools/testing/mock-bridges.js` kennt `unlinkFor`, `outdated`, die Messung (`setHost({ probe })`),
+  `host.bridges.acting(userId, fn)` und ein GateControl ohne `unlinkFor` (`bridges: { version: 1 }`).
+
 ## 1.12.0
 Erste Baustufe der **Brücken zu anderen Messengern** (zuerst WhatsApp, auch Konten der WhatsApp-Business-App). Braucht
 weiterhin **GateControl ≥ 1.193.0**; die Brücken selbst gibt es nur auf einem GateControl, das sie anbietet (dort eine

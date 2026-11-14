@@ -1,5 +1,11 @@
-<!-- version: 1.22.0 -->
+<!-- version: 1.23.0 -->
 # Familie
+
+## Neu in 1.23.0
+
+- **Andere Messenger – Eltern schalten frei:** Bietet dein GateControl-Server Brücken zu anderen Messengern an (dort noch eine Vorschau, mit dem Plugin Messenger ab 1.13.0), sehen Eltern im Portal-Tab „Familie“ die Karte **„Andere Messenger“**. Je Kind und Dienst (zuerst WhatsApp) gibt es einen Schalter: Darf das Kind sein eigenes Konto mit dem Chat in GateControl verknüpfen? Zunächst ist alles aus. Verknüpfen muss das Kind selbst, im Chat unter „Einstellungen › Verknüpfte Dienste“.
+- **Zurücknehmen trennt:** Sperrst du einen Dienst wieder, wird die Verknüpfung des Kindes getrennt; sein Konto beim Dienst bleibt bestehen. Die Altersgrenzen der Dienste gelten weiter.
+- Beim Aktualisieren fragt GateControl einmal nach den zwei neuen Diensten des Messengers, die das Familien-Plugin dafür ruft.
 
 ## Neu in 1.22.0
 
@@ -50,7 +56,7 @@ Die Familie in der GateControl-App (eigener Tab), im Portal (Tab „Familie“) 
 
 ## Berechtigungen
 
-- **Eltern** legen Aufgaben, Termine und Regeln an, orten Kinder, sehen Haushaltsbuch und Taschengeld aller Kinder und steuern Internet zu Hause.
+- **Eltern** legen Aufgaben, Termine und Regeln an, orten Kinder, sehen Haushaltsbuch und Taschengeld aller Kinder, steuern Internet zu Hause und schalten frei, welche anderen Messenger ein Kind mit dem Chat verknüpfen darf (Karte „Andere Messenger“, nur mit den Brücken des Plugins Messenger).
 - **Kinder** haken Aufgaben ab, sehen ihr Taschengeld, senden „Bin angekommen“ und SOS. Ab dem 18. Geburtstag endet die Ortung von selbst.
 - **Wand-Tablet** hakt Aufgaben ab und fügt Einkäufe hinzu, sieht aber keine Positionen.
 - Portal-Besuche, die nur über Geräte-Vertrauen erkannt sind, lesen nur – keine Positionen, kein SOS, keine Anwesenheit.

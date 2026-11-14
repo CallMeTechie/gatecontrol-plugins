@@ -495,6 +495,12 @@
           el('span', { class: 'ms-pref-tx' }, [T('routes.title'), el('small', { text: T('routes.open_hint') })]), M.icon('bell', 16),
         ]));
       }
+      // 1.13.0: the person's own links to other messengers (ui/bridges.js) — only while the server offers a bridge
+      if (f.linked_services && window.MSBridges) {
+        body.appendChild(el('button', { type: 'button', class: 'ms-pref ms-pref-btn', on: { click: function () { closeTop(); window.MSBridges.open(); } } }, [
+          el('span', { class: 'ms-pref-tx' }, [T('br.title'), el('small', { text: T('br.open_hint') })]), M.icon('group', 16),
+        ]));
+      }
       sec(T('set.chats'));
       [['readReceipts', 'prefs.read_receipts', 'prefs.read_receipts_hint'], ['typing', 'prefs.typing', 'prefs.typing_hint'], ['preview', 'prefs.preview', 'prefs.preview_hint']].forEach(function (x) {
         sw(T(x[1]), T(x[2]), !!p[x[0]], function (v, rev) { var o = {}; o[x[0]] = v; save(o, rev); });

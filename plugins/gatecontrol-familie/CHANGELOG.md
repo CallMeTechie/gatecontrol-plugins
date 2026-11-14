@@ -3,6 +3,25 @@
 Die Familie in der GateControl-App (eigener Tab), im Portal (eigener Tab „Familie“) und auf
 drei Admin-Seiten. Alles bleibt auf dem eigenen Server.
 
+## 1.23.0
+
+- **„Andere Messenger“ – Eltern schalten frei** (`server/linked.js`, `ui/portal-linked.js`; Messenger ab 1.13.0 auf
+  einem GateControl, das Brücken zu anderen Messengern anbietet – dort eine Vorschau). Im Portal-Tab „Familie“
+  erscheint für Eltern die Karte **„Andere Messenger“**: je Kind und Dienst (zuerst WhatsApp) ein Schalter, ob das
+  Kind sein eigenes Konto mit dem Chat in GateControl verknüpfen darf. **Zunächst aus.** Die Karte zeigt, ob ein
+  Konto verknüpft ist – nie welches.
+- **Zurücknehmen trennt:** Wird eine Freigabe zurückgenommen (mit Rückfrage), beendet GateControl die Verknüpfung
+  des Kindes; das Konto beim Dienst bleibt bestehen. Ließ sich die Verknüpfung nicht trennen (ein älteres
+  GateControl, die Brücke antwortet nicht), sagt die Seite das.
+- Die Karte bleibt verborgen ohne Messenger, mit einem älteren Messenger, ohne eingeschaltete Brücke, für Kinder und
+  ohne Kinder. API: `GET messengers`, `PUT messengers/<childId>` (nur Eltern, nur angemeldet).
+- Die Schalter liegen im Messenger, nicht hier: Familie ruft dessen Dienste `bridge_children` und `bridge_child_set`
+  (neu in `permissions.services` – **das Update installiert sich deshalb nicht von selbst, ein Admin bestätigt es**).
+  Keine Migration, keine eigene Tabelle. Die Liste wird je Elternteil fünf Minuten gehalten (Dienstaufrufe sind je
+  Stunde begrenzt).
+- Tests: `test/linked.test.js` (gegen eine Attrappe der Dienste und gegen das echte Messenger-Plugin in einem
+  zweiten Mock-Host).
+
 ## 1.22.0
 
 - **Orte für „Notizen & Aufgaben“** (dort ab 1.5.0: Aufgaben am Ort). Zwei Dienste, beide nur für Mitglieder der

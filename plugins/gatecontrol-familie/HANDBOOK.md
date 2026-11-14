@@ -1,5 +1,11 @@
-<!-- version: 1.22.0 -->
+<!-- version: 1.23.0 -->
 # Family
+
+## New in 1.23.0
+
+- **Other messengers – parents decide:** When your GateControl server offers bridges to other messengers (still a preview there, with the Messenger plugin 1.13.0 or later), parents see the card **“Other messengers”** in the portal tab “Family”. Per child and service (WhatsApp first) there is a switch: may the child link its own account with the chat in GateControl? Everything is off at first. The child links itself, in the chat under “Settings › Linked services”.
+- **Taking it back unlinks:** When you lock a service again, the child’s link is ended; its account at the service stays. The services’ age limits still apply.
+- When updating, GateControl asks once for the two new services of the Messenger that the Family plugin calls for this.
 
 ## New in 1.22.0
 
@@ -50,7 +56,7 @@ The family in the GateControl app (a tab of its own), in the portal (tab “Fami
 
 ## Permissions
 
-- **Parents** create tasks, events and rules, locate children, see the household book and every child's pocket money and control internet at home.
+- **Parents** create tasks, events and rules, locate children, see the household book and every child's pocket money, control internet at home and decide which other messengers a child may link with the chat (card “Other messengers”, only with the bridges of the Messenger plugin).
 - **Children** tick off tasks, see their pocket money, send “I've arrived” and SOS. Locating ends by itself at the 18th birthday.
 - The **wall tablet** ticks off tasks and adds shopping, but sees no positions.
 - Portal visits recognised only by device trust can only read – no positions, no SOS, no presence.

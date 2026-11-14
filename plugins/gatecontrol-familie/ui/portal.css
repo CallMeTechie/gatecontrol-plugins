@@ -144,3 +144,9 @@
 .fa-net-panel-title{font-size:13px;font-weight:700}
 .fa-net-panel .fa-sub{font-size:12.5px;line-height:1.45}
 @media (max-width:420px){.fa-net-kid{padding:12px;gap:10px}.fa-net-btns{width:100%}.fa-net-btns .btn{flex:1 1 auto}}
+/* 1.23.0: „Andere Messenger“ (portal-linked.js) — per child a line per service with the parents' switch */
+.fa-lk-nets{flex:1 1 260px;display:flex;flex-direction:column;gap:8px;min-width:0}
+.fa-lk-net{display:flex;align-items:center;gap:10px;min-width:0}
+.fa-lk-tx{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;font-size:14px;overflow-wrap:anywhere}
+.fa-lk-tx .fa-sub{font-size:12.5px;line-height:1.4}
+.fa-lk-net .fa-switch:focus-visible{outline:2px solid var(--accent);outline-offset:2px}

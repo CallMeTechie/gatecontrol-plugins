@@ -1,4 +1,4 @@
-<!-- version: 1.12.0 -->
+<!-- version: 1.13.0 -->
 # Messenger
 
 ## Was das Plugin kann
@@ -49,7 +49,7 @@ Im Portal öffnen sich Dateien außer Bildern, Ton und Video in den Apps.
 - In Gruppenchats für GateControl-Gruppen ändern Mitglieder weder Mitglieder noch Titel und können nicht austreten; Chat-Admins sind die Leitungen der Gruppe.
 - Den Familien-Chat als Ziel für Mitteilungen dürfen nur Administratoren und Eltern aus dem Plugin Familie für den Haushalt einstellen.
 - Administratoren sehen auf „Übersicht“ und „Protokoll“ nur Zahlen und Fehler – nie Texte, Titel, Dateinamen, Mitglieder oder wer wem schreibt.
-- Brücken zu anderen Messengern (nur wenn der Server sie anbietet): Administratoren schalten sie und sehen Zustand, Arbeitsspeicher und die Zahl der verknüpften Personen – keine Nummern, Kontakte oder Inhalte. Verknüpfen kann jede Person nur ihr eigenes Konto; Kinder erst, wenn ein Elternteil den Dienst freigeschaltet hat.
+- Brücken zu anderen Messengern (nur wenn der Server sie anbietet): Administratoren schalten sie und sehen Zustand, Arbeitsspeicher und die Zahl der verknüpften Personen – keine Nummern, Kontakte oder Inhalte. Verknüpfen kann jede Person nur ihr eigenes Konto; Kinder erst, wenn ein Elternteil den Dienst freigeschaltet hat (Plugin Familie, Karte „Andere Messenger“). Nimmt ein Elternteil die Freigabe zurück, wird die Verknüpfung des Kindes getrennt – GateControl hält im Aktivitätsprotokoll fest, wer das war.
 
 ## Häufige Fragen / Fehlersuche
 
@@ -68,10 +68,13 @@ Den führt das Plugin Familie (Seite „Funktionen“ › Messenger-Gruppe).
 **Alte Nachrichten sind weg.**
 Der Administrator hat eine Aufbewahrung eingestellt, oder der Chat ist selbstlöschend.
 
-## Neu in 1.12.0
+## Neu in 1.13.0
 
-- **Brücken zu anderen Messengern, erste Stufe** (zuerst WhatsApp): Bietet der GateControl-Server Brücken an (dort noch eine Vorschau), erscheint auf „Übersicht“ die Karte „Brücken zu anderen Messengern“ – mit dem Schalter (standardmäßig aus), dem Ort (Server), dem Zustand je Brücke, dem belegten Arbeitsspeicher und der Zahl der verknüpften Personen. Auf allen anderen Servern ändert sich nichts.
-- Jede Person verknüpft später ihr eigenes Konto selbst; Kinder-Konten aus dem Plugin Familie bleiben gesperrt, bis ein Elternteil den Dienst freischaltet. Die Seiten dafür in den Apps und im Portal sowie die Chats selbst folgen mit späteren Versionen.
-- Beim Aktualisieren fragt GateControl einmal nach dem neuen Recht „Brücken zu anderen Messengern“.
+Nur auf einem GateControl-Server, der Brücken anbietet (dort noch eine Vorschau) und sie eingeschaltet hat – überall sonst ändert sich nichts.
 
-Zuletzt in 1.11.1: Dieses Handbuch im Reiter „Handbuch“ (GateControl ≥ 1.241.0).
+- **„Verknüpfte Dienste“ im Portal:** Unter **Chats › Einstellungen › Verknüpfte Dienste** verknüpfst du dein eigenes WhatsApp-Konto. Zuerst liest und bestätigst du die Hinweise; danach wählst du **Mit Code** (Nummer eingeben, den angezeigten Code in WhatsApp unter „Verknüpfte Geräte › Gerät hinzufügen › Stattdessen mit Telefonnummer verknüpfen“ eintippen) oder **QR-Code** (auf einem zweiten Bildschirm anzeigen und mit dem Handy scannen). Die Seite zeigt, ob das Konto verknüpft ist, ob WhatsApp die Brücke abgemeldet hat („Neu verknüpfen“ – ein neuer Code genügt) und lässt dich jederzeit **trennen**.
+- **Kinder:** Die Schalter der Eltern stehen jetzt im Plugin Familie (Portal, Karte „Andere Messenger“). Nimmt ein Elternteil die Freigabe zurück, wird die Verknüpfung des Kindes getrennt.
+- **Für Administratoren:** Die Karte „Brücken“ zeigt „Veraltet“, wenn eine Brücke mit einer älteren Version läuft als vorgesehen, und nennt den Befehl, mit dem am Server Speicher und Schreiblast gemessen werden.
+- In dieser Version lassen sich Konten verknüpfen; die Chats mit Kontakten des Dienstes folgen später.
+
+Zuletzt in 1.12.0: die Karte „Brücken zu anderen Messengern“ auf „Übersicht“ (Schalter, Ort, Zustand je Brücke, belegter Arbeitsspeicher, Zahl der verknüpften Personen) und das Recht „Brücken zu anderen Messengern“.
