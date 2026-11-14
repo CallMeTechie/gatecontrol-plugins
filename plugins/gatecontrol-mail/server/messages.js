@@ -217,7 +217,10 @@ async function search(gc, userId, q) {
       where.push(`(${HEAD}${texts ? " OR b.text LIKE ? ESCAPE '\\'" : ''})`);
       args.push(like, like, like, like, like, ...(texts ? [like] : []));
     }
-    return store.all(gc, `SELECT m.id, m.date FROM messages m JOIN folders f ON f.id = m.folder_id${texts ? ' LEFT JOIN bodies b ON b.message_id = m.id' : ''}
+    // 1.15.1: the rest along its partial index (search.js: it is there while the index is on) and nothing else. Left to
+    // itself SQLite went by the account (messages_body_state) and read every mail of it to look at `fts` — for a rest
+    // of no mail at all, with every search
+    return store.all(gc, `SELECT m.id, m.date FROM messages m${rest ? ` INDEXED BY ${searchIndex.TODO_INDEX}` : ''} JOIN folders f ON f.id = m.folder_id${texts ? ' LEFT JOIN bodies b ON b.message_id = m.id' : ''}
       WHERE ${where.join(' AND ')} ${TAIL}`, [...args, LIMIT + 1]);
   };
   /** The mails the index finds. */

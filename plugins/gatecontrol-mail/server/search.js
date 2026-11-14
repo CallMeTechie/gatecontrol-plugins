@@ -43,6 +43,7 @@ const BATCH_MIN = 5;
 const SLOW_MS = 1500;         // a batch slower than this: the next one half as large …
 const FAST_MS = 300;          // … faster than this: twice as large
 const KEY = 'search';
+const TODO_INDEX = 'messages_fts_todo';
 // tickMs: what a background run spends on the build or the removal; maxBytes: the build rests while the database is
 // larger than this (plugin.json storage.maxMB is 4096 — the index must not take the room new mail needs); resetRows:
 // ids per statement when messages.fts is set back. A test changes them.
@@ -66,7 +67,8 @@ const PUT = (id) => `${shards.map((k) => `DELETE FROM ${table(k)} WHERE rowid = 
 const SCHEMA = [
   // the mails the index does not hold (completely): the build's rest (fts = 0, newest first — and how many are left,
   // from the index alone) and what GET search still looks through the old way
-  'CREATE INDEX IF NOT EXISTS messages_fts_todo ON messages (fts, date) WHERE fts <> 1',
+  // (GET search names it: INDEXED BY, messages.js)
+  `CREATE INDEX IF NOT EXISTS ${TODO_INDEX} ON messages (fts, date) WHERE fts <> 1`,
   ...shards.map((k) => `CREATE VIRTUAL TABLE IF NOT EXISTS ${table(k)} USING fts5(subject, sender, recipients, snippet, body, content='', contentless_delete=1, tokenize='trigram')`),
   `CREATE TRIGGER IF NOT EXISTS mail_fts_new AFTER INSERT ON messages BEGIN
     ${PUT('new.id')}
@@ -205,7 +207,7 @@ async function removeStep(gc) {
   const left = await store.all(gc, `SELECT name FROM sqlite_master WHERE type = 'table' AND name IN (${shards.map((k) => `'${table(k)}'`).join(',')}) ORDER BY name`);
   if (left.length) { await gc.db.exec(`DROP TABLE IF EXISTS ${left[0].name}`); return false; }
   // the partial index before the marks: setting a mail back to 0 would put it into that index first
-  await gc.db.exec('DROP INDEX IF EXISTS messages_fts_todo');
+  await gc.db.exec('DROP INDEX IF EXISTS ' + TODO_INDEX);
   const max = await store.one(gc, 'SELECT MAX(id) AS n FROM messages');
   const top = (max && max.n) || 0;
   if (cursor < top) {
@@ -293,4 +295,4 @@ async function view(gc) {
   return { state: n ? 'building' : 'ready', pending: n };
 }
 
-module.exports = { apply, tick, view, matchOf, matchArgs, pending, dbSize, isOn, reset, limits, BODY_MAX, MIN_CHARS, SHARDS, MATCH_ALL, TRIGGERS, table };
+module.exports = { apply, tick, view, matchOf, matchArgs, pending, dbSize, isOn, reset, limits, BODY_MAX, MIN_CHARS, SHARDS, MATCH_ALL, TRIGGERS, TODO_INDEX, table };
