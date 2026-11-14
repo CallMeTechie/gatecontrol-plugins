@@ -23,6 +23,22 @@
         </div>
       </section>
 
+      <!-- 1.21.0: the shopping lists move to „Notizen & Aufgaben“ by this button, never by themselves -->
+      <section class="fa-card" aria-labelledby="fa-move-h" id="fa-move">
+        <h2 class="fa-card-title" id="fa-move-h">{{t:shopmove.title}}</h2>
+        <p class="fa-hint">{{t:shopmove.intro}}</p>
+        <p class="fa-hint" id="fa-move-status" role="status"></p>
+        <ul class="fa-hint fa-modes" id="fa-move-what" hidden>
+          <li>{{t:shopmove.what_1}}</li>
+          <li>{{t:shopmove.what_2}}</li>
+          <li>{{t:shopmove.what_3}}</li>
+        </ul>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button type="button" class="btn btn-sm btn-primary" id="fa-move-go" hidden>{{t:shopmove.go}}</button>
+          <button type="button" class="btn btn-sm" id="fa-move-back" hidden>{{t:shopmove.back}}</button>
+        </div>
+      </section>
+
       <section class="fa-card" aria-labelledby="fa-msg-h" id="fa-msg">
         <h2 class="fa-card-title" id="fa-msg-h">{{t:msgcfg.title}}</h2>
         <p class="fa-hint">{{t:msgcfg.intro}}</p>

@@ -318,7 +318,7 @@ test('GET internet for a parents\' view: where the child is and from which sourc
 test('the topic `internet`: its own switch in the notification settings, every message of „Internet zu Hause“ in it', () => withFamily(ON(), async (host, { as, clock }) => {
   const manifest = JSON.parse(fs.readFileSync(path.join(DIR, 'plugin.json'), 'utf8'));
   assert.deepEqual(manifest.notifyTopics.find((t) => t.id === 'internet'), { id: 'internet', label: { de: 'Internet zu Hause', en: 'Internet at home' }, default: true });
-  assert.equal(manifest.version, '1.20.0');
+  assert.equal(manifest.version, '1.21.0');
   // by hand, by a rule, run out: one topic, to the child only
   await as(ANNA)('POST', '/rules', DINNER({ actions: [{ type: 'internet', op: 'pause', userId: LENA.id, minutes: 5 }] }));
   await as(ANNA)('POST', `/internet/${TIM.id}/pause`, { minutes: 20 });

@@ -3,6 +3,37 @@
 Die Familie in der GateControl-App (eigener Tab), im Portal (eigener Tab „Familie“) und auf
 drei Admin-Seiten. Alles bleibt auf dem eigenen Server.
 
+## 1.21.0
+
+- **Einkaufslisten ziehen nach „Notizen & Aufgaben“ um – per Knopf** (`server/shopsync.js`,
+  `migrations/014_shopping_hub.sql`; „Notizen & Aufgaben“ ab 1.4.0). Auf **Funktionen** gibt es die Karte
+  „Einkaufslisten in ‚Notizen & Aufgaben‘“ mit der Vorschau („2 Einkaufslisten mit 14 Punkten“) und dem Knopf
+  **Umziehen**. Nichts zieht von selbst um.
+  - **Wiederholbar:** Listen und Punkte gehen mit ihren eigenen Kennungen hinüber; ein zweiter Umzug legt nichts
+    doppelt an.
+  - **Danach** ist „Notizen & Aufgaben“ der Besitzer: Die Listen stehen dort unter „Aufgaben“, sind mit der ganzen
+    Familie geteilt (Eltern verwalten sie) und können an einer Aufgabe hängen. Das Familien-Plugin **behält eine Kopie**
+    und zeigt sie weiter – App, Portal (Hinweis „aus Notizen & Aufgaben“), Wandtablet, Karten im Chat, Essensplan
+    („auf die Einkaufsliste“), der Dienst `list_add` des Messengers. Eine Änderung hier geht sofort hinüber
+    (`shopping_put`), eine Änderung dort kommt binnen Sekunden zurück (`shopping_changed` → `shopping_list`, spätestens
+    nach 5 Minuten). Ändern beide Seiten denselben Punkt, bevor sie sich treffen, gilt die Änderung aus dem
+    Familien-Plugin.
+  - **„Ich gehe einkaufen“ / „Kannst du einkaufen gehen?“** bleiben hier (Meldungen, Chat-Karten, „Übernehmen“ /
+    „Heute nicht“) – auch wenn sie in „Notizen & Aufgaben“ gedrückt werden (Dienst `shopping_action`).
+  - **Rückweg:** Ist „Notizen & Aufgaben“ aus oder entfernt, arbeitet das Familien-Plugin ohne Zutun mit seiner Kopie
+    weiter (`home: 'familie'`); kommt es zurück, wird nachgezogen. Kennt ein neu installiertes „Notizen & Aufgaben“ die
+    Familie nicht mehr, gehören die Listen wieder dem Familien-Plugin, und der Knopf ist wieder da. **Zurückholen** auf
+    derselben Karte macht das mit Absicht; die Listen bleiben dort als gewöhnliche Listen stehen.
+  - **Nur Familie installiert, oder kein Umzug:** alles wie bisher – es wird kein Dienst gerufen.
+- **API:** `GET me` → `features: ['shoppingHome']`; `GET shopping` und `GET overview` (`shopping.home`) tragen
+  `home { home: 'familie' | 'notizen', since }`. Eltern: `GET shopping/move` (Vorschau `{ lists, items, open, home,
+  hub { available }, moved, canMove, canBack }`), `POST shopping/move {}` (umziehen) bzw. `{ back: true }`.
+  Administrator: `GET admin/shopping`, `POST admin/shopping/move`. Dienste `shopping_changed`, `shopping_action`
+  (nur für „Notizen & Aufgaben“).
+- Als Quelle von „Notizen & Aufgaben“ meldet das Familien-Plugin umgezogene Einkaufslisten nicht mehr als eigene
+  Einträge (sie stehen dort als Listen).
+- Tests: `test/shopmove.test.js` – beide Plugins gegeneinander (echtes „Notizen & Aufgaben“ im Test-Host).
+
 ## 1.20.0
 
 - **Regel-Aktion „Internet pausieren“ / „Internet fortsetzen“** (ab GateControl 1.259.0): Im Regel-Editor (Portal und

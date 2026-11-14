@@ -91,7 +91,7 @@ test('since: changes including tombstones; deleted lists take their items; tombs
   const first = await as(TIM)('GET', '/shopping');
   const since = first.json.serverTime;
   clock.add(5 * MIN + 400);
-  assert.deepEqual((await as(TIM)('GET', '/shopping', null, { since: '2026-10-14T08:04:00Z' })).json, { ok: true, lists: [], items: [], serverTime: '2026-10-14T08:05:00Z' }, 'nothing changed');
+  assert.deepEqual((await as(TIM)('GET', '/shopping', null, { since: '2026-10-14T08:04:00Z' })).json, { ok: true, lists: [], items: [], serverTime: '2026-10-14T08:05:00Z', home: { home: 'familie', since: null } }, 'nothing changed');
   await as(MARC)('POST', '/shopping/ops', { ops: [{ op: 'item_check', id: I(2), checked: true }, { op: 'clear_checked', listId: L1 }, { op: 'list_delete', id: L2 }] });
   const d = await as(TIM)('GET', '/shopping', null, { since: '2026-10-14T08:05:00Z' });
   assert.deepEqual(d.json.lists.map((l) => [l.id, l.deleted]), [[L2, true]]);

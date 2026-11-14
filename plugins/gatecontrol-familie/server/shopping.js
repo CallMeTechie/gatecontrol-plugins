@@ -189,6 +189,7 @@ async function applyOps(gc, body, user, now, opts) {
   const ops = body && body.ops;
   if (!Array.isArray(ops) || ops.length > MAX_OPS) throw fail('invalid');
   let applied = 0;
+  let touched = false;
   const rejected = [];
   for (let i = 0; i < ops.length; i++) {
     const op = ops[i];
@@ -198,12 +199,24 @@ async function applyOps(gc, body, user, now, opts) {
     try {
       await fn(gc, op, user, now);
       applied++;
+      touched = true;
     } catch (e) {
       if (!(e instanceof OpError)) throw e;
       rejected.push({ index: i, code: e.code });
     }
   }
+  if (touched) await changed(gc, now, user && user.id);
   return { applied, rejected, serverTime: iso(now) };
+}
+
+/**
+ * 1.21.0: the rows written at `now` are to go to „Notizen & Aufgaben“ once the lists live there (server/shopsync.js):
+ * counted (a change made while a push runs is not lost), with the person who made it (the one the hub acts for).
+ */
+async function changed(gc, now, userId) {
+  const by = Number.isSafeInteger(userId) ? userId : null;
+  await store.run(gc, 'UPDATE shop_lists SET dirty = dirty + 1, by_user = COALESCE(?, by_user) WHERE updated_at = ?', [by, now]);
+  await store.run(gc, 'UPDATE shop_items SET dirty = dirty + 1, by_user = COALESCE(?, by_user) WHERE updated_at = ?', [by, now]);
 }
 
 /** POST shopping/lists/<id>/going (inside a transaction; the push goes to r.pushes) */
@@ -219,6 +232,9 @@ async function going(gc, r, listId) {
   const lang = r.cfg.lang;
   // the person asked goes: the request is taken
   if (l.assignee_id === r.me.userId && l.assign_state !== 'taken') await store.run(gc, "UPDATE shop_lists SET assign_state = 'taken', updated_at = ? WHERE id = ?", [r.now, listId]);
+  // 1.21.0: with the lists in „Notizen & Aufgaben“ — who is on the way is shown there as well (server/shopsync.js)
+  else if (await require('./shopsync').inHub(gc)) await store.run(gc, 'UPDATE shop_lists SET updated_at = ? WHERE id = ?', [r.now, listId]);
+  await changed(gc, r.now, null);
   // 1.9.0: a card in the family chat (setting shopping_chat), after the commit
   if (r.cfg.shoppingChat === 'family' && Array.isArray(r.after)) {
     const card = {
@@ -297,6 +313,7 @@ async function assign(gc, r, listId) {
   if (b.userId === undefined) throw fail('invalid', { field: 'userId' });
   if (b.userId === null) {
     await store.run(gc, 'UPDATE shop_lists SET assignee_id = NULL, assigned_by = NULL, assigned_at = NULL, due_at = NULL, assign_state = NULL, assign_notify = NULL, updated_at = ? WHERE id = ?', [r.now, listId]);
+    await changed(gc, r.now, null);
     return { list: listView(await getList(gc, listId)), notified: null };
   }
   const userId = posInt(b.userId);
@@ -310,6 +327,7 @@ async function assign(gc, r, listId) {
   if (!SHOPPING_NOTIFY.includes(mode)) throw fail('invalid', { field: 'notify' });
   await store.run(gc, `UPDATE shop_lists SET assignee_id = ?, assigned_by = ?, assigned_at = ?, due_at = ?, assign_state = 'open', assign_notify = ?, updated_at = ? WHERE id = ?`,
     [userId, r.me.userId, r.now, dueAt, mode, r.now, listId]);
+  await changed(gc, r.now, null);
   const open = (await store.one(gc, 'SELECT COUNT(*) AS n FROM shop_items WHERE list_id = ? AND deleted = 0 AND checked = 0', [listId])).n;
   const row = await getList(gc, listId);
   if (userId !== r.me.userId && Array.isArray(r.after)) r.after.push(async () => ({ notified: await ask(gc, r, row, userId, dueAt, mode, open) }));
@@ -330,6 +348,7 @@ async function answer(gc, fam, cfg, now, listId, userId, take, pushes) {
   const l = await getList(gc, listId);
   if (!l || l.deleted || l.assignee_id !== userId || l.assign_state !== 'open') return null;
   await store.run(gc, 'UPDATE shop_lists SET assign_state = ?, updated_at = ? WHERE id = ?', [take ? 'taken' : 'declined', now, listId]);
+  await changed(gc, now, null);
   const me = fam.byId.get(userId);
   if (l.assigned_by && l.assigned_by !== userId && fam.byId.has(l.assigned_by)) {
     pushes.push({

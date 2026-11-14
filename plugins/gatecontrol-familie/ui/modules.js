@@ -183,7 +183,52 @@
     }).catch(function (e) { A.warn(e); renderMessenger(); });
   });
 
+  // ── the shopping lists in „Notizen & Aufgaben“ (1.21.0) ─────────────────────────────────
+  var move = null;
+  function countText(s) {
+    return T(s.lists === 1 ? 'shopmove.lists_1' : 'shopmove.lists_n', { n: s.lists }) + ' ' + T(s.items === 1 ? 'shopmove.items_1' : 'shopmove.items_n', { n: s.items });
+  }
+  function renderMove() {
+    var s = move;
+    var st = $('#fa-move-status');
+    var go = $('#fa-move-go');
+    var back = $('#fa-move-back');
+    go.hidden = true; back.hidden = true; $('#fa-move-what').hidden = true;
+    if (!s) { st.textContent = ''; return; }
+    var text;
+    if (!data.modules.shopping) text = T('shopmove.module_off');
+    else if (s.moved && s.home.home === 'notizen') text = T('shopmove.moved', { when: A.when(s.home.since), count: countText(s) });
+    else if (s.moved) text = T('shopmove.moved_away');
+    else if (!s.hub.available) text = T('shopmove.no_hub');
+    else text = T('shopmove.preview', { count: countText(s), open: s.open });
+    st.textContent = text;
+    st.className = 'fa-hint' + (s.moved && s.home.home === 'notizen' ? ' fa-ok' : '');
+    go.hidden = !(s.canMove && data.modules.shopping);
+    back.hidden = !s.canBack;
+    $('#fa-move-what').hidden = go.hidden;
+  }
+  function loadMove() {
+    return A.api('GET', 'admin/shopping').then(function (r) { move = r.shopping; renderMove(); }).catch(function () { move = null; renderMove(); });
+  }
+  $('#fa-move-go').addEventListener('click', function () {
+    A.confirm(T('shopmove.confirm', { count: countText(move) }), T('shopmove.go')).then(function (yes) {
+      if (!yes) return;
+      $('#fa-move-go').disabled = true;
+      A.api('POST', 'admin/shopping/move', {}).then(function (r) {
+        move = r.shopping;
+        A.toast(T('shopmove.done', { count: countText({ lists: r.moved.lists, items: r.moved.items }) }));
+      }).catch(A.warn).then(function () { $('#fa-move-go').disabled = false; renderMove(); });
+    });
+  });
+  $('#fa-move-back').addEventListener('click', function () {
+    A.confirm(T('shopmove.back_confirm'), T('shopmove.back')).then(function (yes) {
+      if (!yes) return;
+      A.api('POST', 'admin/shopping/move', { back: true }).then(function (r) { move = r.shopping; A.toast(T('shopmove.back_done')); }).catch(A.warn).then(renderMove);
+    });
+  });
+
   function render() {
+    renderMove();
     renderGroups();
     renderWall();
     renderMessenger();
@@ -195,5 +240,6 @@
     data = r;
     renderPreviewSelect();
     render();
+    loadMove();
   }).catch(A.warn);
 }());

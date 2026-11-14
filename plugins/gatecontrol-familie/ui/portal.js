@@ -60,6 +60,8 @@
   function loadShopping() {
     return A.api('GET', 'shopping').then(function (r) {
       shop.lists = r.lists; shop.items = r.items;
+      // 1.21.0: the lists moved to „Notizen & Aufgaben“ — said under the title
+      $('#fa-shop-home').hidden = !(r.home && r.home.home === 'notizen');
       if (!shop.lists.some(function (l) { return l.id === shop.listId; })) shop.listId = shop.lists.length ? shop.lists[0].id : null;
       renderShopping();
     }).catch(A.warn);

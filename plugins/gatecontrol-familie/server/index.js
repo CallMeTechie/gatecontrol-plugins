@@ -108,6 +108,7 @@ const homewifi = require('./homewifi');
 const internet = require('./internet');
 const notizen = require('./notizen');
 const boardsync = require('./boardsync');
+const shopsync = require('./shopsync');
 const texts = require('./texts.json');
 const { STATUS, isKnown } = require('./util');
 
@@ -126,6 +127,11 @@ function errorResponse(e, lang) {
 }
 
 const state = { ticking: false, lastPurge: 0 };
+/** The family and the settings as they are now (for runs that start later, server/shopsync.js). */
+const famNow = (gc) => async () => {
+  const cfg = await config.load(gc);
+  return { cfg, fam: await members.load(gc, tz.localDate(Date.now(), cfg.tz)) };
+};
 // 1.19.0: the parts of the API whose changes are items of „Notizen & Aufgaben“ (server/notizen.js)
 const TODO_PARTS = ['tasks', 'shopping', 'rules'];
 const PURGE_EVERY_MS = 3600000;
@@ -212,6 +218,8 @@ async function background(gc, now) {
   await messenger.tick(gc, fam, cfg, now);
   // 1.19.0: „Notizen & Aufgaben“ — Pinnwand and Packlisten in step with the hub, then the to-dos (both never throw)
   await boardsync.sync(gc, fam, cfg, now);
+  // 1.21.0: the shopping lists, once they moved there (never throws; without the move nothing runs)
+  await shopsync.sync(gc, fam, cfg, now);
   await notizen.source.tick(gc, now);
 }
 
@@ -222,8 +230,11 @@ module.exports = {
     groups.reset();
     school.reset();
     boardsync.reset();
+    shopsync.reset();
     notizen.source.reset();
     state.lastPurge = 0;
+    // 1.21.0: have the shopping lists moved (read once; asks nobody)?
+    await shopsync.load(gc);
     // 1.19.0: is „Notizen & Aufgaben“ there (asks nobody)?
     await notizen.source.available(gc);
     // 1.17.0: GateControl's presence over the home network (≥ 1.230.0 with permissions.homePresence; never fails the start)
@@ -257,12 +268,14 @@ module.exports = {
         if (!req.user || req.user.portal || req.user.app || req.user.role !== 'admin') return errorResponse({ code: 'forbidden' }, lang);
         const out = { status: 200, json: { ok: true, ...(await admin.route(req, gc, seg, cfg, now)) } };
         // 1.19.0: members or modules changed — „Notizen & Aufgaben“ gets the difference in a few seconds
-        if (String(req.method || 'GET').toUpperCase() !== 'GET') notizen.source.soon(gc);
+        if (String(req.method || 'GET').toUpperCase() !== 'GET') { notizen.source.soon(gc); shopsync.soon(gc, famNow(gc)); }
         return out;
       }
       const out = await api.route(req, gc, seg, cfg, now);
       // 1.19.0: a task, a shopping list or a reminder changed — „Notizen & Aufgaben“ gets the difference in a few seconds
       if (String(req.method || 'GET').toUpperCase() !== 'GET' && TODO_PARTS.includes(seg[0])) notizen.source.soon(gc);
+      // 1.21.0: a shopping list changed (also from the meal plan) — to „Notizen & Aufgaben“ in a second, once the lists live there
+      if (String(req.method || 'GET').toUpperCase() !== 'GET') shopsync.soon(gc, famNow(gc));
       return out;
     } catch (e) {
       if (!isKnown(e)) gc.log.warn('request failed', req && req.method, String((req && req.path) || '').split('/').slice(0, 3).join('/'), (e && (e.code || e.message)) || 'error');
@@ -306,13 +319,19 @@ module.exports = {
         return { cfg: c, fam: await members.load(gc, tz.localDate(Date.now(), c.tz)) };
       });
     }
+    // 1.21.0: the shopping lists in the hub — it changed something, or „Ich gehe einkaufen“ / „Kannst du …?“ pressed there
+    if (call && call.name === 'shopping_changed') return shopsync.changed(gc, call, famNow(gc));
+    if (call && call.name === 'shopping_action') return shopsync.action(gc, call, famNow(gc), Date.now());
     const cfg = await config.load(gc);
-    return services.handle(gc, cfg, call);
+    const out = await services.handle(gc, cfg, call);
+    shopsync.soon(gc, famNow(gc));
+    return out;
   },
 
   async stop() {
     notizen.source.stop();
     boardsync.stop();
+    shopsync.stop();
   },
 
   /**
@@ -338,7 +357,9 @@ module.exports = {
   },
 
   async runQuickAction(args, gc) {
-    return quick.run(gc, await config.load(gc), args, Date.now());
+    const out = await quick.run(gc, await config.load(gc), args, Date.now());
+    shopsync.soon(gc, famNow(gc));
+    return out;
   },
 
   /**

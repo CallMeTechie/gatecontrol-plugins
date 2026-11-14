@@ -1,4 +1,4 @@
-<!-- version: 1.20.0 -->
+<!-- version: 1.21.0 -->
 # Familie
 
 ## Was das Plugin kann
@@ -73,6 +73,14 @@ Sie braucht GateControl 1.231.0 und ein Gateway mit DNS-Filter, und sie erschein
 
 **Eine Regel pausiert das Internet nicht („nicht ausgeführt“).**
 Der Schritt braucht GateControl 1.259.0 oder neuer und ein Gateway mit DNS-Filter. „Nicht mehr erlaubt“ heißt: Wer die Regel zuletzt gespeichert hat, ist kein Elternteil der Familie mehr – ein Elternteil öffnet die Regel und speichert sie neu. „Kein minderjähriges Kind der Familie mehr“: den Schritt entfernen.
+
+## Neu in 1.21.0
+
+- **Einkaufslisten in „Notizen & Aufgaben“:** Ist das Plugin „Notizen & Aufgaben“ (ab 1.4.0) installiert, können die Einkaufslisten dorthin umziehen. Unter **Einstellungen › Plugins › Familie › Funktionen** zeigt die Karte „Einkaufslisten in ‚Notizen & Aufgaben‘“, was umzieht (z. B. „2 Einkaufslisten mit 14 Punkten“); **Umziehen** startet den Umzug. Von selbst zieht nichts um.
+- **Was sich ändert:** Die Listen stehen danach unter „Aufgaben“, bleiben mit der ganzen Familie geteilt und können an einer Aufgabe hängen („bei Lidl einkaufen“). Sind alle Punkte abgehakt, ist die Aufgabe erledigt.
+- **Was bleibt:** Die Karte „Einkaufsliste“ im Familien-Tab, das Wand-Tablet und die Karten im Chat bleiben und zeigen die Listen „aus Notizen & Aufgaben“. „Ich gehe einkaufen“ und „Kannst du einkaufen gehen?“ funktionieren wie bisher.
+- **Sicher:** Das Familien-Plugin behält eine Kopie. Wird „Notizen & Aufgaben“ abgeschaltet oder entfernt, arbeitet es damit weiter. Mit **Zurückholen** gehören die Listen wieder dem Familien-Plugin. Der Umzug lässt sich wiederholen, ohne dass etwas doppelt entsteht.
+- **Ohne „Notizen & Aufgaben“** ändert sich nichts.
 
 ## Neu in 1.20.0
 
