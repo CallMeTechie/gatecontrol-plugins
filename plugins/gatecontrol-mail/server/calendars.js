@@ -42,6 +42,8 @@ function view(c, accounts) {
     state: local ? 'ok' : c.state, error: c.error_code ? { code: c.error_code, at: c.error_at } : null, syncedAt: c.synced_at || null, version: c.version,
     // since 1.9.0: a calendar of another mailbox the account sees (Microsoft 365, shared with it there) — „Mit mir geteilt“
     sharedBy: c.source === 'graph' && c.owner_email && a && c.owner_email !== String(a.email || '').toLowerCase() ? { email: c.owner_email } : null,
+    // since 1.15.0: 'tasks' — the calendar „Aufgaben“ Notizen & Aufgaben writes into (services.js calendar_tasks); null otherwise
+    role: c.role || null,
   };
 }
 

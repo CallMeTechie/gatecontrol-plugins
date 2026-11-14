@@ -1,5 +1,14 @@
-<!-- version: 1.2.1 -->
+<!-- version: 1.3.0 -->
 # Notes & Tasks
+
+## New in 1.3.0
+
+- **Buttons on the reminder:** The message when a task is due now has **“Done”**, **“In 1 hr”** and **“This evening”** (in the evening “Tomorrow morning” instead). “Done” ticks the task off without opening the app; the other two put the reminder off.
+- **No reminder is lost silently any more:** If the server was off at the time, the message comes up to 24 hours late – saying “Was due at …”. If it is longer ago, the task is under “Left open yesterday” the next morning.
+- **“Left open yesterday”:** What was due yesterday or was in “My Day” and was not ticked off is a card at the top of “My Day” and comes in **one** message in the morning (07:30 unless you change it). For each task: **Done**, **Today** or **Move** (Tomorrow, At the weekend, another date); with several also “All today”.
+- **In the calendar:** With the Mail plugin (1.15.0 or newer) every task with a date and a time is a 30-minute event in the “Tasks” calendar – without an event reminder of its own, so that you do not get two messages. The sign “in the calendar” at the task shows it.
+- **Switches:** Administrators find “Add tasks with a time to the calendar” in the plugin settings; everyone switches the calendar and the morning hint for themselves under “Settings” (gear at the bottom left).
+- **Apps:** The new buttons on the message work with the current GateControl apps right away. The card “Left open yesterday” and the extra backup on the phone come with one of the next app versions; until then “Move” opens the portal.
 
 ## New in 1.2.1
 
@@ -58,6 +67,9 @@ The plugin is new: your own tasks and notes plus everything the other plugins ha
 
 - **Quick add:** type into the field on top and press Enter – or **Ctrl N**. The plugin understands e.g. "tomorrow 9 am call the dentist, important, #health": tomorrow 9:00, a reminder at 9:00, important, list "Health". Below the field it shows what it found. See [Quick entry](#quick-entry).
 - **Ticking off:** the circle in front. A repeating task gets its next one right away (with the same sub-tasks, open again).
+- **Reminder:** At the set time a message comes with **Done**, **In 1 hr** and **This evening** (in the evening “Tomorrow morning”). The evening and the morning time are your times from “Settings”. A task with a date only gets no message of its own – if it stays open, it is under “Left open yesterday” the next morning.
+- **Left open yesterday:** the card at the top of “My Day”. **Done** ticks the task off, **Today** puts it on today (the time stays), **Move** offers Tomorrow, At the weekend and another date. The card stays until every row is decided.
+- **In the calendar:** Tasks with a date and a time are a 30-minute event in the “Tasks” calendar of the Mail plugin, for the person they are assigned to (else the one who made them). Done ones stay as “✓ …”, deleted ones disappear. The “Tasks” calendar is always a GateControl calendar in Mail.
 - **Details:** tap a task – the right side shows sub-tasks, "In My Day", Due, Reminder, Repeat, Assigned, List, Attachments and Note.
 - **Lists and groups:** the **"+"** at "My lists" opens "New list or group". A group is a folder for several lists; "Ungroup" keeps the lists. Groups are just for you.
 - **⋯ at a list:** edit (name, colour, symbol, group, shopping day, morning reminder), **share …**, move to a group, delete. The default list "Tasks" can be renamed, not deleted.
@@ -140,9 +152,12 @@ Fetching straight from the NAS is not possible yet.
 | Language of reminders | German or English |
 | Share lists and notebooks with | Everyone, Family and team, Nobody |
 | Allow vault notebooks | on/off |
+| Add tasks with a time to the calendar | on (default) / off. Needs the Mail plugin 1.15.0 or newer; without Mail nothing happens, once it is added later the open tasks are added. Off: the tasks' events are removed. |
 | From other plugins | Family, Mail, Drive, School, Everyday one by one |
 | Moving over | Microsoft To Do, syncing both ways, DS Note |
 | Largest file, space per person | for pictures and attachments |
+
+Everyone also has their own **“Settings”** (gear at the bottom left): under “Notifications” the switch **In the morning: “Left open yesterday”** with the **time of the morning hint**, under “Calendar” the switch **Add tasks with a time to my “Tasks” calendar** (shown when Mail is installed and the administrator's setting is on).
 
 ## Without a connection (apps)
 

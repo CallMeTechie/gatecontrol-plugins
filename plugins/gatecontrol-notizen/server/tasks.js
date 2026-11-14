@@ -13,6 +13,8 @@ const fts = require('./fts');
 const clientIds = require('./clientids');
 const push = require('./push');
 const pushprefs = require('./pushprefs');
+const duty = require('./duty');
+const calsync = require('./calsync');
 const R = require('../ui/repeat');
 const Q = require('../ui/quickparse');
 const { t } = require('./text');
@@ -78,6 +80,11 @@ function view(ctx, r, extra = {}) {
     important: !!r.important, done: !!r.done_at, doneAt: r.done_at ? iso(ctx, r.done_at) : null,
     due: r.due_date ? { date: r.due_date, time: r.due_time || null } : null, overdue,
     remindAt: r.remind_at ? iso(ctx, r.remind_at) : null, repeat, repeatText: repeat ? R.describe(repeat, ctx.lang) : null,
+    // 1.3.0: the reminder still to come ({ tag, at, atMs, mine: this person gets its push, snoozed }), „Später“ pressed,
+    // a reminder that could not be sent any more, the event in Mail's calendar (calsync.view)
+    reminder: duty.pending(r) ? { tag: duty.tagOf(r), at: iso(ctx, r.remind_at), atMs: r.remind_at, mine: (extra.duty ? extra.duty.get(r.id) : duty.candidate(r)) === ctx.userId, snoozed: !!r.snoozed_at } : null,
+    snoozed: !!r.snoozed_at && duty.pending(r), missedReminder: !!r.missed_at && !r.done_at,
+    calendar: calsync.view(ctx, r),
     assignee: r.assignee_id ? { id: r.assignee_id, name: extra.names ? extra.names.get(r.assignee_id) || null : null } : null,
     myDay: extra.myDay ? extra.myDay.has(r.id) : false,
     progress: extra.progress && extra.progress.get(r.id) ? extra.progress.get(r.id) : null,
@@ -119,7 +126,9 @@ async function extras(gc, ctx, rows) {
     if (!part.length) continue;
     for (const p of await store.all(gc, `SELECT id FROM tasks WHERE id IN (${store.marks(part.length)}) AND assignee_id = ?`, [...part, ctx.userId])) parentMine.add(p.id);
   }
-  return { progress, myDay, attachments, names, roles, parentMine };
+  // whose reminder: only asked for the tasks that have one to come
+  const due = rows.filter(duty.pending);
+  return { progress, myDay, attachments, names, roles, parentMine, duty: due.length ? await duty.of(gc, due) : new Map() };
 }
 
 async function views(gc, ctx, rows) {
@@ -259,6 +268,8 @@ async function create(gc, ctx, b0, opts = {}) {
   const members = await lists.memberIds(gc, listId);
   events.changed(gc, members, 'tasks');
   if (assignee && assignee !== ctx.userId) await notifyAssigned(gc, ctx, assignee, title, id);
+  // 1.3.0: its event in Mail's calendar — at once; a task that comes in by an import waits for the background run
+  if (due.time && !opts.doneAt) await (opts.extId ? calsync.touch(gc, id) : calsync.now(gc, ctx, id));
   const row = await store.one(gc, 'SELECT * FROM tasks WHERE id = ?', [id]);
   return { task: (await views(gc, ctx, [row]))[0], ...(parsed ? { parsed } : {}), ...(cid ? { clientId: cid } : {}) };
 }
@@ -341,7 +352,9 @@ async function update(gc, ctx, id, b) {
     if (l.id !== r.list_id) { lists.writable(l); listId = l.id; put('list_id', l.id); }
   }
   if (next.due !== undefined) { put('due_date', next.due.date); put('due_time', next.due.time); put('due_at', dueAt(ctx, next.due.date, next.due.time)); }
-  if (next.remindAt !== undefined) { put('remind_at', next.remindAt); put('reminded_at', null); }
+  if (next.remindAt !== undefined) { put('remind_at', next.remindAt); put('reminded_at', null); if (r.snoozed_at) put('snoozed_at', null); }
+  // a new date or reminder decides a task of „Gestern offen geblieben“ whose reminder got lost
+  if ((next.due !== undefined || next.remindAt !== undefined) && r.missed_at) put('missed_at', null);
   if (next.repeat !== undefined) put('repeat_json', next.repeat === null ? null : JSON.stringify(next.repeat));
   if (next.assigneeId !== undefined) put('assignee_id', next.assigneeId === null ? null : await assigneeArg(gc, listId, next.assigneeId));
   else if (!sub && listId !== r.list_id && r.assignee_id && !(await store.one(gc, 'SELECT 1 AS x FROM list_members WHERE list_id = ? AND user_id = ?', [listId, r.assignee_id]))) put('assignee_id', null);
@@ -361,6 +374,7 @@ async function update(gc, ctx, id, b) {
   const after = listId !== r.list_id ? await lists.memberIds(gc, listId) : before;
   events.changed(gc, [...new Set([...before, ...after])], 'tasks');
   if (next.assigneeId && next.assigneeId !== ctx.userId) await notifyAssigned(gc, ctx, next.assigneeId, title, r.id);
+  if (!sub && (next.title !== undefined || next.due !== undefined || set.some((c) => c.startsWith('assignee_id') || c.startsWith('list_id')))) await calsync.now(gc, ctx, r.id);
   return get(gc, ctx, r.id);
 }
 
@@ -378,14 +392,17 @@ async function complete(gc, ctx, id, b, opts = {}) {
   const twoWay = await linkedTwoWay(gc, r.list_id);
   let nextId = null;
   await store.tx(gc, async () => {
-    await store.run(gc, 'UPDATE tasks SET done_at = ?, done_by = ?, updated_at = ?, ext_dirty = ? WHERE id = ?', [done ? ctx.now : null, done ? ctx.userId : null, ctx.now, twoWay ? 1 : r.ext_dirty, r.id]);
+    await store.run(gc, 'UPDATE tasks SET done_at = ?, done_by = ?, updated_at = ?, ext_dirty = ?, missed_at = NULL WHERE id = ?', [done ? ctx.now : null, done ? ctx.userId : null, ctx.now, twoWay ? 1 : r.ext_dirty, r.id]);
     if (r.parent_id && twoWay) await store.run(gc, 'UPDATE tasks SET ext_dirty = 1 WHERE id = ? AND ext_id IS NOT NULL', [r.parent_id]);
     const rule = done && !r.parent_id ? parse(r.repeat_json, null) : null;
     if (rule) {
       const nextDate = R.next(rule, { due: r.due_date, done: ctx.today });
       if (nextDate) {
         const shift = r.due_date ? tz.diffDays(r.due_date, nextDate) : 0;
-        const remind = r.remind_at ? r.remind_at + shift * 86400000 : null;
+        // 1.3.0: by days on the wall clock (09:00 stays 09:00 over a change of summer time); a snoozed reminder
+        // goes back to the task's own time
+        const base = r.remind_at && r.snoozed_at && r.due_at && r.due_time ? r.due_at : r.remind_at;
+        const remind = base ? duty.shiftDays(base, shift, ctx.tz) : null;
         const ins = await store.run(gc, `INSERT INTO tasks (list_id, title, note, important, due_date, due_time, due_at, remind_at, repeat_json, assignee_id, position,
           ext_dirty, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [r.list_id, r.title, r.note, r.important, nextDate, r.due_time, dueAt(ctx, nextDate, r.due_time), remind, r.repeat_json, r.assignee_id, r.position,
@@ -400,6 +417,7 @@ async function complete(gc, ctx, id, b, opts = {}) {
     }
   });
   events.changed(gc, await lists.memberIds(gc, r.list_id), 'tasks');
+  if (!r.parent_id) await calsync.now(gc, ctx, [r.id, nextId]);
   const out = await get(gc, ctx, r.id, opts);
   if (nextId) out.next = (await get(gc, ctx, nextId, opts)).task;
   return out;
@@ -421,12 +439,16 @@ async function remove(gc, ctx, id) {
   if (r.my_role === 'read') throw readOnly();
   const twoWay = await linkedTwoWay(gc, r.list_id);
   await store.tx(gc, async () => {
-    await store.run(gc, 'UPDATE tasks SET deleted_at = ?, updated_at = ?, ext_dirty = ? WHERE id = ? OR parent_id = ?', [ctx.now, ctx.now, twoWay && r.ext_id && !r.parent_id ? 1 : 0, r.id, r.id]);
+    // two statements (1.3.0): „id = ? OR parent_id = ?“ read every task — the sub tasks have an index of their own
+    const dirty = twoWay && r.ext_id && !r.parent_id ? 1 : 0;
+    await store.run(gc, 'UPDATE tasks SET deleted_at = ?, updated_at = ?, ext_dirty = ? WHERE id = ?', [ctx.now, ctx.now, dirty, r.id]);
+    await store.run(gc, 'UPDATE tasks INDEXED BY idx_tasks_parent SET deleted_at = ?, updated_at = ?, ext_dirty = ? WHERE parent_id = ? AND deleted_at IS NULL', [ctx.now, ctx.now, dirty, r.id]);
     if (r.parent_id && twoWay) await store.run(gc, 'UPDATE tasks SET ext_dirty = 1 WHERE id = ? AND ext_id IS NOT NULL', [r.parent_id]);
     await store.run(gc, 'DELETE FROM my_day WHERE task_id = ?', [r.id]);
     await fts.dropTask(gc, r.id);
   });
   events.changed(gc, await lists.memberIds(gc, r.list_id), 'tasks');
+  if (!r.parent_id && r.cal_event_id) await calsync.now(gc, ctx, r.id);
   return { ok: true };
 }
 
@@ -436,4 +458,4 @@ async function carrying(gc, ctx, plugin, srcId) {
     WHERE t.src_plugin = ? AND t.src_id = ? AND t.deleted_at IS NULL AND t.parent_id IS NULL LIMIT 1`, [ctx.userId, plugin, srcId]);
 }
 
-module.exports = { TITLE_MAX, NOTE_MAX, view, views, extras, access, mayComplete, create, get, update, complete, remove, dueAt, iso, carrying, fromText };
+module.exports = { TITLE_MAX, NOTE_MAX, view, views, extras, access, mayComplete, readOnly, linkedTwoWay, create, get, update, complete, remove, dueAt, iso, carrying, fromText };

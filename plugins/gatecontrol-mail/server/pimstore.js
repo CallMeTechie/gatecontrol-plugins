@@ -242,6 +242,9 @@ async function dropEvent(gc, ev) {
   await store.run(gc, 'UPDATE invitations SET event_id = NULL WHERE event_id = ?', [ev.id]);
   // 1.9.0: a booking of a resource does not outlive its event
   await store.run(gc, "UPDATE bookings SET state = 'cancelled', updated_at = ? WHERE event_id = ? AND state IN ('pending', 'confirmed')", [Date.now(), ev.id]);
+  // 1.15.0: the key a plugin made it with goes too (services.js) — SQLite gives the number of a deleted event to the next
+  // one, and a key left behind would then name an event the plugin never made
+  await store.run(gc, 'DELETE FROM service_keys WHERE event_id = ?', [ev.id]);
   await store.run(gc, 'DELETE FROM events WHERE id = ?', [ev.id]);
 }
 

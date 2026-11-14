@@ -268,6 +268,9 @@ test('pushes carry kind and the ids to open (and the keys of 1.0)', async () => 
     assert.deepEqual(data((n) => n.topic === 'shared' && n.collapseKey === 'list:' + l.list.id), [{ kind: 'shared_list', listId: l.list.id, area: 'work', list: l.list.id }]);
     assert.deepEqual(data((n) => n.topic === 'shared' && n.collapseKey === 'task:' + t.task.id), [{ kind: 'assigned', taskId: t.task.id, listId: l.list.id, area: 'work', task: t.task.id }]);
     assert.deepEqual(data((n) => n.topic === 'shared' && n.collapseKey === 'notebook:' + nb.notebook.id), [{ kind: 'shared_notebook', notebookId: nb.notebook.id, area: 'work', notebook: nb.notebook.id }]);
-    assert.deepEqual(data((n) => n.topic === 'reminders'), [{ kind: 'reminder', taskId: t.task.id, listId: l.list.id, area: 'work', task: t.task.id }]);
+    // 1.3.0: the reminder also carries its tag, when it was due and whether it comes late or after „Später“
+    const at = Date.parse('2026-11-08T13:00:00Z');
+    assert.deepEqual(data((n) => n.topic === 'reminders'), [{ kind: 'reminder', taskId: t.task.id, listId: l.list.id, area: 'work', task: t.task.id,
+      tag: `task:${t.task.id}:${at}`, remindAtMs: at, dueAt: null, late: false, snoozed: false }]);
   } finally { await h.close(); clock.set(T0); }
 });

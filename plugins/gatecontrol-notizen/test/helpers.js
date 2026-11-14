@@ -75,7 +75,15 @@ async function withHost(opts = {}) {
   };
   const src = (plugin) => sources.find((s) => s.plugin === plugin);
   const push = (plugin, payload) => host.callService('todo_changed', { caller: plugin, user: null, payload: { v: 1, ...payload } });
-  return { host, call, ok, src, push, sources, close: () => host.close() };
+  // a part of the background run or a button that failed is only logged by the plugin — a test must not pass over it
+  const close = async () => {
+    const bad = host.logs.filter((l) => /^(?:background part failed|notify action failed|calendar sync failed|calendar marks failed)\b/.test(String(l.message))).map((l) => l.message);
+    await host.close();
+    if (bad.length && !opts.failuresAllowed) throw new Error('logged failures: ' + bad.join(' | '));
+  };
+  /** A button of a push pressed by `user` (GateControl: once per push and button — a test presses as often as it says). */
+  const press = (user, n, action) => host.notifyAction({ userId: user.id, notificationId: n.id == null ? 1 : n.id, action, data: Object.fromEntries(Object.entries(n.data || {}).filter(([k]) => !['route', 'actions', 'facts'].includes(k))) });
+  return { host, call, ok, src, push, press, sources, close };
 }
 
 module.exports = { withHost, fakeSource, item, ANNA, MARC, LENA, BOB, USERS, T0, PLUGINS, clock };

@@ -4,7 +4,7 @@
     "de": "Mail",
     "en": "Mail"
   },
-  "version": "1.14.0",
+  "version": "1.15.0",
   "publisher": "CallMeTechie",
   "description": {
     "de": "Alle E-Mail-Konten an einem Ort – GMX, Web.de, T-Online, Gmail, Outlook und Microsoft 365 oder jedes IMAP-Konto: ein gemeinsamer Posteingang mit Relevant und Sonstige, Push, Schutz vor Zählpixeln, Anhänge in Drive und eine KI, die zusammenfasst, Aufgaben findet und Antworten vorschlägt. Dazu Kalender und Kontakte: eigene Kalender und die der Konten (Microsoft 365, CalDAV), Einladungen, Erinnerungen, Familie und Alltag eingeblendet, ein Adressbuch mit Gruppen und Dubletten-Abgleich. Außerdem Frei/Gebucht, geteilte Kalender und buchbare Räume, Fahrzeuge und Geräte.",
@@ -110,7 +110,28 @@
           "de": "Termin in einen Kalender von Mail eintragen",
           "en": "Add an event to a calendar in Mail"
         },
-        "maxPerHour": 600
+        "maxPerHour": 3600
+      },
+      "calendar_tasks": {
+        "label": {
+          "de": "Kalender „Aufgaben“ einer Person finden oder anlegen",
+          "en": "Find or create a person's “Tasks” calendar"
+        },
+        "maxPerHour": 3600
+      },
+      "calendar_update": {
+        "label": {
+          "de": "Eingetragenen Termin ändern",
+          "en": "Change an event it added"
+        },
+        "maxPerHour": 3600
+      },
+      "calendar_delete": {
+        "label": {
+          "de": "Eingetragenen Termin entfernen",
+          "en": "Remove an event it added"
+        },
+        "maxPerHour": 3600
       },
       "tofile_count": {
         "label": {

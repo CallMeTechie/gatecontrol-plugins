@@ -28,6 +28,7 @@ const lists = require('./lists');
 const tasks = require('./tasks');
 const attachments = require('./attachments');
 const events = require('./events');
+const calsync = require('./calsync');
 const R = require('../ui/repeat');
 const { fail, posInt, parse, line } = require('./util');
 
@@ -362,7 +363,12 @@ async function syncLink(gc, base, link) {
       for (const g of d.value || []) {
         const have = await store.one(gc, 'SELECT * FROM tasks INDEXED BY idx_tasks_ext WHERE list_id = ? AND ext_id = ?', [link.list_id, g.id]);
         if (g['@removed']) {
-          if (have && !have.deleted_at && !have.ext_dirty) { await store.run(gc, 'UPDATE tasks SET deleted_at = ?, updated_at = ? WHERE id = ? OR parent_id = ?', [ctx.now, ctx.now, have.id, have.id]); changed = true; }
+          if (have && !have.deleted_at && !have.ext_dirty) {
+            await store.run(gc, 'UPDATE tasks SET deleted_at = ?, updated_at = ? WHERE id = ? OR parent_id = ?', [ctx.now, ctx.now, have.id, have.id]);
+            // 1.3.0: its event in Mail's calendar goes with the next background run
+            if (have.cal_event_id) await calsync.touch(gc, have.id);
+            changed = true;
+          }
           continue;
         }
         if (!g.title && !g.status) continue;
@@ -375,6 +381,7 @@ async function syncLink(gc, base, link) {
           repeat_json = ?, done_at = ?, ext_at = ?, ext_dirty = 0, updated_at = ? WHERE id = ?`,
         [f.title, f.note, f.important ? 1 : 0, f.due ? f.due.date : null, f.due ? tasks.dueAt(ctx, f.due.date, null) : null, f.remindAt, f.repeat ? JSON.stringify(R.normalize(f.repeat)) : null,
           f.done ? (have.done_at || f.doneAt) : null, f.modifiedAt, ctx.now, have.id]);
+        if (have.cal_event_id) await calsync.touch(gc, have.id);
         changed = true;
       }
       if (d['@odata.deltaLink']) { deltaLink = d['@odata.deltaLink']; url = null; } else url = d['@odata.nextLink'] || null;

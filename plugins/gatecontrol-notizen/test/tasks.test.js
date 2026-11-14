@@ -118,20 +118,21 @@ test('sharing a list: members see and change its tasks, assigning pushes, leavin
   } finally { await h.close(); }
 });
 
-test('reminders: a push at the time to the person (assignee first), once; a late one is dropped', async () => {
+test('reminders: a push at the time to the person (assignee first), once; one the server missed comes late and says so (1.3.0)', async () => {
   const h = await withHost();
   try {
     await h.ok(ANNA, 'POST', 'tasks', { title: 'Zahnarzt anrufen', due: { date: '2026-11-08', time: '14:00' }, remindAt: { date: '2026-11-08', time: '14:00' }, important: true });
     await h.ok(ANNA, 'POST', 'tasks', { title: 'Uralt', remindAt: '2026-11-08T01:00:00+01:00' });
     await h.host.tick();
-    assert.equal(h.host.notifications.filter((n) => n.topic === 'reminders').length, 0, 'too late (9 h) and not yet');
+    // 9 hours late: before 1.3.0 it was dropped without a word
+    let r = h.host.notifications.filter((n) => n.topic === 'reminders');
+    assert.deepEqual(r.map((n) => [n.title, n.body, n.data.notizen.late]), [['Uralt', 'War fällig um 01:00 · Aufgaben', true]]);
     clock.set(Date.parse('2026-11-08T13:00:30Z'));
     await h.host.tick();
     await h.host.tick();
-    const r = h.host.notifications.filter((n) => n.topic === 'reminders');
-    assert.equal(r.length, 1);
-    assert.deepEqual([r[0].title, r[0].users, r[0].priority], ['Zahnarzt anrufen', [ANNA.id], 'high']);
-    assert.match(r[0].body, /fällig heute 14:00/);
+    r = h.host.notifications.filter((n) => n.topic === 'reminders');
+    assert.equal(r.length, 2);
+    assert.deepEqual([r[1].title, r[1].users, r[1].priority, r[1].body], ['Zahnarzt anrufen', [ANNA.id], 'high', 'Fällig heute 14:00 · Aufgaben']);
   } finally { await h.close(); clock.set(T0); }
 });
 

@@ -9,6 +9,7 @@ const events = require('./events');
 const clientIds = require('./clientids');
 const push = require('./push');
 const pushprefs = require('./pushprefs');
+const calsync = require('./calsync');
 const { t } = require('./text');
 const tz = require('./tz');
 const { fail, posInt, line, area: areaOf, color: colorOf, isTime, same, stale } = require('./util');
@@ -246,6 +247,7 @@ async function remove(gc, ctx, id, q = {}) {
   if (l.my_role !== 'owner') {
     await store.run(gc, 'DELETE FROM list_members WHERE user_id = ? AND list_id = ?', [ctx.userId, l.id]);
     await store.run(gc, 'UPDATE tasks SET assignee_id = NULL WHERE list_id = ? AND assignee_id = ?', [l.id, ctx.userId]);
+    await calsync.touchList(gc, l.id);
     events.changed(gc, members, 'lists');
     return { ok: true, left: true };
   }
@@ -275,6 +277,8 @@ async function remove(gc, ctx, id, q = {}) {
     return { removed: Number((gone && gone.changes) || 0) };
   });
   const removed = await store.one(gc, 'SELECT COUNT(*) AS n FROM tasks WHERE list_id = ? AND deleted_at = ? AND parent_id IS NULL', [l.id, ctx.now]);
+  // 1.3.0: their events in Mail's calendar follow (server/calsync.js, the next background run)
+  await calsync.touchList(gc, [l.id, target]);
   events.changed(gc, members, 'lists');
   if (target) events.changed(gc, [...targetMembers], 'tasks');
   const td = target ? await store.one(gc, 'SELECT id, name FROM lists WHERE id = ?', [target]) : null;
@@ -310,6 +314,7 @@ async function restore(gc, ctx, id) {
     }
   });
   const ms = await memberIds(gc, l.id);
+  await calsync.touchList(gc, [l.id, target]);
   events.changed(gc, ms, 'lists');
   events.changed(gc, ms, 'tasks');
   return { list: await view(gc, ctx, await access(gc, ctx.userId, l.id)) };
@@ -351,6 +356,7 @@ async function setMembers(gc, ctx, id, b) {
       await store.run(gc, 'UPDATE tasks SET assignee_id = NULL WHERE list_id = ? AND assignee_id = ?', [l.id, u]);
     }
   });
+  if (gone.length) await calsync.touchList(gc, l.id);
   if (added.length) {
     await pushprefs.send(gc, added, 'shared', { topic: 'shared', title: t(ctx.notifyLang, 'n.shared_title', { name: ctx.userName || '' }), body: l.name,
       collapseKey: 'list:' + l.id, data: { notizen: push.sharedList(l) } });

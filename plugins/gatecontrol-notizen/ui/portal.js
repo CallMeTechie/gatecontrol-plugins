@@ -33,6 +33,7 @@
     sun: 'M12 4V2M12 22v-2M4 12H2M22 12h-2M5.6 5.6 4.2 4.2M19.8 19.8l-1.4-1.4M5.6 18.4l-1.4 1.4M19.8 4.2l-1.4 1.4M12 17a5 5 0 1 0 0-10 5 5 0 0 0 0 10z',
     star: 'M12 3l2.8 5.7 6.2.9-4.5 4.4 1 6.2L12 17.3 6.5 20.2l1-6.2L3 9.6l6.2-.9z',
     cal: 'M4 6h16v14H4zM4 10h16M8 3v4M16 3v4',
+    bell: 'M6 16v-5a6 6 0 0 1 12 0v5l2 2H4zM10 20a2 2 0 0 0 4 0',
     user: 'M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4 21a8 8 0 0 1 16 0',
     list: 'M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01',
     plus: 'M12 5v14M5 12h14',
@@ -159,12 +160,22 @@
     if (date === today) return T('w.today');
     if (date === addDays(today, 1)) return T('w.tomorrow');
     if (date === addDays(today, -1)) return T('w.yesterday');
+    return shortDate(date);
+  }
+  /** „Sa. 21. Nov.“ (with the year when it is not this one). */
+  function shortDate(date) {
     var p = date.split('-');
-    return WD(RP.weekday(date)) + ' ' + Number(p[2]) + '. ' + MO(Number(p[1])) + (p[0] !== today.slice(0, 4) ? ' ' + p[0] : '');
+    return WD(RP.weekday(date)) + ' ' + Number(p[2]) + '. ' + MO(Number(p[1])) + (p[0] !== S.me.today.slice(0, 4) ? ' ' + p[0] : '');
   }
   function longDate(date) {
     var p = date.split('-');
     return T('wdl.' + RP.weekday(date)) + ', ' + Number(p[2]) + '. ' + T('mol.' + Number(p[1]));
+  }
+  /** An ISO time of the server (its zone's wall clock) → „14:00“ today, else „morgen 9:00“. */
+  function isoWhen(iso) {
+    var d = String(iso || '').slice(0, 10);
+    var tm = String(iso || '').slice(11, 16).replace(/^0/, '');
+    return d === S.me.today ? tm : dayText(d) + ' ' + tm;
   }
   function whenText(x) {
     var d = x.show || x.due;
@@ -204,7 +215,13 @@
   }
 
   function reloadNav() {
-    return api('GET', 'nav', null, { area: S.area }).then(function (n) { S.nav = n; renderNav(); }).catch(fail);
+    return api('GET', 'nav', null, { area: S.area }).then(function (n) {
+      var first = !S.nav;
+      S.nav = n;
+      renderNav();
+      // the rows name their list: when the view came before the menu (the first load), they are drawn again
+      if (first && S.data && (S.view.kind === 'smart' || S.view.kind === 'source')) renderMain();
+    }).catch(fail);
   }
   function reloadView() {
     var v = S.view;
@@ -510,8 +527,17 @@
       extra.unshift(mb);
     }
     main.appendChild(header(viewTitle(), sub, extra, { icon: l ? listIcon(l) : null }));
+    // 1.3.0: „Gestern offen geblieben“ above everything of today — until every row is decided
+    var yest = v.kind === 'smart' && v.id === 'myday' && d.yesterday && d.yesterday.count ? d.yesterday : null;
+    if (yest) main.appendChild(yesterdayCard(yest));
     if (v.kind === 'smart' && v.id === 'myday') (d.listdays || []).forEach(function (c) { main.appendChild(listDayCard(c)); });
     var sections = d.sections || [];
+    if (yest) {
+      // its tasks are in „Überfällig“ too (for older apps): shown once, in the card
+      var inCard = {};
+      yest.items.forEach(function (x) { inCard[x.uid] = true; });
+      sections = sections.map(function (s) { return s.id === 'overdue' ? Object.assign({}, s, { items: s.items.filter(function (x) { return !inCard[x.uid]; }) }) : s; });
+    }
     if (l && l.shared) {
       var open = (sections.filter(function (s) { return s.id === 'open'; })[0] || { items: [] }).items;
       main.appendChild(assignFilter(l, open));
@@ -523,7 +549,50 @@
       any = true;
       main.appendChild(sectionCard(Object.assign({}, s, { items: items })));
     });
-    if (!any && !(d.listdays || []).length) main.appendChild(h('div', { class: 'na-card' }, h('div', { class: 'na-empty', text: T(v.kind === 'source' ? 'p.empty_source' : 'p.empty') })));
+    if (!any && !yest && !(d.listdays || []).length) main.appendChild(h('div', { class: 'na-card' }, h('div', { class: 'na-empty', text: T(v.kind === 'source' ? 'p.empty_source' : 'p.empty') })));
+  }
+
+  /** Are tasks with a time written into the person's calendar „Aufgaben“ in Mail (Mail there, both switches on)? */
+  function calOn() { var c = S.me && S.me.calendar; return !!(c && c.available && c.enabled && c.mine); }
+
+  /** 1.3.0 „Gestern offen geblieben“: each task with „Erledigt“, „Heute“, „Verschieben“; several: „Alle heute“. */
+  function yesterdayCard(y) {
+    var all = function (body) {
+      return api('POST', 'yesterday', Object.assign({ area: S.area }, body)).then(function (r) {
+        if (r.failed && r.failed.length) toast(T('p.y_failed', { n: r.failed.length }), 'error');
+        soon();
+      }, fail);
+    };
+    var move = function (x, to) { return api('POST', 'tasks/' + x.id + '/move', { to: to }).then(function (r) { toast(T('p.y_moved', { when: dayText(r.task.due ? r.task.due.date : S.me.today) })); soon(); }, fail); };
+    var stop = function (fn) { return function (ev) { if (ev && ev.stopPropagation) ev.stopPropagation(); fn(); }; };
+    var card = h('div', { class: 'na-card na-yest' });
+    card.appendChild(h('div', { class: 'na-sec' }, [h('span', { text: y.title }), h('span', { class: 'na-count', text: String(y.count) }),
+      y.count > 1 ? btn(T('p.y_all_today'), function () { all({ action: 'today' }); }, { small: true }) : null]));
+    y.items.forEach(function (x) {
+      var l = listOf(x.listId);
+      var meta = h('div', { class: 'na-meta' });
+      if (l) meta.appendChild(h('span', { text: l.name }));
+      if (x.due && x.due.time) meta.appendChild(h('span', { text: T('w.yesterday') + ' ' + x.due.time.replace(/^0/, '') }));
+      if (x.missedReminder) meta.appendChild(h('span', { class: 'na-mi' }, [icon('bell', 13), h('span', { text: T('p.y_missed') })]));
+      var mv = btn(T('p.y_move'), stop(function () {
+        var items = (y.moveOptions || []).map(function (o) { return { icon: 'move', label: o.label, end: shortDate(o.date), fn: function () { move(x, o.to); } }; });
+        items.push({ icon: 'cal', label: T('p.y_other'), fn: function () {
+          var dd = h('input', { type: 'date', class: 'dp-input', value: addDays(S.me.today, 1), attrs: { min: S.me.today, 'aria-label': T('p.due') } });
+          dialog(T('p.y_move_title', { title: x.title }), [h('label', { class: 'dp-field' }, [h('span', { class: 'dp-label', text: T('p.due') }), dd]),
+            h('div', { class: 'dp-actions' }, [btn(T('p.cancel'), closeDialog), btn(T('p.y_move'), function () { if (!dd.value) return; closeDialog(); move(x, dd.value); }, { primary: true })])]);
+        } });
+        popMenu(mv, items);
+      }), { small: true, disabled: x.canEdit === false });
+      card.appendChild(h('div', { class: 'na-item na-yest-it', role: 'button', tabindex: '0', on: { click: function () { openDetail(x); }, keydown: function (ev) { if (ev.key === 'Enter' && ev.target === ev.currentTarget) openDetail(x); } } }, [
+        h('div', { class: 'na-it' }, [h('span', { class: 'na-it-title', text: x.title }), meta.childNodes.length ? meta : null]),
+        h('div', { class: 'na-yest-b' }, [
+          btn(T('p.y_done'), stop(function () { complete(x, true); }), { small: true, primary: true, disabled: x.canComplete === false }),
+          btn(T('p.y_today'), stop(function () { move(x, 'today'); }), { small: true, disabled: x.canEdit === false }),
+          mv,
+        ]),
+      ]));
+    });
+    return card;
   }
 
   /** „Heute ist Einkaufstag“: a list whose day is today, at the top of „Mein Tag“. */
@@ -615,6 +684,9 @@
       if (l && !(S.view.kind === 'list')) meta.appendChild(h('span', { text: T('area.' + l.area) + ' › ' + l.name }));
       if (x.assignee && x.assignee.id !== S.me.user.id && !(l && l.shared)) meta.appendChild(h('span', { text: x.assignee.name || '' }));
       if (x.repeatText) meta.appendChild(h('span', { text: '↻ ' + x.repeatText }));
+      // 1.3.0: a reminder is to come (or was put off with „Später“), the task is in the person's calendar in Mail
+      if (x.reminder && !x.done) meta.appendChild(h('span', { class: 'na-mi' }, [icon('bell', 13), h('span', { text: x.snoozed ? T('p.snoozed_until', { when: isoWhen(x.reminder.at) }) : T('p.reminder') })]));
+      if (x.calendar && x.calendar.mine) meta.appendChild(h('span', { class: 'na-mi', title: T(x.calendar.state === 'pending' ? 'p.cal_pending' : 'p.cal_hint') }, [icon('cal', 13), h('span', { text: T('p.in_calendar') })]));
       if (x.hasNote) meta.appendChild(h('span', { text: T('p.has_note') }));
       if (x.attachments) meta.appendChild(h('span', { text: '📎 ' + x.attachments }));
     }
@@ -679,6 +751,8 @@
       if (!parsed) return;
       if (parsed.date) chips.appendChild(h('span', { class: 'na-chip', text: dayText(parsed.date) + (parsed.time ? ', ' + parsed.time : '') }));
       if (parsed.remind) chips.appendChild(h('span', { class: 'na-chip', text: T('p.reminder') + ' ' + parsed.remind.time }));
+      // 1.3.0: with a time it also becomes an event in the calendar „Aufgaben“ of Mail
+      if (parsed.date && parsed.time && calOn()) chips.appendChild(h('span', { class: 'na-chip', title: T('p.cal_hint') }, [icon('cal', 13), h('span', { text: T('p.cal_chip', { name: S.me.calendar.name }) })]));
       if (parsed.repeat) chips.appendChild(h('span', { class: 'na-chip', text: '↻ ' + RP.describe(parsed.repeat, S.me.lang) }));
       if (parsed.important) chips.appendChild(h('span', { class: 'na-chip', text: T('p.important') }));
       if (parsed.list) chips.appendChild(h('span', { class: 'na-chip', text: T('p.list') + ': ' + parsed.list.name }));
@@ -821,6 +895,8 @@
       patchTask(t, { remindAt: { date: rm.value.slice(0, 10), time: rm.value.slice(11, 16) } });
     });
     card.appendChild(field(T('p.reminder'), rm));
+    if (t.snoozed && t.reminder) card.appendChild(h('p', { class: 'dp-hint', text: T('p.snoozed_until', { when: isoWhen(t.reminder.at) }) }));
+    if (t.calendar && t.calendar.mine) card.appendChild(field(T('p.calendar'), h('span', { class: 'na-mi' }, [icon('cal', 15), h('span', { text: T(t.calendar.state === 'pending' ? 'p.cal_pending' : 'p.cal_in', { name: (S.me.calendar && S.me.calendar.name) || '' }) })])));
     card.appendChild(field(T('p.repeat'), repeatSelect(t)));
     var members = [];
     var l = listOf(t.listId);
@@ -1781,7 +1857,14 @@
 
   // ── „Einstellungen“ (1.2.0, instead of „Quellen“ and „Umziehen“): the gear at the bottom left ──
 
-  function savePrefs(body) { return api('PUT', 'prefs', body).then(function (r) { S.me.prefs = r.prefs; reloadNav(); return r; }, fail); }
+  function savePrefs(body) {
+    return api('PUT', 'prefs', body).then(function (r) {
+      S.me.prefs = r.prefs;
+      if (S.me.calendar && r.prefs.calendar) S.me.calendar.mine = r.prefs.calendar.tasks !== false;
+      reloadNav();
+      return r;
+    }, fail);
+  }
   function swRow(label, hint, on, onChange) {
     var sw = h('input', { type: 'checkbox', class: 'dp-sw', checked: !!on, attrs: { 'aria-label': label } });
     sw.addEventListener('change', function () { onChange(sw.checked); });
@@ -1821,11 +1904,23 @@
     // Benachrichtigungen
     wrap.appendChild(h('h3', { text: T('p.notify_title') }));
     var nt = prefs.notify || {};
+    var yAt = h('input', { type: 'time', class: 'dp-input na-time', value: prefs.yesterdayAt || '07:30', attrs: { 'aria-label': T('p.yesterday_at') } });
+    yAt.addEventListener('change', function () { if (yAt.value) savePrefs({ yesterdayAt: yAt.value }); });
     wrap.appendChild(h('div', { class: 'na-card' }, [h('div', { class: 'na-tl' }, [
       swRow(T('p.notify_reminders'), null, nt.reminders !== false, function (v) { savePrefs({ notify: { reminders: v } }); }),
       swRow(T('p.notify_shared'), null, nt.shared !== false, function (v) { savePrefs({ notify: { shared: v } }); }),
       swRow(T('p.notify_listday'), T('p.notify_listday_hint'), nt.listday !== false, function (v) { savePrefs({ notify: { listday: v } }); }),
+      swRow(T('p.notify_yesterday'), T('p.notify_yesterday_hint'), nt.yesterday !== false, function (v) { savePrefs({ notify: { yesterday: v } }); }),
+      setRow(T('p.yesterday_at'), null, yAt),
     ]), h('p', { class: 'dp-hint', text: T('p.notify_hint') })]));
+    // 1.3.0: Kalender — only while Mail offers it and the administrator has it on
+    var cal = S.me.calendar;
+    if (cal && cal.available && cal.enabled) {
+      wrap.appendChild(h('h3', { text: T('p.calendar') }));
+      wrap.appendChild(h('div', { class: 'na-card' }, [h('div', { class: 'na-tl' }, [
+        swRow(T('p.cal_mine', { name: cal.name }), T('p.cal_mine_hint'), cal.mine !== false, function (v) { savePrefs({ calendar: { tasks: v } }); }),
+      ])]));
+    }
     // Umziehen
     if (S.me.imports && (S.me.imports.mstodo || S.me.imports.dsnote)) {
       wrap.appendChild(h('h3', { text: T('p.import') }));

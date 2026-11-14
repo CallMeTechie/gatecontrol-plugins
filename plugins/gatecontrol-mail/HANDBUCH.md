@@ -1,4 +1,4 @@
-<!-- version: 1.14.0 -->
+<!-- version: 1.15.0 -->
 # Mail
 
 ## Was das Plugin kann
@@ -69,6 +69,7 @@ Die Zugangsdaten werden verschlüsselt gespeichert. Die erste Synchronisierung h
 - **Arbeitszeit:** im Portal unter Kalender › Kalender-Einstellungen, in den Apps unter Mail › Einstellungen › Kalender – die Arbeitstage und „Von“/„Bis“ (Standard Mo–Fr 8–18 Uhr). Vorschläge kommen nur aus dieser Zeit.
 - **Teilen:** im Menü eines eigenen Kalenders „Teilen“ mit Personen oder Gruppen – Frei/Gebucht, Lesen oder Bearbeiten. Mit dir Geteiltes steht unter „Mit mir geteilt“. Ist ein Kalender mit dir auf „Bearbeiten“ geteilt, kannst du dort auch neue Termine anlegen (ohne Teilnehmer).
 - **Ressource buchen** im Kalender oder „Ressource hinzufügen“ im Termin. Mit Freigabe geht eine Anfrage an die Freigebenden; sie sehen sie unter „Anfragen“.
+- **Kalender „Aufgaben“** (ab 1.15.0, mit Notizen & Aufgaben ab 1.3.0): Aufgaben mit Datum und Uhrzeit stehen als Termin von 30 Minuten in einem eigenen Kalender „Aufgaben“ – ohne Termin-Erinnerung, denn erinnert wird über die Aufgabe. Geändert wird in Notizen & Aufgaben; eine erledigte Aufgabe bleibt als „✓ …“ stehen. Der Kalender ist immer ein GateControl-eigener Kalender, auch wenn du ein Microsoft- oder CalDAV-Konto hast. Ausblenden kannst du ihn wie jeden Kalender; abschalten in Notizen & Aufgaben › Einstellungen.
 - **Kontakte:** Suche, Gruppen, Dubletten zusammenführen, vCard-Import und -Export, „Als Kontakt speichern“ aus einer Mail.
 
 ### Mitteilungen
@@ -106,6 +107,14 @@ Liegen die Anhänge auf einem Speicherziel, das nicht erreichbar ist, versucht M
 
 **Frei/Gebucht zeigt „unbekannt“.**
 Die Person hat Frei/Gebucht abgeschaltet oder ist nicht in GateControl. Kolleginnen in Microsoft 365 erscheinen über dein Microsoft-Konto.
+
+## Neu in 1.15.0
+
+- **Kalender „Aufgaben“:** Ist Notizen & Aufgaben (ab 1.3.0) installiert, steht jede Aufgabe mit Datum und Uhrzeit als Termin von 30 Minuten in einem eigenen Kalender „Aufgaben“ – bei der Person, der die Aufgabe gehört. So siehst du Aufgaben neben deinen Terminen.
+- **Keine doppelte Meldung:** Der Termin hat keine eigene Erinnerung. Erinnert wird über die Aufgabe, mit den Knöpfen „Erledigt“ und „Später“.
+- **Ändern in Notizen & Aufgaben:** Titel, Uhrzeit, Verschieben, Erledigen und Löschen ziehen im Kalender nach. Eine erledigte Aufgabe bleibt als „✓ …“ stehen und gibt die Zeit frei; eine gelöschte verschwindet. Was du am Termin im Kalender änderst, überschreibt die Aufgabe bei ihrer nächsten Änderung.
+- **Immer ein GateControl-Kalender:** auch mit Microsoft-365- oder CalDAV-Konto. So gibt es ihn für alle, er hängt nicht an der Erreichbarkeit eines Anbieters, und kein Anbieter hängt dem Termin eine eigene Erinnerung an.
+- **Abschalten:** für alle in den Plugin-Einstellungen von Notizen & Aufgaben („Aufgaben mit Uhrzeit in den Kalender eintragen“), für dich selbst in Notizen & Aufgaben › Einstellungen. Die Termine werden dann wieder entfernt.
 
 ## Neu in 1.14.0
 

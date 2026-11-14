@@ -213,7 +213,7 @@ test('list days: the card at the top of „Mein Tag“ for every member, own swi
     // the person's own choice: no cards, no done ones
     await h.ok(ANNA, 'POST', 'tasks/' + (await h.ok(ANNA, 'POST', 'tasks', { title: 'Erledigt' })).task.id + '/complete', { done: true });
     const pr = await h.ok(ANNA, 'PUT', 'prefs', { myday: { listdays: false, showDone: false }, startArea: 'work' });
-    assert.deepEqual([pr.prefs.myday, pr.prefs.startArea, pr.prefs.notify], [{ listdays: false, showDone: false }, 'work', { reminders: true, shared: true, listday: true }]);
+    assert.deepEqual([pr.prefs.myday, pr.prefs.startArea, pr.prefs.notify], [{ listdays: false, showDone: false }, 'work', { reminders: true, shared: true, listday: true, yesterday: true }]);
     const md2 = await h.ok(ANNA, 'GET', 'views/myday', null, { area: 'private' });
     assert.deepEqual([md2.listdays.length, sec(md2, 'done').length], [0, 0]);
     // another icon: a list day, not a shopping day

@@ -106,6 +106,8 @@ async function myDay(gc, ctx, area, opts = {}) {
   return {
     view: 'myday', title: t(ctx.lang, 'v.myday'), date: ctx.today,
     listdays: opts.listdays === false || prefs.myday.listdays === false ? [] : await listDays(gc, ctx, area),
+    // 1.3.0: the card „Gestern offen geblieben“ (server/yesterday.js) — its tasks are in `overdue` as well
+    ...(opts.listdays === false || opts.yesterday === false ? {} : { yesterday: await require('./yesterday').get(gc, ctx, { area }) }),
     sections: [section(ctx, 'events', out.events), section(ctx, 'overdue', out.overdue), section(ctx, 'today', out.today),
       section(ctx, 'upcoming', out.upcoming), section(ctx, 'done', out.done, { collapsed: true })],
   };

@@ -1,4 +1,4 @@
-<!-- version: 1.14.0 -->
+<!-- version: 1.15.0 -->
 # Mail
 
 ## What the plugin does
@@ -10,6 +10,7 @@
 - **Attachments in Drive:** save them there and attach files from Drive.
 - **AI** through GateControl's AI provider: “In short”, to-dos and reply suggestions.
 - **Calendars:** own GateControl calendars, the accounts' calendars (Microsoft 365, CalDAV such as GMX or WEB.DE, Gmail read only), invitations, reminders; events from Family and Everyday and birthdays shown alongside.
+- **“Tasks” calendar** (since 1.15.0, with Notes & Tasks 1.3.0 or newer): tasks with a date and a time are a 30-minute event in a calendar of their own, “Tasks” – without an event reminder, because the task itself reminds. Changes are made in Notes & Tasks; a task that is done stays as “✓ …”. The calendar is always a GateControl calendar, even if you have a Microsoft or CalDAV account. You can hide it like any calendar; switch it off in Notes & Tasks › Settings.
 - **Contacts:** an address book with the accounts' contacts, groups and duplicate merging.
 - **Free/busy, shared calendars and resources** (since 1.9.0): plan meetings with others, share calendars, book rooms, vehicles and devices.
 
@@ -106,6 +107,14 @@ When attachments live on a storage target that is unreachable, Mail tries again 
 
 **Free/busy shows “unknown”.**
 The person switched free/busy off or is not in GateControl. Colleagues in Microsoft 365 appear through your Microsoft account.
+
+## New in 1.15.0
+
+- **“Tasks” calendar:** With Notes & Tasks (1.3.0 or newer) installed, every task with a date and a time is a 30-minute event in a calendar of its own, “Tasks” – for the person the task belongs to. You see tasks next to your appointments.
+- **No double message:** The event has no reminder of its own. The task reminds, with the buttons “Done” and “Later”.
+- **Change it in Notes & Tasks:** title, time, moving, completing and deleting follow in the calendar. A task that is done stays as “✓ …” and frees its time; a deleted one disappears. What you change on the event in the calendar is overwritten by the task's next change.
+- **Always a GateControl calendar:** also with a Microsoft 365 or CalDAV account. Everyone has it, it does not depend on a provider being reachable, and no provider adds a reminder of its own to the event.
+- **Switching off:** for everyone in the plugin settings of Notes & Tasks (“Add tasks with a time to the calendar”), for yourself in Notes & Tasks › Settings. The events are then removed again.
 
 ## New in 1.14.0
 

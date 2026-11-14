@@ -163,3 +163,77 @@ test('portal 1.2.0: the ⋯ menu of a list, its days, sharing with roles, the li
     await until('back in the menu', () => /Einkaufsliste/.test(p.text('na-nav')));
   } finally { if (p) p.stop(); if (m) m.stop(); await h.close(); }
 });
+
+test('portal 1.3.0: the card „Gestern offen geblieben“ with its three buttons, the signs „Erinnerung“ and „im Kalender“, the chip of the quick entry, the person\'s switches', async () => {
+  const { fakeSource, PLUGINS, clock, T0 } = require('./helpers');
+  // Mail with the calendar services (a stand-in that takes every event)
+  let next = 100;
+  const provides = Object.fromEntries(['calendar_tasks', 'calendar_add', 'calendar_update', 'calendar_delete'].map((s) => [s, { label: { de: 'x', en: 'x' }, maxPerHour: 3600 }]));
+  const mail = fakeSource('gatecontrol-mail', { provides, service: async ({ name, payload }) => {
+    if (name === 'calendar_tasks') return { ok: true, calendar: { id: 7, name: 'Aufgaben', color: '#123456', created: false } };
+    if (name === 'calendar_add') return { ok: true, eventId: next++ };
+    if (name === 'calendar_update') return { ok: true, eventId: payload.eventId };
+    return { ok: true, removed: true };
+  } });
+  const h = await withHost({ now: Date.parse('2026-11-18T09:00:00Z'), sources: PLUGINS.map((x) => (x === 'gatecontrol-mail' ? mail : fakeSource(x))) });
+  let p;
+  try {
+    const screws = await h.ok(ANNA, 'POST', 'tasks', { title: 'Schrauben kaufen', due: { date: '2026-11-18' } });
+    const recipe = await h.ok(ANNA, 'POST', 'tasks', { title: 'Rezept abholen', due: { date: '2026-11-18', time: '17:00' } });
+    const old = await h.ok(ANNA, 'POST', 'tasks', { title: 'Schon länger offen', due: { date: '2026-11-10' } });
+    clock.set(Date.parse('2026-11-19T07:00:00Z'));
+    await h.ok(ANNA, 'POST', 'tasks', { text: 'heute 15 Uhr Mülltonne rausstellen' });
+    p = portal(h.host, ANNA);
+    const main = () => p.doc.getElementById('na-main');
+    const cards = () => main().all().filter((x) => /(?:^| )na-card(?: |$)/.test(x.getAttribute('class') || ''));
+    const card = () => cards().find((x) => /(?:^| )na-yest(?: |$)/.test(x.getAttribute('class') || ''));
+    const rows = () => card().childNodes.slice(1).map((r) => textOf(r));
+    await until('the card with the names of the lists', () => card() && textOf(card()).includes('Rezept abholenAufgaben'));
+    assert.equal(textOf(card().childNodes[0]), 'Gestern offen geblieben2Alle heute');
+    assert.deepEqual(rows(), ['Schrauben kaufenAufgabenErledigtHeuteVerschieben', 'Rezept abholenAufgabengestern 17:00ErledigtHeuteVerschieben']);
+    // its tasks are not shown a second time under „Überfällig“ — what is older stays there
+    const overdue = cards().find((x) => textOf(x.childNodes[0]).startsWith('Überfällig'));
+    assert.equal(textOf(overdue), 'Überfällig1Schon länger offenPrivat › AufgabenDi. 10. Nov.');
+    // the task of today: a reminder to come and its event in the calendar
+    const today = cards().find((x) => textOf(x.childNodes[0]).startsWith('Heute'));
+    assert.match(textOf(today), /^Heute1Mülltonne rausstellenPrivat › AufgabenErinnerungim Kalender15:00$/);
+    // the quick entry names the calendar for a task with a time, not for one without
+    const q = p.doc.getElementById('na-quick');
+    const chips = () => textOf(q.parentNode.parentNode.childNodes[1]);
+    q.value = 'morgen 9 Uhr Altglas wegbringen';
+    q.dispatchEvent({ type: 'input' });
+    assert.equal(chips(), 'morgen, 09:00Erinnerung 09:00Kalender: Aufgaben');
+    q.value = 'morgen Altglas wegbringen';
+    q.dispatchEvent({ type: 'input' });
+    assert.equal(chips(), 'morgen');
+    q.value = '';
+    q.dispatchEvent({ type: 'input' });
+    // „Heute“ on one row, then „Verschieben“ › „Am Wochenende“ on the other — the card empties
+    const button = (row, label) => card().childNodes[row].all().find((x) => x.localName === 'button' && textOf(x) === label);
+    button(1, 'Heute').dispatchEvent({ type: 'click', stopPropagation() {} });
+    await until('moved to today', () => p.calls.some((c) => c.method === 'POST' && c.path === `tasks/${screws.task.id}/move` && c.body.to === 'today'));
+    await until('one row left', () => card() && rows().length === 1);
+    button(1, 'Verschieben').dispatchEvent({ type: 'click', stopPropagation() {} });
+    const item = await until('the menu', () => p.doc.body.all().find((x) => x.getAttribute && x.getAttribute('role') === 'menuitem' && textOf(x).startsWith('Am Wochenende')));
+    assert.deepEqual(p.doc.body.all().filter((x) => x.getAttribute && x.getAttribute('role') === 'menuitem').map((x) => textOf(x)), ['MorgenFr. 20. Nov.', 'Am WochenendeSa. 21. Nov.', 'Anderes Datum …']);
+    item.click();
+    await until('moved to the weekend', () => p.calls.some((c) => c.path === `tasks/${recipe.task.id}/move` && c.body.to === 'weekend'));
+    await until('the card is gone', () => !card());
+    assert.deepEqual((await h.ok(ANNA, 'GET', 'tasks/' + recipe.task.id)).task.due, { date: '2026-11-21', time: '17:00' });
+    assert.ok(old.task.id);
+    // „Einstellungen“: the morning hint with its time, the calendar switch
+    p.doc.body.all().find((x) => x.localName === 'button' && x.getAttribute('aria-label') === 'Einstellungen').click();
+    await until('Einstellungen', () => p.text('na-main').includes('Uhrzeit des Morgen-Hinweises'));
+    for (const label of ['Morgens: „Gestern offen geblieben“', 'Aufgaben mit Uhrzeit in meinen Kalender „Aufgaben“ eintragen']) assert.ok(p.text('na-main').includes(label), label);
+    const sw = p.doc.body.all().find((x) => x.localName === 'input' && x.getAttribute('aria-label') === 'Aufgaben mit Uhrzeit in meinen Kalender „Aufgaben“ eintragen');
+    sw.checked = false;
+    sw.dispatchEvent({ type: 'change' });
+    await until('saved', () => p.calls.some((c) => c.method === 'PUT' && c.path === 'prefs' && c.body.calendar && c.body.calendar.tasks === false));
+    const at = p.doc.body.all().find((x) => x.localName === 'input' && x.getAttribute('aria-label') === 'Uhrzeit des Morgen-Hinweises');
+    assert.equal(at.value, '07:30');
+    at.value = '06:45';
+    at.dispatchEvent({ type: 'change' });
+    await until('the time saved', async () => (await h.ok(ANNA, 'GET', 'prefs')).prefs.yesterdayAt === '06:45');
+    assert.equal((await h.ok(ANNA, 'GET', 'prefs')).prefs.calendar.tasks, false);
+  } finally { if (p) p.stop(); await h.close(); clock.set(T0); }
+});

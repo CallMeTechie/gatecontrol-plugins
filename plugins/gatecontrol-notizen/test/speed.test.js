@@ -25,10 +25,13 @@ const WHOLE = [
 // the indexes the statements stand on: one that is gone or no longer taken shows here, also where SQLite then finds
 // its way by another index and sorts
 const INDEXES = {
-  screens: ['idx_tasks_list', 'idx_tasks_due', 'idx_tasks_important', 'idx_tasks_assignee', 'idx_tasks_done', 'idx_tasks_parent', 'idx_my_day_task', 'idx_notes_nb', 'idx_notes_pinned',
+  screens: ['idx_tasks_list', 'idx_tasks_due', 'idx_tasks_important', 'idx_tasks_assignee', 'idx_tasks_done', 'idx_tasks_parent', 'idx_my_day_task', 'idx_tasks_missed', 'idx_notes_nb', 'idx_notes_pinned',
     'idx_notes_updated', 'idx_note_tags_tag', 'idx_list_members_list', 'idx_notebook_members_nb'],
   // idx_notes_gone, idx_tasks_rest (1.2.1): „is this notebook / list of the trash empty?“ — test/writes.test.js
-  background: ['idx_tasks_remind', 'idx_tasks_trash', 'idx_notes_trash', 'idx_notes_expires', 'idx_src_item_users_item', 'idx_src_items_done', 'idx_notes_gone', 'idx_tasks_rest'],
+  // idx_tasks_cal_dirty, idx_tasks_dueday, idx_tasks_missed, idx_my_day_day (1.3.0): the tasks the calendar has to look at,
+  // „Gestern offen geblieben“ of everybody
+  background: ['idx_tasks_remind', 'idx_tasks_trash', 'idx_notes_trash', 'idx_notes_expires', 'idx_src_item_users_item', 'idx_src_items_done', 'idx_notes_gone', 'idx_tasks_rest',
+    'idx_tasks_cal_dirty', 'idx_tasks_dueday', 'idx_tasks_missed', 'idx_my_day_day'],
 };
 // the requests of the screens run 766 statements; one per row of a list (1 667 tasks, 50 notes a page) would be far more
 const SCREENS_MAX = 900;
@@ -54,7 +57,13 @@ test(`speed: ${N} tasks and ${N} notes — no statement reads them as a whole`, 
       await h.ok(ANNA, 'GET', 'notes', null, { notebook: nbs[3], before: page.next });
       await h.ok(ANNA, 'GET', 'notes/' + page.notes[0].id);
       for (const q of ['zahnarzt', 'notiz 4711', 'lorem ipsum', 'tag1', 'ang']) await h.ok(ANNA, 'GET', 'search', null, { q, area: 'private' });
-      await h.ok(ANNA, 'POST', 'tasks', { text: 'morgen 9 Uhr Zahnarzt anrufen wichtig', area: 'private' });
+      const made = await h.ok(ANNA, 'POST', 'tasks', { text: 'morgen 9 Uhr Zahnarzt anrufen wichtig', area: 'private' });
+      // 1.3.0: „Gestern offen geblieben“, the reminders to come, „Später“, „Verschieben“ — and a delete (the marks of „Mein Tag“ by task)
+      await h.ok(ANNA, 'GET', 'yesterday');
+      await h.ok(ANNA, 'GET', 'reminders');
+      await h.ok(ANNA, 'POST', `tasks/${made.task.id}/snooze`, { until: '1h' });
+      await h.ok(ANNA, 'POST', `tasks/${made.task.id}/move`, { to: 'weekend' });
+      await h.ok(ANNA, 'DELETE', 'tasks/' + made.task.id);
       await h.ok(ANNA, 'POST', 'notes', { notebookId: nbs[1], title: 'Neu', body: '#tag1 Text' });
       await h.ok(MARC, 'GET', 'views/myday', null, { area: 'private' });
       await h.ok(MARC, 'GET', 'nav', null, { area: 'private' });

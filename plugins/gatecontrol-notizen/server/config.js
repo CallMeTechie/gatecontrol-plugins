@@ -8,7 +8,7 @@ const SOURCES = ['gatecontrol-familie', 'gatecontrol-mail', 'gatecontrol-drive',
 const DEFAULTS = {
   timezone: 'Europe/Berlin', notify_lang: 'de', sharing: 'all', vaults: true,
   source_familie: true, source_mail: true, source_drive: true, source_schule: true, source_alltag: true,
-  import_mstodo: true, mstodo_sync: true, import_dsnote: true, attach_mb: 25, quota_mb: 2048,
+  import_mstodo: true, mstodo_sync: true, import_dsnote: true, attach_mb: 25, quota_mb: 2048, calendar_tasks: true,
 };
 
 let cache = null;

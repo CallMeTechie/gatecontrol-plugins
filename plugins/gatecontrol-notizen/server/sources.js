@@ -8,6 +8,7 @@ const store = require('./store');
 const tz = require('./tz');
 const config = require('./config');
 const events = require('./events');
+const calsync = require('./calsync');
 const { fail, posInt, line, area: areaOf, parse } = require('./util');
 
 const SOURCES = config.SOURCES;
@@ -139,9 +140,11 @@ async function write(gc, ctx, plugin, items, opts = {}) {
 
 /** A source ticked an item off (or undid it): the hub task carrying it follows. */
 async function carried(gc, ctx, plugin, extId, done) {
-  const rows = await store.all(gc, 'SELECT id, list_id FROM tasks INDEXED BY idx_tasks_src WHERE src_plugin = ? AND src_id = ? AND deleted_at IS NULL AND parent_id IS NULL', [plugin, extId]);
+  const rows = await store.all(gc, 'SELECT id, list_id, cal_event_id FROM tasks INDEXED BY idx_tasks_src WHERE src_plugin = ? AND src_id = ? AND deleted_at IS NULL AND parent_id IS NULL', [plugin, extId]);
   for (const r of rows) {
     await store.run(gc, `UPDATE tasks SET done_at = ${done ? 'COALESCE(done_at, ?)' : 'NULL'}, updated_at = ? WHERE id = ?`, done ? [ctx.now, ctx.now, r.id] : [ctx.now, r.id]);
+    // 1.3.0: its event in Mail's calendar follows („✓“) with the next background run
+    if (r.cal_event_id) await calsync.touch(gc, r.id);
     const ms = await store.all(gc, 'SELECT user_id FROM list_members WHERE list_id = ?', [r.list_id]);
     events.changed(gc, ms.map((m) => m.user_id), 'tasks');
   }
