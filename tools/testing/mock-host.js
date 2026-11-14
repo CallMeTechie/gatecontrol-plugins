@@ -3621,6 +3621,8 @@ async function createHost(pluginDir, opts = {}) {
   delete require.cache[require.resolve(entry)];
   const plugin = require(entry);
   const hook = async (name, ...a) => (typeof plugin[name] === 'function' ? wire(await plugin[name](...a.map(wire), gc)) : undefined);
+  // gc.bridges version 3: the bridges delivered something → the hook bridgeEvents (fire and forget in the host; awaited here so a test sees the result)
+  br.control.onWake(async (payload) => { try { await hook('bridgeEvents', payload); } catch { /* like the host: the answer is ignored */ } });
 
   // the default req.user: the first user as a session knows it (no gc.users face fields)
   const sessionUser = () => (users[0] ? { id: users[0].id, name: users[0].name, role: users[0].role } : DEFAULT_USER);

@@ -3,6 +3,37 @@
 Chats zwischen den GateControl-Konten – in der GateControl-App (eigener Tab „Chats“), im
 Windows-Client und im Portal (eigener Tab „Chats“). Alles bleibt auf dem eigenen Server.
 
+## 1.14.0
+Dritte Baustufe der **Brücken zu anderen Messengern** (WhatsApp): die **Chats selbst**. Weiterhin **GateControl ≥
+1.193.0**; alles davon erscheint nur auf einem GateControl, das Brücken mit Nachrichten anbietet (`gc.bridges`
+Version 3, dort eine Vorschau). Kein neues Recht.
+- **Chats über eine Brücke** (`server/bridgechats.js`, Migration 007): Ein Chat mit einem Kontakt oder einer Gruppe
+  des anderen Dienstes erscheint in der Chatliste, sobald dort eine **neue Nachricht** eintrifft (älterer Verlauf wird
+  nicht geladen). Er gehört **nur der verknüpften Person** – kein anderes Familienmitglied und kein Administrator
+  sieht ihn, bekommt ein Ereignis oder eine Push-Mitteilung dazu. Die Gegenseite sind Kontakte dieser Person
+  (`bridge_contacts`, Name verschlüsselt), keine Konten.
+- **Was geht:** Text, Antworten mit Zitat, Reaktionen, Bearbeiten, Löschen für alle, Lesebestätigung und
+  „schreibt …“ (nur von Personen, die das teilen) – in beide Richtungen. Zu jeder eigenen Nachricht der Zustand:
+  gesendet, zugestellt, gelesen oder **nicht gesendet** mit Grund und „Erneut senden“. Was man am Handy im Dienst
+  selbst schreibt, erscheint als eigene Nachricht.
+- **Was noch nicht geht:** Bilder, Videos, Sprachnachrichten und Dateien – bis dahin steht im Chat eine Zeile
+  „Bild · Name – folgt; in WhatsApp ansehen“, nichts wird verschluckt. GateControl-Extras (Abstimmungen, Termine,
+  Live-Ankunft, Haus-Aktionen, Karten, Standort), selbstlöschende Nachrichten und Änderungen an Titel oder
+  Mitgliedern gibt es in solchen Chats nicht (`409 bridge_text_only`). Keine Warteschlange: Ist die Brücke nicht
+  erreichbar, wird nichts angenommen.
+- **Portal:** Kennzeichen des Dienstes am Profilbild, Filter je Dienst, die Zeile „Dieser Chat läuft über WhatsApp –
+  nicht nur über deinen Server“ mit Erklärung beim ersten Öffnen, die Zustände „Brücke nicht erreichbar“,
+  „abgemeldet“ (mit „Neu verknüpfen“), „nicht verknüpft“, „gesperrt“; in der Eingabezeile nur Text. In der Chat-Info
+  steht für solche Chats nicht mehr, dass die Nachrichten nur auf dem eigenen Server liegen.
+- **Trennen** beendet die Zustellung; die Chats bleiben lesbar. **Kinder:** ohne Freigabe der Eltern kommt nichts an
+  und geht nichts hinaus; wird die Freigabe zurückgenommen, sind die Chats nur noch lesbar.
+- **Apps:** `GET me` `features.bridge_chats` nur bei Personen mit solchen Chats; überbrückte Chats gibt es in der API
+  nur mit `?bridged=1` (README „Chats over a bridge“). Ältere Apps zeigen sie nicht und stellen sie deshalb auch
+  nicht falsch dar.
+- **Administration:** Die Karte „Brücken“ nummeriert die Schritte und sagt deutlich, dass nach dem Hauptschalter
+  jeder Dienst einzeln eingeschaltet werden muss; sie meldet, wenn der Vermittler für die Chats in der
+  docker-compose.yml des Servers fehlt, und zeigt, wann die Brücken zuletzt etwas zugestellt haben (nur Zahlen).
+
 ## 1.13.0
 Zweite Baustufe der **Brücken zu anderen Messengern** (WhatsApp): die Seite zum Verknüpfen im Portal, die Schalter der
 Eltern im Familien-Plugin, und Zurücknehmen trennt. Weiterhin **GateControl ≥ 1.193.0**; alles davon erscheint nur auf

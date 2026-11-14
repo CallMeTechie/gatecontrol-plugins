@@ -24,6 +24,17 @@
 //   createHost(dir, { bridges: { …, version: 1 } })   a GateControl whose gc.bridges has no unlinkFor yet (1.273.x)
 //   host.bridges.state                       { enabled, networks, logins: Map userId → [...], processes: Map, log: [{ op, … }] }
 //
+// Version 3 (GateControl with stage 3 — messages; createHost(dir, { bridges: { …, version: 3 } })):
+//   await host.bridges.deliver([event, …])   the bridges delivered neutral events ({ userId, network?, type, chat, … } as
+//                                            services/bridges/events.js makes them): into the inbox, then the hook bridgeEvents
+//   await host.bridges.ephemeral([event, …]) typing / read receipts: only in the hook's payload, never in the inbox
+//   host.bridges.chat(userId, { kind?, name? }) → the reference of a new chat of that person (what send() accepts)
+//   host.bridges.sent                        what the plugin sent out: [{ op: 'send' | 'react' | 'redact' | 'read' | 'typing', userId, network, chatId, … , id? }]
+//   host.bridges.failSend = { code, reason } the next send / react / redact is refused that way (once)
+//   host.bridges.state.inbox                 what was delivered and not acknowledged
+// events.pull / events.ack need no person; chats() a request of that person; send / react / redact / read / typing a
+// changing request of that person, their own chat (else ERR_INVALID 'unknown chat'), a bridge that runs.
+//
 // Like the host: status() anywhere; configure() only inside a changing request of an administrator (ERR_NOT_PERSON /
 // ERR_NOT_ADMIN); everything with a userId only while a request of THAT person is in flight (flows / logins: any
 // request, the rest a changing one) — else ERR_NOT_PERSON. A bridge that is off → ERR_BRIDGES_UNAVAILABLE (reason
@@ -52,7 +63,8 @@ function install({ opts, perms, enabledUser, hostError, personCtx }) {
     host: { state: o && o.running ? 'running' : null, error: null, running: !!(o && o.running), memMb: o && o.running ? 88 : null, outdated: false, probe: null },
     logins: new Map(), processes: new Map(), log: [], seq: 0, oddStep: null, elsewhere: new Map(),
   };
-  const version = o && o.version === 1 ? 1 : 2;
+  const version = o && o.version === 1 ? 1 : (o && o.version === 3 ? 3 : 2);
+  Object.assign(st, { inbox: [], inboxSeq: 0, chats: new Map(), sent: [], failSend: null, wake: null });
 
   const err = (code, message, reason) => { const e = hostError(code, message); if (reason) e.reason = reason; return e; };
   const need = () => { if (perms.bridges !== true) throw hostError('ERR_BRIDGES_DENIED', 'this plugin has no bridges permission'); };
@@ -74,11 +86,12 @@ function install({ opts, perms, enabledUser, hostError, personCtx }) {
       }),
       host: {
         state: st.enabled ? st.host.state : 'stopped', error: st.enabled ? st.host.error : null, checkedAt: st.host.state ? new Date().toISOString() : null,
-        cron: 'ok', script: { host: version >= 2 ? 6 : 5, needed: version >= 2 ? 6 : 5 },
+        cron: 'ok', script: { host: version >= 3 ? 7 : (version >= 2 ? 6 : 5), needed: version >= 3 ? 7 : (version >= 2 ? 6 : 5) },
         homeserver: { running: up, memMb: up ? 61 : null, limitMb: up ? 384 : null, version: up ? '1.9.4' : null, ...(version >= 2 ? { outdated: false, wantVersion: '1.9.4' } : {}) },
         ...(version >= 2 ? { limitsProvisional: true, probe: st.host.probe || null } : {}),
       },
       history: { enabled: false },
+      ...(version >= 3 ? { messages: { listening: st.enabled, relay: !st.enabled ? null : (st.host.relay || 'running'), lastEventAt: null, transactions: 0, pending: st.inbox.length } } : {}),
     };
   }
 
@@ -210,6 +223,87 @@ function install({ opts, perms, enabledUser, hostError, personCtx }) {
     } : {}),
   };
 
+  // ── version 3: messages ──
+  const EVENT_RE = /^\$[A-Za-z0-9._=/+-]{1,128}(:[a-z0-9.-]{1,64})?$/;
+  const TXN_RE = /^[A-Za-z0-9_-]{8,96}$/;
+  function chatOf(userId, network, chatId) {
+    const c = typeof chatId === 'string' ? st.chats.get(chatId) : null;
+    if (!c || c.userId !== userId || c.network !== network) throw hostError('ERR_INVALID', 'unknown chat');
+    if (c.closed) throw refuse('chat_closed');
+    return c;
+  }
+  const out = (op, userId, network, chatId, extra) => {
+    if (st.failSend && op !== 'read' && op !== 'typing') { const f = st.failSend; st.failSend = null; throw err(f.code || 'ERR_BRIDGE', 'the bridge refused or failed', f.reason || 'bridge_error'); }
+    const row = { op, userId, network, chatId, ...extra };
+    st.sent.push(row);
+    return row;
+  };
+  if (version >= 3) Object.assign(api, {
+    'bridges.events.pull': async ({ after, limit }) => {
+      need();
+      if (!st.preview) return { events: [], more: false };
+      const a = Number.isSafeInteger(after) && after >= 0 ? after : 0;
+      const n = Number.isSafeInteger(limit) && limit > 0 ? Math.min(limit, 200) : 100;
+      const rows = st.inbox.filter((e) => e.seq > a);
+      return { events: rows.slice(0, n).map((e) => JSON.parse(JSON.stringify(e))), more: rows.length > n };
+    },
+    'bridges.events.ack': async ({ upTo }) => {
+      need();
+      if (!Number.isSafeInteger(upTo) || upTo < 0) throw hostError('ERR_INVALID', 'upTo: a sequence number');
+      st.inbox = st.inbox.filter((e) => e.seq > upTo);
+      return { ok: true, pending: st.inbox.length };
+    },
+    'bridges.chats': async ({ userId, network }) => {
+      need(); person(userId, false);
+      if (!NETWORKS.includes(network)) throw hostError('ERR_INVALID', 'unknown network');
+      return [...st.chats.entries()].filter(([, c]) => c.userId === userId && c.network === network).map(([id, c]) => ({ id, kind: c.kind, open: !c.closed }));
+    },
+    'bridges.send': async ({ userId, network, chatId, message }) => {
+      need(); person(userId, true); bridge(network);
+      const c = chatOf(userId, network, chatId);
+      const m = message && typeof message === 'object' && !Array.isArray(message) ? message : null;
+      if (!m || typeof m.text !== 'string' || !m.text.trim() || m.text.length > 16000 || !TXN_RE.test(String(m.txnId || ''))) throw hostError('ERR_INVALID', 'message: { txnId, text }');
+      for (const k of ['replyTo', 'edit']) if (m[k] != null && !EVENT_RE.test(String(m[k]))) throw hostError('ERR_INVALID', `${k}: a message id`);
+      // the same txnId sends once
+      const key = `${userId}|${m.txnId}`;
+      if (c.txns.has(key)) return { id: c.txns.get(key) };
+      const id = `$out${++st.seq}`;
+      out('send', userId, network, chatId, { txnId: m.txnId, text: m.text, replyTo: m.replyTo || null, edit: m.edit || null, id });
+      c.txns.set(key, id);
+      return { id };
+    },
+    'bridges.react': async ({ userId, network, chatId, reaction }) => {
+      need(); person(userId, true); bridge(network);
+      chatOf(userId, network, chatId);
+      const r = reaction && typeof reaction === 'object' ? reaction : {};
+      if (typeof r.emoji !== 'string' || !r.emoji || !EVENT_RE.test(String(r.target || '')) || !TXN_RE.test(String(r.txnId || ''))) throw hostError('ERR_INVALID', 'reaction: { txnId, target, emoji }');
+      const id = `$react${++st.seq}`;
+      out('react', userId, network, chatId, { txnId: r.txnId, target: r.target, emoji: r.emoji, id });
+      return { id };
+    },
+    'bridges.redact': async ({ userId, network, chatId, redaction }) => {
+      need(); person(userId, true); bridge(network);
+      chatOf(userId, network, chatId);
+      const r = redaction && typeof redaction === 'object' ? redaction : {};
+      if (!EVENT_RE.test(String(r.target || '')) || !TXN_RE.test(String(r.txnId || ''))) throw hostError('ERR_INVALID', 'redaction: { txnId, target }');
+      out('redact', userId, network, chatId, { txnId: r.txnId, target: r.target });
+      return { ok: true };
+    },
+    'bridges.read': async ({ userId, network, chatId, messageId }) => {
+      need(); person(userId, true); bridge(network);
+      chatOf(userId, network, chatId);
+      if (!EVENT_RE.test(String(messageId || ''))) throw hostError('ERR_INVALID', 'messageId: a message id');
+      out('read', userId, network, chatId, { messageId });
+      return { ok: true };
+    },
+    'bridges.typing': async ({ userId, network, chatId, on }) => {
+      need(); person(userId, true); bridge(network);
+      chatOf(userId, network, chatId);
+      out('typing', userId, network, chatId, { on: on === true });
+      return { ok: true };
+    },
+  });
+
   /** gc.bridges (the child bootstrap's shape) */
   const gcPart = (call) => Object.freeze({
     version,
@@ -224,6 +318,18 @@ function install({ opts, perms, enabledUser, hostError, personCtx }) {
     logins: (userId, network) => call('bridges.logins', { userId, network }),
     logout: (userId, network, loginId) => call('bridges.logout', { userId, network, loginId }),
     ...(version >= 2 ? { unlinkFor: (userId, network, actor) => call('bridges.unlinkFor', { userId, network, actor }) } : {}),
+    ...(version >= 3 ? {
+      events: Object.freeze({
+        pull: (o2) => call('bridges.events.pull', { after: o2 && o2.after, limit: o2 && o2.limit }),
+        ack: (upTo) => call('bridges.events.ack', { upTo }),
+      }),
+      chats: (userId, network) => call('bridges.chats', { userId, network }),
+      send: (userId, network, chatId, message) => call('bridges.send', { userId, network, chatId, message }),
+      react: (userId, network, chatId, reaction) => call('bridges.react', { userId, network, chatId, reaction }),
+      redact: (userId, network, chatId, redaction) => call('bridges.redact', { userId, network, chatId, redaction }),
+      read: (userId, network, chatId, messageId) => call('bridges.read', { userId, network, chatId, messageId }),
+      typing: (userId, network, chatId, on) => call('bridges.typing', { userId, network, chatId, on: on === true }),
+    } : {}),
   });
 
   const settle = (processId, how) => {
@@ -246,6 +352,24 @@ function install({ opts, perms, enabledUser, hostError, personCtx }) {
       try { return await fn(); } finally { st.elsewhere.set(userId, st.elsewhere.get(userId) - 1); }
     },
     set oddStep(v) { st.oddStep = v; },
+    // ── version 3 ──
+    get sent() { return st.sent; },
+    set failSend(v) { st.failSend = v; },
+    /** the mock host hands over how it calls a hook of the plugin */
+    onWake(fn) { st.wake = fn; },
+    chat(userId, { kind = 'direct', name = null, network = 'whatsapp' } = {}) {
+      const id = 'r' + String(++st.seq).padStart(20, '0');
+      st.chats.set(id, { userId, network, kind, name, closed: false, txns: new Map() });
+      return id;
+    },
+    closeChat(id) { const c = st.chats.get(id); if (c) c.closed = true; },
+    async deliver(events, { wake = true } = {}) {
+      for (const e of events) st.inbox.push({ network: 'whatsapp', at: Date.now(), ...JSON.parse(JSON.stringify(e)), seq: ++st.inboxSeq });
+      if (wake && st.wake) await st.wake({ pending: st.inbox.length, ephemeral: [] });
+    },
+    async ephemeral(events) {
+      if (st.wake) await st.wake({ pending: st.inbox.length, ephemeral: events.map((e) => ({ network: 'whatsapp', ...JSON.parse(JSON.stringify(e)) })) });
+    },
   };
 
   return { on, api, gcPart, control };

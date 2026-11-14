@@ -1,0 +1,668 @@
+'use strict';
+
+// 1.14.0 — chats over a bridge to another messenger (WhatsApp first; GateControl with gc.bridges version ≥ 3,
+// feature-detected). bridges.js links an account; this file carries the messages.
+//
+//   in    GateControl hands over neutral events (gc.bridges.events.pull, woken by the hook bridgeEvents and, as a
+//         net, by the background run): a chat, a message, an edit, a deletion, a reaction, the bridge's word on a
+//         sent message, a contact's new name. Each is filed into the chats of the person it belongs to and then
+//         acknowledged (events.ack) — GateControl forgets it. The bridge's id of a message is unique per chat, so
+//         an event that arrives twice changes nothing; what arrives before its message waits (bridge_pending).
+//   out   a text, an edit, a deletion, a reaction, "read" and "typing …" go out through gc.bridges as the person —
+//         GateControl lets that happen only while this very person has a changing request in flight. There is no
+//         queue: a message the bridge did not take shows why and can be sent again.
+//
+// A bridged chat is a conversation with ONE member, the linked person (migrations/007). Nobody else — no
+// administrator, no other member of the family — has a member row, so nobody else can read it, gets an event or a
+// push about it. The people on the other side are that person's contacts (bridge_contacts), never accounts.
+//
+// What does not cross: files of any kind (a later version; until then a line "Bild – folgt" with the file's name,
+// nothing is swallowed), GateControl's own message kinds (polls, events, live arrival, home actions, cards,
+// locations), disappearing messages, changes to members or title.
+//
+// Clients that do not know bridged chats never see one: every route answers 404 for a bridged conversation unless
+// the request says ?bridged=1 (or `bridged: true` in its body — the buttons of a push; README "App-API", since 1.14.0).
+
+const crypto = require('node:crypto');
+const store = require('./store');
+const seal = require('./seal');
+const live = require('./live');
+const log = require('./log');
+const people = require('./people');
+const texts = require('./texts.json');
+const { fail, iso } = require('./util');
+
+const NETWORKS = ['whatsapp'];
+const LABEL = { whatsapp: 'WhatsApp' };
+const REF_RE = /^r[A-Za-z0-9_-]{20}$/;
+const CONTACT_RE = /^c[A-Za-z0-9_-]{21}$/;
+const EVENT_RE = /^\$[A-Za-z0-9._=/+-]{1,128}(:[a-z0-9.-]{1,64})?$/;
+const REASON_RE = /^[a-z][a-z0-9_]{0,39}$/;
+const NAME_MAX = 120;
+const TEXT_MAX = 4000;
+const PENDING_MS = 86400000;
+const LINK_CHECK_MS = 5 * 60000;
+const SUPPORTS = ['text', 'reply', 'reaction', 'edit', 'delete', 'read', 'typing'];
+const PLACEHOLDERS = ['image', 'video', 'audio', 'voice', 'file', 'sticker', 'location', 'unsupported'];
+
+const via = (net) => `bridge:${net}`;
+const isBridged = (conv) => !!(conv && conv.bridge_net);
+
+/** gc.bridges with the message part (version ≥ 3), else null. */
+function api(gc) {
+  const b = gc && gc.bridges;
+  return b && Number(b.version) >= 3 && b.events && typeof b.events.pull === 'function' && typeof b.send === 'function' ? b : null;
+}
+
+function t(lang, key, params) {
+  const l = lang === 'en' ? 'en' : 'de';
+  let s = (texts[l] && texts[l][key]) || texts.de[key] || key;
+  if (params) for (const [k, v] of Object.entries(params)) s = s.split(`{{${k}}}`).join(String(v));
+  return s;
+}
+
+const line = (v, max) => (typeof v === 'string' ? v.replace(/[\0-\x1f\x7f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max) : '');
+const body = (v) => (typeof v === 'string' ? v.replace(/\r\n?/g, '\n').replace(/[\0-\x08\x0b-\x1f\x7f]/g, '').slice(0, 16000) : '');
+
+/** GateControl's refusals → this API's codes. */
+function mapped(e) {
+  const reason = e && typeof e.reason === 'string' && REASON_RE.test(e.reason) ? e.reason : null;
+  switch (e && e.code) {
+    case 'ERR_BRIDGES_UNAVAILABLE': return fail('bridge_off', { reason });
+    case 'ERR_BRIDGE_UNREACHABLE': return fail('bridge_unreachable', { reason });
+    case 'ERR_BRIDGE': return fail('bridge_failed', { reason });
+    case 'ERR_INVALID': return fail('invalid');
+    case 'ERR_NOT_PERSON': case 'ERR_BRIDGES_DENIED': return fail('forbidden');
+    default: return e;
+  }
+}
+const reasonOf = (e) => (e && typeof e.reason === 'string' && REASON_RE.test(e.reason) ? e.reason : (e && e.code === 'ERR_BRIDGE_UNREACHABLE' ? 'unreachable' : 'bridge_error'));
+
+// ─── state of a person's link (what the conversation view shows) ───────────
+
+/**
+ * The state of the bridge for one person and network, without asking the bridge:
+ *   ok | off (not offered / switched off) | unreachable (does not run) | logged_out (the service dropped the linked
+ *   device) | unlinked (no link) | locked (a child without the parents' yes)
+ * `cache` (per request): { host, links: Map }.
+ */
+async function stateFor(ctx, userId, net) {
+  const c = ctx.bridgeState || (ctx.bridgeState = { host: null, links: new Map(), allowed: new Map() });
+  if (!c.host) {
+    let s = null;
+    try { s = api(ctx.gc) ? await ctx.gc.bridges.status() : null; } catch { s = null; }
+    c.host = s && typeof s === 'object' ? s : { available: false };
+  }
+  const n = c.host.available && c.host.enabled ? (c.host.networks || []).find((x) => x.id === net) : null;
+  if (!n || !n.enabled) return 'off';
+  const k = `${userId}:${net}`;
+  if (!c.allowed.has(k)) c.allowed.set(k, (await require('./bridges').allowed(ctx.gc, userId, net, ctx.now)).allowed);
+  if (!c.allowed.get(k)) return 'locked';
+  if (n.state !== 'running') return 'unreachable';
+  if (!c.links.has(k)) c.links.set(k, await store.all(ctx.gc, 'SELECT state FROM bridge_links WHERE user_id = ? AND network = ?', [userId, net]));
+  const rows = c.links.get(k);
+  if (!rows.length) return 'unlinked';
+  return rows.some((r) => r.state !== 'logged_out') ? 'ok' : 'logged_out';
+}
+
+const linkChecked = new Map(); // `${userId}:${net}` → when the bridge was last asked for this person's logins
+
+/** Ask the bridge for the viewer's logins now and then (their own request is in flight), so "abgemeldet" is noticed. */
+async function refreshLinks(ctx) {
+  const b = api(ctx.gc);
+  if (!b || ctx.viewer == null) return;
+  const nets = await store.all(ctx.gc, 'SELECT DISTINCT bridge_net AS n FROM conversations WHERE bridge_owner = ? AND bridge_net IS NOT NULL', [ctx.viewer]);
+  for (const { n } of nets) {
+    const k = `${ctx.viewer}:${n}`;
+    if (ctx.now - (linkChecked.get(k) || 0) < LINK_CHECK_MS) continue;
+    if (linkChecked.size > 2000) linkChecked.clear();
+    linkChecked.set(k, ctx.now);
+    try { await require('./bridges').refresh(ctx, n); } catch { /* as last seen */ }
+  }
+}
+
+// ─── what a conversation and a message say about the bridge ────────────────
+
+/** `bridge` of a conversation view (null for a normal chat). */
+async function convInfo(ctx, conv) {
+  if (!isBridged(conv)) return null;
+  const state = await stateFor(ctx, conv.bridge_owner, conv.bridge_net);
+  return { network: conv.bridge_net, label: LABEL[conv.bridge_net] || conv.bridge_net, state, closed: !!conv.bridge_closed, supports: SUPPORTS };
+}
+
+/** The highest ids of the person's own messages the other side has got / read (null when none). */
+async function marks(gc, convId) {
+  const r = await store.one(gc, "SELECT MAX(CASE WHEN ext_state = 'read' THEN id END) AS r, MAX(CASE WHEN ext_state IN ('read', 'delivered') THEN id END) AS d FROM messages WHERE conv_id = ? AND ext_state IS NOT NULL", [convId]);
+  return { readUpTo: (r && r.r) || null, deliveredUpTo: (r && r.d) || null };
+}
+
+const STATUS_OUT = { pending: 'sending', sent: 'sent', delivered: 'delivered', read: 'read', failed: 'failed' };
+
+/**
+ * Message views of a bridged chat get `bridge`: { sender: { contactId, name } | null, state, reason, placeholder }
+ * — and the reactions of contacts. `rows` and `out` are parallel (messages.views).
+ */
+async function decorate(ctx, rows, out) {
+  const idx = [];
+  rows.forEach((r, i) => { if (r.ext_sender != null || r.ext_state != null || r.ext_event != null || (r.via && String(r.via).startsWith('bridge:'))) idx.push(i); });
+  if (!idx.length) return;
+  const contactIds = [...new Set(idx.map((i) => rows[i].ext_sender).filter((x) => x != null))];
+  const reacts = new Map();
+  const ids = idx.map((i) => rows[i].id);
+  for (let i = 0; i < ids.length; i += 90) {
+    const part = ids.slice(i, i + 90);
+    for (const r of await store.all(ctx.gc, `SELECT msg_id, contact_id, emoji FROM bridge_reactions WHERE msg_id IN (${store.marks(part.length)}) ORDER BY at, contact_id`, part)) {
+      if (!reacts.has(r.msg_id)) reacts.set(r.msg_id, []);
+      reacts.get(r.msg_id).push(r);
+      if (!contactIds.includes(r.contact_id)) contactIds.push(r.contact_id);
+    }
+  }
+  // quoted messages of contacts
+  for (const i of idx) if (out[i].replyTo && out[i].replyTo.contactId != null && !contactIds.includes(out[i].replyTo.contactId)) contactIds.push(out[i].replyTo.contactId);
+  const names = new Map();
+  for (let i = 0; i < contactIds.length; i += 90) {
+    const part = contactIds.slice(i, i + 90);
+    for (const c of await store.all(ctx.gc, `SELECT id, name_enc FROM bridge_contacts WHERE id IN (${store.marks(part.length)})`, part)) {
+      const n = seal.open(c.name_enc);
+      names.set(c.id, typeof n === 'string' && n ? n : null);
+    }
+  }
+  for (const i of idx) {
+    const r = rows[i];
+    const o = out[i];
+    const meta = (!r.deleted_at && require('./messages').metaOf(r)) || {};
+    const ph = meta.bridge && PLACEHOLDERS.includes(meta.bridge.placeholder) ? { kind: meta.bridge.placeholder, name: typeof meta.bridge.name === 'string' ? meta.bridge.name : null } : null;
+    o.bridge = {
+      sender: r.ext_sender != null ? { contactId: r.ext_sender, name: names.get(r.ext_sender) || null } : null,
+      // written in the messenger's own app (the person's phone), not here
+      remote: r.sender_id != null && r.client_id == null,
+      state: r.ext_state || null,
+      reason: r.ext_reason || null,
+      placeholder: ph,
+    };
+    if (r.sender_id != null && r.ext_state && !r.deleted_at) o.status = STATUS_OUT[r.ext_state] || o.status;
+    if (o.replyTo && o.replyTo.contactId != null) o.replyTo.senderName = names.get(o.replyTo.contactId) || null;
+    const list = reacts.get(r.id) || [];
+    if (list.length) {
+      const by = new Map(o.reactions.map((x) => [x.emoji, { ...x, contactIds: [] }]));
+      for (const x of list) {
+        if (!by.has(x.emoji)) by.set(x.emoji, { emoji: x.emoji, count: 0, userIds: [], contactIds: [] });
+        const e = by.get(x.emoji);
+        e.count += 1;
+        e.contactIds.push(x.contact_id);
+      }
+      o.reactions = [...by.values()];
+    }
+  }
+}
+
+// ─── in: the events of the bridges ──────────────────────────────────────────
+
+async function convOf(gc, userId, net, ref) {
+  return store.one(gc, 'SELECT * FROM conversations WHERE bridge_owner = ? AND bridge_net = ? AND bridge_ref = ?', [userId, net, ref]);
+}
+
+/** The conversation of a chat (made when it is first heard of; listed only once it has a message). */
+async function ensureConv(c, ev) {
+  const chat = ev.chat && typeof ev.chat === 'object' ? ev.chat : {};
+  if (!REF_RE.test(String(chat.id || ''))) return null;
+  const kind = chat.kind === 'group' ? 'group' : 'direct';
+  const name = line(chat.name, NAME_MAX) || null;
+  let conv = await convOf(c.gc, ev.userId, ev.network, chat.id);
+  if (!conv) {
+    const r = await store.run(c.gc, 'INSERT INTO conversations (kind, title_enc, created_by, created_at, updated_at, bridge_net, bridge_ref, bridge_owner) VALUES (?, ?, NULL, ?, ?, ?, ?, ?)',
+      [kind, name ? seal.seal(name) : null, c.now, c.now, ev.network, chat.id, ev.userId]);
+    conv = await store.one(c.gc, 'SELECT * FROM conversations WHERE id = ?', [r.lastInsertRowid]);
+    await store.run(c.gc, "INSERT INTO members (conv_id, user_id, role, joined_at, joined_msg_id, last_read_id, last_delivered_id, updated_at) VALUES (?, ?, 'member', ?, 0, 0, 0, ?)", [conv.id, ev.userId, c.now, c.now]);
+    return conv;
+  }
+  const old = seal.open(conv.title_enc);
+  if ((name && name !== old) || kind !== conv.kind) {
+    await store.run(c.gc, 'UPDATE conversations SET title_enc = ?, kind = ?, updated_at = ? WHERE id = ?', [name ? seal.seal(name) : conv.title_enc, kind, c.now, conv.id]);
+    conv = await store.one(c.gc, 'SELECT * FROM conversations WHERE id = ?', [conv.id]);
+    if (conv.last_msg_id) live.queue(c.box, [ev.userId], 'conversation.update', { conversationId: conv.id, reason: 'title' });
+  }
+  return conv;
+}
+
+async function ensureContact(c, ev, who) {
+  if (!who || !CONTACT_RE.test(String(who.id || ''))) return null;
+  const name = line(who.name, NAME_MAX) || null;
+  const old = await store.one(c.gc, 'SELECT * FROM bridge_contacts WHERE owner_id = ? AND network = ? AND ref = ?', [ev.userId, ev.network, who.id]);
+  if (!old) {
+    const r = await store.run(c.gc, 'INSERT INTO bridge_contacts (owner_id, network, ref, name_enc, updated_at) VALUES (?, ?, ?, ?, ?)', [ev.userId, ev.network, who.id, name ? seal.seal(name) : null, c.now]);
+    return r.lastInsertRowid;
+  }
+  if (name && name !== seal.open(old.name_enc)) await store.run(c.gc, 'UPDATE bridge_contacts SET name_enc = ?, updated_at = ? WHERE id = ?', [seal.seal(name), c.now, old.id]);
+  return old.id;
+}
+
+const msgByEvent = (gc, convId, eventId) => store.one(gc, 'SELECT * FROM messages WHERE conv_id = ? AND ext_event = ?', [convId, eventId]);
+
+async function park(c, conv, target, ev) {
+  await store.run(c.gc, 'INSERT INTO bridge_pending (conv_id, target, data_enc, at) VALUES (?, ?, ?, ?)', [conv.id, target, seal.sealJson(ev), c.now]);
+}
+
+/** What waited for this message: applied in the order it arrived. */
+async function unpark(c, conv, eventId) {
+  const rows = await store.all(c.gc, 'SELECT * FROM bridge_pending WHERE conv_id = ? AND target = ? ORDER BY id', [conv.id, eventId]);
+  if (!rows.length) return;
+  await store.run(c.gc, 'DELETE FROM bridge_pending WHERE conv_id = ? AND target = ?', [conv.id, eventId]);
+  for (const r of rows) {
+    const ev = seal.openJson(r.data_enc);
+    if (ev && typeof ev === 'object') await apply(c, ev, { parked: true });
+  }
+}
+
+/** One neutral event → the person's chats. Runs inside a transaction; events and pushes go to c.box. */
+async function apply(c, ev, { parked = false } = {}) {
+  if (!ev || typeof ev !== 'object' || !NETWORKS.includes(ev.network) || !c.users.has(ev.userId)) return;
+  // a child whose parents did not (or no longer) allow the service gets nothing from it
+  if (!(await require('./bridges').allowed(c.gc, ev.userId, ev.network, c.now)).allowed) { c.dropped = (c.dropped || 0) + 1; return; }
+  const at = Number.isFinite(Number(ev.at)) && Number(ev.at) > 0 ? Math.min(Number(ev.at), c.now) : c.now;
+  const users = [ev.userId];
+
+  if (ev.type === 'chat') {
+    const conv = await ensureConv(c, ev);
+    if (conv && ev.closed === true && !conv.bridge_closed) {
+      await store.run(c.gc, 'UPDATE conversations SET bridge_closed = 1, updated_at = ? WHERE id = ?', [c.now, conv.id]);
+      if (conv.last_msg_id) live.queue(c.box, users, 'conversation.update', { conversationId: conv.id, reason: 'bridge' });
+    } else if (conv && ev.closed !== true && conv.bridge_closed) {
+      await store.run(c.gc, 'UPDATE conversations SET bridge_closed = 0, updated_at = ? WHERE id = ?', [c.now, conv.id]);
+      if (conv.last_msg_id) live.queue(c.box, users, 'conversation.update', { conversationId: conv.id, reason: 'bridge' });
+    }
+    return;
+  }
+  if (ev.type === 'contact') {
+    await ensureContact(c, ev, ev.contact);
+    return;
+  }
+  const conv = await ensureConv(c, ev);
+  if (!conv) return;
+  const sender = ev.sender && typeof ev.sender === 'object' ? ev.sender : {};
+  const me = await store.one(c.gc, 'SELECT * FROM members WHERE conv_id = ? AND user_id = ?', [conv.id, ev.userId]);
+  if (!me) return;
+  const messages = require('./messages');
+
+  if (ev.type === 'message') {
+    if (!EVENT_RE.test(String(ev.id || '')) || (await msgByEvent(c.gc, conv.id, ev.id))) return;
+    const contactId = sender.self || sender.system ? null : await ensureContact(c, ev, sender);
+    if (!sender.self && !sender.system && contactId == null) return;
+    let text = body(ev.text).slice(0, TEXT_MAX).trim() || null;
+    const meta = {};
+    let kind = 'text';
+    if (sender.system) { kind = 'system'; meta.system = { event: 'bridge_notice', network: ev.network }; }
+    else if (ev.kind === 'media') {
+      const m = ev.media && typeof ev.media === 'object' ? ev.media : {};
+      meta.bridge = { placeholder: PLACEHOLDERS.includes(m.kind) ? m.kind : 'file', name: line(m.name, 200) || null };
+    } else if (ev.kind !== 'text' && ev.kind !== 'notice') { meta.bridge = { placeholder: 'unsupported', name: null }; text = null; }
+    let replyTo = null;
+    if (EVENT_RE.test(String(ev.replyTo || ''))) { const q = await msgByEvent(c.gc, conv.id, ev.replyTo); replyTo = q && !q.deleted_at ? q.id : null; }
+    const cx = { ...c, now: at };
+    const id = await messages.insert(cx, conv, { senderId: sender.self ? ev.userId : null, kind, text, replyTo, meta, via: via(ev.network) });
+    await store.run(c.gc, 'UPDATE messages SET ext_sender = ?, ext_event = ?, ext_state = ? WHERE id = ?', [contactId, ev.id, sender.self ? 'sent' : null, id]);
+    if (sender.self) await store.run(c.gc, 'UPDATE members SET last_read_id = MAX(last_read_id, ?), last_delivered_id = MAX(last_delivered_id, ?), updated_at = ? WHERE conv_id = ? AND user_id = ?', [id, id, c.now, conv.id, ev.userId]);
+    const row = await store.one(c.gc, 'SELECT * FROM messages WHERE id = ?', [id]);
+    live.queue(c.box, users, 'message.new', { conversationId: conv.id, messageId: id, senderId: row.sender_id, clientId: null, kind: row.kind, createdAt: iso(row.created_at), bridge: ev.network });
+    if (!sender.self && !parked) c.box.pushes.push({ bridged: { conv, me, row, text, meta, senderName: sender.system ? LABEL[ev.network] : (line(sender.name, NAME_MAX) || null), contactId, title: seal.open(conv.title_enc) || null } });
+    await unpark(c, conv, ev.id);
+    return;
+  }
+
+  if (ev.type === 'status') {
+    if (!EVENT_RE.test(String(ev.target || ''))) return;
+    const m = await msgByEvent(c.gc, conv.id, ev.target);
+    if (!m) { if (!parked) await park(c, conv, ev.target, ev); return; }
+    if (m.sender_id == null || m.deleted_at) return;
+    const rank = { pending: 0, failed: 0, sent: 1, delivered: 2, read: 3 };
+    let state = m.ext_state;
+    let reason = m.ext_reason;
+    if (ev.status === 'failed') { if ((rank[m.ext_state] || 0) < 2) { state = 'failed'; reason = REASON_RE.test(String(ev.reason || '')) ? ev.reason : 'bridge_error'; } }
+    else if ((ev.status === 'sent' || ev.status === 'delivered') && rank[ev.status] > (rank[m.ext_state] || 0)) { state = ev.status; reason = null; }
+    else if (ev.status === 'sent' && m.ext_state === 'failed') { state = 'sent'; reason = null; }
+    if (state === m.ext_state && reason === m.ext_reason) return;
+    await store.run(c.gc, 'UPDATE messages SET ext_state = ?, ext_reason = ?, updated_at = ? WHERE id = ?', [state, reason, c.now, m.id]);
+    live.queue(c.box, users, 'message.update', { conversationId: conv.id, messageId: m.id, editedAt: iso(c.now), status: STATUS_OUT[state] });
+    return;
+  }
+
+  if (ev.type === 'edit') {
+    if (!EVENT_RE.test(String(ev.target || ''))) return;
+    const m = await msgByEvent(c.gc, conv.id, ev.target);
+    if (!m) { if (!parked) await park(c, conv, ev.target, ev); return; }
+    // only the one who wrote it changes it
+    const mine = sender.self === true && m.sender_id === ev.userId;
+    const theirs = !sender.self && m.ext_sender != null && m.ext_sender === await ensureContact(c, ev, sender);
+    if (m.deleted_at || m.kind !== 'text' || !(mine || theirs)) return;
+    const text = body(ev.text).slice(0, TEXT_MAX).trim();
+    if (!text || text === messages.bodyOf(m)) return;
+    await store.run(c.gc, 'UPDATE messages SET body_enc = ?, edited_at = ?, updated_at = ? WHERE id = ?', [seal.seal(text), at, c.now, m.id]);
+    await store.run(c.gc, 'UPDATE conversations SET updated_at = ? WHERE id = ?', [c.now, conv.id]);
+    live.queue(c.box, users, 'message.update', { conversationId: conv.id, messageId: m.id, editedAt: iso(at) });
+    return;
+  }
+
+  if (ev.type === 'reaction') {
+    if (!EVENT_RE.test(String(ev.target || '')) || !EVENT_RE.test(String(ev.id || ''))) return;
+    let emoji;
+    try { emoji = messages.cleanEmoji(typeof ev.emoji === 'string' ? ev.emoji : ''); } catch { return; }
+    const m = await msgByEvent(c.gc, conv.id, ev.target);
+    if (!m) { if (!parked) await park(c, conv, ev.target, ev); return; }
+    if (m.deleted_at) return;
+    if (sender.self) {
+      await store.run(c.gc, 'INSERT INTO reactions (msg_id, user_id, emoji, at, ext_event) VALUES (?, ?, ?, ?, ?) ON CONFLICT(msg_id, user_id) DO UPDATE SET emoji = excluded.emoji, at = excluded.at, ext_event = excluded.ext_event', [m.id, ev.userId, emoji, at, ev.id]);
+    } else {
+      const contactId = await ensureContact(c, ev, sender);
+      if (contactId == null) return;
+      await store.run(c.gc, 'INSERT INTO bridge_reactions (msg_id, contact_id, emoji, ext_event, at) VALUES (?, ?, ?, ?, ?) ON CONFLICT(msg_id, contact_id) DO UPDATE SET emoji = excluded.emoji, ext_event = excluded.ext_event, at = excluded.at', [m.id, contactId, emoji, ev.id, at]);
+    }
+    await reactionChanged(c, conv, m.id, users);
+    return;
+  }
+
+  if (ev.type === 'redact') {
+    if (!EVENT_RE.test(String(ev.target || ''))) return;
+    // a reaction taken back
+    const br = await store.one(c.gc, 'SELECT r.msg_id FROM bridge_reactions r JOIN messages m ON m.id = r.msg_id WHERE r.ext_event = ? AND m.conv_id = ?', [ev.target, conv.id]);
+    if (br) {
+      await store.run(c.gc, 'DELETE FROM bridge_reactions WHERE ext_event = ? AND msg_id = ?', [ev.target, br.msg_id]);
+      await reactionChanged(c, conv, br.msg_id, users);
+      return;
+    }
+    const own = await store.one(c.gc, 'SELECT r.msg_id FROM reactions r JOIN messages m ON m.id = r.msg_id WHERE r.ext_event = ? AND m.conv_id = ?', [ev.target, conv.id]);
+    if (own) {
+      await store.run(c.gc, 'DELETE FROM reactions WHERE ext_event = ? AND msg_id = ?', [ev.target, own.msg_id]);
+      await reactionChanged(c, conv, own.msg_id, users);
+      return;
+    }
+    const m = await msgByEvent(c.gc, conv.id, ev.target);
+    if (!m) { if (!parked) await park(c, conv, ev.target, ev); return; }
+    if (m.deleted_at) return;
+    await tombstone(c, conv, m.id, users);
+  }
+}
+
+async function reactionChanged(c, conv, msgId, users) {
+  await store.run(c.gc, 'UPDATE messages SET updated_at = ? WHERE id = ?', [c.now, msgId]);
+  live.queue(c.box, users, 'message.update', { conversationId: conv.id, messageId: msgId, editedAt: iso(c.now), reactions: true });
+}
+
+/** Deleted for everyone: the row stays as a tombstone, like a message deleted in GateControl. */
+async function tombstone(c, conv, msgId, users) {
+  await store.run(c.gc, 'UPDATE messages SET deleted_at = ?, body_enc = NULL, meta_enc = NULL, media_id = NULL, thumb_media_id = NULL, reply_to = NULL, updated_at = ? WHERE id = ?', [c.now, c.now, msgId]);
+  await store.run(c.gc, 'DELETE FROM reactions WHERE msg_id = ?', [msgId]);
+  await store.run(c.gc, 'DELETE FROM bridge_reactions WHERE msg_id = ?', [msgId]);
+  await store.run(c.gc, 'UPDATE conversations SET updated_at = ? WHERE id = ?', [c.now, conv.id]);
+  live.queue(c.box, users, 'message.delete', { conversationId: conv.id, messageIds: [msgId], reason: 'deleted' });
+}
+
+/** "typing …" and read receipts of the other side: live only, and a read mark on the person's own messages. */
+async function applyEphemeral(c, ev) {
+  if (!ev || typeof ev !== 'object' || !NETWORKS.includes(ev.network) || !c.users.has(ev.userId)) return;
+  const chat = ev.chat && typeof ev.chat === 'object' ? ev.chat : {};
+  if (!REF_RE.test(String(chat.id || ''))) return;
+  const conv = await convOf(c.gc, ev.userId, ev.network, chat.id);
+  if (!conv || !conv.last_msg_id) return;
+  const prefs = (await people.prefsOf(c.gc, [ev.userId])).get(ev.userId) || {};
+  if (ev.type === 'typing') {
+    if (prefs.typing === false) return;
+    const refs = (Array.isArray(ev.contacts) ? ev.contacts : []).filter((x) => CONTACT_RE.test(String(x))).slice(0, 20);
+    const list = [];
+    for (const ref of refs) {
+      const k = await store.one(c.gc, 'SELECT id, name_enc FROM bridge_contacts WHERE owner_id = ? AND network = ? AND ref = ?', [ev.userId, ev.network, ref]);
+      if (k) list.push({ contactId: k.id, name: seal.open(k.name_enc) || null });
+    }
+    live.queue(c.box, [ev.userId], 'typing', { conversationId: conv.id, userId: null, contacts: list, until: list.length ? iso(c.now + live.TYPING_MS) : null });
+    return;
+  }
+  if (ev.type === 'receipt' && EVENT_RE.test(String(ev.upTo || ''))) {
+    const m = await msgByEvent(c.gc, conv.id, ev.upTo);
+    if (!m) return;
+    const reader = ev.reader && typeof ev.reader === 'object' ? ev.reader : {};
+    if (reader.self) {
+      // read in the messenger's own app: read here too
+      const me = await store.one(c.gc, 'SELECT * FROM members WHERE conv_id = ? AND user_id = ?', [conv.id, ev.userId]);
+      if (me && m.id > me.last_read_id) {
+        await store.run(c.gc, 'UPDATE members SET last_read_id = ?, last_delivered_id = MAX(last_delivered_id, ?), updated_at = ? WHERE conv_id = ? AND user_id = ?', [m.id, m.id, c.now, conv.id, ev.userId]);
+        const me2 = { ...me, last_read_id: m.id, last_delivered_id: Math.max(me.last_delivered_id, m.id) };
+        live.queue(c.box, [ev.userId], 'read', { conversationId: conv.id, userId: ev.userId, lastReadId: m.id, lastDeliveredId: me2.last_delivered_id, self: true, unread: await require('./messages').unreadCount(c.gc, me2), ...(await marks(c.gc, conv.id)) });
+      }
+      return;
+    }
+    // the other side read up to here (shown only to people who share read receipts themselves)
+    const r = await store.run(c.gc, "UPDATE messages SET ext_state = 'read', updated_at = ? WHERE conv_id = ? AND sender_id = ? AND id <= ? AND ext_state IN ('sent', 'delivered') AND deleted_at IS NULL", [c.now, conv.id, ev.userId, m.id]);
+    if (r && r.changes) live.queue(c.box, [ev.userId], 'read', { conversationId: conv.id, userId: null, lastReadId: prefs.readReceipts === false ? null : m.id, lastDeliveredId: m.id, ...(await marksFor(c.gc, conv.id, prefs)) });
+  }
+}
+
+/** marks() as the person may see them: no "read" for somebody who does not share read receipts. */
+async function marksFor(gc, convId, prefs) {
+  const mk = await marks(gc, convId);
+  return prefs && prefs.readReceipts === false ? { readUpTo: null, deliveredUpTo: mk.deliveredUpTo } : mk;
+}
+
+let pumping = Promise.resolve();
+
+/**
+ * Fetch what the bridges delivered, file it, acknowledge it. One run at a time; never throws.
+ * `make()` → a fresh context { gc, now, users, box, … } (index.js), `flush(ctx)` sends its events and pushes.
+ */
+function pump(gc, make, flush, ephemeral) {
+  const run = pumping.then(() => pumpNow(gc, make, flush, ephemeral)).catch((e) => { gc.log.warn('bridge events failed', (e && (e.code || e.message)) || 'error'); return { filed: 0 }; });
+  pumping = run;
+  return run;
+}
+
+async function pumpNow(gc, make, flush, ephemeral) {
+  const b = api(gc);
+  if (!b) return { filed: 0 };
+  let filed = 0;
+  for (let round = 0; round < 50; round++) {
+    const r = await b.events.pull({ after: 0, limit: 100 });
+    const list = r && Array.isArray(r.events) ? r.events : [];
+    if (!list.length) break;
+    const ctx = await make();
+    let last = 0;
+    await store.tx(gc, async () => {
+      for (const ev of list) {
+        if (!Number.isSafeInteger(ev.seq)) continue;
+        try { await apply(ctx, ev); }
+        catch (e) { await log.add(gc, 'bridge_event_failed', String((e && (e.code || e.message)) || 'error').slice(0, 60), ctx.now); }
+        last = Math.max(last, ev.seq);
+      }
+    });
+    if (ctx.dropped) await log.add(gc, 'bridge_event_locked', `dropped ${ctx.dropped}`, ctx.now);
+    filed += list.length;
+    // filed and committed: now GateControl may forget them (a crash before this line files them again — once, by their id)
+    if (last) await b.events.ack(last);
+    await flush(ctx);
+    if (!r.more || !last) break;
+  }
+  if (Array.isArray(ephemeral) && ephemeral.length) {
+    const ctx = await make();
+    await store.tx(gc, async () => { for (const ev of ephemeral.slice(0, 200)) { try { await applyEphemeral(ctx, ev); } catch { /* live only */ } } });
+    await flush(ctx);
+  }
+  return { filed };
+}
+
+/** Background: what waited a day for its message is dropped. */
+async function sweep(gc, now) {
+  await store.run(gc, 'DELETE FROM bridge_pending WHERE at < ?', [now - PENDING_MS]);
+}
+
+// ─── pushes ─────────────────────────────────────────────────────────────────
+
+/** The push of a contact's message: to the one person the chat belongs to — like a normal chat's, never to anybody else. */
+async function push(gc, job, users, now) {
+  const { conv, me, row } = job;
+  const u = conv.bridge_owner;
+  if (!users.has(u) || me.notify === 'none' || (me.muted_until != null && me.muted_until > now) || live.isActive(u, conv.id, now)) return [];
+  if ((await require('./status').dndUsers(gc, now)).has(u)) return [];
+  const p = (await people.prefsOf(gc, [u])).get(u) || {};
+  const lang = p.lang === 'en' ? 'en' : 'de';
+  const net = LABEL[conv.bridge_net] || conv.bridge_net;
+  const name = job.senderName || job.title || net;
+  const ph = job.meta && job.meta.bridge ? job.meta.bridge.placeholder : null;
+  let text = typeof job.text === 'string' ? job.text : '';
+  if (ph) text = [t(lang, 'bridgechat.placeholder.' + ph), text].filter(Boolean).join(': ');
+  text = text.replace(/\s+/g, ' ').trim();
+  const n = {
+    topic: 'message',
+    title: p.preview ? t(lang, 'bridgechat.push_title', { name, network: net }) : t(lang, 'bridgechat.push_neutral', { name, network: net }),
+    body: p.preview ? (text.length > 1000 ? text.slice(0, 999) + '…' : text) : '',
+    users: [u],
+    priority: 'normal',
+    conversation: { id: String(conv.id), title: conv.kind === 'group' ? (job.title || null) : null, isGroup: conv.kind === 'group' },
+    sender: { id: job.contactId != null ? `ext-${job.contactId}` : 'gatecontrol', name, avatarUrl: null },
+    data: { messageId: row.id, conversationId: conv.id, bridge: conv.bridge_net, actions: [
+      // `bridged` in the body: the buttons of a push work in every app, also one that does not list bridged chats
+      { type: 'reply', label: t(lang, 'push.reply'), path: `conversations/${conv.id}/messages`, body: { bridged: true } },
+      { type: 'mark_read', label: t(lang, 'push.mark_read'), path: `conversations/${conv.id}/read`, body: { upTo: row.id, bridged: true } },
+    ] },
+  };
+  try {
+    const res = await gc.notify(n);
+    if (res && Array.isArray(res.skipped) && res.skipped.length) await log.add(gc, 'push_rate_limit', `skipped ${res.skipped.length}`, now);
+    return [{ users: [u], preview: !!p.preview, lang }];
+  } catch (e) {
+    await log.add(gc, e && e.code === 'ERR_RATE_LIMIT' ? 'push_rate_limit' : 'push_failed', e && e.code === 'ERR_RATE_LIMIT' ? null : ((e && e.code) || 'error'), now);
+    return [];
+  }
+}
+
+// ─── out: the person writes ─────────────────────────────────────────────────
+
+/** Everything that must hold before something goes out. → gc.bridges */
+async function gate(ctx, conv) {
+  const b = api(ctx.gc);
+  if (!b) throw fail('bridge_off', { reason: 'no_host' });
+  const st = await stateFor(ctx, conv.bridge_owner, conv.bridge_net);
+  if (st === 'locked') throw fail('bridge_locked');
+  if (st === 'off') throw fail('bridge_off', { reason: 'off' });
+  if (st === 'unreachable') throw fail('bridge_unreachable', { reason: 'not_running' });
+  if (st === 'logged_out' || st === 'unlinked') throw fail('bridge_unlinked', { reason: st });
+  if (conv.bridge_closed) throw fail('bridge_failed', { reason: 'chat_closed' });
+  return b;
+}
+
+/** What a bridged chat takes: a text, maybe as an answer. Everything else is refused before anything is stored. */
+function checkBody(b) {
+  const x = b && typeof b === 'object' && !Array.isArray(b) ? b : null;
+  if (!x) throw fail('invalid');
+  if (x.kind != null && x.kind !== 'text') throw fail('bridge_text_only', { reason: 'kind' });
+  for (const k of ['mediaId', 'thumbMediaId', 'video', 'location', 'poll', 'event', 'arrival', 'action', 'replyStory', 'meta']) if (x[k] != null) throw fail('bridge_text_only', { reason: 'kind' });
+}
+
+// The id a step is sent under: a message's own (so sending it again sends it once), a fresh one for every edit,
+// deletion or reaction (each is a step of its own).
+const txnOf = (row, step) => `gc-${row.id}-${step ? step + crypto.randomBytes(6).toString('hex') : (row.client_id || 'x')}`.replace(/[^A-Za-z0-9_-]/g, '').slice(0, 96);
+
+/** Hand a stored message to the bridge and note what became of it. → the row afterwards */
+async function deliver(ctx, b, conv, row) {
+  let ext = null;
+  let reason = null;
+  const text = require('./messages').bodyOf(row);
+  let replyTo = null;
+  if (row.reply_to) { const q = await store.one(ctx.gc, 'SELECT ext_event FROM messages WHERE id = ?', [row.reply_to]); replyTo = q && q.ext_event ? q.ext_event : null; }
+  try {
+    const r = await b.send(ctx.viewer, conv.bridge_net, conv.bridge_ref, { txnId: txnOf(row), text, ...(replyTo ? { replyTo } : {}) });
+    ext = r && EVENT_RE.test(String(r.id || '')) ? r.id : null;
+    if (!ext) reason = 'bad_answer';
+  } catch (e) {
+    reason = reasonOf(e);
+    if (e && e.code === 'ERR_NOT_PERSON') throw mapped(e);
+  }
+  await store.tx(ctx.gc, async () => {
+    if (ext) {
+      // the bridge's word may have arrived before this line: it waits in bridge_pending and is applied now
+      await store.run(ctx.gc, "UPDATE messages SET ext_event = ?, ext_state = CASE WHEN ext_state IN ('pending', 'failed') OR ext_state IS NULL THEN 'sent' ELSE ext_state END, ext_reason = NULL, updated_at = ? WHERE id = ?", [ext, ctx.now, row.id]);
+      await unpark(ctx, conv, ext);
+    } else {
+      await store.run(ctx.gc, "UPDATE messages SET ext_state = 'failed', ext_reason = ?, updated_at = ? WHERE id = ?", [reason, ctx.now, row.id]);
+    }
+  });
+  if (!ext) await log.add(ctx.gc, 'bridge_send_failed', reason, ctx.now);
+  return store.one(ctx.gc, 'SELECT * FROM messages WHERE id = ?', [row.id]);
+}
+
+/** POST conversations/:id/messages for a bridged chat. `stored` = messages.send's result, committed. → the row afterwards */
+async function sendOut(ctx, conv, stored) {
+  if (stored.duplicate) return stored.row;
+  const b = api(ctx.gc);
+  return deliver(ctx, b, conv, stored.row);
+}
+
+/** POST messages/:id/resend — a message that did not go out, again (the same id at the bridge: sent once). */
+async function resend(ctx, conv, row) {
+  if (row.sender_id !== ctx.viewer) throw fail('not_sender');
+  if (row.deleted_at) throw fail('deleted');
+  if (row.ext_state !== 'failed' && row.ext_state !== 'pending') throw fail('invalid');
+  const b = await gate(ctx, conv);
+  await store.tx(ctx.gc, () => store.run(ctx.gc, "UPDATE messages SET ext_state = 'pending', ext_reason = NULL, updated_at = ? WHERE id = ?", [ctx.now, row.id]));
+  return deliver(ctx, b, conv, row);
+}
+
+/** Before PATCH messages/:id: the edit goes to the other side first; only then the text changes here. */
+async function editOut(ctx, conv, row, text) {
+  if (!row.ext_event || row.kind !== 'text') throw fail('bridge_text_only', { reason: 'edit' });
+  const b = await gate(ctx, conv);
+  try { await b.send(ctx.viewer, conv.bridge_net, conv.bridge_ref, { txnId: txnOf(row, 'e'), text, edit: row.ext_event }); } catch (e) { throw mapped(e); }
+}
+
+/** Before DELETE messages/:id?for=all. A message that never went out is simply removed here. */
+async function deleteOut(ctx, conv, row) {
+  if (!row.ext_event) return;
+  const b = await gate(ctx, conv);
+  try { await b.redact(ctx.viewer, conv.bridge_net, conv.bridge_ref, { txnId: txnOf(row, 'd'), target: row.ext_event }); } catch (e) { throw mapped(e); }
+}
+
+/** Before PUT messages/:id/reaction: take the old one back, set the new one. → the bridge's id of the new reaction (null: none) */
+async function reactOut(ctx, conv, row, emoji) {
+  if (!row.ext_event) throw fail('bridge_text_only', { reason: 'reaction' });
+  const b = await gate(ctx, conv);
+  const old = await store.one(ctx.gc, 'SELECT ext_event FROM reactions WHERE msg_id = ? AND user_id = ?', [row.id, ctx.viewer]);
+  try {
+    if (old && old.ext_event) await b.redact(ctx.viewer, conv.bridge_net, conv.bridge_ref, { txnId: txnOf(row, 'u'), target: old.ext_event });
+    if (emoji == null) return null;
+    const r = await b.react(ctx.viewer, conv.bridge_net, conv.bridge_ref, { txnId: txnOf(row, 'r'), target: row.ext_event, emoji });
+    return r && EVENT_RE.test(String(r.id || '')) ? r.id : null;
+  } catch (e) { throw mapped(e); }
+}
+
+/** After POST conversations/:id/read: tell the other side (only for people who share read receipts). Best effort. */
+async function readOut(ctx, conv, upTo) {
+  const b = api(ctx.gc);
+  if (!b || conv.bridge_closed) return;
+  const prefs = (await people.prefsOf(ctx.gc, [ctx.viewer])).get(ctx.viewer) || {};
+  if (prefs.readReceipts === false) return;
+  const m = await store.one(ctx.gc, 'SELECT ext_event FROM messages WHERE conv_id = ? AND id <= ? AND ext_sender IS NOT NULL AND ext_event IS NOT NULL ORDER BY id DESC LIMIT 1', [conv.id, upTo]);
+  if (!m) return;
+  try { await b.read(ctx.viewer, conv.bridge_net, conv.bridge_ref, m.ext_event); } catch { /* the mark here stands */ }
+}
+
+/** POST conversations/:id/typing of a bridged chat. Best effort, at most every few seconds. */
+async function typingOut(ctx, conv, bodyIn) {
+  const b = api(ctx.gc);
+  const stop = !!(bodyIn && bodyIn.stop === true);
+  const prefs = (await people.prefsOf(ctx.gc, [ctx.viewer])).get(ctx.viewer) || {};
+  if (!b || conv.bridge_closed || prefs.typing === false) return { until: null };
+  if (stop) {
+    if (live.clearTyping(conv.id, ctx.viewer, ctx.now)) { try { await b.typing(ctx.viewer, conv.bridge_net, conv.bridge_ref, false); } catch { /* live only */ } }
+    return { until: null };
+  }
+  const tt = live.setTyping(conv.id, ctx.viewer, ctx.now);
+  if (tt.emit) { try { await b.typing(ctx.viewer, conv.bridge_net, conv.bridge_ref, true); } catch { /* live only */ } }
+  return { until: iso(tt.until) };
+}
+
+/** Has this person a bridged chat with a message? (GET me: features.bridge_chats) */
+async function hasChats(gc, userId) {
+  return !!(await store.one(gc, 'SELECT 1 AS x FROM conversations WHERE bridge_owner = ? AND bridge_net IS NOT NULL AND last_msg_id IS NOT NULL LIMIT 1', [userId]));
+}
+
+module.exports = {
+  api, isBridged, via, convInfo, marks, marksFor, decorate, apply, applyEphemeral, pump, sweep, push, gate, checkBody, sendOut, resend, editOut, deleteOut, reactOut, readOut, typingOut,
+  refreshLinks, stateFor, hasChats, mapped, NETWORKS, LABEL, SUPPORTS, PLACEHOLDERS,
+  _reset: () => { linkChecked.clear(); pumping = Promise.resolve(); },
+};

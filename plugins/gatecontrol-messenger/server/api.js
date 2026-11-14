@@ -17,6 +17,7 @@ const social = require('./social');
 const homeactions = require('./homeactions');
 const familie = require('./familie');
 const status = require('./status');
+const bridgechats = require('./bridgechats');
 const { route14 } = require('./api14');
 const { fail, posInt, iso } = require('./util');
 
@@ -31,6 +32,10 @@ async function me(ctx) {
   const u = ctx.users.get(ctx.viewer);
   let linked = false;
   try { linked = (await require('./bridges').offered(ctx.gc)).length > 0; } catch { linked = false; }
+  // 1.14.0: this person has chats over a bridge. Only then — an app that does not know the word shows "a newer
+  // version supports all chat features", and that is true exactly for these people
+  let bridgeChats = false;
+  try { bridgeChats = !!bridgechats.api(ctx.gc) && await bridgechats.hasChats(ctx.gc, ctx.viewer); } catch { bridgeChats = false; }
   return {
     user: u ? { id: u.id, name: u.name, avatarUrl: u.avatarUrl || null, initials: u.initials || null, colorHex: u.colorHex || null } : { id: ctx.viewer, name: null, avatarUrl: null, initials: null, colorHex: null },
     prefs,
@@ -45,6 +50,8 @@ async function me(ctx) {
       ...Object.fromEntries(features14(ctx).map((f) => [f, true])),
       // 1.13.0: „Verknüpfte Dienste“ (GET bridges …) — only while this server offers a bridge and it is switched on
       ...(linked ? { linked_services: true } : {}),
+      // 1.14.0: chats over a bridge (README "App-API", since 1.14.0): conversations with `bridge`, ?bridged=1
+      ...(bridgeChats ? { bridge_chats: true } : {}),
     },
     // 1.4.0: what the Familie plugin offers here (gc.services.available) — "Zur Liste", "In Kalender", places;
     // 1.10.0: drive — Drive takes files (save_file): "In Drive speichern" (POST messages/:id/to-drive)
@@ -130,6 +137,9 @@ async function route(ctx, req, seg) {
 
   if (a === 'conversations') {
     if (seg.length === 1 && m === 'GET') {
+      // 1.14.0: the viewer's own request is in flight — a good moment to notice that the service dropped the link
+      // (before the transaction: it writes what the bridge says)
+      if (ctx.bridged) await bridgechats.refreshLinks(ctx);
       const out = await tx(() => conversations.list(ctx, req.query));
       return json(200, out);
     }
@@ -167,6 +177,28 @@ async function route(ctx, req, seg) {
       }
       if (seg.length === 3 && c === 'messages' && m === 'POST') {
         let job = null;
+        // 1.14.0: a bridged chat — checked first (only a text, the account linked, the bridge up), stored, then handed over
+        const pre = await conversations.access(ctx, b);
+        if (pre.conv.bridge_net) {
+          bridgechats.checkBody(req.body);
+          await bridgechats.gate(ctx, pre.conv);
+          ctx.bridgeOut = pre.conv.id;
+          const stored = await tx(async () => {
+            const x = await conversations.access(ctx, b);
+            const before = x.conv.last_msg_id || 0;
+            const r = await messages.send(ctx, x.conv, x.me, x.members, req.body);
+            if (!r.duplicate) {
+              messages.queueNew(ctx, x.conv, x.members, r.row);
+              if (x.me.last_read_id < before) await messages.queueRead(ctx, x.conv, x.members, { ...x.me, last_read_id: r.row.id, last_delivered_id: r.row.id });
+            }
+            return r;
+          });
+          const row = await bridgechats.sendOut(ctx, pre.conv, stored);
+          const x = await conversations.access(ctx, b);
+          const rc = await conversations.receipts(ctx, x.conv, x.members);
+          if (!stored.duplicate) live.queue(ctx.box, [ctx.viewer], 'message.update', { conversationId: x.conv.id, messageId: row.id, editedAt: iso(ctx.now), status: row.ext_state === 'failed' ? 'failed' : 'sent' });
+          return json(200, { message: (await messages.views(ctx, x.me, [row], rc))[0], duplicate: stored.duplicate });
+        }
         const out = await tx(async () => {
           const x = await conversations.access(ctx, b);
           const before = x.conv.last_msg_id || 0;
@@ -185,13 +217,19 @@ async function route(ctx, req, seg) {
         return json(200, out);
       }
       if (seg.length === 3 && c === 'read' && m === 'POST') {
-        return json(200, await tx(async () => {
+        let bconv = null;
+        const res = await tx(async () => {
           const x = await conversations.access(ctx, b);
+          if (x.conv.bridge_net) bconv = x.conv;
           return messages.markRead(ctx, x.conv, x.me, x.members, req.body);
-        }));
+        });
+        // 1.14.0: the other messenger learns it too (for people who share read receipts)
+        if (bconv) await bridgechats.readOut(ctx, bconv, res.lastReadId);
+        return json(200, res);
       }
       if (seg.length === 3 && c === 'typing' && m === 'POST') {
         const x = await conversations.access(ctx, b);
+        if (x.conv.bridge_net) return json(200, await bridgechats.typingOut(ctx, x.conv, req.body));
         return json(200, await conversations.typing(ctx, x.conv, x.me, x.members, req.body));
       }
       if (seg.length === 3 && c === 'active' && m === 'POST') {
@@ -225,7 +263,29 @@ async function route(ctx, req, seg) {
       const row = await store.one(gc, 'SELECT * FROM messages WHERE id = ?', [id]);
       return row ? (await messages.views(ctx, x.me, [row], rc))[0] : null;
     };
+    // 1.14.0: in a bridged chat the change goes to the other messenger first — refused there, nothing changes here
+    const ownRow = async (pre) => {
+      const row = await messages.visibleMessage(ctx, pre.me, id);
+      if (row.deleted_at) throw fail('deleted');
+      return row;
+    };
+    if (seg.length === 3 && c === 'resend' && m === 'POST') {
+      const pre = await locate();
+      if (!pre.conv.bridge_net) throw fail('not_found');
+      const row = await bridgechats.resend(ctx, pre.conv, await ownRow(pre));
+      live.queue(ctx.box, [ctx.viewer], 'message.update', { conversationId: pre.conv.id, messageId: row.id, editedAt: iso(ctx.now), status: row.ext_state === 'failed' ? 'failed' : 'sent' });
+      return json(200, { message: await out(pre) });
+    }
     if (seg.length === 2 && (m === 'PATCH' || m === 'PUT')) {
+      const pre = await locate();
+      if (pre.conv.bridge_net) {
+        const row = await ownRow(pre);
+        if (row.sender_id !== ctx.viewer) throw fail('not_sender');
+        const w = ctx.cfg.editWindowMin;
+        if (!(w > 0 && ctx.now - row.created_at <= w * 60000)) throw fail('edit_window');
+        const text = messages.cleanText(req.body && typeof req.body === 'object' ? req.body.text : null, true);
+        await bridgechats.editOut(ctx, pre.conv, row, text);
+      }
       return json(200, await tx(async () => {
         const x = await locate();
         await messages.edit(ctx, x.conv, x.me, x.members, id, req.body);
@@ -235,6 +295,14 @@ async function route(ctx, req, seg) {
     if (seg.length === 2 && m === 'DELETE') {
       const scope = req.query && req.query.for != null ? String(req.query.for) : 'me';
       if (scope !== 'me' && scope !== 'all') throw fail('invalid');
+      const pre = scope === 'all' ? await locate() : null;
+      if (pre && pre.conv.bridge_net) {
+        const row = await ownRow(pre);
+        if (row.sender_id !== ctx.viewer) throw fail('not_sender');
+        const w = ctx.cfg.editWindowMin;
+        if (!(w > 0 && ctx.now - row.created_at <= w * 60000)) throw fail('edit_window');
+        await bridgechats.deleteOut(ctx, pre.conv, row);
+      }
       return json(200, await tx(async () => {
         const x = await locate();
         const r = await messages.remove(ctx, x.conv, x.me, x.members, id, scope);
@@ -243,9 +311,24 @@ async function route(ctx, req, seg) {
     }
     if (seg.length === 3 && c === 'reaction' && (m === 'PUT' || m === 'POST')) {
       // (1.4.0 routes of a message are in api14.js)
+      let extReaction;
+      const pre = await locate();
+      const bridged = !!pre.conv.bridge_net;
+      if (bridged) {
+        const row = await ownRow(pre);
+        if (!req.body || typeof req.body !== 'object' || !Object.prototype.hasOwnProperty.call(req.body, 'emoji')) throw fail('invalid');
+        extReaction = await bridgechats.reactOut(ctx, pre.conv, row, messages.cleanEmoji(req.body.emoji));
+      }
       return json(200, await tx(async () => {
         const x = await locate();
-        return { reactions: await messages.react(ctx, x.conv, x.me, x.members, id, req.body) };
+        await messages.react(ctx, x.conv, x.me, x.members, id, req.body);
+        if (bridged) {
+          await store.run(gc, 'UPDATE reactions SET ext_event = ? WHERE msg_id = ? AND user_id = ?', [extReaction || null, id, ctx.viewer]);
+          // the event 'reaction' carries the accounts' reactions only: clients fetch the message for the contacts' as well
+          live.queue(ctx.box, [ctx.viewer], 'message.update', { conversationId: x.conv.id, messageId: id, editedAt: iso(ctx.now), reactions: true });
+        }
+        // with the contacts' reactions, as the message view shows them
+        return { reactions: (await out(x)).reactions };
       }));
     }
   }
@@ -262,7 +345,8 @@ async function flush(ctx) {
   await live.flush(ctx.gc, ctx.box);
   const jobs = ctx.box.pushes;
   ctx.box.pushes = [];
-  for (const j of jobs) await push.send(ctx.gc, j, ctx.users, ctx.now);
+  // 1.14.0: the push of a contact's message goes to the one person the bridged chat belongs to (bridgechats.push)
+  for (const j of jobs) await (j.bridged ? bridgechats.push(ctx.gc, j.bridged, ctx.users, ctx.now) : push.send(ctx.gc, j, ctx.users, ctx.now));
   const after = ctx.box.after || [];
   ctx.box.after = [];
   for (const fn of after) {

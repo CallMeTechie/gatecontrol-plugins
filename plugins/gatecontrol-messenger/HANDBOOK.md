@@ -1,4 +1,4 @@
-<!-- version: 1.13.0 -->
+<!-- version: 1.14.0 -->
 # Messenger
 
 ## What the plugin does
@@ -67,6 +67,16 @@ The Family plugin keeps it (page “Features” › messenger group).
 
 **Old messages are gone.**
 The administrator set a retention, or the chat is a disappearing chat.
+
+## New in 1.14.0
+
+- **Chats over WhatsApp:** once you linked your WhatsApp account under “Linked services”, a chat with a contact or a group appears in your chat list as soon as a new message arrives there. The picture carries the mark “WA”; above the list you can filter by service.
+- **Only you** see these chats – no other member of the family and no administrator.
+- **What works:** text, replies, reactions, editing, deleting for everyone, read receipts and “typing …”. Under your message you see whether it was sent, delivered or read – or not sent, with the reason and “Send again”.
+- **What does not work yet:** pictures, videos, voice messages and files. When something like that arrives, the chat shows a line such as “Picture – follows; see it in WhatsApp”. Polls, events, home actions, cards and locations do not exist in these chats.
+- **Important:** these chats run over WhatsApp and not only over your server. WhatsApp’s encryption ends at the bridge next to your GateControl server.
+- **Unlink** under “Linked services” ends the delivery; the chats stay readable. Children still need their parents’ permission.
+- **For administrators:** on “Overview” first switch on the main switch of the bridges, then each service under “3 · Which services?”.
 
 ## New in 1.13.0
 

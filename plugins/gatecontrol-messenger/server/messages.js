@@ -84,6 +84,8 @@ async function views(ctx, me, rows, rc) {
   const out = [];
   for (const r of rows) out.push(await view(ctx, me, r, rc, reactions.get(r.id) || [], replies, hiddenReplies));
   if (rows.some((r) => RICH_VIEW.includes(r.kind) && !r.deleted_at)) await require('./rich').decorate(ctx, rows, out);
+  // 1.14.0: messages of a bridged chat — who of the other side wrote it, what became of one's own (bridgechats.js)
+  await require('./bridgechats').decorate(ctx, rows, out);
   return out;
 }
 
@@ -99,13 +101,15 @@ function reactionList(list) {
 /** A short preview of a message for quotes: { id, senderId, kind, text, deleted, missing }. */
 function quote(r, me, hidden, id) {
   if (!r || !visibleTo(r, me) || hidden.has(r.id)) return { id, senderId: null, kind: null, text: null, deleted: false, missing: true };
-  if (r.deleted_at) return { id: r.id, senderId: r.sender_id, kind: r.kind, text: null, deleted: true, missing: false };
+  // 1.14.0: a quoted message of a contact (a bridged chat) names the contact — bridgechats.decorate adds senderName
+  const ext = r.ext_sender != null ? { contactId: r.ext_sender } : {};
+  if (r.deleted_at) return { id: r.id, senderId: r.sender_id, kind: r.kind, text: null, deleted: true, missing: false, ...ext };
   const meta = metaOf(r) || {};
   let t = bodyOf(r);
   if (!t && r.kind === 'file') t = meta.fileName || null;
   if (!t && r.kind === 'location' && meta.location) t = meta.location.label || null;
   if (!t) t = require('./rich').summaryText(r.kind, meta);
-  return { id: r.id, senderId: r.sender_id, kind: r.kind, text: typeof t === 'string' ? t.slice(0, REPLY_PREVIEW) : null, deleted: false, missing: false };
+  return { id: r.id, senderId: r.sender_id, kind: r.kind, text: typeof t === 'string' ? t.slice(0, REPLY_PREVIEW) : null, deleted: false, missing: false, ...ext };
 }
 
 async function view(ctx, me, r, rc, reacts, replies, hiddenReplies) {
@@ -118,6 +122,8 @@ async function view(ctx, me, r, rc, reacts, replies, hiddenReplies) {
     thumbMediaId: null, video: null,
     // 1.4.0
     poll: null, event: null, arrival: null, action: null, card: null, replyStory: null,
+    // 1.14.0: only in a bridged chat (bridgechats.decorate)
+    bridge: null,
   };
   if (mine && rc) {
     base.status = rc.readUpTo != null && r.id <= rc.readUpTo ? 'read' : (rc.deliveredUpTo != null && r.id <= rc.deliveredUpTo ? 'delivered' : 'sent');
@@ -357,7 +363,10 @@ async function send(ctx, conv, me, members, body) {
   const dup = await store.one(ctx.gc, 'SELECT * FROM messages WHERE conv_id = ? AND sender_id = ? AND client_id = ?', [conv.id, ctx.viewer, b.clientId]);
   if (dup) return { row: dup, duplicate: true };
   if (conv.readonly) throw fail('readonly');
-  if (conv.kind === 'direct') {
+  // 1.14.0: into a bridged chat only what the API route checked and hands to the bridge afterwards (a text) — never
+  // through a service, a forward or a rich kind
+  if (conv.bridge_net && ctx.bridgeOut !== conv.id) throw fail('bridge_text_only');
+  if (conv.kind === 'direct' && !conv.bridge_net) {
     const peer = members.find((m) => m.user_id !== ctx.viewer);
     if (!peer || !ctx.users.has(peer.user_id)) throw fail('peer_unavailable');
     // 1.4.0: blocked either way — no direct messages
@@ -403,6 +412,8 @@ async function send(ctx, conv, me, members, body) {
   if (media) await bindMedia(ctx, media, { convId: conv.id, msgId: id, role: 'file', kind });
   if (thumb) await bindMedia(ctx, thumb, { convId: conv.id, msgId: id, role: 'thumb', kind });
   if (extra) await extra.create(id);
+  // 1.14.0: not out yet — bridgechats.sendOut hands it to the bridge after the commit
+  if (conv.bridge_net) await store.run(ctx.gc, "UPDATE messages SET ext_state = 'pending' WHERE id = ?", [id]);
   // one's own message: everything up to it is read
   await store.run(ctx.gc, 'UPDATE members SET last_read_id = MAX(last_read_id, ?), last_delivered_id = MAX(last_delivered_id, ?), updated_at = ? WHERE conv_id = ? AND user_id = ?', [id, id, ctx.now, conv.id, ctx.viewer]);
   live.clearTyping(conv.id, ctx.viewer, ctx.now);

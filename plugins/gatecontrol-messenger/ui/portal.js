@@ -16,7 +16,11 @@
    lists its feature.
    1.6.0: the status strip ("Mein Status") above "Angeheftet"; under it "GateControl", then the chats the server pins
    (listPinned: Familie's group); notice channels of GateControl's notifications (`notice`) marked "Mitteilungen";
-   notification cards (card.notice) with "<source> · <topic>" and their full text (ui/rich.js). */
+   notification cards (card.notice) with "<source> · <topic>" and their full text (ui/rich.js).
+   1.14.0: chats over a bridge to another messenger (`bridge` on a conversation, GET me features.bridge_chats): the
+   service's mark at the picture, a filter per service, the names of contacts, a line that says where the chat runs,
+   the states "bridge not reachable" / "logged out" / "not linked", only text in the composer, files as a
+   placeholder line, and what became of one's own message (sent, delivered, read, not sent — send again). */
 (function () {
   'use strict';
   var M = window.MS;
@@ -33,6 +37,8 @@
     rec: null, uploads: [], q: '', inbox: null, lastSync: null, activeTimer: null, firstUnread: null, infoOpen: false, loading: false, menu: null, refreshTimers: {}, typingAt: 0,
     // 1.4.0
     feed: null, lists: [], listFilter: null, showArchived: false, integrations: {}, feedTimer: null, drive: false,
+    // 1.14.0: net — null | 'gc' | '<network>' (the list's filter); typingExt — conversation id → { until, names }
+    net: null, typingExt: {}, bridgeSeen: {},
   };
   var R = window.MSRich;
 
@@ -62,9 +68,17 @@
   function convTitle(c) {
     if (!c) return '';
     if (c.title) return c.title;
+    if (c.bridge) return T('bc.unknown_contact');
     return c.kind === 'direct' ? T('portal.gone') : T('portal.group');
   }
+  /** 1.14.0: who wrote a message — a contact of a bridged chat has a name of its own, no account. */
+  function senderName(c, m, opts) {
+    if (m && m.bridge && m.bridge.sender) return m.bridge.sender.name || T('bc.unknown_contact');
+    return nameOf(c, m ? m.senderId : null, opts);
+  }
+  function netMark(c) { return el('span', { class: 'ms-net ms-net-' + c.bridge.network, title: T('bc.via', { network: c.bridge.label }), 'aria-label': T('bc.via', { network: c.bridge.label }), text: c.bridge.network === 'whatsapp' ? 'WA' : c.bridge.label.slice(0, 2).toUpperCase() }); }
   function convAvatar(c, size) {
+    if (c.bridge) return el('span', { class: 'ms-av-wrap' }, [c.kind === 'group' ? M.avatar({ icon: 'group' }, size) : M.avatar({ name: convTitle(c) }, size), netMark(c)]);
     if (c.kind === 'group') return M.avatar({ icon: c.readonly ? 'system' : 'group', avatarUrl: c.avatarUrl }, size);
     if (!c.peer || c.peer.gone) return M.avatar({ icon: 'gone' }, size);
     return M.avatar(c.peer, size);
@@ -112,6 +126,11 @@
     return out;
   }
   function typingText(c) {
+    var ext = S.typingExt[c.id];
+    if (c.bridge) {
+      if (!ext || ext.until <= Date.now() || !ext.names.length) return null;
+      return c.kind === 'direct' ? T('portal.typing') : (ext.names.length === 1 ? T('portal.typing_one', { name: ext.names[0] || T('bc.unknown_contact') }) : T('portal.typing_many', { n: ext.names.length }));
+    }
     var ids = typingIds(c);
     if (!ids.length) return null;
     if (c.kind === 'direct') return T('portal.typing');
@@ -124,7 +143,7 @@
     var s = summary(m, c);
     if (m.kind === 'system') return s;
     if (m.mine) return T('portal.you') + ': ' + s;
-    if (c.kind === 'group') return nameOf(c, m.senderId) + ': ' + s;
+    if (c.kind === 'group') return senderName(c, m) + ': ' + s;
     return s;
   }
   function sortConvs() {
@@ -145,6 +164,8 @@
   }
   function statusOf(m, c) {
     if (!m.mine || m.pending) return m.pending ? 'pending' : null;
+    // 1.14.0: in a bridged chat the bridge says what became of the message
+    if (m.bridge && m.bridge.state) return m.status === 'sending' ? 'pending' : m.status;
     if (c.readUpTo != null && m.id <= c.readUpTo) return 'read';
     if (c.deliveredUpTo != null && m.id <= c.deliveredUpTo) return 'delivered';
     return 'sent';
@@ -202,7 +223,15 @@
   function chips() {
     var box = el('div', { class: 'ms-chips', role: 'group', 'aria-label': T('lists.title') });
     var chip = function (label, on, fn) { box.appendChild(el('button', { type: 'button', class: 'ms-chip', 'aria-pressed': on ? 'true' : 'false', text: label, on: { click: fn } })); };
-    chip(T('lists.all'), !S.listFilter && !S.showArchived, function () { S.listFilter = null; S.showArchived = false; renderList(); });
+    chip(T('lists.all'), !S.listFilter && !S.showArchived && !S.net, function () { S.listFilter = null; S.showArchived = false; S.net = null; renderList(); });
+    // 1.14.0: one filter per service once a chat over a bridge exists
+    var nets = {};
+    S.convs.forEach(function (c) { if (c.bridge) nets[c.bridge.network] = c.bridge.label; });
+    if (Object.keys(nets).length) {
+      chip(T('bc.only_gc'), S.net === 'gc', function () { S.net = S.net === 'gc' ? null : 'gc'; renderList(); });
+      Object.keys(nets).forEach(function (n) { chip(nets[n], S.net === n, function () { S.net = S.net === n ? null : n; renderList(); }); });
+    }
+    if (!feature('msg_tools')) return box;
     S.lists.forEach(function (l) { chip(l.name, S.listFilter === l.id, function () { S.listFilter = S.listFilter === l.id ? null : l.id; S.showArchived = false; renderList(); }); });
     var archived = S.convs.filter(function (c) { return c.archived; }).length;
     if (archived || S.showArchived) chip(T('lists.archived', { n: archived }), S.showArchived, function () { S.showArchived = !S.showArchived; S.listFilter = null; renderList(); });
@@ -217,6 +246,7 @@
     var list = S.convs.filter(function (c) {
       if (q && convTitle(c).toLowerCase().indexOf(q) < 0 && preview(c).toLowerCase().indexOf(q) < 0) return false;
       if (q) return true; // a search finds archived chats too
+      if (S.net && (S.net === 'gc' ? !!c.bridge : !(c.bridge && c.bridge.network === S.net))) return false;
       if (lst) return lst.conversationIds.indexOf(c.id) >= 0;
       return S.showArchived ? !!c.archived : !c.archived;
     });
@@ -232,7 +262,9 @@
       pinned.forEach(function (c) { rows.appendChild(row(c)); });
     }
     if ((strip || inboxShown(q) || pinned.length) && (list.length || tools)) rows.appendChild(el('div', { class: 'ms-list-sec', text: T('portal.chats') }));
-    if (tools && !q) rows.appendChild(chips());
+    var anyBridge = S.convs.some(function (c) { return !!c.bridge; });
+    if (!anyBridge) S.net = null;
+    if ((tools || anyBridge) && !q) rows.appendChild(chips());
     list.forEach(function (c) { rows.appendChild(row(c)); });
     var empty = $('#ms-list-empty');
     empty.hidden = list.length + pinned.length > 0;
@@ -244,6 +276,7 @@
   function headSub(c) {
     var typ = typingText(c);
     if (typ) return { text: typ, typing: true };
+    if (c.bridge) return { text: T('bc.via', { network: c.bridge.label }), typing: false };
     if (c.kind === 'direct') {
       if (c.peer && c.peer.gone) return { text: T('portal.gone_hint'), typing: false };
       if (c.peer && c.peer.blocked) return { text: T('set.blocked_one'), typing: false };
@@ -268,6 +301,7 @@
     ]));
     h.appendChild(el('button', { type: 'button', class: 'ms-ib', 'aria-label': T('portal.search_in_chat'), title: T('portal.search_in_chat'), on: { click: toggleSearch } }, [M.icon('search', 18)]));
     h.appendChild(el('button', { type: 'button', class: 'ms-ib', 'aria-label': T('info.title'), title: T('info.title'), 'aria-pressed': S.infoOpen ? 'true' : 'false', on: { click: toggleInfo } }, [M.icon('info', 18)]));
+    if (refs.bridge) renderBridgeBar();
   }
   function renderShell() {
     var box = M.clear($('#ms-conv'));
@@ -278,6 +312,7 @@
     refs.searchbar = el('div', { class: 'ms-searchbar', hidden: true });
     refs.results = el('div', { class: 'ms-results', hidden: true });
     refs.banner = el('div', { class: 'ms-banners' });
+    refs.bridge = el('div', { class: 'ms-bridgebar', hidden: true });
     refs.scroll = el('div', { class: 'ms-scroll', role: 'log', 'aria-live': 'polite', 'aria-label': T('portal.messages') });
     refs.jump = el('button', { type: 'button', class: 'ms-ib ms-jump', hidden: true, 'aria-label': T('portal.to_latest'), title: T('portal.to_latest'), on: { click: toLatest } }, [M.icon('down', 18)]);
     refs.compose = el('div', { class: 'ms-compose-wrap' });
@@ -285,13 +320,49 @@
     box.appendChild(refs.searchbar);
     box.appendChild(refs.results);
     box.appendChild(refs.banner);
+    box.appendChild(refs.bridge);
     box.appendChild(refs.scroll);
     box.appendChild(refs.jump);
     box.appendChild(refs.compose);
     refs.scroll.addEventListener('scroll', onScroll);
     renderHead();
     renderBanner();
+    renderBridgeBar();
     renderComposer();
+  }
+  /** 1.14.0: a chat over a bridge says so — where it runs, what does not cross, and when it cannot send. */
+  function bridgeSeen(c, set) {
+    var k = 'ms-bridge-seen-' + c.bridge.network;
+    if (set) { S.bridgeSeen[k] = true; try { window.localStorage.setItem(k, '1'); } catch (e) { /* this session only */ } return true; }
+    if (S.bridgeSeen[k]) return true;
+    try { return window.localStorage.getItem(k) === '1'; } catch (e) { return false; }
+  }
+  function renderBridgeBar() {
+    var c = conv(S.cur);
+    if (!refs.bridge) return;
+    var bar = M.clear(refs.bridge);
+    bar.hidden = !(c && c.bridge);
+    if (!c || !c.bridge) return;
+    var n = { network: c.bridge.label };
+    var relink = function (label) { return window.MSBridges ? el('button', { type: 'button', class: 'btn btn-sm', text: label, on: { click: function () { window.MSBridges.open(); } } }) : null; };
+    var st = c.bridge.state;
+    if (c.bridge.closed) bar.appendChild(el('div', { class: 'ms-bridge-state', role: 'status' }, [M.icon('info', 15), el('span', { text: T('bc.closed', n) })]));
+    else if (st === 'unreachable') bar.appendChild(el('div', { class: 'ms-bridge-state is-warn', role: 'status' }, [M.icon('info', 15), el('span', { text: T('bc.state_unreachable', n) })]));
+    else if (st === 'logged_out') bar.appendChild(el('div', { class: 'ms-bridge-state is-warn', role: 'status' }, [M.icon('info', 15), el('span', { text: T('bc.state_logged_out', n) }), relink(T('br.relink'))]));
+    else if (st === 'unlinked') bar.appendChild(el('div', { class: 'ms-bridge-state', role: 'status' }, [M.icon('info', 15), el('span', { text: T('bc.state_unlinked', n) }), relink(T('br.link'))]));
+    else if (st === 'locked') bar.appendChild(el('div', { class: 'ms-bridge-state', role: 'status' }, [M.icon('lock', 15), el('span', { text: T('br.sub_locked') })]));
+    else if (st === 'off') bar.appendChild(el('div', { class: 'ms-bridge-state', role: 'status' }, [M.icon('info', 15), el('span', { text: T('bc.state_off', n) })]));
+    if (!bridgeSeen(c)) {
+      bar.appendChild(el('div', { class: 'ms-bridge-first' }, [
+        el('b', { text: T('bc.first_title', n) }),
+        el('p', { text: T('bc.first_lead', n) }),
+        el('ul', {}, [el('li', { text: T('bc.first_1', n) }), el('li', { text: T('bc.first_2') }), el('li', { text: T('bc.first_3', n) })]),
+        el('button', { type: 'button', class: 'btn btn-sm btn-primary', text: T('bc.first_ok'), on: { click: function () { bridgeSeen(c, true); renderBridgeBar(); } } }),
+      ]));
+    } else {
+      bar.appendChild(el('div', { class: 'ms-bridge-strip' }, [M.icon('info', 13), el('span', { text: T('bc.strip', n) }),
+        el('button', { type: 'button', class: 'ms-linkbtn', text: T('bc.more'), on: { click: function () { var k = 'ms-bridge-seen-' + c.bridge.network; S.bridgeSeen[k] = false; try { window.localStorage.removeItem(k); } catch (e) { /* nothing kept */ } renderBridgeBar(); } } })]));
+    }
   }
   /** 1.4.0: the next event and the pinned messages above the chat. */
   function renderBanner() {
@@ -315,7 +386,7 @@
   function quoteEl(q, c) {
     var label = q.missing ? T('msg.quote_missing') : (q.deleted ? T('msg.deleted') : (q.text || T('kind.' + (q.kind || 'text'))));
     return el('button', { type: 'button', class: 'ms-quote', on: { click: function (e) { e.stopPropagation(); if (q.id && !q.missing) jumpTo(q.id); } } }, [
-      el('b', { text: q.missing ? '–' : nameOf(c, q.senderId) }), el('span', { text: label }),
+      el('b', { text: q.missing ? '–' : (q.contactId != null ? (q.senderName || T('bc.unknown_contact')) : nameOf(c, q.senderId)) }), el('span', { text: label }),
     ]);
   }
   function ticks(st) {
@@ -323,6 +394,7 @@
     if (st === 'sent') return el('span', { title: T('status.sent'), 'aria-label': T('status.sent') }, [M.icon('check', 15)]);
     if (st === 'delivered') return el('span', { title: T('status.delivered'), 'aria-label': T('status.delivered') }, [M.icon('checks', 16)]);
     if (st === 'read') return el('span', { class: 'is-read', title: T('status.read'), 'aria-label': T('status.read') }, [M.icon('checks', 16, { stroke: '2.4' })]);
+    if (st === 'failed') return el('span', { class: 'is-failed', title: T('bc.failed'), 'aria-label': T('bc.failed') }, [M.icon('info', 14)]);
     return null;
   }
   function metaEl(m, c) {
@@ -446,7 +518,7 @@
     var mine = S.me && S.me.user.id;
     return el('div', { class: 'ms-reacts' }, m.reactions.map(function (r) {
       var isMine = r.userIds.indexOf(mine) >= 0;
-      return el('button', { type: 'button', class: 'ms-react' + (isMine ? ' is-mine' : ''), title: r.userIds.map(function (u) { return nameOf(conv(m.conversationId), u); }).join(', '),
+      return el('button', { type: 'button', class: 'ms-react' + (isMine ? ' is-mine' : ''), title: r.userIds.map(function (u) { return nameOf(conv(m.conversationId), u); }).concat(r.contactIds && r.contactIds.length ? [convTitle(conv(m.conversationId))] : []).join(', '),
         on: { click: function () { react(m, isMine ? null : r.emoji); } } }, [r.emoji, r.count > 1 ? el('small', { text: String(r.count) }) : null]);
     }));
   }
@@ -471,7 +543,7 @@
     var wrap = el('div', { class: 'ms-msg' + (m.mine ? ' is-out' : '') + (cont ? ' is-cont' : ''), 'data-id': String(m.id) });
     if (c.kind === 'group' && !m.mine && !cont) {
       var mb = member(c, m.senderId);
-      var s = el('div', { class: 'ms-sender', text: nameOf(c, m.senderId) });
+      var s = el('div', { class: 'ms-sender', text: senderName(c, m) });
       if (mb && mb.colorHex) s.style.setProperty('--c', M.safeColor(mb.colorHex));
       wrap.appendChild(s);
     }
@@ -511,8 +583,18 @@
     } else if (rich) {
       b.classList.add('is-rich');
       b.appendChild(rich);
+    } else if (m.bridge && m.bridge.placeholder) {
+      // 1.14.0: files do not cross the bridge yet — a line that says what it was, never nothing
+      var ph = m.bridge.placeholder;
+      b.appendChild(el('div', { class: 'ms-ph' }, [M.icon(ph.kind === 'unsupported' ? 'info' : (ph.kind === 'image' || ph.kind === 'sticker' ? 'image' : 'file'), 15),
+        el('span', { text: ph.kind === 'unsupported' ? T('bc.ph.unsupported', { network: c.bridge ? c.bridge.label : '' }) : T('bc.ph.' + ph.kind) + (ph.name ? ' · ' + ph.name : '') + ' – ' + T('bc.ph_later', { network: c.bridge ? c.bridge.label : '' }) })]));
+      if (m.text) b.appendChild(el('div', { class: 'ms-cap', text: m.text }));
     } else if (m.text) {
       b.appendChild(document.createTextNode(m.text));
+    }
+    if (m.mine && m.bridge && m.bridge.state === 'failed') {
+      b.appendChild(el('div', { class: 'ms-failed' }, [el('span', { text: T('bc.failed') + ' ' + bridgeReason(m.bridge.reason) }),
+        c.can.send ? el('button', { type: 'button', class: 'ms-linkbtn', text: T('bc.resend'), on: { click: function (e) { e.stopPropagation(); resend(m); } } }) : null]));
     }
     var warn = scanWarnEl(m);
     if (warn) b.appendChild(warn);
@@ -530,7 +612,17 @@
     }
     return wrap;
   }
+  function bridgeReason(r) {
+    var k = 'bc.reason.' + (r || 'bridge_error');
+    return CTX.texts && CTX.texts[k] ? T(k) : T('bc.reason.bridge_error');
+  }
+  function resend(m) {
+    M.api('POST', 'messages/' + m.id + '/resend', {}).then(function (r) { replaceMsg(r.message); if (r.message.bridge && r.message.bridge.state === 'failed') M.toast(T('bc.failed') + ' ' + bridgeReason(r.message.bridge.reason), 'bad'); }).catch(M.warn);
+  }
   function systemEl(m, c) {
+    if (m.system && m.system.event === 'bridge_notice') {
+      return el('div', { class: 'ms-sys is-notice', 'data-id': String(m.id) }, [el('b', { text: c.bridge ? c.bridge.label : 'GateControl' }), document.createTextNode(m.text || ''), el('div', { class: 'ms-meta', text: M.hm(m.createdAt) })]);
+    }
     if (m.system && m.system.event === 'notice') {
       return el('div', { class: 'ms-sys is-notice', 'data-id': String(m.id) }, [el('b', { text: 'GateControl' }), document.createTextNode(m.text || ''), el('div', { class: 'ms-meta', text: M.hm(m.createdAt) })]);
     }
@@ -728,7 +820,7 @@
     var box = M.clear(refs.compose);
     if (!c) return;
     if (!c.can.send) {
-      box.appendChild(el('div', { class: 'ms-readonly', text: c.readonly ? T('portal.readonly') : T('portal.peer_gone') }));
+      box.appendChild(el('div', { class: 'ms-readonly', text: c.bridge ? T(c.bridge.closed ? 'bc.closed' : 'bc.cannot_send', { network: c.bridge.label }) : (c.readonly ? T('portal.readonly') : T('portal.peer_gone')) }));
       refs.input = null;
       return;
     }
@@ -737,7 +829,7 @@
       var m = S.reply || S.edit;
       wrap.appendChild(el('div', { class: 'ms-ctx' }, [
         M.icon(S.edit ? 'pen' : 'reply', 16),
-        el('div', { class: 'ms-ctx-tx' }, [el('b', { text: S.edit ? T('msg.editing') : T('msg.reply_to', { name: nameOf(c, m.senderId) }) }), el('span', { text: summary(m, c) })]),
+        el('div', { class: 'ms-ctx-tx' }, [el('b', { text: S.edit ? T('msg.editing') : T('msg.reply_to', { name: senderName(c, m) }) }), el('span', { text: summary(m, c) })]),
         el('button', { type: 'button', class: 'ms-ib ms-ib-flat', 'aria-label': T('common.cancel'), on: { click: function () { var wasEdit = !!S.edit; S.reply = null; S.edit = null; renderComposer(); if (wasEdit && refs.input) refs.input.value = ''; } } }, [M.icon('close', 16)]),
       ]));
     }
@@ -759,11 +851,13 @@
       refs.input = null;
       return;
     }
-    if (!S.edit) {
+    // 1.14.0: only text crosses a bridge — no files, no voice messages, none of GateControl's own message kinds
+    if (!S.edit && !c.bridge) {
       var attachBtn = el('button', { type: 'button', class: 'ms-ib', 'aria-label': T('portal.attach'), title: T('portal.attach'), 'aria-haspopup': 'menu', on: { click: function () { attachMenu(attachBtn); } } }, [M.icon('attach', 18)]);
       rowEl.appendChild(attachBtn);
     }
-    var input = el('textarea', { class: 'ms-input', rows: '1', placeholder: T('portal.placeholder_short'), title: narrow() ? null : T('portal.placeholder'), 'aria-label': T('portal.placeholder'), maxlength: String(S.limits.textMax || 4000) });
+    var hint = c.bridge ? T('bc.placeholder', { network: c.bridge.label }) : null;
+    var input = el('textarea', { class: 'ms-input', rows: '1', placeholder: hint || T('portal.placeholder_short'), title: narrow() ? null : (hint || T('portal.placeholder')), 'aria-label': hint || T('portal.placeholder'), maxlength: String(S.limits.textMax || 4000) });
     if (S.edit) input.value = S.edit.text || '';
     if (refs.draft && !S.edit) { input.value = refs.draft; refs.draft = ''; }
     input.addEventListener('input', function () { grow(input); if (input.value.trim() && !S.edit) typed(); });
@@ -772,7 +866,7 @@
       if (e.key === 'Escape' && (S.reply || S.edit)) { S.reply = null; S.edit = null; renderComposer(); }
     });
     rowEl.appendChild(input);
-    if (!S.edit && recordingSupported()) rowEl.appendChild(el('button', { type: 'button', class: 'ms-ib', 'aria-label': T('portal.rec_start'), title: T('portal.rec_start'), on: { click: startRec } }, [M.icon('mic', 18)]));
+    if (!S.edit && !c.bridge && recordingSupported()) rowEl.appendChild(el('button', { type: 'button', class: 'ms-ib', 'aria-label': T('portal.rec_start'), title: T('portal.rec_start'), on: { click: startRec } }, [M.icon('mic', 18)]));
     rowEl.appendChild(el('button', { type: 'button', class: 'ms-ib is-round', 'aria-label': S.edit ? T('common.save') : T('portal.send'), title: S.edit ? T('common.save') : T('portal.send'), on: { click: submit } }, [M.icon(S.edit ? 'check' : 'send', 20)]));
     wrap.appendChild(rowEl);
     box.appendChild(wrap);
@@ -1284,18 +1378,21 @@
     var item = function (iconName, label, fn, danger) {
       items.push(el('button', { type: 'button', class: 'ms-menu-item' + (danger ? ' is-danger' : ''), on: { click: function () { closeMenu(); fn(); } } }, [M.icon(iconName, 16), label]));
     };
-    if (!m.deleted && c.can.send) item('reply', T('msg.reply'), function () { startReply(m); });
-    if (m.mine && !m.deleted && (m.kind === 'text' || m.kind === 'image' || m.kind === 'file') && withinWindow(m)) item('pen', T('msg.edit'), function () { startEdit(m); });
+    // 1.14.0: in a bridged chat only what the other messenger got can be answered, changed or reacted to
+    var out = !c.bridge || (c.can.send && !(m.mine && m.bridge && (m.bridge.state === 'failed' || m.bridge.state === 'pending')));
+    if (c.bridge && !out) items.length = 0;
+    if (!m.deleted && c.can.send && out) item('reply', T('msg.reply'), function () { startReply(m); });
+    if (m.mine && !m.deleted && (m.kind === 'text' || m.kind === 'image' || m.kind === 'file') && withinWindow(m) && out && !(m.bridge && (m.bridge.remote || m.bridge.placeholder))) item('pen', T('msg.edit'), function () { startEdit(m); });
     if (feature('msg_tools') && !m.deleted) {
       var pinned = (c.pinned || []).indexOf(m.id) >= 0;
       if (m.kind !== 'system' && c.can.pin) item('pin', pinned ? T('tools.unpin') : T('tools.pin'), function () { pinMsg(c, m, !pinned); });
       item('clock', T('tools.remind'), function () { R.remind(m); });
-      if (m.text && (m.kind === 'text' || m.kind === 'image' || m.kind === 'file')) item('search', T('tools.suggest'), function () { R.suggest(m); });
+      if (m.text && !c.bridge && (m.kind === 'text' || m.kind === 'image' || m.kind === 'file')) item('search', T('tools.suggest'), function () { R.suggest(m); });
     }
     // 1.10.0: "In Drive speichern" — pictures, voice messages and files, when Drive takes files (GET me integrations.drive)
     if (S.drive && !m.deleted && m.media && !scanHeld(m) && (m.kind === 'image' || m.kind === 'voice' || m.kind === 'file')) item('drive', T('msg.to_drive'), function () { saveToDrive(m); });
     item('trash', T('msg.delete_me'), function () { removeMsg(m, 'me'); }, true);
-    if (m.mine && !m.deleted && withinWindow(m)) item('trash', T('msg.delete_all'), function () { removeMsg(m, 'all'); }, true);
+    if (m.mine && !m.deleted && withinWindow(m) && (!c.bridge || c.can.send || !(m.bridge && m.bridge.state !== 'failed'))) item('trash', T('msg.delete_all'), function () { removeMsg(m, 'all'); }, true);
     var layer = el('div', { style: 'position:absolute;inset:0;z-index:19', on: { click: function (e) { if (e.target === layer) closeMenu(); } } });
     var menu = el('div', { class: 'ms-menu', role: 'menu' }, items);
     layer.appendChild(menu);
@@ -1516,7 +1613,10 @@
       }
       pane.appendChild(tools);
     }
-    var foot = el('div', { class: 'ms-info-sec' }, [el('p', { class: 'ms-note' }, [M.icon('lock', 14), T('info.encrypted')])]);
+    // 1.14.0: a chat over a bridge does not stay on this server alone — the note says where it runs instead
+    var foot = el('div', { class: 'ms-info-sec' }, c.bridge
+      ? [el('p', { class: 'ms-note' }, [M.icon('info', 14), T('bc.info_note', { network: c.bridge.label })]), el('p', { class: 'ms-note' }, [M.icon('info', 14), T('bc.info_not', { network: c.bridge.label })])]
+      : [el('p', { class: 'ms-note' }, [M.icon('lock', 14), T('info.encrypted')])]);
     if (c.can.leave) foot.appendChild(el('button', { type: 'button', class: 'btn btn-danger', on: { click: function () { leave(c); } } }, [T('info.leave')]));
     pane.appendChild(foot);
   }
@@ -1698,6 +1798,7 @@
         if (cid === S.cur) loadNewer(cid).then(function () { if (document.visibilityState !== 'hidden') markRead(); });
         else if (st) st.stale = true;
         if (S.typing[cid] && d.senderId) { delete S.typing[cid][d.senderId]; }
+        if (d.bridge) delete S.typingExt[cid];
         break;
       case 'message.update':
         if (st) fetchChanged(cid, d.editedAt);
@@ -1723,6 +1824,14 @@
         refreshConv(cid);
         break;
       case 'typing': {
+        if (Array.isArray(d.contacts)) {
+          // 1.14.0: contacts of a bridged chat
+          S.typingExt[cid] = { until: d.until ? Date.now() + 6000 : 0, names: d.contacts.map(function (x) { return x && x.name; }) };
+          renderList();
+          if (cid === S.cur) renderHead();
+          setTimeout(function () { renderList(); if (cid === S.cur) renderHead(); }, 6100);
+          break;
+        }
         if (!S.typing[cid]) S.typing[cid] = {};
         if (d.until) S.typing[cid][d.userId] = Date.now() + 6000; else delete S.typing[cid][d.userId];
         renderList();
