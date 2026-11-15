@@ -37,6 +37,15 @@ const FILE_KINDS = ['image', 'video', 'audio', 'voice', 'file', 'sticker'];
 const REASONS = ['too_large', 'type', 'infected', 'quota', 'gone', 'unavailable'];
 const TRIES = 6;
 const WAIT_MAX_MS = 3 * 86400000;
+// 1.19.0: a file the host refuses for another reason than "the bridge is away" (a homeserver answer it does not read,
+// a host call that timed out, …): a few runs, then the placeholder says so — never „wird geladen …“ for days
+const FILE_TRIES = 5;
+// the bridge or the scanner is away for now: wait (up to WAIT_MAX_MS), the next files would fail the same way
+const TRANSIENT = ['ERR_BRIDGE_UNREACHABLE', 'ERR_BRIDGES_UNAVAILABLE', 'ERR_BUSY', 'ERR_RATE_LIMIT'];
+// a placeholder that failed with one of these keeps its reference: „Erneut versuchen“ (POST messages/:id/fetch)
+const RETRY_REASONS = ['unavailable'];
+const WARN_MS = 3600000;
+const warned = new Map(); // code|reason → last warning (one line per hour and kind of failure)
 const RUN_FILES = 20;
 const RUN_PICTURES = 10;
 // what mautrix-whatsapp takes from GateControl (pkg/connector/capabilities.go; from-matrix.go reuploadFileToWhatsApp):
@@ -122,14 +131,21 @@ function placeholderOf(m, kinds) {
   return out;
 }
 
-/** The view of a placeholder: { kind, name, state: 'loading' | 'failed' | null, reason, geo? } — null state: nothing to fetch. */
+/** May the person ask for this file again (a failed placeholder that kept its reference)? */
+const retriable = (bm, row) => !row.ext_media && RETRY_REASONS.includes(bm.reason) && REF_RE.test(String(bm.ref || ''));
+
+/**
+ * The view of a placeholder: { kind, name, state: 'loading' | 'on_request' | 'failed' | null, reason, retry?, geo? } —
+ * null state: nothing to fetch; `retry` (1.19.0, only with state 'failed'): true → POST messages/:id/fetch asks for it
+ * again („Erneut versuchen“).
+ */
 function placeholderView(bm, row) {
   const v = { kind: bm.placeholder, name: typeof bm.name === 'string' ? bm.name : null, state: null, reason: null };
   if (bm.geo) v.geo = bm.geo;
   if (row.ext_media === 'wait') v.state = 'loading';
   // 1.17.0: a file of the history — fetched when the person asks for it
   else if (row.ext_media === 'ask') v.state = 'on_request';
-  else if (REASONS.includes(bm.reason)) { v.state = 'failed'; v.reason = bm.reason; }
+  else if (REASONS.includes(bm.reason)) { v.state = 'failed'; v.reason = bm.reason; v.retry = retriable(bm, row); }
   return v;
 }
 
@@ -157,6 +173,18 @@ function reasonOf(e) {
 
 const tries = new Map(); // what failed for now: `m<id>` / `c<id>` / `k<id>` → count
 
+/** A refusal of the host, once an hour per kind in the plugin's log: code and reason only, never a reference or a name. */
+function warnOnce(gc, what, e) {
+  const code = String((e && e.code) || (e && /timed out/.test(String(e.message)) ? 'timeout' : 'error')).replace(/[^A-Za-z0-9_]/g, '').slice(0, 40);
+  const reason = e && typeof e.reason === 'string' ? e.reason.replace(/[^A-Za-z0-9_]/g, '').slice(0, 40) : '';
+  const k = `${what}|${code}|${reason}`;
+  const now = Date.now();
+  if (now - (warned.get(k) || 0) < WARN_MS) return;
+  if (warned.size > 200) warned.clear();
+  warned.set(k, now);
+  gc.log.warn(what, reason ? `${code} ${reason}` : code);
+}
+
 function again(key) {
   const n = (tries.get(key) || 0) + 1;
   if (tries.size > 5000) tries.clear();
@@ -171,16 +199,17 @@ async function fetchFile(gc, b, row, box, maxBytes, now) {
   const messages = require('./messages');
   const meta = messages.metaOf(row) || {};
   const bm = meta.bridge && typeof meta.bridge === 'object' ? meta.bridge : {};
-  const settle = async (reason) => {
+  const settle = async (reason, code = null) => {
     await store.tx(gc, async () => {
       const cur = await store.one(gc, 'SELECT * FROM messages WHERE id = ?', [row.id]);
       if (!cur || cur.ext_media !== 'wait') return;
       const m2 = messages.metaOf(cur) || {};
-      if (m2.bridge) m2.bridge = { placeholder: m2.bridge.placeholder, name: m2.bridge.name || null, reason };
+      // 1.19.0: a reason worth another try keeps what is needed for it (the reference and what was known of the file)
+      if (m2.bridge) m2.bridge = RETRY_REASONS.includes(reason) && m2.bridge.ref ? { ...m2.bridge, reason } : { placeholder: m2.bridge.placeholder, name: m2.bridge.name || null, reason };
       await store.run(gc, 'UPDATE messages SET ext_media = NULL, meta_enc = ?, updated_at = ? WHERE id = ?', [seal.sealJson(m2), now, row.id]);
       live.queue(box, [row.bridge_owner], 'message.update', { conversationId: row.conv_id, messageId: row.id, editedAt: iso(now), media: true });
     });
-    await log.add(gc, 'bridge_media_failed', reason, now);
+    await log.add(gc, 'bridge_media_failed', code ? `${reason} ${code}` : reason, now);
   };
   if (!REF_RE.test(String(bm.ref || ''))) return settle('gone');
   // larger than the plugin takes: not even asked for
@@ -189,12 +218,22 @@ async function fetchFile(gc, b, row, box, maxBytes, now) {
   try {
     r = await b.media.fetch(row.bridge_owner, row.bridge_net, bm.ref, { name: bm.name || null });
   } catch (e) {
+    warnOnce(gc, 'bridge file not fetched', e);
     const reason = reasonOf(e);
-    if (reason) return settle(reason);
-    // the bridge is away or busy: later — given up only after days
-    if (now - Math.max(row.created_at, row.ext_asked_at || 0) > WAIT_MAX_MS) return settle('unavailable');
-    return 'later';
+    if (reason) { tries.delete('m' + row.id); return settle(reason); }
+    if (TRANSIENT.includes(e && e.code)) {
+      // the bridge is away or busy: later — given up only after days
+      if (now - Math.max(row.created_at, row.ext_asked_at || 0) > WAIT_MAX_MS) return settle('unavailable');
+      return 'later';
+    }
+    // 1.19.0: anything else is tried a few times, then said — and the next files are tried meanwhile
+    if (again('m' + row.id) >= FILE_TRIES) {
+      tries.delete('m' + row.id);
+      return settle('unavailable', String((e && e.code) || 'error').replace(/[^A-Za-z0-9_]/g, '').slice(0, 40) + (e && typeof e.reason === 'string' ? `/${e.reason.replace(/[^A-Za-z0-9_]/g, '').slice(0, 30)}` : ''));
+    }
+    return 'failed';
   }
+  tries.delete('m' + row.id);
   const sc = scan.norm(r.scan);
   const kind = kindOf(bm.placeholder, String(r.mime || ''));
   await store.tx(gc, async () => {
@@ -224,6 +263,7 @@ async function fetchFile(gc, b, row, box, maxBytes, now) {
 async function fetchPicture(gc, b, userId, net, ref, key, now) {
   let r;
   try { r = await b.media.fetch(userId, net, ref, { name: 'avatar' }); } catch (e) {
+    warnOnce(gc, 'bridge picture not fetched', e);
     // a picture is not worth days of trying: a few runs, then the next change of the picture
     if (reasonOf(e) || again(key) >= TRIES) { tries.delete(key); await log.add(gc, 'bridge_picture_failed', reasonOf(e) || 'unavailable', now); return { final: true }; }
     return null;
@@ -317,11 +357,16 @@ function kick(gc) {
 }
 
 /**
- * 1.17.0: POST messages/:id/fetch — the person asks for a file of the history. → true when it is on its way
+ * 1.17.0: POST messages/:id/fetch — the person asks for a file of the history (1.19.0: or again for one that failed
+ * with a reason worth another try). → true when it is on its way
  * (fetched by the next run, kick); false when there is nothing to ask for. Inside a transaction.
  */
 async function ask(ctx, conv, row) {
-  if (!conv.bridge_net || conv.bridge_owner !== ctx.viewer || row.ext_media !== 'ask' || row.deleted_at) return false;
+  if (!conv.bridge_net || conv.bridge_owner !== ctx.viewer || row.deleted_at) return false;
+  // 1.19.0: also a file that failed with a reason worth another try („Erneut versuchen“)
+  const bm = (require('./messages').metaOf(row) || {}).bridge || {};
+  if (row.ext_media !== 'ask' && !retriable(bm, row)) return false;
+  tries.delete('m' + row.id);
   await store.run(ctx.gc, "UPDATE messages SET ext_media = 'wait', ext_asked_at = ?, updated_at = ? WHERE id = ?", [ctx.now, ctx.now, row.id]);
   live.queue(ctx.box, [ctx.viewer], 'message.update', { conversationId: conv.id, messageId: row.id, editedAt: iso(ctx.now), media: true });
   return true;
@@ -403,6 +448,6 @@ function outMedia(row, file) {
 
 module.exports = {
   api, newChatApi, placeholderOf, placeholderView, kick, runOnce, chatAvatar, contactAvatar, wantContacts, pictureOf, ask, ensureArea, areaInfo, AREA,
-  outKind, outRefusal, outMedia, OUT_TYPES, SUPPORTS, REF_RE, REASONS, FILE_KINDS,
-  _reset: () => { tries.clear(); running = null; more = false; areaReady = false; areaFailedAt = 0; },
+  outKind, outRefusal, outMedia, OUT_TYPES, SUPPORTS, REF_RE, REASONS, FILE_KINDS, FILE_TRIES, RETRY_REASONS,
+  _reset: () => { tries.clear(); warned.clear(); running = null; more = false; areaReady = false; areaFailedAt = 0; },
 };

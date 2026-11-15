@@ -3,6 +3,28 @@
 Chats zwischen den GateControl-Konten – in der GateControl-App (eigener Tab „Chats“), im
 Windows-Client und im Portal (eigener Tab „Chats“). Alles bleibt auf dem eigenen Server.
 
+## 1.19.0
+**Brücken: Namen ohne Telefonnummer, kein endloses „wird geladen …“** (erster echter Test über WhatsApp). Läuft mit jedem
+GateControl mit `gc.bridges` ab Version 3; die Namen aus dem Adressbuch brauchen Version 6 und Mail ≥ 1.16.0.
+- **Namen:** mautrix-whatsapp nennt einen Kontakt, dessen Namen es noch nicht kennt, nach seiner Nummer
+  („+49… (WA)“, Vorlage `{{or .BusinessName .PushName .Phone …}} (WA)`) – und der Einzelchat übernimmt den Namen. Das
+  Plugin nimmt so einen Namen nicht mehr an (`util.bridgeName`: „ (WA)“ fällt weg, eine Nummer – auch die gekürzte mit
+  „∙“ – ist kein Name) und korrigiert gespeicherte Titel und Kontaktnamen einmal je Start (`bridgechats.fixNames`,
+  Protokoll `bridge_names_fixed`, Live-Ereignis `conversation.update { reason: "title" }`). Ein Einzelchat heißt jetzt
+  zuerst wie im eigenen Adressbuch der Person (Mail `contacts_phones` + `gc.bridges.matchNumbers` – die Nummer bleibt
+  zwischen Mail und GateControl, 10 min im Speicher), dann wie der öffentliche Name des Kontakts, sonst „WhatsApp-Kontakt“
+  (`bridgechat.unknown_contact`, Gruppen „WhatsApp-Gruppe“). Auch in „Neuer Chat“ und bei der Nummern-Abfrage nie eine
+  Nummer als Name.
+- **Dateien:** Eine Ablehnung von `gc.bridges.media.fetch`, die keine endgültige ist und nicht „Brücke weg“ heißt
+  (z. B. eine Antwort des Homeservers, die GateControl nicht liest, oder eine abgelaufene Host-Anfrage), ließ den
+  Platzhalter bisher bis zu drei Tage „wird geladen …“ stehen – ohne Protokoll und so, dass alle folgenden Dateien
+  ebenfalls warteten. Jetzt: höchstens 5 Läufe, dann `failed` / `unavailable` mit `retry: true`
+  (`bridge.placeholder.retry`), die nächsten Dateien werden weiter geholt; „Brücke weg“ (`ERR_BRIDGE_UNREACHABLE`,
+  `ERR_BRIDGES_UNAVAILABLE`, `ERR_BUSY`, `ERR_RATE_LIMIT`) wartet wie bisher. `POST messages/:id/fetch` holt eine
+  solche Datei erneut (Portal: „Erneut versuchen“). Jede Ablehnung steht einmal je Stunde und Art im Log des Plugins
+  („bridge file not fetched“, Code und Grund), das Protokoll `bridge_media_failed` nennt beim Aufgeben den Code.
+- Testattrappe: `host.bridges.failFetch = { code, reason, times? }` (tools/testing/mock-bridges.js).
+
 ## 1.18.0
 **Brücken, Stufe 4c: „Neuer Chat“ mit Kontakten statt getippter Nummern.** Wirkt nur auf einem GateControl mit
 `gc.bridges` Version 6 (Vorschau); das Adressbuch kommt aus Mail ≥ 1.16.0. Neues Recht: `gatecontrol-mail:contacts_phones`

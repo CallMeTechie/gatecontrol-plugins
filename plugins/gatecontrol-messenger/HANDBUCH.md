@@ -1,4 +1,4 @@
-<!-- version: 1.18.0 -->
+<!-- version: 1.19.0 -->
 # Messenger
 
 ## Was das Plugin kann
@@ -70,6 +70,11 @@ Er kommt nur beim Verknüpfen und erscheint nachts. Steht „Älteren Verlauf la
 
 **Alte Nachrichten sind weg.**
 Der Administrator hat eine Aufbewahrung eingestellt, oder der Chat ist selbstlöschend.
+
+## Neu in 1.19.0
+
+- **Chats über WhatsApp heißen wie der Kontakt, nie wie seine Nummer.** Kennt WhatsApp noch keinen Namen (z. B. direkt nach dem Verknüpfen), heißt der Chat nach dem Kontakt in deinem Adressbuch (Mail), sonst „WhatsApp-Kontakt“ – bis der Kontakt seinen Namen zeigt. Chats und Kontakte, die bisher nur eine Telefonnummer als Namen hatten, werden beim Start einmal korrigiert (Protokoll: „… korrigiert“). Die Nummer verlässt deinen Server dafür nicht.
+- **Kein endloses „wird geladen …“ mehr:** Lässt sich ein Bild, Video oder eine Datei aus WhatsApp nach einigen Versuchen nicht holen, steht in der Zeile „kam nicht an“ mit **„Erneut versuchen“**. Ist nur die Brücke gerade nicht erreichbar, wartet die Datei weiter. Das Protokoll nennt den Grund („Brücke: Datei ließ sich nicht holen“), ohne Namen und Nummern.
 
 ## Neu in 1.18.0
 

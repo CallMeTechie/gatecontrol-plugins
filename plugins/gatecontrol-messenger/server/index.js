@@ -337,6 +337,8 @@ module.exports = {
     const out = await jobs.tick(gc, Date.now());
     // 1.14.0: the net under the hook bridgeEvents — whatever the bridges delivered and nobody fetched yet
     try { await pumpBridges(gc); await require('./bridgechats').sweep(gc, Date.now()); } catch (e) { gc.log.warn('bridge events tick failed', (e && (e.code || e.message)) || 'error'); }
+    // 1.19.0: chats and contacts stored with a phone number as their name — put right once per start
+    await require('./bridgechats').fixNames(gc);
     // 1.15.0: files and pictures of bridged chats still to fetch (one run; it never throws)
     await require('./bridgemedia').kick(gc);
     // 1.17.0: older messages — one small portion per run, only at night (bridgehistory.js); the phone warning, hourly

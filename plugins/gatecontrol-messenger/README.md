@@ -1041,7 +1041,7 @@ Codes: `bridge_text_only` 409, `bridge_unlinked` 409 (`reason`), `bridge_off`
 Events: `message.new` with `bridge`, `message.update` with `status` or
 `reactions: true`, `typing` `{ conversationId, userId: null, contacts: [{
 contactId, name }], until }`, `read` with `userId: null`,
-`conversation.update` reasons `bridge` and `title`. Push: like a normal chat's,
+`conversation.update` reasons `bridge` and `title`. Since 1.19.0 `title` of a bridged chat is never a phone number: a direct chat is named by the person's own address book (Mail, matched by the number at GateControl), else by the bridge's name, else „WhatsApp-Kontakt“ (a group without a name „WhatsApp-Gruppe“); a contact without a name has `name: null`. Push: like a normal chat's,
 to the one person; `data.bridge`, `data.sender.id` `"ext-<contactId>"`; the
 actions carry `bridged: true` in their body.
 
@@ -1076,7 +1076,10 @@ GateControl's virus scan, `media.scan` as everywhere — a normal message: `kind
 `file` (a video with `video { durationMs, width, height }`, any other file a download), `text` the caption,
 `bridge.placeholder: null`; the live event `message.update` carries `media: true`. `state: "failed"` keeps the
 placeholder with `reason`: `too_large` (more than `limits.maxBytes`), `type`, `infected`, `quota`, `gone` (the bridge
-lost it), `unavailable` (no answer for days). `state: null`: nothing to fetch (a location — then `geo { lat, lon }` —,
+lost it), `unavailable` (no answer for days — since 1.19.0 also: refused a few times in a way that is not final). Since
+1.19.0 a failed placeholder carries `retry: true` when asking again may help (`unavailable` with its reference kept):
+`POST messages/:id/fetch?bridged=1` then fetches it again („Erneut versuchen“; `retry` is missing for other states).
+`state: null`: nothing to fetch (a location — then `geo { lat, lon }` —,
 an encrypted file, a GateControl without version 4). Older apps see the placeholder as in 1.14.0 and the file once it
 is there.
 
@@ -1138,7 +1141,7 @@ version 5; `server/bridgehistory.js`):
 |---|---|
 | `GET bridges` | adds `history: { available, days, default, options, pending } \| null` — `days` `0` (off), `30` (default), `-1` (everything the bridge brings); `available: false` while the administrator switched it off, `null` on a GateControl without history. Each network adds `phone: { offline, days, leftDays }` (the bridge's warning: the phone was not seen for `days` ≥ 12 days; WhatsApp ends the link after about 14) and `clientOutdated` (WhatsApp refuses the bridge's version — show „Brücke veraltet“ like `outdated`) |
 | `PUT bridges/history { days }` | `{ history }` — `days` one of `0`, `30`, `-1`, else `400 invalid`; `403 feature_off` without history. It counts at a link; fewer days drop what still waits |
-| `POST messages/:id/fetch?bridged=1` | `{ message }` — a file of the history (placeholder `state: "on_request"`) is fetched now: the placeholder becomes `loading`, later the file arrives as usual (`message.update { media: true }`). Only the person of the chat; `400 invalid` when there is nothing to ask for |
+| `POST messages/:id/fetch?bridged=1` | `{ message }` — a file of the history (placeholder `state: "on_request"`), or since 1.19.0 one that failed with `retry: true`, is fetched now: the placeholder becomes `loading`, later the file arrives as usual (`message.update { media: true }`). Only the person of the chat; `400 invalid` when there is nothing to ask for |
 
 **Filed at night:** the plugin files the history GateControl hands over in its night window (card „Brücken“,
 `historyFrom` / `historyTo`, default 01:00–05:00 in the time zone of GateControl's update window), 100 events a minute,

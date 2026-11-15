@@ -58,7 +58,7 @@ const log = require('./log');
 const seal = require('./seal');
 const config = require('./config');
 const familie = require('./familie');
-const { fail, posInt, iso } = require('./util');
+const { fail, posInt, iso, bridgeName } = require('./util');
 const { encode } = require('./vendor/uqr');
 
 const NETWORKS = ['whatsapp'];
@@ -770,7 +770,7 @@ async function resolveNumber(ctx, net, body) {
     if (!m || NOT_COUNTED.includes(m.code)) back();
     throw m;
   }
-  const name = r && typeof r.name === 'string' ? r.name.replace(/[\0-\x1f\x7f]/g, ' ').trim().slice(0, 120) || null : null;
+  const name = r ? bridgeName(r.name, 120) : null;
   if (!(r && r.found === true)) return { found: false, name: null, avatarUrl: null, existing: null };
   remember1(ctx, mark);
   // a GateControl that names the chat it knows for this number (not yet: version 4 answers only found and name)

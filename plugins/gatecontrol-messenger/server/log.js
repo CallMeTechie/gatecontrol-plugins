@@ -22,17 +22,20 @@
 //   bridge_send_failed  a message of a bridged chat did not go out (1.14.0; the bridge's reason as a word in detail)
 //   bridge_event_failed something a bridge delivered could not be filed (1.14.0; the code in detail)
 //   bridge_event_locked something arrived for a child whose parents have not allowed the service — dropped (1.14.0; a count)
-//   bridge_media_failed a contact's file of a bridged chat could not be fetched (1.15.0; the reason as a word in detail)
+//   bridge_media_failed a file of a bridged chat could not be fetched (1.15.0; the reason as a word in detail — 1.19.0:
+//                       with GateControl's code after it when it gave up trying)
 //   bridge_picture_failed a picture of a bridged chat or contact could not be fetched (1.15.0; the reason as a word)
 //   bridge_number_checked a number of the address book was checked at the service („Neuer Chat“, 1.18.0; the source and
 //                       found / not_found in detail — never the number, never a name). Level info
+//   bridge_names_fixed  chats and contacts that were named by their phone number got their name put right (1.19.0; the
+//                       counts in detail). Level info
 
 const store = require('./store');
 
 const MERGE_MS = 10 * 60000;
 const KEEP_MS = 30 * 86400000;
-const CODES = ['push_rate_limit', 'push_failed', 'events_rate_limit', 'events_failed', 'media_claim_failed', 'media_delete_failed', 'decrypt_failed', 'service_refused', 'job_failed', 'action_failed', 'notice_failed', 'group_chat_failed', 'bridge_refused', 'bridge_send_failed', 'bridge_event_failed', 'bridge_event_locked', 'bridge_media_failed', 'bridge_picture_failed', 'bridge_number_checked'];
-const LEVEL = { push_rate_limit: 'limit', events_rate_limit: 'limit', bridge_number_checked: 'info' };
+const CODES = ['push_rate_limit', 'push_failed', 'events_rate_limit', 'events_failed', 'media_claim_failed', 'media_delete_failed', 'decrypt_failed', 'service_refused', 'job_failed', 'action_failed', 'notice_failed', 'group_chat_failed', 'bridge_refused', 'bridge_send_failed', 'bridge_event_failed', 'bridge_event_locked', 'bridge_media_failed', 'bridge_picture_failed', 'bridge_number_checked', 'bridge_names_fixed'];
+const LEVEL = { push_rate_limit: 'limit', events_rate_limit: 'limit', bridge_number_checked: 'info', bridge_names_fixed: 'info' };
 
 /** Record one entry; never throws. `detail` must not carry content (a code, a count, a plugin id). */
 async function add(gc, code, detail, now = Date.now()) {

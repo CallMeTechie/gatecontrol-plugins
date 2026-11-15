@@ -31,6 +31,8 @@
 //   host.bridges.chat(userId, { kind?, name? }) → the reference of a new chat of that person (what send() accepts)
 //   host.bridges.sent                        what the plugin sent out: [{ op: 'send' | 'react' | 'redact' | 'read' | 'typing', userId, network, chatId, … , id? }]
 //   host.bridges.failSend = { code, reason } the next send / react / redact is refused that way (once)
+//   host.bridges.failFetch = { code, reason, times? } media.fetch is refused that way (`times` calls, default every one;
+//                                            null: fetched again) — the host's refusals a plugin cannot tell from the name
 //   host.bridges.state.inbox                 what was delivered and not acknowledged
 //
 // Version 4 (GateControl with stage 4 — files, pictures, a new chat by number; createHost(dir, { bridges: { …, version: 4 } })):
@@ -100,7 +102,7 @@ function install({ opts, perms, enabledUser, hostError, personCtx, mediaHost }) 
   };
   const version = o && o.version === 1 ? 1 : (o && o.version === 6 ? 6 : (o && o.version === 5 ? 5 : (o && o.version === 4 ? 4 : (o && o.version === 3 ? 3 : 2))));
   Object.assign(st, { inbox: [], inboxSeq: 0, chats: new Map(), sent: [], failSend: null, wake: null });
-  Object.assign(st, { files: new Map(), fetches: [], numbers: new Map(), lookups: new Map(), dms: new Map() });
+  Object.assign(st, { files: new Map(), fetches: [], numbers: new Map(), lookups: new Map(), dms: new Map(), failFetch: null });
   Object.assign(st, { contacts: [], contactRefs: new Map(), contactDms: new Map() });
   Object.assign(st, { history: true, historyPeople: new Map(), backlog: [], backlogSeq: 0, backup: { time: '03:10', timeZone: 'Europe/Berlin', lastAt: null, bytes: null, requested: false, error: null, restore: null }, backupTime: '03:10' });
 
@@ -388,6 +390,11 @@ function install({ opts, perms, enabledUser, hostError, personCtx, mediaHost }) 
       bridge(network);
       const f = typeof ref === 'string' ? st.files.get(ref) : null;
       st.fetches.push({ userId, network, ref });
+      if (st.failFetch) {
+        const ff = st.failFetch;
+        if (Number.isSafeInteger(ff.times) && --ff.times <= 0) st.failFetch = null;
+        throw err(ff.code || 'ERR_BRIDGE', 'the bridge refused or failed', ff.reason || 'bad_answer');
+      }
       if (!f || f.userId !== userId) throw hostError('ERR_INVALID', 'unknown file');
       if (f.gone) throw refuse('m_not_found');
       return mediaHost.store(f.data, { mime: f.mime, name: name == null ? (f.name || null) : name });
@@ -563,6 +570,7 @@ function install({ opts, perms, enabledUser, hostError, personCtx, mediaHost }) 
     // ── version 3 ──
     get sent() { return st.sent; },
     set failSend(v) { st.failSend = v; },
+    set failFetch(v) { st.failFetch = v ? { ...v } : null; },
     /** the mock host hands over how it calls a hook of the plugin */
     onWake(fn) { st.wake = fn; },
     chat(userId, { kind = 'direct', name = null, network = 'whatsapp' } = {}) {
