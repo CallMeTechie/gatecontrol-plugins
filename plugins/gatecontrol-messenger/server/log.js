@@ -22,12 +22,14 @@
 //   bridge_send_failed  a message of a bridged chat did not go out (1.14.0; the bridge's reason as a word in detail)
 //   bridge_event_failed something a bridge delivered could not be filed (1.14.0; the code in detail)
 //   bridge_event_locked something arrived for a child whose parents have not allowed the service — dropped (1.14.0; a count)
+//   bridge_media_failed a contact's file of a bridged chat could not be fetched (1.15.0; the reason as a word in detail)
+//   bridge_picture_failed a picture of a bridged chat or contact could not be fetched (1.15.0; the reason as a word)
 
 const store = require('./store');
 
 const MERGE_MS = 10 * 60000;
 const KEEP_MS = 30 * 86400000;
-const CODES = ['push_rate_limit', 'push_failed', 'events_rate_limit', 'events_failed', 'media_claim_failed', 'media_delete_failed', 'decrypt_failed', 'service_refused', 'job_failed', 'action_failed', 'notice_failed', 'group_chat_failed', 'bridge_refused', 'bridge_send_failed', 'bridge_event_failed', 'bridge_event_locked'];
+const CODES = ['push_rate_limit', 'push_failed', 'events_rate_limit', 'events_failed', 'media_claim_failed', 'media_delete_failed', 'decrypt_failed', 'service_refused', 'job_failed', 'action_failed', 'notice_failed', 'group_chat_failed', 'bridge_refused', 'bridge_send_failed', 'bridge_event_failed', 'bridge_event_locked', 'bridge_media_failed', 'bridge_picture_failed'];
 const LEVEL = { push_rate_limit: 'limit', events_rate_limit: 'limit' };
 
 /** Record one entry; never throws. `detail` must not carry content (a code, a count, a plugin id). */

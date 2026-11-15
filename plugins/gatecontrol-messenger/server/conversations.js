@@ -99,8 +99,11 @@ async function view(ctx, conv, me, members) {
   const withPresence = (f) => { const p = social.presence(soc, ctx.viewer, f.userId, ctx.now); return { ...f, online: p.online, lastSeenAt: p.lastSeenAt }; };
   const iBlocked = !!(peerId && soc.hasBlocked(ctx.viewer, peerId));
   let avatarUrl = null;
-  if (isGroup && conv.avatar_media_id && ctx.portal) {
-    try { avatarUrl = await ctx.gc.media.url(conv.avatar_media_id, { user: ctx.viewer, ttlS: messages.URL_TTL_S }); } catch { avatarUrl = null; }
+  // 1.15.0: a bridged chat's picture (the contact's in a direct chat, the group's) — fetched from the bridge, once the
+  // virus scan let it through
+  const avatarMediaId = bridged ? await require('./bridgemedia').pictureOf(ctx.gc, conv.avatar_media_id) : (isGroup ? conv.avatar_media_id || null : null);
+  if ((isGroup || bridged) && avatarMediaId && ctx.portal) {
+    try { avatarUrl = await ctx.gc.media.url(avatarMediaId, { user: ctx.viewer, ttlS: messages.URL_TTL_S }); } catch { avatarUrl = null; }
   } else if (peer) avatarUrl = peer.avatarUrl;
   return {
     id: conv.id,
@@ -108,7 +111,7 @@ async function view(ctx, conv, me, members) {
     title: isGroup || bridged ? titleOf(conv) : (peer && peer.name),
     peer: peer ? { ...withPresence(peer), blocked: iBlocked } : null,
     avatarUrl,
-    avatarMediaId: isGroup ? conv.avatar_media_id || null : null,
+    avatarMediaId,
     managedBy: managed,
     readonly: !!conv.readonly,
     // 1.6.0: Familie's group is pinned in the list (under "GateControl"); a notice channel of the chat sink names its source

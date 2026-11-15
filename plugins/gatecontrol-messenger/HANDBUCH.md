@@ -1,4 +1,4 @@
-<!-- version: 1.14.0 -->
+<!-- version: 1.15.0 -->
 # Messenger
 
 ## Was das Plugin kann
@@ -67,6 +67,14 @@ Den führt das Plugin Familie (Seite „Funktionen“ › Messenger-Gruppe).
 
 **Alte Nachrichten sind weg.**
 Der Administrator hat eine Aufbewahrung eingestellt, oder der Chat ist selbstlöschend.
+
+## Neu in 1.15.0
+
+- **Bilder, Videos, Sprachnachrichten und Dateien über WhatsApp:** Was ein Kontakt schickt, steht zuerst als „wird geladen …“ im Chat und erscheint kurz danach wie jeder andere Anhang. Es wird wie deine eigenen Anhänge auf Schadsoftware geprüft.
+- Ist eine Datei zu groß für GateControl, eine Art, die GateControl nicht annimmt, oder bei WhatsApp nicht mehr da, bleibt die Zeile stehen und sagt, warum – dann in WhatsApp ansehen. Ein Standort öffnet die Kartenansicht.
+- **Senden:** Über die Büroklammer schickst du Bilder, Videos und Dateien, über das Mikrofon Sprachnachrichten in einen WhatsApp-Chat. Gesendet wird erst, wenn die Prüfung auf Schadsoftware fertig ist. Manche Formate nimmt WhatsApp nicht an – dann sagt GateControl das.
+- **Profilbilder:** In der Chatliste siehst du das Bild deines Kontakts oder der Gruppe.
+- **Neuer Chat per Nummer:** Der Server kann schon einen Chat mit einer Telefonnummer beginnen; die Apps und das Portal bekommen die Eingabe dafür in einer späteren Version.
 
 ## Neu in 1.14.0
 

@@ -371,6 +371,10 @@ button.ms-loc:hover .ms-locmap{filter:brightness(1.05)}
 .ms-ph{display:flex;align-items:flex-start;gap:6px;font-size:13px;font-style:italic;color:var(--muted)}
 .ms-ph svg{flex:none;margin-top:2px}
 .ms-msg.is-out .ms-ph{color:inherit;opacity:.85}
+.ms-ph.is-loading span{animation:ms-ph-pulse 1.6s ease-in-out infinite}
+@keyframes ms-ph-pulse{50%{opacity:.55}}
+@media (prefers-reduced-motion:reduce){.ms-ph.is-loading span{animation:none}}
+.ms-bub .ms-ph + .ms-linkbtn{display:inline-block;margin-top:4px;font-size:13px}
 .ms-failed{display:flex;flex-wrap:wrap;gap:4px 10px;margin-top:6px;font-size:12px;font-weight:600;color:var(--crit)}
 .ms-msg.is-out .ms-failed{color:inherit}
 .ms-msg.is-out .ms-failed .ms-linkbtn{color:inherit}

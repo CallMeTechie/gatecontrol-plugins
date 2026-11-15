@@ -66,7 +66,9 @@ function errorResponse(e, lang) {
   const finding = isKnown(e) && e.extra && typeof e.extra.finding === 'string' ? e.extra.finding : null;
   // 1.12.0: why a bridge refused (a word of GateControl, e.g. not_running, fi_mau_whatsapp_login_timeout)
   const reason = isKnown(e) && e.extra && typeof e.extra.reason === 'string' && /^[a-z][a-z0-9_]{0,39}$/.test(e.extra.reason) ? e.extra.reason : null;
-  return { status: STATUS[code], json: { ok: false, code, error: t(lang, 'error.' + code), ...(finding ? { finding } : {}), ...(reason ? { reason } : {}) } };
+  // 1.15.0: when to ask again (rate_limited of a new chat by number)
+  const retry = isKnown(e) && e.extra && Number.isSafeInteger(e.extra.retryAfterS) && e.extra.retryAfterS > 0 ? Math.min(e.extra.retryAfterS, 86400) : null;
+  return { status: STATUS[code], json: { ok: false, code, error: t(lang, 'error.' + code), ...(finding ? { finding } : {}), ...(reason ? { reason } : {}), ...(retry ? { retryAfterS: retry } : {}) } };
 }
 
 /** The request context of a chat call. */
@@ -119,6 +121,8 @@ module.exports = {
     } catch (e) { gc.log.warn('removing familie notice channels failed', (e && (e.code || e.message)) || 'error'); }
     // 1.14.0: what the bridges delivered while the plugin was not running
     require('./bridgechats')._reset();
+    require('./bridgemedia')._reset();
+    require('./bridges')._resetLookups();
     pumpBridges(gc).catch(() => {});
     gc.log.info('messenger started', gc.plugin.version);
   },
@@ -162,6 +166,8 @@ module.exports = {
         throw e;
       }
       await api.flush(ctx);
+      // 1.15.0: contacts' pictures somebody now sees — fetched afterwards (bridgemedia.js), not waited for
+      if (ctx.bridgeMediaWork) require('./bridgemedia').kick(gc);
       return res;
     } catch (e) {
       if (!isKnown(e)) gc.log.warn('request failed', req && req.method, String((req && req.path) || '').split('/').slice(0, 2).join('/'), (e && (e.code || e.message)) || 'error');
@@ -199,6 +205,8 @@ module.exports = {
     const m = await store.one(gc, 'SELECT * FROM media WHERE media_id = ?', [mediaId]);
     if (!m) return owner != null && owner === user.id;
     if (m.orphan) return false;
+    // 1.15.0: a contact's picture of a bridged chat belongs to no chat — only the person whose contact it is sees it
+    if (m.role === 'avatar' && m.conv_id === 0) return m.owner_id != null && m.owner_id === user.id;
     // 1.4.0: story files — the story's audience while it lasts (and the owner)
     if (m.role === 'story' || m.role === 'story_thumb') {
       await ensureKey(gc);
@@ -321,6 +329,8 @@ module.exports = {
     const out = await jobs.tick(gc, Date.now());
     // 1.14.0: the net under the hook bridgeEvents — whatever the bridges delivered and nobody fetched yet
     try { await pumpBridges(gc); await require('./bridgechats').sweep(gc, Date.now()); } catch (e) { gc.log.warn('bridge events tick failed', (e && (e.code || e.message)) || 'error'); }
+    // 1.15.0: files and pictures of bridged chats still to fetch (one run; it never throws)
+    await require('./bridgemedia').kick(gc);
     // 1.9.0: the group chats of GateControl groups — after a start and every 6 hours
     try { await groupchats.tick(gc, Date.now()); } catch (e) { gc.log.warn('group chats tick failed', (e && (e.code || e.message)) || 'error'); }
     return out;

@@ -52,6 +52,11 @@ async function me(ctx) {
       ...(linked ? { linked_services: true } : {}),
       // 1.14.0: chats over a bridge (README "App-API", since 1.14.0): conversations with `bridge`, ?bridged=1
       ...(bridgeChats ? { bridge_chats: true } : {}),
+      // 1.15.0 (GateControl with gc.bridges version 4), only for the same people as bridge_chats: bridge_media — files
+      // in both directions, pictures of chats and contacts; bridge_new_chat — POST bridges/:network/resolve and
+      // bridges/:network/chats (a chat by phone number; no screen of its own yet)
+      ...(bridgeChats && require('./bridgemedia').api(ctx.gc) ? { bridge_media: true } : {}),
+      ...(bridgeChats && require('./bridgemedia').newChatApi(ctx.gc) ? { bridge_new_chat: true } : {}),
     },
     // 1.4.0: what the Familie plugin offers here (gc.services.available) — "Zur Liste", "In Kalender", places;
     // 1.10.0: drive — Drive takes files (save_file): "In Drive speichern" (POST messages/:id/to-drive)
@@ -180,7 +185,7 @@ async function route(ctx, req, seg) {
         // 1.14.0: a bridged chat — checked first (only a text, the account linked, the bridge up), stored, then handed over
         const pre = await conversations.access(ctx, b);
         if (pre.conv.bridge_net) {
-          bridgechats.checkBody(req.body);
+          await bridgechats.checkBody(ctx, req.body);
           await bridgechats.gate(ctx, pre.conv);
           ctx.bridgeOut = pre.conv.id;
           const stored = await tx(async () => {

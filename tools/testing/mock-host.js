@@ -3268,7 +3268,32 @@ async function createHost(pluginDir, opts = {}) {
     groupUsers: (ids) => { const out = new Set(); for (const id of ids) if (groupStore.has(id) && !groupStore.get(id).archived) for (const u of totalIds(id)) if (enabledUser(u)) out.add(u); return out; } });
   Object.assign(api, vd.api);
   // ─── Messenger-Brücken (GateControl preview, src/services/bridges; tools/testing/mock-bridges.js) ───
-  const br = mockBridges.install({ opts, perms, enabledUser, hostError, personCtx });
+  const br = mockBridges.install({ opts, perms, enabledUser, hostError, personCtx,
+    // gc.bridges version 4: a file of a bridged chat into the plugin's media, a file of the plugin to be sent
+    mediaHost: {
+      store(buf, { mime, name }) {
+        needMedia();
+        if (buf.length > media.maxBytes) throw hostError('ERR_MEDIA_TOO_LARGE', 'file too large');
+        if (!buf.length) throw hostError('ERR_MEDIA_EMPTY', 'the file is empty');
+        let type = String(mime || '').split(';')[0].trim().toLowerCase();
+        if (!typeAllowed(media.types, type) && typeAllowed(media.types, 'application/octet-stream') && !/^(image|audio|video)\//.test(type)) type = 'application/octet-stream';
+        if (!typeAllowed(media.types, type)) throw hostError('ERR_MEDIA_TYPE', `type not allowed: ${type}`);
+        if (mediaUsage().bytes + buf.length > mediaQuota) throw hostError('ERR_MEDIA_QUOTA', 'quota exceeded');
+        const id = require('node:crypto').randomBytes(16).toString('hex');
+        const n = mediaName(name);
+        mediaStore.set(id, { mime: type, bytes: buf.length, owner: null, data: Buffer.from(buf), claimed: false, createdAt: Date.now(), name: n });
+        const sc = scanThrow(scanNew(id, 'bridge'));
+        return { mediaId: id, mime: type, bytes: buf.length, name: n, ...scanAnswer(sc) };
+      },
+      servable(id) {
+        needMedia();
+        if (typeof id !== 'string' || !/^[0-9a-f]{32}$/.test(id)) throw hostError('ERR_INVALID', 'media.mediaId: a media id');
+        const m = mediaStore.get(id);
+        if (!m) throw hostError('ERR_NOT_FOUND', 'no such media of this plugin');
+        needServable(m);
+        return m;
+      },
+    } });
   Object.assign(api, br.api);
 
   // ─── Funk (GateControl with phase 3c step 2, src/services/homeRadio.js): gc.radio.sensors() ───

@@ -384,6 +384,80 @@ async function unlink(ctx, net, loginId) {
   return { unlinked: true };
 }
 
+// ─── A new chat by number (1.15.0) ─────────────────────
+
+const LOOKUP_WINDOW_MS = 10 * 60000;
+const LOOKUPS = 10;
+const lookups = new Map(); // userId → [times]
+
+/** Who may ask: gc.bridges version 4, the bridge offered and running, a child allowed, the person's own link alive. */
+async function newGate(ctx, net) {
+  const b = require('./bridgemedia').newChatApi(ctx.gc);
+  if (!b) throw fail('feature_off');
+  const a = await allowed(ctx.gc, ctx.viewer, net, ctx.now);
+  if (!a.allowed) throw fail('bridge_locked');
+  const links = await store.all(ctx.gc, 'SELECT state FROM bridge_links WHERE user_id = ? AND network = ?', [ctx.viewer, net]);
+  if (!links.length) throw fail('bridge_unlinked', { reason: 'unlinked' });
+  if (!links.some((l) => l.state !== 'logged_out')) throw fail('bridge_unlinked', { reason: 'logged_out' });
+  return b;
+}
+
+/** The number of the body — a string the host checks (+ and the country code); it is never logged or stored here. */
+function numberIn(body) {
+  const n = body && typeof body === 'object' ? body.number : null;
+  if (typeof n !== 'string' || !n.trim() || n.length > 40) throw fail('invalid_number');
+  return n;
+}
+
+/** At most LOOKUPS numbers per person in LOOKUP_WINDOW_MS here (GateControl allows 20 an hour). */
+function limit(ctx) {
+  const list = (lookups.get(ctx.viewer) || []).filter((t) => ctx.now - t < LOOKUP_WINDOW_MS);
+  if (list.length >= LOOKUPS) throw fail('rate_limited', { retryAfterS: Math.max(1, Math.ceil((LOOKUP_WINDOW_MS - (ctx.now - list[0])) / 1000)) });
+  list.push(ctx.now);
+  if (lookups.size > 2000) lookups.clear();
+  lookups.set(ctx.viewer, list);
+}
+
+function lookupMapped(e) {
+  if (e && e.code === 'ERR_RATE_LIMIT') return fail('rate_limited', Number.isSafeInteger(e.retryAfterS) ? { retryAfterS: e.retryAfterS } : null);
+  if (e && e.code === 'ERR_INVALID' && e.reason === 'invalid_number') return fail('invalid_number');
+  if (e && e.code === 'ERR_BRIDGE' && e.reason === 'not_found') return fail('not_found', { reason: 'not_on_network' });
+  return mapped(e);
+}
+
+/** POST bridges/:network/resolve { number } → { found, name } — is this number at the service, under which name? */
+async function resolveNumber(ctx, net, body) {
+  const b = await newGate(ctx, net);
+  const number = numberIn(body);
+  limit(ctx);
+  let r;
+  try { r = await b.resolve(ctx.viewer, net, number); } catch (e) { throw lookupMapped(e); }
+  const name = r && typeof r.name === 'string' ? r.name.replace(/[\0-\x1f\x7f]/g, ' ').trim().slice(0, 120) || null : null;
+  return r && r.found === true ? { found: true, name } : { found: false, name: null };
+}
+
+/** POST bridges/:network/chats { number } → { conversation, created } — the direct chat with this number, made or found. */
+async function newChat(ctx, net, body) {
+  const b = await newGate(ctx, net);
+  const number = numberIn(body);
+  limit(ctx);
+  let r;
+  try { r = await b.createDm(ctx.viewer, net, number); } catch (e) { throw lookupMapped(e); }
+  const chat = r && r.chat && typeof r.chat === 'object' ? r.chat : null;
+  if (!chat) throw fail('bridge_failed', { reason: 'bad_answer' });
+  const conversations = require('./conversations');
+  const out = await store.tx(ctx.gc, async () => {
+    const before = await store.one(ctx.gc, 'SELECT id FROM conversations WHERE bridge_owner = ? AND bridge_net = ? AND bridge_ref = ?', [ctx.viewer, net, String(chat.id || '')]);
+    const conv = await require('./bridgechats').openChat(ctx, net, { id: chat.id, kind: 'direct', name: chat.name });
+    if (!conv) throw fail('bridge_failed', { reason: 'bad_answer' });
+    // the answer shows the chat like GET conversations/:id?bridged=1 — the caller asked for exactly this one
+    ctx.bridged = true;
+    const a = await conversations.access(ctx, conv.id);
+    return { conversation: await conversations.view(ctx, a.conv, a.me, a.members), created: !before };
+  });
+  return out;
+}
+
 // ─── Routes ────────────────────────────────────────────
 
 /** bridges/* of the app API → the answer's body, or null when the path is not ours. */
@@ -404,7 +478,10 @@ async function route(ctx, req, seg) {
   if (seg.length === 5 && seg[2] === 'login' && m === 'POST') return { login: await loginStep(ctx, net, seg[3], seg[4], req.body) };
   if (seg.length === 4 && seg[2] === 'login' && m === 'DELETE') return loginCancel(ctx, net, seg[3]);
   if (seg.length === 4 && seg[2] === 'logins' && m === 'DELETE') return unlink(ctx, net, seg[3]);
+  // 1.15.0: a new chat by number (no screen of its own yet; README "App-API", since 1.15.0)
+  if (seg.length === 3 && seg[2] === 'resolve' && m === 'POST') return resolveNumber(ctx, net, req.body);
+  if (seg.length === 3 && seg[2] === 'chats' && m === 'POST') return newChat(ctx, net, req.body);
   throw fail('not_found');
 }
 
-module.exports = { route, service, offered, adminView, adminSet, mine, allowed, refresh, api, NETWORKS, FLOWS };
+module.exports = { route, service, offered, adminView, adminSet, mine, allowed, refresh, api, NETWORKS, FLOWS, _resetLookups: () => lookups.clear() };

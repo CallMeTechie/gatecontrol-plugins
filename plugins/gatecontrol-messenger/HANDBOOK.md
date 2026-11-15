@@ -1,4 +1,4 @@
-<!-- version: 1.14.0 -->
+<!-- version: 1.15.0 -->
 # Messenger
 
 ## What the plugin does
@@ -67,6 +67,14 @@ The Family plugin keeps it (page “Features” › messenger group).
 
 **Old messages are gone.**
 The administrator set a retention, or the chat is a disappearing chat.
+
+## New in 1.15.0
+
+- **Pictures, videos, voice messages and files over WhatsApp:** what a contact sends first shows as “loading …” in the chat and appears shortly after like any other attachment. It is checked for malware like your own attachments.
+- When a file is too large for GateControl, of a kind GateControl does not take, or gone at WhatsApp, the line stays and says why – then see it in WhatsApp. A location opens the map view.
+- **Sending:** with the paper clip you send pictures, videos and files, with the microphone voice messages into a WhatsApp chat. They go out once the malware check is finished. WhatsApp does not take some formats – GateControl tells you then.
+- **Profile pictures:** the chat list shows the picture of your contact or the group.
+- **New chat by number:** the server can already start a chat with a phone number; the apps and the portal get the input for it in a later version.
 
 ## New in 1.14.0
 

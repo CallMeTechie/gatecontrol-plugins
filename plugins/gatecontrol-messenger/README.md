@@ -1012,7 +1012,8 @@ server nothing of this exists.
 
 `conversation.bridge`: `null`, or `{ network: "whatsapp", label, state: "ok" |
 "unreachable" | "logged_out" | "unlinked" | "locked" | "off", closed, supports:
-["text", "reply", "reaction", "edit", "delete", "read", "typing"] }`; `peer`
+["text", "reply", "reaction", "edit", "delete", "read", "typing"] }` (since 1.15.0 also
+files and `mediaTypes` — see below); `peer`
 null, `title` the contact's or group's name, `can.send` only with `state: "ok"`
 and not `closed`.
 
@@ -1051,6 +1052,54 @@ so an event that arrives twice changes nothing; what arrives before its
 message waits in `bridge_pending` (a day). Events for a child without the
 parents' permission are dropped. Tests: `test/bridgechats.test.js` against the
 mock host's `gc.bridges` version 3 (`tools/testing/mock-bridges.js`).
+
+## Files, pictures and a new chat by number over a bridge (since 1.15.0)
+
+GateControl with `gc.bridges` version ≥ 4 carries files (`server/bridgemedia.js`, migration 008). With version 3
+nothing of this section exists: `supports` stays as above and files stay placeholders.
+
+* `GET me` `features.bridge_media: true` and `features.bridge_new_chat: true` — only for the same people as
+  `bridge_chats` (an older app shows its update hint to exactly them), and only when GateControl has the API.
+* `conversation.bridge.supports` adds `"image"`, `"video"`, `"voice"`, `"file"`; `conversation.bridge.mediaTypes`
+  `{ image: ["image/jpeg", "image/png", "image/webp"], video: ["video/mp4"], voice: ["audio/ogg", "audio/mp4",
+  "audio/aac", "audio/mpeg"], file: null }` — what the bridge takes (WhatsApp: no `audio/webm`; `null` = any type).
+* `conversation.avatarMediaId` / `avatarUrl` (portal) — the contact's picture in a direct chat, the group's picture,
+  once fetched (load it like a group picture: `GET …/media/<id>`); `message.bridge.sender.avatarMediaId` /
+  `avatarUrl` — a contact's picture, fetched once a message of theirs was shown (so it may come with a later
+  refresh). A contact's picture belongs to no chat: only the person whose contact it is may load it.
+
+**In.** A contact's picture, video, voice message, file or sticker first is a placeholder with `state: "loading"`
+(`message.bridge.placeholder: { kind, name, state: "loading" | "failed" | null, reason, geo? }`), then — after
+GateControl's virus scan, `media.scan` as everywhere — a normal message: `kind` `image` (also a sticker), `voice`, or
+`file` (a video with `video { durationMs, width, height }`, any other file a download), `text` the caption,
+`bridge.placeholder: null`; the live event `message.update` carries `media: true`. `state: "failed"` keeps the
+placeholder with `reason`: `too_large` (more than `limits.maxBytes`), `type`, `infected`, `quota`, `gone` (the bridge
+lost it), `unavailable` (no answer for days). `state: null`: nothing to fetch (a location — then `geo { lat, lon }` —,
+an encrypted file, a GateControl without version 4). Older apps see the placeholder as in 1.14.0 and the file once it
+is there.
+
+**Out.** `POST conversations/:id/messages` with `kind: "image" | "voice" | "file"` and `mediaId` (and `text` as the
+caption, `replyTo`, `meta`, `video`) as in a normal chat — `supports` names it. Refused before anything is stored:
+`423 scan_pending` (the virus scan is not finished — send again in a moment), `409 bridge_media_type` (`reason`
+`image` | `voice` | `video`: a type the bridge does not take), `422 infected` / `423 scan_blocked` as everywhere.
+Location, polls, events, live arrival, home actions, cards, `replyStory` stay `409 bridge_text_only`; a caption is
+not edited at the other side (`PATCH` → `409 bridge_text_only`). "Erneut senden" sends the same file again.
+
+**A new chat by number** (`bridge_new_chat`; no screen of its own yet — the dialog follows):
+
+| Route | Answer |
+|---|---|
+| `POST bridges/:network/resolve { number }` | `{ found: true, name } \| { found: false, name: null }` — is this number at the service (WhatsApp: "on WhatsApp"), under which name |
+| `POST bridges/:network/chats { number }` | `{ conversation, created }` — the direct chat with this number, made or found; open it with `?bridged=1` as usual. It is listed once something was said in it |
+
+`number` with `+` and the country code (spaces, dashes, brackets, a leading `00` are fine) — else `400
+invalid_number`. Only the linked person (`409 bridge_unlinked` with `reason`), a child only with the parents' yes
+(`403 bridge_locked`), at most 10 numbers per person in 10 minutes here and 20 an hour at GateControl (`429
+rate_limited` with `retryAfterS`) — every number is a question to WhatsApp. `chats`: `404 not_found` with `reason:
+"not_on_network"` when the number is not at the service. The number is never logged and never stored by the
+plugin or GateControl; only the chat (with the contact's name) remains. Without version 4: `403 feature_off`.
+
+Tests: `test/bridgemedia.test.js` against the mock host's `gc.bridges` version 4.
 
 ## Services (for other plugins)
 

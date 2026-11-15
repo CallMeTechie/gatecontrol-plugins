@@ -3,6 +3,31 @@
 Chats zwischen den GateControl-Konten – in der GateControl-App (eigener Tab „Chats“), im
 Windows-Client und im Portal (eigener Tab „Chats“). Alles bleibt auf dem eigenen Server.
 
+## 1.15.0
+Vierte Baustufe der **Brücken zu anderen Messengern** (WhatsApp): **Bilder, Videos, Sprachnachrichten und Dateien**,
+Profilbilder und die Schnittstelle für einen **neuen Chat per Nummer**. Weiterhin **GateControl ≥ 1.193.0**; alles davon
+erscheint nur auf einem GateControl, das Brücken mit Dateien anbietet (`gc.bridges` Version 4, dort eine Vorschau).
+Kein neues Recht.
+- **Dateien herein** (`server/bridgemedia.js`, Migration 008): Ein Bild, Video, eine Sprachnachricht, Datei oder ein
+  Sticker eines Kontakts erscheint zuerst als „wird geladen …“ und wird dann über GateControl in die Medienablage des
+  Plugins geholt – mit dem **Virenscan** wie bei eigenen Anhängen („Wird geprüft …“, gesperrt) – und wird zu einer
+  normalen Nachricht mit Anhang. Größer als die Grenze für Anhänge, eine Art, die das Plugin nicht annimmt, Schadsoftware
+  oder bei der Brücke nicht mehr vorhanden: Die Zeile bleibt und sagt, warum. Ein **Standort** öffnet die Kartenansicht.
+  Geholt wird nacheinander und außerhalb der Ablage der Nachrichten (langsame Platte), die Datei liegt nur einmal in
+  GateControl.
+- **Dateien hinaus:** Bilder, Videos, Sprachnachrichten und Dateien gehen in einen überbrückten Chat, sobald der
+  Virenscan fertig ist (vorher `423 scan_pending`) – nur in Arten, die WhatsApp annimmt (`409 bridge_media_type`, z. B.
+  Sprachnachrichten im WebM-Format). `409 bridge_text_only` gilt nur noch für GateControl-Extras.
+- **Profilbilder:** das Bild des Kontakts bzw. der Gruppe in der Chatliste (`avatarMediaId`), das eines Kontakts in
+  Gruppen, sobald eine Nachricht von ihm gezeigt wurde. Nur die verknüpfte Person darf sie laden.
+- **Neuer Chat per Nummer – nur die Schnittstelle:** `POST bridges/:network/resolve` und `POST bridges/:network/chats`
+  (README), nur für die verknüpfte Person, Kinder nur mit Freigabe, höchstens 10 Nummern in 10 Minuten; die Nummer wird
+  weder protokolliert noch gespeichert. Eine Oberfläche dafür kommt später.
+- **Apps:** `GET me` `features.bridge_media` und `features.bridge_new_chat` nur bei Personen mit überbrückten Chats;
+  `conversation.bridge.supports` nennt die Dateiarten, `bridge.mediaTypes` die Formate.
+- **Portal:** Anhänge in überbrückten Chats wie in eigenen, die Büroklammer (nur Dateien) und Sprachnachrichten in einem
+  Format, das WhatsApp annimmt; Profilbilder in der Chatliste. Keine neuen Dialoge.
+
 ## 1.14.0
 Dritte Baustufe der **Brücken zu anderen Messengern** (WhatsApp): die **Chats selbst**. Weiterhin **GateControl ≥
 1.193.0**; alles davon erscheint nur auf einem GateControl, das Brücken mit Nachrichten anbietet (`gc.bridges`
