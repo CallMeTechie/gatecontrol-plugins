@@ -19,6 +19,7 @@ const familie = require('./familie');
 const status = require('./status');
 const bridgechats = require('./bridgechats');
 const bridgemedia = require('./bridgemedia');
+const persons = require('./persons');
 const { route14 } = require('./api14');
 const { fail, posInt, iso } = require('./util');
 
@@ -80,6 +81,10 @@ async function me(ctx) {
       // bridge.channel / bridge.readOnly / bridge.reactions, can.sendReason / can.react, message marks / preview /
       // bridge.channel (README "App-API", since 1.20.0)
       ...(channels ? { bridge_channels: true } : {}),
+      // 1.21.0, for the same people as bridge_chats: chat_people — persons (?people=1: one entry per person in GET
+      // conversations, `person`, `folded`; persons/… routes; suggestions from GateControl's gc.bridges version 8;
+      // README "App-API", since 1.21.0)
+      ...(bridgeChats ? { chat_people: true } : {}),
     },
     // 1.4.0: what the Familie plugin offers here (gc.services.available) — "Zur Liste", "In Kalender", places;
     // 1.10.0: drive — Drive takes files (save_file): "In Drive speichern" (POST messages/:id/to-drive)
@@ -163,6 +168,45 @@ async function route(ctx, req, seg) {
     return json(200, { people: list });
   }
 
+  // 1.21.0: persons — one chat per human over several ways (persons.js; ?people=1 with ?bridged=1)
+  if (a === 'persons') {
+    if (!persons.on(ctx)) throw fail('not_found');
+    if (seg.length === 2 && b === 'suggestions' && m === 'GET') {
+      await bridgechats.refreshLinks(ctx);
+      return json(200, await tx(() => persons.suggestions(ctx)));
+    }
+    if (seg.length === 3 && b === 'suggestions' && m === 'POST') return json(200, await tx(() => persons.answer(ctx, c, req.body)));
+    if (seg.length === 2 && b === 'candidates' && m === 'GET') return json(200, await tx(() => persons.candidates(ctx, req.query)));
+    if (seg.length === 1 && m === 'POST') return json(200, await tx(() => persons.merge(ctx, req.body)));
+    if (seg.length === 2 && m === 'GET') {
+      return json(200, await tx(async () => {
+        const e = await persons.entryOf(ctx, await persons.needPerson(ctx, b));
+        if (!e) throw fail('not_found');
+        return { conversation: e, person: e.person };
+      }));
+    }
+    if (seg.length === 2 && (m === 'PATCH' || m === 'PUT')) return json(200, await tx(() => persons.patch(ctx, b, req.body)));
+    if (seg.length === 2 && m === 'DELETE') return json(200, await tx(() => persons.split(ctx, b)));
+    if (seg.length === 4 && c === 'ways' && m === 'DELETE') return json(200, await tx(() => persons.split(ctx, b, seg[3])));
+    if (seg.length === 3 && c === 'archive' && m === 'POST') return json(200, await tx(() => persons.archive(ctx, b, req.body)));
+    if (seg.length === 3 && c === 'messages' && m === 'GET') return json(200, await tx(() => persons.page(ctx, b, req.query)));
+    if (seg.length === 3 && c === 'search' && m === 'GET') return json(200, await persons.search(ctx, b, req.query));
+    if (seg.length === 3 && c === 'read' && m === 'POST') {
+      const res = await tx(() => persons.read(ctx, b, req.body));
+      // the other messenger learns it too (for people who share read receipts)
+      for (const x of res.bridged) await bridgechats.readOut(ctx, x.conv, x.lastReadId);
+      return json(200, { unread: res.unread, ways: res.ways });
+    }
+    if (seg.length === 3 && c === 'messages' && m === 'POST') {
+      // the way of the newest incoming message (a tie, none: GateControl), an answer the way of its message — then exactly
+      // like a message to that chat
+      const way = await tx(() => persons.sendWay(ctx, b, req.body));
+      const r = await route(ctx, { ...req, method: 'POST' }, ['conversations', String(way.conversationId), 'messages']);
+      return { ...r, json: { ...r.json, way: way.way, conversationId: way.conversationId } };
+    }
+    throw fail('not_found');
+  }
+
   // 1.20.0: the page „Kanäle“ — the viewer's channels (bridgechannels.js)
   if (a === 'channels' && seg.length === 1 && m === 'GET') {
     if (!ctx.bridged) throw fail('not_found');
@@ -187,12 +231,17 @@ async function route(ctx, req, seg) {
     if (seg.length >= 2) {
       if (seg.length === 2 && m === 'GET') {
         const x = await conversations.access(ctx, b);
-        return json(200, { conversation: await conversations.view(ctx, x.conv, x.me, x.members) });
+        const v = await conversations.view(ctx, x.conv, x.me, x.members);
+        // 1.21.0: a way of a person — the app opens the person (persons.js)
+        if (persons.on(ctx)) v.person = await persons.personFor(ctx, x.conv.id);
+        return json(200, { conversation: v });
       }
       if (seg.length === 2 && (m === 'PATCH' || m === 'PUT')) {
         const out = await tx(async () => {
           const x = await conversations.access(ctx, b);
           const conv = await conversations.patch(ctx, x.conv, x.me, x.members, req.body);
+          // 1.21.0: mute and notifications hold for the whole person
+          if (persons.on(ctx)) await persons.syncFrom(ctx, conv.id);
           const still = await conversations.isMember(gc, conv.id, ctx.viewer);
           return { conversation: still ? await convOut(ctx, conv.id) : null, left: !still, skipped: ctx.skipped || [] };
         });

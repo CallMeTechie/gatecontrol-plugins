@@ -82,6 +82,8 @@ async function context(gc, user, now, lang, query, body) {
   ctx.bridged = !!(query && typeof query === 'object' && String(query.bridged) === '1') || !!(body && typeof body === 'object' && !Array.isArray(body) && body.bridged === true);
   // 1.20.0: the client knows channels (?channels=1): GET conversations leaves them out — they are on GET channels
   ctx.channels = !!(query && typeof query === 'object' && String(query.channels) === '1') || !!(body && typeof body === 'object' && !Array.isArray(body) && body.channels === true);
+  // 1.21.0: the client knows persons (?people=1): GET conversations shows one entry per person (server/persons.js)
+  ctx.people = !!(query && typeof query === 'object' && String(query.people) === '1') || !!(body && typeof body === 'object' && !Array.isArray(body) && body.people === true);
   // 1.4.0: pictures of people whose avatar privacy leaves the viewer out are not handed out
   if (ctx.viewer != null) ctx.users = social.maskUsers(await social.load(ctx), ctx.users, ctx.viewer);
   return ctx;
@@ -348,6 +350,8 @@ module.exports = {
       await require('./bridgehistory').runOnce(gc, async () => { const c = await context(gc, null, Date.now(), 'de'); c.portal = false; return c; }, (c) => api.flush(c));
       await require('./bridges').phoneCheck(gc, Date.now());
     }
+    // 1.21.0: persons whose ways went (a conversation deleted) — nothing else is kept of them
+    try { await store.tx(gc, () => require('./persons').tidy(gc)); } catch (e) { gc.log.warn('persons tidy failed', (e && (e.code || e.message)) || 'error'); }
     // 1.9.0: the group chats of GateControl groups — after a start and every 6 hours
     try { await groupchats.tick(gc, Date.now()); } catch (e) { gc.log.warn('group chats tick failed', (e && (e.code || e.message)) || 'error'); }
     return out;

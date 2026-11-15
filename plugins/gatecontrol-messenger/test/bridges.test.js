@@ -95,7 +95,7 @@ test('a person links their own WhatsApp with the pairing code — notes first', 
   await withHost({ bridges: ON }, async (host, c) => {
     const anna = c.as(ANNA);
     let mine = (await anna('GET', 'bridges')).json.bridges;
-    assert.deepEqual(mine, { available: true, location: 'server', history: null, networks: [{ id: 'whatsapp', state: 'running', allowed: true, lock: null, consent: null, outdated: false, version: '0.2610.0', wantVersion: '0.2610.0', logins: [],
+    assert.deepEqual(mine, { available: true, location: 'server', history: null, recognition: null, networks: [{ id: 'whatsapp', state: 'running', allowed: true, lock: null, consent: null, outdated: false, version: '0.2610.0', wantVersion: '0.2610.0', logins: [],
       clientOutdated: false, phone: { offline: false, days: null, leftDays: null },
       newChat: { available: false, reason: 'off', limit: { perHour: 10, left: 10, retryAfterS: 0 } } }] });
 

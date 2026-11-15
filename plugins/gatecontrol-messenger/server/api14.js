@@ -89,6 +89,8 @@ async function route14(ctx, req, seg) {
       return json(200, await tx(async () => {
         const x = await conversations.access(ctx, b);
         await tools.archive(ctx, x, req.body);
+        // 1.21.0: the archive holds for the whole person
+        if (require('./persons').on(ctx)) await require('./persons').syncFrom(ctx, x.conv.id);
         return { conversation: await convOut(ctx, x.conv.id) };
       }));
     }

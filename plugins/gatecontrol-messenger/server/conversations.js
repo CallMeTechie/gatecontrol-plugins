@@ -8,6 +8,7 @@
 // plugin's notice channel (`readonly`) takes no messages from its members.
 // 1.6.0: `listPinned` (Familie's group, shown under "Angeheftet") and `notice` { source, label } (the notice
 // channels of the chat sink, server/notices.js) in the conversation view.
+// 1.21.0: persons (?people=1, server/persons.js) — GET conversations shows one entry per person (`person`, `folded`).
 //
 // A non-member never learns that a conversation exists: every route answers
 // 404 not_found for a conversation the viewer is not an active member of.
@@ -168,9 +169,19 @@ async function list(ctx, query, opts = {}) {
   if (q.since != null && q.since !== '' && since == null) throw fail('invalid');
   const mine = await store.all(ctx.gc, 'SELECT * FROM members WHERE user_id = ? AND left_at IS NULL', [ctx.viewer]);
   const out = [];
+  // 1.21.0: persons (?people=1) — all ways of a person come along when one of them is listed; one entry each (persons.js)
+  const persons = require('./persons');
+  const pw = persons.on(ctx) && !opts.channels ? await persons.wayMap(ctx) : null;
+  const held = new Map(); // person id → [{ conv, me, fresh }]
   for (const me of mine) {
     const conv = await getConv(ctx.gc, me.conv_id);
     if (!conv) continue;
+    if (pw && pw.has(conv.id)) {
+      const pid = pw.get(conv.id);
+      if (!held.has(pid)) held.set(pid, []);
+      held.get(pid).push({ conv, me, fresh: since == null || conv.updated_at > since || (me.updated_at || 0) > since || me.joined_at > since });
+      continue;
+    }
     // 1.14.0: bridged chats only for clients that know them, and only once something was said in them
     if (conv.bridge_net && (!ctx.bridged || !conv.last_msg_id)) continue;
     // 1.20.0: channels on their own page for a client that knows them
@@ -181,8 +192,16 @@ async function list(ctx, query, opts = {}) {
     const members = await membersOf(ctx.gc, conv.id);
     out.push({ conv, me, members });
   }
-  const views = [];
+  for (const [pid, ways] of held) {
+    let fresh = ways.some((w) => w.fresh);
+    if (!fresh && since != null) fresh = !!(await store.one(ctx.gc, 'SELECT 1 AS x FROM persons WHERE id = ? AND updated_at > ?', [pid, since]));
+    if (!fresh) continue;
+    for (const w of ways) out.push({ conv: w.conv, me: w.me, members: await membersOf(ctx.gc, w.conv.id) });
+  }
+  let views = [];
   for (const x of out) views.push(await view(ctx, x.conv, x.me, x.members));
+  let folded = null;
+  if (pw) ({ list: views, folded } = await persons.fold(ctx, views, pw));
   views.sort((a, b) => {
     const ta = a.lastMessage ? a.lastMessage.createdAt : a.createdAt;
     const tb = b.lastMessage ? b.lastMessage.createdAt : b.createdAt;
@@ -191,8 +210,9 @@ async function list(ctx, query, opts = {}) {
   const removed = since == null ? [] : (await store.all(ctx.gc, 'SELECT conv_id FROM members WHERE user_id = ? AND left_at IS NOT NULL AND left_at > ?', [ctx.viewer, since])).map((r) => r.conv_id);
   // the apps got the newest message of each conversation: delivered
   for (const x of out) if (x.conv.last_msg_id) await messages.markDelivered(ctx, x.conv, x.me, x.members, x.conv.last_msg_id);
-  if (ctx.channels && ctx.bridged && !opts.channels) return { conversations: views, removed, channels: await require('./bridgechannels').summary(ctx), serverTime: iso(ctx.now) };
-  return { conversations: views, removed, serverTime: iso(ctx.now) };
+  const extra = folded ? { folded } : {};
+  if (ctx.channels && ctx.bridged && !opts.channels) return { conversations: views, removed, ...extra, channels: await require('./bridgechannels').summary(ctx), serverTime: iso(ctx.now) };
+  return { conversations: views, removed, ...extra, serverTime: iso(ctx.now) };
 }
 
 /** Enabled accounts among `ids` (others → invalid). */

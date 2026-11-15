@@ -32,7 +32,8 @@ const FILES = {
   // bridges.js (1.13.0): „Verknüpfte Dienste“ — the person's own links to other messengers (window.MSBridges)
   // newchat.js (1.16.0): „Neuer WhatsApp-Chat“ — a new chat by phone number over a bridge (window.MSNewChat);
   // ncontacts.js (1.18.0): „Neuer Chat“ with contacts — GateControl, WhatsApp, the address book (window.MSContacts)
-  portal: { html: read('portal.html'), js: read('portal.js'), css: read('portal.css'), lib: [read('video.js'), read('rich.js'), read('bridges.js'), read('newchat.js'), read('ncontacts.js')] },
+  // persons.js (1.21.0): persons — the suggestion card, „Zusammenführen?“, „Wege von …“, the source chips (window.MSPersons)
+  portal: { html: read('portal.html'), js: read('portal.js'), css: read('portal.css'), lib: [read('video.js'), read('rich.js'), read('bridges.js'), read('newchat.js'), read('ncontacts.js'), read('persons.js')] },
 };
 
 function esc(s) {

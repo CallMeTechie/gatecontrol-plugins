@@ -1247,6 +1247,43 @@ Message fields (bridged chats; `null` elsewhere):
 `message.update { media: true }` follows when a preview's picture arrived. `conversation.update { reason: "bridge" }`
 when a chat turned out to be a channel, an admins-only group opened or closed, or reacting in channels went off.
 
+## Persons — one chat per human over several ways (since 1.21.0)
+
+`features.chat_people` (for the same people as `bridge_chats`; `server/persons.js`, migration 013). A client that knows
+persons sends `?people=1` next to `?bridged=1` (in a body `people: true`). Suggestions need GateControl with `gc.bridges`
+version 8 (`matchAccounts`), the question at the link version 9 (`recognition`); merging by hand works from version 3.
+Only in the view of the person who merged: nothing of it reaches the other side; the messages stay in their
+conversation, so „Trennen“ loses nothing. Groups and channels are never merged. Tests: `test/persons.test.js`.
+
+| Route | Answer |
+|---|---|
+| `GET conversations?…&people=1` | one entry per person: the view of its lead conversation (the chat inside GateControl, else the oldest way) with the person's `title`, picture (`avatarUrl` / `avatarMediaId` of the way the name comes from, else of another), `unread` of all ways, the newest `lastMessage` of any way, `archived` (every way) and `person`; `folded: [id]` — the ways that left the list |
+| `GET conversations/:id` (any way) | + `person` — the app opens the person (`person.conversationId`) |
+| `GET persons/:id` | `{ conversation (the entry), person }` |
+| `GET persons/:id/messages?before=\|after=\|around=\|changedSince=&limit=&way=` | `{ messages (ascending by time), hasMore[, hasMoreBefore, hasMoreAfter], ways: [{ conversationId, way, lastReadId, readUpTo, deliveredUpTo }], serverTime }` — all ways mixed by time; cursors are message ids of any way; `way=gatecontrol \| whatsapp` filters |
+| `POST persons/:id/messages` | body as for a conversation → `{ message, duplicate, way, conversationId }` — the way of the newest incoming message (a tie and none: GateControl; a bridged way that cannot send gives way to GateControl); with `replyTo` the way of that message |
+| `POST persons/:id/read { upTo? }` | `{ unread, ways: [{ conversationId, way, lastReadId, unread }] }` — every way up to the time of `upTo` (without: all) |
+| `GET persons/:id/search?q=&way=` | `{ results (newest first), scanned, truncated }` over the ways |
+| `PATCH persons/:id { name?: "account" \| <conversationId>, notify?, mutedUntil? }` | `{ conversation, person }` — the name, mute and notifications for every way |
+| `POST persons/:id/archive { archived }` | `{ conversation, person }` |
+| `POST persons { conversationIds: [id…], userId?, name? }` | `{ conversation, person }` — merges (chats that belong to a person bring it along; the chat with the account is made when there is none, without a message). `409 cannot_merge` with `reason` `group` \| `channel` \| `not_direct` \| `two_accounts` \| `one_way` |
+| `DELETE persons/:id/ways/:conversationId` / `DELETE persons/:id` | `{ person \| null, conversations }` — „Trennen“ (a person with one way left is dissolved); that account and way are not suggested again |
+| `GET persons/suggestions` | `{ suggestions: [{ id, conversationId, userId, network, label, strength, via, contact: { name, avatarUrl, avatarMediaId }, account: { name, avatarUrl, initials, colorHex }, text, reason, lastMessageAt }] }` — strong first; `gc.bridges.matchAccounts` at most every 10 minutes per person and network |
+| `POST persons/suggestions/:id { action: "later" \| "never" }` | `{ suggestion: { id, state, until } }` — „Nicht jetzt“ (7 days), „Nicht mehr vorschlagen“ |
+| `GET persons/candidates?conversationId=` | `{ accounts: [{ userId, name, avatarUrl, initials, colorHex, personId }], chats: [{ conversationId, title, network, label, avatarUrl, avatarMediaId, personId }] }` — „Mit Person zusammenführen …“ |
+| `GET bridges` → `recognition` | `{ available, network, asked, allowed } \| null` — „Dürfen andere auf diesem Server dich an deinem WhatsApp erkennen?“ (the profile's consent), asked once after WhatsApp was linked |
+| `PUT bridges/recognition { allowed }` | `{ recognition }` (`403 feature_off` without `gc.bridges` version 9) |
+
+`person`: `{ id, name, nameFrom: "account" | <conversationId>, userId, conversationId (the lead), names (every name — the
+search finds each), ways: [{ way, label, conversationId, title, avatarUrl, avatarMediaId, unread, muted, archived,
+lastMessageAt, bridge, can: { send, sendReason, react } }], reply: { way, label, conversationId }, createdAt }`. With
+`?people=1` every message carries `way` (`gatecontrol` or the network). Mute, notifications and archive of one way are
+copied to the others (also after `PATCH conversations/:id` / `POST …/archive` of a way). Pushes of a way: „<Name> · über
+WhatsApp“ / „<Name> · über GateControl“ (without previews: as before), `data.person: { id, conversationId }`. Live: the
+events of the ways as before; `conversation.update { reason: "person", personId }` when a person was merged, renamed or
+split — load the list again. The Mail address book as a hint („Adressbuch verbindet beide“) is not built: it needs the
+e-mail address of the account, which plugins do not get.
+
 ## Services (for other plugins)
 
 `gc.services.call({ plugin: 'gatecontrol-messenger', service, userId?, payload })`

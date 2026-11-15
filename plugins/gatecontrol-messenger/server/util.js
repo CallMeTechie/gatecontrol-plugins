@@ -73,6 +73,8 @@ const STATUS = {
   // not there (not installed, contacts off, no place)
   contact_expired: 409,
   mail_missing: 409,
+  // 1.21.0: persons — these chats cannot be one person (reason: group | channel | not_direct | two_accounts | one_way)
+  cannot_merge: 409,
   internal: 500,
 };
 

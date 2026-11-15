@@ -11,6 +11,8 @@
    bridges/:network/login/:process | logins/:id). The code and the QR content are shown and forgotten; the QR code
    is drawn from the modules the server sends (display.matrix), never from a picture address.
 
+   1.21.0: after a link of WhatsApp, once: „Dürfen andere auf diesem Server dich an deinem WhatsApp erkennen?“
+   (GET bridges recognition, PUT bridges/recognition — GateControl with gc.bridges version 9).
    1.17.0: the row „Älteren Verlauf laden“ (nothing, the last 30 days, everything — PUT bridges/history), the warning
    „Handy seit N Tagen nicht gesehen“ under a service (networks[].phone) and „Brücke veraltet“ also when WhatsApp
    itself turned the bridge's version away (networks[].clientOutdated). */
@@ -305,7 +307,7 @@
     if (step.type === 'complete') {
       open.run = null; run.stopped = true;
       M.toast(T('br.linked', { name: name(n.id) }));
-      load();
+      askRecognition(n);
     } else if (step.type === 'display_and_wait') {
       showWait(n, flow, run, step); // WhatsApp renews the QR code a few times: each one is a new step
     } else if (step.type === 'user_input') {
@@ -314,6 +316,36 @@
       stopRun(true);
       failed(n, flow, { data: { code: 'bridge_unsupported' } });
     }
+  }
+
+  /**
+   * 1.21.0 (GateControl with gc.bridges version 9): right after WhatsApp was linked, once — „Dürfen andere auf diesem
+   * Server dich an deinem WhatsApp erkennen?“ (the profile's consent „Erkennung › an meinem verknüpften WhatsApp“, off
+   * until the person says yes). Answered before (here or in the profile): the overview at once.
+   */
+  function askRecognition(n) {
+    if (n.id !== 'whatsapp') { load(); return; }
+    M.api('GET', 'bridges').then(function (r) {
+      var rec = r.bridges && r.bridges.recognition;
+      if (!open || !rec || !rec.available || rec.asked) { load(); return; }
+      var answer = function (yes, btn) {
+        busy(btn, true);
+        M.api('PUT', 'bridges/recognition', { allowed: yes }).then(function () {
+          M.toast(T(yes ? 'person.rec_saved_yes' : 'person.rec_saved_no'));
+          load();
+        }).catch(function (e) { busy(btn, false); M.warn(e); });
+      };
+      var no = el('button', { type: 'button', class: 'btn', text: T('person.rec_no') });
+      var yes = el('button', { type: 'button', class: 'btn btn-primary', text: T('person.rec_yes') });
+      no.addEventListener('click', function () { answer(false, no); });
+      yes.addEventListener('click', function () { answer(true, yes); });
+      show([
+        head(T('person.rec_title')),
+        el('p', { class: 'ms-brp-foot', text: T('person.rec_text') }),
+        note('lock', T('person.rec_note')),
+        el('div', { class: 'ms-brp-bar' }, [no, yes]),
+      ]);
+    }).catch(function () { load(); });
   }
 
   function askPhone(n, flow, run, step) {

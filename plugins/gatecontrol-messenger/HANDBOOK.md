@@ -1,4 +1,4 @@
-<!-- version: 1.20.0 -->
+<!-- version: 1.21.0 -->
 # Messenger
 
 ## What the plugin does
@@ -70,6 +70,17 @@ It only comes when linking and appears at night. When “Load older history” i
 
 **Old messages are gone.**
 The administrator set a retention, or the chat is a disappearing chat.
+
+## New in 1.21.0
+
+- **One person, one chat.** Someone who writes to you over GateControl and over WhatsApp can stand in your list once – with one shared history, mixed by time. Each message carries the logo of its way; at the top of the chat you filter “All”, “GateControl” or “WhatsApp”. The ways stand behind the name in the list.
+- **Asked first, merged after.** When GateControl recognises the same person on two ways, a card appears above the list (“"Schatzimausi 💕" on WhatsApp may be Jenny Backes.”). Nothing is merged before you tap “Merge”; you pick the name (the GateControl account's by default). “Not now” hides the suggestion for 7 days, “Don't suggest again” for good. GateControl only recognises people who agreed (in their profile under “Recognition”) – never by name.
+- **By hand:** in the chat info of a chat with one person, “Merge with person …” – a GateControl account or another chat. Groups and channels are never merged.
+- **Answers:** your answer goes automatically over the way of the last message you received (on a tie and without an incoming message over GateControl). The input field names the way (“Message via WhatsApp”); when it goes over WhatsApp a line reminds you that WhatsApp's encryption ends at the bridge next to your server. An answer to a particular message goes over that message's way.
+- **For the person:** unread counts both ways, mute and archive hold for both, a push reads “Jenny Backes · via WhatsApp”. Search finds every name of the person.
+- **Only for you:** the other person sees nothing of it. “Separate” in “Ways to reach …” shows the chats apart again – no message is lost.
+- **When you link WhatsApp** the messenger asks once: “May others on this server recognise you by your WhatsApp?” (default: no; change it in “My profile” under “Recognition”).
+- Suggestions and the question at the link need a GateControl server with the user profile and bridges in the new version; merging by hand works with any server with bridges.
 
 ## New in 1.20.0
 

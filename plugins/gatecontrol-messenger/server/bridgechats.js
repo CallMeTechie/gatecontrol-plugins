@@ -629,7 +629,10 @@ async function push(gc, job, users, now) {
   const lang = p.lang === 'en' ? 'en' : 'de';
   const net = LABEL[conv.bridge_net] || conv.bridge_net;
   // 1.19.0: a contact without a name (never its number) → „WhatsApp-Kontakt“
-  const name = job.senderName || bridgeName(job.title, NAME_MAX) || titleLabel({ lang }, conv.bridge_net, conv.kind === 'group');
+  let name = job.senderName || bridgeName(job.title, NAME_MAX) || titleLabel({ lang }, conv.bridge_net, conv.kind === 'group');
+  // 1.21.0: a way of a person — „Jenny Backes · über WhatsApp“ (persons.js)
+  const person = conv.kind === 'direct' && !conv.bridge_channel ? await require('./persons').pushName(gc, u, conv.id, users) : null;
+  if (person && person.name) name = person.name;
   // 1.20.0: a channel's post (only when the person turned the channel's bell on) — „<Kanal> · Kanal über WhatsApp“
   const chan = !!conv.bridge_channel;
   const ph = job.meta && job.meta.bridge ? job.meta.bridge.placeholder : null;
@@ -638,13 +641,15 @@ async function push(gc, job, users, now) {
   text = text.replace(/\s+/g, ' ').trim();
   const n = {
     topic: 'message',
-    title: chan ? t(lang, 'bridgechat.push_channel', { name, network: net }) : (p.preview ? t(lang, 'bridgechat.push_title', { name, network: net }) : t(lang, 'bridgechat.push_neutral', { name, network: net })),
+    title: chan ? t(lang, 'bridgechat.push_channel', { name, network: net })
+      : (person && p.preview ? t(lang, 'person.push_title', { name, way: net })
+        : (p.preview ? t(lang, 'bridgechat.push_title', { name, network: net }) : t(lang, 'bridgechat.push_neutral', { name, network: net }))),
     body: p.preview ? (text.length > 1000 ? text.slice(0, 999) + '…' : text) : '',
     users: [u],
     priority: 'normal',
     conversation: { id: String(conv.id), title: conv.kind === 'group' ? (job.title || null) : null, isGroup: conv.kind === 'group' },
     sender: { id: job.contactId != null ? `ext-${job.contactId}` : (chan ? `channel-${conv.id}` : 'gatecontrol'), name, avatarUrl: null },
-    data: { messageId: row.id, conversationId: conv.id, bridge: conv.bridge_net, ...(chan ? { channel: true } : {}), actions: [
+    data: { messageId: row.id, conversationId: conv.id, bridge: conv.bridge_net, ...(chan ? { channel: true } : {}), ...(person ? { person: { id: person.personId, conversationId: person.conversationId } } : {}), actions: [
       // `bridged` in the body: the buttons of a push work in every app, also one that does not list bridged chats; no
       // answer into a channel or a group where only admins write
       ...(chan || conv.bridge_read_only ? [] : [{ type: 'reply', label: t(lang, 'push.reply'), path: `conversations/${conv.id}/messages`, body: { bridged: true } }]),

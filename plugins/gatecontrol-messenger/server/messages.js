@@ -86,6 +86,15 @@ async function views(ctx, me, rows, rc) {
   if (rows.some((r) => RICH_VIEW.includes(r.kind) && !r.deleted_at)) await require('./rich').decorate(ctx, rows, out);
   // 1.14.0: messages of a bridged chat — who of the other side wrote it, what became of one's own (bridgechats.js)
   await require('./bridgechats').decorate(ctx, rows, out);
+  // 1.21.0: a client that knows persons (?people=1) learns each message's way — 'gatecontrol' or the bridge's network
+  if (ctx.people && ctx.bridged) {
+    const nets = new Map();
+    for (const cid of new Set(rows.map((r) => r.conv_id))) {
+      const c = await store.one(ctx.gc, 'SELECT bridge_net FROM conversations WHERE id = ?', [cid]);
+      nets.set(cid, (c && c.bridge_net) || 'gatecontrol');
+    }
+    for (const o of out) o.way = nets.get(o.conversationId) || 'gatecontrol';
+  }
   return out;
 }
 

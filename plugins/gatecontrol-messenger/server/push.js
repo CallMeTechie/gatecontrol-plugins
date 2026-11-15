@@ -161,6 +161,8 @@ async function send(gc, job, users, now = Date.now()) {
     groups.get(k).users.push(u);
   }
   const calls = [];
+  // 1.21.0: a direct chat that is a way of the recipient's person — „Jenny Backes · über GateControl“ (persons.js)
+  const person = conv.kind === 'direct' && to.length === 1 && senderId != null ? await require('./persons').pushName(gc, to[0], conv.id, users) : null;
   const picture = await pictureOf(gc, row);
   // 1.4.0: a plugin card: its picture as { data, mime }, a doorbell with high priority
   let cardImage = null;
@@ -173,13 +175,14 @@ async function send(gc, job, users, now = Date.now()) {
     actions.push({ type: 'mark_read', label: t(g.lang, 'push.mark_read'), path: `conversations/${conv.id}/read`, body: { upTo: row.id } });
     const n = {
       topic: TOPIC,
-      title: g.preview ? senderName : t(g.lang, 'push.new_from', { name: senderName }),
+      title: person ? t(g.lang, g.preview ? 'person.push_title' : 'person.push_neutral', { name: person.name || senderName, way: 'GateControl' })
+        : (g.preview ? senderName : t(g.lang, 'push.new_from', { name: senderName })),
       body: g.preview ? bodyOf(g.lang, row.kind, job.text, job.meta) : '',
       users: g.users,
       priority: (row.kind === 'card' && job.meta && job.meta.card && job.meta.card.kind === 'doorbell') || (notice && ['high', 'critical'].includes(notice.priority)) ? 'high' : 'normal',
       conversation: { id: String(conv.id), title: conv.kind === 'group' ? (job.title || null) : null, isGroup: conv.kind === 'group' },
       sender: { id: senderId == null ? 'gatecontrol' : senderId, name: senderName, avatarUrl: sender && sender.avatarUrl ? sender.avatarUrl : null },
-      data: { messageId: row.id, conversationId: conv.id, actions },
+      data: { messageId: row.id, conversationId: conv.id, ...(person ? { person: { id: person.personId, conversationId: person.conversationId } } : {}), actions },
     };
     if (!n.title.trim()) continue;
     if (g.preview && picture) n.image = { mediaId: picture };
