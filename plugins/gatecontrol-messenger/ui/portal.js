@@ -20,7 +20,11 @@
    1.14.0: chats over a bridge to another messenger (`bridge` on a conversation, GET me features.bridge_chats): the
    service's mark at the picture, a filter per service, the names of contacts, a line that says where the chat runs,
    the states "bridge not reachable" / "logged out" / "not linked", only text in the composer, files as a
-   placeholder line, and what became of one's own message (sent, delivered, read, not sent — send again). */
+   placeholder line, and what became of one's own message (sent, delivered, read, not sent — send again).
+   1.15.0 (bridge.supports with image / video / voice / file): files of a bridged chat like those of an own chat, the
+   composer's attach button (files only) and voice messages in a type the bridge takes (bridge.mediaTypes; no webm for
+   WhatsApp), "wird geladen …" / why a file did not come, a location as the location view, the pictures of contacts
+   and groups in the list. */
 (function () {
   'use strict';
   var M = window.MS;
@@ -76,9 +80,18 @@
     if (m && m.bridge && m.bridge.sender) return m.bridge.sender.name || T('bc.unknown_contact');
     return nameOf(c, m ? m.senderId : null, opts);
   }
+  /** 1.15.0: what crosses a bridge (conversation bridge.supports) — 'image', 'video', 'voice', 'file'. */
+  function bridgeTakes(c, what) { return !!(c && c.bridge && Array.isArray(c.bridge.supports) && c.bridge.supports.indexOf(what) >= 0); }
+  /** 1.15.0: may this file go over the bridge? (bridge.mediaTypes; null: any type) */
+  function bridgeType(c, kind, type) {
+    var mt = c && c.bridge && c.bridge.mediaTypes;
+    var list = mt && mt[kind];
+    return !list || list.indexOf(String(type || '').split(';')[0]) >= 0;
+  }
   function netMark(c) { return el('span', { class: 'ms-net ms-net-' + c.bridge.network, title: T('bc.via', { network: c.bridge.label }), 'aria-label': T('bc.via', { network: c.bridge.label }), text: c.bridge.network === 'whatsapp' ? 'WA' : c.bridge.label.slice(0, 2).toUpperCase() }); }
   function convAvatar(c, size) {
-    if (c.bridge) return el('span', { class: 'ms-av-wrap' }, [c.kind === 'group' ? M.avatar({ icon: 'group' }, size) : M.avatar({ name: convTitle(c) }, size), netMark(c)]);
+    // 1.15.0: the picture of the contact / the group, once fetched from the bridge (avatarUrl), else initials or the group icon
+    if (c.bridge) return el('span', { class: 'ms-av-wrap' }, [c.avatarUrl ? M.avatar({ name: convTitle(c), avatarUrl: c.avatarUrl }, size) : (c.kind === 'group' ? M.avatar({ icon: 'group' }, size) : M.avatar({ name: convTitle(c) }, size)), netMark(c)]);
     if (c.kind === 'group') return M.avatar({ icon: c.readonly ? 'system' : 'group', avatarUrl: c.avatarUrl }, size);
     if (!c.peer || c.peer.gone) return M.avatar({ icon: 'gone' }, size);
     return M.avatar(c.peer, size);
@@ -356,7 +369,7 @@
       bar.appendChild(el('div', { class: 'ms-bridge-first' }, [
         el('b', { text: T('bc.first_title', n) }),
         el('p', { text: T('bc.first_lead', n) }),
-        el('ul', {}, [el('li', { text: T('bc.first_1', n) }), el('li', { text: T('bc.first_2') }), el('li', { text: T('bc.first_3', n) })]),
+        el('ul', {}, [el('li', { text: T('bc.first_1', n) }), el('li', { text: T(bridgeTakes(c, 'file') ? 'bc.first_2_media' : 'bc.first_2') }), el('li', { text: T('bc.first_3', n) })]),
         el('button', { type: 'button', class: 'btn btn-sm btn-primary', text: T('bc.first_ok'), on: { click: function () { bridgeSeen(c, true); renderBridgeBar(); } } }),
       ]));
     } else {
@@ -584,10 +597,18 @@
       b.classList.add('is-rich');
       b.appendChild(rich);
     } else if (m.bridge && m.bridge.placeholder) {
-      // 1.14.0: files do not cross the bridge yet — a line that says what it was, never nothing
+      // 1.14.0: a file that has not crossed (yet) — a line that says what it was, never nothing; 1.15.0: "wird geladen …"
+      // while it comes, the reason when it cannot, a location as a link to the map
       var ph = m.bridge.placeholder;
-      b.appendChild(el('div', { class: 'ms-ph' }, [M.icon(ph.kind === 'unsupported' ? 'info' : (ph.kind === 'image' || ph.kind === 'sticker' ? 'image' : 'file'), 15),
-        el('span', { text: ph.kind === 'unsupported' ? T('bc.ph.unsupported', { network: c.bridge ? c.bridge.label : '' }) : T('bc.ph.' + ph.kind) + (ph.name ? ' · ' + ph.name : '') + ' – ' + T('bc.ph_later', { network: c.bridge ? c.bridge.label : '' }) })]));
+      var net = { network: c.bridge ? c.bridge.label : '' };
+      var tail = ph.state === 'loading' ? T('bc.ph_loading') : (ph.state === 'failed' && ph.reason && CTX.texts['bc.ph_failed.' + ph.reason] ? T('bc.ph_failed.' + ph.reason, net) : T('bc.ph_later', net));
+      var phText = ph.kind === 'unsupported' ? T('bc.ph.unsupported', net) : T('bc.ph.' + ph.kind) + (ph.name ? ' · ' + ph.name : '') + (ph.kind === 'location' && ph.geo ? '' : ' – ' + tail);
+      b.appendChild(el('div', { class: 'ms-ph' + (ph.state === 'loading' ? ' is-loading' : '') }, [M.icon(ph.kind === 'unsupported' ? 'info' : (ph.kind === 'location' ? 'pin' : (ph.kind === 'image' || ph.kind === 'sticker' ? 'image' : 'file')), 15),
+        el('span', { text: phText })]));
+      if (ph.kind === 'location' && ph.geo && validPos(ph.geo)) {
+        // the existing location view (map, coordinates, OpenStreetMap)
+        b.appendChild(el('button', { type: 'button', class: 'ms-linkbtn', text: T('bc.ph_map'), on: { click: function (e) { e.stopPropagation(); showLocation({ lat: ph.geo.lat, lon: ph.geo.lon, label: m.text || null }); } } }));
+      }
       if (m.text) b.appendChild(el('div', { class: 'ms-cap', text: m.text }));
     } else if (m.text) {
       b.appendChild(document.createTextNode(m.text));
@@ -851,8 +872,9 @@
       refs.input = null;
       return;
     }
-    // 1.14.0: only text crosses a bridge — no files, no voice messages, none of GateControl's own message kinds
-    if (!S.edit && !c.bridge) {
+    // 1.14.0: only text crosses a bridge — none of GateControl's own message kinds; 1.15.0: files where the bridge
+    // says it takes them (bridge.supports)
+    if (!S.edit && (!c.bridge || bridgeTakes(c, 'file') || bridgeTakes(c, 'image'))) {
       var attachBtn = el('button', { type: 'button', class: 'ms-ib', 'aria-label': T('portal.attach'), title: T('portal.attach'), 'aria-haspopup': 'menu', on: { click: function () { attachMenu(attachBtn); } } }, [M.icon('attach', 18)]);
       rowEl.appendChild(attachBtn);
     }
@@ -866,7 +888,7 @@
       if (e.key === 'Escape' && (S.reply || S.edit)) { S.reply = null; S.edit = null; renderComposer(); }
     });
     rowEl.appendChild(input);
-    if (!S.edit && !c.bridge && recordingSupported()) rowEl.appendChild(el('button', { type: 'button', class: 'ms-ib', 'aria-label': T('portal.rec_start'), title: T('portal.rec_start'), on: { click: startRec } }, [M.icon('mic', 18)]));
+    if (!S.edit && (!c.bridge || bridgeTakes(c, 'voice')) && recordingSupported(c)) rowEl.appendChild(el('button', { type: 'button', class: 'ms-ib', 'aria-label': T('portal.rec_start'), title: T('portal.rec_start'), on: { click: startRec } }, [M.icon('mic', 18)]));
     rowEl.appendChild(el('button', { type: 'button', class: 'ms-ib is-round', 'aria-label': S.edit ? T('common.save') : T('portal.send'), title: S.edit ? T('common.save') : T('portal.send'), on: { click: submit } }, [M.icon(S.edit ? 'check' : 'send', 20)]));
     wrap.appendChild(rowEl);
     box.appendChild(wrap);
@@ -1020,6 +1042,8 @@
     var caption = refs.input && refs.input.value.trim() ? refs.input.value.trim() : null;
     var isImage = /^image\/(jpeg|png|webp)$/.test(type);
     if (!isImage && !allowedType(type)) { M.toast(T('error.upload_unsupported_type'), 'error'); return; }
+    // 1.15.0: over a bridge only what it takes (a picture is sent as WebP, which the bridge takes)
+    if (c.bridge && !isImage && !bridgeType(c, /^video\//.test(type) ? 'video' : 'file', type)) { M.toast(T('error.bridge_media_type'), 'error'); return; }
     var finish = function (body, pendingExtra) {
       if (caption) { body.text = caption; if (refs.input) { refs.input.value = ''; grow(refs.input); } }
       if (S.reply) { body.replyTo = S.reply.id; S.reply = null; renderComposer(); }
@@ -1062,17 +1086,19 @@
   }
 
   // ── voice recording (MediaRecorder; the frame has allow="microphone") ──
-  function recMime() {
+  function recMime(c) {
     if (!window.MediaRecorder) return null;
     var list = ['audio/ogg;codecs=opus', 'audio/webm;codecs=opus', 'audio/mp4', 'audio/webm', 'audio/ogg'];
     for (var i = 0; i < list.length; i++) {
+      // 1.15.0: over a bridge only a type it takes (WhatsApp: no webm)
+      if (c && c.bridge && !bridgeType(c, 'voice', list[i].split(';')[0])) continue;
       try { if (window.MediaRecorder.isTypeSupported(list[i]) && allowedType(list[i].split(';')[0])) return list[i]; } catch (_) { /* old browser */ }
     }
     return null;
   }
-  function recordingSupported() { return !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia && recMime()); }
+  function recordingSupported(c) { return !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia && recMime(c)); }
   function startRec() {
-    var mime = recMime();
+    var mime = recMime(conv(S.cur));
     if (!mime) return;
     navigator.mediaDevices.getUserMedia({ audio: true }).then(function (stream) {
       var rec = { stream: stream, chunks: [], levels: [], started: Date.now(), mime: mime, timer: null, analyser: null, ctx: null };
@@ -1339,13 +1365,15 @@
     var items = [
       el('button', { type: 'button', class: 'ms-menu-item', role: 'menuitem', on: { click: function () { closeMenu(); pickFile(); } } }, [M.icon('attach', 16), T('portal.attach_file')]),
     ];
-    if (S.features.location !== false) {
+    var cc = conv(S.cur);
+    // 1.15.0: over a bridge only files — no location, no poll, no event, no home action
+    var own = !(cc && cc.bridge);
+    if (own && S.features.location !== false) {
       items.push(el('button', { type: 'button', class: 'ms-menu-item', role: 'menuitem', on: { click: function () { closeMenu(); pickLocation(); } } }, [M.icon('pin', 16), T('loc.send')]));
     }
-    var cc = conv(S.cur);
-    if (feature('polls')) items.push(el('button', { type: 'button', class: 'ms-menu-item', role: 'menuitem', on: { click: function () { closeMenu(); R.createPoll(cc); } } }, [R.icon('poll', 16), T('poll.create')]));
-    if (feature('events')) items.push(el('button', { type: 'button', class: 'ms-menu-item', role: 'menuitem', on: { click: function () { closeMenu(); R.createEvent(cc); } } }, [R.icon('cal', 16), T('ev.create')]));
-    if (feature('actions')) items.push(el('button', { type: 'button', class: 'ms-menu-item', role: 'menuitem', on: { click: function () { closeMenu(); R.createAction(cc); } } }, [R.icon('home', 16), T('act.create')]));
+    if (own && feature('polls')) items.push(el('button', { type: 'button', class: 'ms-menu-item', role: 'menuitem', on: { click: function () { closeMenu(); R.createPoll(cc); } } }, [R.icon('poll', 16), T('poll.create')]));
+    if (own && feature('events')) items.push(el('button', { type: 'button', class: 'ms-menu-item', role: 'menuitem', on: { click: function () { closeMenu(); R.createEvent(cc); } } }, [R.icon('cal', 16), T('ev.create')]));
+    if (own && feature('actions')) items.push(el('button', { type: 'button', class: 'ms-menu-item', role: 'menuitem', on: { click: function () { closeMenu(); R.createAction(cc); } } }, [R.icon('home', 16), T('act.create')]));
     var layer = el('div', { style: 'position:absolute;inset:0;z-index:19', on: { click: function (e) { if (e.target === layer) closeMenu(); } } });
     var menu = el('div', { class: 'ms-menu', role: 'menu', 'aria-label': T('portal.attach') }, items);
     layer.appendChild(menu);
@@ -1382,7 +1410,8 @@
     var out = !c.bridge || (c.can.send && !(m.mine && m.bridge && (m.bridge.state === 'failed' || m.bridge.state === 'pending')));
     if (c.bridge && !out) items.length = 0;
     if (!m.deleted && c.can.send && out) item('reply', T('msg.reply'), function () { startReply(m); });
-    if (m.mine && !m.deleted && (m.kind === 'text' || m.kind === 'image' || m.kind === 'file') && withinWindow(m) && out && !(m.bridge && (m.bridge.remote || m.bridge.placeholder))) item('pen', T('msg.edit'), function () { startEdit(m); });
+    // 1.15.0: over a bridge only a text is edited (a caption is not)
+    if (m.mine && !m.deleted && (m.kind === 'text' || ((m.kind === 'image' || m.kind === 'file') && !c.bridge)) && withinWindow(m) && out && !(m.bridge && (m.bridge.remote || m.bridge.placeholder))) item('pen', T('msg.edit'), function () { startEdit(m); });
     if (feature('msg_tools') && !m.deleted) {
       var pinned = (c.pinned || []).indexOf(m.id) >= 0;
       if (m.kind !== 'system' && c.can.pin) item('pin', pinned ? T('tools.unpin') : T('tools.pin'), function () { pinMsg(c, m, !pinned); });
@@ -1615,7 +1644,7 @@
     }
     // 1.14.0: a chat over a bridge does not stay on this server alone — the note says where it runs instead
     var foot = el('div', { class: 'ms-info-sec' }, c.bridge
-      ? [el('p', { class: 'ms-note' }, [M.icon('info', 14), T('bc.info_note', { network: c.bridge.label })]), el('p', { class: 'ms-note' }, [M.icon('info', 14), T('bc.info_not', { network: c.bridge.label })])]
+      ? [el('p', { class: 'ms-note' }, [M.icon('info', 14), T('bc.info_note', { network: c.bridge.label })]), el('p', { class: 'ms-note' }, [M.icon('info', 14), T(bridgeTakes(c, 'file') ? 'bc.info_not_media' : 'bc.info_not', { network: c.bridge.label })])]
       : [el('p', { class: 'ms-note' }, [M.icon('lock', 14), T('info.encrypted')])]);
     if (c.can.leave) foot.appendChild(el('button', { type: 'button', class: 'btn btn-danger', on: { click: function () { leave(c); } } }, [T('info.leave')]));
     pane.appendChild(foot);

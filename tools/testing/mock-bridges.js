@@ -32,6 +32,21 @@
 //   host.bridges.sent                        what the plugin sent out: [{ op: 'send' | 'react' | 'redact' | 'read' | 'typing', userId, network, chatId, … , id? }]
 //   host.bridges.failSend = { code, reason } the next send / react / redact is refused that way (once)
 //   host.bridges.state.inbox                 what was delivered and not acknowledged
+//
+// Version 4 (GateControl with stage 4 — files, pictures, a new chat by number; createHost(dir, { bridges: { …, version: 4 } })):
+//   host.bridges.file(userId, { data, mime, name? }) → a reference (`m…`) as an event carries it (media.ref,
+//                                            chat.avatar, contact.avatar); gc.bridges.media.fetch stores it into the
+//                                            plugin's media like GateControl: maxBytes first, the type (any other file
+//                                            that is no picture, sound or video → application/octet-stream when declared),
+//                                            the quota, the virus scan (opts.scan) — answer { mediaId, mime, bytes, name, scan? }
+//   host.bridges.gone(ref)                   the homeserver lost the file (ERR_BRIDGE m_not_found)
+//   host.bridges.fetches                     every media.fetch: [{ userId, network, ref }]
+//   host.bridges.numbers                     Map '+49…' → { name } — who is at the service (resolve / createDm)
+//   sent rows of a file: { op: 'send', …, media: { mediaId, kind, … }, mime, bytes } — only a file of the plugin the
+//   scan lets be served (ERR_MEDIA_SCAN_PENDING / ERR_MEDIA_QUARANTINED / ERR_MEDIA_BLOCKED, ERR_NOT_FOUND)
+//   resolve / createDm: a changing request of that person, a link (else ERR_BRIDGE bridge_error), + and the country
+//   code (ERR_INVALID invalid_number), 20 per person and hour (ERR_RATE_LIMIT with retryAfterS); logged as
+//   { op: 'resolve' | 'create_dm', userId } — never the number
 // events.pull / events.ack need no person; chats() a request of that person; send / react / redact / read / typing a
 // changing request of that person, their own chat (else ERR_INVALID 'unknown chat'), a bridge that runs.
 //
@@ -51,7 +66,7 @@ const FLOWS = [
   { id: 'phone', name: 'Pairing code', description: 'Enter a pairing code in the app' },
 ];
 
-function install({ opts, perms, enabledUser, hostError, personCtx }) {
+function install({ opts, perms, enabledUser, hostError, personCtx, mediaHost }) {
   const o = opts.bridges === true ? {} : (opts.bridges && typeof opts.bridges === 'object' ? opts.bridges : null);
   const host = !!o;
   if (host && perms.bridges != null && typeof perms.bridges !== 'boolean') throw hostError('ERR_INVALID', 'plugin.json: permissions.bridges: invalid');
@@ -63,8 +78,9 @@ function install({ opts, perms, enabledUser, hostError, personCtx }) {
     host: { state: o && o.running ? 'running' : null, error: null, running: !!(o && o.running), memMb: o && o.running ? 88 : null, outdated: false, probe: null },
     logins: new Map(), processes: new Map(), log: [], seq: 0, oddStep: null, elsewhere: new Map(),
   };
-  const version = o && o.version === 1 ? 1 : (o && o.version === 3 ? 3 : 2);
+  const version = o && o.version === 1 ? 1 : (o && o.version === 4 ? 4 : (o && o.version === 3 ? 3 : 2));
   Object.assign(st, { inbox: [], inboxSeq: 0, chats: new Map(), sent: [], failSend: null, wake: null });
+  Object.assign(st, { files: new Map(), fetches: [], numbers: new Map(), lookups: new Map(), dms: new Map() });
 
   const err = (code, message, reason) => { const e = hostError(code, message); if (reason) e.reason = reason; return e; };
   const need = () => { if (perms.bridges !== true) throw hostError('ERR_BRIDGES_DENIED', 'this plugin has no bridges permission'); };
@@ -259,9 +275,22 @@ function install({ opts, perms, enabledUser, hostError, personCtx }) {
       return [...st.chats.entries()].filter(([, c]) => c.userId === userId && c.network === network).map(([id, c]) => ({ id, kind: c.kind, open: !c.closed }));
     },
     'bridges.send': async ({ userId, network, chatId, message }) => {
-      need(); person(userId, true); bridge(network);
+      need();
+      // a file is checked before anything else (its own, servable) — like the host
+      const file = version >= 4 && message && typeof message === 'object' && message.media != null ? mediaHost.servable(message.media && message.media.mediaId) : null;
+      person(userId, true); bridge(network);
       const c = chatOf(userId, network, chatId);
       const m = message && typeof message === 'object' && !Array.isArray(message) ? message : null;
+      if (file) {
+        if (!['image', 'video', 'audio', 'voice', 'file'].includes(m.media.kind) || m.edit != null || !TXN_RE.test(String(m.txnId || ''))) throw hostError('ERR_INVALID', 'media: { kind: image | video | audio | voice | file }');
+        if (m.replyTo != null && !EVENT_RE.test(String(m.replyTo))) throw hostError('ERR_INVALID', 'replyTo: a message id');
+        const key = `${userId}|${m.txnId}`;
+        if (c.txns.has(key)) return { id: c.txns.get(key) };
+        const id = `$out${++st.seq}`;
+        out('send', userId, network, chatId, { txnId: m.txnId, text: typeof m.text === 'string' && m.text.trim() ? m.text : null, replyTo: m.replyTo || null, edit: null, media: { ...m.media }, mime: file.mime, bytes: file.bytes, id });
+        c.txns.set(key, id);
+        return { id };
+      }
       if (!m || typeof m.text !== 'string' || !m.text.trim() || m.text.length > 16000 || !TXN_RE.test(String(m.txnId || ''))) throw hostError('ERR_INVALID', 'message: { txnId, text }');
       for (const k of ['replyTo', 'edit']) if (m[k] != null && !EVENT_RE.test(String(m[k]))) throw hostError('ERR_INVALID', `${k}: a message id`);
       // the same txnId sends once
@@ -304,6 +333,55 @@ function install({ opts, perms, enabledUser, hostError, personCtx }) {
     },
   });
 
+  // ── version 4: files, pictures, a new chat by number ──
+  const NUMBER_RE = /^\+[1-9][0-9]{6,14}$/;
+  const numberOf = (v) => {
+    if (typeof v !== 'string' || v.length > 40) return null;
+    let x = v.replace(/[\s\-./()]/g, '');
+    if (x.startsWith('00')) x = '+' + x.slice(2);
+    return NUMBER_RE.test(x) ? x : null;
+  };
+  const lookup = (userId, number) => {
+    const n = numberOf(number);
+    if (!n) throw err('ERR_INVALID', 'number: + and the country code', 'invalid_number');
+    const now = Date.now();
+    const list = (st.lookups.get(userId) || []).filter((t) => now - t < 3600000);
+    if (list.length >= 20) throw Object.assign(err('ERR_RATE_LIMIT', 'too many numbers asked for in the last hour'), { retryAfterS: Math.ceil((3600000 - (now - list[0])) / 1000) });
+    list.push(now);
+    st.lookups.set(userId, list);
+    if (!(st.logins.get(userId) || []).length) throw refuse('bridge_error');
+    return n;
+  };
+  if (version >= 4) Object.assign(api, {
+    'bridges.media.fetch': async ({ userId, network, ref, name }) => {
+      need();
+      if (!Number.isSafeInteger(userId) || userId <= 0) throw hostError('ERR_INVALID', 'invalid user id');
+      bridge(network);
+      const f = typeof ref === 'string' ? st.files.get(ref) : null;
+      st.fetches.push({ userId, network, ref });
+      if (!f || f.userId !== userId) throw hostError('ERR_INVALID', 'unknown file');
+      if (f.gone) throw refuse('m_not_found');
+      return mediaHost.store(f.data, { mime: f.mime, name: name == null ? (f.name || null) : name });
+    },
+    'bridges.resolve': async ({ userId, network, number }) => {
+      need(); person(userId, true); bridge(network);
+      const n = lookup(userId, number);
+      st.log.push({ op: 'resolve', userId, network });
+      const who = st.numbers.get(n);
+      return who ? { found: true, name: who.name || null } : { found: false };
+    },
+    'bridges.createDm': async ({ userId, network, number }) => {
+      need(); person(userId, true); bridge(network);
+      const n = lookup(userId, number);
+      st.log.push({ op: 'create_dm', userId, network });
+      const who = st.numbers.get(n);
+      if (!who) throw refuse('not_found');
+      const k = `${userId}|${network}|${n}`;
+      if (!st.dms.has(k)) st.dms.set(k, control.chat(userId, { kind: 'direct', name: who.name || null, network }));
+      return { chat: { id: st.dms.get(k), kind: 'direct', name: who.name || null } };
+    },
+  });
+
   /** gc.bridges (the child bootstrap's shape) */
   const gcPart = (call) => Object.freeze({
     version,
@@ -329,6 +407,11 @@ function install({ opts, perms, enabledUser, hostError, personCtx }) {
       redact: (userId, network, chatId, redaction) => call('bridges.redact', { userId, network, chatId, redaction }),
       read: (userId, network, chatId, messageId) => call('bridges.read', { userId, network, chatId, messageId }),
       typing: (userId, network, chatId, on) => call('bridges.typing', { userId, network, chatId, on: on === true }),
+    } : {}),
+    ...(version >= 4 ? {
+      media: Object.freeze({ fetch: (userId, network, ref, o2) => call('bridges.media.fetch', { userId, network, ref, name: o2 && o2.name != null ? o2.name : null }) }),
+      resolve: (userId, network, number) => call('bridges.resolve', { userId, network, number }),
+      createDm: (userId, network, number) => call('bridges.createDm', { userId, network, number }),
     } : {}),
   });
 
@@ -363,6 +446,15 @@ function install({ opts, perms, enabledUser, hostError, personCtx }) {
       return id;
     },
     closeChat(id) { const c = st.chats.get(id); if (c) c.closed = true; },
+    // ── version 4 ──
+    file(userId, { data, mime = 'application/octet-stream', name = null } = {}) {
+      const ref = 'm' + Buffer.from(`file-${++st.seq}-${userId}`).toString('base64url').padEnd(44, 'A');
+      st.files.set(ref, { userId, data: Buffer.from(data), mime, name });
+      return ref;
+    },
+    gone(ref) { const f = st.files.get(ref); if (f) f.gone = true; },
+    get fetches() { return st.fetches; },
+    get numbers() { return st.numbers; },
     async deliver(events, { wake = true } = {}) {
       for (const e of events) st.inbox.push({ network: 'whatsapp', at: Date.now(), ...JSON.parse(JSON.stringify(e)), seq: ++st.inboxSeq });
       if (wake && st.wake) await st.wake({ pending: st.inbox.length, ephemeral: [] });

@@ -16,9 +16,10 @@
 // administrator, no other member of the family — has a member row, so nobody else can read it, gets an event or a
 // push about it. The people on the other side are that person's contacts (bridge_contacts), never accounts.
 //
-// What does not cross: files of any kind (a later version; until then a line "Bild – folgt" with the file's name,
-// nothing is swallowed), GateControl's own message kinds (polls, events, live arrival, home actions, cards,
-// locations), disappearing messages, changes to members or title.
+// What does not cross: files of any kind (1.15.0 with GateControl's gc.bridges version 4: pictures, videos, voice
+// messages and files do — bridgemedia.js; before that a line "Bild – folgt" with the file's name, nothing is swallowed),
+// GateControl's own message kinds (polls, events, live arrival, home actions, cards, locations), disappearing messages,
+// changes to members or title.
 //
 // Clients that do not know bridged chats never see one: every route answers 404 for a bridged conversation unless
 // the request says ?bridged=1 (or `bridged: true` in its body — the buttons of a push; README "App-API", since 1.14.0).
@@ -30,6 +31,8 @@ const live = require('./live');
 const log = require('./log');
 const people = require('./people');
 const texts = require('./texts.json');
+const bridgemedia = require('./bridgemedia');
+const scan = require('./scan');
 const { fail, iso } = require('./util');
 
 const NETWORKS = ['whatsapp'];
@@ -127,7 +130,13 @@ async function refreshLinks(ctx) {
 async function convInfo(ctx, conv) {
   if (!isBridged(conv)) return null;
   const state = await stateFor(ctx, conv.bridge_owner, conv.bridge_net);
-  return { network: conv.bridge_net, label: LABEL[conv.bridge_net] || conv.bridge_net, state, closed: !!conv.bridge_closed, supports: SUPPORTS };
+  // 1.15.0: files cross (GateControl with gc.bridges version 4) — `mediaTypes` names what the bridge takes per kind
+  const media = !!bridgemedia.api(ctx.gc);
+  return {
+    network: conv.bridge_net, label: LABEL[conv.bridge_net] || conv.bridge_net, state, closed: !!conv.bridge_closed,
+    supports: media ? SUPPORTS.concat(bridgemedia.SUPPORTS) : SUPPORTS,
+    ...(media ? { mediaTypes: { image: bridgemedia.OUT_TYPES.image, video: bridgemedia.OUT_TYPES.video, voice: bridgemedia.OUT_TYPES.voice, file: null } } : {}),
+  };
 }
 
 /** The highest ids of the person's own messages the other side has got / read (null when none). */
@@ -160,20 +169,28 @@ async function decorate(ctx, rows, out) {
   // quoted messages of contacts
   for (const i of idx) if (out[i].replyTo && out[i].replyTo.contactId != null && !contactIds.includes(out[i].replyTo.contactId)) contactIds.push(out[i].replyTo.contactId);
   const names = new Map();
+  const pics = new Map();
+  const seen = [];
   for (let i = 0; i < contactIds.length; i += 90) {
     const part = contactIds.slice(i, i + 90);
-    for (const c of await store.all(ctx.gc, `SELECT id, name_enc FROM bridge_contacts WHERE id IN (${store.marks(part.length)})`, part)) {
+    for (const c of await store.all(ctx.gc, `SELECT id, name_enc, avatar_ref, avatar_got, avatar_media_id, avatar_want FROM bridge_contacts WHERE id IN (${store.marks(part.length)})`, part)) {
       const n = seal.open(c.name_enc);
       names.set(c.id, typeof n === 'string' && n ? n : null);
+      // 1.15.0: the contact's picture, once fetched (a contact's picture is fetched once somebody sees their messages)
+      pics.set(c.id, await bridgemedia.pictureOf(ctx.gc, c.avatar_media_id));
+      seen.push(c);
     }
   }
+  await bridgemedia.wantContacts(ctx, seen);
   for (const i of idx) {
     const r = rows[i];
     const o = out[i];
     const meta = (!r.deleted_at && require('./messages').metaOf(r)) || {};
-    const ph = meta.bridge && PLACEHOLDERS.includes(meta.bridge.placeholder) ? { kind: meta.bridge.placeholder, name: typeof meta.bridge.name === 'string' ? meta.bridge.name : null } : null;
+    // 1.15.0: state 'loading' (the file is on its way), 'failed' with a reason, null (nothing to fetch); geo of a location
+    const ph = meta.bridge && PLACEHOLDERS.includes(meta.bridge.placeholder) ? bridgemedia.placeholderView(meta.bridge, r) : null;
+    const pic = r.ext_sender != null ? pics.get(r.ext_sender) || null : null;
     o.bridge = {
-      sender: r.ext_sender != null ? { contactId: r.ext_sender, name: names.get(r.ext_sender) || null } : null,
+      sender: r.ext_sender != null ? { contactId: r.ext_sender, name: names.get(r.ext_sender) || null, avatarMediaId: pic, avatarUrl: pic && ctx.portal ? await avatarUrl(ctx, pic) : null } : null,
       // written in the messenger's own app (the person's phone), not here
       remote: r.sender_id != null && r.client_id == null,
       state: r.ext_state || null,
@@ -196,6 +213,11 @@ async function decorate(ctx, rows, out) {
   }
 }
 
+/** A signed URL of a picture for frames (the portal), null for the apps (they load it by its media id). */
+async function avatarUrl(ctx, mediaId) {
+  try { return await ctx.gc.media.url(mediaId, { user: ctx.viewer, ttlS: 6 * 3600 }); } catch { return null; }
+}
+
 // ─── in: the events of the bridges ──────────────────────────────────────────
 
 async function convOf(gc, userId, net, ref) {
@@ -214,8 +236,11 @@ async function ensureConv(c, ev) {
       [kind, name ? seal.seal(name) : null, c.now, c.now, ev.network, chat.id, ev.userId]);
     conv = await store.one(c.gc, 'SELECT * FROM conversations WHERE id = ?', [r.lastInsertRowid]);
     await store.run(c.gc, "INSERT INTO members (conv_id, user_id, role, joined_at, joined_msg_id, last_read_id, last_delivered_id, updated_at) VALUES (?, ?, 'member', ?, 0, 0, 0, ?)", [conv.id, ev.userId, c.now, c.now]);
+    await bridgemedia.chatAvatar(c, conv, chat.avatar);
     return conv;
   }
+  // 1.15.0: the chat's picture (a reference; fetched afterwards, bridgemedia.js)
+  await bridgemedia.chatAvatar(c, conv, chat.avatar);
   const old = seal.open(conv.title_enc);
   if ((name && name !== old) || kind !== conv.kind) {
     await store.run(c.gc, 'UPDATE conversations SET title_enc = ?, kind = ?, updated_at = ? WHERE id = ?', [name ? seal.seal(name) : conv.title_enc, kind, c.now, conv.id]);
@@ -229,11 +254,14 @@ async function ensureContact(c, ev, who) {
   if (!who || !CONTACT_RE.test(String(who.id || ''))) return null;
   const name = line(who.name, NAME_MAX) || null;
   const old = await store.one(c.gc, 'SELECT * FROM bridge_contacts WHERE owner_id = ? AND network = ? AND ref = ?', [ev.userId, ev.network, who.id]);
+  const avatar = who.avatar === null || bridgemedia.REF_RE.test(String(who.avatar || '')) ? who.avatar : undefined;
   if (!old) {
-    const r = await store.run(c.gc, 'INSERT INTO bridge_contacts (owner_id, network, ref, name_enc, updated_at) VALUES (?, ?, ?, ?, ?)', [ev.userId, ev.network, who.id, name ? seal.seal(name) : null, c.now]);
+    const r = await store.run(c.gc, 'INSERT INTO bridge_contacts (owner_id, network, ref, name_enc, updated_at, avatar_ref) VALUES (?, ?, ?, ?, ?, ?)', [ev.userId, ev.network, who.id, name ? seal.seal(name) : null, c.now, avatar || null]);
     return r.lastInsertRowid;
   }
   if (name && name !== seal.open(old.name_enc)) await store.run(c.gc, 'UPDATE bridge_contacts SET name_enc = ?, updated_at = ? WHERE id = ?', [seal.seal(name), c.now, old.id]);
+  // 1.15.0: the contact's picture
+  await bridgemedia.contactAvatar(c, old, avatar);
   return old.id;
 }
 
@@ -293,14 +321,16 @@ async function apply(c, ev, { parked = false } = {}) {
     let kind = 'text';
     if (sender.system) { kind = 'system'; meta.system = { event: 'bridge_notice', network: ev.network }; }
     else if (ev.kind === 'media') {
-      const m = ev.media && typeof ev.media === 'object' ? ev.media : {};
-      meta.bridge = { placeholder: PLACEHOLDERS.includes(m.kind) ? m.kind : 'file', name: line(m.name, 200) || null };
+      // 1.15.0: the file's reference and details too — fetched afterwards into the media of this plugin (bridgemedia.js)
+      meta.bridge = bridgemedia.placeholderOf(ev.media && typeof ev.media === 'object' ? ev.media : {}, PLACEHOLDERS);
     } else if (ev.kind !== 'text' && ev.kind !== 'notice') { meta.bridge = { placeholder: 'unsupported', name: null }; text = null; }
     let replyTo = null;
     if (EVENT_RE.test(String(ev.replyTo || ''))) { const q = await msgByEvent(c.gc, conv.id, ev.replyTo); replyTo = q && !q.deleted_at ? q.id : null; }
     const cx = { ...c, now: at };
     const id = await messages.insert(cx, conv, { senderId: sender.self ? ev.userId : null, kind, text, replyTo, meta, via: via(ev.network) });
-    await store.run(c.gc, 'UPDATE messages SET ext_sender = ?, ext_event = ?, ext_state = ? WHERE id = ?', [contactId, ev.id, sender.self ? 'sent' : null, id]);
+    const fetch = !!(meta.bridge && meta.bridge.ref && bridgemedia.api(c.gc));
+    await store.run(c.gc, 'UPDATE messages SET ext_sender = ?, ext_event = ?, ext_state = ?, ext_media = ? WHERE id = ?', [contactId, ev.id, sender.self ? 'sent' : null, fetch ? 'wait' : null, id]);
+    if (fetch) c.mediaWork = true;
     if (sender.self) await store.run(c.gc, 'UPDATE members SET last_read_id = MAX(last_read_id, ?), last_delivered_id = MAX(last_delivered_id, ?), updated_at = ? WHERE conv_id = ? AND user_id = ?', [id, id, c.now, conv.id, ev.userId]);
     const row = await store.one(c.gc, 'SELECT * FROM messages WHERE id = ?', [id]);
     live.queue(c.box, users, 'message.new', { conversationId: conv.id, messageId: id, senderId: row.sender_id, clientId: null, kind: row.kind, createdAt: iso(row.created_at), bridge: ev.network });
@@ -389,7 +419,9 @@ async function reactionChanged(c, conv, msgId, users) {
 
 /** Deleted for everyone: the row stays as a tombstone, like a message deleted in GateControl. */
 async function tombstone(c, conv, msgId, users) {
-  await store.run(c.gc, 'UPDATE messages SET deleted_at = ?, body_enc = NULL, meta_enc = NULL, media_id = NULL, thumb_media_id = NULL, reply_to = NULL, updated_at = ? WHERE id = ?', [c.now, c.now, msgId]);
+  await store.run(c.gc, 'UPDATE messages SET deleted_at = ?, body_enc = NULL, meta_enc = NULL, media_id = NULL, thumb_media_id = NULL, reply_to = NULL, ext_media = NULL, updated_at = ? WHERE id = ?', [c.now, c.now, msgId]);
+  // 1.15.0: a file it brought goes with it
+  await require('./messages').orphanMedia(c.gc, [msgId]);
   await store.run(c.gc, 'DELETE FROM reactions WHERE msg_id = ?', [msgId]);
   await store.run(c.gc, 'DELETE FROM bridge_reactions WHERE msg_id = ?', [msgId]);
   await store.run(c.gc, 'UPDATE conversations SET updated_at = ? WHERE id = ?', [c.now, conv.id]);
@@ -457,6 +489,7 @@ async function pumpNow(gc, make, flush, ephemeral) {
   const b = api(gc);
   if (!b) return { filed: 0 };
   let filed = 0;
+  let media = false;
   for (let round = 0; round < 50; round++) {
     const r = await b.events.pull({ after: 0, limit: 100 });
     const list = r && Array.isArray(r.events) ? r.events : [];
@@ -472,6 +505,7 @@ async function pumpNow(gc, make, flush, ephemeral) {
       }
     });
     if (ctx.dropped) await log.add(gc, 'bridge_event_locked', `dropped ${ctx.dropped}`, ctx.now);
+    if (ctx.mediaWork) media = true;
     filed += list.length;
     // filed and committed: now GateControl may forget them (a crash before this line files them again — once, by their id)
     if (last) await b.events.ack(last);
@@ -483,7 +517,9 @@ async function pumpNow(gc, make, flush, ephemeral) {
     await store.tx(gc, async () => { for (const ev of ephemeral.slice(0, 200)) { try { await applyEphemeral(ctx, ev); } catch { /* live only */ } } });
     await flush(ctx);
   }
-  return { filed };
+  // 1.15.0: files and pictures to fetch — after the events are filed and acknowledged, not waited for here
+  if (media) bridgemedia.kick(gc);
+  return { filed, media };
 }
 
 /** Background: what waited a day for its message is dropped. */
@@ -546,12 +582,31 @@ async function gate(ctx, conv) {
   return b;
 }
 
-/** What a bridged chat takes: a text, maybe as an answer. Everything else is refused before anything is stored. */
-function checkBody(b) {
+/**
+ * What a bridged chat takes: a text, maybe as an answer — and since 1.15.0 (gc.bridges version 4) a picture, voice
+ * message or file (a video is a file), with a caption: only one the virus scan has finished with (scan_pending
+ * otherwise; infected / blocked files are refused by messages.send as everywhere), in a type the bridge takes
+ * (bridge_media_type, reason = the kind). Everything else is refused before anything is stored.
+ */
+async function checkBody(ctx, b) {
   const x = b && typeof b === 'object' && !Array.isArray(b) ? b : null;
   if (!x) throw fail('invalid');
-  if (x.kind != null && x.kind !== 'text') throw fail('bridge_text_only', { reason: 'kind' });
-  for (const k of ['mediaId', 'thumbMediaId', 'video', 'location', 'poll', 'event', 'arrival', 'action', 'replyStory', 'meta']) if (x[k] != null) throw fail('bridge_text_only', { reason: 'kind' });
+  const kind = x.kind == null ? 'text' : x.kind;
+  for (const k of ['location', 'poll', 'event', 'arrival', 'action', 'replyStory']) if (x[k] != null) throw fail('bridge_text_only', { reason: 'kind' });
+  if (kind === 'text') {
+    for (const k of ['mediaId', 'thumbMediaId', 'video', 'meta']) if (x[k] != null) throw fail('bridge_text_only', { reason: 'kind' });
+    return;
+  }
+  if (!['image', 'voice', 'file'].includes(kind) || !bridgemedia.api(ctx.gc)) throw fail('bridge_text_only', { reason: 'kind' });
+  if (typeof x.mediaId !== 'string' || !/^[0-9a-f]{32}$/.test(x.mediaId)) throw fail('invalid');
+  let info = null;
+  try { info = await ctx.gc.media.info(x.mediaId); } catch { info = null; }
+  // anything else about the file (whose it is, used already, its kind) messages.send checks as for every chat
+  if (!info) return;
+  const sc = scan.norm(info.scan);
+  if (sc && sc.state === 'pending') throw fail('scan_pending');
+  const no = bridgemedia.outRefusal(kind, info.mime);
+  if (no) throw fail('bridge_media_type', { reason: no });
 }
 
 // The id a step is sent under: a message's own (so sending it again sends it once), a fresh one for every edit,
@@ -565,8 +620,14 @@ async function deliver(ctx, b, conv, row) {
   const text = require('./messages').bodyOf(row);
   let replyTo = null;
   if (row.reply_to) { const q = await store.one(ctx.gc, 'SELECT ext_event FROM messages WHERE id = ?', [row.reply_to]); replyTo = q && q.ext_event ? q.ext_event : null; }
+  // 1.15.0: a message with a file — the caption is its text
+  let media = null;
+  if (row.media_id) {
+    const f = await store.one(ctx.gc, 'SELECT mime FROM media WHERE media_id = ?', [row.media_id]);
+    media = bridgemedia.outMedia(row, f || {});
+  }
   try {
-    const r = await b.send(ctx.viewer, conv.bridge_net, conv.bridge_ref, { txnId: txnOf(row), text, ...(replyTo ? { replyTo } : {}) });
+    const r = await b.send(ctx.viewer, conv.bridge_net, conv.bridge_ref, { txnId: txnOf(row), ...(media ? { media, ...(text ? { text } : {}) } : { text }), ...(replyTo ? { replyTo } : {}) });
     ext = r && EVENT_RE.test(String(r.id || '')) ? r.id : null;
     if (!ext) reason = 'bad_answer';
   } catch (e) {
@@ -656,6 +717,11 @@ async function typingOut(ctx, conv, bodyIn) {
   return { until: iso(tt.until) };
 }
 
+/** 1.15.0: the conversation of a chat a person just opened by number (bridges.js newChat). Inside a transaction. */
+async function openChat(ctx, net, chat) {
+  return ensureConv({ gc: ctx.gc, now: ctx.now, box: ctx.box }, { userId: ctx.viewer, network: net, chat });
+}
+
 /** Has this person a bridged chat with a message? (GET me: features.bridge_chats) */
 async function hasChats(gc, userId) {
   return !!(await store.one(gc, 'SELECT 1 AS x FROM conversations WHERE bridge_owner = ? AND bridge_net IS NOT NULL AND last_msg_id IS NOT NULL LIMIT 1', [userId]));
@@ -663,6 +729,6 @@ async function hasChats(gc, userId) {
 
 module.exports = {
   api, isBridged, via, convInfo, marks, marksFor, decorate, apply, applyEphemeral, pump, sweep, push, gate, checkBody, sendOut, resend, editOut, deleteOut, reactOut, readOut, typingOut,
-  refreshLinks, stateFor, hasChats, mapped, NETWORKS, LABEL, SUPPORTS, PLACEHOLDERS,
+  refreshLinks, stateFor, hasChats, openChat, mapped, NETWORKS, LABEL, SUPPORTS, PLACEHOLDERS,
   _reset: () => { linkChecked.clear(); pumping = Promise.resolve(); },
 };

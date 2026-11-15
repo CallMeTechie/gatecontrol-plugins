@@ -183,9 +183,10 @@ test('files arrive as a line that says what came — nothing is swallowed; the b
     const [conv] = await list(c, ANNA);
     const m = await msgs(c, ANNA, conv.id);
     assert.deepEqual(m.map((x) => [x.kind, x.text, x.bridge.placeholder]), [
-      ['text', 'So sah es letztes Jahr aus', { kind: 'image', name: 'grill.jpg' }],
-      ['text', null, { kind: 'voice', name: null }],
-      ['text', null, { kind: 'unsupported', name: null }],
+      // 1.15.0: state / reason — null: nothing to fetch (a GateControl without files over the bridge)
+      ['text', 'So sah es letztes Jahr aus', { kind: 'image', name: 'grill.jpg', state: null, reason: null }],
+      ['text', null, { kind: 'voice', name: null, state: null, reason: null }],
+      ['text', null, { kind: 'unsupported', name: null, state: null, reason: null }],
       ['system', 'Du wurdest abgemeldet', null],
     ]);
     assert.equal(m[3].system.event, 'bridge_notice');
