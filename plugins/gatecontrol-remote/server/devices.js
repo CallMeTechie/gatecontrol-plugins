@@ -13,6 +13,11 @@
 //   gateway           through a home gateway: an L4 listener of the plugin
 //                     (gc.remote.listener, key route-<id> / dev-<id>) that the
 //                     gateway passes on to host:port in its home network.
+//
+// Since 1.1 a device is of a kind: `target` (made on the admin page or taken
+// over) or `host` — a Windows PC the GateControl app registered with the switch
+// "Remote Desktop erlauben" (server/hosts.js): its owner, the app installation,
+// the state the app reports and how it is shared ("nur mit Code" / "ohne Code").
 
 const store = require('./store');
 const { fail, fromHost, clip, multiline, bool, iso, posInt } = require('./util');
@@ -24,6 +29,8 @@ const ACCESS_MODES = ['internal', 'external', 'both', 'gateway'];
 const MAC_RE = /^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$/;
 const HOST_RE = /^[A-Za-z0-9.:_-]{1,253}$/;
 const FIRST_OWN_ID = 100000;
+// a host without a heartbeat for three minutes (three missed host/state) is offline
+const HOST_OFFLINE_MS = 180000;
 
 // field → rule. 'bool', 'text:<max>', 'lines:<max>', 'port', 'int:<min>:<max>', 'id', [enum], 'tags', 'mac', 'host'
 const FIELDS = Object.freeze({
@@ -133,16 +140,43 @@ function checkWhole(d) {
   if (c.resolution_mode === 'fixed' && (!c.resolution_width || !c.resolution_height)) throw fail('invalid', { field: 'resolution_width' });
 }
 
+/** The state of a registered PC (kind host) — null for a target. */
+function hostOf(r, now = Date.now()) {
+  if (r.kind !== 'host') return null;
+  const registered = bool(r.registered);
+  const online = registered && Number.isFinite(r.last_seen) && now - r.last_seen < HOST_OFFLINE_MS;
+  return {
+    owner: r.owner_user_id || null, tokenDeviceId: r.token_device_id || null, platform: r.platform || 'windows', edition: r.edition || null,
+    rdpAvailable: r.rdp_available == null ? null : bool(r.rdp_available), rdpEnabled: r.rdp_enabled == null ? null : bool(r.rdp_enabled),
+    shareMode: r.share_mode === 'open' ? 'open' : 'code', allowOpen: r.allow_open == null ? true : bool(r.allow_open), registered, online,
+    lastSeen: r.last_seen || null, osUser: r.os_user || null, appVersion: r.app_version || null,
+  };
+}
+
+/** How a person connects to a PC now: 'open' (no code, no question) only when the owner switched it on and the admin allows it. */
+function connectMode(d) {
+  if (!d || !d.host) return null;
+  return d.host.shareMode === 'open' && d.host.allowOpen ? 'open' : 'code';
+}
+
+/** Can a session reach the PC at all (switch on, Remote Desktop on in Windows, the app reports)? */
+function hostReady(d) {
+  return !!(d && d.host && d.host.registered && d.host.rdpEnabled !== false && d.host.online);
+}
+
 function fromRow(r) {
   if (!r) return null;
+  const host = hostOf(r);
   const config = { ...DEFAULTS, ...parseJson(r.config, {}) };
   for (const k of BOOLS) if (k in config) config[k] = bool(config[k]);
   if (!Array.isArray(config.tags)) config.tags = [];
   return {
     id: r.id, name: r.name, protocol: PROTOCOLS.includes(r.protocol) ? r.protocol : 'rdp', enabled: bool(r.enabled), source: r.source,
     config, credential: r.credential || null, sftpCredential: r.sftp_credential || null, credentialUnreadable: bool(r.credential_unreadable),
-    listener: r.listener || null, listenerError: r.listener_error || null,
-    status: { online: r.online == null ? null : bool(r.online), responseTime: r.response_time == null ? null : r.response_time, lastCheck: r.last_check || null },
+    listener: r.listener || null, listenerError: r.listener_error || null, kind: host ? 'host' : 'target', host,
+    // a PC: online is what its app reports (3389 is closed between sessions, a check would always fail)
+    status: host ? { online: host.online, responseTime: null, lastCheck: host.lastSeen }
+      : { online: r.online == null ? null : bool(r.online), responseTime: r.response_time == null ? null : r.response_time, lastCheck: r.last_check || null },
     createdAt: r.created_at, updatedAt: r.updated_at,
   };
 }
@@ -219,8 +253,16 @@ function adminView(d, access, vault, now = Date.now()) {
     credential: credentialView(d, vault), access: { users: a.users, groups: a.groups, tokens: a.tokens, open: !a.users.length && !a.groups.length && !a.tokens.length },
     listener: d.listener, listenerError: d.listenerError, status: { ...d.status, lastCheck: iso(d.status.lastCheck) },
     maintenance: maintenance.inWindow(d.config, new Date(now)), rotationDue: rotationDue(d, now),
+    kind: d.kind, host: d.host ? hostView(d) : null,
     createdAt: iso(d.createdAt), updatedAt: iso(d.updatedAt),
   };
+}
+
+/** The state of a PC for the pages (never the app's token). */
+function hostView(d) {
+  const h = d.host;
+  return { owner: h.owner, edition: h.edition, rdpAvailable: h.rdpAvailable, rdpEnabled: h.rdpEnabled, shareMode: h.shareMode, allowOpen: h.allowOpen,
+    connect: connectMode(d), registered: h.registered, online: h.online, lastSeen: iso(h.lastSeen), osUser: h.osUser, appVersion: h.appVersion };
 }
 
 /** The next id of a device made in the plugin (≥ 100000, never one of GateControl's rdp_routes). */
@@ -312,7 +354,12 @@ async function setAccess(gc, id, a) {
 async function save(gc, id, b, now = Date.now()) {
   if (!b || typeof b !== 'object' || Array.isArray(b)) throw fail('invalid');
   const before = id ? await need(gc, id) : null;
-  const next = applyPatch(before, b);
+  const next = applyPatch(before && before.kind === 'host' ? { ...before, config: { ...before.config } } : before, b);
+  if (before && before.kind === 'host') {
+    // a PC: where it is reached comes from its app (host/register), never from the page
+    next.protocol = 'rdp';
+    for (const k of ['host', 'port', 'access_mode', 'external_hostname', 'external_port', 'gateway_peer_id', 'gateway_pool_id', 'gateway_listen_port', 'wol_enabled', 'wol_mac_address']) next.config[k] = before.config[k];
+  }
   if (!before) { next.id = await nextId(gc); next.createdAt = now; }
   // credentials → the vault (a handle per device)
   const cred = credentialPatch(b.credentials, next.config.domain);
@@ -364,7 +411,8 @@ async function setStatus(gc, id, s, now = Date.now()) {
 }
 
 module.exports = {
-  PROTOCOLS, DEFAULT_PORT, ACCESS_MODES, FIELDS, KEPT, BOOLS, DEFAULTS, FIRST_OWN_ID,
+  PROTOCOLS, DEFAULT_PORT, ACCESS_MODES, FIELDS, KEPT, BOOLS, DEFAULTS, FIRST_OWN_ID, HOST_OFFLINE_MS,
+  hostOf, hostView, connectMode, hostReady,
   get, need, all, accessLists, emptyAccess, targetOf, listenerKey, vaultInfo, credentialView, adminView, rotationDue,
   applyPatch, checkField, save, remove, rotated, setStatus, setAccess, write, fromRow, nextId,
 };

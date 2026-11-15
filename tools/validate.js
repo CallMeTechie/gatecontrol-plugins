@@ -62,6 +62,10 @@ const NEWER_KEYS = {
     // notifyTopics[].email: the topic's pushes also by e-mail (a boolean; never on a chat topic) — an older one ignores it
     { path: ['notifyTopics'], present: (v) => Array.isArray(v) && v.some((t) => t && typeof t === 'object' && t.email !== undefined), check: (v) => notifyEmailError(v), replace: (v) => (Array.isArray(v) ? v.map((t) => { if (!t || typeof t !== 'object') return t; const { email, ...rest } = t; return rest; }) : v) },
   ],
+  '1.284.0': [
+    // notifyTopics[].signal: silent data pushes to single devices only (gc.remote version 2, the Windows switch) — an older one ignores it
+    { path: ['notifyTopics'], present: (v) => Array.isArray(v) && v.some((t) => t && typeof t === 'object' && t.signal !== undefined), check: (v) => notifySignalError(v), replace: (v) => (Array.isArray(v) ? v.map((t) => { if (!t || typeof t !== 'object') return t; const { signal, ...rest } = t; return rest; }) : v) },
+  ],
 };
 
 const RESERVED_TABS = ['overview', 'settings', 'perms', 'license', 'log', 'versions'];
@@ -82,6 +86,16 @@ function notifyEmailError(v) {
     if (!t || typeof t !== 'object' || t.email === undefined) continue;
     if (typeof t.email !== 'boolean') return 'notifyTopics: invalid';
     if (t.chat === true && t.email === true) return 'notifyTopics: chat topic cannot be mailed';
+  }
+  return null;
+}
+
+function notifySignalError(v) {
+  if (!Array.isArray(v)) return null;
+  for (const t of v) {
+    if (!t || typeof t !== 'object' || t.signal === undefined) continue;
+    if (typeof t.signal !== 'boolean') return 'notifyTopics: invalid';
+    if (t.signal === true && (t.chat === true || t.email === true || t.allowCritical === true || t.id === 'default')) return 'notifyTopics: signal topic cannot be chat, mailed, critical or default';
   }
   return null;
 }

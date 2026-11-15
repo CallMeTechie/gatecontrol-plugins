@@ -12,9 +12,12 @@
 //   sessions (browser and apps)                — server/connect.js, server/history.js
 //   the take-over of the built-in data         — server/legacy.js (hook legacyImport)
 //   the old app API /api/v1/client/rdp*        — server/facade.js (hook clientFacade)
+//   Windows PCs of the app (1.1, stage 2)      — server/hosts.js, codes.js, support.js, log.js
+//                                                (gc.remote version 2: GateControl after 1.283.0)
 //
 // Background (every 60 s): the device checks (every `checkMinutes`), sessions of
-// apps that stopped reporting, the retention of the history (hourly).
+// apps that stopped reporting, requests and firewall rules that ran out, the
+// retention of the history and of the sharing protocol (hourly).
 
 const ui = require('./ui');
 const api = require('./api');
@@ -25,6 +28,9 @@ const history = require('./history');
 const connect = require('./connect');
 const legacy = require('./legacy');
 const facade = require('./facade');
+const support = require('./support');
+const codes = require('./codes');
+const log = require('./log');
 const texts = require('./texts.json');
 const { STATUS, isKnown } = require('./util');
 
@@ -64,6 +70,7 @@ async function background(gc, now) {
     } catch (e) { gc.log.warn('device check failed', (e && e.code) || (e && e.message) || 'error'); }
   }
   try { await history.sweep(gc, now); } catch (e) { gc.log.warn('session sweep failed', (e && e.code) || 'error'); }
+  try { await support.sweep(gc, now); } catch (e) { gc.log.warn('firewall sweep failed', (e && e.code) || 'error'); }
   if (now - state.lastReconcile >= RECONCILE_EVERY_MS) {
     state.lastReconcile = now;
     try { await history.reconcile(gc, now); } catch (e) { gc.log.debug('reconcile failed', (e && e.code) || 'error'); }
@@ -71,12 +78,14 @@ async function background(gc, now) {
   if (now - state.lastPurge >= PURGE_EVERY_MS) {
     state.lastPurge = now;
     try { await history.purge(gc, cfg.historyDays, now); } catch (e) { gc.log.warn('purge failed', (e && e.code) || 'error'); }
+    try { await log.purge(gc, cfg.historyDays, now); await codes.purge(gc, now); } catch (e) { gc.log.warn('purge failed', (e && e.code) || 'error'); }
   }
 }
 
 module.exports = {
   async start(gc) {
     rights.reset();
+    codes.reset();
     state.lastCheck = 0;
     state.lastPurge = 0;
     state.lastReconcile = 0;
@@ -85,7 +94,12 @@ module.exports = {
       return;
     }
     if (state.off) { try { state.off(); } catch { /* gone */ } }
-    state.off = gc.remote.on('session', (ev) => history.onEvent(gc, ev).catch((e) => gc.log.warn('session event not recorded', (e && e.code) || 'error')));
+    state.off = gc.remote.on('session', async (ev) => {
+      try { await history.onEvent(gc, ev); } catch (e) { gc.log.warn('session event not recorded', (e && e.code) || 'error'); }
+      // the firewall rule of a PC closes with its browser session
+      try { await support.onSession(gc, ev); } catch (e) { gc.log.warn('firewall not closed', (e && e.code) || 'error'); }
+    });
+    if (!(gc.remote.version >= 2)) gc.log.info('gc.remote version 1: Windows PCs of the app need a newer GateControl');
     gc.log.info('remote started', gc.plugin.version);
   },
 
@@ -116,7 +130,7 @@ module.exports = {
     return { html: ui.render(view || {}, t) };
   },
 
-  /** The portal tab and the profile section: people with a right to RDP / VNC or SSH (the profile section: everybody signed in). */
+  /** The portal tab and the profile section: people with a right to RDP / VNC, SSH or support codes (the profile section: everybody signed in). */
   async portalVisible({ user, section } = {}, gc) {
     if (section === 'rights') return !!(user && Number.isSafeInteger(user.id));
     if (section) return false;

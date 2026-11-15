@@ -1,4 +1,5 @@
-/* Admin page "Geräte": every target with its state, connect, wake, check, and the editor with all settings of a target. */
+/* Admin page "Geräte": every target with its state, connect, wake, check, and the editor with all settings of a target.
+   1.1: the Windows PCs the app registered (owner, "Angemeldet von der App", nur mit Code / ohne Code, "„Ohne Code“ sperren"). */
 (function () {
   'use strict';
   var P = window.RM;
@@ -258,7 +259,9 @@
 
   function row(d) {
     var acts = el('div', { class: 'rm-actions' });
-    if (d.config.browser_enabled && d.enabled) {
+    var h = d.host;
+    // a PC asks for its code (the administrator, too); "Verbinden" only "ohne Code"
+    if (d.config.browser_enabled && d.enabled && (!h || (h.connect === 'open' && h.registered && h.online && h.rdpEnabled !== false))) {
       var cb = el('button', { class: 'btn btn-sm btn-primary', type: 'button', text: T('dev.connect') });
       cb.addEventListener('click', function () {
         busy(cb, P.api('POST', 'admin/devices/' + d.id + '/connect', {}).then(function (r) { return P.openSession(r.session.ref, acts); }));
@@ -270,9 +273,15 @@
       wb.addEventListener('click', function () { busy(wb, P.api('POST', 'admin/devices/' + d.id + '/wake').then(function () { P.toast(T('dev.woken')); })); });
       acts.appendChild(wb);
     }
-    var kb = el('button', { class: 'btn btn-sm', type: 'button', text: T('dev.check') });
-    kb.addEventListener('click', function () { busy(kb, P.api('POST', 'admin/devices/' + d.id + '/check').then(load)); });
-    acts.appendChild(kb);
+    if (!h) {
+      var kb = el('button', { class: 'btn btn-sm', type: 'button', text: T('dev.check') });
+      kb.addEventListener('click', function () { busy(kb, P.api('POST', 'admin/devices/' + d.id + '/check').then(load)); });
+      acts.appendChild(kb);
+    } else {
+      acts.appendChild(el('button', { class: 'btn btn-sm', type: 'button', text: h.allowOpen ? T('dev.lock_open') : T('dev.allow_open'), on: { click: function (ev) {
+        busy(ev.currentTarget, P.api('POST', 'admin/devices/' + d.id + '/allow-open', { allowOpen: !h.allowOpen }).then(load));
+      } } }));
+    }
     acts.appendChild(el('button', { class: 'btn btn-sm', type: 'button', text: T('dev.edit'), on: { click: function () {
       P.api('GET', 'admin/devices/' + d.id).then(function (r) { return editor(r.device); }).then(function (x) { if (x) load(); }).catch(P.warn);
     } } }));
@@ -288,13 +297,23 @@
         return P.api('DELETE', 'admin/devices/' + d.id).then(function () { P.toast(T('dev.deleted')); load(); });
       }).catch(P.warn);
     } } }));
-    var badges = el('div', { class: 'rm-badges' }, [P.protoBadge(d.protocol), P.stateBadge(d)]);
+    var badges = el('div', { class: 'rm-badges' }, [P.protoBadge(d.protocol), h && !h.registered ? el('span', { class: 'rm-badge', text: T('dev.unregistered') }) : P.stateBadge(d)]);
+    if (h) {
+      badges.appendChild(el('span', { class: 'rm-badge', text: T('dev.app_host') }));
+      if (h.registered && h.rdpEnabled === false) badges.appendChild(el('span', { class: 'rm-badge', 'data-tone': 'warn', text: T('dev.rdp_off') }));
+      badges.appendChild(el('span', { class: 'rm-badge', text: T(h.connect === 'open' ? 'dev.share_open' : 'dev.share_code') }));
+      if (!h.allowOpen) badges.appendChild(el('span', { class: 'rm-badge', 'data-tone': 'warn', text: T('dev.open_locked') }));
+    }
     if (d.rotationDue) badges.appendChild(el('span', { class: 'rm-badge', 'data-tone': 'warn', text: T('dev.rotation_due') }));
     if (d.credential && d.credential.readable === false) badges.appendChild(el('span', { class: 'rm-badge', 'data-tone': 'crit', text: T('dev.cred_unreadable') }));
     if (d.listenerError) badges.appendChild(el('span', { class: 'rm-badge', 'data-tone': 'crit', title: d.listenerError, text: T('dev.listener_error') }));
     if (d.activeSessions) badges.appendChild(el('span', { class: 'rm-badge', 'data-tone': 'good', text: T('dev.active', { n: d.activeSessions }) }));
     if (!d.config.browser_enabled) badges.appendChild(el('span', { class: 'rm-badge', text: T('dev.apps_only') }));
     var sub = [address(d)];
+    if (h) {
+      sub.push(T('dev.owner', { name: h.ownerName || '#' + h.owner }));
+      if (h.osUser) sub.push(T('dev.os_user', { name: h.osUser }));
+    }
     if (d.status && d.status.lastCheck) sub.push(T('dev.checked', { ago: P.ago(d.status.lastCheck) }) + (d.status.responseTime != null ? ' · ' + d.status.responseTime + ' ms' : ''));
     if (!d.access.open) sub.push(T('dev.restricted', { n: d.access.users.length + d.access.groups.length + d.access.tokens.length }));
     return el('div', { class: 'rm-item', 'data-device': String(d.id) }, [

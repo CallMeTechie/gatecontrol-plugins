@@ -197,7 +197,9 @@
 //   owned by one of `users`, `users` required — else ERR_INVALID; ids as strings or numbers, ≤ 100); gc.notify({ …,
 //   silent: true, data }) → a data push without a banner (title optional, no image, own budget 600 per hour); both need
 //   permissions.devices (ERR_DEVICES_DENIED), never on a chat topic (ERR_INVALID); recorded with `devices` and, for a data
-//   push, `kind: 'data', silent: true` (what the apps get: kind "data", silent true and `data`).
+//   push, `kind: 'data', silent: true` (what the apps get: kind "data", silent true and `data`). GateControl ≥ 1.284.0: a
+//   notifyTopics entry with signal: true takes only such silent pushes to devices (ERR_INVALID otherwise), recorded with
+//   `signal: true` (the host delivers them past the person's switches, mutes and quiet hours).
 //   Hand-over — gc.media.handOver(mediaId, { toPlugin, user }) → { mediaId, mime, bytes, name } in the other plugin's store (unclaimed, owner
 //   `user`, counts against its quota). The other plugin is an entry of opts.services: either { plugin, host } — another
 //   mock host (createHost of that plugin, its services and media are the real ones: callService, its media store) — or
@@ -1108,6 +1110,11 @@ async function createHost(pluginDir, opts = {}) {
   for (const t of Array.isArray(manifest.notifyTopics) ? manifest.notifyTopics : []) {
     if (t && t.chat != null && typeof t.chat !== 'boolean') throw hostError('ERR_INVALID', 'plugin.json: notifyTopics: invalid');
     if (t && t.chat === true && (t.allowCritical === true || t.id === 'default')) throw hostError('ERR_INVALID', 'plugin.json: notifyTopics: chat topic cannot be critical or default');
+    // GateControl with gc.remote version 2: a signal topic (silent pushes to devices only) — older ones ignore the key
+    if (t && t.signal != null && (gcVersion[0] > 1 || gcVersion[1] >= 284)) {
+      if (typeof t.signal !== 'boolean') throw hostError('ERR_INVALID', 'plugin.json: notifyTopics: invalid');
+      if (t.signal === true && (t.chat === true || t.email === true || t.allowCritical === true || t.id === 'default')) throw hostError('ERR_INVALID', 'plugin.json: notifyTopics: signal topic cannot be chat, mailed, critical or default');
+    }
   }
   // ─── The AI service (gc.ai, GateControl ≥ 1.214.0) and cloud accounts (gc.cloud, ≥ 1.213.0) ───
   // Every plugin of such a host has them (the host refuses without the permission); opts.ai / opts.cloud also switch them
@@ -1364,6 +1371,9 @@ async function createHost(pluginDir, opts = {}) {
         const silent = gc193 && n.silent === true;
         if (gc193 && (silent || n.devices != null) && perms.devices !== true) throw hostError('ERR_DEVICES_DENIED', 'devices / silent need permissions.devices');
         if (silent && n.image != null) throw hostError('ERR_INVALID', 'a silent push carries no image');
+        // GateControl with gc.remote version 2: a signal topic takes only silent pushes to devices (past switches, mutes, quiet hours)
+        const signal = hostAtLeast('1.284.0') && declared.some((t) => t && t.id === topic && t.signal === true);
+        if (signal && !(silent && n.devices != null)) throw hostError('ERR_INVALID', 'a signal topic takes only silent pushes to devices');
         let devices = null;
         if (gc193 && n.devices != null) {
           if (!Array.isArray(n.devices) || !n.devices.length || n.devices.length > 100) throw hostError('ERR_INVALID', 'invalid devices');
@@ -1405,6 +1415,7 @@ async function createHost(pluginDir, opts = {}) {
         if (card) rec.card = card;
         if (devices) rec.devices = devices;
         if (silent) Object.assign(rec, { kind: 'data', silent: true });
+        if (signal) rec.signal = true;
         if (image) {
           // notify_media: a capability URL (≥ 22 url-safe characters), expires with the push (24 h default, ≤ 7 days)
           const mediaId = require('node:crypto').randomBytes(18).toString('base64url');
@@ -3277,7 +3288,7 @@ async function createHost(pluginDir, opts = {}) {
   const pr = mockPrint.install({ opts, perms, atLeast, enabledUser, hostError, mediaStore });
   Object.assign(api, pr.api);
   // ─── Fernzugriff (GateControl ≥ 1.281.0, src/services/remote; tools/testing/mock-remote.js) ───
-  const rm = mockRemote.install({ opts, perms, atLeast, enabledUser, hostError, license });
+  const rm = mockRemote.install({ opts, perms, atLeast, enabledUser, hostError, license, personCtx, deviceList });
   Object.assign(api, rm.api);
   // ─── DNS-Schutz (GateControl ≥ 1.264.0, src/services/vpnDns.js; tools/testing/mock-vpn-dns.js) ───
   const vd = mockVpnDns.install({ opts, perms, atLeast, enabledUser, hostError, personCtx, logs, wire, homeInternet: hi.state.state,

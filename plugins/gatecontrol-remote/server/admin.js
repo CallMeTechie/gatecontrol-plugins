@@ -10,6 +10,9 @@ const rights = require('./rights');
 const history = require('./history');
 const connect = require('./connect');
 const legacy = require('./legacy');
+const hosts = require('./hosts');
+const support = require('./support');
+const log = require('./log');
 const { fail, fromHost, posInt } = require('./util');
 
 /** Gateways and failover pools for the gateway target (gc.remote.gateways, GateControl after 1.281.0). */
@@ -27,7 +30,13 @@ async function gateways(gc) {
 async function deviceList(gc) {
   const [list, lists, vault, active] = [await devices.all(gc), await devices.accessLists(gc), await devices.vaultInfo(gc), await history.activeCounts(gc)];
   const now = Date.now();
-  return list.map((d) => ({ ...devices.adminView(d, lists.get(d.id), vault, now), activeSessions: active.get(d.id) || 0 }));
+  const names = new Map();
+  try { for (const u of (await gc.users.list()) || []) names.set(u.id, u.name); } catch { /* names stay empty */ }
+  return list.map((d) => {
+    const v = { ...devices.adminView(d, lists.get(d.id), vault, now), activeSessions: active.get(d.id) || 0 };
+    if (v.host) v.host.ownerName = names.get(v.host.owner) || null;
+    return v;
+  });
 }
 
 async function one(gc, id) {
@@ -53,7 +62,8 @@ async function route(req, gc, seg, cfg) {
     if (m === 'GET' && seg.length === 2) return { devices: await deviceList(gc), ...(await gateways(gc)) };
     if (m === 'POST' && seg.length === 2) return { device: await one(gc, await devices.save(gc, null, b)) };
     if (m === 'POST' && seg.length === 3 && seg[2] === 'check') {
-      for (const d of (await devices.all(gc)).filter((x) => x.enabled)) await connect.probe(gc, d);
+      // a PC is not checked: 3389 is closed between sessions, its app reports its state
+      for (const d of (await devices.all(gc)).filter((x) => x.enabled && x.kind !== 'host')) await connect.probe(gc, d);
       return { devices: await deviceList(gc) };
     }
     const id = posInt(seg[2]);
@@ -61,12 +71,26 @@ async function route(req, gc, seg, cfg) {
     if (seg.length === 3) {
       if (m === 'GET') return { device: await one(gc, id) };
       if (m === 'PUT') return { device: await one(gc, await devices.save(gc, id, b)) };
-      if (m === 'DELETE') return devices.remove(gc, id);
+      if (m === 'DELETE') {
+        const d = await devices.need(gc, id);
+        if (d.kind === 'host') await hosts.retire(gc, d, support, 'deleted');
+        return devices.remove(gc, id);
+      }
     }
     if (seg.length === 4 && m === 'POST') {
-      if (seg[3] === 'check') return { status: await connect.probe(gc, await devices.need(gc, id)) };
+      if (seg[3] === 'check') {
+        const d = await devices.need(gc, id);
+        if (d.kind === 'host') return { status: { online: d.status.online, responseTime: null, lastCheck: d.host.lastSeen ? new Date(d.host.lastSeen).toISOString() : null } };
+        return { status: await connect.probe(gc, d) };
+      }
+      if (seg[3] === 'allow-open') { await hosts.setAllowOpen(gc, id, b.allowOpen); return { device: await one(gc, id) }; }
       if (seg[3] === 'wake') return { wake: await connect.wake(gc, user, id, { admin: true }) };
-      if (seg[3] === 'connect') return { session: await connect.open(gc, user, id, cfg, { admin: true, mode: b.mode === 'view' ? 'view' : 'control' }) };
+      if (seg[3] === 'connect') {
+        const d = await devices.need(gc, id);
+        // a PC: the administrator, too, needs the code — or the owner's "ohne Code"
+        if (d.kind === 'host') return require('./api').connectHost(gc, user, d, req, { admin: true });
+        return { session: await connect.open(gc, user, id, cfg, { admin: true, mode: b.mode === 'view' ? 'view' : 'control' }) };
+      }
       if (seg[3] === 'rotated') { await devices.rotated(gc, id); return { device: await one(gc, id) }; }
       if (seg[3] === 'toggle') {
         const d = await devices.need(gc, id);
@@ -102,6 +126,8 @@ async function route(req, gc, seg, cfg) {
       return { sessions: await history.list(gc, { deviceId: q.device, userId: q.user, status: q.status, before: q.before, limit: q.limit }), recordings: await recordings(gc) };
     }
     if (m === 'GET' && seg.length === 3 && seg[2] === 'csv') return { csv: await history.csv(gc) };
+    // the protocol of the sharing (filter "Freigaben")
+    if (m === 'GET' && seg.length === 3 && seg[2] === 'shares') return { entries: await log.list(gc, { deviceId: (req.query || {}).device, before: (req.query || {}).before, limit: (req.query || {}).limit }) };
     if (m === 'POST' && seg.length === 4 && seg[3] === 'end') {
       const id = posInt(seg[2]);
       const rows = await history.list(gc, { limit: 200, status: 'active' });
