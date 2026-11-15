@@ -1,4 +1,4 @@
-<!-- version: 1.19.0 -->
+<!-- version: 1.19.1 -->
 # Messenger
 
 ## Was das Plugin kann
@@ -70,6 +70,11 @@ Er kommt nur beim Verknüpfen und erscheint nachts. Steht „Älteren Verlauf la
 
 **Alte Nachrichten sind weg.**
 Der Administrator hat eine Aufbewahrung eingestellt, oder der Chat ist selbstlöschend.
+
+## Neu in 1.19.1
+
+- **Profilbilder aus WhatsApp kommen nach.** Ließ sich das Bild eines Chats oder Kontakts einige Male nicht holen (z. B. vor GateControl 1.278.1, als der Server die Antwort der Brücke nicht annahm), gab der Messenger es bisher für immer auf – der Chat zeigte nur Initialen. Jetzt versucht er es später erneut, mit wachsendem Abstand (höchstens alle 6 Stunden), und holt beim Start einmal alle Bilder nach, die bisher fehlen. Zeigt ein Kontakt sein Profilbild in WhatsApp nicht für dich (Datenschutz), bleiben ehrlich die Initialen.
+- **Initialen ohne Fragezeichen-Raute:** Ein Name mit Emoji („Schatzimausi 💕“) zeigt „S“ statt „S“ mit einer Fragezeichen-Raute. Initialen sind nur noch Buchstaben und Ziffern; ein Name nur aus Emoji zeigt das Personen-Symbol.
 
 ## Neu in 1.19.0
 

@@ -1,4 +1,4 @@
-<!-- version: 1.19.0 -->
+<!-- version: 1.19.1 -->
 # Messenger
 
 ## What the plugin does
@@ -70,6 +70,11 @@ It only comes when linking and appears at night. When “Load older history” i
 
 **Old messages are gone.**
 The administrator set a retention, or the chat is a disappearing chat.
+
+## New in 1.19.1
+
+- **Profile pictures from WhatsApp arrive after all.** When the picture of a chat or contact could not be fetched a few times (e.g. before GateControl 1.278.1, when the server did not take the bridge’s answer), the Messenger gave it up for good – the chat only showed initials. Now it tries again later, at growing intervals (at most every 6 hours), and at start fetches once every picture still missing. When a contact does not show you their profile picture in WhatsApp (privacy), the initials honestly stay.
+- **Initials without a replacement mark:** a name with an emoji (“Schatzimausi 💕”) shows “S” instead of “S” with a replacement mark. Initials are letters and digits only; a name made of emoji only shows the person symbol.
 
 ## New in 1.19.0
 

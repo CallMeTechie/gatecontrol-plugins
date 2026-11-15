@@ -3,6 +3,23 @@
 Chats zwischen den GateControl-Konten – in der GateControl-App (eigener Tab „Chats“), im
 Windows-Client und im Portal (eigener Tab „Chats“). Alles bleibt auf dem eigenen Server.
 
+## 1.19.1
+**Brücken: Profilbilder, die einmal nicht kamen, kommen nach; Initialen ohne halbe Emojis** (zweiter Praxistest: ein
+WhatsApp-Chat „Schatzimausi 💕“ zeigte „S“ mit Fragezeichen-Raute und kein Profilbild).
+- **Profilbilder:** Ein Bild eines Chats oder Kontakts, das `gc.bridges.media.fetch` nicht endgültig ablehnte (Brücke weg,
+  eine Antwort des Homeservers, die GateControl nicht annahm – vor GateControl 1.278.1 jede ohne Content-Length), galt
+  nach 6 Läufen als erledigt (`bridge_avatar_got` / `avatar_got` = Referenz ohne Datei) und wurde nie wieder angefragt,
+  erst bei einem neuen Bild. Jetzt wartet es mit wachsendem Abstand (5 min, verdoppelt, höchstens 6 h, nur im Speicher)
+  und wird nie endgültig aufgegeben; nur eine endgültige Antwort (`gone`, `type`, `too_large`, `infected`, `quota`,
+  kein Bild) beendet es. Beim Start werden Bilder, die als erledigt ohne Datei gelten, einmal zurückgesetzt und neu
+  geholt (auch die von 1.19.0 aufgegebenen). Das Protokoll `bridge_picture_failed` nennt weiter den Grund (bei
+  vorläufigen Fehlern einmal nach 6 Läufen, `unavailable`).
+- **Initialen (Portal):** `MS.initials` schnitt mit `charAt` ein Emoji in der Mitte des Surrogatpaars ab („S\uD83D“,
+  angezeigt als Fragezeichen-Raute). Jetzt ganze Zeichen (NFC, Codepunkte samt kombinierenden Zeichen), nur Buchstaben
+  und Ziffern (`\p{L}`/`\p{N}`): „Schatzimausi 💕“ → „S“, „Ä Ö“ → „ÄÖ“, „van der Berg“ → „VB“; nur Emoji → kein Text,
+  der Avatar zeigt das neue Symbol `person`.
+- Tests: `test/bridgepictures.test.js` (vorher rot), `test/initials.test.js`.
+
 ## 1.19.0
 **Brücken: Namen ohne Telefonnummer, kein endloses „wird geladen …“** (erster echter Test über WhatsApp). Läuft mit jedem
 GateControl mit `gc.bridges` ab Version 3; die Namen aus dem Adressbuch brauchen Version 6 und Mail ≥ 1.16.0.

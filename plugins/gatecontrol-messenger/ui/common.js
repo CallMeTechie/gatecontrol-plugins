@@ -100,6 +100,8 @@
     plug: 'M9 2v5M15 2v5M6 7h12v4a6 6 0 0 1-12 0z|M12 17v5|M3 3l18 18',
     logout: 'M15 4h4v16h-4|M10 8l-4 4 4 4M6 12h10',
     refresh: 'M20 11a8 8 0 1 0-2.3 5.7|M20 5v6h-6',
+    // 1.19.1: a name without a letter (only emoji): the person symbol instead of initials
+    person: 'M12 4a4 4 0 1 0 0 8a4 4 0 1 0 0-8|M4.5 20.5c0-4 3.4-6 7.5-6s7.5 2 7.5 6',
   };
   function icon(name, size, opts) { return svg(ICONS[name] || ICONS.info, size, opts); }
   var COLOR_RE = /^#[0-9a-fA-F]{6}$/;
@@ -160,9 +162,19 @@
     var h = Array.prototype.map.call(b, function (x) { return (x < 16 ? '0' : '') + x.toString(16); }).join('');
     return h.slice(0, 8) + '-' + h.slice(8, 12) + '-' + h.slice(12, 16) + '-' + h.slice(16, 20) + '-' + h.slice(20);
   }
+  /**
+   * 1.19.1: up to two initials of letters and digits, whole characters only — an emoji is never cut in half (it was:
+   * „Schatzimausi 💕“ showed „S�“) and never an initial: „Schatzimausi 💕“ → „S“, „Ä Ö“ → „ÄÖ“, „van der Berg“ → „VB“,
+   * „Kim“ → „KI“. Several words: the first letter of the first and of the last word; one word: its first two letters;
+   * no letter at all (only emoji) → '' — avatar() shows the person symbol.
+   */
+  var INI_RE = /[\p{L}\p{N}]\p{M}*/gu;
+  function letters(word) { return String(word).match(INI_RE) || []; }
   function initials(name) {
-    var parts = String(name || '?').trim().split(/\s+/);
-    return ((parts[0] || '?').charAt(0) + (parts.length > 1 ? parts[parts.length - 1].charAt(0) : (parts[0] || '').charAt(1) || '')).toUpperCase();
+    var parts = String(name || '').normalize('NFC').trim().split(/\s+/).filter(Boolean);
+    if (!parts.length) return '';
+    var out = parts.length > 1 ? (letters(parts[0])[0] || '') + (letters(parts[parts.length - 1])[0] || '') : letters(parts[0]).slice(0, 2).join('');
+    return out.toUpperCase();
   }
   var AVATAR_RE = /^\/avatars\/[A-Za-z0-9_-]{16,128}\.(?:png|jpe?g|webp)$/;
   var MEDIA_RE = /^\/plugin-media\/[A-Za-z0-9._-]{20,200}$/;
@@ -179,7 +191,10 @@
     else a.style.setProperty('--c', hex);
     if (size) { a.style.width = size + 'px'; a.style.height = size + 'px'; a.style.fontSize = Math.max(10, Math.round(size * 0.34)) + 'px'; }
     if (p && p.icon) a.appendChild(icon(p.icon === 'system' ? 'shield' : (p.icon === 'gone' ? 'lock' : 'group'), Math.round((size || 40) * 0.46)));
-    else a.appendChild(el('span', { class: 'ms-av-ini', text: (p && p.initials) || initials(p && p.name) }));
+    else {
+      var ini = (p && p.initials) || initials(p && p.name);
+      a.appendChild(ini ? el('span', { class: 'ms-av-ini', text: ini }) : el('span', { class: 'ms-av-ini' }, [icon('person', Math.round((size || 40) * 0.5))]));
+    }
     var url = p && p.avatarUrl;
     if (typeof url === 'string' && (AVATAR_RE.test(url) || MEDIA_RE.test(url))) {
       var img = el('img', { class: 'ms-av-img', src: url, alt: '', decoding: 'async', draggable: 'false' });
