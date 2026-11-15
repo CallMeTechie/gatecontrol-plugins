@@ -421,6 +421,10 @@
 // Hause" (status / pause / resume / extend, only with permissions.homeInternet): see tools/testing/mock-home-internet.js.
 // GateControl 1.236.0 (opt-in: opts.gatecontrol: '1.236.0' or opts.print) — gc.print, "Drucken & Scannen" (printers and
 // scanners the gateways find; only with permissions.print): see tools/testing/mock-print.js.
+// GateControl 1.281.0 (opt-in: opts.gatecontrol: '1.281.0' or opts.remote) — gc.remote version 1, "Fernzugriff" (sessions
+// on GateControl's session page, the key vault, probe / wake, L4 listeners of the gateways, the hook remoteSession; only
+// with permissions.remote), host.remoteOpen / remoteClose (the session page), host.clientFacade (the old app API through the
+// core's facade); '1.282.0' adds gc.remote.gateways() and `server` in the facade's payload: see tools/testing/mock-remote.js.
 // GateControl 1.264.0 (opt-in: opts.gatecontrol: '1.264.0' or opts.vpnDns) — gc.vpnDns, the DNS protection of the VPN
 // devices (settings, profiles, suspensions, counters, the query log; only with permissions.vpnDns), and `peerId` on the
 // viewer of an app request: see tools/testing/mock-vpn-dns.js.
@@ -439,6 +443,7 @@ const EventEmitter = require('node:events');
 const mockMail = require('./mock-mail');
 const mockHomeInternet = require('./mock-home-internet');
 const mockPrint = require('./mock-print');
+const mockRemote = require('./mock-remote');
 const mockVpnDns = require('./mock-vpn-dns');
 const mockCameras = require('./mock-cameras');
 const mockBridges = require('./mock-bridges');
@@ -3271,6 +3276,9 @@ async function createHost(pluginDir, opts = {}) {
   // ─── Drucken & Scannen (GateControl ≥ 1.236.0, src/services/homePrint.js; tools/testing/mock-print.js) ───
   const pr = mockPrint.install({ opts, perms, atLeast, enabledUser, hostError, mediaStore });
   Object.assign(api, pr.api);
+  // ─── Fernzugriff (GateControl ≥ 1.281.0, src/services/remote; tools/testing/mock-remote.js) ───
+  const rm = mockRemote.install({ opts, perms, atLeast, enabledUser, hostError, license });
+  Object.assign(api, rm.api);
   // ─── DNS-Schutz (GateControl ≥ 1.264.0, src/services/vpnDns.js; tools/testing/mock-vpn-dns.js) ───
   const vd = mockVpnDns.install({ opts, perms, atLeast, enabledUser, hostError, personCtx, logs, wire, homeInternet: hi.state.state,
     groupExists: (id) => groupStore.has(id),
@@ -3614,6 +3622,8 @@ async function createHost(pluginDir, opts = {}) {
     } : {}),
     // GateControl ≥ 1.236.0: gc.print only with permissions.print (like the child bootstrap)
     ...(pr.on ? { print: pr.gcPart(call) } : {}),
+    // GateControl ≥ 1.281.0: gc.remote only with permissions.remote (like the child bootstrap)
+    ...(rm.on ? { remote: rm.gcPart(call) } : {}),
     // GateControl ≥ 1.264.0: gc.vpnDns only with permissions.vpnDns (like the child bootstrap)
     ...(vd.on ? { vpnDns: vd.gcPart(call) } : {}),
     ...(br.on ? { bridges: br.gcPart(call) } : {}),
@@ -4290,6 +4300,14 @@ async function createHost(pluginDir, opts = {}) {
     /** GateControl ≥ 1.236.0 (permissions.print): { devices, jobs, scans, discovers, retrusted, calls } — see tools/testing/mock-print.js */
     print: pr.state,
     printJob: (id, x) => pr.setJob(id, x || {}),
+    /** GateControl ≥ 1.281.0 (permissions.remote): { tickets, live, rows, vault, listeners, wakes, calls } — see tools/testing/mock-remote.js */
+    remote: rm.state,
+    remoteOpen: (ref) => rm.open(ref),
+    remoteClose: (sessionId, reason) => rm.close(sessionId, reason),
+    remoteVaultSeed: (entry, source) => rm.vaultSeed(entry, source),
+    remoteUnreadable: (handle) => rm.setUnreadable(handle),
+    /** the old app API /api/v1/client/rdp* through the core's facade: { status, body } | { handled: false } */
+    clientFacade: (op, x) => rm.facade(hook, op, x),
     /** GateControl ≥ 1.264.0 (permissions.vpnDns): the DNS protection as GateControl knows it — see tools/testing/mock-vpn-dns.js */
     vpnDns: vd.state,
     /** GateControl's messenger bridges (permissions.bridges, opts.bridges): { state, confirm, expire, logOut, setHost, oddStep } — see tools/testing/mock-bridges.js */

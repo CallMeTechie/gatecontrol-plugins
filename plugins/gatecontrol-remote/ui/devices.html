@@ -1,0 +1,29 @@
+<main class="rm-page">
+  <p class="rm-note" id="rm-licence" role="status" hidden></p>
+  <div class="rm-stats" id="rm-stats" aria-live="polite"></div>
+  <section class="rm-card" aria-labelledby="rm-dev-h">
+    <div class="rm-card-head">
+      <h2 class="rm-card-title" id="rm-dev-h">{{t:dev.title}}</h2>
+      <button class="btn btn-sm" type="button" id="rm-check">{{t:dev.check_all}}</button>
+      <button class="btn btn-sm btn-primary" type="button" id="rm-add">{{t:dev.add}}</button>
+    </div>
+    <div class="rm-toolbar">
+      <input class="form-input" type="search" id="rm-search" placeholder="{{t:dev.search}}" aria-label="{{t:dev.search}}">
+      <select class="form-select" id="rm-proto" aria-label="{{t:dev.protocol}}">
+        <option value="">{{t:dev.all_protocols}}</option>
+        <option value="rdp">{{t:proto.rdp}}</option>
+        <option value="vnc">{{t:proto.vnc}}</option>
+        <option value="ssh">{{t:proto.ssh}}</option>
+        <option value="telnet">{{t:proto.telnet}}</option>
+      </select>
+      <select class="form-select" id="rm-state" aria-label="{{t:dev.state}}">
+        <option value="">{{t:dev.all_states}}</option>
+        <option value="online">{{t:state.online}}</option>
+        <option value="offline">{{t:state.offline}}</option>
+      </select>
+    </div>
+    <div class="rm-list" id="rm-devices" aria-live="polite"></div>
+    <p class="rm-hint" id="rm-none" hidden>{{t:dev.none}}</p>
+    <p class="rm-hint">{{t:dev.hint}}</p>
+  </section>
+</main>
