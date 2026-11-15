@@ -2,7 +2,9 @@
    per child and service (WhatsApp first) a switch — may this child link its own account at that messenger with the
    bridges of the Messenger plugin? Off until a parent allows it. Taking it back also ends the child's link (asked
    first; the answer says when the link could not be ended). Hidden without the Messenger's bridges (no Messenger, an
-   older one, no bridge switched on), for children and without children. */
+   older one, no bridge switched on), for children and without children.
+   1.25.0: under each service a second switch „Neue Chats per Nummer“ (Messenger ≥ 1.16.0: messengers.newChat) — may
+   the child start new chats by phone number? Off by default, only while the service itself is allowed. */
 (function () {
   'use strict';
   var A = window.FA, T = A.T, $ = A.$, el = A.el, CTX = A.CTX;
@@ -39,16 +41,41 @@
     });
   }
 
+  /** 1.25.0: the second switch — new chats by number (only next to the permission itself). */
+  function changeNew(c, n, on, sw) {
+    if (busy) return;
+    busy = true;
+    A.setSwitch(sw, on);
+    var nc = {};
+    nc[n] = on;
+    A.api('PUT', 'messengers/' + encodeURIComponent(c.userId), { newChat: nc }).then(function (x) {
+      busy = false;
+      if (x.child) data.children = data.children.map(function (k) { return k.userId === x.child.userId ? x.child : k; });
+      render();
+      var p = { name: c.name, service: netName(n) };
+      A.toast(on ? T('linked.new_on', p) : T('linked.new_off', p));
+    }).catch(function (e) { busy = false; A.setSwitch(sw, !on); A.warn(e); });
+  }
+
   function row(c) {
-    var lines = data.networks.map(function (n) {
+    var lines = [];
+    data.networks.forEach(function (n) {
       var on = !!(c.networks && c.networks[n]);
       var isLinked = !!(c.linked && c.linked[n]);
       var state = on ? (isLinked ? T('linked.state_linked') : T('linked.state_allowed')) : (isLinked ? T('linked.state_locked_linked') : T('linked.state_locked'));
-      return el('div', { class: 'fa-lk-net' }, [
+      lines.push(el('div', { class: 'fa-lk-net' }, [
         el('span', { class: 'fa-lk-tx' }, [el('b', { text: netName(n) }), el('span', { class: 'fa-sub', text: state })]),
         isLinked ? el('span', { class: 'fa-pill fa-net-pill' + (on ? '' : ' is-warn'), text: T('linked.pill_linked') }) : null,
         A.switchBtn(on, T('linked.switch', { name: c.name, service: netName(n) }), function (v, b) { change(c, n, v, b); }),
-      ]);
+      ]));
+      if (!data.newChat) return;
+      var nOn = on && !!(c.newChat && c.newChat[n]);
+      var p = { name: c.name, service: netName(n) };
+      var sub = !on ? T('linked.new_state_locked', p) : (nOn ? T('linked.new_state_on', p) : T('linked.new_state_off', p));
+      lines.push(el('div', { class: 'fa-lk-net fa-lk-sub' + (on ? '' : ' is-off') }, [
+        el('span', { class: 'fa-lk-tx' }, [el('b', { text: T('linked.new_title') }), el('span', { class: 'fa-sub', text: sub })]),
+        A.switchBtn(nOn, T('linked.new_switch', { name: c.name, service: netName(n) }), function (v, b) { changeNew(c, n, v, b); }, !on),
+      ]));
     });
     return el('div', { class: 'fa-net-item' }, [el('div', { class: 'fa-net-kid' }, [
       A.avatar(c, 40),

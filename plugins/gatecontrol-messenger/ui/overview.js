@@ -280,7 +280,16 @@
     var pr = $('#ms-br-probe');
     pr.hidden = !probe;
     pr.textContent = probe || '';
+    // 1.16.0: a new chat by number — how many numbers a person may check per hour (only while GateControl can)
+    var nc = b.newChat;
+    $('#ms-br-nc').hidden = !(nc && nc.available);
+    if (nc && nc.available && document.activeElement !== $('#ms-br-nc-in')) $('#ms-br-nc-in').value = String(nc.perHour);
   }
+  $('#ms-br-nc-in').addEventListener('change', function (e) {
+    var v = Number(e.target.value);
+    if (!Number.isInteger(v) || v < 1 || v > 60) { M.toast(T('error.invalid'), 'error'); M.api('GET', 'admin/bridges').then(function (r) { renderBr(r.bridges); }).catch(function () {}); return; }
+    setBr({ newChatPerHour: v });
+  });
 
   function load() {
     M.api('GET', 'admin/overview').then(renderOverview).catch(M.warn);

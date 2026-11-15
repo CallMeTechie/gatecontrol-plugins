@@ -36,6 +36,8 @@ async function me(ctx) {
   // version supports all chat features", and that is true exactly for these people
   let bridgeChats = false;
   try { bridgeChats = !!bridgechats.api(ctx.gc) && await bridgechats.hasChats(ctx.gc, ctx.viewer); } catch { bridgeChats = false; }
+  let newChat = false;
+  try { newChat = await require('./bridges').newChatFeature(ctx); } catch { newChat = false; }
   return {
     user: u ? { id: u.id, name: u.name, avatarUrl: u.avatarUrl || null, initials: u.initials || null, colorHex: u.colorHex || null } : { id: ctx.viewer, name: null, avatarUrl: null, initials: null, colorHex: null },
     prefs,
@@ -53,10 +55,11 @@ async function me(ctx) {
       // 1.14.0: chats over a bridge (README "App-API", since 1.14.0): conversations with `bridge`, ?bridged=1
       ...(bridgeChats ? { bridge_chats: true } : {}),
       // 1.15.0 (GateControl with gc.bridges version 4), only for the same people as bridge_chats: bridge_media — files
-      // in both directions, pictures of chats and contacts; bridge_new_chat — POST bridges/:network/resolve and
-      // bridges/:network/chats (a chat by phone number; no screen of its own yet)
+      // in both directions, pictures of chats and contacts
       ...(bridgeChats && require('./bridgemedia').api(ctx.gc) ? { bridge_media: true } : {}),
-      ...(bridgeChats && require('./bridgemedia').newChatApi(ctx.gc) ? { bridge_new_chat: true } : {}),
+      // bridge_new_chat — POST bridges/:network/resolve and bridges/:network/chats (a chat by phone number). 1.16.0: as
+      // soon as the person linked a service (not only with a chat), so that the first chat can be their own
+      ...(newChat ? { bridge_new_chat: true } : {}),
     },
     // 1.4.0: what the Familie plugin offers here (gc.services.available) — "Zur Liste", "In Kalender", places;
     // 1.10.0: drive — Drive takes files (save_file): "In Drive speichern" (POST messages/:id/to-drive)

@@ -1,5 +1,10 @@
-<!-- version: 1.24.0 -->
+<!-- version: 1.25.0 -->
 # Family
+
+## New in 1.25.0
+
+- **New chats by number – a switch of its own per child:** In the card **“Other messengers”** each service has a second switch “New chats by number”. When it is on, the child may start a new WhatsApp chat with a phone number in the chat itself. **Off at first**; it only works while the service itself is allowed. Answers in existing chats are not affected.
+- The switch comes with the Messenger plugin 1.16.0 or later on a GateControl server that can check numbers through the bridge. With an older Messenger it is missing – new chats by number then stay off for children.
 
 ## New in 1.24.0
 

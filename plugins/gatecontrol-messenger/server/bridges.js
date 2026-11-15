@@ -26,6 +26,12 @@
 //   the child's account on that network (gc.bridges.unlinkFor, GateControl with gc.bridges.version ≥ 2 — it checks
 //   that the parent is acting right now and writes it to its activity log); on an older GateControl the link stays
 //   until the child or the service ends it, and the answer says so (unlinked false).
+//   1.16.0 — a second switch per child and network: newChat { whatsapp: boolean } — may the child start NEW chats by
+//   phone number (default off; only together with the permission itself). bridge_children answers `newChat: true`
+//   (the server can look numbers up) and each child's newChat; bridge_child_set takes newChat next to / instead of
+//   networks. An older Familie never sends it: children stay without new chats by number.
+//   1.16.0 — GET bridges: each network carries newChat { available, reason, limit: { perHour, left, retryAfterS } }
+//   (the line „WhatsApp-Chat mit Nummer“ in „Neuer Chat“); resolve answers existing / avatarUrl as well.
 //   1.13.0 — the portal page „Verknüpfte Dienste“ (ui/bridges.js): a QR step also carries `display.matrix`
 //   { size, rows } — the code's modules, drawn by the page (the apps draw from `display.data` themselves).
 //
@@ -35,6 +41,8 @@
 
 const store = require('./store');
 const log = require('./log');
+const seal = require('./seal');
+const config = require('./config');
 const familie = require('./familie');
 const { fail, posInt, iso } = require('./util');
 const { encode } = require('./vendor/uqr');
@@ -103,7 +111,10 @@ async function adminView(gc, now) {
   const rows = await store.all(gc, "SELECT network, user_id FROM bridge_links WHERE state != 'logged_out' GROUP BY network, user_id");
   const linked = {};
   for (const r of rows) if (users.has(r.user_id)) linked[r.network] = (linked[r.network] || 0) + 1;
-  return { ...s, networks: (s.networks || []).map((n) => ({ ...n, linked: linked[n.id] || 0 })) };
+  // 1.16.0: a new chat by number — the limit per person and hour (only while GateControl can look numbers up)
+  const cfg = await config.load(gc);
+  return { ...s, networks: (s.networks || []).map((n) => ({ ...n, linked: linked[n.id] || 0 })),
+    newChat: { available: !!require('./bridgemedia').newChatApi(gc), perHour: cfg.newChatPerHour, min: config.NEW_CHAT_PER_HOUR.min, max: config.NEW_CHAT_PER_HOUR.max } };
 }
 
 async function adminSet(gc, body, now) {
@@ -120,6 +131,13 @@ async function adminSet(gc, body, now) {
       if (!NETWORKS.includes(k) || typeof v !== 'boolean') throw fail('invalid');
       patch.networks[k] = v;
     }
+  }
+  // 1.16.0: the limit of a new chat by number is the plugin's own setting
+  if (p.newChatPerHour !== undefined) {
+    if (!Number.isSafeInteger(p.newChatPerHour) || p.newChatPerHour < config.NEW_CHAT_PER_HOUR.min || p.newChatPerHour > config.NEW_CHAT_PER_HOUR.max) throw fail('invalid');
+    if (Object.keys(patch).length) throw fail('invalid');
+    await config.update(gc, { newChatPerHour: p.newChatPerHour });
+    return adminView(gc, now);
   }
   if (!Object.keys(patch).length) throw fail('invalid');
   try { await b.configure(patch); } catch (e) {
@@ -141,12 +159,22 @@ async function grantsOf(gc, userId) {
   const rows = await store.all(gc, 'SELECT network FROM bridge_grants WHERE child_id = ?', [userId]);
   return new Set(rows.map((r) => r.network));
 }
+/** 1.16.0: the networks a child may start new chats on by number. */
+async function newChatGrantsOf(gc, userId) {
+  const rows = await store.all(gc, 'SELECT network FROM bridge_grants WHERE child_id = ? AND new_chat = 1', [userId]);
+  return new Set(rows.map((r) => r.network));
+}
 
-/** May this person link on this network? → { allowed, lock: null | 'child' } */
+/**
+ * May this person link on this network? → { allowed, lock: null | 'child', child, newChat }
+ * newChat (1.16.0): may they start a new chat by number — everybody else yes, a child only with the parents' second switch.
+ */
 async function allowed(gc, userId, net, now, fam) {
   const f = fam || await family(gc, now);
-  if (!f.children.has(userId)) return { allowed: true, lock: null };
-  return (await grantsOf(gc, userId)).has(net) ? { allowed: true, lock: null } : { allowed: false, lock: 'child' };
+  if (!f.children.has(userId)) return { allowed: true, lock: null, child: false, newChat: true };
+  return (await grantsOf(gc, userId)).has(net)
+    ? { allowed: true, lock: null, child: true, newChat: (await newChatGrantsOf(gc, userId)).has(net) }
+    : { allowed: false, lock: 'child', child: true, newChat: false };
 }
 
 /** Which networks an account is linked on right now (as last seen; never a number or a name). */
@@ -164,7 +192,10 @@ async function childrenOf(who) {
     if (!who.users.has(id)) continue;
     const g = await grantsOf(who.gc, id);
     const l = await linkedOf(who.gc, id);
-    out.push({ userId: id, networks: Object.fromEntries(NETWORKS.map((n) => [n, g.has(n)])), linked: Object.fromEntries(NETWORKS.map((n) => [n, l.has(n)])) });
+    const nc = await newChatGrantsOf(who.gc, id);
+    out.push({ userId: id, networks: Object.fromEntries(NETWORKS.map((n) => [n, g.has(n)])), linked: Object.fromEntries(NETWORKS.map((n) => [n, l.has(n)])),
+      // 1.16.0: new chats by number (off until a parent allows it; always off without the permission itself)
+      newChat: Object.fromEntries(NETWORKS.map((n) => [n, g.has(n) && nc.has(n)])) });
   }
   return out;
 }
@@ -177,14 +208,27 @@ async function childGrant(who, childId, body) {
   const f = await family(who.gc, who.now);
   if (!f.parents.has(who.parentId)) throw fail('forbidden');
   if (!f.children.has(childId) || !who.users.has(childId)) throw fail('not_found');
-  const nets = body && typeof body === 'object' && body.networks && typeof body.networks === 'object' && !Array.isArray(body.networks) ? body.networks : null;
-  if (!nets || !Object.keys(nets).length) throw fail('invalid');
-  for (const [k, v] of Object.entries(nets)) if (!NETWORKS.includes(k) || typeof v !== 'boolean') throw fail('invalid');
+  const flags = (o) => {
+    if (o === undefined) return {};
+    if (!o || typeof o !== 'object' || Array.isArray(o)) throw fail('invalid');
+    for (const [k, v] of Object.entries(o)) if (!NETWORKS.includes(k) || typeof v !== 'boolean') throw fail('invalid');
+    return o;
+  };
+  const b = body && typeof body === 'object' && !Array.isArray(body) ? body : {};
+  const nets = flags(b.networks);
+  // 1.16.0: newChat — new chats by number, only next to the permission itself
+  const newChat = flags(b.newChat);
+  if (!Object.keys(nets).length && !Object.keys(newChat).length) throw fail('invalid');
   const had = await grantsOf(who.gc, childId);
+  for (const [k, v] of Object.entries(newChat)) if (v && !(nets[k] === true || (nets[k] === undefined && had.has(k)))) throw fail('invalid');
   await store.tx(who.gc, async () => {
     for (const [k, v] of Object.entries(nets)) {
       if (v) await store.run(who.gc, 'INSERT INTO bridge_grants (child_id, network, granted_by, at) VALUES (?, ?, ?, ?) ON CONFLICT(child_id, network) DO NOTHING', [childId, k, who.parentId, who.now]);
       else await store.run(who.gc, 'DELETE FROM bridge_grants WHERE child_id = ? AND network = ?', [childId, k]);
+    }
+    for (const [k, v] of Object.entries(newChat)) {
+      if (nets[k] === false) continue;
+      await store.run(who.gc, 'UPDATE bridge_grants SET new_chat = ? WHERE child_id = ? AND network = ?', [v ? 1 : 0, childId, k]);
     }
   });
   const unlinked = {};
@@ -207,7 +251,10 @@ async function unlinkChild(who, childId, net) {
   if (typeof b.unlinkFor !== 'function') return false;
   try {
     await b.unlinkFor(childId, net, who.parentId);
-    await store.tx(who.gc, () => store.run(who.gc, 'DELETE FROM bridge_links WHERE user_id = ? AND network = ?', [childId, net]));
+    await store.tx(who.gc, async () => {
+      await store.run(who.gc, 'DELETE FROM bridge_links WHERE user_id = ? AND network = ?', [childId, net]);
+      await forgetNumbers(who.gc, childId, net);
+    });
     return true;
   } catch (e) {
     await log.add(who.gc, 'bridge_refused', `unlinkFor: ${String((e && e.code) || 'error').slice(0, 40)}${e && e.reason ? ' ' + String(e.reason).slice(0, 40) : ''}`, who.now);
@@ -221,8 +268,10 @@ const childSet = (ctx, childId, body) => childGrant(whoOf(ctx), childId, body);
 
 /**
  * The services for the Familie plugin (its page „Mitglieder“ carries the parents' switches) — `user` is the parent.
- *   bridge_children  {} → { available, networks: ['whatsapp'], children: [{ userId, networks, linked }] }
- *   bridge_child_set { childId, networks: { whatsapp: boolean } } → { child, unlinked }
+ *   bridge_children  {} → { available, networks: ['whatsapp'], newChat, children: [{ userId, networks, linked, newChat }] }
+ *   bridge_child_set { childId, networks?: { whatsapp: boolean }, newChat?: { whatsapp: boolean } } → { child, unlinked }
+ * newChat (1.16.0): true when this GateControl can start chats by number — only then has the Familie page the second
+ * switch per child.
  */
 async function service(ctx, name, caller, user, payload) {
   if (caller !== 'gatecontrol-familie') throw fail('forbidden');
@@ -233,7 +282,7 @@ async function service(ctx, name, caller, user, payload) {
     const nets = await offered(ctx.gc);
     // nothing to switch while no bridge is offered: the Familie page shows nothing then
     if (!nets.length) return { available: false, networks: [], children: [] };
-    return { available: true, networks: nets, children: await childrenOf(who) };
+    return { available: true, networks: nets, newChat: !!require('./bridgemedia').newChatApi(ctx.gc), children: await childrenOf(who) };
   }
   const childId = posInt(payload.childId);
   if (!childId) throw fail('invalid');
@@ -254,6 +303,8 @@ async function remember(gc, userId, net, logins, now) {
     }
     const rows = await store.all(gc, 'SELECT login_id FROM bridge_links WHERE user_id = ? AND network = ?', [userId, net]);
     for (const r of rows) if (!seen.has(r.login_id)) await store.run(gc, 'DELETE FROM bridge_links WHERE user_id = ? AND network = ? AND login_id = ?', [userId, net, r.login_id]);
+    // 1.16.0: no link left (ended at the service) — the keyed hashes of numbers go as well
+    if (!seen.size && rows.length) await forgetNumbers(gc, userId, net);
   });
 }
 
@@ -290,6 +341,8 @@ async function mine(ctx) {
     }
     out.push({
       id: n.id, state, allowed: a.allowed, lock: a.lock, consent: consents.has(n.id) ? iso(consents.get(n.id)) : null,
+      // 1.16.0: a new chat by number — the line in „Neuer Chat“ and why it does not work right now
+      newChat: await newChatState(ctx, n.id, a, state, await store.all(ctx.gc, 'SELECT state FROM bridge_links WHERE user_id = ? AND network = ?', [ctx.viewer, n.id])),
       // 1.13.0: the bridge runs an older program than GateControl expects — sending and receiving may fail until the
       // administrator updated it; nothing has to be linked again
       outdated: n.outdated === true, version: typeof n.version === 'string' ? n.version : null, wantVersion: typeof n.wantVersion === 'string' ? n.wantVersion : null,
@@ -380,17 +433,118 @@ async function unlink(ctx, net, loginId) {
   const b = api(ctx.gc);
   if (!b) throw fail('bridge_off', { reason: 'no_host' });
   try { await b.logout(ctx.viewer, net, ident(loginId)); } catch (e) { throw mapped(e); }
-  await store.tx(ctx.gc, () => store.run(ctx.gc, 'DELETE FROM bridge_links WHERE user_id = ? AND network = ? AND login_id = ?', [ctx.viewer, net, loginId]));
+  await store.tx(ctx.gc, async () => {
+    await store.run(ctx.gc, 'DELETE FROM bridge_links WHERE user_id = ? AND network = ? AND login_id = ?', [ctx.viewer, net, loginId]);
+    // 1.16.0: the keyed hashes of numbers go with the last link
+    if (!(await store.one(ctx.gc, 'SELECT 1 AS x FROM bridge_links WHERE user_id = ? AND network = ?', [ctx.viewer, net]))) await forgetNumbers(ctx.gc, ctx.viewer, net);
+  });
   return { unlinked: true };
 }
 
-// ─── A new chat by number (1.15.0) ─────────────────────
+// ─── A new chat by number (1.15.0; 1.16.0: the dialog in the apps and the portal) ─────
 
-const LOOKUP_WINDOW_MS = 10 * 60000;
-const LOOKUPS = 10;
-const lookups = new Map(); // userId → [times]
+const LOOKUP_WINDOW_MS = 3600000;     // 1.16.0: the admin's limit counts per hour (config newChatPerHour, 1–60)
+const RECENT_MS = 15 * 60000;         // a number just found: starting its chat counts no second time
+const LOOKUP_TIMEOUT_MS = 15000;      // the bridge has this long, then „nicht erreichbar“
+const NUMBER_RE = /^\+[1-9][0-9]{6,14}$/;
+const lookups = new Map(); // userId → [times of checks that counted]
+const recent = new Map();  // userId → Map(mark of a number found → time) — in memory only, never the number
 
-/** Who may ask: gc.bridges version 4, the bridge offered and running, a child allowed, the person's own link alive. */
+/** The number of the body, the way GateControl reads it (+ and the country code; spaces, dashes, dots, brackets,
+ *  a leading 00) → '+49…', else invalid_number. A national 0 after +49 is no number. Never logged or stored. */
+function numberOf(v) {
+  if (typeof v !== 'string' || !v.trim() || v.length > 40) return null;
+  let x = v.replace(/[\s\-./()]/g, '');
+  if (x.startsWith('00')) x = '+' + x.slice(2);
+  if (!NUMBER_RE.test(x) || x.startsWith('+490')) return null;
+  return x;
+}
+function numberIn(body) {
+  const n = numberOf(body && typeof body === 'object' ? body.number : null);
+  if (!n) throw fail('invalid_number');
+  return n;
+}
+
+/** The checks that counted in the last hour → { perHour, left, retryAfterS, list } */
+function budget(ctx) {
+  const perHour = ctx.cfg && Number.isSafeInteger(ctx.cfg.newChatPerHour) ? ctx.cfg.newChatPerHour : config.DEFAULTS.newChatPerHour;
+  const list = (lookups.get(ctx.viewer) || []).filter((t) => ctx.now - t < LOOKUP_WINDOW_MS);
+  const left = Math.max(0, perHour - list.length);
+  const retryAfterS = left > 0 ? 0 : Math.max(1, Math.ceil((LOOKUP_WINDOW_MS - (ctx.now - list[list.length - perHour])) / 1000));
+  return { perHour, left, retryAfterS, list };
+}
+
+/** Count one check (before asking the service) → a function that takes it back (an answer that does not count). */
+function take(ctx) {
+  const b = budget(ctx);
+  if (b.left <= 0) throw fail('rate_limited', { retryAfterS: b.retryAfterS, perHour: b.perHour });
+  const t = ctx.now;
+  b.list.push(t);
+  if (lookups.size > 2000) lookups.clear();
+  lookups.set(ctx.viewer, b.list);
+  return () => {
+    const l = lookups.get(ctx.viewer) || [];
+    const i = l.lastIndexOf(t);
+    if (i >= 0) l.splice(i, 1);
+  };
+}
+
+function remembered(ctx, mark) {
+  const m = recent.get(ctx.viewer);
+  const t = m && m.get(mark);
+  return !!(t && ctx.now - t < RECENT_MS);
+}
+function remember1(ctx, mark) {
+  if (!mark) return;
+  let m = recent.get(ctx.viewer);
+  if (!m) { if (recent.size > 2000) recent.clear(); m = new Map(); recent.set(ctx.viewer, m); }
+  for (const [k, t] of m) if (ctx.now - t >= RECENT_MS) m.delete(k);
+  if (m.size > 50) m.delete(m.keys().next().value);
+  m.set(mark, ctx.now);
+}
+
+/** The keyed hash of a number of this person and network (seal.mark) — never the number. */
+const markOf = (ctx, net, number) => seal.mark(`${ctx.viewer}|${net}|${number}`);
+
+async function forgetNumbers(gc, userId, net) {
+  await store.run(gc, 'UPDATE conversations SET bridge_num = NULL WHERE bridge_owner = ? AND bridge_net = ? AND bridge_num IS NOT NULL', [userId, net]);
+  recent.delete(userId);
+}
+
+/** The conversation of a chat started with this number here (open at the service) → its row, or null. */
+async function chatOfNumber(ctx, net, mark) {
+  if (!mark) return null;
+  return store.one(ctx.gc, 'SELECT * FROM conversations WHERE bridge_owner = ? AND bridge_net = ? AND bridge_num = ? AND bridge_closed = 0 LIMIT 1', [ctx.viewer, net, mark]);
+}
+
+/**
+ * GET bridges → networks[].newChat: { available, reason, limit: { perHour, left, retryAfterS } }
+ * reason: off (GateControl cannot look numbers up) · unlinked · child_locked · child_new_chat_off · logged_out ·
+ * unreachable. The apps show the line „WhatsApp-Chat mit Nummer“ for everything but off, unlinked and
+ * child_new_chat_off; the other reasons are the dialog's states.
+ */
+async function newChatState(ctx, net, a, state, links) {
+  const b = budget(ctx);
+  const limit = { perHour: b.perHour, left: b.left, retryAfterS: b.retryAfterS };
+  let reason = null;
+  if (!require('./bridgemedia').newChatApi(ctx.gc)) reason = 'off';
+  else if (!links.length) reason = 'unlinked';
+  else if (!a.allowed) reason = 'child_locked';
+  else if (!a.newChat) reason = 'child_new_chat_off';
+  else if (!links.some((l) => l.state !== 'logged_out')) reason = 'logged_out';
+  else if (state !== 'running') reason = 'unreachable';
+  return { available: reason === null, reason, limit };
+}
+
+/** GET me features.bridge_new_chat (1.16.0): GateControl can look numbers up and the person linked a service — the
+ *  first chat can be one they start themselves. */
+async function newChatFeature(ctx) {
+  if (!require('./bridgemedia').newChatApi(ctx.gc)) return false;
+  return !!(await store.one(ctx.gc, 'SELECT 1 AS x FROM bridge_links WHERE user_id = ? LIMIT 1', [ctx.viewer]));
+}
+
+/** Who may ask: gc.bridges version 4, the bridge offered, a child allowed (and with the second switch), the person's
+ *  own link alive. */
 async function newGate(ctx, net) {
   const b = require('./bridgemedia').newChatApi(ctx.gc);
   if (!b) throw fail('feature_off');
@@ -398,64 +552,99 @@ async function newGate(ctx, net) {
   if (!a.allowed) throw fail('bridge_locked');
   const links = await store.all(ctx.gc, 'SELECT state FROM bridge_links WHERE user_id = ? AND network = ?', [ctx.viewer, net]);
   if (!links.length) throw fail('bridge_unlinked', { reason: 'unlinked' });
-  if (!links.some((l) => l.state !== 'logged_out')) throw fail('bridge_unlinked', { reason: 'logged_out' });
+  if (!a.newChat) throw fail('child_new_chat_off');
+  if (!links.some((l) => l.state !== 'logged_out')) throw fail('bridge_logged_out', { reason: 'logged_out' });
   return b;
 }
 
-/** The number of the body — a string the host checks (+ and the country code); it is never logged or stored here. */
-function numberIn(body) {
-  const n = body && typeof body === 'object' ? body.number : null;
-  if (typeof n !== 'string' || !n.trim() || n.length > 40) throw fail('invalid_number');
-  return n;
-}
-
-/** At most LOOKUPS numbers per person in LOOKUP_WINDOW_MS here (GateControl allows 20 an hour). */
-function limit(ctx) {
-  const list = (lookups.get(ctx.viewer) || []).filter((t) => ctx.now - t < LOOKUP_WINDOW_MS);
-  if (list.length >= LOOKUPS) throw fail('rate_limited', { retryAfterS: Math.max(1, Math.ceil((LOOKUP_WINDOW_MS - (ctx.now - list[0])) / 1000)) });
-  list.push(ctx.now);
-  if (lookups.size > 2000) lookups.clear();
-  lookups.set(ctx.viewer, list);
+/** A call to the bridge, at most LOOKUP_TIMEOUT_MS long. */
+function timed(p) {
+  let t = null;
+  const out = Promise.race([p, new Promise((_, reject) => {
+    t = setTimeout(() => reject(fail('bridge_unreachable', { reason: 'timeout' })), LOOKUP_TIMEOUT_MS);
+    if (t.unref) t.unref();
+  })]);
+  return out.finally(() => clearTimeout(t));
 }
 
 function lookupMapped(e) {
   if (e && e.code === 'ERR_RATE_LIMIT') return fail('rate_limited', Number.isSafeInteger(e.retryAfterS) ? { retryAfterS: e.retryAfterS } : null);
   if (e && e.code === 'ERR_INVALID' && e.reason === 'invalid_number') return fail('invalid_number');
   if (e && e.code === 'ERR_BRIDGE' && e.reason === 'not_found') return fail('not_found', { reason: 'not_on_network' });
+  // GateControl lost the login (the service dropped the linked device)
+  if (e && e.code === 'ERR_BRIDGE' && (e.reason === 'logged_out' || e.reason === 'not_logged_in')) return fail('bridge_logged_out', { reason: 'logged_out' });
   return mapped(e);
 }
+/** Refusals that asked nobody at the service: they do not count. */
+const NOT_COUNTED = ['invalid_number', 'rate_limited', 'bridge_unreachable', 'bridge_off', 'bridge_logged_out', 'feature_off', 'forbidden'];
 
-/** POST bridges/:network/resolve { number } → { found, name } — is this number at the service, under which name? */
+/** The chat as GET conversations/:id?bridged=1 shows it (the caller asked for exactly this one). */
+async function convView(ctx, convId) {
+  const conversations = require('./conversations');
+  ctx.bridged = true;
+  const a = await conversations.access(ctx, convId);
+  return conversations.view(ctx, a.conv, a.me, a.members);
+}
+
+/**
+ * POST bridges/:network/resolve { number } → { found, name, avatarUrl, existing: null | { conversationId } }
+ * Is this number at the service, under which name? A chat started with it here before → existing, without asking
+ * the service (and without counting). Invalid numbers count neither.
+ */
 async function resolveNumber(ctx, net, body) {
   const b = await newGate(ctx, net);
   const number = numberIn(body);
-  limit(ctx);
+  const mark = markOf(ctx, net, number);
+  const known = await chatOfNumber(ctx, net, mark);
+  if (known) {
+    const v = await convView(ctx, known.id);
+    return { found: true, name: v.title || null, avatarUrl: v.avatarUrl || null, existing: { conversationId: known.id } };
+  }
+  const back = take(ctx);
   let r;
-  try { r = await b.resolve(ctx.viewer, net, number); } catch (e) { throw lookupMapped(e); }
+  try { r = await timed(b.resolve(ctx.viewer, net, number)); } catch (e) {
+    const m = lookupMapped(e);
+    if (!m || NOT_COUNTED.includes(m.code)) back();
+    throw m;
+  }
   const name = r && typeof r.name === 'string' ? r.name.replace(/[\0-\x1f\x7f]/g, ' ').trim().slice(0, 120) || null : null;
-  return r && r.found === true ? { found: true, name } : { found: false, name: null };
+  if (!(r && r.found === true)) return { found: false, name: null, avatarUrl: null, existing: null };
+  remember1(ctx, mark);
+  // a GateControl that names the chat it knows for this number (not yet: version 4 answers only found and name)
+  const ref = r.chat && typeof r.chat === 'object' && typeof r.chat.id === 'string' ? r.chat.id : null;
+  const conv = ref ? await store.one(ctx.gc, 'SELECT id FROM conversations WHERE bridge_owner = ? AND bridge_net = ? AND bridge_ref = ? AND bridge_closed = 0', [ctx.viewer, net, ref]) : null;
+  if (conv) {
+    const v = await convView(ctx, conv.id);
+    return { found: true, name: name || v.title || null, avatarUrl: v.avatarUrl || null, existing: { conversationId: conv.id } };
+  }
+  return { found: true, name, avatarUrl: null, existing: null };
 }
 
 /** POST bridges/:network/chats { number } → { conversation, created } — the direct chat with this number, made or found. */
 async function newChat(ctx, net, body) {
   const b = await newGate(ctx, net);
   const number = numberIn(body);
-  limit(ctx);
+  const mark = markOf(ctx, net, number);
+  const known = await chatOfNumber(ctx, net, mark);
+  if (known) return { conversation: await convView(ctx, known.id), created: false };
+  // a number just checked (and found) counts no second time
+  const back = remembered(ctx, mark) ? () => {} : take(ctx);
   let r;
-  try { r = await b.createDm(ctx.viewer, net, number); } catch (e) { throw lookupMapped(e); }
+  try { r = await timed(b.createDm(ctx.viewer, net, number)); } catch (e) {
+    const m = lookupMapped(e);
+    if (!m || NOT_COUNTED.includes(m.code)) back();
+    throw m;
+  }
   const chat = r && r.chat && typeof r.chat === 'object' ? r.chat : null;
   if (!chat) throw fail('bridge_failed', { reason: 'bad_answer' });
-  const conversations = require('./conversations');
-  const out = await store.tx(ctx.gc, async () => {
+  return store.tx(ctx.gc, async () => {
     const before = await store.one(ctx.gc, 'SELECT id FROM conversations WHERE bridge_owner = ? AND bridge_net = ? AND bridge_ref = ?', [ctx.viewer, net, String(chat.id || '')]);
     const conv = await require('./bridgechats').openChat(ctx, net, { id: chat.id, kind: 'direct', name: chat.name });
     if (!conv) throw fail('bridge_failed', { reason: 'bad_answer' });
-    // the answer shows the chat like GET conversations/:id?bridged=1 — the caller asked for exactly this one
-    ctx.bridged = true;
-    const a = await conversations.access(ctx, conv.id);
-    return { conversation: await conversations.view(ctx, a.conv, a.me, a.members), created: !before };
+    // 1.16.0: found again by the keyed hash of the number (never the number)
+    if (mark && conv.kind === 'direct') await store.run(ctx.gc, 'UPDATE conversations SET bridge_num = ? WHERE id = ?', [mark, conv.id]);
+    return { conversation: await convView(ctx, conv.id), created: !before };
   });
-  return out;
 }
 
 // ─── Routes ────────────────────────────────────────────
@@ -478,10 +667,10 @@ async function route(ctx, req, seg) {
   if (seg.length === 5 && seg[2] === 'login' && m === 'POST') return { login: await loginStep(ctx, net, seg[3], seg[4], req.body) };
   if (seg.length === 4 && seg[2] === 'login' && m === 'DELETE') return loginCancel(ctx, net, seg[3]);
   if (seg.length === 4 && seg[2] === 'logins' && m === 'DELETE') return unlink(ctx, net, seg[3]);
-  // 1.15.0: a new chat by number (no screen of its own yet; README "App-API", since 1.15.0)
+  // 1.15.0: a new chat by number (1.16.0: the dialog „Neuer WhatsApp-Chat“ in the portal; README "App-API")
   if (seg.length === 3 && seg[2] === 'resolve' && m === 'POST') return resolveNumber(ctx, net, req.body);
   if (seg.length === 3 && seg[2] === 'chats' && m === 'POST') return newChat(ctx, net, req.body);
   throw fail('not_found');
 }
 
-module.exports = { route, service, offered, adminView, adminSet, mine, allowed, refresh, api, NETWORKS, FLOWS, _resetLookups: () => lookups.clear() };
+module.exports = { route, service, offered, adminView, adminSet, mine, allowed, refresh, api, numberOf, newChatFeature, NETWORKS, FLOWS, LOOKUP_TIMEOUT_MS, _resetLookups: () => { lookups.clear(); recent.clear(); } };

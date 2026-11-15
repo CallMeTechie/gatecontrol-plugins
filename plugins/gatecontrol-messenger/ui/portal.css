@@ -380,3 +380,59 @@ button.ms-loc:hover .ms-locmap{filter:brightness(1.05)}
 .ms-msg.is-out .ms-failed .ms-linkbtn{color:inherit}
 .ms-meta .is-failed{color:var(--crit)}
 .ms-msg.is-out .ms-meta .is-failed{color:inherit}
+/* 1.16.0: „Neuer WhatsApp-Chat“ (newchat.js) — the line in „Neuer Chat“ and the dialog; a sheet at phone width */
+.ms-nc-row{margin:0 -8px 4px;width:calc(100% + 16px)}
+.ms-nc-row .ms-av{background:var(--accent-soft);color:var(--accent)}
+.ms-nc-row-tx{display:flex;flex-direction:column;min-width:0}
+.ms-nc-row-tx small{font-weight:500;font-size:12.5px;color:var(--muted)}
+.ms-nc-modal{max-width:440px}
+.ms-nc-modal .ms-modal-head{border-bottom:0;padding-bottom:4px}
+.ms-nc-modal .ms-modal-foot{border-top:0;padding-top:6px;padding-bottom:16px}
+.ms-nc-modal .ms-modal-body{padding-top:10px}
+.ms-nc-head{display:flex;align-items:center;gap:12px;min-width:0}
+.ms-nc-hico{position:relative;flex:none;width:40px;height:40px;border-radius:12px;background:var(--accent-soft);color:var(--accent);display:flex;align-items:center;justify-content:center}
+.ms-nc-hico .ms-net{right:-6px;bottom:-5px}
+.ms-nc-ht{display:flex;flex-direction:column;min-width:0}
+.ms-nc-ht small{font-size:12.5px;color:var(--muted)}
+.ms-nc{display:flex;flex-direction:column;gap:12px;min-width:0}
+.ms-nc-fld{display:flex;flex-direction:column;gap:6px;min-width:0}
+.ms-nc-fld[hidden]{display:none}
+.ms-nc-lb{font-weight:700;font-size:13.5px}
+.ms-nc-fr{display:flex;gap:8px;align-items:stretch;min-width:0}
+.ms-nc-cc{flex:none;width:auto;min-height:44px;padding:0 8px;border:1px solid var(--line-2);border-radius:12px;background:var(--surface);color:var(--text);font:600 14px var(--font)}
+.ms-nc-fi{flex:1;min-width:0;display:flex;align-items:center;gap:6px;border:1px solid var(--line-2);border-radius:12px;background:var(--surface);padding:0 10px 0 0}
+.ms-nc-fi:focus-within{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+.ms-nc-fi.is-err{border-color:var(--crit);box-shadow:0 0 0 1px var(--crit)}
+.ms-nc-fi.is-dis{background:var(--surface-2);color:var(--muted)}
+.ms-nc-in{flex:1;min-width:0;border:0!important;background:transparent!important;box-shadow:none!important;outline:0;min-height:44px;font-size:15.5px;letter-spacing:.02em;color:inherit}
+.ms-nc-ok{color:var(--accent);display:inline-flex}
+.ms-nc-ok[hidden]{display:none}
+.ms-nc-fh{margin:0;font-size:12.5px;color:var(--muted);line-height:1.4}
+.ms-nc-fh[hidden]{display:none}
+.ms-nc-fh.is-ok{color:var(--accent);font-weight:600}
+.ms-nc-fh.is-err{color:var(--crit);font-weight:600}
+.ms-nc-resbox:empty{display:none}
+.ms-nc-res{display:flex;gap:12px;align-items:flex-start;padding:12px 14px;border-radius:14px;border:1px solid var(--line);background:var(--surface-2);font-size:13.5px;line-height:1.45;min-width:0}
+.ms-nc-res.is-ok{background:var(--accent-soft);border-color:transparent;align-items:center}
+.ms-nc-res.is-warn{background:color-mix(in srgb,var(--warn) 14%,transparent);border-color:transparent}
+.ms-nc-res.is-err{background:color-mix(in srgb,var(--crit) 12%,transparent);border-color:transparent}
+.ms-nc-ri{flex:none;width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:var(--surface);color:var(--muted)}
+.ms-nc-res.is-warn .ms-nc-ri{color:var(--warn)}
+.ms-nc-res.is-err .ms-nc-ri{color:var(--crit)}
+.ms-nc-res > .ms-nc-ri .ms-nc-spin{color:var(--accent)}
+.ms-nc-rb{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px;overflow-wrap:anywhere}
+.ms-nc-rb b{font-size:14.5px}
+.ms-nc-rb > span{color:var(--muted)}
+.ms-nc-num{font-variant-numeric:tabular-nums}
+.ms-nc-tag{align-self:flex-start;margin-top:3px;padding:2px 8px;border-radius:999px;background:var(--surface);color:var(--accent)!important;font-weight:700;font-size:11.5px}
+.ms-nc-priv{margin:0;font-size:12px}
+.ms-nc-priv[hidden]{display:none}
+.ms-nc-spin{display:inline-block;width:18px;height:18px;border-radius:50%;border:2.5px solid currentColor;border-right-color:transparent;animation:ms-nc-sp .8s linear infinite;flex:none}
+.btn .ms-nc-spin{width:14px;height:14px;border-width:2px}
+.btn.is-busy{opacity:.8}
+@keyframes ms-nc-sp{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.ms-nc-spin{animation:none}}
+@media (max-width:520px){
+  .ms-overlay.is-sheet{align-items:flex-end;padding:0}
+  .ms-overlay.is-sheet .ms-modal{max-width:none;border-radius:18px 18px 0 0;border-bottom:0;max-height:calc(100% - 24px)}
+}

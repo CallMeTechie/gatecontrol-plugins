@@ -1,5 +1,10 @@
-<!-- version: 1.24.0 -->
+<!-- version: 1.25.0 -->
 # Familie
+
+## Neu in 1.25.0
+
+- **Neue Chats per Nummer – eigener Schalter je Kind:** In der Karte **„Andere Messenger“** steht unter jedem Dienst ein zweiter Schalter „Neue Chats per Nummer“. Ist er an, darf das Kind im Chat selbst einen neuen WhatsApp-Chat mit einer Telefonnummer beginnen. **Zunächst aus**; er geht nur, solange der Dienst selbst freigeschaltet ist. Antworten in bestehenden Chats bleiben davon unberührt.
+- Den Schalter gibt es mit dem Plugin Messenger ab 1.16.0 auf einem GateControl-Server, der Nummern über die Brücke prüfen kann. Mit einem älteren Messenger fehlt er – für Kinder bleiben neue Chats per Nummer dann aus.
 
 ## Neu in 1.24.0
 

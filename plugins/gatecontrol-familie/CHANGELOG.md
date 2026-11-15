@@ -3,6 +3,18 @@
 Die Familie in der GateControl-App (eigener Tab), im Portal (eigener Tab „Familie“) und auf
 drei Admin-Seiten. Alles bleibt auf dem eigenen Server.
 
+## 1.25.0
+
+„Andere Messenger“: ein zweiter Schalter je Kind und Dienst – **„Neue Chats per Nummer“**.
+
+- **Elternschalter** (`server/linked.js`, `ui/portal-linked.js`): unter jedem Dienst der Karte „Andere Messenger“, ob das
+  Kind im Chat selbst einen neuen Chat mit einer Telefonnummer beginnen darf. Voreinstellung aus, nur zusammen mit der
+  Freigabe des Dienstes (sonst ausgegraut). Antworten in bestehenden Chats bleiben unberührt.
+- **Schnittstelle:** `GET messengers` mit `newChat` (der Messenger kann es) und je Kind `newChat: { whatsapp }`;
+  `PUT messengers/<childId>` nimmt `newChat` neben oder statt `networks` und reicht es an den Dienst `bridge_child_set`
+  des Messengers weiter (ab Messenger 1.16.0). Mit einem älteren Messenger fehlt der Schalter, eine Änderung wird mit
+  `unavailable` abgelehnt; für Kinder bleiben neue Chats per Nummer dann aus. Keine eigene Tabelle, kein neues Recht.
+
 ## 1.24.0
 
 „Aufgaben und Erinnerungen“, Stufe 4 – die Aufgaben und Orts-Erinnerungen ziehen nach „Notizen & Aufgaben“ um.

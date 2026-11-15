@@ -49,6 +49,7 @@ test('settings: read with GateControl\'s media limits; partial update; only the 
     assert.deepEqual(r.settings, {
       retentionDays: 0, allowDisappearing: true, editWindowMin: 15, maxVoiceS: 300, allowStories: true, allowActions: true,
       requestTtlMin: 15, requestApproversDefault: 'auto', childrenMayRequest: true, grantMaxDays: 7, // 1.5.0
+      newChatPerHour: 10, // 1.16.0
       defaults: { readReceipts: true, typing: true, preview: true },
     });
     assert.deepEqual(r.options, {

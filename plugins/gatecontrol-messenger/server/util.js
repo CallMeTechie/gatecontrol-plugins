@@ -63,6 +63,9 @@ const STATUS = {
   // country code (POST bridges/:network/resolve, …/chats)
   bridge_media_type: 409,
   invalid_number: 400,
+  // 1.16.0: a new chat by number — the service signed the person out; a child without the parents' second switch
+  bridge_logged_out: 409,
+  child_new_chat_off: 403,
   internal: 500,
 };
 

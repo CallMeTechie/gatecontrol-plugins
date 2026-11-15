@@ -1,4 +1,4 @@
-<!-- version: 1.15.0 -->
+<!-- version: 1.16.0 -->
 # Messenger
 
 ## What the plugin does
@@ -67,6 +67,15 @@ The Family plugin keeps it (page “Features” › messenger group).
 
 **Old messages are gone.**
 The administrator set a retention, or the chat is a disappearing chat.
+
+## New in 1.16.0
+
+- **New WhatsApp chat by number:** When you linked WhatsApp under “Linked services”, “New chat” (pen) has the line **“WhatsApp chat by number”** under the tabs. Enter the number – the code +49 is preset, a leading 0 and spaces do not matter –, below it says “Checked as +49 …”. Only on **“Check”** does GateControl ask WhatsApp through your bridge. Then you see the name and start the chat with **“Start chat”**; it opens at once.
+- **The chat exists:** When you started a chat with that number before, it says “You already have a chat” and **“Open chat”** – without a new question to WhatsApp.
+- **When it does not work,** the dialog says why: no WhatsApp under the number, not a complete number, too many checks (with the time of the next one), bridge not reachable, WhatsApp signed out (“Link again”) or – for children – locked by the parents.
+- **At most 10 checks an hour** (the administrator can change the value), so that WhatsApp does not block your account for many number lookups. Invalid numbers and chats that exist do not count.
+- **Children** need a second permission of their parents for this (“New chats by number” in the Family card “Other messengers”), off at first. Answers in existing chats always work.
+- **Privacy:** to check it, the number goes to WhatsApp through your bridge. GateControl does not write it to the log; it is only kept when you start the chat.
 
 ## New in 1.15.0
 

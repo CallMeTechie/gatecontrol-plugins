@@ -70,6 +70,16 @@ function openJson(v) {
   try { return JSON.parse(s); } catch { return undefined; }
 }
 
+/**
+ * 1.16.0: a keyed hash (HMAC-SHA256 with a key derived from the plugin's key) — to find a value again without keeping
+ * it (a chat started by phone number). Not reversible without the key; null without a key.
+ */
+function mark(s) {
+  if (!key) return null;
+  const k = crypto.createHmac('sha256', key).update('messenger-mark-v1').digest();
+  return 'h1.' + crypto.createHmac('sha256', k).update(String(s), 'utf8').digest('base64url');
+}
+
 function _reset() { key = null; }
 
-module.exports = { init, ready, seal, open, sealJson, openJson, SECRET_KEY, _reset };
+module.exports = { init, ready, seal, open, sealJson, openJson, mark, SECRET_KEY, _reset };

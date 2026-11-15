@@ -49,7 +49,7 @@ const WITH = (s, extra = {}) => ({ gatecontrol: '1.273.0', services: [s.entry], 
 test('without the Messenger, with an older one, or with no bridge switched on: nothing is offered, nothing breaks', async () => {
   linked._reset();
   await withFamily({ gatecontrol: '1.273.0' }, async (host, { as }) => {
-    assert.deepEqual((await as(ANNA)('GET', '/messengers')).json.messengers, { available: false, manage: true, networks: [], children: [] });
+    assert.deepEqual((await as(ANNA)('GET', '/messengers')).json.messengers, { available: false, manage: true, networks: [], newChat: false, children: [] });
     const r = await as(ANNA)('PUT', `/messengers/${LENA.id}`, { networks: { whatsapp: true } });
     assert.deepEqual([r.status, r.json.code], [409, 'unavailable']);
   });
@@ -63,7 +63,7 @@ test('without the Messenger, with an older one, or with no bridge switched on: n
   linked._reset();
   const off = standIn({ off: true });
   await withFamily(WITH(off), async (host, { as }) => {
-    assert.deepEqual((await as(ANNA)('GET', '/messengers')).json.messengers, { available: false, manage: true, networks: [], children: [] });
+    assert.deepEqual((await as(ANNA)('GET', '/messengers')).json.messengers, { available: false, manage: true, networks: [], newChat: false, children: [] });
   });
   linked._reset();
   const broken = standIn({ fail: true });
@@ -89,7 +89,7 @@ test('parents see every child with the switch per service; nobody else sees or c
 
     // a child, a person outside the family, device trust only
     for (const u of [LENA, TIM]) {
-      assert.deepEqual((await as(u)('GET', '/messengers')).json.messengers, { available: false, manage: false, networks: [], children: [] });
+      assert.deepEqual((await as(u)('GET', '/messengers')).json.messengers, { available: false, manage: false, networks: [], newChat: false, children: [] });
       const r = await as(u)('PUT', `/messengers/${LENA.id}`, { networks: { whatsapp: true } });
       assert.deepEqual([r.status, r.json.code], [403, 'parents_only']);
     }
@@ -167,6 +167,53 @@ test('with the real Messenger and GateControl’s bridges: a parent’s yes lets
       assert.deepEqual(messenger.bridges.state.log.filter((l) => l.op === 'unlink_for'), [{ op: 'unlink_for', userId: LENA.id, by: MARC.id, network: 'whatsapp', logins: 1 }]);
       const mine = (await chat(LENA)('GET', 'bridges')).json.bridges.networks[0];
       assert.deepEqual([mine.lock, mine.logins], ['child', []]);
+    });
+  } finally { await messenger.close(); }
+});
+
+test('1.25.0 — „Neue Chats per Nummer“: a second switch per child, off by default; only with a Messenger that knows it', async () => {
+  // a Messenger before 1.16.0 (no newChat in its answer): no switch, a change of it refused without asking
+  linked._reset();
+  const s = standIn();
+  await withFamily(WITH(s), async (host, { as }) => {
+    const m = (await as(ANNA)('GET', '/messengers')).json.messengers;
+    assert.equal(m.newChat, false);
+    assert.deepEqual(m.children[0].newChat, { whatsapp: false });
+    const r = await as(ANNA)('PUT', `/messengers/${LENA.id}`, { newChat: { whatsapp: true } });
+    assert.deepEqual([r.status, r.json.code], [409, 'unavailable']);
+    assert.equal(s.st.calls.filter((c) => c.name === 'bridge_child_set').length, 0);
+    for (const body of [{ newChat: {} }, { newChat: { whatsapp: 'ja' } }, { newChat: { signal: true } }, { newChat: [] }]) {
+      assert.equal((await as(ANNA)('PUT', `/messengers/${LENA.id}`, body)).json.code, 'invalid', JSON.stringify(body));
+    }
+  });
+  // the real Messenger on a GateControl that looks numbers up
+  linked._reset();
+  const roles = { plugin: 'gatecontrol-familie', provides: ['family_roles'], service: () => ({ ok: true, parents: [ANNA.id, MARC.id], children: [LENA.id, TIM.id] }) };
+  const messenger = await createHost(MESSENGER, { users: USERS, gatecontrol: '1.273.0', services: [roles], bridges: { enabled: true, networks: { whatsapp: true }, running: true, version: 4 } });
+  await messenger.start();
+  try {
+    await withFamily({ gatecontrol: '1.273.0', services: [{ plugin: 'gatecontrol-messenger', host: messenger }] }, async (host, { as }) => {
+      const chat = (u) => (method, p, body) => messenger.request({ method, path: p, body: body === undefined ? null : body, query: {}, user: { ...u, portal: true, loggedIn: true, app: true }, lang: 'de' });
+      let m = (await as(ANNA)('GET', '/messengers')).json.messengers;
+      assert.equal(m.newChat, true);
+      assert.deepEqual(m.children.map((c) => c.newChat.whatsapp), [false, false], 'off by default');
+      // not before the permission itself
+      assert.equal((await as(ANNA)('PUT', `/messengers/${LENA.id}`, { newChat: { whatsapp: true } })).json.code, 'invalid');
+      let r = (await as(ANNA)('PUT', `/messengers/${LENA.id}`, { networks: { whatsapp: true } })).json;
+      assert.deepEqual([r.child.networks, r.child.newChat], [{ whatsapp: true }, { whatsapp: false }]);
+      await chat(LENA)('POST', 'bridges/whatsapp/consent', { accept: true });
+      const qr = (await chat(LENA)('POST', 'bridges/whatsapp/login', { flow: 'qr' })).json.login;
+      messenger.bridges.confirm(qr.processId);
+      await chat(LENA)('POST', `bridges/whatsapp/login/${qr.processId}/${qr.step.id}`, {});
+      assert.equal((await chat(LENA)('GET', 'bridges')).json.bridges.networks[0].newChat.reason, 'child_new_chat_off');
+      r = (await as(MARC)('PUT', `/messengers/${LENA.id}`, { newChat: { whatsapp: true } })).json;
+      assert.deepEqual([r.child.networks, r.child.newChat, r.unlinked], [{ whatsapp: true }, { whatsapp: true }, {}]);
+      assert.equal((await chat(LENA)('GET', 'bridges')).json.bridges.networks[0].newChat.available, true);
+      m = (await as(ANNA)('GET', '/messengers')).json.messengers;
+      assert.deepEqual(m.children.map((c) => c.newChat.whatsapp), [true, false]);
+      r = (await as(ANNA)('PUT', `/messengers/${LENA.id}`, { newChat: { whatsapp: false } })).json;
+      assert.deepEqual(r.child.newChat, { whatsapp: false });
+      assert.equal((await chat(LENA)('POST', 'bridges/whatsapp/resolve', { number: '+4915112345678' })).json.code, 'child_new_chat_off');
     });
   } finally { await messenger.close(); }
 });
