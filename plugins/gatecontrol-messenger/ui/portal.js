@@ -24,7 +24,10 @@
    1.15.0 (bridge.supports with image / video / voice / file): files of a bridged chat like those of an own chat, the
    composer's attach button (files only) and voice messages in a type the bridge takes (bridge.mediaTypes; no webm for
    WhatsApp), "wird geladen …" / why a file did not come, a location as the location view, the pictures of contacts
-   and groups in the list. */
+   and groups in the list.
+   1.16.0 (GET me features.bridge_new_chat, GET bridges networks[].newChat): in „Neuer Chat“ the line „WhatsApp-Chat
+   mit Nummer“ under the tabs → the dialog „Neuer WhatsApp-Chat“ (ui/newchat.js, window.MSNewChat); the chat it
+   starts opens at once, with a line that says over which service and with which number it runs. */
 (function () {
   'use strict';
   var M = window.MS;
@@ -43,6 +46,8 @@
     feed: null, lists: [], listFilter: null, showArchived: false, integrations: {}, feedTimer: null, drive: false,
     // 1.14.0: net — null | 'gc' | '<network>' (the list's filter); typingExt — conversation id → { until, names }
     net: null, typingExt: {}, bridgeSeen: {},
+    // 1.16.0: chats just started by number (conversation id → { number, name }) — this page only, never kept
+    started: {},
   };
   var R = window.MSRich;
 
@@ -659,7 +664,9 @@
     var prevTop = box.scrollTop;
     M.clear(box);
     if (st.hasMore) box.appendChild(el('button', { type: 'button', class: 'btn btn-sm ms-more', text: T('portal.load_older'), on: { click: loadOlder } }));
-    if (!st.list.length && !st.hasMore) box.appendChild(el('div', { class: 'ms-sys', text: c.kind === 'group' ? T('portal.group_new') : T('portal.chat_empty') }));
+    // 1.16.0: a chat just started by number says over which service and with which number it runs
+    var started = c.bridge && S.started[c.id];
+    if (!st.list.length && !st.hasMore) box.appendChild(el('div', { class: 'ms-sys', text: started ? T('nc.first_line', { network: c.bridge.label, number: started.number, name: started.name || convTitle(c) }) : (c.kind === 'group' ? T('portal.group_new') : T('portal.chat_empty')) }));
     var prev = null;
     var lastDay = null;
     var divider = false;
@@ -1714,6 +1721,7 @@
           } }));
         });
         titleGroup.hidden = mode !== 'group';
+        if (numRows) numRows.hidden = mode !== 'direct';
         createBtn.hidden = mode !== 'group';
         M.$$('button', tabs).forEach(function (b) { b.setAttribute('aria-pressed', b.getAttribute('data-mode') === mode ? 'true' : 'false'); });
       }
@@ -1729,6 +1737,25 @@
       } } });
       filter.addEventListener('input', draw);
       body.appendChild(tabs);
+      // 1.16.0: „WhatsApp-Chat mit Nummer“ — one line per linked service that may start chats by number
+      var numRows = el('div', { class: 'ms-nc-rows' });
+      body.appendChild(numRows);
+      if (feature('bridge_new_chat') && window.MSNewChat) {
+        M.api('GET', 'bridges').then(function (r) {
+          var b = r.bridges || {};
+          (b.networks || []).filter(function (n) { return n.newChat && ['off', 'unlinked', 'child_new_chat_off'].indexOf(n.newChat.reason) < 0; }).forEach(function (n) {
+            var label = T('admin.br_net_' + n.id);
+            numRows.appendChild(el('button', { type: 'button', class: 'ms-person ms-nc-row', on: { click: function () {
+              if (closeFn) closeFn(null);
+              window.MSNewChat.open(n, { open: openStarted });
+            } } }, [
+              el('span', { class: 'ms-av-wrap' }, [el('span', { class: 'ms-av', 'aria-hidden': 'true', style: 'width:38px;height:38px' }, [M.icon('dial', 18)]), el('span', { class: 'ms-net ms-net-' + n.id, text: T('admin.br_mark_' + n.id) })]),
+              el('span', { class: 'ms-nc-row-tx' }, [el('span', { text: T('nc.row', { network: label }) }), el('small', { text: T('nc.row_sub') })]),
+            ]));
+          });
+          numRows.hidden = mode !== 'direct';
+        }).catch(function () { /* no line then */ });
+      }
       body.appendChild(titleGroup);
       body.appendChild(filter);
       body.appendChild(list);
@@ -1737,6 +1764,14 @@
       draw();
       M.dialog(T('portal.new_chat'), body, [], { onOpen: function (done) { closeFn = done; } });
     }).catch(M.warn);
+  }
+  /** 1.16.0: a chat of the dialog „Neuer WhatsApp-Chat“ — into the list and open (info: { number, name } when new). */
+  function openStarted(cv, info) {
+    if (!cv) return;
+    if (info) S.started[cv.id] = info;
+    upsert(cv);
+    renderList();
+    openConv(cv.id);
   }
   function addMembers(c) {
     loadPeople().then(function (people) {

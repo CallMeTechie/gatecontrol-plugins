@@ -1,4 +1,4 @@
-<!-- version: 1.15.0 -->
+<!-- version: 1.16.0 -->
 # Messenger
 
 ## Was das Plugin kann
@@ -67,6 +67,15 @@ Den führt das Plugin Familie (Seite „Funktionen“ › Messenger-Gruppe).
 
 **Alte Nachrichten sind weg.**
 Der Administrator hat eine Aufbewahrung eingestellt, oder der Chat ist selbstlöschend.
+
+## Neu in 1.16.0
+
+- **Neuer WhatsApp-Chat per Nummer:** Hast du WhatsApp unter „Verknüpfte Dienste“ verknüpft, steht in „Neuer Chat“ (Stift) unter den Reitern die Zeile **„WhatsApp-Chat mit Nummer“**. Nummer eingeben – die Vorwahl +49 ist voreingestellt, eine 0 am Anfang und Leerzeichen sind egal –, darunter steht „Wird geprüft als +49 …“. Erst auf **„Prüfen“** fragt GateControl über deine Brücke bei WhatsApp nach. Dann siehst du den Namen und startest mit **„Chat starten“** den Chat; er öffnet sich sofort.
+- **Chat gibt es schon:** Hast du mit der Nummer schon einen Chat begonnen, steht „Ihr habt schon einen Chat“ und **„Chat öffnen“** – ohne neue Anfrage an WhatsApp.
+- **Wenn es nicht geht,** sagt der Dialog warum: kein WhatsApp unter der Nummer, keine vollständige Nummer, zu viele Prüfungen (mit der Uhrzeit der nächsten), Brücke nicht erreichbar, WhatsApp abgemeldet („Neu verknüpfen“) oder – bei Kindern – von den Eltern gesperrt.
+- **Höchstens 10 Prüfungen je Stunde** (der Administrator kann den Wert ändern), damit WhatsApp dein Konto nicht wegen vieler Nummern-Abfragen sperrt. Ungültige Nummern und Chats, die es schon gibt, zählen nicht.
+- **Kinder** brauchen dafür eine zweite Freigabe der Eltern („Neue Chats per Nummer“ in der Familie-Karte „Andere Messenger“), zunächst aus. Antworten in bestehenden Chats gehen immer.
+- **Datenschutz:** Zum Prüfen geht die Nummer über deine Brücke an WhatsApp. GateControl schreibt sie nicht ins Protokoll; gespeichert wird sie nur, wenn du den Chat startest.
 
 ## Neu in 1.15.0
 

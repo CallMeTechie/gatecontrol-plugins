@@ -1252,7 +1252,14 @@
     "taskmove.back_confirm": "Aufgaben und Orts-Erinnerungen wieder dem Familien-Plugin geben? Sie stehen danach hier, auf dem Stand des letzten Abgleichs. In „Notizen & Aufgaben“ wandern die offenen Aufgaben aus der Familie in den Papierkorb (30 Tage), damit nichts doppelt erinnert. Nicht zurück kommt, was es nur dort gibt: Unteraufgaben, Notizen, Anhänge, ein Ort an einer Familien-Aufgabe, Wiederholungen wie „alle 2 Wochen“.",
     "taskmove.back_done": "Aufgaben und Orts-Erinnerungen gehören wieder dem Familien-Plugin.",
     "taskmove.err_hub": "„Notizen & Aufgaben“ antwortet nicht. Läuft es, und sind die neuen Berechtigungen beider Plugins bestätigt (Einstellungen › Plugins)? Es wurde nichts verändert.",
-    "taskmove.err_cut": "Der Umzug wurde unterbrochen – {{n}} Einträge warten noch. Er geht von selbst weiter, sobald „Notizen & Aufgaben“ wieder antwortet."
+    "taskmove.err_cut": "Der Umzug wurde unterbrochen – {{n}} Einträge warten noch. Er geht von selbst weiter, sobald „Notizen & Aufgaben“ wieder antwortet.",
+    "linked.new_title": "Neue Chats per Nummer",
+    "linked.new_switch": "Neue {{service}}-Chats per Nummer für {{name}} erlauben",
+    "linked.new_state_off": "Aus · {{name}} antwortet nur in bestehenden Chats",
+    "linked.new_state_on": "An · {{name}} darf selbst Chats mit einer Telefonnummer beginnen",
+    "linked.new_state_locked": "Erst möglich, wenn {{service}} freigeschaltet ist",
+    "linked.new_on": "{{name}} darf jetzt neue {{service}}-Chats per Nummer beginnen",
+    "linked.new_off": "{{name}} kann keine neuen {{service}}-Chats per Nummer mehr beginnen – Antworten in bestehenden Chats gehen weiter"
   },
   "en": {
     "account.admin": "Admin",
@@ -2507,6 +2514,13 @@
     "taskmove.back_confirm": "Give the tasks and place reminders back to the Family plugin? Afterwards they are here, as of the last sync. In “Notes & Tasks” the open tasks from the family go to the trash (30 days) so that nothing reminds twice. What only exists there does not come back: sub tasks, notes, attachments, a place on a family task, repeats like “every 2 weeks”.",
     "taskmove.back_done": "The tasks and place reminders belong to the Family plugin again.",
     "taskmove.err_hub": "“Notes & Tasks” does not answer. Is it running, and are the new permissions of both plugins confirmed (Settings › Plugins)? Nothing was changed.",
-    "taskmove.err_cut": "The move was cut short – {{n}} entries still wait. It goes on by itself once “Notes & Tasks” answers again."
+    "taskmove.err_cut": "The move was cut short – {{n}} entries still wait. It goes on by itself once “Notes & Tasks” answers again.",
+    "linked.new_title": "New chats by number",
+    "linked.new_switch": "Allow new {{service}} chats by number for {{name}}",
+    "linked.new_state_off": "Off · {{name}} only answers in existing chats",
+    "linked.new_state_on": "On · {{name}} may start chats with a phone number",
+    "linked.new_state_locked": "Possible once {{service}} is allowed",
+    "linked.new_on": "{{name}} may start new {{service}} chats by number now",
+    "linked.new_off": "{{name}} can no longer start new {{service}} chats by number – answers in existing chats still work"
   }
 }

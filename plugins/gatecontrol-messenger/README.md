@@ -974,9 +974,9 @@ Rules:
 | `POST bridges/:network/login/:processId/:stepId` | `{ input: { <field id>: text } }` for a `user_input` step, `{}` for `display_and_wait` | `{ login: { processId, step } }`, or `{ login: { processId, waiting: true } }` — the person has not confirmed on the phone yet: call again (the call takes up to 15 s) |
 | `DELETE bridges/:network/login/:processId` | | `{ cancelled: true }` |
 | `DELETE bridges/:network/logins/:id` | | `{ unlinked: true }` |
-| `GET bridges/children` | | parents only: `{ children: [{ userId, networks: { whatsapp: boolean }, linked: { whatsapp: boolean } }] }` — `linked` (1.13.0): the child has an account linked, never which |
-| `PUT bridges/children/:userId` | `{ networks: { whatsapp: boolean } }` | parents only: `{ child, unlinked }` — `unlinked` (1.13.0): per network taken back `true` (the child's link was ended) or `false` (it could not be ended); absent when nothing was linked or allowed |
-| `GET admin/bridges` · `PUT admin/bridges` | `{ enabled?, networks?: { whatsapp?: boolean } }` | administrators in the admin UI: `{ bridges }` — GateControl's `gc.bridges.status()` plus `linked` per network |
+| `GET bridges/children` | | parents only: `{ children: [{ userId, networks: { whatsapp: boolean }, linked: { whatsapp: boolean }, newChat: { whatsapp: boolean } }] }` — `linked` (1.13.0): the child has an account linked, never which; `newChat` (1.16.0): new chats by number allowed |
+| `PUT bridges/children/:userId` | `{ networks?: { whatsapp: boolean }, newChat?: { whatsapp: boolean } }` | parents only: `{ child, unlinked }` — `unlinked` (1.13.0): per network taken back `true` (the child's link was ended) or `false` (it could not be ended); absent when nothing was linked or allowed |
+| `GET admin/bridges` · `PUT admin/bridges` | `{ enabled?, networks?: { whatsapp?: boolean } }` or (1.16.0, alone) `{ newChatPerHour: 1…60 }` | administrators in the admin UI: `{ bridges }` — GateControl's `gc.bridges.status()` plus `linked` per network |
 
 `step`: `{ id, type: "user_input", fields: [{ id, type: "phone_number", optional }] }`,
 `{ id, type: "display_and_wait", display: { type: "code" | "qr", data } }` (draw
@@ -1058,8 +1058,10 @@ mock host's `gc.bridges` version 3 (`tools/testing/mock-bridges.js`).
 GateControl with `gc.bridges` version ≥ 4 carries files (`server/bridgemedia.js`, migration 008). With version 3
 nothing of this section exists: `supports` stays as above and files stay placeholders.
 
-* `GET me` `features.bridge_media: true` and `features.bridge_new_chat: true` — only for the same people as
-  `bridge_chats` (an older app shows its update hint to exactly them), and only when GateControl has the API.
+* `GET me` `features.bridge_media: true` — only for the same people as `bridge_chats` (an older app shows its update
+  hint to exactly them), and only when GateControl has the API. `features.bridge_new_chat: true` — 1.15.0 the same;
+  **since 1.16.0** as soon as the person has a service linked (also without a chat — the first chat can be one they
+  start), and only when GateControl can look numbers up.
 * `conversation.bridge.supports` adds `"image"`, `"video"`, `"voice"`, `"file"`; `conversation.bridge.mediaTypes`
   `{ image: ["image/jpeg", "image/png", "image/webp"], video: ["video/mp4"], voice: ["audio/ogg", "audio/mp4",
   "audio/aac", "audio/mpeg"], file: null }` — what the bridge takes (WhatsApp: no `audio/webm`; `null` = any type).
@@ -1085,21 +1087,49 @@ caption, `replyTo`, `meta`, `video`) as in a normal chat — `supports` names it
 Location, polls, events, live arrival, home actions, cards, `replyStory` stay `409 bridge_text_only`; a caption is
 not edited at the other side (`PATCH` → `409 bridge_text_only`). "Erneut senden" sends the same file again.
 
-**A new chat by number** (`bridge_new_chat`; no screen of its own yet — the dialog follows):
+**A new chat by number** (`bridge_new_chat`; since 1.16.0 the dialog „Neuer WhatsApp-Chat“ in the portal,
+`ui/newchat.js`, and what the apps need for theirs):
 
 | Route | Answer |
 |---|---|
-| `POST bridges/:network/resolve { number }` | `{ found: true, name } \| { found: false, name: null }` — is this number at the service (WhatsApp: "on WhatsApp"), under which name |
-| `POST bridges/:network/chats { number }` | `{ conversation, created }` — the direct chat with this number, made or found; open it with `?bridged=1` as usual. It is listed once something was said in it |
+| `GET bridges` (1.16.0) | each network adds `newChat: { available, reason, limit: { perHour, left, retryAfterS } }` — `reason`: `null`, `"off"` (GateControl cannot look numbers up), `"unlinked"`, `"child_locked"` (a child, the service locked by the parents, the link still there), `"child_new_chat_off"` (a child without the parents' second switch), `"logged_out"`, `"unreachable"` |
+| `POST bridges/:network/resolve { number }` | `{ found, name, avatarUrl, existing }` — is this number at the service (WhatsApp: "on WhatsApp"), under which name. 1.16.0: `existing: { conversationId }` when the person started a chat with this number here before (then without asking the service and without counting), else `null`; `avatarUrl` (portal; the chat's picture when it exists) or `null`. `{ found: false, name: null, avatarUrl: null, existing: null }` when not |
+| `POST bridges/:network/chats { number }` | `{ conversation, created }` — the direct chat with this number, made or found (`created: false`); open it with `?bridged=1` as usual. It is listed once something was said in it |
 
-`number` with `+` and the country code (spaces, dashes, brackets, a leading `00` are fine) — else `400
-invalid_number`. Only the linked person (`409 bridge_unlinked` with `reason`), a child only with the parents' yes
-(`403 bridge_locked`), at most 10 numbers per person in 10 minutes here and 20 an hour at GateControl (`429
-rate_limited` with `retryAfterS`) — every number is a question to WhatsApp. `chats`: `404 not_found` with `reason:
-"not_on_network"` when the number is not at the service. The number is never logged and never stored by the
-plugin or GateControl; only the chat (with the contact's name) remains. Without version 4: `403 feature_off`.
+**Show the line** „WhatsApp-Chat mit Nummer“ in „Neuer Chat“ (under „Neue Gruppe“) per network when
+`features.bridge_new_chat` and `newChat.reason` is none of `off`, `unlinked`, `child_new_chat_off`. Any other
+`available: false` is a state of the dialog: `child_locked` „Von deinen Eltern gesperrt“, `logged_out` „abgemeldet“ →
+„Neu verknüpfen“, `unreachable` „Brücke nicht erreichbar“, `limit.left: 0` „Zu viele Prüfungen“ (next check
+`retryAfterS` from now). Ask the service only on the button („Prüfen“), never while typing.
 
-Tests: `test/bridgemedia.test.js` against the mock host's `gc.bridges` version 4.
+`number` with `+` and the country code (spaces, dashes, dots, brackets, a leading `00` are fine; a national `0`
+after `+49` is not) — else `400 invalid_number`. The clients normalise first with +49 as the preset (drop a leading
+0, spaces and dashes, take a `+` as it is) and show „Wird geprüft als +49 …“; the plugin checks again. Refusals:
+`409 bridge_unlinked` (`reason: "unlinked"`), `409 bridge_logged_out` (1.16.0; before `bridge_unlinked` with `reason:
+"logged_out"`), `403 bridge_locked` (a child, the service locked), `403 child_new_chat_off` (1.16.0: a child without
+the second switch — answers in existing chats are not affected), `503 bridge_unreachable` (also after 15 s without an
+answer), `409 bridge_off`, `403 feature_off` (GateControl without the lookup), `429 rate_limited` with `retryAfterS`
+and (1.16.0) `perHour`. `chats`: `404 not_found` with `reason: "not_on_network"`.
+
+**The limit** (1.16.0): `newChatPerHour` checks per person and hour (preset 10; the administrator sets 1–60 in the
+card „Brücken“: `PUT admin/bridges { newChatPerHour }`, `GET admin/bridges` → `newChat: { available, perHour, min,
+max }`); GateControl's own limit of 20 an hour stays. Not counted: invalid numbers, a chat that exists, a bridge that
+does not answer, GateControl's own refusals, and „Chat starten“ for a number found in the last 15 minutes (kept in
+memory as a keyed hash, never the number). Before 1.16.0: 10 numbers in 10 minutes, every call counted.
+
+**The number** is never logged — neither by the plugin nor by GateControl — and the apps must not log it either.
+Kept only once the person starts the chat, and only as a keyed hash (HMAC with a key derived from the plugin's own
+key, migration 009 `conversations.bridge_num`) to find that chat again; deleted when the person (or a parent) unlinks
+the service. Of the bridge's answer only the name goes on.
+
+**Children** (1.16.0): the parents' second switch per child and network, „Neue Chats per Nummer“, default off and only
+next to the permission itself (taking the permission back clears it). Shown by Familie ≥ 1.25.0 in its card „Andere
+Messenger“: `bridge_children` answers `newChat: true` (this GateControl can look numbers up) and each child's
+`newChat: { whatsapp }`; `bridge_child_set` takes `newChat: { whatsapp }` next to or instead of `networks` (`invalid`
+without the permission). The same in the app API: `GET bridges/children` / `PUT bridges/children/:userId { newChat }`.
+An older Familie never sends it: children stay without new chats by number.
+
+Tests: `test/bridgemedia.test.js`, `test/newchat.test.js` (1.16.0) against the mock host's `gc.bridges` version 4.
 
 ## Services (for other plugins)
 

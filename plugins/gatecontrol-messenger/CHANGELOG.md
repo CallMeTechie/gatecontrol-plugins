@@ -3,6 +3,31 @@
 Chats zwischen den GateControl-Konten – in der GateControl-App (eigener Tab „Chats“), im
 Windows-Client und im Portal (eigener Tab „Chats“). Alles bleibt auf dem eigenen Server.
 
+## 1.16.0
+**Neuer WhatsApp-Chat per Nummer** – der Dialog im Portal und was die Apps dafür brauchen. Weiterhin
+**GateControl ≥ 1.193.0**; zu sehen nur auf einem GateControl, das Nummern über die Brücke prüfen kann (`gc.bridges`
+Version 4, dort eine Vorschau). Kein neues Recht.
+- **Portal** (`ui/newchat.js`): in „Neuer Chat“ unter den Reitern die Zeile „WhatsApp-Chat mit Nummer“ (nur wenn
+  verknüpft, bei Kindern nur mit dem zweiten Elternschalter); der Dialog „Neuer WhatsApp-Chat“ mit Ländervorwahl (+49
+  voreingestellt), „Wird geprüft als …“, wird geprüft, gefunden, „Chat gibt es schon“ → „Chat öffnen“, kein WhatsApp,
+  ungültig, zu viele Prüfungen mit Uhrzeit, Brücke nicht erreichbar, abgemeldet → „Neu verknüpfen“, von den Eltern
+  gesperrt; Datenschutzsatz; auf schmalen Bildschirmen als Blatt von unten. Danach öffnet sich der Chat mit der Zeile
+  „Neuer Chat über WhatsApp mit …“ (nur auf dieser Seite, nicht gespeichert).
+- **`GET bridges`**: je Dienst `newChat { available, reason, limit: { perHour, left, retryAfterS } }`; `reason` `off`,
+  `unlinked`, `child_locked`, `child_new_chat_off`, `logged_out`, `unreachable`.
+- **`POST bridges/:network/resolve`** antwortet zusätzlich `avatarUrl` und `existing: { conversationId }` – ein hier per
+  Nummer begonnener Chat wird wiedererkannt (Schlüssel-Hash der Nummer mit dem Schlüssel des Plugins, Migration 009;
+  gelöscht beim Trennen des Dienstes), ohne WhatsApp zu fragen und ohne zu zählen. Neue Fehler `409 bridge_logged_out`,
+  `403 child_new_chat_off`; `429 rate_limited` nennt `perHour`; nach 15 s ohne Antwort `503 bridge_unreachable`.
+- **Bremse:** 10 Prüfungen je Person und Stunde (vorher 10 in 10 Minuten), vom Administrator in der Karte „Brücken“
+  einstellbar (1–60). Ungültige Nummern, Chats, die es schon gibt, und eine Brücke, die nicht antwortet, zählen nicht;
+  „Chat starten“ für eine gerade gefundene Nummer auch nicht. GateControls eigene Grenze (20 je Stunde) bleibt.
+- **Kinder:** zweiter Elternschalter „Neue Chats per Nummer“ je Kind und Dienst (Familie ab 1.25.0, Dienst
+  `bridge_child_set` mit `newChat`, `bridge_children` mit `newChat`), Voreinstellung aus; nur zusammen mit der Freigabe
+  des Dienstes. Ohne neue Familie-Version bleibt er für Kinder aus. Antworten in bestehenden Chats bleiben unberührt.
+- **`features.bridge_new_chat`** schon, sobald die Person einen Dienst verknüpft hat (nicht erst mit einem Chat), damit
+  der erste Chat ein eigener sein kann.
+
 ## 1.15.0
 Vierte Baustufe der **Brücken zu anderen Messengern** (WhatsApp): **Bilder, Videos, Sprachnachrichten und Dateien**,
 Profilbilder und die Schnittstelle für einen **neuen Chat per Nummer**. Weiterhin **GateControl ≥ 1.193.0**; alles davon

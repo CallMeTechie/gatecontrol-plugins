@@ -94,6 +94,12 @@
     down: 'M12 5v14M6 13l6 6 6-6',
     clock: 'M12 7v5l3 2|M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18',
     drive: 'M7 19a4.5 4.5 0 0 1-.6-9A6 6 0 0 1 17.8 9a4.5 4.5 0 0 1-.3 10z|M12 10v6M9.5 13.5L12 16l2.5-2.5',
+    // 1.16.0: a new chat by number
+    dial: 'M5 3h4l2 5-2.5 1.5a11 11 0 0 0 6 6L16 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 5a2 2 0 0 1 2-2',
+    userx: 'M10 4a4 4 0 1 0 0 8a4 4 0 1 0 0-8|M3 21c0-4 3-6 7-6s7 2 7 6|M17 8l4 4M21 8l-4 4',
+    plug: 'M9 2v5M15 2v5M6 7h12v4a6 6 0 0 1-12 0z|M12 17v5|M3 3l18 18',
+    logout: 'M15 4h4v16h-4|M10 8l-4 4 4 4M6 12h10',
+    refresh: 'M20 11a8 8 0 1 0-2.3 5.7|M20 5v6h-6',
   };
   function icon(name, size, opts) { return svg(ICONS[name] || ICONS.info, size, opts); }
   var COLOR_RE = /^#[0-9a-fA-F]{6}$/;
@@ -189,7 +195,11 @@
     if (!disabled) b.addEventListener('click', function () { var v = b.getAttribute('aria-checked') !== 'true'; b.setAttribute('aria-checked', v ? 'true' : 'false'); onChange(v, b); });
     return b;
   }
-  /** A dialog drawn in the frame (sandboxed frames have no alert/confirm). Resolves when closed. */
+  /**
+   * A dialog drawn in the frame (sandboxed frames have no alert/confirm). Resolves when closed.
+   * opts: wide, onOpen(done); 1.16.0: head (a node in place of the title), foot (a node the caller fills, in place of
+   * buttons), sheet (a sheet from the bottom at phone width), cls (a class of the box).
+   */
   function dialog(title, body, buttons, opts) {
     var o = opts || {};
     return new Promise(function (resolve) {
@@ -201,11 +211,11 @@
           if (b.onClick) { var r = b.onClick(); if (r === false) return; Promise.resolve(r).then(function (v) { if (v !== false) done(b.value !== undefined ? b.value : v); }); } else done(b.value);
         } } });
       }));
-      ov = el('div', { class: 'ms-overlay', role: 'dialog', 'aria-modal': 'true', 'aria-label': title }, [
-        el('div', { class: 'ms-modal' + (o.wide ? ' is-wide' : '') }, [
-          el('div', { class: 'ms-modal-head' }, [el('div', { class: 'ms-modal-title', text: title }), el('button', { type: 'button', class: 'ms-ib ms-ib-flat', 'aria-label': T('common.close'), on: { click: function () { done(null); } } }, [icon('close', 18)])]),
+      ov = el('div', { class: 'ms-overlay' + (o.sheet ? ' is-sheet' : ''), role: 'dialog', 'aria-modal': 'true', 'aria-label': title }, [
+        el('div', { class: 'ms-modal' + (o.wide ? ' is-wide' : '') + (o.cls ? ' ' + o.cls : '') }, [
+          el('div', { class: 'ms-modal-head' }, [o.head || el('div', { class: 'ms-modal-title', text: title }), el('button', { type: 'button', class: 'ms-ib ms-ib-flat', 'aria-label': T('common.close'), on: { click: function () { done(null); } } }, [icon('close', 18)])]),
           el('div', { class: 'ms-modal-body' }, [body]),
-          (buttons && buttons.length) ? foot : null,
+          o.foot || ((buttons && buttons.length) ? foot : null),
         ]),
       ]);
       ov.addEventListener('click', function (e) { if (e.target === ov) done(null); });

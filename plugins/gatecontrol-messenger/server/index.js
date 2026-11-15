@@ -68,7 +68,9 @@ function errorResponse(e, lang) {
   const reason = isKnown(e) && e.extra && typeof e.extra.reason === 'string' && /^[a-z][a-z0-9_]{0,39}$/.test(e.extra.reason) ? e.extra.reason : null;
   // 1.15.0: when to ask again (rate_limited of a new chat by number)
   const retry = isKnown(e) && e.extra && Number.isSafeInteger(e.extra.retryAfterS) && e.extra.retryAfterS > 0 ? Math.min(e.extra.retryAfterS, 86400) : null;
-  return { status: STATUS[code], json: { ok: false, code, error: t(lang, 'error.' + code), ...(finding ? { finding } : {}), ...(reason ? { reason } : {}), ...(retry ? { retryAfterS: retry } : {}) } };
+  // 1.16.0: the plugin's own limit of a new chat by number (checks per hour) — the dialog names it
+  const perHour = isKnown(e) && e.extra && Number.isSafeInteger(e.extra.perHour) && e.extra.perHour > 0 ? e.extra.perHour : null;
+  return { status: STATUS[code], json: { ok: false, code, error: t(lang, 'error.' + code), ...(finding ? { finding } : {}), ...(reason ? { reason } : {}), ...(retry ? { retryAfterS: retry } : {}), ...(perHour ? { perHour } : {}) } };
 }
 
 /** The request context of a chat call. */

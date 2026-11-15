@@ -294,7 +294,7 @@ test('a new chat by number: the linked person only, a child only with the parent
     r = await me('POST', 'bridges/whatsapp/resolve', { number: '+49 151 12345678' });
     assert.deepEqual([r.status, r.json.found, r.json.name], [200, true, 'Kim Muster']);
     r = await me('POST', 'bridges/whatsapp/resolve', { number: '+4915199999999' });
-    assert.deepEqual([r.json.found, r.json.name], [false, null]);
+    assert.deepEqual([r.json.found, r.json.name, r.json.avatarUrl, r.json.existing], [false, null, null, null]);
     r = await me('POST', 'bridges/whatsapp/resolve', { number: '0151 12345678' });
     assert.deepEqual([r.status, r.json.code], [400, 'invalid_number']);
     r = await me('POST', 'bridges/whatsapp/resolve', {});
@@ -319,13 +319,9 @@ test('a new chat by number: the linked person only, a child only with the parent
     // a child: locked until the parents allow it
     r = await c.as(LENA)('POST', 'bridges/whatsapp/resolve', { number: '+4915112345678' });
     assert.deepEqual([r.status, r.json.code], [403, 'bridge_locked']);
-    // a limit of its own per person (10 in 10 minutes), with the time to wait
-    for (let i = 0; i < 4; i++) await me('POST', 'bridges/whatsapp/resolve', { number: '+4915112345678' });
+    // 1.16.0: the chat started here is found again by the number — without asking the service (test/newchat.test.js)
     r = await me('POST', 'bridges/whatsapp/resolve', { number: '+4915112345678' });
-    assert.deepEqual([r.status, r.json.code], [429, 'rate_limited']);
-    assert.ok(r.json.retryAfterS > 0 && r.json.retryAfterS <= 600);
-    c.clock.add(11 * 60000);
-    assert.equal((await me('POST', 'bridges/whatsapp/resolve', { number: '+4915112345678' })).status, 200);
+    assert.deepEqual([r.status, r.json.found, r.json.existing], [200, true, { conversationId: conv.id }]);
     // the number is in no log entry (of the plugin, of what the host was asked to note) and in no answer about the chat
     const log = JSON.stringify(host.bridges.state.log) + JSON.stringify((await c.admin('GET', 'log')).json) + JSON.stringify(await list(c)) + JSON.stringify(host.logs || []);
     assert.doesNotMatch(log, /4915112345678|15112345678/);

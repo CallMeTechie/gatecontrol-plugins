@@ -95,7 +95,8 @@ test('a person links their own WhatsApp with the pairing code — notes first', 
   await withHost({ bridges: ON }, async (host, c) => {
     const anna = c.as(ANNA);
     let mine = (await anna('GET', 'bridges')).json.bridges;
-    assert.deepEqual(mine, { available: true, location: 'server', networks: [{ id: 'whatsapp', state: 'running', allowed: true, lock: null, consent: null, outdated: false, version: '0.2610.0', wantVersion: '0.2610.0', logins: [] }] });
+    assert.deepEqual(mine, { available: true, location: 'server', networks: [{ id: 'whatsapp', state: 'running', allowed: true, lock: null, consent: null, outdated: false, version: '0.2610.0', wantVersion: '0.2610.0', logins: [],
+      newChat: { available: false, reason: 'off', limit: { perHour: 10, left: 10, retryAfterS: 0 } } }] });
 
     // not before the notes were confirmed
     assert.equal((await anna('POST', 'bridges/whatsapp/login', { flow: 'phone' })).json.code, 'consent_required');
@@ -219,14 +220,14 @@ test('children: locked until a parent allows it, per child and network', async (
       assert.equal((await c.as(u)('GET', 'bridges/children')).status, 403);
       assert.equal((await c.as(u)('PUT', `bridges/children/${LENA.id}`, { networks: { whatsapp: true } })).status, 403);
     }
-    assert.deepEqual((await c.as(ANNA)('GET', 'bridges/children')).json.children, [{ userId: LENA.id, networks: { whatsapp: false }, linked: { whatsapp: false } }]);
+    assert.deepEqual((await c.as(ANNA)('GET', 'bridges/children')).json.children, [{ userId: LENA.id, networks: { whatsapp: false }, linked: { whatsapp: false }, newChat: { whatsapp: false } }]);
     assert.equal((await c.as(ANNA)('PUT', `bridges/children/${MARC.id}`, { networks: { whatsapp: true } })).status, 404, 'a parent is no child');
     for (const bad of [{}, { networks: {} }, { networks: { signal: true } }, { networks: { whatsapp: 'yes' } }]) {
       assert.equal((await c.as(ANNA)('PUT', `bridges/children/${LENA.id}`, bad)).json.code, 'invalid');
     }
 
     const r = await c.as(ANNA)('PUT', `bridges/children/${LENA.id}`, { networks: { whatsapp: true } });
-    assert.deepEqual(r.json.child, { userId: LENA.id, networks: { whatsapp: true }, linked: { whatsapp: false } });
+    assert.deepEqual(r.json.child, { userId: LENA.id, networks: { whatsapp: true }, linked: { whatsapp: false }, newChat: { whatsapp: false } });
     assert.deepEqual(r.json.unlinked, {});
     mine = (await lena('GET', 'bridges')).json.bridges;
     assert.equal(mine.networks[0].allowed, true);
@@ -238,7 +239,7 @@ test('children: locked until a parent allows it, per child and network', async (
     // the other parent takes it back: the child's account is unlinked as well (GateControl logs who did it), and no new link
     const back = await c.as(MARC)('PUT', `bridges/children/${LENA.id}`, { networks: { whatsapp: false } });
     assert.deepEqual(back.json.unlinked, { whatsapp: true });
-    assert.deepEqual(back.json.child, { userId: LENA.id, networks: { whatsapp: false }, linked: { whatsapp: false } });
+    assert.deepEqual(back.json.child, { userId: LENA.id, networks: { whatsapp: false }, linked: { whatsapp: false }, newChat: { whatsapp: false } });
     assert.deepEqual(host.bridges.state.log.filter((l) => l.op === 'unlink_for'), [{ op: 'unlink_for', userId: LENA.id, by: MARC.id, network: 'whatsapp', logins: 1 }]);
     assert.equal((await lena('POST', 'bridges/whatsapp/login', { flow: 'qr' })).json.code, 'bridge_locked');
     mine = (await lena('GET', 'bridges')).json.bridges;
@@ -304,13 +305,13 @@ test('1.13.0 — the services for the Familie page: only Familie, only a parent,
     assert.deepEqual(await svc('bridge_child_set', { id: OMA.id }, { childId: LENA.id, networks: { whatsapp: true } }), { ok: false, code: 'forbidden' });
 
     let r = await svc('bridge_children', { id: ANNA.id });
-    assert.deepEqual(r, { ok: true, available: true, networks: ['whatsapp'], children: [{ userId: LENA.id, networks: { whatsapp: false }, linked: { whatsapp: false } }] });
+    assert.deepEqual(r, { ok: true, available: true, networks: ['whatsapp'], newChat: false, children: [{ userId: LENA.id, networks: { whatsapp: false }, linked: { whatsapp: false }, newChat: { whatsapp: false } }] });
     assert.deepEqual(await svc('bridge_child_set', { id: ANNA.id }, { childId: MARC.id, networks: { whatsapp: true } }), { ok: false, code: 'not_found' });
     for (const bad of [{}, { childId: LENA.id }, { childId: LENA.id, networks: { signal: true } }, { childId: 'x', networks: { whatsapp: true } }]) {
       assert.deepEqual(await svc('bridge_child_set', { id: ANNA.id }, bad), { ok: false, code: 'invalid' });
     }
     r = await svc('bridge_child_set', { id: ANNA.id }, { childId: LENA.id, networks: { whatsapp: true } });
-    assert.deepEqual(r, { ok: true, child: { userId: LENA.id, networks: { whatsapp: true }, linked: { whatsapp: false } }, unlinked: {} });
+    assert.deepEqual(r, { ok: true, child: { userId: LENA.id, networks: { whatsapp: true }, linked: { whatsapp: false }, newChat: { whatsapp: false } }, unlinked: {} });
     assert.equal((await c.as(LENA)('GET', 'bridges')).json.bridges.networks[0].allowed, true);
     await link(c, host, LENA, 'phone');
 
@@ -320,7 +321,7 @@ test('1.13.0 — the services for the Familie page: only Familie, only a parent,
     assert.equal((await c.as(LENA)('GET', 'bridges')).json.bridges.networks[0].logins.length, 1);
     await svc('bridge_child_set', { id: MARC.id }, { childId: LENA.id, networks: { whatsapp: true } });
     r = await host.bridges.acting(MARC.id, () => svc('bridge_child_set', { id: MARC.id }, { childId: LENA.id, networks: { whatsapp: false } }));
-    assert.deepEqual(r, { ok: true, child: { userId: LENA.id, networks: { whatsapp: false }, linked: { whatsapp: false } }, unlinked: { whatsapp: true } });
+    assert.deepEqual(r, { ok: true, child: { userId: LENA.id, networks: { whatsapp: false }, linked: { whatsapp: false }, newChat: { whatsapp: false } }, unlinked: { whatsapp: true } });
     assert.deepEqual(host.bridges.state.log.filter((l) => l.op === 'unlink_for'), [{ op: 'unlink_for', userId: LENA.id, by: MARC.id, network: 'whatsapp', logins: 1 }]);
     const mine = (await c.as(LENA)('GET', 'bridges')).json.bridges.networks[0];
     assert.equal(mine.lock, 'child');

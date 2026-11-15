@@ -6,11 +6,18 @@
 // switches: who is allowed and what is linked lives in the Messenger, reached through GateControl's services between
 // plugins (permissions.services) — no table here, no access to the Messenger's data.
 //
-//   GET messengers             → { messengers: { available, manage, networks: ['whatsapp'], children: [child] } } —
+//   GET messengers             → { messengers: { available, manage, networks: ['whatsapp'], newChat, children: [child] } } —
 //                                parents: every child of the family; everybody else: available false
-//   PUT messengers/<childId>   { networks: { whatsapp: boolean } } → { child, unlinked: { whatsapp?: boolean } }
+//   PUT messengers/<childId>   { networks?: { whatsapp: boolean }, newChat?: { whatsapp: boolean } }
+//                                → { child, unlinked: { whatsapp?: boolean } }
 //   child = { userId, name, avatarUrl, color, colorHex, initials, networks: { whatsapp: boolean },
-//             linked: { whatsapp: boolean } } — `linked`: the child has an account linked right now (never which)
+//             linked: { whatsapp: boolean }, newChat: { whatsapp: boolean } } — `linked`: the child has an account
+//             linked right now (never which)
+//
+// 1.25.0: „Neue Chats per Nummer“ — a second switch per child and service (newChat): may the child start NEW chats by
+// phone number (Messenger ≥ 1.16.0 on a GateControl that can look numbers up: its answer carries newChat: true)? Off
+// by default, only next to the permission itself; answers in existing chats stay. An older Messenger knows nothing of
+// it: the switch is not shown (messengers.newChat false) and a change is refused (unavailable).
 //
 // Taking a permission back also ends the child's link: the Messenger asks GateControl, which does it only while the
 // parent's request (this one) is in flight and writes it to its activity log. `unlinked[network]`: true = ended,
@@ -34,19 +41,19 @@ async function offered(gc, service) {
   try { return (await gc.services.available(PLUGIN, service)) === true; } catch { return false; }
 }
 
-const NONE = Object.freeze({ available: false, networks: [], children: [] });
+const NONE = Object.freeze({ available: false, networks: [], newChat: false, children: [] });
 
 /** The Messenger's answer, reduced to what is known here. */
 function clean(x) {
   if (!x || x.ok === false || x.available !== true || !Array.isArray(x.networks) || !Array.isArray(x.children)) return NONE;
   const networks = x.networks.filter((n) => NETWORKS.includes(n));
   if (!networks.length) return NONE;
-  return { available: true, networks, children: x.children.filter((c) => c && Number.isSafeInteger(c.userId)).map((c) => childOf(c, networks)) };
+  return { available: true, networks, newChat: x.newChat === true, children: x.children.filter((c) => c && Number.isSafeInteger(c.userId)).map((c) => childOf(c, networks)) };
 }
 
 function childOf(c, networks) {
   const flags = (o) => Object.fromEntries(networks.map((n) => [n, !!(o && o[n] === true)]));
-  return { userId: c.userId, networks: flags(c.networks), linked: flags(c.linked) };
+  return { userId: c.userId, networks: flags(c.networks), linked: flags(c.linked), newChat: flags(c.newChat) };
 }
 
 async function ask(gc, parentId, now) {
@@ -65,16 +72,16 @@ async function ask(gc, parentId, now) {
 function face(fam, c) {
   const m = fam.byId.get(c.userId);
   if (!m || m.role !== 'child') return null;
-  return { userId: m.userId, name: m.name, ...members.faceOf(m), networks: c.networks, linked: c.linked };
+  return { userId: m.userId, name: m.name, ...members.faceOf(m), networks: c.networks, linked: c.linked, newChat: c.newChat };
 }
 
 /** GET messengers */
 async function view(gc, r) {
   const manage = r.me.role === 'parent';
-  if (!manage) return { messengers: { available: false, manage, networks: [], children: [] } };
+  if (!manage) return { messengers: { available: false, manage, networks: [], newChat: false, children: [] } };
   const v = await ask(gc, r.me.userId, r.now);
   const children = v.children.map((c) => face(r.fam, c)).filter(Boolean);
-  return { messengers: { available: v.available && children.length > 0, manage, networks: v.networks, children } };
+  return { messengers: { available: v.available && children.length > 0, manage, networks: v.networks, newChat: v.newChat === true, children } };
 }
 
 /** PUT messengers/<childId> */
@@ -83,19 +90,29 @@ async function set(gc, r, childId, body) {
   const id = Number(childId);
   const m = Number.isSafeInteger(id) ? r.fam.byId.get(id) : null;
   if (!m || m.role !== 'child') throw fail('not_found');
-  const nets = body && typeof body === 'object' && body.networks && typeof body.networks === 'object' && !Array.isArray(body.networks) ? body.networks : null;
-  if (!nets || !Object.keys(nets).length) throw fail('invalid');
-  for (const [k, v] of Object.entries(nets)) if (!NETWORKS.includes(k) || typeof v !== 'boolean') throw fail('invalid');
+  const flags = (o) => {
+    if (o === undefined) return null;
+    if (!o || typeof o !== 'object' || Array.isArray(o) || !Object.keys(o).length) throw fail('invalid');
+    for (const [k, v] of Object.entries(o)) if (!NETWORKS.includes(k) || typeof v !== 'boolean') throw fail('invalid');
+    return o;
+  };
+  const b = body && typeof body === 'object' && !Array.isArray(body) ? body : {};
+  const nets = flags(b.networks);
+  // 1.25.0: new chats by number — only with a Messenger that says it knows them
+  const newChat = flags(b.newChat);
+  if (!nets && !newChat) throw fail('invalid');
   if (!(await offered(gc, 'bridge_child_set'))) throw fail('unavailable');
+  if (newChat && !(await ask(gc, r.me.userId, r.now)).newChat) throw fail('unavailable');
   cache.delete(r.me.userId);
+  const payload = { childId: id, ...(nets ? { networks: nets } : {}), ...(newChat ? { newChat } : {}) };
   let x;
-  try { x = await gc.services.call({ plugin: PLUGIN, service: 'bridge_child_set', userId: r.me.userId, payload: { childId: id, networks: nets } }); }
+  try { x = await gc.services.call({ plugin: PLUGIN, service: 'bridge_child_set', userId: r.me.userId, payload }); }
   catch (e) { gc.log.warn('messenger bridges not changed', (e && e.code) || 'error'); throw fail('unavailable'); }
   if (!x || x.ok === false || !x.child) {
     const code = x && typeof x.code === 'string' ? x.code : '';
     throw fail(code === 'forbidden' ? 'parents_only' : (code === 'not_found' || code === 'invalid' ? code : 'unavailable'));
   }
-  const networks = Object.keys(nets);
+  const networks = Object.keys(nets || {});
   const child = face(r.fam, childOf(x.child, NETWORKS));
   const unlinked = {};
   for (const n of networks) if (x.unlinked && typeof x.unlinked[n] === 'boolean') unlinked[n] = x.unlinked[n];

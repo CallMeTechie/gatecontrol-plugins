@@ -15,6 +15,8 @@ const DISAPPEARING_S = [0, 86400, 604800, 2592000];      // off, 1 day, 1 week, 
 const REQUEST_TTL_MIN = [5, 10, 15, 30, 60, 120, 240, 1440];
 const APPROVERS = ['auto', 'parents', 'rights'];          // auto: parents when Familie offers family_roles, else rights
 const GRANT_MAX_DAYS = [1, 2, 3, 7, 14, 30];
+// 1.16.0: a new chat by number — at most this many numbers checked per person and hour (admin: card „Brücken“)
+const NEW_CHAT_PER_HOUR = { min: 1, max: 60 };
 
 const DEFAULTS = Object.freeze({
   retentionDays: 0,
@@ -27,10 +29,13 @@ const DEFAULTS = Object.freeze({
   requestApproversDefault: 'auto', // 1.5.0: who may approve when the request names nobody
   childrenMayRequest: true,        // 1.5.0: Familie's children may send requests
   grantMaxDays: 7,        // 1.5.0: the longest „Gerät teilen“
+  newChatPerHour: 10,     // 1.16.0: numbers checked per person and hour (GateControl itself allows 20)
   defaults: Object.freeze({ readReceipts: true, typing: true, preview: true }),
 });
 
 let cache = null;
+
+const perHour = (v) => Number.isSafeInteger(v) && v >= NEW_CHAT_PER_HOUR.min && v <= NEW_CHAT_PER_HOUR.max;
 
 async function load(gc) {
   if (cache) return cache;
@@ -49,6 +54,7 @@ async function load(gc) {
     requestApproversDefault: APPROVERS.includes(raw.requestApproversDefault) ? raw.requestApproversDefault : DEFAULTS.requestApproversDefault,
     childrenMayRequest: typeof raw.childrenMayRequest === 'boolean' ? raw.childrenMayRequest : DEFAULTS.childrenMayRequest,
     grantMaxDays: GRANT_MAX_DAYS.includes(raw.grantMaxDays) ? raw.grantMaxDays : DEFAULTS.grantMaxDays,
+    newChatPerHour: perHour(raw.newChatPerHour) ? raw.newChatPerHour : DEFAULTS.newChatPerHour,
     defaults: {
       readReceipts: typeof d.readReceipts === 'boolean' ? d.readReceipts : true,
       typing: typeof d.typing === 'boolean' ? d.typing : true,
@@ -74,12 +80,13 @@ async function update(gc, body) {
   if (b.requestApproversDefault !== undefined) { if (!APPROVERS.includes(b.requestApproversDefault)) throw fail('invalid'); next.requestApproversDefault = b.requestApproversDefault; }
   if (b.childrenMayRequest !== undefined) next.childrenMayRequest = bool(b.childrenMayRequest);
   if (b.grantMaxDays !== undefined) { if (!GRANT_MAX_DAYS.includes(b.grantMaxDays)) throw fail('invalid'); next.grantMaxDays = b.grantMaxDays; }
+  if (b.newChatPerHour !== undefined) { if (!perHour(b.newChatPerHour)) throw fail('invalid'); next.newChatPerHour = b.newChatPerHour; }
   if (b.defaults !== undefined) {
     if (!b.defaults || typeof b.defaults !== 'object' || Array.isArray(b.defaults)) throw fail('invalid');
     for (const k of ['readReceipts', 'typing', 'preview']) if (b.defaults[k] !== undefined) next.defaults[k] = bool(b.defaults[k]);
   }
   await store.tx(gc, async () => {
-    for (const k of ['retentionDays', 'allowDisappearing', 'editWindowMin', 'maxVoiceS', 'allowStories', 'allowActions', 'requestTtlMin', 'requestApproversDefault', 'childrenMayRequest', 'grantMaxDays', 'defaults']) {
+    for (const k of ['retentionDays', 'allowDisappearing', 'editWindowMin', 'maxVoiceS', 'allowStories', 'allowActions', 'requestTtlMin', 'requestApproversDefault', 'childrenMayRequest', 'grantMaxDays', 'newChatPerHour', 'defaults']) {
       await store.run(gc, 'INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value', [k, JSON.stringify(next[k])]);
     }
   });
@@ -89,4 +96,4 @@ async function update(gc, body) {
 
 function reset() { cache = null; }
 
-module.exports = { load, update, reset, DEFAULTS, RETENTION_DAYS, EDIT_WINDOW_MIN, VOICE_MAX_S, DISAPPEARING_S, REQUEST_TTL_MIN, APPROVERS, GRANT_MAX_DAYS };
+module.exports = { load, update, reset, DEFAULTS, RETENTION_DAYS, EDIT_WINDOW_MIN, VOICE_MAX_S, DISAPPEARING_S, REQUEST_TTL_MIN, APPROVERS, GRANT_MAX_DAYS, NEW_CHAT_PER_HOUR };
