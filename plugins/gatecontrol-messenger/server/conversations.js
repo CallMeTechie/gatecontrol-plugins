@@ -108,7 +108,9 @@ async function view(ctx, conv, me, members) {
   return {
     id: conv.id,
     kind: conv.kind,
-    title: isGroup || bridged ? titleOf(conv) : (peer && peer.name),
+    // 1.19.0: a bridged direct chat by the person's own address book first, then the bridge's name, then neutrally —
+    // never a phone number (bridgechats.titleFor)
+    title: bridged ? await bridgechats.titleFor(ctx, conv) : (isGroup ? titleOf(conv) : (peer && peer.name)),
     peer: peer ? { ...withPresence(peer), blocked: iBlocked } : null,
     avatarUrl,
     avatarMediaId,

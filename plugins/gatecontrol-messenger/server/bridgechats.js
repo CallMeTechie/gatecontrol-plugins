@@ -37,7 +37,7 @@ const people = require('./people');
 const texts = require('./texts.json');
 const bridgemedia = require('./bridgemedia');
 const scan = require('./scan');
-const { fail, iso } = require('./util');
+const { fail, iso, bridgeName } = require('./util');
 
 const NETWORKS = ['whatsapp'];
 const LABEL = { whatsapp: 'WhatsApp' };
@@ -68,7 +68,6 @@ function t(lang, key, params) {
   return s;
 }
 
-const line = (v, max) => (typeof v === 'string' ? v.replace(/[\0-\x1f\x7f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max) : '');
 const body = (v) => (typeof v === 'string' ? v.replace(/\r\n?/g, '\n').replace(/[\0-\x08\x0b-\x1f\x7f]/g, '').slice(0, 16000) : '');
 
 /** GateControl's refusals → this API's codes. */
@@ -233,7 +232,8 @@ async function ensureConv(c, ev) {
   const chat = ev.chat && typeof ev.chat === 'object' ? ev.chat : {};
   if (!REF_RE.test(String(chat.id || ''))) return null;
   const kind = chat.kind === 'group' ? 'group' : 'direct';
-  const name = line(chat.name, NAME_MAX) || null;
+  // 1.19.0: never a phone number as a name (util.bridgeName)
+  const name = bridgeName(chat.name, NAME_MAX);
   let conv = await convOf(c.gc, ev.userId, ev.network, chat.id);
   if (!conv) {
     const r = await store.run(c.gc, 'INSERT INTO conversations (kind, title_enc, created_by, created_at, updated_at, bridge_net, bridge_ref, bridge_owner) VALUES (?, ?, NULL, ?, ?, ?, ?, ?)',
@@ -246,8 +246,10 @@ async function ensureConv(c, ev) {
   // 1.15.0: the chat's picture (a reference; fetched afterwards, bridgemedia.js)
   await bridgemedia.chatAvatar(c, conv, chat.avatar);
   const old = seal.open(conv.title_enc);
-  if ((name && name !== old) || kind !== conv.kind) {
-    await store.run(c.gc, 'UPDATE conversations SET title_enc = ?, kind = ?, updated_at = ? WHERE id = ?', [name ? seal.seal(name) : conv.title_enc, kind, c.now, conv.id]);
+  // a stored name that is a number (delivered before 1.19.0) goes even when no better one comes
+  const stale = typeof old === 'string' && bridgeName(old, NAME_MAX) !== old;
+  if ((name && name !== old) || kind !== conv.kind || (stale && !name)) {
+    await store.run(c.gc, 'UPDATE conversations SET title_enc = ?, kind = ?, updated_at = ? WHERE id = ?', [name ? seal.seal(name) : (stale ? null : conv.title_enc), kind, c.now, conv.id]);
     conv = await store.one(c.gc, 'SELECT * FROM conversations WHERE id = ?', [conv.id]);
     if (conv.last_msg_id) live.queue(c.box, [ev.userId], 'conversation.update', { conversationId: conv.id, reason: 'title' });
   }
@@ -256,14 +258,16 @@ async function ensureConv(c, ev) {
 
 async function ensureContact(c, ev, who) {
   if (!who || !CONTACT_RE.test(String(who.id || ''))) return null;
-  const name = line(who.name, NAME_MAX) || null;
+  const name = bridgeName(who.name, NAME_MAX);
   const old = await store.one(c.gc, 'SELECT * FROM bridge_contacts WHERE owner_id = ? AND network = ? AND ref = ?', [ev.userId, ev.network, who.id]);
   const avatar = who.avatar === null || bridgemedia.REF_RE.test(String(who.avatar || '')) ? who.avatar : undefined;
   if (!old) {
     const r = await store.run(c.gc, 'INSERT INTO bridge_contacts (owner_id, network, ref, name_enc, updated_at, avatar_ref) VALUES (?, ?, ?, ?, ?, ?)', [ev.userId, ev.network, who.id, name ? seal.seal(name) : null, c.now, avatar || null]);
     return r.lastInsertRowid;
   }
-  if (name && name !== seal.open(old.name_enc)) await store.run(c.gc, 'UPDATE bridge_contacts SET name_enc = ?, updated_at = ? WHERE id = ?', [seal.seal(name), c.now, old.id]);
+  const had = seal.open(old.name_enc);
+  if (name && name !== had) await store.run(c.gc, 'UPDATE bridge_contacts SET name_enc = ?, updated_at = ? WHERE id = ?', [seal.seal(name), c.now, old.id]);
+  else if (!name && typeof had === 'string' && bridgeName(had, NAME_MAX) !== had) await store.run(c.gc, 'UPDATE bridge_contacts SET name_enc = NULL, updated_at = ? WHERE id = ?', [c.now, old.id]);
   // 1.15.0: the contact's picture
   await bridgemedia.contactAvatar(c, old, avatar);
   return old.id;
@@ -359,7 +363,7 @@ async function apply(c, ev, { parked = false } = {}) {
     }
     const row = await store.one(c.gc, 'SELECT * FROM messages WHERE id = ?', [id]);
     live.queue(c.box, users, 'message.new', { conversationId: conv.id, messageId: id, senderId: row.sender_id, clientId: null, kind: row.kind, createdAt: iso(row.created_at), bridge: ev.network });
-    if (!sender.self && !parked) c.box.pushes.push({ bridged: { conv, me, row, text, meta, senderName: sender.system ? LABEL[ev.network] : (line(sender.name, NAME_MAX) || null), contactId, title: seal.open(conv.title_enc) || null } });
+    if (!sender.self && !parked) c.box.pushes.push({ bridged: { conv, me, row, text, meta, senderName: sender.system ? LABEL[ev.network] : bridgeName(sender.name, NAME_MAX), contactId, title: seal.open(conv.title_enc) || null } });
     await unpark(c, conv, ev.id);
     return;
   }
@@ -563,7 +567,8 @@ async function push(gc, job, users, now) {
   const p = (await people.prefsOf(gc, [u])).get(u) || {};
   const lang = p.lang === 'en' ? 'en' : 'de';
   const net = LABEL[conv.bridge_net] || conv.bridge_net;
-  const name = job.senderName || job.title || net;
+  // 1.19.0: a contact without a name (never its number) → „WhatsApp-Kontakt“
+  const name = job.senderName || bridgeName(job.title, NAME_MAX) || titleLabel({ lang }, conv.bridge_net, conv.kind === 'group');
   const ph = job.meta && job.meta.bridge ? job.meta.bridge.placeholder : null;
   let text = typeof job.text === 'string' ? job.text : '';
   if (ph) text = [t(lang, 'bridgechat.placeholder.' + ph), text].filter(Boolean).join(': ');
@@ -747,6 +752,59 @@ async function openChat(ctx, net, chat) {
   return ensureConv({ gc: ctx.gc, now: ctx.now, box: ctx.box }, { userId: ctx.viewer, network: net, chat });
 }
 
+/**
+ * 1.19.0: names stored before — a chat or contact named by its phone number („+49… (WA)“) — are put right once per
+ * start: the suffix goes, a number becomes no name (the view then shows the address book's name or a neutral label).
+ * → { chats, contacts } changed. Never throws.
+ */
+let namesFixed = false;
+async function fixNames(gc) {
+  if (namesFixed) return { chats: 0, contacts: 0 };
+  const out = { chats: 0, contacts: 0 };
+  try {
+    const now = Date.now();
+    for (const r of await store.all(gc, 'SELECT id, title_enc, bridge_owner, last_msg_id FROM conversations WHERE bridge_net IS NOT NULL AND title_enc IS NOT NULL')) {
+      const old = seal.open(r.title_enc);
+      if (typeof old !== 'string') continue;
+      const n = bridgeName(old, NAME_MAX);
+      if (n === old) continue;
+      await store.run(gc, 'UPDATE conversations SET title_enc = ?, updated_at = ? WHERE id = ?', [n ? seal.seal(n) : null, now, r.id]);
+      out.chats++;
+      if (r.last_msg_id) {
+        const box = live.outbox();
+        live.queue(box, [r.bridge_owner], 'conversation.update', { conversationId: r.id, reason: 'title' });
+        await live.flush(gc, box);
+      }
+    }
+    for (const r of await store.all(gc, 'SELECT id, name_enc FROM bridge_contacts WHERE name_enc IS NOT NULL')) {
+      const old = seal.open(r.name_enc);
+      if (typeof old !== 'string') continue;
+      const n = bridgeName(old, NAME_MAX);
+      if (n === old) continue;
+      await store.run(gc, 'UPDATE bridge_contacts SET name_enc = ?, updated_at = ? WHERE id = ?', [n ? seal.seal(n) : null, now, r.id]);
+      out.contacts++;
+    }
+    namesFixed = true;
+    if (out.chats || out.contacts) await log.add(gc, 'bridge_names_fixed', `chats ${out.chats}, contacts ${out.contacts}`, now);
+  } catch (e) { gc.log.warn('bridge names not fixed', (e && (e.code || e.message)) || 'error'); }
+  return out;
+}
+
+/** 1.19.0: the title of a bridged chat as the viewer sees it — address book, the bridge's name, a neutral label. */
+async function titleFor(ctx, conv) {
+  const own = conv.kind === 'direct' ? await require('./contactchat').bookNameOf(ctx, conv) : null;
+  if (own) return own;
+  const stored = seal.open(conv.title_enc);
+  const n = typeof stored === 'string' ? bridgeName(stored, NAME_MAX) : null;
+  if (n) return n;
+  return titleLabel(ctx, conv.bridge_net, conv.kind === 'group');
+}
+
+/** „WhatsApp-Kontakt“ / „WhatsApp-Gruppe“ — a chat or contact without a name. */
+function titleLabel(ctx, net, group = false) {
+  return t(ctx && ctx.lang === 'en' ? 'en' : 'de', group ? 'bridgechat.unknown_group' : 'bridgechat.unknown_contact', { network: LABEL[net] || net });
+}
+
 /** Has this person a bridged chat with a message? (GET me: features.bridge_chats) */
 async function hasChats(gc, userId) {
   return !!(await store.one(gc, 'SELECT 1 AS x FROM conversations WHERE bridge_owner = ? AND bridge_net IS NOT NULL AND last_msg_id IS NOT NULL LIMIT 1', [userId]));
@@ -754,6 +812,6 @@ async function hasChats(gc, userId) {
 
 module.exports = {
   api, isBridged, via, convInfo, marks, marksFor, decorate, apply, applyEphemeral, pump, sweep, push, gate, checkBody, sendOut, resend, editOut, deleteOut, reactOut, readOut, typingOut,
-  refreshLinks, stateFor, hasChats, openChat, mapped, NETWORKS, LABEL, SUPPORTS, PLACEHOLDERS,
-  _reset: () => { linkChecked.clear(); pumping = Promise.resolve(); },
+  refreshLinks, stateFor, hasChats, openChat, mapped, fixNames, titleFor, titleLabel, NETWORKS, LABEL, SUPPORTS, PLACEHOLDERS,
+  _reset: () => { linkChecked.clear(); pumping = Promise.resolve(); namesFixed = false; },
 };

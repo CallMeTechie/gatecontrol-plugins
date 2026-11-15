@@ -158,4 +158,18 @@ function parseJson(s, fallback) {
   try { const v = JSON.parse(s); return v == null ? fallback : v; } catch { return fallback; }
 }
 
-module.exports = { STATUS, fail, isKnown, posInt, line, multiline, text, optText, bool, intIn, numIn, iso, parseIso, userIds, parseJson };
+/**
+ * 1.19.0: a name a bridge gave a chat or a contact → the name, or null. mautrix-whatsapp names a contact it knows no
+ * name of by the phone number („+49… (WA)“, also redacted with „∙“); GateControl (names.js) drops that since the
+ * first real test — this is the same check for what older servers delivered and what is stored already.
+ */
+const NUMBER_RE = /^[\s+()\-./\u2219\u2022·0-9]+$/;
+function bridgeName(v, max = 120) {
+  let n = typeof v === 'string' ? v.replace(/[\0-\x1f\x7f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max * 2) : '';
+  if (n.endsWith(' (WA)')) n = n.slice(0, -5).trim();
+  const digits = (n.match(/[0-9]/g) || []).length;
+  if (!n || (NUMBER_RE.test(n) && (digits >= 5 || (digits >= 1 && /[\u2219\u2022]/.test(n)))) || n.toLowerCase() === 'unknown user') return null;
+  return n.slice(0, max);
+}
+
+module.exports = { STATUS, fail, isKnown, posInt, line, multiline, text, optText, bool, intIn, numIn, iso, parseIso, userIds, parseJson, bridgeName };

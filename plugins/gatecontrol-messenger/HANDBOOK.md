@@ -1,4 +1,4 @@
-<!-- version: 1.18.0 -->
+<!-- version: 1.19.0 -->
 # Messenger
 
 ## What the plugin does
@@ -70,6 +70,11 @@ It only comes when linking and appears at night. When “Load older history” i
 
 **Old messages are gone.**
 The administrator set a retention, or the chat is a disappearing chat.
+
+## New in 1.19.0
+
+- **Chats over WhatsApp are named like the contact, never like their number.** When WhatsApp knows no name yet (e.g. right after linking), the chat is named after the contact in your address book (Mail), otherwise “WhatsApp contact” – until the contact shows their name. Chats and contacts that had only a phone number as their name are put right once at start (log: “… put right”). The number does not leave your server for it.
+- **No more endless “loading …”:** when a picture, video or file from WhatsApp cannot be fetched after a few tries, the line says “did not arrive” with **“Try again”**. When only the bridge is not reachable right now, the file keeps waiting. The log names the reason (“Bridge: a file could not be fetched”) without names or numbers.
 
 ## New in 1.18.0
 

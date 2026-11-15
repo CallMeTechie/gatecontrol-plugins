@@ -617,6 +617,10 @@
       if (ph.state === 'on_request') {
         b.appendChild(el('button', { type: 'button', class: 'ms-linkbtn', text: T('bc.ph_fetch'), on: { click: function (e) { e.stopPropagation(); fetchOld(m, e.currentTarget); } } }));
       }
+      // 1.19.0: a file that did not arrive (not for good) — asked for once more
+      if (ph.state === 'failed' && ph.retry === true) {
+        b.appendChild(el('button', { type: 'button', class: 'ms-linkbtn', text: T('bc.ph_retry'), on: { click: function (e) { e.stopPropagation(); fetchOld(m, e.currentTarget); } } }));
+      }
       if (ph.kind === 'location' && ph.geo && validPos(ph.geo)) {
         // the existing location view (map, coordinates, OpenStreetMap)
         b.appendChild(el('button', { type: 'button', class: 'ms-linkbtn', text: T('bc.ph_map'), on: { click: function (e) { e.stopPropagation(); showLocation({ lat: ph.geo.lat, lon: ph.geo.lon, label: m.text || null }); } } }));

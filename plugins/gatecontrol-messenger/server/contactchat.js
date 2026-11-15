@@ -26,7 +26,7 @@ const store = require('./store');
 const seal = require('./seal');
 const log = require('./log');
 const people = require('./people');
-const { fail, posInt } = require('./util');
+const { fail, posInt, bridgeName } = require('./util');
 
 const MAIL = 'gatecontrol-mail';
 const MAIL_SERVICE = 'contacts_phones';
@@ -228,7 +228,8 @@ async function list(ctx, query) {
       seen.add(key);
       rows.push({
         ref: REF_RE.test(String(c.ref || '')) ? c.ref : null,
-        name: entry ? entry.name || c.name || '' : String(c.name || ''),
+        // 1.19.0: never a number as a name (a bridge names a contact without a name by it)
+        name: (entry && entry.name) || bridgeName(c.name) || require('./bridgechats').titleLabel(ctx, net),
         ...(await pictureFor(ctx, net, c.avatar || null)),
         conversationId: await convOfRef(ctx, net, c.chatId),
         alsoInAddressBook: !!entry,
@@ -274,4 +275,59 @@ async function route(ctx, req, seg) {
   return list(ctx, req.query);
 }
 
-module.exports = { route, list, api, feature, bookContact, isNotOn, rememberNotOn, forget, purge, numberLike, KEY_RE, REF_RE, NOT_ON_MS, _reset: () => book.clear() };
+// ─── names of chats from the address book (1.19.0) ─────────────────────────
+//
+// A direct chat over a bridge is named like in the messenger's own app: by the person's OWN address book (Mail) when a
+// number of a contact there is that chat's contact at the bridge (gc.bridges.matchNumbers — compared with the bridge's
+// list, no question to WhatsApp, nothing counted; the number stays between Mail and GateControl), else by the name the
+// bridge knows (the contact's public name), else neutrally. Asked inside a request of the person, kept BOOK_NAMES_MS
+// per person and network in memory only.
+const BOOK_NAMES_MS = 10 * 60000;
+const BOOK_NAMES_RETRY_MS = 60000;
+const bookNamesKept = new Map(); // `${viewer}|${net}` → { at, names: Map(chat reference → name) }
+
+/** → Map(chat reference of the bridge → the address book's name) for the viewer; empty when it cannot be known. */
+async function bookNames(ctx, net, ref) {
+  const k = `${ctx.viewer}|${net}`;
+  const have = bookNamesKept.get(k);
+  // a chat not in the list (new since): asked again, at most once a minute
+  const fresh = have && ctx.now >= have.at && (ctx.now - have.at < BOOK_NAMES_MS) && (have.names.has(ref) || ctx.now - have.at < BOOK_NAMES_RETRY_MS);
+  if (fresh) return have.names;
+  const names = new Map();
+  const b = api(ctx.gc);
+  let known = !b;
+  if (b) {
+    try {
+      const ab = await addressBook(ctx, '');
+      const nums = [];
+      const owner = [];
+      for (const x of ab.state === 'ok' ? ab.items : []) {
+        const name = typeof x.name === 'string' ? x.name.replace(/[\0-\x1f\x7f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 120) : '';
+        if (!name) continue;
+        for (const p of Array.isArray(x.phones) ? x.phones : []) if (p && typeof p.e164 === 'string' && nums.length < 2000) { nums.push(p.e164); owner.push(name); }
+      }
+      if (nums.length) {
+        const m = await b.matchNumbers(ctx.viewer, net, nums);
+        for (const hit of (m && Array.isArray(m.matches) ? m.matches : [])) {
+          if (typeof hit.chatId === 'string' && hit.chatId && owner[hit.index] && !names.has(hit.chatId)) names.set(hit.chatId, owner[hit.index]);
+        }
+      }
+      known = true;
+    } catch { known = false; }
+  }
+  // not known now (WhatsApp away, no request of the person): asked again at the next view, nothing kept
+  if (known) {
+    for (const [x, v] of bookNamesKept) if (ctx.now - v.at >= BOOK_NAMES_MS) bookNamesKept.delete(x);
+    if (bookNamesKept.size > 500) bookNamesKept.clear();
+    bookNamesKept.set(k, { at: ctx.now, names });
+  }
+  return names;
+}
+
+/** The address book's name of a bridged direct chat (null: none). Never throws. */
+async function bookNameOf(ctx, conv) {
+  if (!conv || !conv.bridge_net || conv.kind !== 'direct' || conv.bridge_owner !== ctx.viewer || !(await mailOffers(ctx.gc))) return null;
+  try { return (await bookNames(ctx, conv.bridge_net, conv.bridge_ref)).get(conv.bridge_ref) || null; } catch { return null; }
+}
+
+module.exports = { route, list, api, feature, bookContact, isNotOn, rememberNotOn, forget, purge, numberLike, bookNameOf, KEY_RE, REF_RE, NOT_ON_MS, _reset: () => { book.clear(); bookNamesKept.clear(); } };
