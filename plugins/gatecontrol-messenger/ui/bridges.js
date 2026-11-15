@@ -29,7 +29,7 @@
     if (!d || isNaN(d.getTime())) return '';
     return d.toLocaleDateString(M.LOCALE, { day: '2-digit', month: '2-digit', year: 'numeric' });
   }
-  function mark(id) { return el('span', { class: 'ms-br-mark', 'aria-hidden': 'true', text: T('admin.br_mark_' + id) }); }
+  function mark(id) { return M.netLogo(id, null, 18, 'ms-br-mark'); }
   function name(id) { return T('admin.br_net_' + id); }
   function pill(text, tone) { return el('span', { class: 'ms-pill' + (tone ? ' is-' + tone : ''), text: text }); }
   function note(iconName, text, cls) { return el('p', { class: 'ms-note' + (cls ? ' ' + cls : '') }, [M.icon(iconName, 14), el('span', { text: text })]); }

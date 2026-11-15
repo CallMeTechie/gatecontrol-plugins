@@ -141,8 +141,12 @@ async function view(ctx, conv, me, members) {
     pinned: await require('./tools').pinnedFor(ctx, conv, me),
     nextEvent: await require('./eventmsg').nextEvent(ctx, me),
     can: bridged ? {
-      // only text crosses the bridge, and only while the account is linked and the bridge runs
-      send: bridge.state === 'ok' && !bridge.closed, pin: true, editInfo: false, manageMembers: false, leave: false, setDisappearing: false,
+      // only text crosses the bridge, and only while the account is linked and the bridge runs; 1.20.0: never into a
+      // channel or a group where only admins write — sendReason says why (channel | admins_only), react whether the
+      // person may react (in a channel: their own, until the bridge refused one)
+      send: bridge.state === 'ok' && !bridge.closed && !bridge.readOnly, pin: true, editInfo: false, manageMembers: false, leave: false, setDisappearing: false,
+      sendReason: conv.bridge_channel ? 'channel' : (conv.bridge_read_only ? 'admins_only' : null),
+      react: bridge.state === 'ok' && !bridge.closed && (!conv.bridge_channel || bridge.reactions === 'own'),
     } : {
       send: !conv.readonly && (isGroup || !!(peer && !peer.gone && !iBlocked)),
       pin: !conv.readonly && (!managed || isAdmin),
@@ -154,8 +158,11 @@ async function view(ctx, conv, me, members) {
   };
 }
 
-/** GET conversations?since=<ISO> → { conversations, removed, serverTime } */
-async function list(ctx, query) {
+/**
+ * GET conversations?since=<ISO> → { conversations, removed, serverTime } — 1.20.0: with ?channels=1 without the channels
+ * and with `channels` { count, unread } (bridgechannels.summary); `opts.channels` → the channels only (GET channels).
+ */
+async function list(ctx, query, opts = {}) {
   const q = query || {};
   const since = q.since == null || q.since === '' ? null : parseIso(String(q.since));
   if (q.since != null && q.since !== '' && since == null) throw fail('invalid');
@@ -166,6 +173,8 @@ async function list(ctx, query) {
     if (!conv) continue;
     // 1.14.0: bridged chats only for clients that know them, and only once something was said in them
     if (conv.bridge_net && (!ctx.bridged || !conv.last_msg_id)) continue;
+    // 1.20.0: channels on their own page for a client that knows them
+    if (opts.channels ? !conv.bridge_channel : (ctx.channels && conv.bridge_channel)) continue;
     // a direct chat without a message is shown to the person who opened it only
     if (conv.kind === 'direct' && !conv.last_msg_id && conv.created_by !== ctx.viewer) continue;
     if (since != null && conv.updated_at <= since && (me.updated_at || 0) <= since && me.joined_at <= since) continue;
@@ -182,6 +191,7 @@ async function list(ctx, query) {
   const removed = since == null ? [] : (await store.all(ctx.gc, 'SELECT conv_id FROM members WHERE user_id = ? AND left_at IS NOT NULL AND left_at > ?', [ctx.viewer, since])).map((r) => r.conv_id);
   // the apps got the newest message of each conversation: delivered
   for (const x of out) if (x.conv.last_msg_id) await messages.markDelivered(ctx, x.conv, x.me, x.members, x.conv.last_msg_id);
+  if (ctx.channels && ctx.bridged && !opts.channels) return { conversations: views, removed, channels: await require('./bridgechannels').summary(ctx), serverTime: iso(ctx.now) };
   return { conversations: views, removed, serverTime: iso(ctx.now) };
 }
 

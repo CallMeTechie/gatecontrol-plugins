@@ -30,7 +30,12 @@
    starts opens at once, with a line that says over which service and with which number it runs.
    1.18.0 (GET me features.bridge_contacts): „Neuer Chat“ › Person shows three sections — GateControl, WhatsApp, „Aus
    deinem Adressbuch“ — under one search field (ui/ncontacts.js, window.MSContacts); „Nicht dabei? Nummer eingeben“ at the
-   bottom opens the dialog of 1.16.0. At phone width a sheet from the bottom. */
+   bottom opens the dialog of 1.16.0. At phone width a sheet from the bottom.
+   1.20.0 (GET me features.bridge_channels): channels the person follows at the other messenger are not in the list — an
+   entry „Kanäle“ above it opens their page (GET channels); a channel is read only (a bar instead of the composer), muted
+   until its bell is turned on, its posts are bubbles with the link preview; a group where only admins write says so
+   instead of the composer. Texts show their format (`marks`) and clickable addresses in every chat (M.richText, built
+   from text nodes and elements — never HTML of anybody else). The messenger's logo instead of the letters „WA“. */
 (function () {
   'use strict';
   var M = window.MS;
@@ -51,6 +56,8 @@
     net: null, typingExt: {}, bridgeSeen: {},
     // 1.16.0: chats just started by number (conversation id → { number, name }) — this page only, never kept
     started: {},
+    // 1.20.0: chans — the channels (GET channels); chanSum — { count, unread } of GET conversations; chanView — the page
+    chans: [], chanSum: null, chanView: false,
   };
   var R = window.MSRich;
 
@@ -63,7 +70,13 @@
   }
 
   // ── helpers ──
-  function conv(id) { for (var i = 0; i < S.convs.length; i++) if (S.convs[i].id === id) return S.convs[i]; return null; }
+  function conv(id) {
+    for (var i = 0; i < S.convs.length; i++) if (S.convs[i].id === id) return S.convs[i];
+    for (var j = 0; j < S.chans.length; j++) if (S.chans[j].id === id) return S.chans[j];
+    return null;
+  }
+  /** 1.20.0: a channel (its own page, read only). */
+  function isChan(c) { return !!(c && c.bridge && c.bridge.channel); }
   function member(c, uid) {
     if (!c) return null;
     for (var i = 0; i < c.members.length; i++) if (c.members[i].userId === uid) return c.members[i];
@@ -96,7 +109,8 @@
     var list = mt && mt[kind];
     return !list || list.indexOf(String(type || '').split(';')[0]) >= 0;
   }
-  function netMark(c) { return el('span', { class: 'ms-net ms-net-' + c.bridge.network, title: T('bc.via', { network: c.bridge.label }), 'aria-label': T('bc.via', { network: c.bridge.label }), text: c.bridge.network === 'whatsapp' ? 'WA' : c.bridge.label.slice(0, 2).toUpperCase() }); }
+  // 1.20.0: the messenger's logo instead of the letters „WA“
+  function netMark(c) { return M.netLogo(c.bridge.network, T('bc.via', { network: c.bridge.label }), 11); }
   function convAvatar(c, size) {
     // 1.15.0: the picture of the contact / the group, once fetched from the bridge (avatarUrl), else initials or the group icon
     if (c.bridge) return el('span', { class: 'ms-av-wrap' }, [c.avatarUrl ? M.avatar({ name: convTitle(c), avatarUrl: c.avatarUrl }, size) : (c.kind === 'group' ? M.avatar({ icon: 'group' }, size) : M.avatar({ name: convTitle(c) }, size)), netMark(c)]);
@@ -164,20 +178,30 @@
     var s = summary(m, c);
     if (m.kind === 'system') return s;
     if (m.mine) return T('portal.you') + ': ' + s;
-    if (c.kind === 'group') return senderName(c, m) + ': ' + s;
+    if (c.kind === 'group' && !isChan(c)) return senderName(c, m) + ': ' + s;
     return s;
   }
-  function sortConvs() {
-    S.convs.sort(function (a, b) {
-      var ta = a.lastMessage ? a.lastMessage.createdAt : a.createdAt;
-      var tb = b.lastMessage ? b.lastMessage.createdAt : b.createdAt;
-      return ta < tb ? 1 : ta > tb ? -1 : b.id - a.id;
-    });
+  function byLatest(a, b) {
+    var ta = a.lastMessage ? a.lastMessage.createdAt : a.createdAt;
+    var tb = b.lastMessage ? b.lastMessage.createdAt : b.createdAt;
+    return ta < tb ? 1 : ta > tb ? -1 : b.id - a.id;
+  }
+  function sortConvs() { S.convs.sort(byLatest); S.chans.sort(byLatest); }
+  function chanSummary() {
+    var n = 0;
+    S.chans.forEach(function (x) { n += x.unread || 0; });
+    S.chanSum = { count: S.chans.length, unread: n };
   }
   function upsert(c) {
-    for (var i = 0; i < S.convs.length; i++) if (S.convs[i].id === c.id) { S.convs[i] = c; sortConvs(); return; }
-    S.convs.push(c);
+    // 1.20.0: a channel lives on its own page
+    var into = isChan(c) ? S.chans : S.convs;
+    var other = isChan(c) ? 'convs' : 'chans';
+    S[other] = S[other].filter(function (x) { return x.id !== c.id; });
+    var found = false;
+    for (var i = 0; i < into.length; i++) if (into[i].id === c.id) { into[i] = c; found = true; }
+    if (!found) into.push(c);
     sortConvs();
+    if (isChan(c)) chanSummary();
   }
   function withinWindow(m) {
     var w = (S.limits.editWindowS || 0) * 1000;
@@ -259,9 +283,44 @@
     box.appendChild(el('button', { type: 'button', class: 'ms-chip is-edit', 'aria-label': T('lists.manage'), title: T('lists.manage'), on: { click: function () { R.listsDialog(); } } }, [M.icon('pen', 12)]));
     return box;
   }
+  /** 1.20.0: the entry „Kanäle“ above the list — a grey dot while a channel has a new post. */
+  function chanEntry() {
+    var sum = S.chanSum || { count: 0, unread: 0 };
+    var sub = sum.unread ? (sum.unread === 1 ? T('ch.entry_one') : T('ch.entry_new', { n: sum.unread > 99 ? '99+' : sum.unread })) : T('ch.entry_none');
+    var b = el('button', { type: 'button', class: 'ms-row ms-row-chan', role: 'listitem', 'aria-label': T('ch.entry') + (sum.unread ? ', ' + T('ch.entry_aria') : ''),
+      on: { click: function () { S.chanView = true; S.q = ''; $('#ms-q').value = ''; renderList(); loadChannels(); } } });
+    b.appendChild(el('span', { class: 'ms-av ms-av-chan', 'aria-hidden': 'true', style: 'width:46px;height:46px' }, [M.icon('tv', 22)]));
+    b.appendChild(el('span', { class: 'ms-row-tx' }, [
+      el('span', { class: 'ms-row-top' }, [el('span', { class: 'ms-row-name', text: T('ch.entry') })]),
+      el('span', { class: 'ms-row-bottom' }, [el('span', { class: 'ms-row-pv', text: sub }), sum.unread ? el('span', { class: 'ms-dot', 'aria-hidden': 'true' }) : null]),
+    ]));
+    return b;
+  }
+  /** 1.20.0: the page „Kanäle“ in the list pane. */
+  function renderChannels(rows, q) {
+    var nets = {};
+    S.chans.forEach(function (c) { nets[c.bridge.network] = c.bridge.label; });
+    rows.appendChild(el('div', { class: 'ms-chan-head' }, [
+      el('button', { type: 'button', class: 'ms-ib ms-ib-flat', 'aria-label': T('common.back'), title: T('common.back'), on: { click: function () { S.chanView = false; renderList(); } } }, [M.icon('back', 18)]),
+      el('span', { class: 'ms-chan-ht' }, [el('b', { text: T('ch.title') }), Object.keys(nets).length ? el('small', { text: Object.keys(nets).map(function (k) { return nets[k]; }).join(' · ') }) : null]),
+    ]));
+    var list = S.chans.filter(function (c) { return !q || convTitle(c).toLowerCase().indexOf(q) >= 0 || preview(c).toLowerCase().indexOf(q) >= 0; });
+    list.forEach(function (c) { rows.appendChild(row(c)); });
+    if (list.length && !q) rows.appendChild(el('p', { class: 'ms-chan-hint', text: T('ch.page_hint') }));
+    var empty = $('#ms-list-empty');
+    empty.hidden = list.length > 0;
+    empty.textContent = S.chans.length ? T('portal.no_match') : T('ch.empty_list');
+  }
+  function loadChannels() {
+    if (!feature('bridge_channels')) return Promise.resolve();
+    return M.api('GET', 'channels').then(function (r) { S.chans = r.channels || []; sortConvs(); chanSummary(); renderList(); }).catch(function () {});
+  }
   function renderList() {
     var rows = M.clear($('#ms-rows'));
     var q = S.q.trim().toLowerCase();
+    if (S.chanView) { renderChannels(rows, q); return; }
+    // 1.20.0: the entry „Kanäle“ above everything, while the person follows a channel
+    if (!q && S.chanSum && S.chanSum.count > 0 && feature('bridge_channels')) rows.appendChild(chanEntry());
     var tools = feature('msg_tools');
     var lst = S.listFilter ? S.lists.filter(function (l) { return l.id === S.listFilter; })[0] : null;
     var list = S.convs.filter(function (c) {
@@ -297,6 +356,7 @@
   function headSub(c) {
     var typ = typingText(c);
     if (typ) return { text: typ, typing: true };
+    if (isChan(c)) return { text: T('ch.sub', { network: c.bridge.label }), typing: false };
     if (c.bridge) return { text: T('bc.via', { network: c.bridge.label }), typing: false };
     if (c.kind === 'direct') {
       if (c.peer && c.peer.gone) return { text: T('portal.gone_hint'), typing: false };
@@ -320,6 +380,11 @@
     h.appendChild(el('button', { type: 'button', class: 'ms-head-tx', 'aria-label': T('info.open'), on: { click: toggleInfo } }, [
       el('b', { text: convTitle(c) }), el('span', { class: 'ms-head-sub' + (sub.typing ? ' ms-typing' : ''), text: sub.text }),
     ]));
+    // 1.20.0: a channel's bell — struck through while it sends no pushes (the default)
+    if (isChan(c)) {
+      var bell = c.muted ? T('ch.bell_on') : T('ch.bell_off');
+      h.appendChild(el('button', { type: 'button', class: 'ms-ib', 'aria-label': bell, title: bell, 'aria-pressed': c.muted ? 'false' : 'true', on: { click: function () { patchConv(c, c.muted ? { notify: 'all', mutedUntil: null } : { notify: 'none', mutedUntil: null }); } } }, [M.icon(c.muted ? 'bellOff' : 'bell', 18)]));
+    }
     h.appendChild(el('button', { type: 'button', class: 'ms-ib', 'aria-label': T('portal.search_in_chat'), title: T('portal.search_in_chat'), on: { click: toggleSearch } }, [M.icon('search', 18)]));
     h.appendChild(el('button', { type: 'button', class: 'ms-ib', 'aria-label': T('info.title'), title: T('info.title'), 'aria-pressed': S.infoOpen ? 'true' : 'false', on: { click: toggleInfo } }, [M.icon('info', 18)]));
     if (refs.bridge) renderBridgeBar();
@@ -367,6 +432,14 @@
     var n = { network: c.bridge.label };
     var relink = function (label) { return window.MSBridges ? el('button', { type: 'button', class: 'btn btn-sm', text: label, on: { click: function () { window.MSBridges.open(); } } }) : null; };
     var st = c.bridge.state;
+    // 1.20.0: a channel — read only, muted until its bell is on; when the bridge is away new posts come later
+    if (isChan(c)) {
+      if (st === 'unreachable') { bar.appendChild(el('div', { class: 'ms-bridge-state is-warn', role: 'status' }, [M.icon('info', 15), el('span', { text: T('ch.down', n) })])); return; }
+      if (st !== 'ok' && st !== 'off') { bar.hidden = true; }
+      else bar.appendChild(el('div', { class: 'ms-bridge-strip ms-chan-bar' }, [M.icon('info', 13), el('span', { text: T('ch.bar', n) + (c.muted ? ' ' + T('ch.bar_muted') : '') }),
+        c.muted ? el('button', { type: 'button', class: 'ms-linkbtn', text: T('ch.turn_on'), on: { click: function () { patchConv(c, { notify: 'all', mutedUntil: null }); } } }) : null]));
+      return;
+    }
     if (c.bridge.closed) bar.appendChild(el('div', { class: 'ms-bridge-state', role: 'status' }, [M.icon('info', 15), el('span', { text: T('bc.closed', n) })]));
     else if (st === 'unreachable') bar.appendChild(el('div', { class: 'ms-bridge-state is-warn', role: 'status' }, [M.icon('info', 15), el('span', { text: T('bc.state_unreachable', n) })]));
     else if (st === 'logged_out') bar.appendChild(el('div', { class: 'ms-bridge-state is-warn', role: 'status' }, [M.icon('info', 15), el('span', { text: T('bc.state_logged_out', n) }), relink(T('br.relink'))]));
@@ -562,7 +635,7 @@
   }
   function bubble(m, c, cont) {
     var wrap = el('div', { class: 'ms-msg' + (m.mine ? ' is-out' : '') + (cont ? ' is-cont' : ''), 'data-id': String(m.id) });
-    if (c.kind === 'group' && !m.mine && !cont) {
+    if (c.kind === 'group' && !m.mine && !cont && !isChan(c)) {
       var mb = member(c, m.senderId);
       var s = el('div', { class: 'ms-sender', text: senderName(c, m) });
       if (mb && mb.colorHex) s.style.setProperty('--c', M.safeColor(mb.colorHex));
@@ -578,11 +651,14 @@
     }
     if (m.replyTo) b.appendChild(quoteEl(m.replyTo, c));
     if (m.replyStory && R) b.appendChild(R.replyStoryEl(m.replyStory, c));
+    // 1.20.0: the link preview on top of the bubble (a text of a bridged chat)
+    var lp = m.preview && m.kind === 'text' ? previewEl(m.preview) : null;
+    if (lp) b.appendChild(lp);
     var rich = R ? R.body(m, c) : null;
     if (m.undecryptable) b.appendChild(el('i', { class: 'ms-muted', text: T('msg.undecryptable') }));
     if (scanHeld(m) && (m.kind === 'image' || m.kind === 'voice' || m.kind === 'file')) {
       b.appendChild(heldEl(m));
-      if (m.text) b.appendChild(el('div', { class: 'ms-cap', text: m.text }));
+      if (m.text) b.appendChild(capEl(m));
     } else if (m.kind === 'image') {
       b.classList.add('is-media');
       var src = m.media && (m.media.thumbUrl || m.media.url);
@@ -592,13 +668,13 @@
         src ? el('img', { src: src, alt: m.text || T('kind.image'), loading: 'lazy', style: w && h ? 'aspect-ratio:' + w + '/' + h + ';width:' + Math.min(320, w) + 'px' : null }) : el('span', { class: 'ms-muted', text: T('msg.media_unavailable') }),
       ]);
       b.appendChild(img);
-      if (m.text) b.appendChild(el('div', { class: 'ms-cap', text: m.text }));
+      if (m.text) b.appendChild(capEl(m));
     } else if (m.kind === 'voice') {
       b.appendChild(voiceEl(m));
     } else if (m.kind === 'file') {
       if (isVideoMsg(m) && m.media.url) b.classList.add('is-media');
       b.appendChild(fileEl(m));
-      if (m.text) b.appendChild(el('div', { class: 'ms-cap', text: m.text }));
+      if (m.text) b.appendChild(capEl(m));
     } else if (m.kind === 'location') {
       b.appendChild(locationEl(m));
     } else if (rich) {
@@ -625,9 +701,10 @@
         // the existing location view (map, coordinates, OpenStreetMap)
         b.appendChild(el('button', { type: 'button', class: 'ms-linkbtn', text: T('bc.ph_map'), on: { click: function (e) { e.stopPropagation(); showLocation({ lat: ph.geo.lat, lon: ph.geo.lon, label: m.text || null }); } } }));
       }
-      if (m.text) b.appendChild(el('div', { class: 'ms-cap', text: m.text }));
+      if (m.text) b.appendChild(capEl(m));
     } else if (m.text) {
-      b.appendChild(document.createTextNode(m.text));
+      // 1.20.0: the format of the text and clickable addresses (every chat)
+      b.appendChild(M.richText(m.text, m.marks));
     }
     if (m.mine && m.bridge && m.bridge.state === 'failed') {
       b.appendChild(el('div', { class: 'ms-failed' }, [el('span', { text: T('bc.failed') + ' ' + bridgeReason(m.bridge.reason) }),
@@ -639,6 +716,8 @@
     wrap.appendChild(b);
     var rx = reactionsEl(m);
     if (rx) wrap.appendChild(rx);
+    // 1.20.0: in a channel only the person's own reaction shows — said under it
+    if (rx && isChan(c) && (m.reactions || []).some(function (r) { return r.userIds.indexOf(S.me.user.id) >= 0; })) wrap.appendChild(el('div', { class: 'ms-chan-note' }, [M.icon('info', 12), el('span', { text: T('ch.reactions', { network: c.bridge.label }) })]));
     if (!m.pending) {
       wrap.appendChild(el('div', { class: 'ms-acts' }, [
         c.can.send ? el('button', { type: 'button', class: 'ms-ib', 'aria-label': T('msg.reply'), title: T('msg.reply'), on: { click: function (e) { e.stopPropagation(); startReply(m); } } }, [M.icon('reply', 15)]) : null,
@@ -648,6 +727,22 @@
       b.addEventListener('click', function (e) { if (narrow() && !(e.target.closest && e.target.closest('button,audio,video'))) openMenu(m, wrap); });
     }
     return wrap;
+  }
+  /** 1.20.0: a caption with its format and clickable addresses. */
+  function capEl(m) { var d = el('div', { class: 'ms-cap' }); d.appendChild(M.richText(m.text, m.marks)); return d; }
+  /** 1.20.0: a link preview — picture, title, description, site; opens the address in a new tab. */
+  function previewEl(p) {
+    var href = null;
+    try { var u = new URL(p.url); if (u.protocol === 'http:' || u.protocol === 'https:') href = u.href; } catch (e) { href = null; }
+    if (!href) return null;
+    var im = p.image;
+    var pic = null;
+    if (im && im.url) pic = el('img', { src: im.url, alt: '', loading: 'lazy', style: im.w && im.h ? 'aspect-ratio:' + im.w + '/' + im.h : null });
+    else if (im && im.state === 'loading') pic = el('span', { class: 'ms-lp-wait' }, [M.icon('image', 16), el('span', { text: T('ch.pic_loading') })]);
+    return el('a', { class: 'ms-lp', href: href, target: '_blank', rel: 'noopener noreferrer nofollow', title: T('msg.open_link'), on: { click: function (e) { e.stopPropagation(); } } }, [
+      pic ? el('span', { class: 'ms-lp-pic' }, [pic]) : null,
+      el('span', { class: 'ms-lp-tx' }, [p.title ? el('b', { text: p.title }) : null, p.description ? el('span', { text: p.description }) : null, el('small', { text: p.site || new URL(href).hostname })]),
+    ]);
   }
   function bridgeReason(r) {
     var k = 'bc.reason.' + (r || 'bridge_error');
@@ -684,7 +779,8 @@
     var started = c.bridge && S.started[c.id];
     // 1.18.0: started with a WhatsApp contact (no number known here) or a number of the address book
     var firstKey = started && started.kind === 'contact' ? 'nc.first_line_contact' : (started && started.kind === 'book' ? 'nc.first_line_book' : 'nc.first_line');
-    if (!st.list.length && !st.hasMore) box.appendChild(el('div', { class: 'ms-sys', text: started ? T(firstKey, { network: c.bridge.label, number: started.number || '', name: started.name || convTitle(c) }) : (c.kind === 'group' ? T('portal.group_new') : T('portal.chat_empty')) }));
+    if (!st.list.length && !st.hasMore && isChan(c)) box.appendChild(el('div', { class: 'ms-sys', text: T('ch.empty') }));
+    else if (!st.list.length && !st.hasMore) box.appendChild(el('div', { class: 'ms-sys', text: started ? T(firstKey, { network: c.bridge.label, number: started.number || '', name: started.name || convTitle(c) }) : (c.kind === 'group' ? T('portal.group_new') : T('portal.chat_empty')) }));
     var prev = null;
     var lastDay = null;
     var divider = false;
@@ -866,6 +962,9 @@
     var box = M.clear(refs.compose);
     if (!c) return;
     if (!c.can.send) {
+      // 1.20.0: a channel (only the channel writes), a group where only admins write
+      if (c.bridge && c.can.sendReason === 'channel') { box.appendChild(el('div', { class: 'ms-readonly' }, [M.icon('eye', 16), el('span', { text: T('ch.readonly') })])); refs.input = null; return; }
+      if (c.bridge && c.can.sendReason === 'admins_only' && c.bridge.state === 'ok') { box.appendChild(el('div', { class: 'ms-readonly' }, [M.icon('lock', 15), el('span', { text: T('grp.admins_only') })])); refs.input = null; return; }
       box.appendChild(el('div', { class: 'ms-readonly', text: c.bridge ? T(c.bridge.closed ? 'bc.closed' : 'bc.cannot_send', { network: c.bridge.label }) : (c.readonly ? T('portal.readonly') : T('portal.peer_gone')) }));
       refs.input = null;
       return;
@@ -1423,17 +1522,20 @@
     var mineReaction = null;
     (m.reactions || []).forEach(function (r) { if (r.userIds.indexOf(S.me.user.id) >= 0) mineReaction = r.emoji; });
     var items = [];
-    if (!m.deleted && m.kind !== 'system') {
-      items.push(el('div', { class: 'ms-menu-emojis', role: 'group', 'aria-label': T('msg.react') }, EMOJIS.map(function (e) {
-        return el('button', { type: 'button', 'aria-pressed': mineReaction === e ? 'true' : 'false', 'aria-label': e, text: e, on: { click: function () { closeMenu(); react(m, mineReaction === e ? null : e); } } });
-      })));
-    }
+    var emojis = !m.deleted && m.kind !== 'system' ? el('div', { class: 'ms-menu-emojis', role: 'group', 'aria-label': T('msg.react') }, EMOJIS.map(function (e) {
+      return el('button', { type: 'button', 'aria-pressed': mineReaction === e ? 'true' : 'false', 'aria-label': e, text: e, on: { click: function () { closeMenu(); react(m, mineReaction === e ? null : e); } } });
+    })) : null;
+    if (emojis) items.push(emojis);
     var item = function (iconName, label, fn, danger) {
       items.push(el('button', { type: 'button', class: 'ms-menu-item' + (danger ? ' is-danger' : ''), on: { click: function () { closeMenu(); fn(); } } }, [M.icon(iconName, 16), label]));
     };
     // 1.14.0: in a bridged chat only what the other messenger got can be answered, changed or reacted to
     var out = !c.bridge || (c.can.send && !(m.mine && m.bridge && (m.bridge.state === 'failed' || m.bridge.state === 'pending')));
     if (c.bridge && !out) items.length = 0;
+    // 1.20.0: a channel or a group where only admins write: no answer, but a reaction (can.react — in a channel the
+    // person's own, until the bridge refused one)
+    if (c.bridge && !out && emojis && c.can.react && !m.mine && m.bridge && m.bridge.state !== 'failed') items.push(emojis);
+    if (c.bridge && c.can.react === false && emojis) items = items.filter(function (x) { return x !== emojis; });
     if (!m.deleted && c.can.send && out) item('reply', T('msg.reply'), function () { startReply(m); });
     // 1.15.0: over a bridge only a text is edited (a caption is not)
     if (m.mine && !m.deleted && (m.kind === 'text' || ((m.kind === 'image' || m.kind === 'file') && !c.bridge)) && withinWindow(m) && out && !(m.bridge && (m.bridge.remote || m.bridge.placeholder))) item('pen', T('msg.edit'), function () { startEdit(m); });
@@ -1557,7 +1659,7 @@
     M.clear(pane);
     var closeBtn = el('button', { type: 'button', class: 'ms-ib ms-ib-flat', 'aria-label': narrow() ? T('common.back') : T('common.close'), on: { click: toggleInfo } }, [M.icon(narrow() ? 'back' : 'close', 18)]);
     pane.appendChild(el('div', { class: 'ms-info-head' }, narrow() ? [closeBtn, el('span', { text: T('info.title') })] : [el('span', { text: T('info.title') }), closeBtn]));
-    var top = el('div', { class: 'ms-info-top' }, [convAvatar(c, 76), el('b', { text: convTitle(c) }), el('span', { class: 'ms-muted', text: c.notice ? T('notice.info', { label: c.notice.label || convTitle(c) }) : c.kind === 'group' ? (c.coreGroupId ? T('info.managed_group') : c.managedBy ? T('info.managed', { plugin: pluginName(c.managedBy) }) : T('info.members_n', { n: c.members.length })) : (c.peer && c.peer.gone ? T('portal.gone_hint') : T('portal.direct_sub')) })]);
+    var top = el('div', { class: 'ms-info-top' }, [convAvatar(c, 76), el('b', { text: convTitle(c) }), el('span', { class: 'ms-muted', text: isChan(c) ? T('ch.info', { network: c.bridge.label }) : c.notice ? T('notice.info', { label: c.notice.label || convTitle(c) }) : c.kind === 'group' ? (c.coreGroupId ? T('info.managed_group') : c.managedBy ? T('info.managed', { plugin: pluginName(c.managedBy) }) : T('info.members_n', { n: c.members.length })) : (c.peer && c.peer.gone ? T('portal.gone_hint') : T('portal.direct_sub')) })]);
     if (c.can.editInfo) {
       top.appendChild(el('div', { style: 'display:flex;gap:6px;flex-wrap:wrap;justify-content:center' }, [
         el('button', { type: 'button', class: 'btn btn-sm', on: { click: function () { rename(c); } } }, [M.icon('pen', 14), T('info.rename')]),
@@ -1784,7 +1886,7 @@
               if (closeFn) closeFn(null);
               window.MSNewChat.open(n, { open: openStarted });
             } } }, [
-              el('span', { class: 'ms-av-wrap' }, [el('span', { class: 'ms-av', 'aria-hidden': 'true', style: 'width:38px;height:38px' }, [M.icon('dial', 18)]), el('span', { class: 'ms-net ms-net-' + n.id, text: T('admin.br_mark_' + n.id) })]),
+              el('span', { class: 'ms-av-wrap' }, [el('span', { class: 'ms-av', 'aria-hidden': 'true', style: 'width:38px;height:38px' }, [M.icon('dial', 18)]), M.netLogo(n.id, null, 11)]),
               el('span', { class: 'ms-nc-row-tx' }, [el('span', { text: T('nc.row', { network: label }) }), el('small', { text: T('nc.row_sub') })]),
             ]));
           });
@@ -1853,6 +1955,7 @@
   // ── refresh and live events ──
   function removeConv(id) {
     S.convs = S.convs.filter(function (c) { return c.id !== id; });
+    if (S.chans.some(function (c) { return c.id === id; })) { S.chans = S.chans.filter(function (c) { return c.id !== id; }); chanSummary(); }
     delete S.msgs[id];
     if (S.cur === id) closeConv(); else renderList();
   }
@@ -1875,6 +1978,12 @@
       S.lastSync = r.serverTime;
       if (!since) S.convs = r.conversations;
       else r.conversations.forEach(upsert);
+      // 1.20.0: the channels' summary (GET conversations?channels=1) — their list when there is one
+      if (r.channels && typeof r.channels.count === 'number') {
+        S.chanSum = { count: r.channels.count, unread: r.channels.unread || 0 };
+        if (r.channels.count && feature('bridge_channels')) loadChannels();
+        else if (!r.channels.count) S.chans = [];
+      }
       (r.removed || []).forEach(removeConv);
       sortConvs();
       renderList();

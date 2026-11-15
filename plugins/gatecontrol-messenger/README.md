@@ -1209,6 +1209,44 @@ gefunden / nicht gefunden“ (`bridge_number_checked`, level `info`) without num
 
 Tests: `test/contactchat.test.js` against the mock host's `gc.bridges` version 6.
 
+## Channels, read-only groups, format and link previews over a bridge (since 1.20.0)
+
+Needs GateControl with `gc.bridges` version 7 (`features.bridge_channels`, for the same people as `bridge_chats`;
+`server/bridgechannels.js`, migration 012). Tests: `test/bridgechannels.test.js` against the mock host's version 7.
+
+**Channels** (a WhatsApp channel the person follows) are bridged conversations with `bridge.channel: true`
+(`kind: "group"`). A client that knows them sends `?channels=1` (next to `?bridged=1`) on its calls:
+
+| Route | Answer |
+|---|---|
+| `GET conversations?bridged=1&channels=1` | as before, **without** channels — so they are not in „Ungelesen“ or the badge — plus `channels: { count, unread }` (channels with a post; `unread` = new posts) for the TV symbol and its grey dot |
+| `GET channels?bridged=1&channels=1[&since=]` | `{ channels: [conversation], removed, unread, serverTime }` — the page „Kanäle“, newest post first |
+
+Without `?channels=1` channels stay in `GET conversations` as before (read-only chats). Everything else (messages,
+read, PATCH `notify`, reactions) works on a channel like on any bridged chat.
+
+Conversation fields: `bridge.channel`, `bridge.readOnly` (a channel, or a group where only admins write),
+`bridge.reactions` (channels only: `"own"` — the person's own reaction; `"off"` — the bridge refused one, reacting in
+channels of this network is off until the bridge runs another version), `can.sendReason` (`"channel"` |
+`"admins_only"` | `null`), `can.react`. A channel is created muted (`me.notify: "none"`, `muted: true`): the bell is
+`PATCH conversations/:id { notify: "all" | "none" }`. Its push: title „<Kanal> · Kanal über WhatsApp“, `data.channel:
+true`, only the action `mark_read`. Sending into a channel or an admins-only group: `409 bridge_read_only` with `reason`
+`channel` | `admins_only`; reacting in a channel while off: `409 bridge_read_only` `reason: "reactions_off"`.
+
+Message fields (bridged chats; `null` elsewhere):
+
+* `marks: [{ type: "bold" | "italic" | "strike" | "code" | "link", start, end, url? }] | null` — offsets in UTF-16 code
+  units of `text` (JavaScript string indices; Kotlin `String` indices are the same), `end` exclusive, may nest; `url`
+  only http(s). Render as text with spans, never as HTML. Plain addresses in the text carry no mark: clients make
+  http(s) and `www.` addresses clickable themselves, in every chat.
+* `preview: { url, title, description, site, image: { mediaId, url, mime, w, h, state: "loading" | "failed" | null } |
+  null } | null` — a link preview on top of the bubble (tap → open `url`). `image.mediaId` loads like any file of the
+  plugin (`url` only for the portal).
+* `bridge.channel: true` — a post written by the channel (`bridge.sender` is `null`; show no sender name).
+
+`message.update { media: true }` follows when a preview's picture arrived. `conversation.update { reason: "bridge" }`
+when a chat turned out to be a channel, an admins-only group opened or closed, or reacting in channels went off.
+
 ## Services (for other plugins)
 
 `gc.services.call({ plugin: 'gatecontrol-messenger', service, userId?, payload })`

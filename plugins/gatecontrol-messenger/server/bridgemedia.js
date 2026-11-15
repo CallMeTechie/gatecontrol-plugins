@@ -379,6 +379,8 @@ function kick(gc) {
     do {
       more = false;
       try { last = await runOnce(gc); } catch (e) { gc.log.warn('bridge files failed', (e && (e.code || e.message)) || 'error'); }
+      // 1.20.0: the pictures of link previews (bridgechannels.js)
+      try { await require('./bridgechannels').previewRun(gc); } catch (e) { gc.log.warn('bridge previews failed', (e && (e.code || e.message)) || 'error'); }
     } while (more);
     return last;
   })().finally(() => { running = null; });

@@ -224,7 +224,7 @@
     });
 
     var head = el('div', { class: 'ms-nc-head' }, [
-      el('span', { class: 'ms-nc-hico', 'aria-hidden': 'true' }, [M.icon('dial', 20), el('span', { class: 'ms-net ms-net-' + net, text: T('admin.br_mark_' + net) })]),
+      el('span', { class: 'ms-nc-hico', 'aria-hidden': 'true' }, [M.icon('dial', 20), M.netLogo(net, null, 11)]),
       el('div', { class: 'ms-nc-ht' }, [el('b', { class: 'ms-modal-title', text: T('nc.title', { network: label }) }), el('small', { text: T('nc.sub') })]),
     ]);
     draw();

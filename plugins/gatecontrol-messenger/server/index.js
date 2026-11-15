@@ -80,6 +80,8 @@ async function context(gc, user, now, lang, query, body) {
   const ctx = { gc, viewer: user ? user.id : null, now, lang: lang === 'en' ? 'en' : 'de', users: await people.users(gc, now), cfg: await config.load(gc), portal: !(user && user.app === true), box: live.outbox() };
   // 1.14.0: the client knows chats over a bridge (?bridged=1 on its calls) — without it such a chat does not exist
   ctx.bridged = !!(query && typeof query === 'object' && String(query.bridged) === '1') || !!(body && typeof body === 'object' && !Array.isArray(body) && body.bridged === true);
+  // 1.20.0: the client knows channels (?channels=1): GET conversations leaves them out — they are on GET channels
+  ctx.channels = !!(query && typeof query === 'object' && String(query.channels) === '1') || !!(body && typeof body === 'object' && !Array.isArray(body) && body.channels === true);
   // 1.4.0: pictures of people whose avatar privacy leaves the viewer out are not handed out
   if (ctx.viewer != null) ctx.users = social.maskUsers(await social.load(ctx), ctx.users, ctx.viewer);
   return ctx;

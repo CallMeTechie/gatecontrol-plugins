@@ -68,10 +68,10 @@ test('a chat appears with its first message — for the linked person only, and 
     assert.equal(conv.kind, 'direct');
     assert.equal(conv.title, 'Kim Muster');
     assert.equal(conv.peer, null);
-    assert.deepEqual(conv.bridge, { network: 'whatsapp', label: 'WhatsApp', state: 'ok', closed: false, supports: ['text', 'reply', 'reaction', 'edit', 'delete', 'read', 'typing'] });
+    assert.deepEqual(conv.bridge, { network: 'whatsapp', label: 'WhatsApp', state: 'ok', closed: false, channel: false, readOnly: false, supports: ['text', 'reply', 'reaction', 'edit', 'delete', 'read', 'typing'] });
     assert.deepEqual(conv.members.map((m) => m.userId), [ANNA.id], 'the only member is the linked person');
     assert.equal(conv.unread, 1);
-    assert.deepEqual(conv.can, { send: true, pin: true, editInfo: false, manageMembers: false, leave: false, setDisappearing: false });
+    assert.deepEqual(conv.can, { send: true, pin: true, editInfo: false, manageMembers: false, leave: false, setDisappearing: false, sendReason: null, react: true });
     assert.equal(conv.lastMessage.text, 'Kommt ihr Samstag zum Grillen?');
     const [m] = await msgs(c, ANNA, conv.id);
     assert.deepEqual([m.senderId, m.mine, m.kind, m.text], [null, false, 'text', 'Kommt ihr Samstag zum Grillen?']);
