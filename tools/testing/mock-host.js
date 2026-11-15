@@ -424,7 +424,7 @@
 // GateControl 1.281.0 (opt-in: opts.gatecontrol: '1.281.0' or opts.remote) — gc.remote version 1, "Fernzugriff" (sessions
 // on GateControl's session page, the key vault, probe / wake, L4 listeners of the gateways, the hook remoteSession; only
 // with permissions.remote), host.remoteOpen / remoteClose (the session page), host.clientFacade (the old app API through the
-// core's facade); '1.282.0' adds gc.remote.gateways() and `server` in the facade's payload: see tools/testing/mock-remote.js.
+// core's facade); '1.283.0' adds gc.remote.gateways() and `server` in the facade's payload: see tools/testing/mock-remote.js.
 // GateControl 1.264.0 (opt-in: opts.gatecontrol: '1.264.0' or opts.vpnDns) — gc.vpnDns, the DNS protection of the VPN
 // devices (settings, profiles, suspensions, counters, the query log; only with permissions.vpnDns), and `peerId` on the
 // viewer of an app request: see tools/testing/mock-vpn-dns.js.

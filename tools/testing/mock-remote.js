@@ -30,7 +30,7 @@
 //     ERR_REMOTE_PORT_IN_USE; an unknown gateway peer → ERR_NOT_FOUND), listener.remove(key), listeners()
 //   recordings.available() → { available: false, reason: 'not_yet' }, list → [], stream → ERR_REMOTE_RECORDING_UNAVAILABLE
 //   on('session', fn) — the hook remoteSession
-// GateControl after 1.281.0 (the server part of Fernzugriff 1.0; opt-in opts.gatecontrol ≥ '1.282.0' or opts.remote.gateways):
+// GateControl after 1.281.0 (the server part of Fernzugriff 1.0; opt-in opts.gatecontrol ≥ '1.283.0' or opts.remote.gateways):
 //   gc.remote.gateways() → { gateways: [{ peerId, name, online }], pools: [{ poolId, name }] }, and `server: { connectHost }`
 //   in the payload of the hook clientFacade (opts.remote.connectHost, default 'gc.example.test').
 // The session page and the old app API for tests:
@@ -73,7 +73,7 @@ function install({ opts, perms, atLeast, enabledUser, hostError, license }) {
   const host = !!o || atLeast(281);
   if (host && perms.remote != null && typeof perms.remote !== 'boolean') throw hostError('ERR_INVALID', 'plugin.json: permissions.remote: invalid');
   const on = host && perms.remote === true;
-  const next = !!(o && (o.gateways || o.pools || o.connectHost)) || atLeast(282);
+  const next = !!(o && (o.gateways || o.pools || o.connectHost)) || atLeast(283);
   const state = { tickets: new Map(), live: new Map(), rows: [], vault: new Map(), listeners: new Map(), wakes: new Map(), calls: [], handlers: [], seq: 0, routeSeq: 500 };
   const cfg = { gateways: (o && o.gateways) || [], pools: (o && o.pools) || [], l4: (o && o.l4) || [], limits: { global: 10, perUser: 2, perTarget: 2, ...((o && o.limits) || {}) } };
   const need = () => { if (perms.remote !== true) throw hostError('ERR_REMOTE_DENIED', 'this plugin has no remote permission'); };

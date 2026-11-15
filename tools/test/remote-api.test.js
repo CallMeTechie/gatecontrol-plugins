@@ -41,7 +41,7 @@ function plugin(perms) {
 
 const call = (host, op, ...args) => host.request({ method: 'POST', path: '/x', body: { op, args } }).then((r) => r.json);
 
-test('gc.remote only with permissions.remote on GateControl 1.281.0, gateways() from 1.282.0', async () => {
+test('gc.remote only with permissions.remote on GateControl 1.281.0, gateways() from 1.283.0', async () => {
   const a = plugin({ remote: true });
   const b = plugin({ storage: true });
   try {
@@ -51,7 +51,7 @@ test('gc.remote only with permissions.remote on GateControl 1.281.0, gateways() 
     const h2 = await createHost(a.dir, { gatecontrol: '1.281.0', users: USERS });
     assert.deepEqual((await h2.request({ path: '/has' })).json, { remote: true, version: 1, gateways: false });
     await h2.close();
-    const h3 = await createHost(a.dir, { gatecontrol: '1.282.0', users: USERS });
+    const h3 = await createHost(a.dir, { gatecontrol: '1.283.0', users: USERS });
     assert.equal((await h3.request({ path: '/has' })).json.gateways, true);
     await h3.close();
     const h4 = await createHost(b.dir, { gatecontrol: '1.281.0', users: USERS });
@@ -108,9 +108,9 @@ test('listeners reuse an L4 route, wake has a rate limit, recordings are not the
   } finally { await host.close(); p.done(); }
 });
 
-test('the facade: credential keys removed, credentials only with ECDH, handled: false passes on, `server` from 1.282.0', async () => {
+test('the facade: credential keys removed, credentials only with ECDH, handled: false passes on, `server` from 1.283.0', async () => {
   const p = plugin({ remote: true });
-  const host = await createHost(p.dir, { gatecontrol: '1.282.0', users: USERS });
+  const host = await createHost(p.dir, { gatecontrol: '1.283.0', users: USERS });
   try {
     const h = (await call(host, 'vault.put', { username: 'tom', password: 'x' })).result.handle;
     const no = await host.clientFacade('connect', { id: 3, user: { id: 2 }, query: { h } });

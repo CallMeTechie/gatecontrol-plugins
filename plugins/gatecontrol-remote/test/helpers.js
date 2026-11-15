@@ -1,6 +1,6 @@
 'use strict';
 
-// Test helpers: the mock host (tools/testing/mock-host.js, GateControl 1.282.0 with gc.remote — tools/testing/mock-remote.js)
+// Test helpers: the mock host (tools/testing/mock-host.js, GateControl 1.283.0 with gc.remote — tools/testing/mock-remote.js)
 // with people, two groups and a home gateway.
 //
 //   ADMIN (admin) · MARC · SABINE · LEA · TIM — group "Büro" (Marc, Sabine), group "Familie" (Lea, Tim)
@@ -20,7 +20,7 @@ const FAMILIE = 11;
 
 async function setup(o = {}) {
   const host = await createHost(DIR, {
-    gatecontrol: o.gatecontrol || '1.282.0',
+    gatecontrol: o.gatecontrol || '1.283.0',
     users: USERS,
     groups: [
       { id: BUERO, name: 'Büro', kind: 'team', members: [{ userId: 2, role: 'member' }, { userId: 3, role: 'member' }] },

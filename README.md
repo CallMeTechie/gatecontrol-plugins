@@ -273,7 +273,7 @@ host's checks and codes, the vault answering metadata only, `probe`, `wake`, `li
 `recordings`, `on('session')`) over `opts.remote: { gateways, pools, l4, probe, limits, resolve }`; `host.remoteOpen(ref)` /
 `host.remoteClose(sessionId, reason)` are the session page, `host.clientFacade(op, { id, query, body, user })` the core's facade of
 the old app API (ECDH only, `{ handled: false }` passed on), `host.remoteVaultSeed(entry, source)` a handle of the take-over;
-`'1.282.0'` adds `gc.remote.gateways()` and `server` in the facade's payload (`tools/testing/mock-remote.js`, `tools/test/remote-api.test.js`).
+`'1.283.0'` adds `gc.remote.gateways()` and `server` in the facade's payload (`tools/testing/mock-remote.js`, `tools/test/remote-api.test.js`).
 `opts.gatecontrol: '1.264.0'` (or `opts.vpnDns`) adds the DNS protection of the VPN devices: `permissions.vpnDns`, `gc.vpnDns`
 (status, catalog, get / set with the host's validation, devices with the profile that holds, lists, stats, test, pauses,
 pause / resume with the two fixed rules, restart, log / clearLog, `on`; `releasePihole` only as the empty function of GateControl 1.268.0) — reading anywhere, changes for the
