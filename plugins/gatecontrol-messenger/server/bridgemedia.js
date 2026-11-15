@@ -16,6 +16,7 @@
 //         bridgechats.deliver hands it over as gc.bridges.send(…, { media }).
 //   pictures  the picture of a chat (conversations.bridge_avatar → avatar_media_id) is fetched when it changes; a
 //         contact's (bridge_contacts.avatar_ref) only once somebody sees one of their messages (avatar_want).
+//         1.19.1: a picture that cannot come for now is tried again later (PICTURE_WAIT_MS …), never given up for good.
 //
 // No file is held twice in the plugin: it lies in GateControl's media store only, the plugin keeps its id.
 //
@@ -48,6 +49,14 @@ const WARN_MS = 3600000;
 const warned = new Map(); // code|reason → last warning (one line per hour and kind of failure)
 const RUN_FILES = 20;
 const RUN_PICTURES = 10;
+// 1.19.1: a picture that cannot come for now (the bridge away, an answer the host does not take — as before GateControl
+// 1.278.1, when the homeserver answered without Content-Length) is tried again later, the wait doubling from
+// PICTURE_WAIT_MS up to PICTURE_WAIT_MAX_MS — never given up for good. Only a final answer ends it (reasonOf).
+const PICTURE_WAIT_MS = 5 * 60000;
+const PICTURE_WAIT_MAX_MS = 6 * 3600000;
+const PICTURE_SCAN = 200;
+const pictureWait = new Map(); // `c<id>` / `k<id>` → not before (ms)
+let picturesRepaired = false;
 // what mautrix-whatsapp takes from GateControl (pkg/connector/capabilities.go; from-matrix.go reuploadFileToWhatsApp):
 // pictures jpeg (png and webp converted), videos mp4, sound ogg (taken as Opus) / mp4 / aac / mpeg — no webm —, files of any type
 const OUT_TYPES = { image: ['image/jpeg', 'image/png', 'image/webp'], voice: ['audio/ogg', 'audio/mp4', 'audio/aac', 'audio/mpeg'], video: ['video/mp4'] };
@@ -264,11 +273,17 @@ async function fetchPicture(gc, b, userId, net, ref, key, now) {
   let r;
   try { r = await b.media.fetch(userId, net, ref, { name: 'avatar' }); } catch (e) {
     warnOnce(gc, 'bridge picture not fetched', e);
-    // a picture is not worth days of trying: a few runs, then the next change of the picture
-    if (reasonOf(e) || again(key) >= TRIES) { tries.delete(key); await log.add(gc, 'bridge_picture_failed', reasonOf(e) || 'unavailable', now); return { final: true }; }
+    const reason = reasonOf(e);
+    if (reason) { tries.delete(key); pictureWait.delete(key); await log.add(gc, 'bridge_picture_failed', reason, now); return { final: true }; }
+    // 1.19.1: for now only — later again (until 1.19.0 it was given up after a few runs and never asked for again)
+    const n = again(key);
+    if (pictureWait.size > 5000) pictureWait.clear();
+    pictureWait.set(key, now + Math.min(PICTURE_WAIT_MS * 2 ** Math.min(n - 1, 12), PICTURE_WAIT_MAX_MS));
+    if (n === TRIES) await log.add(gc, 'bridge_picture_failed', 'unavailable', now);
     return null;
   }
   tries.delete(key);
+  pictureWait.delete(key);
   if (!/^image\//.test(String(r.mime || ''))) { await deleteFile(gc, r.mediaId); return { final: true }; }
   return { mediaId: r.mediaId, mime: r.mime, bytes: r.bytes, scan: scan.norm(r.scan) };
 }
@@ -326,12 +341,26 @@ async function runOnce(gc) {
     if (r === true) files++;
   }
   let pictures = 0;
-  for (const conv of await store.all(gc, `SELECT * FROM conversations WHERE bridge_net IS NOT NULL AND bridge_avatar IS NOT NULL
-    AND (bridge_avatar_got IS NULL OR bridge_avatar_got <> bridge_avatar) LIMIT ?`, [RUN_PICTURES])) {
+  // 1.19.1: once per start, pictures noted as done without a file are asked for again — up to 1.19.0 a picture was
+  // given up for good after a few failed runs (with GateControl before 1.278.1 every one: the homeserver answered
+  // chunked), and a final answer may not be final any more (the file is back, the type is taken now)
+  if (!picturesRepaired) {
+    picturesRepaired = true;
+    await store.tx(gc, async () => {
+      await store.run(gc, `UPDATE conversations SET bridge_avatar_got = NULL WHERE bridge_net IS NOT NULL AND bridge_avatar IS NOT NULL
+        AND bridge_avatar_got = bridge_avatar AND avatar_media_id IS NULL`);
+      await store.run(gc, 'UPDATE bridge_contacts SET avatar_got = NULL WHERE avatar_ref IS NOT NULL AND avatar_got = avatar_ref AND avatar_media_id IS NULL');
+    });
+  }
+  const due = (key) => !(pictureWait.get(key) > now);
+  const convs = (await store.all(gc, `SELECT * FROM conversations WHERE bridge_net IS NOT NULL AND bridge_avatar IS NOT NULL
+    AND (bridge_avatar_got IS NULL OR bridge_avatar_got <> bridge_avatar) LIMIT ?`, [PICTURE_SCAN])).filter((conv) => due('c' + conv.id));
+  for (const conv of convs.slice(0, RUN_PICTURES)) {
     try { await chatPicture(gc, b, conv, box, now); pictures++; } catch (e) { gc.log.warn('bridge picture failed', (e && (e.code || e.message)) || 'error'); }
   }
-  for (const k of await store.all(gc, `SELECT * FROM bridge_contacts WHERE avatar_want = 1 AND avatar_ref IS NOT NULL
-    AND (avatar_got IS NULL OR avatar_got <> avatar_ref) LIMIT ?`, [RUN_PICTURES])) {
+  const contacts = (await store.all(gc, `SELECT * FROM bridge_contacts WHERE avatar_want = 1 AND avatar_ref IS NOT NULL
+    AND (avatar_got IS NULL OR avatar_got <> avatar_ref) LIMIT ?`, [PICTURE_SCAN])).filter((k) => due('k' + k.id));
+  for (const k of contacts.slice(0, RUN_PICTURES)) {
     try { await contactPicture(gc, b, k, now); pictures++; } catch (e) { gc.log.warn('bridge picture failed', (e && (e.code || e.message)) || 'error'); }
   }
   await live.flush(gc, box);
@@ -451,5 +480,5 @@ function outMedia(row, file) {
 module.exports = {
   api, newChatApi, placeholderOf, placeholderView, kick, runOnce, chatAvatar, contactAvatar, wantContacts, pictureOf, ask, ensureArea, areaInfo, AREA,
   outKind, outRefusal, outMedia, OUT_TYPES, SUPPORTS, REF_RE, REASONS, FILE_KINDS, FILE_TRIES, RETRY_REASONS,
-  _reset: () => { tries.clear(); warned.clear(); running = null; more = false; areaReady = false; areaFailedAt = 0; },
+  _reset: () => { tries.clear(); warned.clear(); pictureWait.clear(); picturesRepaired = false; running = null; more = false; areaReady = false; areaFailedAt = 0; },
 };

@@ -80,6 +80,11 @@ Der Administrator hat eine Aufbewahrung eingestellt, oder der Chat ist selbstlö
 - Statt „WA“ steht das **WhatsApp-Logo** am Bild eines Chats.
 - Braucht einen GateControl-Server, dessen Brücken das unterstützen (Vorschau).
 
+## Neu in 1.19.1
+
+- **Profilbilder aus WhatsApp kommen nach.** Ließ sich das Bild eines Chats oder Kontakts einige Male nicht holen (z. B. vor GateControl 1.278.1, als der Server die Antwort der Brücke nicht annahm), gab der Messenger es bisher für immer auf – der Chat zeigte nur Initialen. Jetzt versucht er es später erneut, mit wachsendem Abstand (höchstens alle 6 Stunden), und holt beim Start einmal alle Bilder nach, die bisher fehlen. Zeigt ein Kontakt sein Profilbild in WhatsApp nicht für dich (Datenschutz), bleiben ehrlich die Initialen.
+- **Initialen ohne Fragezeichen-Raute:** Ein Name mit Emoji („Schatzimausi 💕“) zeigt „S“ statt „S“ mit einer Fragezeichen-Raute. Initialen sind nur noch Buchstaben und Ziffern; ein Name nur aus Emoji zeigt das Personen-Symbol.
+
 ## Neu in 1.19.0
 
 - **Chats über WhatsApp heißen wie der Kontakt, nie wie seine Nummer.** Kennt WhatsApp noch keinen Namen (z. B. direkt nach dem Verknüpfen), heißt der Chat nach dem Kontakt in deinem Adressbuch (Mail), sonst „WhatsApp-Kontakt“ – bis der Kontakt seinen Namen zeigt. Chats und Kontakte, die bisher nur eine Telefonnummer als Namen hatten, werden beim Start einmal korrigiert (Protokoll: „… korrigiert“). Die Nummer verlässt deinen Server dafür nicht.
