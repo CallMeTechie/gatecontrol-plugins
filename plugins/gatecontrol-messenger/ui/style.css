@@ -113,3 +113,7 @@ input,select,textarea{font-family:var(--font)}
 .ms-br-mark{flex:none;min-width:34px;padding:3px 6px;border-radius:8px;background:var(--surface-2);border:1px solid var(--line);font:700 11px var(--mono);letter-spacing:.06em;text-align:center;color:var(--muted)}
 .ms-pill.is-off{background:var(--surface-2);color:var(--muted)}
 .ms-br-nc-in{width:90px;flex:none}
+/* 1.17.0: the night window of older messages, the snapshot */
+.ms-br-win{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.ms-br-time{width:auto;min-width:118px;flex:none}
+.ms-br-bkv{display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end}

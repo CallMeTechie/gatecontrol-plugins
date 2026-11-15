@@ -64,7 +64,7 @@ test('administrators switch the bridges — off by default; nobody else may', as
     assert.equal(b.enabled, false);
     assert.equal(b.location, 'server');
     assert.deepEqual(b.locations.map((l) => l.kind), ['server']);
-    assert.deepEqual(b.networks, [{ id: 'whatsapp', enabled: false, state: 'off', version: null, memMb: null, limitMb: null, outdated: false, wantVersion: '0.2610.0', linked: 0 }]);
+    assert.deepEqual(b.networks, [{ id: 'whatsapp', enabled: false, state: 'off', version: null, memMb: null, limitMb: null, outdated: false, wantVersion: '0.2610.0', linked: 0, phoneOffline: 0 }]);
     assert.equal(b.history.enabled, false);
     // while it is off, people are offered nothing
     assert.deepEqual((await c.as(ANNA)('GET', 'bridges')).json.bridges, { available: false, networks: [] });
@@ -87,7 +87,7 @@ test('administrators switch the bridges — off by default; nobody else may', as
 
     host.bridges.setHost({ state: 'running', error: null, running: true, memMb: 93 });
     b = (await c.admin('GET', 'bridges')).json.bridges;
-    assert.deepEqual(b.networks[0], { id: 'whatsapp', enabled: true, state: 'running', version: '0.2610.0', memMb: 93, limitMb: 512, outdated: false, wantVersion: '0.2610.0', linked: 0 });
+    assert.deepEqual(b.networks[0], { id: 'whatsapp', enabled: true, state: 'running', version: '0.2610.0', memMb: 93, limitMb: 512, outdated: false, wantVersion: '0.2610.0', linked: 0, phoneOffline: 0 });
   });
 });
 
@@ -95,7 +95,8 @@ test('a person links their own WhatsApp with the pairing code — notes first', 
   await withHost({ bridges: ON }, async (host, c) => {
     const anna = c.as(ANNA);
     let mine = (await anna('GET', 'bridges')).json.bridges;
-    assert.deepEqual(mine, { available: true, location: 'server', networks: [{ id: 'whatsapp', state: 'running', allowed: true, lock: null, consent: null, outdated: false, version: '0.2610.0', wantVersion: '0.2610.0', logins: [],
+    assert.deepEqual(mine, { available: true, location: 'server', history: null, networks: [{ id: 'whatsapp', state: 'running', allowed: true, lock: null, consent: null, outdated: false, version: '0.2610.0', wantVersion: '0.2610.0', logins: [],
+      clientOutdated: false, phone: { offline: false, days: null, leftDays: null },
       newChat: { available: false, reason: 'off', limit: { perHour: 10, left: 10, retryAfterS: 0 } } }] });
 
     // not before the notes were confirmed

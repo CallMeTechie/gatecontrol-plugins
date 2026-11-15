@@ -1,4 +1,4 @@
-<!-- version: 1.16.0 -->
+<!-- version: 1.17.0 -->
 # Messenger
 
 ## Was das Plugin kann
@@ -15,7 +15,7 @@ Alles bleibt auf deinem Server. Texte, Standorte, Dateinamen und Gruppentitel we
 
 ## Voraussetzungen
 
-- GateControl **1.193.0** oder neuer (Gruppenchats für GateControl-Gruppen ab 1.200.0, Virenscan ab der Version nach 1.222.0).
+- GateControl **1.204.0** oder neuer (Gruppenchats für GateControl-Gruppen ab 1.200.0, Virenscan ab der Version nach 1.222.0).
 - Eine Lizenz für das Plugin.
 - Für „In Drive speichern“: das Plugin Drive. Für den Familien-Chat: das Plugin Familie.
 
@@ -65,8 +65,20 @@ Der Browser erlaubt den Standort im Portal nicht. Setz den Punkt auf der Karte v
 **Ich finde den Familien-Chat nicht.**
 Den führt das Plugin Familie (Seite „Funktionen“ › Messenger-Gruppe).
 
+**Der ältere WhatsApp-Verlauf fehlt.**
+Er kommt nur beim Verknüpfen und erscheint nachts. Steht „Älteren Verlauf laden“ auf „Aus“, oder hat der Administrator ihn abgeschaltet, kommt keiner. WhatsApp schickt nicht für jeden Chat alles mit.
+
 **Alte Nachrichten sind weg.**
 Der Administrator hat eine Aufbewahrung eingestellt, oder der Chat ist selbstlöschend.
+
+## Neu in 1.17.0
+
+- **Älteren Verlauf laden:** Unter **„Verknüpfte Dienste“** wählst du, wie viel älterer Verlauf beim Verknüpfen mitkommt: **Aus**, **Letzte 30 Tage** (voreingestellt) oder **Alles**, was WhatsApp mitschickt. Die Wahl gilt beim (nächsten) Verknüpfen.
+- **Nachts, in kleinen Portionen:** Der ältere Verlauf erscheint über Nacht in deinen Chats – an der richtigen Stelle, ohne Push und als gelesen. Schreibt dir vorher jemand in einem dieser Chats, kommt sein Verlauf gleich mit.
+- **Dateien aus dem Verlauf** (Bilder, Videos, Sprachnachrichten) stehen als Zeile „älterer Verlauf“ mit **„Laden“** da – erst dann holt GateControl sie. Sehr alte Dateien hat WhatsApp oft nicht mehr; dann steht da, dass du sie in WhatsApp ansehen kannst.
+- **„Handy seit … Tagen nicht gesehen“:** War dein Handy 12 Tage nicht online, bekommst du eine Mitteilung und siehst den Hinweis unter „Verknüpfte Dienste“. Öffne WhatsApp auf dem Handy – sonst trennt WhatsApp die Verknüpfung nach etwa 14 Tagen.
+- **„Brücke veraltet“** steht auch da, wenn WhatsApp die Version der Brücke ablehnt. Das behebt dein Administrator mit einem GateControl-Update; neu verknüpfen musst du nicht.
+- **Für Administratoren** (Karte „Brücken“ auf „Übersicht“): Älteren Verlauf erlauben oder abschalten, das Nachtfenster (voreingestellt 01:00–05:00), wo die Medien liegen (Ort ändern unter Einstellungen › Plugins › Messenger › Speicherorte – dieselben Speicherziele wie bei Drive, dort immer verschlüsselt), die tägliche verschlüsselte Sicherung des Brücken-Zustands im GateControl-Backup mit **„Jetzt sichern“**.
 
 ## Neu in 1.16.0
 

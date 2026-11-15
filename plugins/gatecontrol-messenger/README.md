@@ -1131,6 +1131,38 @@ An older Familie never sends it: children stay without new chats by number.
 
 Tests: `test/bridgemedia.test.js`, `test/newchat.test.js` (1.16.0) against the mock host's `gc.bridges` version 4.
 
+**Older history, the phone, where the files lie** (`bridge_history`, since 1.17.0, GateControl with `gc.bridges`
+version 5; `server/bridgehistory.js`):
+
+| Route | Answer |
+|---|---|
+| `GET bridges` | adds `history: { available, days, default, options, pending } \| null` — `days` `0` (off), `30` (default), `-1` (everything the bridge brings); `available: false` while the administrator switched it off, `null` on a GateControl without history. Each network adds `phone: { offline, days, leftDays }` (the bridge's warning: the phone was not seen for `days` ≥ 12 days; WhatsApp ends the link after about 14) and `clientOutdated` (WhatsApp refuses the bridge's version — show „Brücke veraltet“ like `outdated`) |
+| `PUT bridges/history { days }` | `{ history }` — `days` one of `0`, `30`, `-1`, else `400 invalid`; `403 feature_off` without history. It counts at a link; fewer days drop what still waits |
+| `POST messages/:id/fetch?bridged=1` | `{ message }` — a file of the history (placeholder `state: "on_request"`) is fetched now: the placeholder becomes `loading`, later the file arrives as usual (`message.update { media: true }`). Only the person of the chat; `400 invalid` when there is nothing to ask for |
+
+**Filed at night:** the plugin files the history GateControl hands over in its night window (card „Brücken“,
+`historyFrom` / `historyTo`, default 01:00–05:00 in the time zone of GateControl's update window), 100 events a minute,
+one transaction each. Such messages come **without push and without `message.new`**, already read; each chat that got
+some sends one live event `conversation.update { reason: "history" }` — reload the chat's messages then (they sit at
+their own time, `createdAt`, before the newer ones; `messages?changedSince=` finds them by their `updatedAt`). History
+GateControl hands over before a new message of the same chat comes in the normal stream, the same way.
+
+**The phone warning** reaches the person once per time as a push of the topic `bridge` („Verknüpfte Dienste“, `data:
+{ deepLink: "bridges", bridge: "whatsapp" }`); show `phone.offline` in „Verknüpfte Dienste“ under the service:
+„Handy seit {days} Tagen nicht gesehen …“.
+
+**Files** of bridged chats (and the pictures of their chats and contacts) lie in the sealed media area `bruecken`
+(`plugin.json` `media.areas`): the administrator chooses its storage target under Einstellungen › Plugins › Messenger ›
+Speicherorte. Nothing changes for the apps.
+
+Admin (card „Brücken“): `GET admin/bridges` adds `history: { available, enabled, default, options, pending, from, to,
+timeZone, conversations, messages }`, `backup: { time, timeZone, lastAt, bytes, requested, error, restore }`, `cleanup:
+{ deleted, waiting, lastAt, error }`, `media: { target, bytes, count, state, moving, encrypted }` and per network
+`phoneOffline` (how many people) and `clientOutdated`. `PUT admin/bridges` takes `{ history }`, `{ historyFrom,
+historyTo }` (`HH:MM`), `{ backupNow: true }`, `{ backupTime }`.
+
+Tests: `test/bridgehistory.test.js` against the mock host's `gc.bridges` version 5.
+
 ## Services (for other plugins)
 
 `gc.services.call({ plugin: 'gatecontrol-messenger', service, userId?, payload })`

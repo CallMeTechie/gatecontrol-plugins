@@ -18,6 +18,7 @@ const homeactions = require('./homeactions');
 const familie = require('./familie');
 const status = require('./status');
 const bridgechats = require('./bridgechats');
+const bridgemedia = require('./bridgemedia');
 const { route14 } = require('./api14');
 const { fail, posInt, iso } = require('./util');
 
@@ -38,6 +39,8 @@ async function me(ctx) {
   try { bridgeChats = !!bridgechats.api(ctx.gc) && await bridgechats.hasChats(ctx.gc, ctx.viewer); } catch { bridgeChats = false; }
   let newChat = false;
   try { newChat = await require('./bridges').newChatFeature(ctx); } catch { newChat = false; }
+  let history = false;
+  try { history = await require('./bridges').historyFeature(ctx); } catch { history = false; }
   return {
     user: u ? { id: u.id, name: u.name, avatarUrl: u.avatarUrl || null, initials: u.initials || null, colorHex: u.colorHex || null } : { id: ctx.viewer, name: null, avatarUrl: null, initials: null, colorHex: null },
     prefs,
@@ -60,6 +63,10 @@ async function me(ctx) {
       // bridge_new_chat — POST bridges/:network/resolve and bridges/:network/chats (a chat by phone number). 1.16.0: as
       // soon as the person linked a service (not only with a chat), so that the first chat can be their own
       ...(newChat ? { bridge_new_chat: true } : {}),
+      // 1.17.0 (GateControl with gc.bridges version 5), once the person linked a service: bridge_history — the choice of
+      // older messages in „Verknüpfte Dienste“ (GET/PUT bridges/history), files of the history on request
+      // (placeholder state on_request → POST messages/:id/fetch?bridged=1), the phone warning (networks[].phone)
+      ...(history ? { bridge_history: true } : {}),
     },
     // 1.4.0: what the Familie plugin offers here (gc.services.available) — "Zur Liste", "In Kalender", places;
     // 1.10.0: drive — Drive takes files (save_file): "In Drive speichern" (POST messages/:id/to-drive)
@@ -277,6 +284,18 @@ async function route(ctx, req, seg) {
       if (row.deleted_at) throw fail('deleted');
       return row;
     };
+    // 1.17.0: a file of the history, fetched now because the person asks for it
+    if (seg.length === 3 && c === 'fetch' && m === 'POST') {
+      const res = await tx(async () => {
+        const x = await locate();
+        if (!x.conv.bridge_net) throw fail('not_found');
+        const row = await messages.visibleMessage(ctx, x.me, id);
+        if (!(await bridgemedia.ask(ctx, x.conv, row))) throw fail('invalid');
+        return { message: await out(x) };
+      });
+      bridgemedia.kick(gc);
+      return json(200, res);
+    }
     if (seg.length === 3 && c === 'resend' && m === 'POST') {
       const pre = await locate();
       if (!pre.conv.bridge_net) throw fail('not_found');

@@ -606,10 +606,14 @@
       // while it comes, the reason when it cannot, a location as a link to the map
       var ph = m.bridge.placeholder;
       var net = { network: c.bridge ? c.bridge.label : '' };
-      var tail = ph.state === 'loading' ? T('bc.ph_loading') : (ph.state === 'failed' && ph.reason && CTX.texts['bc.ph_failed.' + ph.reason] ? T('bc.ph_failed.' + ph.reason, net) : T('bc.ph_later', net));
+      // 1.17.0: a file of the older history — fetched when the person asks for it
+      var tail = ph.state === 'loading' ? T('bc.ph_loading') : (ph.state === 'on_request' ? T('bc.ph_on_request') : (ph.state === 'failed' && ph.reason && CTX.texts['bc.ph_failed.' + ph.reason] ? T('bc.ph_failed.' + ph.reason, net) : T('bc.ph_later', net)));
       var phText = ph.kind === 'unsupported' ? T('bc.ph.unsupported', net) : T('bc.ph.' + ph.kind) + (ph.name ? ' · ' + ph.name : '') + (ph.kind === 'location' && ph.geo ? '' : ' – ' + tail);
       b.appendChild(el('div', { class: 'ms-ph' + (ph.state === 'loading' ? ' is-loading' : '') }, [M.icon(ph.kind === 'unsupported' ? 'info' : (ph.kind === 'location' ? 'pin' : (ph.kind === 'image' || ph.kind === 'sticker' ? 'image' : 'file')), 15),
         el('span', { text: phText })]));
+      if (ph.state === 'on_request') {
+        b.appendChild(el('button', { type: 'button', class: 'ms-linkbtn', text: T('bc.ph_fetch'), on: { click: function (e) { e.stopPropagation(); fetchOld(m, e.currentTarget); } } }));
+      }
       if (ph.kind === 'location' && ph.geo && validPos(ph.geo)) {
         // the existing location view (map, coordinates, OpenStreetMap)
         b.appendChild(el('button', { type: 'button', class: 'ms-linkbtn', text: T('bc.ph_map'), on: { click: function (e) { e.stopPropagation(); showLocation({ lat: ph.geo.lat, lon: ph.geo.lon, label: m.text || null }); } } }));
@@ -641,6 +645,11 @@
   function bridgeReason(r) {
     var k = 'bc.reason.' + (r || 'bridge_error');
     return CTX.texts && CTX.texts[k] ? T(k) : T('bc.reason.bridge_error');
+  }
+  /** 1.17.0: fetch a file of the older history now. */
+  function fetchOld(m, btn) {
+    if (btn) btn.disabled = true;
+    M.api('POST', 'messages/' + m.id + '/fetch', {}).then(function (r) { replaceMsg(r.message); }).catch(function (e) { if (btn) btn.disabled = false; M.warn(e); });
   }
   function resend(m) {
     M.api('POST', 'messages/' + m.id + '/resend', {}).then(function (r) { replaceMsg(r.message); if (r.message.bridge && r.message.bridge.state === 'failed') M.toast(T('bc.failed') + ' ' + bridgeReason(r.message.bridge.reason), 'bad'); }).catch(M.warn);
@@ -1905,6 +1914,11 @@
       }
       case 'conversation.update':
         refreshConv(cid);
+        // 1.17.0: older messages came into this chat (at night, or before a new message) — load it again
+        if (d.reason === 'history' && st) {
+          if (cid === S.cur) loadMessages(cid).then(function () { if (S.cur === cid) renderMessages('keep'); });
+          else delete S.msgs[cid];
+        }
         break;
       case 'conversation.remove':
         removeConv(cid);

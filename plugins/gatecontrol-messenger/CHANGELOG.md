@@ -3,6 +3,40 @@
 Chats zwischen den GateControl-Konten – in der GateControl-App (eigener Tab „Chats“), im
 Windows-Client und im Portal (eigener Tab „Chats“). Alles bleibt auf dem eigenen Server.
 
+## 1.17.0
+**Brücken, Stufe 5: älterer Verlauf, Medien auf einem Speicherziel, Handy-Warnung, „Brücke veraltet“.** Jetzt
+**GateControl ≥ 1.204.0** (Medienbereiche, `plugin.json` `media.areas`); das meiste wirkt nur auf einem GateControl mit
+`gc.bridges` Version 5 (dort eine Vorschau), auf älteren bleibt alles wie in 1.16.0. Kein neues Recht.
+- **Älterer Verlauf** (`server/bridgehistory.js`, Migration 010): Was WhatsApp beim Verknüpfen mitschickt, übernimmt
+  GateControl je nach Wahl der Person – **Aus, 30 Tage (Voreinstellung) oder Alles** (`GET bridges` → `history`,
+  `PUT bridges/history { days: 0 | 30 | -1 }`). Das Plugin ordnet ihn **nachts in kleinen Portionen** ein (100
+  Ereignisse je Minute, im Fenster der Brücken-Karte, Voreinstellung 01:00–05:00 in der Zeitzone des Update-Fensters),
+  ohne Push, als gelesen, mit einem `conversation.update { reason: "history" }` je Chat. Kommt vorher eine neue
+  Nachricht in einem dieser Chats, liefert GateControl dessen Verlauf direkt davor – die Reihenfolge stimmt, nichts doppelt
+  (Ereignis-ID je Chat).
+- **Dateien aus dem Verlauf nur auf Abruf:** Platzhalter `state: "on_request"` („älterer Verlauf · Laden“),
+  `POST messages/:id/fetch?bridged=1` holt die Datei (Virenscan wie immer). Alte WhatsApp-Dateien sind bei WhatsApp oft
+  nicht mehr da, jeder Abruf ist ein Scan und ein Schreibvorgang auf der langsamen Platte.
+- **Medien auf einem Speicherziel:** Dateien und Bilder aus überbrückten Chats liegen im Medienbereich
+  **„bruecken“** (versiegelt: am Ziel immer verschlüsselt). Ort wählen und umziehen unter Einstellungen › Plugins ›
+  Messenger › Speicherorte – dieselben Ziele wie bei Drive (Ordner, SMB, WebDAV, S3); die Brücken-Karte zeigt Ort, Größe
+  und Umzug. Die Datenbank bleibt auf dem Server.
+- **„Handy seit N Tagen nicht gesehen“:** Die Brücke warnt nach 12 Tagen ohne Handy (WhatsApp trennt nach etwa 14).
+  Einmal je Stunde fragt das Plugin den Zustand aller Verknüpfungen ab (`gc.bridges.health`), schickt **einmal** einen
+  Push (neues Thema „Verknüpfte Dienste“) und zeigt den Hinweis in „Verknüpfte Dienste“ (`networks[].phone { offline,
+  days, leftDays }`); die Karte zählt die Personen (ohne Namen).
+- **„Brücke veraltet“** auch, wenn WhatsApp die Version der Brücke ablehnt (`clientOutdated`); läuft die Brücke nicht
+  mit der vorgesehenen Version, sagt die Karte, dass das Update-Skript sie beim nächsten Lauf umstellt.
+- **Brücken-Karte:** neuer Abschnitt „Älterer Verlauf“ (Schalter, Nachtfenster, was wartet, Hinweis zur Platte), in „Wo
+  liegen die Daten?“ die Zeilen „Medien und Anhänge“ und „Sicherungen des Brücken-Zustands“ (täglich, verschlüsselt, im
+  GateControl-Backup, zuletzt …) mit **„Jetzt sichern“**, und wie viele Kopien im internen Matrix-Server nach der
+  Übernahme gelöscht wurden.
+- **`features.bridge_history`** für Personen mit Verknüpfung, wenn GateControl Verlauf kann.
+- **Datenschutz:** Eine Verknüpfung heißt jetzt mit GateControls Kennung (HMAC je Person) statt mit der Kennung der
+  Brücke – die ist bei WhatsApp die Telefonnummer. Was ältere Versionen davon in `bridge_links.login_id` hielten, wird
+  beim Start durch einen Schlüssel-Hash ersetzt; beim nächsten Blick auf die Verknüpfungen steht dort GateControls
+  Kennung. Trennen geht weiter über `DELETE bridges/:network/logins/:id`.
+
 ## 1.16.0
 **Neuer WhatsApp-Chat per Nummer** – der Dialog im Portal und was die Apps dafür brauchen. Weiterhin
 **GateControl ≥ 1.193.0**; zu sehen nur auf einem GateControl, das Nummern über die Brücke prüfen kann (`gc.bridges`

@@ -35,6 +35,20 @@
 //   1.13.0 — the portal page „Verknüpfte Dienste“ (ui/bridges.js): a QR step also carries `display.matrix`
 //   { size, rows } — the code's modules, drawn by the page (the apps draw from `display.data` themselves).
 //
+//   1.17.0 (GateControl with gc.bridges version 5):
+//     GET bridges                 + history { available, days, default, options, pending } (older messages: what of
+//                                 them comes over — 0 none, 30, -1 everything; only at a new link), per network
+//                                 phone { offline, days, leftDays } (the bridge's warning: the phone was not seen for
+//                                 12 days — WhatsApp ends the link after about 14) and clientOutdated (WhatsApp turned
+//                                 the bridge's version away)
+//     PUT bridges/history         { days } → { history }
+//     admin                       + history (allowed, the night window, what waits), backup (the nightly snapshot,
+//                                 „Jetzt sichern“), cleanup (copies at the homeserver deleted), media (the media
+//                                 area of the bridged files and its storage target)
+//     background                  phoneCheck: once an hour the state of every linked person's login
+//                                 (gc.bridges.health, no person needed) — a push „Handy seit N Tagen nicht gesehen“,
+//                                 once per time it happens
+//
 // Kept here (migration 006): the consent, the parents' grants and WHICH account is linked on which network (the
 // bridge's login id and state — for the count on the admin card and the state without asking the bridge). Never the
 // phone number, never a session key: those stay in the bridge.
@@ -113,8 +127,19 @@ async function adminView(gc, now) {
   for (const r of rows) if (users.has(r.user_id)) linked[r.network] = (linked[r.network] || 0) + 1;
   // 1.16.0: a new chat by number — the limit per person and hour (only while GateControl can look numbers up)
   const cfg = await config.load(gc);
-  return { ...s, networks: (s.networks || []).map((n) => ({ ...n, linked: linked[n.id] || 0 })),
-    newChat: { available: !!require('./bridgemedia').newChatApi(gc), perHour: cfg.newChatPerHour, min: config.NEW_CHAT_PER_HOUR.min, max: config.NEW_CHAT_PER_HOUR.max } };
+  // 1.17.0: how many linked people the phone warning holds for right now (no names)
+  const phone = {};
+  for (const r of await store.all(gc, "SELECT network, user_id FROM bridge_links WHERE state != 'logged_out' AND phone_offline_since IS NOT NULL GROUP BY network, user_id")) {
+    if (users.has(r.user_id)) phone[r.network] = (phone[r.network] || 0) + 1;
+  }
+  const v5 = !!require('./bridgehistory').api(gc);
+  return { ...s, networks: (s.networks || []).map((n) => ({ ...n, linked: linked[n.id] || 0, phoneOffline: phone[n.id] || 0 })),
+    newChat: { available: !!require('./bridgemedia').newChatApi(gc), perHour: cfg.newChatPerHour, min: config.NEW_CHAT_PER_HOUR.min, max: config.NEW_CHAT_PER_HOUR.max },
+    // 1.17.0 (gc.bridges version 5): older messages, the snapshot, the clean-up, where the files lie
+    history: { ...(s.history || {}), available: v5, from: cfg.historyFrom, to: cfg.historyTo },
+    backup: v5 ? s.backup || null : null,
+    cleanup: v5 ? s.cleanup || null : null,
+    media: v5 ? await require('./bridgemedia').areaInfo(gc) : null };
 }
 
 async function adminSet(gc, body, now) {
@@ -138,6 +163,21 @@ async function adminSet(gc, body, now) {
     if (Object.keys(patch).length) throw fail('invalid');
     await config.update(gc, { newChatPerHour: p.newChatPerHour });
     return adminView(gc, now);
+  }
+  // 1.17.0: the night window of older messages is the plugin's own setting
+  if (p.historyFrom !== undefined || p.historyTo !== undefined) {
+    if (Object.keys(patch).length) throw fail('invalid');
+    const w = {};
+    for (const k of ['historyFrom', 'historyTo']) if (p[k] !== undefined) { if (!config.HHMM_RE.test(String(p[k]))) throw fail('invalid'); w[k] = p[k]; }
+    await config.update(gc, w);
+    return adminView(gc, now);
+  }
+  // 1.17.0 (gc.bridges version 5): older messages at all, a snapshot now, the time of the nightly one — GateControl's
+  if (p.history !== undefined || p.backupNow !== undefined || p.backupTime !== undefined) {
+    if (!require('./bridgehistory').api(gc)) throw fail('bridge_off', { reason: 'no_host' });
+    if (p.history !== undefined) { if (typeof p.history !== 'boolean') throw fail('invalid'); patch.history = p.history; }
+    if (p.backupNow !== undefined) { if (p.backupNow !== true) throw fail('invalid'); patch.backupNow = true; }
+    if (p.backupTime !== undefined) { if (!config.HHMM_RE.test(String(p.backupTime))) throw fail('invalid'); patch.backupTime = p.backupTime; }
   }
   if (!Object.keys(patch).length) throw fail('invalid');
   try { await b.configure(patch); } catch (e) {
@@ -298,8 +338,11 @@ async function remember(gc, userId, net, logins, now) {
       if (!l || !ID_RE.test(String(l.id || ''))) continue;
       const state = STATES.includes(l.state) ? l.state : 'unknown';
       seen.add(l.id);
-      await store.run(gc, `INSERT INTO bridge_links (user_id, network, login_id, state, linked_at, seen_at) VALUES (?, ?, ?, ?, ?, ?)
-        ON CONFLICT(user_id, network, login_id) DO UPDATE SET state = excluded.state, seen_at = excluded.seen_at`, [userId, net, l.id, state, now, now]);
+      // 1.17.0: the bridge's phone warning travels with the login (gc.bridges version 5; older: never set)
+      const phone = l.phoneOffline === true ? (Date.parse(l.since) || now) : null;
+      await store.run(gc, `INSERT INTO bridge_links (user_id, network, login_id, state, linked_at, seen_at, phone_offline_since) VALUES (?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(user_id, network, login_id) DO UPDATE SET state = excluded.state, seen_at = excluded.seen_at, phone_offline_since = excluded.phone_offline_since,
+          phone_warned_at = CASE WHEN excluded.phone_offline_since IS NULL THEN NULL ELSE phone_warned_at END`, [userId, net, l.id, state, now, now, phone]);
     }
     const rows = await store.all(gc, 'SELECT login_id FROM bridge_links WHERE user_id = ? AND network = ?', [userId, net]);
     for (const r of rows) if (!seen.has(r.login_id)) await store.run(gc, 'DELETE FROM bridge_links WHERE user_id = ? AND network = ? AND login_id = ?', [userId, net, r.login_id]);
@@ -346,12 +389,118 @@ async function mine(ctx) {
       // 1.13.0: the bridge runs an older program than GateControl expects — sending and receiving may fail until the
       // administrator updated it; nothing has to be linked again
       outdated: n.outdated === true, version: typeof n.version === 'string' ? n.version : null, wantVersion: typeof n.wantVersion === 'string' ? n.wantVersion : null,
+      // 1.17.0: WhatsApp turned the bridge's version away (only a GateControl update helps); the phone was not seen
+      clientOutdated: n.clientOutdated === true || logins.some((l) => l && l.clientOutdated === true),
+      phone: phoneOf(logins, await store.all(ctx.gc, 'SELECT phone_offline_since FROM bridge_links WHERE user_id = ? AND network = ? AND phone_offline_since IS NOT NULL', [ctx.viewer, n.id]), ctx.now),
       // the name is the person's own account at the service (WhatsApp: their number) — theirs to see, nobody else's
       logins: logins.map((l) => ({ id: l.id, name: typeof l.name === 'string' ? l.name.slice(0, 80) : '', state: STATES.includes(l.state) ? l.state : 'unknown', since: l.since || null })),
     });
   }
   // where the bridges run (today always the server) — the page says so
-  return { available: true, location: s.location === 'server' ? 'server' : 'gateway', networks: out };
+  return { available: true, location: s.location === 'server' ? 'server' : 'gateway', networks: out, history: await historyMine(ctx) };
+}
+
+// ─── 1.17.0: older messages, the phone ─────────────────
+
+/** GET bridges → history: { available, days, default, options, pending } — null while GateControl has none. */
+async function historyMine(ctx) {
+  const b = require('./bridgehistory').api(ctx.gc);
+  if (!b) return null;
+  try {
+    const h = await b.history.get(ctx.viewer);
+    return { available: h.allowed === true, days: h.days, default: h.default, options: Array.isArray(h.options) ? h.options : [0, 30, -1], pending: Number.isSafeInteger(h.pending) ? h.pending : 0 };
+  } catch { return null; }
+}
+
+/** PUT bridges/history { days } → { history } */
+async function historySet(ctx, body) {
+  const b = require('./bridgehistory').api(ctx.gc);
+  if (!b) throw fail('feature_off');
+  const days = body && typeof body === 'object' ? body.days : undefined;
+  if (![0, 30, -1].includes(days)) throw fail('invalid');
+  try { await b.history.set(ctx.viewer, days); } catch (e) { throw mapped(e); }
+  return { history: await historyMine(ctx) };
+}
+
+const DAY = 86400000;
+// the bridge warns 12 days after the phone was last seen; WhatsApp ends the link after about 14
+const PHONE_WARN_DAYS = 12;
+const PHONE_DROP_DAYS = 14;
+
+/** The phone warning of a person's logins: { offline, days, leftDays } (days counted from the bridge's warning on). */
+function phoneOf(logins, rows, now) {
+  let since = null;
+  for (const l of logins || []) if (l && l.phoneOffline === true && l.since) { const t = Date.parse(l.since); if (Number.isFinite(t) && (since == null || t < since)) since = t; }
+  if (since == null) for (const r of rows || []) if (Number.isSafeInteger(r.phone_offline_since) && (since == null || r.phone_offline_since < since)) since = r.phone_offline_since;
+  if (since == null) return { offline: false, days: null, leftDays: null };
+  const days = PHONE_WARN_DAYS + Math.max(0, Math.floor((now - since) / DAY));
+  return { offline: true, days, leftDays: Math.max(0, PHONE_DROP_DAYS - days) };
+}
+
+const PHONE_EVERY_MS = 3600000;
+const HEALTH_BATCH = 20;
+let phoneCheckedAt = 0;
+
+/**
+ * Background, once an hour: the state of every linked person's login (gc.bridges.health) → bridge_links, and the
+ * push „Handy seit N Tagen nicht gesehen“ once per time it happens. → { checked, warned }. Never throws.
+ */
+async function phoneCheck(gc, now = Date.now(), { force = false } = {}) {
+  const b = require('./bridgehistory').api(gc);
+  if (!b || typeof b.health !== 'function') return { checked: 0, warned: 0 };
+  if (!force && now - phoneCheckedAt < PHONE_EVERY_MS) return { checked: 0, warned: 0 };
+  phoneCheckedAt = now;
+  let checked = 0;
+  let warned = 0;
+  try {
+    const nets = await offered(gc);
+    for (const net of nets) {
+      const ids = (await store.all(gc, "SELECT DISTINCT user_id FROM bridge_links WHERE network = ? AND state != 'logged_out'", [net])).map((r) => r.user_id);
+      for (let i = 0; i < ids.length; i += HEALTH_BATCH) {
+        let res = [];
+        try { res = await b.health({ userIds: ids.slice(i, i + HEALTH_BATCH), network: net }); } catch { res = []; }
+        for (const r of Array.isArray(res) ? res : []) {
+          if (!r || !Number.isSafeInteger(r.userId) || !Array.isArray(r.logins)) continue;
+          checked++;
+          if (await phoneNote(gc, r.userId, net, r.logins, now)) warned++;
+        }
+      }
+    }
+  } catch (e) { gc.log.warn('phone check failed', (e && (e.code || e.message)) || 'error'); }
+  return { checked, warned };
+}
+
+/** One person's logins as the bridge sees them → bridge_links; a push when the warning is new. → true when pushed */
+async function phoneNote(gc, userId, net, logins, now) {
+  let push = null;
+  // gc.bridges.health names no login (WhatsApp names it after the number): the state holds for the person's link(s)
+  // on this network — one login per network is the rule
+  const list = logins.filter((l) => l && typeof l === 'object');
+  if (!list.length) return false;
+  const state = list.some((l) => l.state === 'connected') ? 'connected' : (STATES.includes(list[0].state) ? list[0].state : 'unknown');
+  const off = list.find((l) => l.phoneOffline === true);
+  const since = off ? (Date.parse(off.since) || now) : null;
+  await store.tx(gc, async () => {
+    const rows = await store.all(gc, 'SELECT * FROM bridge_links WHERE user_id = ? AND network = ?', [userId, net]);
+    if (!rows.length) return;
+    await store.run(gc, 'UPDATE bridge_links SET state = ?, seen_at = ?, phone_offline_since = ?, phone_warned_at = CASE WHEN ? IS NULL THEN NULL ELSE phone_warned_at END WHERE user_id = ? AND network = ?',
+      [state, now, since, since, userId, net]);
+    if (since != null && state !== 'logged_out' && rows.every((r) => r.phone_warned_at == null)) {
+      await store.run(gc, 'UPDATE bridge_links SET phone_warned_at = ? WHERE user_id = ? AND network = ?', [now, userId, net]);
+      push = phoneOf([], [{ phone_offline_since: since }], now);
+    }
+  });
+  if (!push) return false;
+  const p = (await require('./people').prefsOf(gc, [userId])).get(userId) || {};
+  const lang = p.lang === 'en' ? 'en' : 'de';
+  const texts = require('./texts.json');
+  const t = (k, params) => { let x = (texts[lang] && texts[lang][k]) || texts.de[k] || k; for (const [a, v] of Object.entries(params || {})) x = x.split(`{{${a}}}`).join(String(v)); return x; };
+  const name = t('admin.br_net_' + net);
+  try {
+    await gc.notify({ topic: 'bridge', title: t('push.phone_title', { name, days: push.days }), body: t('push.phone_body', { name }), users: [userId], priority: 'normal',
+      collapseKey: `bridge-phone-${net}`, data: { deepLink: 'bridges', bridge: net } });
+  } catch (e) { await log.add(gc, 'push_failed', (e && e.code) || 'error', now); return false; }
+  return true;
 }
 
 /** The modules of a QR code → { size, rows: ['0101…'] } (error correction M, no quiet zone), or null. */
@@ -654,6 +803,8 @@ async function route(ctx, req, seg) {
   if (seg[0] !== 'bridges') return null;
   const m = String(req.method || 'GET').toUpperCase();
   if (seg.length === 1 && m === 'GET') return { bridges: await mine(ctx) };
+  // 1.17.0: what of the older messages comes over
+  if (seg.length === 2 && seg[1] === 'history' && (m === 'PUT' || m === 'PATCH')) return historySet(ctx, req.body);
   if (seg[1] === 'children') {
     if (seg.length === 2 && m === 'GET') return { children: await childrenView(ctx) };
     const id = seg.length === 3 ? posInt(seg[2]) : null;
@@ -673,4 +824,31 @@ async function route(ctx, req, seg) {
   throw fail('not_found');
 }
 
-module.exports = { route, service, offered, adminView, adminSet, mine, allowed, refresh, api, numberOf, newChatFeature, NETWORKS, FLOWS, LOOKUP_TIMEOUT_MS, _resetLookups: () => { lookups.clear(); recent.clear(); } };
+// 1.17.0: GateControl names a login by a reference (HMAC per person, `l` + 22 characters); older GateControls passed the
+// bridge's own id — at WhatsApp the person's phone number. What is still kept of those is replaced by a keyed hash
+// (seal.mark, never the number) at the start; the next look at the person's logins puts GateControl's reference there.
+const LOGIN_REF_RE = /^l[A-Za-z0-9_-]{22}$/;
+async function forgetRawLoginIds(gc) {
+  const rows = await store.all(gc, 'SELECT user_id, network, login_id FROM bridge_links');
+  const old = rows.filter((r) => !LOGIN_REF_RE.test(String(r.login_id)) && !String(r.login_id).startsWith('h1.'));
+  if (!old.length) return 0;
+  await store.tx(gc, async () => {
+    for (const r of old) {
+      const m = seal.mark(`login|${r.user_id}|${r.network}|${r.login_id}`);
+      if (!m) continue;
+      await store.run(gc, 'UPDATE bridge_links SET login_id = ? WHERE user_id = ? AND network = ? AND login_id = ?', [m, r.user_id, r.network, r.login_id]);
+    }
+  });
+  return old.length;
+}
+
+/** GET me features.bridge_history (1.17.0): GateControl has older messages for bridges and the person linked a service. */
+async function historyFeature(ctx) {
+  if (!require('./bridgehistory').api(ctx.gc)) return false;
+  return !!(await store.one(ctx.gc, 'SELECT 1 AS x FROM bridge_links WHERE user_id = ? LIMIT 1', [ctx.viewer]));
+}
+
+module.exports = {
+  route, service, offered, adminView, adminSet, mine, allowed, refresh, api, numberOf, newChatFeature, historyFeature, phoneCheck, phoneOf, forgetRawLoginIds, NETWORKS, FLOWS, LOOKUP_TIMEOUT_MS,
+  _resetLookups: () => { lookups.clear(); recent.clear(); phoneCheckedAt = 0; },
+};

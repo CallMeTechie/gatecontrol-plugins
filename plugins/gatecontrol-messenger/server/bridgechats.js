@@ -21,6 +21,10 @@
 // GateControl's own message kinds (polls, events, live arrival, home actions, cards, locations), disappearing messages,
 // changes to members or title.
 //
+// 1.17.0 (GateControl with gc.bridges version 5): older messages — events with `history: true` (bridgehistory.js) are
+// filed like the others, but without a push, as read, without a live event per message (one conversation.update
+// { reason: 'history' } per chat), and a file in them waits until the person asks for it (ext_media 'ask').
+//
 // Clients that do not know bridged chats never see one: every route answers 404 for a bridged conversation unless
 // the request says ?bridged=1 (or `bridged: true` in its body — the buttons of a push; README "App-API", since 1.14.0).
 
@@ -289,6 +293,8 @@ async function apply(c, ev, { parked = false } = {}) {
   if (!(await require('./bridges').allowed(c.gc, ev.userId, ev.network, c.now)).allowed) { c.dropped = (c.dropped || 0) + 1; return; }
   const at = Number.isFinite(Number(ev.at)) && Number(ev.at) > 0 ? Math.min(Number(ev.at), c.now) : c.now;
   const users = [ev.userId];
+  // 1.17.0: older messages (bridgehistory.js) — no push, read already, one live event per chat
+  const hist = ev.history === true || c.history === true;
 
   if (ev.type === 'chat') {
     const conv = await ensureConv(c, ev);
@@ -327,11 +333,30 @@ async function apply(c, ev, { parked = false } = {}) {
     let replyTo = null;
     if (EVENT_RE.test(String(ev.replyTo || ''))) { const q = await msgByEvent(c.gc, conv.id, ev.replyTo); replyTo = q && !q.deleted_at ? q.id : null; }
     const cx = { ...c, now: at };
+    const before = hist && conv.last_msg_id ? await store.one(c.gc, 'SELECT id, created_at FROM messages WHERE id = ?', [conv.last_msg_id]) : null;
     const id = await messages.insert(cx, conv, { senderId: sender.self ? ev.userId : null, kind, text, replyTo, meta, via: via(ev.network) });
-    const fetch = !!(meta.bridge && meta.bridge.ref && bridgemedia.api(c.gc));
-    await store.run(c.gc, 'UPDATE messages SET ext_sender = ?, ext_event = ?, ext_state = ?, ext_media = ? WHERE id = ?', [contactId, ev.id, sender.self ? 'sent' : null, fetch ? 'wait' : null, id]);
-    if (fetch) c.mediaWork = true;
-    if (sender.self) await store.run(c.gc, 'UPDATE members SET last_read_id = MAX(last_read_id, ?), last_delivered_id = MAX(last_delivered_id, ?), updated_at = ? WHERE conv_id = ? AND user_id = ?', [id, id, c.now, conv.id, ev.userId]);
+    const file = !!(meta.bridge && meta.bridge.ref && bridgemedia.api(c.gc));
+    // a file of the history only when the person asks for it (bridgehistory.js says why)
+    const extMedia = file ? (hist ? 'ask' : 'wait') : null;
+    await store.run(c.gc, 'UPDATE messages SET ext_sender = ?, ext_event = ?, ext_state = ?, ext_media = ? WHERE id = ?', [contactId, ev.id, sender.self ? 'sent' : null, extMedia, id]);
+    if (extMedia === 'wait') c.mediaWork = true;
+    if (sender.self || hist) await store.run(c.gc, 'UPDATE members SET last_read_id = MAX(last_read_id, ?), last_delivered_id = MAX(last_delivered_id, ?), updated_at = ? WHERE conv_id = ? AND user_id = ?', [id, id, c.now, conv.id, ev.userId]);
+    if (hist) {
+      // changed now (the apps fetch messages?changedSince= and conversations?since= by it), shown at its own time; a
+      // newer message the chat had already stays its last one
+      await store.run(c.gc, 'UPDATE messages SET updated_at = ? WHERE id = ?', [c.now, id]);
+      const last = before && before.created_at > at ? before.id : id;
+      await store.run(c.gc, 'UPDATE conversations SET last_msg_id = ?, updated_at = ? WHERE id = ?', [last, c.now, conv.id]);
+      conv.last_msg_id = last;
+      if (!c.historyConvs) c.historyConvs = new Set();
+      if (!c.historyConvs.has(conv.id)) {
+        c.historyConvs.add(conv.id);
+        live.queue(c.box, users, 'conversation.update', { conversationId: conv.id, reason: 'history' });
+      }
+      c.historyFiled = (c.historyFiled || 0) + 1;
+      await unpark(c, conv, ev.id);
+      return;
+    }
     const row = await store.one(c.gc, 'SELECT * FROM messages WHERE id = ?', [id]);
     live.queue(c.box, users, 'message.new', { conversationId: conv.id, messageId: id, senderId: row.sender_id, clientId: null, kind: row.kind, createdAt: iso(row.created_at), bridge: ev.network });
     if (!sender.self && !parked) c.box.pushes.push({ bridged: { conv, me, row, text, meta, senderName: sender.system ? LABEL[ev.network] : (line(sender.name, NAME_MAX) || null), contactId, title: seal.open(conv.title_enc) || null } });

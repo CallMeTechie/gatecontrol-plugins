@@ -178,8 +178,8 @@
   // ── 1.12.0: bridges to other messengers (a GateControl that offers gc.bridges; hidden otherwise) ──
   var brBusy = false;
   function brState(n) {
-    // 1.13.0: runs, but with another image than GateControl pins
-    if (n.state === 'running' && n.outdated) return { text: T('admin.br_state_outdated'), cls: ' is-limit' };
+    // 1.13.0: runs, but with another image than GateControl pins; 1.17.0: or WhatsApp turned its version away
+    if (n.state === 'running' && (n.outdated || n.clientOutdated)) return { text: T('admin.br_state_outdated'), cls: ' is-limit' };
     if (n.state === 'running') return { text: T('admin.br_state_running'), cls: '' };
     if (n.state === 'starting') return { text: T('admin.br_state_starting'), cls: ' is-limit' };
     if (n.state === 'failed') return { text: T('admin.br_state_failed'), cls: ' is-error' };
@@ -195,8 +195,12 @@
     if (h.error === 'start_failed') return T('admin.br_err_start');
     if (h.script && h.script.host != null && h.script.host < h.script.needed) return T('admin.br_err_script', { have: h.script.host, need: h.script.needed });
     if (h.state !== 'running') return T('admin.br_starting_hint');
+    // 1.17.0: WhatsApp itself refuses the bridge's version — only a GateControl update with a newer pin helps
+    var refused = (b.networks || []).filter(function (n) { return n.clientOutdated; })[0];
+    if (refused) return T('admin.br_client_outdated', { name: T('admin.br_net_' + refused.id) });
     var old = (b.networks || []).filter(function (n) { return n.state === 'running' && n.outdated; })[0] || (h.homeserver && h.homeserver.running && h.homeserver.outdated ? h.homeserver : null);
-    if (old) return T('admin.br_outdated', { have: old.version || '?', want: old.wantVersion || '?' });
+    // 1.17.0 (update.sh marker 8): the script takes the pin of this GateControl at its next run
+    if (old) return T(h.script && h.script.host != null && h.script.host >= 8 ? 'admin.br_outdated_pin' : 'admin.br_outdated', { have: old.version || '?', want: old.wantVersion || '?' });
     // 1.14.0: the way of the messages (GateControl with gc.bridges version 3: status().messages)
     if (!b.messages) return T('admin.br_need_server');
     if (b.messages.relay === 'missing') return T('admin.br_err_relay');
@@ -256,6 +260,8 @@
       if (n.version) sub.push(n.version);
       if (n.memMb != null) sub.push(n.limitMb ? T('admin.br_mem_of', { mem: n.memMb, limit: n.limitMb }) : T('admin.br_mem', { mem: n.memMb }));
       sub.push(T(n.linked === 1 ? 'admin.br_linked_one' : 'admin.br_linked', { n: n.linked || 0 }));
+      // 1.17.0: how many of them got the bridge's phone warning (no names)
+      if (n.phoneOffline) sub.push(T(n.phoneOffline === 1 ? 'admin.br_phone_one' : 'admin.br_phone', { n: n.phoneOffline }));
       list.appendChild(el('li', null, [
         el('span', { class: 'ms-br-mark', 'aria-hidden': 'true', text: T('admin.br_mark_' + n.id) }),
         el('span', { class: 'ms-gc-path' }, [el('span', { text: T('admin.br_net_' + n.id) }), el('small', { text: sub.join(' · ') })]),
@@ -280,11 +286,70 @@
     var pr = $('#ms-br-probe');
     pr.hidden = !probe;
     pr.textContent = probe || '';
+    renderBr17(b);
     // 1.16.0: a new chat by number — how many numbers a person may check per hour (only while GateControl can)
     var nc = b.newChat;
     $('#ms-br-nc').hidden = !(nc && nc.available);
     if (nc && nc.available && document.activeElement !== $('#ms-br-nc-in')) $('#ms-br-nc-in').value = String(nc.perHour);
   }
+  // ── 1.17.0: where the files lie, the nightly snapshot, older messages, the clean-up at the homeserver ──
+  function fmtDate(iso) { return new Date(iso).toLocaleString(M.LOCALE, { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }); }
+  function renderBr17(b) {
+    var md = b.media;
+    $('#ms-br-media').hidden = !md;
+    if (md) {
+      $('#ms-br-media-v').textContent = md.target && md.target.kind !== 'server' ? (md.target.label || T('admin.br_media_target')) : T('admin.br_place_server');
+      var ms = [T('admin.br_media_sub', { size: M.bytes(md.bytes || 0), n: md.count || 0 })];
+      if (md.moving) ms.push(T('admin.br_media_moving', { done: md.moving.done, total: md.moving.total }));
+      else if (md.state === 'unreachable') ms.push(T('admin.br_media_unreachable'));
+      ms.push(T('admin.br_media_hint'));
+      $('#ms-br-media-sub').textContent = ms.join(' · ');
+    }
+    var bk = b.backup;
+    $('#ms-br-bk').hidden = !bk;
+    if (bk) {
+      var bs = [T('admin.br_bk_sub', { time: bk.time })];
+      if (bk.lastAt) bs.push(T('admin.br_bk_last', { date: fmtDate(bk.lastAt), size: bk.bytes != null ? M.bytes(bk.bytes) : '?' }));
+      else bs.push(T('admin.br_bk_never'));
+      if (bk.error) bs.push(T('admin.br_bk_error'));
+      if (bk.restore && bk.restore.state === 'waiting') bs.push(T('admin.br_bk_restoring'));
+      $('#ms-br-bk-sub').textContent = bs.join(' · ');
+      var v = M.clear($('#ms-br-bk-v'));
+      v.className = 'ms-br-bkv';
+      if (bk.requested) v.appendChild(el('span', { class: 'ms-pill is-limit', text: T('admin.br_bk_requested') }));
+      v.appendChild(el('button', { type: 'button', class: 'btn btn-sm', id: 'ms-br-bk-now', text: T('admin.br_bk_now'), disabled: !!bk.requested || !b.enabled,
+        on: { click: function () { setBr({ backupNow: true }); } } }));
+    }
+    var hs = b.history || {};
+    $('#ms-br-hist').hidden = !hs.available;
+    // with older history (gc.bridges version 5) the note under „Wo laufen die Brücken?“ says how the server spares its disk
+    if (hs.available) $('#ms-br-place-note').textContent = T('admin.br_place_note_hist');
+    if (hs.available) {
+      var sw = M.clear($('#ms-br-hist-on'));
+      sw.appendChild(M.switchBtn(hs.enabled !== false, T('admin.br_hist_on'), function (on) { setBr({ history: on }); }, !b.enabled));
+      $('#ms-br-hist-sub').textContent = T('admin.br_hist_sub', { conv: hs.conversations || 30, msgs: hs.messages || 200 });
+      $('#ms-br-hist-win').hidden = hs.enabled === false;
+      if (document.activeElement !== $('#ms-br-hist-from')) $('#ms-br-hist-from').value = hs.from || '01:00';
+      if (document.activeElement !== $('#ms-br-hist-to')) $('#ms-br-hist-to').value = hs.to || '05:00';
+      var hn = $('#ms-br-hist-note');
+      var text = hs.enabled === false ? null : (hs.pending > 0 ? T('admin.br_hist_pending', { n: hs.pending, from: hs.from, to: hs.to }) : T('admin.br_hist_disk'));
+      hn.hidden = !text;
+      hn.textContent = text || '';
+    }
+    var cl = b.cleanup;
+    var cn = $('#ms-br-clean');
+    var ct = !cl || !b.enabled ? null : (cl.error === 'no_admin' ? T('admin.br_clean_no_admin') : ((cl.deleted || cl.waiting) ? T('admin.br_clean', { deleted: cl.deleted || 0, waiting: cl.waiting || 0 }) : null));
+    cn.hidden = !ct;
+    cn.textContent = ct || '';
+  }
+  function histWindow() {
+    var f = $('#ms-br-hist-from').value;
+    var t = $('#ms-br-hist-to').value;
+    if (!/^\d\d:\d\d$/.test(f) || !/^\d\d:\d\d$/.test(t)) { M.toast(T('error.invalid'), 'error'); return; }
+    setBr({ historyFrom: f, historyTo: t });
+  }
+  $('#ms-br-hist-from').addEventListener('change', histWindow);
+  $('#ms-br-hist-to').addEventListener('change', histWindow);
   $('#ms-br-nc-in').addEventListener('change', function (e) {
     var v = Number(e.target.value);
     if (!Number.isInteger(v) || v < 1 || v > 60) { M.toast(T('error.invalid'), 'error'); M.api('GET', 'admin/bridges').then(function (r) { renderBr(r.bridges); }).catch(function () {}); return; }

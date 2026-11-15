@@ -47,6 +47,17 @@
 //   resolve / createDm: a changing request of that person, a link (else ERR_BRIDGE bridge_error), + and the country
 //   code (ERR_INVALID invalid_number), 20 per person and hour (ERR_RATE_LIMIT with retryAfterS); logged as
 //   { op: 'resolve' | 'create_dm', userId } — never the number
+// Version 5 (GateControl with stage 5 — history, health, snapshot, clean-up; createHost(dir, { bridges: { …, version: 5 } })):
+//   await host.bridges.deliverHistory([event, …])  older messages the people wanted (GateControl's bridge_backlog):
+//                                            gc.bridges.history.pull / ack (no person needed); `history: true` on each
+//   host.bridges.backlog                     what of it was not acknowledged
+//   host.bridges.setHistory(false)           an administrator forbade older messages (status().history.enabled)
+//   host.bridges.phoneOffline(userId, loginId, sinceIso | null)   the bridge's warning "phone not seen for 12 days"
+//                                            (logins / health: phoneOffline, since; state stays connected)
+//   host.bridges.clientOutdated(userId, loginId, on)   WhatsApp turned the bridge's version away (clientOutdated)
+//   history.get / set: inside a request (set: a changing one) of that person; days 0 | 30 | -1 (default 30)
+//   health({ userIds, network }): no person needed, ≤ 100 people; status() also carries backup and cleanup;
+//   configure() takes history, backupNow, backupTime
 // events.pull / events.ack need no person; chats() a request of that person; send / react / redact / read / typing a
 // changing request of that person, their own chat (else ERR_INVALID 'unknown chat'), a bridge that runs.
 //
@@ -78,9 +89,10 @@ function install({ opts, perms, enabledUser, hostError, personCtx, mediaHost }) 
     host: { state: o && o.running ? 'running' : null, error: null, running: !!(o && o.running), memMb: o && o.running ? 88 : null, outdated: false, probe: null },
     logins: new Map(), processes: new Map(), log: [], seq: 0, oddStep: null, elsewhere: new Map(),
   };
-  const version = o && o.version === 1 ? 1 : (o && o.version === 4 ? 4 : (o && o.version === 3 ? 3 : 2));
+  const version = o && o.version === 1 ? 1 : (o && o.version === 5 ? 5 : (o && o.version === 4 ? 4 : (o && o.version === 3 ? 3 : 2)));
   Object.assign(st, { inbox: [], inboxSeq: 0, chats: new Map(), sent: [], failSend: null, wake: null });
   Object.assign(st, { files: new Map(), fetches: [], numbers: new Map(), lookups: new Map(), dms: new Map() });
+  Object.assign(st, { history: true, historyPeople: new Map(), backlog: [], backlogSeq: 0, backup: { time: '03:10', timeZone: 'Europe/Berlin', lastAt: null, bytes: null, requested: false, error: null, restore: null }, backupTime: '03:10' });
 
   const err = (code, message, reason) => { const e = hostError(code, message); if (reason) e.reason = reason; return e; };
   const need = () => { if (perms.bridges !== true) throw hostError('ERR_BRIDGES_DENIED', 'this plugin has no bridges permission'); };
@@ -98,15 +110,17 @@ function install({ opts, perms, enabledUser, hostError, personCtx, mediaHost }) 
         return {
           id, enabled: st.networks[id], state, version: up ? (st.host.outdated ? '0.2609.0' : '0.2610.0') : null, memMb: up ? st.host.memMb : null, limitMb: up ? 512 : null,
           ...(version >= 2 ? { outdated: up && st.host.outdated === true, wantVersion: '0.2610.0' } : {}),
+          ...(version >= 5 ? { clientOutdated: [...st.logins.values()].some((l) => l.some((x) => x.clientOutdated)) } : {}),
         };
       }),
       host: {
         state: st.enabled ? st.host.state : 'stopped', error: st.enabled ? st.host.error : null, checkedAt: st.host.state ? new Date().toISOString() : null,
-        cron: 'ok', script: { host: version >= 3 ? 7 : (version >= 2 ? 6 : 5), needed: version >= 3 ? 7 : (version >= 2 ? 6 : 5) },
+        cron: 'ok', script: { host: version >= 5 ? 8 : (version >= 3 ? 7 : (version >= 2 ? 6 : 5)), needed: version >= 5 ? 8 : (version >= 3 ? 7 : (version >= 2 ? 6 : 5)) },
         homeserver: { running: up, memMb: up ? 61 : null, limitMb: up ? 384 : null, version: up ? '1.9.4' : null, ...(version >= 2 ? { outdated: false, wantVersion: '1.9.4' } : {}) },
         ...(version >= 2 ? { limitsProvisional: true, probe: st.host.probe || null } : {}),
       },
-      history: { enabled: false },
+      history: version >= 5 ? { enabled: st.history, default: 30, options: [0, 30, -1], pending: st.backlog.length, conversations: 30, messages: 200, timeZone: 'Europe/Berlin' } : { enabled: false },
+      ...(version >= 5 ? { backup: { ...st.backup, time: st.backupTime }, cleanup: { deleted: 0, lastAt: null, error: null, waiting: 0 }, version: 5 } : {}),
       ...(version >= 3 ? { messages: { listening: st.enabled, relay: !st.enabled ? null : (st.host.relay || 'running'), lastEventAt: null, transactions: 0, pending: st.inbox.length } } : {}),
     };
   }
@@ -145,7 +159,8 @@ function install({ opts, perms, enabledUser, hostError, personCtx, mediaHost }) 
   };
 
   function complete(p) {
-    const loginId = `login-${++st.seq}`;
+    // like GateControl: a reference (HMAC per person), never the bridge's id — which is the person's number at WhatsApp
+    const loginId = 'l' + Buffer.from(`login-${++st.seq}-${p.userId}`).toString('base64url').padEnd(22, 'A').slice(0, 22);
     const list = st.logins.get(p.userId) || [];
     list.push({ id: loginId, name: p.phone || '+490000000', state: 'connected', since: new Date().toISOString(), error: null });
     st.logins.set(p.userId, list);
@@ -162,7 +177,11 @@ function install({ opts, perms, enabledUser, hostError, personCtx, mediaHost }) 
       if (!st.preview) throw err('ERR_BRIDGES_UNAVAILABLE', 'the bridges are not offered on this server', 'preview_off');
       const p = patch && typeof patch === 'object' && !Array.isArray(patch) ? patch : null;
       if (!p) throw hostError('ERR_INVALID', 'patch: an object');
-      for (const k of Object.keys(p)) if (k !== 'enabled' && k !== 'networks') throw hostError('ERR_INVALID', 'unknown key');
+      const keys = version >= 5 ? ['enabled', 'networks', 'history', 'backupNow', 'backupTime'] : ['enabled', 'networks'];
+      for (const k of Object.keys(p)) if (!keys.includes(k)) throw hostError('ERR_INVALID', 'unknown key');
+      if (p.history !== undefined) { if (typeof p.history !== 'boolean') throw hostError('ERR_INVALID', 'history: a boolean'); st.history = p.history; }
+      if (p.backupTime !== undefined) { if (!/^([01][0-9]|2[0-3]):[0-5][0-9]$/.test(String(p.backupTime))) throw hostError('ERR_INVALID', 'backupTime: HH:MM'); st.backupTime = p.backupTime; }
+      if (p.backupNow !== undefined) { if (p.backupNow !== true) throw hostError('ERR_INVALID', 'backupNow: true'); st.backup.requested = true; }
       if (p.enabled !== undefined && typeof p.enabled !== 'boolean') throw hostError('ERR_INVALID', 'enabled: a boolean');
       if (p.networks !== undefined) {
         if (!p.networks || typeof p.networks !== 'object' || Array.isArray(p.networks)) throw hostError('ERR_INVALID', 'networks: an object');
@@ -170,7 +189,7 @@ function install({ opts, perms, enabledUser, hostError, personCtx, mediaHost }) 
         Object.assign(st.networks, p.networks);
       }
       if (p.enabled !== undefined) st.enabled = p.enabled;
-      st.log.push({ op: 'configure', by: who.id, enabled: st.enabled, networks: { ...st.networks } });
+      st.log.push({ op: 'configure', by: who.id, enabled: st.enabled, networks: { ...st.networks }, ...(version >= 5 ? { history: st.history, backupNow: p.backupNow === true } : {}) });
       return status();
     },
     'bridges.login.flows': async ({ userId, network }) => { need(); person(userId, false); bridge(network); return FLOWS.map((f) => ({ ...f })); },
@@ -382,6 +401,47 @@ function install({ opts, perms, enabledUser, hostError, personCtx, mediaHost }) 
     },
   });
 
+  // ── version 5: older messages, the state of the logins ──
+  const daysOf = (userId) => (!st.history ? 0 : (st.historyPeople.has(userId) ? st.historyPeople.get(userId) : 30));
+  if (version >= 5) Object.assign(api, {
+    'bridges.history.get': async ({ userId }) => {
+      need(); person(userId, false);
+      return { allowed: st.preview && st.history, days: st.historyPeople.has(userId) ? st.historyPeople.get(userId) : 30, default: 30, options: [0, 30, -1], pending: st.backlog.filter((e) => e.userId === userId).length };
+    },
+    'bridges.history.set': async ({ userId, days }) => {
+      need(); person(userId, true);
+      if (![0, 30, -1].includes(days)) throw hostError('ERR_INVALID', 'days: one of 0, 30, -1');
+      if (days === 30) st.historyPeople.delete(userId); else st.historyPeople.set(userId, days);
+      st.log.push({ op: 'history_set', userId, days });
+      // fewer days: what waits and is not wanted any more goes now
+      const d = daysOf(userId);
+      st.backlog = st.backlog.filter((e) => e.userId !== userId || (d !== 0 && (d < 0 || (Number(e.at) || 0) >= Date.now() - d * 86400000)));
+      return api['bridges.history.get']({ userId });
+    },
+    'bridges.history.pull': async ({ limit, chatId, userId }) => {
+      need();
+      if (!st.preview) return { events: [], more: false };
+      const n = Number.isSafeInteger(limit) && limit > 0 ? Math.min(limit, 200) : 100;
+      const rows = st.backlog.filter((e) => (chatId == null || (e.chat && e.chat.id === chatId)) && (userId == null || e.userId === userId));
+      return { events: rows.slice(0, n).map((e) => JSON.parse(JSON.stringify(e))), more: rows.length > n };
+    },
+    'bridges.history.ack': async ({ seqs }) => {
+      need();
+      if (!Array.isArray(seqs) || seqs.length > 1000 || seqs.some((x) => !Number.isSafeInteger(x) || x < 0)) throw hostError('ERR_INVALID', 'seqs: up to 1000 sequence numbers');
+      st.backlog = st.backlog.filter((e) => !seqs.includes(e.seq));
+      st.log.push({ op: 'history_ack', count: seqs.length });
+      return { ok: true, pending: st.backlog.length };
+    },
+    'bridges.health': async ({ userIds, network }) => {
+      need();
+      if (!Array.isArray(userIds) || userIds.length > 100 || userIds.some((u) => !Number.isSafeInteger(u) || u <= 0)) throw hostError('ERR_INVALID', 'userIds: up to 100 people');
+      bridge(network);
+      st.log.push({ op: 'health', count: userIds.length });
+      // like the host: no id, no name of a login (WhatsApp names both after the number)
+      return userIds.map((u) => ({ userId: u, logins: (st.logins.get(u) || []).map((l) => ({ state: l.state, since: l.since, error: l.error, phoneOffline: !!l.phoneOffline, clientOutdated: !!l.clientOutdated })) }));
+    },
+  });
+
   /** gc.bridges (the child bootstrap's shape) */
   const gcPart = (call) => Object.freeze({
     version,
@@ -412,6 +472,15 @@ function install({ opts, perms, enabledUser, hostError, personCtx, mediaHost }) 
       media: Object.freeze({ fetch: (userId, network, ref, o2) => call('bridges.media.fetch', { userId, network, ref, name: o2 && o2.name != null ? o2.name : null }) }),
       resolve: (userId, network, number) => call('bridges.resolve', { userId, network, number }),
       createDm: (userId, network, number) => call('bridges.createDm', { userId, network, number }),
+    } : {}),
+    ...(version >= 5 ? {
+      history: Object.freeze({
+        get: (userId) => call('bridges.history.get', { userId }),
+        set: (userId, days) => call('bridges.history.set', { userId, days }),
+        pull: (o2) => call('bridges.history.pull', { limit: o2 && o2.limit, chatId: o2 && o2.chatId, userId: o2 && o2.userId }),
+        ack: (seqs) => call('bridges.history.ack', { seqs }),
+      }),
+      health: (o2) => call('bridges.health', { userIds: o2 && o2.userIds, network: o2 && o2.network }),
     } : {}),
   });
 
@@ -458,6 +527,22 @@ function install({ opts, perms, enabledUser, hostError, personCtx, mediaHost }) 
     async deliver(events, { wake = true } = {}) {
       for (const e of events) st.inbox.push({ network: 'whatsapp', at: Date.now(), ...JSON.parse(JSON.stringify(e)), seq: ++st.inboxSeq });
       if (wake && st.wake) await st.wake({ pending: st.inbox.length, ephemeral: [] });
+    },
+    // ── version 5 ──
+    async deliverHistory(events) {
+      for (const e of events) st.backlog.push({ network: 'whatsapp', at: Date.now(), ...JSON.parse(JSON.stringify(e)), history: true, seq: ++st.backlogSeq });
+    },
+    get backlog() { return st.backlog; },
+    setHistory(on) { st.history = on === true; },
+    phoneOffline(userId, loginId, since) {
+      const l = (st.logins.get(userId) || []).find((x) => x.id === loginId);
+      if (!l) throw new Error('mock host: unknown login ' + loginId);
+      l.phoneOffline = !!since; l.error = since ? 'wa-phone-offline' : null; if (since) l.since = since;
+    },
+    clientOutdated(userId, loginId, on) {
+      const l = (st.logins.get(userId) || []).find((x) => x.id === loginId);
+      if (!l) throw new Error('mock host: unknown login ' + loginId);
+      l.clientOutdated = on !== false; l.error = on !== false ? 'wa-client-outdated' : null;
     },
     async ephemeral(events) {
       if (st.wake) await st.wake({ pending: st.inbox.length, ephemeral: events.map((e) => ({ network: 'whatsapp', ...JSON.parse(JSON.stringify(e)) })) });
