@@ -1,4 +1,4 @@
-<!-- version: 1.15.1 -->
+<!-- version: 1.16.0 -->
 # Mail
 
 ## Was das Plugin kann
@@ -107,6 +107,12 @@ Liegen die Anhänge auf einem Speicherziel, das nicht erreichbar ist, versucht M
 
 **Frei/Gebucht zeigt „unbekannt“.**
 Die Person hat Frei/Gebucht abgeschaltet oder ist nicht in GateControl. Kolleginnen in Microsoft 365 erscheinen über dein Microsoft-Konto.
+
+## Neu in 1.16.0
+
+- **Dein Adressbuch im Messenger:** Ist der Messenger (ab 1.18.0) mit WhatsApp-Verknüpfung installiert, zeigt „Neuer Chat“ deine Kontakte mit Telefonnummer im Abschnitt „Aus deinem Adressbuch“. Der Messenger liest nur deine eigenen Kontakte, nur Name und Telefonnummern, und ändert nichts daran.
+- **Mobil zuerst:** Hat ein Kontakt mehrere Nummern, stehen Mobilnummern vorn, dann Geschäftlich und Privat; Festnetznummern stehen ausgegraut unten.
+- Sind die Kontakte in Mail ausgeschaltet oder hast du keinen Platz in Mail, fehlt der Abschnitt im Messenger.
 
 ## Neu in 1.15.1
 

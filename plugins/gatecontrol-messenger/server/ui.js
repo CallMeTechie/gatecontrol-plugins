@@ -30,8 +30,9 @@ const FILES = {
   // video.js (1.3.0): previews of the videos and PDFs the portal sends (MP4 reader + WebCodecs)
   // rich.js (1.4.0): polls, events, arrivals, home actions, cards, status and stories, settings (window.MSRich)
   // bridges.js (1.13.0): „Verknüpfte Dienste“ — the person's own links to other messengers (window.MSBridges)
-  // newchat.js (1.16.0): „Neuer WhatsApp-Chat“ — a new chat by phone number over a bridge (window.MSNewChat)
-  portal: { html: read('portal.html'), js: read('portal.js'), css: read('portal.css'), lib: [read('video.js'), read('rich.js'), read('bridges.js'), read('newchat.js')] },
+  // newchat.js (1.16.0): „Neuer WhatsApp-Chat“ — a new chat by phone number over a bridge (window.MSNewChat);
+  // ncontacts.js (1.18.0): „Neuer Chat“ with contacts — GateControl, WhatsApp, the address book (window.MSContacts)
+  portal: { html: read('portal.html'), js: read('portal.js'), css: read('portal.css'), lib: [read('video.js'), read('rich.js'), read('bridges.js'), read('newchat.js'), read('ncontacts.js')] },
 };
 
 function esc(s) {

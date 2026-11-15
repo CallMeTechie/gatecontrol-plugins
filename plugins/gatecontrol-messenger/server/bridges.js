@@ -657,6 +657,8 @@ const markOf = (ctx, net, number) => seal.mark(`${ctx.viewer}|${net}|${number}`)
 
 async function forgetNumbers(gc, userId, net) {
   await store.run(gc, 'UPDATE conversations SET bridge_num = NULL WHERE bridge_owner = ? AND bridge_net = ? AND bridge_num IS NOT NULL', [userId, net]);
+  // 1.18.0: what was remembered as „nicht bei WhatsApp“ goes with the link
+  await require('./contactchat').forget(gc, userId, net);
   recent.delete(userId);
 }
 
@@ -683,6 +685,18 @@ async function newChatState(ctx, net, a, state, links) {
   else if (!links.some((l) => l.state !== 'logged_out')) reason = 'logged_out';
   else if (state !== 'running') reason = 'unreachable';
   return { available: reason === null, reason, limit };
+}
+
+/** 1.18.0: newChatState of one network for the viewer without asking the bridge (contacts/new-chat) — null when the
+ *  bridges are not offered or this network is off. */
+async function newChatOf(ctx, net) {
+  const s = await hostStatus(ctx.gc);
+  if (!s.available || !s.enabled) return null;
+  const n = (s.networks || []).find((x) => x && x.id === net && x.enabled);
+  if (!n) return null;
+  const a = await allowed(ctx.gc, ctx.viewer, net, ctx.now);
+  const links = await store.all(ctx.gc, 'SELECT state FROM bridge_links WHERE user_id = ? AND network = ?', [ctx.viewer, net]);
+  return newChatState(ctx, net, a, n.state === 'running' ? 'running' : 'unreachable', links);
 }
 
 /** GET me features.bridge_new_chat (1.16.0): GateControl can look numbers up and the person linked a service — the
@@ -769,8 +783,79 @@ async function resolveNumber(ctx, net, body) {
   return { found: true, name, avatarUrl: null, existing: null };
 }
 
-/** POST bridges/:network/chats { number } → { conversation, created } — the direct chat with this number, made or found. */
+/** The chat the bridge made or found → { conversation, created } (mark: the keyed hash of its number, or null). */
+async function adoptChat(ctx, net, r, mark) {
+  const chat = r && r.chat && typeof r.chat === 'object' ? r.chat : null;
+  if (!chat) throw fail('bridge_failed', { reason: 'bad_answer' });
+  return store.tx(ctx.gc, async () => {
+    const before = await store.one(ctx.gc, 'SELECT id FROM conversations WHERE bridge_owner = ? AND bridge_net = ? AND bridge_ref = ?', [ctx.viewer, net, String(chat.id || '')]);
+    const conv = await require('./bridgechats').openChat(ctx, net, { id: chat.id, kind: 'direct', name: chat.name });
+    if (!conv) throw fail('bridge_failed', { reason: 'bad_answer' });
+    // 1.16.0: found again by the keyed hash of the number (never the number)
+    if (mark && conv.kind === 'direct') await store.run(ctx.gc, 'UPDATE conversations SET bridge_num = ? WHERE id = ?', [mark, conv.id]);
+    return { conversation: await convView(ctx, conv.id), created: !before };
+  });
+}
+
+/** 1.18.0: POST bridges/:network/chats { ref } — a WhatsApp contact of contacts/new-chat: nothing to check, nothing counted. */
+async function chatByRef(ctx, net, ref) {
+  await newGate(ctx, net);
+  const cc = require('./contactchat');
+  const b = cc.api(ctx.gc);
+  if (!b) throw fail('feature_off');
+  if (typeof ref !== 'string' || !cc.REF_RE.test(ref)) throw fail('invalid');
+  let r;
+  try { r = await timed(b.createDmByRef(ctx.viewer, net, ref)); } catch (e) {
+    if (e && e.code === 'ERR_INVALID' && e.reason === 'expired_ref') throw fail('contact_expired');
+    throw lookupMapped(e);
+  }
+  return adoptChat(ctx, net, r, null);
+}
+
+/**
+ * 1.18.0: POST bridges/:network/chats { contactId, phoneKind } — a number of the person's address book (Mail): exactly
+ * this number is checked at the service (resolve), counted in the brake, a „no“ remembered for 30 days (contact id,
+ * kind, date — never the number). A chat that exists, or a „no“ remembered, asks nobody and counts nothing.
+ */
+async function chatByContact(ctx, net, body) {
+  const b = await newGate(ctx, net);
+  const cc = require('./contactchat');
+  const id = posInt(body.contactId);
+  const key = typeof body.phoneKind === 'string' && cc.KEY_RE.test(body.phoneKind) ? body.phoneKind : null;
+  if (!id || !key) throw fail('invalid');
+  const entry = await cc.bookContact(ctx, id);
+  const phone = entry && Array.isArray(entry.phones) ? entry.phones.find((p) => p && p.key === key) : null;
+  if (!phone) throw fail('not_found', { reason: 'contact_gone' });
+  const number = numberOf(phone.e164 || '');
+  if (!number) throw fail('invalid_number');
+  const mark = markOf(ctx, net, number);
+  const known = await chatOfNumber(ctx, net, mark);
+  if (known) return { conversation: await convView(ctx, known.id), created: false };
+  if (await cc.isNotOn(ctx, net, id, key)) throw fail('not_found', { reason: 'not_on_network', remembered: true });
+  const back = remembered(ctx, mark) ? () => {} : take(ctx);
+  let r;
+  try { r = await timed(b.resolve(ctx.viewer, net, number)); } catch (e) {
+    const m = lookupMapped(e);
+    if (!m || NOT_COUNTED.includes(m.code)) back();
+    throw m;
+  }
+  if (!(r && r.found === true)) {
+    await cc.rememberNotOn(ctx, net, id, key);
+    await log.add(ctx.gc, 'bridge_number_checked', 'addressbook not_found', ctx.now);
+    throw fail('not_found', { reason: 'not_on_network' });
+  }
+  await log.add(ctx.gc, 'bridge_number_checked', 'addressbook found', ctx.now);
+  remember1(ctx, mark);
+  let made;
+  try { made = await timed(b.createDm(ctx.viewer, net, number)); } catch (e) { throw lookupMapped(e); }
+  return adoptChat(ctx, net, made, mark);
+}
+
+/** POST bridges/:network/chats { number } → { conversation, created } — the direct chat with this number, made or found.
+ *  1.18.0: or { ref } (a WhatsApp contact) / { contactId, phoneKind } (a number of the address book). */
 async function newChat(ctx, net, body) {
+  if (body && typeof body === 'object' && body.ref != null) return chatByRef(ctx, net, body.ref);
+  if (body && typeof body === 'object' && (body.contactId != null || body.phoneKind != null)) return chatByContact(ctx, net, body);
   const b = await newGate(ctx, net);
   const number = numberIn(body);
   const mark = markOf(ctx, net, number);
@@ -784,16 +869,7 @@ async function newChat(ctx, net, body) {
     if (!m || NOT_COUNTED.includes(m.code)) back();
     throw m;
   }
-  const chat = r && r.chat && typeof r.chat === 'object' ? r.chat : null;
-  if (!chat) throw fail('bridge_failed', { reason: 'bad_answer' });
-  return store.tx(ctx.gc, async () => {
-    const before = await store.one(ctx.gc, 'SELECT id FROM conversations WHERE bridge_owner = ? AND bridge_net = ? AND bridge_ref = ?', [ctx.viewer, net, String(chat.id || '')]);
-    const conv = await require('./bridgechats').openChat(ctx, net, { id: chat.id, kind: 'direct', name: chat.name });
-    if (!conv) throw fail('bridge_failed', { reason: 'bad_answer' });
-    // 1.16.0: found again by the keyed hash of the number (never the number)
-    if (mark && conv.kind === 'direct') await store.run(ctx.gc, 'UPDATE conversations SET bridge_num = ? WHERE id = ?', [mark, conv.id]);
-    return { conversation: await convView(ctx, conv.id), created: !before };
-  });
+  return adoptChat(ctx, net, r, mark);
 }
 
 // ─── Routes ────────────────────────────────────────────
@@ -849,6 +925,6 @@ async function historyFeature(ctx) {
 }
 
 module.exports = {
-  route, service, offered, adminView, adminSet, mine, allowed, refresh, api, numberOf, newChatFeature, historyFeature, phoneCheck, phoneOf, forgetRawLoginIds, NETWORKS, FLOWS, LOOKUP_TIMEOUT_MS,
+  route, service, offered, adminView, adminSet, mine, allowed, refresh, api, numberOf, newChatFeature, newChatOf, historyFeature, phoneCheck, phoneOf, forgetRawLoginIds, NETWORKS, FLOWS, LOOKUP_TIMEOUT_MS,
   _resetLookups: () => { lookups.clear(); recent.clear(); phoneCheckedAt = 0; },
 };

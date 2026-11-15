@@ -35,6 +35,18 @@
 //   ms_accounts, ms_tasks_consent, ms_tasks_token (1.12.0, caller gatecontrol-notizen only, maxPerHour 600 each) — the
 //                  person's Microsoft accounts for the move from Microsoft To Do; see msAccounts / msTasksConsent /
 //                  msTasksToken below.
+//   1.16.0 — for the Messenger („Neuer Chat“: the section „Aus deinem Adressbuch“):
+//   contacts_phones { userId, q?, cursor?, limit?, ids? } → { ok: true, items: [{ id, name, phones: [{ key, kind, value,
+//                  e164, landline }] }], next }   (caller gatecontrol-messenger only, read only) — the person's OWN
+//                  contacts with at least one phone number, as „Kontakte“ lists them (linked ones under their main
+//                  contact, visible address books only), sorted like there. `q` searches name, company and number
+//                  digits; `ids` (≤ 50) answers just those contacts (the one tapped). kind: mobile | work | home | other
+//                  (fax numbers are left out); key: kind, the second of a kind `<kind>-2` …; e164: the number with +
+//                  and the country code (a national 0 → +49), null when it cannot be read; landline: true when the
+//                  number is a landline by its prefix (+49 not 15x/16x/17x, +43 not 6xx, +41 not 75x–79x), false for a
+//                  mobile one, null unknown. A page holds up to `limit` (≤ 100, default 50) and stays within the 16 KB
+//                  of an answer; `next` continues. Codes: forbidden, invalid, unavailable { reason } (feature_off —
+//                  contacts switched off —, not_allowed, not_licensed, no_seat).
 //   tofile_count   { userId } → { ok: true, count, hint }   (1.7.0, caller gatecontrol-drive only) — the attachments of
 //                  "Zum Ablegen" (GET filing) of the person: how many, and the folder Drive suggested for the newest one
 //                  („Familie › Versicherungen“, null without). Drive's overview shows it under "Zu erledigen".
@@ -56,6 +68,7 @@ const { posInt, line, isKnown, parse } = require('./util');
 
 const DRIVE = 'gatecontrol-drive';
 const NOTIZEN = 'gatecontrol-notizen';
+const MESSENGER = 'gatecontrol-messenger';
 const TITLE_MAX = 80;
 const NOTE_MAX = 500;
 const LIST_MAX = 100;
@@ -387,6 +400,127 @@ async function msTasksToken(gc, payload, user) {
   }
 }
 
+// ─── 1.16.0: contacts with phone numbers (Messenger) ─────
+
+const PHONES_PAGE = 50;
+const PHONES_PAGE_MAX = 100;
+const PHONES_IDS_MAX = 50;
+const PHONES_PER_CARD = 8;
+const PHONES_ANSWER_MAX = 14000; // the answer of a service stays within 16 KB
+const PHONE_KINDS = ['mobile', 'work', 'home', 'other'];
+const E164_RE = /^\+[1-9][0-9]{6,14}$/;
+
+/** A number as written in a contact → '+49…' (a national 0 counts as Germany), or null. */
+function e164Of(v) {
+  let x = String(v || '').replace(/\(0\)/g, '').replace(/[\s\-./()]/g, '');
+  if (x.startsWith('00')) x = '+' + x.slice(2);
+  else if (/^0[1-9]/.test(x)) x = '+49' + x.slice(1);
+  if (!E164_RE.test(x) || x.startsWith('+490')) return null;
+  return x;
+}
+/** Landline by the prefix (true), mobile (false), or not known (null). */
+function landlineOf(e164) {
+  if (!e164) return null;
+  if (e164.startsWith('+49')) return !/^\+491[5-7]/.test(e164);
+  if (e164.startsWith('+43')) return !/^\+436/.test(e164);
+  if (e164.startsWith('+41')) return !/^\+417[5-9]/.test(e164);
+  return null;
+}
+/** The phones of a card's fields → [{ key, kind, value, e164, landline }]: mobile numbers first, then work, home, other, landlines last. */
+function phonesOf(list) {
+  const seen = new Map();
+  const out = [];
+  for (const p of list || []) {
+    if (!p || typeof p.value !== 'string' || p.type === 'fax') continue;
+    const kind = PHONE_KINDS.includes(p.type) ? p.type : 'other';
+    const n = (seen.get(kind) || 0) + 1;
+    seen.set(kind, n);
+    const value = line(p.value).slice(0, 40);
+    if (!value) continue;
+    const e164 = e164Of(value);
+    out.push({ key: n === 1 ? kind : `${kind}-${n}`, kind, value, e164, landline: kind === 'mobile' && landlineOf(e164) === null ? false : landlineOf(e164) });
+  }
+  const rank = (p) => (p.landline === true ? 10 : 0) + PHONE_KINDS.indexOf(p.kind);
+  return out.map((p, i) => [p, i]).sort((a, b) => rank(a[0]) - rank(b[0]) || a[1] - b[1]).map((x) => x[0]).slice(0, PHONES_PER_CARD);
+}
+
+/** contacts_phones { userId, q?, cursor?, limit?, ids? } */
+async function contactsPhones(gc, payload, user) {
+  const uid = personOf(user, payload);
+  const cards = require('./cards');
+  const cardstore = require('./cardstore');
+  const cardmerge = require('./cardmerge');
+  const vcard = require('./vcard');
+  const cfg = await config.get(gc);
+  if (!cfg.contacts.enabled) throw no('unavailable', { reason: 'feature_off' });
+  const why = await mailBlocked(gc, uid);
+  if (why) throw no('unavailable', { reason: why });
+  const q = payload.q == null ? '' : payload.q;
+  if (typeof q !== 'string' || q.length > 100) throw no('invalid');
+  const limit = payload.limit == null ? PHONES_PAGE : posInt(payload.limit);
+  if (!limit || limit > PHONES_PAGE_MAX) throw no('invalid');
+  let ids = null;
+  if (payload.ids != null) {
+    if (!Array.isArray(payload.ids) || !payload.ids.length || payload.ids.length > PHONES_IDS_MAX || payload.ids.some((x) => !posInt(x))) throw no('invalid');
+    ids = [...new Set(payload.ids.map(posInt))];
+  }
+  let cur = null;
+  if (payload.cursor != null) {
+    try { const [k, id] = Buffer.from(String(payload.cursor), 'base64url').toString('utf8').split('\u0000'); cur = Number.isSafeInteger(Number(id)) && Number(id) > 0 ? { key: k, id: Number(id) } : null; } catch { cur = null; }
+    if (!cur) throw no('invalid');
+  }
+  await pimstore.ensureSetup(gc, uid, payload.lang === 'en' ? 'en' : 'de');
+  const prefs = await pimstore.cardPrefs(gc, uid);
+  const { rows: bookRows } = await cards.books(gc, cfg, uid);
+  const bookIds = bookRows.filter((b) => b.visible === 1).map((b) => b.id);
+  if (!bookIds.length) return { ok: true, items: [], next: null };
+  const where = ['c.user_id = ?', `c.addressbook_id IN (${store.marks(bookIds.length)})`, 'c.link_id IS NULL',
+    '(c.id IN (SELECT card_id FROM card_phones WHERE user_id = ?) OR c.id IN (SELECT l.link_id FROM cards l JOIN card_phones p ON p.card_id = l.id WHERE l.user_id = ?))'];
+  const args = [uid, ...bookIds, uid, uid];
+  if (ids) { where.push(`c.id IN (${store.marks(ids.length)})`); args.push(...ids); }
+  const text = q.trim();
+  if (text) {
+    const like = `%${cardstore.fold(text).replace(/[%_\\]/g, (ch) => '\\' + ch)}%`;
+    const raw = `%${text.toLowerCase().replace(/[%_\\]/g, (ch) => '\\' + ch)}%`;
+    const digits = text.replace(/\D/g, '');
+    where.push(`(c.sort_key LIKE ? ESCAPE '\\' OR LOWER(c.display) LIKE ? ESCAPE '\\' OR LOWER(COALESCE(c.company, '')) LIKE ? ESCAPE '\\'${digits.length >= 3 ? ' OR c.id IN (SELECT card_id FROM card_phones WHERE user_id = ? AND digits LIKE ?)' : ''})`);
+    args.push(like, raw, raw);
+    if (digits.length >= 3) args.push(uid, `%${vcard.digits(digits) || digits}%`);
+  }
+  if (cur) { where.push('(c.sort_key > ? OR (c.sort_key = ? AND c.id > ?))'); args.push(cur.key, cur.key, cur.id); }
+  const rows = await store.all(gc, `SELECT c.* FROM cards c WHERE ${where.join(' AND ')} ORDER BY c.sort_key, c.id LIMIT ?`, [...args, (ids ? ids.length : limit) + 1]);
+  const master = await cardmerge.migrated(gc, uid);
+  const books = new Map(bookRows.map((b) => [b.id, b]));
+  const items = [];
+  let size = 40;
+  let last = null;
+  let more = rows.length > (ids ? ids.length : limit);
+  for (const r of rows.slice(0, ids ? ids.length : limit)) {
+    const f = parse(r.fields_json, {});
+    let list = f.phones || [];
+    // like the card: an account card as the main one (or a person before the move to GC contacts) joins its links in
+    const own = books.get(r.addressbook_id);
+    if (!(master && own && own.source === 'local')) {
+      const links = await store.all(gc, 'SELECT id, fields_json FROM cards WHERE link_id = ? AND user_id = ?', [r.id, uid]);
+      if (links.length) {
+        const gone = await cards.dismissedOf(gc, r.id);
+        for (const l of links) list = list.concat((parse(l.fields_json, {}).phones || []).filter((p) => !gone.has(`${l.id}|phones|${cardstore.valueKey('phones', p)}`)));
+        list = cards.uniq(list, (p) => cardstore.valueKey('phones', p));
+      }
+    }
+    const phones = phonesOf(list);
+    if (!phones.length) continue;
+    const item = { id: r.id, name: cards.nameShown(f, prefs.show) || phones[0].value, phones };
+    const n = JSON.stringify(item).length + 1;
+    if (size + n > PHONES_ANSWER_MAX && items.length) { more = true; break; }
+    size += n;
+    items.push(item);
+    last = r;
+  }
+  const next = !ids && more && last ? Buffer.from(`${last.sort_key}\u0000${last.id}`).toString('base64url') : null;
+  return { ok: true, items, next };
+}
+
 // ─── the hook ───────────────────────────────────
 
 const HANDLERS = {
@@ -399,8 +533,9 @@ const HANDLERS = {
   ms_accounts: (gc, payload, user) => msAccounts(gc, payload, user),
   ms_tasks_consent: (gc, payload, user) => msTasksConsent(gc, payload, user),
   ms_tasks_token: (gc, payload, user) => msTasksToken(gc, payload, user),
+  contacts_phones: (gc, payload, user) => contactsPhones(gc, payload, user),
 };
-const CALLERS = { calendar_list: [DRIVE], calendar_add: [DRIVE, NOTIZEN], calendar_tasks: [NOTIZEN], calendar_update: [NOTIZEN], calendar_delete: [NOTIZEN], tofile_count: [DRIVE], ms_accounts: [NOTIZEN], ms_tasks_consent: [NOTIZEN], ms_tasks_token: [NOTIZEN] };
+const CALLERS = { calendar_list: [DRIVE], calendar_add: [DRIVE, NOTIZEN], calendar_tasks: [NOTIZEN], calendar_update: [NOTIZEN], calendar_delete: [NOTIZEN], tofile_count: [DRIVE], ms_accounts: [NOTIZEN], ms_tasks_consent: [NOTIZEN], ms_tasks_token: [NOTIZEN], contacts_phones: [MESSENGER] };
 
 /** service({ name, caller, user, payload }) → the answer (see the head of this file). */
 async function handle(gc, call) {
@@ -429,4 +564,4 @@ async function newDraft(gc, user, payload) {
   return compose.serviceDraft(gc, user, payload);
 }
 
-module.exports = { handle, DRIVE, NOTIZEN };
+module.exports = { handle, DRIVE, NOTIZEN, MESSENGER, _phonesOf: phonesOf, _e164Of: e164Of };

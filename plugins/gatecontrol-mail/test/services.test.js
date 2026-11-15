@@ -212,3 +212,60 @@ test('1.15.0 calendar_add with a time and without a reminder, calendar_update, c
   // no reminder is ever due for such an event
   assert.equal((await c.db('SELECT COUNT(*) AS n FROM reminders_sent'))[0].n, 0);
 }));
+
+test('1.16.0 contacts_phones: own contacts with a number for the Messenger — kinds, keys, +49, landlines last, search, pages, ids; only the Messenger, only the person', () => withMail({ gatecontrol: '1.219.0', license: { tier: 'family', seats: { included: 2, family: 0, business: 0 } } }, async (host, c) => {
+  const MS = 'gatecontrol-messenger';
+  const anna = c.as(ANNA);
+  const mk = async (b) => { const r = await anna('POST', 'cards', b); assert.equal(r.status, 200, JSON.stringify(r.json)); return r.json.card; };
+  const paul = await mk({ name: { given: 'Paul', family: 'Hoffmann' }, phones: [{ value: '0160 98765432', type: 'mobile' }] });
+  const sabine = await mk({ name: { given: 'Sabine', family: 'Wolf' }, phones: [{ value: '+49 30 12345678', type: 'home' }, { value: '+49 170 2345678', type: 'work' }, { value: '+49 (0)151 23456780', type: 'mobile' }, { value: '030 999', type: 'fax' }, { value: '+49 171 1111111', type: 'mobile' }] });
+  await mk({ name: { given: 'Ohne', family: 'Nummer' }, emails: [{ value: 'ohne@example.com' }] });
+  const odd = await mk({ name: { given: 'Zora', family: 'Ausland' }, phones: [{ value: '+1 212 555 0100', type: 'other' }] });
+  const page = await call(host, 'contacts_phones', ANNA, { userId: ANNA.id }, MS);
+  assert.equal(page.ok, true, JSON.stringify(page));
+  assert.deepEqual(page.items.map((x) => x.name), ['Zora Ausland', 'Paul Hoffmann', 'Sabine Wolf'], 'only with a number, sorted like „Kontakte“');
+  assert.equal(page.next, null);
+  assert.deepEqual(page.items[1], { id: paul.id, name: 'Paul Hoffmann', phones: [{ key: 'mobile', kind: 'mobile', value: '0160 98765432', e164: '+4916098765432', landline: false }] });
+  assert.deepEqual(page.items[2].phones.map((p) => [p.key, p.e164, p.landline]), [
+    ['mobile', '+4915123456780', false], ['mobile-2', '+491711111111', false], ['work', '+491702345678', false], ['home', '+493012345678', true],
+  ], 'mobile first, then work, home; the landline last; no fax');
+  assert.deepEqual(page.items[0].phones.map((p) => [p.kind, p.e164, p.landline]), [['other', '+12125550100', null]]);
+  // search by name and by number; pages; just the tapped one
+  assert.deepEqual((await call(host, 'contacts_phones', ANNA, { userId: ANNA.id, q: 'wol' }, MS)).items.map((x) => x.id), [sabine.id]);
+  assert.deepEqual((await call(host, 'contacts_phones', ANNA, { userId: ANNA.id, q: '98765' }, MS)).items.map((x) => x.id), [paul.id]);
+  const p1 = await call(host, 'contacts_phones', ANNA, { userId: ANNA.id, limit: 2 }, MS);
+  assert.deepEqual(p1.items.map((x) => x.id), [odd.id, paul.id]);
+  const p2 = await call(host, 'contacts_phones', ANNA, { userId: ANNA.id, limit: 2, cursor: p1.next }, MS);
+  assert.deepEqual([p2.items.map((x) => x.id), p2.next], [[sabine.id], null]);
+  assert.deepEqual((await call(host, 'contacts_phones', ANNA, { userId: ANNA.id, ids: [sabine.id, 99999] }, MS)).items.map((x) => x.id), [sabine.id]);
+  // only the person's own contacts
+  await c.as(MARC)('GET', 'me');
+  assert.deepEqual((await call(host, 'contacts_phones', MARC, { userId: MARC.id, ids: [sabine.id] }, MS)).items, []);
+  assert.deepEqual(await call(host, 'contacts_phones', MARC, { userId: ANNA.id }, MS), { ok: false, code: 'forbidden' });
+  assert.deepEqual(await call(host, 'contacts_phones', ANNA, { userId: ANNA.id }), { ok: false, code: 'forbidden' }, 'only the Messenger');
+  for (const bad of [{ limit: 0 }, { limit: 101 }, { ids: [] }, { ids: ['x'] }, { cursor: '!!' }, { q: 'x'.repeat(101) }, { q: 5 }]) {
+    assert.deepEqual(await call(host, 'contacts_phones', ANNA, { userId: ANNA.id, ...bad }, MS), { ok: false, code: 'invalid' }, JSON.stringify(bad));
+  }
+  // without a place, with contacts switched off
+  assert.deepEqual(await call(host, 'contacts_phones', BOB, { userId: BOB.id }, MS), { ok: false, code: 'unavailable', reason: 'no_seat' });
+  await c.admin('PUT', 'admin/settings', { contacts: { enabled: false } });
+  assert.deepEqual(await call(host, 'contacts_phones', ANNA, { userId: ANNA.id }, MS), { ok: false, code: 'unavailable', reason: 'feature_off' });
+}));
+
+test('1.16.0 contacts_phones: a page stays within the 16 KB of an answer', () => withMail({ gatecontrol: '1.219.0' }, async (host, c) => {
+  const anna = c.as(ANNA);
+  for (let i = 0; i < 60; i++) {
+    const r = await anna('POST', 'cards', { name: { given: `Person${String(i).padStart(2, '0')}`, family: 'Mit Einem Sehr Langen Familiennamen Für Die Größe' }, phones: Array.from({ length: 6 }, (_, k) => ({ value: `+49 151 ${1000000 + i * 10 + k}`, type: 'mobile' })) });
+    assert.equal(r.status, 200);
+  }
+  const seen = [];
+  let cursor;
+  for (let n = 0; n < 10; n++) {
+    const p = await call(host, 'contacts_phones', ANNA, { userId: ANNA.id, limit: 100, ...(cursor ? { cursor } : {}) }, 'gatecontrol-messenger');
+    assert.ok(JSON.stringify(p).length < 16 * 1024);
+    seen.push(...p.items.map((x) => x.id));
+    if (!p.next) break;
+    cursor = p.next;
+  }
+  assert.equal(new Set(seen).size, 60, 'every contact once over the pages');
+}));

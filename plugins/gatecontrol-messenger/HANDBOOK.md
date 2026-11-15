@@ -1,4 +1,4 @@
-<!-- version: 1.17.0 -->
+<!-- version: 1.18.0 -->
 # Messenger
 
 ## What the plugin does
@@ -70,6 +70,17 @@ It only comes when linking and appears at night. When “Load older history” i
 
 **Old messages are gone.**
 The administrator set a retention, or the chat is a disappearing chat.
+
+## New in 1.18.0
+
+- **New chat with your contacts:** “New chat” (pen) shows three sections under one search field: **GateControl** (the accounts on your server), **WhatsApp** (your WhatsApp contacts) and **“From your address book”** (your contacts with a phone number from Mail). Long sections show the first hits and “All … ”. With a chat already there, the row says “Open chat”.
+- **Tapping a WhatsApp contact** starts the chat at once, without a check.
+- **Tapping an address book contact** checks exactly this one number with WhatsApp, then the chat opens. With several numbers you choose in the row – mobile first, landlines greyed out. Without WhatsApp under that number, GateControl remembers it for 30 days (without keeping the number) and does not ask again.
+- **The same person only once:** if a number from your address book is also in WhatsApp, the person shows under WhatsApp with the name from your address book and “also in your address book”.
+- **“Not listed? Enter a number”** at the bottom opens the previous dialog. Typing a number into the search shows “Check … on WhatsApp” at the bottom.
+- **Brake:** every tap on an address book contact that asks WhatsApp counts like a typed number (10 an hour by default). WhatsApp contacts and existing chats always work.
+- **Privacy:** your WhatsApp contacts stay on your server – the apps get names, no numbers. A number from your address book only goes to WhatsApp when you tap the contact. The log only notes “WhatsApp number checked” with source and result.
+- **Requirements:** a GateControl with the bridges preview (stage 4c); for the address book the Mail plugin 1.16.0 or newer. Children without their parents' permission for new chats see GateControl only.
 
 ## New in 1.17.0
 

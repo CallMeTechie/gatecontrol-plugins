@@ -27,7 +27,10 @@
    and groups in the list.
    1.16.0 (GET me features.bridge_new_chat, GET bridges networks[].newChat): in „Neuer Chat“ the line „WhatsApp-Chat
    mit Nummer“ under the tabs → the dialog „Neuer WhatsApp-Chat“ (ui/newchat.js, window.MSNewChat); the chat it
-   starts opens at once, with a line that says over which service and with which number it runs. */
+   starts opens at once, with a line that says over which service and with which number it runs.
+   1.18.0 (GET me features.bridge_contacts): „Neuer Chat“ › Person shows three sections — GateControl, WhatsApp, „Aus
+   deinem Adressbuch“ — under one search field (ui/ncontacts.js, window.MSContacts); „Nicht dabei? Nummer eingeben“ at the
+   bottom opens the dialog of 1.16.0. At phone width a sheet from the bottom. */
 (function () {
   'use strict';
   var M = window.MS;
@@ -675,7 +678,9 @@
     if (st.hasMore) box.appendChild(el('button', { type: 'button', class: 'btn btn-sm ms-more', text: T('portal.load_older'), on: { click: loadOlder } }));
     // 1.16.0: a chat just started by number says over which service and with which number it runs
     var started = c.bridge && S.started[c.id];
-    if (!st.list.length && !st.hasMore) box.appendChild(el('div', { class: 'ms-sys', text: started ? T('nc.first_line', { network: c.bridge.label, number: started.number, name: started.name || convTitle(c) }) : (c.kind === 'group' ? T('portal.group_new') : T('portal.chat_empty')) }));
+    // 1.18.0: started with a WhatsApp contact (no number known here) or a number of the address book
+    var firstKey = started && started.kind === 'contact' ? 'nc.first_line_contact' : (started && started.kind === 'book' ? 'nc.first_line_book' : 'nc.first_line');
+    if (!st.list.length && !st.hasMore) box.appendChild(el('div', { class: 'ms-sys', text: started ? T(firstKey, { network: c.bridge.label, number: started.number || '', name: started.name || convTitle(c) }) : (c.kind === 'group' ? T('portal.group_new') : T('portal.chat_empty')) }));
     var prev = null;
     var lastDay = null;
     var divider = false;
@@ -1719,7 +1724,24 @@
       var list = el('div', { class: 'ms-people' });
       var msg = el('p', { class: 'form-hint', role: 'status' });
       var closeFn = null;
+      // 1.18.0: the person's contacts in three sections (mode „Person“)
+      var cc = feature('bridge_contacts') && window.MSContacts ? window.MSContacts.create({
+        people: people,
+        close: function () { if (closeFn) closeFn(null); },
+        openConv: function (id) { M.api('GET', 'conversations/' + id).then(function (x) { openStarted(x.conversation, null); }).catch(M.warn); },
+        started: function (cv, info) { openStarted(cv, info); },
+        gcChat: function (p) {
+          M.api('POST', 'conversations', { kind: 'direct', userIds: [p.userId] }).then(function (r) { upsert(r.conversation); if (closeFn) closeFn(null); openConv(r.conversation.id); }).catch(M.warn);
+        },
+        numberDialog: function (n, o) { if (closeFn) closeFn(null); if (window.MSNewChat) window.MSNewChat.open(n, { open: openStarted }, o); },
+      }) : null;
+      if (cc) filter.placeholder = T('ncc.search');
       function draw() {
+        if (cc) {
+          cc.show(mode === 'direct');
+          list.hidden = mode === 'direct';
+          if (mode === 'direct') cc.setQuery(filter.value);
+        }
         M.clear(list);
         var q = filter.value.trim().toLowerCase();
         var ps = people.filter(function (p) { return !q || p.name.toLowerCase().indexOf(q) >= 0; });
@@ -1730,7 +1752,7 @@
           } }));
         });
         titleGroup.hidden = mode !== 'group';
-        if (numRows) numRows.hidden = mode !== 'direct';
+        if (numRows) numRows.hidden = mode !== 'direct' || !!cc;
         createBtn.hidden = mode !== 'group';
         M.$$('button', tabs).forEach(function (b) { b.setAttribute('aria-pressed', b.getAttribute('data-mode') === mode ? 'true' : 'false'); });
       }
@@ -1749,7 +1771,7 @@
       // 1.16.0: „WhatsApp-Chat mit Nummer“ — one line per linked service that may start chats by number
       var numRows = el('div', { class: 'ms-nc-rows' });
       body.appendChild(numRows);
-      if (feature('bridge_new_chat') && window.MSNewChat) {
+      if (feature('bridge_new_chat') && window.MSNewChat && !cc) {
         M.api('GET', 'bridges').then(function (r) {
           var b = r.bridges || {};
           (b.networks || []).filter(function (n) { return n.newChat && ['off', 'unlinked', 'child_new_chat_off'].indexOf(n.newChat.reason) < 0; }).forEach(function (n) {
@@ -1768,10 +1790,11 @@
       body.appendChild(titleGroup);
       body.appendChild(filter);
       body.appendChild(list);
+      if (cc) body.appendChild(cc.box);
       body.appendChild(msg);
       body.appendChild(createBtn);
       draw();
-      M.dialog(T('portal.new_chat'), body, [], { onOpen: function (done) { closeFn = done; } });
+      M.dialog(T('portal.new_chat'), body, [], cc ? { foot: cc.foot, sheet: true, cls: 'ms-ncc-modal', onOpen: function (done) { closeFn = done; } } : { onOpen: function (done) { closeFn = done; } });
     }).catch(M.warn);
   }
   /** 1.16.0: a chat of the dialog „Neuer WhatsApp-Chat“ — into the list and open (info: { number, name } when new). */

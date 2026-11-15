@@ -885,4 +885,5 @@ async function suggest(gc, userId, text, max = 10) {
 module.exports = {
   ownCard, write, destroy, books, addressbooks, patchBook, settings, list, get, create, patch, remove, photo, putPhoto, deletePhoto, lookup, activity, draft, duplicates, ignore, merge,
   importVcf, exportVcf, createGroup, patchGroup, removeGroup, getGroup, groupMembers, suggest, fromSignature, full, cardOf, defaultBook, summaries,
+  nameShown, dismissedOf, uniq,
 };

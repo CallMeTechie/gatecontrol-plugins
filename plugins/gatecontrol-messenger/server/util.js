@@ -66,6 +66,10 @@ const STATUS = {
   // 1.16.0: a new chat by number — the service signed the person out; a child without the parents' second switch
   bridge_logged_out: 409,
   child_new_chat_off: 403,
+  // 1.18.0: „Neuer Chat“ with contacts — a WhatsApp contact's reference ran out (reload the list); Mail's address book is
+  // not there (not installed, contacts off, no place)
+  contact_expired: 409,
+  mail_missing: 409,
   internal: 500,
 };
 

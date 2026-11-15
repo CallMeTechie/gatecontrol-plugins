@@ -68,7 +68,7 @@ test('texts: every key used by the pages exists in de and en; both languages hav
   const dyn = [
     ...Object.keys(util.STATUS).map((c) => 'error.' + c),
     ...['too_large', 'unsupported_type', 'quota_exceeded', 'length_required', 'not_found'].map((c) => 'error.upload_' + c),
-    ...log.CODES.map((c) => 'log.code.' + c), 'log.level_error', 'log.level_limit',
+    ...log.CODES.map((c) => 'log.code.' + c), 'log.level_error', 'log.level_limit', 'log.level_info',
     ...config.DISAPPEARING_S.filter(Boolean).map((s) => 'dis.' + s),
     ...['text', 'image', 'voice', 'file', 'location', 'system'].map((k) => 'kind.' + k),
     ...['image', 'audio', 'video', 'application', 'text'].map((k) => 'admin.type_' + k),
@@ -79,7 +79,7 @@ test('texts: every key used by the pages exists in de and en; both languages hav
 
 test('plugin.json: licence, GateControl 1.204.0, permissions, pages, app and portal tab "Chats"', () => {
   assert.equal(manifest.id, 'gatecontrol-messenger');
-  assert.equal(manifest.version, '1.17.0');
+  assert.equal(manifest.version, '1.18.0');
   assert.equal(manifest.gatecontrol, '>=1.204.0', '1.17.0: media.areas for the files of bridged chats (1.8.0: media.handOverMaxBytes, GateControl 1.193.0)');
   assert.equal(manifest.media.handOverMaxBytes, 2147483648, '1.8.0: GateDrop hands over files up to 2 GB; own uploads stay at 25 MB');
   assert.equal(manifest.permissions.notifySink, true);
@@ -92,7 +92,8 @@ test('plugin.json: licence, GateControl 1.204.0, permissions, pages, app and por
   assert.equal(p.groups, 'read');
   // 1.5.0: family_roles (who approves requests, who is a child)
   // 1.10.0: "In Drive speichern" (hand-over and save_file of gatecontrol-drive)
-  assert.deepEqual(p.services, [...['list_add', 'calendar_add', 'calendar_upsert', 'calendar_remove', 'places', 'family_roles'].map((x) => 'gatecontrol-familie:' + x), 'gatecontrol-drive:save_file']);
+  // 1.18.0: „Neuer Chat“ with the address book of Mail (contacts_phones)
+  assert.deepEqual(p.services, [...['list_add', 'calendar_add', 'calendar_upsert', 'calendar_remove', 'places', 'family_roles'].map((x) => 'gatecontrol-familie:' + x), 'gatecontrol-drive:save_file', 'gatecontrol-mail:contacts_phones']);
   assert.ok(manifest.services.provides.set_place_status);
   assert.deepEqual(manifest.ui.pages.map((x) => x.id), ['overview', 'log']);
   for (const k of ['portal', 'app']) assert.deepEqual(manifest.ui[k].label, { de: 'Chats', en: 'Chats' });

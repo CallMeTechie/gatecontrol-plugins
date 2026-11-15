@@ -121,6 +121,8 @@ async function tick(gc, now = Date.now()) {
       state.lastHourly = now;
       out.retention = await step('retention', () => store.tx(gc, () => retention(gc, now, box)));
       await step('log', () => log.purge(gc, now));
+      // 1.18.0: „nicht bei WhatsApp“ is remembered 30 days
+      await step('not_on', () => require('./contactchat').purge(gc, now));
       await step('notices', () => require('./notices').purge(gc, now));
       const list = await txStep('digest', () => status.digest(ctx));
       if (Array.isArray(list) && list.length) { out.digest = list.length; await step('digest_push', () => push.digest(gc, list, now)); }

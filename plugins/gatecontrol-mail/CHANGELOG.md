@@ -2,6 +2,22 @@
 
 Alle E-Mail-Konten an einem Ort – im eigenen Tab der GateControl-Apps und im Portal.
 
+## 1.16.0
+
+- **Dienst `contacts_phones` für den Messenger („Neuer Chat“, Abschnitt „Aus deinem Adressbuch“).** Nur Lesen, nur der
+  Aufrufer `gatecontrol-messenger`, nur für die Person des Aufrufs (`userId` = GateControls `user`) und nur ihre eigenen
+  Kontakte: Kontakte mit mindestens einer Telefonnummer, wie „Kontakte“ sie zeigt (verknüpfte unter ihrem Hauptkontakt,
+  nur sichtbare Adressbücher), sortiert wie dort. Je Nummer `key` (Art, die zweite derselben Art `mobile-2` …), `kind`
+  (`mobile` | `work` | `home` | `other`, Fax fällt weg), `value` wie gespeichert, `e164` (mit `+` und Landesvorwahl; eine
+  nationale 0 gilt als Deutschland) und `landline` (Festnetz nach der Vorwahl: +49 außer 15x/16x/17x, +43 außer 6xx,
+  +41 außer 75x–79x; `null` = unbekannt). Mobilnummern zuerst, dann geschäftlich, privat, Festnetz zuletzt. Suche
+  (`q`) nach Name, Firma und Ziffern, seitenweise (`limit` ≤ 100, `cursor`), eine Seite bleibt unter den 16 KB einer
+  Dienst-Antwort; `ids` (≤ 50) liefert genau diese Kontakte (der angetippte). Verweigerungen: `forbidden`, `invalid`,
+  `unavailable { reason }` (`feature_off` – Kontakte abgeschaltet –, `not_allowed`, `not_licensed`, `no_seat`).
+  `maxPerHour: 3600` (`server/services.js`, `plugin.json` `services.provides`).
+- Tests: `test/services.test.js` (Arten, Schlüssel, +49, Festnetz zuletzt, Suche, Seiten, `ids`, nur eigene Kontakte,
+  nur der Messenger, Verweigerungen, 16 KB je Seite).
+
 ## 1.15.1
 
 - **Volltextsuche: Die Suche liest die Mails im Index nicht mehr einzeln an.** Bei eingeschalteter Volltextsuche sucht

@@ -490,6 +490,15 @@ Since 1.6.0 (`tofile_count` since 1.7.0) for Drive only (`server/services.js`; a
     deleted it in the calendar meanwhile (the caller adds it anew).
   * `calendar_delete` `{ userId, eventId }` → `{ ok: true, removed }` — the same rule; an event that is gone: `removed: false`.
   A key goes with its event (SQLite gives the number of a deleted event to the next one).
+* `contacts_phones` `{ userId, q?, cursor?, limit?, ids? }` → `{ ok: true, items: [{ id, name, phones: [{ key, kind,
+  value, e164, landline }] }], next }` (since 1.16.0; caller `gatecontrol-messenger` only, 3600 calls an hour) — read
+  only: the person's own contacts with at least one phone number, as „Kontakte“ lists them (linked ones under their main
+  contact, visible address books, the same order). `kind` `mobile` | `work` | `home` | `other` (fax left out), `key` the
+  kind, the second of a kind `<kind>-2` …; `e164` with `+` and the country code (a national 0 → +49), `null` when it
+  cannot be read; `landline` by the prefix (+49 not 15x–17x, +43 not 6xx, +41 not 75x–79x), `null` unknown; mobile
+  numbers first, landlines last. `q` searches name, company and digits; `limit` ≤ 100 (default 50), a page stays within
+  the 16 KB of an answer, `next` continues; `ids` (≤ 50) answers just those. Refusals: `forbidden`, `invalid`,
+  `unavailable { reason }` (`feature_off`, `not_allowed`, `not_licensed`, `no_seat`).
 * `tofile_count` `{ userId }` → `{ ok: true, count, hint }` (since 1.7.0) — the attachments of "Zum Ablegen" (`GET
   filing`) of the person and the folder Drive suggested for the newest one (`where` of its suggestion, e.g. "Familie ›
   Versicherungen"; `null` without). Drive's overview (Drive ≥ 1.18.0) shows it under "Zu erledigen". Refusals:

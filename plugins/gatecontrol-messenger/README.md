@@ -1163,6 +1163,49 @@ historyTo }` (`HH:MM`), `{ backupNow: true }`, `{ backupTime }`.
 
 Tests: `test/bridgehistory.test.js` against the mock host's `gc.bridges` version 5.
 
+**„Neuer Chat“ with contacts** (`bridge_contacts`, since 1.18.0, GateControl with `gc.bridges` version 6;
+`server/contactchat.js`, migration 011; Mail ≥ 1.16.0 for the address book):
+
+| Route | Answer |
+|---|---|
+| `GET contacts/new-chat?q=&network=whatsapp` | `{ network, query, gatecontrol, whatsapp, addressBook, addressBookReason?, number, numberEntry, limit }` — the three sections of „Neuer Chat“ › Person (below) |
+| `POST bridges/:network/chats { ref }` | `{ conversation, created }` — a WhatsApp contact of the list: the chat at once, nothing checked, nothing counted. `409 contact_expired`: the reference ran out (30 minutes, or GateControl restarted) — load the list again |
+| `POST bridges/:network/chats { contactId, phoneKind }` | `{ conversation, created }` — a number of the address book (`contactId` of `addressBook.items`, `phoneKind` its `key`): exactly this number is asked at the service, counted in the brake. `404 not_found` with `reason: "not_on_network"` (and `remembered: true` when the answer came from what was remembered — nobody asked, nothing counted), `reason: "contact_gone"` (no such contact or number any more — reload), `409 mail_missing`, `429 rate_limited` (`retryAfterS`, `perHour`), the refusals of `{ number }` |
+
+The sections (`null` = leave it out):
+
+* `gatecontrol: [{ userId, name, avatarUrl, initials, colorHex, conversationId }]` — the accounts as `GET people`;
+  `conversationId` of a direct chat with a message („Chat öffnen“), else start it with `POST conversations`.
+* `whatsapp: { state, items, total } | null` — `null` when nothing is linked, the bridge or this GateControl cannot,
+  a child is locked or has no second switch. `state` `"ok"`, `"unreachable"` („WhatsApp-Kontakte gerade nicht
+  verfügbar“), `"logged_out"` („WhatsApp ist abgemeldet“ → „Neu verknüpfen“). `items: [{ ref, name, avatarMediaId,
+  avatarUrl, conversationId, alsoInAddressBook, addressBookId }]`, sorted by name — **never a number**. `ref` starts the
+  chat; `avatarMediaId` (apps) / `avatarUrl` (portal) only when GateControl already fetched that contact's picture;
+  `alsoInAddressBook`: the same number is in the person's address book (merged on the server, `name` is then the
+  address book's) — show „auch in deinem Adressbuch“.
+* `addressBook: { state, items, total } | null` — the person's own contacts with a number (Mail's service
+  `contacts_phones`), without those merged into WhatsApp; `null` without Mail, contacts switched off, no place in Mail,
+  no contact with a number, or without the WhatsApp section (`addressBookReason`: `no_mail`, `feature_off`, `no_seat`,
+  … when Mail refused). `state` follows WhatsApp: not `"ok"` → show, but not tappable („Antippen geht wieder, sobald …“).
+  `items: [{ contactId, name, conversationId, phones: [{ key, kind: mobile | work | home | other, number, e164,
+  landline, notOnNetwork }] }]` — the numbers are the person's own, so they go to the apps; mobile numbers first,
+  landlines last (grey, still choosable). `notOnNetwork`: remembered „nicht bei WhatsApp“ (30 days).
+  `conversationId`: a chat started here with one of its numbers („Chat öffnen“, no question to WhatsApp).
+* `number: { e164, show, conversationId } | null` — the search looks like a phone number: the last line „<show> bei
+  WhatsApp prüfen“ → the number dialog of 1.16.0 with it (checked only when tapped).
+* `numberEntry` — show „Nicht dabei? Nummer eingeben“ (the number dialog). `limit` as `GET bridges` `newChat.limit`.
+
+The search `q` (≤ 100 characters) goes through all sections (GateControl by name, WhatsApp by the bridge's search,
+the address book by name, company and digits). Nothing goes to WhatsApp while listing or searching: the WhatsApp list
+is the bridge's own contact store, merging compares numbers with it on the server (`gc.bridges.matchNumbers`).
+**The brake** is the one of 1.16.0 (`newChatPerHour`, preset 10): a tapped address book number counts like a typed
+one; WhatsApp contacts, „Chat öffnen“, merged contacts and remembered answers do not. **„nicht bei WhatsApp“** is
+kept 30 days as the address book contact's id, the kind of number and the date — never the number (table
+`bridge_not_on`); unlinking the service deletes it. The protocol notes „WhatsApp-Nummer geprüft · Quelle Adressbuch ·
+gefunden / nicht gefunden“ (`bridge_number_checked`, level `info`) without number and name.
+
+Tests: `test/contactchat.test.js` against the mock host's `gc.bridges` version 6.
+
 ## Services (for other plugins)
 
 `gc.services.call({ plugin: 'gatecontrol-messenger', service, userId?, payload })`
