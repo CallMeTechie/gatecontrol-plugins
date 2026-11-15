@@ -35,6 +35,8 @@
     if (p.indexOf('admin/') !== 0 && p.indexOf('bridged=') < 0) p += (p.indexOf('?') < 0 ? '?' : '&') + 'bridged=1';
     // 1.20.0: … and channels — GET conversations leaves them out, they are on GET channels (the page „Kanäle“)
     if (p.indexOf('admin/') !== 0 && p.indexOf('channels=') < 0) p += '&channels=1';
+    // 1.21.0: … and persons — GET conversations shows one entry per person, persons/… carry the shared history
+    if (p.indexOf('admin/') !== 0 && p.indexOf('people=') < 0) p += '&people=1';
     return window.GC.call(method, p, body);
   }
   function errCode(e) { return (e && e.data && e.data.code) || null; }

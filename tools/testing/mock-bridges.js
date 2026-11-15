@@ -72,6 +72,14 @@
 // Version 7 (GateControl with channels, groups, format; createHost(dir, { bridges: { …, version: 7 } })): no new call —
 //   events carry chat.channel / chat.readOnly, sender { channel: true, system: true }, marks and preview (the test writes
 //   them into deliver()); host.bridges.chat(userId, { channel, readOnly }); chats() names channel and readOnly.
+// Version 8 (GateControl with the user profile; createHost(dir, { bridges: { …, version: 8 } })):
+//   host.bridges.accounts = [{ contactId, userId, strength, via, viewer? }]   which contacts at the bridge (sender.id of
+//                                            the events) are accounts — what the server's profile service would compare;
+//                                            matchAccounts: a request of that person, a link; never the person herself,
+//                                            never a disabled account; logged as { op: 'match_accounts', userId }
+// Version 9 (chats v2, persons; createHost(dir, { bridges: { …, version: 9 } })): recognition.get(userId) → { asked,
+//   allowed, linked } (a request of that person), recognition.set(userId, allowed) (a changing one; whatsapp only) —
+//   host.bridges.recognition(userId) → { asked, allowed }
 // events.pull / events.ack need no person; chats() a request of that person; send / react / redact / read / typing a
 // changing request of that person, their own chat (else ERR_INVALID 'unknown chat'), a bridge that runs.
 //
@@ -103,10 +111,11 @@ function install({ opts, perms, enabledUser, hostError, personCtx, mediaHost }) 
     host: { state: o && o.running ? 'running' : null, error: null, running: !!(o && o.running), memMb: o && o.running ? 88 : null, outdated: false, probe: null },
     logins: new Map(), processes: new Map(), log: [], seq: 0, oddStep: null, elsewhere: new Map(),
   };
-  const version = o && o.version === 1 ? 1 : (o && o.version === 7 ? 7 : (o && o.version === 6 ? 6 : (o && o.version === 5 ? 5 : (o && o.version === 4 ? 4 : (o && o.version === 3 ? 3 : 2)))));
+  const version = o && [1, 3, 4, 5, 6, 7, 8, 9].includes(o.version) ? o.version : 2;
   Object.assign(st, { inbox: [], inboxSeq: 0, chats: new Map(), sent: [], failSend: null, wake: null });
   Object.assign(st, { files: new Map(), fetches: [], numbers: new Map(), lookups: new Map(), dms: new Map(), failFetch: null });
   Object.assign(st, { contacts: [], contactRefs: new Map(), contactDms: new Map() });
+  Object.assign(st, { accounts: [], recognition: new Map() });
   Object.assign(st, { history: true, historyPeople: new Map(), backlog: [], backlogSeq: 0, backup: { time: '03:10', timeZone: 'Europe/Berlin', lastAt: null, bytes: null, requested: false, error: null, restore: null }, backupTime: '03:10' });
 
   const err = (code, message, reason) => { const e = hostError(code, message); if (reason) e.reason = reason; return e; };
@@ -503,6 +512,36 @@ function install({ opts, perms, enabledUser, hostError, personCtx, mediaHost }) 
     },
   });
 
+  // ── version 8: accounts among the contacts (the user profile) ──
+  if (version >= 8) Object.assign(api, {
+    'bridges.matchAccounts': async ({ userId, network }) => {
+      need(); person(userId, false); bridge(network); linked(userId);
+      st.log.push({ op: 'match_accounts', userId, network });
+      // like the server: never the person herself, never a disabled account; the test names the pairings
+      const matches = st.accounts.filter((a) => (a.viewer == null || a.viewer === userId) && a.userId !== userId && enabledUser(a.userId))
+        .map((a) => ({ contactId: a.contactId, userId: a.userId, strength: a.strength === 'strong' ? 'strong' : 'medium', via: a.via === 'own_whatsapp' ? 'own_whatsapp' : 'profile_phone' }));
+      return { matches };
+    },
+  });
+  // ── version 9: the consent to be recognised by the own WhatsApp ──
+  const recOf = (userId) => st.recognition.get(userId) || { asked: false, allowed: false };
+  if (version >= 9) Object.assign(api, {
+    'bridges.recognition.get': async ({ userId, network }) => {
+      need(); person(userId, false);
+      if (network != null && network !== 'whatsapp') throw hostError('ERR_INVALID', 'recognition: whatsapp only');
+      const r = recOf(userId);
+      return { asked: r.asked, allowed: r.allowed, linked: (st.logins.get(userId) || []).length > 0 };
+    },
+    'bridges.recognition.set': async ({ userId, allowed, network }) => {
+      need(); person(userId, true);
+      if (network != null && network !== 'whatsapp') throw hostError('ERR_INVALID', 'recognition: whatsapp only');
+      if (typeof allowed !== 'boolean') throw hostError('ERR_INVALID', 'allowed: true or false');
+      st.recognition.set(userId, { asked: true, allowed });
+      st.log.push({ op: 'recognition', userId, allowed });
+      return { asked: true, allowed, linked: (st.logins.get(userId) || []).length > 0 };
+    },
+  });
+
   /** gc.bridges (the child bootstrap's shape) */
   const gcPart = (call) => Object.freeze({
     version,
@@ -547,6 +586,13 @@ function install({ opts, perms, enabledUser, hostError, personCtx, mediaHost }) 
       contacts: (userId, network, o2) => call('bridges.contacts', { userId, network, query: o2 && typeof o2.query === 'string' ? o2.query : null }),
       matchNumbers: (userId, network, numbers) => call('bridges.matchNumbers', { userId, network, numbers }),
       createDmByRef: (userId, network, ref) => call('bridges.createDmByRef', { userId, network, ref }),
+    } : {}),
+    ...(version >= 8 ? { matchAccounts: (userId, network) => call('bridges.matchAccounts', { userId, network }) } : {}),
+    ...(version >= 9 ? {
+      recognition: Object.freeze({
+        get: (userId, network) => call('bridges.recognition.get', { userId, network: network == null ? 'whatsapp' : network }),
+        set: (userId, allowed, network) => call('bridges.recognition.set', { userId, allowed, network: network == null ? 'whatsapp' : network }),
+      }),
     } : {}),
   });
 
@@ -595,6 +641,10 @@ function install({ opts, perms, enabledUser, hostError, personCtx, mediaHost }) 
     get contacts() { return st.contacts; },
     set contacts(v) { st.contacts = v; },
     expireRefs() { for (const r of st.contactRefs.values()) r.at = 0; },
+    // ── version 8 / 9 ──
+    get accounts() { return st.accounts; },
+    set accounts(v) { st.accounts = v; },
+    recognition(userId) { return recOf(userId); },
     async deliver(events, { wake = true } = {}) {
       for (const e of events) st.inbox.push({ network: 'whatsapp', at: Date.now(), ...JSON.parse(JSON.stringify(e)), seq: ++st.inboxSeq });
       if (wake && st.wake) await st.wake({ pending: st.inbox.length, ephemeral: [] });

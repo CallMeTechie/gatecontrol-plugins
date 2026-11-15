@@ -1,4 +1,4 @@
-<!-- version: 1.20.0 -->
+<!-- version: 1.21.0 -->
 # Messenger
 
 ## Was das Plugin kann
@@ -70,6 +70,17 @@ Er kommt nur beim Verknüpfen und erscheint nachts. Steht „Älteren Verlauf la
 
 **Alte Nachrichten sind weg.**
 Der Administrator hat eine Aufbewahrung eingestellt, oder der Chat ist selbstlöschend.
+
+## Neu in 1.21.0
+
+- **Eine Person, ein Chat.** Wer dir über GateControl und über WhatsApp schreibt, kann in deiner Liste einmal stehen – mit einem gemeinsamen Verlauf, nach der Zeit gemischt. Jede Nachricht trägt das Logo ihres Weges; oben im Chat filterst du „Alle“, „GateControl“ oder „WhatsApp“. Hinter dem Namen in der Liste stehen die Wege.
+- **Erst fragen, dann zusammenführen.** Erkennt GateControl dieselbe Person auf zwei Wegen, erscheint eine Karte über der Liste („„Schatzimausi 💕“ bei WhatsApp ist vielleicht Jenny Backes.“). Zusammengeführt wird erst nach deinem „Zusammenführen“; du wählst dabei den Namen (vorgewählt der des GateControl-Kontos). „Nicht jetzt“ blendet den Vorschlag 7 Tage aus, „Nicht mehr vorschlagen“ für immer. GateControl erkennt nur, wer zugestimmt hat (im Profil unter „Erkennung“) – nie nach dem Namen.
+- **Von Hand:** In der Chat-Info eines Chats mit einer Person „Mit Person zusammenführen …“ – ein GateControl-Konto oder ein anderer Chat. Gruppen und Kanäle werden nie zusammengeführt.
+- **Antworten:** Deine Antwort geht automatisch über den Weg der letzten Nachricht, die du bekommen hast (bei Gleichstand und ohne eingehende Nachricht über GateControl). Das Eingabefeld nennt den Weg („Nachricht über WhatsApp“); geht sie über WhatsApp, erinnert eine Zeile daran, dass die Verschlüsselung von WhatsApp an der Brücke neben deinem Server endet. Eine Antwort auf eine bestimmte Nachricht geht über deren Weg.
+- **Für die Person:** Ungelesen zählt beide Wege, Stumm und Archiv gelten für beide, eine Push-Nachricht heißt „Jenny Backes · über WhatsApp“. Die Suche findet alle Namen der Person.
+- **Nur für dich:** Die andere Person sieht davon nichts. „Trennen“ in „Wege von …“ zeigt die Chats wieder getrennt – keine Nachricht geht verloren.
+- **Beim Verknüpfen von WhatsApp** fragt der Messenger einmal: „Dürfen andere auf diesem Server dich an deinem WhatsApp erkennen?“ (Standard: nein; änderbar in „Mein Profil“ unter „Erkennung“).
+- Vorschläge und die Frage beim Verknüpfen brauchen einen GateControl-Server mit Nutzerprofil und Brücken in der neuen Fassung; von Hand zusammenführen geht mit jedem Server mit Brücken.
 
 ## Neu in 1.20.0
 

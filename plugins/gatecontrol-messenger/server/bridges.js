@@ -35,6 +35,10 @@
 //   1.13.0 — the portal page „Verknüpfte Dienste“ (ui/bridges.js): a QR step also carries `display.matrix`
 //   { size, rows } — the code's modules, drawn by the page (the apps draw from `display.data` themselves).
 //
+//   1.21.0 (GateControl with gc.bridges version 9):
+//     GET bridges                 + recognition { available, network, asked, allowed } — „Dürfen andere auf diesem Server
+//                                 dich an deinem WhatsApp erkennen?“, the profile's consent; asked once after a link
+//     PUT bridges/recognition     { allowed } → { recognition }
 //   1.17.0 (GateControl with gc.bridges version 5):
 //     GET bridges                 + history { available, days, default, options, pending } (older messages: what of
 //                                 them comes over — 0 none, 30, -1 everything; only at a new link), per network
@@ -397,7 +401,38 @@ async function mine(ctx) {
     });
   }
   // where the bridges run (today always the server) — the page says so
-  return { available: true, location: s.location === 'server' ? 'server' : 'gateway', networks: out, history: await historyMine(ctx) };
+  return { available: true, location: s.location === 'server' ? 'server' : 'gateway', networks: out, history: await historyMine(ctx), recognition: await recognitionMine(ctx) };
+}
+
+// ─── 1.21.0: „Dürfen andere auf diesem Server dich an deinem WhatsApp erkennen?“ ─────────────────
+
+/** gc.bridges with recognition (version ≥ 9), else null. */
+function recognitionApi(gc) {
+  const b = gc && gc.bridges;
+  return b && Number(b.version) >= 9 && b.recognition && typeof b.recognition.get === 'function' && typeof b.recognition.set === 'function' ? b : null;
+}
+
+/**
+ * GET bridges → recognition: { available, asked, allowed } — the person's consent of the profile („Erkennung › an meinem
+ * verknüpften WhatsApp“), asked once right after WhatsApp was linked; null while GateControl has no such call.
+ */
+async function recognitionMine(ctx) {
+  const b = recognitionApi(ctx.gc);
+  if (!b) return null;
+  try {
+    const r = await b.recognition.get(ctx.viewer, 'whatsapp');
+    return { available: true, network: 'whatsapp', asked: r.asked === true, allowed: r.allowed === true };
+  } catch { return null; }
+}
+
+/** PUT bridges/recognition { allowed } → { recognition } */
+async function recognitionSet(ctx, body) {
+  const b = recognitionApi(ctx.gc);
+  if (!b) throw fail('feature_off');
+  const allowed = body && typeof body === 'object' ? body.allowed : undefined;
+  if (typeof allowed !== 'boolean') throw fail('invalid');
+  try { await b.recognition.set(ctx.viewer, allowed, 'whatsapp'); } catch (e) { throw mapped(e); }
+  return { recognition: await recognitionMine(ctx) };
 }
 
 // ─── 1.17.0: older messages, the phone ─────────────────
@@ -881,6 +916,8 @@ async function route(ctx, req, seg) {
   if (seg.length === 1 && m === 'GET') return { bridges: await mine(ctx) };
   // 1.17.0: what of the older messages comes over
   if (seg.length === 2 && seg[1] === 'history' && (m === 'PUT' || m === 'PATCH')) return historySet(ctx, req.body);
+  // 1.21.0: the consent to be recognised by the own WhatsApp (GateControl with gc.bridges version 9)
+  if (seg.length === 2 && seg[1] === 'recognition' && (m === 'PUT' || m === 'PATCH')) return recognitionSet(ctx, req.body);
   if (seg[1] === 'children') {
     if (seg.length === 2 && m === 'GET') return { children: await childrenView(ctx) };
     const id = seg.length === 3 ? posInt(seg[2]) : null;

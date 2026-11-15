@@ -35,7 +35,12 @@
    entry „Kanäle“ above it opens their page (GET channels); a channel is read only (a bar instead of the composer), muted
    until its bell is turned on, its posts are bubbles with the link preview; a group where only admins write says so
    instead of the composer. Texts show their format (`marks`) and clickable addresses in every chat (M.richText, built
-   from text nodes and elements — never HTML of anybody else). The messenger's logo instead of the letters „WA“. */
+   from text nodes and elements — never HTML of anybody else). The messenger's logo instead of the letters „WA“.
+   1.21.0 (GET me features.chat_people, ui/persons.js — window.MSPersons): persons — one entry per human over several
+   ways (`person` on a list entry; its id is the lead conversation's): the shared history through persons/:id/…, ordered
+   by time, each message with the logo of its way, the source chips (Alle · GateControl · WhatsApp), the composer names
+   the way the server picks (the way of the newest incoming message) and warns when it is WhatsApp; the suggestion card
+   above the list, „Wege von …“ with „Trennen“ and „Mit Person zusammenführen …“ in the chat info. */
 (function () {
   'use strict';
   var M = window.MS;
@@ -58,7 +63,10 @@
     started: {},
     // 1.20.0: chans — the channels (GET channels); chanSum — { count, unread } of GET conversations; chanView — the page
     chans: [], chanSum: null, chanView: false,
+    // 1.21.0: sugg — the open suggestions (GET persons/suggestions); way — lead conversation id → the source chip
+    sugg: [], way: {},
   };
+  var P = window.MSPersons;
   var R = window.MSRich;
 
   // ── sizing: the frame grows with its content, the app gets a fixed height from the screen ──
@@ -77,6 +85,38 @@
   }
   /** 1.20.0: a channel (its own page, read only). */
   function isChan(c) { return !!(c && c.bridge && c.bridge.channel); }
+  /** 1.21.0: a person (one entry for several ways) — its routes are persons/:id/…, its id is the lead conversation's. */
+  function isPerson(c) { return !!(c && c.person && P); }
+  /** The entry (a person's lead id) a conversation of a way belongs to, else the id itself. */
+  function leadOf(cid) {
+    for (var i = 0; i < S.convs.length; i++) {
+      var c = S.convs[i];
+      if (c.person && c.person.ways.some(function (w) { return w.conversationId === cid; })) return c.id;
+    }
+    return cid;
+  }
+  /** The messages of a chat: conversations/:id/… or, for a person, persons/:id/… (with the source chip). */
+  function msgPath(c, qs) {
+    if (isPerson(c)) return 'persons/' + c.person.id + '/messages?' + qs + (S.way[c.id] ? '&way=' + encodeURIComponent(S.way[c.id]) : '');
+    return 'conversations/' + c.id + '/messages?' + qs;
+  }
+  /** The way an answer to a person takes (the server's pick) → that way of `person.ways`, else null. */
+  function replyWay(c) {
+    if (!isPerson(c) || !c.person.reply) return null;
+    var id = c.person.reply.conversationId;
+    return c.person.ways.filter(function (w) { return w.conversationId === id; })[0] || null;
+  }
+  /** What the composer checks: the chat itself, for a person the way the answer takes. */
+  function sendConv(c) {
+    var w = replyWay(c);
+    if (!w) return c;
+    return Object.assign({}, c, { bridge: w.bridge, can: w.can });
+  }
+  /** Messages in the order shown: by time for a person (its ways are mixed), else by id; pending ones last. */
+  function msgOrder(c) {
+    if (isPerson(c)) return function (a, b) { if (a.pending !== b.pending) return a.pending ? 1 : -1; return a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : a.id - b.id; };
+    return function (a, b) { return (a.pending ? 1e15 : a.id) - (b.pending ? 1e15 : b.id); };
+  }
   function member(c, uid) {
     if (!c) return null;
     for (var i = 0; i < c.members.length; i++) if (c.members[i].userId === uid) return c.members[i];
@@ -112,6 +152,8 @@
   // 1.20.0: the messenger's logo instead of the letters „WA“
   function netMark(c) { return M.netLogo(c.bridge.network, T('bc.via', { network: c.bridge.label }), 11); }
   function convAvatar(c, size) {
+    // 1.21.0: a person — the picture of the way its name comes from (else of another way), no mark of a service
+    if (isPerson(c)) return M.avatar({ name: convTitle(c), avatarUrl: c.avatarUrl, initials: c.peer && c.person.nameFrom === 'account' ? c.peer.initials : null, colorHex: c.peer ? c.peer.colorHex : null }, size);
     // 1.15.0: the picture of the contact / the group, once fetched from the bridge (avatarUrl), else initials or the group icon
     if (c.bridge) return el('span', { class: 'ms-av-wrap' }, [c.avatarUrl ? M.avatar({ name: convTitle(c), avatarUrl: c.avatarUrl }, size) : (c.kind === 'group' ? M.avatar({ icon: 'group' }, size) : M.avatar({ name: convTitle(c) }, size)), netMark(c)]);
     if (c.kind === 'group') return M.avatar({ icon: c.readonly ? 'system' : 'group', avatarUrl: c.avatarUrl }, size);
@@ -193,6 +235,11 @@
     S.chanSum = { count: S.chans.length, unread: n };
   }
   function upsert(c) {
+    // 1.21.0: a plain view of a person's lead (an answer of conversations/…) never replaces the person's entry
+    var had = conv(c.id);
+    if (had && had.person && !c.person) { refreshConv(c.id); return; }
+    // … and a way of a person is no entry of its own
+    if (c.person && c.person.conversationId !== c.id) { S.convs = S.convs.filter(function (x) { return x.id !== c.id; }); refreshPerson(c.person.id); return; }
     // 1.20.0: a channel lives on its own page
     var into = isChan(c) ? S.chans : S.convs;
     var other = isChan(c) ? 'convs' : 'chans';
@@ -229,6 +276,8 @@
     b.appendChild(el('span', { class: 'ms-row-tx' }, [
       el('span', { class: 'ms-row-top' }, [
         el('span', { class: 'ms-row-name', text: convTitle(c) }),
+        // 1.21.0: the ways of a person behind the name
+        isPerson(c) ? P.marks(c.person, 10) : null,
         // 1.6.0: a notice channel of GateControl's notifications
         c.notice ? el('span', { class: 'ms-row-tag', text: T('notice.badge') }) : null,
         el('span', { class: 'ms-row-time', text: M.listTime(c.lastMessage ? c.lastMessage.createdAt : c.createdAt) }),
@@ -271,7 +320,10 @@
     chip(T('lists.all'), !S.listFilter && !S.showArchived && !S.net, function () { S.listFilter = null; S.showArchived = false; S.net = null; renderList(); });
     // 1.14.0: one filter per service once a chat over a bridge exists
     var nets = {};
-    S.convs.forEach(function (c) { if (c.bridge) nets[c.bridge.network] = c.bridge.label; });
+    S.convs.forEach(function (c) {
+      if (c.bridge) nets[c.bridge.network] = c.bridge.label;
+      if (c.person) c.person.ways.forEach(function (w) { if (w.bridge) nets[w.bridge.network] = w.bridge.label; });
+    });
     if (Object.keys(nets).length) {
       chip(T('bc.only_gc'), S.net === 'gc', function () { S.net = S.net === 'gc' ? null : 'gc'; renderList(); });
       Object.keys(nets).forEach(function (n) { chip(nets[n], S.net === n, function () { S.net = S.net === n ? null : n; renderList(); }); });
@@ -324,10 +376,13 @@
     var tools = feature('msg_tools');
     var lst = S.listFilter ? S.lists.filter(function (l) { return l.id === S.listFilter; })[0] : null;
     var list = S.convs.filter(function (c) {
-      if (q && convTitle(c).toLowerCase().indexOf(q) < 0 && preview(c).toLowerCase().indexOf(q) < 0) return false;
+      // 1.21.0: a person is found by every name it has („Schatz“ and „Jenny“)
+      var names = isPerson(c) ? c.person.names.join('\n').toLowerCase() : '';
+      if (q && convTitle(c).toLowerCase().indexOf(q) < 0 && preview(c).toLowerCase().indexOf(q) < 0 && names.indexOf(q) < 0) return false;
       if (q) return true; // a search finds archived chats too
-      if (S.net && (S.net === 'gc' ? !!c.bridge : !(c.bridge && c.bridge.network === S.net))) return false;
-      if (lst) return lst.conversationIds.indexOf(c.id) >= 0;
+      var ways = isPerson(c) ? c.person.ways.map(function (w) { return w.way; }) : [c.bridge ? c.bridge.network : 'gatecontrol'];
+      if (S.net && ways.indexOf(S.net === 'gc' ? 'gatecontrol' : S.net) < 0) return false;
+      if (lst) return lst.conversationIds.indexOf(c.id) >= 0 || (isPerson(c) && c.person.ways.some(function (w) { return lst.conversationIds.indexOf(w.conversationId) >= 0; }));
       return S.showArchived ? !!c.archived : !c.archived;
     });
     // 1.6.0: chats pinned by the server (listPinned: Familie's group) sit under "GateControl", not among the chats
@@ -342,9 +397,11 @@
       pinned.forEach(function (c) { rows.appendChild(row(c)); });
     }
     if ((strip || inboxShown(q) || pinned.length) && (list.length || tools)) rows.appendChild(el('div', { class: 'ms-list-sec', text: T('portal.chats') }));
-    var anyBridge = S.convs.some(function (c) { return !!c.bridge; });
+    var anyBridge = S.convs.some(function (c) { return !!c.bridge || (isPerson(c) && c.person.ways.some(function (w) { return !!w.bridge; })); });
     if (!anyBridge) S.net = null;
     if ((tools || anyBridge) && !q) rows.appendChild(chips());
+    // 1.21.0: GateControl recognised a person on two ways — a card, merged only after the person's „Ja“
+    if (!q && P && S.sugg.length && !S.showArchived) rows.appendChild(P.card(S.sugg[0], personsHost()));
     list.forEach(function (c) { rows.appendChild(row(c)); });
     var empty = $('#ms-list-empty');
     empty.hidden = list.length + pinned.length > 0;
@@ -357,6 +414,11 @@
     var typ = typingText(c);
     if (typ) return { text: typ, typing: true };
     if (isChan(c)) return { text: T('ch.sub', { network: c.bridge.label }), typing: false };
+    // 1.21.0: the ways of a person („GateControl · WhatsApp“)
+    if (isPerson(c)) {
+      var seen = {};
+      return { text: c.person.ways.filter(function (w) { if (seen[w.way]) return false; seen[w.way] = true; return true; }).map(function (w) { return w.label; }).join(' · '), typing: false, person: true };
+    }
     if (c.bridge) return { text: T('bc.via', { network: c.bridge.label }), typing: false };
     if (c.kind === 'direct') {
       if (c.peer && c.peer.gone) return { text: T('portal.gone_hint'), typing: false };
@@ -378,7 +440,7 @@
     h.appendChild(convAvatar(c, 42));
     var sub = headSub(c);
     h.appendChild(el('button', { type: 'button', class: 'ms-head-tx', 'aria-label': T('info.open'), on: { click: toggleInfo } }, [
-      el('b', { text: convTitle(c) }), el('span', { class: 'ms-head-sub' + (sub.typing ? ' ms-typing' : ''), text: sub.text }),
+      el('b', { text: convTitle(c) }), sub.person ? el('span', { class: 'ms-head-sub' }, [P.marks(c.person, 10), el('span', { text: sub.text })]) : el('span', { class: 'ms-head-sub' + (sub.typing ? ' ms-typing' : ''), text: sub.text }),
     ]));
     // 1.20.0: a channel's bell — struck through while it sends no pushes (the default)
     if (isChan(c)) {
@@ -388,6 +450,21 @@
     h.appendChild(el('button', { type: 'button', class: 'ms-ib', 'aria-label': T('portal.search_in_chat'), title: T('portal.search_in_chat'), on: { click: toggleSearch } }, [M.icon('search', 18)]));
     h.appendChild(el('button', { type: 'button', class: 'ms-ib', 'aria-label': T('info.title'), title: T('info.title'), 'aria-pressed': S.infoOpen ? 'true' : 'false', on: { click: toggleInfo } }, [M.icon('info', 18)]));
     if (refs.bridge) renderBridgeBar();
+    if (refs.src) renderSrc();
+  }
+  /** 1.21.0: the source chips of a person's shared history. */
+  function renderSrc() {
+    var c = conv(S.cur);
+    var box = M.clear(refs.src);
+    box.hidden = !isPerson(c);
+    if (!isPerson(c)) return;
+    box.appendChild(P.srcChips(c, S.way[c.id] || null, function (way) {
+      if ((S.way[c.id] || null) === way) return;
+      S.way[c.id] = way;
+      delete S.msgs[c.id];
+      renderSrc();
+      loadMessages(c.id).then(function () { if (S.cur === c.id) renderMessages('bottom'); });
+    }));
   }
   function renderShell() {
     var box = M.clear($('#ms-conv'));
@@ -399,10 +476,12 @@
     refs.results = el('div', { class: 'ms-results', hidden: true });
     refs.banner = el('div', { class: 'ms-banners' });
     refs.bridge = el('div', { class: 'ms-bridgebar', hidden: true });
+    refs.src = el('div', { class: 'ms-src', hidden: true });
     refs.scroll = el('div', { class: 'ms-scroll', role: 'log', 'aria-live': 'polite', 'aria-label': T('portal.messages') });
     refs.jump = el('button', { type: 'button', class: 'ms-ib ms-jump', hidden: true, 'aria-label': T('portal.to_latest'), title: T('portal.to_latest'), on: { click: toLatest } }, [M.icon('down', 18)]);
     refs.compose = el('div', { class: 'ms-compose-wrap' });
     box.appendChild(refs.head);
+    box.appendChild(refs.src);
     box.appendChild(refs.searchbar);
     box.appendChild(refs.results);
     box.appendChild(refs.banner);
@@ -414,6 +493,7 @@
     renderHead();
     renderBanner();
     renderBridgeBar();
+    renderSrc();
     renderComposer();
   }
   /** 1.14.0: a chat over a bridge says so — where it runs, what does not cross, and when it cannot send. */
@@ -427,8 +507,9 @@
     var c = conv(S.cur);
     if (!refs.bridge) return;
     var bar = M.clear(refs.bridge);
-    bar.hidden = !(c && c.bridge);
-    if (!c || !c.bridge) return;
+    // 1.21.0: a person's ways say where they run in the info (and under the composer)
+    bar.hidden = !(c && c.bridge) || isPerson(c);
+    if (!c || !c.bridge || isPerson(c)) return;
     var n = { network: c.bridge.label };
     var relink = function (label) { return window.MSBridges ? el('button', { type: 'button', class: 'btn btn-sm', text: label, on: { click: function () { window.MSBridges.open(); } } }) : null; };
     var st = c.bridge.state;
@@ -495,6 +576,8 @@
     return el('div', { class: 'ms-meta' }, [
       m.expiresAt ? el('span', { title: T('portal.disappears', { time: M.when(m.expiresAt) }) }, [M.icon('timer', 12)]) : null,
       m.editedAt && !m.deleted ? el('span', { text: T('msg.edited') }) : null,
+      // 1.21.0: the way of a message in a person's shared history
+      isPerson(c) && m.way ? P.mark(m.way, T('bc.via', { network: P.labelOf(m.way) }), 9) : null,
       el('span', { text: M.hm(m.createdAt) }),
       ticks(statusOf(m, c)),
     ]);
@@ -684,7 +767,7 @@
       // 1.14.0: a file that has not crossed (yet) — a line that says what it was, never nothing; 1.15.0: "wird geladen …"
       // while it comes, the reason when it cannot, a location as a link to the map
       var ph = m.bridge.placeholder;
-      var net = { network: c.bridge ? c.bridge.label : '' };
+      var net = { network: c.bridge ? c.bridge.label : (m.way ? P.labelOf(m.way) : '') };
       // 1.17.0: a file of the older history — fetched when the person asks for it
       var tail = ph.state === 'loading' ? T('bc.ph_loading') : (ph.state === 'on_request' ? T('bc.ph_on_request') : (ph.state === 'failed' && ph.reason && CTX.texts['bc.ph_failed.' + ph.reason] ? T('bc.ph_failed.' + ph.reason, net) : T('bc.ph_later', net)));
       var phText = ph.kind === 'unsupported' ? T('bc.ph.unsupported', net) : T('bc.ph.' + ph.kind) + (ph.name ? ' · ' + ph.name : '') + (ph.kind === 'location' && ph.geo ? '' : ' – ' + tail);
@@ -720,7 +803,7 @@
     if (rx && isChan(c) && (m.reactions || []).some(function (r) { return r.userIds.indexOf(S.me.user.id) >= 0; })) wrap.appendChild(el('div', { class: 'ms-chan-note' }, [M.icon('info', 12), el('span', { text: T('ch.reactions', { network: c.bridge.label }) })]));
     if (!m.pending) {
       wrap.appendChild(el('div', { class: 'ms-acts' }, [
-        c.can.send ? el('button', { type: 'button', class: 'ms-ib', 'aria-label': T('msg.reply'), title: T('msg.reply'), on: { click: function (e) { e.stopPropagation(); startReply(m); } } }, [M.icon('reply', 15)]) : null,
+        sendConv(c).can.send ? el('button', { type: 'button', class: 'ms-ib', 'aria-label': T('msg.reply'), title: T('msg.reply'), on: { click: function (e) { e.stopPropagation(); startReply(m); } } }, [M.icon('reply', 15)]) : null,
         el('button', { type: 'button', class: 'ms-ib', 'aria-label': T('msg.more'), title: T('msg.more'), on: { click: function (e) { e.stopPropagation(); openMenu(m, wrap); } } }, [M.icon('more', 15, { stroke: '3' })]),
       ]));
       b.addEventListener('contextmenu', function (e) { e.preventDefault(); openMenu(m, wrap); });
@@ -816,13 +899,19 @@
   }
   function setReceipts(c, r) {
     if (!c || !r) return;
+    // 1.21.0: a person — the ticks of the messages inside GateControl come from that way's marks
+    if (Array.isArray(r.ways)) {
+      var gw = r.ways.filter(function (w) { return w.way === 'gatecontrol'; })[0];
+      if (gw) { c.readUpTo = gw.readUpTo; c.deliveredUpTo = gw.deliveredUpTo; }
+      return;
+    }
     if (r.readUpTo !== undefined) c.readUpTo = r.readUpTo;
     if (r.deliveredUpTo !== undefined) c.deliveredUpTo = r.deliveredUpTo;
     if (r.receipts !== undefined) c.receipts = r.receipts;
   }
   function loadMessages(id) {
     S.loading = true;
-    return M.api('GET', 'conversations/' + id + '/messages?limit=50').then(function (r) {
+    return M.api('GET', msgPath(conv(id) || { id: id }, 'limit=50')).then(function (r) {
       S.msgs[id] = { list: r.messages, hasMore: r.hasMore, partial: false };
       setReceipts(conv(id), r);
     }).catch(M.warn).then(function () { S.loading = false; });
@@ -832,7 +921,7 @@
     var st = S.msgs[id];
     if (!st || !st.list.length || S.loading) return Promise.resolve();
     S.loading = true;
-    return M.api('GET', 'conversations/' + id + '/messages?limit=50&before=' + st.list[0].id).then(function (r) {
+    return M.api('GET', msgPath(conv(id), 'limit=50&before=' + st.list[0].id)).then(function (r) {
       if (S.cur !== id) return;
       st.list = r.messages.concat(st.list);
       st.hasMore = r.hasMore;
@@ -843,7 +932,10 @@
     var st = S.msgs[id];
     if (!st) return Promise.resolve();
     var after = lastId(st.list.filter(function (m) { return !m.pending; }));
-    return M.api('GET', 'conversations/' + id + '/messages?limit=100&after=' + after).then(function (r) {
+    var c0 = conv(id);
+    if (!c0) return Promise.resolve();
+    // 1.21.0: a person's history is ordered by time: the newest message shown is the cursor
+    return M.api('GET', after ? msgPath(c0, 'limit=100&after=' + after) : msgPath(c0, 'limit=50')).then(function (r) {
       var known = {};
       st.list.forEach(function (m) { if (!m.pending) known[m.id] = true; });
       r.messages.forEach(function (m) {
@@ -852,7 +944,7 @@
         st.list = st.list.filter(function (x) { return !(x.pending && x.clientId && x.clientId === m.clientId); });
         st.list.push(m);
       });
-      st.list.sort(function (a, b) { return (a.pending ? 1e15 : a.id) - (b.pending ? 1e15 : b.id); });
+      st.list.sort(msgOrder(conv(id)));
       st.partial = false;
       setReceipts(conv(id), r);
       if (r.hasMore) return loadNewer(id);
@@ -864,7 +956,7 @@
     var st = S.msgs[id];
     if (!st || !since) return;
     var t = new Date(new Date(since).getTime() - 1000).toISOString();
-    M.api('GET', 'conversations/' + id + '/messages?limit=100&changedSince=' + encodeURIComponent(t)).then(function (r) {
+    M.api('GET', msgPath(conv(id) || { id: id }, 'limit=100&changedSince=' + encodeURIComponent(t))).then(function (r) {
       r.messages.forEach(function (m) { for (var i = 0; i < st.list.length; i++) if (st.list[i].id === m.id) st.list[i] = m; });
       if (S.cur === id) renderMessages('keep');
     }).catch(function () {});
@@ -886,12 +978,14 @@
   function jumpTo(id) {
     if (highlight(id)) return;
     var cid = S.cur;
-    Promise.all([
-      M.api('GET', 'conversations/' + cid + '/messages?limit=30&before=' + (id + 1)),
-      M.api('GET', 'conversations/' + cid + '/messages?limit=30&after=' + id),
-    ]).then(function (rs) {
+    var jc = conv(cid);
+    // 1.21.0: a person's history around a message (its ways mixed by time)
+    var calls = isPerson(jc) ? [M.api('GET', msgPath(jc, 'limit=60&around=' + id)).then(function (r) { return [{ messages: r.messages, hasMore: r.hasMoreBefore }, { messages: [], hasMore: r.hasMoreAfter }]; })]
+      : [M.api('GET', 'conversations/' + cid + '/messages?limit=30&before=' + (id + 1)), M.api('GET', 'conversations/' + cid + '/messages?limit=30&after=' + id)];
+    Promise.all(calls).then(function (rs) {
+      if (rs.length === 1) rs = rs[0];
       if (S.cur !== cid) return;
-      S.msgs[cid] = { list: rs[0].messages.concat(rs[1].messages), hasMore: rs[0].hasMore, partial: rs[1].hasMore || rs[1].messages.length > 0 };
+      S.msgs[cid] = { list: rs[0].messages.concat(rs[1].messages), hasMore: rs[0].hasMore, partial: rs[1].hasMore };
       renderMessages('keep');
       highlight(id);
     }).catch(M.warn);
@@ -904,6 +998,13 @@
     if (!c || !st || document.visibilityState === 'hidden' || st.partial) return;
     var top = 0;
     st.list.forEach(function (m) { if (!m.pending && m.id > top) top = m.id; });
+    // 1.21.0: a person — every way read up to the newest message shown (by time)
+    if (isPerson(c)) {
+      var newest = st.list.filter(function (m) { return !m.pending; }).slice(-1)[0];
+      if (!newest || !c.unread || S.way[c.id]) return;
+      M.api('POST', 'persons/' + c.person.id + '/read', { upTo: newest.id }).then(function (r) { c.unread = r.unread; renderList(); }).catch(function () {});
+      return;
+    }
     if (!top || top <= c.me.lastReadId) return;
     c.me.lastReadId = top;
     M.api('POST', 'conversations/' + c.id + '/read', { upTo: top }).then(function (r) {
@@ -912,16 +1013,22 @@
       renderList();
     }).catch(function () {});
   }
+  /** 1.21.0: the conversations a chat stands for — a person's ways, else the chat itself. */
+  function waysOf(id) {
+    var c = conv(id);
+    return isPerson(c) ? c.person.ways.map(function (w) { return w.conversationId; }) : [id];
+  }
   function ping() {
     if (!S.cur || document.visibilityState === 'hidden') return;
-    M.api('POST', 'conversations/' + S.cur + '/active', {}).catch(function () {});
+    waysOf(S.cur).forEach(function (id) { M.api('POST', 'conversations/' + id + '/active', {}).catch(function () {}); });
   }
-  function leaveActive(id) { if (id) M.api('POST', 'conversations/' + id + '/active', { active: false }).catch(function () {}); }
+  function leaveActive(id) { if (id) waysOf(id).forEach(function (x) { M.api('POST', 'conversations/' + x + '/active', { active: false }).catch(function () {}); }); }
   function typed() {
     var now = Date.now();
     if (!S.cur || now - S.typingAt < 3000) return;
     S.typingAt = now;
-    M.api('POST', 'conversations/' + S.cur + '/typing', {}).catch(function () {});
+    var w = replyWay(conv(S.cur));
+    M.api('POST', 'conversations/' + (w ? w.conversationId : S.cur) + '/typing', {}).catch(function () {});
   }
 
   // ── open / close ──
@@ -958,9 +1065,11 @@
 
   // ── composer ──
   function renderComposer() {
-    var c = conv(S.cur);
+    var entry = conv(S.cur);
     var box = M.clear(refs.compose);
-    if (!c) return;
+    if (!entry) return;
+    // 1.21.0: a person — the composer is that of the way the answer takes (the server's pick)
+    var c = sendConv(entry);
     if (!c.can.send) {
       // 1.20.0: a channel (only the channel writes), a group where only admins write
       if (c.bridge && c.can.sendReason === 'channel') { box.appendChild(el('div', { class: 'ms-readonly' }, [M.icon('eye', 16), el('span', { text: T('ch.readonly') })])); refs.input = null; return; }
@@ -1003,6 +1112,9 @@
       rowEl.appendChild(attachBtn);
     }
     var hint = c.bridge ? T('bc.placeholder', { network: c.bridge.label }) : null;
+    var rw = replyWay(entry);
+    if (rw) hint = T('person.placeholder', { way: rw.label });
+    if (rw && rw.bridge && !S.edit) box.appendChild(P.wayHint(rw.label));
     var input = el('textarea', { class: 'ms-input', rows: '1', placeholder: hint || T('portal.placeholder_short'), title: narrow() ? null : (hint || T('portal.placeholder')), 'aria-label': hint || T('portal.placeholder'), maxlength: String(S.limits.textMax || 4000) });
     if (S.edit) input.value = S.edit.text || '';
     if (refs.draft && !S.edit) { input.value = refs.draft; refs.draft = ''; }
@@ -1036,10 +1148,10 @@
     if (st) {
       st.list = st.list.filter(function (x) { return x !== pending && x.id !== msg.id; });
       st.list.push(msg);
-      st.list.sort(function (a, b) { return (a.pending ? 1e15 : a.id) - (b.pending ? 1e15 : b.id); });
+      st.list.sort(msgOrder(c));
     }
     c.lastMessage = msg;
-    c.me.lastReadId = Math.max(c.me.lastReadId, msg.id);
+    if (!isPerson(c)) c.me.lastReadId = Math.max(c.me.lastReadId, msg.id);
     sortConvs();
     S.firstUnread = null;
     if (S.cur === c.id) renderMessages('bottom');
@@ -1052,7 +1164,9 @@
   }
   function send(c, body, pendingExtra) {
     var pending = addPending(c, body, pendingExtra);
-    return M.api('POST', 'conversations/' + c.id + '/messages', body).then(function (r) { settle(c, pending, r.message); return r.message; })
+    // 1.21.0: a person — the server picks the way (the newest incoming message's; an answer goes back its message's way)
+    var path = isPerson(c) ? 'persons/' + c.person.id + '/messages' : 'conversations/' + c.id + '/messages';
+    return M.api('POST', path, body).then(function (r) { settle(c, pending, r.message); if (isPerson(c)) refreshConv(c.id); return r.message; })
       .catch(function (e) { dropPending(c, pending); throw e; });
   }
   function submit() {
@@ -1167,7 +1281,8 @@
     var isImage = /^image\/(jpeg|png|webp)$/.test(type);
     if (!isImage && !allowedType(type)) { M.toast(T('error.upload_unsupported_type'), 'error'); return; }
     // 1.15.0: over a bridge only what it takes (a picture is sent as WebP, which the bridge takes)
-    if (c.bridge && !isImage && !bridgeType(c, /^video\//.test(type) ? 'video' : 'file', type)) { M.toast(T('error.bridge_media_type'), 'error'); return; }
+    var k = sendConv(c);
+    if (k.bridge && !isImage && !bridgeType(k, /^video\//.test(type) ? 'video' : 'file', type)) { M.toast(T('error.bridge_media_type'), 'error'); return; }
     var finish = function (body, pendingExtra) {
       if (caption) { body.text = caption; if (refs.input) { refs.input.value = ''; grow(refs.input); } }
       if (S.reply) { body.replyTo = S.reply.id; S.reply = null; renderComposer(); }
@@ -1222,7 +1337,7 @@
   }
   function recordingSupported(c) { return !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia && recMime(c)); }
   function startRec() {
-    var mime = recMime(conv(S.cur));
+    var mime = recMime(conv(S.cur) ? sendConv(conv(S.cur)) : null);
     if (!mime) return;
     navigator.mediaDevices.getUserMedia({ audio: true }).then(function (stream) {
       var rec = { stream: stream, chunks: [], levels: [], started: Date.now(), mime: mime, timer: null, analyser: null, ctx: null };
@@ -1618,7 +1733,7 @@
     var c = conv(S.cur);
     if (!c) return;
     if (q.trim().length < 2) { box.hidden = true; return; }
-    M.api('GET', 'conversations/' + c.id + '/search?q=' + encodeURIComponent(q.trim())).then(function (r) {
+    M.api('GET', (isPerson(c) ? 'persons/' + c.person.id : 'conversations/' + c.id) + '/search?q=' + encodeURIComponent(q.trim())).then(function (r) {
       M.clear(box);
       box.hidden = false;
       if (!r.results.length) { box.appendChild(el('p', { class: 'ms-list-empty', text: T('portal.search_none') })); return; }
@@ -1646,11 +1761,14 @@
   }
   function patchConv(c, body) {
     return M.api('PATCH', 'conversations/' + c.id, body).then(function (r) {
-      if (r.conversation) { upsert(r.conversation); if (S.cur === c.id) { renderHead(); renderComposer(); renderInfo(); } renderList(); } else { removeConv(c.id); }
+      // 1.21.0: a person's settings hold for every way (the server copies them) — its entry is read again
+      if (r.conversation && isPerson(c)) refreshConv(c.id);
+      else if (r.conversation) { upsert(r.conversation); if (S.cur === c.id) { renderHead(); renderComposer(); renderInfo(); } renderList(); } else { removeConv(c.id); }
       return r;
     }).catch(function (e) { M.warn(e); renderInfo(); });
   }
   function renderInfo() {
+    var foot0 = null;
     var pane = $('#ms-info');
     var c = conv(S.cur);
     pane.hidden = !(c && S.infoOpen);
@@ -1659,7 +1777,7 @@
     M.clear(pane);
     var closeBtn = el('button', { type: 'button', class: 'ms-ib ms-ib-flat', 'aria-label': narrow() ? T('common.back') : T('common.close'), on: { click: toggleInfo } }, [M.icon(narrow() ? 'back' : 'close', 18)]);
     pane.appendChild(el('div', { class: 'ms-info-head' }, narrow() ? [closeBtn, el('span', { text: T('info.title') })] : [el('span', { text: T('info.title') }), closeBtn]));
-    var top = el('div', { class: 'ms-info-top' }, [convAvatar(c, 76), el('b', { text: convTitle(c) }), el('span', { class: 'ms-muted', text: isChan(c) ? T('ch.info', { network: c.bridge.label }) : c.notice ? T('notice.info', { label: c.notice.label || convTitle(c) }) : c.kind === 'group' ? (c.coreGroupId ? T('info.managed_group') : c.managedBy ? T('info.managed', { plugin: pluginName(c.managedBy) }) : T('info.members_n', { n: c.members.length })) : (c.peer && c.peer.gone ? T('portal.gone_hint') : T('portal.direct_sub')) })]);
+    var top = el('div', { class: 'ms-info-top' }, [convAvatar(c, 76), el('b', { text: convTitle(c) }), el('span', { class: 'ms-muted', text: isPerson(c) ? T('person.only_you', { name: convTitle(c) }) : isChan(c) ? T('ch.info', { network: c.bridge.label }) : c.notice ? T('notice.info', { label: c.notice.label || convTitle(c) }) : c.kind === 'group' ? (c.coreGroupId ? T('info.managed_group') : c.managedBy ? T('info.managed', { plugin: pluginName(c.managedBy) }) : T('info.members_n', { n: c.members.length })) : (c.peer && c.peer.gone ? T('portal.gone_hint') : T('portal.direct_sub')) })]);
     if (c.can.editInfo) {
       top.appendChild(el('div', { style: 'display:flex;gap:6px;flex-wrap:wrap;justify-content:center' }, [
         el('button', { type: 'button', class: 'btn btn-sm', on: { click: function () { rename(c); } } }, [M.icon('pen', 14), T('info.rename')]),
@@ -1667,6 +1785,11 @@
       ]));
     }
     pane.appendChild(top);
+    // 1.21.0: the ways of a person („Trennen“), or „Mit Person zusammenführen …“ in a chat with one person
+    if (isPerson(c)) pane.appendChild(P.waysSection(c, personsHost()));
+    else if (P && feature('chat_people') && c.kind === 'direct' && !isChan(c) && !c.notice && !c.readonly && !c.managedBy && (c.bridge || (c.peer && !c.peer.gone))) {
+      pane.appendChild(el('div', { class: 'ms-info-sec' }, [el('button', { type: 'button', class: 'btn btn-sm', on: { click: function () { P.pickDialog(c, personsHost()); } } }, [M.icon('plus', 14), T('person.add_way')])]));
+    }
     // 1.6.0: a notice channel leads to "Wo Mitteilungen erscheinen"
     if (c.notice && R && feature('notice_routes')) {
       pane.appendChild(el('div', { class: 'ms-info-sec' }, [el('button', { type: 'button', class: 'btn btn-sm', on: { click: function () { R.noticeRoutes(); } } }, [M.icon('bell', 14), T('routes.title')])]));
@@ -1758,7 +1881,8 @@
     if (feature('msg_tools')) {
       var tools = el('div', { class: 'ms-info-sec ms-info-tools' }, [el('div', { class: 'ms-sec', text: T('tools.title') })]);
       tools.appendChild(el('button', { type: 'button', class: 'btn btn-sm', on: { click: function () {
-        M.api('POST', 'conversations/' + c.id + '/archive', { archived: !c.archived }).then(function (r) { upsert(r.conversation); renderList(); renderInfo(); }).catch(M.warn);
+        (isPerson(c) ? M.api('POST', 'persons/' + c.person.id + '/archive', { archived: !c.archived }) : M.api('POST', 'conversations/' + c.id + '/archive', { archived: !c.archived }))
+          .then(function (r) { upsert(r.conversation); renderList(); renderInfo(); }).catch(M.warn);
       } } }, [R.icon('archive', 14), c.archived ? T('tools.unarchive') : T('tools.archive')]));
       tools.appendChild(el('button', { type: 'button', class: 'btn btn-sm', on: { click: function () { R.exportChat(c); } } }, [R.icon('export', 14), T('tools.export')]));
       if (c.kind === 'direct' && c.peer && !c.peer.gone) {
@@ -1770,9 +1894,11 @@
       pane.appendChild(tools);
     }
     // 1.14.0: a chat over a bridge does not stay on this server alone — the note says where it runs instead
-    var foot = el('div', { class: 'ms-info-sec' }, c.bridge
+    var pw = isPerson(c) ? c.person.ways.filter(function (w) { return w.bridge; })[0] : null;
+    if (pw) foot0 = [el('p', { class: 'ms-note' }, [M.icon('info', 14), T('bc.info_note', { network: pw.label })])];
+    var foot = el('div', { class: 'ms-info-sec' }, foot0 || (c.bridge
       ? [el('p', { class: 'ms-note' }, [M.icon('info', 14), T('bc.info_note', { network: c.bridge.label })]), el('p', { class: 'ms-note' }, [M.icon('info', 14), T(bridgeTakes(c, 'file') ? 'bc.info_not_media' : 'bc.info_not', { network: c.bridge.label })])]
-      : [el('p', { class: 'ms-note' }, [M.icon('lock', 14), T('info.encrypted')])]);
+      : [el('p', { class: 'ms-note' }, [M.icon('lock', 14), T('info.encrypted')])]));
     if (c.can.leave) foot.appendChild(el('button', { type: 'button', class: 'btn btn-danger', on: { click: function () { leave(c); } } }, [T('info.leave')]));
     pane.appendChild(foot);
   }
@@ -1964,7 +2090,11 @@
     clearTimeout(S.refreshTimers[id]);
     return new Promise(function (resolve) {
       S.refreshTimers[id] = setTimeout(function () {
+        var pc = conv(id);
+        // 1.21.0: a person's entry is read through persons/:id
+        if (isPerson(pc)) { refreshPerson(pc.person.id).then(resolve); return; }
         M.api('GET', 'conversations/' + id).then(function (r) {
+          if (r.conversation.person && P) { S.convs = S.convs.filter(function (x) { return x.id !== id; }); return refreshPerson(r.conversation.person.id); }
           upsert(r.conversation);
           renderList();
           if (S.cur === id) { renderHead(); renderBanner(); renderComposer(); if (S.infoOpen) renderInfo(); renderMessages('keep'); }
@@ -1972,12 +2102,59 @@
       }, 120);
     });
   }
+  /** 1.21.0: a person's entry again (GET persons/:id); gone → the list again. */
+  function refreshPerson(pid) {
+    return M.api('GET', 'persons/' + pid).then(function (r) {
+      var e = r.conversation;
+      var ids = e.person.ways.map(function (w) { return w.conversationId; });
+      S.convs = S.convs.filter(function (x) { return x.id === e.id || ids.indexOf(x.id) < 0; });
+      var found = false;
+      for (var i = 0; i < S.convs.length; i++) if (S.convs[i].id === e.id) { S.convs[i] = e; found = true; }
+      if (!found) S.convs.push(e);
+      sortConvs();
+      renderList();
+      if (S.cur === e.id) { renderHead(); renderBanner(); renderComposer(); if (S.infoOpen) renderInfo(); renderMessages('keep'); }
+    }).catch(function (e) { if (e && e.status === 404) { S.lastSync = null; refreshAll().catch(function () {}); } });
+  }
+  /** 1.21.0: the open suggestions („… ist vielleicht …“). */
+  function loadSuggestions() {
+    if (!P || !feature('chat_people')) return Promise.resolve();
+    return M.api('GET', 'persons/suggestions').then(function (r) { S.sugg = r.suggestions || []; renderList(); }).catch(function () {});
+  }
+  /** The host object of ui/persons.js. */
+  function personsHost() {
+    return {
+      api: M.api,
+      merged: function (entry, stay) {
+        S.sugg = S.sugg.filter(function (x) { return !entry.person || !entry.person.ways.some(function (w) { return w.conversationId === x.conversationId; }); });
+        var ids = entry.person ? entry.person.ways.map(function (w) { return w.conversationId; }) : [];
+        var wasOpen = S.cur != null && ids.indexOf(S.cur) >= 0;
+        ids.forEach(function (id) { if (id !== entry.id) delete S.msgs[id]; });
+        delete S.msgs[entry.id];
+        S.convs = S.convs.filter(function (x) { return ids.indexOf(x.id) < 0 || x.id === entry.id; });
+        var found = false;
+        for (var i = 0; i < S.convs.length; i++) if (S.convs[i].id === entry.id) { S.convs[i] = entry; found = true; }
+        if (!found) S.convs.push(entry);
+        sortConvs();
+        if (wasOpen || stay) openConv(entry.id); else renderList();
+      },
+      split: function (r) {
+        S.lastSync = null;
+        Object.keys(S.msgs).forEach(function (k) { delete S.msgs[k]; });
+        refreshAll().then(function () { if (S.cur && conv(S.cur)) openConv(S.cur); else if (S.cur) closeConv(); }).catch(function () {});
+        return r;
+      },
+      answered: function (sg) { S.sugg = S.sugg.filter(function (x) { return x.id !== sg.id; }); renderList(); },
+    };
+  }
   function refreshAll() {
     var since = S.lastSync;
     return M.api('GET', 'conversations' + (since ? '?since=' + encodeURIComponent(since) : '')).then(function (r) {
       S.lastSync = r.serverTime;
       if (!since) S.convs = r.conversations;
       else r.conversations.forEach(upsert);
+      // 1.21.0: the ways of persons are no entries of their own
+      (r.folded || []).forEach(function (id) { S.convs = S.convs.filter(function (x) { return x.id !== id || (x.person && x.person.conversationId === id); }); });
       // 1.20.0: the channels' summary (GET conversations?channels=1) — their list when there is one
       if (r.channels && typeof r.channels.count === 'number') {
         S.chanSum = { count: r.channels.count, unread: r.channels.unread || 0 };
@@ -1999,7 +2176,9 @@
   function onEvent(ev) {
     if (!ev || (ev.plugin && ev.plugin !== PLUGIN)) return;
     var d = ev.data || {};
-    var cid = d.conversationId;
+    // 1.21.0: a way of a person — its entry (the lead) stands for it; merged or split: the list again
+    if (ev.type === 'conversation.update' && d.reason === 'person') { S.lastSync = null; refreshAll().catch(function () {}); loadSuggestions(); return; }
+    var cid = d.conversationId ? leadOf(d.conversationId) : d.conversationId;
     var st = cid ? S.msgs[cid] : null;
     switch (ev.type) {
       case 'message.new':
@@ -2151,7 +2330,9 @@
       }
       return refreshAll();
     }).then(function () {
+      loadSuggestions();
       setInterval(function () { refreshAll().catch(function () {}); }, 30000);
+      setInterval(loadSuggestions, 15 * 60000);
     }).catch(function (e) {
       if (M.errCode(e) === 'login_required' || M.errCode(e) === 'forbidden') showLogin(); else M.warn(e);
     });

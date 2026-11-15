@@ -3,6 +3,40 @@
 Chats zwischen den GateControl-Konten – in der GateControl-App (eigener Tab „Chats“), im
 Windows-Client und im Portal (eigener Tab „Chats“). Alles bleibt auf dem eigenen Server.
 
+## 1.21.0
+**Personen zusammenführen** („Chats v2 – Teil B“). Feature-Wort `chat_people` (für dieselben Personen wie `bridge_chats`);
+Clients schicken `?people=1` neben `?bridged=1`. Vorschläge brauchen GateControl mit `gc.bridges` Version 8
+(`matchAccounts`), die Frage beim Verknüpfen Version 9 (`recognition`); von Hand zusammenführen geht ab Version 3.
+Migration 013 (`persons`, `person_ways`, `person_hints`, Index `messages_conv_time`). `server/persons.js`, `ui/persons.js`.
+- **Personen** (nur in der Sicht des Betrachters): der Chat mit einem GateControl-Konto und Brücken-Einzelchats (WhatsApp,
+  später Signal/Telegram) als eine Person. `GET conversations?people=1` zeigt einen Eintrag je Person — die Sicht des
+  führenden Chats (GateControl-Chat, sonst der älteste Weg) mit Name, Bild, Ungelesen aller Wege, neuester Nachricht und
+  `person { id, name, nameFrom, userId, names, ways, reply, conversationId }`; die übrigen Wege in `folded`. Ein
+  GateControl-Chat entsteht beim Zusammenführen, falls keiner da ist (ohne Nachricht — die andere Seite sieht nichts).
+  Gruppen und Kanäle nie (`409 cannot_merge`, `reason` `group` | `channel` | `not_direct` | `two_accounts` | `one_way`).
+- **Gemeinsamer Verlauf** `GET persons/:id/messages` (`before` / `after` / `around` über alle Wege nach Zeit,
+  `changedSince`, `way=`), jede Nachricht mit `way` (bei `?people=1` auch in allen anderen Antworten); `read`, `search`.
+- **Antwortweg** ohne Wahl: der Weg der neuesten eingehenden Nachricht, Gleichstand und ohne eingehende GateControl; ein
+  Brückenweg, der gerade nicht senden kann, weicht GateControl. Eine Antwort auf eine Nachricht (`replyTo`) geht über
+  deren Weg. `POST persons/:id/messages` → `{ message, way, conversationId }`.
+- **Für die Person:** Stumm, Benachrichtigungen und Archiv werden auf alle Wege übertragen (auch nach `PATCH
+  conversations/:id` / `…/archive` eines Weges); Push „<Name> · über WhatsApp“ / „… · über GateControl“ mit
+  `data.person { id, conversationId }`.
+- **Vorschläge** `GET persons/suggestions` aus `gc.bridges.matchAccounts` (höchstens alle 10 Minuten je Person und Netz;
+  stark vor mittel, nur die Zuordnung, nie eine Nummer), `POST persons/suggestions/:id { action: later | never }` (7 Tage /
+  für immer); eine zurückgenommene Zustimmung nimmt den Vorschlag weg. **Mail-Adressbuch als Hinweis nicht gebaut:** dafür
+  bräuchte das Plugin die E-Mail-Adresse des Kontos, die `gc.users` / `gc.profile` nicht herausgeben.
+- **Von Hand:** `GET persons/candidates?conversationId=`, `POST persons { conversationIds, userId?, name? }`, `PATCH
+  persons/:id { name | notify | mutedUntil }`, `POST persons/:id/archive`, `DELETE persons/:id/ways/:conversationId`
+  („Trennen“, nichts geht verloren; dieser Vorschlag kommt nicht wieder), `DELETE persons/:id`.
+- **Erkennung beim Verknüpfen:** `GET bridges` → `recognition { available, network, asked, allowed }`, `PUT
+  bridges/recognition { allowed }` (die Zustimmung „an meinem verknüpften WhatsApp“ des Profils); das Portal fragt nach dem
+  Verknüpfen von WhatsApp einmal.
+- **Portal:** Vorschlag-Karte über der Liste, Dialog „Zu einer Person zusammenführen?“ mit Namenswahl, Logos der Wege hinter
+  dem Namen und an jeder Nachricht, Quellen-Chips, Platzhalter „Nachricht über …“ und die Zeile zur
+  WhatsApp-Verschlüsselung, „Wege von …“ mit „Trennen“, „Mit Person zusammenführen …“ in der Chat-Info.
+- Testattrappe: `gc.bridges` Version 8 (`host.bridges.accounts`) und 9 (`recognition`). Tests: `test/persons.test.js`.
+
 ## 1.20.0
 **Brücken: WhatsApp-Kanäle, Gruppen „nur Admins“, Format, Link-Vorschau, Reaktionen in Kanälen** („Chats v2 – Teil A“).
 Wirkt mit einem GateControl mit `gc.bridges` Version 7 (Vorschau); ältere Server ändern nichts. Feature-Wort
