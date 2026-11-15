@@ -18,6 +18,12 @@
 //         contact's (bridge_contacts.avatar_ref) only once somebody sees one of their messages (avatar_want).
 //
 // No file is held twice in the plugin: it lies in GateControl's media store only, the plugin keeps its id.
+//
+// 1.17.0: the files of bridged chats (and the pictures of their chats and contacts) go into the media area AREA
+// (plugin.json media.areas) — the administrator chooses where it lives under Einstellungen › Plugins › Messenger ›
+// Speicherorte, the same storage targets Drive uses (a folder, a NAS over SMB / WebDAV, S3), and moves it there with
+// one click. The area is sealed: other people's files are never readable files on a NAS. A file of the history waits
+// until the person asks for it (ext_media 'ask', placeholder state 'on_request', POST messages/:id/fetch).
 
 const store = require('./store');
 const seal = require('./seal');
@@ -37,6 +43,40 @@ const RUN_PICTURES = 10;
 // pictures jpeg (png and webp converted), videos mp4, sound ogg (taken as Opus) / mp4 / aac / mpeg — no webm —, files of any type
 const OUT_TYPES = { image: ['image/jpeg', 'image/png', 'image/webp'], voice: ['audio/ogg', 'audio/mp4', 'audio/aac', 'audio/mpeg'], video: ['video/mp4'] };
 const SUPPORTS = ['image', 'video', 'voice', 'file'];
+// 1.17.0: the media area of the bridged chats' files
+const AREA = 'bruecken';
+const AREA_LABEL = 'Medien und Anhänge aus Chats über andere Messenger';
+let areaReady = false;
+let areaFailedAt = 0;
+
+/** Make the area once (GateControl with media areas); → true when files go into it. Never throws. */
+async function ensureArea(gc) {
+  if (areaReady) return true;
+  const a = gc && gc.media && gc.media.areas;
+  if (!a || typeof a.ensure !== 'function' || Date.now() - areaFailedAt < 3600000) return false;
+  try { await a.ensure(AREA, { label: AREA_LABEL, sealed: true }); areaReady = true; } catch (e) {
+    areaFailedAt = Date.now();
+    gc.log.warn('media area not made', (e && (e.code || e.message)) || 'error');
+  }
+  return areaReady;
+}
+/** Keep a fetched file — in the area when there is one. */
+async function claimFile(gc, mediaId) {
+  if (await ensureArea(gc)) {
+    try { await gc.media.claim(mediaId, { area: AREA }); return; } catch (e) { gc.log.warn('file not put into the area', (e && (e.code || e.message)) || 'error'); }
+  }
+  await gc.media.claim(mediaId);
+}
+/** The area for the admin card: { target, bytes, count, state, moving } or null. */
+async function areaInfo(gc) {
+  if (!(await ensureArea(gc))) return null;
+  try {
+    const i = await gc.media.areas.info(AREA);
+    if (!i) return null;
+    return { label: i.label, target: i.target ? { kind: i.target.kind, label: i.target.label || null } : { kind: 'server', label: null },
+      bytes: i.bytes || 0, count: i.count || 0, state: i.state || 'ok', moving: i.moving ? { done: i.moving.done, total: i.moving.total } : null, encrypted: i.encrypted !== false };
+  } catch { return null; }
+}
 
 /** gc.bridges with files (version ≥ 4), else null. */
 function api(gc) {
@@ -87,6 +127,8 @@ function placeholderView(bm, row) {
   const v = { kind: bm.placeholder, name: typeof bm.name === 'string' ? bm.name : null, state: null, reason: null };
   if (bm.geo) v.geo = bm.geo;
   if (row.ext_media === 'wait') v.state = 'loading';
+  // 1.17.0: a file of the history — fetched when the person asks for it
+  else if (row.ext_media === 'ask') v.state = 'on_request';
   else if (REASONS.includes(bm.reason)) { v.state = 'failed'; v.reason = bm.reason; }
   return v;
 }
@@ -150,7 +192,7 @@ async function fetchFile(gc, b, row, box, maxBytes, now) {
     const reason = reasonOf(e);
     if (reason) return settle(reason);
     // the bridge is away or busy: later — given up only after days
-    if (now - row.created_at > WAIT_MAX_MS) return settle('unavailable');
+    if (now - Math.max(row.created_at, row.ext_asked_at || 0) > WAIT_MAX_MS) return settle('unavailable');
     return 'later';
   }
   const sc = scan.norm(r.scan);
@@ -158,7 +200,7 @@ async function fetchFile(gc, b, row, box, maxBytes, now) {
   await store.tx(gc, async () => {
     const cur = await store.one(gc, 'SELECT * FROM messages WHERE id = ?', [row.id]);
     if (!cur || cur.ext_media !== 'wait' || cur.deleted_at) { await deleteFile(gc, r.mediaId); return; }
-    await gc.media.claim(r.mediaId);
+    await claimFile(gc, r.mediaId);
     await store.run(gc, `INSERT INTO media (media_id, conv_id, msg_id, role, kind, mime, bytes, owner_id, created_at, scan_state, scan_blocked, scan_finding)
       VALUES (?, ?, ?, 'file', ?, ?, ?, NULL, ?, ?, ?, ?)`, [r.mediaId, cur.conv_id, cur.id, kind, r.mime, r.bytes, now, ...scan.cols(sc)]);
     const m2 = messages.metaOf(cur) || {};
@@ -199,7 +241,7 @@ async function chatPicture(gc, b, conv, box, now) {
     const cur = await store.one(gc, 'SELECT * FROM conversations WHERE id = ?', [conv.id]);
     if (!cur || cur.bridge_avatar !== ref) { if (p.mediaId) await deleteFile(gc, p.mediaId); return; }
     if (!p.mediaId) { await store.run(gc, 'UPDATE conversations SET bridge_avatar_got = ? WHERE id = ?', [ref, conv.id]); return; }
-    await gc.media.claim(p.mediaId);
+    await claimFile(gc, p.mediaId);
     if (cur.avatar_media_id) await store.run(gc, 'UPDATE media SET orphan = 1 WHERE media_id = ?', [cur.avatar_media_id]);
     await store.run(gc, `INSERT INTO media (media_id, conv_id, msg_id, role, kind, mime, bytes, owner_id, created_at, scan_state, scan_blocked, scan_finding)
       VALUES (?, ?, NULL, 'avatar', 'avatar', ?, ?, ?, ?, ?, ?, ?)`, [p.mediaId, conv.id, p.mime, p.bytes, conv.bridge_owner, now, ...scan.cols(p.scan)]);
@@ -216,7 +258,7 @@ async function contactPicture(gc, b, k, now) {
     const cur = await store.one(gc, 'SELECT * FROM bridge_contacts WHERE id = ?', [k.id]);
     if (!cur || cur.avatar_ref !== ref) { if (p.mediaId) await deleteFile(gc, p.mediaId); return; }
     if (!p.mediaId) { await store.run(gc, 'UPDATE bridge_contacts SET avatar_got = ? WHERE id = ?', [ref, k.id]); return; }
-    await gc.media.claim(p.mediaId);
+    await claimFile(gc, p.mediaId);
     if (cur.avatar_media_id) await store.run(gc, 'UPDATE media SET orphan = 1 WHERE media_id = ?', [cur.avatar_media_id]);
     // a contact's picture belongs to no chat (conv_id 0): only the person whose contact it is sees it (index.js mediaAccess)
     await store.run(gc, `INSERT INTO media (media_id, conv_id, msg_id, role, kind, mime, bytes, owner_id, created_at, scan_state, scan_blocked, scan_finding)
@@ -272,6 +314,17 @@ function kick(gc) {
     return last;
   })().finally(() => { running = null; });
   return running;
+}
+
+/**
+ * 1.17.0: POST messages/:id/fetch — the person asks for a file of the history. → true when it is on its way
+ * (fetched by the next run, kick); false when there is nothing to ask for. Inside a transaction.
+ */
+async function ask(ctx, conv, row) {
+  if (!conv.bridge_net || conv.bridge_owner !== ctx.viewer || row.ext_media !== 'ask' || row.deleted_at) return false;
+  await store.run(ctx.gc, "UPDATE messages SET ext_media = 'wait', ext_asked_at = ?, updated_at = ? WHERE id = ?", [ctx.now, ctx.now, row.id]);
+  live.queue(ctx.box, [ctx.viewer], 'message.update', { conversationId: conv.id, messageId: row.id, editedAt: iso(ctx.now), media: true });
+  return true;
 }
 
 // ─── pictures that change, files that go ────────────────────────────────────
@@ -349,7 +402,7 @@ function outMedia(row, file) {
 }
 
 module.exports = {
-  api, newChatApi, placeholderOf, placeholderView, kick, runOnce, chatAvatar, contactAvatar, wantContacts, pictureOf,
+  api, newChatApi, placeholderOf, placeholderView, kick, runOnce, chatAvatar, contactAvatar, wantContacts, pictureOf, ask, ensureArea, areaInfo, AREA,
   outKind, outRefusal, outMedia, OUT_TYPES, SUPPORTS, REF_RE, REASONS, FILE_KINDS,
-  _reset: () => { tries.clear(); running = null; more = false; },
+  _reset: () => { tries.clear(); running = null; more = false; areaReady = false; areaFailedAt = 0; },
 };

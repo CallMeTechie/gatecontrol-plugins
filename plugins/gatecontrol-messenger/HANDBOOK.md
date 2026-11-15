@@ -1,4 +1,4 @@
-<!-- version: 1.16.0 -->
+<!-- version: 1.17.0 -->
 # Messenger
 
 ## What the plugin does
@@ -15,7 +15,7 @@ Everything stays on your server. Texts, locations, file names and group titles a
 
 ## Requirements
 
-- GateControl **1.193.0** or later (group chats for GateControl groups from 1.200.0, virus scan from the version after 1.222.0).
+- GateControl **1.204.0** or later (group chats for GateControl groups from 1.200.0, virus scan from the version after 1.222.0).
 - A licence for the plugin.
 - For “Save to Drive”: the Drive plugin. For the family chat: the Family plugin.
 
@@ -65,8 +65,20 @@ The browser does not allow the location in the portal. Set the point on the map 
 **I cannot find the family chat.**
 The Family plugin keeps it (page “Features” › messenger group).
 
+**The older WhatsApp history is missing.**
+It only comes when linking and appears at night. When “Load older history” is “Off”, or the administrator switched it off, none comes. WhatsApp does not send everything for every chat.
+
 **Old messages are gone.**
 The administrator set a retention, or the chat is a disappearing chat.
+
+## New in 1.17.0
+
+- **Load older history:** Under **“Linked services”** you choose how much older history comes along when linking: **Off**, **Last 30 days** (preset) or **Everything** WhatsApp sends. The choice applies at the (next) link.
+- **At night, in small portions:** the older history appears in your chats overnight – in the right place, without push and as read. If somebody writes to you in one of these chats before, its history comes right along.
+- **Files from the history** (pictures, videos, voice messages) show as a line “older history” with **“Load”** – only then does GateControl fetch them. WhatsApp often no longer has very old files; then the line says you can see them in WhatsApp.
+- **“Phone not seen for … days”:** When your phone was not online for 12 days, you get a notification and see the note under “Linked services”. Open WhatsApp on the phone – otherwise WhatsApp ends the link after about 14 days.
+- **“Bridge outdated”** also shows when WhatsApp refuses the bridge's version. Your administrator fixes it with a GateControl update; you do not have to link again.
+- **For administrators** (card “Bridges” on “Overview”): allow or switch off older history, the night window (preset 01:00–05:00), where the media lie (change the place under Settings › Plugins › Messenger › Storage places – the same storage targets as Drive, always encrypted there), the daily encrypted backup of the bridges' state in the GateControl backup with **“Back up now”**.
 
 ## New in 1.16.0
 

@@ -9,7 +9,11 @@
 
    Server: bridges.js (GET bridges, POST bridges/:network/consent | login | login/:process/:step, DELETE
    bridges/:network/login/:process | logins/:id). The code and the QR content are shown and forgotten; the QR code
-   is drawn from the modules the server sends (display.matrix), never from a picture address. */
+   is drawn from the modules the server sends (display.matrix), never from a picture address.
+
+   1.17.0: the row „Älteren Verlauf laden“ (nothing, the last 30 days, everything — PUT bridges/history), the warning
+   „Handy seit N Tagen nicht gesehen“ under a service (networks[].phone) and „Brücke veraltet“ also when WhatsApp
+   itself turned the bridge's version away (networks[].clientOutdated). */
 (function () {
   'use strict';
   var M = window.MS;
@@ -83,6 +87,10 @@
       el('span', { class: 'ms-brp-tx' }, [el('b', { text: name(n.id) }), el('small', { text: sub })]),
       el('span', { class: 'ms-brp-act' }, right),
     ])];
+    // 1.17.0: the bridge's warning — the phone was not seen for 12 days and more (WhatsApp ends the link after about 14)
+    if (n.phone && n.phone.offline && l && l.state !== 'logged_out') {
+      out.push(note('info', T(n.phone.leftDays > 0 ? 'br.phone_offline' : 'br.phone_offline_now', { name: name(n.id), days: n.phone.days, left: n.phone.leftDays }), 'ms-brp-warn'));
+    }
     // signed out or failed: a new code is enough (the notes were confirmed before)
     if (l && (l.state === 'logged_out' || l.state === 'error' || l.state === 'unknown') && n.state === 'running') {
       out.push(el('div', { class: 'ms-brp-again' }, [
@@ -96,12 +104,15 @@
 
   function overview(b) {
     var nodes = [el('p', { class: 'ms-brp-lead', text: T('br.lead') })];
-    var outdated = b.networks.filter(function (n) { return n.outdated; });
+    var outdated = b.networks.filter(function (n) { return n.outdated || n.clientOutdated; });
     if (outdated.length) nodes.push(note('info', T('br.outdated_banner', { name: name(outdated[0].id) }), 'ms-brp-warn'));
     var list = el('div', { class: 'ms-brp-list' });
     b.networks.forEach(function (n) { row(n).forEach(function (r) { list.appendChild(r); }); });
     if (!b.networks.length) list.appendChild(el('p', { class: 'ms-muted', text: T('br.none_offered') }));
     nodes.push(list);
+    // 1.17.0: older messages — what comes over at a new link
+    var hrow = historyRow(b.history, b.networks);
+    if (hrow) nodes.push(hrow);
     if (b.networks.length) {
       nodes.push(el('div', { class: 'ms-brp-row is-plain' }, [
         el('span', { class: 'ms-brp-tx' }, [el('b', { text: T('br.runs_on') }), el('small', { text: T('br.runs_on_' + (b.location === 'server' ? 'server' : 'gateway')) + ' · ' + T(outdated.length ? 'br.runs_outdated' : 'br.runs_current') })]),
@@ -109,9 +120,34 @@
       ]));
       if (outdated.length) nodes.push(el('p', { class: 'ms-brp-foot', text: T('br.outdated_hint') }));
       nodes.push(el('p', { class: 'ms-brp-foot', text: T('br.foot_unlink') }));
-      nodes.push(note('lock', T('br.foot_preview')));
+      nodes.push(note('lock', T(b.history ? 'br.foot_preview_hist' : 'br.foot_preview')));
     }
     show(nodes);
+  }
+
+  /** 1.17.0: the row „Älteren Verlauf laden“ with the choice (only on a server that has it). */
+  function historyRow(h, nets) {
+    if (!h || !nets.length) return null;
+    var label = function (d) { return d === 0 ? T('br.hist_off') : (d < 0 ? T('br.hist_all') : T('br.hist_days', { n: d })); };
+    var sub = h.available ? T('br.hist_sub', { choice: label(h.days) }) : T('br.hist_admin_off');
+    if (h.available && h.pending > 0) sub += ' · ' + T('br.hist_pending', { n: h.pending });
+    var right = null;
+    if (h.available) {
+      right = el('select', { class: 'form-select ms-brp-sel', id: 'ms-brp-hist', 'aria-label': T('br.hist_title') }, (h.options || [0, 30, -1]).map(function (d) {
+        var o = el('option', { value: String(d), text: label(d) });
+        if (d === h.days) o.selected = true;
+        return o;
+      }));
+      right.addEventListener('change', function () {
+        right.disabled = true;
+        M.api('PUT', 'bridges/history', { days: Number(right.value) }).then(function () { M.toast(T('common.saved')); load(); })
+          .catch(function (e) { right.disabled = false; M.warn(e); });
+      });
+    }
+    return el('div', { class: 'ms-brp-row is-plain' }, [
+      el('span', { class: 'ms-brp-tx' }, [el('b', { text: T('br.hist_title') }), el('small', { text: sub })]),
+      right,
+    ]);
   }
 
   function load() {

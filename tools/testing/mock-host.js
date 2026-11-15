@@ -1008,7 +1008,9 @@ function mediaDecl(m, gc190 = false, gc193 = false, gc204 = false) {
   // may still emulate an older host for its runtime fallbacks — the real older host refuses them (tools/validate.js
   // against that core says so); they only act from 1.193.0 on.
   const keys = gc190 ? ['maxBytes', 'types', 'quotaDefault', 'uploads', 'resumable', 'handOverMaxBytes'] : ['maxBytes', 'types', 'quotaDefault', 'resumable', 'handOverMaxBytes'];
-  if (gc204) keys.push('areas');
+  // areas (GateControl ≥ 1.204.0) is accepted at every emulated version too (a plugin that requires 1.204.0 may still
+  // emulate an older host for its runtime fallbacks); it acts from 1.204.0 on
+  keys.push('areas');
   keys.push('previews');
   if (typeof m !== 'object' || Array.isArray(m) || Object.keys(m).some((k) => !keys.includes(k))) bad('media');
   if (m.previews != null && typeof m.previews !== 'boolean') bad('media.previews');
@@ -1871,7 +1873,7 @@ async function createHost(pluginDir, opts = {}) {
     const target = a.target || { id: null, kind: 'server', label: null };
     const form = a.form || 'blocks';
     return { area, label: a.label, target, form, moving: null, bytes: u.bytes, count: u.count, quota: a.quota, quotaDefault: a.quota,
-      pending: { count: 0, bytes: 0 }, state: a.state || 'ok', error: a.error || null, encrypted: form === 'blocks', free: null, scan: null };
+      pending: { count: 0, bytes: 0 }, state: a.state || 'ok', error: a.error || null, encrypted: form === 'blocks', free: null, scan: null, sealed: !!a.sealed };
   };
   const areaQuotaFull = (area, add) => { const a = areaStore.get(area); return a.quota != null && areaUsage(area).bytes + add > a.quota; };
   if (gc204) {
@@ -1883,7 +1885,10 @@ async function createHost(pluginDir, opts = {}) {
       if (label.length > 80) throw areaFail('invalid', 'label too long');
       if (x.quota != null && (!Number.isSafeInteger(x.quota) || x.quota < 1024 * 1024 || x.quota > MEDIA_QUOTA_MAX_AREAS)) throw areaFail('invalid', 'quota must be 1 MB … 1 PB in bytes');
       if (!areaStore.has(area) && areaStore.size >= 1000) throw areaFail('limit', 'at most 1000 areas');
-      areaStore.set(area, { area, label: label || area, quota: x.quota == null ? null : x.quota });
+      if (x.sealed != null && typeof x.sealed !== 'boolean') throw areaFail('invalid', 'sealed: a boolean');
+      // GateControl after 1.276.0 (sealed: the files are never readable on a target); an older one ignores the key
+      const had = areaStore.get(area);
+      areaStore.set(area, { ...(had || {}), area, label: label || area, quota: x.quota == null ? null : x.quota, sealed: x.sealed === true || !!(had && had.sealed && x.sealed === undefined) });
       return areaInfo(area);
     };
     api['media.areas.info'] = async ({ area }) => { needAreas(); return areaInfo(String(area || '')); };

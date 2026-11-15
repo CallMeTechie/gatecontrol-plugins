@@ -126,6 +126,10 @@ module.exports = {
     require('./bridgemedia')._reset();
     require('./bridges')._resetLookups();
     pumpBridges(gc).catch(() => {});
+    // 1.17.0: no phone number as a login id any more (bridges.js forgetRawLoginIds) — after the key is there
+    try { await ensureKey(gc); await require('./bridges').forgetRawLoginIds(gc); } catch (e) { gc.log.warn('login ids not replaced', (e && (e.code || e.message)) || 'error'); }
+    // 1.17.0: the media area of the bridged chats' files (GateControl with media areas)
+    require('./bridgemedia').ensureArea(gc).catch(() => {});
     gc.log.info('messenger started', gc.plugin.version);
   },
 
@@ -333,6 +337,11 @@ module.exports = {
     try { await pumpBridges(gc); await require('./bridgechats').sweep(gc, Date.now()); } catch (e) { gc.log.warn('bridge events tick failed', (e && (e.code || e.message)) || 'error'); }
     // 1.15.0: files and pictures of bridged chats still to fetch (one run; it never throws)
     await require('./bridgemedia').kick(gc);
+    // 1.17.0: older messages — one small portion per run, only at night (bridgehistory.js); the phone warning, hourly
+    if (require('./bridgehistory').api(gc)) {
+      await require('./bridgehistory').runOnce(gc, async () => { const c = await context(gc, null, Date.now(), 'de'); c.portal = false; return c; }, (c) => api.flush(c));
+      await require('./bridges').phoneCheck(gc, Date.now());
+    }
     // 1.9.0: the group chats of GateControl groups — after a start and every 6 hours
     try { await groupchats.tick(gc, Date.now()); } catch (e) { gc.log.warn('group chats tick failed', (e && (e.code || e.message)) || 'error'); }
     return out;

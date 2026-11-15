@@ -17,6 +17,8 @@ const APPROVERS = ['auto', 'parents', 'rights'];          // auto: parents when 
 const GRANT_MAX_DAYS = [1, 2, 3, 7, 14, 30];
 // 1.16.0: a new chat by number — at most this many numbers checked per person and hour (admin: card „Brücken“)
 const NEW_CHAT_PER_HOUR = { min: 1, max: 60 };
+// 1.17.0: older messages of the bridges are filed in this window (local time of GateControl's update window), in small portions
+const HHMM_RE = /^([01][0-9]|2[0-3]):[0-5][0-9]$/;
 
 const DEFAULTS = Object.freeze({
   retentionDays: 0,
@@ -30,6 +32,8 @@ const DEFAULTS = Object.freeze({
   childrenMayRequest: true,        // 1.5.0: Familie's children may send requests
   grantMaxDays: 7,        // 1.5.0: the longest „Gerät teilen“
   newChatPerHour: 10,     // 1.16.0: numbers checked per person and hour (GateControl itself allows 20)
+  historyFrom: '01:00',   // 1.17.0: older messages of the bridges are filed from … (the server's disk is slow)
+  historyTo: '05:00',     //         … to (end before start: over midnight)
   defaults: Object.freeze({ readReceipts: true, typing: true, preview: true }),
 });
 
@@ -55,6 +59,8 @@ async function load(gc) {
     childrenMayRequest: typeof raw.childrenMayRequest === 'boolean' ? raw.childrenMayRequest : DEFAULTS.childrenMayRequest,
     grantMaxDays: GRANT_MAX_DAYS.includes(raw.grantMaxDays) ? raw.grantMaxDays : DEFAULTS.grantMaxDays,
     newChatPerHour: perHour(raw.newChatPerHour) ? raw.newChatPerHour : DEFAULTS.newChatPerHour,
+    historyFrom: HHMM_RE.test(String(raw.historyFrom || '')) ? raw.historyFrom : DEFAULTS.historyFrom,
+    historyTo: HHMM_RE.test(String(raw.historyTo || '')) ? raw.historyTo : DEFAULTS.historyTo,
     defaults: {
       readReceipts: typeof d.readReceipts === 'boolean' ? d.readReceipts : true,
       typing: typeof d.typing === 'boolean' ? d.typing : true,
@@ -81,12 +87,13 @@ async function update(gc, body) {
   if (b.childrenMayRequest !== undefined) next.childrenMayRequest = bool(b.childrenMayRequest);
   if (b.grantMaxDays !== undefined) { if (!GRANT_MAX_DAYS.includes(b.grantMaxDays)) throw fail('invalid'); next.grantMaxDays = b.grantMaxDays; }
   if (b.newChatPerHour !== undefined) { if (!perHour(b.newChatPerHour)) throw fail('invalid'); next.newChatPerHour = b.newChatPerHour; }
+  for (const k of ['historyFrom', 'historyTo']) if (b[k] !== undefined) { if (!HHMM_RE.test(String(b[k]))) throw fail('invalid'); next[k] = b[k]; }
   if (b.defaults !== undefined) {
     if (!b.defaults || typeof b.defaults !== 'object' || Array.isArray(b.defaults)) throw fail('invalid');
     for (const k of ['readReceipts', 'typing', 'preview']) if (b.defaults[k] !== undefined) next.defaults[k] = bool(b.defaults[k]);
   }
   await store.tx(gc, async () => {
-    for (const k of ['retentionDays', 'allowDisappearing', 'editWindowMin', 'maxVoiceS', 'allowStories', 'allowActions', 'requestTtlMin', 'requestApproversDefault', 'childrenMayRequest', 'grantMaxDays', 'newChatPerHour', 'defaults']) {
+    for (const k of ['retentionDays', 'allowDisappearing', 'editWindowMin', 'maxVoiceS', 'allowStories', 'allowActions', 'requestTtlMin', 'requestApproversDefault', 'childrenMayRequest', 'grantMaxDays', 'newChatPerHour', 'historyFrom', 'historyTo', 'defaults']) {
       await store.run(gc, 'INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value', [k, JSON.stringify(next[k])]);
     }
   });
@@ -96,4 +103,4 @@ async function update(gc, body) {
 
 function reset() { cache = null; }
 
-module.exports = { load, update, reset, DEFAULTS, RETENTION_DAYS, EDIT_WINDOW_MIN, VOICE_MAX_S, DISAPPEARING_S, REQUEST_TTL_MIN, APPROVERS, GRANT_MAX_DAYS, NEW_CHAT_PER_HOUR };
+module.exports = { load, update, reset, HHMM_RE, DEFAULTS, RETENTION_DAYS, EDIT_WINDOW_MIN, VOICE_MAX_S, DISAPPEARING_S, REQUEST_TTL_MIN, APPROVERS, GRANT_MAX_DAYS, NEW_CHAT_PER_HOUR };

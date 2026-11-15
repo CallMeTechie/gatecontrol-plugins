@@ -180,7 +180,9 @@ test('plugin.json: the chat topic "message", app + events + media + services', (
   const m = require('../plugin.json');
   assert.deepEqual(m.notifyTopics, [{ id: 'message', label: { de: 'Chat-Nachrichten', en: 'Chat messages' }, chat: true, default: true },
     // 1.4.0: the daily story digest (not a chat push, off by default)
-    { id: 'status', label: { de: 'Status-Zusammenfassung', en: 'Status digest' }, default: false }]);
+    { id: 'status', label: { de: 'Status-Zusammenfassung', en: 'Status digest' }, default: false },
+    // 1.17.0: „Handy seit N Tagen nicht gesehen“ (a linked service needs the person)
+    { id: 'bridge', label: { de: 'Verknüpfte Dienste', en: 'Linked services' }, default: true }]);
   assert.equal(m.permissions.app, true);
   assert.equal(m.permissions.events, true);
   assert.equal(m.permissions.notify, true);

@@ -80,11 +80,21 @@
     <p class="ms-gc-note" id="ms-br-place-note">{{t:admin.br_place_note}}</p>
     <h3 class="ms-sec">{{t:admin.br_data}}</h3>
     <div class="ms-field"><span class="ms-field-k">{{t:admin.br_data_db}}<small>{{t:admin.br_data_db_hint}}</small></span><span class="ms-field-v" id="ms-br-data">–</span></div>
+    <div class="ms-field" id="ms-br-media" hidden><span class="ms-field-k">{{t:admin.br_data_media}}<small id="ms-br-media-sub"></small></span><span class="ms-field-v" id="ms-br-media-v">–</span></div>
+    <div class="ms-field" id="ms-br-bk" hidden><span class="ms-field-k">{{t:admin.br_data_backup}}<small id="ms-br-bk-sub"></small></span><span class="ms-field-v" id="ms-br-bk-v"></span></div>
+    <div id="ms-br-hist" hidden>
+      <h3 class="ms-sec">{{t:admin.br_hist}}</h3>
+      <div class="ms-field"><span class="ms-field-k" id="ms-l-br-hist">{{t:admin.br_hist_on}}<small id="ms-br-hist-sub"></small></span><span id="ms-br-hist-on"></span></div>
+      <div class="ms-field" id="ms-br-hist-win"><span class="ms-field-k">{{t:admin.br_hist_window}}<small>{{t:admin.br_hist_window_hint}}</small></span>
+        <span class="ms-br-win"><input type="time" class="form-input ms-br-time" id="ms-br-hist-from" aria-label="{{t:admin.br_hist_from}}"><span aria-hidden="true">–</span><input type="time" class="form-input ms-br-time" id="ms-br-hist-to" aria-label="{{t:admin.br_hist_to}}"></span></div>
+      <p class="ms-gc-note" id="ms-br-hist-note" hidden></p>
+    </div>
     <h3 class="ms-sec">{{t:admin.br_networks}}</h3>
     <p class="ms-gc-note">{{t:admin.br_services_hint}}</p>
     <ul class="ms-gc-list" id="ms-br-list" aria-live="polite"></ul>
     <p class="ms-gc-note" id="ms-br-note" role="status" hidden></p>
     <p class="ms-gc-note" id="ms-br-flow" hidden></p>
+    <p class="ms-gc-note" id="ms-br-clean" hidden></p>
     <p id="ms-br-probe" hidden></p>
     <div class="ms-field" id="ms-br-nc" hidden><label class="ms-field-k" for="ms-br-nc-in">{{t:admin.br_new_chat}}<small>{{t:admin.br_new_chat_hint}}</small></label><input type="number" class="form-input ms-br-nc-in" id="ms-br-nc-in" min="1" max="60" step="1" inputmode="numeric"></div>
     <p>{{t:admin.br_privacy}}</p>
