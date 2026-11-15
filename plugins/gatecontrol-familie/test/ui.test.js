@@ -142,7 +142,7 @@ test('Leaflet: one constant (server/ui.js), nowhere else', () => {
 
 test('plugin.json: permissions (kiosk, actions), app tab, maps, the twelve topics with SOS allowed critical', () => {
   assert.equal(manifest.id, 'gatecontrol-familie');
-  assert.equal(manifest.version, '1.25.0');
+  assert.equal(manifest.version, '1.26.0');
   // 1.6.0 stays on 1.173.0: the messenger services (GateControl ≥ 1.177.0) are optional — an older host ignores
   // permissions.services and has no gc.services, so the group and the rule action stay hidden there.
   // 1.14.2 too: GC.viewport (GateControl ≥ 1.199.0) is optional — without it the wall keeps its 640 px
@@ -153,12 +153,15 @@ test('plugin.json: permissions (kiosk, actions), app tab, maps, the twelve topic
   // has no gc.homeNetwork, the app stays the only source of presence
   // 1.18.0 stays too: permissions.homeInternet (gc.homeNetwork.internet, GateControl ≥ 1.231.0) — an older host ignores the
   // key, the card „Internet zu Hause“ stays hidden
+  // 1.26.0 stays too: permissions.profile (gc.profile, GateControl ≥ 1.280.0) — an older host ignores the key and has no
+  // gc.profile, the birthdays stay Familie's own
   assert.equal(manifest.gatecontrol, '>=1.216.0', 'maxPerHour of calendar_range needs GateControl 1.216.0');
   const p = manifest.permissions;
   assert.deepEqual([p.storage, p.portal, p.users, p.app, p.notify, p.background, p.kiosk, p.actions], [true, true, true, true, { perHour: 120 }, { intervalSeconds: 60 }, true, true]);
   assert.equal(p.groups, 'manage', '1.15.0: the family as a GateControl group of the plugin (gc.groups.ensure)');
   assert.equal(p.homePresence, true, '1.17.0: presence over the home network (gc.homeNetwork.presence)');
   assert.equal(p.homeInternet, true, '1.18.0: „Internet zu Hause“ (gc.homeNetwork.internet)');
+  assert.deepEqual(p.profile, ['birthday'], '1.26.0: the birthday from the user profile only — no names, no telephone numbers');
   assert.deepEqual(p.services, ['gatecontrol-messenger:sync_group', 'gatecontrol-messenger:send_message', 'gatecontrol-messenger:release_group',
     'gatecontrol-messenger:set_place_status', 'gatecontrol-messenger:bridge_children', 'gatecontrol-messenger:bridge_child_set', 'gatecontrol-alltag:calendar_query', 'gatecontrol-alltag:calendar_list', 'gatecontrol-schule:school_students',
     'gatecontrol-schule:school_day', 'gatecontrol-notizen:todo_changed', 'gatecontrol-notizen:notes_bind', 'gatecontrol-notizen:notes_list',

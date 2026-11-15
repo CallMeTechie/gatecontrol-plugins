@@ -73,6 +73,11 @@
 // (pushed when they change — todo_changed; services todo_items / todo_complete, server/notizen.js) and Pinnwand and
 // Packlisten moved into the hub's notebooks (notes_bind / notes_import / note_save / note_delete / notes_list, the hub
 // calls notes_changed back — server/boardsync.js); Familie keeps showing them. Without the hub nothing changes.
+//
+// 1.26.0: the user profile (GateControl ≥ 1.280.0, permissions.profile ["birthday"]) — a parent's birthday comes from the
+// person's profile, children's stay with the parents; Familie takes the profile's value over once when its own is empty
+// (server/profile.js). Hooks profileChanged (read a changed birthday again) and myData (the person's part of „Meine
+// Daten“: role, birthday, her own emergency card). Older GateControl: no gc.profile, everything as before.
 
 const ui = require('./ui');
 const api = require('./api');
@@ -110,8 +115,10 @@ const notizen = require('./notizen');
 const boardsync = require('./boardsync');
 const shopsync = require('./shopsync');
 const tasksync = require('./tasksync');
+const emergency = require('./emergency');
+const profile = require('./profile');
 const texts = require('./texts.json');
-const { STATUS, isKnown } = require('./util');
+const { STATUS, isKnown, iso } = require('./util');
 
 function t(lang, key, params) {
   const l = lang === 'en' ? 'en' : 'de';
@@ -234,6 +241,7 @@ module.exports = {
     messenger.reset();
     groups.reset();
     school.reset();
+    profile.forget();
     boardsync.reset();
     shopsync.reset();
     tasksync.reset();
@@ -382,6 +390,37 @@ module.exports = {
    */
   async groupsChanged(arg, gc) {
     try { await groups.changed(gc, arg && arg.changes); } catch (e) { gc.log.warn('groupsChanged failed', (e && (e.code || e.message)) || 'error'); }
+  },
+
+  /**
+   * 1.26.0 (GateControl ≥ 1.280.0, the user profile): { userId, fields } — never a value. A changed birthday is read
+   * again (server/profile.js); names come from gc.users on every load anyway.
+   */
+  async profileChanged(arg, gc) {
+    const userId = arg && Number.isSafeInteger(arg.userId) ? arg.userId : null;
+    const fields = arg && Array.isArray(arg.fields) ? arg.fields : [];
+    if (userId && fields.includes('birthday')) profile.forget(userId);
+  },
+
+  /**
+   * 1.26.0 — "Meine Daten herunterladen" (GateControl ≥ 1.280.0): the person's part of Familie — her role, the
+   * birthday as Familie keeps it and her own emergency card (only hers; the person downloads it herself). null for
+   * somebody who is no member.
+   */
+  async myData(arg, gc) {
+    const userId = arg && Number.isSafeInteger(arg.userId) ? arg.userId : null;
+    if (!userId) return null;
+    const row = await store.one(gc, 'SELECT role, birthdate, birthdate_profile, locate_mode, star_goal, created_at FROM members WHERE user_id = ?', [userId]);
+    if (!row) return null;
+    const role = members.ROLES.includes(row.role) ? row.role : 'parent';
+    const out = { role, memberSince: iso(row.created_at) };
+    if (role !== 'wall') {
+      out.birthdate = row.birthdate || null;
+      out.birthdateFrom = row.birthdate ? (row.birthdate_profile === 1 ? 'profile' : 'family') : null;
+      out.emergencyCard = await emergency.ownCard(gc, userId);
+    }
+    if (role === 'child') { out.locateMode = row.locate_mode; out.starGoal = row.star_goal; }
+    return out;
   },
 
   async tick(gc) {

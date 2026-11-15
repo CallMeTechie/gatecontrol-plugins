@@ -34,6 +34,14 @@
     return a < 0 ? 0 : a;
   }
 
+  /** 1.26.0: the birthday cell — without the year (profile) day and month; „aus dem Profil“ for a parent's from the user profile. */
+  function birthCell(m) {
+    var b = m.birthday;
+    var text = m.birthdate ? A.dateLong(m.birthdate)
+      : (b && b.month && b.day ? A.day('2000-' + (b.month < 10 ? '0' : '') + b.month + '-' + (b.day < 10 ? '0' : '') + b.day, { day: '2-digit', month: '2-digit' }) : '–');
+    return [el('span', { text: text }), m.birthdaySource === 'profile' ? el('div', { class: 'fa-sub', text: T('members.birthday_from_profile') }) : null];
+  }
+
   function memberRow(m) {
     var acct = [T('members.account', { name: m.name }), m.gcRole === 'admin' ? T('account.admin') : T('account.user')];
     if (m.role === 'child' && m.age != null) acct.push(T('members.years', { n: m.age }));
@@ -41,7 +49,7 @@
     return el('tr', null, [
       el('td', null, [person]),
       el('td', null, [el('span', { class: 'fa-pill' + (m.role === 'child' ? ' is-child' : (m.role === 'wall' ? ' is-off' : '')), text: T('role.' + m.role) })]),
-      el('td', { text: m.birthdate ? A.dateLong(m.birthdate) : '–' }),
+      el('td', null, birthCell(m)),
       el('td', null, [locateCell(m)]),
       el('td', { text: m.role === 'child' ? String(m.starGoal) + ' ★' : '–' }),
       el('td', null, [el('button', { type: 'button', class: 'btn btn-sm', text: T('common.edit'), on: { click: function () { openMember(m); } } })]),
@@ -127,7 +135,10 @@
     $('#fa-m-child-box').hidden = role !== 'child';
     $('#fa-m-person-box').hidden = role === 'wall';
     $('#fa-m-wall-hint').hidden = role !== 'wall';
-    $('#fa-m-birth-hint').textContent = role === 'child' ? T('members.birthdate_required') : T('members.birthdate_hint');
+    // 1.26.0: with the user profile a parent's birthday comes from there — shown, not edited here
+    var fromProfile = role === 'parent' && !!data.profile;
+    $('#fa-m-birth').disabled = fromProfile;
+    $('#fa-m-birth-hint').textContent = role === 'child' ? T('members.birthdate_required') : (fromProfile ? T('members.birthdate_profile_hint') : T('members.birthdate_hint'));
     syncAgeHint();
   }
   /** From 14 we recommend "<Name> bestätigt": a hint next to the select when "Automatisch" is chosen. */
@@ -176,7 +187,7 @@
 
   $('#fa-m-save').addEventListener('click', function () {
     var role = roleValue();
-    var body = role === 'wall' ? { role: role } : { role: role, birthdate: $('#fa-m-birth').value || null };
+    var body = role === 'wall' || (role === 'parent' && data.profile) ? { role: role } : { role: role, birthdate: $('#fa-m-birth').value || null };
     if (role === 'child') {
       if (!body.birthdate) { $('#fa-m-msg').textContent = T('members.birthdate_required'); return; }
       body.locateMode = $('#fa-m-mode').value;

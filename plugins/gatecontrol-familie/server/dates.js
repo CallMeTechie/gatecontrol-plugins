@@ -8,7 +8,8 @@
 // A yearly event repeats on its month and day (29 February → 28 February in
 // other years) from its own date on. Member birthdays (members.birthdate)
 // are virtual yearly birthday events with the id "member:<userId>",
-// read-only here (the admin page edits the birthdate). Reminders (tick):
+// read-only here (the admin page edits the birthdate; 1.26.0: a parent's
+// comes from the user profile, server/profile.js — without its year no age). Reminders (tick):
 // remindDays 0–14 before an occurrence, from 08:00 local on that day, once
 // per occurrence, to the event's members (everyone when none) — a member's
 // birthday goes to everyone else, on the day.
@@ -25,6 +26,7 @@ const store = require('./store');
 const tz = require('./tz');
 const push = require('./push');
 const format = require('./format');
+const profile = require('./profile');
 const { fail, text, optText, multiline, bool, intIn, time, date, userIds, parseJson, posInt } = require('./util');
 
 const TITLE_MAX = 80;
@@ -46,11 +48,17 @@ function rowToEvent(r) {
 }
 
 function memberBirthdays(fam) {
-  return fam.list.filter((m) => m.birthdate).map((m) => ({
-    id: `member:${m.userId}`, title: m.name, date: m.birthdate, time: null, endDate: null, allDay: true, repeat: 'yearly',
+  // 1.26.0: a parent's birthday from the profile (server/profile.js) — without its year: day and month, no age
+  return fam.list.map((m) => ({ m, date: profile.eventDate(m) })).filter((x) => x.date).map(({ m, date: d }) => ({
+    id: `member:${m.userId}`, title: m.name, date: d, time: null, endDate: null, allDay: true, repeat: 'yearly',
     memberIds: [m.userId], kind: 'birthday', remindDays: MEMBER_BIRTHDAY_REMIND, note: '', createdBy: null, readOnly: true, memberId: m.userId,
-    place: null, endTime: null, origin: null,
+    place: null, endTime: null, origin: null, noYear: !m.birthdate,
   }));
+}
+
+/** The age turned on an occurrence of a yearly birthday (null: no birthday, or its year is not known). */
+function yearsAt(ev, date) {
+  return ev.kind === 'birthday' && ev.repeat === 'yearly' && !ev.noYear ? tz.parseDate(date).y - tz.parseDate(ev.date).y : null;
 }
 
 function isLeap(y) { return (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0; }
@@ -85,7 +93,7 @@ function occurrenceView(ev, o) {
     id: ev.id, title: ev.title, date: o.date, time: ev.allDay ? null : ev.time, endDate: o.endDate, allDay: ev.allDay, repeat: ev.repeat,
     memberIds: ev.memberIds, kind: ev.kind, remindDays: ev.remindDays, note: ev.note,
     // additions: the stored date (birth date for birthdays), the age turned, read-only for member birthdays
-    baseDate: ev.date, years: ev.kind === 'birthday' && ev.repeat === 'yearly' ? tz.parseDate(o.date).y - tz.parseDate(ev.date).y : null,
+    baseDate: ev.noYear ? null : ev.date, years: yearsAt(ev, o.date),
     readOnly: ev.readOnly, createdBy: ev.createdBy,
     // 1.8.0: the place label, the end time, 'chat' for a date from the family chat
     place: ev.place || null, endTime: ev.allDay ? null : (ev.endTime || null), origin: ev.origin || null,
@@ -220,7 +228,7 @@ async function remind(gc, fam, cfg, now, pushes) {
     const n = ev.remindDays;
     let title;
     if (ev.kind === 'birthday') {
-      const years = ev.repeat === 'yearly' ? tz.parseDate(occ.date).y - tz.parseDate(ev.date).y : null;
+      const years = yearsAt(ev, occ.date);
       const when = n === 0 ? 'today' : (n === 1 ? 'tomorrow' : 'in');
       title = push.t(lang, `date.birthday_${when}${years ? '_age' : ''}`, { name: ev.title, age: years, n });
     } else {

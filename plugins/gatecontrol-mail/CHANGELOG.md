@@ -2,6 +2,21 @@
 
 Alle E-Mail-Konten an einem Ort – im eigenen Tab der GateControl-Apps und im Portal.
 
+## 1.17.0
+
+Nutzerprofil – Vorschlag für Absendername und Signatur (GateControl ≥ 1.280.0, `permissions.profile: ["firstName", "lastName"]`).
+
+- **`GET me` mit `suggest`** (`server/profile.js`): `{ senderName, signature, from: 'profile' | 'account' }` – Vor- und
+  Nachname aus `gc.profile.get(person, { viewer: person })` (in der eigenen Anfrage sieht die Person auch „Nur ich“),
+  Signatur „Vorname Nachname“. Ohne Namen im Profil oder auf einem älteren GateControl (kein `gc.profile`): der
+  Anzeigename, keine Signatur.
+- **`POST accounts`** nimmt `signature` (≤ 4000 Zeichen, sonst 400 `invalid` mit `field: 'signature'`).
+- **Portal:** Das Formular „Konto hinzufügen“ (Passwort/IMAP) ist mit dem Vorschlag vorbelegt, mit neuem Feld „Signatur“;
+  der Kontodialog bietet „Übernehmen“, wenn der Absendername vom Profil abweicht oder die Signatur leer ist – gespeichert
+  wird erst mit „Speichern“.
+- **Nur ein Vorschlag:** Absendername und Signatur bleiben je Konto; eine Änderung im Profil (Hook `profileChanged`)
+  überschreibt nichts – `suggest` wird bei jedem `GET me` frisch gelesen, es gibt nichts zu verwerfen.
+
 ## 1.16.0
 
 - **Dienst `contacts_phones` für den Messenger („Neuer Chat“, Abschnitt „Aus deinem Adressbuch“).** Nur Lesen, nur der

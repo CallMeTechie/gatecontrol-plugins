@@ -1,4 +1,4 @@
-<!-- version: 1.16.0 -->
+<!-- version: 1.17.0 -->
 # Mail
 
 ## Was das Plugin kann
@@ -15,7 +15,7 @@
 
 ## Voraussetzungen
 
-- GateControl **1.219.0** oder neuer (der Reiter „Ressourcen“ und Buchungsanfragen per E-Mail ab 1.225.0).
+- GateControl **1.219.0** oder neuer (der Reiter „Ressourcen“ und Buchungsanfragen per E-Mail ab 1.225.0, Vorschlag für Absendername und Signatur aus dem Profil ab 1.280.0).
 - Eine **Lizenz** mit Plätzen für Personen (Familie oder Business).
 - Für Anhänge in Drive: das Plugin Drive ab 1.15.0. Für die KI: ein KI-Anbieter in GateControl.
 - Für Outlook.com und Microsoft 365: die Microsoft-Anmeldung (die Registrierung des Herstellers ist voreingestellt).
@@ -44,6 +44,8 @@ Im Portal-Tab **„Mail“** (oder in der App) › Einstellungen › **„Konto 
 - **Gmail:** ein **App-Passwort** – Bestätigung in zwei Schritten einschalten, dann unter myaccount.google.com › Sicherheit › App-Passwörter eins erstellen.
 - **Outlook.com / Microsoft 365:** Anmeldung bei Microsoft. Im Portal zeigt Mail einen Code, den du auf der Seite von Microsoft eingibst. GateControl sieht dein Passwort nie.
 - **Anderes Konto (IMAP):** Server und Zugangsdaten deines Anbieters.
+
+Absendername und Signatur schlägt Mail aus deinem Profil vor („Mein Profil“: Vor- und Nachname). Du kannst beides ändern oder leeren, bevor du verbindest.
 
 Die Zugangsdaten werden verschlüsselt gespeichert. Die erste Synchronisierung holt die neuesten Mails zuerst.
 
@@ -107,6 +109,13 @@ Liegen die Anhänge auf einem Speicherziel, das nicht erreichbar ist, versucht M
 
 **Frei/Gebucht zeigt „unbekannt“.**
 Die Person hat Frei/Gebucht abgeschaltet oder ist nicht in GateControl. Kolleginnen in Microsoft 365 erscheinen über dein Microsoft-Konto.
+
+## Neu in 1.17.0
+
+- **Absendername und Signatur aus deinem Profil:** Mit GateControl 1.280.0 hast du ein eigenes Profil („Mein Profil“ im Portal und in der App). Fügst du ein Konto hinzu, stehen dein Vor- und Nachname von dort schon als Absendername und als Signatur im Formular. Du kannst beides ändern oder leeren.
+- **Beim Bearbeiten eines Kontos:** Weicht der Absendername von deinem Profil ab oder ist die Signatur leer, bietet der Kontodialog „Übernehmen“ an. Gespeichert wird erst mit „Speichern“.
+- **Nur ein Vorschlag:** Änderst du später deinen Namen im Profil, bleiben Absendername und Signatur deiner Konten, wie sie sind. Sie gelten weiter je Konto.
+- Ohne Namen im Profil oder auf einem älteren GateControl schlägt Mail wie bisher deinen Anzeigenamen vor. Beim Update fragt GateControl einmal nach der neuen Berechtigung „Nutzerprofil“ (liest Vor- und Nachname).
 
 ## Neu in 1.16.0
 

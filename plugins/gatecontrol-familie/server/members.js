@@ -23,9 +23,14 @@
 // null), color (a palette key, never red — red means "away"), colorHex and
 // initials; every member object carries them (face()). The member colour of
 // the admin page (1.0–1.2) is gone; the column stays unused.
+//
+// Birthday (1.26.0, GateControl ≥ 1.280.0): a parent's birthday comes from the
+// user profile (server/profile.js) — load(gc, today, { viewer }) reads it as
+// that viewer may see it; the admin page no longer edits it. Children as before.
 
 const store = require('./store');
 const tz = require('./tz');
+const profile = require('./profile');
 const push = require('./push');
 const notices = require('./notices');
 const { fail, posInt, intIn, date } = require('./util');
@@ -98,6 +103,11 @@ function rowToMember(r, u, today) {
     ...faceOf(u),
     role: ROLES.includes(r.role) ? r.role : 'parent',
     birthdate: r.birthdate || null,
+    // 1.26.0: day and month even without a year (profile), where it comes from, Familie's own value
+    birthday: r.birthdate && r.role !== 'wall' ? (() => { const p = tz.parseDate(r.birthdate); return p ? { month: p.m, day: p.d, year: p.y } : null; })() : null,
+    birthdaySource: 'family',
+    storedBirthdate: r.birthdate || null,
+    birthdateFromProfile: r.birthdate_profile === 1,
     age: a,
     adult: r.role === 'child' && a != null && a >= ADULT_AGE,
     locateMode: LOCATE_MODES.includes(r.locate_mode) ? r.locate_mode : 'confirm',
@@ -109,14 +119,17 @@ function rowToMember(r, u, today) {
 /**
  * The family as of `today`: { users: Map(id → user), list: [member], byId: Map(id → member),
  * walls: Map(id → wall member), all: [member + wall] }. Wall tablets are not in list / byId.
+ * `viewer` (1.26.0): whose request it is — the parents' birthdays from the profile as that person may see them.
  */
-async function load(gc, today) {
+async function load(gc, today, { viewer = null } = {}) {
   const users = await usersById(gc);
   const rows = await store.all(gc, 'SELECT * FROM members ORDER BY CASE role WHEN \'parent\' THEN 0 WHEN \'child\' THEN 1 ELSE 2 END, created_at, user_id');
   const all = rows.filter((r) => users.has(r.user_id)).map((r) => rowToMember(r, users.get(r.user_id), today));
   const list = all.filter((m) => m.role !== 'wall');
   const walls = all.filter((m) => m.role === 'wall');
-  return { users, list, byId: new Map(list.map((m) => [m.userId, m])), walls: new Map(walls.map((m) => [m.userId, m])), all, today };
+  const fam = { users, list, byId: new Map(list.map((m) => [m.userId, m])), walls: new Map(walls.map((m) => [m.userId, m])), all, today };
+  await profile.apply(gc, fam, Number.isSafeInteger(viewer) && viewer > 0 ? viewer : null);
+  return fam;
 }
 
 const parents = (fam) => fam.list.filter((m) => m.role === 'parent');
@@ -169,7 +182,7 @@ function memberView(viewer, m, cfg, presence) {
 
 // ─── Admin ──────────────────────────────────────
 
-function checkFields(body, existing, today) {
+function checkFields(body, existing, today, { profileLeads = false } = {}) {
   const out = {};
   const role = body.role !== undefined ? body.role : (existing ? existing.role : undefined);
   if (!ROLES.includes(role)) throw fail('invalid');
@@ -181,7 +194,8 @@ function checkFields(body, existing, today) {
     return out;
   }
   let birthdate = existing ? existing.birthdate : null;
-  if (body.birthdate !== undefined) {
+  // 1.26.0: a parent's birthday comes from the profile — the admin page does not change it (a value sent is ignored)
+  if (body.birthdate !== undefined && !(profileLeads && role === 'parent')) {
     if (body.birthdate === null || body.birthdate === '') birthdate = null;
     else {
       birthdate = date(body.birthdate);
@@ -204,7 +218,7 @@ async function add(gc, fam, body, now) {
   const userId = posInt(body && body.userId);
   if (!userId || !fam.users.has(userId)) throw fail('not_found');
   if (await store.one(gc, 'SELECT user_id FROM members WHERE user_id = ?', [userId])) throw fail('invalid');
-  const f = checkFields(body, null, fam.today);
+  const f = checkFields(body, null, fam.today, { profileLeads: profile.available(gc) });
   await store.run(gc, 'INSERT INTO members (user_id, role, birthdate, locate_mode, star_goal, color, created_at) VALUES (?, ?, ?, ?, ?, NULL, ?)',
     [userId, f.role, f.birthdate, f.locate_mode, f.star_goal, now]);
   return userId;
@@ -213,7 +227,9 @@ async function add(gc, fam, body, now) {
 async function update(gc, fam, userId, body) {
   const row = await store.one(gc, 'SELECT * FROM members WHERE user_id = ?', [userId]);
   if (!row) throw fail('not_found');
-  const f = checkFields(body || {}, { role: row.role, birthdate: row.birthdate }, fam.today);
+  const f = checkFields(body || {}, { role: row.role, birthdate: row.birthdate }, fam.today, { profileLeads: profile.available(gc) });
+  // a value the parents enter (a child) is Familie's own, no copy of the profile any more
+  if (f.birthdate !== row.birthdate) f.birthdate_profile = 0;
   const sets = [];
   const params = [];
   for (const [k, v] of Object.entries(f)) { sets.push(`${k} = ?`); params.push(v); }

@@ -57,6 +57,7 @@ const ruleplaces = require('./ruleplaces');
 const messenger = require('./messenger');
 const groups = require('./groups');
 const rules = require('./rules');
+const profile = require('./profile');
 const { fail, posInt, iso } = require('./util');
 
 const DAY = 86400000;
@@ -65,6 +66,8 @@ const LOG_KINDS = ['locate', 'arrival', 'sos', 'place'];
 function adminMember(m, cfg, rings) {
   return {
     userId: m.userId, name: m.name, gcRole: m.gcRole, role: m.role, birthdate: m.birthdate, age: m.age, adult: m.adult,
+    // 1.26.0: day and month (also without the year), 'profile' = a parent's birthday from the user profile (read-only here)
+    birthday: m.birthday || null, birthdaySource: m.birthdaySource || 'family',
     locateMode: m.locateMode, effectiveMode: members.effectiveMode(m), locatable: m.role === 'child' && members.locateRefusal(m, cfg) === null,
     starGoal: m.starGoal, ...members.faceOf(m), presence: rings.get(m.userId) || null,
     // 1.1.0: a child of 14+ on "Automatisch" — the pages recommend "Kind bestätigt"
@@ -72,9 +75,9 @@ function adminMember(m, cfg, rings) {
   };
 }
 
-async function status(gc, cfg, now) {
+async function status(gc, cfg, now, viewer) {
   const today = tz.localDate(now, cfg.tz);
-  const fam = await members.load(gc, today);
+  const fam = await members.load(gc, today, { viewer });
   const rings = await presence.rings(gc, fam, cfg, false);
   return {
     members: fam.all.map((m) => adminMember(m, cfg, rings)),
@@ -88,6 +91,8 @@ async function status(gc, cfg, now) {
     messenger: await messenger.info(gc, cfg),
     // 1.15.0: the family as a GateControl group (GateControl ≥ 1.200.0) — server/groups.js
     group: await groups.info(gc),
+    // 1.26.0: GateControl has the user profile — the parents' birthdays come from there
+    profile: profile.available(gc),
     today,
   };
 }
@@ -238,7 +243,8 @@ async function route(req, gc, seg, cfg, now) {
   const [, a, b] = seg;
   if (a === 'presence') return presenceRoute(req, gc, seg, cfg, now, m, body);
   if (a === 'rules') return rulesRoute(req, gc, seg, cfg, now, m, body);
-  if (a === 'status' && seg.length === 2 && m === 'GET') return status(gc, cfg, now);
+  const viewer = req.user && Number.isSafeInteger(req.user.id) ? req.user.id : null;
+  if (a === 'status' && seg.length === 2 && m === 'GET') return status(gc, cfg, now, viewer);
   if (a === 'messenger') return messengerRoute(gc, seg, cfg, now, m, body);
   if (a === 'log' && seg.length === 2 && m === 'GET') return log(gc, cfg, req.query, now);
   if (a === 'modules' && seg.length === 2 && (m === 'PUT' || m === 'PATCH')) {
@@ -280,12 +286,12 @@ async function route(req, gc, seg, cfg, now) {
   }
   if (a === 'members') {
     const today = tz.localDate(now, cfg.tz);
-    const fam = await members.load(gc, today);
+    const fam = await members.load(gc, today, { viewer });
     if (seg.length === 2 && m === 'POST') {
       const id = await store.tx(gc, () => members.add(gc, fam, body, now));
       await kiosk.roleChanged(gc, id, null, await kiosk.roleOf(gc, id));
       await memberChanged(gc, cfg, now);
-      const fresh = await members.load(gc, today);
+      const fresh = await members.load(gc, today, { viewer });
       return { member: adminMember(fresh.byId.get(id) || fresh.walls.get(id), cfg, await presence.rings(gc, fresh, cfg, false)) };
     }
     const id = posInt(b);
@@ -295,7 +301,7 @@ async function route(req, gc, seg, cfg, now) {
       await store.tx(gc, () => members.update(gc, fam, id, body));
       await kiosk.roleChanged(gc, id, before, await kiosk.roleOf(gc, id));
       await memberChanged(gc, cfg, now);
-      const fresh = await members.load(gc, today);
+      const fresh = await members.load(gc, today, { viewer });
       const mm = fresh.byId.get(id) || fresh.walls.get(id);
       if (!mm) throw fail('not_found');
       return { member: adminMember(mm, cfg, await presence.rings(gc, fresh, cfg, false)) };

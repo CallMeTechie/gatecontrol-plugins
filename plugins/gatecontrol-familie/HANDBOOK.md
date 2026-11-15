@@ -1,5 +1,14 @@
-<!-- version: 1.25.0 -->
+<!-- version: 1.26.0 -->
 # Family
+
+## New in 1.26.0
+
+- **The parents’ birthdays from the profile:** With GateControl 1.280.0 everybody has a profile of their own (“My profile” in the portal and the app) with their birthday. For **adults** (parents) the profile now leads: Family shows the birthday from there, in the dates, on the wall tablet and in the reminder on the day. On the admin page **“Members & locating”** it is shown only, marked “from the profile”.
+- **Children stay with the parents:** A child’s birthday is still entered by the parents on “Members & locating”. It gives the age, and locating ends at 18.
+- **Taken over once:** If Family has no birthday for a parent yet and the profile has one with the year, Family takes it over once – but only when the person shows it at least to the family. A birthday set to “Only me” does not appear for the others. If the person deletes it in the profile, the copy goes too. A value you entered yourself earlier stays while the profile is empty.
+- **Without the year:** If somebody hides the year of birth, Family shows only day and month, no age.
+- **“Download my data”** in the profile now also holds your part of Family: your role, your birthday as Family keeps it and your own emergency card (yours only; for the emergency contacts only label and note, no numbers).
+- On the update GateControl asks once for the new permission “User profile” (reads the birthday). On an older GateControl nothing changes: you keep the birthdays on “Members & locating” as before.
 
 ## New in 1.25.0
 
@@ -42,14 +51,14 @@ The family in the GateControl app (a tab of its own), in the portal (tab “Fami
 
 ## Requirements
 
-- GateControl **1.216.0** or later (presence through the home network from 1.230.0, internet at home from 1.231.0, “pause the internet” in rules from 1.259.0).
+- GateControl **1.216.0** or later (presence through the home network from 1.230.0, internet at home from 1.231.0, “pause the internet” in rules from 1.259.0, birthdays from the profile from 1.280.0).
 - GateControl accounts for every family member.
 - For presence through the home network and internet at home: a GateControl gateway with the network watch or DNS filter on which the phones are assigned to the people.
 - For the family chat: the Messenger plugin. For switching in the smart home: the device's plugin (e.g. Smart Home, Door & Camera).
 
 ## Setting up
 
-1. **Members:** admin page **“Members & locating”** – add GateControl accounts as **parent** or **child**, with birth date (required for children), colour, star goal and the way each child is located (*child confirms*, *automatic*, *off*).
+1. **Members:** admin page **“Members & locating”** – add GateControl accounts as **parent** or **child**, with birth date (required for children), colour, star goal and the way each child is located (*child confirms*, *automatic*, *off*). From GateControl 1.280.0 the parents’ birthday comes from their profile; the field is locked for parents then.
 2. **Functions:** admin page **“Features”** – switch the functions you want on. “Preview as …” shows the app tab as a member sees it. Here you also switch the group “Family” in the Messenger.
 3. **Settings** (**Settings › Plugins › Family › Settings**): time zone, notification language, latitude and longitude of the home (for “after sunset”), “children may create their own reminders”, shopping and early end of school.
 4. **Presence & smart home** (optional): everyone consents themselves (“Share presence” in the app, or in the portal the card about how the family knows you are at home). For the home Wi-Fi an administrator assigns the phone to the person at the gateway; the person switches it on. Parents create rules on the page **“Presence & smart home”** or in the portal.
@@ -95,6 +104,9 @@ An administrator account or a disabled account cannot be a wall tablet. Use an a
 
 **A change of the pinboard is missing in “Notes & Tasks” (or the other way round).**
 Changes in Family go over at once, changes in the hub come back within 15 minutes at the latest (mostly within half a minute). If “Notes & Tasks” could not be reached, Family catches up with the next run.
+
+**A parent’s birthday is missing or cannot be changed.**
+From GateControl 1.280.0 it comes from the person’s profile. They enter it under “My profile” and choose at least “Family” for who can see it. Set to “Only me”, the others do not see it.
 
 **The card “Internet at home” is missing.**
 It needs GateControl 1.231.0 and a gateway with the DNS filter, and it only shows for parents after signing in.
