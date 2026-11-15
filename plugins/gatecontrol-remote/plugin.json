@@ -1,0 +1,93 @@
+{
+  "id": "gatecontrol-remote",
+  "name": {
+    "de": "Fernzugriff",
+    "en": "Remote access"
+  },
+  "version": "1.0.0",
+  "publisher": "CallMeTechie",
+  "description": {
+    "de": "Die Remote Desktops von GateControl als eigenes Plugin: Geräte mit RDP, VNC, SSH und Telnet – direkt im VPN, über einen Port-Forward oder über ein Home-Gateway ins Heimnetz –, Verbinden im Browser, Wake-on-LAN, Wartungsfenster, Rechte je Person und Gruppe und der Verlauf. Übernimmt Ziele, Rechte und Verlauf aus „Remote Desktops“; die GateControl-Apps verbinden sich weiter wie bisher. Zugangsdaten bleiben verschlüsselt im Tresor von GateControl.",
+    "en": "GateControl's remote desktops as a plugin of their own: devices with RDP, VNC, SSH and Telnet – directly in the VPN, through a port forward or through a home gateway into the home network –, connecting in the browser, wake-on-LAN, maintenance windows, rights per person and group, and the history. Takes over targets, rights and history from “Remote desktops”; the GateControl apps keep connecting as before. Credentials stay encrypted in GateControl's vault."
+  },
+  "gatecontrol": ">=1.281.0",
+  "entry": "server/index.js",
+  "permissions": {
+    "remote": true,
+    "storage": true,
+    "users": true,
+    "groups": "read",
+    "portal": true,
+    "app": true,
+    "devices": true,
+    "events": true,
+    "background": {
+      "intervalSeconds": 60
+    }
+  },
+  "ui": {
+    "nav": {
+      "label": {
+        "de": "Fernzugriff",
+        "en": "Remote access"
+      },
+      "icon": "M3 4h18v12H3zM8 20h8M12 16v4",
+      "section": "devices"
+    },
+    "pages": [
+      {
+        "id": "devices",
+        "title": {
+          "de": "Geräte",
+          "en": "Devices"
+        }
+      },
+      {
+        "id": "rights",
+        "title": {
+          "de": "Berechtigungen",
+          "en": "Permissions"
+        }
+      },
+      {
+        "id": "sessions",
+        "title": {
+          "de": "Sitzungen",
+          "en": "Sessions"
+        }
+      },
+      {
+        "id": "settings",
+        "title": {
+          "de": "Einstellungen",
+          "en": "Settings"
+        }
+      }
+    ],
+    "portal": {
+      "label": {
+        "de": "Fernzugriff",
+        "en": "Remote access"
+      },
+      "icon": "M3 4h18v12H3zM8 20h8M12 16v4",
+      "profileSections": [
+        {
+          "id": "rights",
+          "title": {
+            "de": "Fernzugriff",
+            "en": "Remote access"
+          },
+          "order": 300
+        }
+      ]
+    }
+  },
+  "license": {
+    "required": true
+  },
+  "migrations": "migrations",
+  "handbook": {
+    "de": "HANDBUCH.md",
+    "en": "HANDBOOK.md"
+  }
+}

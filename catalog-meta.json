@@ -3548,6 +3548,130 @@
         "de",
         "en"
       ]
+    },
+    "gatecontrol-remote": {
+      "category": "infrastructure",
+      "icon": "server",
+      "summary": {
+        "de": "Remote Desktops als Plugin: RDP, VNC und SSH im Browser, Wake-on-LAN, Rechte je Person – die GateControl-Apps verbinden sich wie bisher.",
+        "en": "Remote desktops as a plugin: RDP, VNC and SSH in the browser, wake-on-LAN, rights per person – the GateControl apps connect as before."
+      },
+      "audience": "all",
+      "keywords": ["fernzugriff", "remote", "rdp", "vnc", "ssh", "telnet", "remote desktop", "fernwartung", "wake-on-lan", "wol", "guacamole", "support"],
+      "adds": [
+        {
+          "icon": "page",
+          "title": {
+            "de": "Admin-Seiten „Geräte“, „Berechtigungen“, „Sitzungen“, „Einstellungen“",
+            "en": "Admin pages “Devices”, “Permissions”, “Sessions”, “Settings”"
+          },
+          "text": {
+            "de": "Alle Einstellungen der bisherigen Ziele, Rechte je Person und Gruppe, Verlauf mit CSV",
+            "en": "Every setting of the former targets, rights per person and group, history with CSV"
+          }
+        },
+        {
+          "icon": "portal",
+          "title": {
+            "de": "Portal-Tab „Fernzugriff“",
+            "en": "Portal tab “Remote access”"
+          },
+          "text": {
+            "de": "Meine Geräte mit Zustand, „Verbinden“ im Browser, „Aufwecken“",
+            "en": "My devices with their state, “Connect” in the browser, “Wake up”"
+          }
+        },
+        {
+          "icon": "users",
+          "title": {
+            "de": "Profil-Abschnitt „Fernzugriff“",
+            "en": "Profile section “Remote access”"
+          },
+          "text": {
+            "de": "Jede Person sieht, was sie darf",
+            "en": "Everybody sees what they may do"
+          }
+        },
+        {
+          "icon": "data",
+          "title": {
+            "de": "Übernahme aus „Remote Desktops“",
+            "en": "Take-over from “Remote desktops”"
+          },
+          "text": {
+            "de": "Ziele, Rechte, Zugangsdaten und Verlauf – die Apps laufen unverändert weiter",
+            "en": "Targets, rights, credentials and history – the apps keep working unchanged"
+          }
+        },
+        {
+          "icon": "clock",
+          "title": {
+            "de": "Geräte prüfen",
+            "en": "Device checks"
+          },
+          "text": {
+            "de": "Online oder offline, alle paar Minuten, auch über die Gateways",
+            "en": "Online or offline, every few minutes, also through the gateways"
+          }
+        }
+      ],
+      "permissions": [
+        {
+          "icon": "network",
+          "title": {
+            "de": "Fernzugriff auf Geräte",
+            "en": "Remote access to devices"
+          },
+          "text": {
+            "de": "Sitzungen zu den Geräten, die ein Administrator einträgt – über GateControls Sitzungsseite, nie aus dem Plugin selbst.",
+            "en": "Sessions to the devices an administrator enters – through GateControl's session page, never from the plugin itself."
+          },
+          "tag": {
+            "de": "Netzwerk",
+            "en": "Network"
+          }
+        },
+        {
+          "icon": "key",
+          "title": {
+            "de": "Zugangsdaten im Tresor von GateControl",
+            "en": "Credentials in GateControl's vault"
+          },
+          "text": {
+            "de": "Passwörter und Schlüssel speichert GateControl verschlüsselt; das Plugin sieht sie nie.",
+            "en": "GateControl stores passwords and keys encrypted; the plugin never sees them."
+          }
+        },
+        {
+          "icon": "users",
+          "title": {
+            "de": "Benutzer und Gruppen lesen",
+            "en": "Read users and groups"
+          },
+          "text": {
+            "de": "Namen der Konten und ihre Gruppen – für die Rechte je Person und Gruppe.",
+            "en": "Account names and their groups – for the rights per person and group."
+          },
+          "tag": {
+            "de": "Benutzer",
+            "en": "Users"
+          }
+        }
+      ],
+      "shows": [
+        {
+          "kind": "list",
+          "caption": {
+            "de": "Meine Geräte mit Zustand und „Verbinden“",
+            "en": "My devices with their state and “Connect”"
+          }
+        }
+      ],
+      "needs": {
+        "de": "Eine eigene Lizenz (nicht im GateControl-Plan)",
+        "en": "A licence of its own (not part of the GateControl plan)"
+      },
+      "languages": ["de", "en"]
     }
   }
 }

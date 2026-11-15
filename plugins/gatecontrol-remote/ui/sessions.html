@@ -1,0 +1,23 @@
+<main class="rm-page">
+  <section class="rm-card" aria-labelledby="rm-s-h">
+    <div class="rm-card-head">
+      <h2 class="rm-card-title" id="rm-s-h">{{t:ses.title}}</h2>
+      <button class="btn btn-sm" type="button" id="rm-csv">{{t:ses.csv}}</button>
+    </div>
+    <div class="rm-toolbar">
+      <select class="form-select" id="rm-status" aria-label="{{t:ses.status}}">
+        <option value="">{{t:ses.all}}</option>
+        <option value="active">{{t:ses.active}}</option>
+        <option value="ended">{{t:ses.ended}}</option>
+      </select>
+      <select class="form-select" id="rm-device" aria-label="{{t:ses.device}}"><option value="">{{t:ses.all_devices}}</option></select>
+    </div>
+    <div id="rm-sessions" aria-live="polite"></div>
+    <p class="rm-hint" id="rm-s-none" hidden>{{t:ses.none}}</p>
+    <div class="rm-actions"><button class="btn btn-sm" type="button" id="rm-more" hidden>{{t:ses.more}}</button></div>
+  </section>
+  <section class="rm-card" aria-labelledby="rm-rec-h">
+    <div class="rm-card-head"><h2 class="rm-card-title" id="rm-rec-h">{{t:ses.rec_title}}</h2></div>
+    <p class="rm-hint" id="rm-rec">{{t:ses.rec_later}}</p>
+  </section>
+</main>

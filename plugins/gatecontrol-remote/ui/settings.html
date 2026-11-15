@@ -1,0 +1,28 @@
+<main class="rm-page">
+  <section class="rm-card" aria-labelledby="rm-lic-h">
+    <div class="rm-card-head"><h2 class="rm-card-title" id="rm-lic-h">{{t:set.licence}}</h2></div>
+    <p id="rm-lic" role="status"></p>
+    <p class="rm-hint">{{t:set.licence_hint}}</p>
+  </section>
+  <section class="rm-card" aria-labelledby="rm-imp-h">
+    <div class="rm-card-head"><h2 class="rm-card-title" id="rm-imp-h">{{t:set.import}}</h2></div>
+    <p id="rm-imp" role="status"></p>
+    <p class="rm-hint">{{t:set.import_hint}}</p>
+    <div class="rm-actions"><button class="btn btn-sm" type="button" id="rm-imp-open">{{t:set.import_open}}</button></div>
+  </section>
+  <section class="rm-card" aria-labelledby="rm-lim-h">
+    <div class="rm-card-head"><h2 class="rm-card-title" id="rm-lim-h">{{t:set.limits}}</h2></div>
+    <p class="rm-hint">{{t:set.limits_hint}}</p>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label" for="rm-max-user">{{t:set.max_user}}</label><input class="form-input" id="rm-max-user" type="number" min="0" max="20" style="max-width:120px"></div>
+      <div class="form-group"><label class="form-label" for="rm-max-device">{{t:set.max_device}}</label><input class="form-input" id="rm-max-device" type="number" min="0" max="20" style="max-width:120px"></div>
+      <div class="form-group"><label class="form-label" for="rm-check-min">{{t:set.check_minutes}}</label><input class="form-input" id="rm-check-min" type="number" min="1" max="60" style="max-width:120px"></div>
+    </div>
+  </section>
+  <section class="rm-card" aria-labelledby="rm-ret-h">
+    <div class="rm-card-head"><h2 class="rm-card-title" id="rm-ret-h">{{t:set.retention}}</h2></div>
+    <div class="form-group"><label class="form-label" for="rm-days">{{t:set.days}}</label><input class="form-input" id="rm-days" type="number" min="30" max="3650" style="max-width:140px"></div>
+    <p class="rm-hint" id="rm-rec">{{t:set.rec_later}}</p>
+    <div><button class="btn btn-primary" type="button" id="rm-save">{{t:common.save}}</button></div>
+  </section>
+</main>
