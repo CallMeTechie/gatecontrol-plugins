@@ -1,4 +1,4 @@
-<!-- version: 1.17.0 -->
+<!-- version: 1.18.0 -->
 # Messenger
 
 ## Was das Plugin kann
@@ -70,6 +70,17 @@ Er kommt nur beim Verknüpfen und erscheint nachts. Steht „Älteren Verlauf la
 
 **Alte Nachrichten sind weg.**
 Der Administrator hat eine Aufbewahrung eingestellt, oder der Chat ist selbstlöschend.
+
+## Neu in 1.18.0
+
+- **Neuer Chat mit deinen Kontakten:** „Neuer Chat“ (Stift) zeigt unter einem Suchfeld drei Abschnitte: **GateControl** (die Konten auf deinem Server), **WhatsApp** (deine WhatsApp-Kontakte) und **„Aus deinem Adressbuch“** (deine Kontakte mit Telefonnummer aus Mail). Lange Abschnitte zeigen die ersten Treffer und „Alle … anzeigen“. Gibt es schon einen Chat, steht „Chat öffnen“ in der Zeile.
+- **WhatsApp-Kontakt antippen** startet den Chat sofort, ohne Prüfung.
+- **Adressbuch-Kontakt antippen** prüft genau diese eine Nummer bei WhatsApp, dann geht der Chat auf. Hat der Kontakt mehrere Nummern, wählst du sie in der Zeile – Mobil zuerst, Festnetz ausgegraut. Gibt es unter der Nummer kein WhatsApp, merkt sich GateControl das 30 Tage (ohne die Nummer zu speichern) und fragt nicht erneut.
+- **Dieselbe Person nur einmal:** Steht eine Nummer aus deinem Adressbuch auch in WhatsApp, erscheint die Person unter WhatsApp mit dem Namen aus deinem Adressbuch und „auch in deinem Adressbuch“.
+- **„Nicht dabei? Nummer eingeben“** unten öffnet den bisherigen Dialog. Tippst du eine Nummer ins Suchfeld, steht unten „… bei WhatsApp prüfen“.
+- **Bremse:** Jedes Antippen eines Adressbuch-Kontakts, das WhatsApp fragt, zählt wie eine getippte Nummer (voreingestellt 10 je Stunde). WhatsApp-Kontakte und bestehende Chats gehen immer.
+- **Datenschutz:** Deine WhatsApp-Kontakte bleiben auf deinem Server – die Apps bekommen Namen, keine Nummern. Eine Nummer aus deinem Adressbuch geht nur dann an WhatsApp, wenn du den Kontakt antippst. Das Protokoll notiert nur „WhatsApp-Nummer geprüft“ mit Quelle und Ergebnis.
+- **Voraussetzungen:** ein GateControl mit der Brücken-Vorschau (Stufe 4c); für das Adressbuch das Plugin Mail ab 1.16.0. Kinder ohne Freigabe der Eltern für neue Chats sehen nur GateControl.
 
 ## Neu in 1.17.0
 

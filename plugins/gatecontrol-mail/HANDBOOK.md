@@ -1,4 +1,4 @@
-<!-- version: 1.15.1 -->
+<!-- version: 1.16.0 -->
 # Mail
 
 ## What the plugin does
@@ -107,6 +107,12 @@ When attachments live on a storage target that is unreachable, Mail tries again 
 
 **Free/busy shows “unknown”.**
 The person switched free/busy off or is not in GateControl. Colleagues in Microsoft 365 appear through your Microsoft account.
+
+## New in 1.16.0
+
+- **Your address book in the Messenger:** With the Messenger (1.18.0 or newer) linked to WhatsApp, “New chat” shows your contacts with a phone number in the section “From your address book”. The Messenger reads only your own contacts, only names and phone numbers, and changes nothing.
+- **Mobile first:** With several numbers, mobile numbers come first, then work and home; landlines are greyed out at the bottom.
+- With contacts switched off in Mail, or without a place in Mail, the section is missing in the Messenger.
 
 ## New in 1.15.1
 

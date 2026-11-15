@@ -438,3 +438,70 @@ button.ms-loc:hover .ms-locmap{filter:brightness(1.05)}
   .ms-overlay.is-sheet{align-items:flex-end;padding:0}
   .ms-overlay.is-sheet .ms-modal{max-width:none;border-radius:18px 18px 0 0;border-bottom:0;max-height:calc(100% - 24px)}
 }
+/* 1.18.0: „Neuer Chat“ with contacts (ui/ncontacts.js) — three sections, „Alle … anzeigen“, the number choice in the row */
+.ms-ncc-modal{max-width:460px}
+.ms-ncc-modal .ms-modal-body{padding-bottom:0}
+.ms-ncc{max-height:52vh;margin:6px -8px 0;gap:0}
+.ms-ncc[hidden]{display:none}
+.ms-ncc-sec{display:flex;flex-direction:column;min-width:0;padding-bottom:4px}
+.ms-ncc-cap{display:flex;align-items:center;gap:6px;padding:12px 8px 4px;font:700 11px var(--font);letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+.ms-ncc-cap em{font-style:normal;margin-left:auto;display:inline-flex;color:var(--accent)}
+.ms-ncc-cap em .ms-nc-spin{width:12px;height:12px;border-width:2px}
+.ms-ncc-svc{display:inline-grid;place-items:center;height:15px;padding:0 4px;border-radius:4px;background:#1f8f5a;color:#fff;font:800 9px/1 var(--font);letter-spacing:.04em}
+.ms-ncc-row{padding:6px 8px;gap:11px;min-width:0}
+.ms-ncc-row:disabled{cursor:default}
+.ms-ncc-row:disabled:hover{background:transparent}
+.ms-ncc-row.is-off{opacity:.5}
+.ms-ncc-row.is-tap{background:var(--accent-soft);box-shadow:inset 3px 0 0 var(--accent)}
+.ms-ncc-row > .ms-nc-spin{color:var(--accent)}
+.ms-ncc-rt{flex:1;min-width:0;display:flex;flex-direction:column}
+.ms-ncc-name{font-weight:600;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ms-ncc-rt small{font-weight:500;font-size:12.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-variant-numeric:tabular-nums}
+.ms-ncc-pill{flex:none;padding:2px 9px;border-radius:999px;font-size:11.5px;font-weight:700;background:var(--accent-soft);color:var(--accent);white-space:nowrap}
+.ms-ncc-pill.is-gray{background:var(--surface-2);color:var(--muted);border:1px solid var(--line)}
+.ms-ncc-pill.is-warn{background:color-mix(in srgb,var(--warn) 14%,transparent);color:var(--warn)}
+.ms-ncc-more{display:flex;align-items:center;gap:6px;padding:6px 8px 6px 57px;border:0;background:transparent;color:var(--accent);font:600 13px var(--font);cursor:pointer;text-align:left}
+.ms-ncc-more svg{transform:rotate(-90deg)}
+.ms-ncc-more:hover span{text-decoration:underline}
+.ms-ncc-note{margin:0 8px 6px 57px;font-size:12px;line-height:1.4;color:var(--muted)}
+.ms-ncc-note.is-warn{color:var(--warn);font-weight:600}
+.ms-ncc-note.is-err{color:var(--crit);font-weight:600}
+.ms-ncc-sec > .ms-ncc-note:first-of-type{margin-top:2px}
+.ms-ncc-res{margin:4px 8px 6px;padding:10px 12px;font-size:12.5px}
+.ms-ncc-res .ms-nc-ri{width:30px;height:30px}
+.ms-ncc-link{align-self:flex-start;border:0;background:transparent;padding:0;color:var(--accent);font:700 12.5px var(--font);text-decoration:underline;text-underline-offset:2px;cursor:pointer}
+.ms-ncc-pick{margin:2px 8px 8px 57px;border:1px solid var(--line-2);border-radius:12px;background:var(--surface);overflow:hidden}
+.ms-ncc-pkh{padding:7px 12px 5px;font-size:11.5px;font-weight:700;color:var(--muted);letter-spacing:.04em;text-transform:uppercase}
+.ms-ncc-pk{display:flex;align-items:center;gap:8px;width:100%;padding:8px 12px;border:0;border-top:1px solid var(--line);background:transparent;color:var(--text);font:13px var(--font);min-width:0;cursor:pointer;text-align:left}
+.ms-ncc-pk:hover{background:var(--accent-soft)}
+.ms-ncc-pk > span{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ms-ncc-pk b{display:inline-block;min-width:96px;margin-right:8px;font-weight:600}
+.ms-ncc-pk small{color:var(--muted);font-size:11.5px}
+.ms-ncc-pk svg{color:var(--muted);transform:rotate(-90deg)}
+.ms-ncc-pk.is-dim{color:var(--muted)}
+.ms-ncc-sk{display:flex;align-items:center;gap:11px;padding:7px 8px}
+.ms-ncc-sk i{width:38px;height:38px;border-radius:50%;background:var(--surface-2)}
+.ms-ncc-sk span{flex:1;display:flex;flex-direction:column;gap:6px}
+.ms-ncc-sk em{display:block;height:9px;border-radius:5px;background:var(--surface-2)}
+.ms-ncc-sk em + em{width:45%}
+.ms-ncc-dial{background:var(--accent-soft)!important;color:var(--accent);width:38px;height:38px;display:inline-flex;align-items:center;justify-content:center}
+.ms-ncc-empty{padding:26px 22px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:8px;color:var(--muted);font-size:13px}
+.ms-ncc-empty b{color:var(--text);font-size:15px;overflow-wrap:anywhere}
+.ms-ncc-empty .btn{margin-top:6px;display:inline-flex;align-items:center;gap:6px}
+.ms-ncc-bub{width:52px;height:52px;border-radius:50%;background:var(--accent-soft);color:var(--accent);display:flex;align-items:center;justify-content:center}
+.ms-ncc-foot{display:flex;flex-direction:column}
+.ms-ncc-foot[hidden]{display:none}
+.ms-ncc-priv{margin:0;padding:8px 18px 6px;font-size:11.5px;display:flex;gap:6px;align-items:flex-start}
+.ms-ncc-priv[hidden]{display:none}
+.ms-ncc-priv svg{flex:none;margin-top:1px}
+.ms-ncc-nfoot{display:flex;align-items:center;gap:10px;padding:11px 18px 14px;border:0;border-top:1px solid var(--line);background:transparent;color:var(--accent);font:600 13.5px var(--font);min-width:0;cursor:pointer;text-align:left;width:100%}
+.ms-ncc-nfoot > span{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ms-ncc-lead{color:var(--muted);font-weight:500}
+.ms-ncc-nfoot.is-off{opacity:.45}
+.ms-ncc-nfoot svg:last-child{transform:rotate(-90deg)}
+@media (max-width:520px){
+  /* a sheet from the bottom: tabs and search stay, the sections scroll */
+  .ms-ncc-modal .ms-modal-body{display:flex;flex-direction:column;overflow:hidden}
+  .ms-ncc-modal .ms-modal-body > div{display:flex;flex-direction:column;min-height:0;flex:1 1 auto}
+  .ms-ncc{flex:1 1 auto;min-height:0;max-height:none;overflow:auto}
+}

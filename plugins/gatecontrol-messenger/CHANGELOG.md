@@ -3,6 +3,36 @@
 Chats zwischen den GateControl-Konten – in der GateControl-App (eigener Tab „Chats“), im
 Windows-Client und im Portal (eigener Tab „Chats“). Alles bleibt auf dem eigenen Server.
 
+## 1.18.0
+**Brücken, Stufe 4c: „Neuer Chat“ mit Kontakten statt getippter Nummern.** Wirkt nur auf einem GateControl mit
+`gc.bridges` Version 6 (Vorschau); das Adressbuch kommt aus Mail ≥ 1.16.0. Neues Recht: `gatecontrol-mail:contacts_phones`
+in `permissions.services` (nur Lesen der eigenen Kontakte der Person).
+- **Drei Abschnitte unter einem Suchfeld** (`server/contactchat.js`, `GET contacts/new-chat?q=&network=whatsapp`):
+  **GateControl** (Konten wie bisher), **WhatsApp** (die Kontakte, die die Brücke selbst hält – `gc.bridges.contacts`;
+  die Apps bekommen Name, Profilbild, sofern schon geholt, bestehenden Chat und eine versiegelte Kennung, **keine
+  Nummer**), **„Aus deinem Adressbuch“** (Mails Dienst `contacts_phones`: eigene Kontakte mit Telefonnummer, die
+  Nummern gehören der Person und gehen an die Apps). Die Suche läuft über alle drei; sieht sie wie eine Nummer aus,
+  wird die letzte Zeile „… bei WhatsApp prüfen“.
+- **Zusammengeführt auf dem Server über die Nummer** (`gc.bridges.matchNumbers` – nur gegen die Liste der Brücke, keine
+  Anfrage an WhatsApp): Steht eine Adressbuch-Nummer auch in WhatsApp, erscheint die Person einmal unter WhatsApp, mit
+  dem Namen aus dem Adressbuch und „auch in deinem Adressbuch“.
+- **Antippen:** WhatsApp-Kontakt → `POST bridges/:network/chats { ref }`, der Chat geht sofort auf, nichts wird gezählt.
+  Adressbuch-Nummer → `{ contactId, phoneKind }`: genau diese Nummer wird geprüft und zählt in der Bremse aus 1.16.0
+  (gemeinsame Grenze, Voreinstellung 10 je Stunde). „Nicht bei WhatsApp“ merkt sich das Plugin **30 Tage** – nur
+  Kontakt-ID, Nummernart und Datum, keine Nummer (Migration 011, Tabelle `bridge_not_on`); beim Trennen gelöscht.
+  Bestehende Chats („Chat öffnen“) fragen niemanden.
+- **Zustände:** Brücke nicht erreichbar, abgemeldet („Neu verknüpfen“), Kind ohne Freigabe (nur GateControl), Mail
+  fehlt oder ohne Kontakte (kein Adressbuch-Abschnitt). Ohne WhatsApp fehlen Adressbuch und „Nummer eingeben“.
+- **Portal** (`ui/ncontacts.js`, `window.MSContacts`): „Neuer Chat“ › Person nach dem freigegebenen Entwurf – Suchfeld,
+  drei Abschnitte mit je drei Zeilen und „Alle … anzeigen“, Nummernauswahl in der Zeile (Mobil zuerst, Festnetz
+  ausgegraut), Prüfen/Gefunden/Nicht bei WhatsApp/Zu viele Prüfungen in der Zeile, „Nicht dabei? Nummer eingeben“
+  öffnet den Dialog aus 1.16.0, Datenschutzsatz über der Fußzeile; am Handy ein Blatt von unten.
+- **Feature-Wort** `bridge_contacts` in `GET me` – nur bei Personen mit Verknüpfung und nur mit `gc.bridges` Version 6.
+- **Protokoll:** neue Stufe „Hinweis“ (Migration 011 baut die Tabelle `log` neu) mit „WhatsApp-Nummer geprüft“, Quelle
+  und Ergebnis – ohne Nummer und Namen.
+- Tests: `test/contactchat.test.js` (Abschnitte, Zusammenführen, Bremse, Merker, Zustände) gegen den Mock-Host
+  `gc.bridges` Version 6 (`tools/testing/mock-bridges.js`).
+
 ## 1.17.0
 **Brücken, Stufe 5: älterer Verlauf, Medien auf einem Speicherziel, Handy-Warnung, „Brücke veraltet“.** Jetzt
 **GateControl ≥ 1.204.0** (Medienbereiche, `plugin.json` `media.areas`); das meiste wirkt nur auf einem GateControl mit

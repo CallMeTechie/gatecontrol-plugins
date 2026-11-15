@@ -70,7 +70,9 @@ function errorResponse(e, lang) {
   const retry = isKnown(e) && e.extra && Number.isSafeInteger(e.extra.retryAfterS) && e.extra.retryAfterS > 0 ? Math.min(e.extra.retryAfterS, 86400) : null;
   // 1.16.0: the plugin's own limit of a new chat by number (checks per hour) — the dialog names it
   const perHour = isKnown(e) && e.extra && Number.isSafeInteger(e.extra.perHour) && e.extra.perHour > 0 ? e.extra.perHour : null;
-  return { status: STATUS[code], json: { ok: false, code, error: t(lang, 'error.' + code), ...(finding ? { finding } : {}), ...(reason ? { reason } : {}), ...(retry ? { retryAfterS: retry } : {}), ...(perHour ? { perHour } : {}) } };
+  // 1.18.0: „nicht bei WhatsApp“ answered from what was remembered (nobody asked)
+  const remembered = isKnown(e) && e.extra && e.extra.remembered === true;
+  return { status: STATUS[code], json: { ok: false, code, error: t(lang, 'error.' + code), ...(finding ? { finding } : {}), ...(reason ? { reason } : {}), ...(retry ? { retryAfterS: retry } : {}), ...(perHour ? { perHour } : {}), ...(remembered ? { remembered: true } : {}) } };
 }
 
 /** The request context of a chat call. */

@@ -57,10 +57,11 @@
   function spin() { return el('span', { class: 'ms-nc-spin', 'aria-hidden': 'true' }); }
 
   /**
-   * open(n, host) — n: a network of GET bridges ({ id, newChat }), host: { open(conversation, info) } where info is
-   * { number, name } of a chat just started (the chat shows where it runs).
+   * open(n, host, opts) — n: a network of GET bridges ({ id, newChat }), host: { open(conversation, info) } where info is
+   * { number, name } of a chat just started (the chat shows where it runs). 1.18.0: opts.number — a number typed into
+   * the search of „Neuer Chat“ (contacts): filled in and checked at once (the person tapped „… bei WhatsApp prüfen“).
    */
-  function open(n, host) {
+  function open(n, host, opts) {
     var net = n.id;
     var label = name(net);
     var st = { view: 'input', res: null, err: null, retryAt: null, perHour: (n.newChat && n.newChat.limit && n.newChat.limit.perHour) || 10 };
@@ -228,7 +229,8 @@
     ]);
     draw();
     M.dialog(T('nc.title', { network: label }), body, [], { head: head, foot: foot, sheet: true, cls: 'ms-nc-modal', onOpen: function (done) { closeFn = done; } });
-    if (!field.hidden && !input.disabled) setTimeout(function () { input.focus(); }, 40);
+    if (opts && typeof opts.number === 'string' && st.view === 'input') { input.value = opts.number; check(); }
+    else if (!field.hidden && !input.disabled) setTimeout(function () { input.focus(); }, 40);
   }
 
   window.MSNewChat = { open: open, parse: parse };

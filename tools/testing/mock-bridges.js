@@ -58,6 +58,15 @@
 //   history.get / set: inside a request (set: a changing one) of that person; days 0 | 30 | -1 (default 30)
 //   health({ userIds, network }): no person needed, ≤ 100 people; status() also carries backup and cleanup;
 //   configure() takes history, backupNow, backupTime
+// Version 6 (GateControl with stage 4c — a new chat with a contact; createHost(dir, { bridges: { …, version: 6 } })):
+//   host.bridges.contacts = [{ number, name, avatar?, chatId? }]   the person's contacts at the bridge (all people the
+//                                            same; `avatar` a picture reference like contact.avatar, `chatId` the chat
+//                                            reference of a chat that exists). Like the host: contacts / matchNumbers a
+//                                            request of that person, a link (else ERR_BRIDGE refused); createDmByRef a
+//                                            changing request, the person's own reference of the last 30 minutes (else
+//                                            ERR_INVALID expired_ref), nothing counted; logged as { op: 'contacts' |
+//                                            'match' | 'create_dm_ref', userId } — never a number
+//   host.bridges.expireRefs()                every reference handed out runs out (as after 30 minutes or a restart)
 // events.pull / events.ack need no person; chats() a request of that person; send / react / redact / read / typing a
 // changing request of that person, their own chat (else ERR_INVALID 'unknown chat'), a bridge that runs.
 //
@@ -89,9 +98,10 @@ function install({ opts, perms, enabledUser, hostError, personCtx, mediaHost }) 
     host: { state: o && o.running ? 'running' : null, error: null, running: !!(o && o.running), memMb: o && o.running ? 88 : null, outdated: false, probe: null },
     logins: new Map(), processes: new Map(), log: [], seq: 0, oddStep: null, elsewhere: new Map(),
   };
-  const version = o && o.version === 1 ? 1 : (o && o.version === 5 ? 5 : (o && o.version === 4 ? 4 : (o && o.version === 3 ? 3 : 2)));
+  const version = o && o.version === 1 ? 1 : (o && o.version === 6 ? 6 : (o && o.version === 5 ? 5 : (o && o.version === 4 ? 4 : (o && o.version === 3 ? 3 : 2))));
   Object.assign(st, { inbox: [], inboxSeq: 0, chats: new Map(), sent: [], failSend: null, wake: null });
   Object.assign(st, { files: new Map(), fetches: [], numbers: new Map(), lookups: new Map(), dms: new Map() });
+  Object.assign(st, { contacts: [], contactRefs: new Map(), contactDms: new Map() });
   Object.assign(st, { history: true, historyPeople: new Map(), backlog: [], backlogSeq: 0, backup: { time: '03:10', timeZone: 'Europe/Berlin', lastAt: null, bytes: null, requested: false, error: null, restore: null }, backupTime: '03:10' });
 
   const err = (code, message, reason) => { const e = hostError(code, message); if (reason) e.reason = reason; return e; };
@@ -120,7 +130,7 @@ function install({ opts, perms, enabledUser, hostError, personCtx, mediaHost }) 
         ...(version >= 2 ? { limitsProvisional: true, probe: st.host.probe || null } : {}),
       },
       history: version >= 5 ? { enabled: st.history, default: 30, options: [0, 30, -1], pending: st.backlog.length, conversations: 30, messages: 200, timeZone: 'Europe/Berlin' } : { enabled: false },
-      ...(version >= 5 ? { backup: { ...st.backup, time: st.backupTime }, cleanup: { deleted: 0, lastAt: null, error: null, waiting: 0 }, version: 5 } : {}),
+      ...(version >= 5 ? { backup: { ...st.backup, time: st.backupTime }, cleanup: { deleted: 0, lastAt: null, error: null, waiting: 0 }, version } : {}),
       ...(version >= 3 ? { messages: { listening: st.enabled, relay: !st.enabled ? null : (st.host.relay || 'running'), lastEventAt: null, transactions: 0, pending: st.inbox.length } } : {}),
     };
   }
@@ -442,6 +452,47 @@ function install({ opts, perms, enabledUser, hostError, personCtx, mediaHost }) 
     },
   });
 
+  // ── version 6: a new chat with a contact ──
+  const contactOut = (userId, network, c, i) => {
+    const ref = 'k' + Buffer.from(`contact-${++st.seq}-${userId}-${i}`).toString('base64url').padEnd(44, 'A');
+    st.contactRefs.set(ref, { userId, network, i, at: Date.now() });
+    return { ref, contactId: 'c' + Buffer.from(`c-${i}-${c.number}`).toString('base64url').slice(0, 21).padEnd(21, 'A'), name: c.name || null, avatar: c.avatar || null, chatId: c.chatId || null };
+  };
+  const linked = (userId) => { if (!(st.logins.get(userId) || []).some((l) => l.state !== 'logged_out')) throw refuse('refused'); };
+  if (version >= 6) Object.assign(api, {
+    'bridges.contacts': async ({ userId, network, query }) => {
+      need(); person(userId, false); bridge(network); linked(userId);
+      st.log.push({ op: 'contacts', userId, network });
+      const q = typeof query === 'string' ? query.trim().toLowerCase() : '';
+      return { contacts: st.contacts.map((c, i) => [c, i]).filter(([c]) => !q || String(c.name || '').toLowerCase().includes(q)).map(([c, i]) => contactOut(userId, network, c, i)) };
+    },
+    'bridges.matchNumbers': async ({ userId, network, numbers }) => {
+      need(); person(userId, false); bridge(network);
+      if (!Array.isArray(numbers) || numbers.length > 2000) throw hostError('ERR_INVALID', 'numbers: up to 2000');
+      linked(userId);
+      st.log.push({ op: 'match', userId, network, count: numbers.length });
+      const matches = [];
+      numbers.forEach((v, index) => {
+        const n = numberOf(v);
+        const i = n ? st.contacts.findIndex((c) => c.number === n) : -1;
+        if (i >= 0) matches.push({ index, ...contactOut(userId, network, st.contacts[i], i) });
+      });
+      return { matches };
+    },
+    'bridges.createDmByRef': async ({ userId, network, ref }) => {
+      need(); person(userId, true); bridge(network);
+      const r = typeof ref === 'string' ? st.contactRefs.get(ref) : null;
+      if (!r || r.userId !== userId || r.network !== network || Date.now() - r.at > 30 * 60000) throw err('ERR_INVALID', 'unknown or expired contact', 'expired_ref');
+      linked(userId);
+      const c = st.contacts[r.i];
+      if (!c) throw refuse('not_found');
+      st.log.push({ op: 'create_dm_ref', userId, network });
+      const k = `${userId}|${network}|${c.number}`;
+      if (!st.contactDms.has(k)) st.contactDms.set(k, c.chatId || control.chat(userId, { kind: 'direct', name: c.name || null, network }));
+      return { chat: { id: st.contactDms.get(k), kind: 'direct', name: c.name || null } };
+    },
+  });
+
   /** gc.bridges (the child bootstrap's shape) */
   const gcPart = (call) => Object.freeze({
     version,
@@ -481,6 +532,11 @@ function install({ opts, perms, enabledUser, hostError, personCtx, mediaHost }) 
         ack: (seqs) => call('bridges.history.ack', { seqs }),
       }),
       health: (o2) => call('bridges.health', { userIds: o2 && o2.userIds, network: o2 && o2.network }),
+    } : {}),
+    ...(version >= 6 ? {
+      contacts: (userId, network, o2) => call('bridges.contacts', { userId, network, query: o2 && typeof o2.query === 'string' ? o2.query : null }),
+      matchNumbers: (userId, network, numbers) => call('bridges.matchNumbers', { userId, network, numbers }),
+      createDmByRef: (userId, network, ref) => call('bridges.createDmByRef', { userId, network, ref }),
     } : {}),
   });
 
@@ -524,6 +580,10 @@ function install({ opts, perms, enabledUser, hostError, personCtx, mediaHost }) 
     gone(ref) { const f = st.files.get(ref); if (f) f.gone = true; },
     get fetches() { return st.fetches; },
     get numbers() { return st.numbers; },
+    // ── version 6 ──
+    get contacts() { return st.contacts; },
+    set contacts(v) { st.contacts = v; },
+    expireRefs() { for (const r of st.contactRefs.values()) r.at = 0; },
     async deliver(events, { wake = true } = {}) {
       for (const e of events) st.inbox.push({ network: 'whatsapp', at: Date.now(), ...JSON.parse(JSON.stringify(e)), seq: ++st.inboxSeq });
       if (wake && st.wake) await st.wake({ pending: st.inbox.length, ephemeral: [] });

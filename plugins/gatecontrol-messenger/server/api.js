@@ -41,6 +41,8 @@ async function me(ctx) {
   try { newChat = await require('./bridges').newChatFeature(ctx); } catch { newChat = false; }
   let history = false;
   try { history = await require('./bridges').historyFeature(ctx); } catch { history = false; }
+  let contacts = false;
+  try { contacts = await require('./contactchat').feature(ctx); } catch { contacts = false; }
   return {
     user: u ? { id: u.id, name: u.name, avatarUrl: u.avatarUrl || null, initials: u.initials || null, colorHex: u.colorHex || null } : { id: ctx.viewer, name: null, avatarUrl: null, initials: null, colorHex: null },
     prefs,
@@ -67,6 +69,9 @@ async function me(ctx) {
       // older messages in „Verknüpfte Dienste“ (GET/PUT bridges/history), files of the history on request
       // (placeholder state on_request → POST messages/:id/fetch?bridged=1), the phone warning (networks[].phone)
       ...(history ? { bridge_history: true } : {}),
+      // 1.18.0 (GateControl with gc.bridges version 6), once the person linked a service: bridge_contacts — „Neuer Chat“
+      // with three sections (GET contacts/new-chat) and POST bridges/:network/chats { ref } | { contactId, phoneKind }
+      ...(contacts ? { bridge_contacts: true } : {}),
     },
     // 1.4.0: what the Familie plugin offers here (gc.services.available) — "Zur Liste", "In Kalender", places;
     // 1.10.0: drive — Drive takes files (save_file): "In Drive speichern" (POST messages/:id/to-drive)
@@ -362,6 +367,9 @@ async function route(ctx, req, seg) {
   // 1.12.0: the viewer's own links to other messengers, the parents' switch for children (bridges.js)
   const rb = await require('./bridges').route(ctx, req, seg);
   if (rb) return json(200, rb);
+  // 1.18.0: „Neuer Chat“ with the person's contacts (contactchat.js)
+  const rc = await require('./contactchat').route(ctx, req, seg);
+  if (rc) return json(200, rc);
   const r14 = await route14(ctx, req, seg);
   if (r14) return r14;
   throw fail('not_found');
