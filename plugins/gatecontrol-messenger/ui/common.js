@@ -33,6 +33,8 @@
     // 1.14.0: this page knows chats over a bridge — without the mark the API leaves them out (README "App-API")
     var p = String(path).replace(/^\/+/, '');
     if (p.indexOf('admin/') !== 0 && p.indexOf('bridged=') < 0) p += (p.indexOf('?') < 0 ? '?' : '&') + 'bridged=1';
+    // 1.20.0: … and channels — GET conversations leaves them out, they are on GET channels (the page „Kanäle“)
+    if (p.indexOf('admin/') !== 0 && p.indexOf('channels=') < 0) p += '&channels=1';
     return window.GC.call(method, p, body);
   }
   function errCode(e) { return (e && e.data && e.data.code) || null; }
@@ -52,6 +54,90 @@
     toastTimer = setTimeout(function () { t.hidden = true; }, 4000);
   }
   function warn(e) { toast(errText(e), 'error'); }
+
+  /**
+   * 1.20.0: a text with its format (`marks` of a bridged message: bold, italic, strike, code, link — UTF-16 offsets) and
+   * clickable addresses (in every chat) → a fragment built from text nodes and elements; never HTML of anybody else.
+   */
+  var URL_RE = /\b(?:https?:\/\/|www\.)[^\s<>"]{2,2000}/gi;
+  var TRAIL_RE = /[.,;:!?)\]}'"»“”]+$/;
+  function safeHref(u) {
+    // an address written without its scheme ("www.…") is taken as https (no address in this file: the frame loads nothing)
+    var s = /^www\./i.test(u) ? 'https:' + '//' + u : u;
+    try { var x = new URL(s); return (x.protocol === 'http:' || x.protocol === 'https:') && !x.username && !x.password ? x.href : null; } catch (e) { return null; }
+  }
+  function linkEl(text, href) {
+    return el('a', { class: 'ms-link', href: href, target: '_blank', rel: 'noopener noreferrer nofollow', text: text, on: { click: function (e) { e.stopPropagation(); } } });
+  }
+  /** Plain text with its http(s) addresses as links. */
+  function linkify(text, into) {
+    var t = String(text || '');
+    var last = 0;
+    URL_RE.lastIndex = 0;
+    var m;
+    while ((m = URL_RE.exec(t))) {
+      var raw = m[0].replace(TRAIL_RE, '');
+      var href = safeHref(raw);
+      if (!href) continue;
+      if (m.index > last) into.appendChild(document.createTextNode(t.slice(last, m.index)));
+      into.appendChild(linkEl(raw, href));
+      last = m.index + raw.length;
+      URL_RE.lastIndex = last;
+    }
+    if (last < t.length) into.appendChild(document.createTextNode(t.slice(last)));
+    return into;
+  }
+  var MARK_TAG = { bold: 'b', italic: 'i', strike: 's', code: 'code' };
+  function richText(text, marks) {
+    var t = String(text || '');
+    var frag = document.createDocumentFragment();
+    var list = (Array.isArray(marks) ? marks : []).filter(function (k) {
+      return k && (MARK_TAG[k.type] || k.type === 'link') && k.start >= 0 && k.end <= t.length && k.end > k.start;
+    });
+    if (!list.length) return linkify(t, frag);
+    // cut the text where a mark begins or ends; each piece gets the elements of the marks that cover it
+    var cuts = [0, t.length];
+    list.forEach(function (k) { cuts.push(k.start, k.end); });
+    cuts = cuts.filter(function (x, i, a) { return a.indexOf(x) === i; }).sort(function (a, b) { return a - b; });
+    for (var i = 0; i < cuts.length - 1; i++) {
+      var a = cuts[i];
+      var b = cuts[i + 1];
+      var piece = t.slice(a, b);
+      var on = list.filter(function (k) { return k.start <= a && k.end >= b; });
+      var link = on.filter(function (k) { return k.type === 'link'; })[0];
+      var href = link ? safeHref(String(link.url || '')) : null;
+      var node = href ? linkEl(piece, href) : linkify(piece, document.createDocumentFragment());
+      on.forEach(function (k) { if (MARK_TAG[k.type]) { var w = el(MARK_TAG[k.type], { class: 'ms-mk-' + k.type }); w.appendChild(node); node = w; } });
+      frag.appendChild(node);
+    }
+    return frag;
+  }
+
+  /**
+   * 1.20.0: the mark of a messenger at a picture or a row — its logo as a small glyph (only to say which service it is),
+   * GateControl's shield, a speech bubble for a network this page does not know.
+   */
+  var NET_GLYPH = {
+    whatsapp: { fill: 'M12 2.6a9.3 9.3 0 0 0-8 14l-1.3 4.8 4.9-1.3A9.3 9.3 0 1 0 12 2.6zm0 1.7a7.6 7.6 0 1 1-3.9 14.1l-.3-.2-2.9.8.8-2.8-.2-.3A7.6 7.6 0 0 1 12 4.3z|M9.2 7.6c.2-.4.4-.4.7-.4h.5c.2 0 .4 0 .6.5l.8 1.9c.1.2.1.4 0 .6l-.5.7c-.1.2-.2.3 0 .6.6 1 1.4 1.8 2.5 2.4.3.1.4.1.6-.1l.7-.8c.2-.2.4-.2.6-.1l1.8.9c.2.1.4.2.4.4.1.3 0 1-.3 1.4-.4.5-1.3 1-2 1-1 .1-2.3-.4-4-1.6-1.5-1.2-2.5-2.6-2.9-3.6-.4-1-.2-2 .5-2.8z' },
+    gatecontrol: { fill: 'M12 2.5l7.5 2.8v5.9c0 4.8-3.2 8.6-7.5 10.3-4.3-1.7-7.5-5.5-7.5-10.3V5.3z' },
+  };
+  function netGlyph(network, size) {
+    var NS = 'http://www.w3.org/2000/svg';
+    var g = NET_GLYPH[network] || { fill: 'M4 5h16v11H9l-5 4z' };
+    var s = document.createElementNS(NS, 'svg');
+    s.setAttribute('viewBox', '0 0 24 24');
+    s.setAttribute('width', String(size || 12));
+    s.setAttribute('height', String(size || 12));
+    s.setAttribute('aria-hidden', 'true');
+    s.setAttribute('focusable', 'false');
+    g.fill.split('|').forEach(function (d) { var p = document.createElementNS(NS, 'path'); p.setAttribute('d', d); p.setAttribute('fill', 'currentColor'); p.setAttribute('fill-rule', 'evenodd'); s.appendChild(p); });
+    return s;
+  }
+  /** The mark at a picture: the logo on the service's colour (`cls`: another class than ms-net, e.g. a mark in a row). */
+  function netLogo(network, label, size, cls) {
+    var known = !!NET_GLYPH[network];
+    return el('span', { class: (cls || 'ms-net') + ' ' + (cls || 'ms-net') + '-' + (known ? network : 'other'), title: label || null, 'aria-label': label || null, role: label ? 'img' : null, 'aria-hidden': label ? null : 'true' }, [netGlyph(network, size)]);
+  }
   /** Stroke icon from static path data (never data from the API). */
   function svg(d, size, opts) {
     var o = opts || {};
@@ -66,6 +152,9 @@
   var ICONS = {
     search: 'M11 4a7 7 0 1 0 0 14a7 7 0 1 0 0-14|M20 20l-3.5-3.5',
     pen: 'M4 20h4L19 9l-4-4L4 16v4z',
+    // 1.20.0: channels (the TV symbol), read only (the eye), a bell switched off
+    tv: 'M3 7h18v12H3z|M8 3l4 4 4-4',
+    eye: 'M2 12s3.5-6.5 10-6.5S22 12 22 12s-3.5 6.5-10 6.5S2 12 2 12z|M12 9a3 3 0 1 0 0 6a3 3 0 1 0 0-6',
     gear: 'M12 9a3 3 0 1 0 0 6a3 3 0 1 0 0-6|M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z',
     attach: 'M21 11.5l-8.5 8.5a5 5 0 0 1-7-7l9-9a3.5 3.5 0 0 1 5 5l-9 9a2 2 0 0 1-3-3l8-8',
     mic: 'M9 6a3 3 0 0 1 6 0v5a3 3 0 0 1-6 0z|M5 11a7 7 0 0 0 14 0M12 18v3',
@@ -236,5 +325,6 @@
     CTX: CTX, T: T, $: $, $$: $$, el: el, clear: clear, api: api, errText: errText, errCode: errCode, toast: toast, warn: warn,
     svg: svg, icon: icon, safeColor: safeColor, hm: hm, listTime: listTime, dayLabel: dayLabel, dayKey: dayKey, when: when, bytes: bytes, duration: duration,
     uuid: uuid, initials: initials, avatar: avatar, switchBtn: switchBtn, dialog: dialog, confirm: confirmDialog, LOCALE: LOCALE,
+    richText: richText, linkify: linkify, netLogo: netLogo, netGlyph: netGlyph,
   };
 }());

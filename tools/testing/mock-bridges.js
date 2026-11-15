@@ -69,6 +69,9 @@
 //                                            ERR_INVALID expired_ref), nothing counted; logged as { op: 'contacts' |
 //                                            'match' | 'create_dm_ref', userId } — never a number
 //   host.bridges.expireRefs()                every reference handed out runs out (as after 30 minutes or a restart)
+// Version 7 (GateControl with channels, groups, format; createHost(dir, { bridges: { …, version: 7 } })): no new call —
+//   events carry chat.channel / chat.readOnly, sender { channel: true, system: true }, marks and preview (the test writes
+//   them into deliver()); host.bridges.chat(userId, { channel, readOnly }); chats() names channel and readOnly.
 // events.pull / events.ack need no person; chats() a request of that person; send / react / redact / read / typing a
 // changing request of that person, their own chat (else ERR_INVALID 'unknown chat'), a bridge that runs.
 //
@@ -100,7 +103,7 @@ function install({ opts, perms, enabledUser, hostError, personCtx, mediaHost }) 
     host: { state: o && o.running ? 'running' : null, error: null, running: !!(o && o.running), memMb: o && o.running ? 88 : null, outdated: false, probe: null },
     logins: new Map(), processes: new Map(), log: [], seq: 0, oddStep: null, elsewhere: new Map(),
   };
-  const version = o && o.version === 1 ? 1 : (o && o.version === 6 ? 6 : (o && o.version === 5 ? 5 : (o && o.version === 4 ? 4 : (o && o.version === 3 ? 3 : 2))));
+  const version = o && o.version === 1 ? 1 : (o && o.version === 7 ? 7 : (o && o.version === 6 ? 6 : (o && o.version === 5 ? 5 : (o && o.version === 4 ? 4 : (o && o.version === 3 ? 3 : 2)))));
   Object.assign(st, { inbox: [], inboxSeq: 0, chats: new Map(), sent: [], failSend: null, wake: null });
   Object.assign(st, { files: new Map(), fetches: [], numbers: new Map(), lookups: new Map(), dms: new Map(), failFetch: null });
   Object.assign(st, { contacts: [], contactRefs: new Map(), contactDms: new Map() });
@@ -303,7 +306,7 @@ function install({ opts, perms, enabledUser, hostError, personCtx, mediaHost }) 
     'bridges.chats': async ({ userId, network }) => {
       need(); person(userId, false);
       if (!NETWORKS.includes(network)) throw hostError('ERR_INVALID', 'unknown network');
-      return [...st.chats.entries()].filter(([, c]) => c.userId === userId && c.network === network).map(([id, c]) => ({ id, kind: c.kind, open: !c.closed }));
+      return [...st.chats.entries()].filter(([, c]) => c.userId === userId && c.network === network).map(([id, c]) => ({ id, kind: c.kind, open: !c.closed, ...(version >= 7 ? { channel: !!c.channel, readOnly: !!c.readOnly } : {}) }));
     },
     'bridges.send': async ({ userId, network, chatId, message }) => {
       need();
@@ -573,9 +576,9 @@ function install({ opts, perms, enabledUser, hostError, personCtx, mediaHost }) 
     set failFetch(v) { st.failFetch = v ? { ...v } : null; },
     /** the mock host hands over how it calls a hook of the plugin */
     onWake(fn) { st.wake = fn; },
-    chat(userId, { kind = 'direct', name = null, network = 'whatsapp' } = {}) {
+    chat(userId, { kind = 'direct', name = null, network = 'whatsapp', channel = false, readOnly = false } = {}) {
       const id = 'r' + String(++st.seq).padStart(20, '0');
-      st.chats.set(id, { userId, network, kind, name, closed: false, txns: new Map() });
+      st.chats.set(id, { userId, network, kind, name, closed: false, txns: new Map(), channel, readOnly });
       return id;
     },
     closeChat(id) { const c = st.chats.get(id); if (c) c.closed = true; },

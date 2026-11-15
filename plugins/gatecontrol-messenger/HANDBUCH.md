@@ -1,4 +1,4 @@
-<!-- version: 1.19.0 -->
+<!-- version: 1.20.0 -->
 # Messenger
 
 ## Was das Plugin kann
@@ -70,6 +70,15 @@ Er kommt nur beim Verknüpfen und erscheint nachts. Steht „Älteren Verlauf la
 
 **Alte Nachrichten sind weg.**
 Der Administrator hat eine Aufbewahrung eingestellt, oder der Chat ist selbstlöschend.
+
+## Neu in 1.20.0
+
+- **WhatsApp-Kanäle bekommen eine eigene Seite.** Kanäle, denen du in WhatsApp folgst, stehen nicht mehr zwischen deinen Chats, sondern unter „Kanäle“ (im Portal ein Eintrag über der Liste, mit grauem Punkt bei neuen Beiträgen). Ein Beitrag sieht aus wie in WhatsApp: Vorschaubild, Titel, Domain, Text mit Format und klickbarem Link. Kanäle sind nur zum Lesen da, melden sich standardmäßig nicht per Push (die Glocke im Kanal schaltet das ein) und zählen nicht bei „Ungelesen“. Du kannst auf einen Beitrag reagieren; Reaktionen anderer zeigt WhatsApp nur in der eigenen App. Lehnt WhatsApp Reaktionen in Kanälen ab, blendet GateControl das Reagieren dort aus.
+- **Gruppen, in denen nur Admins schreiben,** zeigen „Nur Admins schreiben in dieser Gruppe.“ statt des Eingabefelds.
+- **WhatsApp-Gruppen** werden als Gruppen erkannt (vorher teils als Einzelchat).
+- **Fett, kursiv, durchgestrichen, Code** aus WhatsApp erscheinen so; **Links sind in allen Chats klickbar**, Link-Vorschauen mit Bild.
+- Statt „WA“ steht das **WhatsApp-Logo** am Bild eines Chats.
+- Braucht einen GateControl-Server, dessen Brücken das unterstützen (Vorschau).
 
 ## Neu in 1.19.0
 

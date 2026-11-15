@@ -43,6 +43,9 @@ async function me(ctx) {
   try { history = await require('./bridges').historyFeature(ctx); } catch { history = false; }
   let contacts = false;
   try { contacts = await require('./contactchat').feature(ctx); } catch { contacts = false; }
+  // 1.20.0: channels, read-only groups, format, link previews, reactions in channels (GateControl with gc.bridges version 7)
+  let channels = false;
+  try { channels = bridgeChats && !!require('./bridgechannels').api(ctx.gc); } catch { channels = false; }
   return {
     user: u ? { id: u.id, name: u.name, avatarUrl: u.avatarUrl || null, initials: u.initials || null, colorHex: u.colorHex || null } : { id: ctx.viewer, name: null, avatarUrl: null, initials: null, colorHex: null },
     prefs,
@@ -72,6 +75,11 @@ async function me(ctx) {
       // 1.18.0 (GateControl with gc.bridges version 6), once the person linked a service: bridge_contacts — „Neuer Chat“
       // with three sections (GET contacts/new-chat) and POST bridges/:network/chats { ref } | { contactId, phoneKind }
       ...(contacts ? { bridge_contacts: true } : {}),
+      // 1.20.0 (GateControl with gc.bridges version 7), for the same people as bridge_chats: bridge_channels — GET channels,
+      // ?channels=1 on GET conversations (the channels leave the list; `channels` { count, unread }), conversation
+      // bridge.channel / bridge.readOnly / bridge.reactions, can.sendReason / can.react, message marks / preview /
+      // bridge.channel (README "App-API", since 1.20.0)
+      ...(channels ? { bridge_channels: true } : {}),
     },
     // 1.4.0: what the Familie plugin offers here (gc.services.available) — "Zur Liste", "In Kalender", places;
     // 1.10.0: drive — Drive takes files (save_file): "In Drive speichern" (POST messages/:id/to-drive)
@@ -155,6 +163,12 @@ async function route(ctx, req, seg) {
     return json(200, { people: list });
   }
 
+  // 1.20.0: the page „Kanäle“ — the viewer's channels (bridgechannels.js)
+  if (a === 'channels' && seg.length === 1 && m === 'GET') {
+    if (!ctx.bridged) throw fail('not_found');
+    await bridgechats.refreshLinks(ctx);
+    return json(200, await tx(() => require('./bridgechannels').list(ctx, req.query)));
+  }
   if (a === 'conversations') {
     if (seg.length === 1 && m === 'GET') {
       // 1.14.0: the viewer's own request is in flight — a good moment to notice that the service dropped the link
@@ -200,6 +214,7 @@ async function route(ctx, req, seg) {
         // 1.14.0: a bridged chat — checked first (only a text, the account linked, the bridge up), stored, then handed over
         const pre = await conversations.access(ctx, b);
         if (pre.conv.bridge_net) {
+          bridgechats.writable(pre.conv);
           await bridgechats.checkBody(ctx, req.body);
           await bridgechats.gate(ctx, pre.conv);
           ctx.bridgeOut = pre.conv.id;

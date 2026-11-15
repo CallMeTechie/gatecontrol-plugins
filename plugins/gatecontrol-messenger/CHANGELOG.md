@@ -3,6 +3,32 @@
 Chats zwischen den GateControl-Konten – in der GateControl-App (eigener Tab „Chats“), im
 Windows-Client und im Portal (eigener Tab „Chats“). Alles bleibt auf dem eigenen Server.
 
+## 1.20.0
+**Brücken: WhatsApp-Kanäle, Gruppen „nur Admins“, Format, Link-Vorschau, Reaktionen in Kanälen** („Chats v2 – Teil A“).
+Wirkt mit einem GateControl mit `gc.bridges` Version 7 (Vorschau); ältere Server ändern nichts. Feature-Wort
+`bridge_channels`. Migration 012 (`conversations.bridge_channel`, `bridge_read_only`, `messages.ext_preview`).
+- **Kanäle** (`chat.channel`): eigene Unterhaltung mit `bridge_channel = 1`, stumm angelegt (`members.notify = 'none'`,
+  die Glocke schaltet Push je Kanal ein; Push-Titel „<Kanal> · Kanal über WhatsApp“, ohne Antworten-Knopf). Ein Client
+  mit `?channels=1` bekommt sie nicht mehr in `GET conversations` (also nicht in „Ungelesen“ und im Zähler), dafür dort
+  `channels: { count, unread }` und die neue Route `GET channels`. Ältere Clients sehen Kanäle weiter als Chat, nur lesen.
+  Beiträge des Kanals (`sender.channel`) sind Texte bzw. Dateien statt grauer Brücken-Meldungen; Bearbeiten und Löschen
+  des Kanals kommen an. Senden: `409 bridge_read_only` (`reason: channel`).
+- **Gruppen, in denen nur Admins schreiben** (`chat.readOnly`): bleiben unter „Chats“, `can.send: false`,
+  `can.sendReason: "admins_only"`; Reagieren geht weiter.
+- **Format und Links:** `marks` (fett, kursiv, durchgestrichen, Code, Link nur http(s)) aus GateControl, im Meta
+  verschlüsselt; die Nachricht trägt `marks`. Das Portal zeigt Format und macht Adressen in **allen** Chats klickbar
+  (DOM-Aufbau, nie `innerHTML`).
+- **Link-Vorschau:** `preview { url, title, description, site, image }`; das Vorschaubild holt das Plugin über den
+  vorhandenen Medienweg (`gc.bridges.media.fetch`, Virenscan, Medienbereich `bruecken`), auch im Verlauf sofort (klein).
+- **Reaktionen in Kanälen:** nur die eigene (die Brücke liefert keine Zähler). Lehnt die Brücke eine ab (sofort oder als
+  `status failed` der Reaktion), wird sie zurückgenommen und Reagieren in Kanälen dieses Netzes abgeschaltet und gemerkt
+  (Einstellung `bridgeChannelReactOff`, Protokoll `bridge_channel_react_off`) – bis die Brücke eine andere Version hat.
+  `bridge.reactions: "own" | "off"`, `can.react`. Fehlgeschlagene Reaktionen in Chats werden ebenfalls zurückgenommen.
+- **Portal:** Eintrag „Kanäle“ über der Liste (grauer Punkt bei Neuem) → Seite „Kanäle“; Kanalansicht nur lesen mit
+  Hinweisleiste, Glocke und Leiste „Nur lesen“; Gruppen „nur Admins“ mit Leiste; Blase mit Link-Vorschau; Logo des
+  Messengers statt „WA“ an Bildern und Zeilen.
+- Testattrappe: `gc.bridges` Version 7 (`host.bridges.chat(userId, { channel, readOnly })`).
+
 ## 1.19.0
 **Brücken: Namen ohne Telefonnummer, kein endloses „wird geladen …“** (erster echter Test über WhatsApp). Läuft mit jedem
 GateControl mit `gc.bridges` ab Version 3; die Namen aus dem Adressbuch brauchen Version 6 und Mail ≥ 1.16.0.

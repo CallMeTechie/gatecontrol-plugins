@@ -79,7 +79,7 @@
     function cap(icon, text, extra) {
       return el('div', { class: 'ms-ncc-cap', role: 'presentation' }, [icon, el('span', { text: text }), extra || null]);
     }
-    function waMark() { return el('span', { class: 'ms-ncc-svc', text: T('admin.br_mark_' + NET) }); }
+    function waMark() { return M.netLogo(NET, T('admin.br_net_' + NET), 12, 'ms-ncc-svc'); }
     function pill(text, cls) { return el('span', { class: 'ms-ncc-pill' + (cls ? ' is-' + cls : ''), text: text }); }
     function row(av, name, sub, right, opts) {
       var o = opts || {};
@@ -91,7 +91,7 @@
     }
     function avatar(p, wa) {
       var a = el('span', { class: 'ms-av-wrap' }, [M.avatar(p, 38)]);
-      if (wa) a.appendChild(el('span', { class: 'ms-net ms-net-' + NET, text: T('admin.br_mark_' + NET) }));
+      if (wa) a.appendChild(M.netLogo(NET, null, 11));
       return a;
     }
     function moreRow(text, key) {

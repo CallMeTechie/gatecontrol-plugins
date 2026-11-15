@@ -263,7 +263,7 @@
       // 1.17.0: how many of them got the bridge's phone warning (no names)
       if (n.phoneOffline) sub.push(T(n.phoneOffline === 1 ? 'admin.br_phone_one' : 'admin.br_phone', { n: n.phoneOffline }));
       list.appendChild(el('li', null, [
-        el('span', { class: 'ms-br-mark', 'aria-hidden': 'true', text: T('admin.br_mark_' + n.id) }),
+        M.netLogo(n.id, null, 18, 'ms-br-mark'),
         el('span', { class: 'ms-gc-path' }, [el('span', { text: T('admin.br_net_' + n.id) }), el('small', { text: sub.join(' · ') })]),
         el('span', { class: 'ms-pill' + st.cls, text: st.text }),
         M.switchBtn(n.enabled, T('admin.br_net_' + n.id), function (v) { var nets = {}; nets[n.id] = v; setBr({ networks: nets }); }, !b.enabled),

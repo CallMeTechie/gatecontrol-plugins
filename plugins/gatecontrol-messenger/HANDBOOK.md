@@ -1,4 +1,4 @@
-<!-- version: 1.19.0 -->
+<!-- version: 1.20.0 -->
 # Messenger
 
 ## What the plugin does
@@ -70,6 +70,15 @@ It only comes when linking and appears at night. When “Load older history” i
 
 **Old messages are gone.**
 The administrator set a retention, or the chat is a disappearing chat.
+
+## New in 1.20.0
+
+- **WhatsApp channels get a page of their own.** Channels you follow in WhatsApp are no longer among your chats but under “Channels” (in the portal an entry above the list, with a grey dot for new posts). A post looks like in WhatsApp: preview picture, title, domain, text with formatting and a clickable link. Channels are read only, send no pushes by default (the bell in a channel turns them on) and do not count as “unread”. You can react to a post; WhatsApp shows other people's reactions only in its own app. If WhatsApp refuses reactions in channels, GateControl hides reacting there.
+- **Groups where only admins post** show “Only admins can post in this group.” instead of the input field.
+- **WhatsApp groups** are recognised as groups (before, some showed as direct chats).
+- **Bold, italic, strikethrough, code** from WhatsApp show as such; **links are clickable in every chat**, link previews with a picture.
+- Instead of “WA” the **WhatsApp logo** marks a chat's picture.
+- Needs a GateControl server whose bridges support it (preview).
 
 ## New in 1.19.0
 

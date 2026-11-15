@@ -59,6 +59,9 @@ const STATUS = {
   bridge_unlinked: 409,
   // 1.14.0: only text crosses a bridge for now (no files, no rich kinds, no changes to title or members)
   bridge_text_only: 409,
+  // 1.20.0: a channel or a group where only admins write takes no message (reason: channel | admins_only), reacting in
+  // channels is off after the bridge refused it (reason: reactions_off)
+  bridge_read_only: 409,
   // 1.15.0: a file in a type the bridge does not take (reason: image | voice | video); a phone number without + and
   // country code (POST bridges/:network/resolve, …/chats)
   bridge_media_type: 409,

@@ -25,6 +25,9 @@
 // filed like the others, but without a push, as read, without a live event per message (one conversation.update
 // { reason: 'history' } per chat), and a file in them waits until the person asks for it (ext_media 'ask').
 //
+// 1.20.0 (GateControl with gc.bridges version 7): channels, groups where only admins write, format and link previews —
+// bridgechannels.js says how.
+//
 // Clients that do not know bridged chats never see one: every route answers 404 for a bridged conversation unless
 // the request says ?bridged=1 (or `bridged: true` in its body — the buttons of a push; README "App-API", since 1.14.0).
 
@@ -36,6 +39,7 @@ const log = require('./log');
 const people = require('./people');
 const texts = require('./texts.json');
 const bridgemedia = require('./bridgemedia');
+const bridgechannels = require('./bridgechannels');
 const scan = require('./scan');
 const { fail, iso, bridgeName } = require('./util');
 
@@ -137,6 +141,10 @@ async function convInfo(ctx, conv) {
   const media = !!bridgemedia.api(ctx.gc);
   return {
     network: conv.bridge_net, label: LABEL[conv.bridge_net] || conv.bridge_net, state, closed: !!conv.bridge_closed,
+    // 1.20.0: a channel (only the channel writes; reactions: the person's own — 'own' — or none after the bridge refused
+    // one — 'off'), a chat the person may not write into (a channel, a group where only admins write)
+    channel: !!conv.bridge_channel, readOnly: !!(conv.bridge_read_only || conv.bridge_channel),
+    ...(conv.bridge_channel ? { reactions: await bridgechannels.reactState(ctx, conv.bridge_net) } : {}),
     supports: media ? SUPPORTS.concat(bridgemedia.SUPPORTS) : SUPPORTS,
     ...(media ? { mediaTypes: { image: bridgemedia.OUT_TYPES.image, video: bridgemedia.OUT_TYPES.video, voice: bridgemedia.OUT_TYPES.voice, file: null } } : {}),
   };
@@ -185,6 +193,9 @@ async function decorate(ctx, rows, out) {
     }
   }
   await bridgemedia.wantContacts(ctx, seen);
+  // 1.20.0: the posts of a channel (no contact wrote them: the channel did)
+  const convIds = [...new Set(idx.map((i) => rows[i].conv_id))];
+  const channels = new Set((await store.all(ctx.gc, `SELECT id FROM conversations WHERE bridge_channel = 1 AND id IN (${store.marks(convIds.length)})`, convIds)).map((x) => x.id));
   for (const i of idx) {
     const r = rows[i];
     const o = out[i];
@@ -199,7 +210,11 @@ async function decorate(ctx, rows, out) {
       state: r.ext_state || null,
       reason: r.ext_reason || null,
       placeholder: ph,
+      // 1.20.0: written by the channel (a post of a channel)
+      channel: channels.has(r.conv_id) && r.sender_id == null && r.ext_sender == null,
     };
+    // 1.20.0: the format of the text and the link preview (bridgechannels.viewFields)
+    if (!r.deleted_at) Object.assign(o, await bridgechannels.viewFields(ctx, r, meta));
     if (r.sender_id != null && r.ext_state && !r.deleted_at) o.status = STATUS_OUT[r.ext_state] || o.status;
     if (o.replyTo && o.replyTo.contactId != null) o.replyTo.senderName = names.get(o.replyTo.contactId) || null;
     const list = reacts.get(r.id) || [];
@@ -234,14 +249,25 @@ async function ensureConv(c, ev) {
   const kind = chat.kind === 'group' ? 'group' : 'direct';
   // 1.19.0: never a phone number as a name (util.bridgeName)
   const name = bridgeName(chat.name, NAME_MAX);
+  // 1.20.0 (gc.bridges version 7): a channel, a chat the person may not write into — only when the event knows it
+  const channel = typeof chat.channel === 'boolean' ? (chat.channel ? 1 : 0) : null;
+  const readOnly = typeof chat.readOnly === 'boolean' ? (chat.readOnly ? 1 : 0) : null;
   let conv = await convOf(c.gc, ev.userId, ev.network, chat.id);
   if (!conv) {
-    const r = await store.run(c.gc, 'INSERT INTO conversations (kind, title_enc, created_by, created_at, updated_at, bridge_net, bridge_ref, bridge_owner) VALUES (?, ?, NULL, ?, ?, ?, ?, ?)',
-      [kind, name ? seal.seal(name) : null, c.now, c.now, ev.network, chat.id, ev.userId]);
+    const r = await store.run(c.gc, 'INSERT INTO conversations (kind, title_enc, created_by, created_at, updated_at, bridge_net, bridge_ref, bridge_owner, bridge_channel, bridge_read_only) VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?)',
+      [kind, name ? seal.seal(name) : null, c.now, c.now, ev.network, chat.id, ev.userId, channel || 0, readOnly || 0]);
     conv = await store.one(c.gc, 'SELECT * FROM conversations WHERE id = ?', [r.lastInsertRowid]);
-    await store.run(c.gc, "INSERT INTO members (conv_id, user_id, role, joined_at, joined_msg_id, last_read_id, last_delivered_id, updated_at) VALUES (?, ?, 'member', ?, 0, 0, 0, ?)", [conv.id, ev.userId, c.now, c.now]);
+    // a channel is muted from the start (its bell turns pushes on)
+    await store.run(c.gc, "INSERT INTO members (conv_id, user_id, role, joined_at, joined_msg_id, last_read_id, last_delivered_id, updated_at, notify) VALUES (?, ?, 'member', ?, 0, 0, 0, ?, ?)", [conv.id, ev.userId, c.now, c.now, channel ? 'none' : 'all']);
     await bridgemedia.chatAvatar(c, conv, chat.avatar);
     return conv;
+  }
+  if ((channel != null && channel !== conv.bridge_channel) || (readOnly != null && readOnly !== conv.bridge_read_only)) {
+    // a chat known before 1.20.0 turns out to be a channel: it goes muted to the page „Kanäle“ (once)
+    if (channel === 1 && !conv.bridge_channel) await store.run(c.gc, "UPDATE members SET notify = 'none', updated_at = ? WHERE conv_id = ? AND user_id = ?", [c.now, conv.id, ev.userId]);
+    await store.run(c.gc, 'UPDATE conversations SET bridge_channel = ?, bridge_read_only = ?, updated_at = ? WHERE id = ?', [channel != null ? channel : conv.bridge_channel, readOnly != null ? readOnly : conv.bridge_read_only, c.now, conv.id]);
+    conv = await store.one(c.gc, 'SELECT * FROM conversations WHERE id = ?', [conv.id]);
+    if (conv.last_msg_id) live.queue(c.box, [ev.userId], 'conversation.update', { conversationId: conv.id, reason: 'bridge' });
   }
   // 1.15.0: the chat's picture (a reference; fetched afterwards, bridgemedia.js)
   await bridgemedia.chatAvatar(c, conv, chat.avatar);
@@ -326,14 +352,24 @@ async function apply(c, ev, { parked = false } = {}) {
     if (!EVENT_RE.test(String(ev.id || '')) || (await msgByEvent(c.gc, conv.id, ev.id))) return;
     const contactId = sender.self || sender.system ? null : await ensureContact(c, ev, sender);
     if (!sender.self && !sender.system && contactId == null) return;
-    let text = body(ev.text).slice(0, TEXT_MAX).trim() || null;
+    // 1.20.0: a channel's post (sender.channel) — written by the channel, only in a channel
+    const byChannel = sender.channel === true && !!conv.bridge_channel;
+    const raw = body(ev.text).slice(0, TEXT_MAX);
+    let text = raw.trim() || null;
     const meta = {};
     let kind = 'text';
-    if (sender.system) { kind = 'system'; meta.system = { event: 'bridge_notice', network: ev.network }; }
+    if (sender.system && !byChannel) { kind = 'system'; meta.system = { event: 'bridge_notice', network: ev.network }; }
     else if (ev.kind === 'media') {
       // 1.15.0: the file's reference and details too — fetched afterwards into the media of this plugin (bridgemedia.js)
       meta.bridge = bridgemedia.placeholderOf(ev.media && typeof ev.media === 'object' ? ev.media : {}, PLACEHOLDERS);
     } else if (ev.kind !== 'text' && ev.kind !== 'notice') { meta.bridge = { placeholder: 'unsupported', name: null }; text = null; }
+    // 1.20.0: the format of the text, the link preview (its picture is fetched afterwards, bridgechannels.previewRun)
+    if (text && kind !== 'system') {
+      const mk = bridgechannels.cleanMarks(ev.marks, text.length, raw.length - raw.trimStart().length);
+      if (mk) meta.marks = mk;
+    }
+    const preview = kind === 'text' ? bridgechannels.cleanPreview(ev.preview) : null;
+    if (preview) meta.preview = preview;
     let replyTo = null;
     if (EVENT_RE.test(String(ev.replyTo || ''))) { const q = await msgByEvent(c.gc, conv.id, ev.replyTo); replyTo = q && !q.deleted_at ? q.id : null; }
     const cx = { ...c, now: at };
@@ -342,8 +378,9 @@ async function apply(c, ev, { parked = false } = {}) {
     const file = !!(meta.bridge && meta.bridge.ref && bridgemedia.api(c.gc));
     // a file of the history only when the person asks for it (bridgehistory.js says why)
     const extMedia = file ? (hist ? 'ask' : 'wait') : null;
-    await store.run(c.gc, 'UPDATE messages SET ext_sender = ?, ext_event = ?, ext_state = ?, ext_media = ? WHERE id = ?', [contactId, ev.id, sender.self ? 'sent' : null, extMedia, id]);
-    if (extMedia === 'wait') c.mediaWork = true;
+    const extPreview = preview && preview.image && bridgemedia.api(c.gc) ? 'wait' : null;
+    await store.run(c.gc, 'UPDATE messages SET ext_sender = ?, ext_event = ?, ext_state = ?, ext_media = ?, ext_preview = ? WHERE id = ?', [contactId, ev.id, sender.self ? 'sent' : null, extMedia, extPreview, id]);
+    if (extMedia === 'wait' || extPreview) c.mediaWork = true;
     if (sender.self || hist) await store.run(c.gc, 'UPDATE members SET last_read_id = MAX(last_read_id, ?), last_delivered_id = MAX(last_delivered_id, ?), updated_at = ? WHERE conv_id = ? AND user_id = ?', [id, id, c.now, conv.id, ev.userId]);
     if (hist) {
       // changed now (the apps fetch messages?changedSince= and conversations?since= by it), shown at its own time; a
@@ -363,13 +400,24 @@ async function apply(c, ev, { parked = false } = {}) {
     }
     const row = await store.one(c.gc, 'SELECT * FROM messages WHERE id = ?', [id]);
     live.queue(c.box, users, 'message.new', { conversationId: conv.id, messageId: id, senderId: row.sender_id, clientId: null, kind: row.kind, createdAt: iso(row.created_at), bridge: ev.network });
-    if (!sender.self && !parked) c.box.pushes.push({ bridged: { conv, me, row, text, meta, senderName: sender.system ? LABEL[ev.network] : bridgeName(sender.name, NAME_MAX), contactId, title: seal.open(conv.title_enc) || null } });
+    if (!sender.self && !parked) c.box.pushes.push({ bridged: { conv, me, row, text, meta, senderName: byChannel ? null : (sender.system ? LABEL[ev.network] : bridgeName(sender.name, NAME_MAX)), contactId, title: seal.open(conv.title_enc) || null } });
     await unpark(c, conv, ev.id);
     return;
   }
 
   if (ev.type === 'status') {
     if (!EVENT_RE.test(String(ev.target || ''))) return;
+    // 1.20.0: the bridge's word on one of the person's reactions — a refusal takes it back here; in a channel reacting
+    // goes off for this network (bridgechannels.reactRefused)
+    const ownReact = await store.one(c.gc, 'SELECT r.msg_id FROM reactions r JOIN messages m ON m.id = r.msg_id WHERE r.ext_event = ? AND m.conv_id = ?', [ev.target, conv.id]);
+    if (ownReact) {
+      if (ev.status !== 'failed') return;
+      await store.run(c.gc, 'DELETE FROM reactions WHERE ext_event = ? AND msg_id = ?', [ev.target, ownReact.msg_id]);
+      if (conv.bridge_channel) await bridgechannels.reactRefused(c, conv.bridge_net);
+      await reactionChanged(c, conv, ownReact.msg_id, users);
+      if (conv.bridge_channel) live.queue(c.box, users, 'conversation.update', { conversationId: conv.id, reason: 'bridge' });
+      return;
+    }
     const m = await msgByEvent(c.gc, conv.id, ev.target);
     if (!m) { if (!parked) await park(c, conv, ev.target, ev); return; }
     if (m.sender_id == null || m.deleted_at) return;
@@ -391,11 +439,24 @@ async function apply(c, ev, { parked = false } = {}) {
     if (!m) { if (!parked) await park(c, conv, ev.target, ev); return; }
     // only the one who wrote it changes it
     const mine = sender.self === true && m.sender_id === ev.userId;
-    const theirs = !sender.self && m.ext_sender != null && m.ext_sender === await ensureContact(c, ev, sender);
-    if (m.deleted_at || m.kind !== 'text' || !(mine || theirs)) return;
-    const text = body(ev.text).slice(0, TEXT_MAX).trim();
-    if (!text || text === messages.bodyOf(m)) return;
-    await store.run(c.gc, 'UPDATE messages SET body_enc = ?, edited_at = ?, updated_at = ? WHERE id = ?', [seal.seal(text), at, c.now, m.id]);
+    // 1.20.0: a channel changes its own posts
+    const chan = sender.channel === true && !!conv.bridge_channel && m.sender_id == null && m.ext_sender == null;
+    const theirs = !sender.self && !chan && m.ext_sender != null && m.ext_sender === await ensureContact(c, ev, sender);
+    if (m.deleted_at || m.kind !== 'text' || !(mine || theirs || chan)) return;
+    const raw = body(ev.text).slice(0, TEXT_MAX);
+    const text = raw.trim();
+    // 1.20.0: the new text with its format (and a new preview, when the bridge sends one)
+    const meta = messages.metaOf(m) || {};
+    const mk = bridgechannels.cleanMarks(ev.marks, text.length, raw.length - raw.trimStart().length);
+    const pv = bridgechannels.cleanPreview(ev.preview);
+    const before = JSON.stringify([meta.marks || null, meta.preview ? meta.preview.url : null]);
+    if (mk) meta.marks = mk; else delete meta.marks;
+    if (pv && (!meta.preview || meta.preview.url !== pv.url)) meta.preview = pv;
+    const changedMeta = before !== JSON.stringify([meta.marks || null, meta.preview ? meta.preview.url : null]);
+    if (!text || (text === messages.bodyOf(m) && !changedMeta)) return;
+    const extPreview = changedMeta && pv && meta.preview === pv && pv.image && bridgemedia.api(c.gc) ? 'wait' : m.ext_preview;
+    await store.run(c.gc, 'UPDATE messages SET body_enc = ?, meta_enc = ?, ext_preview = ?, edited_at = ?, updated_at = ? WHERE id = ?', [seal.seal(text), seal.sealJson(meta), extPreview || null, at, c.now, m.id]);
+    if (extPreview === 'wait') c.mediaWork = true;
     await store.run(c.gc, 'UPDATE conversations SET updated_at = ? WHERE id = ?', [c.now, conv.id]);
     live.queue(c.box, users, 'message.update', { conversationId: conv.id, messageId: m.id, editedAt: iso(at) });
     return;
@@ -569,21 +630,24 @@ async function push(gc, job, users, now) {
   const net = LABEL[conv.bridge_net] || conv.bridge_net;
   // 1.19.0: a contact without a name (never its number) → „WhatsApp-Kontakt“
   const name = job.senderName || bridgeName(job.title, NAME_MAX) || titleLabel({ lang }, conv.bridge_net, conv.kind === 'group');
+  // 1.20.0: a channel's post (only when the person turned the channel's bell on) — „<Kanal> · Kanal über WhatsApp“
+  const chan = !!conv.bridge_channel;
   const ph = job.meta && job.meta.bridge ? job.meta.bridge.placeholder : null;
   let text = typeof job.text === 'string' ? job.text : '';
   if (ph) text = [t(lang, 'bridgechat.placeholder.' + ph), text].filter(Boolean).join(': ');
   text = text.replace(/\s+/g, ' ').trim();
   const n = {
     topic: 'message',
-    title: p.preview ? t(lang, 'bridgechat.push_title', { name, network: net }) : t(lang, 'bridgechat.push_neutral', { name, network: net }),
+    title: chan ? t(lang, 'bridgechat.push_channel', { name, network: net }) : (p.preview ? t(lang, 'bridgechat.push_title', { name, network: net }) : t(lang, 'bridgechat.push_neutral', { name, network: net })),
     body: p.preview ? (text.length > 1000 ? text.slice(0, 999) + '…' : text) : '',
     users: [u],
     priority: 'normal',
     conversation: { id: String(conv.id), title: conv.kind === 'group' ? (job.title || null) : null, isGroup: conv.kind === 'group' },
-    sender: { id: job.contactId != null ? `ext-${job.contactId}` : 'gatecontrol', name, avatarUrl: null },
-    data: { messageId: row.id, conversationId: conv.id, bridge: conv.bridge_net, actions: [
-      // `bridged` in the body: the buttons of a push work in every app, also one that does not list bridged chats
-      { type: 'reply', label: t(lang, 'push.reply'), path: `conversations/${conv.id}/messages`, body: { bridged: true } },
+    sender: { id: job.contactId != null ? `ext-${job.contactId}` : (chan ? `channel-${conv.id}` : 'gatecontrol'), name, avatarUrl: null },
+    data: { messageId: row.id, conversationId: conv.id, bridge: conv.bridge_net, ...(chan ? { channel: true } : {}), actions: [
+      // `bridged` in the body: the buttons of a push work in every app, also one that does not list bridged chats; no
+      // answer into a channel or a group where only admins write
+      ...(chan || conv.bridge_read_only ? [] : [{ type: 'reply', label: t(lang, 'push.reply'), path: `conversations/${conv.id}/messages`, body: { bridged: true } }]),
       { type: 'mark_read', label: t(lang, 'push.mark_read'), path: `conversations/${conv.id}/read`, body: { upTo: row.id, bridged: true } },
     ] },
   };
@@ -610,6 +674,12 @@ async function gate(ctx, conv) {
   if (st === 'logged_out' || st === 'unlinked') throw fail('bridge_unlinked', { reason: st });
   if (conv.bridge_closed) throw fail('bridge_failed', { reason: 'chat_closed' });
   return b;
+}
+
+/** 1.20.0: nothing is written into a channel or a group where only admins write (before anything is stored). */
+function writable(conv) {
+  if (conv.bridge_channel) throw fail('bridge_read_only', { reason: 'channel' });
+  if (conv.bridge_read_only) throw fail('bridge_read_only', { reason: 'admins_only' });
 }
 
 /**
@@ -712,13 +782,19 @@ async function deleteOut(ctx, conv, row) {
 async function reactOut(ctx, conv, row, emoji) {
   if (!row.ext_event) throw fail('bridge_text_only', { reason: 'reaction' });
   const b = await gate(ctx, conv);
+  // 1.20.0: in a channel only while the bridge took reactions there (bridgechannels.reactState)
+  if (conv.bridge_channel && (await bridgechannels.reactState(ctx, conv.bridge_net)) === 'off') throw fail('bridge_read_only', { reason: 'reactions_off' });
   const old = await store.one(ctx.gc, 'SELECT ext_event FROM reactions WHERE msg_id = ? AND user_id = ?', [row.id, ctx.viewer]);
   try {
     if (old && old.ext_event) await b.redact(ctx.viewer, conv.bridge_net, conv.bridge_ref, { txnId: txnOf(row, 'u'), target: old.ext_event });
     if (emoji == null) return null;
     const r = await b.react(ctx.viewer, conv.bridge_net, conv.bridge_ref, { txnId: txnOf(row, 'r'), target: row.ext_event, emoji });
     return r && EVENT_RE.test(String(r.id || '')) ? r.id : null;
-  } catch (e) { throw mapped(e); }
+  } catch (e) {
+    // the bridge refused a reaction in a channel: no more reactions in channels of this network
+    if (conv.bridge_channel && e && e.code === 'ERR_BRIDGE') await store.tx(ctx.gc, () => bridgechannels.reactRefused(ctx, conv.bridge_net, bridgechannels.bridgeVersion(ctx, conv.bridge_net)));
+    throw mapped(e);
+  }
 }
 
 /** After POST conversations/:id/read: tell the other side (only for people who share read receipts). Best effort. */
@@ -737,7 +813,7 @@ async function typingOut(ctx, conv, bodyIn) {
   const b = api(ctx.gc);
   const stop = !!(bodyIn && bodyIn.stop === true);
   const prefs = (await people.prefsOf(ctx.gc, [ctx.viewer])).get(ctx.viewer) || {};
-  if (!b || conv.bridge_closed || prefs.typing === false) return { until: null };
+  if (!b || conv.bridge_closed || conv.bridge_channel || conv.bridge_read_only || prefs.typing === false) return { until: null };
   if (stop) {
     if (live.clearTyping(conv.id, ctx.viewer, ctx.now)) { try { await b.typing(ctx.viewer, conv.bridge_net, conv.bridge_ref, false); } catch { /* live only */ } }
     return { until: null };
@@ -811,7 +887,7 @@ async function hasChats(gc, userId) {
 }
 
 module.exports = {
-  api, isBridged, via, convInfo, marks, marksFor, decorate, apply, applyEphemeral, pump, sweep, push, gate, checkBody, sendOut, resend, editOut, deleteOut, reactOut, readOut, typingOut,
+  api, isBridged, via, convInfo, marks, marksFor, decorate, apply, applyEphemeral, pump, sweep, push, gate, writable, checkBody, sendOut, resend, editOut, deleteOut, reactOut, readOut, typingOut,
   refreshLinks, stateFor, hasChats, openChat, mapped, fixNames, titleFor, titleLabel, NETWORKS, LABEL, SUPPORTS, PLACEHOLDERS,
   _reset: () => { linkChecked.clear(); pumping = Promise.resolve(); namesFixed = false; },
 };
