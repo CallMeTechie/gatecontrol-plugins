@@ -29,6 +29,7 @@ test('initials: never half an emoji, never an emoji, letters of any script', () 
   assert.equal(initials('Οδυσσέας Ελύτης'), 'ΟΕ');
   assert.equal(initials('李 小龍'), '李小');
   assert.equal(initials('2 Pac'), '2P');
+  assert.equal(initials('1️⃣'), '1', 'a keycap: the digit, not the emoji');
   assert.equal(initials(''), '');
   assert.equal(initials(null), '');
   const LONE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;

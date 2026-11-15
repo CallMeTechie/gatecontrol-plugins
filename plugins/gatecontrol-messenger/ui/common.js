@@ -168,7 +168,8 @@
    * „Kim“ → „KI“. Several words: the first letter of the first and of the last word; one word: its first two letters;
    * no letter at all (only emoji) → '' — avatar() shows the person symbol.
    */
-  var INI_RE = /[\p{L}\p{N}]\p{M}*/gu;
+  // a letter with its combining marks; variation selectors (an emoji's U+FE0F) stay out („1️⃣“ → „1“)
+  var INI_RE = /[\p{L}\p{N}](?:(?![\uFE00-\uFE0F])\p{M})*/gu;
   function letters(word) { return String(word).match(INI_RE) || []; }
   function initials(name) {
     var parts = String(name || '').normalize('NFC').trim().split(/\s+/).filter(Boolean);
